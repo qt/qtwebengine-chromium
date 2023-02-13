@@ -1,4 +1,4 @@
-# Copyright 2017 The PDFium Authors. All rights reserved.
+# Copyright 2017 The PDFium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 #
@@ -10,7 +10,7 @@
 # Column 1: platform: *, win, mac, linux
 # Column 2: v8 support: *, nov8, v8
 # Column 3: xfa support: *, noxfa, xfa
-# Column 4: rendering support: *, agg, skia, skiapaths
+# Column 4: rendering support: *, agg, skia
 #
 # All columns on a line on a line must match, but filenames may be repeated
 # on subsequent lines to suppress more cases.  Within each column, any one of

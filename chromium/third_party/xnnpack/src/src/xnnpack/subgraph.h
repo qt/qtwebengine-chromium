@@ -135,6 +135,8 @@ enum xnn_allocation_type {
   xnn_allocation_type_workspace,
   /// Non-static data that is external to the runtime, provided by caller, specified in xnn_setup_runtime.
   xnn_allocation_type_external,
+  // Persistent data is internal to XNNPACK-managed workspace, but shared by multiple runtime/subgraph.
+  xnn_allocation_type_persistent,
 };
 
 struct xnn_blob {
@@ -271,6 +273,14 @@ struct xnn_node {
       size_t perm[XNN_MAX_TENSOR_DIMS];
       size_t num_dims;
     } transpose;
+    struct {
+      size_t num_dims;
+      size_t offsets[XNN_MAX_TENSOR_DIMS];
+      size_t sizes[XNN_MAX_TENSOR_DIMS];
+    } slice;
+    struct {
+      uint32_t block_size;
+    } space_to_depth_2d;
   } params;
   struct {
     float output_min;
@@ -319,6 +329,9 @@ struct xnn_operator_data {
   struct xnn_shape shape2;
   size_t pre_paddings[XNN_MAX_TENSOR_DIMS];
   size_t post_paddings[XNN_MAX_TENSOR_DIMS];
+  // TODO(zhin): merge this with pre_paddings/post_paddings to reduce size of this struct.
+  size_t offsets[XNN_MAX_TENSOR_DIMS];
+  size_t sizes[XNN_MAX_TENSOR_DIMS];
   uint32_t adjustment_height;
   uint32_t adjustment_width;
   uint32_t inputs[XNN_MAX_RUNTIME_INPUTS];
@@ -412,6 +425,7 @@ struct xnn_workspace {
   struct xnn_runtime* first_user;
   // Workspace will be destroyed in xnn_delete_runtime or xnn_delete_workspace if num_users reaches 0.
   size_t ref_count;
+  size_t persistent_size;
 };
 
 void xnn_subgraph_analyze_consumers_and_producers(xnn_subgraph_t subgraph);

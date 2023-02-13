@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2016 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -32,11 +32,11 @@ class CFGAS_GEColor {
   }
   CFGAS_GEPattern* GetPattern() const {
     DCHECK_EQ(m_type, Pattern);
-    return m_pPattern.Get();
+    return m_pPattern;
   }
   CFGAS_GEShading* GetShading() const {
     DCHECK_EQ(m_type, Shading);
-    return m_pShading.Get();
+    return m_pShading;
   }
 
   CFGAS_GEColor& operator=(const CFGAS_GEColor& that);

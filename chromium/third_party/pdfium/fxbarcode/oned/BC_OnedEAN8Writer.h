@@ -1,4 +1,4 @@
-// Copyright 2014 PDFium Authors. All rights reserved.
+// Copyright 2014 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -22,12 +22,7 @@ class CBC_OnedEAN8Writer final : public CBC_OneDimEANWriter {
   ~CBC_OnedEAN8Writer() override;
 
   // CBC_OneDimEANWriter:
-  uint8_t* EncodeWithHint(const ByteString& contents,
-                          BC_TYPE format,
-                          int32_t& outWidth,
-                          int32_t& outHeight,
-                          int32_t hints) override;
-  uint8_t* EncodeImpl(const ByteString& contents, int32_t& outLength) override;
+  DataVector<uint8_t> Encode(const ByteString& contents) override;
   bool CheckContentValidity(WideStringView contents) override;
   WideString FilterContents(WideStringView contents) override;
   void SetDataLength(int32_t length) override;
@@ -38,8 +33,7 @@ class CBC_OnedEAN8Writer final : public CBC_OneDimEANWriter {
   bool ShowChars(WideStringView contents,
                  CFX_RenderDevice* device,
                  const CFX_Matrix& matrix,
-                 int32_t barWidth,
-                 int32_t multiple) override;
+                 int32_t barWidth) override;
 
   static constexpr int32_t kDefaultCodeWidth = 3 + (7 * 4) + 5 + (7 * 4) + 3;
   int32_t m_codeWidth = kDefaultCodeWidth;

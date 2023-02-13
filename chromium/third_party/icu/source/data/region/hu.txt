@@ -307,6 +307,7 @@ hu{
         CD{"Kongó (KDK)"}
         CG{"Kongó (Köztársaság)"}
         CZ{"Cseh Köztársaság"}
+        NZ{"Aotearoa (Új-Zéland)"}
         SZ{"Eswatini"}
         TL{"Timor-Leste"}
     }

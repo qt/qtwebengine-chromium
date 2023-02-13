@@ -26,7 +26,7 @@
 #include "src/tint/program_builder.h"
 #include "src/tint/reader/wgsl/parser_impl_detail.h"
 #include "src/tint/reader/wgsl/token.h"
-#include "src/tint/sem/storage_texture.h"
+#include "src/tint/type/storage_texture.h"
 
 namespace tint::ast {
 class BreakStatement;
@@ -74,7 +74,7 @@ class ParserImpl {
     /// Pre-determined small vector sizes for AST pointers
     //! @cond Doxygen_Suppress
     using AttributeList = utils::Vector<const ast::Attribute*, 4>;
-    using CaseSelectorList = utils::Vector<const ast::IntLiteralExpression*, 4>;
+    using CaseSelectorList = utils::Vector<const ast::CaseSelector*, 4>;
     using CaseStatementList = utils::Vector<const ast::CaseStatement*, 4>;
     using ExpressionList = utils::Vector<const ast::Expression*, 8>;
     using ParameterList = utils::Vector<const ast::Parameter*, 8>;
@@ -573,6 +573,9 @@ class ParserImpl {
     /// Parses a `case_selectors` grammar element
     /// @returns the list of literals
     Expect<CaseSelectorList> expect_case_selectors();
+    /// Parses a `case_selector` grammar element
+    /// @returns the selector
+    Maybe<const ast::CaseSelector*> case_selector();
     /// Parses a `case_body` grammar element
     /// @returns the parsed statements
     Maybe<const ast::BlockStatement*> case_body();
@@ -611,10 +614,10 @@ class ParserImpl {
     /// @param use a description of what was being parsed if an error was raised
     /// @returns the list of arguments
     Expect<ExpressionList> expect_argument_expression_list(std::string_view use);
-    /// Parses the recursive portion of the postfix_expression
+    /// Parses the recursive portion of the component_or_swizzle_specifier
     /// @param prefix the left side of the expression
     /// @returns the parsed expression or nullptr
-    Maybe<const ast::Expression*> postfix_expression(const ast::Expression* prefix);
+    Maybe<const ast::Expression*> component_or_swizzle_specifier(const ast::Expression* prefix);
     /// Parses a `singular_expression` grammar elment
     /// @returns the parsed expression or nullptr
     Maybe<const ast::Expression*> singular_expression();

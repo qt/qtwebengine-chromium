@@ -24,3 +24,13 @@ message EnrollScanDone {
   optional bool done = 2;
   optional int32 percent_complete = 3;
 }
+
+// Returned from biod's StartEnrollSession method.
+message StartEnrollSessionReply {
+  optional FingerprintError error = 1;
+}
+
+// Returned from biod's StartAuthSession method.
+message StartAuthSessionReply {
+  optional FingerprintError error = 1;
+}

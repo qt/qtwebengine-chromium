@@ -100,7 +100,7 @@ static void tchar_to_skstring(const TCHAR t[], SkString* s) {
 #ifdef UNICODE
     size_t sSize = WideCharToMultiByte(CP_UTF8, 0, t, -1, nullptr, 0, nullptr, nullptr);
     s->resize(sSize);
-    WideCharToMultiByte(CP_UTF8, 0, t, -1, s->writable_str(), sSize, nullptr, nullptr);
+    WideCharToMultiByte(CP_UTF8, 0, t, -1, s->data(), sSize, nullptr, nullptr);
 #else
     s->set(t);
 #endif
@@ -1639,7 +1639,7 @@ std::unique_ptr<SkAdvancedTypefaceMetrics> LogFontTypeface::onGetAdvancedMetrics
 
     // The design HFONT must be destroyed after the HDC
     using HFONT_T = typename std::remove_pointer<HFONT>::type;
-    std::unique_ptr<HFONT_T, SkFunctionWrapper<decltype(DeleteObject), DeleteObject>> designFont;
+    std::unique_ptr<HFONT_T, SkFunctionObject<DeleteObject>> designFont;
     SkAutoHDC hdc(lf);
 
     const char stem_chars[] = {'i', 'I', '!', '1'};

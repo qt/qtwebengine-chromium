@@ -233,7 +233,7 @@ public:
 
 #ifdef SK_DEBUG
     static void Print(const SkTArray<TopoTestNode*>& graph) {
-        for (int i = 0; i < graph.count(); ++i) {
+        for (int i = 0; i < graph.size(); ++i) {
             SkDebugf("%d, ", graph[i]->id());
         }
         SkDebugf("\n");
@@ -242,7 +242,7 @@ public:
 
     // randomize the array
     static void Shuffle(SkSpan<sk_sp<TopoTestNode>> graph, SkRandom* rand) {
-        for (int i = graph.size() - 1; i > 0; --i) {
+        for (size_t i = graph.size() - 1; i > 0; --i) {
             int swap = rand->nextU() % (i + 1);
 
             graph[i].swap(graph[swap]);

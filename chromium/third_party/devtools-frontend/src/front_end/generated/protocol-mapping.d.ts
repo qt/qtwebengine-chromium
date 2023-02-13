@@ -154,12 +154,6 @@ export namespace ProtocolMapping {
      */
     'Emulation.virtualTimeBudgetExpired': [];
     /**
-     * Issued when the target starts or stops needing BeginFrames.
-     * Deprecated. Issue beginFrame unconditionally instead and use result from
-     * beginFrame to detect whether the frames were suppressed.
-     */
-    'HeadlessExperimental.needsBeginFramesChanged': [Protocol.HeadlessExperimental.NeedsBeginFramesChangedEvent];
-    /**
      * Emitted only when `Input.setInterceptDrags` is enabled. Use this data with `Input.dispatchDragEvent` to
      * restore normal drag and drop behavior.
      */
@@ -482,6 +476,11 @@ export namespace ProtocolMapping {
      */
     'Storage.interestGroupAccessed': [Protocol.Storage.InterestGroupAccessedEvent];
     /**
+     * Shared storage was accessed by the associated page.
+     * The following parameters are included in all events.
+     */
+    'Storage.sharedStorageAccessed': [Protocol.Storage.SharedStorageAccessedEvent];
+    /**
      * Issued when attached to target because of auto-attach or `attachToTarget` command.
      */
     'Target.attachedToTarget': [Protocol.Target.AttachedToTargetEvent];
@@ -518,8 +517,8 @@ export namespace ProtocolMapping {
     'Tethering.accepted': [Protocol.Tethering.AcceptedEvent];
     'Tracing.bufferUsage': [Protocol.Tracing.BufferUsageEvent];
     /**
-     * Contains an bucket of collected trace events. When tracing is stopped collected events will be
-     * send as a sequence of dataCollected events followed by tracingComplete event.
+     * Contains a bucket of collected trace events. When tracing is stopped collected events will be
+     * sent as a sequence of dataCollected events followed by tracingComplete event.
      */
     'Tracing.dataCollected': [Protocol.Tracing.DataCollectedEvent];
     /**
@@ -593,6 +592,14 @@ export namespace ProtocolMapping {
      * Notifies that an AudioNode is disconnected to an AudioParam.
      */
     'WebAudio.nodeParamDisconnected': [Protocol.WebAudio.NodeParamDisconnectedEvent];
+    /**
+     * Triggered when a credential is added to an authenticator.
+     */
+    'WebAuthn.credentialAdded': [Protocol.WebAuthn.CredentialAddedEvent];
+    /**
+     * Triggered when a credential is used in a webauthn assertion.
+     */
+    'WebAuthn.credentialAsserted': [Protocol.WebAuthn.CredentialAssertedEvent];
     /**
      * This can be called multiple times, and can be used to set / override /
      * remove player properties. A null propValue indicates removal.
@@ -1246,7 +1253,7 @@ export namespace ProtocolMapping {
      * Requests cache names.
      */
     'CacheStorage.requestCacheNames': {
-      paramsType: [Protocol.CacheStorage.RequestCacheNamesRequest];
+      paramsType: [Protocol.CacheStorage.RequestCacheNamesRequest?];
       returnType: Protocol.CacheStorage.RequestCacheNamesResponse;
     };
     /**
@@ -1660,9 +1667,10 @@ export namespace ProtocolMapping {
       returnType: Protocol.DOM.GetFrameOwnerResponse;
     };
     /**
-     * Returns the container of the given node based on container query conditions.
-     * If containerName is given, it will find the nearest container with a matching name;
-     * otherwise it will find the nearest container regardless of its container name.
+     * Returns the query container of the given node based on container query
+     * conditions: containerName, physical, and logical axes. If no axes are
+     * provided, the style container is returned, which is the direct parent or the
+     * closest element with a matching container-name.
      */
     'DOM.getContainerForNode': {
       paramsType: [Protocol.DOM.GetContainerForNodeRequest];
@@ -2967,9 +2975,14 @@ export namespace ProtocolMapping {
       paramsType: [];
       returnType: Protocol.Page.GetAppIdResponse;
     };
+    'Page.getAdScriptId': {
+      paramsType: [Protocol.Page.GetAdScriptIdRequest];
+      returnType: Protocol.Page.GetAdScriptIdResponse;
+    };
     /**
-     * Returns all browser cookies. Depending on the backend support, will return detailed cookie
-     * information in the `cookies` field.
+     * Returns all browser cookies for the page and all of its subframes. Depending
+     * on the backend support, will return detailed cookie information in the
+     * `cookies` field.
      */
     'Page.getCookies': {
       paramsType: [];
@@ -3466,6 +3479,13 @@ export namespace ProtocolMapping {
       returnType: void;
     };
     /**
+     * Registers storage key to be notified when an update occurs to its cache storage list.
+     */
+    'Storage.trackCacheStorageForStorageKey': {
+      paramsType: [Protocol.Storage.TrackCacheStorageForStorageKeyRequest];
+      returnType: void;
+    };
+    /**
      * Registers origin to be notified when an update occurs to its IndexedDB.
      */
     'Storage.trackIndexedDBForOrigin': {
@@ -3484,6 +3504,13 @@ export namespace ProtocolMapping {
      */
     'Storage.untrackCacheStorageForOrigin': {
       paramsType: [Protocol.Storage.UntrackCacheStorageForOriginRequest];
+      returnType: void;
+    };
+    /**
+     * Unregisters storage key from receiving notifications for cache storage.
+     */
+    'Storage.untrackCacheStorageForStorageKey': {
+      paramsType: [Protocol.Storage.UntrackCacheStorageForStorageKeyRequest];
       returnType: void;
     };
     /**
@@ -3531,11 +3558,60 @@ export namespace ProtocolMapping {
       returnType: void;
     };
     /**
+     * Gets metadata for an origin's shared storage.
+     */
+    'Storage.getSharedStorageMetadata': {
+      paramsType: [Protocol.Storage.GetSharedStorageMetadataRequest];
+      returnType: Protocol.Storage.GetSharedStorageMetadataResponse;
+    };
+    /**
+     * Gets the entries in an given origin's shared storage.
+     */
+    'Storage.getSharedStorageEntries': {
+      paramsType: [Protocol.Storage.GetSharedStorageEntriesRequest];
+      returnType: Protocol.Storage.GetSharedStorageEntriesResponse;
+    };
+    /**
+     * Sets entry with `key` and `value` for a given origin's shared storage.
+     */
+    'Storage.setSharedStorageEntry': {
+      paramsType: [Protocol.Storage.SetSharedStorageEntryRequest];
+      returnType: void;
+    };
+    /**
+     * Deletes entry for `key` (if it exists) for a given origin's shared storage.
+     */
+    'Storage.deleteSharedStorageEntry': {
+      paramsType: [Protocol.Storage.DeleteSharedStorageEntryRequest];
+      returnType: void;
+    };
+    /**
+     * Clears all entries for a given origin's shared storage.
+     */
+    'Storage.clearSharedStorageEntries': {
+      paramsType: [Protocol.Storage.ClearSharedStorageEntriesRequest];
+      returnType: void;
+    };
+    /**
+     * Enables/disables issuing of sharedStorageAccessed events.
+     */
+    'Storage.setSharedStorageTracking': {
+      paramsType: [Protocol.Storage.SetSharedStorageTrackingRequest];
+      returnType: void;
+    };
+    /**
      * Returns information about the system.
      */
     'SystemInfo.getInfo': {
       paramsType: [];
       returnType: Protocol.SystemInfo.GetInfoResponse;
+    };
+    /**
+     * Returns information about the feature state.
+     */
+    'SystemInfo.getFeatureState': {
+      paramsType: [Protocol.SystemInfo.GetFeatureStateRequest];
+      returnType: Protocol.SystemInfo.GetFeatureStateResponse;
     };
     /**
      * Returns information about all running processes.
@@ -3857,6 +3933,13 @@ export namespace ProtocolMapping {
       returnType: Protocol.WebAuthn.AddVirtualAuthenticatorResponse;
     };
     /**
+     * Resets parameters isBogusSignature, isBadUV, isBadUP to false if they are not present.
+     */
+    'WebAuthn.setResponseOverrideBits': {
+      paramsType: [Protocol.WebAuthn.SetResponseOverrideBitsRequest];
+      returnType: void;
+    };
+    /**
      * Removes the given authenticator.
      */
     'WebAuthn.removeVirtualAuthenticator': {
@@ -4119,8 +4202,8 @@ export namespace ProtocolMapping {
       returnType: void;
     };
     /**
-     * Defines pause on exceptions state. Can be set to stop on all exceptions, uncaught exceptions or
-     * no exceptions. Initial pause on exceptions state is `none`.
+     * Defines pause on exceptions state. Can be set to stop on all exceptions, uncaught exceptions,
+     * or caught exceptions, no exceptions. Initial pause on exceptions state is `none`.
      */
     'Debugger.setPauseOnExceptions': {
       paramsType: [Protocol.Debugger.SetPauseOnExceptionsRequest];
@@ -4270,13 +4353,6 @@ export namespace ProtocolMapping {
       paramsType: [Protocol.Profiler.StartPreciseCoverageRequest?];
       returnType: Protocol.Profiler.StartPreciseCoverageResponse;
     };
-    /**
-     * Enable type profile.
-     */
-    'Profiler.startTypeProfile': {
-      paramsType: [];
-      returnType: void;
-    };
     'Profiler.stop': {
       paramsType: [];
       returnType: Protocol.Profiler.StopResponse;
@@ -4290,26 +4366,12 @@ export namespace ProtocolMapping {
       returnType: void;
     };
     /**
-     * Disable type profile. Disabling releases type profile data collected so far.
-     */
-    'Profiler.stopTypeProfile': {
-      paramsType: [];
-      returnType: void;
-    };
-    /**
      * Collect coverage data for the current isolate, and resets execution counters. Precise code
      * coverage needs to have started.
      */
     'Profiler.takePreciseCoverage': {
       paramsType: [];
       returnType: Protocol.Profiler.TakePreciseCoverageResponse;
-    };
-    /**
-     * Collect type profile.
-     */
-    'Profiler.takeTypeProfile': {
-      paramsType: [];
-      returnType: Protocol.Profiler.TakeTypeProfileResponse;
     };
     /**
      * Add handler to promise with given promise object id.

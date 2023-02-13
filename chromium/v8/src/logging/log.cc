@@ -1372,7 +1372,7 @@ void V8FileLogger::LogCodeDisassemble(Handle<AbstractCode> code) {
 #ifdef ENABLE_DISASSEMBLER
       Code::cast(*code).Disassemble(nullptr, stream, isolate_);
 #endif
-    } else if (V8_REMOVE_BUILTINS_CODE_OBJECTS &&
+    } else if (V8_EXTERNAL_CODE_SPACE_BOOL &&
                code->IsCodeDataContainer(cage_base)) {
 #ifdef ENABLE_DISASSEMBLER
       CodeT::cast(*code).Disassemble(nullptr, stream, isolate_);
@@ -1739,8 +1739,11 @@ void V8FileLogger::ScriptEvent(ScriptEventType type, int script_id) {
     case ScriptEventType::kBackgroundCompile:
       msg << "background-compile";
       break;
-    case ScriptEventType::kStreamingCompile:
+    case ScriptEventType::kStreamingCompileBackground:
       msg << "streaming-compile";
+      break;
+    case ScriptEventType::kStreamingCompileForeground:
+      msg << "streaming-compile-foreground";
       break;
   }
   msg << V8FileLogger::kNext << script_id << V8FileLogger::kNext << Time();
@@ -1952,6 +1955,7 @@ EnumerateCompiledFunctions(Heap* heap) {
       // only on a type feedback vector. We should make this mroe precise.
       if (function.HasAttachedOptimizedCode() &&
           Script::cast(function.shared().script()).HasValidSource()) {
+        // TODO(v8:13261): use ToAbstractCode() here.
         record(function.shared(),
                AbstractCode::cast(FromCodeT(function.code())));
       }
@@ -1982,8 +1986,9 @@ void V8FileLogger::LogExistingFunction(Handle<SharedFunctionInfo> shared,
   existing_code_logger_.LogExistingFunction(shared, code);
 }
 
-void V8FileLogger::LogCompiledFunctions() {
-  existing_code_logger_.LogCompiledFunctions();
+void V8FileLogger::LogCompiledFunctions(
+    bool ensure_source_positions_available) {
+  existing_code_logger_.LogCompiledFunctions(ensure_source_positions_available);
 }
 
 void V8FileLogger::LogBuiltins() { existing_code_logger_.LogBuiltins(); }
@@ -2136,7 +2141,7 @@ void V8FileLogger::LateSetup(Isolate* isolate) {
   if (!isolate->logger()->is_listening_to_code_events()) return;
   Builtins::EmitCodeCreateEvents(isolate);
 #if V8_ENABLE_WEBASSEMBLY
-  wasm::GetWasmEngine()->EnableCodeLogging(isolate);
+  if (!isolate->is_shared()) wasm::GetWasmEngine()->EnableCodeLogging(isolate);
 #endif
 }
 
@@ -2163,7 +2168,7 @@ void V8FileLogger::SetEtwCodeEventHandler(uint32_t options) {
     HandleScope scope(isolate_);
     LogBuiltins();
     LogCodeObjects();
-    LogCompiledFunctions();
+    LogCompiledFunctions(false);
   }
 }
 
@@ -2330,7 +2335,7 @@ void ExistingCodeLogger::LogCodeObjects() {
   for (HeapObject obj = iterator.Next(); !obj.is_null();
        obj = iterator.Next()) {
     InstanceType instance_type = obj.map(cage_base).instance_type();
-    if (V8_REMOVE_BUILTINS_CODE_OBJECTS) {
+    if (V8_EXTERNAL_CODE_SPACE_BOOL) {
       // In this case AbstactCode is Code|CodeDataContainer|BytecodeArray but
       // we want to log code objects only once, thus we ignore Code objects
       // which will be logged via corresponding CodeDataContainer.
@@ -2357,7 +2362,8 @@ void ExistingCodeLogger::LogBuiltins() {
   // for arm64).
 }
 
-void ExistingCodeLogger::LogCompiledFunctions() {
+void ExistingCodeLogger::LogCompiledFunctions(
+    bool ensure_source_positions_available) {
   Heap* heap = isolate_->heap();
   HandleScope scope(isolate_);
   std::vector<std::pair<Handle<SharedFunctionInfo>, Handle<AbstractCode>>>
@@ -2367,8 +2373,11 @@ void ExistingCodeLogger::LogCompiledFunctions() {
   // GetScriptLineNumber call.
   for (auto& pair : compiled_funcs) {
     Handle<SharedFunctionInfo> shared = pair.first;
-    SharedFunctionInfo::EnsureSourcePositionsAvailable(isolate_, shared);
+    if (ensure_source_positions_available) {
+      SharedFunctionInfo::EnsureSourcePositionsAvailable(isolate_, shared);
+    }
     if (shared->HasInterpreterData()) {
+      // TODO(v8:13261): use ToAbstractCode() here.
       LogExistingFunction(
           shared,
           Handle<AbstractCode>(
@@ -2376,6 +2385,7 @@ void ExistingCodeLogger::LogCompiledFunctions() {
               isolate_));
     }
     if (shared->HasBaselineCode()) {
+      // TODO(v8:13261): use ToAbstractCode() here.
       LogExistingFunction(shared, Handle<AbstractCode>(
                                       AbstractCode::cast(FromCodeT(
                                           shared->baseline_code(kAcquireLoad))),

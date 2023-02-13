@@ -48,8 +48,9 @@ import spectrumStyles from './spectrum.css.js';
 const UIStrings = {
   /**
   *@description Tooltip text that appears when hovering over largeicon eyedropper button in Spectrum of the Color Picker
+  * @example {c} PH1
   */
-  toggleColorPicker: 'Toggle color picker',
+  toggleColorPicker: 'Eye dropper [{PH1}]',
   /**
   *@description Aria label for hue slider in Color Picker
   */
@@ -184,6 +185,7 @@ export class Spectrum extends Common.ObjectWrapper.eventMixin<EventTypes, typeof
   private colorNameInternal?: string;
   private colorStringInternal?: string;
   private colorFormat?: string;
+  private eyeDropperAbortController: AbortController|null = null;
   constructor(contrastInfo?: ContrastInfo|null) {
     super(true);
 
@@ -203,8 +205,13 @@ export class Spectrum extends Common.ObjectWrapper.eventMixin<EventTypes, typeof
 
     const toolsContainer: HTMLElement = this.contentElement.createChild('div', 'spectrum-tools') as HTMLElement;
     const toolbar = new UI.Toolbar.Toolbar('spectrum-eye-dropper', toolsContainer);
-    this.colorPickerButton =
-        new UI.Toolbar.ToolbarToggle(i18nString(UIStrings.toggleColorPicker), 'largeicon-eyedropper');
+    const toggleEyeDropperShortcut =
+        UI.ShortcutRegistry.ShortcutRegistry.instance().shortcutsForAction('elements.toggle-eye-dropper');
+    const definedShortcutKey =
+        toggleEyeDropperShortcut[0]?.descriptors.flatMap(descriptor => descriptor.name.split(' + '))[0];
+
+    this.colorPickerButton = new UI.Toolbar.ToolbarToggle(
+        i18nString(UIStrings.toggleColorPicker, {PH1: definedShortcutKey || ''}), 'largeicon-eyedropper');
     this.colorPickerButton.setToggled(true);
     this.colorPickerButton.addEventListener(
         UI.Toolbar.ToolbarButton.Events.Click, this.toggleColorPicker.bind(this, undefined));
@@ -467,6 +474,7 @@ export class Spectrum extends Common.ObjectWrapper.eventMixin<EventTypes, typeof
     for (const palette of this.palettes.values()) {
       this.palettePanel.appendChild(this.createPreviewPaletteElement(palette));
     }
+    this.contentElement.scrollIntoView({block: 'end'});
   }
 
   private togglePalettePanel(show: boolean): void {
@@ -482,7 +490,7 @@ export class Spectrum extends Common.ObjectWrapper.eventMixin<EventTypes, typeof
   }
 
   private onCloseBtnKeydown(event: KeyboardEvent): void {
-    if (Platform.KeyboardUtilities.isEscKey(event) || isEnterOrSpaceKey(event)) {
+    if (Platform.KeyboardUtilities.isEscKey(event) || Platform.KeyboardUtilities.isEnterOrSpaceKey(event)) {
       this.togglePalettePanel(false);
       event.consume(true);
     }
@@ -814,7 +822,7 @@ export class Spectrum extends Common.ObjectWrapper.eventMixin<EventTypes, typeof
   }
 
   private paletteColorSelected(colorText: string, colorName: string|undefined, matchUserFormat: boolean): void {
-    const color = Common.Color.Color.parse(colorText);
+    const color = Common.Color.parse(colorText)?.asLegacyColor();
     if (!color) {
       return;
     }
@@ -866,8 +874,8 @@ export class Spectrum extends Common.ObjectWrapper.eventMixin<EventTypes, typeof
     this.addColorToCustomPalette();
   }
 
-  private onAddColorKeydown(event: Event): void {
-    if (isEnterOrSpaceKey(event)) {
+  private onAddColorKeydown(event: KeyboardEvent): void {
+    if (Platform.KeyboardUtilities.isEnterOrSpaceKey(event)) {
       this.addColorToCustomPalette();
       event.consume(true);
     }
@@ -909,7 +917,7 @@ export class Spectrum extends Common.ObjectWrapper.eventMixin<EventTypes, typeof
     this.showPalette(palette, false);
   }
 
-  setColor(color: Common.Color.Color, colorFormat: string): void {
+  setColor(color: Common.Color.Legacy, colorFormat: string): void {
     this.originalFormat = colorFormat;
     this.innerSetColor(color.hsva(), '', undefined /* colorName */, colorFormat, ChangeSource.Model);
     const colorValues = this.color().canonicalHSLA();
@@ -917,7 +925,7 @@ export class Spectrum extends Common.ObjectWrapper.eventMixin<EventTypes, typeof
     UI.ARIAUtils.setValueText(this.alphaElement, colorValues[3]);
   }
 
-  colorSelected(color: Common.Color.Color): void {
+  colorSelected(color: Common.Color.Legacy): void {
     this.innerSetColor(color.hsva(), '', undefined /* colorName */, undefined /* colorFormat */, ChangeSource.Other);
   }
 
@@ -949,7 +957,7 @@ export class Spectrum extends Common.ObjectWrapper.eventMixin<EventTypes, typeof
     }
 
     if (this.contrastInfo) {
-      this.contrastInfo.setColor(Common.Color.Color.fromHSVA(this.hsv), this.colorFormat);
+      this.contrastInfo.setColor(Common.Color.Legacy.fromHSVA(this.hsv), this.colorFormat);
     }
 
     this.updateHelperLocations();
@@ -963,8 +971,8 @@ export class Spectrum extends Common.ObjectWrapper.eventMixin<EventTypes, typeof
     }
   }
 
-  private color(): Common.Color.Color {
-    return Common.Color.Color.fromHSVA(this.hsv);
+  private color(): Common.Color.Legacy {
+    return Common.Color.Legacy.fromHSVA(this.hsv);
   }
 
   colorName(): string|undefined {
@@ -1076,7 +1084,7 @@ export class Spectrum extends Common.ObjectWrapper.eventMixin<EventTypes, typeof
   }
 
   private updateUI(): void {
-    const h = Common.Color.Color.fromHSVA([this.hsv[0], 1, 1, 1]);
+    const h = Common.Color.Legacy.fromHSVA([this.hsv[0], 1, 1, 1]);
     this.colorElement.style.backgroundColor = h.asString(Common.Color.Format.RGB) as string;
     if (this.contrastOverlay) {
       this.contrastOverlay.setDimensions(this.dragWidth, this.dragHeight);
@@ -1084,7 +1092,7 @@ export class Spectrum extends Common.ObjectWrapper.eventMixin<EventTypes, typeof
 
     this.swatch.setColor(this.color(), this.colorString());
     this.colorDragElement.style.backgroundColor = this.color().asString(Common.Color.Format.RGBA) as string;
-    const noAlpha = Common.Color.Color.fromHSVA(this.hsv.slice(0, 3).concat(1));
+    const noAlpha = Common.Color.Legacy.fromHSVA(this.hsv.slice(0, 3).concat(1));
     this.alphaElementBackground.style.backgroundImage = Platform.StringUtilities.sprintf(
         'linear-gradient(to right, rgba(0,0,0,0), %s)', noAlpha.asString(Common.Color.Format.RGB));
   }
@@ -1110,7 +1118,7 @@ export class Spectrum extends Common.ObjectWrapper.eventMixin<EventTypes, typeof
       return;
     }
     const text = event.clipboardData.getData('text');
-    const color = Common.Color.Color.parse(text);
+    const color = Common.Color.parse(text)?.asLegacyColor();
     if (!color) {
       return;
     }
@@ -1142,7 +1150,7 @@ export class Spectrum extends Common.ObjectWrapper.eventMixin<EventTypes, typeof
       colorString = Platform.StringUtilities.sprintf('%s(%s)', this.colorFormat, [values, alpha].join(' / '));
     }
 
-    const color = Common.Color.Color.parse(colorString);
+    const color = Common.Color.parse(colorString)?.asLegacyColor();
     if (!color) {
       return;
     }
@@ -1188,7 +1196,7 @@ export class Spectrum extends Common.ObjectWrapper.eventMixin<EventTypes, typeof
     }
   }
 
-  private async toggleColorPicker(enabled?: boolean): Promise<void> {
+  async toggleColorPicker(enabled?: boolean): Promise<void> {
     const eyeDropperExperimentEnabled = this.eyeDropperExperimentEnabled;
 
     if (enabled === undefined) {
@@ -1219,16 +1227,23 @@ export class Spectrum extends Common.ObjectWrapper.eventMixin<EventTypes, typeof
       // https://github.com/microsoft/TypeScript/issues/48638
       /* eslint-disable  @typescript-eslint/no-explicit-any */
       const eyeDropper = new (<any>window).EyeDropper();
+      this.eyeDropperAbortController = new AbortController();
 
       try {
-        const hexColor = await eyeDropper.open();
-        const color = Common.Color.Color.parse(hexColor.sRGBHex);
+        const hexColor = await eyeDropper.open({signal: this.eyeDropperAbortController.signal});
+        const color = Common.Color.parse(hexColor.sRGBHex)?.asLegacyColor();
+
         this.innerSetColor(color?.hsva(), '', undefined /* colorName */, undefined, ChangeSource.Other);
       } catch (error) {
-        console.error(error);
+        if (error.name !== 'AbortError') {
+          console.error(error);
+        }
       }
 
       this.colorPickerButton.setToggled(false);
+    } else if (eyeDropperExperimentEnabled && !enabled) {
+      this.eyeDropperAbortController?.abort();
+      this.eyeDropperAbortController = null;
     }
   }
 
@@ -1236,7 +1251,7 @@ export class Spectrum extends Common.ObjectWrapper.eventMixin<EventTypes, typeof
     data: rgbColor,
   }: Common.EventTarget.EventTargetEvent<Host.InspectorFrontendHostAPI.EyeDropperPickedColorEvent>): void {
     const rgba = [rgbColor.r, rgbColor.g, rgbColor.b, (rgbColor.a / 2.55 | 0) / 100];
-    const color = Common.Color.Color.fromRGBA(rgba);
+    const color = Common.Color.Legacy.fromRGBA(rgba);
     this.innerSetColor(color.hsva(), '', undefined /* colorName */, undefined, ChangeSource.Other);
     Host.InspectorFrontendHost.InspectorFrontendHostInstance.bringToFront();
   }
@@ -1289,8 +1304,8 @@ export class PaletteGenerator {
 
   private finish(): void {
     function hueComparator(a: string, b: string): number {
-      const hsva = (paletteColors.get(a) as Common.Color.Color).hsva();
-      const hsvb = (paletteColors.get(b) as Common.Color.Color).hsva();
+      const hsva = (paletteColors.get(a) as Common.Color.Legacy).hsva();
+      const hsvb = (paletteColors.get(b) as Common.Color.Legacy).hsva();
 
       // First trim the shades of gray
       if (hsvb[1] < 0.12 && hsva[1] < 0.12) {
@@ -1313,11 +1328,11 @@ export class PaletteGenerator {
 
     let colors: string[]|string[] = [...this.frequencyMap.keys()];
     colors = colors.sort(this.frequencyComparator.bind(this));
-    const paletteColors = new Map<string, Common.Color.Color>();
+    const paletteColors = new Map<string, Common.Color.Legacy>();
     const colorsPerRow = 24;
     while (paletteColors.size < colorsPerRow && colors.length) {
       const colorText = colors.shift() as string;
-      const color = Common.Color.Color.parse(colorText);
+      const color = Common.Color.parse(colorText)?.asLegacyColor();
       if (!color || color.nickname() === 'white' || color.nickname() === 'black') {
         continue;
       }
@@ -1452,7 +1467,7 @@ export class Swatch {
     UI.ARIAUtils.setAccessibleName(this.swatchOverlayElement, this.swatchCopyIcon.title);
   }
 
-  setColor(color: Common.Color.Color, colorString?: string): void {
+  setColor(color: Common.Color.Legacy, colorString?: string): void {
     this.swatchInnerElement.style.backgroundColor = color.asString(Common.Color.Format.RGBA) as string;
     // Show border if the swatch is white.
     this.swatchInnerElement.classList.toggle('swatch-inner-white', color.hsla()[2] > 0.9);

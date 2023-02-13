@@ -1,4 +1,4 @@
-// Copyright 2017 PDFium Authors. All rights reserved.
+// Copyright 2017 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -25,7 +25,7 @@ class TestReadValidator final : public CPDF_ReadValidator {
  public:
   CONSTRUCT_VIA_MAKE_RETAIN;
 
-  void SimulateReadError() { ReadBlockAtOffset(nullptr, 0, 1); }
+  void SimulateReadError() { ReadBlockAtOffset({}, 0); }
 
  private:
   TestReadValidator()

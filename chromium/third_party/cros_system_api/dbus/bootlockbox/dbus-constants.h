@@ -5,7 +5,7 @@
 #ifndef SYSTEM_API_DBUS_BOOTLOCKBOX_DBUS_CONSTANTS_H_
 #define SYSTEM_API_DBUS_BOOTLOCKBOX_DBUS_CONSTANTS_H_
 
-namespace cryptohome {
+namespace bootlockbox {
 
 // Interface exposed by the boot lockbox daemon.
 
@@ -17,6 +17,6 @@ const char kBootLockboxStoreBootLockbox[] = "StoreBootLockbox";
 const char kBootLockboxReadBootLockbox[] = "ReadBootLockbox";
 const char kBootLockboxFinalizeBootLockbox[] = "FinalizeBootLockbox";
 
-}  // namespace cryptohome
+}  // namespace bootlockbox
 
 #endif  // SYSTEM_API_DBUS_BOOTLOCKBOX_DBUS_CONSTANTS_H_

@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2016 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -139,10 +139,10 @@ TEST_F(CPDFSecurityHandlerEmbedderTest, PasswordAfterGenerateSave) {
     if (CFX_DefaultRenderDevice::SkiaIsDefaultRenderer())
       return "df9fe67555b7ceb59c99036e8d2c1c76";
 #if BUILDFLAG(IS_APPLE)
-    if (!CFX_DefaultRenderDevice::SkiaPathsIsDefaultRenderer())
-      return "2a308e8cc20a6221112c387d122075a8";
-#endif
+    return "2a308e8cc20a6221112c387d122075a8";
+#else
     return "9fe7eef8e51d15a604001854be6ed1ee";
+#endif  // BUILDFLAG(IS_APPLE)
   }();
   {
     ASSERT_TRUE(OpenDocumentWithOptions("encrypted.pdf", "5678",

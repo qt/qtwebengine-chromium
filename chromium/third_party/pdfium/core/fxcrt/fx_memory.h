@@ -1,4 +1,4 @@
-// Copyright 2014 PDFium Authors. All rights reserved.
+// Copyright 2014 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -44,7 +44,7 @@ NOINLINE void FX_OutOfMemoryTerminate(size_t size);
   static_cast<type*>(pdfium::internal::Realloc(ptr, size, sizeof(type)))
 
 // These never return nullptr, but return uninitialized memory.
-// TOOD(thestig): Add FX_TryAllocUninit() if there is a use case.
+// TODO(thestig): Add FX_TryAllocUninit() if there is a use case.
 #define FX_AllocUninit(type, size) \
   static_cast<type*>(pdfium::internal::AllocOrDie(size, sizeof(type)))
 #define FX_AllocUninit2D(type, w, h) \
@@ -105,8 +105,6 @@ inline T FxAlignToBoundary(T size) {
   static_assert(N > 0 && (N & (N - 1)) == 0, "Not non-zero power of two");
   return (size + (N - 1)) & ~(N - 1);
 }
-
-size_t Fx2DSizeOrDie(size_t w, size_t h);
 
 #endif  // __cplusplus
 

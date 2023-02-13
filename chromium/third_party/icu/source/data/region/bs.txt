@@ -307,6 +307,7 @@ bs{
         CD{"DR Kongo"}
         CG{"Republika Kongo"}
         CZ{"Češka Republika"}
+        NZ{"Novi Zeland Aotearoa"}
         SZ{"Svazilend"}
     }
 }

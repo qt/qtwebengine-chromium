@@ -8,10 +8,10 @@ const t = CodeMirror.tags;
 
 export const highlightStyle: CodeMirror.HighlightStyle = CodeMirror.HighlightStyle.define([
   {tag: t.variableName, class: 'token-variable'},
+  {tag: t.definition(t.variableName), class: 'token-definition'},
   {tag: t.propertyName, class: 'token-property'},
   {tag: [t.typeName, t.className, t.namespace, t.macroName], class: 'token-type'},
   {tag: [t.special(t.name), t.constant(t.className)], class: 'token-variable-special'},
-  {tag: t.definition(t.name), class: 'token-definition'},
   {tag: t.standard(t.variableName), class: 'token-builtin'},
 
   {tag: [t.number, t.literal, t.unit], class: 'token-number'},
@@ -66,9 +66,30 @@ export async function highlightNode(node: Element, mimeType: string): Promise<vo
 
 export async function languageFromMIME(mimeType: string): Promise<CodeMirror.LanguageSupport|null> {
   switch (mimeType) {
+    // The correct MIME type for JavaScript is text/javascript, but we also support
+    // the legacy JavaScript MIME types here for backwards compatibility.
+    // https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/MIME_types#legacy_javascript_mime_types
+    case 'application/javascript':
+    case 'application/ecmascript':
+    case 'application/x-ecmascript':
+    case 'application/x-javascript':
+    case 'text/ecmascript':
+    case 'text/javascript1.0':
+    case 'text/javascript1.1':
+    case 'text/javascript1.2':
+    case 'text/javascript1.3':
+    case 'text/javascript1.4':
+    case 'text/javascript1.5':
+    case 'text/jscript':
+    case 'text/livescript ':
+    case 'text/x-ecmascript':
+    case 'text/x-javascript':
     case 'text/javascript':
-      return CodeMirror.javascript.javascript();
     case 'text/jsx':
+      // We intentionally allow JSX in normal .js as well as .jsx files,
+      // because there are simply too many existing applications and
+      // examples out there that use JSX within .js files, and we don't
+      // want to break them.
       return CodeMirror.javascript.javascript({jsx: true});
     case 'text/typescript':
       return CodeMirror.javascript.javascript({typescript: true});
@@ -76,25 +97,31 @@ export async function languageFromMIME(mimeType: string): Promise<CodeMirror.Lan
       return CodeMirror.javascript.javascript({typescript: true, jsx: true});
 
     case 'text/css':
-    case 'text/x-scss':
       return CodeMirror.css.css();
 
     case 'text/html':
-      return CodeMirror.html.html();
+      return CodeMirror.html.html({selfClosingTags: true});
 
     case 'application/xml':
       return (await CodeMirror.xml()).xml();
 
-    case 'text/webassembly':
+    case 'application/wasm':
       return (await CodeMirror.wast()).wast();
 
     case 'text/x-c++src':
       return (await CodeMirror.cpp()).cpp();
 
+    case 'text/x-go':
+      return new CodeMirror.LanguageSupport(await CodeMirror.go());
+
     case 'text/x-java':
       return (await CodeMirror.java()).java();
 
+    case 'text/x-kotlin':
+      return new CodeMirror.LanguageSupport(await CodeMirror.kotlin());
+
     case 'application/json':
+    case 'application/manifest+json':
       return (await CodeMirror.json()).json();
 
     case 'application/x-httpd-php':
@@ -114,6 +141,27 @@ export async function languageFromMIME(mimeType: string): Promise<CodeMirror.Lan
 
     case 'text/x-clojure':
       return new CodeMirror.LanguageSupport(await CodeMirror.clojure());
+
+    case 'application/vnd.dart':
+      return new CodeMirror.LanguageSupport(await CodeMirror.dart());
+
+    case 'text/x-gss':
+      return new CodeMirror.LanguageSupport(await CodeMirror.gss());
+
+    case 'text/x-less':
+      return new CodeMirror.LanguageSupport(await CodeMirror.less());
+
+    case 'text/x-sass':
+      return new CodeMirror.LanguageSupport(await CodeMirror.sass());
+
+    case 'text/x-scala':
+      return new CodeMirror.LanguageSupport(await CodeMirror.scala());
+
+    case 'text/x-scss':
+      return new CodeMirror.LanguageSupport(await CodeMirror.scss());
+
+    case 'text/x.svelte':
+      return (await CodeMirror.svelte()).svelte();
 
     default:
       return null;

@@ -222,6 +222,7 @@ export class NetworkRequest extends Common.ObjectWrapper.ObjectWrapper<EventType
   requestMethod: string;
   requestTime: number;
   protocol: string;
+  alternateProtocolUsage: Protocol.Network.AlternateProtocolUsage|undefined;
   mixedContentType: Protocol.Security.MixedContentType;
   #initialPriorityInternal: Protocol.Network.ResourcePriority|null;
   #currentPriority: Protocol.Network.ResourcePriority|null;
@@ -237,6 +238,11 @@ export class NetworkRequest extends Common.ObjectWrapper.ObjectWrapper<EventType
   };
   #responseHeadersTextInternal: string;
   #originalResponseHeaders: Protocol.Fetch.HeaderEntry[];
+
+  // This field is only used when intercepting and overriding requests, because
+  // in that case 'this.responseHeaders' does not contain 'set-cookie' headers.
+  #setCookieHeaders: Protocol.Fetch.HeaderEntry[];
+
   #requestHeadersInternal: NameValue[];
   #requestHeaderValues: {
     [x: string]: string|undefined,
@@ -256,6 +262,7 @@ export class NetworkRequest extends Common.ObjectWrapper.ObjectWrapper<EventType
   #blockedRequestCookiesInternal: BlockedCookieWithReason[];
   #includedRequestCookiesInternal: Cookie[];
   #blockedResponseCookiesInternal: BlockedSetCookieWithReason[];
+  #siteHasCookieInOtherPartition: boolean;
   localizedFailDescription: string|null;
   #urlInternal!: Platform.DevToolsPath.UrlString;
   #responseReceivedTimeInternal!: number;
@@ -322,6 +329,7 @@ export class NetworkRequest extends Common.ObjectWrapper.ObjectWrapper<EventType
     this.requestMethod = '';
     this.requestTime = 0;
     this.protocol = '';
+    this.alternateProtocolUsage = undefined;
     this.mixedContentType = Protocol.Security.MixedContentType.None;
 
     this.#initialPriorityInternal = null;
@@ -339,6 +347,7 @@ export class NetworkRequest extends Common.ObjectWrapper.ObjectWrapper<EventType
     this.#responseHeaderValues = {};
     this.#responseHeadersTextInternal = '';
     this.#originalResponseHeaders = [];
+    this.#setCookieHeaders = [];
 
     this.#requestHeadersInternal = [];
     this.#requestHeaderValues = {};
@@ -363,6 +372,7 @@ export class NetworkRequest extends Common.ObjectWrapper.ObjectWrapper<EventType
     this.#blockedRequestCookiesInternal = [];
     this.#includedRequestCookiesInternal = [];
     this.#blockedResponseCookiesInternal = [];
+    this.#siteHasCookieInOtherPartition = false;
 
     this.localizedFailDescription = null;
     this.#isSameSiteInternal = null;
@@ -950,6 +960,14 @@ export class NetworkRequest extends Common.ObjectWrapper.ObjectWrapper<EventType
     this.#originalResponseHeaders = headers;
   }
 
+  get setCookieHeaders(): Protocol.Fetch.HeaderEntry[] {
+    return this.#setCookieHeaders;
+  }
+
+  set setCookieHeaders(headers: Protocol.Fetch.HeaderEntry[]) {
+    this.#setCookieHeaders = headers;
+  }
+
   get responseHeadersText(): string {
     return this.#responseHeadersTextInternal;
   }
@@ -1377,6 +1395,7 @@ export class NetworkRequest extends Common.ObjectWrapper.ObjectWrapper<EventType
     this.setRequestHeadersText('');  // Mark request headers as non-provisional
     this.#clientSecurityStateInternal = extraRequestInfo.clientSecurityState;
     this.setConnectTimingFromExtraInfo(extraRequestInfo.connectTiming);
+    this.#siteHasCookieInOtherPartition = extraRequestInfo.siteHasCookieInOtherPartition ?? false;
   }
 
   hasExtraRequestInfo(): boolean {
@@ -1395,9 +1414,23 @@ export class NetworkRequest extends Common.ObjectWrapper.ObjectWrapper<EventType
     return this.#includedRequestCookiesInternal.length > 0 || this.#blockedRequestCookiesInternal.length > 0;
   }
 
+  siteHasCookieInOtherPartition(): boolean {
+    return this.#siteHasCookieInOtherPartition;
+  }
+
+  // Parse the status text from the first line of the response headers text.
+  // See net::HttpResponseHeaders::GetStatusText.
+  static parseStatusTextFromResponseHeadersText(responseHeadersText: string): string {
+    const firstLineParts = responseHeadersText.split('\r')[0].split(' ');
+    return firstLineParts.slice(2).join(' ');
+  }
+
   addExtraResponseInfo(extraResponseInfo: ExtraResponseInfo): void {
     this.#blockedResponseCookiesInternal = extraResponseInfo.blockedResponseCookies;
     this.responseHeaders = extraResponseInfo.responseHeaders;
+    // We store a copy of the headers we initially received, so that after
+    // potential header overrides, we can compare actual with original headers.
+    this.originalResponseHeaders = extraResponseInfo.responseHeaders.map(headerEntry => ({...headerEntry}));
 
     if (extraResponseInfo.responseHeadersText) {
       this.responseHeadersText = extraResponseInfo.responseHeadersText;
@@ -1416,6 +1449,8 @@ export class NetworkRequest extends Common.ObjectWrapper.ObjectWrapper<EventType
         }
         this.setRequestHeadersText(requestHeadersText);
       }
+
+      this.statusText = NetworkRequest.parseStatusTextFromResponseHeadersText(extraResponseInfo.responseHeadersText);
     }
     this.#remoteAddressSpaceInternal = extraResponseInfo.resourceIPAddressSpace;
 
@@ -1721,6 +1756,7 @@ export interface ExtraRequestInfo {
   includedRequestCookies: Cookie[];
   clientSecurityState?: Protocol.Network.ClientSecurityState;
   connectTiming: Protocol.Network.ConnectTiming;
+  siteHasCookieInOtherPartition?: boolean;
 }
 
 export interface ExtraResponseInfo {

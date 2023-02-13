@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2016 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -49,7 +49,7 @@ class PatternValue {
 
  private:
   RetainPtr<CPDF_Pattern> m_pRetainedPattern;
-  std::array<float, kMaxPatternColorComps> m_Comps;
+  std::array<float, kMaxPatternColorComps> m_Comps{};
 };
 
 class CPDF_ColorSpace : public Retainable, public Observable {

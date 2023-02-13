@@ -13,7 +13,10 @@
 #include "src/compiler/access-info.h"
 #include "src/compiler/allocation-builder-inl.h"
 #include "src/compiler/allocation-builder.h"
+#include "src/compiler/common-operator.h"
 #include "src/compiler/compilation-dependencies.h"
+#include "src/compiler/frame-states.h"
+#include "src/compiler/graph-assembler.h"
 #include "src/compiler/js-graph.h"
 #include "src/compiler/js-heap-broker.h"
 #include "src/compiler/js-operator.h"
@@ -24,9 +27,11 @@
 #include "src/compiler/property-access-builder.h"
 #include "src/compiler/simplified-operator.h"
 #include "src/compiler/type-cache.h"
+#include "src/flags/flags.h"
 #include "src/handles/handles.h"
 #include "src/heap/factory.h"
 #include "src/heap/heap-write-barrier-inl.h"
+#include "src/objects/elements-kind.h"
 #include "src/objects/feedback-vector.h"
 #include "src/objects/heap-number.h"
 #include "src/objects/string.h"
@@ -577,6 +582,9 @@ JSNativeContextSpecialization::ReduceJSFindNonDefaultConstructorOrConstruct(
   JSFunctionRef this_function_ref = m.Ref(broker()).AsJSFunction();
   MapRef function_map = this_function_ref.map();
   HeapObjectRef current = function_map.prototype();
+  // The uppermost JSFunction on the class hierarchy (above it, there can be
+  // other JSObjects, e.g., Proxies).
+  base::Optional<JSObjectRef> last_function;
 
   Node* return_value;
   Node* ctor_or_instance;
@@ -607,6 +615,7 @@ JSNativeContextSpecialization::ReduceJSFindNonDefaultConstructorOrConstruct(
       if (!dependencies()->DependOnArrayIteratorProtector()) {
         return NoChange();
       }
+      last_function = current_function;
 
       if (kind == FunctionKind::kDefaultBaseConstructor) {
         return_value = jsgraph()->BooleanConstant(true);
@@ -614,9 +623,32 @@ JSNativeContextSpecialization::ReduceJSFindNonDefaultConstructorOrConstruct(
         // Generate a builtin call for creating the instance.
         Node* constructor = jsgraph()->Constant(current_function);
 
+        // In the current FrameState setup, the two outputs of this bytecode are
+        // poked at indices slot(index(reg_2)) (boolean_output) and
+        // slot(index(reg_2) + 1) (object_output). Now we're reducing this
+        // bytecode to a builtin call which only has one output (object_output).
+        // Change where in the FrameState the output is poked at.
+
+        // The current poke location points to the location for boolean_ouput.
+        // We move the poke location by -1, since the poke location decreases
+        // when the register index increases (see
+        // BytecodeGraphBuilder::Environment::BindRegistersToProjections).
+
+        // The location for boolean_output is already hard-wired to true (which
+        // is the correct value here) in
+        // BytecodeGraphBuilder::VisitFindNonDefaultConstructorOrConstruct.
+
+        FrameState old_frame_state = n.frame_state();
+        auto old_poke_offset = old_frame_state.frame_state_info()
+                                   .state_combine()
+                                   .GetOffsetToPokeAt();
+        FrameState new_frame_state = CloneFrameState(
+            jsgraph(), old_frame_state,
+            OutputFrameStateCombine::PokeAt(old_poke_offset - 1));
+
         effect = ctor_or_instance = graph()->NewNode(
             jsgraph()->javascript()->Create(), constructor, new_target,
-            n.context(), n.frame_state(), effect, control);
+            n.context(), new_frame_state, effect, control);
       } else {
         return_value = jsgraph()->BooleanConstant(false);
         ctor_or_instance = jsgraph()->Constant(current_function);
@@ -628,8 +660,8 @@ JSNativeContextSpecialization::ReduceJSFindNonDefaultConstructorOrConstruct(
     current = current_function.map().prototype();
   }
 
-  dependencies()->DependOnStablePrototypeChain(function_map,
-                                               WhereToStart::kStartAtReceiver);
+  dependencies()->DependOnStablePrototypeChain(
+      function_map, WhereToStart::kStartAtReceiver, last_function);
 
   // Update the uses of {node}.
   for (Edge edge : node->use_edges()) {
@@ -1713,6 +1745,7 @@ Reduction JSNativeContextSpecialization::ReduceNamedAccess(
         // trimming.
         return NoChange();
       }
+
       values.push_back(continuation->value());
       effects.push_back(continuation->effect());
       controls.push_back(continuation->control());
@@ -2092,6 +2125,7 @@ Reduction JSNativeContextSpecialization::ReduceElementAccess(
   Node* receiver = NodeProperties::GetValueInput(node, 0);
   Effect effect{NodeProperties::GetEffectInput(node)};
   Control control{NodeProperties::GetControlInput(node)};
+  Node* context = NodeProperties::GetContextInput(node);
 
   // TODO(neis): It's odd that we do optimizations below that don't really care
   // about the feedback, but we don't do them when the feedback is megamorphic.
@@ -2201,8 +2235,8 @@ Reduction JSNativeContextSpecialization::ReduceElementAccess(
 
     // Access the actual element.
     ValueEffectControl continuation =
-        BuildElementAccess(receiver, index, value, effect, control, access_info,
-                           feedback.keyed_mode());
+        BuildElementAccess(receiver, index, value, effect, control, context,
+                           access_info, feedback.keyed_mode());
     value = continuation.value();
     effect = continuation.effect();
     control = continuation.control();
@@ -2266,9 +2300,9 @@ Reduction JSNativeContextSpecialization::ReduceElementAccess(
       }
 
       // Access the actual element.
-      ValueEffectControl continuation =
-          BuildElementAccess(this_receiver, this_index, this_value, this_effect,
-                             this_control, access_info, feedback.keyed_mode());
+      ValueEffectControl continuation = BuildElementAccess(
+          this_receiver, this_index, this_value, this_effect, this_control,
+          context, access_info, feedback.keyed_mode());
       values.push_back(continuation.value());
       effects.push_back(continuation.effect());
       controls.push_back(continuation.control());
@@ -2865,9 +2899,14 @@ JSNativeContextSpecialization::BuildPropertyStore(
               AccessBuilder::ForJSObjectPropertiesOrHashKnownPointer()),
           storage, effect, control);
     }
-    bool store_to_existing_constant_field = access_info.IsFastDataConstant() &&
-                                            access_mode == AccessMode::kStore &&
-                                            !access_info.HasTransitionMap();
+    if (access_info.IsFastDataConstant() && access_mode == AccessMode::kStore &&
+        !access_info.HasTransitionMap()) {
+      Node* deoptimize = graph()->NewNode(
+          simplified()->CheckIf(DeoptimizeReason::kStoreToConstant),
+          jsgraph()->FalseConstant(), effect, control);
+      return ValueEffectControl(jsgraph()->UndefinedConstant(), deoptimize,
+                                control);
+    }
     FieldAccess field_access = {
         kTaggedBase,
         field_index.offset(),
@@ -2920,40 +2959,11 @@ JSNativeContextSpecialization::BuildPropertyStore(
           field_access.name = MaybeHandle<Name>();
           field_access.machine_type = MachineType::Float64();
         }
-        if (store_to_existing_constant_field) {
-          DCHECK(!access_info.HasTransitionMap());
-          // If the field is constant check that the value we are going
-          // to store matches current value.
-          Node* current_value = effect = graph()->NewNode(
-              simplified()->LoadField(field_access), storage, effect, control);
-
-          Node* check =
-              graph()->NewNode(simplified()->SameValue(), current_value, value);
-          effect = graph()->NewNode(
-              simplified()->CheckIf(DeoptimizeReason::kWrongValue), check,
-              effect, control);
-          return ValueEffectControl(value, effect, control);
-        }
         break;
       }
       case MachineRepresentation::kTaggedSigned:
       case MachineRepresentation::kTaggedPointer:
       case MachineRepresentation::kTagged:
-        if (store_to_existing_constant_field) {
-          DCHECK(!access_info.HasTransitionMap());
-          // If the field is constant check that the value we are going
-          // to store matches current value.
-          Node* current_value = effect = graph()->NewNode(
-              simplified()->LoadField(field_access), storage, effect, control);
-
-          Node* check = graph()->NewNode(simplified()->SameValueNumbersOnly(),
-                                         current_value, value);
-          effect = graph()->NewNode(
-              simplified()->CheckIf(DeoptimizeReason::kWrongValue), check,
-              effect, control);
-          return ValueEffectControl(value, effect, control);
-        }
-
         if (field_representation == MachineRepresentation::kTaggedSigned) {
           value = effect = graph()->NewNode(
               simplified()->CheckSmi(FeedbackSource()), value, effect, control);
@@ -3086,6 +3096,7 @@ ExternalArrayType GetArrayTypeFromElementsKind(ElementsKind kind) {
   switch (kind) {
 #define TYPED_ARRAY_CASE(Type, type, TYPE, ctype) \
   case TYPE##_ELEMENTS:                           \
+  case RAB_GSAB_##TYPE##_ELEMENTS:                \
     return kExternal##Type##Array;
     TYPED_ARRAYS(TYPED_ARRAY_CASE)
 #undef TYPED_ARRAY_CASE
@@ -3100,14 +3111,18 @@ ExternalArrayType GetArrayTypeFromElementsKind(ElementsKind kind) {
 JSNativeContextSpecialization::ValueEffectControl
 JSNativeContextSpecialization::BuildElementAccess(
     Node* receiver, Node* index, Node* value, Node* effect, Node* control,
-    ElementAccessInfo const& access_info, KeyedAccessMode const& keyed_mode) {
+    Node* context, ElementAccessInfo const& access_info,
+    KeyedAccessMode const& keyed_mode) {
   // TODO(bmeurer): We currently specialize based on elements kind. We should
   // also be able to properly support strings and other JSObjects here.
   ElementsKind elements_kind = access_info.elements_kind();
+  DCHECK_IMPLIES(IsRabGsabTypedArrayElementsKind(elements_kind),
+                 v8_flags.turbo_rab_gsab);
   ZoneVector<MapRef> const& receiver_maps =
       access_info.lookup_start_object_maps();
 
-  if (IsTypedArrayElementsKind(elements_kind)) {
+  if (IsTypedArrayElementsKind(elements_kind) ||
+      IsRabGsabTypedArrayElementsKind(elements_kind)) {
     Node* buffer_or_receiver = receiver;
     Node* length;
     Node* base_pointer;
@@ -3117,22 +3132,41 @@ JSNativeContextSpecialization::BuildElementAccess(
     // for asm.js-like code patterns).
     base::Optional<JSTypedArrayRef> typed_array =
         GetTypedArrayConstant(broker(), receiver);
-    if (typed_array.has_value()) {
-      length = jsgraph()->Constant(static_cast<double>(typed_array->length()));
+    if (typed_array.has_value() &&
+        // TODO(v8:11111): Add support for rab/gsab here.
+        !IsRabGsabTypedArrayElementsKind(elements_kind)) {
+      if (typed_array->map().elements_kind() != elements_kind) {
+        // This case should never be reachable at runtime.
+        JSGraphAssembler assembler(jsgraph_, zone(), BranchSemantics::kJS,
+                                   [this](Node* n) { this->Revisit(n); });
+        assembler.InitializeEffectControl(effect, control);
+        assembler.Unreachable();
+        ReleaseEffectAndControlFromAssembler(&assembler);
+        Node* dead = jsgraph_->Dead();
+        return ValueEffectControl{dead, dead, dead};
+      } else {
+        length =
+            jsgraph()->Constant(static_cast<double>(typed_array->length()));
 
-      DCHECK(!typed_array->is_on_heap());
-      // Load the (known) data pointer for the {receiver} and set {base_pointer}
-      // and {external_pointer} to the values that will allow to generate typed
-      // element accesses using the known data pointer.
-      // The data pointer might be invalid if the {buffer} was detached,
-      // so we need to make sure that any access is properly guarded.
-      base_pointer = jsgraph()->ZeroConstant();
-      external_pointer = jsgraph()->PointerConstant(typed_array->data_ptr());
+        DCHECK(!typed_array->is_on_heap());
+        // Load the (known) data pointer for the {receiver} and set
+        // {base_pointer} and {external_pointer} to the values that will allow
+        // to generate typed element accesses using the known data pointer. The
+        // data pointer might be invalid if the {buffer} was detached, so we
+        // need to make sure that any access is properly guarded.
+        base_pointer = jsgraph()->ZeroConstant();
+        external_pointer = jsgraph()->PointerConstant(typed_array->data_ptr());
+      }
     } else {
       // Load the {receiver}s length.
-      length = effect = graph()->NewNode(
-          simplified()->LoadField(AccessBuilder::ForJSTypedArrayLength()),
-          receiver, effect, control);
+      JSGraphAssembler assembler(jsgraph_, zone(), BranchSemantics::kJS,
+                                 [this](Node* n) { this->Revisit(n); });
+      assembler.InitializeEffectControl(effect, control);
+      length = assembler.TypedArrayLength(
+          TNode<JSTypedArray>::UncheckedCast(receiver), {elements_kind},
+          TNode<Context>::UncheckedCast(context));
+      std::tie(effect, control) =
+          ReleaseEffectAndControlFromAssembler(&assembler);
 
       // Load the base pointer for the {receiver}. This will always be Smi
       // zero unless we allow on-heap TypedArrays, which is only the case
@@ -3901,6 +3935,27 @@ Node* JSNativeContextSpecialization::BuildLoadPrototypeFromObject(
   return graph()->NewNode(
       simplified()->LoadField(AccessBuilder::ForMapPrototype()), map, effect,
       control);
+}
+
+std::pair<Node*, Node*>
+JSNativeContextSpecialization::ReleaseEffectAndControlFromAssembler(
+    JSGraphAssembler* gasm) {
+  auto catch_scope = gasm->catch_scope();
+  DCHECK(catch_scope->is_outermost());
+
+  if (catch_scope->has_handler() &&
+      catch_scope->has_exceptional_control_flow()) {
+    TNode<Object> handler_exception;
+    Effect handler_effect{nullptr};
+    Control handler_control{nullptr};
+    gasm->catch_scope()->MergeExceptionalPaths(
+        &handler_exception, &handler_effect, &handler_control);
+
+    ReplaceWithValue(gasm->outermost_handler(), handler_exception,
+                     handler_effect, handler_control);
+  }
+
+  return {gasm->effect(), gasm->control()};
 }
 
 Graph* JSNativeContextSpecialization::graph() const {

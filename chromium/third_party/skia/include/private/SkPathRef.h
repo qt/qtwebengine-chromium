@@ -8,23 +8,24 @@
 #ifndef SkPathRef_DEFINED
 #define SkPathRef_DEFINED
 
-#include "include/core/SkMatrix.h"
 #include "include/core/SkPoint.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkRefCnt.h"
+#include "include/core/SkScalar.h"
+#include "include/core/SkTypes.h"
 #include "include/private/SkIDChangeListener.h"
-#include "include/private/SkMutex.h"
-#include "include/private/SkTDArray.h"
-#include "include/private/SkTemplates.h"
+#include "include/private/SkTArray.h"
 #include "include/private/SkTo.h"
 
 #include <atomic>
-#include <limits>
+#include <cstddef>
+#include <cstdint>
 #include <tuple>
+#include <utility>
 
-class SkRBuffer;
-class SkWBuffer;
+class SkMatrix;
 class SkRRect;
+class SkWBuffer;
 
 enum class SkPathConvexity {
     kConvex,
@@ -64,7 +65,13 @@ SkPathVerbAnalysis sk_path_analyze_verbs(const uint8_t verbs[], int count);
 
 class SK_API SkPathRef final : public SkNVRefCnt<SkPathRef> {
 public:
-    SkPathRef(SkTDArray<SkPoint> points, SkTDArray<uint8_t> verbs, SkTDArray<SkScalar> weights,
+    // See https://bugs.chromium.org/p/skia/issues/detail?id=13817 for how these sizes were
+    // determined.
+    using PointsArray = SkSTArray<4, SkPoint>;
+    using VerbsArray = SkSTArray<4, uint8_t>;
+    using ConicWeightsArray = SkSTArray<2, SkScalar>;
+
+    SkPathRef(PointsArray points, VerbsArray verbs, ConicWeightsArray weights,
               unsigned segmentMask)
         : fPoints(std::move(points))
         , fVerbs(std::move(verbs))
@@ -346,6 +353,15 @@ public:
     bool isValid() const;
     SkDEBUGCODE(void validate() const { SkASSERT(this->isValid()); } )
 
+    /**
+     * Resets this SkPathRef to a clean state.
+     */
+    void reset();
+
+    bool isInitialEmptyPathRef() const {
+        return fGenerationID == kEmptyGenID;
+    }
+
 private:
     enum SerializationOffsets {
         kLegacyRRectOrOvalStartIdx_SerializationShift = 28, // requires 3 bits, ignored.
@@ -397,15 +413,18 @@ private:
     /** Makes additional room but does not change the counts or change the genID */
     void incReserve(int additionalVerbs, int additionalPoints) {
         SkDEBUGCODE(this->validate();)
-        fPoints.reserve(fPoints.size() + additionalPoints);
-        fVerbs.reserve(fVerbs.size() + additionalVerbs);
+        if (additionalPoints > 0)
+            fPoints.reserve_back(additionalPoints);
+        if (additionalVerbs > 0)
+            fVerbs.reserve_back(additionalVerbs);
         SkDEBUGCODE(this->validate();)
     }
 
-    /** Resets the path ref with verbCount verbs and pointCount points, all uninitialized. Also
-     *  allocates space for reserveVerb additional verbs and reservePoints additional points.*/
-    void resetToSize(int verbCount, int pointCount, int conicCount,
-                     int reserveVerbs = 0, int reservePoints = 0) {
+    /**
+     * Resets all state except that of the verbs, points, and conic-weights.
+     * Intended to be called from other functions that reset state.
+     */
+    void commonReset() {
         SkDEBUGCODE(this->validate();)
         this->callGenIDChangeListeners();
         fBoundsIsDirty = true;      // this also invalidates fIsFinite
@@ -414,12 +433,18 @@ private:
         fSegmentMask = 0;
         fIsOval = false;
         fIsRRect = false;
+    }
 
+    /** Resets the path ref with verbCount verbs and pointCount points, all uninitialized. Also
+     *  allocates space for reserveVerb additional verbs and reservePoints additional points.*/
+    void resetToSize(int verbCount, int pointCount, int conicCount,
+                     int reserveVerbs = 0, int reservePoints = 0) {
+        commonReset();
         fPoints.reserve(pointCount + reservePoints);
-        fPoints.resize(pointCount);
+        fPoints.resize_back(pointCount);
         fVerbs.reserve(verbCount + reserveVerbs);
-        fVerbs.resize(verbCount);
-        fConicWeights.resize(conicCount);
+        fVerbs.resize_back(verbCount);
+        fConicWeights.resize_back(conicCount);
         SkDEBUGCODE(this->validate();)
     }
 
@@ -489,9 +514,9 @@ private:
 
     mutable SkRect   fBounds;
 
-    SkTDArray<SkPoint>  fPoints;
-    SkTDArray<uint8_t>  fVerbs;
-    SkTDArray<SkScalar> fConicWeights;
+    PointsArray fPoints;
+    VerbsArray fVerbs;
+    ConicWeightsArray fConicWeights;
 
     enum {
         kEmptyGenID = 1, // GenID reserved for path ref with zero points and zero verbs.

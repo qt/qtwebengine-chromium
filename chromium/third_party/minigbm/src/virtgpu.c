@@ -48,7 +48,7 @@ static int virtgpu_init(struct driver *drv)
 		get_param.value = (uint64_t)(uintptr_t)&params[i].value;
 		int ret = drmIoctl(drv->fd, DRM_IOCTL_VIRTGPU_GETPARAM, &get_param);
 		if (ret)
-			drv_log("virtgpu backend not enabling %s\n", params[i].name);
+			drv_logi("virtgpu backend not enabling %s\n", params[i].name);
 	}
 
 	for (uint32_t i = 0; i < ARRAY_SIZE(virtgpu_backends); i++) {

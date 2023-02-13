@@ -180,6 +180,10 @@ export class MainImpl {
     self.Host.userMetrics = self.Host.userMetrics || Host.userMetrics;
     // @ts-ignore e2e test global
     self.Host.UserMetrics = self.Host.UserMetrics || Host.UserMetrics;
+    // @ts-ignore e2e test global
+    self.ProtocolClient = self.ProtocolClient || {};
+    // @ts-ignore e2e test global
+    self.ProtocolClient.test = self.ProtocolClient.test || ProtocolClient.InspectorBackend.test;
   }
 
   async requestAndRegisterLocaleData(): Promise<void> {
@@ -205,7 +209,7 @@ export class MainImpl {
     try {
       await i18n.i18n.fetchAndRegisterLocaleData(devToolsLocale.locale);
     } catch (error) {
-      console.error(error);
+      console.warn(`Unable to fetch & register locale data for '${devToolsLocale.locale}', falling back to 'en-US'. Cause: `, error);
       // Loading the actual locale data failed, tell DevTools to use 'en-US'.
       devToolsLocale.forceFallbackLocale();
     }
@@ -313,6 +317,9 @@ export class MainImpl {
     Root.Runtime.experiments.register(
         'timelineV8RuntimeCallStats', 'Timeline: V8 Runtime Call Stats on Timeline', true);
     Root.Runtime.experiments.register('timelineReplayEvent', 'Timeline: Replay input events', true);
+    Root.Runtime.experiments.register(
+        'timelineAsConsoleProfileResultPanel', 'View console.profile() results in the Performance panel for Node.js',
+        true);
 
     // Debugging
     Root.Runtime.experiments.register(
@@ -382,9 +389,6 @@ export class MainImpl {
         Root.Runtime.ExperimentName.CSS_AUTHORING_HINTS,
         'Enable CSS Authoring hints for inactive rules, deprecated properties, etc.');
 
-    // New Lighthouse panel with timespan and snapshot mode
-    Root.Runtime.experiments.register('lighthousePanelFR', 'Use Lighthouse panel with timespan and snapshot modes');
-
     // Enable color picking outside the browser window (using Eyedropper API)
     Root.Runtime.experiments.register(
         Root.Runtime.ExperimentName.EYEDROPPER_COLOR_PICKER, 'Enable color picking outside the browser window');
@@ -403,15 +407,25 @@ export class MainImpl {
         Root.Runtime.ExperimentName.IMPORTANT_DOM_PROPERTIES,
         'Highlight important DOM properties in the Object Properties viewer');
 
+    Root.Runtime.experiments.register(
+        Root.Runtime.ExperimentName.PRELOADING_STATUS_PANEL, 'Enable Preloading Status Panel in Application panel',
+        true);
+
+    Root.Runtime.experiments.register(
+        Root.Runtime.ExperimentName.DISABLE_COLOR_FORMAT_SETTING,
+        // Adding the reload hint here because users getting here are likely coming from inside the settings UI, but the regular reminder bar is only shown after the UI is closed which they're not going to see.
+        'Disable the deprecated `Color format` setting (requires reloading DevTools)', false);
+
     Root.Runtime.experiments.enableExperimentsByDefault([
       'sourceOrderViewer',
       'cssTypeComponentLength',
       Root.Runtime.ExperimentName.PRECISE_CHANGES,
       ...('EyeDropper' in window ? [Root.Runtime.ExperimentName.EYEDROPPER_COLOR_PICKER] : []),
-      'lighthousePanelFR',
       'keyboardShortcutEditor',
       'groupAndHideIssuesByKind',
       Root.Runtime.ExperimentName.CSS_AUTHORING_HINTS,
+      'sourcesPrettyPrint',
+      Root.Runtime.ExperimentName.DISABLE_COLOR_FORMAT_SETTING,
     ]);
 
     Root.Runtime.experiments.setNonConfigurableExperiments([
@@ -474,7 +488,9 @@ export class MainImpl {
     // Equally if the user has set to match the system and the OS preference changes
     // we perform the same change.
     const darkThemeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const highContrastMediaQuery = window.matchMedia('(forced-colors: active)');
     darkThemeMediaQuery.addEventListener('change', onThemeChange);
+    highContrastMediaQuery.addEventListener('change', onThemeChange);
     themeSetting.addChangeListener(onThemeChange);
 
     UI.UIUtils.installComponentRootStyles((document.body as Element));
@@ -520,24 +536,24 @@ export class MainImpl {
 
     // @ts-ignore layout test global
     self.Bindings.networkProjectManager = Bindings.NetworkProject.NetworkProjectManager.instance();
+    const resourceMapping = new Bindings.ResourceMapping.ResourceMapping(
+        SDK.TargetManager.TargetManager.instance(),
+        Workspace.Workspace.WorkspaceImpl.instance(),
+    );
     // @ts-ignore layout test global
-    self.Bindings.resourceMapping = Bindings.ResourceMapping.ResourceMapping.instance({
-      forceNew: true,
-      targetManager: SDK.TargetManager.TargetManager.instance(),
-      workspace: Workspace.Workspace.WorkspaceImpl.instance(),
-    });
+    self.Bindings.resourceMapping = resourceMapping;
     new Bindings.PresentationConsoleMessageHelper.PresentationConsoleMessageManager();
     // @ts-ignore layout test global
     self.Bindings.cssWorkspaceBinding = Bindings.CSSWorkspaceBinding.CSSWorkspaceBinding.instance({
       forceNew: true,
+      resourceMapping,
       targetManager: SDK.TargetManager.TargetManager.instance(),
-      workspace: Workspace.Workspace.WorkspaceImpl.instance(),
     });
     // @ts-ignore layout test global
     self.Bindings.debuggerWorkspaceBinding = Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance({
       forceNew: true,
+      resourceMapping,
       targetManager: SDK.TargetManager.TargetManager.instance(),
-      workspace: Workspace.Workspace.WorkspaceImpl.instance(),
     });
     // @ts-ignore layout test global
     self.Bindings.breakpointManager = Bindings.BreakpointManager.BreakpointManager.instance({
@@ -940,7 +956,7 @@ export class MainMenuItem implements UI.Toolbar.Provider {
     }
 
     if (UI.DockController.DockController.instance().dockSide() === UI.DockController.DockState.UNDOCKED) {
-      const mainTarget = SDK.TargetManager.TargetManager.instance().mainTarget();
+      const mainTarget = SDK.TargetManager.TargetManager.instance().mainFrameTarget();
       if (mainTarget && mainTarget.type() === SDK.Target.Type.Frame) {
         contextMenu.defaultSection().appendAction('inspector_main.focus-debuggee', i18nString(UIStrings.focusDebuggee));
       }

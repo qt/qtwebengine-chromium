@@ -22,17 +22,15 @@
 #include "quiche/quic/core/http/quic_send_control_stream.h"
 #include "quiche/quic/core/http/quic_spdy_stream.h"
 #include "quiche/quic/core/qpack/qpack_decoder.h"
-#include "quiche/quic/core/qpack/qpack_decoder_stream_sender.h"
 #include "quiche/quic/core/qpack/qpack_encoder.h"
-#include "quiche/quic/core/qpack/qpack_encoder_stream_sender.h"
 #include "quiche/quic/core/qpack/qpack_receive_stream.h"
 #include "quiche/quic/core/qpack/qpack_send_stream.h"
 #include "quiche/quic/core/quic_session.h"
+#include "quiche/quic/core/quic_stream_priority.h"
 #include "quiche/quic/core/quic_time.h"
 #include "quiche/quic/core/quic_types.h"
 #include "quiche/quic/core/quic_versions.h"
 #include "quiche/quic/platform/api/quic_export.h"
-#include "quiche/common/quiche_circular_deque.h"
 #include "quiche/spdy/core/http2_frame_decoder_adapter.h"
 #include "quiche/spdy/core/http2_header_block.h"
 
@@ -62,11 +60,11 @@ class QUIC_EXPORT_PRIVATE Http3DebugVisitor {
   // Creation of unidirectional streams.
 
   // Called when locally-initiated control stream is created.
-  virtual void OnControlStreamCreated(QuicStreamId /*stream_id*/) {}
+  virtual void OnControlStreamCreated(QuicStreamId /*stream_id*/) = 0;
   // Called when locally-initiated QPACK encoder stream is created.
-  virtual void OnQpackEncoderStreamCreated(QuicStreamId /*stream_id*/) {}
+  virtual void OnQpackEncoderStreamCreated(QuicStreamId /*stream_id*/) = 0;
   // Called when locally-initiated QPACK decoder stream is created.
-  virtual void OnQpackDecoderStreamCreated(QuicStreamId /*stream_id*/) {}
+  virtual void OnQpackDecoderStreamCreated(QuicStreamId /*stream_id*/) = 0;
   // Called when peer's control stream type is received.
   virtual void OnPeerControlStreamCreated(QuicStreamId /*stream_id*/) = 0;
   // Called when peer's QPACK encoder stream type is received.
@@ -80,49 +78,50 @@ class QUIC_EXPORT_PRIVATE Http3DebugVisitor {
 
   // Incoming HTTP/3 frames on the control stream.
   virtual void OnSettingsFrameReceived(const SettingsFrame& /*frame*/) = 0;
-  virtual void OnGoAwayFrameReceived(const GoAwayFrame& /*frame*/) {}
+  virtual void OnGoAwayFrameReceived(const GoAwayFrame& /*frame*/) = 0;
   virtual void OnPriorityUpdateFrameReceived(
-      const PriorityUpdateFrame& /*frame*/) {}
+      const PriorityUpdateFrame& /*frame*/) = 0;
   virtual void OnAcceptChFrameReceived(const AcceptChFrame& /*frame*/) {}
 
   // Incoming HTTP/3 frames on request or push streams.
   virtual void OnDataFrameReceived(QuicStreamId /*stream_id*/,
-                                   QuicByteCount /*payload_length*/) {}
+                                   QuicByteCount /*payload_length*/) = 0;
   virtual void OnHeadersFrameReceived(
-      QuicStreamId /*stream_id*/, QuicByteCount /*compressed_headers_length*/) {
-  }
+      QuicStreamId /*stream_id*/,
+      QuicByteCount /*compressed_headers_length*/) = 0;
   virtual void OnHeadersDecoded(QuicStreamId /*stream_id*/,
-                                QuicHeaderList /*headers*/) {}
+                                QuicHeaderList /*headers*/) = 0;
 
   // Incoming HTTP/3 frames of unknown type on any stream.
   virtual void OnUnknownFrameReceived(QuicStreamId /*stream_id*/,
                                       uint64_t /*frame_type*/,
-                                      QuicByteCount /*payload_length*/) {}
+                                      QuicByteCount /*payload_length*/) = 0;
 
   // Outgoing HTTP/3 frames on the control stream.
   virtual void OnSettingsFrameSent(const SettingsFrame& /*frame*/) = 0;
-  virtual void OnGoAwayFrameSent(QuicStreamId /*stream_id*/) {}
-  virtual void OnPriorityUpdateFrameSent(const PriorityUpdateFrame& /*frame*/) {
-  }
+  virtual void OnGoAwayFrameSent(QuicStreamId /*stream_id*/) = 0;
+  virtual void OnPriorityUpdateFrameSent(
+      const PriorityUpdateFrame& /*frame*/) = 0;
 
   // Outgoing HTTP/3 frames on request or push streams.
   virtual void OnDataFrameSent(QuicStreamId /*stream_id*/,
-                               QuicByteCount /*payload_length*/) {}
+                               QuicByteCount /*payload_length*/) = 0;
   virtual void OnHeadersFrameSent(
       QuicStreamId /*stream_id*/,
-      const spdy::Http2HeaderBlock& /*header_block*/) {}
+      const spdy::Http2HeaderBlock& /*header_block*/) = 0;
 
   // 0-RTT related events.
-  virtual void OnSettingsFrameResumed(const SettingsFrame& /*frame*/) {}
+  virtual void OnSettingsFrameResumed(const SettingsFrame& /*frame*/) = 0;
 };
 
-// Whether draft-ietf-masque-h3-datagram is supported on this session and if so
-// which draft is currently in use.
+// Whether HTTP Datagrams are supported on this session and if so which version
+// is currently in use.
 enum class HttpDatagramSupport : uint8_t {
   kNone,  // HTTP Datagrams are not supported for this session.
   kDraft04,
-  kDraft09,
-  kDraft04And09,  // Only used locally for sending, we only negotiate one draft.
+  kRfc,
+  kRfcAndDraft04,  // Only used locally for sending, we only negotiate one
+                   // version.
 };
 
 QUIC_EXPORT_PRIVATE std::string HttpDatagramSupportToString(
@@ -182,11 +181,8 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession
 
   // Called when an HTTP/3 PRIORITY_UPDATE frame has been received for a request
   // stream.  Returns false and closes connection if |stream_id| is invalid.
-  bool OnPriorityUpdateForRequestStream(QuicStreamId stream_id, int urgency);
-
-  // Called when an HTTP/3 PRIORITY_UPDATE frame has been received for a push
-  // stream.  Returns false and closes connection if |push_id| is invalid.
-  bool OnPriorityUpdateForPushStream(QuicStreamId push_id, int urgency);
+  bool OnPriorityUpdateForRequestStream(QuicStreamId stream_id,
+                                        QuicStreamPriority priority);
 
   // Called when an HTTP/3 ACCEPT_CH frame has been received.
   // This method will only be called for client sessions.
@@ -215,11 +211,12 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession
 
   // Writes an HTTP/2 PRIORITY frame the to peer. Returns the size in bytes of
   // the resulting PRIORITY frame.
-  size_t WritePriority(QuicStreamId id, QuicStreamId parent_stream_id,
+  size_t WritePriority(QuicStreamId stream_id, QuicStreamId parent_stream_id,
                        int weight, bool exclusive);
 
   // Writes an HTTP/3 PRIORITY_UPDATE frame to the peer.
-  void WriteHttp3PriorityUpdate(const PriorityUpdateFrame& priority_update);
+  void WriteHttp3PriorityUpdate(QuicStreamId stream_id,
+                                QuicStreamPriority priority);
 
   // Process received HTTP/3 GOAWAY frame.  When sent from server to client,
   // |id| is a stream ID.  When sent from client to server, |id| is a push ID.
@@ -627,7 +624,8 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession
 
   // Priority values received in PRIORITY_UPDATE frames for streams that are not
   // open yet.
-  absl::flat_hash_map<QuicStreamId, int> buffered_stream_priorities_;
+  absl::flat_hash_map<QuicStreamId, QuicStreamPriority>
+      buffered_stream_priorities_;
 
   // An integer used for live check. The indicator is assigned a value in
   // constructor. As long as it is not the assigned value, that would indicate

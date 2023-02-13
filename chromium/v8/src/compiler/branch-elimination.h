@@ -43,6 +43,8 @@ class V8_EXPORT_PRIVATE BranchElimination final
     : public NON_EXPORTED_BASE(AdvancedReducerWithControlPathState)<
           BranchCondition, kUniqueInstance> {
  public:
+  // TODO(nicohartmann@): Remove {Phase} once all Branch operators have
+  // specified semantics.
   enum Phase {
     kEARLY,
     kLATE,
@@ -68,6 +70,7 @@ class V8_EXPORT_PRIVATE BranchElimination final
   Reduction ReduceStart(Node* node);
   Reduction ReduceOtherControl(Node* node);
   void SimplifyBranchCondition(Node* branch);
+  bool TryEliminateBranchWithPhiCondition(Node* branch, Node* phi, Node* merge);
   Reduction UpdateStatesHelper(Node* node,
                                ControlPathConditions prev_conditions,
                                Node* current_condition, Node* current_branch,

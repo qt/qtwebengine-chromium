@@ -1,4 +1,4 @@
-// Copyright 2014 PDFium Authors. All rights reserved.
+// Copyright 2014 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -191,8 +191,8 @@ class CFXJS_ObjDefinition {
   }
 
   FXJSOBJTYPE GetObjType() const { return m_ObjType; }
-  const char* GetObjName() const { return m_ObjName.Get(); }
-  v8::Isolate* GetIsolate() const { return m_pIsolate.Get(); }
+  const char* GetObjName() const { return m_ObjName; }
+  v8::Isolate* GetIsolate() const { return m_pIsolate; }
 
   void DefineConst(const char* sConstName, v8::Local<v8::Value> pDefault) {
     GetInstanceTemplate()->Set(GetIsolate(), sConstName, pDefault);

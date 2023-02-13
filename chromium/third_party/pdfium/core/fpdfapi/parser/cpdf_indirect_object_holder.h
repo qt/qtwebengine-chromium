@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2016 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -31,36 +31,34 @@ class CPDF_IndirectObjectHolder {
   RetainPtr<CPDF_Object> GetMutableIndirectObject(uint32_t objnum);
   void DeleteIndirectObject(uint32_t objnum);
 
-  // Creates and adds a new object owned by the indirect object holder,
-  // and returns a retained pointer to it.  We have a special case to
-  // handle objects that can intern strings from our ByteStringPool.
+  // Creates and adds a new object retained by the indirect object holder,
+  // and returns a retained pointer to it.
   template <typename T, typename... Args>
-  typename std::enable_if<!CanInternStrings<T>::value, RetainPtr<T>>::type
-  NewIndirect(Args&&... args) {
-    return pdfium::WrapRetain(static_cast<T*>(
-        AddIndirectObject(pdfium::MakeRetain<T>(std::forward<Args>(args)...))));
-  }
-  template <typename T, typename... Args>
-  typename std::enable_if<CanInternStrings<T>::value, RetainPtr<T>>::type
-  NewIndirect(Args&&... args) {
-    return pdfium::WrapRetain(
-        static_cast<T*>(AddIndirectObject(pdfium::MakeRetain<T>(
-            m_pByteStringPool, std::forward<Args>(args)...))));
+  RetainPtr<T> NewIndirect(Args&&... args) {
+    auto obj = New<T>(std::forward<Args>(args)...);
+    AddIndirectObject(obj);
+    return obj;
   }
 
-  // Creates and adds a new object not owned by the indirect object holder,
-  // but which can intern strings from it.
+  // Creates and adds a new object not retained by the indirect object holder,
+  // but which can intern strings from it. We have a special cast to handle
+  // objects that can intern strings from our ByteStringPool.
   template <typename T, typename... Args>
   typename std::enable_if<CanInternStrings<T>::value, RetainPtr<T>>::type New(
       Args&&... args) {
     return pdfium::MakeRetain<T>(m_pByteStringPool,
                                  std::forward<Args>(args)...);
   }
+  template <typename T, typename... Args>
+  typename std::enable_if<!CanInternStrings<T>::value, RetainPtr<T>>::type New(
+      Args&&... args) {
+    return pdfium::MakeRetain<T>(std::forward<Args>(args)...);
+  }
 
-  // Takes ownership of |pObj|, returns unowned pointer to it.
-  CPDF_Object* AddIndirectObject(RetainPtr<CPDF_Object> pObj);
+  // Always Retains |pObj|, returns its new object number.
+  uint32_t AddIndirectObject(RetainPtr<CPDF_Object> pObj);
 
-  // Always takes ownership of |pObj|, return true if higher generation number.
+  // If higher generation number, retains |pObj| and returns true.
   bool ReplaceIndirectObjectIfHigherGeneration(uint32_t objnum,
                                                RetainPtr<CPDF_Object> pObj);
 

@@ -17,6 +17,8 @@ generate_css("css_files") {
     "permissionsPolicySection.css",
     "protocolHandlersView.css",
     "reportingApiGrid.css",
+    "sharedStorageAccessGrid.css",
+    "sharedStorageMetadataView.css",
     "stackTraceLinkButton.css",
     "stackTraceRow.css",
     "trustTokensView.css",
@@ -36,6 +38,8 @@ devtools_module("components") {
     "Prerender2.ts",
     "ProtocolHandlersView.ts",
     "ReportsGrid.ts",
+    "SharedStorageAccessGrid.ts",
+    "SharedStorageMetadataView.ts",
     "StackTrace.ts",
     "TrustTokensView.ts",
   ]

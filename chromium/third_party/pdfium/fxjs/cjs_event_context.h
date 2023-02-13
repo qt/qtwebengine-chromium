@@ -1,4 +1,4 @@
-// Copyright 2017 PDFium Authors. All rights reserved.
+// Copyright 2017 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -106,7 +106,7 @@ class CJS_EventContext final : public IJS_EventContext {
                         bool* bRc) override;
   void OnExternal_Exec() override;
 
-  CJS_Runtime* GetJSRuntime() const { return m_pRuntime.Get(); }
+  CJS_Runtime* GetJSRuntime() const { return m_pRuntime; }
   CPDFSDK_FormFillEnvironment* GetFormFillEnv() const {
     return m_pFormFillEnv.Get();
   }

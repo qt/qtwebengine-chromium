@@ -1,4 +1,4 @@
-// Copyright 2014 PDFium Authors. All rights reserved.
+// Copyright 2014 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -4512,7 +4512,9 @@ void CFXJSE_FormCalcContext::Get(
 
   FX_FILESIZE size = pFile->GetSize();
   DataVector<uint8_t> dataBuf(size);
-  pFile->ReadBlock(dataBuf.data(), size);
+
+  // TODO(tsepez): check return value?
+  (void)pFile->ReadBlock(dataBuf);
   info.GetReturnValue().Set(
       fxv8::NewStringHelper(info.GetIsolate(), ByteStringView(dataBuf)));
 }

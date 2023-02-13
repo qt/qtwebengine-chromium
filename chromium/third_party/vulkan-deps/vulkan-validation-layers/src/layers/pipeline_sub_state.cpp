@@ -100,7 +100,14 @@ PreRasterState::PreRasterState(const PIPELINE_STATE &p, const ValidationStateTra
                         geometry_shader = std::move(module_state);
                         geometry_shader_ci = stage_ci;
                         break;
-                    // TODO mesh shaders?
+                    case VK_SHADER_STAGE_TASK_BIT_EXT:
+                        task_shader = std::move(module_state);
+                        task_shader_ci = stage_ci;
+                        break;
+                    case VK_SHADER_STAGE_MESH_BIT_EXT:
+                        mesh_shader = std::move(module_state);
+                        mesh_shader_ci = stage_ci;
+                        break;
                     default:
                         // TODO is this an error?
                         break;
@@ -113,36 +120,36 @@ PreRasterState::PreRasterState(const PIPELINE_STATE &p, const ValidationStateTra
 std::unique_ptr<const safe_VkPipelineColorBlendStateCreateInfo> ToSafeColorBlendState(
     const safe_VkPipelineColorBlendStateCreateInfo &cbs) {
     // This is needlessly copied here. Might better to make this a plain pointer, with an optional "backing unique_ptr"
-    return layer_data::make_unique<const safe_VkPipelineColorBlendStateCreateInfo>(cbs);
+    return std::make_unique<const safe_VkPipelineColorBlendStateCreateInfo>(cbs);
 }
 std::unique_ptr<const safe_VkPipelineColorBlendStateCreateInfo> ToSafeColorBlendState(
     const VkPipelineColorBlendStateCreateInfo &cbs) {
-    return layer_data::make_unique<const safe_VkPipelineColorBlendStateCreateInfo>(&cbs);
+    return std::make_unique<const safe_VkPipelineColorBlendStateCreateInfo>(&cbs);
 }
 std::unique_ptr<const safe_VkPipelineMultisampleStateCreateInfo> ToSafeMultisampleState(
     const safe_VkPipelineMultisampleStateCreateInfo &cbs) {
     // This is needlessly copied here. Might better to make this a plain pointer, with an optional "backing unique_ptr"
-    return layer_data::make_unique<const safe_VkPipelineMultisampleStateCreateInfo>(cbs);
+    return std::make_unique<const safe_VkPipelineMultisampleStateCreateInfo>(cbs);
 }
 std::unique_ptr<const safe_VkPipelineMultisampleStateCreateInfo> ToSafeMultisampleState(
     const VkPipelineMultisampleStateCreateInfo &cbs) {
-    return layer_data::make_unique<const safe_VkPipelineMultisampleStateCreateInfo>(&cbs);
+    return std::make_unique<const safe_VkPipelineMultisampleStateCreateInfo>(&cbs);
 }
 std::unique_ptr<const safe_VkPipelineDepthStencilStateCreateInfo> ToSafeDepthStencilState(
     const safe_VkPipelineDepthStencilStateCreateInfo &cbs) {
     // This is needlessly copied here. Might better to make this a plain pointer, with an optional "backing unique_ptr"
-    return layer_data::make_unique<const safe_VkPipelineDepthStencilStateCreateInfo>(cbs);
+    return std::make_unique<const safe_VkPipelineDepthStencilStateCreateInfo>(cbs);
 }
 std::unique_ptr<const safe_VkPipelineDepthStencilStateCreateInfo> ToSafeDepthStencilState(
     const VkPipelineDepthStencilStateCreateInfo &cbs) {
-    return layer_data::make_unique<const safe_VkPipelineDepthStencilStateCreateInfo>(&cbs);
+    return std::make_unique<const safe_VkPipelineDepthStencilStateCreateInfo>(&cbs);
 }
 std::unique_ptr<const safe_VkPipelineShaderStageCreateInfo> ToShaderStageCI(const safe_VkPipelineShaderStageCreateInfo &cbs) {
     // This is needlessly copied here. Might better to make this a plain pointer, with an optional "backing unique_ptr"
-    return layer_data::make_unique<const safe_VkPipelineShaderStageCreateInfo>(cbs);
+    return std::make_unique<const safe_VkPipelineShaderStageCreateInfo>(cbs);
 }
 std::unique_ptr<const safe_VkPipelineShaderStageCreateInfo> ToShaderStageCI(const VkPipelineShaderStageCreateInfo &cbs) {
-    return layer_data::make_unique<const safe_VkPipelineShaderStageCreateInfo>(&cbs);
+    return std::make_unique<const safe_VkPipelineShaderStageCreateInfo>(&cbs);
 }
 
 template <typename CreateInfo>
@@ -214,19 +221,13 @@ bool FragmentOutputState::GetDualSourceBlending(const safe_VkPipelineColorBlendS
     if (!color_blend_state) {
         return false;
     }
-    const std::array<VkBlendFactor, 4> dual_modes = {
-        VK_BLEND_FACTOR_SRC1_COLOR,
-        VK_BLEND_FACTOR_ONE_MINUS_SRC1_COLOR,
-        VK_BLEND_FACTOR_SRC1_ALPHA,
-        VK_BLEND_FACTOR_ONE_MINUS_SRC1_ALPHA,
-    };
     for (uint32_t i = 0; i < color_blend_state->attachmentCount; ++i) {
         const auto &attachment = color_blend_state->pAttachments[i];
         if (attachment.blendEnable) {
-            if (std::find(dual_modes.begin(), dual_modes.end(), attachment.srcColorBlendFactor) != dual_modes.end() ||
-                std::find(dual_modes.begin(), dual_modes.end(), attachment.dstColorBlendFactor) != dual_modes.end() ||
-                std::find(dual_modes.begin(), dual_modes.end(), attachment.srcAlphaBlendFactor) != dual_modes.end() ||
-                std::find(dual_modes.begin(), dual_modes.end(), attachment.dstAlphaBlendFactor) != dual_modes.end()) {
+            if (IsSecondaryColorInputBlendFactor(attachment.srcColorBlendFactor) ||
+                IsSecondaryColorInputBlendFactor(attachment.dstColorBlendFactor) ||
+                IsSecondaryColorInputBlendFactor(attachment.srcAlphaBlendFactor) ||
+                IsSecondaryColorInputBlendFactor(attachment.dstAlphaBlendFactor)) {
                 return true;
             }
         }

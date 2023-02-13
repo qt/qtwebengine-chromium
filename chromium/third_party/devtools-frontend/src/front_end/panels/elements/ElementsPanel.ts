@@ -62,6 +62,7 @@ import {
   StylesSidebarPane,
   type StylesUpdateCompletedEvent,
 } from './StylesSidebarPane.js';
+import {ColorSwatchPopoverIcon} from './ColorSwatchPopoverIcon.js';
 
 const UIStrings = {
   /**
@@ -811,6 +812,18 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
     }
   }
 
+  selectAndShowSidebarTab(tabId: SidebarPaneTabId): void {
+    if (!this.sidebarPaneView) {
+      return;
+    }
+
+    this.sidebarPaneView.tabbedPane().selectTab(tabId);
+
+    if (!this.isShowing()) {
+      void UI.ViewManager.ViewManager.instance().showView('elements');
+    }
+  }
+
   private updateBreadcrumbIfNeeded(event: Common.EventTarget.EventTargetEvent<SDK.DOMModel.DOMNode[]>): void {
     const nodes = event.data;
     /* If we don't have a selected node then we can tell the breadcrumbs that & bail. */
@@ -936,7 +949,7 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
       stylePaneWrapperElement.style.setProperty('left', `${- 1 * largeLength}px`);
       stylePaneWrapperElement.style.setProperty('padding-left', `${largeLength}px`);
       stylePaneWrapperElement.style.setProperty('width', `calc(100% + ${largeLength}px)`);
-      stylePaneWrapperElement.style.setProperty('position', 'absolute');
+      stylePaneWrapperElement.style.setProperty('position', 'fixed');
 
       stylePaneWrapperElement.window().addEventListener('blur', uninstallHackBound);
       stylePaneWrapperElement.window().addEventListener('contextmenu', uninstallHackBound, true);
@@ -1425,6 +1438,20 @@ export class ElementsActionDelegate implements UI.ActionRegistration.ActionDeleg
         void SDK.DOMModel.DOMModelUndoStack.instance().redo();
         ElementsPanel.instance().stylesWidget.forceUpdate();
         return true;
+      case 'elements.show-styles':
+        ElementsPanel.instance().selectAndShowSidebarTab(SidebarPaneTabId.Styles);
+        return true;
+      case 'elements.show-computed':
+        ElementsPanel.instance().selectAndShowSidebarTab(SidebarPaneTabId.Computed);
+        return true;
+      case 'elements.toggle-eye-dropper': {
+        const colorSwatchPopoverIcon = UI.Context.Context.instance().flavor(ColorSwatchPopoverIcon);
+        if (!colorSwatchPopoverIcon) {
+          return false;
+        }
+
+        void colorSwatchPopoverIcon.toggleEyeDropper();
+      }
     }
     return false;
   }

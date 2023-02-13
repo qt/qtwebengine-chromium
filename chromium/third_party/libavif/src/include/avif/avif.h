@@ -56,7 +56,7 @@ extern "C" {
 // downstream projects to do greater-than preprocessor checks on AVIF_VERSION
 // to leverage in-development code without breaking their stable builds.
 #define AVIF_VERSION_MAJOR 0
-#define AVIF_VERSION_MINOR 10
+#define AVIF_VERSION_MINOR 11
 #define AVIF_VERSION_PATCH 1
 #define AVIF_VERSION_DEVEL 1
 #define AVIF_VERSION \
@@ -78,6 +78,11 @@ typedef int avifBool;
 // a 12 hour AVIF image sequence, running at 60 fps (a basic sanity check as this is quite ridiculous)
 #define AVIF_DEFAULT_IMAGE_COUNT_LIMIT (12 * 3600 * 60)
 
+#define AVIF_QUALITY_DEFAULT -1
+#define AVIF_QUALITY_LOSSLESS 100
+#define AVIF_QUALITY_WORST 0
+#define AVIF_QUALITY_BEST 100
+
 #define AVIF_QUANTIZER_LOSSLESS 0
 #define AVIF_QUANTIZER_BEST_QUALITY 0
 #define AVIF_QUANTIZER_WORST_QUALITY 63
@@ -87,6 +92,12 @@ typedef int avifBool;
 #define AVIF_SPEED_DEFAULT -1
 #define AVIF_SPEED_SLOWEST 0
 #define AVIF_SPEED_FASTEST 10
+
+// This value is used to indicate that an animated AVIF file has to be repeated infinitely.
+#define AVIF_REPETITION_COUNT_INFINITE -1
+// This value is used if an animated AVIF file does not have repetitions specified using an EditList box. Applications can choose
+// to handle this case however they want.
+#define AVIF_REPETITION_COUNT_UNKNOWN -2
 
 typedef enum avifPlanesFlag
 {
@@ -102,7 +113,10 @@ typedef enum avifChannelIndex
     // These can be used as the index for the yuvPlanes and yuvRowBytes arrays in avifImage.
     AVIF_CHAN_Y = 0,
     AVIF_CHAN_U = 1,
-    AVIF_CHAN_V = 2
+    AVIF_CHAN_V = 2,
+
+    // This may not be used in yuvPlanes and yuvRowBytes, but is available for use with avifImagePlane().
+    AVIF_CHAN_A = 3
 } avifChannelIndex;
 
 // ---------------------------------------------------------------------------
@@ -182,6 +196,15 @@ typedef struct avifRWData
 AVIF_API void avifRWDataRealloc(avifRWData * raw, size_t newSize);
 AVIF_API void avifRWDataSet(avifRWData * raw, const uint8_t * data, size_t len);
 AVIF_API void avifRWDataFree(avifRWData * raw);
+
+// ---------------------------------------------------------------------------
+// Metadata
+
+// Validates the first bytes of the Exif payload and finds the TIFF header offset (up to UINT32_MAX).
+AVIF_API avifResult avifGetExifTiffHeaderOffset(const uint8_t * exif, size_t exifSize, size_t * offset);
+// Returns the offset to the Exif 8-bit orientation value and AVIF_RESULT_OK, or an error.
+// If the offset is set to exifSize, there was no parsing error but no orientation tag was found.
+AVIF_API avifResult avifGetExifOrientationOffset(const uint8_t * exif, size_t exifSize, size_t * offset);
 
 // ---------------------------------------------------------------------------
 // avifPixelFormat
@@ -422,6 +445,29 @@ AVIF_API avifBool avifCleanApertureBoxConvertCropRect(avifCleanApertureBox * cla
                                                       avifDiagnostics * diag);
 
 // ---------------------------------------------------------------------------
+// avifContentLightLevelInformationBox
+
+typedef struct avifContentLightLevelInformationBox
+{
+    // 'clli' from ISO/IEC 23000-22:2019 (MIAF) 7.4.4.2.2. The SEI message semantics written above
+    //  each entry were originally described in ISO/IEC 23008-2.
+
+    // max_content_light_level, when not equal to 0, indicates an upper bound on the maximum light
+    // level among all individual samples in a 4:4:4 representation of red, green, and blue colour
+    // primary intensities (in the linear light domain) for the pictures of the CLVS, in units of
+    // candelas per square metre. When equal to 0, no such upper bound is indicated by
+    // max_content_light_level.
+    uint16_t maxCLL;
+
+    // max_pic_average_light_level, when not equal to 0, indicates an upper bound on the maximum
+    // average light level among the samples in a 4:4:4 representation of red, green, and blue
+    // colour primary intensities (in the linear light domain) for any individual picture of the
+    // CLVS, in units of candelas per square metre. When equal to 0, no such upper bound is
+    // indicated by max_pic_average_light_level.
+    uint16_t maxPALL;
+} avifContentLightLevelInformationBox;
+
+// ---------------------------------------------------------------------------
 // avifImage
 
 typedef struct avifImage
@@ -454,6 +500,13 @@ typedef struct avifImage
     avifColorPrimaries colorPrimaries;
     avifTransferCharacteristics transferCharacteristics;
     avifMatrixCoefficients matrixCoefficients;
+
+    // CLLI information:
+    // Content Light Level Information. Used to represent maximum and average light level of an
+    // image. Useful for tone mapping HDR images, especially when using transfer characteristics
+    // SMPTE2084 (PQ). The default value of (0, 0) means the content light level information is
+    // unknown or unavailable, and will cause libavif to avoid writing a clli box for it.
+    avifContentLightLevelInformationBox clli;
 
     // Transformations - These metadata values are encoded/decoded when transformFlags are set
     // appropriately, but do not impact/adjust the actual pixel buffers used (images won't be
@@ -889,8 +942,13 @@ typedef struct avifDecoder
     avifProgressiveState progressiveState; // See avifProgressiveState declaration
     avifImageTiming imageTiming;           //
     uint64_t timescale;                    // timescale of the media (Hz)
-    double duration;                       // in seconds (durationInTimescales / timescale)
-    uint64_t durationInTimescales;         // duration in "timescales"
+    double duration;                       // duration of a single playback of the image sequence in seconds
+                                           // (durationInTimescales / timescale)
+    uint64_t durationInTimescales;         // duration of a single playback of the image sequence in "timescales"
+    int repetitionCount;                   // number of times the sequence has to be repeated. This can also be one of
+                                           // AVIF_REPETITION_COUNT_INFINITE or AVIF_REPETITION_COUNT_UNKNOWN. Essentially, if
+                                           // repetitionCount is a non-negative integer `n`, then the image sequence should be
+                                           // played back `n + 1` times.
 
     // This is true when avifDecoderParse() detects an alpha plane. Use this to find out if alpha is
     // present after a successful call to avifDecoderParse(), but prior to any call to
@@ -1013,7 +1071,14 @@ struct avifCodecSpecificOptions;
 // * If avifEncoderWrite() returns AVIF_RESULT_OK, output must be freed with avifRWDataFree()
 // * If (maxThreads < 2), multithreading is disabled
 //   * NOTE: Please see the "Understanding maxThreads" comment block above
-// * Quality range: [AVIF_QUANTIZER_BEST_QUALITY - AVIF_QUANTIZER_WORST_QUALITY]
+// * Quality range: [AVIF_QUALITY_WORST - AVIF_QUALITY_BEST]
+// * Quantizer range: [AVIF_QUANTIZER_BEST_QUALITY - AVIF_QUANTIZER_WORST_QUALITY]
+// * In older versions of libavif, the avifEncoder struct doesn't have the quality and qualityAlpha
+//   fields. For backward compatibility, if the quality field is not set, the default value of
+//   quality is based on the average of minQuantizer and maxQuantizer. Similarly the default value
+//   of qualityAlpha is based on the average of minQuantizerAlpha and maxQuantizerAlpha. New code
+//   should set quality and qualityAlpha and leave minQuantizer, maxQuantizer, minQuantizerAlpha,
+//   and maxQuantizerAlpha initialized to their default values.
 // * To enable tiling, set tileRowsLog2 > 0 and/or tileColsLog2 > 0.
 //   Tiling values range [0-6], where the value indicates a request for 2^n tiles in that dimension.
 //   If autoTiling is set to AVIF_TRUE, libavif ignores tileRowsLog2 and tileColsLog2 and
@@ -1034,7 +1099,14 @@ typedef struct avifEncoder
     int speed;
     int keyframeInterval; // How many frames between automatic forced keyframes; 0 to disable (default).
     uint64_t timescale;   // timescale of the media (Hz)
+    int repetitionCount;  // Number of times the image sequence should be repeated. This can also be set to
+                          // AVIF_REPETITION_COUNT_INFINITE for infinite repetitions.  Only applicable for image sequences.
+                          // Essentially, if repetitionCount is a non-negative integer `n`, then the image sequence should be
+                          // played back `n + 1` times. Defaults to AVIF_REPETITION_COUNT_INFINITE.
+
     // changeable encoder settings
+    int quality;
+    int qualityAlpha;
     int minQuantizer;
     int maxQuantizer;
     int minQuantizerAlpha;
@@ -1103,6 +1175,12 @@ AVIF_API void avifEncoderSetCodecSpecificOption(avifEncoder * encoder, const cha
 
 // Helpers
 AVIF_API avifBool avifImageUsesU16(const avifImage * image);
+AVIF_API avifBool avifImageIsOpaque(const avifImage * image);
+// channel can be an avifChannelIndex.
+AVIF_API uint8_t * avifImagePlane(const avifImage * image, int channel);
+AVIF_API uint32_t avifImagePlaneRowBytes(const avifImage * image, int channel);
+AVIF_API uint32_t avifImagePlaneWidth(const avifImage * image, int channel);
+AVIF_API uint32_t avifImagePlaneHeight(const avifImage * image, int channel);
 
 // Returns AVIF_TRUE if input begins with a valid FileTypeBox (ftyp) that supports
 // either the brand 'avif' or 'avis' (or both), without performing any allocations.

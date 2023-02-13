@@ -307,6 +307,7 @@ es{
         CG{"Congo (República)"}
         CI{"Costa de Marfil"}
         CZ{"República Checa"}
+        NZ{"Aotearoa (Nueva Zelanda)"}
         SZ{"Suazilandia"}
         TL{"Timor Oriental"}
     }

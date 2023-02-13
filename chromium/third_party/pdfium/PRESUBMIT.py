@@ -1,4 +1,4 @@
-# Copyright 2015 The Chromium Authors. All rights reserved.
+# Copyright 2015 The PDFium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -7,6 +7,8 @@
 See http://dev.chromium.org/developers/how-tos/depottools/presubmit-scripts
 for more details about the presubmit API built into depot_tools.
 """
+
+PRESUBMIT_VERSION = '2.0.0'
 
 USE_PYTHON3 = True
 
@@ -51,9 +53,11 @@ _BANNED_CPP_FUNCTIONS = (
     (
         r'/\busing namespace ',
         (
-            'Using directives ("using namespace x") are banned by the Google Style',
-            'Guide ( https://google.github.io/styleguide/cppguide.html#Namespaces ).',
-            'Explicitly qualify symbols or use using declarations ("using x::foo").',
+            'Using directives ("using namespace x") are banned by the Google',
+            'Style Guide (',
+            'https://google.github.io/styleguide/cppguide.html#Namespaces ).',
+            'Explicitly qualify symbols or use using declarations ("using',
+            'x::foo").',
         ),
         True,
         [_THIRD_PARTY],
@@ -61,9 +65,10 @@ _BANNED_CPP_FUNCTIONS = (
     (
         r'/v8::Isolate::(?:|Try)GetCurrent()',
         (
-            'v8::Isolate::GetCurrent() and v8::Isolate::TryGetCurrent() are banned. Hold',
-            'a pointer to the v8::Isolate that was entered. Use v8::Isolate::IsCurrent()',
-            'to check whether a given v8::Isolate is entered.',
+            'v8::Isolate::GetCurrent() and v8::Isolate::TryGetCurrent() are',
+            'banned. Hold a pointer to the v8::Isolate that was entered. Use',
+            'v8::Isolate::IsCurrent() to check whether a given v8::Isolate is',
+            'entered.',
         ),
         True,
         (),
@@ -422,12 +427,12 @@ def _CheckTestDuplicates(input_api, output_api):
 def _CheckPNGFormat(input_api, output_api):
   """Checks that .png files have a format that will be considered valid by our
   test runners. If a file ends with .png, then it must be of the form
-  NAME_expected(_(skia|skiapaths))?(_(win|mac|linux))?.pdf.#.png
+  NAME_expected(_skia)?(_(win|mac|linux))?.pdf.#.png
   The expected format used by _CheckPngNames() in testing/corpus/PRESUBMIT.py
   must be the same as this one.
   """
   expected_pattern = input_api.re.compile(
-      r'.+_expected(_(skia|skiapaths))?(_(win|mac|linux))?\.pdf\.\d+.png')
+      r'.+_expected(_skia)?(_(win|mac|linux))?\.pdf\.\d+.png')
   results = []
   for f in input_api.AffectedFiles(include_deletes=False):
     if not f.LocalPath().endswith('.png'):
@@ -482,6 +487,29 @@ def _CheckUselessForwardDeclarations(input_api, output_api):
                     '%s: %s forward declaration is no longer needed' %
                     (f.LocalPath(), decl)))
             useless_fwd_decls.remove(decl)
+
+  return results
+
+
+def ChecksCommon(input_api, output_api):
+  results = []
+
+  results.extend(
+      input_api.canned_checks.PanProjectChecks(
+          input_api, output_api, project_name='PDFium'))
+
+  # PanProjectChecks() doesn't consider .gn/.gni files, so check those, too.
+  files_to_check = (
+      r'.*\.gn$',
+      r'.*\.gni$',
+  )
+  results.extend(
+      input_api.canned_checks.CheckLicense(
+          input_api,
+          output_api,
+          project_name='PDFium',
+          source_file_filter=lambda x: input_api.FilterSourceFile(
+              x, files_to_check=files_to_check)))
 
   return results
 

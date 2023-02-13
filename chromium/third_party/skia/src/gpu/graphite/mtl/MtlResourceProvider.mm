@@ -9,6 +9,7 @@
 
 #include "include/gpu/ShaderErrorHandler.h"
 #include "include/gpu/graphite/BackendTexture.h"
+#include "include/private/SkSLProgramKind.h"
 
 #include "src/core/SkSLTypeShared.h"
 #include "src/gpu/Blend.h"
@@ -24,6 +25,7 @@
 #include "src/gpu/graphite/mtl/MtlSharedContext.h"
 #include "src/gpu/graphite/mtl/MtlTexture.h"
 #include "src/gpu/graphite/mtl/MtlUtils.h"
+#include "src/sksl/SkSLProgramSettings.h"
 
 #import <Metal/Metal.h>
 
@@ -93,7 +95,7 @@ sk_sp<MtlGraphicsPipeline> MtlResourceProvider::findOrCreateLoadMSAAPipeline(
 }
 
 sk_sp<GraphicsPipeline> MtlResourceProvider::createGraphicsPipeline(
-        const SkRuntimeEffectDictionary* runtimeDict,
+        const RuntimeEffectDictionary* runtimeDict,
         const GraphicsPipelineDesc& pipelineDesc,
         const RenderPassDesc& renderPassDesc) {
     std::string vsMSL, fsMSL;
@@ -114,7 +116,9 @@ sk_sp<GraphicsPipeline> MtlResourceProvider::createGraphicsPipeline(
     BlendInfo blendInfo;
     bool localCoordsNeeded = false;
     if (!SkSLToMSL(skslCompiler,
-                   GetSkSLFS(fSharedContext->shaderCodeDictionary(),
+                   GetSkSLFS(fSharedContext->caps()->uniformBufferLayout(),
+                             fSharedContext->caps()->storageBufferLayout(),
+                             fSharedContext->shaderCodeDictionary(),
                              runtimeDict,
                              step,
                              pipelineDesc.paintParamsID(),
@@ -130,7 +134,10 @@ sk_sp<GraphicsPipeline> MtlResourceProvider::createGraphicsPipeline(
     }
 
     if (!SkSLToMSL(skslCompiler,
-                   GetSkSLVS(step, useShadingSsboIndex, localCoordsNeeded),
+                   GetSkSLVS(fSharedContext->caps()->uniformBufferLayout(),
+                             step,
+                             useShadingSsboIndex,
+                             localCoordsNeeded),
                    SkSL::ProgramKind::kGraphiteVertex,
                    settings,
                    &vsMSL,

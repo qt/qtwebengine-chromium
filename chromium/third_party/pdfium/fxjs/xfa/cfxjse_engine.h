@@ -1,4 +1,4 @@
-// Copyright 2014 PDFium Authors. All rights reserved.
+// Copyright 2014 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -27,6 +27,7 @@ class CFXJSE_Class;
 class CFXJSE_Context;
 class CFXJSE_FormCalcContext;
 class CFXJSE_HostObject;
+class CFXJSE_NodeHelper;
 class CFXJSE_ResolveProcessor;
 class CFXJSE_Value;
 class CJS_Runtime;
@@ -110,7 +111,7 @@ class CFXJSE_Engine final : public CFX_V8 {
   ~CFXJSE_Engine() override;
 
   void SetEventParam(CXFA_EventParam* param) { m_eventParam = param; }
-  CXFA_EventParam* GetEventParam() const { return m_eventParam.Get(); }
+  CXFA_EventParam* GetEventParam() const { return m_eventParam; }
   bool RunScript(CXFA_Script::Type eScriptType,
                  WideStringView wsScript,
                  CFXJSE_Value* pRetValue,
@@ -129,8 +130,7 @@ class CFXJSE_Engine final : public CFX_V8 {
   v8::Local<v8::Object> GetOrCreateJSBindingFromMap(CXFA_Object* pObject);
 
   CXFA_Object* GetThisObject() const { return m_pThisObject; }
-  CFXJSE_Class* GetJseNormalClass() const { return m_pJsClass.Get(); }
-  CFXJSE_Context* GetJseContext() const { return m_JsContext.get(); }
+  CFXJSE_Class* GetJseNormalClass() const { return m_pJsClass; }
   CXFA_Document* GetDocument() const { return m_pDocument.Get(); }
 
   void SetNodesOfRunScript(std::vector<cppgc::Persistent<CXFA_Node>>* pArray);
@@ -149,7 +149,10 @@ class CFXJSE_Engine final : public CFX_V8 {
 
   bool IsResolvingNodes() const { return m_bResolvingNodes; }
 
+  CFXJSE_Context* GetJseContextForTest() const { return GetJseContext(); }
+
  private:
+  CFXJSE_Context* GetJseContext() const { return m_JsContext.get(); }
   CFXJSE_Context* CreateVariablesContext(CXFA_Script* pScriptNode,
                                          CXFA_Node* pSubform);
   void RemoveBuiltInObjs(CFXJSE_Context* pContext);
@@ -185,6 +188,7 @@ class CFXJSE_Engine final : public CFX_V8 {
   UnownedPtr<CXFA_EventParam> m_eventParam;
   std::vector<cppgc::Persistent<CXFA_Node>> m_upObjectArray;
   UnownedPtr<std::vector<cppgc::Persistent<CXFA_Node>>> m_pScriptNodeArray;
+  std::unique_ptr<CFXJSE_NodeHelper> const m_NodeHelper;
   std::unique_ptr<CFXJSE_ResolveProcessor> const m_ResolveProcessor;
   std::unique_ptr<CFXJSE_FormCalcContext> m_FormCalcContext;
   cppgc::Persistent<CXFA_Object> m_pThisObject;

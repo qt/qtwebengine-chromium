@@ -183,8 +183,9 @@ class V8_EXPORT_PRIVATE Factory : public FactoryBase<Factory> {
   Handle<PrototypeInfo> NewPrototypeInfo();
 
   // Create a new EnumCache struct.
-  Handle<EnumCache> NewEnumCache(Handle<FixedArray> keys,
-                                 Handle<FixedArray> indices);
+  Handle<EnumCache> NewEnumCache(
+      Handle<FixedArray> keys, Handle<FixedArray> indices,
+      AllocationType allocation = AllocationType::kOld);
 
   // Create a new Tuple2 struct.
   Handle<Tuple2> NewTuple2(Handle<Object> value1, Handle<Object> value2,
@@ -607,7 +608,8 @@ class V8_EXPORT_PRIVATE Factory : public FactoryBase<Factory> {
       AllocationType allocation = AllocationType::kYoung);
 
   Handle<JSArray> NewJSArrayForTemplateLiteralArray(
-      Handle<FixedArray> cooked_strings, Handle<FixedArray> raw_strings);
+      Handle<FixedArray> cooked_strings, Handle<FixedArray> raw_strings,
+      int function_literal_id, int slot_id);
 
   void NewJSArrayStorage(
       Handle<JSArray> array, int length, int capacity,
@@ -638,8 +640,8 @@ class V8_EXPORT_PRIVATE Factory : public FactoryBase<Factory> {
   Handle<WasmExportedFunctionData> NewWasmExportedFunctionData(
       Handle<CodeT> export_wrapper, Handle<WasmInstanceObject> instance,
       Address call_target, Handle<Object> ref, int func_index,
-      const wasm::FunctionSig* sig, int wrapper_budget, Handle<Map> rtt,
-      wasm::Promise promise);
+      const wasm::FunctionSig* sig, uint32_t canonical_type_index,
+      int wrapper_budget, Handle<Map> rtt, wasm::Promise promise);
   Handle<WasmApiFunctionRef> NewWasmApiFunctionRef(
       Handle<JSReceiver> callable, wasm::Suspend suspend,
       Handle<WasmInstanceObject> instance);
@@ -694,6 +696,11 @@ class V8_EXPORT_PRIVATE Factory : public FactoryBase<Factory> {
       size_t byte_length, InitializedFlag initialized,
       AllocationType allocation = AllocationType::kYoung);
 
+  MaybeHandle<JSArrayBuffer> NewJSArrayBufferAndBackingStore(
+      size_t byte_length, size_t max_byte_length, InitializedFlag initialized,
+      ResizableFlag resizable = ResizableFlag::kNotResizable,
+      AllocationType allocation = AllocationType::kYoung);
+
   Handle<JSArrayBuffer> NewJSSharedArrayBuffer(
       std::shared_ptr<BackingStore> backing_store);
 
@@ -704,10 +711,12 @@ class V8_EXPORT_PRIVATE Factory : public FactoryBase<Factory> {
   // Creates a new JSTypedArray with the specified buffer.
   Handle<JSTypedArray> NewJSTypedArray(ExternalArrayType type,
                                        Handle<JSArrayBuffer> buffer,
-                                       size_t byte_offset, size_t length);
+                                       size_t byte_offset, size_t length,
+                                       bool is_length_tracking = false);
 
   Handle<JSDataView> NewJSDataView(Handle<JSArrayBuffer> buffer,
-                                   size_t byte_offset, size_t byte_length);
+                                   size_t byte_offset, size_t byte_length,
+                                   bool is_length_tracking = false);
 
   Handle<JSIteratorResult> NewJSIteratorResult(Handle<Object> value, bool done);
   Handle<JSAsyncFromSyncIterator> NewJSAsyncFromSyncIterator(

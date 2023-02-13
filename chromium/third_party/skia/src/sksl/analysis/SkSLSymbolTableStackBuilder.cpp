@@ -5,6 +5,7 @@
  * found in the LICENSE file.
  */
 
+#include "include/private/SkSLIRNode.h"
 #include "include/private/SkSLStatement.h"
 #include "src/sksl/SkSLAnalysis.h"
 #include "src/sksl/ir/SkSLBlock.h"
@@ -12,6 +13,7 @@
 #include "src/sksl/ir/SkSLSwitchStatement.h"
 
 #include <memory>
+#include <utility>
 #include <vector>
 
 namespace SkSL {
@@ -26,21 +28,21 @@ SymbolTableStackBuilder::SymbolTableStackBuilder(const Statement* stmt,
         switch (stmt->kind()) {
             case Statement::Kind::kBlock:
                 if (std::shared_ptr<SymbolTable> symbols = stmt->as<Block>().symbolTable()) {
-                    stack->push_back(symbols);
+                    stack->push_back(std::move(symbols));
                     fStackToPop = stack;
                 }
                 break;
 
             case Statement::Kind::kFor:
                 if (std::shared_ptr<SymbolTable> symbols = stmt->as<ForStatement>().symbols()) {
-                    stack->push_back(symbols);
+                    stack->push_back(std::move(symbols));
                     fStackToPop = stack;
                 }
                 break;
 
             case Statement::Kind::kSwitch:
                 if (std::shared_ptr<SymbolTable> symbols = stmt->as<SwitchStatement>().symbols()) {
-                    stack->push_back(symbols);
+                    stack->push_back(std::move(symbols));
                     fStackToPop = stack;
                 }
                 break;

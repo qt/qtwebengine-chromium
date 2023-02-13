@@ -23,10 +23,9 @@ cc_library(
     ],
     copts = ["-DCORE_ADAPTER_DLL"],
     visibility = [
-        "//location/nearby/cpp/sharing:__subpackages__",
-        "//location/nearby/testing:__subpackages__",
         "//connections/clients:__subpackages__",
         "//internal/platform/implementation:__subpackages__",
+        "//location/nearby/testing:__subpackages__",
     ],
     deps = [
         ":core_types",
@@ -70,10 +69,10 @@ cc_library(
     ],
     copts = ["-DCORE_ADAPTER_DLL"],
     visibility = [
-        "//location/nearby/cpp/sharing:__subpackages__",
         "//connections:__subpackages__",
         "//internal/analytics:__subpackages__",
         "//internal/platform/implementation/ios:__subpackages__",
+        "//location/nearby/testing:__subpackages__",
     ],
     deps = [
         "//internal:device",
@@ -100,8 +99,8 @@ cc_test(
     deps = [
         ":core",
         ":core_types",
-        "//connections/implementation:internal",
         "//connections/implementation:internal_test",
+        "//internal:device",
         "//internal/platform:base",
         "//internal/platform:logging",
         "//internal/platform:types",
@@ -109,7 +108,6 @@ cc_test(
         "@com_github_protobuf_matchers//protobuf-matchers",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/time",
-        "@com_google_absl//absl/types:variant",
         "@com_google_googletest//:gtest_main",
     ],
 )

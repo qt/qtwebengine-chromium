@@ -1,4 +1,4 @@
-// Copyright 2014 PDFium Authors. All rights reserved.
+// Copyright 2014 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -2430,7 +2430,7 @@ CXFA_ContentLayoutProcessor::InsertFlowedItem(
     pFormNode =
         m_pViewLayoutProcessor->QueryOverflow(pProcessor->GetFormNode());
     if (!pFormNode && pLayoutContext && pLayoutContext->m_pOverflowProcessor) {
-      pFormNode = pLayoutContext->m_pOverflowNode.Get();
+      pFormNode = pLayoutContext->m_pOverflowNode;
       bUseInherited = true;
     }
     absl::optional<CXFA_ViewLayoutProcessor::OverflowData> overflow_data =

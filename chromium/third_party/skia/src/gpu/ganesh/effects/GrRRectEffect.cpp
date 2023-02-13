@@ -11,6 +11,7 @@
 #include "src/core/SkTLazy.h"
 #include "src/gpu/KeyBuilder.h"
 #include "src/gpu/ganesh/GrFragmentProcessor.h"
+#include "src/gpu/ganesh/GrProcessorUnitTest.h"
 #include "src/gpu/ganesh/GrShaderCaps.h"
 #include "src/gpu/ganesh/effects/GrConvexPolyEffect.h"
 #include "src/gpu/ganesh/effects/GrOvalEffect.h"
@@ -118,7 +119,7 @@ bool CircularRRectEffect::onIsEqual(const GrFragmentProcessor& other) const {
 
 //////////////////////////////////////////////////////////////////////////////
 
-GR_DEFINE_FRAGMENT_PROCESSOR_TEST(CircularRRectEffect);
+GR_DEFINE_FRAGMENT_PROCESSOR_TEST(CircularRRectEffect)
 
 #if GR_TEST_UTILS
 std::unique_ptr<GrFragmentProcessor> CircularRRectEffect::TestCreate(GrProcessorTestData* d) {
@@ -452,7 +453,7 @@ bool EllipticalRRectEffect::onIsEqual(const GrFragmentProcessor& other) const {
 
 //////////////////////////////////////////////////////////////////////////////
 
-GR_DEFINE_FRAGMENT_PROCESSOR_TEST(EllipticalRRectEffect);
+GR_DEFINE_FRAGMENT_PROCESSOR_TEST(EllipticalRRectEffect)
 
 #if GR_TEST_UTILS
 std::unique_ptr<GrFragmentProcessor> EllipticalRRectEffect::TestCreate(GrProcessorTestData* d) {

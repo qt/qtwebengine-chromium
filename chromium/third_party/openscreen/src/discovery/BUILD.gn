@@ -5,8 +5,10 @@
 import("//build_overrides/build.gni")
 import("../testing/libfuzzer/fuzzer_test.gni")
 
+visibility = [ "./*" ]
+
 source_set("public") {
-  visibility = [ "*" ]
+  visibility += [ "*" ]
 
   public = [
     "common/config.h",
@@ -38,10 +40,7 @@ source_set("public") {
 # TODO(https://issuetracker.google.com/issues/194234872):
 # Move implementation files to impl/
 source_set("mdns") {
-  visibility = [
-    ":*",
-    "..:gn_all",
-  ]
+  visibility += [ "..:gn_all" ]
   public = [
     "mdns/mdns_domain_confirmed_provider.h",
     "mdns/mdns_record_changed_callback.h",
@@ -86,14 +85,11 @@ source_set("mdns") {
 }
 
 source_set("dnssd") {
-  visibility = [
-    ":*",
+  visibility += [
     "..:gn_all",
     "../cast/common:discovery_e2e_test",
-    "../cast/standalone_receiver:cast_receiver",
-    "../cast/standalone_receiver:standalone_receiver_dummy",
-    "../cast/standalone_receiver:standalone_receiver_sdl",
-    "../cast/standalone_sender:cast_sender",
+    "../cast/standalone_receiver:*",
+    "../cast/standalone_sender:*",
     "../osp/impl",
   ]
   public = []
@@ -129,7 +125,7 @@ source_set("dnssd") {
 
 source_set("testing") {
   testonly = true
-  visibility = [ ":unittests" ]
+  visibility += [ ":unittests" ]
   public = [
     "common/testing/mock_reporting_client.h",
     "mdns/testing/hash_test_util.h",
@@ -159,10 +155,7 @@ source_set("testing") {
 
 source_set("unittests") {
   testonly = true
-  visibility = [
-    ":*",
-    "..:openscreen_unittests_all",
-  ]
+  visibility += [ "..:openscreen_unittests_all" ]
   public = []
   sources = [
     "dnssd/impl/conversion_layer_unittest.cc",
@@ -203,7 +196,7 @@ source_set("unittests") {
 }
 
 openscreen_fuzzer_test("mdns_fuzzer") {
-  visibility = [ "..:fuzzer_tests_all" ]
+  visibility += [ "..:fuzzer_tests_all" ]
   public = []
   sources = [ "mdns/mdns_reader_fuzztest.cc" ]
 

@@ -571,11 +571,11 @@ void Serializer::ObjectSerializer::SerializeJSArrayBuffer() {
       uint32_t ref =
           SerializeBackingStore(backing_store, byte_length, max_byte_length);
       buffer.SetBackingStoreRefForSerialization(ref);
-
-      // Ensure deterministic output by setting extension to null during
-      // serialization.
-      buffer.set_extension(nullptr);
     }
+
+    // Ensure deterministic output by setting extension to null during
+    // serialization.
+    buffer.set_extension(nullptr);
   }
   SerializeObject();
   {
@@ -760,8 +760,6 @@ SnapshotSpace GetSnapshotSpace(HeapObject object) {
       return SnapshotSpace::kCode;
     } else if (ReadOnlyHeap::Contains(object)) {
       return SnapshotSpace::kReadOnlyHeap;
-    } else if (object.IsMap()) {
-      return SnapshotSpace::kMap;
     } else {
       return SnapshotSpace::kOld;
     }
@@ -783,13 +781,13 @@ SnapshotSpace GetSnapshotSpace(HeapObject object) {
       // detail and isn't relevant to the snapshot.
       case NEW_LO_SPACE:
       case LO_SPACE:
+      // Shared objects are currently encoded as 'old' snapshot objects. This
+      // basically duplicates shared heap objects for each isolate again.
+      case SHARED_SPACE:
+      case SHARED_LO_SPACE:
         return SnapshotSpace::kOld;
       case CODE_SPACE:
         return SnapshotSpace::kCode;
-      case MAP_SPACE:
-        return SnapshotSpace::kMap;
-      case SHARED_SPACE:
-      case SHARED_LO_SPACE:
       case CODE_LO_SPACE:
       case RO_SPACE:
         UNREACHABLE();
@@ -1228,16 +1226,13 @@ void Serializer::ObjectSerializer::OutputRawData(Address up_to) {
           sizeof(field_value), field_value);
     } else if (V8_EXTERNAL_CODE_SPACE_BOOL &&
                object_->IsCodeDataContainer(cage_base)) {
-      // code_cage_base and code_entry_point fields contain raw values that
-      // will be recomputed after deserialization, so write zeros to keep the
-      // snapshot deterministic.
-      CHECK_EQ(CodeDataContainer::kCodeCageBaseUpper32BitsOffset + kTaggedSize,
-               CodeDataContainer::kCodeEntryPointOffset);
-      static byte field_value[kTaggedSize + kSystemPointerSize] = {0};
-      OutputRawWithCustomField(
-          sink_, object_start, base, bytes_to_output,
-          CodeDataContainer::kCodeCageBaseUpper32BitsOffset,
-          sizeof(field_value), field_value);
+      // code_entry_point field contains a raw value that will be recomputed
+      // after deserialization, so write zeros to keep the snapshot
+      // deterministic.
+      static byte field_value[kSystemPointerSize] = {0};
+      OutputRawWithCustomField(sink_, object_start, base, bytes_to_output,
+                               CodeDataContainer::kCodeEntryPointOffset,
+                               sizeof(field_value), field_value);
     } else if (object_->IsSeqString()) {
       // SeqStrings may contain padding. Serialize the padding bytes as 0s to
       // make the snapshot content deterministic.
@@ -1373,6 +1368,29 @@ Handle<FixedArray> ObjectCacheIndexMap::Values(Isolate* isolate) {
   }
 
   return externals;
+}
+
+bool Serializer::SerializeReadOnlyObjectReference(HeapObject obj,
+                                                  SnapshotByteSink* sink) {
+  if (!ReadOnlyHeap::Contains(obj)) return false;
+
+  // For objects on the read-only heap, never serialize the object, but instead
+  // create a back reference that encodes the page number as the chunk_index and
+  // the offset within the page as the chunk_offset.
+  Address address = obj.address();
+  BasicMemoryChunk* chunk = BasicMemoryChunk::FromAddress(address);
+  uint32_t chunk_index = 0;
+  ReadOnlySpace* const read_only_space = isolate()->heap()->read_only_space();
+  DCHECK(!read_only_space->writable());
+  for (ReadOnlyPage* page : read_only_space->pages()) {
+    if (chunk == page) break;
+    ++chunk_index;
+  }
+  uint32_t chunk_offset = static_cast<uint32_t>(chunk->Offset(address));
+  sink->Put(kReadOnlyHeapRef, "ReadOnlyHeapRef");
+  sink->PutInt(chunk_index, "ReadOnlyHeapRefChunkIndex");
+  sink->PutInt(chunk_offset, "ReadOnlyHeapRefChunkOffset");
+  return true;
 }
 
 }  // namespace internal

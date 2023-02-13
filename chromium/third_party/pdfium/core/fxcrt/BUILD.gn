@@ -1,4 +1,4 @@
-# Copyright 2018 The PDFium Authors. All rights reserved.
+# Copyright 2018 The PDFium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -41,8 +41,10 @@ source_set("fxcrt") {
     "data_vector.h",
     "fileaccess_iface.h",
     "fixed_size_data_vector.h",
+    "fixed_try_alloc_zeroed_data_vector.h",
     "fixed_uninit_data_vector.h",
     "fixed_zeroed_data_vector.h",
+    "fx_2d_size.h",
     "fx_bidi.cpp",
     "fx_bidi.h",
     "fx_codepage.cpp",
@@ -77,7 +79,6 @@ source_set("fxcrt") {
     "observed_ptr.h",
     "pauseindicator_iface.h",
     "retain_ptr.h",
-    "retained_tree_node.h",
     "scoped_set_insertion.h",
     "shared_copy_on_write.h",
     "small_buffer.h",
@@ -123,7 +124,6 @@ source_set("fxcrt") {
     "../../third_party:fx_agg",
     "../../third_party:fx_lcms2",
     "../../third_party:fx_libopenjpeg",
-    "../../third_party:fx_lpng",
     "../../third_party:fx_tiff",
     "../../xfa/*",
   ]
@@ -162,6 +162,19 @@ source_set("fxcrt") {
   }
 }
 
+source_set("unit_test_support") {
+  testonly = true
+  sources = [
+    "fake_time_test.cpp",
+    "fake_time_test.h",
+  ]
+  configs += [ "../../:pdfium_strict_config" ]
+  deps = [
+    ":fxcrt",
+    "//testing/gtest",
+  ]
+}
+
 pdfium_unittest_source_set("unittests") {
   sources = [
     "autonuller_unittest.cpp",
@@ -173,6 +186,7 @@ pdfium_unittest_source_set("unittests") {
     "cfx_datetime_unittest.cpp",
     "cfx_seekablestreamproxy_unittest.cpp",
     "cfx_timer_unittest.cpp",
+    "fixed_try_alloc_zeroed_data_vector_unittest.cpp",
     "fixed_uninit_data_vector_unittest.cpp",
     "fixed_zeroed_data_vector_unittest.cpp",
     "fx_bidi_unittest.cpp",
@@ -191,7 +205,6 @@ pdfium_unittest_source_set("unittests") {
     "observed_ptr_unittest.cpp",
     "pdfium_span_unittest.cpp",
     "retain_ptr_unittest.cpp",
-    "retained_tree_node_unittest.cpp",
     "scoped_set_insertion_unittest.cpp",
     "shared_copy_on_write_unittest.cpp",
     "small_buffer_unittest.cpp",
@@ -210,7 +223,7 @@ pdfium_unittest_source_set("unittests") {
     "xml/cfx_xmlparser_unittest.cpp",
     "xml/cfx_xmltext_unittest.cpp",
   ]
-  deps = []
+  deps = [ ":unit_test_support" ]
   pdfium_root_dir = "../../"
 
   if (pdf_enable_xfa) {

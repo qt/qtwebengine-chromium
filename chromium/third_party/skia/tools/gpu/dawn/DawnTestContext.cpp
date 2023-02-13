@@ -29,7 +29,7 @@
 #include "dawn/native/MetalBackend.h"
 #elif defined(SK_BUILD_FOR_WIN)
 #include "dawn/native/D3D12Backend.h"
-#elif defined(SK_BUILD_FOR_UNIX)
+#elif defined(SK_BUILD_FOR_UNIX) || (defined(SK_BUILD_FOR_ANDROID) && __ANDROID_API__ >= 26)
 #include "dawn/native/VulkanBackend.h"
 #endif
 
@@ -87,6 +87,12 @@ static void PrintDeviceError(WGPUErrorType, const char* message, void*) {
     SkDebugf("Device error: %s\n", message);
 }
 
+static void PrintDeviceLostMessage(WGPUDeviceLostReason reason, const char* message, void*) {
+    if (reason != WGPUDeviceLostReason_Destroyed) {
+        SkDebugf("Device lost: %s\n", message);
+    }
+}
+
 class DawnTestContextImpl : public sk_gpu_test::DawnTestContext {
 public:
     static wgpu::Device createDevice(const dawn::native::Instance& instance,
@@ -132,7 +138,7 @@ public:
 #elif defined(SK_BUILD_FOR_WIN)
             type = wgpu::BackendType::D3D12;
             dawn::native::d3d12::AdapterDiscoveryOptions adapterOptions;
-#elif defined(SK_BUILD_FOR_UNIX)
+#elif defined(SK_BUILD_FOR_UNIX) || (defined(SK_BUILD_FOR_ANDROID) && __ANDROID_API__ >= 26)
             type = wgpu::BackendType::Vulkan;
             dawn::native::vulkan::AdapterDiscoveryOptions adapterOptions;
 #endif
@@ -141,6 +147,7 @@ public:
             device = createDevice(*instance, type);
             if (device) {
                 device.SetUncapturedErrorCallback(PrintDeviceError, 0);
+                device.SetDeviceLostCallback(PrintDeviceLostMessage, 0);
             }
         }
         if (!device) {

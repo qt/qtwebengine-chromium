@@ -1,13 +1,11 @@
-#!/usr/bin/env python
-# Copyright 2017 The PDFium Authors. All rights reserved.
+#!/usr/bin/env python3
+# Copyright 2017 The PDFium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 """Measures performance for rendering a single test case with pdfium.
 
 The output is a number that is a metric which depends on the profiler specified.
 """
-
-from __future__ import print_function
 
 import argparse
 import os

@@ -141,21 +141,21 @@ class IsolateSafepoint final {
   // Mutex is used both for safepointing and adding/removing threads. A
   // RecursiveMutex is needed since we need to support nested SafepointScopes.
   base::RecursiveMutex local_heaps_mutex_;
-  LocalHeap* local_heaps_head_;
+  LocalHeap* local_heaps_head_ = nullptr;
 
-  int active_safepoint_scopes_;
+  int active_safepoint_scopes_ = 0;
 
   friend class GlobalSafepoint;
   friend class GlobalSafepointScope;
   friend class Isolate;
+  friend class IsolateSafepointScope;
   friend class LocalHeap;
-  friend class SafepointScope;
 };
 
-class V8_NODISCARD SafepointScope {
+class V8_NODISCARD IsolateSafepointScope {
  public:
-  V8_EXPORT_PRIVATE explicit SafepointScope(Heap* heap);
-  V8_EXPORT_PRIVATE ~SafepointScope();
+  V8_EXPORT_PRIVATE explicit IsolateSafepointScope(Heap* heap);
+  V8_EXPORT_PRIVATE ~IsolateSafepointScope();
 
  private:
   IsolateSafepoint* safepoint_;
@@ -187,8 +187,11 @@ class GlobalSafepoint final {
   void LeaveGlobalSafepointScope(Isolate* initiator);
 
   Isolate* const shared_heap_isolate_;
-  base::Mutex clients_mutex_;
+  // RecursiveMutex is needed since we need to support nested
+  // GlobalSafepointScopes.
+  base::RecursiveMutex clients_mutex_;
   Isolate* clients_head_ = nullptr;
+  int active_safepoint_scopes_ = 0;
 
   friend class GlobalSafepointScope;
   friend class Isolate;
@@ -202,6 +205,18 @@ class V8_NODISCARD GlobalSafepointScope {
  private:
   Isolate* const initiator_;
   Isolate* const shared_heap_isolate_;
+};
+
+enum class SafepointKind { kIsolate, kGlobal };
+
+class V8_NODISCARD SafepointScope {
+ public:
+  V8_EXPORT_PRIVATE explicit SafepointScope(Isolate* initiator,
+                                            SafepointKind kind);
+
+ private:
+  base::Optional<IsolateSafepointScope> isolate_safepoint_;
+  base::Optional<GlobalSafepointScope> global_safepoint_;
 };
 
 }  // namespace internal

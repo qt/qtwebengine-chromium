@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2016 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -38,8 +38,8 @@ class IJS_Runtime {
     explicit ScopedEventContext(IJS_Runtime* pRuntime);
     ~ScopedEventContext();
 
-    IJS_EventContext* Get() const { return m_pContext.Get(); }
-    IJS_EventContext* operator->() const { return m_pContext.Get(); }
+    IJS_EventContext* Get() const { return m_pContext; }
+    IJS_EventContext* operator->() const { return m_pContext; }
 
    private:
     UnownedPtr<IJS_Runtime> const m_pRuntime;

@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2016 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -67,12 +67,6 @@ class TRIVIAL_ABI RetainPtr {
     return *this;
   }
 
-  // Assign a RetainPtr from a raw ptr.
-  RetainPtr& operator=(T* that) noexcept {
-    Reset(that);
-    return *this;
-  }
-
   // Copy-assign a RetainPtr.
   // Required in addition to copy conversion assignment below.
   RetainPtr& operator=(const RetainPtr& that) {
@@ -110,8 +104,13 @@ class TRIVIAL_ABI RetainPtr {
   ~RetainPtr() = default;
 
   template <class U>
+  U* AsRaw() const {
+    return static_cast<U*>(Get());
+  }
+
+  template <class U>
   RetainPtr<U> As() const {
-    return RetainPtr<U>(static_cast<U*>(Get()));
+    return RetainPtr<U>(AsRaw<U>());
   }
 
   void Reset(T* obj = nullptr) {
@@ -178,14 +177,20 @@ class Retainable {
   // These need to be const methods operating on a mutable member so that
   // RetainPtr<const T> can be used for an object that is otherwise const
   // apart from the internal ref-counting.
-  void Retain() const { ++m_nRefCount; }
+  void Retain() const {
+    ++m_nRefCount;
+    CHECK(m_nRefCount > 0);
+  }
   void Release() const {
-    DCHECK(m_nRefCount > 0);
+    CHECK(m_nRefCount > 0);
     if (--m_nRefCount == 0)
       delete this;
   }
 
-  mutable intptr_t m_nRefCount = 0;
+  mutable uintptr_t m_nRefCount = 0;
+  static_assert(std::is_unsigned<decltype(m_nRefCount)>::value,
+                "m_nRefCount must be an unsigned type for overflow check"
+                "to work properly in Retain()");
 };
 
 }  // namespace fxcrt

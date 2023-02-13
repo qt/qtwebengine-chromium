@@ -12,6 +12,7 @@
 #include "include/core/SkMatrix.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkPathEffect.h"
+#include "include/core/SkPathUtils.h"
 #include "include/core/SkRRect.h"
 #include "include/core/SkShader.h"
 #include "include/core/SkString.h"
@@ -27,6 +28,7 @@
 #include "src/core/SkBlitter.h"
 #include "src/core/SkDevice.h"
 #include "src/core/SkDrawProcs.h"
+#include "src/core/SkImagePriv.h"
 #include "src/core/SkMaskFilterBase.h"
 #include "src/core/SkMatrixUtils.h"
 #include "src/core/SkPathEffectBase.h"
@@ -938,8 +940,8 @@ void SkDraw::drawPath(const SkPath& origSrcPath, const SkPaint& origPaint,
         if (this->computeConservativeLocalClipBounds(&cullRect)) {
             cullRectPtr = &cullRect;
         }
-        doFill = paint->getFillPath(*pathPtr, tmpPath, cullRectPtr,
-                                    fMatrixProvider->localToDevice());
+        doFill = skpathutils::FillPathWithPaint(*pathPtr, *paint, tmpPath, cullRectPtr,
+                                                fMatrixProvider->localToDevice());
         pathPtr = tmpPath;
     }
 

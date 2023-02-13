@@ -1,7 +1,9 @@
 use_relative_paths = True
 
 gclient_gn_args_file = 'build/config/gclient_args.gni'
-gclient_gn_args = []
+gclient_gn_args = [
+  'checkout_skia',
+]
 
 vars = {
   # By default, we should check out everything needed to run on the main
@@ -32,7 +34,7 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling abseil
   # and whatever else without interference from each other.
-  'abseil_revision': '751b72a8c1370f4586f5f726e396262f98f4dcdb',
+  'abseil_revision': '4cb960a03f72b61662b378a7dbc3d7c0d5ad98ef',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling android_ndk
   # and whatever else without interference from each other.
@@ -40,15 +42,15 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling build
   # and whatever else without interference from each other.
-  'build_revision': '01569374d46a14b225586c564146a8e1749520b6',
+  'build_revision': '2748ef76c64b3cbd4027df2eafaaf4b927fa2853',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling buildtools
   # and whatever else without interference from each other.
-  'buildtools_revision': 'cccaf48c82bcf4ddafa6f8aa9f06014a1ef434bf',
+  'buildtools_revision': '8d4ff27e86bfa3044b9fdb0abcb029a2ebbf8109',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling catapult
   # and whatever else without interference from each other.
-  'catapult_revision': '16eb7278843e4955064c980c5887668d6cba1035',
+  'catapult_revision': '07489847d9adb4d5fb5ab9348f1044acd96e523a',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling clang format
   # and whatever else without interference from each other.
@@ -56,27 +58,27 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling clang
   # and whatever else without interference from each other.
-  'clang_revision': 'a5e0d72349d028a4023927d6d166a8478355fac3',
+  'clang_revision': '65848dccd6cb0c9224c8b2ae0dbe503820a1e10d',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling code_coverage
   # and whatever else without interference from each other.
-  'code_coverage_revision': '690a8f131004631f69dfb63b492c0c51e0c714dc',
+  'code_coverage_revision': '5afe9c957e7911df1dfe8a457d7ef9e3723af699',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling depot_tools
   # and whatever else without interference from each other.
-  'depot_tools_revision': 'e3ed6a8e015bada7f2708d990b5e8c4d01bcf047',
+  'depot_tools_revision': 'de9b59989f05253625a73a204387f031c3d3b703',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling freetype
   # and whatever else without interference from each other.
-  'freetype_revision': '905270925dd0492ba557e58938e5513f062e6fc5',
+  'freetype_revision': 'aca4ec5907e0bfb5bbeb01370257a121f3f47a0f',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling Fuchsia sdk
   # and whatever else without interference from each other.
-  'fuchsia_version': 'version:9.20220929.2.1',
+  'fuchsia_version': 'version:10.20221201.2.1',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling GN CIPD package version
   # and whatever else without interference from each other.
-  'gn_version': 'git_revision:cc28efe62ef0c2fb32455f414a29c4a55bb7fbc4',
+  'gn_version': 'git_revision:70d6c60823c0233a0f35eccc25b2b640d2980bdc',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling gtest
   # and whatever else without interference from each other.
@@ -84,15 +86,15 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling icu
   # and whatever else without interference from each other.
-  'icu_revision': '20f8ac695af59b6c830def7d4e95bfeb13dd7be5',
+  'icu_revision': '1b7d391f0528fb3a4976b7541b387ee04f915f83',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling instrumented_lib
   # and whatever else without interference from each other.
-  'instrumented_lib_revision': '673b76772c2ec379804deffbbca42672f3e70434',
+  'instrumented_lib_revision': '87467200f117f90dd95f66fe4def980a57075b61',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling jinja2
   # and whatever else without interference from each other.
-  'jinja2_revision': 'ee69aa00ee8536f61db6a451f3858745cf587de6',
+  'jinja2_revision': '4633bf431193690c3491244f5a0acbe9ac776233',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling jpeg_turbo
   # and whatever else without interference from each other.
@@ -102,15 +104,19 @@ vars = {
   # and whatever else without interference from each other.
   # If you change this, also update the libc++ revision in
   # //buildtools/deps_revisions.gni.
-  'libcxx_revision': '5ee02b299379896f90faa88f576be98c61156f26',
+  'libcxx_revision': 'ae1fbc40376dff4c5b58bd1f8d38211d260259a0',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling libc++abi
   # and whatever else without interference from each other.
-  'libcxxabi_revision': '5c3e02e92ae8bbc1bf1001bd9ef0d76e044ddb86',
+  'libcxxabi_revision': '44d54baf424cfcfdd2fa6dab88cb5e536d7d81af',
+  # Three lines of non-changing comments so that
+  # the commit queue can handle CLs rolling libpng
+  # and whatever else without interference from each other.
+  'libpng_revision': '20d2554f81dbe5994d7ee11e3744a47cf8d71d34',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling libunwind
   # and whatever else without interference from each other.
-  'libunwind_revision': '7ff728a9779cdc8e0639c032dc45cc20f7b4af21',
+  'libunwind_revision': 'fd49ee4ee904ff6b65fc76ba2448a370873255e3',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling lss
   # and whatever else without interference from each other.
@@ -118,19 +124,23 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling markupsafe
   # and whatever else without interference from each other.
-  'markupsafe_revision': '1b882ef6372b58bfd55a3285f37ed801be9137cd',
+  'markupsafe_revision': '13f4e8c9e206567eeb13bf585406ddc574005748',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling nasm_source
   # and whatever else without interference from each other.
-  'nasm_source_revision': '9215e8e1d0fe474ffd3e16c1a07a0f97089e6224',
+  'nasm_source_revision': '0873b2bae6a5388a1c55deac8456e3c60a47ca08',
+  # Three lines of non-changing comments so that
+  # the commit queue can handle CLs rolling Ninja CIPD package version
+  # and whatever else without interference from each other.
+  'ninja_version': 'version:2@1.8.2.chromium.3',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling partition_allocator
   # and whatever else without interference from each other.
-  'partition_allocator_revision': 'bb627f4ab5d5eb26c0daad0e86b4d4a07a8b7506',
+  'partition_allocator_revision': '109a742d11634f68caedd2e3b2efc2347087f8b2',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling pdfium_tests
   # and whatever else without interference from each other.
-  'pdfium_tests_revision': 'e39d191c01449a0d9cdca9733a5a5cd21df8942d',
+  'pdfium_tests_revision': '23370cd9710389f721b88db0fb1451d44dd4f20f',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling resultdb
   # and whatever else without interference from each other.
@@ -138,7 +148,7 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling skia
   # and whatever else without interference from each other.
-  'skia_revision': '03cb8e7d8ee33d9b7dc2232610baa7e4a1b74e75',
+  'skia_revision': '8e165b9cf288fd3d3fbe06cf2fc3032897312a5a',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling test_fonts
   # and whatever else without interference from each other.
@@ -146,7 +156,7 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling tools_memory
   # and whatever else without interference from each other.
-  'tools_memory_revision': '98140a69489b05f65f7a4649b9949e074fc2da8a',
+  'tools_memory_revision': '5d2efcc932883fa993dd6947456ed036bb41de9a',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling trace_event
   # and whatever else without interference from each other.
@@ -154,11 +164,11 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling v8
   # and whatever else without interference from each other.
-  'v8_revision': '261f006976dcb286e2cf89302774e4c139c93510',
+  'v8_revision': '24bde540139abb3724f1ba0027b214050ec3067b',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling zlib
   # and whatever else without interference from each other.
-  'zlib_revision': '6fe4ce825fd93c6e7a23eecd385a66e181fb6b81',
+  'zlib_revision': 'd866d41e168ec04545bb17031fa911007a0581f4',
 }
 
 # Only these hosts are allowed for dependencies in this DEPS file.
@@ -299,6 +309,10 @@ deps = {
     Var('chromium_git') + '/chromium/deps/libjpeg_turbo.git@' +
         Var('jpeg_turbo_revision'),
 
+  'third_party/libpng':
+    Var('chromium_git') + '/chromium/src/third_party/libpng.git@' +
+        Var('libpng_revision'),
+
   'third_party/lss': {
       'url': Var('chromium_git') + '/linux-syscall-support.git' + '@' + Var('lss_revision'),
       'condition': 'checkout_android or checkout_linux',
@@ -311,6 +325,17 @@ deps = {
   'third_party/nasm':
     Var('chromium_git') + '/chromium/deps/nasm.git@' +
         Var('nasm_source_revision'),
+
+  'third_party/ninja': {
+    'packages': [
+      {
+        # https://chrome-infra-packages.appspot.com/p/infra/3pp/tools/ninja
+        'package': 'infra/3pp/tools/ninja/${{platform}}',
+        'version': Var('ninja_version'),
+      }
+    ],
+    'dep_type': 'cipd',
+  },
 
   'third_party/skia': {
     'url': Var('skia_git') + '/skia.git@' + Var('skia_revision'),
@@ -596,7 +621,7 @@ hooks = [
     ],
   },
   {
-    'name': 'msan_chained_origins',
+    'name': 'msan_chained_origins_xenial',
     'pattern': '.',
     'condition': 'checkout_instrumented_libraries',
     'action': [ 'python3',
@@ -604,11 +629,11 @@ hooks = [
                 '--no_resume',
                 '--no_auth',
                 '--bucket', 'chromium-instrumented-libraries',
-                '-s', 'third_party/instrumented_libraries/binaries/msan-chained-origins.tgz.sha1',
+                '-s', 'third_party/instrumented_libraries/binaries/msan-chained-origins-xenial.tgz.sha1',
               ],
   },
   {
-    'name': 'msan_no_origins',
+    'name': 'msan_no_origins_xenial',
     'pattern': '.',
     'condition': 'checkout_instrumented_libraries',
     'action': [ 'python3',
@@ -616,7 +641,7 @@ hooks = [
                 '--no_resume',
                 '--no_auth',
                 '--bucket', 'chromium-instrumented-libraries',
-                '-s', 'third_party/instrumented_libraries/binaries/msan-no-origins.tgz.sha1',
+                '-s', 'third_party/instrumented_libraries/binaries/msan-no-origins-xenial.tgz.sha1',
               ],
   },
   {

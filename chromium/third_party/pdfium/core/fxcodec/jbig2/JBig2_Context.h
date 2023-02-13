@@ -1,4 +1,4 @@
-// Copyright 2014 PDFium Authors. All rights reserved.
+// Copyright 2014 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -40,7 +40,7 @@ class CJBig2_Context {
 
   static bool HuffmanAssignCode(JBig2HuffmanCode* SBSYMCODES, uint32_t NTEMP);
 
-  bool GetFirstPage(uint8_t* pBuf,
+  bool GetFirstPage(pdfium::span<uint8_t> pBuf,
                     int32_t width,
                     int32_t height,
                     int32_t stride,
@@ -97,7 +97,7 @@ class CJBig2_Context {
   std::unique_ptr<CJBig2_GRDProc> m_pGRD;
   std::unique_ptr<CJBig2_Segment> m_pSegment;
   uint32_t m_nOffset = 0;
-  JBig2RegionInfo m_ri;
+  JBig2RegionInfo m_ri = {};
   UnownedPtr<std::list<CJBig2_CachePair>> const m_pSymbolDictCache;
 };
 

@@ -16,9 +16,10 @@
 #include "src/gpu/ganesh/effects/GrMatrixEffect.h"
 #endif
 
-#ifdef SK_ENABLE_SKSL
-#include "src/core/SkKeyHelpers.h"
-#include "src/core/SkPaintParamsKey.h"
+#ifdef SK_GRAPHITE_ENABLED
+#include "src/gpu/graphite/KeyContext.h"
+#include "src/gpu/graphite/KeyHelpers.h"
+#include "src/gpu/graphite/PaintParamsKey.h"
 #endif
 
 SkShaderBase::GradientType SkLocalMatrixShader::asGradient(GradientInfo* info,
@@ -34,19 +35,23 @@ SkShaderBase::GradientType SkLocalMatrixShader::asGradient(GradientInfo* info,
 std::unique_ptr<GrFragmentProcessor> SkLocalMatrixShader::asFragmentProcessor(
         const GrFPArgs& args) const {
     return as_SB(fWrappedShader)->asFragmentProcessor(GrFPArgs::ConcatLocalMatrix(args,
-                                                                                fLocalMatrix));
+                                                                                  fLocalMatrix));
 }
 #endif
 
-#ifdef SK_ENABLE_SKSL
-void SkLocalMatrixShader::addToKey(const SkKeyContext& keyContext,
-                                   SkPaintParamsKeyBuilder* builder,
-                                   SkPipelineDataGatherer* gatherer) const {
+#ifdef SK_GRAPHITE_ENABLED
+void SkLocalMatrixShader::addToKey(const skgpu::graphite::KeyContext& keyContext,
+                                   skgpu::graphite::PaintParamsKeyBuilder* builder,
+                                   skgpu::graphite::PipelineDataGatherer* gatherer) const {
+    using namespace skgpu::graphite;
+
     LocalMatrixShaderBlock::LMShaderData lmShaderData(fLocalMatrix);
 
-    LocalMatrixShaderBlock::BeginBlock(keyContext, builder, gatherer, lmShaderData);
+    KeyContextWithLocalMatrix newContext(keyContext, fLocalMatrix);
 
-    as_SB(fWrappedShader)->addToKey(keyContext, builder, gatherer);
+    LocalMatrixShaderBlock::BeginBlock(newContext, builder, gatherer, &lmShaderData);
+
+    as_SB(fWrappedShader)->addToKey(newContext, builder, gatherer);
 
     builder->endBlock();
 }

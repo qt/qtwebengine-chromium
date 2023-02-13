@@ -1,4 +1,4 @@
-// Copyright 2017 PDFium Authors. All rights reserved.
+// Copyright 2017 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -21,8 +21,8 @@ class CXFA_ThisProxy final : public CXFA_Object {
 
   void Trace(cppgc::Visitor* visitor) const override;
 
-  CXFA_Node* GetThisNode() const { return m_pThisNode.Get(); }
-  CXFA_Script* GetScriptNode() const { return m_pScriptNode.Get(); }
+  CXFA_Node* GetThisNode() const { return m_pThisNode; }
+  CXFA_Script* GetScriptNode() const { return m_pScriptNode; }
 
  private:
   CXFA_ThisProxy(CXFA_Node* pThisNode, CXFA_Script* pScriptNode);

@@ -19,21 +19,29 @@
 #include <utility>
 #include <vector>
 
+#include "absl/status/status.h"
 #include "absl/strings/string_view.h"
+#include "absl/time/time.h"
 #include "internal/crypto/aead.h"
 #include "internal/crypto/ec_private_key.h"
 #include "internal/crypto/hkdf.h"
 #include "internal/platform/base64_utils.h"
+#include "internal/platform/future.h"
+#include "internal/platform/implementation/credential_callbacks.h"
 #include "internal/platform/implementation/crypto.h"
 #include "internal/platform/logging.h"
-#include "internal/proto/credential.proto.h"
+#include "internal/proto/credential.pb.h"
 #include "presence/implementation/encryption.h"
+#include "presence/implementation/ldt.h"
 
 namespace nearby {
 namespace presence {
 namespace {
 using ::location::nearby::Base64Utils;
 using ::location::nearby::Crypto;
+using ::location::nearby::Exception;
+using ::location::nearby::ExceptionOr;
+using ::location::nearby::Future;
 using ::nearby::internal::DeviceMetadata;
 using ::nearby::internal::IdentityType;
 using ::nearby::internal::PrivateCredential;
@@ -41,6 +49,8 @@ using ::nearby::internal::PublicCredential;
 
 // Key to retrieve local device's Private/Public Key Credentials from key store.
 constexpr char kPairedKeyAliasPrefix[] = "nearby_presence_paired_key_alias_";
+
+constexpr absl::Duration kTimeout = absl::Seconds(3);
 
 }  // namespace
 
@@ -75,7 +85,38 @@ void CredentialManagerImpl::GenerateCredentials(
   credential_storage_ptr_->SaveCredentials(
       manager_app_id, device_metadata.account_name(), private_credentials,
       public_credentials, PublicCredentialType::kLocalPublicCredential,
-      std::move(credentials_generated_cb));
+      SaveCredentialsResultCallback{
+          .credentials_saved_cb =
+              [callback = std::move(credentials_generated_cb),
+               public_credentials](absl::Status status) mutable {
+                if (status.ok()) {
+                  std::move(callback.credentials_generated_cb)(
+                      std::move(public_credentials));
+                } else {
+                  NEARBY_LOGS(WARNING)
+                      << "Save credentials failed with: " << status;
+                  std::move(callback.credentials_generated_cb)({});
+                }
+              }});
+}
+
+void CredentialManagerImpl::UpdateRemotePublicCredentials(
+    absl::string_view manager_app_id, absl::string_view account_name,
+    const std::vector<nearby::internal::PublicCredential>& remote_public_creds,
+    UpdateRemotePublicCredentialsCallback credentials_updated_cb) {
+  credential_storage_ptr_->SaveCredentials(
+      manager_app_id, account_name, /* private_credentials */ {},
+      remote_public_creds, PublicCredentialType::kRemotePublicCredential,
+      SaveCredentialsResultCallback{
+          .credentials_saved_cb = [callback =
+                                       std::move(credentials_updated_cb)](
+                                      absl::Status status) mutable {
+            if (!status.ok()) {
+              NEARBY_LOGS(WARNING)
+                  << "Update remote credentials failed with: " << status;
+            }
+            std::move(callback.credentials_updated_cb)(status);
+          }});
 }
 
 std::pair<PrivateCredential, PublicCredential>
@@ -92,14 +133,14 @@ CredentialManagerImpl::CreatePrivateCredential(
       Encryption::GenerateRandomByteArray(kAuthenticityKeyByteSize);
   private_credential.set_authenticity_key(secret_key);
 
-  // Uses SHA-256 algorithm to generate the credential ID from the authenticity
-  // key
+  // Uses SHA-256 algorithm to generate the credential ID from the
+  // authenticity key
   auto secret_id = Crypto::Sha256(secret_key);
-  // Does not expect to fail here since Crypto::Sha256 should not return empty
-  // ByteArray.
+  // Does not expect to fail here since Crypto::Sha256 should not return
+  // empty ByteArray.
   CHECK(!secret_id.Empty()) << "Crypto::Sha256 failed!";
 
-  private_credential.set_secret_id(secret_id.AsStringView());
+  private_credential.set_secret_id(std::string(secret_id.AsStringView()));
 
   std::string alias = Base64Utils::Encode(secret_id);
   auto prefixedAlias = kPairedKeyAliasPrefix + alias;
@@ -145,7 +186,7 @@ PublicCredential CredentialManagerImpl::CreatePublicCredential(
   auto metadata_encryption_key_tag =
       Crypto::Sha256(private_credential.metadata_encryption_key());
   public_credential.set_metadata_encryption_key_tag(
-      metadata_encryption_key_tag.AsStringView());
+      std::string(metadata_encryption_key_tag.AsStringView()));
 
   // Encrypt the device metadata
   auto encrypted_meta_data = EncryptDeviceMetadata(
@@ -236,6 +277,45 @@ void CredentialManagerImpl::GetPublicCredentials(
     GetPublicCredentialsResultCallback callback) {
   credential_storage_ptr_->GetPublicCredentials(
       credential_selector, public_credential_type, std::move(callback));
+}
+
+ExceptionOr<std::vector<PrivateCredential>>
+CredentialManagerImpl::GetPrivateCredentialsSync(
+    const CredentialSelector& credential_selector, absl::Duration timeout) {
+  Future<std::vector<PrivateCredential>> result;
+  GetPrivateCredentials(
+      credential_selector,
+      {
+          .credentials_fetched_cb =
+              [result](std::vector<PrivateCredential> credentials) mutable {
+                result.Set(credentials);
+              },
+          .get_credentials_failed_cb =
+              [result](absl::Status status) mutable {
+                result.SetException({Exception::kFailed});
+              },
+      });
+  return result.Get(timeout);
+}
+
+ExceptionOr<std::vector<PublicCredential>>
+CredentialManagerImpl::GetPublicCredentialsSync(
+    const CredentialSelector& credential_selector,
+    PublicCredentialType public_credential_type, absl::Duration timeout) {
+  Future<std::vector<PublicCredential>> result;
+  GetPublicCredentials(
+      credential_selector, public_credential_type,
+      {
+          .credentials_fetched_cb =
+              [result](std::vector<PublicCredential> credentials) mutable {
+                result.Set(credentials);
+              },
+          .get_credentials_failed_cb =
+              [result](absl::Status status) mutable {
+                result.SetException({Exception::kFailed});
+              },
+      });
+  return result.Get(timeout);
 }
 
 }  // namespace presence

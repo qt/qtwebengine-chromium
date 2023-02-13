@@ -902,8 +902,6 @@ bool TranslatorMetalDirect::translateImpl(TInfoSinkBase &sink,
         {
             DeclareRightBeforeMain(*root, *BuiltInVariable::gl_FrontFacing());
         }
-
-        EmitEarlyFragmentTestsGLSL(*this, sink);
     }
     else if (getShaderType() == GL_VERTEX_SHADER)
     {
@@ -943,8 +941,8 @@ bool TranslatorMetalDirect::translateImpl(TInfoSinkBase &sink,
         }
 
         if (useClipDistance &&
-            !ReplaceClipDistanceAssignments(this, root, &getSymbolTable(), getShaderType(),
-                                            driverUniforms->getClipDistancesEnabled()))
+            !ZeroDisabledClipDistanceAssignments(this, root, &getSymbolTable(), getShaderType(),
+                                                 driverUniforms->getClipDistancesEnabled()))
         {
             return false;
         }

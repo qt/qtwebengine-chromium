@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2016 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -42,8 +42,8 @@ class CPDF_TilingPattern final : public CPDF_Pattern {
 
   bool m_bColored;
   CFX_FloatRect m_BBox;
-  float m_XStep;
-  float m_YStep;
+  float m_XStep = 0.0f;
+  float m_YStep = 0.0f;
 };
 
 #endif  // CORE_FPDFAPI_PAGE_CPDF_TILINGPATTERN_H_

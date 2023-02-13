@@ -39,6 +39,13 @@ class MessagePipeEnd : public MessagePort {
 
   void ResetClient() override { client_ = nullptr; }
 
+  void ReceiveMessage(const std::string& sender_id,
+                      const std::string& namespace_,
+                      const std::string& message) {
+    ASSERT_NE(client_, nullptr);
+    client_->OnMessage(sender_id, namespace_, message);
+  }
+
   void ReceiveMessage(const std::string& namespace_,
                       const std::string& message) {
     ASSERT_NE(client_, nullptr);

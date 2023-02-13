@@ -10,6 +10,7 @@ group("all") {
     ":system_api-anomaly_detector-protos",
     ":system_api-arc-goprotos",
     ":system_api-arc-protos",
+    ":system_api-arcvm_data_migrator-protos",
     ":system_api-attestation-goprotos",
     ":system_api-attestation-protos",
     ":system_api-authpolicy-protos",
@@ -666,5 +667,12 @@ proto_library("system_api-private_computing-protos") {
   proto_in_dir = "dbus/private_computing"
   proto_out_dir = "include/private_computing/proto_bindings"
   sources = [ "${proto_in_dir}/private_computing_service.proto" ]
+  standalone = true
+}
+
+proto_library("system_api-arcvm_data_migrator-protos") {
+  proto_in_dir = "dbus/arcvm_data_migrator"
+  proto_out_dir = "include/arcvm_data_migrator/proto_bindings"
+  sources = [ "${proto_in_dir}/arcvm_data_migrator.proto" ]
   standalone = true
 }

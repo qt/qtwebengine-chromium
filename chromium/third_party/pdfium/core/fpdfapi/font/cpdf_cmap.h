@@ -1,4 +1,4 @@
-// Copyright 2017 PDFium Authors. All rights reserved.
+// Copyright 2017 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -71,7 +71,7 @@ class CPDF_CMap final : public Retainable {
   void SetMixedFourByteLeadingRanges(std::vector<CodeRange> ranges);
 
   CIDCoding GetCoding() const { return m_Coding; }
-  const FXCMAP_CMap* GetEmbedMap() const { return m_pEmbedMap.Get(); }
+  const FXCMAP_CMap* GetEmbedMap() const { return m_pEmbedMap; }
   CIDSet GetCharset() const { return m_Charset; }
   void SetCharset(CIDSet set) { m_Charset = set; }
 

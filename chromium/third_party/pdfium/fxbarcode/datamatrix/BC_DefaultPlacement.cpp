@@ -1,4 +1,4 @@
-// Copyright 2014 PDFium Authors. All rights reserved.
+// Copyright 2014 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -27,7 +27,7 @@
 #include <utility>
 
 #include "core/fxcrt/data_vector.h"
-#include "core/fxcrt/fx_memory.h"
+#include "core/fxcrt/fx_2d_size.h"
 #include "fxbarcode/datamatrix/BC_Encoder.h"
 #include "third_party/base/check_op.h"
 

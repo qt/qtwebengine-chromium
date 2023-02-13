@@ -28,6 +28,7 @@
 
 #include <memory>
 #include <utility>
+#include <vector>
 
 namespace SkSL {
 
@@ -74,7 +75,7 @@ static bool eliminate_dead_local_variables(const Context& context,
         bool visitStatementPtr(std::unique_ptr<Statement>& stmt) override {
             if (stmt->is<VarDeclaration>()) {
                 VarDeclaration& varDecl = stmt->as<VarDeclaration>();
-                const Variable* var = &varDecl.var();
+                const Variable* var = varDecl.var();
                 ProgramUsage::VariableCounts* counts = fUsage->fVariableCounts.find(var);
                 SkASSERT(counts);
                 SkASSERT(counts->fVarExists);
@@ -152,7 +153,7 @@ static bool eliminate_dead_local_variables(const Context& context,
 }
 
 bool Transform::EliminateDeadLocalVariables(const Context& context,
-                                            LoadedModule& module,
+                                            Module& module,
                                             ProgramUsage* usage) {
     return eliminate_dead_local_variables(context, SkSpan(module.fElements), usage);
 }

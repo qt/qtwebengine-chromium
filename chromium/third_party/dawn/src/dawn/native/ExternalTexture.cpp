@@ -99,6 +99,27 @@ MaybeError ValidateExternalTextureDescriptor(const DeviceBase* device,
         }
     }
 
+    // TODO(crbug.com/1316671): visible size width must have valid value after chromium side changes
+    // landed.
+    if (descriptor->visibleSize.width > 0) {
+        DAWN_INVALID_IF(descriptor->visibleSize.width == 0 || descriptor->visibleSize.height == 0,
+                        "VisibleSize %s have 0 on width or height.", &descriptor->visibleSize);
+
+        const Extent3D textureSize = descriptor->plane0->GetTexture()->GetSize();
+        DAWN_INVALID_IF(
+            descriptor->visibleSize.width > textureSize.width ||
+                descriptor->visibleSize.height > textureSize.height,
+            "VisibleSize %s is exceed the texture size, defined by Plane0 size (%u, %u).",
+            &descriptor->visibleSize, textureSize.width, textureSize.height);
+        DAWN_INVALID_IF(
+            descriptor->visibleOrigin.x > textureSize.width - descriptor->visibleSize.width ||
+                descriptor->visibleOrigin.y > textureSize.height - descriptor->visibleSize.height,
+            "VisibleRect[Origin: %s, Size: %s] is exceed the texture size, defined by "
+            "Plane0 size (%u, %u).",
+            &descriptor->visibleOrigin, &descriptor->visibleSize, textureSize.width,
+            textureSize.height);
+    }
+
     return {};
 }
 
@@ -114,7 +135,10 @@ ResultOrError<Ref<ExternalTextureBase>> ExternalTextureBase::Create(
 
 ExternalTextureBase::ExternalTextureBase(DeviceBase* device,
                                          const ExternalTextureDescriptor* descriptor)
-    : ApiObjectBase(device, descriptor->label), mState(ExternalTextureState::Alive) {
+    : ApiObjectBase(device, descriptor->label),
+      mVisibleOrigin(descriptor->visibleOrigin),
+      mVisibleSize(descriptor->visibleSize),
+      mState(ExternalTextureState::Alive) {
     GetObjectTrackingList()->Track(this);
 }
 
@@ -185,6 +209,28 @@ MaybeError ExternalTextureBase::Initialize(DeviceBase* device,
     const float* dstFn = descriptor->dstTransferFunctionParameters;
     std::copy(dstFn, dstFn + 7, params.gammaEncodingParams.begin());
 
+    float flipY = 1;
+    if (descriptor->flipY) {
+        flipY = -1;
+    }
+
+    // We can perform the flip-Y operation by multiplying the y-component portion of the matrix by
+    // -1.
+    switch (descriptor->rotation) {
+        case wgpu::ExternalTextureRotation::Rotate0Degrees:
+            params.coordTransformMatrix = {1.0, 0.0, 0.0, 1.0f * flipY};
+            break;
+        case wgpu::ExternalTextureRotation::Rotate90Degrees:
+            params.coordTransformMatrix = {0.0, 1.0f * flipY, -1.0, 0.0};
+            break;
+        case wgpu::ExternalTextureRotation::Rotate180Degrees:
+            params.coordTransformMatrix = {-1.0, 0.0, 0.0, -1.0f * flipY};
+            break;
+        case wgpu::ExternalTextureRotation::Rotate270Degrees:
+            params.coordTransformMatrix = {0.0, -1.0f * flipY, 1.0, 0.0};
+            break;
+    }
+
     DAWN_TRY(device->GetQueue()->WriteBuffer(mParamsBuffer.Get(), 0, &params,
                                              sizeof(ExternalTextureParams)));
 
@@ -200,6 +246,13 @@ MaybeError ExternalTextureBase::ValidateCanUseInSubmitNow() const {
     ASSERT(!IsError());
     DAWN_INVALID_IF(mState == ExternalTextureState::Destroyed,
                     "Destroyed external texture %s is used in a submit.", this);
+
+    for (uint32_t i = 0; i < kMaxPlanesPerFormat; ++i) {
+        if (mTextureViews[i] != nullptr) {
+            DAWN_TRY_CONTEXT(mTextureViews[i]->GetTexture()->ValidateCanUseInSubmitNow(),
+                             "Validate plane %u of %s can be used in a submit.", i, this);
+        }
+    }
     return {};
 }
 
@@ -225,6 +278,16 @@ BufferBase* ExternalTextureBase::GetParamsBuffer() const {
 
 ObjectType ExternalTextureBase::GetType() const {
     return ObjectType::ExternalTexture;
+}
+
+const Extent2D& ExternalTextureBase::GetVisibleSize() const {
+    ASSERT(!IsError());
+    return mVisibleSize;
+}
+
+const Origin2D& ExternalTextureBase::GetVisibleOrigin() const {
+    ASSERT(!IsError());
+    return mVisibleOrigin;
 }
 
 }  // namespace dawn::native

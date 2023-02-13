@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2016 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -88,6 +88,8 @@ class CPDFSDK_Widget final : public CPDFSDK_BAAnnot {
   WideString GetValue() const;
   WideString GetExportValue() const;
   WideString GetOptionLabel(int nIndex) const;
+  WideString GetSelectExportText(int nIndex) const;
+
   int CountOptions() const;
   bool IsOptionSelected(int nIndex) const;
   int GetTopVisibleIndex() const;
@@ -122,9 +124,6 @@ class CPDFSDK_Widget final : public CPDFSDK_BAAnnot {
                  CFFL_FieldAction* data,
                  const CPDFSDK_PageView* pPageView);
 
-  CPDFSDK_InteractiveForm* GetInteractiveForm() const {
-    return m_pInteractiveForm.Get();
-  }
   CPDF_FormField* GetFormField() const;
   CPDF_FormControl* GetFormControl() const;
 
@@ -137,7 +136,8 @@ class CPDFSDK_Widget final : public CPDFSDK_BAAnnot {
   uint32_t GetAppearanceAge() const { return m_nAppearanceAge; }
   uint32_t GetValueAge() const { return m_nValueAge; }
 
-  bool IsWidgetAppearanceValid(CPDF_Annot::AppearanceMode mode);
+  bool IsWidgetAppearanceValid(CPDF_Annot::AppearanceMode mode) const;
+  bool IsPushHighlighted() const;
   CFX_Matrix GetMatrix() const;
   CFX_FloatRect GetClientRect() const;
   CFX_FloatRect GetRotatedRect() const;

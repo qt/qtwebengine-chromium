@@ -574,7 +574,7 @@ int main(int argc, char** argv) {
                                           : SkColorSpace::MakeRGB(tf,gamut);
     const SkColorInfo color_info{ct,at,cs};
 
-    for (int i = 0; i < sources.count(); i += replicas)
+    for (int i = 0; i < sources.size(); i += replicas)
     SkTaskGroup{}.batch(replicas, [=](int replica) {
         Source source = sources[i+replica];
 
@@ -659,7 +659,7 @@ int main(int argc, char** argv) {
             if (!FLAGS_writePath.isEmpty()) {
                 SkString path = SkStringPrintf("%s/%s%s",
                                                FLAGS_writePath[0], source.name.c_str(), ext);
-                for (char* it = path.writable_str(); *it != '\0'; it++) {
+                for (char* it = path.data(); *it != '\0'; it++) {
                     if (*it == '/' || *it == '\\') {
                         char prev = std::exchange(*it, '\0');
                         sk_mkdir(path.c_str());

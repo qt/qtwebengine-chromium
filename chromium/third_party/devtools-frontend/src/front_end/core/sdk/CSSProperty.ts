@@ -49,9 +49,8 @@ export class CSSProperty {
 
     if (longhandProperties && longhandProperties.length > 0) {
       for (const property of longhandProperties) {
-        this.#longhandProperties.push(new CSSProperty(
-            ownerStyle, this.#longhandProperties.length, property.name, property.value, important, disabled, parsedOk,
-            true));
+        this.#longhandProperties.push(
+            new CSSProperty(ownerStyle, ++index, property.name, property.value, important, disabled, parsedOk, true));
       }
     } else {
       // Blink would not parse shorthands containing 'var()' functions:
@@ -60,8 +59,8 @@ export class CSSProperty {
       // and fills its longhand components with empty values.
       const longhandNames = cssMetadata().getLonghands(name);
       for (const longhandName of longhandNames || []) {
-        this.#longhandProperties.push(new CSSProperty(
-            ownerStyle, this.#longhandProperties.length, longhandName, '', important, disabled, parsedOk, true));
+        this.#longhandProperties.push(
+            new CSSProperty(ownerStyle, ++index, longhandName, '', important, disabled, parsedOk, true));
       }
     }
   }
@@ -216,7 +215,7 @@ export class CSSProperty {
         const disabledProperty = tokenType?.includes('comment') && isDisabledProperty(token);
         const isPropertyStart =
             (tokenType?.includes('string') || tokenType?.includes('meta') || tokenType?.includes('property') ||
-             tokenType?.includes('variableName'));
+             (tokenType?.includes('variableName') && tokenType !== ('variableName.function')));
         if (disabledProperty) {
           result = result.trimEnd() + indentation + token;
         } else if (isPropertyStart) {

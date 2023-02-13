@@ -1,4 +1,4 @@
-// Copyright 2022 PDFium Authors. All rights reserved.
+// Copyright 2022 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,6 +9,6 @@
 
 template <typename T>
 using FixedZeroedDataVector =
-    fxcrt::FixedSizeDataVector<T, /*initialize=*/true>;
+    fxcrt::FixedSizeDataVector<T, fxcrt::DataVectorAllocOption::kInitialized>;
 
 #endif  // CORE_FXCRT_FIXED_ZEROED_DATA_VECTOR_H_

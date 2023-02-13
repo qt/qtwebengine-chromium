@@ -8,6 +8,7 @@
 #ifndef SKSL_POSTFIXEXPRESSION
 #define SKSL_POSTFIXEXPRESSION
 
+#include "include/private/SkSLIRNode.h"
 #include "include/sksl/SkSLOperator.h"
 #include "include/sksl/SkSLPosition.h"
 #include "src/sksl/ir/SkSLExpression.h"
@@ -25,10 +26,10 @@ class Context;
  */
 class PostfixExpression final : public Expression {
 public:
-    inline static constexpr Kind kExpressionKind = Kind::kPostfix;
+    inline static constexpr Kind kIRNodeKind = Kind::kPostfix;
 
     PostfixExpression(Position pos, std::unique_ptr<Expression> operand, Operator op)
-        : INHERITED(pos, kExpressionKind, &operand->type())
+        : INHERITED(pos, kIRNodeKind, &operand->type())
         , fOperand(std::move(operand))
         , fOperator(op) {}
 

@@ -166,7 +166,12 @@ class SimulatedAudioCapturer final : public SimulatedCapturer {
   // Current resampler input audio parameters.
   AVSampleFormat input_sample_format_ = AV_SAMPLE_FMT_NONE;
   int input_sample_rate_;
-  uint64_t input_channel_layout_;  // Opaque value used by resampler library.
+  // Opaque value used by resampler library.
+#if _LIBAVUTIL_OLD_CHANNEL_LAYOUT
+  uint64_t input_channel_layout_;
+#else
+  AVChannelLayout input_channel_layout_;
+#endif  // _LIBAVUTIL_OLD_CHANNEL_LAYOUT
 
   std::vector<float> resampled_audio_;
 };

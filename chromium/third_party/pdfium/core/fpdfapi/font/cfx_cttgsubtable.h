@@ -1,4 +1,4 @@
-// Copyright 2014 PDFium Authors. All rights reserved.
+// Copyright 2014 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -102,7 +102,7 @@ class CFX_CTTGSUBTable {
     TSubTable1();
     ~TSubTable1() override;
 
-    int16_t DeltaGlyphID;
+    int16_t DeltaGlyphID = 0;
   };
 
   struct TSubTable2 final : public TSubTableBase {

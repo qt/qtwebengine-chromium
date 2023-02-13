@@ -66,22 +66,16 @@ public:
      */
     virtual sk_sp<SkImage> onNewImageSnapshot(const SkIRect* subset = nullptr) { return nullptr; }
 
-    virtual void onWritePixels(const SkPixmap&, int x, int y) = 0;
+#ifdef SK_GRAPHITE_ENABLED
+    virtual sk_sp<SkImage> onAsImage() { return nullptr; }
 
-    /**
-     * Default implementation calls onAsyncRescaleAndReadPixels with default rescale params.
-     */
-    virtual void onAsyncReadPixels(const SkImageInfo& info,
-                                   const SkIRect srcRect,
-                                   ReadPixelsCallback callback,
-                                   ReadPixelsContext context) {
-        this->onAsyncRescaleAndReadPixels(info,
-                                          srcRect,
-                                          RescaleGamma::kSrc,
-                                          RescaleMode::kNearest,
-                                          callback,
-                                          context);
+    virtual sk_sp<SkImage> onMakeImageCopy(const SkIRect* /* subset */,
+                                           skgpu::graphite::Mipmapped) {
+        return nullptr;
     }
+#endif
+
+    virtual void onWritePixels(const SkPixmap&, int x, int y) = 0;
 
     /**
      * Default implementation does a rescale/read and then calls the callback.
@@ -155,6 +149,9 @@ public:
     // TODO: Remove this (make it pure virtual) after updating Android (which has a class derived
     // from SkSurface_Base).
     virtual sk_sp<const SkCapabilities> onCapabilities();
+
+    // True for surfaces instantiated by Graphite in GPU memory
+    virtual bool isGraphiteBacked() const { return false; }
 
     inline SkCanvas* getCachedCanvas();
     inline sk_sp<SkImage> refCachedImage();

@@ -80,8 +80,13 @@ void StressConcurrentAllocatorTask::Schedule(Isolate* isolate) {
 }
 
 ConcurrentAllocator::ConcurrentAllocator(LocalHeap* local_heap,
-                                         PagedSpace* space)
-    : local_heap_(local_heap), space_(space), owning_heap_(space_->heap()) {}
+                                         PagedSpace* space, Context context)
+    : local_heap_(local_heap),
+      space_(space),
+      owning_heap_(space_->heap()),
+      context_(context) {
+  DCHECK_IMPLIES(!local_heap_, context_ == Context::kGC);
+}
 
 void ConcurrentAllocator::FreeLinearAllocationArea() {
   // The code page of the linear allocation area needs to be unprotected
@@ -90,8 +95,7 @@ void ConcurrentAllocator::FreeLinearAllocationArea() {
   if (IsLabValid() && space_->identity() == CODE_SPACE) {
     optional_scope.emplace(MemoryChunk::FromAddress(lab_.top()));
   }
-  if (lab_.top() != lab_.limit() &&
-      owning_heap()->incremental_marking()->black_allocation()) {
+  if (lab_.top() != lab_.limit() && IsBlackAllocationEnabled()) {
     Page::FromAddress(lab_.top())
         ->DestroyBlackAreaBackground(lab_.top(), lab_.limit());
   }
@@ -178,7 +182,7 @@ ConcurrentAllocator::AllocateFromSpaceFreeList(size_t min_size_in_bytes,
                                                AllocationOrigin origin) {
   DCHECK(!space_->is_compaction_space());
   DCHECK(space_->identity() == OLD_SPACE || space_->identity() == CODE_SPACE ||
-         space_->identity() == MAP_SPACE || space_->identity() == SHARED_SPACE);
+         space_->identity() == SHARED_SPACE);
   DCHECK(origin == AllocationOrigin::kRuntime ||
          origin == AllocationOrigin::kGC);
   DCHECK_IMPLIES(!local_heap_, origin == AllocationOrigin::kGC);
@@ -277,7 +281,8 @@ AllocationResult ConcurrentAllocator::AllocateOutsideLab(
 }
 
 bool ConcurrentAllocator::IsBlackAllocationEnabled() const {
-  return owning_heap()->incremental_marking()->black_allocation();
+  return context_ == Context::kNotGC &&
+         owning_heap()->incremental_marking()->black_allocation();
 }
 
 void ConcurrentAllocator::MakeLabIterable() {

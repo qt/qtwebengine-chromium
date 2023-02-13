@@ -307,6 +307,7 @@ pt{
         CG{"Congo"}
         CI{"Côte d’Ivoire"}
         CZ{"República Tcheca"}
+        NZ{"Aotearoa da Nova Zelândia"}
         SZ{"Suazilândia"}
         TL{"República Democrática de Timor-Leste"}
     }

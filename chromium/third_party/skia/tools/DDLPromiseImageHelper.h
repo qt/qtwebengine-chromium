@@ -119,8 +119,8 @@ public:
 
     // Remove this class' refs on the promise images and the PromiseImageCallbackContexts
     void reset() {
-        fImageInfo.reset();
-        fPromiseImages.reset();
+        fImageInfo.clear();
+        fPromiseImages.clear();
     }
 
 private:
@@ -222,7 +222,7 @@ private:
 
     static sk_sp<SkImage> CreatePromiseImages(const void* rawData, size_t length, void* ctxIn);
 
-    bool isValidID(int id) const { return id >= 0 && id < fImageInfo.count(); }
+    bool isValidID(int id) const { return id >= 0 && id < fImageInfo.size(); }
     const PromiseImageInfo& getInfo(int id) const { return fImageInfo[id]; }
     void uploadImage(GrDirectContext*, PromiseImageInfo*);
 

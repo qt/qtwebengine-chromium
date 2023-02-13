@@ -61,6 +61,13 @@
             ]
         },
         {
+            "name": "single_threaded_texture_decompression",
+            "category": "Workarounds",
+            "description": [
+                "Disables multi-threaded decompression of compressed texture formats"
+            ]
+        },
+        {
             "name": "force_depth_attachment_init_on_clear",
             "category": "Workarounds",
             "description": [
@@ -75,14 +82,6 @@
                 "Set the context limits like frame capturing was enabled"
             ],
             "issue": "http://anglebug.com/5750"
-        },
-        {
-            "name": "enable_compressing_pipeline_cache_in_thread_pool",
-            "category": "Workarounds",
-            "description": [
-                "Enable compressing pipeline cache in thread pool."
-            ],
-            "issue": "http://anglebug.com/4722"
         },
         {
             "name": "force_robust_resource_init",

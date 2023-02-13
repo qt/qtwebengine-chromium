@@ -21,11 +21,14 @@
 
 // Standard C/C++ headers
 #include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 
 // Nearby connections headers
+#include "internal/platform/cancellation_flag_listener.h"
 #include "internal/platform/implementation/wifi_hotspot.h"
+#include "internal/platform/implementation/windows/scheduled_executor.h"
 
 // WinRT headers
 #include "absl/types/optional.h"
@@ -57,8 +60,8 @@ using ::winrt::Windows::Devices::WiFiDirect::WiFiDirectConnectionListener;
 using ::winrt::Windows::Devices::WiFiDirect::WiFiDirectConnectionRequest;
 using ::winrt::Windows::Devices::WiFiDirect::
     WiFiDirectConnectionRequestedEventArgs;
-using ::winrt::Windows::Devices::WiFiDirect::WiFiDirectDevice;
 using ::winrt::Windows::Devices::WiFiDirect::WiFiDirectConnectionStatus;
+using ::winrt::Windows::Devices::WiFiDirect::WiFiDirectDevice;
 
 using ::winrt::Windows::Devices::WiFi::WiFiAccessStatus;
 using ::winrt::Windows::Devices::WiFi::WiFiAdapter;
@@ -86,10 +89,6 @@ using ::winrt::Windows::Networking::Sockets::StreamSocket;
 using ::winrt::Windows::Networking::Sockets::StreamSocketListener;
 using ::winrt::Windows::Networking::Sockets::
     StreamSocketListenerConnectionReceivedEventArgs;
-
-constexpr int kMaxRetries = 3;
-constexpr int kRetryIntervalMilliSeconds = 300;
-constexpr int kMaxScans = 2;
 
 // WifiHotspotSocket wraps the socket functions to read and write stream.
 // In WiFi HOTSPOT, A WifiHotspotSocket will be passed to
@@ -274,6 +273,7 @@ class WifiHotspotMedium : public api::WifiHotspotMedium {
   bool IsBeaconing() { return (medium_status_ & kMediumStatusBeaconing) != 0; }
   // Discoverer is connected with the Hotspot
   bool IsConnected() { return (medium_status_ & kMediumStatusConnected) != 0; }
+  void RestoreWifiConnection();
 
   WiFiDirectAdvertisementPublisher publisher_{nullptr};
   WiFiDirectConnectionListener listener_{nullptr};
@@ -303,6 +303,16 @@ class WifiHotspotMedium : public api::WifiHotspotMedium {
 
   // Keep the server socket listener pointer
   WifiHotspotServerSocket* server_socket_ptr_ ABSL_GUARDED_BY(mutex_) = nullptr;
+
+  // Scheduler for timeout.
+  ScheduledExecutor scheduled_executor_;
+
+  // Scheduled task for connection timeout.
+  std::shared_ptr<api::Cancelable> connection_timeout_ = nullptr;
+
+  // Listener to connect cancellation.
+  std::unique_ptr<location::nearby::CancellationFlagListener>
+      connection_cancellation_listener_ = nullptr;
 };
 
 }  // namespace windows

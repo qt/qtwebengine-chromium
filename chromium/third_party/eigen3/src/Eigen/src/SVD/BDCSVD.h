@@ -594,9 +594,9 @@ void BDCSVD<MatrixType, Options>::divide(Index firstCol, Index lastCol, Index fi
   }
 
 #ifdef EIGEN_BDCSVD_SANITY_CHECKS
-  assert(m_naiveU.allFinite());
-  assert(m_naiveV.allFinite());
-  assert(m_computed.allFinite());
+  eigen_internal_assert(m_naiveU.allFinite());
+  eigen_internal_assert(m_naiveV.allFinite());
+  eigen_internal_assert(m_computed.allFinite());
 #endif
 
   if (m_compU)
@@ -633,9 +633,9 @@ void BDCSVD<MatrixType, Options>::divide(Index firstCol, Index lastCol, Index fi
   }
 
 #ifdef EIGEN_BDCSVD_SANITY_CHECKS
-  assert(m_naiveU.allFinite());
-  assert(m_naiveV.allFinite());
-  assert(m_computed.allFinite());
+  eigen_internal_assert(m_naiveU.allFinite());
+  eigen_internal_assert(m_naiveV.allFinite());
+  eigen_internal_assert(m_computed.allFinite());
 #endif
 
   m_computed(firstCol + shift, firstCol + shift) = r0;
@@ -654,9 +654,9 @@ void BDCSVD<MatrixType, Options>::divide(Index firstCol, Index lastCol, Index fi
   std::cout << "err:      " << ((tmp1-tmp2).abs()>1e-12*tmp2.abs()).transpose() << "\n";
   static int count = 0;
   std::cout << "# " << ++count << "\n\n";
-  assert((tmp1-tmp2).matrix().norm() < 1e-14*tmp2.matrix().norm());
-//   assert(count<681);
-//   assert(((tmp1-tmp2).abs()<1e-13*tmp2.abs()).all());
+  eigen_internal_assert((tmp1-tmp2).matrix().norm() < 1e-14*tmp2.matrix().norm());
+//   eigen_internal_assert(count<681);
+//   eigen_internal_assert(((tmp1-tmp2).abs()<1e-13*tmp2.abs()).all());
 #endif
 
   // Third part: compute SVD of combined matrix
@@ -665,8 +665,8 @@ void BDCSVD<MatrixType, Options>::divide(Index firstCol, Index lastCol, Index fi
   computeSVDofM(firstCol + shift, n, UofSVD, singVals, VofSVD);
 
 #ifdef EIGEN_BDCSVD_SANITY_CHECKS
-  assert(UofSVD.allFinite());
-  assert(VofSVD.allFinite());
+  eigen_internal_assert(UofSVD.allFinite());
+  eigen_internal_assert(VofSVD.allFinite());
 #endif
 
   if (m_compU)
@@ -681,9 +681,9 @@ void BDCSVD<MatrixType, Options>::divide(Index firstCol, Index lastCol, Index fi
   if (m_compV)  structured_update(m_naiveV.block(firstRowW, firstColW, n, n), VofSVD, (n+1)/2);
 
 #ifdef EIGEN_BDCSVD_SANITY_CHECKS
-  assert(m_naiveU.allFinite());
-  assert(m_naiveV.allFinite());
-  assert(m_computed.allFinite());
+  eigen_internal_assert(m_naiveU.allFinite());
+  eigen_internal_assert(m_naiveV.allFinite());
+  eigen_internal_assert(m_computed.allFinite());
 #endif
 
   m_computed.block(firstCol + shift, firstCol + shift, n, n).setZero();
@@ -754,16 +754,16 @@ void BDCSVD<MatrixType, Options>::computeSVDofM(Index firstCol, Index n, MatrixX
   {
     std::cout << "\n\n    mus:    " << mus.head(actual_n).transpose() << "\n\n";
     std::cout << "    check1 (expect0) : " << ((singVals.array()-(shifts+mus)) / singVals.array()).head(actual_n).transpose() << "\n\n";
-    assert((((singVals.array()-(shifts+mus)) / singVals.array()).head(actual_n) >= 0).all());
+    eigen_internal_assert((((singVals.array()-(shifts+mus)) / singVals.array()).head(actual_n) >= 0).all());
     std::cout << "    check2 (>0)      : " << ((singVals.array()-diag) / singVals.array()).head(actual_n).transpose() << "\n\n";
-    assert((((singVals.array()-diag) / singVals.array()).head(actual_n) >= 0).all());
+    eigen_internal_assert((((singVals.array()-diag) / singVals.array()).head(actual_n) >= 0).all());
   }
 #endif
 
 #ifdef EIGEN_BDCSVD_SANITY_CHECKS
-  assert(singVals.allFinite());
-  assert(mus.allFinite());
-  assert(shifts.allFinite());
+  eigen_internal_assert(singVals.allFinite());
+  eigen_internal_assert(mus.allFinite());
+  eigen_internal_assert(shifts.allFinite());
 #endif
 
   // Compute zhat
@@ -773,7 +773,7 @@ void BDCSVD<MatrixType, Options>::computeSVDofM(Index firstCol, Index n, MatrixX
 #endif
 
 #ifdef EIGEN_BDCSVD_SANITY_CHECKS
-  assert(zhat.allFinite());
+  eigen_internal_assert(zhat.allFinite());
 #endif
 
   computeSingVecs(zhat, diag, perm, singVals, shifts, mus, U, V);
@@ -784,13 +784,13 @@ void BDCSVD<MatrixType, Options>::computeSVDofM(Index firstCol, Index n, MatrixX
 #endif
 
 #ifdef EIGEN_BDCSVD_SANITY_CHECKS
-  assert(m_naiveU.allFinite());
-  assert(m_naiveV.allFinite());
-  assert(m_computed.allFinite());
-  assert(U.allFinite());
-  assert(V.allFinite());
-//   assert((U.transpose() * U - MatrixXr(MatrixXr::Identity(U.cols(),U.cols()))).norm() < 100*NumTraits<RealScalar>::epsilon() * n);
-//   assert((V.transpose() * V - MatrixXr(MatrixXr::Identity(V.cols(),V.cols()))).norm() < 100*NumTraits<RealScalar>::epsilon() * n);
+  eigen_internal_assert(m_naiveU.allFinite());
+  eigen_internal_assert(m_naiveV.allFinite());
+  eigen_internal_assert(m_computed.allFinite());
+  eigen_internal_assert(U.allFinite());
+  eigen_internal_assert(V.allFinite());
+//   eigen_internal_assert((U.transpose() * U - MatrixXr(MatrixXr::Identity(U.cols(),U.cols()))).norm() < 100*NumTraits<RealScalar>::epsilon() * n);
+//   eigen_internal_assert((V.transpose() * V - MatrixXr(MatrixXr::Identity(V.cols(),V.cols()))).norm() < 100*NumTraits<RealScalar>::epsilon() * n);
 #endif
 
   // Because of deflation, the singular values might not be completely sorted.
@@ -811,7 +811,7 @@ void BDCSVD<MatrixType, Options>::computeSVDofM(Index firstCol, Index n, MatrixX
     bool singular_values_sorted = (((singVals.segment(1,actual_n-1)-singVals.head(actual_n-1))).array() >= 0).all();
     if(!singular_values_sorted)
       std::cout << "Singular values are not sorted: " << singVals.segment(1,actual_n).transpose() << "\n";
-    assert(singular_values_sorted);
+    eigen_internal_assert(singular_values_sorted);
   }
 #endif
 
@@ -966,7 +966,7 @@ void BDCSVD<MatrixType, Options>::computeSingVals(const ArrayRef& col0, const Ar
       RealScalar fZero = secularEq(muZero, col0, diag, perm, diagShifted, shift);
 
 #ifdef EIGEN_BDCSVD_SANITY_CHECKS
-      assert((numext::isfinite)(fZero));
+      eigen_internal_assert((numext::isfinite)(fZero));
 #endif
 
       muPrev = muCur;
@@ -1019,11 +1019,11 @@ void BDCSVD<MatrixType, Options>::computeSingVals(const ArrayRef& col0, const Ar
 #ifdef EIGEN_BDCSVD_SANITY_CHECKS
       if(!(numext::isfinite)(fLeft))
         std::cout << "f(" << leftShifted << ") =" << fLeft << " ; " << left << " " << shift << " " << right << "\n";
-      assert((numext::isfinite)(fLeft));
+      eigen_internal_assert((numext::isfinite)(fLeft));
 
       if(!(numext::isfinite)(fRight))
         std::cout << "f(" << rightShifted << ") =" << fRight << " ; " << left << " " << shift << " " << right << "\n";
-      // assert((numext::isfinite)(fRight));
+      // eigen_internal_assert((numext::isfinite)(fRight));
 #endif
 
 #ifdef  EIGEN_BDCSVD_DEBUG_VERBOSE
@@ -1081,8 +1081,8 @@ void BDCSVD<MatrixType, Options>::computeSingVals(const ArrayRef& col0, const Ar
       std::cout << "found " << singVals[k] << " == " << shift << " + " << muCur << " from " << diag(k) << " .. "  << diag(k+1) << "\n";
 #endif
 #ifdef EIGEN_BDCSVD_SANITY_CHECKS
-    assert(k==0 || singVals[k]>=singVals[k-1]);
-    assert(singVals[k]>=diag(k));
+    eigen_internal_assert(k==0 || singVals[k]>=singVals[k-1]);
+    eigen_internal_assert(singVals[k]>=diag(k));
 #endif
 
     // perturb singular value slightly if it equals diagonal entry to avoid division by zero later
@@ -1123,7 +1123,7 @@ void BDCSVD<MatrixType, Options>::perturbCol0(const ArrayRef& col0, const ArrayR
         std::cout << "prod = " << "(" << singVals(lastIdx) << " + " << dk << ") * (" << mus(lastIdx) << " + (" << shifts(lastIdx) << " - " << dk << "))" << "\n";
         std::cout << "     = " << singVals(lastIdx) + dk << " * " << mus(lastIdx) + (shifts(lastIdx) - dk) <<  "\n";
       }
-      assert(prod>=0);
+      eigen_internal_assert(prod>=0);
 #endif
 
       for(Index l = 0; l<m; ++l)
@@ -1154,11 +1154,11 @@ void BDCSVD<MatrixType, Options>::perturbCol0(const ArrayRef& col0, const ArrayR
           {
             std::cout << "k=" << k << ", i=" << i << ", l=" << l << ", perm.size()=" << perm.size() << "\n";
           }
-          assert(dk!=Literal(0) || diag(i)!=Literal(0));
+          eigen_internal_assert(dk!=Literal(0) || diag(i)!=Literal(0));
 #endif
           prod *= ((singVals(j)+dk) / ((diag(i)+dk))) * ((mus(j)+(shifts(j)-dk)) / ((diag(i)-dk)));
 #ifdef EIGEN_BDCSVD_SANITY_CHECKS
-          assert(prod>=0);
+          eigen_internal_assert(prod>=0);
 #endif
 #ifdef EIGEN_BDCSVD_DEBUG_VERBOSE
           if(i!=k && numext::abs(((singVals(j)+dk)*(mus(j)+(shifts(j)-dk)))/((diag(i)+dk)*(diag(i)-dk)) - 1) > 0.9 )
@@ -1172,7 +1172,7 @@ void BDCSVD<MatrixType, Options>::perturbCol0(const ArrayRef& col0, const ArrayR
 #endif
       RealScalar tmp = sqrt(prod);
 #ifdef EIGEN_BDCSVD_SANITY_CHECKS
-      assert((numext::isfinite)(tmp));
+      eigen_internal_assert((numext::isfinite)(tmp));
 #endif
       zhat(k) = col0(k) > Literal(0) ? RealScalar(tmp) : RealScalar(-tmp);
     }
@@ -1309,9 +1309,9 @@ void BDCSVD<MatrixType, Options>::deflation(Index firstCol, Index lastCol, Index
   RealScalar epsilon_coarse = Literal(8) * NumTraits<RealScalar>::epsilon() * numext::maxi<RealScalar>(col0.cwiseAbs().maxCoeff(), maxDiag);
 
 #ifdef EIGEN_BDCSVD_SANITY_CHECKS
-  assert(m_naiveU.allFinite());
-  assert(m_naiveV.allFinite());
-  assert(m_computed.allFinite());
+  eigen_internal_assert(m_naiveU.allFinite());
+  eigen_internal_assert(m_naiveV.allFinite());
+  eigen_internal_assert(m_computed.allFinite());
 #endif
 
 #ifdef  EIGEN_BDCSVD_DEBUG_VERBOSE
@@ -1348,9 +1348,9 @@ void BDCSVD<MatrixType, Options>::deflation(Index firstCol, Index lastCol, Index
     }
 
 #ifdef EIGEN_BDCSVD_SANITY_CHECKS
-  assert(m_naiveU.allFinite());
-  assert(m_naiveV.allFinite());
-  assert(m_computed.allFinite());
+  eigen_internal_assert(m_naiveU.allFinite());
+  eigen_internal_assert(m_naiveV.allFinite());
+  eigen_internal_assert(m_computed.allFinite());
 #endif
 #ifdef EIGEN_BDCSVD_DEBUG_VERBOSE
   std::cout << "to be sorted: " << diag.transpose() << "\n\n";
@@ -1454,13 +1454,13 @@ void BDCSVD<MatrixType, Options>::deflation(Index firstCol, Index lastCol, Index
 
 #ifdef EIGEN_BDCSVD_SANITY_CHECKS
   for(Index j=2;j<length;++j)
-    assert(diag(j-1)<=diag(j) || abs(diag(j))<considerZero);
+    eigen_internal_assert(diag(j-1)<=diag(j) || abs(diag(j))<considerZero);
 #endif
 
 #ifdef EIGEN_BDCSVD_SANITY_CHECKS
-  assert(m_naiveU.allFinite());
-  assert(m_naiveV.allFinite());
-  assert(m_computed.allFinite());
+  eigen_internal_assert(m_naiveU.allFinite());
+  eigen_internal_assert(m_naiveV.allFinite());
+  eigen_internal_assert(m_computed.allFinite());
 #endif
 }  // end deflation
 

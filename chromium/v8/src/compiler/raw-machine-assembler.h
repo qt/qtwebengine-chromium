@@ -611,6 +611,7 @@ class V8_EXPORT_PRIVATE RawMachineAssembler {
   INTPTR_BINOP(Int, MulHigh)
   INTPTR_BINOP(Int, MulWithOverflow)
   INTPTR_BINOP(Int, Div)
+  INTPTR_BINOP(Int, Mod)
   INTPTR_BINOP(Int, LessThan)
   INTPTR_BINOP(Int, LessThanOrEqual)
   INTPTR_BINOP(Word, Equal)
@@ -875,19 +876,19 @@ class V8_EXPORT_PRIVATE RawMachineAssembler {
     return AddNode(machine()->Float32RoundDown().op(), a);
   }
   Node* Float64RoundDown(Node* a) {
-    return AddNode(machine()->Float64RoundDown().op(), a);
+    return AddNode(machine()->Float64RoundDown().placeholder(), a);
   }
   Node* Float32RoundUp(Node* a) {
     return AddNode(machine()->Float32RoundUp().op(), a);
   }
   Node* Float64RoundUp(Node* a) {
-    return AddNode(machine()->Float64RoundUp().op(), a);
+    return AddNode(machine()->Float64RoundUp().placeholder(), a);
   }
   Node* Float32RoundTruncate(Node* a) {
     return AddNode(machine()->Float32RoundTruncate().op(), a);
   }
   Node* Float64RoundTruncate(Node* a) {
-    return AddNode(machine()->Float64RoundTruncate().op(), a);
+    return AddNode(machine()->Float64RoundTruncate().placeholder(), a);
   }
   Node* Float64RoundTiesAway(Node* a) {
     return AddNode(machine()->Float64RoundTiesAway().op(), a);
@@ -896,7 +897,7 @@ class V8_EXPORT_PRIVATE RawMachineAssembler {
     return AddNode(machine()->Float32RoundTiesEven().op(), a);
   }
   Node* Float64RoundTiesEven(Node* a) {
-    return AddNode(machine()->Float64RoundTiesEven().op(), a);
+    return AddNode(machine()->Float64RoundTiesEven().placeholder(), a);
   }
   Node* Word32ReverseBytes(Node* a) {
     return AddNode(machine()->Word32ReverseBytes(), a);

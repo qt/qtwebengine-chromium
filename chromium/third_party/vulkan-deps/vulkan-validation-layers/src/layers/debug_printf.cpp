@@ -80,16 +80,15 @@ void DebugPrintf::DestroyBuffer(DPFBufferInfo &buffer_info) {
 }
 
 // Call the SPIR-V Optimizer to run the instrumentation pass on the shader.
-bool DebugPrintf::InstrumentShader(const VkShaderModuleCreateInfo *pCreateInfo, std::vector<uint32_t> &new_pgm,
+bool DebugPrintf::InstrumentShader(const layer_data::span<const uint32_t> &input, std::vector<uint32_t> &new_pgm,
                                    uint32_t *unique_shader_id) {
     if (aborted) return false;
-    if (pCreateInfo->pCode[0] != spv::MagicNumber) return false;
+    if (input[0] != spv::MagicNumber) return false;
 
     // Load original shader SPIR-V
-    uint32_t num_words = static_cast<uint32_t>(pCreateInfo->codeSize / 4);
     new_pgm.clear();
-    new_pgm.reserve(num_words);
-    new_pgm.insert(new_pgm.end(), &pCreateInfo->pCode[0], &pCreateInfo->pCode[num_words]);
+    new_pgm.reserve(input.size());
+    new_pgm.insert(new_pgm.end(), &input.front(), &input.back() + 1);
 
     // Call the optimizer to instrument the shader.
     // Use the unique_shader_module_id as a shader ID so we can look up its handle later in the shader_map.
@@ -117,7 +116,7 @@ bool DebugPrintf::InstrumentShader(const VkShaderModuleCreateInfo *pCreateInfo, 
     };
     optimizer.SetMessageConsumer(debug_printf_console_message_consumer);
     optimizer.RegisterPass(CreateInstDebugPrintfPass(desc_set_bind_index, unique_shader_module_id));
-    bool pass = optimizer.Run(new_pgm.data(), new_pgm.size(), &new_pgm, opt_options);
+    const bool pass = optimizer.Run(new_pgm.data(), new_pgm.size(), &new_pgm, opt_options);
     if (!pass) {
         ReportSetupProblem(device, "Failure to instrument shader.  Proceeding with non-instrumented shader.");
     }
@@ -129,7 +128,8 @@ void DebugPrintf::PreCallRecordCreateShaderModule(VkDevice device, const VkShade
                                                   const VkAllocationCallbacks *pAllocator, VkShaderModule *pShaderModule,
                                                   void *csm_state_data) {
     create_shader_module_api_state *csm_state = reinterpret_cast<create_shader_module_api_state *>(csm_state_data);
-    bool pass = InstrumentShader(pCreateInfo, csm_state->instrumented_pgm, &csm_state->unique_shader_id);
+    const bool pass = InstrumentShader(layer_data::make_span(pCreateInfo->pCode, pCreateInfo->codeSize / sizeof(uint32_t)),
+                                       csm_state->instrumented_pgm, &csm_state->unique_shader_id);
     if (pass) {
         csm_state->instrumented_create_info.pCode = csm_state->instrumented_pgm.data();
         csm_state->instrumented_create_info.codeSize = csm_state->instrumented_pgm.size() * sizeof(uint32_t);
@@ -163,7 +163,7 @@ vartype vartype_lookup(char intype) {
     }
 }
 
-std::vector<DPFSubstring> DebugPrintf::ParseFormatString(const std::string format_string) {
+std::vector<DPFSubstring> DebugPrintf::ParseFormatString(const std::string &format_string) {
     const char types[] = {'d', 'i', 'o', 'u', 'x', 'X', 'a', 'A', 'e', 'E', 'f', 'F', 'g', 'G', 'v', '\0'};
     std::vector<DPFSubstring> parsed_strings;
     size_t pos = 0;
@@ -241,7 +241,7 @@ std::vector<DPFSubstring> DebugPrintf::ParseFormatString(const std::string forma
 std::string DebugPrintf::FindFormatString(std::vector<uint32_t> pgm, uint32_t string_id) {
     std::string format_string;
     SHADER_MODULE_STATE module_state(pgm);
-    if (module_state.words.size() > 0) {
+    if (module_state.words_.size() > 0) {
         for (const auto &insn : module_state) {
             if (insn.opcode() == spv::OpString) {
                 uint32_t offset = insn.offset();
@@ -263,7 +263,7 @@ std::string DebugPrintf::FindFormatString(std::vector<uint32_t> pgm, uint32_t st
 #pragma GCC diagnostic ignored "-Wformat-security"
 #endif
 
-void snprintf_with_malloc(std::stringstream &shader_message, DPFSubstring substring, size_t needed, void *values) {
+void snprintf_with_malloc(std::stringstream &shader_message, const DPFSubstring &substring, size_t needed, void *values) {
     char *buffer = static_cast<char *>(malloc((needed + 1) * sizeof(char)));  // Add 1 for terminator
     if (substring.longval) {
         snprintf(buffer, needed, substring.string.c_str(), substring.longval);
@@ -291,20 +291,21 @@ void snprintf_with_malloc(std::stringstream &shader_message, DPFSubstring substr
 void DebugPrintf::AnalyzeAndGenerateMessages(VkCommandBuffer command_buffer, VkQueue queue, DPFBufferInfo &buffer_info,
                                              uint32_t operation_index, uint32_t *const debug_output_buffer) {
     // Word         Content
-    //    0         Size of output record, including this word
-    //    1         Shader ID
-    //    2         Instruction Position
-    //    3         Stage Ordinal
-    //    4         Stage - specific Info Word 0
-    //    5         Stage - specific Info Word 1
-    //    6         Stage - specific Info Word 2
-    //    7         Printf Format String Id
-    //    8         Printf Values Word 0 (optional)
-    //    9         Printf Values Word 1 (optional)
-    uint32_t expect = debug_output_buffer[0];
+    //    0         Must be zero
+    //    1         Size of output record, including this word
+    //    2         Shader ID
+    //    3         Instruction Position
+    //    4         Stage Ordinal
+    //    5         Stage - specific Info Word 0
+    //    6         Stage - specific Info Word 1
+    //    7         Stage - specific Info Word 2
+    //    8         Printf Format String Id
+    //    9         Printf Values Word 0 (optional)
+    //    10         Printf Values Word 1 (optional)
+    uint32_t expect = debug_output_buffer[1];
     if (!expect) return;
 
-    uint32_t index = 1;
+    uint32_t index = spvtools::kDebugOutputDataOffset;
     while (debug_output_buffer[index]) {
         std::stringstream shader_message;
         VkShaderModule shader_module_handle = VK_NULL_HANDLE;
@@ -333,7 +334,7 @@ void DebugPrintf::AnalyzeAndGenerateMessages(VkCommandBuffer command_buffer, VkQ
             std::vector<std::string> format_strings = { "%ul", "%lu", "%lx" };
             size_t ul_pos = 0;
             bool print_hex = true;
-            for (auto ul_string : format_strings) {
+            for (const auto &ul_string : format_strings) {
                 ul_pos = substring.string.find(ul_string);
                 if (ul_pos != std::string::npos) {
                     if (ul_string == "%lu") print_hex = false;
@@ -405,11 +406,11 @@ void DebugPrintf::AnalyzeAndGenerateMessages(VkCommandBuffer command_buffer, VkQ
         }
         index += debug_record->size;
     }
-    if ((index - 1) != expect) {
+    if ((index - spvtools::kDebugOutputDataOffset) != expect) {
         LogWarning(device, "UNASSIGNED-DEBUG-PRINTF",
                    "WARNING - Debug Printf message was truncated, likely due to a buffer size that was too small for the message");
     }
-    memset(debug_output_buffer, 0, 4 * (debug_output_buffer[0] + 1));
+    memset(debug_output_buffer, 0, 4 * (debug_output_buffer[spvtools::kDebugOutputSizeOffset] + spvtools::kDebugOutputDataOffset));
 }
 
 // For the given command buffer, map its debug data buffers and read their contents for analysis.
@@ -567,6 +568,22 @@ void DebugPrintf::PreCallRecordCmdDrawMeshTasksIndirectCountNV(VkCommandBuffer c
     AllocateDebugPrintfResources(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS);
 }
 
+void DebugPrintf::PreCallRecordCmdDrawMeshTasksEXT(VkCommandBuffer commandBuffer, uint32_t groupCountX, uint32_t groupCountY,
+                                                   uint32_t groupCountZ) {
+    AllocateDebugPrintfResources(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS);
+}
+
+void DebugPrintf::PreCallRecordCmdDrawMeshTasksIndirectEXT(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset,
+                                                           uint32_t drawCount, uint32_t stride) {
+    AllocateDebugPrintfResources(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS);
+}
+
+void DebugPrintf::PreCallRecordCmdDrawMeshTasksIndirectCountEXT(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset,
+                                                                VkBuffer countBuffer, VkDeviceSize countBufferOffset,
+                                                                uint32_t maxDrawCount, uint32_t stride) {
+    AllocateDebugPrintfResources(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS);
+}
+
 void DebugPrintf::PreCallRecordCmdTraceRaysNV(VkCommandBuffer commandBuffer, VkBuffer raygenShaderBindingTableBuffer,
                                               VkDeviceSize raygenShaderBindingOffset, VkBuffer missShaderBindingTableBuffer,
                                               VkDeviceSize missShaderBindingOffset, VkDeviceSize missShaderBindingStride,
@@ -629,14 +646,8 @@ void DebugPrintf::AllocateDebugPrintfResources(const VkCommandBuffer cmd_buffer,
     }
 
     const auto lv_bind_point = ConvertToLvlBindPoint(bind_point);
-    const auto *pipeline_state = cb_node->lastBound[lv_bind_point].pipeline_state;
-
-    // TODO (ncesario) remove once VK_EXT_graphics_pipeline_library support is added for debug printf
-    if (pipeline_state && pipeline_state->IsGraphicsLibrary()) {
-        ReportSetupProblem(device, "Debug printf does not currently support VK_EXT_graphics_pipeline_library");
-        aborted = true;
-        return;
-    }
+    const auto &last_bound = cb_node->lastBound[lv_bind_point];
+    const auto *pipeline_state = last_bound.pipeline_state;
 
     // Allocate memory for the output block that the gpu will use to return values for printf
     DPFDeviceMemoryBlock output_block = {};
@@ -675,10 +686,17 @@ void DebugPrintf::AllocateDebugPrintfResources(const VkCommandBuffer cmd_buffer,
     DispatchUpdateDescriptorSets(device, desc_count, &desc_writes, 0, NULL);
 
     if (pipeline_state) {
-        const auto &pipeline_layout = pipeline_state->PipelineLayoutState();
+        const auto pipeline_layout = pipeline_state->PipelineLayoutState();
+        // If GPL is used, it's possible the pipeline layout used at pipeline creation time is null. If CmdBindDescriptorSets has
+        // not been called yet (i.e., state.pipeline_null), then fall back to the layout associated with pre-raster state.
+        // PipelineLayoutState should be used for the purposes of determining the number of sets in the layout, but this layout
+        // may be a "pseudo layout" used to represent the union of pre-raster and fragment shader layouts, and therefore have a
+        // null handle.
+        const auto pipeline_layout_handle =
+            (last_bound.pipeline_layout) ? last_bound.pipeline_layout : pipeline_state->PreRasterPipelineLayoutState()->layout();
         if (pipeline_layout->set_layouts.size() <= desc_set_bind_index) {
-            DispatchCmdBindDescriptorSets(cmd_buffer, bind_point, pipeline_layout->layout(), desc_set_bind_index, 1,
-                                          desc_sets.data(), 0, nullptr);
+            DispatchCmdBindDescriptorSets(cmd_buffer, bind_point, pipeline_layout_handle, desc_set_bind_index, 1, desc_sets.data(),
+                                          0, nullptr);
         }
         // Record buffer and memory info in CB state tracking
         cb_node->buffer_infos.emplace_back(output_block, desc_sets[0], desc_pool, bind_point);

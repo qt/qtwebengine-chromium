@@ -1,4 +1,4 @@
-// Copyright 2017 PDFium Authors. All rights reserved.
+// Copyright 2017 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -22,7 +22,7 @@ class CPDF_ObjectWalker {
     virtual ~SubobjectIterator();
     virtual bool IsFinished() const = 0;
     bool IsStarted() const { return is_started_; }
-    const CPDF_Object* Increment();
+    RetainPtr<const CPDF_Object> Increment();
     const CPDF_Object* object() const { return object_.Get(); }
 
    protected:

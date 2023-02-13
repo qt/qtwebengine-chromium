@@ -6,7 +6,10 @@ import("../../../../../third_party/typescript/typescript.gni")
 
 ts_library("main") {
   testonly = true
-  sources = [ "ExecutionContextSelector_test.ts" ]
+  sources = [
+    "ExecutionContextSelector_test.ts",
+    "MainImpl_test.ts",
+  ]
 
   deps = [
     "../../../../../front_end/core/common:bundle",

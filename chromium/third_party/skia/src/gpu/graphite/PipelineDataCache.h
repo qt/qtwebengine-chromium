@@ -10,7 +10,7 @@
 
 #include "include/private/SkTHash.h"
 #include "src/core/SkArenaAlloc.h"
-#include "src/core/SkPipelineData.h"
+#include "src/gpu/graphite/PipelineData.h"
 
 
 namespace skgpu::graphite {
@@ -19,7 +19,7 @@ namespace skgpu::graphite {
 // resettable gatherer had accumulated the input data pointer).
 //
 // If an identical block of data is already in the cache, that existing pointer is returned, making
-// pointer comparison suitable when comparing data blocks retreived from the cache.
+// pointer comparison suitable when comparing data blocks retrieved from the cache.
 //
 // T must define a hash() function, an operator==, and a static Make(const T&, SkArenaAlloc*)
 // factory that's used to copy the data into an arena allocation owned by the PipelineDataCache.
@@ -44,6 +44,14 @@ public:
     // The number of unique T objects in the cache
     int count() const {
         return fDataPointers.count();
+    }
+
+    // Call fn on every item in the set.  You may not mutate anything.
+    template <typename Fn>  // f(T), f(const T&)
+    void foreach(Fn&& fn) const {
+        fDataPointers.foreach([fn](const DataRef& ref){
+            fn(ref.fPointer);
+        });
     }
 
 private:
@@ -71,12 +79,12 @@ private:
 };
 
 // A UniformDataCache lives for the entire duration of a Recorder.
-using UniformDataCache = PipelineDataCache<SkUniformDataBlock>;
+using UniformDataCache = PipelineDataCache<UniformDataBlock>;
 
 // A TextureDataCache only lives for a single Recording. When a Recording is snapped it is pulled
 // off of the Recorder and goes with the Recording as a record of the required Textures and
 // Samplers.
-using TextureDataCache = PipelineDataCache<SkTextureDataBlock>;
+using TextureDataCache = PipelineDataCache<TextureDataBlock>;
 
 } // namespace skgpu::graphite
 

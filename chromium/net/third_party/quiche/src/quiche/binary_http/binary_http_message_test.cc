@@ -74,10 +74,11 @@ TEST(BinaryHttpRequest, EncodeGetNoBody) {
   ASSERT_EQ(*result, expected);
   EXPECT_THAT(
       request.DebugString(),
-      StrEq(
-          "BinaryHttpRequest{BinaryHttpMessage{Headers{user-agent=curl/7.16.3 "
-          "libcurl/7.16.3 OpenSSL/0.9.7l "
-          "zlib/1.2.3;;host=www.example.com;;accept-language=en, mi}Body{}}}"));
+      StrEq("BinaryHttpRequest{BinaryHttpMessage{Headers{Field{user-agent=curl/"
+            "7.16.3 "
+            "libcurl/7.16.3 OpenSSL/0.9.7l "
+            "zlib/1.2.3};Field{host=www.example.com};Field{accept-language=en, "
+            "mi}}Body{}}}"));
   TestPrintTo(request);
 }
 
@@ -102,14 +103,18 @@ TEST(BinaryHttpRequest, DecodeGetNoBody) {
       {"user-agent", "curl/7.16.3 libcurl/7.16.3 OpenSSL/0.9.7l zlib/1.2.3"},
       {"host", "www.example.com"},
       {"accept-language", "en, mi"}};
+  for (const auto& field : expected_fields) {
+    TestPrintTo(field);
+  }
   ASSERT_THAT(request.GetHeaderFields(), ContainerEq(expected_fields));
   ASSERT_EQ(request.body(), "");
   EXPECT_THAT(
       request.DebugString(),
-      StrEq(
-          "BinaryHttpRequest{BinaryHttpMessage{Headers{user-agent=curl/7.16.3 "
-          "libcurl/7.16.3 OpenSSL/0.9.7l "
-          "zlib/1.2.3;;host=www.example.com;;accept-language=en, mi}Body{}}}"));
+      StrEq("BinaryHttpRequest{BinaryHttpMessage{Headers{Field{user-agent=curl/"
+            "7.16.3 "
+            "libcurl/7.16.3 OpenSSL/0.9.7l "
+            "zlib/1.2.3};Field{host=www.example.com};Field{accept-language=en, "
+            "mi}}Body{}}}"));
   TestPrintTo(request);
 }
 
@@ -151,9 +156,9 @@ TEST(BinaryHttpRequest, EncodeGetWithAuthority) {
   ASSERT_EQ(*result, expected);
   EXPECT_THAT(
       request.DebugString(),
-      StrEq("BinaryHttpRequest{BinaryHttpMessage{Headers{user-agent=curl/"
+      StrEq("BinaryHttpRequest{BinaryHttpMessage{Headers{Field{user-agent=curl/"
             "7.16.3 libcurl/7.16.3 OpenSSL/0.9.7l "
-            "zlib/1.2.3;;accept-language=en, mi}Body{}}}"));
+            "zlib/1.2.3};Field{accept-language=en, mi}}Body{}}}"));
 }
 
 TEST(BinaryHttpRequest, DecodeGetWithAuthority) {
@@ -180,9 +185,9 @@ TEST(BinaryHttpRequest, DecodeGetWithAuthority) {
   ASSERT_EQ(request.body(), "");
   EXPECT_THAT(
       request.DebugString(),
-      StrEq("BinaryHttpRequest{BinaryHttpMessage{Headers{user-agent=curl/"
+      StrEq("BinaryHttpRequest{BinaryHttpMessage{Headers{Field{user-agent=curl/"
             "7.16.3 libcurl/7.16.3 OpenSSL/0.9.7l "
-            "zlib/1.2.3;;accept-language=en, mi}Body{}}}"));
+            "zlib/1.2.3};Field{accept-language=en, mi}}Body{}}}"));
 }
 
 TEST(BinaryHttpRequest, EncodePostBody) {
@@ -227,8 +232,9 @@ TEST(BinaryHttpRequest, EncodePostBody) {
   ASSERT_EQ(*result, expected);
   EXPECT_THAT(
       request.DebugString(),
-      StrEq("BinaryHttpRequest{BinaryHttpMessage{Headers{user-agent=not/"
-            "telling;;host=www.example.com;;accept-language=en}Body{Some "
+      StrEq("BinaryHttpRequest{BinaryHttpMessage{Headers{Field{user-agent=not/"
+            "telling};Field{host=www.example.com};Field{accept-language=en}}"
+            "Body{Some "
             "body that I used to post.\r\n}}}"));
 }
 
@@ -257,8 +263,9 @@ TEST(BinaryHttpRequest, DecodePostBody) {
   ASSERT_EQ(request.body(), "Some body that I used to post.\r\n");
   EXPECT_THAT(
       request.DebugString(),
-      StrEq("BinaryHttpRequest{BinaryHttpMessage{Headers{user-agent=not/"
-            "telling;;host=www.example.com;;accept-language=en}Body{Some "
+      StrEq("BinaryHttpRequest{BinaryHttpMessage{Headers{Field{user-agent=not/"
+            "telling};Field{host=www.example.com};Field{accept-language=en}}"
+            "Body{Some "
             "body that I used to post.\r\n}}}"));
 }
 
@@ -328,9 +335,10 @@ TEST(BinaryHttpResponse, EncodeNoBody) {
   const auto result = response.Serialize();
   ASSERT_TRUE(result.ok());
   ASSERT_EQ(*result, expected);
-  EXPECT_THAT(response.DebugString(),
-              StrEq("BinaryHttpResponse(404){BinaryHttpMessage{Headers{server="
-                    "Apache}Body{}}}"));
+  EXPECT_THAT(
+      response.DebugString(),
+      StrEq("BinaryHttpResponse(404){BinaryHttpMessage{Headers{Field{server="
+            "Apache}}Body{}}}"));
 }
 
 TEST(BinaryHttpResponse, DecodeNoBody) {
@@ -353,9 +361,10 @@ TEST(BinaryHttpResponse, DecodeNoBody) {
   ASSERT_THAT(response.GetHeaderFields(), ContainerEq(expected_fields));
   ASSERT_EQ(response.body(), "");
   ASSERT_TRUE(response.informational_responses().empty());
-  EXPECT_THAT(response.DebugString(),
-              StrEq("BinaryHttpResponse(404){BinaryHttpMessage{Headers{server="
-                    "Apache}Body{}}}"));
+  EXPECT_THAT(
+      response.DebugString(),
+      StrEq("BinaryHttpResponse(404){BinaryHttpMessage{Headers{Field{server="
+            "Apache}}Body{}}}"));
 }
 
 TEST(BinaryHttpResponse, EncodeBody) {
@@ -386,9 +395,10 @@ TEST(BinaryHttpResponse, EncodeBody) {
   const auto result = response.Serialize();
   ASSERT_TRUE(result.ok());
   ASSERT_EQ(*result, expected);
-  EXPECT_THAT(response.DebugString(),
-              StrEq("BinaryHttpResponse(200){BinaryHttpMessage{Headers{server="
-                    "Apache}Body{Hello, world!\r\n}}}"));
+  EXPECT_THAT(
+      response.DebugString(),
+      StrEq("BinaryHttpResponse(200){BinaryHttpMessage{Headers{Field{server="
+            "Apache}}Body{Hello, world!\r\n}}}"));
 }
 
 TEST(BinaryHttpResponse, DecodeBody) {
@@ -413,9 +423,10 @@ TEST(BinaryHttpResponse, DecodeBody) {
   ASSERT_THAT(response.GetHeaderFields(), ContainerEq(expected_fields));
   ASSERT_EQ(response.body(), "Hello, world!\r\n");
   ASSERT_TRUE(response.informational_responses().empty());
-  EXPECT_THAT(response.DebugString(),
-              StrEq("BinaryHttpResponse(200){BinaryHttpMessage{Headers{server="
-                    "Apache}Body{Hello, world!\r\n}}}"));
+  EXPECT_THAT(
+      response.DebugString(),
+      StrEq("BinaryHttpResponse(200){BinaryHttpMessage{Headers{Field{server="
+            "Apache}}Body{Hello, world!\r\n}}}"));
 }
 
 TEST(BHttpResponse, AddBadInformationalResponseCode) {
@@ -515,15 +526,18 @@ TEST(BinaryHttpResponse, EncodeMultiInformationalWithBody) {
   ASSERT_EQ(*result, expected);
   EXPECT_THAT(
       response.DebugString(),
-      StrEq("BinaryHttpResponse(200){BinaryHttpMessage{Headers{date=Mon, "
-            "27 Jul 2009 12:28:53 GMT;;server=Apache;;last-modified=Wed, "
-            "22 Jul 2009 19:15:56 "
-            "GMT;;etag=\"34aa387-d-1568eb00\";;accept-ranges=bytes;;"
-            "content-length=51;;vary=Accept-Encoding;;content-type=text/"
-            "plain}Body{Hello World! My content includes a trailing "
-            "CRLF.\r\n}}InformationalResponse{running=\"sleep "
-            "15\"};;InformationalResponse{link=</style.css>; rel=preload; "
-            "as=style;;link=</script.js>; rel=preload; as=script}}"));
+      StrEq(
+          "BinaryHttpResponse(200){BinaryHttpMessage{Headers{Field{date=Mon, "
+          "27 Jul 2009 12:28:53 "
+          "GMT};Field{server=Apache};Field{last-modified=Wed, 22 Jul 2009 "
+          "19:15:56 "
+          "GMT};Field{etag=\"34aa387-d-1568eb00\"};Field{accept-ranges=bytes};"
+          "Field{"
+          "content-length=51};Field{vary=Accept-Encoding};Field{content-type="
+          "text/plain}}Body{Hello World! My content includes a trailing "
+          "CRLF.\r\n}}InformationalResponse{Field{running=\"sleep "
+          "15\"}};InformationalResponse{Field{link=</style.css>; rel=preload; "
+          "as=style};Field{link=</script.js>; rel=preload; as=script}}}"));
   TestPrintTo(response);
 }
 
@@ -581,6 +595,7 @@ TEST(BinaryHttpResponse, DecodeMultiInformationalWithBody) {
       {"content-length", "51"},
       {"vary", "Accept-Encoding"},
       {"content-type", "text/plain"}};
+
   ASSERT_THAT(response.GetHeaderFields(), ContainerEq(expected_fields));
   ASSERT_EQ(response.body(),
             "Hello World! My content includes a trailing CRLF.\r\n");
@@ -595,15 +610,18 @@ TEST(BinaryHttpResponse, DecodeMultiInformationalWithBody) {
               ContainerEq(expected_control));
   EXPECT_THAT(
       response.DebugString(),
-      StrEq("BinaryHttpResponse(200){BinaryHttpMessage{Headers{date=Mon, "
-            "27 Jul 2009 12:28:53 GMT;;server=Apache;;last-modified=Wed, "
-            "22 Jul 2009 19:15:56 "
-            "GMT;;etag=\"34aa387-d-1568eb00\";;accept-ranges=bytes;;"
-            "content-length=51;;vary=Accept-Encoding;;content-type=text/"
-            "plain}Body{Hello World! My content includes a trailing "
-            "CRLF.\r\n}}InformationalResponse{running=\"sleep "
-            "15\"};;InformationalResponse{link=</style.css>; rel=preload; "
-            "as=style;;link=</script.js>; rel=preload; as=script}}"));
+      StrEq(
+          "BinaryHttpResponse(200){BinaryHttpMessage{Headers{Field{date=Mon, "
+          "27 Jul 2009 12:28:53 "
+          "GMT};Field{server=Apache};Field{last-modified=Wed, 22 Jul 2009 "
+          "19:15:56 "
+          "GMT};Field{etag=\"34aa387-d-1568eb00\"};Field{accept-ranges=bytes};"
+          "Field{"
+          "content-length=51};Field{vary=Accept-Encoding};Field{content-type="
+          "text/plain}}Body{Hello World! My content includes a trailing "
+          "CRLF.\r\n}}InformationalResponse{Field{running=\"sleep "
+          "15\"}};InformationalResponse{Field{link=</style.css>; rel=preload; "
+          "as=style};Field{link=</script.js>; rel=preload; as=script}}}"));
   TestPrintTo(response);
 }
 
@@ -687,6 +705,82 @@ TEST(BinaryHttpResponse, Inequality) {
   no_informational.AddHeaderField({"Server", "Apache"})
       ->set_body("Hello, world!\r\n");
   EXPECT_NE(response, no_informational);
+}
+
+MATCHER_P(HasEqPayload, value, "Payloads of messages are equivalent.") {
+  return arg.IsPayloadEqual(value);
+}
+
+template <typename T>
+void TestPadding(T& message) {
+  const auto data_so = message.Serialize();
+  ASSERT_TRUE(data_so.ok());
+  auto data = *data_so;
+  ASSERT_EQ(data.size(), message.EncodedSize());
+
+  message.set_num_padding_bytes(10);
+  const auto padded_data_so = message.Serialize();
+  ASSERT_TRUE(padded_data_so.ok());
+  const auto padded_data = *padded_data_so;
+  ASSERT_EQ(padded_data.size(), message.EncodedSize());
+
+  // Check padding size output.
+  ASSERT_EQ(data.size() + 10, padded_data.size());
+  // Check for valid null byte padding output
+  data.resize(data.size() + 10);
+  ASSERT_EQ(data, padded_data);
+
+  // Deserialize padded and not padded, and verify they are the same.
+  const auto deserialized_padded_message_so = T::Create(data);
+  ASSERT_TRUE(deserialized_padded_message_so.ok());
+  const auto deserialized_padded_message = *deserialized_padded_message_so;
+  ASSERT_EQ(deserialized_padded_message, message);
+  ASSERT_EQ(deserialized_padded_message.num_padding_bytes(), size_t(10));
+
+  // Invalid padding
+  data[data.size() - 1] = 'a';
+  const auto bad_so = T::Create(data);
+  ASSERT_FALSE(bad_so.ok());
+
+  // Check that padding does not impact equality.
+  data.resize(data.size() - 10);
+  const auto deserialized_message_so = T::Create(data);
+  ASSERT_TRUE(deserialized_message_so.ok());
+  const auto deserialized_message = *deserialized_message_so;
+  ASSERT_EQ(deserialized_message.num_padding_bytes(), size_t(0));
+  // Confirm that the message payloads are equal, but not fully equivalent due
+  // to padding.
+  ASSERT_THAT(deserialized_message, HasEqPayload(deserialized_padded_message));
+  ASSERT_NE(deserialized_message, deserialized_padded_message);
+}
+
+TEST(BinaryHttpRequest, Padding) {
+  /*
+    GET /hello.txt HTTP/1.1
+    User-Agent: curl/7.16.3 libcurl/7.16.3 OpenSSL/0.9.7l zlib/1.2.3
+    Host: www.example.com
+    Accept-Language: en, mi
+  */
+  BinaryHttpRequest request({"GET", "https", "", "/hello.txt"});
+  request
+      .AddHeaderField({"User-Agent",
+                       "curl/7.16.3 libcurl/7.16.3 OpenSSL/0.9.7l zlib/1.2.3"})
+      ->AddHeaderField({"Host", "www.example.com"})
+      ->AddHeaderField({"Accept-Language", "en, mi"});
+  TestPadding(request);
+}
+
+TEST(BinaryHttpResponse, Padding) {
+  /*
+    HTTP/1.1 200 OK
+    Server: Apache
+
+    Hello, world!
+  */
+  BinaryHttpResponse response(200);
+  response.AddHeaderField({"Server", "Apache"});
+  response.set_body("Hello, world!\r\n");
+  TestPadding(response);
 }
 
 }  // namespace quiche

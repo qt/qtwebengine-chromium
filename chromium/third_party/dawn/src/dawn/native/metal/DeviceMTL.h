@@ -18,6 +18,7 @@
 #include <atomic>
 #include <memory>
 #include <mutex>
+#include <vector>
 
 #include "dawn/native/dawn_platform.h"
 
@@ -33,6 +34,7 @@
 namespace dawn::native::metal {
 
 struct KalmanInfo;
+struct ExternalImageMTLSharedEventDescriptor;
 
 class Device final : public DeviceBase {
   public:
@@ -49,23 +51,28 @@ class Device final : public DeviceBase {
     id<MTLDevice> GetMTLDevice();
     id<MTLCommandQueue> GetMTLQueue();
 
-    CommandRecordingContext* GetPendingCommandContext();
+    CommandRecordingContext* GetPendingCommandContext(
+        Device::SubmitMode submitMode = Device::SubmitMode::Normal);
     MaybeError SubmitPendingCommandBuffer();
 
-    Ref<Texture> CreateTextureWrappingIOSurface(const ExternalImageDescriptor* descriptor,
-                                                IOSurfaceRef ioSurface);
+    void ExportLastSignaledEvent(ExternalImageMTLSharedEventDescriptor* desc);
+
+    Ref<Texture> CreateTextureWrappingIOSurface(
+        const ExternalImageDescriptor* descriptor,
+        IOSurfaceRef ioSurface,
+        std::vector<MTLSharedEventAndSignalValue> waitEvents);
     void WaitForCommandsToBeScheduled();
 
     ResultOrError<std::unique_ptr<StagingBufferBase>> CreateStagingBuffer(size_t size) override;
-    MaybeError CopyFromStagingToBuffer(StagingBufferBase* source,
-                                       uint64_t sourceOffset,
-                                       BufferBase* destination,
-                                       uint64_t destinationOffset,
-                                       uint64_t size) override;
-    MaybeError CopyFromStagingToTexture(const StagingBufferBase* source,
-                                        const TextureDataLayout& dataLayout,
-                                        TextureCopy* dst,
-                                        const Extent3D& copySizePixels) override;
+    MaybeError CopyFromStagingToBufferImpl(StagingBufferBase* source,
+                                           uint64_t sourceOffset,
+                                           BufferBase* destination,
+                                           uint64_t destinationOffset,
+                                           uint64_t size) override;
+    MaybeError CopyFromStagingToTextureImpl(const StagingBufferBase* source,
+                                            const TextureDataLayout& dataLayout,
+                                            TextureCopy* dst,
+                                            const Extent3D& copySizePixels) override;
 
     uint32_t GetOptimalBytesPerRowAlignment() const override;
     uint64_t GetOptimalBufferToTextureCopyOffsetAlignment() const override;
@@ -75,9 +82,11 @@ class Device final : public DeviceBase {
     bool UseCounterSamplingAtCommandBoundary() const;
     bool UseCounterSamplingAtStageBoundary() const;
 
-    // Get a MTLBuffer that can be used as a dummy in a no-op blit encoder based on filling this
+    // Get a MTLBuffer that can be used as a mock in a no-op blit encoder based on filling this
     // single-byte buffer
-    id<MTLBuffer> GetDummyBlitMtlBuffer();
+    id<MTLBuffer> GetMockBlitMtlBuffer();
+
+    void ForceEventualFlushOfCommands() override;
 
   private:
     Device(AdapterBase* adapter,
@@ -127,9 +136,11 @@ class Device final : public DeviceBase {
     void InitTogglesFromDriver();
     void DestroyImpl() override;
     MaybeError WaitForIdleForDestruction() override;
+    bool HasPendingCommands() const override;
     ResultOrError<ExecutionSerial> CheckAndUpdateCompletedSerials() override;
 
     NSPRef<id<MTLDevice>> mMtlDevice;
+    NSPRef<id> mMtlSharedEvent = nil;  // MTLSharedEvent not available until macOS 10.14+.
     NSPRef<id<MTLCommandQueue>> mCommandQueue;
 
     CommandRecordingContext mCommandContext;
@@ -157,7 +168,7 @@ class Device final : public DeviceBase {
     // Support counter sampling at the begin and end of blit pass, compute pass and render pass's
     // vertex/fragement stage
     bool mCounterSamplingAtStageBoundary;
-    NSPRef<id<MTLBuffer>> mDummyBlitMtlBuffer;
+    NSPRef<id<MTLBuffer>> mMockBlitMtlBuffer;
 };
 
 }  // namespace dawn::native::metal

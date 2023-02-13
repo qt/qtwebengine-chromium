@@ -120,7 +120,8 @@ struct WasmImportData {
 // is why the ultimate target is returned as well.
 V8_EXPORT_PRIVATE WasmImportData ResolveWasmImportCall(
     Handle<JSReceiver> callable, const wasm::FunctionSig* sig,
-    const wasm::WasmModule* module, const wasm::WasmFeatures& enabled_features);
+    uint32_t expected_canonical_type_index, const wasm::WasmModule* module,
+    const wasm::WasmFeatures& enabled_features);
 
 // Compiles an import call wrapper, which allows Wasm to call imports.
 V8_EXPORT_PRIVATE wasm::WasmCompilationResult CompileWasmImportCallWrapper(
@@ -255,7 +256,9 @@ class WasmGraphBuilder {
   Node* EffectPhi(unsigned count, Node** effects_and_control);
   Node* RefNull();
   Node* RefFunc(uint32_t function_index);
-  Node* RefAsNonNull(Node* arg, wasm::WasmCodePosition position);
+  Node* AssertNotNull(
+      Node* object, wasm::WasmCodePosition position,
+      wasm::TrapReason reason = wasm::TrapReason::kTrapNullDereference);
   Node* TraceInstruction(uint32_t mark_id);
   Node* Int32Constant(int32_t value);
   Node* Int64Constant(int64_t value);
@@ -497,24 +500,32 @@ class WasmGraphBuilder {
   Node* RefTestAbstract(Node* object, wasm::HeapType type, bool null_succeeds);
   Node* RefCast(Node* object, Node* rtt, WasmTypeCheckConfig config,
                 wasm::WasmCodePosition position);
+  Node* RefCastAbstract(Node* object, wasm::HeapType type,
+                        wasm::WasmCodePosition position, bool null_succeeds);
   void BrOnCast(Node* object, Node* rtt, WasmTypeCheckConfig config,
                 Node** match_control, Node** match_effect,
                 Node** no_match_control, Node** no_match_effect);
   Node* RefIsEq(Node* object, bool object_can_be_null, bool null_succeeds);
-  Node* RefIsData(Node* object, bool object_can_be_null, bool null_succeeds);
-  Node* RefAsData(Node* object, bool object_can_be_null,
-                  wasm::WasmCodePosition position);
-  void BrOnData(Node* object, Node* rtt, WasmTypeCheckConfig config,
-                Node** match_control, Node** match_effect,
-                Node** no_match_control, Node** no_match_effect);
+  Node* RefAsEq(Node* object, bool object_can_be_null,
+                wasm::WasmCodePosition position, bool null_succeeds);
+  void BrOnEq(Node* object, Node* rtt, WasmTypeCheckConfig config,
+              Node** match_control, Node** match_effect,
+              Node** no_match_control, Node** no_match_effect);
+  Node* RefIsStruct(Node* object, bool object_can_be_null, bool null_succeeds);
+  Node* RefAsStruct(Node* object, bool object_can_be_null,
+                    wasm::WasmCodePosition position, bool null_succeeds);
+  void BrOnStruct(Node* object, Node* rtt, WasmTypeCheckConfig config,
+                  Node** match_control, Node** match_effect,
+                  Node** no_match_control, Node** no_match_effect);
   Node* RefIsArray(Node* object, bool object_can_be_null, bool null_succeeds);
   Node* RefAsArray(Node* object, bool object_can_be_null,
-                   wasm::WasmCodePosition position);
+                   wasm::WasmCodePosition position, bool null_succeeds);
   void BrOnArray(Node* object, Node* rtt, WasmTypeCheckConfig config,
                  Node** match_control, Node** match_effect,
                  Node** no_match_control, Node** no_match_effect);
   Node* RefIsI31(Node* object, bool null_succeeds);
-  Node* RefAsI31(Node* object, wasm::WasmCodePosition position);
+  Node* RefAsI31(Node* object, wasm::WasmCodePosition position,
+                 bool null_succeeds);
   void BrOnI31(Node* object, Node* rtt, WasmTypeCheckConfig config,
                Node** match_control, Node** match_effect,
                Node** no_match_control, Node** no_match_effect);
@@ -739,8 +750,6 @@ class WasmGraphBuilder {
   void MemTypeToUintPtrOrOOBTrap(std::initializer_list<Node**> nodes,
                                  wasm::WasmCodePosition position);
 
-  Node* AssertNotNull(Node* object, wasm::WasmCodePosition position);
-
   void GetGlobalBaseAndOffset(const wasm::WasmGlobal&, Node** base_node,
                               Node** offset_node);
 
@@ -831,9 +840,9 @@ class WasmGraphBuilder {
   void AddInt64LoweringReplacement(CallDescriptor* original,
                                    CallDescriptor* replacement);
 
-  CallDescriptor* GetI32AtomicWaitCallDescriptor();
+  Node* BuildChangeInt64ToBigInt(Node* input, StubCallMode stub_mode);
 
-  CallDescriptor* GetI64AtomicWaitCallDescriptor();
+  CallDescriptor* GetI64ToBigIntCallDescriptor(StubCallMode stub_mode);
 
   Node* StoreArgsInStackSlot(
       std::initializer_list<std::pair<MachineRepresentation, Node*>> args);
@@ -863,8 +872,8 @@ class WasmGraphBuilder {
   SetOncePointer<Node> instance_node_;
 
   std::unique_ptr<Int64LoweringSpecialCase> lowering_special_case_;
-  CallDescriptor* i32_atomic_wait_descriptor_ = nullptr;
-  CallDescriptor* i64_atomic_wait_descriptor_ = nullptr;
+  CallDescriptor* i64_to_bigint_builtin_descriptor_ = nullptr;
+  CallDescriptor* i64_to_bigint_stub_descriptor_ = nullptr;
 };
 
 enum WasmCallKind { kWasmFunction, kWasmImportWrapper, kWasmCapiFunction };

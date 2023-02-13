@@ -32,7 +32,7 @@
 #include <stdarg.h>
 
 #include "debug_utils.h"
-#include "get_environment.h"
+#include "loader_environment.h"
 
 uint32_t g_loader_debug = 0;
 
@@ -228,4 +228,9 @@ void loader_log(const struct loader_instance *inst, VkFlags msg_type, int32_t ms
         // the string boundary
         assert(false);
     }
+}
+
+void loader_log_asm_function_not_supported(const struct loader_instance *inst, VkFlags msg_type, int32_t msg_code,
+                                           const char *func_name) {
+    loader_log(inst, msg_type, msg_code, "Function %s not supported for this physical device", func_name);
 }

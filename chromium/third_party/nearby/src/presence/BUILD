@@ -13,12 +13,13 @@
 # limitations under the License.
 licenses(["notice"])
 
-package(default_visibility = ["//third_party/nearby:__subpackages__"])
+package(default_visibility = ["//:__subpackages__"])
 
 cc_library(
     name = "presence",
     srcs = [
         "presence_client.cc",
+        "presence_service.cc",
     ],
     hdrs = [
         "presence_client.h",
@@ -26,8 +27,10 @@ cc_library(
     ],
     deps = [
         ":types",
+        "//internal/platform:types",
         "//presence/implementation:internal",  # build_cleaner: keep
-        "@com_google_absl//absl/functional:any_invocable",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
     ],
 )
 
@@ -59,12 +62,19 @@ cc_library(
         "status.h",
     ],
     deps = [
+        "//internal:device",
+        "//internal/crypto",
         "//internal/platform:base",
+        "//internal/platform:connection_info",
+        "//internal/platform:logging",
+        "//internal/platform/implementation:types",
         "//internal/proto:credential_cc_proto",
+        "//internal/proto:device_metadata_cc_proto",
+        "@com_google_absl//absl/functional:any_invocable",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/time",
         "@com_google_absl//absl/types:optional",
         "@com_google_absl//absl/types:variant",
-        "@com_google_glog//:glog",
     ],
 )
 
@@ -86,8 +96,13 @@ cc_test(
     shard_count = 6,
     deps = [
         ":types",
+        "//internal/platform:connection_info",
+        "//internal/platform:logging",
+        "//internal/platform/implementation/g3",  # build_cleaner: keep
         "//internal/proto:credential_cc_proto",
+        "//internal/proto:device_metadata_cc_proto",
         "@com_github_protobuf_matchers//protobuf-matchers",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:variant",
         "@com_google_googletest//:gtest_main",
     ],
@@ -121,6 +136,7 @@ cc_test(
     deps = [
         ":presence",
         ":types",
+        "//internal/platform:test_util",
         "//internal/platform/implementation/g3",  # build_cleaner: keep
         "@com_github_protobuf_matchers//protobuf-matchers",
         "@com_google_googletest//:gtest_main",

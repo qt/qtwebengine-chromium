@@ -394,10 +394,7 @@ export class ConsoleView extends UI.Widget.VBox implements UI.SearchableView.Sea
     this.groupSimilarSetting.addChangeListener(() => this.updateMessageList());
 
     this.showCorsErrorsSetting = Common.Settings.Settings.instance().moduleSetting('consoleShowsCorsErrors');
-    this.showCorsErrorsSetting.addChangeListener(() => {
-      Host.userMetrics.showCorsErrorsSettingChanged(this.showCorsErrorsSetting.get());
-      this.updateMessageList();
-    });
+    this.showCorsErrorsSetting.addChangeListener(() => this.updateMessageList());
 
     const toolbar = new UI.Toolbar.Toolbar('console-main-toolbar', this.consoleToolbarContainer);
     toolbar.makeWrappable(true);
@@ -598,8 +595,8 @@ export class ConsoleView extends UI.Widget.VBox implements UI.SearchableView.Sea
     return checkbox;
   }
 
-  static instance(): ConsoleView {
-    if (!consoleViewInstance) {
+  static instance(opts?: {forceNew: boolean}): ConsoleView {
+    if (!consoleViewInstance || opts?.forceNew) {
       consoleViewInstance = new ConsoleView();
     }
     return consoleViewInstance;
@@ -1107,7 +1104,7 @@ export class ConsoleView extends UI.Widget.VBox implements UI.SearchableView.Sea
   }
 
   private async saveConsole(): Promise<void> {
-    const url = (SDK.TargetManager.TargetManager.instance().mainTarget() as SDK.Target.Target).inspectedURL();
+    const url = (SDK.TargetManager.TargetManager.instance().mainFrameTarget() as SDK.Target.Target).inspectedURL();
     const parsedURL = Common.ParsedURL.ParsedURL.fromString(url);
     const filename =
         Platform.StringUtilities.sprintf('%s-%d.log', parsedURL ? parsedURL.host : 'console', Date.now()) as

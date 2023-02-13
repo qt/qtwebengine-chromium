@@ -67,7 +67,7 @@ static std::unique_ptr<Expression> extract_field(Position pos,
                                                  int fieldIndex) {
     // Confirm that the fields that are being removed are side-effect free.
     const ExpressionArray& args = ctor.arguments();
-    int numFields = args.count();
+    int numFields = args.size();
     for (int index = 0; index < numFields; ++index) {
         if (fieldIndex == index) {
             continue;
@@ -103,8 +103,11 @@ std::unique_ptr<Expression> FieldAccess::Make(const Context& context,
 }
 
 std::string FieldAccess::description(OperatorPrecedence) const {
-    return this->base()->description(OperatorPrecedence::kPostfix) + "." +
-           std::string(this->base()->type().fields()[this->fieldIndex()].fName);
+    std::string f = this->base()->description(OperatorPrecedence::kPostfix);
+    if (!f.empty()) {
+        f.push_back('.');
+    }
+    return f + std::string(this->base()->type().fields()[this->fieldIndex()].fName);
 }
 
 }  // namespace SkSL

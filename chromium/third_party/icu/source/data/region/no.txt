@@ -302,6 +302,7 @@ no{
         CD{"Den demokratiske republikken Kongo"}
         CG{"Republikken Kongo"}
         CZ{"Den tsjekkiske republikk"}
+        NZ{"Aotearoa New Zealand"}
         SZ{"Swaziland"}
         TL{"Timor-Leste"}
     }

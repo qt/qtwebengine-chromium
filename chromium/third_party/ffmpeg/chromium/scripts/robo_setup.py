@@ -38,6 +38,7 @@ def InstallPrereqs(robo_configuration):
   if robo_configuration.host_operating_system() == "linux":
     packages.Nasm.Install(robo_configuration)
     packages.GccAarch64LinuxGNU.Install(robo_configuration)
+    packages.GccMultilib.Install(robo_configuration)
   else:
     raise Exception("I don't know how to install deps for host os %s" %
                     robo_configuration.host_operating_system())

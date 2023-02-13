@@ -40,6 +40,7 @@ import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
+import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
 import * as Bindings from '../../models/bindings/bindings.js';
@@ -239,6 +240,39 @@ const UIStrings = {
   * between the time a response to a network request is received and the time the request is started.
   */
   timeSubtitleTooltipText: 'Latency (response received time - start time)',
+  /**
+  *@description Tooltip text giving the reason why a specific HTTP transport protocol has been used
+  */
+  alternativeJobWonWithoutRace:
+      '`Chrome` used a `HTTP/3` connection induced by an \'`Alt-Svc`\' header without racing against establishing a connection using a different `HTTP` version.',
+  /**
+  *@description Tooltip text giving the reason why a specific HTTP transport protocol has been used
+  */
+  alternativeJobWonRace:
+      '`Chrome` used a `HTTP/3` connection induced by an \'`Alt-Svc`\' header because it won a race against establishing a connection using a different `HTTP` version.',
+  /**
+  *@description Tooltip text giving the reason why a specific HTTP transport protocol has been used
+  */
+  mainJobWonRace: '`Chrome` used this protocol because it won a race against establishing a `HTTP/3` connection.',
+  /**
+  *@description Tooltip text giving the reason why a specific HTTP transport protocol has been used
+  */
+  mappingMissing:
+      '`Chrome` did not use an alternative `HTTP` version because no alternative protocol information was available when the request was issued, but an \'`Alt-Svc`\' header was present in the response.',
+  /**
+  *@description Tooltip text giving the reason why a specific HTTP transport protocol has been used
+  */
+  broken: '`Chrome` did not try to establish a `HTTP/3` connection because it was marked as broken.',
+  /**
+  *@description Tooltip text giving the reason why a specific HTTP transport protocol has been used
+  */
+  dnsAlpnH3JobWonWithoutRace:
+      '`Chrome` used a `HTTP/3` connection due to the `DNS record` indicating `HTTP/3` support. There was no race against establishing a connection using a different `HTTP` version.',
+  /**
+  *@description Tooltip text giving the reason why a specific HTTP transport protocol has been used
+  */
+  dnsAlpnH3JobWonRace:
+      '`Chrome` used a `HTTP/3` connection due to the `DNS record` indicating `HTTP/3` support, which won a race against establishing a connection using a different `HTTP` version.',
 };
 const str_ = i18n.i18n.registerUIStrings('panels/network/NetworkDataGridNode.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
@@ -881,7 +915,7 @@ export class NetworkRequestNode extends NetworkNode {
         break;
       }
       case 'protocol': {
-        this.setTextAndTitle(cell, this.requestInternal.protocol);
+        this.renderProtocolCell(cell);
         break;
       }
       case 'scheme': {
@@ -1170,6 +1204,52 @@ export class NetworkRequestNode extends NetworkNode {
     }
   }
 
+  private renderProtocolCell(cell: HTMLElement): void {
+    UI.UIUtils.createTextChild(cell, this.requestInternal.protocol);
+
+    switch (this.requestInternal.alternateProtocolUsage) {
+      case Protocol.Network.AlternateProtocolUsage.AlternativeJobWonWithoutRace: {
+        UI.Tooltip.Tooltip.install(cell, UIStrings.alternativeJobWonWithoutRace);
+        break;
+      }
+
+      case Protocol.Network.AlternateProtocolUsage.AlternativeJobWonRace: {
+        UI.Tooltip.Tooltip.install(cell, UIStrings.alternativeJobWonRace);
+        break;
+      }
+
+      case Protocol.Network.AlternateProtocolUsage.MainJobWonRace: {
+        UI.Tooltip.Tooltip.install(cell, UIStrings.mainJobWonRace);
+        break;
+      }
+
+      case Protocol.Network.AlternateProtocolUsage.MappingMissing: {
+        UI.Tooltip.Tooltip.install(cell, UIStrings.mappingMissing);
+        break;
+      }
+
+      case Protocol.Network.AlternateProtocolUsage.Broken: {
+        UI.Tooltip.Tooltip.install(cell, UIStrings.broken);
+        break;
+      }
+
+      case Protocol.Network.AlternateProtocolUsage.DnsAlpnH3JobWonWithoutRace: {
+        UI.Tooltip.Tooltip.install(cell, UIStrings.dnsAlpnH3JobWonWithoutRace);
+        break;
+      }
+
+      case Protocol.Network.AlternateProtocolUsage.DnsAlpnH3JobWonRace: {
+        UI.Tooltip.Tooltip.install(cell, UIStrings.dnsAlpnH3JobWonRace);
+        break;
+      }
+
+      default: {
+        UI.Tooltip.Tooltip.install(cell, this.requestInternal.protocol);
+        break;
+      }
+    }
+  }
+
   private renderInitiatorCell(cell: HTMLElement): void {
     this.initiatorCell = cell;
     const request = this.requestInternal;
@@ -1181,7 +1261,6 @@ export class NetworkRequestNode extends NetworkNode {
     }
     switch (initiator.type) {
       case SDK.NetworkRequest.InitiatorType.Parser: {
-        UI.Tooltip.Tooltip.install(cell, initiator.url + ':' + (initiator.lineNumber + 1));
         const uiSourceCode = Workspace.Workspace.WorkspaceImpl.instance().uiSourceCodeForURL(initiator.url);
         cell.appendChild(
             Components.Linkifier.Linkifier.linkifyURL(initiator.url, ({

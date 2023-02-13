@@ -1,4 +1,4 @@
-// Copyright 2022 PDFium Authors. All rights reserved.
+// Copyright 2022 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -24,8 +24,7 @@ FX_FILESIZE CFX_ReadOnlyVectorStream::GetSize() {
   return stream_->GetSize();
 }
 
-bool CFX_ReadOnlyVectorStream::ReadBlockAtOffset(void* buffer,
-                                                 FX_FILESIZE offset,
-                                                 size_t size) {
-  return stream_->ReadBlockAtOffset(buffer, offset, size);
+bool CFX_ReadOnlyVectorStream::ReadBlockAtOffset(pdfium::span<uint8_t> buffer,
+                                                 FX_FILESIZE offset) {
+  return stream_->ReadBlockAtOffset(buffer, offset);
 }

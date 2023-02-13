@@ -20,9 +20,10 @@
 #include "src/core/SkWriteBuffer.h"
 #include "src/shaders/SkShaderBase.h"
 
-#ifdef SK_ENABLE_SKSL
-#include "src/core/SkKeyHelpers.h"
-#include "src/core/SkPaintParamsKey.h"
+#ifdef SK_GRAPHITE_ENABLED
+#include "src/gpu/Blend.h"
+#include "src/gpu/graphite/KeyHelpers.h"
+#include "src/gpu/graphite/PaintParamsKey.h"
 #endif
 
 namespace {
@@ -62,9 +63,9 @@ public:
 #endif
 
 #ifdef SK_GRAPHITE_ENABLED
-    void addToKey(const SkKeyContext&,
-                  SkPaintParamsKeyBuilder*,
-                  SkPipelineDataGatherer*) const override;
+    void addToKey(const skgpu::graphite::KeyContext&,
+                  skgpu::graphite::PaintParamsKeyBuilder*,
+                  skgpu::graphite::PipelineDataGatherer*) const override;
 #endif
 
 protected:
@@ -176,12 +177,11 @@ std::unique_ptr<GrFragmentProcessor> SkShader_Blend::asFragmentProcessor(
 #endif
 
 #ifdef SK_GRAPHITE_ENABLED
+void SkShader_Blend::addToKey(const skgpu::graphite::KeyContext& keyContext,
+                              skgpu::graphite::PaintParamsKeyBuilder* builder,
+                              skgpu::graphite::PipelineDataGatherer* gatherer) const {
+    using namespace skgpu::graphite;
 
-#include "src/gpu/Blend.h"
-
-void SkShader_Blend::addToKey(const SkKeyContext& keyContext,
-                              SkPaintParamsKeyBuilder* builder,
-                              SkPipelineDataGatherer* gatherer) const {
     SkSpan<const float> porterDuffConstants = skgpu::GetPorterDuffBlendConstants(fMode);
     if (!porterDuffConstants.empty()) {
         PorterDuffBlendShaderBlock::BeginBlock(keyContext, builder, gatherer,
@@ -190,8 +190,8 @@ void SkShader_Blend::addToKey(const SkKeyContext& keyContext,
         BlendShaderBlock::BeginBlock(keyContext, builder, gatherer, {fMode});
     }
 
-    as_SB(fSrc)->addToKey(keyContext, builder, gatherer);
     as_SB(fDst)->addToKey(keyContext, builder, gatherer);
+    as_SB(fSrc)->addToKey(keyContext, builder, gatherer);
 
     builder->endBlock();
 }

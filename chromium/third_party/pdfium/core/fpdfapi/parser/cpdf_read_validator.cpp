@@ -1,4 +1,4 @@
-// Copyright 2017 PDFium Authors. All rights reserved.
+// Copyright 2017 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -41,11 +41,11 @@ CPDF_ReadValidator::ScopedSession::~ScopedSession() {
 }
 
 CPDF_ReadValidator::CPDF_ReadValidator(
-    const RetainPtr<IFX_SeekableReadStream>& file_read,
+    RetainPtr<IFX_SeekableReadStream> file_read,
     CPDF_DataAvail::FileAvail* file_avail)
-    : file_read_(file_read),
+    : file_read_(std::move(file_read)),
       file_avail_(file_avail),
-      file_size_(file_read->GetSize()) {}
+      file_size_(file_read_->GetSize()) {}
 
 CPDF_ReadValidator::~CPDF_ReadValidator() = default;
 
@@ -54,29 +54,28 @@ void CPDF_ReadValidator::ResetErrors() {
   has_unavailable_data_ = false;
 }
 
-bool CPDF_ReadValidator::ReadBlockAtOffset(void* buffer,
-                                           FX_FILESIZE offset,
-                                           size_t size) {
+bool CPDF_ReadValidator::ReadBlockAtOffset(pdfium::span<uint8_t> buffer,
+                                           FX_FILESIZE offset) {
   if (offset < 0) {
     NOTREACHED();
     return false;
   }
 
   FX_SAFE_FILESIZE end_offset = offset;
-  end_offset += size;
+  end_offset += buffer.size();
   if (!end_offset.IsValid() || end_offset.ValueOrDie() > file_size_)
     return false;
 
-  if (!IsDataRangeAvailable(offset, size)) {
-    ScheduleDownload(offset, size);
+  if (!IsDataRangeAvailable(offset, buffer.size())) {
+    ScheduleDownload(offset, buffer.size());
     return false;
   }
 
-  if (file_read_->ReadBlockAtOffset(buffer, offset, size))
+  if (file_read_->ReadBlockAtOffset(buffer, offset))
     return true;
 
   read_error_ = true;
-  ScheduleDownload(offset, size);
+  ScheduleDownload(offset, buffer.size());
   return false;
 }
 

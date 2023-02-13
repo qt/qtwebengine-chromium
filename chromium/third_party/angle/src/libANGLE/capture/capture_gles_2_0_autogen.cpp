@@ -10,16 +10,15 @@
 
 #include "libANGLE/capture/capture_gles_2_0_autogen.h"
 
+#include "common/gl_enum_utils.h"
 #include "libANGLE/Context.h"
 #include "libANGLE/capture/FrameCapture.h"
-#include "libANGLE/capture/gl_enum_utils.h"
 #include "libANGLE/validationES2.h"
 
 using namespace angle;
 
 namespace gl
 {
-
 CallCapture CaptureActiveTexture(const State &glState, bool isCallValid, GLenum texture)
 {
     ParamBuffer paramBuffer;

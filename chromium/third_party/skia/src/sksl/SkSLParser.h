@@ -10,7 +10,6 @@
 
 #include "include/core/SkTypes.h"
 #include "include/private/SkSLDefines.h"
-#include "include/private/SkSLProgramKind.h"
 #include "include/private/SkTArray.h"
 #include "include/sksl/DSLCore.h"
 #include "include/sksl/DSLExpression.h"
@@ -21,11 +20,11 @@
 #include "include/sksl/SkSLErrorReporter.h"
 #include "include/sksl/SkSLOperator.h"
 #include "include/sksl/SkSLPosition.h"
-#include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLLexer.h"
 #include "src/sksl/SkSLProgramSettings.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
@@ -33,7 +32,10 @@
 
 namespace SkSL {
 
-class BuiltinMap;
+class Compiler;
+class SymbolTable;
+enum class ProgramKind : int8_t;
+struct Module;
 struct Program;
 
 namespace dsl {
@@ -41,6 +43,7 @@ class DSLBlock;
 class DSLCase;
 class DSLGlobalVar;
 class DSLParameter;
+class DSLVarBase;
 }
 
 /**
@@ -52,7 +55,7 @@ public:
 
     std::unique_ptr<Program> program();
 
-    SkSL::LoadedModule moduleInheritingFrom(const SkSL::BuiltinMap* baseModule);
+    std::unique_ptr<Module> moduleInheritingFrom(const Module* parent);
 
     std::string_view text(Token token);
 
@@ -60,6 +63,7 @@ public:
 
 private:
     class AutoDepth;
+    class AutoSymbolTable;
 
     /**
      * Return the next token, including whitespace tokens, from the parse stream.
@@ -275,6 +279,10 @@ private:
     bool boolLiteral(bool* dest);
 
     bool identifier(std::string_view* dest);
+
+    std::shared_ptr<SymbolTable>& symbolTable();
+
+    void addToSymbolTable(dsl::DSLVarBase& var, Position pos = {});
 
     class Checkpoint {
     public:

@@ -37,6 +37,7 @@
 #include "src/objects/objects-inl.h"
 #include "src/objects/objects.h"
 #include "src/objects/turbofan-types-inl.h"
+#include "src/objects/turboshaft-types-inl.h"
 #include "src/roots/roots.h"
 #ifdef V8_INTL_SUPPORT
 #include "src/objects/js-break-iterator-inl.h"
@@ -561,6 +562,7 @@ void Map::MapVerify(Isolate* isolate) {
       if (maybe_cell.IsCell()) CHECK(maybe_cell.InSharedHeap());
       CHECK(!is_extensible());
       CHECK(!is_prototype_map());
+      CHECK(OnlyHasSimpleProperties());
       CHECK(instance_descriptors(isolate).InSharedHeap());
       if (IsJSSharedArrayMap()) {
         CHECK(has_shared_array_elements());
@@ -1089,8 +1091,6 @@ void PropertyCell::PropertyCellVerify(Isolate* isolate) {
 
 void CodeDataContainer::CodeDataContainerVerify(Isolate* isolate) {
   CHECK(IsCodeDataContainer());
-  VerifyObjectField(isolate, kNextCodeLinkOffset);
-  CHECK(next_code_link().IsCodeT() || next_code_link().IsUndefined(isolate));
   if (V8_EXTERNAL_CODE_SPACE_BOOL) {
     if (raw_code() != Smi::zero()) {
       Code code = this->code();
@@ -1099,7 +1099,7 @@ void CodeDataContainer::CodeDataContainerVerify(Isolate* isolate) {
       // when external code space is not enabled.
       CHECK_EQ(code.kind(), kind());
       CHECK_EQ(code.builtin_id(), builtin_id());
-      if (V8_REMOVE_BUILTINS_CODE_OBJECTS) {
+      if (V8_EXTERNAL_CODE_SPACE_BOOL) {
         // When v8_flags.interpreted_frames_native_stack is enabled each
         // interpreted function gets its own copy of the
         // InterpreterEntryTrampoline. Thus, there could be Code'ful builtins.
@@ -1268,7 +1268,6 @@ void JSSharedStruct::JSSharedStructVerify(Isolate* isolate) {
     CHECK(details.representation().IsTagged());
     FieldIndex field_index = FieldIndex::ForDescriptor(struct_map, i);
     CHECK(RawFastPropertyAt(field_index).IsShared());
-    CHECK(field_index.is_inobject());
   }
 }
 

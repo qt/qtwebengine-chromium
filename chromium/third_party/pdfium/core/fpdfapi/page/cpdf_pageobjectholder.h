@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2016 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -68,7 +68,7 @@ class CPDF_PageObjectHolder {
   void ContinueParse(PauseIndicatorIface* pPause);
   ParseState GetParseState() const { return m_ParseState; }
 
-  CPDF_Document* GetDocument() const { return m_pDocument.Get(); }
+  CPDF_Document* GetDocument() const { return m_pDocument; }
   RetainPtr<const CPDF_Dictionary> GetDict() const { return m_pDict; }
   RetainPtr<CPDF_Dictionary> GetMutableDict() { return m_pDict; }
   RetainPtr<const CPDF_Dictionary> GetResources() const { return m_pResources; }
@@ -85,7 +85,9 @@ class CPDF_PageObjectHolder {
   size_t GetPageObjectCount() const { return m_PageObjectList.size(); }
   CPDF_PageObject* GetPageObjectByIndex(size_t index) const;
   void AppendPageObject(std::unique_ptr<CPDF_PageObject> pPageObj);
-  bool RemovePageObject(CPDF_PageObject* pPageObj);
+
+  // Remove `pPageObj` if present, and transfer ownership to the caller.
+  std::unique_ptr<CPDF_PageObject> RemovePageObject(CPDF_PageObject* pPageObj);
   bool ErasePageObjectAtIndex(size_t index);
 
   iterator begin() { return m_PageObjectList.begin(); }

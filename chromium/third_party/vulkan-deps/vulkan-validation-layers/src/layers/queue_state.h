@@ -92,7 +92,7 @@ class FENCE_STATE : public REFCOUNTED_NODE {
     uint64_t seq_{0};
     FENCE_STATUS state_;
     SyncScope scope_{kSyncScopeInternal};
-    mutable ReadWriteLock lock_;
+    mutable std::shared_mutex lock_;
     std::promise<void> completed_;
     std::shared_future<void> waiter_;
     ValidationStateTracker &dev_data_;
@@ -122,11 +122,9 @@ class SEMAPHORE_STATE : public REFCOUNTED_NODE {
     }
 
     struct SemOp {
-        SemOp() : op_type(kNone), queue(nullptr), seq(0), payload(0) {}
         SemOp(OpType ot, QUEUE_STATE *q, uint64_t queue_seq, uint64_t timeline_payload)
             : op_type(ot), queue(q), seq(queue_seq), payload(timeline_payload) {}
-        // NOTE: c++11 doesn't allow aggregate initialization and default member
-        // initializers in the same struct. This limitation is removed in c++14
+
         OpType op_type;
         QUEUE_STATE *queue;
         uint64_t seq;
@@ -136,18 +134,32 @@ class SEMAPHORE_STATE : public REFCOUNTED_NODE {
 
         bool IsWait() const { return op_type == kWait; }
         bool IsSignal() const { return op_type == kSignal; }
+        bool IsAcquire() const { return op_type == kBinaryAcquire; }
 
         // NOTE: Present semaphores are waited on by the implementation, not queue operations. We do not yet
         // have a good way to figure out when this wait completes, so we must assume they are safe to re-use
         bool CanBeSignaled() const { return op_type == kNone || op_type == kWait; }
         bool CanBeWaited() const {  return op_type == kSignal || op_type == kBinaryAcquire; }
+
+        void Notify() const;
     };
 
-    struct SemOpEntry : public SemOp {
-        SemOpEntry(OpType ot, QUEUE_STATE *q, uint64_t queue_seq, uint64_t timeline_payload)
-            : SemOp(ot, q, queue_seq, timeline_payload), completed(), waiter(completed.get_future()) {}
+    struct TimePoint {
+        TimePoint(SemOp &op) : signal_op(), completed(), waiter(completed.get_future()) {
+            if (op.op_type == kWait) {
+                wait_ops.emplace(op);
+            } else {
+                signal_op.emplace(op);
+            }
+        }
+        std::optional<SemOp> signal_op;
+        std::set<SemOp> wait_ops;
         std::promise<void> completed;
         std::shared_future<void> waiter;
+
+        bool HasSignaler() const { return signal_op.has_value(); }
+        bool HasWaiters() const { return !wait_ops.empty(); }
+        void Notify() const;
     };
 
 #ifdef VK_USE_PLATFORM_METAL_EXT
@@ -180,7 +192,8 @@ class SEMAPHORE_STATE : public REFCOUNTED_NODE {
 #endif  // VK_USE_PLATFORM_METAL_EXT
           type(type_create_info ? type_create_info->semaphoreType : VK_SEMAPHORE_TYPE_BINARY),
           exportHandleTypes(GetExportHandleTypes(pCreateInfo)),
-          completed_{kNone, nullptr, 0, type_create_info ? type_create_info->initialValue : 0},
+          completed_{type == VK_SEMAPHORE_TYPE_TIMELINE ? kSignal : kNone, nullptr, 0,
+                     type_create_info ? type_create_info->initialValue : 0},
           next_payload_(completed_.payload + 1),
           dev_data_(dev) {
     }
@@ -199,7 +212,7 @@ class SEMAPHORE_STATE : public REFCOUNTED_NODE {
 
     // Enqueue a semaphore operation. For binary semaphores, the payload value is generated and
     // returned, so that every semaphore operation has a unique value.
-    bool EnqueueSignal(QUEUE_STATE *queue, uint64_t queue_seq, uint64_t &payload);
+    void EnqueueSignal(QUEUE_STATE *queue, uint64_t queue_seq, uint64_t &payload);
     void EnqueueWait(QUEUE_STATE *queue, uint64_t queue_seq, uint64_t &payload);
 
     // Binary only special cases enqueue functions
@@ -216,18 +229,14 @@ class SEMAPHORE_STATE : public REFCOUNTED_NODE {
     // Remove completed operations and signal any waiters. This should only be called by QUEUE_STATE
     void Retire(QUEUE_STATE *current_queue, uint64_t payload);
 
-    // For vkSignalSemaphores()
-    void RetireTimeline(uint64_t payload);
-
     // look for most recent / highest payload operation that matches
-    layer_data::optional<SemOp> LastOp(std::function<bool(const SemOp &)> filter = nullptr) const;
+    std::optional<SemOp> LastOp(const std::function<bool(const SemOp &, bool is_pending)> &filter = nullptr) const;
 
     bool CanBeSignaled() const;
     bool CanBeWaited() const;
-    VkQueue AnotherQueueWaitsBinary(VkQueue queue) const;
     bool HasPendingOps() const {
         auto guard = ReadLock();
-        return !operations_.empty();
+        return !timeline_.empty();
     }
 
     void Import(VkExternalSemaphoreHandleTypeFlagBits handle_type, VkSemaphoreImportFlags flags);
@@ -249,10 +258,10 @@ class SEMAPHORE_STATE : public REFCOUNTED_NODE {
     uint64_t next_payload_;
 
     // Set of pending operations ordered by payload.
-    // Timeline operations can be added in any order and multiple operations
+    // Timeline operations can be added in any order and multiple wait operations
     // can use the same payload value.
-    std::multimap<uint64_t, SemOpEntry> operations_;
-    mutable ReadWriteLock lock_;
+    std::map<uint64_t, TimePoint> timeline_;
+    mutable std::shared_mutex lock_;
     ValidationStateTracker &dev_data_;
 };
 
@@ -273,7 +282,7 @@ struct CB_SUBMISSION {
     std::promise<void> completed;
     std::shared_future<void> waiter;
 
-    void AddCommandBuffer(std::shared_ptr<CMD_BUFFER_STATE> &&cb_node) { cbs.emplace_back(std::move(cb_node)); }
+    void AddCommandBuffer(std::shared_ptr<CMD_BUFFER_STATE> &&cb_state) { cbs.emplace_back(std::move(cb_state)); }
 
     void AddSignalSemaphore(std::shared_ptr<SEMAPHORE_STATE> &&semaphore_state, uint64_t value) {
         signal_semaphores.emplace_back(std::move(semaphore_state), value);
@@ -312,16 +321,16 @@ class QUEUE_STATE : public BASE_NODE {
     // Tell the queue and then wait for it to finish updating its state.
     // UINT64_MAX means to finish all submissions.
     void NotifyAndWait(uint64_t until_seq = UINT64_MAX);
+    std::shared_future<void> Wait(uint64_t until_seq = UINT64_MAX);
 
     const uint32_t queueFamilyIndex;
     const VkDeviceQueueCreateFlags flags;
     const VkQueueFamilyProperties queueFamilyProperties;
 
-    std::shared_future<void> Wait(uint64_t until_seq = UINT64_MAX);
   private:
     using LockGuard = std::unique_lock<std::mutex>;
     void ThreadFunc();
-    layer_data::optional<CB_SUBMISSION> NextSubmission();
+    CB_SUBMISSION *NextSubmission();
     LockGuard Lock() const { return LockGuard(lock_); }
 
     ValidationStateTracker &dev_data_;

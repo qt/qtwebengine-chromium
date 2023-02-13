@@ -27,38 +27,40 @@
 #define TABLE_DEF(name, size) \
     DECLARE_ALIGNED(32, TXSample, TX_TAB(ff_tx_tab_ ##name))[size]
 
-#define SR_TABLE(len) \
-    TABLE_DEF(len, len/4 + 1)
+#define SR_POW2_TABLES \
+    SR_TABLE(8)        \
+    SR_TABLE(16)       \
+    SR_TABLE(32)       \
+    SR_TABLE(64)       \
+    SR_TABLE(128)      \
+    SR_TABLE(256)      \
+    SR_TABLE(512)      \
+    SR_TABLE(1024)     \
+    SR_TABLE(2048)     \
+    SR_TABLE(4096)     \
+    SR_TABLE(8192)     \
+    SR_TABLE(16384)    \
+    SR_TABLE(32768)    \
+    SR_TABLE(65536)    \
+    SR_TABLE(131072)   \
 
+#define SR_TABLE(len) \
+    TABLE_DEF(len, len/4 + 1);
 /* Power of two tables */
-SR_TABLE(8);
-SR_TABLE(16);
-SR_TABLE(32);
-SR_TABLE(64);
-SR_TABLE(128);
-SR_TABLE(256);
-SR_TABLE(512);
-SR_TABLE(1024);
-SR_TABLE(2048);
-SR_TABLE(4096);
-SR_TABLE(8192);
-SR_TABLE(16384);
-SR_TABLE(32768);
-SR_TABLE(65536);
-SR_TABLE(131072);
+SR_POW2_TABLES
+#undef SR_TABLE
 
 /* Other factors' tables */
-TABLE_DEF(53, 8);
-TABLE_DEF( 7, 6);
-TABLE_DEF( 9, 8);
+TABLE_DEF(53, 12);
+TABLE_DEF( 7,  6);
+TABLE_DEF( 9,  8);
 
-typedef struct FFSRTabsInitOnce {
+typedef struct FFTabInitData {
     void (*func)(void);
-    AVOnce control;
     int factors[TX_MAX_SUB]; /* Must be sorted high -> low */
-} FFSRTabsInitOnce;
+} FFTabInitData;
 
-#define INIT_FF_SR_TAB(len)                                        \
+#define SR_TABLE(len)                                              \
 static av_cold void TX_TAB(ff_tx_init_tab_ ##len)(void)            \
 {                                                                  \
     double freq = 2*M_PI/len;                                      \
@@ -69,54 +71,41 @@ static av_cold void TX_TAB(ff_tx_init_tab_ ##len)(void)            \
                                                                    \
     *tab = 0;                                                      \
 }
+SR_POW2_TABLES
+#undef SR_TABLE
 
-INIT_FF_SR_TAB(8)
-INIT_FF_SR_TAB(16)
-INIT_FF_SR_TAB(32)
-INIT_FF_SR_TAB(64)
-INIT_FF_SR_TAB(128)
-INIT_FF_SR_TAB(256)
-INIT_FF_SR_TAB(512)
-INIT_FF_SR_TAB(1024)
-INIT_FF_SR_TAB(2048)
-INIT_FF_SR_TAB(4096)
-INIT_FF_SR_TAB(8192)
-INIT_FF_SR_TAB(16384)
-INIT_FF_SR_TAB(32768)
-INIT_FF_SR_TAB(65536)
-INIT_FF_SR_TAB(131072)
-
-static FFSRTabsInitOnce sr_tabs_init_once[] = {
-    { TX_TAB(ff_tx_init_tab_8),      AV_ONCE_INIT },
-    { TX_TAB(ff_tx_init_tab_16),     AV_ONCE_INIT },
-    { TX_TAB(ff_tx_init_tab_32),     AV_ONCE_INIT },
-    { TX_TAB(ff_tx_init_tab_64),     AV_ONCE_INIT },
-    { TX_TAB(ff_tx_init_tab_128),    AV_ONCE_INIT },
-    { TX_TAB(ff_tx_init_tab_256),    AV_ONCE_INIT },
-    { TX_TAB(ff_tx_init_tab_512),    AV_ONCE_INIT },
-    { TX_TAB(ff_tx_init_tab_1024),   AV_ONCE_INIT },
-    { TX_TAB(ff_tx_init_tab_2048),   AV_ONCE_INIT },
-    { TX_TAB(ff_tx_init_tab_4096),   AV_ONCE_INIT },
-    { TX_TAB(ff_tx_init_tab_8192),   AV_ONCE_INIT },
-    { TX_TAB(ff_tx_init_tab_16384),  AV_ONCE_INIT },
-    { TX_TAB(ff_tx_init_tab_32768),  AV_ONCE_INIT },
-    { TX_TAB(ff_tx_init_tab_65536),  AV_ONCE_INIT },
-    { TX_TAB(ff_tx_init_tab_131072), AV_ONCE_INIT },
+static void (*const sr_tabs_init_funcs[])(void) = {
+#define SR_TABLE(len) TX_TAB(ff_tx_init_tab_ ##len),
+    SR_POW2_TABLES
+#undef SR_TABLE
 };
 
-static void TX_TAB(ff_tx_init_tab_53)(void)
+static AVOnce sr_tabs_init_once[] = {
+#define SR_TABLE(len) AV_ONCE_INIT,
+    SR_POW2_TABLES
+#undef SR_TABLE
+};
+
+static av_cold void TX_TAB(ff_tx_init_tab_53)(void)
 {
-    TX_TAB(ff_tx_tab_53)[0] = RESCALE(cos(2 * M_PI / 12));
-    TX_TAB(ff_tx_tab_53)[1] = RESCALE(cos(2 * M_PI / 12));
-    TX_TAB(ff_tx_tab_53)[2] = RESCALE(cos(2 * M_PI /  6));
-    TX_TAB(ff_tx_tab_53)[3] = RESCALE(cos(8 * M_PI /  6));
-    TX_TAB(ff_tx_tab_53)[4] = RESCALE(cos(2 * M_PI /  5));
-    TX_TAB(ff_tx_tab_53)[5] = RESCALE(sin(8 * M_PI /  5));
-    TX_TAB(ff_tx_tab_53)[6] = RESCALE(cos(2 * M_PI / 10));
-    TX_TAB(ff_tx_tab_53)[7] = RESCALE(sin(6 * M_PI /  5));
+    /* 5pt, doubled to eliminate AVX lane shuffles */
+    TX_TAB(ff_tx_tab_53)[0] = RESCALE(cos(2 * M_PI /  5));
+    TX_TAB(ff_tx_tab_53)[1] = RESCALE(cos(2 * M_PI /  5));
+    TX_TAB(ff_tx_tab_53)[2] = RESCALE(cos(2 * M_PI / 10));
+    TX_TAB(ff_tx_tab_53)[3] = RESCALE(cos(2 * M_PI / 10));
+    TX_TAB(ff_tx_tab_53)[4] = RESCALE(sin(2 * M_PI /  5));
+    TX_TAB(ff_tx_tab_53)[5] = RESCALE(sin(2 * M_PI /  5));
+    TX_TAB(ff_tx_tab_53)[6] = RESCALE(sin(2 * M_PI / 10));
+    TX_TAB(ff_tx_tab_53)[7] = RESCALE(sin(2 * M_PI / 10));
+
+    /* 3pt */
+    TX_TAB(ff_tx_tab_53)[ 8] = RESCALE(cos(2 * M_PI / 12));
+    TX_TAB(ff_tx_tab_53)[ 9] = RESCALE(cos(2 * M_PI / 12));
+    TX_TAB(ff_tx_tab_53)[10] = RESCALE(cos(2 * M_PI /  6));
+    TX_TAB(ff_tx_tab_53)[11] = RESCALE(cos(8 * M_PI /  6));
 }
 
-static void TX_TAB(ff_tx_init_tab_7)(void)
+static av_cold void TX_TAB(ff_tx_init_tab_7)(void)
 {
     TX_TAB(ff_tx_tab_7)[0] = RESCALE(cos(2 * M_PI /  7));
     TX_TAB(ff_tx_tab_7)[1] = RESCALE(sin(2 * M_PI /  7));
@@ -126,7 +115,7 @@ static void TX_TAB(ff_tx_init_tab_7)(void)
     TX_TAB(ff_tx_tab_7)[5] = RESCALE(sin(2 * M_PI / 14));
 }
 
-static void TX_TAB(ff_tx_init_tab_9)(void)
+static av_cold void TX_TAB(ff_tx_init_tab_9)(void)
 {
     TX_TAB(ff_tx_tab_9)[0] = RESCALE(cos(2 * M_PI /  3));
     TX_TAB(ff_tx_tab_9)[1] = RESCALE(sin(2 * M_PI /  3));
@@ -138,10 +127,16 @@ static void TX_TAB(ff_tx_init_tab_9)(void)
     TX_TAB(ff_tx_tab_9)[7] = TX_TAB(ff_tx_tab_9)[3] - TX_TAB(ff_tx_tab_9)[4];
 }
 
-static FFSRTabsInitOnce nptwo_tabs_init_once[] = {
-    { TX_TAB(ff_tx_init_tab_53),      AV_ONCE_INIT, { 15, 5, 3 } },
-    { TX_TAB(ff_tx_init_tab_9),       AV_ONCE_INIT, {  9 }       },
-    { TX_TAB(ff_tx_init_tab_7),       AV_ONCE_INIT, {  7 }       },
+static const FFTabInitData nptwo_tabs_init_data[] = {
+    { TX_TAB(ff_tx_init_tab_53),      { 15, 5, 3 } },
+    { TX_TAB(ff_tx_init_tab_9),       {  9 }       },
+    { TX_TAB(ff_tx_init_tab_7),       {  7 }       },
+};
+
+static AVOnce nptwo_tabs_init_once[] = {
+    AV_ONCE_INIT,
+    AV_ONCE_INIT,
+    AV_ONCE_INIT,
 };
 
 av_cold void TX_TAB(ff_tx_init_tabs)(int len)
@@ -150,23 +145,23 @@ av_cold void TX_TAB(ff_tx_init_tabs)(int len)
     if (factor_2) {
         int idx = factor_2 - 3;
         for (int i = 0; i <= idx; i++)
-            ff_thread_once(&sr_tabs_init_once[i].control,
-                            sr_tabs_init_once[i].func);
+            ff_thread_once(&sr_tabs_init_once[i],
+                            sr_tabs_init_funcs[i]);
         len >>= factor_2;
     }
 
-    for (int i = 0; i < FF_ARRAY_ELEMS(nptwo_tabs_init_once); i++) {
+    for (int i = 0; i < FF_ARRAY_ELEMS(nptwo_tabs_init_data); i++) {
         int f, f_idx = 0;
 
         if (len <= 1)
             return;
 
-        while ((f = nptwo_tabs_init_once[i].factors[f_idx++])) {
+        while ((f = nptwo_tabs_init_data[i].factors[f_idx++])) {
             if (f % len)
                 continue;
 
-            ff_thread_once(&nptwo_tabs_init_once[i].control,
-                            nptwo_tabs_init_once[i].func);
+            ff_thread_once(&nptwo_tabs_init_once[i],
+                            nptwo_tabs_init_data[i].func);
             len /= f;
             break;
         }
@@ -189,19 +184,19 @@ static av_always_inline void fft3(TXComplex *out, TXComplex *in,
     out[0*stride].im = in[0].im + tmp[1].im;
 
 #ifdef TX_INT32
-    mtmp[0] = (int64_t)tab[0] * tmp[0].re;
-    mtmp[1] = (int64_t)tab[1] * tmp[0].im;
-    mtmp[2] = (int64_t)tab[2] * tmp[1].re;
-    mtmp[3] = (int64_t)tab[2] * tmp[1].im;
+    mtmp[0] = (int64_t)tab[ 8] * tmp[0].re;
+    mtmp[1] = (int64_t)tab[ 9] * tmp[0].im;
+    mtmp[2] = (int64_t)tab[10] * tmp[1].re;
+    mtmp[3] = (int64_t)tab[10] * tmp[1].im;
     out[1*stride].re = in[0].re - (mtmp[2] + mtmp[0] + 0x40000000 >> 31);
     out[1*stride].im = in[0].im - (mtmp[3] - mtmp[1] + 0x40000000 >> 31);
     out[2*stride].re = in[0].re - (mtmp[2] - mtmp[0] + 0x40000000 >> 31);
     out[2*stride].im = in[0].im - (mtmp[3] + mtmp[1] + 0x40000000 >> 31);
 #else
-    tmp[0].re = tab[0] * tmp[0].re;
-    tmp[0].im = tab[1] * tmp[0].im;
-    tmp[1].re = tab[2] * tmp[1].re;
-    tmp[1].im = tab[2] * tmp[1].im;
+    tmp[0].re = tab[ 8] * tmp[0].re;
+    tmp[0].im = tab[ 9] * tmp[0].im;
+    tmp[1].re = tab[10] * tmp[1].re;
+    tmp[1].im = tab[10] * tmp[1].im;
     out[1*stride].re = in[0].re - tmp[1].re + tmp[0].re;
     out[1*stride].im = in[0].im - tmp[1].im - tmp[0].im;
     out[2*stride].re = in[0].re - tmp[1].re - tmp[0].re;
@@ -224,10 +219,10 @@ static av_always_inline void NAME(TXComplex *out, TXComplex *in,    \
     out[D0*stride].re = in[0].re + t[0].re + t[2].re;               \
     out[D0*stride].im = in[0].im + t[0].im + t[2].im;               \
                                                                     \
-    SMUL(t[4].re, t[0].re, tab[4], tab[6], t[2].re, t[0].re);       \
-    SMUL(t[4].im, t[0].im, tab[4], tab[6], t[2].im, t[0].im);       \
-    CMUL(t[5].re, t[1].re, -tab[5], -tab[7], t[3].re, t[1].re);     \
-    CMUL(t[5].im, t[1].im, -tab[5], -tab[7], t[3].im, t[1].im);     \
+    SMUL(t[4].re, t[0].re, tab[0], tab[2], t[2].re, t[0].re);       \
+    SMUL(t[4].im, t[0].im, tab[0], tab[2], t[2].im, t[0].im);       \
+    CMUL(t[5].re, t[1].re, tab[4], tab[6], t[3].re, t[1].re);       \
+    CMUL(t[5].im, t[1].im, tab[4], tab[6], t[3].im, t[1].im);       \
                                                                     \
     BF(z0[0].re, z0[3].re, t[0].re, t[1].re);                       \
     BF(z0[0].im, z0[3].im, t[0].im, t[1].im);                       \
@@ -965,15 +960,14 @@ static av_cold int TX_NAME(ff_tx_mdct_init)(AVTXContext *s,
             return ret;
     }
 
-    /* If we need to preshuffle just steal the map from the subcontext */
-    if (s->sub[0].flags & FF_TX_PRESHUFFLE) {
-        s->map = s->sub[0].map;
-        s->sub[0].map = NULL;
-    } else {
-        s->map = av_malloc((len >> 1)*sizeof(*s->map));
-        if (!s->map)
-            return AVERROR(ENOMEM);
+    s->map = av_malloc((len >> 1)*sizeof(*s->map));
+    if (!s->map)
+        return AVERROR(ENOMEM);
 
+    /* If we need to preshuffle copy the map from the subcontext */
+    if (s->sub[0].flags & FF_TX_PRESHUFFLE) {
+        memcpy(s->map, s->sub->map, (len >> 1)*sizeof(*s->map));
+    } else {
         for (int i = 0; i < len >> 1; i++)
             s->map[i] = i;
     }

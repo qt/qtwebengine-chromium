@@ -155,10 +155,6 @@ struct FeaturesMtl : FeatureSetBase
         &members,
     };
 
-    FeatureInfo directMetalGeneration = {"directMetalGeneration", FeatureCategory::MetalFeatures,
-                                         "Direct translation to Metal.", &members,
-                                         "http://anglebug.com/5505"};
-
     FeatureInfo forceNonCSBaseMipmapGeneration = {
         "forceNonCSBaseMipmapGeneration",
         FeatureCategory::MetalFeatures,
@@ -232,6 +228,46 @@ struct FeaturesMtl : FeatureSetBase
         "uploadDataToIosurfacesWithStagingBuffers", FeatureCategory::MetalWorkarounds,
         "When uploading data to IOSurface-backed textures, use a staging buffer.", &members,
         "http://anglebug.com/7573"};
+
+    FeatureInfo alwaysUseStagedBufferUpdates = {
+        "alwaysUseStagedBufferUpdates", FeatureCategory::MetalFeatures,
+        "Always update buffers by copying the data to a staging buffer and then blitting it to the "
+        "actual buffer",
+        &members, "http://anglebug.com/7544"};
+
+    FeatureInfo useShadowBuffersWhenAppropriate = {
+        "useShadowBuffersWhenAppropriate", FeatureCategory::MetalFeatures,
+        "On some architectures using a shadow buffer can be faster for certain size buffers",
+        &members, "http://anglebug.com/7544"};
+
+    FeatureInfo alwaysUseManagedStorageModeForBuffers = {
+        "alwaysUseManagedStorageModeForBuffers", FeatureCategory::MetalFeatures,
+        "Metal buffers can be managed, shared, or private. Sometimes managed is fastest", &members,
+        "http://anglebug.com/7544"};
+
+    FeatureInfo alwaysUseSharedStorageModeForBuffers = {
+        "alwaysUseSharedStorageModeForBuffers", FeatureCategory::MetalFeatures,
+        "Metal buffers can be managed, shared, or private. Sometimes shared is fastest", &members,
+        "http://anglebug.com/7544"};
+
+    FeatureInfo preferCpuForBuffersubdata = {
+        "preferCpuForBuffersubdata", FeatureCategory::MetalFeatures,
+        "Makes bufferSubData always update via CPU", &members, "http://anglebug.com/7544"};
+
+    FeatureInfo disableProgrammableBlending = {
+        "disableProgrammableBlending", FeatureCategory::MetalFeatures,
+        "Disable programmable blending in order to test read_write pixel local storage textures",
+        &members, "http://anglebug.com/7279"};
+
+    FeatureInfo disableRWTextureTier2Support = {
+        "disableRWTextureTier2Support", FeatureCategory::MetalFeatures,
+        "Disable tier2 read_write textures in order to test tier1 support", &members,
+        "http://anglebug.com/7279"};
+
+    FeatureInfo disableRasterOrderGroups = {
+        "disableRasterOrderGroups", FeatureCategory::MetalFeatures,
+        "Disable raster order groups in order to test pixel local storage memory barriers",
+        &members, "http://anglebug.com/7279"};
 };
 
 inline FeaturesMtl::FeaturesMtl()  = default;

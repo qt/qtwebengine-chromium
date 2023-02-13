@@ -38,6 +38,7 @@ typedef struct {
   int layering_mode;
   int output_obu;
   int decode;
+  int tune_content;
 } AppInput;
 
 typedef enum {
@@ -91,6 +92,14 @@ static const arg_def_t output_obu_arg =
 static const arg_def_t test_decode_arg =
     ARG_DEF(NULL, "test-decode", 1,
             "Attempt to test decoding the output when set to 1. Default is 1.");
+static const struct arg_enum_list tune_content_enum[] = {
+  { "default", AOM_CONTENT_DEFAULT },
+  { "screen", AOM_CONTENT_SCREEN },
+  { "film", AOM_CONTENT_FILM },
+  { NULL, 0 }
+};
+static const arg_def_t tune_content_arg = ARG_DEF_ENUM(
+    NULL, "tune-content", 1, "Tune content type", tune_content_enum);
 
 #if CONFIG_AV1_HIGHBITDEPTH
 static const struct arg_enum_list bitdepth_enum[] = {
@@ -125,6 +134,7 @@ static const arg_def_t *svc_args[] = { &frames_arg,
                                        &error_resilient_arg,
                                        &output_obu_arg,
                                        &test_decode_arg,
+                                       &tune_content_arg,
                                        NULL };
 
 #define zero(Dest) memset(&(Dest), 0, sizeof(Dest))
@@ -365,6 +375,9 @@ static void parse_command_line(int argc, const char **argv_,
       if (app_input->decode != 0 && app_input->decode != 1)
         die("Invalid value for test decode flag (0, 1): %d.",
             app_input->decode);
+    } else if (arg_match(&arg, &tune_content_arg, argi)) {
+      app_input->tune_content = arg_parse_enum_or_int(&arg);
+      printf("tune content %d\n", app_input->tune_content);
     } else {
       ++argj;
     }
@@ -591,7 +604,7 @@ static void set_layer_pattern(
     int spatial_layer_id, int is_key_frame, int ksvc_mode, int speed) {
   // Setting this flag to 1 enables simplex example of
   // RPS (Reference Picture Selection) for 1 layer.
-  int use_rps_example = 1;
+  int use_rps_example = 0;
   int i;
   int enable_longterm_temporal_ref = 1;
   int shift = (layering_mode == 8) ? 2 : 0;
@@ -1353,9 +1366,25 @@ int main(int argc, const char **argv) {
   aom_codec_control(&codec, AV1E_SET_MV_COST_UPD_FREQ, 3);
   aom_codec_control(&codec, AV1E_SET_DV_COST_UPD_FREQ, 3);
   aom_codec_control(&codec, AV1E_SET_CDF_UPDATE_MODE, 1);
+
+  // Settings to reduce key frame encoding time.
+  aom_codec_control(&codec, AV1E_SET_ENABLE_CFL_INTRA, 0);
+  aom_codec_control(&codec, AV1E_SET_ENABLE_SMOOTH_INTRA, 0);
+  aom_codec_control(&codec, AV1E_SET_ENABLE_ANGLE_DELTA, 0);
+  aom_codec_control(&codec, AV1E_SET_ENABLE_FILTER_INTRA, 0);
+  aom_codec_control(&codec, AV1E_SET_INTRA_DEFAULT_TX_ONLY, 1);
+
   aom_codec_control(&codec, AV1E_SET_TILE_COLUMNS,
                     cfg.g_threads ? get_msb(cfg.g_threads) : 0);
   if (cfg.g_threads > 1) aom_codec_control(&codec, AV1E_SET_ROW_MT, 1);
+
+  aom_codec_control(&codec, AV1E_SET_TUNE_CONTENT, app_input.tune_content);
+  if (app_input.tune_content == AOM_CONTENT_SCREEN) {
+    aom_codec_control(&codec, AV1E_SET_ENABLE_PALETTE, 1);
+    aom_codec_control(&codec, AV1E_SET_ENABLE_CFL_INTRA, 1);
+    // INTRABC is currently disabled for rt mode, as it's too slow.
+    aom_codec_control(&codec, AV1E_SET_ENABLE_INTRABC, 0);
+  }
 
   svc_params.number_spatial_layers = ss_number_layers;
   svc_params.number_temporal_layers = ts_number_layers;
@@ -1449,14 +1478,43 @@ int main(int argc, const char **argv) {
       if (frame_avail && slx == 0) ++rc.layer_input_frames[layer];
 
       if (test_dynamic_scaling_single_layer) {
-        if (frame_cnt >= 200 && frame_cnt <= 400) {
+        // Example to scale source down by 2x2, then 4x4, and then back up to
+        // 2x2, and then back to original.
+        int frame_2x2 = 200;
+        int frame_4x4 = 400;
+        int frame_2x2up = 600;
+        int frame_orig = 800;
+        if (frame_cnt >= frame_2x2 && frame_cnt < frame_4x4) {
           // Scale source down by 2x2.
           struct aom_scaling_mode mode = { AOME_ONETWO, AOME_ONETWO };
           aom_codec_control(&codec, AOME_SET_SCALEMODE, &mode);
-        } else {
+        } else if (frame_cnt >= frame_4x4 && frame_cnt < frame_2x2up) {
+          // Scale source down by 4x4.
+          struct aom_scaling_mode mode = { AOME_ONEFOUR, AOME_ONEFOUR };
+          aom_codec_control(&codec, AOME_SET_SCALEMODE, &mode);
+        } else if (frame_cnt >= frame_2x2up && frame_cnt < frame_orig) {
+          // Source back up to 2x2.
+          struct aom_scaling_mode mode = { AOME_ONETWO, AOME_ONETWO };
+          aom_codec_control(&codec, AOME_SET_SCALEMODE, &mode);
+        } else if (frame_cnt >= frame_orig) {
           // Source back up to original resolution (no scaling).
           struct aom_scaling_mode mode = { AOME_NORMAL, AOME_NORMAL };
           aom_codec_control(&codec, AOME_SET_SCALEMODE, &mode);
+        }
+        if (frame_cnt == frame_2x2 || frame_cnt == frame_4x4 ||
+            frame_cnt == frame_2x2up || frame_cnt == frame_orig) {
+          // For dynamic resize testing on single layer: refresh all references
+          // on the resized frame: this is to avoid decode error:
+          // if resize goes down by >= 4x4 then libaom decoder will throw an
+          // error that some reference (even though not used) is beyond the
+          // limit size (must be smaller than 4x4).
+          for (i = 0; i < REF_FRAMES; i++) ref_frame_config.refresh[i] = 1;
+          if (use_svc_control) {
+            aom_codec_control(&codec, AV1E_SET_SVC_REF_FRAME_CONFIG,
+                              &ref_frame_config);
+            aom_codec_control(&codec, AV1E_SET_SVC_REF_FRAME_COMP_PRED,
+                              &ref_frame_comp_pred);
+          }
         }
       }
 

@@ -286,6 +286,8 @@ static const ExtensionProperties instanceExtensionProperties[] = {
 	{ { VK_EXT_HEADLESS_SURFACE_EXTENSION_NAME, VK_EXT_HEADLESS_SURFACE_SPEC_VERSION } },
 #ifndef __ANDROID__
 	{ { VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_SURFACE_SPEC_VERSION } },
+	{ { VK_EXT_SURFACE_MAINTENANCE_1_EXTENSION_NAME, VK_EXT_SURFACE_MAINTENANCE_1_SPEC_VERSION } },
+	{ { VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME, VK_KHR_GET_SURFACE_CAPABILITIES_2_SPEC_VERSION } },
 #endif
 #ifdef VK_USE_PLATFORM_XCB_KHR
 	{ { VK_KHR_XCB_SURFACE_EXTENSION_NAME, VK_KHR_XCB_SURFACE_SPEC_VERSION }, [] { return vk::XcbSurfaceKHR::isSupported(); } },
@@ -401,6 +403,8 @@ static const ExtensionProperties deviceExtensionProperties[] = {
 	{ { VK_KHR_SHADER_NON_SEMANTIC_INFO_EXTENSION_NAME, VK_KHR_SHADER_NON_SEMANTIC_INFO_SPEC_VERSION } },
 	{ { VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME, VK_KHR_SYNCHRONIZATION_2_SPEC_VERSION } },
 	{ { VK_KHR_ZERO_INITIALIZE_WORKGROUP_MEMORY_EXTENSION_NAME, VK_KHR_ZERO_INITIALIZE_WORKGROUP_MEMORY_SPEC_VERSION } },
+	// Roadmap 2022 extension
+	{ { VK_KHR_GLOBAL_PRIORITY_EXTENSION_NAME, VK_KHR_GLOBAL_PRIORITY_SPEC_VERSION } },
 	// Additional extension
 	{ { VK_EXT_DEPTH_CLIP_CONTROL_EXTENSION_NAME, VK_EXT_DEPTH_CLIP_CONTROL_SPEC_VERSION } },
 	{ { VK_GOOGLE_DECORATE_STRING_EXTENSION_NAME, VK_GOOGLE_DECORATE_STRING_SPEC_VERSION } },
@@ -410,6 +414,9 @@ static const ExtensionProperties deviceExtensionProperties[] = {
 	{ { VK_KHR_SAMPLER_MIRROR_CLAMP_TO_EDGE_EXTENSION_NAME, VK_KHR_SAMPLER_MIRROR_CLAMP_TO_EDGE_SPEC_VERSION } },
 	{ { VK_KHR_SWAPCHAIN_MUTABLE_FORMAT_EXTENSION_NAME, VK_KHR_SWAPCHAIN_MUTABLE_FORMAT_SPEC_VERSION } },
 	{ { VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME, VK_KHR_PIPELINE_LIBRARY_SPEC_VERSION } },
+#ifndef __ANDROID__
+	{ { VK_EXT_SWAPCHAIN_MAINTENANCE_1_EXTENSION_NAME, VK_EXT_SWAPCHAIN_MAINTENANCE_1_SPEC_VERSION } },
+#endif
 	{ { VK_EXT_GRAPHICS_PIPELINE_LIBRARY_EXTENSION_NAME, VK_EXT_GRAPHICS_PIPELINE_LIBRARY_SPEC_VERSION } },
 	{ { VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME, VK_EXT_DESCRIPTOR_INDEXING_SPEC_VERSION } },
 	{ { VK_EXT_DEPTH_CLIP_ENABLE_EXTENSION_NAME, VK_EXT_DEPTH_CLIP_ENABLE_SPEC_VERSION } },
@@ -510,8 +517,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(const VkInstanceCreateInfo *pCre
 
 	initializeLibrary();
 
-	if(pCreateInfo->flags != 0 &&
-	   pCreateInfo->flags != VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR)  // TODO(https://github.com/KhronosGroup/Vulkan-Loader/issues/992)
+	if(pCreateInfo->flags != 0)
 	{
 		// Vulkan 1.3: "flags is reserved for future use." "flags must be 0"
 		UNSUPPORTED("pCreateInfo->flags 0x%08X", int(pCreateInfo->flags));
@@ -804,7 +810,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(VkPhysicalDevice physicalDevice, c
 				(void)(dynamicRenderingFeatures->dynamicRendering);
 			}
 			break;
-		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SEPARATE_DEPTH_STENCIL_LAYOUTS_FEATURES_KHR:
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SEPARATE_DEPTH_STENCIL_LAYOUTS_FEATURES:
 			{
 				const VkPhysicalDeviceSeparateDepthStencilLayoutsFeaturesKHR *shaderDrawParametersFeatures = reinterpret_cast<const VkPhysicalDeviceSeparateDepthStencilLayoutsFeaturesKHR *>(extensionCreateInfo);
 
@@ -846,7 +852,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(VkPhysicalDevice physicalDevice, c
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ROBUSTNESS_2_FEATURES_EXT:
 			ASSERT(!hasDeviceExtension(VK_EXT_ROBUSTNESS_2_EXTENSION_NAME));
 			break;
-		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGELESS_FRAMEBUFFER_FEATURES_KHR:
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGELESS_FRAMEBUFFER_FEATURES:
 			{
 				const VkPhysicalDeviceImagelessFramebufferFeaturesKHR *imagelessFramebufferFeatures = reinterpret_cast<const VkPhysicalDeviceImagelessFramebufferFeaturesKHR *>(extensionCreateInfo);
 				// Always provide Imageless Framebuffers
@@ -1068,6 +1074,16 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(VkPhysicalDevice physicalDevice, c
 				}
 			}
 			break;
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_GLOBAL_PRIORITY_QUERY_FEATURES_KHR:
+			{
+				const auto *globalPriorityQueryFeatures = reinterpret_cast<const VkPhysicalDeviceGlobalPriorityQueryFeaturesKHR *>(extensionCreateInfo);
+				bool hasFeatures = vk::Cast(physicalDevice)->hasExtendedFeatures(globalPriorityQueryFeatures);
+				if(!hasFeatures)
+				{
+					return VK_ERROR_FEATURE_NOT_PRESENT;
+				}
+			}
+			break;
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROTECTED_MEMORY_FEATURES:
 			{
 				const auto *protectedMemoryFeatures = reinterpret_cast<const VkPhysicalDeviceProtectedMemoryFeatures *>(extensionCreateInfo);
@@ -1078,7 +1094,20 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(VkPhysicalDevice physicalDevice, c
 				}
 			}
 			break;
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES:
+			{
+				const auto *bufferDeviceAddressFeatures = reinterpret_cast<const VkPhysicalDeviceBufferDeviceAddressFeatures *>(extensionCreateInfo);
+				bool hasFeatures = vk::Cast(physicalDevice)->hasExtendedFeatures(bufferDeviceAddressFeatures);
+				if(!hasFeatures)
+				{
+					return VK_ERROR_FEATURE_NOT_PRESENT;
+				}
+			}
+			break;
 		// These structs are supported, but no behavior changes based on their feature flags
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_8BIT_STORAGE_FEATURES:
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FLOAT16_INT8_FEATURES:
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_INT64_FEATURES:
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_UNIFORM_BUFFER_STANDARD_LAYOUT_FEATURES:
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_SUBGROUP_EXTENDED_TYPES_FEATURES:
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_4444_FORMATS_FEATURES_EXT:
@@ -1087,11 +1116,9 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(VkPhysicalDevice physicalDevice, c
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_4_FEATURES:
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RASTERIZATION_ORDER_ATTACHMENT_ACCESS_FEATURES_EXT:
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_GRAPHICS_PIPELINE_LIBRARY_FEATURES_EXT:
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SWAPCHAIN_MAINTENANCE_1_FEATURES_EXT:
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_CLIP_CONTROL_FEATURES_EXT:
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_ROBUSTNESS_FEATURES_EXT:
-			break;
-		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COHERENT_MEMORY_FEATURES_AMD:
-			// TODO(b/247637094): VK-GL-CTS uses this enum without properly checking for VK_AMD_device_coherent_memory first.
 			break;
 		default:
 			// "the [driver] must skip over, without processing (other than reading the sType and pNext members) any structures in the chain with sType values not defined by [supported extenions]"
@@ -1125,7 +1152,22 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(VkPhysicalDevice physicalDevice, c
 		const auto *extInfo = reinterpret_cast<const VkBaseInStructure *>(queueCreateInfo.pNext);
 		while(extInfo)
 		{
-			UNSUPPORTED("pCreateInfo->pQueueCreateInfos[%d].pNext sType = %s", i, vk::Stringify(extInfo->sType).c_str());
+			switch(extInfo->sType)
+			{
+			case VK_STRUCTURE_TYPE_DEVICE_QUEUE_GLOBAL_PRIORITY_CREATE_INFO_KHR:
+				{
+					const auto *globalPriorityCreateInfo = reinterpret_cast<const VkDeviceQueueGlobalPriorityCreateInfoKHR *>(extInfo);
+					if(!(vk::Cast(physicalDevice)->validateQueueGlobalPriority(globalPriorityCreateInfo->globalPriority)))
+					{
+						return VK_ERROR_INITIALIZATION_FAILED;
+					}
+				}
+				break;
+			default:
+				UNSUPPORTED("pCreateInfo->pQueueCreateInfos[%d].pNext sType = %s", i, vk::Stringify(extInfo->sType).c_str());
+				break;
+			}
+
 			extInfo = extInfo->pNext;
 		}
 
@@ -3509,11 +3551,14 @@ VKAPI_ATTR void VKAPI_CALL vkGetImageSparseMemoryRequirements2(VkDevice device, 
 		extInfo = extInfo->pNext;
 	}
 
-	const auto *extensionRequirements = reinterpret_cast<const VkBaseInStructure *>(pSparseMemoryRequirements->pNext);
-	while(extensionRequirements)
+	if(pSparseMemoryRequirements)  // Valid to be NULL
 	{
-		UNSUPPORTED("pSparseMemoryRequirements->pNext sType = %s", vk::Stringify(extensionRequirements->sType).c_str());
-		extensionRequirements = extensionRequirements->pNext;
+		const auto *extensionRequirements = reinterpret_cast<const VkBaseInStructure *>(pSparseMemoryRequirements->pNext);
+		while(extensionRequirements)
+		{
+			UNSUPPORTED("pSparseMemoryRequirements->pNext sType = %s", vk::Stringify(extensionRequirements->sType).c_str());
+			extensionRequirements = extensionRequirements->pNext;
+		}
 	}
 
 	// The 'sparseBinding' feature is not supported, so images can not be created with the VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT flag.
@@ -3749,47 +3794,6 @@ VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceFormatProperties2(VkPhysicalDevice
 	vkGetPhysicalDeviceFormatProperties(physicalDevice, format, &(pFormatProperties->formatProperties));
 }
 
-static bool checkFormatUsage(VkImageUsageFlags usage, VkFormatFeatureFlags features)
-{
-	// Check for usage conflict with features
-	if((usage & VK_IMAGE_USAGE_SAMPLED_BIT) && !(features & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT))
-	{
-		return false;
-	}
-
-	if((usage & VK_IMAGE_USAGE_STORAGE_BIT) && !(features & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT))
-	{
-		return false;
-	}
-
-	if((usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) && !(features & VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT))
-	{
-		return false;
-	}
-
-	if((usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) && !(features & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT))
-	{
-		return false;
-	}
-
-	if((usage & VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT) && !(features & (VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT | VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT)))
-	{
-		return false;
-	}
-
-	if((usage & VK_IMAGE_USAGE_TRANSFER_SRC_BIT) && !(features & VK_FORMAT_FEATURE_TRANSFER_SRC_BIT))
-	{
-		return false;
-	}
-
-	if((usage & VK_IMAGE_USAGE_TRANSFER_DST_BIT) && !(features & VK_FORMAT_FEATURE_TRANSFER_DST_BIT))
-	{
-		return false;
-	}
-
-	return true;
-}
-
 VKAPI_ATTR VkResult VKAPI_CALL vkGetPhysicalDeviceImageFormatProperties2(VkPhysicalDevice physicalDevice, const VkPhysicalDeviceImageFormatInfo2 *pImageFormatInfo, VkImageFormatProperties2 *pImageFormatProperties)
 {
 	TRACE("(VkPhysicalDevice physicalDevice = %p, const VkPhysicalDeviceImageFormatInfo2* pImageFormatInfo = %p, VkImageFormatProperties2* pImageFormatProperties = %p)",
@@ -3896,106 +3900,9 @@ VKAPI_ATTR VkResult VKAPI_CALL vkGetPhysicalDeviceImageFormatProperties2(VkPhysi
 	VkImageUsageFlags usage = pImageFormatInfo->usage;
 	VkImageCreateFlags flags = pImageFormatInfo->flags;
 
-	VkFormatProperties properties = {};
-	vk::PhysicalDevice::GetFormatProperties(format, &properties);
-
-	if(flags & VK_IMAGE_CREATE_EXTENDED_USAGE_BIT)
-	{
-		for(vk::Format f : format.getCompatibleFormats())
-		{
-			VkFormatProperties extendedProperties = {};
-			vk::PhysicalDevice::GetFormatProperties(f, &extendedProperties);
-			properties.linearTilingFeatures |= extendedProperties.linearTilingFeatures;
-			properties.optimalTilingFeatures |= extendedProperties.optimalTilingFeatures;
-			properties.bufferFeatures |= extendedProperties.bufferFeatures;
-		}
-	}
-
-	VkFormatFeatureFlags features;
-	switch(tiling)
-	{
-	case VK_IMAGE_TILING_LINEAR:
-		features = properties.linearTilingFeatures;
-		break;
-
-	case VK_IMAGE_TILING_OPTIMAL:
-		features = properties.optimalTilingFeatures;
-		break;
-
-	default:
-		UNSUPPORTED("VkImageTiling %d", int(tiling));
-		features = 0;
-	}
-
-	if(features == 0)
+	if(!vk::Cast(physicalDevice)->isFormatSupported(format, type, tiling, usage, stencilUsage, flags))
 	{
 		return VK_ERROR_FORMAT_NOT_SUPPORTED;
-	}
-
-	// Reject any usage or separate stencil usage that is not compatible with the specified format.
-	if(!checkFormatUsage(usage, features))
-	{
-		return VK_ERROR_FORMAT_NOT_SUPPORTED;
-	}
-	// If stencilUsage is 0 then no separate usage was provided and it takes on the same value as usage,
-	// which has already been checked. So only check non-zero stencilUsage.
-	if(stencilUsage != 0 && !checkFormatUsage(stencilUsage, features))
-	{
-		return VK_ERROR_FORMAT_NOT_SUPPORTED;
-	}
-
-	auto allRecognizedUsageBits = VK_IMAGE_USAGE_SAMPLED_BIT |
-	                              VK_IMAGE_USAGE_STORAGE_BIT |
-	                              VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-	                              VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
-	                              VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT |
-	                              VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
-	                              VK_IMAGE_USAGE_TRANSFER_DST_BIT |
-	                              VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT;
-	ASSERT(!(usage & ~(allRecognizedUsageBits)));
-
-	if(usage & VK_IMAGE_USAGE_SAMPLED_BIT)
-	{
-		if(tiling == VK_IMAGE_TILING_LINEAR)
-		{
-			// TODO(b/171299814): Compressed formats and cube maps are not supported for sampling using VK_IMAGE_TILING_LINEAR; otherwise, sampling
-			// in linear tiling is always supported as long as it can be sampled when using VK_IMAGE_TILING_OPTIMAL.
-			if(!(properties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT) ||
-			   vk::Format(format).isCompressed() ||
-			   (flags & VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT))
-			{
-				return VK_ERROR_FORMAT_NOT_SUPPORTED;
-			}
-		}
-		else if(!(features & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT))
-		{
-			return VK_ERROR_FORMAT_NOT_SUPPORTED;
-		}
-	}
-
-	// "Images created with tiling equal to VK_IMAGE_TILING_LINEAR have further restrictions on their limits and capabilities
-	//  compared to images created with tiling equal to VK_IMAGE_TILING_OPTIMAL."
-	if(tiling == VK_IMAGE_TILING_LINEAR)
-	{
-		if(type != VK_IMAGE_TYPE_2D)
-		{
-			return VK_ERROR_FORMAT_NOT_SUPPORTED;
-		}
-
-		if(vk::Format(format).isDepth() || vk::Format(format).isStencil())
-		{
-			return VK_ERROR_FORMAT_NOT_SUPPORTED;
-		}
-	}
-
-	// "Images created with a format from one of those listed in Formats requiring sampler Y'CBCR conversion for VK_IMAGE_ASPECT_COLOR_BIT image views
-	//  have further restrictions on their limits and capabilities compared to images created with other formats."
-	if(vk::Format(format).isYcbcrFormat())
-	{
-		if(type != VK_IMAGE_TYPE_2D)
-		{
-			return VK_ERROR_FORMAT_NOT_SUPPORTED;
-		}
 	}
 
 	vk::Cast(physicalDevice)->getImageFormatProperties(format, type, tiling, usage, flags, &pImageFormatProperties->imageFormatProperties);
@@ -4016,16 +3923,6 @@ VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceQueueFamilyProperties2(VkPhysicalD
 {
 	TRACE("(VkPhysicalDevice physicalDevice = %p, uint32_t* pQueueFamilyPropertyCount = %p, VkQueueFamilyProperties2* pQueueFamilyProperties = %p)",
 	      physicalDevice, pQueueFamilyPropertyCount, pQueueFamilyProperties);
-
-	if(pQueueFamilyProperties)
-	{
-		const auto *extInfo = reinterpret_cast<const VkBaseInStructure *>(pQueueFamilyProperties->pNext);
-		while(extInfo)
-		{
-			UNSUPPORTED("pQueueFamilyProperties->pNext sType = %s", vk::Stringify(extInfo->sType).c_str());
-			extInfo = extInfo->pNext;
-		}
-	}
 
 	if(!pQueueFamilyProperties)
 	{
@@ -4609,7 +4506,15 @@ VKAPI_ATTR VkResult VKAPI_CALL vkGetPhysicalDeviceSurfaceCapabilitiesKHR(VkPhysi
 	TRACE("(VkPhysicalDevice physicalDevice = %p, VkSurfaceKHR surface = %p, VkSurfaceCapabilitiesKHR* pSurfaceCapabilities = %p)",
 	      physicalDevice, static_cast<void *>(surface), pSurfaceCapabilities);
 
-	return vk::Cast(surface)->getSurfaceCapabilities(pSurfaceCapabilities);
+	return vk::Cast(surface)->getSurfaceCapabilities(nullptr, pSurfaceCapabilities, nullptr);
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL vkGetPhysicalDeviceSurfaceCapabilities2KHR(VkPhysicalDevice physicalDevice, const VkPhysicalDeviceSurfaceInfo2KHR *pSurfaceInfo, VkSurfaceCapabilities2KHR *pSurfaceCapabilities)
+{
+	TRACE("(VkPhysicalDevice physicalDevice = %p, const VkPhysicalDeviceSurfaceInfo2KHR *pSurfaceInfo = %p, VkSurfaceCapabilities2KHR *pSurfaceCapabilities = %p)",
+	      physicalDevice, pSurfaceInfo, pSurfaceCapabilities);
+
+	return vk::Cast(pSurfaceInfo->surface)->getSurfaceCapabilities(pSurfaceInfo->pNext, &pSurfaceCapabilities->surfaceCapabilities, pSurfaceCapabilities->pNext);
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL vkGetPhysicalDeviceSurfaceFormatsKHR(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface, uint32_t *pSurfaceFormatCount, VkSurfaceFormatKHR *pSurfaceFormats)
@@ -4619,11 +4524,41 @@ VKAPI_ATTR VkResult VKAPI_CALL vkGetPhysicalDeviceSurfaceFormatsKHR(VkPhysicalDe
 
 	if(!pSurfaceFormats)
 	{
-		*pSurfaceFormatCount = vk::Cast(surface)->getSurfaceFormatsCount();
+		*pSurfaceFormatCount = vk::Cast(surface)->getSurfaceFormatsCount(nullptr);
 		return VK_SUCCESS;
 	}
 
-	return vk::Cast(surface)->getSurfaceFormats(pSurfaceFormatCount, pSurfaceFormats);
+	std::vector<VkSurfaceFormat2KHR> formats(*pSurfaceFormatCount);
+
+	VkResult result = vk::Cast(surface)->getSurfaceFormats(nullptr, pSurfaceFormatCount, formats.data());
+
+	if(result == VK_SUCCESS || result == VK_INCOMPLETE)
+	{
+		// The value returned in pSurfaceFormatCount is either capped at the original value,
+		// or is smaller because there aren't that many formats.
+		ASSERT(*pSurfaceFormatCount <= formats.size());
+
+		for(size_t i = 0; i < *pSurfaceFormatCount; ++i)
+		{
+			pSurfaceFormats[i] = formats[i].surfaceFormat;
+		}
+	}
+
+	return result;
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL vkGetPhysicalDeviceSurfaceFormats2KHR(VkPhysicalDevice physicalDevice, const VkPhysicalDeviceSurfaceInfo2KHR *pSurfaceInfo, uint32_t *pSurfaceFormatCount, VkSurfaceFormat2KHR *pSurfaceFormats)
+{
+	TRACE("(VkPhysicalDevice physicalDevice = %p, VkPhysicalDeviceSurfaceInfo2KHR *pSurfaceInfo = %p. uint32_t* pSurfaceFormatCount = %p, VkSurfaceFormat2KHR* pSurfaceFormats = %p)",
+	      physicalDevice, pSurfaceInfo, pSurfaceFormatCount, pSurfaceFormats);
+
+	if(!pSurfaceFormats)
+	{
+		*pSurfaceFormatCount = vk::Cast(pSurfaceInfo->surface)->getSurfaceFormatsCount(pSurfaceInfo->pNext);
+		return VK_SUCCESS;
+	}
+
+	return vk::Cast(pSurfaceInfo->surface)->getSurfaceFormats(pSurfaceInfo->pNext, pSurfaceFormatCount, pSurfaceFormats);
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL vkGetPhysicalDeviceSurfacePresentModesKHR(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface, uint32_t *pPresentModeCount, VkPresentModeKHR *pPresentModes)
@@ -4720,6 +4655,14 @@ VKAPI_ATTR VkResult VKAPI_CALL vkAcquireNextImage2KHR(VkDevice device, const VkA
 	      device, pAcquireInfo, pImageIndex);
 
 	return vk::Cast(pAcquireInfo->swapchain)->getNextImage(pAcquireInfo->timeout, vk::DynamicCast<vk::BinarySemaphore>(pAcquireInfo->semaphore), vk::Cast(pAcquireInfo->fence), pImageIndex);
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL vkReleaseSwapchainImagesEXT(VkDevice device, const VkReleaseSwapchainImagesInfoEXT *pReleaseInfo)
+{
+	TRACE("(VkDevice device = %p, const VkReleaseSwapchainImagesInfoEXT *pReleaseInfo = %p",
+	      device, pReleaseInfo);
+
+	return vk::Cast(pReleaseInfo->swapchain)->releaseImages(pReleaseInfo->imageIndexCount, pReleaseInfo->pImageIndices);
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL vkGetDeviceGroupPresentCapabilitiesKHR(VkDevice device, VkDeviceGroupPresentCapabilitiesKHR *pDeviceGroupPresentCapabilities)

@@ -112,7 +112,7 @@ export class ResourceTreeModel extends SDKModel<EventTypes> {
   static frames(): ResourceTreeFrame[] {
     const result = [];
     for (const resourceTreeModel of TargetManager.instance().models(ResourceTreeModel)) {
-      result.push(...resourceTreeModel.framesInternal.values());
+      result.push(...resourceTreeModel.frames());
     }
     return result;
   }
@@ -187,7 +187,7 @@ export class ResourceTreeModel extends SDKModel<EventTypes> {
 
   frameAttached(
       frameId: Protocol.Page.FrameId, parentFrameId: Protocol.Page.FrameId|null,
-      stackTrace?: Protocol.Runtime.StackTrace, adScriptId?: Protocol.Page.AdScriptId): ResourceTreeFrame|null {
+      stackTrace?: Protocol.Runtime.StackTrace): ResourceTreeFrame|null {
     const sameTargetParentFrame = parentFrameId ? (this.framesInternal.get(parentFrameId) || null) : null;
     // Do nothing unless cached resource tree is processed - it will overwrite everything.
     if (!this.#cachedResourcesProcessed && sameTargetParentFrame) {
@@ -197,8 +197,7 @@ export class ResourceTreeModel extends SDKModel<EventTypes> {
       return null;
     }
 
-    const frame =
-        new ResourceTreeFrame(this, sameTargetParentFrame, frameId, null, stackTrace || null, adScriptId || null);
+    const frame = new ResourceTreeFrame(this, sameTargetParentFrame, frameId, null, stackTrace || null);
     if (parentFrameId && !sameTargetParentFrame) {
       frame.crossTargetParentFrameId = parentFrameId;
     }
@@ -354,7 +353,7 @@ export class ResourceTreeModel extends SDKModel<EventTypes> {
   private addFramesRecursively(
       sameTargetParentFrame: ResourceTreeFrame|null, frameTreePayload: Protocol.Page.FrameResourceTree): void {
     const framePayload = frameTreePayload.frame;
-    const frame = new ResourceTreeFrame(this, sameTargetParentFrame, framePayload.id, framePayload, null, null);
+    const frame = new ResourceTreeFrame(this, sameTargetParentFrame, framePayload.id, framePayload, null);
     if (!sameTargetParentFrame && framePayload.parentId) {
       frame.crossTargetParentFrameId = framePayload.parentId;
     }
@@ -603,6 +602,8 @@ export class ResourceTreeModel extends SDKModel<EventTypes> {
     } else {
       this.#pendingPrerenderAttemptCompletedEvents.add(event);
     }
+
+    this.dispatchEventToListeners(Events.PrerenderAttemptCompleted, event);
   }
 
   processPendingEvents(frame: ResourceTreeFrame): void {
@@ -653,6 +654,7 @@ export enum Events {
   InterstitialHidden = 'InterstitialHidden',
   BackForwardCacheDetailsUpdated = 'BackForwardCacheDetailsUpdated',
   PrerenderingStatusUpdated = 'PrerenderingStatusUpdated',
+  PrerenderAttemptCompleted = 'PrerenderAttemptCompleted',
 }
 
 export type EventTypes = {
@@ -674,6 +676,7 @@ export type EventTypes = {
   [Events.InterstitialHidden]: void,
   [Events.BackForwardCacheDetailsUpdated]: ResourceTreeFrame,
   [Events.PrerenderingStatusUpdated]: ResourceTreeFrame,
+  [Events.PrerenderAttemptCompleted]: Protocol.Page.PrerenderAttemptCompletedEvent,
 };
 
 export class ResourceTreeFrame {
@@ -695,8 +698,6 @@ export class ResourceTreeFrame {
   #creationStackTrace: Protocol.Runtime.StackTrace|null;
   #creationStackTraceTarget: Target|null;
   #childFramesInternal: Set<ResourceTreeFrame>;
-  #adScriptId: Protocol.Runtime.ScriptId|null;
-  #debuggerId: Protocol.Runtime.UniqueDebuggerId|null;
   resourcesMap: Map<Platform.DevToolsPath.UrlString, Resource>;
   backForwardCacheDetails: {
     restoredFromCache: boolean|undefined,
@@ -712,8 +713,7 @@ export class ResourceTreeFrame {
 
   constructor(
       model: ResourceTreeModel, parentFrame: ResourceTreeFrame|null, frameId: Protocol.Page.FrameId,
-      payload: Protocol.Page.Frame|null, creationStackTrace: Protocol.Runtime.StackTrace|null,
-      adScriptId: Protocol.Page.AdScriptId|null) {
+      payload: Protocol.Page.Frame|null, creationStackTrace: Protocol.Runtime.StackTrace|null) {
     this.#model = model;
     this.#sameTargetParentFrameInternal = parentFrame;
     this.#idInternal = frameId;
@@ -734,9 +734,6 @@ export class ResourceTreeFrame {
 
     this.#creationStackTrace = creationStackTrace;
     this.#creationStackTraceTarget = null;
-
-    this.#adScriptId = adScriptId?.scriptId || null;
-    this.#debuggerId = adScriptId?.debuggerId || null;
 
     this.#childFramesInternal = new Set();
 
@@ -824,20 +821,9 @@ export class ResourceTreeFrame {
     return this.#domainAndRegistryInternal;
   }
 
-  getAdScriptId(): Protocol.Runtime.ScriptId|null {
-    return this.#adScriptId;
-  }
-
-  setAdScriptId(adScriptId: Protocol.Runtime.ScriptId|null): void {
-    this.#adScriptId = adScriptId;
-  }
-
-  getDebuggerId(): Protocol.Runtime.UniqueDebuggerId|null {
-    return this.#debuggerId;
-  }
-
-  setDebuggerId(debuggerId: Protocol.Runtime.UniqueDebuggerId|null): void {
-    this.#debuggerId = debuggerId;
+  async getAdScriptId(frameId: Protocol.Page.FrameId): Promise<Protocol.Page.AdScriptId|null> {
+    const res = await this.#model.agent.invoke_getAdScriptId({frameId});
+    return res.adScriptId || null;
   }
 
   get securityOrigin(): string|null {
@@ -1130,8 +1116,8 @@ export class PageDispatcher implements ProtocolProxyApi.PageDispatcher {
     this.#resourceTreeModel.dispatchEventToListeners(Events.LifecycleEvent, {frameId, name});
   }
 
-  frameAttached({frameId, parentFrameId, stack, adScriptId}: Protocol.Page.FrameAttachedEvent): void {
-    this.#resourceTreeModel.frameAttached(frameId, parentFrameId, stack, adScriptId);
+  frameAttached({frameId, parentFrameId, stack}: Protocol.Page.FrameAttachedEvent): void {
+    this.#resourceTreeModel.frameAttached(frameId, parentFrameId, stack);
   }
 
   frameNavigated({frame, type}: Protocol.Page.FrameNavigatedEvent): void {

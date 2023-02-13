@@ -20,6 +20,11 @@
 #include "src/gpu/ganesh/GrFragmentProcessor.h"
 #endif
 
+#ifdef SK_GRAPHITE_ENABLED
+#include "src/gpu/graphite/KeyHelpers.h"
+#include "src/gpu/graphite/PaintParamsKey.h"
+#endif
+
 SkColorFilterShader::SkColorFilterShader(sk_sp<SkShader> shader,
                                          float alpha,
                                          sk_sp<SkColorFilter> filter)
@@ -112,10 +117,29 @@ std::unique_ptr<GrFragmentProcessor> SkColorFilterShader::asFragmentProcessor(
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
+#ifdef SK_GRAPHITE_ENABLED
+
+void SkColorFilterShader::addToKey(const skgpu::graphite::KeyContext& keyContext,
+                                   skgpu::graphite::PaintParamsKeyBuilder* builder,
+                                   skgpu::graphite::PipelineDataGatherer* gatherer) const {
+    using namespace skgpu::graphite;
+
+    ColorFilterShaderBlock::BeginBlock(keyContext, builder, gatherer);
+
+    as_SB(fShader)->addToKey(keyContext, builder, gatherer);
+    as_CFB(fFilter)->addToKey(keyContext, builder, gatherer);
+
+    builder->endBlock();
+}
+
+#endif // SK_ENABLE_SKSL
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
 sk_sp<SkShader> SkShader::makeWithColorFilter(sk_sp<SkColorFilter> filter) const {
     SkShader* base = const_cast<SkShader*>(this);
     if (!filter) {
         return sk_ref_sp(base);
     }
-    return sk_make_sp<SkColorFilterShader>(sk_ref_sp(base), 1.0f, filter);
+    return sk_make_sp<SkColorFilterShader>(sk_ref_sp(base), 1.0f, std::move(filter));
 }

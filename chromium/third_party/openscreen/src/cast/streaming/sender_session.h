@@ -68,6 +68,11 @@ class SenderSession final {
     // Called when the receiver's remoting-related capabilities have been
     // determined. The consumer may then determine if they want to switch to
     // remoting.
+    //
+    // NOTE: if the capabilities response indicates that remoting is not
+    // supported, either due to an error or a too-new version of remoting,
+    // OnError will be called with the special value of kRemotingNotSupported
+    // instead of this method.
     virtual void OnCapabilitiesDetermined(const SenderSession* session,
                                           RemotingCapabilities capabilities) {}
 

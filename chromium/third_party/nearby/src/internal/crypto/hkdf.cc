@@ -21,10 +21,17 @@
 #include <string>
 #include <vector>
 
+#ifdef NEARBY_CHROMIUM
+#include "base/check.h"
+#elif defined(NEARBY_SWIFTPM)
+#include "internal/platform/logging.h"
+#else
+#include "absl/log/check.h"  // nogncheck
+#endif
+
 #include "absl/strings/string_view.h"
 #include "internal/crypto/hkdf.h"
 #include "internal/crypto/hmac.h"
-#include "internal/platform/logging.h"
 #include <openssl/digest.h>
 
 namespace crypto {

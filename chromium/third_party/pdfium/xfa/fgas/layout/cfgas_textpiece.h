@@ -1,4 +1,4 @@
-// Copyright 2019 PDFium Authors. All rights reserved.
+// Copyright 2019 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -22,11 +22,11 @@ class CFGAS_TextPiece {
 
   WideString szText;
   std::vector<int32_t> Widths;
-  int32_t iChars;
-  int32_t iHorScale;
-  int32_t iVerScale;
-  int32_t iBidiLevel;
-  float fFontSize;
+  int32_t iChars = 0;
+  int32_t iHorScale = 0;
+  int32_t iVerScale = 0;
+  int32_t iBidiLevel = 0;
+  float fFontSize = 0.0f;
   CFX_RectF rtPiece;
   RetainPtr<CFGAS_GEFont> pFont;
 };

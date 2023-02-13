@@ -8,11 +8,14 @@
 
 #include "absl/types/span.h"
 #include "cast/streaming/encoded_frame.h"
+#include "platform/base/trivial_clock_traits.h"
 #include "util/chrono_helpers.h"
 #include "util/osp_logging.h"
 
 namespace openscreen {
 namespace cast {
+
+using clock_operators::operator<<;
 
 DummyPlayer::DummyPlayer(Receiver* receiver) : receiver_(receiver) {
   OSP_DCHECK(receiver_);
@@ -38,7 +41,7 @@ void DummyPlayer::OnFramesReady(int buffer_size) {
                << (frame.dependency == EncodedFrame::Dependency::kKeyFrame
                        ? "KEY "
                        : "")
-               << frame.frame_id << " at " << media_timestamp.count() << "µs, "
+               << frame.frame_id << " at " << media_timestamp << ", "
                << buffer_size << " bytes";
 }
 

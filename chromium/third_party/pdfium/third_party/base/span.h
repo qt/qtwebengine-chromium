@@ -160,7 +160,6 @@ using EnableIfConstSpanCompatibleContainer =
 //
 // Differences from [span.cons]:
 // - no constructor from a pointer range
-// - no constructor from std::array
 //
 // Differences from [span.sub]:
 // - no templated first()
@@ -189,12 +188,17 @@ class TRIVIAL_ABI GSL_POINTER span {
 
   // [span.cons], span constructors, copy, assignment, and destructor
   constexpr span() noexcept : data_(nullptr), size_(0) {}
-  constexpr span(T* data, size_t size) noexcept : data_(data), size_(size) {}
+  constexpr span(T* data, size_t size) noexcept : data_(data), size_(size) {
+    DCHECK(data_ || size_ == 0);
+  }
 
   // TODO(dcheng): Implement construction from a |begin| and |end| pointer.
   template <size_t N>
   constexpr span(T (&array)[N]) noexcept : span(array, N) {}
-  // TODO(dcheng): Implement construction from std::array.
+
+  template <size_t N>
+  constexpr span(std::array<T, N>& array) noexcept : span(array.data(), N) {}
+
   // Conversion from a container that provides |T* data()| and |integral_type
   // size()|.
   template <typename Container,
@@ -223,18 +227,18 @@ class TRIVIAL_ABI GSL_POINTER span {
   // [span.sub], span subviews
   const span first(size_t count) const {
     CHECK(count <= size_);
-    return span(data_.Get(), count);
+    return span(static_cast<T*>(data_), count);
   }
 
   const span last(size_t count) const {
     CHECK(count <= size_);
-    return span(data_.Get() + (size_ - count), count);
+    return span(static_cast<T*>(data_) + (size_ - count), count);
   }
 
   const span subspan(size_t pos, size_t count = dynamic_extent) const {
     CHECK(pos <= size_);
     CHECK(count == dynamic_extent || count <= size_ - pos);
-    return span(data_.Get() + pos,
+    return span(static_cast<T*>(data_) + pos,
                 count == dynamic_extent ? size_ - pos : count);
   }
 
@@ -246,7 +250,7 @@ class TRIVIAL_ABI GSL_POINTER span {
   // [span.elem], span element access
   T& operator[](size_t index) const noexcept {
     CHECK(index < size_);
-    return data_.Get()[index];
+    return static_cast<T*>(data_)[index];
   }
 
   constexpr T& front() const noexcept {
@@ -259,11 +263,11 @@ class TRIVIAL_ABI GSL_POINTER span {
     return *(data() + size() - 1);
   }
 
-  constexpr T* data() const noexcept { return data_.Get(); }
+  constexpr T* data() const noexcept { return static_cast<T*>(data_); }
 
   // [span.iter], span iterator support
-  constexpr iterator begin() const noexcept { return data_.Get(); }
-  constexpr iterator end() const noexcept { return data_.Get() + size_; }
+  constexpr iterator begin() const noexcept { return static_cast<T*>(data_); }
+  constexpr iterator end() const noexcept { return begin() + size_; }
 
   constexpr const_iterator cbegin() const noexcept { return begin(); }
   constexpr const_iterator cend() const noexcept { return end(); }
@@ -348,6 +352,11 @@ constexpr span<T> make_span(T* data, size_t size) noexcept {
 
 template <typename T, size_t N>
 constexpr span<T> make_span(T (&array)[N]) noexcept {
+  return span<T>(array);
+}
+
+template <typename T, size_t N>
+constexpr span<T> make_span(std::array<T, N>& array) noexcept {
   return span<T>(array);
 }
 

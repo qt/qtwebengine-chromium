@@ -11,9 +11,9 @@
 #include "src/core/SkWriteBuffer.h"
 #include "src/shaders/SkLocalMatrixShader.h"
 
-#ifdef SK_ENABLE_SKSL
-#include "src/core/SkKeyHelpers.h"
-#include "src/core/SkPaintParamsKey.h"
+#ifdef SK_GRAPHITE_ENABLED
+#include "src/gpu/graphite/KeyHelpers.h"
+#include "src/gpu/graphite/PaintParamsKey.h"
 #endif
 
 #include "src/shaders/gradients/SkGradientShaderBase.h"
@@ -27,10 +27,10 @@ public:
 #if SK_SUPPORT_GPU
     std::unique_ptr<GrFragmentProcessor> asFragmentProcessor(const GrFPArgs&) const override;
 #endif
-#ifdef SK_ENABLE_SKSL
-    void addToKey(const SkKeyContext&,
-                  SkPaintParamsKeyBuilder*,
-                  SkPipelineDataGatherer*) const override;
+#ifdef SK_GRAPHITE_ENABLED
+    void addToKey(const skgpu::graphite::KeyContext&,
+                  skgpu::graphite::PaintParamsKeyBuilder*,
+                  skgpu::graphite::PipelineDataGatherer*) const override;
 #endif
 
 protected:
@@ -91,8 +91,8 @@ sk_sp<SkFlattenable> SkSweepGradient::CreateProc(SkReadBuffer& buffer) {
     return SkGradientShader::MakeSweep(center.x(), center.y(),
                                        desc.fColors,
                                        std::move(desc.fColorSpace),
-                                       desc.fPos,
-                                       desc.fCount,
+                                       desc.fPositions,
+                                       desc.fColorCount,
                                        desc.fTileMode,
                                        startAngle,
                                        endAngle,
@@ -147,6 +147,7 @@ skvm::F32 SkSweepGradient::transformT(skvm::Builder* p, skvm::Uniforms* uniforms
 #if SK_SUPPORT_GPU
 
 #include "src/core/SkRuntimeEffectPriv.h"
+#include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrRecordingContextPriv.h"
 #include "src/gpu/ganesh/effects/GrSkSLFP.h"
 #include "src/gpu/ganesh/gradients/GrGradientShader.h"
@@ -187,18 +188,20 @@ std::unique_ptr<GrFragmentProcessor> SkSweepGradient::asFragmentProcessor(
 
 #endif
 
-#ifdef SK_ENABLE_SKSL
-void SkSweepGradient::addToKey(const SkKeyContext& keyContext,
-                               SkPaintParamsKeyBuilder* builder,
-                               SkPipelineDataGatherer* gatherer) const {
+#ifdef SK_GRAPHITE_ENABLED
+void SkSweepGradient::addToKey(const skgpu::graphite::KeyContext& keyContext,
+                               skgpu::graphite::PaintParamsKeyBuilder* builder,
+                               skgpu::graphite::PipelineDataGatherer* gatherer) const {
+    using namespace skgpu::graphite;
+
     GradientShaderBlocks::GradientData data(SkShaderBase::GradientType::kSweep,
                                             fCenter, { 0.0f, 0.0f },
                                             0.0, 0.0f,
                                             fTBias, fTScale,
                                             fTileMode,
                                             fColorCount,
-                                            fOrigColors4f,
-                                            fOrigPos);
+                                            fColors,
+                                            fPositions);
 
     GradientShaderBlocks::BeginBlock(keyContext, builder, gatherer, data);
     builder->endBlock();
@@ -215,7 +218,7 @@ sk_sp<SkShader> SkGradientShader::MakeSweep(SkScalar cx, SkScalar cy,
                                             SkScalar endAngle,
                                             const Interpolation& interpolation,
                                             const SkMatrix* localMatrix) {
-    if (!SkGradientShaderBase::ValidGradient(colors, pos, colorCount, mode)) {
+    if (!SkGradientShaderBase::ValidGradient(colors, colorCount, mode, interpolation)) {
         return nullptr;
     }
     if (1 == colorCount) {

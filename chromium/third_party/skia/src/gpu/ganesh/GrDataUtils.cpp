@@ -285,7 +285,7 @@ void GrTwoColorBC1Compress(const SkPixmap& pixmap, SkColor otherColor, char* dst
 
 size_t GrComputeTightCombinedBufferSize(size_t bytesPerPixel, SkISize baseDimensions,
                                         SkTArray<size_t>* individualMipOffsets, int mipLevelCount) {
-    SkASSERT(individualMipOffsets && !individualMipOffsets->count());
+    SkASSERT(individualMipOffsets && !individualMipOffsets->size());
     SkASSERT(mipLevelCount >= 1);
 
     individualMipOffsets->push_back(0);
@@ -314,7 +314,7 @@ size_t GrComputeTightCombinedBufferSize(size_t bytesPerPixel, SkISize baseDimens
         combinedBufferSize += trimmedSize;
     }
 
-    SkASSERT(individualMipOffsets->count() == mipLevelCount);
+    SkASSERT(individualMipOffsets->size() == mipLevelCount);
     return combinedBufferSize;
 }
 
@@ -345,7 +345,7 @@ void GrFillInCompressedData(SkImage::CompressionType type, SkISize dimensions,
     }
 }
 
-static skgpu::Swizzle get_load_and_src_swizzle(GrColorType ct, SkRasterPipeline::StockStage* load,
+static skgpu::Swizzle get_load_and_src_swizzle(GrColorType ct, SkRasterPipeline::Stage* load,
                                                bool* isNormalized, bool* isSRGB) {
     skgpu::Swizzle swizzle("rgba");
     *isNormalized = true;
@@ -427,7 +427,7 @@ enum class LumMode {
     kToAlpha
 };
 
-static skgpu::Swizzle get_dst_swizzle_and_store(GrColorType ct, SkRasterPipeline::StockStage* store,
+static skgpu::Swizzle get_dst_swizzle_and_store(GrColorType ct, SkRasterPipeline::Stage* store,
                                                 LumMode* lumMode, bool* isNormalized,
                                                 bool* isSRGB) {
     skgpu::Swizzle swizzle("rgba");
@@ -594,7 +594,7 @@ bool GrConvertPixels(const GrPixmap& dst, const GrCPixmap& src, bool flipY) {
         return true;
     }
 
-    SkRasterPipeline::StockStage load;
+    SkRasterPipeline::Stage load;
     bool srcIsNormalized;
     bool srcIsSRGB;
     auto loadSwizzle = get_load_and_src_swizzle(src.colorType(),
@@ -602,7 +602,7 @@ bool GrConvertPixels(const GrPixmap& dst, const GrCPixmap& src, bool flipY) {
                                                 &srcIsNormalized,
                                                 &srcIsSRGB);
 
-    SkRasterPipeline::StockStage store;
+    SkRasterPipeline::Stage store;
     LumMode lumMode;
     bool dstIsNormalized;
     bool dstIsSRGB;
@@ -612,17 +612,12 @@ bool GrConvertPixels(const GrPixmap& dst, const GrCPixmap& src, bool flipY) {
                                                   &dstIsNormalized,
                                                   &dstIsSRGB);
 
-    bool clampGamut;
     SkTLazy<SkColorSpaceXformSteps> steps;
     skgpu::Swizzle loadStoreSwizzle;
     if (alphaOrCSConversion) {
         steps.init(src.colorSpace(), src.alphaType(), dst.colorSpace(), dst.alphaType());
-        clampGamut = dstIsNormalized && dst.alphaType() == kPremul_SkAlphaType;
     } else {
-        clampGamut = dstIsNormalized && !srcIsNormalized && dst.alphaType() == kPremul_SkAlphaType;
-        if (!clampGamut) {
-            loadStoreSwizzle = skgpu::Swizzle::Concat(loadSwizzle, storeSwizzle);
-        }
+        loadStoreSwizzle = skgpu::Swizzle::Concat(loadSwizzle, storeSwizzle);
     }
     int cnt = 1;
     int height = src.height();
@@ -640,7 +635,7 @@ bool GrConvertPixels(const GrPixmap& dst, const GrCPixmap& src, bool flipY) {
         std::swap(cnt, height);
     }
 
-    bool hasConversion = alphaOrCSConversion || clampGamut || lumMode != LumMode::kNone;
+    bool hasConversion = alphaOrCSConversion || lumMode != LumMode::kNone;
 
     if (srcIsSRGB && dstIsSRGB && !hasConversion) {
         // No need to convert from srgb if we are just going to immediately convert it back.
@@ -659,17 +654,14 @@ bool GrConvertPixels(const GrPixmap& dst, const GrCPixmap& src, bool flipY) {
         if (alphaOrCSConversion) {
             steps->apply(&pipeline);
         }
-        if (clampGamut) {
-            pipeline.append(SkRasterPipeline::clamp_gamut);
-        }
         switch (lumMode) {
             case LumMode::kNone:
                 break;
             case LumMode::kToRGB:
-                pipeline.append(SkRasterPipeline::StockStage::bt709_luminance_or_luma_to_rgb);
+                pipeline.append(SkRasterPipeline::Stage::bt709_luminance_or_luma_to_rgb);
                 break;
             case LumMode::kToAlpha:
-                pipeline.append(SkRasterPipeline::StockStage::bt709_luminance_or_luma_to_alpha);
+                pipeline.append(SkRasterPipeline::Stage::bt709_luminance_or_luma_to_alpha);
                 // If we ever need to store srgb-encoded gray (e.g. GL_SLUMINANCE8) then we
                 // should use ToRGB and then a swizzle stage rather than ToAlpha. The subsequent
                 // transfer function stage ignores the alpha channel (where we just stashed the
@@ -722,7 +714,7 @@ bool GrClearImage(const GrImageInfo& dstInfo, void* dst, size_t dstRB, std::arra
     LumMode lumMode;
     bool isNormalized;
     bool dstIsSRGB;
-    SkRasterPipeline::StockStage store;
+    SkRasterPipeline::Stage store;
     skgpu::Swizzle storeSwizzle = get_dst_swizzle_and_store(dstInfo.colorType(), &store, &lumMode,
                                                             &isNormalized, &dstIsSRGB);
     char block[64];
@@ -733,10 +725,10 @@ bool GrClearImage(const GrImageInfo& dstInfo, void* dst, size_t dstRB, std::arra
         case LumMode::kNone:
             break;
         case LumMode::kToRGB:
-            pipeline.append(SkRasterPipeline::StockStage::bt709_luminance_or_luma_to_rgb);
+            pipeline.append(SkRasterPipeline::Stage::bt709_luminance_or_luma_to_rgb);
             break;
         case LumMode::kToAlpha:
-            pipeline.append(SkRasterPipeline::StockStage::bt709_luminance_or_luma_to_alpha);
+            pipeline.append(SkRasterPipeline::Stage::bt709_luminance_or_luma_to_alpha);
             // If we ever need to store srgb-encoded gray (e.g. GL_SLUMINANCE8) then we should use
             // ToRGB and then a swizzle stage rather than ToAlpha. The subsequent transfer function
             // stage ignores the alpha channel (where we just stashed the gray).

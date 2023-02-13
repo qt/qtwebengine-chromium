@@ -208,7 +208,7 @@ struct TensorEvaluator<const TensorForcedEvalOp<ArgType_>, Device>
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE TensorBlock
   block(TensorBlockDesc& desc, TensorBlockScratch& scratch,
           bool /*root_of_expr_ast*/ = false) const {
-    assert(m_buffer != NULL);
+    eigen_assert(m_buffer != NULL);
     return TensorBlock::materialize(m_buffer, m_impl.dimensions(), desc, scratch);
   }
 

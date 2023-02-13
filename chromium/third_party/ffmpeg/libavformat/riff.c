@@ -499,6 +499,8 @@ const AVCodecTag ff_codec_bmp_tags[] = {
     { AV_CODEC_ID_MVHA,         MKTAG('M', 'V', 'H', 'A') },
     { AV_CODEC_ID_MV30,         MKTAG('M', 'V', '3', '0') },
     { AV_CODEC_ID_NOTCHLC,      MKTAG('n', 'l', 'c', '1') },
+    { AV_CODEC_ID_VQC,          MKTAG('V', 'Q', 'C', '1') },
+    { AV_CODEC_ID_VQC,          MKTAG('V', 'Q', 'C', '2') },
     { AV_CODEC_ID_NONE,         0 }
 };
 
@@ -558,6 +560,7 @@ const AVCodecTag ff_codec_wav_tags[] = {
     { AV_CODEC_ID_WMALOSSLESS,     0x0163 },
     { AV_CODEC_ID_XMA1,            0x0165 },
     { AV_CODEC_ID_XMA2,            0x0166 },
+    { AV_CODEC_ID_FTR,             0x0180 },
     { AV_CODEC_ID_ADPCM_CT,        0x0200 },
     { AV_CODEC_ID_DVAUDIO,         0x0215 },
     { AV_CODEC_ID_DVAUDIO,         0x0216 },
@@ -584,8 +587,10 @@ const AVCodecTag ff_codec_wav_tags[] = {
     { AV_CODEC_ID_PCM_MULAW,       0x6c75 },
     { AV_CODEC_ID_AAC,             0x706d },
     { AV_CODEC_ID_AAC,             0x4143 },
+    { AV_CODEC_ID_FTR,             0x4180 },
     { AV_CODEC_ID_XAN_DPCM,        0x594a },
     { AV_CODEC_ID_G729,            0x729A },
+    { AV_CODEC_ID_FTR,             0x8180 },
     { AV_CODEC_ID_G723_1,          0xA100 }, /* Comverse Infosys Ltd. G723 1 */
     { AV_CODEC_ID_AAC,             0xA106 },
     { AV_CODEC_ID_SPEEX,           0xA109 },

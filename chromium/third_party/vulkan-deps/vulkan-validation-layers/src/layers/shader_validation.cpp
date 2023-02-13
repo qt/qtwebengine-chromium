@@ -47,38 +47,38 @@ static shader_stage_attributes shader_stage_attribs[] = {
     {"fragment shader", false, false, VK_SHADER_STAGE_FRAGMENT_BIT},
 };
 
-static const spirv_inst_iter GetBaseTypeIter(const SHADER_MODULE_STATE &module_state, uint32_t type) {
-    const auto &insn = module_state.get_def(type);
+static const Instruction *GetBaseTypeInstruction(const SHADER_MODULE_STATE &module_state, uint32_t type) {
+    const Instruction *insn = module_state.FindDef(type);
     const uint32_t base_insn_id = module_state.GetBaseType(insn);
     // Will return end() if an invalid/unknown base_insn_id is returned
-    return module_state.get_def(base_insn_id);
+    return module_state.FindDef(base_insn_id);
 }
 
-static bool BaseTypesMatch(const SHADER_MODULE_STATE &a, const SHADER_MODULE_STATE &b, const spirv_inst_iter &a_base_insn,
-                           const spirv_inst_iter &b_base_insn) {
-    if (a_base_insn == a.end() || b_base_insn == b.end()) {
+static bool BaseTypesMatch(const SHADER_MODULE_STATE &a, const SHADER_MODULE_STATE &b, const Instruction *a_base_insn,
+                           const Instruction *b_base_insn) {
+    if (!a_base_insn || !b_base_insn) {
         return false;
     }
-    const uint32_t a_opcode = a_base_insn.opcode();
-    const uint32_t b_opcode = b_base_insn.opcode();
+    const uint32_t a_opcode = a_base_insn->Opcode();
+    const uint32_t b_opcode = b_base_insn->Opcode();
     if (a_opcode == b_opcode) {
         if (a_opcode == spv::OpTypeInt) {
             // Match width and signedness
-            return a_base_insn.word(2) == b_base_insn.word(2) && a_base_insn.word(3) == b_base_insn.word(3);
+            return a_base_insn->Word(2) == b_base_insn->Word(2) && a_base_insn->Word(3) == b_base_insn->Word(3);
         } else if (a_opcode == spv::OpTypeFloat) {
             // Match width
-            return a_base_insn.word(2) == b_base_insn.word(2);
+            return a_base_insn->Word(2) == b_base_insn->Word(2);
         } else if (a_opcode == spv::OpTypeBool) {
             return true;
         } else if (a_opcode == spv::OpTypeStruct) {
             // Match on all element types
-            if (a_base_insn.len() != b_base_insn.len()) {
+            if (a_base_insn->Length() != b_base_insn->Length()) {
                 return false;  // Structs cannot match if member counts differ
             }
 
-            for (uint32_t i = 2; i < a_base_insn.len(); i++) {
-                const auto &c_base_insn = GetBaseTypeIter(a, a_base_insn.word(i));
-                const auto &d_base_insn = GetBaseTypeIter(b, b_base_insn.word(i));
+            for (uint32_t i = 2; i < a_base_insn->Length(); i++) {
+                const Instruction *c_base_insn = GetBaseTypeInstruction(a, a_base_insn->Word(i));
+                const Instruction *d_base_insn = GetBaseTypeInstruction(b, b_base_insn->Word(i));
                 if (!BaseTypesMatch(a, b, c_base_insn, d_base_insn)) {
                     return false;
                 }
@@ -91,8 +91,8 @@ static bool BaseTypesMatch(const SHADER_MODULE_STATE &a, const SHADER_MODULE_STA
 }
 
 static bool TypesMatch(const SHADER_MODULE_STATE &a, const SHADER_MODULE_STATE &b, uint32_t a_type, uint32_t b_type) {
-    const auto &a_base_insn = GetBaseTypeIter(a, a_type);
-    const auto &b_base_insn = GetBaseTypeIter(b, b_type);
+    const Instruction *a_base_insn = GetBaseTypeInstruction(a, a_type);
+    const Instruction *b_base_insn = GetBaseTypeInstruction(b, b_type);
 
     return BaseTypesMatch(a, b, a_base_insn, b_base_insn);
 }
@@ -126,29 +126,8 @@ static uint32_t GetShaderStageId(VkShaderStageFlagBits stage) {
     return bit_pos - 1;
 }
 
-bool CoreChecks::ValidateViConsistency(safe_VkPipelineVertexInputStateCreateInfo const *vi) const {
-    // Walk the binding descriptions, which describe the step rate and stride of each vertex buffer.  Each binding should
-    // be specified only once.
-    layer_data::unordered_map<uint32_t, VkVertexInputBindingDescription const *> bindings;
-    bool skip = false;
-
-    for (uint32_t i = 0; i < vi->vertexBindingDescriptionCount; i++) {
-        auto desc = &vi->pVertexBindingDescriptions[i];
-        auto &binding = bindings[desc->binding];
-        if (binding) {
-            // TODO: "VUID-VkGraphicsPipelineCreateInfo-pStages-00742" perhaps?
-            skip |= LogError(device, kVUID_Core_Shader_InconsistentVi, "Duplicate vertex input binding descriptions for binding %d",
-                             desc->binding);
-        } else {
-            binding = desc;
-        }
-    }
-
-    return skip;
-}
-
 bool CoreChecks::ValidateViAgainstVsInputs(safe_VkPipelineVertexInputStateCreateInfo const *vi,
-                                           const SHADER_MODULE_STATE &module_state, spirv_inst_iter entrypoint) const {
+                                           const SHADER_MODULE_STATE &module_state, const Instruction &entrypoint) const {
     bool skip = false;
 
     const auto inputs = module_state.CollectInterfaceByLocation(entrypoint, spv::StorageClassInput, false);
@@ -166,7 +145,7 @@ bool CoreChecks::ValidateViAgainstVsInputs(safe_VkPipelineVertexInputStateCreate
 
     struct AttribInputPair {
         const VkVertexInputAttributeDescription *attrib = nullptr;
-        const interface_var *input = nullptr;
+        const InterfaceVariable *input = nullptr;
     };
     std::map<uint32_t, AttribInputPair> location_map;
     for (const auto &attrib_it : attribs) location_map[attrib_it.first].attrib = attrib_it.second;
@@ -202,12 +181,12 @@ bool CoreChecks::ValidateViAgainstVsInputs(safe_VkPipelineVertexInputStateCreate
 }
 
 bool CoreChecks::ValidateFsOutputsAgainstDynamicRenderingRenderPass(const SHADER_MODULE_STATE &module_state,
-                                                                    spirv_inst_iter entrypoint,
-                                                                    PIPELINE_STATE const *pipeline) const {
+                                                                    const Instruction &entrypoint,
+                                                                    const PIPELINE_STATE &pipeline) const {
     bool skip = false;
 
     struct Attachment {
-        const interface_var* output = nullptr;
+        const InterfaceVariable *output = nullptr;
     };
     std::map<uint32_t, Attachment> location_map;
 
@@ -218,14 +197,14 @@ bool CoreChecks::ValidateFsOutputsAgainstDynamicRenderingRenderPass(const SHADER
         location_map[location].output = &output_it.second;
     }
 
-    const auto ms_state = pipeline->MultisampleState();
+    const auto ms_state = pipeline.MultisampleState();
     const bool alpha_to_coverage_enabled = ms_state && (ms_state->alphaToCoverageEnable == VK_TRUE);
 
     for (uint32_t location = 0; location < location_map.size(); ++location) {
          const auto output = location_map[location].output;
 
-         const auto &rp_state = pipeline->RenderPassState();
-         const auto &attachments = pipeline->Attachments();
+         const auto &rp_state = pipeline.RenderPassState();
+         const auto &attachments = pipeline.Attachments();
          if (!output && location < attachments.size() && attachments[location].colorWriteMask != 0) {
              skip |= LogWarning(
                  module_state.vk_shader_module(), kVUID_Core_Shader_InputNotProduced,
@@ -247,8 +226,8 @@ bool CoreChecks::ValidateFsOutputsAgainstDynamicRenderingRenderPass(const SHADER
     }
 
     const auto output_zero = location_map.count(0) ? location_map[0].output : nullptr;
-    bool location_zero_has_alpha = output_zero && module_state.get_def(output_zero->type_id) != module_state.end() &&
-                                   module_state.GetComponentsConsumedByType(output_zero->type_id, false) == 4;
+    const bool location_zero_has_alpha = output_zero && module_state.FindDef(output_zero->type_id) &&
+                                         module_state.GetComponentsConsumedByType(output_zero->type_id, false) == 4;
     if (alpha_to_coverage_enabled && !location_zero_has_alpha) {
         skip |= LogError(module_state.vk_shader_module(), kVUID_Core_Shader_NoAlphaAtLocation0WithAlphaToCoverage,
                          "fragment shader doesn't declare alpha output at location 0 even though alpha to coverage is enabled.");
@@ -257,18 +236,18 @@ bool CoreChecks::ValidateFsOutputsAgainstDynamicRenderingRenderPass(const SHADER
     return skip;
 }
 
-bool CoreChecks::ValidateFsOutputsAgainstRenderPass(const SHADER_MODULE_STATE &module_state, spirv_inst_iter entrypoint,
-                                                    PIPELINE_STATE const *pipeline, uint32_t subpass_index) const {
+bool CoreChecks::ValidateFsOutputsAgainstRenderPass(const SHADER_MODULE_STATE &module_state, const Instruction &entrypoint,
+                                                    const PIPELINE_STATE &pipeline, uint32_t subpass_index) const {
     bool skip = false;
 
     struct Attachment {
         const VkAttachmentReference2 *reference = nullptr;
         const VkAttachmentDescription2 *attachment = nullptr;
-        const interface_var *output = nullptr;
+        const InterfaceVariable *output = nullptr;
     };
     std::map<uint32_t, Attachment> location_map;
 
-    const auto &rp_state = pipeline->RenderPassState();
+    const auto &rp_state = pipeline.RenderPassState();
     if (rp_state && !rp_state->UsesDynamicRendering()) {
         const auto rpci = rp_state->createInfo.ptr();
         const auto subpass = rpci->pSubpasses[subpass_index];
@@ -290,11 +269,11 @@ bool CoreChecks::ValidateFsOutputsAgainstRenderPass(const SHADER_MODULE_STATE &m
         location_map[location].output = &output_it.second;
     }
 
-    const auto *ms_state = pipeline->MultisampleState();
+    const auto *ms_state = pipeline.MultisampleState();
     const bool alpha_to_coverage_enabled = ms_state && (ms_state->alphaToCoverageEnable == VK_TRUE);
 
     // Don't check any color attachments if rasterization is disabled
-    const auto raster_state = pipeline->RasterizationState();
+    const auto raster_state = pipeline.RasterizationState();
     if (raster_state && !raster_state->rasterizerDiscardEnable) {
         for (const auto &location_it : location_map) {
             const auto reference = location_it.second.reference;
@@ -306,7 +285,7 @@ bool CoreChecks::ValidateFsOutputsAgainstRenderPass(const SHADER_MODULE_STATE &m
             const auto attachment = location_it.second.attachment;
             const auto output = location_it.second.output;
             if (attachment && !output) {
-                const auto &attachments = pipeline->Attachments();
+                const auto &attachments = pipeline.Attachments();
                 if (location < attachments.size() && attachments[location].colorWriteMask != 0) {
                     skip |= LogWarning(module_state.vk_shader_module(), kVUID_Core_Shader_InputNotProduced,
                                        "Attachment %" PRIu32
@@ -338,8 +317,8 @@ bool CoreChecks::ValidateFsOutputsAgainstRenderPass(const SHADER_MODULE_STATE &m
     }
 
     const auto output_zero = location_map.count(0) ? location_map[0].output : nullptr;
-    bool location_zero_has_alpha = output_zero && module_state.get_def(output_zero->type_id) != module_state.end() &&
-                                   module_state.GetComponentsConsumedByType(output_zero->type_id, false) == 4;
+    const bool location_zero_has_alpha = output_zero && module_state.FindDef(output_zero->type_id) &&
+                                         module_state.GetComponentsConsumedByType(output_zero->type_id, false) == 4;
     if (alpha_to_coverage_enabled && !location_zero_has_alpha) {
         skip |= LogError(module_state.vk_shader_module(), kVUID_Core_Shader_NoAlphaAtLocation0WithAlphaToCoverage,
                          "fragment shader doesn't declare alpha output at location 0 even though alpha to coverage is enabled.");
@@ -349,7 +328,7 @@ bool CoreChecks::ValidateFsOutputsAgainstRenderPass(const SHADER_MODULE_STATE &m
 }
 
 PushConstantByteState CoreChecks::ValidatePushConstantSetUpdate(const std::vector<uint8_t> &push_constant_data_update,
-                                                                const shader_struct_member &push_constant_used_in_shader,
+                                                                const SHADER_MODULE_STATE::StructInfo &push_constant_used_in_shader,
                                                                 uint32_t &out_issue_index) const {
     const auto *used_bytes = push_constant_used_in_shader.GetUsedbytes();
     const auto used_bytes_size = used_bytes->size();
@@ -395,8 +374,8 @@ bool CoreChecks::ValidatePushConstantUsage(const PIPELINE_STATE &pipeline, const
     }
 
     // Validate directly off the offsets. this isn't quite correct for arrays and matrices, but is a good first step.
-    const auto *entrypoint = module_state.FindEntrypointStruct(pStage->pName, pStage->stage);
-    if (!entrypoint || !entrypoint->push_constant_used_in_shader.IsUsed()) {
+    const auto *push_constants = module_state.FindEntrypointPushConstant(pStage->pName, pStage->stage);
+    if (!push_constants || !push_constants->IsUsed()) {
         return skip;
     }
     const auto &pipeline_layout = pipeline.PipelineLayoutState();
@@ -413,11 +392,10 @@ bool CoreChecks::ValidatePushConstantUsage(const PIPELINE_STATE &pipeline, const
             }
             push_constant_bytes_set.resize(range.offset + range.size, PC_Byte_Updated);
             uint32_t issue_index = 0;
-            const auto ret =
-                ValidatePushConstantSetUpdate(push_constant_bytes_set, entrypoint->push_constant_used_in_shader, issue_index);
+            const auto ret = ValidatePushConstantSetUpdate(push_constant_bytes_set, *push_constants, issue_index);
 
             if (ret == PC_Byte_Not_Set) {
-                const auto loc_descr = entrypoint->push_constant_used_in_shader.GetLocationDesc(issue_index);
+                const auto loc_descr = push_constants->GetLocationDesc(issue_index);
                 LogObjectList objlist(module_state.vk_shader_module());
                 objlist.add(pipeline_layout->layout());
                 skip |= LogError(objlist, vuid, "Push constant buffer:%s in %s is out of range in %s.", loc_descr.c_str(),
@@ -439,28 +417,28 @@ bool CoreChecks::ValidatePushConstantUsage(const PIPELINE_STATE &pipeline, const
     return skip;
 }
 
-bool CoreChecks::ValidateBuiltinLimits(const SHADER_MODULE_STATE &module_state, spirv_inst_iter entrypoint) const {
+bool CoreChecks::ValidateBuiltinLimits(const SHADER_MODULE_STATE &module_state, const Instruction &entrypoint) const {
     bool skip = false;
 
     // Currently all builtin tested are only found in fragment shaders
-    if (entrypoint.word(1) != spv::ExecutionModelFragment) {
+    if (entrypoint.Word(1) != spv::ExecutionModelFragment) {
         return skip;
     }
 
     // Find all builtin from just the interface variables
     for (uint32_t id : FindEntrypointInterfaces(entrypoint)) {
-        auto insn = module_state.get_def(id);
-        assert(insn.opcode() == spv::OpVariable);
-        const decoration_set decorations = module_state.get_decorations(insn.word(2));
+        const Instruction *insn = module_state.FindDef(id);
+        assert(insn->Opcode() == spv::OpVariable);
+        const DecorationSet decorations = module_state.GetDecorationSet(insn->Word(2));
 
         // Currently don't need to search in structs
-        if (((decorations.flags & decoration_set::builtin_bit) != 0) && (decorations.builtin == spv::BuiltInSampleMask)) {
-            auto type_pointer = module_state.get_def(insn.word(1));
-            assert(type_pointer.opcode() == spv::OpTypePointer);
+        if (((decorations.flags & DecorationSet::builtin_bit) != 0) && (decorations.builtin == spv::BuiltInSampleMask)) {
+            const Instruction *type_pointer = module_state.FindDef(insn->Word(1));
+            assert(type_pointer->Opcode() == spv::OpTypePointer);
 
-            auto type = module_state.get_def(type_pointer.word(3));
-            if (type.opcode() == spv::OpTypeArray) {
-                uint32_t length = static_cast<uint32_t>(module_state.GetConstantValueById(type.word(3)));
+            const Instruction *type = module_state.FindDef(type_pointer->Word(3));
+            if (type->Opcode() == spv::OpTypeArray) {
+                uint32_t length = static_cast<uint32_t>(module_state.GetConstantValueById(type->Word(3)));
                 // Handles both the input and output sampleMask
                 if (length > phys_dev_props.limits.maxSampleMaskWords) {
                     skip |=
@@ -519,32 +497,33 @@ bool CoreChecks::ValidateSpecializations(const SHADER_MODULE_STATE &module_state
 // TODO (jbolz): Can this return a const reference?
 static std::set<uint32_t> TypeToDescriptorTypeSet(const SHADER_MODULE_STATE &module_state, uint32_t type_id,
                                                   uint32_t &descriptor_count, bool is_khr) {
-    auto type = module_state.get_def(type_id);
+    const Instruction *type = module_state.FindDef(type_id);
     bool is_storage_buffer = false;
     descriptor_count = 1;
     std::set<uint32_t> ret;
 
     // Strip off any array or ptrs. Where we remove array levels, adjust the  descriptor count for each dimension.
-    while (type.opcode() == spv::OpTypeArray || type.opcode() == spv::OpTypePointer || type.opcode() == spv::OpTypeRuntimeArray) {
-        if (type.opcode() == spv::OpTypeRuntimeArray) {
+    while (type->Opcode() == spv::OpTypeArray || type->Opcode() == spv::OpTypePointer ||
+           type->Opcode() == spv::OpTypeRuntimeArray) {
+        if (type->Opcode() == spv::OpTypeRuntimeArray) {
             descriptor_count = 0;
-            type = module_state.get_def(type.word(2));
-        } else if (type.opcode() == spv::OpTypeArray) {
-            descriptor_count *= module_state.GetConstantValueById(type.word(3));
-            type = module_state.get_def(type.word(2));
+            type = module_state.FindDef(type->Word(2));
+        } else if (type->Opcode() == spv::OpTypeArray) {
+            descriptor_count *= module_state.GetConstantValueById(type->Word(3));
+            type = module_state.FindDef(type->Word(2));
         } else {
-            if (type.word(2) == spv::StorageClassStorageBuffer) {
+            if (type->StorageClass() == spv::StorageClassStorageBuffer) {
                 is_storage_buffer = true;
             }
-            type = module_state.get_def(type.word(3));
+            type = module_state.FindDef(type->Word(3));
         }
     }
 
-    switch (type.opcode()) {
+    switch (type->Opcode()) {
         case spv::OpTypeStruct: {
-            for (const auto insn : module_state.GetDecorationInstructions()) {
-                if (insn.word(1) == type.word(1)) {
-                    if (insn.word(2) == spv::DecorationBlock) {
+            for (const Instruction *insn : module_state.GetDecorationInstructions()) {
+                if (insn->Word(1) == type->Word(1)) {
+                    if (insn->Word(2) == spv::DecorationBlock) {
                         if (is_storage_buffer) {
                             ret.insert(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
                             ret.insert(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC);
@@ -555,7 +534,7 @@ static std::set<uint32_t> TypeToDescriptorTypeSet(const SHADER_MODULE_STATE &mod
                             ret.insert(VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK_EXT);
                             return ret;
                         }
-                    } else if (insn.word(2) == spv::DecorationBufferBlock) {
+                    } else if (insn->Word(2) == spv::DecorationBufferBlock) {
                         ret.insert(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
                         ret.insert(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC);
                         return ret;
@@ -575,9 +554,9 @@ static std::set<uint32_t> TypeToDescriptorTypeSet(const SHADER_MODULE_STATE &mod
         case spv::OpTypeSampledImage: {
             // Slight relaxation for some GLSL historical madness: samplerBuffer doesn't really have a sampler, and a texel
             // buffer descriptor doesn't really provide one. Allow this slight mismatch.
-            auto image_type = module_state.get_def(type.word(2));
-            auto dim = image_type.word(3);
-            auto sampled = image_type.word(7);
+            const Instruction *image_type = module_state.FindDef(type->Word(2));
+            auto dim = image_type->Word(3);
+            auto sampled = image_type->Word(7);
             if (dim == spv::DimBuffer && sampled == 1) {
                 ret.insert(VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER);
                 return ret;
@@ -589,8 +568,8 @@ static std::set<uint32_t> TypeToDescriptorTypeSet(const SHADER_MODULE_STATE &mod
         case spv::OpTypeImage: {
             // Many descriptor types backing image types-- depends on dimension and whether the image will be used with a sampler.
             // SPIRV for Vulkan requires that sampled be 1 or 2 -- leaving the decision to runtime is unacceptable.
-            auto dim = type.word(3);
-            auto sampled = type.word(7);
+            auto dim = type->Word(3);
+            auto sampled = type->Word(7);
 
             if (dim == spv::DimSubpassData) {
                 ret.insert(VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT);
@@ -682,13 +661,13 @@ bool CoreChecks::ValidateShaderStageWritableOrAtomicDescriptor(const SHADER_MODU
 }
 
 bool CoreChecks::ValidateShaderStageGroupNonUniform(const SHADER_MODULE_STATE &module_state, VkShaderStageFlagBits stage,
-                                                    spirv_inst_iter &insn) const {
+                                                    const Instruction &insn) const {
     bool skip = false;
 
     // Check anything using a group operation (which currently is only OpGroupNonUnifrom* operations)
-    if (GroupOperation(insn.opcode()) == true) {
+    if (GroupOperation(insn.Opcode()) == true) {
         // Check the quad operations.
-        if ((insn.opcode() == spv::OpGroupNonUniformQuadBroadcast) || (insn.opcode() == spv::OpGroupNonUniformQuadSwap)) {
+        if ((insn.Opcode() == spv::OpGroupNonUniformQuadBroadcast) || (insn.Opcode() == spv::OpGroupNonUniformQuadSwap)) {
             if ((stage != VK_SHADER_STAGE_FRAGMENT_BIT) && (stage != VK_SHADER_STAGE_COMPUTE_BIT)) {
                 skip |=
                     RequireFeature(module_state, phys_dev_props_core11.subgroupQuadOperationsInAllStages,
@@ -697,13 +676,13 @@ bool CoreChecks::ValidateShaderStageGroupNonUniform(const SHADER_MODULE_STATE &m
         }
 
         uint32_t scope_type = spv::ScopeMax;
-        if (insn.opcode() == spv::OpGroupNonUniformPartitionNV) {
+        if (insn.Opcode() == spv::OpGroupNonUniformPartitionNV) {
             // OpGroupNonUniformPartitionNV always assumed subgroup as missing operand
             scope_type = spv::ScopeSubgroup;
         } else {
             // "All <id> used for Scope <id> must be of an OpConstant"
-            auto scope_id = module_state.get_def(insn.word(3));
-            scope_type = scope_id.word(3);
+            const Instruction *scope_id = module_state.FindDef(insn.Word(3));
+            scope_type = scope_id->Word(3);
         }
 
         if (scope_type == spv::ScopeSubgroup) {
@@ -714,19 +693,19 @@ bool CoreChecks::ValidateShaderStageGroupNonUniform(const SHADER_MODULE_STATE &m
         }
 
         if (!enabled_features.core12.shaderSubgroupExtendedTypes) {
-            auto type = module_state.get_def(insn.word(1));
+            const Instruction *type = module_state.FindDef(insn.Word(1));
 
-            if (type.opcode() == spv::OpTypeVector) {
+            if (type->Opcode() == spv::OpTypeVector) {
                 // Get the element type
-                type = module_state.get_def(type.word(2));
+                type = module_state.FindDef(type->Word(2));
             }
 
-            if (type.opcode() != spv::OpTypeBool) {
+            if (type->Opcode() != spv::OpTypeBool) {
                 // Both OpTypeInt and OpTypeFloat the width is in the 2nd word.
-                const uint32_t width = type.word(2);
+                const uint32_t width = type->Word(2);
 
-                if ((type.opcode() == spv::OpTypeFloat && width == 16) ||
-                    (type.opcode() == spv::OpTypeInt && (width == 8 || width == 16 || width == 64))) {
+                if ((type->Opcode() == spv::OpTypeFloat && width == 16) ||
+                    (type->Opcode() == spv::OpTypeInt && (width == 8 || width == 16 || width == 64))) {
                     skip |= RequireFeature(module_state, enabled_features.core12.shaderSubgroupExtendedTypes,
                                            "VkPhysicalDeviceShaderSubgroupExtendedTypesFeatures::shaderSubgroupExtendedTypes",
                                            "VUID-RuntimeSpirv-None-06275");
@@ -738,27 +717,27 @@ bool CoreChecks::ValidateShaderStageGroupNonUniform(const SHADER_MODULE_STATE &m
     return skip;
 }
 
-bool CoreChecks::ValidateMemoryScope(const SHADER_MODULE_STATE &module_state, const spirv_inst_iter &insn) const {
+bool CoreChecks::ValidateMemoryScope(const SHADER_MODULE_STATE &module_state, const Instruction &insn) const {
     bool skip = false;
 
-    const auto &entry = OpcodeMemoryScopePosition(insn.opcode());
+    const auto &entry = OpcodeMemoryScopePosition(insn.Opcode());
     if (entry > 0) {
-        const uint32_t scope_id = insn.word(entry);
-        const auto &scope_def = module_state.GetConstantDef(scope_id);
-        if (scope_def != module_state.end()) {
-            const auto scope_type = module_state.GetConstantValue(scope_def);
+        const uint32_t scope_id = insn.Word(entry);
+        const Instruction *scope_def = module_state.GetConstantDef(scope_id);
+        if (scope_def) {
+            const auto scope_type = scope_def->GetConstantValue();
             if (enabled_features.core12.vulkanMemoryModel && !enabled_features.core12.vulkanMemoryModelDeviceScope &&
                 scope_type == spv::Scope::ScopeDevice) {
                 skip |= LogError(module_state.vk_shader_module(), "VUID-RuntimeSpirv-vulkanMemoryModel-06265",
                                  "VkPhysicalDeviceVulkan12Features::vulkanMemoryModel is enabled and "
                                  "VkPhysicalDeviceVulkan12Features::vulkanMemoryModelDeviceScope is disabled, but\n%s\nuses "
                                  "Device memory scope.",
-                                 module_state.DescribeInstruction(insn).c_str());
+                                 insn.Describe().c_str());
             } else if (!enabled_features.core12.vulkanMemoryModel && scope_type == spv::Scope::ScopeQueueFamily) {
                 skip |= LogError(module_state.vk_shader_module(), "VUID-RuntimeSpirv-vulkanMemoryModel-06266",
                                  "VkPhysicalDeviceVulkan12Features::vulkanMemoryModel is not enabled, but\n%s\nuses "
                                  "QueueFamily memory scope.",
-                                 module_state.DescribeInstruction(insn).c_str());
+                                 insn.Describe().c_str());
             }
         }
     }
@@ -768,7 +747,7 @@ bool CoreChecks::ValidateMemoryScope(const SHADER_MODULE_STATE &module_state, co
 
 bool CoreChecks::ValidateShaderStageInputOutputLimits(const SHADER_MODULE_STATE &module_state,
                                                       safe_VkPipelineShaderStageCreateInfo const *pStage,
-                                                      const PIPELINE_STATE *pipeline, spirv_inst_iter entrypoint) const {
+                                                      const PIPELINE_STATE &pipeline, const Instruction &entrypoint) const {
     if (pStage->stage == VK_SHADER_STAGE_COMPUTE_BIT || pStage->stage == VK_SHADER_STAGE_ALL_GRAPHICS ||
         pStage->stage == VK_SHADER_STAGE_ALL) {
         return false;
@@ -786,18 +765,20 @@ bool CoreChecks::ValidateShaderStageInputOutputLimits(const SHADER_MODULE_STATE 
     std::vector<Variable> variables;
 
     uint32_t num_vertices = 0;
+    uint32_t num_primitives = 0;
     bool is_iso_lines = false;
     bool is_point_mode = false;
+    bool is_xfb_execution_mode = false;
 
     auto entrypoint_variables = FindEntrypointInterfaces(entrypoint);
 
-    for (auto insn : module_state) {
-        switch (insn.opcode()) {
+    for (const Instruction &insn : module_state.GetInstructions()) {
+        switch (insn.Opcode()) {
             // Find all Patch decorations
             case spv::OpDecorate:
-                switch (insn.word(2)) {
+                switch (insn.Word(2)) {
                     case spv::DecorationPatch: {
-                        patch_i_ds.insert(insn.word(1));
+                        patch_i_ds.insert(insn.Word(1));
                         break;
                     }
                     default:
@@ -807,24 +788,24 @@ bool CoreChecks::ValidateShaderStageInputOutputLimits(const SHADER_MODULE_STATE 
             // Find all input and output variables
             case spv::OpVariable: {
                 Variable var = {};
-                var.storageClass = insn.word(3);
+                var.storageClass = insn.StorageClass();
                 if ((var.storageClass == spv::StorageClassInput || var.storageClass == spv::StorageClassOutput) &&
                     // Only include variables in the entrypoint's interface
-                    find(entrypoint_variables.begin(), entrypoint_variables.end(), insn.word(2)) != entrypoint_variables.end()) {
-                    var.baseTypePtrID = insn.word(1);
-                    var.ID = insn.word(2);
+                    find(entrypoint_variables.begin(), entrypoint_variables.end(), insn.Word(2)) != entrypoint_variables.end()) {
+                    var.baseTypePtrID = insn.Word(1);
+                    var.ID = insn.Word(2);
                     variables.push_back(var);
                 }
                 break;
             }
             case spv::OpExecutionMode:
             case spv::OpExecutionModeId:
-                if (insn.word(1) == entrypoint.word(2)) {
-                    switch (insn.word(2)) {
+                if (insn.Word(1) == entrypoint.Word(2)) {
+                    switch (insn.Word(2)) {
                         default:
                             break;
                         case spv::ExecutionModeOutputVertices:
-                            num_vertices = insn.word(3);
+                            num_vertices = insn.Word(3);
                             break;
                         case spv::ExecutionModeIsolines:
                             is_iso_lines = true;
@@ -832,12 +813,25 @@ bool CoreChecks::ValidateShaderStageInputOutputLimits(const SHADER_MODULE_STATE 
                         case spv::ExecutionModePointMode:
                             is_point_mode = true;
                             break;
+                        case spv::ExecutionModeOutputPrimitivesEXT:  // alias ExecutionModeOutputPrimitivesNV
+                            num_primitives = insn.Word(3);
+                            break;
+                        case spv::ExecutionModeXfb:
+                            is_xfb_execution_mode = true;
+                            break;
                     }
                 }
                 break;
             default:
                 break;
         }
+    }
+
+    if (is_xfb_execution_mode &&
+        (pipeline.HasShaderStage(VK_SHADER_STAGE_MESH_BIT_EXT) || pipeline.HasShaderStage(VK_SHADER_STAGE_TASK_BIT_EXT))) {
+        skip |= LogError(pipeline.pipeline(), "VUID-VkGraphicsPipelineCreateInfo-None-02322",
+                         "If the pipeline is being created with pre-rasterization shader state, and there are any mesh shader "
+                         "stages in the pipeline there must not be any shader stage in the pipeline with a Xfb execution mode");
     }
 
     bool strip_output_array_level =
@@ -856,18 +850,18 @@ bool CoreChecks::ValidateShaderStageInputOutputLimits(const SHADER_MODULE_STATE 
     for (auto &var : inputs) {
         int location = var.first.first;
         int component = var.first.second;
-        interface_var &iv = var.second;
+        InterfaceVariable &interface_var = var.second;
 
         // Only need to look at the first location, since we use the type's whole size
-        if (iv.offset != 0) {
+        if (interface_var.offset != 0) {
             continue;
         }
 
-        if (iv.is_patch) {
+        if (interface_var.is_patch) {
             continue;
         }
 
-        int num_components = module_state.GetComponentsConsumedByType(iv.type_id, strip_input_array_level);
+        int num_components = module_state.GetComponentsConsumedByType(interface_var.type_id, strip_input_array_level);
         max_comp_in = std::max(max_comp_in, location * 4 + component + num_components);
     }
 
@@ -875,18 +869,18 @@ bool CoreChecks::ValidateShaderStageInputOutputLimits(const SHADER_MODULE_STATE 
     for (auto &var : outputs) {
         int location = var.first.first;
         int component = var.first.second;
-        interface_var &iv = var.second;
+        InterfaceVariable &interface_var = var.second;
 
         // Only need to look at the first location, since we use the type's whole size
-        if (iv.offset != 0) {
+        if (interface_var.offset != 0) {
             continue;
         }
 
-        if (iv.is_patch) {
+        if (interface_var.is_patch) {
             continue;
         }
 
-        int num_components = module_state.GetComponentsConsumedByType(iv.type_id, strip_output_array_level);
+        int num_components = module_state.GetComponentsConsumedByType(interface_var.type_id, strip_output_array_level);
         max_comp_out = std::max(max_comp_out, location * 4 + component + num_components);
     }
 
@@ -898,7 +892,7 @@ bool CoreChecks::ValidateShaderStageInputOutputLimits(const SHADER_MODULE_STATE 
         // Check if the variable is a patch. Patches can also be members of blocks,
         // but if they are then the top-level arrayness has already been stripped
         // by the time GetComponentsConsumedByType gets to it.
-        bool is_patch = patch_i_ds.find(var.ID) != patch_i_ds.end();
+        const bool is_patch = patch_i_ds.find(var.ID) != patch_i_ds.end();
 
         if (var.storageClass == spv::StorageClassInput) {
             num_comp_in += module_state.GetComponentsConsumedByType(var.baseTypePtrID, strip_input_array_level && !is_patch);
@@ -1063,7 +1057,40 @@ bool CoreChecks::ValidateShaderStageInputOutputLimits(const SHADER_MODULE_STATE 
         case VK_SHADER_STAGE_INTERSECTION_BIT_KHR:
         case VK_SHADER_STAGE_CALLABLE_BIT_KHR:
         case VK_SHADER_STAGE_TASK_BIT_NV:
+            break;
+
         case VK_SHADER_STAGE_MESH_BIT_NV:
+            if (entrypoint.Word(1) == spv::ExecutionModelMeshNV) {
+                if (num_vertices > phys_dev_ext_props.mesh_shader_props_NV.maxMeshOutputVertices) {
+                    skip |= LogError(module_state.vk_shader_module(), "VUID-RuntimeSpirv-MeshNV-07113",
+                                     "Invalid Pipeline CreateInfo State: Mesh shader output vertices count exceeds the "
+                                     "maxMeshOutputVertices of %" PRIu32 " by %" PRIu32,
+                                     phys_dev_ext_props.mesh_shader_props_NV.maxMeshOutputVertices,
+                                     num_vertices - phys_dev_ext_props.mesh_shader_props_NV.maxMeshOutputVertices);
+                }
+                if (num_primitives > phys_dev_ext_props.mesh_shader_props_NV.maxMeshOutputPrimitives) {
+                    skip |= LogError(module_state.vk_shader_module(), "VUID-RuntimeSpirv-MeshNV-07114",
+                                     "Invalid Pipeline CreateInfo State: Mesh shader output primitives count exceeds the "
+                                     "maxMeshOutputPrimitives of %" PRIu32 " by %" PRIu32,
+                                     phys_dev_ext_props.mesh_shader_props_NV.maxMeshOutputPrimitives,
+                                     num_primitives - phys_dev_ext_props.mesh_shader_props_NV.maxMeshOutputPrimitives);
+                }
+            } else if (entrypoint.Word(1) == spv::ExecutionModelMeshEXT) {
+                if (num_vertices > phys_dev_ext_props.mesh_shader_props.maxMeshOutputVertices) {
+                    skip |= LogError(module_state.vk_shader_module(), "VUID-RuntimeSpirv-MeshEXT-07115",
+                                     "Invalid Pipeline CreateInfo State: Mesh shader output vertices count exceeds the "
+                                     "maxMeshOutputVertices of %" PRIu32 " by %" PRIu32,
+                                     phys_dev_ext_props.mesh_shader_props.maxMeshOutputVertices,
+                                     num_vertices - phys_dev_ext_props.mesh_shader_props.maxMeshOutputVertices);
+                }
+                if (num_primitives > phys_dev_ext_props.mesh_shader_props.maxMeshOutputPrimitives) {
+                    skip |= LogError(module_state.vk_shader_module(), "VUID-RuntimeSpirv-MeshEXT-07116",
+                                     "Invalid Pipeline CreateInfo State: Mesh shader output primitives count exceeds the "
+                                     "maxMeshOutputPrimitives of %u by %u ",
+                                     phys_dev_ext_props.mesh_shader_props.maxMeshOutputPrimitives,
+                                     num_primitives - phys_dev_ext_props.mesh_shader_props.maxMeshOutputPrimitives);
+                }
+            }
             break;
 
         default:
@@ -1073,51 +1100,49 @@ bool CoreChecks::ValidateShaderStageInputOutputLimits(const SHADER_MODULE_STATE 
 }
 
 bool CoreChecks::ValidateShaderStorageImageFormatsVariables(const SHADER_MODULE_STATE &module_state,
-                                                            const spirv_inst_iter &insn) const {
+                                                            const Instruction *insn) const {
     bool skip = false;
     // Go through all variables for images and check decorations
-    assert(insn.opcode() == spv::OpVariable);
+    assert(insn->Opcode() == spv::OpVariable);
     // spirv-val validates this is an OpTypePointer
-    const spirv_inst_iter pointer_def = module_state.get_def(insn.word(1));
-    if (pointer_def.word(2) != spv::StorageClassUniformConstant) {
+    const Instruction *pointer_def = module_state.FindDef(insn->Word(1));
+    if (pointer_def->Word(2) != spv::StorageClassUniformConstant) {
         return skip;  // Vulkan Spec says storage image must be UniformConstant
     }
-    spirv_inst_iter type_def = module_state.get_def(pointer_def.word(3));
+    const Instruction *type_def = module_state.FindDef(pointer_def->Word(3));
 
     // Unpack an optional level of arraying
-    if (type_def.opcode() == spv::OpTypeArray || type_def.opcode() == spv::OpTypeRuntimeArray) {
-        type_def = module_state.get_def(type_def.word(2));
+    if (type_def && (type_def->Opcode() == spv::OpTypeArray || type_def->Opcode() == spv::OpTypeRuntimeArray)) {
+        type_def = module_state.FindDef(type_def->Word(2));
     }
 
-    if (type_def != module_state.end() && type_def.opcode() == spv::OpTypeImage) {
+    if (type_def && type_def->Opcode() == spv::OpTypeImage) {
         // Only check if the Image Dim operand is not SubpassData
-        const uint32_t dim = type_def.word(3);
+        const uint32_t dim = type_def->Word(3);
         // Only check storage images
-        const uint32_t sampled = type_def.word(7);
-        const uint32_t image_format = type_def.word(8);
+        const uint32_t sampled = type_def->Word(7);
+        const uint32_t image_format = type_def->Word(8);
         if ((dim == spv::DimSubpassData) || (sampled != 2) || (image_format != spv::ImageFormatUnknown)) {
             return skip;
         }
 
-        const uint32_t var_id = insn.word(2);
-        decoration_set img_decorations = module_state.get_decorations(var_id);
+        const uint32_t var_id = insn->Word(2);
+        DecorationSet img_decorations = module_state.GetDecorationSet(var_id);
 
         if (!enabled_features.core.shaderStorageImageReadWithoutFormat &&
-            !(img_decorations.flags & decoration_set::nonreadable_bit)) {
+            !(img_decorations.flags & DecorationSet::nonreadable_bit)) {
             skip |= LogError(module_state.vk_shader_module(), "VUID-RuntimeSpirv-OpTypeImage-06270",
                              "shaderStorageImageReadWithoutFormat is not supported but\n%s\nhas an Image\n%s\nwith Unknown "
                              "format and is not decorated with NonReadable",
-                             module_state.DescribeInstruction(module_state.get_def(var_id)).c_str(),
-                             module_state.DescribeInstruction(type_def).c_str());
+                             module_state.FindDef(var_id)->Describe().c_str(), type_def->Describe().c_str());
         }
 
         if (!enabled_features.core.shaderStorageImageWriteWithoutFormat &&
-            !(img_decorations.flags & decoration_set::nonwritable_bit)) {
+            !(img_decorations.flags & DecorationSet::nonwritable_bit)) {
             skip |= LogError(module_state.vk_shader_module(), "VUID-RuntimeSpirv-OpTypeImage-06269",
                              "shaderStorageImageWriteWithoutFormat is not supported but\n%s\nhas an Image\n%s\nwith "
                              "Unknown format and is not decorated with NonWritable",
-                             module_state.DescribeInstruction(module_state.get_def(var_id)).c_str(),
-                             module_state.DescribeInstruction(type_def).c_str());
+                             module_state.FindDef(var_id)->Describe().c_str(), type_def->Describe().c_str());
         }
     }
 
@@ -1125,25 +1150,29 @@ bool CoreChecks::ValidateShaderStorageImageFormatsVariables(const SHADER_MODULE_
 }
 
 bool CoreChecks::ValidateShaderStageMaxResources(const SHADER_MODULE_STATE &module_state, VkShaderStageFlagBits stage,
-                                                 const PIPELINE_STATE *pipeline) const {
+                                                 const PIPELINE_STATE &pipeline) const {
     bool skip = false;
     uint32_t total_resources = 0;
 
-    const auto &rp_state = pipeline->RenderPassState();
+    const auto &rp_state = pipeline.RenderPassState();
     if ((stage == VK_SHADER_STAGE_FRAGMENT_BIT) && rp_state) {
         if (rp_state->UsesDynamicRendering()) {
             total_resources += rp_state->dynamic_rendering_pipeline_create_info.colorAttachmentCount;
         } else {
             // "For the fragment shader stage the framebuffer color attachments also count against this limit"
-            total_resources += rp_state->createInfo.pSubpasses[pipeline->Subpass()].colorAttachmentCount;
+            total_resources += rp_state->createInfo.pSubpasses[pipeline.Subpass()].colorAttachmentCount;
         }
     }
 
     // TODO: This reuses a lot of GetDescriptorCountMaxPerStage but currently would need to make it agnostic in a way to handle
     // input from CreatePipeline and CreatePipelineLayout level
-    const auto &layout_state = pipeline->PipelineLayoutState();
+    const auto &layout_state = pipeline.PipelineLayoutState();
     if (layout_state) {
-        for (auto set_layout : layout_state->set_layouts) {
+        for (const auto &set_layout : layout_state->set_layouts) {
+            if (!set_layout) {
+                continue;
+            }
+
             if ((set_layout->GetCreateFlags() & VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT) != 0) {
                 continue;
             }
@@ -1204,20 +1233,20 @@ void GetSpecConstantValue(StageCreateInfo const *pStage, uint32_t spec_id, void 
 
 // Fill in value with the constant or specialization constant value, if available.
 // Returns true if the value has been accurately filled out.
-static bool GetIntConstantValue(spirv_inst_iter insn, const SHADER_MODULE_STATE &module_state,
+static bool GetIntConstantValue(const Instruction *insn, const SHADER_MODULE_STATE &module_state,
                                 safe_VkPipelineShaderStageCreateInfo const *pStage,
                                 const layer_data::unordered_map<uint32_t, uint32_t> &id_to_spec_id, uint32_t *value) {
-    auto type_id = module_state.get_def(insn.word(1));
-    if (type_id.opcode() != spv::OpTypeInt || type_id.word(2) != 32) {
+    const Instruction *type_id = module_state.FindDef(insn->Word(1));
+    if (type_id->Opcode() != spv::OpTypeInt || type_id->Word(2) != 32) {
         return false;
     }
-    switch (insn.opcode()) {
+    switch (insn->Opcode()) {
         case spv::OpSpecConstant:
-            *value = insn.word(3);
-            GetSpecConstantValue(pStage, id_to_spec_id.at(insn.word(2)), value);
+            *value = insn->Word(3);
+            GetSpecConstantValue(pStage, id_to_spec_id.at(insn->Word(2)), value);
             return true;
         case spv::OpConstant:
-            *value = insn.word(3);
+            *value = insn->Word(3);
             return true;
         default:
             return false;
@@ -1225,23 +1254,23 @@ static bool GetIntConstantValue(spirv_inst_iter insn, const SHADER_MODULE_STATE 
 }
 
 // Map SPIR-V type to VK_COMPONENT_TYPE enum
-VkComponentTypeNV GetComponentType(spirv_inst_iter insn) {
-    switch (insn.opcode()) {
+VkComponentTypeNV GetComponentType(const Instruction *insn) {
+    switch (insn->Opcode()) {
         case spv::OpTypeInt:
-            switch (insn.word(2)) {
+            switch (insn->Word(2)) {
                 case 8:
-                    return insn.word(3) != 0 ? VK_COMPONENT_TYPE_SINT8_NV : VK_COMPONENT_TYPE_UINT8_NV;
+                    return insn->Word(3) != 0 ? VK_COMPONENT_TYPE_SINT8_NV : VK_COMPONENT_TYPE_UINT8_NV;
                 case 16:
-                    return insn.word(3) != 0 ? VK_COMPONENT_TYPE_SINT16_NV : VK_COMPONENT_TYPE_UINT16_NV;
+                    return insn->Word(3) != 0 ? VK_COMPONENT_TYPE_SINT16_NV : VK_COMPONENT_TYPE_UINT16_NV;
                 case 32:
-                    return insn.word(3) != 0 ? VK_COMPONENT_TYPE_SINT32_NV : VK_COMPONENT_TYPE_UINT32_NV;
+                    return insn->Word(3) != 0 ? VK_COMPONENT_TYPE_SINT32_NV : VK_COMPONENT_TYPE_UINT32_NV;
                 case 64:
-                    return insn.word(3) != 0 ? VK_COMPONENT_TYPE_SINT64_NV : VK_COMPONENT_TYPE_UINT64_NV;
+                    return insn->Word(3) != 0 ? VK_COMPONENT_TYPE_SINT64_NV : VK_COMPONENT_TYPE_UINT64_NV;
                 default:
                     return VK_COMPONENT_TYPE_MAX_ENUM_NV;
             }
         case spv::OpTypeFloat:
-            switch (insn.word(2)) {
+            switch (insn->Word(2)) {
                 case 16:
                     return VK_COMPONENT_TYPE_FLOAT16_NV;
                 case 32:
@@ -1259,8 +1288,7 @@ VkComponentTypeNV GetComponentType(spirv_inst_iter insn) {
 // Validate SPV_NV_cooperative_matrix behavior that can't be statically validated
 // in SPIRV-Tools (e.g. due to specialization constant usage).
 bool CoreChecks::ValidateCooperativeMatrix(const SHADER_MODULE_STATE &module_state,
-                                           safe_VkPipelineShaderStageCreateInfo const *pStage,
-                                           const PIPELINE_STATE *pipeline) const {
+                                           safe_VkPipelineShaderStageCreateInfo const *pStage) const {
     bool skip = false;
 
     // Map SPIR-V result ID to specialization constant id (SpecId decoration value)
@@ -1277,45 +1305,45 @@ bool CoreChecks::ValidateCooperativeMatrix(const SHADER_MODULE_STATE &module_sta
 
         void Init(uint32_t id, const SHADER_MODULE_STATE &module_state, safe_VkPipelineShaderStageCreateInfo const *pStage,
                   const layer_data::unordered_map<uint32_t, uint32_t> &id_to_spec_id) {
-            spirv_inst_iter insn = module_state.get_def(id);
-            uint32_t component_type_id = insn.word(2);
-            uint32_t scope_id = insn.word(3);
-            uint32_t rows_id = insn.word(4);
-            uint32_t cols_id = insn.word(5);
-            auto component_type_iter = module_state.get_def(component_type_id);
-            auto scope_iter = module_state.get_def(scope_id);
-            auto rows_iter = module_state.get_def(rows_id);
-            auto cols_iter = module_state.get_def(cols_id);
+            const Instruction *insn = module_state.FindDef(id);
+            uint32_t component_type_id = insn->Word(2);
+            uint32_t scope_id = insn->Word(3);
+            uint32_t rows_id = insn->Word(4);
+            uint32_t cols_id = insn->Word(5);
+            const Instruction *component_type_insn = module_state.FindDef(component_type_id);
+            const Instruction *scope_insn = module_state.FindDef(scope_id);
+            const Instruction *rows_insn = module_state.FindDef(rows_id);
+            const Instruction *cols_insn = module_state.FindDef(cols_id);
 
             all_constant = true;
-            if (!GetIntConstantValue(scope_iter, module_state, pStage, id_to_spec_id, &scope)) {
+            if (!GetIntConstantValue(scope_insn, module_state, pStage, id_to_spec_id, &scope)) {
                 all_constant = false;
             }
-            if (!GetIntConstantValue(rows_iter, module_state, pStage, id_to_spec_id, &rows)) {
+            if (!GetIntConstantValue(rows_insn, module_state, pStage, id_to_spec_id, &rows)) {
                 all_constant = false;
             }
-            if (!GetIntConstantValue(cols_iter, module_state, pStage, id_to_spec_id, &cols)) {
+            if (!GetIntConstantValue(cols_insn, module_state, pStage, id_to_spec_id, &cols)) {
                 all_constant = false;
             }
-            component_type = GetComponentType(component_type_iter);
+            component_type = GetComponentType(component_type_insn);
         }
     };
 
     bool seen_coopmat_capability = false;
 
-    for (auto insn : module_state) {
-        if (OpcodeHasType(insn.opcode()) && OpcodeHasResult(insn.opcode())) {
-            id_to_type_id[insn.word(2)] = insn.word(1);
+    for (const Instruction &insn : module_state.GetInstructions()) {
+        if (OpcodeHasType(insn.Opcode()) && OpcodeHasResult(insn.Opcode())) {
+            id_to_type_id[insn.Word(2)] = insn.Word(1);
         }
 
-        switch (insn.opcode()) {
+        switch (insn.Opcode()) {
             case spv::OpDecorate:
-                if (insn.word(2) == spv::DecorationSpecId) {
-                    id_to_spec_id[insn.word(1)] = insn.word(3);
+                if (insn.Word(2) == spv::DecorationSpecId) {
+                    id_to_spec_id[insn.Word(1)] = insn.Word(3);
                 }
                 break;
             case spv::OpCapability:
-                if (insn.word(1) == spv::CapabilityCooperativeMatrixNV) {
+                if (insn.Word(1) == spv::CapabilityCooperativeMatrixNV) {
                     seen_coopmat_capability = true;
 
                     if (!(pStage->stage & phys_dev_ext_props.cooperative_matrix_props.cooperativeMatrixSupportedStages)) {
@@ -1335,7 +1363,7 @@ bool CoreChecks::ValidateCooperativeMatrix(const SHADER_MODULE_STATE &module_sta
                 break;
             case spv::OpTypeCooperativeMatrixNV: {
                 CoopMatType m;
-                m.Init(insn.word(1), module_state, pStage, id_to_spec_id);
+                m.Init(insn.Word(1), module_state, pStage, id_to_spec_id);
 
                 if (m.all_constant) {
                     // Validate that the type parameters are all supported for one of the
@@ -1370,25 +1398,25 @@ bool CoreChecks::ValidateCooperativeMatrix(const SHADER_MODULE_STATE &module_sta
                     if (!valid) {
                         skip |= LogError(module_state.vk_shader_module(), kVUID_Core_Shader_CooperativeMatrixType,
                                          "OpTypeCooperativeMatrixNV (result id = %u) operands don't match a supported matrix type",
-                                         insn.word(1));
+                                         insn.Word(1));
                     }
                 }
                 break;
             }
             case spv::OpCooperativeMatrixMulAddNV: {
                 CoopMatType a, b, c, d;
-                if (id_to_type_id.find(insn.word(2)) == id_to_type_id.end() ||
-                    id_to_type_id.find(insn.word(3)) == id_to_type_id.end() ||
-                    id_to_type_id.find(insn.word(4)) == id_to_type_id.end() ||
-                    id_to_type_id.find(insn.word(5)) == id_to_type_id.end()) {
+                if (id_to_type_id.find(insn.Word(2)) == id_to_type_id.end() ||
+                    id_to_type_id.find(insn.Word(3)) == id_to_type_id.end() ||
+                    id_to_type_id.find(insn.Word(4)) == id_to_type_id.end() ||
+                    id_to_type_id.find(insn.Word(5)) == id_to_type_id.end()) {
                     // Couldn't find type of matrix
                     assert(false);
                     break;
                 }
-                d.Init(id_to_type_id[insn.word(2)], module_state, pStage, id_to_spec_id);
-                a.Init(id_to_type_id[insn.word(3)], module_state, pStage, id_to_spec_id);
-                b.Init(id_to_type_id[insn.word(4)], module_state, pStage, id_to_spec_id);
-                c.Init(id_to_type_id[insn.word(5)], module_state, pStage, id_to_spec_id);
+                d.Init(id_to_type_id[insn.Word(2)], module_state, pStage, id_to_spec_id);
+                a.Init(id_to_type_id[insn.Word(3)], module_state, pStage, id_to_spec_id);
+                b.Init(id_to_type_id[insn.Word(4)], module_state, pStage, id_to_spec_id);
+                c.Init(id_to_type_id[insn.Word(5)], module_state, pStage, id_to_spec_id);
 
                 if (a.all_constant && b.all_constant && c.all_constant && d.all_constant) {
                     // Validate that the type parameters are all supported for the same
@@ -1418,7 +1446,7 @@ bool CoreChecks::ValidateCooperativeMatrix(const SHADER_MODULE_STATE &module_sta
                         skip |= LogError(module_state.vk_shader_module(), kVUID_Core_Shader_CooperativeMatrixMulAdd,
                                          "OpCooperativeMatrixMulAddNV (result id = %u) operands don't match a supported matrix "
                                          "VkCooperativeMatrixPropertiesNV",
-                                         insn.word(2));
+                                         insn.Word(2));
                     }
                 }
                 break;
@@ -1433,18 +1461,18 @@ bool CoreChecks::ValidateCooperativeMatrix(const SHADER_MODULE_STATE &module_sta
 
 bool CoreChecks::ValidateShaderResolveQCOM(const SHADER_MODULE_STATE &module_state,
                                            safe_VkPipelineShaderStageCreateInfo const *pStage,
-                                           const PIPELINE_STATE *pipeline) const {
+                                           const PIPELINE_STATE &pipeline) const {
     bool skip = false;
 
     // If the pipeline's subpass description contains flag VK_SUBPASS_DESCRIPTION_FRAGMENT_REGION_BIT_QCOM,
     // then the fragment shader must not enable the SPIRV SampleRateShading capability.
     if (pStage->stage == VK_SHADER_STAGE_FRAGMENT_BIT) {
-        for (auto insn : module_state) {
-            switch (insn.opcode()) {
+        for (const Instruction &insn : module_state.GetInstructions()) {
+            switch (insn.Opcode()) {
                 case spv::OpCapability:
-                    if (insn.word(1) == spv::CapabilitySampleRateShading) {
-                        const auto &rp_state = pipeline->RenderPassState();
-                        auto subpass_flags = (!rp_state) ? 0 : rp_state->createInfo.pSubpasses[pipeline->Subpass()].flags;
+                    if (insn.Word(1) == spv::CapabilitySampleRateShading) {
+                        const auto &rp_state = pipeline.RenderPassState();
+                        auto subpass_flags = (!rp_state) ? 0 : rp_state->createInfo.pSubpasses[pipeline.Subpass()].flags;
                         if ((subpass_flags & VK_SUBPASS_DESCRIPTION_FRAGMENT_REGION_BIT_QCOM) != 0) {
                             LogObjectList objlist(module_state.vk_shader_module());
                             objlist.add(rp_state->renderPass());
@@ -1551,34 +1579,32 @@ bool CoreChecks::ValidateAtomicsTypes(const SHADER_MODULE_STATE &module_state) c
         (float2_features.shaderSharedFloat64AtomicMinMax == VK_TRUE));
     // clang-format on
 
-    for (const auto &atomic_inst : module_state.GetAtomicInstructions()) {
-        const atomic_instruction &atomic = atomic_inst.second;
-        const spirv_inst_iter atomic_def = module_state.at(atomic_inst.first);
-        const uint32_t opcode = atomic_def.opcode();
+    for (const Instruction *atomic_def : module_state.GetAtomicInstructions()) {
+        const AtomicInstructionInfo &atomic = atomic_def->GetAtomicInfo(module_state);
+        const uint32_t opcode = atomic_def->Opcode();
 
         if ((atomic.bit_width == 64) && (atomic.type == spv::OpTypeInt)) {
             // Validate 64-bit image atomics
             if (((atomic.storage_class == spv::StorageClassStorageBuffer) || (atomic.storage_class == spv::StorageClassUniform)) &&
                 (enabled_features.core12.shaderBufferInt64Atomics == VK_FALSE)) {
-                skip |=
-                    LogError(device, "VUID-RuntimeSpirv-None-06278",
-                             "%s: Can't use 64-bit int atomics operations\n%s\nwith %s storage class without "
-                             "shaderBufferInt64Atomics enabled.",
-                             report_data->FormatHandle(module_state.vk_shader_module()).c_str(),
-                             module_state.DescribeInstruction(atomic_def).c_str(), string_SpvStorageClass(atomic.storage_class));
+                skip |= LogError(device, "VUID-RuntimeSpirv-None-06278",
+                                 "%s: Can't use 64-bit int atomics operations\n%s\nwith %s storage class without "
+                                 "shaderBufferInt64Atomics enabled.",
+                                 report_data->FormatHandle(module_state.vk_shader_module()).c_str(), atomic_def->Describe().c_str(),
+                                 string_SpvStorageClass(atomic.storage_class));
             } else if ((atomic.storage_class == spv::StorageClassWorkgroup) &&
                        (enabled_features.core12.shaderSharedInt64Atomics == VK_FALSE)) {
-                skip |= LogError(device, "VUID-RuntimeSpirv-None-06279",
-                                 "%s: Can't use 64-bit int atomics operations\n%s\nwith Workgroup storage class without "
-                                 "shaderSharedInt64Atomics enabled.",
-                                 report_data->FormatHandle(module_state.vk_shader_module()).c_str(),
-                                 module_state.DescribeInstruction(atomic_def).c_str());
+                skip |=
+                    LogError(device, "VUID-RuntimeSpirv-None-06279",
+                             "%s: Can't use 64-bit int atomics operations\n%s\nwith Workgroup storage class without "
+                             "shaderSharedInt64Atomics enabled.",
+                             report_data->FormatHandle(module_state.vk_shader_module()).c_str(), atomic_def->Describe().c_str());
             } else if ((atomic.storage_class == spv::StorageClassImage) && (valid_image_64_int == false)) {
-                skip |= LogError(device, "VUID-RuntimeSpirv-None-06288",
-                                 "%s: Can't use 64-bit int atomics operations\n%s\nwith Image storage class without "
-                                 "shaderImageInt64Atomics enabled.",
-                                 report_data->FormatHandle(module_state.vk_shader_module()).c_str(),
-                                 module_state.DescribeInstruction(atomic_def).c_str());
+                skip |=
+                    LogError(device, "VUID-RuntimeSpirv-None-06288",
+                             "%s: Can't use 64-bit int atomics operations\n%s\nwith Image storage class without "
+                             "shaderImageInt64Atomics enabled.",
+                             report_data->FormatHandle(module_state.vk_shader_module()).c_str(), atomic_def->Describe().c_str());
             }
         } else if (atomic.type == spv::OpTypeFloat) {
             // Validate Floats
@@ -1593,26 +1619,26 @@ bool CoreChecks::ValidateAtomicsTypes(const SHADER_MODULE_STATE &module_state) c
                                      "or shaderBufferFloat16AtomicMinMax or shaderBufferFloat32AtomicMinMax or "
                                      "shaderBufferFloat64AtomicMinMax enabled.",
                                      report_data->FormatHandle(module_state.vk_shader_module()).c_str(),
-                                     module_state.DescribeInstruction(atomic_def).c_str());
+                                     atomic_def->Describe().c_str());
                 } else if (opcode == spv::OpAtomicFAddEXT) {
                     if ((atomic.bit_width == 16) && (float2_features.shaderBufferFloat16AtomicAdd == VK_FALSE)) {
                         skip |= LogError(device, kVUID_Core_Shader_AtomicFeature,
                                          "%s: Can't use 16-bit float atomics for add operations\n%s\nwith "
                                          "StorageBuffer storage class without shaderBufferFloat16AtomicAdd enabled.",
                                          report_data->FormatHandle(module_state.vk_shader_module()).c_str(),
-                                         module_state.DescribeInstruction(atomic_def).c_str());
+                                         atomic_def->Describe().c_str());
                     } else if ((atomic.bit_width == 32) && (float_features.shaderBufferFloat32AtomicAdd == VK_FALSE)) {
                         skip |= LogError(device, kVUID_Core_Shader_AtomicFeature,
                                          "%s: Can't use 32-bit float atomics for add operations\n%s\nwith "
                                          "StorageBuffer storage class without shaderBufferFloat32AtomicAdd enabled.",
                                          report_data->FormatHandle(module_state.vk_shader_module()).c_str(),
-                                         module_state.DescribeInstruction(atomic_def).c_str());
+                                         atomic_def->Describe().c_str());
                     } else if ((atomic.bit_width == 64) && (float_features.shaderBufferFloat64AtomicAdd == VK_FALSE)) {
                         skip |= LogError(device, kVUID_Core_Shader_AtomicFeature,
                                          "%s: Can't use 64-bit float atomics for add operations\n%s\nwith "
                                          "StorageBuffer storage class without shaderBufferFloat64AtomicAdd enabled.",
                                          report_data->FormatHandle(module_state.vk_shader_module()).c_str(),
-                                         module_state.DescribeInstruction(atomic_def).c_str());
+                                         atomic_def->Describe().c_str());
                     }
                 } else if (opcode == spv::OpAtomicFMinEXT || opcode == spv::OpAtomicFMaxEXT) {
                     if ((atomic.bit_width == 16) && (float2_features.shaderBufferFloat16AtomicMinMax == VK_FALSE)) {
@@ -1620,19 +1646,19 @@ bool CoreChecks::ValidateAtomicsTypes(const SHADER_MODULE_STATE &module_state) c
                                          "%s: Can't use 16-bit float atomics for min/max operations\n%s\nwith "
                                          "StorageBuffer storage class without shaderBufferFloat16AtomicMinMax enabled.",
                                          report_data->FormatHandle(module_state.vk_shader_module()).c_str(),
-                                         module_state.DescribeInstruction(atomic_def).c_str());
+                                         atomic_def->Describe().c_str());
                     } else if ((atomic.bit_width == 32) && (float2_features.shaderBufferFloat32AtomicMinMax == VK_FALSE)) {
                         skip |= LogError(device, kVUID_Core_Shader_AtomicFeature,
                                          "%s: Can't use 32-bit float atomics for min/max operations\n%s\nwith "
                                          "StorageBuffer storage class without shaderBufferFloat32AtomicMinMax enabled.",
                                          report_data->FormatHandle(module_state.vk_shader_module()).c_str(),
-                                         module_state.DescribeInstruction(atomic_def).c_str());
+                                         atomic_def->Describe().c_str());
                     } else if ((atomic.bit_width == 64) && (float2_features.shaderBufferFloat64AtomicMinMax == VK_FALSE)) {
                         skip |= LogError(device, kVUID_Core_Shader_AtomicFeature,
                                          "%s: Can't use 64-bit float atomics for min/max operations\n%s\nwith "
                                          "StorageBuffer storage class without shaderBufferFloat64AtomicMinMax enabled.",
                                          report_data->FormatHandle(module_state.vk_shader_module()).c_str(),
-                                         module_state.DescribeInstruction(atomic_def).c_str());
+                                         atomic_def->Describe().c_str());
                     }
                 } else {
                     // Assume is valid load/store/exchange (rest of supported atomic operations) or else spirv-val will catch
@@ -1641,53 +1667,52 @@ bool CoreChecks::ValidateAtomicsTypes(const SHADER_MODULE_STATE &module_state) c
                                          "%s: Can't use 16-bit float atomics for load/store/exhange operations\n%s\nwith "
                                          "StorageBuffer storage class without shaderBufferFloat16Atomics enabled.",
                                          report_data->FormatHandle(module_state.vk_shader_module()).c_str(),
-                                         module_state.DescribeInstruction(atomic_def).c_str());
+                                         atomic_def->Describe().c_str());
                     } else if ((atomic.bit_width == 32) && (float_features.shaderBufferFloat32Atomics == VK_FALSE)) {
                         skip |= LogError(device, kVUID_Core_Shader_AtomicFeature,
                                          "%s: Can't use 32-bit float atomics for load/store/exhange operations\n%s\nwith "
                                          "StorageBuffer storage class without shaderBufferFloat32Atomics enabled.",
                                          report_data->FormatHandle(module_state.vk_shader_module()).c_str(),
-                                         module_state.DescribeInstruction(atomic_def).c_str());
+                                         atomic_def->Describe().c_str());
                     } else if ((atomic.bit_width == 64) && (float_features.shaderBufferFloat64Atomics == VK_FALSE)) {
                         skip |= LogError(device, kVUID_Core_Shader_AtomicFeature,
                                          "%s: Can't use 64-bit float atomics for load/store/exhange operations\n%s\nwith "
                                          "StorageBuffer storage class without shaderBufferFloat64Atomics enabled.",
                                          report_data->FormatHandle(module_state.vk_shader_module()).c_str(),
-                                         module_state.DescribeInstruction(atomic_def).c_str());
+                                         atomic_def->Describe().c_str());
                     }
                 }
             } else if (atomic.storage_class == spv::StorageClassWorkgroup) {
                 if (valid_workgroup_float == false) {
                     const char *vuid = IsExtEnabled(device_extensions.vk_ext_shader_atomic_float2) ? "VUID-RuntimeSpirv-None-06285"
                                                                                                    : "VUID-RuntimeSpirv-None-06281";
-                    skip |=
-                        LogError(device, vuid,
-                                 "%s: Can't use float atomics operations\n%s\nwith Workgroup storage class without "
-                                 "shaderSharedFloat32Atomics or "
-                                 "shaderSharedFloat32AtomicAdd or shaderSharedFloat64Atomics or shaderSharedFloat64AtomicAdd or "
-                                 "shaderSharedFloat16Atomics or shaderSharedFloat16AtomicAdd or shaderSharedFloat16AtomicMinMax or "
-                                 "shaderSharedFloat32AtomicMinMax or shaderSharedFloat64AtomicMinMax enabled.",
-                                 report_data->FormatHandle(module_state.vk_shader_module()).c_str(),
-                                 module_state.DescribeInstruction(atomic_def).c_str());
+                    skip |= LogError(
+                        device, vuid,
+                        "%s: Can't use float atomics operations\n%s\nwith Workgroup storage class without "
+                        "shaderSharedFloat32Atomics or "
+                        "shaderSharedFloat32AtomicAdd or shaderSharedFloat64Atomics or shaderSharedFloat64AtomicAdd or "
+                        "shaderSharedFloat16Atomics or shaderSharedFloat16AtomicAdd or shaderSharedFloat16AtomicMinMax or "
+                        "shaderSharedFloat32AtomicMinMax or shaderSharedFloat64AtomicMinMax enabled.",
+                        report_data->FormatHandle(module_state.vk_shader_module()).c_str(), atomic_def->Describe().c_str());
                 } else if (opcode == spv::OpAtomicFAddEXT) {
                     if ((atomic.bit_width == 16) && (float2_features.shaderSharedFloat16AtomicAdd == VK_FALSE)) {
                         skip |= LogError(device, kVUID_Core_Shader_AtomicFeature,
                                          "%s: Can't use 16-bit float atomics for add operations\n%s\nwith Workgroup "
                                          "storage class without shaderSharedFloat16AtomicAdd enabled.",
                                          report_data->FormatHandle(module_state.vk_shader_module()).c_str(),
-                                         module_state.DescribeInstruction(atomic_def).c_str());
+                                         atomic_def->Describe().c_str());
                     } else if ((atomic.bit_width == 32) && (float_features.shaderSharedFloat32AtomicAdd == VK_FALSE)) {
                         skip |= LogError(device, kVUID_Core_Shader_AtomicFeature,
                                          "%s: Can't use 32-bit float atomics for add operations\n%s\nwith Workgroup "
                                          "storage class without shaderSharedFloat32AtomicAdd enabled.",
                                          report_data->FormatHandle(module_state.vk_shader_module()).c_str(),
-                                         module_state.DescribeInstruction(atomic_def).c_str());
+                                         atomic_def->Describe().c_str());
                     } else if ((atomic.bit_width == 64) && (float_features.shaderSharedFloat64AtomicAdd == VK_FALSE)) {
                         skip |= LogError(device, kVUID_Core_Shader_AtomicFeature,
                                          "%s: Can't use 64-bit float atomics for add operations\n%s\nwith Workgroup "
                                          "storage class without shaderSharedFloat64AtomicAdd enabled.",
                                          report_data->FormatHandle(module_state.vk_shader_module()).c_str(),
-                                         module_state.DescribeInstruction(atomic_def).c_str());
+                                         atomic_def->Describe().c_str());
                     }
                 } else if (opcode == spv::OpAtomicFMinEXT || opcode == spv::OpAtomicFMaxEXT) {
                     if ((atomic.bit_width == 16) && (float2_features.shaderSharedFloat16AtomicMinMax == VK_FALSE)) {
@@ -1695,19 +1720,19 @@ bool CoreChecks::ValidateAtomicsTypes(const SHADER_MODULE_STATE &module_state) c
                                          "%s: Can't use 16-bit float atomics for min/max operations\n%s\nwith "
                                          "Workgroup storage class without shaderSharedFloat16AtomicMinMax enabled.",
                                          report_data->FormatHandle(module_state.vk_shader_module()).c_str(),
-                                         module_state.DescribeInstruction(atomic_def).c_str());
+                                         atomic_def->Describe().c_str());
                     } else if ((atomic.bit_width == 32) && (float2_features.shaderSharedFloat32AtomicMinMax == VK_FALSE)) {
                         skip |= LogError(device, kVUID_Core_Shader_AtomicFeature,
                                          "%s: Can't use 32-bit float atomics for min/max operations\n%s\nwith "
                                          "Workgroup storage class without shaderSharedFloat32AtomicMinMax enabled.",
                                          report_data->FormatHandle(module_state.vk_shader_module()).c_str(),
-                                         module_state.DescribeInstruction(atomic_def).c_str());
+                                         atomic_def->Describe().c_str());
                     } else if ((atomic.bit_width == 64) && (float2_features.shaderSharedFloat64AtomicMinMax == VK_FALSE)) {
                         skip |= LogError(device, kVUID_Core_Shader_AtomicFeature,
                                          "%s: Can't use 64-bit float atomics for min/max operations\n%s\nwith "
                                          "Workgroup storage class without shaderSharedFloat64AtomicMinMax enabled.",
                                          report_data->FormatHandle(module_state.vk_shader_module()).c_str(),
-                                         module_state.DescribeInstruction(atomic_def).c_str());
+                                         atomic_def->Describe().c_str());
                     }
                 } else {
                     // Assume is valid load/store/exchange (rest of supported atomic operations) or else spirv-val will catch
@@ -1716,19 +1741,19 @@ bool CoreChecks::ValidateAtomicsTypes(const SHADER_MODULE_STATE &module_state) c
                                          "%s: Can't use 16-bit float atomics for load/store/exhange operations\n%s\nwith Workgroup "
                                          "storage class without shaderSharedFloat16Atomics enabled.",
                                          report_data->FormatHandle(module_state.vk_shader_module()).c_str(),
-                                         module_state.DescribeInstruction(atomic_def).c_str());
+                                         atomic_def->Describe().c_str());
                     } else if ((atomic.bit_width == 32) && (float_features.shaderSharedFloat32Atomics == VK_FALSE)) {
                         skip |= LogError(device, kVUID_Core_Shader_AtomicFeature,
                                          "%s: Can't use 32-bit float atomics for load/store/exhange operations\n%s\nwith Workgroup "
                                          "storage class without shaderSharedFloat32Atomics enabled.",
                                          report_data->FormatHandle(module_state.vk_shader_module()).c_str(),
-                                         module_state.DescribeInstruction(atomic_def).c_str());
+                                         atomic_def->Describe().c_str());
                     } else if ((atomic.bit_width == 64) && (float_features.shaderSharedFloat64Atomics == VK_FALSE)) {
                         skip |= LogError(device, kVUID_Core_Shader_AtomicFeature,
                                          "%s: Can't use 64-bit float atomics for load/store/exhange operations\n%s\nwith Workgroup "
                                          "storage class without shaderSharedFloat64Atomics enabled.",
                                          report_data->FormatHandle(module_state.vk_shader_module()).c_str(),
-                                         module_state.DescribeInstruction(atomic_def).c_str());
+                                         atomic_def->Describe().c_str());
                     }
                 }
             } else if ((atomic.storage_class == spv::StorageClassImage) && (valid_image_float == false)) {
@@ -1738,44 +1763,43 @@ bool CoreChecks::ValidateAtomicsTypes(const SHADER_MODULE_STATE &module_state) c
                     device, vuid,
                     "%s: Can't use float atomics operations\n%s\nwith Image storage class without shaderImageFloat32Atomics or "
                     "shaderImageFloat32AtomicAdd or shaderImageFloat32AtomicMinMax enabled.",
-                    report_data->FormatHandle(module_state.vk_shader_module()).c_str(),
-                    module_state.DescribeInstruction(atomic_def).c_str());
+                    report_data->FormatHandle(module_state.vk_shader_module()).c_str(), atomic_def->Describe().c_str());
             } else if ((atomic.bit_width == 16) && (valid_16_float == false)) {
-                skip |= LogError(device, "VUID-RuntimeSpirv-None-06337",
-                                 "%s: Can't use 16-bit float atomics operations\n%s\nwithout shaderBufferFloat16Atomics, "
-                                 "shaderBufferFloat16AtomicAdd, shaderBufferFloat16AtomicMinMax, shaderSharedFloat16Atomics, "
-                                 "shaderSharedFloat16AtomicAdd or shaderSharedFloat16AtomicMinMax enabled.",
-                                 report_data->FormatHandle(module_state.vk_shader_module()).c_str(),
-                                 module_state.DescribeInstruction(atomic_def).c_str());
+                skip |=
+                    LogError(device, "VUID-RuntimeSpirv-None-06337",
+                             "%s: Can't use 16-bit float atomics operations\n%s\nwithout shaderBufferFloat16Atomics, "
+                             "shaderBufferFloat16AtomicAdd, shaderBufferFloat16AtomicMinMax, shaderSharedFloat16Atomics, "
+                             "shaderSharedFloat16AtomicAdd or shaderSharedFloat16AtomicMinMax enabled.",
+                             report_data->FormatHandle(module_state.vk_shader_module()).c_str(), atomic_def->Describe().c_str());
             } else if ((atomic.bit_width == 32) && (valid_32_float == false)) {
                 const char *vuid = IsExtEnabled(device_extensions.vk_ext_shader_atomic_float2) ? "VUID-RuntimeSpirv-None-06338"
                                                                                                : "VUID-RuntimeSpirv-None-06335";
-                skip |= LogError(device, vuid,
-                                 "%s: Can't use 32-bit float atomics operations\n%s\nwithout shaderBufferFloat32AtomicMinMax, "
-                                 "shaderSharedFloat32AtomicMinMax, shaderImageFloat32AtomicMinMax, sparseImageFloat32AtomicMinMax, "
-                                 "shaderBufferFloat32Atomics, shaderBufferFloat32AtomicAdd, shaderSharedFloat32Atomics, "
-                                 "shaderSharedFloat32AtomicAdd, shaderImageFloat32Atomics, shaderImageFloat32AtomicAdd, "
-                                 "sparseImageFloat32Atomics or sparseImageFloat32AtomicAdd enabled.",
-                                 report_data->FormatHandle(module_state.vk_shader_module()).c_str(),
-                                 module_state.DescribeInstruction(atomic_def).c_str());
+                skip |=
+                    LogError(device, vuid,
+                             "%s: Can't use 32-bit float atomics operations\n%s\nwithout shaderBufferFloat32AtomicMinMax, "
+                             "shaderSharedFloat32AtomicMinMax, shaderImageFloat32AtomicMinMax, sparseImageFloat32AtomicMinMax, "
+                             "shaderBufferFloat32Atomics, shaderBufferFloat32AtomicAdd, shaderSharedFloat32Atomics, "
+                             "shaderSharedFloat32AtomicAdd, shaderImageFloat32Atomics, shaderImageFloat32AtomicAdd, "
+                             "sparseImageFloat32Atomics or sparseImageFloat32AtomicAdd enabled.",
+                             report_data->FormatHandle(module_state.vk_shader_module()).c_str(), atomic_def->Describe().c_str());
             } else if ((atomic.bit_width == 64) && (valid_64_float == false)) {
                 const char *vuid = IsExtEnabled(device_extensions.vk_ext_shader_atomic_float2) ? "VUID-RuntimeSpirv-None-06339"
                                                                                                : "VUID-RuntimeSpirv-None-06336";
-                skip |= LogError(device, vuid,
-                                 "%s: Can't use 64-bit float atomics operations\n%s\nwithout shaderBufferFloat64AtomicMinMax, "
-                                 "shaderSharedFloat64AtomicMinMax, shaderBufferFloat64Atomics, shaderBufferFloat64AtomicAdd, "
-                                 "shaderSharedFloat64Atomics or shaderSharedFloat64AtomicAdd enabled.",
-                                 report_data->FormatHandle(module_state.vk_shader_module()).c_str(),
-                                 module_state.DescribeInstruction(atomic_def).c_str());
+                skip |=
+                    LogError(device, vuid,
+                             "%s: Can't use 64-bit float atomics operations\n%s\nwithout shaderBufferFloat64AtomicMinMax, "
+                             "shaderSharedFloat64AtomicMinMax, shaderBufferFloat64Atomics, shaderBufferFloat64AtomicAdd, "
+                             "shaderSharedFloat64Atomics or shaderSharedFloat64AtomicAdd enabled.",
+                             report_data->FormatHandle(module_state.vk_shader_module()).c_str(), atomic_def->Describe().c_str());
             }
         }
     }
     return skip;
 }
 
-bool CoreChecks::ValidateExecutionModes(const SHADER_MODULE_STATE &module_state, spirv_inst_iter entrypoint,
-                                        VkShaderStageFlagBits stage, const PIPELINE_STATE *pipeline) const {
-    auto entrypoint_id = entrypoint.word(2);
+bool CoreChecks::ValidateExecutionModes(const SHADER_MODULE_STATE &module_state, const Instruction &entrypoint,
+                                        VkShaderStageFlagBits stage, const PIPELINE_STATE &pipeline) const {
+    auto entrypoint_id = entrypoint.Word(2);
 
     // The first denorm execution mode encountered, along with its bit width.
     // Used to check if SeparateDenormSettings is respected.
@@ -1793,45 +1817,45 @@ bool CoreChecks::ValidateExecutionModes(const SHADER_MODULE_STATE &module_state,
     const auto &execution_mode_inst = module_state.GetExecutionModeInstructions();
     auto it = execution_mode_inst.find(entrypoint_id);
     if (it != execution_mode_inst.end()) {
-        for (auto insn : it->second) {
-            auto mode = insn.word(2);
+        for (const Instruction *insn : it->second) {
+            auto mode = insn->Word(2);
             switch (mode) {
                 case spv::ExecutionModeSignedZeroInfNanPreserve: {
-                    auto bit_width = insn.word(3);
+                    auto bit_width = insn->Word(3);
                     if (bit_width == 16 && !phys_dev_props_core12.shaderSignedZeroInfNanPreserveFloat16) {
                         skip |= LogError(
                             module_state.vk_shader_module(), "VUID-RuntimeSpirv-shaderSignedZeroInfNanPreserveFloat16-06293",
                             "Shader requires SignedZeroInfNanPreserve for bit width 16 but it is not enabled on the device\n%s",
-                            module_state.DescribeInstruction(insn).c_str());
+                            insn->Describe().c_str());
                     } else if (bit_width == 32 && !phys_dev_props_core12.shaderSignedZeroInfNanPreserveFloat32) {
                         skip |= LogError(
                             module_state.vk_shader_module(), "VUID-RuntimeSpirv-shaderSignedZeroInfNanPreserveFloat32-06294",
                             "Shader requires SignedZeroInfNanPreserve for bit width 32 but it is not enabled on the device\n%s",
-                            module_state.DescribeInstruction(insn).c_str());
+                            insn->Describe().c_str());
                     } else if (bit_width == 64 && !phys_dev_props_core12.shaderSignedZeroInfNanPreserveFloat64) {
                         skip |= LogError(
                             module_state.vk_shader_module(), "VUID-RuntimeSpirv-shaderSignedZeroInfNanPreserveFloat64-06295",
                             "Shader requires SignedZeroInfNanPreserve for bit width 64 but it is not enabled on the device\n%s",
-                            module_state.DescribeInstruction(insn).c_str());
+                            insn->Describe().c_str());
                     }
                     break;
                 }
 
                 case spv::ExecutionModeDenormPreserve: {
-                    auto bit_width = insn.word(3);
+                    auto bit_width = insn->Word(3);
                     if (bit_width == 16 && !phys_dev_props_core12.shaderDenormPreserveFloat16) {
                         skip |= LogError(module_state.vk_shader_module(), "VUID-RuntimeSpirv-shaderDenormPreserveFloat16-06296",
                                          "Shader requires DenormPreserve for bit width 16 but it is not enabled on the device\n%s",
-                                         module_state.DescribeInstruction(insn).c_str());
+                                         insn->Describe().c_str());
                         ;
                     } else if (bit_width == 32 && !phys_dev_props_core12.shaderDenormPreserveFloat32) {
                         skip |= LogError(module_state.vk_shader_module(), "VUID-RuntimeSpirv-shaderDenormPreserveFloat32-06297",
                                          "Shader requires DenormPreserve for bit width 32 but it is not enabled on the device\n%s",
-                                         module_state.DescribeInstruction(insn).c_str());
+                                         insn->Describe().c_str());
                     } else if (bit_width == 64 && !phys_dev_props_core12.shaderDenormPreserveFloat64) {
                         skip |= LogError(module_state.vk_shader_module(), "VUID-RuntimeSpirv-shaderDenormPreserveFloat64-06298",
                                          "Shader requires DenormPreserve for bit width 64 but it is not enabled on the device\n%s",
-                                         module_state.DescribeInstruction(insn).c_str());
+                                         insn->Describe().c_str());
                     }
 
                     if (first_denorm_execution_mode.first == spv::ExecutionModeMax) {
@@ -1846,7 +1870,7 @@ bool CoreChecks::ValidateExecutionModes(const SHADER_MODULE_STATE &module_state,
                                                      "Shader uses different denorm execution modes for 16 and 64-bit but "
                                                      "denormBehaviorIndependence is "
                                                      "VK_SHADER_FLOAT_CONTROLS_INDEPENDENCE_32_BIT_ONLY on the device\n%s",
-                                                     module_state.DescribeInstruction(insn).c_str());
+                                                     insn->Describe().c_str());
                                 }
                                 break;
 
@@ -1859,7 +1883,7 @@ bool CoreChecks::ValidateExecutionModes(const SHADER_MODULE_STATE &module_state,
                                              "Shader uses different denorm execution modes for different bit widths but "
                                              "denormBehaviorIndependence is "
                                              "VK_SHADER_FLOAT_CONTROLS_INDEPENDENCE_NONE on the device\n%s",
-                                             module_state.DescribeInstruction(insn).c_str());
+                                             insn->Describe().c_str());
                                 break;
                             }
 
@@ -1871,22 +1895,22 @@ bool CoreChecks::ValidateExecutionModes(const SHADER_MODULE_STATE &module_state,
                 }
 
                 case spv::ExecutionModeDenormFlushToZero: {
-                    auto bit_width = insn.word(3);
+                    auto bit_width = insn->Word(3);
                     if (bit_width == 16 && !phys_dev_props_core12.shaderDenormFlushToZeroFloat16) {
                         skip |=
                             LogError(module_state.vk_shader_module(), "VUID-RuntimeSpirv-shaderDenormFlushToZeroFloat16-06299",
                                      "Shader requires DenormFlushToZero for bit width 16 but it is not enabled on the device\n%s",
-                                     module_state.DescribeInstruction(insn).c_str());
+                                     insn->Describe().c_str());
                     } else if (bit_width == 32 && !phys_dev_props_core12.shaderDenormFlushToZeroFloat32) {
                         skip |=
                             LogError(module_state.vk_shader_module(), "VUID-RuntimeSpirv-shaderDenormFlushToZeroFloat32-06300",
                                      "Shader requires DenormFlushToZero for bit width 32 but it is not enabled on the device\n%s",
-                                     module_state.DescribeInstruction(insn).c_str());
+                                     insn->Describe().c_str());
                     } else if (bit_width == 64 && !phys_dev_props_core12.shaderDenormFlushToZeroFloat64) {
                         skip |=
                             LogError(module_state.vk_shader_module(), "VUID-RuntimeSpirv-shaderDenormFlushToZeroFloat64-06301",
                                      "Shader requires DenormFlushToZero for bit width 64 but it is not enabled on the device\n%s",
-                                     module_state.DescribeInstruction(insn).c_str());
+                                     insn->Describe().c_str());
                     }
 
                     if (first_denorm_execution_mode.first == spv::ExecutionModeMax) {
@@ -1901,7 +1925,7 @@ bool CoreChecks::ValidateExecutionModes(const SHADER_MODULE_STATE &module_state,
                                                      "Shader uses different denorm execution modes for 16 and 64-bit but "
                                                      "denormBehaviorIndependence is "
                                                      "VK_SHADER_FLOAT_CONTROLS_INDEPENDENCE_32_BIT_ONLY on the device\n%s",
-                                                     module_state.DescribeInstruction(insn).c_str());
+                                                     insn->Describe().c_str());
                                 }
                                 break;
 
@@ -1914,7 +1938,7 @@ bool CoreChecks::ValidateExecutionModes(const SHADER_MODULE_STATE &module_state,
                                              "Shader uses different denorm execution modes for different bit widths but "
                                              "denormBehaviorIndependence is "
                                              "VK_SHADER_FLOAT_CONTROLS_INDEPENDENCE_NONE on the device\n%s",
-                                             module_state.DescribeInstruction(insn).c_str());
+                                             insn->Describe().c_str());
                                 break;
                             }
 
@@ -1926,19 +1950,19 @@ bool CoreChecks::ValidateExecutionModes(const SHADER_MODULE_STATE &module_state,
                 }
 
                 case spv::ExecutionModeRoundingModeRTE: {
-                    auto bit_width = insn.word(3);
+                    auto bit_width = insn->Word(3);
                     if (bit_width == 16 && !phys_dev_props_core12.shaderRoundingModeRTEFloat16) {
                         skip |= LogError(module_state.vk_shader_module(), "VUID-RuntimeSpirv-shaderRoundingModeRTEFloat16-06302",
                                          "Shader requires RoundingModeRTE for bit width 16 but it is not enabled on the device\n%s",
-                                         module_state.DescribeInstruction(insn).c_str());
+                                         insn->Describe().c_str());
                     } else if (bit_width == 32 && !phys_dev_props_core12.shaderRoundingModeRTEFloat32) {
                         skip |= LogError(module_state.vk_shader_module(), "VUID-RuntimeSpirv-shaderRoundingModeRTEFloat32-06303",
                                          "Shader requires RoundingModeRTE for bit width 32 but it is not enabled on the device\n%s",
-                                         module_state.DescribeInstruction(insn).c_str());
+                                         insn->Describe().c_str());
                     } else if (bit_width == 64 && !phys_dev_props_core12.shaderRoundingModeRTEFloat64) {
                         skip |= LogError(module_state.vk_shader_module(), "VUID-RuntimeSpirv-shaderRoundingModeRTEFloat64-06304",
                                          "Shader requires RoundingModeRTE for bit width 64 but it is not enabled on the device\n%s",
-                                         module_state.DescribeInstruction(insn).c_str());
+                                         insn->Describe().c_str());
                     }
 
                     if (first_rounding_mode.first == spv::ExecutionModeMax) {
@@ -1953,7 +1977,7 @@ bool CoreChecks::ValidateExecutionModes(const SHADER_MODULE_STATE &module_state,
                                                      "Shader uses different rounding modes for 16 and 64-bit but "
                                                      "roundingModeIndependence is "
                                                      "VK_SHADER_FLOAT_CONTROLS_INDEPENDENCE_32_BIT_ONLY on the device\n%s",
-                                                     module_state.DescribeInstruction(insn).c_str());
+                                                     insn->Describe().c_str());
                                 }
                                 break;
 
@@ -1966,7 +1990,7 @@ bool CoreChecks::ValidateExecutionModes(const SHADER_MODULE_STATE &module_state,
                                              "Shader uses different rounding modes for different bit widths but "
                                              "roundingModeIndependence is "
                                              "VK_SHADER_FLOAT_CONTROLS_INDEPENDENCE_NONE on the device\n%s",
-                                             module_state.DescribeInstruction(insn).c_str());
+                                             insn->Describe().c_str());
                                 break;
                             }
 
@@ -1978,19 +2002,19 @@ bool CoreChecks::ValidateExecutionModes(const SHADER_MODULE_STATE &module_state,
                 }
 
                 case spv::ExecutionModeRoundingModeRTZ: {
-                    auto bit_width = insn.word(3);
+                    auto bit_width = insn->Word(3);
                     if (bit_width == 16 && !phys_dev_props_core12.shaderRoundingModeRTZFloat16) {
                         skip |= LogError(module_state.vk_shader_module(), "VUID-RuntimeSpirv-shaderRoundingModeRTZFloat16-06305",
                                          "Shader requires RoundingModeRTZ for bit width 16 but it is not enabled on the device\n%s",
-                                         module_state.DescribeInstruction(insn).c_str());
+                                         insn->Describe().c_str());
                     } else if (bit_width == 32 && !phys_dev_props_core12.shaderRoundingModeRTZFloat32) {
                         skip |= LogError(module_state.vk_shader_module(), "VUID-RuntimeSpirv-shaderRoundingModeRTZFloat32-06306",
                                          "Shader requires RoundingModeRTZ for bit width 32 but it is not enabled on the device\n%s",
-                                         module_state.DescribeInstruction(insn).c_str());
+                                         insn->Describe().c_str());
                     } else if (bit_width == 64 && !phys_dev_props_core12.shaderRoundingModeRTZFloat64) {
                         skip |= LogError(module_state.vk_shader_module(), "VUID-RuntimeSpirv-shaderRoundingModeRTZFloat64-06307",
                                          "Shader requires RoundingModeRTZ for bit width 64 but it is not enabled on the device\n%s",
-                                         module_state.DescribeInstruction(insn).c_str());
+                                         insn->Describe().c_str());
                     }
 
                     if (first_rounding_mode.first == spv::ExecutionModeMax) {
@@ -2005,7 +2029,7 @@ bool CoreChecks::ValidateExecutionModes(const SHADER_MODULE_STATE &module_state,
                                                      "Shader uses different rounding modes for 16 and 64-bit but "
                                                      "roundingModeIndependence is "
                                                      "VK_SHADER_FLOAT_CONTROLS_INDEPENDENCE_32_BIT_ONLY on the device\n%s",
-                                                     module_state.DescribeInstruction(insn).c_str());
+                                                     insn->Describe().c_str());
                                 }
                                 break;
 
@@ -2018,7 +2042,7 @@ bool CoreChecks::ValidateExecutionModes(const SHADER_MODULE_STATE &module_state,
                                              "Shader uses different rounding modes for different bit widths but "
                                              "roundingModeIndependence is "
                                              "VK_SHADER_FLOAT_CONTROLS_INDEPENDENCE_NONE on the device\n%s",
-                                             module_state.DescribeInstruction(insn).c_str());
+                                             insn->Describe().c_str());
                                 break;
                             }
 
@@ -2030,12 +2054,12 @@ bool CoreChecks::ValidateExecutionModes(const SHADER_MODULE_STATE &module_state,
                 }
 
                 case spv::ExecutionModeOutputVertices: {
-                    vertices_out = insn.word(3);
+                    vertices_out = insn->Word(3);
                     break;
                 }
 
                 case spv::ExecutionModeInvocations: {
-                    invocations = insn.word(3);
+                    invocations = insn->Word(3);
                     break;
                 }
 
@@ -2053,7 +2077,7 @@ bool CoreChecks::ValidateExecutionModes(const SHADER_MODULE_STATE &module_state,
                 }
 
                 case spv::ExecutionModeEarlyFragmentTests: {
-                    const auto *ds_state = (pipeline) ? pipeline->DepthStencilState() : nullptr;
+                    const auto *ds_state = pipeline.DepthStencilState();
                     if ((stage == VK_SHADER_STAGE_FRAGMENT_BIT) &&
                         (ds_state &&
                          (ds_state->flags &
@@ -2070,7 +2094,7 @@ bool CoreChecks::ValidateExecutionModes(const SHADER_MODULE_STATE &module_state,
                 case spv::ExecutionModeSubgroupUniformControlFlowKHR: {
                     if (!enabled_features.shader_subgroup_uniform_control_flow_features.shaderSubgroupUniformControlFlow ||
                         (phys_dev_ext_props.subgroup_properties.supportedStages & stage) == 0 ||
-                        module_state.static_data_.has_invocation_repack_instruction) {
+                        module_state.HasInvocationRepackInstruction()) {
                         std::stringstream msg;
                         if (!enabled_features.shader_subgroup_uniform_control_flow_features.shaderSubgroupUniformControlFlow) {
                             msg << "shaderSubgroupUniformControlFlow feature must be enabled";
@@ -2089,7 +2113,7 @@ bool CoreChecks::ValidateExecutionModes(const SHADER_MODULE_STATE &module_state,
         }
     }
 
-    if (entrypoint.word(1) == spv::ExecutionModelGeometry) {
+    if (entrypoint.Word(1) == spv::ExecutionModelGeometry) {
         if (vertices_out == 0 || vertices_out > phys_dev_props.limits.maxGeometryOutputVertices) {
             skip |= LogError(module_state.vk_shader_module(), "VUID-VkPipelineShaderStageCreateInfo-stage-00714",
                              "Geometry shader entry point must have an OpExecutionMode instruction that "
@@ -2108,6 +2132,7 @@ bool CoreChecks::ValidateExecutionModes(const SHADER_MODULE_STATE &module_state,
                              invocations, phys_dev_props.limits.maxGeometryShaderInvocations);
         }
     }
+
     return skip;
 }
 
@@ -2122,26 +2147,23 @@ static VkDescriptorSetLayoutBinding const *GetDescriptorBinding(PIPELINE_LAYOUT_
     return pipelineLayout->set_layouts[slot.set]->GetDescriptorSetLayoutBindingPtrFromBinding(slot.binding);
 }
 
-// If PointList topology is specified in the pipeline, verify that a shader geometry stage writes PointSize
-//    o If there is only a vertex shader : gl_PointSize must be written when using points
-//    o If there is a geometry or tessellation shader:
-//        - If shaderTessellationAndGeometryPointSize feature is enabled:
-//            * gl_PointSize must be written in the final geometry stage
-//        - If shaderTessellationAndGeometryPointSize feature is disabled:
-//            * gl_PointSize must NOT be written and a default of 1.0 is assumed
-bool CoreChecks::ValidatePointListShaderState(const PIPELINE_STATE *pipeline, const SHADER_MODULE_STATE &module_state,
-                                              spirv_inst_iter entrypoint, VkShaderStageFlagBits stage) const {
-    if (pipeline->topology_at_rasterizer != VK_PRIMITIVE_TOPOLOGY_POINT_LIST) {
-        return false;
+bool CoreChecks::ValidatePointSizeShaderState(const PIPELINE_STATE &pipeline, const SHADER_MODULE_STATE &module_state,
+                                              const Instruction &entrypoint, VkShaderStageFlagBits stage) const {
+    bool skip = false;
+    // vkspec.html#primsrast-points describes which is the final stage that needs to check for points
+    //
+    // Vertex - Need to read input topology in pipeline
+    // Geo/Tess - Need to know the feature bit is on
+    // Mesh - are checked in spirv-val as they don't require any runtime information
+    if (stage != VK_SHADER_STAGE_VERTEX_BIT && stage != VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT &&
+        stage != VK_SHADER_STAGE_GEOMETRY_BIT) {
+        return skip;
     }
 
-    bool pointsize_written = false;
-    bool skip = false;
-
     // Search for PointSize built-in decorations
-    for (const auto &set : module_state.GetBuiltinDecorationList()) {
-        auto insn = module_state.at(set.offset);
-        if (set.builtin == spv::BuiltInPointSize) {
+    bool pointsize_written = false;
+    for (const Instruction *insn : module_state.GetBuiltinDecorationList()) {
+        if (insn->GetBuiltIn() == spv::BuiltInPointSize) {
             pointsize_written = module_state.IsBuiltInWritten(insn, entrypoint);
             if (pointsize_written) {
                 break;
@@ -2149,37 +2171,78 @@ bool CoreChecks::ValidatePointListShaderState(const PIPELINE_STATE *pipeline, co
         }
     }
 
-    if ((stage == VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT || stage == VK_SHADER_STAGE_GEOMETRY_BIT) &&
-        !enabled_features.core.shaderTessellationAndGeometryPointSize) {
-        if (pointsize_written) {
-            skip |= LogError(module_state.vk_shader_module(), kVUID_Core_Shader_PointSizeBuiltInOverSpecified,
-                             "Pipeline topology is set to POINT_LIST and geometry or tessellation shaders write PointSize which "
-                             "is prohibited when the shaderTessellationAndGeometryPointSize feature is not enabled.");
+    // Search for execution modes used, unless a vertex shader where points are determined by the input topology
+    bool output_points = false;
+    bool point_mode = false;
+    if (stage != VK_SHADER_STAGE_VERTEX_BIT) {
+        uint32_t entrypoint_id = entrypoint.Word(2);
+        const auto &execution_mode_inst = module_state.GetExecutionModeInstructions();
+        auto it = execution_mode_inst.find(entrypoint_id);
+        if (it != execution_mode_inst.end()) {
+            for (const Instruction *insn : it->second) {
+                uint32_t mode = insn->Word(2);
+                if (mode == spv::ExecutionModeOutputPoints) {
+                    output_points = true;  // for geometry
+                    break;
+                } else if (mode == spv::ExecutionModePointMode) {
+                    point_mode = true;  // for tessellation
+                    break;
+                }
+            }
         }
-    } else if (!pointsize_written) {
-        skip |=
-            LogError(module_state.vk_shader_module(), kVUID_Core_Shader_MissingPointSizeBuiltIn,
-                     "Pipeline topology is set to POINT_LIST, but PointSize is not written to in the shader corresponding to %s.",
-                     string_VkShaderStageFlagBits(stage));
     }
+
+    if (stage == VK_SHADER_STAGE_GEOMETRY_BIT && output_points) {
+        if (enabled_features.core.shaderTessellationAndGeometryPointSize && !pointsize_written) {
+            skip |= LogError(module_state.vk_shader_module(), "VUID-VkGraphicsPipelineCreateInfo-Geometry-07725",
+                             "vkCreateGraphicsPipelines(): shaderTessellationAndGeometryPointSize is enabled, but PointSize is not "
+                             "written in the Geometry shader.");
+        } else if (!enabled_features.core.shaderTessellationAndGeometryPointSize && pointsize_written) {
+            skip |=
+                LogError(module_state.vk_shader_module(), "VUID-VkGraphicsPipelineCreateInfo-Geometry-07726",
+                         "vkCreateGraphicsPipelines(): shaderTessellationAndGeometryPointSize is not enabled, but PointSize is "
+                         "written to in the Geometry shader (gl_PointSize must NOT be written and a default of 1.0 is assumed).");
+        }
+    } else if (stage == VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT && !pipeline.HasShaderStage(VK_SHADER_STAGE_GEOMETRY_BIT) &&
+               point_mode) {
+        if (enabled_features.core.shaderTessellationAndGeometryPointSize && !pointsize_written) {
+            skip |= LogError(module_state.vk_shader_module(), "VUID-VkGraphicsPipelineCreateInfo-TessellationEvaluation-07723",
+                             "vkCreateGraphicsPipelines(): shaderTessellationAndGeometryPointSize is enabled, but PointSize is not "
+                             "written in the Tessellation Evaluation shader.");
+        } else if (!enabled_features.core.shaderTessellationAndGeometryPointSize && pointsize_written) {
+            skip |= LogError(
+                module_state.vk_shader_module(), "VUID-VkGraphicsPipelineCreateInfo-TessellationEvaluation-07724",
+                "vkCreateGraphicsPipelines(): shaderTessellationAndGeometryPointSize is not enabled, but PointSize is written to "
+                "in the Tessellation Evaluation shader (gl_PointSize must NOT be written and a default of 1.0 is assumed).");
+        }
+    } else if (stage == VK_SHADER_STAGE_VERTEX_BIT && !pipeline.HasShaderStage(VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT) &&
+               !pipeline.HasShaderStage(VK_SHADER_STAGE_GEOMETRY_BIT) &&
+               pipeline.topology_at_rasterizer == VK_PRIMITIVE_TOPOLOGY_POINT_LIST) {
+        if (!pointsize_written) {
+            skip |= LogError(module_state.vk_shader_module(), "VUID-VkGraphicsPipelineCreateInfo-Vertex-07722",
+                             "vkCreateGraphicsPipelines(): Pipeline topology is set to VK_PRIMITIVE_TOPOLOGY_POINT_LIST, but "
+                             "PointSize is not written in the Vertex shader.");
+        }
+    }
+
     return skip;
 }
 
-bool CoreChecks::ValidatePrimitiveRateShaderState(const PIPELINE_STATE *pipeline, const SHADER_MODULE_STATE &module_state,
-                                                  spirv_inst_iter entrypoint, VkShaderStageFlagBits stage) const {
+bool CoreChecks::ValidatePrimitiveRateShaderState(const PIPELINE_STATE &pipeline, const SHADER_MODULE_STATE &module_state,
+                                                  const Instruction &entrypoint, VkShaderStageFlagBits stage) const {
     bool primitiverate_written = false;
     bool viewportindex_written = false;
     bool viewportmask_written = false;
     bool skip = false;
 
     // Check if the primitive shading rate is written
-    for (const auto &set : module_state.GetBuiltinDecorationList()) {
-        auto insn = module_state.at(set.offset);
-        if (set.builtin == spv::BuiltInPrimitiveShadingRateKHR) {
+    for (const Instruction *insn : module_state.GetBuiltinDecorationList()) {
+        spv::BuiltIn builtin = insn->GetBuiltIn();
+        if (builtin == spv::BuiltInPrimitiveShadingRateKHR) {
             primitiverate_written = module_state.IsBuiltInWritten(insn, entrypoint);
-        } else if (set.builtin == spv::BuiltInViewportIndex) {
+        } else if (builtin == spv::BuiltInViewportIndex) {
             viewportindex_written = module_state.IsBuiltInWritten(insn, entrypoint);
-        } else if (set.builtin == spv::BuiltInViewportMaskNV) {
+        } else if (builtin == spv::BuiltInViewportMaskNV) {
             viewportmask_written = module_state.IsBuiltInWritten(insn, entrypoint);
         }
         if (primitiverate_written && viewportindex_written && viewportmask_written) {
@@ -2187,10 +2250,10 @@ bool CoreChecks::ValidatePrimitiveRateShaderState(const PIPELINE_STATE *pipeline
         }
     }
 
-    const auto viewport_state = pipeline->ViewportState();
+    const auto viewport_state = pipeline.ViewportState();
     if (!phys_dev_ext_props.fragment_shading_rate_props.primitiveFragmentShadingRateWithMultipleViewports &&
-        (pipeline->GetPipelineType() == VK_PIPELINE_BIND_POINT_GRAPHICS) && viewport_state) {
-        if (!IsDynamic(pipeline, VK_DYNAMIC_STATE_VIEWPORT_WITH_COUNT_EXT) && viewport_state->viewportCount > 1 &&
+        (pipeline.GetPipelineType() == VK_PIPELINE_BIND_POINT_GRAPHICS) && viewport_state) {
+        if (!pipeline.IsDynamic(VK_DYNAMIC_STATE_VIEWPORT_WITH_COUNT_EXT) && viewport_state->viewportCount > 1 &&
             primitiverate_written) {
             skip |= LogError(module_state.vk_shader_module(),
                              "VUID-VkGraphicsPipelineCreateInfo-primitiveFragmentShadingRateWithMultipleViewports-04503",
@@ -2224,14 +2287,14 @@ bool CoreChecks::ValidatePrimitiveRateShaderState(const PIPELINE_STATE *pipeline
 bool CoreChecks::ValidateDecorations(const SHADER_MODULE_STATE &module_state) const {
     bool skip = false;
 
-    std::vector<spirv_inst_iter> xfb_streams;
-    std::vector<spirv_inst_iter> xfb_buffers;
-    std::vector<spirv_inst_iter> xfb_offsets;
+    std::vector<const Instruction *> xfb_streams;
+    std::vector<const Instruction *> xfb_buffers;
+    std::vector<const Instruction *> xfb_offsets;
 
-    for (const auto &op_decorate : module_state.GetDecorationInstructions()) {
-        uint32_t decoration = op_decorate.word(2);
+    for (const Instruction *op_decorate : module_state.GetDecorationInstructions()) {
+        uint32_t decoration = op_decorate->Word(2);
         if (decoration == spv::DecorationXfbStride) {
-            uint32_t stride = op_decorate.word(3);
+            uint32_t stride = op_decorate->Word(3);
             if (stride > phys_dev_ext_props.transform_feedback_props.maxTransformFeedbackBufferDataStride) {
                 skip |= LogError(
                     module_state.vk_shader_module(), "VUID-RuntimeSpirv-XfbStride-06313",
@@ -2243,7 +2306,7 @@ bool CoreChecks::ValidateDecorations(const SHADER_MODULE_STATE &module_state) co
         }
         if (decoration == spv::DecorationStream) {
             xfb_streams.push_back(op_decorate);
-            uint32_t stream = op_decorate.word(3);
+            uint32_t stream = op_decorate->Word(3);
             if (stream >= phys_dev_ext_props.transform_feedback_props.maxTransformFeedbackStreams) {
                 skip |= LogError(
                     module_state.vk_shader_module(), "VUID-RuntimeSpirv-Stream-06312",
@@ -2262,11 +2325,11 @@ bool CoreChecks::ValidateDecorations(const SHADER_MODULE_STATE &module_state) co
 
     // XfbBuffer, buffer data size
     std::vector<std::pair<uint32_t, uint32_t>> buffer_data_sizes;
-    for (const auto &op_decorate : xfb_offsets) {
-        for (const auto xfb_buffer : xfb_buffers) {
-            if (xfb_buffer.word(1) == op_decorate.word(1)) {
-                const auto offset = op_decorate.word(3);
-                const auto def = module_state.get_def(xfb_buffer.word(1));
+    for (const Instruction *op_decorate : xfb_offsets) {
+        for (const Instruction *xfb_buffer : xfb_buffers) {
+            if (xfb_buffer->Word(1) == op_decorate->Word(1)) {
+                const auto offset = op_decorate->Word(3);
+                const Instruction *def = module_state.FindDef(xfb_buffer->Word(1));
                 const auto size = module_state.GetTypeBytesSize(def);
                 const uint32_t buffer_data_size = offset + size;
                 if (buffer_data_size > phys_dev_ext_props.transform_feedback_props.maxTransformFeedbackBufferDataSize) {
@@ -2281,14 +2344,14 @@ bool CoreChecks::ValidateDecorations(const SHADER_MODULE_STATE &module_state) co
 
                 bool found = false;
                 for (auto &bds : buffer_data_sizes) {
-                    if (bds.first == xfb_buffer.word(1)) {
+                    if (bds.first == xfb_buffer->Word(1)) {
                         bds.second = std::max(bds.second, buffer_data_size);
                         found = true;
                         break;
                     }
                 }
                 if (!found) {
-                    buffer_data_sizes.emplace_back(xfb_buffer.word(1), buffer_data_size);
+                    buffer_data_sizes.emplace_back(xfb_buffer->Word(1), buffer_data_size);
                 }
 
                 break;
@@ -2297,10 +2360,10 @@ bool CoreChecks::ValidateDecorations(const SHADER_MODULE_STATE &module_state) co
     }
 
     std::unordered_map<uint32_t, uint32_t> stream_data_size;
-    for (const auto &xfb_stream : xfb_streams) {
+    for (const Instruction *xfb_stream : xfb_streams) {
         for (const auto& bds : buffer_data_sizes) {
-            if (xfb_stream.word(1) == bds.first) {
-                uint32_t stream = xfb_stream.word(3);
+            if (xfb_stream->Word(1) == bds.first) {
+                uint32_t stream = xfb_stream->Word(3);
                 const auto itr = stream_data_size.find(stream);
                 if (itr != stream_data_size.end()) {
                     itr->second += bds.second;
@@ -2337,16 +2400,16 @@ bool CoreChecks::ValidateComputeSharedMemory(const SHADER_MODULE_STATE &module_s
         // In this case we want to find the MAX not ADD the block sizes
         bool find_max_block = false;
 
-        for (auto insn : module_state.static_data_.variable_inst) {
+        for (const Instruction *insn : module_state.GetVariableInstructions()) {
             // StorageClass Workgroup is shared memory
-            if (insn.word(3) == spv::StorageClassWorkgroup) {
-                if (module_state.get_decorations(insn.word(2)).flags & decoration_set::aliased_bit) {
+            if (insn->StorageClass() == spv::StorageClassWorkgroup) {
+                if (module_state.GetDecorationSet(insn->Word(2)).flags & DecorationSet::aliased_bit) {
                     find_max_block = true;
                 }
 
-                const uint32_t result_type_id = insn.word(1);
-                const auto result_type = module_state.get_def(result_type_id);
-                const auto type = module_state.get_def(result_type.word(3));
+                const uint32_t result_type_id = insn->Word(1);
+                const Instruction *result_type = module_state.FindDef(result_type_id);
+                const Instruction *type = module_state.FindDef(result_type->Word(3));
                 const uint32_t variable_shared_size = module_state.GetTypeBytesSize(type);
 
                 if (find_max_block) {
@@ -2453,16 +2516,16 @@ struct VariableInstInfo {
 };
 
 // easier to use recursion to traverse the OpTypeStruct
-static void GetVariableInfo(const SHADER_MODULE_STATE &module_state, const spirv_inst_iter &insn, VariableInstInfo &info) {
-    if (insn == module_state.end()) {
+static void GetVariableInfo(const SHADER_MODULE_STATE &module_state, const Instruction *insn, VariableInstInfo &info) {
+    if (!insn) {
         return;
-    } else if (insn.opcode() == spv::OpTypeFloat || insn.opcode() == spv::OpTypeInt) {
-        const uint32_t bit_width = insn.word(2);
+    } else if (insn->Opcode() == spv::OpTypeFloat || insn->Opcode() == spv::OpTypeInt) {
+        const uint32_t bit_width = insn->Word(2);
         info.has_8bit |= (bit_width == 8);
         info.has_16bit |= (bit_width == 16);
-    } else if (insn.opcode() == spv::OpTypeStruct) {
-        for (uint32_t i = 2; i < insn.len(); i++) {
-            const auto &base_insn = GetBaseTypeIter(module_state, insn.word(i));
+    } else if (insn->Opcode() == spv::OpTypeStruct) {
+        for (uint32_t i = 2; i < insn->Length(); i++) {
+            const Instruction *base_insn = GetBaseTypeInstruction(module_state, insn->Word(i));
             GetVariableInfo(module_state, base_insn, info);
         }
     }
@@ -2471,13 +2534,12 @@ static void GetVariableInfo(const SHADER_MODULE_STATE &module_state, const spirv
 bool CoreChecks::ValidateVariables(const SHADER_MODULE_STATE &module_state) const {
     bool skip = false;
 
-    for (auto insn : module_state.static_data_.variable_inst) {
-        const uint32_t storage_class = insn.word(3);
+    for (const Instruction *insn : module_state.GetVariableInstructions()) {
+        const uint32_t storage_class = insn->StorageClass();
 
         if (storage_class == spv::StorageClassWorkgroup) {
             // If Workgroup variable is initalized, make sure the feature is enabled
-            if (insn.len() > 4 &&
-                !enabled_features.core13.shaderZeroInitializeWorkgroupMemory) {
+            if (insn->Length() > 4 && !enabled_features.core13.shaderZeroInitializeWorkgroupMemory) {
                 const char *vuid = IsExtEnabled(device_extensions.vk_khr_zero_initialize_workgroup_memory)
                                        ? "VUID-RuntimeSpirv-shaderZeroInitializeWorkgroupMemory-06372"
                                        : "VUID-RuntimeSpirv-OpVariable-06373";
@@ -2486,12 +2548,12 @@ bool CoreChecks::ValidateVariables(const SHADER_MODULE_STATE &module_state) cons
                     "vkCreateShaderModule(): "
                     "VkPhysicalDeviceZeroInitializeWorkgroupMemoryFeaturesKHR::shaderZeroInitializeWorkgroupMemory is not enabled, "
                     "but shader contains an OpVariable with Workgroup Storage Class with an Initializer operand.\n%s",
-                    module_state.DescribeInstruction(insn).c_str());
+                    insn->Describe().c_str());
             }
         }
 
-        const auto type_pointer = module_state.get_def(insn.word(1));
-        const auto type = module_state.get_def(type_pointer.word(3));
+        const Instruction *type_pointer = module_state.FindDef(insn->Word(1));
+        const Instruction *type = module_state.FindDef(type_pointer->Word(3));
         // type will either be a float, int, or struct and if struct need to traverse it
         VariableInstInfo info;
         GetVariableInfo(module_state, type, info);
@@ -2502,19 +2564,19 @@ bool CoreChecks::ValidateVariables(const SHADER_MODULE_STATE &module_state) cons
                skip |= LogError(module_state.vk_shader_module(), "VUID-RuntimeSpirv-storageBuffer8BitAccess-06328",
                                 "vkCreateShaderModule(): storageBuffer8BitAccess is not enabled, but shader contains an 8-bit "
                                 "OpVariable with %s Storage Class.\n%s",
-                                string_SpvStorageClass(storage_class), module_state.DescribeInstruction(insn).c_str());
+                                string_SpvStorageClass(storage_class), insn->Describe().c_str());
            }
            if (!enabled_features.core12.uniformAndStorageBuffer8BitAccess && storage_class == spv::StorageClassUniform) {
                skip |= LogError(module_state.vk_shader_module(), "VUID-RuntimeSpirv-uniformAndStorageBuffer8BitAccess-06329",
                                 "vkCreateShaderModule(): uniformAndStorageBuffer8BitAccess is not enabled, but shader contains an "
                                 "8-bit OpVariable with Uniform Storage Class.\n%s",
-                                module_state.DescribeInstruction(insn).c_str());
+                                insn->Describe().c_str());
            }
            if (!enabled_features.core12.storagePushConstant8 && storage_class == spv::StorageClassPushConstant) {
                skip |= LogError(module_state.vk_shader_module(), "VUID-RuntimeSpirv-storagePushConstant8-06330",
                                 "vkCreateShaderModule(): storagePushConstant8 is not enabled, but shader contains an 8-bit "
                                 "OpVariable with PushConstant Storage Class.\n%s",
-                                module_state.DescribeInstruction(insn).c_str());
+                                insn->Describe().c_str());
            }
         }
 
@@ -2524,26 +2586,26 @@ bool CoreChecks::ValidateVariables(const SHADER_MODULE_STATE &module_state) cons
               skip |= LogError(module_state.vk_shader_module(), "VUID-RuntimeSpirv-storageBuffer16BitAccess-06331",
                                "vkCreateShaderModule(): storageBuffer16BitAccess is not enabled, but shader contains an 16-bit "
                                "OpVariable with %s Storage Class.\n%s",
-                               string_SpvStorageClass(storage_class), module_state.DescribeInstruction(insn).c_str());
+                               string_SpvStorageClass(storage_class), insn->Describe().c_str());
            }
            if (!enabled_features.core11.uniformAndStorageBuffer16BitAccess && storage_class == spv::StorageClassUniform) {
                skip |= LogError(module_state.vk_shader_module(), "VUID-RuntimeSpirv-uniformAndStorageBuffer16BitAccess-06332",
                                 "vkCreateShaderModule(): uniformAndStorageBuffer16BitAccess is not enabled, but shader contains an "
                                 "16-bit OpVariable with Uniform Storage Class.\n%s",
-                                module_state.DescribeInstruction(insn).c_str());
+                                insn->Describe().c_str());
            }
            if (!enabled_features.core11.storagePushConstant16 && storage_class == spv::StorageClassPushConstant) {
                skip |= LogError(module_state.vk_shader_module(), "VUID-RuntimeSpirv-storagePushConstant16-06333",
                                 "vkCreateShaderModule(): storagePushConstant16 is not enabled, but shader contains an 16-bit "
                                 "OpVariable with PushConstant Storage Class.\n%s",
-                                module_state.DescribeInstruction(insn).c_str());
+                                insn->Describe().c_str());
            }
            if (!enabled_features.core11.storageInputOutput16 &&
              (storage_class == spv::StorageClassInput || storage_class == spv::StorageClassOutput)) {
                skip |= LogError(module_state.vk_shader_module(), "VUID-RuntimeSpirv-storageInputOutput16-06334",
                                 "vkCreateShaderModule(): storageInputOutput16 is not enabled, but shader contains an 16-bit "
                                 "OpVariable with %s Storage Class.\n%s",
-                                string_SpvStorageClass(storage_class), module_state.DescribeInstruction(insn).c_str());
+                                string_SpvStorageClass(storage_class), insn->Describe().c_str());
            }
         }
 
@@ -2574,25 +2636,25 @@ bool CoreChecks::ValidateTransformFeedback(const SHADER_MODULE_STATE &module_sta
 
     layer_data::unordered_set<uint32_t> emitted_streams;
     bool output_points = false;
-    for (const auto &insn : module_state) {
-        const uint32_t opcode = insn.opcode();
+    // TODO - Don't do a full loop here over the module
+    for (const Instruction &insn : module_state.GetInstructions()) {
+        const uint32_t opcode = insn.Opcode();
         if (opcode == spv::OpEmitStreamVertex) {
-            emitted_streams.emplace(static_cast<uint32_t>(module_state.GetConstantValueById(insn.word(1))));
+            emitted_streams.emplace(static_cast<uint32_t>(module_state.GetConstantValueById(insn.Word(1))));
         }
         if (opcode == spv::OpEmitStreamVertex || opcode == spv::OpEndStreamPrimitive) {
-            uint32_t stream = static_cast<uint32_t>(module_state.GetConstantValueById(insn.word(1)));
+            uint32_t stream = static_cast<uint32_t>(module_state.GetConstantValueById(insn.Word(1)));
             if (stream >= phys_dev_ext_props.transform_feedback_props.maxTransformFeedbackStreams) {
                 skip |= LogError(
                     module_state.vk_shader_module(), "VUID-RuntimeSpirv-OpEmitStreamVertex-06310",
                     "vkCreateGraphicsPipelines(): shader uses transform feedback stream\n%s\nwith index %" PRIu32
                     ", which is not less than VkPhysicalDeviceTransformFeedbackPropertiesEXT::maxTransformFeedbackStreams (%" PRIu32
                     ").",
-                    module_state.DescribeInstruction(insn).c_str(), stream,
-                    phys_dev_ext_props.transform_feedback_props.maxTransformFeedbackStreams);
+                    insn.Describe().c_str(), stream, phys_dev_ext_props.transform_feedback_props.maxTransformFeedbackStreams);
             }
         }
         if ((opcode == spv::OpExecutionMode || opcode == spv::OpExecutionModeId) &&
-            insn.word(2) == spv::ExecutionModeOutputPoints) {
+            insn.Word(2) == spv::ExecutionModeOutputPoints) {
             output_points = true;
         }
     }
@@ -2612,15 +2674,15 @@ bool CoreChecks::ValidateTransformFeedback(const SHADER_MODULE_STATE &module_sta
 }
 
 // Checks for both TexelOffset and TexelGatherOffset limits
-bool CoreChecks::ValidateTexelOffsetLimits(const SHADER_MODULE_STATE &module_state, spirv_inst_iter &insn) const {
+bool CoreChecks::ValidateTexelOffsetLimits(const SHADER_MODULE_STATE &module_state, const Instruction &insn) const {
     bool skip = false;
 
-    const uint32_t opcode = insn.opcode();
+    const uint32_t opcode = insn.Opcode();
     if (ImageGatherOperation(opcode) || ImageSampleOperation(opcode) || ImageFetchOperation(opcode)) {
         uint32_t image_operand_position = OpcodeImageOperandsPosition(opcode);
         // Image operands can be optional
-        if (image_operand_position != 0 && insn.len() > image_operand_position) {
-            auto image_operand = insn.word(image_operand_position);
+        if (image_operand_position != 0 && insn.Length() > image_operand_position) {
+            auto image_operand = insn.Word(image_operand_position);
             // Bits we are validating (sample/fetch only check ConstOffset)
             uint32_t offset_bits =
                 ImageGatherOperation(opcode)
@@ -2633,59 +2695,55 @@ bool CoreChecks::ValidateTexelOffsetLimits(const SHADER_MODULE_STATE &module_sta
                 // ImageOperandsOffsetMask, ImageOperandsConstOffsetMask and ImageOperandsConstOffsetsMask
                 for (uint32_t i = 1; i < spv::ImageOperandsConstOffsetsMask; i <<= 1) {
                     if (image_operand & i) {  // If the bit is set, consume operand
-                        if (insn.len() > index && (i & offset_bits)) {
-                            uint32_t constant_id = insn.word(index);
-                            const auto &constant = module_state.get_def(constant_id);
-                            const bool is_dynamic_offset = constant == module_state.end();
-                            if (!is_dynamic_offset && constant.opcode() == spv::OpConstantComposite) {
-                                for (uint32_t j = 3; j < constant.len(); ++j) {
-                                    uint32_t comp_id = constant.word(j);
-                                    const auto &comp = module_state.get_def(comp_id);
-                                    const auto &comp_type = module_state.get_def(comp.word(1));
+                        if (insn.Length() > index && (i & offset_bits)) {
+                            uint32_t constant_id = insn.Word(index);
+                            const Instruction *constant = module_state.FindDef(constant_id);
+                            const bool is_dynamic_offset = constant == nullptr;
+                            if (!is_dynamic_offset && constant->Opcode() == spv::OpConstantComposite) {
+                                for (uint32_t j = 3; j < constant->Length(); ++j) {
+                                    uint32_t comp_id = constant->Word(j);
+                                    const Instruction *comp = module_state.FindDef(comp_id);
+                                    const Instruction *comp_type = module_state.FindDef(comp->Word(1));
                                     // Get operand value
-                                    const uint32_t offset = comp.word(3);
+                                    const uint32_t offset = comp->Word(3);
                                     // spec requires minTexelGatherOffset/minTexelOffset to be -8 or less so never can compare if
                                     // unsigned spec requires maxTexelGatherOffset/maxTexelOffset to be 7 or greater so never can
                                     // compare if signed is less then zero
                                     const int32_t signed_offset = static_cast<int32_t>(offset);
-                                    const bool use_signed = (comp_type.opcode() == spv::OpTypeInt && comp_type.word(3) != 0);
+                                    const bool use_signed = (comp_type->Opcode() == spv::OpTypeInt && comp_type->Word(3) != 0);
 
                                     // There are 2 sets of VU being covered where the only main difference is the opcode
                                     if (ImageGatherOperation(opcode)) {
                                         // min/maxTexelGatherOffset
                                         if (use_signed && (signed_offset < phys_dev_props.limits.minTexelGatherOffset)) {
-                                            skip |=
-                                                LogError(module_state.vk_shader_module(), "VUID-RuntimeSpirv-OpImage-06376",
-                                                         "vkCreateShaderModule(): Shader uses\n%s\nwith offset (%" PRIi32
-                                                         ") less than VkPhysicalDeviceLimits::minTexelGatherOffset (%" PRIi32 ").",
-                                                         module_state.DescribeInstruction(insn).c_str(), signed_offset,
-                                                         phys_dev_props.limits.minTexelGatherOffset);
+                                            skip |= LogError(
+                                                module_state.vk_shader_module(), "VUID-RuntimeSpirv-OpImage-06376",
+                                                "vkCreateShaderModule(): Shader uses\n%s\nwith offset (%" PRIi32
+                                                ") less than VkPhysicalDeviceLimits::minTexelGatherOffset (%" PRIi32 ").",
+                                                insn.Describe().c_str(), signed_offset, phys_dev_props.limits.minTexelGatherOffset);
                                         } else if ((offset > phys_dev_props.limits.maxTexelGatherOffset) &&
                                                    (!use_signed || (use_signed && signed_offset > 0))) {
-                                            skip |= LogError(module_state.vk_shader_module(), "VUID-RuntimeSpirv-OpImage-06377",
-                                                             "vkCreateShaderModule(): Shader uses\n%s\nwith offset (%" PRIu32
-                                                             ") greater than VkPhysicalDeviceLimits::maxTexelGatherOffset (%" PRIu32
-                                                             ").",
-                                                             module_state.DescribeInstruction(insn).c_str(), offset,
-                                                             phys_dev_props.limits.maxTexelGatherOffset);
+                                            skip |= LogError(
+                                                module_state.vk_shader_module(), "VUID-RuntimeSpirv-OpImage-06377",
+                                                "vkCreateShaderModule(): Shader uses\n%s\nwith offset (%" PRIu32
+                                                ") greater than VkPhysicalDeviceLimits::maxTexelGatherOffset (%" PRIu32 ").",
+                                                insn.Describe().c_str(), offset, phys_dev_props.limits.maxTexelGatherOffset);
                                         }
                                     } else {
                                         // min/maxTexelOffset
                                         if (use_signed && (signed_offset < phys_dev_props.limits.minTexelOffset)) {
-                                            skip |=
-                                                LogError(module_state.vk_shader_module(), "VUID-RuntimeSpirv-OpImageSample-06435",
-                                                         "vkCreateShaderModule(): Shader uses\n%s\nwith offset (%" PRIi32
-                                                         ") less than VkPhysicalDeviceLimits::minTexelOffset (%" PRIi32 ").",
-                                                         module_state.DescribeInstruction(insn).c_str(), signed_offset,
-                                                         phys_dev_props.limits.minTexelOffset);
+                                            skip |= LogError(
+                                                module_state.vk_shader_module(), "VUID-RuntimeSpirv-OpImageSample-06435",
+                                                "vkCreateShaderModule(): Shader uses\n%s\nwith offset (%" PRIi32
+                                                ") less than VkPhysicalDeviceLimits::minTexelOffset (%" PRIi32 ").",
+                                                insn.Describe().c_str(), signed_offset, phys_dev_props.limits.minTexelOffset);
                                         } else if ((offset > phys_dev_props.limits.maxTexelOffset) &&
                                                    (!use_signed || (use_signed && signed_offset > 0))) {
                                             skip |=
                                                 LogError(module_state.vk_shader_module(), "VUID-RuntimeSpirv-OpImageSample-06436",
                                                          "vkCreateShaderModule(): Shader uses\n%s\nwith offset (%" PRIu32
                                                          ") greater than VkPhysicalDeviceLimits::maxTexelOffset (%" PRIu32 ").",
-                                                         module_state.DescribeInstruction(insn).c_str(), offset,
-                                                         phys_dev_props.limits.maxTexelOffset);
+                                                         insn.Describe().c_str(), offset, phys_dev_props.limits.maxTexelOffset);
                                         }
                                     }
                                 }
@@ -2701,24 +2759,22 @@ bool CoreChecks::ValidateTexelOffsetLimits(const SHADER_MODULE_STATE &module_sta
     return skip;
 }
 
-bool CoreChecks::ValidateShaderClock(const SHADER_MODULE_STATE &module_state, spirv_inst_iter &insn) const {
+bool CoreChecks::ValidateShaderClock(const SHADER_MODULE_STATE &module_state, const Instruction &insn) const {
     bool skip = false;
 
-    switch (insn.opcode()) {
+    switch (insn.Opcode()) {
         case spv::OpReadClockKHR: {
-            auto scope_id = module_state.get_def(insn.word(3));
-            auto scope_type = scope_id.word(3);
+            const Instruction *scope_id = module_state.FindDef(insn.Word(3));
+            auto scope_type = scope_id->Word(3);
             // if scope isn't Subgroup or Device, spirv-val will catch
             if ((scope_type == spv::ScopeSubgroup) && (enabled_features.shader_clock_features.shaderSubgroupClock == VK_FALSE)) {
                 skip |= LogError(device, "VUID-RuntimeSpirv-shaderSubgroupClock-06267",
                                  "%s: OpReadClockKHR is used with a Subgroup scope but shaderSubgroupClock was not enabled.\n%s",
-                                 report_data->FormatHandle(module_state.vk_shader_module()).c_str(),
-                                 module_state.DescribeInstruction(insn).c_str());
+                                 report_data->FormatHandle(module_state.vk_shader_module()).c_str(), insn.Describe().c_str());
             } else if ((scope_type == spv::ScopeDevice) && (enabled_features.shader_clock_features.shaderDeviceClock == VK_FALSE)) {
                 skip |= LogError(device, "VUID-RuntimeSpirv-shaderDeviceClock-06268",
                                  "%s: OpReadClockKHR is used with a Device scope but shaderDeviceClock was not enabled.\n%s",
-                                 report_data->FormatHandle(module_state.vk_shader_module()).c_str(),
-                                 module_state.DescribeInstruction(insn).c_str());
+                                 report_data->FormatHandle(module_state.vk_shader_module()).c_str(), insn.Describe().c_str());
             }
             break;
         }
@@ -2726,30 +2782,27 @@ bool CoreChecks::ValidateShaderClock(const SHADER_MODULE_STATE &module_state, sp
     return skip;
 }
 
-bool CoreChecks::ValidateImageWrite(const SHADER_MODULE_STATE &module_state, spirv_inst_iter &insn) const {
+bool CoreChecks::ValidateImageWrite(const SHADER_MODULE_STATE &module_state, const Instruction &insn) const {
     bool skip = false;
 
-    if (insn.opcode() == spv::OpImageWrite) {
+    if (insn.Opcode() == spv::OpImageWrite) {
         // guaranteed by spirv-val to be an OpTypeImage
-        const uint32_t image = module_state.GetTypeId(insn.word(1));
-        const spirv_inst_iter image_def = module_state.get_def(image);
-        const uint32_t image_format = image_def.word(8);
+        const uint32_t image = module_state.GetTypeId(insn.Word(1));
+        const Instruction *image_def = module_state.FindDef(image);
+        const uint32_t image_format = image_def->Word(8);
         // If format is 'Unknown' then need to wait until a descriptor is bound to it
         if (image_format != spv::ImageFormatUnknown) {
             const VkFormat compatible_format = CompatibleSpirvImageFormat(image_format);
             if (compatible_format != VK_FORMAT_UNDEFINED) {
                 const uint32_t format_component_count = FormatComponentCount(compatible_format);
-                const spirv_inst_iter texel_def = module_state.get_def(insn.word(3));
-                const spirv_inst_iter texel_type = module_state.get_def(texel_def.word(1));
-                const uint32_t texel_component_count = (texel_type.opcode() == spv::OpTypeVector) ? texel_type.word(3) : 1;
+                const uint32_t texel_component_count = module_state.GetTexelComponentCount(insn);
                 if (texel_component_count < format_component_count) {
-                    skip |= LogError(device, " VUID-RuntimeSpirv-OpImageWrite-07112",
+                    skip |= LogError(device, "VUID-RuntimeSpirv-OpImageWrite-07112",
                                      "%s: OpImageWrite Texel operand only contains %" PRIu32
                                      " components, but the OpImage format mapping to %s has %" PRIu32 " components.\n%s\n%s",
                                      report_data->FormatHandle(module_state.vk_shader_module()).c_str(), texel_component_count,
-                                     string_VkFormat(compatible_format), format_component_count,
-                                     module_state.DescribeInstruction(insn).c_str(),
-                                     module_state.DescribeInstruction(image_def).c_str());
+                                     string_VkFormat(compatible_format), format_component_count, insn.Describe().c_str(),
+                                     image_def->Describe().c_str());
                 }
             }
         }
@@ -2757,16 +2810,18 @@ bool CoreChecks::ValidateImageWrite(const SHADER_MODULE_STATE &module_state, spi
     return skip;
 }
 
-bool CoreChecks::ValidatePipelineShaderStage(const PIPELINE_STATE *pipeline, const PipelineStageState &stage_state,
-                                             bool check_point_size) const {
+bool CoreChecks::ValidatePipelineShaderStage(const PIPELINE_STATE &pipeline, const PipelineStageState &stage_state) const {
     bool skip = false;
     const auto *pStage = stage_state.create_info;
     const SHADER_MODULE_STATE &module_state = *stage_state.module_state.get();
-    const auto &entrypoint = stage_state.entrypoint;
+    auto entrypoint_optional = stage_state.entrypoint;
+    const auto module_identifier = LvlFindInChain<VkPipelineShaderStageModuleIdentifierCreateInfoEXT>(stage_state.create_info);
 
-    skip |= ValidateShaderModuleId(module_state, stage_state, pStage, pipeline->GetPipelineCreateFlags());
+    skip |= ValidateShaderModuleId(module_state, stage_state, pStage, pipeline.GetPipelineCreateFlags());
 
-    if (module_state.vk_shader_module() == VK_NULL_HANDLE) return skip;  // No real shader for further validation
+    if (module_identifier && module_state.vk_shader_module() == VK_NULL_HANDLE) {
+        return skip;  // No real shader for further validation
+    }
 
     // to prevent const_cast on pipeline object, just store here as not needed outside function anyway
     uint32_t local_size_x = 0;
@@ -2780,6 +2835,9 @@ bool CoreChecks::ValidatePipelineShaderStage(const PIPELINE_STATE *pipeline, con
                          "%s does not contain valid spirv for stage %s.",
                          report_data->FormatHandle(module_state.vk_shader_module()).c_str(),
                          string_VkShaderStageFlagBits(stage_state.stage_flag));
+
+        // No reason in continuing if the spir-v is invalid
+        return skip;
     }
 
     // If specialization-constant instructions are present in the shader, the specializations should be applied.
@@ -2817,18 +2875,18 @@ bool CoreChecks::ValidatePipelineShaderStage(const PIPELINE_STATE *pipeline, con
                 // behavior of the pipeline."
                 if (itr != module_state.GetSpecConstMap().cend()) {
                     // Make sure map_entry.size matches the spec constant's size
-                    uint32_t spec_const_size = decoration_set::kInvalidValue;
-                    const auto def_ins = module_state.get_def(itr->second);
-                    const auto type_ins = module_state.get_def(def_ins.word(1));
+                    uint32_t spec_const_size = DecorationSet::kInvalidValue;
+                    const Instruction *def_insn = module_state.FindDef(itr->second);
+                    const Instruction *type_insn = module_state.FindDef(def_insn->Word(1));
                     // Specialization constants can only be of type bool, scalar integer, or scalar floating point
-                    switch (type_ins.opcode()) {
+                    switch (type_insn->Opcode()) {
                         case spv::OpTypeBool:
                             // "If the specialization constant is of type boolean, size must be the byte size of VkBool32"
                             spec_const_size = sizeof(VkBool32);
                             break;
                         case spv::OpTypeInt:
                         case spv::OpTypeFloat:
-                            spec_const_size = type_ins.word(2) / 8;
+                            spec_const_size = type_insn->Word(2) / 8;
                             break;
                         default:
                             // spirv-val should catch if SpecId is not used on a
@@ -2877,9 +2935,6 @@ bool CoreChecks::ValidatePipelineShaderStage(const PIPELINE_STATE *pipeline, con
         //
         // this will generate branch/switch statements that we want to leverage spirv-opt to apply to make parsing easier
         optimizer.RegisterPass(spvtools::CreateFoldSpecConstantOpAndCompositePass());
-        // Currently need to re-run the pass as spirv-opt has a bug and not folding everything sometimes
-        // https://github.com/KhronosGroup/Vulkan-ValidationLayers/pull/4399#issuecomment-1216203563
-        optimizer.RegisterPass(spvtools::CreateFoldSpecConstantOpAndCompositePass());
 
         // Apply the specialization-constant values and revalidate the shader module is valid.
         const char *pSpecializationInfo_vuid = IsExtEnabled(device_extensions.vk_ext_shader_module_identifier)
@@ -2887,7 +2942,7 @@ bool CoreChecks::ValidatePipelineShaderStage(const PIPELINE_STATE *pipeline, con
                                : "VUID-VkPipelineShaderStageCreateInfo-pSpecializationInfo-06719";
         std::vector<uint32_t> specialized_spirv;
         auto const optimized =
-            optimizer.Run(module_state.words.data(), module_state.words.size(), &specialized_spirv, options, true);
+            optimizer.Run(module_state.words_.data(), module_state.words_.size(), &specialized_spirv, options, true);
         if (optimized) {
             spv_context ctx = spvContextCreate(spirv_environment);
             spv_const_binary_t binary{specialized_spirv.data(), specialized_spirv.size()};
@@ -2909,7 +2964,6 @@ bool CoreChecks::ValidatePipelineShaderStage(const PIPELINE_STATE *pipeline, con
             // input is used or not) don't have to be checked post spec constants freezing since the device compiler is not
             // guaranteed to run things such as dead-code elimination. The following checks are things that don't follow under
             // "static use" rules and need to be validated still.
-            auto specialized_it = spec_mod.begin();
 
             // see ValidateComputeSharedMemory() for details why we might track max block size
             layer_data::unordered_set<uint32_t> aliased_id;
@@ -2921,41 +2975,41 @@ bool CoreChecks::ValidatePipelineShaderStage(const PIPELINE_STATE *pipeline, con
             uint32_t local_size_id_z = 0;
 
             // make single interation through new shader
-            while (specialized_it != spec_mod.end()) {
-                const uint32_t opcode = specialized_it.opcode();
+            for (const Instruction &insn : spec_mod.GetInstructions()) {
+                const uint32_t opcode = insn.Opcode();
 
-                if (opcode == spv::OpExecutionModeId && specialized_it.word(2) == spv::ExecutionModeLocalSizeId) {
-                    local_size_id_x = specialized_it.word(3);
-                    local_size_id_y = specialized_it.word(4);
-                    local_size_id_z = specialized_it.word(5);
+                if (opcode == spv::OpExecutionModeId && insn.Word(2) == spv::ExecutionModeLocalSizeId) {
+                    local_size_id_x = insn.Word(3);
+                    local_size_id_y = insn.Word(4);
+                    local_size_id_z = insn.Word(5);
                 }
 
                 if (opcode == spv::OpDecorate) {
                     // Validate applied WorkgroupSize is still below maxComputeWorkGroupSize limit
-                    if (specialized_it.word(2) == spv::DecorationBuiltIn && specialized_it.word(3) == spv::BuiltInWorkgroupSize) {
+                    if (insn.Word(2) == spv::DecorationBuiltIn && insn.Word(3) == spv::BuiltInWorkgroupSize) {
                         // Will be a OpConstantComposite and always have the OpDecorate section
-                        workgroup_size_id = specialized_it.word(1);
+                        workgroup_size_id = insn.Word(1);
                     }
-                    if (specialized_it.word(2) == spv::DecorationAliased) {
-                        aliased_id.emplace(specialized_it.word(1));
+                    if (insn.Word(2) == spv::DecorationAliased) {
+                        aliased_id.emplace(insn.Word(1));
                     }
                 }
 
-                if (opcode == spv::OpConstantComposite && workgroup_size_id == specialized_it.word(2)) {
+                if (opcode == spv::OpConstantComposite && workgroup_size_id == insn.Word(2)) {
                     // VUID-WorkgroupSize-WorkgroupSize-04427 makes sure this is a OpTypeVector of int32 so this can be assuemd
-                    local_size_x = spec_mod.get_def(specialized_it.word(3)).word(3);
-                    local_size_y = spec_mod.get_def(specialized_it.word(4)).word(3);
-                    local_size_z = spec_mod.get_def(specialized_it.word(5)).word(3);
+                    local_size_x = spec_mod.FindDef(insn.Word(3))->Word(3);
+                    local_size_y = spec_mod.FindDef(insn.Word(4))->Word(3);
+                    local_size_z = spec_mod.FindDef(insn.Word(5))->Word(3);
                 }
 
-                if (opcode == spv::OpVariable && specialized_it.word(3) == spv::StorageClassWorkgroup) {
-                    if (aliased_id.find(specialized_it.word(2)) != aliased_id.end()) {
+                if (opcode == spv::OpVariable && insn.StorageClass() == spv::StorageClassWorkgroup) {
+                    if (aliased_id.find(insn.Word(2)) != aliased_id.end()) {
                         find_max_block = true;
                     }
 
-                    const uint32_t result_type_id = specialized_it.word(1);
-                    const auto result_type = spec_mod.get_def(result_type_id);
-                    const auto type = spec_mod.get_def(result_type.word(3));
+                    const uint32_t result_type_id = insn.Word(1);
+                    const Instruction *result_type = spec_mod.FindDef(result_type_id);
+                    const Instruction *type = spec_mod.FindDef(result_type->Word(3));
                     const uint32_t variable_shared_size = spec_mod.GetTypeBitsSize(type) / 8;
 
                     if (find_max_block) {
@@ -2964,15 +3018,13 @@ bool CoreChecks::ValidatePipelineShaderStage(const PIPELINE_STATE *pipeline, con
                         total_shared_size += variable_shared_size;
                     }
                 }
-
-                ++specialized_it;
             }
 
             // if after no WorkgroupSize is found, then can apply any possible LocalSizeId due to precedence order
             if (local_size_x == 0 && local_size_id_x != 0) {
-                local_size_x = spec_mod.get_def(local_size_id_x).word(3);
-                local_size_y = spec_mod.get_def(local_size_id_y).word(3);
-                local_size_z = spec_mod.get_def(local_size_id_z).word(3);
+                local_size_x = spec_mod.FindDef(local_size_id_x)->Word(3);
+                local_size_y = spec_mod.FindDef(local_size_id_y)->Word(3);
+                local_size_z = spec_mod.FindDef(local_size_id_z)->Word(3);
             }
 
             spvDiagnosticDestroy(diag);
@@ -2987,20 +3039,19 @@ bool CoreChecks::ValidatePipelineShaderStage(const PIPELINE_STATE *pipeline, con
     }
 
     // Check the entrypoint
-    if (entrypoint == module_state.end()) {
+    if (!entrypoint_optional) {
         skip |= LogError(device, "VUID-VkPipelineShaderStageCreateInfo-pName-00707", "No entrypoint found named `%s` for stage %s.",
                          pStage->pName, string_VkShaderStageFlagBits(stage_state.stage_flag));
     }
     if (skip) return true;  // no point continuing beyond here, any analysis is just going to be garbage.
 
-    // Mark accessible ids
-    auto &accessible_ids = stage_state.accessible_ids;
+    const Instruction &entrypoint = *entrypoint_optional;
 
     // Validate descriptor set layout against what the entrypoint actually uses
 
     // The following tries to limit the number of passes through the shader module. The validation passes in here are "stateless"
     // and mainly only checking the instruction in detail for a single operation
-    for (auto insn : module_state) {
+    for (const Instruction &insn : module_state.GetInstructions()) {
         skip |= ValidateTexelOffsetLimits(module_state, insn);
         skip |= ValidateShaderCapabilitiesAndExtensions(insn);
         skip |= ValidateShaderClock(module_state, insn);
@@ -3019,13 +3070,10 @@ bool CoreChecks::ValidatePipelineShaderStage(const PIPELINE_STATE *pipeline, con
     skip |= ValidateSpecializations(module_state, pStage);
     skip |= ValidateDecorations(module_state);
     skip |= ValidateVariables(module_state);
-    const auto *raster_state = pipeline->RasterizationState();
-    if (check_point_size && raster_state && !raster_state->rasterizerDiscardEnable) {
-        skip |= ValidatePointListShaderState(pipeline, module_state, entrypoint, pStage->stage);
-    }
+    skip |= ValidatePointSizeShaderState(pipeline, module_state, entrypoint, pStage->stage);
     skip |= ValidateBuiltinLimits(module_state, entrypoint);
     if (enabled_features.cooperative_matrix_features.cooperativeMatrix) {
-        skip |= ValidateCooperativeMatrix(module_state, pStage, pipeline);
+        skip |= ValidateCooperativeMatrix(module_state, pStage);
     }
     if (enabled_features.fragment_shading_rate_features.primitiveFragmentShadingRate) {
         skip |= ValidatePrimitiveRateShaderState(pipeline, module_state, entrypoint, pStage->stage);
@@ -3040,7 +3088,7 @@ bool CoreChecks::ValidatePipelineShaderStage(const PIPELINE_STATE *pipeline, con
     // "layout must be consistent with the layout of the * shader"
     // 'consistent' -> #descriptorsets-pipelinelayout-consistency
     std::string vuid_layout_mismatch;
-    switch (pipeline->GetCreateInfoSType()) {
+    switch (pipeline.GetCreateInfoSType()) {
         case VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO:
             vuid_layout_mismatch = "VUID-VkGraphicsPipelineCreateInfo-layout-00756";
             break;
@@ -3059,57 +3107,57 @@ bool CoreChecks::ValidatePipelineShaderStage(const PIPELINE_STATE *pipeline, con
     }
 
     // Validate Push Constants use
-    skip |= ValidatePushConstantUsage(*pipeline, module_state, pStage, vuid_layout_mismatch);
+    skip |= ValidatePushConstantUsage(pipeline, module_state, pStage, vuid_layout_mismatch);
 
     // Validate descriptor use
-    for (auto use : stage_state.descriptor_uses) {
+    for (const auto &use : stage_state.descriptor_uses) {
         // Verify given pipelineLayout has requested setLayout with requested binding
         // const auto& layout_state = (stage_state.stage_flag == VK_SHADER_STAGE_VERTEX_BIT) ?
         // pipeline->PreRasterPipelineLayoutState() : pipeline->FragmentShaderPipelineLayoutState();
-        const auto &binding = GetDescriptorBinding(pipeline->PipelineLayoutState().get(), use.first);
+        const auto &binding = GetDescriptorBinding(pipeline.PipelineLayoutState().get(), use.first);
         unsigned required_descriptor_count;
-        bool is_khr = binding && binding->descriptorType == VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+        const bool is_khr = binding && binding->descriptorType == VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
         std::set<uint32_t> descriptor_types =
             TypeToDescriptorTypeSet(module_state, use.second.type_id, required_descriptor_count, is_khr);
 
         if (!binding) {
             LogObjectList objlist(module_state.vk_shader_module());
-            objlist.add(pipeline->PipelineLayoutState()->layout());
+            objlist.add(pipeline.PipelineLayoutState()->layout());
             skip |= LogError(objlist, vuid_layout_mismatch,
-                             "Shader uses descriptor slot %u.%u (expected `%s`) but not declared in pipeline layout", use.first.set,
-                             use.first.binding, string_descriptorTypes(descriptor_types).c_str());
+                             "Set %u Binding %u in shader uses descriptor slot (expected `%s`) but not declared in pipeline layout",
+                             use.first.set, use.first.binding, string_descriptorTypes(descriptor_types).c_str());
         } else if (~binding->stageFlags & pStage->stage) {
             LogObjectList objlist(module_state.vk_shader_module());
-            objlist.add(pipeline->PipelineLayoutState()->layout());
+            objlist.add(pipeline.PipelineLayoutState()->layout());
             skip |= LogError(objlist, vuid_layout_mismatch,
-                             "Shader uses descriptor slot %u.%u but descriptor not accessible from stage %s", use.first.set,
-                             use.first.binding, string_VkShaderStageFlagBits(pStage->stage));
+                             "Set %u Binding %u in shader uses descriptor slot but descriptor not accessible from stage %s",
+                             use.first.set, use.first.binding, string_VkShaderStageFlagBits(pStage->stage));
         } else if ((binding->descriptorType != VK_DESCRIPTOR_TYPE_MUTABLE_EXT) &&
                    (descriptor_types.find(binding->descriptorType) == descriptor_types.end())) {
             LogObjectList objlist(module_state.vk_shader_module());
-            objlist.add(pipeline->PipelineLayoutState()->layout());
+            objlist.add(pipeline.PipelineLayoutState()->layout());
             skip |= LogError(objlist, vuid_layout_mismatch,
-                             "Type mismatch on descriptor slot %u.%u (expected `%s`) but descriptor of type %s", use.first.set,
-                             use.first.binding, string_descriptorTypes(descriptor_types).c_str(),
-                             string_VkDescriptorType(binding->descriptorType));
+                             "Set %u Binding %u type mismatch on descriptor slot, uses type %s but expected %s", use.first.set,
+                             use.first.binding, string_VkDescriptorType(binding->descriptorType),
+                             string_descriptorTypes(descriptor_types).c_str());
         } else if (binding->descriptorCount < required_descriptor_count) {
             LogObjectList objlist(module_state.vk_shader_module());
-            objlist.add(pipeline->PipelineLayoutState()->layout());
+            objlist.add(pipeline.PipelineLayoutState()->layout());
             skip |= LogError(objlist, vuid_layout_mismatch,
-                             "Shader expects at least %u descriptors for binding %u.%u but only %u provided",
-                             required_descriptor_count, use.first.set, use.first.binding, binding->descriptorCount);
+                             "Set %u Binding %u in shader expects at least %u descriptors, but only %u provided", use.first.set,
+                             use.first.binding, required_descriptor_count, binding->descriptorCount);
         }
     }
 
     // Validate use of input attachments against subpass structure
     if (pStage->stage == VK_SHADER_STAGE_FRAGMENT_BIT) {
-        auto input_attachment_uses = module_state.CollectInterfaceByInputAttachmentIndex(accessible_ids);
+        auto input_attachment_uses = module_state.CollectInterfaceByInputAttachmentIndex(entrypoint);
 
-        const auto &rp_state = pipeline->RenderPassState();
+        const auto &rp_state = pipeline.RenderPassState();
         if (rp_state && !rp_state->UsesDynamicRendering()) {
             auto rpci = rp_state->createInfo.ptr();
-            auto subpass = pipeline->Subpass();
-            for (auto use : input_attachment_uses) {
+            auto subpass = pipeline.Subpass();
+            for (const auto &use : input_attachment_uses) {
                 auto input_attachments = rpci->pSubpasses[subpass].pInputAttachments;
                 auto index = (input_attachments && use.first < rpci->pSubpasses[subpass].inputAttachmentCount)
                     ? input_attachments[use.first].attachment
@@ -3117,13 +3165,13 @@ bool CoreChecks::ValidatePipelineShaderStage(const PIPELINE_STATE *pipeline, con
 
                 if (index == VK_ATTACHMENT_UNUSED) {
                     LogObjectList objlist(module_state.vk_shader_module());
-                    objlist.add(pipeline->PipelineLayoutState()->layout());
+                    objlist.add(pipeline.PipelineLayoutState()->layout());
                     skip |= LogError(objlist, kVUID_Core_Shader_MissingInputAttachment,
                                      "Shader consumes input attachment index %d but not provided in subpass", use.first);
                 } else if (!(GetFormatType(rpci->pAttachments[index].format) &
                              module_state.GetFundamentalType(use.second.type_id))) {
                     LogObjectList objlist(module_state.vk_shader_module());
-                    objlist.add(pipeline->PipelineLayoutState()->layout());
+                    objlist.add(pipeline.PipelineLayoutState()->layout());
                     skip |= LogError(objlist, kVUID_Core_Shader_InputAttachmentTypeMismatch,
                                      "Subpass input attachment %u format of %s does not match type used in shader `%s`", use.first,
                                      string_VkFormat(rpci->pAttachments[index].format),
@@ -3135,14 +3183,16 @@ bool CoreChecks::ValidatePipelineShaderStage(const PIPELINE_STATE *pipeline, con
     if (pStage->stage == VK_SHADER_STAGE_COMPUTE_BIT) {
         skip |= ValidateComputeWorkGroupSizes(module_state, entrypoint, stage_state, local_size_x, local_size_y, local_size_z);
         skip |= ValidateComputeSharedMemory(module_state, total_shared_size);
+    } else if (pStage->stage == VK_SHADER_STAGE_TASK_BIT_EXT || pStage->stage == VK_SHADER_STAGE_MESH_BIT_EXT) {
+        skip |= ValidateTaskMeshWorkGroupSizes(module_state, entrypoint, stage_state, local_size_x, local_size_y, local_size_z);
     }
 
     return skip;
 }
 
-bool CoreChecks::ValidateInterfaceBetweenStages(const SHADER_MODULE_STATE &producer, spirv_inst_iter producer_entrypoint,
+bool CoreChecks::ValidateInterfaceBetweenStages(const SHADER_MODULE_STATE &producer, const Instruction &producer_entrypoint,
                                                 shader_stage_attributes const *producer_stage, const SHADER_MODULE_STATE &consumer,
-                                                spirv_inst_iter consumer_entrypoint,
+                                                const Instruction &consumer_entrypoint,
                                                 shader_stage_attributes const *consumer_stage) const {
     bool skip = false;
 
@@ -3158,8 +3208,8 @@ bool CoreChecks::ValidateInterfaceBetweenStages(const SHADER_MODULE_STATE &produ
 
     // Maps sorted by key (location); walk them together to find mismatches
     while ((outputs.size() > 0 && output_it != outputs.end()) || (inputs.size() && input_it != inputs.end())) {
-        bool output_at_end = outputs.size() == 0 || output_it == outputs.end();
-        bool input_at_end = inputs.size() == 0 || input_it == inputs.end();
+        const bool output_at_end = outputs.size() == 0 || output_it == outputs.end();
+        const bool input_at_end = inputs.size() == 0 || input_it == inputs.end();
         auto output_first = output_at_end ? std::make_pair(0u, 0u) : output_it->first;
         auto input_first = input_at_end ? std::make_pair(0u, 0u) : input_it->first;
 
@@ -3167,9 +3217,9 @@ bool CoreChecks::ValidateInterfaceBetweenStages(const SHADER_MODULE_STATE &produ
         input_first.second += input_component;
 
         const auto output_length =
-            output_at_end ? 0 : producer.GetNumComponentsInBaseType(producer.get_def(output_it->second.type_id));
+            output_at_end ? 0 : producer.GetNumComponentsInBaseType(producer.FindDef(output_it->second.type_id));
         const auto input_length =
-            input_at_end ? 0 : consumer.GetNumComponentsInBaseType(consumer.get_def(input_it->second.type_id));
+            input_at_end ? 0 : consumer.GetNumComponentsInBaseType(consumer.FindDef(input_it->second.type_id));
         assert(output_at_end || output_component < output_length);
         assert(input_at_end || input_component < input_length);
 
@@ -3279,40 +3329,19 @@ bool CoreChecks::ValidateInterfaceBetweenStages(const SHADER_MODULE_STATE &produ
     return skip;
 }
 
-static inline uint32_t DetermineFinalGeomStage(const PIPELINE_STATE &pipeline) {
-    uint32_t stage_mask = pipeline.active_shaders;
-    if (pipeline.topology_at_rasterizer == VK_PRIMITIVE_TOPOLOGY_POINT_LIST) {
-        // Determine which shader in which PointSize should be written (the final geometry stage)
-        if (stage_mask & VK_SHADER_STAGE_MESH_BIT_NV) {
-            stage_mask = VK_SHADER_STAGE_MESH_BIT_NV;
-        } else if (stage_mask & VK_SHADER_STAGE_GEOMETRY_BIT) {
-            stage_mask = VK_SHADER_STAGE_GEOMETRY_BIT;
-        } else if (stage_mask & VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT) {
-            stage_mask = VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
-        } else if (stage_mask & VK_SHADER_STAGE_VERTEX_BIT) {
-            stage_mask = VK_SHADER_STAGE_VERTEX_BIT;
-        }
-    }
-    return stage_mask;
-}
-
 // Validate that the shaders used by the given pipeline and store the active_slots
 //  that are actually used by the pipeline into pPipeline->active_slots
-bool CoreChecks::ValidateGraphicsPipelineShaderState(const PIPELINE_STATE *pipeline) const {
+bool CoreChecks::ValidateGraphicsPipelineShaderState(const PIPELINE_STATE &pipeline) const {
     bool skip = false;
 
-    if (pipeline->IsGraphicsLibrary()) {
-        // Only validate stages in an executable pipeline, not a graphics library
-        // TODO This currently makes executing executable pipeline more expensive than they need to be since we could be validating
-        // more per library.
+    if (!(pipeline.pre_raster_state || pipeline.fragment_shader_state)) {
+        // Only validate pipelines that contain shader stages
         return skip;
     }
 
-    uint32_t pointlist_stage_mask = DetermineFinalGeomStage(*pipeline);
-
     const PipelineStageState *vertex_stage = nullptr, *fragment_stage = nullptr;
-    for (auto &stage : pipeline->stage_state) {
-        skip |= ValidatePipelineShaderStage(pipeline, stage, (pointlist_stage_mask == stage.stage_flag));
+    for (auto &stage : pipeline.stage_state) {
+        skip |= ValidatePipelineShaderStage(pipeline, stage);
         if (stage.stage_flag == VK_SHADER_STAGE_VERTEX_BIT) {
             vertex_stage = &stage;
         }
@@ -3324,57 +3353,54 @@ bool CoreChecks::ValidateGraphicsPipelineShaderState(const PIPELINE_STATE *pipel
     // if the shader stages are no good individually, cross-stage validation is pointless.
     if (skip) return true;
 
-    auto vi_state = pipeline->InputState();
-
-    if (vi_state) {
-        skip |= ValidateViConsistency(vi_state);
+    if (pipeline.vertex_input_state && vertex_stage && vertex_stage->entrypoint && vertex_stage->module_state->has_valid_spirv &&
+        !pipeline.IsDynamic(VK_DYNAMIC_STATE_VERTEX_INPUT_EXT)) {
+        skip |= ValidateViAgainstVsInputs(pipeline.vertex_input_state->input_state, *vertex_stage->module_state.get(),
+                                          *(vertex_stage->entrypoint));
     }
 
-    if (vertex_stage && vertex_stage->module_state->has_valid_spirv && !IsDynamic(pipeline, VK_DYNAMIC_STATE_VERTEX_INPUT_EXT)) {
-        skip |= ValidateViAgainstVsInputs(vi_state, *vertex_stage->module_state.get(), vertex_stage->entrypoint);
-    }
-
-    for (size_t i = 1; i < pipeline->stage_state.size(); i++) {
-        const auto &producer = pipeline->stage_state[i - 1];
-        const auto &consumer = pipeline->stage_state[i];
+    for (size_t i = 1; i < pipeline.stage_state.size(); i++) {
+        const auto &producer = pipeline.stage_state[i - 1];
+        const auto &consumer = pipeline.stage_state[i];
         assert(producer.module_state);
         if (&producer == fragment_stage) {
             break;
         }
         if (consumer.module_state) {
-            if (consumer.module_state->has_valid_spirv && producer.module_state->has_valid_spirv) {
+            if (consumer.module_state->has_valid_spirv && producer.module_state->has_valid_spirv && consumer.entrypoint &&
+                producer.entrypoint) {
                 auto producer_id = GetShaderStageId(producer.stage_flag);
                 auto consumer_id = GetShaderStageId(consumer.stage_flag);
-                skip |= ValidateInterfaceBetweenStages(*producer.module_state.get(), producer.entrypoint,
+                skip |= ValidateInterfaceBetweenStages(*producer.module_state.get(), *(producer.entrypoint),
                                                        &shader_stage_attribs[producer_id], *consumer.module_state.get(),
-                                                       consumer.entrypoint, &shader_stage_attribs[consumer_id]);
+                                                       *(consumer.entrypoint), &shader_stage_attribs[consumer_id]);
             }
         }
     }
 
-    if (fragment_stage && fragment_stage->module_state->has_valid_spirv) {
-        const auto &rp_state = pipeline->RenderPassState();
+    if (fragment_stage && fragment_stage->entrypoint && fragment_stage->module_state->has_valid_spirv) {
+        const auto &rp_state = pipeline.RenderPassState();
         if (rp_state && rp_state->UsesDynamicRendering()) {
             skip |= ValidateFsOutputsAgainstDynamicRenderingRenderPass(*fragment_stage->module_state.get(),
-                                                                       fragment_stage->entrypoint, pipeline);
+                                                                       *(fragment_stage->entrypoint), pipeline);
         } else {
-            skip |= ValidateFsOutputsAgainstRenderPass(*fragment_stage->module_state.get(), fragment_stage->entrypoint, pipeline,
-                                                       pipeline->Subpass());
+            skip |= ValidateFsOutputsAgainstRenderPass(*fragment_stage->module_state.get(), *(fragment_stage->entrypoint), pipeline,
+                                                       pipeline.Subpass());
         }
     }
 
     return skip;
 }
 
-bool CoreChecks::ValidateGraphicsPipelineShaderDynamicState(const PIPELINE_STATE *pipeline, const CMD_BUFFER_STATE *pCB,
+bool CoreChecks::ValidateGraphicsPipelineShaderDynamicState(const PIPELINE_STATE &pipeline, const CMD_BUFFER_STATE &cb_state,
                                                             const char *caller, const DrawDispatchVuid &vuid) const {
     bool skip = false;
 
-    for (auto &stage : pipeline->stage_state) {
+    for (auto &stage : pipeline.stage_state) {
         if (stage.stage_flag == VK_SHADER_STAGE_VERTEX_BIT || stage.stage_flag == VK_SHADER_STAGE_GEOMETRY_BIT ||
             stage.stage_flag == VK_SHADER_STAGE_MESH_BIT_NV) {
             if (!phys_dev_ext_props.fragment_shading_rate_props.primitiveFragmentShadingRateWithMultipleViewports &&
-                IsDynamic(pipeline, VK_DYNAMIC_STATE_VIEWPORT_WITH_COUNT_EXT) && pCB->viewportWithCountCount != 1) {
+                pipeline.IsDynamic(VK_DYNAMIC_STATE_VIEWPORT_WITH_COUNT_EXT) && cb_state.viewportWithCountCount != 1) {
                 if (stage.wrote_primitive_shading_rate) {
                     skip |=
                         LogError(stage.module_state.get()->vk_shader_module(), vuid.viewport_count_primitive_shading_rate,
@@ -3390,8 +3416,8 @@ bool CoreChecks::ValidateGraphicsPipelineShaderDynamicState(const PIPELINE_STATE
     return skip;
 }
 
-bool CoreChecks::ValidateComputePipelineShaderState(PIPELINE_STATE *pipeline) const {
-    return ValidatePipelineShaderStage(pipeline, pipeline->stage_state[0], false);
+bool CoreChecks::ValidateComputePipelineShaderState(const PIPELINE_STATE &pipeline) const {
+    return ValidatePipelineShaderStage(pipeline, pipeline.stage_state[0]);
 }
 
 uint32_t CoreChecks::CalcShaderStageCount(const PIPELINE_STATE &pipeline, VkShaderStageFlagBits stageBit) const {
@@ -3445,7 +3471,8 @@ bool CoreChecks::GroupHasValidIndex(const PIPELINE_STATE &pipeline, uint32_t gro
     return false;
 }
 
-bool CoreChecks::ValidateRayTracingPipeline(PIPELINE_STATE *pipeline, const safe_VkRayTracingPipelineCreateInfoCommon &create_info,
+bool CoreChecks::ValidateRayTracingPipeline(const PIPELINE_STATE &pipeline,
+                                            const safe_VkRayTracingPipelineCreateInfoCommon &create_info,
                                             VkPipelineCreateFlags flags, bool isKHR) const {
     bool skip = false;
 
@@ -3498,11 +3525,11 @@ bool CoreChecks::ValidateRayTracingPipeline(PIPELINE_STATE *pipeline, const safe
     const auto *groups = create_info.ptr()->pGroups;
 
     for (uint32_t stage_index = 0; stage_index < create_info.stageCount; stage_index++) {
-        skip |= ValidatePipelineShaderStage(pipeline, pipeline->stage_state[stage_index], false);
+        skip |= ValidatePipelineShaderStage(pipeline, pipeline.stage_state[stage_index]);
     }
 
     if ((create_info.flags & VK_PIPELINE_CREATE_LIBRARY_BIT_KHR) == 0) {
-        const uint32_t raygen_stages_count = CalcShaderStageCount(*pipeline, VK_SHADER_STAGE_RAYGEN_BIT_KHR);
+        const uint32_t raygen_stages_count = CalcShaderStageCount(pipeline, VK_SHADER_STAGE_RAYGEN_BIT_KHR);
         if (raygen_stages_count == 0) {
             skip |= LogError(
                 device,
@@ -3524,7 +3551,7 @@ bool CoreChecks::ValidateRayTracingPipeline(PIPELINE_STATE *pipeline, const safe
 
         if (group.type == VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_NV) {
             if (!GroupHasValidIndex(
-                    *pipeline, group.generalShader,
+                    pipeline, group.generalShader,
                     VK_SHADER_STAGE_RAYGEN_BIT_NV | VK_SHADER_STAGE_MISS_BIT_NV | VK_SHADER_STAGE_CALLABLE_BIT_NV)) {
                 skip |= LogError(device,
                                  isKHR ? "VUID-VkRayTracingShaderGroupCreateInfoKHR-type-03474"
@@ -3539,7 +3566,7 @@ bool CoreChecks::ValidateRayTracingPipeline(PIPELINE_STATE *pipeline, const safe
                                  ": pGroups[%d]", group_index);
             }
         } else if (group.type == VK_RAY_TRACING_SHADER_GROUP_TYPE_PROCEDURAL_HIT_GROUP_NV) {
-            if (!GroupHasValidIndex(*pipeline, group.intersectionShader, VK_SHADER_STAGE_INTERSECTION_BIT_NV)) {
+            if (!GroupHasValidIndex(pipeline, group.intersectionShader, VK_SHADER_STAGE_INTERSECTION_BIT_NV)) {
                 skip |= LogError(device,
                                  isKHR ? "VUID-VkRayTracingShaderGroupCreateInfoKHR-type-03476"
                                        : "VUID-VkRayTracingShaderGroupCreateInfoNV-type-02415",
@@ -3556,13 +3583,13 @@ bool CoreChecks::ValidateRayTracingPipeline(PIPELINE_STATE *pipeline, const safe
 
         if (group.type == VK_RAY_TRACING_SHADER_GROUP_TYPE_PROCEDURAL_HIT_GROUP_NV ||
             group.type == VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_NV) {
-            if (!GroupHasValidIndex(*pipeline, group.anyHitShader, VK_SHADER_STAGE_ANY_HIT_BIT_KHR)) {
+            if (!GroupHasValidIndex(pipeline, group.anyHitShader, VK_SHADER_STAGE_ANY_HIT_BIT_KHR)) {
                 skip |= LogError(device,
                                  isKHR ? "VUID-VkRayTracingShaderGroupCreateInfoKHR-anyHitShader-03479"
                                        : "VUID-VkRayTracingShaderGroupCreateInfoNV-anyHitShader-02418",
                                  ": pGroups[%d]", group_index);
             }
-            if (!GroupHasValidIndex(*pipeline, group.closestHitShader, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR)) {
+            if (!GroupHasValidIndex(pipeline, group.closestHitShader, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR)) {
                 skip |= LogError(device,
                                  isKHR ? "VUID-VkRayTracingShaderGroupCreateInfoKHR-closestHitShader-03478"
                                        : "VUID-VkRayTracingShaderGroupCreateInfoNV-closestHitShader-02417",
@@ -3660,7 +3687,7 @@ bool CoreChecks::PreCallValidateGetShaderModuleCreateInfoIdentifierEXT(VkDevice 
     return skip;
 }
 
-bool CoreChecks::ValidateComputeWorkGroupSizes(const SHADER_MODULE_STATE &module_state, const spirv_inst_iter &entrypoint,
+bool CoreChecks::ValidateComputeWorkGroupSizes(const SHADER_MODULE_STATE &module_state, const Instruction &entrypoint,
                                                const PipelineStageState &stage_state, uint32_t local_size_x, uint32_t local_size_y,
                                                uint32_t local_size_z) const {
     bool skip = false;
@@ -3792,6 +3819,102 @@ bool CoreChecks::ValidateComputeWorkGroupSizes(const SHADER_MODULE_STATE &module
                     phys_dev_props_core11.subgroupSize);
             }
         }
+    }
+    return skip;
+}
+
+bool CoreChecks::ValidateTaskMeshWorkGroupSizes(const SHADER_MODULE_STATE &module_state, const Instruction &entrypoint,
+                                                const PipelineStageState &stage_state, uint32_t local_size_x, uint32_t local_size_y,
+                                                uint32_t local_size_z) const {
+    bool skip = false;
+    // If spec constants were used then the local size are already found if possible
+    if (local_size_x == 0) {
+        if (!module_state.FindLocalSize(entrypoint, local_size_x, local_size_y, local_size_z)) {
+            return skip;  // no local size found
+        }
+    }
+
+    uint32_t max_local_size_x = 0;
+    uint32_t max_local_size_y = 0;
+    uint32_t max_local_size_z = 0;
+    uint32_t max_workgroup_size = 0;
+    const char *x_vuid;
+    const char *y_vuid;
+    const char *z_vuid;
+    const char *workgroup_size_vuid;
+    const uint32_t shader_stage = entrypoint.Word(1);
+
+    switch (shader_stage) {
+        case spv::ExecutionModelTaskEXT: {
+            x_vuid = "VUID-RuntimeSpirv-TaskEXT-07291";
+            y_vuid = "VUID-RuntimeSpirv-TaskEXT-07292";
+            z_vuid = "VUID-RuntimeSpirv-TaskEXT-07293";
+            workgroup_size_vuid = "VUID-RuntimeSpirv-TaskEXT-07294";
+            max_local_size_x = phys_dev_ext_props.mesh_shader_props.maxTaskWorkGroupSize[0];
+            max_local_size_y = phys_dev_ext_props.mesh_shader_props.maxTaskWorkGroupSize[1];
+            max_local_size_z = phys_dev_ext_props.mesh_shader_props.maxTaskWorkGroupSize[2];
+            max_workgroup_size = phys_dev_ext_props.mesh_shader_props.maxTaskWorkGroupInvocations;
+            break;
+        }
+
+        case spv::ExecutionModelMeshEXT: {
+            x_vuid = "VUID-RuntimeSpirv-MeshEXT-07295";
+            y_vuid = "VUID-RuntimeSpirv-MeshEXT-07296";
+            z_vuid = "VUID-RuntimeSpirv-MeshEXT-07297";
+            workgroup_size_vuid = "VUID-RuntimeSpirv-MeshEXT-07298";
+            max_local_size_x = phys_dev_ext_props.mesh_shader_props.maxMeshWorkGroupSize[0];
+            max_local_size_y = phys_dev_ext_props.mesh_shader_props.maxMeshWorkGroupSize[1];
+            max_local_size_z = phys_dev_ext_props.mesh_shader_props.maxMeshWorkGroupSize[2];
+            max_workgroup_size = phys_dev_ext_props.mesh_shader_props.maxMeshWorkGroupInvocations;
+            break;
+        }
+
+        // skip for spv::ExecutionModelTaskNV and spv::ExecutionModelMeshNV case
+        default: {
+            // must match one of the above case
+            return skip;
+        }
+    }
+
+    if (local_size_x > max_local_size_x) {
+        skip |= LogError(module_state.vk_shader_module(), x_vuid,
+                         "%s shader local workgroup size in X dimension (%" PRIu32
+                         ") must be less than or equal to the max workgroup size (%" PRIu32 ").",
+                         string_SpvExecutionModel(shader_stage), local_size_x, max_local_size_x);
+    }
+
+    if (local_size_y > max_local_size_y) {
+        skip |= LogError(module_state.vk_shader_module(), y_vuid,
+                         "%s shader local workgroup size in Y dimension (%" PRIu32
+                         ") must be less than or equal to the max workgroup size (%" PRIu32 ").",
+                         string_SpvExecutionModel(shader_stage), local_size_y, max_local_size_y);
+    }
+
+    if (local_size_z > max_local_size_z) {
+        skip |= LogError(module_state.vk_shader_module(), z_vuid,
+                         "%s shader local workgroup size in Z dimension (%" PRIu32
+                         ") must be less than or equal to the max workgroup size (%" PRIu32 ").",
+                         string_SpvExecutionModel(shader_stage), local_size_z, max_local_size_z);
+    }
+
+    uint64_t invocations = local_size_x * local_size_y;
+    // Prevent overflow.
+    bool fail = false;
+    if (invocations > UINT32_MAX || invocations > max_workgroup_size) {
+        fail = true;
+    }
+    if (!fail) {
+        invocations *= local_size_z;
+        if (invocations > UINT32_MAX || invocations > max_workgroup_size) {
+            fail = true;
+        }
+    }
+    if (fail) {
+        skip |= LogError(module_state.vk_shader_module(), workgroup_size_vuid,
+                         "%s shader total invocation size (%" PRIu32 "* %" PRIu32 "* %" PRIu32 " = %" PRIu32
+                         ") must be less than or equal to max workgroup invocations (%" PRIu32 ").",
+                         string_SpvExecutionModel(shader_stage), local_size_x, local_size_y, local_size_z,
+                         local_size_x * local_size_y * local_size_z, max_workgroup_size);
     }
     return skip;
 }

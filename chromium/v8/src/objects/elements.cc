@@ -3587,10 +3587,13 @@ class TypedElementsAccessor
     }
 
     size_t typed_array_length = typed_array.GetLength();
-    if (start_from >= typed_array_length) {
+    if (V8_UNLIKELY(start_from >= typed_array_length)) {
       // This can happen if the TypedArray got resized when we did ToInteger
       // on the last parameter of lastIndexOf.
       DCHECK(typed_array.IsVariableLength());
+      if (typed_array_length == 0) {
+        return Just<int64_t>(-1);
+      }
       start_from = typed_array_length - 1;
     }
 
@@ -3974,10 +3977,8 @@ class TypedElementsAccessor
       CHECK(!out_of_bounds);
       Handle<JSTypedArray> source_ta = Handle<JSTypedArray>::cast(source);
       ElementsKind source_kind = source_ta->GetElementsKind();
-      bool source_is_bigint =
-          source_kind == BIGINT64_ELEMENTS || source_kind == BIGUINT64_ELEMENTS;
-      bool target_is_bigint =
-          Kind == BIGINT64_ELEMENTS || Kind == BIGUINT64_ELEMENTS;
+      bool source_is_bigint = IsBigIntTypedArrayElementsKind(source_kind);
+      bool target_is_bigint = IsBigIntTypedArrayElementsKind(Kind);
       // If we have to copy more elements than we have in the source, we need to
       // do special handling and conversion; that happens in the slow case.
       if (source_is_bigint == target_is_bigint && !source_ta->WasDetached() &&

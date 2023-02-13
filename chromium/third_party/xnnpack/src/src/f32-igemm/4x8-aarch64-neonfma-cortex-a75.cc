@@ -9,14 +9,15 @@
 
 #include <xnnpack.h>
 #include <xnnpack/aarch64-assembler.h>
-#include <xnnpack/allocator.h>
 #include <xnnpack/igemm.h>
+#include <xnnpack/memory.h>
+
 
 namespace xnnpack {
 namespace aarch64 {
 namespace {
-class Generator : public Assembler {
-  using Assembler::Assembler;
+class Generator : public MacroAssembler {
+  using MacroAssembler::MacroAssembler;
  public:
   void generate(bool prefetch, size_t max_mr, size_t nc_mod_nr, size_t kc, size_t ks, float min, float max);
 };

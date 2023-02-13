@@ -1,4 +1,4 @@
-// Copyright 2014 PDFium Authors. All rights reserved.
+// Copyright 2014 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,8 +10,8 @@
 #include <utility>
 
 #include "core/fpdfapi/page/cpdf_page.h"
+#include "core/fpdfapi/page/cpdf_pageimagecache.h"
 #include "core/fpdfapi/parser/cpdf_document.h"
-#include "core/fpdfapi/render/cpdf_pagerendercache.h"
 #include "fpdfsdk/cpdfsdk_pageview.h"
 #include "fpdfsdk/fpdfxfa/cpdfxfa_context.h"
 #include "fpdfsdk/fpdfxfa/cpdfxfa_widget.h"
@@ -87,7 +87,7 @@ CPDFXFA_Page* CPDFXFA_Page::AsXFAPage() {
 }
 
 CPDF_Document* CPDFXFA_Page::GetDocument() const {
-  return m_pDocument.Get();
+  return m_pDocument;
 }
 
 bool CPDFXFA_Page::LoadPDFPage() {
@@ -124,8 +124,7 @@ void CPDFXFA_Page::LoadPDFPageFromDict(RetainPtr<CPDF_Dictionary> pPageDict) {
   DCHECK(pPageDict);
   m_pPDFPage =
       pdfium::MakeRetain<CPDF_Page>(GetDocument(), std::move(pPageDict));
-  m_pPDFPage->SetRenderCache(
-      std::make_unique<CPDF_PageRenderCache>(m_pPDFPage.Get()));
+  m_pPDFPage->AddPageImageCache();
   m_pPDFPage->ParseContent();
 }
 

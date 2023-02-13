@@ -22,11 +22,12 @@ namespace {
 using WgslGeneratorImplTest = TestHelper;
 
 TEST_F(WgslGeneratorImplTest, Emit_Loop) {
-    auto* body = Block(create<ast::DiscardStatement>());
+    auto* body = Block(Break());
     auto* continuing = Block();
     auto* l = Loop(body, continuing);
 
-    WrapInFunction(l);
+    Func("F", utils::Empty, ty.void_(), utils::Vector{l},
+         utils::Vector{Stage(ast::PipelineStage::kFragment)});
 
     GeneratorImpl& gen = Build();
 
@@ -34,7 +35,7 @@ TEST_F(WgslGeneratorImplTest, Emit_Loop) {
 
     ASSERT_TRUE(gen.EmitStatement(l)) << gen.error();
     EXPECT_EQ(gen.result(), R"(  loop {
-    discard;
+    break;
   }
 )");
 }
@@ -42,11 +43,37 @@ TEST_F(WgslGeneratorImplTest, Emit_Loop) {
 TEST_F(WgslGeneratorImplTest, Emit_LoopWithContinuing) {
     Func("a_statement", {}, ty.void_(), {});
 
-    auto* body = Block(create<ast::DiscardStatement>());
+    auto* body = Block(Break());
     auto* continuing = Block(CallStmt(Call("a_statement")));
     auto* l = Loop(body, continuing);
 
-    WrapInFunction(l);
+    Func("F", utils::Empty, ty.void_(), utils::Vector{l},
+         utils::Vector{Stage(ast::PipelineStage::kFragment)});
+
+    GeneratorImpl& gen = Build();
+
+    gen.increment_indent();
+
+    ASSERT_TRUE(gen.EmitStatement(l)) << gen.error();
+    EXPECT_EQ(gen.result(), R"(  loop {
+    break;
+
+    continuing {
+      a_statement();
+    }
+  }
+)");
+}
+
+TEST_F(WgslGeneratorImplTest, Emit_LoopWithContinuing_BreakIf) {
+    Func("a_statement", {}, ty.void_(), {});
+
+    auto* body = Block(create<ast::DiscardStatement>());
+    auto* continuing = Block(CallStmt(Call("a_statement")), BreakIf(true));
+    auto* l = Loop(body, continuing);
+
+    Func("F", utils::Empty, ty.void_(), utils::Vector{l},
+         utils::Vector{Stage(ast::PipelineStage::kFragment)});
 
     GeneratorImpl& gen = Build();
 
@@ -58,6 +85,7 @@ TEST_F(WgslGeneratorImplTest, Emit_LoopWithContinuing) {
 
     continuing {
       a_statement();
+      break if true;
     }
   }
 )");

@@ -56,16 +56,16 @@ struct BatchInfo {
 // various failure modes.
 static const char sRenderValidationShaderSource[] = R"(
 
-            let kNumDrawIndirectParams = 4u;
+            const kNumDrawIndirectParams = 4u;
 
-            let kIndexCountEntry = 0u;
-            let kFirstIndexEntry = 2u;
+            const kIndexCountEntry = 0u;
+            const kFirstIndexEntry = 2u;
 
             // Bitmasks for BatchInfo::flags
-            let kDuplicateBaseVertexInstance = 1u;
-            let kIndexedDraw = 2u;
-            let kValidationEnabled = 4u;
-            let kIndirectFirstInstanceEnabled = 8u;
+            const kDuplicateBaseVertexInstance = 1u;
+            const kIndexedDraw = 2u;
+            const kValidationEnabled = 4u;
+            const kIndirectFirstInstanceEnabled = 8u;
 
             struct BatchInfo {
                 numIndexBufferElementsLow: u32,
@@ -109,7 +109,7 @@ static const char sRenderValidationShaderSource[] = R"(
                 }
             }
 
-            fn pass(drawIndex: u32) {
+            fn set_pass(drawIndex: u32) {
                 let numInputParams = numIndirectParamsPerDrawCallInput();
                 var outIndex = drawIndex * numIndirectParamsPerDrawCallOutput();
                 let inIndex = batch.indirectOffsets[drawIndex];
@@ -137,7 +137,7 @@ static const char sRenderValidationShaderSource[] = R"(
                 }
 
                 if(!bool(batch.flags & kValidationEnabled)) {
-                    pass(id.x);
+                    set_pass(id.x);
                     return;
                 }
 
@@ -152,14 +152,14 @@ static const char sRenderValidationShaderSource[] = R"(
                 }
 
                 if (!bool(batch.flags & kIndexedDraw)) {
-                    pass(id.x);
+                    set_pass(id.x);
                     return;
                 }
 
                 if (batch.numIndexBufferElementsHigh >= 2u) {
                     // firstIndex and indexCount are both u32. The maximum possible sum of these
                     // values is 0x1fffffffe, which is less than 0x200000000. Nothing to validate.
-                    pass(id.x);
+                    set_pass(id.x);
                     return;
                 }
 
@@ -178,7 +178,7 @@ static const char sRenderValidationShaderSource[] = R"(
                     fail(id.x);
                     return;
                 }
-                pass(id.x);
+                set_pass(id.x);
             }
         )";
 

@@ -121,33 +121,33 @@ Object ThrowWasmError(Isolate* isolate, MessageTemplate message,
 // type; if the check succeeds, returns the object in its wasm representation;
 // otherwise throws a type error.
 RUNTIME_FUNCTION(Runtime_WasmJSToWasmObject) {
-  // This code is called from wrappers, so the "thread is wasm" flag is not set.
-  DCHECK_IMPLIES(trap_handler::IsTrapHandlerEnabled(),
-                 !trap_handler::IsThreadInWasm());
+  // TODO(manoskouk): Use {SaveAndClearThreadInWasmFlag} in runtime-internal.cc
+  // and runtime-strings.cc.
+  bool thread_in_wasm = trap_handler::IsThreadInWasm();
+  if (thread_in_wasm) trap_handler::ClearThreadInWasm();
   HandleScope scope(isolate);
-  DCHECK_EQ(3, args.length());
+  DCHECK_EQ(2, args.length());
   // 'raw_instance' can be either a WasmInstanceObject or undefined.
-  Object raw_instance = args[0];
-  Handle<Object> value(args[1], isolate);
+  Handle<Object> value(args[0], isolate);
   // Make sure ValueType fits properly in a Smi.
   static_assert(wasm::ValueType::kLastUsedBit + 1 <= kSmiValueSize);
-  int raw_type = args.smi_value_at(2);
+  int raw_type = args.smi_value_at(1);
 
-  const wasm::WasmModule* module =
-      raw_instance.IsWasmInstanceObject()
-          ? WasmInstanceObject::cast(raw_instance).module()
-          : nullptr;
-
-  wasm::ValueType type = wasm::ValueType::FromRawBitField(raw_type);
+  wasm::ValueType expected_canonical =
+      wasm::ValueType::FromRawBitField(raw_type);
   const char* error_message;
 
   Handle<Object> result;
-  bool success = internal::wasm::JSToWasmObject(isolate, module, value, type,
-                                                &error_message)
+  bool success = internal::wasm::JSToWasmObject(
+                     isolate, value, expected_canonical, &error_message)
                      .ToHandle(&result);
-  if (success) return *result;
-  THROW_NEW_ERROR_RETURN_FAILURE(
-      isolate, NewTypeError(MessageTemplate::kWasmTrapJSTypeError));
+  Object ret = success ? *result
+                       : isolate->Throw(*isolate->factory()->NewTypeError(
+                             MessageTemplate::kWasmTrapJSTypeError));
+  if (thread_in_wasm && !isolate->has_pending_exception()) {
+    trap_handler::SetThreadInWasm();
+  }
+  return ret;
 }
 
 RUNTIME_FUNCTION(Runtime_WasmMemoryGrow) {
@@ -238,29 +238,52 @@ RUNTIME_FUNCTION(Runtime_WasmStackGuard) {
 
 RUNTIME_FUNCTION(Runtime_WasmCompileLazy) {
   ClearThreadInWasmScope wasm_flag(isolate);
+  DisallowHeapAllocation no_gc;
   HandleScope scope(isolate);
-  DCHECK_EQ(3, args.length());
-  Handle<WasmInstanceObject> instance(WasmInstanceObject::cast(args[0]),
-                                      isolate);
+  DCHECK_EQ(2, args.length());
+  WasmInstanceObject instance = WasmInstanceObject::cast(args[0]);
   int func_index = args.smi_value_at(1);
 
-  // Save the native_module on the stack, where the GC will use it to scan
-  // WasmCompileLazy stack frames.
-  wasm::NativeModule** native_module_stack_slot =
-      reinterpret_cast<wasm::NativeModule**>(args.address_of_arg_at(2));
-  *native_module_stack_slot = instance->module_object().native_module();
-
   DCHECK(isolate->context().is_null());
-  isolate->set_context(instance->native_context());
+  isolate->set_context(instance.native_context());
   bool success = wasm::CompileLazy(isolate, instance, func_index);
   if (!success) {
+    DCHECK(v8_flags.wasm_lazy_validation);
+    AllowHeapAllocation throwing_unwinds_the_stack;
     wasm::ThrowLazyCompilationError(
-        isolate, instance->module_object().native_module(), func_index);
+        isolate, instance.module_object().native_module(), func_index);
     DCHECK(isolate->has_pending_exception());
     return ReadOnlyRoots{isolate}.exception();
   }
 
-  return Smi::FromInt(wasm::JumpTableOffset(instance->module(), func_index));
+  return Smi::FromInt(wasm::JumpTableOffset(instance.module(), func_index));
+}
+
+RUNTIME_FUNCTION(Runtime_WasmAllocateFeedbackVector) {
+  ClearThreadInWasmScope wasm_flag(isolate);
+  DCHECK(v8_flags.wasm_speculative_inlining);
+  HandleScope scope(isolate);
+  DCHECK_EQ(3, args.length());
+  Handle<WasmInstanceObject> instance(WasmInstanceObject::cast(args[0]),
+                                      isolate);
+  int declared_func_index = args.smi_value_at(1);
+  wasm::NativeModule** native_module_stack_slot =
+      reinterpret_cast<wasm::NativeModule**>(args.address_of_arg_at(2));
+  wasm::NativeModule* native_module = instance->module_object().native_module();
+  // We have to save the native_module on the stack, in case the allocation
+  // triggers a GC and we need the module to scan LiftoffSetupFrame stack frame.
+  *native_module_stack_slot = native_module;
+
+  DCHECK(isolate->context().is_null());
+  isolate->set_context(instance->native_context());
+
+  const wasm::WasmModule* module = native_module->module();
+  int func_index = declared_func_index + module->num_imported_functions;
+  Handle<FixedArray> vector = isolate->factory()->NewFixedArrayWithZeroes(
+      NumFeedbackSlots(module, func_index));
+  DCHECK_EQ(instance->feedback_vectors().get(declared_func_index), Smi::zero());
+  instance->feedback_vectors().set(declared_func_index, *vector);
+  return *vector;
 }
 
 namespace {
@@ -805,6 +828,7 @@ void SyncStackLimit(Isolate* isolate) {
   }
   uintptr_t limit = reinterpret_cast<uintptr_t>(stack->jmpbuf()->stack_limit);
   isolate->stack_guard()->SetStackLimit(limit);
+  isolate->RecordStackSwitchForScanning();
 }
 }  // namespace
 

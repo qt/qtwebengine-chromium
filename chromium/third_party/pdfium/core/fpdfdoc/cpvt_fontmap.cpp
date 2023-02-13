@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2016 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -34,7 +34,7 @@ void CPVT_FontMap::SetupAnnotSysPDFFont() {
     return;
 
   RetainPtr<CPDF_Font> pPDFFont =
-      CPDF_InteractiveForm::AddNativeInteractiveFormFont(m_pDocument.Get(),
+      CPDF_InteractiveForm::AddNativeInteractiveFormFont(m_pDocument,
                                                          &m_sSysFontAlias);
   if (!pPDFFont)
     return;
@@ -42,7 +42,7 @@ void CPVT_FontMap::SetupAnnotSysPDFFont() {
   RetainPtr<CPDF_Dictionary> pFontList = m_pResDict->GetMutableDictFor("Font");
   if (ValidateFontResourceDict(pFontList.Get()) &&
       !pFontList->KeyExist(m_sSysFontAlias)) {
-    pFontList->SetNewFor<CPDF_Reference>(m_sSysFontAlias, m_pDocument.Get(),
+    pFontList->SetNewFor<CPDF_Reference>(m_sSysFontAlias, m_pDocument,
                                          pPDFFont->GetFontDictObjNum());
   }
   m_pSysFont = std::move(pPDFFont);

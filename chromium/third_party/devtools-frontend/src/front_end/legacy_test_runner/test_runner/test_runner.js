@@ -36,6 +36,7 @@ function _setupTestHelpers(target) {
 
   self.TestRunner.networkManager = target.model(SDK.NetworkManager);
   self.TestRunner.securityOriginManager = target.model(SDK.SecurityOriginManager);
+  self.TestRunner.storageKeyManager = target.model(SDK.StorageKeyManager);
   self.TestRunner.resourceTreeModel = target.model(SDK.ResourceTreeModel);
   self.TestRunner.debuggerModel = target.model(SDK.DebuggerModel);
   self.TestRunner.runtimeModel = target.model(SDK.RuntimeModel);
@@ -86,21 +87,22 @@ export class _TestObserver {
    * @override
    */
   targetAdded(target) {
-    if (target.id() === 'main') {
+    if (target.id() === 'main' && target.type() === 'frame' ||
+        target.parentTarget()?.type() === 'tab' && target.type() === 'frame' && !target.targetInfo()?.subtype?.length) {
       _setupTestHelpers(target);
+      if (_startedTest) {
+        return;
+      }
+      _startedTest = true;
+      TestRunner
+          .loadHTML(`
+        <head>
+          <base href="${TestRunner.url()}">
+        </head>
+        <body>
+        </body>
+      `).then(() => _executeTestScript());
     }
-    if (_startedTest) {
-      return;
-    }
-    _startedTest = true;
-    TestRunner
-        .loadHTML(`
-      <head>
-        <base href="${TestRunner.url()}">
-      </head>
-      <body>
-      </body>
-    `).then(() => _executeTestScript());
   }
 
   /**

@@ -183,20 +183,11 @@ static_assert(std::is_same<uint64_t, DISTINCT_NONDISPATCHABLE_PHONY_HANDLE>::val
               "Mismatched non-dispatchable handle handle, expected uint64_t.");
 #endif
 
-// Suppress unused warning on Linux
-#if defined(__GNUC__)
-#define DECORATE_UNUSED __attribute__((unused))
-#else
-#define DECORATE_UNUSED
-#endif
-
 // clang-format off
-static const char DECORATE_UNUSED *kVUID_Threading_Info = "UNASSIGNED-Threading-Info";
-static const char DECORATE_UNUSED *kVUID_Threading_MultipleThreads = "UNASSIGNED-Threading-MultipleThreads";
-static const char DECORATE_UNUSED *kVUID_Threading_SingleThreadReuse = "UNASSIGNED-Threading-SingleThreadReuse";
+[[maybe_unused]] static const char *kVUID_Threading_Info = "UNASSIGNED-Threading-Info";
+[[maybe_unused]] static const char *kVUID_Threading_MultipleThreads = "UNASSIGNED-Threading-MultipleThreads";
+[[maybe_unused]] static const char *kVUID_Threading_SingleThreadReuse = "UNASSIGNED-Threading-SingleThreadReuse";
 // clang-format on
-
-#undef DECORATE_UNUSED
 
 class ObjectUseData
 {
@@ -421,7 +412,7 @@ private:
 class ThreadSafety : public ValidationObject {
 public:
 
-    ReadWriteLock thread_safety_lock;
+    std::shared_mutex thread_safety_lock;
 
     // Override chassis read/write locks for this validation object
     // This override takes a deferred lock. i.e. it is not acquired.
@@ -633,7 +624,14 @@ void PostCallRecordGetRandROutputDisplayEXT(
     VkDisplayKHR*                               pDisplay,
     VkResult                                    result) override;
 
-#endif // VK_USE_PLATFORM_XLIB_XRANDR_EXT"""
+#endif // VK_USE_PLATFORM_XLIB_XRANDR_EXT
+
+void PostCallRecordGetDrmDisplayEXT(
+    VkPhysicalDevice                            physicalDevice,
+    int32_t                                     drmFd,
+    uint32_t                                    connectorId,
+    VkDisplayKHR*                               display,
+    VkResult                                    result) override;"""
 
 
     inline_custom_source_preamble = """
@@ -939,7 +937,7 @@ void ThreadSafety::PreCallRecordUpdateDescriptorSetWithTemplate(
     StartReadObjectParentInstance(device, "vkUpdateDescriptorSetWithTemplate");
     StartReadObject(descriptorUpdateTemplate, "vkUpdateDescriptorSetWithTemplate");
 
-    bool read_only = DsReadOnly(descriptorSet);
+    const bool read_only = DsReadOnly(descriptorSet);
     if (read_only) {
         StartReadObject(descriptorSet, "vkUpdateDescriptorSetWithTemplate");
     } else {
@@ -956,7 +954,7 @@ void ThreadSafety::PostCallRecordUpdateDescriptorSetWithTemplate(
     FinishReadObjectParentInstance(device, "vkUpdateDescriptorSetWithTemplate");
     FinishReadObject(descriptorUpdateTemplate, "vkUpdateDescriptorSetWithTemplate");
 
-    bool read_only = DsReadOnly(descriptorSet);
+    const bool read_only = DsReadOnly(descriptorSet);
     if (read_only) {
         FinishReadObject(descriptorSet, "vkUpdateDescriptorSetWithTemplate");
     } else {
@@ -973,7 +971,7 @@ void ThreadSafety::PreCallRecordUpdateDescriptorSetWithTemplateKHR(
     StartReadObjectParentInstance(device, "vkUpdateDescriptorSetWithTemplateKHR");
     StartReadObject(descriptorUpdateTemplate, "vkUpdateDescriptorSetWithTemplateKHR");
 
-    bool read_only = DsReadOnly(descriptorSet);
+    const bool read_only = DsReadOnly(descriptorSet);
     if (read_only) {
         StartReadObject(descriptorSet, "vkUpdateDescriptorSetWithTemplateKHR");
     } else {
@@ -990,7 +988,7 @@ void ThreadSafety::PostCallRecordUpdateDescriptorSetWithTemplateKHR(
     FinishReadObjectParentInstance(device, "vkUpdateDescriptorSetWithTemplateKHR");
     FinishReadObject(descriptorUpdateTemplate, "vkUpdateDescriptorSetWithTemplateKHR");
 
-    bool read_only = DsReadOnly(descriptorSet);
+    const bool read_only = DsReadOnly(descriptorSet);
     if (read_only) {
         FinishReadObject(descriptorSet, "vkUpdateDescriptorSetWithTemplateKHR");
     } else {
@@ -1101,7 +1099,7 @@ void ThreadSafety::PostCallRecordGetSwapchainImagesKHR(VkDevice device, VkSwapch
                                                        VkImage *pSwapchainImages, VkResult result) {
     FinishReadObjectParentInstance(device, "vkGetSwapchainImagesKHR");
     FinishReadObjectParentInstance(swapchain, "vkGetSwapchainImagesKHR");
-    if (pSwapchainImages != NULL) {
+    if (pSwapchainImages != nullptr) {
         auto lock = WriteLockGuard(thread_safety_lock);
         auto &wrapped_swapchain_image_handles = swapchain_wrapped_image_handle_map[swapchain];
         for (uint32_t i = static_cast<uint32_t>(wrapped_swapchain_image_handles.size()); i < *pSwapchainImageCount; i++) {
@@ -1345,6 +1343,16 @@ void ThreadSafety::PostCallRecordGetRandROutputDisplayEXT(
 
 #endif // VK_USE_PLATFORM_XLIB_XRANDR_EXT
 
+void ThreadSafety::PostCallRecordGetDrmDisplayEXT(
+    VkPhysicalDevice                            physicalDevice,
+    int32_t                                     drmFd,
+    uint32_t                                    connectorId,
+    VkDisplayKHR*                               display,
+    VkResult                                    result) {
+    if ((result != VK_SUCCESS) || (display == nullptr)) return;
+    CreateObjectParentInstance(*display);
+}
+
 void ThreadSafety::PreCallRecordRegisterDisplayEventEXT(
     VkDevice                                    device,
     VkDisplayKHR                                display,
@@ -1425,9 +1433,8 @@ void ThreadSafety::PostCallRecordCreateRayTracingPipelinesKHR(
         }
     };
 
-    bool is_operation_deferred = (deferredOperation != VK_NULL_HANDLE && result == VK_OPERATION_DEFERRED_KHR);
-
-    if(is_operation_deferred) {
+    const bool is_operation_deferred = (deferredOperation != VK_NULL_HANDLE && result == VK_OPERATION_DEFERRED_KHR);
+    if (is_operation_deferred) {
         auto layer_data = GetLayerDataPtr(get_dispatch_key(device), layer_data_map);
         if (wrap_handles) {
             deferredOperation = layer_data->Unwrap(deferredOperation);
@@ -1796,6 +1803,7 @@ void ThreadSafety::PostCallRecordCreateRayTracingPipelinesKHR(
             'vkGetDisplayModeProperties2KHR',
             'vkGetDisplayPlaneCapabilities2KHR',
             'vkGetRandROutputDisplayEXT',
+            'vkGetDrmDisplayEXT',
             'vkDeviceWaitIdle',
             'vkRegisterDisplayEventEXT',
             'vkCreateRayTracingPipelinesKHR',

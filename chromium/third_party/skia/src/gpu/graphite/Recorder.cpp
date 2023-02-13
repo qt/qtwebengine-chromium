@@ -7,23 +7,27 @@
 
 #include "include/gpu/graphite/Recorder.h"
 
+#include "include/core/SkCanvas.h"
 #include "include/effects/SkRuntimeEffect.h"
 #include "include/gpu/graphite/BackendTexture.h"
 #include "include/gpu/graphite/GraphiteTypes.h"
 #include "include/gpu/graphite/ImageProvider.h"
 #include "include/gpu/graphite/Recording.h"
-#include "src/core/SkPipelineData.h"
-#include "src/core/SkRuntimeEffectDictionary.h"
+#include "src/core/SkConvertPixels.h"
 #include "src/gpu/AtlasTypes.h"
 #include "src/gpu/graphite/Caps.h"
 #include "src/gpu/graphite/CommandBuffer.h"
 #include "src/gpu/graphite/ContextPriv.h"
+#include "src/gpu/graphite/CopyTask.h"
 #include "src/gpu/graphite/Device.h"
 #include "src/gpu/graphite/DrawBufferManager.h"
 #include "src/gpu/graphite/GlobalCache.h"
+#include "src/gpu/graphite/Log.h"
+#include "src/gpu/graphite/PipelineData.h"
 #include "src/gpu/graphite/PipelineDataCache.h"
 #include "src/gpu/graphite/RecorderPriv.h"
 #include "src/gpu/graphite/ResourceProvider.h"
+#include "src/gpu/graphite/RuntimeEffectDictionary.h"
 #include "src/gpu/graphite/SharedContext.h"
 #include "src/gpu/graphite/TaskGraph.h"
 #include "src/gpu/graphite/Texture.h"
@@ -79,7 +83,7 @@ static int32_t next_id() {
 Recorder::Recorder(sk_sp<SharedContext> sharedContext,
                    const RecorderOptions& options)
         : fSharedContext(std::move(sharedContext))
-        , fRuntimeEffectDict(std::make_unique<SkRuntimeEffectDictionary>())
+        , fRuntimeEffectDict(std::make_unique<RuntimeEffectDictionary>())
         , fGraph(new TaskGraph)
         , fUniformDataCache(new UniformDataCache)
         , fTextureDataCache(new TextureDataCache)
@@ -108,6 +112,11 @@ Recorder::~Recorder() {
     for (auto& device : fTrackedDevices) {
         device->abandonRecorder();
     }
+#if GRAPHITE_TEST_UTILS
+    if (fContext) {
+        fContext->priv().deregisterRecorder(this);
+    }
+#endif
 
     // TODO: needed?
     fStrikeCache->freeAll();
@@ -120,6 +129,22 @@ std::unique_ptr<Recording> Recorder::snap() {
     for (auto& device : fTrackedDevices) {
         device->flushPendingWorkToRecorder();
     }
+
+    std::unordered_set<sk_sp<TextureProxy>, Recording::ProxyHash> nonVolatileLazyProxies;
+    std::unordered_set<sk_sp<TextureProxy>, Recording::ProxyHash> volatileLazyProxies;
+    fTextureDataCache->foreach([&](const TextureDataBlock* block) {
+        for (int j = 0; j < block->numTextures(); ++j) {
+            const TextureDataBlock::SampledTexture& tex = block->texture(j);
+
+            if (tex.first->isLazy()) {
+                if (tex.first->isVolatile()) {
+                    volatileLazyProxies.insert(tex.first);
+                } else {
+                    nonVolatileLazyProxies.insert(tex.first);
+                }
+            }
+        }
+    });
 
     // TODO: fulfill all promise images in the TextureDataCache here
     // TODO: create all the samplers needed in the TextureDataCache here
@@ -138,7 +163,17 @@ std::unique_ptr<Recording> Recorder::snap() {
         return nullptr;
     }
 
-    std::unique_ptr<Recording> recording(new Recording(std::move(fGraph)));
+    std::unique_ptr<Recording::LazyProxyData> targetProxyData;
+    if (fTargetProxyData) {
+        targetProxyData = std::move(fTargetProxyData);
+        fTargetProxyDevice.reset();
+        fTargetProxyCanvas.reset();
+    }
+    std::unique_ptr<Recording> recording(new Recording(std::move(fGraph),
+                                                       std::move(nonVolatileLazyProxies),
+                                                       std::move(volatileLazyProxies),
+                                                       std::move(targetProxyData)));
+
     fDrawBufferManager->transferToRecording(recording.get());
     fUploadBufferManager->transferToRecording(recording.get());
 
@@ -147,6 +182,25 @@ std::unique_ptr<Recording> Recorder::snap() {
     fTextureDataCache = std::make_unique<TextureDataCache>();
     fAtlasManager->evictAtlases();
     return recording;
+}
+
+SkCanvas* Recorder::makeDeferredCanvas(const SkImageInfo& imageInfo,
+                                       const TextureInfo& textureInfo) {
+    if (fTargetProxyCanvas) {
+        // Require snapping before requesting another canvas.
+        SKGPU_LOG_W("Requested a new deferred canvas before snapping the previous one");
+        return nullptr;
+    }
+
+    fTargetProxyData = std::make_unique<Recording::LazyProxyData>(textureInfo);
+    fTargetProxyDevice = Device::Make(this,
+                                      fTargetProxyData->refLazyProxy(),
+                                      imageInfo.dimensions(),
+                                      imageInfo.colorInfo(),
+                                      {},
+                                      false);
+    fTargetProxyCanvas = std::make_unique<SkCanvas>(fTargetProxyDevice);
+    return fTargetProxyCanvas.get();
 }
 
 void Recorder::registerDevice(Device* device) {
@@ -164,7 +218,7 @@ void Recorder::deregisterDevice(const Device* device) {
     }
 }
 
-#if GR_TEST_UTILS
+#if GRAPHITE_TEST_UTILS
 bool Recorder::deviceIsRegistered(Device* device) {
     ASSERT_SINGLE_OWNER
     for (auto& currentDevice : fTrackedDevices) {
@@ -200,7 +254,7 @@ bool Recorder::updateBackendTexture(const BackendTexture& backendTex,
 
     // If the texture has MIP levels then we require that the full set is overwritten.
     int numExpectedLevels = 1;
-    if (backendTex.info().numMipLevels() > 1) {
+    if (backendTex.info().mipmapped() == Mipmapped::kYes) {
         numExpectedLevels = SkMipmap::ComputeLevelCount(backendTex.dimensions().width(),
                                                         backendTex.dimensions().height()) + 1;
     }
@@ -236,9 +290,10 @@ bool Recorder::updateBackendTexture(const BackendTexture& backendTex,
                                                  std::move(proxy),
                                                  ct,
                                                  mipLevels,
-                                                 SkIRect::MakeSize(backendTex.dimensions()));
+                                                 SkIRect::MakeSize(backendTex.dimensions()),
+                                                 nullptr);
 
-    sk_sp<Task> uploadTask = UploadTask::Make(upload);
+    sk_sp<Task> uploadTask = UploadTask::Make(std::move(upload));
 
     this->priv().add(std::move(uploadTask));
 
@@ -265,5 +320,13 @@ void RecorderPriv::flushTrackedDevices() {
         device->flushPendingWorkToRecorder();
     }
 }
+
+#if GRAPHITE_TEST_UTILS
+// used by the Context that created this Recorder to set a back pointer
+void RecorderPriv::setContext(Context* context) {
+    fRecorder->fContext = context;
+}
+#endif
+
 
 } // namespace skgpu::graphite

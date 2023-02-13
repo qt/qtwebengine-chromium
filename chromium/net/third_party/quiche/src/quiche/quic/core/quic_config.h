@@ -247,6 +247,10 @@ class QUIC_EXPORT_PRIVATE QuicConfig {
 
   bool HasReceivedConnectionOptions() const;
 
+  void SetGoogleHandshakeMessageToSend(std::string message);
+
+  const absl::optional<std::string>& GetReceivedGoogleHandshakeMessage() const;
+
   // Sets initial received connection options.  All received connection options
   // will be initialized with these fields. Initial received options may only be
   // set once per config, prior to the setting of any other options.  If options
@@ -417,6 +421,7 @@ class QUIC_EXPORT_PRIVATE QuicConfig {
   // Stateless reset token.
   void SetStatelessResetTokenToSend(
       const StatelessResetToken& stateless_reset_token);
+  bool HasStatelessResetTokenToSend() const;
   bool HasReceivedStatelessResetToken() const;
   const StatelessResetToken& ReceivedStatelessResetToken() const;
 
@@ -510,6 +515,9 @@ class QUIC_EXPORT_PRIVATE QuicConfig {
   received_custom_transport_parameters() const {
     return received_custom_transport_parameters_;
   }
+
+  // Called to clear google_handshake_message to send or received.
+  void ClearGoogleHandshakeMessage();
 
  private:
   friend class test::QuicConfigPeer;
@@ -657,6 +665,10 @@ class QUIC_EXPORT_PRIVATE QuicConfig {
   // handshake.
   TransportParameters::ParameterMap custom_transport_parameters_to_send_;
   TransportParameters::ParameterMap received_custom_transport_parameters_;
+
+  // Google internal handshake message.
+  absl::optional<std::string> google_handshake_message_to_send_;
+  absl::optional<std::string> received_google_handshake_message_;
 };
 
 }  // namespace quic

@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2016 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -31,6 +31,7 @@ class CPDF_ObjectStream;
 class CPDF_ReadValidator;
 class CPDF_SecurityHandler;
 class CPDF_SyntaxParser;
+class IFX_ArchiveStream;
 class IFX_SeekableReadStream;
 
 class CPDF_Parser {
@@ -64,7 +65,7 @@ class CPDF_Parser {
   CPDF_Parser();
   ~CPDF_Parser();
 
-  Error StartParse(const RetainPtr<IFX_SeekableReadStream>& pFile,
+  Error StartParse(RetainPtr<IFX_SeekableReadStream> pFile,
                    const ByteString& password);
   Error StartLinearizedParse(RetainPtr<CPDF_ReadValidator> validator,
                              const ByteString& password);
@@ -109,6 +110,7 @@ class CPDF_Parser {
   RetainPtr<CPDF_Object> ParseIndirectObjectAt(FX_FILESIZE pos,
                                                uint32_t objnum);
 
+  FX_FILESIZE GetDocumentSize() const;
   uint32_t GetFirstPageNo() const;
   const CPDF_LinearizedHeader* GetLinearizedHeader() const {
     return m_pLinearized.get();
@@ -120,7 +122,8 @@ class CPDF_Parser {
 
   bool xref_table_rebuilt() const { return m_bXRefTableRebuilt; }
 
-  CPDF_SyntaxParser* GetSyntax() const { return m_pSyntax.get(); }
+  std::vector<unsigned int> GetTrailerEnds();
+  bool WriteToArchive(IFX_ArchiveStream* archive, FX_FILESIZE src_size);
 
   void SetLinearizedHeaderForTesting(
       std::unique_ptr<CPDF_LinearizedHeader> pLinearized);
@@ -186,7 +189,7 @@ class CPDF_Parser {
   // m_CrossRefTable must be destroyed after m_pSecurityHandler due to the
   // ownership of the ID array data.
   std::unique_ptr<CPDF_CrossRefTable> m_CrossRefTable;
-  FX_FILESIZE m_LastXRefOffset;
+  FX_FILESIZE m_LastXRefOffset = 0;
   ByteString m_Password;
   std::unique_ptr<CPDF_LinearizedHeader> m_pLinearized;
 

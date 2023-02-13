@@ -71,6 +71,19 @@ deps = {
     'dep_type': 'cipd',
     'condition': 'host_os == "mac" and not build_with_chromium',
   },
+
+  'third_party/ninja': {
+    'packages': [
+      # https://chrome-infra-packages.appspot.com/p/infra/3pp/tools/ninja
+      {
+        'package': 'infra/3pp/tools/ninja/${{platform}}',
+        'version': 'version:2@1.8.2.chromium.3',
+      }
+    ],
+    'dep_type': 'cipd',
+    'condition': 'not build_with_chromium',
+  },
+
   'third_party/protobuf/src': {
     'url': Var('chromium_git') +
       '/external/github.com/protocolbuffers/protobuf.git' +

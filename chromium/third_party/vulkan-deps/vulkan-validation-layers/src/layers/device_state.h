@@ -37,7 +37,8 @@ struct DeviceFeatures {
 
     VkPhysicalDeviceExclusiveScissorFeaturesNV exclusive_scissor_features;
     VkPhysicalDeviceShadingRateImageFeaturesNV shading_rate_image_features;
-    VkPhysicalDeviceMeshShaderFeaturesNV mesh_shader_features;
+    VkPhysicalDeviceMeshShaderFeaturesEXT mesh_shader_features;
+    VkPhysicalDeviceDescriptorBufferFeaturesEXT descriptor_buffer_features;
     VkPhysicalDeviceTransformFeedbackFeaturesEXT transform_feedback_features;
     VkPhysicalDeviceVertexAttributeDivisorFeaturesEXT vtx_attrib_divisor_features;
     VkPhysicalDeviceBufferDeviceAddressFeaturesEXT buffer_device_address_ext_features;
@@ -75,6 +76,10 @@ struct DeviceFeatures {
     VkPhysicalDeviceConditionalRenderingFeaturesEXT conditional_rendering_features;
     VkPhysicalDeviceWorkgroupMemoryExplicitLayoutFeaturesKHR workgroup_memory_explicit_layout_features;
     VkPhysicalDeviceExtendedDynamicState2FeaturesEXT extended_dynamic_state2_features;
+    VkPhysicalDeviceExtendedDynamicState3FeaturesEXT extended_dynamic_state3_features;
+    VkPhysicalDeviceDepthClipEnableFeaturesEXT depth_clip_enable_features;
+    VkPhysicalDeviceDepthClipControlFeaturesEXT depth_clip_control_features;
+    VkPhysicalDeviceLineRasterizationFeaturesEXT line_rasterization_features;
     VkPhysicalDeviceVertexInputDynamicStateFeaturesEXT vertex_input_dynamic_state_features;
     VkPhysicalDeviceInheritedViewportScissorFeaturesNV inherited_viewport_scissor_features;
     VkPhysicalDeviceProvokingVertexFeaturesEXT provoking_vertex_features;
@@ -98,6 +103,8 @@ struct DeviceFeatures {
     VkPhysicalDeviceShaderModuleIdentifierFeaturesEXT shader_module_identifier_features;
     VkPhysicalDeviceAttachmentFeedbackLoopLayoutFeaturesEXT attachment_feedback_loop_layout_features;
     VkPhysicalDevicePipelineProtectedAccessFeaturesEXT pipeline_protected_access_features;
+    VkPhysicalDeviceLinearColorAttachmentFeaturesNV linear_color_attachment_features;
+    VkPhysicalDeviceShaderCoreBuiltinsFeaturesARM shader_core_builtins_features;
     // If a new feature is added here that involves a SPIR-V capability add also in spirv_validation_generator.py
     // This is known by checking the table in the spec or if the struct is in a <spirvcapability> in vk.xml
 };

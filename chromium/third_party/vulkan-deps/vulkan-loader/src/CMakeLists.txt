@@ -14,11 +14,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ~~~
-
 cmake_minimum_required(VERSION 3.10.2)
-
-# Apple: Must be set before enable_language() or project() as it may influence configuration of the toolchain and flags.
-set(CMAKE_OSX_DEPLOYMENT_TARGET "10.12" CACHE STRING "Minimum OS X deployment version")
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 # If we are building in Visual Studio 2015 and with a CMake version 3.19 or greater, we need to set this variable
 # so that CMake will choose a Windows SDK version higher than 10.0.14393.0, as dxgi1_6.h is only found in Windows SDK
@@ -52,7 +49,7 @@ if (UPDATE_DEPS)
     endif()
 
     message("********************************************************************************")
-    message("* NOTE: Adding target vl_update_deps to run as needed for updating            *")
+    message("* NOTE: Adding target vl_update_deps to run as needed for updating             *")
     message("*       dependencies.                                                          *")
     message("********************************************************************************")
 
@@ -82,8 +79,10 @@ else()
     message("********************************************************************************")
     find_package(PythonInterp 3 QUIET)
 endif()
+if (VULKAN_HEADERS_INSTALL_DIR)
+    list(APPEND CMAKE_PREFIX_PATH ${VULKAN_HEADERS_INSTALL_DIR})
+endif()
 
-set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 find_package(PythonInterp 3 QUIET)
 
 set(THREADS_PREFER_PTHREAD_FLAG ON)
@@ -110,44 +109,12 @@ if(BUILD_STATIC_LOADER)
         "or tested as part of the loader. Use it at your own risk.")
 endif()
 
-if (TARGET Vulkan::Headers)
-    message(STATUS "Using Vulkan headers from Vulkan::Headers target")
-    get_target_property(VulkanHeaders_INCLUDE_DIRS Vulkan::Headers INTERFACE_INCLUDE_DIRECTORIES)
-    get_target_property(VulkanRegistry_DIR Vulkan::Registry INTERFACE_INCLUDE_DIRECTORIES)
-else()
-    find_package(VulkanHeaders)
-    if(NOT ${VulkanHeaders_FOUND})
-        message(FATAL_ERROR "Could not find Vulkan headers path. This can be fixed by setting VULKAN_HEADERS_INSTALL_DIR to an "
-                            "installation of the Vulkan-Headers repository.")
-    endif()
-    if(NOT ${VulkanRegistry_FOUND})
-        message(FATAL_ERROR "Could not find Vulkan registry path. This can be fixed by setting VULKAN_HEADERS_INSTALL_DIR to an "
-                            "installation of the Vulkan-Headers repository.")
-    endif()
-
-    # set up the Vulkan::Headers target for consistency
-    add_library(vulkan-headers INTERFACE)
-    target_include_directories(vulkan-headers SYSTEM INTERFACE "${VulkanHeaders_INCLUDE_DIRS}")
-    add_library(Vulkan::Headers ALIAS vulkan-headers)
-endif()
-
-option(USE_CCACHE "Use ccache" OFF)
-if(USE_CCACHE)
-    find_program(CCACHE_FOUND ccache)
-    if(CCACHE_FOUND)
-        set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE ccache)
-    endif()
-endif()
+find_package(VulkanHeaders REQUIRED CONFIG QUIET)
 
 include(GNUInstallDirs)
 
 if(UNIX AND NOT APPLE) # i.e.: Linux
-    include(FindPkgConfig)
-endif()
-
-if(APPLE)
-    # CMake versions 3 or later need CMAKE_MACOSX_RPATH defined. This avoids the CMP0042 policy message.
-    set(CMAKE_MACOSX_RPATH 1)
+    find_package(PkgConfig)
 endif()
 
 set(GIT_BRANCH_NAME "--unknown--")
@@ -174,7 +141,7 @@ endif()
 
 if(WIN32 AND CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
     # Windows: if install locations not set by user, set install prefix to "<build_dir>\install".
-    set(CMAKE_INSTALL_PREFIX "${CMAKE_BINARY_DIR}/install" CACHE PATH "default install path" FORCE)
+    set(CMAKE_INSTALL_PREFIX "${CMAKE_CURRENT_BINARY_DIR}/install" CACHE PATH "default install path" FORCE)
 endif()
 
 # Enable IDE GUI folders.  "Helper targets" that don't have interesting source code should set their FOLDER property to this
@@ -298,13 +265,8 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang
         target_compile_options(loader_common_options INTERFACE -fno-strict-aliasing -fno-builtin-memcmp)
     endif()
 
-    # For GCC version 7.1 or greater, we need to disable the implicit fallthrough warning since there's no consistent way to satisfy
-    # all compilers until they all accept the C++17 standard
     if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
         target_compile_options(loader_common_options INTERFACE -Wno-stringop-truncation -Wno-stringop-overflow)
-        if(CMAKE_CXX_COMPILER_VERSION GREATER_EQUAL 7.1)
-            target_compile_options(loader_common_options INTERFACE -Wimplicit-fallthrough=0)
-        endif()
     endif()
 
     if(UNIX)
@@ -357,6 +319,7 @@ endif()
 
 # Optional codegen target
 if(PYTHONINTERP_FOUND)
+    get_target_property(VulkanRegistry_DIR Vulkan::Registry INTERFACE_INCLUDE_DIRECTORIES)
     add_custom_target(VulkanLoader_generated_source
                       COMMAND ${PYTHON_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/generate_source.py
                               ${VulkanRegistry_DIR} --incremental
@@ -495,7 +458,7 @@ if(BUILD_TESTS)
     endif()
 
     if (BUILD_TESTS)
-        add_subdirectory(tests ${CMAKE_BINARY_DIR}/tests)
+        add_subdirectory(tests)
     endif()
 
 endif()

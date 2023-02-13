@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -19,6 +19,12 @@ class FakeUniquePtr : public std::unique_ptr<T> {
   using std::unique_ptr<T>::unique_ptr;
   ~FakeUniquePtr() { std::unique_ptr<T>::release(); }
 };
+
+// Type-deducing wrapper for FakeUniquePtr<T>.
+template <class T>
+FakeUniquePtr<T> MakeFakeUniquePtr(T* arg) {
+  return FakeUniquePtr<T>(arg);
+}
 
 // Convenience routine for "int-fected" code, so that the stl collection
 // size_t size() method return values will be checked.

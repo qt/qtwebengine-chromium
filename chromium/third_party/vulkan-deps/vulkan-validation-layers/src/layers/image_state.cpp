@@ -37,9 +37,9 @@ static VkImageSubresourceRange MakeImageFullRange(const VkImageCreateInfo &creat
 
 #ifdef VK_USE_PLATFORM_ANDROID_KHR
     const VkExternalFormatANDROID *external_format_android = LvlFindInChain<VkExternalFormatANDROID>(&create_info);
-    bool is_external_format_conversion = (external_format_android != nullptr && external_format_android->externalFormat != 0);
+    const bool is_external_format_conversion = (external_format_android != nullptr && external_format_android->externalFormat != 0);
 #else
-    bool is_external_format_conversion = false;
+    const bool is_external_format_conversion = false;
 #endif
 
     if (FormatIsColor(format) || FormatIsMultiplane(format) || is_external_format_conversion) {
@@ -148,12 +148,12 @@ static IMAGE_STATE::MemoryReqs GetMemoryRequirements(const ValidationStateTracke
             static const std::array<VkImageAspectFlagBits, 3> aspects{VK_IMAGE_ASPECT_PLANE_0_BIT, VK_IMAGE_ASPECT_PLANE_1_BIT,
                                                                       VK_IMAGE_ASPECT_PLANE_2_BIT};
             assert(plane_count <= aspects.size());
-            auto image_plane_req = lvl_init_struct<VkImagePlaneMemoryRequirementsInfo>();
-            auto mem_req_info2 = lvl_init_struct<VkImageMemoryRequirementsInfo2>(&image_plane_req);
+            auto image_plane_req = LvlInitStruct<VkImagePlaneMemoryRequirementsInfo>();
+            auto mem_req_info2 = LvlInitStruct<VkImageMemoryRequirementsInfo2>(&image_plane_req);
             mem_req_info2.image = img;
 
             for (uint32_t i = 0; i < plane_count; i++) {
-                auto mem_reqs2 = lvl_init_struct<VkMemoryRequirements2>();
+                auto mem_reqs2 = LvlInitStruct<VkMemoryRequirements2>();
 
                 image_plane_req.planeAspect = aspects[i];
                 switch (dev_data->device_extensions.vk_khr_get_memory_requirements2) {
@@ -278,6 +278,9 @@ void IMAGE_STATE::Destroy() {
     // If it is, bad local entries could be created by CMD_BUFFER_STATE::GetImageSubresourceLayoutMap()
     // If an aliasing image was being destroyed (and layout_range_map was reset()), a nullptr keyed
     // entry could get put into CMD_BUFFER_STATE::aliased_image_layout_map.
+    //
+    // NOTE: the fragment_encoder should not be cleaned-up in case a semaphore to an acquired image is being processed
+    //       after the swapchain is waited, and the range generation needs an intact encoder.
     if (bind_swapchain) {
         bind_swapchain->RemoveParent(this);
         bind_swapchain = nullptr;
@@ -581,6 +584,8 @@ SWAPCHAIN_NODE::SWAPCHAIN_NODE(ValidationStateTracker *dev_data_, const VkSwapch
                                VkSwapchainKHR swapchain)
     : BASE_NODE(swapchain, kVulkanObjectTypeSwapchainKHR),
       createInfo(pCreateInfo),
+      images(),
+      exclusive_full_screen_access(false),
       shared_presentable(VK_PRESENT_MODE_SHARED_DEMAND_REFRESH_KHR == pCreateInfo->presentMode ||
                          VK_PRESENT_MODE_SHARED_CONTINUOUS_REFRESH_KHR == pCreateInfo->presentMode),
       image_create_info(GetImageCreateInfo(pCreateInfo)),
@@ -637,6 +642,21 @@ void SWAPCHAIN_NODE::NotifyInvalidate(const BASE_NODE::NodeList &invalid_nodes, 
     if (unlink) {
         surface = nullptr;
     }
+}
+
+SWAPCHAIN_IMAGE SWAPCHAIN_NODE::GetSwapChainImage(uint32_t index) const {
+    if (index < images.size()) {
+        return images[index];
+    }
+    return SWAPCHAIN_IMAGE();
+}
+
+std::shared_ptr<const IMAGE_STATE> SWAPCHAIN_NODE::GetSwapChainImageShared(uint32_t index) const {
+    const SWAPCHAIN_IMAGE swapchain_image(GetSwapChainImage(index));
+    if (swapchain_image.image_state) {
+        return swapchain_image.image_state->shared_from_this();
+    }
+    return std::shared_ptr<const IMAGE_STATE>();
 }
 
 void SURFACE_STATE::Destroy() {

@@ -1174,8 +1174,8 @@ void WebAssemblyTable(const v8::FunctionCallbackInfo<v8::Value>& args) {
                string->StringEquals(v8_str(isolate, "eqref"))) {
       type = i::wasm::kWasmEqRef;
     } else if (enabled_features.has_gc() &&
-               string->StringEquals(v8_str(isolate, "dataref"))) {
-      type = i::wasm::kWasmDataRef;
+               string->StringEquals(v8_str(isolate, "structref"))) {
+      type = i::wasm::kWasmStructRef;
     } else if (enabled_features.has_gc() &&
                string->StringEquals(v8_str(isolate, "arrayref"))) {
       type = i::wasm::kWasmArrayRef;
@@ -1293,27 +1293,22 @@ void WebAssemblyMemory(const v8::FunctionCallbackInfo<v8::Value>& args) {
   }
 
   auto shared = i::SharedFlag::kNotShared;
-  auto enabled_features = i::wasm::WasmFeatures::FromIsolate(i_isolate);
-  if (enabled_features.has_threads()) {
-    // Shared property of descriptor
-    Local<String> shared_key = v8_str(isolate, "shared");
-    v8::MaybeLocal<v8::Value> maybe_value =
-        descriptor->Get(context, shared_key);
-    v8::Local<v8::Value> value;
-    if (maybe_value.ToLocal(&value)) {
-      shared = value->BooleanValue(isolate) ? i::SharedFlag::kShared
-                                            : i::SharedFlag::kNotShared;
-    } else {
-      DCHECK(i_isolate->has_scheduled_exception());
-      return;
-    }
+  // Shared property of descriptor
+  Local<String> shared_key = v8_str(isolate, "shared");
+  v8::MaybeLocal<v8::Value> maybe_value = descriptor->Get(context, shared_key);
+  v8::Local<v8::Value> value;
+  if (maybe_value.ToLocal(&value)) {
+    shared = value->BooleanValue(isolate) ? i::SharedFlag::kShared
+                                          : i::SharedFlag::kNotShared;
+  } else {
+    DCHECK(i_isolate->has_scheduled_exception());
+    return;
+  }
 
-    // Throw TypeError if shared is true, and the descriptor has no "maximum"
-    if (shared == i::SharedFlag::kShared && maximum == -1) {
-      thrower.TypeError(
-          "If shared is true, maximum property should be defined.");
-      return;
-    }
+  // Throw TypeError if shared is true, and the descriptor has no "maximum"
+  if (shared == i::SharedFlag::kShared && maximum == -1) {
+    thrower.TypeError("If shared is true, maximum property should be defined.");
+    return;
   }
 
   i::Handle<i::JSObject> memory_obj;
@@ -1390,8 +1385,8 @@ bool GetValueType(Isolate* isolate, MaybeLocal<Value> maybe,
              string->StringEquals(v8_str(isolate, "anyref"))) {
     *type = i::wasm::kWasmAnyRef;
   } else if (enabled_features.has_gc() &&
-             string->StringEquals(v8_str(isolate, "dataref"))) {
-    *type = i::wasm::kWasmDataRef;
+             string->StringEquals(v8_str(isolate, "structref"))) {
+    *type = i::wasm::kWasmStructRef;
   } else if (enabled_features.has_gc() &&
              string->StringEquals(v8_str(isolate, "arrayref"))) {
     *type = i::wasm::kWasmArrayRef;
@@ -1555,7 +1550,10 @@ void WebAssemblyGlobal(const v8::FunctionCallbackInfo<v8::Value>& args) {
           (args.Length() < 2) ? i_isolate->factory()->null_value()
                               : Utils::OpenHandle(*value);
       const char* error_message;
-      if (!i::wasm::JSToWasmObject(i_isolate, nullptr, value_handle, type,
+      // The JS API does not allow for indexed types.
+      // TODO(7748): Fix this if that changes.
+      DCHECK(!type.has_index());
+      if (!i::wasm::JSToWasmObject(i_isolate, value_handle, type,
                                    &error_message)
                .ToHandle(&value_handle)) {
         thrower.TypeError("%s", error_message);
@@ -1747,7 +1745,7 @@ void EncodeExceptionValues(v8::Isolate* isolate,
           case i::wasm::HeapType::kAny:
           case i::wasm::HeapType::kEq:
           case i::wasm::HeapType::kI31:
-          case i::wasm::HeapType::kData:
+          case i::wasm::HeapType::kStruct:
           case i::wasm::HeapType::kArray:
           case i::wasm::HeapType::kString:
           case i::wasm::HeapType::kStringViewWtf8:
@@ -2033,7 +2031,10 @@ void WebAssemblyFunction(const v8::FunctionCallbackInfo<v8::Value>& args) {
   bool is_wasm_js_function = i::WasmJSFunction::IsWasmJSFunction(*callable);
 
   if (is_wasm_exported_function && !suspend && !promise) {
-    if (*i::Handle<i::WasmExportedFunction>::cast(callable)->sig() == *sig) {
+    uint32_t canonical_sig_index =
+        i::wasm::GetWasmEngine()->type_canonicalizer()->AddRecursiveGroup(sig);
+    if (i::Handle<i::WasmExportedFunction>::cast(callable)->MatchesSignature(
+            canonical_sig_index)) {
       args.GetReturnValue().Set(Utils::ToLocal(callable));
       return;
     }
@@ -2045,7 +2046,10 @@ void WebAssemblyFunction(const v8::FunctionCallbackInfo<v8::Value>& args) {
   }
 
   if (is_wasm_js_function && !suspend && !promise) {
-    if (i::Handle<i::WasmJSFunction>::cast(callable)->MatchesSignature(sig)) {
+    uint32_t canonical_sig_index =
+        i::wasm::GetWasmEngine()->type_canonicalizer()->AddRecursiveGroup(sig);
+    if (i::Handle<i::WasmJSFunction>::cast(callable)->MatchesSignature(
+            canonical_sig_index)) {
       args.GetReturnValue().Set(Utils::ToLocal(callable));
       return;
     }
@@ -2263,19 +2267,10 @@ void WasmObjectToJSReturnValue(v8::ReturnValue<v8::Value>& return_value,
       return;
     case i::wasm::HeapType::kBottom:
       UNREACHABLE();
-    case i::wasm::HeapType::kData:
+    case i::wasm::HeapType::kStruct:
     case i::wasm::HeapType::kArray:
     case i::wasm::HeapType::kEq:
     case i::wasm::HeapType::kAny: {
-      if (!i::v8_flags.wasm_gc_js_interop && value->IsWasmObject()) {
-        // Transform wasm object into JS-compliant representation.
-        i::Handle<i::JSObject> wrapper =
-            isolate->factory()->NewJSObject(isolate->object_function());
-        i::JSObject::AddProperty(
-            isolate, wrapper, isolate->factory()->wasm_wrapped_object_symbol(),
-            value, i::NONE);
-        value = wrapper;
-      }
       return_value.Set(Utils::ToLocal(value));
       return;
     }
@@ -2287,17 +2282,6 @@ void WasmObjectToJSReturnValue(v8::ReturnValue<v8::Value>& return_value,
               i::Handle<i::WasmInternalFunction>::cast(value)->external(),
               isolate);
         }
-        return_value.Set(Utils::ToLocal(value));
-        return;
-      }
-      if (!i::v8_flags.wasm_gc_js_interop && value->IsWasmObject()) {
-        // Transform wasm object into JS-compliant representation.
-        i::Handle<i::JSObject> wrapper =
-            isolate->factory()->NewJSObject(isolate->object_function());
-        i::JSObject::AddProperty(
-            isolate, wrapper, isolate->factory()->wasm_wrapped_object_symbol(),
-            value, i::NONE);
-        value = wrapper;
       }
       return_value.Set(Utils::ToLocal(value));
       return;
@@ -2572,7 +2556,7 @@ void WebAssemblyExceptionGetArg(
           case i::wasm::HeapType::kAny:
           case i::wasm::HeapType::kEq:
           case i::wasm::HeapType::kI31:
-          case i::wasm::HeapType::kData:
+          case i::wasm::HeapType::kStruct:
           case i::wasm::HeapType::kArray:
           case i::wasm::HeapType::kString:
           case i::wasm::HeapType::kStringViewWtf8:
@@ -2636,7 +2620,7 @@ void WebAssemblyExceptionGetArg(
         case i::wasm::HeapType::kEq:
         case i::wasm::HeapType::kI31:
         case i::wasm::HeapType::kArray:
-        case i::wasm::HeapType::kData:
+        case i::wasm::HeapType::kStruct:
         case i::wasm::HeapType::kString:
         case i::wasm::HeapType::kStringViewWtf8:
         case i::wasm::HeapType::kStringViewWtf16:
@@ -3094,29 +3078,27 @@ void WasmJs::Install(Isolate* isolate, bool exposed_on_global_object) {
   }
 
   // Setup Exception
-  if (enabled_features.has_eh()) {
-    Handle<JSFunction> tag_constructor =
-        InstallConstructorFunc(isolate, webassembly, "Tag", WebAssemblyTag);
-    Handle<JSObject> tag_proto =
-        SetupConstructor(isolate, tag_constructor, i::WASM_TAG_OBJECT_TYPE,
-                         WasmTagObject::kHeaderSize, "WebAssembly.Tag");
-    context->set_wasm_tag_constructor(*tag_constructor);
+  Handle<JSFunction> tag_constructor =
+      InstallConstructorFunc(isolate, webassembly, "Tag", WebAssemblyTag);
+  Handle<JSObject> tag_proto =
+      SetupConstructor(isolate, tag_constructor, i::WASM_TAG_OBJECT_TYPE,
+                       WasmTagObject::kHeaderSize, "WebAssembly.Tag");
+  context->set_wasm_tag_constructor(*tag_constructor);
 
-    if (enabled_features.has_type_reflection()) {
-      InstallFunc(isolate, tag_proto, "type", WebAssemblyTagType, 0);
-    }
-    // Set up runtime exception constructor.
-    Handle<JSFunction> exception_constructor = InstallConstructorFunc(
-        isolate, webassembly, "Exception", WebAssemblyException);
-    SetDummyInstanceTemplate(isolate, exception_constructor);
-    Handle<JSObject> exception_proto = SetupConstructor(
-        isolate, exception_constructor, i::WASM_EXCEPTION_PACKAGE_TYPE,
-        WasmExceptionPackage::kHeaderSize, "WebAssembly.Exception");
-    InstallFunc(isolate, exception_proto, "getArg", WebAssemblyExceptionGetArg,
-                2);
-    InstallFunc(isolate, exception_proto, "is", WebAssemblyExceptionIs, 1);
-    context->set_wasm_exception_constructor(*exception_constructor);
+  if (enabled_features.has_type_reflection()) {
+    InstallFunc(isolate, tag_proto, "type", WebAssemblyTagType, 0);
   }
+  // Set up runtime exception constructor.
+  Handle<JSFunction> exception_constructor = InstallConstructorFunc(
+      isolate, webassembly, "Exception", WebAssemblyException);
+  SetDummyInstanceTemplate(isolate, exception_constructor);
+  Handle<JSObject> exception_proto = SetupConstructor(
+      isolate, exception_constructor, i::WASM_EXCEPTION_PACKAGE_TYPE,
+      WasmExceptionPackage::kHeaderSize, "WebAssembly.Exception");
+  InstallFunc(isolate, exception_proto, "getArg", WebAssemblyExceptionGetArg,
+              2);
+  InstallFunc(isolate, exception_proto, "is", WebAssemblyExceptionIs, 1);
+  context->set_wasm_exception_constructor(*exception_constructor);
 
   // Setup Suspender.
   if (enabled_features.has_stack_switching()) {
@@ -3176,56 +3158,21 @@ void WasmJs::Install(Isolate* isolate, bool exposed_on_global_object) {
 // static
 void WasmJs::InstallConditionalFeatures(Isolate* isolate,
                                         Handle<Context> context) {
-  // Exception handling may have been enabled by an origin trial. If so, make
-  // sure that the {WebAssembly.Tag} constructor is set up.
-  auto enabled_features = i::wasm::WasmFeatures::FromContext(isolate, context);
-  if (enabled_features.has_eh()) {
-    Handle<JSGlobalObject> global = handle(context->global_object(), isolate);
-    MaybeHandle<Object> maybe_webassembly =
-        JSObject::GetProperty(isolate, global, "WebAssembly");
-    Handle<Object> webassembly_obj;
-    if (!maybe_webassembly.ToHandle(&webassembly_obj) ||
-        !webassembly_obj->IsJSObject()) {
-      // There is no {WebAssembly} object, or it's not what we expect.
-      // Just return without adding the {Tag} constructor.
-      return;
-    }
-    Handle<JSObject> webassembly = Handle<JSObject>::cast(webassembly_obj);
-    // Setup Tag.
-    Handle<String> tag_name = v8_str(isolate, "Tag");
-    // The {WebAssembly} object may already have been modified. The following
-    // code is designed to:
-    //  - check for existing {Tag} properties on the object itself, and avoid
-    //    overwriting them or adding duplicate properties
-    //  - disregard any setters or read-only properties on the prototype chain
-    //  - only make objects accessible to user code after all internal setup
-    //    has been completed.
-    if (JSObject::HasOwnProperty(isolate, webassembly, tag_name)
-            .FromMaybe(true)) {
-      // Existing property, or exception.
-      return;
-    }
-
-    bool has_prototype = true;
-    Handle<JSFunction> tag_constructor =
-        CreateFunc(isolate, tag_name, WebAssemblyTag, has_prototype,
-                   SideEffectType::kHasNoSideEffect);
-    tag_constructor->shared().set_length(1);
-    context->set_wasm_tag_constructor(*tag_constructor);
-    Handle<JSObject> tag_proto =
-        SetupConstructor(isolate, tag_constructor, i::WASM_TAG_OBJECT_TYPE,
-                         WasmTagObject::kHeaderSize, "WebAssembly.Tag");
-    if (enabled_features.has_type_reflection()) {
-      InstallFunc(isolate, tag_proto, "type", WebAssemblyTagType, 0);
-    }
-    LookupIterator it(isolate, webassembly, tag_name, LookupIterator::OWN);
-    Maybe<bool> result = JSObject::DefineOwnPropertyIgnoreAttributes(
-        &it, tag_constructor, DONT_ENUM, Just(kDontThrow));
-    // This could still fail if the object was non-extensible, but now we
-    // return anyway so there's no need to even check.
-    USE(result);
-  }
+  // This space left blank for future origin trials.
 }
+
+namespace wasm {
+// static
+std::unique_ptr<WasmStreaming> StartStreamingForTesting(
+    Isolate* isolate,
+    std::shared_ptr<wasm::CompilationResultResolver> resolver) {
+  return std::make_unique<WasmStreaming>(
+      std::make_unique<WasmStreaming::WasmStreamingImpl>(
+          reinterpret_cast<v8::Isolate*>(isolate), "StartStreamingForTesting",
+          resolver));
+}
+}  // namespace wasm
+
 #undef ASSIGN
 #undef EXTRACT_THIS
 

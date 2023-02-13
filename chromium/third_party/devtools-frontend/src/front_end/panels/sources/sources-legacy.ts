@@ -80,11 +80,6 @@ Sources.JavaScriptBreakpointsSidebarPane.retrieveLocationForElement =
     SourcesModule.JavaScriptBreakpointsSidebarPane.retrieveLocationForElement;
 
 /** @constructor */
-Sources.JavaScriptCompilerPlugin = SourcesModule.JavaScriptCompilerPlugin.JavaScriptCompilerPlugin;
-
-Sources.JavaScriptCompilerPlugin.CompileDelay = SourcesModule.JavaScriptCompilerPlugin.CompileDelay;
-
-/** @constructor */
 Sources.NavigatorView = SourcesModule.NavigatorView.NavigatorView;
 
 Sources.NavigatorView.Types = SourcesModule.NavigatorView.Types;
@@ -124,11 +119,6 @@ Sources.ScopeChainSidebarPane.OpenLinearMemoryInspector = SourcesModule.ScopeCha
 
 /** @constructor */
 Sources.ScriptFormatterEditorAction = SourcesModule.ScriptFormatterEditorAction.ScriptFormatterEditorAction;
-
-/** @constructor */
-Sources.ScriptOriginPlugin = SourcesModule.ScriptOriginPlugin.ScriptOriginPlugin;
-
-Sources.ScriptOriginPlugin._linkifier = SourcesModule.ScriptOriginPlugin.linkifier;
 
 /** @constructor */
 Sources.SearchSourcesView = SourcesModule.SearchSourcesView.SearchSourcesView;

@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2016 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -20,7 +20,7 @@ class CPSOutput final : public IFX_RetainableWriteStream {
   ~CPSOutput() override;
 
   // IFX_Writestream:
-  bool WriteBlock(const void* str, size_t len) override;
+  bool WriteBlock(pdfium::span<const uint8_t> input) override;
 
  private:
   const HDC m_hDC;

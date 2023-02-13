@@ -8,6 +8,7 @@
 #include "src/gpu/ganesh/mtl/GrMtlPipelineStateBuilder.h"
 
 #include "include/gpu/GrDirectContext.h"
+#include "include/private/SkSLProgramKind.h"
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkTraceEvent.h"
 #include "src/core/SkWriteBuffer.h"
@@ -15,6 +16,7 @@
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
 #include "src/gpu/ganesh/GrPersistentCacheUtils.h"
 #include "src/gpu/ganesh/GrRenderTarget.h"
+#include "src/sksl/SkSLProgramSettings.h"
 #include "src/utils/SkShaderUtils.h"
 
 #include "src/gpu/ganesh/mtl/GrMtlGpu.h"
@@ -56,10 +58,6 @@ const GrCaps* GrMtlPipelineStateBuilder::caps() const {
 
 SkSL::Compiler* GrMtlPipelineStateBuilder::shaderCompiler() const {
     return fGpu->shaderCompiler();
-}
-
-void GrMtlPipelineStateBuilder::finalizeFragmentOutputColor(GrShaderVar& outputColor) {
-    outputColor.addLayoutQualifier("location = 0, index = 0");
 }
 
 void GrMtlPipelineStateBuilder::finalizeFragmentSecondaryColor(GrShaderVar& outputColor) {

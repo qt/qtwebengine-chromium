@@ -307,7 +307,6 @@ quiche_core_hdrs = [
     "quic/core/quic_interval.h",
     "quic/core/quic_interval_deque.h",
     "quic/core/quic_interval_set.h",
-    "quic/core/quic_legacy_version_encapsulator.h",
     "quic/core/quic_lru_cache.h",
     "quic/core/quic_mtu_discovery.h",
     "quic/core/quic_network_blackhole_detector.h",
@@ -329,6 +328,7 @@ quiche_core_hdrs = [
     "quic/core/quic_stream.h",
     "quic/core/quic_stream_frame_data_producer.h",
     "quic/core/quic_stream_id_manager.h",
+    "quic/core/quic_stream_priority.h",
     "quic/core/quic_stream_send_buffer.h",
     "quic/core/quic_stream_sequencer.h",
     "quic/core/quic_stream_sequencer_buffer.h",
@@ -636,7 +636,6 @@ quiche_core_srcs = [
     "quic/core/quic_flow_controller.cc",
     "quic/core/quic_framer.cc",
     "quic/core/quic_idle_network_detector.cc",
-    "quic/core/quic_legacy_version_encapsulator.cc",
     "quic/core/quic_mtu_discovery.cc",
     "quic/core/quic_network_blackhole_detector.cc",
     "quic/core/quic_packet_creator.cc",
@@ -652,6 +651,7 @@ quiche_core_srcs = [
     "quic/core/quic_socket_address_coder.cc",
     "quic/core/quic_stream.cc",
     "quic/core/quic_stream_id_manager.cc",
+    "quic/core/quic_stream_priority.cc",
     "quic/core/quic_stream_send_buffer.cc",
     "quic/core/quic_stream_sequencer.cc",
     "quic/core/quic_stream_sequencer_buffer.cc",
@@ -970,7 +970,9 @@ io_tool_support_hdrs = [
     "quic/masque/masque_utils.h",
     "quic/platform/api/quic_udp_socket_platform_api.h",
     "quic/tools/quic_client_default_network_helper.h",
+    "quic/tools/quic_client_factory.h",
     "quic/tools/quic_default_client.h",
+    "quic/tools/quic_epoll_client_factory.h",
     "quic/tools/quic_server.h",
 ]
 io_tool_support_srcs = [
@@ -995,6 +997,7 @@ io_tool_support_srcs = [
     "quic/masque/masque_utils.cc",
     "quic/tools/quic_client_default_network_helper.cc",
     "quic/tools/quic_default_client.cc",
+    "quic/tools/quic_epoll_client_factory.cc",
     "quic/tools/quic_server.cc",
 ]
 io_test_support_hdrs = [
@@ -1095,6 +1098,12 @@ quiche_tests_srcs = [
     "http2/test_tools/http2_frame_builder_test.cc",
     "http2/test_tools/http2_random_test.cc",
     "http2/test_tools/random_decoder_test_base_test.cc",
+    "oblivious_http/buffers/oblivious_http_integration_test.cc",
+    "oblivious_http/buffers/oblivious_http_request_test.cc",
+    "oblivious_http/buffers/oblivious_http_response_test.cc",
+    "oblivious_http/common/oblivious_http_header_key_config_test.cc",
+    "oblivious_http/oblivious_http_client_test.cc",
+    "oblivious_http/oblivious_http_gateway_test.cc",
     "quic/core/congestion_control/bandwidth_sampler_test.cc",
     "quic/core/congestion_control/bbr2_simulator_test.cc",
     "quic/core/congestion_control/bbr_sender_test.cc",
@@ -1205,7 +1214,6 @@ quiche_tests_srcs = [
     "quic/core/quic_interval_deque_test.cc",
     "quic/core/quic_interval_set_test.cc",
     "quic/core/quic_interval_test.cc",
-    "quic/core/quic_legacy_version_encapsulator_test.cc",
     "quic/core/quic_lru_cache_test.cc",
     "quic/core/quic_network_blackhole_detector_test.cc",
     "quic/core/quic_one_block_arena_test.cc",
@@ -1220,6 +1228,7 @@ quiche_tests_srcs = [
     "quic/core/quic_session_test.cc",
     "quic/core/quic_socket_address_coder_test.cc",
     "quic/core/quic_stream_id_manager_test.cc",
+    "quic/core/quic_stream_priority_test.cc",
     "quic/core/quic_stream_send_buffer_test.cc",
     "quic/core/quic_stream_sequencer_buffer_test.cc",
     "quic/core/quic_stream_sequencer_test.cc",
@@ -1307,7 +1316,6 @@ fuzzers_srcs = [
     "quic/test_tools/fuzzing/quic_framer_process_data_packet_fuzzer.cc",
 ]
 cli_tools_hdrs = [
-    "quic/tools/quic_epoll_client_factory.h",
     "quic/tools/quic_server_factory.h",
     "quic/tools/quic_toy_client.h",
     "quic/tools/quic_toy_server.h",
@@ -1319,7 +1327,6 @@ cli_tools_srcs = [
     "quic/tools/qpack_offline_decoder_bin.cc",
     "quic/tools/quic_client_bin.cc",
     "quic/tools/quic_client_interop_test_bin.cc",
-    "quic/tools/quic_epoll_client_factory.cc",
     "quic/tools/quic_packet_printer_bin.cc",
     "quic/tools/quic_reject_reason_decoder_bin.cc",
     "quic/tools/quic_server_bin.cc",
@@ -1440,6 +1447,20 @@ binary_http_hdrs = [
 ]
 binary_http_srcs = [
     "binary_http/binary_http_message.cc",
+]
+oblivious_http_hdrs = [
+    "oblivious_http/buffers/oblivious_http_request.h",
+    "oblivious_http/buffers/oblivious_http_response.h",
+    "oblivious_http/common/oblivious_http_header_key_config.h",
+    "oblivious_http/oblivious_http_client.h",
+    "oblivious_http/oblivious_http_gateway.h",
+]
+oblivious_http_srcs = [
+    "oblivious_http/buffers/oblivious_http_request.cc",
+    "oblivious_http/buffers/oblivious_http_response.cc",
+    "oblivious_http/common/oblivious_http_header_key_config.cc",
+    "oblivious_http/oblivious_http_client.cc",
+    "oblivious_http/oblivious_http_gateway.cc",
 ]
 qbone_hdrs = [
     "quic/qbone/bonnet/icmp_reachable.h",

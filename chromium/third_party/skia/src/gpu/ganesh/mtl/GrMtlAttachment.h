@@ -13,6 +13,7 @@
 
 #import <Metal/Metal.h>
 
+class GrBackendFormat;
 class GrMtlGpu;
 
 class GrMtlAttachment : public GrAttachment {
@@ -44,15 +45,13 @@ public:
 
     ~GrMtlAttachment() override;
 
-    GrBackendFormat backendFormat() const override {
-        return GrBackendFormat::MakeMtl(fTexture.pixelFormat);
-    }
+    GrBackendFormat backendFormat() const override;
 
     MTLPixelFormat mtlFormat() const { return fTexture.pixelFormat; }
 
     id<MTLTexture> mtlTexture() const { return fTexture; }
 
-    unsigned int sampleCount() const { return fTexture.sampleCount; }
+    unsigned int sampleCount() const { return SkToU32(fTexture.sampleCount); }
 
     bool framebufferOnly() const { return fTexture.framebufferOnly; }
 

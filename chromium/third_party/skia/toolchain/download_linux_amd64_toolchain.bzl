@@ -13,31 +13,38 @@ resolver) and extracted to
 which will act as our sysroot.
 """
 
-load("//toolchain:utils.bzl", "gcs_mirror_url")
+load(":clang_layering_check.bzl", "generate_system_module_map")
+load(":utils.bzl", "gcs_mirror_only", "gcs_mirror_url")
 
-# From https://github.com/llvm/llvm-project/releases/download/llvmorg-13.0.0/clang+llvm-13.0.0-x86_64-linux-gnu-ubuntu-20.04.tar.xz.sha256
-clang_prefix = "clang+llvm-13.0.0-x86_64-linux-gnu-ubuntu-20.04/"
-clang_sha256 = "2c2fb857af97f41a5032e9ecadf7f78d3eff389a5cd3c9ec620d24f134ceb3c8"
-clang_url = "https://github.com/llvm/llvm-project/releases/download/llvmorg-13.0.0/clang+llvm-13.0.0-x86_64-linux-gnu-ubuntu-20.04.tar.xz"
+# The clang from CIPD has no prefix, and we download it directly from our GCS bucket
+# This is clang 15.0.1 and iwyu built from source.
+# https://chrome-infra-packages.appspot.com/p/skia/bots/clang_linux/+/5h9JgVTkZk0fFuOyLUCHZXIFqG1b1TAdYG9fHTFLEzoC
+clang_sha256 = "e61f498154e4664d1f16e3b22d4087657205a86d5bd5301d606f5f1d314b133a"
 
 debs_to_install = [
     # These three comprise glibc. libc6 has the shared libraries, like libc itself, the math library
     # (libm), etc. linux-libc-dev has the header files specific to linux. libc6-dev has the libc
     # system headers (e.g. malloc.h, math.h).
     {
-        # From https://packages.debian.org/bullseye/amd64/libc6/download
-        "sha256": "a6263062b476cee1052972621d473b159debec6e424f661eda88248b00331d79",
-        "url": "https://ftp.debian.org/debian/pool/main/g/glibc/libc6_2.31-13+deb11u4_amd64.deb",
+        # We use this old version of glibc because as of Nov 2022, many of our Swarming machines
+        # are still on Debian 10. While many of the Bazel tasks can be run in RBE, using a newer
+        # Debian 11 image (see //bazel/rbe/gce_linux_container/Dockerfile) some tasks need to be
+        # run on these host machines using Debian 10. As a result, we need to compile and link
+        # against a version of glibc that can be run on Debian 10 until we update those Swarming
+        # hosts.
+        # From https://packages.debian.org/buster/amd64/libc6/download
+        "sha256": "980066e3e6124b8d84cdfd4cfa96d78a97cd659f8f3ba995bbcb887dad9ac237",
+        "url": "https://security.debian.org/debian-security/pool/updates/main/g/glibc/libc6_2.28-10+deb10u2_amd64.deb",
     },
     {
-        # From https://packages.debian.org/bullseye/amd64/linux-libc-dev/download
-        "sha256": "e89023a5fc58c30ebb8cbb82de77f872baeafe7a5449f574b03cea478f7e9e6d",
-        "url": "https://ftp.debian.org/debian/pool/main/l/linux/linux-libc-dev_5.10.140-1_amd64.deb",
+        # From https://packages.debian.org/buster/amd64/linux-libc-dev/download
+        "sha256": "e724656440d71d6316772fe58d7a8ac9634a0060a94af4e3b50e4f0a9e5a75e0",
+        "url": "https://security.debian.org/debian-security/pool/updates/main/l/linux/linux-libc-dev_4.19.260-1_amd64.deb",
     },
     {
-        # From https://packages.debian.org/bullseye/amd64/libc6-dev/download
-        "sha256": "5f368eb89d102ccd23529a02fb17aaa1c15e7612506e22ef0c559b71f5049a91",
-        "url": "https://ftp.debian.org/debian/pool/main/g/glibc/libc6-dev_2.31-13+deb11u4_amd64.deb",
+        # From https://packages.debian.org/buster/amd64/libc6-dev/download
+        "sha256": "6c11087f5bdc6a2a59fc6424e003dddede53fb97888ade2e35738448fa30a159",
+        "url": "https://security.debian.org/debian-security/pool/updates/main/g/glibc/libc6-dev_2.28-10+deb10u2_amd64.deb",
     },
     # These two put the X11 include files in ${PWD}/usr/include/X11
     # libx11-dev puts libX11.a in ${PWD}/usr/lib/x86_64-linux-gnu
@@ -124,43 +131,6 @@ debs_to_install = [
         "sha256": "1f9f2dbe7744a2bb7f855d819f43167df095fe7d5291546bec12865aed045e0c",
         "url": "https://ftp.debian.org/debian/pool/main/libx/libx11/libx11-xcb1_1.7.2-1_amd64.deb",
     },
-    # This is used to make sure we include only the headers we need. This corresponds to
-    # IWYU version 0.17, which uses Clang 13, like we compile with.
-    {
-        # From https://packages.debian.org/sid/amd64/iwyu/download
-        "sha256": "9fd6932a7609e89364f7edc5f9613892c98c21c88a3931e51cf1a0f8744759bd",
-        "url": "https://ftp.debian.org/debian/pool/main/i/iwyu/iwyu_8.17-1_amd64.deb",
-    },
-    {
-        # This is a requirement of iwyu
-        # https://packages.debian.org/sid/amd64/libclang-cpp13/download
-        "sha256": "c6e2471de8f3ec06e40c8e006e06bbd251dd0c8000dee820a4b6dca3d3290c0d",
-        "url": "https://ftp.debian.org/debian/pool/main/l/llvm-toolchain-13/libclang-cpp13_13.0.1-3+b1_amd64.deb",
-    },
-    {
-        # This is a requirement of libclang-cpp13
-        # https://packages.debian.org/sid/amd64/libstdc++6/download
-        "sha256": "f37e5954423955938c5309a8d0e475f7e84e92b56b8301487fb885192dee8085",
-        "url": "https://ftp.debian.org/debian/pool/main/g/gcc-12/libstdc++6_12-20220319-1_amd64.deb",
-    },
-    {
-        # This is a requirement of iwyu
-        # https://packages.debian.org/sid/amd64/libllvm13/download
-        "sha256": "49f29a6c9fbc3097077931529e7fe1c032b1d04a984d971aa1e6990a5133556e",
-        "url": "https://ftp.debian.org/debian/pool/main/l/llvm-toolchain-13/libllvm13_13.0.1-3+b1_amd64.deb",
-    },
-    {
-        # This is a requirement of libllvm13
-        # https://packages.debian.org/sid/amd64/libffi8/download
-        "sha256": "87c55b36951aed18ef2c357683e15c365713bda6090f15386998b57df433b387",
-        "url": "https://ftp.debian.org/debian/pool/main/libf/libffi/libffi8_3.4.2-4_amd64.deb",
-    },
-    {
-        # This is a requirement of libllvm13
-        # https://packages.debian.org/sid/libz3-4/download
-        "sha256": "b415b863678625dee3f3c75bd48b1b9e3b6e11279ebec337904d7f09630d107f",
-        "url": "https://ftp.debian.org/debian/pool/main/z/z3/libz3-4_4.8.12-1+b1_amd64.deb",
-    },
     {
         # https://packages.debian.org/bullseye/libfontconfig-dev/download
         "sha256": "7655d4238ee7e6ced13501006d20986cbf9ff08454a4e502d5aa399f83e28876",
@@ -209,9 +179,8 @@ def _download_linux_amd64_toolchain_impl(ctx):
     # Download the clang toolchain (the extraction can take a while)
     # https://bazel.build/rules/lib/repository_ctx#download_and_extract
     ctx.download_and_extract(
-        url = gcs_mirror_url(clang_url, clang_sha256),
+        url = gcs_mirror_only(clang_sha256, ".zip"),
         output = "",
-        stripPrefix = clang_prefix,
         sha256 = clang_sha256,
     )
 
@@ -225,6 +194,22 @@ def _download_linux_amd64_toolchain_impl(ctx):
             ".",
         )
 
+    # This list of files lines up with _make_default_flags() in linux_amd64_toolchain_config.bzl
+    # It is all locations that our toolchain could find a system header.
+    builtin_include_directories = [
+        "include/c++/v1",
+        "include/x86_64-unknown-linux-gnu/c++/v1",
+        "lib/clang/15.0.1/include",
+        "usr/include",
+        "usr/include/x86_64-linux-gnu",
+    ]
+
+    generate_system_module_map(
+        ctx,
+        module_file = "toolchain_system_headers.modulemap",
+        folders = builtin_include_directories,
+    )
+
     # Create a BUILD.bazel file that makes the files downloaded into the toolchain visible.
     # We have separate groups for each task because doing less work (sandboxing fewer files
     # or uploading less data to RBE) makes compiles go faster. We try to strike a balance
@@ -237,6 +222,12 @@ def _download_linux_amd64_toolchain_impl(ctx):
 # DO NOT EDIT THIS BAZEL FILE DIRECTLY
 # Generated from ctx.file action in download_linux_amd64_toolchain.bzl
 filegroup(
+    name = "generated_module_map",
+    srcs = ["toolchain_system_headers.modulemap"],
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
     name = "archive_files",
     srcs = [
         "bin/llvm-ar",
@@ -248,12 +239,13 @@ filegroup(
     name = "compile_files",
     srcs = [
         "bin/clang",
-        "usr/bin/include-what-you-use",
+        "bin/include-what-you-use",
     ] + glob(
         include = [
             "include/c++/v1/**",
+            "include/x86_64-unknown-linux-gnu/c++/v1/**",
             "usr/include/**",
-            "lib/clang/13.0.0/**",
+            "lib/clang/15.0.1/**",
             "usr/include/x86_64-linux-gnu/**",
         ],
         allow_empty = False,
@@ -267,13 +259,13 @@ filegroup(
         "bin/clang",
         "bin/ld.lld",
         "bin/lld",
-        "lib/libc++.a",
-        "lib/libc++abi.a",
-        "lib/libunwind.a",
+        "lib/x86_64-unknown-linux-gnu/libc++.a",
+        "lib/x86_64-unknown-linux-gnu/libc++abi.a",
+        "lib/x86_64-unknown-linux-gnu/libunwind.a",
         "lib64/ld-linux-x86-64.so.2",
     ] + glob(
         include = [
-            "lib/clang/13.0.0/lib/**",
+            "lib/clang/15.0.1/lib/**",
             "lib/x86_64-linux-gnu/**",
             "usr/lib/x86_64-linux-gnu/**",
         ],

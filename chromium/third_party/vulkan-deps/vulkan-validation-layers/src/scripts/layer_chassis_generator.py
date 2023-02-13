@@ -392,7 +392,7 @@ class ValidationObject {
 
         void InitObjectDispatchVectors();
 
-        ReadWriteLock validation_object_mutex;
+        std::shared_mutex validation_object_mutex;
         virtual ReadLockGuard ReadLock() {
             return ReadLockGuard(validation_object_mutex);
         }
@@ -442,7 +442,7 @@ class ValidationObject {
                 }
             }
             return nullptr;
-        };
+        }
 
         // Debug Logging Helpers
         bool DECORATE_PRINTF(4, 5) LogError(const LogObjectList &objects, const std::string &vuid_text, const char *format, ...) const {
@@ -460,7 +460,7 @@ class ValidationObject {
             }
             va_end(argptr);
             return LogMsgLocked(report_data, kErrorBit, objects, vuid_text, str);
-        };
+        }
 
         template <typename HANDLE_T>
         bool DECORATE_PRINTF(4, 5) LogError(HANDLE_T src_object, const std::string &vuid_text, const char *format, ...) const {
@@ -480,7 +480,7 @@ class ValidationObject {
             LogObjectList single_object(src_object);
             return LogMsgLocked(report_data, kErrorBit, single_object, vuid_text, str);
 
-        };
+        }
 
         bool DECORATE_PRINTF(4, 5) LogWarning(const LogObjectList &objects, const std::string &vuid_text, const char *format, ...) const {
             std::unique_lock<std::mutex> lock(report_data->debug_output_mutex);
@@ -497,7 +497,7 @@ class ValidationObject {
             }
             va_end(argptr);
             return LogMsgLocked(report_data, kWarningBit, objects, vuid_text, str);
-        };
+        }
 
         template <typename HANDLE_T>
         bool DECORATE_PRINTF(4, 5) LogWarning(HANDLE_T src_object, const std::string &vuid_text, const char *format, ...) const {
@@ -516,7 +516,7 @@ class ValidationObject {
             va_end(argptr);
             LogObjectList single_object(src_object);
             return LogMsgLocked(report_data, kWarningBit, single_object, vuid_text, str);
-        };
+        }
 
         bool DECORATE_PRINTF(4, 5) LogPerformanceWarning(const LogObjectList &objects, const std::string &vuid_text, const char *format, ...) const {
             std::unique_lock<std::mutex> lock(report_data->debug_output_mutex);
@@ -533,7 +533,7 @@ class ValidationObject {
             }
             va_end(argptr);
             return LogMsgLocked(report_data, kPerformanceWarningBit, objects, vuid_text, str);
-        };
+        }
 
         template <typename HANDLE_T>
         bool DECORATE_PRINTF(4, 5) LogPerformanceWarning(HANDLE_T src_object, const std::string &vuid_text, const char *format, ...) const {
@@ -552,7 +552,7 @@ class ValidationObject {
             va_end(argptr);
             LogObjectList single_object(src_object);
             return LogMsgLocked(report_data, kPerformanceWarningBit, single_object, vuid_text, str);
-        };
+        }
 
         bool DECORATE_PRINTF(4, 5) LogInfo(const LogObjectList &objects, const std::string &vuid_text, const char *format, ...) const {
             std::unique_lock<std::mutex> lock(report_data->debug_output_mutex);
@@ -569,7 +569,7 @@ class ValidationObject {
             }
             va_end(argptr);
             return LogMsgLocked(report_data, kInformationBit, objects, vuid_text, str);
-        };
+        }
 
         template <typename HANDLE_T>
         bool DECORATE_PRINTF(4, 5) LogInfo(HANDLE_T src_object, const std::string &vuid_text, const char *format, ...) const {
@@ -588,7 +588,7 @@ class ValidationObject {
             va_end(argptr);
             LogObjectList single_object(src_object);
             return LogMsgLocked(report_data, kInformationBit, single_object, vuid_text, str);
-        };
+        }
 
         // Handle Wrapping Data
         // Reverse map display handles
@@ -916,19 +916,12 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateInstance(const VkInstanceCreateInfo *pCreat
 
     assert(chain_info->u.pLayerInfo);
     PFN_vkGetInstanceProcAddr fpGetInstanceProcAddr = chain_info->u.pLayerInfo->pfnNextGetInstanceProcAddr;
-    PFN_vkCreateInstance fpCreateInstance = (PFN_vkCreateInstance)fpGetInstanceProcAddr(NULL, "vkCreateInstance");
-    if (fpCreateInstance == NULL) return VK_ERROR_INITIALIZATION_FAILED;
+    PFN_vkCreateInstance fpCreateInstance = (PFN_vkCreateInstance)fpGetInstanceProcAddr(nullptr, "vkCreateInstance");
+    if (fpCreateInstance == nullptr) return VK_ERROR_INITIALIZATION_FAILED;
     chain_info->u.pLayerInfo = chain_info->u.pLayerInfo->pNext;
     uint32_t specified_version = (pCreateInfo->pApplicationInfo ? pCreateInfo->pApplicationInfo->apiVersion : VK_API_VERSION_1_0);
-    uint32_t api_version;
-    if (specified_version < VK_API_VERSION_1_1)
-        api_version = VK_API_VERSION_1_0;
-    else if (specified_version < VK_API_VERSION_1_2)
-        api_version = VK_API_VERSION_1_1;
-    else if (specified_version < VK_API_VERSION_1_3)
-        api_version = VK_API_VERSION_1_2;
-    else
-        api_version = VK_API_VERSION_1_3;
+    uint32_t api_version = VK_MAKE_API_VERSION(0, VK_API_VERSION_MAJOR(specified_version), VK_API_VERSION_MINOR(specified_version), 0);
+
     auto report_data = new debug_report_data{};
     report_data->instance_pnext_chain = SafePnextCopy(pCreateInfo->pNext);
     ActivateInstanceDebugCallbacks(report_data);
@@ -1078,7 +1071,7 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateDevice(VkPhysicalDevice gpu, const VkDevice
     PFN_vkGetInstanceProcAddr fpGetInstanceProcAddr = chain_info->u.pLayerInfo->pfnNextGetInstanceProcAddr;
     PFN_vkGetDeviceProcAddr fpGetDeviceProcAddr = chain_info->u.pLayerInfo->pfnNextGetDeviceProcAddr;
     PFN_vkCreateDevice fpCreateDevice = (PFN_vkCreateDevice)fpGetInstanceProcAddr(instance_interceptor->instance, "vkCreateDevice");
-    if (fpCreateDevice == NULL) {
+    if (fpCreateDevice == nullptr) {
         return VK_ERROR_INITIALIZATION_FAILED;
     }
     chain_info->u.pLayerInfo = chain_info->u.pLayerInfo->pNext;
@@ -1732,7 +1725,7 @@ VK_LAYER_EXPORT VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vk_layerGetPhysicalDevi
 }
 
 VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkNegotiateLoaderLayerInterfaceVersion(VkNegotiateLayerInterface *pVersionStruct) {
-    assert(pVersionStruct != NULL);
+    assert(pVersionStruct != nullptr);
     assert(pVersionStruct->sType == LAYER_NEGOTIATE_INTERFACE_STRUCT);
 
     // Fill in the function pointers if our version is at least capable of having the structure contain them.

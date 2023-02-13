@@ -11,6 +11,7 @@
 #include "cast/streaming/constants.h"
 #include "cast/streaming/receiver_packet_router.h"
 #include "cast/streaming/session_config.h"
+#include "platform/base/trivial_clock_traits.h"
 #include "util/chrono_helpers.h"
 #include "util/osp_logging.h"
 #include "util/std_util.h"
@@ -18,6 +19,8 @@
 
 namespace openscreen {
 namespace cast {
+
+using clock_operators::operator<<;
 
 // Conveniences for ensuring logging output includes the SSRC of the Receiver,
 // to help distinguish one out of multiple instances in a Cast Streaming
@@ -160,12 +163,10 @@ EncodedFrame Receiver::ConsumeNextFrame(absl::Span<uint8_t> buffer) {
 
   RECEIVER_VLOG << "ConsumeNextFrame → " << frame.frame_id << ": "
                 << frame.data.size() << " payload bytes, RTP Timestamp "
-                << frame.rtp_timestamp
-                       .ToTimeSinceOrigin<microseconds>(rtp_timebase_)
-                       .count()
-                << " µs, to play-out "
-                << to_microseconds(frame.reference_time - now_()).count()
-                << " µs from now.";
+                << frame.rtp_timestamp.ToTimeSinceOrigin<microseconds>(
+                       rtp_timebase_)
+                << ", to play-out " << (frame.reference_time - now_())
+                << " from now.";
 
   entry.Reset();
   last_frame_consumed_ = frame_id;

@@ -16,6 +16,8 @@
 #include "src/gpu/ganesh/tessellate/GrPathTessellationShader.h"
 #include "src/gpu/ganesh/tessellate/PathTessellator.h"
 
+#if !defined(SK_ENABLE_OPTIMIZE_SIZE)
+
 namespace skgpu::v1 {
 
 namespace {
@@ -39,8 +41,8 @@ public:
             fInstanceAttribs.emplace_back("curveType", kFloat_GrVertexAttribType, SkSLType::kFloat);
         }
         this->setInstanceAttributesWithImplicitOffsets(fInstanceAttribs.data(),
-                                                       fInstanceAttribs.count());
-        SkASSERT(fInstanceAttribs.count() <= kMaxInstanceAttribCount);
+                                                       fInstanceAttribs.size());
+        SkASSERT(fInstanceAttribs.size() <= kMaxInstanceAttribCount);
 
         if (!shaderCaps.fVertexIDSupport) {
             constexpr static Attribute kVertexIdxAttrib("vertexidx", kFloat_GrVertexAttribType,
@@ -472,3 +474,5 @@ void PathInnerTriangulateOp::onExecute(GrOpFlushState* flushState, const SkRect&
 }
 
 } // namespace skgpu::v1
+
+#endif // SK_ENABLE_OPTIMIZE_SIZE

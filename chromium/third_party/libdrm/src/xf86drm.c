@@ -261,6 +261,7 @@ drmGetAfbcFormatModifierNameFromArm(uint64_t modifier, FILE *fp)
 static bool
 drmGetAfrcFormatModifierNameFromArm(uint64_t modifier, FILE *fp)
 {
+    bool scan_layout;
     for (unsigned int i = 0; i < 2; ++i) {
         uint64_t coding_unit_block =
           (modifier >> (i * 4)) & AFRC_FORMAT_MOD_CU_SIZE_MASK;
@@ -292,7 +293,7 @@ drmGetAfrcFormatModifierNameFromArm(uint64_t modifier, FILE *fp)
         }
     }
 
-    bool scan_layout =
+    scan_layout =
         (modifier & AFRC_FORMAT_MOD_LAYOUT_SCAN) == AFRC_FORMAT_MOD_LAYOUT_SCAN;
     if (scan_layout) {
         fprintf(fp, "SCAN");
@@ -848,7 +849,7 @@ wait_for_udev:
     }
 #endif
 
-    fd = open(buf, O_RDWR | O_CLOEXEC, 0);
+    fd = open(buf, O_RDWR | O_CLOEXEC);
     drmMsg("drmOpenDevice: open result is %d, (%s)\n",
            fd, fd < 0 ? strerror(errno) : "OK");
     if (fd >= 0)
@@ -868,7 +869,7 @@ wait_for_udev:
             chmod(buf, devmode);
         }
     }
-    fd = open(buf, O_RDWR | O_CLOEXEC, 0);
+    fd = open(buf, O_RDWR | O_CLOEXEC);
     drmMsg("drmOpenDevice: open result is %d, (%s)\n",
            fd, fd < 0 ? strerror(errno) : "OK");
     if (fd >= 0)
@@ -906,7 +907,7 @@ static int drmOpenMinor(int minor, int create, int type)
         return -EINVAL;
 
     sprintf(buf, dev_name, DRM_DIR_NAME, minor);
-    if ((fd = open(buf, O_RDWR | O_CLOEXEC, 0)) >= 0)
+    if ((fd = open(buf, O_RDWR | O_CLOEXEC)) >= 0)
         return fd;
     return -errno;
 }
@@ -1134,7 +1135,7 @@ static int drmOpenByName(const char *name, int type)
         int  retcode;
 
         sprintf(proc_name, "/proc/dri/%d/name", i);
-        if ((fd = open(proc_name, O_RDONLY, 0)) >= 0) {
+        if ((fd = open(proc_name, O_RDONLY)) >= 0) {
             retcode = read(fd, buf, sizeof(buf)-1);
             close(fd);
             if (retcode) {
@@ -3891,7 +3892,7 @@ static int drmParsePciDeviceInfo(int maj, int min,
     if (get_sysctl_pci_bus_info(maj, min, &info) != 0)
         return -EINVAL;
 
-    fd = open("/dev/pci", O_RDONLY, 0);
+    fd = open("/dev/pci", O_RDONLY);
     if (fd < 0)
         return -errno;
 
@@ -5104,4 +5105,44 @@ drmGetFormatModifierName(uint64_t modifier)
         return drmGetFormatModifierFromSimpleTokens(modifier);
 
     return modifier_found;
+}
+
+/**
+ * Get a human-readable name for a DRM FourCC format.
+ *
+ * \param format The format.
+ * \return A malloc'ed string containing the format name. Caller is responsible
+ * for freeing it.
+ */
+drm_public char *
+drmGetFormatName(uint32_t format)
+{
+    char *str, code[5];
+    const char *be;
+    size_t str_size, i;
+
+    be = (format & DRM_FORMAT_BIG_ENDIAN) ? "_BE" : "";
+    format &= ~DRM_FORMAT_BIG_ENDIAN;
+
+    if (format == DRM_FORMAT_INVALID)
+        return strdup("INVALID");
+
+    code[0] = (char) ((format >> 0) & 0xFF);
+    code[1] = (char) ((format >> 8) & 0xFF);
+    code[2] = (char) ((format >> 16) & 0xFF);
+    code[3] = (char) ((format >> 24) & 0xFF);
+    code[4] = '\0';
+
+    /* Trim spaces at the end */
+    for (i = 3; i > 0 && code[i] == ' '; i--)
+        code[i] = '\0';
+
+    str_size = strlen(code) + strlen(be) + 1;
+    str = malloc(str_size);
+    if (!str)
+        return NULL;
+
+    snprintf(str, str_size, "%s%s", code, be);
+
+    return str;
 }

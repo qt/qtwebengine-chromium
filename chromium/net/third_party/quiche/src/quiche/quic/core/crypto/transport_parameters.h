@@ -252,6 +252,9 @@ struct QUIC_EXPORT_PRIVATE TransportParameters {
   // initial round-trip time in microseconds.
   IntegerParameter initial_round_trip_time_us;
 
+  // Google internal handshake message.
+  absl::optional<std::string> google_handshake_message;
+
   // Google-specific connection options.
   absl::optional<QuicTagVector> google_connection_options;
 
@@ -296,6 +299,12 @@ QUIC_EXPORT_PRIVATE bool ParseTransportParameters(
 QUIC_EXPORT_PRIVATE bool SerializeTransportParametersForTicket(
     const TransportParameters& in, const std::vector<uint8_t>& application_data,
     std::vector<uint8_t>* out);
+
+// Removes reserved values from custom_parameters and versions.
+// The resulting value can be reliably compared with an original or other
+// deserialized value.
+QUIC_EXPORT_PRIVATE void DegreaseTransportParameters(
+    TransportParameters& parameters);
 
 }  // namespace quic
 

@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2016 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,13 +13,13 @@
 #include "constants/annotation_flags.h"
 #include "core/fpdfapi/page/cpdf_form.h"
 #include "core/fpdfapi/page/cpdf_page.h"
+#include "core/fpdfapi/page/cpdf_pageimagecache.h"
 #include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfapi/parser/cpdf_boolean.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_document.h"
 #include "core/fpdfapi/parser/cpdf_stream.h"
 #include "core/fpdfapi/parser/fpdf_parser_utility.h"
-#include "core/fpdfapi/render/cpdf_pagerendercache.h"
 #include "core/fpdfapi/render/cpdf_rendercontext.h"
 #include "core/fpdfapi/render/cpdf_renderoptions.h"
 #include "core/fpdfdoc/cpdf_generateap.h"
@@ -53,6 +53,21 @@ CPDF_Form* AnnotGetMatrix(CPDF_Page* pPage,
   CFX_FloatRect form_bbox =
       form_matrix.TransformRect(pForm->GetDict()->GetRectFor("BBox"));
   matrix->MatchRect(pAnnot->GetRect(), form_bbox);
+
+  // Compensate for page rotation.
+  if ((pAnnot->GetFlags() & pdfium::annotation_flags::kNoRotate) &&
+      pPage->GetPageRotation() != 0) {
+    // Rotate annotation rect around top-left angle (according to the
+    // specification).
+    const float offset_x = pAnnot->GetRect().Left();
+    const float offset_y = pAnnot->GetRect().Top();
+    matrix->Concat({1, 0, 0, 1, -offset_x, -offset_y});
+    // GetPageRotation returns value in fractions of pi/2.
+    const float angle = FXSYS_PI / 2 * pPage->GetPageRotation();
+    matrix->Rotate(angle);
+    matrix->Concat({1, 0, 0, 1, offset_x, offset_y});
+  }
+
   matrix->Concat(mtUser2Device);
   return pForm;
 }
@@ -119,7 +134,7 @@ CPDF_Annot::~CPDF_Annot() {
 void CPDF_Annot::GenerateAPIfNeeded() {
   if (!ShouldGenerateAP())
     return;
-  if (!CPDF_GenerateAP::GenerateAnnotAP(m_pDocument.Get(), m_pAnnotDict.Get(),
+  if (!CPDF_GenerateAP::GenerateAnnotAP(m_pDocument, m_pAnnotDict.Get(),
                                         m_nSubtype)) {
     return;
   }
@@ -197,12 +212,23 @@ CPDF_Form* CPDF_Annot::GetAPForm(CPDF_Page* pPage, AppearanceMode mode) {
     return it->second.get();
 
   auto pNewForm = std::make_unique<CPDF_Form>(
-      m_pDocument.Get(), pPage->GetMutableResources(), pStream);
+      m_pDocument, pPage->GetMutableResources(), pStream);
   pNewForm->ParseContent();
 
   CPDF_Form* pResult = pNewForm.get();
   m_APMap[pStream] = std::move(pNewForm);
   return pResult;
+}
+
+void CPDF_Annot::SetPopupAnnotOpenState(bool bOpenState) {
+  if (m_pPopupAnnot)
+    m_pPopupAnnot->SetOpenState(bOpenState);
+}
+
+absl::optional<CFX_FloatRect> CPDF_Annot::GetPopupAnnotRect() const {
+  if (!m_pPopupAnnot)
+    return absl::nullopt;
+  return m_pPopupAnnot->GetRect();
 }
 
 // static
@@ -401,9 +427,9 @@ bool CPDF_Annot::DrawAppearance(CPDF_Page* pPage,
   if (!pForm)
     return false;
 
-  CPDF_RenderContext context(
-      pPage->GetDocument(), pPage->GetMutablePageResources(),
-      static_cast<CPDF_PageRenderCache*>(pPage->GetRenderCache()));
+  CPDF_RenderContext context(pPage->GetDocument(),
+                             pPage->GetMutablePageResources(),
+                             pPage->GetPageImageCache());
   context.AppendLayer(pForm, matrix);
   context.Render(pDevice, nullptr, nullptr, nullptr);
   return true;

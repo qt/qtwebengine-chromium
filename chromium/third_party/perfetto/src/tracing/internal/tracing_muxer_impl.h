@@ -28,6 +28,7 @@
 #include <memory>
 #include <vector>
 
+#include "perfetto/base/time.h"
 #include "perfetto/ext/base/scoped_file.h"
 #include "perfetto/ext/base/thread_checker.h"
 #include "perfetto/ext/tracing/core/basic_types.h"
@@ -104,6 +105,7 @@ class TracingMuxerImpl : public TracingMuxer {
     DataSourceDescriptor descriptor;
     DataSourceFactory factory{};
     bool supports_multiple_instances = false;
+    bool requires_callbacks_under_lock = false;
     DataSourceStaticState* static_state = nullptr;
   };
 
@@ -114,7 +116,7 @@ class TracingMuxerImpl : public TracingMuxer {
   // TracingMuxer implementation.
   bool RegisterDataSource(const DataSourceDescriptor&,
                           DataSourceFactory,
-                          bool supports_multiple_instances,
+                          DataSourceParams,
                           DataSourceStaticState*) override;
   void UpdateDataSourceDescriptor(const DataSourceDescriptor&,
                                   const DataSourceStaticState*) override;
@@ -128,6 +130,8 @@ class TracingMuxerImpl : public TracingMuxer {
                            InterceptorFactory,
                            InterceptorBase::TLSFactory,
                            InterceptorBase::TracePacketCallback) override;
+
+  void ActivateTriggers(const std::vector<std::string>&, uint32_t) override;
 
   std::unique_ptr<TracingSession> CreateTracingSession(BackendType);
   std::unique_ptr<StartupTracingSession> CreateStartupTracingSession(
@@ -217,6 +221,7 @@ class TracingMuxerImpl : public TracingMuxer {
     void ClearIncrementalState(const DataSourceInstanceID*, size_t) override;
 
     bool SweepDeadServices();
+    void SendOnConnectTriggers();
 
     PERFETTO_THREAD_CHECKER(thread_checker_)
     TracingMuxerImpl* muxer_;
@@ -241,6 +246,10 @@ class TracingMuxerImpl : public TracingMuxer {
     // we keep the old services around and periodically try to clean up ones
     // that no longer have any writers (see SweepDeadServices).
     std::list<std::shared_ptr<ProducerEndpoint>> dead_services_;
+
+    // Triggers that should be sent when the service connects (trigger_name,
+    // expiration).
+    std::list<std::pair<std::string, base::TimeMillis>> on_connect_triggers_;
 
     // The currently active service endpoint is maintained as an atomic shared
     // pointer so it won't get deleted from underneath threads that are creating
@@ -280,6 +289,7 @@ class TracingMuxerImpl : public TracingMuxer {
     void OnAttach(bool success, const TraceConfig&) override;
     void OnTraceStats(bool success, const TraceStats&) override;
     void OnObservableEvents(const ObservableEvents&) override;
+    void OnSessionCloned(bool, const std::string&) override;
 
     void NotifyStartComplete();
     void NotifyError(const TracingError&);
@@ -444,13 +454,20 @@ class TracingMuxerImpl : public TracingMuxer {
 
   struct FindDataSourceRes {
     FindDataSourceRes() = default;
-    FindDataSourceRes(DataSourceStaticState* a, DataSourceState* b, uint32_t c)
-        : static_state(a), internal_state(b), instance_idx(c) {}
+    FindDataSourceRes(DataSourceStaticState* a,
+                      DataSourceState* b,
+                      uint32_t c,
+                      bool d)
+        : static_state(a),
+          internal_state(b),
+          instance_idx(c),
+          requires_callbacks_under_lock(d) {}
     explicit operator bool() const { return !!internal_state; }
 
     DataSourceStaticState* static_state = nullptr;
     DataSourceState* internal_state = nullptr;
     uint32_t instance_idx = 0;
+    bool requires_callbacks_under_lock = false;
   };
   FindDataSourceRes FindDataSource(TracingBackendId, DataSourceInstanceID);
 

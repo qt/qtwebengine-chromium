@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2016 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -320,11 +320,6 @@ void* CFX_FolderFontInfo::FindFont(int weight,
                                    const ByteString& family,
                                    bool bMatchName) {
   FontFaceInfo* pFind = nullptr;
-  if (charset == FX_Charset::kANSI && FontFamilyIsFixedPitch(pitch_family)) {
-    auto* courier_new = GetFont("Courier New");
-    if (courier_new)
-      return courier_new;
-  }
 
   ByteStringView bsFamily = family.AsStringView();
   uint32_t charset_flag = GetCharset(charset);
@@ -346,7 +341,18 @@ void* CFX_FolderFontInfo::FindFont(int weight,
       pFind = pFont;
     }
   }
-  return pFind;
+
+  if (pFind) {
+    return pFind;
+  }
+
+  if (charset == FX_Charset::kANSI && FontFamilyIsFixedPitch(pitch_family)) {
+    auto* courier_new = GetFont("Courier New");
+    if (courier_new)
+      return courier_new;
+  }
+
+  return nullptr;
 }
 
 void* CFX_FolderFontInfo::MapFont(int weight,

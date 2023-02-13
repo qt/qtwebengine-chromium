@@ -1034,9 +1034,10 @@ declare namespace ProtocolProxyApi {
     invoke_getFrameOwner(params: Protocol.DOM.GetFrameOwnerRequest): Promise<Protocol.DOM.GetFrameOwnerResponse>;
 
     /**
-     * Returns the container of the given node based on container query conditions.
-     * If containerName is given, it will find the nearest container with a matching name;
-     * otherwise it will find the nearest container regardless of its container name.
+     * Returns the query container of the given node based on container query
+     * conditions: containerName, physical, and logical axes. If no axes are
+     * provided, the style container is returned, which is the direct parent or the
+     * closest element with a matching container-name.
      */
     invoke_getContainerForNode(params: Protocol.DOM.GetContainerForNodeRequest): Promise<Protocol.DOM.GetContainerForNodeResponse>;
 
@@ -1462,13 +1463,6 @@ declare namespace ProtocolProxyApi {
 
   }
   export interface HeadlessExperimentalDispatcher {
-    /**
-     * Issued when the target starts or stops needing BeginFrames.
-     * Deprecated. Issue beginFrame unconditionally instead and use result from
-     * beginFrame to detect whether the frames were suppressed.
-     */
-    needsBeginFramesChanged(params: Protocol.HeadlessExperimental.NeedsBeginFramesChangedEvent): void;
-
   }
 
   // eslint thinks this is us prefixing our interfaces but it's not!
@@ -2367,9 +2361,12 @@ declare namespace ProtocolProxyApi {
      */
     invoke_getAppId(): Promise<Protocol.Page.GetAppIdResponse>;
 
+    invoke_getAdScriptId(params: Protocol.Page.GetAdScriptIdRequest): Promise<Protocol.Page.GetAdScriptIdResponse>;
+
     /**
-     * Returns all browser cookies. Depending on the backend support, will return detailed cookie
-     * information in the `cookies` field.
+     * Returns all browser cookies for the page and all of its subframes. Depending
+     * on the backend support, will return detailed cookie information in the
+     * `cookies` field.
      */
     invoke_getCookies(): Promise<Protocol.Page.GetCookiesResponse>;
 
@@ -2913,6 +2910,11 @@ declare namespace ProtocolProxyApi {
     invoke_trackCacheStorageForOrigin(params: Protocol.Storage.TrackCacheStorageForOriginRequest): Promise<Protocol.ProtocolResponseWithError>;
 
     /**
+     * Registers storage key to be notified when an update occurs to its cache storage list.
+     */
+    invoke_trackCacheStorageForStorageKey(params: Protocol.Storage.TrackCacheStorageForStorageKeyRequest): Promise<Protocol.ProtocolResponseWithError>;
+
+    /**
      * Registers origin to be notified when an update occurs to its IndexedDB.
      */
     invoke_trackIndexedDBForOrigin(params: Protocol.Storage.TrackIndexedDBForOriginRequest): Promise<Protocol.ProtocolResponseWithError>;
@@ -2926,6 +2928,11 @@ declare namespace ProtocolProxyApi {
      * Unregisters origin from receiving notifications for cache storage.
      */
     invoke_untrackCacheStorageForOrigin(params: Protocol.Storage.UntrackCacheStorageForOriginRequest): Promise<Protocol.ProtocolResponseWithError>;
+
+    /**
+     * Unregisters storage key from receiving notifications for cache storage.
+     */
+    invoke_untrackCacheStorageForStorageKey(params: Protocol.Storage.UntrackCacheStorageForStorageKeyRequest): Promise<Protocol.ProtocolResponseWithError>;
 
     /**
      * Unregisters origin from receiving notifications for IndexedDB.
@@ -2959,6 +2966,36 @@ declare namespace ProtocolProxyApi {
      */
     invoke_setInterestGroupTracking(params: Protocol.Storage.SetInterestGroupTrackingRequest): Promise<Protocol.ProtocolResponseWithError>;
 
+    /**
+     * Gets metadata for an origin's shared storage.
+     */
+    invoke_getSharedStorageMetadata(params: Protocol.Storage.GetSharedStorageMetadataRequest): Promise<Protocol.Storage.GetSharedStorageMetadataResponse>;
+
+    /**
+     * Gets the entries in an given origin's shared storage.
+     */
+    invoke_getSharedStorageEntries(params: Protocol.Storage.GetSharedStorageEntriesRequest): Promise<Protocol.Storage.GetSharedStorageEntriesResponse>;
+
+    /**
+     * Sets entry with `key` and `value` for a given origin's shared storage.
+     */
+    invoke_setSharedStorageEntry(params: Protocol.Storage.SetSharedStorageEntryRequest): Promise<Protocol.ProtocolResponseWithError>;
+
+    /**
+     * Deletes entry for `key` (if it exists) for a given origin's shared storage.
+     */
+    invoke_deleteSharedStorageEntry(params: Protocol.Storage.DeleteSharedStorageEntryRequest): Promise<Protocol.ProtocolResponseWithError>;
+
+    /**
+     * Clears all entries for a given origin's shared storage.
+     */
+    invoke_clearSharedStorageEntries(params: Protocol.Storage.ClearSharedStorageEntriesRequest): Promise<Protocol.ProtocolResponseWithError>;
+
+    /**
+     * Enables/disables issuing of sharedStorageAccessed events.
+     */
+    invoke_setSharedStorageTracking(params: Protocol.Storage.SetSharedStorageTrackingRequest): Promise<Protocol.ProtocolResponseWithError>;
+
   }
   export interface StorageDispatcher {
     /**
@@ -2986,6 +3023,12 @@ declare namespace ProtocolProxyApi {
      */
     interestGroupAccessed(params: Protocol.Storage.InterestGroupAccessedEvent): void;
 
+    /**
+     * Shared storage was accessed by the associated page.
+     * The following parameters are included in all events.
+     */
+    sharedStorageAccessed(params: Protocol.Storage.SharedStorageAccessedEvent): void;
+
   }
 
   export interface SystemInfoApi {
@@ -2993,6 +3036,11 @@ declare namespace ProtocolProxyApi {
      * Returns information about the system.
      */
     invoke_getInfo(): Promise<Protocol.SystemInfo.GetInfoResponse>;
+
+    /**
+     * Returns information about the feature state.
+     */
+    invoke_getFeatureState(params: Protocol.SystemInfo.GetFeatureStateRequest): Promise<Protocol.SystemInfo.GetFeatureStateResponse>;
 
     /**
      * Returns information about all running processes.
@@ -3203,8 +3251,8 @@ declare namespace ProtocolProxyApi {
     bufferUsage(params: Protocol.Tracing.BufferUsageEvent): void;
 
     /**
-     * Contains an bucket of collected trace events. When tracing is stopped collected events will be
-     * send as a sequence of dataCollected events followed by tracingComplete event.
+     * Contains a bucket of collected trace events. When tracing is stopped collected events will be
+     * sent as a sequence of dataCollected events followed by tracingComplete event.
      */
     dataCollected(params: Protocol.Tracing.DataCollectedEvent): void;
 
@@ -3402,6 +3450,11 @@ declare namespace ProtocolProxyApi {
     invoke_addVirtualAuthenticator(params: Protocol.WebAuthn.AddVirtualAuthenticatorRequest): Promise<Protocol.WebAuthn.AddVirtualAuthenticatorResponse>;
 
     /**
+     * Resets parameters isBogusSignature, isBadUV, isBadUP to false if they are not present.
+     */
+    invoke_setResponseOverrideBits(params: Protocol.WebAuthn.SetResponseOverrideBitsRequest): Promise<Protocol.ProtocolResponseWithError>;
+
+    /**
      * Removes the given authenticator.
      */
     invoke_removeVirtualAuthenticator(params: Protocol.WebAuthn.RemoveVirtualAuthenticatorRequest): Promise<Protocol.ProtocolResponseWithError>;
@@ -3446,6 +3499,16 @@ declare namespace ProtocolProxyApi {
 
   }
   export interface WebAuthnDispatcher {
+    /**
+     * Triggered when a credential is added to an authenticator.
+     */
+    credentialAdded(params: Protocol.WebAuthn.CredentialAddedEvent): void;
+
+    /**
+     * Triggered when a credential is used in a webauthn assertion.
+     */
+    credentialAsserted(params: Protocol.WebAuthn.CredentialAssertedEvent): void;
+
   }
 
   export interface MediaApi {
@@ -3635,8 +3698,8 @@ declare namespace ProtocolProxyApi {
     invoke_setBreakpointsActive(params: Protocol.Debugger.SetBreakpointsActiveRequest): Promise<Protocol.ProtocolResponseWithError>;
 
     /**
-     * Defines pause on exceptions state. Can be set to stop on all exceptions, uncaught exceptions or
-     * no exceptions. Initial pause on exceptions state is `none`.
+     * Defines pause on exceptions state. Can be set to stop on all exceptions, uncaught exceptions,
+     * or caught exceptions, no exceptions. Initial pause on exceptions state is `none`.
      */
     invoke_setPauseOnExceptions(params: Protocol.Debugger.SetPauseOnExceptionsRequest): Promise<Protocol.ProtocolResponseWithError>;
 
@@ -3788,11 +3851,6 @@ declare namespace ProtocolProxyApi {
      */
     invoke_startPreciseCoverage(params: Protocol.Profiler.StartPreciseCoverageRequest): Promise<Protocol.Profiler.StartPreciseCoverageResponse>;
 
-    /**
-     * Enable type profile.
-     */
-    invoke_startTypeProfile(): Promise<Protocol.ProtocolResponseWithError>;
-
     invoke_stop(): Promise<Protocol.Profiler.StopResponse>;
 
     /**
@@ -3802,20 +3860,10 @@ declare namespace ProtocolProxyApi {
     invoke_stopPreciseCoverage(): Promise<Protocol.ProtocolResponseWithError>;
 
     /**
-     * Disable type profile. Disabling releases type profile data collected so far.
-     */
-    invoke_stopTypeProfile(): Promise<Protocol.ProtocolResponseWithError>;
-
-    /**
      * Collect coverage data for the current isolate, and resets execution counters. Precise code
      * coverage needs to have started.
      */
     invoke_takePreciseCoverage(): Promise<Protocol.Profiler.TakePreciseCoverageResponse>;
-
-    /**
-     * Collect type profile.
-     */
-    invoke_takeTypeProfile(): Promise<Protocol.Profiler.TakeTypeProfileResponse>;
 
   }
   export interface ProfilerDispatcher {

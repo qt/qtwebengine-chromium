@@ -39,6 +39,7 @@
 #include "qsv_internal.h"
 
 #define QSV_HAVE_EXT_VP9_TILES QSV_VERSION_ATLEAST(1, 29)
+#define QSV_HAVE_EXT_AV1_PARAM QSV_VERSION_ATLEAST(2, 5)
 
 #if defined(_WIN32) || defined(__CYGWIN__)
 #define QSV_HAVE_AVBR   1
@@ -52,7 +53,7 @@
 
 #define QSV_COMMON_OPTS \
 { "async_depth", "Maximum processing parallelism", OFFSET(qsv.async_depth), AV_OPT_TYPE_INT, { .i64 = ASYNC_DEPTH_DEFAULT }, 1, INT_MAX, VE },                          \
-{ "preset", NULL, OFFSET(qsv.preset), AV_OPT_TYPE_INT, { .i64 = MFX_TARGETUSAGE_BALANCED }, MFX_TARGETUSAGE_BEST_QUALITY, MFX_TARGETUSAGE_BEST_SPEED,   VE, "preset" }, \
+{ "preset", NULL, OFFSET(qsv.preset), AV_OPT_TYPE_INT, { .i64 = MFX_TARGETUSAGE_UNKNOWN }, MFX_TARGETUSAGE_UNKNOWN, MFX_TARGETUSAGE_BEST_SPEED,   VE, "preset" },       \
 { "veryfast",    NULL, 0, AV_OPT_TYPE_CONST, { .i64 = MFX_TARGETUSAGE_BEST_SPEED  },   INT_MIN, INT_MAX, VE, "preset" },                                                \
 { "faster",      NULL, 0, AV_OPT_TYPE_CONST, { .i64 = MFX_TARGETUSAGE_6  },            INT_MIN, INT_MAX, VE, "preset" },                                                \
 { "fast",        NULL, 0, AV_OPT_TYPE_CONST, { .i64 = MFX_TARGETUSAGE_5  },            INT_MIN, INT_MAX, VE, "preset" },                                                \
@@ -126,6 +127,18 @@
 { "avbr_accuracy",    "Accuracy of the AVBR ratecontrol (unit of tenth of percent)",    OFFSET(qsv.avbr_accuracy),    AV_OPT_TYPE_INT, { .i64 = 0 }, 0, UINT16_MAX, VE }, \
 { "avbr_convergence", "Convergence of the AVBR ratecontrol (unit of 100 frames)", OFFSET(qsv.avbr_convergence), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, UINT16_MAX, VE },
 
+#define QSV_OPTION_SKIP_FRAME \
+{ "skip_frame",     "Allow frame skipping", OFFSET(qsv.skip_frame),  AV_OPT_TYPE_INT, { .i64 = MFX_SKIPFRAME_NO_SKIP }, \
+   MFX_SKIPFRAME_NO_SKIP, MFX_SKIPFRAME_BRC_ONLY, VE, "skip_frame" }, \
+{ "no_skip",        "Frame skipping is disabled", \
+    0, AV_OPT_TYPE_CONST, { .i64 = MFX_SKIPFRAME_NO_SKIP },           .flags = VE, "skip_frame" },        \
+{ "insert_dummy",   "Encoder inserts into bitstream frame where all macroblocks are encoded as skipped",  \
+    0, AV_OPT_TYPE_CONST, { .i64 = MFX_SKIPFRAME_INSERT_DUMMY },      .flags = VE, "skip_frame" },        \
+{ "insert_nothing", "Encoder inserts nothing into bitstream",                                             \
+    0, AV_OPT_TYPE_CONST, { .i64 = MFX_SKIPFRAME_INSERT_NOTHING },    .flags = VE, "skip_frame" },        \
+{ "brc_only",       "skip_frame metadata indicates the number of missed frames before the current frame", \
+    0, AV_OPT_TYPE_CONST, { .i64 = MFX_SKIPFRAME_BRC_ONLY },          .flags = VE, "skip_frame" },
+
 extern const AVCodecHWConfigInternal *const ff_qsv_enc_hw_configs[];
 
 typedef int SetEncodeCtrlCB (AVCodecContext *avctx,
@@ -154,6 +167,10 @@ typedef struct QSVEncContext {
 #endif
     mfxExtHEVCTiles exthevctiles;
     mfxExtVP9Param  extvp9param;
+#if QSV_HAVE_EXT_AV1_PARAM
+    mfxExtAV1TileParam extav1tileparam;
+    mfxExtAV1BitstreamParam extav1bsparam;
+#endif
 
 #if QSV_HAVE_OPAQUE
     mfxExtOpaqueSurfaceAlloc opaque_alloc;
@@ -163,7 +180,7 @@ typedef struct QSVEncContext {
 
     mfxExtVideoSignalInfo extvsi;
 
-    mfxExtBuffer  *extparam_internal[5 + (QSV_HAVE_MF * 2)];
+    mfxExtBuffer  *extparam_internal[5 + (QSV_HAVE_MF * 2) + QSV_HAVE_EXT_AV1_PARAM * 2];
     int         nb_extparam_internal;
 
     mfxExtBuffer **extparam;
@@ -180,6 +197,7 @@ typedef struct QSVEncContext {
     int async_depth;
     int idr_interval;
     int profile;
+    int tier;
     int preset;
     int avbr_accuracy;
     int avbr_convergence;
@@ -271,6 +289,16 @@ typedef struct QSVEncContext {
     int old_min_qp_b;
     // This is used for low_delay_brc reset
     int old_low_delay_brc;
+    // This is used for framerate reset
+    AVRational old_framerate;
+    // These are used for bitrate control reset
+    int old_bit_rate;
+    int old_rc_buffer_size;
+    int old_rc_initial_buffer_occupancy;
+    int old_rc_max_rate;
+    // This is used for SEI Timing reset
+    int old_pic_timing_sei;
+    int skip_frame;
 } QSVEncContext;
 
 int ff_qsv_enc_init(AVCodecContext *avctx, QSVEncContext *q);

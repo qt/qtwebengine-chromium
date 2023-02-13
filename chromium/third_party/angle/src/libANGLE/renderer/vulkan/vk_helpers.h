@@ -91,7 +91,8 @@ class DynamicBuffer : angle::NonCopyable
 
     // This adds in-flight buffers to the mResourceUseList in the share group and then releases
     // them.
-    void releaseInFlightBuffersToResourceUseList(ContextVk *contextVk);
+    void updateQueueSerialAndReleaseInFlightBuffers(ContextVk *contextVk,
+                                                    const QueueSerial &queueSerial);
 
     // This frees resources immediately.
     void destroy(RendererVk *renderer);
@@ -363,7 +364,7 @@ class DynamicallyGrowingPool : angle::NonCopyable
     angle::Result allocateNewEntryPool(ContextVk *contextVk, Pool &&pool);
 
     // Called by the implementation whenever an entry is freed.
-    void onEntryFreed(ContextVk *contextVk, size_t poolIndex);
+    void onEntryFreed(ContextVk *contextVk, size_t poolIndex, const ResourceUse &use);
 
     const Pool &getPool(size_t index) const
     {
@@ -560,36 +561,6 @@ class QueryHelper final : public Resource
         Ended
     };
     QueryStatus mStatus;
-};
-
-// DynamicSemaphorePool allocates semaphores as needed.  It uses a std::vector
-// as a pool to allocate many semaphores at once.  The pools live permanently,
-// but are recycled as semaphores get freed.
-
-// These are arbitrary default sizes for semaphore pools.
-constexpr uint32_t kDefaultSemaphorePoolSize = 64;
-
-class SemaphoreHelper;
-
-class DynamicSemaphorePool final : public DynamicallyGrowingPool<std::vector<Semaphore>>
-{
-  public:
-    DynamicSemaphorePool();
-    ~DynamicSemaphorePool() override;
-
-    angle::Result init(ContextVk *contextVk, uint32_t poolSize);
-    void destroy(VkDevice device);
-
-    // autoFree can be used to allocate a semaphore that's expected to be freed at the end of the
-    // frame.  This renders freeSemaphore unnecessary and saves an eventual search.
-    angle::Result allocateSemaphore(ContextVk *contextVk, SemaphoreHelper *semaphoreOut);
-    void freeSemaphore(ContextVk *contextVk, SemaphoreHelper *semaphore);
-
-  private:
-    angle::Result allocatePoolImpl(ContextVk *contextVk,
-                                   std::vector<Semaphore> &poolToAllocate,
-                                   uint32_t entriesToAllocate) override;
-    void destroyPoolImpl(VkDevice device, std::vector<Semaphore> &poolToDestroy) override;
 };
 
 // Semaphores that are allocated from the semaphore pool are encapsulated in a helper object,
@@ -966,12 +937,6 @@ class BufferPool : angle::NonCopyable
 };
 using BufferPoolPointerArray = std::array<std::unique_ptr<BufferPool>, VK_MAX_MEMORY_TYPES>;
 
-enum class BufferAccess
-{
-    Read,
-    Write,
-};
-
 // Stores clear value In packed attachment index
 class PackedClearValuesArray final
 {
@@ -1118,15 +1083,14 @@ class CommandBufferHelperCommon : angle::NonCopyable
 
     bool hasGLMemoryBarrierIssued() const { return mHasGLMemoryBarrierIssued; }
 
-    ResourceUseList &&releaseResourceUseList();
-
     void retainResource(Resource *resource);
 
     void retainReadOnlyResource(ReadWriteResource *readWriteResource);
     void retainReadWriteResource(ReadWriteResource *readWriteResource);
 
-    void assignID(CommandBufferID id) { mID = id; }
-    CommandBufferID releaseID();
+    const QueueSerial &getQueueSerial() const { return mQueueSerial; }
+
+    SecondaryCommandBlockAllocator *getAllocator() { return &mCommandAllocator; }
 
     // Dumping the command stream is disabled by default.
     static constexpr bool kEnableCommandStreamDiagnostics = false;
@@ -1135,7 +1099,7 @@ class CommandBufferHelperCommon : angle::NonCopyable
     CommandBufferHelperCommon();
     ~CommandBufferHelperCommon();
 
-    void initializeImpl(Context *context, CommandPool *commandPool);
+    void initializeImpl(CommandPool *commandPool);
 
     void resetImpl();
 
@@ -1159,12 +1123,8 @@ class CommandBufferHelperCommon : angle::NonCopyable
 
     void addCommandDiagnosticsCommon(std::ostringstream *out);
 
-    // Identifies the command buffer.
-    CommandBufferID mID;
-
-    // Allocator used by this class. Using a pool allocator per CBH to avoid threading issues
-    //  that occur w/ shared allocator between multiple CBHs.
-    angle::PoolAllocator mAllocator;
+    // Allocator used by this class.
+    SecondaryCommandBlockAllocator mCommandAllocator;
 
     // Barriers to be executed before the command buffer.
     PipelineBarrierArray mPipelineBarriers;
@@ -1184,7 +1144,7 @@ class CommandBufferHelperCommon : angle::NonCopyable
     bool mHasGLMemoryBarrierIssued;
 
     // Tracks resources used in the command buffer.
-    vk::ResourceUseList mResourceUseList;
+    QueueSerial mQueueSerial;
     uint32_t mUsedBufferCount;
 };
 
@@ -1201,6 +1161,9 @@ class OutsideRenderPassCommandBufferHelper final : public CommandBufferHelperCom
     OutsideRenderPassCommandBuffer &getCommandBuffer() { return mCommandBuffer; }
 
     bool empty() const { return mCommandBuffer.empty(); }
+
+    void attachAllocator(SecondaryCommandMemoryAllocator *allocator);
+    SecondaryCommandMemoryAllocator *detachAllocator();
 
 #if defined(ANGLE_ENABLE_ASSERTS)
     void markOpen() { mCommandBuffer.open(); }
@@ -1230,6 +1193,11 @@ class OutsideRenderPassCommandBufferHelper final : public CommandBufferHelperCom
     }
 
     void addCommandDiagnostics(ContextVk *contextVk);
+
+    void setQueueSerial(SerialIndex index, Serial serial)
+    {
+        mQueueSerial = QueueSerial(index, serial);
+    }
 
   private:
     angle::Result initializeCommandBuffer(Context *context);
@@ -1278,8 +1246,6 @@ class MaybeImagelessFramebuffer : angle::NonCopyable
     ImagelessStatus mImageless;
 };
 
-using RenderPassSerial = Serial;
-
 class RenderPassCommandBufferHelper final : public CommandBufferHelperCommon
 {
   public:
@@ -1293,6 +1259,9 @@ class RenderPassCommandBufferHelper final : public CommandBufferHelperCommon
     RenderPassCommandBuffer &getCommandBuffer() { return mCommandBuffers[mCurrentSubpass]; }
 
     bool empty() const { return !started(); }
+
+    void attachAllocator(SecondaryCommandMemoryAllocator *allocator);
+    SecondaryCommandMemoryAllocator *detachAllocator();
 
 #if defined(ANGLE_ENABLE_ASSERTS)
     void markOpen() { getCommandBuffer().open(); }
@@ -1343,7 +1312,7 @@ class RenderPassCommandBufferHelper final : public CommandBufferHelperCommon
                                   const PackedAttachmentCount colorAttachmentCount,
                                   const PackedAttachmentIndex depthStencilAttachmentIndex,
                                   const PackedClearValuesArray &clearValues,
-                                  const RenderPassSerial renderPassSerial,
+                                  const QueueSerial &queueSerial,
                                   RenderPassCommandBuffer **commandBufferOut);
 
     angle::Result endRenderPass(ContextVk *contextVk);
@@ -1433,8 +1402,6 @@ class RenderPassCommandBufferHelper final : public CommandBufferHelperCommon
     }
     void addCommandDiagnostics(ContextVk *contextVk);
 
-    RenderPassSerial getRenderPassSerial() const { return mRenderPassSerial; }
-
   private:
     angle::Result initializeCommandBuffer(Context *context);
     angle::Result beginRenderPassCommandBuffer(ContextVk *contextVk);
@@ -1517,10 +1484,6 @@ class RenderPassCommandBufferHelper final : public CommandBufferHelperCommon
     // This is last renderpass before present and this is the image will be presented. We can use
     // final layout of the renderpass to transition it to the presentable layout
     ImageHelper *mImageOptimizeForPresent;
-
-    // This serial is updated when a render pass starts, and is used to identify the framebuffer
-    // that has opened it.
-    RenderPassSerial mRenderPassSerial;
 };
 
 // The following class helps support both Vulkan and ANGLE secondary command buffers by
@@ -1536,12 +1499,10 @@ class CommandBufferRecycler
 
     angle::Result getCommandBufferHelper(Context *context,
                                          CommandPool *commandPool,
-                                         CommandBufferHandleAllocator *freeCommandBuffers,
+                                         SecondaryCommandMemoryAllocator *commandsAllocator,
                                          CommandBufferHelperT **commandBufferHelperOut);
 
-    void recycleCommandBufferHelper(VkDevice device,
-                                    CommandBufferHandleAllocator *freeCommandBuffers,
-                                    CommandBufferHelperT **commandBuffer);
+    void recycleCommandBufferHelper(VkDevice device, CommandBufferHelperT **commandBuffer);
 
     void resetCommandBuffer(CommandBufferT &&commandBuffer);
 
@@ -1840,7 +1801,6 @@ class ImageHelper final : public Resource, public angle::Subject
     // Similar to releaseImage, but also notify all contexts in the same share group to stop
     // accessing to it.
     void releaseImageFromShareContexts(RendererVk *renderer, ContextVk *contextVk);
-    void collectViewGarbage(RendererVk *renderer, vk::ImageViewHelper *imageView);
     void releaseStagedUpdates(RendererVk *renderer);
 
     bool valid() const { return mImage.valid(); }
@@ -1860,7 +1820,6 @@ class ImageHelper final : public Resource, public angle::Subject
                              GLint samples,
                              bool isRobustResourceInitEnabled);
     void resetImageWeakReference();
-    void releaseImageAndViewGarbage(RendererVk *renderer);
 
     const Image &getImage() const { return mImage; }
     const DeviceMemory &getDeviceMemory() const { return mDeviceMemory; }
@@ -2624,12 +2583,16 @@ class ImageHelper final : public Resource, public angle::Subject
     gl::TexLevelArray<LevelContentDefinedMask> mContentDefined;
     gl::TexLevelArray<LevelContentDefinedMask> mStencilContentDefined;
 
-    std::vector<vk::GarbageObject> mImageAndViewGarbage;
+    // Used for memory allocation tracking.
+    // Memory size allocated for the image in the memory during the initialization.
+    VkDeviceSize mAllocationSize;
+    // Type of the memory allocation for the image (Image or ImageExternal).
+    MemoryAllocationType mMemoryAllocationType;
 };
 
 ANGLE_INLINE bool RenderPassCommandBufferHelper::usesImage(const ImageHelper &image) const
 {
-    return image.usedByCommandBuffer(mID);
+    return image.usedByCommandBuffer(mQueueSerial);
 }
 
 ANGLE_INLINE bool RenderPassCommandBufferHelper::isImageWithLayoutTransition(
@@ -2833,7 +2796,7 @@ class ImageViewHelper final : angle::NonCopyable
 
     bool isImageViewGarbageEmpty() const;
 
-    void release(RendererVk *renderer, std::vector<vk::GarbageObject> &garbage);
+    void release(RendererVk *renderer, const ResourceUse &use);
 
   private:
     ImageView &getReadImageView()
@@ -2986,13 +2949,16 @@ enum class ComputePipelineFlag : uint8_t
     // programs are allowed to be shared between robust and non-robust contexts, so different
     // pipelines can be created for the same compute program.
     Robust,
+    // Whether VK_EXT_pipeline_protected_access should be used to make the pipeline protected-only.
+    // Similar to robustness, EGL allows protected and unprotected to be in the same share group.
+    Protected,
 
     InvalidEnum,
     EnumCount = InvalidEnum,
 };
 
 using ComputePipelineFlags = angle::PackedEnumBitSet<ComputePipelineFlag, uint8_t>;
-using ComputePipelineSet   = std::array<PipelineHelper, 1u << ComputePipelineFlags::size()>;
+using ComputePipelineCache = std::array<PipelineHelper, 1u << ComputePipelineFlags::size()>;
 
 class ShaderProgramHelper : angle::NonCopyable
 {
@@ -3004,51 +2970,45 @@ class ShaderProgramHelper : angle::NonCopyable
     void destroy(RendererVk *rendererVk);
     void release(ContextVk *contextVk);
 
-    ShaderAndSerial &getShader(gl::ShaderType shaderType) { return mShaders[shaderType].get(); }
+    void setShader(gl::ShaderType shaderType, RefCounted<ShaderModule> *shader);
 
-    void setShader(gl::ShaderType shaderType, RefCounted<ShaderAndSerial> *shader);
-    void setSpecializationConstant(sh::vk::SpecializationConstantId id, uint32_t value);
-
-    // For getting a Pipeline and from the pipeline cache.
-    ANGLE_INLINE angle::Result getGraphicsPipeline(
+    // Create a graphics pipeline and place it in the cache.  Must not be called if the pipeline
+    // exists in cache.
+    template <typename PipelineHash>
+    ANGLE_INLINE angle::Result createGraphicsPipeline(
         ContextVk *contextVk,
-        RenderPassCache *renderPassCache,
+        GraphicsPipelineCache<PipelineHash> *graphicsPipelines,
         PipelineCacheAccess *pipelineCache,
+        const RenderPass &compatibleRenderPass,
         const PipelineLayout &pipelineLayout,
         PipelineSource source,
         const GraphicsPipelineDesc &pipelineDesc,
-        const gl::AttributesMask &activeAttribLocationsMask,
-        const gl::ComponentTypeMask &programAttribsTypeMask,
-        const gl::DrawBufferMask &missingOutputsMask,
+        const SpecializationConstants &specConsts,
         const GraphicsPipelineDesc **descPtrOut,
-        PipelineHelper **pipelineOut)
+        PipelineHelper **pipelineOut) const
     {
-        // Pull in a compatible RenderPass.
-        RenderPass *compatibleRenderPass = nullptr;
-        ANGLE_TRY(renderPassCache->getCompatibleRenderPass(
-            contextVk, pipelineDesc.getRenderPassDesc(), &compatibleRenderPass));
-
-        return mGraphicsPipelines.getPipeline(
-            contextVk, pipelineCache, *compatibleRenderPass, pipelineLayout,
-            activeAttribLocationsMask, programAttribsTypeMask, missingOutputsMask, mShaders,
-            mSpecializationConstants, source, pipelineDesc, descPtrOut, pipelineOut);
+        return graphicsPipelines->createPipeline(contextVk, pipelineCache, compatibleRenderPass,
+                                                 pipelineLayout, mShaders, specConsts, source,
+                                                 pipelineDesc, descPtrOut, pipelineOut);
     }
 
-    angle::Result getComputePipeline(ContextVk *contextVk,
-                                     PipelineCacheAccess *pipelineCache,
-                                     const PipelineLayout &pipelineLayout,
-                                     ComputePipelineFlags pipelineFlags,
-                                     PipelineSource source,
-                                     PipelineHelper **pipelineOut);
+    void createMonolithicPipelineCreationTask(ContextVk *contextVk,
+                                              PipelineCacheAccess *pipelineCache,
+                                              const GraphicsPipelineDesc &desc,
+                                              const PipelineLayout &pipelineLayout,
+                                              const SpecializationConstants &specConsts,
+                                              PipelineHelper *pipeline) const;
+
+    angle::Result getOrCreateComputePipeline(ContextVk *contextVk,
+                                             ComputePipelineCache *computePipelines,
+                                             PipelineCacheAccess *pipelineCache,
+                                             const PipelineLayout &pipelineLayout,
+                                             ComputePipelineFlags pipelineFlags,
+                                             PipelineSource source,
+                                             PipelineHelper **pipelineOut) const;
 
   private:
-    ShaderAndSerialMap mShaders;
-    GraphicsPipelineCache mGraphicsPipelines;
-
-    ComputePipelineSet mComputePipelines;
-
-    // Specialization constants, currently only used by the graphics queue.
-    SpecializationConstants mSpecializationConstants;
+    ShaderModuleMap mShaders;
 };
 
 // Tracks current handle allocation counts in the back-end. Useful for debugging and profiling.

@@ -129,7 +129,7 @@ std::unique_ptr<Expression> IndexExpression::Make(const Context& context,
                 if (baseExpr->is<ConstructorArray>()) {
                     const ConstructorArray& arrayCtor = baseExpr->as<ConstructorArray>();
                     const ExpressionArray& arguments = arrayCtor.arguments();
-                    SkASSERT(arguments.count() == baseType.columns());
+                    SkASSERT(arguments.size() == baseType.columns());
 
                     return arguments[indexValue]->clone(pos);
                 }
@@ -155,7 +155,7 @@ std::unique_ptr<Expression> IndexExpression::Make(const Context& context,
                         ctorArgs.push_back(Literal::Make(baseExpr->fPosition, *slotVal,
                                 &scalarType));
                     } else {
-                        ctorArgs.reset();
+                        ctorArgs.clear();
                         break;
                     }
                 }

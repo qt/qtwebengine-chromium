@@ -31,6 +31,7 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_FRAME_WEB_FRAME_WIDGET_IMPL_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_FRAME_WEB_FRAME_WIDGET_IMPL_H_
 
+#include "base/functional/function_ref.h"
 #include "base/memory/weak_ptr.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/time/time.h"
@@ -312,6 +313,9 @@ class CORE_EXPORT WebFrameWidgetImpl
   void SetLayerTreeDebugState(const cc::LayerTreeDebugState& state) override;
   void SetMayThrottleIfUndrawnFrames(
       bool may_throttle_if_undrawn_frames) override;
+  int GetVirtualKeyboardResizeHeight() const override;
+
+  void SetVirtualKeyboardResizeHeightForTesting(int);
   bool GetMayThrottleIfUndrawnFramesForTesting();
 
   // WebFrameWidget overrides.
@@ -369,10 +373,8 @@ class CORE_EXPORT WebFrameWidgetImpl
   void ResetMeaningfulLayoutStateForMainFrame();
 
   // WebWidget overrides.
-  void InitializeCompositing(
-      scheduler::WebAgentGroupScheduler& agent_group_scheduler,
-      const display::ScreenInfos& screen_infos,
-      const cc::LayerTreeSettings* settings) override;
+  void InitializeCompositing(const display::ScreenInfos& screen_infos,
+                             const cc::LayerTreeSettings* settings) override;
   void SetCompositorVisible(bool visible) override;
   gfx::Size Size() override;
   void Resize(const gfx::Size& size_with_dsf) override;
@@ -408,6 +410,7 @@ class CORE_EXPORT WebFrameWidgetImpl
   float GetEmulatorScale() override;
 
   // WidgetBaseClient overrides:
+  void OnCommitRequested() override;
   void BeginMainFrame(base::TimeTicks last_frame_time) override;
   void UpdateLifecycle(WebLifecycleUpdate requested_update,
                        DocumentUpdateReason reason) override;
@@ -634,6 +637,7 @@ class CORE_EXPORT WebFrameWidgetImpl
 
  protected:
   // WidgetBaseClient overrides:
+  void WillBeginMainFrame() override;
   void ScheduleAnimation() override;
   void DidBeginMainFrame() override;
   std::unique_ptr<cc::LayerTreeFrameSink> AllocateNewLayerTreeFrameSink()
@@ -821,7 +825,7 @@ class CORE_EXPORT WebFrameWidgetImpl
   void PresentationCallbackForMeaningfulLayout(base::TimeTicks);
 
   void ForEachRemoteFrameControlledByWidget(
-      const base::RepeatingCallback<void(RemoteFrame*)>& callback);
+      base::FunctionRef<void(RemoteFrame*)> callback);
 
   void SetWindowRectSynchronously(const gfx::Rect& new_window_rect);
 
@@ -949,6 +953,10 @@ class CORE_EXPORT WebFrameWidgetImpl
   // The size of the widget in viewport coordinates. This is slightly different
   // than the WebViewImpl::size_ since isn't set in auto resize mode.
   absl::optional<gfx::Size> size_;
+
+  // The amount the top-most widget has been resized by the virtual keyboard,
+  // in physical pixels.
+  int virtual_keyboard_resize_height_physical_px_ = 0;
 
   static bool ignore_input_events_;
 

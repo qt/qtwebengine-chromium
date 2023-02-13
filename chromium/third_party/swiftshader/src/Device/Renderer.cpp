@@ -262,7 +262,6 @@ void Renderer::draw(const vk::GraphicsPipeline *pipeline, const vk::DynamicState
 	draw->numBatches = (count + draw->numPrimitivesPerBatch - 1) / draw->numPrimitivesPerBatch;
 	draw->topology = vertexInputInterfaceState.getTopology();
 	draw->provokingVertexMode = preRasterizationState.getProvokingVertexMode();
-	draw->indexType = pipeline->getIndexBuffer().getIndexType();
 	draw->lineRasterizationMode = preRasterizationState.getLineRasterizationMode();
 	draw->descriptorSetObjects = inputs.getDescriptorSetObjects();
 	draw->preRasterizationPipelineLayout = preRasterizationState.getPipelineLayout();
@@ -287,6 +286,11 @@ void Renderer::draw(const vk::GraphicsPipeline *pipeline, const vk::DynamicState
 	data->instanceID = instanceID;
 	data->baseVertex = baseVertex;
 
+	if(indexBuffer)
+	{
+		draw->indexType = pipeline->getIndexBuffer().getIndexType();
+	}
+
 	draw->vertexRoutine = vertexRoutine;
 
 	vk::DescriptorSet::PrepareForSampling(draw->descriptorSetObjects, draw->preRasterizationPipelineLayout, device);
@@ -310,7 +314,6 @@ void Renderer::draw(const vk::GraphicsPipeline *pipeline, const vk::DynamicState
 		data->Y0xF = Y0 * subPixF - subPixF / 2;
 		data->halfPixelX = 0.5f / W;
 		data->halfPixelY = 0.5f / H;
-		data->viewportHeight = abs(viewport.height);
 		data->depthRange = Z;
 		data->depthNear = N;
 		data->constantDepthBias = preRasterizationState.getConstantDepthBias();

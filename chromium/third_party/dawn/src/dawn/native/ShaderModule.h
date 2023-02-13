@@ -60,9 +60,10 @@ struct EntryPointMetadata;
 
 // Base component type of an inter-stage variable
 enum class InterStageComponentType {
-    Sint,
-    Uint,
-    Float,
+    I32,
+    U32,
+    F32,
+    F16,
 };
 
 enum class InterpolationType {
@@ -226,11 +227,6 @@ struct EntryPointMetadata {
         // Then it is required for the pipeline stage to have a constant record to initialize a
         // value
         bool isInitialized;
-
-        // Store the default initialized value in shader
-        // This is used by metal backend as the function_constant does not have dafault values
-        // Initialized when isInitialized == true
-        OverrideScalar defaultValue;
     };
 
     using OverridesMap = std::unordered_map<std::string, Override>;

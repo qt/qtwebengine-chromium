@@ -795,6 +795,11 @@ bool RenderPassDesc::equalIgnoreLoadStoreOptions(const RenderPassDesc &other) co
         }
     }
 
+    if (defaultWidth != other.defaultWidth || defaultHeight != other.defaultHeight)
+    {
+        return false;
+    }
+
     return depthAttachment.equalIgnoreLoadStoreOptions(other.depthAttachment) &&
            stencilAttachment.equalIgnoreLoadStoreOptions(other.stencilAttachment);
 }
@@ -816,6 +821,11 @@ bool RenderPassDesc::operator==(const RenderPassDesc &other) const
         }
     }
 
+    if (defaultWidth != other.defaultWidth || defaultHeight != other.defaultHeight)
+    {
+        return false;
+    }
+
     return depthAttachment == other.depthAttachment && stencilAttachment == other.stencilAttachment;
 }
 
@@ -825,27 +835,11 @@ void RenderPassDesc::convertToMetalDesc(MTLRenderPassDescriptor *objCDesc,
 {
     ASSERT(deviceMaxRenderTargets <= kMaxRenderTargets);
 
-    ANGLE_MTL_OBJC_SCOPE
+    for (uint32_t i = 0; i < numColorAttachments; ++i)
     {
-        for (uint32_t i = 0; i < numColorAttachments; ++i)
-        {
-            ToObjC(colorAttachments[i], objCDesc.colorAttachments[i]);
-        }
-        for (uint32_t i = numColorAttachments; i < deviceMaxRenderTargets; ++i)
-        {
-            // Inactive render target
-            objCDesc.colorAttachments[i].texture     = nil;
-            objCDesc.colorAttachments[i].level       = 0;
-            objCDesc.colorAttachments[i].slice       = 0;
-            objCDesc.colorAttachments[i].depthPlane  = 0;
-            objCDesc.colorAttachments[i].loadAction  = MTLLoadActionDontCare;
-            objCDesc.colorAttachments[i].storeAction = MTLStoreActionDontCare;
-        }
-
-        ToObjC(depthAttachment, objCDesc.depthAttachment);
-        ToObjC(stencilAttachment, objCDesc.stencilAttachment);
+        ToObjC(colorAttachments[i], objCDesc.colorAttachments[i]);
     }
-    for (uint32_t i = numColorAttachments; i < kMaxRenderTargets; ++i)
+    for (uint32_t i = numColorAttachments; i < deviceMaxRenderTargets; ++i)
     {
         // Inactive render target
         objCDesc.colorAttachments[i].texture     = nil;
@@ -858,6 +852,13 @@ void RenderPassDesc::convertToMetalDesc(MTLRenderPassDescriptor *objCDesc,
 
     ToObjC(depthAttachment, objCDesc.depthAttachment);
     ToObjC(stencilAttachment, objCDesc.stencilAttachment);
+
+    if ((defaultWidth | defaultHeight) != 0)
+    {
+        objCDesc.renderTargetWidth        = defaultWidth;
+        objCDesc.renderTargetHeight       = defaultHeight;
+        objCDesc.defaultRasterSampleCount = 1;
+    }
 }
 
 // RenderPipelineCache implementation

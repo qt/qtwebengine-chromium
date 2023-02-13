@@ -30,7 +30,7 @@ LOCAL_C_INCLUDES += $(VULKAN_INCLUDE) \
                     $(LOCAL_PATH)/$(SRC_DIR)/layers/generated \
                     $(LOCAL_PATH)/$(SRC_DIR)/layers \
                     $(LOCAL_PATH)/$(THIRD_PARTY)/robin-hood-hashing/src/include
-LOCAL_CPPFLAGS += -std=c++11 -Wall -Werror -Wno-unused-function -Wno-unused-const-variable
+LOCAL_CPPFLAGS += -std=c++17 -Wall -Werror -Wno-unused-function -Wno-unused-const-variable
 LOCAL_CPPFLAGS += -DVK_ENABLE_BETA_EXTENSIONS -DVK_USE_PLATFORM_ANDROID_KHR -DVK_PROTOTYPES -DUSE_ROBIN_HOOD_HASHING -fvisibility=hidden
 include $(BUILD_STATIC_LIBRARY)
 
@@ -53,6 +53,7 @@ LOCAL_SRC_FILES += $(SRC_DIR)/layers/descriptor_sets.cpp
 LOCAL_SRC_FILES += $(SRC_DIR)/layers/descriptor_validation.cpp
 LOCAL_SRC_FILES += $(SRC_DIR)/layers/buffer_validation.cpp
 LOCAL_SRC_FILES += $(SRC_DIR)/layers/shader_module.cpp
+LOCAL_SRC_FILES += $(SRC_DIR)/layers/shader_instruction.cpp
 LOCAL_SRC_FILES += $(SRC_DIR)/layers/shader_validation.cpp
 LOCAL_SRC_FILES += $(SRC_DIR)/layers/generated/spirv_validation_helper.cpp
 LOCAL_SRC_FILES += $(SRC_DIR)/layers/generated/spirv_grammar_helper.cpp
@@ -87,7 +88,7 @@ LOCAL_C_INCLUDES += $(VULKAN_INCLUDE) \
                     $(LOCAL_PATH)/$(THIRD_PARTY)/shaderc/third_party/spirv-tools/external/spirv-headers/include \
                     $(LOCAL_PATH)/$(THIRD_PARTY)/robin-hood-hashing/src/include
 LOCAL_STATIC_LIBRARIES += layer_utils glslang SPIRV-Tools SPIRV-Tools-opt
-LOCAL_CPPFLAGS += -std=c++11 -Wall -Werror -Wno-unused-function -Wno-unused-const-variable -frtti
+LOCAL_CPPFLAGS += -std=c++17 -Wall -Werror -Wno-unused-function -Wno-unused-const-variable -frtti
 LOCAL_CPPFLAGS += -DVK_ENABLE_BETA_EXTENSIONS -DVK_USE_PLATFORM_ANDROID_KHR -DVK_PROTOTYPES -DUSE_ROBIN_HOOD_HASHING -fvisibility=hidden -DXXH_NO_LONG_LONG
 LOCAL_LDLIBS    := -llog -landroid
 LOCAL_LDFLAGS   += -Wl,-Bsymbolic
@@ -104,11 +105,16 @@ LOCAL_SRC_FILES += $(SRC_DIR)/tests/layer_validation_tests.cpp \
                    $(SRC_DIR)/tests/vklayertests_descriptor_renderpass_framebuffer.cpp \
                    $(SRC_DIR)/tests/vklayertests_command.cpp \
                    $(SRC_DIR)/tests/vklayertests_gpu.cpp \
+                   $(SRC_DIR)/tests/vklayertests_debug_printf.cpp \
                    $(SRC_DIR)/tests/vklayertests_best_practices.cpp \
                    $(SRC_DIR)/tests/vklayertests_arm_best_practices.cpp \
                    $(SRC_DIR)/tests/vklayertests_wsi.cpp \
                    $(SRC_DIR)/tests/vklayertests_imageless_framebuffer.cpp \
                    $(SRC_DIR)/tests/vklayertests_graphics_library.cpp \
+                   $(SRC_DIR)/tests/vklayertests_android_hardware_buffer.cpp \
+                   $(SRC_DIR)/tests/vklayertests_ray_tracing.cpp \
+                   $(SRC_DIR)/tests/vklayertests_ray_tracing_pipeline.cpp \
+                   $(SRC_DIR)/tests/vklayertests_ray_tracing_gpu.cpp \
                    $(SRC_DIR)/tests/positive/command.cpp \
                    $(SRC_DIR)/tests/positive/descriptors.cpp \
                    $(SRC_DIR)/tests/positive/image_buffer.cpp \
@@ -119,9 +125,13 @@ LOCAL_SRC_FILES += $(SRC_DIR)/tests/layer_validation_tests.cpp \
                    $(SRC_DIR)/tests/positive/shaderval.cpp \
                    $(SRC_DIR)/tests/positive/sync.cpp \
                    $(SRC_DIR)/tests/positive/tooling.cpp \
+                   $(SRC_DIR)/tests/positive/android_hardware_buffer.cpp \
+                   $(SRC_DIR)/tests/positive/ray_tracing.cpp \
+                   $(SRC_DIR)/tests/positive/ray_tracing_pipeline.cpp \
                    $(SRC_DIR)/tests/vksyncvaltests.cpp \
                    $(SRC_DIR)/tests/vktestbinding.cpp \
                    $(SRC_DIR)/tests/vktestframeworkandroid.cpp \
+                   $(SRC_DIR)/tests/vkerrormonitor.cpp \
                    $(SRC_DIR)/tests/vkrenderframework.cpp \
                    $(SRC_DIR)/layers/convert_to_renderpass2.cpp \
                    $(SRC_DIR)/layers/generated/vk_safe_struct.cpp \
@@ -130,11 +140,10 @@ LOCAL_C_INCLUDES += $(VULKAN_INCLUDE) \
                     $(LOCAL_PATH)/$(SRC_DIR)/layers/generated \
                     $(LOCAL_PATH)/$(SRC_DIR)/layers \
                     $(LOCAL_PATH)/$(SRC_DIR)/libs \
-                    $(LOCAL_PATH)/$(THIRD_PARTY)/Vulkan-Tools/common \
                     $(LOCAL_PATH)/$(THIRD_PARTY)/robin-hood-hashing/src/include
 
 LOCAL_STATIC_LIBRARIES := googletest_main layer_utils shaderc
-LOCAL_CPPFLAGS += -std=c++11 -DVK_PROTOTYPES -Wall -Werror -Wno-unused-function -Wno-unused-const-variable
+LOCAL_CPPFLAGS += -std=c++17 -DVK_PROTOTYPES -Wall -Werror -Wno-unused-function -Wno-unused-const-variable
 LOCAL_CPPFLAGS += -DVK_ENABLE_BETA_EXTENSIONS -DVK_USE_PLATFORM_ANDROID_KHR -DNV_EXTENSIONS -DAMD_EXTENSIONS -DUSE_ROBIN_HOOD_HASHING -fvisibility=hidden
 LOCAL_LDLIBS := -llog -landroid -ldl
 LOCAL_LDFLAGS   += -Wl,-Bsymbolic
@@ -152,11 +161,16 @@ LOCAL_SRC_FILES += $(SRC_DIR)/tests/layer_validation_tests.cpp \
                    $(SRC_DIR)/tests/vklayertests_descriptor_renderpass_framebuffer.cpp \
                    $(SRC_DIR)/tests/vklayertests_command.cpp \
                    $(SRC_DIR)/tests/vklayertests_gpu.cpp \
+                   $(SRC_DIR)/tests/vklayertests_debug_printf.cpp \
                    $(SRC_DIR)/tests/vklayertests_best_practices.cpp \
                    $(SRC_DIR)/tests/vklayertests_arm_best_practices.cpp \
                    $(SRC_DIR)/tests/vklayertests_wsi.cpp \
                    $(SRC_DIR)/tests/vklayertests_imageless_framebuffer.cpp \
                    $(SRC_DIR)/tests/vklayertests_graphics_library.cpp \
+                   $(SRC_DIR)/tests/vklayertests_android_hardware_buffer.cpp \
+                   $(SRC_DIR)/tests/vklayertests_ray_tracing.cpp \
+                   $(SRC_DIR)/tests/vklayertests_ray_tracing_pipeline.cpp \
+                   $(SRC_DIR)/tests/vklayertests_ray_tracing_gpu.cpp \
                    $(SRC_DIR)/tests/positive/command.cpp \
                    $(SRC_DIR)/tests/positive/descriptors.cpp \
                    $(SRC_DIR)/tests/positive/image_buffer.cpp \
@@ -167,9 +181,13 @@ LOCAL_SRC_FILES += $(SRC_DIR)/tests/layer_validation_tests.cpp \
                    $(SRC_DIR)/tests/positive/shaderval.cpp \
                    $(SRC_DIR)/tests/positive/sync.cpp \
                    $(SRC_DIR)/tests/positive/tooling.cpp \
+                   $(SRC_DIR)/tests/positive/android_hardware_buffer.cpp \
+                   $(SRC_DIR)/tests/positive/ray_tracing.cpp \
+                   $(SRC_DIR)/tests/positive/ray_tracing_pipeline.cpp \
                    $(SRC_DIR)/tests/vksyncvaltests.cpp \
                    $(SRC_DIR)/tests/vktestbinding.cpp \
                    $(SRC_DIR)/tests/vktestframeworkandroid.cpp \
+                   $(SRC_DIR)/tests/vkerrormonitor.cpp \
                    $(SRC_DIR)/tests/vkrenderframework.cpp \
                    $(SRC_DIR)/layers/convert_to_renderpass2.cpp \
                    $(SRC_DIR)/layers/generated/vk_safe_struct.cpp \
@@ -178,11 +196,10 @@ LOCAL_C_INCLUDES += $(VULKAN_INCLUDE) \
                     $(LOCAL_PATH)/$(SRC_DIR)/layers/generated \
                     $(LOCAL_PATH)/$(SRC_DIR)/layers \
                     $(LOCAL_PATH)/$(SRC_DIR)/libs \
-                    $(LOCAL_PATH)/$(THIRD_PARTY)/Vulkan-Tools/common \
                     $(LOCAL_PATH)/$(THIRD_PARTY)/robin-hood-hashing/src/include
 
 LOCAL_STATIC_LIBRARIES := googletest_main layer_utils shaderc
-LOCAL_CPPFLAGS += -std=c++11 -DVK_PROTOTYPES -Wall -Werror -Wno-unused-function -Wno-unused-const-variable
+LOCAL_CPPFLAGS += -std=c++17 -DVK_PROTOTYPES -Wall -Werror -Wno-unused-function -Wno-unused-const-variable
 LOCAL_CPPFLAGS += -DVK_ENABLE_BETA_EXTENSIONS -DVK_USE_PLATFORM_ANDROID_KHR -DNV_EXTENSIONS -DAMD_EXTENSIONS -fvisibility=hidden -DVALIDATION_APK -DUSE_ROBIN_HOOD_HASHING
 LOCAL_WHOLE_STATIC_LIBRARIES += android_native_app_glue
 LOCAL_LDLIBS := -llog -landroid -ldl

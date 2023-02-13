@@ -183,6 +183,14 @@ class DataSource : public DataSourceBase {
   // session), it will fail to start the second instance of data source.
   static constexpr bool kSupportsMultipleInstances = true;
 
+  // When this flag is true, DataSource callbacks (OnSetup, OnStart, etc.) are
+  // called under the lock (the same that is used in GetDataSourceLocked
+  // function). This is not recommended because it can lead to deadlocks, but
+  // it was the default behavior for a long time and some embedders rely on it
+  // to protect concurrent access to the DataSource members. So we keep the
+  // "true" value as the default.
+  static constexpr bool kRequiresCallbacksUnderLock = true;
+
   // Argument passed to the lambda function passed to Trace() (below).
   class TraceContext {
    public:
@@ -201,17 +209,18 @@ class DataSource : public DataSourceBase {
     // safely read the last event from the trace buffer.
     // See PERFETTO_INTERNAL_ADD_EMPTY_EVENT macros for context.
     void AddEmptyTracePacket() {
-      // Only add a new empty packet if the previous packet wasn't empty.
-      // Otherwise, there's nothing to flush, so adding more empty packets
-      // serves no purpose.
-      if (tls_inst_->last_packet_was_empty)
+      // If nothing was written since the last empty packet, there's nothing to
+      // scrape, so adding more empty packets serves no purpose.
+      if (tls_inst_->trace_writer->written() ==
+          tls_inst_->last_empty_packet_position) {
         return;
-      tls_inst_->last_packet_was_empty = true;
+      }
       tls_inst_->trace_writer->NewTracePacket();
+      tls_inst_->last_empty_packet_position =
+          tls_inst_->trace_writer->written();
     }
 
     TracePacketHandle NewTracePacket() {
-      tls_inst_->last_packet_was_empty = false;
       return tls_inst_->trace_writer->NewTracePacket();
     }
 
@@ -473,9 +482,11 @@ class DataSource : public DataSourceBase {
           new DataSourceType(constructor_args...));
     };
     auto* tracing_impl = internal::TracingMuxer::Get();
-    return tracing_impl->RegisterDataSource(
-        descriptor, factory, DataSourceType::kSupportsMultipleInstances,
-        &static_state_);
+    internal::DataSourceParams params{
+        DataSourceType::kSupportsMultipleInstances,
+        DataSourceType::kRequiresCallbacksUnderLock};
+    return tracing_impl->RegisterDataSource(descriptor, factory, params,
+                                            &static_state_);
   }
 
   // Updates the data source descriptor.

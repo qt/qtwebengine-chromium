@@ -10,6 +10,7 @@
 #include "src/gpu/ganesh/gl/GrGLGpu.h"
 #include "src/gpu/ganesh/gl/builders/GrGLShaderStringBuilder.h"
 #include "src/sksl/SkSLCompiler.h"
+#include "src/sksl/SkSLProgramSettings.h"
 #include "src/sksl/codegen/SkSLGLSLCodeGenerator.h"
 #include "src/sksl/ir/SkSLProgram.h"
 #include "src/utils/SkShaderUtils.h"
@@ -68,7 +69,7 @@ GrGLuint GrGLCompileAndAttachShader(const GrGLContext& glCtx,
         return 0;
     }
     const GrGLchar* source = glsl.c_str();
-    GrGLint sourceLength = glsl.size();
+    GrGLint sourceLength = SkToInt(glsl.size());
     GR_GL_CALL(gli, ShaderSource(shaderId, 1, &source, &sourceLength));
 
     stats->incShaderCompilations();

@@ -360,7 +360,7 @@ const UIStrings = {
   *@description A context menu item in the Network Log View of the Network panel
   * for creating a header override
   */
-  createResponseHeaderOverride: 'Create response header override',
+  overrideHeaders: 'Override headers',
 };
 const str_ = i18n.i18n.registerUIStrings('panels/network/NetworkLogView.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
@@ -831,7 +831,7 @@ export class NetworkLogView extends Common.ObjectWrapper.eventMixin<EventTypes, 
 
   modelAdded(networkManager: SDK.NetworkManager.NetworkManager): void {
     // TODO(allada) Remove dependency on networkManager and instead use NetworkLog and PageLoad for needed data.
-    if (networkManager.target().parentTarget()) {
+    if (networkManager.target().parentTarget()?.type() === SDK.Target.Type.Frame) {
       return;
     }
     const resourceTreeModel = networkManager.target().model(SDK.ResourceTreeModel.ResourceTreeModel);
@@ -843,7 +843,7 @@ export class NetworkLogView extends Common.ObjectWrapper.eventMixin<EventTypes, 
   }
 
   modelRemoved(networkManager: SDK.NetworkManager.NetworkManager): void {
-    if (!networkManager.target().parentTarget()) {
+    if (networkManager.target().parentTarget()?.type() !== SDK.Target.Type.Frame) {
       const resourceTreeModel = networkManager.target().model(SDK.ResourceTreeModel.ResourceTreeModel);
       if (resourceTreeModel) {
         resourceTreeModel.removeEventListener(SDK.ResourceTreeModel.Events.Load, this.loadEventFired, this);
@@ -982,7 +982,7 @@ export class NetworkLogView extends Common.ObjectWrapper.eventMixin<EventTypes, 
         }
       }
 
-      if (isEnterOrSpaceKey(event)) {
+      if (Platform.KeyboardUtilities.isEnterOrSpaceKey(event)) {
         this.dispatchEventToListeners(Events.RequestActivated, {showPanel: true, takeFocus: true});
         event.consume(true);
       }
@@ -1594,13 +1594,11 @@ export class NetworkLogView extends Common.ObjectWrapper.eventMixin<EventTypes, 
     footerSection.appendItem(i18nString(UIStrings.copyAllAsHar), this.copyAll.bind(this));
 
     contextMenu.saveSection().appendItem(i18nString(UIStrings.saveAllAsHarWithContent), this.exportAll.bind(this));
-
     if (Root.Runtime.experiments.isEnabled(Root.Runtime.ExperimentName.HEADER_OVERRIDES)) {
-      contextMenu.editSection().appendItem(
-          i18nString(UIStrings.createResponseHeaderOverride),
-          this.#handleCreateResponseHeaderOverrideClick.bind(this, request));
-      contextMenu.editSection().appendSeparator();
+      contextMenu.saveSection().appendItem(
+          i18nString(UIStrings.overrideHeaders), this.#handleCreateResponseHeaderOverrideClick.bind(this, request));
     }
+
     contextMenu.editSection().appendItem(i18nString(UIStrings.clearBrowserCache), this.clearBrowserCache.bind(this));
     contextMenu.editSection().appendItem(
         i18nString(UIStrings.clearBrowserCookies), this.clearBrowserCookies.bind(this));
@@ -1696,7 +1694,7 @@ export class NetworkLogView extends Common.ObjectWrapper.eventMixin<EventTypes, 
   }
 
   async exportAll(): Promise<void> {
-    const mainTarget = SDK.TargetManager.TargetManager.instance().mainTarget();
+    const mainTarget = SDK.TargetManager.TargetManager.instance().mainFrameTarget();
     if (!mainTarget) {
       return;
     }
@@ -1717,13 +1715,18 @@ export class NetworkLogView extends Common.ObjectWrapper.eventMixin<EventTypes, 
   }
 
   async #handleCreateResponseHeaderOverrideClick(request: SDK.NetworkRequest.NetworkRequest): Promise<void> {
+    const requestLocation =
+        NetworkForward.UIRequestLocation.UIRequestLocation.responseHeaderMatch(request, {name: '', value: ''});
     const networkPersistanceManager = Persistence.NetworkPersistenceManager.NetworkPersistenceManager.instance();
     if (networkPersistanceManager.project()) {
+      Common.Settings.Settings.instance().moduleSetting('persistenceNetworkOverridesEnabled').set(true);
       await networkPersistanceManager.getOrCreateHeadersUISourceCodeFromUrl(request.url());
+      await Common.Revealer.reveal(requestLocation);
     } else {  // If folder for local overrides has not been provided yet
       UI.InspectorView.InspectorView.instance().displaySelectOverrideFolderInfobar(async(): Promise<void> => {
         await Sources.SourcesNavigator.OverridesNavigatorView.instance().setupNewWorkspace();
         await networkPersistanceManager.getOrCreateHeadersUISourceCodeFromUrl(request.url());
+        await Common.Revealer.reveal(requestLocation);
       });
     }
   }

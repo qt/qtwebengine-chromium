@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2016 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -78,7 +78,7 @@ void CPDF_Form::ParseContentInternal(const CPDF_AllStates* pGraphicStates,
 
   if (GetParseState() == ParseState::kNotParsed) {
     StartParse(std::make_unique<CPDF_ContentParser>(
-        this, pGraphicStates, pParentMatrix, pType3Char,
+        GetStream(), this, pGraphicStates, pParentMatrix, pType3Char,
         pParsedSet ? pParsedSet : &m_ParsedSet));
   }
   DCHECK_EQ(GetParseState(), ParseState::kParsing);

@@ -44,6 +44,7 @@ pt_PT{
         LK{"Sri Lanca"}
         LV{"Letónia"}
         MC{"Mónaco"}
+        MF{"São Martinho (Saint-Martin)"}
         MG{"Madagáscar"}
         MK{"Macedónia do Norte"}
         MS{"Monserrate"}
@@ -80,5 +81,6 @@ pt_PT{
         CG{"República do Congo"}
         CI{"Costa do Marfim"}
         CZ{"República Checa"}
+        NZ{"Aotearoa"}
     }
 }

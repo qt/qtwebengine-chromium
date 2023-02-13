@@ -1,4 +1,4 @@
-// Copyright 2017 PDFium Authors. All rights reserved.
+// Copyright 2017 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -298,9 +298,6 @@ CFGAS_Decimal::CFGAS_Decimal(WideStringView strObj) {
   bool pointmet = false;
   bool negmet = false;
   uint8_t scale = 0;
-  m_uHi = 0;
-  m_uMid = 0;
-  m_uLo = 0;
   while (str != strBound && *str == ' ')
     str++;
   if (str != strBound && *str == '-') {

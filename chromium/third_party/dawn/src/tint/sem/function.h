@@ -57,7 +57,7 @@ class Function final : public Castable<Function, CallTarget> {
     /// @param return_location the location value for the return, if provided
     /// @param parameters the parameters to the function
     Function(const ast::Function* declaration,
-             Type* return_type,
+             type::Type* return_type,
              std::optional<uint32_t> return_location,
              utils::VectorRef<Parameter*> parameters);
 
@@ -135,13 +135,11 @@ class Function final : public Castable<Function, CallTarget> {
 
     /// @returns the list of texture/sampler pairs that this function uses
     /// (directly or indirectly).
-    const utils::Vector<VariablePair, 8>& TextureSamplerPairs() const {
-        return texture_sampler_pairs_;
-    }
+    utils::VectorRef<VariablePair> TextureSamplerPairs() const { return texture_sampler_pairs_; }
 
     /// @returns the list of direct calls to functions / builtins made by this
     /// function
-    std::vector<const Call*> DirectCallStatements() const { return direct_calls_; }
+    std::vector<const Call*> DirectCalls() const { return direct_calls_; }
 
     /// Adds a record of the direct function / builtin calls made by this
     /// function
@@ -160,7 +158,7 @@ class Function final : public Castable<Function, CallTarget> {
         return nullptr;
     }
 
-    /// @returns the list of callsites of this function
+    /// @returns the list of callsites to this function
     std::vector<const Call*> CallSites() const { return callsites_; }
 
     /// Adds a record of a callsite to this function
@@ -237,12 +235,17 @@ class Function final : public Castable<Function, CallTarget> {
     /// @returns true if `sym` is an ancestor entry point of this function
     bool HasAncestorEntryPoint(Symbol sym) const;
 
-    /// Sets that this function has a discard statement
-    void SetHasDiscard() { has_discard_ = true; }
+    /// Records the first discard statement in the function
+    /// @param stmt the `discard` statement.
+    void SetDiscardStatement(const Statement* stmt) {
+        if (!discard_stmt_) {
+            discard_stmt_ = stmt;
+        }
+    }
 
-    /// Returns true if this function has a discard statement
-    /// @returns true if this function has a discard statement
-    bool HasDiscard() const { return has_discard_; }
+    /// @returns the first discard statement for the function, or nullptr if the function does not
+    /// use `discard`.
+    const Statement* DiscardStatement() const { return discard_stmt_; }
 
     /// @return the behaviors of this function
     const sem::Behaviors& Behaviors() const { return behaviors_; }
@@ -271,7 +274,7 @@ class Function final : public Castable<Function, CallTarget> {
     std::vector<const Call*> direct_calls_;
     std::vector<const Call*> callsites_;
     std::vector<const Function*> ancestor_entry_points_;
-    bool has_discard_ = false;
+    const Statement* discard_stmt_ = nullptr;
     sem::Behaviors behaviors_{sem::Behavior::kNext};
 
     std::optional<uint32_t> return_location_;

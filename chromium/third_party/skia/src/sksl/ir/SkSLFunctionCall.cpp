@@ -12,7 +12,9 @@
 #include "include/private/SkFloatingPoint.h"
 #include "include/private/SkHalf.h"
 #include "include/private/SkSLModifiers.h"
+#include "include/private/SkSLString.h"
 #include "include/private/SkTArray.h"
+#include "include/private/SkTo.h"
 #include "include/sksl/DSLCore.h"
 #include "include/sksl/DSLExpression.h"
 #include "include/sksl/DSLType.h"
@@ -43,8 +45,8 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <optional>
 #include <string_view>
 #include <vector>
@@ -469,8 +471,8 @@ static std::unique_ptr<Expression> optimize_intrinsic_call(const Context& contex
                                                            const Type& returnType) {
     // Replace constant variables with their literal values.
     IntrinsicArguments arguments = {};
-    SkASSERT(argArray.size() <= arguments.size());
-    for (int index = 0; index < argArray.count(); ++index) {
+    SkASSERT(SkToSizeT(argArray.size()) <= arguments.size());
+    for (int index = 0; index < argArray.size(); ++index) {
         arguments[index] = ConstantFolder::GetConstantValueForVariable(*argArray[index]);
     }
 
@@ -851,11 +853,10 @@ std::unique_ptr<Expression> FunctionCall::clone(Position pos) const {
 
 std::string FunctionCall::description(OperatorPrecedence) const {
     std::string result = std::string(this->function().name()) + "(";
-    const char* separator = "";
+    auto separator = SkSL::String::Separator();
     for (const std::unique_ptr<Expression>& arg : this->arguments()) {
-        result += separator;
+        result += separator();
         result += arg->description(OperatorPrecedence::kSequence);
-        separator = ", ";
     }
     result += ")";
     return result;
@@ -873,7 +874,7 @@ static CoercionCost call_cost(const Context& context,
         (function.modifiers().fFlags & Modifiers::kES3_Flag)) {
         return CoercionCost::Impossible();
     }
-    if (function.parameters().size() != arguments.size()) {
+    if (function.parameters().size() != SkToSizeT(arguments.size())) {
         return CoercionCost::Impossible();
     }
     FunctionDeclaration::ParamTypes types;
@@ -882,7 +883,7 @@ static CoercionCost call_cost(const Context& context,
         return CoercionCost::Impossible();
     }
     CoercionCost total = CoercionCost::Free();
-    for (size_t i = 0; i < arguments.size(); i++) {
+    for (int i = 0; i < arguments.size(); i++) {
         total = total + arguments[i]->coercionCost(*types[i]);
     }
     return total;
@@ -909,10 +910,9 @@ const FunctionDeclaration* FunctionCall::FindBestFunctionForCall(
 
 static std::string build_argument_type_list(SkSpan<const std::unique_ptr<Expression>> arguments) {
     std::string result = "(";
-    const char* separator = "";
+    auto separator = SkSL::String::Separator();
     for (const std::unique_ptr<Expression>& arg : arguments) {
-        result += separator;
-        separator = ", ";
+        result += separator();
         result += arg->type().displayName();
     }
     return result + ")";
@@ -997,13 +997,13 @@ std::unique_ptr<Expression> FunctionCall::Convert(const Context& context,
     }
 
     // Reject function calls with the wrong number of arguments.
-    if (function.parameters().size() != arguments.size()) {
+    if (function.parameters().size() != SkToSizeT(arguments.size())) {
         std::string msg = "call to '" + std::string(function.name()) + "' expected " +
                           std::to_string(function.parameters().size()) + " argument";
         if (function.parameters().size() != 1) {
             msg += "s";
         }
-        msg += ", but found " + std::to_string(arguments.count());
+        msg += ", but found " + std::to_string(arguments.size());
         context.fErrors->error(pos, msg);
         return nullptr;
     }
@@ -1018,7 +1018,7 @@ std::unique_ptr<Expression> FunctionCall::Convert(const Context& context,
         return nullptr;
     }
 
-    for (size_t i = 0; i < arguments.size(); i++) {
+    for (int i = 0; i < arguments.size(); i++) {
         // Coerce each argument to the proper type.
         arguments[i] = types[i]->coerceExpression(std::move(arguments[i]), context);
         if (!arguments[i]) {
@@ -1059,7 +1059,7 @@ std::unique_ptr<Expression> FunctionCall::Make(const Context& context,
                                                const Type* returnType,
                                                const FunctionDeclaration& function,
                                                ExpressionArray arguments) {
-    SkASSERT(function.parameters().size() == arguments.size());
+    SkASSERT(function.parameters().size() == SkToSizeT(arguments.size()));
 
     // We might be able to optimize built-in intrinsics.
     if (function.isIntrinsic() && has_compile_time_constant_arguments(arguments)) {

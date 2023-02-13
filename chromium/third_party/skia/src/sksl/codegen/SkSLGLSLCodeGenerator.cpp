@@ -10,6 +10,7 @@
 #include "include/core/SkSpan.h"
 #include "include/core/SkTypes.h"
 #include "include/private/SkSLDefines.h"
+#include "include/private/SkSLIRNode.h"
 #include "include/private/SkSLLayout.h"
 #include "include/private/SkSLModifiers.h"
 #include "include/private/SkSLProgramElement.h"
@@ -18,6 +19,7 @@
 #include "include/private/SkStringView.h"
 #include "include/private/SkTArray.h"
 #include "include/sksl/SkSLErrorReporter.h"
+#include "include/sksl/SkSLOperator.h"
 #include "include/sksl/SkSLPosition.h"
 #include "src/sksl/SkSLAnalysis.h"
 #include "src/sksl/SkSLBuiltinTypes.h"
@@ -485,13 +487,12 @@ void GLSLCodeGenerator::writeTransposeHack(const Expression& mat) {
         std::string transposed =  this->getTypeName(base.toCompound(fContext, r, c));
         fExtraFunctions.writeText((transposed + " " + name + "(" + typeName + " m) { return " +
                                    transposed + "(").c_str());
-        const char* separator = "";
+        auto separator = SkSL::String::Separator();
         for (int row = 0; row < r; ++row) {
             for (int column = 0; column < c; ++column) {
-                fExtraFunctions.writeText(separator);
+                fExtraFunctions.writeText(separator().c_str());
                 fExtraFunctions.writeText(("m[" + std::to_string(column) + "][" +
                                            std::to_string(row) + "]").c_str());
-                separator = ", ";
             }
         }
         fExtraFunctions.writeText("); }\n");
@@ -636,9 +637,8 @@ void GLSLCodeGenerator::writeFunctionCall(const FunctionCall& c) {
             if (!this->caps().fRemovePowWithConstantExponent) {
                 break;
             }
-            // pow(x, y) on some NVIDIA drivers causes crashes if y is a
-            // constant.  It's hard to tell what constitutes "constant" here
-            // so just replace in all cases.
+            // pow(x, y) on some NVIDIA drivers causes crashes if y is a constant.
+            // It's hard to tell what constitutes "constant" here, so just replace in all cases.
 
             // Change pow(x, y) into exp2(y * log2(x))
             this->write("exp2(");
@@ -748,10 +748,9 @@ void GLSLCodeGenerator::writeFunctionCall(const FunctionCall& c) {
         this->writeIdentifier(function.mangledName());
     }
     this->write("(");
-    const char* separator = "";
+    auto separator = SkSL::String::Separator();
     for (const auto& arg : arguments) {
-        this->write(separator);
-        separator = ", ";
+        this->write(separator());
         this->writeExpression(*arg, Precedence::kSequence);
     }
     if (fProgram.fConfig->fSettings.fSharpenTextures && isTextureFunctionWithBias) {
@@ -836,10 +835,9 @@ void GLSLCodeGenerator::writeCastConstructor(const AnyConstructor& c, Precedence
 void GLSLCodeGenerator::writeAnyConstructor(const AnyConstructor& c, Precedence parentPrecedence) {
     this->writeType(c.type());
     this->write("(");
-    const char* separator = "";
+    auto separator = SkSL::String::Separator();
     for (const auto& arg : c.argumentSpan()) {
-        this->write(separator);
-        separator = ", ";
+        this->write(separator());
         this->writeExpression(*arg, Precedence::kSequence);
     }
     this->write(")");
@@ -1120,7 +1118,7 @@ void GLSLCodeGenerator::writeFunctionDeclaration(const FunctionDeclaration& f) {
     this->write(" ");
     this->writeIdentifier(f.mangledName());
     this->write("(");
-    const char* separator = "";
+    auto separator = SkSL::String::Separator();
     for (size_t index = 0; index < f.parameters().size(); ++index) {
         const Variable* param = f.parameters()[index];
 
@@ -1130,9 +1128,12 @@ void GLSLCodeGenerator::writeFunctionDeclaration(const FunctionDeclaration& f) {
         if (f.isMain() && param->modifiers().fLayout.fBuiltin != -1) {
             continue;
         }
-        this->write(separator);
-        separator = ", ";
-        this->writeModifiers(param->modifiers(), false);
+        this->write(separator());
+        Modifiers modifiers = param->modifiers();
+        if (this->caps().fRemoveConstFromFunctionParameters) {
+            modifiers.fFlags &= ~Modifiers::kConst_Flag;
+        }
+        this->writeModifiers(modifiers, false);
         std::vector<int> sizes;
         const Type* type = &param->type();
         if (type->isArray()) {
@@ -1245,14 +1246,11 @@ void GLSLCodeGenerator::writeInterfaceBlock(const InterfaceBlock& intf) {
     if (intf.typeName() == "sk_PerVertex") {
         return;
     }
-    this->writeModifiers(intf.variable().modifiers(), true);
-    this->writeIdentifier(intf.typeName());
+    const Type* structType = &intf.var()->type().componentType();
+    this->writeModifiers(intf.var()->modifiers(), true);
+    this->writeType(*structType);
     this->writeLine(" {");
     fIndentation++;
-    const Type* structType = &intf.variable().type();
-    if (structType->isArray()) {
-        structType = &structType->componentType();
-    }
     for (const auto& f : structType->fields()) {
         this->writeModifiers(f.fModifiers, false);
         this->writeTypePrecision(*f.fType);
@@ -1315,11 +1313,11 @@ void GLSLCodeGenerator::writeTypePrecision(const Type& type) {
 }
 
 void GLSLCodeGenerator::writeVarDeclaration(const VarDeclaration& var, bool global) {
-    this->writeModifiers(var.var().modifiers(), global);
+    this->writeModifiers(var.var()->modifiers(), global);
     this->writeTypePrecision(var.baseType());
     this->writeType(var.baseType());
     this->write(" ");
-    this->writeIdentifier(var.var().mangledName());
+    this->writeIdentifier(var.var()->mangledName());
     if (var.arraySize() > 0) {
         this->write("[");
         this->write(std::to_string(var.arraySize()));
@@ -1327,10 +1325,10 @@ void GLSLCodeGenerator::writeVarDeclaration(const VarDeclaration& var, bool glob
     }
     if (var.value()) {
         this->write(" = ");
-        this->writeVarInitializer(var.var(), *var.value());
+        this->writeVarInitializer(*var.var(), *var.value());
     }
     if (!fFoundExternalSamplerDecl &&
-        var.var().type().matches(*fContext.fTypes.fSamplerExternalOES)) {
+        var.var()->type().matches(*fContext.fTypes.fSamplerExternalOES)) {
         if (this->caps().externalTextureExtensionString()) {
             this->writeExtension(this->caps().externalTextureExtensionString());
         }
@@ -1339,7 +1337,7 @@ void GLSLCodeGenerator::writeVarDeclaration(const VarDeclaration& var, bool glob
         }
         fFoundExternalSamplerDecl = true;
     }
-    if (!fFoundRectSamplerDecl && var.var().type().matches(*fContext.fTypes.fSampler2DRect)) {
+    if (!fFoundRectSamplerDecl && var.var()->type().matches(*fContext.fTypes.fSampler2DRect)) {
         fFoundRectSamplerDecl = true;
     }
     this->write(";");
@@ -1634,9 +1632,8 @@ void GLSLCodeGenerator::writeProgramElement(const ProgramElement& e) {
             this->writeExtension(e.as<Extension>().name());
             break;
         case ProgramElement::Kind::kGlobalVar: {
-            const VarDeclaration& decl =
-                                   e.as<GlobalVarDeclaration>().declaration()->as<VarDeclaration>();
-            int builtin = decl.var().modifiers().fLayout.fBuiltin;
+            const VarDeclaration& decl = e.as<GlobalVarDeclaration>().varDeclaration();
+            int builtin = decl.var()->modifiers().fLayout.fBuiltin;
             if (builtin == -1) {
                 // normal var
                 this->writeVarDeclaration(decl, true);

@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2016 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -153,7 +153,7 @@ RetainPtr<const CPDF_Stream> CPDF_FileSpec::GetFileStream() const {
 }
 
 RetainPtr<const CPDF_Dictionary> CPDF_FileSpec::GetParamsDict() const {
-  const CPDF_Stream* pStream = GetFileStream();
+  RetainPtr<const CPDF_Stream> pStream = GetFileStream();
   if (!pStream)
     return nullptr;
 

@@ -83,7 +83,6 @@
 #endif
 
 #ifdef SK_GRAPHITE_ENABLED
-#include "include/gpu/graphite/CombinationBuilder.h"
 #include "include/gpu/graphite/Context.h"
 #include "include/gpu/graphite/Recorder.h"
 #include "include/gpu/graphite/Recording.h"
@@ -115,10 +114,16 @@ namespace DM {
 GMSrc::GMSrc(skiagm::GMFactory factory) : fFactory(factory) {}
 
 Result GMSrc::draw(GrDirectContext* context, SkCanvas* canvas) const {
+    return this->draw(nullptr, context, canvas);
+}
+
+Result GMSrc::draw(skgpu::graphite::Context* graphiteContext,
+                   GrDirectContext* ganeshContext,
+                   SkCanvas* canvas) const {
     std::unique_ptr<skiagm::GM> gm(fFactory());
     SkString msg;
 
-    skiagm::DrawResult gpuSetupResult = gm->gpuSetup(context, canvas, &msg);
+    skiagm::DrawResult gpuSetupResult = gm->gpuSetup(ganeshContext, canvas, &msg);
     switch (gpuSetupResult) {
         case skiagm::DrawResult::kOk  : break;
         case skiagm::DrawResult::kFail: return Result(Result::Status::Fatal, msg);
@@ -126,7 +131,7 @@ Result GMSrc::draw(GrDirectContext* context, SkCanvas* canvas) const {
         default: SK_ABORT("");
     }
 
-    skiagm::DrawResult drawResult = gm->draw(canvas, &msg);
+    skiagm::DrawResult drawResult = gm->draw(graphiteContext, canvas, &msg);
     switch (drawResult) {
         case skiagm::DrawResult::kOk  : return Result(Result::Status::Ok,    msg);
         case skiagm::DrawResult::kFail: return Result(Result::Status::Fatal, msg);
@@ -1196,7 +1201,7 @@ Result BisectSrc::draw(GrDirectContext* context, SkCanvas* canvas) const {
         return result;
     }
 
-    int start = 0, end = pathFinder.foundPaths().count();
+    int start = 0, end = pathFinder.foundPaths().size();
     for (const char* ch = fTrail.c_str(); *ch; ++ch) {
         int midpt = (start + end) / 2;
         if ('l' == *ch) {
@@ -1374,15 +1379,15 @@ MSKPSrc::MSKPSrc(Path path) : fPath(path) {
     int count = SkMultiPictureDocumentReadPageCount(stream.get());
     if (count > 0) {
         fPages.reset(count);
-        (void)SkMultiPictureDocumentReadPageSizes(stream.get(), &fPages[0], fPages.count());
+        (void)SkMultiPictureDocumentReadPageSizes(stream.get(), &fPages[0], fPages.size());
     }
 }
 
-int MSKPSrc::pageCount() const { return fPages.count(); }
+int MSKPSrc::pageCount() const { return fPages.size(); }
 
 SkISize MSKPSrc::size() const { return this->size(0); }
 SkISize MSKPSrc::size(int i) const {
-    return i >= 0 && i < fPages.count() ? fPages[i].fSize.toCeil() : SkISize{0, 0};
+    return i >= 0 && i < fPages.size() ? fPages[i].fSize.toCeil() : SkISize{0, 0};
 }
 
 Result MSKPSrc::draw(GrDirectContext* context, SkCanvas* c) const {
@@ -1392,7 +1397,7 @@ Result MSKPSrc::draw(int i, GrDirectContext*, SkCanvas* canvas) const {
     if (this->pageCount() == 0) {
         return Result::Fatal("Unable to parse MultiPictureDocument file: %s", fPath.c_str());
     }
-    if (i >= fPages.count() || i < 0) {
+    if (i >= fPages.size() || i < 0) {
         return Result::Fatal("MultiPictureDocument page number out of range: %d", i);
     }
     SkPicture* page = fPages[i].fPicture.get();
@@ -1401,7 +1406,7 @@ Result MSKPSrc::draw(int i, GrDirectContext*, SkCanvas* canvas) const {
         if (!stream) {
             return Result::Fatal("Unable to open file: %s", fPath.c_str());
         }
-        if (!SkMultiPictureDocumentRead(stream.get(), &fPages[0], fPages.count())) {
+        if (!SkMultiPictureDocumentRead(stream.get(), &fPages[0], fPages.size())) {
             return Result::Fatal("SkMultiPictureDocument reader failed on page %d: %s", i,
                                  fPath.c_str());
         }
@@ -1602,6 +1607,46 @@ Result GPUSlugSink::draw(const Src& src, SkBitmap* dst, SkWStream* write, SkStri
             testCanvas.init(canvas);
             return testCanvas.get();
         });
+}
+
+/*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
+GPUSerializeSlugSink::GPUSerializeSlugSink(
+        const SkCommandLineConfigGpu* config, const GrContextOptions& options)
+    : GPUSink(config, options) {}
+
+Result GPUSerializeSlugSink::draw(
+        const Src& src, SkBitmap* dst, SkWStream* write, SkString* log) const {
+    GrContextOptions grOptions = this->baseContextOptions();
+    // Force padded atlas entries for slug drawing.
+    grOptions.fSupportBilerpFromGlyphAtlas |= true;
+
+    SkTLazy<SkTestCanvas<SkSerializeSlugTestKey>> testCanvas;
+
+    return onDraw(src, dst, write, log, grOptions, nullptr,
+                  [&](SkCanvas* canvas){
+                      testCanvas.init(canvas);
+                      return testCanvas.get();
+                  });
+}
+
+/*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
+GPURemoteSlugSink::GPURemoteSlugSink(
+        const SkCommandLineConfigGpu* config, const GrContextOptions& options)
+        : GPUSink(config, options) {}
+
+Result GPURemoteSlugSink::draw(
+        const Src& src, SkBitmap* dst, SkWStream* write, SkString* log) const {
+    GrContextOptions grOptions = this->baseContextOptions();
+    // Force padded atlas entries for slug drawing.
+    grOptions.fSupportBilerpFromGlyphAtlas |= true;
+
+    SkTLazy<SkTestCanvas<SkSerializeSlugTestKey>> testCanvas;
+
+    return onDraw(src, dst, write, log, grOptions, nullptr,
+                  [&](SkCanvas* canvas) {
+                      testCanvas.init(canvas);
+                      return testCanvas.get();
+                  });
 }
 
 /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
@@ -2158,21 +2203,14 @@ Result GraphiteSink::draw(const Src& src,
         if (!surface) {
             return Result::Fatal("Could not create a surface.");
         }
-        Result result = src.draw(/* dContext */ nullptr, surface->getCanvas());
+        Result result = src.draw(context, nullptr, surface->getCanvas());
         if (!result.isOk()) {
             return result;
         }
 
-        // For now we cast and call directly into Surface. Once we have a better idea of
-        // what the public API for synchronous graphite readPixels we can update this call to use
-        // that instead.
         SkPixmap pm;
         if (!dst->peekPixels(&pm) ||
-            !static_cast<skgpu::graphite::Surface*>(surface.get())->onReadPixels(context,
-                                                                                 recorder.get(),
-                                                                                 pm,
-                                                                                 0,
-                                                                                 0)) {
+            !surface->readPixels(pm, 0, 0)) {
             return Result::Fatal("Could not readback from surface.");
         }
     }
@@ -2184,7 +2222,9 @@ Result GraphiteSink::draw(const Src& src,
 
     skgpu::graphite::InsertRecordingInfo info;
     info.fRecording = recording.get();
-    context->insertRecording(info);
+    if (!context->insertRecording(info)) {
+        return Result::Fatal("Context::insertRecording failed.");
+    }
     context->submit(skgpu::graphite::SyncToCpu::kYes);
 
     return Result::Ok();

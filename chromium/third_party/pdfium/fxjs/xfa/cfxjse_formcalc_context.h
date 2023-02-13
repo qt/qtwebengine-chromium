@@ -1,4 +1,4 @@
-// Copyright 2014 PDFium Authors. All rights reserved.
+// Copyright 2014 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,10 +11,10 @@
 
 #include <functional>
 
-#include "core/fxcrt/unowned_ptr.h"
 #include "core/fxcrt/widetext_buffer.h"
 #include "fxjs/xfa/fxjse.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
+#include "v8/include/cppgc/persistent.h"
 #include "v8/include/v8-forward.h"
 #include "v8/include/v8-persistent-handle.h"
 
@@ -274,7 +274,7 @@ class CFXJSE_FormCalcContext final : public CFXJSE_HostObject {
                                                   WideStringView wsFormcalc);
 
   v8::Local<v8::Value> GlobalPropertyGetter();
-  v8::Isolate* GetIsolate() const { return m_pIsolate.Get(); }
+  v8::Isolate* GetIsolate() const { return m_pIsolate; }
   CXFA_Document* GetDocument() const { return m_pDocument.Get(); }
 
  private:
@@ -307,7 +307,7 @@ class CFXJSE_FormCalcContext final : public CFXJSE_HostObject {
 
   UnownedPtr<v8::Isolate> const m_pIsolate;
   v8::Global<v8::Value> m_Value;
-  UnownedPtr<CXFA_Document> const m_pDocument;
+  cppgc::WeakPersistent<CXFA_Document> const m_pDocument;
 };
 
 #endif  // FXJS_XFA_CFXJSE_FORMCALC_CONTEXT_H_

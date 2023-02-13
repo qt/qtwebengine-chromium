@@ -8,8 +8,8 @@
 #include "src/gpu/graphite/vk/VulkanCommandBuffer.h"
 
 #include "src/gpu/graphite/Log.h"
+#include "src/gpu/graphite/vk/VulkanGraphiteUtils.h"
 #include "src/gpu/graphite/vk/VulkanSharedContext.h"
-#include "src/gpu/graphite/vk/VulkanUtils.h"
 
 namespace skgpu::graphite {
 
@@ -242,6 +242,7 @@ bool VulkanCommandBuffer::onAddRenderPass(
         const Texture* colorTexture,
         const Texture* resolveTexture,
         const Texture* depthStencilTexture,
+        SkRect viewport,
         const std::vector<std::unique_ptr<DrawPass>>& drawPasses) {
     return false;
 }
@@ -249,6 +250,14 @@ bool VulkanCommandBuffer::onAddRenderPass(
 bool VulkanCommandBuffer::onAddComputePass(const ComputePassDesc&,
                                            const ComputePipeline*,
                                            const std::vector<ResourceBinding>& bindings) {
+    return false;
+}
+
+bool VulkanCommandBuffer::onCopyBufferToBuffer(const Buffer* srcBuffer,
+                                               size_t srcOffset,
+                                               const Buffer* dstBuffer,
+                                               size_t dstOffset,
+                                               size_t size) {
     return false;
 }
 

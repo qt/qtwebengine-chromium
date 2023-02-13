@@ -69,6 +69,8 @@ static const struct {
     { "gldft",                 "gpu", "api=gl,dit=true" },
     { "glesdft",               "gpu", "api=gles,dit=true" },
     { "glslug",                "gpu", "api=gl,slug=true" },
+    { "glserializeslug",       "gpu", "api=gl,serializeSlug=true" },
+    { "glremoteslug",          "gpu", "api=gl,remoteSlug=true" },
     { "gltestthreading",       "gpu", "api=gl,testThreading=true" },
     { "gltestpersistentcache", "gpu", "api=gl,testPersistentCache=1" },
     { "gltestglslcache",       "gpu", "api=gl,testPersistentCache=2" },
@@ -134,6 +136,9 @@ static const struct {
 #ifdef SK_GRAPHITE_ENABLED
 #ifdef SK_DIRECT3D
     { "grd3d",                 "graphite", "api=direct3d" },
+#endif
+#ifdef SK_DAWN
+    { "grdawn",                "graphite", "api=dawn" },
 #endif
 #ifdef SK_METAL
     { "grmtl",                 "graphite", "api=metal" },
@@ -417,10 +422,10 @@ public:
     ExtendedOptions(const SkString& optionsString, bool* outParseSucceeded) {
         SkTArray<SkString> optionParts;
         SkStrSplit(optionsString.c_str(), ",", kStrict_SkStrSplitMode, &optionParts);
-        for (int i = 0; i < optionParts.count(); ++i) {
+        for (int i = 0; i < optionParts.size(); ++i) {
             SkTArray<SkString> keyValueParts;
             SkStrSplit(optionParts[i].c_str(), "=", kStrict_SkStrSplitMode, &keyValueParts);
-            if (keyValueParts.count() != 2) {
+            if (keyValueParts.size() != 2) {
                 *outParseSucceeded = false;
                 return;
             }
@@ -462,30 +467,35 @@ public:
 #ifdef SK_GRAPHITE_ENABLED
     bool get_option_graphite_api(const char*                               optionKey,
                                  SkCommandLineConfigGraphite::ContextType* outContextType) const {
-        using ContextType = skiatest::graphite::ContextFactory::ContextType;
-
         SkString* optionValue = fOptionsMap.find(SkString(optionKey));
         if (optionValue == nullptr) {
             return false;
         }
-#ifdef SK_VULKAN
-        if (optionValue->equals("vulkan")) {
-            *outContextType = ContextType::kVulkan;
-            return true;
-        }
-#endif
-#ifdef SK_METAL
-        if (optionValue->equals("metal")) {
-            *outContextType = ContextType::kMetal;
+#ifdef SK_DAWN
+        if (optionValue->equals("dawn")) {
+            *outContextType = sk_gpu_test::GrContextFactory::kDawn_ContextType;
             return true;
         }
 #endif
 #ifdef SK_DIRECT3D
         if (optionValue->equals("direct3d")) {
-            *outContextType = ContextType::kDirect3D;
+            *outContextType = sk_gpu_test::GrContextFactory::kDirect3D_ContextType;
             return true;
         }
 #endif
+#ifdef SK_METAL
+        if (optionValue->equals("metal")) {
+            *outContextType = sk_gpu_test::GrContextFactory::kMetal_ContextType;
+            return true;
+        }
+#endif
+#ifdef SK_VULKAN
+        if (optionValue->equals("vulkan")) {
+            *outContextType = sk_gpu_test::GrContextFactory::kVulkan_ContextType;
+            return true;
+        }
+#endif
+
         return false;
     }
 #endif
@@ -535,6 +545,8 @@ SkCommandLineConfigGpu::SkCommandLineConfigGpu(const SkString&           tag,
                                                bool                      useDDLSink,
                                                bool                      OOPRish,
                                                bool                      slug,
+                                               bool                      serializeSlug,
+                                               bool                      remoteSlug,
                                                bool                      reducedShaders,
                                                SurfType                  surfType)
         : SkCommandLineConfig(tag, SkString("gpu"), viaParts)
@@ -550,6 +562,8 @@ SkCommandLineConfigGpu::SkCommandLineConfigGpu(const SkString&           tag,
         , fUseDDLSink(useDDLSink)
         , fOOPRish(OOPRish)
         , fSlug(slug)
+        , fSerializeSlug(serializeSlug)
+        , fRemoteSlug(remoteSlug)
         , fReducedShaders(reducedShaders)
         , fSurfType(surfType) {
     if (!useStencilBuffers) {
@@ -580,6 +594,8 @@ SkCommandLineConfigGpu* parse_command_line_config_gpu(const SkString&           
     bool                                useDDLs             = false;
     bool                                ooprish             = false;
     bool                                slug                = false;
+    bool                                serializeSlug       = false;
+    bool                                remoteSlug          = false;
     bool                                reducedShaders      = false;
     bool                                fakeGLESVersion2    = false;
     SkCommandLineConfigGpu::SurfType    surfType = SkCommandLineConfigGpu::SurfType::kDefault;
@@ -603,6 +619,8 @@ SkCommandLineConfigGpu* parse_command_line_config_gpu(const SkString&           
             extendedOptions.get_option_bool("useDDLSink", &useDDLs) &&
             extendedOptions.get_option_bool("OOPRish", &ooprish) &&
             extendedOptions.get_option_bool("slug", &slug) &&
+            extendedOptions.get_option_bool("serializeSlug", &serializeSlug) &&
+            extendedOptions.get_option_bool("remoteSlug", &remoteSlug) &&
             extendedOptions.get_option_bool("reducedShaders", &reducedShaders) &&
             extendedOptions.get_option_gpu_surf_type("surf", &surfType);
 
@@ -634,6 +652,8 @@ SkCommandLineConfigGpu* parse_command_line_config_gpu(const SkString&           
                                       useDDLs,
                                       ooprish,
                                       slug,
+                                      serializeSlug,
+                                      remoteSlug,
                                       reducedShaders,
                                       surfType);
 }
@@ -643,9 +663,9 @@ SkCommandLineConfigGpu* parse_command_line_config_gpu(const SkString&           
 SkCommandLineConfigGraphite* parse_command_line_config_graphite(const SkString&           tag,
                                                                 const SkTArray<SkString>& vias,
                                                                 const SkString&           options) {
-    using ContextType = skiatest::graphite::ContextFactory::ContextType;
+    using ContextType = sk_gpu_test::GrContextFactory::ContextType;
 
-    ContextType contextType = ContextType::kMetal;
+    ContextType contextType = sk_gpu_test::GrContextFactory::kMetal_ContextType;
     SkColorType colorType = kRGBA_8888_SkColorType;
     SkAlphaType alphaType = kPremul_SkAlphaType;
 
@@ -698,7 +718,7 @@ SkCommandLineConfigSvg* parse_command_line_config_svg(const SkString&           
 
 void ParseConfigs(const CommandLineFlags::StringArray& configs,
                   SkCommandLineConfigArray*            outResult) {
-    outResult->reset();
+    outResult->clear();
     for (int i = 0; i < configs.size(); ++i) {
         SkString           extendedBackend;
         SkString           extendedOptions;
@@ -708,13 +728,13 @@ void ParseConfigs(const CommandLineFlags::StringArray& configs,
         SkString           tag(configs[i]);
         SkTArray<SkString> parts;
         SkStrSplit(tag.c_str(), "[", kStrict_SkStrSplitMode, &parts);
-        if (parts.count() == 2) {
+        if (parts.size() == 2) {
             SkTArray<SkString> parts2;
             SkStrSplit(parts[1].c_str(), "]", kStrict_SkStrSplitMode, &parts2);
-            if (parts2.count() == 2 && parts2[1].isEmpty()) {
+            if (parts2.size() == 2 && parts2[1].isEmpty()) {
                 SkStrSplit(parts[0].c_str(), "-", kStrict_SkStrSplitMode, &vias);
-                if (vias.count()) {
-                    extendedBackend = vias[vias.count() - 1];
+                if (vias.size()) {
+                    extendedBackend = vias[vias.size() - 1];
                     vias.pop_back();
                 } else {
                     extendedBackend = parts[0];
@@ -727,8 +747,8 @@ void ParseConfigs(const CommandLineFlags::StringArray& configs,
         if (extendedBackend.isEmpty()) {
             simpleBackend = tag;
             SkStrSplit(tag.c_str(), "-", kStrict_SkStrSplitMode, &vias);
-            if (vias.count()) {
-                simpleBackend = vias[vias.count() - 1];
+            if (vias.size()) {
+                simpleBackend = vias[vias.size() - 1];
                 vias.pop_back();
             }
             for (auto& predefinedConfig : gPredefinedConfigs) {

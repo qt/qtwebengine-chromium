@@ -77,7 +77,8 @@ class Device final : public DeviceBase {
     ComPtr<IDxcCompiler> GetDxcCompiler() const;
     ComPtr<IDxcValidator> GetDxcValidator() const;
 
-    ResultOrError<CommandRecordingContext*> GetPendingCommandContext();
+    ResultOrError<CommandRecordingContext*> GetPendingCommandContext(
+        Device::SubmitMode submitMode = Device::SubmitMode::Normal);
 
     MaybeError ClearBufferToZero(CommandRecordingContext* commandContext,
                                  BufferBase* destination,
@@ -91,32 +92,35 @@ class Device final : public DeviceBase {
 
     void ReferenceUntilUnused(ComPtr<IUnknown> object);
 
+    void ForceEventualFlushOfCommands() override;
+
     MaybeError ExecutePendingCommandContext();
 
     ResultOrError<std::unique_ptr<StagingBufferBase>> CreateStagingBuffer(size_t size) override;
-    MaybeError CopyFromStagingToBuffer(StagingBufferBase* source,
+    MaybeError CopyFromStagingToBufferImpl(StagingBufferBase* source,
+                                           uint64_t sourceOffset,
+                                           BufferBase* destination,
+                                           uint64_t destinationOffset,
+                                           uint64_t size) override;
+
+    void CopyFromStagingToBufferHelper(CommandRecordingContext* commandContext,
+                                       StagingBufferBase* source,
                                        uint64_t sourceOffset,
                                        BufferBase* destination,
                                        uint64_t destinationOffset,
-                                       uint64_t size) override;
+                                       uint64_t size);
 
-    void CopyFromStagingToBufferImpl(CommandRecordingContext* commandContext,
-                                     StagingBufferBase* source,
-                                     uint64_t sourceOffset,
-                                     BufferBase* destination,
-                                     uint64_t destinationOffset,
-                                     uint64_t size);
-
-    MaybeError CopyFromStagingToTexture(const StagingBufferBase* source,
-                                        const TextureDataLayout& src,
-                                        TextureCopy* dst,
-                                        const Extent3D& copySizePixels) override;
+    MaybeError CopyFromStagingToTextureImpl(const StagingBufferBase* source,
+                                            const TextureDataLayout& src,
+                                            TextureCopy* dst,
+                                            const Extent3D& copySizePixels) override;
 
     ResultOrError<ResourceHeapAllocation> AllocateMemory(
         D3D12_HEAP_TYPE heapType,
         const D3D12_RESOURCE_DESC& resourceDescriptor,
         D3D12_RESOURCE_STATES initialUsage,
-        uint32_t formatBytesPerBlock);
+        uint32_t formatBytesPerBlock,
+        bool forceAllocateAsCommittedResource = false);
 
     void DeallocateMemory(ResourceHeapAllocation& allocation);
 
@@ -208,6 +212,7 @@ class Device final : public DeviceBase {
 
     void DestroyImpl() override;
     MaybeError WaitForIdleForDestruction() override;
+    bool HasPendingCommands() const override;
 
     MaybeError CheckDebugLayerAndGenerateErrors();
     void AppendDebugLayerMessages(ErrorData* error) override;

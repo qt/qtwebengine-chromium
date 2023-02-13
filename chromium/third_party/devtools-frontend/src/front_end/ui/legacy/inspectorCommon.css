@@ -256,6 +256,7 @@ iframe.widget {
   cursor: pointer;
   text-decoration: underline;
   color: var(--color-link);
+  outline-offset: 2px;
 }
 
 button,
@@ -402,6 +403,28 @@ input::placeholder {
 
 .chrome-select:enabled:focus {
   border-color: transparent;
+}
+
+@media (forced-colors: active) and (prefers-color-scheme: light) {
+  .chrome-select {
+    background-image: var(--image-file-chromeSelect);
+  }
+
+  .-theme-with-dark-background .chrome-select,
+  :host-context(.-theme-with-dark-background) .chrome-select {
+    background-image: var(--image-file-chromeSelect);
+  }
+}
+
+@media (forced-colors: active) and (prefers-color-scheme: dark) {
+  .chrome-select {
+    background-image: var(--image-file-chromeSelectDark);
+  }
+
+  .-theme-with-dark-background .chrome-select,
+  :host-context(.-theme-with-dark-background) .chrome-select {
+    background-image: var(--image-file-chromeSelectDark);
+  }
 }
 
 .-theme-with-dark-background .chrome-select:enabled:active,

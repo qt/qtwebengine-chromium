@@ -18,7 +18,6 @@
 #include "base/callback_list.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/raw_ptr.h"
-#include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "base/time/default_clock.h"
 #include "base/time/time.h"
@@ -103,6 +102,12 @@ class TemplateURLService : public WebDataServiceConsumer,
   struct URLVisitedDetails {
     GURL url;
     bool is_keyword_transition;
+  };
+
+  // Search metadata that's often used to persist into History.
+  struct SearchMetadata {
+    GURL normalized_url;
+    std::u16string search_terms;
   };
 
   // Values for an enumerated histogram used to track TemplateURL edge cases.
@@ -314,6 +319,9 @@ class TemplateURLService : public WebDataServiceConsumer,
   GURL GenerateSearchURLForDefaultSearchProvider(
       const std::u16string& search_terms) const;
 
+  // Returns search metadata if |url| is a valid Search URL.
+  absl::optional<SearchMetadata> ExtractSearchMetadata(const GURL& url) const;
+
   // Returns true if the default search provider supports the side search
   // feature.
   bool IsSideSearchSupportedForDefaultSearchProvider() const;
@@ -400,7 +408,7 @@ class TemplateURLService : public WebDataServiceConsumer,
 #endif
 
   // Whether or not the keywords have been loaded.
-  bool loaded() { return loaded_; }
+  bool loaded() const { return loaded_; }
 
   // Notification that the keywords have been loaded.
   // This is invoked from WebDataService, and should not be directly
@@ -815,7 +823,7 @@ class TemplateURLService : public WebDataServiceConsumer,
   // Essentially all direct usages of this variable need to first check that
   // |loading_| is true, and should call GetDefaultSearchProvider() instead.
   // Example of a regression due to this mistake: https://crbug.com/1164024.
-  raw_ptr<TemplateURL> default_search_provider_ = nullptr;
+  raw_ptr<TemplateURL, DanglingUntriaged> default_search_provider_ = nullptr;
 
   // A temporary location for the DSE until Web Data has been loaded and it can
   // be merged into |template_urls_|.

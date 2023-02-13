@@ -1,4 +1,4 @@
-// Copyright 2014 PDFium Authors. All rights reserved.
+// Copyright 2014 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -54,7 +54,7 @@ class CPDFXFA_Context final : public CPDF_Document::Extension,
     m_XFAPageList.resize(count);
   }
 
-  CPDF_Document* GetPDFDoc() const { return m_pPDFDoc.Get(); }
+  CPDF_Document* GetPDFDoc() const { return m_pPDFDoc; }
   CFX_XMLDocument* GetXMLDoc() { return m_pXML.get(); }
   CXFA_FFDoc* GetXFADoc() { return m_pXFADoc; }
   CXFA_FFDocView* GetXFADocView() const { return m_pXFADocView.Get(); }

@@ -26,6 +26,7 @@
 #include "src/sksl/ir/SkSLField.h"
 #include "src/sksl/ir/SkSLFieldAccess.h"
 #include "src/sksl/ir/SkSLReturnStatement.h"
+#include "src/sksl/ir/SkSLSymbolTable.h"
 #include "src/sksl/ir/SkSLType.h"
 #include "src/sksl/ir/SkSLVarDeclarations.h"
 #include "src/sksl/ir/SkSLVariable.h"
@@ -36,7 +37,6 @@
 #include <cstddef>
 #include <forward_list>
 #include <string_view>
-#include <type_traits>
 
 namespace SkSL {
 
@@ -51,8 +51,8 @@ static void append_rtadjust_fixup_to_vertex_main(const Context& context,
     ThreadContext::RTAdjustData& rtAdjust = ThreadContext::RTAdjustState();
     if (rtAdjust.fVar || rtAdjust.fInterfaceBlock) {
         // ...append a line to the end of the function body which fixes up sk_Position.
-        const Field& skPositionField = ThreadContext::SymbolTable()->find(Compiler::POSITION_NAME)
-                                                                   ->as<Field>();
+        const SymbolTable* symbolTable = ThreadContext::SymbolTable().get();
+        const Field& skPositionField = symbolTable->find(Compiler::POSITION_NAME)->as<Field>();
 
         auto Ref = [](const Variable* var) -> std::unique_ptr<Expression> {
             return VariableReference::Make(Position(), var);
@@ -114,18 +114,18 @@ std::unique_ptr<FunctionDefinition> FunctionDefinition::Convert(const Context& c
                     // (i.e., RelaxedPrecision math doesn't mean your variable takes less space.)
                     // We also don't attempt to reclaim slots at the end of a Block.
                     size_t prevSlotsUsed = fSlotsUsed;
-                    const Variable& var = stmt.as<VarDeclaration>().var();
-                    if (var.type().isOrContainsUnsizedArray()) {
+                    const Variable* var = stmt.as<VarDeclaration>().var();
+                    if (var->type().isOrContainsUnsizedArray()) {
                         fContext.fErrors->error(stmt.fPosition,
                                                 "unsized arrays are not permitted here");
                         break;
                     }
-                    fSlotsUsed = SkSafeMath::Add(fSlotsUsed, var.type().slotCount());
+                    fSlotsUsed = SkSafeMath::Add(fSlotsUsed, var->type().slotCount());
                     // To avoid overzealous error reporting, only trigger the error at the first
                     // place where the stack limit is exceeded.
                     if (prevSlotsUsed < kVariableSlotLimit && fSlotsUsed >= kVariableSlotLimit) {
                         fContext.fErrors->error(stmt.fPosition,
-                                                "variable '" + std::string(var.name()) +
+                                                "variable '" + std::string(var->name()) +
                                                 "' exceeds the stack size limit");
                     }
                     break;

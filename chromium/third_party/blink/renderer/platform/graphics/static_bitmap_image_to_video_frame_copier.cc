@@ -189,12 +189,14 @@ void StaticBitmapImageToVideoFrameCopier::ReadARGBPixelsAsync(
                                      ? kTopLeft_GrSurfaceOrigin
                                      : kBottomLeft_GrSurfaceOrigin;
 
+  gfx::Point src_point;
   gpu::MailboxHolder mailbox_holder = image->GetMailboxHolder();
   DCHECK(context_provider->RasterInterface());
   context_provider->RasterInterface()->WaitSyncTokenCHROMIUM(
       mailbox_holder.sync_token.GetConstData());
   context_provider->RasterInterface()->ReadbackARGBPixelsAsync(
-      mailbox_holder.mailbox, mailbox_holder.texture_target, image_origin, info,
+      mailbox_holder.mailbox, mailbox_holder.texture_target, image_origin,
+      image_size, src_point, info,
       temp_argb_frame->stride(media::VideoFrame::kARGBPlane),
       temp_argb_frame->GetWritableVisibleData(media::VideoFrame::kARGBPlane),
       WTF::BindOnce(&StaticBitmapImageToVideoFrameCopier::OnARGBPixelsReadAsync,

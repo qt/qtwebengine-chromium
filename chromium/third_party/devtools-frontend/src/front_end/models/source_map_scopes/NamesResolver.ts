@@ -48,6 +48,29 @@ export class IdentifierPositions {
   }
 }
 
+const tryParseScope = async function(scopeText: string): Promise<{
+  prefixLength: number, scopeTree: Formatter.FormatterWorkerPool.ScopeTreeNode,
+}|null> {
+  const prefixSuffixToTry = [
+    // We wrap the scope in a class constructor. This handles the case where the
+    // scope is a (non-arrow) function and the case where it is a constructor
+    // (so that parsing 'super' calls succeeds).
+    {prefix: 'class DummyClass extends DummyBase { constructor', suffix: '}'},
+    // Next, we try async generator, this handles functions with yield or await keywords.
+    {prefix: 'async function* __DEVTOOLS_DUMMY__', suffix: ''},
+    // Finally, try parse as an async arrow function.
+    {prefix: 'async ', suffix: ''},
+  ];
+  for (const {prefix, suffix} of prefixSuffixToTry) {
+    const scopeTree =
+        await Formatter.FormatterWorkerPool.formatterWorkerPool().javaScriptScopeTree(prefix + scopeText + suffix);
+    if (scopeTree) {
+      return {prefixLength: prefix.length, scopeTree};
+    }
+  }
+  return null;
+};
+
 const computeScopeTree = async function(functionScope: SDK.DebuggerModel.ScopeChainEntry): Promise<{
   scopeTree: Formatter.FormatterWorkerPool.ScopeTreeNode, text: TextUtils.Text.Text, slide: number,
 }|null> {
@@ -64,30 +87,17 @@ const computeScopeTree = async function(functionScope: SDK.DebuggerModel.ScopeCh
   if (!text) {
     return null;
   }
-
   const scopeRange = new TextUtils.TextRange.TextRange(
       functionStartLocation.lineNumber, functionStartLocation.columnNumber, functionEndLocation.lineNumber,
       functionEndLocation.columnNumber);
   const scopeText = text.extract(scopeRange);
   const scopeStart = text.toSourceRange(scopeRange).offset;
-  // We wrap the scope in a class constructor. This handles the case where the
-  // scope is a (non-arrow) function and the case where it is a constructor
-  // (so that parsing 'super' calls succeeds).
-  let prefix = 'class DummyClass extends DummyBase { constructor';
-  let suffix = '}';
-  let scopeTree =
-      await Formatter.FormatterWorkerPool.formatterWorkerPool().javaScriptScopeTree(prefix + scopeText + suffix);
-  if (!scopeTree) {
-    // Try to parse the function as an arrow function.
-    prefix = '';
-    suffix = '';
-    scopeTree =
-        await Formatter.FormatterWorkerPool.formatterWorkerPool().javaScriptScopeTree(prefix + scopeText + suffix);
-  }
-  if (!scopeTree) {
+  const prefixLengthAndscopeTree = await tryParseScope(scopeText);
+  if (!prefixLengthAndscopeTree) {
     return null;
   }
-  return {scopeTree, text, slide: scopeStart - prefix.length};
+  const {prefixLength, scopeTree} = prefixLengthAndscopeTree;
+  return {scopeTree, text, slide: scopeStart - prefixLength};
 };
 
 export const scopeIdentifiers = async function(
@@ -646,38 +656,66 @@ export class RemoteObject extends SDK.RemoteObject.RemoteObject {
 // paren that starts the scope. If there is no name associated with the scope
 // start or if the function scope does not start with a left paren (e.g., arrow
 // function with one parameter), the resolution returns null.
-export async function resolveFrameFunctionName(frame: SDK.DebuggerModel.CallFrame): Promise<string|null> {
+async function getFunctionNameFromScopeStart(
+    script: SDK.Script.Script, lineNumber: number, columnNumber: number): Promise<string|null> {
   // To reduce the overhead of resolving function names,
   // we check for source maps first and immediately leave
-  // this function if the frame doesn't have a sourcemap.
-  const sourceMap =
-      Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance().sourceMapForScript(frame.script);
+  // this function if the script doesn't have a sourcemap.
+  const sourceMap = Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance().sourceMapForScript(script);
   if (!sourceMap) {
     return null;
   }
 
-  const startLocation = frame.localScope()?.startLocation();
-  if (!startLocation) {
-    return null;
-  }
-
-  const name = sourceMap.findEntry(startLocation.lineNumber, startLocation.columnNumber)?.name;
+  const name = sourceMap?.findEntry(lineNumber, columnNumber)?.name;
   if (!name) {
     return null;
   }
 
-  const text = await getTextFor(frame.script);
+  const text = await getTextFor(script);
   if (!text) {
     return null;
   }
 
-  const openRange = new TextUtils.TextRange.TextRange(
-      startLocation.lineNumber, startLocation.columnNumber, startLocation.lineNumber, startLocation.columnNumber + 1);
+  const openRange = new TextUtils.TextRange.TextRange(lineNumber, columnNumber, lineNumber, columnNumber + 1);
+
   if (text.extract(openRange) !== '(') {
     return null;
   }
 
   return name;
+}
+
+export async function resolveDebuggerFrameFunctionName(frame: SDK.DebuggerModel.CallFrame): Promise<string|null> {
+  const startLocation = frame.localScope()?.startLocation();
+  if (!startLocation) {
+    return null;
+  }
+  return await getFunctionNameFromScopeStart(frame.script, startLocation.lineNumber, startLocation.columnNumber);
+}
+
+export async function resolveProfileFrameFunctionName(
+    {scriptId, lineNumber, columnNumber}: Partial<Protocol.Runtime.CallFrame>,
+    target: SDK.Target.Target|null): Promise<string|null> {
+  if (!target || lineNumber === undefined || columnNumber === undefined || scriptId === undefined) {
+    return null;
+  }
+  const debuggerModel = target.model(SDK.DebuggerModel.DebuggerModel);
+  const script = debuggerModel?.scriptForId(String(scriptId));
+
+  if (!debuggerModel || !script) {
+    return null;
+  }
+
+  const debuggerWorkspaceBinding = Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance();
+  const location = new SDK.DebuggerModel.Location(debuggerModel, scriptId, lineNumber, columnNumber);
+  const functionInfoFromPlugin = await debuggerWorkspaceBinding.pluginManager?.getFunctionInfo(script, location);
+  if (functionInfoFromPlugin && 'frames' in functionInfoFromPlugin) {
+    const last = functionInfoFromPlugin.frames.at(-1);
+    if (last?.name) {
+      return last.name;
+    }
+  }
+  return await getFunctionNameFromScopeStart(script, lineNumber, columnNumber);
 }
 
 // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration)

@@ -16,7 +16,6 @@
 #include "libANGLE/Display.h"
 #include "libANGLE/Surface.h"
 #include "libANGLE/renderer/driver_utils.h"
-#include "libANGLE/renderer/glslang_wrapper_utils.h"
 #include "libANGLE/renderer/metal/CompilerMtl.h"
 #include "libANGLE/renderer/metal/ContextMtl.h"
 #include "libANGLE/renderer/metal/DeviceMtl.h"
@@ -109,7 +108,7 @@ struct DefaultShaderAsyncInfoMtl
 };
 
 DisplayMtl::DisplayMtl(const egl::DisplayState &state)
-    : DisplayImpl(state), mStateCache(mFeatures), mUtils(this)
+    : DisplayImpl(state), mDisplay(nullptr), mStateCache(mFeatures), mUtils(this)
 {}
 
 DisplayMtl::~DisplayMtl() {}
@@ -130,6 +129,8 @@ angle::Result DisplayMtl::initializeImpl(egl::Display *display)
 {
     ANGLE_MTL_OBJC_SCOPE
     {
+        mDisplay = display;
+
         mMetalDevice = getMetalDeviceMatchingAttribute(display->getAttributeMap());
         // If we can't create a device, fail initialization.
         if (!mMetalDevice.get())
@@ -142,10 +143,6 @@ angle::Result DisplayMtl::initializeImpl(egl::Display *display)
         mCmdQueue.set([[mMetalDevice newCommandQueue] ANGLE_MTL_AUTORELEASE]);
 
         mCapsInitialized = false;
-#if ANGLE_ENABLE_METAL_SPIRV
-        ANGLE_TRACE_EVENT0("gpu.angle,startup", "GlslangWarmup");
-        sh::InitializeGlslang();
-#endif
 
         if (!mState.featuresAllDisabled)
         {
@@ -171,9 +168,6 @@ void DisplayMtl::terminate()
     mCapsInitialized = false;
 
     mMetalDeviceVendorId = 0;
-#if ANGLE_ENABLE_METAL_SPIRV
-    sh::FinalizeGlslang();
-#endif
 }
 
 bool DisplayMtl::testDeviceLost()
@@ -674,15 +668,10 @@ const gl::Limitations &DisplayMtl::getNativeLimitations() const
     ensureCapsInitialized();
     return mNativeLimitations;
 }
-ShPixelLocalStorageType DisplayMtl::getNativePixelLocalStorageType() const
+const ShPixelLocalStorageOptions &DisplayMtl::getNativePixelLocalStorageOptions() const
 {
     ensureCapsInitialized();
-    return mPixelLocalStorageType;
-}
-ShFragmentSynchronizationType DisplayMtl::getPLSSynchronizationType() const
-{
-    ensureCapsInitialized();
-    return mPLSSynchronizationType;
+    return mNativePLSOptions;
 }
 
 void DisplayMtl::ensureCapsInitialized() const
@@ -884,7 +873,7 @@ void DisplayMtl::ensureCapsInitialized() const
     mNativeCaps.programBinaryFormats.push_back(GL_PROGRAM_BINARY_ANGLE);
 
     // GL_APPLE_clip_distance
-    mNativeCaps.maxClipDistances = mFeatures.directMetalGeneration.enabled ? 0 : 8;
+    mNativeCaps.maxClipDistances = 8;
 
     // Metal doesn't support GL_TEXTURE_COMPARE_MODE=GL_NONE for shadow samplers
     mNativeLimitations.noShadowSamplerCompareModeNone = true;
@@ -996,7 +985,7 @@ void DisplayMtl::initializeExtensions() const
     mNativeExtensions.getProgramBinaryOES = true;
 
     // GL_APPLE_clip_distance
-    mNativeExtensions.clipDistanceAPPLE = !mFeatures.directMetalGeneration.enabled;
+    mNativeExtensions.clipDistanceAPPLE = true;
 
     // GL_NV_pixel_buffer_object
     mNativeExtensions.pixelBufferObjectNV = true;
@@ -1028,42 +1017,72 @@ void DisplayMtl::initializeExtensions() const
     mNativeExtensions.provokingVertexANGLE = true;
 
     // GL_ANGLE_shader_pixel_local_storage.
-    if (supportsAppleGPUFamily(1))
+    if (!mFeatures.disableProgrammableBlending.enabled && supportsAppleGPUFamily(1))
     {
         // Programmable blending is supported on all Apple GPU families, and is always coherent.
-        mPixelLocalStorageType = ShPixelLocalStorageType::FramebufferFetch;
+        mNativePLSOptions.type = ShPixelLocalStorageType::FramebufferFetch;
 
         // Raster order groups are NOT required to make framebuffer fetch coherent, however, they
         // may improve performance by allowing finer grained synchronization (e.g., by assigning
         // attachments to different raster order groups when they don't depend on each other).
-        bool rasterOrderGroupsSupported = supportsAppleGPUFamily(4);
-        mPLSSynchronizationType         = rasterOrderGroupsSupported
-                                              ? ShFragmentSynchronizationType::RasterOrderGroups_Metal
-                                              : ShFragmentSynchronizationType::Automatic;
+        bool rasterOrderGroupsSupported =
+            !mFeatures.disableRasterOrderGroups.enabled && supportsAppleGPUFamily(4);
+        mNativePLSOptions.fragmentSyncType =
+            rasterOrderGroupsSupported ? ShFragmentSynchronizationType::RasterOrderGroups_Metal
+                                       : ShFragmentSynchronizationType::Automatic;
 
         mNativeExtensions.shaderPixelLocalStorageANGLE         = true;
         mNativeExtensions.shaderPixelLocalStorageCoherentANGLE = true;
     }
     else
     {
-        // TODO(anglebug.com/7279): Implement PLS shader images.
-        // MTLReadWriteTextureTier readWriteTextureTier = [mMetalDevice readWriteTextureSupport];
-        // if (readWriteTextureTier != MTLReadWriteTextureTierNone)
-        // {
-        //     mPixelLocalStorageType = (readWriteTextureTier == MTLReadWriteTextureTier1)
-        //                                  ? ShPixelLocalStorageType::ImageStoreR32PackedFormats
-        //                                  : ShPixelLocalStorageType::ImageStoreNativeFormats;
-        //
-        //     // Raster order groups are required to make PLS coherent via readWrite textures.
-        //     bool rasterOrderGroupsSupported = [mMetalDevice areRasterOrderGroupsSupported];
-        //     mPLSSynchronizationType = rasterOrderGroupsSupported
-        //                                  ? ShFragmentSynchronizationType::RasterOrderGroups_Metal
-        //                                  : ShFragmentSynchronizationType::NotSupported;
-        //
-        //     mNativeExtensions.shaderPixelLocalStorageANGLE         = true;
-        //     mNativeExtensions.shaderPixelLocalStorageCoherentANGLE = rasterOrderGroupsSupported;
-        // }
+        MTLReadWriteTextureTier readWriteTextureTier = [mMetalDevice readWriteTextureSupport];
+        if (readWriteTextureTier != MTLReadWriteTextureTierNone)
+        {
+            mNativePLSOptions.type = ShPixelLocalStorageType::ImageLoadStore;
+
+            // Raster order groups are required to make PLS coherent when using read_write textures.
+            bool rasterOrderGroupsSupported = !mFeatures.disableRasterOrderGroups.enabled &&
+                                              [mMetalDevice areRasterOrderGroupsSupported];
+            mNativePLSOptions.fragmentSyncType =
+                rasterOrderGroupsSupported ? ShFragmentSynchronizationType::RasterOrderGroups_Metal
+                                           : ShFragmentSynchronizationType::NotSupported;
+
+            mNativePLSOptions.supportsNativeRGBA8ImageFormats =
+                !mFeatures.disableRWTextureTier2Support.enabled &&
+                readWriteTextureTier == MTLReadWriteTextureTier2;
+
+            if (isAMD())
+            {
+                // anglebug.com/7792 -- [[raster_order_group()]] does not work for read_write
+                // textures on AMD when the render pass doesn't have a color attachment on slot 0.
+                // To work around this we attach one of the PLS textures to GL_COLOR_ATTACHMENT0, if
+                // there isn't one already.
+                mNativePLSOptions.renderPassNeedsAMDRasterOrderGroupsWorkaround = true;
+            }
+
+            mNativeExtensions.shaderPixelLocalStorageANGLE         = true;
+            mNativeExtensions.shaderPixelLocalStorageCoherentANGLE = rasterOrderGroupsSupported;
+
+            // Set up PLS caps here because the higher level context won't have enough info to set
+            // them up itself. Shader images and other ES3.1 caps aren't fully exposed yet.
+            static_assert(mtl::kMaxShaderImages >=
+                          gl::IMPLEMENTATION_MAX_PIXEL_LOCAL_STORAGE_PLANES);
+            mNativeCaps.maxPixelLocalStoragePlanes =
+                gl::IMPLEMENTATION_MAX_PIXEL_LOCAL_STORAGE_PLANES;
+            mNativeCaps.maxColorAttachmentsWithActivePixelLocalStorage =
+                gl::IMPLEMENTATION_MAX_DRAW_BUFFERS;
+            mNativeCaps.maxCombinedDrawBuffersAndPixelLocalStoragePlanes =
+                gl::IMPLEMENTATION_MAX_PIXEL_LOCAL_STORAGE_PLANES +
+                gl::IMPLEMENTATION_MAX_DRAW_BUFFERS;
+            mNativeCaps.maxShaderImageUniforms[gl::ShaderType::Fragment] =
+                gl::IMPLEMENTATION_MAX_PIXEL_LOCAL_STORAGE_PLANES;
+            mNativeCaps.maxImageUnits = gl::IMPLEMENTATION_MAX_PIXEL_LOCAL_STORAGE_PLANES;
+        }
     }
+    // "The GPUs in Apple3 through Apple8 families only support memory barriers for compute command
+    // encoders, and for vertex-to-vertex and vertex-to-fragment stages of render command encoders."
+    mHasFragmentMemoryBarriers = !supportsAppleGPUFamily(3);
 }
 
 void DisplayMtl::initializeTextureCaps() const
@@ -1193,8 +1212,15 @@ void DisplayMtl::initializeFeatures()
 
     ANGLE_FEATURE_CONDITION((&mFeatures), preemptivelyStartProvokingVertexCommandBuffer, isAMD());
 
-    bool defaultDirectToMetal = true;
-    ANGLE_FEATURE_CONDITION((&mFeatures), directMetalGeneration, defaultDirectToMetal);
+    ANGLE_FEATURE_CONDITION((&mFeatures), alwaysUseStagedBufferUpdates, isAMD());
+    ANGLE_FEATURE_CONDITION((&mFeatures), alwaysUseManagedStorageModeForBuffers, isAMD());
+
+    ANGLE_FEATURE_CONDITION((&mFeatures), alwaysUseSharedStorageModeForBuffers, isIntel());
+    ANGLE_FEATURE_CONDITION((&mFeatures), useShadowBuffersWhenAppropriate, isIntel());
+
+    // At least one of these must not be set.
+    ASSERT(!mFeatures.alwaysUseManagedStorageModeForBuffers.enabled ||
+           !mFeatures.alwaysUseSharedStorageModeForBuffers.enabled);
 
     ANGLE_FEATURE_CONDITION((&mFeatures), uploadDataToIosurfacesWithStagingBuffers, isAMD());
 
@@ -1349,10 +1375,5 @@ mtl::AutoObjCObj<MTLSharedEventListener> DisplayMtl::getOrCreateSharedEventListe
     return mSharedEventListener;
 }
 #endif
-
-bool DisplayMtl::useDirectToMetalCompiler() const
-{
-    return mFeatures.directMetalGeneration.enabled;
-}
 
 }  // namespace rx

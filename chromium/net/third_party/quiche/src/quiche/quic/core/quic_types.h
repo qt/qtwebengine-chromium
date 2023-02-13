@@ -710,8 +710,6 @@ enum SerializedPacketFate : uint8_t {
   COALESCE,                    // Try to coalesce packet.
   BUFFER,                      // Buffer packet in buffered_packets_.
   SEND_TO_WRITER,              // Send packet to writer.
-  LEGACY_VERSION_ENCAPSULATE,  // Perform Legacy Version Encapsulation on this
-                               // packet.
 };
 
 QUIC_EXPORT_PRIVATE std::string SerializedPacketFateToString(
@@ -840,6 +838,8 @@ struct QUIC_NO_EXPORT QuicDelayedSSLConfig {
   // Client certificate mode for mTLS support. Only used at server side.
   // absl::nullopt means do not change client certificate mode.
   absl::optional<ClientCertMode> client_cert_mode;
+  // QUIC transport parameters as serialized by ProofSourceHandle.
+  absl::optional<std::vector<uint8_t>> quic_transport_parameters;
 };
 
 // ParsedClientHello contains client hello information extracted from a fully
@@ -848,7 +848,6 @@ struct QUIC_NO_EXPORT ParsedClientHello {
   std::string sni;                 // QUIC crypto and TLS.
   std::string uaid;                // QUIC crypto only.
   std::vector<std::string> alpns;  // QUIC crypto and TLS.
-  std::string legacy_version_encapsulation_inner_packet;  // QUIC crypto only.
   // The unvalidated retry token from the last received packet of a potentially
   // multi-packet client hello. TLS only.
   std::string retry_token;

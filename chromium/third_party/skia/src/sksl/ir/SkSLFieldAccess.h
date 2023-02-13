@@ -8,6 +8,7 @@
 #ifndef SKSL_FIELDACCESS
 #define SKSL_FIELDACCESS
 
+#include "include/private/SkSLIRNode.h"
 #include "include/sksl/SkSLPosition.h"
 #include "src/sksl/ir/SkSLExpression.h"
 #include "src/sksl/ir/SkSLType.h"
@@ -39,11 +40,11 @@ class FieldAccess final : public Expression {
 public:
     using OwnerKind = FieldAccessOwnerKind;
 
-    inline static constexpr Kind kExpressionKind = Kind::kFieldAccess;
+    inline static constexpr Kind kIRNodeKind = Kind::kFieldAccess;
 
     FieldAccess(Position pos, std::unique_ptr<Expression> base, int fieldIndex,
                 OwnerKind ownerKind = OwnerKind::kDefault)
-    : INHERITED(pos, kExpressionKind, base->type().fields()[fieldIndex].fType)
+    : INHERITED(pos, kIRNodeKind, base->type().fields()[fieldIndex].fType)
     , fFieldIndex(fieldIndex)
     , fOwnerKind(ownerKind)
     , fBase(std::move(base)) {}

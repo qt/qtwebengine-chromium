@@ -6,6 +6,7 @@
 
 #ifdef DRV_ROCKCHIP
 
+#include <drm_fourcc.h>
 #include <errno.h>
 #include <inttypes.h>
 #include <rockchip_drm.h>
@@ -17,6 +18,10 @@
 #include "drv_helpers.h"
 #include "drv_priv.h"
 #include "util.h"
+
+#define DRM_FORMAT_MOD_ROCKCHIP_AFBC                                                               \
+	DRM_FORMAT_MOD_ARM_AFBC(AFBC_FORMAT_MOD_BLOCK_SIZE_16x16 | AFBC_FORMAT_MOD_SPARSE |        \
+				AFBC_FORMAT_MOD_YTR)
 
 struct rockchip_private_map_data {
 	void *cached_addr;
@@ -30,7 +35,8 @@ static const uint32_t scanout_render_formats[] = { DRM_FORMAT_ABGR8888, DRM_FORM
 static const uint32_t texture_only_formats[] = { DRM_FORMAT_NV12, DRM_FORMAT_YVU420,
 						 DRM_FORMAT_YVU420_ANDROID };
 
-static int afbc_bo_from_format(struct bo *bo, uint32_t width, uint32_t height, uint32_t format)
+static int afbc_bo_from_format(struct bo *bo, uint32_t width, uint32_t height, uint32_t format,
+			       uint64_t modifier)
 {
 	/* We've restricted ourselves to four bytes per pixel. */
 	const uint32_t pixel_size = 4;
@@ -69,7 +75,7 @@ static int afbc_bo_from_format(struct bo *bo, uint32_t width, uint32_t height, u
 
 	bo->meta.total_size = total_size;
 
-	bo->meta.format_modifier = DRM_FORMAT_MOD_CHROMEOS_ROCKCHIP_AFBC;
+	bo->meta.format_modifier = modifier;
 
 	return 0;
 }
@@ -101,7 +107,8 @@ static int rockchip_init(struct driver *drv)
 	 */
 	drv_add_combination(drv, DRM_FORMAT_R8, &metadata,
 			    BO_USE_CAMERA_READ | BO_USE_CAMERA_WRITE | BO_USE_SW_MASK |
-				BO_USE_LINEAR | BO_USE_HW_VIDEO_DECODER | BO_USE_HW_VIDEO_ENCODER);
+				BO_USE_LINEAR | BO_USE_HW_VIDEO_DECODER | BO_USE_HW_VIDEO_ENCODER |
+				BO_USE_GPU_DATA_BUFFER | BO_USE_SENSOR_DIRECT_DATA);
 
 	return 0;
 }
@@ -113,6 +120,14 @@ static int rockchip_bo_create_with_modifiers(struct bo *bo, uint32_t width, uint
 	int ret;
 	size_t plane;
 	struct drm_rockchip_gem_create gem_create = { 0 };
+	uint64_t afbc_modifier;
+
+	if (drv_has_modifier(modifiers, count, DRM_FORMAT_MOD_ROCKCHIP_AFBC))
+		afbc_modifier = DRM_FORMAT_MOD_ROCKCHIP_AFBC;
+	else if (drv_has_modifier(modifiers, count, DRM_FORMAT_MOD_CHROMEOS_ROCKCHIP_AFBC))
+		afbc_modifier = DRM_FORMAT_MOD_CHROMEOS_ROCKCHIP_AFBC;
+	else
+		afbc_modifier = 0;
 
 	if (format == DRM_FORMAT_NV12) {
 		uint32_t w_mbs = DIV_ROUND_UP(width, 16);
@@ -127,16 +142,14 @@ static int rockchip_bo_create_with_modifiers(struct bo *bo, uint32_t width, uint
 		 * driver to store motion vectors.
 		 */
 		bo->meta.total_size += w_mbs * h_mbs * 128;
-	} else if (width <= 2560 &&
-		   drv_has_modifier(modifiers, count, DRM_FORMAT_MOD_CHROMEOS_ROCKCHIP_AFBC) &&
-		   bo->drv->compression) {
+	} else if (width <= 2560 && afbc_modifier && bo->drv->compression) {
 		/* If the caller has decided they can use AFBC, always
 		 * pick that */
-		afbc_bo_from_format(bo, width, height, format);
+		afbc_bo_from_format(bo, width, height, format, afbc_modifier);
 	} else {
 		if (!drv_has_modifier(modifiers, count, DRM_FORMAT_MOD_LINEAR)) {
 			errno = EINVAL;
-			drv_log("no usable modifier found\n");
+			drv_loge("no usable modifier found\n");
 			return -errno;
 		}
 
@@ -160,8 +173,8 @@ static int rockchip_bo_create_with_modifiers(struct bo *bo, uint32_t width, uint
 	ret = drmIoctl(bo->drv->fd, DRM_IOCTL_ROCKCHIP_GEM_CREATE, &gem_create);
 
 	if (ret) {
-		drv_log("DRM_IOCTL_ROCKCHIP_GEM_CREATE failed (size=%" PRIu64 ")\n",
-			gem_create.size);
+		drv_loge("DRM_IOCTL_ROCKCHIP_GEM_CREATE failed (size=%" PRIu64 ")\n",
+			 gem_create.size);
 		return -errno;
 	}
 
@@ -188,13 +201,14 @@ static void *rockchip_bo_map(struct bo *bo, struct vma *vma, size_t plane, uint3
 
 	/* We can only map buffers created with SW access flags, which should
 	 * have no modifiers (ie, not AFBC). */
-	if (bo->meta.format_modifier == DRM_FORMAT_MOD_CHROMEOS_ROCKCHIP_AFBC)
+	if (bo->meta.format_modifier == DRM_FORMAT_MOD_CHROMEOS_ROCKCHIP_AFBC ||
+	    bo->meta.format_modifier == DRM_FORMAT_MOD_ROCKCHIP_AFBC)
 		return MAP_FAILED;
 
 	gem_map.handle = bo->handles[0].u32;
 	ret = drmIoctl(bo->drv->fd, DRM_IOCTL_ROCKCHIP_GEM_MAP_OFFSET, &gem_map);
 	if (ret) {
-		drv_log("DRM_IOCTL_ROCKCHIP_GEM_MAP_OFFSET failed\n");
+		drv_loge("DRM_IOCTL_ROCKCHIP_GEM_MAP_OFFSET failed\n");
 		return MAP_FAILED;
 	}
 

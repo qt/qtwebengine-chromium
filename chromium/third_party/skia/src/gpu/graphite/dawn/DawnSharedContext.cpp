@@ -10,22 +10,49 @@
 #include "include/gpu/graphite/ContextOptions.h"
 #include "include/gpu/graphite/dawn/DawnBackendContext.h"
 #include "src/gpu/graphite/Log.h"
-#include "src/gpu/graphite/dawn/DawnCaps.h"
 #include "src/gpu/graphite/dawn/DawnResourceProvider.h"
 
 namespace skgpu::graphite {
+namespace {
 
-sk_sp<SharedContext> DawnSharedContext::Make(const DawnBackendContext& context,
+wgpu::ShaderModule CreateNoopFragment(const wgpu::Device& device) {
+    wgpu::ShaderModuleWGSLDescriptor wgslDesc;
+    wgslDesc.source =
+            "@fragment\n"
+            "fn main() {}\n";
+    wgpu::ShaderModuleDescriptor smDesc;
+    smDesc.nextInChain = &wgslDesc;
+    auto fsModule = device.CreateShaderModule(&smDesc);
+    return fsModule;
+}
+
+}
+
+sk_sp<SharedContext> DawnSharedContext::Make(const DawnBackendContext& backendContext,
                                              const ContextOptions& options) {
-    std::unique_ptr<const DawnCaps> caps(new DawnCaps());
+    if (!backendContext.fDevice || !backendContext.fQueue) {
+        return {};
+    }
 
-    return sk_sp<SharedContext>(new DawnSharedContext(context,
-                                                      std::move(caps)));
+    auto noopFragment = CreateNoopFragment(backendContext.fDevice);
+    if (!noopFragment) {
+        return {};
+    }
+
+    auto caps = std::make_unique<const DawnCaps>(backendContext.fDevice, options);
+
+    return sk_sp<SharedContext>(new DawnSharedContext(backendContext,
+                                                      std::move(caps),
+                                                      std::move(noopFragment)));
 }
 
 DawnSharedContext::DawnSharedContext(const DawnBackendContext& backendContext,
-                                     std::unique_ptr<const DawnCaps> caps)
-        : skgpu::graphite::SharedContext(std::move(caps), BackendApi::kDawn) {}
+                                     std::unique_ptr<const DawnCaps> caps,
+                                     wgpu::ShaderModule noopFragment)
+        : skgpu::graphite::SharedContext(std::move(caps), BackendApi::kDawn)
+        , fDevice(backendContext.fDevice)
+        , fQueue(backendContext.fQueue)
+        , fNoopFragment(std::move(noopFragment)) {}
 
 DawnSharedContext::~DawnSharedContext() = default;
 

@@ -13,6 +13,7 @@
 #include "src/gpu/graphite/DrawTypes.h"
 #include "src/gpu/graphite/ResourceTypes.h"
 
+#include <array>
 #include <unordered_map>
 #include <vector>
 
@@ -37,7 +38,7 @@ public:
     void returnVertexBytes(size_t unusedBytes);
 
     size_t alignUniformBlockSize(size_t dataSize) {
-        return SkAlignTo(dataSize, fUniformStartAlignment);
+        return SkAlignTo(dataSize, fCurrentBuffers[kUniformBufferIndex].fStartAlignment);
     }
 
     // Get the shared static buffer filled with contents computed by the InitializeBufferFn.
@@ -56,24 +57,32 @@ public:
     void transferToRecording(Recording*);
 
 private:
-    ResourceProvider* fResourceProvider;
+    struct BufferInfo {
+        const BufferType fType;
+        const size_t fStartAlignment;
+        const size_t fBlockSize;
+        sk_sp<Buffer> fBuffer{};
+        // The fTransferBuffer can be null, if draw buffer cannot be mapped,
+        // see Caps::drawBufferCanBeMapped() for detail.
+        sk_sp<Buffer> fTransferBuffer{};
+        size_t fOffset = 0;
 
-    sk_sp<Buffer> fCurrentVertexBuffer;
-    size_t fVertexOffset = 0;
+        Buffer* getMappableBuffer() {
+            return fTransferBuffer ? fTransferBuffer.get() : fBuffer.get();
+        }
+    };
+    std::pair<void*, BindBufferInfo> prepareBindBuffer(BufferInfo* info, size_t requiredBytes);
 
-    sk_sp<Buffer> fCurrentIndexBuffer;
-    size_t fIndexOffset = 0;
+    ResourceProvider* const fResourceProvider;
 
-    sk_sp<Buffer> fCurrentUniformBuffer;
-    size_t fUniformOffset = 0;
+    static constexpr size_t kVertexBufferIndex  = 0;
+    static constexpr size_t kIndexBufferIndex   = 1;
+    static constexpr size_t kUniformBufferIndex = 2;
+    static constexpr size_t kStorageBufferIndex = 3;
+    std::array<BufferInfo, 4> fCurrentBuffers;
 
-    sk_sp<Buffer> fCurrentStorageBuffer;
-    size_t fSsboOffset = 0;
-
-    const size_t fUniformStartAlignment;
-    const size_t fSsboStartAlignment;
-
-    std::vector<sk_sp<Buffer>> fUsedBuffers;
+    // Vector of buffer and transfer buffer pairs.
+    std::vector<std::pair<sk_sp<Buffer>, sk_sp<Buffer>>> fUsedBuffers;
     // TODO(skbug.com/13059): This is likely not the final location for static buffers, but makes it
     // convenient to maintain ownership and call trackResources() on the CommandBuffer.
     std::unordered_map<uintptr_t, sk_sp<Buffer>> fStaticBuffers;

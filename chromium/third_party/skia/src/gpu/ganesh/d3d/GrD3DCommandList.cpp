@@ -64,18 +64,18 @@ void GrD3DCommandList::reset() {
 
 void GrD3DCommandList::releaseResources() {
     TRACE_EVENT0("skia.gpu", TRACE_FUNC);
-    if (fTrackedResources.count() == 0 && fTrackedRecycledResources.count() == 0) {
+    if (fTrackedResources.size() == 0 && fTrackedRecycledResources.size() == 0) {
         return;
     }
     SkASSERT(!fIsActive);
-    for (int i = 0; i < fTrackedRecycledResources.count(); ++i) {
+    for (int i = 0; i < fTrackedRecycledResources.size(); ++i) {
         auto resource = fTrackedRecycledResources[i].release();
         resource->recycle();
     }
 
-    fTrackedResources.reset();
-    fTrackedRecycledResources.reset();
-    fTrackedGpuBuffers.reset();
+    fTrackedResources.clear();
+    fTrackedRecycledResources.clear();
+    fTrackedGpuBuffers.clear();
 
     this->callFinishedCallbacks();
 }
@@ -151,7 +151,7 @@ void GrD3DCommandList::submitResourceBarriers() {
 
     if (fResourceBarriers.size()) {
         fCommandList->ResourceBarrier(fResourceBarriers.size(), fResourceBarriers.begin());
-        fResourceBarriers.reset();
+        fResourceBarriers.clear();
     }
     SkASSERT(!fResourceBarriers.size());
 }

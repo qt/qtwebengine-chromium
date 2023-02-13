@@ -801,7 +801,7 @@ class BlendStateExt final
 
     uint8_t mDrawBufferCount;
 
-    [[maybe_unused]] uint32_t kUnused = 0;
+    ANGLE_MAYBE_UNUSED_PRIVATE_FIELD uint32_t kUnused = 0;
 };
 
 static_assert(sizeof(BlendStateExt) == sizeof(uint64_t) +
@@ -866,10 +866,10 @@ ANGLE_INLINE void SetComponentTypeMask(ComponentType type, size_t index, Compone
     *mask |= kComponentMasks[type] << index;
 }
 
-ANGLE_INLINE ComponentType GetComponentTypeMask(const ComponentTypeMask &mask, size_t index)
+ANGLE_INLINE ComponentType GetComponentTypeMask(ComponentTypeMask mask, size_t index)
 {
     ASSERT(index <= kMaxComponentTypeMaskIndex);
-    uint32_t mask_bits = static_cast<uint32_t>((mask.to_ulong() >> index) & 0x10001);
+    uint32_t mask_bits = mask.bits() >> index & 0x10001;
     switch (mask_bits)
     {
         case 0x10001:
@@ -881,6 +881,15 @@ ANGLE_INLINE ComponentType GetComponentTypeMask(const ComponentTypeMask &mask, s
         default:
             return ComponentType::InvalidEnum;
     }
+}
+
+ANGLE_INLINE ComponentTypeMask GetActiveComponentTypeMask(gl::AttributesMask activeAttribLocations)
+{
+    const uint32_t activeAttribs = static_cast<uint32_t>(activeAttribLocations.bits());
+
+    // Ever attrib index takes one bit from the lower 16-bits and another bit from the upper
+    // 16-bits at the same index.
+    return ComponentTypeMask(activeAttribs << kMaxComponentTypeMaskIndex | activeAttribs);
 }
 
 bool ValidateComponentTypeMasks(unsigned long outputTypes,
@@ -907,26 +916,6 @@ enum class RenderToTextureImageIndex
 
 template <typename T>
 using RenderToTextureImageMap = angle::PackedEnumMap<RenderToTextureImageIndex, T>;
-
-struct ContextID
-{
-    uint32_t value;
-};
-
-inline bool operator==(ContextID lhs, ContextID rhs)
-{
-    return lhs.value == rhs.value;
-}
-
-inline bool operator!=(ContextID lhs, ContextID rhs)
-{
-    return lhs.value != rhs.value;
-}
-
-inline bool operator<(ContextID lhs, ContextID rhs)
-{
-    return lhs.value < rhs.value;
-}
 
 constexpr size_t kCubeFaceCount = 6;
 

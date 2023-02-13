@@ -148,11 +148,6 @@ config("icu_code") {
       # Used for conditional changes to the compilation process that
       # are only needed for the Fuchsia toolchain.
       "-DICU_IS_IN_FUCHSIA",
-
-      # Can be removed after
-      # https://unicode-org.atlassian.net/browse/ICU-22113 is fixed.
-      "-Wno-unknown-warning-option",
-      "-Wno-enum-constexpr-conversion",
     ]
   }
   if (current_cpu == "wasm") {

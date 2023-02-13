@@ -13,6 +13,7 @@
 #include "include/core/SkTypes.h"
 #include "include/private/SkMalloc.h"
 #include "include/private/SkTArray.h"
+#include "include/private/SkTemplates.h"
 #include "include/private/SkTo.h"
 
 #include <stdarg.h>
@@ -128,6 +129,7 @@ public:
 
     bool        isEmpty() const { return 0 == fRec->fLength; }
     size_t      size() const { return (size_t) fRec->fLength; }
+    const char* data() const { return fRec->data(); }
     const char* c_str() const { return fRec->data(); }
     char operator[](size_t n) const { return this->c_str()[n]; }
 
@@ -173,8 +175,8 @@ public:
     SkString& operator=(SkString&&);
     SkString& operator=(const char text[]);
 
-    char* writable_str();
-    char& operator[](size_t n) { return this->writable_str()[n]; }
+    char* data();
+    char& operator[](size_t n) { return this->data()[n]; }
 
     void reset();
     /** String contents are preserved on resize. (For destructive resize, `set(nullptr, length)`.)

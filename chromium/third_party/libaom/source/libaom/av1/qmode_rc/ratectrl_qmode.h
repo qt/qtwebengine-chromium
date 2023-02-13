@@ -14,6 +14,7 @@
 
 #include <deque>
 #include <queue>
+#include <unordered_map>
 #include <vector>
 #include "av1/encoder/firstpass.h"
 #include "av1/qmode_rc/ratectrl_qmode_interface.h"
@@ -35,6 +36,7 @@ struct TplUnitDepStats {
 
 struct TplFrameDepStats {
   int unit_size;  // equivalent to min_block_size
+  double rdcost;  // overall rate-distortion cost
   std::vector<std::vector<TplUnitDepStats>> unit_stats;
 };
 
@@ -77,6 +79,9 @@ std::vector<int> GetKeyFrameList(const FirstpassInfo &first_pass_info);
 double TplFrameDepStatsAccumulateIntraCost(
     const TplFrameDepStats &frame_dep_stats);
 
+double TplFrameDepStatsAccumulateInterCost(
+    const TplFrameDepStats &frame_dep_stats);
+
 double TplFrameDepStatsAccumulate(const TplFrameDepStats &frame_dep_stats);
 
 void TplFrameDepStatsPropagate(int coding_idx,
@@ -84,6 +89,10 @@ void TplFrameDepStatsPropagate(int coding_idx,
                                TplGopDepStats *tpl_gop_dep_stats);
 
 int GetBlockOverlapArea(int r0, int c0, int r1, int c1, int size);
+
+namespace internal {
+std::unordered_map<int, int> KMeans(std::vector<uint8_t> qindices, int k);
+}
 
 StatusOr<TplGopDepStats> ComputeTplGopDepStats(
     const TplGopStats &tpl_gop_stats,
@@ -98,7 +107,11 @@ class AV1RateControlQMode : public AV1RateControlQModeInterface {
   StatusOr<GopEncodeInfo> GetGopEncodeInfo(
       const GopStruct &gop_struct, const TplGopStats &tpl_gop_stats,
       const std::vector<LookaheadStats> &lookahead_stats,
+      const FirstpassInfo &firstpass_info,
       const RefFrameTable &ref_frame_table_snapshot) override;
+  StatusOr<GopEncodeInfo> GetTplPassGopEncodeInfo(
+      const GopStruct &gop_struct,
+      const FirstpassInfo &firstpass_info) override;
 
   // Public for testing only.
   // Returns snapshots of the ref frame before and after each frame in
@@ -112,6 +125,16 @@ class AV1RateControlQMode : public AV1RateControlQModeInterface {
 
  private:
   RateControlParam rc_param_;
+
+  // Private methods to determine GOP encode info with different stats
+  StatusOr<GopEncodeInfo> GetGopEncodeInfoWithNoStats(
+      const GopStruct &gop_struct);
+  StatusOr<GopEncodeInfo> GetGopEncodeInfoWithFp(
+      const GopStruct &gop_struct, const FirstpassInfo &firstpass_info);
+  StatusOr<GopEncodeInfo> GetGopEncodeInfoWithTpl(
+      const GopStruct &gop_struct, const TplGopStats &tpl_gop_stats,
+      const std::vector<LookaheadStats> &lookahead_stats,
+      const RefFrameTable &ref_frame_table_snapshot_init);
 };
 }  // namespace aom
 

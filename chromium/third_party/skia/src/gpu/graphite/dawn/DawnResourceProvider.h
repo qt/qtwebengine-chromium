@@ -12,6 +12,8 @@
 
 namespace skgpu::graphite {
 
+class DawnSharedContext;
+
 class DawnResourceProvider final : public ResourceProvider {
 public:
     DawnResourceProvider(SharedContext* sharedContext, SingleOwner*);
@@ -20,7 +22,7 @@ public:
     sk_sp<Texture> createWrappedTexture(const BackendTexture&) override;
 
 private:
-    sk_sp<GraphicsPipeline> createGraphicsPipeline(const SkRuntimeEffectDictionary*,
+    sk_sp<GraphicsPipeline> createGraphicsPipeline(const RuntimeEffectDictionary*,
                                                    const GraphicsPipelineDesc&,
                                                    const RenderPassDesc&) override;
     sk_sp<ComputePipeline> createComputePipeline(const ComputePipelineDesc&) override;
@@ -33,7 +35,9 @@ private:
                                  SkTileMode yTileMode) override;
 
     BackendTexture onCreateBackendTexture(SkISize dimensions, const TextureInfo&) override;
-    void onDeleteBackendTexture(BackendTexture&) override {}
+    void onDeleteBackendTexture(BackendTexture&) override;
+
+    const DawnSharedContext* dawnSharedContext() const;
 };
 
 } // namespace skgpu::graphite

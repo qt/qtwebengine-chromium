@@ -1,5 +1,5 @@
 #!/usr/bin/env vpython3
-# Copyright 2017 The PDFium Authors. All rights reserved.
+# Copyright 2017 The PDFium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 """Generates a coverage report for given tests.
@@ -7,8 +7,6 @@
 Requires that 'use_clang_coverage = true' is set in args.gn.
 Prefers that 'is_component_build = false' is set in args.gn.
 """
-
-from __future__ import print_function
 
 import argparse
 from collections import namedtuple
@@ -18,14 +16,11 @@ import pprint
 import subprocess
 import sys
 
-# Add src dir to path to avoid having to set PYTHONPATH.
+# Add parent dir to avoid having to set PYTHONPATH.
 sys.path.append(
-    os.path.abspath(
-        os.path.join(
-            os.path.dirname(__file__), os.path.pardir, os.path.pardir,
-            os.path.pardir)))
+    os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir)))
 
-from testing.tools.common import GetBooleanGnArg
+import common
 
 # 'binary' is the file that is to be run for the test.
 # 'use_test_runner' indicates if 'binary' depends on test_runner.py and thus
@@ -45,6 +40,10 @@ COVERAGE_TESTS = {
         TestSpec('run_corpus_tests.py', True, ['--disable-javascript']),
     'corpus_tests_xfa_disabled':
         TestSpec('run_corpus_tests.py', True, ['--disable-xfa']),
+    'corpus_tests_render_oneshot':
+        TestSpec('run_corpus_tests.py', True, ['--render-oneshot']),
+    'corpus_tests_reverse_byte_order':
+        TestSpec('run_corpus_tests.py', True, ['--reverse-byte-order']),
     'javascript_tests':
         TestSpec('run_javascript_tests.py', True, []),
     'javascript_tests_javascript_disabled':
@@ -57,6 +56,10 @@ COVERAGE_TESTS = {
         TestSpec('run_pixel_tests.py', True, ['--disable-javascript']),
     'pixel_tests_xfa_disabled':
         TestSpec('run_pixel_tests.py', True, ['--disable-xfa']),
+    'pixel_tests_render_oneshot':
+        TestSpec('run_pixel_tests.py', True, ['--render-oneshot']),
+    'pixel_tests_reverse_byte_order':
+        TestSpec('run_pixel_tests.py', True, ['--reverse-byte-order']),
 }
 
 
@@ -93,14 +96,14 @@ class CoverageExecutor:
           'No valid tests in set to be run. This is likely due to bad command '
           'line arguments')
 
-    if not GetBooleanGnArg('use_clang_coverage', self.build_directory,
-                           self.verbose):
+    if not common.GetBooleanGnArg('use_clang_coverage', self.build_directory,
+                                  self.verbose):
       parser.error(
           'use_clang_coverage does not appear to be set to true for build, but '
           'is needed')
 
-    self.use_goma = GetBooleanGnArg('use_goma', self.build_directory,
-                                    self.verbose)
+    self.use_goma = common.GetBooleanGnArg('use_goma', self.build_directory,
+                                           self.verbose)
 
     self.output_directory = args['output_directory']
     if not os.path.exists(self.output_directory):

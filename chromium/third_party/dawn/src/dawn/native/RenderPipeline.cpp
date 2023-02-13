@@ -16,10 +16,10 @@
 
 #include <algorithm>
 #include <cmath>
-#include <sstream>
 
 #include "dawn/common/BitSetIterator.h"
 #include "dawn/native/ChainUtils_autogen.h"
+#include "dawn/native/CommandValidation.h"
 #include "dawn/native/Commands.h"
 #include "dawn/native/Device.h"
 #include "dawn/native/InternalPipelineStore.h"
@@ -128,7 +128,7 @@ MaybeError ValidateVertexState(DeviceBase* device,
     DAWN_TRY_CONTEXT(ValidateProgrammableStage(device, descriptor->module, descriptor->entryPoint,
                                                descriptor->constantCount, descriptor->constants,
                                                layout, SingleShaderStage::Vertex),
-                     "validating vertex stage (module: %s, entryPoint: %s).", descriptor->module,
+                     "validating vertex stage (%s, entryPoint: %s).", descriptor->module,
                      descriptor->entryPoint);
     const EntryPointMetadata& vertexMetadata =
         descriptor->module->GetEntryPoint(descriptor->entryPoint);
@@ -341,7 +341,7 @@ MaybeError ValidateFragmentState(DeviceBase* device,
     DAWN_TRY_CONTEXT(ValidateProgrammableStage(device, descriptor->module, descriptor->entryPoint,
                                                descriptor->constantCount, descriptor->constants,
                                                layout, SingleShaderStage::Fragment),
-                     "validating fragment stage (module: %s, entryPoint: %s).", descriptor->module,
+                     "validating fragment stage (%s, entryPoint: %s).", descriptor->module,
                      descriptor->entryPoint);
 
     uint32_t maxColorAttachments = device->GetLimits().v1.maxColorAttachments;
@@ -351,6 +351,7 @@ MaybeError ValidateFragmentState(DeviceBase* device,
 
     const EntryPointMetadata& fragmentMetadata =
         descriptor->module->GetEntryPoint(descriptor->entryPoint);
+    ColorAttachmentFormats colorAttachmentFormats;
     for (ColorAttachmentIndex i(uint8_t(0));
          i < ColorAttachmentIndex(static_cast<uint8_t>(descriptor->targetCount)); ++i) {
         const ColorTargetState* target = &descriptor->targets[static_cast<uint8_t>(i)];
@@ -359,12 +360,14 @@ MaybeError ValidateFragmentState(DeviceBase* device,
                 ValidateColorTargetState(device, target, fragmentMetadata.fragmentOutputsWritten[i],
                                          fragmentMetadata.fragmentOutputVariables[i]),
                 "validating targets[%u].", static_cast<uint8_t>(i));
+            colorAttachmentFormats->push_back(&device->GetValidInternalFormat(target->format));
         } else {
             DAWN_INVALID_IF(target->blend,
                             "Color target[%u] blend state is set when the format is undefined.",
                             static_cast<uint8_t>(i));
         }
     }
+    DAWN_TRY(ValidateColorAttachmentBytesPerSample(device, colorAttachmentFormats));
 
     DAWN_INVALID_IF(fragmentMetadata.usesSampleMaskOutput && alphaToCoverageEnabled,
                     "alphaToCoverageEnabled is true when the sample_mask builtin is a "
@@ -382,12 +385,24 @@ MaybeError ValidateInterStageMatching(DeviceBase* device,
     const EntryPointMetadata& fragmentMetadata =
         fragmentState.module->GetEntryPoint(fragmentState.entryPoint);
 
-    // TODO(dawn:563): Can this message give more details?
-    DAWN_INVALID_IF(
-        vertexMetadata.usedInterStageVariables != fragmentMetadata.usedInterStageVariables,
-        "One or more fragment inputs and vertex outputs are not one-to-one matching");
+    if (DAWN_UNLIKELY(
+            (vertexMetadata.usedInterStageVariables | fragmentMetadata.usedInterStageVariables) !=
+            vertexMetadata.usedInterStageVariables)) {
+        for (size_t i : IterateBitSet(fragmentMetadata.usedInterStageVariables)) {
+            if (!vertexMetadata.usedInterStageVariables.test(i)) {
+                return DAWN_VALIDATION_ERROR(
+                    "The fragment input at location %u doesn't have a corresponding vertex output.",
+                    i);
+            }
+        }
+        UNREACHABLE();
+    }
 
     for (size_t i : IterateBitSet(vertexMetadata.usedInterStageVariables)) {
+        if (!fragmentMetadata.usedInterStageVariables.test(i)) {
+            // It is valid that fragment output is a subset of vertex input
+            continue;
+        }
         const auto& vertexOutputInfo = vertexMetadata.interStageVariables[i];
         const auto& fragmentInputInfo = fragmentMetadata.interStageVariables[i];
         DAWN_INVALID_IF(

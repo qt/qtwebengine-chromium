@@ -194,8 +194,11 @@ BufferedPacketList QuicBufferedPacketStore::DeliverPackets(
       absl::optional<absl::string_view> unused_retry_token;
       std::string unused_detailed_error;
 
+      // We don't need to pass |generator| because we already got the correct
+      // connection ID length when we buffered the packet and indexed by
+      // connection ID.
       QuicErrorCode error_code = QuicFramer::ParsePublicHeaderDispatcher(
-          *packet.packet, kQuicDefaultConnectionIdLength, &unused_format,
+          *packet.packet, connection_id.length(), &unused_format,
           &long_packet_type, &unused_version_flag, &unused_use_length_prefix,
           &unused_version_label, &unused_parsed_version,
           &unused_destination_connection_id, &unused_source_connection_id,
@@ -208,8 +211,8 @@ BufferedPacketList QuicBufferedPacketStore::DeliverPackets(
       }
     }
 
-      initial_packets.splice(initial_packets.end(), other_packets);
-      packets_to_deliver.buffered_packets = std::move(initial_packets);
+    initial_packets.splice(initial_packets.end(), other_packets);
+    packets_to_deliver.buffered_packets = std::move(initial_packets);
   }
   return packets_to_deliver;
 }

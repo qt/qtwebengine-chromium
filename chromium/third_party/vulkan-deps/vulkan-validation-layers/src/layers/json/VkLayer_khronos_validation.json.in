@@ -3,8 +3,8 @@
     "layer": {
         "name": "VK_LAYER_KHRONOS_validation",
         "type": "GLOBAL",
-        "library_path": "@RELATIVE_LAYER_BINARY@",
-        "api_version": "@VK_VERSION@",
+        "library_path": "@JSON_LIBRARY_PATH@",
+        "api_version": "@JSON_API_VERSION@",
         "implementation_version": "1",
         "description": "Khronos Validation Layer",
         "introduction": "The main, comprehensive Khronos validation layer.\n\nVulkan is an Explicit API, enabling direct control over how GPUs actually work. By design, minimal error checking is done inside a Vulkan driver. Applications have full control and responsibility for correct operation. Any errors in how Vulkan is used can result in a crash. \n\nThe Khronos Valiation Layer can be enabled to assist development by enabling developers to verify their applications correctly use the Vulkan API.",
@@ -519,7 +519,26 @@
                                                 "value": [ "VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_EXT" ]
                                             }
                                         ]
-                                    }
+                                    },
+                                    "settings": [
+                                        {
+                                            "key": "warn_on_robust_oob",
+                                            "label": "Generate warning on out of bounds accesses even if buffer robustness is enabled",
+                                            "description": "Warn on out of bounds accesses even if robustness is enabled",
+                                            "type": "BOOL",
+                                            "default": true,
+                                            "platforms": [ "WINDOWS", "LINUX" ],
+                                            "dependence": {
+                                                "mode": "ALL",
+                                                "settings": [
+                                                    {
+                                                        "key": "gpuav_buffer_oob",
+                                                        "value": true
+                                                    }
+                                                ]
+                                            }
+                                        }
+                                    ]
                                 },
                                 {
                                     "key": "validate_draw_indirect",
@@ -597,7 +616,13 @@
                             "key": "VALIDATION_CHECK_ENABLE_VENDOR_SPECIFIC_AMD",
                             "label": "AMD-specific best practices",
                             "description": "Adds check for spec-conforming but non-ideal code on AMD GPUs.",
-                            "platforms": [ "WINDOWS", "LINUX", "MACOS"]
+                            "platforms": [ "WINDOWS", "LINUX", "MACOS" ]
+                        },
+                        {
+                            "key": "VALIDATION_CHECK_ENABLE_VENDOR_SPECIFIC_IMG",
+                            "label": "IMG-specific best practices",
+                            "description": "Adds check for spec-conforming but non-ideal code on Imagination GPUs.",
+                            "platforms": [ "WINDOWS", "LINUX", "MACOS" ]
                         },
                         {
                             "key": "VALIDATION_CHECK_ENABLE_VENDOR_SPECIFIC_NVIDIA",

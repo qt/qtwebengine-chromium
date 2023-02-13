@@ -73,19 +73,37 @@ using GopEncodeInfoList = std::vector<GopEncodeInfo>;
 // invalid.
 class DuckyEncode {
  public:
-  explicit DuckyEncode(const VideoInfo &video_info, int max_ref_frames,
-                       int speed, int base_qindex);
+  explicit DuckyEncode(const VideoInfo &video_info, BLOCK_SIZE sb_size,
+                       int max_ref_frames, int speed, int base_qindex);
   ~DuckyEncode();
   std::vector<FIRSTPASS_STATS> ComputeFirstPassStats();
   void StartEncode(const std::vector<FIRSTPASS_STATS> &stats_list);
-  TplGopStats ObtainTplStats(const GopStruct gop_struct);
-  std::vector<TplGopStats> ComputeTplStats(const GopStructList &gop_list);
+
+  TplGopStats ObtainTplStats(const GopStruct gop_struct,
+                             bool rate_dist_present);
+
+  std::vector<TplGopStats> ComputeTplStats(
+      const std::vector<FIRSTPASS_STATS> &stats_list,
+      const GopStructList &gop_list,
+      const GopEncodeInfoList &gop_encode_info_list);
+
+  std::vector<TplGopStats> ComputeTwoPassTplStats(
+      const std::vector<FIRSTPASS_STATS> &stats_list,
+      const GopStructList &gop_list,
+      const GopEncodeInfoList &gop_encode_info_list,
+      const GopEncodeInfoList &alt_gop_encode_info_list);
+
   std::vector<EncodeFrameResult> EncodeVideo(
       const GopStructList &gop_list,
       const GopEncodeInfoList &gop_encode_info_list);
   EncodeFrameResult EncodeFrame(const EncodeFrameDecision &decision);
   void EndEncode();
   void AllocateBitstreamBuffer(const VideoInfo &video_info);
+
+ private:
+  void InitEncoder(aom_enc_pass pass,
+                   const std::vector<FIRSTPASS_STATS> *stats_list);
+  void FreeEncoder();
 
  private:
   class EncodeImpl;

@@ -102,6 +102,7 @@ constexpr float kColorStopShift =
 #endif
 
 namespace {
+using SkUniqueFTSize = std::unique_ptr<FT_SizeRec, SkFunctionObject<FT_Done_Size>>;
 
 FT_Pixel_Mode compute_pixel_mode(SkMask::Format format) {
     switch (format) {
@@ -441,7 +442,7 @@ SkColor lerpSkColor(SkColor c0, SkColor c1, float t) {
                c_4f = c0_4f + (c1_4f - c0_4f) * t;
 
     return Sk4f_toL32(c_4f);
-};
+}
 
 enum TruncateStops {
     TruncateStart,
@@ -479,7 +480,7 @@ void truncateToStopInterpolating(SkScalar zeroRadiusStop,
         stops.insert(stops.end(), 1);
         colors.insert(colors.end(), lerpColor);
     }
-};
+}
 
 struct OpaquePaintHasher {
   size_t operator()(const FT_OpaquePaint& opaquePaint) {
@@ -1349,10 +1350,7 @@ bool colrv1_traverse_paint(SkCanvas* canvas,
 
 SkPath GetClipBoxPath(FT_Face face, uint16_t glyphId, bool untransformed) {
     SkPath resultPath;
-
-    using DoneFTSize = SkFunctionWrapper<decltype(FT_Done_Size), FT_Done_Size>;
-    std::unique_ptr<std::remove_pointer_t<FT_Size>, DoneFTSize> unscaledFtSize = nullptr;
-
+    SkUniqueFTSize unscaledFtSize = nullptr;
     FT_Size oldSize = face->size;
     FT_Matrix oldTransform;
     FT_Vector oldDelta;
@@ -1821,10 +1819,15 @@ void SkScalerContext_FreeType_Base::generateGlyphImage(FT_Face face,
             // Copy the FT_Bitmap into an SkBitmap (either A8 or ARGB)
             SkBitmap unscaledBitmap;
             // TODO: mark this as sRGB when the blits will be sRGB.
-            unscaledBitmap.allocPixels(SkImageInfo::Make(face->glyph->bitmap.width,
-                                                         face->glyph->bitmap.rows,
-                                                         SkColorType_for_FTPixelMode(pixel_mode),
-                                                         kPremul_SkAlphaType));
+            unscaledBitmap.setInfo(SkImageInfo::Make(face->glyph->bitmap.width,
+                                                     face->glyph->bitmap.rows,
+                                                     SkColorType_for_FTPixelMode(pixel_mode),
+                                                     kPremul_SkAlphaType));
+            if (!unscaledBitmap.tryAllocPixels()) {
+                // TODO: set the fImage to indicate "missing"
+                memset(glyph.fImage, 0, glyph.rowBytes() * glyph.fHeight);
+                return;
+            }
 
             SkMask unscaledBitmapAlias;
             unscaledBitmapAlias.fImage = reinterpret_cast<uint8_t*>(unscaledBitmap.getPixels());
@@ -1848,7 +1851,11 @@ void SkScalerContext_FreeType_Base::generateGlyphImage(FT_Face face,
                                                 kPremul_SkAlphaType),
                               bitmapRowBytes);
             if (SkMask::kBW_Format == maskFormat || SkMask::kLCD16_Format == maskFormat) {
-                dstBitmap.allocPixels();
+                if (!dstBitmap.tryAllocPixels()) {
+                    // TODO: set the fImage to indicate "missing"
+                    memset(glyph.fImage, 0, glyph.rowBytes() * glyph.fHeight);
+                    return;
+                }
             } else {
                 dstBitmap.setPixels(glyph.fImage);
             }
@@ -2018,8 +2025,7 @@ bool generateFacePathCOLRv1(FT_Face face, SkGlyphID glyphID, SkPath* path) {
     flags |= FT_LOAD_NO_AUTOHINT;
     flags |= FT_LOAD_IGNORE_TRANSFORM;
 
-    using DoneFTSize = SkFunctionWrapper<decltype(FT_Done_Size), FT_Done_Size>;
-    std::unique_ptr<std::remove_pointer_t<FT_Size>, DoneFTSize> unscaledFtSize([face]() -> FT_Size {
+    SkUniqueFTSize unscaledFtSize([face]() -> FT_Size {
         FT_Size size;
         FT_Error err = FT_New_Size(face, &size);
         if (err != 0) {

@@ -1,4 +1,4 @@
-// Copyright 2014 PDFium Authors. All rights reserved.
+// Copyright 2014 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -127,7 +127,7 @@ JBig2_Result CJBig2_Context::DecodeSequential(PauseIndicatorIface* pPause) {
   return JBig2_Result::kSuccess;
 }
 
-bool CJBig2_Context::GetFirstPage(uint8_t* pBuf,
+bool CJBig2_Context::GetFirstPage(pdfium::span<uint8_t> pBuf,
                                   int32_t width,
                                   int32_t height,
                                   int32_t stride,

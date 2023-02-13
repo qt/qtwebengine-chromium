@@ -1,4 +1,4 @@
-# Copyright 2016 The Chromium Authors. All rights reserved.
+# Copyright 2016 The PDFium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -17,18 +17,13 @@ pdf_enable_v8_override = true
 # Default: Without XFA support.
 pdf_enable_xfa_override = false
 
-# Build PDFium with PartitionAlloc as the memory allocator.
-# Default: Use PartitionAlloc unless it is a MSVC build.
-pdf_use_partition_alloc_override = !is_win || is_clang
+# Build PDFium with PartitionAlloc support, directing `fxcrt` to use
+# it as its memory allocator in lieu of `malloc()`.
+# Default: Use PartitionAlloc when building with Clang.
+pdf_use_partition_alloc_override = is_clang
 
 # Build PDFium to use Skia (experimental) for all PDFium graphics.
 # If enabled, coexists in build with AGG graphics and the default
 # renderer is selectable at runtime.
-# The default is to use AGG when both `pdf_use_skia_override` and
-# `pdf_use_skia_paths_override` are set to their defaults of false.
+# The default is to use AGG only when `pdf_use_skia_override` is false.
 pdf_use_skia_override = false
-
-# Build PDFium against skia (experimental) rather than agg, adding only path
-# support.
-# Default: Use agg.
-pdf_use_skia_paths_override = false

@@ -278,7 +278,7 @@ static int sdma_copy(struct amdgpu_priv *priv, int fd, uint32_t src_handle, uint
 
 	ret = drmCommandWriteRead(fd, DRM_AMDGPU_CS, &cs, sizeof(cs));
 	if (ret) {
-		drv_log("SDMA copy command buffer submission failed %d\n", ret);
+		drv_loge("SDMA copy command buffer submission failed %d\n", ret);
 		goto unmap_dst;
 	}
 
@@ -289,9 +289,9 @@ static int sdma_copy(struct amdgpu_priv *priv, int fd, uint32_t src_handle, uint
 
 	ret = drmCommandWriteRead(fd, DRM_AMDGPU_WAIT_CS, &wait_cs, sizeof(wait_cs));
 	if (ret) {
-		drv_log("Could not wait for CS to finish\n");
+		drv_loge("Could not wait for CS to finish\n");
 	} else if (wait_cs.out.status) {
-		drv_log("Infinite wait timed out, likely GPU hang.\n");
+		drv_loge("Infinite wait timed out, likely GPU hang.\n");
 		ret = -ENODEV;
 	}
 
@@ -380,7 +380,7 @@ static int amdgpu_init(struct driver *drv)
 
 	/* Continue on failure, as we can still succesfully map things without SDMA. */
 	if (sdma_init(priv, drv_get_fd(drv)))
-		drv_log("SDMA init failed\n");
+		drv_loge("SDMA init failed\n");
 
 	metadata.tiling = TILE_TYPE_LINEAR;
 	metadata.priority = 1;
@@ -425,7 +425,8 @@ static int amdgpu_init(struct driver *drv)
 	 */
 	drv_modify_combination(drv, DRM_FORMAT_R8, &metadata,
 			       BO_USE_CAMERA_READ | BO_USE_CAMERA_WRITE | BO_USE_HW_VIDEO_DECODER |
-				   BO_USE_HW_VIDEO_ENCODER);
+				   BO_USE_HW_VIDEO_ENCODER | BO_USE_GPU_DATA_BUFFER |
+				   BO_USE_SENSOR_DIRECT_DATA);
 
 	/*
 	 * The following formats will be allocated by the DRI backend and may be potentially tiled.
@@ -517,10 +518,10 @@ static int amdgpu_create_bo_linear(struct bo *bo, uint32_t width, uint32_t heigh
 	 * aligned. This uses more memory than necessary since the first plane only needs to be
 	 * 256 aligned, but it's acceptable for a short-term fix. It's probably safe for other gpu
 	 * families, but let's restrict it to Raven and Stoney for now (b/171013552, b/190484589).
+	 * This only applies to the Android YUV (multiplane) format.
 	 * */
-	if (num_planes > 1 &&
-	    (priv->dev_info.family == AMDGPU_FAMILY_RV ||
-	     (priv->dev_info.family == AMDGPU_FAMILY_CZ && !(use_flags & BO_USE_HW_VIDEO_ENCODER))))
+	if (format == DRM_FORMAT_YVU420_ANDROID && (priv->dev_info.family == AMDGPU_FAMILY_RV ||
+						    priv->dev_info.family == AMDGPU_FAMILY_CZ))
 		stride = ALIGN(stride, 512);
 	else
 		stride = ALIGN(stride, 256);
@@ -625,8 +626,8 @@ static int amdgpu_import_bo(struct bo *bo, struct drv_import_fd_data *data)
 		dri_tiling = combo->metadata.tiling != TILE_TYPE_LINEAR;
 	}
 
-	bo->meta.num_planes = dri_num_planes_from_modifier(bo->drv, data->format,
-		data->format_modifier);
+	bo->meta.num_planes =
+	    dri_num_planes_from_modifier(bo->drv, data->format, data->format_modifier);
 
 	if (dri_tiling)
 		return dri_bo_import(bo, data);
@@ -691,7 +692,7 @@ static void *amdgpu_map_bo(struct bo *bo, struct vma *vma, size_t plane, uint32_
 		ret = drmCommandWriteRead(bo->drv->fd, DRM_AMDGPU_GEM_CREATE, &gem_create,
 					  sizeof(gem_create));
 		if (ret < 0) {
-			drv_log("GEM create failed\n");
+			drv_loge("GEM create failed\n");
 			free(priv);
 			return MAP_FAILED;
 		}
@@ -702,7 +703,7 @@ static void *amdgpu_map_bo(struct bo *bo, struct vma *vma, size_t plane, uint32_
 		ret = sdma_copy(bo->drv->priv, bo->drv->fd, bo->handles[0].u32, priv->handle,
 				bo_info.bo_size);
 		if (ret) {
-			drv_log("SDMA copy for read failed\n");
+			drv_loge("SDMA copy for read failed\n");
 			goto fail;
 		}
 	}
@@ -710,7 +711,7 @@ static void *amdgpu_map_bo(struct bo *bo, struct vma *vma, size_t plane, uint32_
 	gem_map.in.handle = handle;
 	ret = drmIoctl(bo->drv->fd, DRM_IOCTL_AMDGPU_GEM_MMAP, &gem_map);
 	if (ret) {
-		drv_log("DRM_IOCTL_AMDGPU_GEM_MMAP failed\n");
+		drv_loge("DRM_IOCTL_AMDGPU_GEM_MMAP failed\n");
 		goto fail;
 	}
 
@@ -775,12 +776,12 @@ static int amdgpu_bo_invalidate(struct bo *bo, struct mapping *mapping)
 				  sizeof(wait_idle));
 
 	if (ret < 0) {
-		drv_log("DRM_AMDGPU_GEM_WAIT_IDLE failed with %d\n", ret);
+		drv_loge("DRM_AMDGPU_GEM_WAIT_IDLE failed with %d\n", ret);
 		return ret;
 	}
 
 	if (ret == 0 && wait_idle.out.status)
-		drv_log("DRM_AMDGPU_GEM_WAIT_IDLE BO is busy\n");
+		drv_loge("DRM_AMDGPU_GEM_WAIT_IDLE BO is busy\n");
 
 	return 0;
 }

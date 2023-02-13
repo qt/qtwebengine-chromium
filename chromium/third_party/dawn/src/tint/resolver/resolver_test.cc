@@ -39,11 +39,11 @@
 #include "src/tint/sem/function.h"
 #include "src/tint/sem/member_accessor_expression.h"
 #include "src/tint/sem/module.h"
-#include "src/tint/sem/reference.h"
-#include "src/tint/sem/sampled_texture.h"
 #include "src/tint/sem/statement.h"
 #include "src/tint/sem/switch_statement.h"
 #include "src/tint/sem/variable.h"
+#include "src/tint/type/reference.h"
+#include "src/tint/type/sampled_texture.h"
 
 using ::testing::ElementsAre;
 using ::testing::HasSubstr;
@@ -99,8 +99,8 @@ TEST_F(ResolverTest, Stmt_Assign) {
     ASSERT_NE(TypeOf(lhs), nullptr);
     ASSERT_NE(TypeOf(rhs), nullptr);
 
-    EXPECT_TRUE(TypeOf(lhs)->UnwrapRef()->Is<sem::F32>());
-    EXPECT_TRUE(TypeOf(rhs)->Is<sem::F32>());
+    EXPECT_TRUE(TypeOf(lhs)->UnwrapRef()->Is<type::F32>());
+    EXPECT_TRUE(TypeOf(rhs)->Is<type::F32>());
     EXPECT_EQ(StmtOf(lhs), assign);
     EXPECT_EQ(StmtOf(rhs), assign);
 }
@@ -112,7 +112,7 @@ TEST_F(ResolverTest, Stmt_Case) {
 
     auto* assign = Assign(lhs, rhs);
     auto* block = Block(assign);
-    auto* sel = Expr(3_i);
+    auto* sel = CaseSelector(3_i);
     auto* cse = Case(sel, block);
     auto* def = DefaultCase();
     auto* cond_var = Var("c", ty.i32());
@@ -123,8 +123,8 @@ TEST_F(ResolverTest, Stmt_Case) {
 
     ASSERT_NE(TypeOf(lhs), nullptr);
     ASSERT_NE(TypeOf(rhs), nullptr);
-    EXPECT_TRUE(TypeOf(lhs)->UnwrapRef()->Is<sem::F32>());
-    EXPECT_TRUE(TypeOf(rhs)->Is<sem::F32>());
+    EXPECT_TRUE(TypeOf(lhs)->UnwrapRef()->Is<type::F32>());
+    EXPECT_TRUE(TypeOf(rhs)->Is<type::F32>());
     EXPECT_EQ(StmtOf(lhs), assign);
     EXPECT_EQ(StmtOf(rhs), assign);
     EXPECT_EQ(BlockOf(assign), block);
@@ -132,9 +132,15 @@ TEST_F(ResolverTest, Stmt_Case) {
     ASSERT_EQ(sem->Cases().size(), 2u);
     EXPECT_EQ(sem->Cases()[0]->Declaration(), cse);
     ASSERT_EQ(sem->Cases()[0]->Selectors().size(), 1u);
-    EXPECT_EQ(sem->Cases()[0]->Selectors()[0]->Declaration(), sel);
-    EXPECT_EQ(sem->Cases()[1]->Declaration(), def);
-    EXPECT_EQ(sem->Cases()[1]->Selectors().size(), 0u);
+    EXPECT_EQ(sem->Cases()[1]->Selectors().size(), 1u);
+}
+
+TEST_F(ResolverTest, Stmt_Case_AddressOf_Invalid) {
+    auto* cond_var = Var("i", ty.i32());
+    WrapInFunction(cond_var, Switch("i", Case(CaseSelector(AddressOf(1_a)), Block())));
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(), "error: cannot take the address of expression");
 }
 
 TEST_F(ResolverTest, Stmt_Block) {
@@ -150,8 +156,8 @@ TEST_F(ResolverTest, Stmt_Block) {
 
     ASSERT_NE(TypeOf(lhs), nullptr);
     ASSERT_NE(TypeOf(rhs), nullptr);
-    EXPECT_TRUE(TypeOf(lhs)->UnwrapRef()->Is<sem::F32>());
-    EXPECT_TRUE(TypeOf(rhs)->Is<sem::F32>());
+    EXPECT_TRUE(TypeOf(lhs)->UnwrapRef()->Is<type::F32>());
+    EXPECT_TRUE(TypeOf(rhs)->Is<type::F32>());
     EXPECT_EQ(StmtOf(lhs), assign);
     EXPECT_EQ(StmtOf(rhs), assign);
     EXPECT_EQ(BlockOf(lhs), block);
@@ -185,11 +191,11 @@ TEST_F(ResolverTest, Stmt_If) {
     ASSERT_NE(TypeOf(else_rhs), nullptr);
     ASSERT_NE(TypeOf(lhs), nullptr);
     ASSERT_NE(TypeOf(rhs), nullptr);
-    EXPECT_TRUE(TypeOf(stmt->condition)->Is<sem::Bool>());
-    EXPECT_TRUE(TypeOf(else_lhs)->UnwrapRef()->Is<sem::F32>());
-    EXPECT_TRUE(TypeOf(else_rhs)->Is<sem::F32>());
-    EXPECT_TRUE(TypeOf(lhs)->UnwrapRef()->Is<sem::F32>());
-    EXPECT_TRUE(TypeOf(rhs)->Is<sem::F32>());
+    EXPECT_TRUE(TypeOf(stmt->condition)->Is<type::Bool>());
+    EXPECT_TRUE(TypeOf(else_lhs)->UnwrapRef()->Is<type::F32>());
+    EXPECT_TRUE(TypeOf(else_rhs)->Is<type::F32>());
+    EXPECT_TRUE(TypeOf(lhs)->UnwrapRef()->Is<type::F32>());
+    EXPECT_TRUE(TypeOf(rhs)->Is<type::F32>());
     EXPECT_EQ(StmtOf(lhs), assign);
     EXPECT_EQ(StmtOf(rhs), assign);
     EXPECT_EQ(StmtOf(cond), stmt);
@@ -209,7 +215,8 @@ TEST_F(ResolverTest, Stmt_Loop) {
     auto* continuing_lhs = Expr("v");
     auto* continuing_rhs = Expr(2.3_f);
 
-    auto* continuing = Block(Assign(continuing_lhs, continuing_rhs));
+    auto* break_if = BreakIf(false);
+    auto* continuing = Block(Assign(continuing_lhs, continuing_rhs), break_if);
     auto* stmt = Loop(body, continuing);
     WrapInFunction(v, stmt);
 
@@ -219,14 +226,15 @@ TEST_F(ResolverTest, Stmt_Loop) {
     ASSERT_NE(TypeOf(body_rhs), nullptr);
     ASSERT_NE(TypeOf(continuing_lhs), nullptr);
     ASSERT_NE(TypeOf(continuing_rhs), nullptr);
-    EXPECT_TRUE(TypeOf(body_lhs)->UnwrapRef()->Is<sem::F32>());
-    EXPECT_TRUE(TypeOf(body_rhs)->Is<sem::F32>());
-    EXPECT_TRUE(TypeOf(continuing_lhs)->UnwrapRef()->Is<sem::F32>());
-    EXPECT_TRUE(TypeOf(continuing_rhs)->Is<sem::F32>());
+    EXPECT_TRUE(TypeOf(body_lhs)->UnwrapRef()->Is<type::F32>());
+    EXPECT_TRUE(TypeOf(body_rhs)->Is<type::F32>());
+    EXPECT_TRUE(TypeOf(continuing_lhs)->UnwrapRef()->Is<type::F32>());
+    EXPECT_TRUE(TypeOf(continuing_rhs)->Is<type::F32>());
     EXPECT_EQ(BlockOf(body_lhs), body);
     EXPECT_EQ(BlockOf(body_rhs), body);
     EXPECT_EQ(BlockOf(continuing_lhs), continuing);
     EXPECT_EQ(BlockOf(continuing_rhs), continuing);
+    EXPECT_EQ(BlockOf(break_if), continuing);
 }
 
 TEST_F(ResolverTest, Stmt_Return) {
@@ -238,7 +246,7 @@ TEST_F(ResolverTest, Stmt_Return) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(cond), nullptr);
-    EXPECT_TRUE(TypeOf(cond)->Is<sem::I32>());
+    EXPECT_TRUE(TypeOf(cond)->Is<type::I32>());
 }
 
 TEST_F(ResolverTest, Stmt_Return_WithoutValue) {
@@ -253,7 +261,7 @@ TEST_F(ResolverTest, Stmt_Switch) {
     auto* lhs = Expr("v");
     auto* rhs = Expr(2.3_f);
     auto* case_block = Block(Assign(lhs, rhs));
-    auto* stmt = Switch(Expr(2_i), Case(Expr(3_i), case_block), DefaultCase());
+    auto* stmt = Switch(Expr(2_i), Case(CaseSelector(3_i), case_block), DefaultCase());
     WrapInFunction(v, stmt);
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
@@ -262,9 +270,9 @@ TEST_F(ResolverTest, Stmt_Switch) {
     ASSERT_NE(TypeOf(lhs), nullptr);
     ASSERT_NE(TypeOf(rhs), nullptr);
 
-    EXPECT_TRUE(TypeOf(stmt->condition)->Is<sem::I32>());
-    EXPECT_TRUE(TypeOf(lhs)->UnwrapRef()->Is<sem::F32>());
-    EXPECT_TRUE(TypeOf(rhs)->Is<sem::F32>());
+    EXPECT_TRUE(TypeOf(stmt->condition)->Is<type::I32>());
+    EXPECT_TRUE(TypeOf(lhs)->UnwrapRef()->Is<type::F32>());
+    EXPECT_TRUE(TypeOf(rhs)->Is<type::F32>());
     EXPECT_EQ(BlockOf(lhs), case_block);
     EXPECT_EQ(BlockOf(rhs), case_block);
 }
@@ -283,13 +291,13 @@ TEST_F(ResolverTest, Stmt_Call) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(expr), nullptr);
-    EXPECT_TRUE(TypeOf(expr)->Is<sem::Void>());
+    EXPECT_TRUE(TypeOf(expr)->Is<type::Void>());
     EXPECT_EQ(StmtOf(expr), call);
 }
 
 TEST_F(ResolverTest, Stmt_VariableDecl) {
     auto* var = Var("my_var", ty.i32(), Expr(2_i));
-    auto* init = var->constructor;
+    auto* init = var->initializer;
 
     auto* decl = Decl(var);
     WrapInFunction(decl);
@@ -297,13 +305,13 @@ TEST_F(ResolverTest, Stmt_VariableDecl) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(init), nullptr);
-    EXPECT_TRUE(TypeOf(init)->Is<sem::I32>());
+    EXPECT_TRUE(TypeOf(init)->Is<type::I32>());
 }
 
 TEST_F(ResolverTest, Stmt_VariableDecl_Alias) {
     auto* my_int = Alias("MyInt", ty.i32());
     auto* var = Var("my_var", ty.Of(my_int), Expr(2_i));
-    auto* init = var->constructor;
+    auto* init = var->initializer;
 
     auto* decl = Decl(var);
     WrapInFunction(decl);
@@ -311,7 +319,7 @@ TEST_F(ResolverTest, Stmt_VariableDecl_Alias) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(init), nullptr);
-    EXPECT_TRUE(TypeOf(init)->Is<sem::I32>());
+    EXPECT_TRUE(TypeOf(init)->Is<type::I32>());
 }
 
 TEST_F(ResolverTest, Stmt_VariableDecl_ModuleScope) {
@@ -321,7 +329,7 @@ TEST_F(ResolverTest, Stmt_VariableDecl_ModuleScope) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(init), nullptr);
-    EXPECT_TRUE(TypeOf(init)->Is<sem::I32>());
+    EXPECT_TRUE(TypeOf(init)->Is<type::I32>());
     EXPECT_EQ(StmtOf(init), nullptr);
 }
 
@@ -337,47 +345,47 @@ TEST_F(ResolverTest, Stmt_VariableDecl_OuterScopeAfterInnerScope) {
 
     // Declare i32 "foo" inside a block
     auto* foo_i32 = Var("foo", ty.i32(), Expr(2_i));
-    auto* foo_i32_init = foo_i32->constructor;
+    auto* foo_i32_init = foo_i32->initializer;
     auto* foo_i32_decl = Decl(foo_i32);
 
     // Reference "foo" inside the block
     auto* bar_i32 = Var("bar", ty.i32(), Expr("foo"));
-    auto* bar_i32_init = bar_i32->constructor;
+    auto* bar_i32_init = bar_i32->initializer;
     auto* bar_i32_decl = Decl(bar_i32);
 
     auto* inner = Block(foo_i32_decl, bar_i32_decl);
 
     // Declare f32 "foo" at function scope
     auto* foo_f32 = Var("foo", ty.f32(), Expr(2_f));
-    auto* foo_f32_init = foo_f32->constructor;
+    auto* foo_f32_init = foo_f32->initializer;
     auto* foo_f32_decl = Decl(foo_f32);
 
     // Reference "foo" at function scope
     auto* bar_f32 = Var("bar", ty.f32(), Expr("foo"));
-    auto* bar_f32_init = bar_f32->constructor;
+    auto* bar_f32_init = bar_f32->initializer;
     auto* bar_f32_decl = Decl(bar_f32);
 
     Func("func", utils::Empty, ty.void_(), utils::Vector{inner, foo_f32_decl, bar_f32_decl});
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
     ASSERT_NE(TypeOf(foo_i32_init), nullptr);
-    EXPECT_TRUE(TypeOf(foo_i32_init)->Is<sem::I32>());
+    EXPECT_TRUE(TypeOf(foo_i32_init)->Is<type::I32>());
     ASSERT_NE(TypeOf(foo_f32_init), nullptr);
-    EXPECT_TRUE(TypeOf(foo_f32_init)->Is<sem::F32>());
+    EXPECT_TRUE(TypeOf(foo_f32_init)->Is<type::F32>());
     ASSERT_NE(TypeOf(bar_i32_init), nullptr);
-    EXPECT_TRUE(TypeOf(bar_i32_init)->UnwrapRef()->Is<sem::I32>());
+    EXPECT_TRUE(TypeOf(bar_i32_init)->UnwrapRef()->Is<type::I32>());
     ASSERT_NE(TypeOf(bar_f32_init), nullptr);
-    EXPECT_TRUE(TypeOf(bar_f32_init)->UnwrapRef()->Is<sem::F32>());
+    EXPECT_TRUE(TypeOf(bar_f32_init)->UnwrapRef()->Is<type::F32>());
     EXPECT_EQ(StmtOf(foo_i32_init), foo_i32_decl);
     EXPECT_EQ(StmtOf(bar_i32_init), bar_i32_decl);
     EXPECT_EQ(StmtOf(foo_f32_init), foo_f32_decl);
     EXPECT_EQ(StmtOf(bar_f32_init), bar_f32_decl);
-    EXPECT_TRUE(CheckVarUsers(foo_i32, utils::Vector{bar_i32->constructor}));
-    EXPECT_TRUE(CheckVarUsers(foo_f32, utils::Vector{bar_f32->constructor}));
-    ASSERT_NE(VarOf(bar_i32->constructor), nullptr);
-    EXPECT_EQ(VarOf(bar_i32->constructor)->Declaration(), foo_i32);
-    ASSERT_NE(VarOf(bar_f32->constructor), nullptr);
-    EXPECT_EQ(VarOf(bar_f32->constructor)->Declaration(), foo_f32);
+    EXPECT_TRUE(CheckVarUsers(foo_i32, utils::Vector{bar_i32->initializer}));
+    EXPECT_TRUE(CheckVarUsers(foo_f32, utils::Vector{bar_f32->initializer}));
+    ASSERT_NE(VarOf(bar_i32->initializer), nullptr);
+    EXPECT_EQ(VarOf(bar_i32->initializer)->Declaration(), foo_i32);
+    ASSERT_NE(VarOf(bar_f32->initializer), nullptr);
+    EXPECT_EQ(VarOf(bar_f32->initializer)->Declaration(), foo_f32);
 }
 
 TEST_F(ResolverTest, Stmt_VariableDecl_ModuleScopeAfterFunctionScope) {
@@ -391,35 +399,35 @@ TEST_F(ResolverTest, Stmt_VariableDecl_ModuleScopeAfterFunctionScope) {
 
     // Declare i32 "foo" inside a function
     auto* fn_i32 = Var("foo", ty.i32(), Expr(2_i));
-    auto* fn_i32_init = fn_i32->constructor;
+    auto* fn_i32_init = fn_i32->initializer;
     auto* fn_i32_decl = Decl(fn_i32);
     Func("func_i32", utils::Empty, ty.void_(), utils::Vector{fn_i32_decl});
 
     // Declare f32 "foo" at module scope
     auto* mod_f32 = Var("foo", ty.f32(), ast::AddressSpace::kPrivate, Expr(2_f));
-    auto* mod_init = mod_f32->constructor;
+    auto* mod_init = mod_f32->initializer;
     AST().AddGlobalVariable(mod_f32);
 
     // Reference "foo" in another function
     auto* fn_f32 = Var("bar", ty.f32(), Expr("foo"));
-    auto* fn_f32_init = fn_f32->constructor;
+    auto* fn_f32_init = fn_f32->initializer;
     auto* fn_f32_decl = Decl(fn_f32);
     Func("func_f32", utils::Empty, ty.void_(), utils::Vector{fn_f32_decl});
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
     ASSERT_NE(TypeOf(mod_init), nullptr);
-    EXPECT_TRUE(TypeOf(mod_init)->Is<sem::F32>());
+    EXPECT_TRUE(TypeOf(mod_init)->Is<type::F32>());
     ASSERT_NE(TypeOf(fn_i32_init), nullptr);
-    EXPECT_TRUE(TypeOf(fn_i32_init)->Is<sem::I32>());
+    EXPECT_TRUE(TypeOf(fn_i32_init)->Is<type::I32>());
     ASSERT_NE(TypeOf(fn_f32_init), nullptr);
-    EXPECT_TRUE(TypeOf(fn_f32_init)->UnwrapRef()->Is<sem::F32>());
+    EXPECT_TRUE(TypeOf(fn_f32_init)->UnwrapRef()->Is<type::F32>());
     EXPECT_EQ(StmtOf(fn_i32_init), fn_i32_decl);
     EXPECT_EQ(StmtOf(mod_init), nullptr);
     EXPECT_EQ(StmtOf(fn_f32_init), fn_f32_decl);
     EXPECT_TRUE(CheckVarUsers(fn_i32, utils::Empty));
-    EXPECT_TRUE(CheckVarUsers(mod_f32, utils::Vector{fn_f32->constructor}));
-    ASSERT_NE(VarOf(fn_f32->constructor), nullptr);
-    EXPECT_EQ(VarOf(fn_f32->constructor)->Declaration(), mod_f32);
+    EXPECT_TRUE(CheckVarUsers(mod_f32, utils::Vector{fn_f32->initializer}));
+    ASSERT_NE(VarOf(fn_f32->initializer), nullptr);
+    EXPECT_EQ(VarOf(fn_f32->initializer)->Declaration(), mod_f32);
 }
 
 TEST_F(ResolverTest, ArraySize_UnsignedLiteral) {
@@ -429,10 +437,10 @@ TEST_F(ResolverTest, ArraySize_UnsignedLiteral) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(a), nullptr);
-    auto* ref = TypeOf(a)->As<sem::Reference>();
+    auto* ref = TypeOf(a)->As<type::Reference>();
     ASSERT_NE(ref, nullptr);
-    auto* ary = ref->StoreType()->As<sem::Array>();
-    EXPECT_EQ(ary->Count(), sem::ConstantArrayCount{10u});
+    auto* ary = ref->StoreType()->As<type::Array>();
+    EXPECT_EQ(ary->Count(), create<type::ConstantArrayCount>(10u));
 }
 
 TEST_F(ResolverTest, ArraySize_SignedLiteral) {
@@ -442,10 +450,10 @@ TEST_F(ResolverTest, ArraySize_SignedLiteral) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(a), nullptr);
-    auto* ref = TypeOf(a)->As<sem::Reference>();
+    auto* ref = TypeOf(a)->As<type::Reference>();
     ASSERT_NE(ref, nullptr);
-    auto* ary = ref->StoreType()->As<sem::Array>();
-    EXPECT_EQ(ary->Count(), sem::ConstantArrayCount{10u});
+    auto* ary = ref->StoreType()->As<type::Array>();
+    EXPECT_EQ(ary->Count(), create<type::ConstantArrayCount>(10u));
 }
 
 TEST_F(ResolverTest, ArraySize_UnsignedConst) {
@@ -457,10 +465,10 @@ TEST_F(ResolverTest, ArraySize_UnsignedConst) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(a), nullptr);
-    auto* ref = TypeOf(a)->As<sem::Reference>();
+    auto* ref = TypeOf(a)->As<type::Reference>();
     ASSERT_NE(ref, nullptr);
-    auto* ary = ref->StoreType()->As<sem::Array>();
-    EXPECT_EQ(ary->Count(), sem::ConstantArrayCount{10u});
+    auto* ary = ref->StoreType()->As<type::Array>();
+    EXPECT_EQ(ary->Count(), create<type::ConstantArrayCount>(10u));
 }
 
 TEST_F(ResolverTest, ArraySize_SignedConst) {
@@ -472,14 +480,14 @@ TEST_F(ResolverTest, ArraySize_SignedConst) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(a), nullptr);
-    auto* ref = TypeOf(a)->As<sem::Reference>();
+    auto* ref = TypeOf(a)->As<type::Reference>();
     ASSERT_NE(ref, nullptr);
-    auto* ary = ref->StoreType()->As<sem::Array>();
-    EXPECT_EQ(ary->Count(), sem::ConstantArrayCount{10u});
+    auto* ary = ref->StoreType()->As<type::Array>();
+    EXPECT_EQ(ary->Count(), create<type::ConstantArrayCount>(10u));
 }
 
-TEST_F(ResolverTest, ArraySize_Override) {
-    // override size = 0;
+TEST_F(ResolverTest, ArraySize_NamedOverride) {
+    // override size = 10i;
     // var<workgroup> a : array<f32, size>;
     auto* override = Override("size", Expr(10_i));
     auto* a = GlobalVar("a", ty.array(ty.f32(), Expr("size")), ast::AddressSpace::kWorkgroup);
@@ -487,16 +495,16 @@ TEST_F(ResolverTest, ArraySize_Override) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(a), nullptr);
-    auto* ref = TypeOf(a)->As<sem::Reference>();
+    auto* ref = TypeOf(a)->As<type::Reference>();
     ASSERT_NE(ref, nullptr);
-    auto* ary = ref->StoreType()->As<sem::Array>();
+    auto* ary = ref->StoreType()->As<type::Array>();
     auto* sem_override = Sem().Get<sem::GlobalVariable>(override);
     ASSERT_NE(sem_override, nullptr);
-    EXPECT_EQ(ary->Count(), sem::OverrideArrayCount{sem_override});
+    EXPECT_EQ(ary->Count(), create<sem::NamedOverrideArrayCount>(sem_override));
 }
 
-TEST_F(ResolverTest, ArraySize_Override_Equivalence) {
-    // override size = 0;
+TEST_F(ResolverTest, ArraySize_NamedOverride_Equivalence) {
+    // override size = 10i;
     // var<workgroup> a : array<f32, size>;
     // var<workgroup> b : array<f32, size>;
     auto* override = Override("size", Expr(10_i));
@@ -506,20 +514,67 @@ TEST_F(ResolverTest, ArraySize_Override_Equivalence) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(a), nullptr);
-    auto* ref_a = TypeOf(a)->As<sem::Reference>();
+    auto* ref_a = TypeOf(a)->As<type::Reference>();
     ASSERT_NE(ref_a, nullptr);
-    auto* ary_a = ref_a->StoreType()->As<sem::Array>();
+    auto* ary_a = ref_a->StoreType()->As<type::Array>();
 
     ASSERT_NE(TypeOf(b), nullptr);
-    auto* ref_b = TypeOf(b)->As<sem::Reference>();
+    auto* ref_b = TypeOf(b)->As<type::Reference>();
     ASSERT_NE(ref_b, nullptr);
-    auto* ary_b = ref_b->StoreType()->As<sem::Array>();
+    auto* ary_b = ref_b->StoreType()->As<type::Array>();
 
     auto* sem_override = Sem().Get<sem::GlobalVariable>(override);
     ASSERT_NE(sem_override, nullptr);
-    EXPECT_EQ(ary_a->Count(), sem::OverrideArrayCount{sem_override});
-    EXPECT_EQ(ary_b->Count(), sem::OverrideArrayCount{sem_override});
+    EXPECT_EQ(ary_a->Count(), create<sem::NamedOverrideArrayCount>(sem_override));
+    EXPECT_EQ(ary_b->Count(), create<sem::NamedOverrideArrayCount>(sem_override));
     EXPECT_EQ(ary_a, ary_b);
+}
+
+TEST_F(ResolverTest, ArraySize_UnnamedOverride) {
+    // override size = 10i;
+    // var<workgroup> a : array<f32, size*2>;
+    auto* override = Override("size", Expr(10_i));
+    auto* cnt = Mul("size", 2_a);
+    auto* a = GlobalVar("a", ty.array(ty.f32(), cnt), ast::AddressSpace::kWorkgroup);
+
+    EXPECT_TRUE(r()->Resolve()) << r()->error();
+
+    ASSERT_NE(TypeOf(a), nullptr);
+    auto* ref = TypeOf(a)->As<type::Reference>();
+    ASSERT_NE(ref, nullptr);
+    auto* ary = ref->StoreType()->As<type::Array>();
+    auto* sem_override = Sem().Get<sem::GlobalVariable>(override);
+    ASSERT_NE(sem_override, nullptr);
+    EXPECT_EQ(ary->Count(), create<sem::UnnamedOverrideArrayCount>(Sem().Get(cnt)));
+}
+
+TEST_F(ResolverTest, ArraySize_UnamedOverride_Equivalence) {
+    // override size = 10i;
+    // var<workgroup> a : array<f32, size>;
+    // var<workgroup> b : array<f32, size>;
+    auto* override = Override("size", Expr(10_i));
+    auto* a_cnt = Mul("size", 2_a);
+    auto* b_cnt = Mul("size", 2_a);
+    auto* a = GlobalVar("a", ty.array(ty.f32(), a_cnt), ast::AddressSpace::kWorkgroup);
+    auto* b = GlobalVar("b", ty.array(ty.f32(), b_cnt), ast::AddressSpace::kWorkgroup);
+
+    EXPECT_TRUE(r()->Resolve()) << r()->error();
+
+    ASSERT_NE(TypeOf(a), nullptr);
+    auto* ref_a = TypeOf(a)->As<type::Reference>();
+    ASSERT_NE(ref_a, nullptr);
+    auto* ary_a = ref_a->StoreType()->As<type::Array>();
+
+    ASSERT_NE(TypeOf(b), nullptr);
+    auto* ref_b = TypeOf(b)->As<type::Reference>();
+    ASSERT_NE(ref_b, nullptr);
+    auto* ary_b = ref_b->StoreType()->As<type::Array>();
+
+    auto* sem_override = Sem().Get<sem::GlobalVariable>(override);
+    ASSERT_NE(sem_override, nullptr);
+    EXPECT_EQ(ary_a->Count(), create<sem::UnnamedOverrideArrayCount>(Sem().Get(a_cnt)));
+    EXPECT_EQ(ary_b->Count(), create<sem::UnnamedOverrideArrayCount>(Sem().Get(b_cnt)));
+    EXPECT_NE(ary_a, ary_b);
 }
 
 TEST_F(ResolverTest, Expr_Bitcast) {
@@ -531,7 +586,7 @@ TEST_F(ResolverTest, Expr_Bitcast) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(bitcast), nullptr);
-    EXPECT_TRUE(TypeOf(bitcast)->Is<sem::F32>());
+    EXPECT_TRUE(TypeOf(bitcast)->Is<type::F32>());
 }
 
 TEST_F(ResolverTest, Expr_Call) {
@@ -543,7 +598,7 @@ TEST_F(ResolverTest, Expr_Call) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(call), nullptr);
-    EXPECT_TRUE(TypeOf(call)->Is<sem::F32>());
+    EXPECT_TRUE(TypeOf(call)->Is<type::F32>());
 }
 
 TEST_F(ResolverTest, Expr_Call_InBinaryOp) {
@@ -555,7 +610,7 @@ TEST_F(ResolverTest, Expr_Call_InBinaryOp) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(expr), nullptr);
-    EXPECT_TRUE(TypeOf(expr)->Is<sem::F32>());
+    EXPECT_TRUE(TypeOf(expr)->Is<type::F32>());
 }
 
 TEST_F(ResolverTest, Expr_Call_WithParams) {
@@ -572,7 +627,7 @@ TEST_F(ResolverTest, Expr_Call_WithParams) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(param), nullptr);
-    EXPECT_TRUE(TypeOf(param)->Is<sem::F32>());
+    EXPECT_TRUE(TypeOf(param)->Is<type::F32>());
 }
 
 TEST_F(ResolverTest, Expr_Call_Builtin) {
@@ -582,7 +637,7 @@ TEST_F(ResolverTest, Expr_Call_Builtin) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(call), nullptr);
-    EXPECT_TRUE(TypeOf(call)->Is<sem::F32>());
+    EXPECT_TRUE(TypeOf(call)->Is<type::F32>());
 }
 
 TEST_F(ResolverTest, Expr_Cast) {
@@ -594,53 +649,53 @@ TEST_F(ResolverTest, Expr_Cast) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(cast), nullptr);
-    EXPECT_TRUE(TypeOf(cast)->Is<sem::F32>());
+    EXPECT_TRUE(TypeOf(cast)->Is<type::F32>());
 }
 
-TEST_F(ResolverTest, Expr_Constructor_Scalar) {
+TEST_F(ResolverTest, Expr_Initializer_Scalar) {
     auto* s = Expr(1_f);
     WrapInFunction(s);
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(s), nullptr);
-    EXPECT_TRUE(TypeOf(s)->Is<sem::F32>());
+    EXPECT_TRUE(TypeOf(s)->Is<type::F32>());
 }
 
-TEST_F(ResolverTest, Expr_Constructor_Type_Vec2) {
+TEST_F(ResolverTest, Expr_Initializer_Type_Vec2) {
     auto* tc = vec2<f32>(1_f, 1_f);
     WrapInFunction(tc);
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(tc), nullptr);
-    ASSERT_TRUE(TypeOf(tc)->Is<sem::Vector>());
-    EXPECT_TRUE(TypeOf(tc)->As<sem::Vector>()->type()->Is<sem::F32>());
-    EXPECT_EQ(TypeOf(tc)->As<sem::Vector>()->Width(), 2u);
+    ASSERT_TRUE(TypeOf(tc)->Is<type::Vector>());
+    EXPECT_TRUE(TypeOf(tc)->As<type::Vector>()->type()->Is<type::F32>());
+    EXPECT_EQ(TypeOf(tc)->As<type::Vector>()->Width(), 2u);
 }
 
-TEST_F(ResolverTest, Expr_Constructor_Type_Vec3) {
+TEST_F(ResolverTest, Expr_Initializer_Type_Vec3) {
     auto* tc = vec3<f32>(1_f, 1_f, 1_f);
     WrapInFunction(tc);
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(tc), nullptr);
-    ASSERT_TRUE(TypeOf(tc)->Is<sem::Vector>());
-    EXPECT_TRUE(TypeOf(tc)->As<sem::Vector>()->type()->Is<sem::F32>());
-    EXPECT_EQ(TypeOf(tc)->As<sem::Vector>()->Width(), 3u);
+    ASSERT_TRUE(TypeOf(tc)->Is<type::Vector>());
+    EXPECT_TRUE(TypeOf(tc)->As<type::Vector>()->type()->Is<type::F32>());
+    EXPECT_EQ(TypeOf(tc)->As<type::Vector>()->Width(), 3u);
 }
 
-TEST_F(ResolverTest, Expr_Constructor_Type_Vec4) {
+TEST_F(ResolverTest, Expr_Initializer_Type_Vec4) {
     auto* tc = vec4<f32>(1_f, 1_f, 1_f, 1_f);
     WrapInFunction(tc);
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(tc), nullptr);
-    ASSERT_TRUE(TypeOf(tc)->Is<sem::Vector>());
-    EXPECT_TRUE(TypeOf(tc)->As<sem::Vector>()->type()->Is<sem::F32>());
-    EXPECT_EQ(TypeOf(tc)->As<sem::Vector>()->Width(), 4u);
+    ASSERT_TRUE(TypeOf(tc)->Is<type::Vector>());
+    EXPECT_TRUE(TypeOf(tc)->As<type::Vector>()->type()->Is<type::F32>());
+    EXPECT_EQ(TypeOf(tc)->As<type::Vector>()->Width(), 4u);
 }
 
 TEST_F(ResolverTest, Expr_Identifier_GlobalVariable) {
@@ -652,8 +707,8 @@ TEST_F(ResolverTest, Expr_Identifier_GlobalVariable) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(ident), nullptr);
-    ASSERT_TRUE(TypeOf(ident)->Is<sem::Reference>());
-    EXPECT_TRUE(TypeOf(ident)->UnwrapRef()->Is<sem::F32>());
+    ASSERT_TRUE(TypeOf(ident)->Is<type::Reference>());
+    EXPECT_TRUE(TypeOf(ident)->UnwrapRef()->Is<type::F32>());
     EXPECT_TRUE(CheckVarUsers(my_var, utils::Vector{ident}));
     ASSERT_NE(VarOf(ident), nullptr);
     EXPECT_EQ(VarOf(ident)->Declaration(), my_var);
@@ -668,7 +723,7 @@ TEST_F(ResolverTest, Expr_Identifier_GlobalConst) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(ident), nullptr);
-    EXPECT_TRUE(TypeOf(ident)->Is<sem::F32>());
+    EXPECT_TRUE(TypeOf(ident)->Is<type::F32>());
     EXPECT_TRUE(CheckVarUsers(my_var, utils::Vector{ident}));
     ASSERT_NE(VarOf(ident), nullptr);
     EXPECT_EQ(VarOf(ident)->Declaration(), my_var);
@@ -688,7 +743,7 @@ TEST_F(ResolverTest, Expr_Identifier_FunctionVariable_Const) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(my_var_a), nullptr);
-    EXPECT_TRUE(TypeOf(my_var_a)->Is<sem::F32>());
+    EXPECT_TRUE(TypeOf(my_var_a)->Is<type::F32>());
     EXPECT_EQ(StmtOf(my_var_a), decl);
     EXPECT_TRUE(CheckVarUsers(var, utils::Vector{my_var_a}));
     ASSERT_NE(VarOf(my_var_a), nullptr);
@@ -729,12 +784,12 @@ TEST_F(ResolverTest, Expr_Identifier_FunctionVariable) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(my_var_a), nullptr);
-    ASSERT_TRUE(TypeOf(my_var_a)->Is<sem::Reference>());
-    EXPECT_TRUE(TypeOf(my_var_a)->UnwrapRef()->Is<sem::F32>());
+    ASSERT_TRUE(TypeOf(my_var_a)->Is<type::Reference>());
+    EXPECT_TRUE(TypeOf(my_var_a)->UnwrapRef()->Is<type::F32>());
     EXPECT_EQ(StmtOf(my_var_a), assign);
     ASSERT_NE(TypeOf(my_var_b), nullptr);
-    ASSERT_TRUE(TypeOf(my_var_b)->Is<sem::Reference>());
-    EXPECT_TRUE(TypeOf(my_var_b)->UnwrapRef()->Is<sem::F32>());
+    ASSERT_TRUE(TypeOf(my_var_b)->Is<type::Reference>());
+    EXPECT_TRUE(TypeOf(my_var_b)->UnwrapRef()->Is<type::F32>());
     EXPECT_EQ(StmtOf(my_var_b), assign);
     EXPECT_TRUE(CheckVarUsers(var, utils::Vector{my_var_a, my_var_b}));
     ASSERT_NE(VarOf(my_var_a), nullptr);
@@ -759,12 +814,12 @@ TEST_F(ResolverTest, Expr_Identifier_Function_Ptr) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(v), nullptr);
-    ASSERT_TRUE(TypeOf(v)->Is<sem::Reference>());
-    EXPECT_TRUE(TypeOf(v)->UnwrapRef()->Is<sem::F32>());
+    ASSERT_TRUE(TypeOf(v)->Is<type::Reference>());
+    EXPECT_TRUE(TypeOf(v)->UnwrapRef()->Is<type::F32>());
     EXPECT_EQ(StmtOf(v), p_decl);
     ASSERT_NE(TypeOf(p), nullptr);
-    ASSERT_TRUE(TypeOf(p)->Is<sem::Pointer>());
-    EXPECT_TRUE(TypeOf(p)->UnwrapPtr()->Is<sem::F32>());
+    ASSERT_TRUE(TypeOf(p)->Is<type::Pointer>());
+    EXPECT_TRUE(TypeOf(p)->UnwrapPtr()->Is<type::F32>());
     EXPECT_EQ(StmtOf(p), assign);
 }
 
@@ -780,7 +835,7 @@ TEST_F(ResolverTest, Expr_Call_Function) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(call), nullptr);
-    EXPECT_TRUE(TypeOf(call)->Is<sem::F32>());
+    EXPECT_TRUE(TypeOf(call)->Is<type::F32>());
 }
 
 TEST_F(ResolverTest, Expr_Identifier_Unknown) {
@@ -808,13 +863,13 @@ TEST_F(ResolverTest, Function_Parameters) {
     auto* func_sem = Sem().Get(func);
     ASSERT_NE(func_sem, nullptr);
     EXPECT_EQ(func_sem->Parameters().Length(), 3u);
-    EXPECT_TRUE(func_sem->Parameters()[0]->Type()->Is<sem::F32>());
-    EXPECT_TRUE(func_sem->Parameters()[1]->Type()->Is<sem::I32>());
-    EXPECT_TRUE(func_sem->Parameters()[2]->Type()->Is<sem::U32>());
+    EXPECT_TRUE(func_sem->Parameters()[0]->Type()->Is<type::F32>());
+    EXPECT_TRUE(func_sem->Parameters()[1]->Type()->Is<type::I32>());
+    EXPECT_TRUE(func_sem->Parameters()[2]->Type()->Is<type::U32>());
     EXPECT_EQ(func_sem->Parameters()[0]->Declaration(), param_a);
     EXPECT_EQ(func_sem->Parameters()[1]->Declaration(), param_b);
     EXPECT_EQ(func_sem->Parameters()[2]->Declaration(), param_c);
-    EXPECT_TRUE(func_sem->ReturnType()->Is<sem::Void>());
+    EXPECT_TRUE(func_sem->ReturnType()->Is<type::Void>());
 }
 
 TEST_F(ResolverTest, Function_Parameters_Locations) {
@@ -882,7 +937,7 @@ TEST_F(ResolverTest, Function_RegisterInputOutputVariables) {
     auto* func_sem = Sem().Get(func);
     ASSERT_NE(func_sem, nullptr);
     EXPECT_EQ(func_sem->Parameters().Length(), 0u);
-    EXPECT_TRUE(func_sem->ReturnType()->Is<sem::Void>());
+    EXPECT_TRUE(func_sem->ReturnType()->Is<type::Void>());
 
     const auto& vars = func_sem->TransitivelyReferencedGlobals();
     ASSERT_EQ(vars.Length(), 3u);
@@ -974,7 +1029,7 @@ TEST_F(ResolverTest, Function_NotRegisterFunctionVariable) {
     ASSERT_NE(func_sem, nullptr);
 
     EXPECT_EQ(func_sem->TransitivelyReferencedGlobals().Length(), 0u);
-    EXPECT_TRUE(func_sem->ReturnType()->Is<sem::Void>());
+    EXPECT_TRUE(func_sem->ReturnType()->Is<type::Void>());
 }
 
 TEST_F(ResolverTest, Function_NotRegisterFunctionConstant) {
@@ -989,7 +1044,7 @@ TEST_F(ResolverTest, Function_NotRegisterFunctionConstant) {
     ASSERT_NE(func_sem, nullptr);
 
     EXPECT_EQ(func_sem->TransitivelyReferencedGlobals().Length(), 0u);
-    EXPECT_TRUE(func_sem->ReturnType()->Is<sem::Void>());
+    EXPECT_TRUE(func_sem->ReturnType()->Is<type::Void>());
 }
 
 TEST_F(ResolverTest, Function_NotRegisterFunctionParams) {
@@ -1000,7 +1055,7 @@ TEST_F(ResolverTest, Function_NotRegisterFunctionParams) {
     ASSERT_NE(func_sem, nullptr);
 
     EXPECT_EQ(func_sem->TransitivelyReferencedGlobals().Length(), 0u);
-    EXPECT_TRUE(func_sem->ReturnType()->Is<sem::Void>());
+    EXPECT_TRUE(func_sem->ReturnType()->Is<type::Void>());
 }
 
 TEST_F(ResolverTest, Function_CallSites) {
@@ -1195,13 +1250,13 @@ TEST_F(ResolverTest, Expr_MemberAccessor_Struct) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(mem), nullptr);
-    ASSERT_TRUE(TypeOf(mem)->Is<sem::Reference>());
+    ASSERT_TRUE(TypeOf(mem)->Is<type::Reference>());
 
-    auto* ref = TypeOf(mem)->As<sem::Reference>();
-    EXPECT_TRUE(ref->StoreType()->Is<sem::F32>());
+    auto* ref = TypeOf(mem)->As<type::Reference>();
+    EXPECT_TRUE(ref->StoreType()->Is<type::F32>());
     auto* sma = Sem().Get(mem)->As<sem::StructMemberAccess>();
     ASSERT_NE(sma, nullptr);
-    EXPECT_TRUE(sma->Member()->Type()->Is<sem::F32>());
+    EXPECT_TRUE(sma->Member()->Type()->Is<type::F32>());
     EXPECT_EQ(sma->Object()->Declaration(), mem->structure);
     EXPECT_EQ(sma->Member()->Index(), 1u);
     EXPECT_EQ(sma->Member()->Declaration()->symbol, Symbols().Get("second_member"));
@@ -1219,14 +1274,14 @@ TEST_F(ResolverTest, Expr_MemberAccessor_Struct_Alias) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(mem), nullptr);
-    ASSERT_TRUE(TypeOf(mem)->Is<sem::Reference>());
+    ASSERT_TRUE(TypeOf(mem)->Is<type::Reference>());
 
-    auto* ref = TypeOf(mem)->As<sem::Reference>();
-    EXPECT_TRUE(ref->StoreType()->Is<sem::F32>());
+    auto* ref = TypeOf(mem)->As<type::Reference>();
+    EXPECT_TRUE(ref->StoreType()->Is<type::F32>());
     auto* sma = Sem().Get(mem)->As<sem::StructMemberAccess>();
     ASSERT_NE(sma, nullptr);
     EXPECT_EQ(sma->Object()->Declaration(), mem->structure);
-    EXPECT_TRUE(sma->Member()->Type()->Is<sem::F32>());
+    EXPECT_TRUE(sma->Member()->Type()->Is<type::F32>());
     EXPECT_EQ(sma->Member()->Index(), 1u);
 }
 
@@ -1239,9 +1294,9 @@ TEST_F(ResolverTest, Expr_MemberAccessor_VectorSwizzle) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(mem), nullptr);
-    ASSERT_TRUE(TypeOf(mem)->Is<sem::Vector>());
-    EXPECT_TRUE(TypeOf(mem)->As<sem::Vector>()->type()->Is<sem::F32>());
-    EXPECT_EQ(TypeOf(mem)->As<sem::Vector>()->Width(), 4u);
+    ASSERT_TRUE(TypeOf(mem)->Is<type::Vector>());
+    EXPECT_TRUE(TypeOf(mem)->As<type::Vector>()->type()->Is<type::F32>());
+    EXPECT_EQ(TypeOf(mem)->As<type::Vector>()->Width(), 4u);
     auto* sma = Sem().Get(mem)->As<sem::Swizzle>();
     ASSERT_NE(sma, nullptr);
     EXPECT_EQ(sma->Object()->Declaration(), mem->structure);
@@ -1257,10 +1312,10 @@ TEST_F(ResolverTest, Expr_MemberAccessor_VectorSwizzle_SingleElement) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(mem), nullptr);
-    ASSERT_TRUE(TypeOf(mem)->Is<sem::Reference>());
+    ASSERT_TRUE(TypeOf(mem)->Is<type::Reference>());
 
-    auto* ref = TypeOf(mem)->As<sem::Reference>();
-    ASSERT_TRUE(ref->StoreType()->Is<sem::F32>());
+    auto* ref = TypeOf(mem)->As<type::Reference>();
+    ASSERT_TRUE(ref->StoreType()->Is<type::F32>());
     auto* sma = Sem().Get(mem)->As<sem::Swizzle>();
     ASSERT_NE(sma, nullptr);
     EXPECT_EQ(sma->Object()->Declaration(), mem->structure);
@@ -1294,9 +1349,9 @@ TEST_F(ResolverTest, Expr_Accessor_MultiLevel) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(mem), nullptr);
-    ASSERT_TRUE(TypeOf(mem)->Is<sem::Vector>());
-    EXPECT_TRUE(TypeOf(mem)->As<sem::Vector>()->type()->Is<sem::F32>());
-    EXPECT_EQ(TypeOf(mem)->As<sem::Vector>()->Width(), 2u);
+    ASSERT_TRUE(TypeOf(mem)->Is<type::Vector>());
+    EXPECT_TRUE(TypeOf(mem)->As<type::Vector>()->type()->Is<type::F32>());
+    EXPECT_EQ(TypeOf(mem)->As<type::Vector>()->Width(), 2u);
     ASSERT_TRUE(Sem().Get(mem)->Is<sem::Swizzle>());
 }
 
@@ -1312,7 +1367,7 @@ TEST_F(ResolverTest, Expr_MemberAccessor_InBinaryOp) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(expr), nullptr);
-    EXPECT_TRUE(TypeOf(expr)->Is<sem::F32>());
+    EXPECT_TRUE(TypeOf(expr)->Is<type::F32>());
 }
 
 namespace ExprBinaryTest {
@@ -1712,18 +1767,18 @@ TEST_P(Expr_Binary_Test_Invalid_VectorMatrixMultiply, All) {
 
     const ast::Type* lhs_type = nullptr;
     const ast::Type* rhs_type = nullptr;
-    const sem::Type* result_type = nullptr;
+    const type::Type* result_type = nullptr;
     bool is_valid_expr;
 
     if (vec_by_mat) {
         lhs_type = ty.vec<f32>(vec_size);
         rhs_type = ty.mat<f32>(mat_cols, mat_rows);
-        result_type = create<sem::Vector>(create<sem::F32>(), mat_cols);
+        result_type = create<type::Vector>(create<type::F32>(), mat_cols);
         is_valid_expr = vec_size == mat_rows;
     } else {
         lhs_type = ty.mat<f32>(mat_cols, mat_rows);
         rhs_type = ty.vec<f32>(vec_size);
-        result_type = create<sem::Vector>(create<sem::F32>(), mat_rows);
+        result_type = create<type::Vector>(create<type::F32>(), mat_rows);
         is_valid_expr = vec_size == mat_cols;
     }
 
@@ -1760,9 +1815,9 @@ TEST_P(Expr_Binary_Test_Invalid_MatrixMatrixMultiply, All) {
     auto* lhs_type = ty.mat<f32>(lhs_mat_cols, lhs_mat_rows);
     auto* rhs_type = ty.mat<f32>(rhs_mat_cols, rhs_mat_rows);
 
-    auto* f32 = create<sem::F32>();
-    auto* col = create<sem::Vector>(f32, lhs_mat_rows);
-    auto* result_type = create<sem::Matrix>(col, rhs_mat_cols);
+    auto* f32 = create<type::F32>();
+    auto* col = create<type::Vector>(f32, lhs_mat_rows);
+    auto* result_type = create<type::Matrix>(col, rhs_mat_cols);
 
     GlobalVar("lhs", lhs_type, ast::AddressSpace::kPrivate);
     GlobalVar("rhs", rhs_type, ast::AddressSpace::kPrivate);
@@ -1805,15 +1860,15 @@ TEST_P(UnaryOpExpressionTest, Expr_UnaryOp) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(der), nullptr);
-    ASSERT_TRUE(TypeOf(der)->Is<sem::Vector>());
+    ASSERT_TRUE(TypeOf(der)->Is<type::Vector>());
     if (op == ast::UnaryOp::kNot) {
-        EXPECT_TRUE(TypeOf(der)->As<sem::Vector>()->type()->Is<sem::Bool>());
+        EXPECT_TRUE(TypeOf(der)->As<type::Vector>()->type()->Is<type::Bool>());
     } else if (op == ast::UnaryOp::kNegation || op == ast::UnaryOp::kComplement) {
-        EXPECT_TRUE(TypeOf(der)->As<sem::Vector>()->type()->Is<sem::I32>());
+        EXPECT_TRUE(TypeOf(der)->As<type::Vector>()->type()->Is<type::I32>());
     } else {
-        EXPECT_TRUE(TypeOf(der)->As<sem::Vector>()->type()->Is<sem::F32>());
+        EXPECT_TRUE(TypeOf(der)->As<type::Vector>()->type()->Is<type::F32>());
     }
-    EXPECT_EQ(TypeOf(der)->As<sem::Vector>()->Width(), 4u);
+    EXPECT_EQ(TypeOf(der)->As<type::Vector>()->Width(), 4u);
 }
 INSTANTIATE_TEST_SUITE_P(ResolverTest,
                          UnaryOpExpressionTest,
@@ -2306,22 +2361,47 @@ TEST_F(ResolverTest, MaxExpressionDepth_Fail) {
                                         std::to_string(kMaxExpressionDepth)));
 }
 
-TEST_F(ResolverTest, Literal_F16WithoutExtension) {
-    // fn test() {_ = 1.23h;}
-    WrapInFunction(Ignore(Expr(f16(1.23f))));
+// Windows debug builds have significantly smaller stack than other builds, and these tests will
+// stack overflow.
+#if !defined(NDEBUG)
+
+TEST_F(ResolverTest, ScopeDepth_NestedBlocks) {
+    const ast::Statement* stmt = Return();
+    for (size_t i = 0; i < 150; i++) {
+        stmt = Block(Source{{i, 1}}, stmt);
+    }
+    WrapInFunction(stmt);
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_THAT(r()->error(), HasSubstr("error: f16 literal used without 'f16' extension enabled"));
+    EXPECT_EQ(r()->error(),
+              "23:1 error: statement nesting depth / chaining length exceeds limit of 127");
 }
 
-TEST_F(ResolverTest, Literal_F16WithExtension) {
-    // enable f16;
-    // fn test() {_ = 1.23h;}
-    Enable(ast::Extension::kF16);
-    WrapInFunction(Ignore(Expr(f16(1.23f))));
+TEST_F(ResolverTest, ScopeDepth_NestedIf) {
+    const ast::Statement* stmt = Return();
+    for (size_t i = 0; i < 150; i++) {
+        stmt = If(Source{{i, 1}}, false, Block(Source{{i, 2}}, stmt));
+    }
+    WrapInFunction(stmt);
 
-    EXPECT_TRUE(r()->Resolve());
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(),
+              "86:1 error: statement nesting depth / chaining length exceeds limit of 127");
 }
+
+TEST_F(ResolverTest, ScopeDepth_IfElseChain) {
+    const ast::Statement* stmt = nullptr;
+    for (size_t i = 0; i < 150; i++) {
+        stmt = If(Source{{i, 1}}, false, Block(Source{{i, 2}}), Else(stmt));
+    }
+    WrapInFunction(stmt);
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(),
+              "24:2 error: statement nesting depth / chaining length exceeds limit of 127");
+}
+
+#endif  // !defined(NDEBUG)
 
 }  // namespace
 }  // namespace tint::resolver

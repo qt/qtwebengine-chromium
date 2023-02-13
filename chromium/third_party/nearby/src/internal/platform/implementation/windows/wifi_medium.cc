@@ -12,10 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <exception>
+
 // #include <cstddef>
 #include "absl/strings/str_format.h"
-#include "internal/platform/implementation/windows/wifi.h"
 #include "internal/platform/implementation/windows/utils.h"
+#include "internal/platform/implementation/windows/wifi.h"
 #include "internal/platform/logging.h"
 
 namespace location {
@@ -23,14 +25,11 @@ namespace nearby {
 namespace windows {
 
 namespace {
-  constexpr int kMacAddrLen = 6;
-  constexpr int kDefaultApFreq = -1;
+constexpr int kMacAddrLen = 6;
+constexpr int kDefaultApFreq = -1;
 }  // namespace
 
-
-WifiMedium::WifiMedium() {
-  InitCapability();
-}
+WifiMedium::WifiMedium() { InitCapability(); }
 
 PWLAN_INTERFACE_INFO_LIST EnumInterface(PHANDLE client_handle) {
   DWORD client_version = 2;
@@ -54,9 +53,7 @@ PWLAN_INTERFACE_INFO_LIST EnumInterface(PHANDLE client_handle) {
   return p_intf_list;
 }
 
-bool WifiMedium::IsInterfaceValid() const {
-  return wifi_interface_valid_;
-}
+bool WifiMedium::IsInterfaceValid() const { return wifi_interface_valid_; }
 
 void WifiMedium::InitCapability() {
   HANDLE client_handle = NULL;
@@ -106,6 +103,7 @@ void WifiMedium::InitCapability() {
   WlanCloseHandle(client_handle, NULL);
 }
 
+// TODO(b/259414512): the return type should be optional.
 api::WifiInformation& WifiMedium::GetInformation() {
   HANDLE client_handle = NULL;
   PWLAN_AVAILABLE_NETWORK_LIST pWLAN_AVAILABLE_NETWORK_LIST = NULL;
@@ -150,7 +148,7 @@ api::WifiInformation& WifiMedium::GetInformation() {
         wifi_information_.ap_frequency =
             WifiUtils::ConvertChannelToFrequencyMhz(
                 *channel, api::WifiBandType::kUnknown);
-        NEARBY_LOGS(INFO) << "Frequency: " << *channel << "; ap_frequency: "
+        NEARBY_LOGS(INFO) << "Channel: " << *channel << "; ap_frequency: "
                           << wifi_information_.ap_frequency;
         WlanFreeMemory(channel);
         channel = NULL;
@@ -196,38 +194,59 @@ api::WifiInformation& WifiMedium::GetInformation() {
   p_intf_list = NULL;
   WlanCloseHandle(client_handle, NULL);
 
-  wifi_information_.ip_address_dot_decimal = GetIpAddress();
-  wifi_information_.ip_address_4_bytes = ipaddr_dotdecimal_to_4bytes_string(
-      wifi_information_.ip_address_dot_decimal);
+  wifi_information_.ip_address_dot_decimal = InternalGetIpAddress();
+  if (!wifi_information_.ip_address_dot_decimal.empty()) {
+    wifi_information_.ip_address_4_bytes = ipaddr_dotdecimal_to_4bytes_string(
+        wifi_information_.ip_address_dot_decimal);
+  }
 
   return wifi_information_;
 }
 
 std::string WifiMedium::GetIpAddress() {
-  auto host_names = NetworkInformation::GetHostNames();
-  for (auto host_name : host_names) {
-    if (host_name.IPInformation() != nullptr &&
-        host_name.IPInformation().NetworkAdapter() != nullptr &&
-        host_name.Type() == HostNameType::Ipv4) {
-      std::string ipv4_s = winrt::to_string(host_name.ToString());
-      NEARBY_LOGS(INFO) << "Found IP: " << ipv4_s;
+  GetInformation();
+  return wifi_information_.ip_address_dot_decimal;
+}
 
-      auto profile = host_name.IPInformation()
-                         .NetworkAdapter()
-                         .GetConnectedProfileAsync()
-                         .get();
-      if (profile.IsWlanConnectionProfile()) {
-        if ( wifi_information_.ssid == winrt::to_string(
-                   profile.WlanConnectionProfileDetails().GetConnectedSsid())) {
-          NEARBY_LOGS(INFO)
-              << "SSID of this IP matches with this WiFi interface's SSID:"
-              << wifi_information_.ssid << ", return this IP";
-          return ipv4_s;
+std::string WifiMedium::InternalGetIpAddress() {
+  try {
+    auto host_names = NetworkInformation::GetHostNames();
+    for (auto host_name : host_names) {
+      if (host_name.IPInformation() != nullptr &&
+          host_name.IPInformation().NetworkAdapter() != nullptr &&
+          host_name.Type() == HostNameType::Ipv4) {
+        std::string ipv4_s = winrt::to_string(host_name.ToString());
+        NEARBY_LOGS(INFO) << "Found IP: " << ipv4_s;
+
+        auto profile = host_name.IPInformation()
+                           .NetworkAdapter()
+                           .GetConnectedProfileAsync()
+                           .get();
+        if (profile != nullptr && profile.IsWlanConnectionProfile()) {
+          auto profile_details = profile.WlanConnectionProfileDetails();
+          if (profile_details != nullptr &&
+              wifi_information_.ssid ==
+                  winrt::to_string(profile_details.GetConnectedSsid())) {
+            NEARBY_LOGS(INFO)
+                << "SSID of this IP matches with this WiFi interface's SSID:"
+                << wifi_information_.ssid << ", return this IP";
+            return ipv4_s;
+          }
         }
       }
     }
+    return {};
+  } catch (std::exception exception) {
+    NEARBY_LOGS(ERROR) << __func__ << ": Exception: " << exception.what();
+    return {};
+  } catch (const winrt::hresult_error& error) {
+    NEARBY_LOGS(ERROR) << __func__ << ": WinRT exception: " << error.code()
+                       << ": " << winrt::to_string(error.message());
+    return {};
+  } catch (...) {
+    NEARBY_LOGS(ERROR) << __func__ << ": Unknown exeption.";
+    return {};
   }
-  return {};
 }
 
 }  // namespace windows

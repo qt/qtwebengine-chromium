@@ -146,10 +146,7 @@ QuicAlarm* QuicConnectionPeer::GetAckAlarm(QuicConnection* connection) {
 
 // static
 QuicAlarm* QuicConnectionPeer::GetPingAlarm(QuicConnection* connection) {
-  if (GetQuicReloadableFlag(quic_use_ping_manager2)) {
-    return connection->ping_manager_.alarm_.get();
-  }
-  return connection->ping_alarm_.get();
+  return connection->ping_manager_.alarm_.get();
 }
 
 // static
@@ -558,6 +555,12 @@ QuicCoalescedPacket& QuicConnectionPeer::GetCoalescedPacket(
 // static
 void QuicConnectionPeer::FlushCoalescedPacket(QuicConnection* connection) {
   connection->FlushCoalescedPacket();
+}
+
+// static
+void QuicConnectionPeer::SetInProbeTimeOut(QuicConnection* connection,
+                                           bool value) {
+  connection->in_probe_time_out_ = value;
 }
 
 }  // namespace test

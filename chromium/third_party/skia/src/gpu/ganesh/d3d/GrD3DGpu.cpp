@@ -10,6 +10,7 @@
 #include "include/core/SkColorSpace.h"
 #include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/d3d/GrD3DBackendContext.h"
+#include "src/core/SkCompressedDataUtils.h"
 #include "src/core/SkConvertPixels.h"
 #include "src/core/SkMipmap.h"
 #include "src/gpu/ganesh/GrBackendUtils.h"
@@ -149,10 +150,10 @@ bool GrD3DGpu::submitDirectCommandList(SyncQueue sync) {
     SkASSERT(fCurrentDirectCommandList);
 
     fResourceProvider.prepForSubmit();
-    for (int i = 0; i < fMipmapCPUDescriptors.count(); ++i) {
+    for (int i = 0; i < fMipmapCPUDescriptors.size(); ++i) {
         fResourceProvider.recycleShaderView(fMipmapCPUDescriptors[i]);
     }
-    fMipmapCPUDescriptors.reset();
+    fMipmapCPUDescriptors.clear();
 
     GrD3DDirectCommandList::SubmitResult result = fCurrentDirectCommandList->submit(fQueue.get());
     if (result == GrD3DDirectCommandList::SubmitResult::kFailure) {

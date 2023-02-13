@@ -273,7 +273,7 @@ class BandMatrixWrapper : public BandMatrixBase<BandMatrixWrapper<CoefficientsTy
         m_rows(rows), m_supers(supers), m_subs(subs)
     {
       EIGEN_UNUSED_VARIABLE(cols);
-      //internal::assert(coeffs.cols()==cols() && (supers()+subs()+1)==coeffs.rows());
+      // eigen_assert(coeffs.cols()==cols() && (supers()+subs()+1)==coeffs.rows());
     }
 
     /** \returns the number of columns */

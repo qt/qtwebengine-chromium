@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2016 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,19 +13,8 @@
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_stream.h"
 #include "core/fpdfapi/parser/fpdf_parser_decode.h"
+#include "core/fxcrt/data_vector.h"
 #include "third_party/base/check_op.h"
-
-CPDF_StreamAcc::OwnedData::OwnedData(
-    std::unique_ptr<uint8_t, FxFreeDeleter> buffer,
-    uint32_t size)
-    : buffer(std::move(buffer)), size(size) {}
-
-CPDF_StreamAcc::OwnedData::OwnedData(OwnedData&&) = default;
-
-CPDF_StreamAcc::OwnedData& CPDF_StreamAcc::OwnedData::operator=(OwnedData&&) =
-    default;
-
-CPDF_StreamAcc::OwnedData::~OwnedData() = default;
 
 CPDF_StreamAcc::CPDF_StreamAcc(RetainPtr<const CPDF_Stream> pStream)
     : m_pStream(std::move(pStream)) {}
@@ -79,23 +68,16 @@ RetainPtr<const CPDF_Dictionary> CPDF_StreamAcc::GetImageParam() const {
   return m_pImageParam;
 }
 
-const uint8_t* CPDF_StreamAcc::GetData() const {
-  if (is_owned())
-    return absl::get<OwnedData>(m_Data).buffer.get();
-  return (m_pStream && m_pStream->IsMemoryBased())
-             ? m_pStream->GetInMemoryRawData()
-             : nullptr;
-}
-
 uint32_t CPDF_StreamAcc::GetSize() const {
-  if (is_owned())
-    return absl::get<OwnedData>(m_Data).size;
-  return (m_pStream && m_pStream->IsMemoryBased()) ? m_pStream->GetRawSize()
-                                                   : 0;
+  return GetSpan().size();
 }
 
 pdfium::span<const uint8_t> CPDF_StreamAcc::GetSpan() const {
-  return {GetData(), GetSize()};
+  if (is_owned())
+    return absl::get<DataVector<uint8_t>>(m_Data);
+  if (m_pStream && m_pStream->IsMemoryBased())
+    return m_pStream->GetInMemoryRawData();
+  return {};
 }
 
 uint64_t CPDF_StreamAcc::KeyForCache() const {
@@ -104,58 +86,60 @@ uint64_t CPDF_StreamAcc::KeyForCache() const {
 
 ByteString CPDF_StreamAcc::ComputeDigest() const {
   uint8_t digest[20];
-  CRYPT_SHA1Generate(GetData(), GetSize(), digest);
+  pdfium::span<const uint8_t> span = GetSpan();
+  CRYPT_SHA1Generate(span.data(), span.size(), digest);
   return ByteString(digest, 20);
 }
 
-std::unique_ptr<uint8_t, FxFreeDeleter> CPDF_StreamAcc::DetachData() {
-  if (is_owned()) {
-    auto& data = absl::get<OwnedData>(m_Data);
-    data.size = 0;
-    return std::move(data.buffer);
-  }
+DataVector<uint8_t> CPDF_StreamAcc::DetachData() {
+  if (is_owned())
+    return std::move(absl::get<DataVector<uint8_t>>(m_Data));
+
   auto span = absl::get<pdfium::span<const uint8_t>>(m_Data);
-  std::unique_ptr<uint8_t, FxFreeDeleter> result(
-      FX_AllocUninit(uint8_t, span.size()));
-  memcpy(result.get(), span.data(), span.size());
-  return result;
+  return DataVector<uint8_t>(span.begin(), span.end());
 }
 
 void CPDF_StreamAcc::ProcessRawData() {
+  if (m_pStream->IsUninitialized())
+    return;
+
   uint32_t dwSrcSize = m_pStream->GetRawSize();
   if (dwSrcSize == 0)
     return;
 
   if (m_pStream->IsMemoryBased()) {
-    m_Data = pdfium::make_span(m_pStream->GetInMemoryRawData(), dwSrcSize);
+    m_Data = m_pStream->GetInMemoryRawData();
     return;
   }
 
-  std::unique_ptr<uint8_t, FxFreeDeleter> pData = ReadRawStream();
-  if (!pData)
+  DataVector<uint8_t> data = ReadRawStream();
+  if (data.empty())
     return;
 
-  m_Data.emplace<OwnedData>(std::move(pData), dwSrcSize);
+  m_Data = std::move(data);
 }
 
 void CPDF_StreamAcc::ProcessFilteredData(uint32_t estimated_size,
                                          bool bImageAcc) {
+  if (m_pStream->IsUninitialized())
+    return;
+
   uint32_t dwSrcSize = m_pStream->GetRawSize();
   if (dwSrcSize == 0)
     return;
 
-  absl::variant<pdfium::span<const uint8_t>, OwnedData> src_data;
+  absl::variant<pdfium::span<const uint8_t>, DataVector<uint8_t>> src_data;
   pdfium::span<const uint8_t> src_span;
   if (m_pStream->IsMemoryBased()) {
-    src_span = pdfium::make_span(m_pStream->GetInMemoryRawData(), dwSrcSize);
+    src_span = m_pStream->GetInMemoryRawData();
     src_data = src_span;
   } else {
-    std::unique_ptr<uint8_t, FxFreeDeleter> pTempSrcData = ReadRawStream();
-    if (!pTempSrcData)
+    DataVector<uint8_t> temp_src_data = ReadRawStream();
+    if (temp_src_data.empty())
       return;
 
-    src_span = pdfium::make_span(pTempSrcData.get(), dwSrcSize);
-    src_data.emplace<OwnedData>(std::move(pTempSrcData), dwSrcSize);
+    src_span = pdfium::make_span(temp_src_data);
+    src_data = std::move(temp_src_data);
   }
 
   std::unique_ptr<uint8_t, FxFreeDeleter> pDecodedData;
@@ -173,21 +157,16 @@ void CPDF_StreamAcc::ProcessFilteredData(uint32_t estimated_size,
 
   if (pDecodedData) {
     DCHECK_NE(pDecodedData.get(), src_span.data());
-    m_Data.emplace<OwnedData>(std::move(pDecodedData), dwDecodedSize);
+    // TODO(crbug.com/pdfium/1872): Avoid copying.
+    m_Data = DataVector<uint8_t>(pDecodedData.get(),
+                                 pDecodedData.get() + dwDecodedSize);
   } else {
     m_Data = std::move(src_data);
   }
 }
 
-std::unique_ptr<uint8_t, FxFreeDeleter> CPDF_StreamAcc::ReadRawStream() const {
+DataVector<uint8_t> CPDF_StreamAcc::ReadRawStream() const {
   DCHECK(m_pStream);
-  DCHECK(!m_pStream->IsMemoryBased());
-
-  uint32_t dwSrcSize = m_pStream->GetRawSize();
-  DCHECK(dwSrcSize);
-  std::unique_ptr<uint8_t, FxFreeDeleter> pSrcData(
-      FX_Alloc(uint8_t, dwSrcSize));
-  if (!m_pStream->ReadRawData(0, pSrcData.get(), dwSrcSize))
-    return nullptr;
-  return pSrcData;
+  DCHECK(m_pStream->IsFileBased());
+  return m_pStream->ReadAllRawData();
 }

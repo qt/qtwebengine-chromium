@@ -19,8 +19,12 @@
 
 #include <string>
 
-#include "absl/strings/string_view.h"
+#ifdef NEARBY_SWIFTPM
 #include "internal/platform/logging.h"
+#else
+#include "absl/log/log.h"  // nogncheck
+#endif
+#include "absl/strings/string_view.h"
 #include <openssl/crypto.h>
 #include <openssl/err.h>
 
@@ -38,7 +42,7 @@ namespace {
 // error queue and return, otherwise it will continue calling this function
 // until all errors have been removed from the queue.
 int OpenSSLErrorCallback(const char* str, size_t len, void* context) {
-  NEARBY_LOGS(VERBOSE) << "\t" << absl::string_view(str, len);
+  LOG(INFO) << "\t" << absl::string_view(str, len);
   return 1;
 }
 
@@ -50,13 +54,7 @@ void EnsureOpenSSLInit() {
 }
 
 void ClearOpenSSLERRStack() {
-  if (NEARBY_LOG_IS_ON(VERBOSE)) {
-    uint32_t error_num = ERR_peek_error();
-    if (error_num == 0) return;
-    ERR_print_errors_cb(&OpenSSLErrorCallback, nullptr);
-  } else {
     ERR_clear_error();
-  }
 }
 
 }  // namespace crypto

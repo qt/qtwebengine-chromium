@@ -178,7 +178,7 @@ protected:
         const SkRect* cropRect() const {
             return fCropRect.flags() != 0x0 ? &fCropRect.rect() : nullptr;
         }
-        int inputCount() const { return fInputs.count(); }
+        int inputCount() const { return fInputs.size(); }
         sk_sp<SkImageFilter>* inputs() { return fInputs.begin(); }
 
         sk_sp<SkImageFilter> getInput(int index) { return fInputs[index]; }
@@ -482,7 +482,6 @@ void SkRegisterMatrixConvolutionImageFilterFlattenable();
 void SkRegisterMatrixTransformImageFilterFlattenable();
 void SkRegisterMergeImageFilterFlattenable();
 void SkRegisterMorphologyImageFilterFlattenables();
-void SkRegisterOffsetImageFilterFlattenable();
 void SkRegisterPictureImageFilterFlattenable();
 #ifdef SK_ENABLE_SKSL
 void SkRegisterRuntimeImageFilterFlattenable();

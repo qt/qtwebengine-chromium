@@ -24,6 +24,7 @@
 #include "src/gpu/KeyBuilder.h"
 #include "src/gpu/ganesh/GrFPArgs.h"
 #include "src/gpu/ganesh/GrFragmentProcessor.h"
+#include "src/gpu/ganesh/GrProcessorUnitTest.h"
 #include "src/gpu/ganesh/GrRecordingContextPriv.h"
 #include "src/gpu/ganesh/SkGr.h"
 #include "src/gpu/ganesh/effects/GrMatrixEffect.h"
@@ -669,7 +670,7 @@ private:
 };
 
 /////////////////////////////////////////////////////////////////////
-GR_DEFINE_FRAGMENT_PROCESSOR_TEST(GrPerlinNoise2Effect);
+GR_DEFINE_FRAGMENT_PROCESSOR_TEST(GrPerlinNoise2Effect)
 
 #if GR_TEST_UTILS
 std::unique_ptr<GrFragmentProcessor> GrPerlinNoise2Effect::TestCreate(GrProcessorTestData* d) {

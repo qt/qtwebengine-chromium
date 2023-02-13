@@ -15,6 +15,13 @@
 #ifndef THIRD_PARTY_NEARBY_PRESENCE_IMPLEMENTATION_SERVICE_CONTROLLER_H_
 #define THIRD_PARTY_NEARBY_PRESENCE_IMPLEMENTATION_SERVICE_CONTROLLER_H_
 
+#include <memory>
+
+#include "absl/status/statusor.h"
+#include "presence/broadcast_request.h"
+#include "presence/data_types.h"
+#include "presence/scan_request.h"
+
 namespace nearby {
 namespace presence {
 
@@ -25,7 +32,14 @@ namespace presence {
  */
 class ServiceController {
  public:
+  ServiceController() = default;
   virtual ~ServiceController() = default;
+  virtual absl::StatusOr<ScanSessionId> StartScan(ScanRequest scan_request,
+                                                  ScanCallback callback) = 0;
+  virtual void StopScan(ScanSessionId session_id) = 0;
+  virtual absl::StatusOr<BroadcastSessionId> StartBroadcast(
+      BroadcastRequest broadcast_request, BroadcastCallback callback) = 0;
+  virtual void StopBroadcast(BroadcastSessionId session_id) = 0;
 };
 
 }  // namespace presence

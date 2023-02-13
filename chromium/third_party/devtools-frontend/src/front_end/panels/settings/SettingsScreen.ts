@@ -41,6 +41,7 @@ import * as PanelComponents from './components/components.js';
 import settingsScreenStyles from './settingsScreen.css.js';
 
 import {type KeybindsSettingsTab} from './KeybindsSettingsTab.js';
+import {highlightElement} from '../utils/utils.js';
 
 const UIStrings = {
   /**
@@ -236,7 +237,7 @@ export class SettingsScreen extends UI.Widget.VBox implements UI.View.ViewLocati
   }
 }
 
-class SettingsTab extends UI.Widget.VBox {
+abstract class SettingsTab extends UI.Widget.VBox {
   containerElement: HTMLElement;
   constructor(name: string, id?: string) {
     super();
@@ -261,12 +262,15 @@ class SettingsTab extends UI.Widget.VBox {
     }
     return block;
   }
+
+  abstract highlightObject(_object: Object): void;
 }
 
 let genericSettingsTabInstance: GenericSettingsTab;
 
 export class GenericSettingsTab extends SettingsTab {
   private readonly syncSection: PanelComponents.SyncSection.SyncSection = new PanelComponents.SyncSection.SyncSection();
+  private readonly settingToControl = new Map<Common.Settings.Setting<unknown>, HTMLElement>();
 
   constructor() {
     super(i18nString(UIStrings.preferences), 'preferences-tab-content');
@@ -379,10 +383,20 @@ export class GenericSettingsTab extends SettingsTab {
       const setting = Common.Settings.Settings.instance().moduleSetting(settingRegistration.settingName);
       const settingControl = UI.SettingsUI.createControlForSetting(setting);
       if (settingControl) {
+        this.settingToControl.set(setting, settingControl);
         sectionElement.appendChild(settingControl);
       }
     }
     return sectionElement;
+  }
+
+  highlightObject(setting: Object): void {
+    if (setting instanceof Common.Settings.Setting) {
+      const element = this.settingToControl.get(setting);
+      if (element) {
+        highlightElement(element);
+      }
+    }
   }
 }
 
@@ -391,6 +405,7 @@ let experimentsSettingsTabInstance: ExperimentsSettingsTab;
 export class ExperimentsSettingsTab extends SettingsTab {
   private experimentsSection: HTMLElement|undefined;
   private unstableExperimentsSection: HTMLElement|undefined;
+  private readonly experimentToControl = new Map<Root.Runtime.Experiment, HTMLElement>();
 
   constructor() {
     super(i18nString(UIStrings.experiments), 'experiments-tab-content');
@@ -408,6 +423,7 @@ export class ExperimentsSettingsTab extends SettingsTab {
   }
 
   private renderExperiments(filterText: string): void {
+    this.experimentToControl.clear();
     if (this.experimentsSection) {
       this.experimentsSection.remove();
     }
@@ -472,6 +488,7 @@ export class ExperimentsSettingsTab extends SettingsTab {
     input.addEventListener('click', listener, false);
 
     const p = document.createElement('p');
+    this.experimentToControl.set(experiment, p);
     p.classList.add('settings-experiment');
     if (experiment.unstable && !experiment.isEnabled()) {
       p.classList.add('settings-experiment-unstable');
@@ -500,6 +517,15 @@ export class ExperimentsSettingsTab extends SettingsTab {
     }
 
     return p;
+  }
+
+  highlightObject(experiment: Object): void {
+    if (experiment instanceof Root.Runtime.Experiment) {
+      const element = this.experimentToControl.get(experiment);
+      if (element) {
+        highlightElement(element);
+      }
+    }
   }
 }
 
@@ -542,9 +568,14 @@ export class Revealer implements Common.Revealer.Revealer {
   }
 
   reveal(object: Object): Promise<void> {
+    if (object instanceof Root.Runtime.Experiment) {
+      Host.InspectorFrontendHost.InspectorFrontendHostInstance.bringToFront();
+      void SettingsScreen.showSettingsScreen({name: 'experiments'})
+          .then(() => ExperimentsSettingsTab.instance().highlightObject(object));
+      return Promise.resolve();
+    }
     console.assert(object instanceof Common.Settings.Setting);
     const setting = object as Common.Settings.Setting<string>;
-    let success = false;
 
     for (const settingRegistration of Common.Settings.getRegisteredSettings()) {
       if (!GenericSettingsTab.isSettingVisible(settingRegistration)) {
@@ -552,8 +583,8 @@ export class Revealer implements Common.Revealer.Revealer {
       }
       if (settingRegistration.settingName === setting.name) {
         Host.InspectorFrontendHost.InspectorFrontendHostInstance.bringToFront();
-        void SettingsScreen.showSettingsScreen();
-        success = true;
+        void SettingsScreen.showSettingsScreen().then(() => GenericSettingsTab.instance().highlightObject(object));
+        return Promise.resolve();
       }
     }
 
@@ -567,12 +598,17 @@ export class Revealer implements Common.Revealer.Revealer {
       const settings = view.settings();
       if (settings && settings.indexOf(setting.name) !== -1) {
         Host.InspectorFrontendHost.InspectorFrontendHostInstance.bringToFront();
-        void SettingsScreen.showSettingsScreen({name: id} as ShowSettingsScreenOptions);
-        success = true;
+        void SettingsScreen.showSettingsScreen({name: id}).then(async () => {
+          const widget = await view.widget();
+          if (widget instanceof SettingsTab) {
+            widget.highlightObject(object);
+          }
+        });
+        return Promise.resolve();
       }
     }
 
-    return success ? Promise.resolve() : Promise.reject();
+    return Promise.reject();
   }
 }
 export interface ShowSettingsScreenOptions {

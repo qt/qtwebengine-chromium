@@ -158,6 +158,76 @@ int32x4_t vcvtnq_s32_f32(float32x4_t v) {
 
 #endif  // ARM NEON
 
+// AArch32 Clang targeting ARMv8.2-A with FP16 arithmetics
+#if XNN_ARCH_ARM && (defined(__ARM_FEATURE_FP16_SCALAR_ARITHMETIC) && defined(__clang__))
+#include <arm_fp16.h>
+
+static XNN_INTRINSIC
+float16_t vaddh_f16(float16_t a, float16_t b) {
+  return a + b;
+}
+
+static XNN_INTRINSIC
+float16_t vdivh_f16(float16_t a, float16_t b) {
+  return a / b;
+}
+
+static XNN_INTRINSIC
+float16_t vmaxnmh_f16(float16_t a, float16_t b) {
+  return XNN_UNPREDICTABLE(b < a) ? a : b;
+}
+
+static XNN_INTRINSIC
+float16_t vminnmh_f16(float16_t a, float16_t b) {
+  return XNN_UNPREDICTABLE(b < a) ? b : a;
+}
+
+static XNN_INTRINSIC
+float16_t vmulh_f16(float16_t a, float16_t b) {
+  return a * b;
+}
+
+static XNN_INTRINSIC
+float16_t vsubh_f16(float16_t a, float16_t b) {
+  return a - b;
+}
+
+static XNN_INTRINSIC
+float16_t vsqrth_f16(float16_t v) {
+  return __builtin_sqrtf(v);
+}
+#endif  // AArch32 Clang targeting ARMv8.2-A with FP16 arithmetics
+
+// AArch32 targeting ARMv8.2-A with NEON+FP16 arithmetics
+#if XNN_ARCH_ARM && defined(__ARM_FEATURE_FP16_VECTOR_ARITHMETIC)
+#include <arm_neon.h>
+
+#if !defined(__GNUC__) || defined(__clang_major__) & (__clang_major__ < 10)
+  // GNU-style assembly is not supported, or "x" constraint is not supported (Clang pre-10)
+  #define vmlaq_lane_f16(acc, x, y, n) \
+    vaddq_f16((acc), vmulq_lane_f16((x), (y), (n)))
+  #define vmla_lane_f16(acc, x, y, n) \
+    vadd_f16((acc), vmul_lane_f16((x), (y), (n)))
+#else
+  #define vmlaq_lane_f16(acc, x, y, n)       \
+    ({                                       \
+      float16x8_t result = acc;              \
+      __asm__ ("vmla.f16 %q0, %q1, %P2[%c3]" \
+          : "+w" (result)                    \
+          : "w" (x), "x" (y), "i" (n));      \
+      result;                                \
+    })
+  #define vmla_lane_f16(acc, x, y, n)        \
+    ({                                       \
+      float16x4_t result = acc;              \
+      __asm__ ("vmla.f16 %P0, %P1, %P2[%c3]" \
+          : "+w" (result)                    \
+          : "w" (x), "x" (y), "i" (n));      \
+      result;                                \
+    })
+#endif
+#endif  // AArch32 targeting ARMv8.2-A with NEON+FP16 arithmetics
+
 #if XNN_ARCH_ARM64
 #include <arm_neon.h>
 

@@ -685,11 +685,11 @@ struct igammac_retval {
 template <typename Scalar>
 struct cephes_helper {
   EIGEN_DEVICE_FUNC
-  static EIGEN_STRONG_INLINE Scalar machep() { assert(false && "machep not supported for this type"); return 0.0; }
+  static EIGEN_STRONG_INLINE Scalar machep() { eigen_assert(false && "machep not supported for this type"); return 0.0; }
   EIGEN_DEVICE_FUNC
-  static EIGEN_STRONG_INLINE Scalar big() { assert(false && "big not supported for this type"); return 0.0; }
+  static EIGEN_STRONG_INLINE Scalar big() { eigen_assert(false && "big not supported for this type"); return 0.0; }
   EIGEN_DEVICE_FUNC
-  static EIGEN_STRONG_INLINE Scalar biginv() { assert(false && "biginv not supported for this type"); return 0.0; }
+  static EIGEN_STRONG_INLINE Scalar biginv() { eigen_assert(false && "biginv not supported for this type"); return 0.0; }
 };
 
 template <>

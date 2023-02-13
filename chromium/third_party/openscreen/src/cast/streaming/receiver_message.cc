@@ -178,6 +178,19 @@ ErrorOr<ReceiverMessage> ReceiverMessage::Parse(const Json::Value& value) {
   message.type = GetMessageType(value);
   message.valid =
       (result == kResultOk || message.type == ReceiverMessage::Type::kRpc);
+
+  if (message.type != ReceiverMessage::Type::kRpc) {
+    if (!json::TryParseInt(value[kSequenceNumber],
+                           &(message.sequence_number))) {
+      message.sequence_number = -1;
+    }
+
+    // Sequence numbers must be non-negative.
+    if (message.sequence_number < 0) {
+      message.valid = false;
+    }
+  }
+
   if (!message.valid) {
     ErrorOr<ReceiverError> error =
         ReceiverError::Parse(value[kErrorMessageBody]);
@@ -218,12 +231,6 @@ ErrorOr<ReceiverMessage> ReceiverMessage::Parse(const Json::Value& value) {
 
     default:
       break;
-  }
-
-  if (message.type != ReceiverMessage::Type::kRpc &&
-      !json::TryParseInt(value[kSequenceNumber], &(message.sequence_number))) {
-    message.sequence_number = -1;
-    message.valid = false;
   }
 
   return message;

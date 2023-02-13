@@ -82,7 +82,7 @@ TEST_P(ResolverInferredTypeParamTest, GlobalConst_Pass) {
 
     auto* expected_type = params.create_expected_type(*this);
 
-    // const a = <type constructor>;
+    // const a = <type initializer>;
     auto* ctor_expr = params.create_value(*this, 0);
     auto* a = GlobalConst("a", ctor_expr);
 
@@ -95,7 +95,7 @@ TEST_P(ResolverInferredTypeParamTest, GlobalVar_Pass) {
 
     auto* expected_type = params.create_expected_type(*this);
 
-    // var a = <type constructor>;
+    // var a = <type initializer>;
     auto* ctor_expr = params.create_value(*this, 0);
     auto* var = GlobalVar("a", ast::AddressSpace::kPrivate, ctor_expr);
 
@@ -108,7 +108,7 @@ TEST_P(ResolverInferredTypeParamTest, LocalLet_Pass) {
 
     auto* expected_type = params.create_expected_type(*this);
 
-    // let a = <type constructor>;
+    // let a = <type initializer>;
     auto* ctor_expr = params.create_value(*this, 0);
     auto* var = Let("a", ctor_expr);
     WrapInFunction(var);
@@ -122,7 +122,7 @@ TEST_P(ResolverInferredTypeParamTest, LocalVar_Pass) {
 
     auto* expected_type = params.create_expected_type(*this);
 
-    // var a = <type constructor>;
+    // var a = <type initializer>;
     auto* ctor_expr = params.create_value(*this, 0);
     auto* var = Var("a", ast::AddressSpace::kFunction, ctor_expr);
     WrapInFunction(var);
@@ -135,8 +135,8 @@ INSTANTIATE_TEST_SUITE_P(ResolverTest, ResolverInferredTypeParamTest, testing::V
 
 TEST_F(ResolverInferredTypeTest, InferArray_Pass) {
     auto* type = ty.array(ty.u32(), 10_u);
-    auto* expected_type =
-        create<sem::Array>(create<sem::U32>(), sem::ConstantArrayCount{10u}, 4u, 4u * 10u, 4u, 4u);
+    auto* expected_type = create<type::Array>(
+        create<type::U32>(), create<type::ConstantArrayCount>(10u), 4u, 4u * 10u, 4u, 4u);
 
     auto* ctor_expr = Construct(type);
     auto* var = Var("a", ast::AddressSpace::kFunction, ctor_expr);
@@ -151,9 +151,9 @@ TEST_F(ResolverInferredTypeTest, InferStruct_Pass) {
     auto* str = Structure("S", utils::Vector{member});
 
     auto* expected_type = create<sem::Struct>(
-        str, str->name,
-        sem::StructMemberList{create<sem::StructMember>(member, member->symbol, create<sem::I32>(),
-                                                        0u, 0u, 0u, 4u, std::nullopt)},
+        str, str->source, str->name,
+        utils::Vector{create<sem::StructMember>(member, member->source, member->symbol,
+                                                create<type::I32>(), 0u, 0u, 0u, 4u, std::nullopt)},
         0u, 4u, 4u);
 
     auto* ctor_expr = Construct(ty.Of(str));

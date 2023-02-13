@@ -90,7 +90,7 @@ message Battery {
     // https://chromium.git.corp.google.com/chromiumos/third_party/kernel/+/d7380965752505951668e85de59c128d1d6fd21f%5E%21/#F1
 
     // Index number of this battery, starts from 1.
-    int32 index = 1;
+    int32 index = 1 [deprecated = true];
     // Manufacturer for length not exceeding EC_COMM_TEXT_MAX.
     string manufacturer = 2;
     // Model name for length not exceeding EC_COMM_TEXT_MAX.
@@ -288,7 +288,7 @@ message Camera {
     // if the caller needs to correlate with other information.
     string path = 1;
 
-    // HW interface type, currently must be "usb".
+    // HW interface type, currently must be "usb" or "mipi".
     string bus_type = 2;
 
     // The following are fields for USB.  Every field name must start with
@@ -303,6 +303,18 @@ message Camera {
 
     // Whether this USB device is removable or not.
     UsbRemovable usb_removable = 6;
+
+    // The following are fields for MIPI.  Every field name must start with
+    // prefix "mipi_".
+
+    // Entity name from sysfs path or V4L2.
+    string mipi_name = 7;
+    // Camera module vendor ID and product ID read from camera EEPROM.
+    string mipi_module_id = 8;
+    // Image sensor vendor ID and product ID read from camera EEPROM.
+    string mipi_sensor_id = 9;
+    // Image sensor vendor ID queried via V4L2.
+    string mipi_vendor = 10;
   }
   // Component alias.
   string name = 1;

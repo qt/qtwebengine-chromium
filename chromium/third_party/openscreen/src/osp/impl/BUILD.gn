@@ -2,8 +2,10 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+visibility = [ "./*" ]
+
 source_set("impl") {
-  visibility = [ "..:*" ]
+  visibility += [ "..:*" ]
   public = []
   sources = [
     "dns_sd_publisher_client.cc",

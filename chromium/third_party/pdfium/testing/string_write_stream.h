@@ -1,4 +1,4 @@
-// Copyright 2018 PDFium Authors. All rights reserved.
+// Copyright 2018 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,7 +16,7 @@ class StringWriteStream final : public IFX_RetainableWriteStream {
   ~StringWriteStream() override;
 
   // IFX_WriteStream:
-  bool WriteBlock(const void* pData, size_t size) override;
+  bool WriteBlock(pdfium::span<const uint8_t> buffer) override;
 
   std::string ToString() const { return stream_.str(); }
 

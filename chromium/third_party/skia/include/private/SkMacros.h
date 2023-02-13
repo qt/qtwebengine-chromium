@@ -7,8 +7,6 @@
 #ifndef SkMacros_DEFINED
 #define SkMacros_DEFINED
 
-#include <type_traits>
-
 /*
  *  Usage:  SK_MACRO_CONCAT(a, b)   to construct the symbol ab
  *
@@ -38,6 +36,23 @@
 #else
     #define SK_BEGIN_REQUIRE_DENSE
     #define SK_END_REQUIRE_DENSE
+#endif
+
+#if defined(__clang__) && defined(__has_feature)
+    // Some compilers have a preprocessor that does not appear to do short-circuit
+    // evaluation as expected
+    #if __has_feature(leak_sanitizer) || __has_feature(address_sanitizer)
+        // Chrome had issues if we tried to include lsan_interface.h ourselves.
+        // https://github.com/llvm/llvm-project/blob/10a35632d55bb05004fe3d0c2d4432bb74897ee7/compiler-rt/include/sanitizer/lsan_interface.h#L26
+extern "C" {
+        void __lsan_ignore_object(const void *p);
+}
+        #define SK_INTENTIONALLY_LEAKED(X) __lsan_ignore_object(X)
+    #else
+        #define SK_INTENTIONALLY_LEAKED(X) ((void)0)
+    #endif
+#else
+    #define SK_INTENTIONALLY_LEAKED(X) ((void)0)
 #endif
 
 #define SK_INIT_TO_AVOID_WARNING    = 0

@@ -1,4 +1,4 @@
-// Copyright 2017 PDFium Authors. All rights reserved.
+// Copyright 2017 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -139,7 +139,7 @@ class CXFA_TextLayout final : public cppgc::GarbageCollected<CXFA_TextLayout> {
   bool LoadRichText(const CFX_XMLNode* pXMLNode,
                     float textWidth,
                     float* pLinePos,
-                    const RetainPtr<CFX_CSSComputedStyle>& pParentStyle,
+                    RetainPtr<CFX_CSSComputedStyle> pParentStyle,
                     bool bSavePieces,
                     RetainPtr<CFGAS_LinkUserData> pLinkData,
                     bool bEndBreak,

@@ -1,4 +1,4 @@
-// Copyright 2014 PDFium Authors. All rights reserved.
+// Copyright 2014 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -119,9 +119,10 @@ tsize_t tiff_read(thandle_t context, tdata_t buf, tsize_t length) {
     return 0;
 
   FX_FILESIZE offset = pTiffContext->offset();
-  if (!pTiffContext->io_in()->ReadBlockAtOffset(buf, offset, length))
+  if (!pTiffContext->io_in()->ReadBlockAtOffset(
+          {static_cast<uint8_t*>(buf), static_cast<size_t>(length)}, offset)) {
     return 0;
-
+  }
   pTiffContext->set_offset(increment.ValueOrDie());
   if (offset + length > pTiffContext->io_in()->GetSize()) {
     return pdfium::base::checked_cast<tsize_t>(
@@ -427,8 +428,8 @@ bool CTiffContext::Decode(const RetainPtr<CFX_DIBitmap>& pDIBitmap) {
     uint16_t rotation = ORIENTATION_TOPLEFT;
     TIFFGetField(m_tif_ctx.get(), TIFFTAG_ORIENTATION, &rotation);
     if (TIFFReadRGBAImageOriented(m_tif_ctx.get(), img_width, img_height,
-                                  (uint32*)pDIBitmap->GetBuffer(), rotation,
-                                  1)) {
+                                  (uint32*)pDIBitmap->GetBuffer().data(),
+                                  rotation, 1)) {
       for (uint32_t row = 0; row < img_height; row++) {
         uint8_t* row_buf = pDIBitmap->GetWritableScanline(row).data();
         TiffBGRA2RGBA(row_buf, img_width, 4);

@@ -47,6 +47,7 @@ export const kBit = {
       min: 0xff7f_ffff,
       zero: 0x8000_0000,
       nearest_min: 0xff7f_fffe,
+      less_than_one: 0xbf7f_ffff,
       pi: {
         whole: 0xc04_90fdb,
         three_quarters: 0xc016_cbe4,
@@ -262,6 +263,26 @@ export const kBit = {
 } as const;
 
 /**
+ * Converts a 64-bit hex value to a 64-bit float value
+ *
+ * Using a locally defined function here to avoid compile time dependency
+ * issues.
+ * */
+function hexToF64(hex: bigint): number {
+  return new Float64Array(new BigInt64Array([hex]).buffer)[0];
+}
+
+/**
+ * Converts a 64-bit float value to a 64-bit hex value
+ *
+ * Using a locally defined function here to avoid compile time dependency
+ * issues.
+ * */
+function f64ToHex(number: number): bigint {
+  return new BigUint64Array(new Float64Array([number]).buffer)[0];
+}
+
+/**
  * Converts a 32-bit hex value to a 32-bit float value
  *
  * Using a locally defined function here to avoid compile time dependency
@@ -294,7 +315,7 @@ export const kValue = {
     },
   },
 
-  // Limits of uint32
+  // Limits of u32
   u32: {
     min: 0,
     max: 4294967295,
@@ -316,11 +337,16 @@ export const kValue = {
         sixth: hexToF32(kBit.f32.positive.pi.sixth),
       },
       e: hexToF32(kBit.f32.positive.e),
+      first_f64_not_castable: hexToF32(kBit.f32.positive.max) / 2 + 2 ** 127, // mid point of 2**128 and largest f32
+      last_f64_castable: hexToF64(
+        f64ToHex(hexToF32(kBit.f32.positive.max) / 2 + 2 ** 127) - BigInt(1)
+      ), // first_f64_not_castable minus one fraction bit of the 64 bit float representation
     },
     negative: {
       max: hexToF32(kBit.f32.negative.max),
       min: hexToF32(kBit.f32.negative.min),
       nearest_min: hexToF32(kBit.f32.negative.nearest_min),
+      less_than_one: hexToF32(kBit.f32.negative.less_than_one), // -0.999999940395
       pi: {
         whole: hexToF32(kBit.f32.negative.pi.whole),
         three_quarters: hexToF32(kBit.f32.negative.pi.three_quarters),
@@ -329,6 +355,10 @@ export const kValue = {
         quarter: hexToF32(kBit.f32.negative.pi.quarter),
         sixth: hexToF32(kBit.f32.negative.pi.sixth),
       },
+      first_f64_not_castable: -(hexToF32(kBit.f32.positive.max) / 2 + 2 ** 127), // mid point of -2**128 and largest f32
+      last_f64_castable: -hexToF64(
+        f64ToHex(hexToF32(kBit.f32.positive.max) / 2 + 2 ** 127) - BigInt(1)
+      ), // first_f64_not_castable minus one fraction bit of the 64 bit float representation
     },
     subnormal: {
       positive: {
@@ -346,17 +376,43 @@ export const kValue = {
     },
   },
 
+  // Limits of i16
+  i16: {
+    positive: {
+      min: 0,
+      max: 32767,
+    },
+    negative: {
+      min: -32768,
+      max: 0,
+    },
+  },
+
+  // Limits of u16
+  u16: {
+    min: 0,
+    max: 65535,
+  },
+
   // Limits of f16
   f16: {
     positive: {
       min: hexToF16(kBit.f16.positive.min),
       max: hexToF16(kBit.f16.positive.max),
       zero: hexToF16(kBit.f16.positive.zero),
+      first_f64_not_castable: hexToF16(kBit.f16.positive.max) / 2 + 2 ** 16, // mid point of 2**16 and largest f16
+      last_f64_castable: hexToF64(
+        f64ToHex(hexToF16(kBit.f16.positive.max) / 2 + 2 ** 16) - BigInt(1)
+      ), // first_f64_not_castable minus one fraction bit of the 64 bit float representation
     },
     negative: {
       max: hexToF16(kBit.f16.negative.max),
       min: hexToF16(kBit.f16.negative.min),
       zero: hexToF16(kBit.f16.negative.zero),
+      first_f64_not_castable: -(hexToF16(kBit.f16.positive.max) / 2 + 2 ** 16), // mid point of -2**16 and largest f16
+      last_f64_castable: -hexToF64(
+        f64ToHex(hexToF16(kBit.f16.positive.max) / 2 + 2 ** 16) - BigInt(1)
+      ), // first_f64_not_castable minus one fraction bit of the 64 bit float representation
     },
     subnormal: {
       positive: {
@@ -509,5 +565,23 @@ export const kValue = {
     toMinus30: -Math.pow(2, -30),
     toMinus31: -Math.pow(2, -31),
     toMinus32: -Math.pow(2, -32),
+  },
+
+  // Limits of i8
+  i8: {
+    positive: {
+      min: 0,
+      max: 127,
+    },
+    negative: {
+      min: -128,
+      max: 0,
+    },
+  },
+
+  // Limits of u8
+  u8: {
+    min: 0,
+    max: 255,
   },
 } as const;

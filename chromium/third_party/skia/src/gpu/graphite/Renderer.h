@@ -8,16 +8,15 @@
 #ifndef skgpu_graphite_Renderer_DEFINED
 #define skgpu_graphite_Renderer_DEFINED
 
-#include "src/core/SkEnumBitMask.h"
-#include "src/gpu/graphite/Attribute.h"
-#include "src/gpu/graphite/DrawTypes.h"
-#include "src/gpu/graphite/ResourceTypes.h"
-
 #include "include/core/SkSpan.h"
 #include "include/core/SkString.h"
 #include "include/core/SkTypes.h"
 #include "include/core/SkVertices.h"
-#include "src/core/SkUniform.h"
+#include "src/core/SkEnumBitMask.h"
+#include "src/gpu/graphite/Attribute.h"
+#include "src/gpu/graphite/DrawTypes.h"
+#include "src/gpu/graphite/ResourceTypes.h"
+#include "src/gpu/graphite/Uniform.h"
 
 #include <array>
 #include <initializer_list>
@@ -26,8 +25,6 @@
 #include <vector>
 
 enum class SkPathFillType;
-class SkPipelineDataGatherer;
-class SkTextureDataBlock;
 
 namespace skgpu { enum class MaskFormat; }
 
@@ -35,7 +32,9 @@ namespace skgpu::graphite {
 
 class DrawWriter;
 class DrawParams;
+class PipelineDataGatherer;
 class ResourceProvider;
+class TextureDataBlock;
 
 struct Varying {
     const char* fName;
@@ -73,7 +72,7 @@ public:
     // values will be de-duplicated across all draws using the RenderStep before uploading to the
     // GPU, but it can be assumed the uniforms will be bound before the draws recorded in
     // 'writeVertices' are executed.
-    virtual void writeUniformsAndTextures(const DrawParams&, SkPipelineDataGatherer*) const = 0;
+    virtual void writeUniformsAndTextures(const DrawParams&, PipelineDataGatherer*) const = 0;
 
     // Returns the body of a vertex function, which must define a float4 devPosition variable and
     // must write to an already-defined float2 stepLocalCoords variable. This will be automatically
@@ -125,7 +124,7 @@ public:
 
     // The uniforms of a RenderStep are bound to the kRenderStep slot, the rest of the pipeline
     // may still use uniforms bound to other slots.
-    SkSpan<const SkUniform> uniforms()           const { return SkSpan(fUniforms);      }
+    SkSpan<const Uniform> uniforms()             const { return SkSpan(fUniforms);      }
     SkSpan<const Attribute> vertexAttributes()   const { return SkSpan(fVertexAttrs);   }
     SkSpan<const Attribute> instanceAttributes() const { return SkSpan(fInstanceAttrs); }
     SkSpan<const Varying>   varyings()           const { return SkSpan(fVaryings);      }
@@ -163,7 +162,7 @@ protected:
     RenderStep(std::string_view className,
                std::string_view variantName,
                SkEnumBitMask<Flags> flags,
-               std::initializer_list<SkUniform> uniforms,
+               std::initializer_list<Uniform> uniforms,
                PrimitiveType primitiveType,
                DepthStencilSettings depthStencilSettings,
                SkSpan<const Attribute> vertexAttrs,
@@ -189,7 +188,7 @@ private:
     // could just have this be std::array and keep all attributes inline with the RenderStep memory.
     // On the other hand, the attributes are only needed when creating a new pipeline so it's not
     // that performance sensitive.
-    std::vector<SkUniform> fUniforms;
+    std::vector<Uniform>   fUniforms;
     std::vector<Attribute> fVertexAttrs;
     std::vector<Attribute> fInstanceAttrs;
     std::vector<Varying>   fVaryings;

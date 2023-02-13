@@ -81,16 +81,20 @@ message CryptohomeRecoveryAuthInput {
   // These fields are used for `AddAuthFactor`:
   // Public key of the mediator for Cryptohome recovery flow.
   bytes mediator_pub_key = 1;
+  // Gaia_id of the user executing the recovery flow.
+  string user_gaia_id = 2;
+  // Unique id of the user's vault on the device.
+  string device_user_id = 3;
 
   // These fields are used for `AuthenticateAuthFactor`:
   // Serialized cryptorecovery::CryptoRecoveryEpochResponse.
   // An epoch response received from Recovery Mediator service containing epoch
   // beacon value for Cryptohome recovery flow.
-  bytes epoch_response = 2;
+  bytes epoch_response = 4;
   // Serialized cryptohome.cryptorecovery.CryptoRecoveryRpcResponse.
   // A response received from Recovery Mediator service and used by Cryptohome
   // recovery flow to derive the wrapping keys.
-  bytes recovery_response = 3;
+  bytes recovery_response = 5;
 }
 
 // Kiosk AuthFactor requires no secret to be passed for derivation and

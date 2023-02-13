@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2016 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -19,6 +19,7 @@
 #include "core/fxcrt/string_pool_template.h"
 #include "core/fxcrt/unowned_ptr.h"
 #include "core/fxcrt/weak_ptr.h"
+#include "third_party/base/span.h"
 
 class CPDF_Dictionary;
 class CPDF_IndirectObjectHolder;
@@ -37,11 +38,10 @@ class CPDF_SyntaxParser {
   };
 
   static std::unique_ptr<CPDF_SyntaxParser> CreateForTesting(
-      const RetainPtr<IFX_SeekableReadStream>& pFileAccess,
+      RetainPtr<IFX_SeekableReadStream> pFileAccess,
       FX_FILESIZE HeaderOffset);
 
-  explicit CPDF_SyntaxParser(
-      const RetainPtr<IFX_SeekableReadStream>& pFileAccess);
+  explicit CPDF_SyntaxParser(RetainPtr<IFX_SeekableReadStream> pFileAccess);
   CPDF_SyntaxParser(RetainPtr<CPDF_ReadValidator> pValidator,
                     FX_FILESIZE HeaderOffset);
   ~CPDF_SyntaxParser();
@@ -54,7 +54,6 @@ class CPDF_SyntaxParser {
   void SetPos(FX_FILESIZE pos);
 
   RetainPtr<CPDF_Object> GetObjectBody(CPDF_IndirectObjectHolder* pObjList);
-
   RetainPtr<CPDF_Object> GetIndirectObject(CPDF_IndirectObjectHolder* pObjList,
                                            ParseType parse_type);
 
@@ -64,7 +63,7 @@ class CPDF_SyntaxParser {
   void RecordingToNextWord();
   bool BackwardsSearchToWord(ByteStringView word, FX_FILESIZE limit);
   FX_FILESIZE FindTag(ByteStringView tag);
-  bool ReadBlock(uint8_t* pBuf, uint32_t size);
+  bool ReadBlock(pdfium::span<uint8_t> buffer);
   bool GetCharAt(FX_FILESIZE pos, uint8_t& ch);
   WordResult GetNextWord();
   ByteString PeekNextWord();
@@ -127,7 +126,7 @@ class CPDF_SyntaxParser {
   DataVector<uint8_t> m_pFileBuf;
   FX_FILESIZE m_BufOffset = 0;
   uint32_t m_WordSize = 0;
-  uint8_t m_WordBuffer[257];
+  uint8_t m_WordBuffer[257] = {};
   uint32_t m_ReadBufferSize = CPDF_Stream::kFileBufSize;
 
   // The syntax parser records traversed trailer end byte offsets here.

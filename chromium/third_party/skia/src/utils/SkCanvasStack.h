@@ -9,14 +9,13 @@
 #define SkCanvasStack_DEFINED
 
 #include "include/core/SkCanvas.h"
-#include "include/core/SkClipOp.h"
 #include "include/core/SkM44.h"
 #include "include/core/SkPoint.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkRegion.h"
 #include "include/core/SkTypes.h"
 #include "include/private/SkTArray.h"
-#include "include/private/SkTemplates.h"
+#include "include/private/SkTypeTraits.h"
 #include "include/utils/SkNWayCanvas.h"
 
 #include <memory>
@@ -25,6 +24,7 @@
 class SkPath;
 class SkRRect;
 class SkShader;
+enum class SkClipOp;
 struct SkRect;
 
 /**

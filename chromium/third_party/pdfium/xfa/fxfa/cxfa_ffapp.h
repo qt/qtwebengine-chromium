@@ -1,4 +1,4 @@
-// Copyright 2014 PDFium Authors. All rights reserved.
+// Copyright 2014 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -141,7 +141,7 @@ class CXFA_FFApp final : public cppgc::GarbageCollected<CXFA_FFApp>,
 
   bool LoadFWLTheme(CXFA_FFDoc* doc);
   CFWL_WidgetMgr* GetFWLWidgetMgr() const { return m_pFWLApp->GetWidgetMgr(); }
-  CallbackIface* GetAppProvider() const { return m_pProvider.Get(); }
+  CallbackIface* GetAppProvider() const { return m_pProvider; }
   CFWL_App* GetFWLApp() const { return m_pFWLApp; }
   CXFA_FontMgr* GetXFAFontMgr() const { return m_pXFAFontMgr; }
 

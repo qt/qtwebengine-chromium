@@ -16,7 +16,7 @@
 #include "include/core/SkSpan.h"
 #include "include/core/SkStream.h"
 #include "include/core/SkTypeface.h"
-#include "include/private/SkTArray.h"
+#include "include/private/SkTDArray.h"
 #include "src/core/SkOSFile.h"
 #include "src/core/SkPathPriv.h"
 #include "src/utils/SkOSPath.h"
@@ -56,7 +56,7 @@ static FILE* font_header(const char* family) {
         if (dashIndex < 0) {
             break;
         }
-        fam.writable_str()[dashIndex] = '_';
+        fam.data()[dashIndex] = '_';
     } while (true);
     outPath.append(fam);
     outPath.append(".inc");

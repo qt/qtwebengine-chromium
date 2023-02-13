@@ -53,8 +53,10 @@ Bbr2Mode Bbr2StartupMode::OnCongestionEvent(
     return Bbr2Mode::STARTUP;
   }
   bool has_bandwidth_growth = model_->HasBandwidthGrowth(congestion_event);
-  if (Params().exit_startup_on_persistent_queue && !has_bandwidth_growth) {
-    model_->CheckPersistentQueue(congestion_event, Params().startup_cwnd_gain);
+  if (Params().max_startup_queue_rounds > 0 && !has_bandwidth_growth) {
+    // 1.75 is less than the 2x CWND gain, but substantially more than 1.25x,
+    // the minimum bandwidth increase expected during STARTUP.
+    model_->CheckPersistentQueue(congestion_event, 1.75);
   }
   // TCP BBR always exits upon excessive losses. QUIC BBRv1 does not exit
   // upon excessive losses, if enough bandwidth growth is observed or if the
@@ -76,11 +78,11 @@ Bbr2Mode Bbr2StartupMode::OnCongestionEvent(
                              static_cast<double>(
                                  max_bw_at_round_beginning_.ToBitsPerSecond()));
         // Even when bandwidth isn't increasing, use a gain large enough to
-        // cause a startup_full_bw_threshold increase.
+        // cause a full_bw_threshold increase.
         const float new_gain =
-            ((bandwidth_ratio - 1) * (Params().startup_pacing_gain -
-                                      Params().startup_full_bw_threshold)) +
-            Params().startup_full_bw_threshold;
+            ((bandwidth_ratio - 1) *
+             (Params().startup_pacing_gain - Params().full_bw_threshold)) +
+            Params().full_bw_threshold;
         // Allow the pacing gain to decrease.
         model_->set_pacing_gain(
             std::min(Params().startup_pacing_gain, new_gain));

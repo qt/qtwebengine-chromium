@@ -19,12 +19,10 @@ const char kIncreaseScreenBrightnessMethod[] = "IncreaseScreenBrightness";
 const char kGetScreenBrightnessPercentMethod[] = "GetScreenBrightnessPercent";
 const char kGetKeyboardBrightnessPercentMethod[] =
     "GetKeyboardBrightnessPercent";
+const char kSetKeyboardBrightnessMethod[] = "SetKeyboardBrightness";
 const char kDecreaseKeyboardBrightnessMethod[] = "DecreaseKeyboardBrightness";
 const char kIncreaseKeyboardBrightnessMethod[] = "IncreaseKeyboardBrightness";
-const char kSetKeyboardBacklightToggledOffMethod[] =
-    "SetKeyboardBacklightToggledOff";
-const char kGetKeyboardBacklightToggledOffMethod[] =
-    "GetKeyboardBacklightToggledOff";
+const char kToggleKeyboardBacklightMethod[] = "ToggleKeyboardBacklight";
 const char kRequestRestartMethod[] = "RequestRestart";
 const char kRequestShutdownMethod[] = "RequestShutdown";
 const char kRequestSuspendMethod[] = "RequestSuspend";
@@ -53,13 +51,11 @@ const char kGetInactivityDelaysMethod[] = "GetInactivityDelays";
 const char kCreateArcTimersMethod[] = "CreateArcTimers";
 const char kStartArcTimerMethod[] = "StartArcTimer";
 const char kDeleteArcTimersMethod[] = "DeleteArcTimers";
-const char kHasAmbientColorDeviceMethod[] = "HasAmbientColorDevice";
 const char kChangeWifiRegDomainMethod[] = "ChangeWifiRegDomain";
+const char kGetTabletModeMethod[] = "GetTabletMode";
 const char kChargeNowForAdaptiveChargingMethod[] =
     "ChargeNowForAdaptiveCharging";
 const char kGetChargeHistoryMethod[] = "GetChargeHistory";
-// TODO(b/166543531): Remove after migrating to BlueZ Battery Provider API.
-const char kRefreshBluetoothBatteryMethod[] = "RefreshBluetoothBattery";
 const char kRefreshAllPeripheralBatteryMethod[] = "RefreshAllPeripheralBattery";
 const char kGetThermalStateMethod[] = "GetThermalState";
 const char kSetExternalDisplayALSBrightnessMethod[] =
@@ -106,6 +102,12 @@ enum RequestRestartReason {
   REQUEST_RESTART_FOR_UPDATE = 1,
   // Some other reason.
   REQUEST_RESTART_OTHER = 2,
+  // DeviceScheduledReboot policy.
+  REQUEST_RESTART_SCHEDULED_REBOOT_POLICY = 3,
+  // Remote action reboot from the admin console.
+  REQUEST_RESTART_REMOTE_ACTION_REBOOT = 4,
+  // chrome.runtime.restart API.
+  REQUEST_RESTART_API = 5,
 };
 enum RequestShutdownReason {
   // An explicit user request (e.g. clicking a button).

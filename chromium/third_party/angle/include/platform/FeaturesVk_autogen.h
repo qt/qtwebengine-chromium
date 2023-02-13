@@ -214,10 +214,6 @@ struct FeaturesVk : FeatureSetBase
                                      "VkDevice supports the VK_KHR_multiview extension", &members,
                                      "http://anglebug.com/6048"};
 
-    FeatureInfo disableFifoPresentMode = {
-        "disableFifoPresentMode", FeatureCategory::VulkanWorkarounds,
-        "VK_PRESENT_MODE_FIFO_KHR causes random timeouts", &members, "http://anglebug.com/3153"};
-
     FeatureInfo forceD16TexFilter = {
         "forceD16TexFilter", FeatureCategory::VulkanWorkarounds,
         "VK_FORMAT_D16_UNORM does not support VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT, "
@@ -276,11 +272,6 @@ struct FeaturesVk : FeatureSetBase
         &members,
     };
 
-    FeatureInfo shadowBuffers = {
-        "shadowBuffers", FeatureCategory::VulkanFeatures,
-        "Allocate a shadow buffer for GL buffer objects to reduce glMap* latency.", &members,
-        "http://anglebug.com/4339"};
-
     FeatureInfo preferCPUForBufferSubData = {
         "preferCPUForBufferSubData", FeatureCategory::VulkanFeatures,
         "Prefer use CPU to do bufferSubData instead of staged update.", &members,
@@ -299,6 +290,12 @@ struct FeaturesVk : FeatureSetBase
     FeatureInfo enablePrecisionQualifiers = {
         "enablePrecisionQualifiers", FeatureCategory::VulkanFeatures,
         "Enable precision qualifiers in shaders", &members, "http://anglebug.com/3078"};
+
+    FeatureInfo varyingsRequireMatchingPrecisionInSpirv = {
+        "varyingsRequireMatchingPrecisionInSpirv", FeatureCategory::VulkanWorkarounds,
+        "Add additional SPIRV instructions to make sure precision "
+        "between shader stages match with each other",
+        &members, "http://anglebug.com/7488"};
 
     FeatureInfo preferAggregateBarrierCalls = {
         "preferAggregateBarrierCalls", FeatureCategory::VulkanWorkarounds,
@@ -453,10 +450,6 @@ struct FeaturesVk : FeatureSetBase
                                           "Emulate 270-degree prerotation.", &members,
                                           "http://anglebug.com/4901"};
 
-    FeatureInfo generateSPIRVThroughGlslang = {
-        "generateSPIRVThroughGlslang", FeatureCategory::VulkanFeatures,
-        "Translate SPIR-V through glslang.", &members, "http://anglebug.com/4889"};
-
     FeatureInfo preferDriverUniformOverSpecConst = {
         "preferDriverUniformOverSpecConst", FeatureCategory::VulkanFeatures,
         "Prefer using driver uniforms instead of specialization constants.", &members,
@@ -573,7 +566,7 @@ struct FeaturesVk : FeatureSetBase
     FeatureInfo permanentlySwitchToFramebufferFetchMode = {
         "permanentlySwitchToFramebufferFetchMode",
         FeatureCategory::VulkanFeatures,
-        "Whether the context should permanently switch to framebuffer fetch mode on first"
+        "Whether the context should permanently switch to framebuffer fetch mode on first "
         "encounter",
         &members,
     };
@@ -607,7 +600,7 @@ struct FeaturesVk : FeatureSetBase
     FeatureInfo precisionSafeDivision = {
         "precisionSafeDivision",
         FeatureCategory::VulkanWorkarounds,
-        "Special case handling for platforms that do not generate 1.0f even when the dividend and"
+        "Special case handling for platforms that do not generate 1.0f even when the dividend and "
         "divisor have the same value",
         &members,
     };
@@ -639,7 +632,7 @@ struct FeaturesVk : FeatureSetBase
 
     FeatureInfo forceStaticVertexStrideState = {
         "forceStaticVertexStrideState", FeatureCategory::VulkanWorkarounds,
-        "Force static state for VK_DYNAMIC_STATE_VERTEX_INPUT_BINDING_STRIDE_EXT due to"
+        "Force static state for VK_DYNAMIC_STATE_VERTEX_INPUT_BINDING_STRIDE_EXT due to "
         "driver bugs",
         &members, "https://bugs.fuchsia.dev/p/fuchsia/issues/detail?id=107106"};
 
@@ -705,7 +698,7 @@ struct FeaturesVk : FeatureSetBase
 
     FeatureInfo useNonZeroStencilWriteMaskStaticState = {
         "useNonZeroStencilWriteMaskStaticState", FeatureCategory::VulkanWorkarounds,
-        "Work around a driver bug where 0 in stencil write mask static state would make the"
+        "Work around a driver bug where 0 in stencil write mask static state would make the "
         "corresponding dynamic state malfunction in the presence of discard or alpha to coverage",
         &members, "http://anglebug.com/7556"};
 
@@ -766,6 +759,41 @@ struct FeaturesVk : FeatureSetBase
         "VkDevice supports the VK_EXT_graphics_pipeline_library extension", &members,
         "https://anglebug.com/7369"};
 
+    FeatureInfo preferMonolithicPipelinesOverLibraries = {
+        "preferMonolithicPipelinesOverLibraries", FeatureCategory::VulkanWorkarounds,
+        "Whether monolithic pipelines perform significantly better than libraries", &members,
+        "https://anglebug.com/7369"};
+
+    FeatureInfo slowDownMonolithicPipelineCreationForTesting = {
+        "slowDownMonolithicPipelineCreationForTesting", FeatureCategory::VulkanWorkarounds,
+        "Artificially slow down async monolithic pipeline creation for threading testing", &members,
+        "https://anglebug.com/7369"};
+
+    FeatureInfo syncMonolithicPipelinesToBlobCache = {
+        "syncMonolithicPipelinesToBlobCache", FeatureCategory::VulkanWorkarounds,
+        "Whether it's beneficial to store monolithic pipelines in the blob cache when "
+        "VK_EXT_graphics_pipeline_library is in use.  Otherwise the libraries are stored "
+        "only, and monolithic pipelines are recreated on every run",
+        &members, "https://anglebug.com/7369"};
+
+    FeatureInfo mergeProgramPipelineCachesToGlobalCache = {
+        "mergeProgramPipelineCachesToGlobalCache", FeatureCategory::VulkanWorkarounds,
+        "Whether it's beneficial to merge the pipeline cache for the shaders subset of the "
+        "pipeline into the monolithic pipeline cache.  Only useful on platforms where "
+        "monolithic pipelines can reuse blobs from partial pipelines",
+        &members, "https://anglebug.com/7369"};
+
+    FeatureInfo hasEffectivePipelineCacheSerialization = {
+        "hasEffectivePipelineCacheSerialization", FeatureCategory::VulkanFeatures,
+        "Whether the implementation serializes the Vulkan pipeline cache effectively. "
+        "On some implementations, pipeline cache serialization returns no data, so there "
+        "is no benefit to serializing it",
+        &members, "https://anglebug.com/7369"};
+
+    FeatureInfo enableAsyncPipelineCacheCompression = {
+        "enableAsyncPipelineCacheCompression", FeatureCategory::VulkanWorkarounds,
+        "Enable compressing pipeline cache in a thread.", &members, "http://anglebug.com/4722"};
+
     FeatureInfo supportsPipelineProtectedAccess = {
         "supportsPipelineProtectedAccess", FeatureCategory::VulkanFeatures,
         "VkDevice supports the VK_EXT_pipeline_protected_access extension", &members,
@@ -776,6 +804,11 @@ struct FeaturesVk : FeatureSetBase
         "Submit commands to driver when last GL_ANY_SAMPLES_PASSED query is made for performance "
         "improvements.",
         &members, "https://issuetracker.google.com/250706693"};
+
+    FeatureInfo forceWaitForSubmissionToCompleteForQueryResult = {
+        "forceWaitForSubmissionToCompleteForQueryResult", FeatureCategory::VulkanWorkarounds,
+        "Force wait for submission to complete before calling getQueryResult(wait).", &members,
+        "https://issuetracker.google.com/253522366"};
 };
 
 inline FeaturesVk::FeaturesVk()  = default;

@@ -25,6 +25,7 @@
 #include "include/core/SkPath.h"
 #include "include/core/SkPathEffect.h"
 #include "include/core/SkPathMeasure.h"
+#include "include/core/SkPathUtils.h"
 #include "include/core/SkPicture.h"
 #include "include/core/SkPictureRecorder.h"
 #include "include/core/SkPoint3.h"
@@ -71,6 +72,7 @@
 
 #ifdef ENABLE_GPU
 #include "include/gpu/GrDirectContext.h"
+#include "src/gpu/ganesh/GrCaps.h"
 #endif // ENABLE_GPU
 
 #ifdef CK_ENABLE_WEBGL
@@ -435,9 +437,7 @@ SkPathOrNull MakeAsWinding(const SkPath& self) {
 #endif
 
 JSString ToSVGString(const SkPath& path) {
-    SkString s;
-    SkParsePath::ToSVGString(path, &s);
-    return emscripten::val(s.c_str());
+    return emscripten::val(SkParsePath::ToSVGString(path).c_str());
 }
 
 SkPathOrNull MakePathFromSVGString(std::string str) {
@@ -694,7 +694,7 @@ bool ApplyStroke(SkPath& path, StrokeOpts opts) {
     p.setStrokeWidth(opts.width);
     p.setStrokeMiter(opts.miter_limit);
 
-    return p.getFillPath(path, &path, nullptr, opts.precision);
+    return skpathutils::FillPathWithPaint(path, p, &path, nullptr, opts.precision);
 }
 
 // This function is private, we call it in interface.js

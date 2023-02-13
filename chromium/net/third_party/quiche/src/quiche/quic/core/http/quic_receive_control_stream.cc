@@ -12,6 +12,7 @@
 #include "quiche/quic/core/http/http_constants.h"
 #include "quiche/quic/core/http/http_decoder.h"
 #include "quiche/quic/core/http/quic_spdy_session.h"
+#include "quiche/quic/core/quic_stream_priority.h"
 #include "quiche/quic/core/quic_types.h"
 #include "quiche/quic/platform/api/quic_flag_utils.h"
 #include "quiche/quic/platform/api/quic_flags.h"
@@ -135,7 +136,23 @@ bool QuicReceiveControlStream::OnPriorityUpdateFrame(
     spdy_session()->debug_visitor()->OnPriorityUpdateFrameReceived(frame);
   }
 
-  // TODO(b/147306124): Use a proper structured headers parser instead.
+  if (GetQuicReloadableFlag(quic_priority_update_structured_headers_parser)) {
+    QUIC_RELOADABLE_FLAG_COUNT(quic_priority_update_structured_headers_parser);
+    const ParsePriorityFieldValueResult result =
+        ParsePriorityFieldValue(frame.priority_field_value);
+
+    if (!result.success) {
+      stream_delegate()->OnStreamError(
+          QUIC_INVALID_PRIORITY_UPDATE,
+          "Invalid PRIORITY_UPDATE frame payload.");
+      return false;
+    }
+
+    const QuicStreamId stream_id = frame.prioritized_element_id;
+    return spdy_session_->OnPriorityUpdateForRequestStream(stream_id,
+                                                           result.priority);
+  }
+
   for (absl::string_view key_value :
        absl::StrSplit(frame.priority_field_value, ',')) {
     std::vector<absl::string_view> key_and_value =
@@ -152,6 +169,8 @@ bool QuicReceiveControlStream::OnPriorityUpdateFrame(
 
     absl::string_view value = key_and_value[1];
     int urgency;
+    // This violates RFC9218 Section 4: "priority parameters with out-of-range
+    // values, or values of unexpected types MUST be ignored".
     if (!absl::SimpleAtoi(value, &urgency) || urgency < 0 || urgency > 7) {
       stream_delegate()->OnStreamError(
           QUIC_INVALID_PRIORITY_UPDATE,
@@ -159,13 +178,10 @@ bool QuicReceiveControlStream::OnPriorityUpdateFrame(
       return false;
     }
 
-    if (frame.prioritized_element_type == REQUEST_STREAM) {
-      return spdy_session_->OnPriorityUpdateForRequestStream(
-          frame.prioritized_element_id, urgency);
-    } else {
-      return spdy_session_->OnPriorityUpdateForPushStream(
-          frame.prioritized_element_id, urgency);
-    }
+    return spdy_session_->OnPriorityUpdateForRequestStream(
+        frame.prioritized_element_id,
+        QuicStreamPriority{static_cast<uint8_t>(urgency),
+                           QuicStreamPriority::kDefaultIncremental});
   }
 
   // Ignore frame if no urgency parameter can be parsed.

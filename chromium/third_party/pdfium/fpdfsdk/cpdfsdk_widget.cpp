@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2016 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -341,7 +341,8 @@ bool CPDFSDK_Widget::HandleXFAAAction(
 }
 #endif  // PDF_ENABLE_XFA
 
-bool CPDFSDK_Widget::IsWidgetAppearanceValid(CPDF_Annot::AppearanceMode mode) {
+bool CPDFSDK_Widget::IsWidgetAppearanceValid(
+    CPDF_Annot::AppearanceMode mode) const {
   RetainPtr<const CPDF_Dictionary> pAP =
       GetAnnotDict()->GetDictFor(pdfium::annotation::kAP);
   if (!pAP)
@@ -378,6 +379,10 @@ bool CPDFSDK_Widget::IsWidgetAppearanceValid(CPDF_Annot::AppearanceMode mode) {
     default:
       return true;
   }
+}
+
+bool CPDFSDK_Widget::IsPushHighlighted() const {
+  return GetFormControl()->GetHighlightingMode() == CPDF_FormControl::kPush;
 }
 
 FormFieldType CPDFSDK_Widget::GetFieldType() const {
@@ -509,6 +514,21 @@ WideString CPDFSDK_Widget::GetExportValue() const {
 
 WideString CPDFSDK_Widget::GetOptionLabel(int nIndex) const {
   CPDF_FormField* pFormField = GetFormField();
+  return pFormField->GetOptionLabel(nIndex);
+}
+
+WideString CPDFSDK_Widget::GetSelectExportText(int nIndex) const {
+  if (nIndex < 0)
+    return WideString();
+
+  CPDF_FormField* pFormField = GetFormField();
+  if (!pFormField)
+    return WideString();
+
+  WideString swRet = pFormField->GetOptionValue(nIndex);
+  if (!swRet.IsEmpty())
+    return swRet;
+
   return pFormField->GetOptionLabel(nIndex);
 }
 

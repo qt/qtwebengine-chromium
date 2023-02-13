@@ -11,27 +11,33 @@ import {RemoteObjectPreviewFormatter} from './RemoteObjectPreviewFormatter.js';
 export class JavaScriptREPL {
   static wrapObjectLiteral(code: string): string {
     // Only parenthesize what appears to be an object literal.
-    if (!(/^\s*\{/.test(code) && /\}\s*$/.test(code))) {
+    const result = /^\s*\{\s*(.*)\s*\}[\s;]*$/.exec(code);
+    if (result === null) {
       return code;
+    }
+    const [, body] = result;
+    let level = 0;
+    for (const c of body) {
+      if (c === '{') {
+        level++;
+      } else if (c === '}' && --level < 0) {
+        return code;
+      }
     }
 
     const parse = (async(): Promise<number> => 0).constructor;
     try {
-      // Check if the code can be interpreted as an expression.
-      parse('return ' + code + ';');
+      // Check if the body can be interpreted as an expression.
+      parse('return {' + body + '};');
 
       // No syntax error! Does it work parenthesized?
-      const wrappedCode = '(' + code + ')';
+      const wrappedCode = '({' + body + '})';
       parse(wrappedCode);
 
       return wrappedCode;
     } catch (e) {
       return code;
     }
-  }
-
-  static preprocessExpression(text: string): string {
-    return JavaScriptREPL.wrapObjectLiteral(text);
   }
 
   static async evaluateAndBuildPreview(
@@ -46,7 +52,7 @@ export class JavaScriptREPL {
       return {preview: document.createDocumentFragment(), result: null};
     }
 
-    const expression = JavaScriptREPL.preprocessExpression(text);
+    const expression = JavaScriptREPL.wrapObjectLiteral(text);
     const options = {
       expression: expression,
       generatePreview: true,

@@ -88,6 +88,8 @@ const char* xnn_node_type_to_string(enum xnn_node_type type) {
       return "Sigmoid";
     case xnn_node_type_softmax:
       return "Softmax";
+    case xnn_node_type_space_to_depth_2d:
+      return "Space To Depth 2D";
     case xnn_node_type_square:
       return "Square";
     case xnn_node_type_square_root:
@@ -100,6 +102,8 @@ const char* xnn_node_type_to_string(enum xnn_node_type type) {
       return "Static Reshape";
     case xnn_node_type_static_resize_bilinear_2d:
       return "Static Resize Bilinear 2D";
+    case xnn_node_type_static_slice:
+      return "Static Slice";
     case xnn_node_type_static_transpose:
       return "Static Transpose";
     case xnn_node_type_subtract:

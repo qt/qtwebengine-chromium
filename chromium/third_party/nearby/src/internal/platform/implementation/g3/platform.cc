@@ -51,6 +51,8 @@
 #include "internal/platform/implementation/g3/mutex.h"
 #include "internal/platform/implementation/g3/scheduled_executor.h"
 #include "internal/platform/implementation/g3/single_thread_executor.h"
+#include "internal/platform/implementation/g3/wifi.h"
+#include "internal/platform/implementation/g3/wifi_direct.h"
 #include "internal/platform/implementation/g3/wifi_hotspot.h"
 #include "internal/platform/implementation/g3/wifi_lan.h"
 #include "internal/platform/implementation/shared/file.h"
@@ -61,8 +63,13 @@ namespace location {
 namespace nearby {
 namespace api {
 
+std::string ImplementationPlatform::GetCustomSavePath(
+    const std::string& parent_folder, const std::string& file_name) {
+  return file::JoinPath(parent_folder, file_name);
+}
+
 std::string ImplementationPlatform::GetDownloadPath(
-    absl::string_view parent_folder, absl::string_view file_name) {
+    const std::string& parent_folder, const std::string& file_name) {
   std::string fullPath("/tmp");
 
   return file::JoinPath("/tmp", file_name);
@@ -120,7 +127,7 @@ std::unique_ptr<InputFile> ImplementationPlatform::CreateInputFile(
 }
 
 std::unique_ptr<InputFile> ImplementationPlatform::CreateInputFile(
-    absl::string_view file_path, size_t size) {
+    const std::string& file_path, size_t size) {
   return shared::IOFile::CreateInputFile(file_path, size);
 }
 
@@ -135,7 +142,7 @@ std::unique_ptr<OutputFile> ImplementationPlatform::CreateOutputFile(
 }
 
 std::unique_ptr<OutputFile> ImplementationPlatform::CreateOutputFile(
-    absl::string_view file_path) {
+    const std::string& file_path) {
   return shared::IOFile::CreateOutputFile(file_path);
 }
 
@@ -171,7 +178,7 @@ ImplementationPlatform::CreateServerSyncMedium() {
 }
 
 std::unique_ptr<WifiMedium> ImplementationPlatform::CreateWifiMedium() {
-  return std::unique_ptr<WifiMedium>();
+  return std::make_unique<g3::WifiMedium>();
 }
 
 std::unique_ptr<WifiLanMedium> ImplementationPlatform::CreateWifiLanMedium() {
@@ -181,6 +188,11 @@ std::unique_ptr<WifiLanMedium> ImplementationPlatform::CreateWifiLanMedium() {
 std::unique_ptr<WifiHotspotMedium>
 ImplementationPlatform::CreateWifiHotspotMedium() {
   return std::make_unique<g3::WifiHotspotMedium>();
+}
+
+std::unique_ptr<WifiDirectMedium>
+ImplementationPlatform::CreateWifiDirectMedium() {
+  return std::make_unique<g3::WifiDirectMedium>();
 }
 
 #ifndef NO_WEBRTC

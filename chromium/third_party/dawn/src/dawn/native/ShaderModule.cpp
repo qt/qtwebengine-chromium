@@ -157,11 +157,12 @@ SampleTypeBit TintSampledKindToSampleTypeBit(tint::inspector::ResourceBinding::S
 ResultOrError<wgpu::TextureComponentType> TintComponentTypeToTextureComponentType(
     tint::inspector::ComponentType type) {
     switch (type) {
-        case tint::inspector::ComponentType::kFloat:
+        case tint::inspector::ComponentType::kF32:
+        case tint::inspector::ComponentType::kF16:
             return wgpu::TextureComponentType::Float;
-        case tint::inspector::ComponentType::kSInt:
+        case tint::inspector::ComponentType::kI32:
             return wgpu::TextureComponentType::Sint;
-        case tint::inspector::ComponentType::kUInt:
+        case tint::inspector::ComponentType::kU32:
             return wgpu::TextureComponentType::Uint;
         case tint::inspector::ComponentType::kUnknown:
             return DAWN_VALIDATION_ERROR("Attempted to convert 'Unknown' component type from Tint");
@@ -172,11 +173,12 @@ ResultOrError<wgpu::TextureComponentType> TintComponentTypeToTextureComponentTyp
 ResultOrError<VertexFormatBaseType> TintComponentTypeToVertexFormatBaseType(
     tint::inspector::ComponentType type) {
     switch (type) {
-        case tint::inspector::ComponentType::kFloat:
+        case tint::inspector::ComponentType::kF32:
+        case tint::inspector::ComponentType::kF16:
             return VertexFormatBaseType::Float;
-        case tint::inspector::ComponentType::kSInt:
+        case tint::inspector::ComponentType::kI32:
             return VertexFormatBaseType::Sint;
-        case tint::inspector::ComponentType::kUInt:
+        case tint::inspector::ComponentType::kU32:
             return VertexFormatBaseType::Uint;
         case tint::inspector::ComponentType::kUnknown:
             return DAWN_VALIDATION_ERROR("Attempted to convert 'Unknown' component type from Tint");
@@ -213,12 +215,14 @@ ResultOrError<wgpu::StorageTextureAccess> TintResourceTypeToStorageTextureAccess
 ResultOrError<InterStageComponentType> TintComponentTypeToInterStageComponentType(
     tint::inspector::ComponentType type) {
     switch (type) {
-        case tint::inspector::ComponentType::kFloat:
-            return InterStageComponentType::Float;
-        case tint::inspector::ComponentType::kSInt:
-            return InterStageComponentType::Sint;
-        case tint::inspector::ComponentType::kUInt:
-            return InterStageComponentType::Uint;
+        case tint::inspector::ComponentType::kF32:
+            return InterStageComponentType::F32;
+        case tint::inspector::ComponentType::kI32:
+            return InterStageComponentType::I32;
+        case tint::inspector::ComponentType::kU32:
+            return InterStageComponentType::U32;
+        case tint::inspector::ComponentType::kF16:
+            return InterStageComponentType::F16;
         case tint::inspector::ComponentType::kUnknown:
             return DAWN_VALIDATION_ERROR("Attempted to convert 'Unknown' component type from Tint");
     }
@@ -529,24 +533,8 @@ ResultOrError<std::unique_ptr<EntryPointMetadata>> ReflectEntryPointUsingTint(
 
         for (auto& c : entryPoint.overrides) {
             auto id = name2Id.at(c.name);
-            OverrideScalar defaultValue;
-            if (c.is_initialized) {
-                // if it is initialized, the scalar must exist
-                const auto& scalar = id2Scalar.at(id);
-                if (scalar.IsBool()) {
-                    defaultValue.b = scalar.AsBool();
-                } else if (scalar.IsU32()) {
-                    defaultValue.u32 = scalar.AsU32();
-                } else if (scalar.IsI32()) {
-                    defaultValue.i32 = scalar.AsI32();
-                } else if (scalar.IsFloat()) {
-                    defaultValue.f32 = scalar.AsFloat();
-                } else {
-                    UNREACHABLE();
-                }
-            }
             EntryPointMetadata::Override override = {id, FromTintOverrideType(c.type),
-                                                     c.is_initialized, defaultValue};
+                                                     c.is_initialized};
 
             std::string identifier = c.is_id_specified ? std::to_string(override.id.value) : c.name;
             metadata->overrides[identifier] = override;
@@ -696,7 +684,7 @@ ResultOrError<std::unique_ptr<EntryPointMetadata>> ReflectEntryPointUsingTint(
 
         switch (info.bindingType) {
             case BindingInfoType::Buffer:
-                info.buffer.minBindingSize = resource.size_no_padding;
+                info.buffer.minBindingSize = resource.size;
                 DAWN_TRY_ASSIGN(info.buffer.type,
                                 TintResourceTypeToBufferBindingType(resource.resource_type));
                 break;
@@ -1042,7 +1030,7 @@ MaybeError ValidateCompatibilityWithPipelineLayout(DeviceBase* device,
             continue;
         }
 
-        // Uint/sint can't be statically used with a sampler, so they any
+        // Uint/Sint can't be statically used with a sampler, so they any
         // texture bindings reflected must be float or depth textures. If
         // the shader uses a float/depth texture but the bind group layout
         // specifies a uint/sint texture binding,

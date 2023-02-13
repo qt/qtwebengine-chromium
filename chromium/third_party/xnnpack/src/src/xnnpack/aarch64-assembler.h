@@ -3,10 +3,13 @@
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
 
+#pragma once
+
 #include <cstddef>
 #include <cstdint>
 
 #include <xnnpack/assembler.h>
+
 
 namespace xnnpack {
 namespace aarch64 {
@@ -402,6 +405,14 @@ class Assembler : public AssemblerBase {
   void str(uint32_t size, uint32_t opc, MemOperand xn, int32_t imm, uint8_t rt_code);
   void tb_helper(uint32_t op, XRegister xd, uint8_t bit, Label& l);
 
+};
+
+class MacroAssembler : public Assembler {
+  using Assembler::Assembler;
+ public:
+   void f32_hardswish(VRegister sixth, VRegister three, VRegister six,
+                      VRegister zero, const VRegister *accs, size_t num_accs,
+                      const VRegister *tmps, size_t num_tmps);
 };
 
 }  // namespace aarch64

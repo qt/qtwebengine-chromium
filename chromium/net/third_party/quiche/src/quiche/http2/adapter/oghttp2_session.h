@@ -35,11 +35,10 @@ namespace http2 {
 namespace adapter {
 
 // This class manages state associated with a single multiplexed HTTP/2 session.
-class QUICHE_EXPORT_PRIVATE OgHttp2Session
-    : public Http2Session,
-      public spdy::SpdyFramerVisitorInterface {
+class QUICHE_EXPORT OgHttp2Session : public Http2Session,
+                                     public spdy::SpdyFramerVisitorInterface {
  public:
-  struct QUICHE_EXPORT_PRIVATE Options {
+  struct QUICHE_EXPORT Options {
     // Returns whether to send a WINDOW_UPDATE based on the window limit, window
     // size, and delta that would be sent in the WINDOW_UPDATE.
     WindowManager::ShouldWindowUpdateFn should_window_update_fn =
@@ -214,7 +213,7 @@ class QUICHE_EXPORT_PRIVATE OgHttp2Session
                       Http2VisitorInterface::OnHeaderResult result);
 
  private:
-  struct QUICHE_EXPORT_PRIVATE StreamState {
+  struct QUICHE_EXPORT StreamState {
     StreamState(int32_t stream_receive_window, int32_t stream_send_window,
                 WindowManager::WindowUpdateListener listener,
                 WindowManager::ShouldWindowUpdateFn should_window_update_fn)
@@ -234,17 +233,18 @@ class QUICHE_EXPORT_PRIVATE OgHttp2Session
     bool half_closed_remote = false;
     // Indicates that `outbound_body` temporarily cannot produce data.
     bool data_deferred = false;
+    bool sent_head_method = false;
     bool can_receive_body = true;
   };
   using StreamStateMap = absl::flat_hash_map<Http2StreamId, StreamState>;
 
-  struct QUICHE_EXPORT_PRIVATE PendingStreamState {
+  struct QUICHE_EXPORT PendingStreamState {
     spdy::Http2HeaderBlock headers;
     std::unique_ptr<DataFrameSource> data_source;
     void* user_data = nullptr;
   };
 
-  class QUICHE_EXPORT_PRIVATE PassthroughHeadersHandler
+  class QUICHE_EXPORT PassthroughHeadersHandler
       : public spdy::SpdyHeadersHandlerInterface {
    public:
     PassthroughHeadersHandler(OgHttp2Session& session,
@@ -293,7 +293,7 @@ class QUICHE_EXPORT_PRIVATE OgHttp2Session
     bool frame_contains_fin_ = false;
   };
 
-  struct QUICHE_EXPORT_PRIVATE ProcessBytesResultVisitor;
+  struct QUICHE_EXPORT ProcessBytesResultVisitor;
 
   // Queues the connection preface, if not already done. If not
   // `sending_outbound_settings` and the preface has not yet been queued, this

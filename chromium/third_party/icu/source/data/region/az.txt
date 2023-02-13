@@ -308,6 +308,7 @@ az{
         CG{"Konqo (Respublika)"}
         CI{"Fil Dişi Sahili"}
         CZ{"Çex Respublikası"}
+        NZ{"Aotearoa Yeni Zelandiya"}
         SZ{"Svazilend"}
     }
 }

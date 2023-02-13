@@ -187,22 +187,17 @@ void SenderSessionMessenger::OnMessage(const std::string& source_id,
     ReportError(receiver_message.error());
     OSP_DLOG_WARN << "Received an invalid receiver message: "
                   << receiver_message.error();
+    return;
   }
 
   if (receiver_message.value().type == ReceiverMessage::Type::kRpc) {
     if (rpc_callback_) {
       rpc_callback_(receiver_message.value());
     } else {
-      OSP_DLOG_INFO << "Received RTP message but no callback, dropping";
+      OSP_DLOG_INFO << "Received RPC message but no callback, dropping";
     }
   } else {
-    int sequence_number;
-    if (!json::TryParseInt(message_body.value()[kSequenceNumber],
-                           &sequence_number)) {
-      OSP_DLOG_WARN << "Received a message without a sequence number";
-      return;
-    }
-
+    const int sequence_number = receiver_message.value().sequence_number;
     auto it = awaiting_replies_.find(sequence_number);
     if (it == awaiting_replies_.end()) {
       OSP_DLOG_WARN << "Received a reply I wasn't waiting for: "
@@ -210,12 +205,9 @@ void SenderSessionMessenger::OnMessage(const std::string& source_id,
       return;
     }
 
-    it->second(std::move(receiver_message.value()));
-
-    // Calling the function callback may result in the checksum of the pointed
-    // to object to change, so calling erase() on the iterator after executing
-    // second() may result in a segfault.
-    awaiting_replies_.erase_key(sequence_number);
+    ReplyCallback callback = std::move(it->second);
+    awaiting_replies_.erase(it);
+    callback(std::move(receiver_message.value()));
   }
 }
 
@@ -296,9 +288,9 @@ void ReceiverSessionMessenger::OnMessage(const std::string& source_id,
   auto it = callbacks_.find(sender_message.value().type);
   if (it == callbacks_.end()) {
     OSP_DLOG_INFO << "Received message without a callback, dropping";
-  } else {
-    it->second(source_id, sender_message.value());
+    return;
   }
+  it->second(source_id, sender_message.value());
 }
 
 void ReceiverSessionMessenger::OnError(Error error) {

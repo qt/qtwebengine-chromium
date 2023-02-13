@@ -12,6 +12,7 @@
 #include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/GrContextOptions.h"
 #include "include/gpu/GrDirectContext.h"
+#include "include/private/SkSLProgramKind.h"
 #include "src/core/SkConvertPixels.h"
 #include "src/gpu/ganesh/GrDataUtils.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
@@ -32,6 +33,7 @@
 #include "src/gpu/ganesh/dawn/GrDawnRenderTarget.h"
 #include "src/gpu/ganesh/dawn/GrDawnTexture.h"
 #include "src/gpu/ganesh/dawn/GrDawnUtil.h"
+#include "src/sksl/SkSLProgramSettings.h"
 
 #include "src/core/SkAutoMalloc.h"
 #include "src/core/SkMipmap.h"
@@ -751,7 +753,7 @@ bool GrDawnGpu::onRegenerateMipMapLevels(GrTexture* tex) {
     wgpu::Texture dstTexture = fDevice.CreateTexture(&texDesc);
 
     const char* vs =
-        "layout(location = 0) out float2 texCoord;"
+        "layout(spirv, location = 0) out float2 texCoord;"
         "float2 positions[4] = float2[4](float2(-1.0, 1.0),"
                                         "float2(1.0, 1.0),"
                                         "float2(-1.0, -1.0),"
@@ -770,8 +772,8 @@ bool GrDawnGpu::onRegenerateMipMapLevels(GrTexture* tex) {
                                             nullptr);
 
     const char* fs =
-        "layout(set = 0, binding = 0) uniform sampler samp;"
-        "layout(set = 0, binding = 1) uniform texture2D tex;"
+        "layout(spirv, set = 0, binding = 0) uniform sampler samp;"
+        "layout(spirv, set = 0, binding = 1) uniform texture2D tex;"
         "layout(location = 0) in float2 texCoord;"
         "void main() {"
             "sk_FragColor = sample(makeSampler2D(tex, samp), texCoord);"

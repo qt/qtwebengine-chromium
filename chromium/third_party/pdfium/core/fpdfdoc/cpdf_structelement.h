@@ -1,4 +1,4 @@
-// Copyright 2017 PDFium Authors. All rights reserved.
+// Copyright 2017 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -37,7 +37,7 @@ class CPDF_StructElement final : public Retainable {
   bool UpdateKidIfElement(const CPDF_Dictionary* pDict,
                           CPDF_StructElement* pElement);
 
-  CPDF_StructElement* GetParent() const { return m_pParentElement.Get(); }
+  CPDF_StructElement* GetParent() const { return m_pParentElement; }
   void SetParent(CPDF_StructElement* pParentElement) {
     m_pParentElement = pParentElement;
   }

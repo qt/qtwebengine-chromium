@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2016 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -53,10 +53,6 @@ class CFX_RenderDevice {
                                   float height,
                                   float left,
                                   float top);
-
-  RenderDeviceDriverIface* GetDeviceDriver() const {
-    return m_pDeviceDriver.get();
-  }
 
   void SaveState();
   void RestoreState(bool bKeepSaved);
@@ -206,6 +202,11 @@ class CFX_RenderDevice {
                   int32_t nTransparency,
                   int32_t nStartGray,
                   int32_t nEndGray);
+  bool DrawShading(const CPDF_ShadingPattern* pPattern,
+                   const CFX_Matrix* pMatrix,
+                   const FX_RECT& clip_rect,
+                   int alpha,
+                   bool bAlphaMode);
 
 #if defined(_SKIA_SUPPORT_)
   virtual void DebugVerifyBitmapIsPreMultiplied() const;
@@ -216,7 +217,7 @@ class CFX_RenderDevice {
                                int bitmap_alpha,
                                BlendMode blend_type);
 #endif
-#if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
+#ifdef _SKIA_SUPPORT_
   void Flush(bool release);
 #endif
 
@@ -224,6 +225,9 @@ class CFX_RenderDevice {
   CFX_RenderDevice();
 
   void SetDeviceDriver(std::unique_ptr<RenderDeviceDriverIface> pDriver);
+  RenderDeviceDriverIface* GetDeviceDriver() const {
+    return m_pDeviceDriver.get();
+  }
 
  private:
   void InitDeviceInfo();

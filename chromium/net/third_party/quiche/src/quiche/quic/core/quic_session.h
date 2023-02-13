@@ -35,6 +35,7 @@
 #include "quiche/quic/core/quic_path_validator.h"
 #include "quiche/quic/core/quic_stream.h"
 #include "quiche/quic/core/quic_stream_frame_data_producer.h"
+#include "quiche/quic/core/quic_stream_priority.h"
 #include "quiche/quic/core/quic_types.h"
 #include "quiche/quic/core/quic_write_blocked_list.h"
 #include "quiche/quic/core/session_notifier_interface.h"
@@ -326,15 +327,13 @@ class QUIC_EXPORT_PRIVATE QuicSession
                      QuicIetfTransportErrorCodes ietf_error,
                      std::string error_details) override;
   // Sets priority in the write blocked list.
-  void RegisterStreamPriority(
-      QuicStreamId id, bool is_static,
-      const spdy::SpdyStreamPrecedence& precedence) override;
+  void RegisterStreamPriority(QuicStreamId id, bool is_static,
+                              const QuicStreamPriority& priority) override;
   // Clears priority from the write blocked list.
   void UnregisterStreamPriority(QuicStreamId id, bool is_static) override;
   // Updates priority on the write blocked list.
-  void UpdateStreamPriority(
-      QuicStreamId id,
-      const spdy::SpdyStreamPrecedence& new_precedence) override;
+  void UpdateStreamPriority(QuicStreamId id,
+                            const QuicStreamPriority& new_priority) override;
 
   // Called by streams when they want to write data to the peer.
   // Returns a pair with the number of bytes consumed from data, and a boolean
@@ -360,7 +359,8 @@ class QUIC_EXPORT_PRIVATE QuicSession
 
   // Returns mutable config for this session. Returned config is owned
   // by QuicSession.
-  QuicConfig* config();
+  QuicConfig* config() { return &config_; }
+  const QuicConfig* config() const { return &config_; }
 
   // Returns true if the stream existed previously and has been closed.
   // Returns false if the stream is still active or if the stream has
@@ -788,7 +788,7 @@ class QUIC_EXPORT_PRIVATE QuicSession
 
   // Call SetPriority() on stream id |id| and return true if stream is active.
   bool MaybeSetStreamPriority(QuicStreamId stream_id,
-                              const spdy::SpdyStreamPrecedence& precedence);
+                              const QuicStreamPriority& priority);
 
   void SetLossDetectionTuner(
       std::unique_ptr<LossDetectionTunerInterface> tuner) {
@@ -950,6 +950,7 @@ class QUIC_EXPORT_PRIVATE QuicSession
 
   // Received information for a connection close.
   QuicConnectionCloseFrame on_closed_frame_;
+  absl::optional<ConnectionCloseSource> source_;
 
   // Used for connection-level flow control.
   QuicFlowController flow_controller_;
@@ -1006,6 +1007,9 @@ class QUIC_EXPORT_PRIVATE QuicSession
   // This indicates a liveness testing is in progress, and push back the
   // creation of new outgoing bidirectional streams.
   bool liveness_testing_in_progress_;
+
+  const bool delay_setting_stateless_reset_token_ =
+      GetQuicReloadableFlag(quic_delay_setting_stateless_reset_token);
 };
 
 }  // namespace quic

@@ -1,4 +1,4 @@
-// Copyright 2017 PDFium Authors. All rights reserved.
+// Copyright 2017 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -33,9 +33,8 @@ FX_FILESIZE CPDF_SeekableMultiStream::GetSize() {
   return dwSize.ValueOrDie();
 }
 
-bool CPDF_SeekableMultiStream::ReadBlockAtOffset(void* buffer,
-                                                 FX_FILESIZE offset,
-                                                 size_t size) {
+bool CPDF_SeekableMultiStream::ReadBlockAtOffset(pdfium::span<uint8_t> buffer,
+                                                 FX_FILESIZE offset) {
   int32_t iCount = fxcrt::CollectionSize<int32_t>(m_Data);
   int32_t index = 0;
   while (index < iCount) {
@@ -47,14 +46,12 @@ bool CPDF_SeekableMultiStream::ReadBlockAtOffset(void* buffer,
     offset -= dwSize;
     index++;
   }
-  auto buffer_span = pdfium::make_span(static_cast<uint8_t*>(buffer), size);
   while (index < iCount) {
     auto acc_span = m_Data[index]->GetSpan();
-    size_t dwRead =
-        std::min<size_t>(buffer_span.size(), acc_span.size() - offset);
-    fxcrt::spancpy(buffer_span, acc_span.subspan(offset, dwRead));
-    buffer_span = buffer_span.subspan(dwRead);
-    if (buffer_span.empty())
+    size_t dwRead = std::min<size_t>(buffer.size(), acc_span.size() - offset);
+    fxcrt::spancpy(buffer, acc_span.subspan(offset, dwRead));
+    buffer = buffer.subspan(dwRead);
+    if (buffer.empty())
       return true;
 
     offset = 0;
@@ -63,7 +60,7 @@ bool CPDF_SeekableMultiStream::ReadBlockAtOffset(void* buffer,
   return false;
 }
 
-size_t CPDF_SeekableMultiStream::ReadBlock(void* buffer, size_t size) {
+size_t CPDF_SeekableMultiStream::ReadBlock(pdfium::span<uint8_t> buffer) {
   NOTREACHED();
   return 0;
 }
@@ -81,9 +78,9 @@ bool CPDF_SeekableMultiStream::Flush() {
   return false;
 }
 
-bool CPDF_SeekableMultiStream::WriteBlockAtOffset(const void* pData,
-                                                  FX_FILESIZE offset,
-                                                  size_t size) {
+bool CPDF_SeekableMultiStream::WriteBlockAtOffset(
+    pdfium::span<const uint8_t> buffer,
+    FX_FILESIZE offset) {
   NOTREACHED();
   return false;
 }

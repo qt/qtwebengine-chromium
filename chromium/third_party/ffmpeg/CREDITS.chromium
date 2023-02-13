@@ -336,74 +336,6 @@ x86inc.asm: x264asm abstraction layer
 
 ********************************************************************************
 
-libswresample/swresample.h
-
-Copyright (C) 2011-2013 Michael Niedermayer (michaelni@gmx.at)
-
-This file is part of libswresample
-
-libswresample is free software; you can redistribute it and/or
-modify it under the terms of the GNU Lesser General Public
-License as published by the Free Software Foundation; either
-version 2.1 of the License, or (at your option) any later version.
-
-libswresample is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-Lesser General Public License for more details.
-
-You should have received a copy of the GNU Lesser General Public
-License along with libswresample; if not, write to the Free Software
-Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
-
-********************************************************************************
-
-libswresample/version.h
-
-Version macros.
-
-This file is part of libswresample
-
-libswresample is free software; you can redistribute it and/or
-modify it under the terms of the GNU Lesser General Public
-License as published by the Free Software Foundation; either
-version 2.1 of the License, or (at your option) any later version.
-
-libswresample is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-Lesser General Public License for more details.
-
-You should have received a copy of the GNU Lesser General Public
-License along with libswresample; if not, write to the Free Software
-Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
-
-********************************************************************************
-
-libswresample/version_major.h
-
-Version macros.
-
-This file is part of libswresample
-
-libswresample is free software; you can redistribute it and/or
-modify it under the terms of the GNU Lesser General Public
-License as published by the Free Software Foundation; either
-version 2.1 of the License, or (at your option) any later version.
-
-libswresample is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-Lesser General Public License for more details.
-
-You should have received a copy of the GNU Lesser General Public
-License along with libswresample; if not, write to the Free Software
-Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
-
-********************************************************************************
-
-libavcodec/jfdctfst.c
-libavcodec/jfdctint_template.c
 libavcodec/jrevdct.c
 
 This file is part of the Independent JPEG Group's software.
@@ -448,13 +380,10 @@ assumed by the product vendor.
 libavcodec/fft_fixed_32.c
 libavcodec/fft_init_table.c
 libavcodec/fft_table.h
-libavcodec/mdct_fixed_32.c
 libavcodec/mips/aacdec_mips.h
 libavcodec/mips/aacsbr_mips.h
-libavcodec/mips/amrwbdec_mips.h
 libavcodec/mips/compute_antialias_fixed.h
 libavcodec/mips/compute_antialias_float.h
-libavcodec/mips/lsp_mips.h
 libavutil/fixed_dsp.c
 libavutil/fixed_dsp.h
 libavutil/mips/libm_mips.h

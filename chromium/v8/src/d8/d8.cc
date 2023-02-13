@@ -113,8 +113,6 @@ namespace v8 {
 
 namespace {
 
-const int kMB = 1024 * 1024;
-
 #ifdef V8_FUZZILLI
 // REPRL = read-eval-print-reset-loop
 // These file descriptors are being opened when Fuzzilli uses fork & execve to
@@ -127,9 +125,6 @@ bool fuzzilli_reprl = true;
 #else
 bool fuzzilli_reprl = false;
 #endif  // V8_FUZZILLI
-
-const int kMaxSerializerMemoryUsage =
-    1 * kMB;  // Arbitrary maximum for testing.
 
 // Base class for shell ArrayBuffer allocators. It forwards all opertions to
 // the default v8 allocator.
@@ -210,7 +205,7 @@ class MockArrayBufferAllocator : public ArrayBufferAllocatorBase {
 
  private:
   size_t Adjust(size_t length) {
-    const size_t kAllocationLimit = 10 * kMB;
+    const size_t kAllocationLimit = 10 * i::MB;
     return length > kAllocationLimit ? i::AllocatePageSize() : length;
   }
 };
@@ -381,7 +376,7 @@ base::Thread::Options GetThreadOptions(const char* name) {
   // which is not enough to parse the big literal expressions used in tests.
   // The stack size should be at least StackGuard::kLimitSize + some
   // OS-specific padding for thread startup code.  2Mbytes seems to be enough.
-  return base::Thread::Options(name, 2 * kMB);
+  return base::Thread::Options(name, 2 * i::MB);
 }
 
 }  // namespace
@@ -470,6 +465,8 @@ CounterCollection* Shell::counters_ = &local_counters_;
 base::LazyMutex Shell::context_mutex_;
 const base::TimeTicks Shell::kInitialTicks = base::TimeTicks::Now();
 Global<Function> Shell::stringify_function_;
+std::map<Isolate*, std::pair<Global<Function>, Global<Context>>>
+    Shell::profiler_end_callback_;
 base::LazyMutex Shell::workers_mutex_;
 bool Shell::allow_new_workers_ = true;
 std::unordered_set<std::shared_ptr<Worker>> Shell::running_workers_;
@@ -1759,7 +1756,7 @@ double Shell::GetTimestamp() {
     return delta.InMillisecondsF();
   }
 }
-int64_t Shell::GetTracingTimestampFromPerformanceTimestamp(
+uint64_t Shell::GetTracingTimestampFromPerformanceTimestamp(
     double performance_timestamp) {
   // Don't use this in --verify-predictable mode, predictable timestamps don't
   // work well with tracing.
@@ -1767,7 +1764,9 @@ int64_t Shell::GetTracingTimestampFromPerformanceTimestamp(
   base::TimeDelta delta =
       base::TimeDelta::FromMillisecondsD(performance_timestamp);
   // See TracingController::CurrentTimestampMicroseconds().
-  return (delta + kInitialTicks).ToInternalValue();
+  int64_t internal_value = (delta + kInitialTicks).ToInternalValue();
+  DCHECK_GE(internal_value, 0);
+  return internal_value;
 }
 
 // performance.now() returns GetTimestamp().
@@ -2510,6 +2509,48 @@ void Shell::SerializerDeserialize(
   Local<Value> result;
   if (!deserializer.ReadValue(context).ToLocal(&result)) return;
   args.GetReturnValue().Set(result);
+}
+
+void Shell::ProfilerSetOnProfileEndListener(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  HandleScope handle_scope(isolate);
+  if (!args[0]->IsFunction()) {
+    isolate->ThrowError("The OnProfileEnd listener has to be a function");
+    return;
+  }
+  profiler_end_callback_[isolate] =
+      std::make_pair(Global<Function>(isolate, args[0].As<Function>()),
+                     Global<Context>(isolate, isolate->GetCurrentContext()));
+}
+
+bool Shell::HasOnProfileEndListener(Isolate* isolate) {
+  return profiler_end_callback_.find(isolate) != profiler_end_callback_.end();
+}
+
+void Shell::ResetOnProfileEndListener(Isolate* isolate) {
+  profiler_end_callback_.erase(isolate);
+}
+
+void Shell::ProfilerTriggerSample(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
+  D8Console* console =
+      reinterpret_cast<D8Console*>(i_isolate->console_delegate());
+  if (console->profiler()) console->profiler()->CollectSample(isolate);
+}
+
+void Shell::TriggerOnProfileEndListener(Isolate* isolate, std::string profile) {
+  CHECK(HasOnProfileEndListener(isolate));
+  Local<Value> argv[1] = {
+      String::NewFromUtf8(isolate, profile.c_str()).ToLocalChecked()};
+  auto& callback_pair = profiler_end_callback_[isolate];
+  Local<Function> callback = callback_pair.first.Get(isolate);
+  Local<Context> context = callback_pair.second.Get(isolate);
+  TryCatch try_catch(isolate);
+  try_catch.SetVerbose(true);
+  USE(callback->Call(context, Undefined(isolate), 1, argv));
 }
 
 void WriteToFile(FILE* file, const v8::FunctionCallbackInfo<v8::Value>& args) {
@@ -3538,6 +3579,16 @@ Local<ObjectTemplate> Shell::CreateD8Template(Isolate* isolate) {
                               Local<Signature>(), 1));
     d8_template->Set(isolate, "serializer", serializer_template);
   }
+  {
+    Local<ObjectTemplate> profiler_template = ObjectTemplate::New(isolate);
+    profiler_template->Set(
+        isolate, "setOnProfileEndListener",
+        FunctionTemplate::New(isolate, ProfilerSetOnProfileEndListener));
+    profiler_template->Set(
+        isolate, "triggerSample",
+        FunctionTemplate::New(isolate, ProfilerTriggerSample));
+    d8_template->Set(isolate, "profiler", profiler_template);
+  }
   return d8_template;
 }
 
@@ -3826,7 +3877,9 @@ void Shell::WriteLcovData(v8::Isolate* isolate, const char* file) {
 
 void Shell::OnExit(v8::Isolate* isolate, bool dispose) {
   platform::NotifyIsolateShutdown(g_default_platform, isolate);
-  isolate->Dispose();
+  if (dispose) {
+    isolate->Dispose();
+  }
 
   // Simulate errors before disposing V8, as that resets flags (via
   // FlagList::ResetAllFlags()), but error simulation reads the random seed.
@@ -3954,7 +4007,7 @@ V8_NOINLINE void FuzzerMonitor::ObservableDifference() {
 V8_NOINLINE void FuzzerMonitor::UndefinedBehavior() {
   // Caught by UBSAN.
   int32_t val = -1;
-  USE(val << 8);
+  USE(val << val);
 }
 
 V8_NOINLINE void FuzzerMonitor::UseAfterFree() {
@@ -4178,7 +4231,8 @@ class InspectorClient : public v8_inspector::V8InspectorClient {
     inspector_ = v8_inspector::V8Inspector::create(isolate_, this);
     session_ =
         inspector_->connect(1, channel_.get(), v8_inspector::StringView(),
-                            v8_inspector::V8Inspector::kFullyTrusted);
+                            v8_inspector::V8Inspector::kFullyTrusted,
+                            v8_inspector::V8Inspector::kNotWaitingForDebugger);
     context->SetAlignedPointerInEmbedderData(kInspectorClientIndex, this);
     inspector_->contextCreated(v8_inspector::V8ContextInfo(
         context, kContextGroupId, v8_inspector::StringView()));
@@ -4429,6 +4483,7 @@ void SourceGroup::ExecuteInThread() {
     done_semaphore_.Signal();
   }
 
+  Shell::ResetOnProfileEndListener(isolate);
   isolate->Dispose();
 }
 
@@ -4713,6 +4768,7 @@ void Worker::ExecuteInThread() {
     task_manager_ = nullptr;
   }
 
+  Shell::ResetOnProfileEndListener(isolate_);
   context_.Reset();
   platform::NotifyIsolateShutdown(g_default_platform, isolate_);
   isolate_->Dispose();
@@ -4957,6 +5013,10 @@ bool Shell::SetOptions(int argc, char* argv[]) {
       argv[i] = nullptr;
     } else if (strncmp(argv[i], "--repeat-compile=", 17) == 0) {
       options.repeat_compile = atoi(argv[i] + 17);
+      argv[i] = nullptr;
+    } else if (strncmp(argv[i], "--max-serializer-memory=", 24) == 0) {
+      // Value is expressed in MB.
+      options.max_serializer_memory = atoi(argv[i] + 24) * i::MB;
       argv[i] = nullptr;
 #ifdef V8_FUZZILLI
     } else if (strcmp(argv[i], "--no-fuzzilli-enable-builtins-coverage") == 0) {
@@ -5370,7 +5430,9 @@ class Serializer : public ValueSerializer::Delegate {
     // Not accurate, because we don't take into account reallocated buffers,
     // but this is fine for testing.
     current_memory_usage_ += size;
-    if (current_memory_usage_ > kMaxSerializerMemoryUsage) return nullptr;
+    if (current_memory_usage_ > Shell::options.max_serializer_memory) {
+      return nullptr;
+    }
 
     void* result = base::Realloc(old_buffer, size);
     *actual_size = result ? size : 0;
@@ -5436,7 +5498,9 @@ class Serializer : public ValueSerializer::Delegate {
 
       auto backing_store = array_buffer->GetBackingStore();
       data_->backing_stores_.push_back(std::move(backing_store));
-      array_buffer->Detach();
+      if (array_buffer->Detach(v8::Local<v8::Value>()).IsNothing()) {
+        return Nothing<bool>();
+      }
     }
 
     return Just(true);
@@ -5860,11 +5924,12 @@ int Shell::Main(int argc, char* argv[]) {
           {
             D8Console console2(isolate2);
             Initialize(isolate2, &console2);
-            PerIsolateData data2(isolate2);
             Isolate::Scope isolate_scope(isolate2);
+            PerIsolateData data2(isolate2);
 
             result = RunMain(isolate2, false);
           }
+          ResetOnProfileEndListener(isolate2);
           isolate2->Dispose();
         }
 
@@ -5913,6 +5978,7 @@ int Shell::Main(int argc, char* argv[]) {
       cached_code_map_.clear();
       evaluation_context_.Reset();
       stringify_function_.Reset();
+      ResetOnProfileEndListener(isolate);
       CollectGarbage(isolate);
 #ifdef V8_FUZZILLI
       // Send result to parent (fuzzilli) and reset edge guards.

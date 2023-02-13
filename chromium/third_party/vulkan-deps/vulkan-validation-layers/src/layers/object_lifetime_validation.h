@@ -1,7 +1,7 @@
-/* Copyright (c) 2015-2021 The Khronos Group Inc.
- * Copyright (c) 2015-2021 Valve Corporation
- * Copyright (c) 2015-2021 LunarG, Inc.
- * Copyright (C) 2015-2021 Google Inc.
+/* Copyright (c) 2015-2022 The Khronos Group Inc.
+ * Copyright (c) 2015-2022 Valve Corporation
+ * Copyright (c) 2015-2022 LunarG, Inc.
+ * Copyright (C) 2015-2022 Google Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,21 +20,12 @@
  * Author: Tobin Ehlis <tobine@google.com>
  */
 
-// Suppress unused warning on Linux
-#if defined(__GNUC__)
-#define DECORATE_UNUSED __attribute__((unused))
-#else
-#define DECORATE_UNUSED
-#endif
-
 // clang-format off
-static const char DECORATE_UNUSED *kVUID_ObjectTracker_Info = "UNASSIGNED-ObjectTracker-Info";
-static const char DECORATE_UNUSED *kVUID_ObjectTracker_InternalError = "UNASSIGNED-ObjectTracker-InternalError";
-static const char DECORATE_UNUSED *kVUID_ObjectTracker_ObjectLeak =    "UNASSIGNED-ObjectTracker-ObjectLeak";
-static const char DECORATE_UNUSED *kVUID_ObjectTracker_UnknownObject = "UNASSIGNED-ObjectTracker-UnknownObject";
+[[maybe_unused]] static const char *kVUID_ObjectTracker_Info = "UNASSIGNED-ObjectTracker-Info";
+[[maybe_unused]] static const char *kVUID_ObjectTracker_InternalError = "UNASSIGNED-ObjectTracker-InternalError";
+[[maybe_unused]] static const char *kVUID_ObjectTracker_ObjectLeak =    "UNASSIGNED-ObjectTracker-ObjectLeak";
+[[maybe_unused]] static const char *kVUID_ObjectTracker_UnknownObject = "UNASSIGNED-ObjectTracker-UnknownObject";
 // clang-format on
-
-#undef DECORATE_UNUSED
 
 extern uint64_t object_track_index;
 
@@ -65,7 +56,7 @@ class ObjectLifetimes : public ValidationObject {
     ReadLockGuard ReadLock() override;
     WriteLockGuard WriteLock() override;
 
-    mutable ReadWriteLock object_lifetime_mutex;
+    mutable std::shared_mutex object_lifetime_mutex;
     WriteLockGuard WriteSharedLock() { return WriteLockGuard(object_lifetime_mutex); }
     ReadLockGuard ReadSharedLock() const { return ReadLockGuard(object_lifetime_mutex); }
 
@@ -92,7 +83,7 @@ class ObjectLifetimes : public ValidationObject {
     template <typename T1>
     void InsertObject(object_map_type &map, T1 object, VulkanObjectType object_type, std::shared_ptr<ObjTrackState> pNode) {
         uint64_t object_handle = HandleToUint64(object);
-        bool inserted = map.insert(object_handle, pNode);
+        const bool inserted = map.insert(object_handle, pNode);
         if (!inserted) {
             // The object should not already exist. If we couldn't add it to the map, there was probably
             // a race condition in the app. Report an error and move on.
@@ -197,7 +188,7 @@ class ObjectLifetimes : public ValidationObject {
     template <typename T1>
     void CreateObject(T1 object, VulkanObjectType object_type, const VkAllocationCallbacks *pAllocator) {
         uint64_t object_handle = HandleToUint64(object);
-        bool custom_allocator = (pAllocator != nullptr);
+        const bool custom_allocator = (pAllocator != nullptr);
         if (!object_map[object_type].contains(object_handle)) {
             auto pNewObjNode = std::make_shared<ObjTrackState>();
             pNewObjNode->object_type = object_type;
@@ -250,7 +241,7 @@ class ObjectLifetimes : public ValidationObject {
     bool ValidateDestroyObject(T1 object_handle, VulkanObjectType object_type, const VkAllocationCallbacks *pAllocator,
                                const char *expected_custom_allocator_code, const char *expected_default_allocator_code) const {
         auto object = HandleToUint64(object_handle);
-        bool custom_allocator = pAllocator != nullptr;
+        const bool custom_allocator = pAllocator != nullptr;
         bool skip = false;
 
         if ((expected_custom_allocator_code != kVUIDUndefined || expected_default_allocator_code != kVUIDUndefined) &&

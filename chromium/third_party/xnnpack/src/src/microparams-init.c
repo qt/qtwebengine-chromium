@@ -1904,30 +1904,7 @@ size_t xnn_init_f32_gavgpool_params(
   #endif
 }
 
-size_t xnn_init_f16_gavgpool_neonfp16arith_x4_params(
-  union xnn_f16_gavgpool_params params[XNN_MIN_ELEMENTS(1)],
-  uint16_t multiplier,
-  uint16_t output_min,
-  uint16_t output_max,
-  uint32_t width)
-{
-  #if XNN_ARCH_ARM || XNN_ARCH_ARM64
-    params->neonfp16arith.multiplier = multiplier;
-    params->neonfp16arith.output_min = output_min;
-    params->neonfp16arith.output_max = output_max;
-
-    const uint32_t w = (width - 1) & 3;
-    params->neonfp16arith.mask[0] = UINT16_C(0xFFFF);
-    params->neonfp16arith.mask[1] = -(uint16_t) (w >= 1);
-    params->neonfp16arith.mask[2] = -(uint16_t) (w >= 2);
-    params->neonfp16arith.mask[3] = -(uint16_t) (w >= 3);
-    return sizeof(params->neonfp16arith);
-  #else
-    return 0;
-  #endif
-}
-
-size_t xnn_init_f16_gavgpool_neonfp16arith_x8_params(
+size_t xnn_init_f16_gavgpool_neonfp16arith_params(
   union xnn_f16_gavgpool_params params[XNN_MIN_ELEMENTS(1)],
   uint16_t multiplier,
   uint16_t output_min,
@@ -4192,30 +4169,34 @@ size_t xnn_init_f16_chw_params(
     params->neonfp16arith.min = output_min;
     params->neonfp16arith.max = output_max;
 
-    const uint32_t w4 = (width - 1) & 3;
-    params->neonfp16arith.maskx4[0] = UINT16_C(0xFFFF);
-    params->neonfp16arith.maskx4[1] = -(uint16_t) (w4 >= 1);
-    params->neonfp16arith.maskx4[2] = -(uint16_t) (w4 >= 2);
-    params->neonfp16arith.maskx4[3] = -(uint16_t) (w4 >= 3);
-
     const uint32_t w8 = (width - 1) & 7;
-    params->neonfp16arith.maskx8[0] = UINT16_C(0xFFFF);
-    params->neonfp16arith.maskx8[1] = -(uint16_t) (w8 >= 1);
-    params->neonfp16arith.maskx8[2] = -(uint16_t) (w8 >= 2);
-    params->neonfp16arith.maskx8[3] = -(uint16_t) (w8 >= 3);
-    params->neonfp16arith.maskx8[4] = -(uint16_t) (w8 >= 4);
-    params->neonfp16arith.maskx8[5] = -(uint16_t) (w8 >= 5);
-    params->neonfp16arith.maskx8[6] = -(uint16_t) (w8 >= 6);
-    params->neonfp16arith.maskx8[7] = -(uint16_t) (w8 >= 7);
+    params->neonfp16arith.mask[0] = UINT16_C(0xFFFF);
+    params->neonfp16arith.mask[1] = -(uint16_t) (w8 >= 1);
+    params->neonfp16arith.mask[2] = -(uint16_t) (w8 >= 2);
+    params->neonfp16arith.mask[3] = -(uint16_t) (w8 >= 3);
+    params->neonfp16arith.mask[4] = -(uint16_t) (w8 >= 4);
+    params->neonfp16arith.mask[5] = -(uint16_t) (w8 >= 5);
+    params->neonfp16arith.mask[6] = -(uint16_t) (w8 >= 6);
+    params->neonfp16arith.mask[7] = -(uint16_t) (w8 >= 7);
 
-    params->neonfp16arith.maskx4_even[0] = UINT16_C(0xFFFF);
-    params->neonfp16arith.maskx4_even[1] = -(uint16_t) (w8 >= 2);
-    params->neonfp16arith.maskx4_even[2] = -(uint16_t) (w8 >= 4);
-    params->neonfp16arith.maskx4_even[3] = -(uint16_t) (w8 >= 6);
-    params->neonfp16arith.maskx4_odd[0] = -(uint16_t) (w8 >= 1);
-    params->neonfp16arith.maskx4_odd[1] = -(uint16_t) (w8 >= 3);
-    params->neonfp16arith.maskx4_odd[2] = -(uint16_t) (w8 >= 5);
-    params->neonfp16arith.maskx4_odd[3] = -(uint16_t) (w8 >= 7);
+    const uint32_t w16 = (width - 1) & 15;
+    params->neonfp16arith.mask_even[0] = UINT16_C(0xFFFF);
+    params->neonfp16arith.mask_even[1] = -(uint16_t) (w16 >= 2);
+    params->neonfp16arith.mask_even[2] = -(uint16_t) (w16 >= 4);
+    params->neonfp16arith.mask_even[3] = -(uint16_t) (w16 >= 6);
+    params->neonfp16arith.mask_even[4] = -(uint16_t) (w16 >= 8);
+    params->neonfp16arith.mask_even[5] = -(uint16_t) (w16 >= 10);
+    params->neonfp16arith.mask_even[6] = -(uint16_t) (w16 >= 12);
+    params->neonfp16arith.mask_even[7] = -(uint16_t) (w16 >= 14);
+    params->neonfp16arith.mask_odd[0] = -(uint16_t) (w16 >= 1);
+    params->neonfp16arith.mask_odd[1] = -(uint16_t) (w16 >= 3);
+    params->neonfp16arith.mask_odd[2] = -(uint16_t) (w16 >= 5);
+    params->neonfp16arith.mask_odd[3] = -(uint16_t) (w16 >= 7);
+    params->neonfp16arith.mask_odd[4] = -(uint16_t) (w16 >= 9);
+    params->neonfp16arith.mask_odd[5] = -(uint16_t) (w16 >= 11);
+    params->neonfp16arith.mask_odd[6] = -(uint16_t) (w16 >= 13);
+    params->neonfp16arith.mask_odd[7] = -(uint16_t) (w16 >= 15);
+
     return sizeof(params->neonfp16arith);
   #else
     return 0;

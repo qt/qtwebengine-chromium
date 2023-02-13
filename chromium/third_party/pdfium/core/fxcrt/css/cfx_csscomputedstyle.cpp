@@ -1,4 +1,4 @@
-// Copyright 2017 PDFium Authors. All rights reserved.
+// Copyright 2017 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -33,7 +33,7 @@ absl::optional<WideString> CFX_CSSComputedStyle::GetLastFontFamily() const {
 
   return m_InheritedData.m_pFontFamily->values()
       .back()
-      .As<CFX_CSSStringValue>()
+      .AsRaw<CFX_CSSStringValue>()
       ->Value();
 }
 

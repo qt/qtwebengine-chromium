@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2016 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -254,7 +254,7 @@ std::vector<CPDF_MeshVertex> CPDF_MeshStream::ReadVertexRow(
     if (m_BitStream->IsEOF() || !CanReadCoords())
       return std::vector<CPDF_MeshVertex>();
 
-    vertices.push_back(CPDF_MeshVertex());
+    vertices.emplace_back();
     CPDF_MeshVertex& vertex = vertices.back();
     vertex.position = pObject2Bitmap.Transform(ReadCoords());
     if (!CanReadColor())

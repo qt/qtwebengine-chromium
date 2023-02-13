@@ -35,12 +35,12 @@ Error CrosGralloc4Allocator::initializeMetadata(
         cros_gralloc_handle_t crosHandle,
         const struct cros_gralloc_buffer_descriptor& crosDescriptor) {
     if (!mDriver) {
-        drv_log("Failed to initializeMetadata. Driver is uninitialized.\n");
+        ALOGE("Failed to initializeMetadata. Driver is uninitialized.");
         return Error::NO_RESOURCES;
     }
 
     if (!crosHandle) {
-        drv_log("Failed to initializeMetadata. Invalid handle.\n");
+        ALOGE("Failed to initializeMetadata. Invalid handle.");
         return Error::BAD_BUFFER;
     }
 
@@ -48,7 +48,7 @@ Error CrosGralloc4Allocator::initializeMetadata(
     uint64_t size;
     int ret = mDriver->get_reserved_region(crosHandle, &addr, &size);
     if (ret) {
-        drv_log("Failed to getReservedRegion.\n");
+        ALOGE("Failed to getReservedRegion.");
         return Error::NO_RESOURCES;
     }
 
@@ -65,7 +65,7 @@ Error CrosGralloc4Allocator::initializeMetadata(
 Error CrosGralloc4Allocator::allocate(const BufferDescriptorInfo& descriptor, uint32_t* outStride,
                                       hidl_handle* outHandle) {
     if (!mDriver) {
-        drv_log("Failed to allocate. Driver is uninitialized.\n");
+        ALOGE("Failed to allocate. Driver is uninitialized.");
         return Error::NO_RESOURCES;
     }
 
@@ -84,8 +84,8 @@ Error CrosGralloc4Allocator::allocate(const BufferDescriptorInfo& descriptor, ui
         std::string drmFormatString = get_drm_format_string(crosDescriptor.drm_format);
         std::string pixelFormatString = getPixelFormatString(descriptor.format);
         std::string usageString = getUsageString(descriptor.usage);
-        drv_log("Unsupported combination -- pixel format: %s, drm format:%s, usage: %s\n",
-                pixelFormatString.c_str(), drmFormatString.c_str(), usageString.c_str());
+        ALOGE("Unsupported combination -- pixel format: %s, drm format:%s, usage: %s",
+              pixelFormatString.c_str(), drmFormatString.c_str(), usageString.c_str());
         return Error::UNSUPPORTED;
     }
 
@@ -116,7 +116,7 @@ Return<void> CrosGralloc4Allocator::allocate(const hidl_vec<uint8_t>& descriptor
     hidl_vec<hidl_handle> handles;
 
     if (!mDriver) {
-        drv_log("Failed to allocate. Driver is uninitialized.\n");
+        ALOGE("Failed to allocate. Driver is uninitialized.");
         hidlCb(Error::NO_RESOURCES, 0, handles);
         return Void();
     }
@@ -125,7 +125,7 @@ Return<void> CrosGralloc4Allocator::allocate(const hidl_vec<uint8_t>& descriptor
 
     int ret = android::gralloc4::decodeBufferDescriptorInfo(descriptor, &description);
     if (ret) {
-        drv_log("Failed to allocate. Failed to decode buffer descriptor: %d.\n", ret);
+        ALOGE("Failed to allocate. Failed to decode buffer descriptor: %d.", ret);
         hidlCb(Error::BAD_DESCRIPTOR, 0, handles);
         return Void();
     }

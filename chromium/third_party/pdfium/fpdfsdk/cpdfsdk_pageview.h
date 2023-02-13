@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2016 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -62,10 +62,7 @@ class CPDFSDK_PageView final : public CPDF_Page::View {
 
   CPDF_Page* GetPDFPage() const;
   CPDF_Document* GetPDFDocument();
-  CPDFSDK_InteractiveForm* GetInteractiveForm() const;
-  CPDFSDK_FormFillEnvironment* GetFormFillEnv() const {
-    return m_pFormFillEnv.Get();
-  }
+  CPDFSDK_FormFillEnvironment* GetFormFillEnv() const { return m_pFormFillEnv; }
 
   WideString GetFocusedFormText();
   WideString GetSelectedText();
@@ -112,6 +109,7 @@ class CPDFSDK_PageView final : public CPDF_Page::View {
 
   std::unique_ptr<CPDFSDK_Annot> NewAnnot(CPDF_Annot* annot);
 
+  CPDFSDK_InteractiveForm* GetInteractiveForm() const;
   CPDFSDK_Annot* GetFXAnnotAtPoint(const CFX_PointF& point);
   CPDFSDK_Annot* GetFXWidgetAtPoint(const CFX_PointF& point);
 

@@ -252,6 +252,10 @@ message StartVmRequest {
 
   // Enable virtgpu drm native context:
   bool enable_virtgpu_native_context = 25;
+
+  // Optional suggested username of the owner of the VM. Only used by
+  // VM types that support dynamic usernames.
+  string vm_username = 26;
 }
 
 // Information that must be included with every StartPluginVm request.
@@ -295,36 +299,6 @@ message StartPluginVmRequest {
   NetworkOptions net_options = 8;
 }
 
-// Optional fields for LimitCacheBalloonPolicy configuration.
-message BalloonPolicyOptions {
-  // The maximum amount of page cache the guest should have if ChromeOS is
-  // reclaiming.
-  int64 reclaim_target_cache = 1;
-
-  // The maximum amount of page cache the guest should have if ChromeOS has
-  // critical memory pressure.
-  int64 critical_target_cache = 2;
-
-  // The maximum amount of page cache the guest should have if ChromeOS has
-  // moderate memory pressure.
-  int64 moderate_target_cache = 3;
-
-  // If set, enable responsive balloon sizing. Concierge will listen on a VSOCK
-  // for connections from LMKD in Android. When LMKD is about to kill an app, it
-  // will signal the balloon sizing code, which may deflate the balloon instead
-  // of killing the app.
-  bool responsive = 4;
-
-  // The amount of time LMKD will wait for a response from concierge before
-  // killing an app.
-  int32 responsive_timeout_ms = 5;
-
-  // If an app should not be killed, the balloon will be deflated by
-  // min(app_size, responsive_max_deflate_bytes), so that large apps don't
-  // completely deflate the balloon.
-  int64 responsive_max_deflate_bytes = 6;
-}
-
 // Information that must be included with every StartArcVm request.
 message StartArcVmRequest {
   // The VM that should be started.
@@ -340,7 +314,7 @@ message StartArcVmRequest {
   string owner_id = 4;
 
   // Parameters to pass to the ARCVM's init process.
-  repeated string params = 5;
+  repeated string params = 5 [deprecated = true];
 
   // Path to Android fstab.
   string fstab = 6;
@@ -364,9 +338,8 @@ message StartArcVmRequest {
   // How much memory to give ARCVM, in MiB. Optional.
   uint32 memory_mib = 12;
 
-  // How to configure the balloon policy. If set, LimitCacheBalloonPolicy is
-  // used, otherwise BalanceAvailableBalloonPolicy is used.
-  BalloonPolicyOptions balloon_policy = 13;
+  // Deprecated BalloonPolicyOptions. Do not use.
+  reserved 13;
 
   // Whether per-VM core scheduling should be used instead of the default one
   // (per-vCPU core scheduing.) This option is no-op on devices that have
@@ -379,7 +352,8 @@ message StartArcVmRequest {
   uint32 rootfs_block_size = 15;
 
   // Option to enable disable consumer auto update toggle.
-  bool enable_consumer_auto_update_toggle = 16;
+  // deprecated: exists in StartArcMiniInstanceRequest
+  bool enable_consumer_auto_update_toggle = 16 [deprecated = true];
 
   // Display orientation in clock-wise degrees. ORIENTATION_90 means the panel's
   // right side is the top side of the natural device orientation.
@@ -401,19 +375,23 @@ message StartArcVmRequest {
   bool lock_guest_memory = 18;
 
   // Whether the file picker experiment feature is enabled.
-  bool enable_arc_file_picker_experiment = 19;
+  // deprecated: exists in StartArcMiniInstanceRequest
+  bool enable_arc_file_picker_experiment = 19 [deprecated = true];
 
   // Whether the custom tabs experiment feature is enabled.
-  bool enable_custom_tabs_experiment = 20;
+  // deprecated: exists in StartArcMiniInstanceRequest
+  bool enable_custom_tabs_experiment = 20 [deprecated = true];
 
   // Whether the keyboard shortcut helper integration feature is enabled.
   bool enable_keyboard_shortcut_helper_integration = 21;
 
   // Whether the notifications refresh is enabled.
-  bool enable_notifications_refresh = 22;
+  // deprecated: exists in StartArcMiniInstanceRequest
+  bool enable_notifications_refresh = 22 [deprecated = true];
 
   // Whether the tts caching feature is enabled.
-  bool enable_tts_caching = 23;
+  // deprecated: exists in StartArcMiniInstanceRequest
+  bool enable_tts_caching = 23 [deprecated = true];
 
   // Whether gmscore lmk protection is enabled.
   bool enable_gmscore_lmk_protection = 24;
@@ -422,7 +400,7 @@ message StartArcVmRequest {
   bool enable_broadcast_anr_prenotify = 25;
 
   // Size of logd config in kBytes, -1 if disabled
-  int32 logd_config_size = 26;
+  int32 logd_config_size = 26 [deprecated = true];
 
   // Whether virtio blk data is enabled
   bool enable_virtio_blk_data = 27;
@@ -431,13 +409,16 @@ message StartArcVmRequest {
   int32 vm_memory_psi_period = 28;
 
   // Whether media store maintenance is disabled
-  bool disable_media_store_maintenance = 29;
+  // deprecated: exists in StartArcMiniInstanceRequest
+  bool disable_media_store_maintenance = 29 [deprecated = true];
 
   // Whether Play auto install is generated
-  bool arc_generate_play_auto_install = 30;
+  // deprecated: exists in StartArcMiniInstanceRequest
+  bool arc_generate_play_auto_install = 30 [deprecated = true];
 
   // Whether download provider is disabled
-  bool disable_download_provider = 31;
+  // deprecated: exists in StartArcMiniInstanceRequest
+  bool disable_download_provider = 31 [deprecated = true];
 
   // Size of Guest Zram in bytes
   int32 guest_zram_size = 32;
@@ -452,6 +433,61 @@ message StartArcVmRequest {
 
   // List of parameters that are shared by ARCVM and container.
   arc.StartArcMiniInstanceRequest mini_instance_request = 34;
+
+  // Reclaim interval in milliseconds
+  // A value of 0 will disable the MGLRU reclaim feature
+  int32 mglru_reclaim_interval = 35;
+
+  // Swappiness value for MGLRU reclaim (0 - 200)
+  // 0 means only filecache will be used while 200 means only swap will be used
+  // any value in between will be a mix of both
+  // The lower the value, the higher the ratio of freeing filecache pages
+  // Implementation and a more detailed description can be found in
+  // src/third_party/kernel/v5.10-arcvm/mm/vmscan.c
+  int32 mglru_reclaim_swappiness = 36;
+
+  // Whether updating O4C (Optimized for Chromebook applications) list via A2C2
+  // (ARC Application Compatibility Configuration Delivery) is enabled (See
+  // go/a2c2 for project details.)
+  bool update_o4c_list_via_a2c2 = 37;
+
+  enum UsapProfileType {
+    // Default USAP profile suitable for all devices.
+    USAP_PROFILE_DEFAULT = 0;
+    // USAP profile suitable for 4G devices.
+    USAP_PROFILE_4G = 1;
+    // USAP profile suitable for 8G devices.
+    USAP_PROFILE_8G = 2;
+    // USAP profile suitable for 16G devices.
+    USAP_PROFILE_16G = 3;
+  }
+
+  // USAP Profile of the device
+  UsapProfileType usap_profile = 38;
+
+  enum BinaryTranslationType {
+    BINARY_TRANSLATION_TYPE_NONE = 0;
+    BINARY_TRANSLATION_TYPE_HOUDINI = 1;
+    BINARY_TRANSLATION_TYPE_NDK_TRANSLATION = 2;
+  }
+
+  // Type of binary translation used in natvie bridge experiment
+  BinaryTranslationType native_bridge_experiment = 39;
+
+  enum UreadaheadMode {
+    UREADAHEAD_MODE_READAHEAD = 0;
+    UREADAHEAD_MODE_GENERATE = 1;
+    UREADAHEAD_MODE_DISABLED = 2;
+  }
+
+  // Ureadahead mode used
+  UreadaheadMode ureadahead_mode = 40;
+
+  // Whether rw is enabled
+  bool enable_rw = 41;
+
+  // Controls whether WebView Zygote is lazily initialized in ARC.
+  bool enable_web_view_zygote_lazy_init = 42;
 }
 
 enum VmStatus {
@@ -1306,4 +1342,23 @@ message AddGroupPermissionMesaRequest {
 
   // The owner of the VM.
   string owner_id = 2;
+}
+
+message GetVmLaunchAllowedRequest {
+  // Request untrusted VM regardless of other arguments.
+  bool run_as_untrusted = 1;
+
+  // The VM disk image is considered trusted.
+  bool is_trusted_image = 2;
+
+  // The VM kernel is started with custom kernel parameters.
+  bool has_custom_kernel_params = 3;
+}
+
+message GetVmLaunchAllowedResponse {
+  // Whether the launch would be allowed.
+  bool allowed = 1;
+
+  // If not allowed, the reason why.
+  string reason = 2;
 }

@@ -29,6 +29,7 @@
 #include "quiche/quic/core/quic_error_codes.h"
 #include "quiche/quic/core/quic_packets.h"
 #include "quiche/quic/core/quic_stream.h"
+#include "quiche/quic/core/quic_stream_priority.h"
 #include "quiche/quic/core/quic_stream_sequencer.h"
 #include "quiche/quic/core/quic_types.h"
 #include "quiche/quic/core/web_transport_interface.h"
@@ -180,6 +181,10 @@ class QUIC_EXPORT_PRIVATE QuicSpdyStream
   // code to |status_code|.
   static bool ParseHeaderStatusCode(const spdy::Http2HeaderBlock& header,
                                     int* status_code);
+  // Returns true if status_value (associated with :status) contains a valid
+  // 3-digit status and parse the status code to |status_code|.
+  static bool ParseHeaderStatusCode(absl::string_view status_value,
+                                    int* status_code);
 
   // Returns true when all data from the peer has been read and consumed,
   // including the fin.
@@ -221,8 +226,8 @@ class QUIC_EXPORT_PRIVATE QuicSpdyStream
 
   QuicSpdySession* spdy_session() const { return spdy_session_; }
 
-  // Send PRIORITY_UPDATE frame and update |last_sent_urgency_| if
-  // |last_sent_urgency_| is different from current priority.
+  // Send PRIORITY_UPDATE frame and update |last_sent_priority_| if
+  // |last_sent_priority_| is different from current priority.
   void MaybeSendPriorityUpdateFrame() override;
 
   // Returns the WebTransport session owned by this stream, if one exists.
@@ -330,6 +335,11 @@ class QUIC_EXPORT_PRIVATE QuicSpdyStream
       spdy::Http2HeaderBlock header_block, bool fin,
       quiche::QuicheReferenceCountedPointer<QuicAckListenerInterface>
           ack_listener);
+
+  virtual bool CopyAndValidateTrailers(const QuicHeaderList& header_list,
+                                       bool expect_final_byte_offset,
+                                       size_t* final_byte_offset,
+                                       spdy::Http2HeaderBlock* trailers);
 
   Visitor* visitor() { return visitor_; }
 
@@ -461,9 +471,9 @@ class QUIC_EXPORT_PRIVATE QuicSpdyStream
   // Offset of unacked frame headers.
   QuicIntervalSet<QuicStreamOffset> unacked_frame_headers_offsets_;
 
-  // Urgency value sent in the last PRIORITY_UPDATE frame, or default urgency
-  // defined by the spec if no PRIORITY_UPDATE frame has been sent.
-  int last_sent_urgency_;
+  // Priority parameters sent in the last PRIORITY_UPDATE frame, or default
+  // values defined by RFC9218 if no PRIORITY_UPDATE frame has been sent.
+  QuicStreamPriority last_sent_priority_;
 
   // If this stream is a WebTransport extended CONNECT stream, contains the
   // WebTransport session associated with this stream.

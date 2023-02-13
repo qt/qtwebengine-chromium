@@ -3219,8 +3219,6 @@ static void find_next_key_frame(AV1_COMP *cpi, FIRSTPASS_STATS *this_frame) {
     rc->frames_to_key = kf_cfg->key_freq_max;
   }
 
-  rc->frames_to_fwd_kf = kf_cfg->fwd_kf_dist;
-
   if (cpi->ppi->lap_enabled) correct_frames_to_key(cpi);
 
   // If there is a max kf interval set by the user we must obey it.
@@ -3491,8 +3489,8 @@ static void setup_target_rate(AV1_COMP *cpi) {
   rc->base_frame_target = target_rate;
 }
 
-static void mark_flashes(FIRSTPASS_STATS *first_stats,
-                         FIRSTPASS_STATS *last_stats) {
+void av1_mark_flashes(FIRSTPASS_STATS *first_stats,
+                      FIRSTPASS_STATS *last_stats) {
   FIRSTPASS_STATS *this_stats = first_stats, *next_stats;
   while (this_stats < last_stats - 1) {
     next_stats = this_stats + 1;
@@ -3511,8 +3509,8 @@ static void mark_flashes(FIRSTPASS_STATS *first_stats,
 }
 
 // Estimate the noise variance of each frame from the first pass stats
-static void estimate_noise(FIRSTPASS_STATS *first_stats,
-                           FIRSTPASS_STATS *last_stats) {
+void av1_estimate_noise(FIRSTPASS_STATS *first_stats,
+                        FIRSTPASS_STATS *last_stats) {
   FIRSTPASS_STATS *this_stats, *next_stats;
   double C1, C2, C3, noise;
   for (this_stats = first_stats + 2; this_stats < last_stats; this_stats++) {
@@ -3600,8 +3598,8 @@ static void estimate_noise(FIRSTPASS_STATS *first_stats,
 }
 
 // Estimate correlation coefficient of each frame with its previous frame.
-static void estimate_coeff(FIRSTPASS_STATS *first_stats,
-                           FIRSTPASS_STATS *last_stats) {
+void av1_estimate_coeff(FIRSTPASS_STATS *first_stats,
+                        FIRSTPASS_STATS *last_stats) {
   FIRSTPASS_STATS *this_stats;
   for (this_stats = first_stats + 1; this_stats < last_stats; this_stats++) {
     const double C =
@@ -3727,8 +3725,15 @@ void av1_get_second_pass_params(AV1_COMP *cpi,
                                           oxcf->algo_cfg.arnr_max_frames / 2)
             : MAX_GF_LENGTH_LAP;
 
+    // Handle forward key frame when enabled.
+    if (oxcf->kf_cfg.fwd_kf_dist > 0)
+      max_gop_length = AOMMIN(rc->frames_to_fwd_kf + 1, max_gop_length);
+
     // Use the provided gop size in low delay setting
     if (oxcf->gf_cfg.lag_in_frames == 0) max_gop_length = rc->max_gf_interval;
+
+    // Limit the max gop length for the last gop in 1 pass setting.
+    max_gop_length = AOMMIN(max_gop_length, rc->frames_to_key);
 
     // Identify regions if needed.
     // TODO(bohanli): identify regions for all stats available.
@@ -3747,12 +3752,12 @@ void av1_get_second_pass_params(AV1_COMP *cpi,
       p_rc->frames_till_regions_update = rest_frames;
 
       if (cpi->ppi->lap_enabled) {
-        mark_flashes(twopass->stats_buf_ctx->stats_in_start,
-                     twopass->stats_buf_ctx->stats_in_end);
-        estimate_noise(twopass->stats_buf_ctx->stats_in_start,
-                       twopass->stats_buf_ctx->stats_in_end);
-        estimate_coeff(twopass->stats_buf_ctx->stats_in_start,
-                       twopass->stats_buf_ctx->stats_in_end);
+        av1_mark_flashes(twopass->stats_buf_ctx->stats_in_start,
+                         twopass->stats_buf_ctx->stats_in_end);
+        av1_estimate_noise(twopass->stats_buf_ctx->stats_in_start,
+                           twopass->stats_buf_ctx->stats_in_end);
+        av1_estimate_coeff(twopass->stats_buf_ctx->stats_in_start,
+                           twopass->stats_buf_ctx->stats_in_end);
         av1_identify_regions(cpi->twopass_frame.stats_in, rest_frames,
                              (rc->frames_since_key == 0), p_rc->regions,
                              &p_rc->num_regions);
@@ -3917,12 +3922,12 @@ void av1_init_second_pass(AV1_COMP *cpi) {
 
   if (!twopass->stats_buf_ctx->stats_in_end) return;
 
-  mark_flashes(twopass->stats_buf_ctx->stats_in_start,
-               twopass->stats_buf_ctx->stats_in_end);
-  estimate_noise(twopass->stats_buf_ctx->stats_in_start,
-                 twopass->stats_buf_ctx->stats_in_end);
-  estimate_coeff(twopass->stats_buf_ctx->stats_in_start,
-                 twopass->stats_buf_ctx->stats_in_end);
+  av1_mark_flashes(twopass->stats_buf_ctx->stats_in_start,
+                   twopass->stats_buf_ctx->stats_in_end);
+  av1_estimate_noise(twopass->stats_buf_ctx->stats_in_start,
+                     twopass->stats_buf_ctx->stats_in_end);
+  av1_estimate_coeff(twopass->stats_buf_ctx->stats_in_start,
+                     twopass->stats_buf_ctx->stats_in_end);
 
   stats = twopass->stats_buf_ctx->total_stats;
 

@@ -1,4 +1,4 @@
-load("//bazel:macros.bzl", "exports_files_legacy", "split_srcs_and_hdrs")
+load("//bazel:macros.bzl", "exports_files_legacy", "skia_filegroup", "split_srcs_and_hdrs")
 
 licenses(["notice"])
 
@@ -11,6 +11,7 @@ CORE_SKSLC_FILES = [
     "SkArenaAlloc.h",
     "SkBlockAllocator.cpp",
     "SkBlockAllocator.h",
+    "SkContainers.cpp",
     "SkCpu.cpp",
     "SkCpu.h",
     "SkData.cpp",
@@ -82,7 +83,6 @@ CORE_FILES = [
     "SkBlurMask.h",
     "SkBuffer.cpp",
     "SkBuffer.h",
-    "SkBuiltInCodeSnippetID.h",
     "SkCachedData.cpp",
     "SkCachedData.h",
     "SkCanvas.cpp",
@@ -244,6 +244,7 @@ CORE_FILES = [
     "SkPathMeasurePriv.h",
     "SkPathPriv.h",
     "SkPathRef.cpp",
+    "SkPathUtils.cpp",
     "SkPath_serial.cpp",
     "SkPicturePriv.h",
     "SkPixelRef.cpp",
@@ -286,7 +287,6 @@ CORE_FILES = [
     "SkRegion_path.cpp",
     "SkResourceCache.cpp",
     "SkResourceCache.h",
-    "SkRuntimeEffectDictionary.h",
     "SkRuntimeEffectPriv.h",
     "SkSafeMath.h",
     "SkSafeRange.h",
@@ -389,20 +389,9 @@ split_srcs_and_hdrs(
 
 # These files are only needed if SkSL is enabled (GPU backend or SkVM).
 SKSL_FILES = [
-    "SkKeyContext.cpp",
-    "SkKeyContext.h",
-    "SkKeyHelpers.cpp",
-    "SkKeyHelpers.h",
-    "SkPaintParamsKey.cpp",
-    "SkPaintParamsKey.h",
-    "SkPipelineData.cpp",
-    "SkPipelineData.h",
     "SkRuntimeEffect.cpp",
     "SkSLTypeShared.cpp",
     "SkSLTypeShared.h",
-    "SkShaderCodeDictionary.cpp",
-    "SkShaderCodeDictionary.h",
-    "SkUniform.h",
 ]
 
 split_srcs_and_hdrs(
@@ -410,7 +399,7 @@ split_srcs_and_hdrs(
     files = SKSL_FILES,
 )
 
-# SkPicture files are maintained as a separate filegroups for backward compatability
+# SkPicture files are maintained as a separate skia_filegroups for backward compatability
 # with GNI files. This allows the generation of skia_skpicture_sources GNI file list.
 SKPICTURE_FILES = [
     "SkBigPicture.cpp",
@@ -437,7 +426,7 @@ split_srcs_and_hdrs(
     files = SKPICTURE_FILES,
 )
 
-filegroup(
+skia_filegroup(
     name = "srcs",
     srcs = [
         ":core_skslc_srcs",
@@ -452,7 +441,7 @@ filegroup(
     visibility = ["//src:__pkg__"],
 )
 
-filegroup(
+skia_filegroup(
     name = "private_hdrs",
     srcs = [
         ":core_hdrs",

@@ -3,10 +3,12 @@
 # Copyright 2019 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
+
 """
 Helper to manage DEPS. Use this script to update node_modules instead of
 running npm install manually. To upgrade a dependency, change the version
-number in DEPS below and run this script.
+number in DEPS below and run this script, which can be done with `npm run
+install-deps` locally.
 """
 
 import os
@@ -49,18 +51,17 @@ DEPS = {
     "@types/istanbul-lib-source-maps": "4.0.1",
     "@types/istanbul-reports": "3.0.1",
     "@types/karma-chai-sinon": "0.1.16",
-    "@types/node": "17.0.8",
+    "@types/node": "18.11.9",
     "@types/marked": "4.0.1",
     "@types/mocha": "9.0.0",
     "@types/rimraf": "3.0.2",
     "@types/sinon": "10.0.6",
     "@types/webidl2": "23.13.6",
-    "@typescript-eslint/parser": "5.30.6",
-    "@typescript-eslint/eslint-plugin": "5.30.6",
+    "@typescript-eslint/parser": "5.44.0",
+    "@typescript-eslint/eslint-plugin": "5.44.0",
     "@web/rollup-plugin-import-meta-assets": "1.0.7",
     "chai": "4.3.4",
     "chokidar": "3.5.2",
-    "clean-css": "5.2.2",
     "convert-source-map": "1.8.0",
 
     # This should be match with esbuild in DEPS.
@@ -85,6 +86,7 @@ DEPS = {
     "license-checker": "25.0.1",
     "mocha": "9.1.3",
     "postcss": "8.4.5",
+    "cssnano": "5.1.14",
     "puppeteer": "14.0.0",
     "recast": "0.20.5",
     "rimraf": "3.0.2",
@@ -97,7 +99,7 @@ DEPS = {
     "stylelint-config-standard": "24.0.0",
     "svgo": "2.8.0",
     "terser": "5.10.0",
-    "typescript": "4.7.4",
+    "typescript": "4.9.3",
     "ws": "8.4.0",
     "yargs": "17.3.1",
     "glob": "7.1.7",

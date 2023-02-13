@@ -91,7 +91,6 @@ interface Node {
   enclosingNodeOrSelfWithClass(className: string, stayWithin?: Element): Element;
   getComponentRoot(): Document|DocumentFragment|null;
   getComponentSelection(): Selection|null;
-  hasSameShadowRoot(other: Node): boolean;
   hasSelection(): boolean;
   isAncestor(node: Node|null): boolean;
   isDescendant(node: Node|null): boolean;
@@ -101,13 +100,13 @@ interface Node {
   parentNodeOrShadowHost(): Node|null;
   setTextContentTruncatedIfNeeded(text: any, placeholder?: string): boolean;
   traverseNextNode(stayWithin?: Node): Node|null;
+  traversePreviousNode(stayWithin?: Node): Node|null;
   deepTextContent(): string
   window(): Window;
   childTextNodes(): Node[];
   __widget?: any;
 }
 
-declare function isEnterOrSpaceKey(event: Event): boolean;
 declare function onInvokeElement(element: Element, callback: (event: Event) => void): void;
 
 // The following types exist in Chrome but were removed for various reasons

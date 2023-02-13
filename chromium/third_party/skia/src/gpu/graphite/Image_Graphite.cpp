@@ -11,6 +11,7 @@
 #include "include/core/SkImageInfo.h"
 #include "include/gpu/graphite/BackendTexture.h"
 #include "include/gpu/graphite/Recorder.h"
+#include "src/gpu/RefCntedCallback.h"
 #include "src/gpu/graphite/Caps.h"
 #include "src/gpu/graphite/Log.h"
 #include "src/gpu/graphite/RecorderPriv.h"
@@ -39,26 +40,6 @@ Image::Image(TextureProxyView view,
 
 Image::~Image() {}
 
-bool Image::testingOnly_ReadPixels(Context* context,
-                                   Recorder* recorder,
-                                   const SkImageInfo& dstInfo,
-                                   void* dstPixels,
-                                   size_t dstRowBytes,
-                                   int srcX,
-                                   int srcY) {
-    return ReadPixelsHelper([recorder]() {
-                                recorder->priv().flushTrackedDevices();
-                            },
-                            context,
-                            recorder,
-                            fTextureProxyView.proxy(),
-                            dstInfo,
-                            dstPixels,
-                            dstRowBytes,
-                            srcX,
-                            srcY);
-}
-
 sk_sp<SkImage> Image::onMakeColorTypeAndColorSpace(SkColorType,
                                                    sk_sp<SkColorSpace>,
                                                    GrDirectContext*) const {
@@ -67,14 +48,6 @@ sk_sp<SkImage> Image::onMakeColorTypeAndColorSpace(SkColorType,
 
 sk_sp<SkImage> Image::onReinterpretColorSpace(sk_sp<SkColorSpace>) const {
     return nullptr;
-}
-
-void Image::onAsyncReadPixels(const SkImageInfo& info,
-                              SkIRect srcRect,
-                              ReadPixelsCallback callback,
-                              ReadPixelsContext context) const {
-    // TODO
-    callback(context, nullptr);
 }
 
 void Image::onAsyncRescaleAndReadPixels(const SkImageInfo& info,
@@ -147,6 +120,8 @@ bool validate_backend_texture(const Caps* caps,
 
 } // anonymous namespace
 
+using namespace skgpu::graphite;
+
 sk_sp<SkImage> SkImage::makeTextureImage(Recorder* recorder,
                                          RequiredImageProperties requiredProps) const {
     if (!recorder) {
@@ -163,6 +138,129 @@ sk_sp<SkImage> SkImage::makeTextureImage(Recorder* recorder,
         }
     }
     return as_IB(this)->onMakeTextureImage(recorder, requiredProps);
+}
+
+sk_sp<TextureProxy> Image::MakePromiseImageLazyProxy(
+        SkISize dimensions,
+        TextureInfo textureInfo,
+        Volatile isVolatile,
+        GraphitePromiseImageFulfillProc fulfillProc,
+        sk_sp<skgpu::RefCntedCallback> releaseHelper,
+        GraphitePromiseTextureReleaseProc textureReleaseProc) {
+    SkASSERT(!dimensions.isEmpty());
+    SkASSERT(releaseHelper);
+
+    if (!fulfillProc) {
+        return nullptr;
+    }
+
+    /**
+     * This class is the lazy instantiation callback for promise images. It manages calling the
+     * client's Fulfill, ImageRelease, and TextureRelease procs.
+     */
+    class PromiseLazyInstantiateCallback {
+    public:
+        PromiseLazyInstantiateCallback(GraphitePromiseImageFulfillProc fulfillProc,
+                                       sk_sp<skgpu::RefCntedCallback> releaseHelper,
+                                       GraphitePromiseTextureReleaseProc textureReleaseProc)
+                : fFulfillProc(fulfillProc)
+                , fReleaseHelper(std::move(releaseHelper))
+                , fTextureReleaseProc(textureReleaseProc) {
+        }
+        PromiseLazyInstantiateCallback(PromiseLazyInstantiateCallback&&) = default;
+        PromiseLazyInstantiateCallback(const PromiseLazyInstantiateCallback&) {
+            // Because we get wrapped in std::function we must be copyable. But we should never
+            // be copied.
+            SkASSERT(false);
+        }
+        PromiseLazyInstantiateCallback& operator=(PromiseLazyInstantiateCallback&&) = default;
+        PromiseLazyInstantiateCallback& operator=(const PromiseLazyInstantiateCallback&) {
+            SkASSERT(false);
+            return *this;
+        }
+
+        sk_sp<Texture> operator()(ResourceProvider* resourceProvider) {
+
+            auto [ backendTexture, textureReleaseCtx ] = fFulfillProc(fReleaseHelper->context());
+            if (!backendTexture.isValid()) {
+                SKGPU_LOG_W("FulFill Proc failed");
+                return nullptr;
+            }
+
+            sk_sp<RefCntedCallback> textureReleaseCB = RefCntedCallback::Make(fTextureReleaseProc,
+                                                                              textureReleaseCtx);
+
+            sk_sp<Texture> texture = resourceProvider->createWrappedTexture(backendTexture);
+            if (!texture) {
+                SKGPU_LOG_W("Texture creation failed");
+                return nullptr;
+            }
+
+            texture->setReleaseCallback(std::move(textureReleaseCB));
+            return texture;
+        }
+
+    private:
+        GraphitePromiseImageFulfillProc fFulfillProc;
+        sk_sp<skgpu::RefCntedCallback> fReleaseHelper;
+        GraphitePromiseTextureReleaseProc fTextureReleaseProc;
+
+    } callback(fulfillProc, std::move(releaseHelper), textureReleaseProc);
+
+    return TextureProxy::MakeLazy(dimensions,
+                                  textureInfo,
+                                  SkBudgeted::kNo,     // This is destined for a user's SkImage
+                                  isVolatile,
+                                  std::move(callback));
+}
+
+sk_sp<SkImage> SkImage::MakeGraphitePromiseTexture(
+        Recorder* recorder,
+        SkISize dimensions,
+        const TextureInfo& textureInfo,
+        const SkColorInfo& colorInfo,
+        Volatile isVolatile,
+        GraphitePromiseImageFulfillProc fulfillProc,
+        GraphitePromiseImageReleaseProc imageReleaseProc,
+        GraphitePromiseTextureReleaseProc textureReleaseProc,
+        GraphitePromiseImageContext imageContext) {
+
+    // Our contract is that we will always call the _image_ release proc even on failure.
+    // We use the helper to convey the imageContext, so we need to ensure Make doesn't fail.
+    imageReleaseProc = imageReleaseProc ? imageReleaseProc : [](void*) {};
+    auto releaseHelper = skgpu::RefCntedCallback::Make(imageReleaseProc, imageContext);
+
+    if (!recorder) {
+        SKGPU_LOG_W("Null Recorder");
+        return nullptr;
+    }
+
+    const Caps* caps = recorder->priv().caps();
+
+    SkImageInfo info = SkImageInfo::Make(dimensions, colorInfo);
+    if (!SkImageInfoIsValid(info)) {
+        SKGPU_LOG_W("Invalid SkImageInfo");
+        return nullptr;
+    }
+
+    if (!caps->areColorTypeAndTextureInfoCompatible(colorInfo.colorType(), textureInfo)) {
+        SKGPU_LOG_W("Incompatible SkColorType and TextureInfo");
+        return nullptr;
+    }
+
+    sk_sp<TextureProxy> proxy = Image::MakePromiseImageLazyProxy(dimensions,
+                                                                 textureInfo,
+                                                                 isVolatile,
+                                                                 fulfillProc,
+                                                                 std::move(releaseHelper),
+                                                                 textureReleaseProc);
+    if (!proxy) {
+        return nullptr;
+    }
+
+    skgpu::Swizzle swizzle = caps->getReadSwizzle(colorInfo.colorType(), textureInfo);
+    TextureProxyView view(std::move(proxy), swizzle);
+    return sk_make_sp<Image>(view, colorInfo);
 }
 
 sk_sp<SkImage> SkImage::MakeGraphiteFromBackendTexture(Recorder* recorder,

@@ -256,7 +256,8 @@ def main(input_file):
         elif '#include <xnnpack/assembly.h>' in line:
           prologue.append(f'#include <cassert>')
           prologue.append(f'#include <cstddef>')
-          prologue.append(f'#include <limits>')
+          if minmax:
+            prologue.append(f'#include <limits>')
           prologue.append('')
           prologue.append(f'#include <xnnpack/{arch}-assembler.h>')
           prologue.append('#include <xnnpack/allocator.h>')
@@ -268,8 +269,8 @@ def main(input_file):
           prologue.append('namespace xnnpack {')
           prologue.append(f'namespace {arch} {{')
           prologue.append('namespace {')
-          prologue.append('class Generator : public Assembler {')
-          prologue.append('  using Assembler::Assembler;')
+          prologue.append('class Generator : public MacroAssembler {')
+          prologue.append('  using MacroAssembler::MacroAssembler;')
           prologue.append(' public:')
           params = 'float min, float max' if minmax else 'void* params'
           prefetch = 'bool prefetch, ' if prfm else ''

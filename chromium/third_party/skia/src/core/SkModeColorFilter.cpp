@@ -19,6 +19,11 @@
 #include "src/core/SkValidationUtils.h"
 #include "src/core/SkWriteBuffer.h"
 
+#ifdef SK_GRAPHITE_ENABLED
+#include "src/gpu/graphite/KeyHelpers.h"
+#include "src/gpu/graphite/PaintParamsKey.h"
+#endif
+
 template <SkAlphaType kDstAT = kPremul_SkAlphaType>
 static SkRGBA4f<kDstAT> map_color(const SkColor4f& c, SkColorSpace* src, SkColorSpace* dst) {
     SkRGBA4f<kDstAT> color = {c.fR, c.fG, c.fB, c.fA};
@@ -41,10 +46,10 @@ public:
                                    const GrColorInfo&,
                                    const SkSurfaceProps&) const override;
 #endif
-#ifdef SK_ENABLE_SKSL
-    void addToKey(const SkKeyContext&,
-                  SkPaintParamsKeyBuilder*,
-                  SkPipelineDataGatherer*) const override;
+#ifdef SK_GRAPHITE_ENABLED
+    void addToKey(const skgpu::graphite::KeyContext&,
+                  skgpu::graphite::PaintParamsKeyBuilder*,
+                  skgpu::graphite::PipelineDataGatherer*) const override;
 #endif
 
 private:
@@ -170,14 +175,12 @@ GrFPResult SkModeColorFilter::asFragmentProcessor(std::unique_ptr<GrFragmentProc
 
 #endif
 
-#ifdef SK_ENABLE_SKSL
+#ifdef SK_GRAPHITE_ENABLED
+void SkModeColorFilter::addToKey(const skgpu::graphite::KeyContext& keyContext,
+                                 skgpu::graphite::PaintParamsKeyBuilder* builder,
+                                 skgpu::graphite::PipelineDataGatherer* gatherer) const {
+    using namespace skgpu::graphite;
 
-#include "src/core/SkKeyHelpers.h"
-#include "src/core/SkPaintParamsKey.h"
-
-void SkModeColorFilter::addToKey(const SkKeyContext& keyContext,
-                                 SkPaintParamsKeyBuilder* builder,
-                                 SkPipelineDataGatherer* gatherer) const {
     // TODO: Take into account the render target color space once graphite has color management.
     SkPMColor4f color = map_color(fColor, sk_srgb_singleton(), nullptr);
     BlendColorFilterBlock::BlendColorFilterData data(fMode, color);

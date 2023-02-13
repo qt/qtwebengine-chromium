@@ -443,6 +443,11 @@ class GoodRepo(object):
             '-DCMAKE_INSTALL_PREFIX=' + self.install_dir
         ]
 
+        # Allow users to pass in arbitrary cache variables
+        for cmake_var in self._args.cmake_var:
+            pieces = cmake_var.split('=', 1)
+            cmake_cmd.append('-D{}={}'.format(pieces[0], pieces[1]))
+
         # For each repo this repo depends on, generate a CMake variable
         # definitions for "...INSTALL_DIR" that points to that dependent
         # repo's install dir.
@@ -495,7 +500,7 @@ class GoodRepo(object):
             cmake_cmd.append('--config')
             cmake_cmd.append(CONFIG_MAP[self._args.config])
 
-        # Speed up the build.
+        # TODO: CMake 3.12 introduced gained --parallel [<jobs>] and -j [<jobs>] options
         if platform.system() == 'Linux' or platform.system() == 'Darwin':
             cmake_cmd.append('--')
             num_make_jobs = multiprocessing.cpu_count()
@@ -506,7 +511,10 @@ class GoodRepo(object):
                 except ValueError:
                     print('warning: environment variable MAKE_JOBS has non-numeric value "{}".  '
                           'Using {} (CPU count) instead.'.format(env_make_jobs, num_make_jobs))
-            cmake_cmd.append('-j{}'.format(num_make_jobs))
+            
+            # Xcode doesn't have a '-j' flag, Xcode build performs parallel builds by default.
+            if self._args.generator != "Xcode":
+                cmake_cmd.append('-j{}'.format(num_make_jobs))
         if platform.system() == 'Windows' and self._args.generator != "Ninja":
             cmake_cmd.append('--')
             cmake_cmd.append('/maxcpucount')
@@ -682,6 +690,13 @@ def main():
         type=lambda a: set(a.lower().split(',')),
         help="Comma-separated list of 'optional' resources that may be skipped. Only 'tests' is currently supported as 'optional'",
         default=set())
+    parser.add_argument(
+        '--cmake_var',
+        dest='cmake_var',
+        action='append',
+        metavar='VAR[=VALUE]',
+        help="Add CMake command line option -D'VAR'='VALUE' to the CMake generation command line; may be used multiple times",
+        default=[])
 
     args = parser.parse_args()
     save_cwd = os.getcwd()

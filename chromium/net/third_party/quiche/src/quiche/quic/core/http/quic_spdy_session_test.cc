@@ -16,7 +16,6 @@
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
 #include "quiche/quic/core/crypto/crypto_protocol.h"
-#include "quiche/quic/core/crypto/null_encrypter.h"
 #include "quiche/quic/core/frames/quic_stream_frame.h"
 #include "quiche/quic/core/frames/quic_streams_blocked_frame.h"
 #include "quiche/quic/core/http/http_constants.h"
@@ -30,6 +29,7 @@
 #include "quiche/quic/core/quic_error_codes.h"
 #include "quiche/quic/core/quic_packets.h"
 #include "quiche/quic/core/quic_stream.h"
+#include "quiche/quic/core/quic_stream_priority.h"
 #include "quiche/quic/core/quic_types.h"
 #include "quiche/quic/core/quic_utils.h"
 #include "quiche/quic/core/quic_versions.h"
@@ -92,7 +92,7 @@ class TestCryptoStream : public QuicCryptoStream, public QuicCryptoHandshaker {
     encryption_established_ = true;
     session()->connection()->SetEncrypter(
         ENCRYPTION_ZERO_RTT,
-        std::make_unique<NullEncrypter>(session()->perspective()));
+        std::make_unique<TaggingEncrypter>(ENCRYPTION_ZERO_RTT));
   }
 
   void OnHandshakeMessage(const CryptoHandshakeMessage& /*message*/) override {
@@ -128,7 +128,7 @@ class TestCryptoStream : public QuicCryptoStream, public QuicCryptoHandshaker {
     EXPECT_THAT(error, IsQuicNoError());
     session()->OnNewEncryptionKeyAvailable(
         ENCRYPTION_FORWARD_SECURE,
-        std::make_unique<NullEncrypter>(session()->perspective()));
+        std::make_unique<TaggingEncrypter>(ENCRYPTION_FORWARD_SECURE));
     session()->OnConfigNegotiated();
     if (session()->connection()->version().handshake_protocol ==
         PROTOCOL_TLS1_3) {
@@ -271,7 +271,7 @@ class TestSession : public QuicSpdySession {
         writev_consumes_all_data_(false) {
     this->connection()->SetEncrypter(
         ENCRYPTION_FORWARD_SECURE,
-        std::make_unique<NullEncrypter>(connection->perspective()));
+        std::make_unique<TaggingEncrypter>(ENCRYPTION_FORWARD_SECURE));
     if (this->connection()->version().SupportsAntiAmplificationLimit()) {
       QuicConnectionPeer::SetAddressValidated(this->connection());
     }
@@ -898,7 +898,8 @@ TEST_P(QuicSpdySessionTestServer, TestBatchedWrites) {
   // Now let stream 4 do the 2nd of its 3 writes, but add a block for a high
   // priority stream 6.  4 should be preempted.  6 will write but *not* block so
   // will cede back to 4.
-  stream6->SetPriority(spdy::SpdyStreamPrecedence(kV3HighestPriority));
+  stream6->SetPriority(QuicStreamPriority{
+      kV3HighestPriority, QuicStreamPriority::kDefaultIncremental});
   EXPECT_CALL(*stream4, OnCanWrite())
       .WillOnce(Invoke([this, stream4, stream6]() {
         session_.SendLargeFakeData(stream4, 6000);
@@ -2175,8 +2176,10 @@ TEST_P(QuicSpdySessionTestServer, OnPriorityFrame) {
   TestStream* stream = session_.CreateIncomingStream(stream_id);
   session_.OnPriorityFrame(stream_id,
                            spdy::SpdyStreamPrecedence(kV3HighestPriority));
-  EXPECT_EQ(spdy::SpdyStreamPrecedence(kV3HighestPriority),
-            stream->precedence());
+
+  EXPECT_EQ((QuicStreamPriority{kV3HighestPriority,
+                                QuicStreamPriority::kDefaultIncremental}),
+            stream->priority());
 }
 
 TEST_P(QuicSpdySessionTestServer, OnPriorityUpdateFrame) {
@@ -2211,10 +2214,7 @@ TEST_P(QuicSpdySessionTestServer, OnPriorityUpdateFrame) {
 
   // PRIORITY_UPDATE frame for first request stream.
   const QuicStreamId stream_id1 = GetNthClientInitiatedBidirectionalId(0);
-  struct PriorityUpdateFrame priority_update1;
-  priority_update1.prioritized_element_type = REQUEST_STREAM;
-  priority_update1.prioritized_element_id = stream_id1;
-  priority_update1.priority_field_value = "u=2";
+  PriorityUpdateFrame priority_update1{stream_id1, "u=2"};
   std::string serialized_priority_update1 =
       HttpEncoder::SerializePriorityUpdateFrame(priority_update1);
   QuicStreamFrame data3(receive_control_stream_id,
@@ -2223,18 +2223,17 @@ TEST_P(QuicSpdySessionTestServer, OnPriorityUpdateFrame) {
 
   // PRIORITY_UPDATE frame arrives after stream creation.
   TestStream* stream1 = session_.CreateIncomingStream(stream_id1);
-  EXPECT_EQ(QuicStream::kDefaultUrgency,
-            stream1->precedence().spdy3_priority());
+  EXPECT_EQ((QuicStreamPriority{QuicStreamPriority::kDefaultUrgency,
+                                QuicStreamPriority::kDefaultIncremental}),
+            stream1->priority());
   EXPECT_CALL(debug_visitor, OnPriorityUpdateFrameReceived(priority_update1));
   session_.OnStreamFrame(data3);
-  EXPECT_EQ(2u, stream1->precedence().spdy3_priority());
+  EXPECT_EQ((QuicStreamPriority{2u, QuicStreamPriority::kDefaultIncremental}),
+            stream1->priority());
 
   // PRIORITY_UPDATE frame for second request stream.
   const QuicStreamId stream_id2 = GetNthClientInitiatedBidirectionalId(1);
-  struct PriorityUpdateFrame priority_update2;
-  priority_update2.prioritized_element_type = REQUEST_STREAM;
-  priority_update2.prioritized_element_id = stream_id2;
-  priority_update2.priority_field_value = "u=2";
+  PriorityUpdateFrame priority_update2{stream_id2, "u=2"};
   std::string serialized_priority_update2 =
       HttpEncoder::SerializePriorityUpdateFrame(priority_update2);
   QuicStreamFrame stream_frame3(receive_control_stream_id,
@@ -2247,7 +2246,110 @@ TEST_P(QuicSpdySessionTestServer, OnPriorityUpdateFrame) {
   session_.OnStreamFrame(stream_frame3);
   // Priority is applied upon stream construction.
   TestStream* stream2 = session_.CreateIncomingStream(stream_id2);
-  EXPECT_EQ(2u, stream2->precedence().spdy3_priority());
+  EXPECT_EQ((QuicStreamPriority{2u, QuicStreamPriority::kDefaultIncremental}),
+            stream2->priority());
+}
+
+TEST_P(QuicSpdySessionTestServer, OnInvalidPriorityUpdateFrame) {
+  if (!VersionUsesHttp3(transport_version())) {
+    return;
+  }
+
+  StrictMock<MockHttp3DebugVisitor> debug_visitor;
+  session_.set_debug_visitor(&debug_visitor);
+
+  // Create control stream.
+  QuicStreamId receive_control_stream_id =
+      GetNthClientInitiatedUnidirectionalStreamId(transport_version(), 3);
+  char type[] = {kControlStream};
+  absl::string_view stream_type(type, 1);
+  QuicStreamOffset offset = 0;
+  QuicStreamFrame data1(receive_control_stream_id, false, offset, stream_type);
+  offset += stream_type.length();
+  EXPECT_CALL(debug_visitor,
+              OnPeerControlStreamCreated(receive_control_stream_id));
+  session_.OnStreamFrame(data1);
+  EXPECT_EQ(receive_control_stream_id,
+            QuicSpdySessionPeer::GetReceiveControlStream(&session_)->id());
+
+  // Send SETTINGS frame.
+  std::string serialized_settings = HttpEncoder::SerializeSettingsFrame({});
+  QuicStreamFrame data2(receive_control_stream_id, false, offset,
+                        serialized_settings);
+  offset += serialized_settings.length();
+  EXPECT_CALL(debug_visitor, OnSettingsFrameReceived(_));
+  session_.OnStreamFrame(data2);
+
+  // PRIORITY_UPDATE frame with Priority Field Value that is not valid
+  // Structured Headers.
+  const QuicStreamId stream_id = GetNthClientInitiatedBidirectionalId(0);
+  PriorityUpdateFrame priority_update{stream_id, "00"};
+
+  EXPECT_CALL(debug_visitor, OnPriorityUpdateFrameReceived(priority_update));
+  if (GetQuicReloadableFlag(quic_priority_update_structured_headers_parser)) {
+    EXPECT_CALL(*connection_,
+                CloseConnection(QUIC_INVALID_PRIORITY_UPDATE,
+                                "Invalid PRIORITY_UPDATE frame payload.", _));
+  } else {
+    EXPECT_CALL(*connection_, CloseConnection(_, _, _)).Times(0);
+  }
+
+  std::string serialized_priority_update =
+      HttpEncoder::SerializePriorityUpdateFrame(priority_update);
+  QuicStreamFrame data3(receive_control_stream_id,
+                        /* fin = */ false, offset, serialized_priority_update);
+  session_.OnStreamFrame(data3);
+}
+
+TEST_P(QuicSpdySessionTestServer, OnPriorityUpdateFrameOutOfBoundsUrgency) {
+  if (!VersionUsesHttp3(transport_version())) {
+    return;
+  }
+
+  StrictMock<MockHttp3DebugVisitor> debug_visitor;
+  session_.set_debug_visitor(&debug_visitor);
+
+  // Create control stream.
+  QuicStreamId receive_control_stream_id =
+      GetNthClientInitiatedUnidirectionalStreamId(transport_version(), 3);
+  char type[] = {kControlStream};
+  absl::string_view stream_type(type, 1);
+  QuicStreamOffset offset = 0;
+  QuicStreamFrame data1(receive_control_stream_id, false, offset, stream_type);
+  offset += stream_type.length();
+  EXPECT_CALL(debug_visitor,
+              OnPeerControlStreamCreated(receive_control_stream_id));
+  session_.OnStreamFrame(data1);
+  EXPECT_EQ(receive_control_stream_id,
+            QuicSpdySessionPeer::GetReceiveControlStream(&session_)->id());
+
+  // Send SETTINGS frame.
+  std::string serialized_settings = HttpEncoder::SerializeSettingsFrame({});
+  QuicStreamFrame data2(receive_control_stream_id, false, offset,
+                        serialized_settings);
+  offset += serialized_settings.length();
+  EXPECT_CALL(debug_visitor, OnSettingsFrameReceived(_));
+  session_.OnStreamFrame(data2);
+
+  // PRIORITY_UPDATE frame with urgency not in [0,7].
+  const QuicStreamId stream_id = GetNthClientInitiatedBidirectionalId(0);
+  PriorityUpdateFrame priority_update{stream_id, "u=9"};
+
+  EXPECT_CALL(debug_visitor, OnPriorityUpdateFrameReceived(priority_update));
+  if (GetQuicReloadableFlag(quic_priority_update_structured_headers_parser)) {
+    EXPECT_CALL(*connection_, CloseConnection(_, _, _)).Times(0);
+  } else {
+    EXPECT_CALL(*connection_,
+                CloseConnection(
+                    QUIC_INVALID_PRIORITY_UPDATE,
+                    "Invalid value for PRIORITY_UPDATE urgency parameter.", _));
+  }
+
+  std::string serialized_priority_update =
+      HttpEncoder::SerializePriorityUpdateFrame(priority_update);
+  QuicStreamFrame data3(receive_control_stream_id,
+                        /* fin = */ false, offset, serialized_priority_update);
+  session_.OnStreamFrame(data3);
 }
 
 TEST_P(QuicSpdySessionTestServer, SimplePendingStreamType) {
@@ -3370,12 +3472,12 @@ void QuicSpdySessionTestBase::TestHttpDatagramSetting(
     case HttpDatagramSupport::kDraft04:
       settings.values[SETTINGS_H3_DATAGRAM_DRAFT04] = 1;
       break;
-    case HttpDatagramSupport::kDraft09:
-      settings.values[SETTINGS_H3_DATAGRAM_DRAFT09] = 1;
+    case HttpDatagramSupport::kRfc:
+      settings.values[SETTINGS_H3_DATAGRAM] = 1;
       break;
-    case HttpDatagramSupport::kDraft04And09:
+    case HttpDatagramSupport::kRfcAndDraft04:
+      settings.values[SETTINGS_H3_DATAGRAM] = 1;
       settings.values[SETTINGS_H3_DATAGRAM_DRAFT04] = 1;
-      settings.values[SETTINGS_H3_DATAGRAM_DRAFT09] = 1;
       break;
   }
   std::string data = std::string(1, kControlStream) +
@@ -3403,7 +3505,7 @@ TEST_P(QuicSpdySessionTestClient, HttpDatagramSettingLocal04Remote04) {
 TEST_P(QuicSpdySessionTestClient, HttpDatagramSettingLocal04Remote09) {
   TestHttpDatagramSetting(
       /*local_support=*/HttpDatagramSupport::kDraft04,
-      /*remote_support=*/HttpDatagramSupport::kDraft09,
+      /*remote_support=*/HttpDatagramSupport::kRfc,
       /*expected_support=*/HttpDatagramSupport::kNone,
       /*expected_datagram_supported=*/false);
 }
@@ -3411,14 +3513,14 @@ TEST_P(QuicSpdySessionTestClient, HttpDatagramSettingLocal04Remote09) {
 TEST_P(QuicSpdySessionTestClient, HttpDatagramSettingLocal04Remote04And09) {
   TestHttpDatagramSetting(
       /*local_support=*/HttpDatagramSupport::kDraft04,
-      /*remote_support=*/HttpDatagramSupport::kDraft04And09,
+      /*remote_support=*/HttpDatagramSupport::kRfcAndDraft04,
       /*expected_support=*/HttpDatagramSupport::kDraft04,
       /*expected_datagram_supported=*/true);
 }
 
 TEST_P(QuicSpdySessionTestClient, HttpDatagramSettingLocal09Remote04) {
   TestHttpDatagramSetting(
-      /*local_support=*/HttpDatagramSupport::kDraft09,
+      /*local_support=*/HttpDatagramSupport::kRfc,
       /*remote_support=*/HttpDatagramSupport::kDraft04,
       /*expected_support=*/HttpDatagramSupport::kNone,
       /*expected_datagram_supported=*/false);
@@ -3426,23 +3528,23 @@ TEST_P(QuicSpdySessionTestClient, HttpDatagramSettingLocal09Remote04) {
 
 TEST_P(QuicSpdySessionTestClient, HttpDatagramSettingLocal09Remote09) {
   TestHttpDatagramSetting(
-      /*local_support=*/HttpDatagramSupport::kDraft09,
-      /*remote_support=*/HttpDatagramSupport::kDraft09,
-      /*expected_support=*/HttpDatagramSupport::kDraft09,
+      /*local_support=*/HttpDatagramSupport::kRfc,
+      /*remote_support=*/HttpDatagramSupport::kRfc,
+      /*expected_support=*/HttpDatagramSupport::kRfc,
       /*expected_datagram_supported=*/true);
 }
 
 TEST_P(QuicSpdySessionTestClient, HttpDatagramSettingLocal09Remote04And09) {
   TestHttpDatagramSetting(
-      /*local_support=*/HttpDatagramSupport::kDraft09,
-      /*remote_support=*/HttpDatagramSupport::kDraft04And09,
-      /*expected_support=*/HttpDatagramSupport::kDraft09,
+      /*local_support=*/HttpDatagramSupport::kRfc,
+      /*remote_support=*/HttpDatagramSupport::kRfcAndDraft04,
+      /*expected_support=*/HttpDatagramSupport::kRfc,
       /*expected_datagram_supported=*/true);
 }
 
 TEST_P(QuicSpdySessionTestClient, HttpDatagramSettingLocal04And09Remote04) {
   TestHttpDatagramSetting(
-      /*local_support=*/HttpDatagramSupport::kDraft04And09,
+      /*local_support=*/HttpDatagramSupport::kRfcAndDraft04,
       /*remote_support=*/HttpDatagramSupport::kDraft04,
       /*expected_support=*/HttpDatagramSupport::kDraft04,
       /*expected_datagram_supported=*/true);
@@ -3450,18 +3552,18 @@ TEST_P(QuicSpdySessionTestClient, HttpDatagramSettingLocal04And09Remote04) {
 
 TEST_P(QuicSpdySessionTestClient, HttpDatagramSettingLocal04And09Remote09) {
   TestHttpDatagramSetting(
-      /*local_support=*/HttpDatagramSupport::kDraft04And09,
-      /*remote_support=*/HttpDatagramSupport::kDraft09,
-      /*expected_support=*/HttpDatagramSupport::kDraft09,
+      /*local_support=*/HttpDatagramSupport::kRfcAndDraft04,
+      /*remote_support=*/HttpDatagramSupport::kRfc,
+      /*expected_support=*/HttpDatagramSupport::kRfc,
       /*expected_datagram_supported=*/true);
 }
 
 TEST_P(QuicSpdySessionTestClient,
        HttpDatagramSettingLocal04And09Remote04And09) {
   TestHttpDatagramSetting(
-      /*local_support=*/HttpDatagramSupport::kDraft04And09,
-      /*remote_support=*/HttpDatagramSupport::kDraft04And09,
-      /*expected_support=*/HttpDatagramSupport::kDraft09,
+      /*local_support=*/HttpDatagramSupport::kRfcAndDraft04,
+      /*remote_support=*/HttpDatagramSupport::kRfcAndDraft04,
+      /*expected_support=*/HttpDatagramSupport::kRfc,
       /*expected_datagram_supported=*/true);
 }
 TEST_P(QuicSpdySessionTestClient, WebTransportSetting) {

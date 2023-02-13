@@ -22,6 +22,11 @@
 
 namespace dawn::native::metal {
 
+struct MTLSharedEventAndSignalValue {
+    NSPRef<id> sharedEvent;
+    uint64_t signaledValue;
+};
+
 // This class wraps a MTLCommandBuffer and tracks which Metal encoder is open.
 // Only one encoder may be open at a time.
 class CommandRecordingContext : NonMovable {
@@ -30,6 +35,8 @@ class CommandRecordingContext : NonMovable {
     ~CommandRecordingContext();
 
     id<MTLCommandBuffer> GetCommands();
+    void SetNeedsSubmit();
+    bool NeedsSubmit() const;
     void MarkUsed();
     bool WasUsed() const;
 
@@ -59,6 +66,7 @@ class CommandRecordingContext : NonMovable {
     NSPRef<id<MTLComputeCommandEncoder>> mCompute;
     NSPRef<id<MTLRenderCommandEncoder>> mRender;
     bool mInEncoder = false;
+    bool mNeedsSubmit = false;
     bool mUsed = false;
 };
 

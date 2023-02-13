@@ -9,6 +9,7 @@
 #define SKSL_FUNCTIONDECLARATION
 
 #include "include/core/SkTypes.h"
+#include "include/private/SkSLIRNode.h"
 #include "include/private/SkSLSymbol.h"
 #include "include/private/SkTArray.h"
 #include "src/sksl/SkSLIntrinsicList.h"
@@ -35,7 +36,7 @@ struct Modifiers;
  */
 class FunctionDeclaration final : public Symbol {
 public:
-    inline static constexpr Kind kSymbolKind = Kind::kFunctionDeclaration;
+    inline static constexpr Kind kIRNodeKind = Kind::kFunctionDeclaration;
 
     FunctionDeclaration(Position pos,
                         const Modifiers* modifiers,

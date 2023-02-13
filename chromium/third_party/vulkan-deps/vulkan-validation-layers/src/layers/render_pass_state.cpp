@@ -26,8 +26,6 @@
  * Author: Jeremy Gebben <jeremyg@lunarg.com>
  */
 
-#include <bitset>
-
 #include "render_pass_state.h"
 #include "convert_to_renderpass2.h"
 #include "image_state.h"
@@ -110,13 +108,12 @@ static void RecordRenderPassDAG(const VkRenderPassCreateInfo2 *pCreateInfo, REND
         if (subpass_dep.barrier_from_external.size() == 0) {
             // Add implicit from barrier if they're aren't any
             subpass_dep.implicit_barrier_from_external =
-                layer_data::make_unique<VkSubpassDependency2>(ImplicitDependencyFromExternal(pass));
+                std::make_unique<VkSubpassDependency2>(ImplicitDependencyFromExternal(pass));
             subpass_dep.barrier_from_external.emplace_back(subpass_dep.implicit_barrier_from_external.get());
         }
         if (subpass_dep.barrier_to_external.size() == 0) {
             // Add implicit to barrier  if they're aren't any
-            subpass_dep.implicit_barrier_to_external =
-                layer_data::make_unique<VkSubpassDependency2>(ImplicitDependencyToExternal(pass));
+            subpass_dep.implicit_barrier_to_external = std::make_unique<VkSubpassDependency2>(ImplicitDependencyToExternal(pass));
             subpass_dep.barrier_to_external.emplace_back(subpass_dep.implicit_barrier_to_external.get());
         }
     }
@@ -335,19 +332,13 @@ uint32_t RENDER_PASS_STATE::GetDynamicRenderingViewMask() const {
 
 uint32_t RENDER_PASS_STATE::GetViewMaskBits(uint32_t subpass) const {
     if (use_dynamic_rendering_inherited) {
-        constexpr int num_bits = std::numeric_limits<decltype(inheritance_rendering_info.viewMask)>::digits;
-        std::bitset<num_bits> view_bits(inheritance_rendering_info.viewMask);
-        return static_cast<uint32_t>(view_bits.count());
+        return GetBitSetCount(inheritance_rendering_info.viewMask);
     } else if (use_dynamic_rendering) {
-        constexpr int num_bits = std::numeric_limits<decltype(dynamic_rendering_begin_rendering_info.viewMask)>::digits;
-        std::bitset<num_bits> view_bits(dynamic_rendering_begin_rendering_info.viewMask);
-        return static_cast<uint32_t>(view_bits.count());
+        return GetBitSetCount(dynamic_rendering_begin_rendering_info.viewMask);
     } else {
         const auto *subpass_desc = &createInfo.pSubpasses[subpass];
         if (subpass_desc) {
-            constexpr int num_bits = std::numeric_limits<decltype(subpass_desc->viewMask)>::digits;
-            std::bitset<num_bits> view_bits(subpass_desc->viewMask);
-            return static_cast<uint32_t>(view_bits.count());
+            return GetBitSetCount(subpass_desc->viewMask);
         }
     }
     return 0;

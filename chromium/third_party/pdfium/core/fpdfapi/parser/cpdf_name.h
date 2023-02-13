@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2016 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -39,6 +39,10 @@ inline CPDF_Name* ToName(CPDF_Object* obj) {
 
 inline const CPDF_Name* ToName(const CPDF_Object* obj) {
   return obj ? obj->AsName() : nullptr;
+}
+
+inline RetainPtr<const CPDF_Name> ToName(RetainPtr<CPDF_Object> obj) {
+  return RetainPtr<CPDF_Name>(ToName(obj.Get()));
 }
 
 inline RetainPtr<const CPDF_Name> ToName(RetainPtr<const CPDF_Object> obj) {

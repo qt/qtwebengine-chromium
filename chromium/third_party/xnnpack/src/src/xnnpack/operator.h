@@ -287,6 +287,7 @@ struct xnn_operator {
     struct prelu_context prelu;
     struct resize_bilinear_context resize_bilinear;
     struct resize_bilinear_chw_context resize_bilinear_chw;
+    struct slice_context slice;
     struct spmm_context spmm;
     struct subconv_context subconv;
     struct subgemm_context subgemm;
@@ -303,6 +304,12 @@ struct xnn_operator {
   struct xnn_weights_cache* weights_cache;
   enum xnn_run_state state;
 };
+
+XNN_INTERNAL enum xnn_status xnn_run_operator_with_index(
+  xnn_operator_t op,
+  size_t opdata_index,
+  size_t operator_object_index,
+  pthreadpool_t threadpool);
 
 static inline void* packed_weights(struct xnn_operator* op) {
   if (op->weights_cache == NULL) {

@@ -276,7 +276,6 @@ Handle<Object> Context::Lookup(Handle<Context> context, Handle<String> name,
         // TODO(v8:5405): Replace this check with a DCHECK when resolution of
         // of synthetic variables does not go through this code path.
         if (ScopeInfo::VariableIsSynthetic(*name)) {
-          DCHECK(context->IsWithContext());
           maybe = Just(ABSENT);
         } else {
           LookupIterator it(isolate, object, name, object);
@@ -455,13 +454,6 @@ Handle<Object> Context::Lookup(Handle<Context> context, Handle<String> name,
 
 bool NativeContext::HasTemplateLiteralObject(JSArray array) {
   return array.map() == js_array_template_literal_object_map();
-}
-
-void NativeContext::AddOptimizedCode(CodeT code) {
-  DCHECK(CodeKindCanDeoptimize(code.kind()));
-  DCHECK(code.next_code_link().IsUndefined());
-  code.set_next_code_link(OptimizedCodeListHead());
-  set(OPTIMIZED_CODE_LIST, code, UPDATE_WRITE_BARRIER, kReleaseStore);
 }
 
 Handle<Object> Context::ErrorMessageForCodeGenerationFromStrings() {

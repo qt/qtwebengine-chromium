@@ -1,16 +1,16 @@
 Name: icu
 URL: https://github.com/unicode-org/icu
-Version: 71-1
-CPEPrefix: cpe:/a:icu-project:international_components_for_unicode:71.1
+Version: 72-1
+CPEPrefix: cpe:/a:icu-project:international_components_for_unicode:72.1
 License: MIT
 Security Critical: yes
 
 Description:
-This directory contains the source code of ICU 71.1 for C/C++.
+This directory contains the source code of ICU 72.1 for C/C++.
 
 A. How to update ICU
 
-1. Run "scripts/update.sh <version>" (e.g. 71-1).
+1. Run "scripts/update.sh <version>" (e.g. 72-1).
    This will download ICU from the upstream git repository.
    It does preserve Chrome-specific build files and
    converter files. (see section C)
@@ -212,10 +212,6 @@ D. Local Modifications
       Put ICU_DATA_ENTRY_POINT(icudtXX_dat) in common when we use
       the icu data file or icudt.dll
 
-  - patches/unused-var-unary-operators.patch:
-    upstream bug: https://unicode-org.atlassian.net/browse/ICU-21966
-    upstream PR: https://github.com/unicode-org/icu/pull/2055
-
 5. ISO-2022-JP encoding (fromUnicode) change per WHATWG encoding spec.
   - patches/iso2022jp.patch
   - upstream bug:
@@ -249,56 +245,6 @@ D. Local Modifications
     patches/fuchsia.patch
   - context bug: https://bugs.chromium.org/p/chromium/issues/detail?id=1184527
 
-10. Patch i18n/dtitvfmt.cpp to fix DateIntervalFormat regression
-    patches/DateIntervalFormatnormalizeHourMetacharacters.patch
-  - https://github.com/unicode-org/icu/pull/2060
-  - https://unicode-org.atlassian.net/browse/ICU-21984
-
-11. Patch common/locid.cpp to fix heap-buffer-overflow
-    patches/AliasDataBuilder-readAlias.patch
-  - https://patch-diff.githubusercontent.com/raw/unicode-org/icu/pull/2067
-  - https://unicode-org.atlassian.net/browse/ICU-21994
-
-12. Patch source/i18n/collationdatabuilder.*
-    patches/collationdatabuilder.patch
-  - https://github.com/unicode-org/icu/pull/2052
-  - https://unicode-org.atlassian.net/browse/ICU-20715
-
-13. Patch i18n/formatted_string_builder to fix int32_t overflow bug
-    patches/formatted_string_builder.patch
-  - https://github.com/unicode-org/icu/pull/2070
-  - https://unicode-org.atlassian.net/browse/ICU-22005
-
-14. Patch to fix C++20 enum issues
-    patches/cxx20enum.patch
-  - https://unicode-org.atlassian.net/browse/ICU-22014
-  - https://github.com/unicode-org/icu/pull/2084
-
-15. Patch to remove ATOMIC_VAR_INIT for C++20
-    patches/rmATOMIC_VAR_INIT.patch
-  - https://github.com/unicode-org/icu/pull/2090
-
-16. Patch Calendar and TimeZone code to fix out-of-bound result in get()
-    patches/calendar-get-out-of-bound.patch
-  - https://unicode-org.atlassian.net/browse/ICU-22023
-  - https://github.com/unicode-org/icu/pull/2086
-    AND
-    patches/calendar-get-out-of-bound2.patch
-  - https://unicode-org.atlassian.net/browse/ICU-22043
-  - https://github.com/unicode-org/icu/pull/2100
-
-17. Patch TimeZone to fix incorrect name for "Africa/Casablanca"
-    patches/timezone-rawoffset.patch
-  - https://github.com/unicode-org/icu/pull/2096
-  - https://unicode-org.atlassian.net/browse/ICU-22041
-
-18. Patch NumberRangeFormatter to fix numbering system resolution.
-    patches/number_range_format.patch
-  - https://github.com/unicode-org/icu/pull/2085
-  - https://unicode-org.atlassian.net/browse/ICU-22017
-
-19. Patch Calendar to return error ASAP to avoid incorrect assert
-    patches/calendar_return_error_early.patch
-  - https://github.com/unicode-org/icu/pull/2177
-  - https://unicode-org.atlassian.net/browse/ICU-22070
-
+10. Patch ICU to fix mix usage of UBool which break win64_msvc
+  - patches/fix-bool-mix-use.patch
+  - https://github.com/unicode-org/icu/pull/2255

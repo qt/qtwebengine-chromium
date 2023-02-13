@@ -334,7 +334,8 @@ void EncodeEmptyBlitEncoderForWriteTimestamp(Device* device,
     API_AVAILABLE(macos(11.0), ios(14.0)) {
     commandContext->EndBlit();
 
-    MTLBlitPassDescriptor* descriptor = [[MTLBlitPassDescriptor alloc] init];
+    auto scopedDescriptor = AcquireNSRef([[MTLBlitPassDescriptor alloc] init]);
+    MTLBlitPassDescriptor* descriptor = scopedDescriptor.Get();
     if (cmd->querySet.Get() != nullptr) {
         descriptor.sampleBufferAttachments[0].sampleBuffer =
             ToBackend(cmd->querySet.Get())->GetCounterSampleBuffer();
@@ -342,8 +343,8 @@ void EncodeEmptyBlitEncoderForWriteTimestamp(Device* device,
         descriptor.sampleBufferAttachments[0].endOfEncoderSampleIndex = NSUInteger(cmd->queryIndex);
 
         id<MTLBlitCommandEncoder> blit = commandContext->BeginBlit(descriptor);
-        if (device->IsToggleEnabled(Toggle::MetalUseDummyBlitEncoderForWriteTimestamp)) {
-            [blit fillBuffer:device->GetDummyBlitMtlBuffer() range:NSMakeRange(0, 1) value:0];
+        if (device->IsToggleEnabled(Toggle::MetalUseMockBlitEncoderForWriteTimestamp)) {
+            [blit fillBuffer:device->GetMockBlitMtlBuffer() range:NSMakeRange(0, 1) value:0];
         }
         commandContext->EndBlit();
     }
@@ -761,6 +762,10 @@ MaybeError CommandBuffer::FillCommands(CommandRecordingContext* commandContext) 
             case Command::BeginComputePass: {
                 BeginComputePassCmd* cmd = mCommands.NextCommand<BeginComputePassCmd>();
 
+                for (TextureBase* texture :
+                     GetResourceUsages().computePasses[nextComputePassNumber].referencedTextures) {
+                    ToBackend(texture)->SynchronizeTextureBeforeUse(commandContext);
+                }
                 for (const SyncScopeResourceUsage& scope :
                      GetResourceUsages().computePasses[nextComputePassNumber].dispatchUsages) {
                     LazyClearSyncScope(scope, commandContext);
@@ -776,6 +781,20 @@ MaybeError CommandBuffer::FillCommands(CommandRecordingContext* commandContext) 
             case Command::BeginRenderPass: {
                 BeginRenderPassCmd* cmd = mCommands.NextCommand<BeginRenderPassCmd>();
 
+                for (TextureBase* texture :
+                     this->GetResourceUsages().renderPasses[nextRenderPassNumber].textures) {
+                    ToBackend(texture)->SynchronizeTextureBeforeUse(commandContext);
+                }
+                for (ExternalTextureBase* externalTexture : this->GetResourceUsages()
+                                                                .renderPasses[nextRenderPassNumber]
+                                                                .externalTextures) {
+                    for (auto& view : externalTexture->GetTextureViews()) {
+                        if (view.Get()) {
+                            Texture* texture = ToBackend(view->GetTexture());
+                            texture->SynchronizeTextureBeforeUse(commandContext);
+                        }
+                    }
+                }
                 LazyClearSyncScope(GetResourceUsages().renderPasses[nextRenderPassNumber],
                                    commandContext);
                 commandContext->EndBlit();
@@ -831,6 +850,7 @@ MaybeError CommandBuffer::FillCommands(CommandRecordingContext* commandContext) 
                 buffer->EnsureDataInitialized(commandContext);
                 EnsureDestinationTextureInitialized(commandContext, texture, dst, copySize);
 
+                texture->SynchronizeTextureBeforeUse(commandContext);
                 RecordCopyBufferToTexture(commandContext, buffer->GetMTLBuffer(), buffer->GetSize(),
                                           src.offset, src.bytesPerRow, src.rowsPerImage, texture,
                                           dst.mipLevel, dst.origin, dst.aspect, copySize);
@@ -852,6 +872,7 @@ MaybeError CommandBuffer::FillCommands(CommandRecordingContext* commandContext) 
 
                 buffer->EnsureDataInitializedAsDestination(commandContext, copy);
 
+                texture->SynchronizeTextureBeforeUse(commandContext);
                 texture->EnsureSubresourceContentInitialized(
                     commandContext, GetSubresourcesAffectedByCopy(src, copySize));
 
@@ -941,6 +962,8 @@ MaybeError CommandBuffer::FillCommands(CommandRecordingContext* commandContext) 
                 Texture* srcTexture = ToBackend(copy->source.texture.Get());
                 Texture* dstTexture = ToBackend(copy->destination.texture.Get());
 
+                srcTexture->SynchronizeTextureBeforeUse(commandContext);
+                dstTexture->SynchronizeTextureBeforeUse(commandContext);
                 srcTexture->EnsureSubresourceContentInitialized(
                     commandContext, GetSubresourcesAffectedByCopy(copy->source, copy->copySize));
                 EnsureDestinationTextureInitialized(commandContext, dstTexture, copy->destination,

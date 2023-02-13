@@ -1,4 +1,4 @@
-// Copyright 2017 PDFium Authors. All rights reserved.
+// Copyright 2017 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -98,13 +98,13 @@ class ArrayIterator final : public CPDF_ObjectWalker::SubobjectIterator {
 
 CPDF_ObjectWalker::SubobjectIterator::~SubobjectIterator() = default;
 
-const CPDF_Object* CPDF_ObjectWalker::SubobjectIterator::Increment() {
+RetainPtr<const CPDF_Object> CPDF_ObjectWalker::SubobjectIterator::Increment() {
   if (!IsStarted()) {
     Start();
     is_started_ = true;
   }
   while (!IsFinished()) {
-    const CPDF_Object* result = IncrementImpl();
+    RetainPtr<const CPDF_Object> result = IncrementImpl();
     if (result)
       return result;
   }
@@ -142,14 +142,14 @@ RetainPtr<const CPDF_Object> CPDF_ObjectWalker::GetNext() {
         // Schedule walk within composite objects.
         stack_.push(std::move(new_iterator));
       }
-      return std::move(next_object_);  // next_object_ now NULL after move.
+      return std::move(next_object_);  // next_object_ is NULL after move.
     }
 
     SubobjectIterator* it = stack_.top().get();
     if (it->IsFinished()) {
       stack_.pop();
     } else {
-      next_object_.Reset(it->Increment());
+      next_object_ = it->Increment();
       parent_object_.Reset(it->object());
       dict_key_ = parent_object_->IsDictionary()
                       ? static_cast<DictionaryIterator*>(it)->dict_key()

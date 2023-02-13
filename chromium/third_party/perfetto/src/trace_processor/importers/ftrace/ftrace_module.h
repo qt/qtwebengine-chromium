@@ -17,6 +17,7 @@
 #ifndef SRC_TRACE_PROCESSOR_IMPORTERS_FTRACE_FTRACE_MODULE_H_
 #define SRC_TRACE_PROCESSOR_IMPORTERS_FTRACE_FTRACE_MODULE_H_
 
+#include "src/trace_processor/importers/common/parser_types.h"
 #include "src/trace_processor/importers/common/trace_parser.h"
 #include "src/trace_processor/importers/proto/proto_importer_module.h"
 
@@ -27,7 +28,7 @@ class FtraceModule : public ProtoImporterModule {
  public:
   virtual void ParseFtraceEventData(uint32_t cpu,
                                     int64_t ts,
-                                    const FtraceEventData& data);
+                                    const TracePacketData& data);
 
   virtual void ParseInlineSchedSwitch(uint32_t cpu,
                                       int64_t ts,

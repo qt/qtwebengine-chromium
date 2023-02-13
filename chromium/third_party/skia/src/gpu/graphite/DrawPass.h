@@ -21,9 +21,6 @@
 
 #include <memory>
 
-class SkRuntimeEffectDictionary;
-class SkTextureDataBlock;
-
 namespace skgpu::graphite {
 
 class BoundsManager;
@@ -33,7 +30,9 @@ class GraphicsPipeline;
 class Recorder;
 struct RenderPassDesc;
 class ResourceProvider;
+class RuntimeEffectDictionary;
 class Sampler;
+class TextureDataBlock;
 class TextureProxy;
 class Texture;
 enum class UniformSlot;
@@ -54,10 +53,10 @@ class DrawPass {
 public:
     ~DrawPass();
 
-    // TODO: Replace SDC with the SDC's surface proxy view
     static std::unique_ptr<DrawPass> Make(Recorder*,
                                           std::unique_ptr<DrawList>,
                                           sk_sp<TextureProxy>,
+                                          SkISize deviceSize,
                                           std::pair<LoadOp, StoreOp>,
                                           std::array<float, 4> clearColor);
 
@@ -80,7 +79,7 @@ public:
     // ResourceProvider. This includes things likes GraphicsPipelines, sampled Textures, Samplers,
     // etc.
     bool prepareResources(ResourceProvider*,
-                          const SkRuntimeEffectDictionary*,
+                          const RuntimeEffectDictionary*,
                           const RenderPassDesc&);
 
     DrawPassCommands::List::Iter commands() const {

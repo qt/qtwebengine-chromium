@@ -1,4 +1,4 @@
-// Copyright 2018 PDFium Authors. All rights reserved.
+// Copyright 2018 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -20,6 +20,7 @@
 #include "core/fpdfdoc/cpdf_annot.h"
 #include "core/fpdfdoc/cpdf_interactiveform.h"
 #include "core/fpdfdoc/cpdf_metadata.h"
+#include "core/fxcrt/span_util.h"
 #include "core/fxcrt/unowned_ptr.h"
 #include "fpdfsdk/cpdfsdk_formfillenvironment.h"
 #include "third_party/base/check.h"
@@ -53,26 +54,22 @@ bool DocHasXFA(const CPDF_Document* doc) {
   return form && form->GetArrayFor("XFA");
 }
 
-unsigned long GetStreamMaybeCopyAndReturnLengthImpl(const CPDF_Stream* stream,
-                                                    void* buffer,
-                                                    unsigned long buflen,
-                                                    bool decode) {
+unsigned long GetStreamMaybeCopyAndReturnLengthImpl(
+    RetainPtr<const CPDF_Stream> stream,
+    pdfium::span<uint8_t> buffer,
+    bool decode) {
   DCHECK(stream);
-  auto stream_acc =
-      pdfium::MakeRetain<CPDF_StreamAcc>(pdfium::WrapRetain(stream));
-
+  auto stream_acc = pdfium::MakeRetain<CPDF_StreamAcc>(std::move(stream));
   if (decode)
     stream_acc->LoadAllDataFiltered();
   else
     stream_acc->LoadAllDataRaw();
 
-  const auto stream_data_size = stream_acc->GetSize();
-  if (!buffer || buflen < stream_data_size)
-    return stream_data_size;
+  pdfium::span<const uint8_t> stream_data_span = stream_acc->GetSpan();
+  if (!buffer.empty() && buffer.size() <= stream_data_span.size())
+    fxcrt::spancpy(buffer, stream_data_span);
 
-  pdfium::span<const uint8_t> span = stream_acc->GetSpan();
-  memcpy(buffer, span.data(), span.size());
-  return stream_data_size;
+  return pdfium::base::checked_cast<unsigned long>(stream_data_span.size());
 }
 
 #ifdef PDF_ENABLE_XFA
@@ -82,15 +79,13 @@ class FPDF_FileHandlerContext final : public IFX_SeekableStream {
 
   // IFX_SeekableStream:
   FX_FILESIZE GetSize() override;
-  bool IsEOF() override;
   FX_FILESIZE GetPosition() override;
-  bool ReadBlockAtOffset(void* buffer,
-                         FX_FILESIZE offset,
-                         size_t size) override;
-  size_t ReadBlock(void* buffer, size_t size) override;
-  bool WriteBlockAtOffset(const void* buffer,
-                          FX_FILESIZE offset,
-                          size_t size) override;
+  bool IsEOF() override;
+  size_t ReadBlock(pdfium::span<uint8_t> buffer) override;
+  bool ReadBlockAtOffset(pdfium::span<uint8_t> buffer,
+                         FX_FILESIZE offset) override;
+  bool WriteBlockAtOffset(pdfium::span<const uint8_t> buffer,
+                          FX_FILESIZE offset) override;
   bool Flush() override;
 
   void SetPosition(FX_FILESIZE pos) { m_nCurPos = pos; }
@@ -125,48 +120,50 @@ FX_FILESIZE FPDF_FileHandlerContext::GetPosition() {
   return m_nCurPos;
 }
 
-bool FPDF_FileHandlerContext::ReadBlockAtOffset(void* buffer,
-                                                FX_FILESIZE offset,
-                                                size_t size) {
-  if (!buffer || !size || !m_pFS->ReadBlock)
+bool FPDF_FileHandlerContext::ReadBlockAtOffset(pdfium::span<uint8_t> buffer,
+                                                FX_FILESIZE offset) {
+  if (buffer.empty() || !m_pFS->ReadBlock)
     return false;
 
-  if (m_pFS->ReadBlock(m_pFS->clientData, (FPDF_DWORD)offset, buffer,
-                       (FPDF_DWORD)size) == 0) {
-    m_nCurPos = offset + size;
+  if (m_pFS->ReadBlock(m_pFS->clientData, static_cast<FPDF_DWORD>(offset),
+                       buffer.data(),
+                       static_cast<FPDF_DWORD>(buffer.size())) == 0) {
+    m_nCurPos = offset + buffer.size();
     return true;
   }
   return false;
 }
 
-size_t FPDF_FileHandlerContext::ReadBlock(void* buffer, size_t size) {
-  if (!buffer || !size || !m_pFS->ReadBlock)
+size_t FPDF_FileHandlerContext::ReadBlock(pdfium::span<uint8_t> buffer) {
+  if (buffer.empty() || !m_pFS->ReadBlock)
     return 0;
 
   FX_FILESIZE nSize = GetSize();
   if (m_nCurPos >= nSize)
     return 0;
   FX_FILESIZE dwAvail = nSize - m_nCurPos;
-  if (dwAvail < (FX_FILESIZE)size)
-    size = static_cast<size_t>(dwAvail);
-  if (m_pFS->ReadBlock(m_pFS->clientData, (FPDF_DWORD)m_nCurPos, buffer,
-                       (FPDF_DWORD)size) == 0) {
-    m_nCurPos += size;
-    return size;
+  if (dwAvail < (FX_FILESIZE)buffer.size())
+    buffer = buffer.first(static_cast<size_t>(dwAvail));
+  if (m_pFS->ReadBlock(m_pFS->clientData, static_cast<FPDF_DWORD>(m_nCurPos),
+                       buffer.data(),
+                       static_cast<FPDF_DWORD>(buffer.size())) == 0) {
+    m_nCurPos += buffer.size();
+    return buffer.size();
   }
 
   return 0;
 }
 
-bool FPDF_FileHandlerContext::WriteBlockAtOffset(const void* buffer,
-                                                 FX_FILESIZE offset,
-                                                 size_t size) {
+bool FPDF_FileHandlerContext::WriteBlockAtOffset(
+    pdfium::span<const uint8_t> buffer,
+    FX_FILESIZE offset) {
   if (!m_pFS || !m_pFS->WriteBlock)
     return false;
 
-  if (m_pFS->WriteBlock(m_pFS->clientData, (FPDF_DWORD)offset, buffer,
-                        (FPDF_DWORD)size) == 0) {
-    m_nCurPos = offset + size;
+  if (m_pFS->WriteBlock(m_pFS->clientData, static_cast<FPDF_DWORD>(offset),
+                        buffer.data(),
+                        static_cast<FPDF_DWORD>(buffer.size())) == 0) {
+    m_nCurPos = offset + buffer.size();
     return true;
   }
   return false;
@@ -305,17 +302,17 @@ unsigned long Utf16EncodeMaybeCopyAndReturnLength(const WideString& text,
   return len;
 }
 
-unsigned long GetRawStreamMaybeCopyAndReturnLength(const CPDF_Stream* stream,
-                                                   void* buffer,
-                                                   unsigned long buflen) {
-  return GetStreamMaybeCopyAndReturnLengthImpl(stream, buffer, buflen,
+unsigned long GetRawStreamMaybeCopyAndReturnLength(
+    RetainPtr<const CPDF_Stream> stream,
+    pdfium::span<uint8_t> buffer) {
+  return GetStreamMaybeCopyAndReturnLengthImpl(std::move(stream), buffer,
                                                /*decode=*/false);
 }
 
-unsigned long DecodeStreamMaybeCopyAndReturnLength(const CPDF_Stream* stream,
-                                                   void* buffer,
-                                                   unsigned long buflen) {
-  return GetStreamMaybeCopyAndReturnLengthImpl(stream, buffer, buflen,
+unsigned long DecodeStreamMaybeCopyAndReturnLength(
+    RetainPtr<const CPDF_Stream> stream,
+    pdfium::span<uint8_t> buffer) {
+  return GetStreamMaybeCopyAndReturnLengthImpl(std::move(stream), buffer,
                                                /*decode=*/true);
 }
 

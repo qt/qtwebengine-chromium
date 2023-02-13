@@ -1,4 +1,4 @@
-// Copyright 2014 PDFium Authors. All rights reserved.
+// Copyright 2014 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -68,13 +68,9 @@ class CPWL_MsgControl final : public Observable {
   }
 
   void SetFocus(CPWL_Wnd* pWnd) {
-    m_KeyboardPaths.clear();
+    m_KeyboardPaths = pWnd->GetAncestors();
     m_pMainKeyboardWnd = pWnd;
-    CPWL_Wnd* pParent = pWnd;
-    while (pParent) {
-      m_KeyboardPaths.emplace_back(pParent);
-      pParent = pParent->GetParentWindow();
-    }
+
     // Note, pWnd may get destroyed in the OnSetFocus call.
     pWnd->OnSetFocus();
   }
@@ -82,7 +78,7 @@ class CPWL_MsgControl final : public Observable {
   void KillFocus() {
     ObservedPtr<CPWL_MsgControl> observed_ptr(this);
     if (!m_KeyboardPaths.empty()) {
-      CPWL_Wnd* pWnd = m_KeyboardPaths.front().Get();
+      CPWL_Wnd* pWnd = m_KeyboardPaths.front();
       if (pWnd)
         pWnd->OnKillFocus();
     }
@@ -93,13 +89,7 @@ class CPWL_MsgControl final : public Observable {
     m_KeyboardPaths.clear();
   }
 
-  void SetCapture(CPWL_Wnd* pWnd) {
-    m_MousePaths.clear();
-    while (pWnd) {
-      m_MousePaths.emplace_back(pWnd);
-      pWnd = pWnd->GetParentWindow();
-    }
-  }
+  void SetCapture(CPWL_Wnd* pWnd) { m_MousePaths = pWnd->GetAncestors(); }
 
   void ReleaseCapture() { m_MousePaths.clear(); }
 
@@ -402,8 +392,8 @@ void CPWL_Wnd::AddChild(std::unique_ptr<CPWL_Wnd> pWnd) {
 
 void CPWL_Wnd::RemoveChild(CPWL_Wnd* pWnd) {
   DCHECK_EQ(pWnd->m_pParent, this);
-  auto it = std::find(m_Children.begin(), m_Children.end(),
-                      fxcrt::FakeUniquePtr<CPWL_Wnd>(pWnd));
+  auto it =
+      std::find(m_Children.begin(), m_Children.end(), MakeFakeUniquePtr(pWnd));
   if (it == m_Children.end())
     return;
 
@@ -483,7 +473,7 @@ const CPWL_Dash& CPWL_Wnd::GetBorderDash() const {
 }
 
 CPWL_ScrollBar* CPWL_Wnd::GetVScrollBar() const {
-  return HasFlag(PWS_VSCROLL) ? m_pVScrollBar.Get() : nullptr;
+  return HasFlag(PWS_VSCROLL) ? m_pVScrollBar : nullptr;
 }
 
 void CPWL_Wnd::CreateScrollBar(const CreateParams& cp) {
@@ -541,6 +531,14 @@ void CPWL_Wnd::OnKillFocus() {}
 std::unique_ptr<IPWL_FillerNotify::PerWindowData> CPWL_Wnd::CloneAttachedData()
     const {
   return m_pAttachedData ? m_pAttachedData->Clone() : nullptr;
+}
+
+std::vector<UnownedPtr<CPWL_Wnd>> CPWL_Wnd::GetAncestors() {
+  std::vector<UnownedPtr<CPWL_Wnd>> results;
+  for (CPWL_Wnd* pWnd = this; pWnd; pWnd = pWnd->GetParentWindow()) {
+    results.emplace_back(pWnd);
+  }
+  return results;
 }
 
 bool CPWL_Wnd::WndHitTest(const CFX_PointF& point) const {

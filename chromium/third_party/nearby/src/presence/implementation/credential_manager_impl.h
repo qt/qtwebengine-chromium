@@ -64,11 +64,17 @@ class CredentialManagerImpl : public CredentialManager {
       absl::string_view manager_app_id, absl::string_view account_name,
       const std::vector<nearby::internal::PublicCredential>&
           remote_public_creds,
-      UpdateRemotePublicCredentialsCallback credentials_updated_cb) override{};
+      UpdateRemotePublicCredentialsCallback credentials_updated_cb) override;
 
   void GetPrivateCredentials(
       const CredentialSelector& credential_selector,
       GetPrivateCredentialsResultCallback callback) override;
+
+  // Blocking version of `GetPrivateCredentials`
+  location::nearby::ExceptionOr<
+      std::vector<nearby::internal::PrivateCredential>>
+  GetPrivateCredentialsSync(const CredentialSelector& credential_selector,
+                            absl::Duration timeout);
 
   // Used to fetch remote public creds when scanning.
   void GetPublicCredentials(
@@ -76,21 +82,17 @@ class CredentialManagerImpl : public CredentialManager {
       PublicCredentialType public_credential_type,
       GetPublicCredentialsResultCallback callback) override;
 
+  // Blocking version of `GetPublicCredentials`.
+  ::location::nearby::ExceptionOr<
+      std::vector<::nearby::internal::PublicCredential>>
+  GetPublicCredentialsSync(const CredentialSelector& credential_selector,
+                           PublicCredentialType public_credential_type,
+                           absl::Duration timeout);
+
   std::string DecryptDeviceMetadata(
       absl::string_view device_metadata_encryption_key,
       absl::string_view authenticity_key,
       absl::string_view device_metadata_string) override;
-
-  absl::StatusOr<std::string> DecryptDataElements(
-      absl::string_view salt, absl::string_view data_elements) override {
-    return absl::UnimplementedError("DecryptDataElements unimplemented");
-  }
-
-  absl::StatusOr<std::string> EncryptDataElements(
-      nearby::internal::IdentityType identity, absl::string_view salt,
-      absl::string_view data_elements) override {
-    return absl::UnimplementedError("EncryptDataElements unimplemented");
-  }
 
   std::pair<nearby::internal::PrivateCredential,
             nearby::internal::PublicCredential>

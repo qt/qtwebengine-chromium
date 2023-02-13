@@ -10,17 +10,32 @@ import { makeTestGroup } from '../../../../../../common/framework/test_group.js'
 import { GPUTest } from '../../../../../gpu_test.js';
 import { TypeF32, TypeVec } from '../../../../../util/conversion.js';
 import { crossInterval } from '../../../../../util/f32_interval.js';
-import { kVectorTestValues } from '../../../../../util/math.js';
-import {
-  allInputSources,
-  Case,
-  makeVectorPairToVectorIntervalCase,
-  run,
-} from '../../expression.js';
+import { vectorF32Range } from '../../../../../util/math.js';
+import { makeCaseCache } from '../../case_cache.js';
+import { allInputSources, generateVectorPairToVectorCases, run } from '../../expression.js';
 
 import { builtin } from './builtin.js';
 
 export const g = makeTestGroup(GPUTest);
+
+export const d = makeCaseCache('cross', {
+  f32_const: () => {
+    return generateVectorPairToVectorCases(
+      vectorF32Range(3),
+      vectorF32Range(3),
+      'f32-only',
+      crossInterval
+    );
+  },
+  f32_non_const: () => {
+    return generateVectorPairToVectorCases(
+      vectorF32Range(3),
+      vectorF32Range(3),
+      'unfiltered',
+      crossInterval
+    );
+  },
+});
 
 g.test('abstract_float')
   .specURL('https://www.w3.org/TR/WGSL/#float-builtin-functions')
@@ -33,16 +48,7 @@ g.test('f32')
   .desc(`f32 tests`)
   .params(u => u.combine('inputSource', allInputSources))
   .fn(async t => {
-    const makeCase = (x: number[], y: number[]): Case => {
-      return makeVectorPairToVectorIntervalCase(x, y, crossInterval);
-    };
-
-    const cases: Case[] = kVectorTestValues[3].flatMap(i => {
-      return kVectorTestValues[3].map(j => {
-        return makeCase(i, j);
-      });
-    });
-
+    const cases = await d.get(t.params.inputSource === 'const' ? 'f32_const' : 'f32_non_const');
     await run(
       t,
       builtin('cross'),

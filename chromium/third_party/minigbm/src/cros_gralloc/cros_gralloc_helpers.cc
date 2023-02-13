@@ -12,8 +12,14 @@
 /* Define to match AIDL BufferUsage::VIDEO_DECODER. */
 #define BUFFER_USAGE_VIDEO_DECODER (1 << 22)
 
+/* Define to match AIDL BufferUsage::SENSOR_DIRECT_DATA. */
+#define BUFFER_USAGE_SENSOR_DIRECT_DATA (1 << 23)
+
 /* Define to match AIDL BufferUsage::GPU_DATA_BUFFER. */
 #define BUFFER_USAGE_GPU_DATA_BUFFER (1 << 24)
+
+/* Define to match AIDL PixelFormat::R_8. */
+#define HAL_PIXEL_FORMAT_R8 0x38
 
 uint32_t cros_gralloc_convert_format(int format)
 {
@@ -50,6 +56,7 @@ uint32_t cros_gralloc_convert_format(int format)
 	 * equal to their size in bytes.
 	 */
 	case HAL_PIXEL_FORMAT_BLOB:
+	case HAL_PIXEL_FORMAT_R8:
 		return DRM_FORMAT_R8;
 	case HAL_PIXEL_FORMAT_IMPLEMENTATION_DEFINED:
 		return DRM_FORMAT_FLEX_IMPLEMENTATION_DEFINED;
@@ -119,11 +126,13 @@ uint64_t cros_gralloc_convert_usage(uint64_t usage)
 	handle_usage(&usage, GRALLOC_USAGE_HW_CAMERA_READ, &use_flags, BO_USE_CAMERA_READ);
 	handle_usage(&usage, GRALLOC_USAGE_RENDERSCRIPT, &use_flags, BO_USE_RENDERSCRIPT);
 	handle_usage(&usage, BUFFER_USAGE_VIDEO_DECODER, &use_flags, BO_USE_HW_VIDEO_DECODER);
+	handle_usage(&usage, BUFFER_USAGE_SENSOR_DIRECT_DATA, &use_flags,
+		     BO_USE_SENSOR_DIRECT_DATA);
 	handle_usage(&usage, BUFFER_USAGE_GPU_DATA_BUFFER, &use_flags, BO_USE_GPU_DATA_BUFFER);
-	handle_usage(&usage, BUFFER_USAGE_FRONT_RENDERING, &use_flags, BO_USE_FRONT_RENDERING);
+	handle_usage(&usage, BUFFER_USAGE_FRONT_RENDERING_MASK, &use_flags, BO_USE_FRONT_RENDERING);
 
 	if (usage) {
-		drv_log("Unhandled gralloc usage: %llx\n", (unsigned long long)usage);
+		ALOGE("Unhandled gralloc usage: %llx", (unsigned long long)usage);
 		return BO_USE_NONE;
 	}
 
@@ -162,10 +171,10 @@ int32_t cros_gralloc_sync_wait(int32_t fence, bool close_fence)
 	 */
 	int err = sync_wait(fence, 1000);
 	if (err < 0) {
-		drv_log("Timed out on sync wait, err = %s\n", strerror(errno));
+		ALOGE("Timed out on sync wait, err = %s", strerror(errno));
 		err = sync_wait(fence, -1);
 		if (err < 0) {
-			drv_log("sync wait error = %s\n", strerror(errno));
+			ALOGE("sync wait error = %s", strerror(errno));
 			return -errno;
 		}
 	}
@@ -173,7 +182,7 @@ int32_t cros_gralloc_sync_wait(int32_t fence, bool close_fence)
 	if (close_fence) {
 		err = close(fence);
 		if (err) {
-			drv_log("Unable to close fence fd, err = %s\n", strerror(errno));
+			ALOGE("Unable to close fence fd, err = %s", strerror(errno));
 			return -errno;
 		}
 	}

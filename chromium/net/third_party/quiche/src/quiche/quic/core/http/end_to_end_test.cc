@@ -266,8 +266,13 @@ class EndToEndTest : public QuicTestWithParam<TestParams> {
     if (!pre_shared_key_client_.empty()) {
       client->client()->SetPreSharedKey(pre_shared_key_client_);
     }
-    client->UseConnectionIdLength(override_server_connection_id_length_);
-    client->UseClientConnectionIdLength(override_client_connection_id_length_);
+    if (override_server_connection_id_length_ >= 0) {
+      client->UseConnectionIdLength(override_server_connection_id_length_);
+    }
+    if (override_client_connection_id_length_ >= 0) {
+      client->UseClientConnectionIdLength(
+          override_client_connection_id_length_);
+    }
     client->client()->set_connection_debug_visitor(connection_debug_visitor_);
     client->client()->set_enable_web_transport(enable_web_transport_);
     client->Connect();
@@ -5418,13 +5423,15 @@ TEST_P(EndToEndTest, ClientValidateNewNetwork) {
 }
 
 TEST_P(EndToEndTest, ClientMultiPortConnection) {
-  client_extra_copts_.push_back(kMPQC);
+  client_config_.SetClientConnectionOptions(QuicTagVector{kMPQC});
   ASSERT_TRUE(Initialize());
   if (!GetClientConnection()->connection_migration_use_new_cid()) {
     return;
   }
   client_.reset(EndToEndTest::CreateQuicClient(nullptr));
   QuicConnection* client_connection = GetClientConnection();
+  QuicSpdyClientStream* stream = client_->GetOrCreateStream();
+  ASSERT_TRUE(stream);
   // Increase the probing frequency to speed up this test.
   client_connection->SetMultiPortProbingInterval(
       QuicTime::Delta::FromMilliseconds(100));
@@ -5458,6 +5465,7 @@ TEST_P(EndToEndTest, ClientMultiPortConnection) {
   }));
   // Verify that the previous path was retired.
   EXPECT_EQ(1u, client_connection->GetStats().num_retire_connection_id_sent);
+  stream->Reset(QuicRstStreamErrorCode::QUIC_STREAM_NO_ERROR);
 }
 
 TEST_P(EndToEndPacketReorderingTest, ReorderedPathChallenge) {
@@ -6054,109 +6062,6 @@ TEST_P(EndToEndTest, CustomTransportParameters) {
     ADD_FAILURE() << "Missing server config";
   }
   server_thread_->Resume();
-}
-
-TEST_P(EndToEndTest, LegacyVersionEncapsulation) {
-  if (GetQuicRestartFlag(quic_disable_legacy_version_encapsulation)) {
-    ASSERT_TRUE(Initialize());
-    return;
-  }
-  if (!version_.HasLongHeaderLengths() ||
-      override_server_connection_id_length_ > -1) {
-    // Decapsulating Legacy Version Encapsulation packets from these versions
-    // is not currently supported in QuicDispatcher.
-    ASSERT_TRUE(Initialize());
-    return;
-  }
-  client_config_.SetClientConnectionOptions(QuicTagVector{kQLVE});
-  ASSERT_TRUE(Initialize());
-  SendSynchronousFooRequestAndCheckResponse();
-  QuicConnection* client_connection = GetClientConnection();
-  ASSERT_TRUE(client_connection);
-  EXPECT_GT(
-      client_connection->GetStats().sent_legacy_version_encapsulated_packets,
-      0u);
-}
-
-TEST_P(EndToEndTest, LegacyVersionEncapsulationWithMultiPacketChlo) {
-  if (GetQuicRestartFlag(quic_disable_legacy_version_encapsulation)) {
-    ASSERT_TRUE(Initialize());
-    return;
-  }
-  if (!version_.HasLongHeaderLengths() ||
-      override_server_connection_id_length_ > -1) {
-    // Decapsulating Legacy Version Encapsulation packets from these versions
-    // is not currently supported in QuicDispatcher.
-    ASSERT_TRUE(Initialize());
-    return;
-  }
-  if (!version_.UsesTls()) {
-    // This test uses custom transport parameters to increase the size of the
-    // CHLO, and those are only supported with TLS.
-    ASSERT_TRUE(Initialize());
-    return;
-  }
-  client_config_.SetClientConnectionOptions(QuicTagVector{kQLVE});
-  constexpr auto kCustomParameter =
-      static_cast<TransportParameters::TransportParameterId>(0xff34);
-  client_config_.custom_transport_parameters_to_send()[kCustomParameter] =
-      std::string(2000, '?');
-  ASSERT_TRUE(Initialize());
-  SendSynchronousFooRequestAndCheckResponse();
-  QuicConnection* client_connection = GetClientConnection();
-  ASSERT_TRUE(client_connection);
-  EXPECT_GT(
-      client_connection->GetStats().sent_legacy_version_encapsulated_packets,
-      0u);
-}
-
-TEST_P(EndToEndTest, LegacyVersionEncapsulationWithVersionNegotiation) {
-  if (GetQuicRestartFlag(quic_disable_legacy_version_encapsulation)) {
-    ASSERT_TRUE(Initialize());
-    return;
-  }
-  if (!version_.HasLongHeaderLengths() ||
-      override_server_connection_id_length_ > -1) {
-    // Decapsulating Legacy Version Encapsulation packets from these versions
-    // is not currently supported in QuicDispatcher.
-    ASSERT_TRUE(Initialize());
-    return;
-  }
-  client_supported_versions_.insert(client_supported_versions_.begin(),
-                                    QuicVersionReservedForNegotiation());
-  client_config_.SetClientConnectionOptions(QuicTagVector{kQLVE});
-  ASSERT_TRUE(Initialize());
-  SendSynchronousFooRequestAndCheckResponse();
-  QuicConnection* client_connection = GetClientConnection();
-  ASSERT_TRUE(client_connection);
-  EXPECT_GT(
-      client_connection->GetStats().sent_legacy_version_encapsulated_packets,
-      0u);
-}
-
-TEST_P(EndToEndTest, LegacyVersionEncapsulationWithLoss) {
-  if (GetQuicRestartFlag(quic_disable_legacy_version_encapsulation)) {
-    ASSERT_TRUE(Initialize());
-    return;
-  }
-  if (!version_.HasLongHeaderLengths() ||
-      override_server_connection_id_length_ > -1) {
-    // Decapsulating Legacy Version Encapsulation packets from these versions
-    // is not currently supported in QuicDispatcher.
-    ASSERT_TRUE(Initialize());
-    return;
-  }
-  SetPacketLossPercentage(30);
-  client_config_.SetClientConnectionOptions(QuicTagVector{kQLVE});
-  // Disable blackhole detection as this test is testing loss recovery.
-  client_extra_copts_.push_back(kNBHD);
-  ASSERT_TRUE(Initialize());
-  SendSynchronousFooRequestAndCheckResponse();
-  QuicConnection* client_connection = GetClientConnection();
-  ASSERT_TRUE(client_connection);
-  EXPECT_GT(
-      client_connection->GetStats().sent_legacy_version_encapsulated_packets,
-      0u);
 }
 
 // Testing packet writer that makes a copy of the first sent packets before

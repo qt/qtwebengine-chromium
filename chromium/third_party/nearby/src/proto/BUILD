@@ -47,10 +47,7 @@ proto_library(
 
 cc_proto_library(
     name = "sharing_enums_cc_proto",
-    visibility = [
-        "//location/nearby/cpp/sharing:__subpackages__",
-        "//third_party/nearby:__subpackages__",
-    ],
+    visibility = ["//:__subpackages__"],
     deps = [
         ":sharing_enums_proto",
     ],

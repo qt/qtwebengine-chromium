@@ -704,6 +704,7 @@ export namespace Audits {
     ExcludeInvalidSameParty = 'ExcludeInvalidSameParty',
     ExcludeSamePartyCrossPartyContext = 'ExcludeSamePartyCrossPartyContext',
     ExcludeDomainNonASCII = 'ExcludeDomainNonASCII',
+    ExcludeThirdPartyCookieBlockedInFirstPartySet = 'ExcludeThirdPartyCookieBlockedInFirstPartySet',
   }
 
   export const enum CookieWarningReason {
@@ -1011,6 +1012,7 @@ export namespace Audits {
 
   export const enum GenericIssueErrorType {
     CrossOriginPortalPostMessageError = 'CrossOriginPortalPostMessageError',
+    FormLabelForNameError = 'FormLabelForNameError',
   }
 
   /**
@@ -1022,6 +1024,7 @@ export namespace Audits {
      */
     errorType: GenericIssueErrorType;
     frameId?: Page.FrameId;
+    violatingNodeId?: DOM.BackendNodeId;
   }
 
   export const enum DeprecationIssueType {
@@ -1110,14 +1113,14 @@ export namespace Audits {
   export const enum FederatedAuthRequestIssueReason {
     ShouldEmbargo = 'ShouldEmbargo',
     TooManyRequests = 'TooManyRequests',
-    ManifestListHttpNotFound = 'ManifestListHttpNotFound',
-    ManifestListNoResponse = 'ManifestListNoResponse',
-    ManifestListInvalidResponse = 'ManifestListInvalidResponse',
-    ManifestNotInManifestList = 'ManifestNotInManifestList',
-    ManifestListTooBig = 'ManifestListTooBig',
-    ManifestHttpNotFound = 'ManifestHttpNotFound',
-    ManifestNoResponse = 'ManifestNoResponse',
-    ManifestInvalidResponse = 'ManifestInvalidResponse',
+    WellKnownHttpNotFound = 'WellKnownHttpNotFound',
+    WellKnownNoResponse = 'WellKnownNoResponse',
+    WellKnownInvalidResponse = 'WellKnownInvalidResponse',
+    ConfigNotInWellKnown = 'ConfigNotInWellKnown',
+    WellKnownTooBig = 'WellKnownTooBig',
+    ConfigHttpNotFound = 'ConfigHttpNotFound',
+    ConfigNoResponse = 'ConfigNoResponse',
+    ConfigInvalidResponse = 'ConfigInvalidResponse',
     ClientMetadataHttpNotFound = 'ClientMetadataHttpNotFound',
     ClientMetadataNoResponse = 'ClientMetadataNoResponse',
     ClientMetadataInvalidResponse = 'ClientMetadataInvalidResponse',
@@ -1320,6 +1323,10 @@ export namespace BackgroundService {
      * A list of event-specific information.
      */
     eventMetadata: EventMetadata[];
+    /**
+     * Storage key this event belongs to.
+     */
+    storageKey: string;
   }
 
   export interface StartObservingRequest {
@@ -1412,6 +1419,8 @@ export namespace Browser {
     DurableStorage = 'durableStorage',
     Flash = 'flash',
     Geolocation = 'geolocation',
+    IdleDetection = 'idleDetection',
+    LocalFonts = 'localFonts',
     Midi = 'midi',
     MidiSysex = 'midiSysex',
     Nfc = 'nfc',
@@ -1420,11 +1429,12 @@ export namespace Browser {
     PeriodicBackgroundSync = 'periodicBackgroundSync',
     ProtectedMediaIdentifier = 'protectedMediaIdentifier',
     Sensors = 'sensors',
+    StorageAccess = 'storageAccess',
     VideoCapture = 'videoCapture',
     VideoCapturePanTiltZoom = 'videoCapturePanTiltZoom',
-    IdleDetection = 'idleDetection',
     WakeLockScreen = 'wakeLockScreen',
     WakeLockSystem = 'wakeLockSystem',
+    WindowManagement = 'windowManagement',
   }
 
   export const enum PermissionSetting {
@@ -2245,6 +2255,14 @@ export namespace CSS {
      * Optional name for the container.
      */
     name?: string;
+    /**
+     * Optional physical axes queried for the container.
+     */
+    physicalAxes?: DOM.PhysicalAxes;
+    /**
+     * Optional logical axes queried for the container.
+     */
+    logicalAxes?: DOM.LogicalAxes;
   }
 
   /**
@@ -2906,6 +2924,10 @@ export namespace CacheStorage {
      */
     securityOrigin: string;
     /**
+     * Storage key of the cache.
+     */
+    storageKey: string;
+    /**
      * The name of the cache.
      */
     cacheName: string;
@@ -2946,9 +2968,14 @@ export namespace CacheStorage {
 
   export interface RequestCacheNamesRequest {
     /**
+     * At least and at most one of securityOrigin, storageKey must be specified.
      * Security origin.
      */
-    securityOrigin: string;
+    securityOrigin?: string;
+    /**
+     * Storage key.
+     */
+    storageKey?: string;
   }
 
   export interface RequestCacheNamesResponse extends ProtocolResponseWithError {
@@ -3126,11 +3153,11 @@ export namespace DOM {
     ScrollbarCorner = 'scrollbar-corner',
     Resizer = 'resizer',
     InputListButton = 'input-list-button',
-    PageTransition = 'page-transition',
-    PageTransitionContainer = 'page-transition-container',
-    PageTransitionImageWrapper = 'page-transition-image-wrapper',
-    PageTransitionOutgoingImage = 'page-transition-outgoing-image',
-    PageTransitionIncomingImage = 'page-transition-incoming-image',
+    ViewTransition = 'view-transition',
+    ViewTransitionGroup = 'view-transition-group',
+    ViewTransitionImagePair = 'view-transition-image-pair',
+    ViewTransitionOld = 'view-transition-old',
+    ViewTransitionNew = 'view-transition-new',
   }
 
   /**
@@ -3149,6 +3176,24 @@ export namespace DOM {
     QuirksMode = 'QuirksMode',
     LimitedQuirksMode = 'LimitedQuirksMode',
     NoQuirksMode = 'NoQuirksMode',
+  }
+
+  /**
+   * ContainerSelector physical axes
+   */
+  export const enum PhysicalAxes {
+    Horizontal = 'Horizontal',
+    Vertical = 'Vertical',
+    Both = 'Both',
+  }
+
+  /**
+   * ContainerSelector logical axes
+   */
+  export const enum LogicalAxes {
+    Inline = 'Inline',
+    Block = 'Block',
+    Both = 'Both',
   }
 
   /**
@@ -4068,6 +4113,8 @@ export namespace DOM {
   export interface GetContainerForNodeRequest {
     nodeId: NodeId;
     containerName?: string;
+    physicalAxes?: PhysicalAxes;
+    logicalAxes?: LogicalAxes;
   }
 
   export interface GetContainerForNodeResponse extends ProtocolResponseWithError {
@@ -5262,7 +5309,6 @@ export namespace Emulation {
    */
   export const enum DisabledImageType {
     Avif = 'avif',
-    Jxl = 'jxl',
     Webp = 'webp',
   }
 
@@ -5577,6 +5623,7 @@ export namespace HeadlessExperimental {
   export const enum ScreenshotParamsFormat {
     Jpeg = 'jpeg',
     Png = 'png',
+    Webp = 'webp',
   }
 
   /**
@@ -5591,6 +5638,10 @@ export namespace HeadlessExperimental {
      * Compression quality from range [0..100] (jpeg only).
      */
     quality?: integer;
+    /**
+     * Optimize image encoding for speed, not for resulting size (defaults to false)
+     */
+    optimizeForSpeed?: boolean;
   }
 
   export interface BeginFrameRequest {
@@ -5628,18 +5679,6 @@ export namespace HeadlessExperimental {
      * Base64-encoded image data of the screenshot, if one was requested and successfully taken.
      */
     screenshotData?: binary;
-  }
-
-  /**
-   * Issued when the target starts or stops needing BeginFrames.
-   * Deprecated. Issue beginFrame unconditionally instead and use result from
-   * beginFrame to detect whether the frames were suppressed.
-   */
-  export interface NeedsBeginFramesChangedEvent {
-    /**
-     * True if BeginFrames are needed, false otherwise.
-     */
-    needsBeginFrames: boolean;
   }
 }
 
@@ -7922,6 +7961,7 @@ export namespace Network {
     SameSiteUnspecifiedTreatedAsLax = 'SameSiteUnspecifiedTreatedAsLax',
     SameSiteNoneInsecure = 'SameSiteNoneInsecure',
     UserPreferences = 'UserPreferences',
+    ThirdPartyBlockedInFirstPartySet = 'ThirdPartyBlockedInFirstPartySet',
     SyntaxError = 'SyntaxError',
     SchemeNotSupported = 'SchemeNotSupported',
     OverwriteSecure = 'OverwriteSecure',
@@ -7948,6 +7988,7 @@ export namespace Network {
     SameSiteUnspecifiedTreatedAsLax = 'SameSiteUnspecifiedTreatedAsLax',
     SameSiteNoneInsecure = 'SameSiteNoneInsecure',
     UserPreferences = 'UserPreferences',
+    ThirdPartyBlockedInFirstPartySet = 'ThirdPartyBlockedInFirstPartySet',
     UnknownError = 'UnknownError',
     SchemefulSameSiteStrict = 'SchemefulSameSiteStrict',
     SchemefulSameSiteLax = 'SchemefulSameSiteLax',
@@ -9352,6 +9393,10 @@ export namespace Network {
      * The client security state set for the request.
      */
     clientSecurityState?: ClientSecurityState;
+    /**
+     * Whether the site has partitioned cookies stored in a partition different than the current one.
+     */
+    siteHasCookieInOtherPartition?: boolean;
   }
 
   /**
@@ -10347,6 +10392,7 @@ export namespace Page {
     ChDownlink = 'ch-downlink',
     ChEct = 'ch-ect',
     ChPrefersColorScheme = 'ch-prefers-color-scheme',
+    ChPrefersReducedMotion = 'ch-prefers-reduced-motion',
     ChRtt = 'ch-rtt',
     ChSaveData = 'ch-save-data',
     ChUa = 'ch-ua',
@@ -10366,6 +10412,7 @@ export namespace Page {
     ChWidth = 'ch-width',
     ClipboardRead = 'clipboard-read',
     ClipboardWrite = 'clipboard-write',
+    ComputePressure = 'compute-pressure',
     CrossOriginIsolated = 'cross-origin-isolated',
     DirectSockets = 'direct-sockets',
     DisplayCapture = 'display-capture',
@@ -10373,7 +10420,6 @@ export namespace Page {
     EncryptedMedia = 'encrypted-media',
     ExecutionWhileOutOfViewport = 'execution-while-out-of-viewport',
     ExecutionWhileNotRendered = 'execution-while-not-rendered',
-    FederatedCredentials = 'federated-credentials',
     FocusWithoutUserActivation = 'focus-without-user-activation',
     Fullscreen = 'fullscreen',
     Frobulate = 'frobulate',
@@ -10381,6 +10427,7 @@ export namespace Page {
     Geolocation = 'geolocation',
     Gyroscope = 'gyroscope',
     Hid = 'hid',
+    IdentityCredentialsGet = 'identity-credentials-get',
     IdleDetection = 'idle-detection',
     InterestCohort = 'interest-cohort',
     JoinAdInterestGroup = 'join-ad-interest-group',
@@ -10398,6 +10445,7 @@ export namespace Page {
     Serial = 'serial',
     SharedAutofill = 'shared-autofill',
     SharedStorage = 'shared-storage',
+    SmartCard = 'smart-card',
     StorageAccess = 'storage-access',
     SyncXhr = 'sync-xhr',
     TrustTokenRedemption = 'trust-token-redemption',
@@ -11043,7 +11091,6 @@ export namespace Page {
     DedicatedWorkerOrWorklet = 'DedicatedWorkerOrWorklet',
     OutstandingNetworkRequestOthers = 'OutstandingNetworkRequestOthers',
     OutstandingIndexedDBTransaction = 'OutstandingIndexedDBTransaction',
-    RequestedNotificationsPermission = 'RequestedNotificationsPermission',
     RequestedMIDIPermission = 'RequestedMIDIPermission',
     RequestedAudioCapturePermission = 'RequestedAudioCapturePermission',
     RequestedVideoCapturePermission = 'RequestedVideoCapturePermission',
@@ -11074,7 +11121,9 @@ export namespace Page {
     OutstandingNetworkRequestDirectSocket = 'OutstandingNetworkRequestDirectSocket',
     InjectedJavascript = 'InjectedJavascript',
     InjectedStyleSheet = 'InjectedStyleSheet',
+    KeepaliveRequest = 'KeepaliveRequest',
     Dummy = 'Dummy',
+    AuthorizationHeader = 'AuthorizationHeader',
     ContentSecurityHandler = 'ContentSecurityHandler',
     ContentWebAuthenticationAPI = 'ContentWebAuthenticationAPI',
     ContentFileChooser = 'ContentFileChooser',
@@ -11150,8 +11199,6 @@ export namespace Page {
     Activated = 'Activated',
     Destroyed = 'Destroyed',
     LowEndDevice = 'LowEndDevice',
-    CrossOriginRedirect = 'CrossOriginRedirect',
-    CrossOriginNavigation = 'CrossOriginNavigation',
     InvalidSchemeRedirect = 'InvalidSchemeRedirect',
     InvalidSchemeNavigation = 'InvalidSchemeNavigation',
     InProgressNavigation = 'InProgressNavigation',
@@ -11185,6 +11232,16 @@ export namespace Page {
     ActivatedBeforeStarted = 'ActivatedBeforeStarted',
     InactivePageRestriction = 'InactivePageRestriction',
     StartFailed = 'StartFailed',
+    TimeoutBackgrounded = 'TimeoutBackgrounded',
+    CrossSiteRedirect = 'CrossSiteRedirect',
+    CrossSiteNavigation = 'CrossSiteNavigation',
+    SameSiteCrossOriginRedirect = 'SameSiteCrossOriginRedirect',
+    SameSiteCrossOriginNavigation = 'SameSiteCrossOriginNavigation',
+    SameSiteCrossOriginRedirectNotOptIn = 'SameSiteCrossOriginRedirectNotOptIn',
+    SameSiteCrossOriginNavigationNotOptIn = 'SameSiteCrossOriginNavigationNotOptIn',
+    ActivationNavigationParameterMismatch = 'ActivationNavigationParameterMismatch',
+    ActivatedInBackground = 'ActivatedInBackground',
+    EmbedderHostDisallowed = 'EmbedderHostDisallowed',
   }
 
   export interface AddScriptToEvaluateOnLoadRequest {
@@ -11247,6 +11304,10 @@ export namespace Page {
      * Capture the screenshot beyond the viewport. Defaults to false.
      */
     captureBeyondViewport?: boolean;
+    /**
+     * Optimize image encoding for speed, not for resulting size (defaults to false)
+     */
+    optimizeForSpeed?: boolean;
   }
 
   export interface CaptureScreenshotResponse extends ProtocolResponseWithError {
@@ -11341,6 +11402,18 @@ export namespace Page {
      * Recommendation for manifest's id attribute to match current id computed from start_url
      */
     recommendedId?: string;
+  }
+
+  export interface GetAdScriptIdRequest {
+    frameId: FrameId;
+  }
+
+  export interface GetAdScriptIdResponse extends ProtocolResponseWithError {
+    /**
+     * Identifies the bottom-most script which caused the frame to be labelled
+     * as an ad. Only sent if frame is labelled as an ad and id is available.
+     */
+    adScriptId?: AdScriptId;
   }
 
   export interface GetCookiesResponse extends ProtocolResponseWithError {
@@ -11870,8 +11943,9 @@ export namespace Page {
 
   export const enum SetSPCTransactionModeRequestMode {
     None = 'none',
-    Autoaccept = 'autoaccept',
-    Autoreject = 'autoreject',
+    AutoAccept = 'autoAccept',
+    AutoReject = 'autoReject',
+    AutoOptOut = 'autoOptOut',
   }
 
   export interface SetSPCTransactionModeRequest {
@@ -11936,11 +12010,6 @@ export namespace Page {
      * JavaScript stack trace of when frame was attached, only set if frame initiated from script.
      */
     stack?: Runtime.StackTrace;
-    /**
-     * Identifies the bottom-most script which caused the frame to be labelled
-     * as an ad. Only sent if frame is labelled as an ad and id is available.
-     */
-    adScriptId?: AdScriptId;
   }
 
   /**
@@ -12895,6 +12964,7 @@ export namespace Storage {
     Service_workers = 'service_workers',
     Cache_storage = 'cache_storage',
     Interest_groups = 'interest_groups',
+    Shared_storage = 'shared_storage',
     All = 'all',
     Other = 'other',
   }
@@ -12929,6 +12999,7 @@ export namespace Storage {
     Join = 'join',
     Leave = 'leave',
     Update = 'update',
+    Loaded = 'loaded',
     Bid = 'bid',
     Win = 'win',
   }
@@ -12957,6 +13028,121 @@ export namespace Storage {
     userBiddingSignals?: string;
     ads: InterestGroupAd[];
     adComponents: InterestGroupAd[];
+  }
+
+  /**
+   * Enum of shared storage access types.
+   */
+  export const enum SharedStorageAccessType {
+    DocumentAddModule = 'documentAddModule',
+    DocumentSelectURL = 'documentSelectURL',
+    DocumentRun = 'documentRun',
+    DocumentSet = 'documentSet',
+    DocumentAppend = 'documentAppend',
+    DocumentDelete = 'documentDelete',
+    DocumentClear = 'documentClear',
+    WorkletSet = 'workletSet',
+    WorkletAppend = 'workletAppend',
+    WorkletDelete = 'workletDelete',
+    WorkletClear = 'workletClear',
+    WorkletGet = 'workletGet',
+    WorkletKeys = 'workletKeys',
+    WorkletEntries = 'workletEntries',
+    WorkletLength = 'workletLength',
+    WorkletRemainingBudget = 'workletRemainingBudget',
+  }
+
+  /**
+   * Struct for a single key-value pair in an origin's shared storage.
+   */
+  export interface SharedStorageEntry {
+    key: string;
+    value: string;
+  }
+
+  /**
+   * Details for an origin's shared storage.
+   */
+  export interface SharedStorageMetadata {
+    creationTime: Network.TimeSinceEpoch;
+    length: integer;
+    remainingBudget: number;
+  }
+
+  /**
+   * Pair of reporting metadata details for a candidate URL for `selectURL()`.
+   */
+  export interface SharedStorageReportingMetadata {
+    eventType: string;
+    reportingUrl: string;
+  }
+
+  /**
+   * Bundles a candidate URL with its reporting metadata.
+   */
+  export interface SharedStorageUrlWithMetadata {
+    /**
+     * Spec of candidate URL.
+     */
+    url: string;
+    /**
+     * Any associated reporting metadata.
+     */
+    reportingMetadata: SharedStorageReportingMetadata[];
+  }
+
+  /**
+   * Bundles the parameters for shared storage access events whose
+   * presence/absence can vary according to SharedStorageAccessType.
+   */
+  export interface SharedStorageAccessParams {
+    /**
+     * Spec of the module script URL.
+     * Present only for SharedStorageAccessType.documentAddModule.
+     */
+    scriptSourceUrl?: string;
+    /**
+     * Name of the registered operation to be run.
+     * Present only for SharedStorageAccessType.documentRun and
+     * SharedStorageAccessType.documentSelectURL.
+     */
+    operationName?: string;
+    /**
+     * The operation's serialized data in bytes (converted to a string).
+     * Present only for SharedStorageAccessType.documentRun and
+     * SharedStorageAccessType.documentSelectURL.
+     */
+    serializedData?: string;
+    /**
+     * Array of candidate URLs' specs, along with any associated metadata.
+     * Present only for SharedStorageAccessType.documentSelectURL.
+     */
+    urlsWithMetadata?: SharedStorageUrlWithMetadata[];
+    /**
+     * Key for a specific entry in an origin's shared storage.
+     * Present only for SharedStorageAccessType.documentSet,
+     * SharedStorageAccessType.documentAppend,
+     * SharedStorageAccessType.documentDelete,
+     * SharedStorageAccessType.workletSet,
+     * SharedStorageAccessType.workletAppend,
+     * SharedStorageAccessType.workletDelete, and
+     * SharedStorageAccessType.workletGet.
+     */
+    key?: string;
+    /**
+     * Value for a specific entry in an origin's shared storage.
+     * Present only for SharedStorageAccessType.documentSet,
+     * SharedStorageAccessType.documentAppend,
+     * SharedStorageAccessType.workletSet, and
+     * SharedStorageAccessType.workletAppend.
+     */
+    value?: string;
+    /**
+     * Whether or not to set an entry for a key if that key is already present.
+     * Present only for SharedStorageAccessType.documentSet and
+     * SharedStorageAccessType.workletSet.
+     */
+    ignoreIfPresent?: boolean;
   }
 
   export interface GetStorageKeyForFrameRequest {
@@ -13071,6 +13257,13 @@ export namespace Storage {
     origin: string;
   }
 
+  export interface TrackCacheStorageForStorageKeyRequest {
+    /**
+     * Storage key.
+     */
+    storageKey: string;
+  }
+
   export interface TrackIndexedDBForOriginRequest {
     /**
      * Security origin.
@@ -13090,6 +13283,13 @@ export namespace Storage {
      * Security origin.
      */
     origin: string;
+  }
+
+  export interface UntrackCacheStorageForStorageKeyRequest {
+    /**
+     * Storage key.
+     */
+    storageKey: string;
   }
 
   export interface UntrackIndexedDBForOriginRequest {
@@ -13134,6 +13334,46 @@ export namespace Storage {
     enable: boolean;
   }
 
+  export interface GetSharedStorageMetadataRequest {
+    ownerOrigin: string;
+  }
+
+  export interface GetSharedStorageMetadataResponse extends ProtocolResponseWithError {
+    metadata: SharedStorageMetadata;
+  }
+
+  export interface GetSharedStorageEntriesRequest {
+    ownerOrigin: string;
+  }
+
+  export interface GetSharedStorageEntriesResponse extends ProtocolResponseWithError {
+    entries: SharedStorageEntry[];
+  }
+
+  export interface SetSharedStorageEntryRequest {
+    ownerOrigin: string;
+    key: string;
+    value: string;
+    /**
+     * If `ignoreIfPresent` is included and true, then only sets the entry if
+     * `key` doesn't already exist.
+     */
+    ignoreIfPresent?: boolean;
+  }
+
+  export interface DeleteSharedStorageEntryRequest {
+    ownerOrigin: string;
+    key: string;
+  }
+
+  export interface ClearSharedStorageEntriesRequest {
+    ownerOrigin: string;
+  }
+
+  export interface SetSharedStorageTrackingRequest {
+    enable: boolean;
+  }
+
   /**
    * A cache's contents have been modified.
    */
@@ -13142,6 +13382,10 @@ export namespace Storage {
      * Origin to update.
      */
     origin: string;
+    /**
+     * Storage key to update.
+     */
+    storageKey: string;
     /**
      * Name of cache in origin.
      */
@@ -13156,6 +13400,10 @@ export namespace Storage {
      * Origin to update.
      */
     origin: string;
+    /**
+     * Storage key to update.
+     */
+    storageKey: string;
   }
 
   /**
@@ -13202,6 +13450,34 @@ export namespace Storage {
     type: InterestGroupAccessType;
     ownerOrigin: string;
     name: string;
+  }
+
+  /**
+   * Shared storage was accessed by the associated page.
+   * The following parameters are included in all events.
+   */
+  export interface SharedStorageAccessedEvent {
+    /**
+     * Time of the access.
+     */
+    accessTime: Network.TimeSinceEpoch;
+    /**
+     * Enum value indicating the Shared Storage API method invoked.
+     */
+    type: SharedStorageAccessType;
+    /**
+     * DevTools Frame Token for the primary frame tree's root.
+     */
+    mainFrameId: Page.FrameId;
+    /**
+     * Serialized origin for the context that invoked the Shared Storage API.
+     */
+    ownerOrigin: string;
+    /**
+     * The sub-parameters warapped by `params` are all optional and their
+     * presence/absence depends on `type`.
+     */
+    params: SharedStorageAccessParams;
   }
 }
 
@@ -13417,6 +13693,14 @@ export namespace SystemInfo {
      * supported.
      */
     commandLine: string;
+  }
+
+  export interface GetFeatureStateRequest {
+    featureState: string;
+  }
+
+  export interface GetFeatureStateResponse extends ProtocolResponseWithError {
+    featureEnabled: boolean;
   }
 
   export interface GetProcessInfoResponse extends ProtocolResponseWithError {
@@ -14035,8 +14319,8 @@ export namespace Tracing {
   }
 
   /**
-   * Contains an bucket of collected trace events. When tracing is stopped collected events will be
-   * send as a sequence of dataCollected events followed by tracingComplete event.
+   * Contains a bucket of collected trace events. When tracing is stopped collected events will be
+   * sent as a sequence of dataCollected events followed by tracingComplete event.
    */
   export interface DataCollectedEvent {
     value: any[];
@@ -14242,7 +14526,9 @@ export namespace Fetch {
      */
     postData?: binary;
     /**
-     * If set, overrides the request headers.
+     * If set, overrides the request headers. Note that the overrides do not
+     * extend to subsequent redirect hops, if a redirect happens. Another override
+     * may be applied to a different request produced by a redirect.
      */
     headers?: HeaderEntry[];
     /**
@@ -14360,7 +14646,12 @@ export namespace Fetch {
      * If the intercepted request had a corresponding Network.requestWillBeSent event fired for it,
      * then this networkId will be the same as the requestId present in the requestWillBeSent event.
      */
-    networkId?: RequestId;
+    networkId?: Network.RequestId;
+    /**
+     * If the request is due to a redirect response from the server, the id of the request that
+     * has caused the redirect.
+     */
+    redirectedRequestId?: RequestId;
   }
 
   /**
@@ -14776,6 +15067,25 @@ export namespace WebAuthn {
     authenticatorId: AuthenticatorId;
   }
 
+  export interface SetResponseOverrideBitsRequest {
+    authenticatorId: AuthenticatorId;
+    /**
+     * If isBogusSignature is set, overrides the signature in the authenticator response to be zero.
+     * Defaults to false.
+     */
+    isBogusSignature?: boolean;
+    /**
+     * If isBadUV is set, overrides the UV bit in the flags in the authenticator response to
+     * be zero. Defaults to false.
+     */
+    isBadUV?: boolean;
+    /**
+     * If isBadUP is set, overrides the UP bit in the flags in the authenticator response to
+     * be zero. Defaults to false.
+     */
+    isBadUP?: boolean;
+  }
+
   export interface RemoveVirtualAuthenticatorRequest {
     authenticatorId: AuthenticatorId;
   }
@@ -14819,6 +15129,22 @@ export namespace WebAuthn {
   export interface SetAutomaticPresenceSimulationRequest {
     authenticatorId: AuthenticatorId;
     enabled: boolean;
+  }
+
+  /**
+   * Triggered when a credential is added to an authenticator.
+   */
+  export interface CredentialAddedEvent {
+    authenticatorId: AuthenticatorId;
+    credential: Credential;
+  }
+
+  /**
+   * Triggered when a credential is used in a webauthn assertion.
+   */
+  export interface CredentialAssertedEvent {
+    authenticatorId: AuthenticatorId;
+    credential: Credential;
   }
 }
 
@@ -15562,6 +15888,7 @@ export namespace Debugger {
 
   export const enum SetPauseOnExceptionsRequestState {
     None = 'none',
+    Caught = 'caught',
     Uncaught = 'uncaught',
     All = 'all',
   }
@@ -16243,48 +16570,6 @@ export namespace Profiler {
     functions: FunctionCoverage[];
   }
 
-  /**
-   * Describes a type collected during runtime.
-   */
-  export interface TypeObject {
-    /**
-     * Name of a type collected with type profiling.
-     */
-    name: string;
-  }
-
-  /**
-   * Source offset and types for a parameter or return value.
-   */
-  export interface TypeProfileEntry {
-    /**
-     * Source offset of the parameter or end of function for return values.
-     */
-    offset: integer;
-    /**
-     * The types for this parameter or return value.
-     */
-    types: TypeObject[];
-  }
-
-  /**
-   * Type profile data collected during runtime for a JavaScript script.
-   */
-  export interface ScriptTypeProfile {
-    /**
-     * JavaScript script id.
-     */
-    scriptId: Runtime.ScriptId;
-    /**
-     * JavaScript script name or url.
-     */
-    url: string;
-    /**
-     * Type profile entries for parameters and return values of the functions in the script.
-     */
-    entries: TypeProfileEntry[];
-  }
-
   export interface GetBestEffortCoverageResponse extends ProtocolResponseWithError {
     /**
      * Coverage data for the current isolate.
@@ -16337,13 +16622,6 @@ export namespace Profiler {
      * Monotonically increasing time (in seconds) when the coverage update was taken in the backend.
      */
     timestamp: number;
-  }
-
-  export interface TakeTypeProfileResponse extends ProtocolResponseWithError {
-    /**
-     * Type profile for all scripts since startTypeProfile() was turned on.
-     */
-    result: ScriptTypeProfile[];
   }
 
   export interface ConsoleProfileFinishedEvent {

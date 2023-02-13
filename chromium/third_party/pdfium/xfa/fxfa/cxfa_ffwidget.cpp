@@ -1,4 +1,4 @@
-// Copyright 2014 PDFium Authors. All rights reserved.
+// Copyright 2014 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -77,7 +77,8 @@ void XFA_DrawImage(CFGAS_GEGraphics* pGS,
                    XFA_AttributeValue iVertAlign) {
   if (rtImage.IsEmpty())
     return;
-  if (!pDIBitmap || !pDIBitmap->GetBuffer())
+
+  if (!pDIBitmap || pDIBitmap->GetBuffer().empty())
     return;
 
   CFX_RectF rtFit(rtImage.TopLeft(),
@@ -144,14 +145,15 @@ void XFA_DrawImage(CFGAS_GEGraphics* pGS,
 }
 
 RetainPtr<CFX_DIBitmap> XFA_LoadImageFromBuffer(
-    const RetainPtr<IFX_SeekableReadStream>& pImageFileRead,
+    RetainPtr<IFX_SeekableReadStream> pImageFileRead,
     FXCODEC_IMAGE_TYPE type,
     int32_t& iImageXDpi,
     int32_t& iImageYDpi) {
   auto pProgressiveDecoder = std::make_unique<ProgressiveDecoder>();
 
   CFX_DIBAttribute dibAttr;
-  pProgressiveDecoder->LoadImageInfo(pImageFileRead, type, &dibAttr, false);
+  pProgressiveDecoder->LoadImageInfo(std::move(pImageFileRead), type, &dibAttr,
+                                     false);
   switch (dibAttr.m_wDPIUnit) {
     case CFX_DIBAttribute::kResUnitCentimeter:
       dibAttr.m_nXDPI = static_cast<int32_t>(dibAttr.m_nXDPI * 2.54f);

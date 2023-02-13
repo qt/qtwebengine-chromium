@@ -93,7 +93,7 @@
 // HIPCC do not support the use of assert on the GPU side.
 #define gpu_assert(COND)
 #else
-#define gpu_assert(COND) assert(COND)
+#define gpu_assert(COND) eigen_assert(COND)
 #endif
 
 #endif // gpu_assert

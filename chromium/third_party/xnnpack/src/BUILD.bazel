@@ -98,6 +98,7 @@ OPERATOR_SRCS = [
     "src/operators/prelu-nc.c",
     "src/operators/resize-bilinear-nchw.c",
     "src/operators/resize-bilinear-nhwc.c",
+    "src/operators/slice-nd.c",
     "src/operators/softmax-nc.c",
     "src/operators/transpose-nd.c",
     "src/operators/unary-elementwise-nc.c",
@@ -138,12 +139,14 @@ SUBGRAPH_SRCS = [
     "src/subgraph/prelu.c",
     "src/subgraph/sigmoid.c",
     "src/subgraph/softmax.c",
+    "src/subgraph/space-to-depth-2d.c",
     "src/subgraph/square-root.c",
     "src/subgraph/square.c",
     "src/subgraph/squared-difference.c",
     "src/subgraph/static-constant-pad.c",
     "src/subgraph/static-reshape.c",
     "src/subgraph/static-resize-bilinear-2d.c",
+    "src/subgraph/static-slice.c",
     "src/subgraph/static-transpose.c",
     "src/subgraph/subtract.c",
     "src/subgraph/unpooling-2d.c",
@@ -1018,6 +1021,10 @@ ALL_SCALAR_MICROKERNEL_SRCS = [
     "src/f32-vunary/gen/vsqr-scalar-x1.c",
     "src/f32-vunary/gen/vsqr-scalar-x2.c",
     "src/f32-vunary/gen/vsqr-scalar-x4.c",
+    "src/i16-vlshift/gen/scalar-x1.c",
+    "src/i16-vlshift/gen/scalar-x2.c",
+    "src/i16-vlshift/gen/scalar-x3.c",
+    "src/i16-vlshift/gen/scalar-x4.c",
     "src/math/cvt-f32-f16-scalar-bitcast.c",
     "src/math/cvt-f32-f16-scalar-fabsf.c",
     "src/math/expminus-f32-scalar-rr2-lut64-p2.c",
@@ -1407,10 +1414,6 @@ ALL_SCALAR_MICROKERNEL_SRCS = [
     "src/s16-rmaxabs/gen/scalar-x2.c",
     "src/s16-rmaxabs/gen/scalar-x3.c",
     "src/s16-rmaxabs/gen/scalar-x4.c",
-    "src/s16-vlshift/gen/scalar-x1.c",
-    "src/s16-vlshift/gen/scalar-x2.c",
-    "src/s16-vlshift/gen/scalar-x3.c",
-    "src/s16-vlshift/gen/scalar-x4.c",
     "src/s16-window/gen/scalar-x1.c",
     "src/s16-window/gen/scalar-x2.c",
     "src/s16-window/gen/scalar-x3.c",
@@ -3045,6 +3048,9 @@ ALL_ARMSIMD32_MICROKERNEL_SRCS = [
 ]
 
 PROD_FP16ARITH_MICROKERNEL_SRCS = [
+    "src/f16-vbinary/gen/vdiv-minmax-fp16arith-x2.c",
+    "src/f16-vbinary/gen/vdivc-minmax-fp16arith-x2.c",
+    "src/f16-vbinary/gen/vrdivc-minmax-fp16arith-x2.c",
 ]
 
 ALL_FP16ARITH_MICROKERNEL_SRCS = [
@@ -3538,6 +3544,10 @@ ALL_NEON_MICROKERNEL_SRCS = [
     "src/f32-vunary/gen/vneg-neon-x8.c",
     "src/f32-vunary/gen/vsqr-neon-x4.c",
     "src/f32-vunary/gen/vsqr-neon-x8.c",
+    "src/i16-vlshift/gen/neon-x8.c",
+    "src/i16-vlshift/gen/neon-x16.c",
+    "src/i16-vlshift/gen/neon-x24.c",
+    "src/i16-vlshift/gen/neon-x32.c",
     "src/math/cvt-f16-f32-neon-int16.c",
     "src/math/cvt-f16-f32-neon-int32.c",
     "src/math/cvt-f32-f16-neon.c",
@@ -3555,9 +3565,9 @@ ALL_NEON_MICROKERNEL_SRCS = [
     "src/math/sigmoid-f32-neon-rr2-lut64-p2-nr2recps.c",
     "src/math/sigmoid-f32-neon-rr2-lut2048-p1-nr2recps.c",
     "src/math/sigmoid-f32-neon-rr2-p5-nr2recps.c",
-    "src/math/sqrt-neon-nr1rsqrts.c",
-    "src/math/sqrt-neon-nr2rsqrts.c",
-    "src/math/sqrt-neon-nr3rsqrts.c",
+    "src/math/sqrt-f32-neon-nr1rsqrts.c",
+    "src/math/sqrt-f32-neon-nr2rsqrts.c",
+    "src/math/sqrt-f32-neon-nr3rsqrts.c",
     "src/qc8-dwconv/gen/up8x3-minmax-fp32-neon-mla8-ld64.c",
     "src/qc8-dwconv/gen/up8x9-minmax-fp32-neon-mla8-ld64.c",
     "src/qc8-dwconv/gen/up8x9-minmax-fp32-neon-mul8-ld64.c",
@@ -4293,10 +4303,6 @@ ALL_NEON_MICROKERNEL_SRCS = [
     "src/s16-rmaxabs/gen/neon-x16.c",
     "src/s16-rmaxabs/gen/neon-x24.c",
     "src/s16-rmaxabs/gen/neon-x32.c",
-    "src/s16-vlshift/gen/neon-x8.c",
-    "src/s16-vlshift/gen/neon-x16.c",
-    "src/s16-vlshift/gen/neon-x24.c",
-    "src/s16-vlshift/gen/neon-x32.c",
     "src/s16-window/gen/neon-x8.c",
     "src/s16-window/gen/neon-x16.c",
     "src/s16-window/gen/neon-x24.c",
@@ -4627,11 +4633,11 @@ ALL_NEONFMA_MICROKERNEL_SRCS = [
     "src/math/sigmoid-f32-neonfma-rr2-p5-nr1recps1fma.c",
     "src/math/sigmoid-f32-neonfma-rr2-p5-nr2fma.c",
     "src/math/sigmoid-f32-neonfma-rr2-p5-nr2recps.c",
-    "src/math/sqrt-neonfma-nr1fma.c",
-    "src/math/sqrt-neonfma-nr1rsqrts1fma1adj.c",
-    "src/math/sqrt-neonfma-nr2fma.c",
-    "src/math/sqrt-neonfma-nr2fma1adj.c",
-    "src/math/sqrt-neonfma-nr3fma.c",
+    "src/math/sqrt-f32-neonfma-nr1fma.c",
+    "src/math/sqrt-f32-neonfma-nr1rsqrts1fma1adj.c",
+    "src/math/sqrt-f32-neonfma-nr2fma.c",
+    "src/math/sqrt-f32-neonfma-nr2fma1adj.c",
+    "src/math/sqrt-f32-neonfma-nr3fma.c",
 ]
 
 PROD_AARCH64_NEON_MICROKERNEL_SRCS = [
@@ -4641,9 +4647,11 @@ PROD_AARCH64_NEON_MICROKERNEL_SRCS = [
     "src/f32-dwconv2d-chw/gen/5x5p2-minmax-neonfma-4x4.c",
     "src/f32-dwconv2d-chw/gen/5x5s2p2-minmax-neonfma-1x4-acc2.c",
     "src/f32-gemm/gen/1x8-minmax-neonfma-lane-ld64.c",
+    "src/f32-gemm/gen/4x2-minmax-neonfma-lane-ld64.c",
     "src/f32-gemm/gen/6x2-minmax-neonfma-lane-ld64.c",
     "src/f32-gemm/gen/6x8-minmax-neonfma-lane-ld64.c",
     "src/f32-igemm/gen/1x8-minmax-neonfma-lane-ld64.c",
+    "src/f32-igemm/gen/4x2-minmax-neonfma-lane-ld64.c",
     "src/f32-igemm/gen/6x2-minmax-neonfma-lane-ld64.c",
     "src/f32-igemm/gen/6x8-minmax-neonfma-lane-ld64.c",
     "src/f32-spmm/gen/32x2-minmax-neonfma.c",
@@ -5036,23 +5044,34 @@ ALL_NEONV8_MICROKERNEL_SRCS = [
 PROD_NEONFP16ARITH_MICROKERNEL_SRCS = [
     "src/f16-avgpool/9p8x-minmax-neonfp16arith-c8.c",
     "src/f16-avgpool/9x-minmax-neonfp16arith-c8.c",
+    "src/f16-conv-hwc2chw/3x3s2p1c3x4-neonfp16arith-2x2.c",
+    "src/f16-dwconv/gen/up8x9-minmax-neonfp16arith.c",
     "src/f16-dwconv/gen/up8x25-minmax-neonfp16arith-acc2.c",
     "src/f16-dwconv/gen/up16x3-minmax-neonfp16arith.c",
     "src/f16-dwconv/gen/up16x4-minmax-neonfp16arith.c",
     "src/f16-dwconv/gen/up16x9-minmax-neonfp16arith.c",
-    "src/f16-gavgpool-cw/neonfp16arith-x4.c",
+    "src/f16-dwconv2d-chw/gen/3x3p1-minmax-neonfp16arith-2x8.c",
+    "src/f16-dwconv2d-chw/gen/3x3s2p1-minmax-neonfp16arith-1x8.c",
+    "src/f16-dwconv2d-chw/gen/5x5p2-minmax-neonfp16arith-1x8.c",
+    "src/f16-dwconv2d-chw/gen/5x5s2p2-minmax-neonfp16arith-1x8.c",
+    "src/f16-gavgpool-cw/neonfp16arith-x8.c",
     "src/f16-gavgpool/gen/7p7x-minmax-neonfp16arith-c8.c",
     "src/f16-gavgpool/gen/7x-minmax-neonfp16arith-c8.c",
+    "src/f16-gemm/gen/1x8-minmax-neonfp16arith-ld64.c",
     "src/f16-gemm/gen/1x16-minmax-neonfp16arith-ld64.c",
+    "src/f16-gemm/gen/6x8-minmax-neonfp16arith-ld64.c",
     "src/f16-gemm/gen/6x16-minmax-neonfp16arith-ld64.c",
     "src/f16-ibilinear-chw/gen/neonfp16arith-p8.c",
     "src/f16-ibilinear/gen/neonfp16arith-c8.c",
+    "src/f16-igemm/gen/1x8-minmax-neonfp16arith-ld64.c",
     "src/f16-igemm/gen/1x16-minmax-neonfp16arith-ld64.c",
+    "src/f16-igemm/gen/6x8-minmax-neonfp16arith-ld64.c",
     "src/f16-igemm/gen/6x16-minmax-neonfp16arith-ld64.c",
     "src/f16-maxpool/9p8x-minmax-neonfp16arith-c8.c",
     "src/f16-pavgpool/9p8x-minmax-neonfp16arith-c8.c",
     "src/f16-pavgpool/9x-minmax-neonfp16arith-c8.c",
     "src/f16-prelu/gen/neonfp16arith-2x16.c",
+    "src/f16-raddstoreexpminusmax/gen/neonfp16arith-rr2-p2-x32.c",
     "src/f16-raddstoreexpminusmax/gen/neonfp16arith-rr2-p2-x40.c",
     "src/f16-rmax/neonfp16arith.c",
     "src/f16-spmm/gen/32x1-minmax-neonfp16arith.c",
@@ -5079,6 +5098,8 @@ PROD_NEONFP16ARITH_MICROKERNEL_SRCS = [
     "src/f16-vrnd/gen/vrndu-neonfp16arith-x16.c",
     "src/f16-vrnd/gen/vrndz-neonfp16arith-x16.c",
     "src/f16-vsigmoid/gen/vsigmoid-neonfp16arith-rr2-p2-nr1fma-x40.c",
+    "src/f16-vsigmoid/gen/vsigmoid-neonfp16arith-rr2-p2-nr1recps-x16.c",
+    "src/f16-vsqrt/gen/neonfp16arith-nr1fma1adj-x8.c",
     "src/f16-vunary/gen/vabs-neonfp16arith-x16.c",
     "src/f16-vunary/gen/vneg-neonfp16arith-x16.c",
     "src/f16-vunary/gen/vsqr-neonfp16arith-x16.c",
@@ -5087,6 +5108,7 @@ PROD_NEONFP16ARITH_MICROKERNEL_SRCS = [
 ALL_NEONFP16ARITH_MICROKERNEL_SRCS = [
     "src/f16-avgpool/9p8x-minmax-neonfp16arith-c8.c",
     "src/f16-avgpool/9x-minmax-neonfp16arith-c8.c",
+    "src/f16-conv-hwc2chw/3x3s2p1c3x4-neonfp16arith-2x2.c",
     "src/f16-dwconv/gen/up8x3-minmax-neonfp16arith-acc2.c",
     "src/f16-dwconv/gen/up8x3-minmax-neonfp16arith.c",
     "src/f16-dwconv/gen/up8x4-minmax-neonfp16arith-acc2.c",
@@ -5111,7 +5133,47 @@ ALL_NEONFP16ARITH_MICROKERNEL_SRCS = [
     "src/f16-dwconv/gen/up32x9-minmax-neonfp16arith.c",
     "src/f16-dwconv/gen/up32x25-minmax-neonfp16arith-acc2.c",
     "src/f16-dwconv/gen/up32x25-minmax-neonfp16arith.c",
-    "src/f16-gavgpool-cw/neonfp16arith-x4.c",
+    "src/f16-dwconv2d-chw/gen/3x3p1-minmax-neonfp16arith-1x8-acc2.c",
+    "src/f16-dwconv2d-chw/gen/3x3p1-minmax-neonfp16arith-1x8-acc3.c",
+    "src/f16-dwconv2d-chw/gen/3x3p1-minmax-neonfp16arith-1x8-acc4.c",
+    "src/f16-dwconv2d-chw/gen/3x3p1-minmax-neonfp16arith-1x8.c",
+    "src/f16-dwconv2d-chw/gen/3x3p1-minmax-neonfp16arith-2x8-acc2.c",
+    "src/f16-dwconv2d-chw/gen/3x3p1-minmax-neonfp16arith-2x8.c",
+    "src/f16-dwconv2d-chw/gen/3x3p1-minmax-neonfp16arith-3x8.c",
+    "src/f16-dwconv2d-chw/gen/3x3p1-minmax-neonfp16arith-4x8.c",
+    "src/f16-dwconv2d-chw/gen/3x3p1-minmax-neonfp16arith-5x8.c",
+    "src/f16-dwconv2d-chw/gen/3x3p1-minmax-neonfp16arith-6x8.c",
+    "src/f16-dwconv2d-chw/gen/3x3s2p1-minmax-neonfp16arith-1x8-acc2.c",
+    "src/f16-dwconv2d-chw/gen/3x3s2p1-minmax-neonfp16arith-1x8-acc3.c",
+    "src/f16-dwconv2d-chw/gen/3x3s2p1-minmax-neonfp16arith-1x8-acc4.c",
+    "src/f16-dwconv2d-chw/gen/3x3s2p1-minmax-neonfp16arith-1x8.c",
+    "src/f16-dwconv2d-chw/gen/3x3s2p1-minmax-neonfp16arith-2x8-acc2.c",
+    "src/f16-dwconv2d-chw/gen/3x3s2p1-minmax-neonfp16arith-2x8.c",
+    "src/f16-dwconv2d-chw/gen/3x3s2p1-minmax-neonfp16arith-3x8.c",
+    "src/f16-dwconv2d-chw/gen/3x3s2p1-minmax-neonfp16arith-4x8.c",
+    "src/f16-dwconv2d-chw/gen/5x5p2-minmax-neonfp16arith-1x8-acc2.c",
+    "src/f16-dwconv2d-chw/gen/5x5p2-minmax-neonfp16arith-1x8-acc3.c",
+    "src/f16-dwconv2d-chw/gen/5x5p2-minmax-neonfp16arith-1x8-acc4.c",
+    "src/f16-dwconv2d-chw/gen/5x5p2-minmax-neonfp16arith-1x8-acc5.c",
+    "src/f16-dwconv2d-chw/gen/5x5p2-minmax-neonfp16arith-1x8.c",
+    "src/f16-dwconv2d-chw/gen/5x5p2-minmax-neonfp16arith-2x8-acc2.c",
+    "src/f16-dwconv2d-chw/gen/5x5p2-minmax-neonfp16arith-2x8-acc3.c",
+    "src/f16-dwconv2d-chw/gen/5x5p2-minmax-neonfp16arith-2x8.c",
+    "src/f16-dwconv2d-chw/gen/5x5p2-minmax-neonfp16arith-3x8-acc2.c",
+    "src/f16-dwconv2d-chw/gen/5x5p2-minmax-neonfp16arith-3x8.c",
+    "src/f16-dwconv2d-chw/gen/5x5p2-minmax-neonfp16arith-4x8-acc2.c",
+    "src/f16-dwconv2d-chw/gen/5x5p2-minmax-neonfp16arith-4x8.c",
+    "src/f16-dwconv2d-chw/gen/5x5p2-minmax-neonfp16arith-5x8.c",
+    "src/f16-dwconv2d-chw/gen/5x5s2p2-minmax-neonfp16arith-1x8-acc2.c",
+    "src/f16-dwconv2d-chw/gen/5x5s2p2-minmax-neonfp16arith-1x8-acc3.c",
+    "src/f16-dwconv2d-chw/gen/5x5s2p2-minmax-neonfp16arith-1x8-acc4.c",
+    "src/f16-dwconv2d-chw/gen/5x5s2p2-minmax-neonfp16arith-1x8-acc5.c",
+    "src/f16-dwconv2d-chw/gen/5x5s2p2-minmax-neonfp16arith-1x8.c",
+    "src/f16-dwconv2d-chw/gen/5x5s2p2-minmax-neonfp16arith-2x8-acc2.c",
+    "src/f16-dwconv2d-chw/gen/5x5s2p2-minmax-neonfp16arith-2x8-acc3.c",
+    "src/f16-dwconv2d-chw/gen/5x5s2p2-minmax-neonfp16arith-2x8.c",
+    "src/f16-dwconv2d-chw/gen/5x5s2p2-minmax-neonfp16arith-3x8-acc2.c",
+    "src/f16-dwconv2d-chw/gen/5x5s2p2-minmax-neonfp16arith-3x8.c",
     "src/f16-gavgpool-cw/neonfp16arith-x8.c",
     "src/f16-gavgpool/gen/7p7x-minmax-neonfp16arith-c8.c",
     "src/f16-gavgpool/gen/7p7x-minmax-neonfp16arith-c16.c",
@@ -5245,6 +5307,10 @@ ALL_NEONFP16ARITH_MICROKERNEL_SRCS = [
     "src/f16-vsigmoid/gen/vsigmoid-neonfp16arith-rr2-p2-nr1recps-x48.c",
     "src/f16-vsigmoid/gen/vsigmoid-neonfp16arith-rr2-p2-nr1recps-x56.c",
     "src/f16-vsigmoid/gen/vsigmoid-neonfp16arith-rr2-p2-nr1recps-x64.c",
+    "src/f16-vsqrt/gen/neonfp16arith-nr1fma1adj-x8.c",
+    "src/f16-vsqrt/gen/neonfp16arith-nr1fma1adj-x16.c",
+    "src/f16-vsqrt/gen/neonfp16arith-nr1fma1adj-x24.c",
+    "src/f16-vsqrt/gen/neonfp16arith-nr1fma1adj-x32.c",
     "src/f16-vunary/gen/vabs-neonfp16arith-x8.c",
     "src/f16-vunary/gen/vabs-neonfp16arith-x16.c",
     "src/f16-vunary/gen/vneg-neonfp16arith-x8.c",
@@ -5264,14 +5330,12 @@ ALL_NEONFP16ARITH_MICROKERNEL_SRCS = [
     "src/math/sigmoid-f16-neonfp16arith-rr2-p3-nr1fma.c",
     "src/math/sigmoid-f16-neonfp16arith-rr2-p3-nr1recps.c",
     "src/math/sigmoid-f16-neonfp16arith-rr2-p3-recpe.c",
+    "src/math/sqrt-f16-neonfp16arith-nr1fma.c",
+    "src/math/sqrt-f16-neonfp16arith-nr1fma1adj.c",
+    "src/math/sqrt-f16-neonfp16arith-nr1rsqrts.c",
 ]
 
 PROD_AARCH64_NEONFP16ARITH_MICROKERNEL_SRCS = [
-    "src/f16-conv-hwc2chw/3x3s2p1c3x4-neonfp16arith-2x2.c",
-    "src/f16-dwconv2d-chw/gen/3x3p1-minmax-neonfp16arith-2x8.c",
-    "src/f16-dwconv2d-chw/gen/3x3s2p1-minmax-neonfp16arith-1x4.c",
-    "src/f16-dwconv2d-chw/gen/5x5p2-minmax-neonfp16arith-1x4.c",
-    "src/f16-dwconv2d-chw/gen/5x5s2p2-minmax-neonfp16arith-1x4.c",
     "src/f16-vbinary/gen/vdiv-minmax-neonfp16arith-x8.c",
     "src/f16-vbinary/gen/vdivc-minmax-neonfp16arith-x8.c",
     "src/f16-vbinary/gen/vrdivc-minmax-neonfp16arith-x8.c",
@@ -5279,48 +5343,6 @@ PROD_AARCH64_NEONFP16ARITH_MICROKERNEL_SRCS = [
 ]
 
 ALL_AARCH64_NEONFP16ARITH_MICROKERNEL_SRCS = [
-    "src/f16-conv-hwc2chw/3x3s2p1c3x4-neonfp16arith-2x2.c",
-    "src/f16-dwconv2d-chw/gen/3x3p1-minmax-neonfp16arith-1x8-acc2.c",
-    "src/f16-dwconv2d-chw/gen/3x3p1-minmax-neonfp16arith-1x8-acc3.c",
-    "src/f16-dwconv2d-chw/gen/3x3p1-minmax-neonfp16arith-1x8-acc4.c",
-    "src/f16-dwconv2d-chw/gen/3x3p1-minmax-neonfp16arith-1x8.c",
-    "src/f16-dwconv2d-chw/gen/3x3p1-minmax-neonfp16arith-2x8-acc2.c",
-    "src/f16-dwconv2d-chw/gen/3x3p1-minmax-neonfp16arith-2x8.c",
-    "src/f16-dwconv2d-chw/gen/3x3p1-minmax-neonfp16arith-3x8.c",
-    "src/f16-dwconv2d-chw/gen/3x3p1-minmax-neonfp16arith-4x8.c",
-    "src/f16-dwconv2d-chw/gen/3x3p1-minmax-neonfp16arith-5x8.c",
-    "src/f16-dwconv2d-chw/gen/3x3p1-minmax-neonfp16arith-6x8.c",
-    "src/f16-dwconv2d-chw/gen/3x3s2p1-minmax-neonfp16arith-1x4-acc2.c",
-    "src/f16-dwconv2d-chw/gen/3x3s2p1-minmax-neonfp16arith-1x4-acc3.c",
-    "src/f16-dwconv2d-chw/gen/3x3s2p1-minmax-neonfp16arith-1x4-acc4.c",
-    "src/f16-dwconv2d-chw/gen/3x3s2p1-minmax-neonfp16arith-1x4.c",
-    "src/f16-dwconv2d-chw/gen/3x3s2p1-minmax-neonfp16arith-2x4-acc2.c",
-    "src/f16-dwconv2d-chw/gen/3x3s2p1-minmax-neonfp16arith-2x4.c",
-    "src/f16-dwconv2d-chw/gen/3x3s2p1-minmax-neonfp16arith-3x4.c",
-    "src/f16-dwconv2d-chw/gen/3x3s2p1-minmax-neonfp16arith-4x4.c",
-    "src/f16-dwconv2d-chw/gen/5x5p2-minmax-neonfp16arith-1x4-acc2.c",
-    "src/f16-dwconv2d-chw/gen/5x5p2-minmax-neonfp16arith-1x4-acc3.c",
-    "src/f16-dwconv2d-chw/gen/5x5p2-minmax-neonfp16arith-1x4-acc4.c",
-    "src/f16-dwconv2d-chw/gen/5x5p2-minmax-neonfp16arith-1x4-acc5.c",
-    "src/f16-dwconv2d-chw/gen/5x5p2-minmax-neonfp16arith-1x4.c",
-    "src/f16-dwconv2d-chw/gen/5x5p2-minmax-neonfp16arith-2x4-acc2.c",
-    "src/f16-dwconv2d-chw/gen/5x5p2-minmax-neonfp16arith-2x4-acc3.c",
-    "src/f16-dwconv2d-chw/gen/5x5p2-minmax-neonfp16arith-2x4.c",
-    "src/f16-dwconv2d-chw/gen/5x5p2-minmax-neonfp16arith-3x4-acc2.c",
-    "src/f16-dwconv2d-chw/gen/5x5p2-minmax-neonfp16arith-3x4.c",
-    "src/f16-dwconv2d-chw/gen/5x5p2-minmax-neonfp16arith-4x4-acc2.c",
-    "src/f16-dwconv2d-chw/gen/5x5p2-minmax-neonfp16arith-4x4.c",
-    "src/f16-dwconv2d-chw/gen/5x5p2-minmax-neonfp16arith-5x4.c",
-    "src/f16-dwconv2d-chw/gen/5x5s2p2-minmax-neonfp16arith-1x4-acc2.c",
-    "src/f16-dwconv2d-chw/gen/5x5s2p2-minmax-neonfp16arith-1x4-acc3.c",
-    "src/f16-dwconv2d-chw/gen/5x5s2p2-minmax-neonfp16arith-1x4-acc4.c",
-    "src/f16-dwconv2d-chw/gen/5x5s2p2-minmax-neonfp16arith-1x4-acc5.c",
-    "src/f16-dwconv2d-chw/gen/5x5s2p2-minmax-neonfp16arith-1x4.c",
-    "src/f16-dwconv2d-chw/gen/5x5s2p2-minmax-neonfp16arith-2x4-acc2.c",
-    "src/f16-dwconv2d-chw/gen/5x5s2p2-minmax-neonfp16arith-2x4-acc3.c",
-    "src/f16-dwconv2d-chw/gen/5x5s2p2-minmax-neonfp16arith-2x4.c",
-    "src/f16-dwconv2d-chw/gen/5x5s2p2-minmax-neonfp16arith-3x4-acc2.c",
-    "src/f16-dwconv2d-chw/gen/5x5s2p2-minmax-neonfp16arith-3x4.c",
     "src/f16-vbinary/gen/vdiv-minmax-neonfp16arith-x8.c",
     "src/f16-vbinary/gen/vdiv-minmax-neonfp16arith-x16.c",
     "src/f16-vbinary/gen/vdivc-minmax-neonfp16arith-x8.c",
@@ -5341,6 +5363,7 @@ ALL_AARCH64_NEONFP16ARITH_MICROKERNEL_SRCS = [
     "src/math/sigmoid-f16-neonfp16arith-rr1-p3-div.c",
     "src/math/sigmoid-f16-neonfp16arith-rr2-p2-div.c",
     "src/math/sigmoid-f16-neonfp16arith-rr2-p3-div.c",
+    "src/math/sqrt-f16-neonfp16arith-sqrt.c",
 ]
 
 PROD_NEONBF16_MICROKERNEL_SRCS = [
@@ -5701,9 +5724,9 @@ ALL_SSE_MICROKERNEL_SRCS = [
     "src/math/roundne-sse-addsub.c",
     "src/math/roundu-sse-addsub.c",
     "src/math/roundz-sse-addsub.c",
-    "src/math/sqrt-sse-hh1mac.c",
-    "src/math/sqrt-sse-nr1mac.c",
-    "src/math/sqrt-sse-nr2mac.c",
+    "src/math/sqrt-f32-sse-hh1mac.c",
+    "src/math/sqrt-f32-sse-nr1mac.c",
+    "src/math/sqrt-f32-sse-nr2mac.c",
     "src/x32-packx/x4-sse.c",
     "src/x32-transposec/4x4-sse.c",
 ]
@@ -7516,9 +7539,9 @@ ALL_FMA3_MICROKERNEL_SRCS = [
     "src/f32-vsqrt/gen/fma3-nr1fma1adj-x48.c",
     "src/f32-vsqrt/gen/fma3-nr1fma1adj-x56.c",
     "src/f32-vsqrt/gen/fma3-nr1fma1adj-x64.c",
-    "src/math/sqrt-fma3-nr1fma.c",
-    "src/math/sqrt-fma3-nr1fma1adj.c",
-    "src/math/sqrt-fma3-nr2fma.c",
+    "src/math/sqrt-f32-fma3-nr1fma.c",
+    "src/math/sqrt-f32-fma3-nr1fma1adj.c",
+    "src/math/sqrt-f32-fma3-nr2fma.c",
 ]
 
 PROD_AVX2_MICROKERNEL_SRCS = [
@@ -8202,9 +8225,9 @@ ALL_AVX512F_MICROKERNEL_SRCS = [
     "src/math/sigmoid-f32-avx512f-rr2-p5-scalef-div.c",
     "src/math/sigmoid-f32-avx512f-rr2-p5-scalef-nr1fma.c",
     "src/math/sigmoid-f32-avx512f-rr2-p5-scalef-nr1fma1adj.c",
-    "src/math/sqrt-avx512f-nr1fma.c",
-    "src/math/sqrt-avx512f-nr1fma1adj.c",
-    "src/math/sqrt-avx512f-nr2fma.c",
+    "src/math/sqrt-f32-avx512f-nr1fma.c",
+    "src/math/sqrt-f32-avx512f-nr1fma1adj.c",
+    "src/math/sqrt-f32-avx512f-nr2fma.c",
 ]
 
 PROD_AVX512SKX_MICROKERNEL_SRCS = [
@@ -8310,6 +8333,17 @@ ALL_AVX512SKX_MICROKERNEL_SRCS = [
     "src/x8-lut/gen/lut-avx512skx-vpshufb-x128.c",
     "src/x8-lut/gen/lut-avx512skx-vpshufb-x192.c",
     "src/x8-lut/gen/lut-avx512skx-vpshufb-x256.c",
+]
+
+PROD_AVX512VBMI_MICROKERNEL_SRCS = [
+    "src/x8-lut/gen/lut-avx512vbmi-vpermx2b-x128.c",
+]
+
+ALL_AVX512VBMI_MICROKERNEL_SRCS = [
+    "src/x8-lut/gen/lut-avx512vbmi-vpermx2b-x64.c",
+    "src/x8-lut/gen/lut-avx512vbmi-vpermx2b-x128.c",
+    "src/x8-lut/gen/lut-avx512vbmi-vpermx2b-x192.c",
+    "src/x8-lut/gen/lut-avx512vbmi-vpermx2b-x256.c",
 ]
 
 WASM32_ASM_MICROKERNEL_SRCS = [
@@ -8749,7 +8783,7 @@ INTERNAL_MICROKERNEL_HDRS = MICROKERNEL_HDRS + [
 
 filegroup(
     name = "microkernel_source_files",
-    data = ALL_SCALAR_MICROKERNEL_SRCS + ALL_WASM_MICROKERNEL_SRCS + ALL_WASMSIMD_MICROKERNEL_SRCS + ALL_WASMRELAXEDSIMD_MICROKERNEL_SRCS + ALL_ARMSIMD32_MICROKERNEL_SRCS + ALL_FP16ARITH_MICROKERNEL_SRCS + ALL_NEON_MICROKERNEL_SRCS + ALL_NEONFP16_MICROKERNEL_SRCS + ALL_NEONFMA_MICROKERNEL_SRCS + ALL_AARCH64_NEON_MICROKERNEL_SRCS + ALL_NEONV8_MICROKERNEL_SRCS + ALL_NEONFP16ARITH_MICROKERNEL_SRCS + ALL_AARCH64_NEONFP16ARITH_MICROKERNEL_SRCS + ALL_NEONBF16_MICROKERNEL_SRCS + ALL_AARCH64_NEONBF16_MICROKERNEL_SRCS + ALL_NEONDOT_MICROKERNEL_SRCS + ALL_SSE_MICROKERNEL_SRCS + ALL_SSE2_MICROKERNEL_SRCS + ALL_SSSE3_MICROKERNEL_SRCS + ALL_SSE41_MICROKERNEL_SRCS + ALL_AVX_MICROKERNEL_SRCS + ALL_F16C_MICROKERNEL_SRCS + ALL_XOP_MICROKERNEL_SRCS + ALL_FMA3_MICROKERNEL_SRCS + ALL_AVX2_MICROKERNEL_SRCS + ALL_AVX512F_MICROKERNEL_SRCS + ALL_AVX512SKX_MICROKERNEL_SRCS + WASM32_ASM_MICROKERNEL_SRCS + AARCH32_ASM_MICROKERNEL_SRCS + AARCH64_ASM_MICROKERNEL_SRCS + ["src/microparams-init.c"],
+    data = ALL_SCALAR_MICROKERNEL_SRCS + ALL_WASM_MICROKERNEL_SRCS + ALL_WASMSIMD_MICROKERNEL_SRCS + ALL_WASMRELAXEDSIMD_MICROKERNEL_SRCS + ALL_ARMSIMD32_MICROKERNEL_SRCS + ALL_FP16ARITH_MICROKERNEL_SRCS + ALL_NEON_MICROKERNEL_SRCS + ALL_NEONFP16_MICROKERNEL_SRCS + ALL_NEONFMA_MICROKERNEL_SRCS + ALL_AARCH64_NEON_MICROKERNEL_SRCS + ALL_NEONV8_MICROKERNEL_SRCS + ALL_NEONFP16ARITH_MICROKERNEL_SRCS + ALL_AARCH64_NEONFP16ARITH_MICROKERNEL_SRCS + ALL_NEONBF16_MICROKERNEL_SRCS + ALL_AARCH64_NEONBF16_MICROKERNEL_SRCS + ALL_NEONDOT_MICROKERNEL_SRCS + ALL_SSE_MICROKERNEL_SRCS + ALL_SSE2_MICROKERNEL_SRCS + ALL_SSSE3_MICROKERNEL_SRCS + ALL_SSE41_MICROKERNEL_SRCS + ALL_AVX_MICROKERNEL_SRCS + ALL_F16C_MICROKERNEL_SRCS + ALL_XOP_MICROKERNEL_SRCS + ALL_FMA3_MICROKERNEL_SRCS + ALL_AVX2_MICROKERNEL_SRCS + ALL_AVX512F_MICROKERNEL_SRCS + ALL_AVX512SKX_MICROKERNEL_SRCS + ALL_AVX512VBMI_MICROKERNEL_SRCS + WASM32_ASM_MICROKERNEL_SRCS + AARCH32_ASM_MICROKERNEL_SRCS + AARCH64_ASM_MICROKERNEL_SRCS + ["src/microparams-init.c"],
     visibility = xnnpack_visibility(),
 )
 
@@ -8873,10 +8907,9 @@ xnnpack_cc_library(
     name = "allocator",
     srcs = [
         "src/allocator.c",
-        "src/memory.c",
     ],
     hdrs = ["src/xnnpack/allocator.h"],
-    # Do not use xnnpack_gcc_std_copts, as it defines -std=c99, which then makes MAP_ANONYMOUS undefined
+    gcc_copts = xnnpack_gcc_std_copts(),
     msvc_copts = xnnpack_msvc_std_copts(),
     deps = [
         ":common",
@@ -8916,6 +8949,22 @@ xnnpack_cc_library(
     ],
     gcc_copts = xnnpack_gcc_std_copts(),
     msvc_copts = xnnpack_msvc_std_copts(),
+)
+
+xnnpack_cc_library(
+    name = "memory",
+    srcs = [
+        "src/memory.c",
+    ],
+    hdrs = ["src/xnnpack/memory.h"],
+    # Do not use xnnpack_gcc_std_copts, as it defines -std=c99, which then makes MAP_ANONYMOUS undefined
+    msvc_copts = xnnpack_msvc_std_copts(),
+    deps = [
+        ":common",
+        ":logging",
+        ":math",
+        ":xnnpack_h",
+    ],
 )
 
 xnnpack_cc_library(
@@ -9162,6 +9211,17 @@ xnnpack_cc_library(
 
 xnnpack_cc_library(
     name = "fp16arith_bench_microkernels",
+    aarch32_copts = [
+        "-marm",
+        "-march=armv8.2-a+fp16",
+        # GCC emits wrong directives for assembler with -mfpu=fp-armv8
+        "-mfpu=neon-fp-armv8",
+        # For vsqrth_f16 polyfill using sqrtf
+        "-fno-math-errno",
+        # For vminh_f16/vmaxh_f16 polyfills using compare + select
+        "-ffinite-math-only",
+    ],
+    aarch32_srcs = ALL_FP16ARITH_MICROKERNEL_SRCS,
     aarch64_copts = ["-march=armv8.2-a+fp16"],
     aarch64_srcs = ALL_FP16ARITH_MICROKERNEL_SRCS,
     gcc_copts = xnnpack_gcc_std_copts(),
@@ -9178,6 +9238,17 @@ xnnpack_cc_library(
 
 xnnpack_cc_library(
     name = "fp16arith_prod_microkernels",
+    aarch32_copts = [
+        "-marm",
+        "-march=armv8.2-a+fp16",
+        # GCC emits wrong directives for assembler with -mfpu=fp-armv8
+        "-mfpu=neon-fp-armv8",
+        # For vsqrth_f16 polyfill using sqrtf
+        "-fno-math-errno",
+        # For vminh_f16/vmaxh_f16 polyfills using compare + select
+        "-ffinite-math-only",
+    ],
+    aarch32_srcs = PROD_FP16ARITH_MICROKERNEL_SRCS,
     aarch64_copts = ["-march=armv8.2-a+fp16"],
     aarch64_srcs = PROD_FP16ARITH_MICROKERNEL_SRCS,
     gcc_copts = xnnpack_gcc_std_copts(),
@@ -9194,6 +9265,17 @@ xnnpack_cc_library(
 
 xnnpack_cc_library(
     name = "fp16arith_test_microkernels",
+    aarch32_copts = [
+        "-marm",
+        "-march=armv8.2-a+fp16",
+        # GCC emits wrong directives for assembler with -mfpu=fp-armv8
+        "-mfpu=neon-fp-armv8",
+        # For vsqrth_f16 polyfill using sqrtf
+        "-fno-math-errno",
+        # For vminh_f16/vmaxh_f16 polyfills using compare + select
+        "-ffinite-math-only",
+    ],
+    aarch32_srcs = ALL_FP16ARITH_MICROKERNEL_SRCS,
     aarch64_copts = ["-march=armv8.2-a+fp16"],
     aarch64_srcs = ALL_FP16ARITH_MICROKERNEL_SRCS,
     copts = [
@@ -10470,6 +10552,118 @@ xnnpack_cc_library(
 )
 
 xnnpack_cc_library(
+    name = "avx512vbmi_amalgam_microkernels",
+    gcc_copts = xnnpack_gcc_std_copts(),
+    gcc_x86_copts = [
+        "-mavx512f",
+        "-mavx512cd",
+        "-mavx512bw",
+        "-mavx512dq",
+        "-mavx512vl",
+        "-mavx512vbmi",
+    ],
+    mingw_copts = ["-fno-asynchronous-unwind-tables"],
+    msvc_copts = xnnpack_msvc_std_copts(),
+    msvc_x86_32_copts = ["/arch:AVX512"],
+    msvc_x86_64_copts = ["/arch:AVX512"],
+    msys_copts = ["-fno-asynchronous-unwind-tables"],
+    x86_srcs = ["src/amalgam/avx512vbmi.c"],
+    deps = [
+        ":common",
+        ":math",
+        ":microkernels_h",
+        ":microparams",
+        ":tables",
+        ":unaligned",
+    ],
+)
+
+xnnpack_cc_library(
+    name = "avx512vbmi_bench_microkernels",
+    gcc_copts = xnnpack_gcc_std_copts(),
+    gcc_x86_copts = [
+        "-mavx512f",
+        "-mavx512cd",
+        "-mavx512bw",
+        "-mavx512dq",
+        "-mavx512vl",
+        "-mavx512vbmi",
+    ],
+    mingw_copts = ["-fno-asynchronous-unwind-tables"],
+    msvc_copts = xnnpack_msvc_std_copts(),
+    msvc_x86_32_copts = ["/arch:AVX512"],
+    msvc_x86_64_copts = ["/arch:AVX512"],
+    msys_copts = ["-fno-asynchronous-unwind-tables"],
+    x86_srcs = ALL_AVX512VBMI_MICROKERNEL_SRCS,
+    deps = [
+        ":common",
+        ":math",
+        ":microkernels_h",
+        ":microparams",
+        ":tables",
+        ":unaligned",
+    ],
+)
+
+xnnpack_cc_library(
+    name = "avx512vbmi_prod_microkernels",
+    gcc_copts = xnnpack_gcc_std_copts(),
+    gcc_x86_copts = [
+        "-mavx512f",
+        "-mavx512cd",
+        "-mavx512bw",
+        "-mavx512dq",
+        "-mavx512vl",
+        "-mavx512vbmi",
+    ],
+    mingw_copts = ["-fno-asynchronous-unwind-tables"],
+    msvc_copts = xnnpack_msvc_std_copts(),
+    msvc_x86_32_copts = ["/arch:AVX512"],
+    msvc_x86_64_copts = ["/arch:AVX512"],
+    msys_copts = ["-fno-asynchronous-unwind-tables"],
+    x86_srcs = PROD_AVX512VBMI_MICROKERNEL_SRCS,
+    deps = [
+        ":common",
+        ":math",
+        ":microkernels_h",
+        ":microparams",
+        ":tables",
+        ":unaligned",
+    ],
+)
+
+xnnpack_cc_library(
+    name = "avx512vbmi_test_microkernels",
+    copts = [
+        "-UNDEBUG",
+        "-DXNN_TEST_MODE=1",
+    ],
+    gcc_copts = xnnpack_gcc_std_copts(),
+    gcc_x86_copts = [
+        "-mavx512f",
+        "-mavx512cd",
+        "-mavx512bw",
+        "-mavx512dq",
+        "-mavx512vl",
+        "-mavx512vbmi",
+    ],
+    mingw_copts = ["-fno-asynchronous-unwind-tables"],
+    msvc_copts = xnnpack_msvc_std_copts(),
+    msvc_x86_32_copts = ["/arch:AVX512"],
+    msvc_x86_64_copts = ["/arch:AVX512"],
+    msys_copts = ["-fno-asynchronous-unwind-tables"],
+    x86_srcs = ALL_AVX512VBMI_MICROKERNEL_SRCS,
+    deps = [
+        ":common",
+        ":math",
+        ":microkernels_h",
+        ":microparams",
+        ":tables",
+        ":unaligned",
+    ],
+)
+
+xnnpack_cc_library(
     name = "asm_microkernels",
     hdrs = ["src/xnnpack/assembly.h"],
     aarch32_copts = [
@@ -10608,6 +10802,7 @@ xnnpack_aggregate_library(
         ":avx2_amalgam_microkernels",
         ":avx512f_amalgam_microkernels",
         ":avx512skx_amalgam_microkernels",
+        ":avx512vbmi_amalgam_microkernels",
     ],
 )
 
@@ -10676,6 +10871,7 @@ xnnpack_aggregate_library(
         ":avx2_bench_microkernels",
         ":avx512f_bench_microkernels",
         ":avx512skx_bench_microkernels",
+        ":avx512vbmi_bench_microkernels",
     ],
 )
 
@@ -10744,6 +10940,7 @@ xnnpack_aggregate_library(
         ":avx2_prod_microkernels",
         ":avx512f_prod_microkernels",
         ":avx512skx_prod_microkernels",
+        ":avx512vbmi_prod_microkernels",
     ],
 )
 
@@ -10812,6 +11009,7 @@ xnnpack_aggregate_library(
         ":avx2_test_microkernels",
         ":avx512f_test_microkernels",
         ":avx512skx_test_microkernels",
+        ":avx512vbmi_test_microkernels",
     ],
 )
 
@@ -10942,6 +11140,7 @@ xnnpack_cc_library(
         ":common",
         ":logging",
         ":math",
+        ":memory",
         ":mutex",
         ":xnnpack_h",
     ],
@@ -11094,12 +11293,13 @@ xnnpack_cc_library(
     aarch64_srcs = JIT_AARCH64_SRCS,
     msvc_copts = xnnpack_msvc_std_copts(),
     deps = [
-        ":allocator",
         ":common",
         ":logging",
         ":math",
+        ":memory",
         ":microkernels_h",
-        ":params",
+        ":microparams",
+        ":post_operation",
         ":xnnpack_h",
     ],
 )
@@ -11124,12 +11324,13 @@ xnnpack_cc_library(
     ],
     msvc_copts = xnnpack_msvc_std_copts(),
     deps = [
-        ":allocator",
         ":common",
         ":logging",
         ":math",
+        ":memory",
         ":microkernels_h",
-        ":params",
+        ":microparams",
+        ":post_operation",
         ":xnnpack_h",
     ],
 )
@@ -11249,7 +11450,9 @@ xnnpack_cc_library(
     gcc_copts = xnnpack_gcc_std_copts(),
     msvc_copts = xnnpack_msvc_std_copts(),
     deps = [
+        ":common",
         ":math",
+        ":xnnpack_h",
     ],
 )
 
@@ -11265,6 +11468,7 @@ xnnpack_cc_library(
     msvc_copts = xnnpack_msvc_std_copts(),
     deps = [
         ":math",
+        ":xnnpack_h",
     ],
 )
 
@@ -11739,6 +11943,22 @@ xnnpack_benchmark(
 )
 
 xnnpack_benchmark(
+    name = "f16_gavgpool_cw_bench",
+    srcs = [
+        "bench/f16-gavgpool-cw.cc",
+    ],
+    deps = MICROKERNEL_BENCHMARK_DEPS,
+)
+
+xnnpack_benchmark(
+    name = "f32_gavgpool_cw_bench",
+    srcs = [
+        "bench/f32-gavgpool-cw.cc",
+    ],
+    deps = MICROKERNEL_BENCHMARK_DEPS,
+)
+
+xnnpack_benchmark(
     name = "f32_conv_hwc2chw_bench",
     srcs = [
         "bench/dconv.h",
@@ -12002,6 +12222,14 @@ xnnpack_benchmark(
 )
 
 xnnpack_benchmark(
+    name = "f16_vsqrt_bench",
+    srcs = [
+        "bench/f16-vsqrt.cc",
+    ],
+    deps = MICROKERNEL_BENCHMARK_DEPS,
+)
+
+xnnpack_benchmark(
     name = "f32_vsqrt_bench",
     srcs = [
         "bench/f32-vsqrt.cc",
@@ -12079,9 +12307,9 @@ xnnpack_benchmark(
 )
 
 xnnpack_benchmark(
-    name = "s16_vlshift_bench",
+    name = "i16_vlshift_bench",
     srcs = [
-        "bench/s16-vlshift.cc",
+        "bench/i16-vlshift.cc",
     ],
     deps = MICROKERNEL_BENCHMARK_DEPS,
 )
@@ -12480,6 +12708,19 @@ xnnpack_cc_library(
 )
 
 xnnpack_cc_library(
+    name = "fp32_mobilenet_v3_small_fused",
+    srcs = ["models/fp32-mobilenet-v3-small-fused.cc"],
+    hdrs = ["models/models.h"],
+    copts = xnnpack_std_cxxopts(),
+    deps = [
+        ":XNNPACK",
+        ":cache",
+        ":post_operation",
+        "@pthreadpool",
+    ],
+)
+
+xnnpack_cc_library(
     name = "fp32_sparse_mobilenet_v3_small",
     srcs = ["models/fp32-sparse-mobilenet-v3-small.cc"],
     hdrs = ["models/models.h"],
@@ -12501,6 +12742,21 @@ xnnpack_cc_library(
         ":cache",
         "@FP16",
         "@pthreadpool",
+    ],
+)
+
+xnnpack_benchmark(
+    name = "f16_gemm_e2e_bench",
+    srcs = [
+        "bench/end2end.h",
+        "bench/f16-gemm-e2e.cc",
+    ],
+    deps = MICROKERNEL_BENCHMARK_DEPS + [
+        ":XNNPACK",
+        ":fp16_mobilenet_v1",
+        ":fp16_mobilenet_v2",
+        ":fp16_mobilenet_v3_large",
+        ":fp16_mobilenet_v3_small",
     ],
 )
 
@@ -12600,6 +12856,7 @@ xnnpack_benchmark(
         ":fp32_mobilenet_v2",
         ":fp32_mobilenet_v3_large",
         ":fp32_mobilenet_v3_small",
+        ":fp32_mobilenet_v3_small_fused",
         ":fp32_sparse_mobilenet_v1",
         ":fp32_sparse_mobilenet_v2",
         ":fp32_sparse_mobilenet_v3_large",
@@ -12644,6 +12901,14 @@ xnnpack_benchmark(
     name = "f16_sigmoid_ulp_eval",
     srcs = [
         "eval/f16-sigmoid-ulp.cc",
+    ],
+    deps = ACCURACY_EVAL_DEPS,
+)
+
+xnnpack_benchmark(
+    name = "f16_sqrt_ulp_eval",
+    srcs = [
+        "eval/f16-sqrt-ulp.cc",
     ],
     deps = ACCURACY_EVAL_DEPS,
 )
@@ -12697,6 +12962,15 @@ xnnpack_benchmark(
 )
 
 ################### Accuracy verification for math functions ##################
+
+xnnpack_unit_test(
+    name = "f16_sqrt_eval",
+    srcs = [
+        "eval/f16-sqrt.cc",
+    ],
+    automatic = False,
+    deps = ACCURACY_EVAL_DEPS,
+)
 
 xnnpack_unit_test(
     name = "f16_f32_cvt_eval",
@@ -13301,6 +13575,17 @@ xnnpack_unit_test(
 )
 
 xnnpack_unit_test(
+    name = "f32_igemm_post_operation_test",
+    srcs = [
+        "test/f32-igemm-post-operation.cc",
+    ],
+    deps = MICROKERNEL_TEST_DEPS + [
+        ":gemm_microkernel_tester",
+        ":post_operation",
+    ],
+)
+
+xnnpack_unit_test(
     name = "f32_conv_hwc_test",
     srcs = [
         "test/conv-hwc-microkernel-tester.h",
@@ -13435,6 +13720,17 @@ xnnpack_unit_test(
     shard_count = 5,
     deps = MICROKERNEL_TEST_DEPS + [
         ":gemm_microkernel_tester",
+    ],
+)
+
+xnnpack_unit_test(
+    name = "f32_gemm_post_operation_test",
+    srcs = [
+        "test/f32-gemm-post-operation.cc",
+    ],
+    deps = MICROKERNEL_TEST_DEPS + [
+        ":gemm_microkernel_tester",
+        ":post_operation",
     ],
 )
 
@@ -14472,9 +14768,9 @@ xnnpack_unit_test(
 )
 
 xnnpack_unit_test(
-    name = "s16_vlshift_test",
+    name = "i16_vlshift_test",
     srcs = [
-        "test/s16-vlshift.cc",
+        "test/i16-vlshift.cc",
         "test/vlshift-microkernel-tester.h",
     ],
     deps = MICROKERNEL_TEST_DEPS,
@@ -14733,6 +15029,15 @@ xnnpack_unit_test(
 )
 
 xnnpack_unit_test(
+    name = "abs_nc_eager_test",
+    srcs = [
+        "test/abs-nc-eager.cc",
+        "test/abs-operator-tester.h",
+    ],
+    deps = OPERATOR_TEST_DEPS,
+)
+
+xnnpack_unit_test(
     name = "add_nd_test",
     timeout = "moderate",
     srcs = [
@@ -14745,6 +15050,7 @@ xnnpack_unit_test(
 
 xnnpack_unit_test(
     name = "add_nd_eager_test",
+    timeout = "moderate",
     srcs = [
         "test/add-nd-eager.cc",
         "test/binary-elementwise-operator-tester.h",
@@ -14781,9 +15087,27 @@ xnnpack_unit_test(
 )
 
 xnnpack_unit_test(
+    name = "bankers_rounding_nc_eager_test",
+    srcs = [
+        "test/bankers-rounding-nc-eager.cc",
+        "test/bankers-rounding-operator-tester.h",
+    ],
+    deps = OPERATOR_TEST_DEPS,
+)
+
+xnnpack_unit_test(
     name = "ceiling_nc_test",
     srcs = [
         "test/ceiling-nc.cc",
+        "test/ceiling-operator-tester.h",
+    ],
+    deps = OPERATOR_TEST_DEPS,
+)
+
+xnnpack_unit_test(
+    name = "ceiling_nc_eager_test",
+    srcs = [
+        "test/ceiling-nc-eager.cc",
         "test/ceiling-operator-tester.h",
     ],
     deps = OPERATOR_TEST_DEPS,
@@ -14808,9 +15132,27 @@ xnnpack_unit_test(
 )
 
 xnnpack_unit_test(
+    name = "clamp_nc_eager_test",
+    srcs = [
+        "test/clamp-nc-eager.cc",
+        "test/clamp-operator-tester.h",
+    ],
+    deps = OPERATOR_TEST_DEPS,
+)
+
+xnnpack_unit_test(
     name = "constant_pad_nd_test",
     srcs = [
         "test/constant-pad-nd.cc",
+        "test/constant-pad-operator-tester.h",
+    ],
+    deps = OPERATOR_TEST_DEPS,
+)
+
+xnnpack_unit_test(
+    name = "constant_pad_nd_eager_test",
+    srcs = [
+        "test/constant-pad-nd-eager.cc",
         "test/constant-pad-operator-tester.h",
     ],
     deps = OPERATOR_TEST_DEPS,
@@ -14860,6 +15202,15 @@ xnnpack_unit_test(
 )
 
 xnnpack_unit_test(
+    name = "copy_nc_eager_test",
+    srcs = [
+        "test/copy-nc-eager.cc",
+        "test/copy-operator-tester.h",
+    ],
+    deps = OPERATOR_TEST_DEPS,
+)
+
+xnnpack_unit_test(
     name = "deconvolution_nhwc_test",
     timeout = "moderate",
     srcs = [
@@ -14901,9 +15252,27 @@ xnnpack_unit_test(
 )
 
 xnnpack_unit_test(
+    name = "divide_nd_eager_test",
+    srcs = [
+        "test/binary-elementwise-operator-tester.h",
+        "test/divide-nd-eager.cc",
+    ],
+    deps = OPERATOR_TEST_DEPS,
+)
+
+xnnpack_unit_test(
     name = "elu_nc_test",
     srcs = [
         "test/elu-nc.cc",
+        "test/elu-operator-tester.h",
+    ],
+    deps = OPERATOR_TEST_DEPS,
+)
+
+xnnpack_unit_test(
+    name = "elu_nc_eager_test",
+    srcs = [
+        "test/elu-nc-eager.cc",
         "test/elu-operator-tester.h",
     ],
     deps = OPERATOR_TEST_DEPS,
@@ -14922,6 +15291,15 @@ xnnpack_unit_test(
     name = "floor_nc_test",
     srcs = [
         "test/floor-nc.cc",
+        "test/floor-operator-tester.h",
+    ],
+    deps = OPERATOR_TEST_DEPS,
+)
+
+xnnpack_unit_test(
+    name = "floor_nc_eager_test",
+    srcs = [
+        "test/floor-nc-eager.cc",
         "test/floor-operator-tester.h",
     ],
     deps = OPERATOR_TEST_DEPS,
@@ -14955,9 +15333,27 @@ xnnpack_unit_test(
 )
 
 xnnpack_unit_test(
+    name = "hardswish_nc_eager_test",
+    srcs = [
+        "test/hardswish-nc-eager.cc",
+        "test/hardswish-operator-tester.h",
+    ],
+    deps = OPERATOR_TEST_DEPS,
+)
+
+xnnpack_unit_test(
     name = "leaky_relu_nc_test",
     srcs = [
         "test/leaky-relu-nc.cc",
+        "test/leaky-relu-operator-tester.h",
+    ],
+    deps = OPERATOR_TEST_DEPS,
+)
+
+xnnpack_unit_test(
+    name = "leaky_relu_nc_eager_test",
+    srcs = [
+        "test/leaky-relu-nc-eager.cc",
         "test/leaky-relu-operator-tester.h",
     ],
     deps = OPERATOR_TEST_DEPS,
@@ -14970,6 +15366,7 @@ xnnpack_unit_test(
         "test/max-pooling-nhwc.cc",
         "test/max-pooling-operator-tester.h",
     ],
+    shard_count = 10,
     deps = OPERATOR_TEST_DEPS,
 )
 
@@ -14984,12 +15381,30 @@ xnnpack_unit_test(
 )
 
 xnnpack_unit_test(
+    name = "maximum_nd_eager_test",
+    srcs = [
+        "test/binary-elementwise-operator-tester.h",
+        "test/maximum-nd-eager.cc",
+    ],
+    deps = OPERATOR_TEST_DEPS,
+)
+
+xnnpack_unit_test(
     name = "minimum_nd_test",
     srcs = [
         "test/binary-elementwise-operator-tester.h",
         "test/minimum-nd.cc",
     ],
     shard_count = 5,
+    deps = OPERATOR_TEST_DEPS,
+)
+
+xnnpack_unit_test(
+    name = "minimum_nd_eager_test",
+    srcs = [
+        "test/binary-elementwise-operator-tester.h",
+        "test/minimum-nd-eager.cc",
+    ],
     deps = OPERATOR_TEST_DEPS,
 )
 
@@ -15005,10 +15420,38 @@ xnnpack_unit_test(
 )
 
 xnnpack_unit_test(
+    name = "multiply_nd_eager_test",
+    timeout = "moderate",
+    srcs = [
+        "test/binary-elementwise-operator-tester.h",
+        "test/multiply-nd-eager.cc",
+    ],
+    deps = OPERATOR_TEST_DEPS,
+)
+
+xnnpack_unit_test(
     name = "negate_nc_test",
     srcs = [
         "test/negate-nc.cc",
         "test/negate-operator-tester.h",
+    ],
+    deps = OPERATOR_TEST_DEPS,
+)
+
+xnnpack_unit_test(
+    name = "negate_nc_eager_test",
+    srcs = [
+        "test/negate-nc-eager.cc",
+        "test/negate-operator-tester.h",
+    ],
+    deps = OPERATOR_TEST_DEPS,
+)
+
+xnnpack_unit_test(
+    name = "slice_normalization_test",
+    srcs = [
+        "test/slice-normalization.cc",
+        "test/slice-normalization-tester.h",
     ],
     deps = OPERATOR_TEST_DEPS,
 )
@@ -15059,6 +15502,26 @@ xnnpack_unit_test(
 )
 
 xnnpack_unit_test(
+    name = "sigmoid_nc_eager_test",
+    srcs = [
+        "test/sigmoid-nc-eager.cc",
+        "test/sigmoid-operator-tester.h",
+    ],
+    deps = OPERATOR_TEST_DEPS,
+)
+
+xnnpack_unit_test(
+    name = "slice_nd_test",
+    timeout = "moderate",
+    srcs = [
+        "test/slice-nd.cc",
+        "test/slice-operator-tester.h",
+    ],
+    shard_count = 5,
+    deps = OPERATOR_TEST_DEPS,
+)
+
+xnnpack_unit_test(
     name = "softmax_nc_test",
     srcs = [
         "test/softmax-nc.cc",
@@ -15086,9 +15549,27 @@ xnnpack_unit_test(
 )
 
 xnnpack_unit_test(
+    name = "square_nc_eager_test",
+    srcs = [
+        "test/square-nc-eager.cc",
+        "test/square-operator-tester.h",
+    ],
+    deps = OPERATOR_TEST_DEPS,
+)
+
+xnnpack_unit_test(
     name = "square_root_nc_test",
     srcs = [
         "test/square-root-nc.cc",
+        "test/square-root-operator-tester.h",
+    ],
+    deps = OPERATOR_TEST_DEPS,
+)
+
+xnnpack_unit_test(
+    name = "square_root_nc_eager_test",
+    srcs = [
+        "test/square-root-nc-eager.cc",
         "test/square-root-operator-tester.h",
     ],
     deps = OPERATOR_TEST_DEPS,
@@ -15105,10 +15586,29 @@ xnnpack_unit_test(
 )
 
 xnnpack_unit_test(
+    name = "squared_difference_nd_eager_test",
+    srcs = [
+        "test/binary-elementwise-operator-tester.h",
+        "test/squared-difference-nd-eager.cc",
+    ],
+    deps = OPERATOR_TEST_DEPS,
+)
+
+xnnpack_unit_test(
     name = "subtract_nd_test",
     srcs = [
         "test/binary-elementwise-operator-tester.h",
         "test/subtract-nd.cc",
+    ],
+    shard_count = 5,
+    deps = OPERATOR_TEST_DEPS,
+)
+
+xnnpack_unit_test(
+    name = "subtract_nd_eager_test",
+    srcs = [
+        "test/binary-elementwise-operator-tester.h",
+        "test/subtract-nd-eager.cc",
     ],
     shard_count = 5,
     deps = OPERATOR_TEST_DEPS,
@@ -15139,6 +15639,7 @@ xnnpack_unit_test(
         "test/transpose-nd-eager.cc",
         "test/transpose-operator-tester.h",
     ],
+    shard_count = 5,
     deps = OPERATOR_TEST_DEPS,
 )
 
@@ -15146,6 +15647,15 @@ xnnpack_unit_test(
     name = "truncation_nc_test",
     srcs = [
         "test/truncation-nc.cc",
+        "test/truncation-operator-tester.h",
+    ],
+    deps = OPERATOR_TEST_DEPS,
+)
+
+xnnpack_unit_test(
+    name = "truncation_nc_eager_test",
+    srcs = [
+        "test/truncation-nc-eager.cc",
         "test/truncation-operator-tester.h",
     ],
     deps = OPERATOR_TEST_DEPS,
@@ -15212,6 +15722,7 @@ xnnpack_unit_test(
     ],
     deps = [
         ":XNNPACK_test_mode",
+        ":math",
         ":subgraph_test_mode",
     ],
 )
@@ -15395,6 +15906,7 @@ xnnpack_unit_test(
 
 xnnpack_unit_test(
     name = "deconvolution_2d_test",
+    timeout = "moderate",
     srcs = [
         "test/deconvolution-2d.cc",
     ],
@@ -15696,6 +16208,20 @@ xnnpack_unit_test(
 )
 
 xnnpack_unit_test(
+    name = "space_to_depth_2d_test",
+    srcs = [
+        "test/space-to-depth-2d.cc",
+    ],
+    deps = [
+        ":XNNPACK_test_mode",
+        ":node_type",
+        ":operators_test_mode",
+        ":subgraph_test_mode",
+        ":subgraph_unary_tester",
+    ],
+)
+
+xnnpack_unit_test(
     name = "square_test",
     srcs = [
         "test/square.cc",
@@ -15770,6 +16296,20 @@ xnnpack_unit_test(
     name = "static_resize_bilinear_2d_test",
     srcs = [
         "test/static-resize-bilinear-2d.cc",
+    ],
+    deps = [
+        ":XNNPACK_test_mode",
+        ":node_type",
+        ":operators_test_mode",
+        ":subgraph_test_mode",
+        ":subgraph_unary_tester",
+    ],
+)
+
+xnnpack_unit_test(
+    name = "static_slice_test",
+    srcs = [
+        "test/static-slice.cc",
     ],
     deps = [
         ":XNNPACK_test_mode",
@@ -15882,10 +16422,9 @@ xnnpack_unit_test(
         "test/jit.cc",
     ],
     deps = [
-        ":XNNPACK",
-        ":allocator",
         ":common",
         ":jit_test_mode",
+        ":memory",
     ],
 )
 
@@ -15896,10 +16435,9 @@ xnnpack_unit_test(
         "test/assembler-helpers.h",
     ],
     deps = [
-        ":XNNPACK",
-        ":allocator",
         ":common",
         ":jit_test_mode",
+        ":memory",
     ],
 )
 
@@ -15910,10 +16448,9 @@ xnnpack_unit_test(
         "test/assembler-helpers.h",
     ],
     deps = [
-        ":XNNPACK",
-        ":allocator",
         ":common",
         ":jit_test_mode",
+        ":memory",
     ],
 )
 
@@ -16414,6 +16951,7 @@ selects.config_setting_group(
 selects.config_setting_group(
     name = "arm_fp16_enabled_by_default",
     match_any = [
+        ":aarch32",
         ":aarch64",
     ],
 )

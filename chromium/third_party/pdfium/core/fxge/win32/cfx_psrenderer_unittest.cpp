@@ -1,4 +1,4 @@
-// Copyright 2021 PDFium Authors. All rights reserved.
+// Copyright 2021 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -27,9 +27,8 @@ class TestWriteStream final : public IFX_RetainableWriteStream {
   CONSTRUCT_VIA_MAKE_RETAIN;
 
   // IFX_RetainableWriteStream:
-  bool WriteBlock(const void* pData, size_t size) override {
-    const uint8_t* data_as_uint8 = static_cast<const uint8_t*>(pData);
-    data_.insert(data_.end(), data_as_uint8, data_as_uint8 + size);
+  bool WriteBlock(pdfium::span<const uint8_t> buffer) override {
+    data_.insert(data_.end(), buffer.begin(), buffer.end());
     return true;
   }
 

@@ -1,8 +1,9 @@
-# Copyright 2016 The Chromium Authors. All rights reserved.
+# Copyright 2016 The PDFium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
 import("//build/config/clang/clang.gni")
+import("//build/config/gclient_args.gni")
 import("//testing/test.gni")
 import("pdfium.gni")
 
@@ -25,10 +26,7 @@ config("pdfium_common_config") {
   cflags_cc = []
   ldflags = []
   include_dirs = [ "." ]
-  defines = [
-    "PNG_PREFIX",
-    "PNG_USE_READ_MACROS",
-  ]
+  defines = []
 
   if (!use_system_libopenjpeg2) {
     defines += [ "OPJ_STATIC" ]
@@ -40,10 +38,6 @@ config("pdfium_common_config") {
 
   if (pdf_use_skia) {
     defines += [ "_SKIA_SUPPORT_" ]
-  }
-
-  if (pdf_use_skia_paths) {
-    defines += [ "_SKIA_SUPPORT_PATHS_" ]
   }
 
   if (is_win) {
@@ -502,6 +496,7 @@ test("pdfium_embeddertests") {
     "core/fxcrt",
     "core/fxge:embeddertests",
     "fpdfsdk:embeddertests",
+    "fpdfsdk/formfiller:embeddertests",
     "fpdfsdk/pwl:embeddertests",
     "testing/image_diff",
     "//testing/gmock",
@@ -569,5 +564,18 @@ group("pdfium_all") {
       ":fuzzers",
       ":samples",
     ]
+  }
+}
+
+# Makes additional targets reachable only for "gn check". These are not always
+# built by the "all" Ninja target, which uses the "default" group, which in turn
+# depends on the "pdfium_all" group.
+group("gn_check") {
+  deps = []
+
+  # TODO(crbug.com/pdfium/1832): Remove !is_android when //third_party/expat is
+  # available.
+  if (defined(checkout_skia) && checkout_skia && !is_android) {
+    deps += [ "//skia" ]
   }
 }

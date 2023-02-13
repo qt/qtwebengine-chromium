@@ -524,53 +524,10 @@ struct round_impl
   EIGEN_DEVICE_FUNC
   static inline Scalar run(const Scalar& x)
   {
-#if EIGEN_HAS_CXX11_MATH
     EIGEN_USING_STD(round);
-#endif
     return Scalar(round(x));
   }
 };
-
-#if !EIGEN_HAS_CXX11_MATH
-#if EIGEN_HAS_C99_MATH
-// Use ::roundf for float.
-template<>
-struct round_impl<float> {
-  EIGEN_DEVICE_FUNC
-  static inline float run(const float& x)
-  {
-    return ::roundf(x);
-  }
-};
-#else
-template<typename Scalar>
-struct round_using_floor_ceil_impl
-{
-  EIGEN_STATIC_ASSERT((!NumTraits<Scalar>::IsComplex), NUMERIC_TYPE_MUST_BE_REAL)
-
-  EIGEN_DEVICE_FUNC
-  static inline Scalar run(const Scalar& x)
-  {
-    // Without C99 round/roundf, resort to floor/ceil.
-    EIGEN_USING_STD(floor);
-    EIGEN_USING_STD(ceil);
-    // If not enough precision to resolve a decimal at all, return the input.
-    // Otherwise, adding 0.5 can trigger an increment by 1.
-    const Scalar limit = Scalar(1ull << (NumTraits<Scalar>::digits() - 1));
-    if (x >= limit || x <= -limit) {
-      return x;
-    }
-    return (x > Scalar(0)) ? Scalar(floor(x + Scalar(0.5))) : Scalar(ceil(x - Scalar(0.5)));
-  }
-};
-
-template<>
-struct round_impl<float> : round_using_floor_ceil_impl<float> {};
-
-template<>
-struct round_impl<double> : round_using_floor_ceil_impl<double> {};
-#endif // EIGEN_HAS_C99_MATH
-#endif // !EIGEN_HAS_CXX11_MATH
 
 template<typename Scalar>
 struct round_retval
@@ -589,31 +546,10 @@ struct rint_impl {
   EIGEN_DEVICE_FUNC
   static inline Scalar run(const Scalar& x)
   {
-#if EIGEN_HAS_CXX11_MATH
-      EIGEN_USING_STD(rint);
-#endif
+    EIGEN_USING_STD(rint);
     return rint(x);
   }
 };
-
-#if !EIGEN_HAS_CXX11_MATH
-template<>
-struct rint_impl<double> {
-  EIGEN_DEVICE_FUNC
-  static inline double run(const double& x)
-  {
-    return ::rint(x);
-  }
-};
-template<>
-struct rint_impl<float> {
-  EIGEN_DEVICE_FUNC
-  static inline float run(const float& x)
-  {
-    return ::rintf(x);
-  }
-};
-#endif
 
 template<typename Scalar>
 struct rint_retval
@@ -627,7 +563,7 @@ struct rint_retval
 
 // Visual Studio 2017 has a bug where arg(float) returns 0 for negative inputs.
 // This seems to be fixed in VS 2019.
-#if EIGEN_HAS_CXX11_MATH && (!EIGEN_COMP_MSVC || EIGEN_COMP_MSVC >= 1920)
+#if (!EIGEN_COMP_MSVC || EIGEN_COMP_MSVC >= 1920)
 // std::arg is only defined for types of std::complex, or integer types or float/double/long double
 template<typename Scalar,
           bool HasStdImpl = NumTraits<Scalar>::IsComplex || is_integral<Scalar>::value
@@ -728,11 +664,7 @@ struct expm1_impl {
   EIGEN_DEVICE_FUNC static inline Scalar run(const Scalar& x)
   {
     EIGEN_STATIC_ASSERT_NON_INTEGER(Scalar)
-    #if EIGEN_HAS_CXX11_MATH
     using std::expm1;
-    #else
-    using std_fallback::expm1;
-    #endif
     return expm1(x);
   }
 };
@@ -793,11 +725,7 @@ struct log1p_impl {
 
   EIGEN_DEVICE_FUNC static inline Scalar run(const Scalar& x)
   {
-    #if EIGEN_HAS_CXX11_MATH
     using std::log1p;
-    #else
-    using std_fallback::log1p;
-    #endif
     return log1p(x);
   }
 };
@@ -1011,7 +939,7 @@ inline EIGEN_MATHFUNC_RETVAL(random, Scalar) random()
 // Implementation of is* functions
 
 // std::is* do not work with fast-math and gcc, std::is* are available on MSVC 2013 and newer, as well as in clang.
-#if (EIGEN_HAS_CXX11_MATH && !(EIGEN_COMP_GNUC_STRICT && __FINITE_MATH_ONLY__)) || (EIGEN_COMP_MSVC) || (EIGEN_COMP_CLANG)
+#if (!(EIGEN_COMP_GNUC_STRICT && __FINITE_MATH_ONLY__)) || (EIGEN_COMP_MSVC) || (EIGEN_COMP_CLANG)
 #define EIGEN_USE_STD_FPCLASSIFY 1
 #else
 #define EIGEN_USE_STD_FPCLASSIFY 0
@@ -1721,14 +1649,12 @@ T acos(const T &x) {
   return acos(x);
 }
 
-#if EIGEN_HAS_CXX11_MATH
 template<typename T>
 EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
 T acosh(const T &x) {
   EIGEN_USING_STD(acosh);
   return static_cast<T>(acosh(x));
 }
-#endif
 
 #if defined(SYCL_DEVICE_ONLY)
 SYCL_SPECIALIZE_FLOATING_TYPES_UNARY(acos, acos)
@@ -1750,14 +1676,12 @@ T asin(const T &x) {
   return asin(x);
 }
 
-#if EIGEN_HAS_CXX11_MATH
 template<typename T>
 EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
 T asinh(const T &x) {
   EIGEN_USING_STD(asinh);
   return static_cast<T>(asinh(x));
 }
-#endif
 
 #if defined(SYCL_DEVICE_ONLY)
 SYCL_SPECIALIZE_FLOATING_TYPES_UNARY(asin, asin)
@@ -1779,14 +1703,12 @@ T atan(const T &x) {
   return static_cast<T>(atan(x));
 }
 
-#if EIGEN_HAS_CXX11_MATH
 template<typename T>
 EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
 T atanh(const T &x) {
   EIGEN_USING_STD(atanh);
   return static_cast<T>(atanh(x));
 }
-#endif
 
 #if defined(SYCL_DEVICE_ONLY)
 SYCL_SPECIALIZE_FLOATING_TYPES_UNARY(atan, atan)

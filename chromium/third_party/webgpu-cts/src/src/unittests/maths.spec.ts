@@ -18,6 +18,8 @@ import {
   biasedRange,
   cartesianProduct,
   correctlyRoundedF32,
+  FlushMode,
+  fullF16Range,
   fullF32Range,
   fullI32Range,
   hexToF32,
@@ -26,7 +28,6 @@ import {
   linearRange,
   nextAfterF32,
   oneULP,
-  withinULP,
 } from '../webgpu/util/math.js';
 
 import { UnitTest } from './unit_test.js';
@@ -34,16 +35,39 @@ import { UnitTest } from './unit_test.js';
 export const g = makeTestGroup(UnitTest);
 
 /**
- * @returns true if arrays are equal within 1ULP, doing element-wise comparison as needed, and considering NaNs to be equal.
+ * Utility wrapper around oneULP to test if a value is within 1 ULP(x)
  *
- * Depends on the correctness of withinULP, which is tested in this file.
+ * @param got number to test
+ * @param expected number to be within 1 ULP of
+ * @param mode should oneULP FTZ
+ * @returns if got is within 1 ULP of expected
+ */
+function withinOneULP(got: number, expected: number, mode: FlushMode): boolean {
+  const ulp = oneULP(expected, mode);
+  return got >= expected - ulp && got <= expected + ulp;
+}
+
+/**
+ * @returns true if arrays are equal within 1ULP, doing element-wise comparison
+ *               as needed, and considering NaNs to be equal.
+ *
+ * Depends on the correctness of oneULP, which is tested in this file.
+ **
+ * @param got array of numbers to compare for equality
+ * @param expect array of numbers to compare against
+ * @param mode should different subnormals be considered the same, i.e. should
+ *              FTZ occur during comparison
  **/
-function compareArrayOfNumbers(got: Array<number>, expect: Array<number>): boolean {
+function compareArrayOfNumbers(
+  got: Array<number>,
+  expect: Array<number>,
+  mode: FlushMode = 'flush'
+): boolean {
   return (
     got.length === expect.length &&
     got.every((value, index) => {
       const expected = expect[index];
-      return (Number.isNaN(value) && Number.isNaN(expected)) || withinULP(value, expected);
+      return (Number.isNaN(value) && Number.isNaN(expected)) || withinOneULP(value, expected, mode);
     })
   );
 }
@@ -112,7 +136,7 @@ g.test('nextAfterFlushToZero')
     const dir = t.params.dir;
     const expect = t.params.result;
     const expect_type = typeof expect;
-    const got = nextAfterF32(val, dir, true);
+    const got = nextAfterF32(val, dir, 'flush');
     const got_type = typeof got;
     t.expect(
       got.value === expect.value || (Number.isNaN(got.value) && Number.isNaN(expect.value)),
@@ -178,7 +202,7 @@ g.test('nextAfterNoFlush')
     const dir = t.params.dir;
     const expect = t.params.result;
     const expect_type = typeof expect;
-    const got = nextAfterF32(val, dir, false);
+    const got = nextAfterF32(val, dir, 'no-flush');
     const got_type = typeof got;
     t.expect(
       got.value === expect.value || (Number.isNaN(got.value) && Number.isNaN(expect.value)),
@@ -232,7 +256,7 @@ g.test('oneULPFlushToZero')
   ])
   .fn(t => {
     const target = t.params.target;
-    const got = oneULP(target, true);
+    const got = oneULP(target, 'flush');
     const expect = t.params.expect;
     t.expect(
       got === expect || (Number.isNaN(got) && Number.isNaN(expect)),
@@ -281,7 +305,7 @@ g.test('oneULPNoFlush')
   ])
   .fn(t => {
     const target = t.params.target;
-    const got = oneULP(target, false);
+    const got = oneULP(target, 'no-flush');
     const expect = t.params.expect;
     t.expect(
       got === expect || (Number.isNaN(got) && Number.isNaN(expect)),
@@ -336,67 +360,6 @@ g.test('oneULP')
       got === expect || (Number.isNaN(got) && Number.isNaN(expect)),
       `oneULP(${target}) returned ${got}. Expected ${expect}`
     );
-  });
-
-interface withinULPCase {
-  val: number;
-  target: number;
-  expect: boolean;
-}
-g.test('withinULP')
-  .paramsSubcasesOnly<withinULPCase>(
-    // prettier-ignore
-    [
-    // Edge Cases
-    { val: Number.NaN, target: Number.NaN, expect: false },
-    { val: Number.POSITIVE_INFINITY, target: Number.NaN, expect: false },
-    { val: Number.NEGATIVE_INFINITY, target: Number.NaN, expect: false },
-    { val: 0, target: Number.NaN, expect: false },
-    { val: 10, target: Number.NaN, expect: false },
-    { val: -10, target: Number.NaN, expect: false },
-    { val: hexToF32(kBit.f32.subnormal.positive.max), target: Number.NaN, expect: false },
-    { val: hexToF32(kBit.f32.subnormal.negative.min), target: Number.NaN, expect: false },
-    { val: hexToF32(kBit.f32.positive.max), target: Number.NaN, expect: false },
-    { val: hexToF32(kBit.f32.negative.min), target: Number.NaN, expect: false },
-
-    { val: Number.NaN, target: Number.POSITIVE_INFINITY, expect: false },
-    { val: Number.POSITIVE_INFINITY, target: Number.POSITIVE_INFINITY, expect: true },
-    { val: Number.NEGATIVE_INFINITY, target: Number.POSITIVE_INFINITY, expect: false },
-    { val: 0, target: Number.POSITIVE_INFINITY, expect: false },
-    { val: 10, target: Number.POSITIVE_INFINITY, expect: false },
-    { val: -10, target: Number.POSITIVE_INFINITY, expect: false },
-    { val: hexToF32(kBit.f32.subnormal.positive.max), target: Number.POSITIVE_INFINITY, expect: false },
-    { val: hexToF32(kBit.f32.subnormal.negative.min), target: Number.POSITIVE_INFINITY, expect: false },
-    { val: hexToF32(kBit.f32.positive.max), target: Number.POSITIVE_INFINITY, expect: false },
-    { val: hexToF32(kBit.f32.negative.min), target: Number.POSITIVE_INFINITY, expect: false },
-
-    { val: Number.NaN, target: Number.NEGATIVE_INFINITY, expect: false },
-    { val: Number.POSITIVE_INFINITY, target: Number.NEGATIVE_INFINITY, expect: false },
-    { val: Number.NEGATIVE_INFINITY, target: Number.NEGATIVE_INFINITY, expect: true },
-    { val: 0, target: Number.NEGATIVE_INFINITY, expect: false },
-    { val: 10, target: Number.NEGATIVE_INFINITY, expect: false },
-    { val: -10, target: Number.NEGATIVE_INFINITY, expect: false },
-    { val: hexToF32(kBit.f32.subnormal.positive.max), target: Number.NEGATIVE_INFINITY, expect: false },
-    { val: hexToF32(kBit.f32.subnormal.negative.min), target: Number.NEGATIVE_INFINITY, expect: false },
-    { val: hexToF32(kBit.f32.positive.max), target: Number.NEGATIVE_INFINITY, expect: false },
-    { val: hexToF32(kBit.f32.negative.min), target: Number.NEGATIVE_INFINITY, expect: false },
-
-    // Zero
-    { val: 0, target: 0, expect: true },
-    { val: 10, target: 0, expect: false },
-    { val: -10, target: 0, expect: false },
-    { val: hexToF32(kBit.f32.subnormal.positive.max), target: 0, expect: true },
-    { val: hexToF32(kBit.f32.subnormal.negative.min), target: 0, expect: true },
-    { val: hexToF32(kBit.f32.positive.max), target: 0, expect: false },
-    { val: hexToF32(kBit.f32.negative.min), target: 0, expect: false },
-  ]
-  )
-  .fn(t => {
-    const val = t.params.val;
-    const target = t.params.target;
-    const got = withinULP(val, target);
-    const expect = t.params.expect;
-    t.expect(got === expect, `withinULP(${val}, ${target}) returned ${got}. Expected ${expect}`);
   });
 
 interface correctlyRoundedF32Case {
@@ -626,7 +589,7 @@ g.test('lerp')
     const expect = test.params.result;
 
     test.expect(
-      (Number.isNaN(got) && Number.isNaN(expect)) || withinULP(got, expect),
+      (Number.isNaN(got) && Number.isNaN(expect)) || withinOneULP(got, expect, 'flush'),
       `lerp(${a}, ${b}, ${t}) returned ${got}. Expected ${expect}`
     );
   });
@@ -676,7 +639,7 @@ g.test('linearRange')
     const expect = test.params.result;
 
     test.expect(
-      compareArrayOfNumbers(got, expect),
+      compareArrayOfNumbers(got, expect, 'no-flush'),
       `linearRange(${a}, ${b}, ${num_steps}) returned ${got}. Expected ${expect}`
     );
   });
@@ -719,7 +682,7 @@ g.test('biasedRange')
     const expect = test.params.result;
 
     test.expect(
-      compareArrayOfNumbers(got, expect),
+      compareArrayOfNumbers(got, expect, 'no-flush'),
       `biasedRange(${a}, ${b}, ${num_steps}) returned ${got}. Expected ${expect}`
     );
   });
@@ -748,7 +711,7 @@ g.test('fullF32Range')
         { neg_norm: 0, neg_sub: 0, pos_sub: 0, pos_norm: 2, expect: [ 0.0, kValue.f32.positive.min, kValue.f32.positive.max ] },
         { neg_norm: 0, neg_sub: 0, pos_sub: 0, pos_norm: 3, expect: [ 0.0, kValue.f32.positive.min, 1.9999998807907104, kValue.f32.positive.max ] },
         { neg_norm: 1, neg_sub: 1, pos_sub: 1, pos_norm: 1, expect: [ kValue.f32.negative.min, kValue.f32.subnormal.negative.min, 0.0, kValue.f32.subnormal.positive.min, kValue.f32.positive.min ] },
-        { neg_norm: 2, neg_sub: 2, pos_sub: 2, pos_norm: 2, expect: [ kValue.f32.negative.min, kValue.f32.negative.max, kValue.f32.subnormal.negative.max, kValue.f32.subnormal.negative.min, 0.0, kValue.f32.subnormal.positive.min, kValue.f32.subnormal.positive.max, kValue.f32.positive.min, kValue.f32.positive.max ] },
+        { neg_norm: 2, neg_sub: 2, pos_sub: 2, pos_norm: 2, expect: [ kValue.f32.negative.min, kValue.f32.negative.max, kValue.f32.subnormal.negative.min, kValue.f32.subnormal.negative.max, 0.0, kValue.f32.subnormal.positive.min, kValue.f32.subnormal.positive.max, kValue.f32.positive.min, kValue.f32.positive.max ] },
     ]
   )
   .fn(test => {
@@ -760,8 +723,49 @@ g.test('fullF32Range')
     const expect = test.params.expect;
 
     test.expect(
-      compareArrayOfNumbers(got, expect),
+      compareArrayOfNumbers(got, expect, 'no-flush'),
       `fullF32Range(${neg_norm}, ${neg_sub}, ${pos_sub}, ${pos_norm}) returned [${got}]. Expected [${expect}]`
+    );
+  });
+
+interface fullF16RangeCase {
+  neg_norm: number;
+  neg_sub: number;
+  pos_sub: number;
+  pos_norm: number;
+  expect: Array<number>;
+}
+
+g.test('fullF16Range')
+  .paramsSimple<fullF16RangeCase>(
+    // prettier-ignore
+    [
+          { neg_norm: 0, neg_sub: 0, pos_sub: 0, pos_norm: 0, expect: [ 0.0 ] },
+          { neg_norm: 1, neg_sub: 0, pos_sub: 0, pos_norm: 0, expect: [ kValue.f16.negative.min, 0.0] },
+          { neg_norm: 2, neg_sub: 0, pos_sub: 0, pos_norm: 0, expect: [ kValue.f16.negative.min, kValue.f16.negative.max, 0.0 ] },
+          { neg_norm: 3, neg_sub: 0, pos_sub: 0, pos_norm: 0, expect: [ kValue.f16.negative.min, -1.9990234375, kValue.f16.negative.max, 0.0 ] },
+          { neg_norm: 0, neg_sub: 1, pos_sub: 0, pos_norm: 0, expect: [ kValue.f16.subnormal.negative.min, 0.0 ] },
+          { neg_norm: 0, neg_sub: 2, pos_sub: 0, pos_norm: 0, expect: [ kValue.f16.subnormal.negative.min, kValue.f16.subnormal.negative.max, 0.0 ] },
+          { neg_norm: 0, neg_sub: 0, pos_sub: 1, pos_norm: 0, expect: [ 0.0, kValue.f16.subnormal.positive.min ] },
+          { neg_norm: 0, neg_sub: 0, pos_sub: 2, pos_norm: 0, expect: [ 0.0, kValue.f16.subnormal.positive.min, kValue.f16.subnormal.positive.max ] },
+          { neg_norm: 0, neg_sub: 0, pos_sub: 0, pos_norm: 1, expect: [ 0.0, kValue.f16.positive.min ] },
+          { neg_norm: 0, neg_sub: 0, pos_sub: 0, pos_norm: 2, expect: [ 0.0, kValue.f16.positive.min, kValue.f16.positive.max ] },
+          { neg_norm: 0, neg_sub: 0, pos_sub: 0, pos_norm: 3, expect: [ 0.0, kValue.f16.positive.min, 1.9990234375, kValue.f16.positive.max ] },
+          { neg_norm: 1, neg_sub: 1, pos_sub: 1, pos_norm: 1, expect: [ kValue.f16.negative.min, kValue.f16.subnormal.negative.min, 0.0, kValue.f16.subnormal.positive.min, kValue.f16.positive.min ] },
+          { neg_norm: 2, neg_sub: 2, pos_sub: 2, pos_norm: 2, expect: [ kValue.f16.negative.min, kValue.f16.negative.max, kValue.f16.subnormal.negative.min, kValue.f16.subnormal.negative.max, 0.0, kValue.f16.subnormal.positive.min, kValue.f16.subnormal.positive.max, kValue.f16.positive.min, kValue.f16.positive.max ] },
+      ]
+  )
+  .fn(test => {
+    const neg_norm = test.params.neg_norm;
+    const neg_sub = test.params.neg_sub;
+    const pos_sub = test.params.pos_sub;
+    const pos_norm = test.params.pos_norm;
+    const got = fullF16Range({ neg_norm, neg_sub, pos_sub, pos_norm });
+    const expect = test.params.expect;
+
+    test.expect(
+      compareArrayOfNumbers(got, expect),
+      `fullF16Range(${neg_norm}, ${neg_sub}, ${pos_sub}, ${pos_norm}) returned [${got}]. Expected [${expect}]`
     );
   });
 
@@ -871,21 +875,42 @@ g.test('f16LimitsEquivalency')
     );
   });
 
-interface cartesianProductCase {
-  inputs: number[][];
-  result: number[][];
+interface cartesianProductCase<T> {
+  inputs: T[][];
+  result: T[][];
 }
 
-g.test('cartesianProduct')
-  .paramsSimple<cartesianProductCase>(
+g.test('cartesianProductNumber')
+  .paramsSimple<cartesianProductCase<number>>(
     // prettier-ignore
     [
       { inputs: [[0], [1]], result: [[0, 1]] },
-      { inputs: [[0, 1], [2]], result: [[0, 2], [1, 2]] },
-      { inputs: [[0], [1, 2]], result: [[0, 1], [0, 2]] },
-      { inputs: [[0, 1], [2, 3]], result: [[0,2], [1, 2], [0, 3], [1, 3]] },
-      { inputs: [[0, 1, 2], [3, 4, 5]], result: [[0, 3], [1, 3], [2, 3], [0, 4], [1, 4], [2, 4], [0, 5], [1, 5], [2, 5]] },
-      { inputs: [[0, 1], [2, 3], [4, 5]], result: [[0, 2, 4], [1, 2, 4], [0, 3, 4], [1, 3, 4], [0, 2, 5], [1, 2, 5], [0, 3, 5], [1, 3, 5]] },
+      { inputs: [[0, 1], [2]], result: [[0, 2],
+                                        [1, 2]] },
+      { inputs: [[0], [1, 2]], result: [[0, 1],
+                                        [0, 2]] },
+      { inputs: [[0, 1], [2, 3]], result: [[0,2],
+                                           [1, 2],
+                                           [0, 3],
+                                           [1, 3]] },
+      { inputs: [[0, 1, 2], [3, 4, 5]], result: [[0, 3],
+                                                 [1, 3],
+                                                 [2, 3],
+                                                 [0, 4],
+                                                 [1, 4],
+                                                 [2, 4],
+                                                 [0, 5],
+                                                 [1, 5],
+                                                 [2, 5]] },
+      { inputs: [[0, 1], [2, 3], [4, 5]], result: [[0, 2, 4],
+                                                   [1, 2, 4],
+                                                   [0, 3, 4],
+                                                   [1, 3, 4],
+                                                   [0, 2, 5],
+                                                   [1, 2, 5],
+                                                   [0, 3, 5],
+                                                   [1, 3, 5]] },
+
   ]
   )
   .fn(test => {
@@ -895,8 +920,45 @@ g.test('cartesianProduct')
 
     test.expect(
       objectEquals(got, expect),
-      `cartesianProduct([${inputs.map(i => '[' + i.toString() + ']')}]) returned [${got.map(
-        g => '[' + g.toString() + ']'
-      )}]. Expected ${expect.map(e => '[' + e.toString() + ']')}`
+      `cartesianProduct(${JSON.stringify(inputs)}) returned ${JSON.stringify(
+        got
+      )}. Expected ${JSON.stringify(expect)} `
+    );
+  });
+
+g.test('cartesianProductArray')
+  .paramsSimple<cartesianProductCase<number[]>>(
+    // prettier-ignore
+    [
+      { inputs: [[[0, 1], [2, 3]], [[4, 5], [6, 7]]], result: [[[0, 1], [4, 5]],
+                                                               [[2, 3], [4, 5]],
+                                                               [[0, 1], [6, 7]],
+                                                               [[2, 3], [6, 7]]]},
+      { inputs: [[[0, 1], [2, 3]], [[4, 5], [6, 7]], [[8, 9]]], result: [[[0, 1], [4, 5], [8, 9]],
+                                                                         [[2, 3], [4, 5], [8, 9]],
+                                                                         [[0, 1], [6, 7], [8, 9]],
+                                                                         [[2, 3], [6, 7], [8, 9]]]},
+      { inputs: [[[0, 1, 2], [3, 4, 5], [6, 7, 8]], [[2, 1, 0], [5, 4, 3], [8, 7, 6]]], result:  [[[0, 1, 2], [2, 1, 0]],
+                                                                                                  [[3, 4, 5], [2, 1, 0]],
+                                                                                                  [[6, 7, 8], [2, 1, 0]],
+                                                                                                  [[0, 1, 2], [5, 4, 3]],
+                                                                                                  [[3, 4, 5], [5, 4, 3]],
+                                                                                                  [[6, 7, 8], [5, 4, 3]],
+                                                                                                  [[0, 1, 2], [8, 7, 6]],
+                                                                                                  [[3, 4, 5], [8, 7, 6]],
+                                                                                                  [[6, 7, 8], [8, 7, 6]]]}
+
+    ]
+  )
+  .fn(test => {
+    const inputs = test.params.inputs;
+    const got = cartesianProduct(...inputs);
+    const expect = test.params.result;
+
+    test.expect(
+      objectEquals(got, expect),
+      `cartesianProduct(${JSON.stringify(inputs)}) returned ${JSON.stringify(
+        got
+      )}. Expected ${JSON.stringify(expect)} `
     );
   });

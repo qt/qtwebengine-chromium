@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2016 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -74,11 +74,10 @@ CPDF_DataAvail::FileAvail::~FileAvail() = default;
 
 CPDF_DataAvail::DownloadHints::~DownloadHints() = default;
 
-CPDF_DataAvail::CPDF_DataAvail(
-    FileAvail* pFileAvail,
-    const RetainPtr<IFX_SeekableReadStream>& pFileRead)
-    : m_pFileRead(
-          pdfium::MakeRetain<CPDF_ReadValidator>(pFileRead, pFileAvail)),
+CPDF_DataAvail::CPDF_DataAvail(FileAvail* pFileAvail,
+                               RetainPtr<IFX_SeekableReadStream> pFileRead)
+    : m_pFileRead(pdfium::MakeRetain<CPDF_ReadValidator>(std::move(pFileRead),
+                                                         pFileAvail)),
       m_dwFileLen(m_pFileRead->GetSize()) {}
 
 CPDF_DataAvail::~CPDF_DataAvail() {
@@ -827,9 +826,9 @@ CPDF_DataAvail::DocAvailStatus CPDF_DataAvail::IsPageAvail(
       if (!pPageDict)
         return kDataError;
 
-      auto page_num_obj = std::make_pair(
-          dwPage, std::make_unique<CPDF_PageObjectAvail>(
-                      GetValidator(), m_pDocument.Get(), pPageDict));
+      auto page_num_obj =
+          std::make_pair(dwPage, std::make_unique<CPDF_PageObjectAvail>(
+                                     GetValidator(), m_pDocument, pPageDict));
 
       CPDF_PageObjectAvail* page_obj_avail =
           m_PagesObjAvail.insert(std::move(page_num_obj)).first->second.get();
@@ -880,9 +879,9 @@ CPDF_DataAvail::DocAvailStatus CPDF_DataAvail::IsPageAvail(
     return kDataError;
 
   {
-    auto page_num_obj = std::make_pair(
-        dwPage, std::make_unique<CPDF_PageObjectAvail>(
-                    GetValidator(), m_pDocument.Get(), pPageDict));
+    auto page_num_obj =
+        std::make_pair(dwPage, std::make_unique<CPDF_PageObjectAvail>(
+                                   GetValidator(), m_pDocument, pPageDict));
     CPDF_PageObjectAvail* page_obj_avail =
         m_PagesObjAvail.insert(std::move(page_num_obj)).first->second.get();
     const DocAvailStatus status = page_obj_avail->CheckAvail();
@@ -913,9 +912,9 @@ CPDF_DataAvail::DocAvailStatus CPDF_DataAvail::CheckResources(
 
   CPDF_PageObjectAvail* resource_avail =
       m_PagesResourcesAvail
-          .insert(std::make_pair(
-              resources, std::make_unique<CPDF_PageObjectAvail>(
-                             GetValidator(), m_pDocument.Get(), resources)))
+          .insert(std::make_pair(resources,
+                                 std::make_unique<CPDF_PageObjectAvail>(
+                                     GetValidator(), m_pDocument, resources)))
           .first->second.get();
   return resource_avail->CheckAvail();
 }
@@ -959,8 +958,7 @@ RetainPtr<const CPDF_Dictionary> CPDF_DataAvail::GetPageDictionary(
   // Page object already can be parsed in document.
   if (!m_pDocument->GetIndirectObject(dwObjNum)) {
     m_pDocument->ReplaceIndirectObjectIfHigherGeneration(
-        dwObjNum,
-        ParseIndirectObjectAt(szPageStartPos, dwObjNum, m_pDocument.Get()));
+        dwObjNum, ParseIndirectObjectAt(szPageStartPos, dwObjNum, m_pDocument));
   }
   if (!ValidatePage(index))
     return nullptr;
@@ -995,7 +993,7 @@ CPDF_DataAvail::DocFormStatus CPDF_DataAvail::CheckAcroForm() {
       return kFormNotExist;
 
     m_pFormAvail = std::make_unique<CPDF_PageObjectAvail>(
-        GetValidator(), m_pDocument.Get(), std::move(pAcroForm));
+        GetValidator(), m_pDocument, std::move(pAcroForm));
   }
   switch (m_pFormAvail->CheckAvail()) {
     case kDataError:
@@ -1017,7 +1015,7 @@ bool CPDF_DataAvail::ValidatePage(uint32_t dwPage) const {
   if (!pPageDict)
     return false;
 
-  CPDF_PageObjectAvail obj_avail(GetValidator(), m_pDocument.Get(),
+  CPDF_PageObjectAvail obj_avail(GetValidator(), m_pDocument,
                                  std::move(pPageDict));
   return obj_avail.CheckAvail() == kDataAvailable;
 }

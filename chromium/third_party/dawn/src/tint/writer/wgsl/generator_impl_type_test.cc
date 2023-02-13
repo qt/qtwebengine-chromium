@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/tint/sem/depth_texture.h"
-#include "src/tint/sem/multisampled_texture.h"
-#include "src/tint/sem/sampled_texture.h"
+#include "src/tint/type/depth_texture.h"
+#include "src/tint/type/multisampled_texture.h"
+#include "src/tint/type/sampled_texture.h"
 #include "src/tint/writer/wgsl/test_helper.h"
 
 using namespace tint::number_suffixes;  // NOLINT
@@ -188,9 +188,11 @@ TEST_F(WgslGeneratorImplTest, EmitType_StructOffsetDecl) {
     EXPECT_EQ(gen.result(), R"(struct S {
   @size(8)
   padding : u32,
+  /* @offset(8) */
   a : i32,
   @size(4)
   padding_1 : u32,
+  /* @offset(16) */
   b : f32,
 }
 )");
@@ -209,9 +211,11 @@ TEST_F(WgslGeneratorImplTest, EmitType_StructOffsetDecl_WithSymbolCollisions) {
     EXPECT_EQ(gen.result(), R"(struct S {
   @size(8)
   padding : u32,
+  /* @offset(8) */
   tint_0_padding : i32,
   @size(4)
   padding_1 : u32,
+  /* @offset(16) */
   tint_2_padding : f32,
 }
 )");

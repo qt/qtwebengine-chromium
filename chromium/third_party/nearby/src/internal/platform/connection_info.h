@@ -19,11 +19,16 @@
 
 namespace location {
 namespace nearby {
+
+constexpr int kMacAddressLength = 6;
+
 class ConnectionInfo {
  public:
   enum class MediumType {
     kUnknown = 0,
     kBluetooth = 1,
+    kWifiLan = 2,
+    kBle = 3,
   };
   virtual ~ConnectionInfo() = default;
   virtual MediumType GetMediumType() const = 0;

@@ -159,14 +159,14 @@ struct TensorEvaluator
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE TensorBlock
   block(TensorBlockDesc& desc, TensorBlockScratch& scratch,
           bool /*root_of_expr_ast*/ = false) const {
-    assert(m_data != NULL);
+    eigen_assert(m_data != NULL);
     return TensorBlock::materialize(m_data, m_dims, desc, scratch);
   }
 
   template<typename TensorBlock>
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void writeBlock(
       const TensorBlockDesc& desc, const TensorBlock& block) {
-    assert(m_data != NULL);
+    eigen_assert(m_data != NULL);
 
     typedef typename TensorBlock::XprType TensorBlockExpr;
     typedef internal::TensorBlockAssignment<Scalar, NumCoords, TensorBlockExpr,
@@ -331,7 +331,7 @@ struct TensorEvaluator<const Derived, Device>
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE TensorBlock
   block(TensorBlockDesc& desc, TensorBlockScratch& scratch,
           bool /*root_of_expr_ast*/ = false) const {
-    assert(m_data != NULL);
+    eigen_assert(m_data != NULL);
     return TensorBlock::materialize(m_data, m_dims, desc, scratch);
   }
 

@@ -308,6 +308,7 @@ tr{
         CG{"Kongo Cumhuriyeti"}
         CI{"Fildişi Sahili"}
         CZ{"Çek Cumhuriyeti"}
+        NZ{"Aotearoa Yeni Zelanda"}
         SZ{"Svaziland"}
         TL{"Doğu Timor"}
     }

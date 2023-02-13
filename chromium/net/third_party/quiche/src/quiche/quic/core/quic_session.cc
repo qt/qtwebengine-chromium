@@ -28,8 +28,6 @@
 #include "quiche/quic/platform/api/quic_stack_trace.h"
 #include "quiche/common/quiche_text_utils.h"
 
-using spdy::SpdyPriority;
-
 namespace quic {
 
 namespace {
@@ -111,7 +109,8 @@ QuicSession::QuicSession(
   closed_streams_clean_up_alarm_ =
       absl::WrapUnique<QuicAlarm>(connection_->alarm_factory()->CreateAlarm(
           new ClosedStreamsCleanUpDelegate(this)));
-  if (perspective() == Perspective::IS_SERVER &&
+  if (!delay_setting_stateless_reset_token_ &&
+      perspective() == Perspective::IS_SERVER &&
       connection_->version().handshake_protocol == PROTOCOL_TLS1_3) {
     config_.SetStatelessResetTokenToSend(GetStatelessResetToken());
   }
@@ -134,6 +133,12 @@ void QuicSession::Initialize() {
       connection_->set_can_receive_ack_frequency_frame();
       config_.SetMinAckDelayMs(kDefaultMinAckDelayTimeMs);
     }
+  }
+  if (delay_setting_stateless_reset_token_ &&
+      perspective() == Perspective::IS_SERVER &&
+      connection_->version().handshake_protocol == PROTOCOL_TLS1_3) {
+    QUIC_RELOADABLE_FLAG_COUNT(quic_delay_setting_stateless_reset_token);
+    config_.SetStatelessResetTokenToSend(GetStatelessResetToken());
   }
 
   connection_->CreateConnectionIdManager();
@@ -445,6 +450,7 @@ void QuicSession::OnConnectionClosed(const QuicConnectionCloseFrame& frame,
   if (on_closed_frame_.quic_error_code == QUIC_NO_ERROR) {
     // Save all of the connection close information
     on_closed_frame_ = frame;
+    source_ = source;
   }
 
   GetMutableCryptoStream()->OnConnectionClosed(frame.quic_error_code, source);
@@ -639,6 +645,14 @@ void QuicSession::OnCanWrite() {
   if (control_frame_manager_.WillingToWrite()) {
     control_frame_manager_.OnCanWrite();
   }
+  if (GetQuicReloadableFlag(
+          quic_donot_pto_stream_data_before_handshake_confirmed) &&
+      version().UsesTls() && GetHandshakeState() != HANDSHAKE_CONFIRMED &&
+      connection_->in_probe_time_out()) {
+    QUIC_CODE_COUNT(quic_donot_pto_stream_data_before_handshake_confirmed);
+    // Do not PTO stream data before handshake gets confirmed.
+    return;
+  }
   // TODO(b/147146815): this makes all datagrams go before stream data.  We
   // should have a better priority scheme for this.
   if (!datagram_queue_.empty()) {
@@ -774,8 +788,13 @@ QuicConsumedData QuicSession::WritevData(QuicStreamId id, size_t write_length,
                                          StreamSendingState state,
                                          TransmissionType type,
                                          EncryptionLevel level) {
-  QUICHE_DCHECK(connection_->connected())
-      << ENDPOINT << "Try to write stream data when connection is closed.";
+  QUIC_BUG_IF(session writevdata when disconnected, !connection()->connected())
+      << ENDPOINT
+      << absl::StrCat("Try to write stream data when connection is closed: ",
+                      QuicFrameToString(QuicFrame(&on_closed_frame_)), " ",
+                      source_.has_value()
+                          ? ConnectionCloseSourceToString(source_.value())
+                          : "");
   if (!IsEncryptionEstablished() &&
       !QuicUtils::IsCryptoStreamId(transport_version(), id)) {
     // Do not let streams write without encryption. The calling stream will end
@@ -850,7 +869,13 @@ void QuicSession::OnControlFrameManagerError(QuicErrorCode error_code,
 bool QuicSession::WriteControlFrame(const QuicFrame& frame,
                                     TransmissionType type) {
   QUIC_BUG_IF(quic_bug_12435_11, !connection()->connected())
-      << ENDPOINT << "Try to write control frames when connection is closed.";
+      << ENDPOINT
+      << absl::StrCat("Try to write control frame: ", QuicFrameToString(frame),
+                      " when connection is closed: ",
+                      QuicFrameToString(QuicFrame(&on_closed_frame_)), " ",
+                      source_.has_value()
+                          ? ConnectionCloseSourceToString(source_.value())
+                          : "");
   if (!IsEncryptionEstablished()) {
     // Suppress the write before encryption gets established.
     return false;
@@ -1773,24 +1798,24 @@ void QuicSession::OnCryptoHandshakeMessageSent(
 void QuicSession::OnCryptoHandshakeMessageReceived(
     const CryptoHandshakeMessage& /*message*/) {}
 
-void QuicSession::RegisterStreamPriority(
-    QuicStreamId id, bool is_static,
-    const spdy::SpdyStreamPrecedence& precedence) {
-  write_blocked_streams()->RegisterStream(id, is_static, precedence);
+void QuicSession::RegisterStreamPriority(QuicStreamId id, bool is_static,
+                                         const QuicStreamPriority& priority) {
+  write_blocked_streams()->RegisterStream(
+      id, is_static, spdy::SpdyStreamPrecedence(priority.urgency));
 }
 
 void QuicSession::UnregisterStreamPriority(QuicStreamId id, bool is_static) {
   write_blocked_streams()->UnregisterStream(id, is_static);
 }
 
-void QuicSession::UpdateStreamPriority(
-    QuicStreamId id, const spdy::SpdyStreamPrecedence& new_precedence) {
-  write_blocked_streams()->UpdateStreamPriority(id, new_precedence);
+void QuicSession::UpdateStreamPriority(QuicStreamId id,
+                                       const QuicStreamPriority& new_priority) {
+  write_blocked_streams()->UpdateStreamPriority(
+      id, spdy::SpdyStreamPrecedence(new_priority.urgency));
 }
 
-QuicConfig* QuicSession::config() { return &config_; }
-
 void QuicSession::ActivateStream(std::unique_ptr<QuicStream> stream) {
+  const bool should_keep_alive = ShouldKeepConnectionAlive();
   QuicStreamId stream_id = stream->id();
   bool is_static = stream->is_static();
   QUIC_DVLOG(1) << ENDPOINT << "num_streams: " << stream_map_.size()
@@ -1805,6 +1830,11 @@ void QuicSession::ActivateStream(std::unique_ptr<QuicStream> stream) {
     // Do not inform stream ID manager of static streams.
     stream_id_manager_.ActivateStream(
         /*is_incoming=*/IsIncomingStream(stream_id));
+  }
+  if (perspective() == Perspective::IS_CLIENT &&
+      connection()->multi_port_stats() != nullptr && !should_keep_alive &&
+      ShouldKeepConnectionAlive()) {
+    connection()->MaybeProbeMultiPortPath();
   }
 }
 
@@ -2000,11 +2030,11 @@ void QuicSession::DeleteConnection() {
   }
 }
 
-bool QuicSession::MaybeSetStreamPriority(
-    QuicStreamId stream_id, const spdy::SpdyStreamPrecedence& precedence) {
+bool QuicSession::MaybeSetStreamPriority(QuicStreamId stream_id,
+                                         const QuicStreamPriority& priority) {
   auto active_stream = stream_map_.find(stream_id);
   if (active_stream != stream_map_.end()) {
-    active_stream->second->SetPriority(precedence);
+    active_stream->second->SetPriority(priority);
     return true;
   }
 

@@ -254,7 +254,7 @@ ms{
         SV{"El Salvador"}
         SX{"Sint Maarten"}
         SY{"Syria"}
-        SZ{"Swaziland"}
+        SZ{"Eswatini"}
         TA{"Tristan da Cunha"}
         TC{"Kepulauan Turks dan Caicos"}
         TD{"Chad"}
@@ -308,6 +308,9 @@ ms{
         CG{"Congo (Republik)"}
         CI{"Ivory Coast"}
         CZ{"Republik Czech"}
+        NZ{"Aotearoa New Zealand"}
+        SZ{"Swaziland"}
         TL{"Timor Timur"}
+        TR{"Türkiye"}
     }
 }

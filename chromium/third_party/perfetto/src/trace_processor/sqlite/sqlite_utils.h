@@ -19,9 +19,14 @@
 
 #include <math.h>
 #include <sqlite3.h>
+#include <cstddef>
+#include <cstring>
 
+#include "perfetto/base/logging.h"
 #include "perfetto/base/status.h"
+#include "perfetto/ext/base/optional.h"
 #include "perfetto/ext/base/string_utils.h"
+#include "perfetto/ext/base/string_view.h"
 #include "perfetto/trace_processor/basic_types.h"
 #include "src/trace_processor/sqlite/scoped_db.h"
 #include "src/trace_processor/sqlite/sqlite_table.h"
@@ -132,6 +137,47 @@ inline void ReportSqlValue(
   }
 }
 
+inline ScopedSqliteString ExpandedSqlForStmt(sqlite3_stmt* stmt) {
+  return ScopedSqliteString(sqlite3_expanded_sql(stmt));
+}
+
+inline base::Status FormatErrorMessage(base::StringView sql,
+                                       sqlite3* db,
+                                       int error_code) {
+  uint32_t offset = static_cast<uint32_t>(sqlite3_error_offset(db));
+
+  auto error_opt = FindLineWithOffset(sql, offset);
+
+  if (!error_opt.has_value()) {
+    return base::ErrStatus("Error: %s (errcode: %d)", sqlite3_errmsg(db),
+                           error_code);
+  }
+
+  auto error = error_opt.value();
+
+  return base::ErrStatus(
+      "Error in line:%u, col: %u.\n"
+      "%s\n"
+      "%s^\n"
+      "%s (errcode: %d)",
+      error.line_num, error.line_offset + 1, error.line.ToStdString().c_str(),
+      std::string(error.line_offset, ' ').c_str(), sqlite3_errmsg(db),
+      error_code);
+}
+
+inline base::Status FormatErrorMessage(sqlite3_stmt* stmt,
+                                       base::Optional<base::StringView> sql,
+                                       sqlite3* db,
+                                       int error_code) {
+  if (stmt) {
+    auto expanded_sql = ExpandedSqlForStmt(stmt);
+    PERFETTO_CHECK(expanded_sql);
+    return FormatErrorMessage(expanded_sql.get(), db, error_code);
+  }
+  PERFETTO_CHECK(sql.has_value());
+  return FormatErrorMessage(sql.value(), db, error_code);
+}
+
 inline base::Status PrepareStmt(sqlite3* db,
                                 const char* sql,
                                 ScopedStmt* stmt,
@@ -140,12 +186,8 @@ inline base::Status PrepareStmt(sqlite3* db,
   int err = sqlite3_prepare_v2(db, sql, -1, &raw_stmt, tail);
   stmt->reset(raw_stmt);
   if (err != SQLITE_OK)
-    return base::ErrStatus("%s (errcode: %d)", sqlite3_errmsg(db), err);
+    return base::ErrStatus("%s", FormatErrorMessage(sql, db, err).c_message());
   return base::OkStatus();
-}
-
-inline ScopedSqliteString ExpandedSqlForStmt(sqlite3_stmt* stmt) {
-  return ScopedSqliteString(sqlite3_expanded_sql(stmt));
 }
 
 inline bool IsStmtDone(sqlite3_stmt* stmt) {
@@ -162,76 +204,52 @@ inline base::Status StepStmtUntilDone(sqlite3_stmt* stmt) {
   for (err = sqlite3_step(stmt); err == SQLITE_ROW; err = sqlite3_step(stmt)) {
   }
   if (err != SQLITE_DONE) {
-    return base::ErrStatus("%s (errcode: %d)",
-                           sqlite3_errmsg(sqlite3_db_handle(stmt)), err);
+    auto db = sqlite3_db_handle(stmt);
+    return base::ErrStatus(
+        "%s", FormatErrorMessage(stmt, base::nullopt, db, err).c_message());
   }
   return base::OkStatus();
 }
 
-inline base::Status GetColumnsForTable(
-    sqlite3* db,
-    const std::string& raw_table_name,
-    std::vector<SqliteTable::Column>& columns) {
-  PERFETTO_DCHECK(columns.empty());
-  char sql[1024];
-  const char kRawSql[] = "SELECT name, type from pragma_table_info(\"%s\")";
+// Exracts the given type from the SqlValue if |value| can fit
+// in the provided optional. Note that SqlValue::kNull will always
+// succeed and cause base::nullopt to be set.
+//
+// Returns base::ErrStatus if the type does not match or does not
+// fit in the width of the provided optional type (i.e. int64 value
+// not fitting in int32 optional).
+base::Status ExtractFromSqlValue(const SqlValue& value,
+                                 base::Optional<int64_t>&);
+base::Status ExtractFromSqlValue(const SqlValue& value,
+                                 base::Optional<int32_t>&);
+base::Status ExtractFromSqlValue(const SqlValue& value,
+                                 base::Optional<uint32_t>&);
+base::Status ExtractFromSqlValue(const SqlValue& value,
+                                 base::Optional<double>&);
+base::Status ExtractFromSqlValue(const SqlValue& value,
+                                 base::Optional<const char*>&);
 
-  // Support names which are table valued functions with arguments.
-  std::string table_name = raw_table_name.substr(0, raw_table_name.find('('));
-  size_t n = base::SprintfTrunc(sql, sizeof(sql), kRawSql, table_name.c_str());
-  PERFETTO_DCHECK(n > 0);
+// Returns the column names for the table named by |raw_table_name|.
+base::Status GetColumnsForTable(sqlite3* db,
+                                const std::string& raw_table_name,
+                                std::vector<SqliteTable::Column>& columns);
 
-  sqlite3_stmt* raw_stmt = nullptr;
-  int err =
-      sqlite3_prepare_v2(db, sql, static_cast<int>(n), &raw_stmt, nullptr);
-  if (err != SQLITE_OK) {
-    return base::ErrStatus("Preparing database failed");
-  }
-  ScopedStmt stmt(raw_stmt);
-  PERFETTO_DCHECK(sqlite3_column_count(*stmt) == 2);
+// Reads a `SQLITE_TEXT` value and returns it as a wstring (UTF-16) in the
+// default byte order. `value` must be a `SQLITE_TEXT`.
+std::wstring SqliteValueToWString(sqlite3_value* value);
 
-  for (;;) {
-    err = sqlite3_step(raw_stmt);
-    if (err == SQLITE_DONE)
-      break;
-    if (err != SQLITE_ROW) {
-      return base::ErrStatus("Querying schema of table %s failed",
-                             raw_table_name.c_str());
-    }
+// Given an SqlValue::Type, converts it to a human-readable string.
+// This should really only be used for debugging messages.
+const char* SqliteTypeToFriendlyString(SqlValue::Type type);
 
-    const char* name =
-        reinterpret_cast<const char*>(sqlite3_column_text(*stmt, 0));
-    const char* raw_type =
-        reinterpret_cast<const char*>(sqlite3_column_text(*stmt, 1));
-    if (!name || !raw_type || !*name) {
-      return base::ErrStatus("Schema for %s has invalid column values",
-                             raw_table_name.c_str());
-    }
-
-    SqlValue::Type type;
-    if (base::CaseInsensitiveEqual(raw_type, "STRING") ||
-        base::CaseInsensitiveEqual(raw_type, "TEXT")) {
-      type = SqlValue::Type::kString;
-    } else if (base::CaseInsensitiveEqual(raw_type, "DOUBLE")) {
-      type = SqlValue::Type::kDouble;
-    } else if (base::CaseInsensitiveEqual(raw_type, "BIG INT") ||
-               base::CaseInsensitiveEqual(raw_type, "UNSIGNED INT") ||
-               base::CaseInsensitiveEqual(raw_type, "INT") ||
-               base::CaseInsensitiveEqual(raw_type, "BOOLEAN") ||
-               base::CaseInsensitiveEqual(raw_type, "INTEGER")) {
-      type = SqlValue::Type::kLong;
-    } else if (!*raw_type) {
-      PERFETTO_DLOG("Unknown column type for %s %s", raw_table_name.c_str(),
-                    name);
-      type = SqlValue::Type::kNull;
-    } else {
-      return base::ErrStatus("Unknown column type '%s' on table %s", raw_type,
-                             raw_table_name.c_str());
-    }
-    columns.emplace_back(columns.size(), name, type);
-  }
-  return base::OkStatus();
-}
+// Verifies if |value| has the type represented by |expected_type|.
+// Returns base::OkStatus if it does or an base::ErrStatus with an
+// appropriate error mesage (incorporating |expected_type_str| if specified).
+base::Status TypeCheckSqliteValue(sqlite3_value* value,
+                                  SqlValue::Type expected_type);
+base::Status TypeCheckSqliteValue(sqlite3_value* value,
+                                  SqlValue::Type expected_type,
+                                  const char* expected_type_str);
 
 }  // namespace sqlite_utils
 }  // namespace trace_processor

@@ -16,34 +16,44 @@
 #define THIRD_PARTY_NEARBY_PRESENCE_ADVERTISEMENT_FACTORY_H_
 
 #include <string>
+#include <vector>
 
-#include "absl/status/status.h"
 #include "absl/status/statusor.h"
-#include "internal/platform/implementation/ble_v2.h"
+#include "internal/proto/credential.pb.h"
 #include "presence/implementation/base_broadcast_request.h"
-#include "presence/implementation/credential_manager.h"
+#include "presence/implementation/mediums/advertisement_data.h"
 
 namespace nearby {
 namespace presence {
 
-// An opaque container with the advertisement data.
-using ::location::nearby::api::ble_v2::BleAdvertisementData;
-
-/** Builds BLE advertisements from broadcast requests. */
+// Builds BLE advertisements from broadcast requests.
 class AdvertisementFactory {
  public:
-  explicit AdvertisementFactory(CredentialManager* credential_manager)
-      : credential_manager_(*credential_manager) {}
+  using PrivateCredential = internal::PrivateCredential;
 
-  /** Returns a BLE advertisement for given `request` */
-  absl::StatusOr<BleAdvertisementData> CreateAdvertisement(
-      const BaseBroadcastRequest& request) const;
+  // Returns a `CredentialSelector` if credentials are required to create an
+  // advertisement from the `request`.
+  static absl::StatusOr<CredentialSelector> GetCredentialSelector(
+      const BaseBroadcastRequest& request);
+
+  // Returns a BLE advertisement for given `request.
+  absl::StatusOr<AdvertisementData> CreateAdvertisement(
+      const BaseBroadcastRequest& request,
+      std::vector<PrivateCredential>& credentials) const;
+
+  absl::StatusOr<AdvertisementData> CreateAdvertisement(
+      const BaseBroadcastRequest& request) const {
+    std::vector<PrivateCredential> empty;
+    return CreateAdvertisement(request, empty);
+  }
 
  private:
-  absl::StatusOr<BleAdvertisementData> CreateBaseNpAdvertisement(
-      const BaseBroadcastRequest& request) const;
-
-  CredentialManager& credential_manager_;
+  absl::StatusOr<AdvertisementData> CreateBaseNpAdvertisement(
+      const BaseBroadcastRequest& request,
+      std::vector<PrivateCredential>& credentials) const;
+  absl::StatusOr<std::string> EncryptDataElements(
+      std::vector<PrivateCredential>& credentials, absl::string_view salt,
+      absl::string_view data_elements) const;
 };
 
 }  // namespace presence

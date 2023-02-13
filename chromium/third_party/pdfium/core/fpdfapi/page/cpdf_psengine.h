@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2016 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -74,8 +74,9 @@ class CPDF_PSOP {
   explicit CPDF_PSOP(float value);
   ~CPDF_PSOP();
 
+  bool Parse(CPDF_SimpleParser* parser, int depth);
+  void Execute(CPDF_PSEngine* pEngine);
   float GetFloatValue() const;
-  CPDF_PSProc* GetProc() const;
   PDF_PSOP GetOp() const { return m_op; }
 
  private:
@@ -126,7 +127,7 @@ class CPDF_PSEngine {
 
   uint32_t m_StackCount = 0;
   CPDF_PSProc m_MainProc;
-  float m_Stack[kPSEngineStackSize];
+  float m_Stack[kPSEngineStackSize] = {};
 };
 
 #endif  // CORE_FPDFAPI_PAGE_CPDF_PSENGINE_H_

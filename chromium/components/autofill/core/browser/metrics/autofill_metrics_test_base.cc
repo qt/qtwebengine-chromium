@@ -23,7 +23,7 @@ void SetProfileTestData(AutofillProfile* profile) {
                        "theking@gmail.com", "RCA", "3734 Elvis Presley Blvd.",
                        "Apt. 10", "Memphis", "Tennessee", "38116", "US",
                        "12345678901");
-  profile->set_guid(kTestGuid);
+  profile->set_guid(kTestProfileId);
 }
 }  // namespace
 
@@ -62,7 +62,8 @@ void AutofillMetricsBaseTest::SetUp() {
   autofill_client_->set_test_form_data_importer(
       std::make_unique<TestFormDataImporter>(
           autofill_client_.get(), payments_client,
-          std::move(credit_card_save_manager), &personal_data(), "en-US"));
+          std::move(credit_card_save_manager),
+          /*iban_save_manager=*/nullptr, &personal_data(), "en-US"));
   autofill_client_->set_autofill_offer_manager(
       std::make_unique<AutofillOfferManager>(
           &personal_data(), /*coupon_service_delegate=*/nullptr));
@@ -193,13 +194,13 @@ void AutofillMetricsBaseTest::OnCreditCardFetchingSuccessful(
                       : CreditCard::RecordType::MASKED_SERVER_CARD);
   credit_card_.SetNumber(real_pan);
 
-  autofill_manager().OnCreditCardFetched(CreditCardFetchResult::kSuccess,
-                                         &credit_card_, u"123");
+  autofill_manager().OnCreditCardFetchedForTest(CreditCardFetchResult::kSuccess,
+                                                &credit_card_, u"123");
 }
 
 void AutofillMetricsBaseTest::OnCreditCardFetchingFailed() {
-  autofill_manager().OnCreditCardFetched(CreditCardFetchResult::kPermanentError,
-                                         nullptr, u"");
+  autofill_manager().OnCreditCardFetchedForTest(
+      CreditCardFetchResult::kPermanentError, nullptr, u"");
 }
 
 void AutofillMetricsBaseTest::RecreateCreditCards(
@@ -314,7 +315,7 @@ void AutofillMetricsBaseTest::CreateTestAutofillProfiles() {
                        "theking@gmail.com", "RCA", "3734 Elvis Presley Blvd.",
                        "Apt. 10", "Memphis", "Tennessee", "38116", "US",
                        "12345678901");
-  profile1.set_guid(kTestGuid);
+  profile1.set_guid(kTestProfileId);
   personal_data().AddProfile(profile1);
 
   AutofillProfile profile2;

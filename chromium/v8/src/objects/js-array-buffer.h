@@ -6,6 +6,7 @@
 #define V8_OBJECTS_JS_ARRAY_BUFFER_H_
 
 #include "include/v8-typed-array.h"
+#include "src/handles/maybe-handles.h"
 #include "src/objects/backing-store.h"
 #include "src/objects/js-objects.h"
 #include "torque-generated/bit-fields.h"
@@ -89,11 +90,14 @@ class JSArrayBuffer
   // An ArrayBuffer with a size greater than zero is never empty.
   DECL_GETTER(IsEmpty, bool)
 
+  DECL_ACCESSORS(detach_key, Object)
+
   // Initializes the fields of the ArrayBuffer. The provided backing_store can
   // be nullptr. If it is not nullptr, then the function registers it with
   // src/heap/array-buffer-tracker.h.
   V8_EXPORT_PRIVATE void Setup(SharedFlag shared, ResizableFlag resizable,
-                               std::shared_ptr<BackingStore> backing_store);
+                               std::shared_ptr<BackingStore> backing_store,
+                               Isolate* isolate);
 
   // Attaches the backing store to an already constructed empty ArrayBuffer.
   // This is intended to be used only in ArrayBufferConstructor builtin.
@@ -108,7 +112,9 @@ class JSArrayBuffer
   // of growing the underlying memory object. The {force_for_wasm_memory} flag
   // is used by the implementation of Wasm memory growth in order to bypass the
   // non-detachable check.
-  V8_EXPORT_PRIVATE void Detach(bool force_for_wasm_memory = false);
+  V8_EXPORT_PRIVATE V8_WARN_UNUSED_RESULT static Maybe<bool> Detach(
+      Handle<JSArrayBuffer> buffer, bool force_for_wasm_memory = false,
+      Handle<Object> key = Handle<Object>());
 
   // Get a reference to backing store of this array buffer, if there is a
   // backing store. Returns nullptr if there is no backing store (e.g. detached
@@ -151,7 +157,7 @@ class JSArrayBuffer
   DECL_PRINTER(JSArrayBuffer)
   DECL_VERIFIER(JSArrayBuffer)
 
-  static constexpr int kEndOfTaggedFieldsOffset = JSObject::kHeaderSize;
+  static constexpr int kEndOfTaggedFieldsOffset = kRawByteLengthOffset;
 
   static const int kSizeWithEmbedderFields =
       kHeaderSize +
@@ -160,14 +166,17 @@ class JSArrayBuffer
   class BodyDescriptor;
 
  private:
-  inline ArrayBufferExtension** extension_location() const;
+  void DetachInternal(bool force_for_wasm_memory, Isolate* isolate);
 
 #if V8_COMPRESS_POINTERS
-  static const int kUninitializedTagMask = 1;
-
-  inline uint32_t* extension_lo() const;
-  inline uint32_t* extension_hi() const;
-#endif
+  // When pointer compression is enabled, the pointer to the extension is
+  // stored in the external pointer table and the object itself only contains a
+  // 32-bit external pointer handles. This simplifies alignment requirements
+  // and is also necessary for the sandbox.
+  inline ExternalPointerHandle* extension_handle_location() const;
+#else
+  inline ArrayBufferExtension** extension_location() const;
+#endif  // V8_COMPRESS_POINTERS
 
   TQ_OBJECT_CONSTRUCTORS(JSArrayBuffer)
 };
@@ -409,6 +418,9 @@ class JSDataView
   // Dispatched behavior.
   DECL_PRINTER(JSDataView)
   DECL_VERIFIER(JSDataView)
+
+  inline size_t GetByteLength() const;
+  inline bool IsOutOfBounds() const;
 
   // TODO(v8:9287): Re-enable when GCMole stops mixing 32/64 bit configs.
   // static_assert(IsAligned(kDataPointerOffset, kTaggedSize));

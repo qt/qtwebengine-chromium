@@ -23,8 +23,15 @@
 #include <utility>
 #include <vector>
 
-#include "internal/crypto/openssl_util.h"
+#ifdef NEARBY_CHROMIUM
+#include "base/check.h"
+#elif defined(NEARBY_SWIFTPM)
 #include "internal/platform/logging.h"
+#else
+#include "absl/log/check.h"  // nogncheck
+#endif
+
+#include "internal/crypto/openssl_util.h"
 #include <openssl/bn.h>
 #include <openssl/bytestring.h>
 #include <openssl/ec.h>

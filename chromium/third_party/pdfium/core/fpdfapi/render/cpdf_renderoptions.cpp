@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2016 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -66,4 +66,13 @@ FX_ARGB CPDF_RenderOptions::TranslateObjectColor(
 
 uint32_t CPDF_RenderOptions::GetCacheSizeLimit() const {
   return kCacheSizeLimitBytes;
+}
+
+bool CPDF_RenderOptions::CheckOCGDictVisible(const CPDF_Dictionary* pOC) const {
+  return !m_pOCContext || m_pOCContext->CheckOCGDictVisible(pOC);
+}
+
+bool CPDF_RenderOptions::CheckPageObjectVisible(
+    const CPDF_PageObject* pPageObj) const {
+  return !m_pOCContext || m_pOCContext->CheckPageObjectVisible(pPageObj);
 }

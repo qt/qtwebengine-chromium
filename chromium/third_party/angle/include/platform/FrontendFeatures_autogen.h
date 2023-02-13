@@ -63,6 +63,13 @@ struct FrontendFeatures : FeatureSetBase
         &members,
     };
 
+    FeatureInfo singleThreadedTextureDecompression = {
+        "singleThreadedTextureDecompression",
+        FeatureCategory::FrontendWorkarounds,
+        "Disables multi-threaded decompression of compressed texture formats",
+        &members,
+    };
+
     FeatureInfo forceDepthAttachmentInitOnClear = {
         "forceDepthAttachmentInitOnClear", FeatureCategory::FrontendWorkarounds,
         "Force depth attachment initialization on clear ops", &members,
@@ -71,10 +78,6 @@ struct FrontendFeatures : FeatureSetBase
     FeatureInfo enableCaptureLimits = {"enableCaptureLimits", FeatureCategory::FrontendFeatures,
                                        "Set the context limits like frame capturing was enabled",
                                        &members, "http://anglebug.com/5750"};
-
-    FeatureInfo enableCompressingPipelineCacheInThreadPool = {
-        "enableCompressingPipelineCacheInThreadPool", FeatureCategory::FrontendWorkarounds,
-        "Enable compressing pipeline cache in thread pool.", &members, "http://anglebug.com/4722"};
 
     FeatureInfo forceRobustResourceInit = {
         "forceRobustResourceInit", FeatureCategory::FrontendFeatures,

@@ -19,14 +19,18 @@
 #include "src/compiler/machine-operator.h"
 #include "src/compiler/node-aux-data.h"
 #include "src/compiler/node-origin-table.h"
+#include "src/compiler/node-properties.h"
 #include "src/compiler/opcodes.h"
 #include "src/compiler/operator.h"
 #include "src/compiler/schedule.h"
+#include "src/compiler/simplified-operator.h"
 #include "src/compiler/state-values-utils.h"
 #include "src/compiler/turboshaft/assembler.h"
 #include "src/compiler/turboshaft/deopt-data.h"
 #include "src/compiler/turboshaft/graph.h"
 #include "src/compiler/turboshaft/operations.h"
+#include "src/compiler/turboshaft/representations.h"
+#include "src/zone/zone-containers.h"
 
 namespace v8::internal::compiler::turboshaft {
 
@@ -36,7 +40,8 @@ struct GraphBuilder {
   Zone* graph_zone;
   Zone* phase_zone;
   Schedule& schedule;
-  Assembler assembler;
+  Assembler<> assembler;
+  Linkage* linkage;
   SourcePositionTable* source_positions;
   NodeOriginTable* origins;
 
@@ -48,7 +53,7 @@ struct GraphBuilder {
  private:
   OpIndex Map(Node* old_node) {
     OpIndex result = op_mapping.Get(old_node);
-    DCHECK(assembler.graph().IsValid(result));
+    DCHECK(assembler.output_graph().IsValid(result));
     return result;
   }
   Block* Map(BasicBlock* block) {
@@ -59,11 +64,11 @@ struct GraphBuilder {
 
   void FixLoopPhis(Block* loop, Block* backedge) {
     DCHECK(loop->IsLoop());
-    for (Operation& op : assembler.graph().operations(*loop)) {
+    for (Operation& op : assembler.output_graph().operations(*loop)) {
       if (!op.Is<PendingLoopPhiOp>()) continue;
       auto& pending_phi = op.Cast<PendingLoopPhiOp>();
-      assembler.graph().Replace<PhiOp>(
-          assembler.graph().Index(pending_phi),
+      assembler.output_graph().Replace<PhiOp>(
+          assembler.output_graph().Index(pending_phi),
           base::VectorOf(
               {pending_phi.first(), Map(pending_phi.old_backedge_node)}),
           pending_phi.rep);
@@ -141,17 +146,35 @@ struct GraphBuilder {
     }
   }
   OpIndex Process(Node* node, BasicBlock* block,
-                  const base::SmallVector<int, 16>& predecessor_permutation);
+                  const base::SmallVector<int, 16>& predecessor_permutation,
+                  base::Optional<BailoutReason>* bailout,
+                  bool is_final_control = false);
+
+  OpIndex EmitProjectionsAndTuple(OpIndex op_idx) {
+    Operation& op = assembler.output_graph().Get(op_idx);
+    base::Vector<const RegisterRepresentation> outputs_rep = op.outputs_rep();
+    if (outputs_rep.size() <= 1) {
+      // If {op} has a single output, there is no need to emit Projections or
+      // Tuple, so we just return it.
+      return op_idx;
+    }
+    base::SmallVector<OpIndex, 16> tuple_inputs;
+    for (size_t i = 0; i < outputs_rep.size(); i++) {
+      tuple_inputs.push_back(assembler.Projection(op_idx, i, outputs_rep[i]));
+    }
+    return assembler.Tuple(base::VectorOf(tuple_inputs));
+  }
 };
 
 base::Optional<BailoutReason> GraphBuilder::Run() {
   for (BasicBlock* block : *schedule.rpo_order()) {
-    block_mapping[block->rpo_number()] = assembler.NewBlock(BlockKind(block));
+    block_mapping[block->rpo_number()] = block->IsLoopHeader()
+                                             ? assembler.NewLoopHeader()
+                                             : assembler.NewBlock();
   }
   for (BasicBlock* block : *schedule.rpo_order()) {
     Block* target_block = Map(block);
     if (!assembler.Bind(target_block)) continue;
-    target_block->SetDeferred(block->deferred());
 
     // Since we visit blocks in rpo-order, the new block predecessors are sorted
     // in rpo order too. However, the input schedule does not order
@@ -167,13 +190,15 @@ base::Optional<BailoutReason> GraphBuilder::Run() {
                        predecessors[j]->rpo_number();
               });
 
+    base::Optional<BailoutReason> bailout = base::nullopt;
     for (Node* node : *block->nodes()) {
       if (V8_UNLIKELY(node->InputCount() >=
                       int{std::numeric_limits<
                           decltype(Operation::input_count)>::max()})) {
         return BailoutReason::kTooManyArguments;
       }
-      OpIndex i = Process(node, block, predecessor_permutation);
+      OpIndex i = Process(node, block, predecessor_permutation, &bailout);
+      if (V8_UNLIKELY(bailout)) return bailout;
       op_mapping.Set(node, i);
     }
     if (Node* node = block->control_input()) {
@@ -182,7 +207,8 @@ base::Optional<BailoutReason> GraphBuilder::Run() {
                           decltype(Operation::input_count)>::max()})) {
         return BailoutReason::kTooManyArguments;
       }
-      OpIndex i = Process(node, block, predecessor_permutation);
+      OpIndex i = Process(node, block, predecessor_permutation, &bailout, true);
+      if (V8_UNLIKELY(bailout)) return bailout;
       op_mapping.Set(node, i);
     }
     switch (block->control()) {
@@ -201,21 +227,9 @@ base::Optional<BailoutReason> GraphBuilder::Run() {
       case BasicBlock::kReturn:
       case BasicBlock::kDeoptimize:
       case BasicBlock::kThrow:
+      case BasicBlock::kCall:
       case BasicBlock::kTailCall:
         break;
-      case BasicBlock::kCall: {
-        Node* call = block->control_input();
-        DCHECK_EQ(call->opcode(), IrOpcode::kCall);
-        DCHECK_EQ(block->SuccessorCount(), 2);
-        Block* if_success = Map(block->SuccessorAt(0));
-        Block* if_exception = Map(block->SuccessorAt(1));
-        OpIndex catch_exception =
-            assembler.CatchException(Map(call), if_success, if_exception);
-        Node* if_exception_node = block->SuccessorAt(1)->NodeAt(0);
-        DCHECK_EQ(if_exception_node->opcode(), IrOpcode::kIfException);
-        op_mapping.Set(if_exception_node, catch_exception);
-        break;
-      }
       case BasicBlock::kNone:
         UNREACHABLE();
     }
@@ -223,17 +237,18 @@ base::Optional<BailoutReason> GraphBuilder::Run() {
   }
 
   if (source_positions->IsEnabled()) {
-    for (OpIndex index : assembler.graph().AllOperationIndices()) {
-      compiler::NodeId origin =
-          assembler.graph().operation_origins()[index].DecodeTurbofanNodeId();
-      assembler.graph().source_positions()[index] =
+    for (OpIndex index : assembler.output_graph().AllOperationIndices()) {
+      compiler::NodeId origin = assembler.output_graph()
+                                    .operation_origins()[index]
+                                    .DecodeTurbofanNodeId();
+      assembler.output_graph().source_positions()[index] =
           source_positions->GetSourcePosition(origin);
     }
   }
 
   if (origins) {
-    for (OpIndex index : assembler.graph().AllOperationIndices()) {
-      OpIndex origin = assembler.graph().operation_origins()[index];
+    for (OpIndex index : assembler.output_graph().AllOperationIndices()) {
+      OpIndex origin = assembler.output_graph().operation_origins()[index];
       origins->SetNodeOrigin(index.id(), origin.DecodeTurbofanNodeId());
     }
   }
@@ -243,7 +258,8 @@ base::Optional<BailoutReason> GraphBuilder::Run() {
 
 OpIndex GraphBuilder::Process(
     Node* node, BasicBlock* block,
-    const base::SmallVector<int, 16>& predecessor_permutation) {
+    const base::SmallVector<int, 16>& predecessor_permutation,
+    base::Optional<BailoutReason>* bailout, bool is_final_control) {
   assembler.SetCurrentOrigin(OpIndex::EncodeTurbofanNodeId(node->id()));
   const Operator* op = node->op();
   Operator::Opcode opcode = op->opcode();
@@ -263,20 +279,50 @@ OpIndex GraphBuilder::Process(
     case IrOpcode::kArgumentsLengthState:
     case IrOpcode::kEffectPhi:
     case IrOpcode::kTerminate:
-    case IrOpcode::kIfSuccess:
       return OpIndex::Invalid();
 
     case IrOpcode::kIfException: {
-      // Use the `CatchExceptionOp` that has already been produced when
-      // processing the call.
-      OpIndex catch_exception = Map(node);
-      DCHECK(assembler.graph().Get(catch_exception).Is<CatchExceptionOp>());
-      return catch_exception;
+      return assembler.LoadException();
+    }
+
+    case IrOpcode::kIfSuccess: {
+      // We emit all of the value projections of the call now, emit a Tuple with
+      // all of those projections, and remap the old call to this new Tuple
+      // instead of the CallAndCatchExceptionOp.
+      Node* call = node->InputAt(0);
+      DCHECK_EQ(call->opcode(), IrOpcode::kCall);
+      OpIndex call_idx = Map(call);
+      CallAndCatchExceptionOp& op = assembler.output_graph()
+                                        .Get(call_idx)
+                                        .Cast<CallAndCatchExceptionOp>();
+
+      size_t return_count = op.outputs_rep().size();
+      DCHECK_EQ(return_count, op.descriptor->descriptor->ReturnCount());
+      if (return_count <= 1) {
+        // Calls with one output (or zero) do not require Projections.
+        return OpIndex::Invalid();
+      }
+      base::Vector<OpIndex> projections =
+          graph_zone->NewVector<OpIndex>(return_count);
+      for (size_t i = 0; i < return_count; i++) {
+        projections[i] = assembler.Projection(call_idx, i, op.outputs_rep()[i]);
+      }
+      OpIndex tuple_idx = assembler.Tuple(projections);
+
+      // Re-mapping {call} to {tuple_idx} so that subsequent projections are not
+      // emitted.
+      op_mapping.Set(call, tuple_idx);
+
+      return OpIndex::Invalid();
     }
 
     case IrOpcode::kParameter: {
       const ParameterInfo& info = ParameterInfoOf(op);
-      return assembler.Parameter(info.index(), info.debug_name());
+      RegisterRepresentation rep =
+          RegisterRepresentation::FromMachineRepresentation(
+              linkage->GetParameterType(ParameterIndexOf(node->op()))
+                  .representation());
+      return assembler.Parameter(info.index(), rep, info.debug_name());
     }
 
     case IrOpcode::kOsrValue: {
@@ -370,12 +416,6 @@ OpIndex GraphBuilder::Process(
       BINOP_CASE(Float64Pow, Float64Power)
       BINOP_CASE(Float64Atan2, Float64Atan2)
 
-      BINOP_CASE(Int32AddWithOverflow, Int32AddCheckOverflow)
-      BINOP_CASE(Int64AddWithOverflow, Int64AddCheckOverflow)
-      BINOP_CASE(Int32MulWithOverflow, Int32MulCheckOverflow)
-      BINOP_CASE(Int32SubWithOverflow, Int32SubCheckOverflow)
-      BINOP_CASE(Int64SubWithOverflow, Int64SubCheckOverflow)
-
       BINOP_CASE(Word32Shr, Word32ShiftRightLogical)
       BINOP_CASE(Word64Shr, Word64ShiftRightLogical)
 
@@ -408,6 +448,20 @@ OpIndex GraphBuilder::Process(
       BINOP_CASE(Float64LessThanOrEqual, Float64LessThanOrEqual)
 #undef BINOP_CASE
 
+#define TUPLE_BINOP_CASE(opcode, assembler_op)                                \
+  case IrOpcode::k##opcode: {                                                 \
+    OpIndex idx =                                                             \
+        assembler.assembler_op(Map(node->InputAt(0)), Map(node->InputAt(1))); \
+    return EmitProjectionsAndTuple(idx);                                      \
+  }
+      TUPLE_BINOP_CASE(Int32AddWithOverflow, Int32AddCheckOverflow)
+      TUPLE_BINOP_CASE(Int64AddWithOverflow, Int64AddCheckOverflow)
+      TUPLE_BINOP_CASE(Int32MulWithOverflow, Int32MulCheckOverflow)
+      TUPLE_BINOP_CASE(Int64MulWithOverflow, Int64MulCheckOverflow)
+      TUPLE_BINOP_CASE(Int32SubWithOverflow, Int32SubCheckOverflow)
+      TUPLE_BINOP_CASE(Int64SubWithOverflow, Int64SubCheckOverflow)
+#undef TUPLE_BINOP_CASE
+
     case IrOpcode::kWord64Sar:
     case IrOpcode::kWord32Sar: {
       WordRepresentation rep = opcode == IrOpcode::kWord64Sar
@@ -429,6 +483,11 @@ OpIndex GraphBuilder::Process(
 #define UNARY_CASE(opcode, assembler_op) \
   case IrOpcode::k##opcode:              \
     return assembler.assembler_op(Map(node->InputAt(0)));
+#define TUPLE_UNARY_CASE(opcode, assembler_op)                   \
+  case IrOpcode::k##opcode: {                                    \
+    OpIndex idx = assembler.assembler_op(Map(node->InputAt(0))); \
+    return EmitProjectionsAndTuple(idx);                         \
+  }
 
       UNARY_CASE(Word32ReverseBytes, Word32ReverseBytes)
       UNARY_CASE(Word64ReverseBytes, Word64ReverseBytes)
@@ -509,16 +568,18 @@ OpIndex GraphBuilder::Process(
       UNARY_CASE(TruncateFloat64ToUint32,
                  TruncateFloat64ToUint32OverflowUndefined)
       UNARY_CASE(TruncateFloat64ToWord32, JSTruncateFloat64ToWord32)
-      UNARY_CASE(TryTruncateFloat32ToInt64, TryTruncateFloat32ToInt64)
-      UNARY_CASE(TryTruncateFloat32ToUint64, TryTruncateFloat32ToUint64)
-      UNARY_CASE(TryTruncateFloat64ToInt32, TryTruncateFloat64ToInt32)
-      UNARY_CASE(TryTruncateFloat64ToInt64, TryTruncateFloat64ToInt64)
-      UNARY_CASE(TryTruncateFloat64ToUint32, TryTruncateFloat64ToUint32)
-      UNARY_CASE(TryTruncateFloat64ToUint64, TryTruncateFloat64ToUint64)
+
+      TUPLE_UNARY_CASE(TryTruncateFloat32ToInt64, TryTruncateFloat32ToInt64)
+      TUPLE_UNARY_CASE(TryTruncateFloat32ToUint64, TryTruncateFloat32ToUint64)
+      TUPLE_UNARY_CASE(TryTruncateFloat64ToInt32, TryTruncateFloat64ToInt32)
+      TUPLE_UNARY_CASE(TryTruncateFloat64ToInt64, TryTruncateFloat64ToInt64)
+      TUPLE_UNARY_CASE(TryTruncateFloat64ToUint32, TryTruncateFloat64ToUint32)
+      TUPLE_UNARY_CASE(TryTruncateFloat64ToUint64, TryTruncateFloat64ToUint64)
 
       UNARY_CASE(Float64ExtractLowWord32, Float64ExtractLowWord32)
       UNARY_CASE(Float64ExtractHighWord32, Float64ExtractHighWord32)
 #undef UNARY_CASE
+#undef TUPLE_UNARY_CASE
     case IrOpcode::kTruncateInt64ToInt32:
       // 64- to 32-bit truncation is implicit in Turboshaft.
       return Map(node->InputAt(0));
@@ -567,47 +628,59 @@ OpIndex GraphBuilder::Process(
                                      RegisterRepresentation::PointerSized(),
                                      RegisterRepresentation::Tagged());
 
+    case IrOpcode::kSelect: {
+      OpIndex cond = Map(node->InputAt(0));
+      OpIndex vtrue = Map(node->InputAt(1));
+      OpIndex vfalse = Map(node->InputAt(2));
+      const SelectParameters& params = SelectParametersOf(op);
+      return assembler.Select(cond, vtrue, vfalse,
+                              RegisterRepresentation::FromMachineRepresentation(
+                                  params.representation()),
+                              params.hint(), SelectOp::Implementation::kBranch);
+    }
     case IrOpcode::kWord32Select:
-      return assembler.Word32Select(
-          Map(node->InputAt(0)), Map(node->InputAt(1)), Map(node->InputAt(2)));
+      return assembler.Select(
+          Map(node->InputAt(0)), Map(node->InputAt(1)), Map(node->InputAt(2)),
+          RegisterRepresentation::Word32(), BranchHint::kNone,
+          SelectOp::Implementation::kCMove);
     case IrOpcode::kWord64Select:
-      return assembler.Word64Select(
-          Map(node->InputAt(0)), Map(node->InputAt(1)), Map(node->InputAt(2)));
+      return assembler.Select(
+          Map(node->InputAt(0)), Map(node->InputAt(1)), Map(node->InputAt(2)),
+          RegisterRepresentation::Word64(), BranchHint::kNone,
+          SelectOp::Implementation::kCMove);
 
     case IrOpcode::kLoad:
     case IrOpcode::kLoadImmutable:
     case IrOpcode::kUnalignedLoad: {
       MemoryRepresentation loaded_rep =
           MemoryRepresentation::FromMachineType(LoadRepresentationOf(op));
-      RegisterRepresentation result_rep = loaded_rep.ToRegisterRepresentation();
       Node* base = node->InputAt(0);
       Node* index = node->InputAt(1);
       // It's ok to merge LoadImmutable into Load after scheduling.
       LoadOp::Kind kind = opcode == IrOpcode::kUnalignedLoad
-                              ? LoadOp::Kind::kRawUnaligned
-                              : LoadOp::Kind::kRawAligned;
+                              ? LoadOp::Kind::RawUnaligned()
+                              : LoadOp::Kind::RawAligned();
       if (index->opcode() == IrOpcode::kInt32Constant) {
         int32_t offset = OpParameter<int32_t>(index->op());
-        return assembler.Load(Map(base), kind, loaded_rep, result_rep, offset);
+        return assembler.Load(Map(base), kind, loaded_rep, offset);
       }
       if (index->opcode() == IrOpcode::kInt64Constant) {
         int64_t offset = OpParameter<int64_t>(index->op());
         if (base::IsValueInRangeForNumericType<int32_t>(offset)) {
-          return assembler.Load(Map(base), kind, loaded_rep, result_rep,
+          return assembler.Load(Map(base), kind, loaded_rep,
                                 static_cast<int32_t>(offset));
         }
       }
       int32_t offset = 0;
       uint8_t element_size_log2 = 0;
-      return assembler.IndexedLoad(Map(base), Map(index), kind, loaded_rep,
-                                   result_rep, offset, element_size_log2);
+      return assembler.Load(Map(base), Map(index), kind, loaded_rep, offset,
+                            element_size_log2);
     }
     case IrOpcode::kProtectedLoad: {
       MemoryRepresentation loaded_rep =
           MemoryRepresentation::FromMachineType(LoadRepresentationOf(op));
-      RegisterRepresentation result_rep = loaded_rep.ToRegisterRepresentation();
-      return assembler.ProtectedLoad(
-          Map(node->InputAt(0)), Map(node->InputAt(1)), loaded_rep, result_rep);
+      return assembler.Load(Map(node->InputAt(0)), Map(node->InputAt(1)),
+                            LoadOp::Kind::Protected(), loaded_rep);
     }
 
     case IrOpcode::kStore:
@@ -618,57 +691,60 @@ OpIndex GraphBuilder::Process(
                   : StoreRepresentation(UnalignedStoreRepresentationOf(op),
                                         WriteBarrierKind::kNoWriteBarrier);
       StoreOp::Kind kind = opcode == IrOpcode::kStore
-                               ? StoreOp::Kind::kRawAligned
-                               : StoreOp::Kind::kRawUnaligned;
+                               ? StoreOp::Kind::RawAligned()
+                               : StoreOp::Kind::RawUnaligned();
 
       Node* base = node->InputAt(0);
       Node* index = node->InputAt(1);
       Node* value = node->InputAt(2);
       if (index->opcode() == IrOpcode::kInt32Constant) {
         int32_t offset = OpParameter<int32_t>(index->op());
-        return assembler.Store(Map(base), Map(value), kind,
-                               MemoryRepresentation::FromMachineRepresentation(
-                                   store_rep.representation()),
-                               store_rep.write_barrier_kind(), offset);
+        assembler.Store(Map(base), Map(value), kind,
+                        MemoryRepresentation::FromMachineRepresentation(
+                            store_rep.representation()),
+                        store_rep.write_barrier_kind(), offset);
+        return OpIndex::Invalid();
       }
       if (index->opcode() == IrOpcode::kInt64Constant) {
         int64_t offset = OpParameter<int64_t>(index->op());
         if (base::IsValueInRangeForNumericType<int32_t>(offset)) {
-          return assembler.Store(
-              Map(base), Map(value), kind,
-              MemoryRepresentation::FromMachineRepresentation(
-                  store_rep.representation()),
-              store_rep.write_barrier_kind(), static_cast<int32_t>(offset));
+          assembler.Store(Map(base), Map(value), kind,
+                          MemoryRepresentation::FromMachineRepresentation(
+                              store_rep.representation()),
+                          store_rep.write_barrier_kind(),
+                          static_cast<int32_t>(offset));
+          return OpIndex::Invalid();
         }
       }
       int32_t offset = 0;
       uint8_t element_size_log2 = 0;
-      return assembler.IndexedStore(
-          Map(base), Map(index), Map(value), kind,
-          MemoryRepresentation::FromMachineRepresentation(
-              store_rep.representation()),
-          store_rep.write_barrier_kind(), offset, element_size_log2);
+      assembler.Store(Map(base), Map(index), Map(value), kind,
+                      MemoryRepresentation::FromMachineRepresentation(
+                          store_rep.representation()),
+                      store_rep.write_barrier_kind(), offset,
+                      element_size_log2);
+      return OpIndex::Invalid();
     }
-    case IrOpcode::kProtectedStore: {
-      return assembler.ProtectedStore(
-          Map(node->InputAt(0)), Map(node->InputAt(1)), Map(node->InputAt(2)),
-          MemoryRepresentation::FromMachineRepresentation(
-              OpParameter<MachineRepresentation>(node->op())));
-    }
+    case IrOpcode::kProtectedStore:
+      assembler.Store(Map(node->InputAt(0)), Map(node->InputAt(1)),
+                      Map(node->InputAt(2)), StoreOp::Kind::Protected(),
+                      MemoryRepresentation::FromMachineRepresentation(
+                          OpParameter<MachineRepresentation>(node->op())),
+                      WriteBarrierKind::kNoWriteBarrier);
+      return OpIndex::Invalid();
 
     case IrOpcode::kRetain:
-      return assembler.Retain(Map(node->InputAt(0)));
-
+      assembler.Retain(Map(node->InputAt(0)));
+      return OpIndex::Invalid();
     case IrOpcode::kStackPointerGreaterThan:
       return assembler.StackPointerGreaterThan(Map(node->InputAt(0)),
                                                StackCheckKindOf(op));
     case IrOpcode::kLoadStackCheckOffset:
-      return assembler.FrameConstant(FrameConstantOp::Kind::kStackCheckOffset);
+      return assembler.StackCheckOffset();
     case IrOpcode::kLoadFramePointer:
-      return assembler.FrameConstant(FrameConstantOp::Kind::kFramePointer);
+      return assembler.FramePointer();
     case IrOpcode::kLoadParentFramePointer:
-      return assembler.FrameConstant(
-          FrameConstantOp::Kind::kParentFramePointer);
+      return assembler.ParentFramePointer();
 
     case IrOpcode::kStackSlot:
       return assembler.StackSlot(StackSlotRepresentationOf(op).size(),
@@ -676,8 +752,9 @@ OpIndex GraphBuilder::Process(
 
     case IrOpcode::kBranch:
       DCHECK_EQ(block->SuccessorCount(), 2);
-      return assembler.Branch(Map(node->InputAt(0)), Map(block->SuccessorAt(0)),
-                              Map(block->SuccessorAt(1)));
+      assembler.Branch(Map(node->InputAt(0)), Map(block->SuccessorAt(0)),
+                       Map(block->SuccessorAt(1)), BranchHintOf(node->op()));
+      return OpIndex::Invalid();
 
     case IrOpcode::kSwitch: {
       BasicBlock* default_branch = block->successors().back();
@@ -687,11 +764,12 @@ OpIndex GraphBuilder::Process(
       for (size_t i = 0; i < case_count; ++i) {
         BasicBlock* branch = block->SuccessorAt(i);
         const IfValueParameters& p = IfValueParametersOf(branch->front()->op());
-        cases.emplace_back(p.value(), Map(branch));
+        cases.emplace_back(p.value(), Map(branch), p.hint());
       }
-      return assembler.Switch(Map(node->InputAt(0)),
-                              graph_zone->CloneVector(base::VectorOf(cases)),
-                              Map(default_branch));
+      assembler.Switch(
+          Map(node->InputAt(0)), graph_zone->CloneVector(base::VectorOf(cases)),
+          Map(default_branch), BranchHintOf(default_branch->front()->op()));
+      return OpIndex::Invalid();
     }
 
     case IrOpcode::kCall: {
@@ -705,13 +783,32 @@ OpIndex GraphBuilder::Process(
            ++i) {
         arguments.emplace_back(Map(node->InputAt(i)));
       }
-      OpIndex call =
-          assembler.Call(callee, base::VectorOf(arguments), call_descriptor);
-      if (!call_descriptor->NeedsFrameState()) return call;
-      FrameState frame_state{
-          node->InputAt(static_cast<int>(call_descriptor->InputCount()))};
-      assembler.CheckLazyDeopt(call, Map(frame_state));
-      return call;
+
+      const TSCallDescriptor* ts_descriptor =
+          TSCallDescriptor::Create(call_descriptor, graph_zone);
+
+      OpIndex frame_state_idx = OpIndex::Invalid();
+      if (call_descriptor->NeedsFrameState()) {
+        FrameState frame_state{
+            node->InputAt(static_cast<int>(call_descriptor->InputCount()))};
+        frame_state_idx = Map(frame_state);
+      }
+
+      if (!is_final_control) {
+        return EmitProjectionsAndTuple(assembler.Call(
+            callee, frame_state_idx, base::VectorOf(arguments), ts_descriptor));
+      } else {
+        DCHECK_EQ(block->SuccessorCount(), 2);
+
+        Block* if_success = Map(block->SuccessorAt(0));
+        Block* if_exception = Map(block->SuccessorAt(1));
+        // CallAndCatchException is a block terminator, so we can't generate the
+        // projections right away. We'll generate them in the IfSuccess
+        // successor.
+        return assembler.CallAndCatchException(
+            callee, frame_state_idx, base::VectorOf(arguments), if_success,
+            if_exception, ts_descriptor);
+      }
     }
 
     case IrOpcode::kTailCall: {
@@ -725,14 +822,23 @@ OpIndex GraphBuilder::Process(
            ++i) {
         arguments.emplace_back(Map(node->InputAt(i)));
       }
-      return assembler.TailCall(callee, base::VectorOf(arguments),
-                                call_descriptor);
+
+      const TSCallDescriptor* ts_descriptor =
+          TSCallDescriptor::Create(call_descriptor, graph_zone);
+
+      assembler.TailCall(callee, base::VectorOf(arguments), ts_descriptor);
+      return OpIndex::Invalid();
     }
 
     case IrOpcode::kFrameState: {
       FrameState frame_state{node};
       FrameStateData::Builder builder;
       BuildFrameStateData(&builder, frame_state);
+      if (builder.Inputs().size() >
+          std::numeric_limits<decltype(Operation::input_count)>::max() - 1) {
+        *bailout = BailoutReason::kTooManyArguments;
+        return OpIndex::Invalid();
+      }
       return assembler.FrameState(
           builder.Inputs(), builder.inlined(),
           builder.AllocateFrameStateData(frame_state.frame_state_info(),
@@ -740,24 +846,25 @@ OpIndex GraphBuilder::Process(
     }
 
     case IrOpcode::kDeoptimizeIf:
-    case IrOpcode::kDeoptimizeUnless: {
-      OpIndex condition = Map(node->InputAt(0));
-      OpIndex frame_state = Map(node->InputAt(1));
-      bool negated = op->opcode() == IrOpcode::kDeoptimizeUnless;
-      return assembler.DeoptimizeIf(condition, frame_state, negated,
-                                    &DeoptimizeParametersOf(op));
-    }
+      assembler.DeoptimizeIf(Map(node->InputAt(0)), Map(node->InputAt(1)),
+                             &DeoptimizeParametersOf(op));
+      return OpIndex::Invalid();
+    case IrOpcode::kDeoptimizeUnless:
+      assembler.DeoptimizeIfNot(Map(node->InputAt(0)), Map(node->InputAt(1)),
+                                &DeoptimizeParametersOf(op));
+      return OpIndex::Invalid();
 
     case IrOpcode::kTrapIf:
-    case IrOpcode::kTrapUnless: {
-      OpIndex condition = Map(node->InputAt(0));
-      bool negated = op->opcode() == IrOpcode::kTrapUnless;
-      return assembler.TrapIf(condition, negated, TrapIdOf(op));
-    }
+      assembler.TrapIf(Map(node->InputAt(0)), TrapIdOf(op));
+      return OpIndex::Invalid();
+    case IrOpcode::kTrapUnless:
+      assembler.TrapIfNot(Map(node->InputAt(0)), TrapIdOf(op));
+      return OpIndex::Invalid();
 
     case IrOpcode::kDeoptimize: {
       OpIndex frame_state = Map(node->InputAt(0));
-      return assembler.Deoptimize(frame_state, &DeoptimizeParametersOf(op));
+      assembler.Deoptimize(frame_state, &DeoptimizeParametersOf(op));
+      return OpIndex::Invalid();
     }
 
     case IrOpcode::kReturn: {
@@ -766,7 +873,8 @@ OpIndex GraphBuilder::Process(
       for (int i = 1; i < node->op()->ValueInputCount(); ++i) {
         return_values.push_back(Map(node->InputAt(i)));
       }
-      return assembler.Return(Map(pop_count), base::VectorOf(return_values));
+      assembler.Return(Map(pop_count), base::VectorOf(return_values));
+      return OpIndex::Invalid();
     }
 
     case IrOpcode::kUnreachable:
@@ -775,12 +883,145 @@ OpIndex GraphBuilder::Process(
       }
       return OpIndex::Invalid();
     case IrOpcode::kThrow:
-      return assembler.Unreachable();
+      assembler.Unreachable();
+      return OpIndex::Invalid();
 
     case IrOpcode::kProjection: {
       Node* input = node->InputAt(0);
       size_t index = ProjectionIndexOf(op);
-      return assembler.Projection(Map(input), index);
+      RegisterRepresentation rep =
+          RegisterRepresentation::FromMachineRepresentation(
+              NodeProperties::GetProjectionType(node));
+      return assembler.Projection(Map(input), index, rep);
+    }
+
+    case IrOpcode::kStaticAssert: {
+      // We currently ignore StaticAsserts in turboshaft (because some of them
+      // need specific unported optimizations to be evaluated).
+      // TODO(turboshaft): once CommonOperatorReducer and MachineOperatorReducer
+      // have been ported, re-enable StaticAsserts.
+      // return assembler.ReduceStaticAssert(Map(node->InputAt(0)),
+      //                                     StaticAssertSourceOf(node->op()));
+      return OpIndex::Invalid();
+    }
+
+    case IrOpcode::kAllocateRaw: {
+      Node* size = node->InputAt(0);
+      const AllocateParameters& params = AllocateParametersOf(node->op());
+      return assembler.Allocate(Map(size), params.allocation_type(),
+                                params.allow_large_objects());
+    }
+    case IrOpcode::kStoreToObject: {
+      Node* object = node->InputAt(0);
+      Node* offset = node->InputAt(1);
+      Node* value = node->InputAt(2);
+      ObjectAccess const& access = ObjectAccessOf(node->op());
+      assembler.Store(
+          Map(object), Map(offset), Map(value), StoreOp::Kind::TaggedBase(),
+          MemoryRepresentation::FromMachineType(access.machine_type),
+          access.write_barrier_kind, kHeapObjectTag);
+      return OpIndex::Invalid();
+    }
+    case IrOpcode::kStoreElement: {
+      Node* object = node->InputAt(0);
+      Node* index = node->InputAt(1);
+      Node* value = node->InputAt(2);
+      ElementAccess const& access = ElementAccessOf(node->op());
+      DCHECK(!access.machine_type.IsMapWord());
+      StoreOp::Kind kind = StoreOp::Kind::Aligned(access.base_is_tagged);
+      MemoryRepresentation rep =
+          MemoryRepresentation::FromMachineType(access.machine_type);
+      assembler.Store(Map(object), Map(index), Map(value), kind, rep,
+                      access.write_barrier_kind, access.header_size,
+                      rep.SizeInBytesLog2());
+      return OpIndex::Invalid();
+    }
+    case IrOpcode::kStoreField: {
+      OpIndex object = Map(node->InputAt(0));
+      OpIndex value = Map(node->InputAt(1));
+      FieldAccess const& access = FieldAccessOf(node->op());
+      // External pointer must never be stored by optimized code.
+      DCHECK(!access.type.Is(compiler::Type::ExternalPointer()) ||
+             !V8_ENABLE_SANDBOX_BOOL);
+      // SandboxedPointers are not currently stored by optimized code.
+      DCHECK(!access.type.Is(compiler::Type::SandboxedPointer()));
+
+#ifdef V8_ENABLE_SANDBOX
+      if (access.is_bounded_size_access) {
+        value = assembler.ShiftLeft(value, kBoundedSizeShift,
+                                    WordRepresentation::PointerSized());
+      }
+#endif  // V8_ENABLE_SANDBOX
+
+      StoreOp::Kind kind = StoreOp::Kind::Aligned(access.base_is_tagged);
+      MachineType machine_type = access.machine_type;
+      if (machine_type.IsMapWord()) {
+        machine_type = MachineType::TaggedPointer();
+#ifdef V8_MAP_PACKING
+        UNIMPLEMENTED();
+#endif
+      }
+      MemoryRepresentation rep =
+          MemoryRepresentation::FromMachineType(machine_type);
+      assembler.Store(object, value, kind, rep, access.write_barrier_kind,
+                      access.offset);
+      return OpIndex::Invalid();
+    }
+    case IrOpcode::kLoadFromObject:
+    case IrOpcode::kLoadImmutableFromObject: {
+      Node* object = node->InputAt(0);
+      Node* offset = node->InputAt(1);
+      ObjectAccess const& access = ObjectAccessOf(node->op());
+      MemoryRepresentation rep =
+          MemoryRepresentation::FromMachineType(access.machine_type);
+      return assembler.Load(Map(object), Map(offset),
+                            LoadOp::Kind::TaggedBase(), rep, kHeapObjectTag);
+    }
+    case IrOpcode::kLoadField: {
+      Node* object = node->InputAt(0);
+      FieldAccess const& access = FieldAccessOf(node->op());
+      StoreOp::Kind kind = StoreOp::Kind::Aligned(access.base_is_tagged);
+      MachineType machine_type = access.machine_type;
+      if (machine_type.IsMapWord()) {
+        machine_type = MachineType::TaggedPointer();
+#ifdef V8_MAP_PACKING
+        UNIMPLEMENTED();
+#endif
+      }
+      MemoryRepresentation rep =
+          MemoryRepresentation::FromMachineType(machine_type);
+#ifdef V8_ENABLE_SANDBOX
+      bool is_sandboxed_external =
+          access.type.Is(compiler::Type::ExternalPointer());
+      if (is_sandboxed_external) {
+        // Fields for sandboxed external pointer contain a 32-bit handle, not a
+        // 64-bit raw pointer.
+        rep = MemoryRepresentation::Uint32();
+      }
+#endif  // V8_ENABLE_SANDBOX
+      OpIndex value = assembler.Load(Map(object), kind, rep, access.offset);
+#ifdef V8_ENABLE_SANDBOX
+      if (is_sandboxed_external) {
+        value =
+            assembler.DecodeExternalPointer(value, access.external_pointer_tag);
+      }
+      if (access.is_bounded_size_access) {
+        DCHECK(!is_sandboxed_external);
+        value = assembler.ShiftRightLogical(value, kBoundedSizeShift,
+                                            WordRepresentation::PointerSized());
+      }
+#endif  // V8_ENABLE_SANDBOX
+      return value;
+    }
+    case IrOpcode::kLoadElement: {
+      Node* object = node->InputAt(0);
+      Node* index = node->InputAt(1);
+      ElementAccess const& access = ElementAccessOf(node->op());
+      LoadOp::Kind kind = LoadOp::Kind::Aligned(access.base_is_tagged);
+      MemoryRepresentation rep =
+          MemoryRepresentation::FromMachineType(access.machine_type);
+      return assembler.Load(Map(object), Map(index), kind, rep,
+                            access.header_size, rep.SizeInBytesLog2());
     }
 
     default:
@@ -792,13 +1033,19 @@ OpIndex GraphBuilder::Process(
 
 }  // namespace
 
-base::Optional<BailoutReason> BuildGraph(Schedule* schedule, Zone* graph_zone,
-                                         Zone* phase_zone, Graph* graph,
+base::Optional<BailoutReason> BuildGraph(Schedule* schedule, Isolate* isolate,
+                                         Zone* graph_zone, Zone* phase_zone,
+                                         Graph* graph, Linkage* linkage,
                                          SourcePositionTable* source_positions,
                                          NodeOriginTable* origins) {
-  GraphBuilder builder{graph_zone,       phase_zone,
-                       *schedule,        Assembler(graph, phase_zone),
-                       source_positions, origins};
+  GraphBuilder builder{
+      graph_zone,
+      phase_zone,
+      *schedule,
+      Assembler<>(*graph, *graph, phase_zone, nullptr, std::tuple<>{}),
+      linkage,
+      source_positions,
+      origins};
   return builder.Run();
 }
 

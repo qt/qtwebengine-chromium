@@ -874,7 +874,7 @@ struct TensorEvaluator<const TensorContractionOp<Indices, LeftArgType, RightArgT
                         lhs_.getSubMapper(m1 * bm_, k * bk_), bk(k), bm(m1));
 
       if (!parallel_pack_ && shard_by_col_) {
-        assert(!use_thread_local);
+        eigen_assert(!use_thread_local);
         signal_packing(k);
       } else {
         signal_switch(k + 1);
@@ -927,7 +927,7 @@ struct TensorEvaluator<const TensorContractionOp<Indices, LeftArgType, RightArgT
           signal_kernel(m, n, k, sync, use_thread_local);
         }
       } else {
-        assert(!use_thread_local);
+        eigen_assert(!use_thread_local);
         signal_packing(k);
       }
     }

@@ -912,6 +912,32 @@ If used together with @option{-vcodec copy}, it will affect the aspect ratio
 stored at container level, but not the aspect ratio stored in encoded
 frames, if it exists.
 
+@item -display_rotation[:@var{stream_specifier}] @var{rotation} (@emph{input,per-stream})
+Set video rotation metadata.
+
+@var{rotation} is a decimal number specifying the amount in degree by
+which the video should be rotated counter-clockwise before being
+displayed.
+
+This option overrides the rotation/display transform metadata stored in
+the file, if any. When the video is being transcoded (rather than
+copied) and @code{-autorotate} is enabled, the video will be rotated at
+the filtering stage. Otherwise, the metadata will be written into the
+output file if the muxer supports it.
+
+If the @code{-display_hflip} and/or @code{-display_vflip} options are
+given, they are applied after the rotation specified by this option.
+
+@item -display_hflip[:@var{stream_specifier}] (@emph{input,per-stream})
+Set whether on display the image should be horizontally flipped.
+
+See the @code{-display_rotation} option for more details.
+
+@item -display_vflip[:@var{stream_specifier}] (@emph{input,per-stream})
+Set whether on display the image should be vertically flipped.
+
+See the @code{-display_rotation} option for more details.
+
 @item -vn (@emph{input/output})
 As an input option, blocks all video streams of a file from being filtered or
 being automatically selected or mapped for any output. See @code{-discard}
@@ -1696,18 +1722,6 @@ be before they are dropped. In frame rate units, so 1.0 is one frame.
 The default is -1.1. One possible usecase is to avoid framedrops in case
 of noisy timestamps or to increase frame drop precision in case of exact
 timestamps.
-
-@item -async @var{samples_per_second}
-Audio sync method. "Stretches/squeezes" the audio stream to match the timestamps,
-the parameter is the maximum samples per second by which the audio is changed.
--async 1 is a special case where only the start of the audio stream is corrected
-without any later correction.
-
-Note that the timestamps may be further modified by the muxer, after this.
-For example, in the case that the format option @option{avoid_negative_ts}
-is enabled.
-
-This option has been deprecated. Use the @code{aresample} audio filter instead.
 
 @item -adrift_threshold @var{time}
 Set the minimum difference between timestamps and audio data (in seconds) to trigger

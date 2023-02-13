@@ -308,6 +308,7 @@ et{
         CG{"Kongo-Brazzaville"}
         CI{"Elevandiluurannik"}
         CZ{"Tšehhi Vabariik"}
+        NZ{"Aotearoa Uus-Meremaa"}
         SZ{"eSwatini"}
         TL{"Timor-Leste"}
     }

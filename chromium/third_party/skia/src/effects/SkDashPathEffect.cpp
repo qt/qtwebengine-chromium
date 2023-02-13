@@ -18,7 +18,6 @@
 #include "include/private/SkMalloc.h"
 #include "include/private/SkTemplates.h"
 #include "include/private/SkTo.h"
-#include "src/core/SkPathEffectBase.h"
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkWriteBuffer.h"
 #include "src/effects/SkDashImpl.h"
@@ -27,7 +26,6 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
-#include <utility>
 
 SkDashImpl::SkDashImpl(const SkScalar intervals[], int count, SkScalar phase)
         : fPhase(0)
@@ -55,7 +53,8 @@ SkDashImpl::~SkDashImpl() {
 bool SkDashImpl::onFilterPath(SkPath* dst, const SkPath& src, SkStrokeRec* rec,
                               const SkRect* cullRect, const SkMatrix&) const {
     return SkDashPath::InternalFilter(dst, src, rec, cullRect, fIntervals, fCount,
-                                      fInitialDashLength, fInitialDashIndex, fIntervalLength);
+                                      fInitialDashLength, fInitialDashIndex, fIntervalLength,
+                                      fPhase);
 }
 
 static void outset_for_stroke(SkRect* rect, const SkStrokeRec& rec) {

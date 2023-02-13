@@ -345,7 +345,12 @@ def execute_gtest_perf_test(command_generator, output_paths, use_xvfb=False,
     traceback.print_exc()
     return_code = 1
   if os.path.exists(output_paths.perf_results):
-    if command_generator.executable_name in GTEST_CONVERSION_WHITELIST:
+    executable_name = command_generator.executable_name
+    if executable_name.startswith('bin/run_'):
+      # The executable is a wrapper used by Fuchsia. Remove the prefix to get
+      # the actual executable name.
+      executable_name = executable_name[8:]
+    if executable_name in GTEST_CONVERSION_WHITELIST:
       with path_util.SysPath(path_util.GetTracingDir()):
         # pylint: disable=no-name-in-module,import-outside-toplevel
         from tracing.value import gtest_json_converter
@@ -506,6 +511,7 @@ def execute_telemetry_benchmark(
 
   return_code = 1
   temp_dir = tempfile.mkdtemp('telemetry')
+  infra_failure = False
   try:
     command = command_generator.generate(temp_dir)
     if use_xvfb:
@@ -533,6 +539,7 @@ def execute_telemetry_benchmark(
     print('The following exception may have prevented the code from '
           'outputing structured test results and perf results output:')
     print(traceback.format_exc())
+    infra_failure = True
   finally:
     # On swarming bots, don't remove output directory, since Result Sink might
     # still be uploading files to Result DB. Also, swarming bots automatically
@@ -544,6 +551,11 @@ def execute_telemetry_benchmark(
       shutil.rmtree(temp_dir, ignore_errors=True)
 
   print_duration('executing benchmark %s' % command_generator.benchmark, start)
+
+  if infra_failure:
+    print('There was an infrastructure error encountered during the run. '
+          'Please check the logs above for details')
+    return 1
 
   # Telemetry sets exit code to -1 to indicate that no stories were run. This
   # becomes 255 on linux because linux doesn't support -1 so it does modulo:

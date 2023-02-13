@@ -70,7 +70,7 @@ ProgramBuilder ProgramBuilder::Wrap(const Program* program) {
     ProgramBuilder builder;
     builder.id_ = program->ID();
     builder.last_ast_node_id_ = program->HighestASTNodeID();
-    builder.types_ = sem::TypeManager::Wrap(program->Types());
+    builder.types_ = type::Manager::Wrap(program->Types());
     builder.ast_ =
         builder.create<ast::Module>(program->AST().source, program->AST().GlobalDeclarations());
     builder.sem_ = sem::Info::Wrap(program->Sem());
@@ -95,21 +95,21 @@ void ProgramBuilder::AssertNotMoved() const {
     }
 }
 
-const sem::Type* ProgramBuilder::TypeOf(const ast::Expression* expr) const {
+const type::Type* ProgramBuilder::TypeOf(const ast::Expression* expr) const {
     auto* sem = Sem().Get(expr);
     return sem ? sem->Type() : nullptr;
 }
 
-const sem::Type* ProgramBuilder::TypeOf(const ast::Variable* var) const {
+const type::Type* ProgramBuilder::TypeOf(const ast::Variable* var) const {
     auto* sem = Sem().Get(var);
     return sem ? sem->Type() : nullptr;
 }
 
-const sem::Type* ProgramBuilder::TypeOf(const ast::Type* type) const {
+const type::Type* ProgramBuilder::TypeOf(const ast::Type* type) const {
     return Sem().Get(type);
 }
 
-const sem::Type* ProgramBuilder::TypeOf(const ast::TypeDecl* type_decl) const {
+const type::Type* ProgramBuilder::TypeOf(const ast::TypeDecl* type_decl) const {
     return Sem().Get(type_decl);
 }
 
@@ -118,7 +118,7 @@ std::string ProgramBuilder::FriendlyName(const ast::Type* type) const {
     return type ? type->FriendlyName(Symbols()) : "<null>";
 }
 
-std::string ProgramBuilder::FriendlyName(const sem::Type* type) const {
+std::string ProgramBuilder::FriendlyName(const type::Type* type) const {
     return type ? type->FriendlyName(Symbols()) : "<null>";
 }
 

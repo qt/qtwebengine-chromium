@@ -308,6 +308,7 @@ gl{
         CG{"Congo (RC)"}
         CI{"Costa do Marfil"}
         CZ{"República Checa"}
+        NZ{"Aotearoa (Nova Zelandia)"}
         SZ{"Swazilandia"}
     }
 }

@@ -1,4 +1,4 @@
-// Copyright 2014 PDFium Authors. All rights reserved.
+// Copyright 2014 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -95,7 +95,7 @@ class CXFA_Document final : public cppgc::GarbageCollected<CXFA_Document> {
   // won't have an isolate set into it.
   CFXJSE_Engine* GetScriptContext() const;
 
-  CXFA_FFNotify* GetNotify() const { return notify_.Get(); }
+  CXFA_FFNotify* GetNotify() const { return notify_; }
   CXFA_NodeOwner* GetNodeOwner() { return node_owner_; }
   cppgc::Heap* GetHeap() const;
   CXFA_LocaleMgr* GetLocaleMgr();

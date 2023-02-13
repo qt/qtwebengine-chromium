@@ -333,28 +333,28 @@ export class DOMNode {
   }
 
   beforePseudoElement(): DOMNode|undefined {
-    return this.#pseudoElements.get(DOMNode.PseudoElementNames.Before)?.at(-1);
+    return this.#pseudoElements.get(Protocol.DOM.PseudoType.Before)?.at(-1);
   }
 
   afterPseudoElement(): DOMNode|undefined {
-    return this.#pseudoElements.get(DOMNode.PseudoElementNames.After)?.at(-1);
+    return this.#pseudoElements.get(Protocol.DOM.PseudoType.After)?.at(-1);
   }
 
   markerPseudoElement(): DOMNode|undefined {
-    return this.#pseudoElements.get(DOMNode.PseudoElementNames.Marker)?.at(-1);
+    return this.#pseudoElements.get(Protocol.DOM.PseudoType.Marker)?.at(-1);
   }
 
   backdropPseudoElement(): DOMNode|undefined {
-    return this.#pseudoElements.get(DOMNode.PseudoElementNames.Backdrop)?.at(-1);
+    return this.#pseudoElements.get(Protocol.DOM.PseudoType.Backdrop)?.at(-1);
   }
 
-  pageTransitionPseudoElements(): DOMNode[] {
+  viewTransitionPseudoElements(): DOMNode[] {
     return [
-      ...this.#pseudoElements.get(DOMNode.PseudoElementNames.PageTransition) || [],
-      ...this.#pseudoElements.get(DOMNode.PseudoElementNames.PageTransitionContainer) || [],
-      ...this.#pseudoElements.get(DOMNode.PseudoElementNames.PageTransitionImageWrapper) || [],
-      ...this.#pseudoElements.get(DOMNode.PseudoElementNames.PageTransitionOutgoingImage) || [],
-      ...this.#pseudoElements.get(DOMNode.PseudoElementNames.PageTransitionIncomingImage) || [],
+      ...this.#pseudoElements.get(Protocol.DOM.PseudoType.ViewTransition) || [],
+      ...this.#pseudoElements.get(Protocol.DOM.PseudoType.ViewTransitionGroup) || [],
+      ...this.#pseudoElements.get(Protocol.DOM.PseudoType.ViewTransitionImagePair) || [],
+      ...this.#pseudoElements.get(Protocol.DOM.PseudoType.ViewTransitionOld) || [],
+      ...this.#pseudoElements.get(Protocol.DOM.PseudoType.ViewTransitionNew) || [],
     ];
   }
 
@@ -977,20 +977,6 @@ export class DOMNode {
 export namespace DOMNode {
   // TODO(crbug.com/1167717): Make this a const enum again
   // eslint-disable-next-line rulesdir/const_enum
-  export enum PseudoElementNames {
-    Before = 'before',
-    After = 'after',
-    Marker = 'marker',
-    PageTransition = 'page-transition',
-    PageTransitionContainer = 'page-transition-container',
-    PageTransitionImageWrapper = 'page-transition-image-wrapper',
-    PageTransitionOutgoingImage = 'page-transition-outgoing-image',
-    PageTransitionIncomingImage = 'page-transition-incoming-image',
-    Backdrop = 'backdrop',
-  }
-
-  // TODO(crbug.com/1167717): Make this a const enum again
-  // eslint-disable-next-line rulesdir/const_enum
   export enum ShadowRootTypes {
     UserAgent = 'user-agent',
     Open = 'open',
@@ -1145,7 +1131,6 @@ export class DOMModel extends SDKModel<EventTypes> {
   private async requestDocumentInternal(): Promise<DOMDocument|null> {
     const response = await this.agent.invoke_getDocument({});
     if (response.getError()) {
-      console.error(response.getError());
       return null;
     }
     const {root: documentPayload} = response;
@@ -1405,8 +1390,8 @@ export class DOMModel extends SDKModel<EventTypes> {
     const currentPseudoElements = parent.pseudoElements().get(pseudoType);
     if (currentPseudoElements) {
       Platform.DCHECK(
-          () => pseudoType.startsWith('page-transition'),
-          'DOMModel.pseudoElementAdded expects parent to not already have this pseudo type added; only page-transition* pseudo elements can coexist under the same parent.');
+          () => pseudoType.startsWith('view-transition'),
+          'DOMModel.pseudoElementAdded expects parent to not already have this pseudo type added; only view-transition* pseudo elements can coexist under the same parent.');
       currentPseudoElements.push(node);
     } else {
       parent.pseudoElements().set(pseudoType, [node]);

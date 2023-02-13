@@ -11,12 +11,12 @@
 #include "include/core/SkSize.h"
 #include "include/core/SkTypes.h"
 #include "include/private/SkSLProgramElement.h"
-#include "include/private/SkSLProgramKind.h"
 #include "include/sksl/SkSLErrorReporter.h"
 #include "include/sksl/SkSLPosition.h"
 #include "src/sksl/SkSLContext.h"  // IWYU pragma: keep
 
 #include <array>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -31,11 +31,17 @@
 #define SK_SECONDARYFRAGCOLOR_BUILTIN  10012
 #define SK_FRAGCOORD_BUILTIN              15
 #define SK_CLOCKWISE_BUILTIN              17
-#define SK_THREADPOSITION                 28
+
 #define SK_VERTEXID_BUILTIN               42
 #define SK_INSTANCEID_BUILTIN             43
 #define SK_POSITION_BUILTIN                0
 #define SK_POINTSIZE_BUILTIN               1
+
+#define SK_NUMWORKGROUPS_BUILTIN          24
+#define SK_WORKGROUPID_BUILTIN            26
+#define SK_LOCALINVOCATIONID_BUILTIN      27
+#define SK_GLOBALINVOCATIONID_BUILTIN     28
+#define SK_LOCALINVOCATIONINDEX_BUILTIN   29
 
 namespace SkSL {
 
@@ -43,27 +49,21 @@ namespace dsl {
     class DSLCore;
 }
 
-class BuiltinMap;
 class Expression;
 class Inliner;
 class ModifiersPool;
 class OutputStream;
+class ProgramUsage;
+class SymbolTable;
+enum class ProgramKind : int8_t;
 struct Program;
 struct ProgramSettings;
-class ProgramUsage;
 struct ShaderCaps;
-class SymbolTable;
 
-struct LoadedModule {
+struct Module {
+    const Module*                                fParent = nullptr;
     std::shared_ptr<SymbolTable>                 fSymbols;
     std::vector<std::unique_ptr<ProgramElement>> fElements;
-
-    /**
-     * Converts a compiled LoadedModule (containing symbols and ProgramElements) into a BuiltinMap
-     * (useful for looking up symbols quickly by name). Most elements of `fElements` from this
-     * LoadedModule will be moved into the BuiltinMap, and the rest will be deleted.
-     */
-    std::unique_ptr<BuiltinMap> convertToBuiltinMap(const BuiltinMap* parent);
 };
 
 /**
@@ -177,23 +177,21 @@ public:
         return *fContext;
     }
 
-    std::shared_ptr<SymbolTable> symbolTable() const {
+    std::shared_ptr<SymbolTable>& symbolTable() {
         return fSymbolTable;
     }
 
-    LoadedModule compileModule(ProgramKind kind,
-                               const char* moduleName,
-                               std::string moduleSource,
-                               const BuiltinMap* base,
-                               ModifiersPool& modifiersPool,
-                               bool shouldInline);
+    std::unique_ptr<Module> compileModule(ProgramKind kind,
+                                          const char* moduleName,
+                                          std::string moduleSource,
+                                          const Module* parent,
+                                          ModifiersPool& modifiersPool,
+                                          bool shouldInline);
 
     /** Optimize a module at minification time, before writing it out. */
-    bool optimizeModuleBeforeMinifying(ProgramKind kind,
-                                       LoadedModule& module,
-                                       const BuiltinMap* base);
+    bool optimizeModuleBeforeMinifying(ProgramKind kind, Module& module);
 
-    const BuiltinMap* moduleForProgramKind(ProgramKind kind);
+    const Module* moduleForProgramKind(ProgramKind kind);
 
 private:
     class CompilerErrorReporter : public ErrorReporter {
@@ -209,6 +207,9 @@ private:
         Compiler& fCompiler;
     };
 
+    /** Updates ProgramSettings to eliminate contradictions and to honor the ProgramKind. */
+    static void FinalizeSettings(ProgramSettings* settings, ProgramKind kind);
+
     /** Optimize every function in the program. */
     bool optimize(Program& program);
 
@@ -216,7 +217,7 @@ private:
     bool finalize(Program& program);
 
     /** Optimize a module at Skia runtime, after loading it. */
-    bool optimizeModuleAfterLoading(ProgramKind kind, LoadedModule& module, const BuiltinMap* base);
+    bool optimizeModuleAfterLoading(ProgramKind kind, Module& module);
 
     /** Flattens out function calls when it is safe to do so. */
     bool runInliner(Inliner* inliner,

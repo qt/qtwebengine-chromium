@@ -41,7 +41,7 @@ public:
     sk_sp<SkCapabilities> capabilities() const;
 
     virtual TextureInfo getDefaultSampledTextureInfo(SkColorType,
-                                                     uint32_t levelCount,
+                                                     Mipmapped mipmapped,
                                                      Protected,
                                                      Renderable) const = 0;
 
@@ -76,6 +76,12 @@ public:
     // Returns the required alignment in bytes for the offset into a storage buffer when binding it
     // to a draw.
     size_t requiredStorageBufferAlignment() const { return fRequiredStorageBufferAlignment; }
+
+    // Returns the required data layout rules for the contents of a uniform buffer.
+    Layout uniformBufferLayout() const { return fUniformBufferLayout; }
+
+    // Returns the required data layout rules for the contents of a storage buffer.
+    Layout storageBufferLayout() const { return fStorageBufferLayout; }
 
     // Returns the alignment in bytes for the offset into a Buffer when using it
     // to transfer to or from a Texture with the given bytes per pixel.
@@ -123,12 +129,17 @@ public:
 
     bool clampToBorderSupport() const { return fClampToBorderSupport; }
 
+    bool protectedSupport() const { return fProtectedSupport; }
+
     // Returns whether storage buffers are supported.
     bool storageBufferSupport() const { return fStorageBufferSupport; }
 
     // Returns whether storage buffers are preferred over uniform buffers, when both will yield
     // correct results.
     bool storageBufferPreferred() const { return fStorageBufferPreferred; }
+
+    // Returns whether a draw buffer can be mapped.
+    bool drawBufferCanBeMapped() const { return fDrawBufferCanBeMapped; }
 
     // Returns the skgpu::Swizzle to use when sampling or reading back from a texture with the
     // passed in SkColorType and TextureInfo.
@@ -160,10 +171,30 @@ protected:
     // TODO: This value should be set by some context option. For now just making it 4.
     uint32_t defaultMSAASamples() const { return 4; }
 
+    // There are only a few possible valid sample counts (1, 2, 4, 8, 16). So we can key on those 5
+    // options instead of the actual sample value.
+    static inline uint32_t SamplesToKey(uint32_t numSamples) {
+        switch (numSamples) {
+            case 1:
+                return 0;
+            case 2:
+                return 1;
+            case 4:
+                return 2;
+            case 8:
+                return 3;
+            case 16:
+                return 4;
+            default:
+                SkUNREACHABLE;
+        }
+    }
+
     // ColorTypeInfo for a specific format.
     // Used in format tables.
     struct ColorTypeInfo {
         SkColorType fColorType = kUnknown_SkColorType;
+        SkColorType fTransferColorType = kUnknown_SkColorType;
         enum {
             kUploadData_Flag = 0x1,
             // Does Graphite itself support rendering to this colorType & format pair. Renderability
@@ -180,13 +211,16 @@ protected:
     size_t fRequiredUniformBufferAlignment = 0;
     size_t fRequiredStorageBufferAlignment = 0;
     size_t fTextureDataRowBytesAlignment = 1;
+    Layout fUniformBufferLayout = Layout::kInvalid;
+    Layout fStorageBufferLayout = Layout::kInvalid;
 
     std::unique_ptr<SkSL::ShaderCaps> fShaderCaps;
 
     bool fClampToBorderSupport = true;
-
+    bool fProtectedSupport = false;
     bool fStorageBufferSupport = false;
     bool fStorageBufferPreferred = false;
+    bool fDrawBufferCanBeMapped = true;
 
     //////////////////////////////////////////////////////////////////////////////////////////
     // Client-provided Caps

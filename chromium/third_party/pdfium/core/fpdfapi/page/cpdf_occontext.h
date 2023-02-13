@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2016 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -25,8 +25,8 @@ class CPDF_OCContext final : public Retainable {
 
   CONSTRUCT_VIA_MAKE_RETAIN;
 
-  bool CheckOCGVisible(const CPDF_Dictionary* pOCGDict) const;
-  bool CheckObjectVisible(const CPDF_PageObject* pObj) const;
+  bool CheckOCGDictVisible(const CPDF_Dictionary* pOCGDict) const;
+  bool CheckPageObjectVisible(const CPDF_PageObject* pObj) const;
 
  private:
   CPDF_OCContext(CPDF_Document* pDoc, UsageType eUsageType);

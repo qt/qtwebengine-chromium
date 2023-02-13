@@ -486,6 +486,8 @@ class ShellOptions {
       "throw-on-failed-access-check", false};
   DisallowReassignment<bool> noop_on_failed_access_check = {
       "noop-on-failed-access-check", false};
+  DisallowReassignment<size_t> max_serializer_memory = {"max-serializer-memory",
+                                                        1 * i::MB};
 };
 
 class Shell : public i::AllStatic {
@@ -541,7 +543,7 @@ class Shell : public i::AllStatic {
   static void MapCounters(v8::Isolate* isolate, const char* name);
 
   static double GetTimestamp();
-  static int64_t GetTracingTimestampFromPerformanceTimestamp(
+  static uint64_t GetTracingTimestampFromPerformanceTimestamp(
       double performance_timestamp);
 
   static void PerformanceNow(const v8::FunctionCallbackInfo<v8::Value>& args);
@@ -595,6 +597,18 @@ class Shell : public i::AllStatic {
       const v8::FunctionCallbackInfo<v8::Value>& args);
   static void SerializerDeserialize(
       const v8::FunctionCallbackInfo<v8::Value>& args);
+
+  static void ProfilerSetOnProfileEndListener(
+      const v8::FunctionCallbackInfo<v8::Value>& args);
+  static void ProfilerTriggerSample(
+      const v8::FunctionCallbackInfo<v8::Value>& args);
+
+  static bool HasOnProfileEndListener(Isolate* isolate);
+
+  static void TriggerOnProfileEndListener(Isolate* isolate,
+                                          std::string profile);
+
+  static void ResetOnProfileEndListener(Isolate* isolate);
 
   static void Print(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void PrintErr(const v8::FunctionCallbackInfo<v8::Value>& args);
@@ -732,6 +746,10 @@ class Shell : public i::AllStatic {
   static Global<Context> evaluation_context_;
   static base::OnceType quit_once_;
   static Global<Function> stringify_function_;
+
+  static std::map<Isolate*, std::pair<Global<Function>, Global<Context>>>
+      profiler_end_callback_;
+
   static const char* stringify_source_;
   static CounterMap* counter_map_;
   static base::SharedMutex counter_mutex_;

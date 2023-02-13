@@ -199,15 +199,18 @@ class GpuAssistedBase : public ValidationStateTracker {
         return std::static_pointer_cast<QUEUE_STATE>(std::make_shared<gpu_utils_state::Queue>(*this, q, index, flags, queueFamilyProperties));
     }
 
-    template <typename CreateInfo, typename SafeCreateInfo>
+    template <typename CreateInfo, typename SafeCreateInfo, typename GPUAVState>
     void PreCallRecordPipelineCreations(uint32_t count, const CreateInfo *pCreateInfos, const VkAllocationCallbacks *pAllocator,
                                         VkPipeline *pPipelines, std::vector<std::shared_ptr<PIPELINE_STATE>> &pipe_state,
                                         std::vector<SafeCreateInfo> *new_pipeline_create_infos,
-                                        const VkPipelineBindPoint bind_point);
+                                        const VkPipelineBindPoint bind_point, GPUAVState &cgpl_state);
     template <typename CreateInfo, typename SafeCreateInfo>
     void PostCallRecordPipelineCreations(const uint32_t count, const CreateInfo *pCreateInfos,
                                          const VkAllocationCallbacks *pAllocator, VkPipeline *pPipelines,
                                          const VkPipelineBindPoint bind_point, const SafeCreateInfo &modified_create_infos);
+
+    virtual bool InstrumentShader(const layer_data::span<const uint32_t> &input, std::vector<uint32_t> &new_pgm,
+                                  uint32_t *unique_shader_id) = 0;
 
   public:
     bool aborted = false;
@@ -222,6 +225,7 @@ class GpuAssistedBase : public ValidationStateTracker {
     VkDescriptorSetLayout dummy_desc_layout = VK_NULL_HANDLE;
     uint32_t desc_set_bind_index = 0;
     VmaAllocator vmaAllocator = {};
+    VmaPool output_buffer_pool = VK_NULL_HANDLE;
     std::unique_ptr<UtilDescriptorSetManager> desc_set_manager;
     vl_concurrent_unordered_map<uint32_t, GpuAssistedShaderTracker> shader_map;
     std::vector<VkDescriptorSetLayoutBinding> bindings_;

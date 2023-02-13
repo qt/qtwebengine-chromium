@@ -26,3 +26,9 @@ GccAarch64LinuxGNU = Library('gcc-aarch64-linux-gnu', {
   OsFlavor.Debian: 'gcc-aarch64-linux-gnu',
   OsFlavor.Arch: 'aarch64-linux-gnu-binutils',
 })
+
+
+GccMultilib = Library('gcc-multilib', {
+  OsFlavor.Debian: 'gcc-multilib',
+  OsFlavor.Arch: 'gcc',
+})

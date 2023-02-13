@@ -118,55 +118,6 @@ enum CB_STATE {
     CB_INVALID_INCOMPLETE,  // fouled before recording was completed
 };
 
-// CB Status -- used to track status of various bindings on cmd buffer objects
-typedef uint64_t CBStatusFlags;
-enum CBStatusFlagBits : uint64_t {
-    // clang-format off
-    CBSTATUS_NONE                            = 0x00000000,   // No status is set
-    CBSTATUS_LINE_WIDTH_SET                  = 0x00000001,   // Line width has been set
-    CBSTATUS_DEPTH_BIAS_SET                  = 0x00000002,   // Depth bias has been set
-    CBSTATUS_BLEND_CONSTANTS_SET             = 0x00000004,   // Blend constants state has been set
-    CBSTATUS_DEPTH_BOUNDS_SET                = 0x00000008,   // Depth bounds state object has been set
-    CBSTATUS_STENCIL_READ_MASK_SET           = 0x00000010,   // Stencil read mask has been set
-    CBSTATUS_STENCIL_WRITE_MASK_SET          = 0x00000020,   // Stencil write mask has been set
-    CBSTATUS_STENCIL_REFERENCE_SET           = 0x00000040,   // Stencil reference has been set
-    CBSTATUS_VIEWPORT_SET                    = 0x00000080,
-    CBSTATUS_SCISSOR_SET                     = 0x00000100,
-    CBSTATUS_INDEX_BUFFER_BOUND              = 0x00000200,   // Index buffer has been set
-    CBSTATUS_EXCLUSIVE_SCISSOR_SET           = 0x00000400,
-    CBSTATUS_SHADING_RATE_PALETTE_SET        = 0x00000800,
-    CBSTATUS_LINE_STIPPLE_SET                = 0x00001000,
-    CBSTATUS_VIEWPORT_W_SCALING_SET          = 0x00002000,
-    CBSTATUS_CULL_MODE_SET                   = 0x00004000,
-    CBSTATUS_FRONT_FACE_SET                  = 0x00008000,
-    CBSTATUS_PRIMITIVE_TOPOLOGY_SET          = 0x00010000,
-    CBSTATUS_VIEWPORT_WITH_COUNT_SET         = 0x00020000,
-    CBSTATUS_SCISSOR_WITH_COUNT_SET          = 0x00040000,
-    CBSTATUS_VERTEX_INPUT_BINDING_STRIDE_SET = 0x00080000,
-    CBSTATUS_DEPTH_TEST_ENABLE_SET           = 0x00100000,
-    CBSTATUS_DEPTH_WRITE_ENABLE_SET          = 0x00200000,
-    CBSTATUS_DEPTH_COMPARE_OP_SET            = 0x00400000,
-    CBSTATUS_DEPTH_BOUNDS_TEST_ENABLE_SET    = 0x00800000,
-    CBSTATUS_STENCIL_TEST_ENABLE_SET         = 0x01000000,
-    CBSTATUS_STENCIL_OP_SET                  = 0x02000000,
-    CBSTATUS_DISCARD_RECTANGLE_SET           = 0x04000000,
-    CBSTATUS_SAMPLE_LOCATIONS_SET            = 0x08000000,
-    CBSTATUS_COARSE_SAMPLE_ORDER_SET         = 0x10000000,
-    CBSTATUS_PATCH_CONTROL_POINTS_SET        = 0x20000000,
-    CBSTATUS_RASTERIZER_DISCARD_ENABLE_SET   = 0x40000000,
-    CBSTATUS_DEPTH_BIAS_ENABLE_SET           = 0x80000000,
-    CBSTATUS_LOGIC_OP_SET                    = 0x100000000,
-    CBSTATUS_PRIMITIVE_RESTART_ENABLE_SET    = 0x200000000,
-    CBSTATUS_VERTEX_INPUT_SET                = 0x400000000,
-    CBSTATUS_COLOR_WRITE_ENABLE_SET          = 0x800000000,
-    CBSTATUS_ALL_STATE_SET                   = 0xFFFFFFDFF,   // All state set (intentionally exclude index buffer)
-    // clang-format on
-};
-
-VkDynamicState ConvertToDynamicState(CBStatusFlagBits flag);
-CBStatusFlagBits ConvertToCBStatusFlagBits(VkDynamicState state);
-std::string DynamicStateString(CBStatusFlags input_value);
-
 struct BufferBinding {
     std::shared_ptr<BUFFER_STATE> buffer_state;
     VkDeviceSize size;
@@ -177,6 +128,7 @@ struct BufferBinding {
     virtual ~BufferBinding() {}
 
     virtual void reset() { *this = BufferBinding(); }
+    bool bound() const { return buffer_state && !buffer_state->Destroyed(); }
 };
 
 struct IndexBufferBinding : BufferBinding {
@@ -213,7 +165,6 @@ class CMD_BUFFER_STATE : public REFCOUNTED_NODE {
     // Track if certain commands have been called at least once in lifetime of the command buffer
     // primary command buffers values are set true if a secondary command buffer has a command
     bool has_draw_cmd;
-    bool has_draw_cmd_in_current_render_pass;
     bool has_dispatch_cmd;
     bool has_trace_rays_cmd;
     bool has_build_as_cmd;
@@ -224,10 +175,31 @@ class CMD_BUFFER_STATE : public REFCOUNTED_NODE {
     bool pipeline_bound = false;  // True if CmdBindPipeline has been called on this command buffer, false otherwise
     typedef uint64_t ImageLayoutUpdateCount;
     ImageLayoutUpdateCount image_layout_change_count;  // The sequence number for changes to image layout (for cached validation)
-    CBStatusFlags status;                              // Track status of various bindings on cmd buffer
-    CBStatusFlags static_status;                       // All state bits provided by current graphics pipeline
+
+    // Dynamic State
+    CBDynamicFlags status;                             // Track status of various bindings on cmd buffer
+    CBDynamicFlags static_status;                      // All state bits provided by current graphics pipeline
                                                        // rather than dynamic state
-    CBStatusFlags dynamic_status;                      // dynamic state set up in pipeline
+    CBDynamicFlags dynamic_status;                     // dynamic state set up in pipeline
+    struct DynamicStateValue {
+        // VK_DYNAMIC_STATE_STENCIL_WRITE_MASK
+        uint32_t write_mask_front;
+        uint32_t write_mask_back;
+        // VK_DYNAMIC_STATE_DEPTH_WRITE_ENABLE
+        bool depth_write_enable;
+        // VK_DYNAMIC_STATE_DEPTH_TEST_ENABLE
+        bool depth_test_enable;
+        // VK_DYNAMIC_STATE_STENCIL_TEST_ENABLE
+        bool stencil_test_enable;
+        // VK_DYNAMIC_STATE_STENCIL_OP
+        VkStencilOp fail_op_front;
+        VkStencilOp pass_op_front;
+        VkStencilOp depth_fail_op_front;
+        VkStencilOp fail_op_back;
+        VkStencilOp pass_op_back;
+        VkStencilOp depth_fail_op_back;
+    } dynamic_state_value;
+
     std::string begin_rendering_func_name;
     // Currently storing "lastBound" objects on per-CB basis
     //  long-term may want to create caches of "lastBound" states and could have
@@ -239,9 +211,10 @@ class CMD_BUFFER_STATE : public REFCOUNTED_NODE {
     std::shared_ptr<const CMD_BUFFER_STATE> shared_from_this() const { return SharedFromThisImpl(this); }
     std::shared_ptr<CMD_BUFFER_STATE> shared_from_this() { return SharedFromThisImpl(this); }
 
+    using DescriptorBindingInfo = std::pair<const uint32_t, DescriptorRequirement>;
     struct CmdDrawDispatchInfo {
         CMD_TYPE cmd_type;
-        std::vector<std::pair<const uint32_t, DescriptorRequirement>> binding_infos;
+        std::vector<DescriptorBindingInfo> binding_infos;
         VkFramebuffer framebuffer;
         std::shared_ptr<std::vector<SUBPASS_INFO>> subpasses;
         std::shared_ptr<std::vector<IMAGE_VIEW_STATE *>> attachments;
@@ -298,7 +271,6 @@ class CMD_BUFFER_STATE : public REFCOUNTED_NODE {
     uint32_t active_render_pass_device_mask;
     uint32_t activeSubpass;
     std::shared_ptr<FRAMEBUFFER_STATE> activeFramebuffer;
-    layer_data::unordered_set<std::shared_ptr<FRAMEBUFFER_STATE>> framebuffers;
     // Unified data structs to track objects bound to this command buffer as well as object
     //  dependencies that have been broken : either destroyed objects, or updated descriptor sets
     layer_data::unordered_set<std::shared_ptr<BASE_NODE>> object_bindings;
@@ -332,13 +304,13 @@ class CMD_BUFFER_STATE : public REFCOUNTED_NODE {
     // Validation functions run when secondary CB is executed in primary
     std::vector<std::function<bool(const CMD_BUFFER_STATE &secondary, const CMD_BUFFER_STATE *primary, const FRAMEBUFFER_STATE *)>>
         cmd_execute_commands_functions;
-    std::vector<std::function<bool(CMD_BUFFER_STATE &cb, bool do_validate, EventToStageMap *localEventToStageMap)>> eventUpdates;
-    std::vector<std::function<bool(CMD_BUFFER_STATE &cb, bool do_validate, VkQueryPool &firstPerfQueryPool, uint32_t perfQueryPass,
-                                   QueryMap *localQueryToStateMap)>>
+    std::vector<std::function<bool(CMD_BUFFER_STATE &cb_state, bool do_validate, EventToStageMap *localEventToStageMap)>>
+        eventUpdates;
+    std::vector<std::function<bool(CMD_BUFFER_STATE &cb_state, bool do_validate, VkQueryPool &firstPerfQueryPool,
+                                   uint32_t perfQueryPass, QueryMap *localQueryToStateMap)>>
         queryUpdates;
     layer_data::unordered_map<const cvdescriptorset::DescriptorSet *, cvdescriptorset::DescriptorSet::CachedValidation>
         descriptorset_cache;
-    // Contents valid only after an index buffer is bound (CBSTATUS_INDEX_BUFFER_BOUND set)
     IndexBufferBinding index_buffer_binding;
     bool performance_lock_acquired = false;
     bool performance_lock_released = false;
@@ -361,7 +333,9 @@ class CMD_BUFFER_STATE : public REFCOUNTED_NODE {
     bool conditional_rendering_inside_render_pass{false};
     uint32_t conditional_rendering_subpass{0};
     uint32_t dynamicColorWriteEnableAttachmentCount{0};
-    mutable ReadWriteLock lock;
+    std::vector<VkDescriptorBufferBindingInfoEXT> descriptor_buffer_binding_info;
+
+    mutable std::shared_mutex lock;
     ReadLockGuard ReadLock() const { return ReadLockGuard(lock); }
     WriteLockGuard WriteLock() { return WriteLockGuard(lock); }
 
@@ -425,12 +399,12 @@ class CMD_BUFFER_STATE : public REFCOUNTED_NODE {
     void GetCurrentPipelineAndDesriptorSets(VkPipelineBindPoint pipelineBindPoint, const PIPELINE_STATE **rtn_pipe,
                                             const std::vector<LAST_BOUND_STATE::PER_SET> **rtn_sets) const {
         const auto lv_bind_point = ConvertToLvlBindPoint(pipelineBindPoint);
-        const auto &last_bound_it = lastBound[lv_bind_point];
-        if (!last_bound_it.IsUsing()) {
+        const auto &last_bound = lastBound[lv_bind_point];
+        if (!last_bound.IsUsing()) {
             return;
         }
-        *rtn_pipe = last_bound_it.pipeline_state;
-        *rtn_sets = &(last_bound_it.per_set);
+        *rtn_pipe = last_bound.pipeline_state;
+        *rtn_sets = &(last_bound.per_set);
     }
 
     VkQueueFlags GetQueueFlags() const {
@@ -463,12 +437,16 @@ class CMD_BUFFER_STATE : public REFCOUNTED_NODE {
 
     void ExecuteCommands(uint32_t commandBuffersCount, const VkCommandBuffer *pCommandBuffers);
 
-    void UpdateLastBoundDescriptorSets(VkPipelineBindPoint pipeline_bind_point, const PIPELINE_LAYOUT_STATE *pipeline_layout,
+    void UpdateLastBoundDescriptorSets(VkPipelineBindPoint pipeline_bind_point, const PIPELINE_LAYOUT_STATE &pipeline_layout,
                                        uint32_t first_set, uint32_t set_count, const VkDescriptorSet *pDescriptorSets,
                                        std::shared_ptr<cvdescriptorset::DescriptorSet> &push_descriptor_set,
                                        uint32_t dynamic_offset_count, const uint32_t *p_dynamic_offsets);
 
-    void PushDescriptorSetState(VkPipelineBindPoint pipelineBindPoint, PIPELINE_LAYOUT_STATE *pipeline_layout, uint32_t set,
+    void UpdateLastBoundDescriptorBuffers(VkPipelineBindPoint pipeline_bind_point, const PIPELINE_LAYOUT_STATE &pipeline_layout,
+                                          uint32_t first_set, uint32_t set_count, const uint32_t *buffer_indicies,
+                                          const VkDeviceSize *buffer_offsets);
+
+    void PushDescriptorSetState(VkPipelineBindPoint pipelineBindPoint, const PIPELINE_LAYOUT_STATE &pipeline_layout, uint32_t set,
                                 uint32_t descriptorWriteCount, const VkWriteDescriptorSet *pDescriptorWrites);
 
     void UpdateDrawCmd(CMD_TYPE cmd_type);
@@ -477,8 +455,9 @@ class CMD_BUFFER_STATE : public REFCOUNTED_NODE {
     void UpdatePipelineState(CMD_TYPE cmd_type, const VkPipelineBindPoint bind_point);
 
     virtual void RecordCmd(CMD_TYPE cmd_type);
-    void RecordStateCmd(CMD_TYPE cmd_type, CBStatusFlags state_bits);
-    void RecordColorWriteEnableStateCmd(CMD_TYPE cmd_type, CBStatusFlags state_bits, uint32_t attachment_count);
+    void RecordStateCmd(CMD_TYPE cmd_type, CBDynamicStatus state);
+    void RecordStateCmd(CMD_TYPE cmd_type, CBDynamicFlags const &state_bits);
+    void RecordColorWriteEnableStateCmd(CMD_TYPE cmd_type, CBDynamicStatus state, uint32_t attachment_count);
     void RecordTransferCmd(CMD_TYPE cmd_type, std::shared_ptr<BINDABLE> &&buf1, std::shared_ptr<BINDABLE> &&buf2 = nullptr);
     void RecordSetEvent(CMD_TYPE cmd_type, VkEvent event, VkPipelineStageFlags2KHR stageMask);
     void RecordResetEvent(CMD_TYPE cmd_type, VkEvent event, VkPipelineStageFlags2KHR stageMask);

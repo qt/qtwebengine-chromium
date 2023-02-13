@@ -52,6 +52,12 @@ public:
                               const SkColorInfo&,
                               const SkSurfaceProps&,
                               bool addInitialClear);
+    static sk_sp<Device> Make(Recorder* recorder,
+                              sk_sp<TextureProxy>,
+                              SkISize deviceSize,
+                              const SkColorInfo&,
+                              const SkSurfaceProps&,
+                              bool addInitialClear);
 
     Device* asGraphiteDevice() override { return this; }
 
@@ -65,13 +71,6 @@ public:
     void flushPendingWorkToRecorder();
 
     TextureProxyView createCopy(const SkIRect* subset, Mipmapped);
-
-    bool readPixels(Context*, Recorder*, const SkPixmap& dst, int x, int y);
-
-    void asyncReadPixels(const SkImageInfo& info,
-                         SkIRect srcRect,
-                         SkImage::ReadPixelsCallback callback,
-                         SkImage::ReadPixelsContext context);
 
     void asyncRescaleAndReadPixels(const SkImageInfo& info,
                                    SkIRect srcRect,
@@ -93,10 +92,8 @@ public:
 
     SkStrikeDeviceInfo strikeDeviceInfo() const override;
 
-#if GRAPHITE_TEST_UTILS
-    TextureProxy* proxy();
-#endif
-    TextureProxyView readSurfaceView();
+    TextureProxy* target();
+    TextureProxyView readSurfaceView() const;
 
 private:
     class IntersectionTreeSet;

@@ -143,3 +143,14 @@ message UpdateParams {
   // Checks for an update, but does not apply it.
   bool skip_applying = 4;
 }
+
+message InstallParams {
+  // ID of the DLC to install.
+  string id = 1;
+
+  // The Omaha URL to use. See `UpdateParams::omaha_url` for details.
+  string omaha_url = 2;
+
+  // Boolean indicating whether or not the DLC is scaled.
+  bool scaled = 3;
+}

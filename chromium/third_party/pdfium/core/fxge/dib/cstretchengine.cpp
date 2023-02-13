@@ -1,4 +1,4 @@
-// Copyright 2017 PDFium Authors. All rights reserved.
+// Copyright 2017 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -197,6 +197,13 @@ CStretchEngine::CStretchEngine(ScanlineComposerIface* pDestBitmap,
       m_DestWidth(dest_width),
       m_DestHeight(dest_height),
       m_DestClip(clip_rect) {
+  if (m_bHasAlpha) {
+    DCHECK_EQ(m_DestFormat, FXDIB_Format::kArgb);
+    DCHECK_EQ(m_DestBpp, GetBppFromFormat(FXDIB_Format::kArgb));
+    DCHECK_EQ(m_pSource->GetFormat(), FXDIB_Format::kArgb);
+    DCHECK_EQ(m_SrcBpp, GetBppFromFormat(FXDIB_Format::kArgb));
+  }
+
   absl::optional<uint32_t> maybe_size =
       fxge::CalculatePitch32(m_DestBpp, clip_rect.Width());
   if (!maybe_size.has_value())
@@ -242,13 +249,8 @@ CStretchEngine::CStretchEngine(ScanlineComposerIface* pDestBitmap,
                                      : TransformMethod::k1BppToManyBpp;
       break;
     case 8:
-      if (m_DestBpp == 8) {
-        m_TransMethod = m_bHasAlpha ? TransformMethod::k8BppTo8BppWithAlpha
-                                    : TransformMethod::k8BppTo8Bpp;
-      } else {
-        m_TransMethod = m_bHasAlpha ? TransformMethod::k8BppToManyBppWithAlpha
-                                    : TransformMethod::k8BppToManyBpp;
-      }
+      m_TransMethod = m_DestBpp == 8 ? TransformMethod::k8BppTo8Bpp
+                                     : TransformMethod::k8BppToManyBpp;
       break;
     default:
       m_TransMethod = m_bHasAlpha ? TransformMethod::kManyBpptoManyBppWithAlpha
@@ -274,15 +276,16 @@ bool CStretchEngine::StartStretchHorz() {
   if (m_DestWidth == 0 || m_InterPitch == 0 || m_DestScanline.empty())
     return false;
 
-  if (m_SrcClip.Height() == 0 ||
-      m_SrcClip.Height() > (1 << 29) / m_InterPitch) {
+  FX_SAFE_SIZE_T safe_size = m_SrcClip.Height();
+  safe_size *= m_InterPitch;
+  const size_t size = safe_size.ValueOrDefault(0);
+  if (size == 0)
     return false;
-  }
-  m_InterBuf.resize(m_SrcClip.Height() * m_InterPitch);
-  if (m_pSource && m_bHasAlpha && m_pSource->HasAlphaMask()) {
-    m_ExtraAlphaBuf.resize(m_SrcClip.Height(), m_ExtraMaskPitch);
-    m_DestMaskScanline.resize(m_ExtraMaskPitch);
-  }
+
+  m_InterBuf = FixedTryAllocZeroedDataVector<uint8_t>(size);
+  if (m_InterBuf.empty())
+    return false;
+
   if (!m_WeightTable.CalculateWeights(
           m_DestWidth, m_DestClip.left, m_DestClip.right, m_SrcWidth,
           m_SrcClip.left, m_SrcClip.right, m_ResampleOptions)) {
@@ -311,15 +314,9 @@ bool CStretchEngine::ContinueStretchHorz(PauseIndicatorIface* pPause) {
     }
 
     const uint8_t* src_scan = m_pSource->GetScanline(m_CurRow).data();
-    uint8_t* dest_scan =
-        m_InterBuf.data() + (m_CurRow - m_SrcClip.top) * m_InterPitch;
-    const uint8_t* src_scan_mask = nullptr;
-    uint8_t* dest_scan_mask = nullptr;
-    if (!m_ExtraAlphaBuf.empty()) {
-      src_scan_mask = m_pSource->GetAlphaMaskScanline(m_CurRow).data();
-      dest_scan_mask = m_ExtraAlphaBuf.data() +
-                       (m_CurRow - m_SrcClip.top) * m_ExtraMaskPitch;
-    }
+    pdfium::span<uint8_t> dest_span = m_InterBuf.writable_span().subspan(
+        (m_CurRow - m_SrcClip.top) * m_InterPitch, m_InterPitch);
+    size_t dest_span_index = 0;
     // TODO(npm): reduce duplicated code here
     switch (m_TransMethod) {
       case TransformMethod::k1BppTo8Bpp:
@@ -332,7 +329,7 @@ bool CStretchEngine::ContinueStretchHorz(PauseIndicatorIface* pPause) {
             if (src_scan[j / 8] & (1 << (7 - j % 8)))
               dest_a += pixel_weight * 255;
           }
-          *dest_scan++ = PixelFromFixed(dest_a);
+          dest_span[dest_span_index++] = PixelFromFixed(dest_a);
         }
         break;
       }
@@ -344,23 +341,7 @@ bool CStretchEngine::ContinueStretchHorz(PauseIndicatorIface* pPause) {
             uint32_t pixel_weight = pWeights->GetWeightForPosition(j);
             dest_a += pixel_weight * src_scan[j];
           }
-          *dest_scan++ = PixelFromFixed(dest_a);
-        }
-        break;
-      }
-      case TransformMethod::k8BppTo8BppWithAlpha: {
-        for (int col = m_DestClip.left; col < m_DestClip.right; ++col) {
-          PixelWeight* pWeights = m_WeightTable.GetPixelWeight(col);
-          uint32_t dest_a = 0;
-          uint32_t dest_r = 0;
-          for (int j = pWeights->m_SrcStart; j <= pWeights->m_SrcEnd; ++j) {
-            uint32_t pixel_weight = pWeights->GetWeightForPosition(j);
-            pixel_weight = pixel_weight * src_scan_mask[j] / 255;
-            dest_r += pixel_weight * src_scan[j];
-            dest_a += pixel_weight;
-          }
-          *dest_scan++ = PixelFromFixed(dest_r);
-          *dest_scan_mask++ = PixelFromFixed(255 * dest_a);
+          dest_span[dest_span_index++] = PixelFromFixed(dest_a);
         }
         break;
       }
@@ -383,32 +364,9 @@ bool CStretchEngine::ContinueStretchHorz(PauseIndicatorIface* pPause) {
               dest_r += pixel_weight * static_cast<uint8_t>(argb >> 8);
             }
           }
-          *dest_scan++ = PixelFromFixed(dest_b);
-          *dest_scan++ = PixelFromFixed(dest_g);
-          *dest_scan++ = PixelFromFixed(dest_r);
-        }
-        break;
-      }
-      case TransformMethod::k8BppToManyBppWithAlpha: {
-        for (int col = m_DestClip.left; col < m_DestClip.right; ++col) {
-          PixelWeight* pWeights = m_WeightTable.GetPixelWeight(col);
-          uint32_t dest_a = 0;
-          uint32_t dest_r = 0;
-          uint32_t dest_g = 0;
-          uint32_t dest_b = 0;
-          for (int j = pWeights->m_SrcStart; j <= pWeights->m_SrcEnd; ++j) {
-            uint32_t pixel_weight = pWeights->GetWeightForPosition(j);
-            pixel_weight = pixel_weight * src_scan_mask[j] / 255;
-            unsigned long argb = m_pSrcPalette[src_scan[j]];
-            dest_b += pixel_weight * static_cast<uint8_t>(argb >> 24);
-            dest_g += pixel_weight * static_cast<uint8_t>(argb >> 16);
-            dest_r += pixel_weight * static_cast<uint8_t>(argb >> 8);
-            dest_a += pixel_weight;
-          }
-          *dest_scan++ = PixelFromFixed(dest_b);
-          *dest_scan++ = PixelFromFixed(dest_g);
-          *dest_scan++ = PixelFromFixed(dest_r);
-          *dest_scan_mask++ = PixelFromFixed(255 * dest_a);
+          dest_span[dest_span_index++] = PixelFromFixed(dest_b);
+          dest_span[dest_span_index++] = PixelFromFixed(dest_g);
+          dest_span[dest_span_index++] = PixelFromFixed(dest_r);
         }
         break;
       }
@@ -425,14 +383,15 @@ bool CStretchEngine::ContinueStretchHorz(PauseIndicatorIface* pPause) {
             dest_g += pixel_weight * (*src_pixel++);
             dest_r += pixel_weight * (*src_pixel);
           }
-          *dest_scan++ = PixelFromFixed(dest_b);
-          *dest_scan++ = PixelFromFixed(dest_g);
-          *dest_scan++ = PixelFromFixed(dest_r);
-          dest_scan += Bpp - 3;
+          dest_span[dest_span_index++] = PixelFromFixed(dest_b);
+          dest_span[dest_span_index++] = PixelFromFixed(dest_g);
+          dest_span[dest_span_index++] = PixelFromFixed(dest_r);
+          dest_span_index += Bpp - 3;
         }
         break;
       }
       case TransformMethod::kManyBpptoManyBppWithAlpha: {
+        DCHECK(m_bHasAlpha);
         for (int col = m_DestClip.left; col < m_DestClip.right; ++col) {
           PixelWeight* pWeights = m_WeightTable.GetPixelWeight(col);
           uint32_t dest_a = 0;
@@ -440,26 +399,19 @@ bool CStretchEngine::ContinueStretchHorz(PauseIndicatorIface* pPause) {
           uint32_t dest_g = 0;
           uint32_t dest_b = 0;
           for (int j = pWeights->m_SrcStart; j <= pWeights->m_SrcEnd; ++j) {
-            uint32_t pixel_weight = pWeights->GetWeightForPosition(j);
             const uint8_t* src_pixel = src_scan + j * Bpp;
-            if (m_DestFormat == FXDIB_Format::kArgb) {
-              pixel_weight = pixel_weight * src_pixel[3] / 255;
-            } else {
-              pixel_weight = pixel_weight * src_scan_mask[j] / 255;
-            }
+            uint32_t pixel_weight =
+                pWeights->GetWeightForPosition(j) * src_pixel[3] / 255;
             dest_b += pixel_weight * (*src_pixel++);
             dest_g += pixel_weight * (*src_pixel++);
             dest_r += pixel_weight * (*src_pixel);
             dest_a += pixel_weight;
           }
-          *dest_scan++ = PixelFromFixed(dest_b);
-          *dest_scan++ = PixelFromFixed(dest_g);
-          *dest_scan++ = PixelFromFixed(dest_r);
-          if (m_DestFormat == FXDIB_Format::kArgb)
-            *dest_scan = PixelFromFixed(255 * dest_a);
-          if (dest_scan_mask)
-            *dest_scan_mask++ = PixelFromFixed(255 * dest_a);
-          dest_scan += Bpp - 3;
+          dest_span[dest_span_index++] = PixelFromFixed(dest_b);
+          dest_span[dest_span_index++] = PixelFromFixed(dest_g);
+          dest_span[dest_span_index++] = PixelFromFixed(dest_r);
+          dest_span[dest_span_index] = PixelFromFixed(255 * dest_a);
+          dest_span_index += Bpp - 3;
         }
         break;
       }
@@ -483,62 +435,40 @@ void CStretchEngine::StretchVert() {
   const int DestBpp = m_DestBpp / 8;
   for (int row = m_DestClip.top; row < m_DestClip.bottom; ++row) {
     unsigned char* dest_scan = m_DestScanline.data();
-    unsigned char* dest_scan_mask = m_DestMaskScanline.data();
     PixelWeight* pWeights = table.GetPixelWeight(row);
     switch (m_TransMethod) {
       case TransformMethod::k1BppTo8Bpp:
       case TransformMethod::k1BppToManyBpp:
       case TransformMethod::k8BppTo8Bpp: {
         for (int col = m_DestClip.left; col < m_DestClip.right; ++col) {
-          unsigned char* src_scan =
-              m_InterBuf.data() + (col - m_DestClip.left) * DestBpp;
+          pdfium::span<const uint8_t> src_span =
+              m_InterBuf.span().subspan((col - m_DestClip.left) * DestBpp);
           uint32_t dest_a = 0;
           for (int j = pWeights->m_SrcStart; j <= pWeights->m_SrcEnd; ++j) {
             uint32_t pixel_weight = pWeights->GetWeightForPosition(j);
             dest_a +=
-                pixel_weight * src_scan[(j - m_SrcClip.top) * m_InterPitch];
+                pixel_weight * src_span[(j - m_SrcClip.top) * m_InterPitch];
           }
           *dest_scan = PixelFromFixed(dest_a);
           dest_scan += DestBpp;
         }
         break;
       }
-      case TransformMethod::k8BppTo8BppWithAlpha: {
-        for (int col = m_DestClip.left; col < m_DestClip.right; ++col) {
-          unsigned char* src_scan =
-              m_InterBuf.data() + (col - m_DestClip.left) * DestBpp;
-          unsigned char* src_scan_mask =
-              m_ExtraAlphaBuf.data() + (col - m_DestClip.left);
-          uint32_t dest_a = 0;
-          uint32_t dest_k = 0;
-          for (int j = pWeights->m_SrcStart; j <= pWeights->m_SrcEnd; ++j) {
-            uint32_t pixel_weight = pWeights->GetWeightForPosition(j);
-            dest_k +=
-                pixel_weight * src_scan[(j - m_SrcClip.top) * m_InterPitch];
-            dest_a += pixel_weight *
-                      src_scan_mask[(j - m_SrcClip.top) * m_ExtraMaskPitch];
-          }
-          *dest_scan = PixelFromFixed(dest_k);
-          dest_scan += DestBpp;
-          *dest_scan_mask++ = PixelFromFixed(dest_a);
-        }
-        break;
-      }
       case TransformMethod::k8BppToManyBpp:
       case TransformMethod::kManyBpptoManyBpp: {
         for (int col = m_DestClip.left; col < m_DestClip.right; ++col) {
-          unsigned char* src_scan =
-              m_InterBuf.data() + (col - m_DestClip.left) * DestBpp;
+          pdfium::span<const uint8_t> src_span =
+              m_InterBuf.span().subspan((col - m_DestClip.left) * DestBpp);
           uint32_t dest_r = 0;
           uint32_t dest_g = 0;
           uint32_t dest_b = 0;
           for (int j = pWeights->m_SrcStart; j <= pWeights->m_SrcEnd; ++j) {
             uint32_t pixel_weight = pWeights->GetWeightForPosition(j);
-            const uint8_t* src_pixel =
-                src_scan + (j - m_SrcClip.top) * m_InterPitch;
-            dest_b += pixel_weight * (*src_pixel++);
-            dest_g += pixel_weight * (*src_pixel++);
-            dest_r += pixel_weight * (*src_pixel);
+            pdfium::span<const uint8_t> src_pixel =
+                src_span.subspan((j - m_SrcClip.top) * m_InterPitch, 3);
+            dest_b += pixel_weight * src_pixel[0];
+            dest_g += pixel_weight * src_pixel[1];
+            dest_r += pixel_weight * src_pixel[2];
           }
           dest_scan[0] = PixelFromFixed(dest_b);
           dest_scan[1] = PixelFromFixed(dest_g);
@@ -547,32 +477,24 @@ void CStretchEngine::StretchVert() {
         }
         break;
       }
-      case TransformMethod::k8BppToManyBppWithAlpha:
       case TransformMethod::kManyBpptoManyBppWithAlpha: {
+        DCHECK(m_bHasAlpha);
         for (int col = m_DestClip.left; col < m_DestClip.right; ++col) {
-          unsigned char* src_scan =
-              m_InterBuf.data() + (col - m_DestClip.left) * DestBpp;
-          unsigned char* src_scan_mask = nullptr;
-          if (m_DestFormat != FXDIB_Format::kArgb)
-            src_scan_mask = m_ExtraAlphaBuf.data() + (col - m_DestClip.left);
+          pdfium::span<const uint8_t> src_span =
+              m_InterBuf.span().subspan((col - m_DestClip.left) * DestBpp);
           uint32_t dest_a = 0;
           uint32_t dest_r = 0;
           uint32_t dest_g = 0;
           uint32_t dest_b = 0;
+          constexpr size_t kPixelBytes = 4;
           for (int j = pWeights->m_SrcStart; j <= pWeights->m_SrcEnd; ++j) {
             uint32_t pixel_weight = pWeights->GetWeightForPosition(j);
-            const uint8_t* src_pixel =
-                src_scan + (j - m_SrcClip.top) * m_InterPitch;
-            int mask_v = 255;
-            if (src_scan_mask)
-              mask_v = src_scan_mask[(j - m_SrcClip.top) * m_ExtraMaskPitch];
-            dest_b += pixel_weight * (*src_pixel++);
-            dest_g += pixel_weight * (*src_pixel++);
-            dest_r += pixel_weight * (*src_pixel);
-            if (m_DestFormat == FXDIB_Format::kArgb)
-              dest_a += pixel_weight * (*(src_pixel + 1));
-            else
-              dest_a += pixel_weight * mask_v;
+            pdfium::span<const uint8_t> src_pixel = src_span.subspan(
+                (j - m_SrcClip.top) * m_InterPitch, kPixelBytes);
+            dest_b += pixel_weight * src_pixel[0];
+            dest_g += pixel_weight * src_pixel[1];
+            dest_r += pixel_weight * src_pixel[2];
+            dest_a += pixel_weight * src_pixel[3];
           }
           if (dest_a) {
             int r = static_cast<uint32_t>(dest_r) * 255 / dest_a;
@@ -582,18 +504,12 @@ void CStretchEngine::StretchVert() {
             dest_scan[1] = pdfium::clamp(g, 0, 255);
             dest_scan[2] = pdfium::clamp(r, 0, 255);
           }
-          if (m_DestFormat == FXDIB_Format::kArgb)
-            dest_scan[3] = PixelFromFixed(dest_a);
-          else
-            *dest_scan_mask = PixelFromFixed(dest_a);
+          dest_scan[3] = PixelFromFixed(dest_a);
           dest_scan += DestBpp;
-          if (dest_scan_mask)
-            dest_scan_mask++;
         }
         break;
       }
     }
-    m_pDestBitmap->ComposeScanline(row - m_DestClip.top, m_DestScanline,
-                                   m_DestMaskScanline);
+    m_pDestBitmap->ComposeScanline(row - m_DestClip.top, m_DestScanline);
   }
 }

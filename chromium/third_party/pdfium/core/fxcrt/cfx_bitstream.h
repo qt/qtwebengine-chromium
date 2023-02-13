@@ -1,4 +1,4 @@
-// Copyright 2017 PDFium Authors. All rights reserved.
+// Copyright 2017 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,7 +10,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "core/fxcrt/unowned_ptr.h"
 #include "third_party/base/span.h"
 
 class CFX_BitStream {
@@ -34,7 +33,7 @@ class CFX_BitStream {
  private:
   size_t m_BitPos = 0;
   const size_t m_BitSize;
-  UnownedPtr<const uint8_t> const m_pData;
+  pdfium::span<const uint8_t> const m_pData;
 };
 
 #endif  // CORE_FXCRT_CFX_BITSTREAM_H_

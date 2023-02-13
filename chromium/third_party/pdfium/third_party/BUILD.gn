@@ -1,4 +1,4 @@
-# Copyright 2014 PDFium Authors. All rights reserved.
+# Copyright 2014 The PDFium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -63,6 +63,9 @@ if (pdf_bundle_freetype) {
       "FT_CONFIG_MODULES_H=\"freetype-custom-config/ftmodule.h\"",
       "FT_CONFIG_OPTIONS_H=\"freetype-custom-config/ftoption.h\"",
     ]
+  }
+
+  config("freetype_private_config") {
     if (is_clang) {
       # Multiple functions in freetype/src/src/truetype/ttobjs.h are unused.
       cflags = [ "-Wno-unused-function" ]
@@ -75,6 +78,7 @@ if (pdf_bundle_freetype) {
     configs -= [ "//build/config/compiler:chromium_code" ]
     configs += [
       "//build/config/compiler:no_chromium_code",
+      ":freetype_private_config",
       ":pdfium_third_party_config",
     ]
 
@@ -195,7 +199,7 @@ if (pdf_bundle_freetype) {
       "//third_party/freetype/src/src/truetype/truetype.c",
       "//third_party/freetype/src/src/type1/type1.c",
     ]
-    if (pdf_use_skia || pdf_use_skia_paths) {
+    if (pdf_use_skia) {
       sources += [
         "//third_party/freetype/src/include/freetype/ftsynth.h",
         "//third_party/freetype/src/src/base/fttype1.c",
@@ -204,7 +208,7 @@ if (pdf_bundle_freetype) {
   }
 }
 
-if (pdf_use_skia || pdf_use_skia_paths) {
+if (is_linux || is_chromeos) {
   config("system_fontconfig") {
     libs = [ "fontconfig" ]
   }
@@ -443,77 +447,7 @@ group("png") {
   if (use_system_libpng) {
     public_configs = [ ":system_libpng_config" ]
   } else {
-    public_deps = [ ":fx_lpng" ]
-  }
-}
-
-source_set("fx_lpng") {
-  configs -= [ "//build/config/compiler:chromium_code" ]
-  configs += [
-    "//build/config/compiler:no_chromium_code",
-    ":pdfium_third_party_config",
-  ]
-  sources = [
-    "libpng16/png.c",
-    "libpng16/png.h",
-    "libpng16/pngconf.h",
-    "libpng16/pngdebug.h",
-    "libpng16/pngerror.c",
-    "libpng16/pngget.c",
-    "libpng16/pnginfo.h",
-    "libpng16/pnglibconf.h",
-    "libpng16/pngmem.c",
-    "libpng16/pngpread.c",
-    "libpng16/pngprefix.h",
-    "libpng16/pngpriv.h",
-    "libpng16/pngread.c",
-    "libpng16/pngrio.c",
-    "libpng16/pngrtran.c",
-    "libpng16/pngrutil.c",
-    "libpng16/pngset.c",
-    "libpng16/pngstruct.h",
-    "libpng16/pngtrans.c",
-    "libpng16/pngwio.c",
-    "libpng16/pngwrite.c",
-    "libpng16/pngwtran.c",
-    "libpng16/pngwutil.c",
-  ]
-
-  defines = []
-  cflags = []
-  deps = [
-    ":zlib",
-    "../core/fxcrt",
-  ]
-
-  if (current_cpu == "x86" || current_cpu == "x64") {
-    sources += [
-      "libpng16/intel/filter_sse2_intrinsics.c",
-      "libpng16/intel/intel_init.c",
-    ]
-    defines += [ "PNG_INTEL_SSE_OPT=1" ]
-  } else if ((current_cpu == "arm" || current_cpu == "arm64") && arm_use_neon) {
-    sources += [
-      "libpng16/arm/arm_init.c",
-      "libpng16/arm/filter_neon_intrinsics.c",
-      "libpng16/arm/palette_neon_intrinsics.c",
-    ]
-    defines += [
-      "PNG_ARM_NEON_OPT=2",
-      "PNG_ARM_NEON_IMPLEMENTATION=1",
-    ]
-    configs -= [ "//build/config/compiler:default_optimization" ]
-    configs += [ "//build/config/compiler:optimize_speed" ]
-  } else if (current_cpu == "mips64el" && mips_use_msa) {
-    sources += [
-      "mips/filter_msa_intrinsics.c",
-      "mips/mips_init.c",
-    ]
-  }
-
-  if (is_win) {
-    # Unary minus applied to unsigned type.
-    cflags += [ "/wd4146" ]
+    public_deps = [ "//third_party/libpng" ]
   }
 }
 

@@ -20,11 +20,12 @@
 namespace tint::transform {
 
 /// Std140 is a transform that forks types used in the uniform address space that contain
-/// `matNx2<f32>` matrices into `N`x`vec2<f32>` column vectors. Types that transitively use these
-/// forked types are also forked. `var<uniform>` variables will use these forked types, and
-/// expressions loading from these variables will do appropriate conversions to the regular WGSL
-/// types. As `matNx2<f32>` matrices are the only type that violate std140-layout, this
-/// transformation is sufficient to have any WGSL structure be std140-layout conformant.
+/// `matNx2<f32>` matrices into `N`x`vec2<f32>` column vectors, and `matNxM<f16>` matrices into
+/// `N`x`vecM<f16>` column vectors. Types that transitively use these forked types are also forked.
+/// `var<uniform>` variables will use these forked types, and expressions loading from these
+/// variables will do appropriate conversions to the regular WGSL types. As `matNx2<f32>` and
+/// `matNxM<f16>` matrices are the only type that violate std140-layout, this transformation is
+/// sufficient to have any WGSL structure be std140-layout conformant.
 ///
 /// @note This transform requires the PromoteSideEffectsToDecl transform to have been run first.
 class Std140 final : public Castable<Std140, Transform> {
@@ -34,21 +35,13 @@ class Std140 final : public Castable<Std140, Transform> {
     /// Destructor
     ~Std140() override;
 
-    /// @param program the program to inspect
-    /// @param data optional extra transform-specific input data
-    /// @returns true if this transform should be run for the given program
-    bool ShouldRun(const Program* program, const DataMap& data = {}) const override;
+    /// @copydoc Transform::Apply
+    ApplyResult Apply(const Program* program,
+                      const DataMap& inputs,
+                      DataMap& outputs) const override;
 
   private:
     struct State;
-
-    /// Runs the transform using the CloneContext built for transforming a
-    /// program. Run() is responsible for calling Clone() on the CloneContext.
-    /// @param ctx the CloneContext primed with the input program and
-    /// ProgramBuilder
-    /// @param inputs optional extra transform-specific input data
-    /// @param outputs optional extra transform-specific output data
-    void Run(CloneContext& ctx, const DataMap& inputs, DataMap& outputs) const override;
 };
 
 }  // namespace tint::transform

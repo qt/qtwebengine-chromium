@@ -251,11 +251,16 @@ TEST_P(QuicSendControlStreamTest, WritePriorityBeforeSettings) {
   // SETTINGS frame, and a greased frame before the PRIORITY_UPDATE frame.
   EXPECT_CALL(session_, WritevData(send_control_stream_->id(), _, _, _, _, _))
       .Times(4);
-  PriorityUpdateFrame frame;
-  send_control_stream_->WritePriorityUpdate(frame);
+  send_control_stream_->WritePriorityUpdate(
+      /* stream_id = */ 0,
+      QuicStreamPriority{/* urgency = */ 3, /* incremental = */ false});
+
+  EXPECT_TRUE(testing::Mock::VerifyAndClearExpectations(&session_));
 
   EXPECT_CALL(session_, WritevData(send_control_stream_->id(), _, _, _, _, _));
-  send_control_stream_->WritePriorityUpdate(frame);
+  send_control_stream_->WritePriorityUpdate(
+      /* stream_id = */ 0,
+      QuicStreamPriority{/* urgency = */ 3, /* incremental = */ false});
 }
 
 TEST_P(QuicSendControlStreamTest, CloseControlStream) {

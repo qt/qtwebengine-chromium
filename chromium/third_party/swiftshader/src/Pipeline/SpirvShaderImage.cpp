@@ -74,9 +74,9 @@ static vk::Format SpirvFormatToVulkanFormat(spv::ImageFormat format)
 	}
 }
 
-SpirvShader::ImageInstruction::ImageInstruction(InsnIterator insn, const SpirvShader &spirv, EmitState *state)
+SpirvEmitter::ImageInstruction::ImageInstruction(InsnIterator insn, const Spirv &shader, const SpirvEmitter &state)
     : ImageInstructionSignature(parseVariantAndMethod(insn))
-    , position(insn.distanceFrom(spirv.begin()))
+    , position(insn.distanceFrom(shader.begin()))
 {
 	if(samplerMethod == Write)
 	{
@@ -99,10 +99,10 @@ SpirvShader::ImageInstruction::ImageInstruction(InsnIterator insn, const SpirvSh
 			// an externally combined sampler and image.
 			Object::ID sampledImageId = insn.word(3);
 
-			if(state->isSampledImage(sampledImageId))  // Result of an OpSampledImage instruction
+			if(state.isSampledImage(sampledImageId))  // Result of an OpSampledImage instruction
 			{
-				const SampledImagePointer &sampledImage = state->getSampledImage(sampledImageId);
-				imageId = spirv.getObject(sampledImageId).definition.word(3);
+				const SampledImagePointer &sampledImage = state.getSampledImage(sampledImageId);
+				imageId = shader.getObject(sampledImageId).definition.word(3);
 				samplerId = sampledImage.samplerId;
 			}
 			else  // Combined image/sampler
@@ -117,12 +117,12 @@ SpirvShader::ImageInstruction::ImageInstruction(InsnIterator insn, const SpirvSh
 
 	// `imageId` can represent either a Sampled Image, a samplerless Image, or a pointer to an Image.
 	// To get to the OpTypeImage operands, traverse the OpTypeSampledImage or OpTypePointer.
-	const Type &imageObjectType = spirv.getObjectType(imageId);
+	const Type &imageObjectType = shader.getObjectType(imageId);
 	const Type &imageReferenceType = (imageObjectType.opcode() == spv::OpTypeSampledImage)
-	                                     ? spirv.getType(imageObjectType.definition.word(2))
+	                                     ? shader.getType(imageObjectType.definition.word(2))
 	                                     : imageObjectType;
 	const Type &imageType = ((imageReferenceType.opcode() == spv::OpTypePointer)
-	                             ? spirv.getType(imageReferenceType.element)
+	                             ? shader.getType(imageReferenceType.element)
 	                             : imageReferenceType);
 
 	ASSERT(imageType.opcode() == spv::OpTypeImage);
@@ -130,14 +130,14 @@ SpirvShader::ImageInstruction::ImageInstruction(InsnIterator insn, const SpirvSh
 	arrayed = imageType.definition.word(5);
 	imageFormat = imageType.definition.word(8);
 
-	const Object &coordinateObject = spirv.getObject(coordinateId);
-	const Type &coordinateType = spirv.getType(coordinateObject);
+	const Object &coordinateObject = shader.getObject(coordinateId);
+	const Type &coordinateType = shader.getType(coordinateObject);
 	coordinates = coordinateType.componentCount - (isProj() ? 1 : 0);
 
 	if(samplerMethod == TexelPointer)
 	{
 		sampleId = insn.word(5);
-		sample = !spirv.getObject(sampleId).isConstantZero();
+		sample = !shader.getObject(sampleId).isConstantZero();
 	}
 
 	if(isDref())
@@ -147,7 +147,7 @@ SpirvShader::ImageInstruction::ImageInstruction(InsnIterator insn, const SpirvSh
 
 	if(samplerMethod == Gather)
 	{
-		gatherComponent = !isDref() ? spirv.getObject(insn.word(5)).constantValue[0] : 0;
+		gatherComponent = !isDref() ? shader.getObject(insn.word(5)).constantValue[0] : 0;
 	}
 
 	uint32_t operandsIndex = getImageOperandsIndex(insn);
@@ -179,7 +179,7 @@ SpirvShader::ImageInstruction::ImageInstruction(InsnIterator insn, const SpirvSh
 		operandsIndex += 2;
 		imageOperands &= ~spv::ImageOperandsGradMask;
 
-		grad = spirv.getObjectType(gradDxId).componentCount;
+		grad = shader.getObjectType(gradDxId).componentCount;
 	}
 
 	if(imageOperands & spv::ImageOperandsConstOffsetMask)
@@ -188,7 +188,7 @@ SpirvShader::ImageInstruction::ImageInstruction(InsnIterator insn, const SpirvSh
 		operandsIndex += 1;
 		imageOperands &= ~spv::ImageOperandsConstOffsetMask;
 
-		offset = spirv.getObjectType(offsetId).componentCount;
+		offset = shader.getObjectType(offsetId).componentCount;
 	}
 
 	if(imageOperands & spv::ImageOperandsSampleMask)
@@ -198,7 +198,7 @@ SpirvShader::ImageInstruction::ImageInstruction(InsnIterator insn, const SpirvSh
 		operandsIndex += 1;
 		imageOperands &= ~spv::ImageOperandsSampleMask;
 
-		sample = !spirv.getObject(sampleId).isConstantZero();
+		sample = !shader.getObject(sampleId).isConstantZero();
 	}
 
 	// TODO(b/174475384)
@@ -254,7 +254,7 @@ SpirvShader::ImageInstruction::ImageInstruction(InsnIterator insn, const SpirvSh
 	}
 }
 
-SpirvShader::ImageInstructionSignature SpirvShader::ImageInstruction::parseVariantAndMethod(InsnIterator insn)
+SpirvEmitter::ImageInstructionSignature SpirvEmitter::ImageInstruction::parseVariantAndMethod(InsnIterator insn)
 {
 	uint32_t imageOperands = getImageOperandsMask(insn);
 	bool bias = imageOperands & spv::ImageOperandsBiasMask;
@@ -285,7 +285,7 @@ SpirvShader::ImageInstructionSignature SpirvShader::ImageInstruction::parseVaria
 }
 
 // Returns the instruction word index at which the Image Operands mask is located, or 0 if not present.
-uint32_t SpirvShader::ImageInstruction::getImageOperandsIndex(InsnIterator insn)
+uint32_t SpirvEmitter::ImageInstruction::getImageOperandsIndex(InsnIterator insn)
 {
 	switch(insn.opcode())
 	{
@@ -323,39 +323,37 @@ uint32_t SpirvShader::ImageInstruction::getImageOperandsIndex(InsnIterator insn)
 	}
 }
 
-uint32_t SpirvShader::ImageInstruction::getImageOperandsMask(InsnIterator insn)
+uint32_t SpirvEmitter::ImageInstruction::getImageOperandsMask(InsnIterator insn)
 {
 	uint32_t operandsIndex = getImageOperandsIndex(insn);
 	return (operandsIndex != 0) ? insn.word(operandsIndex) : 0;
 }
 
-SpirvShader::EmitResult SpirvShader::EmitImageSample(const ImageInstruction &instruction, EmitState *state) const
+void SpirvEmitter::EmitImageSample(const ImageInstruction &instruction)
 {
-	auto &resultType = getType(instruction.resultTypeId);
-	auto &result = state->createIntermediate(instruction.resultId, resultType.componentCount);
+	auto &resultType = shader.getType(instruction.resultTypeId);
+	auto &result = createIntermediate(instruction.resultId, resultType.componentCount);
 	Array<SIMD::Float> out(4);
 
 	// TODO(b/153380916): When we're in a code path that is always executed,
 	// i.e. post-dominators of the entry block, we don't have to dynamically
 	// check whether any lanes are active, and can elide the jump.
-	If(AnyTrue(state->activeLaneMask()))
+	If(AnyTrue(activeLaneMask()))
 	{
-		EmitImageSampleUnconditional(out, instruction, state);
+		EmitImageSampleUnconditional(out, instruction);
 	}
 
 	for(auto i = 0u; i < resultType.componentCount; i++) { result.move(i, out[i]); }
-
-	return EmitResult::Continue;
 }
 
-void SpirvShader::EmitImageSampleUnconditional(Array<SIMD::Float> &out, const ImageInstruction &instruction, EmitState *state) const
+void SpirvEmitter::EmitImageSampleUnconditional(Array<SIMD::Float> &out, const ImageInstruction &instruction) const
 {
-	auto decorations = GetDecorationsForId(instruction.imageId);
+	auto decorations = shader.GetDecorationsForId(instruction.imageId);
 
 	if(decorations.NonUniform)
 	{
-		SIMD::Int activeLaneMask = state->activeLaneMask();
-		SIMD::Pointer imagePointer = state->getImage(instruction.imageId);
+		SIMD::Int activeLaneMask = this->activeLaneMask();
+		SIMD::Pointer imagePointer = getImage(instruction.imageId);
 		// PerLane output
 		for(int laneIdx = 0; laneIdx < SIMD::Width; laneIdx++)
 		{
@@ -363,11 +361,11 @@ void SpirvShader::EmitImageSampleUnconditional(Array<SIMD::Float> &out, const Im
 			If(Extract(activeLaneMask, laneIdx) != 0)
 			{
 				Pointer<Byte> imageDescriptor = imagePointer.getPointerForLane(laneIdx);  // vk::SampledImageDescriptor*
-				Pointer<Byte> samplerDescriptor = getSamplerDescriptor(imageDescriptor, instruction, laneIdx, state);
+				Pointer<Byte> samplerDescriptor = getSamplerDescriptor(imageDescriptor, instruction, laneIdx);
 
-				Pointer<Byte> samplerFunction = lookupSamplerFunction(imageDescriptor, samplerDescriptor, instruction, state);
+				Pointer<Byte> samplerFunction = lookupSamplerFunction(imageDescriptor, samplerDescriptor, instruction);
 
-				callSamplerFunction(samplerFunction, laneOut, imageDescriptor, instruction, state);
+				callSamplerFunction(samplerFunction, laneOut, imageDescriptor, instruction);
 			}
 
 			for(int outIdx = 0; outIdx < out.getArraySize(); outIdx++)
@@ -378,36 +376,36 @@ void SpirvShader::EmitImageSampleUnconditional(Array<SIMD::Float> &out, const Im
 	}
 	else
 	{
-		Pointer<Byte> imageDescriptor = state->getImage(instruction.imageId).getUniformPointer();  // vk::SampledImageDescriptor*
-		Pointer<Byte> samplerDescriptor = getSamplerDescriptor(imageDescriptor, instruction, state);
+		Pointer<Byte> imageDescriptor = getImage(instruction.imageId).getUniformPointer();  // vk::SampledImageDescriptor*
+		Pointer<Byte> samplerDescriptor = getSamplerDescriptor(imageDescriptor, instruction);
 
-		Pointer<Byte> samplerFunction = lookupSamplerFunction(imageDescriptor, samplerDescriptor, instruction, state);
+		Pointer<Byte> samplerFunction = lookupSamplerFunction(imageDescriptor, samplerDescriptor, instruction);
 
-		callSamplerFunction(samplerFunction, out, imageDescriptor, instruction, state);
+		callSamplerFunction(samplerFunction, out, imageDescriptor, instruction);
 	}
 }
 
-Pointer<Byte> SpirvShader::getSamplerDescriptor(Pointer<Byte> imageDescriptor, const ImageInstruction &instruction, EmitState *state) const
+Pointer<Byte> SpirvEmitter::getSamplerDescriptor(Pointer<Byte> imageDescriptor, const ImageInstruction &instruction) const
 {
-	return ((instruction.samplerId == instruction.imageId) || (instruction.samplerId == 0)) ? imageDescriptor : state->getImage(instruction.samplerId).getUniformPointer();
+	return ((instruction.samplerId == instruction.imageId) || (instruction.samplerId == 0)) ? imageDescriptor : getImage(instruction.samplerId).getUniformPointer();
 }
 
-Pointer<Byte> SpirvShader::getSamplerDescriptor(Pointer<Byte> imageDescriptor, const ImageInstruction &instruction, int laneIdx, EmitState *state) const
+Pointer<Byte> SpirvEmitter::getSamplerDescriptor(Pointer<Byte> imageDescriptor, const ImageInstruction &instruction, int laneIdx) const
 {
-	return ((instruction.samplerId == instruction.imageId) || (instruction.samplerId == 0)) ? imageDescriptor : state->getImage(instruction.samplerId).getPointerForLane(laneIdx);
+	return ((instruction.samplerId == instruction.imageId) || (instruction.samplerId == 0)) ? imageDescriptor : getImage(instruction.samplerId).getPointerForLane(laneIdx);
 }
 
-Pointer<Byte> SpirvShader::lookupSamplerFunction(Pointer<Byte> imageDescriptor, Pointer<Byte> samplerDescriptor, const ImageInstruction &instruction, EmitState *state) const
+Pointer<Byte> SpirvEmitter::lookupSamplerFunction(Pointer<Byte> imageDescriptor, Pointer<Byte> samplerDescriptor, const ImageInstruction &instruction) const
 {
 	Int samplerId = (instruction.samplerId != 0) ? *Pointer<rr::Int>(samplerDescriptor + OFFSET(vk::SampledImageDescriptor, samplerId)) : Int(0);
 
-	auto &cache = state->routine->samplerCache.at(instruction.position);
+	auto &cache = routine->samplerCache.at(instruction.position);
 	Bool cacheHit = (cache.imageDescriptor == imageDescriptor) && (cache.samplerId == samplerId);  // TODO(b/205566405): Skip sampler ID check for samplerless instructions.
 
 	If(!cacheHit)
 	{
 		rr::Int imageViewId = *Pointer<rr::Int>(imageDescriptor + OFFSET(vk::ImageDescriptor, imageViewId));
-		cache.function = Call(getImageSampler, state->routine->device, instruction.signature, samplerId, imageViewId);
+		cache.function = Call(getImageSampler, routine->device, instruction.signature, samplerId, imageViewId);
 		cache.imageDescriptor = imageDescriptor;
 		cache.samplerId = samplerId;
 	}
@@ -415,11 +413,11 @@ Pointer<Byte> SpirvShader::lookupSamplerFunction(Pointer<Byte> imageDescriptor, 
 	return cache.function;
 }
 
-void SpirvShader::callSamplerFunction(Pointer<Byte> samplerFunction, Array<SIMD::Float> &out, Pointer<Byte> imageDescriptor, const ImageInstruction &instruction, EmitState *state) const
+void SpirvEmitter::callSamplerFunction(Pointer<Byte> samplerFunction, Array<SIMD::Float> &out, Pointer<Byte> imageDescriptor, const ImageInstruction &instruction) const
 {
 	Array<SIMD::Float> in(16);  // Maximum 16 input parameter components.
 
-	auto coordinate = Operand(this, state, instruction.coordinateId);
+	auto coordinate = Operand(shader, *this, instruction.coordinateId);
 
 	uint32_t i = 0;
 	for(; i < instruction.coordinates; i++)
@@ -436,7 +434,7 @@ void SpirvShader::callSamplerFunction(Pointer<Byte> samplerFunction, Array<SIMD:
 
 	if(instruction.isDref())
 	{
-		auto drefValue = Operand(this, state, instruction.drefId);
+		auto drefValue = Operand(shader, *this, instruction.drefId);
 
 		if(instruction.isProj())
 		{
@@ -452,14 +450,14 @@ void SpirvShader::callSamplerFunction(Pointer<Byte> samplerFunction, Array<SIMD:
 
 	if(instruction.lodOrBiasId != 0)
 	{
-		auto lodValue = Operand(this, state, instruction.lodOrBiasId);
+		auto lodValue = Operand(shader, *this, instruction.lodOrBiasId);
 		in[i] = lodValue.Float(0);
 		i++;
 	}
 	else if(instruction.gradDxId != 0)
 	{
-		auto dxValue = Operand(this, state, instruction.gradDxId);
-		auto dyValue = Operand(this, state, instruction.gradDyId);
+		auto dxValue = Operand(shader, *this, instruction.gradDxId);
+		auto dyValue = Operand(shader, *this, instruction.gradDyId);
 		ASSERT(dxValue.componentCount == dxValue.componentCount);
 
 		for(uint32_t j = 0; j < dxValue.componentCount; j++, i++)
@@ -483,7 +481,7 @@ void SpirvShader::callSamplerFunction(Pointer<Byte> samplerFunction, Array<SIMD:
 
 	if(instruction.offsetId != 0)
 	{
-		auto offsetValue = Operand(this, state, instruction.offsetId);
+		auto offsetValue = Operand(shader, *this, instruction.offsetId);
 
 		for(uint32_t j = 0; j < offsetValue.componentCount; j++, i++)
 		{
@@ -493,53 +491,48 @@ void SpirvShader::callSamplerFunction(Pointer<Byte> samplerFunction, Array<SIMD:
 
 	if(instruction.sample)
 	{
-		auto sampleValue = Operand(this, state, instruction.sampleId);
+		auto sampleValue = Operand(shader, *this, instruction.sampleId);
 		in[i] = As<SIMD::Float>(sampleValue.Int(0));
 	}
 
 	Pointer<Byte> texture = imageDescriptor + OFFSET(vk::SampledImageDescriptor, texture);  // sw::Texture*
 
-	Call<ImageSampler>(samplerFunction, texture, &in, &out, state->routine->constants);
+	Call<ImageSampler>(samplerFunction, texture, &in, &out, routine->constants);
 }
 
-SpirvShader::EmitResult SpirvShader::EmitImageQuerySizeLod(InsnIterator insn, EmitState *state) const
+void SpirvEmitter::EmitImageQuerySizeLod(InsnIterator insn)
 {
-	auto &resultTy = getType(insn.resultTypeId());
+	auto &resultTy = shader.getType(insn.resultTypeId());
 	auto imageId = Object::ID(insn.word(3));
 	auto lodId = Object::ID(insn.word(4));
 
-	auto &dst = state->createIntermediate(insn.resultId(), resultTy.componentCount);
-	GetImageDimensions(state, resultTy, imageId, lodId, dst);
-
-	return EmitResult::Continue;
+	auto &dst = createIntermediate(insn.resultId(), resultTy.componentCount);
+	GetImageDimensions(resultTy, imageId, lodId, dst);
 }
 
-SpirvShader::EmitResult SpirvShader::EmitImageQuerySize(InsnIterator insn, EmitState *state) const
+void SpirvEmitter::EmitImageQuerySize(InsnIterator insn)
 {
-	auto &resultTy = getType(insn.resultTypeId());
+	auto &resultTy = shader.getType(insn.resultTypeId());
 	auto imageId = Object::ID(insn.word(3));
 	auto lodId = Object::ID(0);
 
-	auto &dst = state->createIntermediate(insn.resultId(), resultTy.componentCount);
-	GetImageDimensions(state, resultTy, imageId, lodId, dst);
-
-	return EmitResult::Continue;
+	auto &dst = createIntermediate(insn.resultId(), resultTy.componentCount);
+	GetImageDimensions(resultTy, imageId, lodId, dst);
 }
 
-void SpirvShader::GetImageDimensions(const EmitState *state, const Type &resultTy, Object::ID imageId, Object::ID lodId, Intermediate &dst) const
+void SpirvEmitter::GetImageDimensions(const Type &resultTy, Object::ID imageId, Object::ID lodId, Intermediate &dst) const
 {
-	auto routine = state->routine;
-	auto &image = getObject(imageId);
-	auto &imageType = getType(image);
+	auto &image = shader.getObject(imageId);
+	auto &imageType = shader.getType(image);
 
 	ASSERT(imageType.definition.opcode() == spv::OpTypeImage);
 	bool isArrayed = imageType.definition.word(5) != 0;
 	uint32_t dimensions = resultTy.componentCount - (isArrayed ? 1 : 0);
 
-	const DescriptorDecorations &d = descriptorDecorations.at(imageId);
+	const Spirv::DescriptorDecorations &d = shader.descriptorDecorations.at(imageId);
 	auto descriptorType = routine->pipelineLayout->getDescriptorType(d.DescriptorSet, d.Binding);
 
-	Pointer<Byte> descriptor = state->getPointer(imageId).getUniformPointer();
+	Pointer<Byte> descriptor = getPointer(imageId).getUniformPointer();
 
 	Int width;
 	Int height;
@@ -566,7 +559,7 @@ void SpirvShader::GetImageDimensions(const EmitState *state, const Type &resultT
 
 	if(lodId != 0)
 	{
-		auto lodVal = Operand(this, state, lodId);
+		auto lodVal = Operand(shader, *this, lodId);
 		ASSERT(lodVal.componentCount == 1);
 		auto lod = lodVal.Int(0);
 		auto one = SIMD::Int(1);
@@ -589,16 +582,16 @@ void SpirvShader::GetImageDimensions(const EmitState *state, const Type &resultT
 	}
 }
 
-SpirvShader::EmitResult SpirvShader::EmitImageQueryLevels(InsnIterator insn, EmitState *state) const
+void SpirvEmitter::EmitImageQueryLevels(InsnIterator insn)
 {
-	auto &resultTy = getType(insn.resultTypeId());
+	auto &resultTy = shader.getType(insn.resultTypeId());
 	ASSERT(resultTy.componentCount == 1);
 	auto imageId = Object::ID(insn.word(3));
 
-	const DescriptorDecorations &d = descriptorDecorations.at(imageId);
-	auto descriptorType = state->routine->pipelineLayout->getDescriptorType(d.DescriptorSet, d.Binding);
+	const Spirv::DescriptorDecorations &d = shader.descriptorDecorations.at(imageId);
+	auto descriptorType = routine->pipelineLayout->getDescriptorType(d.DescriptorSet, d.Binding);
 
-	Pointer<Byte> descriptor = state->getPointer(imageId).getUniformPointer();
+	Pointer<Byte> descriptor = getPointer(imageId).getUniformPointer();
 	Int mipLevels = 0;
 	switch(descriptorType)
 	{
@@ -611,26 +604,24 @@ SpirvShader::EmitResult SpirvShader::EmitImageQueryLevels(InsnIterator insn, Emi
 		UNREACHABLE("Image descriptorType: %d", int(descriptorType));
 	}
 
-	auto &dst = state->createIntermediate(insn.resultId(), 1);
+	auto &dst = createIntermediate(insn.resultId(), 1);
 	dst.move(0, SIMD::Int(mipLevels));
-
-	return EmitResult::Continue;
 }
 
-SpirvShader::EmitResult SpirvShader::EmitImageQuerySamples(InsnIterator insn, EmitState *state) const
+void SpirvEmitter::EmitImageQuerySamples(InsnIterator insn)
 {
-	auto &resultTy = getType(insn.resultTypeId());
+	auto &resultTy = shader.getType(insn.resultTypeId());
 	ASSERT(resultTy.componentCount == 1);
 	auto imageId = Object::ID(insn.word(3));
-	auto imageTy = getObjectType(imageId);
+	auto imageTy = shader.getObjectType(imageId);
 	ASSERT(imageTy.definition.opcode() == spv::OpTypeImage);
 	ASSERT(imageTy.definition.word(3) == spv::Dim2D);
 	ASSERT(imageTy.definition.word(6 /* MS */) == 1);
 
-	const DescriptorDecorations &d = descriptorDecorations.at(imageId);
-	auto descriptorType = state->routine->pipelineLayout->getDescriptorType(d.DescriptorSet, d.Binding);
+	const Spirv::DescriptorDecorations &d = shader.descriptorDecorations.at(imageId);
+	auto descriptorType = routine->pipelineLayout->getDescriptorType(d.DescriptorSet, d.Binding);
 
-	Pointer<Byte> descriptor = state->getPointer(imageId).getUniformPointer();
+	Pointer<Byte> descriptor = getPointer(imageId).getUniformPointer();
 	Int sampleCount = 0;
 	switch(descriptorType)
 	{
@@ -646,13 +637,11 @@ SpirvShader::EmitResult SpirvShader::EmitImageQuerySamples(InsnIterator insn, Em
 		UNREACHABLE("Image descriptorType: %d", int(descriptorType));
 	}
 
-	auto &dst = state->createIntermediate(insn.resultId(), 1);
+	auto &dst = createIntermediate(insn.resultId(), 1);
 	dst.move(0, SIMD::Int(sampleCount));
-
-	return EmitResult::Continue;
 }
 
-SpirvShader::TexelAddressData SpirvShader::setupTexelAddressData(SIMD::Int rowPitch, SIMD::Int slicePitch, SIMD::Int samplePitch, ImageInstructionSignature instruction, SIMD::Int coordinate[], SIMD::Int sample, vk::Format imageFormat, const EmitState *state)
+SpirvEmitter::TexelAddressData SpirvEmitter::setupTexelAddressData(SIMD::Int rowPitch, SIMD::Int slicePitch, SIMD::Int samplePitch, ImageInstructionSignature instruction, SIMD::Int coordinate[], SIMD::Int sample, vk::Format imageFormat, const SpirvRoutine *routine)
 {
 	TexelAddressData data;
 
@@ -671,8 +660,8 @@ SpirvShader::TexelAddressData SpirvShader::setupTexelAddressData(SIMD::Int rowPi
 
 	if(data.dim == spv::DimSubpassData)
 	{
-		data.u += state->routine->windowSpacePosition[0];
-		data.v += state->routine->windowSpacePosition[1];
+		data.u += routine->windowSpacePosition[0];
+		data.v += routine->windowSpacePosition[1];
 	}
 
 	data.ptrOffset = data.u * SIMD::Int(data.texelSize);
@@ -701,7 +690,7 @@ SpirvShader::TexelAddressData SpirvShader::setupTexelAddressData(SIMD::Int rowPi
 	if(data.dim == spv::DimSubpassData)
 	{
 		// Multiview input attachment access is to the layer corresponding to the current view
-		data.ptrOffset += SIMD::Int(state->routine->layer) * slicePitch;
+		data.ptrOffset += SIMD::Int(routine->layer) * slicePitch;
 	}
 
 	if(instruction.sample)
@@ -712,48 +701,47 @@ SpirvShader::TexelAddressData SpirvShader::setupTexelAddressData(SIMD::Int rowPi
 	return data;
 }
 
-SIMD::Pointer SpirvShader::GetNonUniformTexelAddress(ImageInstructionSignature instruction, SIMD::Pointer descriptor, SIMD::Int coordinate[], SIMD::Int sample, vk::Format imageFormat, OutOfBoundsBehavior outOfBoundsBehavior, const EmitState *state)
+SIMD::Pointer SpirvEmitter::GetNonUniformTexelAddress(ImageInstructionSignature instruction, SIMD::Pointer descriptor, SIMD::Int coordinate[], SIMD::Int sample, vk::Format imageFormat, OutOfBoundsBehavior outOfBoundsBehavior, SIMD::Int activeLaneMask, const SpirvRoutine *routine)
 {
 	const bool useStencilAspect = (imageFormat == VK_FORMAT_S8_UINT);
 	auto rowPitch = (descriptor + (useStencilAspect
 	                                   ? OFFSET(vk::StorageImageDescriptor, stencilRowPitchBytes)
 	                                   : OFFSET(vk::StorageImageDescriptor, rowPitchBytes)))
-	                    .Load<SIMD::Int>(outOfBoundsBehavior, state->activeLaneMask());
-
+	                    .Load<SIMD::Int>(outOfBoundsBehavior, activeLaneMask);
 	auto slicePitch = (descriptor + (useStencilAspect
 	                                     ? OFFSET(vk::StorageImageDescriptor, stencilSlicePitchBytes)
 	                                     : OFFSET(vk::StorageImageDescriptor, slicePitchBytes)))
-	                      .Load<SIMD::Int>(outOfBoundsBehavior, state->activeLaneMask());
+	                      .Load<SIMD::Int>(outOfBoundsBehavior, activeLaneMask);
 	auto samplePitch = (descriptor + (useStencilAspect
 	                                      ? OFFSET(vk::StorageImageDescriptor, stencilSamplePitchBytes)
 	                                      : OFFSET(vk::StorageImageDescriptor, samplePitchBytes)))
-	                       .Load<SIMD::Int>(outOfBoundsBehavior, state->activeLaneMask());
+	                       .Load<SIMD::Int>(outOfBoundsBehavior, activeLaneMask);
 
-	auto texelData = setupTexelAddressData(rowPitch, slicePitch, samplePitch, instruction, coordinate, sample, imageFormat, state);
+	auto texelData = setupTexelAddressData(rowPitch, slicePitch, samplePitch, instruction, coordinate, sample, imageFormat, routine);
 
 	// If the out-of-bounds behavior is set to nullify, then each coordinate must be tested individually.
 	// Other out-of-bounds behaviors work properly by just comparing the offset against the total size.
 	if(outOfBoundsBehavior == OutOfBoundsBehavior::Nullify)
 	{
-		SIMD::UInt width = (descriptor + OFFSET(vk::StorageImageDescriptor, width)).Load<SIMD::Int>(outOfBoundsBehavior, state->activeLaneMask());
+		SIMD::UInt width = (descriptor + OFFSET(vk::StorageImageDescriptor, width)).Load<SIMD::Int>(outOfBoundsBehavior, activeLaneMask);
 		SIMD::Int oobMask = As<SIMD::Int>(CmpNLT(As<SIMD::UInt>(texelData.u), width));
 
 		if(texelData.dims > 1)
 		{
-			SIMD::UInt height = As<SIMD::UInt>((descriptor + OFFSET(vk::StorageImageDescriptor, height)).Load<SIMD::Int>(outOfBoundsBehavior, state->activeLaneMask()));
+			SIMD::UInt height = As<SIMD::UInt>((descriptor + OFFSET(vk::StorageImageDescriptor, height)).Load<SIMD::Int>(outOfBoundsBehavior, activeLaneMask));
 			oobMask |= As<SIMD::Int>(CmpNLT(As<SIMD::UInt>(texelData.v), height));
 		}
 
 		if((texelData.dims > 2) || texelData.isArrayed)
 		{
-			SIMD::UInt depth = As<SIMD::UInt>((descriptor + OFFSET(vk::StorageImageDescriptor, depth)).Load<SIMD::Int>(outOfBoundsBehavior, state->activeLaneMask()));
+			SIMD::UInt depth = As<SIMD::UInt>((descriptor + OFFSET(vk::StorageImageDescriptor, depth)).Load<SIMD::Int>(outOfBoundsBehavior, activeLaneMask));
 			if(texelData.dim == spv::DimCube) { depth *= 6; }
 			oobMask |= As<SIMD::Int>(CmpNLT(As<SIMD::UInt>(texelData.w), depth));
 		}
 
 		if(instruction.sample)
 		{
-			SIMD::UInt sampleCount = As<SIMD::UInt>((descriptor + OFFSET(vk::StorageImageDescriptor, sampleCount)).Load<SIMD::Int>(outOfBoundsBehavior, state->activeLaneMask()));
+			SIMD::UInt sampleCount = As<SIMD::UInt>((descriptor + OFFSET(vk::StorageImageDescriptor, sampleCount)).Load<SIMD::Int>(outOfBoundsBehavior, activeLaneMask));
 			oobMask |= As<SIMD::Int>(CmpNLT(As<SIMD::UInt>(sample), sampleCount));
 		}
 
@@ -774,7 +762,7 @@ SIMD::Pointer SpirvShader::GetNonUniformTexelAddress(ImageInstructionSignature i
 	return SIMD::Pointer(imageBase) + texelData.ptrOffset;
 }
 
-SIMD::Pointer SpirvShader::GetTexelAddress(ImageInstructionSignature instruction, Pointer<Byte> descriptor, SIMD::Int coordinate[], SIMD::Int sample, vk::Format imageFormat, OutOfBoundsBehavior outOfBoundsBehavior, const EmitState *state)
+SIMD::Pointer SpirvEmitter::GetTexelAddress(ImageInstructionSignature instruction, Pointer<Byte> descriptor, SIMD::Int coordinate[], SIMD::Int sample, vk::Format imageFormat, OutOfBoundsBehavior outOfBoundsBehavior, const SpirvRoutine *routine)
 {
 	const bool useStencilAspect = (imageFormat == VK_FORMAT_S8_UINT);
 	auto rowPitch = SIMD::Int(*Pointer<Int>(descriptor + (useStencilAspect
@@ -789,7 +777,7 @@ SIMD::Pointer SpirvShader::GetTexelAddress(ImageInstructionSignature instruction
 	                                    ? OFFSET(vk::StorageImageDescriptor, stencilSamplePitchBytes)
 	                                    : OFFSET(vk::StorageImageDescriptor, samplePitchBytes))));
 
-	auto texelData = setupTexelAddressData(rowPitch, slicePitch, samplePitch, instruction, coordinate, sample, imageFormat, state);
+	auto texelData = setupTexelAddressData(rowPitch, slicePitch, samplePitch, instruction, coordinate, sample, imageFormat, routine);
 
 	// If the out-of-bounds behavior is set to nullify, then each coordinate must be tested individually.
 	// Other out-of-bounds behaviors work properly by just comparing the offset against the total size.
@@ -832,36 +820,36 @@ SIMD::Pointer SpirvShader::GetTexelAddress(ImageInstructionSignature instruction
 	return SIMD::Pointer(imageBase, imageSizeInBytes, texelData.ptrOffset);
 }
 
-SpirvShader::EmitResult SpirvShader::EmitImageRead(const ImageInstruction &instruction, EmitState *state) const
+void SpirvEmitter::EmitImageRead(const ImageInstruction &instruction)
 {
-	auto &resultType = getObjectType(instruction.resultId);
-	auto &image = getObject(instruction.imageId);
-	auto &imageType = getType(image);
+	auto &resultType = shader.getObjectType(instruction.resultId);
+	auto &image = shader.getObject(instruction.imageId);
+	auto &imageType = shader.getType(image);
 
 	ASSERT(imageType.definition.opcode() == spv::OpTypeImage);
 	auto dim = static_cast<spv::Dim>(instruction.dim);
 
-	auto coordinate = Operand(this, state, instruction.coordinateId);
-	const DescriptorDecorations &d = descriptorDecorations.at(instruction.imageId);
+	auto coordinate = Operand(shader, *this, instruction.coordinateId);
+	const Spirv::DescriptorDecorations &d = shader.descriptorDecorations.at(instruction.imageId);
 
 	// For subpass data, format in the instruction is spv::ImageFormatUnknown. Get it from
 	// the renderpass data instead. In all other cases, we can use the format in the instruction.
 	vk::Format imageFormat = (dim == spv::DimSubpassData)
-	                             ? inputAttachmentFormats[d.InputAttachmentIndex]
+	                             ? shader.getInputAttachmentFormat(d.InputAttachmentIndex)
 	                             : SpirvFormatToVulkanFormat(static_cast<spv::ImageFormat>(instruction.imageFormat));
 
 	// Depth+Stencil image attachments select aspect based on the Sampled Type of the
 	// OpTypeImage. If float, then we want the depth aspect. If int, we want the stencil aspect.
 	bool useStencilAspect = (imageFormat == VK_FORMAT_D32_SFLOAT_S8_UINT &&
-	                         getType(imageType.definition.word(2)).opcode() == spv::OpTypeInt);
+	                         shader.getType(imageType.definition.word(2)).opcode() == spv::OpTypeInt);
 
 	if(useStencilAspect)
 	{
 		imageFormat = VK_FORMAT_S8_UINT;
 	}
 
-	auto &dst = state->createIntermediate(instruction.resultId, resultType.componentCount);
-	SIMD::Pointer ptr = state->getPointer(instruction.imageId);
+	auto &dst = createIntermediate(instruction.resultId, resultType.componentCount);
+	SIMD::Pointer ptr = getPointer(instruction.imageId);
 
 	SIMD::Int uvwa[4];
 	SIMD::Int sample;
@@ -876,7 +864,7 @@ SpirvShader::EmitResult SpirvShader::EmitImageRead(const ImageInstruction &instr
 	}
 	if(instruction.sample)
 	{
-		sample = Operand(this, state, instruction.sampleId).Int(0);
+		sample = Operand(shader, *this, instruction.sampleId).Int(0);
 	}
 
 	// Gather packed texel data. Texels larger than 4 bytes occupy multiple SIMD::Int elements.
@@ -884,19 +872,19 @@ SpirvShader::EmitResult SpirvShader::EmitImageRead(const ImageInstruction &instr
 	SIMD::Int packed[4];
 
 	SIMD::Pointer texelPtr = ptr.isBasePlusOffset
-	                             ? GetTexelAddress(instruction, ptr.getUniformPointer(), uvwa, sample, imageFormat, robustness, state)
-	                             : GetNonUniformTexelAddress(instruction, ptr, uvwa, sample, imageFormat, robustness, state);
+	                             ? GetTexelAddress(instruction, ptr.getUniformPointer(), uvwa, sample, imageFormat, robustness, routine)
+	                             : GetNonUniformTexelAddress(instruction, ptr, uvwa, sample, imageFormat, robustness, activeLaneMask(), routine);
 	if(texelSize == 4 || texelSize == 8 || texelSize == 16)
 	{
 		for(auto i = 0; i < texelSize / 4; i++)
 		{
-			packed[i] = texelPtr.Load<SIMD::Int>(robustness, state->activeLaneMask());
+			packed[i] = texelPtr.Load<SIMD::Int>(robustness, activeLaneMask());
 			texelPtr += sizeof(float);
 		}
 	}
 	else if(texelSize == 2)
 	{
-		SIMD::Int mask = state->activeLaneMask() & texelPtr.isInBounds(2, robustness);
+		SIMD::Int mask = activeLaneMask() & texelPtr.isInBounds(2, robustness);
 
 		for(int i = 0; i < SIMD::Width; i++)
 		{
@@ -908,7 +896,7 @@ SpirvShader::EmitResult SpirvShader::EmitImageRead(const ImageInstruction &instr
 	}
 	else if(texelSize == 1)
 	{
-		SIMD::Int mask = state->activeLaneMask() & texelPtr.isInBounds(1, robustness);
+		SIMD::Int mask = activeLaneMask() & texelPtr.isInBounds(1, robustness);
 		for(int i = 0; i < SIMD::Width; i++)
 		{
 			If(Extract(mask, i) != 0)
@@ -1243,22 +1231,18 @@ SpirvShader::EmitResult SpirvShader::EmitImageRead(const ImageInstruction &instr
 		UNSUPPORTED("VkFormat %d", int(imageFormat));
 		break;
 	}
-
-	return EmitResult::Continue;
 }
 
-SpirvShader::EmitResult SpirvShader::EmitImageWrite(const ImageInstruction &instruction, EmitState *state) const
+void SpirvEmitter::EmitImageWrite(const ImageInstruction &instruction)
 {
-	imageWriteEmitted = true;
-
-	auto &image = getObject(instruction.imageId);
-	auto &imageType = getType(image);
+	auto &image = shader.getObject(instruction.imageId);
+	auto &imageType = shader.getType(image);
 
 	ASSERT(imageType.definition.opcode() == spv::OpTypeImage);
 	ASSERT(static_cast<spv::Dim>(instruction.dim) != spv::DimSubpassData);  // "Its Dim operand must not be SubpassData."
 
-	auto coordinate = Operand(this, state, instruction.coordinateId);
-	auto texel = Operand(this, state, instruction.texelId);
+	auto coordinate = Operand(shader, *this, instruction.coordinateId);
+	auto texel = Operand(shader, *this, instruction.texelId);
 
 	Array<SIMD::Int> coord(5);  // uvwa & sample
 
@@ -1270,7 +1254,7 @@ SpirvShader::EmitResult SpirvShader::EmitImageWrite(const ImageInstruction &inst
 
 	if(instruction.sample)
 	{
-		coord[i] = Operand(this, state, instruction.sampleId).Int(0);
+		coord[i] = Operand(shader, *this, instruction.sampleId).Int(0);
 	}
 
 	Array<SIMD::Int> texelAndMask(5);
@@ -1278,21 +1262,21 @@ SpirvShader::EmitResult SpirvShader::EmitImageWrite(const ImageInstruction &inst
 	texelAndMask[1] = texel.Int(1);
 	texelAndMask[2] = texel.Int(2);
 	texelAndMask[3] = texel.Int(3);
-	texelAndMask[4] = state->activeStoresAndAtomicsMask();
+	texelAndMask[4] = activeStoresAndAtomicsMask();
 
 	vk::Format imageFormat = SpirvFormatToVulkanFormat(static_cast<spv::ImageFormat>(instruction.imageFormat));
 
-	SIMD::Pointer ptr = state->getPointer(instruction.imageId);
+	SIMD::Pointer ptr = getPointer(instruction.imageId);
 	if(ptr.isBasePlusOffset)
 	{
 		Pointer<Byte> imageDescriptor = ptr.getUniformPointer();  // vk::StorageImageDescriptor* or vk::SampledImageDescriptor*
-		Pointer<Byte> samplerDescriptor = getSamplerDescriptor(imageDescriptor, instruction, state);
+		Pointer<Byte> samplerDescriptor = getSamplerDescriptor(imageDescriptor, instruction);
 
 		if(imageFormat == VK_FORMAT_UNDEFINED)  // spv::ImageFormatUnknown
 		{
-			Pointer<Byte> samplerFunction = lookupSamplerFunction(imageDescriptor, samplerDescriptor, instruction, state);
+			Pointer<Byte> samplerFunction = lookupSamplerFunction(imageDescriptor, samplerDescriptor, instruction);
 
-			Call<ImageSampler>(samplerFunction, imageDescriptor, &coord, &texelAndMask, state->routine->constants);
+			Call<ImageSampler>(samplerFunction, imageDescriptor, &coord, &texelAndMask, routine->constants);
 		}
 		else
 		{
@@ -1305,14 +1289,15 @@ SpirvShader::EmitResult SpirvShader::EmitImageWrite(const ImageInstruction &inst
 		{
 			SIMD::Int singleLaneMask = 0;
 			singleLaneMask = Insert(singleLaneMask, 0xffffffff, j);
-			texelAndMask[4] = state->activeStoresAndAtomicsMask() & singleLaneMask;
+			texelAndMask[4] = activeStoresAndAtomicsMask() & singleLaneMask;
 			Pointer<Byte> imageDescriptor = ptr.getPointerForLane(j);
-			Pointer<Byte> samplerDescriptor = getSamplerDescriptor(imageDescriptor, instruction, j, state);
+			Pointer<Byte> samplerDescriptor = getSamplerDescriptor(imageDescriptor, instruction, j);
+
 			if(imageFormat == VK_FORMAT_UNDEFINED)  // spv::ImageFormatUnknown
 			{
-				Pointer<Byte> samplerFunction = lookupSamplerFunction(imageDescriptor, samplerDescriptor, instruction, state);
+				Pointer<Byte> samplerFunction = lookupSamplerFunction(imageDescriptor, samplerDescriptor, instruction);
 
-				Call<ImageSampler>(samplerFunction, imageDescriptor, &coord, &texelAndMask, state->routine->constants);
+				Call<ImageSampler>(samplerFunction, imageDescriptor, &coord, &texelAndMask, routine->constants);
 			}
 			else
 			{
@@ -1320,11 +1305,9 @@ SpirvShader::EmitResult SpirvShader::EmitImageWrite(const ImageInstruction &inst
 			}
 		}
 	}
-
-	return EmitResult::Continue;
 }
 
-void SpirvShader::WriteImage(ImageInstructionSignature instruction, Pointer<Byte> descriptor, const Pointer<SIMD::Int> &coord, const Pointer<SIMD::Int> &texelAndMask, vk::Format imageFormat)
+void SpirvEmitter::WriteImage(ImageInstructionSignature instruction, Pointer<Byte> descriptor, const Pointer<SIMD::Int> &coord, const Pointer<SIMD::Int> &texelAndMask, vk::Format imageFormat)
 {
 	SIMD::Int texel[4];
 	texel[0] = texelAndMask[0];
@@ -1495,8 +1478,8 @@ void SpirvShader::WriteImage(ImageInstructionSignature instruction, Pointer<Byte
 	//  validation. If the texel fails integer texel coordinate validation, then the write has no effect."
 	// - https://www.khronos.org/registry/vulkan/specs/1.2/html/chap16.html#textures-output-coordinate-validation
 	auto robustness = OutOfBoundsBehavior::Nullify;
-	// GetTexelAddress() only needs the EmitState* for SubpassData accesses (i.e. input attachments).
-	const EmitState *state = nullptr;
+	// GetTexelAddress() only needs the SpirvRoutine* for SubpassData accesses (i.e. input attachments).
+	const SpirvRoutine *routine = nullptr;
 
 	SIMD::Int uvwa[4];
 	SIMD::Int sample;
@@ -1512,7 +1495,7 @@ void SpirvShader::WriteImage(ImageInstructionSignature instruction, Pointer<Byte
 		sample = As<SIMD::Int>(coord[i]);
 	}
 
-	auto texelPtr = GetTexelAddress(instruction, descriptor, uvwa, sample, imageFormat, robustness, state);
+	auto texelPtr = GetTexelAddress(instruction, descriptor, uvwa, sample, imageFormat, robustness, routine);
 
 	const int texelSize = imageFormat.bytes();
 
@@ -1554,11 +1537,11 @@ void SpirvShader::WriteImage(ImageInstructionSignature instruction, Pointer<Byte
 		UNREACHABLE("texelSize: %d", int(texelSize));
 }
 
-SpirvShader::EmitResult SpirvShader::EmitImageTexelPointer(const ImageInstruction &instruction, EmitState *state) const
+void SpirvEmitter::EmitImageTexelPointer(const ImageInstruction &instruction)
 {
-	auto coordinate = Operand(this, state, instruction.coordinateId);
+	auto coordinate = Operand(shader, *this, instruction.coordinateId);
 
-	SIMD::Pointer ptr = state->getPointer(instruction.imageId);
+	SIMD::Pointer ptr = getPointer(instruction.imageId);
 
 	// VK_EXT_image_robustness requires checking for out-of-bounds accesses.
 	// TODO(b/162327166): Only perform bounds checks when VK_EXT_image_robustness is enabled.
@@ -1572,38 +1555,32 @@ SpirvShader::EmitResult SpirvShader::EmitImageTexelPointer(const ImageInstructio
 		uvwa[i] = coordinate.Int(i);
 	}
 
-	SIMD::Int sample = Operand(this, state, instruction.sampleId).Int(0);
+	SIMD::Int sample = Operand(shader, *this, instruction.sampleId).Int(0);
 
 	auto texelPtr = ptr.isBasePlusOffset
-	                    ? GetTexelAddress(instruction, ptr.getUniformPointer(), uvwa, sample, imageFormat, robustness, state)
-	                    : GetNonUniformTexelAddress(instruction, ptr, uvwa, sample, imageFormat, robustness, state);
+	                    ? GetTexelAddress(instruction, ptr.getUniformPointer(), uvwa, sample, imageFormat, robustness, routine)
+	                    : GetNonUniformTexelAddress(instruction, ptr, uvwa, sample, imageFormat, robustness, activeLaneMask(), routine);
 
-	state->createPointer(instruction.resultId, texelPtr);
-
-	return EmitResult::Continue;
+	createPointer(instruction.resultId, texelPtr);
 }
 
-SpirvShader::EmitResult SpirvShader::EmitSampledImage(InsnIterator insn, EmitState *state) const
+void SpirvEmitter::EmitSampledImage(InsnIterator insn)
 {
 	Object::ID resultId = insn.word(2);
 	Object::ID imageId = insn.word(3);
 	Object::ID samplerId = insn.word(4);
 
 	// Create a sampled image, containing both a sampler and an image
-	state->createSampledImage(resultId, { state->getPointer(imageId), samplerId });
-
-	return EmitResult::Continue;
+	createSampledImage(resultId, { getPointer(imageId), samplerId });
 }
 
-SpirvShader::EmitResult SpirvShader::EmitImage(InsnIterator insn, EmitState *state) const
+void SpirvEmitter::EmitImage(InsnIterator insn)
 {
 	Object::ID resultId = insn.word(2);
 	Object::ID imageId = insn.word(3);
 
 	// Extract the image from a sampled image.
-	state->createPointer(resultId, state->getImage(imageId));
-
-	return EmitResult::Continue;
+	createPointer(resultId, getImage(imageId));
 }
 
 }  // namespace sw

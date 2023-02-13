@@ -1,5 +1,7 @@
 #include "quiche/http2/adapter/oghttp2_session.h"
 
+#include <memory>
+
 #include "quiche/http2/adapter/mock_http2_visitor.h"
 #include "quiche/http2/adapter/test_frame_sequence.h"
 #include "quiche/http2/adapter/test_utils.h"
@@ -76,7 +78,7 @@ TEST(OgHttp2SessionTest, ClientHandlesFrames) {
 
   // Submit a request to ensure the first stream is created.
   const char* kSentinel1 = "arbitrary pointer 1";
-  auto body1 = absl::make_unique<TestDataFrameSource>(visitor, true);
+  auto body1 = std::make_unique<TestDataFrameSource>(visitor, true);
   body1->AppendPayload("This is an example request body.");
   body1->EndData();
   int stream_id =
@@ -172,7 +174,7 @@ TEST(OgHttp2SessionTest, ClientEnqueuesSettingsBeforeOtherFrame) {
   options.perspective = Perspective::kClient;
   OgHttp2Session session(visitor, options);
   EXPECT_FALSE(session.want_write());
-  session.EnqueueFrame(absl::make_unique<spdy::SpdyPingIR>(42));
+  session.EnqueueFrame(std::make_unique<spdy::SpdyPingIR>(42));
   EXPECT_TRUE(session.want_write());
 
   EXPECT_CALL(visitor, OnBeforeFrameSent(SETTINGS, 0, _, 0x0));
@@ -198,7 +200,7 @@ TEST(OgHttp2SessionTest, ClientEnqueuesSettingsOnce) {
   options.perspective = Perspective::kClient;
   OgHttp2Session session(visitor, options);
   EXPECT_FALSE(session.want_write());
-  session.EnqueueFrame(absl::make_unique<spdy::SpdySettingsIR>());
+  session.EnqueueFrame(std::make_unique<spdy::SpdySettingsIR>());
   EXPECT_TRUE(session.want_write());
 
   EXPECT_CALL(visitor, OnBeforeFrameSent(SETTINGS, 0, _, 0x0));
@@ -262,7 +264,7 @@ TEST(OgHttp2SessionTest, ClientSubmitRequest) {
   EXPECT_EQ(0, session.GetHpackEncoderDynamicTableSize());
 
   const char* kSentinel1 = "arbitrary pointer 1";
-  auto body1 = absl::make_unique<TestDataFrameSource>(visitor, true);
+  auto body1 = std::make_unique<TestDataFrameSource>(visitor, true);
   body1->AppendPayload("This is an example request body.");
   body1->EndData();
   int stream_id =
@@ -332,7 +334,7 @@ TEST(OgHttp2SessionTest, ClientSubmitRequestWithReadBlock) {
   EXPECT_FALSE(session.want_write());
 
   const char* kSentinel1 = "arbitrary pointer 1";
-  auto body1 = absl::make_unique<TestDataFrameSource>(visitor, true);
+  auto body1 = std::make_unique<TestDataFrameSource>(visitor, true);
   TestDataFrameSource* body_ref = body1.get();
   int stream_id =
       session.SubmitRequest(ToHeaders({{":method", "POST"},
@@ -388,7 +390,7 @@ TEST(OgHttp2SessionTest, ClientSubmitRequestEmptyDataWithFin) {
   EXPECT_FALSE(session.want_write());
 
   const char* kSentinel1 = "arbitrary pointer 1";
-  auto body1 = absl::make_unique<TestDataFrameSource>(visitor, true);
+  auto body1 = std::make_unique<TestDataFrameSource>(visitor, true);
   TestDataFrameSource* body_ref = body1.get();
   int stream_id =
       session.SubmitRequest(ToHeaders({{":method", "POST"},
@@ -443,7 +445,7 @@ TEST(OgHttp2SessionTest, ClientSubmitRequestWithWriteBlock) {
   EXPECT_FALSE(session.want_write());
 
   const char* kSentinel1 = "arbitrary pointer 1";
-  auto body1 = absl::make_unique<TestDataFrameSource>(visitor, true);
+  auto body1 = std::make_unique<TestDataFrameSource>(visitor, true);
   body1->AppendPayload("This is an example request body.");
   body1->EndData();
   int stream_id =
@@ -621,7 +623,7 @@ TEST(OgHttp2SessionTest, ServerEnqueuesSettingsBeforeOtherFrame) {
   options.perspective = Perspective::kServer;
   OgHttp2Session session(visitor, options);
   EXPECT_FALSE(session.want_write());
-  session.EnqueueFrame(absl::make_unique<spdy::SpdyPingIR>(42));
+  session.EnqueueFrame(std::make_unique<spdy::SpdyPingIR>(42));
   EXPECT_TRUE(session.want_write());
 
   EXPECT_CALL(visitor, OnBeforeFrameSent(SETTINGS, 0, _, 0x0));
@@ -643,7 +645,7 @@ TEST(OgHttp2SessionTest, ServerEnqueuesSettingsOnce) {
   options.perspective = Perspective::kServer;
   OgHttp2Session session(visitor, options);
   EXPECT_FALSE(session.want_write());
-  session.EnqueueFrame(absl::make_unique<spdy::SpdySettingsIR>());
+  session.EnqueueFrame(std::make_unique<spdy::SpdySettingsIR>());
   EXPECT_TRUE(session.want_write());
 
   EXPECT_CALL(visitor, OnBeforeFrameSent(SETTINGS, 0, _, 0x0));
@@ -717,7 +719,7 @@ TEST(OgHttp2SessionTest, ServerSubmitResponse) {
   EXPECT_FALSE(session.want_write());
   // A data fin is not sent so that the stream remains open, and the flow
   // control state can be verified.
-  auto body1 = absl::make_unique<TestDataFrameSource>(visitor, false);
+  auto body1 = std::make_unique<TestDataFrameSource>(visitor, false);
   body1->AppendPayload("This is an example response body.");
   int submit_result = session.SubmitResponse(
       1,
@@ -808,7 +810,7 @@ TEST(OgHttp2SessionTest, ServerSendsTrailers) {
 
   // The body source must indicate that the end of the body is not the end of
   // the stream.
-  auto body1 = absl::make_unique<TestDataFrameSource>(visitor, false);
+  auto body1 = std::make_unique<TestDataFrameSource>(visitor, false);
   body1->AppendPayload("This is an example response body.");
   body1->EndData();
   int submit_result = session.SubmitResponse(
@@ -900,7 +902,7 @@ TEST(OgHttp2SessionTest, ServerQueuesTrailersWithResponse) {
 
   // The body source must indicate that the end of the body is not the end of
   // the stream.
-  auto body1 = absl::make_unique<TestDataFrameSource>(visitor, false);
+  auto body1 = std::make_unique<TestDataFrameSource>(visitor, false);
   body1->AppendPayload("This is an example response body.");
   body1->EndData();
   int submit_result = session.SubmitResponse(
@@ -929,6 +931,68 @@ TEST(OgHttp2SessionTest, ServerQueuesTrailersWithResponse) {
   EXPECT_THAT(visitor.data(),
               EqualsFrames({SpdyFrameType::HEADERS, SpdyFrameType::DATA,
                             SpdyFrameType::HEADERS}));
+}
+
+TEST(OgHttp2SessionTest, ServerSeesErrorOnEndStream) {
+  DataSavingVisitor visitor;
+  OgHttp2Session::Options options;
+  options.perspective = Perspective::kServer;
+  OgHttp2Session session(visitor, options);
+
+  const std::string frames = TestFrameSequence()
+                                 .ClientPreface()
+                                 .Headers(1,
+                                          {{":method", "POST"},
+                                           {":scheme", "https"},
+                                           {":authority", "example.com"},
+                                           {":path", "/"}},
+                                          /*fin=*/false)
+                                 .Data(1, "Request body", true)
+                                 .Serialize();
+  testing::InSequence s;
+
+  // Client preface (empty SETTINGS)
+  EXPECT_CALL(visitor, OnFrameHeader(0, 0, SETTINGS, 0));
+  EXPECT_CALL(visitor, OnSettingsStart());
+  EXPECT_CALL(visitor, OnSettingsEnd());
+  // Stream 1
+  EXPECT_CALL(visitor, OnFrameHeader(1, _, HEADERS, 0x4));
+  EXPECT_CALL(visitor, OnBeginHeadersForStream(1));
+  EXPECT_CALL(visitor, OnHeaderForStream(1, ":method", "POST"));
+  EXPECT_CALL(visitor, OnHeaderForStream(1, ":scheme", "https"));
+  EXPECT_CALL(visitor, OnHeaderForStream(1, ":authority", "example.com"));
+  EXPECT_CALL(visitor, OnHeaderForStream(1, ":path", "/"));
+  EXPECT_CALL(visitor, OnEndHeadersForStream(1));
+
+  EXPECT_CALL(visitor, OnFrameHeader(1, _, DATA, 0x1));
+  EXPECT_CALL(visitor, OnBeginDataForStream(1, _));
+  EXPECT_CALL(visitor, OnDataForStream(1, "Request body"));
+  EXPECT_CALL(visitor, OnEndStream(1)).WillOnce(testing::Return(false));
+  EXPECT_CALL(
+      visitor,
+      OnConnectionError(Http2VisitorInterface::ConnectionError::kParseError));
+
+  const int64_t result = session.ProcessBytes(frames);
+  EXPECT_EQ(/*NGHTTP2_ERR_CALLBACK_FAILURE=*/-902, result);
+
+  EXPECT_TRUE(session.want_write());
+
+  EXPECT_CALL(visitor, OnBeforeFrameSent(SETTINGS, 0, _, 0x0));
+  EXPECT_CALL(visitor, OnFrameSent(SETTINGS, 0, _, 0x0, 0));
+  EXPECT_CALL(visitor, OnBeforeFrameSent(GOAWAY, 0, _, 0x0));
+  EXPECT_CALL(
+      visitor,
+      OnFrameSent(GOAWAY, 0, _, 0x0,
+                  static_cast<int>(
+                      Http2VisitorInterface::ConnectionError::kParseError)));
+
+  int send_result = session.Send();
+  EXPECT_EQ(0, send_result);
+  EXPECT_THAT(visitor.data(),
+              EqualsFrames({SpdyFrameType::SETTINGS, SpdyFrameType::GOAWAY}));
+  visitor.Clear();
+
+  EXPECT_FALSE(session.want_write());
 }
 
 }  // namespace test

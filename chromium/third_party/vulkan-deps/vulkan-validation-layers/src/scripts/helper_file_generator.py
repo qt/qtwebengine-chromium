@@ -129,12 +129,20 @@ class HelperFileOutputGenerator(OutputGenerator):
             # safe_VkAccelerationStructureGeometryKHR needs to know if we're doing a host or device build
             'VkAccelerationStructureGeometryKHR' :
                 ', const bool is_host, const VkAccelerationStructureBuildRangeInfoKHR *build_range_info',
+            # safe_VkDescriptorDataEXT needs to know what field of union is intialized
+            'VkDescriptorDataEXT' :
+                ', const VkDescriptorType type',
         }
 
         # Note that adding an API here requires that all three pre/post routines be added to inline_corechecks_instrumentation_source.
         self.inst_manually_written_functions = [
             'vkQueuePresentKHR',
-            ]
+        ]
+
+        # Some bits are helper that include multiple bits, but it is more useful to use the flag name instead
+        self.custom_bit_flag_print = {
+            'VkShaderStageFlags' : ['VK_SHADER_STAGE_ALL', 'VK_SHADER_STAGE_ALL_GRAPHICS']
+        }
 
     inline_corechecks_instrumentation_source = """
 
@@ -595,6 +603,9 @@ void CoreChecksOptickInstrumented::PreCallRecordQueuePresentKHR(VkQueue queue, c
             intsuffix = 'ULL' if bitwidth == 64 else 'U'
             outstring += 'static inline std::string string_%s(%s input_value)\n' % (flagsName, flagsName)
             outstring += '{\n'
+            if flagsName in self.custom_bit_flag_print:
+                for custom in self.custom_bit_flag_print[flagsName]:
+                    outstring += '    if (input_value == %s) { return "%s"; }\n' % (custom, custom)
             outstring += '    std::string ret;\n'
             outstring += '    int index = 0;\n'
             outstring += '    while(input_value) {\n'
@@ -679,6 +690,7 @@ void CoreChecksOptickInstrumented::PreCallRecordQueuePresentKHR(VkQueue queue, c
         safe_struct_helper_header += '#pragma once\n'
         safe_struct_helper_header += '#include <vulkan/vulkan.h>\n'
         safe_struct_helper_header += '#include <stdlib.h>\n'
+        safe_struct_helper_header += '#include <algorithm>\n'
         safe_struct_helper_header += '\n'
         safe_struct_helper_header += 'void *SafePnextCopy(const void *pNext);\n'
         safe_struct_helper_header += 'void FreePnextChain(const void *pNext);\n'
@@ -696,22 +708,31 @@ void CoreChecksOptickInstrumented::PreCallRecordQueuePresentKHR(VkQueue queue, c
                 if item.ifdef_protect is not None:
                     safe_struct_header += '#ifdef %s\n' % item.ifdef_protect
                 safe_struct_header += self.structOrUnion[item.name] + ' safe_%s {\n' % (item.name)
+                firstMemberInUnion = True
+                isUnion = self.structOrUnion[item.name] == 'union'
                 for member in item.members:
                     if member.type in self.structNames:
                         member_index = next((i for i, v in enumerate(self.structMembers) if v[0] == member.type), None)
                         if member_index is not None and self.NeedSafeStruct(self.structMembers[member_index]) == True:
                             if member.ispointer:
                                 num_indirections = member.cdecl.count('*')
-                                safe_struct_header += '    safe_%s%s %s{};\n' % (member.type, '*' * num_indirections, member.name)
+                                initString = '{}' if ((not isUnion) or (isUnion and firstMemberInUnion)) else ''
+                                safe_struct_header += '    safe_%s%s %s%s;\n' % (member.type, '*' * num_indirections, member.name, initString)
+                                if isUnion and firstMemberInUnion:
+                                    firstMemberInUnion = False
                             else:
                                 safe_struct_header += '    safe_%s %s;\n' % (member.type, member.name)
                             continue
                     if member.len is not None and (self.TypeContainsObjectHandle(member.type, True) or self.TypeContainsObjectHandle(member.type, False)):
                             safe_struct_header += '    %s* %s{};\n' % (member.type, member.name)
-                    elif member.ispointer:
+                    elif member.ispointer and firstMemberInUnion:
                         safe_struct_header += '%s{};\n' % member.cdecl
+                        if isUnion and firstMemberInUnion:
+                            firstMemberInUnion = False
                     else:
                         safe_struct_header += '%s;\n' % member.cdecl
+                if (isUnion and item.name == 'VkDescriptorDataEXT'):
+                    safe_struct_header += '    char type_at_end[sizeof(%s)+sizeof(%s)];\n' % (item.name, 'VkDescriptorGetInfoEXT::type')
                 safe_struct_header += '    safe_%s(const %s* in_struct%s);\n' % (item.name, item.name, self.custom_construct_params.get(item.name, ''))
                 safe_struct_header += '    safe_%s(const safe_%s& copy_src);\n' % (item.name, item.name)
                 safe_struct_header += '    safe_%s& operator=(const safe_%s& copy_src);\n' % (item.name, item.name)
@@ -721,6 +742,19 @@ void CoreChecksOptickInstrumented::PreCallRecordQueuePresentKHR(VkQueue queue, c
                 safe_struct_header += '    void initialize(const safe_%s* copy_src);\n' % (item.name)
                 safe_struct_header += '    %s *ptr() { return reinterpret_cast<%s *>(this); }\n' % (item.name, item.name)
                 safe_struct_header += '    %s const *ptr() const { return reinterpret_cast<%s const *>(this); }\n' % (item.name, item.name)
+                if item.name == 'VkShaderModuleCreateInfo':
+                    safe_struct_header += '''
+    // Primarily intended for use by GPUAV when replacing shader module code with instrumented code
+    template<typename Container>
+    void SetCode(const Container &code) {
+        if (pCode) {
+            delete[] pCode;
+        }
+        codeSize = static_cast<uint32_t>(code.size() * sizeof(uint32_t));
+        pCode = new uint32_t[code.size()];
+        std::copy(&code.front(), &code.back() + 1, const_cast<uint32_t*>(pCode));
+    }
+'''
                 safe_struct_header += '};\n'
                 if item.ifdef_protect is not None:
                     safe_struct_header += '#endif // %s\n' % item.ifdef_protect
@@ -833,7 +867,7 @@ void CoreChecksOptickInstrumented::PreCallRecordQueuePresentKHR(VkQueue queue, c
             'VK_EXT_pipeline_creation_cache_control',
             'VK_EXT_pipeline_creation_feedback',
             'VK_EXT_private_data',
-            'VK_EXT_shader_demote_to_helper_invocation',      
+            'VK_EXT_shader_demote_to_helper_invocation',
             'VK_EXT_subgroup_size_control',
             'VK_EXT_texel_buffer_alignment',
             'VK_EXT_texture_compression_astc_hdr',
@@ -855,24 +889,17 @@ void CoreChecksOptickInstrumented::PreCallRecordQueuePresentKHR(VkQueue queue, c
             ''
             '#define VK_VERSION_1_1_NAME "VK_VERSION_1_1"',
             '',
-            '// Suppress unused warning on Linux',
-            '#if defined(__GNUC__)',
-            '#define DECORATE_UNUSED __attribute__((unused))',
-            '#else',
-            '#define DECORATE_UNUSED',
-            '#endif',
-            '',
             'enum ExtEnabled : unsigned char {',
             '    kNotEnabled,',
             '    kEnabledByCreateinfo,',
             '    kEnabledByApiLevel,',
             '};',
             '',
-            'static bool DECORATE_UNUSED IsExtEnabled(ExtEnabled extension) {',
+            '[[maybe_unused]] static bool IsExtEnabled(ExtEnabled extension) {',
             '    return (extension != kNotEnabled);',
             '};',
             '',
-            'static bool DECORATE_UNUSED IsExtEnabledByCreateinfo(ExtEnabled extension) {',
+            '[[maybe_unused]] static bool IsExtEnabledByCreateinfo(ExtEnabled extension) {',
             '    return (extension == kEnabledByCreateinfo);',
             '};',
             '#define VK_VERSION_1_2_NAME "VK_VERSION_1_2"',
@@ -922,6 +949,8 @@ void CoreChecksOptickInstrumented::PreCallRecordQueuePresentKHR(VkQueue queue, c
             struct.extend([ '    ExtEnabled vk_feature_version_1_2{kNotEnabled};'])
             struct.extend([ '    ExtEnabled vk_feature_version_1_3{kNotEnabled};'])
             struct.extend([ '    ExtEnabled %s{kNotEnabled};' % field_name[ext_name] for ext_name, info in extension_items])
+            # TODO Issue 4841 -  It looks like framework is not ready for two properties structs per extension (like VK_EXT_descriptor_buffer have). Workarounding.
+            struct.extend([ '    ExtEnabled vk_ext_descriptor_buffer_density{kNotEnabled};'])
 
             # Construct the extension information map -- mapping name to data member (field), and required extensions
             # The map is contained within a static function member for portability reasons.
@@ -1280,6 +1309,7 @@ void CoreChecksOptickInstrumented::PreCallRecordQueuePresentKHR(VkQueue queue, c
                 VulkanTypedHandle() :
                     handle(CastToUint64(VK_NULL_HANDLE)),
                     type(kVulkanObjectTypeUnknown) {}
+                operator bool() const { return handle != 0; }
             }; ''')  +'\n'
 
         return object_types_header
@@ -1505,6 +1535,11 @@ void CoreChecksOptickInstrumented::PreCallRecordQueuePresentKHR(VkQueue queue, c
             construct_txt = ''      # Body of constuctor as well as body of initialize() func following init_func_txt
             destruct_txt = ''
 
+            custom_defeault_construct_txt = {
+                'VkDescriptorDataEXT' :
+                    '    VkDescriptorType* pType = (VkDescriptorType*)&type_at_end[sizeof(VkDescriptorDataEXT)];\n'
+                    '    *pType = VK_DESCRIPTOR_TYPE_MAX_ENUM;\n'
+            }
             custom_construct_txt = {
                 # VkWriteDescriptorSet is special case because pointers may be non-null but ignored
                 'VkWriteDescriptorSet' :
@@ -1551,7 +1586,7 @@ void CoreChecksOptickInstrumented::PreCallRecordQueuePresentKHR(VkQueue queue, c
                     '    }\n',
                 # VkGraphicsPipelineCreateInfo is special case because its pointers may be non-null but ignored
                 'VkGraphicsPipelineCreateInfo' :
-                    '    bool is_graphics_library = LvlFindInChain<VkGraphicsPipelineLibraryCreateInfoEXT>(in_struct->pNext) != nullptr;\n'
+                    '    const bool is_graphics_library = LvlFindInChain<VkGraphicsPipelineLibraryCreateInfoEXT>(in_struct->pNext) != nullptr;\n'
                     '    if (stageCount && in_struct->pStages) {\n'
                     '        pStages = new safe_VkPipelineShaderStageCreateInfo[stageCount];\n'
                     '        for (uint32_t i = 0; i < stageCount; ++i) {\n'
@@ -1561,11 +1596,11 @@ void CoreChecksOptickInstrumented::PreCallRecordQueuePresentKHR(VkQueue queue, c
                     '    if (in_struct->pVertexInputState)\n'
                     '        pVertexInputState = new safe_VkPipelineVertexInputStateCreateInfo(in_struct->pVertexInputState);\n'
                     '    else\n'
-                    '        pVertexInputState = NULL;\n'
+                    '        pVertexInputState = nullptr;\n'
                     '    if (in_struct->pInputAssemblyState)\n'
                     '        pInputAssemblyState = new safe_VkPipelineInputAssemblyStateCreateInfo(in_struct->pInputAssemblyState);\n'
                     '    else\n'
-                    '        pInputAssemblyState = NULL;\n'
+                    '        pInputAssemblyState = nullptr;\n'
                     '    bool has_tessellation_stage = false;\n'
                     '    if (stageCount && pStages)\n'
                     '        for (uint32_t i = 0; i < stageCount && !has_tessellation_stage; ++i)\n'
@@ -1574,14 +1609,14 @@ void CoreChecksOptickInstrumented::PreCallRecordQueuePresentKHR(VkQueue queue, c
                     '    if (in_struct->pTessellationState && has_tessellation_stage)\n'
                     '        pTessellationState = new safe_VkPipelineTessellationStateCreateInfo(in_struct->pTessellationState);\n'
                     '    else\n'
-                    '        pTessellationState = NULL; // original pTessellationState pointer ignored\n'
+                    '        pTessellationState = nullptr; // original pTessellationState pointer ignored\n'
                     '    bool is_dynamic_has_rasterization = false;\n'
                     '    if (in_struct->pDynamicState && in_struct->pDynamicState->pDynamicStates) {\n'
                     '        for (uint32_t i = 0; i < in_struct->pDynamicState->dynamicStateCount && !is_dynamic_has_rasterization; ++i)\n'
                     '            if (in_struct->pDynamicState->pDynamicStates[i] == VK_DYNAMIC_STATE_RASTERIZER_DISCARD_ENABLE_EXT)\n'
                     '                is_dynamic_has_rasterization = true;\n'
                     '    }\n'
-                    '    bool has_rasterization = in_struct->pRasterizationState ? (is_dynamic_has_rasterization || !in_struct->pRasterizationState->rasterizerDiscardEnable) : false;\n'
+                    '    const bool has_rasterization = in_struct->pRasterizationState ? (is_dynamic_has_rasterization || !in_struct->pRasterizationState->rasterizerDiscardEnable) : false;\n'
                     '    if (in_struct->pViewportState && (has_rasterization || is_graphics_library)) {\n'
                     '        bool is_dynamic_viewports = false;\n'
                     '        bool is_dynamic_scissors = false;\n'
@@ -1595,29 +1630,29 @@ void CoreChecksOptickInstrumented::PreCallRecordQueuePresentKHR(VkQueue queue, c
                     '        }\n'
                     '        pViewportState = new safe_VkPipelineViewportStateCreateInfo(in_struct->pViewportState, is_dynamic_viewports, is_dynamic_scissors);\n'
                     '    } else\n'
-                    '        pViewportState = NULL; // original pViewportState pointer ignored\n'
+                    '        pViewportState = nullptr; // original pViewportState pointer ignored\n'
                     '    if (in_struct->pRasterizationState)\n'
                     '        pRasterizationState = new safe_VkPipelineRasterizationStateCreateInfo(in_struct->pRasterizationState);\n'
                     '    else\n'
-                    '        pRasterizationState = NULL;\n'
+                    '        pRasterizationState = nullptr;\n'
                     '    if (in_struct->pMultisampleState && (renderPass != VK_NULL_HANDLE || has_rasterization || is_graphics_library))\n'
                     '        pMultisampleState = new safe_VkPipelineMultisampleStateCreateInfo(in_struct->pMultisampleState);\n'
                     '    else\n'
-                    '        pMultisampleState = NULL; // original pMultisampleState pointer ignored\n'
+                    '        pMultisampleState = nullptr; // original pMultisampleState pointer ignored\n'
                     '    // needs a tracked subpass state uses_depthstencil_attachment\n'
                     '    if (in_struct->pDepthStencilState && ((has_rasterization && uses_depthstencil_attachment) || is_graphics_library))\n'
                     '        pDepthStencilState = new safe_VkPipelineDepthStencilStateCreateInfo(in_struct->pDepthStencilState);\n'
                     '    else\n'
-                    '        pDepthStencilState = NULL; // original pDepthStencilState pointer ignored\n'
+                    '        pDepthStencilState = nullptr; // original pDepthStencilState pointer ignored\n'
                     '    // needs a tracked subpass state usesColorAttachment\n'
                     '    if (in_struct->pColorBlendState && ((has_rasterization && uses_color_attachment) || is_graphics_library))\n'
                     '        pColorBlendState = new safe_VkPipelineColorBlendStateCreateInfo(in_struct->pColorBlendState);\n'
                     '    else\n'
-                    '        pColorBlendState = NULL; // original pColorBlendState pointer ignored\n'
+                    '        pColorBlendState = nullptr; // original pColorBlendState pointer ignored\n'
                     '    if (in_struct->pDynamicState)\n'
                     '        pDynamicState = new safe_VkPipelineDynamicStateCreateInfo(in_struct->pDynamicState);\n'
                     '    else\n'
-                    '        pDynamicState = NULL;\n',
+                    '        pDynamicState = nullptr;\n',
                  # VkPipelineViewportStateCreateInfo is special case because its pointers may be non-null but ignored
                 'VkPipelineViewportStateCreateInfo' :
                     '    if (in_struct->pViewports && !is_dynamic_viewports) {\n'
@@ -1625,13 +1660,13 @@ void CoreChecksOptickInstrumented::PreCallRecordQueuePresentKHR(VkQueue queue, c
                     '        memcpy ((void *)pViewports, (void *)in_struct->pViewports, sizeof(VkViewport)*in_struct->viewportCount);\n'
                     '    }\n'
                     '    else\n'
-                    '        pViewports = NULL;\n'
+                    '        pViewports = nullptr;\n'
                     '    if (in_struct->pScissors && !is_dynamic_scissors) {\n'
                     '        pScissors = new VkRect2D[in_struct->scissorCount];\n'
                     '        memcpy ((void *)pScissors, (void *)in_struct->pScissors, sizeof(VkRect2D)*in_struct->scissorCount);\n'
                     '    }\n'
                     '    else\n'
-                    '        pScissors = NULL;\n',
+                    '        pScissors = nullptr;\n',
                 # VkFrameBufferCreateInfo is special case because its pAttachments pointer may be non-null but ignored
                 'VkFramebufferCreateInfo' :
                     '    if (attachmentCount && in_struct->pAttachments && !(flags & VK_FRAMEBUFFER_CREATE_IMAGELESS_BIT)) {\n'
@@ -1736,13 +1771,37 @@ void CoreChecksOptickInstrumented::PreCallRecordQueuePresentKHR(VkQueue queue, c
                     '           pointer_array[i] = new VkMicromapUsageEXT(*in_struct->ppUsageCounts[i]);\n'
                     '       }\n'
                     '       ppUsageCounts = pointer_array;\n'
-                    '   }\n'
+                    '   }\n',
+                'VkDescriptorDataEXT' :
+                    '    VkDescriptorType* pType = (VkDescriptorType*)&type_at_end[sizeof(VkDescriptorDataEXT)];\n'
+                    '\n'
+                    '    switch (type)\n'
+                    '    {\n'
+                    '        case VK_DESCRIPTOR_TYPE_MAX_ENUM:                   break;\n'
+                    '        case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:     break;\n'
+                    '        case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:     break;\n'
+                    '        case VK_DESCRIPTOR_TYPE_SAMPLER:                    pSampler              = new VkSampler(*in_struct->pSampler); break;\n'
+                    '        case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:     pCombinedImageSampler = new VkDescriptorImageInfo(*in_struct->pCombinedImageSampler); break;\n'
+                    '        case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:              pSampledImage         = in_struct->pSampledImage ? new VkDescriptorImageInfo(*in_struct->pSampledImage) : nullptr; break;\n'
+                    '        case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:              pStorageImage         = in_struct->pStorageImage ? new VkDescriptorImageInfo(*in_struct->pStorageImage) : nullptr; break;\n'
+                    '        case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:           pInputAttachmentImage = new VkDescriptorImageInfo(*in_struct->pInputAttachmentImage); break;\n'
+                    '        case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:       pUniformTexelBuffer   = in_struct->pUniformTexelBuffer ? new safe_VkDescriptorAddressInfoEXT(in_struct->pUniformTexelBuffer) : nullptr; break;\n'
+                    '        case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:       pStorageTexelBuffer   = in_struct->pStorageTexelBuffer ? new safe_VkDescriptorAddressInfoEXT(in_struct->pStorageTexelBuffer) : nullptr; break;\n'
+                    '        case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:             pUniformBuffer        = in_struct->pUniformBuffer ? new safe_VkDescriptorAddressInfoEXT(in_struct->pUniformBuffer) : nullptr; break;\n'
+                    '        case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:             pStorageBuffer        = in_struct->pStorageBuffer ? new safe_VkDescriptorAddressInfoEXT(in_struct->pStorageBuffer) : nullptr; break;\n'
+                    '        case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR: accelerationStructure = in_struct->accelerationStructure; break;\n'
+                    '        case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV:  accelerationStructure = in_struct->accelerationStructure; break;\n'
+                    '        default:                                            break;\n'
+                    '    }\n'
+                    '\n'
+                    '    *pType = type;\n',
             }
 
             custom_copy_txt = {
                 # VkGraphicsPipelineCreateInfo is special case because it has custom construct parameters
                 'VkGraphicsPipelineCreateInfo' :
                     '    pNext = SafePnextCopy(copy_src.pNext);\n'
+                    '    const bool is_graphics_library = LvlFindInChain<VkGraphicsPipelineLibraryCreateInfoEXT>(copy_src.pNext);\n'
                     '    if (stageCount && copy_src.pStages) {\n'
                     '        pStages = new safe_VkPipelineShaderStageCreateInfo[stageCount];\n'
                     '        for (uint32_t i = 0; i < stageCount; ++i) {\n'
@@ -1752,11 +1811,11 @@ void CoreChecksOptickInstrumented::PreCallRecordQueuePresentKHR(VkQueue queue, c
                     '    if (copy_src.pVertexInputState)\n'
                     '        pVertexInputState = new safe_VkPipelineVertexInputStateCreateInfo(*copy_src.pVertexInputState);\n'
                     '    else\n'
-                    '        pVertexInputState = NULL;\n'
+                    '        pVertexInputState = nullptr;\n'
                     '    if (copy_src.pInputAssemblyState)\n'
                     '        pInputAssemblyState = new safe_VkPipelineInputAssemblyStateCreateInfo(*copy_src.pInputAssemblyState);\n'
                     '    else\n'
-                    '        pInputAssemblyState = NULL;\n'
+                    '        pInputAssemblyState = nullptr;\n'
                     '    bool has_tessellation_stage = false;\n'
                     '    if (stageCount && pStages)\n'
                     '        for (uint32_t i = 0; i < stageCount && !has_tessellation_stage; ++i)\n'
@@ -1765,38 +1824,38 @@ void CoreChecksOptickInstrumented::PreCallRecordQueuePresentKHR(VkQueue queue, c
                     '    if (copy_src.pTessellationState && has_tessellation_stage)\n'
                     '        pTessellationState = new safe_VkPipelineTessellationStateCreateInfo(*copy_src.pTessellationState);\n'
                     '    else\n'
-                    '        pTessellationState = NULL; // original pTessellationState pointer ignored\n'
+                    '        pTessellationState = nullptr; // original pTessellationState pointer ignored\n'
                     '    bool is_dynamic_has_rasterization = false;\n'
                     '    if (copy_src.pDynamicState && copy_src.pDynamicState->pDynamicStates) {\n'
                     '        for (uint32_t i = 0; i < copy_src.pDynamicState->dynamicStateCount && !is_dynamic_has_rasterization; ++i)\n'
                     '            if (copy_src.pDynamicState->pDynamicStates[i] == VK_DYNAMIC_STATE_RASTERIZER_DISCARD_ENABLE_EXT)\n'
                     '                is_dynamic_has_rasterization = true;\n'
                     '    }\n'
-                    '    bool has_rasterization = copy_src.pRasterizationState ? (is_dynamic_has_rasterization || !copy_src.pRasterizationState->rasterizerDiscardEnable) : false;\n'
-                    '    if (copy_src.pViewportState && has_rasterization) {\n'
+                    '    const bool has_rasterization = copy_src.pRasterizationState ? (is_dynamic_has_rasterization || !copy_src.pRasterizationState->rasterizerDiscardEnable) : false;\n'
+                    '    if (copy_src.pViewportState && (has_rasterization || is_graphics_library)) {\n'
                     '        pViewportState = new safe_VkPipelineViewportStateCreateInfo(*copy_src.pViewportState);\n'
                     '    } else\n'
-                    '        pViewportState = NULL; // original pViewportState pointer ignored\n'
+                    '        pViewportState = nullptr; // original pViewportState pointer ignored\n'
                     '    if (copy_src.pRasterizationState)\n'
                     '        pRasterizationState = new safe_VkPipelineRasterizationStateCreateInfo(*copy_src.pRasterizationState);\n'
                     '    else\n'
-                    '        pRasterizationState = NULL;\n'
-                    '    if (copy_src.pMultisampleState && has_rasterization)\n'
+                    '        pRasterizationState = nullptr;\n'
+                    '    if (copy_src.pMultisampleState && (has_rasterization || is_graphics_library))\n'
                     '        pMultisampleState = new safe_VkPipelineMultisampleStateCreateInfo(*copy_src.pMultisampleState);\n'
                     '    else\n'
-                    '        pMultisampleState = NULL; // original pMultisampleState pointer ignored\n'
-                    '    if (copy_src.pDepthStencilState && has_rasterization)\n'
+                    '        pMultisampleState = nullptr; // original pMultisampleState pointer ignored\n'
+                    '    if (copy_src.pDepthStencilState && (has_rasterization || is_graphics_library))\n'
                     '        pDepthStencilState = new safe_VkPipelineDepthStencilStateCreateInfo(*copy_src.pDepthStencilState);\n'
                     '    else\n'
-                    '        pDepthStencilState = NULL; // original pDepthStencilState pointer ignored\n'
-                    '    if (copy_src.pColorBlendState && has_rasterization)\n'
+                    '        pDepthStencilState = nullptr; // original pDepthStencilState pointer ignored\n'
+                    '    if (copy_src.pColorBlendState && (has_rasterization || is_graphics_library))\n'
                     '        pColorBlendState = new safe_VkPipelineColorBlendStateCreateInfo(*copy_src.pColorBlendState);\n'
                     '    else\n'
-                    '        pColorBlendState = NULL; // original pColorBlendState pointer ignored\n'
+                    '        pColorBlendState = nullptr; // original pColorBlendState pointer ignored\n'
                     '    if (copy_src.pDynamicState)\n'
                     '        pDynamicState = new safe_VkPipelineDynamicStateCreateInfo(*copy_src.pDynamicState);\n'
                     '    else\n'
-                    '        pDynamicState = NULL;\n',
+                    '        pDynamicState = nullptr;\n',
                  # VkPipelineViewportStateCreateInfo is special case because it has custom construct parameters
                 'VkPipelineViewportStateCreateInfo' :
                     '    pNext = SafePnextCopy(copy_src.pNext);\n'
@@ -1805,13 +1864,13 @@ void CoreChecksOptickInstrumented::PreCallRecordQueuePresentKHR(VkQueue queue, c
                     '        memcpy ((void *)pViewports, (void *)copy_src.pViewports, sizeof(VkViewport)*copy_src.viewportCount);\n'
                     '    }\n'
                     '    else\n'
-                    '        pViewports = NULL;\n'
+                    '        pViewports = nullptr;\n'
                     '    if (copy_src.pScissors) {\n'
                     '        pScissors = new VkRect2D[copy_src.scissorCount];\n'
                     '        memcpy ((void *)pScissors, (void *)copy_src.pScissors, sizeof(VkRect2D)*copy_src.scissorCount);\n'
                     '    }\n'
                     '    else\n'
-                    '        pScissors = NULL;\n',
+                    '        pScissors = nullptr;\n',
                 'VkFramebufferCreateInfo' :
                     '    pNext = SafePnextCopy(copy_src.pNext);\n'
                     '    if (attachmentCount && copy_src.pAttachments && !(flags & VK_FRAMEBUFFER_CREATE_IMAGELESS_BIT)) {\n'
@@ -1860,6 +1919,30 @@ void CoreChecksOptickInstrumented::PreCallRecordQueuePresentKHR(VkQueue queue, c
                     '            as_geom_khr_host_alloc.insert(this, new ASGeomKHRExtraData(allocation, src_alloc->primitiveOffset, src_alloc->primitiveCount));\n'
                     '        }\n'
                     '    }\n',
+                'VkDescriptorDataEXT' :
+                    '    VkDescriptorType* pType = (VkDescriptorType*)&type_at_end[sizeof(VkDescriptorDataEXT)];\n'
+                    '    VkDescriptorType type = *(VkDescriptorType*)&copy_src.type_at_end[sizeof(VkDescriptorDataEXT)];\n'
+                    '\n'
+                    '    switch (type)\n'
+                    '    {\n'
+                    '        case VK_DESCRIPTOR_TYPE_MAX_ENUM:                   break;\n'
+                    '        case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:     break;\n'
+                    '        case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:     break;\n'
+                    '        case VK_DESCRIPTOR_TYPE_SAMPLER:                    pSampler              = new VkSampler(*copy_src.pSampler); break;\n'
+                    '        case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:     pCombinedImageSampler = new VkDescriptorImageInfo(*copy_src.pCombinedImageSampler); break;\n'
+                    '        case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:              pSampledImage         = new VkDescriptorImageInfo(*copy_src.pSampledImage); break;\n'
+                    '        case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:              pStorageImage         = new VkDescriptorImageInfo(*copy_src.pStorageImage); break;\n'
+                    '        case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:           pInputAttachmentImage = new VkDescriptorImageInfo(*copy_src.pInputAttachmentImage); break;\n'
+                    '        case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:       pUniformTexelBuffer   = new safe_VkDescriptorAddressInfoEXT(*copy_src.pUniformTexelBuffer); break;\n'
+                    '        case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:       pStorageTexelBuffer   = new safe_VkDescriptorAddressInfoEXT(*copy_src.pStorageTexelBuffer); break;\n'
+                    '        case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:             pUniformBuffer        = new safe_VkDescriptorAddressInfoEXT(*copy_src.pUniformBuffer); break;\n'
+                    '        case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:             pStorageBuffer        = new safe_VkDescriptorAddressInfoEXT(*copy_src.pStorageBuffer); break;\n'
+                    '        case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR: accelerationStructure = copy_src.accelerationStructure; break;\n'
+                    '        case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV:  accelerationStructure = copy_src.accelerationStructure; break;\n'
+                    '        default:                                            break;\n'
+                    '    }\n'
+                    '\n'
+                    '    *pType = type;\n',
             }
 
             custom_destruct_txt = {
@@ -1902,7 +1985,31 @@ void CoreChecksOptickInstrumented::PreCallRecordQueuePresentKHR(VkQueue queue, c
                     '    }\n'
                     '    if (pNext)\n'
                     '        FreePnextChain(pNext);\n',
-           }
+                'VkDescriptorDataEXT' :
+                    '\n'
+                    '    VkDescriptorType& thisType = *(VkDescriptorType*)&type_at_end[sizeof(VkDescriptorDataEXT)];\n'
+                    '\n'
+                    '    switch (thisType)\n'
+                    '    {\n'
+                    '        case VK_DESCRIPTOR_TYPE_MAX_ENUM:                   break;\n'
+                    '        case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:     break;\n'
+                    '        case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:     break;\n'
+                    '        case VK_DESCRIPTOR_TYPE_SAMPLER:                    delete pSampler;              pSampler              = nullptr; break;\n'
+                    '        case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:     delete pCombinedImageSampler; pCombinedImageSampler = nullptr; break;\n'
+                    '        case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:              delete pSampledImage;         pSampledImage         = nullptr; break;\n'
+                    '        case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:              delete pStorageImage;         pStorageImage         = nullptr; break;\n'
+                    '        case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:           delete pInputAttachmentImage; pInputAttachmentImage = nullptr; break;\n'
+                    '        case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:       delete pUniformTexelBuffer;   pUniformTexelBuffer   = nullptr; break;\n'
+                    '        case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:       delete pStorageTexelBuffer;   pStorageTexelBuffer   = nullptr; break;\n'
+                    '        case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:             delete pUniformBuffer;        pUniformBuffer        = nullptr; break;\n'
+                    '        case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:             delete pStorageBuffer;        pStorageBuffer        = nullptr; break;\n'
+                    '        case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR: accelerationStructure = 0ull; break;\n'
+                    '        case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV:  accelerationStructure = 0ull; break;\n'
+                    '        default:                                            break;\n'
+                    '    }\n'
+                    '\n'
+                    '    thisType = VK_DESCRIPTOR_TYPE_MAX_ENUM;\n',
+            }
             copy_pnext = ''
             copy_strings = ''
             for member in item.members:
@@ -2008,6 +2115,9 @@ void CoreChecksOptickInstrumented::PreCallRecordQueuePresentKHR(VkQueue queue, c
                     construct_txt += '        %s = new %s(in_struct->%s);\n' % (member.name, m_type, member.name)
                     destruct_txt += '    if (%s)\n' % member.name
                     destruct_txt += '        delete %s;\n' % member.name
+                elif 'safe_' in m_type and member.type == 'VkDescriptorDataEXT':
+                    init_list += '\n    %s(&in_struct->%s, in_struct->type),' % (member.name, member.name)
+                    init_func_txt += '    %s.initialize(&in_struct->%s, in_struct->type);\n' % (member.name, member.name)
                 elif 'safe_' in m_type:
                     init_list += '\n    %s(&in_struct->%s),' % (member.name, member.name)
                     init_func_txt += '    %s.initialize(&in_struct->%s);\n' % (member.name, member.name)
@@ -2025,7 +2135,6 @@ void CoreChecksOptickInstrumented::PreCallRecordQueuePresentKHR(VkQueue queue, c
             if '' != init_list:
                 init_list = init_list[:-1] # hack off final comma
 
-
             if item.name in custom_construct_txt:
                 construct_txt = custom_construct_txt[item.name]
 
@@ -2040,14 +2149,19 @@ void CoreChecksOptickInstrumented::PreCallRecordQueuePresentKHR(VkQueue queue, c
 
             if (self.structOrUnion[item.name] == 'union'):
                 # Unions don't allow multiple members in the initialization list, so just call initialize
-                safe_struct_body.append("\n%s::%s(const %s* in_struct%s)\n{\n    initialize(in_struct);\n}" % (ss_name, ss_name, item.name, self.custom_construct_params.get(item.name, '')))
+                safe_struct_body.append("\n%s::%s(const %s* in_struct%s)\n{\n%s}" % (ss_name, ss_name, item.name, self.custom_construct_params.get(item.name, ''), construct_txt))
+                if (item.name == 'VkDescriptorDataEXT'):
+                    default_init_list = ' type_at_end {0},'
             else:
                 safe_struct_body.append("\n%s::%s(const %s* in_struct%s) :%s\n{\n%s}" % (ss_name, ss_name, item.name, self.custom_construct_params.get(item.name, ''), init_list, construct_txt))
             if '' != default_init_list:
                 default_init_list = " :%s" % (default_init_list[:-1])
-            safe_struct_body.append("\n%s::%s()%s\n{}" % (ss_name, ss_name, default_init_list))
+            default_init_body = '\n' + custom_defeault_construct_txt[item.name] if item.name in custom_defeault_construct_txt else ''
+            safe_struct_body.append("\n%s::%s()%s\n{%s}" % (ss_name, ss_name, default_init_list, default_init_body))
             # Create slight variation of init and construct txt for copy constructor that takes a copy_src object reference vs. struct ptr
             copy_construct_init = init_func_txt.replace('in_struct->', 'copy_src.')
+            if item.name == 'VkDescriptorGetInfoEXT':
+                copy_construct_init = copy_construct_init.replace(', copy_src.type', '')
             copy_construct_txt = re.sub('(new \\w+)\\(in_struct->', '\\1(*copy_src.', construct_txt) # Pass object to copy constructors
             copy_construct_txt = copy_construct_txt.replace('in_struct->', 'copy_src.')              # Modify remaining struct refs for copy_src object
             if item.name in custom_copy_txt:
@@ -2126,22 +2240,18 @@ void CoreChecksOptickInstrumented::PreCallRecordQueuePresentKHR(VkQueue queue, c
             '    return found;',
             '}}',
             '',
-            '// Init the header of an sType struct with pNext',
-            'template <typename T> T {init_func}(void *p_next) {{',
-            '    T out = {{}};',
-            '    out.sType = {type_map}<T>::kSType;',
-            '    out.pNext = p_next;',
+            '// Init the header of an sType struct with pNext and optional fields',
+            'template <typename T, typename... StructFields>',
+            'T {init_func}(void *p_next, StructFields... fields) {{',
+            '    T out = {{{type_map}<T>::kSType, p_next, fields...}};',
             '    return out;',
             '}}',
-                        '',
             '// Init the header of an sType struct',
-            'template <typename T> T {init_func}() {{',
-            '    T out = {{}};',
-            '    out.sType = {type_map}<T>::kSType;',
-            '    out.pNext = nullptr;',
+            'template <typename T>',
+            'T {init_func}(void *p_next = nullptr) {{',
+            '    T out = {{{type_map}<T>::kSType, p_next}};',
             '    return out;',
             '}}',
-
             ''))
 
         code = []
@@ -2176,17 +2286,6 @@ void CoreChecksOptickInstrumented::PreCallRecordQueuePresentKHR(VkQueue queue, c
         find_func = 'LvlFindInChain'
         find_mod_func = 'LvlFindModInChain'
         init_func = 'LvlInitStruct'
-        code.append('\n'.join((
-            utilities_format.format(id_member=id_member, type_map=typemap,
-                header=generic_header, find_func=find_func,
-                find_mod_func=find_mod_func, init_func=init_func), ''
-            )))
-
-        # Generate utilities using legacy names for backwards compatibility
-        fprefix = 'lvl_'
-        find_func = fprefix + 'find_in_chain'
-        find_mod_func = fprefix + 'find_mod_in_chain'
-        init_func = fprefix + 'init_struct'
         code.append('\n'.join((
             utilities_format.format(id_member=id_member, type_map=typemap,
                 header=generic_header, find_func=find_func,

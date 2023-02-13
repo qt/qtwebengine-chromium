@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2016 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -74,20 +74,18 @@ class CPDF_FormField {
 
   static absl::optional<FormFieldType> IntToFormFieldType(int value);
   static WideString GetFullNameForDict(const CPDF_Dictionary* pFieldDict);
-  static const CPDF_Object* GetFieldAttrForDict(
+  static RetainPtr<const CPDF_Object> GetFieldAttrForDict(
       const CPDF_Dictionary* pFieldDict,
       const ByteString& name);
-  static CPDF_Object* GetFieldAttrForDict(CPDF_Dictionary* pFieldDict,
-                                          const ByteString& name);
+  static RetainPtr<CPDF_Object> GetMutableFieldAttrForDict(
+      CPDF_Dictionary* pFieldDict,
+      const ByteString& name);
 
   WideString GetFullName() const;
   Type GetType() const { return m_Type; }
 
-  const CPDF_Object* GetFieldAttr(const ByteString& name) const {
-    return GetFieldAttrForDict(m_pDict.Get(), name);
-  }
-
-  const CPDF_Dictionary* GetFieldDict() const { return m_pDict.Get(); }
+  RetainPtr<const CPDF_Object> GetFieldAttr(const ByteString& name) const;
+  RetainPtr<const CPDF_Dictionary> GetFieldDict() const;
   bool ResetField();
 
   int CountControls() const;
@@ -139,8 +137,6 @@ class CPDF_FormField {
   // entries are consistent with the value (/V) object.
   bool UseSelectedIndicesObject() const;
 
-  CPDF_InteractiveForm* GetForm() const { return m_pForm.Get(); }
-
   WideString GetCheckValue(bool bDefault) const;
 
  private:
@@ -159,15 +155,18 @@ class CPDF_FormField {
   bool NotifyListOrComboBoxBeforeChange(const WideString& value);
   void NotifyListOrComboBoxAfterChange();
 
-  const CPDF_Object* GetDefaultValueObject() const;
-  const CPDF_Object* GetValueObject() const;
+  RetainPtr<const CPDF_Object> GetFieldAttrInternal(
+      const ByteString& name) const;
+  const CPDF_Dictionary* GetFieldDictInternal() const;
+  RetainPtr<const CPDF_Object> GetDefaultValueObject() const;
+  RetainPtr<const CPDF_Object> GetValueObject() const;
 
   // For choice fields.
-  const CPDF_Object* GetSelectedIndicesObject() const;
+  RetainPtr<const CPDF_Object> GetSelectedIndicesObject() const;
 
   // For choice fields.
   // Value object takes precedence over selected indices object.
-  const CPDF_Object* GetValueOrSelectedIndicesObject() const;
+  RetainPtr<const CPDF_Object> GetValueOrSelectedIndicesObject() const;
 
   const std::vector<UnownedPtr<CPDF_FormControl>>& GetControls() const;
 

@@ -89,9 +89,10 @@ class SessionMessengerTest : public ::testing::Test {
         task_runner_(&clock_),
         message_store_(),
         pipe_(kSenderId, kReceiverId),
-        receiver_messenger_(pipe_.right(),
-                            kReceiverId,
-                            message_store_.GetErrorCallback()),
+        receiver_messenger_(std::make_unique<ReceiverSessionMessenger>(
+            pipe_.right(),
+            kReceiverId,
+            message_store_.GetErrorCallback())),
         sender_messenger_(std::make_unique<SenderSessionMessenger>(
             pipe_.left(),
             kSenderId,
@@ -104,20 +105,24 @@ class SessionMessengerTest : public ::testing::Test {
   void SetUp() override {
     sender_messenger_->SetHandler(ReceiverMessage::Type::kRpc,
                                   message_store_.GetReplyCallback());
-    receiver_messenger_.SetHandler(SenderMessage::Type::kOffer,
-                                   message_store_.GetRequestCallback());
-    receiver_messenger_.SetHandler(SenderMessage::Type::kGetCapabilities,
-                                   message_store_.GetRequestCallback());
-    receiver_messenger_.SetHandler(SenderMessage::Type::kRpc,
-                                   message_store_.GetRequestCallback());
+    receiver_messenger_->SetHandler(SenderMessage::Type::kOffer,
+                                    message_store_.GetRequestCallback());
+    receiver_messenger_->SetHandler(SenderMessage::Type::kGetCapabilities,
+                                    message_store_.GetRequestCallback());
+    receiver_messenger_->SetHandler(SenderMessage::Type::kRpc,
+                                    message_store_.GetRequestCallback());
   }
+
+  MessagePipeEnd& sender_pipe_end() { return *pipe_.left(); }
+
+  MessagePipeEnd& receiver_pipe_end() { return *pipe_.right(); }
 
  protected:
   FakeClock clock_;
   FakeTaskRunner task_runner_;
   SessionMessageStore message_store_;
   MessagePipe pipe_;
-  ReceiverSessionMessenger receiver_messenger_;
+  std::unique_ptr<ReceiverSessionMessenger> receiver_messenger_;
   std::unique_ptr<SenderSessionMessenger> sender_messenger_;
 
   std::vector<Error> receiver_errors_;
@@ -153,9 +158,9 @@ TEST_F(SessionMessengerTest, RpcMessaging) {
   message_store_.sender_messages.clear();
   ASSERT_TRUE(
       receiver_messenger_
-          .SendMessage(kSenderId,
-                       ReceiverMessage{ReceiverMessage::Type::kRpc, 123,
-                                       true /* valid */, kReceiverResponse})
+          ->SendMessage(kSenderId,
+                        ReceiverMessage{ReceiverMessage::Type::kRpc, 123,
+                                        true /* valid */, kReceiverResponse})
           .ok());
 
   ASSERT_TRUE(message_store_.sender_messages.empty());
@@ -184,15 +189,16 @@ TEST_F(SessionMessengerTest, CapabilitiesMessaging) {
   EXPECT_TRUE(message_store_.sender_messages[0].second.valid);
 
   message_store_.sender_messages.clear();
-  ASSERT_TRUE(receiver_messenger_
-                  .SendMessage(kSenderId,
-                               ReceiverMessage{
-                                   ReceiverMessage::Type::kCapabilitiesResponse,
-                                   1337, true /* valid */,
-                                   ReceiverCapability{47,
-                                                      {MediaCapability::kAac,
-                                                       MediaCapability::k4k}}})
-                  .ok());
+  ASSERT_TRUE(
+      receiver_messenger_
+          ->SendMessage(
+              kSenderId,
+              ReceiverMessage{
+                  ReceiverMessage::Type::kCapabilitiesResponse, 1337,
+                  true /* valid */,
+                  ReceiverCapability{
+                      47, {MediaCapability::kAac, MediaCapability::k4k}}})
+          .ok());
 
   ASSERT_TRUE(message_store_.sender_messages.empty());
   ASSERT_EQ(1u, message_store_.receiver_messages.size());
@@ -222,24 +228,24 @@ TEST_F(SessionMessengerTest, OfferAnswerMessaging) {
   EXPECT_TRUE(message_store_.sender_messages[0].second.valid);
   message_store_.sender_messages.clear();
 
-  EXPECT_TRUE(
-      receiver_messenger_
-          .SendMessage(kSenderId,
-                       ReceiverMessage{
-                           ReceiverMessage::Type::kAnswer, 41, true /* valid */,
-                           Answer{1234, {0, 1}, {12344443, 12344445}}})
-          .ok());
+  EXPECT_TRUE(receiver_messenger_
+                  ->SendMessage(
+                      kSenderId,
+                      ReceiverMessage{
+                          ReceiverMessage::Type::kAnswer, 41, true /* valid */,
+                          Answer{1234, {0, 1}, {12344443, 12344445}}})
+                  .ok());
   // A stale answer (for offer 41) should get ignored:
   ASSERT_TRUE(message_store_.sender_messages.empty());
   ASSERT_TRUE(message_store_.receiver_messages.empty());
 
-  ASSERT_TRUE(
-      receiver_messenger_
-          .SendMessage(kSenderId,
-                       ReceiverMessage{
-                           ReceiverMessage::Type::kAnswer, 42, true /* valid */,
-                           Answer{1234, {0, 1}, {12344443, 12344445}}})
-          .ok());
+  ASSERT_TRUE(receiver_messenger_
+                  ->SendMessage(
+                      kSenderId,
+                      ReceiverMessage{
+                          ReceiverMessage::Type::kAnswer, 42, true /* valid */,
+                          Answer{1234, {0, 1}, {12344443, 12344445}}})
+                  .ok());
   EXPECT_TRUE(message_store_.sender_messages.empty());
   ASSERT_EQ(1u, message_store_.receiver_messages.size());
   EXPECT_EQ(ReceiverMessage::Type::kAnswer,
@@ -271,7 +277,7 @@ TEST_F(SessionMessengerTest, OfferAndReceiverError) {
   message_store_.sender_messages.clear();
 
   EXPECT_TRUE(receiver_messenger_
-                  .SendMessage(
+                  ->SendMessage(
                       kSenderId,
                       ReceiverMessage{
                           ReceiverMessage::Type::kAnswer, 42, false /* valid */,
@@ -306,16 +312,17 @@ TEST_F(SessionMessengerTest, UnknownReceiverMessageTypesDontGetSent) {
                                 message_store_.GetReplyCallback())
                   .ok());
 
-  EXPECT_DEATH(receiver_messenger_
-                   .SendMessage(kSenderId,
-                                ReceiverMessage{ReceiverMessage::Type::kUnknown,
-                                                3123, true /* valid */})
-                   .ok(),
-               ".*Trying to send an unknown message is a developer error.*");
+  EXPECT_DEATH(
+      receiver_messenger_
+          ->SendMessage(kSenderId,
+                        ReceiverMessage{ReceiverMessage::Type::kUnknown, 3123,
+                                        true /* valid */})
+          .ok(),
+      ".*Trying to send an unknown message is a developer error.*");
 }
 
 TEST_F(SessionMessengerTest, ReceiverHandlesUnknownMessageType) {
-  pipe_.right()->ReceiveMessage(kCastWebrtcNamespace, R"({
+  receiver_pipe_end().ReceiveMessage(kCastWebrtcNamespace, R"({
     "type": "GET_VIRTUAL_REALITY",
     "seqNum": 31337
   })");
@@ -333,7 +340,7 @@ TEST_F(SessionMessengerTest, SenderHandlesUnknownMessageType) {
                                 ReceiverMessage::Type::kAnswer,
                                 message_store_.GetReplyCallback())
                   .ok());
-  pipe_.left()->ReceiveMessage(kCastWebrtcNamespace, R"({
+  sender_pipe_end().ReceiveMessage(kCastWebrtcNamespace, R"({
     "type": "ANSWER_VERSION_2",
     "seqNum": 42
   })");
@@ -353,7 +360,7 @@ TEST_F(SessionMessengerTest, SenderHandlesMessageMissingSequenceNumber) {
                         ReceiverMessage::Type::kCapabilitiesResponse,
                         message_store_.GetReplyCallback())
           .ok());
-  pipe_.left()->ReceiveMessage(kCastWebrtcNamespace, R"({
+  sender_pipe_end().ReceiveMessage(kCastWebrtcNamespace, R"({
     "capabilities": {
       "keySystems": [],
       "mediaCaps": ["video"]
@@ -367,7 +374,7 @@ TEST_F(SessionMessengerTest, SenderHandlesMessageMissingSequenceNumber) {
 }
 
 TEST_F(SessionMessengerTest, ReceiverCannotSendToEmptyId) {
-  const Error error = receiver_messenger_.SendMessage(
+  const Error error = receiver_messenger_->SendMessage(
       "", ReceiverMessage{ReceiverMessage::Type::kCapabilitiesResponse, 3123,
                           true /* valid */,
                           ReceiverCapability{2, {MediaCapability::kAudio}}});
@@ -398,7 +405,7 @@ TEST_F(SessionMessengerTest, ErrorMessageLoggedIfTimeout) {
 // Make sure that we don't SEGFAULT if we cause the messenger to get deleted or
 // its replies cleared as part of executing an error callback on timeout.
 // See https://issuetracker.google.com/250957657 for more context.
-TEST_F(SessionMessengerTest, HandlesTimeoutThatCausesDelete) {
+TEST_F(SessionMessengerTest, SenderHandlesTimeoutThatCausesDelete) {
   auto reply_callback = [this, message_cb = message_store_.GetReplyCallback()](
                             ErrorOr<ReceiverMessage> reply_result) mutable {
     message_cb(std::move(reply_result));
@@ -424,15 +431,55 @@ TEST_F(SessionMessengerTest, HandlesTimeoutThatCausesDelete) {
             message_store_.receiver_messages[0].error().code());
 }
 
-TEST_F(SessionMessengerTest, ReceiverHandlesMessagesFromMultipleSenders) {
-  SimpleMessagePort port(kReceiverId);
-  ReceiverSessionMessenger messenger(&port, kReceiverId,
-                                     message_store_.GetErrorCallback());
-  messenger.SetHandler(SenderMessage::Type::kGetCapabilities,
-                       message_store_.GetRequestCallback());
+TEST_F(SessionMessengerTest, SenderHandlesMessageThatCausesDelete) {
+  auto reply_callback = [this, message_cb = message_store_.GetReplyCallback()](
+                            ErrorOr<ReceiverMessage> reply_result) mutable {
+    message_cb(std::move(reply_result));
+    sender_messenger_.reset();
+  };
 
+  ASSERT_TRUE(
+      sender_messenger_
+          ->SendRequest(SenderMessage{SenderMessage::Type::kGetCapabilities,
+                                      3123, true /* valid */},
+                        ReceiverMessage::Type::kCapabilitiesResponse,
+                        std::move(reply_callback))
+          .ok());
+
+  ASSERT_EQ(1u, message_store_.sender_messages.size());
+  ASSERT_TRUE(message_store_.receiver_messages.empty());
+
+  clock_.Advance(std::chrono::seconds(10));
+  ASSERT_EQ(1u, message_store_.sender_messages.size());
+  ASSERT_EQ(1u, message_store_.receiver_messages.size());
+  ASSERT_TRUE(message_store_.receiver_messages[0].is_error());
+  EXPECT_EQ(Error::Code::kMessageTimeout,
+            message_store_.receiver_messages[0].error().code());
+}
+
+TEST_F(SessionMessengerTest, RecieverHandlesMessageThatCausesDelete) {
+  auto request_callback =
+      [this, message_cb = message_store_.GetRequestCallback()](
+          const std::string& sender_id, SenderMessage request) mutable {
+        message_cb(sender_id, std::move(request));
+        receiver_messenger_.reset();
+      };
+
+  receiver_messenger_->ResetHandler(SenderMessage::Type::kGetCapabilities);
+  receiver_messenger_->SetHandler(SenderMessage::Type::kGetCapabilities,
+                                  std::move(request_callback));
+
+  receiver_pipe_end().ReceiveMessage("sender-31337", kCastWebrtcNamespace, R"({
+        "seqNum": 820263769,
+        "type": "GET_CAPABILITIES"
+      })");
+  ASSERT_TRUE(message_store_.errors.empty());
+  ASSERT_EQ(1u, message_store_.sender_messages.size());
+}
+
+TEST_F(SessionMessengerTest, ReceiverHandlesMessagesFromMultipleSenders) {
   // The first message should be accepted from any sender.
-  port.ReceiveMessage("sender-31337", kCastWebrtcNamespace, R"({
+  receiver_pipe_end().ReceiveMessage("sender-31337", kCastWebrtcNamespace, R"({
         "seqNum": 820263769,
         "type": "GET_CAPABILITIES"
       })");
@@ -442,7 +489,7 @@ TEST_F(SessionMessengerTest, ReceiverHandlesMessagesFromMultipleSenders) {
 
   // The second message should be happily accepted from another sender because
   // it's a GET_CAPABILITIES call.
-  port.ReceiveMessage("sender-42", kCastWebrtcNamespace, R"({
+  receiver_pipe_end().ReceiveMessage("sender-42", kCastWebrtcNamespace, R"({
         "seqNum": 1234,
         "type": "GET_CAPABILITIES"
       })");
@@ -452,7 +499,7 @@ TEST_F(SessionMessengerTest, ReceiverHandlesMessagesFromMultipleSenders) {
   message_store_.sender_messages.clear();
 
   // The third message should also be accepted from the original sender.
-  port.ReceiveMessage("sender-31337", kCastWebrtcNamespace, R"({
+  receiver_pipe_end().ReceiveMessage("sender-31337", kCastWebrtcNamespace, R"({
         "seqNum": 820263769,
         "type": "GET_CAPABILITIES"
       })");
@@ -461,12 +508,7 @@ TEST_F(SessionMessengerTest, ReceiverHandlesMessagesFromMultipleSenders) {
 }
 
 TEST_F(SessionMessengerTest, SenderRejectsMessageFromWrongReceiver) {
-  SimpleMessagePort port(kReceiverId);
-  SenderSessionMessenger messenger(&port, kSenderId, kReceiverId,
-                                   message_store_.GetErrorCallback(),
-                                   &task_runner_);
-
-  port.ReceiveMessage("receiver-31337", kCastWebrtcNamespace, R"({
+  sender_pipe_end().ReceiveMessage("receiver-31337", kCastWebrtcNamespace, R"({
         "seqNum": 12345,
         "sessionId": 735189,
         "type": "RPC",
@@ -536,15 +578,17 @@ TEST_F(SessionMessengerTest, SenderRejectsMessagesWithoutHandler) {
 }
 
 TEST_F(SessionMessengerTest, UnknownNamespaceMessagesGetDropped) {
-  pipe_.right()->ReceiveMessage("urn:x-cast:com.google.cast.virtualreality",
-                                R"({
+  receiver_pipe_end().ReceiveMessage(
+      "urn:x-cast:com.google.cast.virtualreality",
+      R"({
         "seqNum": 12345,
         "sessionId": 735190,
         "type": "RPC",
         "rpc": "SGVsbG8gZnJvbSB0aGUgQ2FzdCBSZWNlaXZlciE="
       })");
 
-  pipe_.left()->ReceiveMessage("urn:x-cast:com.google.cast.virtualreality", R"({
+  sender_pipe_end().ReceiveMessage("urn:x-cast:com.google.cast.virtualreality",
+                                   R"({
         "seqNum": 12345,
         "sessionId": 735190,
         "type": "RPC",

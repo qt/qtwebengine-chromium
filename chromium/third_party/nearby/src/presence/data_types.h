@@ -16,42 +16,45 @@
 #define THIRD_PARTY_NEARBY_PRESENCE_SCAN_CALLBACK_H_
 
 #include <functional>
+#include <utility>
 
+#include "absl/functional/any_invocable.h"
+#include "internal/platform/logging.h"
 #include "presence/presence_device.h"
 #include "presence/status.h"
 
 namespace nearby {
 namespace presence {
 
-// Holds the callback of stop scan for client to invoke later.
-struct ScanSession {
-  std::function<void(Status)> stop_scan_callback;
-};
+// Unique Scan Session Identifier.
+using ScanSessionId = uint64_t;
 
+// Callers would provide the implementation of these callbacks. If callers
+// don't need these signal updates, they can skip with the provided default
+// empty functions.
 struct ScanCallback {
   // Updates client with the result of start scanning.
-  std::function<void(Status)> start_scan_cb;
+  std::function<void(Status)> start_scan_cb = [](Status) {};
 
   // Reports a {@link PresenceDevice} being discovered.
-  std::function<void(PresenceDevice)> on_discovered_cb;
+  std::function<void(PresenceDevice)> on_discovered_cb = [](PresenceDevice) {};
 
   // Reports a {@link PresenceDevice} information(distance, and etc)
   // changed.
-  std::function<void(PresenceDevice)> on_updated_cb;
+  std::function<void(PresenceDevice)> on_updated_cb = [](PresenceDevice) {};
 
   // Reports a {@link PresenceDevice} is no longer within range.
-  std::function<void(PresenceDevice)> on_lost_cb;
+  std::function<void(PresenceDevice)> on_lost_cb = [](PresenceDevice) {};
 };
 
-/**
- * Holds the callback of stop broadcast for client to invoke later.
- */
-struct BroadcastSession {
-  std::function<void(Status)> stop_broadcast_callback;
-};
+// Unique Broadcast Session Identifier.
+using BroadcastSessionId = uint64_t;
 
+// Callers would provide the implementation of these callbacks. If callers
+// don't need these signal updates, they can skip with the provided default
+// empty functions.
 struct BroadcastCallback {
-  std::function<void(Status)> start_broadcast_cb;
+  std::function<void(Status)> start_broadcast_cb = [](Status) {};
 };
 
 }  // namespace presence

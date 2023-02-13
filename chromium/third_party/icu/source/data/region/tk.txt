@@ -306,6 +306,7 @@ tk{
         CG{"Kongo (Respublika)"}
         CI{"Şirmaýy kenar"}
         CZ{"Çeh Respublikasy"}
+        NZ{"Aotearoa Täze Zelandiýa"}
         SZ{"Swazilend"}
         TL{"Gündogar Timor"}
     }

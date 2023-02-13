@@ -9,7 +9,9 @@
 
 #include "include/core/SkAlphaType.h"
 #include "include/core/SkBitmap.h"
+#include "include/core/SkBlendMode.h"
 #include "include/core/SkBlurTypes.h"
+#include "include/core/SkClipOp.h"
 #include "include/core/SkColorFilter.h"
 #include "include/core/SkColorType.h"
 #include "include/core/SkDrawable.h"
@@ -47,7 +49,7 @@
 #include "tools/debugger/JsonWriteBuffer.h"
 
 #include <algorithm>
-#include <string>
+#include <cstring>
 #include <utility>
 
 class GrDirectContext;
@@ -389,7 +391,7 @@ void apply_paint_blend_mode(const SkPaint& paint, SkJSONWriter& writer) {
     }
 }
 
-};  // namespace
+}  // namespace
 
 void DrawCommand::MakeJsonColor(SkJSONWriter& writer, const SkColor color) {
     writer.beginArray(nullptr, false);

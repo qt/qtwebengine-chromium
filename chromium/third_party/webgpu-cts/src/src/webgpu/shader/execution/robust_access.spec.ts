@@ -8,6 +8,7 @@ TODO: add tests to check that textureLoad operations stay in-bounds.
 import { makeTestGroup } from '../../../common/framework/test_group.js';
 import { assert } from '../../../common/util/util.js';
 import { GPUTest } from '../../gpu_test.js';
+import { align } from '../../util/math.js';
 import { generateTypes, supportedScalarTypes, supportsAtomics } from '../types.js';
 
 export const g = makeTestGroup(GPUTest);
@@ -161,6 +162,11 @@ g.test('linear_memory')
         { containerType: 'matrix' },
         { containerType: 'vector' },
       ] as const)
+      .combineWithParams([
+        { shadowingMode: 'none' },
+        { shadowingMode: 'module-scope' },
+        { shadowingMode: 'function-scope' },
+      ])
       .expand('isAtomic', p => (supportsAtomics(p) ? [false, true] : [false]))
       .beginSubcases()
       .expand('baseType', supportedScalarTypes)
@@ -176,6 +182,7 @@ g.test('linear_memory')
       containerType,
       baseType,
       type,
+      shadowingMode,
       _kTypeInfo,
     } = t.params;
 
@@ -206,7 +213,7 @@ struct S {
         {
           assert(_kTypeInfo.layout !== undefined);
           const layout = _kTypeInfo.layout;
-          bufferBindingSize = layout.size;
+          bufferBindingSize = align(layout.size, layout.alignment);
           const qualifiers = storageClass === 'storage' ? `storage, ${storageMode}` : storageClass;
           globalSource += `
 struct TestData {
@@ -353,13 +360,45 @@ struct TestData {
   }`;
     }
 
+    // Shadowing case declarations
+    let moduleScopeShadowDecls = '';
+    let functionScopeShadowDecls = '';
+
+    switch (shadowingMode) {
+      case 'module-scope':
+        // Shadow the builtins likely used by robustness as module-scope variables
+        moduleScopeShadowDecls = `
+var<private> min = 0;
+var<private> max = 0;
+var<private> arrayLength = 0;
+`;
+        // Make sure that these are referenced by the function.
+        // This ensures that compilers don't strip away unused variables.
+        functionScopeShadowDecls = `
+  _ = min;
+  _ = max;
+  _ = arrayLength;
+`;
+        break;
+      case 'function-scope':
+        // Shadow the builtins likely used by robustness as function-scope variables
+        functionScopeShadowDecls = `
+  let min = 0;
+  let max = 0;
+  let arrayLength = 0;
+`;
+        break;
+    }
+
     // Run the test
 
     // First aggregate the test source
     const testSource = `
-      ${globalSource}
+${globalSource}
+${moduleScopeShadowDecls}
 
 fn runTest() -> u32 {
+  ${functionScopeShadowDecls}
   ${testFunctionSource}
   return 0u;
 }`;

@@ -1,4 +1,4 @@
-// Copyright 2015 PDFium Authors. All rights reserved.
+// Copyright 2015 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -427,6 +427,8 @@ int CheckPDFiumCApi() {
     CHK(FPDFText_GetText);
     CHK(FPDFText_GetTextRenderMode);
     CHK(FPDFText_GetUnicode);
+    CHK(FPDFText_HasUnicodeMapError);
+    CHK(FPDFText_IsGenerated);
     CHK(FPDFText_LoadPage);
 
     // fpdf_thumbnail.h

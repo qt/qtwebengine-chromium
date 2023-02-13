@@ -7,15 +7,15 @@
 
 #include "src/sksl/SkSLCompiler.h"
 
-#include "include/core/SkSpan.h"
 #include "include/private/SkSLDefines.h"
+#include "include/private/SkSLIRNode.h"
+#include "include/private/SkSLProgramKind.h"
 #include "include/private/SkSLSymbol.h"
 #include "include/sksl/DSLCore.h"
 #include "include/sksl/DSLModifiers.h"
 #include "include/sksl/DSLType.h"
 #include "src/core/SkTraceEvent.h"
 #include "src/sksl/SkSLAnalysis.h"
-#include "src/sksl/SkSLBuiltinMap.h"
 #include "src/sksl/SkSLContext.h"
 #include "src/sksl/SkSLInliner.h"
 #include "src/sksl/SkSLModuleLoader.h"
@@ -23,6 +23,7 @@
 #include "src/sksl/SkSLParser.h"
 #include "src/sksl/SkSLProgramSettings.h"
 #include "src/sksl/SkSLStringStream.h"
+#include "src/sksl/analysis/SkSLProgramUsage.h"
 #include "src/sksl/ir/SkSLExpression.h"
 #include "src/sksl/ir/SkSLExternalFunction.h"
 #include "src/sksl/ir/SkSLExternalFunctionReference.h"
@@ -31,6 +32,7 @@
 #include "src/sksl/ir/SkSLFunctionDeclaration.h"
 #include "src/sksl/ir/SkSLFunctionReference.h"
 #include "src/sksl/ir/SkSLProgram.h"
+#include "src/sksl/ir/SkSLSymbolTable.h"  // IWYU pragma: keep
 #include "src/sksl/ir/SkSLTypeReference.h"
 #include "src/sksl/ir/SkSLVariable.h"
 #include "src/sksl/ir/SkSLVariableReference.h"
@@ -64,7 +66,6 @@
 namespace SkSL {
 
 class ModifiersPool;
-class ProgramUsage;
 
 // These flags allow tools like Viewer or Nanobench to override the compiler's ProgramSettings.
 Compiler::OverrideFlag Compiler::sOptimizer = OverrideFlag::kDefault;
@@ -144,32 +145,80 @@ Compiler::Compiler(const ShaderCaps* caps) : fErrorReporter(this), fCaps(caps) {
 
 Compiler::~Compiler() {}
 
-const BuiltinMap* Compiler::moduleForProgramKind(ProgramKind kind) {
+const Module* Compiler::moduleForProgramKind(ProgramKind kind) {
     auto m = ModuleLoader::Get();
     switch (kind) {
-        case ProgramKind::kVertex:               return m.loadVertexModule(this);           break;
-        case ProgramKind::kFragment:             return m.loadFragmentModule(this);         break;
-        case ProgramKind::kCompute:              return m.loadComputeModule(this);          break;
-        case ProgramKind::kGraphiteVertex:       return m.loadGraphiteVertexModule(this);   break;
-        case ProgramKind::kGraphiteFragment:     return m.loadGraphiteFragmentModule(this); break;
-        case ProgramKind::kRuntimeColorFilter:   return m.loadPublicModule(this);           break;
-        case ProgramKind::kRuntimeShader:        return m.loadPublicModule(this);           break;
-        case ProgramKind::kRuntimeBlender:       return m.loadPublicModule(this);           break;
-        case ProgramKind::kPrivateRuntimeShader: return m.loadPrivateRTShaderModule(this);  break;
-        case ProgramKind::kMeshVertex:           return m.loadPublicModule(this);           break;
-        case ProgramKind::kMeshFragment:         return m.loadPublicModule(this);           break;
-        case ProgramKind::kGeneric:              return m.loadPublicModule(this);           break;
+        case ProgramKind::kVertex:                return m.loadVertexModule(this);           break;
+        case ProgramKind::kFragment:              return m.loadFragmentModule(this);         break;
+        case ProgramKind::kCompute:               return m.loadComputeModule(this);          break;
+        case ProgramKind::kGraphiteVertex:        return m.loadGraphiteVertexModule(this);   break;
+        case ProgramKind::kGraphiteFragment:      return m.loadGraphiteFragmentModule(this); break;
+        case ProgramKind::kPrivateRuntimeShader:  return m.loadPrivateRTShaderModule(this);  break;
+        case ProgramKind::kRuntimeColorFilter:
+        case ProgramKind::kRuntimeShader:
+        case ProgramKind::kRuntimeBlender:
+        case ProgramKind::kPrivateRuntimeColorFilter:
+        case ProgramKind::kPrivateRuntimeBlender:
+        case ProgramKind::kMeshVertex:
+        case ProgramKind::kMeshFragment:
+        case ProgramKind::kGeneric:               return m.loadPublicModule(this);           break;
     }
     SkUNREACHABLE;
 }
 
-LoadedModule Compiler::compileModule(ProgramKind kind,
-                                     const char* moduleName,
-                                     std::string moduleSource,
-                                     const BuiltinMap* base,
-                                     ModifiersPool& modifiersPool,
-                                     bool shouldInline) {
-    SkASSERT(base);
+void Compiler::FinalizeSettings(ProgramSettings* settings, ProgramKind kind) {
+    // Honor our optimization-override flags.
+    switch (sOptimizer) {
+        case OverrideFlag::kDefault:
+            break;
+        case OverrideFlag::kOff:
+            settings->fOptimize = false;
+            break;
+        case OverrideFlag::kOn:
+            settings->fOptimize = true;
+            break;
+    }
+
+    switch (sInliner) {
+        case OverrideFlag::kDefault:
+            break;
+        case OverrideFlag::kOff:
+            settings->fInlineThreshold = 0;
+            break;
+        case OverrideFlag::kOn:
+            if (settings->fInlineThreshold == 0) {
+                settings->fInlineThreshold = kDefaultInlineThreshold;
+            }
+            break;
+    }
+
+    // Disable optimization settings that depend on a parent setting which has been disabled.
+    settings->fInlineThreshold *= (int)settings->fOptimize;
+    settings->fRemoveDeadFunctions &= settings->fOptimize;
+    settings->fRemoveDeadVariables &= settings->fOptimize;
+
+    if (kind == ProgramKind::kGeneric) {
+        // For "generic" interpreter programs, leave all functions intact. (The SkVM API supports
+        // calling any function, not just 'main').
+        settings->fRemoveDeadFunctions = false;
+    } else {
+        // Only generic programs (limited to CPU) are able to use external functions.
+        SkASSERT(!settings->fExternalFunctions);
+    }
+
+    // Runtime effects always allow narrowing conversions.
+    if (ProgramConfig::IsRuntimeEffect(kind)) {
+        settings->fAllowNarrowingConversions = true;
+    }
+}
+
+std::unique_ptr<Module> Compiler::compileModule(ProgramKind kind,
+                                                const char* moduleName,
+                                                std::string moduleSource,
+                                                const Module* parent,
+                                                ModifiersPool& modifiersPool,
+                                                bool shouldInline) {
+    SkASSERT(parent);
     SkASSERT(!moduleSource.empty());
     SkASSERT(this->errorCount() == 0);
 
@@ -179,22 +228,17 @@ LoadedModule Compiler::compileModule(ProgramKind kind,
 
     // Compile the module from source, using default program settings.
     ProgramSettings settings;
+    FinalizeSettings(&settings, kind);
     SkSL::Parser parser{this, settings, kind, std::move(moduleSource)};
-    LoadedModule module = parser.moduleInheritingFrom(base);
+    std::unique_ptr<Module> module = parser.moduleInheritingFrom(parent);
     if (this->errorCount() != 0) {
-        SK_ABORT("Unexpected errors compiling %s:\n\n%s\n", moduleName, this->errorText().c_str());
+        SkDebugf("Unexpected errors compiling %s:\n\n%s\n", moduleName, this->errorText().c_str());
+        return nullptr;
     }
     if (shouldInline) {
-        this->optimizeModuleAfterLoading(kind, module, base);
+        this->optimizeModuleAfterLoading(kind, *module);
     }
     return module;
-}
-
-std::unique_ptr<BuiltinMap> LoadedModule::convertToBuiltinMap(const BuiltinMap* parent) {
-    auto elements = std::make_unique<BuiltinMap>(parent, std::move(fSymbols), SkSpan(fElements));
-    fElements = std::vector<std::unique_ptr<ProgramElement>>{};
-
-    return elements;
 }
 
 std::unique_ptr<Program> Compiler::convertProgram(ProgramKind kind,
@@ -202,48 +246,8 @@ std::unique_ptr<Program> Compiler::convertProgram(ProgramKind kind,
                                                   ProgramSettings settings) {
     TRACE_EVENT0("skia.shaders", "SkSL::Compiler::convertProgram");
 
-    SkASSERT(!settings.fExternalFunctions || (kind == ProgramKind::kGeneric));
-
-    // Honor our optimization-override flags.
-    switch (sOptimizer) {
-        case OverrideFlag::kDefault:
-            break;
-        case OverrideFlag::kOff:
-            settings.fOptimize = false;
-            break;
-        case OverrideFlag::kOn:
-            settings.fOptimize = true;
-            break;
-    }
-
-    switch (sInliner) {
-        case OverrideFlag::kDefault:
-            break;
-        case OverrideFlag::kOff:
-            settings.fInlineThreshold = 0;
-            break;
-        case OverrideFlag::kOn:
-            if (settings.fInlineThreshold == 0) {
-                settings.fInlineThreshold = kDefaultInlineThreshold;
-            }
-            break;
-    }
-
-    // Disable optimization settings that depend on a parent setting which has been disabled.
-    settings.fInlineThreshold *= (int)settings.fOptimize;
-    settings.fRemoveDeadFunctions &= settings.fOptimize;
-    settings.fRemoveDeadVariables &= settings.fOptimize;
-
-    // For "generic" interpreter programs, leave all functions intact. (The API supports calling
-    // any function, not just 'main').
-    if (kind == ProgramKind::kGeneric) {
-        settings.fRemoveDeadFunctions = false;
-    }
-
-    // Runtime effects always allow narrowing conversions.
-    if (ProgramConfig::IsRuntimeEffect(kind)) {
-        settings.fAllowNarrowingConversions = true;
-    }
+    // Make sure the passed-in settings are valid.
+    FinalizeSettings(&settings, kind);
 
     // Put the ShaderCaps into the context while compiling a program.
     AutoShaderCaps autoCaps(fContext, fCaps);
@@ -291,9 +295,7 @@ std::unique_ptr<Expression> Compiler::convertIdentifier(Position pos, std::strin
     }
 }
 
-bool Compiler::optimizeModuleBeforeMinifying(ProgramKind kind,
-                                             LoadedModule& module,
-                                             const BuiltinMap* base) {
+bool Compiler::optimizeModuleBeforeMinifying(ProgramKind kind, Module& module) {
     SkASSERT(this->errorCount() == 0);
 
     auto m = SkSL::ModuleLoader::Get();
@@ -305,10 +307,10 @@ bool Compiler::optimizeModuleBeforeMinifying(ProgramKind kind,
     AutoProgramConfig autoConfig(this->context(), &config);
     AutoModifiersPool autoPool(fContext, &m.coreModifiers());
 
-    std::unique_ptr<ProgramUsage> usage = Analysis::GetUsage(module, base);
+    std::unique_ptr<ProgramUsage> usage = Analysis::GetUsage(module);
 
-    // Look for local variables in functions and give them shorter names.
-    Transform::RenamePrivateSymbols(this->context(), module, usage.get());
+    // Assign shorter names to symbols as long as it won't change the external meaning of the code.
+    Transform::RenamePrivateSymbols(this->context(), module, usage.get(), kind);
 
     // Replace constant variables with their literal values to save space.
     Transform::ReplaceConstVarsWithLiterals(module, usage.get());
@@ -316,26 +318,38 @@ bool Compiler::optimizeModuleBeforeMinifying(ProgramKind kind,
     // Remove any unreachable code.
     Transform::EliminateUnreachableCode(module, usage.get());
 
+    // We can only remove dead functions from runtime shaders, since runtime-effect helper functions
+    // are isolated from other parts of the program. In a module, an unreferenced function is
+    // intended to be called by the code that includes the module.
+    if (kind == ProgramKind::kRuntimeShader) {
+        while (Transform::EliminateDeadFunctions(this->context(), module, usage.get())) {
+            // Removing dead functions may cause more functions to become unreferenced. Try again.
+        }
+    }
+
     while (Transform::EliminateDeadLocalVariables(this->context(), module, usage.get())) {
         // Removing dead variables may cause more variables to become unreferenced. Try again.
     }
 
-    // We only eliminate private globals (prefixed with `$`) to avoid changing the meaning of the
-    // module code.
+    // Runtime shaders are isolated from other parts of the program via name mangling, so we can
+    // eliminate public globals if they aren't referenced. Otherwise, we only eliminate private
+    // globals (prefixed with `$`) to avoid changing the meaning of the module code.
+    bool onlyPrivateGlobals = !ProgramConfig::IsRuntimeEffect(kind);
     while (Transform::EliminateDeadGlobalVariables(this->context(), module, usage.get(),
-                                                   /*onlyPrivateGlobals=*/true)) {
+                                                   onlyPrivateGlobals)) {
         // Repeat until no changes occur.
     }
 
     // We eliminate empty statements to avoid runs of `;;;;;;` caused by the previous passes.
     SkSL::Transform::EliminateEmptyStatements(module);
 
+    // Make sure that program usage is still correct after the optimization pass is complete.
+    SkASSERT(*usage == *Analysis::GetUsage(module));
+
     return this->errorCount() == 0;
 }
 
-bool Compiler::optimizeModuleAfterLoading(ProgramKind kind,
-                                          LoadedModule& module,
-                                          const BuiltinMap* base) {
+bool Compiler::optimizeModuleAfterLoading(ProgramKind kind, Module& module) {
     SkASSERT(this->errorCount() == 0);
 
 #ifndef SK_ENABLE_OPTIMIZE_SIZE
@@ -345,7 +359,7 @@ bool Compiler::optimizeModuleAfterLoading(ProgramKind kind,
     config.fKind = kind;
     AutoProgramConfig autoConfig(this->context(), &config);
 
-    std::unique_ptr<ProgramUsage> usage = Analysis::GetUsage(module, base);
+    std::unique_ptr<ProgramUsage> usage = Analysis::GetUsage(module);
 
     // Perform inline-candidate analysis and inline any functions deemed suitable.
     Inliner inliner(fContext.get());
@@ -354,6 +368,8 @@ bool Compiler::optimizeModuleAfterLoading(ProgramKind kind,
             break;
         }
     }
+    // Make sure that program usage is still correct after the optimization pass is complete.
+    SkASSERT(*usage == *Analysis::GetUsage(module));
 #endif
 
     return this->errorCount() == 0;
@@ -372,9 +388,8 @@ bool Compiler::optimize(Program& program) {
 #ifndef SK_ENABLE_OPTIMIZE_SIZE
         // Run the inliner only once; it is expensive! Multiple passes can occasionally shake out
         // more wins, but it's diminishing returns.
-        ProgramUsage* usage = program.fUsage.get();
         Inliner inliner(fContext.get());
-        this->runInliner(&inliner, program.fOwnedElements, program.fSymbols, usage);
+        this->runInliner(&inliner, program.fOwnedElements, program.fSymbols, program.fUsage.get());
 #endif
 
         // Unreachable code can confuse some drivers, so it's worth removing. (skia:12012)
@@ -386,8 +401,11 @@ bool Compiler::optimize(Program& program) {
         while (Transform::EliminateDeadLocalVariables(program)) {
             // Removing dead variables may cause more variables to become unreferenced. Try again.
         }
-
-        Transform::EliminateDeadGlobalVariables(program);
+        while (Transform::EliminateDeadGlobalVariables(program)) {
+            // Repeat until no changes occur.
+        }
+        // Make sure that program usage is still correct after the optimization pass is complete.
+        SkASSERT(*program.usage() == *Analysis::GetUsage(program));
     }
 
     return this->errorCount() == 0;
@@ -427,9 +445,8 @@ bool Compiler::finalize(Program& program) {
     // Variables defined in the pre-includes need their declaring elements added to the program.
     Transform::FindAndDeclareBuiltinVariables(program);
 
-    // Do one last correctness-check pass. This looks for @if/@switch statements that didn't
-    // optimize away, or dangling FunctionReference or TypeReference expressions, and reports them
-    // as errors.
+    // Do one last correctness-check pass. This looks for dangling FunctionReference/TypeReference
+    // expressions, and reports them as errors.
     Analysis::DoFinalizationChecks(program);
 
     if (fContext->fConfig->strictES2Mode() && this->errorCount() == 0) {
@@ -443,6 +460,9 @@ bool Compiler::finalize(Program& program) {
         bool enforceSizeLimit = ProgramConfig::IsRuntimeEffect(program.fConfig->fKind);
         Analysis::CheckProgramStructure(program, enforceSizeLimit);
     }
+
+    // Make sure that program usage is still correct after finalization is complete.
+    SkASSERT(*program.usage() == *Analysis::GetUsage(program));
 
     return this->errorCount() == 0;
 }
@@ -458,7 +478,9 @@ static bool validate_spirv(ErrorReporter& reporter, std::string_view program) {
     spvtools::SpirvTools tools(SPV_ENV_VULKAN_1_0);
     std::string errors;
     auto msgFn = [&errors](spv_message_level_t, const char*, const spv_position_t&, const char* m) {
-        String::appendf(&errors, "SPIR-V validation error: %s\n", m);
+        errors += "SPIR-V validation error: ";
+        errors += m;
+        errors += '\n';
     };
     tools.SetMessageConsumer(msgFn);
 
@@ -629,7 +651,9 @@ void Compiler::handleError(std::string_view msg, Position pos) {
     }
     fErrorText += std::string(msg) + "\n";
     if (printLocation) {
-        // Find the beginning of the line
+        const int kMaxSurroundingChars = 100;
+
+        // Find the beginning of the line.
         int lineStart = pos.startOffset();
         while (lineStart > 0) {
             if (src[lineStart - 1] == '\n') {
@@ -638,16 +662,37 @@ void Compiler::handleError(std::string_view msg, Position pos) {
             --lineStart;
         }
 
-        // echo the line
-        for (int i = lineStart; i < (int)src.length(); i++) {
-            switch (src[i]) {
-                case '\t': fErrorText += "    "; break;
-                case '\0': fErrorText += " ";    break;
-                case '\n': i = src.length();     break;
-                default:   fErrorText += src[i]; break;
+        // We don't want to show more than 100 characters surrounding the error, so push the line
+        // start forward and add a leading ellipsis if there would be more than this.
+        std::string lineText;
+        std::string caretText;
+        if ((pos.startOffset() - lineStart) > kMaxSurroundingChars) {
+            lineStart = pos.startOffset() - kMaxSurroundingChars;
+            lineText = "...";
+            caretText = "   ";
+        }
+
+        // Echo the line. Again, we don't want to show more than 100 characters after the end of the
+        // error, so truncate with a trailing ellipsis if needed.
+        const char* lineSuffix = "...\n";
+        int lineStop = pos.endOffset() + kMaxSurroundingChars;
+        if (lineStop >= (int)src.length()) {
+            lineStop = src.length() - 1;
+            lineSuffix = "\n";  // no ellipsis if we reach end-of-file
+        }
+        for (int i = lineStart; i < lineStop; ++i) {
+            char c = src[i];
+            if (c == '\n') {
+                lineSuffix = "\n";  // no ellipsis if we reach end-of-line
+                break;
+            }
+            switch (c) {
+                case '\t': lineText += "    "; break;
+                case '\0': lineText += " ";    break;
+                default:   lineText += src[i]; break;
             }
         }
-        fErrorText += '\n';
+        fErrorText += lineText + lineSuffix;
 
         // print the carets underneath it, pointing to the range in question
         for (int i = lineStart; i < (int)src.length(); i++) {
@@ -656,20 +701,20 @@ void Compiler::handleError(std::string_view msg, Position pos) {
             }
             switch (src[i]) {
                 case '\t':
-                   fErrorText += (i >= pos.startOffset()) ? "^^^^" : "    ";
+                   caretText += (i >= pos.startOffset()) ? "^^^^" : "    ";
                    break;
                 case '\n':
                     SkASSERT(i >= pos.startOffset());
                     // use an ellipsis if the error continues past the end of the line
-                    fErrorText += (pos.endOffset() > i + 1) ? "..." : "^";
+                    caretText += (pos.endOffset() > i + 1) ? "..." : "^";
                     i = src.length();
                     break;
                 default:
-                    fErrorText += (i >= pos.startOffset()) ? '^' : ' ';
+                    caretText += (i >= pos.startOffset()) ? '^' : ' ';
                     break;
             }
         }
-        fErrorText += '\n';
+        fErrorText += caretText + '\n';
     }
 }
 

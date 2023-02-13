@@ -9,6 +9,9 @@
 
 #include "include/gpu/graphite/Context.h"
 
+#ifdef SK_DAWN
+#include "tools/graphite/dawn/GraphiteDawnTestContext.h"
+#endif
 #ifdef SK_METAL
 #include "tools/graphite/mtl/GraphiteMtlTestContext.h"
 #endif
@@ -24,7 +27,7 @@ ContextFactory::ContextInfo::ContextInfo(ContextInfo&& other)
     , fContext(std::move(other.fContext)) {
 }
 
-ContextFactory::ContextInfo::ContextInfo(ContextFactory::ContextType type,
+ContextFactory::ContextInfo::ContextInfo(GrContextFactory::ContextType type,
                                          std::unique_ptr<GraphiteTestContext> testContext,
                                          std::unique_ptr<skgpu::graphite::Context> context)
     : fType(type)
@@ -34,7 +37,7 @@ ContextFactory::ContextInfo::ContextInfo(ContextFactory::ContextType type,
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 std::tuple<GraphiteTestContext*, skgpu::graphite::Context*> ContextFactory::getContextInfo(
-        ContextType type) {
+        GrContextFactory::ContextType type) {
 
     for (ContextInfo& c : fContexts) {
         if (c.type() == type) {
@@ -45,12 +48,17 @@ std::tuple<GraphiteTestContext*, skgpu::graphite::Context*> ContextFactory::getC
     std::unique_ptr<GraphiteTestContext> testCtx;
 
     switch (type) {
-        case ContextType::kMetal: {
+        case GrContextFactory::kDawn_ContextType: {
+#ifdef SK_DAWN
+            testCtx = graphite::DawnTestContext::Make();
+#endif
+        } break;
+        case GrContextFactory::kMetal_ContextType: {
 #ifdef SK_METAL
             testCtx = graphite::MtlTestContext::Make();
 #endif
         } break;
-        case ContextType::kVulkan: {
+        case GrContextFactory::kVulkan_ContextType: {
 #ifdef SK_VULKAN
             testCtx = graphite::VulkanTestContext::Make();
 #endif

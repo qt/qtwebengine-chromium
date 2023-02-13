@@ -453,13 +453,13 @@ struct StructTraits<media::stable::mojom::ColorSpaceDataView, gfx::ColorSpace> {
 template <>
 struct StructTraits<media::stable::mojom::ColorVolumeMetadataDataView,
                     gfx::ColorVolumeMetadata> {
-  static const gfx::PointF& primary_r(const gfx::ColorVolumeMetadata& input);
+  static gfx::PointF primary_r(const gfx::ColorVolumeMetadata& input);
 
-  static const gfx::PointF& primary_g(const gfx::ColorVolumeMetadata& input);
+  static gfx::PointF primary_g(const gfx::ColorVolumeMetadata& input);
 
-  static const gfx::PointF& primary_b(const gfx::ColorVolumeMetadata& input);
+  static gfx::PointF primary_b(const gfx::ColorVolumeMetadata& input);
 
-  static const gfx::PointF& white_point(const gfx::ColorVolumeMetadata& input);
+  static gfx::PointF white_point(const gfx::ColorVolumeMetadata& input);
 
   static float luminance_max(const gfx::ColorVolumeMetadata& input);
 
@@ -1137,7 +1137,6 @@ struct EnumTraits<media::stable::mojom::VideoDecoderType,
       case ::media::VideoDecoderType::kDav1d:
       case ::media::VideoDecoderType::kFuchsia:
       case ::media::VideoDecoderType::kMediaCodec:
-      case ::media::VideoDecoderType::kGav1:
       case ::media::VideoDecoderType::kD3D11:
       case ::media::VideoDecoderType::kBroker:
         return media::stable::mojom::VideoDecoderType::kUnknown;
@@ -1313,6 +1312,8 @@ struct EnumTraits<media::stable::mojom::VideoPixelFormat,
         return media::stable::mojom::VideoPixelFormat::kPixelFormatYUV422AP10;
       case ::media::VideoPixelFormat::PIXEL_FORMAT_YUV444AP10:
         return media::stable::mojom::VideoPixelFormat::kPixelFormatYUV444AP10;
+      case ::media::VideoPixelFormat::PIXEL_FORMAT_NV12A:
+        return media::stable::mojom::VideoPixelFormat::kPixelFormatNV12A;
     }
 
     NOTREACHED();
@@ -1431,6 +1432,9 @@ struct EnumTraits<media::stable::mojom::VideoPixelFormat,
         return true;
       case media::stable::mojom::VideoPixelFormat::kPixelFormatYUV444AP10:
         *output = ::media::VideoPixelFormat::PIXEL_FORMAT_YUV444AP10;
+        return true;
+      case media::stable::mojom::VideoPixelFormat::kPixelFormatNV12A:
+        *output = ::media::VideoPixelFormat::PIXEL_FORMAT_NV12A;
         return true;
     }
 

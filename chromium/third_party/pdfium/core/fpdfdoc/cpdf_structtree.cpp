@@ -1,4 +1,4 @@
-// Copyright 2017 PDFium Authors. All rights reserved.
+// Copyright 2017 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -20,8 +20,8 @@
 namespace {
 
 bool IsTagged(const CPDF_Document* pDoc) {
-  const CPDF_Dictionary* pCatalog = pDoc->GetRoot();
-  RetainPtr<const CPDF_Dictionary> pMarkInfo = pCatalog->GetDictFor("MarkInfo");
+  RetainPtr<const CPDF_Dictionary> pMarkInfo =
+      pDoc->GetRoot()->GetDictFor("MarkInfo");
   return pMarkInfo && pMarkInfo->GetIntegerFor("Marked");
 }
 
@@ -84,7 +84,8 @@ void CPDF_StructTree::LoadPageTree(RetainPtr<const CPDF_Dictionary> pPageDict) {
   if (parents_id < 0)
     return;
 
-  const CPDF_Array* pParentArray = ToArray(parent_tree.LookupValue(parents_id));
+  RetainPtr<const CPDF_Array> pParentArray =
+      ToArray(parent_tree.LookupValue(parents_id));
   if (!pParentArray)
     return;
 

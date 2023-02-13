@@ -330,6 +330,7 @@ struct Demo {
     bool use_staging_buffer = false;
     bool use_xlib = false;
     bool separate_present_queue = false;
+    bool invalid_gpu_selection = false;
     int32_t gpu_number = 0;
 
     vk::Instance inst;
@@ -706,14 +707,15 @@ void Demo::draw() {
         VERIFY(change_owner_result == vk::Result::eSuccess);
     }
 
+    const auto presentInfo = vk::PresentInfoKHR()
+                                 .setWaitSemaphores(separate_present_queue ? image_ownership_semaphores[frame_index]
+                                                                           : draw_complete_semaphores[frame_index])
+                                 .setSwapchains(swapchain)
+                                 .setImageIndices(current_buffer);
+
     // If we are using separate queues we have to wait for image ownership,
     // otherwise wait for draw complete
-    auto present_result =
-        present_queue.presentKHR(vk::PresentInfoKHR()
-                                     .setWaitSemaphores(separate_present_queue ? image_ownership_semaphores[frame_index]
-                                                                               : draw_complete_semaphores[frame_index])
-                                     .setSwapchains(swapchain)
-                                     .setImageIndices(current_buffer));
+    auto present_result = present_queue.presentKHR(&presentInfo);
     frame_index += 1;
     frame_index %= FRAME_LAG;
     if (present_result == vk::Result::eErrorOutOfDateKHR) {
@@ -901,7 +903,7 @@ void Demo::init(int argc, char **argv) {
         }
         if ((strcmp(argv[i], "--gpu_number") == 0) && (i < argc - 1)) {
             gpu_number = atoi(argv[i + 1]);
-            assert(gpu_number >= 0);
+            if (gpu_number < 0) invalid_gpu_selection = true;
             i++;
             continue;
         }
@@ -1241,7 +1243,8 @@ void Demo::init_vk() {
                          .setPApplicationName(APP_SHORT_NAME)
                          .setApplicationVersion(0)
                          .setPEngineName(APP_SHORT_NAME)
-                         .setEngineVersion(0);
+                         .setEngineVersion(0)
+                         .setApiVersion(VK_API_VERSION_1_0);
     auto const inst_info = vk::InstanceCreateInfo()
                                .setFlags(portabilityEnumerationActive ? vk::InstanceCreateFlagBits::eEnumeratePortabilityKHR
                                                                       : static_cast<vk::InstanceCreateFlagBits>(0))
@@ -1293,7 +1296,7 @@ void Demo::init_vk() {
             "vkEnumeratePhysicalDevices Failure");
     }
 
-    if (gpu_number >= 0 && !(static_cast<uint32_t>(gpu_number) < physical_devices.size())) {
+    if (invalid_gpu_selection || (gpu_number >= 0 && !(static_cast<uint32_t>(gpu_number) < physical_devices.size()))) {
         fprintf(stderr, "GPU %d specified is not present, GPU count = %zu\n", gpu_number, physical_devices.size());
         ERR_EXIT("Specified GPU number is not present", "User Error");
     }

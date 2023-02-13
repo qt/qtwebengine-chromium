@@ -63,9 +63,10 @@ export class BreakpointsSidebarPane extends UI.ThrottledWidget.ThrottledWidget {
           event.consume();
         });
     this.#breakpointsView.addEventListener(
-        SourcesComponents.BreakpointsView.PauseOnExceptionsStateChangedEvent.eventName, (event: Event) => {
-          const {data: {checked}} = event as SourcesComponents.BreakpointsView.PauseOnExceptionsStateChangedEvent;
-          this.#controller.setPauseOnExceptions(checked);
+        SourcesComponents.BreakpointsView.PauseOnUncaughtExceptionsStateChangedEvent.eventName, (event: Event) => {
+          const {data: {checked}} =
+              event as SourcesComponents.BreakpointsView.PauseOnUncaughtExceptionsStateChangedEvent;
+          this.#controller.setPauseOnUncaughtExceptions(checked);
           event.consume();
         });
     this.#breakpointsView.addEventListener(
@@ -93,7 +94,7 @@ export class BreakpointsSidebarController implements UI.ContextFlavorListener.Co
   readonly #breakpointItemToLocationMap =
       new WeakMap<SourcesComponents.BreakpointsView.BreakpointItem, Bindings.BreakpointManager.BreakpointLocation[]>();
   readonly #breakpointsActiveSetting: Common.Settings.Setting<boolean>;
-  readonly #pauseOnExceptionEnabledSetting: Common.Settings.Setting<boolean>;
+  readonly #pauseOnUncaughtExceptionSetting: Common.Settings.Setting<boolean>;
   readonly #pauseOnCaughtExceptionSetting: Common.Settings.Setting<boolean>;
 
   readonly #collapsedFilesSettings: Common.Settings.Setting<Platform.DevToolsPath.UrlString[]>;
@@ -104,7 +105,7 @@ export class BreakpointsSidebarController implements UI.ContextFlavorListener.Co
 
   private constructor(
       breakpointManager: Bindings.BreakpointManager.BreakpointManager, settings: Common.Settings.Settings) {
-    this.#collapsedFilesSettings = Common.Settings.Settings.instance().createLocalSetting('collapsedFiles', []);
+    this.#collapsedFilesSettings = Common.Settings.Settings.instance().createSetting('collapsedFiles', []);
     this.#collapsedFiles = new Set(this.#collapsedFilesSettings.get());
     this.#breakpointManager = breakpointManager;
     this.#breakpointManager.addEventListener(
@@ -113,8 +114,8 @@ export class BreakpointsSidebarController implements UI.ContextFlavorListener.Co
         Bindings.BreakpointManager.Events.BreakpointRemoved, this.#onBreakpointRemoved, this);
     this.#breakpointsActiveSetting = settings.moduleSetting('breakpointsActive');
     this.#breakpointsActiveSetting.addChangeListener(this.update, this);
-    this.#pauseOnExceptionEnabledSetting = settings.moduleSetting('pauseOnExceptionEnabled');
-    this.#pauseOnExceptionEnabledSetting.addChangeListener(this.update, this);
+    this.#pauseOnUncaughtExceptionSetting = settings.moduleSetting('pauseOnUncaughtException');
+    this.#pauseOnUncaughtExceptionSetting.addChangeListener(this.update, this);
     this.#pauseOnCaughtExceptionSetting = settings.moduleSetting('pauseOnCaughtException');
     this.#pauseOnCaughtExceptionSetting.addChangeListener(this.update, this);
   }
@@ -136,6 +137,12 @@ export class BreakpointsSidebarController implements UI.ContextFlavorListener.Co
 
   static removeInstance(): void {
     breakpointsViewControllerInstance = null;
+  }
+
+  static targetSupportsIndependentPauseOnExceptionToggles(): boolean {
+    const hasNodeTargets =
+        SDK.TargetManager.TargetManager.instance().targets().some(target => target.type() === SDK.Target.Type.Node);
+    return !hasNodeTargets;
   }
 
   flavorChanged(_object: Object|null): void {
@@ -191,8 +198,8 @@ export class BreakpointsSidebarController implements UI.ContextFlavorListener.Co
     }
   }
 
-  setPauseOnExceptions(value: boolean): void {
-    this.#pauseOnExceptionEnabledSetting.set(value);
+  setPauseOnUncaughtExceptions(value: boolean): void {
+    this.#pauseOnUncaughtExceptionSetting.set(value);
   }
 
   setPauseOnCaughtExceptions(value: boolean): void {
@@ -215,7 +222,8 @@ export class BreakpointsSidebarController implements UI.ContextFlavorListener.Co
 
   async getUpdatedBreakpointViewData(): Promise<SourcesComponents.BreakpointsView.BreakpointsViewData> {
     const breakpointsActive = this.#breakpointsActiveSetting.get();
-    const pauseOnExceptions = this.#pauseOnExceptionEnabledSetting.get();
+    const independentPauseToggles = BreakpointsSidebarController.targetSupportsIndependentPauseOnExceptionToggles();
+    const pauseOnUncaughtExceptions = this.#pauseOnUncaughtExceptionSetting.get();
     const pauseOnCaughtExceptions = this.#pauseOnCaughtExceptionSetting.get();
 
     const breakpointLocations = this.#getBreakpointLocations();
@@ -223,7 +231,8 @@ export class BreakpointsSidebarController implements UI.ContextFlavorListener.Co
       return {
         breakpointsActive,
         pauseOnCaughtExceptions,
-        pauseOnExceptions,
+        pauseOnUncaughtExceptions,
+        independentPauseToggles,
         groups: [],
       };
     }
@@ -231,8 +240,10 @@ export class BreakpointsSidebarController implements UI.ContextFlavorListener.Co
     const locationsGroupedById = this.#groupBreakpointLocationsById(breakpointLocations);
     const locationIdsByLineId = this.#getLocationIdsByLineId(breakpointLocations);
 
-    const content = await this.#getContent(locationsGroupedById);
-    const selectedUILocation = await this.#getHitUILocation();
+    const [content, selectedUILocation] = await Promise.all([
+      this.#getContent(locationsGroupedById),
+      this.#getHitUILocation(),
+    ]);
 
     const urlToGroup = new Map<Platform.DevToolsPath.UrlString, SourcesComponents.BreakpointsView.BreakpointGroup>();
 
@@ -247,9 +258,9 @@ export class BreakpointsSidebarController implements UI.ContextFlavorListener.Co
 
       const numBreakpointsOnLine = locationIdsByLineId.get(uiLocation.lineId()).size;
       const showColumn = numBreakpointsOnLine > 1;
-      const locationText = uiLocation.lineAndColumnText(showColumn);
+      const locationText = uiLocation.lineAndColumnText(showColumn) as string;
 
-      const text = (content[idx] as TextUtils.Text.Text);
+      const text = content[idx];
       const codeSnippet = text.lineAt(uiLocation.lineNumber);
 
       if (isHit && this.#collapsedFiles.has(sourceURL)) {
@@ -260,8 +271,15 @@ export class BreakpointsSidebarController implements UI.ContextFlavorListener.Co
 
       const status: SourcesComponents.BreakpointsView.BreakpointStatus = this.#getBreakpointState(locations);
       const {type, hoverText} = this.#getBreakpointTypeAndDetails(locations);
-      const item = {location: locationText, codeSnippet, isHit, status, type, hoverText} as
-          SourcesComponents.BreakpointsView.BreakpointItem;
+      const item = {
+        id: fstLocation.breakpoint.breakpointStorageId(),
+        location: locationText,
+        codeSnippet,
+        isHit,
+        status,
+        type,
+        hoverText,
+      };
       this.#breakpointItemToLocationMap.set(item, locations);
 
       let group = urlToGroup.get(sourceURL);
@@ -283,7 +301,8 @@ export class BreakpointsSidebarController implements UI.ContextFlavorListener.Co
     return {
       breakpointsActive,
       pauseOnCaughtExceptions,
-      pauseOnExceptions,
+      pauseOnUncaughtExceptions,
+      independentPauseToggles,
       groups: Array.from(urlToGroup.values()),
     };
   }

@@ -1,4 +1,4 @@
-// Copyright 2014 PDFium Authors. All rights reserved.
+// Copyright 2014 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -1451,7 +1451,7 @@ CXFA_LocaleMgr* CXFA_Document::GetLocaleMgr() {
 }
 
 cppgc::Heap* CXFA_Document::GetHeap() const {
-  return heap_.Get();
+  return heap_;
 }
 
 CFXJSE_Engine* CXFA_Document::InitScriptContext(CJS_Runtime* fxjs_runtime) {

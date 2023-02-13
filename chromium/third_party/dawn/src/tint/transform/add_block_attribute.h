@@ -22,11 +22,8 @@
 
 namespace tint::transform {
 
-/// AddBlockAttribute is a transform that adds an
-/// `@internal(block)` attribute to any structure that is used as the
-/// store type of a buffer. If that structure is nested inside another structure
-/// or an array, then it is wrapped inside another structure which gets the
-/// `@internal(block)` attribute instead.
+/// AddBlockAttribute is a transform that wrap the store type of a buffer into a struct if possible,
+/// then adds an `@internal(block)` attribute to the wrapper struct.
 class AddBlockAttribute final : public Castable<AddBlockAttribute, Transform> {
   public:
     /// BlockAttribute is an InternalAttribute that is used to decorate a
@@ -56,14 +53,10 @@ class AddBlockAttribute final : public Castable<AddBlockAttribute, Transform> {
     /// Destructor
     ~AddBlockAttribute() override;
 
-  protected:
-    /// Runs the transform using the CloneContext built for transforming a
-    /// program. Run() is responsible for calling Clone() on the CloneContext.
-    /// @param ctx the CloneContext primed with the input program and
-    /// ProgramBuilder
-    /// @param inputs optional extra transform-specific input data
-    /// @param outputs optional extra transform-specific output data
-    void Run(CloneContext& ctx, const DataMap& inputs, DataMap& outputs) const override;
+    /// @copydoc Transform::Apply
+    ApplyResult Apply(const Program* program,
+                      const DataMap& inputs,
+                      DataMap& outputs) const override;
 };
 
 }  // namespace tint::transform

@@ -7,6 +7,7 @@
 
 #include "quiche/quic/core/http/http_encoder.h"
 #include "quiche/quic/core/quic_stream.h"
+#include "quiche/quic/core/quic_stream_priority.h"
 #include "quiche/quic/core/quic_types.h"
 #include "quiche/quic/platform/api/quic_export.h"
 #include "quiche/quic/platform/api/quic_logging.h"
@@ -39,7 +40,7 @@ class QUIC_EXPORT_PRIVATE QuicSendControlStream : public QuicStream {
 
   // Send a PRIORITY_UPDATE frame on this stream, and a SETTINGS frame
   // beforehand if one has not been already sent.
-  void WritePriorityUpdate(const PriorityUpdateFrame& priority_update);
+  void WritePriorityUpdate(QuicStreamId stream_id, QuicStreamPriority priority);
 
   // Send a GOAWAY frame on this stream, and a SETTINGS frame beforehand if one
   // has not been already sent.

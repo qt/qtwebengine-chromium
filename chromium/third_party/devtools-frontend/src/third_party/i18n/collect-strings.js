@@ -14,6 +14,8 @@ const path = require('path');
 const tsc = require('typescript');
 const {collectAndBakeCtcStrings} = require('./bake-ctc-to-lhl.js');
 
+const {writeIfChanged} = require('../../scripts/build/ninja/write-if-changed.js');
+
 const OUTPUT_ROOT = path.join(process.cwd(), 'front_end');
 const UISTRINGS_REGEX = /UIStrings = .*?\};\n/s;
 
@@ -21,7 +23,7 @@ const UISTRINGS_REGEX = /UIStrings = .*?\};\n/s;
 /** @typedef {Required<Pick<CtcMessage, 'message'|'placeholders'>>} IncrementalCtc */
 /** @typedef {{message: string, description: string, examples: Record<string, string>}} ParsedUIString */
 
-const ignoredPathComponents = [
+const IGNORED_PATH_COMPONENTS = [
   '**/.git/**',
   '**/*_test_runner/**',
   '**/third_party/**',
@@ -593,6 +595,7 @@ const strings = {};
 /**
  * Collects all LHL messsages defined in UIString from Javascript files in dir,
  * and converts them into CTC.
+ * @param {string} directory
  * @return {Record<string, CtcMessage>}
  */
 function collectAllStringsInDir(directory) {
@@ -600,12 +603,12 @@ function collectAllStringsInDir(directory) {
   // *all* paths will be ignored. To avoid this, make the directory relative to
   // CWD.
   directory = path.relative(process.cwd(), directory)
-  // Globs require UNIX path separators, even on Windows
-  const globPattern = path.join(directory, '/**/*.{js,ts}').replace(/\\/g, '/');
-  const files = glob.sync(globPattern, {
-    ignore: ignoredPathComponents,
+  const files = glob.sync('**/*.{js,ts}', {
+    cwd: directory,
+    ignore: IGNORED_PATH_COMPONENTS,
   });
-  for (const absolutePath of files) {
+  for (const pathRelativeToDirectory of files) {
+    const absolutePath = path.join(directory, pathRelativeToDirectory);
     const content = fs.readFileSync(absolutePath, 'utf8');
     const regexMatch = content.match(UISTRINGS_REGEX);
 
@@ -643,9 +646,10 @@ function collectAllStringsInDir(directory) {
         description,
         placeholders,
       };
-      // slice out "front_end/" and use the path relative to front_end as id
-      const pathRelativeToFrontend = path.relative(directory, absolutePath).replace(/\\/g, '/');
-      const messageKey = `${pathRelativeToFrontend} | ${key}`;
+      const messageKey = `${pathRelativeToDirectory} | ${key}`;
+      if (strings[messageKey] !== undefined) {
+        throw new Error(`Duplicate message key '${messageKey}', please rename the '${key}' property.`);
+      }
       strings[messageKey] = ctc;
 
       // check for duplicates, if duplicate, add @description as @meaning to both
@@ -669,11 +673,12 @@ function collectAllStringsInDir(directory) {
 }
 
 /**
+ * @param {string} directory
  * @param {string} locale
  * @param {Record<string, CtcMessage>} strings
  */
-function writeStringsToCtcFiles(locale, strings) {
-  const fullPath = path.join(OUTPUT_ROOT, `core/i18n/locales/${locale}.ctc.json`);
+function writeStringsToCtcFiles(directory, locale, strings) {
+  const fullPath = path.join(directory, `${locale}.ctc.json`);
   /** @type {Record<string, CtcMessage>} */
   const output = {};
   const sortedEntries = Object.entries(strings).sort(([keyA], [keyB]) => keyA.localeCompare(keyB));
@@ -681,7 +686,7 @@ function writeStringsToCtcFiles(locale, strings) {
     output[key] = defn;
   }
 
-  fs.writeFileSync(fullPath, JSON.stringify(output, null, 2) + '\n');
+  writeIfChanged(fullPath, JSON.stringify(output, null, 2) + '\n');
 }
 
 // @ts-ignore Test if called from the CLI or as a module.
@@ -699,17 +704,16 @@ if (require.main === module) {
     console.log(`Collected from ${directory}!`);
   }
 
-  writeStringsToCtcFiles('en-US', collectedStrings);
-  // Generate local pseudolocalized files for debugging while translating
-  writeStringsToCtcFiles('en-XL', createPsuedoLocaleStrings(collectedStrings));
-
-  // Bake the ctc en-US and en-XL files into en-US and en-XL LHL format
-  const lhl = collectAndBakeCtcStrings(
-      path.join(OUTPUT_ROOT, 'core/i18n/locales/'), path.join(OUTPUT_ROOT, 'core/i18n/locales/'));
+  const outputDirectory = path.join(OUTPUT_ROOT, 'core/i18n/locales');
+  writeStringsToCtcFiles(outputDirectory, 'en-US', collectedStrings);
 }
 
 module.exports = {
   parseUIStrings,
   createPsuedoLocaleStrings,
   convertMessageToCtc,
+  collectAllStringsInDir,
+  collectAndBakeCtcStrings,
+  writeStringsToCtcFiles,
+  IGNORED_PATH_COMPONENTS,
 };

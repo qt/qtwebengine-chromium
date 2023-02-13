@@ -240,9 +240,11 @@ void aom_get8x8var_sse2(const uint8_t *src_ptr, int src_stride,
   variance_final_128_pel_sse2(vsse, vsum, sse, sum);
 }
 
-void aom_get_sse_sum_8x8_quad_sse2(const uint8_t *src_ptr, int src_stride,
-                                   const uint8_t *ref_ptr, int ref_stride,
-                                   unsigned int *sse, int *sum) {
+void aom_get_var_sse_sum_8x8_quad_sse2(const uint8_t *src_ptr, int src_stride,
+                                       const uint8_t *ref_ptr, int ref_stride,
+                                       uint32_t *sse8x8, int *sum8x8,
+                                       unsigned int *tot_sse, int *tot_sum,
+                                       uint32_t *var8x8) {
   // Loop over 4 8x8 blocks. Process one 8x32 block.
   for (int k = 0; k < 4; k++) {
     const uint8_t *src = src_ptr;
@@ -259,8 +261,14 @@ void aom_get_sse_sum_8x8_quad_sse2(const uint8_t *src_ptr, int src_stride,
       src += src_stride;
       ref += ref_stride;
     }
-    variance_final_128_pel_sse2(vsse, vsum, &sse[k], &sum[k]);
+    variance_final_128_pel_sse2(vsse, vsum, &sse8x8[k], &sum8x8[k]);
   }
+
+  // Calculate variance at 8x8 level and total sse, sum of 8x32 block.
+  *tot_sse += sse8x8[0] + sse8x8[1] + sse8x8[2] + sse8x8[3];
+  *tot_sum += sum8x8[0] + sum8x8[1] + sum8x8[2] + sum8x8[3];
+  for (int i = 0; i < 4; i++)
+    var8x8[i] = sse8x8[i] - (uint32_t)(((int64_t)sum8x8[i] * sum8x8[i]) >> 6);
 }
 
 #define AOM_VAR_NO_LOOP_SSE2(bw, bh, bits, max_pixels)                        \
@@ -673,7 +681,7 @@ uint64_t aom_mse_4xh_16bit_sse2(uint8_t *dst, int dstride, uint16_t *src,
   uint64_t sum = 0;
   __m128i dst0_8x8, dst1_8x8, dst_16x8;
   __m128i src0_16x4, src1_16x4, src_16x8;
-  __m128i res0_32x4, res1_32x4, res0_64x4, res1_64x4, res2_64x4, res3_64x4;
+  __m128i res0_32x4, res0_64x2, res1_64x2;
   __m128i sub_result_16x8;
   const __m128i zeros = _mm_setzero_si128();
   __m128i square_result = _mm_setzero_si128();
@@ -688,26 +696,17 @@ uint64_t aom_mse_4xh_16bit_sse2(uint8_t *dst, int dstride, uint16_t *src,
 
     sub_result_16x8 = _mm_sub_epi16(src_16x8, dst_16x8);
 
-    res0_32x4 = _mm_unpacklo_epi16(sub_result_16x8, zeros);
-    res1_32x4 = _mm_unpackhi_epi16(sub_result_16x8, zeros);
+    res0_32x4 = _mm_madd_epi16(sub_result_16x8, sub_result_16x8);
 
-    res0_32x4 = _mm_madd_epi16(res0_32x4, res0_32x4);
-    res1_32x4 = _mm_madd_epi16(res1_32x4, res1_32x4);
+    res0_64x2 = _mm_unpacklo_epi32(res0_32x4, zeros);
+    res1_64x2 = _mm_unpackhi_epi32(res0_32x4, zeros);
 
-    res0_64x4 = _mm_unpacklo_epi32(res0_32x4, zeros);
-    res1_64x4 = _mm_unpackhi_epi32(res0_32x4, zeros);
-    res2_64x4 = _mm_unpacklo_epi32(res1_32x4, zeros);
-    res3_64x4 = _mm_unpackhi_epi32(res1_32x4, zeros);
-
-    square_result = _mm_add_epi64(
-        square_result,
-        _mm_add_epi64(
-            _mm_add_epi64(_mm_add_epi64(res0_64x4, res1_64x4), res2_64x4),
-            res3_64x4));
+    square_result =
+        _mm_add_epi64(square_result, _mm_add_epi64(res0_64x2, res1_64x2));
   }
-  const __m128i sum_1x64 =
+  const __m128i sum_64x1 =
       _mm_add_epi64(square_result, _mm_srli_si128(square_result, 8));
-  xx_storel_64(&sum, sum_1x64);
+  xx_storel_64(&sum, sum_64x1);
   return sum;
 }
 
@@ -716,7 +715,7 @@ uint64_t aom_mse_8xh_16bit_sse2(uint8_t *dst, int dstride, uint16_t *src,
   uint64_t sum = 0;
   __m128i dst_8x8, dst_16x8;
   __m128i src_16x8;
-  __m128i res0_32x4, res1_32x4, res0_64x4, res1_64x4, res2_64x4, res3_64x4;
+  __m128i res0_32x4, res0_64x2, res1_64x2;
   __m128i sub_result_16x8;
   const __m128i zeros = _mm_setzero_si128();
   __m128i square_result = _mm_setzero_si128();
@@ -729,26 +728,17 @@ uint64_t aom_mse_8xh_16bit_sse2(uint8_t *dst, int dstride, uint16_t *src,
 
     sub_result_16x8 = _mm_sub_epi16(src_16x8, dst_16x8);
 
-    res0_32x4 = _mm_unpacklo_epi16(sub_result_16x8, zeros);
-    res1_32x4 = _mm_unpackhi_epi16(sub_result_16x8, zeros);
+    res0_32x4 = _mm_madd_epi16(sub_result_16x8, sub_result_16x8);
 
-    res0_32x4 = _mm_madd_epi16(res0_32x4, res0_32x4);
-    res1_32x4 = _mm_madd_epi16(res1_32x4, res1_32x4);
+    res0_64x2 = _mm_unpacklo_epi32(res0_32x4, zeros);
+    res1_64x2 = _mm_unpackhi_epi32(res0_32x4, zeros);
 
-    res0_64x4 = _mm_unpacklo_epi32(res0_32x4, zeros);
-    res1_64x4 = _mm_unpackhi_epi32(res0_32x4, zeros);
-    res2_64x4 = _mm_unpacklo_epi32(res1_32x4, zeros);
-    res3_64x4 = _mm_unpackhi_epi32(res1_32x4, zeros);
-
-    square_result = _mm_add_epi64(
-        square_result,
-        _mm_add_epi64(
-            _mm_add_epi64(_mm_add_epi64(res0_64x4, res1_64x4), res2_64x4),
-            res3_64x4));
+    square_result =
+        _mm_add_epi64(square_result, _mm_add_epi64(res0_64x2, res1_64x2));
   }
-  const __m128i sum_1x64 =
+  const __m128i sum_64x1 =
       _mm_add_epi64(square_result, _mm_srli_si128(square_result, 8));
-  xx_storel_64(&sum, sum_1x64);
+  xx_storel_64(&sum, sum_64x1);
   return sum;
 }
 

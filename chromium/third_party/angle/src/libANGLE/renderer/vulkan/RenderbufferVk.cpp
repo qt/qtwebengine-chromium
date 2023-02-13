@@ -201,6 +201,8 @@ angle::Result RenderbufferVk::setStorageEGLImageTarget(const gl::Context *contex
         ANGLE_TRY(contextVk->getOutsideRenderPassCommandBuffer(access, &commandBuffer));
         mImage->changeLayoutAndQueue(contextVk, aspect, vk::ImageLayout::ColorAttachment,
                                      rendererQueueFamilyIndex, commandBuffer);
+
+        ANGLE_TRY(contextVk->onEGLImageQueueChange());
     }
 
     mRenderTarget.init(mImage, &mImageViews, nullptr, nullptr, imageVk->getImageLevel(),
@@ -306,8 +308,8 @@ void RenderbufferVk::releaseImage(ContextVk *contextVk)
     else
     {
         mRenderTarget.release(contextVk);
-        mImage->collectViewGarbage(renderer, &mImageViews);
-        mImage->collectViewGarbage(renderer, &mMultisampledImageViews);
+        mImageViews.release(renderer, mImage->getResourceUse());
+        mMultisampledImageViews.release(renderer, mImage->getResourceUse());
     }
 
     if (mImage && mOwnsImage)

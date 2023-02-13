@@ -10,17 +10,14 @@ gclient_gn_args = [
 vars = {
   'build_with_chromium': False,
 
-  # By default, do not checkout the re-client binaries.
-  'checkout_reclient': False,
-
   'build_url': 'https://chromium.googlesource.com/chromium/src/build.git',
-  'build_revision': '1c4f38fd4f534d78b72cefc376a03b3e8b486e7c',
+  'build_revision': 'c91a4dbdb666e9bd82b187109ad311c58a552ce6',
 
   'buildtools_url': 'https://chromium.googlesource.com/chromium/src/buildtools.git',
-  'buildtools_revision': '24fa2da896a027e7202bb8886177cccfe885b67d',
+  'buildtools_revision': 'dcbf73cdcbcd0a2948b9e40bf500de166f622261',
 
   'depot_tools_url': 'https://chromium.googlesource.com/chromium/tools/depot_tools.git',
-  'depot_tools_revision': '2c0a8c736a59044e4acc7be9e172343adc5c4310',
+  'depot_tools_revision': '41a2d0f1a0173723f63ca2994e17c81eaf302b65',
 
   'inspector_protocol_url': 'https://chromium.googlesource.com/deps/inspector_protocol',
   'inspector_protocol_revision': 'dec7ec1932f5277b933ed8a675cc6eb7cfc36f88',
@@ -31,22 +28,21 @@ vars = {
   'emscripten_tag': 'ade9d780ff17c88d81aa13860361743e3c1e1396',
 
   # GN CIPD package version.
-  'gn_version': 'git_revision:b9c6c19be95a3863e02f00f1fe403b2502e345b6',
+  'gn_version': 'git_revision:5e19d2fb166fbd4f6f32147fbb2f497091a54ad8',
 
   # ninja CIPD package version.
   # https://chrome-infra-packages.appspot.com/p/infra/3pp/tools/ninja
   'ninja_version': 'version:2@1.8.2.chromium.3',
 
-  # reclient CIPD package version
-  'reclient_version': 're_client_version:0.19.2.319f839',
-
   # Chromium build number for unit tests. It should be regularly updated to
   # the content of https://commondatastorage.googleapis.com/chromium-browser-snapshots/Linux_x64/LAST_CHANGE
-  'chromium_linux': '1058626',
+  'chromium_linux': '1083678',
   # the content of https://commondatastorage.googleapis.com/chromium-browser-snapshots/Win_x64/LAST_CHANGE
-  'chromium_win': '1058608',
+  'chromium_win': '1083645',
   # the content of https://commondatastorage.googleapis.com/chromium-browser-snapshots/Mac/LAST_CHANGE
-  'chromium_mac': '1058622',
+  'chromium_mac': '1083674',
+  # the content of https://commondatastorage.googleapis.com/chromium-browser-snapshots/Mac_Arm/LAST_CHANGE
+  'chromium_mac_arm': '1083662',
 }
 
 # Only these hosts are allowed for dependencies in this DEPS file.
@@ -94,16 +90,6 @@ deps = {
     'dep_type': 'cipd',
     'condition': 'host_os == "win" and build_with_chromium == False',
   },
-  'buildtools/reclient': {
-    'packages': [
-      {
-        'package': 'infra/rbe/client/${{platform}}',
-        'version': Var('reclient_version'),
-      }
-    ],
-    'dep_type': 'cipd',
-    'condition': '(host_os == "linux" or host_os == "win") and checkout_reclient',
-  },
   'third_party/esbuild': {
     'packages': [
       {
@@ -134,6 +120,7 @@ deps = {
       }
     ],
     'dep_type': 'cipd',
+    'condition': 'build_with_chromium == False',
   },
 }
 
@@ -259,13 +246,25 @@ hooks = [
   {
     'name': 'download_chromium_mac',
     'pattern': '.',
-    'condition': 'host_os == "mac" and build_with_chromium == False',
+    'condition': 'host_os == "mac" and build_with_chromium == False and host_cpu != "arm64"',
     'action': [ 'python3',
                 'scripts/deps/download_chromium.py',
                 'https://commondatastorage.googleapis.com/chromium-browser-snapshots/Mac/' + Var('chromium_mac') + '/chrome-mac.zip',
                 'third_party/chrome',
                 'chrome-mac/Chromium.app/Contents',
                 Var('chromium_mac'),
+    ],
+  },
+  {
+    'name': 'download_chromium_mac',
+    'pattern': '.',
+    'condition': 'host_os == "mac" and build_with_chromium == False and host_cpu == "arm64"',
+    'action': [ 'python3',
+                'scripts/deps/download_chromium.py',
+                'https://commondatastorage.googleapis.com/chromium-browser-snapshots/Mac_Arm/' + Var('chromium_mac_arm') + '/chrome-mac.zip',
+                'third_party/chrome',
+                'chrome-mac/Chromium.app/Contents',
+                Var('chromium_mac_arm'),
     ],
   },
   {

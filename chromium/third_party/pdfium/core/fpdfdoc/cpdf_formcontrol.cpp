@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2016 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -40,10 +40,9 @@ static_assert(kHighlightModes[CPDF_FormControl::kToggle] == 'T',
 }  // namespace
 
 CPDF_FormControl::CPDF_FormControl(CPDF_FormField* pField,
-                                   RetainPtr<CPDF_Dictionary> pWidgetDict)
-    : m_pField(pField),
-      m_pWidgetDict(std::move(pWidgetDict)),
-      m_pForm(m_pField->GetForm()) {
+                                   RetainPtr<CPDF_Dictionary> pWidgetDict,
+                                   CPDF_InteractiveForm* pForm)
+    : m_pField(pField), m_pWidgetDict(std::move(pWidgetDict)), m_pForm(pForm) {
   DCHECK(m_pWidgetDict);
 }
 
@@ -87,7 +86,7 @@ WideString CPDF_FormControl::GetExportValue() const {
   DCHECK(GetType() == CPDF_FormField::kCheckBox ||
          GetType() == CPDF_FormField::kRadioButton);
   ByteString csOn = GetOnStateName();
-  const CPDF_Array* pArray = ToArray(m_pField->GetFieldAttr("Opt"));
+  RetainPtr<const CPDF_Array> pArray = ToArray(m_pField->GetFieldAttr("Opt"));
   if (pArray)
     csOn = pArray->GetByteStringAt(m_pField->GetControlIndex(this));
   if (csOn.IsEmpty())
@@ -106,7 +105,7 @@ bool CPDF_FormControl::IsChecked() const {
 bool CPDF_FormControl::IsDefaultChecked() const {
   DCHECK(GetType() == CPDF_FormField::kCheckBox ||
          GetType() == CPDF_FormField::kRadioButton);
-  const CPDF_Object* pDV = m_pField->GetFieldAttr("DV");
+  RetainPtr<const CPDF_Object> pDV = m_pField->GetFieldAttr("DV");
   if (!pDV)
     return false;
 
@@ -185,11 +184,12 @@ CPDF_DefaultAppearance CPDF_FormControl::GetDefaultAppearance() const {
     return CPDF_DefaultAppearance(
         m_pWidgetDict->GetByteStringFor(pdfium::form_fields::kDA));
   }
-  const CPDF_Object* pObj = m_pField->GetFieldAttr(pdfium::form_fields::kDA);
-  if (!pObj)
-    return m_pForm->GetDefaultAppearance();
+  RetainPtr<const CPDF_Object> pObj =
+      m_pField->GetFieldAttr(pdfium::form_fields::kDA);
+  if (pObj)
+    return CPDF_DefaultAppearance(pObj->GetString());
 
-  return CPDF_DefaultAppearance(pObj->GetString());
+  return m_pForm->GetDefaultAppearance();
 }
 
 absl::optional<WideString> CPDF_FormControl::GetDefaultControlFontName() const {
@@ -207,10 +207,10 @@ RetainPtr<CPDF_Font> CPDF_FormControl::GetDefaultControlFont() const {
   if (!csFontNameTag.has_value() || csFontNameTag->IsEmpty())
     return nullptr;
 
-  CPDF_Object* pObj =
-      CPDF_FormField::GetFieldAttrForDict(m_pWidgetDict.Get(), "DR");
-  if (CPDF_Dictionary* pDict = ToDictionary(pObj)) {
-    RetainPtr<CPDF_Dictionary> pFonts = pDict->GetMutableDictFor("Font");
+  RetainPtr<CPDF_Dictionary> pDRDict = ToDictionary(
+      CPDF_FormField::GetMutableFieldAttrForDict(m_pWidgetDict.Get(), "DR"));
+  if (pDRDict) {
+    RetainPtr<CPDF_Dictionary> pFonts = pDRDict->GetMutableDictFor("Font");
     if (ValidateFontResourceDict(pFonts.Get())) {
       RetainPtr<CPDF_Dictionary> pElement =
           pFonts->GetMutableDictFor(csFontNameTag.value());
@@ -227,8 +227,8 @@ RetainPtr<CPDF_Font> CPDF_FormControl::GetDefaultControlFont() const {
     return pFormFont;
 
   RetainPtr<CPDF_Dictionary> pPageDict = m_pWidgetDict->GetMutableDictFor("P");
-  CPDF_Dictionary* pDict = ToDictionary(
-      CPDF_FormField::GetFieldAttrForDict(pPageDict.Get(), "Resources"));
+  RetainPtr<CPDF_Dictionary> pDict = ToDictionary(
+      CPDF_FormField::GetMutableFieldAttrForDict(pPageDict.Get(), "Resources"));
   if (!pDict)
     return nullptr;
 
@@ -248,7 +248,8 @@ int CPDF_FormControl::GetControlAlignment() const {
   if (m_pWidgetDict->KeyExist(pdfium::form_fields::kQ))
     return m_pWidgetDict->GetIntegerFor(pdfium::form_fields::kQ, 0);
 
-  const CPDF_Object* pObj = m_pField->GetFieldAttr(pdfium::form_fields::kQ);
+  RetainPtr<const CPDF_Object> pObj =
+      m_pField->GetFieldAttr(pdfium::form_fields::kQ);
   if (pObj)
     return pObj->GetInteger();
 

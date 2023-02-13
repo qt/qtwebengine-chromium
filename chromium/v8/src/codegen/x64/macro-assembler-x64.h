@@ -116,7 +116,7 @@ class V8_EXPORT_PRIVATE TurboAssembler
 
   // Calculate the number of stack slots to reserve for arguments when calling a
   // C function.
-  int ArgumentStackSlotsForCFunctionCall(int num_arguments);
+  static int ArgumentStackSlotsForCFunctionCall(int num_arguments);
 
   void CheckPageFlag(Register object, Register scratch, int mask, Condition cc,
                      Label* condition_met,
@@ -203,6 +203,10 @@ class V8_EXPORT_PRIVATE TurboAssembler
   void Cmp(Register dst, Smi src);
   void Cmp(Operand dst, Smi src);
   void Cmp(Register dst, int32_t src);
+
+  void CmpTagged(const Register& src1, const Register& src2) {
+    cmp_tagged(src1, src2);
+  }
 
   // ---------------------------------------------------------------------------
   // Conversions between tagged smi values and non-tagged integer values.
@@ -390,6 +394,7 @@ class V8_EXPORT_PRIVATE TurboAssembler
   void CallBuiltinByIndex(Register builtin_index);
   void CallBuiltin(Builtin builtin);
   void TailCallBuiltin(Builtin builtin);
+  void TailCallBuiltin(Builtin builtin, Condition cc);
 
   void LoadCodeObjectEntry(Register destination, Register code_object);
   void CallCodeObject(Register code_object);
@@ -418,8 +423,10 @@ class V8_EXPORT_PRIVATE TurboAssembler
   void CodeDataContainerFromCodeT(Register destination, Register codet);
 
   void Jump(Address destination, RelocInfo::Mode rmode);
+  void Jump(Address destination, RelocInfo::Mode rmode, Condition cc);
   void Jump(const ExternalReference& reference);
   void Jump(Operand op);
+  void Jump(Operand op, Condition cc);
   void Jump(Handle<CodeT> code_object, RelocInfo::Mode rmode);
   void Jump(Handle<CodeT> code_object, RelocInfo::Mode rmode, Condition cc);
 
@@ -943,8 +950,7 @@ class V8_EXPORT_PRIVATE MacroAssembler : public TurboAssembler {
  private:
   // Helper functions for generating invokes.
   void InvokePrologue(Register expected_parameter_count,
-                      Register actual_parameter_count, Label* done,
-                      InvokeType type);
+                      Register actual_parameter_count, InvokeType type);
 
   void EnterExitFramePrologue(Register saved_rax_reg,
                               StackFrame::Type frame_type);
@@ -964,6 +970,11 @@ class V8_EXPORT_PRIVATE MacroAssembler : public TurboAssembler {
 // Generate an Operand for loading a field from an object.
 inline Operand FieldOperand(Register object, int offset) {
   return Operand(object, offset - kHeapObjectTag);
+}
+
+// For compatibility with platform-independent code.
+inline MemOperand FieldMemOperand(Register object, int offset) {
+  return MemOperand(object, offset - kHeapObjectTag);
 }
 
 // Generate an Operand for loading a field from an object. Object pointer is a

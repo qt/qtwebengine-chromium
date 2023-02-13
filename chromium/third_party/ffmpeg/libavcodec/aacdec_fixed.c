@@ -58,15 +58,14 @@
  * @author Stanislav Ocovaj ( stanislav.ocovaj imgtec com )
  */
 
-#define FFT_FLOAT 0
 #define USE_FIXED 1
+#define TX_TYPE AV_TX_INT32_MDCT
 
 #include "libavutil/fixed_dsp.h"
 #include "libavutil/opt.h"
 #include "avcodec.h"
 #include "codec_internal.h"
 #include "get_bits.h"
-#include "fft.h"
 #include "lpc.h"
 #include "kbdwin.h"
 #include "sinewin_fixed_tablegen.h"
@@ -87,6 +86,8 @@
 
 DECLARE_ALIGNED(32, static int, AAC_RENAME2(aac_kbd_long_1024))[1024];
 DECLARE_ALIGNED(32, static int, AAC_RENAME2(aac_kbd_short_128))[128];
+DECLARE_ALIGNED(32, static int, AAC_RENAME2(aac_kbd_long_960))[960];
+DECLARE_ALIGNED(32, static int, AAC_RENAME2(aac_kbd_short_120))[120];
 
 static av_always_inline void reset_predict_state(PredictorState *ps)
 {
@@ -464,9 +465,7 @@ const FFCodec ff_aac_fixed_decoder = {
     },
     .p.capabilities  = AV_CODEC_CAP_CHANNEL_CONF | AV_CODEC_CAP_DR1,
     .caps_internal   = FF_CODEC_CAP_INIT_CLEANUP,
-#if FF_API_OLD_CHANNEL_LAYOUT
-    .p.channel_layouts = aac_channel_layout,
-#endif
+    CODEC_OLD_CHANNEL_LAYOUTS_ARRAY(aac_channel_layout)
     .p.ch_layouts    = aac_ch_layout,
     .p.priv_class    = &aac_decoder_class,
     .p.profiles      = NULL_IF_CONFIG_SMALL(ff_aac_profiles),

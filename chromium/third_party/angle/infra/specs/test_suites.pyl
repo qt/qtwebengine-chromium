@@ -695,6 +695,7 @@
         },
         'args': [
           '--log=debug',
+          '--samples-per-test=6',
           '--show-test-stdout',
           '--split-shard-samples',
         ],
@@ -753,6 +754,120 @@
       }
     },
 
+    'angle_trace_interpreter_isolated_scripts': {
+      'angle_trace_interpreter_tests': {
+        'args': [
+          '--log=debug',
+          'interpret',
+          'trex_200',
+          '-L=2',
+          '--show-test-stdout',
+        ],
+      },
+    },
+
+    'angle_trace_perf_native_isolated_scripts': {
+      'angle_trace_perf_native_tests': {
+        'android_args': {
+          '--trial-time=10',
+        },
+        'args': [
+          '--log=debug',
+          '--show-test-stdout',
+          '--split-shard-samples',
+          '--use-gl=native',
+          '--trace-tests',
+        ],
+        'merge': {
+          'script': '//scripts/process_angle_perf_results.py',
+        },
+        'android_swarming': {
+          'shards': 30,
+        },
+        'swarming': {
+          'shards': 10,
+        },
+        'test': 'angle_trace_perf_tests',
+      },
+    },
+
+    'angle_trace_perf_native_smoke_isolated_scripts': {
+      'angle_trace_perf_native_tests': {
+        'args': [
+          '--log=debug',
+          '--smoke-test-mode',
+          '--show-test-stdout',
+          '--use-gl=native',
+          '--trace-tests',
+        ],
+        'merge': {
+          'script': '//scripts/process_angle_perf_results.py',
+          # Does not upload to the perf dashboard
+          'args': [
+            '--smoke-test-mode',
+          ],
+        },
+        'swarming': {
+          'shards': 2,
+        },
+        'android_swarming': {
+          'shards': 6,
+        },
+        'test': 'angle_trace_perf_tests',
+      },
+    },
+
+    'angle_trace_perf_vulkan_isolated_scripts': {
+      'angle_trace_perf_vulkan_tests': {
+        'android_args': {
+          '--trial-time=10',
+        },
+        'args': [
+          '--log=debug',
+          '--show-test-stdout',
+          '--split-shard-samples',
+          '--use-angle=vulkan',
+          '--trace-tests',
+        ],
+        'merge': {
+          'script': '//scripts/process_angle_perf_results.py',
+        },
+        'android_swarming': {
+          'shards': 30,
+        },
+        'swarming': {
+          'shards': 10,
+        },
+        'test': 'angle_trace_perf_tests',
+      },
+    },
+
+    'angle_trace_perf_vulkan_smoke_isolated_scripts': {
+      'angle_trace_perf_vulkan_tests': {
+        'args': [
+          '--log=debug',
+          '--smoke-test-mode',
+          '--show-test-stdout',
+          '--use-angle=vulkan',
+          '--trace-tests',
+        ],
+        'merge': {
+          'script': '//scripts/process_angle_perf_results.py',
+          # Does not upload to the perf dashboard
+          'args': [
+            '--smoke-test-mode',
+          ],
+        },
+        'swarming': {
+          'shards': 2,
+        },
+        'android_swarming': {
+          'shards': 6,
+        },
+        'test': 'angle_trace_perf_tests',
+      },
+    },
+
     'angle_unit_gtests': {
       'angle_unittests': {
         'android_args': [
@@ -775,7 +890,7 @@
       },
     },
 
-    'swangle_deqp_egl_slow_tests': {
+    'swangle_deqp_egl_slow_flaky_tests': {
       'angle_deqp_egl_tests': {
         'args': [
           '--use-angle=swiftshader',
@@ -849,6 +964,18 @@
         'args': [
           '--use-angle=swiftshader',
         ],
+        'use_isolated_scripts_api': True,
+      },
+    },
+
+    'swangle_deqp_gles31_slow_tests': {
+      'angle_deqp_gles31_tests': {
+        'args': [
+          '--use-angle=swiftshader',
+        ],
+        'swarming': {
+          'shards': 14,
+        },
         'use_isolated_scripts_api': True,
       },
     },
@@ -943,6 +1070,20 @@
       },
     },
 
+    'swangle_end2end_slow_flaky_tests': {
+      'angle_end2end_tests': {
+        'args': [
+          '--gtest_filter=*Vulkan_SwiftShader*',
+          # Flaky retries enabled on ASAN/TSAN. http://anglebug.com/7772
+          '--flaky-retries=2',
+        ],
+        'use_isolated_scripts_api': True,
+        'swarming': {
+          'shards': 6,
+        },
+      },
+    },
+
     'swangle_end2end_slow_tests': {
       'angle_end2end_tests': {
         'args': [
@@ -1029,6 +1170,15 @@
     'common_isolated_scripts': [
       'angle_perf_smoke_isolated_scripts',
       'angle_restricted_trace_gold_isolated_scripts',
+      'angle_trace_interpreter_isolated_scripts',
+      'angle_trace_perf_native_smoke_isolated_scripts',
+      'angle_trace_perf_vulkan_smoke_isolated_scripts',
+    ],
+
+    'common_perf_isolated_scripts': [
+      'angle_perf_isolated_scripts',
+      'angle_trace_perf_native_isolated_scripts',
+      'angle_trace_perf_vulkan_isolated_scripts',
     ],
 
     'linux_intel_gtests': [
@@ -1099,13 +1249,13 @@
       'swangle_white_box_tests',
     ],
 
-    'swangle_non_deqp_slow_gtests': [
-      'swangle_end2end_slow_tests',
+    'swangle_non_deqp_slow_flaky_gtests': [
+      'swangle_end2end_slow_flaky_tests',
       'swangle_white_box_tests',
     ],
 
-    'swangle_slow_gtests': [
-      'swangle_deqp_egl_slow_tests',
+    'swangle_slow_flaky_gtests': [
+      'swangle_deqp_egl_slow_flaky_tests',
       'swangle_deqp_gles2_slow_tests',
       'swangle_deqp_gles3_slow_tests',
       'swangle_deqp_khr_gles2_tests',
@@ -1115,12 +1265,37 @@
       'swangle_white_box_tests',
     ],
 
+    'swangle_slow_gtests': [
+      'swangle_deqp_egl_tests',
+      'swangle_deqp_gl46_tests',
+      'swangle_deqp_gles2_slow_tests',
+      'swangle_deqp_gles31_rotate180_tests',
+      'swangle_deqp_gles31_rotate270_tests',
+      'swangle_deqp_gles31_rotate90_tests',
+      'swangle_deqp_gles31_slow_tests',
+      'swangle_deqp_gles3_rotate180_tests',
+      'swangle_deqp_gles3_rotate270_tests',
+      'swangle_deqp_gles3_rotate90_tests',
+      'swangle_deqp_gles3_slow_tests',
+      'swangle_deqp_khr_gles2_tests',
+      'swangle_deqp_khr_gles31_tests',
+      'swangle_deqp_khr_gles3_tests',
+      'swangle_end2end_slow_tests',
+      'swangle_white_box_tests',
+    ],
+
     'win10_intel_gtests': [
       'angle_deqp_gles2_d3d11_gtests',
       'angle_end2end_gtests',
-      'angle_gles1_conformance_gtests',
       'angle_unit_gtests',
       'angle_white_box_gtests',
+    ],
+
+    'win10_intel_isolated_scripts': [
+      'angle_perf_smoke_isolated_scripts',
+      'angle_trace_interpreter_isolated_scripts',
+      'angle_trace_perf_native_smoke_isolated_scripts',
+      'angle_trace_perf_vulkan_smoke_isolated_scripts',
     ],
 
     'win10_nvidia_gtests': [

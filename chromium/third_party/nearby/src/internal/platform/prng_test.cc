@@ -20,6 +20,7 @@
 #include <vector>
 
 #include "gtest/gtest.h"
+#include "absl/synchronization/mutex.h"
 
 namespace location {
 namespace nearby {
@@ -50,9 +51,11 @@ TEST(PrngTest, NextInt32GeneratesDifferentValues) {
 }
 
 TEST(PrngTest, NextInt32AcrossThreads) {
+  absl::Mutex mutex;
   Prng prng;
   std::set<int32_t> values;
-  auto func = [&prng, &values]() {
+  auto func = [&prng, &values, &mutex]() {
+    absl::MutexLock lock(&mutex);
     auto value = prng.NextInt32();
     EXPECT_LE(value, std::numeric_limits<std::int32_t>::max());
     EXPECT_GE(value, std::numeric_limits<std::int32_t>::min());

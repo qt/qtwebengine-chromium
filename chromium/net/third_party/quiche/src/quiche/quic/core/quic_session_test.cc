@@ -1063,7 +1063,8 @@ TEST_P(QuicSessionTestServer, TestBatchedWrites) {
   // Now let stream 4 do the 2nd of its 3 writes, but add a block for a high
   // priority stream 6.  4 should be preempted.  6 will write but *not* block so
   // will cede back to 4.
-  stream6->SetPriority(spdy::SpdyStreamPrecedence(kV3HighestPriority));
+  stream6->SetPriority(QuicStreamPriority{
+      kV3HighestPriority, QuicStreamPriority::kDefaultIncremental});
   EXPECT_CALL(*stream4, OnCanWrite())
       .WillOnce(Invoke([this, stream4, stream6]() {
         session_.SendLargeFakeData(stream4, 6000);
@@ -2086,6 +2087,23 @@ TEST_P(QuicSessionTestClient, AvailableBidirectionalStreamsClient) {
       &session_, GetNthClientInitiatedBidirectionalId(1)));
 }
 
+TEST_P(QuicSessionTestClient, NewStreamCreationResumesMultiPortProbing) {
+  session_.config()->SetConnectionOptionsToSend({kRVCM});
+  session_.config()->SetClientConnectionOptions({kMPQC});
+  session_.Initialize();
+  connection_->CreateConnectionIdManager();
+  connection_->SetDefaultEncryptionLevel(ENCRYPTION_FORWARD_SECURE);
+  connection_->OnHandshakeComplete();
+  session_.OnConfigNegotiated();
+
+  if (!connection_->connection_migration_use_new_cid()) {
+    return;
+  }
+
+  EXPECT_CALL(*connection_, MaybeProbeMultiPortPath());
+  session_.CreateOutgoingBidirectionalStream();
+}
+
 TEST_P(QuicSessionTestClient, InvalidSessionFlowControlWindowInHandshake) {
   // Test that receipt of an invalid (< default for gQUIC, < current for TLS)
   // session flow control window from the peer results in the connection being
@@ -3078,14 +3096,7 @@ TEST_P(QuicSessionTestServer, BlockedFrameCausesWriteError) {
             ConnectionCloseBehavior::SILENT_CLOSE);
         return false;
       }));
-  std::string msg =
-      absl::StrCat("Marking unknown stream ", stream->id(), " blocked.");
-  if (GetQuicReloadableFlag(
-          quic_donot_mark_stream_write_blocked_if_write_side_closed)) {
-    stream->WriteOrBufferData(body, false, nullptr);
-  } else {
-    EXPECT_QUIC_BUG(stream->WriteOrBufferData(body, false, nullptr), msg);
-  }
+  stream->WriteOrBufferData(body, false, nullptr);
 }
 
 TEST_P(QuicSessionTestServer, BufferedCryptoFrameCausesWriteError) {
@@ -3121,11 +3132,51 @@ TEST_P(QuicSessionTestServer, BufferedCryptoFrameCausesWriteError) {
   if (!GetQuicReloadableFlag(
           quic_no_write_control_frame_upon_connection_close)) {
     EXPECT_CALL(*connection_, SendControlFrame(_)).WillOnce(Return(false));
-    EXPECT_QUIC_BUG(session_.OnCanWrite(),
-                    "Try to write control frames when connection is closed");
+    EXPECT_QUIC_BUG(session_.OnCanWrite(), "Try to write control frame");
   } else {
     session_.OnCanWrite();
   }
+}
+
+TEST_P(QuicSessionTestServer, DonotPtoStreamDataBeforeHandshakeConfirmed) {
+  if (!session_.version().UsesTls()) {
+    return;
+  }
+  EXPECT_NE(HANDSHAKE_CONFIRMED, session_.GetHandshakeState());
+
+  TestCryptoStream* crypto_stream = session_.GetMutableCryptoStream();
+  EXPECT_FALSE(crypto_stream->HasBufferedCryptoFrames());
+  std::string data(1350, 'a');
+  EXPECT_CALL(*connection_, SendCryptoData(ENCRYPTION_INITIAL, 1350, 0))
+      .WillOnce(Return(1000));
+  crypto_stream->WriteCryptoData(ENCRYPTION_INITIAL, data);
+  ASSERT_TRUE(crypto_stream->HasBufferedCryptoFrames());
+
+  TestStream* stream = session_.CreateOutgoingBidirectionalStream();
+
+  session_.MarkConnectionLevelWriteBlocked(stream->id());
+  // Buffered crypto data gets sent.
+  EXPECT_CALL(*connection_, SendCryptoData(ENCRYPTION_INITIAL, _, _))
+      .WillOnce(Return(350));
+  if (GetQuicReloadableFlag(
+          quic_donot_pto_stream_data_before_handshake_confirmed)) {
+    // Verify stream data is not sent on PTO before handshake confirmed.
+    EXPECT_CALL(*stream, OnCanWrite()).Times(0);
+  } else {
+    EXPECT_CALL(*stream, OnCanWrite());
+  }
+
+  // Fire PTO.
+  QuicConnectionPeer::SetInProbeTimeOut(connection_, true);
+  session_.OnCanWrite();
+  EXPECT_FALSE(crypto_stream->HasBufferedCryptoFrames());
+}
+
+TEST_P(QuicSessionTestServer, SetStatelessResetTokenToSend) {
+  if (!session_.version().HasIetfQuicFrames()) {
+    return;
+  }
+  EXPECT_TRUE(session_.config()->HasStatelessResetTokenToSend());
 }
 
 // A client test class that can be used when the automatic configuration is not

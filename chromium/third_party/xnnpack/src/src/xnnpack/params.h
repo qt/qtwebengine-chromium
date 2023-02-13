@@ -17,7 +17,6 @@
 #include <xnnpack/microfnptr.h>
 #include <xnnpack/microparams.h>
 
-
 struct xnn_hmp_gemm_ukernel {
   xnn_gemm_ukernel_function function[XNN_MAX_UARCH_TYPES];
 #if XNN_PLATFORM_JIT
@@ -494,7 +493,6 @@ struct xnn_parameters {
   // Bitwise combination of XNN_INIT_FLAG_* flags
   uint32_t init_flags;
   struct xnn_allocator allocator;
-  size_t page_size;
   struct {
     struct gemm_parameters gemm;
     struct dwconv_parameters dwconv[XNN_MAX_QC8_DWCONV_UKERNELS];

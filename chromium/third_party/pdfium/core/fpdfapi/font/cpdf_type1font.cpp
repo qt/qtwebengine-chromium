@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2016 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -20,7 +20,8 @@
 #include "core/fxge/fx_font.h"
 
 #if BUILDFLAG(IS_APPLE)
-#include <Carbon/Carbon.h>
+#include <CoreFoundation/CFString.h>
+#include <CoreGraphics/CoreGraphics.h>
 #endif  // BUILDFLAG(IS_APPLE)
 
 namespace {

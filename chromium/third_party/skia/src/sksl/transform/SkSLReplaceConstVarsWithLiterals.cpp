@@ -23,12 +23,11 @@
 #include <memory>
 #include <string>
 #include <string_view>
-#include <type_traits>
 #include <vector>
 
 namespace SkSL {
 
-void Transform::ReplaceConstVarsWithLiterals(LoadedModule& module, ProgramUsage* usage) {
+void Transform::ReplaceConstVarsWithLiterals(Module& module, ProgramUsage* usage) {
     class ConstVarReplacer : public ProgramWriter {
     public:
         ConstVarReplacer(ProgramUsage* usage) : fUsage(usage) {}
@@ -42,8 +41,8 @@ void Transform::ReplaceConstVarsWithLiterals(LoadedModule& module, ProgramUsage*
                 // ... and it's a candidate for size reduction...
                 if (fCandidates.contains(var.variable())) {
                     // ... get its constant value...
-                    const Expression* value = ConstantFolder::GetConstantValueForVariable(var);
-                    if (value != expr.get()) {
+                    if (const Expression* value =
+                                ConstantFolder::GetConstantValueOrNullForVariable(var)) {
                         // ... and replace it with that value.
                         fUsage->remove(expr.get());
                         expr = value->clone();

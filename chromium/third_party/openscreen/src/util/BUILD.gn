@@ -4,11 +4,12 @@
 
 import("//build_overrides/build.gni")
 
+visibility = [ "../*" ]
+
 declare_args() {
-  # Enables trace logging in build. This is true by default, unless
-  # we are built against Chrome--we have no way to link their platform
-  # implementation into our binaries so trace logging is not possible.
-  enable_trace_logging = !build_with_chromium
+  # Enables trace logging in build. This is true by default, but may be disabled
+  # for a slight performance increase.
+  enable_trace_logging = true
 }
 
 config("trace_logging_config") {
@@ -19,7 +20,7 @@ config("trace_logging_config") {
 
 # The set of util classes which have no dependency on platform:api.
 source_set("base") {
-  visibility = [ "../*" ]
+  visibility += [ "../*" ]
 
   public = [
     "base64.h",
@@ -73,8 +74,6 @@ source_set("base") {
 }
 
 source_set("util") {
-  visibility = [ "../*" ]
-
   public = [
     "alarm.h",
     "crypto/certificate_utils.h",

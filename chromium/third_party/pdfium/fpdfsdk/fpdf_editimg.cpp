@@ -1,4 +1,4 @@
-// Copyright 2014 PDFium Authors. All rights reserved.
+// Copyright 2014 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -282,7 +282,9 @@ FPDFImageObj_GetImageDataDecoded(FPDF_PAGEOBJECT image_object,
   if (!pImgStream)
     return 0;
 
-  return DecodeStreamMaybeCopyAndReturnLength(pImgStream.Get(), buffer, buflen);
+  return DecodeStreamMaybeCopyAndReturnLength(
+      std::move(pImgStream),
+      {static_cast<uint8_t*>(buffer), static_cast<size_t>(buflen)});
 }
 
 FPDF_EXPORT unsigned long FPDF_CALLCONV
@@ -301,7 +303,9 @@ FPDFImageObj_GetImageDataRaw(FPDF_PAGEOBJECT image_object,
   if (!pImgStream)
     return 0;
 
-  return GetRawStreamMaybeCopyAndReturnLength(pImgStream.Get(), buffer, buflen);
+  return GetRawStreamMaybeCopyAndReturnLength(
+      std::move(pImgStream),
+      {static_cast<uint8_t*>(buffer), static_cast<size_t>(buflen)});
 }
 
 FPDF_EXPORT int FPDF_CALLCONV
@@ -392,7 +396,7 @@ FPDFImageObj_GetImageMetadata(FPDF_PAGEOBJECT image_object,
   RetainPtr<CPDF_DIB> pSource = pImg->CreateNewDIB();
   CPDF_DIB::LoadState ret = pSource->StartLoadDIBBase(
       false, nullptr, pPage->GetPageResources().Get(), false,
-      CPDF_ColorSpace::Family::kUnknown, false);
+      CPDF_ColorSpace::Family::kUnknown, false, {0, 0});
   if (ret == CPDF_DIB::LoadState::kFail)
     return true;
 

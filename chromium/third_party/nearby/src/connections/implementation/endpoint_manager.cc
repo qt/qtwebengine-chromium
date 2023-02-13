@@ -24,6 +24,7 @@
 #include "connections/implementation/analytics/throughput_recorder.h"
 #include "connections/implementation/endpoint_channel.h"
 #include "connections/implementation/offline_frames.h"
+#include "connections/implementation/payload_manager.h"
 #include "connections/implementation/proto/offline_wire_formats.pb.h"
 #include "connections/implementation/service_id_constants.h"
 #include "internal/platform/count_down_latch.h"
@@ -35,6 +36,9 @@ namespace location {
 namespace nearby {
 namespace connections {
 
+using ::location::nearby::analytics::PacketMetaData;
+using ::location::nearby::connections::PayloadDirection;
+
 constexpr absl::Duration EndpointManager::kProcessEndpointDisconnectionTimeout;
 constexpr absl::Time EndpointManager::kInvalidTimestamp;
 
@@ -45,7 +49,7 @@ class EndpointManager::LockedFrameProcessor {
         frame_processor_with_mutex_{fp} {}
 
   // Constructor of a no-op object.
-  LockedFrameProcessor() {}
+  LockedFrameProcessor() = default;
 
   explicit operator bool() const { return get() != nullptr; }
 
@@ -651,7 +655,7 @@ std::vector<std::string> EndpointManager::SendTransferFrameBytes(
       continue;
     }
     analytics::ThroughputRecorderContainer::GetInstance()
-        .GetTPRecorder(payload_id)
+        .GetTPRecorder(payload_id, PayloadDirection::OUTGOING_PAYLOAD)
         ->OnFrameSent(channel->GetMedium(), packet_meta_data);
   }
 

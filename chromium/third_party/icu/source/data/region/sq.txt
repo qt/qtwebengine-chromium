@@ -307,6 +307,7 @@ sq{
         CG{"Kongo (Republika)"}
         CI{"Bregu i Fildishtë"}
         CZ{"Republika Çeke"}
+        NZ{"Zelanda e Re-Aotearoa"}
         SZ{"Suazilend"}
         TL{"Timori Lindor"}
     }

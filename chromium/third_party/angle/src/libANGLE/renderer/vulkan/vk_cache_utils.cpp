@@ -11,6 +11,7 @@
 #include "libANGLE/renderer/vulkan/vk_cache_utils.h"
 
 #include "common/aligned_memory.h"
+#include "common/system_utils.h"
 #include "common/vulkan/vk_google_filtering_precision.h"
 #include "libANGLE/BlobCache.h"
 #include "libANGLE/VertexAttribute.h"
@@ -51,7 +52,7 @@ static_assert(static_cast<uint32_t>(RenderPassStoreOp::DontCare) ==
 static_assert(static_cast<uint32_t>(RenderPassStoreOp::None) == 2,
               "ConvertRenderPassStoreOpToVkStoreOp must be updated");
 
-constexpr uint16_t kMinSampleShadingScale = angle::BitMask<uint16_t>(11);
+constexpr uint16_t kMinSampleShadingScale = angle::BitMask<uint16_t>(8);
 
 VkAttachmentLoadOp ConvertRenderPassLoadOpToVkLoadOp(RenderPassLoadOp loadOp)
 {
@@ -62,6 +63,69 @@ VkAttachmentStoreOp ConvertRenderPassStoreOpToVkStoreOp(RenderPassStoreOp storeO
 {
     return storeOp == RenderPassStoreOp::None ? VK_ATTACHMENT_STORE_OP_NONE_EXT
                                               : static_cast<VkAttachmentStoreOp>(storeOp);
+}
+
+constexpr size_t TransitionBits(size_t size)
+{
+    return size / kGraphicsPipelineDirtyBitBytes;
+}
+
+constexpr size_t kPipelineShadersDescOffset = 0;
+constexpr size_t kPipelineShadersDescSize =
+    kGraphicsPipelineShadersStateSize + kGraphicsPipelineSharedNonVertexInputStateSize;
+
+constexpr size_t kPipelineFragmentOutputDescOffset = kGraphicsPipelineShadersStateSize;
+constexpr size_t kPipelineFragmentOutputDescSize =
+    kGraphicsPipelineSharedNonVertexInputStateSize + kGraphicsPipelineFragmentOutputStateSize;
+
+constexpr size_t kPipelineVertexInputDescOffset =
+    kGraphicsPipelineShadersStateSize + kPipelineFragmentOutputDescSize;
+constexpr size_t kPipelineVertexInputDescSize = kGraphicsPipelineVertexInputStateSize;
+
+static_assert(kPipelineShadersDescOffset % kGraphicsPipelineDirtyBitBytes == 0);
+static_assert(kPipelineShadersDescSize % kGraphicsPipelineDirtyBitBytes == 0);
+
+static_assert(kPipelineFragmentOutputDescOffset % kGraphicsPipelineDirtyBitBytes == 0);
+static_assert(kPipelineFragmentOutputDescSize % kGraphicsPipelineDirtyBitBytes == 0);
+
+static_assert(kPipelineVertexInputDescOffset % kGraphicsPipelineDirtyBitBytes == 0);
+static_assert(kPipelineVertexInputDescSize % kGraphicsPipelineDirtyBitBytes == 0);
+
+constexpr GraphicsPipelineTransitionBits kPipelineShadersTransitionBitsMask =
+    GraphicsPipelineTransitionBits::Mask(TransitionBits(kPipelineShadersDescSize) +
+                                         TransitionBits(kPipelineShadersDescOffset)) &
+    ~GraphicsPipelineTransitionBits::Mask(TransitionBits(kPipelineShadersDescOffset));
+
+constexpr GraphicsPipelineTransitionBits kPipelineFragmentOutputTransitionBitsMask =
+    GraphicsPipelineTransitionBits::Mask(TransitionBits(kPipelineFragmentOutputDescSize) +
+                                         TransitionBits(kPipelineFragmentOutputDescOffset)) &
+    ~GraphicsPipelineTransitionBits::Mask(TransitionBits(kPipelineFragmentOutputDescOffset));
+
+constexpr GraphicsPipelineTransitionBits kPipelineVertexInputTransitionBitsMask =
+    GraphicsPipelineTransitionBits::Mask(TransitionBits(kPipelineVertexInputDescSize) +
+                                         TransitionBits(kPipelineVertexInputDescOffset)) &
+    ~GraphicsPipelineTransitionBits::Mask(TransitionBits(kPipelineVertexInputDescOffset));
+
+bool GraphicsPipelineHasVertexInput(GraphicsPipelineSubset subset)
+{
+    return subset == GraphicsPipelineSubset::Complete ||
+           subset == GraphicsPipelineSubset::VertexInput;
+}
+
+bool GraphicsPipelineHasShaders(GraphicsPipelineSubset subset)
+{
+    return subset == GraphicsPipelineSubset::Complete || subset == GraphicsPipelineSubset::Shaders;
+}
+
+bool GraphicsPipelineHasShadersOrFragmentOutput(GraphicsPipelineSubset subset)
+{
+    return subset != GraphicsPipelineSubset::VertexInput;
+}
+
+bool GraphicsPipelineHasFragmentOutput(GraphicsPipelineSubset subset)
+{
+    return subset == GraphicsPipelineSubset::Complete ||
+           subset == GraphicsPipelineSubset::FragmentOutput;
 }
 
 uint8_t PackGLBlendOp(GLenum blendOp)
@@ -265,10 +329,10 @@ void UnpackStencilState(const PackedStencilOpState &packedState,
     // bug workaround.
     constexpr uint32_t kNonZeroWriteMaskForWorkaround = 1;
 
-    stateOut->failOp      = static_cast<VkStencilOp>(packedState.ops.fail);
-    stateOut->passOp      = static_cast<VkStencilOp>(packedState.ops.pass);
-    stateOut->depthFailOp = static_cast<VkStencilOp>(packedState.ops.depthFail);
-    stateOut->compareOp   = static_cast<VkCompareOp>(packedState.ops.compare);
+    stateOut->failOp      = static_cast<VkStencilOp>(packedState.fail);
+    stateOut->passOp      = static_cast<VkStencilOp>(packedState.pass);
+    stateOut->depthFailOp = static_cast<VkStencilOp>(packedState.depthFail);
+    stateOut->compareOp   = static_cast<VkCompareOp>(packedState.compare);
     stateOut->compareMask = 0;
     stateOut->writeMask   = writeMaskWorkaround ? kNonZeroWriteMaskForWorkaround : 0;
     stateOut->reference   = 0;
@@ -1107,7 +1171,7 @@ angle::Result InitializeRenderPassFromDesc(ContextVk *contextVk,
         colorRef.layout     = needInputAttachments
                                   ? VK_IMAGE_LAYOUT_GENERAL
                                   : ConvertImageLayoutToVkImageLayout(
-                                        static_cast<ImageLayout>(ops[attachmentCount].initialLayout));
+                                    static_cast<ImageLayout>(ops[attachmentCount].initialLayout));
         colorAttachmentRefs.push_back(colorRef);
 
         UnpackAttachmentDesc(&attachmentDescs[attachmentCount.get()], attachmentFormatID,
@@ -1142,7 +1206,7 @@ angle::Result InitializeRenderPassFromDesc(ContextVk *contextVk,
 
         depthStencilAttachmentRef.attachment = attachmentCount.get();
         depthStencilAttachmentRef.layout     = ConvertImageLayoutToVkImageLayout(
-                static_cast<ImageLayout>(ops[attachmentCount].initialLayout));
+            static_cast<ImageLayout>(ops[attachmentCount].initialLayout));
 
         UnpackAttachmentDesc(&attachmentDescs[attachmentCount.get()], attachmentFormatID,
                              attachmentSamples, ops[attachmentCount]);
@@ -1273,9 +1337,11 @@ angle::Result InitializeRenderPassFromDesc(ContextVk *contextVk,
     applicationSubpass->preserveAttachmentCount = 0;
     applicationSubpass->pPreserveAttachments    = nullptr;
 
-    // Specify rasterization order for color on the subpass.  This is required when the
-    // corresponding flag is set on the pipeline.
-    if (contextVk->getFeatures().supportsRasterizationOrderAttachmentAccess.enabled)
+    // Specify rasterization order for color on the subpass when available and
+    // there is framebuffer fetch.  This is required when the corresponding
+    // flag is set on the pipeline.
+    if (contextVk->getFeatures().supportsRasterizationOrderAttachmentAccess.enabled &&
+        desc.hasFramebufferFetch())
     {
         for (VkSubpassDescription &subpass : subpassDesc)
         {
@@ -1383,7 +1449,7 @@ angle::Result InitializeRenderPassFromDesc(ContextVk *contextVk,
 void GetRenderPassAndUpdateCounters(ContextVk *contextVk,
                                     bool updatePerfCounters,
                                     RenderPassHelper *renderPassHelper,
-                                    RenderPass **renderPassOut)
+                                    const RenderPass **renderPassOut)
 {
     *renderPassOut = &renderPassHelper->getRenderPass();
     if (updatePerfCounters)
@@ -1579,17 +1645,16 @@ constexpr size_t kBitsPerByte        = 8;
 constexpr size_t kTransitionBitShift = kTransitionByteShift + Log2(kBitsPerByte);
 
 // Helper macro to map from a PipelineDesc struct and field to a dirty bit index.
-// Uses the 'offsetof' macro to compute the offset 'Member' within the PipelineDesc
-// and the offset of 'Field' within 'Member'. We can optimize the dirty bit setting by computing
-// the shifted dirty bit at compile time instead of calling "set".
-#define ANGLE_GET_TRANSITION_BIT(Member, Field)                                      \
-    ((offsetof(GraphicsPipelineDesc, Member) + offsetof(decltype(Member), Field)) >> \
-     kTransitionByteShift)
+// Uses the 'offsetof' macro to compute the offset 'Member' within the PipelineDesc.
+// We can optimize the dirty bit setting by computing the shifted dirty bit at compile time instead
+// of calling "set".
+#define ANGLE_GET_TRANSITION_BIT(Member) \
+    (offsetof(GraphicsPipelineDesc, Member) >> kTransitionByteShift)
 
 // Indexed dirty bits cannot be entirely computed at compile time since the index is passed to
 // the update function.
-#define ANGLE_GET_INDEXED_TRANSITION_BIT(Member, Field, Index, BitWidth) \
-    (((BitWidth * Index) >> kTransitionBitShift) + ANGLE_GET_TRANSITION_BIT(Member, Field))
+#define ANGLE_GET_INDEXED_TRANSITION_BIT(Member, Index, BitWidth) \
+    (((BitWidth * Index) >> kTransitionBitShift) + ANGLE_GET_TRANSITION_BIT(Member))
 
 constexpr angle::PackedEnumMap<gl::ComponentType, VkFormat> kMismatchedComponentTypeMap = {{
     {gl::ComponentType::Float, VK_FORMAT_R32G32B32A32_SFLOAT},
@@ -1616,11 +1681,12 @@ constexpr char kDescriptorTypeNameMap[][30] = {"sampler",
 enum class PipelineState
 {
     VertexAttribFormat,
-    VertexAttribDivisor    = VertexAttribFormat + gl::MAX_VERTEX_ATTRIBS,
-    VertexAttribOffset     = VertexAttribDivisor + gl::MAX_VERTEX_ATTRIBS,
-    VertexAttribStride     = VertexAttribOffset + gl::MAX_VERTEX_ATTRIBS,
-    VertexAttribCompressed = VertexAttribStride + gl::MAX_VERTEX_ATTRIBS,
-    RenderPassSamples      = VertexAttribCompressed + gl::MAX_VERTEX_ATTRIBS,
+    VertexAttribDivisor             = VertexAttribFormat + gl::MAX_VERTEX_ATTRIBS,
+    VertexAttribOffset              = VertexAttribDivisor + gl::MAX_VERTEX_ATTRIBS,
+    VertexAttribStride              = VertexAttribOffset + gl::MAX_VERTEX_ATTRIBS,
+    VertexAttribCompressed          = VertexAttribStride + gl::MAX_VERTEX_ATTRIBS,
+    VertexAttribShaderComponentType = VertexAttribCompressed + gl::MAX_VERTEX_ATTRIBS,
+    RenderPassSamples               = VertexAttribShaderComponentType + gl::MAX_VERTEX_ATTRIBS,
     RenderPassColorAttachmentRange,
     RenderPassViewCount,
     RenderPassSrgbWriteControl,
@@ -1652,6 +1718,7 @@ enum class PipelineState
     RasterizerDiscardEnable,
     ColorWriteMask,
     BlendEnableMask = ColorWriteMask + gl::IMPLEMENTATION_MAX_DRAW_BUFFERS,
+    MissingOutputsMask,
     SrcColorBlendFactor,
     DstColorBlendFactor   = SrcColorBlendFactor + gl::IMPLEMENTATION_MAX_DRAW_BUFFERS,
     ColorBlendOp          = DstColorBlendFactor + gl::IMPLEMENTATION_MAX_DRAW_BUFFERS,
@@ -1682,121 +1749,163 @@ enum class PipelineState
 using UnpackedPipelineState = angle::PackedEnumMap<PipelineState, uint32_t>;
 using PipelineStateBitSet   = angle::BitSetArray<angle::EnumSize<PipelineState>()>;
 
-void UnpackPipelineState(const vk::GraphicsPipelineDesc &state, UnpackedPipelineState *valuesOut)
+[[maybe_unused]] void UnpackPipelineState(const GraphicsPipelineDesc &state,
+                                          GraphicsPipelineSubset subset,
+                                          UnpackedPipelineState *valuesOut)
 {
-    const VertexInputAttributes &vertexInputAttribs = state.getVertexInputAttribsForLog();
-    const RenderPassDesc &renderPassDesc            = state.getRenderPassDescForLog();
-    const PackedInputAssemblyAndRasterizationStateInfo &inputAndRaster =
-        state.getInputAssemblyAndRasterizationStateInfoForLog();
-    const PackedColorBlendStateInfo &colorBlend = state.getColorBlendStateInfoForLog();
-    const PackedDitherAndContextState &dither   = state.getDitherForLog();
-    const PackedDynamicState &dynamicState      = state.getDynamicStateForLog();
+    const bool hasVertexInput             = GraphicsPipelineHasVertexInput(subset);
+    const bool hasShaders                 = GraphicsPipelineHasShaders(subset);
+    const bool hasShadersOrFragmentOutput = GraphicsPipelineHasShadersOrFragmentOutput(subset);
+    const bool hasFragmentOutput          = GraphicsPipelineHasFragmentOutput(subset);
 
     valuesOut->fill(0);
 
-    uint32_t *vaFormats    = &(*valuesOut)[PipelineState::VertexAttribFormat];
-    uint32_t *vaDivisors   = &(*valuesOut)[PipelineState::VertexAttribDivisor];
-    uint32_t *vaOffsets    = &(*valuesOut)[PipelineState::VertexAttribOffset];
-    uint32_t *vaStrides    = &(*valuesOut)[PipelineState::VertexAttribStride];
-    uint32_t *vaCompressed = &(*valuesOut)[PipelineState::VertexAttribCompressed];
-    for (uint32_t attribIndex = 0; attribIndex < gl::MAX_VERTEX_ATTRIBS; ++attribIndex)
+    if (hasVertexInput)
     {
-        vaFormats[attribIndex]    = vertexInputAttribs.attribs[attribIndex].format;
-        vaDivisors[attribIndex]   = vertexInputAttribs.attribs[attribIndex].divisor;
-        vaOffsets[attribIndex]    = vertexInputAttribs.attribs[attribIndex].offset;
-        vaStrides[attribIndex]    = dynamicState.ds1.vertexStrides[attribIndex];
-        vaCompressed[attribIndex] = vertexInputAttribs.attribs[attribIndex].compressed;
+        const PipelineVertexInputState &vertexInputState = state.getVertexInputStateForLog();
+
+        const PackedVertexInputAttributes &vertex = vertexInputState.vertex;
+        uint32_t *vaFormats    = &(*valuesOut)[PipelineState::VertexAttribFormat];
+        uint32_t *vaDivisors   = &(*valuesOut)[PipelineState::VertexAttribDivisor];
+        uint32_t *vaOffsets    = &(*valuesOut)[PipelineState::VertexAttribOffset];
+        uint32_t *vaStrides    = &(*valuesOut)[PipelineState::VertexAttribStride];
+        uint32_t *vaCompressed = &(*valuesOut)[PipelineState::VertexAttribCompressed];
+        uint32_t *vaShaderComponentType =
+            &(*valuesOut)[PipelineState::VertexAttribShaderComponentType];
+        for (uint32_t attribIndex = 0; attribIndex < gl::MAX_VERTEX_ATTRIBS; ++attribIndex)
+        {
+            vaFormats[attribIndex]    = vertex.attribs[attribIndex].format;
+            vaDivisors[attribIndex]   = vertex.attribs[attribIndex].divisor;
+            vaOffsets[attribIndex]    = vertex.attribs[attribIndex].offset;
+            vaStrides[attribIndex]    = vertex.strides[attribIndex];
+            vaCompressed[attribIndex] = vertex.attribs[attribIndex].compressed;
+
+            gl::ComponentType componentType = gl::GetComponentTypeMask(
+                gl::ComponentTypeMask(vertex.shaderAttribComponentType), attribIndex);
+            vaShaderComponentType[attribIndex] = componentType == gl::ComponentType::InvalidEnum
+                                                     ? 0
+                                                     : static_cast<uint32_t>(componentType);
+        }
+
+        const PackedInputAssemblyState &inputAssembly = vertexInputState.inputAssembly;
+        (*valuesOut)[PipelineState::Topology]         = inputAssembly.bits.topology;
+        (*valuesOut)[PipelineState::PrimitiveRestartEnable] =
+            inputAssembly.bits.primitiveRestartEnable;
     }
 
-    (*valuesOut)[PipelineState::RenderPassSamples] = renderPassDesc.samples();
-    (*valuesOut)[PipelineState::RenderPassColorAttachmentRange] =
-        static_cast<uint32_t>(renderPassDesc.colorAttachmentRange());
-    (*valuesOut)[PipelineState::RenderPassViewCount] = renderPassDesc.viewCount();
-    (*valuesOut)[PipelineState::RenderPassSrgbWriteControl] =
-        static_cast<uint32_t>(renderPassDesc.getSRGBWriteControlMode());
-    (*valuesOut)[PipelineState::RenderPassHasFramebufferFetch] =
-        renderPassDesc.hasFramebufferFetch();
-    (*valuesOut)[PipelineState::RenderPassIsRenderToTexture] = renderPassDesc.isRenderToTexture();
-    (*valuesOut)[PipelineState::RenderPassResolveDepthStencil] =
-        renderPassDesc.hasDepthStencilResolveAttachment();
-    (*valuesOut)[PipelineState::RenderPassUnresolveDepth] =
-        renderPassDesc.hasDepthUnresolveAttachment();
-    (*valuesOut)[PipelineState::RenderPassUnresolveStencil] =
-        renderPassDesc.hasStencilUnresolveAttachment();
-    (*valuesOut)[PipelineState::RenderPassColorResolveMask] =
-        renderPassDesc.getColorResolveAttachmentMask().bits();
-    (*valuesOut)[PipelineState::RenderPassColorUnresolveMask] =
-        renderPassDesc.getColorUnresolveAttachmentMask().bits();
-
-    uint32_t *colorFormats = &(*valuesOut)[PipelineState::RenderPassColorFormat];
-    for (uint32_t colorIndex = 0; colorIndex < renderPassDesc.colorAttachmentRange(); ++colorIndex)
+    if (hasShaders)
     {
-        colorFormats[colorIndex] = static_cast<uint32_t>(renderPassDesc[colorIndex]);
+        const PipelineShadersState &shadersState = state.getShadersStateForLog();
+
+        const PackedPreRasterizationAndFragmentStates &shaders = shadersState.shaders;
+        (*valuesOut)[PipelineState::ViewportNegativeOneToOne] =
+            shaders.bits.viewportNegativeOneToOne;
+        (*valuesOut)[PipelineState::DepthClampEnable]        = shaders.bits.depthClampEnable;
+        (*valuesOut)[PipelineState::CullMode]                = shaders.bits.cullMode;
+        (*valuesOut)[PipelineState::FrontFace]               = shaders.bits.frontFace;
+        (*valuesOut)[PipelineState::RasterizerDiscardEnable] = shaders.bits.rasterizerDiscardEnable;
+        (*valuesOut)[PipelineState::DepthBiasEnable]         = shaders.bits.depthBiasEnable;
+        (*valuesOut)[PipelineState::PatchVertices]           = shaders.bits.patchVertices;
+        (*valuesOut)[PipelineState::DepthBoundsTest]         = shaders.bits.depthBoundsTest;
+        (*valuesOut)[PipelineState::DepthTest]               = shaders.bits.depthTest;
+        (*valuesOut)[PipelineState::DepthWrite]              = shaders.bits.depthWrite;
+        (*valuesOut)[PipelineState::StencilTest]             = shaders.bits.stencilTest;
+        (*valuesOut)[PipelineState::DepthCompareOp]          = shaders.bits.depthCompareOp;
+        (*valuesOut)[PipelineState::SurfaceRotation]         = shaders.bits.surfaceRotation;
+        (*valuesOut)[PipelineState::EmulatedDitherControl]   = shaders.emulatedDitherControl;
+        (*valuesOut)[PipelineState::StencilOpFailFront]      = shaders.front.fail;
+        (*valuesOut)[PipelineState::StencilOpPassFront]      = shaders.front.pass;
+        (*valuesOut)[PipelineState::StencilOpDepthFailFront] = shaders.front.depthFail;
+        (*valuesOut)[PipelineState::StencilCompareFront]     = shaders.front.compare;
+        (*valuesOut)[PipelineState::StencilOpFailBack]       = shaders.back.fail;
+        (*valuesOut)[PipelineState::StencilOpPassBack]       = shaders.back.pass;
+        (*valuesOut)[PipelineState::StencilOpDepthFailBack]  = shaders.back.depthFail;
+        (*valuesOut)[PipelineState::StencilCompareBack]      = shaders.back.compare;
     }
-    (*valuesOut)[PipelineState::RenderPassDepthStencilFormat] =
-        static_cast<uint32_t>(renderPassDesc[renderPassDesc.depthStencilAttachmentIndex()]);
 
-    (*valuesOut)[PipelineState::Subpass]       = inputAndRaster.bits.subpass;
-    (*valuesOut)[PipelineState::Topology]      = inputAndRaster.misc.topology;
-    (*valuesOut)[PipelineState::PatchVertices] = inputAndRaster.misc.patchVertices;
-    (*valuesOut)[PipelineState::PrimitiveRestartEnable] =
-        dynamicState.ds1And2.primitiveRestartEnable;
-    (*valuesOut)[PipelineState::CullMode]        = dynamicState.ds1And2.cullMode;
-    (*valuesOut)[PipelineState::FrontFace]       = dynamicState.ds1And2.frontFace;
-    (*valuesOut)[PipelineState::SurfaceRotation] = inputAndRaster.misc.surfaceRotation;
-    (*valuesOut)[PipelineState::ViewportNegativeOneToOne] =
-        inputAndRaster.misc.viewportNegativeOneToOne;
-    (*valuesOut)[PipelineState::SampleShadingEnable]   = inputAndRaster.bits.sampleShadingEnable;
-    (*valuesOut)[PipelineState::MinSampleShading]      = inputAndRaster.misc.minSampleShading;
-    (*valuesOut)[PipelineState::RasterizationSamples]  = inputAndRaster.bits.rasterizationSamples;
-    (*valuesOut)[PipelineState::SampleMask]            = inputAndRaster.sampleMask;
-    (*valuesOut)[PipelineState::AlphaToCoverageEnable] = inputAndRaster.bits.alphaToCoverageEnable;
-    (*valuesOut)[PipelineState::AlphaToOneEnable]      = inputAndRaster.bits.alphaToOneEnable;
-    (*valuesOut)[PipelineState::LogicOpEnable]         = inputAndRaster.bits.logicOpEnable;
-    (*valuesOut)[PipelineState::LogicOp]               = inputAndRaster.bits.logicOp;
-    (*valuesOut)[PipelineState::RasterizerDiscardEnable] =
-        dynamicState.ds1And2.rasterizerDiscardEnable;
-    (*valuesOut)[PipelineState::BlendEnableMask]         = inputAndRaster.misc.blendEnableMask;
-    (*valuesOut)[PipelineState::EmulatedDitherControl]   = dither.emulatedDitherControl;
-    (*valuesOut)[PipelineState::DepthBoundsTest]         = inputAndRaster.misc.depthBoundsTest;
-    (*valuesOut)[PipelineState::DepthClampEnable]        = inputAndRaster.bits.depthClampEnable;
-    (*valuesOut)[PipelineState::DepthCompareOp]          = dynamicState.ds1And2.depthCompareOp;
-    (*valuesOut)[PipelineState::DepthTest]               = dynamicState.ds1And2.depthTest;
-    (*valuesOut)[PipelineState::DepthWrite]              = dynamicState.ds1And2.depthWrite;
-    (*valuesOut)[PipelineState::StencilTest]             = dynamicState.ds1And2.stencilTest;
-    (*valuesOut)[PipelineState::DepthBiasEnable]         = dynamicState.ds1And2.depthBiasEnable;
-    (*valuesOut)[PipelineState::StencilOpFailFront]      = dynamicState.ds1.front.ops.fail;
-    (*valuesOut)[PipelineState::StencilOpPassFront]      = dynamicState.ds1.front.ops.pass;
-    (*valuesOut)[PipelineState::StencilOpDepthFailFront] = dynamicState.ds1.front.ops.depthFail;
-    (*valuesOut)[PipelineState::StencilCompareFront]     = dynamicState.ds1.front.ops.compare;
-    (*valuesOut)[PipelineState::StencilOpFailBack]       = dynamicState.ds1.back.ops.fail;
-    (*valuesOut)[PipelineState::StencilOpPassBack]       = dynamicState.ds1.back.ops.pass;
-    (*valuesOut)[PipelineState::StencilOpDepthFailBack]  = dynamicState.ds1.back.ops.depthFail;
-    (*valuesOut)[PipelineState::StencilCompareBack]      = dynamicState.ds1.back.ops.compare;
-
-    uint32_t *colorWriteMasks      = &(*valuesOut)[PipelineState::ColorWriteMask];
-    uint32_t *srcColorBlendFactors = &(*valuesOut)[PipelineState::SrcColorBlendFactor];
-    uint32_t *dstColorBlendFactors = &(*valuesOut)[PipelineState::DstColorBlendFactor];
-    uint32_t *colorBlendOps        = &(*valuesOut)[PipelineState::ColorBlendOp];
-    uint32_t *srcAlphaBlendFactors = &(*valuesOut)[PipelineState::SrcAlphaBlendFactor];
-    uint32_t *dstAlphaBlendFactors = &(*valuesOut)[PipelineState::DstAlphaBlendFactor];
-    uint32_t *alphaBlendOps        = &(*valuesOut)[PipelineState::AlphaBlendOp];
-    const gl::DrawBufferMask blendEnableMask(inputAndRaster.misc.blendEnableMask);
-    for (uint32_t colorIndex = 0; colorIndex < gl::IMPLEMENTATION_MAX_DRAW_BUFFERS; ++colorIndex)
+    if (hasShadersOrFragmentOutput)
     {
-        colorWriteMasks[colorIndex] =
-            Int4Array_Get<VkColorComponentFlags>(colorBlend.colorWriteMaskBits, colorIndex);
+        const PipelineSharedNonVertexInputState &sharedNonVertexInputState =
+            state.getSharedNonVertexInputStateForLog();
 
-        srcColorBlendFactors[colorIndex] = colorBlend.attachments[colorIndex].srcColorBlendFactor;
-        dstColorBlendFactors[colorIndex] = colorBlend.attachments[colorIndex].dstColorBlendFactor;
-        colorBlendOps[colorIndex]        = colorBlend.attachments[colorIndex].colorBlendOp;
-        srcAlphaBlendFactors[colorIndex] = colorBlend.attachments[colorIndex].srcAlphaBlendFactor;
-        dstAlphaBlendFactors[colorIndex] = colorBlend.attachments[colorIndex].dstAlphaBlendFactor;
-        alphaBlendOps[colorIndex]        = colorBlend.attachments[colorIndex].alphaBlendOp;
+        const PackedMultisampleAndSubpassState &multisample = sharedNonVertexInputState.multisample;
+        (*valuesOut)[PipelineState::SampleMask]             = multisample.bits.sampleMask;
+        (*valuesOut)[PipelineState::RasterizationSamples] =
+            multisample.bits.rasterizationSamplesMinusOne + 1;
+        (*valuesOut)[PipelineState::SampleShadingEnable]   = multisample.bits.sampleShadingEnable;
+        (*valuesOut)[PipelineState::AlphaToCoverageEnable] = multisample.bits.alphaToCoverageEnable;
+        (*valuesOut)[PipelineState::AlphaToOneEnable]      = multisample.bits.alphaToOneEnable;
+        (*valuesOut)[PipelineState::Subpass]               = multisample.bits.subpass;
+        (*valuesOut)[PipelineState::MinSampleShading]      = multisample.bits.minSampleShading;
+
+        const RenderPassDesc renderPass                = sharedNonVertexInputState.renderPass;
+        (*valuesOut)[PipelineState::RenderPassSamples] = renderPass.samples();
+        (*valuesOut)[PipelineState::RenderPassColorAttachmentRange] =
+            static_cast<uint32_t>(renderPass.colorAttachmentRange());
+        (*valuesOut)[PipelineState::RenderPassViewCount] = renderPass.viewCount();
+        (*valuesOut)[PipelineState::RenderPassSrgbWriteControl] =
+            static_cast<uint32_t>(renderPass.getSRGBWriteControlMode());
+        (*valuesOut)[PipelineState::RenderPassHasFramebufferFetch] =
+            renderPass.hasFramebufferFetch();
+        (*valuesOut)[PipelineState::RenderPassIsRenderToTexture] = renderPass.isRenderToTexture();
+        (*valuesOut)[PipelineState::RenderPassResolveDepthStencil] =
+            renderPass.hasDepthStencilResolveAttachment();
+        (*valuesOut)[PipelineState::RenderPassUnresolveDepth] =
+            renderPass.hasDepthUnresolveAttachment();
+        (*valuesOut)[PipelineState::RenderPassUnresolveStencil] =
+            renderPass.hasStencilUnresolveAttachment();
+        (*valuesOut)[PipelineState::RenderPassColorResolveMask] =
+            renderPass.getColorResolveAttachmentMask().bits();
+        (*valuesOut)[PipelineState::RenderPassColorUnresolveMask] =
+            renderPass.getColorUnresolveAttachmentMask().bits();
+
+        uint32_t *colorFormats = &(*valuesOut)[PipelineState::RenderPassColorFormat];
+        for (uint32_t colorIndex = 0; colorIndex < renderPass.colorAttachmentRange(); ++colorIndex)
+        {
+            colorFormats[colorIndex] = static_cast<uint32_t>(renderPass[colorIndex]);
+        }
+        (*valuesOut)[PipelineState::RenderPassDepthStencilFormat] =
+            static_cast<uint32_t>(renderPass[renderPass.depthStencilAttachmentIndex()]);
+    }
+
+    if (hasFragmentOutput)
+    {
+        const PipelineFragmentOutputState &fragmentOutputState =
+            state.getFragmentOutputStateForLog();
+
+        const PackedColorBlendState &blend = fragmentOutputState.blend;
+        uint32_t *colorWriteMasks          = &(*valuesOut)[PipelineState::ColorWriteMask];
+        uint32_t *srcColorBlendFactors     = &(*valuesOut)[PipelineState::SrcColorBlendFactor];
+        uint32_t *dstColorBlendFactors     = &(*valuesOut)[PipelineState::DstColorBlendFactor];
+        uint32_t *colorBlendOps            = &(*valuesOut)[PipelineState::ColorBlendOp];
+        uint32_t *srcAlphaBlendFactors     = &(*valuesOut)[PipelineState::SrcAlphaBlendFactor];
+        uint32_t *dstAlphaBlendFactors     = &(*valuesOut)[PipelineState::DstAlphaBlendFactor];
+        uint32_t *alphaBlendOps            = &(*valuesOut)[PipelineState::AlphaBlendOp];
+        for (uint32_t colorIndex = 0; colorIndex < gl::IMPLEMENTATION_MAX_DRAW_BUFFERS;
+             ++colorIndex)
+        {
+            colorWriteMasks[colorIndex] =
+                Int4Array_Get<VkColorComponentFlags>(blend.colorWriteMaskBits, colorIndex);
+
+            srcColorBlendFactors[colorIndex] = blend.attachments[colorIndex].srcColorBlendFactor;
+            dstColorBlendFactors[colorIndex] = blend.attachments[colorIndex].dstColorBlendFactor;
+            colorBlendOps[colorIndex]        = blend.attachments[colorIndex].colorBlendOp;
+            srcAlphaBlendFactors[colorIndex] = blend.attachments[colorIndex].srcAlphaBlendFactor;
+            dstAlphaBlendFactors[colorIndex] = blend.attachments[colorIndex].dstAlphaBlendFactor;
+            alphaBlendOps[colorIndex]        = blend.attachments[colorIndex].alphaBlendOp;
+        }
+
+        const PackedBlendMaskAndLogicOpState &blendMaskAndLogic =
+            fragmentOutputState.blendMaskAndLogic;
+        (*valuesOut)[PipelineState::BlendEnableMask]    = blendMaskAndLogic.bits.blendEnableMask;
+        (*valuesOut)[PipelineState::LogicOpEnable]      = blendMaskAndLogic.bits.logicOpEnable;
+        (*valuesOut)[PipelineState::LogicOp]            = blendMaskAndLogic.bits.logicOp;
+        (*valuesOut)[PipelineState::MissingOutputsMask] = blendMaskAndLogic.bits.missingOutputsMask;
     }
 }
 
-PipelineStateBitSet GetCommonPipelineState(const std::vector<UnpackedPipelineState> &pipelines)
+[[maybe_unused]] PipelineStateBitSet GetCommonPipelineState(
+    const std::vector<UnpackedPipelineState> &pipelines)
 {
     PipelineStateBitSet commonState;
     commonState.set();
@@ -1835,11 +1944,11 @@ PipelineState GetPipelineState(size_t stateIndex, bool *isRangedOut, size_t *sub
     constexpr PipelineState kRangedStates[] = {
         PipelineState::VertexAttribFormat,     PipelineState::VertexAttribDivisor,
         PipelineState::VertexAttribOffset,     PipelineState::VertexAttribStride,
-        PipelineState::VertexAttribCompressed, PipelineState::RenderPassColorFormat,
-        PipelineState::ColorWriteMask,         PipelineState::SrcColorBlendFactor,
-        PipelineState::DstColorBlendFactor,    PipelineState::ColorBlendOp,
-        PipelineState::SrcAlphaBlendFactor,    PipelineState::DstAlphaBlendFactor,
-        PipelineState::AlphaBlendOp,
+        PipelineState::VertexAttribCompressed, PipelineState::VertexAttribShaderComponentType,
+        PipelineState::RenderPassColorFormat,  PipelineState::ColorWriteMask,
+        PipelineState::SrcColorBlendFactor,    PipelineState::DstColorBlendFactor,
+        PipelineState::ColorBlendOp,           PipelineState::SrcAlphaBlendFactor,
+        PipelineState::DstAlphaBlendFactor,    PipelineState::AlphaBlendOp,
     };
 
     for (PipelineState ps : kRangedStates)
@@ -1852,6 +1961,7 @@ PipelineState GetPipelineState(size_t stateIndex, bool *isRangedOut, size_t *sub
             case PipelineState::VertexAttribOffset:
             case PipelineState::VertexAttribStride:
             case PipelineState::VertexAttribCompressed:
+            case PipelineState::VertexAttribShaderComponentType:
                 range = gl::MAX_VERTEX_ATTRIBS;
                 break;
             default:
@@ -1871,7 +1981,7 @@ PipelineState GetPipelineState(size_t stateIndex, bool *isRangedOut, size_t *sub
     return static_cast<PipelineState>(stateIndex);
 }
 
-void OutputPipelineState(std::ostream &out, size_t stateIndex, uint32_t state)
+[[maybe_unused]] void OutputPipelineState(std::ostream &out, size_t stateIndex, uint32_t state)
 {
     size_t subIndex             = 0;
     bool isRanged               = false;
@@ -1883,6 +1993,7 @@ void OutputPipelineState(std::ostream &out, size_t stateIndex, uint32_t state)
         {PipelineState::VertexAttribOffset, "va_offset"},
         {PipelineState::VertexAttribStride, "va_stride"},
         {PipelineState::VertexAttribCompressed, "va_compressed"},
+        {PipelineState::VertexAttribShaderComponentType, "va_shader_component_type"},
         {PipelineState::RenderPassSamples, "rp_samples"},
         {PipelineState::RenderPassColorAttachmentRange, "rp_color_range"},
         {PipelineState::RenderPassViewCount, "rp_views"},
@@ -1915,6 +2026,7 @@ void OutputPipelineState(std::ostream &out, size_t stateIndex, uint32_t state)
         {PipelineState::RasterizerDiscardEnable, "rasterization_discard"},
         {PipelineState::ColorWriteMask, "color_write"},
         {PipelineState::BlendEnableMask, "blend_mask"},
+        {PipelineState::MissingOutputsMask, "missing_outputs_mask"},
         {PipelineState::SrcColorBlendFactor, "src_color_blend"},
         {PipelineState::DstColorBlendFactor, "dst_color_blend"},
         {PipelineState::ColorBlendOp, "color_blend"},
@@ -1973,6 +2085,30 @@ void OutputPipelineState(std::ostream &out, size_t stateIndex, uint32_t state)
             break;
 
         // Special formatting for some state
+        case PipelineState::VertexAttribShaderComponentType:
+            out << "=";
+            switch (state)
+            {
+                case 0:
+                    static_assert(static_cast<uint32_t>(gl::ComponentType::Float) == 0);
+                    out << "float";
+                    break;
+                case 1:
+                    static_assert(static_cast<uint32_t>(gl::ComponentType::Int) == 1);
+                    out << "int";
+                    break;
+                case 2:
+                    static_assert(static_cast<uint32_t>(gl::ComponentType::UnsignedInt) == 2);
+                    out << "uint";
+                    break;
+                case 3:
+                    static_assert(static_cast<uint32_t>(gl::ComponentType::NoType) == 3);
+                    out << "none";
+                    break;
+                default:
+                    UNREACHABLE();
+            }
+            break;
         case PipelineState::Topology:
             out << "=";
             switch (state)
@@ -2250,6 +2386,7 @@ void OutputPipelineState(std::ostream &out, size_t stateIndex, uint32_t state)
         case PipelineState::SampleMask:
         case PipelineState::ColorWriteMask:
         case PipelineState::BlendEnableMask:
+        case PipelineState::MissingOutputsMask:
         case PipelineState::EmulatedDitherControl:
             out << "=0x" << std::hex << state << std::dec;
             break;
@@ -2263,20 +2400,69 @@ void OutputPipelineState(std::ostream &out, size_t stateIndex, uint32_t state)
     out << "\\n";
 }
 
-void OutputAllPipelineState(ContextVk *contextVk,
-                            std::ostream &out,
-                            const UnpackedPipelineState &pipeline,
-                            const PipelineStateBitSet &include,
-                            bool isCommonState)
+[[maybe_unused]] void OutputAllPipelineState(ContextVk *contextVk,
+                                             std::ostream &out,
+                                             const UnpackedPipelineState &pipeline,
+                                             GraphicsPipelineSubset subset,
+                                             const PipelineStateBitSet &include,
+                                             bool isCommonState)
 {
+    // Default non-existing state to 0, so they are automatically not output as
+    // UnpackedPipelineState also sets them to 0.
+    const bool hasVertexInput             = GraphicsPipelineHasVertexInput(subset);
+    const bool hasShaders                 = GraphicsPipelineHasShaders(subset);
+    const bool hasShadersOrFragmentOutput = GraphicsPipelineHasShadersOrFragmentOutput(subset);
+    const bool hasFragmentOutput          = GraphicsPipelineHasFragmentOutput(subset);
+
     const angle::PackedEnumMap<PipelineState, uint32_t> kDefaultState = {{
+        // Vertex input state
         {PipelineState::VertexAttribFormat,
-         static_cast<uint32_t>(GetCurrentValueFormatID(gl::VertexAttribType::Float))},
+         hasVertexInput
+             ? static_cast<uint32_t>(GetCurrentValueFormatID(gl::VertexAttribType::Float))
+             : 0},
         {PipelineState::VertexAttribDivisor, 0},
         {PipelineState::VertexAttribOffset, 0},
         {PipelineState::VertexAttribStride, 0},
         {PipelineState::VertexAttribCompressed, 0},
-        {PipelineState::RenderPassSamples, 1},
+        {PipelineState::VertexAttribShaderComponentType, 0},
+        {PipelineState::Topology, hasVertexInput ? VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST : 0},
+        {PipelineState::PrimitiveRestartEnable, 0},
+
+        // Shaders state
+        {PipelineState::ViewportNegativeOneToOne,
+         hasShaders && contextVk->getFeatures().supportsDepthClipControl.enabled},
+        {PipelineState::DepthClampEnable,
+         hasShaders && contextVk->getFeatures().depthClamping.enabled},
+        {PipelineState::CullMode, hasShaders ? VK_CULL_MODE_NONE : 0},
+        {PipelineState::FrontFace, hasShaders ? VK_FRONT_FACE_COUNTER_CLOCKWISE : 0},
+        {PipelineState::RasterizerDiscardEnable, 0},
+        {PipelineState::DepthBiasEnable, 0},
+        {PipelineState::PatchVertices, hasShaders ? 3 : 0},
+        {PipelineState::DepthBoundsTest, 0},
+        {PipelineState::DepthTest, 0},
+        {PipelineState::DepthWrite, 0},
+        {PipelineState::StencilTest, 0},
+        {PipelineState::DepthCompareOp, hasShaders ? VK_COMPARE_OP_LESS : 0},
+        {PipelineState::SurfaceRotation, 0},
+        {PipelineState::EmulatedDitherControl, 0},
+        {PipelineState::StencilOpFailFront, hasShaders ? VK_STENCIL_OP_KEEP : 0},
+        {PipelineState::StencilOpPassFront, hasShaders ? VK_STENCIL_OP_KEEP : 0},
+        {PipelineState::StencilOpDepthFailFront, hasShaders ? VK_STENCIL_OP_KEEP : 0},
+        {PipelineState::StencilCompareFront, hasShaders ? VK_COMPARE_OP_ALWAYS : 0},
+        {PipelineState::StencilOpFailBack, hasShaders ? VK_STENCIL_OP_KEEP : 0},
+        {PipelineState::StencilOpPassBack, hasShaders ? VK_STENCIL_OP_KEEP : 0},
+        {PipelineState::StencilOpDepthFailBack, hasShaders ? VK_STENCIL_OP_KEEP : 0},
+        {PipelineState::StencilCompareBack, hasShaders ? VK_COMPARE_OP_ALWAYS : 0},
+
+        // Shared shaders and fragment output state
+        {PipelineState::SampleMask,
+         hasShadersOrFragmentOutput ? std::numeric_limits<uint16_t>::max() : 0},
+        {PipelineState::RasterizationSamples, hasShadersOrFragmentOutput ? 1 : 0},
+        {PipelineState::SampleShadingEnable, 0},
+        {PipelineState::MinSampleShading, hasShadersOrFragmentOutput ? kMinSampleShadingScale : 0},
+        {PipelineState::AlphaToCoverageEnable, 0},
+        {PipelineState::AlphaToOneEnable, 0},
+        {PipelineState::RenderPassSamples, hasShadersOrFragmentOutput ? 1 : 0},
         {PipelineState::RenderPassColorAttachmentRange, 0},
         {PipelineState::RenderPassViewCount, 0},
         {PipelineState::RenderPassSrgbWriteControl, 0},
@@ -2290,47 +2476,19 @@ void OutputAllPipelineState(ContextVk *contextVk,
         {PipelineState::RenderPassColorFormat, 0},
         {PipelineState::RenderPassDepthStencilFormat, 0},
         {PipelineState::Subpass, 0},
-        {PipelineState::Topology, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST},
-        {PipelineState::PatchVertices, 3},
-        {PipelineState::PrimitiveRestartEnable, 0},
-        {PipelineState::CullMode, VK_CULL_MODE_NONE},
-        {PipelineState::FrontFace, VK_FRONT_FACE_COUNTER_CLOCKWISE},
-        {PipelineState::SurfaceRotation, 0},
-        {PipelineState::ViewportNegativeOneToOne,
-         contextVk->getFeatures().supportsDepthClipControl.enabled},
-        {PipelineState::SampleShadingEnable, 0},
-        {PipelineState::RasterizationSamples, 1},
-        {PipelineState::MinSampleShading, kMinSampleShadingScale},
-        {PipelineState::SampleMask, std::numeric_limits<uint16_t>::max()},
-        {PipelineState::AlphaToCoverageEnable, 0},
-        {PipelineState::AlphaToOneEnable, 0},
-        {PipelineState::LogicOpEnable, 0},
-        {PipelineState::LogicOp, VK_LOGIC_OP_COPY},
-        {PipelineState::RasterizerDiscardEnable, 0},
+
+        // Fragment output state
         {PipelineState::ColorWriteMask, 0},
+        {PipelineState::SrcColorBlendFactor, hasFragmentOutput ? VK_BLEND_FACTOR_ONE : 0},
+        {PipelineState::DstColorBlendFactor, hasFragmentOutput ? VK_BLEND_FACTOR_ZERO : 0},
+        {PipelineState::ColorBlendOp, hasFragmentOutput ? VK_BLEND_OP_ADD : 0},
+        {PipelineState::SrcAlphaBlendFactor, hasFragmentOutput ? VK_BLEND_FACTOR_ONE : 0},
+        {PipelineState::DstAlphaBlendFactor, hasFragmentOutput ? VK_BLEND_FACTOR_ZERO : 0},
+        {PipelineState::AlphaBlendOp, hasFragmentOutput ? VK_BLEND_OP_ADD : 0},
         {PipelineState::BlendEnableMask, 0},
-        {PipelineState::SrcColorBlendFactor, VK_BLEND_FACTOR_ONE},
-        {PipelineState::DstColorBlendFactor, VK_BLEND_FACTOR_ZERO},
-        {PipelineState::ColorBlendOp, VK_BLEND_OP_ADD},
-        {PipelineState::SrcAlphaBlendFactor, VK_BLEND_FACTOR_ONE},
-        {PipelineState::DstAlphaBlendFactor, VK_BLEND_FACTOR_ZERO},
-        {PipelineState::AlphaBlendOp, VK_BLEND_OP_ADD},
-        {PipelineState::EmulatedDitherControl, 0},
-        {PipelineState::DepthClampEnable, contextVk->getFeatures().depthClamping.enabled},
-        {PipelineState::DepthBoundsTest, 0},
-        {PipelineState::DepthCompareOp, VK_COMPARE_OP_LESS},
-        {PipelineState::DepthTest, 0},
-        {PipelineState::DepthWrite, 0},
-        {PipelineState::StencilTest, 0},
-        {PipelineState::DepthBiasEnable, 0},
-        {PipelineState::StencilOpFailFront, VK_STENCIL_OP_KEEP},
-        {PipelineState::StencilOpPassFront, VK_STENCIL_OP_KEEP},
-        {PipelineState::StencilOpDepthFailFront, VK_STENCIL_OP_KEEP},
-        {PipelineState::StencilCompareFront, VK_COMPARE_OP_ALWAYS},
-        {PipelineState::StencilOpFailBack, VK_STENCIL_OP_KEEP},
-        {PipelineState::StencilOpPassBack, VK_STENCIL_OP_KEEP},
-        {PipelineState::StencilOpDepthFailBack, VK_STENCIL_OP_KEEP},
-        {PipelineState::StencilCompareBack, VK_COMPARE_OP_ALWAYS},
+        {PipelineState::LogicOpEnable, 0},
+        {PipelineState::LogicOp, hasFragmentOutput ? VK_LOGIC_OP_COPY : 0},
+        {PipelineState::MissingOutputsMask, 0},
     }};
 
     bool anyStateOutput = false;
@@ -2354,14 +2512,22 @@ void OutputAllPipelineState(ContextVk *contextVk,
     }
 }
 
+template <typename Hash>
 void DumpPipelineCacheGraph(
     ContextVk *contextVk,
-    const std::unordered_map<vk::GraphicsPipelineDesc, vk::PipelineHelper> &cache)
+    const std::unordered_map<GraphicsPipelineDesc,
+                             PipelineHelper,
+                             Hash,
+                             typename GraphicsPipelineCacheTypeHelper<Hash>::KeyEqual> &cache)
 {
+    constexpr GraphicsPipelineSubset kSubset = GraphicsPipelineCacheTypeHelper<Hash>::kSubset;
+
     std::ostream &out = contextVk->getPipelineCacheGraphStream();
 
     static std::atomic<uint32_t> sCacheSerial(0);
-    angle::HashMap<vk::GraphicsPipelineDesc, uint32_t> descToId;
+    angle::HashMap<GraphicsPipelineDesc, uint32_t, Hash,
+                   typename GraphicsPipelineCacheTypeHelper<Hash>::KeyEqual>
+        descToId;
 
     uint32_t cacheSerial = sCacheSerial.fetch_add(1);
     uint32_t descId      = 0;
@@ -2370,55 +2536,97 @@ void DumpPipelineCacheGraph(
     std::vector<UnpackedPipelineState> pipelines(cache.size());
     for (const auto &descAndPipeline : cache)
     {
-        UnpackPipelineState(descAndPipeline.first, &pipelines[descId++]);
+        UnpackPipelineState(descAndPipeline.first, kSubset, &pipelines[descId++]);
     }
 
     // Extract common state between all pipelines.
     PipelineStateBitSet commonState = GetCommonPipelineState(pipelines);
     PipelineStateBitSet nodeState   = ~commonState;
 
-    out << " subgraph cluster_" << cacheSerial << "{\n";
-    out << "  label=\"Program " << cacheSerial << "\\n\\nCommon state:\\n";
-    OutputAllPipelineState(contextVk, out, pipelines[0], commonState, true);
+    const char *subsetDescription = "";
+    const char *subsetTag         = "";
+    switch (kSubset)
+    {
+        case GraphicsPipelineSubset::VertexInput:
+            subsetDescription = "(vertex input)\\n";
+            subsetTag         = "VI_";
+            break;
+        case GraphicsPipelineSubset::Shaders:
+            subsetDescription = "(shaders)\\n";
+            subsetTag         = "S_";
+            break;
+        case GraphicsPipelineSubset::FragmentOutput:
+            subsetDescription = "(fragment output)\\n";
+            subsetTag         = "FO_";
+            break;
+        default:
+            break;
+    }
+
+    out << " subgraph cluster_" << subsetTag << cacheSerial << "{\n";
+    out << "  label=\"Program " << cacheSerial << "\\n"
+        << subsetDescription << "\\nCommon state:\\n";
+    OutputAllPipelineState(contextVk, out, pipelines[0], kSubset, commonState, true);
     out << "\";\n";
 
     descId = 0;
     for (const auto &descAndPipeline : cache)
     {
-        const vk::GraphicsPipelineDesc &desc = descAndPipeline.first;
+        const GraphicsPipelineDesc &desc = descAndPipeline.first;
 
-        out << "  p" << cacheSerial << "_" << descId << "[label=\"Pipeline " << descId << "\\n\\n";
-        OutputAllPipelineState(contextVk, out, pipelines[descId], nodeState, false);
-        out << "\"]";
-
+        const char *style        = "";
+        const char *feedbackDesc = "";
         switch (descAndPipeline.second.getCacheLookUpFeedback())
         {
-            case vk::CacheLookUpFeedback::Hit:
+            case CacheLookUpFeedback::Hit:
                 // Default is green already
                 break;
-            case vk::CacheLookUpFeedback::Miss:
-                out << "[color=red]";
+            case CacheLookUpFeedback::Miss:
+                style = "[color=red]";
                 break;
-            case vk::CacheLookUpFeedback::WarmUpHit:
+            case CacheLookUpFeedback::LinkedDrawHit:
                 // Default is green already
-                out << "[style=dashed]";
+                style        = "[style=dotted]";
+                feedbackDesc = "(linked)\\n";
                 break;
-            case vk::CacheLookUpFeedback::WarmUpMiss:
-                out << "[style=dashed,color=red]";
+            case CacheLookUpFeedback::LinkedDrawMiss:
+                style        = "[style=dotted,color=red]";
+                feedbackDesc = "(linked)\\n";
+                break;
+            case CacheLookUpFeedback::WarmUpHit:
+                // Default is green already
+                style        = "[style=dashed]";
+                feedbackDesc = "(warm up)\\n";
+                break;
+            case CacheLookUpFeedback::WarmUpMiss:
+                style        = "[style=dashed,color=red]";
+                feedbackDesc = "(warm up)\\n";
+                break;
+            case CacheLookUpFeedback::UtilsHit:
+                style        = "[color=yellow]";
+                feedbackDesc = "(utils)\\n";
+                break;
+            case CacheLookUpFeedback::UtilsMiss:
+                style        = "[color=purple]";
+                feedbackDesc = "(utils)\\n";
                 break;
             default:
                 // No feedback available
                 break;
         }
 
-        out << ";\n";
+        out << "  p" << subsetTag << cacheSerial << "_" << descId << "[label=\"Pipeline " << descId
+            << "\\n"
+            << feedbackDesc << "\\n";
+        OutputAllPipelineState(contextVk, out, pipelines[descId], kSubset, nodeState, false);
+        out << "\"]" << style << ";\n";
 
         descToId[desc] = descId++;
     }
     for (const auto &descAndPipeline : cache)
     {
-        const vk::GraphicsPipelineDesc &desc     = descAndPipeline.first;
-        const vk::PipelineHelper &pipelineHelper = descAndPipeline.second;
+        const GraphicsPipelineDesc &desc     = descAndPipeline.first;
+        const PipelineHelper &pipelineHelper = descAndPipeline.second;
         const std::vector<GraphicsPipelineTransition> &transitions =
             pipelineHelper.getTransitions();
 
@@ -2430,9 +2638,9 @@ void DumpPipelineCacheGraph(
             const uint64_t transitionBits =
                 static_cast<uint64_t>(transition.bits.bits(1)) << 32 | transition.bits.bits(0);
 #endif
-            out << "  p" << cacheSerial << "_" << descToId[desc] << " -> p" << cacheSerial << "_"
-                << descToId[*transition.desc] << " [label=\"'0x" << std::hex << transitionBits
-                << std::dec << "'\"];\n";
+            out << "  p" << subsetTag << cacheSerial << "_" << descToId[desc] << " -> p"
+                << subsetTag << cacheSerial << "_" << descToId[*transition.desc] << " [label=\"'0x"
+                << std::hex << transitionBits << std::dec << "'\"];\n";
         }
     }
     out << " }\n";
@@ -2461,7 +2669,89 @@ void DestroyCachedObject(RendererVk *renderer, const DescriptorSetDescAndPool &d
     ASSERT(descAndPool.mPool != nullptr);
     descAndPool.mPool->destroyCachedDescriptorSet(renderer, descAndPool.mDesc);
 }
+
+angle::Result InitializePipelineFromLibraries(Context *context,
+                                              PipelineCacheAccess *pipelineCache,
+                                              const vk::PipelineLayout &pipelineLayout,
+                                              const vk::PipelineHelper &vertexInputPipeline,
+                                              const vk::PipelineHelper &shadersPipeline,
+                                              const vk::PipelineHelper &fragmentOutputPipeline,
+                                              Pipeline *pipelineOut,
+                                              CacheLookUpFeedback *feedbackOut)
+{
+    // Nothing in the create info, everything comes from the libraries.
+    VkGraphicsPipelineCreateInfo createInfo = {};
+    createInfo.sType                        = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+
+    // Note: the pipeline layout is not necessary when linking libraries as ANGLE does not use
+    // VK_PIPELINE_LAYOUT_CREATE_INDEPENDENT_SETS_BIT_EXT.  However, some drivers have come to
+    // expect a non-null value for the layout, so the layout is provided here as a workaround.
+    createInfo.layout = pipelineLayout.getHandle();
+
+    const std::array<VkPipeline, 3> pipelines = {
+        vertexInputPipeline.getPipeline().getHandle(),
+        shadersPipeline.getPipeline().getHandle(),
+        fragmentOutputPipeline.getPipeline().getHandle(),
+    };
+
+    // Specify the three subsets as input libraries.
+    VkPipelineLibraryCreateInfoKHR libraryInfo = {};
+    libraryInfo.sType                          = VK_STRUCTURE_TYPE_PIPELINE_LIBRARY_CREATE_INFO_KHR;
+    libraryInfo.libraryCount                   = 3;
+    libraryInfo.pLibraries                     = pipelines.data();
+
+    AddToPNextChain(&createInfo, &libraryInfo);
+
+    // If supported, get feedback.
+    VkPipelineCreationFeedback feedback               = {};
+    VkPipelineCreationFeedbackCreateInfo feedbackInfo = {};
+    feedbackInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_CREATION_FEEDBACK_CREATE_INFO;
+
+    const bool supportsFeedback = context->getFeatures().supportsPipelineCreationFeedback.enabled;
+    if (supportsFeedback)
+    {
+        feedbackInfo.pPipelineCreationFeedback = &feedback;
+        AddToPNextChain(&createInfo, &feedbackInfo);
+    }
+
+    // Create the pipeline
+    ANGLE_VK_TRY(context, pipelineCache->createGraphicsPipeline(context, createInfo, pipelineOut));
+
+    if (supportsFeedback)
+    {
+        const bool cacheHit =
+            (feedback.flags & VK_PIPELINE_CREATION_FEEDBACK_APPLICATION_PIPELINE_CACHE_HIT_BIT) !=
+            0;
+
+        *feedbackOut = cacheHit ? CacheLookUpFeedback::Hit : CacheLookUpFeedback::Miss;
+        ApplyPipelineCreationFeedback(context, feedback);
+    }
+
+    return angle::Result::Continue;
+}
 }  // anonymous namespace
+
+GraphicsPipelineTransitionBits GetGraphicsPipelineTransitionBitsMask(GraphicsPipelineSubset subset)
+{
+    switch (subset)
+    {
+        case GraphicsPipelineSubset::VertexInput:
+            return kPipelineVertexInputTransitionBitsMask;
+        case GraphicsPipelineSubset::Shaders:
+            return kPipelineShadersTransitionBitsMask;
+        case GraphicsPipelineSubset::FragmentOutput:
+            return kPipelineFragmentOutputTransitionBitsMask;
+        default:
+            break;
+    }
+
+    ASSERT(subset == GraphicsPipelineSubset::Complete);
+
+    GraphicsPipelineTransitionBits allBits;
+    allBits.set();
+
+    return allBits;
+}
 
 // RenderPassDesc implementation.
 RenderPassDesc::RenderPassDesc()
@@ -2610,7 +2900,7 @@ size_t RenderPassDesc::attachmentCount() const
 
 bool operator==(const RenderPassDesc &lhs, const RenderPassDesc &rhs)
 {
-    return (memcmp(&lhs, &rhs, sizeof(RenderPassDesc)) == 0);
+    return memcmp(&lhs, &rhs, sizeof(RenderPassDesc)) == 0;
 }
 
 // GraphicsPipelineDesc implementation.
@@ -2634,249 +2924,402 @@ GraphicsPipelineDesc::~GraphicsPipelineDesc() = default;
 
 GraphicsPipelineDesc::GraphicsPipelineDesc(const GraphicsPipelineDesc &other)
 {
-    memcpy(this, &other, sizeof(GraphicsPipelineDesc));
+    *this = other;
 }
 
 GraphicsPipelineDesc &GraphicsPipelineDesc::operator=(const GraphicsPipelineDesc &other)
 {
-    memcpy(this, &other, sizeof(GraphicsPipelineDesc));
+    memcpy(this, &other, sizeof(*this));
     return *this;
 }
 
-size_t GraphicsPipelineDesc::hash() const
+const void *GraphicsPipelineDesc::getPipelineSubsetMemory(GraphicsPipelineSubset subset,
+                                                          size_t *sizeOut) const
 {
-    size_t keySize = sizeof(*this);
-    if (mDynamicState.ds1And2.supportsDynamicState1 &&
-        !mDynamicState.ds1And2.forceStaticVertexStrideState)
-    {
-        keySize -= kPackedDynamicState1Size;
+    // GraphicsPipelineDesc must be laid out such that the three subsets are contiguous.  The layout
+    // is:
+    //
+    //     Shaders State                 \
+    //                                    )--> Pre-rasterization + fragment subset
+    //     Shared Non-Vertex-Input State /  \
+    //                                       )--> fragment output subset
+    //     Fragment Output State            /
+    //
+    //     Vertex Input State            ----> Vertex input subset
+    static_assert(offsetof(GraphicsPipelineDesc, mShaders) == kPipelineShadersDescOffset);
+    static_assert(offsetof(GraphicsPipelineDesc, mSharedNonVertexInput) ==
+                  kPipelineShadersDescOffset + kGraphicsPipelineShadersStateSize);
+    static_assert(offsetof(GraphicsPipelineDesc, mSharedNonVertexInput) ==
+                  kPipelineFragmentOutputDescOffset);
+    static_assert(offsetof(GraphicsPipelineDesc, mFragmentOutput) ==
+                  kPipelineFragmentOutputDescOffset +
+                      kGraphicsPipelineSharedNonVertexInputStateSize);
+    static_assert(offsetof(GraphicsPipelineDesc, mVertexInput) == kPipelineVertexInputDescOffset);
 
-        if (mDynamicState.ds1And2.supportsDynamicState2)
+    // Exclude vertex strides from the hash. It's conveniently placed last, so it would be easy to
+    // exclude it from hash.
+    static_assert(offsetof(GraphicsPipelineDesc, mVertexInput.vertex.strides) +
+                      sizeof(PackedVertexInputAttributes::strides) ==
+                  sizeof(GraphicsPipelineDesc));
+
+    size_t vertexInputReduceSize = 0;
+    if (mVertexInput.inputAssembly.bits.supportsDynamicState1 &&
+        !mVertexInput.inputAssembly.bits.forceStaticVertexStrideState)
+    {
+        vertexInputReduceSize = sizeof(PackedVertexInputAttributes::strides);
+    }
+
+    switch (subset)
+    {
+        case GraphicsPipelineSubset::VertexInput:
+            *sizeOut = kPipelineVertexInputDescSize - vertexInputReduceSize;
+            return &mVertexInput;
+
+        case GraphicsPipelineSubset::Shaders:
+            *sizeOut = kPipelineShadersDescSize;
+            return &mShaders;
+
+        case GraphicsPipelineSubset::FragmentOutput:
+            *sizeOut = kPipelineFragmentOutputDescSize;
+            return &mSharedNonVertexInput;
+
+        case GraphicsPipelineSubset::Complete:
+        default:
+            *sizeOut = sizeof(*this) - vertexInputReduceSize;
+            return this;
+    }
+}
+
+size_t GraphicsPipelineDesc::hash(GraphicsPipelineSubset subset) const
+{
+    size_t keySize  = 0;
+    const void *key = getPipelineSubsetMemory(subset, &keySize);
+
+    return angle::ComputeGenericHash(key, keySize);
+}
+
+bool GraphicsPipelineDesc::keyEqual(const GraphicsPipelineDesc &other,
+                                    GraphicsPipelineSubset subset) const
+{
+    size_t keySize  = 0;
+    const void *key = getPipelineSubsetMemory(subset, &keySize);
+
+    size_t otherKeySize  = 0;
+    const void *otherKey = other.getPipelineSubsetMemory(subset, &otherKeySize);
+
+    // Compare the relevant part of the desc memory.  Note that due to workarounds (e.g.
+    // forceStaticVertexStrideState), |this| or |other| may produce different key sizes.  In that
+    // case, comparing the minimum of the two is sufficient; if the workarounds are different, the
+    // comparison would fail anyway.
+    return memcmp(key, otherKey, std::min(keySize, otherKeySize)) == 0;
+}
+
+// Initialize PSO states, it is consistent with initial value of gl::State.
+//
+// Some states affect the pipeline, but they are not derived from the GL state, but rather the
+// properties of the Vulkan device or the context itself; such as whether a workaround is in
+// effect, or the context is robust.  For VK_EXT_graphics_pipeline_library, such state that affects
+// multiple subsets of the pipeline is duplicated in each subset (for example, there are two
+// copies of isRobustContext, one for vertex input and one for shader stages).
+void GraphicsPipelineDesc::initDefaults(const ContextVk *contextVk, GraphicsPipelineSubset subset)
+{
+    if (GraphicsPipelineHasVertexInput(subset))
+    {
+        // Set all vertex input attributes to default, the default format is Float
+        angle::FormatID defaultFormat = GetCurrentValueFormatID(gl::VertexAttribType::Float);
+        for (PackedAttribDesc &packedAttrib : mVertexInput.vertex.attribs)
         {
-            keySize -= kPackedDynamicState1And2Size;
+            SetBitField(packedAttrib.divisor, 0);
+            SetBitField(packedAttrib.format, defaultFormat);
+            SetBitField(packedAttrib.compressed, 0);
+            SetBitField(packedAttrib.offset, 0);
         }
+        mVertexInput.vertex.shaderAttribComponentType = 0;
+        memset(mVertexInput.vertex.strides, 0, sizeof(mVertexInput.vertex.strides));
+
+        SetBitField(mVertexInput.inputAssembly.bits.topology, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+        mVertexInput.inputAssembly.bits.primitiveRestartEnable = 0;
+        mVertexInput.inputAssembly.bits.supportsDynamicState1 =
+            contextVk->getFeatures().supportsExtendedDynamicState.enabled;
+        mVertexInput.inputAssembly.bits.forceStaticVertexStrideState =
+            contextVk->getFeatures().forceStaticVertexStrideState.enabled;
+        mVertexInput.inputAssembly.bits.padding = 0;
     }
-    return angle::ComputeGenericHash(this, keySize);
+
+    if (GraphicsPipelineHasShaders(subset))
+    {
+        mShaders.shaders.bits.viewportNegativeOneToOne =
+            contextVk->getFeatures().supportsDepthClipControl.enabled;
+        mShaders.shaders.bits.depthClampEnable =
+            contextVk->getFeatures().depthClamping.enabled ? VK_TRUE : VK_FALSE;
+        SetBitField(mShaders.shaders.bits.cullMode, VK_CULL_MODE_NONE);
+        SetBitField(mShaders.shaders.bits.frontFace, VK_FRONT_FACE_COUNTER_CLOCKWISE);
+        mShaders.shaders.bits.rasterizerDiscardEnable = 0;
+        mShaders.shaders.bits.depthBiasEnable         = 0;
+        SetBitField(mShaders.shaders.bits.patchVertices, 3);
+        mShaders.shaders.bits.depthBoundsTest                   = 0;
+        mShaders.shaders.bits.depthTest                         = 0;
+        mShaders.shaders.bits.depthWrite                        = 0;
+        mShaders.shaders.bits.stencilTest                       = 0;
+        mShaders.shaders.bits.nonZeroStencilWriteMaskWorkaround = 0;
+        SetBitField(mShaders.shaders.bits.depthCompareOp, VK_COMPARE_OP_LESS);
+        mShaders.shaders.bits.surfaceRotation  = 0;
+        mShaders.shaders.bits.padding          = 0;
+        mShaders.shaders.emulatedDitherControl = 0;
+        mShaders.shaders.padding               = 0;
+        SetBitField(mShaders.shaders.front.fail, VK_STENCIL_OP_KEEP);
+        SetBitField(mShaders.shaders.front.pass, VK_STENCIL_OP_KEEP);
+        SetBitField(mShaders.shaders.front.depthFail, VK_STENCIL_OP_KEEP);
+        SetBitField(mShaders.shaders.front.compare, VK_COMPARE_OP_ALWAYS);
+        SetBitField(mShaders.shaders.back.fail, VK_STENCIL_OP_KEEP);
+        SetBitField(mShaders.shaders.back.pass, VK_STENCIL_OP_KEEP);
+        SetBitField(mShaders.shaders.back.depthFail, VK_STENCIL_OP_KEEP);
+        SetBitField(mShaders.shaders.back.compare, VK_COMPARE_OP_ALWAYS);
+    }
+
+    if (GraphicsPipelineHasShadersOrFragmentOutput(subset))
+    {
+        mSharedNonVertexInput.multisample.bits.sampleMask = std::numeric_limits<uint16_t>::max();
+        mSharedNonVertexInput.multisample.bits.rasterizationSamplesMinusOne = 0;
+        mSharedNonVertexInput.multisample.bits.sampleShadingEnable          = 0;
+        mSharedNonVertexInput.multisample.bits.alphaToCoverageEnable        = 0;
+        mSharedNonVertexInput.multisample.bits.alphaToOneEnable             = 0;
+        mSharedNonVertexInput.multisample.bits.subpass                      = 0;
+        mSharedNonVertexInput.multisample.bits.minSampleShading = kMinSampleShadingScale;
+    }
+
+    if (GraphicsPipelineHasFragmentOutput(subset))
+    {
+        constexpr VkFlags kAllColorBits = (VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                                           VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT);
+
+        for (uint32_t colorIndexGL = 0; colorIndexGL < gl::IMPLEMENTATION_MAX_DRAW_BUFFERS;
+             ++colorIndexGL)
+        {
+            Int4Array_Set(mFragmentOutput.blend.colorWriteMaskBits, colorIndexGL, kAllColorBits);
+        }
+
+        PackedColorBlendAttachmentState blendAttachmentState;
+        SetBitField(blendAttachmentState.srcColorBlendFactor, VK_BLEND_FACTOR_ONE);
+        SetBitField(blendAttachmentState.dstColorBlendFactor, VK_BLEND_FACTOR_ZERO);
+        SetBitField(blendAttachmentState.colorBlendOp, VK_BLEND_OP_ADD);
+        SetBitField(blendAttachmentState.srcAlphaBlendFactor, VK_BLEND_FACTOR_ONE);
+        SetBitField(blendAttachmentState.dstAlphaBlendFactor, VK_BLEND_FACTOR_ZERO);
+        SetBitField(blendAttachmentState.alphaBlendOp, VK_BLEND_OP_ADD);
+
+        std::fill(&mFragmentOutput.blend.attachments[0],
+                  &mFragmentOutput.blend.attachments[gl::IMPLEMENTATION_MAX_DRAW_BUFFERS],
+                  blendAttachmentState);
+
+        mFragmentOutput.blendMaskAndLogic.bits.blendEnableMask = 0;
+        mFragmentOutput.blendMaskAndLogic.bits.logicOpEnable   = 0;
+        SetBitField(mFragmentOutput.blendMaskAndLogic.bits.logicOp, VK_LOGIC_OP_COPY);
+        mFragmentOutput.blendMaskAndLogic.bits.padding = 0;
+    }
+
+    // Context robustness affects vertex input and shader stages.
+    mVertexInput.inputAssembly.bits.isRobustContext = mShaders.shaders.bits.isRobustContext =
+        contextVk->shouldUsePipelineRobustness();
+
+    // Context protected-ness affects all subsets.
+    mVertexInput.inputAssembly.bits.isProtectedContext = mShaders.shaders.bits.isProtectedContext =
+        mFragmentOutput.blendMaskAndLogic.bits.isProtectedContext =
+            contextVk->shouldRestrictPipelineToProtectedAccess();
 }
 
-bool GraphicsPipelineDesc::operator==(const GraphicsPipelineDesc &other) const
+VkResult GraphicsPipelineDesc::initializePipeline(Context *context,
+                                                  PipelineCacheAccess *pipelineCache,
+                                                  GraphicsPipelineSubset subset,
+                                                  const RenderPass &compatibleRenderPass,
+                                                  const PipelineLayout &pipelineLayout,
+                                                  const ShaderModuleMap &shaders,
+                                                  const SpecializationConstants &specConsts,
+                                                  Pipeline *pipelineOut,
+                                                  CacheLookUpFeedback *feedbackOut) const
 {
-    return (memcmp(this, &other, sizeof(GraphicsPipelineDesc)) == 0);
+    GraphicsPipelineVertexInputVulkanStructs vertexInputState;
+    GraphicsPipelineShadersVulkanStructs shadersState;
+    GraphicsPipelineSharedNonVertexInputVulkanStructs sharedNonVertexInputState;
+    GraphicsPipelineFragmentOutputVulkanStructs fragmentOutputState;
+    GraphicsPipelineDynamicStateList dynamicStateList;
+
+    VkGraphicsPipelineCreateInfo createInfo = {};
+    createInfo.sType                        = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    createInfo.flags                        = 0;
+    createInfo.renderPass                   = compatibleRenderPass.getHandle();
+    createInfo.subpass                      = mSharedNonVertexInput.multisample.bits.subpass;
+
+    const bool hasVertexInput             = GraphicsPipelineHasVertexInput(subset);
+    const bool hasShaders                 = GraphicsPipelineHasShaders(subset);
+    const bool hasShadersOrFragmentOutput = GraphicsPipelineHasShadersOrFragmentOutput(subset);
+    const bool hasFragmentOutput          = GraphicsPipelineHasFragmentOutput(subset);
+
+    if (hasVertexInput)
+    {
+        initializePipelineVertexInputState(context, &vertexInputState, &dynamicStateList);
+
+        createInfo.pVertexInputState   = &vertexInputState.vertexInputState;
+        createInfo.pInputAssemblyState = &vertexInputState.inputAssemblyState;
+    }
+
+    if (hasShaders)
+    {
+        initializePipelineShadersState(context, shaders, specConsts, &shadersState,
+                                       &dynamicStateList);
+
+        createInfo.stageCount          = static_cast<uint32_t>(shadersState.shaderStages.size());
+        createInfo.pStages             = shadersState.shaderStages.data();
+        createInfo.pTessellationState  = &shadersState.tessellationState;
+        createInfo.pViewportState      = &shadersState.viewportState;
+        createInfo.pRasterizationState = &shadersState.rasterState;
+        createInfo.pDepthStencilState  = &shadersState.depthStencilState;
+        createInfo.layout              = pipelineLayout.getHandle();
+    }
+
+    if (hasShadersOrFragmentOutput)
+    {
+        initializePipelineSharedNonVertexInputState(context, &sharedNonVertexInputState,
+                                                    &dynamicStateList);
+
+        createInfo.pMultisampleState = &sharedNonVertexInputState.multisampleState;
+    }
+
+    if (hasFragmentOutput)
+    {
+        initializePipelineFragmentOutputState(context, &fragmentOutputState, &dynamicStateList);
+
+        createInfo.pColorBlendState = &fragmentOutputState.blendState;
+    }
+
+    VkPipelineDynamicStateCreateInfo dynamicState = {};
+    dynamicState.sType             = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStateList.size());
+    dynamicState.pDynamicStates    = dynamicStateList.data();
+    createInfo.pDynamicState       = dynamicStateList.empty() ? nullptr : &dynamicState;
+
+    // If not a complete pipeline, specify which subset is being created
+    VkGraphicsPipelineLibraryCreateInfoEXT libraryInfo = {};
+    libraryInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_LIBRARY_CREATE_INFO_EXT;
+
+    if (subset != GraphicsPipelineSubset::Complete)
+    {
+        switch (subset)
+        {
+            case GraphicsPipelineSubset::VertexInput:
+                libraryInfo.flags = VK_GRAPHICS_PIPELINE_LIBRARY_VERTEX_INPUT_INTERFACE_BIT_EXT;
+                break;
+            case GraphicsPipelineSubset::Shaders:
+                libraryInfo.flags = VK_GRAPHICS_PIPELINE_LIBRARY_PRE_RASTERIZATION_SHADERS_BIT_EXT |
+                                    VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_SHADER_BIT_EXT;
+                break;
+            case GraphicsPipelineSubset::FragmentOutput:
+                libraryInfo.flags = VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_OUTPUT_INTERFACE_BIT_EXT;
+                break;
+            default:
+                UNREACHABLE();
+                break;
+        }
+
+        createInfo.flags |= VK_PIPELINE_CREATE_LIBRARY_BIT_KHR;
+
+        AddToPNextChain(&createInfo, &libraryInfo);
+    }
+
+    VkPipelineRobustnessCreateInfoEXT robustness = {};
+    robustness.sType = VK_STRUCTURE_TYPE_PIPELINE_ROBUSTNESS_CREATE_INFO_EXT;
+
+    // Enable robustness on the pipeline if needed.  Note that the global robustBufferAccess feature
+    // must be disabled by default.
+    if ((hasVertexInput && mVertexInput.inputAssembly.bits.isRobustContext) ||
+        (hasShaders && mShaders.shaders.bits.isRobustContext))
+    {
+        ASSERT(context->getFeatures().supportsPipelineRobustness.enabled);
+
+        robustness.storageBuffers = VK_PIPELINE_ROBUSTNESS_BUFFER_BEHAVIOR_ROBUST_BUFFER_ACCESS_EXT;
+        robustness.uniformBuffers = VK_PIPELINE_ROBUSTNESS_BUFFER_BEHAVIOR_ROBUST_BUFFER_ACCESS_EXT;
+        robustness.vertexInputs   = VK_PIPELINE_ROBUSTNESS_BUFFER_BEHAVIOR_ROBUST_BUFFER_ACCESS_EXT;
+        robustness.images         = VK_PIPELINE_ROBUSTNESS_IMAGE_BEHAVIOR_DEVICE_DEFAULT_EXT;
+
+        AddToPNextChain(&createInfo, &robustness);
+    }
+
+    if ((hasVertexInput && mVertexInput.inputAssembly.bits.isProtectedContext) ||
+        (hasShaders && mShaders.shaders.bits.isProtectedContext) ||
+        (hasFragmentOutput && mFragmentOutput.blendMaskAndLogic.bits.isProtectedContext))
+    {
+        ASSERT(context->getFeatures().supportsPipelineProtectedAccess.enabled);
+        createInfo.flags |= VK_PIPELINE_CREATE_PROTECTED_ACCESS_ONLY_BIT_EXT;
+    }
+    else if (context->getFeatures().supportsPipelineProtectedAccess.enabled)
+    {
+        createInfo.flags |= VK_PIPELINE_CREATE_NO_PROTECTED_ACCESS_BIT_EXT;
+    }
+
+    VkPipelineCreationFeedback feedback = {};
+    gl::ShaderMap<VkPipelineCreationFeedback> perStageFeedback;
+
+    VkPipelineCreationFeedbackCreateInfo feedbackInfo = {};
+    feedbackInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_CREATION_FEEDBACK_CREATE_INFO;
+
+    const bool supportsFeedback = context->getFeatures().supportsPipelineCreationFeedback.enabled;
+    if (supportsFeedback)
+    {
+        feedbackInfo.pPipelineCreationFeedback = &feedback;
+        // Provide some storage for per-stage data, even though it's not used.  This first works
+        // around a VVL bug that doesn't allow `pipelineStageCreationFeedbackCount=0` despite the
+        // spec (See https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/4161).  Even
+        // with fixed VVL, several drivers crash when this storage is missing too.
+        feedbackInfo.pipelineStageCreationFeedbackCount = createInfo.stageCount;
+        feedbackInfo.pPipelineStageCreationFeedbacks    = perStageFeedback.data();
+
+        AddToPNextChain(&createInfo, &feedbackInfo);
+    }
+
+    VkResult result = pipelineCache->createGraphicsPipeline(context, createInfo, pipelineOut);
+
+    if (supportsFeedback)
+    {
+        const bool cacheHit =
+            (feedback.flags & VK_PIPELINE_CREATION_FEEDBACK_APPLICATION_PIPELINE_CACHE_HIT_BIT) !=
+            0;
+
+        *feedbackOut = cacheHit ? CacheLookUpFeedback::Hit : CacheLookUpFeedback::Miss;
+        ApplyPipelineCreationFeedback(context, feedback);
+    }
+
+    return result;
 }
 
-// TODO(jmadill): We should prefer using Packed GLenums. http://anglebug.com/2169
-
-// Initialize PSO states, it is consistent with initial value of gl::State
-void GraphicsPipelineDesc::initDefaults(const ContextVk *contextVk)
+void GraphicsPipelineDesc::initializePipelineVertexInputState(
+    Context *context,
+    GraphicsPipelineVertexInputVulkanStructs *stateOut,
+    GraphicsPipelineDynamicStateList *dynamicStateListOut) const
 {
-    // Set all vertex input attributes to default, the default format is Float
-    angle::FormatID defaultFormat = GetCurrentValueFormatID(gl::VertexAttribType::Float);
-    for (PackedAttribDesc &packedAttrib : mVertexInputAttribs.attribs)
-    {
-        SetBitField(packedAttrib.divisor, 0);
-        SetBitField(packedAttrib.format, defaultFormat);
-        SetBitField(packedAttrib.compressed, 0);
-        SetBitField(packedAttrib.offset, 0);
-    }
-
-    mInputAssemblyAndRasterizationStateInfo.bits.subpass = 0;
-    mInputAssemblyAndRasterizationStateInfo.bits.depthClampEnable =
-        contextVk->getFeatures().depthClamping.enabled ? VK_TRUE : VK_FALSE;
-    mInputAssemblyAndRasterizationStateInfo.bits.rasterizationSamples  = 1;
-    mInputAssemblyAndRasterizationStateInfo.bits.sampleShadingEnable   = 0;
-    mInputAssemblyAndRasterizationStateInfo.bits.alphaToCoverageEnable = 0;
-    mInputAssemblyAndRasterizationStateInfo.bits.alphaToOneEnable      = 0;
-    mInputAssemblyAndRasterizationStateInfo.bits.logicOpEnable         = 0;
-    SetBitField(mInputAssemblyAndRasterizationStateInfo.bits.logicOp, VK_LOGIC_OP_COPY);
-
-    mInputAssemblyAndRasterizationStateInfo.sampleMask = std::numeric_limits<uint16_t>::max();
-
-    SetBitField(mInputAssemblyAndRasterizationStateInfo.misc.topology,
-                VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-    SetBitField(mInputAssemblyAndRasterizationStateInfo.misc.patchVertices, 3);
-    mInputAssemblyAndRasterizationStateInfo.misc.surfaceRotation = 0;
-    mInputAssemblyAndRasterizationStateInfo.misc.viewportNegativeOneToOne =
-        contextVk->getFeatures().supportsDepthClipControl.enabled;
-    mInputAssemblyAndRasterizationStateInfo.misc.depthBoundsTest  = 0;
-    mInputAssemblyAndRasterizationStateInfo.misc.minSampleShading = kMinSampleShadingScale;
-    mInputAssemblyAndRasterizationStateInfo.misc.blendEnableMask  = 0;
-
-    VkFlags allColorBits = (VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
-                            VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT);
-
-    for (uint32_t colorIndexGL = 0; colorIndexGL < gl::IMPLEMENTATION_MAX_DRAW_BUFFERS;
-         ++colorIndexGL)
-    {
-        Int4Array_Set(mColorBlendStateInfo.colorWriteMaskBits, colorIndexGL, allColorBits);
-    }
-
-    PackedColorBlendAttachmentState blendAttachmentState;
-    SetBitField(blendAttachmentState.srcColorBlendFactor, VK_BLEND_FACTOR_ONE);
-    SetBitField(blendAttachmentState.dstColorBlendFactor, VK_BLEND_FACTOR_ZERO);
-    SetBitField(blendAttachmentState.colorBlendOp, VK_BLEND_OP_ADD);
-    SetBitField(blendAttachmentState.srcAlphaBlendFactor, VK_BLEND_FACTOR_ONE);
-    SetBitField(blendAttachmentState.dstAlphaBlendFactor, VK_BLEND_FACTOR_ZERO);
-    SetBitField(blendAttachmentState.alphaBlendOp, VK_BLEND_OP_ADD);
-
-    std::fill(&mColorBlendStateInfo.attachments[0],
-              &mColorBlendStateInfo.attachments[gl::IMPLEMENTATION_MAX_DRAW_BUFFERS],
-              blendAttachmentState);
-
-    mDitherAndContextState.emulatedDitherControl = 0;
-    mDitherAndContextState.isRobustContext       = contextVk->shouldUsePipelineRobustness();
-    mDitherAndContextState.nonZeroStencilWriteMaskWorkaround = 0;
-    mDitherAndContextState.unused                            = 0;
-
-    SetBitField(mDynamicState.ds1And2.cullMode, VK_CULL_MODE_NONE);
-    SetBitField(mDynamicState.ds1And2.frontFace, VK_FRONT_FACE_COUNTER_CLOCKWISE);
-    SetBitField(mDynamicState.ds1And2.depthCompareOp, VK_COMPARE_OP_LESS);
-    mDynamicState.ds1And2.depthTest   = 0;
-    mDynamicState.ds1And2.depthWrite  = 0;
-    mDynamicState.ds1And2.stencilTest = 0;
-
-    mDynamicState.ds1And2.rasterizerDiscardEnable = 0;
-    mDynamicState.ds1And2.depthBiasEnable         = 0;
-    mDynamicState.ds1And2.primitiveRestartEnable  = 0;
-
-    mDynamicState.ds1And2.supportsDynamicState1 =
-        contextVk->getFeatures().supportsExtendedDynamicState.enabled;
-    mDynamicState.ds1And2.supportsDynamicState2 =
-        contextVk->getFeatures().supportsExtendedDynamicState2.enabled;
-    mDynamicState.ds1And2.forceStaticVertexStrideState =
-        contextVk->getFeatures().forceStaticVertexStrideState.enabled;
-    mDynamicState.ds1And2.padding = 0;
-
-    SetBitField(mDynamicState.ds1.front.ops.fail, VK_STENCIL_OP_KEEP);
-    SetBitField(mDynamicState.ds1.front.ops.pass, VK_STENCIL_OP_KEEP);
-    SetBitField(mDynamicState.ds1.front.ops.depthFail, VK_STENCIL_OP_KEEP);
-    SetBitField(mDynamicState.ds1.front.ops.compare, VK_COMPARE_OP_ALWAYS);
-    SetBitField(mDynamicState.ds1.back.ops.fail, VK_STENCIL_OP_KEEP);
-    SetBitField(mDynamicState.ds1.back.ops.pass, VK_STENCIL_OP_KEEP);
-    SetBitField(mDynamicState.ds1.back.ops.depthFail, VK_STENCIL_OP_KEEP);
-    SetBitField(mDynamicState.ds1.back.ops.compare, VK_COMPARE_OP_ALWAYS);
-    memset(mDynamicState.ds1.vertexStrides, 0, sizeof(mDynamicState.ds1.vertexStrides));
-}
-
-angle::Result GraphicsPipelineDesc::initializePipeline(
-    ContextVk *contextVk,
-    PipelineCacheAccess *pipelineCache,
-    const RenderPass &compatibleRenderPass,
-    const PipelineLayout &pipelineLayout,
-    const gl::AttributesMask &activeAttribLocationsMask,
-    const gl::ComponentTypeMask &programAttribsTypeMask,
-    const gl::DrawBufferMask &missingOutputsMask,
-    const ShaderAndSerialMap &shaders,
-    const SpecializationConstants &specConsts,
-    Pipeline *pipelineOut,
-    CacheLookUpFeedback *feedbackOut) const
-{
-    angle::FixedVector<VkPipelineShaderStageCreateInfo, 5> shaderStages;
-    VkPipelineVertexInputStateCreateInfo vertexInputState     = {};
-    VkPipelineInputAssemblyStateCreateInfo inputAssemblyState = {};
-    VkPipelineViewportStateCreateInfo viewportState           = {};
-    VkPipelineRasterizationStateCreateInfo rasterState        = {};
-    VkPipelineMultisampleStateCreateInfo multisampleState     = {};
-    VkPipelineDepthStencilStateCreateInfo depthStencilState   = {};
-    gl::DrawBuffersArray<VkPipelineColorBlendAttachmentState> blendAttachmentState;
-    VkPipelineTessellationStateCreateInfo tessellationState             = {};
-    VkPipelineTessellationDomainOriginStateCreateInfo domainOriginState = {};
-    VkPipelineColorBlendStateCreateInfo blendState                      = {};
-    VkSpecializationInfo specializationInfo                             = {};
-    VkGraphicsPipelineCreateInfo createInfo                             = {};
-
-    SpecializationConstantMap<VkSpecializationMapEntry> specializationEntries;
-    InitializeSpecializationInfo(specConsts, &specializationEntries, &specializationInfo);
-
-    // Vertex shader is always expected to be present.
-    const ShaderModule &vertexModule = shaders[gl::ShaderType::Vertex].get().get();
-    ASSERT(vertexModule.valid());
-    VkPipelineShaderStageCreateInfo vertexStage = {};
-    SetPipelineShaderStageInfo(VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-                               VK_SHADER_STAGE_VERTEX_BIT, vertexModule.getHandle(),
-                               specializationInfo, &vertexStage);
-    shaderStages.push_back(vertexStage);
-
-    const ShaderAndSerialPointer &tessControlPointer = shaders[gl::ShaderType::TessControl];
-    if (tessControlPointer.valid())
-    {
-        const ShaderModule &tessControlModule            = tessControlPointer.get().get();
-        VkPipelineShaderStageCreateInfo tessControlStage = {};
-        SetPipelineShaderStageInfo(VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-                                   VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT,
-                                   tessControlModule.getHandle(), specializationInfo,
-                                   &tessControlStage);
-        shaderStages.push_back(tessControlStage);
-    }
-
-    const ShaderAndSerialPointer &tessEvaluationPointer = shaders[gl::ShaderType::TessEvaluation];
-    if (tessEvaluationPointer.valid())
-    {
-        const ShaderModule &tessEvaluationModule            = tessEvaluationPointer.get().get();
-        VkPipelineShaderStageCreateInfo tessEvaluationStage = {};
-        SetPipelineShaderStageInfo(VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-                                   VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT,
-                                   tessEvaluationModule.getHandle(), specializationInfo,
-                                   &tessEvaluationStage);
-        shaderStages.push_back(tessEvaluationStage);
-    }
-
-    const ShaderAndSerialPointer &geometryPointer = shaders[gl::ShaderType::Geometry];
-    if (geometryPointer.valid())
-    {
-        const ShaderModule &geometryModule            = geometryPointer.get().get();
-        VkPipelineShaderStageCreateInfo geometryStage = {};
-        SetPipelineShaderStageInfo(VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-                                   VK_SHADER_STAGE_GEOMETRY_BIT, geometryModule.getHandle(),
-                                   specializationInfo, &geometryStage);
-        shaderStages.push_back(geometryStage);
-    }
-
-    // Fragment shader is optional.
-    // anglebug.com/3509 - Don't compile the fragment shader if rasterizerDiscardEnable = true
-    const ShaderAndSerialPointer &fragmentPointer = shaders[gl::ShaderType::Fragment];
-    if (fragmentPointer.valid() && !mDynamicState.ds1And2.rasterizerDiscardEnable)
-    {
-        const ShaderModule &fragmentModule            = fragmentPointer.get().get();
-        VkPipelineShaderStageCreateInfo fragmentStage = {};
-        SetPipelineShaderStageInfo(VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-                                   VK_SHADER_STAGE_FRAGMENT_BIT, fragmentModule.getHandle(),
-                                   specializationInfo, &fragmentStage);
-        shaderStages.push_back(fragmentStage);
-    }
-
     // TODO(jmadill): Possibly use different path for ES 3.1 split bindings/attribs.
-    gl::AttribArray<VkVertexInputBindingDescription> bindingDescs;
-    gl::AttribArray<VkVertexInputAttributeDescription> attributeDescs;
-
     uint32_t vertexAttribCount = 0;
 
-    size_t unpackedSize = sizeof(shaderStages) + sizeof(vertexInputState) +
-                          sizeof(inputAssemblyState) + sizeof(viewportState) + sizeof(rasterState) +
-                          sizeof(multisampleState) + sizeof(depthStencilState) +
-                          sizeof(tessellationState) + sizeof(blendAttachmentState) +
-                          sizeof(blendState) + sizeof(bindingDescs) + sizeof(attributeDescs);
-    ANGLE_UNUSED_VARIABLE(unpackedSize);
-
-    gl::AttribArray<VkVertexInputBindingDivisorDescriptionEXT> divisorDesc;
-    VkPipelineVertexInputDivisorStateCreateInfoEXT divisorState = {};
-    divisorState.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_DIVISOR_STATE_CREATE_INFO_EXT;
-    divisorState.pVertexBindingDivisors = divisorDesc.data();
-    for (size_t attribIndexSizeT : activeAttribLocationsMask)
+    stateOut->divisorState.sType =
+        VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_DIVISOR_STATE_CREATE_INFO_EXT;
+    stateOut->divisorState.pVertexBindingDivisors = stateOut->divisorDesc.data();
+    for (size_t attribIndexSizeT :
+         gl::AttributesMask(mVertexInput.inputAssembly.bits.programActiveAttributeLocations))
     {
         const uint32_t attribIndex = static_cast<uint32_t>(attribIndexSizeT);
 
-        VkVertexInputBindingDescription &bindingDesc  = bindingDescs[vertexAttribCount];
-        VkVertexInputAttributeDescription &attribDesc = attributeDescs[vertexAttribCount];
-        const PackedAttribDesc &packedAttrib          = mVertexInputAttribs.attribs[attribIndex];
+        VkVertexInputBindingDescription &bindingDesc  = stateOut->bindingDescs[vertexAttribCount];
+        VkVertexInputAttributeDescription &attribDesc = stateOut->attributeDescs[vertexAttribCount];
+        const PackedAttribDesc &packedAttrib          = mVertexInput.vertex.attribs[attribIndex];
 
         bindingDesc.binding = attribIndex;
-        bindingDesc.stride  = static_cast<uint32_t>(mDynamicState.ds1.vertexStrides[attribIndex]);
+        bindingDesc.stride  = static_cast<uint32_t>(mVertexInput.vertex.strides[attribIndex]);
         if (packedAttrib.divisor != 0)
         {
             bindingDesc.inputRate = static_cast<VkVertexInputRate>(VK_VERTEX_INPUT_RATE_INSTANCE);
-            divisorDesc[divisorState.vertexBindingDivisorCount].binding = bindingDesc.binding;
-            divisorDesc[divisorState.vertexBindingDivisorCount].divisor = packedAttrib.divisor;
-            ++divisorState.vertexBindingDivisorCount;
+            stateOut->divisorDesc[stateOut->divisorState.vertexBindingDivisorCount].binding =
+                bindingDesc.binding;
+            stateOut->divisorDesc[stateOut->divisorState.vertexBindingDivisorCount].divisor =
+                packedAttrib.divisor;
+            ++stateOut->divisorState.vertexBindingDivisorCount;
         }
         else
         {
@@ -2885,20 +3328,20 @@ angle::Result GraphicsPipelineDesc::initializePipeline(
 
         // Get the corresponding VkFormat for the attrib's format.
         angle::FormatID formatID            = static_cast<angle::FormatID>(packedAttrib.format);
-        const Format &format                = contextVk->getRenderer()->getFormat(formatID);
+        const Format &format                = context->getRenderer()->getFormat(formatID);
         const angle::Format &intendedFormat = format.getIntendedFormat();
         VkFormat vkFormat = format.getActualBufferVkFormat(packedAttrib.compressed);
 
         const gl::ComponentType attribType = GetVertexAttributeComponentType(
             intendedFormat.isPureInt(), intendedFormat.vertexAttribType);
-        const gl::ComponentType programAttribType =
-            gl::GetComponentTypeMask(programAttribsTypeMask, attribIndex);
+        const gl::ComponentType programAttribType = gl::GetComponentTypeMask(
+            gl::ComponentTypeMask(mVertexInput.vertex.shaderAttribComponentType), attribIndex);
 
         // If using dynamic state for stride, the value for stride is unconditionally 0 here.
         // |ContextVk::handleDirtyGraphicsVertexBuffers| implements the same fix when setting stride
         // dynamically.
-        ASSERT(!contextVk->getFeatures().supportsExtendedDynamicState.enabled ||
-               contextVk->getFeatures().forceStaticVertexStrideState.enabled ||
+        ASSERT(!context->getFeatures().supportsExtendedDynamicState.enabled ||
+               context->getFeatures().forceStaticVertexStrideState.enabled ||
                bindingDesc.stride == 0);
 
         // This forces stride to 0 when glVertexAttribPointer specifies a different type from the
@@ -2918,7 +3361,7 @@ angle::Result GraphicsPipelineDesc::initializePipeline(
                 // match the bit width.
                 angle::FormatID convertedFormatID = gl::ConvertFormatSignedness(intendedFormat);
                 const Format &convertedFormat =
-                    contextVk->getRenderer()->getFormat(convertedFormatID);
+                    context->getRenderer()->getFormat(convertedFormatID);
                 ASSERT(intendedFormat.channelCount ==
                        convertedFormat.getIntendedFormat().channelCount);
                 ASSERT(intendedFormat.redBits == convertedFormat.getIntendedFormat().redBits);
@@ -2929,7 +3372,7 @@ angle::Result GraphicsPipelineDesc::initializePipeline(
                 vkFormat = convertedFormat.getActualBufferVkFormat(packedAttrib.compressed);
             }
 
-            ASSERT(contextVk->getNativeExtensions().relaxedVertexAttributeTypeANGLE);
+            ASSERT(context->getRenderer()->getNativeExtensions().relaxedVertexAttributeTypeANGLE);
 
             if (programAttribType == gl::ComponentType::Float ||
                 attribType == gl::ComponentType::Float)
@@ -2947,61 +3390,145 @@ angle::Result GraphicsPipelineDesc::initializePipeline(
     }
 
     // The binding descriptions are filled in at draw time.
-    vertexInputState.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    vertexInputState.flags = 0;
-    vertexInputState.vertexBindingDescriptionCount   = vertexAttribCount;
-    vertexInputState.pVertexBindingDescriptions      = bindingDescs.data();
-    vertexInputState.vertexAttributeDescriptionCount = vertexAttribCount;
-    vertexInputState.pVertexAttributeDescriptions    = attributeDescs.data();
-    if (divisorState.vertexBindingDivisorCount)
+    stateOut->vertexInputState.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    stateOut->vertexInputState.flags = 0;
+    stateOut->vertexInputState.vertexBindingDescriptionCount   = vertexAttribCount;
+    stateOut->vertexInputState.pVertexBindingDescriptions      = stateOut->bindingDescs.data();
+    stateOut->vertexInputState.vertexAttributeDescriptionCount = vertexAttribCount;
+    stateOut->vertexInputState.pVertexAttributeDescriptions    = stateOut->attributeDescs.data();
+    if (stateOut->divisorState.vertexBindingDivisorCount)
     {
-        vertexInputState.pNext = &divisorState;
+        stateOut->vertexInputState.pNext = &stateOut->divisorState;
     }
 
-    const PackedInputAssemblyAndRasterizationStateInfo &inputAndRaster =
-        mInputAssemblyAndRasterizationStateInfo;
+    const PackedInputAssemblyState &inputAssembly = mVertexInput.inputAssembly;
 
     // Primitive topology is filled in at draw time.
-    inputAssemblyState.sType    = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-    inputAssemblyState.flags    = 0;
-    inputAssemblyState.topology = static_cast<VkPrimitiveTopology>(inputAndRaster.misc.topology);
-    inputAssemblyState.primitiveRestartEnable =
-        static_cast<VkBool32>(mDynamicState.ds1And2.primitiveRestartEnable);
+    stateOut->inputAssemblyState.sType =
+        VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    stateOut->inputAssemblyState.flags = 0;
+    stateOut->inputAssemblyState.topology =
+        static_cast<VkPrimitiveTopology>(inputAssembly.bits.topology);
+    stateOut->inputAssemblyState.primitiveRestartEnable =
+        static_cast<VkBool32>(inputAssembly.bits.primitiveRestartEnable);
+
+    // Dynamic state
+    if (context->getFeatures().supportsExtendedDynamicState.enabled)
+    {
+        if (vertexAttribCount > 0 && !context->getFeatures().forceStaticVertexStrideState.enabled)
+        {
+            dynamicStateListOut->push_back(VK_DYNAMIC_STATE_VERTEX_INPUT_BINDING_STRIDE);
+        }
+    }
+    if (context->getFeatures().supportsExtendedDynamicState2.enabled)
+    {
+        dynamicStateListOut->push_back(VK_DYNAMIC_STATE_PRIMITIVE_RESTART_ENABLE);
+    }
+}
+
+void GraphicsPipelineDesc::initializePipelineShadersState(
+    Context *context,
+    const ShaderModuleMap &shaders,
+    const SpecializationConstants &specConsts,
+    GraphicsPipelineShadersVulkanStructs *stateOut,
+    GraphicsPipelineDynamicStateList *dynamicStateListOut) const
+{
+    InitializeSpecializationInfo(specConsts, &stateOut->specializationEntries,
+                                 &stateOut->specializationInfo);
+
+    // Vertex shader is always expected to be present.
+    const ShaderModule &vertexModule = shaders[gl::ShaderType::Vertex].get();
+    ASSERT(vertexModule.valid());
+    VkPipelineShaderStageCreateInfo vertexStage = {};
+    SetPipelineShaderStageInfo(VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                               VK_SHADER_STAGE_VERTEX_BIT, vertexModule.getHandle(),
+                               stateOut->specializationInfo, &vertexStage);
+    stateOut->shaderStages.push_back(vertexStage);
+
+    const ShaderModulePointer &tessControlPointer = shaders[gl::ShaderType::TessControl];
+    if (tessControlPointer.valid())
+    {
+        const ShaderModule &tessControlModule            = tessControlPointer.get();
+        VkPipelineShaderStageCreateInfo tessControlStage = {};
+        SetPipelineShaderStageInfo(VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                                   VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT,
+                                   tessControlModule.getHandle(), stateOut->specializationInfo,
+                                   &tessControlStage);
+        stateOut->shaderStages.push_back(tessControlStage);
+    }
+
+    const ShaderModulePointer &tessEvaluationPointer = shaders[gl::ShaderType::TessEvaluation];
+    if (tessEvaluationPointer.valid())
+    {
+        const ShaderModule &tessEvaluationModule            = tessEvaluationPointer.get();
+        VkPipelineShaderStageCreateInfo tessEvaluationStage = {};
+        SetPipelineShaderStageInfo(VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                                   VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT,
+                                   tessEvaluationModule.getHandle(), stateOut->specializationInfo,
+                                   &tessEvaluationStage);
+        stateOut->shaderStages.push_back(tessEvaluationStage);
+    }
+
+    const ShaderModulePointer &geometryPointer = shaders[gl::ShaderType::Geometry];
+    if (geometryPointer.valid())
+    {
+        const ShaderModule &geometryModule            = geometryPointer.get();
+        VkPipelineShaderStageCreateInfo geometryStage = {};
+        SetPipelineShaderStageInfo(VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                                   VK_SHADER_STAGE_GEOMETRY_BIT, geometryModule.getHandle(),
+                                   stateOut->specializationInfo, &geometryStage);
+        stateOut->shaderStages.push_back(geometryStage);
+    }
+
+    // Fragment shader is optional.
+    const ShaderModulePointer &fragmentPointer = shaders[gl::ShaderType::Fragment];
+    if (fragmentPointer.valid() && !mShaders.shaders.bits.rasterizerDiscardEnable)
+    {
+        const ShaderModule &fragmentModule            = fragmentPointer.get();
+        VkPipelineShaderStageCreateInfo fragmentStage = {};
+        SetPipelineShaderStageInfo(VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                                   VK_SHADER_STAGE_FRAGMENT_BIT, fragmentModule.getHandle(),
+                                   stateOut->specializationInfo, &fragmentStage);
+        stateOut->shaderStages.push_back(fragmentStage);
+    }
 
     // Set initial viewport and scissor state.
-    viewportState.sType         = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
-    viewportState.flags         = 0;
-    viewportState.viewportCount = 1;
-    viewportState.pViewports    = nullptr;
-    viewportState.scissorCount  = 1;
-    viewportState.pScissors     = nullptr;
+    stateOut->viewportState.sType         = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    stateOut->viewportState.flags         = 0;
+    stateOut->viewportState.viewportCount = 1;
+    stateOut->viewportState.pViewports    = nullptr;
+    stateOut->viewportState.scissorCount  = 1;
+    stateOut->viewportState.pScissors     = nullptr;
 
-    VkPipelineViewportDepthClipControlCreateInfoEXT depthClipControl = {};
-    if (contextVk->getFeatures().supportsDepthClipControl.enabled)
+    if (context->getFeatures().supportsDepthClipControl.enabled)
     {
-        depthClipControl.sType =
+        stateOut->depthClipControl.sType =
             VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_DEPTH_CLIP_CONTROL_CREATE_INFO_EXT;
-        depthClipControl.negativeOneToOne =
-            static_cast<VkBool32>(inputAndRaster.misc.viewportNegativeOneToOne);
+        stateOut->depthClipControl.negativeOneToOne =
+            static_cast<VkBool32>(mShaders.shaders.bits.viewportNegativeOneToOne);
 
-        viewportState.pNext = &depthClipControl;
+        stateOut->viewportState.pNext = &stateOut->depthClipControl;
     }
 
     // Rasterizer state.
-    rasterState.sType            = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-    rasterState.flags            = 0;
-    rasterState.depthClampEnable = static_cast<VkBool32>(inputAndRaster.bits.depthClampEnable);
-    rasterState.rasterizerDiscardEnable =
-        static_cast<VkBool32>(mDynamicState.ds1And2.rasterizerDiscardEnable);
-    rasterState.polygonMode     = VK_POLYGON_MODE_FILL;
-    rasterState.cullMode        = static_cast<VkCullModeFlags>(mDynamicState.ds1And2.cullMode);
-    rasterState.frontFace       = static_cast<VkFrontFace>(mDynamicState.ds1And2.frontFace);
-    rasterState.depthBiasEnable = static_cast<VkBool32>(mDynamicState.ds1And2.depthBiasEnable);
-    rasterState.lineWidth       = 0;
-    const void **pNextPtr       = &rasterState.pNext;
+    stateOut->rasterState.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    stateOut->rasterState.flags = 0;
+    stateOut->rasterState.depthClampEnable =
+        static_cast<VkBool32>(mShaders.shaders.bits.depthClampEnable);
+    stateOut->rasterState.rasterizerDiscardEnable =
+        static_cast<VkBool32>(mShaders.shaders.bits.rasterizerDiscardEnable);
+    stateOut->rasterState.polygonMode = VK_POLYGON_MODE_FILL;
+    stateOut->rasterState.cullMode  = static_cast<VkCullModeFlags>(mShaders.shaders.bits.cullMode);
+    stateOut->rasterState.frontFace = static_cast<VkFrontFace>(mShaders.shaders.bits.frontFace);
+    stateOut->rasterState.depthBiasEnable =
+        static_cast<VkBool32>(mShaders.shaders.bits.depthBiasEnable);
+    stateOut->rasterState.lineWidth = 0;
+    const void **pNextPtr           = &stateOut->rasterState.pNext;
 
-    VkPipelineRasterizationLineStateCreateInfoEXT rasterLineState = {};
-    rasterLineState.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_LINE_STATE_CREATE_INFO_EXT;
+    const PackedMultisampleAndSubpassState &multisample = mSharedNonVertexInput.multisample;
+
+    stateOut->rasterLineState.sType =
+        VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_LINE_STATE_CREATE_INFO_EXT;
     // Enable Bresenham line rasterization if available and the following conditions are met:
     // 1.) not multisampling
     // 2.) VUID-VkGraphicsPipelineCreateInfo-lineRasterizationMode-02766:
@@ -3011,129 +3538,203 @@ angle::Result GraphicsPipelineDesc::initializePipeline(
     // VK_LINE_RASTERIZATION_MODE_RECTANGULAR_SMOOTH_EXT and if rasterization is enabled, then the
     // alphaToCoverageEnable, alphaToOneEnable, and sampleShadingEnable members of pMultisampleState
     // must all be VK_FALSE.
-    if (inputAndRaster.bits.rasterizationSamples <= 1 &&
-        !mDynamicState.ds1And2.rasterizerDiscardEnable &&
-        !inputAndRaster.bits.alphaToCoverageEnable && !inputAndRaster.bits.alphaToOneEnable &&
-        !inputAndRaster.bits.sampleShadingEnable &&
-        contextVk->getFeatures().bresenhamLineRasterization.enabled)
+    if (multisample.bits.rasterizationSamplesMinusOne == 0 &&
+        !mShaders.shaders.bits.rasterizerDiscardEnable && !multisample.bits.alphaToCoverageEnable &&
+        !multisample.bits.alphaToOneEnable && !multisample.bits.sampleShadingEnable &&
+        context->getFeatures().bresenhamLineRasterization.enabled)
     {
-        rasterLineState.lineRasterizationMode = VK_LINE_RASTERIZATION_MODE_BRESENHAM_EXT;
-        *pNextPtr                             = &rasterLineState;
-        pNextPtr                              = &rasterLineState.pNext;
+        stateOut->rasterLineState.lineRasterizationMode = VK_LINE_RASTERIZATION_MODE_BRESENHAM_EXT;
+        *pNextPtr                                       = &stateOut->rasterLineState;
+        pNextPtr                                        = &stateOut->rasterLineState.pNext;
     }
 
-    VkPipelineRasterizationProvokingVertexStateCreateInfoEXT provokingVertexState = {};
-    provokingVertexState.sType =
-        VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_PROVOKING_VERTEX_STATE_CREATE_INFO_EXT;
     // Always set provoking vertex mode to last if available.
-    if (contextVk->getFeatures().provokingVertex.enabled)
+    if (context->getFeatures().provokingVertex.enabled)
     {
-        provokingVertexState.provokingVertexMode = VK_PROVOKING_VERTEX_MODE_LAST_VERTEX_EXT;
-        *pNextPtr                                = &provokingVertexState;
-        pNextPtr                                 = &provokingVertexState.pNext;
+        stateOut->provokingVertexState.sType =
+            VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_PROVOKING_VERTEX_STATE_CREATE_INFO_EXT;
+        stateOut->provokingVertexState.provokingVertexMode =
+            VK_PROVOKING_VERTEX_MODE_LAST_VERTEX_EXT;
+        *pNextPtr = &stateOut->provokingVertexState;
+        pNextPtr  = &stateOut->provokingVertexState.pNext;
     }
 
     // When depth clamping is used, depth clipping is automatically disabled.
     // When the 'depthClamping' feature is enabled, we'll be using depth clamping
     // to work around a driver issue, not as an alternative to depth clipping. Therefore we need to
     // explicitly re-enable depth clipping.
-    VkPipelineRasterizationDepthClipStateCreateInfoEXT depthClipState = {};
-    depthClipState.sType =
-        VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_DEPTH_CLIP_STATE_CREATE_INFO_EXT;
-    if (contextVk->getFeatures().depthClamping.enabled)
+    if (context->getFeatures().depthClamping.enabled)
     {
-        depthClipState.depthClipEnable = VK_TRUE;
-        *pNextPtr                      = &depthClipState;
-        pNextPtr                       = &depthClipState.pNext;
+        stateOut->depthClipState.sType =
+            VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_DEPTH_CLIP_STATE_CREATE_INFO_EXT;
+        stateOut->depthClipState.depthClipEnable = VK_TRUE;
+        *pNextPtr                                = &stateOut->depthClipState;
+        pNextPtr                                 = &stateOut->depthClipState.pNext;
     }
 
-    VkPipelineRasterizationStateStreamCreateInfoEXT rasterStreamState = {};
-    rasterStreamState.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_STREAM_CREATE_INFO_EXT;
-    if (contextVk->getFeatures().supportsGeometryStreamsCapability.enabled)
+    if (context->getFeatures().supportsGeometryStreamsCapability.enabled)
     {
-        rasterStreamState.rasterizationStream = 0;
-        *pNextPtr                             = &rasterStreamState;
-        pNextPtr                              = &rasterStreamState.pNext;
+        stateOut->rasterStreamState.sType =
+            VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_STREAM_CREATE_INFO_EXT;
+        stateOut->rasterStreamState.rasterizationStream = 0;
+        *pNextPtr                                       = &stateOut->rasterStreamState;
+        pNextPtr                                        = &stateOut->rasterStreamState.pNext;
     }
-
-    uint32_t sampleMask = inputAndRaster.sampleMask;
-
-    // Multisample state.
-    multisampleState.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-    multisampleState.flags = 0;
-    multisampleState.rasterizationSamples =
-        gl_vk::GetSamples(inputAndRaster.bits.rasterizationSamples);
-    multisampleState.sampleShadingEnable =
-        static_cast<VkBool32>(inputAndRaster.bits.sampleShadingEnable);
-    multisampleState.minSampleShading =
-        static_cast<float>(inputAndRaster.misc.minSampleShading) / kMinSampleShadingScale;
-    multisampleState.pSampleMask = &sampleMask;
-    multisampleState.alphaToCoverageEnable =
-        static_cast<VkBool32>(inputAndRaster.bits.alphaToCoverageEnable);
-    multisampleState.alphaToOneEnable = static_cast<VkBool32>(inputAndRaster.bits.alphaToOneEnable);
 
     // Depth/stencil state.
-    depthStencilState.sType            = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-    depthStencilState.flags            = 0;
-    depthStencilState.depthTestEnable  = static_cast<VkBool32>(mDynamicState.ds1And2.depthTest);
-    depthStencilState.depthWriteEnable = static_cast<VkBool32>(mDynamicState.ds1And2.depthWrite);
-    depthStencilState.depthCompareOp =
-        static_cast<VkCompareOp>(mDynamicState.ds1And2.depthCompareOp);
-    depthStencilState.depthBoundsTestEnable =
-        static_cast<VkBool32>(inputAndRaster.misc.depthBoundsTest);
-    depthStencilState.stencilTestEnable = static_cast<VkBool32>(mDynamicState.ds1And2.stencilTest);
-    UnpackStencilState(mDynamicState.ds1.front, &depthStencilState.front,
-                       mDitherAndContextState.nonZeroStencilWriteMaskWorkaround);
-    UnpackStencilState(mDynamicState.ds1.back, &depthStencilState.back,
-                       mDitherAndContextState.nonZeroStencilWriteMaskWorkaround);
-    depthStencilState.minDepthBounds = 0;
-    depthStencilState.maxDepthBounds = 0;
+    stateOut->depthStencilState.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    stateOut->depthStencilState.flags = 0;
+    stateOut->depthStencilState.depthTestEnable =
+        static_cast<VkBool32>(mShaders.shaders.bits.depthTest);
+    stateOut->depthStencilState.depthWriteEnable =
+        static_cast<VkBool32>(mShaders.shaders.bits.depthWrite);
+    stateOut->depthStencilState.depthCompareOp =
+        static_cast<VkCompareOp>(mShaders.shaders.bits.depthCompareOp);
+    stateOut->depthStencilState.depthBoundsTestEnable =
+        static_cast<VkBool32>(mShaders.shaders.bits.depthBoundsTest);
+    stateOut->depthStencilState.stencilTestEnable =
+        static_cast<VkBool32>(mShaders.shaders.bits.stencilTest);
+    UnpackStencilState(mShaders.shaders.front, &stateOut->depthStencilState.front,
+                       mShaders.shaders.bits.nonZeroStencilWriteMaskWorkaround);
+    UnpackStencilState(mShaders.shaders.back, &stateOut->depthStencilState.back,
+                       mShaders.shaders.bits.nonZeroStencilWriteMaskWorkaround);
+    stateOut->depthStencilState.minDepthBounds = 0;
+    stateOut->depthStencilState.maxDepthBounds = 0;
 
-    blendState.sType           = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-    blendState.flags           = 0;
-    blendState.logicOpEnable   = static_cast<VkBool32>(inputAndRaster.bits.logicOpEnable);
-    blendState.logicOp         = static_cast<VkLogicOp>(inputAndRaster.bits.logicOp);
-    blendState.attachmentCount = static_cast<uint32_t>(mRenderPassDesc.colorAttachmentRange());
-    blendState.pAttachments    = blendAttachmentState.data();
+    // tessellation State
+    if (tessControlPointer.valid() && tessEvaluationPointer.valid())
+    {
+        stateOut->domainOriginState.sType =
+            VK_STRUCTURE_TYPE_PIPELINE_TESSELLATION_DOMAIN_ORIGIN_STATE_CREATE_INFO;
+        stateOut->domainOriginState.pNext        = NULL;
+        stateOut->domainOriginState.domainOrigin = VK_TESSELLATION_DOMAIN_ORIGIN_LOWER_LEFT;
+
+        stateOut->tessellationState.sType =
+            VK_STRUCTURE_TYPE_PIPELINE_TESSELLATION_STATE_CREATE_INFO;
+        stateOut->tessellationState.flags = 0;
+        stateOut->tessellationState.pNext = &stateOut->domainOriginState;
+        stateOut->tessellationState.patchControlPoints =
+            static_cast<uint32_t>(mShaders.shaders.bits.patchVertices);
+    }
+
+    // Dynamic state
+    dynamicStateListOut->push_back(VK_DYNAMIC_STATE_VIEWPORT);
+    dynamicStateListOut->push_back(VK_DYNAMIC_STATE_SCISSOR);
+    dynamicStateListOut->push_back(VK_DYNAMIC_STATE_LINE_WIDTH);
+    dynamicStateListOut->push_back(VK_DYNAMIC_STATE_DEPTH_BIAS);
+    dynamicStateListOut->push_back(VK_DYNAMIC_STATE_DEPTH_BOUNDS);
+    dynamicStateListOut->push_back(VK_DYNAMIC_STATE_STENCIL_COMPARE_MASK);
+    dynamicStateListOut->push_back(VK_DYNAMIC_STATE_STENCIL_WRITE_MASK);
+    dynamicStateListOut->push_back(VK_DYNAMIC_STATE_STENCIL_REFERENCE);
+    if (context->getFeatures().supportsExtendedDynamicState.enabled)
+    {
+        dynamicStateListOut->push_back(VK_DYNAMIC_STATE_CULL_MODE_EXT);
+        dynamicStateListOut->push_back(VK_DYNAMIC_STATE_FRONT_FACE_EXT);
+        dynamicStateListOut->push_back(VK_DYNAMIC_STATE_DEPTH_TEST_ENABLE);
+        dynamicStateListOut->push_back(VK_DYNAMIC_STATE_DEPTH_WRITE_ENABLE);
+        dynamicStateListOut->push_back(VK_DYNAMIC_STATE_DEPTH_COMPARE_OP);
+        dynamicStateListOut->push_back(VK_DYNAMIC_STATE_STENCIL_TEST_ENABLE);
+        dynamicStateListOut->push_back(VK_DYNAMIC_STATE_STENCIL_OP);
+    }
+    if (context->getFeatures().supportsExtendedDynamicState2.enabled)
+    {
+        dynamicStateListOut->push_back(VK_DYNAMIC_STATE_RASTERIZER_DISCARD_ENABLE);
+        dynamicStateListOut->push_back(VK_DYNAMIC_STATE_DEPTH_BIAS_ENABLE);
+    }
+    if (context->getFeatures().supportsFragmentShadingRate.enabled)
+    {
+        dynamicStateListOut->push_back(VK_DYNAMIC_STATE_FRAGMENT_SHADING_RATE_KHR);
+    }
+}
+
+void GraphicsPipelineDesc::initializePipelineSharedNonVertexInputState(
+    Context *context,
+    GraphicsPipelineSharedNonVertexInputVulkanStructs *stateOut,
+    GraphicsPipelineDynamicStateList *dynamicStateListOut) const
+{
+    const PackedMultisampleAndSubpassState &multisample = mSharedNonVertexInput.multisample;
+
+    stateOut->sampleMask = multisample.bits.sampleMask;
+
+    // Multisample state.
+    stateOut->multisampleState.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    stateOut->multisampleState.flags = 0;
+    stateOut->multisampleState.rasterizationSamples =
+        gl_vk::GetSamples(multisample.bits.rasterizationSamplesMinusOne + 1);
+    stateOut->multisampleState.sampleShadingEnable =
+        static_cast<VkBool32>(multisample.bits.sampleShadingEnable);
+    stateOut->multisampleState.minSampleShading =
+        static_cast<float>(multisample.bits.minSampleShading) / kMinSampleShadingScale;
+    stateOut->multisampleState.pSampleMask = &stateOut->sampleMask;
+    stateOut->multisampleState.alphaToCoverageEnable =
+        static_cast<VkBool32>(multisample.bits.alphaToCoverageEnable);
+    stateOut->multisampleState.alphaToOneEnable =
+        static_cast<VkBool32>(multisample.bits.alphaToOneEnable);
+}
+
+void GraphicsPipelineDesc::initializePipelineFragmentOutputState(
+    Context *context,
+    GraphicsPipelineFragmentOutputVulkanStructs *stateOut,
+    GraphicsPipelineDynamicStateList *dynamicStateListOut) const
+{
+    stateOut->blendState.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    stateOut->blendState.flags = 0;
+    stateOut->blendState.logicOpEnable =
+        static_cast<VkBool32>(mFragmentOutput.blendMaskAndLogic.bits.logicOpEnable);
+    stateOut->blendState.logicOp =
+        static_cast<VkLogicOp>(mFragmentOutput.blendMaskAndLogic.bits.logicOp);
+    stateOut->blendState.attachmentCount =
+        static_cast<uint32_t>(mSharedNonVertexInput.renderPass.colorAttachmentRange());
+    stateOut->blendState.pAttachments = stateOut->blendAttachmentState.data();
 
     // If this graphics pipeline is for the unresolve operation, correct the color attachment count
     // for that subpass.
-    if ((mRenderPassDesc.getColorUnresolveAttachmentMask().any() ||
-         mRenderPassDesc.hasDepthStencilUnresolveAttachment()) &&
-        mInputAssemblyAndRasterizationStateInfo.bits.subpass == 0)
+    if ((mSharedNonVertexInput.renderPass.getColorUnresolveAttachmentMask().any() ||
+         mSharedNonVertexInput.renderPass.hasDepthStencilUnresolveAttachment()) &&
+        mSharedNonVertexInput.multisample.bits.subpass == 0)
     {
-        blendState.attachmentCount =
-            static_cast<uint32_t>(mRenderPassDesc.getColorUnresolveAttachmentMask().count());
+        stateOut->blendState.attachmentCount = static_cast<uint32_t>(
+            mSharedNonVertexInput.renderPass.getColorUnresolveAttachmentMask().count());
     }
 
-    // Specify rasterization order for color when available.  This allows implementation of coherent
-    // framebuffer fetch / advanced blend.
-    if (contextVk->getFeatures().supportsRasterizationOrderAttachmentAccess.enabled)
+    // Specify rasterization order for color when available and there is
+    // framebuffer fetch.  This allows implementation of coherent framebuffer
+    // fetch / advanced blend.
+    //
+    // We can do better by setting the bit only when there is coherent
+    // framebuffer fetch, but getRenderPassFramebufferFetchMode does not
+    // distinguish coherent / non-coherent yet.  Also, once an app uses
+    // framebufer fetch, we treat all render passes as if they use framebuffer
+    // fetch.  This check is not very effective.
+    if (context->getFeatures().supportsRasterizationOrderAttachmentAccess.enabled &&
+        getRenderPassFramebufferFetchMode())
     {
-        blendState.flags |=
+        stateOut->blendState.flags |=
             VK_PIPELINE_COLOR_BLEND_STATE_CREATE_RASTERIZATION_ORDER_ATTACHMENT_ACCESS_BIT_EXT;
     }
 
-    const gl::DrawBufferMask blendEnableMask(inputAndRaster.misc.blendEnableMask);
+    const gl::DrawBufferMask blendEnableMask(
+        mFragmentOutput.blendMaskAndLogic.bits.blendEnableMask);
 
     // Zero-init all states.
-    blendAttachmentState = {};
+    stateOut->blendAttachmentState = {};
 
-    const PackedColorBlendStateInfo &colorBlend = mColorBlendStateInfo;
+    const PackedColorBlendState &colorBlend = mFragmentOutput.blend;
 
-    for (uint32_t colorIndexGL = 0; colorIndexGL < blendState.attachmentCount; ++colorIndexGL)
+    for (uint32_t colorIndexGL = 0; colorIndexGL < stateOut->blendState.attachmentCount;
+         ++colorIndexGL)
     {
-        VkPipelineColorBlendAttachmentState &state = blendAttachmentState[colorIndexGL];
+        VkPipelineColorBlendAttachmentState &state = stateOut->blendAttachmentState[colorIndexGL];
 
         if (blendEnableMask[colorIndexGL])
         {
             // To avoid triggering valid usage error, blending must be disabled for formats that do
             // not have VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BLEND_BIT feature bit set.
             // From OpenGL ES clients, this means disabling blending for integer formats.
-            if (!angle::Format::Get(mRenderPassDesc[colorIndexGL]).isInt())
+            if (!angle::Format::Get(mSharedNonVertexInput.renderPass[colorIndexGL]).isInt())
             {
-                ASSERT(!contextVk->getRenderer()
-                            ->getFormat(mRenderPassDesc[colorIndexGL])
+                ASSERT(!context->getRenderer()
+                            ->getFormat(mSharedNonVertexInput.renderPass[colorIndexGL])
                             .getActualRenderableImageFormat()
                             .isInt());
 
@@ -3143,7 +3744,7 @@ angle::Result GraphicsPipelineDesc::initializePipeline(
                 const PackedColorBlendAttachmentState &packedBlendState =
                     colorBlend.attachments[colorIndexGL];
                 if (packedBlendState.colorBlendOp <= static_cast<uint8_t>(VK_BLEND_OP_MAX) ||
-                    contextVk->getFeatures().supportsBlendOperationAdvanced.enabled)
+                    context->getFeatures().supportsBlendOperationAdvanced.enabled)
                 {
                     state.blendEnable = VK_TRUE;
                     UnpackBlendAttachmentState(packedBlendState, &state);
@@ -3151,8 +3752,8 @@ angle::Result GraphicsPipelineDesc::initializePipeline(
             }
         }
 
-        if (contextVk->getExtensions().robustFragmentShaderOutputANGLE &&
-            missingOutputsMask[colorIndexGL])
+        ASSERT(context->getRenderer()->getNativeExtensions().robustFragmentShaderOutputANGLE);
+        if ((mFragmentOutput.blendMaskAndLogic.bits.missingOutputsMask >> colorIndexGL & 1) != 0)
         {
             state.colorWriteMask = 0;
         }
@@ -3164,134 +3765,11 @@ angle::Result GraphicsPipelineDesc::initializePipeline(
     }
 
     // Dynamic state
-    angle::FixedVector<VkDynamicState, 22> dynamicStateList;
-    dynamicStateList.push_back(VK_DYNAMIC_STATE_VIEWPORT);
-    dynamicStateList.push_back(VK_DYNAMIC_STATE_SCISSOR);
-    dynamicStateList.push_back(VK_DYNAMIC_STATE_LINE_WIDTH);
-    dynamicStateList.push_back(VK_DYNAMIC_STATE_DEPTH_BIAS);
-    dynamicStateList.push_back(VK_DYNAMIC_STATE_BLEND_CONSTANTS);
-    dynamicStateList.push_back(VK_DYNAMIC_STATE_DEPTH_BOUNDS);
-    dynamicStateList.push_back(VK_DYNAMIC_STATE_STENCIL_COMPARE_MASK);
-    dynamicStateList.push_back(VK_DYNAMIC_STATE_STENCIL_WRITE_MASK);
-    dynamicStateList.push_back(VK_DYNAMIC_STATE_STENCIL_REFERENCE);
-    if (contextVk->getFeatures().supportsExtendedDynamicState.enabled)
+    dynamicStateListOut->push_back(VK_DYNAMIC_STATE_BLEND_CONSTANTS);
+    if (context->getFeatures().supportsLogicOpDynamicState.enabled)
     {
-        dynamicStateList.push_back(VK_DYNAMIC_STATE_CULL_MODE_EXT);
-        dynamicStateList.push_back(VK_DYNAMIC_STATE_FRONT_FACE_EXT);
-        if (vertexAttribCount > 0 && !contextVk->getFeatures().forceStaticVertexStrideState.enabled)
-        {
-            dynamicStateList.push_back(VK_DYNAMIC_STATE_VERTEX_INPUT_BINDING_STRIDE);
-        }
-        dynamicStateList.push_back(VK_DYNAMIC_STATE_DEPTH_TEST_ENABLE);
-        dynamicStateList.push_back(VK_DYNAMIC_STATE_DEPTH_WRITE_ENABLE);
-        dynamicStateList.push_back(VK_DYNAMIC_STATE_DEPTH_COMPARE_OP);
-        dynamicStateList.push_back(VK_DYNAMIC_STATE_STENCIL_TEST_ENABLE);
-        dynamicStateList.push_back(VK_DYNAMIC_STATE_STENCIL_OP);
+        dynamicStateListOut->push_back(VK_DYNAMIC_STATE_LOGIC_OP_EXT);
     }
-    if (contextVk->getFeatures().supportsExtendedDynamicState2.enabled)
-    {
-        dynamicStateList.push_back(VK_DYNAMIC_STATE_RASTERIZER_DISCARD_ENABLE);
-        dynamicStateList.push_back(VK_DYNAMIC_STATE_DEPTH_BIAS_ENABLE);
-        dynamicStateList.push_back(VK_DYNAMIC_STATE_PRIMITIVE_RESTART_ENABLE);
-    }
-    if (contextVk->getFeatures().supportsLogicOpDynamicState.enabled)
-    {
-        dynamicStateList.push_back(VK_DYNAMIC_STATE_LOGIC_OP_EXT);
-    }
-    if (contextVk->getFeatures().supportsFragmentShadingRate.enabled)
-    {
-        dynamicStateList.push_back(VK_DYNAMIC_STATE_FRAGMENT_SHADING_RATE_KHR);
-    }
-
-    VkPipelineDynamicStateCreateInfo dynamicState = {};
-    dynamicState.sType             = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-    dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStateList.size());
-    dynamicState.pDynamicStates    = dynamicStateList.data();
-
-    // tessellation State
-    if (tessControlPointer.valid() && tessEvaluationPointer.valid())
-    {
-        domainOriginState.sType =
-            VK_STRUCTURE_TYPE_PIPELINE_TESSELLATION_DOMAIN_ORIGIN_STATE_CREATE_INFO;
-        domainOriginState.pNext        = NULL;
-        domainOriginState.domainOrigin = VK_TESSELLATION_DOMAIN_ORIGIN_LOWER_LEFT;
-
-        tessellationState.sType = VK_STRUCTURE_TYPE_PIPELINE_TESSELLATION_STATE_CREATE_INFO;
-        tessellationState.flags = 0;
-        tessellationState.pNext = &domainOriginState;
-        tessellationState.patchControlPoints =
-            static_cast<uint32_t>(inputAndRaster.misc.patchVertices);
-    }
-
-    createInfo.sType               = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-    createInfo.flags               = 0;
-    createInfo.stageCount          = static_cast<uint32_t>(shaderStages.size());
-    createInfo.pStages             = shaderStages.data();
-    createInfo.pVertexInputState   = &vertexInputState;
-    createInfo.pInputAssemblyState = &inputAssemblyState;
-    createInfo.pTessellationState  = &tessellationState;
-    createInfo.pViewportState      = &viewportState;
-    createInfo.pRasterizationState = &rasterState;
-    createInfo.pMultisampleState   = &multisampleState;
-    createInfo.pDepthStencilState  = &depthStencilState;
-    createInfo.pColorBlendState    = &blendState;
-    createInfo.pDynamicState       = dynamicStateList.empty() ? nullptr : &dynamicState;
-    createInfo.layout              = pipelineLayout.getHandle();
-    createInfo.renderPass          = compatibleRenderPass.getHandle();
-    createInfo.subpass             = mInputAssemblyAndRasterizationStateInfo.bits.subpass;
-    createInfo.basePipelineHandle  = VK_NULL_HANDLE;
-    createInfo.basePipelineIndex   = 0;
-
-    VkPipelineRobustnessCreateInfoEXT robustness = {};
-    robustness.sType = VK_STRUCTURE_TYPE_PIPELINE_ROBUSTNESS_CREATE_INFO_EXT;
-
-    // Enable robustness on the pipeline if needed.  Note that the global robustBufferAccess feature
-    // must be disabled by default.
-    if (mDitherAndContextState.isRobustContext)
-    {
-        ASSERT(contextVk->getFeatures().supportsPipelineRobustness.enabled);
-
-        robustness.storageBuffers = VK_PIPELINE_ROBUSTNESS_BUFFER_BEHAVIOR_ROBUST_BUFFER_ACCESS_EXT;
-        robustness.uniformBuffers = VK_PIPELINE_ROBUSTNESS_BUFFER_BEHAVIOR_ROBUST_BUFFER_ACCESS_EXT;
-        robustness.vertexInputs   = VK_PIPELINE_ROBUSTNESS_BUFFER_BEHAVIOR_ROBUST_BUFFER_ACCESS_EXT;
-        robustness.images         = VK_PIPELINE_ROBUSTNESS_IMAGE_BEHAVIOR_DEVICE_DEFAULT_EXT;
-
-        AddToPNextChain(&createInfo, &robustness);
-    }
-
-    VkPipelineCreationFeedback feedback = {};
-    gl::ShaderMap<VkPipelineCreationFeedback> perStageFeedback;
-
-    VkPipelineCreationFeedbackCreateInfo feedbackInfo = {};
-    feedbackInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_CREATION_FEEDBACK_CREATE_INFO;
-
-    const bool supportsFeedback = contextVk->getFeatures().supportsPipelineCreationFeedback.enabled;
-    if (supportsFeedback)
-    {
-        feedbackInfo.pPipelineCreationFeedback = &feedback;
-        // Provide some storage for per-stage data, even though it's not used.  This first works
-        // around a VVL bug that doesn't allow `pipelineStageCreationFeedbackCount=0` despite the
-        // spec (See https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/4161).  Even
-        // with fixed VVL, several drivers crash when this storage is missing too.
-        feedbackInfo.pipelineStageCreationFeedbackCount = createInfo.stageCount;
-        feedbackInfo.pPipelineStageCreationFeedbacks    = perStageFeedback.data();
-
-        AddToPNextChain(&createInfo, &feedbackInfo);
-    }
-
-    ANGLE_TRY(pipelineCache->createGraphicsPipeline(contextVk, createInfo, pipelineOut));
-
-    if (supportsFeedback)
-    {
-        const bool cacheHit =
-            (feedback.flags & VK_PIPELINE_CREATION_FEEDBACK_APPLICATION_PIPELINE_CACHE_HIT_BIT) !=
-            0;
-
-        *feedbackOut = cacheHit ? CacheLookUpFeedback::Hit : CacheLookUpFeedback::Miss;
-        ApplyPipelineCreationFeedback(contextVk, feedback);
-    }
-
-    return angle::Result::Continue;
 }
 
 void GraphicsPipelineDesc::updateVertexInput(ContextVk *contextVk,
@@ -3303,7 +3781,7 @@ void GraphicsPipelineDesc::updateVertexInput(ContextVk *contextVk,
                                              bool compressed,
                                              GLuint relativeOffset)
 {
-    PackedAttribDesc &packedAttrib = mVertexInputAttribs.attribs[attribIndex];
+    PackedAttribDesc &packedAttrib = mVertexInput.vertex.attribs[attribIndex];
 
     SetBitField(packedAttrib.divisor, divisor);
 
@@ -3318,7 +3796,7 @@ void GraphicsPipelineDesc::updateVertexInput(ContextVk *contextVk,
 
     constexpr size_t kAttribBits = kPackedAttribDescSize * kBitsPerByte;
     const size_t kBit =
-        ANGLE_GET_INDEXED_TRANSITION_BIT(mVertexInputAttribs, attribs, attribIndex, kAttribBits);
+        ANGLE_GET_INDEXED_TRANSITION_BIT(mVertexInput.vertex.attribs, attribIndex, kAttribBits);
 
     // Each attribute is 4 bytes, so only one transition bit needs to be set.
     static_assert(kPackedAttribDescSize == kGraphicsPipelineDirtyBitBytes,
@@ -3328,94 +3806,118 @@ void GraphicsPipelineDesc::updateVertexInput(ContextVk *contextVk,
     if (!contextVk->getFeatures().supportsExtendedDynamicState.enabled ||
         contextVk->getFeatures().forceStaticVertexStrideState.enabled)
     {
-        SetBitField(mDynamicState.ds1.vertexStrides[attribIndex], stride);
+        SetBitField(mVertexInput.vertex.strides[attribIndex], stride);
         transition->set(ANGLE_GET_INDEXED_TRANSITION_BIT(
-            mDynamicState.ds1, vertexStrides, attribIndex,
-            sizeof(mDynamicState.ds1.vertexStrides[0]) * kBitsPerByte));
+            mVertexInput.vertex.strides, attribIndex,
+            sizeof(mVertexInput.vertex.strides[0]) * kBitsPerByte));
+    }
+}
+
+void GraphicsPipelineDesc::updateVertexShaderComponentTypes(
+    GraphicsPipelineTransitionBits *transition,
+    gl::AttributesMask activeAttribLocations,
+    gl::ComponentTypeMask componentTypeMask)
+{
+    if (mVertexInput.inputAssembly.bits.programActiveAttributeLocations !=
+        activeAttribLocations.bits())
+    {
+        SetBitField(mVertexInput.inputAssembly.bits.programActiveAttributeLocations,
+                    activeAttribLocations.bits());
+        transition->set(ANGLE_GET_TRANSITION_BIT(mVertexInput.inputAssembly.bits));
+    }
+
+    const gl::ComponentTypeMask activeComponentTypeMask =
+        componentTypeMask & gl::GetActiveComponentTypeMask(activeAttribLocations);
+
+    if (mVertexInput.vertex.shaderAttribComponentType != activeComponentTypeMask.bits())
+    {
+        SetBitField(mVertexInput.vertex.shaderAttribComponentType, activeComponentTypeMask.bits());
+        transition->set(ANGLE_GET_TRANSITION_BIT(mVertexInput.vertex.shaderAttribComponentType));
     }
 }
 
 void GraphicsPipelineDesc::setTopology(gl::PrimitiveMode drawMode)
 {
     VkPrimitiveTopology vkTopology = gl_vk::GetPrimitiveTopology(drawMode);
-    SetBitField(mInputAssemblyAndRasterizationStateInfo.misc.topology, vkTopology);
+    SetBitField(mVertexInput.inputAssembly.bits.topology, vkTopology);
 }
 
 void GraphicsPipelineDesc::updateTopology(GraphicsPipelineTransitionBits *transition,
                                           gl::PrimitiveMode drawMode)
 {
     setTopology(drawMode);
-    transition->set(ANGLE_GET_TRANSITION_BIT(mInputAssemblyAndRasterizationStateInfo, misc));
+    transition->set(ANGLE_GET_TRANSITION_BIT(mVertexInput.inputAssembly.bits));
 }
 
 void GraphicsPipelineDesc::updateDepthClipControl(GraphicsPipelineTransitionBits *transition,
                                                   bool negativeOneToOne)
 {
-    SetBitField(mInputAssemblyAndRasterizationStateInfo.misc.viewportNegativeOneToOne,
-                negativeOneToOne);
-    transition->set(ANGLE_GET_TRANSITION_BIT(mInputAssemblyAndRasterizationStateInfo, misc));
+    SetBitField(mShaders.shaders.bits.viewportNegativeOneToOne, negativeOneToOne);
+    transition->set(ANGLE_GET_TRANSITION_BIT(mShaders.shaders.bits));
 }
 
 void GraphicsPipelineDesc::updatePrimitiveRestartEnabled(GraphicsPipelineTransitionBits *transition,
                                                          bool primitiveRestartEnabled)
 {
-    mDynamicState.ds1And2.primitiveRestartEnable = static_cast<uint16_t>(primitiveRestartEnabled);
-    transition->set(ANGLE_GET_TRANSITION_BIT(mDynamicState, ds1And2));
+    mVertexInput.inputAssembly.bits.primitiveRestartEnable =
+        static_cast<uint16_t>(primitiveRestartEnabled);
+    transition->set(ANGLE_GET_TRANSITION_BIT(mVertexInput.inputAssembly.bits));
 }
 
 void GraphicsPipelineDesc::updateCullMode(GraphicsPipelineTransitionBits *transition,
                                           const gl::RasterizerState &rasterState)
 {
-    SetBitField(mDynamicState.ds1And2.cullMode, gl_vk::GetCullMode(rasterState));
-    transition->set(ANGLE_GET_TRANSITION_BIT(mDynamicState, ds1And2));
+    SetBitField(mShaders.shaders.bits.cullMode, gl_vk::GetCullMode(rasterState));
+    transition->set(ANGLE_GET_TRANSITION_BIT(mShaders.shaders.bits));
 }
 
 void GraphicsPipelineDesc::updateFrontFace(GraphicsPipelineTransitionBits *transition,
                                            const gl::RasterizerState &rasterState,
                                            bool invertFrontFace)
 {
-    SetBitField(mDynamicState.ds1And2.frontFace,
+    SetBitField(mShaders.shaders.bits.frontFace,
                 gl_vk::GetFrontFace(rasterState.frontFace, invertFrontFace));
-    transition->set(ANGLE_GET_TRANSITION_BIT(mDynamicState, ds1And2));
+    transition->set(ANGLE_GET_TRANSITION_BIT(mShaders.shaders.bits));
 }
 
 void GraphicsPipelineDesc::updateRasterizerDiscardEnabled(
     GraphicsPipelineTransitionBits *transition,
     bool rasterizerDiscardEnabled)
 {
-    mDynamicState.ds1And2.rasterizerDiscardEnable = static_cast<uint32_t>(rasterizerDiscardEnabled);
-    transition->set(ANGLE_GET_TRANSITION_BIT(mDynamicState, ds1And2));
+    mShaders.shaders.bits.rasterizerDiscardEnable = static_cast<uint32_t>(rasterizerDiscardEnabled);
+    transition->set(ANGLE_GET_TRANSITION_BIT(mShaders.shaders.bits));
 }
 
 uint32_t GraphicsPipelineDesc::getRasterizationSamples() const
 {
-    return mInputAssemblyAndRasterizationStateInfo.bits.rasterizationSamples;
+    return mSharedNonVertexInput.multisample.bits.rasterizationSamplesMinusOne + 1;
 }
 
 void GraphicsPipelineDesc::setRasterizationSamples(uint32_t rasterizationSamples)
 {
-    mInputAssemblyAndRasterizationStateInfo.bits.rasterizationSamples = rasterizationSamples;
+    ASSERT(rasterizationSamples > 0);
+    mSharedNonVertexInput.multisample.bits.rasterizationSamplesMinusOne = rasterizationSamples - 1;
 }
 
 void GraphicsPipelineDesc::updateRasterizationSamples(GraphicsPipelineTransitionBits *transition,
                                                       uint32_t rasterizationSamples)
 {
     setRasterizationSamples(rasterizationSamples);
-    transition->set(ANGLE_GET_TRANSITION_BIT(mInputAssemblyAndRasterizationStateInfo, bits));
+    transition->set(ANGLE_GET_TRANSITION_BIT(mSharedNonVertexInput.multisample.bits));
 }
 
 void GraphicsPipelineDesc::updateAlphaToCoverageEnable(GraphicsPipelineTransitionBits *transition,
                                                        bool enable)
 {
-    mInputAssemblyAndRasterizationStateInfo.bits.alphaToCoverageEnable = enable;
-    transition->set(ANGLE_GET_TRANSITION_BIT(mInputAssemblyAndRasterizationStateInfo, bits));
+    mSharedNonVertexInput.multisample.bits.alphaToCoverageEnable = enable;
+    transition->set(ANGLE_GET_TRANSITION_BIT(mSharedNonVertexInput.multisample.bits));
 }
 
 void GraphicsPipelineDesc::updateAlphaToOneEnable(GraphicsPipelineTransitionBits *transition,
                                                   bool enable)
 {
-    mInputAssemblyAndRasterizationStateInfo.bits.alphaToOneEnable = enable;
-    transition->set(ANGLE_GET_TRANSITION_BIT(mInputAssemblyAndRasterizationStateInfo, bits));
+    mSharedNonVertexInput.multisample.bits.alphaToOneEnable = enable;
+    transition->set(ANGLE_GET_TRANSITION_BIT(mSharedNonVertexInput.multisample.bits));
 }
 
 void GraphicsPipelineDesc::updateSampleMask(GraphicsPipelineTransitionBits *transition,
@@ -3423,28 +3925,27 @@ void GraphicsPipelineDesc::updateSampleMask(GraphicsPipelineTransitionBits *tran
                                             uint32_t mask)
 {
     ASSERT(maskNumber == 0);
-    SetBitField(mInputAssemblyAndRasterizationStateInfo.sampleMask, mask);
+    SetBitField(mSharedNonVertexInput.multisample.bits.sampleMask, mask);
 
-    transition->set(ANGLE_GET_TRANSITION_BIT(mInputAssemblyAndRasterizationStateInfo, sampleMask));
+    transition->set(ANGLE_GET_TRANSITION_BIT(mSharedNonVertexInput.multisample.bits));
 }
 
 void GraphicsPipelineDesc::updateSampleShading(GraphicsPipelineTransitionBits *transition,
                                                bool enable,
                                                float value)
 {
-    mInputAssemblyAndRasterizationStateInfo.bits.sampleShadingEnable = enable;
+    mSharedNonVertexInput.multisample.bits.sampleShadingEnable = enable;
     if (enable)
     {
-        SetBitField(mInputAssemblyAndRasterizationStateInfo.misc.minSampleShading,
+        SetBitField(mSharedNonVertexInput.multisample.bits.minSampleShading,
                     static_cast<uint16_t>(value * kMinSampleShadingScale));
     }
     else
     {
-        mInputAssemblyAndRasterizationStateInfo.misc.minSampleShading = kMinSampleShadingScale;
+        mSharedNonVertexInput.multisample.bits.minSampleShading = kMinSampleShadingScale;
     }
 
-    transition->set(ANGLE_GET_TRANSITION_BIT(mInputAssemblyAndRasterizationStateInfo, bits));
-    transition->set(ANGLE_GET_TRANSITION_BIT(mInputAssemblyAndRasterizationStateInfo, misc));
+    transition->set(ANGLE_GET_TRANSITION_BIT(mSharedNonVertexInput.multisample.bits));
 }
 
 void GraphicsPipelineDesc::setSingleBlend(uint32_t colorIndexGL,
@@ -3453,27 +3954,26 @@ void GraphicsPipelineDesc::setSingleBlend(uint32_t colorIndexGL,
                                           VkBlendFactor srcFactor,
                                           VkBlendFactor dstFactor)
 {
-    mInputAssemblyAndRasterizationStateInfo.misc.blendEnableMask |=
+    mFragmentOutput.blendMaskAndLogic.bits.blendEnableMask |=
         static_cast<uint8_t>(1 << colorIndexGL);
 
     PackedColorBlendAttachmentState &blendAttachmentState =
-        mColorBlendStateInfo.attachments[colorIndexGL];
+        mFragmentOutput.blend.attachments[colorIndexGL];
 
-    blendAttachmentState.colorBlendOp = op;
-    blendAttachmentState.alphaBlendOp = op;
+    SetBitField(blendAttachmentState.colorBlendOp, op);
+    SetBitField(blendAttachmentState.alphaBlendOp, op);
 
-    blendAttachmentState.srcColorBlendFactor = srcFactor;
-    blendAttachmentState.dstColorBlendFactor = dstFactor;
-    blendAttachmentState.srcAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
-    blendAttachmentState.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    SetBitField(blendAttachmentState.srcColorBlendFactor, srcFactor);
+    SetBitField(blendAttachmentState.dstColorBlendFactor, dstFactor);
+    SetBitField(blendAttachmentState.srcAlphaBlendFactor, VK_BLEND_FACTOR_ZERO);
+    SetBitField(blendAttachmentState.dstAlphaBlendFactor, VK_BLEND_FACTOR_ONE);
 }
 
 void GraphicsPipelineDesc::updateBlendEnabled(GraphicsPipelineTransitionBits *transition,
                                               gl::DrawBufferMask blendEnabledMask)
 {
-    SetBitField(mInputAssemblyAndRasterizationStateInfo.misc.blendEnableMask,
-                blendEnabledMask.bits());
-    transition->set(ANGLE_GET_TRANSITION_BIT(mInputAssemblyAndRasterizationStateInfo, misc));
+    SetBitField(mFragmentOutput.blendMaskAndLogic.bits.blendEnableMask, blendEnabledMask.bits());
+    transition->set(ANGLE_GET_TRANSITION_BIT(mFragmentOutput.blendMaskAndLogic.bits));
 }
 
 void GraphicsPipelineDesc::updateBlendEquations(GraphicsPipelineTransitionBits *transition,
@@ -3485,12 +3985,12 @@ void GraphicsPipelineDesc::updateBlendEquations(GraphicsPipelineTransitionBits *
     for (size_t attachmentIndex : attachmentMask)
     {
         PackedColorBlendAttachmentState &blendAttachmentState =
-            mColorBlendStateInfo.attachments[attachmentIndex];
+            mFragmentOutput.blend.attachments[attachmentIndex];
         blendAttachmentState.colorBlendOp =
             PackGLBlendOp(blendStateExt.getEquationColorIndexed(attachmentIndex));
         blendAttachmentState.alphaBlendOp =
             PackGLBlendOp(blendStateExt.getEquationAlphaIndexed(attachmentIndex));
-        transition->set(ANGLE_GET_INDEXED_TRANSITION_BIT(mColorBlendStateInfo, attachments,
+        transition->set(ANGLE_GET_INDEXED_TRANSITION_BIT(mFragmentOutput.blend.attachments,
                                                          attachmentIndex, kSizeBits));
     }
 }
@@ -3503,7 +4003,7 @@ void GraphicsPipelineDesc::updateBlendFuncs(GraphicsPipelineTransitionBits *tran
     for (size_t attachmentIndex : attachmentMask)
     {
         PackedColorBlendAttachmentState &blendAttachmentState =
-            mColorBlendStateInfo.attachments[attachmentIndex];
+            mFragmentOutput.blend.attachments[attachmentIndex];
         blendAttachmentState.srcColorBlendFactor =
             PackGLBlendFactor(blendStateExt.getSrcColorIndexed(attachmentIndex));
         blendAttachmentState.dstColorBlendFactor =
@@ -3512,7 +4012,7 @@ void GraphicsPipelineDesc::updateBlendFuncs(GraphicsPipelineTransitionBits *tran
             PackGLBlendFactor(blendStateExt.getSrcAlphaIndexed(attachmentIndex));
         blendAttachmentState.dstAlphaBlendFactor =
             PackGLBlendFactor(blendStateExt.getDstAlphaIndexed(attachmentIndex));
-        transition->set(ANGLE_GET_INDEXED_TRANSITION_BIT(mColorBlendStateInfo, attachments,
+        transition->set(ANGLE_GET_INDEXED_TRANSITION_BIT(mFragmentOutput.blend.attachments,
                                                          attachmentIndex, kSizeBits));
     }
 }
@@ -3533,7 +4033,7 @@ void GraphicsPipelineDesc::resetBlendFuncsAndEquations(GraphicsPipelineTransitio
     for (size_t attachmentIndex : attachmentsToClear)
     {
         PackedColorBlendAttachmentState &blendAttachmentState =
-            mColorBlendStateInfo.attachments[attachmentIndex];
+            mFragmentOutput.blend.attachments[attachmentIndex];
 
         blendAttachmentState.colorBlendOp        = VK_BLEND_OP_ADD;
         blendAttachmentState.alphaBlendOp        = VK_BLEND_OP_ADD;
@@ -3542,7 +4042,7 @@ void GraphicsPipelineDesc::resetBlendFuncsAndEquations(GraphicsPipelineTransitio
         blendAttachmentState.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
         blendAttachmentState.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
 
-        transition->set(ANGLE_GET_INDEXED_TRANSITION_BIT(mColorBlendStateInfo, attachments,
+        transition->set(ANGLE_GET_INDEXED_TRANSITION_BIT(mFragmentOutput.blend.attachments,
                                                          attachmentIndex, kSizeBits));
     }
 
@@ -3557,8 +4057,6 @@ void GraphicsPipelineDesc::setColorWriteMasks(gl::BlendStateExt::ColorMaskStorag
                                               const gl::DrawBufferMask &alphaMask,
                                               const gl::DrawBufferMask &enabledDrawBuffers)
 {
-    PackedColorBlendStateInfo &colorBlend = mColorBlendStateInfo;
-
     for (uint32_t colorIndexGL = 0; colorIndexGL < gl::IMPLEMENTATION_MAX_DRAW_BUFFERS;
          colorIndexGL++)
     {
@@ -3570,7 +4068,7 @@ void GraphicsPipelineDesc::setColorWriteMasks(gl::BlendStateExt::ColorMaskStorag
         {
             mask = alphaMask[colorIndexGL] ? (colorMask & ~VK_COLOR_COMPONENT_A_BIT) : colorMask;
         }
-        Int4Array_Set(colorBlend.colorWriteMaskBits, colorIndexGL, mask);
+        Int4Array_Set(mFragmentOutput.blend.colorWriteMaskBits, colorIndexGL, mask);
     }
 }
 
@@ -3578,7 +4076,7 @@ void GraphicsPipelineDesc::setSingleColorWriteMask(uint32_t colorIndexGL,
                                                    VkColorComponentFlags colorComponentFlags)
 {
     uint8_t colorMask = static_cast<uint8_t>(colorComponentFlags);
-    Int4Array_Set(mColorBlendStateInfo.colorWriteMaskBits, colorIndexGL, colorMask);
+    Int4Array_Set(mFragmentOutput.blend.colorWriteMaskBits, colorIndexGL, colorMask);
 }
 
 void GraphicsPipelineDesc::updateColorWriteMasks(
@@ -3592,76 +4090,87 @@ void GraphicsPipelineDesc::updateColorWriteMasks(
     for (size_t colorIndexGL = 0; colorIndexGL < gl::IMPLEMENTATION_MAX_DRAW_BUFFERS;
          colorIndexGL++)
     {
-        transition->set(ANGLE_GET_INDEXED_TRANSITION_BIT(mColorBlendStateInfo, colorWriteMaskBits,
+        transition->set(ANGLE_GET_INDEXED_TRANSITION_BIT(mFragmentOutput.blend.colorWriteMaskBits,
                                                          colorIndexGL, 4));
+    }
+}
+
+void GraphicsPipelineDesc::updateMissingOutputsMask(GraphicsPipelineTransitionBits *transition,
+                                                    gl::DrawBufferMask missingOutputsMask)
+{
+    if (mFragmentOutput.blendMaskAndLogic.bits.missingOutputsMask != missingOutputsMask.bits())
+    {
+        SetBitField(mFragmentOutput.blendMaskAndLogic.bits.missingOutputsMask,
+                    missingOutputsMask.bits());
+        transition->set(ANGLE_GET_TRANSITION_BIT(mFragmentOutput.blendMaskAndLogic.bits));
     }
 }
 
 void GraphicsPipelineDesc::updateLogicOpEnabled(GraphicsPipelineTransitionBits *transition,
                                                 bool enable)
 {
-    mInputAssemblyAndRasterizationStateInfo.bits.logicOpEnable = enable;
-    transition->set(ANGLE_GET_TRANSITION_BIT(mInputAssemblyAndRasterizationStateInfo, bits));
+    mFragmentOutput.blendMaskAndLogic.bits.logicOpEnable = enable;
+    transition->set(ANGLE_GET_TRANSITION_BIT(mFragmentOutput.blendMaskAndLogic.bits));
 }
 
 void GraphicsPipelineDesc::updateLogicOp(GraphicsPipelineTransitionBits *transition,
                                          VkLogicOp logicOp)
 {
-    SetBitField(mInputAssemblyAndRasterizationStateInfo.bits.logicOp, logicOp);
-    transition->set(ANGLE_GET_TRANSITION_BIT(mInputAssemblyAndRasterizationStateInfo, bits));
+    SetBitField(mFragmentOutput.blendMaskAndLogic.bits.logicOp, logicOp);
+    transition->set(ANGLE_GET_TRANSITION_BIT(mFragmentOutput.blendMaskAndLogic.bits));
 }
 
 void GraphicsPipelineDesc::setDepthTestEnabled(bool enabled)
 {
-    mDynamicState.ds1And2.depthTest = enabled;
+    mShaders.shaders.bits.depthTest = enabled;
 }
 
 void GraphicsPipelineDesc::setDepthWriteEnabled(bool enabled)
 {
-    mDynamicState.ds1And2.depthWrite = enabled;
+    mShaders.shaders.bits.depthWrite = enabled;
 }
 
 void GraphicsPipelineDesc::setDepthFunc(VkCompareOp op)
 {
-    SetBitField(mDynamicState.ds1And2.depthCompareOp, op);
+    SetBitField(mShaders.shaders.bits.depthCompareOp, op);
 }
 
 void GraphicsPipelineDesc::setDepthClampEnabled(bool enabled)
 {
-    mInputAssemblyAndRasterizationStateInfo.bits.depthClampEnable = enabled;
+    mShaders.shaders.bits.depthClampEnable = enabled;
 }
 
 void GraphicsPipelineDesc::setStencilTestEnabled(bool enabled)
 {
-    mDynamicState.ds1And2.stencilTest = enabled;
+    mShaders.shaders.bits.stencilTest = enabled;
 }
 
 void GraphicsPipelineDesc::setStencilFrontFuncs(VkCompareOp compareOp)
 {
-    SetBitField(mDynamicState.ds1.front.ops.compare, compareOp);
+    SetBitField(mShaders.shaders.front.compare, compareOp);
 }
 
 void GraphicsPipelineDesc::setStencilBackFuncs(VkCompareOp compareOp)
 {
-    SetBitField(mDynamicState.ds1.back.ops.compare, compareOp);
+    SetBitField(mShaders.shaders.back.compare, compareOp);
 }
 
 void GraphicsPipelineDesc::setStencilFrontOps(VkStencilOp failOp,
                                               VkStencilOp passOp,
                                               VkStencilOp depthFailOp)
 {
-    SetBitField(mDynamicState.ds1.front.ops.fail, failOp);
-    SetBitField(mDynamicState.ds1.front.ops.pass, passOp);
-    SetBitField(mDynamicState.ds1.front.ops.depthFail, depthFailOp);
+    SetBitField(mShaders.shaders.front.fail, failOp);
+    SetBitField(mShaders.shaders.front.pass, passOp);
+    SetBitField(mShaders.shaders.front.depthFail, depthFailOp);
 }
 
 void GraphicsPipelineDesc::setStencilBackOps(VkStencilOp failOp,
                                              VkStencilOp passOp,
                                              VkStencilOp depthFailOp)
 {
-    SetBitField(mDynamicState.ds1.back.ops.fail, failOp);
-    SetBitField(mDynamicState.ds1.back.ops.pass, passOp);
-    SetBitField(mDynamicState.ds1.back.ops.depthFail, depthFailOp);
+    SetBitField(mShaders.shaders.back.fail, failOp);
+    SetBitField(mShaders.shaders.back.pass, passOp);
+    SetBitField(mShaders.shaders.back.depthFail, depthFailOp);
 }
 
 void GraphicsPipelineDesc::updateDepthTestEnabled(GraphicsPipelineTransitionBits *transition,
@@ -3671,22 +4180,21 @@ void GraphicsPipelineDesc::updateDepthTestEnabled(GraphicsPipelineTransitionBits
     // Only enable the depth test if the draw framebuffer has a depth buffer.  It's possible that
     // we're emulating a stencil-only buffer with a depth-stencil buffer
     setDepthTestEnabled(depthStencilState.depthTest && drawFramebuffer->hasDepth());
-    transition->set(ANGLE_GET_TRANSITION_BIT(mDynamicState, ds1And2));
+    transition->set(ANGLE_GET_TRANSITION_BIT(mShaders.shaders.bits));
 }
 
 void GraphicsPipelineDesc::updateDepthFunc(GraphicsPipelineTransitionBits *transition,
                                            const gl::DepthStencilState &depthStencilState)
 {
     setDepthFunc(gl_vk::GetCompareOp(depthStencilState.depthFunc));
-    transition->set(ANGLE_GET_TRANSITION_BIT(mDynamicState, ds1And2));
+    transition->set(ANGLE_GET_TRANSITION_BIT(mShaders.shaders.bits));
 }
 
 void GraphicsPipelineDesc::updateSurfaceRotation(GraphicsPipelineTransitionBits *transition,
-                                                 const SurfaceRotation surfaceRotation)
+                                                 bool isRotatedAspectRatio)
 {
-    SetBitField(mInputAssemblyAndRasterizationStateInfo.misc.surfaceRotation,
-                IsRotatedAspectRatio(surfaceRotation));
-    transition->set(ANGLE_GET_TRANSITION_BIT(mInputAssemblyAndRasterizationStateInfo, misc));
+    SetBitField(mShaders.shaders.bits.surfaceRotation, isRotatedAspectRatio);
+    transition->set(ANGLE_GET_TRANSITION_BIT(mShaders.shaders.bits));
 }
 
 void GraphicsPipelineDesc::updateDepthWriteEnabled(GraphicsPipelineTransitionBits *transition,
@@ -3696,10 +4204,10 @@ void GraphicsPipelineDesc::updateDepthWriteEnabled(GraphicsPipelineTransitionBit
     // Don't write to depth buffers that should not exist
     const bool depthWriteEnabled =
         drawFramebuffer->hasDepth() && depthStencilState.depthTest && depthStencilState.depthMask;
-    if (static_cast<bool>(mDynamicState.ds1And2.depthWrite) != depthWriteEnabled)
+    if (static_cast<bool>(mShaders.shaders.bits.depthWrite) != depthWriteEnabled)
     {
         setDepthWriteEnabled(depthWriteEnabled);
-        transition->set(ANGLE_GET_TRANSITION_BIT(mDynamicState, ds1And2));
+        transition->set(ANGLE_GET_TRANSITION_BIT(mShaders.shaders.bits));
     }
 }
 
@@ -3710,21 +4218,21 @@ void GraphicsPipelineDesc::updateStencilTestEnabled(GraphicsPipelineTransitionBi
     // Only enable the stencil test if the draw framebuffer has a stencil buffer.  It's possible
     // that we're emulating a depth-only buffer with a depth-stencil buffer
     setStencilTestEnabled(depthStencilState.stencilTest && drawFramebuffer->hasStencil());
-    transition->set(ANGLE_GET_TRANSITION_BIT(mDynamicState, ds1And2));
+    transition->set(ANGLE_GET_TRANSITION_BIT(mShaders.shaders.bits));
 }
 
 void GraphicsPipelineDesc::updateStencilFrontFuncs(GraphicsPipelineTransitionBits *transition,
                                                    const gl::DepthStencilState &depthStencilState)
 {
     setStencilFrontFuncs(gl_vk::GetCompareOp(depthStencilState.stencilFunc));
-    transition->set(ANGLE_GET_TRANSITION_BIT(mDynamicState, ds1));
+    transition->set(ANGLE_GET_TRANSITION_BIT(mShaders.shaders.front));
 }
 
 void GraphicsPipelineDesc::updateStencilBackFuncs(GraphicsPipelineTransitionBits *transition,
                                                   const gl::DepthStencilState &depthStencilState)
 {
     setStencilBackFuncs(gl_vk::GetCompareOp(depthStencilState.stencilBackFunc));
-    transition->set(ANGLE_GET_TRANSITION_BIT(mDynamicState, ds1));
+    transition->set(ANGLE_GET_TRANSITION_BIT(mShaders.shaders.back));
 }
 
 void GraphicsPipelineDesc::updateStencilFrontOps(GraphicsPipelineTransitionBits *transition,
@@ -3733,7 +4241,7 @@ void GraphicsPipelineDesc::updateStencilFrontOps(GraphicsPipelineTransitionBits 
     setStencilFrontOps(gl_vk::GetStencilOp(depthStencilState.stencilFail),
                        gl_vk::GetStencilOp(depthStencilState.stencilPassDepthPass),
                        gl_vk::GetStencilOp(depthStencilState.stencilPassDepthFail));
-    transition->set(ANGLE_GET_TRANSITION_BIT(mDynamicState, ds1));
+    transition->set(ANGLE_GET_TRANSITION_BIT(mShaders.shaders.front));
 }
 
 void GraphicsPipelineDesc::updateStencilBackOps(GraphicsPipelineTransitionBits *transition,
@@ -3742,38 +4250,37 @@ void GraphicsPipelineDesc::updateStencilBackOps(GraphicsPipelineTransitionBits *
     setStencilBackOps(gl_vk::GetStencilOp(depthStencilState.stencilBackFail),
                       gl_vk::GetStencilOp(depthStencilState.stencilBackPassDepthPass),
                       gl_vk::GetStencilOp(depthStencilState.stencilBackPassDepthFail));
-    transition->set(ANGLE_GET_TRANSITION_BIT(mDynamicState, ds1));
+    transition->set(ANGLE_GET_TRANSITION_BIT(mShaders.shaders.back));
 }
 
 void GraphicsPipelineDesc::updatePolygonOffsetFillEnabled(
     GraphicsPipelineTransitionBits *transition,
     bool enabled)
 {
-    mDynamicState.ds1And2.depthBiasEnable = enabled;
-    transition->set(ANGLE_GET_TRANSITION_BIT(mDynamicState, ds1And2));
+    mShaders.shaders.bits.depthBiasEnable = enabled;
+    transition->set(ANGLE_GET_TRANSITION_BIT(mShaders.shaders.bits));
 }
 
 void GraphicsPipelineDesc::setRenderPassDesc(const RenderPassDesc &renderPassDesc)
 {
-    mRenderPassDesc = renderPassDesc;
+    mSharedNonVertexInput.renderPass = renderPassDesc;
 }
 
 void GraphicsPipelineDesc::updateSubpass(GraphicsPipelineTransitionBits *transition,
                                          uint32_t subpass)
 {
-    if (mInputAssemblyAndRasterizationStateInfo.bits.subpass != subpass)
+    if (mSharedNonVertexInput.multisample.bits.subpass != subpass)
     {
-        SetBitField(mInputAssemblyAndRasterizationStateInfo.bits.subpass, subpass);
-        transition->set(ANGLE_GET_TRANSITION_BIT(mInputAssemblyAndRasterizationStateInfo, bits));
+        SetBitField(mSharedNonVertexInput.multisample.bits.subpass, subpass);
+        transition->set(ANGLE_GET_TRANSITION_BIT(mSharedNonVertexInput.multisample.bits));
     }
 }
 
 void GraphicsPipelineDesc::updatePatchVertices(GraphicsPipelineTransitionBits *transition,
                                                GLuint value)
 {
-    SetBitField(mInputAssemblyAndRasterizationStateInfo.misc.patchVertices, value);
-
-    transition->set(ANGLE_GET_TRANSITION_BIT(mInputAssemblyAndRasterizationStateInfo, misc));
+    SetBitField(mShaders.shaders.bits.patchVertices, value);
+    transition->set(ANGLE_GET_TRANSITION_BIT(mShaders.shaders.bits));
 }
 
 void GraphicsPipelineDesc::resetSubpass(GraphicsPipelineTransitionBits *transition)
@@ -3783,35 +4290,35 @@ void GraphicsPipelineDesc::resetSubpass(GraphicsPipelineTransitionBits *transiti
 
 void GraphicsPipelineDesc::nextSubpass(GraphicsPipelineTransitionBits *transition)
 {
-    updateSubpass(transition, mInputAssemblyAndRasterizationStateInfo.bits.subpass + 1);
+    updateSubpass(transition, mSharedNonVertexInput.multisample.bits.subpass + 1);
 }
 
 void GraphicsPipelineDesc::setSubpass(uint32_t subpass)
 {
-    SetBitField(mInputAssemblyAndRasterizationStateInfo.bits.subpass, subpass);
+    SetBitField(mSharedNonVertexInput.multisample.bits.subpass, subpass);
 }
 
 uint32_t GraphicsPipelineDesc::getSubpass() const
 {
-    return mInputAssemblyAndRasterizationStateInfo.bits.subpass;
+    return mSharedNonVertexInput.multisample.bits.subpass;
 }
 
 void GraphicsPipelineDesc::updateEmulatedDitherControl(GraphicsPipelineTransitionBits *transition,
                                                        uint16_t value)
 {
     // Make sure we don't waste time resetting this to zero in the common no-dither case.
-    ASSERT(value != 0 || mDitherAndContextState.emulatedDitherControl != 0);
+    ASSERT(value != 0 || mShaders.shaders.emulatedDitherControl != 0);
 
-    mDitherAndContextState.emulatedDitherControl = value;
-    transition->set(ANGLE_GET_TRANSITION_BIT(mDitherAndContextState, emulatedDitherControl));
+    mShaders.shaders.emulatedDitherControl = value;
+    transition->set(ANGLE_GET_TRANSITION_BIT(mShaders.shaders.emulatedDitherControl));
 }
 
 void GraphicsPipelineDesc::updateNonZeroStencilWriteMaskWorkaround(
     GraphicsPipelineTransitionBits *transition,
     bool enabled)
 {
-    mDitherAndContextState.nonZeroStencilWriteMaskWorkaround = enabled;
-    transition->set(ANGLE_GET_TRANSITION_BIT(mDitherAndContextState, emulatedDitherControl));
+    mShaders.shaders.bits.nonZeroStencilWriteMaskWorkaround = enabled;
+    transition->set(ANGLE_GET_TRANSITION_BIT(mShaders.shaders.bits));
 }
 
 void GraphicsPipelineDesc::updateRenderPassDesc(GraphicsPipelineTransitionBits *transition,
@@ -3821,7 +4328,7 @@ void GraphicsPipelineDesc::updateRenderPassDesc(GraphicsPipelineTransitionBits *
 
     // The RenderPass is a special case where it spans multiple bits but has no member.
     constexpr size_t kFirstBit =
-        offsetof(GraphicsPipelineDesc, mRenderPassDesc) >> kTransitionByteShift;
+        offsetof(GraphicsPipelineDesc, mSharedNonVertexInput.renderPass) >> kTransitionByteShift;
     constexpr size_t kBitCount = kRenderPassDescSize >> kTransitionByteShift;
     for (size_t bit = 0; bit < kBitCount; ++bit)
     {
@@ -3831,18 +4338,18 @@ void GraphicsPipelineDesc::updateRenderPassDesc(GraphicsPipelineTransitionBits *
 
 void GraphicsPipelineDesc::setRenderPassSampleCount(GLint samples)
 {
-    mRenderPassDesc.setSamples(samples);
+    mSharedNonVertexInput.renderPass.setSamples(samples);
 }
 
 void GraphicsPipelineDesc::setRenderPassFramebufferFetchMode(bool hasFramebufferFetch)
 {
-    mRenderPassDesc.setFramebufferFetchMode(hasFramebufferFetch);
+    mSharedNonVertexInput.renderPass.setFramebufferFetchMode(hasFramebufferFetch);
 }
 
 void GraphicsPipelineDesc::setRenderPassColorAttachmentFormat(size_t colorIndexGL,
                                                               angle::FormatID formatID)
 {
-    mRenderPassDesc.packColorAttachment(colorIndexGL, formatID);
+    mSharedNonVertexInput.renderPass.packColorAttachment(colorIndexGL, formatID);
 }
 
 // AttachmentOpsArray implementation.
@@ -3931,7 +4438,7 @@ size_t AttachmentOpsArray::hash() const
 
 bool operator==(const AttachmentOpsArray &lhs, const AttachmentOpsArray &rhs)
 {
-    return (memcmp(&lhs, &rhs, sizeof(AttachmentOpsArray)) == 0);
+    return memcmp(&lhs, &rhs, sizeof(AttachmentOpsArray)) == 0;
 }
 
 // DescriptorSetLayoutDesc implementation.
@@ -3951,8 +4458,8 @@ size_t DescriptorSetLayoutDesc::hash() const
 
 bool DescriptorSetLayoutDesc::operator==(const DescriptorSetLayoutDesc &other) const
 {
-    return (memcmp(&mPackedDescriptorSetLayout, &other.mPackedDescriptorSetLayout,
-                   sizeof(mPackedDescriptorSetLayout)) == 0);
+    return memcmp(&mPackedDescriptorSetLayout, &other.mPackedDescriptorSetLayout,
+                  sizeof(mPackedDescriptorSetLayout)) == 0;
 }
 
 void DescriptorSetLayoutDesc::update(uint32_t bindingIndex,
@@ -4058,6 +4565,68 @@ void PipelineLayoutDesc::updatePushConstantRange(VkShaderStageFlags stageMask,
     SetBitField(mPushConstantRange.stageMask, stageMask);
 }
 
+// CreateMonolithicPipelineTask implementation.
+CreateMonolithicPipelineTask::CreateMonolithicPipelineTask(
+    RendererVk *renderer,
+    const PipelineCacheAccess &pipelineCache,
+    const PipelineLayout &pipelineLayout,
+    const ShaderModuleMap &shaders,
+    const SpecializationConstants &specConsts,
+    const GraphicsPipelineDesc &desc)
+    : Context(renderer),
+      mPipelineCache(pipelineCache),
+      mCompatibleRenderPass(nullptr),
+      mPipelineLayout(pipelineLayout),
+      mShaders(shaders),
+      mSpecConsts(specConsts),
+      mDesc(desc),
+      mResult(VK_NOT_READY),
+      mFeedback(CacheLookUpFeedback::None)
+{
+    // Make sure the given pipeline cache has an associated mutex as this task will be running
+    // asynchronously.
+    ASSERT(pipelineCache.isThreadSafe());
+}
+
+void CreateMonolithicPipelineTask::setCompatibleRenderPass(const RenderPass *compatibleRenderPass)
+{
+    mCompatibleRenderPass = compatibleRenderPass;
+}
+
+void CreateMonolithicPipelineTask::operator()()
+{
+    ANGLE_TRACE_EVENT0("gpu.angle", "CreateMonolithicPipelineTask");
+    mResult = mDesc.initializePipeline(this, &mPipelineCache, vk::GraphicsPipelineSubset::Complete,
+                                       *mCompatibleRenderPass, mPipelineLayout, mShaders,
+                                       mSpecConsts, &mPipeline, &mFeedback);
+
+    if (mRenderer->getFeatures().slowDownMonolithicPipelineCreationForTesting.enabled)
+    {
+        constexpr double kSlowdownTime = 0.05;
+
+        double startTime = angle::GetCurrentSystemTime();
+        while (angle::GetCurrentSystemTime() - startTime < kSlowdownTime)
+        {
+            // Busy waiting
+        }
+    }
+}
+
+void CreateMonolithicPipelineTask::handleError(VkResult result,
+                                               const char *file,
+                                               const char *function,
+                                               unsigned int line)
+{
+    UNREACHABLE();
+}
+
+// WaitableMonolithicPipelineCreationTask implementation
+WaitableMonolithicPipelineCreationTask::~WaitableMonolithicPipelineCreationTask()
+{
+    ASSERT(!mWaitableEvent);
+    ASSERT(!mTask);
+}
+
 // PipelineHelper implementation.
 PipelineHelper::PipelineHelper() = default;
 
@@ -4066,13 +4635,87 @@ PipelineHelper::~PipelineHelper() = default;
 void PipelineHelper::destroy(VkDevice device)
 {
     mPipeline.destroy(device);
-    mCacheLookUpFeedback = CacheLookUpFeedback::None;
+    mLinkedPipelineToRelease.destroy(device);
+
+    // If there is a pending task, wait for it before destruction.
+    if (mMonolithicPipelineCreationTask.isValid())
+    {
+        if (mMonolithicPipelineCreationTask.isPosted())
+        {
+            mMonolithicPipelineCreationTask.wait();
+            mMonolithicPipelineCreationTask.getTask()->getPipeline().destroy(device);
+        }
+        mMonolithicPipelineCreationTask.reset();
+    }
+
+    reset();
 }
 
 void PipelineHelper::release(ContextVk *contextVk)
 {
-    contextVk->addGarbage(&mPipeline);
-    mCacheLookUpFeedback = CacheLookUpFeedback::None;
+    contextVk->getRenderer()->collectGarbage(mUse, &mPipeline);
+    contextVk->getRenderer()->collectGarbage(mUse, &mLinkedPipelineToRelease);
+
+    // If there is a pending task, wait for it before release.
+    if (mMonolithicPipelineCreationTask.isValid())
+    {
+        if (mMonolithicPipelineCreationTask.isPosted())
+        {
+            mMonolithicPipelineCreationTask.wait();
+            contextVk->getRenderer()->collectGarbage(
+                mUse, &mMonolithicPipelineCreationTask.getTask()->getPipeline());
+        }
+        mMonolithicPipelineCreationTask.reset();
+    }
+
+    reset();
+}
+
+void PipelineHelper::reset()
+{
+    mCacheLookUpFeedback           = CacheLookUpFeedback::None;
+    mMonolithicCacheLookUpFeedback = CacheLookUpFeedback::None;
+
+    mLinkedShaders = nullptr;
+}
+
+angle::Result PipelineHelper::getPreferredPipeline(ContextVk *contextVk,
+                                                   const Pipeline **pipelineOut)
+{
+    if (mMonolithicPipelineCreationTask.isValid())
+    {
+        // If there is a monolithic task pending, attempt to post it if not already.  Once the task
+        // is done, retrieve the results and replace the pipeline.
+        if (!mMonolithicPipelineCreationTask.isPosted())
+        {
+            ANGLE_TRY(contextVk->getShareGroup()->scheduleMonolithicPipelineCreationTask(
+                contextVk, &mMonolithicPipelineCreationTask));
+        }
+        else if (mMonolithicPipelineCreationTask.isReady())
+        {
+            CreateMonolithicPipelineTask *task = &*mMonolithicPipelineCreationTask.getTask();
+            ANGLE_VK_TRY(contextVk, task->getResult());
+
+            mMonolithicCacheLookUpFeedback = task->getFeedback();
+
+            // The pipeline will not be used anymore.  Every context that has used this pipeline has
+            // already updated the serial.
+            mLinkedPipelineToRelease = std::move(mPipeline);
+
+            // Replace it with the monolithic one.
+            mPipeline = std::move(task->getPipeline());
+
+            mLinkedShaders = nullptr;
+
+            mMonolithicPipelineCreationTask.reset();
+
+            ++contextVk->getPerfCounters().monolithicPipelineCreation;
+        }
+    }
+
+    *pipelineOut = &mPipeline;
+
+    return angle::Result::Continue;
 }
 
 void PipelineHelper::addTransition(GraphicsPipelineTransitionBits bits,
@@ -4080,6 +4723,24 @@ void PipelineHelper::addTransition(GraphicsPipelineTransitionBits bits,
                                    PipelineHelper *pipeline)
 {
     mTransitions.emplace_back(bits, desc, pipeline);
+}
+
+void PipelineHelper::setLinkedLibraryReferences(vk::PipelineHelper *shadersPipeline)
+{
+    mLinkedShaders = shadersPipeline;
+}
+
+void PipelineHelper::retainInRenderPass(RenderPassCommandBufferHelper *renderPassCommands)
+{
+    renderPassCommands->retainResource(this);
+
+    // Keep references to the linked libraries alive.  Note that currently only need to do this for
+    // the shaders library, as the vertex and fragment libraries live in the context until
+    // destruction.
+    if (mLinkedShaders != nullptr)
+    {
+        renderPassCommands->retainResource(mLinkedShaders);
+    }
 }
 
 // FramebufferHelper implementation.
@@ -4261,7 +4922,7 @@ size_t YcbcrConversionDesc::hash() const
 
 bool YcbcrConversionDesc::operator==(const YcbcrConversionDesc &other) const
 {
-    return (memcmp(this, &other, sizeof(YcbcrConversionDesc)) == 0);
+    return memcmp(this, &other, sizeof(YcbcrConversionDesc)) == 0;
 }
 
 void YcbcrConversionDesc::reset()
@@ -4365,8 +5026,8 @@ angle::Result YcbcrConversionDesc::init(Context *context,
     samplerYcbcrConversionInfo.ycbcrRange   = static_cast<VkSamplerYcbcrRange>(mColorRange);
     samplerYcbcrConversionInfo.chromaFilter = static_cast<VkFilter>(mChromaFilter);
     samplerYcbcrConversionInfo.components   = {
-          static_cast<VkComponentSwizzle>(mRSwizzle), static_cast<VkComponentSwizzle>(mGSwizzle),
-          static_cast<VkComponentSwizzle>(mBSwizzle), static_cast<VkComponentSwizzle>(mASwizzle)};
+        static_cast<VkComponentSwizzle>(mRSwizzle), static_cast<VkComponentSwizzle>(mGSwizzle),
+        static_cast<VkComponentSwizzle>(mBSwizzle), static_cast<VkComponentSwizzle>(mASwizzle)};
 
 #ifdef VK_USE_PLATFORM_ANDROID_KHR
     VkExternalFormatANDROID externalFormat = {};
@@ -4638,7 +5299,7 @@ size_t SamplerDesc::hash() const
 
 bool SamplerDesc::operator==(const SamplerDesc &other) const
 {
-    return (memcmp(this, &other, sizeof(SamplerDesc)) == 0);
+    return memcmp(this, &other, sizeof(SamplerDesc)) == 0;
 }
 
 // SamplerHelper implementation.
@@ -5018,10 +5679,10 @@ void UpdatePreCacheActiveTextures(const std::vector<gl::SamplerBinding> &sampler
         bool isSamplerExternalY2Y = samplerBinding.samplerType == GL_SAMPLER_EXTERNAL_2D_Y2Y_EXT;
         for (uint32_t arrayElement = 0; arrayElement < arraySize; ++arrayElement)
         {
-            size_t textureIndex = samplerBinding.boundTextureUnits[arrayElement];
-            if (!activeTextures.test(textureIndex))
+            GLuint textureUnit = samplerBinding.boundTextureUnits[arrayElement];
+            if (!activeTextures.test(textureUnit))
                 continue;
-            TextureVk *textureVk = textures[textureIndex];
+            TextureVk *textureVk = textures[textureUnit];
 
             DescriptorInfoDesc infoDesc = {};
 
@@ -5033,7 +5694,7 @@ void UpdatePreCacheActiveTextures(const std::vector<gl::SamplerBinding> &sampler
             }
             else
             {
-                gl::Sampler *sampler       = samplers[textureIndex].get();
+                gl::Sampler *sampler       = samplers[textureUnit].get();
                 const SamplerVk *samplerVk = sampler ? vk::GetImpl(sampler) : nullptr;
 
                 const SamplerHelper &samplerHelper =
@@ -5053,7 +5714,7 @@ void UpdatePreCacheActiveTextures(const std::vector<gl::SamplerBinding> &sampler
                        sizeof(uint32_t));
             }
 
-            desc->updateInfoDesc(static_cast<uint32_t>(textureIndex), infoDesc);
+            desc->updateInfoDesc(static_cast<uint32_t>(textureUnit), infoDesc);
         }
     }
 }
@@ -5094,10 +5755,10 @@ angle::Result DescriptorSetDescBuilder::updateExecutableActiveTexturesForShader(
     const std::vector<gl::LinkedUniform> &uniforms         = executable.getUniforms();
     const gl::ActiveTextureTypeArray &textureTypes         = executable.getActiveSamplerTypes();
 
-    for (uint32_t textureIndex = 0; textureIndex < samplerBindings.size(); ++textureIndex)
+    for (uint32_t samplerIndex = 0; samplerIndex < samplerBindings.size(); ++samplerIndex)
     {
-        const gl::SamplerBinding &samplerBinding = samplerBindings[textureIndex];
-        uint32_t uniformIndex = executable.getUniformIndexFromSamplerIndex(textureIndex);
+        const gl::SamplerBinding &samplerBinding = samplerBindings[samplerIndex];
+        uint32_t uniformIndex = executable.getUniformIndexFromSamplerIndex(samplerIndex);
         const gl::LinkedUniform &samplerUniform = uniforms[uniformIndex];
 
         if (!samplerUniform.isActive(shaderType))
@@ -5106,7 +5767,7 @@ angle::Result DescriptorSetDescBuilder::updateExecutableActiveTexturesForShader(
         }
 
         const ShaderInterfaceVariableInfo &info = variableInfoMap.getIndexedVariableInfo(
-            shaderType, ShaderVariableType::Texture, textureIndex);
+            shaderType, ShaderVariableType::Texture, samplerIndex);
         if (info.isDuplicate)
         {
             continue;
@@ -5671,6 +6332,44 @@ void SharedCacheKeyManager<SharedCacheKeyT>::assertAllEntriesDestroyed()
 template class SharedCacheKeyManager<SharedFramebufferCacheKey>;
 // Explict instantiate for DescriptorSetCacheManager
 template class SharedCacheKeyManager<SharedDescriptorSetCacheKey>;
+
+// PipelineCacheAccess implementation.
+std::unique_lock<std::mutex> PipelineCacheAccess::getLock()
+{
+    if (mMutex == nullptr)
+    {
+        return std::unique_lock<std::mutex>();
+    }
+
+    return std::unique_lock<std::mutex>(*mMutex);
+}
+
+VkResult PipelineCacheAccess::createGraphicsPipeline(vk::Context *context,
+                                                     const VkGraphicsPipelineCreateInfo &createInfo,
+                                                     vk::Pipeline *pipelineOut)
+{
+    std::unique_lock<std::mutex> lock = getLock();
+
+    return pipelineOut->initGraphics(context->getDevice(), createInfo, *mPipelineCache);
+}
+
+VkResult PipelineCacheAccess::createComputePipeline(vk::Context *context,
+                                                    const VkComputePipelineCreateInfo &createInfo,
+                                                    vk::Pipeline *pipelineOut)
+{
+    std::unique_lock<std::mutex> lock = getLock();
+
+    return pipelineOut->initCompute(context->getDevice(), createInfo, *mPipelineCache);
+}
+
+void PipelineCacheAccess::merge(RendererVk *renderer, const vk::PipelineCache &pipelineCache)
+{
+    ASSERT(mMutex != nullptr);
+
+    std::unique_lock<std::mutex> lock = getLock();
+
+    mPipelineCache->merge(renderer->getDevice(), 1, pipelineCache.ptr());
+}
 }  // namespace vk
 
 // FramebufferCache implementation.
@@ -5754,6 +6453,9 @@ void RenderPassCache::destroy(RendererVk *rendererVk)
 
 void RenderPassCache::clear(ContextVk *contextVk)
 {
+    // Make sure there are no jobs referencing the render pass cache.
+    contextVk->getShareGroup()->waitForCurrentMonolithicPipelineCreationTask();
+
     for (auto &outerIt : mPayload)
     {
         for (auto &innerIt : outerIt.second)
@@ -5766,7 +6468,7 @@ void RenderPassCache::clear(ContextVk *contextVk)
 
 angle::Result RenderPassCache::addRenderPass(ContextVk *contextVk,
                                              const vk::RenderPassDesc &desc,
-                                             vk::RenderPass **renderPassOut)
+                                             const vk::RenderPass **renderPassOut)
 {
     // Insert some placeholder attachment ops.  Note that render passes with different ops are still
     // compatible. The load/store values are not important as they are aren't used for real RPs.
@@ -5806,7 +6508,7 @@ angle::Result RenderPassCache::addRenderPass(ContextVk *contextVk,
 angle::Result RenderPassCache::getRenderPassWithOps(ContextVk *contextVk,
                                                     const vk::RenderPassDesc &desc,
                                                     const vk::AttachmentOpsArray &attachmentOps,
-                                                    vk::RenderPass **renderPassOut)
+                                                    const vk::RenderPass **renderPassOut)
 {
     return getRenderPassWithOpsImpl(contextVk, desc, attachmentOps, true, renderPassOut);
 }
@@ -5815,7 +6517,7 @@ angle::Result RenderPassCache::getRenderPassWithOpsImpl(ContextVk *contextVk,
                                                         const vk::RenderPassDesc &desc,
                                                         const vk::AttachmentOpsArray &attachmentOps,
                                                         bool updatePerfCounters,
-                                                        vk::RenderPass **renderPassOut)
+                                                        const vk::RenderPass **renderPassOut)
 {
     auto outerIt = mPayload.find(desc);
     if (outerIt != mPayload.end())
@@ -5851,65 +6553,18 @@ angle::Result RenderPassCache::getRenderPassWithOpsImpl(ContextVk *contextVk,
     return angle::Result::Continue;
 }
 
-// PipelineCacheAccess implementation.
-std::unique_lock<std::mutex> PipelineCacheAccess::getLock()
+// GraphicsPipelineCache implementation.
+template <typename Hash>
+void GraphicsPipelineCache<Hash>::destroy(ContextVk *contextVk)
 {
-    if (mMutex == nullptr)
+    if (kDumpPipelineCacheGraph && !mPayload.empty())
     {
-        return std::unique_lock<std::mutex>();
+        vk::DumpPipelineCacheGraph<Hash>(contextVk, mPayload);
     }
 
-    return std::unique_lock<std::mutex>(*mMutex);
-}
+    accumulateCacheStats(contextVk->getRenderer());
 
-angle::Result PipelineCacheAccess::createGraphicsPipeline(
-    vk::Context *context,
-    const VkGraphicsPipelineCreateInfo &createInfo,
-    vk::Pipeline *pipelineOut)
-{
-    std::unique_lock<std::mutex> lock = getLock();
-
-    ANGLE_VK_TRY(context,
-                 pipelineOut->initGraphics(context->getDevice(), createInfo, *mPipelineCache));
-
-    return angle::Result::Continue;
-}
-
-angle::Result PipelineCacheAccess::createComputePipeline(
-    vk::Context *context,
-    const VkComputePipelineCreateInfo &createInfo,
-    vk::Pipeline *pipelineOut)
-{
-    std::unique_lock<std::mutex> lock = getLock();
-
-    ANGLE_VK_TRY(context,
-                 pipelineOut->initCompute(context->getDevice(), createInfo, *mPipelineCache));
-
-    return angle::Result::Continue;
-}
-
-void PipelineCacheAccess::merge(RendererVk *renderer, const vk::PipelineCache &pipelineCache)
-{
-    ASSERT(mMutex != nullptr);
-
-    std::unique_lock<std::mutex> lock = getLock();
-
-    mPipelineCache->merge(renderer->getDevice(), 1, pipelineCache.ptr());
-}
-
-// GraphicsPipelineCache implementation.
-GraphicsPipelineCache::GraphicsPipelineCache() = default;
-
-GraphicsPipelineCache::~GraphicsPipelineCache()
-{
-    ASSERT(mPayload.empty());
-}
-
-void GraphicsPipelineCache::destroy(RendererVk *rendererVk)
-{
-    accumulateCacheStats(rendererVk);
-
-    VkDevice device = rendererVk->getDevice();
+    VkDevice device = contextVk->getDevice();
 
     for (auto &item : mPayload)
     {
@@ -5920,36 +6575,30 @@ void GraphicsPipelineCache::destroy(RendererVk *rendererVk)
     mPayload.clear();
 }
 
-void GraphicsPipelineCache::release(ContextVk *contextVk)
+template <typename Hash>
+void GraphicsPipelineCache<Hash>::release(ContextVk *contextVk)
 {
     if (kDumpPipelineCacheGraph && !mPayload.empty())
     {
-        vk::DumpPipelineCacheGraph(contextVk, mPayload);
+        vk::DumpPipelineCacheGraph<Hash>(contextVk, mPayload);
     }
 
     for (auto &item : mPayload)
     {
         vk::PipelineHelper &pipeline = item.second;
-        contextVk->addGarbage(&pipeline.getPipeline());
+        pipeline.release(contextVk);
     }
 
     mPayload.clear();
 }
 
-void GraphicsPipelineCache::reset()
-{
-    mPayload.clear();
-}
-
-angle::Result GraphicsPipelineCache::insertPipeline(
+template <typename Hash>
+angle::Result GraphicsPipelineCache<Hash>::createPipeline(
     ContextVk *contextVk,
-    PipelineCacheAccess *pipelineCache,
+    vk::PipelineCacheAccess *pipelineCache,
     const vk::RenderPass &compatibleRenderPass,
     const vk::PipelineLayout &pipelineLayout,
-    const gl::AttributesMask &activeAttribLocationsMask,
-    const gl::ComponentTypeMask &programAttribsTypeMask,
-    const gl::DrawBufferMask &missingOutputsMask,
-    const vk::ShaderAndSerialMap &shaders,
+    const vk::ShaderModuleMap &shaders,
     const vk::SpecializationConstants &specConsts,
     PipelineSource source,
     const vk::GraphicsPipelineDesc &desc,
@@ -5962,28 +6611,86 @@ angle::Result GraphicsPipelineCache::insertPipeline(
     // This "if" is left here for the benefit of VulkanPipelineCachePerfTest.
     if (contextVk != nullptr)
     {
-        ANGLE_TRY(desc.initializePipeline(contextVk, pipelineCache, compatibleRenderPass,
-                                          pipelineLayout, activeAttribLocationsMask,
-                                          programAttribsTypeMask, missingOutputsMask, shaders,
-                                          specConsts, &newPipeline, &feedback));
+        constexpr vk::GraphicsPipelineSubset kSubset =
+            GraphicsPipelineCacheTypeHelper<Hash>::kSubset;
+
+        ANGLE_VK_TRY(contextVk, desc.initializePipeline(
+                                    contextVk, pipelineCache, kSubset, compatibleRenderPass,
+                                    pipelineLayout, shaders, specConsts, &newPipeline, &feedback));
     }
 
-    if (source == PipelineSource::WarmUp)
-    {
-        feedback = feedback == vk::CacheLookUpFeedback::Hit ? vk::CacheLookUpFeedback::WarmUpHit
-                                                            : vk::CacheLookUpFeedback::WarmUpMiss;
-    }
+    addToCache(source, desc, std::move(newPipeline), feedback, descPtrOut, pipelineOut);
+    return angle::Result::Continue;
+}
 
-    // The Serial will be updated outside of this query.
-    auto insertedItem = mPayload.emplace(std::piecewise_construct, std::forward_as_tuple(desc),
-                                         std::forward_as_tuple(std::move(newPipeline), feedback));
-    *descPtrOut       = &insertedItem.first->first;
-    *pipelineOut      = &insertedItem.first->second;
+template <typename Hash>
+angle::Result GraphicsPipelineCache<Hash>::linkLibraries(
+    ContextVk *contextVk,
+    vk::PipelineCacheAccess *pipelineCache,
+    const vk::GraphicsPipelineDesc &desc,
+    const vk::PipelineLayout &pipelineLayout,
+    vk::PipelineHelper *vertexInputPipeline,
+    vk::PipelineHelper *shadersPipeline,
+    vk::PipelineHelper *fragmentOutputPipeline,
+    const vk::GraphicsPipelineDesc **descPtrOut,
+    vk::PipelineHelper **pipelineOut)
+{
+    vk::Pipeline newPipeline;
+    vk::CacheLookUpFeedback feedback = vk::CacheLookUpFeedback::None;
+
+    ANGLE_TRY(vk::InitializePipelineFromLibraries(
+        contextVk, pipelineCache, pipelineLayout, *vertexInputPipeline, *shadersPipeline,
+        *fragmentOutputPipeline, &newPipeline, &feedback));
+
+    addToCache(PipelineSource::DrawLinked, desc, std::move(newPipeline), feedback, descPtrOut,
+               pipelineOut);
+    (*pipelineOut)->setLinkedLibraryReferences(shadersPipeline);
 
     return angle::Result::Continue;
 }
 
-void GraphicsPipelineCache::populate(const vk::GraphicsPipelineDesc &desc, vk::Pipeline &&pipeline)
+template <typename Hash>
+void GraphicsPipelineCache<Hash>::addToCache(PipelineSource source,
+                                             const vk::GraphicsPipelineDesc &desc,
+                                             vk::Pipeline &&pipeline,
+                                             vk::CacheLookUpFeedback feedback,
+                                             const vk::GraphicsPipelineDesc **descPtrOut,
+                                             vk::PipelineHelper **pipelineOut)
+{
+    ASSERT(mPayload.find(desc) == mPayload.end());
+
+    mCacheStats.missAndIncrementSize();
+
+    switch (source)
+    {
+        case PipelineSource::WarmUp:
+            feedback = feedback == vk::CacheLookUpFeedback::Hit
+                           ? vk::CacheLookUpFeedback::WarmUpHit
+                           : vk::CacheLookUpFeedback::WarmUpMiss;
+            break;
+        case PipelineSource::DrawLinked:
+            feedback = feedback == vk::CacheLookUpFeedback::Hit
+                           ? vk::CacheLookUpFeedback::LinkedDrawHit
+                           : vk::CacheLookUpFeedback::LinkedDrawMiss;
+            break;
+        case PipelineSource::Utils:
+            feedback = feedback == vk::CacheLookUpFeedback::Hit
+                           ? vk::CacheLookUpFeedback::UtilsHit
+                           : vk::CacheLookUpFeedback::UtilsMiss;
+            break;
+        default:
+            break;
+    }
+
+    auto insertedItem = mPayload.emplace(std::piecewise_construct, std::forward_as_tuple(desc),
+                                         std::forward_as_tuple(std::move(pipeline), feedback));
+    *descPtrOut       = &insertedItem.first->first;
+    *pipelineOut      = &insertedItem.first->second;
+}
+
+template <typename Hash>
+void GraphicsPipelineCache<Hash>::populate(const vk::GraphicsPipelineDesc &desc,
+                                           vk::Pipeline &&pipeline)
 {
     auto item = mPayload.find(desc);
     if (item != mPayload.end())
@@ -5995,6 +6702,92 @@ void GraphicsPipelineCache::populate(const vk::GraphicsPipelineDesc &desc, vk::P
     mPayload.emplace(std::piecewise_construct, std::forward_as_tuple(desc),
                      std::forward_as_tuple(std::move(pipeline), vk::CacheLookUpFeedback::None));
 }
+
+// Instantiate the pipeline cache functions
+template void GraphicsPipelineCache<GraphicsPipelineDescCompleteHash>::destroy(
+    ContextVk *contextVk);
+template void GraphicsPipelineCache<GraphicsPipelineDescCompleteHash>::release(
+    ContextVk *contextVk);
+template angle::Result GraphicsPipelineCache<GraphicsPipelineDescCompleteHash>::createPipeline(
+    ContextVk *contextVk,
+    vk::PipelineCacheAccess *pipelineCache,
+    const vk::RenderPass &compatibleRenderPass,
+    const vk::PipelineLayout &pipelineLayout,
+    const vk::ShaderModuleMap &shaders,
+    const vk::SpecializationConstants &specConsts,
+    PipelineSource source,
+    const vk::GraphicsPipelineDesc &desc,
+    const vk::GraphicsPipelineDesc **descPtrOut,
+    vk::PipelineHelper **pipelineOut);
+template angle::Result GraphicsPipelineCache<GraphicsPipelineDescCompleteHash>::linkLibraries(
+    ContextVk *contextVk,
+    vk::PipelineCacheAccess *pipelineCache,
+    const vk::GraphicsPipelineDesc &desc,
+    const vk::PipelineLayout &pipelineLayout,
+    vk::PipelineHelper *vertexInputPipeline,
+    vk::PipelineHelper *shadersPipeline,
+    vk::PipelineHelper *fragmentOutputPipeline,
+    const vk::GraphicsPipelineDesc **descPtrOut,
+    vk::PipelineHelper **pipelineOut);
+template void GraphicsPipelineCache<GraphicsPipelineDescCompleteHash>::populate(
+    const vk::GraphicsPipelineDesc &desc,
+    vk::Pipeline &&pipeline);
+
+template void GraphicsPipelineCache<GraphicsPipelineDescVertexInputHash>::destroy(
+    ContextVk *contextVk);
+template void GraphicsPipelineCache<GraphicsPipelineDescVertexInputHash>::release(
+    ContextVk *contextVk);
+template angle::Result GraphicsPipelineCache<GraphicsPipelineDescVertexInputHash>::createPipeline(
+    ContextVk *contextVk,
+    vk::PipelineCacheAccess *pipelineCache,
+    const vk::RenderPass &compatibleRenderPass,
+    const vk::PipelineLayout &pipelineLayout,
+    const vk::ShaderModuleMap &shaders,
+    const vk::SpecializationConstants &specConsts,
+    PipelineSource source,
+    const vk::GraphicsPipelineDesc &desc,
+    const vk::GraphicsPipelineDesc **descPtrOut,
+    vk::PipelineHelper **pipelineOut);
+template void GraphicsPipelineCache<GraphicsPipelineDescVertexInputHash>::populate(
+    const vk::GraphicsPipelineDesc &desc,
+    vk::Pipeline &&pipeline);
+
+template void GraphicsPipelineCache<GraphicsPipelineDescShadersHash>::destroy(ContextVk *contextVk);
+template void GraphicsPipelineCache<GraphicsPipelineDescShadersHash>::release(ContextVk *contextVk);
+template angle::Result GraphicsPipelineCache<GraphicsPipelineDescShadersHash>::createPipeline(
+    ContextVk *contextVk,
+    vk::PipelineCacheAccess *pipelineCache,
+    const vk::RenderPass &compatibleRenderPass,
+    const vk::PipelineLayout &pipelineLayout,
+    const vk::ShaderModuleMap &shaders,
+    const vk::SpecializationConstants &specConsts,
+    PipelineSource source,
+    const vk::GraphicsPipelineDesc &desc,
+    const vk::GraphicsPipelineDesc **descPtrOut,
+    vk::PipelineHelper **pipelineOut);
+template void GraphicsPipelineCache<GraphicsPipelineDescShadersHash>::populate(
+    const vk::GraphicsPipelineDesc &desc,
+    vk::Pipeline &&pipeline);
+
+template void GraphicsPipelineCache<GraphicsPipelineDescFragmentOutputHash>::destroy(
+    ContextVk *contextVk);
+template void GraphicsPipelineCache<GraphicsPipelineDescFragmentOutputHash>::release(
+    ContextVk *contextVk);
+template angle::Result
+GraphicsPipelineCache<GraphicsPipelineDescFragmentOutputHash>::createPipeline(
+    ContextVk *contextVk,
+    vk::PipelineCacheAccess *pipelineCache,
+    const vk::RenderPass &compatibleRenderPass,
+    const vk::PipelineLayout &pipelineLayout,
+    const vk::ShaderModuleMap &shaders,
+    const vk::SpecializationConstants &specConsts,
+    PipelineSource source,
+    const vk::GraphicsPipelineDesc &desc,
+    const vk::GraphicsPipelineDesc **descPtrOut,
+    vk::PipelineHelper **pipelineOut);
+template void GraphicsPipelineCache<GraphicsPipelineDescFragmentOutputHash>::populate(
+    const vk::GraphicsPipelineDesc &desc,
+    vk::Pipeline &&pipeline);
 
 // DescriptorSetLayoutCache implementation.
 DescriptorSetLayoutCache::DescriptorSetLayoutCache() = default;

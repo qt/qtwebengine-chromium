@@ -4,9 +4,11 @@
 
 import("//build_overrides/build.gni")
 
+visibility = [ "./*" ]
+
 source_set("test_main") {
   testonly = true
-  visibility = [ "../*" ]
+  visibility += [ "../*" ]
   public = []
   sources = [ "test_main.cc" ]
 

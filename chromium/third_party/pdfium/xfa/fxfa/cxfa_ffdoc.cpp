@@ -1,4 +1,4 @@
-// Copyright 2014 PDFium Authors. All rights reserved.
+// Copyright 2014 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -26,6 +26,7 @@
 #include "third_party/base/check.h"
 #include "v8/include/cppgc/allocation.h"
 #include "v8/include/cppgc/heap.h"
+#include "xfa/fgas/font/cfgas_gefont.h"
 #include "xfa/fgas/font/cfgas_pdffontmgr.h"
 #include "xfa/fwl/cfwl_notedriver.h"
 #include "xfa/fxfa/cxfa_ffapp.h"
@@ -264,6 +265,15 @@ bool CXFA_FFDoc::OpenDoc(CFX_XMLDocument* pXML) {
   return true;
 }
 
+RetainPtr<CFGAS_GEFont> CXFA_FFDoc::GetPDFFont(const WideString& family,
+                                               uint32_t styles,
+                                               bool strict) {
+  if (!m_pPDFFontMgr)
+    return nullptr;
+
+  return m_pPDFFontMgr->GetFont(family, styles, strict);
+}
+
 RetainPtr<CFX_DIBitmap> CXFA_FFDoc::GetPDFNamedImage(WideStringView wsName,
                                                      int32_t& iImageXDpi,
                                                      int32_t& iImageYDpi) {
@@ -275,7 +285,7 @@ RetainPtr<CFX_DIBitmap> CXFA_FFDoc::GetPDFNamedImage(WideStringView wsName,
     return it->second.pDibSource.As<CFX_DIBitmap>();
   }
 
-  auto name_tree = CPDF_NameTree::Create(m_pPDFDoc.Get(), "XFAImages");
+  auto name_tree = CPDF_NameTree::Create(m_pPDFDoc, "XFAImages");
   size_t count = name_tree ? name_tree->GetCount() : 0;
   if (count == 0)
     return nullptr;
@@ -303,9 +313,8 @@ RetainPtr<CFX_DIBitmap> CXFA_FFDoc::GetPDFNamedImage(WideStringView wsName,
 
   auto pImageFileRead =
       pdfium::MakeRetain<CFX_ReadOnlySpanStream>(pAcc->GetSpan());
-
   RetainPtr<CFX_DIBitmap> pDibSource = XFA_LoadImageFromBuffer(
-      pImageFileRead, FXCODEC_IMAGE_UNKNOWN, iImageXDpi, iImageYDpi);
+      std::move(pImageFileRead), FXCODEC_IMAGE_UNKNOWN, iImageXDpi, iImageYDpi);
   m_HashToDibDpiMap[dwHash] = {pDibSource, iImageXDpi, iImageYDpi};
   return pDibSource;
 }

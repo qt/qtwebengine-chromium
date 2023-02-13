@@ -102,6 +102,9 @@ template<> EIGEN_DEFINE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS Packet2d pexp<Pac
 template<> EIGEN_DEFINE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS Packet2d plog<Packet2d>(const Packet2d& x)
 { return plog_double(x); }
 
+template<> EIGEN_DEFINE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS Packet2d patan<Packet2d>(const Packet2d& x)
+{ return patan_double(x); }
+
 #endif
 
 } // end namespace internal

@@ -9,10 +9,7 @@
 #ifndef SkNWayCanvas_DEFINED
 #define SkNWayCanvas_DEFINED
 
-#include "include/core/SkBlendMode.h"
-#include "include/core/SkCanvas.h"
 #include "include/core/SkCanvasVirtualEnforcer.h"
-#include "include/core/SkClipOp.h"
 #include "include/core/SkColor.h"
 #include "include/core/SkM44.h"
 #include "include/core/SkRefCnt.h"
@@ -28,6 +25,7 @@ namespace sktext {
 class GlyphRunList;
 }
 
+class SkCanvas;
 class SkData;
 class SkDrawable;
 class SkImage;
@@ -40,6 +38,8 @@ class SkRegion;
 class SkShader;
 class SkTextBlob;
 class SkVertices;
+enum class SkBlendMode;
+enum class SkClipOp;
 struct SkDrawShadowRec;
 struct SkPoint;
 struct SkRSXform;

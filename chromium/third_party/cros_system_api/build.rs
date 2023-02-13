@@ -98,6 +98,10 @@ const PROTOS_TO_GENERATE: &[(&str, &str)] = &[
         "system_api/dbus/cryptohome/UserDataAuth.proto",
     ),
     ("vtpm_interface", "vtpm/vtpm_interface.proto"),
+    (
+        "update_engine",
+        "system_api/dbus/update_engine/update_engine.proto",
+    ),
 ];
 
 fn generate_protos(source_dir: &Path, protos: &[(&str, &str)]) -> Result<()> {

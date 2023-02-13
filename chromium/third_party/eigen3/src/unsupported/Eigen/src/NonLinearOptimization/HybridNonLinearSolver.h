@@ -430,7 +430,7 @@ HybridNonLinearSolver<FunctorType,Scalar>::solveNumericalDiffOneStep(FVectorType
     using std::sqrt;
     using std::abs;
     
-    assert(x.size()==n); // check the caller is not cheating us
+    eigen_assert(x.size()==n); // check the caller is not cheating us
 
     Index j;
     std::vector<JacobiRotation<Scalar> > v_givens(n), w_givens(n);

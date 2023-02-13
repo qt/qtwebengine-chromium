@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2016 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -171,9 +171,8 @@ void CPDFSDK_PageView::DeleteAnnotForFFWidget(CXFA_FFWidget* pWidget) {
     m_pFormFillEnv->KillFocusAnnot({});  // May invoke JS, invalidating pAnnot.
 
   if (pObserved) {
-    fxcrt::FakeUniquePtr<const CPDFSDK_Annot> fake_unique_annot(pAnnot);
     auto it = std::find(m_SDKAnnotArray.begin(), m_SDKAnnotArray.end(),
-                        fake_unique_annot);
+                        fxcrt::MakeFakeUniquePtr(pAnnot));
     if (it != m_SDKAnnotArray.end())
       m_SDKAnnotArray.erase(it);
   }
@@ -597,10 +596,7 @@ bool CPDFSDK_PageView::IsValidAnnot(const CPDF_Annot* p) const {
 }
 
 bool CPDFSDK_PageView::IsValidSDKAnnot(const CPDFSDK_Annot* p) const {
-  if (!p)
-    return false;
-  fxcrt::FakeUniquePtr<const CPDFSDK_Annot> fake_unique_p(p);
-  return pdfium::Contains(m_SDKAnnotArray, fake_unique_p);
+  return p && pdfium::Contains(m_SDKAnnotArray, fxcrt::MakeFakeUniquePtr(p));
 }
 
 CPDFSDK_Annot* CPDFSDK_PageView::GetFocusAnnot() {

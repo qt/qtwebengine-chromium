@@ -1,4 +1,4 @@
-// Copyright 2017 PDFium Authors. All rights reserved.
+// Copyright 2017 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -23,6 +23,7 @@
 #include "core/fpdfdoc/cpdf_filespec.h"
 #include "core/fpdfdoc/cpdf_nametree.h"
 #include "core/fxcrt/cfx_datetime.h"
+#include "core/fxcrt/data_vector.h"
 #include "core/fxcrt/fx_extension.h"
 #include "core/fxcrt/fx_memory_wrappers.h"
 #include "fpdfsdk/cpdfsdk_helpers.h"
@@ -86,7 +87,8 @@ FPDFDoc_AddAttachment(FPDF_DOCUMENT document, FPDF_WIDESTRING name) {
   if (!name_tree->AddValueAndName(pFile->MakeReference(pDoc), wsName))
     return nullptr;
 
-  return FPDFAttachmentFromCPDFObject(pFile.Get());
+  // Unretained reference in public API. NOLINTNEXTLINE
+  return FPDFAttachmentFromCPDFObject(pFile);
 }
 
 FPDF_EXPORT FPDF_ATTACHMENT FPDF_CALLCONV
@@ -100,8 +102,10 @@ FPDFDoc_GetAttachment(FPDF_DOCUMENT document, int index) {
     return nullptr;
 
   WideString csName;
+
+  // Unretained reference in public API. NOLINTNEXTLINE
   return FPDFAttachmentFromCPDFObject(
-      name_tree->LookupValueAndName(index, &csName).Get());
+      name_tree->LookupValueAndName(index, &csName));
 }
 
 FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
@@ -244,10 +248,10 @@ FPDFAttachment_SetFile(FPDF_ATTACHMENT attachment,
       true);
 
   // Create the file stream and have the filespec dictionary link to it.
-  std::unique_ptr<uint8_t, FxFreeDeleter> stream(FX_AllocUninit(uint8_t, len));
-  memcpy(stream.get(), contents, len);
-  auto pFileStream = pDoc->NewIndirect<CPDF_Stream>(std::move(stream), len,
-                                                    std::move(pFileStreamDict));
+  const uint8_t* contents_as_bytes = static_cast<const uint8_t*>(contents);
+  auto pFileStream = pDoc->NewIndirect<CPDF_Stream>(
+      DataVector<uint8_t>(contents_as_bytes, contents_as_bytes + len),
+      std::move(pFileStreamDict));
   auto pEFDict = pFile->AsMutableDictionary()->SetNewFor<CPDF_Dictionary>("EF");
   pEFDict->SetNewFor<CPDF_Reference>("F", pDoc, pFileStream->GetObjNum());
   return true;
@@ -270,7 +274,8 @@ FPDFAttachment_GetFile(FPDF_ATTACHMENT attachment,
   if (!pFileStream)
     return false;
 
-  *out_buflen =
-      DecodeStreamMaybeCopyAndReturnLength(pFileStream.Get(), buffer, buflen);
+  *out_buflen = DecodeStreamMaybeCopyAndReturnLength(
+      std::move(pFileStream),
+      {static_cast<uint8_t*>(buffer), static_cast<size_t>(buflen)});
   return true;
 }

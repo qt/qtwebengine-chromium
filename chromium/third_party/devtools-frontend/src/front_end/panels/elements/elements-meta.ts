@@ -132,6 +132,18 @@ const UIStrings = {
    * the shadow DOM nodes of HTML elements that are built into the browser (e.g. the <input> element).
    */
   showUserAgentShadowDOM: 'Show user agent shadow `DOM`',
+  /**
+  * @description Command for showing the 'Computed' tool. Displays computed CSS styles in Elements sidebar.
+  */
+  showComputedStyles: 'Show Computed Styles',
+  /**
+  * @description Command for showing the 'Styles' tool. Displays CSS styles in Elements sidebar.
+  */
+  showStyles: 'Show Styles',
+  /**
+  * @description Command for toggling the eye dropper when the color picker is open
+  */
+  toggleEyeDropper: 'Toggle eye dropper',
 };
 const str_ = i18n.i18n.registerUIStrings('panels/elements/elements-meta.ts', UIStrings);
 const i18nLazyString = i18n.i18n.getLazilyComputedLocalizedString.bind(undefined, str_);
@@ -161,6 +173,26 @@ UI.ViewManager.registerViewExtension({
   async loadView() {
     const Elements = await loadElementsModule();
     return Elements.ElementsPanel.ElementsPanel.instance();
+  },
+});
+
+UI.ActionRegistration.registerActionExtension({
+  actionId: 'elements.show-styles',
+  category: UI.ActionRegistration.ActionCategory.ELEMENTS,
+  title: i18nLazyString(UIStrings.showStyles),
+  async loadActionDelegate() {
+    const Elements = await loadElementsModule();
+    return Elements.ElementsPanel.ElementsActionDelegate.instance();
+  },
+});
+
+UI.ActionRegistration.registerActionExtension({
+  actionId: 'elements.show-computed',
+  category: UI.ActionRegistration.ActionCategory.ELEMENTS,
+  title: i18nLazyString(UIStrings.showComputedStyles),
+  async loadActionDelegate() {
+    const Elements = await loadElementsModule();
+    return Elements.ElementsPanel.ElementsActionDelegate.instance();
   },
 });
 
@@ -232,6 +264,24 @@ UI.ActionRegistration.registerActionExtension({
   bindings: [
     {
       shortcut: 'H',
+    },
+  ],
+});
+
+UI.ActionRegistration.registerActionExtension({
+  actionId: 'elements.toggle-eye-dropper',
+  category: UI.ActionRegistration.ActionCategory.ELEMENTS,
+  title: i18nLazyString(UIStrings.toggleEyeDropper),
+  async loadActionDelegate() {
+    const Elements = await loadElementsModule();
+    return Elements.ElementsPanel.ElementsActionDelegate.instance();
+  },
+  contextTypes() {
+    return maybeRetrieveContextTypes(Elements => [Elements.ColorSwatchPopoverIcon.ColorSwatchPopoverIcon]);
+  },
+  bindings: [
+    {
+      shortcut: 'c',
     },
   ],
 });

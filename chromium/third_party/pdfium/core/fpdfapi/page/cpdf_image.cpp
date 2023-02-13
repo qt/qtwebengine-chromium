@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2016 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,6 +15,7 @@
 #include "constants/stream_dict_common.h"
 #include "core/fpdfapi/page/cpdf_dib.h"
 #include "core/fpdfapi/page/cpdf_page.h"
+#include "core/fpdfapi/page/cpdf_pageimagecache.h"
 #include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfapi/parser/cpdf_boolean.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
@@ -26,6 +27,7 @@
 #include "core/fpdfapi/parser/cpdf_string.h"
 #include "core/fxcodec/jpeg/jpegmodule.h"
 #include "core/fxcrt/data_vector.h"
+#include "core/fxcrt/fx_2d_size.h"
 #include "core/fxcrt/fx_memory_wrappers.h"
 #include "core/fxcrt/fx_stream.h"
 #include "core/fxcrt/span_util.h"
@@ -143,13 +145,13 @@ void CPDF_Image::SetJpegImage(RetainPtr<IFX_SeekableReadStream> pFile) {
 
   uint32_t dwEstimateSize = std::min(size, 8192U);
   DataVector<uint8_t> data(dwEstimateSize);
-  if (!pFile->ReadBlockAtOffset(data.data(), 0, dwEstimateSize))
+  if (!pFile->ReadBlockAtOffset(data, 0))
     return;
 
   RetainPtr<CPDF_Dictionary> pDict = InitJPEG(data);
   if (!pDict && size > dwEstimateSize) {
     data.resize(size);
-    if (pFile->ReadBlockAtOffset(data.data(), 0, size))
+    if (pFile->ReadBlockAtOffset(data, 0))
       pDict = InitJPEG(data);
   }
   if (!pDict)
@@ -164,7 +166,7 @@ void CPDF_Image::SetJpegImageInline(RetainPtr<IFX_SeekableReadStream> pFile) {
     return;
 
   DataVector<uint8_t> data(size);
-  if (!pFile->ReadBlockAtOffset(data.data(), 0, size))
+  if (!pFile->ReadBlockAtOffset(data, 0))
     return;
 
   RetainPtr<CPDF_Dictionary> pDict = InitJPEG(data);
@@ -237,21 +239,20 @@ void CPDF_Image::SetImage(const RetainPtr<CFX_DIBitmap>& pBitmap) {
       pCS->AppendNew<CPDF_Name>("Indexed");
       pCS->AppendNew<CPDF_Name>("DeviceRGB");
       pCS->AppendNew<CPDF_Number>(static_cast<int>(palette_size - 1));
-      std::unique_ptr<uint8_t, FxFreeDeleter> pColorTable(
-          FX_Alloc2D(uint8_t, palette_size, 3));
-      uint8_t* ptr = pColorTable.get();
+      DataVector<uint8_t> color_table(Fx2DSizeOrDie(palette_size, 3));
+      auto color_table_span = pdfium::make_span(color_table);
       for (size_t i = 0; i < palette_size; i++) {
         uint32_t argb = pBitmap->GetPaletteArgb(i);
-        ptr[0] = FXARGB_R(argb);
-        ptr[1] = FXARGB_G(argb);
-        ptr[2] = FXARGB_B(argb);
-        ptr += 3;
+        color_table_span[0] = FXARGB_R(argb);
+        color_table_span[1] = FXARGB_G(argb);
+        color_table_span[2] = FXARGB_B(argb);
+        color_table_span = color_table_span.subspan(3);
       }
       auto pNewDict = m_pDocument->New<CPDF_Dictionary>();
-      auto pCTS = m_pDocument->NewIndirect<CPDF_Stream>(
-          std::move(pColorTable), palette_size * 3, std::move(pNewDict));
-      pCS->AppendNew<CPDF_Reference>(m_pDocument.Get(), pCTS->GetObjNum());
-      pDict->SetNewFor<CPDF_Reference>("ColorSpace", m_pDocument.Get(),
+      auto pCTS = m_pDocument->NewIndirect<CPDF_Stream>(std::move(color_table),
+                                                        std::move(pNewDict));
+      pCS->AppendNew<CPDF_Reference>(m_pDocument, pCTS->GetObjNum());
+      pDict->SetNewFor<CPDF_Reference>("ColorSpace", m_pDocument,
                                        pCS->GetObjNum());
     } else {
       pDict->SetNewFor<CPDF_Name>("ColorSpace", "DeviceGray");
@@ -270,66 +271,57 @@ void CPDF_Image::SetImage(const RetainPtr<CFX_DIBitmap>& pBitmap) {
     pMaskBitmap = pBitmap->CloneAlphaMask();
 
   if (pMaskBitmap) {
-    int32_t maskWidth = pMaskBitmap->GetWidth();
-    int32_t maskHeight = pMaskBitmap->GetHeight();
-    std::unique_ptr<uint8_t, FxFreeDeleter> mask_buf;
-    int32_t mask_size = 0;
+    const int32_t mask_width = pMaskBitmap->GetWidth();
+    const int32_t mask_height = pMaskBitmap->GetHeight();
+    DataVector<uint8_t> mask_buf;
     RetainPtr<CPDF_Dictionary> pMaskDict =
-        CreateXObjectImageDict(maskWidth, maskHeight);
+        CreateXObjectImageDict(mask_width, mask_height);
     pMaskDict->SetNewFor<CPDF_Name>("ColorSpace", "DeviceGray");
     pMaskDict->SetNewFor<CPDF_Number>("BitsPerComponent", 8);
     if (pMaskBitmap->GetFormat() != FXDIB_Format::k1bppMask) {
-      mask_buf.reset(FX_AllocUninit2D(uint8_t, maskHeight, maskWidth));
-      mask_size = maskHeight * maskWidth;  // Safe since checked alloc returned.
-      for (int32_t a = 0; a < maskHeight; a++) {
-        memcpy(mask_buf.get() + a * maskWidth,
-               pMaskBitmap->GetScanline(a).data(), maskWidth);
+      mask_buf.resize(Fx2DSizeOrDie(mask_width, mask_height));
+      for (int32_t a = 0; a < mask_height; a++) {
+        fxcrt::spancpy(pdfium::make_span(mask_buf).subspan(a * mask_width),
+                       pMaskBitmap->GetScanline(a).first(mask_width));
       }
     }
-    pMaskDict->SetNewFor<CPDF_Number>("Length", mask_size);
+    pMaskDict->SetNewFor<CPDF_Number>(
+        "Length", pdfium::base::checked_cast<int>(mask_buf.size()));
     auto pNewStream = m_pDocument->NewIndirect<CPDF_Stream>(
-        std::move(mask_buf), mask_size, std::move(pMaskDict));
-    pDict->SetNewFor<CPDF_Reference>("SMask", m_pDocument.Get(),
+        std::move(mask_buf), std::move(pMaskDict));
+    pDict->SetNewFor<CPDF_Reference>("SMask", m_pDocument,
                                      pNewStream->GetObjNum());
   }
 
-  uint8_t* src_buf = pBitmap->GetBuffer();
-  int32_t src_pitch = pBitmap->GetPitch();
-  std::unique_ptr<uint8_t, FxFreeDeleter> dest_buf(
-      FX_Alloc2D(uint8_t, dest_pitch, BitmapHeight));
-  // Safe as checked alloc returned.
-  size_t dest_size = dest_pitch * BitmapHeight;
-  auto dest_span = pdfium::make_span(dest_buf.get(), dest_size);
-  size_t dest_span_offset = 0;
+  DataVector<uint8_t> dest_buf(Fx2DSizeOrDie(dest_pitch, BitmapHeight));
+  pdfium::span<uint8_t> dest_span = pdfium::make_span(dest_buf);
+  pdfium::span<const uint8_t> src_span = pBitmap->GetBuffer();
+  const int32_t src_pitch = pBitmap->GetPitch();
   if (bCopyWithoutAlpha) {
     for (int32_t i = 0; i < BitmapHeight; i++) {
-      fxcrt::spancpy(dest_span.subspan(dest_span_offset),
-                     pdfium::make_span(src_buf, dest_pitch));
-      dest_span_offset += dest_pitch;
-      src_buf += src_pitch;
+      fxcrt::spancpy(dest_span, src_span.first(dest_pitch));
+      dest_span = dest_span.subspan(dest_pitch);
+      src_span = src_span.subspan(src_pitch);
     }
   } else {
-    int32_t src_offset = 0;
+    const size_t src_step = bpp == 24 ? 3 : 4;
     for (int32_t row = 0; row < BitmapHeight; row++) {
-      size_t dest_span_row_offset = dest_span_offset;
-      src_offset = row * src_pitch;
+      uint8_t* dest_ptr = dest_span.data();
+      const uint8_t* src_ptr = src_span.data();
       for (int32_t column = 0; column < BitmapWidth; column++) {
-        float alpha = 1;
-        dest_span[dest_span_row_offset] =
-            static_cast<uint8_t>(src_buf[src_offset + 2] * alpha);
-        dest_span[dest_span_row_offset + 1] =
-            static_cast<uint8_t>(src_buf[src_offset + 1] * alpha);
-        dest_span[dest_span_row_offset + 2] =
-            static_cast<uint8_t>(src_buf[src_offset] * alpha);
-        dest_span_row_offset += 3;
-        src_offset += bpp == 24 ? 3 : 4;
+        dest_ptr[0] = src_ptr[2];
+        dest_ptr[1] = src_ptr[1];
+        dest_ptr[2] = src_ptr[0];
+        dest_ptr += 3;
+        src_ptr += src_step;
       }
-
-      dest_span_offset += dest_pitch;
+      dest_span = dest_span.subspan(dest_pitch);
+      src_span = src_span.subspan(src_pitch);
     }
   }
 
-  m_pStream = pdfium::MakeRetain<CPDF_Stream>(dest_span, std::move(pDict));
+  m_pStream =
+      pdfium::MakeRetain<CPDF_Stream>(std::move(dest_buf), std::move(pDict));
   m_bIsMask = pBitmap->IsMaskFormat();
   m_Width = BitmapWidth;
   m_Height = BitmapHeight;
@@ -337,7 +329,7 @@ void CPDF_Image::SetImage(const RetainPtr<CFX_DIBitmap>& pBitmap) {
 
 void CPDF_Image::ResetCache(CPDF_Page* pPage) {
   RetainPtr<CPDF_Image> pHolder(this);
-  pPage->GetRenderCache()->ResetBitmapForImage(std::move(pHolder));
+  pPage->GetPageImageCache()->ResetBitmapForImage(std::move(pHolder));
 }
 
 RetainPtr<CPDF_DIB> CPDF_Image::CreateNewDIB() const {
@@ -370,10 +362,12 @@ bool CPDF_Image::StartLoadDIBBase(const CPDF_Dictionary* pFormResource,
                                   const CPDF_Dictionary* pPageResource,
                                   bool bStdCS,
                                   CPDF_ColorSpace::Family GroupFamily,
-                                  bool bLoadMask) {
+                                  bool bLoadMask,
+                                  const CFX_Size& max_size_required) {
   RetainPtr<CPDF_DIB> source = CreateNewDIB();
-  CPDF_DIB::LoadState ret = source->StartLoadDIBBase(
-      true, pFormResource, pPageResource, bStdCS, GroupFamily, bLoadMask);
+  CPDF_DIB::LoadState ret =
+      source->StartLoadDIBBase(true, pFormResource, pPageResource, bStdCS,
+                               GroupFamily, bLoadMask, max_size_required);
   if (ret == CPDF_DIB::LoadState::kFail) {
     m_pDIBBase.Reset();
     return false;

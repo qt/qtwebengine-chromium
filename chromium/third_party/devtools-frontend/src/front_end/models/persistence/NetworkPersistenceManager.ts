@@ -625,13 +625,15 @@ export class NetworkPersistenceManager extends Common.ObjectWrapper.ObjectWrappe
       Protocol.Fetch.HeaderEntry[] {
     const headerMap = new Platform.MapUtilities.Multimap<string, string>();
     for (const {name, value} of overrideHeaders) {
-      headerMap.set(name.toLowerCase(), value);
+      if (name.toLowerCase() !== 'set-cookie') {
+        headerMap.set(name.toLowerCase(), value);
+      }
     }
 
     const overriddenHeaderNames = new Set(headerMap.keysArray());
     for (const {name, value} of baseHeaders) {
       const lowerCaseName = name.toLowerCase();
-      if (!overriddenHeaderNames.has(lowerCaseName)) {
+      if (!overriddenHeaderNames.has(lowerCaseName) && lowerCaseName !== 'set-cookie') {
         headerMap.set(lowerCaseName, value);
       }
     }
@@ -642,6 +644,13 @@ export class NetworkPersistenceManager extends Common.ObjectWrapper.ObjectWrappe
         result.push({name: headerName, value: headerValue});
       }
     }
+
+    const originalSetCookieHeaders = baseHeaders.filter(header => header.name.toLowerCase() === 'set-cookie') || [];
+    const setCookieHeadersFromOverrides = overrideHeaders.filter(header => header.name.toLowerCase() === 'set-cookie');
+    const mergedHeaders = SDK.NetworkManager.InterceptedRequest.mergeSetCookieHeaders(
+        originalSetCookieHeaders, setCookieHeadersFromOverrides);
+    result.push(...mergedHeaders);
+
     return result;
   }
 
@@ -783,13 +792,11 @@ interface HeaderOverrideWithRegex {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function isHeaderOverride(arg: any): arg is HeaderOverride {
-  if (!(arg && arg.applyTo && typeof arg.applyTo === 'string' && arg.headers && arg.headers.length &&
-        Array.isArray(arg.headers))) {
+  if (!(arg && typeof arg.applyTo === 'string' && arg.headers && arg.headers.length && Array.isArray(arg.headers))) {
     return false;
   }
   return arg.headers.every(
-      (header: Protocol.Fetch.HeaderEntry) =>
-          header.name && typeof header.name === 'string' && typeof header.value === 'string');
+      (header: Protocol.Fetch.HeaderEntry) => typeof header.name === 'string' && typeof header.value === 'string');
 }
 
 export function escapeRegex(pattern: string): string {

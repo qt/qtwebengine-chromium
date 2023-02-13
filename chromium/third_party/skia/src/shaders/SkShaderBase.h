@@ -26,14 +26,16 @@ class SkColorSpace;
 class SkImage;
 struct SkImageInfo;
 class SkPaint;
-class SkPaintParamsKeyBuilder;
-class SkPipelineDataGatherer;
 class SkRasterPipeline;
 class SkRuntimeEffect;
-class SkKeyContext;
 class SkStageUpdater;
-
 class SkUpdatableShader;
+
+namespace skgpu::graphite {
+class KeyContext;
+class PaintParamsKeyBuilder;
+class PipelineDataGatherer;
+}
 
 class SkShaderBase : public SkShader {
 public:
@@ -48,14 +50,54 @@ public:
      */
     virtual bool isConstant() const { return false; }
 
-    using GradientInfo = SkShader::GradientInfo;
     enum class GradientType {
-        kNone    = kNone_GradientType,
-        kColor   = kColor_GradientType,
-        kLinear  = kLinear_GradientType,
-        kRadial  = kRadial_GradientType,
-        kSweep   = kSweep_GradientType,
-        kConical = kConical_GradientType,
+        kNone,
+        kColor,
+        kLinear,
+        kRadial,
+        kSweep,
+        kConical
+    };
+
+    /**
+     *  If the shader subclass can be represented as a gradient, asGradient
+     *  returns the matching GradientType enum (or GradientType::kNone if it
+     *  cannot). Also, if info is not null, asGradient populates info with
+     *  the relevant (see below) parameters for the gradient.  fColorCount
+     *  is both an input and output parameter.  On input, it indicates how
+     *  many entries in fColors and fColorOffsets can be used, if they are
+     *  non-NULL.  After asGradient has run, fColorCount indicates how
+     *  many color-offset pairs there are in the gradient.  If there is
+     *  insufficient space to store all of the color-offset pairs, fColors
+     *  and fColorOffsets will not be altered.  fColorOffsets specifies
+     *  where on the range of 0 to 1 to transition to the given color.
+     *  The meaning of fPoint and fRadius is dependent on the type of gradient.
+     *
+     *  None:
+     *      info is ignored.
+     *  Color:
+     *      fColorOffsets[0] is meaningless.
+     *  Linear:
+     *      fPoint[0] and fPoint[1] are the end-points of the gradient
+     *  Radial:
+     *      fPoint[0] and fRadius[0] are the center and radius
+     *  Conical:
+     *      fPoint[0] and fRadius[0] are the center and radius of the 1st circle
+     *      fPoint[1] and fRadius[1] are the center and radius of the 2nd circle
+     *  Sweep:
+     *      fPoint[0] is the center of the sweep.
+     */
+    struct GradientInfo {
+        int         fColorCount    = 0;        //!< In-out parameter, specifies passed size
+                                               //   of fColors/fColorOffsets on input, and
+                                               //   actual number of colors/offsets on
+                                               //   output.
+        SkColor*    fColors        = nullptr;  //!< The colors in the gradient.
+        SkScalar*   fColorOffsets  = nullptr;  //!< The unit offset for color transitions.
+        SkPoint     fPoint[2];                 //!< Type specific, see above.
+        SkScalar    fRadius[2];                //!< Type specific, see above.
+        SkTileMode  fTileMode;
+        uint32_t    fGradientFlags = 0;        //!< see SkGradientShader::Flags
     };
 
     virtual GradientType asGradient(GradientInfo* info    = nullptr,
@@ -220,7 +262,7 @@ public:
                         skvm::Uniforms* uniforms, SkArenaAlloc* alloc) const;
 
 
-#ifdef SK_ENABLE_SKSL
+#ifdef SK_GRAPHITE_ENABLED
     /**
         Add implementation details, for the specified backend, of this SkShader to the
         provided key.
@@ -229,13 +271,16 @@ public:
         @param builder    builder for creating the key for this SkShader
         @param gatherer   if non-null, storage for this shader's data
     */
-    virtual void addToKey(const SkKeyContext& keyContext,
-                          SkPaintParamsKeyBuilder* builder,
-                          SkPipelineDataGatherer* gatherer) const;
+    virtual void addToKey(const skgpu::graphite::KeyContext& keyContext,
+                          skgpu::graphite::PaintParamsKeyBuilder* builder,
+                          skgpu::graphite::PipelineDataGatherer* gatherer) const;
 #endif
 
     static SkMatrix ConcatLocalMatrices(const SkMatrix& parentLM, const SkMatrix& childLM) {
+#if defined(SK_BUILD_FOR_ANDROID_FRAMEWORK)  // b/256873449
         return SkMatrix::Concat(childLM, parentLM);
+#endif
+        return SkMatrix::Concat(parentLM, childLM);
     }
 
 protected:

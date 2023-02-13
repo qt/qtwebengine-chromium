@@ -28,11 +28,63 @@ import {
 } from '../../../../../util/conversion.js';
 import { clampIntervals } from '../../../../../util/f32_interval.js';
 import { sparseF32Range } from '../../../../../util/math.js';
-import { allInputSources, Case, makeTernaryToF32IntervalCase, run } from '../../expression.js';
+import { makeCaseCache } from '../../case_cache.js';
+import { allInputSources, Case, generateTernaryToF32IntervalCases, run } from '../../expression.js';
 
 import { builtin } from './builtin.js';
 
 export const g = makeTestGroup(GPUTest);
+
+export const d = makeCaseCache('clamp', {
+  u32: () => {
+    // This array must be strictly increasing, since that ordering determines
+    // the expected values.
+    const test_values: Array<Scalar> = [
+      u32Bits(kBit.u32.min),
+      u32(1),
+      u32(2),
+      u32(0x70000000),
+      u32(0x80000000),
+      u32Bits(kBit.u32.max),
+    ];
+
+    return generateIntegerTestCases(test_values);
+  },
+  i32: () => {
+    // This array must be strictly increasing, since that ordering determines
+    // the expected values.
+    const test_values: Array<Scalar> = [
+      i32Bits(kBit.i32.negative.min),
+      i32(-2),
+      i32(-1),
+      i32(0),
+      i32(1),
+      i32(2),
+      i32Bits(0x70000000),
+      i32Bits(kBit.i32.positive.max),
+    ];
+
+    return generateIntegerTestCases(test_values);
+  },
+  f32_const: () => {
+    return generateTernaryToF32IntervalCases(
+      sparseF32Range(),
+      sparseF32Range(),
+      sparseF32Range(),
+      'f32-only',
+      ...clampIntervals
+    );
+  },
+  f32_non_const: () => {
+    return generateTernaryToF32IntervalCases(
+      sparseF32Range(),
+      sparseF32Range(),
+      sparseF32Range(),
+      'unfiltered',
+      ...clampIntervals
+    );
+  },
+});
 
 /**
  * Calculates clamp using the min-max formula.
@@ -77,25 +129,8 @@ g.test('u32')
     u.combine('inputSource', allInputSources).combine('vectorize', [undefined, 2, 3, 4] as const)
   )
   .fn(async t => {
-    // This array must be strictly increasing, since that ordering determines
-    // the expected values.
-    const test_values: Array<Scalar> = [
-      u32Bits(kBit.u32.min),
-      u32(1),
-      u32(2),
-      u32(0x70000000),
-      u32(0x80000000),
-      u32Bits(kBit.u32.max),
-    ];
-
-    await run(
-      t,
-      builtin('clamp'),
-      [TypeU32, TypeU32, TypeU32],
-      TypeU32,
-      t.params,
-      generateIntegerTestCases(test_values)
-    );
+    const cases = await d.get('u32');
+    await run(t, builtin('clamp'), [TypeU32, TypeU32, TypeU32], TypeU32, t.params, cases);
   });
 
 g.test('i32')
@@ -105,27 +140,8 @@ g.test('i32')
     u.combine('inputSource', allInputSources).combine('vectorize', [undefined, 2, 3, 4] as const)
   )
   .fn(async t => {
-    // This array must be strictly increasing, since that ordering determines
-    // the expected values.
-    const test_values: Array<Scalar> = [
-      i32Bits(kBit.i32.negative.min),
-      i32(-2),
-      i32(-1),
-      i32(0),
-      i32(1),
-      i32(2),
-      i32Bits(0x70000000),
-      i32Bits(kBit.i32.positive.max),
-    ];
-
-    await run(
-      t,
-      builtin('clamp'),
-      [TypeI32, TypeI32, TypeI32],
-      TypeI32,
-      t.params,
-      generateIntegerTestCases(test_values)
-    );
+    const cases = await d.get('i32');
+    await run(t, builtin('clamp'), [TypeI32, TypeI32, TypeI32], TypeI32, t.params, cases);
   });
 
 g.test('abstract_float')
@@ -143,21 +159,7 @@ g.test('f32')
     u.combine('inputSource', allInputSources).combine('vectorize', [undefined, 2, 3, 4] as const)
   )
   .fn(async t => {
-    const makeCase = (x: number, y: number, z: number): Case => {
-      return makeTernaryToF32IntervalCase(x, y, z, ...clampIntervals);
-    };
-
-    // Using sparseF32Range since this will generate N^3 test cases
-    const values = sparseF32Range();
-    const cases: Array<Case> = [];
-    values.forEach(x => {
-      values.forEach(y => {
-        values.forEach(z => {
-          cases.push(makeCase(x, y, z));
-        });
-      });
-    });
-
+    const cases = await d.get(t.params.inputSource === 'const' ? 'f32_const' : 'f32_non_const');
     await run(t, builtin('clamp'), [TypeF32, TypeF32, TypeF32], TypeF32, t.params, cases);
   });
 

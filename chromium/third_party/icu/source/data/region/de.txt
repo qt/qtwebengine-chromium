@@ -308,6 +308,7 @@ de{
         CG{"Kongo (Republik)"}
         CI{"Elfenbeinküste"}
         CZ{"Tschechische Republik"}
+        NZ{"Aotearoa (Neuseeland)"}
         SZ{"Swasiland"}
         TL{"Osttimor"}
     }

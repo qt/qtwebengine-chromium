@@ -1,4 +1,4 @@
-// Copyright 2014 PDFium Authors. All rights reserved.
+// Copyright 2014 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,6 +17,7 @@
 #include "core/fxcodec/scanlinedecoder.h"
 #include "core/fxcrt/binary_buffer.h"
 #include "core/fxcrt/data_vector.h"
+#include "core/fxcrt/fx_2d_size.h"
 #include "core/fxcrt/fx_memory.h"
 #include "core/fxge/calculate_pitch.h"
 #include "third_party/base/check.h"
@@ -54,7 +55,10 @@ constexpr int kFaxMaxImageDimension = 65535;
 constexpr int kFaxBpc = 1;
 constexpr int kFaxComps = 1;
 
-int FindBit(const uint8_t* data_buf, int max_pos, int start_pos, bool bit) {
+int FindBit(pdfium::span<const uint8_t> data_buf,
+            int max_pos,
+            int start_pos,
+            bool bit) {
   DCHECK(start_pos >= 0);
   if (start_pos >= max_pos)
     return max_pos;
@@ -82,7 +86,8 @@ int FindBit(const uint8_t* data_buf, int max_pos, int start_pos, bool bit) {
         0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
     const uint8_t* skip_block = bit ? skip_block_0 : skip_block_1;
     while (byte_pos < max_byte - kBulkReadSize &&
-           memcmp(data_buf + byte_pos, skip_block, kBulkReadSize) == 0) {
+           memcmp(data_buf.subspan(byte_pos).data(), skip_block,
+                  kBulkReadSize) == 0) {
       byte_pos += kBulkReadSize;
     }
   }
@@ -104,20 +109,20 @@ void FaxG4FindB1B2(pdfium::span<const uint8_t> ref_buf,
                    int* b1,
                    int* b2) {
   bool first_bit = a0 < 0 || (ref_buf[a0 / 8] & (1 << (7 - a0 % 8))) != 0;
-  *b1 = FindBit(ref_buf.data(), columns, a0 + 1, !first_bit);
+  *b1 = FindBit(ref_buf, columns, a0 + 1, !first_bit);
   if (*b1 >= columns) {
     *b1 = *b2 = columns;
     return;
   }
   if (first_bit == !a0color) {
-    *b1 = FindBit(ref_buf.data(), columns, *b1 + 1, first_bit);
+    *b1 = FindBit(ref_buf, columns, *b1 + 1, first_bit);
     first_bit = !first_bit;
   }
   if (*b1 >= columns) {
     *b1 = *b2 = columns;
     return;
   }
-  *b2 = FindBit(ref_buf.data(), columns, *b1 + 1, first_bit);
+  *b2 = FindBit(ref_buf, columns, *b1 + 1, first_bit);
 }
 
 void FaxFillBits(uint8_t* dest_buf, int columns, int startpos, int endpos) {
@@ -148,7 +153,7 @@ inline bool NextBit(const uint8_t* src_buf, int* bitpos) {
   return !!(src_buf[pos / 8] & (1 << (7 - pos % 8)));
 }
 
-const uint8_t FaxBlackRunIns[] = {
+const uint8_t kFaxBlackRunIns[] = {
     0,          2,          0x02,       3,          0,          0x03,
     2,          0,          2,          0x02,       1,          0,
     0x03,       4,          0,          2,          0x02,       6,
@@ -205,7 +210,7 @@ const uint8_t FaxBlackRunIns[] = {
     1088 / 256, 0x76,       1152 % 256, 1152 / 256, 0x77,       1216 % 256,
     1216 / 256, 0xff};
 
-const uint8_t FaxWhiteRunIns[] = {
+const uint8_t kFaxWhiteRunIns[] = {
     0,          0,          0,          6,          0x07,       2,
     0,          0x08,       3,          0,          0x0B,       4,
     0,          0x0C,       5,          0,          0x0E,       6,
@@ -263,7 +268,7 @@ const uint8_t FaxWhiteRunIns[] = {
     0xff,
 };
 
-int FaxGetRun(const uint8_t* ins_array,
+int FaxGetRun(pdfium::span<const uint8_t> ins_array,
               const uint8_t* src_buf,
               int* bitpos,
               int bitsize) {
@@ -323,7 +328,8 @@ void FaxG4GetRow(const uint8_t* src_buf,
       } else if (bit2) {
         int run_len1 = 0;
         while (true) {
-          int run = FaxGetRun(a0color ? FaxWhiteRunIns : FaxBlackRunIns,
+          int run = FaxGetRun(a0color ? pdfium::make_span(kFaxWhiteRunIns)
+                                      : pdfium::make_span(kFaxBlackRunIns),
                               src_buf, bitpos, bitsize);
           run_len1 += run;
           if (run < 64)
@@ -340,7 +346,8 @@ void FaxG4GetRow(const uint8_t* src_buf,
 
         int run_len2 = 0;
         while (true) {
-          int run = FaxGetRun(a0color ? FaxBlackRunIns : FaxWhiteRunIns,
+          int run = FaxGetRun(a0color ? pdfium::make_span(kFaxBlackRunIns)
+                                      : pdfium::make_span(kFaxWhiteRunIns),
                               src_buf, bitpos, bitsize);
           run_len2 += run;
           if (run < 64)
@@ -440,8 +447,9 @@ void FaxGet1DLine(const uint8_t* src_buf,
 
     int run_len = 0;
     while (true) {
-      int run = FaxGetRun(color ? FaxWhiteRunIns : FaxBlackRunIns, src_buf,
-                          bitpos, bitsize);
+      int run = FaxGetRun(color ? pdfium::make_span(kFaxWhiteRunIns)
+                                : pdfium::make_span(kFaxBlackRunIns),
+                          src_buf, bitpos, bitsize);
       if (run < 0) {
         while (*bitpos < bitsize) {
           if (NextBit(src_buf, bitpos))
@@ -745,7 +753,7 @@ void FaxEncoder::FaxEncode2DLine(pdfium::span<const uint8_t> src_span) {
   int a0 = -1;
   bool a0color = true;
   while (1) {
-    int a1 = FindBit(src_span.data(), m_Cols, a0 + 1, !a0color);
+    int a1 = FindBit(src_span, m_Cols, a0 + 1, !a0color);
     int b1;
     int b2;
     FaxG4FindB1B2(m_RefLineSpan, m_Cols, a0, a0color, &b1, &b2);
@@ -780,7 +788,7 @@ void FaxEncoder::FaxEncode2DLine(pdfium::span<const uint8_t> src_span) {
       a0 = a1;
       a0color = !a0color;
     } else {
-      int a2 = FindBit(src_span.data(), m_Cols, a1 + 1, a0color);
+      int a2 = FindBit(src_span, m_Cols, a1 + 1, a0color);
       ++m_DestBitpos;
       ++m_DestBitpos;
       m_LineBuf[m_DestBitpos / 8] |= 1 << (7 - m_DestBitpos % 8);
@@ -800,17 +808,18 @@ DataVector<uint8_t> FaxEncoder::Encode() {
   m_DestBitpos = 0;
   uint8_t last_byte = 0;
   for (int i = 0; i < m_Rows; ++i) {
+    pdfium::span<uint8_t> buf_span = pdfium::make_span(m_LineBuf);
+    fxcrt::spanset(buf_span, 0);
+    buf_span[0] = last_byte;
     pdfium::span<const uint8_t> scan_line = m_Src->GetScanline(i);
-    std::fill(std::begin(m_LineBuf), std::end(m_LineBuf), 0);
-    m_LineBuf[0] = last_byte;
     FaxEncode2DLine(scan_line);
-    m_DestBuf.AppendBlock(m_LineBuf.data(), m_DestBitpos / 8);
+    m_DestBuf.AppendSpan(buf_span.first(m_DestBitpos / 8));
     last_byte = m_LineBuf[m_DestBitpos / 8];
     m_DestBitpos %= 8;
     m_RefLineSpan = scan_line;
   }
   if (m_DestBitpos)
-    m_DestBuf.AppendByte(last_byte);
+    m_DestBuf.AppendUint8(last_byte);
   return m_DestBuf.DetachBuffer();
 }
 

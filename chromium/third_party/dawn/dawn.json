@@ -916,7 +916,6 @@
         "category": "structure",
         "extensible": "in",
         "tags": ["dawn"],
-        "_TODO": "support number as length input",
         "members": [
             {"name": "flip y", "type": "bool", "default": "false"},
             {"name": "needs color space conversion", "type": "bool", "default": "false"},
@@ -995,7 +994,10 @@
             {
                 "name": "create error buffer",
                 "returns": "buffer",
-                "tags": ["dawn"]
+                "tags": ["dawn"],
+                "args": [
+                    {"name": "descriptor", "type": "buffer descriptor", "annotation": "const*"}
+                ]
             },
             {
                 "name": "create command encoder",
@@ -1269,6 +1271,7 @@
             {"name": "max inter stage shader components", "type": "uint32_t", "default": "WGPU_LIMIT_U32_UNDEFINED"},
             {"name": "max inter stage shader variables", "type": "uint32_t", "default": "WGPU_LIMIT_U32_UNDEFINED"},
             {"name": "max color attachments", "type": "uint32_t", "default": "WGPU_LIMIT_U32_UNDEFINED"},
+            {"name": "max color attachment bytes per sample", "type": "uint32_t", "default": "WGPU_LIMIT_U32_UNDEFINED"},
             {"name": "max compute workgroup storage size", "type": "uint32_t", "default": "WGPU_LIMIT_U32_UNDEFINED"},
             {"name": "max compute invocations per workgroup", "type": "uint32_t", "default": "WGPU_LIMIT_U32_UNDEFINED"},
             {"name": "max compute workgroup size x", "type": "uint32_t", "default": "WGPU_LIMIT_U32_UNDEFINED"},
@@ -1330,6 +1333,15 @@
             {"value": 3, "name": "error"}
         ]
     },
+    "extent 2D": {
+        "category": "structure",
+        "tags": ["dawn"],
+        "_TODO": "crbug.com/1316671: Remove default value of 'width' after chromium side chagnes landed",
+        "members": [
+            {"name": "width", "type": "uint32_t", "default": 0},
+            {"name": "height", "type": "uint32_t", "default": 1}
+        ]
+    },
     "extent 3D": {
         "category": "structure",
         "members": [
@@ -1355,6 +1367,16 @@
             }
         ]
     },
+    "external texture rotation":{
+        "category": "enum",
+        "tags": ["dawn"],
+        "values": [
+            {"value": 0, "name": "rotate 0 degrees"},
+            {"value": 1, "name": "rotate 90 degrees"},
+            {"value": 2, "name": "rotate 180 degrees"},
+            {"value": 3, "name": "rotate 270 degrees"}
+        ]
+    },
     "external texture descriptor": {
         "category": "structure",
         "extensible": "in",
@@ -1363,6 +1385,8 @@
             {"name": "label", "type": "char", "annotation": "const*", "length": "strlen", "optional": true},
             {"name": "plane 0", "type": "texture view"},
             {"name": "plane 1", "type": "texture view", "optional": true},
+            {"name": "visible origin", "type": "origin 2D"},
+            {"name": "visible size", "type": "extent 2D"},
             {"name": "do yuv to rgb conversion only", "type": "bool", "default": "false"},
             {"name": "yuv to rgb conversion matrix", "type": "float", "annotation": "const*",
                 "length": 12, "optional": true},
@@ -1371,7 +1395,9 @@
             {"name": "dst transfer function parameters", "type": "float", "annotation": "const*",
                 "length": 7},
             {"name": "gamut conversion matrix", "type": "float", "annotation": "const*",
-                "length": 9}
+                "length": 9},
+            {"name": "flip y", "type": "bool", "default": "false"},
+            {"name": "rotation", "type": "external texture rotation", "default": "rotate 0 degrees"}
         ]
     },
     "feature name": {
@@ -1392,7 +1418,8 @@
             {"value": 1002, "name": "dawn internal usages", "tags": ["dawn"]},
             {"value": 1003, "name": "dawn multi planar formats", "tags": ["dawn"]},
             {"value": 1004, "name": "dawn native", "tags": ["dawn", "native"]},
-            {"value": 1005, "name": "chromium experimental dp4a", "tags": ["dawn"]}
+            {"value": 1005, "name": "chromium experimental dp4a", "tags": ["dawn"]},
+            {"value": 1006, "name": "timestamp query inside passes", "tags": ["dawn"]}
         ]
     },
     "filter mode": {
@@ -1428,6 +1455,15 @@
             {"name": "mip level", "type": "uint32_t", "default": "0"},
             {"name": "origin", "type": "origin 3D"},
             {"name": "aspect", "type": "texture aspect", "default": "all"}
+        ]
+    },
+    "image copy external texture": {
+        "category": "structure",
+        "extensible": "in",
+        "tags": ["dawn"],
+        "members": [
+            {"name": "external texture", "type": "external texture"},
+            {"name": "origin", "type": "origin 3D"}
         ]
     },
     "index format": {
@@ -1542,6 +1578,14 @@
             {"name": "x", "type": "uint32_t", "default": "0"},
             {"name": "y", "type": "uint32_t", "default": "0"},
             {"name": "z", "type": "uint32_t", "default": "0"}
+        ]
+    },
+    "origin 2D": {
+        "category": "structure",
+        "tags": ["dawn"],
+        "members": [
+            {"name": "x", "type": "uint32_t", "default": "0"},
+            {"name": "y", "type": "uint32_t", "default": "0"}
         ]
     },
     "pipeline layout": {
@@ -1706,6 +1750,17 @@
                 "tags": ["dawn"],
                 "args": [
                     {"name": "source", "type": "image copy texture", "annotation": "const*"},
+                    {"name": "destination", "type": "image copy texture", "annotation": "const*"},
+                    {"name": "copy size", "type": "extent 3D", "annotation": "const*"},
+                    {"name": "options", "type": "copy texture for browser options", "annotation": "const*"}
+                ]
+            },
+            {
+                "name": "copy external texture for browser",
+                "extensible": "in",
+                "tags": ["dawn"],
+                "args": [
+                    {"name": "source", "type": "image copy external texture", "annotation": "const*"},
                     {"name": "destination", "type": "image copy texture", "annotation": "const*"},
                     {"name": "copy size", "type": "extent 3D", "annotation": "const*"},
                     {"name": "options", "type": "copy texture for browser options", "annotation": "const*"}
@@ -2528,7 +2583,8 @@
             {"value": 1003, "name": "dawn encoder internal usage descriptor", "tags": ["dawn"]},
             {"value": 1004, "name": "dawn instance descriptor", "tags": ["dawn", "native"]},
             {"value": 1005, "name": "dawn cache device descriptor", "tags": ["dawn", "native"]},
-            {"value": 1006, "name": "dawn adapter properties power preference", "tags": ["dawn", "native"]}
+            {"value": 1006, "name": "dawn adapter properties power preference", "tags": ["dawn", "native"]},
+            {"value": 1007, "name": "dawn buffer descriptor error info from wire client", "tags": ["dawn"]}
         ]
     },
     "texture": {
@@ -2939,6 +2995,15 @@
         "tags": ["dawn"],
         "members": [
             {"name": "power preference", "type": "power preference", "default": "undefined"}
+        ]
+    },
+    "dawn buffer descriptor error info from wire client": {
+        "category": "structure",
+        "chained": "in",
+        "chain roots": ["buffer descriptor"],
+        "tags": ["dawn"],
+        "members": [
+            {"name": "out of memory", "type": "bool", "default": "false"}
         ]
     }
 }

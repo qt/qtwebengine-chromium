@@ -11,7 +11,7 @@ syntax = "proto2";
 
 option optimize_for = LITE_RUNTIME;
 
-package cryptohome;
+package bootlockbox;
 option go_package = "chromiumos/system_api/bootlockbox_proto";
 
 enum BootLockboxErrorCode {

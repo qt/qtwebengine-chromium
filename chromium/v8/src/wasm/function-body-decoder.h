@@ -42,9 +42,10 @@ struct FunctionBody {
 
 enum class LoadTransformationKind : uint8_t { kSplat, kExtend, kZeroExtend };
 
-V8_EXPORT_PRIVATE DecodeResult ValidateFunctionBody(
-    AccountingAllocator* allocator, const WasmFeatures& enabled,
-    const WasmModule* module, WasmFeatures* detected, const FunctionBody& body);
+V8_EXPORT_PRIVATE DecodeResult ValidateFunctionBody(const WasmFeatures& enabled,
+                                                    const WasmModule* module,
+                                                    WasmFeatures* detected,
+                                                    const FunctionBody& body);
 
 enum PrintLocals { kPrintLocals, kOmitLocals };
 V8_EXPORT_PRIVATE
@@ -68,11 +69,16 @@ struct BodyLocalDecls {
   ValueType* local_types = nullptr;
 };
 
-V8_EXPORT_PRIVATE bool DecodeLocalDecls(const WasmFeatures& enabled,
+// Decode locals; validation is not performed.
+V8_EXPORT_PRIVATE void DecodeLocalDecls(WasmFeatures enabled,
                                         BodyLocalDecls* decls,
-                                        const WasmModule* module,
                                         const byte* start, const byte* end,
                                         Zone* zone);
+
+// Decode locals, including validation.
+V8_EXPORT_PRIVATE bool ValidateAndDecodeLocalDeclsForTesting(
+    WasmFeatures enabled, BodyLocalDecls* decls, const WasmModule* module,
+    const byte* start, const byte* end, Zone* zone);
 
 V8_EXPORT_PRIVATE BitVector* AnalyzeLoopAssignmentForTesting(
     Zone* zone, uint32_t num_locals, const byte* start, const byte* end);
@@ -170,7 +176,7 @@ class V8_EXPORT_PRIVATE BytecodeIterator : public NON_EXPORTED_BASE(Decoder) {
 
   WasmOpcode current() {
     return static_cast<WasmOpcode>(
-        read_u8<Decoder::kNoValidation>(pc_, "expected bytecode"));
+        read_u8<Decoder::NoValidationTag>(pc_, "expected bytecode"));
   }
 
   void next() {
@@ -183,7 +189,7 @@ class V8_EXPORT_PRIVATE BytecodeIterator : public NON_EXPORTED_BASE(Decoder) {
   bool has_next() { return pc_ < end_; }
 
   WasmOpcode prefixed_opcode() {
-    return read_prefixed_opcode<Decoder::kNoValidation>(pc_);
+    return read_prefixed_opcode<Decoder::NoValidationTag>(pc_);
   }
 };
 

@@ -80,6 +80,7 @@ export class SoftContextMenu {
   private activeSubMenuElement?: HTMLElement;
   private subMenu?: SoftContextMenu;
   private onMenuClosed?: () => void;
+  private focusOnTheFirstItem = true;
 
   constructor(
       items: SoftContextMenuDescriptor[], itemSelectedCallback: (arg0: number) => void, parentMenu?: SoftContextMenu,
@@ -150,13 +151,19 @@ export class SoftContextMenu {
         let firedOnce = false;
         const observer = new ResizeObserver(() => {
           if (firedOnce) {
-            // observer.disconnect();
-            // this.discard();
+            observer.disconnect();
+            this.discard();
             return;
           }
           firedOnce = true;
         });
         observer.observe(devToolsElem);
+      }
+
+      // focus on the first menu item
+      if (this.contextMenuElement.children && this.focusOnTheFirstItem) {
+        const focusElement = this.contextMenuElement.children[0] as HTMLElement;
+        this.highlightMenuItem(focusElement, /* scheduleSubMenu */ false);
       }
     }
   }
@@ -438,12 +445,17 @@ export class SoftContextMenu {
             window.setTimeout(this.showSubMenu.bind(this, this.highlightedMenuItemElement), 150);
       }
     }
+
+    if (this.contextMenuElement) {
+      ARIAUtils.setActiveDescendant(this.contextMenuElement, menuItemElement);
+    }
   }
 
   private highlightPrevious(): void {
     let menuItemElement: (ChildNode|null) = this.highlightedMenuItemElement ?
         this.highlightedMenuItemElement.previousSibling :
-        this.contextMenuElement ? this.contextMenuElement.lastChild : null;
+        this.contextMenuElement ? this.contextMenuElement.lastChild :
+                                  null;
     let menuItemDetails: (ElementMenuDetails|undefined) =
         menuItemElement ? this.detailsForElementMap.get((menuItemElement as HTMLElement)) : undefined;
     while (menuItemElement && menuItemDetails &&
@@ -460,7 +472,8 @@ export class SoftContextMenu {
   private highlightNext(): void {
     let menuItemElement: (ChildNode|null) = this.highlightedMenuItemElement ?
         this.highlightedMenuItemElement.nextSibling :
-        this.contextMenuElement ? this.contextMenuElement.firstChild : null;
+        this.contextMenuElement ? this.contextMenuElement.firstChild :
+                                  null;
     let menuItemDetails: (ElementMenuDetails|undefined) =
         menuItemElement ? this.detailsForElementMap.get((menuItemElement as HTMLElement)) : undefined;
     while (menuItemElement &&
@@ -558,6 +571,10 @@ export class SoftContextMenu {
         ARIAUtils.markAsMenuItemCheckBox(child);
       }
     }
+  }
+
+  setFocusOnTheFirstItem(focusOnTheFirstItem: boolean): void {
+    this.focusOnTheFirstItem = focusOnTheFirstItem;
   }
 }
 export interface SoftContextMenuDescriptor {

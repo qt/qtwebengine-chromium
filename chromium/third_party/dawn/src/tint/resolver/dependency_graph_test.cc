@@ -1128,9 +1128,10 @@ TEST_P(ResolverDependencyGraphResolvedSymbolTest, Test) {
 
     if (expect_pass) {
         // Check that the use resolves to the declaration
-        auto* resolved_symbol = graph.resolved_symbols[use];
-        EXPECT_EQ(resolved_symbol, decl)
-            << "resolved: " << (resolved_symbol ? resolved_symbol->TypeInfo().name : "<null>")
+        auto resolved_symbol = graph.resolved_symbols.Find(use);
+        ASSERT_TRUE(resolved_symbol);
+        EXPECT_EQ(*resolved_symbol, decl)
+            << "resolved: " << (*resolved_symbol ? (*resolved_symbol)->TypeInfo().name : "<null>")
             << "\n"
             << "decl:     " << decl->TypeInfo().name;
     }
@@ -1177,7 +1178,10 @@ TEST_P(ResolverDependencyShadowTest, Test) {
                           : helper.parameters[0];
     helper.Build();
 
-    EXPECT_EQ(Build().shadows[inner_var], outer);
+    auto shadows = Build().shadows;
+    auto shadow = shadows.Find(inner_var);
+    ASSERT_TRUE(shadow);
+    EXPECT_EQ(*shadow, outer);
 }
 
 INSTANTIATE_TEST_SUITE_P(LocalShadowGlobal,
@@ -1230,14 +1234,21 @@ TEST_F(ResolverDependencyGraphTraversalTest, SymbolsReached) {
 
     Alias(Sym(), T);
     Structure(Sym(),  //
-              utils::Vector{
-                  Member(Sym(), T, utils::Vector{MemberAlign(V)})  //
-              });
+              utils::Vector{Member(Sym(), T,
+                                   utils::Vector{
+                                       //
+                                       MemberAlign(V), MemberSize(V)  //
+                                   })});
     GlobalVar(Sym(), T, V);
     GlobalConst(Sym(), T, V);
-    Func(Sym(),                           //
-         utils::Vector{Param(Sym(), T)},  //
-         T,                               // Return type
+    Func(Sym(),
+         utils::Vector{
+             Param(Sym(), T,
+                   utils::Vector{
+                       Location(V),  // Parameter attributes
+                   }),
+         },
+         T,  // Return type
          utils::Vector{
              Decl(Var(Sym(), T, V)),                    //
              Decl(Let(Sym(), T, V)),                    //
@@ -1258,17 +1269,17 @@ TEST_F(ResolverDependencyGraphTraversalTest, SymbolsReached) {
                    Block(                               //
                        Assign(V, V))),                  //
              Loop(Block(Assign(V, V)),                  //
-                  Block(Assign(V, V))),                 //
+                  Block(Assign(V, V), BreakIf(V))),     //
              Switch(V,                                  //
-                    Case(Expr(1_i),                     //
+                    Case(CaseSelector(1_i),             //
                          Block(Assign(V, V))),          //
-                    Case(Expr(2_i),                     //
-                         Block(Fallthrough())),         //
                     DefaultCase(Block(Assign(V, V)))),  //
              Return(V),                                 //
              Break(),                                   //
              Discard(),                                 //
-         });                                            //
+         },
+         utils::Empty,                 // function attributes
+         utils::Vector{Location(V)});  // return attributes
     // Exercise type traversal
     GlobalVar(Sym(), ty.atomic(T));
     GlobalVar(Sym(), ty.bool_());
@@ -1287,6 +1298,11 @@ TEST_F(ResolverDependencyGraphTraversalTest, SymbolsReached) {
     GlobalVar(Sym(), ty.storage_texture(ast::TextureDimension::k2d, ast::TexelFormat::kR32Float,
                                         ast::Access::kRead));  //
     GlobalVar(Sym(), ty.sampler(ast::SamplerKind::kSampler));
+
+    GlobalVar(Sym(), ty.i32(), utils::Vector{Binding(V), Group(V)});
+    GlobalVar(Sym(), ty.i32(), utils::Vector{Location(V)});
+    Override(Sym(), ty.i32(), utils::Vector{Id(V)});
+
     Func(Sym(), utils::Empty, ty.void_(), utils::Empty);
 #undef V
 #undef T
@@ -1294,8 +1310,9 @@ TEST_F(ResolverDependencyGraphTraversalTest, SymbolsReached) {
 
     auto graph = Build();
     for (auto use : symbol_uses) {
-        auto* resolved_symbol = graph.resolved_symbols[use.use];
-        EXPECT_EQ(resolved_symbol, use.decl) << use.where;
+        auto resolved_symbol = graph.resolved_symbols.Find(use.use);
+        ASSERT_TRUE(resolved_symbol) << use.where;
+        EXPECT_EQ(*resolved_symbol, use.decl) << use.where;
     }
 }
 

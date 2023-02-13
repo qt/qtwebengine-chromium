@@ -21,6 +21,14 @@
 #include <string>
 #include <vector>
 
+#ifdef NEARBY_CHROMIUM
+#include "base/check.h"
+#elif defined(NEARBY_SWIFTPM)
+#include "internal/platform/logging.h"
+#else
+#include "absl/log/check.h"  // nogncheck
+#endif
+
 #include "absl/types/span.h"
 #include "internal/crypto/nearby_base.h"
 #include "internal/crypto/openssl_util.h"

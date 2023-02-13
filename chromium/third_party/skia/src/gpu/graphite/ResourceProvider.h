@@ -16,8 +16,6 @@
 #include "src/gpu/graphite/ResourceTypes.h"
 
 struct SkSamplingOptions;
-class SkRuntimeEffectDictionary;
-class SkShaderCodeDictionary;
 
 namespace skgpu {
 class SingleOwner;
@@ -39,6 +37,8 @@ class GraphicsPipeline;
 class GraphicsPipelineDesc;
 class GraphiteResourceKey;
 class ResourceCache;
+class RuntimeEffectDictionary;
+class ShaderCodeDictionary;
 class Sampler;
 class SharedContext;
 class Texture;
@@ -50,7 +50,7 @@ public:
 
     // The runtime effect dictionary provides a link between SkCodeSnippetIds referenced in the
     // paint key and the current SkRuntimeEffect that provides the SkSL for that id.
-    sk_sp<GraphicsPipeline> findOrCreateGraphicsPipeline(const SkRuntimeEffectDictionary*,
+    sk_sp<GraphicsPipeline> findOrCreateGraphicsPipeline(const RuntimeEffectDictionary*,
                                                          const GraphicsPipelineDesc&,
                                                          const RenderPassDesc&);
 
@@ -88,7 +88,7 @@ protected:
     SharedContext* fSharedContext;
 
 private:
-    virtual sk_sp<GraphicsPipeline> createGraphicsPipeline(const SkRuntimeEffectDictionary*,
+    virtual sk_sp<GraphicsPipeline> createGraphicsPipeline(const RuntimeEffectDictionary*,
                                                            const GraphicsPipelineDesc&,
                                                            const RenderPassDesc&) = 0;
     virtual sk_sp<ComputePipeline> createComputePipeline(const ComputePipelineDesc&) = 0;

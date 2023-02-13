@@ -141,8 +141,8 @@ ResultOrError<CacheResult<MslCompilation>> TranslateToMSL(
     std::optional<tint::transform::VertexPulling::Config> vertexPullingTransformConfig;
     if (stage == SingleShaderStage::Vertex &&
         device->IsToggleEnabled(Toggle::MetalEnableVertexPulling)) {
-        vertexPullingTransformConfig = BuildVertexPullingTransformConfig(
-            *renderPipeline, programmableStage.entryPoint.c_str(), kPullingBufferBindingSet);
+        vertexPullingTransformConfig =
+            BuildVertexPullingTransformConfig(*renderPipeline, kPullingBufferBindingSet);
 
         for (VertexBufferSlot slot : IterateBitSet(renderPipeline->GetVertexBufferSlotsUsed())) {
             uint32_t metalIndex = renderPipeline->GetMtlVertexBufferIndex(slot);
@@ -190,8 +190,17 @@ ResultOrError<CacheResult<MslCompilation>> TranslateToMSL(
 
             // We only remap bindings for the target entry point, so we need to strip all other
             // entry points to avoid generating invalid bindings for them.
+            // Run before the renamer so that the entry point name matches `entryPointName` still.
             transformManager.Add<tint::transform::SingleEntryPoint>();
             transformInputs.Add<tint::transform::SingleEntryPoint::Config>(r.entryPointName);
+
+            // Needs to run before all other transforms so that they can use builtin names safely.
+            transformManager.Add<tint::transform::Renamer>();
+            if (r.disableSymbolRenaming) {
+                // We still need to rename MSL reserved keywords
+                transformInputs.Add<tint::transform::Renamer::Config>(
+                    tint::transform::Renamer::Target::kMslKeywords);
+            }
 
             if (!r.externalTextureBindings.empty()) {
                 transformManager.Add<tint::transform::MultiplanarExternalTexture>();
@@ -220,14 +229,6 @@ ResultOrError<CacheResult<MslCompilation>> TranslateToMSL(
             transformInputs.Add<BindingRemapper::Remappings>(std::move(r.bindingPoints),
                                                              BindingRemapper::AccessControls{},
                                                              /* mayCollide */ true);
-
-            transformManager.Add<tint::transform::Renamer>();
-
-            if (r.disableSymbolRenaming) {
-                // We still need to rename MSL reserved keywords
-                transformInputs.Add<tint::transform::Renamer::Config>(
-                    tint::transform::Renamer::Target::kMslKeywords);
-            }
 
             tint::Program program;
             tint::transform::DataMap transformOutputs;
@@ -365,9 +366,7 @@ MaybeError ShaderModule::CreateFunction(SingleShaderStage stage,
         out->function = AcquireNSPRef([*library newFunctionWithName:name.Get()]);
     }
 
-    if (BlobCache* cache = GetDevice()->GetBlobCache()) {
-        cache->EnsureStored(mslCompilation);
-    }
+    GetDevice()->GetBlobCache()->EnsureStored(mslCompilation);
 
     if (GetDevice()->IsToggleEnabled(Toggle::MetalEnableVertexPulling) &&
         GetEntryPoint(entryPointName).usedVertexInputs.any()) {

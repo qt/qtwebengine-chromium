@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2016 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -84,7 +84,7 @@ class CPDF_RenderStatus {
   bool GetDropObjects() const { return m_bDropObjects; }
   bool IsPrint() const { return m_bPrint; }
   bool IsStopped() const { return m_bStopped; }
-  CPDF_RenderContext* GetContext() const { return m_pContext.Get(); }
+  CPDF_RenderContext* GetContext() const { return m_pContext; }
   const CPDF_Dictionary* GetFormResource() const {
     return m_pFormResource.Get();
   }

@@ -1,4 +1,4 @@
-// Copyright 2014 PDFium Authors. All rights reserved.
+// Copyright 2014 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -55,7 +55,7 @@ void XFA_DrawImage(CFGAS_GEGraphics* pGS,
                    XFA_AttributeValue iVertAlign = XFA_AttributeValue::Top);
 
 RetainPtr<CFX_DIBitmap> XFA_LoadImageFromBuffer(
-    const RetainPtr<IFX_SeekableReadStream>& pImageFileRead,
+    RetainPtr<IFX_SeekableReadStream> pImageFileRead,
     FXCODEC_IMAGE_TYPE type,
     int32_t& iImageXDpi,
     int32_t& iImageYDpi);
@@ -155,8 +155,8 @@ class CXFA_FFWidget : public cppgc::GarbageCollected<CXFA_FFWidget>,
   virtual WideString GetText();
   virtual FormFieldType GetFormFieldType();
 
-  CXFA_Node* GetNode() const { return m_pNode.Get(); }
-  CXFA_ContentLayoutItem* GetLayoutItem() const { return m_pLayoutItem.Get(); }
+  CXFA_Node* GetNode() const { return m_pNode; }
+  CXFA_ContentLayoutItem* GetLayoutItem() const { return m_pLayoutItem; }
   void SetLayoutItem(CXFA_ContentLayoutItem* pItem) { m_pLayoutItem = pItem; }
   CXFA_FFPageView* GetPageView() const { return m_pPageView; }
   void SetPageView(CXFA_FFPageView* pPageView) { m_pPageView = pPageView; }

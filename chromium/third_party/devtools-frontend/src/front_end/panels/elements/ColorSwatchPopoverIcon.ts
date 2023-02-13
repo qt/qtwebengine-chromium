@@ -144,7 +144,7 @@ export class ColorSwatchPopoverIcon {
       if (!value) {
         continue;
       }
-      const color = Common.Color.Color.parse(value);
+      const color = Common.Color.parse(value);
       if (!color) {
         continue;
       }
@@ -163,13 +163,17 @@ export class ColorSwatchPopoverIcon {
     this.showPopover();
   }
 
+  async toggleEyeDropper(): Promise<void> {
+    await this.spectrum?.toggleColorPicker();
+  }
+
   showPopover(): void {
     if (this.swatchPopoverHelper.isShowing()) {
       this.swatchPopoverHelper.hide(true);
       return;
     }
 
-    const color = this.swatch.getColor();
+    const color = this.swatch.getColor()?.asLegacyColor();
     let format = this.swatch.getFormat();
     if (!color || !format) {
       return;
@@ -197,6 +201,8 @@ export class ColorSwatchPopoverIcon {
     if (uiLocation) {
       void Common.Revealer.reveal(uiLocation, true /* omitFocus */);
     }
+
+    UI.Context.Context.instance().setFlavor(ColorSwatchPopoverIcon, this);
   }
 
   private spectrumResized(): void {
@@ -204,7 +210,7 @@ export class ColorSwatchPopoverIcon {
   }
 
   private spectrumChanged(event: Common.EventTarget.EventTargetEvent<string>): void {
-    const color = Common.Color.Color.parse(event.data);
+    const color = Common.Color.parse(event.data);
     if (!color) {
       return;
     }
@@ -240,6 +246,8 @@ export class ColorSwatchPopoverIcon {
     void this.treeElement.applyStyleText(propertyText, true);
     this.treeElement.parentPane().setEditingStyle(false);
     delete this.originalPropertyText;
+
+    UI.Context.Context.instance().setFlavor(ColorSwatchPopoverIcon, null);
   }
 }
 

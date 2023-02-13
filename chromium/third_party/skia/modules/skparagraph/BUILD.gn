@@ -10,8 +10,7 @@ declare_args() {
   paragraph_bench_enabled = false
 }
 
-if (skia_enable_skparagraph && skia_enable_skshaper && skia_use_icu &&
-    skia_use_harfbuzz) {
+if (skia_enable_skparagraph && skia_enable_skshaper && skia_use_harfbuzz) {
   config("public_config") {
     defines = [ "SK_ENABLE_PARAGRAPH" ]
     include_dirs = [
@@ -92,9 +91,9 @@ if (skia_enable_skparagraph && skia_enable_skshaper && skia_use_icu &&
       }
     }
 
-    skia_source_set("samples") {
+    skia_source_set("slides") {
       testonly = true
-      sources = [ "samples/SampleParagraph.cpp" ]
+      sources = [ "slides/ParagraphSlide.cpp" ]
       deps = [
         ":skparagraph",
         ":utils",
@@ -114,6 +113,6 @@ if (skia_enable_skparagraph && skia_enable_skshaper && skia_use_icu &&
   }
   group("bench") {
   }
-  group("samples") {
+  group("slides") {
   }
 }

@@ -16,6 +16,7 @@
 #include "include/gpu/GrTypes.h"
 #include "include/private/SkImageInfoPriv.h"
 #include "include/private/SkMacros.h"
+#include "include/private/SkTypeTraits.h"
 
 class GrBackendFormat;
 class GrCaps;

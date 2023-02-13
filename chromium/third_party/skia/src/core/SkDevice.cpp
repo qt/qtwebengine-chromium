@@ -307,6 +307,10 @@ void SkBaseDevice::drawSpecial(SkSpecialImage*, const SkMatrix&, const SkSamplin
 sk_sp<SkSpecialImage> SkBaseDevice::makeSpecial(const SkBitmap&) { return nullptr; }
 sk_sp<SkSpecialImage> SkBaseDevice::makeSpecial(const SkImage*) { return nullptr; }
 sk_sp<SkSpecialImage> SkBaseDevice::snapSpecial(const SkIRect&, bool forceCopy) { return nullptr; }
+sk_sp<SkSpecialImage> SkBaseDevice::snapSpecialScaled(const SkIRect& subset,
+                                                      const SkISize& dstDims) {
+    return nullptr;
+}
 sk_sp<SkSpecialImage> SkBaseDevice::snapSpecial() {
     return this->snapSpecial(SkIRect::MakeWH(this->width(), this->height()));
 }
@@ -319,18 +323,17 @@ void SkBaseDevice::drawDevice(SkBaseDevice* device, const SkSamplingOptions& sam
     }
 }
 
-void SkBaseDevice::drawFilteredImage(const skif::Mapping& mapping, SkSpecialImage* src,
-                                     const SkImageFilter* filter, const SkSamplingOptions& sampling,
+void SkBaseDevice::drawFilteredImage(const skif::Mapping& mapping,
+                                     SkSpecialImage* src,
+                                     SkColorType colorType,
+                                     const SkImageFilter* filter,
+                                     const SkSamplingOptions& sampling,
                                      const SkPaint& paint) {
     SkASSERT(!paint.getImageFilter() && !paint.getMaskFilter());
 
     skif::LayerSpace<SkIRect> targetOutput = mapping.deviceToLayer(
             skif::DeviceSpace<SkIRect>(this->devClipBounds()));
 
-    // FIXME If the saved layer (so src) was created to use F16, should we do all image filtering
-    // in F16 and then only flatten to the destination color encoding at the end?
-    // Currently, this context converts everything to the dst color type ASAP.
-    SkColorType colorType = this->imageInfo().colorType();
     if (colorType == kUnknown_SkColorType) {
         colorType = kRGBA_8888_SkColorType;
     }
@@ -388,16 +391,18 @@ bool SkBaseDevice::peekPixels(SkPixmap* pmap) {
 
 #include "src/core/SkUtils.h"
 
-// TODO: This does not work for arbitrary shader DAGs (when there is no single leaf local matrix).
-// What we really need is proper post-LM plumbing for shaders.
 static sk_sp<SkShader> make_post_inverse_lm(const SkShader* shader, const SkMatrix& lm) {
-    SkMatrix inverse_lm;
+     SkMatrix inverse_lm;
     if (!shader || !lm.invert(&inverse_lm)) {
         return nullptr;
     }
 
-    // LMs pre-compose.  In order to push a post local matrix, we peel off any existing local
-    // set a new local matrix of inverse_lm * prev_local_matrix.
+#if defined(SK_BUILD_FOR_ANDROID_FRAMEWORK)  // b/256873449
+    // Legacy impl for old concat order. This does not work for arbitrary shader DAGs (when there is
+    // no single leaf local matrix).
+
+    // LMs pre-compose. In order to push a post local matrix, we peel off any existing local matrix
+    // and set a new local matrix of inverse_lm * prev_local_matrix.
     SkMatrix prev_local_matrix;
     const auto nested_shader = as_SB(shader)->makeAsALocalMatrixShader(&prev_local_matrix);
     if (nested_shader) {
@@ -406,6 +411,9 @@ static sk_sp<SkShader> make_post_inverse_lm(const SkShader* shader, const SkMatr
     }
 
     return shader->makeWithLocalMatrix(inverse_lm * prev_local_matrix);
+#endif
+
+    return shader->makeWithLocalMatrix(inverse_lm);
 }
 
 void SkBaseDevice::drawGlyphRunList(SkCanvas* canvas,

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: BSD-2-Clause
 
 #include "avifpng.h"
+#include "avifexif.h"
 #include "avifutil.h"
 
 #include "png.h"
@@ -13,12 +14,12 @@
 #include <stdlib.h>
 #include <string.h>
 
-// See libpng-manual.txt, section XI.
-#if PNG_LIBPNG_VER_MAJOR > 1 || (PNG_LIBPNG_VER_MAJOR == 1 && PNG_LIBPNG_VER_MINOR >= 5)
-typedef png_bytep png_iccp_datap;
-#else
-typedef png_charp png_iccp_datap;
+#if !defined(PNG_eXIf_SUPPORTED) || !defined(PNG_iTXt_SUPPORTED)
+#error "libpng 1.6.32 or above with PNG_eXIf_SUPPORTED and PNG_iTXt_SUPPORTED is required."
 #endif
+
+//------------------------------------------------------------------------------
+// Reading
 
 // Converts a hexadecimal string which contains 2-byte character representations of hexadecimal values to raw data (bytes).
 // hexString may contain values consisting of [A-F][a-f][0-9] in pairs, e.g., 7af2..., separated by any number of newlines.
@@ -35,7 +36,7 @@ static avifBool avifHexStringToBytes(const char * hexString, size_t hexStringLen
         }
         if (!isxdigit(hexString[i]) || !isxdigit(hexString[i + 1])) {
             avifRWDataFree(bytes);
-            fprintf(stderr, "Metadata extraction failed: invalid character at " AVIF_FMT_ZU "\n", i);
+            fprintf(stderr, "Metadata extraction failed: invalid character at %" AVIF_FMT_ZU "\n", i);
             return AVIF_FALSE;
         }
         const char twoHexDigits[] = { hexString[i], hexString[i + 1], '\0' };
@@ -46,7 +47,7 @@ static avifBool avifHexStringToBytes(const char * hexString, size_t hexStringLen
 
     if (numBytes != numExpectedBytes) {
         avifRWDataFree(bytes);
-        fprintf(stderr, "Metadata extraction failed: expected " AVIF_FMT_ZU " tokens but got " AVIF_FMT_ZU "\n", numExpectedBytes, numBytes);
+        fprintf(stderr, "Metadata extraction failed: expected %" AVIF_FMT_ZU " tokens but got %" AVIF_FMT_ZU "\n", numExpectedBytes, numBytes);
         return AVIF_FALSE;
     }
     return AVIF_TRUE;
@@ -65,7 +66,7 @@ static avifBool avifCopyRawProfile(const char * profile, size_t profileLength, a
     for (size_t i = 1; i < profileLength; ++i) { // i starts at 1 because the first '\n' was already checked above.
         if (profile[i] == '\0') {
             // This should not happen as libpng provides this guarantee but extra safety does not hurt.
-            fprintf(stderr, "Metadata extraction failed: malformed raw profile, unexpected null character at " AVIF_FMT_ZU "\n", i);
+            fprintf(stderr, "Metadata extraction failed: malformed raw profile, unexpected null character at %" AVIF_FMT_ZU "\n", i);
             return AVIF_FALSE;
         }
         if (profile[i] == '\n') {
@@ -113,7 +114,6 @@ static avifBool avifRemoveHeader(const avifROData * header, avifRWData * payload
 // Returns AVIF_FALSE in case of a parsing error.
 static avifBool avifExtractExifAndXMP(png_structp png, png_infop info, avifBool * ignoreExif, avifBool * ignoreXMP, avifImage * avif)
 {
-#ifdef PNG_eXIf_SUPPORTED
     if (!*ignoreExif) {
         png_uint_32 exifSize = 0;
         png_bytep exif = NULL;
@@ -122,11 +122,20 @@ static avifBool avifExtractExifAndXMP(png_structp png, png_infop info, avifBool 
                 fprintf(stderr, "Exif extraction failed: empty eXIf chunk\n");
                 return AVIF_FALSE;
             }
-            avifImageSetMetadataExif(avif, exif, exifSize);
+            // Avoid avifImageSetMetadataExif() that sets irot/imir.
+            avifRWDataSet(&avif->exif, exif, exifSize);
+            // According to the Extensions to the PNG 1.2 Specification, Version 1.5.0, section 3.7:
+            //   "It is recommended that unless a decoder has independent knowledge of the validity of the Exif data,
+            //    the data should be considered to be of historical value only."
+            // Try to remove any Exif orientation data to be safe.
+            // It is easier to set it to 1 (the default top-left) than actually removing the tag.
+            // libheif has the same behavior, see
+            // https://github.com/strukturag/libheif/blob/18291ddebc23c924440a8a3c9a7267fe3beb5901/examples/heif_enc.cc#L703
+            // Ignore errors because not being able to set Exif orientation now means it cannot be parsed later either.
+            (void)avifSetExifOrientation(&avif->exif, 1);
             *ignoreExif = AVIF_TRUE; // Ignore any other Exif chunk.
         }
     }
-#endif // PNG_eXIf_SUPPORTED
 
     // HEIF specification ISO-23008 section A.2.1 allows including and excluding the Exif\0\0 header from AVIF files.
     // The PNG 1.5 extension mentions the omission of this header for the modern standard eXIf chunk.
@@ -140,17 +149,16 @@ static avifBool avifExtractExifAndXMP(png_structp png, png_infop info, avifBool 
     const png_uint_32 numTextChunks = png_get_text(png, info, &text, NULL);
     for (png_uint_32 i = 0; (!*ignoreExif || !*ignoreXMP) && (i < numTextChunks); ++i, ++text) {
         png_size_t textLength = text->text_length;
-#ifdef PNG_iTXt_SUPPORTED
         if ((text->compression == PNG_ITXT_COMPRESSION_NONE) || (text->compression == PNG_ITXT_COMPRESSION_zTXt)) {
             textLength = text->itxt_length;
         }
-#endif
 
         if (!*ignoreExif && !strcmp(text->key, "Raw profile type exif")) {
             if (!avifCopyRawProfile(text->text, textLength, &avif->exif)) {
                 return AVIF_FALSE;
             }
             avifRemoveHeader(&exifApp1Header, &avif->exif); // Ignore the return value because the header is optional.
+            (void)avifSetExifOrientation(&avif->exif, 1);   // See above.
             *ignoreExif = AVIF_TRUE;                        // Ignore any other Exif chunk.
         } else if (!*ignoreXMP && !strcmp(text->key, "Raw profile type xmp")) {
             if (!avifCopyRawProfile(text->text, textLength, &avif->xmp)) {
@@ -167,7 +175,8 @@ static avifBool avifExtractExifAndXMP(png_structp png, png_infop info, avifBool 
             if (!*ignoreExif && avifRemoveHeader(&exifApp1Header, &metadata)) {
                 avifRWDataFree(&avif->exif);
                 avif->exif = metadata;
-                *ignoreExif = AVIF_TRUE; // Ignore any other Exif chunk.
+                (void)avifSetExifOrientation(&avif->exif, 1); // See above.
+                *ignoreExif = AVIF_TRUE;                      // Ignore any other Exif chunk.
             } else if (!*ignoreXMP && avifRemoveHeader(&xmpApp1Header, &metadata)) {
                 avifRWDataFree(&avif->xmp);
                 avif->xmp = metadata;
@@ -261,7 +270,7 @@ avifBool avifPNGRead(const char * inputFilename,
         int iccpCompression = 0;
         unsigned char * iccpData = NULL;
         png_uint_32 iccpDataLen = 0;
-        if (png_get_iCCP(png, info, &iccpProfileName, &iccpCompression, (png_iccp_datap *)&iccpData, &iccpDataLen) == PNG_INFO_iCCP) {
+        if (png_get_iCCP(png, info, &iccpProfileName, &iccpCompression, &iccpData, &iccpDataLen) == PNG_INFO_iCCP) {
             avifImageSetProfileICC(avif, iccpData, iccpDataLen);
         }
         // Note: There is no support for the rare "Raw profile type icc" or "Raw profile type icm" text chunks.
@@ -368,11 +377,15 @@ cleanup:
     return readResult;
 }
 
+//------------------------------------------------------------------------------
+// Writing
+
 avifBool avifPNGWrite(const char * outputFilename, const avifImage * avif, uint32_t requestedDepth, avifChromaUpsampling chromaUpsampling, int compressionLevel)
 {
     volatile avifBool writeResult = AVIF_FALSE;
     png_structp png = NULL;
     png_infop info = NULL;
+    avifRWData xmp = { NULL, 0 };
     png_bytep * volatile rowPointers = NULL;
     FILE * volatile f = NULL;
 
@@ -399,7 +412,7 @@ avifBool avifPNGWrite(const char * outputFilename, const avifImage * avif, uint3
         rgb.chromaUpsampling = chromaUpsampling;
         rgb.depth = rgbDepth;
         colorType = PNG_COLOR_TYPE_RGBA;
-        if (!avif->alphaPlane) {
+        if (avifImageIsOpaque(avif)) {
             colorType = PNG_COLOR_TYPE_RGB;
             rgb.format = AVIF_RGB_FORMAT_RGB;
         }
@@ -446,8 +459,46 @@ avifBool avifPNGWrite(const char * outputFilename, const avifImage * avif, uint3
 
     png_set_IHDR(png, info, avif->width, avif->height, rgbDepth, colorType, PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
     if (avif->icc.data && (avif->icc.size > 0)) {
-        png_set_iCCP(png, info, "libavif", 0, (png_iccp_datap)avif->icc.data, (png_uint_32)avif->icc.size);
+        png_set_iCCP(png, info, "libavif", 0, avif->icc.data, (png_uint_32)avif->icc.size);
     }
+
+    png_text texts[2];
+    int numTextMetadataChunks = 0;
+    if (avif->exif.data && (avif->exif.size > 0)) {
+        if (avif->exif.size > UINT32_MAX) {
+            fprintf(stderr, "Error writing PNG: Exif metadata is too big\n");
+            goto cleanup;
+        }
+        png_set_eXIf_1(png, info, (png_uint_32)avif->exif.size, avif->exif.data);
+    }
+    if (avif->xmp.data && (avif->xmp.size > 0)) {
+        // The iTXt XMP payload may not contain a zero byte according to section 4.2.3.3 of
+        // the PNG specification, version 1.2.
+        if (memchr(avif->xmp.data, '\0', avif->xmp.size)) {
+            fprintf(stderr, "Error writing PNG: XMP metadata contains an invalid null character\n");
+            goto cleanup;
+        } else {
+            // Providing the length through png_text.itxt_length does not work.
+            // The given png_text.text string must end with a zero byte.
+            if (avif->xmp.size >= SIZE_MAX) {
+                fprintf(stderr, "Error writing PNG: XMP metadata is too big\n");
+                goto cleanup;
+            }
+            avifRWDataRealloc(&xmp, avif->xmp.size + 1);
+            memcpy(xmp.data, avif->xmp.data, avif->xmp.size);
+            xmp.data[avif->xmp.size] = '\0';
+            png_text * text = &texts[numTextMetadataChunks++];
+            memset(text, 0, sizeof(*text));
+            text->compression = PNG_ITXT_COMPRESSION_NONE;
+            text->key = "XML:com.adobe.xmp";
+            text->text = (char *)xmp.data;
+            text->itxt_length = xmp.size;
+        }
+    }
+    if (numTextMetadataChunks != 0) {
+        png_set_text(png, info, texts, numTextMetadataChunks);
+    }
+
     png_write_info(png, info);
 
     rowPointers = (png_bytep *)malloc(sizeof(png_bytep) * avif->height);
@@ -461,6 +512,9 @@ avifBool avifPNGWrite(const char * outputFilename, const avifImage * avif, uint3
         for (uint32_t y = 0; y < avif->height; ++y) {
             rowPointers[y] = &rgb.pixels[y * rgb.rowBytes];
         }
+    }
+    if (avifImageGetExifOrientationFromIrotImir(avif) != 1) {
+        // TODO(yguyon): Rotate the samples.
     }
 
     if (rgbDepth > 8) {
@@ -479,6 +533,7 @@ cleanup:
     if (png) {
         png_destroy_write_struct(&png, &info);
     }
+    avifRWDataFree(&xmp);
     if (rowPointers) {
         free(rowPointers);
     }

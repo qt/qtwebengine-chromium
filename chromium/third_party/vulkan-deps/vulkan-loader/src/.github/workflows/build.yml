@@ -45,7 +45,8 @@ jobs:
               with:
                 python-version: '3.7'
             - run: sudo apt update
-            - run: sudo apt install libwayland-dev libxrandr-dev
+            - name: Install Dependencies
+              run: sudo apt install --yes --no-install-recommends libwayland-dev libxrandr-dev
 
             - name: Generate build files
               run: cmake -S. -Bbuild -DCMAKE_BUILD_TYPE=${{matrix.config}} -DBUILD_TESTS=On -DUPDATE_DEPS=ON -DTEST_USE_ADDRESS_SANITIZER=ON
@@ -68,6 +69,48 @@ jobs:
 
             - name: Verify commit message formatting
               run: ./scripts/check_commit_message_format.sh
+
+    linux-32:
+        runs-on: ${{matrix.os}}
+
+        strategy:
+            matrix:
+                cc: [ gcc, clang ]
+                cxx: [ g++, clang++ ]
+                config: [ Debug, Release ]
+                os: [ ubuntu-18.04, ubuntu-20.04 ]
+                exclude:
+                    - cc: gcc
+                      cxx: clang++
+                    - cc: clang
+                      cxx: g++
+
+        steps:
+            - uses: actions/checkout@v2
+            - uses: actions/setup-python@v2
+              with:
+                python-version: '3.7'
+            - name: Install Dependencies
+              run: |-
+                sudo dpkg --add-architecture i386
+                sudo apt-get update
+                sudo apt install --yes --no-install-recommends gcc-multilib g++-multilib libc6-dev-i386 pkg-config-i686-linux-gnu libwayland-dev:i386 libxrandr-dev:i386
+            - name: Generate build files
+              run: cmake -S. -Bbuild -DCMAKE_BUILD_TYPE=${{matrix.config}} -DBUILD_TESTS=On -DUPDATE_DEPS=ON
+              env:
+                CFLAGS: -m32
+                CXXFLAGS: -m32
+                LDFLAGS: -m32
+                ASFLAGS: --32
+                PKG_CONFIG: i686-pc-linux-gnu-pkg-config
+
+
+            - name: Build the loader
+              run: make -C build
+
+            - name: Run regression tests
+              working-directory: ./build
+              run: ctest --output-on-failure
 
     windows:
         runs-on: ${{matrix.os}}
@@ -98,11 +141,19 @@ jobs:
               run: python scripts/generate_source.py --verify external/Vulkan-Headers/registry
 
     mac:
-        runs-on: macos-latest
+        runs-on: ${{matrix.os}}
 
         strategy:
             matrix:
                 config: [ Debug, Release ]
+                os: [ macos-11, macos-latest ]
+                static_build: [ BUILD_STATIC_LOADER=ON, BUILD_STATIC_LOADER=OFF ]
+                exclude:
+                  - os: macos-latest
+                    static_build: BUILD_STATIC_LOADER=ON
+                  - config: Debug
+                    os: macos-11
+                    static_build: BUILD_STATIC_LOADER=ON
 
         steps:
             - uses: actions/checkout@v2
@@ -111,7 +162,11 @@ jobs:
                 python-version: '3.7'
 
             - name: Generate build files
-              run: cmake -S. -Bbuild -DCMAKE_BUILD_TYPE=${{matrix.config}} -DBUILD_TESTS=On -DUPDATE_DEPS=ON -DTEST_USE_ADDRESS_SANITIZER=ON
+              run: cmake -S. -Bbuild -DCMAKE_BUILD_TYPE=${{matrix.config}} -D${{matrix.static_build}} -DBUILD_TESTS=On -DUPDATE_DEPS=ON -DTEST_USE_ADDRESS_SANITIZER=ON
+              env:
+                # Specify the minimum version of macOS on which the target binaries are to be deployed.
+                # https://cmake.org/cmake/help/latest/envvar/MACOSX_DEPLOYMENT_TARGET.html
+                MACOSX_DEPLOYMENT_TARGET: 10.12
 
             - name: Build the loader
               run: make -C build

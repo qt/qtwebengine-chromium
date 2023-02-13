@@ -10,13 +10,6 @@
   flex-direction: column;
 }
 
-hr {
-  border: none;
-  background-color: var(--color-details-hairline);
-  height: 0.5pt;
-  width: inherit;
-}
-
 .code-snippet {
   width: 100%;
   font-family: var(--source-code-font-family);
@@ -39,6 +32,10 @@ input {
   width: 12px;
   flex-shrink: 0;
   margin: 3px 0;
+}
+
+details {
+  border-top: 1px solid var(--color-details-hairline);
 }
 
 details:not(.active) {
@@ -117,15 +114,14 @@ button {
   display: none;
   align-items: center;
   justify-content: center;
-  margin-left: auto;
 }
 
-details[open] devtools-two-states-counter {
-  display: none;
+button + span {
+  padding-left: 6px;
 }
 
-summary:hover devtools-two-states-counter {
-  display: none;
+button + button {
+  padding-left: 11px;
 }
 
 summary:hover button {
@@ -164,6 +160,10 @@ button:hover devtools-icon {
   background-color: var(--override-breakpoint-hit-background);
 }
 
+.breakpoint-item.hit:focus {
+  background-color: var(--legacy-focus-bg-color);
+}
+
 .-theme-with-dark-background .type-indicator,
 :host-context(.-theme-with-dark-background) .type-indicator {
   --override-color-conditional-breakpoint: #e9a33a;
@@ -190,32 +190,41 @@ button:hover devtools-icon {
 
 .location {
   line-height: 14px;
-  margin-left: auto;
   text-overflow: ellipsis;
   overflow: hidden;
-}
-
-.breakpoint-item:hover .location {
-  display: none;
 }
 
 .breakpoint-item:hover button {
   display: flex;
 }
 
-.pause-on-exceptions > .checkbox-label > input {
+.pause-on-uncaught-exceptions {
+  margin-top: 3px;
+}
+
+/* TODO(crbug.com/1382762): Remove special casing with dependent toggles as soon as Node LTS caught up on independent pause of exception toggles. */
+input:disabled + span {
+  color: var(--color-text-disabled);
+}
+
+.pause-on-caught-exceptions > .checkbox-label > input,
+.pause-on-uncaught-exceptions > .checkbox-label > input {
   margin-left: 6px;
 }
 
-.pause-on-caught-exceptions > .checkbox-label > input {
-  margin-left: 20px;
-}
-
-.pause-on-exceptions,
+.pause-on-uncaught-exceptions,
 .pause-on-caught-exceptions {
   display: flex;
   align-items: center;
   line-height: 13px;
   height: 18px;
   padding-right: 8px;
+}
+
+details > summary:focus,
+.breakpoint-item:focus,
+.pause-on-uncaught-exceptions:focus,
+.pause-on-caught-exceptions:focus {
+  background-color: var(--legacy-focus-bg-color);
+  outline-width: 0;
 }

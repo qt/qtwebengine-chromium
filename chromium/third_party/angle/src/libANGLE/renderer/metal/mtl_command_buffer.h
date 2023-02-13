@@ -80,6 +80,8 @@ class CommandQueue final : public WrappedObject<id<MTLCommandQueue>>, angle::Non
     AutoObjCPtr<id<MTLCommandBuffer>> makeMetalCommandBuffer(uint64_t *queueSerialOut);
     void onCommandBufferCommitted(id<MTLCommandBuffer> buf, uint64_t serial);
 
+    uint64_t getNextRenderEncoderSerial();
+
   private:
     void onCommandBufferCompleted(id<MTLCommandBuffer> buf, uint64_t serial);
     using ParentClass = WrappedObject<id<MTLCommandQueue>>;
@@ -94,6 +96,7 @@ class CommandQueue final : public WrappedObject<id<MTLCommandQueue>>, angle::Non
     uint64_t mQueueSerialCounter = 1;
     std::atomic<uint64_t> mCommittedBufferSerial{0};
     std::atomic<uint64_t> mCompletedBufferSerial{0};
+    uint64_t mRenderEncoderCounter = 1;
 
     mutable std::mutex mLock;
 };
@@ -426,6 +429,7 @@ class RenderCommandEncoder final : public CommandEncoder
     RenderCommandEncoder &setTexture(gl::ShaderType shaderType,
                                      const TextureRef &texture,
                                      uint32_t index);
+    RenderCommandEncoder &setRWTexture(gl::ShaderType, const TextureRef &, uint32_t index);
 
     RenderCommandEncoder &draw(MTLPrimitiveType primitiveType,
                                uint32_t vertexStart,
@@ -465,6 +469,10 @@ class RenderCommandEncoder final : public CommandEncoder
                                       MTLResourceUsage usage,
                                       mtl::RenderStages states);
 
+    RenderCommandEncoder &memoryBarrier(mtl::BarrierScope,
+                                        mtl::RenderStages after,
+                                        mtl::RenderStages before);
+
     RenderCommandEncoder &memoryBarrierWithResource(const BufferRef &resource,
                                                     mtl::RenderStages after,
                                                     mtl::RenderStages before);
@@ -497,6 +505,8 @@ class RenderCommandEncoder final : public CommandEncoder
     const RenderPassDesc &renderPassDesc() const { return mRenderPassDesc; }
     bool hasDrawCalls() const { return mHasDrawCalls; }
 
+    uint64_t getSerial() const { return mSerial; }
+
   private:
     // Override CommandEncoder
     id<MTLRenderCommandEncoder> get()
@@ -508,7 +518,7 @@ class RenderCommandEncoder final : public CommandEncoder
     void initAttachmentWriteDependencyAndScissorRect(const RenderPassAttachmentDesc &attachment);
     void initWriteDependency(const TextureRef &texture);
 
-    void finalizeLoadStoreAction(MTLRenderPassAttachmentDescriptor *objCRenderPassAttachment);
+    bool finalizeLoadStoreAction(MTLRenderPassAttachmentDescriptor *objCRenderPassAttachment);
 
     void encodeMetalEncoder();
     void simulateDiscardFramebuffer();
@@ -541,6 +551,7 @@ class RenderCommandEncoder final : public CommandEncoder
     RenderCommandEncoderStates mStateCache = {};
 
     bool mPipelineStateSet = false;
+    const uint64_t mSerial = 0;
 };
 
 class BlitCommandEncoder final : public CommandEncoder

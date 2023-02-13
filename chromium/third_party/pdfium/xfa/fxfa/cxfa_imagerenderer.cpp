@@ -1,4 +1,4 @@
-// Copyright 2018 PDFium Authors. All rights reserved.
+// Copyright 2018 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -148,7 +148,7 @@ void CXFA_ImageRenderer::CompositeDIBitmap(
   if (!pConverted)
     return;
 
-  CXFA_ImageRenderer imageRender(m_pDevice.Get(), pConverted, m_ImageMatrix);
+  CXFA_ImageRenderer imageRender(m_pDevice, pConverted, m_ImageMatrix);
   if (!imageRender.Start())
     return;
 

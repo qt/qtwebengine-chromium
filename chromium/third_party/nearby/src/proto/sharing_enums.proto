@@ -191,6 +191,12 @@ enum EventType {
   // Receiver auto dismisses a fast initialization notification.
   AUTO_DISMISS_FAST_INITIALIZATION = 50;
 
+  // App Crash event. Used only for Nearby Share Windows App now.
+  APP_CRASH = 51;
+
+  // Sender taps the Send button in quick settings
+  TAP_QUICK_SETTINGS_FILE_SHARE = 52;
+
   // LINT.ThenChange(//depot/google3/location/nearby/proto/nearby_event_codes.proto:SharingEventCode)
 }
 
@@ -360,6 +366,7 @@ enum ServerActionName {
   UPLOAD_SENDER_CERTIFICATES = 6;
   DOWNLOAD_SENDER_CERTIFICATES = 7;
   UPLOAD_CONTACTS_AND_CERTIFICATES = 8;
+  LIST_REACHABLE_PHONE_NUMBERS = 9;
 }
 
 // The Fast Share server response state.
@@ -406,6 +413,7 @@ enum ActivityName {
   SET_DEVICE_NAME_DIALOG = 7;
   SET_DATA_USAGE_DIALOG = 8;
   QUICK_SETTINGS_ACTIVITY = 9;
+  REMOTE_COPY_SHARE_SHEET_ACTIVITY = 10;
 }
 
 // The type of consent page user launches.
@@ -482,4 +490,20 @@ enum SharingUseCase {
   USE_CASE_REMOTE_COPY_PASTE = 2;
   USE_CASE_WIFI_CREDENTIAL = 3;
   USE_CASE_APP_SHARE = 4;
+  USE_CASE_QUICK_SETTING_FILE_SHARE = 5;
+}
+
+// Used only for Nearby Share Windows App now
+enum AppCrashReason {
+  APP_CRASH_REASON_UNKNOWN = 0;
+}
+
+// Thes source where the attachemnt comes from. It can be an action, app name,
+// etc. The first 4 source types are being used as FileSenderType in Nearby
+// Share Windows app.
+enum AttachmentSourceType {
+  ATTACHMENT_SOURCE_UNKNOWN = 0;
+  ATTACHMENT_SOURCE_CONTEXT_MENU = 1;
+  ATTACHMENT_SOURCE_DRAG_AND_DROP = 2;
+  ATTACHMENT_SOURCE_SELECT_FILES_BUTTON = 3;
 }

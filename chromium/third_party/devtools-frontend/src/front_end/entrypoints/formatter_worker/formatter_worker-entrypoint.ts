@@ -23,15 +23,6 @@ self.onmessage = function(event: MessageEvent): void {
     case FormatterActions.PARSE_CSS:
       FormatterWorker.CSSRuleParser.parseCSS(params.content, self.postMessage);
       break;
-    case FormatterActions.HTML_OUTLINE:
-      FormatterWorker.HTMLOutline.htmlOutline(params.content, self.postMessage);
-      break;
-    case FormatterActions.JAVASCRIPT_OUTLINE:
-      FormatterWorker.JavaScriptOutline.javaScriptOutline(params.content, self.postMessage);
-      break;
-    case FormatterActions.JAVASCRIPT_IDENTIFIERS:
-      self.postMessage(FormatterWorker.FormatterWorker.javaScriptIdentifiers(params.content));
-      break;
     case FormatterActions.JAVASCRIPT_SUBSTITUTE: {
       const mapping = new Map<string, string>(params.mapping);
       self.postMessage(FormatterWorker.Substitute.substituteExpression(params.content, mapping));
@@ -43,9 +34,6 @@ self.onmessage = function(event: MessageEvent): void {
     }
     case FormatterActions.EVALUATE_JAVASCRIPT_SUBSTRING:
       self.postMessage(FormatterWorker.FormatterWorker.evaluatableJavaScriptSubstring(params.content));
-      break;
-    case FormatterActions.ARGUMENTS_LIST:
-      self.postMessage(FormatterWorker.FormatterWorker.argumentsList(params.content));
       break;
     default:
       Platform.assertNever(method, `Unsupport method name: ${method}`);

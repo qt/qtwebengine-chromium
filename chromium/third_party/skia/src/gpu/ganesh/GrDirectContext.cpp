@@ -12,6 +12,7 @@
 #include "include/gpu/GrBackendSemaphore.h"
 #include "include/gpu/GrContextThreadSafeProxy.h"
 #include "src/core/SkAutoMalloc.h"
+#include "src/core/SkCompressedDataUtils.h"
 #include "src/core/SkTaskGroup.h"
 #include "src/core/SkTraceEvent.h"
 #include "src/gpu/ganesh/GrBackendUtils.h"
@@ -139,9 +140,11 @@ void GrDirectContext::abandonContext() {
 
     fGpu->disconnect(GrGpu::DisconnectType::kAbandon);
 
+#if !defined(SK_ENABLE_OPTIMIZE_SIZE)
     if (fSmallPathAtlasMgr) {
         fSmallPathAtlasMgr->reset();
     }
+#endif
     fAtlasManager->freeAll();
 }
 
@@ -178,9 +181,11 @@ void GrDirectContext::releaseResourcesAndAbandonContext() {
     fMappedBufferManager.reset();
 
     fGpu->disconnect(GrGpu::DisconnectType::kCleanup);
+#if !defined(SK_ENABLE_OPTIMIZE_SIZE)
     if (fSmallPathAtlasMgr) {
         fSmallPathAtlasMgr->reset();
     }
+#endif
     fAtlasManager->freeAll();
 }
 
@@ -192,9 +197,11 @@ void GrDirectContext::freeGpuResources() {
     }
 
     this->flushAndSubmit();
+#if !defined(SK_ENABLE_OPTIMIZE_SIZE)
     if (fSmallPathAtlasMgr) {
         fSmallPathAtlasMgr->reset();
     }
+#endif
     fAtlasManager->freeAll();
 
     // TODO: the glyph cache doesn't hold any GpuResources so this call should not be needed here.
@@ -376,6 +383,7 @@ bool GrDirectContext::wait(int numSemaphores, const GrBackendSemaphore waitSemap
     return true;
 }
 
+#if !defined(SK_ENABLE_OPTIMIZE_SIZE)
 skgpu::v1::SmallPathAtlasMgr* GrDirectContext::onGetSmallPathAtlasMgr() {
     if (!fSmallPathAtlasMgr) {
         fSmallPathAtlasMgr = std::make_unique<skgpu::v1::SmallPathAtlasMgr>();
@@ -389,6 +397,7 @@ skgpu::v1::SmallPathAtlasMgr* GrDirectContext::onGetSmallPathAtlasMgr() {
 
     return fSmallPathAtlasMgr.get();
 }
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -988,7 +997,7 @@ SkString GrDirectContext::dump() const {
 
     // Allocate a string big enough to hold all the data, then copy out of the stream
     SkString result(stream.bytesWritten());
-    stream.copyToAndReset(result.writable_str());
+    stream.copyToAndReset(result.data());
     return result;
 }
 #endif

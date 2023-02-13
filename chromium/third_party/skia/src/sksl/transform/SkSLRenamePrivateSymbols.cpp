@@ -6,6 +6,7 @@
  */
 
 #include "include/core/SkTypes.h"
+#include "include/private/SkSLIRNode.h"
 #include "include/private/SkSLModifiers.h"
 #include "include/private/SkSLProgramElement.h"
 #include "include/private/SkSLStatement.h"
@@ -15,6 +16,7 @@
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLContext.h"
 #include "src/sksl/SkSLModifiersPool.h"
+#include "src/sksl/SkSLProgramSettings.h"
 #include "src/sksl/ir/SkSLFunctionDeclaration.h"
 #include "src/sksl/ir/SkSLFunctionDefinition.h"
 #include "src/sksl/ir/SkSLFunctionPrototype.h"
@@ -24,6 +26,7 @@
 #include "src/sksl/transform/SkSLProgramWriter.h"
 #include "src/sksl/transform/SkSLTransform.h"
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -33,6 +36,7 @@
 namespace SkSL {
 
 class ProgramUsage;
+enum class ProgramKind : int8_t;
 
 static void strip_export_flag(Context& context,
                               const FunctionDeclaration* funcDecl,
@@ -50,14 +54,20 @@ static void strip_export_flag(Context& context,
     }
 }
 
-void Transform::RenamePrivateSymbols(Context& context, LoadedModule& module, ProgramUsage* usage) {
-
+void Transform::RenamePrivateSymbols(Context& context,
+                                     Module& module,
+                                     ProgramUsage* usage,
+                                     ProgramKind kind) {
     class SymbolRenamer : public ProgramWriter {
     public:
         SymbolRenamer(Context& context,
                       ProgramUsage* usage,
-                      std::shared_ptr<SymbolTable> symbolBase)
-                : fContext(context), fUsage(usage), fSymbolTableStack({std::move(symbolBase)}) {}
+                      std::shared_ptr<SymbolTable> symbolBase,
+                      ProgramKind kind)
+                : fContext(context)
+                , fUsage(usage)
+                , fSymbolTableStack({std::move(symbolBase)})
+                , fKind(kind) {}
 
         static std::string FindShortNameForSymbol(const Symbol* sym,
                                                   const SymbolTable* symbolTable,
@@ -92,26 +102,40 @@ void Transform::RenamePrivateSymbols(Context& context, LoadedModule& module, Pro
         }
 
         void minifyVariableName(const Variable* var) {
+            // Some variables are associated with anonymous parameters--these don't have names and
+            // aren't present in the symbol table. Their names are already empty so there's no way
+            // to shrink them further.
+            if (var->name().empty()) {
+                return;
+            }
+
+            // Ensure that this variable is properly set up in the symbol table.
+            SymbolTable* symbols = fSymbolTableStack.back().get();
+            Symbol* mutableSym = symbols->findMutable(var->name());
+            SkASSERTF(mutableSym != nullptr,
+                      "symbol table missing '%.*s'", (int)var->name().size(), var->name().data());
+            SkASSERTF(mutableSym == var,
+                      "wrong symbol found for '%.*s'", (int)var->name().size(), var->name().data());
+
             // Look for a new name for this symbol.
             // Note: we always rename _every_ variable, even ones with single-letter names. This is
             // a safeguard: if we claimed a name like `i`, and then the program itself contained an
             // `i` later on, in a nested SymbolTable, the two names would clash. By always renaming
             // everything, we can ignore that problem.
-            SymbolTable* symbols = fSymbolTableStack.back().get();
             std::string shortName = FindShortNameForSymbol(var, symbols, "");
             SkASSERT(symbols->findMutable(shortName) == nullptr);
 
             // Update the symbol's name.
-            Symbol* mutableSym = symbols->findMutable(var->name());
-            SkASSERT(mutableSym == var);
             const std::string* ownedName = symbols->takeOwnershipOfString(std::move(shortName));
             symbols->renameSymbol(mutableSym, *ownedName);
         }
 
-        void minifyPrivateFunctionName(const FunctionDeclaration* funcDecl) {
+        void minifyFunctionName(const FunctionDeclaration* funcDecl) {
             // Look for a new name for this function.
+            std::string namePrefix = ProgramConfig::IsRuntimeEffect(fKind) ? "" : "$";
             SymbolTable* symbols = fSymbolTableStack.back().get();
-            std::string shortName = FindShortNameForSymbol(funcDecl, symbols, "$");
+            std::string shortName = FindShortNameForSymbol(funcDecl, symbols,
+                                                           std::move(namePrefix));
             SkASSERT(symbols->findMutable(shortName) == nullptr);
 
             if (shortName.size() < funcDecl->name().size()) {
@@ -123,12 +147,22 @@ void Transform::RenamePrivateSymbols(Context& context, LoadedModule& module, Pro
             }
         }
 
+        bool functionNameCanBeMinifiedSafely(const FunctionDeclaration& funcDecl) const {
+            if (ProgramConfig::IsRuntimeEffect(fKind)) {
+                // The only externally-accessible function in a runtime effect is main().
+                return !funcDecl.isMain();
+            } else {
+                // We will only minify $private_functions, and only ones not marked as $export.
+                return skstd::starts_with(funcDecl.name(), '$') &&
+                       !(funcDecl.modifiers().fFlags & Modifiers::kExport_Flag);
+            }
+        }
+
         void minifyFunction(FunctionDefinition& def) {
             // If the function is private, minify its name.
             const FunctionDeclaration* funcDecl = &def.declaration();
-            if (skstd::starts_with(def.declaration().name(), '$') &&
-                !(funcDecl->modifiers().fFlags & Modifiers::kExport_Flag)) {
-                this->minifyPrivateFunctionName(funcDecl);
+            if (this->functionNameCanBeMinifiedSafely(*funcDecl)) {
+                this->minifyFunctionName(funcDecl);
             }
 
             // Minify the names of each function parameter.
@@ -175,7 +209,7 @@ void Transform::RenamePrivateSymbols(Context& context, LoadedModule& module, Pro
             if (stmt->is<VarDeclaration>()) {
                 // Minify the variable's name.
                 VarDeclaration& decl = stmt->as<VarDeclaration>();
-                this->minifyVariableName(&decl.var());
+                this->minifyVariableName(decl.var());
             }
 
             return INHERITED::visitStatementPtr(stmt);
@@ -184,11 +218,12 @@ void Transform::RenamePrivateSymbols(Context& context, LoadedModule& module, Pro
         Context& fContext;
         ProgramUsage* fUsage;
         std::vector<std::shared_ptr<SymbolTable>> fSymbolTableStack;
+        ProgramKind fKind;
         using INHERITED = ProgramWriter;
     };
 
     // Rename local variables and private functions.
-    SymbolRenamer renamer{context, usage, module.fSymbols};
+    SymbolRenamer renamer{context, usage, module.fSymbols, kind};
     for (std::unique_ptr<ProgramElement>& pe : module.fElements) {
         renamer.visitProgramElement(*pe);
     }

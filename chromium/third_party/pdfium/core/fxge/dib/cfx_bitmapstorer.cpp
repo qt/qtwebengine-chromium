@@ -1,4 +1,4 @@
-// Copyright 2017 PDFium Authors. All rights reserved.
+// Copyright 2017 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -25,18 +25,11 @@ void CFX_BitmapStorer::Replace(RetainPtr<CFX_DIBitmap>&& pBitmap) {
   m_pBitmap = std::move(pBitmap);
 }
 
-void CFX_BitmapStorer::ComposeScanline(
-    int line,
-    pdfium::span<const uint8_t> scanline,
-    pdfium::span<const uint8_t> scan_extra_alpha) {
+void CFX_BitmapStorer::ComposeScanline(int line,
+                                       pdfium::span<const uint8_t> scanline) {
   pdfium::span<uint8_t> dest_buf = m_pBitmap->GetWritableScanline(line);
   if (!dest_buf.empty())
     fxcrt::spancpy(dest_buf, scanline);
-
-  pdfium::span<uint8_t> dest_alpha_buf =
-      m_pBitmap->GetWritableAlphaMaskScanline(line);
-  if (!dest_alpha_buf.empty())
-    fxcrt::spancpy(dest_alpha_buf, scan_extra_alpha);
 }
 
 bool CFX_BitmapStorer::SetInfo(int width,

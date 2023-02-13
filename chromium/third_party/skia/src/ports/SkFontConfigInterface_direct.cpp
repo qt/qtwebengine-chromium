@@ -57,7 +57,7 @@ struct FCLocker {
     ) }
 };
 
-using UniqueFCConfig = std::unique_ptr<FcConfig, SkFunctionWrapper<decltype(FcConfigDestroy), FcConfigDestroy>>;
+using UniqueFCConfig = std::unique_ptr<FcConfig, SkFunctionObject<FcConfigDestroy>>;
 
 } // namespace
 
@@ -97,7 +97,7 @@ size_t SkFontConfigInterface::FontIdentity::readFromMemory(const void* addr,
     SkFontStyle::Slant slant = (SkFontStyle::Slant)u8;
     fStyle = SkFontStyle(weight, width, slant);
     fString.resize(strLen);
-    (void)buffer.read(fString.writable_str(), strLen);
+    (void)buffer.read(fString.data(), strLen);
     buffer.skipToAlign4();
 
     return buffer.pos();    // the actual number of bytes read

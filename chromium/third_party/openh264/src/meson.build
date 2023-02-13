@@ -1,15 +1,15 @@
 project('openh264', ['c', 'cpp'],
-  version : '2.2.0',
+  version : '2.3.0',
   meson_version : '>= 0.52',
   default_options : [ 'warning_level=1',
                       'buildtype=debugoptimized' ])
 
-major_version = '6'
+major_version = '7'
 
 cpp = meson.get_compiler('cpp')
 
 inc = include_directories([
-  join_paths('codec', 'api', 'svc'),
+  join_paths('codec', 'api', 'wels'),
   join_paths('codec', 'common', 'inc'),
 ])
 
@@ -165,7 +165,7 @@ elif system == 'windows'
   elif cpu_family == 'aarch64'
     # For ARM64, Clang can build the assembly as-is without needing to use
     # either gas-preprocessor or armasm64.
-    if cpp.get_argument_syntax() == 'msvc'
+    if cpp.get_argument_syntax() == 'msvc' and (cpp.get_id() != 'clang-cl' or meson.version().version_compare('<0.58.0'))
       use_asm_gen = true
       gasprep = find_program('gas-preprocessor.pl')
       asm_gen = generator(gasprep,
@@ -185,9 +185,6 @@ elif system == 'windows'
   endif
 endif
 
-api_headers = []
-api_header_deps = []
-
 subdir ('codec')
 subdir ('test')
 
@@ -201,8 +198,8 @@ libopenh264 = library('openh264',
 
 openh264_dep = declare_dependency(
   link_with: libopenh264,
-  include_directories: include_directories('include'),
-  dependencies: deps + api_header_deps)
+  include_directories: include_directories('codec/api'),
+  dependencies: deps)
 
 pkg = import('pkgconfig')
 pkg.generate(libopenh264,
@@ -210,5 +207,3 @@ pkg.generate(libopenh264,
                'and decoding. It is suitable for use in real time ' +
                'applications such as WebRTC.',
 )
-
-subdir ('include')

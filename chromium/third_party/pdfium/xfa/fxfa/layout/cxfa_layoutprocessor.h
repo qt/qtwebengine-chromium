@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2016 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -55,7 +55,7 @@ class CXFA_LayoutProcessor final : public CXFA_Document::LayoutProcessorIface {
  private:
   explicit CXFA_LayoutProcessor(cppgc::Heap* pHeap);
 
-  cppgc::Heap* GetHeap() { return m_pHeap.Get(); }
+  cppgc::Heap* GetHeap() { return m_pHeap; }
   bool NeedLayout() const;
   int32_t RestartLayout();
 

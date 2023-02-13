@@ -211,13 +211,11 @@ add_library(
   asn1/a_mbstr.c
   asn1/a_object.c
   asn1/a_octet.c
-  asn1/a_print.c
   asn1/a_strex.c
   asn1/a_strnid.c
   asn1/a_time.c
   asn1/a_type.c
   asn1/a_utctm.c
-  asn1/a_utf8.c
   asn1/asn1_lib.c
   asn1/asn1_par.c
   asn1/asn_pack.c
@@ -264,9 +262,11 @@ add_library(
   cipher_extra/tls_cbc.c
   conf/conf.c
   cpu_aarch64_apple.c
+  cpu_aarch64_freebsd.c
   cpu_aarch64_fuchsia.c
   cpu_aarch64_linux.c
   cpu_aarch64_win.c
+  cpu_arm_freebsd.c
   cpu_arm_linux.c
   cpu_arm.c
   cpu_intel.c
@@ -468,6 +468,10 @@ if(FIPS_DELOCATE OR FIPS_SHARED)
 endif()
 
 SET_TARGET_PROPERTIES(crypto PROPERTIES LINKER_LANGUAGE C)
+
+if(WIN32)
+  target_link_libraries(crypto ws2_32)
+endif()
 
 if(NOT ANDROID)
   find_package(Threads REQUIRED)

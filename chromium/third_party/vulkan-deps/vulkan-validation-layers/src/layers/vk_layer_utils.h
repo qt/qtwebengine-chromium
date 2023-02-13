@@ -27,6 +27,7 @@
 #include <stdbool.h>
 #include <string>
 #include <vector>
+#include <bitset>
 #include <iomanip>
 #include "cast_utils.h"
 #include "vk_format_utils.h"
@@ -206,7 +207,7 @@ static inline uint32_t SampleCountSize(VkSampleCountFlagBits sample_count) {
 }
 
 static inline bool IsImageLayoutReadOnly(VkImageLayout layout) {
-    constexpr std::array<VkImageLayout, 7> read_only_layouts = {
+    constexpr std::array read_only_layouts = {
         VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
         VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL,
@@ -220,7 +221,7 @@ static inline bool IsImageLayoutReadOnly(VkImageLayout layout) {
 }
 
 static inline bool IsImageLayoutDepthReadOnly(VkImageLayout layout) {
-    constexpr std::array<VkImageLayout, 7> read_only_layouts = {
+    constexpr std::array read_only_layouts = {
         VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
         VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL,
         VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL,
@@ -231,7 +232,7 @@ static inline bool IsImageLayoutDepthReadOnly(VkImageLayout layout) {
 }
 
 static inline bool IsImageLayoutStencilReadOnly(VkImageLayout layout) {
-    constexpr std::array<VkImageLayout, 7> read_only_layouts = {
+    constexpr std::array read_only_layouts = {
         VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
         VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_STENCIL_READ_ONLY_OPTIMAL,
         VK_IMAGE_LAYOUT_STENCIL_READ_ONLY_OPTIMAL,
@@ -252,7 +253,7 @@ static inline bool IsIdentitySwizzle(VkComponentMapping components) {
     // clang-format on
 }
 
-static inline VkDeviceSize GetIndexAlignment(VkIndexType indexType) {
+static inline uint32_t GetIndexAlignment(VkIndexType indexType) {
     switch (indexType) {
         case VK_INDEX_TYPE_UINT16:
             return 2;
@@ -260,6 +261,8 @@ static inline VkDeviceSize GetIndexAlignment(VkIndexType indexType) {
             return 4;
         case VK_INDEX_TYPE_UINT8_EXT:
             return 1;
+        case VK_INDEX_TYPE_NONE_KHR:  // alias VK_INDEX_TYPE_NONE_NV
+            return 0;
         default:
             // Not a real index type. Express no alignment requirement here; we expect upper layer
             // to have already picked up on the enum being nonsense.
@@ -291,6 +294,12 @@ static inline bool IsAdvanceBlendOperation(const VkBlendOp blend_op) {
     return (static_cast<int>(blend_op) >= VK_BLEND_OP_ZERO_EXT) && (static_cast<int>(blend_op) <= VK_BLEND_OP_BLUE_EXT);
 }
 
+// Helper for Dual-Source Blending
+static inline bool IsSecondaryColorInputBlendFactor(VkBlendFactor blend_factor) {
+    return (blend_factor == VK_BLEND_FACTOR_SRC1_COLOR || blend_factor == VK_BLEND_FACTOR_ONE_MINUS_SRC1_COLOR ||
+            blend_factor == VK_BLEND_FACTOR_SRC1_ALPHA || blend_factor == VK_BLEND_FACTOR_ONE_MINUS_SRC1_ALPHA);
+}
+
 // Perform a zero-tolerant modulo operation
 static inline VkDeviceSize SafeModulo(VkDeviceSize dividend, VkDeviceSize divisor) {
     VkDeviceSize result = 0;
@@ -306,6 +315,12 @@ static inline VkDeviceSize SafeDivision(VkDeviceSize dividend, VkDeviceSize divi
         result = dividend / divisor;
     }
     return result;
+}
+
+// Only 32 bit fields should need a bit count
+static inline uint32_t GetBitSetCount(uint32_t field) {
+    std::bitset<32> view_bits(field);
+    return static_cast<uint32_t>(view_bits.count());
 }
 
 extern "C" {
@@ -346,60 +361,13 @@ static inline int u_ffs(int val) {
 #endif
 
 #ifdef __cplusplus
-// clang sets _MSC_VER to 1800 and _MSC_FULL_VER to 180000000, but we only want to clean up after MSVC.
-#if defined(_MSC_FULL_VER) && !defined(__clang__)
-// Minimum Visual Studio 2015 Update 2, or libc++ with C++17
-// But, before Visual Studio 2017 version 15.7, __cplusplus is not set
-// correctly. See:
-//   https://docs.microsoft.com/en-us/cpp/build/reference/zc-cplusplus?view=msvc-160
-// Also, according to commit e2a6c442cb1e4, SDKs older than NTDDI_WIN10_RS2 do not
-// support shared_mutex.
-#if _MSC_FULL_VER >= 190023918 && NTDDI_VERSION > NTDDI_WIN10_RS2 && (!defined(_LIBCPP_VERSION) || __cplusplus >= 201703)
-#define VVL_USE_SHARED_MUTEX 1
-#endif
-#elif __cplusplus >= 201703
-#define VVL_USE_SHARED_MUTEX 1
-#elif __cplusplus >= 201402
-#define VVL_USE_SHARED_TIMED_MUTEX 1
-#endif
-
-#if defined(VVL_USE_SHARED_MUTEX) || defined(VVL_USE_SHARED_TIMED_MUTEX)
 #include <shared_mutex>
-#endif
 
-class ReadWriteLock {
-  private:
-#if defined(VVL_USE_SHARED_MUTEX)
-    typedef std::shared_mutex Lock;
-#elif defined(VVL_USE_SHARED_TIMED_MUTEX)
-    typedef std::shared_timed_mutex Lock;
-#else
-    typedef std::mutex Lock;
-#endif
-
-  public:
-    void lock() { m_lock.lock(); }
-    bool try_lock() { return m_lock.try_lock(); }
-    void unlock() { m_lock.unlock(); }
-#if defined(VVL_USE_SHARED_MUTEX) || defined(VVL_USE_SHARED_TIMED_MUTEX)
-    void lock_shared() { m_lock.lock_shared(); }
-    bool try_lock_shared() { return m_lock.try_lock_shared(); }
-    void unlock_shared() { m_lock.unlock_shared(); }
-#else
-    void lock_shared() { lock(); }
-    bool try_lock_shared() { return try_lock(); }
-    void unlock_shared() { unlock(); }
-#endif
-  private:
-    Lock m_lock;
-};
-
-#if defined(VVL_USE_SHARED_MUTEX) || defined(VVL_USE_SHARED_TIMED_MUTEX)
-typedef std::shared_lock<ReadWriteLock> ReadLockGuard;
-#else
-typedef std::unique_lock<ReadWriteLock> ReadLockGuard;
-#endif
-typedef std::unique_lock<ReadWriteLock> WriteLockGuard;
+// Aliases to avoid excessive typing. We can't easily auto these away because
+// there are virtual methods in ValidationObject which return lock guards
+// and those cannot use return type deduction.
+typedef std::shared_lock<std::shared_mutex> ReadLockGuard;
+typedef std::unique_lock<std::shared_mutex> WriteLockGuard;
 
 // helper class for the very common case of getting and then locking a command buffer (or other state object)
 template <typename T, typename Guard>
@@ -500,7 +468,7 @@ class vl_concurrent_unordered_map {
         ReadLockGuard lock(locks[h].lock);
 
         auto itr = maps[h].find(key);
-        bool found = itr != maps[h].end();
+        const bool found = itr != maps[h].end();
 
         if (found) {
             return FindResult(true, itr->second);
@@ -514,7 +482,7 @@ class vl_concurrent_unordered_map {
         WriteLockGuard lock(locks[h].lock);
 
         auto itr = maps[h].find(key);
-        bool found = itr != maps[h].end();
+        const bool found = itr != maps[h].end();
 
         if (found) {
             auto ret = FindResult(true, itr->second);
@@ -568,9 +536,9 @@ class vl_concurrent_unordered_map {
 
     layer_data::unordered_map<Key, T, Hash> maps[BUCKETS];
     struct {
-        mutable ReadWriteLock lock;
+        mutable std::shared_mutex lock;
         // Put each lock on its own cache line to avoid false cache line sharing.
-        char padding[(-int(sizeof(ReadWriteLock))) & 63];
+        char padding[(-int(sizeof(std::shared_mutex))) & 63];
     } locks[BUCKETS];
 
     uint32_t ConcurrentMapHashObject(const Key &object) const {

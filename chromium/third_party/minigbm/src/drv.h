@@ -41,6 +41,7 @@ extern "C" {
 #define BO_USE_FRONT_RENDERING		(1ull << 16)
 #define BO_USE_RENDERSCRIPT		(1ull << 17)
 #define BO_USE_GPU_DATA_BUFFER		(1ull << 18)
+#define BO_USE_SENSOR_DIRECT_DATA	(1ull << 19)
 
 /* Quirks for allocating a buffer. */
 #define BO_QUIRK_NONE			0
@@ -76,6 +77,10 @@ extern "C" {
 #define I915_FORMAT_MOD_Y_TILED_GEN12_RC_CCS fourcc_mod_code(INTEL, 6)
 #endif
 
+//TODO: remove this defination once drm_fourcc.h contains it.
+#ifndef I915_FORMAT_MOD_4_TILED
+#define I915_FORMAT_MOD_4_TILED         fourcc_mod_code(INTEL, 9)
+#endif
 // clang-format on
 struct driver;
 struct bo;
@@ -206,12 +211,25 @@ int drv_resource_info(struct bo *bo, uint32_t strides[DRV_MAX_PLANES],
 
 uint32_t drv_get_max_texture_2d_size(struct driver *drv);
 
-#define drv_log(format, ...)                                                                       \
+enum drv_log_level {
+	DRV_LOGV,
+	DRV_LOGD,
+	DRV_LOGI,
+	DRV_LOGE,
+};
+
+#define _drv_log(level, format, ...)                                                               \
 	do {                                                                                       \
-		drv_log_prefix("minigbm", __FILE__, __LINE__, format, ##__VA_ARGS__);              \
+		drv_log_prefix(level, "minigbm", __FILE__, __LINE__, format, ##__VA_ARGS__);       \
 	} while (0)
 
-__attribute__((format(printf, 4, 5))) void drv_log_prefix(const char *prefix, const char *file,
+#define drv_loge(format, ...) _drv_log(DRV_LOGE, format, ##__VA_ARGS__)
+#define drv_logv(format, ...) _drv_log(DRV_LOGV, format, ##__VA_ARGS__)
+#define drv_logd(format, ...) _drv_log(DRV_LOGD, format, ##__VA_ARGS__)
+#define drv_logi(format, ...) _drv_log(DRV_LOGI, format, ##__VA_ARGS__)
+
+__attribute__((format(printf, 5, 6))) void drv_log_prefix(enum drv_log_level level,
+							  const char *prefix, const char *file,
 							  int line, const char *format, ...);
 
 #ifdef __cplusplus

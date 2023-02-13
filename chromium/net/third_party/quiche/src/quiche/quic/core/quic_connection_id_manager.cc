@@ -296,29 +296,13 @@ QuicSelfIssuedConnectionIdManager::~QuicSelfIssuedConnectionIdManager() {
   retire_connection_id_alarm_->Cancel();
 }
 
-QuicConnectionId QuicSelfIssuedConnectionIdManager::GenerateNewConnectionId(
-    const QuicConnectionId& old_connection_id) const {
-  return QuicUtils::CreateReplacementConnectionId(old_connection_id);
-}
-
 absl::optional<QuicNewConnectionIdFrame>
 QuicSelfIssuedConnectionIdManager::MaybeIssueNewConnectionId() {
   const bool check_cid_collision_when_issue_new_cid =
       GetQuicReloadableFlag(quic_check_cid_collision_when_issue_new_cid);
-  absl::optional<QuicConnectionId> new_cid;
-  if (GetQuicReloadableFlag(
-          quic_connection_uses_abstract_connection_id_generator)) {
-    QUIC_RELOADABLE_FLAG_COUNT(
-        quic_connection_uses_abstract_connection_id_generator);
-    new_cid =
-        connection_id_generator_.GenerateNextConnectionId(last_connection_id_);
-  } else {
-    new_cid = GenerateNewConnectionId(last_connection_id_);
-  }
+  absl::optional<QuicConnectionId> new_cid =
+      connection_id_generator_.GenerateNextConnectionId(last_connection_id_);
   if (!new_cid.has_value()) {
-    QUIC_BUG_IF(quic_bug_469887433_1,
-                !GetQuicReloadableFlag(
-                    quic_connection_uses_abstract_connection_id_generator));
     return {};
   }
   if (check_cid_collision_when_issue_new_cid) {
@@ -356,9 +340,19 @@ QuicErrorCode QuicSelfIssuedConnectionIdManager::OnRetireConnectionIdFrame(
     const QuicRetireConnectionIdFrame& frame, QuicTime::Delta pto_delay,
     std::string* error_detail) {
   QUICHE_DCHECK(!active_connection_ids_.empty());
-  if (frame.sequence_number > active_connection_ids_.back().second) {
-    *error_detail = "To be retired connecton ID is never issued.";
-    return IETF_QUIC_PROTOCOL_VIOLATION;
+  if (GetQuicReloadableFlag(
+          quic_check_retire_cid_with_next_cid_sequence_number)) {
+    QUIC_RELOADABLE_FLAG_COUNT(
+        quic_check_retire_cid_with_next_cid_sequence_number);
+    if (frame.sequence_number >= next_connection_id_sequence_number_) {
+      *error_detail = "To be retired connecton ID is never issued.";
+      return IETF_QUIC_PROTOCOL_VIOLATION;
+    }
+  } else {
+    if (frame.sequence_number > active_connection_ids_.back().second) {
+      *error_detail = "To be retired connecton ID is never issued.";
+      return IETF_QUIC_PROTOCOL_VIOLATION;
+    }
   }
 
   auto it =

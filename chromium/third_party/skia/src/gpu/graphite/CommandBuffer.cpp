@@ -27,7 +27,7 @@ CommandBuffer::~CommandBuffer() {
 void CommandBuffer::releaseResources() {
     TRACE_EVENT0("skia.gpu", TRACE_FUNC);
 
-    fTrackedResources.reset();
+    fTrackedResources.clear();
 }
 
 void CommandBuffer::resetCommandBuffer() {
@@ -47,22 +47,24 @@ void CommandBuffer::addFinishedProc(sk_sp<RefCntedCallback> finishedProc) {
 
 void CommandBuffer::callFinishedProcs(bool success) {
     if (!success) {
-        for (int i = 0; i < fFinishedProcs.count(); ++i) {
+        for (int i = 0; i < fFinishedProcs.size(); ++i) {
             fFinishedProcs[i]->setFailureResult();
         }
     }
-    fFinishedProcs.reset();
+    fFinishedProcs.clear();
 }
 
 bool CommandBuffer::addRenderPass(const RenderPassDesc& renderPassDesc,
                                   sk_sp<Texture> colorTexture,
                                   sk_sp<Texture> resolveTexture,
                                   sk_sp<Texture> depthStencilTexture,
+                                  SkRect viewport,
                                   const std::vector<std::unique_ptr<DrawPass>>& drawPasses) {
     if (!this->onAddRenderPass(renderPassDesc,
                                colorTexture.get(),
                                resolveTexture.get(),
                                depthStencilTexture.get(),
+                               viewport,
                                drawPasses)) {
         return false;
     }
@@ -93,9 +95,25 @@ bool CommandBuffer::addComputePass(const ComputePassDesc& computePassDesc,
 
     this->trackResource(std::move(pipeline));
 
-    for (const auto& binding : bindings) {
-        this->trackResource(binding.fResource.fBuffer);
+    SkDEBUGCODE(fHasWork = true;)
+
+    return true;
+}
+
+bool CommandBuffer::copyBufferToBuffer(sk_sp<Buffer> srcBuffer,
+                                       size_t srcOffset,
+                                       sk_sp<Buffer> dstBuffer,
+                                       size_t dstOffset,
+                                       size_t size) {
+    SkASSERT(srcBuffer);
+    SkASSERT(dstBuffer);
+
+    if (!this->onCopyBufferToBuffer(srcBuffer.get(), srcOffset, dstBuffer.get(), dstOffset, size)) {
+        return false;
     }
+
+    this->trackResource(std::move(srcBuffer));
+    this->trackResource(std::move(dstBuffer));
 
     SkDEBUGCODE(fHasWork = true;)
 

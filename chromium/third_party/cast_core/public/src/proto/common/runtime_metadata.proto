@@ -45,11 +45,13 @@ message RuntimeType {
     CAST_LITE = 2;
     // Runtimes native to specific platform (Netflix, YouTube applications etc)
     NATIVE = 3;
+    // Cast Web runtime on Cobalt.
+    CAST_COBALT = 4;
   }
 }
 
 message MediaCapabilities {
-  bool audio_supported = 1;
+  // Flags if runtime has video support.
   bool video_supported = 2;
 }
 
@@ -95,8 +97,6 @@ message RuntimeCapabilities {
   MediaCapabilities media_capabilities = 1;
   // Application capabilities of the runtime.
   ApplicationCapabilities application_capabilities = 2;
-  // Flags if metrics recording is supported.
-  bool metrics_recorder_supported = 4;
   // Runtime prelaunch capabilities.
   PrelaunchCapabilities prelaunch_capabilities = 5;
 }

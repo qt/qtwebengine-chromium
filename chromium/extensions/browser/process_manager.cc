@@ -19,7 +19,6 @@
 #include "base/one_shot_event.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/task/single_thread_task_runner.h"
-#include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_task_traits.h"
@@ -193,6 +192,7 @@ struct ProcessManager::ExtensionRenderFrameData {
       case extensions::mojom::ViewType::kInvalid:
       case extensions::mojom::ViewType::kExtensionBackgroundPage:
       case extensions::mojom::ViewType::kOffscreenDocument:
+      case extensions::mojom::ViewType::kExtensionSidePanel:
         return false;
     }
     NOTREACHED();
@@ -425,8 +425,11 @@ ExtensionHost* ProcessManager::GetBackgroundHostForExtension(
   return nullptr;
 }
 
-ExtensionHost* ProcessManager::GetExtensionHostForRenderFrameHost(
+ExtensionHost* ProcessManager::GetBackgroundHostForRenderFrameHost(
     content::RenderFrameHost* render_frame_host) {
+  if (!render_frame_host->IsInPrimaryMainFrame())
+    return nullptr;
+
   content::WebContents* web_contents =
       content::WebContents::FromRenderFrameHost(render_frame_host);
   for (ExtensionHost* extension_host : background_hosts_) {
@@ -482,7 +485,7 @@ const Extension* ProcessManager::GetExtensionForWebContents(
     // entry. This can happen in cases where we query this before any entry is
     // fully committed, such as when attributing a WebContents for the
     // TaskManager. If there is a committed navigation, use that instead.
-    if (!entry || entry->IsInitialEntry())
+    if (entry->IsInitialEntry())
       entry = controller.GetPendingEntry();
     if (!entry ||
         extension_registry_->enabled_extensions().GetExtensionOrAppByURL(
@@ -556,7 +559,7 @@ void ProcessManager::OnShouldSuspendAck(const std::string& extension_id,
 void ProcessManager::OnSuspendAck(const std::string& extension_id) {
   background_page_data_[extension_id].is_closing = true;
   uint64_t sequence_id = background_page_data_[extension_id].close_sequence_id;
-  base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
       FROM_HERE,
       base::BindOnce(&ProcessManager::CloseLazyBackgroundPageNow,
                      weak_ptr_factory_.GetWeakPtr(), extension_id, sequence_id),
@@ -796,7 +799,7 @@ void ProcessManager::DecrementLazyKeepaliveCount(
     data.activities.clear();
     if (!background_page_data_[extension_id].is_closing) {
       data.close_sequence_id = ++last_background_close_sequence_id_;
-      base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+      base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
           FROM_HERE,
           base::BindOnce(&ProcessManager::OnLazyBackgroundPageIdle,
                          weak_ptr_factory_.GetWeakPtr(), extension_id,
@@ -827,7 +830,14 @@ void ProcessManager::DecrementServiceWorkerKeepaliveCount(
   content::ServiceWorkerExternalRequestResult result =
       service_worker_context->FinishedExternalRequest(service_worker_version_id,
                                                       request_uuid);
-  DCHECK_EQ(result, content::ServiceWorkerExternalRequestResult::kOk);
+
+  // Example of when kWorkerNotRunning can happen is when the renderer process
+  // is killed while handling a service worker request (e.g. because of a bad
+  // IPC message).
+  DCHECK((result == content::ServiceWorkerExternalRequestResult::kOk) ||
+         (result ==
+          content::ServiceWorkerExternalRequestResult::kWorkerNotRunning))
+      << "; result = " << static_cast<int>(result);
 }
 
 void ProcessManager::OnLazyBackgroundPageIdle(const std::string& extension_id,

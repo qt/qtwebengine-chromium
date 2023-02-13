@@ -54,6 +54,7 @@ struct WasmModule;
   FOREACH_WASM_TRAPREASON(VTRAP)         \
   V(WasmCompileLazy)                     \
   V(WasmTriggerTierUp)                   \
+  V(WasmLiftoffFrameSetup)               \
   V(WasmDebugBreak)                      \
   V(WasmInt32ToHeapNumber)               \
   V(WasmTaggedNonSmiToInt32)             \
@@ -62,10 +63,8 @@ struct WasmModule;
   V(WasmTaggedToFloat64)                 \
   V(WasmAllocateJSArray)                 \
   V(WasmAtomicNotify)                    \
-  V(WasmI32AtomicWait32)                 \
-  V(WasmI32AtomicWait64)                 \
-  V(WasmI64AtomicWait32)                 \
-  V(WasmI64AtomicWait64)                 \
+  V(WasmI32AtomicWait)                   \
+  V(WasmI64AtomicWait)                   \
   V(WasmGetOwnProperty)                  \
   V(WasmRefFunc)                         \
   V(WasmMemoryGrow)                      \
@@ -149,8 +148,7 @@ struct WasmModule;
   V(WasmStringViewIterAdvance)           \
   V(WasmStringViewIterRewind)            \
   V(WasmStringViewIterSlice)             \
-  V(WasmExternInternalize)               \
-  V(WasmExternExternalize)
+  V(WasmExternInternalize)
 
 // Sorted, disjoint and non-overlapping memory regions. A region is of the
 // form [start, end). So there's no [start, end), [end, other_end),
@@ -522,20 +520,6 @@ const char* GetWasmCodeKindAsString(WasmCode::Kind);
 // Manages the code reservations and allocations of a single {NativeModule}.
 class WasmCodeAllocator {
  public:
-#if V8_TARGET_ARCH_ARM64
-  // ARM64 only supports direct calls within a 128 MB range.
-  static constexpr size_t kMaxCodeSpaceSize = 128 * MB;
-#elif V8_TARGET_ARCH_PPC64
-  // branches only takes 26 bits
-  static constexpr size_t kMaxCodeSpaceSize = 32 * MB;
-#else
-  // Use 1024 MB limit for code spaces on other platforms. This is smaller than
-  // the total allowed code space (kMaxWasmCodeMemory) to avoid unnecessarily
-  // big reservations, and to ensure that distances within a code space fit
-  // within a 32-bit signed integer.
-  static constexpr size_t kMaxCodeSpaceSize = 1024 * MB;
-#endif
-
   explicit WasmCodeAllocator(std::shared_ptr<Counters> async_counters);
   ~WasmCodeAllocator();
 
@@ -596,8 +580,6 @@ class WasmCodeAllocator {
   // Code space that was reserved and is available for allocations (subset of
   // {owned_code_space_}).
   DisjointAllocationPool free_code_space_;
-  // Code space that was allocated for code (subset of {owned_code_space_}).
-  DisjointAllocationPool allocated_code_space_;
   // Code space that was allocated before but is dead now. Full pages within
   // this region are discarded. It's still a subset of {owned_code_space_}.
   DisjointAllocationPool freed_code_space_;
@@ -696,6 +678,7 @@ class V8_EXPORT_PRIVATE NativeModule final {
   WasmCode* GetCode(uint32_t index) const;
   bool HasCode(uint32_t index) const;
   bool HasCodeWithTier(uint32_t index, ExecutionTier tier) const;
+  void ResetCode(uint32_t index) const;
 
   void SetWasmSourceMap(std::unique_ptr<WasmModuleSourceMap> source_map);
   WasmModuleSourceMap* GetWasmSourceMap() const;
@@ -784,12 +767,6 @@ class V8_EXPORT_PRIVATE NativeModule final {
   size_t turbofan_code_size() const {
     return turbofan_code_size_.load(std::memory_order_relaxed);
   }
-  size_t baseline_compilation_cpu_duration() const {
-    return baseline_compilation_cpu_duration_.load();
-  }
-  size_t tier_up_cpu_duration() const {
-    return tier_up_cpu_duration_.load(std::memory_order_relaxed);
-  }
 
   void AddLazyCompilationTimeSample(int64_t sample);
 
@@ -822,7 +799,6 @@ class V8_EXPORT_PRIVATE NativeModule final {
   }
   void SetWireBytes(base::OwnedVector<const uint8_t> wire_bytes);
 
-  void UpdateCPUDuration(size_t cpu_duration, ExecutionTier tier);
   void AddLiftoffBailout() {
     liftoff_bailout_count_.fetch_add(1, std::memory_order_relaxed);
   }
@@ -840,8 +816,7 @@ class V8_EXPORT_PRIVATE NativeModule final {
   WasmCode::RuntimeStubId GetRuntimeStubId(Address runtime_stub_target) const;
 
   // Sample the current code size of this modules to the given counters.
-  enum CodeSamplingTime : int8_t { kAfterBaseline, kSampling };
-  void SampleCodeSize(Counters*, CodeSamplingTime) const;
+  void SampleCodeSize(Counters*) const;
 
   V8_WARN_UNUSED_RESULT std::unique_ptr<WasmCode> AddCompiledCode(
       WasmCompilationResult);
@@ -855,6 +830,10 @@ class V8_EXPORT_PRIVATE NativeModule final {
 
   // Check whether this modules is tiered down for debugging.
   bool IsTieredDown();
+
+  // Remove all compiled code from the {NativeModule} and replace it with
+  // {CompileLazy} builtins.
+  void RemoveAllCompiledCode();
 
   // Fully recompile this module in the tier set previously via
   // {SetTieringState}. The calling thread contributes to compilation and only
@@ -886,7 +865,7 @@ class V8_EXPORT_PRIVATE NativeModule final {
   // Get or create the NamesProvider. Requires {HasWireBytes()}.
   NamesProvider* GetNamesProvider();
 
-  uint32_t* tiering_budget_array() { return tiering_budgets_.get(); }
+  uint32_t* tiering_budget_array() const { return tiering_budgets_.get(); }
 
   Counters* counters() const { return code_allocator_.counters(); }
 
@@ -1049,8 +1028,6 @@ class V8_EXPORT_PRIVATE NativeModule final {
   std::atomic<size_t> liftoff_bailout_count_{0};
   std::atomic<size_t> liftoff_code_size_{0};
   std::atomic<size_t> turbofan_code_size_{0};
-  std::atomic<size_t> baseline_compilation_cpu_duration_{0};
-  std::atomic<size_t> tier_up_cpu_duration_{0};
 
   // Metrics for lazy compilation.
   std::atomic<int> num_lazy_compilations_{0};

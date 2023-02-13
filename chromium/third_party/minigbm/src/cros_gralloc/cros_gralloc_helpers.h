@@ -10,6 +10,7 @@
 #include "../drv.h"
 #include "cros_gralloc_handle.h"
 
+#include <log/log.h>
 #include <system/graphics.h>
 #include <system/window.h>
 
@@ -19,6 +20,9 @@
 // used for front rendering. minigbm backend later decides to use
 // BO_USE_FRONT_RENDERING or BO_USE_LINEAR upon buffer allocaton.
 #define BUFFER_USAGE_FRONT_RENDERING (1U << 28)
+
+// Adopt BufferUsage::FRONT_BUFFER from api level 33
+#define BUFFER_USAGE_FRONT_RENDERING_MASK (BUFFER_USAGE_FRONT_RENDERING | (1ULL << 32))
 
 struct cros_gralloc_buffer_descriptor {
 	uint32_t width;

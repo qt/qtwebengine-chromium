@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2016 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -23,8 +23,8 @@ class CFWL_ThemeBackground final : public CFWL_ThemePart {
                        CFGAS_GEGraphics* pGraphics);
   ~CFWL_ThemeBackground();
 
-  CFGAS_GEGraphics* GetGraphics() const { return m_pGraphics.Get(); }
-  const CFGAS_GEPath* GetPath() const { return m_pPath.Get(); }
+  CFGAS_GEGraphics* GetGraphics() const { return m_pGraphics; }
+  const CFGAS_GEPath* GetPath() const { return m_pPath; }
   void SetPath(const CFGAS_GEPath* pPath) { m_pPath = pPath; }
 
  private:

@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2016 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -31,7 +31,7 @@ int FakeBlockWriter(FPDF_FILEWRITE* pThis,
 constexpr int kRectanglesMultiPagesPageCount = 2;
 
 const char* RectanglesMultiPagesExpectedChecksum(int page_index) {
-  if (CFX_DefaultRenderDevice::SkiaVariantIsDefaultRenderer()) {
+  if (CFX_DefaultRenderDevice::SkiaIsDefaultRenderer()) {
     static constexpr const char* kChecksums[kRectanglesMultiPagesPageCount] = {
         "7a4cddd5a17a60ce50acb53e318d94f8", "4fa6a7507e9f3ef4f28719a7d656c3a5"};
     return kChecksums[page_index];
@@ -43,7 +43,7 @@ const char* RectanglesMultiPagesExpectedChecksum(int page_index) {
 
 const char* Bug750568PageHash(int page_index) {
   constexpr int kBug750568PageCount = 4;
-  if (CFX_DefaultRenderDevice::SkiaVariantIsDefaultRenderer()) {
+  if (CFX_DefaultRenderDevice::SkiaIsDefaultRenderer()) {
     static constexpr const char* kChecksums[kBug750568PageCount] = {
         "eaa139e944eafb43d31e8742a0e158de", "226485e9d4fa6a67dfe0a88723f12060",
         "c5601a3492ae5dcc5dd25140fc463bfe", "1f60055b54de4fac8a59c65e90da156e"};
@@ -169,7 +169,7 @@ TEST_F(FPDFPPOEmbedderTest, NupRenderImage) {
 
 TEST_F(FPDFPPOEmbedderTest, ImportPageToXObject) {
   const char* checksum = []() {
-    if (CFX_DefaultRenderDevice::SkiaVariantIsDefaultRenderer())
+    if (CFX_DefaultRenderDevice::SkiaIsDefaultRenderer())
       return "d6ebc0a8afc22fe0137f54ce54e1a19c";
     return "2d88d180af7109eb346439f7c855bb29";
   }();
@@ -194,10 +194,19 @@ TEST_F(FPDFPPOEmbedderTest, ImportPageToXObject) {
       FPDFPage_InsertObject(page.get(), page_object);
       EXPECT_TRUE(FPDFPage_GenerateContent(page.get()));
 
-      // TODO(thestig): This should have `checksum`.
       ScopedFPDFBitmap page_bitmap = RenderPage(page.get());
-      CompareBitmap(page_bitmap.get(), 612, 792,
-                    pdfium::kBlankPage612By792Checksum);
+      CompareBitmap(page_bitmap.get(), 612, 792, checksum);
+
+      float left;
+      float bottom;
+      float right;
+      float top;
+      ASSERT_TRUE(
+          FPDFPageObj_GetBounds(page_object, &left, &bottom, &right, &top));
+      EXPECT_FLOAT_EQ(-1.0f, left);
+      EXPECT_FLOAT_EQ(-1.0f, bottom);
+      EXPECT_FLOAT_EQ(201.0f, right);
+      EXPECT_FLOAT_EQ(301.0f, top);
     }
 
     EXPECT_TRUE(FPDF_SaveAsCopy(output_doc.get(), this, 0));
@@ -226,6 +235,19 @@ TEST_F(FPDFPPOEmbedderTest, ImportPageToXObject) {
     }
   }
 
+  for (int i = 0; i < kExpectedPageCount; ++i) {
+    float left;
+    float bottom;
+    float right;
+    float top;
+    ASSERT_TRUE(
+        FPDFPageObj_GetBounds(xobjects[i], &left, &bottom, &right, &top));
+    EXPECT_FLOAT_EQ(-1.0f, left);
+    EXPECT_FLOAT_EQ(-1.0f, bottom);
+    EXPECT_FLOAT_EQ(201.0f, right);
+    EXPECT_FLOAT_EQ(301.0f, top);
+  }
+
   // Peek at object internals to make sure the two XObjects use the same stream.
   EXPECT_NE(xobjects[0], xobjects[1]);
   CPDF_PageObject* obj1 = CPDFPageObjectFromFPDFPageObject(xobjects[0]);
@@ -247,7 +269,7 @@ TEST_F(FPDFPPOEmbedderTest, ImportPageToXObject) {
 
 TEST_F(FPDFPPOEmbedderTest, ImportPageToXObjectWithSameDoc) {
   const char* checksum = []() {
-    if (CFX_DefaultRenderDevice::SkiaVariantIsDefaultRenderer())
+    if (CFX_DefaultRenderDevice::SkiaIsDefaultRenderer())
       return "8e7d672f49f9ca98fb9157824cefc204";
     return "4d5ca14827b7707f8283e639b33c121a";
   }();
@@ -276,9 +298,8 @@ TEST_F(FPDFPPOEmbedderTest, ImportPageToXObjectWithSameDoc) {
   EXPECT_TRUE(FPDFPage_GenerateContent(page));
 
   {
-    // TODO(thestig): This should have `checksum`.
     ScopedFPDFBitmap bitmap = RenderLoadedPage(page);
-    CompareBitmap(bitmap.get(), 200, 300, pdfium::RectanglesChecksum());
+    CompareBitmap(bitmap.get(), 200, 300, checksum);
   }
 
   FPDF_CloseXObject(xobject);

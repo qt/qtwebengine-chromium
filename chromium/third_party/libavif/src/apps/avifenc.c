@@ -66,22 +66,14 @@ static void syntax(void)
     printf("                                        M = matrix coefficients\n");
     printf("                                        (use 2 for any you wish to leave unspecified)\n");
     printf("    -r,--range RANGE                  : YUV range [limited or l, full or f]. (JPEG/PNG only, default: full; For y4m or stdin, range is retained)\n");
-    printf("    --min Q                           : Set min quantizer for color (%d-%d, where %d is lossless)\n",
-           AVIF_QUANTIZER_BEST_QUALITY,
-           AVIF_QUANTIZER_WORST_QUALITY,
-           AVIF_QUANTIZER_LOSSLESS);
-    printf("    --max Q                           : Set max quantizer for color (%d-%d, where %d is lossless)\n",
-           AVIF_QUANTIZER_BEST_QUALITY,
-           AVIF_QUANTIZER_WORST_QUALITY,
-           AVIF_QUANTIZER_LOSSLESS);
-    printf("    --minalpha Q                      : Set min quantizer for alpha (%d-%d, where %d is lossless)\n",
-           AVIF_QUANTIZER_BEST_QUALITY,
-           AVIF_QUANTIZER_WORST_QUALITY,
-           AVIF_QUANTIZER_LOSSLESS);
-    printf("    --maxalpha Q                      : Set max quantizer for alpha (%d-%d, where %d is lossless)\n",
-           AVIF_QUANTIZER_BEST_QUALITY,
-           AVIF_QUANTIZER_WORST_QUALITY,
-           AVIF_QUANTIZER_LOSSLESS);
+    printf("    -q,--qcolor Q                     : Set quality for color (%d-%d, where %d is lossless)\n",
+           AVIF_QUALITY_WORST,
+           AVIF_QUALITY_BEST,
+           AVIF_QUALITY_LOSSLESS);
+    printf("    --qalpha Q                        : Set quality for alpha (%d-%d, where %d is lossless)\n",
+           AVIF_QUALITY_WORST,
+           AVIF_QUALITY_BEST,
+           AVIF_QUALITY_LOSSLESS);
     printf("    --tilerowslog2 R                  : Set log2 of number of tile rows (0-6, default: 0)\n");
     printf("    --tilecolslog2 C                  : Set log2 of number of tile columns (0-6, default: 0)\n");
     printf("    --autotiling                      : Set --tilerowslog2 and --tilecolslog2 automatically\n");
@@ -108,6 +100,23 @@ static void syntax(void)
     printf("    --clap WN,WD,HN,HD,HON,HOD,VON,VOD: Add clap property (clean aperture). Width, Height, HOffset, VOffset (in num/denom pairs)\n");
     printf("    --irot ANGLE                      : Add irot property (rotation). [0-3], makes (90 * ANGLE) degree rotation anti-clockwise\n");
     printf("    --imir MODE                       : Add imir property (mirroring). 0=top-to-bottom, 1=left-to-right\n");
+    printf("    --repetition-count N or infinite  : Number of times an animated image sequence will be repeated. Use 'infinite' for infinite repetitions (Default: infinite)\n");
+    printf("    --min QP                          : Set min quantizer for color (%d-%d, where %d is lossless)\n",
+           AVIF_QUANTIZER_BEST_QUALITY,
+           AVIF_QUANTIZER_WORST_QUALITY,
+           AVIF_QUANTIZER_LOSSLESS);
+    printf("    --max QP                          : Set max quantizer for color (%d-%d, where %d is lossless)\n",
+           AVIF_QUANTIZER_BEST_QUALITY,
+           AVIF_QUANTIZER_WORST_QUALITY,
+           AVIF_QUANTIZER_LOSSLESS);
+    printf("    --minalpha QP                     : Set min quantizer for alpha (%d-%d, where %d is lossless)\n",
+           AVIF_QUANTIZER_BEST_QUALITY,
+           AVIF_QUANTIZER_WORST_QUALITY,
+           AVIF_QUANTIZER_LOSSLESS);
+    printf("    --maxalpha QP                     : Set max quantizer for alpha (%d-%d, where %d is lossless)\n",
+           AVIF_QUANTIZER_BEST_QUALITY,
+           AVIF_QUANTIZER_WORST_QUALITY,
+           AVIF_QUANTIZER_LOSSLESS);
     printf("    --                                : Signals the end of options. Everything after this is interpreted as file names.\n");
     printf("\n");
     if (avifCodecName(AVIF_CODEC_CHOICE_AOM, 0)) {
@@ -136,18 +145,18 @@ static void syntax(void)
 }
 
 // This is *very* arbitrary, I just want to set people's expectations a bit
-static const char * quantizerString(int quantizer)
+static const char * qualityString(int quality)
 {
-    if (quantizer == 0) {
+    if (quality == AVIF_QUALITY_LOSSLESS) {
         return "Lossless";
     }
-    if (quantizer <= 12) {
+    if (quality >= 80) {
         return "High";
     }
-    if (quantizer <= 32) {
+    if (quality >= 50) {
         return "Medium";
     }
-    if (quantizer == AVIF_QUANTIZER_WORST_QUALITY) {
+    if (quality == AVIF_QUALITY_WORST) {
         return "Worst";
     }
     return "Low";
@@ -340,25 +349,67 @@ static avifBool readEntireFile(const char * filename, avifRWData * raw)
     return AVIF_TRUE;
 }
 
-static avifBool avifImageSplitGrid(const avifImage * gridSplitImage, uint32_t gridCols, uint32_t gridRows, avifImage ** gridCells)
+// Returns the best cell size for a given horizontal or vertical dimension.
+static avifBool avifGetBestCellSize(const char * dimensionStr, uint32_t numPixels, uint32_t numCells, avifBool isSubsampled, uint32_t * cellSize)
 {
-    if ((gridSplitImage->width % gridCols) != 0) {
-        fprintf(stderr, "ERROR: Can't split image width (%u) evenly into %u columns.\n", gridSplitImage->width, gridCols);
-        return AVIF_FALSE;
+    assert(numPixels);
+    assert(numCells);
+
+    // ISO/IEC 23008-12:2017, Section 6.6.2.3.1:
+    //   The reconstructed image is formed by tiling the input images into a grid with a column width
+    //   (potentially excluding the right-most column) equal to tile_width and a row height (potentially
+    //   excluding the bottom-most row) equal to tile_height, without gap or overlap, and then
+    //   trimming on the right and the bottom to the indicated output_width and output_height.
+    // The priority could be to use a cell size that is a multiple of 64, but there is not always a valid one,
+    // even though it is recommended by MIAF. Just use ceil(numPixels/numCells) for simplicity and to avoid
+    // as much padding in the right-most and bottom-most cells as possible.
+    // Use uint64_t computation to avoid a potential uint32_t overflow.
+    *cellSize = (uint32_t)(((uint64_t)numPixels + numCells - 1) / numCells);
+
+    // ISO/IEC 23000-22:2019, Section 7.3.11.4.2:
+    //   - the tile_width shall be greater than or equal to 64, and should be a multiple of 64
+    //   - the tile_height shall be greater than or equal to 64, and should be a multiple of 64
+    if (*cellSize < 64) {
+        *cellSize = 64;
+        if ((uint64_t)(numCells - 1) * *cellSize >= (uint64_t)numPixels) {
+            // Some cells would be entirely off-canvas.
+            fprintf(stderr, "ERROR: There are too many cells %s (%u) to have at least 64 pixels per cell.\n", dimensionStr, numCells);
+            return AVIF_FALSE;
+        }
     }
-    if ((gridSplitImage->height % gridRows) != 0) {
-        fprintf(stderr, "ERROR: Can't split image height (%u) evenly into %u rows.\n", gridSplitImage->height, gridRows);
+
+    // The maximum AV1 frame size is 65536 pixels inclusive.
+    if (*cellSize > 65536) {
+        fprintf(stderr, "ERROR: Cell size %u is bigger %s than the maximum AV1 frame size 65536.\n", *cellSize, dimensionStr);
         return AVIF_FALSE;
     }
 
-    uint32_t cellWidth = gridSplitImage->width / gridCols;
-    uint32_t cellHeight = gridSplitImage->height / gridRows;
-    if ((cellWidth < 64) || (cellHeight < 64)) {
-        fprintf(stderr, "ERROR: Split cell dimensions are too small (must be at least 64x64, and were %ux%u)\n", cellWidth, cellHeight);
-        return AVIF_FALSE;
+    // ISO/IEC 23000-22:2019, Section 7.3.11.4.2:
+    //   - when the images are in the 4:2:2 chroma sampling format the horizontal tile offsets and widths,
+    //     and the output width, shall be even numbers;
+    //   - when the images are in the 4:2:0 chroma sampling format both the horizontal and vertical tile
+    //     offsets and widths, and the output width and height, shall be even numbers.
+    if (isSubsampled && (*cellSize & 1)) {
+        ++*cellSize;
+        if ((uint64_t)(numCells - 1) * *cellSize >= (uint64_t)numPixels) {
+            // Some cells would be entirely off-canvas.
+            fprintf(stderr, "ERROR: Odd cell size %u is forbidden on a %s subsampled image.\n", *cellSize - 1, dimensionStr);
+            return AVIF_FALSE;
+        }
     }
-    if (((cellWidth % 2) != 0) || ((cellHeight % 2) != 0)) {
-        fprintf(stderr, "ERROR: Odd split cell dimensions are unsupported (%ux%u)\n", cellWidth, cellHeight);
+
+    // Each pixel is covered by exactly one cell, and each cell contains at least one pixel.
+    assert(((uint64_t)(numCells - 1) * *cellSize < (uint64_t)numPixels) && ((uint64_t)numCells * *cellSize >= (uint64_t)numPixels));
+    return AVIF_TRUE;
+}
+
+static avifBool avifImageSplitGrid(const avifImage * gridSplitImage, uint32_t gridCols, uint32_t gridRows, avifImage ** gridCells)
+{
+    uint32_t cellWidth, cellHeight;
+    avifPixelFormatInfo formatInfo;
+    avifGetPixelFormatInfo(gridSplitImage->yuvFormat, &formatInfo);
+    if (!avifGetBestCellSize("horizontally", gridSplitImage->width, gridCols, formatInfo.chromaShiftX, &cellWidth) ||
+        !avifGetBestCellSize("vertically", gridSplitImage->height, gridRows, formatInfo.chromaShiftY, &cellHeight)) {
         return AVIF_FALSE;
     }
 
@@ -368,51 +419,26 @@ static avifBool avifImageSplitGrid(const avifImage * gridSplitImage, uint32_t gr
             avifImage * cellImage = avifImageCreateEmpty();
             gridCells[gridIndex] = cellImage;
 
-            const avifResult copyResult = avifImageCopy(cellImage, gridSplitImage, 0);
+            avifCropRect cellRect = { gridX * cellWidth, gridY * cellHeight, cellWidth, cellHeight };
+            if (cellRect.x + cellRect.width > gridSplitImage->width) {
+                cellRect.width = gridSplitImage->width - cellRect.x;
+            }
+            if (cellRect.y + cellRect.height > gridSplitImage->height) {
+                cellRect.height = gridSplitImage->height - cellRect.y;
+            }
+            const avifResult copyResult = avifImageSetViewRect(cellImage, gridSplitImage, &cellRect);
             if (copyResult != AVIF_RESULT_OK) {
-                fprintf(stderr, "ERROR: Image copy failed: %s\n", avifResultToString(copyResult));
+                fprintf(stderr, "ERROR: Cell creation failed: %s\n", avifResultToString(copyResult));
                 return AVIF_FALSE;
-            }
-            cellImage->width = cellWidth;
-            cellImage->height = cellHeight;
-
-            const uint32_t bytesPerPixel = avifImageUsesU16(cellImage) ? 2 : 1;
-
-            const uint32_t bytesPerRowY = bytesPerPixel * cellWidth;
-            const uint32_t srcRowBytesY = gridSplitImage->yuvRowBytes[AVIF_CHAN_Y];
-            cellImage->yuvPlanes[AVIF_CHAN_Y] =
-                &gridSplitImage->yuvPlanes[AVIF_CHAN_Y][(gridX * bytesPerRowY) + (gridY * cellHeight) * srcRowBytesY];
-            cellImage->yuvRowBytes[AVIF_CHAN_Y] = srcRowBytesY;
-
-            if (gridSplitImage->yuvFormat != AVIF_PIXEL_FORMAT_YUV400) {
-                avifPixelFormatInfo info;
-                avifGetPixelFormatInfo(gridSplitImage->yuvFormat, &info);
-
-                const uint32_t uvWidth = (cellWidth + info.chromaShiftX) >> info.chromaShiftX;
-                const uint32_t uvHeight = (cellHeight + info.chromaShiftY) >> info.chromaShiftY;
-                const uint32_t bytesPerRowUV = bytesPerPixel * uvWidth;
-
-                const uint32_t srcRowBytesU = gridSplitImage->yuvRowBytes[AVIF_CHAN_U];
-                cellImage->yuvPlanes[AVIF_CHAN_U] =
-                    &gridSplitImage->yuvPlanes[AVIF_CHAN_U][(gridX * bytesPerRowUV) + (gridY * uvHeight) * srcRowBytesU];
-                cellImage->yuvRowBytes[AVIF_CHAN_U] = srcRowBytesU;
-
-                const uint32_t srcRowBytesV = gridSplitImage->yuvRowBytes[AVIF_CHAN_V];
-                cellImage->yuvPlanes[AVIF_CHAN_V] =
-                    &gridSplitImage->yuvPlanes[AVIF_CHAN_V][(gridX * bytesPerRowUV) + (gridY * uvHeight) * srcRowBytesV];
-                cellImage->yuvRowBytes[AVIF_CHAN_V] = srcRowBytesV;
-            }
-
-            if (gridSplitImage->alphaPlane) {
-                const uint32_t bytesPerRowA = bytesPerPixel * cellWidth;
-                const uint32_t srcRowBytesA = gridSplitImage->alphaRowBytes;
-                cellImage->alphaPlane = &gridSplitImage->alphaPlane[(gridX * bytesPerRowA) + (gridY * cellHeight) * srcRowBytesA];
-                cellImage->alphaRowBytes = srcRowBytesA;
             }
         }
     }
     return AVIF_TRUE;
 }
+
+#define INVALID_QUALITY -1
+#define DEFAULT_QUALITY 60 // Maps to a quantizer (QP) of 25.
+#define DEFAULT_QUALITY_ALPHA AVIF_QUALITY_LOSSLESS
 
 int main(int argc, char * argv[])
 {
@@ -433,10 +459,12 @@ int main(int argc, char * argv[])
 
     int returnCode = 0;
     int jobs = 1;
-    int minQuantizer = 24;
-    int maxQuantizer = 26;
-    int minQuantizerAlpha = AVIF_QUANTIZER_LOSSLESS;
-    int maxQuantizerAlpha = AVIF_QUANTIZER_LOSSLESS;
+    int quality = INVALID_QUALITY;
+    int qualityAlpha = INVALID_QUALITY;
+    int minQuantizer = -1;
+    int maxQuantizer = -1;
+    int minQuantizerAlpha = -1;
+    int maxQuantizerAlpha = -1;
     int tileRowsLog2 = -1;
     int tileColsLog2 = -1;
     avifBool autoTiling = AVIF_FALSE;
@@ -448,6 +476,7 @@ int main(int argc, char * argv[])
     avifBool cropConversionRequired = AVIF_FALSE;
     uint8_t irotAngle = 0xff; // sentinel value indicating "unused"
     uint8_t imirMode = 0xff;  // sentinel value indicating "unused"
+    int repetitionCount = AVIF_REPETITION_COUNT_INFINITE;
     avifCodecChoice codecChoice = AVIF_CODEC_CHOICE_AUTO;
     avifRange requestedRange = AVIF_RANGE_FULL;
     avifBool lossless = AVIF_FALSE;
@@ -549,6 +578,24 @@ int main(int argc, char * argv[])
         } else if (!strcmp(arg, "-k") || !strcmp(arg, "--keyframe")) {
             NEXTARG();
             keyframeInterval = atoi(arg);
+        } else if (!strcmp(arg, "-q") || !strcmp(arg, "--qcolor")) {
+            NEXTARG();
+            quality = atoi(arg);
+            if (quality < AVIF_QUALITY_WORST) {
+                quality = AVIF_QUALITY_WORST;
+            }
+            if (quality > AVIF_QUALITY_BEST) {
+                quality = AVIF_QUALITY_BEST;
+            }
+        } else if (!strcmp(arg, "--qalpha")) {
+            NEXTARG();
+            qualityAlpha = atoi(arg);
+            if (qualityAlpha < AVIF_QUALITY_WORST) {
+                qualityAlpha = AVIF_QUALITY_WORST;
+            }
+            if (qualityAlpha > AVIF_QUALITY_BEST) {
+                qualityAlpha = AVIF_QUALITY_BEST;
+            }
         } else if (!strcmp(arg, "--min")) {
             NEXTARG();
             minQuantizer = atoi(arg);
@@ -771,21 +818,20 @@ int main(int argc, char * argv[])
                 returnCode = 1;
                 goto cleanup;
             }
+        } else if (!strcmp(arg, "--repetition-count")) {
+            NEXTARG();
+            if (!strcmp(arg, "infinite")) {
+                repetitionCount = AVIF_REPETITION_COUNT_INFINITE;
+            } else {
+                repetitionCount = atoi(arg);
+                if (repetitionCount < 0) {
+                    fprintf(stderr, "ERROR: Invalid repetition count: %s\n", arg);
+                    returnCode = 1;
+                    goto cleanup;
+                }
+            }
         } else if (!strcmp(arg, "-l") || !strcmp(arg, "--lossless")) {
             lossless = AVIF_TRUE;
-
-            // Set defaults, and warn later on if anything looks incorrect
-            input.requestedFormat = AVIF_PIXEL_FORMAT_YUV444; // don't subsample when using AVIF_MATRIX_COEFFICIENTS_IDENTITY
-            minQuantizer = AVIF_QUANTIZER_LOSSLESS;           // lossless
-            maxQuantizer = AVIF_QUANTIZER_LOSSLESS;           // lossless
-            minQuantizerAlpha = AVIF_QUANTIZER_LOSSLESS;      // lossless
-            maxQuantizerAlpha = AVIF_QUANTIZER_LOSSLESS;      // lossless
-            codecChoice = AVIF_CODEC_CHOICE_AOM;              // rav1e doesn't support lossless transform yet:
-                                                              // https://github.com/xiph/rav1e/issues/151
-                                                              // SVT-AV1 doesn't support lossless encoding yet:
-                                                              // https://gitlab.com/AOMediaCodec/SVT-AV1/-/issues/1636
-            requestedRange = AVIF_RANGE_FULL;                 // avoid limited range
-            matrixCoefficients = AVIF_MATRIX_COEFFICIENTS_IDENTITY; // this is key for lossless
         } else if (!strcmp(arg, "-p") || !strcmp(arg, "--premultiply")) {
             premultiplyAlpha = AVIF_TRUE;
         } else if (!strcmp(arg, "--sharpyuv")) {
@@ -803,6 +849,96 @@ int main(int argc, char * argv[])
         }
 
         ++argIndex;
+    }
+
+    if ((minQuantizer < 0) != (maxQuantizer < 0)) {
+        fprintf(stderr, "--min and --max must be either both specified or both unspecified.\n");
+        returnCode = 1;
+        goto cleanup;
+    }
+    if ((minQuantizerAlpha < 0) != (maxQuantizerAlpha < 0)) {
+        fprintf(stderr, "--minalpha and --maxalpha must be either both specified or both unspecified.\n");
+        returnCode = 1;
+        goto cleanup;
+    }
+
+    // Check lossy/lossless parameters and set to default if needed.
+    if (lossless) {
+        // Pixel format.
+        if (input.requestedFormat != AVIF_PIXEL_FORMAT_NONE && input.requestedFormat != AVIF_PIXEL_FORMAT_YUV444) {
+            fprintf(stderr,
+                    "When set, the pixel format can only be 444 in lossless "
+                    "mode.\n");
+            returnCode = 1;
+        }
+        // Don't subsample when using AVIF_MATRIX_COEFFICIENTS_IDENTITY.
+        input.requestedFormat = AVIF_PIXEL_FORMAT_YUV444;
+        // Quality.
+        if ((quality != INVALID_QUALITY && quality != AVIF_QUALITY_LOSSLESS) ||
+            (qualityAlpha != INVALID_QUALITY && qualityAlpha != AVIF_QUALITY_LOSSLESS)) {
+            fprintf(stderr, "Quality cannot be set in lossless mode, except to %d.\n", AVIF_QUALITY_LOSSLESS);
+            returnCode = 1;
+        }
+        quality = qualityAlpha = AVIF_QUALITY_LOSSLESS;
+        // Quantizers.
+        if (minQuantizer > 0 || maxQuantizer > 0 || minQuantizerAlpha > 0 || maxQuantizerAlpha > 0) {
+            fprintf(stderr, "Quantizers cannot be set in lossless mode, except to 0.\n");
+            returnCode = 1;
+        }
+        minQuantizer = maxQuantizer = minQuantizerAlpha = maxQuantizerAlpha = AVIF_QUANTIZER_LOSSLESS;
+        // Codec.
+        if (codecChoice != AVIF_CODEC_CHOICE_AUTO && codecChoice != AVIF_CODEC_CHOICE_AOM) {
+            fprintf(stderr, "Codec can only be AOM in lossless mode.\n");
+            returnCode = 1;
+        }
+        // rav1e doesn't support lossless transform yet:
+        // https://github.com/xiph/rav1e/issues/151
+        // SVT-AV1 doesn't support lossless encoding yet:
+        // https://gitlab.com/AOMediaCodec/SVT-AV1/-/issues/1636
+        codecChoice = AVIF_CODEC_CHOICE_AOM;
+        // Range.
+        if (requestedRange != AVIF_RANGE_FULL) {
+            fprintf(stderr, "Range has to be full in lossless mode.\n");
+            returnCode = 1;
+        }
+        // Matrix coefficients.
+        if (cicpExplicitlySet && matrixCoefficients != AVIF_MATRIX_COEFFICIENTS_IDENTITY) {
+            fprintf(stderr, "Matrix coefficients have to be identity in lossless mode.\n");
+            returnCode = 1;
+        }
+        matrixCoefficients = AVIF_MATRIX_COEFFICIENTS_IDENTITY;
+        if (returnCode == 1)
+            goto cleanup;
+    } else {
+        // Set lossy defaults.
+        if (minQuantizer == -1) {
+            assert(maxQuantizer == -1);
+            if (quality == INVALID_QUALITY) {
+                quality = DEFAULT_QUALITY;
+            }
+            minQuantizer = AVIF_QUANTIZER_BEST_QUALITY;
+            maxQuantizer = AVIF_QUANTIZER_WORST_QUALITY;
+        } else {
+            assert(maxQuantizer != -1);
+            if (quality == INVALID_QUALITY) {
+                const int quantizer = (minQuantizer + maxQuantizer) / 2;
+                quality = ((63 - quantizer) * 100 + 31) / 63;
+            }
+        }
+        if (minQuantizerAlpha == -1) {
+            assert(maxQuantizerAlpha == -1);
+            if (qualityAlpha == INVALID_QUALITY) {
+                qualityAlpha = DEFAULT_QUALITY_ALPHA;
+            }
+            minQuantizerAlpha = AVIF_QUANTIZER_BEST_QUALITY;
+            maxQuantizerAlpha = AVIF_QUANTIZER_WORST_QUALITY;
+        } else {
+            assert(maxQuantizerAlpha != -1);
+            if (qualityAlpha == INVALID_QUALITY) {
+                const int quantizerAlpha = (minQuantizerAlpha + maxQuantizerAlpha) / 2;
+                qualityAlpha = ((63 - quantizerAlpha) * 100 + 31) / 63;
+            }
+        }
     }
 
     stdinFile.filename = "(stdin)";
@@ -963,8 +1099,8 @@ int main(int argc, char * argv[])
         usingAOM = AVIF_TRUE;
     }
     avifBool hasAlpha = (image->alphaPlane && image->alphaRowBytes);
-    avifBool losslessColorQP = (minQuantizer == AVIF_QUANTIZER_LOSSLESS) && (maxQuantizer == AVIF_QUANTIZER_LOSSLESS);
-    avifBool losslessAlphaQP = (minQuantizerAlpha == AVIF_QUANTIZER_LOSSLESS) && (maxQuantizerAlpha == AVIF_QUANTIZER_LOSSLESS);
+    avifBool usingLosslessColor = (quality == AVIF_QUALITY_LOSSLESS);
+    avifBool usingLosslessAlpha = (qualityAlpha == AVIF_QUALITY_LOSSLESS);
     avifBool depthMatches = (sourceDepth == image->depth);
     avifBool using400 = (image->yuvFormat == AVIF_PIXEL_FORMAT_YUV400);
     avifBool using444 = (image->yuvFormat == AVIF_PIXEL_FORMAT_YUV444);
@@ -972,9 +1108,9 @@ int main(int argc, char * argv[])
     avifBool usingIdentityMatrix = (image->matrixCoefficients == AVIF_MATRIX_COEFFICIENTS_IDENTITY);
 
     // Guess if the enduser is asking for lossless and enable it so that warnings can be emitted
-    if (!lossless && losslessColorQP && (!hasAlpha || losslessAlphaQP)) {
+    if (!lossless && usingLosslessColor && (!hasAlpha || usingLosslessAlpha)) {
         // The enduser is probably expecting lossless. Turn it on and emit warnings
-        printf("Min/max QPs set to %d, assuming --lossless to enable warnings on potential lossless issues.\n", AVIF_QUANTIZER_LOSSLESS);
+        printf("Quality set to %d, assuming --lossless to enable warnings on potential lossless issues.\n", AVIF_QUALITY_LOSSLESS);
         lossless = AVIF_TRUE;
     }
 
@@ -985,17 +1121,17 @@ int main(int argc, char * argv[])
             lossless = AVIF_FALSE;
         }
 
-        if (!losslessColorQP) {
+        if (!usingLosslessColor) {
             fprintf(stderr,
-                    "WARNING: [--lossless] Color quantizer range (--min, --max) not set to %d. Color output might not be lossless.\n",
-                    AVIF_QUANTIZER_LOSSLESS);
+                    "WARNING: [--lossless] Color quality (-q or --qcolor) not set to %d. Color output might not be lossless.\n",
+                    AVIF_QUALITY_LOSSLESS);
             lossless = AVIF_FALSE;
         }
 
-        if (hasAlpha && !losslessAlphaQP) {
+        if (hasAlpha && !usingLosslessAlpha) {
             fprintf(stderr,
-                    "WARNING: [--lossless] Alpha present and alpha quantizer range (--minalpha, --maxalpha) not set to %d. Alpha output might not be lossless.\n",
-                    AVIF_QUANTIZER_LOSSLESS);
+                    "WARNING: [--lossless] Alpha present and alpha quality (--qalpha) not set to %d. Alpha output might not be lossless.\n",
+                    AVIF_QUALITY_LOSSLESS);
             lossless = AVIF_FALSE;
         }
 
@@ -1065,33 +1201,7 @@ int main(int argc, char * argv[])
                 returnCode = 1;
                 goto cleanup;
             }
-
-            // Verify that this cell's properties matches the first cell's properties
-            if ((image->width != cellImage->width) || (image->height != cellImage->height)) {
-                fprintf(stderr,
-                        "ERROR: Image grid dimensions mismatch, [%ux%u] vs [%ux%u]: %s\n",
-                        image->width,
-                        image->height,
-                        cellImage->width,
-                        cellImage->height,
-                        nextFile->filename);
-                returnCode = 1;
-                goto cleanup;
-            }
-            if (image->depth != cellImage->depth) {
-                fprintf(stderr, "ERROR: Image grid depth mismatch, [%u] vs [%u]: %s\n", image->depth, cellImage->depth, nextFile->filename);
-                returnCode = 1;
-                goto cleanup;
-            }
-            if (image->yuvRange != cellImage->yuvRange) {
-                fprintf(stderr,
-                        "ERROR: Image grid range mismatch, [%s] vs [%s]: %s\n",
-                        (image->yuvRange == AVIF_RANGE_FULL) ? "Full" : "Limited",
-                        (nextImage->yuvRange == AVIF_RANGE_FULL) ? "Full" : "Limited",
-                        nextFile->filename);
-                returnCode = 1;
-                goto cleanup;
-            }
+            // Let avifEncoderAddImageGrid() verify the grid integrity (valid cell sizes, depths etc.).
         }
 
         if (gridCellIndex == 0) {
@@ -1139,20 +1249,18 @@ int main(int argc, char * argv[])
     char manualTilingStr[128];
     snprintf(manualTilingStr, sizeof(manualTilingStr), "tileRowsLog2 [%d], tileColsLog2 [%d]", tileRowsLog2, tileColsLog2);
 
-    printf("Encoding with AV1 codec '%s' speed [%d], color QP [%d (%s) <-> %d (%s)], alpha QP [%d (%s) <-> %d (%s)], %s, %d worker thread(s), please wait...\n",
+    printf("Encoding with AV1 codec '%s' speed [%d], color quality [%d (%s)], alpha quality [%d (%s)], %s, %d worker thread(s), please wait...\n",
            avifCodecName(codecChoice, AVIF_CODEC_FLAG_CAN_ENCODE),
            speed,
-           minQuantizer,
-           quantizerString(minQuantizer),
-           maxQuantizer,
-           quantizerString(maxQuantizer),
-           minQuantizerAlpha,
-           quantizerString(minQuantizerAlpha),
-           maxQuantizerAlpha,
-           quantizerString(maxQuantizerAlpha),
+           quality,
+           qualityString(quality),
+           qualityAlpha,
+           qualityString(qualityAlpha),
            autoTiling ? "automatic tiling" : manualTilingStr,
            jobs);
     encoder->maxThreads = jobs;
+    encoder->quality = quality;
+    encoder->qualityAlpha = qualityAlpha;
     encoder->minQuantizer = minQuantizer;
     encoder->maxQuantizer = maxQuantizer;
     encoder->minQuantizerAlpha = minQuantizerAlpha;
@@ -1164,7 +1272,9 @@ int main(int argc, char * argv[])
     encoder->speed = speed;
     encoder->timescale = outputTiming.timescale;
     encoder->keyframeInterval = keyframeInterval;
+    encoder->repetitionCount = repetitionCount;
 
+    avifBool isImageSequence = AVIF_FALSE;
     if (gridDimsCount > 0) {
         avifResult addImageResult =
             avifEncoderAddImageGrid(encoder, gridDims[0], gridDims[1], (const avifImage * const *)gridCells, AVIF_ADD_IMAGE_FLAG_SINGLE);
@@ -1199,6 +1309,7 @@ int main(int argc, char * argv[])
         int nextImageIndex = -1;
         while ((nextFile = avifInputGetNextFile(&input)) != NULL) {
             ++nextImageIndex;
+            isImageSequence = AVIF_TRUE;
 
             uint64_t nextDurationInTimescales = nextFile->duration ? nextFile->duration : outputTiming.duration;
 
@@ -1288,8 +1399,15 @@ int main(int argc, char * argv[])
     }
 
     printf("Encoded successfully.\n");
-    printf(" * Color AV1 total size: " AVIF_FMT_ZU " bytes\n", encoder->ioStats.colorOBUSize);
-    printf(" * Alpha AV1 total size: " AVIF_FMT_ZU " bytes\n", encoder->ioStats.alphaOBUSize);
+    printf(" * Color AV1 total size: %" AVIF_FMT_ZU " bytes\n", encoder->ioStats.colorOBUSize);
+    printf(" * Alpha AV1 total size: %" AVIF_FMT_ZU " bytes\n", encoder->ioStats.alphaOBUSize);
+    if (isImageSequence) {
+        if (encoder->repetitionCount == AVIF_REPETITION_COUNT_INFINITE) {
+            printf(" * Repetition Count: Infinite\n");
+        } else {
+            printf(" * Repetition Count: %d\n", encoder->repetitionCount);
+        }
+    }
     FILE * f = fopen(outputFilename, "wb");
     if (!f) {
         fprintf(stderr, "ERROR: Failed to open file for write: %s\n", outputFilename);
@@ -1297,7 +1415,7 @@ int main(int argc, char * argv[])
         goto cleanup;
     }
     if (fwrite(raw.data, 1, raw.size, f) != raw.size) {
-        fprintf(stderr, "Failed to write " AVIF_FMT_ZU " bytes: %s\n", raw.size, outputFilename);
+        fprintf(stderr, "Failed to write %" AVIF_FMT_ZU " bytes: %s\n", raw.size, outputFilename);
         returnCode = 1;
     } else {
         printf("Wrote AVIF: %s\n", outputFilename);

@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2016 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -210,10 +210,10 @@ bool CPDF_Parser::ParseFileVersion() {
 }
 
 CPDF_Parser::Error CPDF_Parser::StartParse(
-    const RetainPtr<IFX_SeekableReadStream>& pFileAccess,
+    RetainPtr<IFX_SeekableReadStream> pFileAccess,
     const ByteString& password) {
-  if (!InitSyntaxParser(
-          pdfium::MakeRetain<CPDF_ReadValidator>(pFileAccess, nullptr)))
+  if (!InitSyntaxParser(pdfium::MakeRetain<CPDF_ReadValidator>(
+          std::move(pFileAccess), nullptr)))
     return FORMAT_ERROR;
   SetPassword(password);
   return StartParseInternal();
@@ -306,7 +306,7 @@ CPDF_Parser::Error CPDF_Parser::SetEncryptHandler() {
   if (!GetTrailer())
     return FORMAT_ERROR;
 
-  const CPDF_Dictionary* pEncryptDict = GetEncryptDict();
+  RetainPtr<const CPDF_Dictionary> pEncryptDict = GetEncryptDict();
   if (!pEncryptDict)
     return SUCCESS;
 
@@ -517,10 +517,9 @@ bool CPDF_Parser::ParseAndAppendCrossRefSubsectionData(
   while (entries_to_read > 0) {
     const uint32_t entries_in_block = std::min(entries_to_read, 1024u);
     const uint32_t bytes_to_read = entries_in_block * kEntrySize;
-    if (!m_pSyntax->ReadBlock(reinterpret_cast<uint8_t*>(buf.data()),
-                              bytes_to_read)) {
+    auto block_span = pdfium::make_span(buf).first(bytes_to_read);
+    if (!m_pSyntax->ReadBlock(pdfium::as_writable_bytes(block_span)))
       return false;
-    }
 
     for (uint32_t i = 0; i < entries_in_block; i++) {
       uint32_t iObjectIndex = count - entries_to_read + i;
@@ -698,7 +697,8 @@ bool CPDF_Parser::RebuildCrossRef() {
 
       if (obj_num < kMaxObjectNumber) {
         cross_ref_table->AddNormal(obj_num, gen_num, obj_pos);
-        const auto object_stream = CPDF_ObjectStream::Create(pStream.Get());
+        const auto object_stream =
+            CPDF_ObjectStream::Create(std::move(pStream));
         if (object_stream) {
           const auto& object_info = object_stream->object_info();
           for (size_t i = 0; i < object_info.size(); ++i) {
@@ -937,7 +937,7 @@ RetainPtr<CPDF_Object> CPDF_Parser::ParseIndirectObject(uint32_t objnum) {
   if (!pObjStream)
     return nullptr;
 
-  return pObjStream->ParseObject(m_pObjectsHolder.Get(), objnum,
+  return pObjStream->ParseObject(m_pObjectsHolder, objnum,
                                  info.archive.obj_index);
 }
 
@@ -967,7 +967,7 @@ const CPDF_ObjectStream* CPDF_Parser::GetObjectStream(uint32_t object_number) {
     return nullptr;
 
   std::unique_ptr<CPDF_ObjectStream> objs_stream =
-      CPDF_ObjectStream::Create(ToStream(object.Get()));
+      CPDF_ObjectStream::Create(ToStream(object));
   const CPDF_ObjectStream* result = objs_stream.get();
   m_ObjectStreamMap[object_number] = std::move(objs_stream);
 
@@ -980,7 +980,7 @@ RetainPtr<CPDF_Object> CPDF_Parser::ParseIndirectObjectAt(FX_FILESIZE pos,
   m_pSyntax->SetPos(pos);
 
   auto result = m_pSyntax->GetIndirectObject(
-      m_pObjectsHolder.Get(), CPDF_SyntaxParser::ParseType::kLoose);
+      m_pObjectsHolder, CPDF_SyntaxParser::ParseType::kLoose);
   m_pSyntax->SetPos(saved_pos);
   if (result && objnum && result->GetObjNum() != objnum)
     return nullptr;
@@ -993,6 +993,10 @@ RetainPtr<CPDF_Object> CPDF_Parser::ParseIndirectObjectAt(FX_FILESIZE pos,
     return nullptr;
   }
   return result;
+}
+
+FX_FILESIZE CPDF_Parser::GetDocumentSize() const {
+  return m_pSyntax->GetDocumentSize();
 }
 
 uint32_t CPDF_Parser::GetFirstPageNo() const {
@@ -1008,7 +1012,7 @@ RetainPtr<CPDF_Dictionary> CPDF_Parser::LoadTrailerV4() {
   if (m_pSyntax->GetKeyword() != "trailer")
     return nullptr;
 
-  return ToDictionary(m_pSyntax->GetObjectBody(m_pObjectsHolder.Get()));
+  return ToDictionary(m_pSyntax->GetObjectBody(m_pObjectsHolder));
 }
 
 uint32_t CPDF_Parser::GetPermissions() const {
@@ -1143,4 +1147,66 @@ CPDF_Parser::Error CPDF_Parser::LoadLinearizedMainXRefTable() {
 void CPDF_Parser::SetSyntaxParserForTesting(
     std::unique_ptr<CPDF_SyntaxParser> parser) {
   m_pSyntax = std::move(parser);
+}
+
+std::vector<unsigned int> CPDF_Parser::GetTrailerEnds() {
+  std::vector<unsigned int> trailer_ends;
+  m_pSyntax->SetTrailerEnds(&trailer_ends);
+
+  // Traverse the document.
+  m_pSyntax->SetPos(0);
+  while (true) {
+    CPDF_SyntaxParser::WordResult word_result = m_pSyntax->GetNextWord();
+    if (word_result.is_number) {
+      // The object number was read. Read the generation number.
+      word_result = m_pSyntax->GetNextWord();
+      if (!word_result.is_number)
+        break;
+
+      word_result = m_pSyntax->GetNextWord();
+      if (word_result.word != "obj")
+        break;
+
+      m_pSyntax->GetObjectBody(nullptr);
+
+      word_result = m_pSyntax->GetNextWord();
+      if (word_result.word != "endobj")
+        break;
+    } else if (word_result.word == "trailer") {
+      m_pSyntax->GetObjectBody(nullptr);
+    } else if (word_result.word == "startxref") {
+      m_pSyntax->GetNextWord();
+    } else if (word_result.word == "xref") {
+      while (true) {
+        word_result = m_pSyntax->GetNextWord();
+        if (word_result.word.IsEmpty() || word_result.word == "startxref")
+          break;
+      }
+      m_pSyntax->GetNextWord();
+    } else {
+      break;
+    }
+  }
+
+  // Stop recording trailer ends.
+  m_pSyntax->SetTrailerEnds(nullptr);
+  return trailer_ends;
+}
+
+bool CPDF_Parser::WriteToArchive(IFX_ArchiveStream* archive,
+                                 FX_FILESIZE src_size) {
+  static constexpr FX_FILESIZE kBufferSize = 4096;
+  DataVector<uint8_t> buffer(kBufferSize);
+  m_pSyntax->SetPos(0);
+  while (src_size) {
+    const uint32_t block_size =
+        static_cast<uint32_t>(std::min(kBufferSize, src_size));
+    auto block_span = pdfium::make_span(buffer).first(block_size);
+    if (!m_pSyntax->ReadBlock(block_span))
+      return false;
+    if (!archive->WriteBlock(pdfium::make_span(buffer).first(block_size)))
+      return false;
+    src_size -= block_size;
+  }
+  return true;
 }

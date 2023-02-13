@@ -69,8 +69,8 @@ div.raw-headers-row {
 }
 
 .header-name {
-  color: var(--color-primary);
-  font-weight: 500;
+  color: var(--color-text-primary);
+  font-weight: 400;
   width: 160px;
   flex-shrink: 0;
   text-transform: capitalize;
@@ -120,7 +120,7 @@ div.raw-headers-row {
   color: var(--color-link);
   text-decoration: underline;
   cursor: pointer;
-  padding: 2px 0; /* adjust focus ring size */
+  outline-offset: 2px;
 }
 
 .inline-icon {

@@ -387,7 +387,14 @@ const UIStrings = {
   * @description Text for command of toggling debugger sidebar in Sources panel
   */
   toggleDebuggerSidebar: 'Toggle debugger sidebar',
-
+  /**
+   * @description Title of an action that navigates to the next editor in the Sources panel.
+   */
+  nextEditorTab: 'Next editor',
+  /**
+   * @description Title of an action that navigates to the next editor in the Sources panel.
+   */
+  previousEditorTab: 'Previous editor',
 };
 const str_ = i18n.i18n.registerUIStrings('panels/sources/sources-meta.ts', UIStrings);
 const i18nLazyString = i18n.i18n.getLazilyComputedLocalizedString.bind(undefined, str_);
@@ -906,6 +913,68 @@ UI.ActionRegistration.registerActionExtension({
 });
 
 UI.ActionRegistration.registerActionExtension({
+  actionId: 'sources.next-editor-tab',
+  category: UI.ActionRegistration.ActionCategory.SOURCES,
+  title: i18nLazyString(UIStrings.nextEditorTab),
+  async loadActionDelegate() {
+    const Sources = await loadSourcesModule();
+    return Sources.SourcesView.ActionDelegate.instance();
+  },
+  contextTypes() {
+    return maybeRetrieveContextTypes(Sources => [Sources.SourcesView.SourcesView]);
+  },
+  bindings: [
+    {
+      platform: UI.ActionRegistration.Platforms.WindowsLinux,
+      shortcut: 'Ctrl+PageDown',
+      keybindSets: [
+        UI.ActionRegistration.KeybindSet.DEVTOOLS_DEFAULT,
+        UI.ActionRegistration.KeybindSet.VS_CODE,
+      ],
+    },
+    {
+      platform: UI.ActionRegistration.Platforms.Mac,
+      shortcut: 'Meta+PageDown',
+      keybindSets: [
+        UI.ActionRegistration.KeybindSet.DEVTOOLS_DEFAULT,
+        UI.ActionRegistration.KeybindSet.VS_CODE,
+      ],
+    },
+  ],
+});
+
+UI.ActionRegistration.registerActionExtension({
+  actionId: 'sources.previous-editor-tab',
+  category: UI.ActionRegistration.ActionCategory.SOURCES,
+  title: i18nLazyString(UIStrings.previousEditorTab),
+  async loadActionDelegate() {
+    const Sources = await loadSourcesModule();
+    return Sources.SourcesView.ActionDelegate.instance();
+  },
+  contextTypes() {
+    return maybeRetrieveContextTypes(Sources => [Sources.SourcesView.SourcesView]);
+  },
+  bindings: [
+    {
+      platform: UI.ActionRegistration.Platforms.WindowsLinux,
+      shortcut: 'Ctrl+PageUp',
+      keybindSets: [
+        UI.ActionRegistration.KeybindSet.DEVTOOLS_DEFAULT,
+        UI.ActionRegistration.KeybindSet.VS_CODE,
+      ],
+    },
+    {
+      platform: UI.ActionRegistration.Platforms.Mac,
+      shortcut: 'Meta+PageUp',
+      keybindSets: [
+        UI.ActionRegistration.KeybindSet.DEVTOOLS_DEFAULT,
+        UI.ActionRegistration.KeybindSet.VS_CODE,
+      ],
+    },
+  ],
+});
+
+UI.ActionRegistration.registerActionExtension({
   actionId: 'sources.go-to-line',
   category: UI.ActionRegistration.ActionCategory.SOURCES,
   title: i18nLazyString(UIStrings.goToLine),
@@ -986,10 +1055,16 @@ UI.ActionRegistration.registerActionExtension({
     {
       platform: UI.ActionRegistration.Platforms.WindowsLinux,
       shortcut: 'Ctrl+b',
+      keybindSets: [
+        UI.ActionRegistration.KeybindSet.DEVTOOLS_DEFAULT,
+      ],
     },
     {
       platform: UI.ActionRegistration.Platforms.Mac,
       shortcut: 'Meta+b',
+      keybindSets: [
+        UI.ActionRegistration.KeybindSet.DEVTOOLS_DEFAULT,
+      ],
     },
     {
       shortcut: 'F9',
@@ -1267,10 +1342,30 @@ UI.ActionRegistration.registerActionExtension({
     {
       platform: UI.ActionRegistration.Platforms.WindowsLinux,
       shortcut: 'Ctrl+Shift+y',
+      keybindSets: [
+        UI.ActionRegistration.KeybindSet.DEVTOOLS_DEFAULT,
+      ],
     },
     {
       platform: UI.ActionRegistration.Platforms.Mac,
       shortcut: 'Meta+Shift+y',
+      keybindSets: [
+        UI.ActionRegistration.KeybindSet.DEVTOOLS_DEFAULT,
+      ],
+    },
+    {
+      platform: UI.ActionRegistration.Platforms.WindowsLinux,
+      shortcut: 'Ctrl+b',
+      keybindSets: [
+        UI.ActionRegistration.KeybindSet.VS_CODE,
+      ],
+    },
+    {
+      platform: UI.ActionRegistration.Platforms.WindowsLinux,
+      shortcut: 'Meta+b',
+      keybindSets: [
+        UI.ActionRegistration.KeybindSet.VS_CODE,
+      ],
     },
   ],
 });
@@ -1734,17 +1829,11 @@ UI.Context.registerListener({
   },
   async loadListener() {
     const Sources = await loadSourcesModule();
+    if (Root.Runtime.experiments.isEnabled(Root.Runtime.ExperimentName.BREAKPOINT_VIEW)) {
+      return Sources.BreakpointsSidebarPane.BreakpointsSidebarController.instance();
+    }
     return Sources.JavaScriptBreakpointsSidebarPane.JavaScriptBreakpointsSidebarPane.instance();
-  },
-});
 
-UI.Context.registerListener({
-  contextTypes() {
-    return [SDK.DebuggerModel.DebuggerPausedDetails];
-  },
-  async loadListener() {
-    const Sources = await loadSourcesModule();
-    return Sources.BreakpointsSidebarPane.BreakpointsSidebarController.instance();
   },
 });
 
@@ -1785,7 +1874,7 @@ QuickOpen.FilteredListWidget.registerProvider({
   iconName: 'ic_command_go_to_symbol',
   async provider() {
     const Sources = await loadSourcesModule();
-    return Sources.OutlineQuickOpen.OutlineQuickOpen.instance();
+    return new Sources.OutlineQuickOpen.OutlineQuickOpen();
   },
   titlePrefix: i18nLazyString(UIStrings.goTo),
   titleSuggestion: i18nLazyString(UIStrings.symbol),
@@ -1796,7 +1885,7 @@ QuickOpen.FilteredListWidget.registerProvider({
   iconName: 'ic_command_go_to_line',
   async provider() {
     const Sources = await loadSourcesModule();
-    return Sources.GoToLineQuickOpen.GoToLineQuickOpen.instance();
+    return new Sources.GoToLineQuickOpen.GoToLineQuickOpen();
   },
   titlePrefix: i18nLazyString(UIStrings.goTo),
   titleSuggestion: i18nLazyString(UIStrings.line),
@@ -1807,7 +1896,7 @@ QuickOpen.FilteredListWidget.registerProvider({
   iconName: 'ic_command_open_file',
   async provider() {
     const Sources = await loadSourcesModule();
-    return Sources.OpenFileQuickOpen.OpenFileQuickOpen.instance();
+    return new Sources.OpenFileQuickOpen.OpenFileQuickOpen();
   },
   titlePrefix: i18nLazyString(UIStrings.open),
   titleSuggestion: i18nLazyString(UIStrings.file),

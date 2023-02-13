@@ -37,7 +37,6 @@
 #include "quiche/spdy/core/spdy_protocol.h"
 
 using spdy::Http2HeaderBlock;
-using spdy::SpdyPriority;
 
 namespace quic {
 
@@ -190,8 +189,7 @@ QuicSpdyStream::QuicSpdyStream(QuicStreamId id, QuicSpdySession* spdy_session,
                HttpDecoderOptionsForBidiStream(spdy_session)),
       sequencer_offset_(0),
       is_decoder_processing_input_(false),
-      ack_listener_(nullptr),
-      last_sent_urgency_(kDefaultUrgency) {
+      ack_listener_(nullptr) {
   QUICHE_DCHECK_EQ(session()->connection(), spdy_session->connection());
   QUICHE_DCHECK_EQ(transport_version(), spdy_session->transport_version());
   QUICHE_DCHECK(!QuicUtils::IsCryptoStreamId(transport_version(), id));
@@ -225,8 +223,7 @@ QuicSpdyStream::QuicSpdyStream(PendingStream* pending,
       decoder_(http_decoder_visitor_.get()),
       sequencer_offset_(sequencer()->NumBytesConsumed()),
       is_decoder_processing_input_(false),
-      ack_listener_(nullptr),
-      last_sent_urgency_(kDefaultUrgency) {
+      ack_listener_(nullptr) {
   QUICHE_DCHECK_EQ(session()->connection(), spdy_session->connection());
   QUICHE_DCHECK_EQ(transport_version(), spdy_session->transport_version());
   QUICHE_DCHECK(!QuicUtils::IsCryptoStreamId(transport_version(), id()));
@@ -505,7 +502,8 @@ void QuicSpdyStream::OnStreamHeadersPriority(
     const spdy::SpdyStreamPrecedence& precedence) {
   QUICHE_DCHECK_EQ(Perspective::IS_SERVER,
                    session()->connection()->perspective());
-  SetPriority(precedence);
+  SetPriority(QuicStreamPriority{precedence.spdy3_priority(),
+                                 QuicStreamPriority::kDefaultIncremental});
 }
 
 void QuicSpdyStream::OnStreamHeaderList(bool fin, size_t frame_len,
@@ -587,18 +585,12 @@ void QuicSpdyStream::MaybeSendPriorityUpdateFrame() {
     return;
   }
 
-  // Value between 0 and 7, inclusive.  Lower value means higher priority.
-  int urgency = precedence().spdy3_priority();
-  if (last_sent_urgency_ == urgency) {
+  if (last_sent_priority_ == priority()) {
     return;
   }
-  last_sent_urgency_ = urgency;
+  last_sent_priority_ = priority();
 
-  PriorityUpdateFrame priority_update;
-  priority_update.prioritized_element_type = REQUEST_STREAM;
-  priority_update.prioritized_element_id = id();
-  priority_update.priority_field_value = absl::StrCat("u=", urgency);
-  spdy_session_->WriteHttp3PriorityUpdate(priority_update);
+  spdy_session_->WriteHttp3PriorityUpdate(id(), priority());
 }
 
 void QuicSpdyStream::OnHeadersTooLarge() { Reset(QUIC_HEADERS_TOO_LARGE); }
@@ -659,6 +651,14 @@ void QuicSpdyStream::OnPromiseHeaderList(
                                    "Promise headers received by server");
 }
 
+bool QuicSpdyStream::CopyAndValidateTrailers(const QuicHeaderList& header_list,
+                                             bool expect_final_byte_offset,
+                                             size_t* final_byte_offset,
+                                             spdy::Http2HeaderBlock* trailers) {
+  return SpdyUtils::CopyAndValidateTrailers(
+      header_list, expect_final_byte_offset, final_byte_offset, trailers);
+}
+
 void QuicSpdyStream::OnTrailingHeadersComplete(
     bool fin, size_t /*frame_len*/, const QuicHeaderList& header_list) {
   // TODO(b/134706391): remove |fin| argument.
@@ -681,9 +681,8 @@ void QuicSpdyStream::OnTrailingHeadersComplete(
 
   size_t final_byte_offset = 0;
   const bool expect_final_byte_offset = !VersionUsesHttp3(transport_version());
-  if (!SpdyUtils::CopyAndValidateTrailers(header_list, expect_final_byte_offset,
-                                          &final_byte_offset,
-                                          &received_trailers_)) {
+  if (!CopyAndValidateTrailers(header_list, expect_final_byte_offset,
+                               &final_byte_offset, &received_trailers_)) {
     QUIC_DLOG(ERROR) << ENDPOINT << "Trailers for stream " << id()
                      << " are malformed.";
     stream_delegate()->OnStreamError(QUIC_INVALID_HEADERS_STREAM_DATA,
@@ -703,7 +702,8 @@ void QuicSpdyStream::OnPriorityFrame(
     const spdy::SpdyStreamPrecedence& precedence) {
   QUICHE_DCHECK_EQ(Perspective::IS_SERVER,
                    session()->connection()->perspective());
-  SetPriority(precedence);
+  SetPriority(QuicStreamPriority{precedence.spdy3_priority(),
+                                 QuicStreamPriority::kDefaultIncremental});
 }
 
 void QuicSpdyStream::OnStreamReset(const QuicRstStreamFrame& frame) {
@@ -888,7 +888,6 @@ bool QuicSpdyStream::FinishedReadingHeaders() const {
   return headers_decompressed_ && header_list_.empty();
 }
 
-// static
 bool QuicSpdyStream::ParseHeaderStatusCode(const Http2HeaderBlock& header,
                                            int* status_code) {
   Http2HeaderBlock::const_iterator it = header.find(spdy::kHttp2StatusHeader);
@@ -896,6 +895,11 @@ bool QuicSpdyStream::ParseHeaderStatusCode(const Http2HeaderBlock& header,
     return false;
   }
   const absl::string_view status(it->second);
+  return ParseHeaderStatusCode(status, status_code);
+}
+
+bool QuicSpdyStream::ParseHeaderStatusCode(absl::string_view status,
+                                           int* status_code) {
   if (status.size() != 3) {
     return false;
   }
@@ -1144,7 +1148,8 @@ size_t QuicSpdyStream::WriteHeadersImpl(
         ack_listener) {
   if (!VersionUsesHttp3(transport_version())) {
     return spdy_session_->WriteHeadersOnHeadersStream(
-        id(), std::move(header_block), fin, precedence(),
+        id(), std::move(header_block), fin,
+        spdy::SpdyStreamPrecedence(priority().urgency),
         std::move(ack_listener));
   }
 
@@ -1359,13 +1364,16 @@ bool QuicSpdyStream::OnCapsule(const Capsule& capsule) {
     return false;
   }
   switch (capsule.capsule_type()) {
+    case CapsuleType::DATAGRAM: {
+      HandleReceivedDatagram(capsule.datagram_capsule().http_datagram_payload);
+    } break;
     case CapsuleType::LEGACY_DATAGRAM: {
       HandleReceivedDatagram(
           capsule.legacy_datagram_capsule().http_datagram_payload);
     } break;
-    case CapsuleType::DATAGRAM_WITHOUT_CONTEXT: {
-      HandleReceivedDatagram(
-          capsule.datagram_without_context_capsule().http_datagram_payload);
+    case CapsuleType::LEGACY_DATAGRAM_WITHOUT_CONTEXT: {
+      HandleReceivedDatagram(capsule.legacy_datagram_without_context_capsule()
+                                 .http_datagram_payload);
     } break;
     case CapsuleType::CLOSE_WEBTRANSPORT_SESSION: {
       if (web_transport_ == nullptr) {
@@ -1530,12 +1538,12 @@ QuicByteCount QuicSpdyStream::GetMaxDatagramSize() const {
   QuicByteCount prefix_size = 0;
   switch (spdy_session_->http_datagram_support()) {
     case HttpDatagramSupport::kDraft04:
-    case HttpDatagramSupport::kDraft09:
+    case HttpDatagramSupport::kRfc:
       prefix_size =
           QuicDataWriter::GetVarInt62Len(id() / kHttpDatagramStreamIdDivisor);
       break;
     case HttpDatagramSupport::kNone:
-    case HttpDatagramSupport::kDraft04And09:
+    case HttpDatagramSupport::kRfcAndDraft04:
       QUIC_BUG(GetMaxDatagramSize called with no datagram support)
           << "GetMaxDatagramSize() called when no HTTP/3 datagram support has "
              "been negotiated.  Support value: "

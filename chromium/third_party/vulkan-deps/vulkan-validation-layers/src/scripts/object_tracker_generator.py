@@ -182,7 +182,8 @@ class ObjectTrackerOutputGenerator(OutputGenerator):
             'vkCmdBuildAccelerationStructuresIndirectKHR',
             'vkBuildAccelerationStructuresKHR',
             'vkCreateRayTracingPipelinesKHR',
-            'vkExportMetalObjectsEXT'
+            'vkExportMetalObjectsEXT',
+            'vkGetDescriptorEXT',
             ]
         # These VUIDS are not implicit, but are best handled in this layer. Codegen for vkDestroy calls will generate a key
         # which is translated here into a good VU.  Saves ~40 checks.
@@ -393,6 +394,9 @@ class ObjectTrackerOutputGenerator(OutputGenerator):
         self.handle_parents = GetHandleParents(self.registry.tree)
         self.type_categories = GetTypeCategories(self.registry.tree)
         self.is_aliased_type = GetHandleAliased(self.registry.tree)
+
+        # Fix the parent of VkSwapchainKHR
+        self.handle_parents['VkSwapchainKHR'] = 'VkDevice'
 
         header_file = (genOpts.filename == 'object_tracker.h')
         source_file = (genOpts.filename == 'object_tracker.cpp')
@@ -841,6 +845,8 @@ class ObjectTrackerOutputGenerator(OutputGenerator):
                 manual_vuid_index = parent_name + '-' + obj_name
                 param_vuid = self.manual_vuids.get(manual_vuid_index, "kVUIDUndefined")
             pre_call_code += '%s%sskip |= ValidateObject(%s%s, %s, %s, %s, %s);\n' % (bonus_indent, indent, prefix, obj_name, self.GetVulkanObjType(obj_type), null_allowed, param_vuid, parent_vuid)
+            if 'pSampler' in obj_name:
+                pre_call_code = ''
         return pre_call_code
     #
     # first_level_param indicates if elements are passed directly into the function else they're below a ptr/struct

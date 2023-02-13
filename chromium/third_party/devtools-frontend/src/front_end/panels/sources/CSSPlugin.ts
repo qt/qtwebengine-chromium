@@ -93,7 +93,8 @@ function findColorsAndCurves(
     state: CodeMirror.EditorState,
     from: number,
     to: number,
-    onColor: (pos: number, color: Common.Color.Color, text: string) => void,
+    // TODO(crbug/1385379): Remove `null` from here and use `color` after implementing changes in Color class
+    onColor: (pos: number, parsedColor: Common.Color.Legacy, text: string) => void,
     onCurve: (pos: number, curve: UI.Geometry.CubicBezier, text: string) => void,
     ): void {
   let line = state.doc.lineAt(from);
@@ -115,11 +116,13 @@ function findColorsAndCurves(
       let content;
       if (node.name === 'ValueName' || node.name === 'ColorLiteral') {
         content = getToken(node.from, node.to);
-      } else if (node.name === 'Callee' && /^(?:(?:rgb|hsl)a?|cubic-bezier)$/.test(getToken(node.from, node.to))) {
+      } else if (
+          node.name === 'Callee' &&
+          /^(?:(?:rgba?|hsla?|lch|oklch|lab|oklab|color)|cubic-bezier)$/.test(getToken(node.from, node.to))) {
         content = state.sliceDoc(node.from, (node.node.parent as CodeMirror.SyntaxNode).to);
       }
       if (content) {
-        const parsedColor = Common.Color.Color.parse(content);
+        const parsedColor = Common.Color.parse(content)?.asLegacyColor();
         if (parsedColor) {
           onColor(node.from, parsedColor, content);
         } else {
@@ -134,7 +137,7 @@ function findColorsAndCurves(
 }
 
 class ColorSwatchWidget extends CodeMirror.WidgetType {
-  constructor(readonly color: Common.Color.Color, readonly text: string) {
+  constructor(readonly color: Common.Color.Legacy, readonly text: string) {
     super();
   }
 
@@ -211,7 +214,7 @@ type ActiveTooltip = {
   type: TooltipType.Color,
   pos: number,
   text: string,
-  color: Common.Color.Color,
+  color: Common.Color.Legacy,
   swatch: InlineEditor.ColorSwatch.ColorSwatch,
 }|{
   type: TooltipType.Curve,
@@ -315,8 +318,8 @@ function computeSwatchDeco(state: CodeMirror.EditorState, from: number, to: numb
   const builder = new CodeMirror.RangeSetBuilder<CodeMirror.Decoration>();
   findColorsAndCurves(
       state, from, to,
-      (pos, color, text) => {
-        builder.add(pos, pos, CodeMirror.Decoration.widget({widget: new ColorSwatchWidget(color, text)}));
+      (pos, parsedColor, colorText) => {
+        builder.add(pos, pos, CodeMirror.Decoration.widget({widget: new ColorSwatchWidget(parsedColor, colorText)}));
       },
       (pos, curve, text) => {
         builder.add(pos, pos, CodeMirror.Decoration.widget({widget: new CurveSwatchWidget(curve, text)}));
@@ -407,11 +410,11 @@ export class CSSPlugin extends Plugin implements SDK.TargetManager.SDKModelObser
   }
 
   static accepts(uiSourceCode: Workspace.UISourceCode.UISourceCode): boolean {
-    return uiSourceCode.contentType().isStyleSheet();
+    return uiSourceCode.contentType().hasStyleSheets();
   }
 
   modelAdded(cssModel: SDK.CSSModel.CSSModel): void {
-    if (this.#cssModel) {
+    if (cssModel.target() !== SDK.TargetManager.TargetManager.instance().mainFrameTarget()) {
       return;
     }
     this.#cssModel = cssModel;

@@ -1,4 +1,4 @@
-// Copyright 2014 PDFium Authors. All rights reserved.
+// Copyright 2014 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -218,13 +218,6 @@ void FFLCommon(FPDF_FORMHANDLE hHandle,
     if (pPageView)
       pPageView->PageView_OnDraw(pDevice.get(), matrix, &options, rect);
   }
-
-#if defined(_SKIA_SUPPORT_PATHS_)
-  if (CFX_DefaultRenderDevice::SkiaPathsIsDefaultRenderer()) {
-    pDevice->Flush(true);
-    holder->UnPreMultiply();
-  }
-#endif
 }
 
 // Returns true if formfill version is correctly set. See |version| in

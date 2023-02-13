@@ -56,6 +56,7 @@ class Resource : angle::NonCopyable
     bool hasPendingWorks(Context *context) const;
 
     void setUsedByCommandBufferWithQueueSerial(uint64_t serial, bool writing);
+    void setWrittenToByRenderEncoder(uint64_t serial);
 
     uint64_t getCommandBufferQueueSerial() const { return mUsageRef->cmdBufferQueueSerial; }
 
@@ -70,6 +71,15 @@ class Resource : angle::NonCopyable
 
     bool isCPUReadMemDirty() const { return mUsageRef->cpuReadMemDirty; }
     void resetCPUReadMemDirty() { mUsageRef->cpuReadMemDirty = false; }
+
+    bool getLastWritingRenderEncoderSerial() const
+    {
+        return mUsageRef->lastWritingRenderEncoderSerial;
+    }
+    void setLastWritingRenderEncoderSerial(uint64_t serial) const
+    {
+        mUsageRef->lastWritingRenderEncoderSerial = serial;
+    }
 
     virtual size_t estimatedByteSize() const = 0;
     virtual id getID() const                 = 0;
@@ -98,6 +108,9 @@ class Resource : angle::NonCopyable
 
         // This flag is useful for BufferMtl to know whether it should update the shadow copy
         bool cpuReadMemDirty = false;
+
+        // The id of the last render encoder to write to this resource
+        uint64_t lastWritingRenderEncoderSerial = 0;
     };
 
     // One resource object might just be a view of another resource. For example, a texture 2d
@@ -172,6 +185,8 @@ class Texture final : public Resource,
     // Allow shaders to read/sample this texture?
     // Texture created with renderTargetOnly flag won't be readable
     bool isShaderReadable() const;
+    // Allow shaders to write this texture?
+    bool isShaderWritable() const;
 
     bool supportFormatView() const;
 
@@ -206,6 +221,10 @@ class Texture final : public Resource,
     TextureRef createMipView(const MipmapNativeLevel &level);
     // Create a view with different format
     TextureRef createViewWithDifferentFormat(MTLPixelFormat format);
+    // Create a view for a shader image binding.
+    TextureRef createShaderImageView(const MipmapNativeLevel &level,
+                                     int layer,
+                                     MTLPixelFormat format);
     // Same as above but the target format must be compatible, for example sRGB to linear. In this
     // case texture doesn't need format view usage flag.
     TextureRef createViewWithCompatibleFormat(MTLPixelFormat format);
@@ -321,6 +340,13 @@ class Texture final : public Resource,
     Texture(Texture *original, MTLPixelFormat format);
     Texture(Texture *original, MTLTextureType type, NSRange mipmapLevelRange, NSRange slices);
     Texture(Texture *original, const TextureSwizzleChannels &swizzle);
+
+    // Creates a view for a shader image binding.
+    Texture(Texture *original,
+            MTLTextureType type,
+            const MipmapNativeLevel &level,
+            int layer,
+            MTLPixelFormat pixelFormat);
 
     void syncContentIfNeeded(ContextMtl *context);
 

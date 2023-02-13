@@ -600,7 +600,6 @@ def main():
         ],
         'license_text': [
             'LICENSE',
-            'src/common/third_party/smhasher/LICENSE',
             'src/common/third_party/xxhash/LICENSE',
             'src/libANGLE/renderer/vulkan/shaders/src/third_party/ffx_spd/LICENSE',
             'src/tests/test_utils/third_party/LICENSE',
@@ -666,7 +665,6 @@ def main():
                 "--extra-packages com.android.angle.common",
             ],
             'srcs': [':ANGLE_srcs'],
-            'plugins': ['java_api_finder',],
             'privileged': True,
             'product_specific': True,
             'owner': 'google',

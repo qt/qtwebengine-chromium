@@ -48,6 +48,7 @@ class TextureProxyView;
 class DrawContext final : public SkRefCnt {
 public:
     static sk_sp<DrawContext> Make(sk_sp<TextureProxy> target,
+                                   SkISize deviceSize,
                                    const SkColorInfo&,
                                    const SkSurfaceProps&);
 
@@ -77,7 +78,8 @@ public:
                       sk_sp<TextureProxy> targetProxy,
                       SkColorType colorType,
                       const std::vector<MipLevel>& levels,
-                      const SkIRect& dstRect);
+                      const SkIRect& dstRect,
+                      std::unique_ptr<ConditionalUploadContext>);
 
 #ifdef SK_ENABLE_PIET_GPU
     bool recordPietSceneRender(Recorder* recorder,

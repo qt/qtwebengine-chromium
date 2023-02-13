@@ -285,6 +285,8 @@ class ConvertableToTraceFormat {
  * V8 Tracing controller.
  *
  * Can be implemented by an embedder to record trace events from V8.
+ *
+ * Will become obsolete in Perfetto SDK build (v8_use_perfetto = true).
  */
 class TracingController {
  public:
@@ -348,10 +350,16 @@ class TracingController {
     virtual void OnTraceDisabled() = 0;
   };
 
-  /** Adds tracing state change observer. */
+  /**
+   * Adds tracing state change observer.
+   * Does nothing in Perfetto SDK build (v8_use_perfetto = true).
+   */
   virtual void AddTraceStateObserver(TraceStateObserver*) {}
 
-  /** Removes tracing state change observer. */
+  /**
+   * Removes tracing state change observer.
+   * Does nothing in Perfetto SDK build (v8_use_perfetto = true).
+   */
   virtual void RemoveTraceStateObserver(TraceStateObserver*) {}
 };
 
@@ -923,6 +931,7 @@ class Platform {
 
   /**
    * Allows the embedder to manage memory page allocations.
+   * Returning nullptr will cause V8 to use the default page allocator.
    */
   virtual PageAllocator* GetPageAllocator() = 0;
 

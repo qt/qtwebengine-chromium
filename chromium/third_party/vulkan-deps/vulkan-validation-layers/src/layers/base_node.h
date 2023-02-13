@@ -79,6 +79,10 @@ class BASE_NODE : public std::enable_shared_from_this<BASE_NODE> {
     // returns true if this vulkan object or any it uses have been destroyed
     virtual bool Invalid() const { return Destroyed(); }
 
+    // Save the tedium of two part testing...
+    static bool Invalid(const BASE_NODE *node) { return !node || node->Destroyed(); }
+    static bool Invalid(const std::shared_ptr<const BASE_NODE> &node) { return !node || node->Destroyed(); }
+
     const VulkanTypedHandle &Handle() const { return handle_; }
     VulkanObjectType Type() const { return handle_.type; }
 
@@ -123,7 +127,7 @@ class BASE_NODE : public std::enable_shared_from_this<BASE_NODE> {
     // parent nodes should form a tree with the root being a command buffer.
     NodeMap parent_nodes_;
     // Lock guarding parent_nodes_, this lock MUST NOT be used for other purposes.
-    mutable ReadWriteLock tree_lock_;
+    mutable std::shared_mutex tree_lock_;
 };
 
 class REFCOUNTED_NODE : public BASE_NODE {

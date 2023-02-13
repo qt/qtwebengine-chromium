@@ -7,7 +7,7 @@
 # Layer Interface to the Loader
 [![Creative Commons][3]][4]
 
-<!-- Copyright &copy; 2015-2021 LunarG, Inc. -->
+<!-- Copyright &copy; 2015-2022 LunarG, Inc. -->
 
 [3]: https://i.creativecommons.org/l/by-nd/4.0/88x31.png "Creative Commons License"
 [4]: https://creativecommons.org/licenses/by-nd/4.0/
@@ -25,6 +25,11 @@
   - [Fuchsia Layer Discovery](#fuchsia-layer-discovery)
   - [macOS Layer Discovery](#macos-layer-discovery)
     - [Example macOS Implicit Layer Search Path](#example-macos-implicit-layer-search-path)
+  - [Layer Filtering](#layer-filtering)
+    - [Layer Enable Filtering](#layer-enable-filtering)
+    - [Layer Disable Filtering](#layer-disable-filtering)
+    - [Layer Special Case Disable](#layer-special-case-disable)
+    - [Layer Disable Warning](#layer-disable-warning)
   - [Exception for Elevated Privileges](#exception-for-elevated-privileges)
 - [Layer Version Negotiation](#layer-version-negotiation)
 - [Layer Call Chains and Distributed Dispatch](#layer-call-chains-and-distributed-dispatch)
@@ -335,6 +340,9 @@ provided by the standard explicit layer paths mentioned above.
 The paths provided by `VK_ADD_LAYER_PATH` are added before the standard list
 of search folders and will therefore be searched first.
 
+If `VK_LAYER_PATH` is present, then `VK_ADD_LAYER_PATH` will not be used by the
+loader and any values will be ignored.
+
 For security reasons, both `VK_LAYER_PATH` and `VK_ADD_LAYER_PATH` are ignored
 if running with elevated privileges.
 See [Exception for Elevated Privileges](#exception-for-elevated-privileges)
@@ -412,14 +420,106 @@ following:
   /usr/share/vulkan/implicit_layer.d
 ```
 
+### Layer Filtering
+
+**NOTE:** This functionality is only available with Loaders built with version
+1.3.234 of the Vulkan headers and later.
+
+The loader supports filter environment variables which can forcibly enable and
+disable known layers.
+Known layers are those that are already found by the loader taking into account
+default search paths and other environment variables
+(like `VK_LAYER_PATH` or `VK_ADD_LAYER_PATH`).
+
+The filter variables will be compared against the layer name provided in the
+layer's manifest file.
+
+The filters must also follow the behaviors define in the
+[Filter Environment Variable Behaviors](LoaderInterfaceArchitecture.md#filter-environment-variable-behaviors)
+section of the [LoaderLayerInterface](LoaderLayerInterface.md) document.
+
+#### Layer Enable Filtering
+
+The layer enable environment variable `VK_LOADER_LAYERS_ENABLE` is a
+comma-delimited list of globs to search for in known layers.
+The layer names are compared against the globs listed in the environment
+variable, and if they match, they will automatically be added to the enabled
+layer list in the loader for each application.
+These layers are enabled after implicit layers but before other explicit layers.
+
+When a layer is enabled using the `VK_LOADER_LAYERS_ENABLE` filter, and
+loader logging is set to emit either warnings or layer messages, then a message
+will show for each layer that has been forced on.
+This message will look like the following:
+
+```
+WARNING | LAYER:  Layer "VK_LAYER_LUNARG_wrap_objects" force enabled due to env var 'VK_LOADER_LAYERS_ENABLE'
+```
+
+#### Layer Disable Filtering
+
+The layer disable environment variable `VK_LOADER_LAYERS_DISABLE` is a
+comma-delimited list of globs to search for in known layers.
+The layer names are compared against the globs listed in the environment
+variable, and if they match, they will automatically be disabled (whether or not
+the layer is Implicit or Explicit).
+This means that they will not be added to the enabled layer list in the loader
+for each application.
+This could mean that layers requested by an application are also not enabled
+such as `VK_KHRONOS_LAYER_synchronization2` which could cause some applications
+to misbehave.
+
+When a layer is disabled using the `VK_LOADER_LAYERS_DISABLE` filter, and
+loader logging is set to emit either warnings or layer messages, then a message
+will show for each layer that has been forcibly disabled.
+This message will look like the following:
+
+```
+WARNING | LAYER:  Layer "VK_LAYER_LUNARG_wrap_objects" disabled because name matches filter of env var 'VK_LOADER_LAYERS_DISABLE'
+```
+
+#### Layer Special Case Disable
+
+Because there are different types of layers, there are 3 additional special
+disable options available when using the `VK_LOADER_LAYERS_DISABLE` environment
+variable.
+
+These are:
+
+  * `~all~`
+  * `~implicit~`
+  * `~explicit~`
+
+`~all~` will effectively disable every layer.
+This enables a developer to disable all layers on the system.
+`~implicit~` will effectively disable every implicit layer (leaving explicit
+layers still present in the application call chain).
+`~explicit~` will effectively disable every explicit layer (leaving implicit
+layers still present in the application call chain).
+
+#### Layer Disable Warning
+
+Disabling layers, whether just through normal usage of
+`VK_LOADER_LAYERS_DISABLE` or by evoking one of the special disable options like
+`~all~` or `~explicit~` could cause application breakage if the application is
+relying on features provided by one or more explicit layers.
+
+##### VK_INSTANCE_LAYERS
+
+The original `VK_INSTANCE_LAYERS` can be viewed as a special case of the new
+`VK_LOADER_LAYERS_ENABLE`.
+Because of this, any layers enabled via `VK_INSTANCE_LAYERS` will be treated the
+same as layers enabled with `VK_LOADER_LAYERS_ENABLE` and will therefore
+override any disables supplied in `VK_LOADER_LAYERS_DISABLE`.
+
 ### Exception for Elevated Privileges
 
-There is an exception to when either `VK_LAYER_PATH` or `VK_ADD_LAYER_PATH` are
-available for use.
-For security reasons, both `VK_LAYER_PATH` and `VK_ADD_LAYER_PATH` are ignored
-if running the Vulkan application with elevated privileges.
-Because of this, both `VK_LAYER_PATH` and `VK_ADD_LAYER_PATH` can only be used
-for applications that do not use elevated privileges.
+For security reasons, `VK_LAYER_PATH` and `VK_ADD_LAYER_PATH` are ignored if
+running the Vulkan application with elevated privileges.
+This is because they may insert new libraries into the executable process that
+are not normally found by the loader.
+Because of this, these environment variables can only be used for applications
+that do not use elevated privileges.
 
 For more information see
 [Elevated Privilege Caveats](LoaderInterfaceArchitecture.md#elevated-privilege-caveats)
@@ -630,7 +730,8 @@ chain_info->u.pLayerInfo->pfnNextGetPhysicalDeviceProcAddr
 `vk_layerGetPhysicalDeviceProcAddr`.
 
 If a layer intends to support functions that take VkPhysicalDevice as the
-dispatchable parameter, then layer should support `vk_layerGetPhysicalDeviceProcAddr`.
+dispatchable parameter, then layer should support
+`vk_layerGetPhysicalDeviceProcAddr`.
 This is because if these functions aren't known to the loader, such as those
 from unreleased extensions or because the loader is an older build thus doesn't
 know about them _yet_, the loader won't be able to distinguish whether this is
@@ -658,8 +759,8 @@ function, and set up a generic terminator which will pass it to the proper
 driver.
  4. Call down using `GetInstanceProcAddr`
     - If it returns non-NULL, treat it as an unknown logical device command.
-This means setting up a generic trampoline function that takes in a `VkDevice` as
-the first parameter and adjusting the dispatch table to call the
+This means setting up a generic trampoline function that takes in a `VkDevice`
+as the first parameter and adjusting the dispatch table to call the
 driver/layer's function after getting the dispatch table from the `VkDevice`.
 Then, return the pointer to corresponding trampoline function.
  5. Return NULL
@@ -714,7 +815,8 @@ function.
 corresponding Vulkan function in the next entity.
     * The common behavior for a layer is to intercept a call, perform some
 behavior, then pass it down to the next entity.
-      * If a layer doesn't pass the information down, undefined behavior may occur.
+      * If a layer doesn't pass the information down, undefined behavior may
+        occur.
       * This is because the function will not be received by layers further
 down the chain, or any drivers.
     * One function that **must never call down the chain** is:
@@ -1083,8 +1185,8 @@ Please refer to that documentation for more information.
 
 Vulkan includes a small number of functions which are called without any
 dispatchable object.
-<b>Most layers do not intercept these functions</b>, as layers are enabled when an
-instance is created.
+<b>Most layers do not intercept these functions</b>, as layers are enabled when
+an instance is created.
 However, under certain conditions it is possible for a layer to intercept
 these functions.
 
@@ -1411,7 +1513,8 @@ are in the blacklist will not be enabled.
 
 * The `app_keys` member of the override meta layer will make a meta layer apply
 to only applications found in this list.
-If there are any items in the app keys list, the meta layer isn't enabled for any application except those found in the list.
+If there are any items in the app keys list, the meta layer isn't enabled for
+any application except those found in the list.
 
 * The `override_paths` member of the override meta layer, if present, will
 replace the search paths the loader uses to find component layers.
@@ -1539,7 +1642,7 @@ Here's an example of a meta-layer manifest file:
         supports.
         It does not require the application to make use of that API version.
         It simply is an indication that the layer can support Vulkan API
-        instance and device functions up to and including that API version. </br>
+        instance and device functions up to and including that API version.</br>
         For example: 1.0.33.
     </td>
     <td>None</td>
@@ -1837,8 +1940,8 @@ loader needs to query using OS-specific calls.
       - NOTE: This is an optional field and, as the two previous fields, only
 needed if the layer requires changing the name of the function for some reason.
 
-The layer manifest file does not need to to be updated if the names of any listed
-functions has not changed.
+The layer manifest file does not need to to be updated if the names of any
+listed functions has not changed.
 
 #### Layer Manifest File Version 1.0.1
 
@@ -1878,7 +1981,7 @@ The following sections detail the differences between the various versions.
 ### Layer Interface Version 2
 
 Introduced the concept of
-[loader and layer interface](#layer-version-negotiation) using the new
+[loader and layer interface](#layer-version-negotiation) using the
 `vkNegotiateLoaderLayerInterfaceVersion` function.
 Additionally, it introduced the concept of
 [Layer Unknown Physical Device Extensions](#layer-unknown-physical-device-extensions)

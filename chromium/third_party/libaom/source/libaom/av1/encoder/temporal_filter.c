@@ -187,7 +187,7 @@ static void tf_motion_search(AV1_COMP *cpi, MACROBLOCK *mb,
     block_mv = best_mv.as_mv;
     *ref_mv = best_mv.as_mv;
     // On 4 sub-blocks.
-    const BLOCK_SIZE subblock_size = ss_size_lookup[block_size][1][1];
+    const BLOCK_SIZE subblock_size = av1_ss_size_lookup[block_size][1][1];
     const int subblock_height = block_size_high[subblock_size];
     const int subblock_width = block_size_wide[subblock_size];
     const int subblock_pels = subblock_height * subblock_width;
@@ -1040,7 +1040,7 @@ static void tf_setup_filtering_buffer(AV1_COMP *cpi,
   num_frames = AOMMIN(num_frames + adjust_num, lookahead_depth);
 
   if (frame_type == KEY_FRAME) {
-    num_before = is_forward_keyframe ? num_frames / 2 : 0;
+    num_before = AOMMIN(is_forward_keyframe ? num_frames / 2 : 0, max_before);
     num_after = AOMMIN(num_frames - 1, max_after);
   } else {
     int gfu_boost = av1_calc_arf_boost(&cpi->ppi->twopass, &cpi->twopass_frame,

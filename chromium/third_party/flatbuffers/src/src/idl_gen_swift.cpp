@@ -27,7 +27,9 @@ namespace flatbuffers {
 
 namespace swift {
 
-Namer::Config SwiftDefaultConfig() {
+namespace {
+
+static Namer::Config SwiftDefaultConfig() {
   return { /*types=*/Case::kKeep,
            /*constants=*/Case::kLowerCamel,
            /*methods=*/Case::kLowerCamel,
@@ -50,7 +52,7 @@ Namer::Config SwiftDefaultConfig() {
            /*filename_extension=*/".swift" };
 }
 
-std::set<std::string> SwiftKeywords() {
+static std::set<std::string> SwiftKeywords() {
   return {
     "associatedtype",
     "class",
@@ -134,15 +136,17 @@ std::set<std::string> SwiftKeywords() {
   };
 }
 
-inline std::string GenIndirect(const std::string &reading) {
+static std::string GenIndirect(const std::string &reading) {
   return "{{ACCESS}}.indirect(" + reading + ")";
 }
 
-inline std::string GenArrayMainBody(const std::string &optional) {
+static std::string GenArrayMainBody(const std::string &optional) {
   return "{{ACCESS_TYPE}} func {{FIELDMETHOD}}(at index: Int32) -> "
          "{{VALUETYPE}}" +
          optional + " { ";
 }
+
+} // namespace
 
 class SwiftGenerator : public BaseGenerator {
  private:
@@ -835,6 +839,9 @@ class SwiftGenerator : public BaseGenerator {
     std::string const_string = "return o == 0 ? {{CONSTANT}} : ";
     const auto vectortype = field.value.type.VectorType();
     code_.SetValue("SIZE", NumToString(InlineSize(vectortype)));
+    code_.SetValue("HAS_FIELDVAR", namer_.Variable("has", field));
+    code_ += "{{ACCESS_TYPE}} var {{HAS_FIELDVAR}}: Bool { " + GenOffset() +
+             "return o == 0 ? false : true }";
     code_ += "{{ACCESS_TYPE}} var {{FIELDVAR}}Count: Int32 { " + GenOffset() +
              "return o == 0 ? 0 : {{ACCESS}}.vector(count: o) }";
     code_.SetValue("CONSTANT", IsScalar(vectortype.base_type) ? "0" : "nil");
@@ -1191,7 +1198,8 @@ class SwiftGenerator : public BaseGenerator {
 
   void GenEnum(const EnumDef &enum_def) {
     if (enum_def.generated) return;
-    const auto is_private_access = enum_def.attributes.Lookup("private");
+    const bool is_private_access = parser_.opts.swift_implementation_only ||
+       enum_def.attributes.Lookup("private") != nullptr;
     code_.SetValue("ENUM_TYPE",
                    enum_def.is_union ? "UnionEnum" : "Enum, Verifiable");
     code_.SetValue("ACCESS_TYPE", is_private_access ? "internal" : "public");
@@ -1866,7 +1874,7 @@ class SwiftGenerator : public BaseGenerator {
   }
 
   std::string ValidateFunc() {
-    return "static func validateVersion() { FlatBuffersVersion_2_0_0() }";
+    return "static func validateVersion() { FlatBuffersVersion_22_9_29() }";
   }
 
   std::string GenType(const Type &type,

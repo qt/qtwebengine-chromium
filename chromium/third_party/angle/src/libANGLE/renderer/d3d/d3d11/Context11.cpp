@@ -11,6 +11,7 @@
 
 #include "common/entry_points_enum_autogen.h"
 #include "common/string_utils.h"
+#include "image_util/loadimage.h"
 #include "libANGLE/Context.h"
 #include "libANGLE/Context.inl.h"
 #include "libANGLE/MemoryProgramCache.h"
@@ -861,9 +862,9 @@ const gl::Limitations &Context11::getNativeLimitations() const
     return mRenderer->getNativeLimitations();
 }
 
-ShPixelLocalStorageType Context11::getNativePixelLocalStorageType() const
+const ShPixelLocalStorageOptions &Context11::getNativePixelLocalStorageOptions() const
 {
-    return mRenderer->getNativePixelLocalStorageType();
+    return mRenderer->getNativePixelLocalStorageOptions();
 }
 
 angle::Result Context11::dispatchCompute(const gl::Context *context,
@@ -1044,5 +1045,10 @@ void Context11::handleResult(HRESULT hr,
     errorStream << ": " << message;
 
     mErrors->handleError(glErrorCode, errorStream.str().c_str(), file, function, line);
+}
+
+angle::ImageLoadContext Context11::getImageLoadContext() const
+{
+    return getRenderer()->getDisplay()->getImageLoadContext();
 }
 }  // namespace rx

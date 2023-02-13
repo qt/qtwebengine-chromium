@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright 2017 The PDFium Authors. All rights reserved.
+# Copyright 2017 The PDFium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 """Verifies exported functions in public/*.h are in fpdf_view_c_api_test.c.
@@ -11,8 +11,6 @@ duplicates, and they match each other. It also checks that the order in
 fpdf_view_c_api_test.c is alphabetical within each section.
 
 """
-
-from __future__ import print_function
 
 import os
 import re

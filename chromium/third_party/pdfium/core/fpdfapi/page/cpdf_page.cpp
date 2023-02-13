@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2016 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,6 +11,7 @@
 
 #include "constants/page_object.h"
 #include "core/fpdfapi/page/cpdf_contentparser.h"
+#include "core/fpdfapi/page/cpdf_pageimagecache.h"
 #include "core/fpdfapi/page/cpdf_pageobject.h"
 #include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
@@ -48,7 +49,7 @@ CPDFXFA_Page* CPDF_Page::AsXFAPage() {
 }
 
 CPDF_Document* CPDF_Page::GetDocument() const {
-  return m_pPDFDocument.Get();
+  return m_pPDFDocument;
 }
 
 float CPDF_Page::GetPageWidth() const {
@@ -88,7 +89,7 @@ RetainPtr<const CPDF_Object> CPDF_Page::GetPageAttr(
       return pObj;
 
     visited.insert(pPageDict);
-    pPageDict = pPageDict->GetDictFor(pdfium::page_object::kParent).Get();
+    pPageDict = pPageDict->GetDictFor(pdfium::page_object::kParent);
   }
   return nullptr;
 }
@@ -193,6 +194,10 @@ RetainPtr<CPDF_Array> CPDF_Page::GetMutableAnnotsArray() {
 
 RetainPtr<const CPDF_Array> CPDF_Page::GetAnnotsArray() const {
   return GetDict()->GetArrayFor("Annots");
+}
+
+void CPDF_Page::AddPageImageCache() {
+  m_pPageImageCache = std::make_unique<CPDF_PageImageCache>(this);
 }
 
 void CPDF_Page::SetRenderContext(std::unique_ptr<RenderContextIface> pContext) {

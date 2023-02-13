@@ -1,4 +1,4 @@
-// Copyright 2019 PDFium Authors. All rights reserved.
+// Copyright 2019 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -26,6 +26,7 @@
 #include "core/fpdfapi/render/cpdf_renderoptions.h"
 #include "core/fxcrt/fx_safe_types.h"
 #include "core/fxcrt/fx_system.h"
+#include "core/fxcrt/span_util.h"
 #include "core/fxge/cfx_defaultrenderdevice.h"
 #include "core/fxge/cfx_fillrenderoptions.h"
 #include "core/fxge/cfx_path.h"
@@ -820,11 +821,12 @@ void DrawCoonPatchMeshes(
       for (i = 0; i < 4; i++) {
         tempCoords[i] = coords[(flag * 3 + i) % 12];
       }
-      memcpy(coords, tempCoords, sizeof(tempCoords));
-      CoonColor tempColors[2];
-      tempColors[0] = patch.patch_colors[flag];
-      tempColors[1] = patch.patch_colors[(flag + 1) % 4];
-      memcpy(patch.patch_colors, tempColors, sizeof(CoonColor) * 2);
+      fxcrt::spancpy(pdfium::make_span(coords), pdfium::make_span(tempCoords));
+      CoonColor tempColors[2] = {
+          tempColors[0] = patch.patch_colors[flag],
+          tempColors[1] = patch.patch_colors[(flag + 1) % 4]};
+      fxcrt::spancpy(pdfium::make_span(patch.patch_colors),
+                     pdfium::make_span(tempColors));
     }
     for (i = iStartPoint; i < point_count; i++) {
       if (!stream.CanReadCoords())
@@ -907,8 +909,8 @@ void CPDF_RenderShading::Draw(CFX_RenderDevice* pDevice,
   }
   bool bAlphaMode = options.ColorModeIs(CPDF_RenderOptions::kAlpha);
   if (pDevice->GetDeviceCaps(FXDC_RENDER_CAPS) & FXRC_SHADING &&
-      pDevice->GetDeviceDriver()->DrawShading(
-          pPattern, &mtMatrix, clip_rect_bbox, alpha, bAlphaMode)) {
+      pDevice->DrawShading(pPattern, &mtMatrix, clip_rect_bbox, alpha,
+                           bAlphaMode)) {
     return;
   }
   CPDF_DeviceBuffer buffer(pContext, pDevice, clip_rect_bbox, pCurObj, 150);
@@ -916,7 +918,7 @@ void CPDF_RenderShading::Draw(CFX_RenderDevice* pDevice,
     return;
 
   RetainPtr<CFX_DIBitmap> pBitmap = buffer.GetBitmap();
-  if (!pBitmap->GetBuffer())
+  if (pBitmap->GetBuffer().empty())
     return;
 
   pBitmap->Clear(background);

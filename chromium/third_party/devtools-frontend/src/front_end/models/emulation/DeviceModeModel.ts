@@ -75,7 +75,7 @@ const UIStrings = {
 const str_ = i18n.i18n.registerUIStrings('models/emulation/DeviceModeModel.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 
-let deviceModeModelInstance: DeviceModeModel;
+let deviceModeModelInstance: DeviceModeModel|null;
 
 export class DeviceModeModel extends Common.ObjectWrapper.ObjectWrapper<EventTypes> implements
     SDK.TargetManager.SDKModelObserver<SDK.EmulationModel.EmulationModel> {
@@ -118,7 +118,8 @@ export class DeviceModeModel extends Common.ObjectWrapper.ObjectWrapper<EventTyp
     this.#appliedDeviceScaleFactorInternal = window.devicePixelRatio;
     this.#appliedUserAgentTypeInternal = UA.Desktop;
     this.#experimentDualScreenSupport = Root.Runtime.experiments.isEnabled('dualScreenSupport');
-    this.#webPlatformExperimentalFeaturesEnabledInternal = 'segments' in window.visualViewport;
+    this.#webPlatformExperimentalFeaturesEnabledInternal =
+        window.visualViewport ? 'segments' in window.visualViewport : false;
 
     this.#scaleSettingInternal = Common.Settings.Settings.instance().createSetting('emulation.deviceScale', 1);
     // We've used to allow zero before.
@@ -171,10 +172,8 @@ export class DeviceModeModel extends Common.ObjectWrapper.ObjectWrapper<EventTyp
     SDK.TargetManager.TargetManager.instance().observeModels(SDK.EmulationModel.EmulationModel, this);
   }
 
-  static instance(opts: {
-    forceNew: null,
-  } = {forceNew: null}): DeviceModeModel {
-    if (!deviceModeModelInstance || opts.forceNew) {
+  static instance(opts?: {forceNew: boolean}): DeviceModeModel {
+    if (!deviceModeModelInstance || opts?.forceNew) {
       deviceModeModelInstance = new DeviceModeModel();
     }
 
@@ -415,7 +414,8 @@ export class DeviceModeModel extends Common.ObjectWrapper.ObjectWrapper<EventTyp
   }
 
   modelAdded(emulationModel: SDK.EmulationModel.EmulationModel): void {
-    if (!this.#emulationModel && emulationModel.supportsDeviceEmulation()) {
+    if (emulationModel.target() === SDK.TargetManager.TargetManager.instance().mainFrameTarget() &&
+        emulationModel.supportsDeviceEmulation()) {
       this.#emulationModel = emulationModel;
       if (this.#onModelAvailable) {
         const callback = this.#onModelAvailable;

@@ -25,6 +25,8 @@
 #include <limits>
 #include <new>
 
+#if !defined(SK_ENABLE_OPTIMIZE_SIZE)
+
 //////////////////////////////////////////////////////////////////////////////////
 // Helper data structures and functions
 
@@ -1335,7 +1337,7 @@ bool SkOffsetSimplePolygon(const SkPoint* inputPolygonVerts, int inputPolygonSiz
     edgeData[0].fPrev = prevEdge;
 
     // now clip edges
-    SkASSERT(edgeData.count() == (int)numEdges);
+    SkASSERT(edgeData.size() == (int)numEdges);
     auto head = &edgeData[0];
     auto currEdge = head;
     unsigned int offsetVertexCount = numEdges;
@@ -1764,3 +1766,6 @@ bool SkTriangulateSimplePolygon(const SkPoint* polygonVerts, uint16_t* indexMap,
 
     return true;
 }
+
+#endif // !defined(SK_ENABLE_OPTIMIZE_SIZE)
+

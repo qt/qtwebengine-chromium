@@ -32,9 +32,6 @@
 #include <sys/stat.h>
 
 #include <vulkan/vk_layer.h>
-// sdk_platform header redefines NOMINMAX
-#undef NOMINMAX
-#include <vulkan/vk_sdk_platform.h>
 #include "vk_layer_utils.h"
 
 #if defined(_WIN32)
@@ -139,14 +136,14 @@ VK_LAYER_EXPORT FILE *getLayerLogOutput(const char *option, const char *layer_na
 }
 
 // Map option strings to flag enum values
-VK_LAYER_EXPORT VkFlags GetLayerOptionFlags(string option, layer_data::unordered_map<string, VkFlags> const &enum_data,
+VK_LAYER_EXPORT VkFlags GetLayerOptionFlags(const string &option, layer_data::unordered_map<string, VkFlags> const &enum_data,
                                             uint32_t option_default) {
     VkDebugReportFlagsEXT flags = option_default;
     string option_list = layer_config.GetOption(option.c_str());
 
     while (option_list.length() != 0) {
         // Find length of option string
-        std::size_t option_length = option_list.find(",");
+        std::size_t option_length = option_list.find(',');
         if (option_length == option_list.npos) {
             option_length = option_list.size();
         }
@@ -162,12 +159,12 @@ VK_LAYER_EXPORT VkFlags GetLayerOptionFlags(string option, layer_data::unordered
         // Remove first option from option_list
         option_list.erase(0, option_length);
         // Remove possible comma separator
-        std::size_t char_position = option_list.find(",");
+        std::size_t char_position = option_list.find(',');
         if (char_position == 0) {
             option_list.erase(char_position, 1);
         }
         // Remove possible space
-        char_position = option_list.find(" ");
+        char_position = option_list.find(' ');
         if (char_position == 0) {
             option_list.erase(char_position, 1);
         }

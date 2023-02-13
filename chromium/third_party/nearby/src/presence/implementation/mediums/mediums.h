@@ -15,7 +15,7 @@
 #ifndef THIRD_PARTY_NEARBY_PRESENCE_IMPLEMENTATION_MEDIUMS_MEDIUMS_H_
 #define THIRD_PARTY_NEARBY_PRESENCE_IMPLEMENTATION_MEDIUMS_MEDIUMS_H_
 
-#include "internal/platform/ble_v2.h"
+#include "internal/platform/bluetooth_adapter.h"
 #include "presence/implementation/mediums/ble.h"
 
 namespace nearby {
@@ -27,14 +27,12 @@ namespace presence {
  */
 class Mediums {
  public:
-  Mediums() = default;
-  ~Mediums() = default;
-
   // Returns a handle to the Ble medium.
-  Ble<location::nearby::BleV2Medium>& GetBle();
+  Ble& GetBle() { return ble_; }
 
  private:
-  Ble<location::nearby::BleV2Medium> ble_;
+  location::nearby::BluetoothAdapter adapter_;
+  Ble ble_{adapter_};
 };
 
 }  // namespace presence

@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2016 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -128,7 +128,7 @@ void GenerateAP(CPDF_Document* pDoc, CPDF_Dictionary* pAnnotDict) {
     return;
   }
 
-  CPDF_Object* pFieldTypeObj =
+  RetainPtr<const CPDF_Object> pFieldTypeObj =
       CPDF_FormField::GetFieldAttrForDict(pAnnotDict, pdfium::form_fields::kFT);
   if (!pFieldTypeObj)
     return;
@@ -140,7 +140,7 @@ void GenerateAP(CPDF_Document* pDoc, CPDF_Dictionary* pAnnotDict) {
     return;
   }
 
-  CPDF_Object* pFieldFlagsObj =
+  RetainPtr<const CPDF_Object> pFieldFlagsObj =
       CPDF_FormField::GetFieldAttrForDict(pAnnotDict, pdfium::form_fields::kFf);
   uint32_t flags = pFieldFlagsObj ? pFieldFlagsObj->GetInteger() : 0;
   if (field_type == pdfium::form_fields::kCh) {
@@ -192,20 +192,19 @@ CPDF_AnnotList::CPDF_AnnotList(CPDF_Page* pPage)
       // provides its own Popup annotations.
       continue;
     }
-    pAnnots->ConvertToIndirectObjectAt(i, m_pDocument.Get());
-    m_AnnotList.push_back(
-        std::make_unique<CPDF_Annot>(pDict, m_pDocument.Get()));
+    pAnnots->ConvertToIndirectObjectAt(i, m_pDocument);
+    m_AnnotList.push_back(std::make_unique<CPDF_Annot>(pDict, m_pDocument));
     if (bRegenerateAP && subtype == "Widget" &&
         CPDF_InteractiveForm::IsUpdateAPEnabled() &&
         !pDict->GetDictFor(pdfium::annotation::kAP)) {
-      GenerateAP(m_pDocument.Get(), pDict.Get());
+      GenerateAP(m_pDocument, pDict.Get());
     }
   }
 
   m_nAnnotCount = m_AnnotList.size();
   for (size_t i = 0; i < m_nAnnotCount; ++i) {
     std::unique_ptr<CPDF_Annot> pPopupAnnot =
-        CreatePopupAnnot(m_pDocument.Get(), pPage, m_AnnotList[i].get());
+        CreatePopupAnnot(m_pDocument, pPage, m_AnnotList[i].get());
     if (pPopupAnnot)
       m_AnnotList.push_back(std::move(pPopupAnnot));
   }

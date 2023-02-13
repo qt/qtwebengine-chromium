@@ -15,6 +15,7 @@
 #include "VkSurfaceKHR.hpp"
 
 #include "Vulkan/VkDestroy.hpp"
+#include "Vulkan/VkStringify.hpp"
 
 #include <algorithm>
 
@@ -94,19 +95,19 @@ VkImage PresentImage::asVkImage() const
 	return image ? static_cast<VkImage>(*image) : VkImage({ VK_NULL_HANDLE });
 }
 
-uint32_t SurfaceKHR::getSurfaceFormatsCount() const
+uint32_t SurfaceKHR::getSurfaceFormatsCount(const void *pSurfaceInfoPNext) const
 {
 	return static_cast<uint32_t>(sizeof(surfaceFormats) / sizeof(surfaceFormats[0]));
 }
 
-VkResult SurfaceKHR::getSurfaceFormats(uint32_t *pSurfaceFormatCount, VkSurfaceFormatKHR *pSurfaceFormats) const
+VkResult SurfaceKHR::getSurfaceFormats(const void *pSurfaceInfoPNext, uint32_t *pSurfaceFormatCount, VkSurfaceFormat2KHR *pSurfaceFormats) const
 {
-	uint32_t count = getSurfaceFormatsCount();
+	uint32_t count = getSurfaceFormatsCount(pSurfaceInfoPNext);
 
 	uint32_t i;
 	for(i = 0; i < std::min(*pSurfaceFormatCount, count); i++)
 	{
-		pSurfaceFormats[i] = surfaceFormats[i];
+		pSurfaceFormats[i].surfaceFormat = surfaceFormats[i];
 	}
 
 	*pSurfaceFormatCount = i;
@@ -173,7 +174,7 @@ VkResult SurfaceKHR::getPresentRectangles(uint32_t *pRectCount, VkRect2D *pRects
 	}
 
 	VkSurfaceCapabilitiesKHR capabilities;
-	getSurfaceCapabilities(&capabilities);
+	getSurfaceCapabilities(nullptr, &capabilities, nullptr);
 
 	pRects[0].offset = { 0, 0 };
 	pRects[0].extent = capabilities.currentExtent;
@@ -182,7 +183,7 @@ VkResult SurfaceKHR::getPresentRectangles(uint32_t *pRectCount, VkRect2D *pRects
 	return VK_SUCCESS;
 }
 
-void SurfaceKHR::setCommonSurfaceCapabilities(VkSurfaceCapabilitiesKHR *pSurfaceCapabilities)
+void SurfaceKHR::setCommonSurfaceCapabilities(const void *pSurfaceInfoPNext, VkSurfaceCapabilitiesKHR *pSurfaceCapabilities, void *pSurfaceCapabilitiesPNext)
 {
 	pSurfaceCapabilities->minImageCount = 1;
 	pSurfaceCapabilities->maxImageCount = 0;
@@ -199,6 +200,48 @@ void SurfaceKHR::setCommonSurfaceCapabilities(VkSurfaceCapabilitiesKHR *pSurface
 	    VK_IMAGE_USAGE_TRANSFER_DST_BIT |
 	    VK_IMAGE_USAGE_SAMPLED_BIT |
 	    VK_IMAGE_USAGE_STORAGE_BIT;
+
+	auto *extInfo = reinterpret_cast<VkBaseOutStructure *>(pSurfaceCapabilitiesPNext);
+	while(extInfo)
+	{
+		switch(extInfo->sType)
+		{
+		case VK_STRUCTURE_TYPE_SURFACE_PRESENT_SCALING_CAPABILITIES_EXT:
+			{
+				// Supported scaling is per present mode, but currently that's identical for all present modes.
+				ASSERT(vk::GetExtendedStruct<VkSurfacePresentModeEXT>(pSurfaceInfoPNext, VK_STRUCTURE_TYPE_SURFACE_PRESENT_MODE_EXT) != nullptr);
+				VkSurfacePresentScalingCapabilitiesEXT *presentScalingCapabilities = reinterpret_cast<VkSurfacePresentScalingCapabilitiesEXT *>(extInfo);
+				presentScalingCapabilities->supportedPresentScaling = 0;
+				presentScalingCapabilities->supportedPresentGravityX = 0;
+				presentScalingCapabilities->supportedPresentGravityY = 0;
+				presentScalingCapabilities->minScaledImageExtent = pSurfaceCapabilities->minImageExtent;
+				presentScalingCapabilities->maxScaledImageExtent = pSurfaceCapabilities->maxImageExtent;
+				break;
+			}
+		case VK_STRUCTURE_TYPE_SURFACE_PRESENT_MODE_COMPATIBILITY_EXT:
+			{
+				VkSurfacePresentModeCompatibilityEXT *presentModeCompatibility = reinterpret_cast<VkSurfacePresentModeCompatibilityEXT *>(extInfo);
+				const auto *presentMode = vk::GetExtendedStruct<VkSurfacePresentModeEXT>(pSurfaceInfoPNext, VK_STRUCTURE_TYPE_SURFACE_PRESENT_MODE_EXT);
+				ASSERT(presentMode != nullptr);
+
+				// No support for switching between present modes; i.e. each mode is only compatible with itself.
+				if(presentModeCompatibility->pPresentModes == nullptr)
+				{
+					presentModeCompatibility->presentModeCount = 1;
+				}
+				else if(presentModeCompatibility->presentModeCount >= 1)
+				{
+					presentModeCompatibility->pPresentModes[0] = presentMode->presentMode;
+					presentModeCompatibility->presentModeCount = 1;
+				}
+				break;
+			}
+		default:
+			UNSUPPORTED("pSurfaceCapabilities->pNext sType = %s", vk::Stringify(extInfo->sType).c_str());
+			break;
+		}
+		extInfo = extInfo->pNext;
+	}
 }
 
 }  // namespace vk

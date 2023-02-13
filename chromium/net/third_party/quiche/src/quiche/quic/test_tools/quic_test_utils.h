@@ -35,14 +35,12 @@
 #include "quiche/quic/core/quic_types.h"
 #include "quiche/quic/core/quic_utils.h"
 #include "quiche/quic/platform/api/quic_socket_address.h"
-#include "quiche/quic/platform/api/quic_test.h"
 #include "quiche/quic/test_tools/mock_clock.h"
 #include "quiche/quic/test_tools/mock_connection_id_generator.h"
 #include "quiche/quic/test_tools/mock_quic_session_visitor.h"
 #include "quiche/quic/test_tools/mock_random.h"
 #include "quiche/quic/test_tools/quic_framer_peer.h"
 #include "quiche/quic/test_tools/simple_quic_framer.h"
-#include "quiche/common/quiche_mem_slice_storage.h"
 #include "quiche/common/simple_buffer_allocator.h"
 #include "quiche/spdy/core/http2_header_block.h"
 
@@ -638,6 +636,7 @@ class MockQuicConnection : public QuicConnection {
   MOCK_METHOD(bool, SendConnectivityProbingPacket,
               (QuicPacketWriter*, const QuicSocketAddress& peer_address),
               (override));
+  MOCK_METHOD(void, MaybeProbeMultiPortPath, (), (override));
 
   MOCK_METHOD(void, OnSendConnectionState, (const CachedNetworkParameters&),
               (override));
@@ -1026,6 +1025,7 @@ class MockHttp3DebugVisitor : public Http3DebugVisitor {
   MOCK_METHOD(void, OnDataFrameSent, (QuicStreamId, QuicByteCount), (override));
   MOCK_METHOD(void, OnHeadersFrameSent,
               (QuicStreamId, const spdy::Http2HeaderBlock&), (override));
+  MOCK_METHOD(void, OnSettingsFrameResumed, (const SettingsFrame&), (override));
 };
 
 class TestQuicSpdyServerSession : public QuicServerSessionBase {
@@ -1722,7 +1722,7 @@ class TaggingEncrypter : public QuicEncrypter {
 
  private:
   enum {
-    kTagSize = 12,
+    kTagSize = 16,
   };
 
   const uint8_t tag_;
@@ -1785,7 +1785,7 @@ class TaggingDecrypter : public QuicDecrypter {
 
  private:
   enum {
-    kTagSize = 12,
+    kTagSize = 16,
   };
 
   bool CheckTag(absl::string_view ciphertext, uint8_t tag);
@@ -1966,8 +1966,6 @@ class TestPacketWriter : public QuicPacketWriter {
     return final_bytes_of_previous_packet_;
   }
 
-  void use_tagging_decrypter() { use_tagging_decrypter_ = true; }
-
   uint32_t packets_write_attempts() const { return packets_write_attempts_; }
 
   uint32_t flush_attempts() const { return flush_attempts_; }
@@ -2026,7 +2024,6 @@ class TestPacketWriter : public QuicPacketWriter {
   uint32_t bytes_buffered_ = 0;
   uint32_t final_bytes_of_last_packet_ = 0;
   uint32_t final_bytes_of_previous_packet_ = 0;
-  bool use_tagging_decrypter_ = false;
   uint32_t packets_write_attempts_ = 0;
   uint32_t connection_close_packets_ = 0;
   MockClock* clock_ = nullptr;

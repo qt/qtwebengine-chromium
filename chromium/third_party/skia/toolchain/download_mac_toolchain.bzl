@@ -12,16 +12,32 @@ The destination folder for these files and symlinks are:
   (See https://bazel.build/docs/output_directories#layout-diagram)
 """
 
-load("//toolchain:utils.bzl", "gcs_mirror_url")
+load(":clang_layering_check.bzl", "generate_system_module_map")
+load(":utils.bzl", "gcs_mirror_url")
 
-# From https://github.com/llvm/llvm-project/releases/download/llvmorg-13.0.0/clang+llvm-13.0.0-x86_64-apple-darwin.tar.xz
+# From https://github.com/llvm/llvm-project/releases/tag/llvmorg-15.0.1
 # When updating this, don't forget to use //bazel/gcs_mirror to upload a new version.
 # go run bazel/gcs_mirror/gcs_mirror.go --url [clang_url] --sha256 [clang_sha256]
-clang_prefix = "clang+llvm-13.0.0-x86_64-apple-darwin"
-clang_sha256 = "d051234eca1db1f5e4bc08c64937c879c7098900f7a0370f3ceb7544816a8b09"
-clang_url = "https://github.com/llvm/llvm-project/releases/download/llvmorg-13.0.0/clang+llvm-13.0.0-x86_64-apple-darwin.tar.xz"
+clang_prefix_arm64 = "clang+llvm-15.0.1-arm64-apple-darwin21.0"
+clang_sha256_arm64 = "858f86d96b5e4880f69f7a583daddbf97ee94e7cffce0d53aa05cba6967f13b8"
+clang_url_arm64 = "https://github.com/llvm/llvm-project/releases/download/llvmorg-15.0.1/clang+llvm-15.0.1-arm64-apple-darwin21.0.tar.xz"
+
+clang_prefix_amd64 = "clang+llvm-15.0.1-x86_64-apple-darwin"
+clang_sha256_amd64 = "0b2f1a811e68d011344103274733b7670c15bbe08b2a3a5140ccad8e19d9311e"
+clang_url_amd64 = "https://github.com/llvm/llvm-project/releases/download/llvmorg-15.0.1/clang+llvm-15.0.1-x86_64-apple-darwin.tar.xz"
 
 def _download_mac_toolchain_impl(ctx):
+    # https://bazel.build/rules/lib/repository_ctx#os
+    # https://bazel.build/rules/lib/repository_os
+    if ctx.os.arch == "aarch64":
+        clang_url = clang_url_arm64
+        clang_sha256 = clang_sha256_arm64
+        clang_prefix = clang_prefix_arm64
+    else:
+        clang_url = clang_url_amd64
+        clang_sha256 = clang_sha256_amd64
+        clang_prefix = clang_prefix_amd64
+
     # Download the clang toolchain (the extraction can take a while)
     # https://bazel.build/rules/lib/repository_ctx#download_and_extract
     ctx.download_and_extract(
@@ -55,18 +71,38 @@ def _download_mac_toolchain_impl(ctx):
         "./symlinks/xcode/MacSDK/Frameworks",
     )
 
+    # This list of files lines up with _make_default_flags() in mac_toolchain_config.bzl
+    # It is all locations that our toolchain could find a system header.
+    builtin_include_directories = [
+        "include/c++/v1",
+        "lib/clang/15.0.1/include",
+        "symlinks/xcode/Frameworks",
+        "symlinks/xcode/include",
+    ]
+
+    generate_system_module_map(
+        ctx,
+        module_file = "toolchain_system_headers.modulemap",
+        folders = builtin_include_directories,
+    )
+
     # Create a BUILD.bazel file that makes the files necessary for compiling,
     # linking and creating archive files visible to Bazel.
     # The smaller the globs are, the more performant the sandboxed builds will be.
     # Additionally, globs that are too wide can pick up infinite symlink loops,
     # and be difficult to quash: https://github.com/bazelbuild/bazel/issues/13950
     # https://bazel.build/rules/lib/repository_ctx#file
-    #
     ctx.file(
         "BUILD.bazel",
         content = """
 # DO NOT EDIT THIS BAZEL FILE DIRECTLY
 # Generated from ctx.file action in download_mac_toolchain.bzl
+filegroup(
+    name = "generated_module_map",
+    srcs = ["toolchain_system_headers.modulemap"],
+    visibility = ["//visibility:public"],
+)
+
 filegroup(
     name = "archive_files",
     srcs = [
@@ -82,7 +118,7 @@ filegroup(
     ] + glob(
         include = [
             "include/c++/v1/**",
-            "lib/clang/13.0.0/**",
+            "lib/clang/15.0.1/include/**",
             "symlinks/xcode/MacSDK/Frameworks/AppKit.Framework/**",
             "symlinks/xcode/MacSDK/Frameworks/ApplicationServices.Framework/**",
             "symlinks/xcode/MacSDK/Frameworks/Carbon.Framework/**",

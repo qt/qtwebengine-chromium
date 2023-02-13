@@ -38,6 +38,8 @@
 #include "libavutil/time.h"
 #include "libavutil/time_internal.h"
 
+#include "libavcodec/avcodec.h"
+
 #include "av1.h"
 #include "avc.h"
 #include "avformat.h"
@@ -336,7 +338,7 @@ static int init_segment_types(AVFormatContext *s)
 static void set_vp9_codec_str(AVFormatContext *s, AVCodecParameters *par,
                               AVRational *frame_rate, char *str, int size) {
     VPCC vpcc;
-    int ret = ff_isom_get_vpcc_features(s, par, frame_rate, &vpcc);
+    int ret = ff_isom_get_vpcc_features(s, par, NULL, 0, frame_rate, &vpcc);
     if (ret == 0) {
         av_strlcatf(str, size, "vp09.%02d.%02d.%02d",
                     vpcc.profile, vpcc.level, vpcc.bitdepth);

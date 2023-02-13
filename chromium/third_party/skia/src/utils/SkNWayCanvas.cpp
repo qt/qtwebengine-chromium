@@ -7,16 +7,12 @@
 
 #include "include/utils/SkNWayCanvas.h"
 
-#include "include/core/SkBlendMode.h"
 #include "include/core/SkCanvas.h"
-#include "include/core/SkClipOp.h"
 #include "include/core/SkColor.h"
-#include "include/core/SkM44.h"
 #include "include/core/SkMatrix.h"
 #include "include/core/SkPoint.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkRefCnt.h"
-#include "include/core/SkSamplingOptions.h"
 #include "include/core/SkScalar.h"
 #include "include/core/SkShader.h"
 #include "include/core/SkTypes.h"
@@ -24,6 +20,8 @@
 #include "include/utils/SkNoDrawCanvas.h"
 #include "src/core/SkCanvasPriv.h"
 
+#include <algorithm>
+#include <iterator>
 #include <utility>
 
 namespace sktext {
@@ -40,6 +38,8 @@ class SkRRect;
 class SkRegion;
 class SkTextBlob;
 class SkVertices;
+enum class SkBlendMode;
+enum class SkClipOp;
 struct SkDrawShadowRec;
 
 SkNWayCanvas::SkNWayCanvas(int width, int height) : INHERITED(width, height) {}
@@ -61,9 +61,9 @@ void SkNWayCanvas::addCanvas(SkCanvas* canvas) {
 }
 
 void SkNWayCanvas::removeCanvas(SkCanvas* canvas) {
-    int index = fList.find(canvas);
-    if (index >= 0) {
-        fList.removeShuffle(index);
+    auto found = std::find(fList.begin(), fList.end(), canvas);
+    if (found != fList.end()) {
+        fList.removeShuffle(std::distance(fList.begin(), found));
     }
 }
 

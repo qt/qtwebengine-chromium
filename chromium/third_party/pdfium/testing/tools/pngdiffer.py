@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-# Copyright 2015 The PDFium Authors. All rights reserved.
+# Copyright 2015 The PDFium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-from __future__ import print_function
-
+from dataclasses import dataclass
 import distutils.spawn
 import itertools
 import os
@@ -21,14 +20,10 @@ class PathMode:
     DEFAULT:   Used for default expected paths in the format of
                'NAME_expected(_OSNAME)?.pdf.#.png'. For a test, this path always
                exists.
-    SKIA:      Used when Skia or SkiaPaths is enabled, for paths in the format
-               of 'NAME_expected_skia(_OSNAME)?.pdf.#.png'.
-               Such paths only exist when the expected results of Skia or
-               SkiaPaths are different from those of AGG.
-    SKIAPATHS: Used when SkiaPaths is enabled, for path in the format of
-               'NAME_expected_skiapaths(_OSNAME)?.pdf.#.png'.
-               Such paths only exist when the expected results from using AGG,
-               Skia and SkiaPaths are all different from each other.
+    SKIA:      Used when Skia is enabled, for paths in the format of
+               'NAME_expected_skia(_OSNAME)?.pdf.#.png'.
+               Such paths only exist when the expected results of Skia are
+               different from those of AGG.
 
   Always check PathMode in an incrementing order as the modes are listed in
   order of its matching paths' precedence.
@@ -36,11 +31,22 @@ class PathMode:
 
   DEFAULT = 0
   SKIA = 1
-  SKIAPATHS = 2
 
 
-class NotFoundError(Exception):
-  """Raised when file doesn't exist"""
+@dataclass
+class ImageDiff:
+  """Details about an image diff.
+
+  Attributes:
+    actual_path: Path to the actual image file.
+    expected_path: Path to the expected image file, or `None` if no matches.
+    diff_path: Path to the diff image file, or `None` if no diff.
+    reason: Optional reason for the diff.
+  """
+  actual_path: str
+  expected_path: str = None
+  diff_path: str = None
+  reason: str = None
 
 
 class PNGDiffer():
@@ -49,22 +55,10 @@ class PNGDiffer():
     self.pdfium_diff_path = finder.ExecutablePath('pdfium_diff')
     self.os_name = finder.os_name
     self.reverse_byte_order = reverse_byte_order
-    if 'SKIAPATHS' in features:
-      self.max_path_mode = PathMode.SKIAPATHS
-    elif 'SKIA' in features:
+    if 'SKIA' in features:
       self.max_path_mode = PathMode.SKIA
     else:
       self.max_path_mode = PathMode.DEFAULT
-
-  @staticmethod
-  def _GetMapFunc():
-    try:
-      # Only exists in Python 2.
-      func = itertools.imap
-    except AttributeError:
-      # Python 3's map returns an iterator.
-      func = map
-    return func
 
   def CheckMissingTools(self, regenerate_expected):
     if (regenerate_expected and self.os_name == 'linux' and
@@ -80,58 +74,79 @@ class PNGDiffer():
     for page in itertools.count():
       actual_path = path_templates.GetActualPath(page)
       expected_paths = path_templates.GetExpectedPaths(page)
-      if any(self._GetMapFunc()(os.path.exists, expected_paths)):
+      if any(map(os.path.exists, expected_paths)):
         actual_paths.append(actual_path)
       else:
         break
     return actual_paths
 
-  def _RunImageDiffCommand(self, expected_path, actual_path):
-    if not os.path.exists(expected_path):
-      return NotFoundError('%s does not exist.' % expected_path)
-
+  def _RunImageCompareCommand(self, image_diff):
     cmd = [self.pdfium_diff_path]
     if self.reverse_byte_order:
       cmd.append('--reverse-byte-order')
-    cmd.extend([expected_path, actual_path])
+    cmd.extend([image_diff.actual_path, image_diff.expected_path])
     return common.RunCommand(cmd)
 
-  def HasDifferences(self, input_filename, source_dir, working_dir):
+  def _RunImageDiffCommand(self, image_diff):
+    # TODO(crbug.com/pdfium/1925): Diff mode ignores --reverse-byte-order.
+    return common.RunCommand([
+        self.pdfium_diff_path, '--subtract', image_diff.actual_path,
+        image_diff.expected_path, image_diff.diff_path
+    ])
+
+  def ComputeDifferences(self, input_filename, source_dir, working_dir):
+    """Computes differences between actual and expected image files.
+
+    Returns:
+      A list of `ImageDiff` instances, one per differing page.
+    """
+    image_diffs = []
+
     path_templates = PathTemplates(input_filename, source_dir, working_dir,
                                    self.os_name, self.max_path_mode)
     for page in itertools.count():
-      actual_path = path_templates.GetActualPath(page)
-      expected_paths = path_templates.GetExpectedPaths(page)
-      if not any(self._GetMapFunc()(os.path.exists, expected_paths)):
-        if page == 0:
-          print("WARNING: no expected results files for " + input_filename)
-        if os.path.exists(actual_path):
-          print('FAILURE: Missing expected result for 0-based page %d of %s' %
-                (page, input_filename))
-          return True
+      page_diff = ImageDiff(actual_path=path_templates.GetActualPath(page))
+      if not os.path.exists(page_diff.actual_path):
         break
-      print("Checking " + actual_path)
-      sys.stdout.flush()
 
-      error = None
-      for path in expected_paths:
-        new_error = self._RunImageDiffCommand(path, actual_path)
-        # Update error code. No need to overwrite the previous error code if
-        # |path| doesn't exist.
-        if not isinstance(new_error, NotFoundError):
-          error = new_error
-        # Found a match and proceed to next page
-        if not error:
+      last_not_found_expected_path = None
+      compare_error = None
+      for expected_path in path_templates.GetExpectedPaths(page):
+        if not os.path.exists(expected_path):
+          last_not_found_expected_path = expected_path
+          continue
+        page_diff.expected_path = expected_path
+
+        compare_error = self._RunImageCompareCommand(page_diff)
+        if not compare_error:
+          # Found a match.
           break
 
-      if error:
-        print("FAILURE: " + input_filename + "; " + str(error))
-        return True
+      if page_diff.expected_path:
+        if not compare_error:
+          # Proceed to next page
+          continue
+        page_diff.reason = str(compare_error)
 
-    return False
+        # TODO(crbug.com/pdfium/1925): Compare and diff in a single invocation.
+        page_diff.diff_path = path_templates.GetDiffPath(page)
+        if not self._RunImageDiffCommand(page_diff):
+          print(f'WARNING: No diff for {page_diff.actual_path}')
+          page_diff.diff_path = None
+      else:
+        if page == 0:
+          print(f'WARNING: no expected results files for {input_filename}')
+        if last_not_found_expected_path:
+          page_diff.reason = f'{last_not_found_expected_path} does not exist'
+        else:
+          page_diff.reason = f'Missing expected result for 0-based page {page}'
 
-  # TODO(crbug.com/pdfium/1508): Add support to automatically generate
-  # Skia/SkiaPaths specific expected results.
+      image_diffs.append(page_diff)
+
+    return image_diffs
+
+  # TODO(crbug.com/pdfium/1508): Add support to automatically generate Skia
+  # specific expected results.
   def Regenerate(self, input_filename, source_dir, working_dir, platform_only):
     path_templates = PathTemplates(input_filename, source_dir, working_dir,
                                    self.os_name, self.max_path_mode)
@@ -162,18 +177,21 @@ class PNGDiffer():
 
 
 ACTUAL_TEMPLATE = '.pdf.%d.png'
+DIFF_TEMPLATE = '.pdf.%d.diff.png'
 
 
 class PathTemplates:
 
   def __init__(self, input_filename, source_dir, working_dir, os_name,
                max_path_mode):
-    assert PathMode.DEFAULT <= max_path_mode <= PathMode.SKIAPATHS, (
+    assert PathMode.DEFAULT <= max_path_mode <= PathMode.SKIA, (
         'Unexpected Maximum PathMode: %d.' % max_path_mode)
 
     input_root, _ = os.path.splitext(input_filename)
     self.actual_path_template = os.path.join(working_dir,
                                              input_root + ACTUAL_TEMPLATE)
+    self.diff_path_template = os.path.join(working_dir,
+                                           input_root + DIFF_TEMPLATE)
     self.source_dir = source_dir
     self.input_root = input_root
     self.max_path_mode = max_path_mode
@@ -190,14 +208,15 @@ class PathTemplates:
   def GetActualPath(self, page):
     return self.actual_path_template % page
 
+  def GetDiffPath(self, page):
+    return self.diff_path_template % page
+
   def _GetExpectedTemplateByPathMode(self, mode, os_name=None):
     expected_str = '_expected'
     if mode == PathMode.DEFAULT:
       pass
     elif mode == PathMode.SKIA:
       expected_str += '_skia'
-    elif mode == PathMode.SKIAPATHS:
-      expected_str += '_skiapaths'
     else:
       assert False, 'Unexpected PathMode: %d.' % mode
 

@@ -171,7 +171,7 @@ bool ParagraphCacheKey::operator==(const ParagraphCacheKey& other) const {
     if (fText.size() != other.fText.size()) {
         return false;
     }
-    if (fPlaceholders.count() != other.fPlaceholders.count()) {
+    if (fPlaceholders.size() != other.fPlaceholders.size()) {
         return false;
     }
     if (fText != other.fText) {
@@ -197,7 +197,7 @@ bool ParagraphCacheKey::operator==(const ParagraphCacheKey& other) const {
         return false;
     }
 
-    for (size_t i = 0; i < fTextStyles.size(); ++i) {
+    for (int i = 0; i < fTextStyles.size(); ++i) {
         auto& tsa = fTextStyles[i];
         auto& tsb = other.fTextStyles[i];
         if (tsa.fStyle.isPlaceholder()) {
@@ -213,7 +213,7 @@ bool ParagraphCacheKey::operator==(const ParagraphCacheKey& other) const {
             return false;
         }
     }
-    for (size_t i = 0; i < fPlaceholders.size(); ++i) {
+    for (int i = 0; i < fPlaceholders.size(); ++i) {
         auto& tsa = fPlaceholders[i];
         auto& tsb = other.fPlaceholders[i];
         if (tsa.fRange.width() == 0 && tsb.fRange.width() == 0) {
@@ -255,7 +255,7 @@ ParagraphCache::~ParagraphCache() { }
 
 void ParagraphCache::updateTo(ParagraphImpl* paragraph, const Entry* entry) {
 
-    paragraph->fRuns.reset();
+    paragraph->fRuns.clear();
     paragraph->fRuns = entry->fValue->fRuns;
     paragraph->fClusters = entry->fValue->fClusters;
     paragraph->fClustersIndexFromCodeUnit = entry->fValue->fClustersIndexFromCodeUnit;

@@ -96,7 +96,7 @@ class SpirvGrammarHelperOutputGenerator(OutputGenerator):
         self.imageGatherOps = []
         self.imageSampleOps = []
         self.imageFetchOps = []
-        self.storageClass = []
+        self.storageClassList = [] # list of storage classes
         self.executionModel = []
         # Need range to be large as largest possible operand index
         self.imageOperandsParamCount = [[] for i in range(3)]
@@ -112,8 +112,7 @@ class SpirvGrammarHelperOutputGenerator(OutputGenerator):
 '''
 
     def commonParamSwitch(self, variableName):
-        return '''            break;
-        default:
+        return '''        default:
             break;
     }}
     return {};
@@ -166,6 +165,7 @@ class SpirvGrammarHelperOutputGenerator(OutputGenerator):
         if self.sourceFile:
             write('#include "vk_layer_data.h"', file=self.outFile)
             write('#include "spirv_grammar_helper.h"', file=self.outFile)
+            write('#include "shader_instruction.h"', file=self.outFile)
         elif self.headerFile:
             write('#pragma once', file=self.outFile)
             write('#include <cstdint>', file=self.outFile)
@@ -177,6 +177,7 @@ class SpirvGrammarHelperOutputGenerator(OutputGenerator):
         write(self.instructionTable(), file=self.outFile)
         write(self.atomicOperation(), file=self.outFile)
         write(self.groupOperation(), file=self.outFile)
+        write(self.storageClassHelper(), file=self.outFile)
         write(self.imageOperation(), file=self.outFile)
         write(self.parameterHelper(), file=self.outFile)
         write(self.stringHelper(), file=self.outFile)
@@ -222,7 +223,7 @@ class SpirvGrammarHelperOutputGenerator(OutputGenerator):
                     values = [] # prevent alias from being duplicatd
                     for enum in operandKind['enumerants']:
                         if enum['value'] not in values:
-                            self.storageClass.append(enum['enumerant'])
+                            self.storageClassList.append(enum['enumerant'])
                             values.append(enum['value'])
                 if operandKind['kind'] == 'ExecutionModel':
                     values = [] # prevent alias from being duplicatd
@@ -233,6 +234,7 @@ class SpirvGrammarHelperOutputGenerator(OutputGenerator):
 
             for instruction in instructions:
                 opname = instruction['opname']
+                opcode = instruction['opcode']
                 if 'capabilities' in instruction:
                     notSupported = True
                     for capability in instruction['capabilities']:
@@ -244,13 +246,14 @@ class SpirvGrammarHelperOutputGenerator(OutputGenerator):
 
                 # Nice side effect of using a dict here is alias opcodes will be last in the grammar file
                 # ex: OpTypeAccelerationStructureNV will be replaced by OpTypeAccelerationStructureKHR
-                self.opcodes[instruction['opcode']] = {
+                self.opcodes[opcode] = {
                     'name' : opname,
                     'hasType' : "false",
                     'hasResult' : "false",
                     'memoryScopePosition' : 0,
                     'executionScopePosition' : 0,
                     'imageOperandsPosition' : 0,
+                    'storageClassPosition' : 0,
                 }
 
                 if instruction['class'] == 'Atomic':
@@ -266,21 +269,23 @@ class SpirvGrammarHelperOutputGenerator(OutputGenerator):
                 if 'operands' in instruction:
                     for index, operand in enumerate(instruction['operands']):
                         if operand['kind'] == 'IdResultType':
-                            self.opcodes[instruction['opcode']]['hasType'] = "true"
+                            self.opcodes[opcode]['hasType'] = "true"
                         if operand['kind'] == 'IdResult':
-                            self.opcodes[instruction['opcode']]['hasResult'] = "true"
+                            self.opcodes[opcode]['hasResult'] = "true"
                         # some instructions have both types of IdScope
                         # OpReadClockKHR has the wrong 'name' as 'Scope'
                         if operand['kind'] == 'IdScope':
                             if operand['name'] == '\'Execution\'' or operand['name'] == '\'Scope\'':
-                                self.opcodes[instruction['opcode']]['executionScopePosition'] = index + 1
+                                self.opcodes[opcode]['executionScopePosition'] = index + 1
                             elif operand['name'] == '\'Memory\'':
-                                self.opcodes[instruction['opcode']]['memoryScopePosition'] = index + 1
+                                self.opcodes[opcode]['memoryScopePosition'] = index + 1
                             else:
                                 print("Error: unknown operand {} not handled correctly\n".format(opname))
                                 sys.exit(1)
                         if operand['kind'] == 'ImageOperands':
-                            self.opcodes[instruction['opcode']]['imageOperandsPosition'] = index + 1
+                            self.opcodes[opcode]['imageOperandsPosition'] = index + 1
+                        if operand['kind'] == 'StorageClass':
+                            self.opcodes[opcode]['storageClassPosition'] = index + 1
 
     #
     # Generate table for each opcode instruction
@@ -340,6 +345,23 @@ class SpirvGrammarHelperOutputGenerator(OutputGenerator):
 
         return output;
     #
+    # Get storage class from instruction
+    def storageClassHelper(self):
+        output = ''
+        if self.sourceFile:
+            output += 'spv::StorageClass Instruction::StorageClass() const {\n'
+            output += '    spv::StorageClass storage_class = spv::StorageClassMax;\n'
+            output += '    switch (Opcode()) {\n'
+            for opcode, info in sorted(self.opcodes.items()):
+                operand = info['storageClassPosition']
+                if operand == 0:
+                    continue
+                output += '        case spv::{}:\n'.format(info['name'])
+                output += '            storage_class = static_cast<spv::StorageClass>(Word({}));\n'.format(info['storageClassPosition'])
+                output += '            break;\n'
+            output += self.commonParamSwitch('storage_class')
+        return output;
+    #
     # Generate functions for image operations
     def imageOperation(self):
         output = ''
@@ -379,7 +401,6 @@ class SpirvGrammarHelperOutputGenerator(OutputGenerator):
         if self.headerFile:
             output += 'bool OpcodeHasType(uint32_t opcode);\n'
             output += 'bool OpcodeHasResult(uint32_t opcode);\n'
-            output += 'uint32_t OpcodeResultWord(uint32_t opcode);\n'
             output += '\n'
             output += 'uint32_t OpcodeMemoryScopePosition(uint32_t opcode);\n'
             output += 'uint32_t OpcodeExecutionScopePosition(uint32_t opcode);\n'
@@ -403,18 +424,6 @@ class SpirvGrammarHelperOutputGenerator(OutputGenerator):
             output += '        has_result = format_info->second.has_result;\n'
             output += '    }\n'
             output += '    return has_result;\n'
-            output += '}\n\n'
-
-            output += '// Helper to get the word position of the result operand.\n'
-            output += '// Will either be 1 or 2 if it has a result.\n'
-            output += '// Will be 0 if there is no result.\n'
-            output += 'uint32_t OpcodeResultWord(uint32_t opcode) {\n'
-            output += '    uint32_t position = 0;\n'
-            output += '    if (OpcodeHasResult(opcode)) {\n'
-            output += '        position = 1;\n'
-            output += '        position += OpcodeHasType(opcode) ? 1 : 0;\n'
-            output += '    }\n'
-            output += '    return position;\n'
             output += '}\n\n'
 
             output += '// Return operand position of Memory Scope <ID> or zero if there is none\n'
@@ -481,7 +490,7 @@ class SpirvGrammarHelperOutputGenerator(OutputGenerator):
             output += '};\n'
             output += '\nconst char* string_SpvStorageClass(uint32_t storage_class) {\n'
             output += '    switch(storage_class) {\n'
-            for storageClass in self.storageClass:
+            for storageClass in self.storageClassList:
                 output += '        case spv::StorageClass{}:\n'.format(storageClass)
                 output += '            return \"{}\";\n'.format(storageClass)
             output += '        default:\n'

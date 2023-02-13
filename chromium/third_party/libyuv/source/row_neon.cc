@@ -609,16 +609,36 @@ void DetileRow_NEON(const uint8_t* src,
                     int width) {
   asm volatile(
       "1:                                        \n"
-      "vld1.16     {q0}, [%0], %3                \n"  // load 16 bytes
+      "vld1.8      {q0}, [%0], %3                \n"  // load 16 bytes
       "subs        %2, %2, #16                   \n"  // 16 processed per loop
       "pld         [%0, #1792]                   \n"
-      "vst1.16     {q0}, [%1]!                   \n"  // store 16 bytes
+      "vst1.8      {q0}, [%1]!                   \n"  // store 16 bytes
       "bgt         1b                            \n"
       : "+r"(src),            // %0
         "+r"(dst),            // %1
         "+r"(width)           // %2
       : "r"(src_tile_stride)  // %3
       : "cc", "memory", "q0"  // Clobber List
+  );
+}
+
+// Reads 16 byte Y's of 16 bits from tile and writes out 16 Y's.
+void DetileRow_16_NEON(const uint16_t* src,
+                       ptrdiff_t src_tile_stride,
+                       uint16_t* dst,
+                       int width) {
+  asm volatile(
+      "1:                                        \n"
+      "vld1.16     {q0, q1}, [%0], %3            \n"  // load 16 pixels
+      "subs        %2, %2, #16                   \n"  // 16 processed per loop
+      "pld         [%0, #3584]                   \n"
+      "vst1.16     {q0, q1}, [%1]!               \n"  // store 16 pixels
+      "bgt         1b                            \n"
+      : "+r"(src),                  // %0
+        "+r"(dst),                  // %1
+        "+r"(width)                 // %2
+      : "r"(src_tile_stride * 2)    // %3
+      : "cc", "memory", "q0", "q1"  // Clobber List
   );
 }
 
@@ -655,9 +675,9 @@ void DetileToYUY2_NEON(const uint8_t* src_y,
                        int width) {
   asm volatile(
       "1:                                        \n"
-      "vld1.8      q0, [%0], %4                  \n"  // Load 16 Y
+      "vld1.8      {q0}, [%0], %4                \n"  // Load 16 Y
       "pld         [%0, #1792]                   \n"
-      "vld1.8      q1, [%1], %5                  \n"  // Load 8 UV
+      "vld1.8      {q1}, [%1], %5                \n"  // Load 8 UV
       "pld         [%1, #1792]                   \n"
       "subs        %3, %3, #16                   \n"
       "vst2.8      {q0, q1}, [%2]!               \n"
@@ -681,8 +701,8 @@ void DetileToYUY2_NEON(const uint8_t* src_y,
                        int width) {
   asm volatile(
       "1:                                        \n"
-      "vld1.8      q0, [%0], %4                  \n"  // Load 16 Y
-      "vld1.8      q1, [%1], %5                  \n"  // Load 8 UV
+      "vld1.8      {q0}, [%0], %4                \n"  // Load 16 Y
+      "vld1.8      {q1}, [%1], %5                \n"  // Load 8 UV
       "subs        %3, %3, #16                   \n"
       "pld         [%0, #1792]                   \n"
       "vzip.8      q0, q1                        \n"

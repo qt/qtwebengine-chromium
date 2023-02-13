@@ -60,15 +60,19 @@ class DecomposeMemoryAccess final : public Castable<DecomposeMemoryAccess, Trans
             kU32,
             kF32,
             kI32,
+            kF16,
             kVec2U32,
             kVec2F32,
             kVec2I32,
+            kVec2F16,
             kVec3U32,
             kVec3F32,
             kVec3I32,
+            kVec3F16,
             kVec4U32,
             kVec4F32,
             kVec4I32,
+            kVec4F16,
         };
 
         /// Constructor
@@ -108,20 +112,12 @@ class DecomposeMemoryAccess final : public Castable<DecomposeMemoryAccess, Trans
     /// Destructor
     ~DecomposeMemoryAccess() override;
 
-    /// @param program the program to inspect
-    /// @param data optional extra transform-specific input data
-    /// @returns true if this transform should be run for the given program
-    bool ShouldRun(const Program* program, const DataMap& data = {}) const override;
+    /// @copydoc Transform::Apply
+    ApplyResult Apply(const Program* program,
+                      const DataMap& inputs,
+                      DataMap& outputs) const override;
 
-  protected:
-    /// Runs the transform using the CloneContext built for transforming a
-    /// program. Run() is responsible for calling Clone() on the CloneContext.
-    /// @param ctx the CloneContext primed with the input program and
-    /// ProgramBuilder
-    /// @param inputs optional extra transform-specific input data
-    /// @param outputs optional extra transform-specific output data
-    void Run(CloneContext& ctx, const DataMap& inputs, DataMap& outputs) const override;
-
+  private:
     struct State;
 };
 

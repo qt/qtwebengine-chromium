@@ -11,6 +11,7 @@
 #ifndef AOM_AV1_ENCODER_SVC_LAYERCONTEXT_H_
 #define AOM_AV1_ENCODER_SVC_LAYERCONTEXT_H_
 
+#include "aom_scale/yv12config.h"
 #include "av1/encoder/aq_cyclicrefresh.h"
 #include "av1/encoder/encoder.h"
 #include "av1/encoder/ratectrl.h"
@@ -106,7 +107,9 @@ typedef struct SVC {
   int temporal_layer_fb[REF_FRAMES];
   int num_encoded_top_layer;
   int first_layer_denoise;
-  int high_source_sad_superframe;
+  YV12_BUFFER_CONFIG source_last_TL0;
+  int mi_cols_full_resoln;
+  int mi_rows_full_resoln;
   /*!\endcond */
 
   /*!
@@ -137,6 +140,7 @@ typedef struct SVC {
 } SVC;
 
 struct AV1_COMP;
+struct EncodeFrameInput;
 
 /*!\brief Initialize layer context data from init_config().
  *
@@ -159,9 +163,10 @@ void av1_init_layer_context(struct AV1_COMP *const cpi);
  * \param[in]       cpi  Top level encoder structure
  * \param[in]       num_layers  Number of layers to be allocated
  *
- * \remark  Nothing returned. Allocates memory for cpi->svc.layer_context.
+ * \remark  Allocates memory for cpi->svc.layer_context.
+ * \return  True on success, false on allocation failure.
  */
-void av1_alloc_layer_context(struct AV1_COMP *cpi, int num_layers);
+bool av1_alloc_layer_context(struct AV1_COMP *cpi, int num_layers);
 
 /*!\brief Update the layer context from a change_config() call.
  *
@@ -276,6 +281,10 @@ void av1_get_layer_resolution(const int width_org, const int height_org,
 void av1_set_svc_fixed_mode(struct AV1_COMP *const cpi);
 
 void av1_svc_check_reset_layer_rc_flag(struct AV1_COMP *const cpi);
+
+void av1_svc_set_last_source(struct AV1_COMP *const cpi,
+                             struct EncodeFrameInput *frame_input,
+                             YV12_BUFFER_CONFIG *prev_source);
 
 #ifdef __cplusplus
 }  // extern "C"

@@ -2708,6 +2708,7 @@ template<> struct packet_traits<double> : default_packet_traits
     HasAbs  = 1,
     HasSin  = 0,
     HasCos  = 0,
+    HasATan = 1,
     HasLog  = 0,
     HasExp  = 1,
     HasSqrt = 1,

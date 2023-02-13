@@ -13,11 +13,34 @@ import { GPUTest } from '../../../../../gpu_test.js';
 import { TypeF32 } from '../../../../../util/conversion.js';
 import { atanInterval } from '../../../../../util/f32_interval.js';
 import { fullF32Range } from '../../../../../util/math.js';
-import { allInputSources, Case, makeUnaryToF32IntervalCase, run } from '../../expression.js';
+import { makeCaseCache } from '../../case_cache.js';
+import { allInputSources, generateUnaryToF32IntervalCases, run } from '../../expression.js';
 
 import { builtin } from './builtin.js';
 
 export const g = makeTestGroup(GPUTest);
+
+const inputs = [
+  // Known values
+  -Math.sqrt(3),
+  -1,
+  -1 / Math.sqrt(3),
+  0,
+  1,
+  1 / Math.sqrt(3),
+  Math.sqrt(3),
+
+  ...fullF32Range(),
+];
+
+export const d = makeCaseCache('atan', {
+  f32_const: () => {
+    return generateUnaryToF32IntervalCases(inputs, 'f32-only', atanInterval);
+  },
+  f32_non_const: () => {
+    return generateUnaryToF32IntervalCases(inputs, 'unfiltered', atanInterval);
+  },
+});
 
 g.test('abstract_float')
   .specURL('https://www.w3.org/TR/WGSL/#float-builtin-functions')
@@ -40,24 +63,7 @@ TODO(#792): Decide what the ground-truth is for these tests. [1]
     u.combine('inputSource', allInputSources).combine('vectorize', [undefined, 2, 3, 4] as const)
   )
   .fn(async t => {
-    const makeCase = (x: number): Case => {
-      return makeUnaryToF32IntervalCase(x, atanInterval);
-    };
-    const cases: Array<Case> = [
-      // Known values
-      Number.NEGATIVE_INFINITY,
-      -Math.sqrt(3),
-      -1,
-      -1 / Math.sqrt(3),
-      0,
-      1,
-      1 / Math.sqrt(3),
-      Math.sqrt(3),
-      Number.POSITIVE_INFINITY,
-
-      ...fullF32Range(),
-    ].map(x => makeCase(x));
-
+    const cases = await d.get(t.params.inputSource === 'const' ? 'f32_const' : 'f32_non_const');
     await run(t, builtin('atan'), [TypeF32], TypeF32, t.params, cases);
   });
 

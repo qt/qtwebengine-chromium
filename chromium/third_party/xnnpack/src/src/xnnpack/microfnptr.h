@@ -86,6 +86,20 @@ typedef void (*xnn_f32_gemm_relu_ukernel_function)(
     size_t cn_stride,
     const union xnn_f32_relu_params* params);
 
+// GEneral Matrix Multiplication with post operations
+
+typedef void (*xnn_f32_gemm_post_operation_ukernel_function)(
+    size_t mr,
+    size_t nr,
+    size_t k,
+    const float* a,
+    size_t a_stride,
+    const float* w,
+    float* c,
+    size_t cm_stride,
+    size_t cn_stride,
+    const void* params);
+
 // GEMM: GEneral Matrix Multiplication with Min+Max activation
 
 typedef void (*xnn_bf16_gemm_minmax_ukernel_function)(
@@ -250,6 +264,22 @@ typedef void (*xnn_f32_igemm_minmax_ukernel_function)(
     size_t a_offset,
     const float* zero,
     const union xnn_f32_minmax_params* params);
+
+// IGEMM: Indirect GEMM with post operations
+
+typedef void (*xnn_f32_igemm_post_operation_ukernel_function)(
+    size_t mr,
+    size_t nr,
+    size_t kc,
+    size_t ks,
+    const float** a,
+    const float* w,
+    float* c,
+    size_t cm_stride,
+    size_t cn_stride,
+    size_t a_offset,
+    const float* zero,
+    const void* params);
 
 typedef void (*xnn_qc8_igemm_minmax_ukernel_function)(
     size_t mr,
@@ -1609,17 +1639,6 @@ typedef void (*xnn_f32_gavgpool_cw_ukernel_function)(
 
 /********************* JIT microkernel generator pointers ********************/
 
-// JIT GEMM: used by GEMM/IGEMM microkernel generators.
-
-struct jit_gemm_params {
-  struct {
-    float min;
-    float max;
-  } f32_minmax;
-  size_t num_post_operations;
-  struct xnn_post_operation* post_operations;
-};
-
 typedef xnn_status_t (*xnn_jit_gemm_code_generator_function)(
     struct xnn_code_buffer *code, size_t max_mr, size_t nc_mod_nr, size_t kc, const void *params);
 typedef xnn_status_t (*xnn_jit_igemm_code_generator_function)(
@@ -1661,10 +1680,10 @@ typedef void (*xnn_u32_filterbank_subtract_ukernel_function)(
     uint32_t* noise_estimate,
     uint32_t* output);
 
-typedef void (*xnn_s16_vlshift_ukernel_function)(
+typedef void (*xnn_i16_vlshift_ukernel_function)(
     size_t batch,
-    const int16_t* input,
-    int16_t* output,
+    const uint16_t* input,
+    uint16_t* output,
     uint32_t shift);
 
 typedef void (*xnn_cs16_vsquareabs_ukernel_function)(
@@ -2033,8 +2052,16 @@ typedef size_t (*xnn_init_f16_gavgpool_neonfp16arith_params_fn)(
   uint16_t output_max,
   uint32_t width);
 
+typedef size_t (*xnn_init_f32_gavgpool_params_fn)(
+  union xnn_f32_gavgpool_params params[XNN_MIN_ELEMENTS(1)],
+  float multiplier,
+  float output_min,
+  float output_max,
+  uint32_t width);
+
 typedef size_t (*xnn_init_f16_chw_params_fn)(
   union xnn_f16_chw_params params[XNN_MIN_ELEMENTS(1)],
   uint32_t width,
   uint16_t output_min,
   uint16_t output_max);
+

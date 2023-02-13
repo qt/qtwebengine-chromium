@@ -72,6 +72,12 @@ DEFINE_AV_UNIQUE_PTR(SwrContext, swr_alloc, swr_free);
 // receiver.
 std::string AvErrorToString(int error_num);
 
+// Macros to enable backwards compability codepaths for older versions of
+// ffmpeg, where newer versions have deprecated APIs.  Note that ffmpeg defines
+// its own FF_API* macros that are related to removing APIs (not deprecating
+// them).
+#define _LIBAVUTIL_OLD_CHANNEL_LAYOUT (LIBAVUTIL_VERSION_MAJOR < 57)
+
 }  // namespace cast
 }  // namespace openscreen
 

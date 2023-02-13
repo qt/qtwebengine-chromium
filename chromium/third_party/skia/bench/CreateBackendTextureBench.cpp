@@ -52,12 +52,12 @@ private:
         context->flush();
         context->submit(true);
 
-        for (int i = 0; i < fBackendTextures.count(); ++i) {
+        for (int i = 0; i < fBackendTextures.size(); ++i) {
             if (fBackendTextures[i].isValid()) {
                 context->deleteBackendTexture(fBackendTextures[i]);
             }
         }
-        fBackendTextures.reset();
+        fBackendTextures.clear();
     }
 };
 

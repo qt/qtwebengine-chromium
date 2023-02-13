@@ -40,7 +40,7 @@ TEST_F(ResolverEvaluationStageTest, Literal_f32) {
     EXPECT_EQ(Sem().Get(expr)->Stage(), sem::EvaluationStage::kConstant);
 }
 
-TEST_F(ResolverEvaluationStageTest, Vector_Ctor) {
+TEST_F(ResolverEvaluationStageTest, Vector_Init) {
     auto* expr = vec3<f32>();
     WrapInFunction(expr);
 
@@ -48,7 +48,7 @@ TEST_F(ResolverEvaluationStageTest, Vector_Ctor) {
     EXPECT_EQ(Sem().Get(expr)->Stage(), sem::EvaluationStage::kConstant);
 }
 
-TEST_F(ResolverEvaluationStageTest, Vector_Ctor_Const_Const) {
+TEST_F(ResolverEvaluationStageTest, Vector_Init_Const_Const) {
     // const f = 1.f;
     // vec2<f32>(f, f);
     auto* f = Const("f", Expr(1_f));
@@ -60,7 +60,7 @@ TEST_F(ResolverEvaluationStageTest, Vector_Ctor_Const_Const) {
     EXPECT_EQ(Sem().Get(expr)->Stage(), sem::EvaluationStage::kConstant);
 }
 
-TEST_F(ResolverEvaluationStageTest, Vector_Ctor_Runtime_Runtime) {
+TEST_F(ResolverEvaluationStageTest, Vector_Init_Runtime_Runtime) {
     // var f = 1.f;
     // vec2<f32>(f, f);
     auto* f = Var("f", Expr(1_f));
@@ -96,7 +96,7 @@ TEST_F(ResolverEvaluationStageTest, Vector_Conv_Runtime) {
     EXPECT_EQ(Sem().Get(expr)->Stage(), sem::EvaluationStage::kRuntime);
 }
 
-TEST_F(ResolverEvaluationStageTest, Matrix_Ctor) {
+TEST_F(ResolverEvaluationStageTest, Matrix_Init) {
     auto* expr = mat2x2<f32>();
     WrapInFunction(expr);
 
@@ -104,7 +104,7 @@ TEST_F(ResolverEvaluationStageTest, Matrix_Ctor) {
     EXPECT_EQ(Sem().Get(expr)->Stage(), sem::EvaluationStage::kConstant);
 }
 
-TEST_F(ResolverEvaluationStageTest, Array_Ctor) {
+TEST_F(ResolverEvaluationStageTest, Array_Init) {
     auto* expr = array<f32, 3>();
     WrapInFunction(expr);
 
@@ -112,7 +112,7 @@ TEST_F(ResolverEvaluationStageTest, Array_Ctor) {
     EXPECT_EQ(Sem().Get(expr)->Stage(), sem::EvaluationStage::kConstant);
 }
 
-TEST_F(ResolverEvaluationStageTest, Array_Ctor_Const_Const) {
+TEST_F(ResolverEvaluationStageTest, Array_Init_Const_Const) {
     // const f = 1.f;
     // array<f32, 2>(f, f);
     auto* f = Const("f", Expr(1_f));
@@ -124,7 +124,7 @@ TEST_F(ResolverEvaluationStageTest, Array_Ctor_Const_Const) {
     EXPECT_EQ(Sem().Get(expr)->Stage(), sem::EvaluationStage::kConstant);
 }
 
-TEST_F(ResolverEvaluationStageTest, Array_Ctor_Const_Override) {
+TEST_F(ResolverEvaluationStageTest, Array_Init_Const_Override) {
     // const f1 = 1.f;
     // override f2 = 2.f;
     // array<f32, 2>(f1, f2);
@@ -139,7 +139,7 @@ TEST_F(ResolverEvaluationStageTest, Array_Ctor_Const_Override) {
     EXPECT_EQ(Sem().Get(expr)->Stage(), sem::EvaluationStage::kOverride);
 }
 
-TEST_F(ResolverEvaluationStageTest, Array_Ctor_Override_Runtime) {
+TEST_F(ResolverEvaluationStageTest, Array_Init_Override_Runtime) {
     // override f1 = 1.f;
     // var f2 = 2.f;
     // array<f32, 2>(f1, f2);
@@ -154,7 +154,7 @@ TEST_F(ResolverEvaluationStageTest, Array_Ctor_Override_Runtime) {
     EXPECT_EQ(Sem().Get(expr)->Stage(), sem::EvaluationStage::kRuntime);
 }
 
-TEST_F(ResolverEvaluationStageTest, Array_Ctor_Const_Runtime) {
+TEST_F(ResolverEvaluationStageTest, Array_Init_Const_Runtime) {
     // const f1 = 1.f;
     // var f2 = 2.f;
     // array<f32, 2>(f1, f2);
@@ -169,7 +169,7 @@ TEST_F(ResolverEvaluationStageTest, Array_Ctor_Const_Runtime) {
     EXPECT_EQ(Sem().Get(expr)->Stage(), sem::EvaluationStage::kRuntime);
 }
 
-TEST_F(ResolverEvaluationStageTest, Array_Ctor_Runtime_Runtime) {
+TEST_F(ResolverEvaluationStageTest, Array_Init_Runtime_Runtime) {
     // var f = 1.f;
     // array<f32, 2>(f, f);
     auto* f = Var("f", Expr(1_f));
@@ -291,6 +291,54 @@ TEST_F(ResolverEvaluationStageTest, MemberAccessor_Runtime) {
     ASSERT_TRUE(r()->Resolve()) << r()->error();
     EXPECT_EQ(Sem().Get(str)->Stage(), sem::EvaluationStage::kRuntime);
     EXPECT_EQ(Sem().Get(expr)->Stage(), sem::EvaluationStage::kRuntime);
+}
+
+TEST_F(ResolverEvaluationStageTest, Binary_Runtime) {
+    // let one = 1;
+    // let result = (one == 1) && (one == 1);
+    auto* one = Let("one", Expr(1_a));
+    auto* lhs = Equal("one", 1_a);
+    auto* rhs = Equal("one", 1_a);
+    auto* binary = LogicalAnd(lhs, rhs);
+    auto* result = Let("result", binary);
+    WrapInFunction(one, result);
+
+    ASSERT_TRUE(r()->Resolve()) << r()->error();
+    EXPECT_EQ(Sem().Get(lhs)->Stage(), sem::EvaluationStage::kRuntime);
+    EXPECT_EQ(Sem().Get(rhs)->Stage(), sem::EvaluationStage::kRuntime);
+    EXPECT_EQ(Sem().Get(binary)->Stage(), sem::EvaluationStage::kRuntime);
+}
+
+TEST_F(ResolverEvaluationStageTest, Binary_Const) {
+    // const one = 1;
+    // const result = (one == 1) && (one == 1);
+    auto* one = Const("one", Expr(1_a));
+    auto* lhs = Equal("one", 1_a);
+    auto* rhs = Equal("one", 1_a);
+    auto* binary = LogicalAnd(lhs, rhs);
+    auto* result = Const("result", binary);
+    WrapInFunction(one, result);
+
+    ASSERT_TRUE(r()->Resolve()) << r()->error();
+    EXPECT_EQ(Sem().Get(lhs)->Stage(), sem::EvaluationStage::kConstant);
+    EXPECT_EQ(Sem().Get(rhs)->Stage(), sem::EvaluationStage::kConstant);
+    EXPECT_EQ(Sem().Get(binary)->Stage(), sem::EvaluationStage::kConstant);
+}
+
+TEST_F(ResolverEvaluationStageTest, Binary_NotEvaluated) {
+    // const one = 1;
+    // const result = (one == 0) && (one == 1);
+    auto* one = Const("one", Expr(1_a));
+    auto* lhs = Equal("one", 0_a);
+    auto* rhs = Equal("one", 1_a);
+    auto* binary = LogicalAnd(lhs, rhs);
+    auto* result = Const("result", binary);
+    WrapInFunction(one, result);
+
+    ASSERT_TRUE(r()->Resolve()) << r()->error();
+    EXPECT_EQ(Sem().Get(lhs)->Stage(), sem::EvaluationStage::kConstant);
+    EXPECT_EQ(Sem().Get(rhs)->Stage(), sem::EvaluationStage::kNotEvaluated);
+    EXPECT_EQ(Sem().Get(binary)->Stage(), sem::EvaluationStage::kConstant);
 }
 
 }  // namespace

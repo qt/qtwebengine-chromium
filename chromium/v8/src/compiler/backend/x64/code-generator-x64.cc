@@ -3447,6 +3447,14 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       ASSEMBLE_SIMD_BINOP(pmaddwd);
       break;
     }
+    case kX64I32x4DotI8x16I7x16AddS: {
+      DCHECK_EQ(i.OutputSimd128Register(), i.InputSimd128Register(2));
+      __ I32x4DotI8x16I7x16AddS(
+          i.OutputSimd128Register(), i.InputSimd128Register(0),
+          i.InputSimd128Register(1), i.InputSimd128Register(2),
+          kScratchDoubleReg, i.TempSimd128Register(0));
+      break;
+    }
     case kX64I32x4ExtAddPairwiseI16x8S: {
       __ I32x4ExtAddPairwiseI16x8S(i.OutputSimd128Register(),
                                    i.InputSimd128Register(0), kScratchRegister);
@@ -4348,6 +4356,16 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       ASSEMBLE_SIMD_ALL_TRUE(Pcmpeqb);
       break;
     }
+    case kX64Blendvpd: {
+      __ Blendvpd(i.OutputSimd128Register(), i.InputSimd128Register(0),
+                  i.InputSimd128Register(1), i.InputSimd128Register(2));
+      break;
+    }
+    case kX64Blendvps: {
+      __ Blendvps(i.OutputSimd128Register(), i.InputSimd128Register(0),
+                  i.InputSimd128Register(1), i.InputSimd128Register(2));
+      break;
+    }
     case kX64Pblendvb: {
       __ Pblendvb(i.OutputSimd128Register(), i.InputSimd128Register(0),
                   i.InputSimd128Register(1), i.InputSimd128Register(2));
@@ -4841,10 +4859,10 @@ void CodeGenerator::AssembleConstructFrame() {
       if (call_descriptor->IsWasmFunctionCall() ||
           call_descriptor->IsWasmImportWrapper() ||
           call_descriptor->IsWasmCapiFunction()) {
-        // We do not use this stack value in import wrappers and capi functions.
-        // We push it anyway to satisfy legacy assumptions about these frames'
-        // size and order.
-        // TODO(manoskouk): Consider fixing this.
+        // For import wrappers and C-API functions, this stack slot is only used
+        // for printing stack traces in V8. Also, it holds a WasmApiFunctionRef
+        // instead of the instance itself, which is taken care of in the frames
+        // accessors.
         __ pushq(kWasmInstanceRegister);
       }
       if (call_descriptor->IsWasmCapiFunction()) {
@@ -5085,10 +5103,66 @@ void CodeGenerator::IncrementStackAccessCounter(
   }
 }
 
-void CodeGenerator::MoveToTempLocation(InstructionOperand* source) {
+AllocatedOperand CodeGenerator::Push(InstructionOperand* source) {
+  auto rep = LocationOperand::cast(source)->representation();
+  int new_slots = ElementSizeInPointers(rep);
+  X64OperandConverter g(this, nullptr);
+  int last_frame_slot_id =
+      frame_access_state_->frame()->GetTotalFrameSlotCount() - 1;
+  int sp_delta = frame_access_state_->sp_delta();
+  int slot_id = last_frame_slot_id + sp_delta + new_slots;
+  AllocatedOperand stack_slot(LocationOperand::STACK_SLOT, rep, slot_id);
+  if (source->IsRegister()) {
+    __ pushq(g.ToRegister(source));
+    frame_access_state()->IncreaseSPDelta(new_slots);
+  } else if (source->IsStackSlot() || source->IsFloatStackSlot() ||
+             source->IsDoubleStackSlot()) {
+    __ pushq(g.ToOperand(source));
+    frame_access_state()->IncreaseSPDelta(new_slots);
+  } else {
+    // No push instruction for xmm registers / 128-bit memory operands. Bump
+    // the stack pointer and assemble the move.
+    __ subq(rsp, Immediate(new_slots * kSystemPointerSize));
+    frame_access_state()->IncreaseSPDelta(new_slots);
+    AssembleMove(source, &stack_slot);
+  }
+  temp_slots_ += new_slots;
+  return stack_slot;
+}
+
+void CodeGenerator::Pop(InstructionOperand* dest, MachineRepresentation rep) {
+  X64OperandConverter g(this, nullptr);
+  int new_slots = ElementSizeInPointers(rep);
+  frame_access_state()->IncreaseSPDelta(-new_slots);
+  if (dest->IsRegister()) {
+    __ popq(g.ToRegister(dest));
+  } else if (dest->IsStackSlot() || dest->IsFloatStackSlot() ||
+             dest->IsDoubleStackSlot()) {
+    __ popq(g.ToOperand(dest));
+  } else {
+    int last_frame_slot_id =
+        frame_access_state_->frame()->GetTotalFrameSlotCount() - 1;
+    int sp_delta = frame_access_state_->sp_delta();
+    int slot_id = last_frame_slot_id + sp_delta + new_slots;
+    AllocatedOperand stack_slot(LocationOperand::STACK_SLOT, rep, slot_id);
+    AssembleMove(&stack_slot, dest);
+    __ addq(rsp, Immediate(new_slots * kSystemPointerSize));
+  }
+  temp_slots_ -= new_slots;
+}
+
+void CodeGenerator::PopTempStackSlots() {
+  if (temp_slots_ > 0) {
+    frame_access_state()->IncreaseSPDelta(-temp_slots_);
+    __ addq(rsp, Immediate(temp_slots_ * kSystemPointerSize));
+    temp_slots_ = 0;
+  }
+}
+
+void CodeGenerator::MoveToTempLocation(InstructionOperand* source,
+                                       MachineRepresentation rep) {
   // Must be kept in sync with {MoveTempLocationTo}.
   DCHECK(!source->IsImmediate());
-  auto rep = LocationOperand::cast(source)->representation();
   if ((IsFloatingPoint(rep) &&
        !move_cycle_.pending_double_scratch_register_use) ||
       (!IsFloatingPoint(rep) && !move_cycle_.pending_scratch_register_use)) {
@@ -5099,25 +5173,7 @@ void CodeGenerator::MoveToTempLocation(InstructionOperand* source) {
     AssembleMove(source, &scratch);
   } else {
     // The scratch register is blocked by pending moves. Use the stack instead.
-    int new_slots = ElementSizeInPointers(rep);
-    X64OperandConverter g(this, nullptr);
-    if (source->IsRegister()) {
-      __ pushq(g.ToRegister(source));
-    } else if (source->IsStackSlot() || source->IsFloatStackSlot() ||
-               source->IsDoubleStackSlot()) {
-      __ pushq(g.ToOperand(source));
-    } else {
-      // No push instruction for xmm registers / 128-bit memory operands. Bump
-      // the stack pointer and assemble the move.
-      int last_frame_slot_id =
-          frame_access_state_->frame()->GetTotalFrameSlotCount() - 1;
-      int sp_delta = frame_access_state_->sp_delta();
-      int temp_slot = last_frame_slot_id + sp_delta + new_slots;
-      __ subq(rsp, Immediate(new_slots * kSystemPointerSize));
-      AllocatedOperand temp(LocationOperand::STACK_SLOT, rep, temp_slot);
-      AssembleMove(source, &temp);
-    }
-    frame_access_state()->IncreaseSPDelta(new_slots);
+    Push(source);
   }
 }
 
@@ -5131,23 +5187,7 @@ void CodeGenerator::MoveTempLocationTo(InstructionOperand* dest,
     AllocatedOperand scratch(LocationOperand::REGISTER, rep, scratch_reg_code);
     AssembleMove(&scratch, dest);
   } else {
-    X64OperandConverter g(this, nullptr);
-    int new_slots = ElementSizeInPointers(rep);
-    frame_access_state()->IncreaseSPDelta(-new_slots);
-    if (dest->IsRegister()) {
-      __ popq(g.ToRegister(dest));
-    } else if (dest->IsStackSlot() || dest->IsFloatStackSlot() ||
-               dest->IsDoubleStackSlot()) {
-      __ popq(g.ToOperand(dest));
-    } else {
-      int last_frame_slot_id =
-          frame_access_state_->frame()->GetTotalFrameSlotCount() - 1;
-      int sp_delta = frame_access_state_->sp_delta();
-      int temp_slot = last_frame_slot_id + sp_delta + new_slots;
-      AllocatedOperand temp(LocationOperand::STACK_SLOT, rep, temp_slot);
-      AssembleMove(&temp, dest);
-      __ addq(rsp, Immediate(new_slots * kSystemPointerSize));
-    }
+    Pop(dest, rep);
   }
   move_cycle_ = MoveCycleState();
 }
@@ -5171,6 +5211,18 @@ void CodeGenerator::SetPendingMove(MoveOperands* move) {
     }
   }
 }
+
+namespace {
+
+bool Is32BitOperand(InstructionOperand* operand) {
+  DCHECK(operand->IsStackSlot() || operand->IsRegister());
+  MachineRepresentation mr = LocationOperand::cast(operand)->representation();
+  return mr == MachineRepresentation::kWord32 ||
+         mr == MachineRepresentation::kCompressed ||
+         mr == MachineRepresentation::kCompressedPointer;
+}
+
+}  // namespace
 
 void CodeGenerator::AssembleMove(InstructionOperand* source,
                                  InstructionOperand* destination) {
@@ -5295,18 +5347,18 @@ void CodeGenerator::AssembleMove(InstructionOperand* source,
     case MoveType::kStackToRegister: {
       Operand src = g.ToOperand(source);
       if (source->IsStackSlot()) {
-        MachineRepresentation mr =
-            LocationOperand::cast(source)->representation();
-        const bool is_32_bit = mr == MachineRepresentation::kWord32 ||
-                               mr == MachineRepresentation::kCompressed ||
-                               mr == MachineRepresentation::kCompressedPointer;
         // TODO(13581): Fix this for other code kinds (see
         // https://crbug.com/1356461).
-        if (code_kind() == CodeKind::WASM_FUNCTION && is_32_bit) {
+        if (code_kind() == CodeKind::WASM_FUNCTION && Is32BitOperand(source) &&
+            Is32BitOperand(destination)) {
           // When we need only 32 bits, move only 32 bits. Benefits:
           // - Save a byte here and there (depending on the destination
           //   register; "movl eax, ..." is smaller than "movq rax, ...").
           // - Safeguard against accidental decompression of compressed slots.
+          // We must check both {source} and {destination} to be 32-bit values,
+          // because treating 32-bit sources as 64-bit values can be perfectly
+          // fine as a result of virtual register renaming (to avoid redundant
+          // explicit zero-extensions that also happen implicitly).
           __ movl(g.ToRegister(destination), src);
         } else {
           __ movq(g.ToRegister(destination), src);

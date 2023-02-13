@@ -1,4 +1,4 @@
-// Copyright 2017 PDFium Authors. All rights reserved.
+// Copyright 2017 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -525,7 +525,7 @@ bool CXFA_TextLayout::LayoutInternal(size_t szBlockIndex) {
       if (!pContainerNode)
         return true;
 
-      const CFX_XMLNode* pXMLNode = m_pLoader->pXMLNode.Get();
+      const CFX_XMLNode* pXMLNode = m_pLoader->pXMLNode;
       if (!pXMLNode)
         return true;
 
@@ -690,8 +690,8 @@ void CXFA_TextLayout::Loader(float textWidth,
     m_pTextParser->DoParse(pXMLContainer, m_pTextProvider);
 
   auto pRootStyle = m_pTextParser->CreateRootStyle(m_pTextProvider);
-  LoadRichText(pXMLContainer, textWidth, pLinePos, pRootStyle, bSavePieces,
-               nullptr, true, false, 0);
+  LoadRichText(pXMLContainer, textWidth, pLinePos, std::move(pRootStyle),
+               bSavePieces, nullptr, true, false, 0);
 }
 
 void CXFA_TextLayout::LoadText(CXFA_Node* pNode,
@@ -729,16 +729,15 @@ void CXFA_TextLayout::LoadText(CXFA_Node* pNode,
     EndBreak(CFGAS_Char::BreakType::kParagraph, pLinePos, bSavePieces);
 }
 
-bool CXFA_TextLayout::LoadRichText(
-    const CFX_XMLNode* pXMLNode,
-    float textWidth,
-    float* pLinePos,
-    const RetainPtr<CFX_CSSComputedStyle>& pParentStyle,
-    bool bSavePieces,
-    RetainPtr<CFGAS_LinkUserData> pLinkData,
-    bool bEndBreak,
-    bool bIsOl,
-    int32_t iLiCount) {
+bool CXFA_TextLayout::LoadRichText(const CFX_XMLNode* pXMLNode,
+                                   float textWidth,
+                                   float* pLinePos,
+                                   RetainPtr<CFX_CSSComputedStyle> pParentStyle,
+                                   bool bSavePieces,
+                                   RetainPtr<CFGAS_LinkUserData> pLinkData,
+                                   bool bEndBreak,
+                                   bool bIsOl,
+                                   int32_t iLiCount) {
   if (!pXMLNode)
     return false;
 
@@ -772,7 +771,7 @@ bool CXFA_TextLayout::LoadRichText(
         return true;
       }
 
-      pStyle = m_pTextParser->ComputeStyle(pXMLNode, pParentStyle.Get());
+      pStyle = m_pTextParser->ComputeStyle(pXMLNode, pParentStyle);
       InitBreak(bContentNode ? pParentStyle.Get() : pStyle.Get(), eDisplay,
                 textWidth, pXMLNode, pParentStyle.Get());
       if ((eDisplay == CFX_CSSDisplay::Block ||

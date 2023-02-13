@@ -1,4 +1,4 @@
-// Copyright 2017 PDFium Authors. All rights reserved.
+// Copyright 2017 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,10 +14,8 @@ class ScanlineComposerIface {
  public:
   virtual ~ScanlineComposerIface() = default;
 
-  virtual void ComposeScanline(
-      int line,
-      pdfium::span<const uint8_t> scanline,
-      pdfium::span<const uint8_t> scan_extra_alpha) = 0;
+  virtual void ComposeScanline(int line,
+                               pdfium::span<const uint8_t> scanline) = 0;
 
   virtual bool SetInfo(int width,
                        int height,

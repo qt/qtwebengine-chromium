@@ -40,7 +40,7 @@
           'timeout_120m',
         ],
         'test_suites': {
-          'isolated_scripts': 'angle_perf_isolated_scripts',
+          'isolated_scripts': 'common_perf_isolated_scripts',
         },
       },
       'android-arm64-pixel6': {
@@ -89,7 +89,7 @@
           'timeout_120m',
         ],
         'test_suites': {
-          'isolated_scripts': 'angle_perf_isolated_scripts',
+          'isolated_scripts': 'common_perf_isolated_scripts',
         },
       },
       'linux-nvidia': {
@@ -109,7 +109,7 @@
           'timeout_120m',
         ],
         'test_suites': {
-          'isolated_scripts': 'angle_perf_isolated_scripts',
+          'isolated_scripts': 'common_perf_isolated_scripts',
         },
       },
       'linux-swiftshader': {
@@ -136,7 +136,7 @@
           'x86-64',
         ],
         'test_suites': {
-          'gtest_tests': 'swangle_gtests',
+          'gtest_tests': 'swangle_slow_gtests',
         },
       },
       'linux-swiftshader-tsan': {
@@ -149,20 +149,7 @@
           'x86-64',
         ],
         'test_suites': {
-          'gtest_tests': 'swangle_slow_gtests',
-        },
-      },
-      'linux-swiftshader-ubsan': {
-        'os_type': 'linux',
-        'mixins': [
-          'gpu-swarming-pool',
-          'no_gpu',
-          'linux-bionic',
-          'timeout_15m',
-          'x86-64',
-        ],
-        'test_suites': {
-          'gtest_tests': 'swangle_gtests',
+          'gtest_tests': 'swangle_slow_flaky_gtests',
         },
       },
       'mac-amd': {
@@ -201,6 +188,16 @@
           'gtest_tests': 'mac_nvidia_gtests',
         },
       },
+      'win10-x64-exp-intel': {
+        'os_type': 'win',
+        'mixins': [
+          'win10_intel_uhd_630_experimental',
+        ],
+        'test_suites': {
+          'gtest_tests': 'win10_intel_gtests',
+          'isolated_scripts': 'common_isolated_scripts',
+        },
+      },
       'win10-x64-intel': {
         'os_type': 'win',
         'mixins': [
@@ -208,7 +205,7 @@
         ],
         'test_suites': {
           'gtest_tests': 'win10_intel_gtests',
-          'isolated_scripts': 'common_isolated_scripts',
+          'isolated_scripts': 'win10_intel_isolated_scripts',
         },
       },
       'win10-x64-intel-perf': {
@@ -237,7 +234,7 @@
           'win10_nvidia_gtx_1660_stable',
         ],
         'test_suites': {
-          'isolated_scripts': 'angle_perf_isolated_scripts',
+          'isolated_scripts': 'common_perf_isolated_scripts',
         },
       },
       'win10-x64-swiftshader': {
@@ -259,7 +256,7 @@
         ],
         'test_suites': {
           # Clang-Win/ASAN has issues with dEQP's exceptions. http://crbug.com/1268912
-          'gtest_tests': 'swangle_non_deqp_slow_gtests',
+          'gtest_tests': 'swangle_non_deqp_slow_flaky_gtests',
         },
       },
       'win10-x86-swiftshader': {

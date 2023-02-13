@@ -1,10 +1,8 @@
-#!/usr/bin/env python
-# Copyright 2017 The PDFium Authors. All rights reserved.
+#!/usr/bin/env python3
+# Copyright 2017 The PDFium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 """Compares the performance of two versions of the pdfium code."""
-
-from __future__ import print_function
 
 import argparse
 import functools

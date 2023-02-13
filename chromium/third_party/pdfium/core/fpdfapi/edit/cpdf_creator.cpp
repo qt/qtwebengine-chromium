@@ -1,4 +1,4 @@
-// Copyright 2014 PDFium Authors. All rights reserved.
+// Copyright 2014 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -21,7 +21,6 @@
 #include "core/fpdfapi/parser/cpdf_parser.h"
 #include "core/fpdfapi/parser/cpdf_security_handler.h"
 #include "core/fpdfapi/parser/cpdf_string.h"
-#include "core/fpdfapi/parser/cpdf_syntax_parser.h"
 #include "core/fpdfapi/parser/fpdf_parser_utility.h"
 #include "core/fxcrt/data_vector.h"
 #include "core/fxcrt/fx_extension.h"
@@ -41,7 +40,7 @@ class CFX_FileBufferArchive final : public IFX_ArchiveStream {
   explicit CFX_FileBufferArchive(RetainPtr<IFX_RetainableWriteStream> file);
   ~CFX_FileBufferArchive() override;
 
-  bool WriteBlock(const void* pBuf, size_t size) override;
+  bool WriteBlock(pdfium::span<const uint8_t> buffer) override;
   FX_FILESIZE CurrentOffset() const override { return offset_; }
 
  private:
@@ -70,16 +69,14 @@ bool CFX_FileBufferArchive::Flush() {
   available_ = pdfium::make_span(buffer_);
   if (!nUsed)
     return true;
-  return backing_file_->WriteBlock(buffer_.data(), nUsed);
+  return backing_file_->WriteBlock(available_.first(nUsed));
 }
 
-bool CFX_FileBufferArchive::WriteBlock(const void* pBuf, size_t size) {
-  if (size == 0)
+bool CFX_FileBufferArchive::WriteBlock(pdfium::span<const uint8_t> buffer) {
+  if (buffer.empty())
     return true;
 
-  DCHECK(pBuf);
-  auto* pSrc = reinterpret_cast<const uint8_t*>(pBuf);
-  pdfium::span<const uint8_t> src_span(pSrc, size);
+  pdfium::span<const uint8_t> src_span = buffer;
   while (!src_span.empty()) {
     size_t copy_size = std::min(available_.size(), src_span.size());
     fxcrt::spancpy(available_, src_span.first(copy_size));
@@ -90,7 +87,7 @@ bool CFX_FileBufferArchive::WriteBlock(const void* pBuf, size_t size) {
   }
 
   FX_SAFE_FILESIZE safe_offset = offset_;
-  safe_offset += size;
+  safe_offset += buffer.size();
   if (!safe_offset.IsValid())
     return false;
 
@@ -214,8 +211,6 @@ CPDF_Creator::Stage CPDF_Creator::WriteDoc_Stage1() {
     if (!m_pParser || (m_bSecurityChanged && m_IsOriginal))
       m_IsIncremental = false;
 
-    const CPDF_Dictionary* pDict = m_pDocument->GetRoot();
-    m_pMetadata = pDict ? pDict->GetDirectObjectFor("Metadata") : nullptr;
     m_iStage = Stage::kWriteHeader10;
   }
   if (m_iStage == Stage::kWriteHeader10) {
@@ -235,26 +230,14 @@ CPDF_Creator::Stage CPDF_Creator::WriteDoc_Stage1() {
       }
       m_iStage = Stage::kInitWriteObjs20;
     } else {
-      m_SavedOffset = m_pParser->GetSyntax()->GetDocumentSize();
+      m_SavedOffset = m_pParser->GetDocumentSize();
       m_iStage = Stage::kWriteIncremental15;
     }
   }
   if (m_iStage == Stage::kWriteIncremental15) {
     if (m_IsOriginal && m_SavedOffset > 0) {
-      static constexpr FX_FILESIZE kBufferSize = 4096;
-      DataVector<uint8_t> buffer(kBufferSize);
-      FX_FILESIZE src_size = m_SavedOffset;
-      m_pParser->GetSyntax()->SetPos(0);
-      while (src_size) {
-        const uint32_t block_size =
-            static_cast<uint32_t>(std::min(kBufferSize, src_size));
-        if (!m_pParser->GetSyntax()->ReadBlock(buffer.data(), block_size))
-          return Stage::kInvalid;
-        if (!m_Archive->WriteBlock(buffer.data(), block_size))
-          return Stage::kInvalid;
-
-        src_size -= block_size;
-      }
+      if (!m_pParser->WriteToArchive(m_Archive.get(), m_SavedOffset))
+        return Stage::kInvalid;
     }
     if (m_IsOriginal && m_pParser->GetLastXRefOffset() == 0) {
       for (uint32_t num = 0; num <= m_pParser->GetLastObjNum(); ++num) {
@@ -429,7 +412,7 @@ CPDF_Creator::Stage CPDF_Creator::WriteDoc_Stage4() {
     CPDF_DictionaryLocker locker(m_pParser->GetCombinedTrailer());
     for (const auto& it : locker) {
       const ByteString& key = it.first;
-      CPDF_Object* pValue = it.second.Get();
+      const RetainPtr<CPDF_Object>& pValue = it.second;
       if (key == "Encrypt" || key == "Size" || key == "Filter" ||
           key == "Index" || key == "Length" || key == "Prev" || key == "W" ||
           key == "XRefStm" || key == "ID" || key == "DecodeParms" ||

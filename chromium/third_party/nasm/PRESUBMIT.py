@@ -3,6 +3,8 @@
 # found in the LICENSE file.
 """Presubmit script for nasm repository."""
 
+USE_PYTHON3 = True
+
 
 def _WarnIfGitIgnoreHasSources(input_api, output_api):
   """Warn if .gitignore has source files in it."""

@@ -1,4 +1,4 @@
-// Copyright 2014 PDFium Authors. All rights reserved.
+// Copyright 2014 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -111,8 +111,8 @@ bool CFFL_TextField::OnChar(CPDFSDK_Widget* pWidget,
       CPDFSDK_PageView* pPageView = GetCurPageView();
       DCHECK(pPageView);
       m_bValid = !m_bValid;
-      m_pFormFiller->GetCallbackIface()->Invalidate(
-          pWidget->GetPage(), pWidget->GetRect().GetOuterRect());
+      m_pFormFiller->Invalidate(pWidget->GetPage(),
+                                pWidget->GetRect().GetOuterRect());
       if (m_bValid) {
         if (CPWL_Wnd* pWnd = CreateOrUpdatePWLWindow(pPageView))
           pWnd->SetFocus();
@@ -148,7 +148,7 @@ void CFFL_TextField::SaveData(const CPDFSDK_PageView* pPageView) {
 
   WideString sOldValue = m_pWidget->GetValue();
   WideString sNewValue = pWnd->GetText();
-  ObservedPtr<CPDFSDK_Widget> observed_widget(m_pWidget.Get());
+  ObservedPtr<CPDFSDK_Widget> observed_widget(m_pWidget);
   ObservedPtr<CFFL_TextField> observed_this(this);
   m_pWidget->SetValue(sNewValue);
   if (!observed_widget)
@@ -240,7 +240,7 @@ bool CFFL_TextField::IsFieldFull(const CPDFSDK_PageView* pPageView) {
 void CFFL_TextField::OnSetFocusForEdit(CPWL_Edit* pEdit) {
   pEdit->SetCharSet(FX_Charset::kChineseSimplified);
   pEdit->SetReadyToInput();
-  m_pFormFiller->GetCallbackIface()->OnSetFieldInputFocus(pEdit->GetText());
+  m_pFormFiller->OnSetFieldInputFocus(pEdit->GetText());
 }
 
 CPWL_Edit* CFFL_TextField::GetPWLEdit(const CPDFSDK_PageView* pPageView) const {

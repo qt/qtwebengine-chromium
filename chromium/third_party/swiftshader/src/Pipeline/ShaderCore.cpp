@@ -672,10 +672,11 @@ UInt4 floatToHalfBits(RValue<UInt4> floatBits, bool storeInUpperBits)
 
 SIMD::Float linearToSRGB(const SIMD::Float &c)
 {
-	SIMD::Float lc = Min(c, 0.0031308f) * 12.92f;
+	SIMD::Float lc = c * 12.92f;
 	SIMD::Float ec = MulAdd(1.055f, Pow<Mediump>(c, (1.0f / 2.4f)), -0.055f);  // TODO(b/149574741): Use a custom approximation.
 
-	return Max(lc, ec);
+	SIMD::Int linear = CmpLT(c, 0.0031308f);
+	return As<SIMD::Float>((linear & As<SIMD::Int>(lc)) | (~linear & As<SIMD::Int>(ec)));  // TODO: IfThenElse()
 }
 
 SIMD::Float sRGBtoLinear(const SIMD::Float &c)
@@ -773,6 +774,19 @@ void transpose4x4(Float4 &row0, Float4 &row1, Float4 &row2, Float4 &row3)
 	row0 = Float4(tmp0.xy, tmp1.xy);
 	row1 = Float4(tmp0.zw, tmp1.zw);
 	row2 = Float4(tmp2.xy, tmp3.xy);
+	row3 = Float4(tmp2.zw, tmp3.zw);
+}
+
+void transpose4x4zyxw(Float4 &row0, Float4 &row1, Float4 &row2, Float4 &row3)
+{
+	Float4 tmp0 = UnpackLow(row0, row1);
+	Float4 tmp1 = UnpackLow(row2, row3);
+	Float4 tmp2 = UnpackHigh(row0, row1);
+	Float4 tmp3 = UnpackHigh(row2, row3);
+
+	row2 = Float4(tmp0.xy, tmp1.xy);
+	row1 = Float4(tmp0.zw, tmp1.zw);
+	row0 = Float4(tmp2.xy, tmp3.xy);
 	row3 = Float4(tmp2.zw, tmp3.zw);
 }
 
@@ -899,10 +913,11 @@ UInt r11g11b10Pack(const Float4 &value)
 
 Float4 linearToSRGB(const Float4 &c)
 {
-	Float4 lc = Min(c, 0.0031308f) * 12.92f;
+	Float4 lc = c * 12.92f;
 	Float4 ec = MulAdd(1.055f, Pow<Mediump>(c, (1.0f / 2.4f)), -0.055f);  // TODO(b/149574741): Use a custom approximation.
 
-	return Max(lc, ec);
+	Int4 linear = CmpLT(c, 0.0031308f);
+	return As<Float4>((linear & As<Int4>(lc)) | (~linear & As<Int4>(ec)));  // TODO: IfThenElse()
 }
 
 Float4 sRGBtoLinear(const Float4 &c)

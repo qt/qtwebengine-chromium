@@ -307,6 +307,7 @@ sc{
         CG{"Congo (Repùblica)"}
         CI{"Côte d’Ivoire"}
         CZ{"Repùblica Tzeca"}
+        NZ{"Aotearoa Zelanda Noa"}
         SZ{"Swàziland"}
         TL{"Timor Orientale"}
     }

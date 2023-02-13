@@ -243,8 +243,8 @@ class Error {
   std::string message_;
 };
 
+std::string ToString(openscreen::Error::Code code);
 std::ostream& operator<<(std::ostream& os, const Error::Code& code);
-
 std::ostream& operator<<(std::ostream& out, const Error& error);
 
 // A convenience function to return a single value from a function that can

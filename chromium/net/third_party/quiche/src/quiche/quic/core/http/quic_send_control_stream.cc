@@ -18,6 +18,9 @@
 #include "quiche/quic/platform/api/quic_logging.h"
 
 namespace quic {
+namespace {
+
+}  // anonymous namespace
 
 QuicSendControlStream::QuicSendControlStream(QuicStreamId id,
                                              QuicSpdySession* spdy_session,
@@ -82,19 +85,23 @@ void QuicSendControlStream::MaybeSendSettingsFrame() {
                     nullptr);
 }
 
-void QuicSendControlStream::WritePriorityUpdate(
-    const PriorityUpdateFrame& priority_update) {
+void QuicSendControlStream::WritePriorityUpdate(QuicStreamId stream_id,
+                                                QuicStreamPriority priority) {
   QuicConnection::ScopedPacketFlusher flusher(session()->connection());
   MaybeSendSettingsFrame();
 
+  const std::string priority_field_value =
+      SerializePriorityFieldValue(priority);
+  PriorityUpdateFrame priority_update_frame{stream_id, priority_field_value};
   if (spdy_session_->debug_visitor()) {
-    spdy_session_->debug_visitor()->OnPriorityUpdateFrameSent(priority_update);
+    spdy_session_->debug_visitor()->OnPriorityUpdateFrameSent(
+        priority_update_frame);
   }
 
   std::string frame =
-      HttpEncoder::SerializePriorityUpdateFrame(priority_update);
+      HttpEncoder::SerializePriorityUpdateFrame(priority_update_frame);
   QUIC_DVLOG(1) << "Control Stream " << id() << " is writing "
-                << priority_update;
+                << priority_update_frame;
   WriteOrBufferData(frame, false, nullptr);
 }
 

@@ -22,7 +22,8 @@ ar{
     NumberElements{
         arab{
             patterns{
-                currencyFormat{"#,##0.00 ¤"}
+                currencyFormat{"‏#,##0.00 ¤"}
+                currencyFormat%noCurrency{"#,##0.00"}
                 decimalFormat{"#,##0.###"}
                 percentFormat{"#,##0%"}
                 scientificFormat{"#E0"}
@@ -51,8 +52,11 @@ ar{
                 range{"{0}–{1}"}
             }
             patterns{
-                accountingFormat{"¤#,##0.00;(¤#,##0.00)"}
-                currencyFormat{"¤ #,##0.00"}
+                accountingFormat{"؜#,##0.00¤;(؜#,##0.00¤)"}
+                accountingFormat%alphaNextToNumber{"؜#,##0.00 ¤;(؜#,##0.00 ¤)"}
+                accountingFormat%noCurrency{"#,##0.00;(#,##0.00)"}
+                currencyFormat{"‏#,##0.00 ¤;‏-#,##0.00 ¤"}
+                currencyPatternAppendISO{"{0} ¤¤"}
                 decimalFormat{"#,##0.###"}
                 percentFormat{"#,##0%"}
                 scientificFormat{"#E0"}
@@ -532,11 +536,17 @@ ar{
                 "d MMMM y G",
                 "dd‏/MM‏/y G",
                 "d‏/M‏/y GGGGG",
+                "{1}، {0}",
+                "{1}، {0}",
+                "{1}، {0}",
+                "{1}، {0}",
+                "{1}, {0}",
+            }
+            DateTimePatterns%atTime{
                 "{1} في {0}",
                 "{1} في {0}",
-                "{1} في {0}",
-                "{1} في {0}",
-                "{1} في {0}",
+                "{1}، {0}",
+                "{1}, {0}",
             }
             DateTimeSkeletons{
                 "ahmmsszzzz",
@@ -569,12 +579,12 @@ ar{
                 Hm{"HH:mm"}
                 Hms{"HH:mm:ss"}
                 M{"L"}
-                MEd{"E، d/‏M"}
+                MEd{"E، d‏/M"}
                 MMM{"LLL"}
                 MMMEd{"E، d MMM"}
                 MMMMd{"d MMMM"}
                 MMMd{"d MMM"}
-                Md{"d/‏M"}
+                Md{"d‏/M"}
                 d{"d"}
                 h{"h a"}
                 hm{"h:mm a"}
@@ -583,7 +593,7 @@ ar{
                 y{"y G"}
                 yyyy{"y G"}
                 yyyyM{"M‏/y G"}
-                yyyyMEd{"E، d/‏M/‏y G"}
+                yyyyMEd{"E، d‏/M‏/y G"}
                 yyyyMMM{"MMM y G"}
                 yyyyMMMEd{"E، d MMM y G"}
                 yyyyMMMM{"MMMM y G"}
@@ -649,8 +659,8 @@ ar{
                     M{"M–M"}
                 }
                 MEd{
-                    M{"E، d/‏M – E، d/‏M"}
-                    d{"E، d/‏M –‏ E، d/‏M"}
+                    M{"E، d‏/M – E، d‏/M"}
+                    d{"E، d‏/M – E، d‏/M"}
                 }
                 MMM{
                     M{"MMM–MMM"}
@@ -667,8 +677,8 @@ ar{
                     d{"d–d MMM"}
                 }
                 Md{
-                    M{"d-M – d-M"}
-                    d{"d-M – d-M"}
+                    M{"d‏/M – d‏/M"}
+                    d{"d‏/M – d‏/M"}
                 }
                 d{
                     d{"d–d"}
@@ -751,10 +761,16 @@ ar{
                 "d MMMM y",
                 "dd‏/MM‏/y",
                 "d‏/M‏/y",
-                "{1}, {0}",
+                "{1}، {0}",
+                "{1}، {0}",
+                "{1}، {0}",
+                "{1}، {0}",
+                "{1}، {0}",
+            }
+            DateTimePatterns%atTime{
                 "{1} في {0}",
                 "{1} في {0}",
-                "{1}, {0}",
+                "{1}، {0}",
                 "{1} {0}",
             }
             DateTimeSkeletons{
@@ -793,7 +809,7 @@ ar{
                 Hmsv{"HH:mm:ss v"}
                 Hmv{"HH:mm v"}
                 M{"L"}
-                MEd{"E، d/‏M"}
+                MEd{"E، d‏/M"}
                 MMM{"LLL"}
                 MMMEd{"E، d MMM"}
                 MMMMEd{"E، d MMMM"}
@@ -808,7 +824,7 @@ ar{
                 MMMMd{"d MMMM"}
                 MMMd{"d MMM"}
                 MMdd{"dd‏/MM"}
-                Md{"d/‏M"}
+                Md{"d‏/M"}
                 d{"d"}
                 h{"h a"}
                 hm{"h:mm a"}
@@ -818,7 +834,7 @@ ar{
                 ms{"mm:ss"}
                 y{"y"}
                 yM{"M‏/y"}
-                yMEd{"E، d/‏M/‏y"}
+                yMEd{"E، d‏/M‏/y"}
                 yMM{"MM‏/y"}
                 yMMM{"MMM y"}
                 yMMMEd{"E، d MMM y"}
@@ -1055,8 +1071,8 @@ ar{
                     M{"M–M"}
                 }
                 MEd{
-                    M{"E، d/‏M – E، d/‏M"}
-                    d{"E، d/‏M –‏ E، d/‏M"}
+                    M{"E، d‏/M – E، d‏/M"}
+                    d{"E، d‏/M – E، d‏/M"}
                 }
                 MMM{
                     M{"MMM–MMM"}
@@ -1073,8 +1089,8 @@ ar{
                     d{"d–d MMM"}
                 }
                 Md{
-                    M{"M/d – M/d"}
-                    d{"d-M – d-M"}
+                    M{"d‏/M – d‏/M"}
+                    d{"d‏/M – d‏/M"}
                 }
                 d{
                     d{"d–d"}
@@ -1277,11 +1293,11 @@ ar{
                 "d MMMM y G",
                 "dd‏/MM‏/y G",
                 "d‏/M‏/y GGGGG",
-                "{1} في {0}",
-                "{1} في {0}",
-                "{1} في {0}",
-                "{1} في {0}",
-                "{1} في {0}",
+                "{1}، {0}",
+                "{1}، {0}",
+                "{1}، {0}",
+                "{1}، {0}",
+                "{1}, {0}",
             }
             DateTimeSkeletons{
                 "ahmmsszzzz",
@@ -1379,11 +1395,11 @@ ar{
                 "d MMMM y G",
                 "d MMM y G",
                 "d‏/M‏/y GGGGG",
-                "{1} في {0}",
-                "{1} في {0}",
-                "{1} في {0}",
-                "{1} في {0}",
-                "{1} في {0}",
+                "{1}، {0}",
+                "{1}، {0}",
+                "{1}، {0}",
+                "{1}، {0}",
+                "{1}, {0}",
             }
             DateTimeSkeletons{
                 "ahmmsszzzz",
@@ -1416,12 +1432,12 @@ ar{
                 Hm{"HH:mm"}
                 Hms{"HH:mm:ss"}
                 M{"L"}
-                MEd{"E، d/‏M"}
+                MEd{"E، d‏/M"}
                 MMM{"LLL"}
                 MMMEd{"E، d MMM"}
                 MMMMd{"d MMMM"}
                 MMMd{"d MMM"}
-                Md{"d/‏M"}
+                Md{"d‏/M"}
                 d{"d"}
                 h{"h a"}
                 hm{"h:mm a"}
@@ -1429,7 +1445,7 @@ ar{
                 y{"y G"}
                 yyyy{"y G"}
                 yyyyM{"M‏/y G"}
-                yyyyMEd{"E، d/‏M/‏y G"}
+                yyyyMEd{"E، d‏/M‏/y G"}
                 yyyyMMM{"MMM y G"}
                 yyyyMMMEd{"E، d MMM y G"}
                 yyyyMMMM{"MMMM y G"}
@@ -3125,25 +3141,80 @@ ar{
                 "[\\:∶]",
             }
         }
-        general{
-            lenient{
-                "[.․。︒﹒．｡]",
-                "['ʼ՚᾽᾿’＇]",
-                "[%٪﹪％]",
-                "[؉‰]",
-                "[\$﹩＄$]",
-                "[£₤]",
-                "[¥￥]",
-                "[₩￦]",
-                "[₨₹{Rp}{Rs}]",
-            }
-        }
         number{
             lenient{
                 "[\\-‒⁻₋−➖﹣－]",
                 "[,،٫⹁、︐︑﹐﹑，､]",
                 "[+⁺₊➕﬩﹢＋]",
             }
+        }
+    }
+    personNames{
+        foreignSpaceReplacement{" "}
+        initialPattern{
+            initial{"{0}"}
+            initialSequence{"{0}. {1}."}
+        }
+        nameOrderLocales{
+            givenFirst{
+                "und",
+                "ar",
+            }
+            surnameFirst{
+                "ko",
+                "vi",
+                "yue",
+                "zh",
+            }
+        }
+        namePattern{
+            givenFirst-long-addressing-formal{"{prefix} {surname}"}
+            givenFirst-long-addressing-informal{"{given-informal}"}
+            givenFirst-long-monogram-formal{
+                "{given-monogram-allCaps}.{given2-monogram-allCaps}.{surname-monogram"
+                "-allCaps}"
+            }
+            givenFirst-long-monogram-informal{"{given-informal-monogram-allCaps}.{surname-monogram-allCaps}"}
+            givenFirst-long-referring-formal{"{prefix} {given} {given2} {surname}"}
+            givenFirst-long-referring-informal{"{given-informal} {surname}"}
+            givenFirst-medium-addressing-formal{"{prefix} {surname}"}
+            givenFirst-medium-addressing-informal{"{given-informal}"}
+            givenFirst-medium-monogram-formal{"{given-monogram-allCaps}.{surname-monogram-allCaps}"}
+            givenFirst-medium-monogram-informal{"{given-monogram-allCaps}.{surname-monogram-allCaps}"}
+            givenFirst-medium-referring-formal{"{prefix} {given} {given2-initial} {surname}"}
+            givenFirst-medium-referring-informal{"{given-informal} {surname}"}
+            givenFirst-short-addressing-formal{"{prefix} {surname}"}
+            givenFirst-short-addressing-informal{"{given-informal}"}
+            givenFirst-short-monogram-informal{"{given-monogram-allCaps}.{surname-monogram-allCaps}"}
+            givenFirst-short-referring-formal{"{prefix} {given-initial} {surname}"}
+            givenFirst-short-referring-informal{"{given-informal-initial}. {surname}"}
+            sorting-long-referring-formal{"{surname-prefix} {surname-core}، {given} {given2}"}
+            sorting-long-referring-informal{"{surname}، {given-informal}"}
+            sorting-medium-referring-formal{"{surname-prefix} {surname-core}، {given} {given2-initial}"}
+            sorting-medium-referring-informal{"{surname}، {given-informal}"}
+            sorting-short-referring-formal{"{surname-prefix} {surname-core}، {given} {given2-initial}"}
+            sorting-short-referring-informal{"{surname}، {given-informal}"}
+            surnameFirst-long-addressing-formal{"{prefix} {surname}"}
+            surnameFirst-long-addressing-informal{"{given-informal}"}
+            surnameFirst-long-monogram-formal{
+                "{surname-monogram-allCaps}.{given-monogram-allCaps}.{given2-monogram"
+                "-allCaps}"
+            }
+            surnameFirst-long-monogram-informal{"{surname-monogram-allCaps}.{given-informal-monogram-allCaps}"}
+            surnameFirst-long-referring-formal{"{surname}، {given} {given2}"}
+            surnameFirst-long-referring-informal{"{surname} {given-informal}"}
+            surnameFirst-medium-addressing-formal{"{prefix} {surname}"}
+            surnameFirst-medium-addressing-informal{"{given-informal}"}
+            surnameFirst-medium-monogram-formal{"{surname-monogram-allCaps}."}
+            surnameFirst-medium-monogram-informal{"{given-informal-monogram-allCaps}."}
+            surnameFirst-medium-referring-formal{"{surname}، {given} {given2-initial}"}
+            surnameFirst-medium-referring-informal{"{surname} {given-informal}"}
+            surnameFirst-short-addressing-formal{"{prefix} {surname}"}
+            surnameFirst-short-addressing-informal{"{given-informal}"}
+            surnameFirst-short-monogram-formal{"{surname-monogram-allCaps}."}
+            surnameFirst-short-monogram-informal{"{given-informal-monogram-allCaps}."}
+            surnameFirst-short-referring-formal{"{surname}، {given-initial}"}
+            surnameFirst-short-referring-informal{"{surname} {given-initial}"}
         }
     }
 }

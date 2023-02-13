@@ -1148,7 +1148,7 @@ static int plot_cqt(AVFilterContext *ctx, AVFrame **frameout)
         }
     }
 
-    s->tx_fn(s->fft_ctx, s->fft_result, s->fft_input, sizeof(float));
+    s->tx_fn(s->fft_ctx, s->fft_result, s->fft_input, sizeof(AVComplexFloat));
     s->fft_result[s->fft_len] = s->fft_result[0];
     UPDATE_TIME(s->fft_time);
 
@@ -1187,6 +1187,7 @@ static int plot_cqt(AVFilterContext *ctx, AVFrame **frameout)
             UPDATE_TIME(s->sono_time);
         }
         out->pts = s->next_pts;
+        out->duration = PTS_STEP;
         s->next_pts += PTS_STEP;
     }
     s->sono_count = (s->sono_count + 1) % s->count;
@@ -1355,7 +1356,7 @@ static int config_output(AVFilterLink *outlink)
     AVFilterContext *ctx = outlink->src;
     AVFilterLink *inlink = ctx->inputs[0];
     ShowCQTContext *s = ctx->priv;
-    float scale;
+    float scale = 1.f;
     int ret;
 
     common_uninit(s);

@@ -1,4 +1,4 @@
-// Copyright 2017 PDFium Authors. All rights reserved.
+// Copyright 2017 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -170,7 +170,7 @@ float CPDF_Function::Interpolate(float x,
   return ymin + (divisor ? (x - xmin) * (ymax - ymin) / divisor : 0);
 }
 
-#if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
+#ifdef _SKIA_SUPPORT_
 const CPDF_SampledFunc* CPDF_Function::ToSampledFunc() const {
   return m_Type == Type::kType0Sampled
              ? static_cast<const CPDF_SampledFunc*>(this)
@@ -188,4 +188,4 @@ const CPDF_StitchFunc* CPDF_Function::ToStitchFunc() const {
              ? static_cast<const CPDF_StitchFunc*>(this)
              : nullptr;
 }
-#endif  // defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
+#endif  // _SKIA_SUPPORT_

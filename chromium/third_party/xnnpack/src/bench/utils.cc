@@ -21,6 +21,7 @@
 #include <cpuinfo.h>
 
 #include <xnnpack.h>
+#include <xnnpack/common.h>
 #include <xnnpack/allocator.h>
 
 #include "bench/utils.h"
@@ -183,6 +184,14 @@ bool CheckARMV6(benchmark::State& state) {
   return true;
 }
 
+bool CheckFP16ARITH(benchmark::State& state) {
+  if (!cpuinfo_initialize() || !cpuinfo_has_arm_fp16_arith()) {
+    state.SkipWithError("no FP16-ARITH extension");
+    return false;
+  }
+  return true;
+}
+
 bool CheckNEON(benchmark::State& state) {
   if (!cpuinfo_initialize() || !cpuinfo_has_arm_neon()) {
     state.SkipWithError("no NEON extension");
@@ -314,6 +323,20 @@ bool CheckAVX512SKX(benchmark::State& state) {
   return true;
 }
 
+bool CheckAVX512VBMI(benchmark::State& state) {
+  if (!cpuinfo_initialize() || !cpuinfo_has_x86_avx512f() ||
+      !cpuinfo_has_x86_avx512cd() || !cpuinfo_has_x86_avx512bw() ||
+      !cpuinfo_has_x86_avx512dq() || !cpuinfo_has_x86_avx512vl() ||
+      !cpuinfo_has_x86_avx512vbmi())
+  {
+    state.SkipWithError("no AVX512 VBMI extension");
+    return false;
+  }
+  return true;
+}
+
+#if XNN_PLATFORM_JIT
+
 CodeMemoryHelper::CodeMemoryHelper() {
   status = xnn_allocate_code_memory(&buffer, XNN_DEFAULT_CODE_BUFFER_SIZE);
 }
@@ -323,6 +346,8 @@ CodeMemoryHelper::~CodeMemoryHelper() {
     xnn_release_code_memory(&buffer);
   }
 }
+
+#endif  // XNN_PLATFORM_JIT
 
 }  // namespace utils
 }  // namespace benchmark

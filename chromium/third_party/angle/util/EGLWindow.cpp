@@ -152,6 +152,19 @@ bool EGLWindow::initializeDisplay(OSWindow *osWindow,
                                   angle::GLESDriverType driverType,
                                   const EGLPlatformParameters &params)
 {
+    if (driverType == angle::GLESDriverType::ZinkEGL)
+    {
+        std::stringstream driDirStream;
+        char s = angle::GetPathSeparator();
+        driDirStream << angle::GetModuleDirectory() << "mesa" << s << "src" << s << "gallium" << s
+                     << "targets" << s << "dri";
+
+        std::string driDir = driDirStream.str();
+
+        angle::SetEnvironmentVar("MESA_LOADER_DRIVER_OVERRIDE", "zink");
+        angle::SetEnvironmentVar("LIBGL_DRIVERS_PATH", driDir.c_str());
+    }
+
 #if defined(ANGLE_USE_UTIL_LOADER)
     PFNEGLGETPROCADDRESSPROC getProcAddress;
     glWindowingLibrary->getAs("eglGetProcAddress", &getProcAddress);
@@ -165,8 +178,14 @@ bool EGLWindow::initializeDisplay(OSWindow *osWindow,
     LoadUtilEGL(getProcAddress);
 #endif  // defined(ANGLE_USE_UTIL_LOADER)
 
+    // EGL_NO_DISPLAY + EGL_EXTENSIONS returns NULL before Android 10
     const char *extensionString =
         static_cast<const char *>(eglQueryString(EGL_NO_DISPLAY, EGL_EXTENSIONS));
+    if (!extensionString)
+    {
+        // fallback to an empty string for strstr
+        extensionString = "";
+    }
 
     std::vector<EGLAttrib> displayAttributes;
     displayAttributes.push_back(EGL_PLATFORM_ANGLE_TYPE_ANGLE);
@@ -261,8 +280,7 @@ bool EGLWindow::initializeDisplay(OSWindow *osWindow,
     if (driverType == angle::GLESDriverType::SystemWGL)
         return false;
 
-    if (driverType == angle::GLESDriverType::AngleEGL &&
-        strstr(extensionString, "EGL_ANGLE_platform_angle"))
+    if (IsANGLE(driverType) && strstr(extensionString, "EGL_ANGLE_platform_angle"))
     {
         mDisplay = eglGetPlatformDisplay(EGL_PLATFORM_ANGLE_ANGLE,
                                          reinterpret_cast<void *>(osWindow->getNativeDisplay()),
@@ -763,6 +781,41 @@ EGLBoolean EGLWindow::destroyImageKHR(Image image)
     return eglDestroyImageKHR(getDisplay(), image);
 }
 
+EGLWindow::Sync EGLWindow::createSync(EGLDisplay dpy, EGLenum type, const EGLAttrib *attrib_list)
+{
+    return eglCreateSync(dpy, type, attrib_list);
+}
+
+EGLWindow::Sync EGLWindow::createSyncKHR(EGLDisplay dpy, EGLenum type, const EGLint *attrib_list)
+{
+    return eglCreateSyncKHR(dpy, type, attrib_list);
+}
+
+EGLBoolean EGLWindow::destroySync(EGLDisplay dpy, Sync sync)
+{
+    return eglDestroySync(dpy, sync);
+}
+
+EGLBoolean EGLWindow::destroySyncKHR(EGLDisplay dpy, Sync sync)
+{
+    return eglDestroySyncKHR(dpy, sync);
+}
+
+EGLint EGLWindow::clientWaitSync(EGLDisplay dpy, Sync sync, EGLint flags, EGLTimeKHR timeout)
+{
+    return eglClientWaitSync(dpy, sync, flags, timeout);
+}
+
+EGLint EGLWindow::clientWaitSyncKHR(EGLDisplay dpy, Sync sync, EGLint flags, EGLTimeKHR timeout)
+{
+    return eglClientWaitSyncKHR(dpy, sync, flags, timeout);
+}
+
+EGLint EGLWindow::getEGLError()
+{
+    return eglGetError();
+}
+
 GLWindowBase::Surface EGLWindow::createPbufferSurface(const EGLint *attrib_list)
 {
     return eglCreatePbufferSurface(getDisplay(), getConfig(), attrib_list);
@@ -866,10 +919,11 @@ void EGLWindow::Delete(EGLWindow **window)
 
 void EGLWindow::queryFeatures()
 {
+    // EGL_NO_DISPLAY + EGL_EXTENSIONS returns NULL before Android 10
     const char *extensionString =
         static_cast<const char *>(eglQueryString(EGL_NO_DISPLAY, EGL_EXTENSIONS));
     const bool hasFeatureControlANGLE =
-        strstr(extensionString, "EGL_ANGLE_feature_control") != nullptr;
+        extensionString && strstr(extensionString, "EGL_ANGLE_feature_control") != nullptr;
 
     if (!hasFeatureControlANGLE)
     {

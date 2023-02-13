@@ -2415,10 +2415,9 @@ union xnn_f16_chw_params {
   struct {
     uint16_t min;
     uint16_t max;
-    XNN_ALIGN(8) uint16_t maskx4_even[4]; // used by stride 2 kernels
-    XNN_ALIGN(8) uint16_t maskx4_odd[4];  // used by stride 2 kernels
-    XNN_ALIGN(8) uint16_t maskx4[4]; // used by stride 1 kernels
-    XNN_ALIGN(16) uint16_t maskx8[8]; // used by stride 1 x8 kernels
+    XNN_ALIGN(16) uint16_t mask_even[8]; // used by stride 2 kernels
+    XNN_ALIGN(16) uint16_t mask_odd[8];  // used by stride 2 kernels
+    XNN_ALIGN(16) uint16_t mask[8]; // used by stride 1 x8 kernels
   } neonfp16arith;
 #endif  // XNN_ARCH_ARM || XNN_ARCH_ARM64
 };
@@ -2495,3 +2494,14 @@ union xnn_f32_gavgpool_params {
 struct xnn_code_buffer;
 
 typedef int xnn_status_t;
+
+// JIT GEMM: used by GEMM/IGEMM microkernel generators.
+
+struct jit_gemm_params {
+  struct {
+    float min;
+    float max;
+  } f32_minmax;
+  size_t num_post_operations;
+  const struct xnn_post_operation* post_operations;
+};

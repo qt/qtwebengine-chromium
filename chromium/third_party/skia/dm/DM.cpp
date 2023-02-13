@@ -263,7 +263,7 @@ static void done(const char* config, const char* src, const char* srcOptions, co
     int pending;
     {
         SkAutoSpinlock lock(*gMutex);
-        for (int i = 0; i < gRunning->count(); i++) {
+        for (int i = 0; i < gRunning->size(); i++) {
             if (gRunning->at(i).id == id) {
                 gRunning->removeShuffle(i);
                 break;
@@ -282,7 +282,7 @@ static void done(const char* config, const char* src, const char* srcOptions, co
 
         SkAutoSpinlock lock(*gMutex);
         info("\n%dMB RAM, %dMB peak, %d queued, %d active:\n",
-             curr, peak, gPending - gRunning->count(), gRunning->count());
+             curr, peak, gPending - gRunning->size(), gRunning->size());
         for (auto& task : *gRunning) {
             task.dump();
         }
@@ -464,7 +464,7 @@ static void gather_uninteresting_hashes() {
             gUninterestingHashes->add(hash);
         }
         info("FYI: loaded %d distinct uninteresting hashes from %d lines\n",
-             gUninterestingHashes->count(), hashes.count());
+             gUninterestingHashes->count(), hashes.size());
     }
 }
 
@@ -978,6 +978,8 @@ static Sink* create_sink(const GrContextOptions& grCtxOptions, const SkCommandLi
                 return new GPUOOPRSink(gpuConfig, grCtxOptions);
             } else if (gpuConfig->getSlug()) {
                 return new GPUSlugSink(gpuConfig, grCtxOptions);
+            } else if (gpuConfig->getSerializedSlug()) {
+                return new GPUSerializeSlugSink(gpuConfig, grCtxOptions);
             } else {
                 return new GPUSink(gpuConfig, grCtxOptions);
             }
@@ -1056,7 +1058,7 @@ static bool gather_sinks(const GrContextOptions& grCtxOptions, bool defaultConfi
     SkCommandLineConfigArray configs;
     ParseConfigs(FLAGS_config, &configs);
     AutoreleasePool pool;
-    for (int i = 0; i < configs.count(); i++) {
+    for (int i = 0; i < configs.size(); i++) {
         const SkCommandLineConfig& config = *configs[i];
         Sink* sink = create_sink(grCtxOptions, &config);
         if (sink == nullptr) {
@@ -1069,7 +1071,7 @@ static bool gather_sinks(const GrContextOptions& grCtxOptions, bool defaultConfi
         sink->setColorSpace(config.refColorSpace());
 
         const SkTArray<SkString>& parts = config.getViaParts();
-        for (int j = parts.count(); j-- > 0;) {
+        for (int j = parts.size(); j-- > 0;) {
             const SkString& part = parts[j];
             Sink* next = create_via(part, sink);
             if (next == nullptr) {
@@ -1087,11 +1089,11 @@ static bool gather_sinks(const GrContextOptions& grCtxOptions, bool defaultConfi
     }
 
     // If no configs were requested (just running tests, perhaps?), then we're okay.
-    if (configs.count() == 0 ||
+    if (configs.size() == 0 ||
         // If we're using the default configs, we're okay.
         defaultConfigs ||
         // Otherwise, make sure that all specified configs have become sinks.
-        configs.count() == gSinks->count()) {
+        configs.size() == gSinks->size()) {
         return true;
     }
     return false;
@@ -1316,8 +1318,8 @@ struct Task {
 
         skcms_TransferFunction tf;
         cs->transferFn(&tf);
-        switch (classify_transfer_fn(tf)) {
-            case sRGBish_TF:
+        switch (skcms_TransferFunction_getType(&tf)) {
+            case skcms_TFType_sRGBish:
                 if (tf.a == 1 && tf.b == 0 && tf.c == 0 && tf.d == 0 && tf.e == 0 && tf.f == 0) {
                     return SkStringPrintf("gamma %.3g", tf.g);
                 }
@@ -1326,18 +1328,18 @@ struct Task {
                 return SkStringPrintf("%.3g %.3g %.3g %.3g %.3g %.3g %.3g",
                                         tf.g, tf.a, tf.b, tf.c, tf.d, tf.e, tf.f);
 
-            case PQish_TF:
+            case skcms_TFType_PQish:
                 if (eq(tf, SkNamedTransferFn::kPQ)) { return SkString("PQ"); }
                 return SkStringPrintf("PQish %.3g %.3g %.3g %.3g %.3g %.3g",
                                       tf.a, tf.b, tf.c, tf.d, tf.e, tf.f);
 
-            case HLGish_TF:
+            case skcms_TFType_HLGish:
                 if (eq(tf, SkNamedTransferFn::kHLG)) { return SkString("HLG"); }
                 return SkStringPrintf("HLGish %.3g %.3g %.3g %.3g %.3g (%.3g)",
                                       tf.a, tf.b, tf.c, tf.d, tf.e, tf.f+1);
 
-            case HLGinvish_TF: break;
-            case Bad_TF: break;
+            case skcms_TFType_HLGinvish: break;
+            case skcms_TFType_Invalid: break;
         }
         return SkString("non-numeric");
     }
@@ -1610,9 +1612,9 @@ int main(int argc, char** argv) {
     }
     gather_tests();
     int testCount = gCPUTests->size() + gGaneshTests->size() + gGraphiteTests->size();
-    gPending = gSrcs->count() * gSinks->count() + testCount;
+    gPending = gSrcs->size() * gSinks->size() + testCount;
     info("%d srcs * %d sinks + %d tests == %d tasks\n",
-         gSrcs->count(), gSinks->count(), testCount,
+         gSrcs->size(), gSinks->size(), testCount,
          gPending);
 
     // Kick off as much parallel work as we can, making note of any serial work we'll need to do.
@@ -1662,7 +1664,7 @@ int main(int argc, char** argv) {
         for (const SkString& fail : *gFailures) {
             info("\t%s\n", fail.c_str());
         }
-        info("%d failures\n", gFailures->count());
+        info("%d failures\n", gFailures->size());
         return 1;
     }
 

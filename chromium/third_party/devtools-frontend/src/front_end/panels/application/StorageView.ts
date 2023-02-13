@@ -269,7 +269,7 @@ export class StorageView extends UI.ThrottledWidget.ThrottledWidget {
   }
 
   targetAdded(target: SDK.Target.Target): void {
-    if (this.target) {
+    if (target !== SDK.TargetManager.TargetManager.instance().mainFrameTarget()) {
       return;
     }
     this.target = target;
@@ -406,11 +406,11 @@ export class StorageView extends UI.ThrottledWidget.ThrottledWidget {
 
     if (this.target) {
       const includeThirdPartyCookies = this.includeThirdPartyCookiesSetting.get();
-      // TODO(crbug.com/1313434) Prioritize storageKey once everything is ready
-      if (this.securityOrigin) {
+      if (this.storageKey) {
+        StorageView.clearByStorageKey(
+            this.target, this.storageKey, this.securityOrigin, selectedStorageTypes, includeThirdPartyCookies);
+      } else if (this.securityOrigin) {
         StorageView.clear(this.target, this.securityOrigin, selectedStorageTypes, includeThirdPartyCookies);
-      } else if (this.storageKey) {
-        StorageView.clearByStorageKey(this.target, this.storageKey, selectedStorageTypes);
       }
     }
 
@@ -439,15 +439,6 @@ export class StorageView extends UI.ThrottledWidget.ThrottledWidget {
       }
     }
 
-    if (set.has(Protocol.Storage.StorageType.Indexeddb) || hasAll) {
-      for (const target of SDK.TargetManager.TargetManager.instance().targets()) {
-        const indexedDBModel = target.model(IndexedDBModel);
-        if (indexedDBModel) {
-          indexedDBModel.clearForOrigin(securityOrigin);
-        }
-      }
-    }
-
     if (set.has(Protocol.Storage.StorageType.Local_storage) || hasAll) {
       const storageModel = target.model(DOMStorageModel);
       if (storageModel) {
@@ -464,7 +455,7 @@ export class StorageView extends UI.ThrottledWidget.ThrottledWidget {
     }
 
     if (set.has(Protocol.Storage.StorageType.Cache_storage) || hasAll) {
-      const target = SDK.TargetManager.TargetManager.instance().mainTarget();
+      const target = SDK.TargetManager.TargetManager.instance().mainFrameTarget();
       const model = target && target.model(SDK.ServiceWorkerCacheModel.ServiceWorkerCacheModel);
       if (model) {
         model.clearForOrigin(securityOrigin);
@@ -472,7 +463,9 @@ export class StorageView extends UI.ThrottledWidget.ThrottledWidget {
     }
   }
 
-  static clearByStorageKey(target: SDK.Target.Target, storageKey: string, selectedStorageTypes: string[]): void {
+  static clearByStorageKey(
+      target: SDK.Target.Target, storageKey: string, originForCookies: string|undefined, selectedStorageTypes: string[],
+      includeThirdPartyCookies: boolean): void {
     void target.storageAgent().invoke_clearDataForStorageKey(
         {storageKey, storageTypes: selectedStorageTypes.join(',')});
 
@@ -492,6 +485,31 @@ export class StorageView extends UI.ThrottledWidget.ThrottledWidget {
         if (indexedDBModel) {
           indexedDBModel.clearForStorageKey(storageKey);
         }
+      }
+    }
+
+    if (originForCookies && (set.has(Protocol.Storage.StorageType.Cookies) || hasAll)) {
+      void target.storageAgent().invoke_clearDataForOrigin(
+          {origin: originForCookies, storageTypes: Protocol.Storage.StorageType.Cookies});
+      const cookieModel = target.model(SDK.CookieModel.CookieModel);
+      if (cookieModel) {
+        void cookieModel.clear(undefined, includeThirdPartyCookies ? undefined : originForCookies);
+      }
+    }
+
+    if (set.has(Protocol.Storage.StorageType.Websql) || hasAll) {
+      const databaseModel = target.model(DatabaseModel);
+      if (databaseModel) {
+        databaseModel.disable();
+        databaseModel.enable();
+      }
+    }
+
+    if (set.has(Protocol.Storage.StorageType.Cache_storage) || hasAll) {
+      const target = SDK.TargetManager.TargetManager.instance().mainFrameTarget();
+      const model = target && target.model(SDK.ServiceWorkerCacheModel.ServiceWorkerCacheModel);
+      if (model) {
+        model.clearForStorageKey(storageKey);
       }
     }
   }
@@ -616,16 +634,8 @@ export class ActionDelegate implements UI.ActionRegistration.ActionDelegate {
     return false;
   }
 
-  private async clear(target: SDK.Target.Target, resourceTreeModel: SDK.ResourceTreeModel.ResourceTreeModel):
-      Promise<void> {
-    const storageKey = await resourceTreeModel.getMainStorageKey();
-    if (storageKey) {
-      StorageView.clearByStorageKey(target, storageKey, AllStorageTypes);
-    }
-  }
-
   private handleClear(includeThirdPartyCookies: boolean): boolean {
-    const target = SDK.TargetManager.TargetManager.instance().mainTarget();
+    const target = SDK.TargetManager.TargetManager.instance().mainFrameTarget();
     if (!target) {
       return false;
     }
@@ -634,12 +644,13 @@ export class ActionDelegate implements UI.ActionRegistration.ActionDelegate {
       return false;
     }
     const securityOrigin = resourceTreeModel.getMainSecurityOrigin();
-    // TODO(crbug.com/1313434) Prioritize storageKey functionality once everything is ready
-    if (securityOrigin) {
+    const storageKey = void resourceTreeModel.getMainStorageKey();
+    if (storageKey) {
+      StorageView.clearByStorageKey(
+          target, storageKey, securityOrigin ? securityOrigin : undefined, AllStorageTypes, includeThirdPartyCookies);
+    } else if (securityOrigin) {
       StorageView.clear(target, securityOrigin, AllStorageTypes, includeThirdPartyCookies);
-      return true;
     }
-    void this.clear(target, resourceTreeModel);
     return true;
   }
 }

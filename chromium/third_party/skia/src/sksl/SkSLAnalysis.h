@@ -18,7 +18,6 @@
 
 namespace SkSL {
 
-class BuiltinMap;
 class Context;
 class ErrorReporter;
 class Expression;
@@ -33,8 +32,8 @@ class Variable;
 class VariableReference;
 enum class VariableRefKind : int8_t;
 struct ForLoopPositions;
-struct LoadedModule;
 struct LoopUnrollInfo;
+struct Module;
 struct Program;
 
 /**
@@ -108,7 +107,7 @@ bool SwitchCaseContainsUnconditionalExit(Statement& stmt);
 bool SwitchCaseContainsConditionalExit(Statement& stmt);
 
 std::unique_ptr<ProgramUsage> GetUsage(const Program& program);
-std::unique_ptr<ProgramUsage> GetUsage(const LoadedModule& module, const BuiltinMap* base);
+std::unique_ptr<ProgramUsage> GetUsage(const Module& module);
 
 bool StatementWritesToVariable(const Statement& stmt, const Variable& var);
 
@@ -200,7 +199,6 @@ bool CanExitWithoutReturningValue(const FunctionDeclaration& funcDecl, const Sta
 
 /**
  * Runs at finalization time to perform any last-minute correctness checks:
- * - Reports @if/@switch statements that didn't optimize away
  * - Reports dangling FunctionReference or TypeReference expressions
  * - Reports function `out` params which are never written to (structs are currently exempt)
  */
@@ -223,7 +221,7 @@ public:
     SymbolTableStackBuilder(const Statement* stmt,
                             std::vector<std::shared_ptr<SymbolTable>>* stack);
 
-    // If a symbol table was added to the stack earlier, removes it here.
+    // If a symbol table was added to the stack earlier, removes it from the stack.
     ~SymbolTableStackBuilder();
 
 private:

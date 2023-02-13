@@ -520,6 +520,8 @@ export class NetworkDispatcher implements ProtocolProxyApi.NetworkDispatcher {
 
     networkRequest.protocol = response.protocol || '';
 
+    networkRequest.alternateProtocolUsage = response.alternateProtocolUsage;
+
     if (response.serviceWorkerResponseSource) {
       networkRequest.setServiceWorkerResponseSource(response.serviceWorkerResponseSource);
     }
@@ -836,8 +838,9 @@ export class NetworkDispatcher implements ProtocolProxyApi.NetworkDispatcher {
   requestIntercepted({}: Protocol.Network.RequestInterceptedEvent): void {
   }
 
-  requestWillBeSentExtraInfo({requestId, associatedCookies, headers, clientSecurityState, connectTiming}:
-                                 Protocol.Network.RequestWillBeSentExtraInfoEvent): void {
+  requestWillBeSentExtraInfo(
+      {requestId, associatedCookies, headers, clientSecurityState, connectTiming, siteHasCookieInOtherPartition}:
+          Protocol.Network.RequestWillBeSentExtraInfoEvent): void {
     const blockedRequestCookies: BlockedCookieWithReason[] = [];
     const includedRequestCookies = [];
     for (const {blockedReasons, cookie} of associatedCookies) {
@@ -851,8 +854,9 @@ export class NetworkDispatcher implements ProtocolProxyApi.NetworkDispatcher {
       blockedRequestCookies,
       includedRequestCookies,
       requestHeaders: this.headersMapToHeadersArray(headers),
-      clientSecurityState: clientSecurityState,
+      clientSecurityState,
       connectTiming,
+      siteHasCookieInOtherPartition,
     };
     this.getExtraInfoBuilder(requestId).addRequestExtraInfo(extraRequestInfo);
   }
@@ -1511,12 +1515,13 @@ export class MultitargetNetworkManager extends Common.ObjectWrapper.ObjectWrappe
       headers['Cache-Control'] = 'no-cache';
     }
 
-    const allowFileUNCPaths = Common.Settings.Settings.instance().moduleSetting('network.enable-unc-loading').get();
+    const allowRemoteFilePaths =
+        Common.Settings.Settings.instance().moduleSetting('network.enable-remote-file-loading').get();
 
     return new Promise(
         resolve => Host.ResourceLoader.load(url, headers, (success, _responseHeaders, content, errorDescription) => {
           resolve({success, content, errorDescription});
-        }, allowFileUNCPaths));
+        }, allowRemoteFilePaths));
   }
 }
 
@@ -1571,20 +1576,40 @@ export class InterceptedRequest {
     this.responseHeaders = responseHeaders;
     this.requestId = requestId;
     this.networkRequest = networkRequest;
-    if (this.networkRequest && this.responseHeaders) {
-      // This populates 'NetworkRequest.originalResponseHeaders' with the
-      // response headers from CDP's 'Fetch.requestPaused'. Populating this
-      // field together with 'NetworkRequest.responseHeaders' with the info
-      // from 'Network.responseReceivedExtraInfo' would have been easier, but we
-      // are not sure whether the response headers from the 2 CDP events are
-      // always exactly the same.
-      // Creates a deep copy.
-      this.networkRequest.originalResponseHeaders = this.responseHeaders.map(headerEntry => ({...headerEntry}));
-    }
   }
 
   hasResponded(): boolean {
     return this.#hasRespondedInternal;
+  }
+
+  static mergeSetCookieHeaders(
+      originalSetCookieHeaders: Protocol.Fetch.HeaderEntry[],
+      setCookieHeadersFromOverrides: Protocol.Fetch.HeaderEntry[]): Protocol.Fetch.HeaderEntry[] {
+    const malformedHeaders = new Set<string>();
+    const validHeaders = new Map<string, string>();
+    for (const header of originalSetCookieHeaders.concat(setCookieHeadersFromOverrides)) {
+      // The regex matches cookie headers of the form '<header-name>=<header-value>'.
+      // <header-name> is a token as defined in https://www.rfc-editor.org/rfc/rfc9110.html#name-tokens.
+      // The shape of <header-value> is not being validated at all here.
+      const match = header.value.match(/([a-zA-Z0-9!#$%&'*+.^_`|~-]+)=(.*)/);
+      if (match) {
+        // This step merges headers for cookies with the same name, e.g. if there
+        // are both 'set-cookie: foo=original' and 'set-cookie: foo=override',
+        // only the later one will be stored.
+        validHeaders.set(match[1], match[2]);
+      } else {
+        malformedHeaders.add(header.value);
+      }
+    }
+
+    const mergedHeaders: Protocol.Fetch.HeaderEntry[] = [];
+    for (const [cookieName, cookieValue] of validHeaders) {
+      mergedHeaders.push({name: 'set-cookie', value: `${cookieName}=${cookieValue}`});
+    }
+    for (const headerValue of malformedHeaders) {
+      mergedHeaders.push({name: 'set-cookie', value: headerValue});
+    }
+    return mergedHeaders;
   }
 
   async continueRequestWithContent(
@@ -1593,6 +1618,15 @@ export class InterceptedRequest {
     this.#hasRespondedInternal = true;
     const body = encoded ? await contentBlob.text() : await blobToBase64(contentBlob);
     const responseCode = isBodyOverridden ? 200 : (this.responseStatusCode || 200);
+
+    if (this.networkRequest) {
+      const originalSetCookieHeaders =
+          this.networkRequest?.originalResponseHeaders.filter(header => header.name === 'set-cookie') || [];
+      const setCookieHeadersFromOverrides = responseHeaders.filter(header => header.name === 'set-cookie');
+      this.networkRequest.setCookieHeaders =
+          InterceptedRequest.mergeSetCookieHeaders(originalSetCookieHeaders, setCookieHeadersFromOverrides);
+    }
+
     void this.#fetchAgent.invoke_fulfillRequest({requestId: this.requestId, responseCode, body, responseHeaders});
     MultitargetNetworkManager.instance().dispatchEventToListeners(
         MultitargetNetworkManager.Events.RequestFulfilled, this.request.url as Platform.DevToolsPath.UrlString);

@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2016 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -89,8 +89,7 @@ ByteString CPDF_Action::GetURI(const CPDF_Document* pDoc) const {
     return ByteString();
 
   ByteString csURI = m_pDict->GetByteStringFor("URI");
-  const CPDF_Dictionary* pRoot = pDoc->GetRoot();
-  RetainPtr<const CPDF_Dictionary> pURI = pRoot->GetDictFor("URI");
+  RetainPtr<const CPDF_Dictionary> pURI = pDoc->GetRoot()->GetDictFor("URI");
   if (pURI) {
     auto result = csURI.Find(":");
     if (!result.has_value() || result.value() == 0) {
@@ -148,14 +147,14 @@ std::vector<RetainPtr<const CPDF_Object>> CPDF_Action::GetAllFields() const {
 }
 
 absl::optional<WideString> CPDF_Action::MaybeGetJavaScript() const {
-  const CPDF_Object* pObject = GetJavaScriptObject();
+  RetainPtr<const CPDF_Object> pObject = GetJavaScriptObject();
   if (!pObject)
     return absl::nullopt;
   return pObject->GetUnicodeText();
 }
 
 WideString CPDF_Action::GetJavaScript() const {
-  const CPDF_Object* pObject = GetJavaScriptObject();
+  RetainPtr<const CPDF_Object> pObject = GetJavaScriptObject();
   return pObject ? pObject->GetUnicodeText() : WideString();
 }
 

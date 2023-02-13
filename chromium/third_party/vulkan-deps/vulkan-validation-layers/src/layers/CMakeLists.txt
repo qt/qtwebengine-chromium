@@ -15,35 +15,6 @@
 # limitations under the License.
 # ~~~
 
-if(WIN32)
-    add_definitions(-DVK_USE_PLATFORM_WIN32_KHR -DVK_USE_PLATFORM_WIN32_KHX -DWIN32_LEAN_AND_MEAN)
-    add_custom_target(mk_layer_config_dir ALL
-                      COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>)
-    set_target_properties(mk_layer_config_dir PROPERTIES FOLDER ${LAYERS_HELPER_FOLDER})
-elseif(ANDROID)
-    add_definitions(-DVK_USE_PLATFORM_ANDROID_KHR -DVK_USE_PLATFORM_ANDROID_KHX)
-elseif(APPLE)
-    add_definitions(-DVK_USE_PLATFORM_MACOS_MVK -DVK_USE_PLATFORM_METAL_EXT)
-    if(CMAKE_GENERATOR MATCHES "^Xcode.*")
-        add_custom_target(mk_layer_config_dir ALL
-                          COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>)
-    endif()
-elseif(UNIX AND NOT APPLE) # i.e. Linux
-    if(BUILD_WSI_XCB_SUPPORT)
-        add_definitions(-DVK_USE_PLATFORM_XCB_KHR -DVK_USE_PLATFORM_XCB_KHX)
-    endif()
-
-    if(BUILD_WSI_XLIB_SUPPORT)
-        add_definitions(-DVK_USE_PLATFORM_XLIB_KHR -DVK_USE_PLATFORM_XLIB_KHX -DVK_USE_PLATFORM_XLIB_XRANDR_EXT)
-    endif()
-
-    if(BUILD_WSI_WAYLAND_SUPPORT)
-        add_definitions(-DVK_USE_PLATFORM_WAYLAND_KHR -DVK_USE_PLATFORM_WAYLAND_KHX)
-    endif()
-else()
-    message(FATAL_ERROR "Unsupported Platform!")
-endif()
-
 # XXH_NO_LONG_LONG: removes compilation of algorithms relying on 64-bit types (XXH3 and XXH64). Only XXH32 will be compiled.
 # We only need XXH32 due to restrictions requiring a 32 bit hash. This also reduces binary size.
 #
@@ -80,66 +51,19 @@ if(BUILD_LAYER_SUPPORT_FILES)
         generated/vk_extension_helper.h
         generated/vk_typemap_helper.h)
     install(FILES ${LAYER_UTIL_FILES} DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/vulkan)
+    install(TARGETS VkLayer_utils DESTINATION ${CMAKE_INSTALL_LIBDIR})
 endif()
 
-set(TARGET_NAMES
-    VkLayer_khronos_validation)
-
-# System-specific macro to create a library target.
-macro(AddVkLayer target LAYER_COMPILE_DEFINITIONS)
-    add_library(VkLayer_${target} SHARED ${ARGN})
-    set_target_properties(VkLayer_${target} PROPERTIES CXX_STANDARD ${VVL_CPP_STANDARD})
-    target_compile_definitions(VkLayer_${target} PUBLIC ${LAYER_COMPILE_DEFINITIONS})
-    target_link_libraries(VkLayer_${target} PRIVATE VkLayer_utils)
-
-    if (VVL_ENABLE_ASAN)
-        target_compile_options(VkLayer_${target} PRIVATE -fsanitize=address)
-        # NOTE: Use target_link_options when cmake 3.13 is available on CI
-        target_link_libraries(VkLayer_${target} PRIVATE "-fsanitize=address")
-    endif()
-
-    if(WIN32)
-        target_sources(VkLayer_${target} PRIVATE VkLayer_${target}.def)
-        target_compile_definitions(VkLayer_${target} PUBLIC NOMINMAX)
-    elseif(APPLE)
-        set_target_properties(VkLayer_${target}
-                              PROPERTIES LINK_FLAGS
-                                         "-Wl"
-                                         INSTALL_RPATH
-                                         "@loader_path/")
-    else(UNIX AND NOT APPLE) # i.e.: Linux
-        set_target_properties(VkLayer_${target} PROPERTIES LINK_FLAGS "-Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/libVkLayer_${target}.map,-Bsymbolic,--exclude-libs,ALL")
-    endif()
-
-    install(TARGETS VkLayer_${target} DESTINATION ${CMAKE_INSTALL_LIBDIR})
-endmacro()
-
-include_directories(${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/generated ${VulkanHeaders_INCLUDE_DIR})
-
 if(MSVC)
-    # Applies to all configurations
-    add_definitions(-D_CRT_SECURE_NO_WARNINGS -DNOMINMAX)
     # Avoid: fatal error C1128: number of sections exceeded object file format limit: compile with /bigobj
     add_compile_options("/bigobj")
     add_compile_options("/we4189")
     add_compile_options("/we5038")
-    # Allow Windows to use multiprocessor compilation
-    add_compile_options(/MP)
     # Turn off transitional "changed behavior" warning message for Visual Studio versions prior to 2015. The changed behavior is
     # that constructor initializers are now fixed to clear the struct members.
     add_compile_options("$<$<AND:$<CXX_COMPILER_ID:MSVC>,$<VERSION_LESS:$<CXX_COMPILER_VERSION>,19>>:/wd4351>")
 else()
-    if(MINGW)
-        add_compile_options("-Wa,-mbig-obj")
-    endif()
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wpointer-arith -Wno-unused-function -Wno-sign-compare")
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wpointer-arith -Wno-unused-function -Wno-sign-compare")
-endif()
-
-
-if(ANNOTATED_SPEC_LINK)
-    message("-- ANNOTATED_SPEC_LINK is ${ANNOTATED_SPEC_LINK}")
-    add_definitions(-DANNOTATED_SPEC_LINK=${ANNOTATED_SPEC_LINK})
+    add_compile_options(-Wpointer-arith -Wno-unused-function -Wno-sign-compare)
 endif()
 
 # Clang warns about unused const variables. Generated files may purposely contain unused consts, so silence this warning in Clang
@@ -200,6 +124,8 @@ set(CORE_VALIDATION_LIBRARY_FILES
     buffer_validation.h
     shader_module.cpp
     shader_module.h
+    shader_instruction.cpp
+    shader_instruction.h
     shader_validation.cpp
     shader_validation.h
     sync_vuid_maps.cpp
@@ -226,6 +152,7 @@ set(THREAD_SAFETY_LIBRARY_FILES
 set(STATELESS_VALIDATION_LIBRARY_FILES
     generated/parameter_validation.cpp
     generated/parameter_validation.h
+    generated/enum_flag_bits.h
     parameter_validation_utils.cpp
     stateless_validation.h)
 
@@ -282,107 +209,115 @@ if(INSTRUMENT_OPTICK)
     endif()
 endif()
 
-if(BUILD_LAYERS)
-    AddVkLayer(khronos_validation "${KHRONOS_LAYER_COMPILE_DEFINITIONS}"
-        ${CHASSIS_LIBRARY_FILES}
-        ${CORE_VALIDATION_LIBRARY_FILES}
-        ${OBJECT_LIFETIMES_LIBRARY_FILES}
-        ${THREAD_SAFETY_LIBRARY_FILES}
-        ${STATELESS_VALIDATION_LIBRARY_FILES}
-        ${BEST_PRACTICES_LIBRARY_FILES}
-        ${GPU_UTILITY_LIBRARY_FILES}
-        ${GPU_ASSISTED_LIBRARY_FILES}
-        ${DEBUG_PRINTF_LIBRARY_FILES}
-        ${SYNC_VALIDATION_LIBRARY_FILES}
-        ${OPTICK_SOURCE_FILES})
-
-    # Force generation of the PDB file for Release builds.
-    # Note that CMake reduces inlining optimization levels for RelWithDebInfo builds.
-    if(MSVC)
-        target_compile_options(VkLayer_khronos_validation PRIVATE "$<$<CONFIG:Release>:/Zi>")
-        # Need to use this instead of target_link_options() for older versions of CMake.
-        target_link_libraries(VkLayer_khronos_validation PRIVATE "$<$<CONFIG:Release>:-DEBUG:FULL>")
-    endif()
-
-    # Khronos validation additional dependencies
-    target_include_directories(VkLayer_khronos_validation PRIVATE ${GLSLANG_INCLUDE_DIR})
-    if(INSTRUMENT_OPTICK)
-        target_include_directories(VkLayer_khronos_validation PRIVATE ${OPTICK_SOURCE_DIR})
-    endif()
-    if (USE_ROBIN_HOOD_HASHING)
-        target_link_libraries(VkLayer_khronos_validation PRIVATE robin_hood::robin_hood)
-        # This warning produces what look like false positives in robin_hood.h with Visual Studio 2015
-        target_compile_options(VkLayer_khronos_validation PRIVATE "$<$<AND:$<CXX_COMPILER_ID:MSVC>,$<VERSION_LESS:$<CXX_COMPILER_VERSION>,19.1>>:/wd4996>")
-    endif()
-    target_include_directories(VkLayer_khronos_validation PRIVATE ${SPIRV_HEADERS_INCLUDE_DIR})
-    target_link_libraries(VkLayer_khronos_validation PRIVATE ${SPIRV_TOOLS_TARGET} SPIRV-Tools-opt)
-
-
-    # The output file needs Unix "/" separators or Windows "\" separators On top of that, Windows separators actually need to be doubled
-    # because the json format uses backslash escapes
-    file(TO_NATIVE_PATH "./" RELATIVE_PATH_PREFIX)
-    string(REPLACE "\\"
-                   "\\\\"
-                   RELATIVE_PATH_PREFIX
-                   "${RELATIVE_PATH_PREFIX}")
-
-    # Fetch header version from vulkan_core.h ----------------------------------------------------------------------------------------
-    file(STRINGS "${VulkanHeaders_INCLUDE_DIRS}/vulkan/vulkan_core.h" lines REGEX "^#define VK_HEADER_VERSION [0-9]+")
-    list(LENGTH lines len)
-    if(${len} EQUAL 1)
-        string(REGEX MATCHALL "[0-9]+" vk_header_version ${lines})
-    else()
-        message(FATAL_ERROR "Unable to fetch version from vulkan_core.h")
-    endif()
-
-    # Run each .json.in file through the generator We need to create the generator.cmake script so that the generator can be run at
-    # compile time, instead of configure time Running at compile time lets us use cmake generator expressions (TARGET_FILE_NAME and
-    # TARGET_FILE_DIR, specifically)
-    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/generator.cmake" "configure_file(\"\${INPUT_FILE}\" \"\${OUTPUT_FILE}\" @ONLY)")
-    foreach(TARGET_NAME ${TARGET_NAMES})
-        set(CONFIG_DEFINES -DINPUT_FILE="${CMAKE_CURRENT_SOURCE_DIR}/json/${TARGET_NAME}.json.in" -DVK_VERSION=1.3.${vk_header_version})
-        # If this json file is not a metalayer, get the needed properties from that target
-        if(TARGET ${TARGET_NAME})
-            set(CONFIG_DEFINES
-                ${CONFIG_DEFINES}
-                -DOUTPUT_FILE="$<TARGET_FILE_DIR:${TARGET_NAME}>/${TARGET_NAME}.json"
-                -DRELATIVE_LAYER_BINARY="${RELATIVE_PATH_PREFIX}$<TARGET_FILE_NAME:${TARGET_NAME}>")
-            # If this json file is a metalayer, make the output path match core validation, and there is no layer binary file
-        else()
-            set(CONFIG_DEFINES ${CONFIG_DEFINES} -DOUTPUT_FILE="$<TARGET_FILE_DIR:VkLayer_khronos_validation>/${TARGET_NAME}.json")
-        endif()
-        add_custom_target(${TARGET_NAME}-json ALL
-                          COMMAND ${CMAKE_COMMAND} ${CONFIG_DEFINES} -P "${CMAKE_CURRENT_BINARY_DIR}/generator.cmake")
-        if(CMAKE_GENERATOR MATCHES "^Visual Studio.*")
-            set_target_properties(${TARGET_NAME}-json PROPERTIES FOLDER ${LAYERS_HELPER_FOLDER})
-        endif()
-    endforeach()
-
-    # For UNIX-based systems, `library_path` should not contain a relative path (indicated by "./") before installing to system
-    # directories, so we do not include it in the staging-json files which are used for installation
-    if(UNIX)
-        foreach(TARGET_NAME ${TARGET_NAMES})
-            set(INSTALL_DEFINES
-                -DINPUT_FILE="${CMAKE_CURRENT_SOURCE_DIR}/json/${TARGET_NAME}.json.in"
-                -DOUTPUT_FILE="${CMAKE_CURRENT_BINARY_DIR}/staging-json/${TARGET_NAME}.json"
-                -DVK_VERSION=1.3.${vk_header_version})
-            # If this json file is not a metalayer, get the needed properties from that target
-            if(TARGET ${TARGET_NAME})
-                set(INSTALL_DEFINES ${INSTALL_DEFINES} -DRELATIVE_LAYER_BINARY="$<TARGET_FILE_NAME:${TARGET_NAME}>")
-            endif()
-            add_custom_target(${TARGET_NAME}-staging-json ALL
-                              COMMAND ${CMAKE_COMMAND} ${INSTALL_DEFINES} -P "${CMAKE_CURRENT_BINARY_DIR}/generator.cmake")
-        endforeach()
-    endif()
-
-    # Install the layer json files
-    foreach(TARGET_NAME ${TARGET_NAMES})
-        if(WIN32)
-            install(FILES $<TARGET_FILE_DIR:${TARGET_NAME}>/${TARGET_NAME}.json
-                    DESTINATION ${CMAKE_INSTALL_LIBDIR})
-        elseif(UNIX)
-            install(FILES ${CMAKE_CURRENT_BINARY_DIR}/staging-json/${TARGET_NAME}.json
-                    DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/vulkan/explicit_layer.d)
-        endif()
-    endforeach()
+if (NOT BUILD_LAYERS)
+    return()
 endif()
+
+add_library(VkLayer_khronos_validation MODULE)
+
+target_sources(VkLayer_khronos_validation PRIVATE
+    ${CHASSIS_LIBRARY_FILES}
+    ${CORE_VALIDATION_LIBRARY_FILES}
+    ${OBJECT_LIFETIMES_LIBRARY_FILES}
+    ${THREAD_SAFETY_LIBRARY_FILES}
+    ${STATELESS_VALIDATION_LIBRARY_FILES}
+    ${BEST_PRACTICES_LIBRARY_FILES}
+    ${GPU_UTILITY_LIBRARY_FILES}
+    ${GPU_ASSISTED_LIBRARY_FILES}
+    ${DEBUG_PRINTF_LIBRARY_FILES}
+    ${SYNC_VALIDATION_LIBRARY_FILES}
+    ${OPTICK_SOURCE_FILES}
+)
+
+target_compile_definitions(VkLayer_khronos_validation PUBLIC ${KHRONOS_LAYER_COMPILE_DEFINITIONS})
+target_link_libraries(VkLayer_khronos_validation PRIVATE VkLayer_utils)
+
+if (VVL_ENABLE_ASAN)
+    target_compile_options(VkLayer_khronos_validation PRIVATE -fsanitize=address)
+    # NOTE: Use target_link_options when cmake 3.13 is available on CI
+    target_link_libraries(VkLayer_khronos_validation PRIVATE "-fsanitize=address")
+endif()
+
+if(WIN32)
+    set_target_properties(VkLayer_khronos_validation PROPERTIES LINK_FLAGS "/DEF:${CMAKE_CURRENT_SOURCE_DIR}/VkLayer_khronos_validation.def")
+elseif(APPLE)
+    set_target_properties(VkLayer_khronos_validation PROPERTIES SUFFIX ".dylib")
+else()
+    set_target_properties(VkLayer_khronos_validation PROPERTIES LINK_FLAGS "-Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/libVkLayer_khronos_validation.map,-Bsymbolic,--exclude-libs,ALL")
+endif()
+
+# Force generation of the PDB file for Release builds.
+# Note that CMake reduces inlining optimization levels for RelWithDebInfo builds.
+if(MSVC)
+    target_compile_options(VkLayer_khronos_validation PRIVATE "$<$<CONFIG:Release>:/Zi>")
+    # Need to use this instead of target_link_options() for older versions of CMake.
+    target_link_libraries(VkLayer_khronos_validation PRIVATE "$<$<CONFIG:Release>:-DEBUG:FULL>")
+endif()
+
+# Khronos validation additional dependencies
+if(INSTRUMENT_OPTICK)
+    target_include_directories(VkLayer_khronos_validation PRIVATE ${OPTICK_SOURCE_DIR})
+endif()
+if (USE_ROBIN_HOOD_HASHING)
+    target_link_libraries(VkLayer_khronos_validation PRIVATE robin_hood::robin_hood)
+    # This warning produces what look like false positives in robin_hood.h with Visual Studio 2015
+    target_compile_options(VkLayer_khronos_validation PRIVATE "$<$<AND:$<CXX_COMPILER_ID:MSVC>,$<VERSION_LESS:$<CXX_COMPILER_VERSION>,19.1>>:/wd4996>")
+endif()
+target_link_libraries(VkLayer_khronos_validation PRIVATE
+    ${SPIRV_TOOLS_TARGET}
+    SPIRV-Tools-opt
+    SPIRV-Headers::SPIRV-Headers
+)
+
+# There are 2 primary deliverables for the validation layers.
+# - The actual library VkLayer_khronos_validation.(dll|so|dylib)
+# - The respective json file, VkLayer_khronos_validation.json
+# This code generates the appropriate json for both local testing and the installation.
+# NOTE: For WIN32 the JSON and dll MUST be placed in the same location, due to Win32 using a relative path for installation.
+set(INPUT_FILE "${CMAKE_CURRENT_SOURCE_DIR}/json/VkLayer_khronos_validation.json.in")
+set(INTERMEDIATE_FILE "${CMAKE_CURRENT_BINARY_DIR}/json/validation.json")
+set(OUTPUT_FILE_FINAL_NAME "VkLayer_khronos_validation.json")
+set(LAYER_INSTALL_DIR ${CMAKE_INSTALL_LIBDIR})
+if (WIN32)
+    set(LAYER_INSTALL_DIR ${CMAKE_INSTALL_BINDIR}) # WIN32/MINGW expect the dll in the `bin` dir, this matches our WIN32 SDK process
+endif()
+
+if (WIN32)
+    set(JSON_LIBRARY_PATH ".\\\\VkLayer_khronos_validation.dll")
+elseif(APPLE)
+    set(JSON_LIBRARY_PATH "./libVkLayer_khronos_validation.dylib")
+else()
+    set(JSON_LIBRARY_PATH "./libVkLayer_khronos_validation.so")
+endif()
+
+set(JSON_API_VERSION ${VulkanHeaders_VERSION})
+
+configure_file(${INPUT_FILE} ${INTERMEDIATE_FILE} @ONLY)
+
+# To support both multi/single configuration generators just copy the json to the correct directory
+add_custom_command(TARGET VkLayer_khronos_validation POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${INTERMEDIATE_FILE} $<TARGET_FILE_DIR:VkLayer_khronos_validation>/${OUTPUT_FILE_FINAL_NAME}
+)
+
+# For UNIX-based systems, `library_path` should not contain a relative path (indicated by "./") before installing to system directories
+# This json isn't used for regular local development, it's used for installation
+if (UNIX)
+    set(UNIX_INTERMEDIATE_FILE "${CMAKE_CURRENT_BINARY_DIR}/json/unix_install_validation.json")
+
+    if(APPLE)
+        set(JSON_LIBRARY_PATH "libVkLayer_khronos_validation.dylib")
+    else()
+        set(JSON_LIBRARY_PATH "libVkLayer_khronos_validation.so")
+    endif()
+
+    configure_file(${INPUT_FILE} ${UNIX_INTERMEDIATE_FILE} @ONLY)
+
+    install(FILES ${UNIX_INTERMEDIATE_FILE} DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/vulkan/explicit_layer.d RENAME ${OUTPUT_FILE_FINAL_NAME})
+endif()
+
+if (WIN32)
+    install(FILES ${INTERMEDIATE_FILE} DESTINATION ${LAYER_INSTALL_DIR} RENAME ${OUTPUT_FILE_FINAL_NAME})
+    install(FILES $<TARGET_PDB_FILE:VkLayer_khronos_validation> DESTINATION ${LAYER_INSTALL_DIR})
+endif()
+
+install(TARGETS VkLayer_khronos_validation DESTINATION ${LAYER_INSTALL_DIR})

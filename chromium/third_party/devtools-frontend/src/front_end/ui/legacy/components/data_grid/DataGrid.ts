@@ -608,10 +608,11 @@ export class DataGridImpl<T> extends Common.ObjectWrapper.ObjectWrapper<EventTyp
     }
   }
 
-  startEditingNextEditableColumnOfDataGridNode(node: DataGridNode<T>, columnIdentifier: string): void {
+  startEditingNextEditableColumnOfDataGridNode(node: DataGridNode<T>, columnIdentifier: string, inclusive?: boolean):
+      void {
     const column = this.columns[columnIdentifier];
     const cellIndex = this.visibleColumnsArray.indexOf(column);
-    const nextEditableColumn = this.nextEditableColumn(cellIndex);
+    const nextEditableColumn = this.nextEditableColumn(cellIndex, false, inclusive);
     if (nextEditableColumn !== -1) {
       this.startEditingColumnOfDataGridNode(node, nextEditableColumn);
     }
@@ -753,10 +754,11 @@ export class DataGridImpl<T> extends Common.ObjectWrapper.ObjectWrapper<EventTyp
     this.editingNode = null;
   }
 
-  private nextEditableColumn(cellIndex: number, moveBackward?: boolean): number {
+  private nextEditableColumn(cellIndex: number, moveBackward?: boolean, inclusive?: boolean): number {
     const increment = moveBackward ? -1 : 1;
+    const start = inclusive ? cellIndex : cellIndex + increment;
     const columns = this.visibleColumnsArray;
-    for (let i = cellIndex + increment; (i >= 0) && (i < columns.length); i += increment) {
+    for (let i = start; (i >= 0) && (i < columns.length); i += increment) {
       if (columns[i].editable) {
         return i;
       }
@@ -1181,7 +1183,7 @@ export class DataGridImpl<T> extends Common.ObjectWrapper.ObjectWrapper<EventTyp
       nextSelectedNode.select();
     }
 
-    if (handled && document.activeElement !== this.element) {
+    if (handled && this.element !== document.activeElement && !this.element.contains(document.activeElement)) {
       // crbug.com/1005449, crbug.com/1329956
       // navigational or delete keys pressed but current DataGrid panel has lost focus;
       // re-focus to ensure subsequent keydowns can be registered within this DataGrid

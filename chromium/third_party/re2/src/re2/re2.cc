@@ -36,6 +36,13 @@
 
 namespace re2 {
 
+// Controls the maximum count permitted by GlobalReplace(); -1 is unlimited.
+static int maximum_global_replace_count = -1;
+
+void RE2::FUZZING_ONLY_set_maximum_global_replace_count(int i) {
+  maximum_global_replace_count = i;
+}
+
 // Maximum number of args we can set
 static const int kMaxArgs = 16;
 static const int kVecSize = 1+kMaxArgs;
@@ -58,11 +65,30 @@ RE2::Options::Options(RE2::CannedOptions opt)
     one_line_(false) {
 }
 
-// static empty objects for use as const references.
-// To avoid global constructors, allocated in RE2::Init().
-static const std::string* empty_string;
-static const std::map<std::string, int>* empty_named_groups;
-static const std::map<int, std::string>* empty_group_names;
+// Empty objects for use as const references.
+// Statically allocating the storage and then
+// lazily constructing the objects (in a once
+// in RE2::Init()) avoids global constructors
+// and the false positives (thanks, Valgrind)
+// about memory leaks at program termination.
+struct EmptyStorage {
+  std::string empty_string;
+  std::map<std::string, int> empty_named_groups;
+  std::map<int, std::string> empty_group_names;
+};
+alignas(EmptyStorage) static char empty_storage[sizeof(EmptyStorage)];
+
+static inline std::string* empty_string() {
+  return &reinterpret_cast<EmptyStorage*>(empty_storage)->empty_string;
+}
+
+static inline std::map<std::string, int>* empty_named_groups() {
+  return &reinterpret_cast<EmptyStorage*>(empty_storage)->empty_named_groups;
+}
+
+static inline std::map<int, std::string>* empty_group_names() {
+  return &reinterpret_cast<EmptyStorage*>(empty_storage)->empty_group_names;
+}
 
 // Converts from Regexp error code to RE2 error code.
 // Maybe some day they will diverge.  In any event, this
@@ -173,17 +199,15 @@ int RE2::Options::ParseFlags() const {
 void RE2::Init(const StringPiece& pattern, const Options& options) {
   static std::once_flag empty_once;
   std::call_once(empty_once, []() {
-    empty_string = new std::string;
-    empty_named_groups = new std::map<std::string, int>;
-    empty_group_names = new std::map<int, std::string>;
+    (void) new (empty_storage) EmptyStorage;
   });
 
   pattern_ = new std::string(pattern);
   options_.Copy(options);
   entire_regexp_ = NULL;
   suffix_regexp_ = NULL;
-  error_ = empty_string;
-  error_arg_ = empty_string;
+  error_ = empty_string();
+  error_arg_ = empty_string();
 
   num_captures_ = -1;
   error_code_ = NoError;
@@ -268,15 +292,15 @@ re2::Prog* RE2::ReverseProg() const {
 }
 
 RE2::~RE2() {
-  if (group_names_ != empty_group_names)
+  if (group_names_ != empty_group_names())
     delete group_names_;
-  if (named_groups_ != empty_named_groups)
+  if (named_groups_ != empty_named_groups())
     delete named_groups_;
   delete rprog_;
   delete prog_;
-  if (error_arg_ != empty_string)
+  if (error_arg_ != empty_string())
     delete error_arg_;
-  if (error_ != empty_string)
+  if (error_ != empty_string())
     delete error_;
   if (suffix_regexp_)
     suffix_regexp_->Decref();
@@ -362,7 +386,7 @@ const std::map<std::string, int>& RE2::NamedCapturingGroups() const {
     if (re->suffix_regexp_ != NULL)
       re->named_groups_ = re->suffix_regexp_->NamedCaptures();
     if (re->named_groups_ == NULL)
-      re->named_groups_ = empty_named_groups;
+      re->named_groups_ = empty_named_groups();
   }, this);
   return *named_groups_;
 }
@@ -373,7 +397,7 @@ const std::map<int, std::string>& RE2::CapturingGroupNames() const {
     if (re->suffix_regexp_ != NULL)
       re->group_names_ = re->suffix_regexp_->CaptureNames();
     if (re->group_names_ == NULL)
-      re->group_names_ = empty_group_names;
+      re->group_names_ = empty_group_names();
   }, this);
   return *group_names_;
 }
@@ -449,13 +473,10 @@ int RE2::GlobalReplace(std::string* str,
   const char* lastend = NULL;
   std::string out;
   int count = 0;
-#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
-  // Iterate just once when fuzzing. Otherwise, we easily get bogged down
-  // and coverage is unlikely to improve despite significant expense.
-  while (p == str->data()) {
-#else
   while (p <= ep) {
-#endif
+    if (maximum_global_replace_count != -1 &&
+        count >= maximum_global_replace_count)
+      break;
     if (!re.Match(*str, static_cast<size_t>(p - str->data()),
                   str->size(), UNANCHORED, vec, nvec))
       break;

@@ -1,7 +1,7 @@
-name: CI-Android-JNI
+name: CI
 on: [push, pull_request]
 jobs:
-  build:
+  build-android-jni:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -18,7 +18,7 @@ jobs:
       - name: Setup ninja
         uses: seanmiddleditch/gha-setup-ninja@v3
       - name: Setup cmake
-        uses: jwlawson/actions-setup-cmake@v1.12
+        uses: jwlawson/actions-setup-cmake@v1.13
         with:
           # This is the minimum cmake version needed to build libgav1.
           cmake-version: "3.7.x"

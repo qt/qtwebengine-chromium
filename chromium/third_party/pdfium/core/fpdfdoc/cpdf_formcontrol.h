@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2016 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -36,11 +36,12 @@ class CPDF_FormControl {
   enum HighlightingMode { kNone = 0, kInvert, kOutline, kPush, kToggle };
 
   CPDF_FormControl(CPDF_FormField* pField,
-                   RetainPtr<CPDF_Dictionary> pWidgetDict);
+                   RetainPtr<CPDF_Dictionary> pWidgetDict,
+                   CPDF_InteractiveForm* pForm);
   ~CPDF_FormControl();
 
   CPDF_FormField::Type GetType() const { return m_pField->GetType(); }
-  CPDF_FormField* GetField() const { return m_pField.Get(); }
+  CPDF_FormField* GetField() const { return m_pField; }
   RetainPtr<const CPDF_Dictionary> GetWidgetDict() const {
     return m_pWidgetDict;
   }

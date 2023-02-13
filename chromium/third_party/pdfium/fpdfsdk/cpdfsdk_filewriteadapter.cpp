@@ -1,4 +1,4 @@
-// Copyright 2017 PDFium Authors. All rights reserved.
+// Copyright 2017 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,8 +16,8 @@ CPDFSDK_FileWriteAdapter::CPDFSDK_FileWriteAdapter(FPDF_FILEWRITE* file_write)
 
 CPDFSDK_FileWriteAdapter::~CPDFSDK_FileWriteAdapter() = default;
 
-bool CPDFSDK_FileWriteAdapter::WriteBlock(const void* data, size_t size) {
+bool CPDFSDK_FileWriteAdapter::WriteBlock(pdfium::span<const uint8_t> buffer) {
   return file_write_->WriteBlock(
-             file_write_.Get(), data,
-             pdfium::base::checked_cast<unsigned long>(size)) != 0;
+             file_write_, buffer.data(),
+             pdfium::base::checked_cast<unsigned long>(buffer.size())) != 0;
 }

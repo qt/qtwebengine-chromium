@@ -6,11 +6,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.37.2] - 2022-11-15
+
+### Fixed
+ - Images made from textures correctly invalidate internal state, reducing flicker (skbug.com/13903)
+
+## [0.37.1] - 2022-11-08
+
 ### Fixed
  - Font resolution algorithm for ellipsis in SkParagraph (skbug.com/11797)
  - GrContexts will properly target the correct WebGL context
  - CanvasKit built with no_embedded_font will properly link and be able to load fonts from passed-in
    bytes.
+ - Text styled with fontSize or heightMultiplier 0 will be invisible.
 
 ## [0.37.0] - 2022-09-07
 

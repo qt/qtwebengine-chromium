@@ -58,7 +58,10 @@ public:
 	bool hasExtendedFeatures(const VkPhysicalDeviceDescriptorIndexingFeatures *requested) const;
 	bool hasExtendedFeatures(const VkPhysicalDevicePipelineRobustnessFeaturesEXT *requested) const;
 	bool hasExtendedFeatures(const VkPhysicalDeviceProtectedMemoryFeatures *requested) const;
+	bool hasExtendedFeatures(const VkPhysicalDeviceBufferDeviceAddressFeatures *requested) const;
 	bool hasExtendedFeatures(const VkPhysicalDeviceGraphicsPipelineLibraryFeaturesEXT *requested) const;
+	bool hasExtendedFeatures(const VkPhysicalDeviceGlobalPriorityQueryFeaturesKHR *requested) const;
+	bool hasExtendedFeatures(const VkPhysicalDeviceSwapchainMaintenance1FeaturesEXT *requested) const;
 
 	const VkPhysicalDeviceProperties &getProperties() const;
 	void getProperties(VkPhysicalDeviceIDProperties *properties) const;
@@ -99,17 +102,22 @@ public:
 	void getProperties(VkPhysicalDeviceVulkan12Properties *properties) const;
 	void getProperties(VkPhysicalDeviceVulkan13Properties *properties) const;
 
+	static bool isFormatSupported(vk::Format format, VkImageType type, VkImageTiling tiling,
+	                              VkImageUsageFlags usage, VkImageUsageFlags stencilUsage, VkImageCreateFlags flags);
 	static void GetFormatProperties(Format format, VkFormatProperties *pFormatProperties);
 	static void GetFormatProperties(Format format, VkFormatProperties3 *pFormatProperties);
 	void getImageFormatProperties(Format format, VkImageType type, VkImageTiling tiling,
 	                              VkImageUsageFlags usage, VkImageCreateFlags flags,
 	                              VkImageFormatProperties *pImageFormatProperties) const;
-	uint32_t getQueueFamilyPropertyCount() const;
 
+	uint32_t getQueueFamilyPropertyCount() const;
 	void getQueueFamilyProperties(uint32_t pQueueFamilyPropertyCount,
 	                              VkQueueFamilyProperties *pQueueFamilyProperties) const;
 	void getQueueFamilyProperties(uint32_t pQueueFamilyPropertyCount,
 	                              VkQueueFamilyProperties2 *pQueueFamilyProperties) const;
+	void getQueueFamilyGlobalPriorityProperties(VkQueueFamilyGlobalPriorityPropertiesKHR *pQueueFamilyGlobalPriorityProperties) const;
+	bool validateQueueGlobalPriority(VkQueueGlobalPriorityKHR queueGlobalPriority) const;
+	VkQueueGlobalPriorityKHR getDefaultQueueGlobalPriority() const;
 	static const VkPhysicalDeviceMemoryProperties &GetMemoryProperties();
 
 	static const VkPhysicalDeviceLimits &getLimits();

@@ -51,6 +51,7 @@ button {
   padding: 5px 12px;
   justify-content: center;
   width: 100%;
+  white-space: nowrap;
 }
 
 button.small {
@@ -85,18 +86,14 @@ button.toolbar.small {
   width: 18px;
 }
 
-button.unified-toolbar-2022 {
-  /* These buttons are always 16px in dimension, and don't have different
-   * sizes, hence the lack of a size class above and the use of important! to
-   * ensure no sizing classes accidentally interfere.
-   */
-  height: 16px !important; /* stylelint-disable-line declaration-no-important */
-  width: 16px !important;/* stylelint-disable-line declaration-no-important */
-}
-
 button.round.small {
   height: 24px;
   width: 24px;
+}
+
+button.round.tiny {
+  height: 18px;
+  width: 18px;
 }
 
 button.primary {
@@ -208,13 +205,6 @@ button.round devtools-icon {
   --icon-color: var(--color-text-secondary);
 }
 
-button.unified-toolbar-2022 devtools-icon {
-  width: 16px;
-  height: 16px;
-
-  --icon-color: var(--color-text-secondary);
-}
-
 button.primary devtools-icon {
   --icon-color: var(--color-background);
 }
@@ -228,12 +218,23 @@ button.small devtools-icon {
   height: 14px;
 }
 
+button.explicit-size devtools-icon {
+  width: unset;
+  height: unset;
+}
+
 button.toolbar.small devtools-icon,
 button.round.small devtools-icon {
   width: 18px;
   height: 18px;
 }
 
+button.round.tiny devtools-icon {
+  width: 14px;
+  height: 14px;
+}
+
+button.toolbar.explicit-size devtools-icon,
 button.round.explicit-size devtools-icon {
   width: unset;
   height: unset;

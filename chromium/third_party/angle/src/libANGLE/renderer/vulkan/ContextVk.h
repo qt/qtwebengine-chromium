@@ -55,43 +55,6 @@ enum class GraphicsEventCmdBuf
     EnumCount   = 3,
 };
 
-enum class QueueSubmitType
-{
-    PerformQueueSubmit,
-    SkipQueueSubmit,
-};
-
-class UpdateDescriptorSetsBuilder final : angle::NonCopyable
-{
-  public:
-    UpdateDescriptorSetsBuilder();
-    ~UpdateDescriptorSetsBuilder();
-
-    VkDescriptorBufferInfo *allocDescriptorBufferInfos(size_t count);
-    VkDescriptorImageInfo *allocDescriptorImageInfos(size_t count);
-    VkWriteDescriptorSet *allocWriteDescriptorSets(size_t count);
-    VkBufferView *allocBufferViews(size_t count);
-
-    VkDescriptorBufferInfo &allocDescriptorBufferInfo() { return *allocDescriptorBufferInfos(1); }
-    VkDescriptorImageInfo &allocDescriptorImageInfo() { return *allocDescriptorImageInfos(1); }
-    VkWriteDescriptorSet &allocWriteDescriptorSet() { return *allocWriteDescriptorSets(1); }
-    VkBufferView &allocBufferView() { return *allocBufferViews(1); }
-
-    // Returns the number of written descriptor sets.
-    uint32_t flushDescriptorSetUpdates(VkDevice device);
-
-  private:
-    template <typename T, const T *VkWriteDescriptorSet::*pInfo>
-    T *allocDescriptorInfos(std::vector<T> *descriptorVector, size_t count);
-    template <typename T, const T *VkWriteDescriptorSet::*pInfo>
-    void growDescriptorCapacity(std::vector<T> *descriptorVector, size_t newSize);
-
-    std::vector<VkDescriptorBufferInfo> mDescriptorBufferInfos;
-    std::vector<VkDescriptorImageInfo> mDescriptorImageInfos;
-    std::vector<VkWriteDescriptorSet> mWriteDescriptorSets;
-    std::vector<VkBufferView> mBufferViews;
-};
-
 // Why depth/stencil feedback loop is being updated.  Based on whether it's due to a draw or clear,
 // different GL state affect depth/stencil write.
 enum class UpdateDepthFeedbackLoopReason
@@ -329,7 +292,7 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
     const gl::TextureCapsMap &getNativeTextureCaps() const override;
     const gl::Extensions &getNativeExtensions() const override;
     const gl::Limitations &getNativeLimitations() const override;
-    ShPixelLocalStorageType getNativePixelLocalStorageType() const override;
+    const ShPixelLocalStorageOptions &getNativePixelLocalStorageOptions() const override;
 
     // Shader creation
     CompilerImpl *createCompiler() override;
@@ -471,6 +434,7 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
                                        gl::SamplerFormat format,
                                        gl::Texture **textureOut);
     void updateColorMasks();
+    void updateMissingOutputsMask();
     void updateBlendFuncsAndEquations();
     void updateSampleMaskWithRasterizationSamples(const uint32_t rasterizationSamples);
     void updateFrameBufferFetchSamples(const uint32_t prevSamples, const uint32_t curSamples);
@@ -485,16 +449,9 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
 
     angle::Result flushImpl(const vk::Semaphore *semaphore,
                             RenderPassClosureReason renderPassClosureReason);
-    angle::Result flushAndGetSerial(const vk::Semaphore *semaphore,
-                                    Serial *submitSerialOut,
-                                    RenderPassClosureReason renderPassClosureReason);
     angle::Result finishImpl(RenderPassClosureReason renderPassClosureReason);
 
     void addWaitSemaphore(VkSemaphore semaphore, VkPipelineStageFlags stageMask);
-
-    Serial getLastCompletedQueueSerial() const { return mRenderer->getLastCompletedQueueSerial(); }
-
-    bool isSerialInUse(Serial serial) const;
 
     template <typename T>
     void addGarbage(T *object)
@@ -508,14 +465,11 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
     // It would be nice if we didn't have to expose this for QueryVk::getResult.
     angle::Result checkCompletedCommands();
 
-    // Wait for completion of batches until (at least) batch with given serial is finished.
-    angle::Result finishToSerial(Serial serial);
-
     angle::Result getCompatibleRenderPass(const vk::RenderPassDesc &desc,
-                                          vk::RenderPass **renderPassOut);
+                                          const vk::RenderPass **renderPassOut);
     angle::Result getRenderPassWithOps(const vk::RenderPassDesc &desc,
                                        const vk::AttachmentOpsArray &ops,
-                                       vk::RenderPass **renderPassOut);
+                                       const vk::RenderPass **renderPassOut);
 
     vk::ShaderLibrary &getShaderLibrary() { return mShaderLibrary; }
     UtilsVk &getUtils() { return mUtils; }
@@ -618,6 +572,13 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
         return flushOutsideRenderPassCommands();
     }
 
+    angle::Result onEGLImageQueueChange()
+    {
+        // Flush the barrier inserted to change the queue and layout of an EGL image.  Another
+        // thread may start using this image without issuing a sync object.
+        return flushOutsideRenderPassCommands();
+    }
+
     angle::Result beginNewRenderPass(vk::MaybeImagelessFramebuffer &framebuffer,
                                      const gl::Rectangle &renderArea,
                                      const vk::RenderPassDesc &renderPassDesc,
@@ -625,8 +586,7 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
                                      const vk::PackedAttachmentCount colorAttachmentCount,
                                      const vk::PackedAttachmentIndex depthStencilAttachmentIndex,
                                      const vk::PackedClearValuesArray &clearValues,
-                                     vk::RenderPassCommandBuffer **commandBufferOut,
-                                     vk::RenderPassSerial *renderPassSerialOut);
+                                     vk::RenderPassCommandBuffer **commandBufferOut);
 
     // Only returns true if we have a started RP and we've run setupDraw.
     bool hasStartedRenderPass() const
@@ -635,10 +595,9 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
         return mRenderPassCommandBuffer && mRenderPassCommands->started();
     }
 
-    bool hasStartedRenderPassWithSerial(const vk::RenderPassSerial renderPassSerial) const
+    bool hasStartedRenderPassWithQueueSerial(const QueueSerial &queueSerial) const
     {
-        return hasStartedRenderPass() &&
-               mRenderPassCommands->getRenderPassSerial() == renderPassSerial;
+        return hasStartedRenderPass() && mRenderPassCommands->getQueueSerial() == queueSerial;
     }
 
     bool hasStartedRenderPassWithCommands() const
@@ -653,7 +612,7 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
     }
 
     // TODO(https://anglebug.com/4968): Support multiple open render passes.
-    void restoreFinishedRenderPass(const vk::RenderPassSerial renderPassSerial);
+    void restoreFinishedRenderPass(const QueueSerial &queueSerial);
 
     uint32_t getCurrentSubpassIndex() const;
     uint32_t getCurrentViewCount() const;
@@ -664,8 +623,8 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
                                   bool *renderPassDescChangedOut);
     angle::Result startNextSubpass();
     angle::Result flushCommandsAndEndRenderPass(RenderPassClosureReason reason);
-    angle::Result flushCommandsAndEndRenderPassWithoutQueueSubmit(RenderPassClosureReason reason);
-    angle::Result submitOutsideRenderPassCommandsImpl();
+    angle::Result flushCommandsAndEndRenderPassWithoutSubmit(RenderPassClosureReason reason);
+    angle::Result flushAndSubmitOutsideRenderPassCommands();
 
     angle::Result syncExternalMemory();
 
@@ -721,7 +680,11 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
 
     // TODO(http://anglebug.com/5624): rework updateActiveTextures(), createPipelineLayout(),
     // handleDirtyGraphicsPipeline(), and ProgramPipelineVk::link().
-    void resetCurrentGraphicsPipeline() { mCurrentGraphicsPipeline = nullptr; }
+    void resetCurrentGraphicsPipeline()
+    {
+        mCurrentGraphicsPipeline        = nullptr;
+        mCurrentGraphicsPipelineShaders = nullptr;
+    }
 
     void onProgramExecutableReset(ProgramExecutableVk *executableVk);
 
@@ -782,8 +745,28 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
     {
         return getFeatures().supportsPipelineRobustness.enabled && mState.hasRobustAccess();
     }
+    // Whether VK_EXT_pipeline_protected_access should be used to restrict the pipeline to protected
+    // command buffers.  Note that when false, if the extension is supported, the pipeline can be
+    // restricted to unprotected command buffers.
+    bool shouldRestrictPipelineToProtectedAccess() const
+    {
+        return getFeatures().supportsPipelineProtectedAccess.enabled &&
+               mState.hasProtectedContent();
+    }
 
     vk::ComputePipelineFlags getComputePipelineFlags() const;
+
+    angle::ImageLoadContext getImageLoadContext() const;
+
+    bool hasUnsubmittedUse(const vk::ResourceUse &use) const;
+    bool hasUnsubmittedUse(const vk::Resource &resource) const
+    {
+        return hasUnsubmittedUse(resource.getResourceUse());
+    }
+    bool hasUnsubmittedUse(const vk::ReadWriteResource &resource) const
+    {
+        return hasUnsubmittedUse(resource.getResourceUse());
+    }
 
   private:
     // Dirty bits.
@@ -1208,13 +1191,7 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
         AllCommands,
     };
 
-    angle::Result submitFrame(const vk::Semaphore *signalSemaphore,
-                              Submit submission,
-                              Serial *submitSerialOut);
-    angle::Result submitFrameOutsideCommandBufferOnly(Serial *submitSerialOut);
-    angle::Result submitCommands(const vk::Semaphore *signalSemaphore,
-                                 Submit submission,
-                                 Serial *submitSerialOut);
+    angle::Result submitCommands(const vk::Semaphore *signalSemaphore, Submit submission);
 
     angle::Result synchronizeCpuGpuTime();
     angle::Result traceGpuEventImpl(vk::OutsideRenderPassCommandBuffer *commandBuffer,
@@ -1231,8 +1208,6 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
     // flushCommandsAndEndRenderPass() and flushDirtyGraphicsRenderPass() will set the dirty bits
     // directly or through the iterator respectively.  Outside those two functions, this shouldn't
     // be called directly.
-    angle::Result flushCommandsAndEndRenderPassImpl(QueueSubmitType queueSubmit,
-                                                    RenderPassClosureReason reason);
     angle::Result flushDirtyGraphicsRenderPass(DirtyBits::Iterator *dirtyBitsIterator,
                                                DirtyBits dirtyBitMask,
                                                RenderPassClosureReason reason);
@@ -1314,10 +1289,17 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
     // avoided however, as on the affected driver that would disable certain optimizations.
     void updateStencilWriteWorkaround();
 
-    SpecConstUsageBits getCurrentProgramSpecConstUsageBits() const;
-    void updateGraphicsPipelineDescWithSpecConstUsageBits(SpecConstUsageBits usageBits);
-
     angle::Result updateShaderResourcesDescriptorDesc(PipelineType pipelineType);
+
+    angle::Result createGraphicsPipeline();
+
+    angle::Result allocateQueueSerialIndex();
+    void releaseQueueSerialIndex();
+
+    void generateOutsideRenderPassCommandsQueueSerial();
+    void generateRenderPassCommandsQueueSerial(QueueSerial *queueSerialOut);
+
+    angle::Result ensureInterfacePipelineCache();
 
     std::array<GraphicsDirtyBitHandler, DIRTY_BIT_MAX> mGraphicsDirtyBitHandlers;
     std::array<ComputeDirtyBitHandler, DIRTY_BIT_MAX> mComputeDirtyBitHandlers;
@@ -1325,6 +1307,9 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
     vk::RenderPassCommandBuffer *mRenderPassCommandBuffer;
 
     vk::PipelineHelper *mCurrentGraphicsPipeline;
+    vk::PipelineHelper *mCurrentGraphicsPipelineShaders;
+    vk::PipelineHelper *mCurrentGraphicsPipelineVertexInput;
+    vk::PipelineHelper *mCurrentGraphicsPipelineFragmentOutput;
     vk::PipelineHelper *mCurrentComputePipeline;
     gl::PrimitiveMode mCurrentDrawMode;
 
@@ -1337,7 +1322,31 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
     // Keep a cached pipeline description structure that can be used to query the pipeline cache.
     // Kept in a pointer so allocations can be aligned, and structs can be portably packed.
     std::unique_ptr<vk::GraphicsPipelineDesc> mGraphicsPipelineDesc;
+    // Transition bits indicating which state has changed since last pipeline recreation.  It is
+    // used to look up pipelines in the cache without iterating over the entire key as a performance
+    // optimization.
+    //
+    // |mGraphicsPipelineTransition| tracks transition bits since the last complete pipeline
+    // creation/retrieval.  |mGraphicsPipelineLibraryTransition| tracks the same but for the case
+    // where the pipeline is created through libraries.  The latter accumulates
+    // |mGraphicsPipelineTransition| while the caches are hit, so that the bits are not lost if a
+    // partial library needs to be created in the future.
     vk::GraphicsPipelineTransitionBits mGraphicsPipelineTransition;
+    vk::GraphicsPipelineTransitionBits mGraphicsPipelineLibraryTransition;
+
+    // Used when VK_EXT_graphics_pipeline_library is available, the vertex input and fragment output
+    // partial pipelines are created in the following caches.
+    VertexInputGraphicsPipelineCache mVertexInputGraphicsPipelineCache;
+    FragmentOutputGraphicsPipelineCache mFragmentOutputGraphicsPipelineCache;
+
+    // A pipeline cache specifically used for vertex input and fragment output pipelines, when there
+    // is no blob reuse between libraries and monolithic pipelines.  In that case, there's no point
+    // in making monolithic pipelines be stored in the same cache as these partial pipelines.
+    //
+    // Note additionally that applications only create a handful of vertex input and fragment output
+    // pipelines, which is also s fast operation, so this cache is both small and ephemeral (i.e.
+    // not cached to disk).
+    vk::PipelineCache mInterfacePipelinesCache;
 
     // These pools are externally synchronized, so cannot be accessed from different
     // threads simultaneously. Hence, we keep them in the ContextVk instead of the RendererVk.
@@ -1439,6 +1448,11 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
     vk::OutsideRenderPassCommandBufferHelper *mOutsideRenderPassCommands;
     vk::RenderPassCommandBufferHelper *mRenderPassCommands;
 
+    // Allocators for the render pass command buffers. They are utilized only when shared ring
+    // buffer allocators are being used.
+    vk::SecondaryCommandMemoryAllocator mOutsideRenderPassCommandsAllocator;
+    vk::SecondaryCommandMemoryAllocator mRenderPassCommandsAllocator;
+
     // The following is used when creating debug-util markers for graphics debuggers (e.g. AGI).  A
     // given gl{Begin|End}Query command may result in commands being submitted to the outside or
     // render-pass command buffer.  The ContextVk::handleGraphicsEventLog() method records the
@@ -1516,9 +1530,6 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
 
     egl::ContextPriority mContextPriority;
 
-    // Storage for vkUpdateDescriptorSets
-    UpdateDescriptorSetsBuilder mUpdateDescriptorSetsBuilder;
-
     ShareGroupVk *mShareGroupVk;
 
     // This is a special "empty" placeholder buffer for use when we just need a placeholder buffer
@@ -1544,9 +1555,7 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
     // A graph built from pipeline descs and their transitions.
     std::ostringstream mPipelineCacheGraph;
 
-    // The latest serial used for a started render pass.
-    vk::RenderPassSerial mCurrentRenderPassSerial;
-    RenderPassSerialFactory mRenderPassSerialFactory;
+    RangedSerialFactory mOutsideRenderPassSerialFactory;
 };
 
 ANGLE_INLINE angle::Result ContextVk::endRenderPassIfTransformFeedbackBuffer(
@@ -1607,6 +1616,12 @@ ANGLE_INLINE void ContextVk::retainResource(vk::Resource *resource)
     {
         mOutsideRenderPassCommands->retainResource(resource);
     }
+}
+
+ANGLE_INLINE bool ContextVk::hasUnsubmittedUse(const vk::ResourceUse &use) const
+{
+    return mCurrentQueueSerialIndex != kInvalidQueueSerialIndex &&
+           use > QueueSerial(mCurrentQueueSerialIndex, mLastSubmittedSerial);
 }
 
 ANGLE_INLINE bool UseLineRaster(const ContextVk *contextVk, gl::PrimitiveMode mode)

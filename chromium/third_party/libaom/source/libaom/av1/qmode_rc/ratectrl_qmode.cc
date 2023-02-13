@@ -16,6 +16,8 @@
 #include <functional>
 #include <numeric>
 #include <sstream>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "aom/aom_codec.h"
@@ -852,9 +854,18 @@ StatusOr<GopStructList> AV1RateControlQMode::DetermineGopInfo(
   RefFrameManager ref_frame_manager(rc_param_.ref_frame_table_size,
                                     rc_param_.max_ref_frames);
 
+  // Make a copy of the first pass stats, and analyze them
+  FirstpassInfo fp_info_copy = firstpass_info;
+  av1_mark_flashes(fp_info_copy.stats_list.data(),
+                   fp_info_copy.stats_list.data() + stats_size);
+  av1_estimate_noise(fp_info_copy.stats_list.data(),
+                     fp_info_copy.stats_list.data() + stats_size);
+  av1_estimate_coeff(fp_info_copy.stats_list.data(),
+                     fp_info_copy.stats_list.data() + stats_size);
+
   int global_coding_idx_offset = 0;
   int global_order_idx_offset = 0;
-  std::vector<int> key_frame_list = GetKeyFrameList(firstpass_info);
+  std::vector<int> key_frame_list = GetKeyFrameList(fp_info_copy);
   key_frame_list.push_back(stats_size);  // a sentinel value
   for (size_t ki = 0; ki + 1 < key_frame_list.size(); ++ki) {
     int frames_to_key = key_frame_list[ki + 1] - key_frame_list[ki];
@@ -862,11 +873,11 @@ StatusOr<GopStructList> AV1RateControlQMode::DetermineGopInfo(
 
     std::vector<REGIONS> regions_list(MAX_FIRSTPASS_ANALYSIS_FRAMES);
     int total_regions = 0;
-    av1_identify_regions(firstpass_info.stats_list.data() + key_order_index,
+    av1_identify_regions(fp_info_copy.stats_list.data() + key_order_index,
                          frames_to_key, 0, regions_list.data(), &total_regions);
     regions_list.resize(total_regions);
     std::vector<int> gf_intervals = PartitionGopIntervals(
-        rc_param_, firstpass_info.stats_list, regions_list, key_order_index,
+        rc_param_, fp_info_copy.stats_list, regions_list, key_order_index,
         /*frames_since_key=*/0, frames_to_key);
     for (size_t gi = 0; gi < gf_intervals.size(); ++gi) {
       const bool has_key_frame = gi == 0;
@@ -1007,6 +1018,9 @@ StatusOr<TplFrameDepStats> CreateTplFrameDepStatsWithoutPropagation(
       }
     }
   }
+
+  frame_dep_stats.rdcost = TplFrameDepStatsAccumulateInterCost(frame_dep_stats);
+
   return frame_dep_stats;
 }
 
@@ -1047,6 +1061,18 @@ double TplFrameDepStatsAccumulateIntraCost(
   double sum = 0;
   for (const auto &row : frame_dep_stats.unit_stats) {
     sum = std::accumulate(row.begin(), row.end(), sum, getIntraCost);
+  }
+  return std::max(sum, 1.0);
+}
+
+double TplFrameDepStatsAccumulateInterCost(
+    const TplFrameDepStats &frame_dep_stats) {
+  auto getInterCost = [](double sum, const TplUnitDepStats &unit) {
+    return sum + unit.inter_cost;
+  };
+  double sum = 0;
+  for (const auto &row : frame_dep_stats.unit_stats) {
+    sum = std::accumulate(row.begin(), row.end(), sum, getInterCost);
   }
   return std::max(sum, 1.0);
 }
@@ -1208,7 +1234,7 @@ StatusOr<TplGopDepStats> ComputeTplGopDepStats(
   for (const auto &tpl_frame_stats : tpl_gop_stats.frame_stats_list) {
     tpl_frame_stats_list_with_lookahead.push_back(&tpl_frame_stats);
   }
-  for (auto &lookahead_stat : lookahead_stats) {
+  for (const auto &lookahead_stat : lookahead_stats) {
     for (const auto &tpl_frame_stats :
          lookahead_stat.tpl_gop_stats->frame_stats_list) {
       tpl_frame_stats_list_with_lookahead.push_back(&tpl_frame_stats);
@@ -1243,39 +1269,183 @@ StatusOr<TplGopDepStats> ComputeTplGopDepStats(
   return tpl_gop_dep_stats;
 }
 
-static int GetRDMult(const GopFrame &gop_frame, int qindex) {
+static std::vector<uint8_t> SetupDeltaQ(const TplFrameDepStats &frame_dep_stats,
+                                        int frame_width, int frame_height,
+                                        int base_qindex,
+                                        double frame_importance) {
+  // TODO(jianj) : Add support to various superblock sizes.
+  const int sb_size = 64;
+  const int delta_q_res = 4;
+  const int num_unit_per_sb = sb_size / frame_dep_stats.unit_size;
+  const int sb_rows = (frame_height + sb_size - 1) / sb_size;
+  const int sb_cols = (frame_width + sb_size - 1) / sb_size;
+  const int unit_rows = (frame_height + frame_dep_stats.unit_size - 1) /
+                        frame_dep_stats.unit_size;
+  const int unit_cols =
+      (frame_width + frame_dep_stats.unit_size - 1) / frame_dep_stats.unit_size;
+  std::vector<uint8_t> superblock_q_indices;
+  // Calculate delta_q offset for each superblock.
+  for (int sb_row = 0; sb_row < sb_rows; ++sb_row) {
+    for (int sb_col = 0; sb_col < sb_cols; ++sb_col) {
+      double intra_cost = 0;
+      double mc_dep_cost = 0;
+      const int unit_row_start = sb_row * num_unit_per_sb;
+      const int unit_row_end =
+          std::min((sb_row + 1) * num_unit_per_sb, unit_rows);
+      const int unit_col_start = sb_col * num_unit_per_sb;
+      const int unit_col_end =
+          std::min((sb_col + 1) * num_unit_per_sb, unit_cols);
+      // A simplified version of av1_get_q_for_deltaq_objective()
+      for (int unit_row = unit_row_start; unit_row < unit_row_end; ++unit_row) {
+        for (int unit_col = unit_col_start; unit_col < unit_col_end;
+             ++unit_col) {
+          const TplUnitDepStats &unit_dep_stat =
+              frame_dep_stats.unit_stats[unit_row][unit_col];
+          intra_cost += unit_dep_stat.intra_cost;
+          mc_dep_cost += unit_dep_stat.propagation_cost;
+        }
+      }
+
+      double beta = 1.0;
+      if (mc_dep_cost > 0 && intra_cost > 0) {
+        const double r0 = 1 / frame_importance;
+        const double rk = intra_cost / mc_dep_cost;
+        beta = r0 / rk;
+        assert(beta > 0.0);
+      }
+      int offset = av1_get_deltaq_offset(AOM_BITS_8, base_qindex, beta);
+      offset = std::min(offset, delta_q_res * 9 - 1);
+      offset = std::max(offset, -delta_q_res * 9 + 1);
+      int qindex = offset + base_qindex;
+      qindex = std::min(qindex, MAXQ);
+      qindex = std::max(qindex, MINQ);
+      qindex = av1_adjust_q_from_delta_q_res(delta_q_res, base_qindex, qindex);
+      superblock_q_indices.push_back(static_cast<uint8_t>(qindex));
+    }
+  }
+
+  return superblock_q_indices;
+}
+
+static std::unordered_map<int, double> FindKMeansClusterMap(
+    const std::vector<uint8_t> &qindices,
+    const std::vector<double> &centroids) {
+  std::unordered_map<int, double> cluster_map;
+  for (const uint8_t qindex : qindices) {
+    double nearest_centroid = *std::min_element(
+        centroids.begin(), centroids.end(),
+        [qindex](const double centroid_a, const double centroid_b) {
+          return fabs(centroid_a - qindex) < fabs(centroid_b - qindex);
+        });
+    cluster_map.insert({ qindex, nearest_centroid });
+  }
+  return cluster_map;
+}
+
+namespace internal {
+
+std::unordered_map<int, int> KMeans(std::vector<uint8_t> qindices, int k) {
+  std::vector<double> centroids;
+  // Initialize the centroids with first k qindices
+  std::unordered_set<int> qindices_set;
+
+  for (const uint8_t qp : qindices) {
+    if (!qindices_set.insert(qp).second) continue;  // Already added.
+    centroids.push_back(qp);
+    if (static_cast<int>(centroids.size()) >= k) break;
+  }
+
+  std::unordered_map<int, double> intermediate_cluster_map;
+  while (true) {
+    // Find the closest centroid for each qindex
+    intermediate_cluster_map = FindKMeansClusterMap(qindices, centroids);
+    // For each cluster, calculate the new centroids
+    std::unordered_map<double, std::vector<int>> centroid_to_qindices;
+    for (const auto &qindex_centroid : intermediate_cluster_map) {
+      centroid_to_qindices[qindex_centroid.second].push_back(
+          qindex_centroid.first);
+    }
+    bool centroids_changed = false;
+    std::vector<double> new_centroids;
+    for (const auto &cluster : centroid_to_qindices) {
+      double sum = 0.0;
+      for (const int qindex : cluster.second) {
+        sum += qindex;
+      }
+      double new_centroid = sum / cluster.second.size();
+      new_centroids.push_back(new_centroid);
+      if (new_centroid != cluster.first) centroids_changed = true;
+    }
+    if (!centroids_changed) break;
+    centroids = new_centroids;
+  }
+  std::unordered_map<int, int> cluster_map;
+  for (const auto &qindex_centroid : intermediate_cluster_map) {
+    cluster_map.insert(
+        { qindex_centroid.first, static_cast<int>(qindex_centroid.second) });
+  }
+  return cluster_map;
+}
+}  // namespace internal
+
+static int GetRDMult(const GopFrame &gop_frame, int q_index) {
   // TODO(angiebird):
   // 1) Check if these rdmult rules are good in our use case.
   // 2) Support high-bit-depth mode
   if (gop_frame.is_golden_frame) {
     // Assume ARF_UPDATE/GF_UPDATE share the same remult rule.
-    return av1_compute_rd_mult_based_on_qindex(AOM_BITS_8, GF_UPDATE, qindex);
+    return av1_compute_rd_mult_based_on_qindex(AOM_BITS_8, GF_UPDATE, q_index);
   } else if (gop_frame.is_key_frame) {
-    return av1_compute_rd_mult_based_on_qindex(AOM_BITS_8, KF_UPDATE, qindex);
+    return av1_compute_rd_mult_based_on_qindex(AOM_BITS_8, KF_UPDATE, q_index);
   } else {
     // Assume LF_UPDATE/OVERLAY_UPDATE/INTNL_OVERLAY_UPDATE/INTNL_ARF_UPDATE
     // share the same remult rule.
-    return av1_compute_rd_mult_based_on_qindex(AOM_BITS_8, LF_UPDATE, qindex);
+    return av1_compute_rd_mult_based_on_qindex(AOM_BITS_8, LF_UPDATE, q_index);
   }
 }
 
-StatusOr<GopEncodeInfo> AV1RateControlQMode::GetGopEncodeInfo(
+StatusOr<GopEncodeInfo> AV1RateControlQMode::GetGopEncodeInfoWithNoStats(
+    const GopStruct &gop_struct) {
+  GopEncodeInfo gop_encode_info;
+  const int frame_count = static_cast<int>(gop_struct.gop_frame_list.size());
+  for (int i = 0; i < frame_count; i++) {
+    FrameEncodeParameters param;
+    const GopFrame &gop_frame = gop_struct.gop_frame_list[i];
+    // Use constant QP for TPL pass encoding. Keep the functionality
+    // that allows QP changes across sub-gop.
+    param.q_index = rc_param_.base_q_index;
+    param.rdmult = av1_compute_rd_mult_based_on_qindex(AOM_BITS_8, LF_UPDATE,
+                                                       rc_param_.base_q_index);
+    // TODO(jingning): gop_frame is needed in two pass tpl later.
+    (void)gop_frame;
+
+    if (rc_param_.tpl_pass_index) {
+      if (gop_frame.update_type == GopFrameType::kRegularGolden ||
+          gop_frame.update_type == GopFrameType::kRegularKey ||
+          gop_frame.update_type == GopFrameType::kRegularArf) {
+        double qstep_ratio = 1 / 3.0;
+        param.q_index = av1_get_q_index_from_qstep_ratio(
+            rc_param_.base_q_index, qstep_ratio, AOM_BITS_8);
+        if (rc_param_.base_q_index) param.q_index = AOMMAX(param.q_index, 1);
+      }
+    }
+    gop_encode_info.param_list.push_back(param);
+  }
+  return gop_encode_info;
+}
+
+StatusOr<GopEncodeInfo> AV1RateControlQMode::GetGopEncodeInfoWithFp(
+    const GopStruct &gop_struct,
+    const FirstpassInfo &firstpass_info AOM_UNUSED) {
+  // TODO(b/260859962): This is currently a placeholder. Should use the fp
+  // stats to calculate frame-level qp.
+  return GetGopEncodeInfoWithNoStats(gop_struct);
+}
+
+StatusOr<GopEncodeInfo> AV1RateControlQMode::GetGopEncodeInfoWithTpl(
     const GopStruct &gop_struct, const TplGopStats &tpl_gop_stats,
     const std::vector<LookaheadStats> &lookahead_stats,
     const RefFrameTable &ref_frame_table_snapshot_init) {
-  Status status = ValidateTplStats(gop_struct, tpl_gop_stats);
-  if (!status.ok()) {
-    return status;
-  }
-
-  for (auto &lookahead_stat : lookahead_stats) {
-    Status status = ValidateTplStats(*lookahead_stat.gop_struct,
-                                     *lookahead_stat.tpl_gop_stats);
-    if (!status.ok()) {
-      return status;
-    }
-  }
-
   const std::vector<RefFrameTable> ref_frame_table_list = GetRefFrameTableList(
       gop_struct, lookahead_stats, ref_frame_table_snapshot_init);
 
@@ -1315,6 +1485,25 @@ StatusOr<GopEncodeInfo> AV1RateControlQMode::GetGopEncodeInfo(
                                                        qstep_ratio, AOM_BITS_8);
       if (rc_param_.base_q_index) param.q_index = AOMMAX(param.q_index, 1);
       active_best_quality = param.q_index;
+
+      if (rc_param_.max_distinct_q_indices_per_frame > 1) {
+        std::vector<uint8_t> superblock_q_indices = SetupDeltaQ(
+            frame_dep_stats, rc_param_.frame_width, rc_param_.frame_height,
+            param.q_index, frame_importance);
+        std::unordered_map<int, int> qindex_centroids = internal::KMeans(
+            superblock_q_indices, rc_param_.max_distinct_q_indices_per_frame);
+        for (size_t i = 0; i < superblock_q_indices.size(); ++i) {
+          const int curr_sb_qindex =
+              qindex_centroids.find(superblock_q_indices[i])->second;
+          const int delta_q_res = 4;
+          const int adjusted_qindex =
+              param.q_index +
+              (curr_sb_qindex - param.q_index) / delta_q_res * delta_q_res;
+          const int rd_mult = GetRDMult(gop_frame, adjusted_qindex);
+          param.superblock_encode_params.push_back(
+              { static_cast<uint8_t>(adjusted_qindex), rd_mult });
+        }
+      }
     } else {
       // Intermediate ARFs
       assert(gop_frame.layer_depth >= 1);
@@ -1327,6 +1516,37 @@ StatusOr<GopEncodeInfo> AV1RateControlQMode::GetGopEncodeInfo(
     gop_encode_info.param_list.push_back(param);
   }
   return gop_encode_info;
+}
+
+StatusOr<GopEncodeInfo> AV1RateControlQMode::GetTplPassGopEncodeInfo(
+    const GopStruct &gop_struct, const FirstpassInfo &firstpass_info) {
+  return GetGopEncodeInfoWithFp(gop_struct, firstpass_info);
+}
+
+StatusOr<GopEncodeInfo> AV1RateControlQMode::GetGopEncodeInfo(
+    const GopStruct &gop_struct, const TplGopStats &tpl_gop_stats,
+    const std::vector<LookaheadStats> &lookahead_stats,
+    const FirstpassInfo &firstpass_info AOM_UNUSED,
+    const RefFrameTable &ref_frame_table_snapshot_init) {
+  // When TPL stats are not valid, use first pass stats.
+  Status status = ValidateTplStats(gop_struct, tpl_gop_stats);
+  if (!status.ok()) {
+    return status;
+  }
+
+  for (const auto &lookahead_stat : lookahead_stats) {
+    Status status = ValidateTplStats(*lookahead_stat.gop_struct,
+                                     *lookahead_stat.tpl_gop_stats);
+    if (!status.ok()) {
+      return status;
+    }
+  }
+
+  // TODO(b/260859962): Currently firstpass stats are used as an alternative,
+  // but we could also combine it with tpl results in the future for more
+  // stable qp determination.
+  return GetGopEncodeInfoWithTpl(gop_struct, tpl_gop_stats, lookahead_stats,
+                                 ref_frame_table_snapshot_init);
 }
 
 }  // namespace aom

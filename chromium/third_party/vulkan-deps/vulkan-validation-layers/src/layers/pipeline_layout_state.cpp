@@ -73,8 +73,8 @@ bool PipelineLayoutCompatDef::operator==(const PipelineLayoutCompatDef &other) c
     return true;
 }
 
-static PipelineLayoutCompatId GetCanonicalId(const uint32_t set_index, const PushConstantRangesId pcr_id,
-                                             const PipelineLayoutSetLayoutsId set_layouts_id) {
+static PipelineLayoutCompatId GetCanonicalId(const uint32_t set_index, const PushConstantRangesId &pcr_id,
+                                             const PipelineLayoutSetLayoutsId &set_layouts_id) {
     return pipeline_layout_compat_dict.look_up(PipelineLayoutCompatDef(set_index, pcr_id, set_layouts_id));
 }
 
@@ -166,7 +166,9 @@ static PIPELINE_LAYOUT_STATE::SetLayoutVector GetSetLayouts(const layer_data::sp
                 }
             }
         }
-        set_layouts.emplace_back(used_layout->set_layouts[i]);
+        if (used_layout) {
+            set_layouts.emplace_back(used_layout->set_layouts[i]);
+        }
     }
     return set_layouts;
 }
@@ -181,13 +183,13 @@ static std::vector<PipelineLayoutCompatId> GetCompatForSet(const PIPELINE_LAYOUT
     }
     auto set_layouts_id = pipeline_layout_set_layouts_dict.look_up(set_layout_ids);
 
-    std::vector<PipelineLayoutCompatId> compat_for_set;
-    compat_for_set.reserve(set_layouts.size());
+    std::vector<PipelineLayoutCompatId> set_compat_ids;
+    set_compat_ids.reserve(set_layouts.size());
 
     for (uint32_t i = 0; i < set_layouts.size(); i++) {
-        compat_for_set.emplace_back(GetCanonicalId(i, push_constant_ranges, set_layouts_id));
+        set_compat_ids.emplace_back(GetCanonicalId(i, push_constant_ranges, set_layouts_id));
     }
-    return compat_for_set;
+    return set_compat_ids;
 }
 
 VkPipelineLayoutCreateFlags GetCreateFlags(const layer_data::span<const PIPELINE_LAYOUT_STATE *const> &layouts) {
@@ -205,12 +207,12 @@ PIPELINE_LAYOUT_STATE::PIPELINE_LAYOUT_STATE(ValidationStateTracker *dev_data, V
     : BASE_NODE(l, kVulkanObjectTypePipelineLayout),
       set_layouts(GetSetLayouts(dev_data, pCreateInfo)),
       push_constant_ranges(GetCanonicalId(pCreateInfo)),
-      compat_for_set(GetCompatForSet(set_layouts, push_constant_ranges)),
+      set_compat_ids(GetCompatForSet(set_layouts, push_constant_ranges)),
       create_flags(pCreateInfo->flags) {}
 
 PIPELINE_LAYOUT_STATE::PIPELINE_LAYOUT_STATE(const layer_data::span<const PIPELINE_LAYOUT_STATE *const> &layouts)
     : BASE_NODE(static_cast<VkPipelineLayout>(VK_NULL_HANDLE), kVulkanObjectTypePipelineLayout),
       set_layouts(GetSetLayouts(layouts)),
       push_constant_ranges(GetPushConstantRangesFromLayouts(layouts)),  // TODO is this correct?
-      compat_for_set(GetCompatForSet(set_layouts, push_constant_ranges)),
+      set_compat_ids(GetCompatForSet(set_layouts, push_constant_ranges)),
       create_flags(GetCreateFlags(layouts)) {}

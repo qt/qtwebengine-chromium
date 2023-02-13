@@ -285,8 +285,7 @@ void Deserializer<IsolateT>::WeakenDescriptorArrays() {
 template <typename IsolateT>
 void Deserializer<IsolateT>::LogScriptEvents(Script script) {
   DisallowGarbageCollection no_gc;
-  LOG(isolate(),
-      ScriptEvent(V8FileLogger::ScriptEventType::kDeserialize, script.id()));
+  LOG(isolate(), ScriptEvent(ScriptEventType::kDeserialize, script.id()));
   LOG(isolate(), ScriptDetails(script));
 }
 
@@ -354,10 +353,12 @@ void PostProcessExternalString(ExternalString string, Isolate* isolate) {
 
 }  // namespace
 
-template <typename IsolateT>
-void Deserializer<IsolateT>::PostProcessNewJSReceiver(
-    Map map, Handle<JSReceiver> obj, InstanceType instance_type,
-    SnapshotSpace space) {
+// Should be called only on the main thread (not thread safe).
+template <>
+void Deserializer<Isolate>::PostProcessNewJSReceiver(Map map,
+                                                     Handle<JSReceiver> obj,
+                                                     InstanceType instance_type,
+                                                     SnapshotSpace space) {
   DCHECK_EQ(map.instance_type(), instance_type);
 
   if (InstanceTypeChecker::IsJSDataView(instance_type)) {
@@ -397,6 +398,7 @@ void Deserializer<IsolateT>::PostProcessNewJSReceiver(
     auto buffer = JSArrayBuffer::cast(*obj);
     uint32_t store_index = buffer.GetBackingStoreRefForDeserialization();
     if (store_index == kEmptyBackingStoreRefSentinel) {
+      buffer.set_extension(nullptr);
       buffer.set_backing_store(main_thread_isolate(),
                                EmptyBackingStoreBuffer());
     } else {
@@ -408,9 +410,16 @@ void Deserializer<IsolateT>::PostProcessNewJSReceiver(
       ResizableFlag resizable = bs && bs->is_resizable_by_js()
                                     ? ResizableFlag::kResizable
                                     : ResizableFlag::kNotResizable;
-      buffer.Setup(shared, resizable, bs);
+      buffer.Setup(shared, resizable, bs, main_thread_isolate());
     }
   }
+}
+
+template <>
+void Deserializer<LocalIsolate>::PostProcessNewJSReceiver(
+    Map map, Handle<JSReceiver> obj, InstanceType instance_type,
+    SnapshotSpace space) {
+  UNREACHABLE();
 }
 
 template <typename IsolateT>
@@ -490,11 +499,10 @@ void Deserializer<IsolateT>::PostProcessNewObject(Handle<Map> map,
   } else if (V8_EXTERNAL_CODE_SPACE_BOOL &&
              InstanceTypeChecker::IsCodeDataContainer(instance_type)) {
     auto code_data_container = CodeDataContainer::cast(raw_obj);
-    code_data_container.set_code_cage_base(isolate()->code_cage_base());
     code_data_container.init_code_entry_point(main_thread_isolate(),
                                               kNullAddress);
 #ifdef V8_EXTERNAL_CODE_SPACE
-    if (V8_REMOVE_BUILTINS_CODE_OBJECTS &&
+    if (V8_EXTERNAL_CODE_SPACE_BOOL &&
         code_data_container.is_off_heap_trampoline()) {
       Address entry = OffHeapInstructionStart(code_data_container,
                                               code_data_container.builtin_id());
@@ -575,8 +583,6 @@ AllocationType SpaceToAllocation(SnapshotSpace space) {
   switch (space) {
     case SnapshotSpace::kCode:
       return AllocationType::kCode;
-    case SnapshotSpace::kMap:
-      return AllocationType::kMap;
     case SnapshotSpace::kOld:
       return AllocationType::kOld;
     case SnapshotSpace::kReadOnlyHeap:
@@ -863,11 +869,12 @@ constexpr byte VerifyBytecodeCount(byte bytecode) {
 #define CASE_R32(byte_code) CASE_R16(byte_code) : case CASE_R16(byte_code + 16)
 
 // This generates a case range for all the spaces.
-#define CASE_RANGE_ALL_SPACES(bytecode)                           \
-  SpaceEncoder<bytecode>::Encode(SnapshotSpace::kOld)             \
-      : case SpaceEncoder<bytecode>::Encode(SnapshotSpace::kCode) \
-      : case SpaceEncoder<bytecode>::Encode(SnapshotSpace::kMap)  \
-      : case SpaceEncoder<bytecode>::Encode(SnapshotSpace::kReadOnlyHeap)
+// clang-format off
+#define CASE_RANGE_ALL_SPACES(bytecode)                               \
+  SpaceEncoder<bytecode>::Encode(SnapshotSpace::kOld):                \
+    case SpaceEncoder<bytecode>::Encode(SnapshotSpace::kCode):        \
+    case SpaceEncoder<bytecode>::Encode(SnapshotSpace::kReadOnlyHeap)
+// clang-format on
 
 template <typename IsolateT>
 void Deserializer<IsolateT>::ReadData(Handle<HeapObject> object,
@@ -904,6 +911,8 @@ int Deserializer<IsolateT>::ReadSingleBytecodeData(byte data,
     // object.
     case CASE_RANGE_ALL_SPACES(kNewObject): {
       SnapshotSpace space = NewObject::Decode(data);
+      DCHECK_IMPLIES(V8_STATIC_ROOTS_BOOL,
+                     space != SnapshotSpace::kReadOnlyHeap);
       // Save the reference type before recursing down into reading the object.
       HeapObjectReferenceType ref_type = GetAndResetNextReferenceType();
       Handle<HeapObject> heap_object = ReadObject(space);
@@ -918,9 +927,12 @@ int Deserializer<IsolateT>::ReadSingleBytecodeData(byte data,
     }
 
     // Reference an object in the read-only heap. This should be used when an
-    // object is read-only, but is not a root.
+    // object is read-only, but is not a root. Except with static roots we
+    // always use this reference to refer to read only objects since they are
+    // created by loading a memory dump of r/o space.
     case kReadOnlyHeapRef: {
-      DCHECK(isolate()->heap()->deserialization_complete());
+      DCHECK(isolate()->heap()->deserialization_complete() ||
+             V8_STATIC_ROOTS_BOOL);
       uint32_t chunk_index = source_.GetInt();
       uint32_t chunk_offset = source_.GetInt();
 
@@ -957,6 +969,7 @@ int Deserializer<IsolateT>::ReadSingleBytecodeData(byte data,
     // Find an object in the read-only object cache and write a pointer to it
     // to the current object.
     case kReadOnlyObjectCache: {
+      DCHECK(!V8_STATIC_ROOTS_BOOL);
       int cache_index = source_.GetInt();
       // TODO(leszeks): Could we use the address of the cached_read_only_object
       // entry as a Handle backing?

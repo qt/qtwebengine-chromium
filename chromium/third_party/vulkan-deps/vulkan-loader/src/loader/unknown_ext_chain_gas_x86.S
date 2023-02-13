@@ -37,6 +37,7 @@
 
 .macro PhysDevExtTramp num
 .global vkPhysDevExtTramp\num
+.hidden vkPhysDevExtTramp\num
 vkPhysDevExtTramp\num:
     _CET_ENDBR
     mov     rax, [rdi]
@@ -46,6 +47,7 @@ vkPhysDevExtTramp\num:
 
 .macro PhysDevExtTermin num
 .global vkPhysDevExtTermin\num
+.hidden vkPhysDevExtTermin\num
 vkPhysDevExtTermin\num:
     _CET_ENDBR
     mov     rax, [rdi + ICD_TERM_OFFSET_PHYS_DEV_TERM]                          # Store the loader_icd_term* in rax
@@ -68,6 +70,7 @@ terminError\num:
 
 .macro DevExtTramp num
 .global vkdev_ext\num
+.hidden vkdev_ext\num
 vkdev_ext\num:
     _CET_ENDBR
     mov     rax, [rdi]                                                          # Dereference the handle to get the dispatch table
@@ -78,6 +81,7 @@ vkdev_ext\num:
 
 .macro PhysDevExtTramp num
 .global vkPhysDevExtTramp\num
+.hidden vkPhysDevExtTramp\num
 vkPhysDevExtTramp\num:
     _CET_ENDBR
     mov     eax, [esp + 4]                              # Load the wrapped VkPhysicalDevice into eax
@@ -89,6 +93,7 @@ vkPhysDevExtTramp\num:
 
 .macro PhysDevExtTermin num
 .global vkPhysDevExtTermin\num
+.hidden vkPhysDevExtTermin\num
 vkPhysDevExtTermin\num:
     _CET_ENDBR
     mov     ecx, [esp + 4]                                                      # Move the wrapped VkPhysicalDevice into ecx
@@ -100,12 +105,11 @@ vkPhysDevExtTermin\num:
     jmp     [eax + (DISPATCH_OFFSET_ICD_TERM + (PTR_SIZE * \num))]              # Jump to the next function in the chain
 terminError\num:
     mov     eax, dword ptr [eax + INSTANCE_OFFSET_ICD_TERM]                       # Load the loader_instance into eax
-    push    dword ptr [eax + (FUNCTION_OFFSET_INSTANCE + (CHAR_PTR_SIZE * \num))] # Push the func name (fifth arg)
-    push    offset termin_error_string@GOT                                        # Push the error string (fourth arg)
+    push    dword ptr [eax + (FUNCTION_OFFSET_INSTANCE + (CHAR_PTR_SIZE * \num))] # Push the func name (fourth arg)
     push    0                                                                     # Push zero (third arg)
     push    VULKAN_LOADER_ERROR_BIT                                               # Push the error logging bit (second arg)
     push    eax                                                                   # Push the loader_instance (first arg)
-    call    loader_log                                                            # Log the error message before we crash
+    call    loader_log_asm_function_not_supported                                 # Log the error message before we crash
     add     esp, 20                                                               # Clean up the args
     mov     eax, 0
     jmp     eax                                                         # Crash intentionally by jumping to address zero
@@ -113,6 +117,7 @@ terminError\num:
 
 .macro DevExtTramp num
 .global vkdev_ext\num
+.hidden vkdev_ext\num
 vkdev_ext\num:
     _CET_ENDBR
     mov     eax, dword ptr [esp + 4]                                            # Dereference the handle to get the dispatch table
@@ -129,7 +134,7 @@ vkdev_ext\num:
 .data
 
 termin_error_string:
-.string "Extension %s not supported for this physical device"
+.string "Function %s not supported for this physical device"
 
 .text
 

@@ -50,13 +50,6 @@ var gniExportDescs = []exporter.GNIExportDesc{
 				"//src/pathops:pathops_hdrs",
 				"//src/pathops:pathops_srcs",
 			}},
-		{Var: "skia_precompile_public",
-			Rules: []string{"//include/gpu/graphite:precompile_public_hdrs"}},
-		{Var: "skia_precompile_sources",
-			Rules: []string{
-				"//src/gpu/graphite:precompile_hdrs",
-				"//src/gpu/graphite:precompile_srcs",
-			}},
 		{Var: "skia_skpicture_public",
 			Rules: []string{"//include/core:skpicture_public_hdrs"}},
 		{Var: "skia_skpicture_sources",
@@ -142,6 +135,23 @@ var gniExportDescs = []exporter.GNIExportDesc{
 				"//src/utils:sksl_srcs",
 			}}},
 	},
+	{GNI: "gn/sksl_tests.gni", Vars: []exporter.GNIFileListExportDesc{
+		// This order was the order the original file was in. It could be alphabetized if we like.
+		{Var: "sksl_error_tests", Rules: []string{"//resources/sksl:sksl_error_tests"}},
+		{Var: "sksl_glsl_tests", Rules: []string{"//resources/sksl:sksl_glsl_tests"}},
+		{Var: "sksl_metal_tests", Rules: []string{"//resources/sksl:sksl_metal_tests"}},
+		{Var: "sksl_spirv_tests", Rules: []string{"//resources/sksl:sksl_spirv_tests"}},
+		{Var: "sksl_wgsl_tests", Rules: []string{"//resources/sksl:sksl_wgsl_tests"}},
+		{Var: "sksl_inverse_hyperbolic_intrinsics_tests",
+			Rules: []string{"//resources/sksl:sksl_inverse_hyperbolic_intrinsics_tests"}},
+		{Var: "sksl_shared_tests", Rules: []string{"//resources/sksl:sksl_shared_tests"}},
+		{Var: "sksl_folding_tests", Rules: []string{"//resources/sksl:sksl_folding_tests"}},
+		{Var: "sksl_inliner_tests", Rules: []string{"//resources/sksl:sksl_inliner_tests"}},
+		{Var: "sksl_blend_tests", Rules: []string{"//resources/sksl:sksl_blend_tests"}},
+		{Var: "sksl_settings_tests", Rules: []string{"//resources/sksl:sksl_settings_tests"}},
+		{Var: "sksl_rte_tests", Rules: []string{"//resources/sksl:sksl_rte_tests"}},
+		{Var: "sksl_rte_error_tests", Rules: []string{"//resources/sksl:sksl_rte_error_tests"}},
+	}},
 	{GNI: "gn/utils.gni", Vars: []exporter.GNIFileListExportDesc{
 		{Var: "skia_utils_public",
 			Rules: []string{
@@ -339,6 +349,8 @@ var gniExportDescs = []exporter.GNIExportDesc{
 			Rules: []string{"//modules/skshaper/src:harfbuzz_srcs"}},
 		{Var: "skia_shaper_coretext_sources",
 			Rules: []string{"//modules/skshaper/src:coretext_srcs"}},
+		{Var: "skia_shaper_tests",
+			Rules: []string{"//modules/skshaper/tests:tests_srcs"}},
 	}},
 	{GNI: "modules/skunicode/skunicode.gni", Vars: []exporter.GNIFileListExportDesc{
 		{Var: "skia_unicode_public",
@@ -435,25 +447,12 @@ func doExport(qr interfaces.QueryCommand, exp interfaces.Exporter, outFormat str
 	}
 }
 
-func doCheckCurrent(qr interfaces.QueryCommand, exp interfaces.Exporter, outFormat string) {
-	numOutOfDate, err := exp.CheckCurrent(qr, os.Stdout)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error running %s currency check: %v\n", outFormat, err)
-		os.Exit(verifyErr)
-	}
-	if numOutOfDate > 0 {
-		fmt.Fprintf(os.Stdout, "%d files are out of date\n", numOutOfDate)
-		os.Exit(verifyErr)
-	}
-}
-
 func main() {
 	var (
 		queryRules    = common.NewMultiStringFlag("rule", nil, "Bazel rule (may be repeated).")
 		outFormat     = flag.String("output_format", "", "Desired output format. One of cmake or gni.")
 		cmakeFileName = flag.String("out", "CMakeLists.txt", "CMake output file")
 		projName      = flag.String("proj_name", "", "CMake project name")
-		checkCurrent  = flag.Bool("check_current", false, "Identify any out-of-date target files")
 		cpuprofile    = flag.String("cpuprofile", "", "write cpu profile to file")
 	)
 	flag.Parse()
@@ -476,11 +475,6 @@ func main() {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error getting pwd: %v", err)
 		os.Exit(unknownErr)
-	}
-	if *checkCurrent && *outFormat != "gni" {
-		fmt.Fprintf(os.Stderr, "-check_current is only supported for gni output")
-		flag.PrintDefaults()
-		os.Exit(invalidArgErr)
 	}
 	if *cpuprofile != "" {
 		f, err := os.Create(*cpuprofile)
@@ -505,9 +499,5 @@ func main() {
 	fs := fileSystem{workspaceDir: workspaceDir, outFormat: *outFormat}
 	defer fs.Shutdown()
 	var exp interfaces.Exporter = createExporter(*projName, *cmakeFileName, &fs)
-	if *checkCurrent {
-		doCheckCurrent(qcmd, exp, *outFormat)
-	} else {
-		doExport(qcmd, exp, *outFormat)
-	}
+	doExport(qcmd, exp, *outFormat)
 }

@@ -14,6 +14,7 @@ const char kRgbkbdServiceName[] = "org.chromium.Rgbkbd";
 const char kGetRgbKeyboardCapabilities[] = "GetRgbKeyboardCapabilities";
 const char kSetCapsLockState[] = "SetCapsLockState";
 const char kSetStaticBackgroundColor[] = "SetStaticBackgroundColor";
+const char kSetZoneColor[] = "SetZoneColor";
 const char kSetRainbowMode[] = "SetRainbowMode";
 const char kSetTestingMode[] = "SetTestingMode";
 const char kSetAnimationMode[] = "SetAnimationMode";

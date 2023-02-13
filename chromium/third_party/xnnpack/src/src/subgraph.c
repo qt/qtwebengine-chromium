@@ -753,6 +753,7 @@ bool xnn_subgraph_rewrite_for_fp16(xnn_subgraph_t subgraph)
       case xnn_node_type_bankers_rounding:
       case xnn_node_type_ceiling:
       case xnn_node_type_clamp:
+      case xnn_node_type_copy:
       case xnn_node_type_convolution_2d:
       case xnn_node_type_deconvolution_2d:
       case xnn_node_type_depthwise_convolution_2d:
@@ -1148,11 +1149,15 @@ enum xnn_status xnn_delete_subgraph(
   xnn_subgraph_t subgraph)
 {
   if (subgraph != NULL) {
-    memset(subgraph->nodes, 0, sizeof(struct xnn_node) * subgraph->num_nodes);
-    xnn_release_memory(subgraph->nodes);
+    if (subgraph->nodes != NULL) {
+      memset(subgraph->nodes, 0, sizeof(struct xnn_node) * subgraph->num_nodes);
+      xnn_release_memory(subgraph->nodes);
+    }
 
-    memset(subgraph->values, 0, sizeof(struct xnn_value) * subgraph->num_values);
-    xnn_release_memory(subgraph->values);
+    if (subgraph->values != NULL) {
+      memset(subgraph->values, 0, sizeof(struct xnn_value) * subgraph->num_values);
+      xnn_release_memory(subgraph->values);
+    }
 
     memset(subgraph, 0, sizeof(struct xnn_subgraph));
     xnn_release_memory(subgraph);

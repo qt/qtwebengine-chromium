@@ -41,5 +41,13 @@ chromeos {
         path: "test/plans/v2/ctpv1_compatible/wilco.star"
       }
     }
+    source_test_plans {
+      test_plan_starlark_files {
+        host: "chrome-internal.googlesource.com"
+        project: "chromeos/config-internal"
+        path: "test/plans/v2/ctpv1_compatible/hps_cq.star"
+      }
+      path_regexps: "dbus/hps/.*"
+    }
   }
 }

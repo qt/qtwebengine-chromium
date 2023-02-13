@@ -353,6 +353,7 @@ public:
     LayerSpace() = default;
     explicit LayerSpace(const SkIRect& geometry) : fData(geometry) {}
     explicit LayerSpace(SkIRect&& geometry) : fData(std::move(geometry)) {}
+    explicit LayerSpace(const SkISize& size) : fData(SkIRect::MakeSize(size)) {}
     explicit operator const SkIRect&() const { return fData; }
 
     static LayerSpace<SkIRect> Empty() { return LayerSpace<SkIRect>(SkIRect::MakeEmpty()); }
@@ -439,9 +440,11 @@ public:
     explicit operator const SkMatrix&() const { return fData; }
 
     // Parrot a limited selection of the SkMatrix API while preserving coordinate space.
-    LayerSpace<SkRect> mapRect(const LayerSpace<SkRect>& r) const {
-        return LayerSpace<SkRect>(fData.mapRect(SkRect(r)));
-    }
+    LayerSpace<SkRect> mapRect(const LayerSpace<SkRect>& r) const;
+
+    // Effectively mapRect(SkRect).roundOut() but more accurate when the underlying matrix or
+    // SkIRect has large floating point values.
+    LayerSpace<SkIRect> mapRect(const LayerSpace<SkIRect>& r) const;
 
     LayerSpace<SkPoint> mapPoint(const LayerSpace<SkPoint>& p) const {
         return LayerSpace<SkPoint>(fData.mapPoint(SkPoint(p)));
@@ -594,14 +597,16 @@ public:
     explicit FilterResult(sk_sp<SkSpecialImage> image)
             : FilterResult(std::move(image), LayerSpace<SkIPoint>({0, 0})) {}
 
+    FilterResult(std::pair<sk_sp<SkSpecialImage>, LayerSpace<SkIPoint>> imageAndOrigin)
+            : FilterResult(std::move(std::get<0>(imageAndOrigin)), std::get<1>(imageAndOrigin)) {}
+
     FilterResult(sk_sp<SkSpecialImage> image, const LayerSpace<SkIPoint>& origin)
             : fImage(std::move(image))
             , fSamplingOptions(kDefaultSampling)
             , fTransform(SkMatrix::Translate(origin.x(), origin.y()))
-            , fLayerBounds(SkIRect::MakeXYWH(origin.x(),
-                                             origin.y(),
-                                             fImage ? fImage->width() : 0,
-                                             fImage ? fImage->height() : 0)) {}
+            , fLayerBounds(
+                    fTransform.mapRect(LayerSpace<SkIRect>(fImage ? fImage->dimensions()
+                                                                  : SkISize{0, 0}))) {}
 
     explicit operator bool() const { return SkToBool(fImage); }
 
@@ -647,7 +652,8 @@ public:
 private:
     // Renders this FilterResult into a new, but visually equivalent, image that fills 'dstBounds',
     // has nearest-neighbor sampling, and a transform that just translates by 'dstBounds' TL corner.
-    FilterResult resolve(const LayerSpace<SkIRect>& dstBounds) const;
+    std::pair<sk_sp<SkSpecialImage>, LayerSpace<SkIPoint>>
+    resolve(LayerSpace<SkIRect> dstBounds) const;
 
     // Update metadata to concat the given transform directly.
     void concatTransform(const LayerSpace<SkMatrix>& transform,

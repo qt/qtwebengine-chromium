@@ -2,15 +2,17 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+visibility = [ "./*" ]
+
 source_set("osp") {
-  visibility = [ "../*" ]
+  visibility += [ "../*" ]
   public_deps = [ "public" ]
   deps = [ "impl" ]
 }
 
 source_set("unittests") {
   testonly = true
-  visibility = [ "..:openscreen_unittests_all" ]
+  visibility += [ "..:openscreen_unittests_all" ]
   public = []
   sources = [
     "impl/presentation/presentation_connection_unittest.cc",

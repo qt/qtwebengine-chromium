@@ -14,6 +14,14 @@ version <next>:
 - bonk decoder and demuxer
 - Micronas SC-4 audio decoder
 - LAF demuxer
+- APAC decoder and demuxer
+- Media 100i decoders
+- DTS to PTS reorder bsf
+- ViewQuest VQC decoder
+- backgroundkey filter
+- nvenc AV1 encoding support
+- MediaCodec decoder via NDKMediaCodec
+- MediaCodec encoder
 
 
 version 5.1:

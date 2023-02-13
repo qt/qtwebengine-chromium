@@ -491,10 +491,13 @@ def BuildFFmpeg(target_os, target_arch, host_os, host_arch, parallel_jobs,
   # isn't actually used, so it's safe to set HAVE_SYSCTL to 0. Linux is also
   # removing <sys/sysctl.h> soon, so this is needed to silence a deprecation
   # #warning which will be converted to an error via -Werror.
+  # There is also no prctl.h
   if target_os in ['linux', 'linux-noasm']:
     pre_make_rewrites += [
         (r'(#define HAVE_SYSCTL [01])',
-         r'#define HAVE_SYSCTL 0 /* \1 -- forced to 0 for Fuchsia */')
+         r'#define HAVE_SYSCTL 0 /* \1 -- forced to 0 for Fuchsia */'),
+        (r'(#define HAVE_PRCTL [01])',
+         r'#define HAVE_PRCTL 0 /* \1 -- forced to 0 for Fuchsia */')
     ]
 
   # Turn off bcrypt, since we don't have it on Windows builders, but it does
@@ -738,9 +741,20 @@ def ConfigureAndBuild(target_arch, target_os, host_os, host_arch, parallel_jobs,
         configure_flags['Common'].extend([
             '--arch=x86_64',
         ])
-      if target_os != 'android':
-        configure_flags['Common'].extend(['--enable-lto'])
-      pass
+      else:
+        configure_flags['Common'].extend([
+          '--enable-lto',
+          '--arch=x86_64',
+          '--target-os=linux',
+        ])
+
+        if host_arch != 'x64':
+          configure_flags['Common'].extend([
+            '--enable-cross-compile',
+            '--cross-prefix=/usr/bin/x86_64-linux-gnu-',
+            '--extra-cflags=--target=x86_64-linux-gnu',
+            '--extra-ldflags=--target=x86_64-linux-gnu',
+          ])
     elif target_arch == 'ia32':
       configure_flags['Common'].extend([
           '--arch=i686',
@@ -823,12 +837,16 @@ def ConfigureAndBuild(target_arch, target_os, host_os, host_arch, parallel_jobs,
           ])
     elif target_arch == 'arm64':
       if target_os != 'android':
-        configure_flags['Common'].extend([
+        if host_arch != 'arm64':
+          configure_flags['Common'].extend([
             '--enable-cross-compile',
             '--cross-prefix=/usr/bin/aarch64-linux-gnu-',
-            '--target-os=linux',
             '--extra-cflags=--target=aarch64-linux-gnu',
             '--extra-ldflags=--target=aarch64-linux-gnu',
+          ])
+
+        configure_flags['Common'].extend([
+            '--target-os=linux',
             '--sysroot=' + os.path.join(CHROMIUM_ROOT_DIR,
                                         'build/linux/debian_bullseye_arm64-sysroot'),
         ])
@@ -998,12 +1016,6 @@ def ConfigureAndBuild(target_arch, target_os, host_os, host_arch, parallel_jobs,
       '--enable-decoder=mpeg4',
       '--enable-parser=h263,mpeg4video',
       '--enable-demuxer=avi',
-      # Enable playing Android 3gp files.
-      '--enable-demuxer=amr',
-      '--enable-decoder=amrnb,amrwb',
-      # Wav files for playing phone messages.
-      '--enable-decoder=gsm_ms',
-      '--enable-parser=gsm',
   ])
 
   configure_flags['ChromeAndroid'].extend([

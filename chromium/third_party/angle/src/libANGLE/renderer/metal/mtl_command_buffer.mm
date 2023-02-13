@@ -11,6 +11,7 @@
 #include "libANGLE/renderer/metal/mtl_command_buffer.h"
 
 #include <cassert>
+#include <cstdint>
 #if ANGLE_MTL_SIMULATE_DISCARD_FRAMEBUFFER
 #    include <random>
 #endif
@@ -68,6 +69,7 @@ namespace
     PROC(DrawIndexedInstancedBaseVertexBaseInstance) \
     PROC(SetVisibilityResultMode)                    \
     PROC(UseResource)                                \
+    PROC(MemoryBarrier)                              \
     PROC(MemoryBarrierWithResource)                  \
     PROC(InsertDebugsign)                            \
     PROC(PushDebugGroup)                             \
@@ -380,6 +382,22 @@ inline void UseResourceCmd(id<MTLRenderCommandEncoder> encoder, IntermediateComm
     [resource ANGLE_MTL_RELEASE];
 }
 
+inline void MemoryBarrierCmd(id<MTLRenderCommandEncoder> encoder, IntermediateCommandStream *stream)
+{
+    mtl::RenderStages scope  = stream->fetch<mtl::BarrierScope>();
+    mtl::RenderStages after  = stream->fetch<mtl::RenderStages>();
+    mtl::RenderStages before = stream->fetch<mtl::RenderStages>();
+    ANGLE_UNUSED_VARIABLE(scope);
+    ANGLE_UNUSED_VARIABLE(after);
+    ANGLE_UNUSED_VARIABLE(before);
+#if defined(__MAC_10_14) && (TARGET_OS_OSX || TARGET_OS_MACCATALYST)
+    if (ANGLE_APPLE_AVAILABLE_XC(10.14, 13.0))
+    {
+        [encoder memoryBarrierWithScope:scope afterStages:after beforeStages:before];
+    }
+#endif
+}
+
 inline void MemoryBarrierWithResourceCmd(id<MTLRenderCommandEncoder> encoder,
                                          IntermediateCommandStream *stream)
 {
@@ -577,6 +595,11 @@ void CommandQueue::onCommandBufferCompleted(id<MTLCommandBuffer> buf, uint64_t s
     mCompletedBufferSerial.store(
         std::max(mCompletedBufferSerial.load(std::memory_order_relaxed), serial),
         std::memory_order_relaxed);
+}
+
+uint64_t CommandQueue::getNextRenderEncoderSerial()
+{
+    return ++mRenderEncoderCounter;
 }
 
 // CommandBuffer implementation
@@ -1065,7 +1088,9 @@ void RenderCommandEncoderStates::reset()
 // RenderCommandEncoder implemtation
 RenderCommandEncoder::RenderCommandEncoder(CommandBuffer *cmdBuffer,
                                            const OcclusionQueryPool &queryPool)
-    : CommandEncoder(cmdBuffer, RENDER), mOcclusionQueryPool(queryPool)
+    : CommandEncoder(cmdBuffer, RENDER),
+      mOcclusionQueryPool(queryPool),
+      mSerial(cmdBuffer->cmdQueue().getNextRenderEncoderSerial())
 {
     ANGLE_MTL_OBJC_SCOPE
     {
@@ -1109,7 +1134,7 @@ void RenderCommandEncoder::reset()
     mCommands.clear();
 }
 
-void RenderCommandEncoder::finalizeLoadStoreAction(
+bool RenderCommandEncoder::finalizeLoadStoreAction(
     MTLRenderPassAttachmentDescriptor *objCRenderPassAttachment)
 {
     if (!objCRenderPassAttachment.texture)
@@ -1117,7 +1142,7 @@ void RenderCommandEncoder::finalizeLoadStoreAction(
         objCRenderPassAttachment.loadAction     = MTLLoadActionDontCare;
         objCRenderPassAttachment.storeAction    = MTLStoreActionDontCare;
         objCRenderPassAttachment.resolveTexture = nil;
-        return;
+        return false;
     }
 
     if (objCRenderPassAttachment.resolveTexture)
@@ -1144,6 +1169,8 @@ void RenderCommandEncoder::finalizeLoadStoreAction(
         // If storeAction hasn't been set for this attachment, we set to dontcare.
         objCRenderPassAttachment.storeAction = MTLStoreActionDontCare;
     }
+
+    return true;
 }
 
 void RenderCommandEncoder::endEncoding()
@@ -1156,6 +1183,8 @@ void RenderCommandEncoder::endEncodingImpl(bool considerDiscardSimulation)
     if (!valid())
         return;
 
+    bool hasAttachment = false;
+
     // Last minute correcting the store options.
     MTLRenderPassDescriptor *objCRenderPassDesc = mCachedRenderPassDescObjC.get();
     for (uint32_t i = 0; i < mRenderPassDesc.numColorAttachments; ++i)
@@ -1163,17 +1192,20 @@ void RenderCommandEncoder::endEncodingImpl(bool considerDiscardSimulation)
         // Update store action set between restart() and endEncoding()
         objCRenderPassDesc.colorAttachments[i].storeAction =
             mRenderPassDesc.colorAttachments[i].storeAction;
-        finalizeLoadStoreAction(objCRenderPassDesc.colorAttachments[i]);
+        if (finalizeLoadStoreAction(objCRenderPassDesc.colorAttachments[i]))
+            hasAttachment = true;
     }
 
     // Update store action set between restart() and endEncoding()
     objCRenderPassDesc.depthAttachment.storeAction = mRenderPassDesc.depthAttachment.storeAction;
-    finalizeLoadStoreAction(objCRenderPassDesc.depthAttachment);
+    if (finalizeLoadStoreAction(objCRenderPassDesc.depthAttachment))
+        hasAttachment = true;
 
     // Update store action set between restart() and endEncoding()
     objCRenderPassDesc.stencilAttachment.storeAction =
         mRenderPassDesc.stencilAttachment.storeAction;
-    finalizeLoadStoreAction(objCRenderPassDesc.stencilAttachment);
+    if (finalizeLoadStoreAction(objCRenderPassDesc.stencilAttachment))
+        hasAttachment = true;
 
     // Set visibility result buffer
     if (mOcclusionQueryPool.getNumRenderPassAllocatedQueries())
@@ -1186,8 +1218,23 @@ void RenderCommandEncoder::endEncodingImpl(bool considerDiscardSimulation)
         objCRenderPassDesc.visibilityResultBuffer = nil;
     }
 
-    // Encode the actual encoder
-    encodeMetalEncoder();
+    // If a render pass has intended side effects but no attachments, the app must set a default
+    // width/height.
+    bool hasSideEffects =
+        hasAttachment || (mRenderPassDesc.defaultWidth != 0 && mRenderPassDesc.defaultHeight != 0);
+
+    // Encode the actual encoder. It will not be created when there are no side effects.
+    if (hasSideEffects)
+    {
+        // Metal validation messages say: Either set rendertargets in RenderPassDescriptor or set
+        // defaultRasterSampleCount.
+        ASSERT(hasAttachment || objCRenderPassDesc.defaultRasterSampleCount != 0);
+        encodeMetalEncoder();
+    }
+    else
+    {
+        mCommands.clear();
+    }
 
     CommandEncoder::endEncoding();
 
@@ -1556,6 +1603,7 @@ RenderCommandEncoder &RenderCommandEncoder::setBufferForWrite(gl::ShaderType sha
         return *this;
     }
 
+    buffer->setLastWritingRenderEncoderSerial(mSerial);
     cmdBuffer().setWriteDependency(buffer);
 
     id<MTLBuffer> mtlBuffer = (buffer ? buffer->get() : nil);
@@ -1652,6 +1700,7 @@ RenderCommandEncoder &RenderCommandEncoder::setSamplerState(gl::ShaderType shade
 
     return *this;
 }
+
 RenderCommandEncoder &RenderCommandEncoder::setTexture(gl::ShaderType shaderType,
                                                        const TextureRef &texture,
                                                        uint32_t index)
@@ -1677,6 +1726,19 @@ RenderCommandEncoder &RenderCommandEncoder::setTexture(gl::ShaderType shaderType
         .push(index);
 
     return *this;
+}
+
+RenderCommandEncoder &RenderCommandEncoder::setRWTexture(gl::ShaderType shaderType,
+                                                         const TextureRef &texture,
+                                                         uint32_t index)
+{
+    if (index >= kMaxShaderSamplers)
+    {
+        return *this;
+    }
+
+    cmdBuffer().setWriteDependency(texture);
+    return setTexture(shaderType, texture, index);
 }
 
 RenderCommandEncoder &RenderCommandEncoder::draw(MTLPrimitiveType primitiveType,
@@ -1846,6 +1908,14 @@ RenderCommandEncoder &RenderCommandEncoder::useResource(const BufferRef &resourc
         .push(usage)
         .push(states);
 
+    return *this;
+}
+
+RenderCommandEncoder &RenderCommandEncoder::memoryBarrier(mtl::BarrierScope scope,
+                                                          mtl::RenderStages after,
+                                                          mtl::RenderStages before)
+{
+    mCommands.push(CmdType::MemoryBarrier).push(scope).push(after).push(before);
     return *this;
 }
 
@@ -2183,10 +2253,14 @@ BlitCommandEncoder &BlitCommandEncoder::synchronizeResource(Buffer *buffer)
     }
 
 #if TARGET_OS_OSX || TARGET_OS_MACCATALYST
-    // Only MacOS has separated storage for resource on CPU and GPU and needs explicit
-    // synchronization
-    cmdBuffer().setReadDependency(buffer);
-    [get() synchronizeResource:buffer->get()];
+    if (buffer->get().storageMode == MTLStorageModeManaged)
+    {
+        // Only MacOS has separated storage for resource on CPU and GPU and needs explicit
+        // synchronization
+        cmdBuffer().setReadDependency(buffer);
+
+        [get() synchronizeResource:buffer->get()];
+    }
 #endif
     return *this;
 }

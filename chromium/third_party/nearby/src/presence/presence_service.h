@@ -17,7 +17,10 @@
 
 #include <memory>
 
+#include "internal/platform/borrowable.h"
+#include "presence/data_types.h"
 #include "presence/implementation/service_controller.h"
+#include "presence/presence_client.h"
 
 namespace nearby {
 namespace presence {
@@ -29,11 +32,23 @@ namespace presence {
  */
 class PresenceService {
  public:
-  PresenceService() = default;
-  ~PresenceService() = default;
+  PresenceService();
+  ~PresenceService() { lender_.Release(); }
+
+  PresenceClient CreatePresenceClient();
+
+  absl::StatusOr<ScanSessionId> StartScan(ScanRequest scan_request,
+                                          ScanCallback callback);
+  void StopScan(ScanSessionId session_id);
+
+  absl::StatusOr<BroadcastSessionId> StartBroadcast(
+      BroadcastRequest broadcast_request, BroadcastCallback callback);
+
+  void StopBroadcast(BroadcastSessionId session_id);
 
  private:
   std::unique_ptr<ServiceController> service_controller_;
+  ::location::nearby::Lender<PresenceService *> lender_{this};
 };
 
 }  // namespace presence

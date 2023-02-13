@@ -28,7 +28,13 @@
 //  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
 //  THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-import {contrastRatio, contrastRatioAPCA, getAPCAThreshold, getContrastThreshold} from '../front_end/core/common/ColorUtils.js';  // eslint-disable-line rulesdir/es_modules_import
+// eslint-disable-next-line rulesdir/es_modules_import
+import {
+  contrastRatio,
+  contrastRatioAPCA,
+  getAPCAThreshold,
+  getContrastThreshold,
+} from '../front_end/core/common/ColorUtils.js';
 
 import {
   constrainNumber,
@@ -42,7 +48,7 @@ import {
   type ResetData,
 } from './common.js';
 
-import {drawPath, emptyBounds, formatColor, formatRgba, parseHexa, type PathBounds} from './highlight_common.js';
+import {drawPath, emptyBounds, formatColor, formatRgba, type PathBounds} from './highlight_common.js';
 
 import {
   drawLayoutFlexContainerHighlight,
@@ -58,6 +64,12 @@ import {drawContainerQueryHighlight, type ContainerQueryHighlight} from './highl
 import {type IsolatedElementHighlight} from './highlight_isolated_element.js';
 import {PersistentOverlay} from './tool_persistent.js';
 
+type ColorRgba = [number, number, number, number];
+
+function isTransparent(color: ColorRgba): boolean {
+  return color[3] === 0;
+}
+
 interface Path {
   path: PathCommands;
   outlineColor: string;
@@ -67,13 +79,15 @@ interface Path {
 
 interface ContrastInfo {
   backgroundColor: string;
+  backgroundColorUnclampedRgba: ColorRgba;
+  backgroundColorCssText: string;
   fontSize: string;
   fontWeight: string;
   contrastAlgorithm: 'apca'|'aa'|'aaa';
   textOpacity: number;
 }
 
-interface ElementInfo {
+export interface ElementInfo {
   contrast?: ContrastInfo;
   tagName: string;
   idValue: string;
@@ -82,7 +96,12 @@ interface ElementInfo {
   nodeHeight: number;
   isLocked: boolean;
   isLockedAncestor: boolean;
-  style: {[key: string]: string|undefined};
+  style: {
+    [key: string]: string|undefined,
+  }&{
+    'color-unclamped-rgba'?: ColorRgba,
+    'background-color-unclamped-rgba'?: ColorRgba,
+  };
   showAccessibilityInfo: boolean;
   isKeyboardFocusable: boolean;
   accessibleName: string;
@@ -424,7 +443,7 @@ function getElementLayoutType(elementInfo: ElementInfo): string|null {
 /**
  * Create the DOM node that displays the description of the highlighted element
  */
-function createElementDescription(elementInfo: ElementInfo, colorFormat: string): Element {
+export function createElementDescription(elementInfo: ElementInfo, colorFormat: string): Element {
   const elementInfoElement = createElement('div', 'element-info');
   const elementInfoHeaderElement = createChild(elementInfoElement, 'div', 'element-info-header');
 
@@ -464,8 +483,9 @@ function createElementDescription(elementInfo: ElementInfo, colorFormat: string)
   }
 
   const color = style['color'];
-  if (color && color !== '#00000000') {
-    addColorRow('Color', color, colorFormat);
+  const colorRgba = style['color-unclamped-rgba'];
+  if (color && colorRgba && !isTransparent(colorRgba)) {
+    addColorRow('Color', style['color-css-text'] ?? color, style['color-css-text'] ? 'original' : colorFormat);
   }
 
   const fontFamily = style['font-family'];
@@ -474,9 +494,12 @@ function createElementDescription(elementInfo: ElementInfo, colorFormat: string)
     addTextRow('Font', `${fontSize} ${fontFamily}`);
   }
 
-  const bgcolor = style['background-color'];
-  if (bgcolor && bgcolor !== '#00000000') {
-    addColorRow('Background', bgcolor, colorFormat);
+  const bgColor = style['background-color'];
+  const bgColorRgba = style['background-color-unclamped-rgba'];
+  if (bgColor && bgColorRgba && !isTransparent(bgColorRgba)) {
+    addColorRow(
+        'Background', style['background-color-css-text'] ?? bgColor,
+        style['background-color-css-text'] ? 'original' : colorFormat);
   }
 
   const margin = style['margin'];
@@ -489,14 +512,14 @@ function createElementDescription(elementInfo: ElementInfo, colorFormat: string)
     addTextRow('Padding', padding);
   }
 
-  const cbgColor = elementInfo.contrast ? elementInfo.contrast.backgroundColor : null;
-  const hasContrastInfo = color && color !== '#00000000' && cbgColor && cbgColor !== '#00000000';
+  const cbgColorRgba = elementInfo.contrast ? elementInfo.contrast.backgroundColorUnclampedRgba : null;
+  const hasContrastInfo = colorRgba && !isTransparent(colorRgba) && cbgColorRgba && !isTransparent(cbgColorRgba);
 
   if (elementInfo.showAccessibilityInfo) {
     addSection('Accessibility');
 
-    if (hasContrastInfo && style['color'] && elementInfo.contrast) {
-      addContrastRow(style['color'], elementInfo.contrast);
+    if (hasContrastInfo && style['color-unclamped-rgba'] && elementInfo.contrast) {
+      addContrastRow(style['color-unclamped-rgba'], elementInfo.contrast);
     }
 
     addTextRow('Name', elementInfo.accessibleName);
@@ -548,15 +571,15 @@ function createElementDescription(elementInfo: ElementInfo, colorFormat: string)
     createTextChild(valueElement, formatColor(color, colorFormat));
   }
 
-  function addContrastRow(fgColor: string, contrast: ContrastInfo) {
-    const parsedFgColor = parseHexa(fgColor);
-    const parsedBgColor = parseHexa(contrast.backgroundColor);
+  function addContrastRow(fgColor: ColorRgba, contrast: ContrastInfo) {
+    const parsedFgColor = fgColor.slice();
+    const parsedBgColor = contrast.backgroundColorUnclampedRgba.slice();
     // Merge text opacity into the alpha channel of the color.
     parsedFgColor[3] *= contrast.textOpacity;
     const valueElement = addRow('Contrast', '', 'element-info-value-contrast');
     const sampleText = createChild(valueElement, 'div', 'contrast-text');
     sampleText.style.color = formatRgba(parsedFgColor, 'rgb');
-    sampleText.style.backgroundColor = contrast.backgroundColor;
+    sampleText.style.backgroundColor = contrast.backgroundColorCssText;
     sampleText.textContent = 'Aa';
     const valueSpan = createChild(valueElement, 'span');
     if (contrast.contrastAlgorithm === 'apca') {

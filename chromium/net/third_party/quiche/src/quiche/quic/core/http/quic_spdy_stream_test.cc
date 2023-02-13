@@ -44,7 +44,6 @@
 using spdy::Http2HeaderBlock;
 using spdy::kV3HighestPriority;
 using spdy::kV3LowestPriority;
-using spdy::SpdyPriority;
 using testing::_;
 using testing::AnyNumber;
 using testing::AtLeast;
@@ -320,25 +319,23 @@ class TestSession : public MockQuicSpdySession {
 class TestMockUpdateStreamSession : public MockQuicSpdySession {
  public:
   explicit TestMockUpdateStreamSession(QuicConnection* connection)
-      : MockQuicSpdySession(connection),
-        expected_precedence_(
-            spdy::SpdyStreamPrecedence(QuicStream::kDefaultPriority)) {}
+      : MockQuicSpdySession(connection) {}
 
-  void UpdateStreamPriority(
-      QuicStreamId id, const spdy::SpdyStreamPrecedence& precedence) override {
+  void UpdateStreamPriority(QuicStreamId id,
+                            const QuicStreamPriority& new_priority) override {
     EXPECT_EQ(id, expected_stream_->id());
-    EXPECT_EQ(expected_precedence_, precedence);
-    EXPECT_EQ(expected_precedence_, expected_stream_->precedence());
+    EXPECT_EQ(expected_priority_, new_priority);
+    EXPECT_EQ(expected_priority_, expected_stream_->priority());
   }
 
   void SetExpectedStream(QuicSpdyStream* stream) { expected_stream_ = stream; }
-  void SetExpectedPriority(const spdy::SpdyStreamPrecedence& precedence) {
-    expected_precedence_ = precedence;
+  void SetExpectedPriority(const QuicStreamPriority& priority) {
+    expected_priority_ = priority;
   }
 
  private:
   QuicSpdyStream* expected_stream_;
-  spdy::SpdyStreamPrecedence expected_precedence_;
+  QuicStreamPriority expected_priority_;
 };
 
 class QuicSpdyStreamTest : public QuicTestWithParam<ParsedQuicVersion> {
@@ -1560,10 +1557,10 @@ TEST_P(QuicSpdyStreamTest, ChangePriority) {
   StrictMock<MockHttp3DebugVisitor> debug_visitor;
   session_->set_debug_visitor(&debug_visitor);
 
-  // Two writes on the request stream: HEADERS frame header and payload.
   if (GetQuicReloadableFlag(quic_one_write_for_headers)) {
     EXPECT_CALL(*session_, WritevData(stream_->id(), _, _, _, _, _)).Times(1);
   } else {
+    // Two writes on the request stream: HEADERS frame header and payload.
     EXPECT_CALL(*session_, WritevData(stream_->id(), _, _, _, _, _)).Times(2);
   }
   EXPECT_CALL(*stream_, WriteHeadersMock(false));
@@ -1574,11 +1571,16 @@ TEST_P(QuicSpdyStreamTest, ChangePriority) {
   auto send_control_stream =
       QuicSpdySessionPeer::GetSendControlStream(session_.get());
   EXPECT_CALL(*session_, WritevData(send_control_stream->id(), _, _, _, _, _));
-  PriorityUpdateFrame priority_update;
-  priority_update.prioritized_element_id = 0;
-  priority_update.priority_field_value = "u=0";
-  EXPECT_CALL(debug_visitor, OnPriorityUpdateFrameSent(priority_update));
-  stream_->SetPriority(spdy::SpdyStreamPrecedence(kV3HighestPriority));
+  PriorityUpdateFrame priority_update1{stream_->id(), "u=0"};
+  EXPECT_CALL(debug_visitor, OnPriorityUpdateFrameSent(priority_update1));
+  stream_->SetPriority(QuicStreamPriority{
+      kV3HighestPriority, QuicStreamPriority::kDefaultIncremental});
+
+  // Send another PRIORITY_UPDATE frame with incremental flag set to true.
+  EXPECT_CALL(*session_, WritevData(send_control_stream->id(), _, _, _, _, _));
+  PriorityUpdateFrame priority_update2{stream_->id(), "u=2, i"};
+  EXPECT_CALL(debug_visitor, OnPriorityUpdateFrameSent(priority_update2));
+  stream_->SetPriority(QuicStreamPriority{2, true});
 }
 
 TEST_P(QuicSpdyStreamTest, ChangePriorityBeforeWritingHeaders) {
@@ -1594,7 +1596,8 @@ TEST_P(QuicSpdyStreamTest, ChangePriorityBeforeWritingHeaders) {
       QuicSpdySessionPeer::GetSendControlStream(session_.get());
   EXPECT_CALL(*session_, WritevData(send_control_stream->id(), _, _, _, _, _));
 
-  stream_->SetPriority(spdy::SpdyStreamPrecedence(kV3HighestPriority));
+  stream_->SetPriority(QuicStreamPriority{
+      kV3HighestPriority, QuicStreamPriority::kDefaultIncremental});
   testing::Mock::VerifyAndClearExpectations(session_.get());
 
   // Two writes on the request stream: HEADERS frame header and payload.
@@ -1803,8 +1806,9 @@ TEST_P(QuicSpdyStreamTest, HeaderStreamNotiferCorrespondingSpdyStream) {
 TEST_P(QuicSpdyStreamTest, OnPriorityFrame) {
   Initialize(kShouldProcessData);
   stream_->OnPriorityFrame(spdy::SpdyStreamPrecedence(kV3HighestPriority));
-  EXPECT_EQ(spdy::SpdyStreamPrecedence(kV3HighestPriority),
-            stream_->precedence());
+  EXPECT_EQ((QuicStreamPriority{kV3HighestPriority,
+                                QuicStreamPriority::kDefaultIncremental}),
+            stream_->priority());
 }
 
 TEST_P(QuicSpdyStreamTest, OnPriorityFrameAfterSendingData) {
@@ -1817,8 +1821,9 @@ TEST_P(QuicSpdyStreamTest, OnPriorityFrameAfterSendingData) {
   EXPECT_CALL(*session_, WritevData(_, 4, _, FIN, _, _));
   stream_->WriteOrBufferBody("data", true);
   stream_->OnPriorityFrame(spdy::SpdyStreamPrecedence(kV3HighestPriority));
-  EXPECT_EQ(spdy::SpdyStreamPrecedence(kV3HighestPriority),
-            stream_->precedence());
+  EXPECT_EQ((QuicStreamPriority{kV3HighestPriority,
+                                QuicStreamPriority::kDefaultIncremental}),
+            stream_->priority());
 }
 
 TEST_P(QuicSpdyStreamTest, SetPriorityBeforeUpdateStreamPriority) {
@@ -1839,11 +1844,11 @@ TEST_P(QuicSpdyStreamTest, SetPriorityBeforeUpdateStreamPriority) {
   // if called within UpdateStreamPriority(). This expectation is enforced in
   // TestMockUpdateStreamSession::UpdateStreamPriority().
   session->SetExpectedStream(stream);
-  session->SetExpectedPriority(spdy::SpdyStreamPrecedence(kV3HighestPriority));
-  stream->SetPriority(spdy::SpdyStreamPrecedence(kV3HighestPriority));
+  session->SetExpectedPriority(QuicStreamPriority{kV3HighestPriority});
+  stream->SetPriority(QuicStreamPriority{kV3HighestPriority});
 
-  session->SetExpectedPriority(spdy::SpdyStreamPrecedence(kV3LowestPriority));
-  stream->SetPriority(spdy::SpdyStreamPrecedence(kV3LowestPriority));
+  session->SetExpectedPriority(QuicStreamPriority{kV3LowestPriority});
+  stream->SetPriority(QuicStreamPriority{kV3LowestPriority});
 }
 
 TEST_P(QuicSpdyStreamTest, StreamWaitsForAcks) {
@@ -3078,18 +3083,18 @@ TEST_P(QuicSpdyStreamTest, TwoResetStreamFrames) {
   EXPECT_FALSE(stream_->write_side_closed());
 }
 
-TEST_P(QuicSpdyStreamTest, ProcessOutgoingWebTransportHeadersDatagramDraft04) {
+TEST_P(QuicSpdyStreamTest, ProcessOutgoingWebTransportHeaders) {
   if (!UsesHttp3()) {
     return;
   }
 
   InitializeWithPerspective(kShouldProcessData, Perspective::IS_CLIENT);
-  session_->set_local_http_datagram_support(HttpDatagramSupport::kDraft04);
+  session_->set_local_http_datagram_support(HttpDatagramSupport::kRfc);
   session_->EnableWebTransport();
   session_->OnSetting(SETTINGS_ENABLE_CONNECT_PROTOCOL, 1);
   QuicSpdySessionPeer::EnableWebTransport(session_.get());
   QuicSpdySessionPeer::SetHttpDatagramSupport(session_.get(),
-                                              HttpDatagramSupport::kDraft04);
+                                              HttpDatagramSupport::kRfc);
 
   EXPECT_CALL(*stream_, WriteHeadersMock(false));
   EXPECT_CALL(*session_, WritevData(stream_->id(), _, _, _, _, _))
@@ -3103,17 +3108,17 @@ TEST_P(QuicSpdyStreamTest, ProcessOutgoingWebTransportHeadersDatagramDraft04) {
   EXPECT_EQ(stream_->id(), stream_->web_transport()->id());
 }
 
-TEST_P(QuicSpdyStreamTest, ProcessIncomingWebTransportHeadersDatagramDraft04) {
+TEST_P(QuicSpdyStreamTest, ProcessIncomingWebTransportHeaders) {
   if (!UsesHttp3()) {
     return;
   }
 
   Initialize(kShouldProcessData);
-  session_->set_local_http_datagram_support(HttpDatagramSupport::kDraft04);
+  session_->set_local_http_datagram_support(HttpDatagramSupport::kRfc);
   session_->EnableWebTransport();
   QuicSpdySessionPeer::EnableWebTransport(session_.get());
   QuicSpdySessionPeer::SetHttpDatagramSupport(session_.get(),
-                                              HttpDatagramSupport::kDraft04);
+                                              HttpDatagramSupport::kRfc);
 
   headers_[":method"] = "CONNECT";
   headers_[":protocol"] = "webtransport";
@@ -3134,9 +3139,9 @@ TEST_P(QuicSpdyStreamTest, ReceiveHttpDatagram) {
     return;
   }
   InitializeWithPerspective(kShouldProcessData, Perspective::IS_CLIENT);
-  session_->set_local_http_datagram_support(HttpDatagramSupport::kDraft09);
+  session_->set_local_http_datagram_support(HttpDatagramSupport::kRfc);
   QuicSpdySessionPeer::SetHttpDatagramSupport(session_.get(),
-                                              HttpDatagramSupport::kDraft09);
+                                              HttpDatagramSupport::kRfc);
   headers_[":method"] = "CONNECT";
   headers_[":protocol"] = "webtransport";
   ProcessHeaders(false, headers_);
@@ -3174,9 +3179,9 @@ TEST_P(QuicSpdyStreamTest, SendHttpDatagram) {
     return;
   }
   Initialize(kShouldProcessData);
-  session_->set_local_http_datagram_support(HttpDatagramSupport::kDraft09);
+  session_->set_local_http_datagram_support(HttpDatagramSupport::kRfc);
   QuicSpdySessionPeer::SetHttpDatagramSupport(session_.get(),
-                                              HttpDatagramSupport::kDraft09);
+                                              HttpDatagramSupport::kRfc);
   std::string http_datagram_payload = {1, 2, 3, 4, 5, 6};
   EXPECT_CALL(*connection_, SendMessage(1, _, false))
       .WillOnce(Return(MESSAGE_STATUS_SUCCESS));
@@ -3189,9 +3194,9 @@ TEST_P(QuicSpdyStreamTest, GetMaxDatagramSize) {
     return;
   }
   Initialize(kShouldProcessData);
-  session_->set_local_http_datagram_support(HttpDatagramSupport::kDraft09);
+  session_->set_local_http_datagram_support(HttpDatagramSupport::kRfc);
   QuicSpdySessionPeer::SetHttpDatagramSupport(session_.get(),
-                                              HttpDatagramSupport::kDraft09);
+                                              HttpDatagramSupport::kRfc);
   EXPECT_GT(stream_->GetMaxDatagramSize(), 512u);
 }
 
@@ -3200,9 +3205,9 @@ TEST_P(QuicSpdyStreamTest, Capsules) {
     return;
   }
   Initialize(kShouldProcessData);
-  session_->set_local_http_datagram_support(HttpDatagramSupport::kDraft09);
+  session_->set_local_http_datagram_support(HttpDatagramSupport::kRfc);
   QuicSpdySessionPeer::SetHttpDatagramSupport(session_.get(),
-                                              HttpDatagramSupport::kDraft09);
+                                              HttpDatagramSupport::kRfc);
   SavingHttp3DatagramVisitor h3_datagram_visitor;
   stream_->RegisterHttp3DatagramVisitor(&h3_datagram_visitor);
   SavingConnectIpVisitor connect_ip_visitor;
@@ -3212,7 +3217,7 @@ TEST_P(QuicSpdyStreamTest, Capsules) {
   ProcessHeaders(/*fin=*/false, headers_);
   // Datagram capsule.
   std::string http_datagram_payload = {1, 2, 3, 4, 5, 6};
-  stream_->OnCapsule(Capsule::DatagramWithoutContext(http_datagram_payload));
+  stream_->OnCapsule(Capsule::Datagram(http_datagram_payload));
   EXPECT_THAT(h3_datagram_visitor.received_h3_datagrams(),
               ElementsAre(SavingHttp3DatagramVisitor::SavedHttp3Datagram{
                   stream_->id(), http_datagram_payload}));

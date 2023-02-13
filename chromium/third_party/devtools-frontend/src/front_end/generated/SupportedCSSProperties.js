@@ -4,6 +4,28 @@
 
 export const generatedProperties = [
  {
+  "longhands": [
+   "animation-duration",
+   "animation-timing-function",
+   "animation-delay-start",
+   "animation-delay-end",
+   "animation-iteration-count",
+   "animation-direction",
+   "animation-fill-mode",
+   "animation-play-state",
+   "animation-name",
+   "animation-timeline"
+  ],
+  "name": "-alternative-animation"
+ },
+ {
+  "longhands": [
+   "animation-delay-start",
+   "animation-delay-end"
+  ],
+  "name": "-alternative-animation-delay"
+ },
+ {
   "inherited": true,
   "name": "-webkit-border-horizontal-spacing"
  },
@@ -355,13 +377,18 @@ export const generatedProperties = [
    "animation-direction",
    "animation-fill-mode",
    "animation-play-state",
-   "animation-name",
-   "animation-timeline"
+   "animation-name"
   ],
   "name": "animation"
  },
  {
   "name": "animation-delay"
+ },
+ {
+  "name": "animation-delay-end"
+ },
+ {
+  "name": "animation-delay-start"
  },
  {
   "keywords": [
@@ -576,6 +603,14 @@ export const generatedProperties = [
    "super"
   ],
   "name": "baseline-shift"
+ },
+ {
+  "keywords": [
+   "auto",
+   "first",
+   "last"
+  ],
+  "name": "baseline-source"
  },
  {
   "keywords": [
@@ -1541,6 +1576,8 @@ export const generatedProperties = [
    "font-variant-caps",
    "font-variant-numeric",
    "font-variant-east-asian",
+   "font-variant-alternates",
+   "font-variant-position",
    "font-weight",
    "font-stretch",
    "font-size",
@@ -1675,10 +1712,19 @@ export const generatedProperties = [
   "longhands": [
    "font-variant-ligatures",
    "font-variant-caps",
+   "font-variant-alternates",
    "font-variant-numeric",
-   "font-variant-east-asian"
+   "font-variant-east-asian",
+   "font-variant-position"
   ],
   "name": "font-variant"
+ },
+ {
+  "inherited": true,
+  "keywords": [
+   "normal"
+  ],
+  "name": "font-variant-alternates"
  },
  {
   "inherited": true,
@@ -1739,6 +1785,15 @@ export const generatedProperties = [
    "slashed-zero"
   ],
   "name": "font-variant-numeric"
+ },
+ {
+  "inherited": true,
+  "keywords": [
+   "normal",
+   "sub",
+   "super"
+  ],
+  "name": "font-variant-position"
  },
  {
   "inherited": true,
@@ -1915,6 +1970,13 @@ export const generatedProperties = [
  {
   "inherited": true,
   "keywords": [
+   "auto"
+  ],
+  "name": "hyphenate-limit-chars"
+ },
+ {
+  "inherited": true,
+  "keywords": [
    "none",
    "manual",
    "auto"
@@ -1938,6 +2000,15 @@ export const generatedProperties = [
  },
  {
   "name": "inherits"
+ },
+ {
+  "inherited": false,
+  "keywords": [
+   "drop",
+   "normal",
+   "raise"
+  ],
+  "name": "initial-letter"
  },
  {
   "name": "initial-value"
@@ -2038,10 +2109,6 @@ export const generatedProperties = [
    "normal"
   ],
   "name": "line-height"
- },
- {
-  "inherited": true,
-  "name": "line-height-step"
  },
  {
   "inherited": true,
@@ -2555,12 +2622,6 @@ export const generatedProperties = [
  },
  {
   "name": "page-orientation"
- },
- {
-  "keywords": [
-   "none"
-  ],
-  "name": "page-transition-tag"
  },
  {
   "inherited": true,
@@ -3245,6 +3306,12 @@ export const generatedProperties = [
  },
  {
   "keywords": [
+   "normal"
+  ],
+  "name": "toggle-visibility"
+ },
+ {
+  "keywords": [
    "auto"
   ],
   "name": "top"
@@ -3384,6 +3451,12 @@ export const generatedProperties = [
  },
  {
   "name": "view-timeline-name"
+ },
+ {
+  "keywords": [
+   "none"
+  ],
+  "name": "view-transition-name"
  },
  {
   "inherited": true,
@@ -3726,6 +3799,13 @@ export const generatedPropertyValues = {
    "baseline",
    "sub",
    "super"
+  ]
+ },
+ "baseline-source": {
+  "values": [
+   "auto",
+   "first",
+   "last"
   ]
  },
  "block-size": {
@@ -4333,6 +4413,11 @@ export const generatedPropertyValues = {
    "none"
   ]
  },
+ "font-variant-alternates": {
+  "values": [
+   "normal"
+  ]
+ },
  "font-variant-caps": {
   "values": [
    "normal",
@@ -4383,6 +4468,13 @@ export const generatedPropertyValues = {
    "stacked-fractions",
    "ordinal",
    "slashed-zero"
+  ]
+ },
+ "font-variant-position": {
+  "values": [
+   "normal",
+   "sub",
+   "super"
   ]
  },
  "font-variation-settings": {
@@ -4468,6 +4560,11 @@ export const generatedPropertyValues = {
    "max-content"
   ]
  },
+ "hyphenate-limit-chars": {
+  "values": [
+   "auto"
+  ]
+ },
  "hyphens": {
   "values": [
    "none",
@@ -4482,6 +4579,13 @@ export const generatedPropertyValues = {
    "optimizequality",
    "-webkit-optimize-contrast",
    "pixelated"
+  ]
+ },
+ "initial-letter": {
+  "values": [
+   "drop",
+   "normal",
+   "raise"
   ]
  },
  "inline-size": {
@@ -4785,11 +4889,6 @@ export const generatedPropertyValues = {
  "page": {
   "values": [
    "auto"
-  ]
- },
- "page-transition-tag": {
-  "values": [
-   "none"
   ]
  },
  "paint-order": {
@@ -5171,6 +5270,11 @@ export const generatedPropertyValues = {
    "none"
   ]
  },
+ "toggle-visibility": {
+  "values": [
+   "normal"
+  ]
+ },
  "top": {
   "values": [
    "auto"
@@ -5259,6 +5363,11 @@ export const generatedPropertyValues = {
    "text-top",
    "text-bottom",
    "middle"
+  ]
+ },
+ "view-transition-name": {
+  "values": [
+   "none"
   ]
  },
  "visibility": {
@@ -5366,6 +5475,14 @@ export const generatedAliasesFor = new Map([
  [
   "-webkit-align-self",
   "align-self"
+ ],
+ [
+  "-webkit-alternative-animation",
+  "-alternative-animation"
+ ],
+ [
+  "-webkit-alternative-animation-delay",
+  "-alternative-animation-delay"
  ],
  [
   "-webkit-animation",

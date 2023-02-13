@@ -1,4 +1,4 @@
-// Copyright 2014 PDFium Authors. All rights reserved.
+// Copyright 2014 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -96,7 +96,7 @@ void CFFL_ComboBox::SaveData(const CPDFSDK_PageView* pPageView) {
     m_pWidget->GetSelectedIndex(0);
     m_pWidget->SetOptionSelection(nCurSel);
   }
-  ObservedPtr<CPDFSDK_Widget> observed_widget(m_pWidget.Get());
+  ObservedPtr<CPDFSDK_Widget> observed_widget(m_pWidget);
   ObservedPtr<CFFL_ComboBox> observed_this(this);
   m_pWidget->ResetFieldAppearance();
   if (!observed_widget)
@@ -235,24 +235,13 @@ bool CFFL_ComboBox::IsFieldFull(const CPDFSDK_PageView* pPageView) {
 void CFFL_ComboBox::OnSetFocusForEdit(CPWL_Edit* pEdit) {
   pEdit->SetCharSet(FX_Charset::kChineseSimplified);
   pEdit->SetReadyToInput();
-  m_pFormFiller->GetCallbackIface()->OnSetFieldInputFocus(pEdit->GetText());
+  m_pFormFiller->OnSetFieldInputFocus(pEdit->GetText());
 }
 
 WideString CFFL_ComboBox::GetSelectExportText() {
-  WideString swRet;
-
   CPWL_ComboBox* pComboBox = GetPWLComboBox(GetCurPageView());
   int nExport = pComboBox ? pComboBox->GetSelect() : -1;
-
-  if (nExport >= 0) {
-    if (CPDF_FormField* pFormField = m_pWidget->GetFormField()) {
-      swRet = pFormField->GetOptionValue(nExport);
-      if (swRet.IsEmpty())
-        swRet = pFormField->GetOptionLabel(nExport);
-    }
-  }
-
-  return swRet;
+  return m_pWidget->GetSelectExportText(nExport);
 }
 
 CPWL_ComboBox* CFFL_ComboBox::GetPWLComboBox(

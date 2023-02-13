@@ -1,9 +1,7 @@
-# Copyright 2017 The PDFium Authors. All rights reserved.
+# Copyright 2017 The PDFium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 """Classes that draw conclusions out of a comparison and represent them."""
-
-from __future__ import print_function
 
 from collections import Counter
 

@@ -231,7 +231,7 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
     return matches;
   }
 
-  private processColor(text: string, valueChild?: Node|null): Node {
+  private renderColorSwatch(text: string, valueChild?: Node|null): Node {
     const useUserSettingFormat = this.editable();
     const shiftClickMessage = i18nString(UIStrings.shiftClickToChangeColorFormat);
     const tooltip =
@@ -243,7 +243,7 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
     if (!valueChild) {
       valueChild = swatch.createChild('span');
       const color = swatch.getColor();
-      valueChild.textContent = color ? color.asString(swatch.getFormat()) : text;
+      valueChild.textContent = color ? color.asString(swatch.getFormat() ?? undefined) : text;
     }
     swatch.appendChild(valueChild);
 
@@ -262,6 +262,19 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
     return swatch;
   }
 
+  private processAnimationName(text: string): Node {
+    const swatch = new InlineEditor.LinkSwatch.AnimationNameSwatch();
+    UI.UIUtils.createTextChild(swatch, text);
+    const isDefined = Boolean(this.matchedStylesInternal.keyframes().find(kf => kf.name().text === text));
+    swatch.data = {text, isDefined, onLinkActivate: this.handleAnimationNameDefinitionActivate.bind(this)};
+
+    return swatch;
+  }
+
+  private processColor(text: string, valueChild?: Node|null): Node {
+    return this.renderColorSwatch(text, valueChild);
+  }
+
   private processVar(text: string): Node {
     const computedSingleValue = this.matchedStylesInternal.computeSingleVariableValue(this.style, text);
     if (!computedSingleValue) {
@@ -270,15 +283,19 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
 
     const {computedValue, fromFallback} = computedSingleValue;
 
-    const varSwatch = new InlineEditor.CSSVarSwatch.CSSVarSwatch();
+    const varSwatch = new InlineEditor.LinkSwatch.CSSVarSwatch();
     UI.UIUtils.createTextChild(varSwatch, text);
     varSwatch.data = {text, computedValue, fromFallback, onLinkActivate: this.handleVarDefinitionActivate.bind(this)};
 
-    if (!computedValue || !Common.Color.Color.parse(computedValue)) {
+    if (!computedValue || !Common.Color.parse(computedValue)) {
       return varSwatch;
     }
 
     return this.processColor(computedValue, varSwatch);
+  }
+
+  private handleAnimationNameDefinitionActivate(animationName: string): void {
+    this.parentPaneInternal.jumpToSectionBlock(`@keyframes ${animationName}`);
   }
 
   private handleVarDefinitionActivate(variableName: string): void {
@@ -442,6 +459,7 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
     valueElement.textContent = lengthText;
     cssLength.data = {
       lengthText,
+      overloaded: this.overloadedInternal,
     };
     cssLength.append(valueElement);
 
@@ -655,6 +673,7 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
         new StylesSidebarPropertyRenderer(this.style.parentRule, this.node(), this.name, this.value);
     if (this.property.parsedOk) {
       propertyRenderer.setVarHandler(this.processVar.bind(this));
+      propertyRenderer.setAnimationNameHandler(this.processAnimationName.bind(this));
       propertyRenderer.setColorHandler(this.processColor.bind(this));
       propertyRenderer.setBezierHandler(this.processBezier.bind(this));
       propertyRenderer.setFontHandler(this.processFont.bind(this));
@@ -691,7 +710,9 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
         this.listItemElement.appendChild(this.expandElement);
       }
       this.listItemElement.appendChild(this.valueElement);
-      UI.UIUtils.createTextChild(this.listItemElement, ';');
+      const semicolon = this.listItemElement.createChild('span', 'styles-semicolon');
+      semicolon.textContent = ';';
+      semicolon.onmouseup = this.mouseUp.bind(this);
       if (this.property.disabled) {
         UI.UIUtils.createTextChild(this.listItemElement.createChild('span', 'styles-clipboard-only'), ' */');
       }
@@ -777,9 +798,11 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
       return;
     }
 
+    const localName = this.node()?.localName();
     for (const validator of cssRuleValidatorsMap.get(propertyName) || []) {
-      const hint =
-          validator.getHint(propertyName, this.computedStyles || undefined, this.parentsComputedStyles || undefined);
+      const hint = validator.getHint(
+          propertyName, this.computedStyles || undefined, this.parentsComputedStyles || undefined,
+          localName?.toLowerCase());
       if (hint) {
         Host.userMetrics.cssHintShown(validator.getMetricType());
         const hintIcon = UI.Icon.Icon.create('mediumicon-info', 'hint');
@@ -1016,7 +1039,8 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
 
     if (selectElement) {
       selectElement = selectElement.enclosingNodeOrSelfWithClass('webkit-css-property') ||
-          selectElement.enclosingNodeOrSelfWithClass('value');
+          selectElement.enclosingNodeOrSelfWithClass('value') ||
+          selectElement.enclosingNodeOrSelfWithClass('styles-semicolon');
     }
     if (!selectElement) {
       selectElement = this.nameElement;
@@ -1032,6 +1056,7 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
         this.valueElement.textContent = restoreGridIndents(this.value);
       }
       this.valueElement.textContent = restoreURLs(this.valueElement.textContent || '', this.value);
+      selectElement = this.valueElement;
     }
 
     function restoreGridIndents(value: string): string {

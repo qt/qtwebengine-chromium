@@ -7,8 +7,8 @@
 
 #include "src/sksl/ir/SkSLType.h"
 
+#include "include/private/SkSLLayout.h"
 #include "include/private/SkSLString.h"
-#include "include/private/SkStringView.h"
 #include "include/private/SkTFitsIn.h"
 #include "include/sksl/SkSLErrorReporter.h"
 #include "src/core/SkMathPriv.h"
@@ -65,10 +65,6 @@ public:
 
     int bitWidth() const override {
         return fTargetType.bitWidth();
-    }
-
-    bool isPrivate() const override {
-        return fTargetType.isPrivate();
     }
 
     bool isAllowedInES2() const override {
@@ -174,10 +170,6 @@ public:
         return this->componentType().bitWidth();
     }
 
-    bool isPrivate() const override {
-        return fComponentType.isPrivate();
-    }
-
     bool isAllowedInES2() const override {
         return fComponentType.isAllowedInES2();
     }
@@ -263,10 +255,6 @@ public:
     }
 
     bool isLiteral() const override {
-        return true;
-    }
-
-    bool isPrivate() const override {
         return true;
     }
 
@@ -370,6 +358,18 @@ private:
     NumberKind fNumberKind;
     int8_t fPriority;
     int8_t fBitWidth;
+};
+
+class AtomicType final : public Type {
+public:
+    inline static constexpr TypeKind kTypeKind = TypeKind::kAtomic;
+
+    AtomicType(std::string_view name, const char* abbrev) : INHERITED(name, abbrev, kTypeKind) {}
+
+    bool isAllowedInES2() const override { return false; }
+
+private:
+    using INHERITED = Type;
 };
 
 class MatrixType final : public Type {
@@ -508,9 +508,9 @@ public:
     inline static constexpr TypeKind kTypeKind = TypeKind::kStruct;
 
     StructType(Position pos, std::string_view name, std::vector<Field> fields, bool interfaceBlock)
-        : INHERITED(std::move(name), "S", kTypeKind, pos)
-        , fFields(std::move(fields))
-        , fInterfaceBlock(interfaceBlock) {}
+            : INHERITED(std::move(name), "S", kTypeKind, pos)
+            , fFields(std::move(fields))
+            , fInterfaceBlock(interfaceBlock) {}
 
     const std::vector<Field>& fields() const override {
         return fFields;
@@ -522,12 +522,6 @@ public:
 
     bool isInterfaceBlock() const override {
         return fInterfaceBlock;
-    }
-
-    bool isPrivate() const override {
-        return std::any_of(fFields.begin(), fFields.end(), [](const Field& f) {
-            return f.fType->isPrivate();
-        });
     }
 
     bool isAllowedInES2() const override {
@@ -643,11 +637,63 @@ std::unique_ptr<Type> Type::MakeScalarType(std::string_view name, const char* ab
                                            Type::NumberKind numberKind, int8_t priority,
                                            int8_t bitWidth) {
     return std::make_unique<ScalarType>(name, abbrev, numberKind, priority, bitWidth);
-
 }
 
-std::unique_ptr<Type> Type::MakeStructType(Position pos, std::string_view name,
-                                           std::vector<Field> fields, bool interfaceBlock) {
+std::unique_ptr<Type> Type::MakeAtomicType(std::string_view name, const char* abbrev) {
+    return std::make_unique<AtomicType>(name, abbrev);
+}
+
+static bool is_too_deeply_nested(const Type* t, int limit) {
+    if (limit <= 0) {
+        return true;
+    }
+
+    if (t->isStruct()) {
+        for (const Type::Field& f : t->fields()) {
+            if (is_too_deeply_nested(f.fType, limit - 1)) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+std::unique_ptr<Type> Type::MakeStructType(const Context& context,
+                                           Position pos,
+                                           std::string_view name,
+                                           std::vector<Field> fields,
+                                           bool interfaceBlock) {
+    for (const Field& field : fields) {
+        if (field.fModifiers.fFlags != Modifiers::kNo_Flag) {
+            std::string desc = field.fModifiers.description();
+            desc.pop_back();  // remove trailing space
+            context.fErrors->error(field.fPosition,
+                                   "modifier '" + desc + "' is not permitted on a struct field");
+        }
+        if (field.fModifiers.fLayout.fFlags & Layout::kBinding_Flag) {
+            context.fErrors->error(field.fPosition,
+                                   "layout qualifier 'binding' is not permitted on a struct field");
+        }
+        if (field.fModifiers.fLayout.fFlags & Layout::kSet_Flag) {
+            context.fErrors->error(field.fPosition,
+                                   "layout qualifier 'set' is not permitted on a struct field");
+        }
+
+        if (field.fType->isVoid()) {
+            context.fErrors->error(field.fPosition, "type 'void' is not permitted in a struct");
+        }
+        if (field.fType->isOpaque() && !field.fType->isAtomic()) {
+            context.fErrors->error(field.fPosition, "opaque type '" + field.fType->displayName() +
+                                                    "' is not permitted in a struct");
+        }
+    }
+    for (const Field& field : fields) {
+        if (is_too_deeply_nested(field.fType, kMaxStructDepth)) {
+            context.fErrors->error(pos, "struct '" + std::string(name) + "' is too deeply nested");
+            break;
+        }
+    }
     return std::make_unique<StructType>(pos, name, std::move(fields), interfaceBlock);
 }
 
@@ -969,8 +1015,10 @@ const Type* Type::clone(SymbolTable* symbolTable) const {
             return symbolTable->addArrayDimension(&this->componentType(), this->columns());
         }
         case TypeKind::kStruct: {
+            // We are cloning an existing struct, so there's no need to call MakeStructType and
+            // fully error-check it again.
             const std::string* name = symbolTable->takeOwnershipOfString(std::string(this->name()));
-            return symbolTable->add(Type::MakeStructType(
+            return symbolTable->add(std::make_unique<StructType>(
                     this->fPosition, *name, this->fields(), this->isInterfaceBlock()));
         }
         default:
@@ -1009,10 +1057,6 @@ std::unique_ptr<Expression> Type::coerceExpression(std::unique_ptr<Expression> e
     return nullptr;
 }
 
-bool Type::isPrivate() const {
-    return skstd::starts_with(this->name(), '$');
-}
-
 static bool is_or_contains_array(const Type* type, bool onlyMatchUnsizedArrays) {
     if (type->isStruct()) {
         for (const Type::Field& f : type->fields()) {
@@ -1040,24 +1084,24 @@ bool Type::isOrContainsUnsizedArray() const {
     return is_or_contains_array(this, /*onlyMatchUnsizedArrays=*/true);
 }
 
-bool Type::isTooDeeplyNested(int limit) const {
-    if (limit < 0) {
+bool Type::isOrContainsAtomic() const {
+    if (this->isAtomic()) {
+        return true;
+    }
+
+    if (this->isArray() && this->componentType().isOrContainsAtomic()) {
         return true;
     }
 
     if (this->isStruct()) {
-        for (const Type::Field& f : this->fields()) {
-            if (f.fType->isTooDeeplyNested(limit - 1)) {
+        for (const Field& f : this->fields()) {
+            if (f.fType->isOrContainsAtomic()) {
                 return true;
             }
         }
     }
 
     return false;
-}
-
-bool Type::isTooDeeplyNested() const {
-    return this->isTooDeeplyNested(kMaxStructDepth);
 }
 
 bool Type::isAllowedInES2(const Context& context) const {
@@ -1112,7 +1156,7 @@ bool Type::checkIfUsableInArray(const Context& context, Position arrayPos) const
         context.fErrors->error(arrayPos, "type 'void' may not be used in an array");
         return false;
     }
-    if (this->isOpaque()) {
+    if (this->isOpaque() && !this->isAtomic()) {
         context.fErrors->error(arrayPos, "opaque type '" + std::string(this->name()) +
                                          "' may not be used in an array");
         return false;

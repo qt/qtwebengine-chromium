@@ -91,14 +91,15 @@ void Response::Send(Rpc::RpcResponseFunction send_fn) {
 Rpc::Rpc(std::unique_ptr<TraceProcessor> preloaded_instance)
     : trace_processor_(std::move(preloaded_instance)) {
   if (!trace_processor_)
-    ResetTraceProcessor();
+    ResetTraceProcessorInternal(Config());
 }
 
 Rpc::Rpc() : Rpc(nullptr) {}
 Rpc::~Rpc() = default;
 
-void Rpc::ResetTraceProcessor() {
-  trace_processor_ = TraceProcessor::CreateInstance(Config());
+void Rpc::ResetTraceProcessorInternal(const Config& config) {
+  trace_processor_config_ = config;
+  trace_processor_ = TraceProcessor::CreateInstance(config);
   bytes_parsed_ = bytes_last_progress_ = 0;
   t_parse_started_ = base::GetWallTimeNs().count();
   // Deliberately not resetting the RPC channel state (rxbuf_, {tx,rx}_seq_id_).
@@ -242,16 +243,9 @@ void Rpc::ParseRpcRequest(const uint8_t* data, size_t len) {
     }
     case RpcProto::TPM_ENABLE_METATRACE: {
       using protos::pbzero::MetatraceCategories;
-      TraceProcessor::MetatraceConfig config;
-      if (req.has_enable_metatrace_args()) {
-        protos::pbzero::EnableMetatraceArgs::Decoder args(
-            req.enable_metatrace_args());
-        if (args.has_categories()) {
-          config.categories = MetatraceCategoriesToPublicEnum(
-              static_cast<MetatraceCategories>(args.categories()));
-        }
-      }
-      trace_processor_->EnableMetatrace(config);
+      protozero::ConstBytes args = req.enable_metatrace_args();
+      EnableMetatrace(args.data, args.size);
+
       Response resp(tx_seq_id_++, req_type);
       resp.Send(rpc_response_fn_);
       break;
@@ -266,6 +260,13 @@ void Rpc::ParseRpcRequest(const uint8_t* data, size_t len) {
       Response resp(tx_seq_id_++, req_type);
       std::vector<uint8_t> status = GetStatus();
       resp->set_status()->AppendRawProtoBytes(status.data(), status.size());
+      resp.Send(rpc_response_fn_);
+      break;
+    }
+    case RpcProto::TPM_RESET_TRACE_PROCESSOR: {
+      Response resp(tx_seq_id_++, req_type);
+      protozero::ConstBytes args = req.reset_trace_processor_args();
+      ResetTraceProcessor(args.data, args.size);
       resp.Send(rpc_response_fn_);
       break;
     }
@@ -284,10 +285,13 @@ void Rpc::ParseRpcRequest(const uint8_t* data, size_t len) {
 }
 
 util::Status Rpc::Parse(const uint8_t* data, size_t len) {
+  PERFETTO_TP_TRACE(
+      metatrace::Category::TOPLEVEL, "RPC_PARSE",
+      [&](metatrace::Record* r) { r->AddArg("length", std::to_string(len)); });
   if (eof_) {
     // Reset the trace processor state if another trace has been previously
-    // loaded.
-    ResetTraceProcessor();
+    // loaded. Use the same TraceProcessor Config.
+    ResetTraceProcessorInternal(trace_processor_config_);
   }
 
   eof_ = false;
@@ -304,9 +308,34 @@ util::Status Rpc::Parse(const uint8_t* data, size_t len) {
 }
 
 void Rpc::NotifyEndOfFile() {
+  PERFETTO_TP_TRACE(metatrace::Category::TOPLEVEL, "RPC_NOTIFY_END_OF_FILE");
+
   trace_processor_->NotifyEndOfFile();
   eof_ = true;
   MaybePrintProgress();
+}
+
+void Rpc::ResetTraceProcessor(const uint8_t* args, size_t len) {
+  protos::pbzero::ResetTraceProcessorArgs::Decoder reset_trace_processor_args(
+      args, len);
+  Config config;
+  if (reset_trace_processor_args.has_drop_track_event_data_before()) {
+    config.drop_track_event_data_before =
+        reset_trace_processor_args.drop_track_event_data_before() ==
+                protos::pbzero::ResetTraceProcessorArgs::
+                    TRACK_EVENT_RANGE_OF_INTEREST
+            ? DropTrackEventDataBefore::kTrackEventRangeOfInterest
+            : DropTrackEventDataBefore::kNoDrop;
+  }
+  if (reset_trace_processor_args.has_ingest_ftrace_in_raw_table()) {
+    config.ingest_ftrace_in_raw_table =
+        reset_trace_processor_args.ingest_ftrace_in_raw_table();
+  }
+  if (reset_trace_processor_args.has_analyze_trace_proto_content()) {
+    config.analyze_trace_proto_content =
+        reset_trace_processor_args.analyze_trace_proto_content();
+  }
+  ResetTraceProcessorInternal(config);
 }
 
 void Rpc::MaybePrintProgress() {
@@ -342,7 +371,12 @@ Iterator Rpc::QueryInternal(const uint8_t* args, size_t len) {
   std::string sql = query.sql_query().ToStdString();
   PERFETTO_DLOG("[RPC] Query < %s", sql.c_str());
   PERFETTO_TP_TRACE(metatrace::Category::TOPLEVEL, "RPC_QUERY",
-                    [&](metatrace::Record* r) { r->AddArg("SQL", sql); });
+                    [&](metatrace::Record* r) {
+                      r->AddArg("SQL", sql);
+                      if (query.has_tag()) {
+                        r->AddArg("tag", query.tag());
+                      }
+                    });
 
   return trace_processor_->ExecuteQuery(sql.c_str());
 }
@@ -404,8 +438,13 @@ void Rpc::ComputeMetricInternal(const uint8_t* data,
   }
 }
 
-void Rpc::EnableMetatrace() {
-  trace_processor_->EnableMetatrace();
+void Rpc::EnableMetatrace(const uint8_t* data, size_t len) {
+  using protos::pbzero::MetatraceCategories;
+  TraceProcessor::MetatraceConfig config;
+  protos::pbzero::EnableMetatraceArgs::Decoder args(data, len);
+  config.categories = MetatraceCategoriesToPublicEnum(
+      static_cast<MetatraceCategories>(args.categories()));
+  trace_processor_->EnableMetatrace(config);
 }
 
 std::vector<uint8_t> Rpc::DisableAndReadMetatrace() {

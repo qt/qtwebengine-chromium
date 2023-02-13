@@ -593,7 +593,6 @@ struct functor_traits<scalar_tanh_op<Scalar> > {
   };
 };
 
-#if EIGEN_HAS_CXX11_MATH
 /** \internal
   * \brief Template functor to compute the atanh of a scalar
   * \sa class CwiseUnaryOp, ArrayBase::atanh()
@@ -607,7 +606,6 @@ template <typename Scalar>
 struct functor_traits<scalar_atanh_op<Scalar> > {
   enum { Cost = 5 * NumTraits<Scalar>::MulCost, PacketAccess = false };
 };
-#endif
 
 /** \internal
   * \brief Template functor to compute the sinh of a scalar
@@ -627,7 +625,6 @@ struct functor_traits<scalar_sinh_op<Scalar> >
   };
 };
 
-#if EIGEN_HAS_CXX11_MATH
 /** \internal
   * \brief Template functor to compute the asinh of a scalar
   * \sa class CwiseUnaryOp, ArrayBase::asinh()
@@ -641,7 +638,6 @@ template <typename Scalar>
 struct functor_traits<scalar_asinh_op<Scalar> > {
   enum { Cost = 5 * NumTraits<Scalar>::MulCost, PacketAccess = false };
 };
-#endif
 
 /** \internal
   * \brief Template functor to compute the cosh of a scalar
@@ -661,7 +657,6 @@ struct functor_traits<scalar_cosh_op<Scalar> >
   };
 };
 
-#if EIGEN_HAS_CXX11_MATH
 /** \internal
   * \brief Template functor to compute the acosh of a scalar
   * \sa class CwiseUnaryOp, ArrayBase::acosh()
@@ -675,7 +670,6 @@ template <typename Scalar>
 struct functor_traits<scalar_acosh_op<Scalar> > {
   enum { Cost = 5 * NumTraits<Scalar>::MulCost, PacketAccess = false };
 };
-#endif
 
 /** \internal
   * \brief Template functor to compute the inverse of a scalar
@@ -936,7 +930,7 @@ struct functor_traits<scalar_sign_op<Scalar> >
         NumTraits<Scalar>::IsComplex
         ? ( 8*NumTraits<Scalar>::MulCost  ) // roughly
         : ( 3*NumTraits<Scalar>::AddCost),
-    PacketAccess = packet_traits<Scalar>::HasSign
+    PacketAccess = packet_traits<Scalar>::HasSign && packet_traits<Scalar>::Vectorizable
   };
 };
 

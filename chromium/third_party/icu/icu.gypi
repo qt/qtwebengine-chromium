@@ -63,6 +63,7 @@
       'source/i18n/decContext.cpp',
       'source/i18n/decimfmt.cpp',
       'source/i18n/decNumber.cpp',
+      'source/i18n/displayoptions.cpp',
       'source/i18n/double-conversion-bignum.cpp',
       'source/i18n/double-conversion-bignum-dtoa.cpp',
       'source/i18n/double-conversion-cached-powers.cpp',

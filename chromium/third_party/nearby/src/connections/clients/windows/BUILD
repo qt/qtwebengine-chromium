@@ -31,16 +31,12 @@ cc_library(
         "dll_config.h",
     ],
     visibility = [
-        "//location/nearby/cpp/sharing/implementation:__subpackages__",
         "//connections:__subpackages__",
         "//connections/clients/windows:__subpackages__",
         "//internal/platform:__pkg__",
         "//internal/platform/implementation:__subpackages__",
     ],
-    deps = [
-        "//proto:connections_enums_cc_proto",
-        "@com_google_absl//absl/strings",
-    ],
+    deps = ["@com_google_absl//absl/strings"],
 )
 
 bzl_library(
@@ -104,12 +100,12 @@ lexan.cc_windows_dll(
     tags = ["windows-dll"],
     deps = [
         ":resources",
-        "//third_party/dart_lang/v2:dart_api_dl",
         "//connections:core",
         "//connections:core_types",
         "//connections/clients/windows:types",
         "//internal/platform:base",
         "//internal/platform/implementation/windows",
+        "//third_party/dart_lang/v2:dart_api_dl",
         "//third_party/webrtc/files/stable/webrtc/api:create_peerconnection_factory",
         "@com_google_absl//absl/strings",
     ],
@@ -151,11 +147,11 @@ lexan.cc_windows_dll(
     tags = ["windows-dll"],
     deps = [
         ":resources",
-        "//third_party/dart_lang/v2:dart_api_dl",
         "//connections:core",
         "//connections:core_types",
         "//internal/platform:base",
         "//internal/platform/implementation/windows",
+        "//third_party/dart_lang/v2:dart_api_dl",
         "//third_party/webrtc/files/stable/webrtc/api:create_peerconnection_factory",
         "@com_google_absl//absl/strings",
     ],

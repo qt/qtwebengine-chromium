@@ -493,6 +493,8 @@ INSTANTIATE_TEST_SUITE_P(
         "spv.samplerlessTextureFunctions.frag",
         "spv.smBuiltins.vert",
         "spv.smBuiltins.frag",
+        "spv.ARMCoreBuiltIns.vert",
+        "spv.ARMCoreBuiltIns.frag",
         "spv.builtin.PrimitiveShadingRateEXT.vert",
         "spv.builtin.ShadingRateEXT.frag",
         "spv.atomicAdd.bufferReference.comp",
@@ -650,6 +652,12 @@ INSTANTIATE_TEST_SUITE_P(
         "spv.atomiAddEXT.task",
         "spv.460.subgroupEXT.task",
         "spv.460.subgroupEXT.mesh",
+
+        // SPV_NV_shader_execution_reorder
+
+        "spv.nv.hitobject-allops.rgen",
+        "spv.nv.hitobject-allops.rchit",
+        "spv.nv.hitobject-allops.rmiss",
     })),
     FileNameAsCustomTestSuffix
 );
@@ -660,6 +668,7 @@ INSTANTIATE_TEST_SUITE_P(
     ::testing::ValuesIn(std::vector<std::string>({
         "spv.1.6.conditionalDiscard.frag",
         "spv.1.6.helperInvocation.frag",
+        "spv.1.6.helperInvocation.memmodel.frag",
         "spv.1.6.specConstant.comp",
         "spv.1.6.samplerBuffer.frag",
         "spv.1.6.separate.frag",

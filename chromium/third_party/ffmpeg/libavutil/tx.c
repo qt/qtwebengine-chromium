@@ -213,7 +213,7 @@ int ff_tx_gen_split_radix_parity_revtab(AVTXContext *s, int len, int inv,
     if (len < basis)
         return AVERROR(EINVAL);
 
-    if (!(s->map = av_mallocz((inv_lookup == -1 ? 2 : 1)*len*sizeof(*s->map))))
+    if (!(s->map = av_mallocz(len*sizeof(*s->map))))
         return AVERROR(ENOMEM);
 
     av_assert0(!dual_stride || !(dual_stride & (dual_stride - 1)));
@@ -221,9 +221,6 @@ int ff_tx_gen_split_radix_parity_revtab(AVTXContext *s, int len, int inv,
 
     parity_revtab_generator(s->map, len, inv, 0, 0, 0, len,
                             basis, dual_stride, inv_lookup != 0);
-    if (inv_lookup == -1)
-        parity_revtab_generator(s->map + len, len, inv, 0, 0, 0, len,
-                                basis, dual_stride, 0);
 
     return 0;
 }
@@ -371,7 +368,7 @@ static void print_cd_info(const FFTXCodelet *cd, int prio, int print_prio)
     if (print_prio)
         av_bprintf(&bp, ", prio: %i", prio);
 
-    av_log(NULL, AV_LOG_VERBOSE, "%s\n", bp.str);
+    av_log(NULL, AV_LOG_DEBUG, "%s\n", bp.str);
 }
 
 static void print_tx_structure(AVTXContext *s, int depth)
@@ -379,7 +376,7 @@ static void print_tx_structure(AVTXContext *s, int depth)
     const FFTXCodelet *cd = s->cd_self;
 
     for (int i = 0; i <= depth; i++)
-        av_log(NULL, AV_LOG_VERBOSE, "    ");
+        av_log(NULL, AV_LOG_DEBUG, "    ");
 
     print_cd_info(cd, cd->prio, 0);
 
@@ -455,8 +452,8 @@ av_cold int ff_tx_init_subtx(AVTXContext *s, enum AVTXType type,
     /* Array of all compiled codelet lists. Order is irrelevant. */
     const FFTXCodelet * const * const codelet_list[] = {
         ff_tx_codelet_list_float_c,
-        ff_tx_codelet_list_double_c,
-        ff_tx_codelet_list_int32_c,
+        // ff_tx_codelet_list_double_c, // Chromium: save on binary size
+        // ff_tx_codelet_list_int32_c,  // Chromium: save on binary size
         ff_tx_null_list,
 #if HAVE_X86ASM
         ff_tx_codelet_list_float_x86,
@@ -596,10 +593,10 @@ av_cold int ff_tx_init_subtx(AVTXContext *s, enum AVTXType type,
     AV_QSORT(cd_matches, nb_cd_matches, TXCodeletMatch, cmp_matches);
 
 #if !CONFIG_SMALL
-    av_log(NULL, AV_LOG_VERBOSE, "%s\n", bp.str);
+    av_log(NULL, AV_LOG_DEBUG, "%s\n", bp.str);
 
     for (int i = 0; i < nb_cd_matches; i++) {
-        av_log(NULL, AV_LOG_VERBOSE, "    %i: ", i + 1);
+        av_log(NULL, AV_LOG_DEBUG, "    %i: ", i + 1);
         print_cd_info(cd_matches[i].cd, cd_matches[i].prio, 1);
     }
 #endif
@@ -680,7 +677,7 @@ av_cold int av_tx_init(AVTXContext **ctx, av_tx_fn *tx, enum AVTXType type,
     *tx  = tmp.fn[0];
 
 #if !CONFIG_SMALL
-    av_log(NULL, AV_LOG_VERBOSE, "Transform tree:\n");
+    av_log(NULL, AV_LOG_DEBUG, "Transform tree:\n");
     print_tx_structure(*ctx, 0);
 #endif
 

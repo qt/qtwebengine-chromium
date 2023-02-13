@@ -27,7 +27,6 @@
 #include "libANGLE/renderer/vulkan/vk_format_utils.h"
 #include "libANGLE/renderer/vulkan/vk_helpers.h"
 #include "libANGLE/renderer/vulkan/vk_utils.h"
-#include "libANGLE/trace.h"
 
 namespace rx
 {
@@ -1544,6 +1543,8 @@ angle::Result TextureVk::setEGLImageTarget(const gl::Context *context,
         ANGLE_TRY(contextVk->getOutsideRenderPassCommandBuffer(access, &commandBuffer));
         mImage->changeLayoutAndQueue(contextVk, mImage->getAspectFlags(), newLayout,
                                      rendererQueueFamilyIndex, commandBuffer);
+
+        ANGLE_TRY(contextVk->onEGLImageQueueChange());
     }
 
     return angle::Result::Continue;
@@ -3293,7 +3294,7 @@ void TextureVk::releaseImageViews(ContextVk *contextVk)
 
     for (vk::ImageViewHelper &imageViewHelper : mMultisampledImageViews)
     {
-        mImage->collectViewGarbage(renderer, &imageViewHelper);
+        imageViewHelper.release(renderer, mImage->getResourceUse());
     }
 
     for (auto &renderTargets : mSingleLayerRenderTargets)
@@ -3605,7 +3606,7 @@ angle::Result TextureVk::refreshImageViews(ContextVk *contextVk)
     else
     {
         RendererVk *renderer = contextVk->getRenderer();
-        mImage->collectViewGarbage(renderer, &imageView);
+        imageView.release(renderer, mImage->getResourceUse());
 
         for (auto &renderTargets : mSingleLayerRenderTargets)
         {

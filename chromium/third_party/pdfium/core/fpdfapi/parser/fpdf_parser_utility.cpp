@@ -1,4 +1,4 @@
-// Copyright 2014 PDFium Authors. All rights reserved.
+// Copyright 2014 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -80,7 +80,7 @@ absl::optional<FX_FILESIZE> GetHeaderOffset(
   static constexpr size_t kBufSize = 4;
   uint8_t buf[kBufSize];
   for (FX_FILESIZE offset = 0; offset <= 1024; ++offset) {
-    if (!pFile->ReadBlockAtOffset(buf, offset, kBufSize))
+    if (!pFile->ReadBlockAtOffset(buf, offset))
       return absl::nullopt;
 
     if (memcmp(buf, "%PDF", 4) == 0)
@@ -232,7 +232,7 @@ std::ostream& operator<<(std::ostream& buf, const CPDF_Object* pObj) {
       buf << "<<";
       for (const auto& it : locker) {
         const ByteString& key = it.first;
-        const CPDF_Object* pValue = it.second.Get();
+        const RetainPtr<CPDF_Object>& pValue = it.second;
         buf << "/" << PDF_NameEncode(key);
         if (!pValue->IsInline()) {
           buf << " " << pValue->GetObjNum() << " 0 R ";

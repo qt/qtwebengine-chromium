@@ -83,7 +83,7 @@ struct skcms_TransferFunction;
     M(callback)                                                    \
     M(stack_checkpoint) M(stack_rewind)                            \
     M(unbounded_set_rgb) M(unbounded_uniform_color)                \
-    M(unpremul) M(dither)                                          \
+    M(unpremul) M(unpremul_polar) M(dither)                        \
     M(load_16161616) M(load_16161616_dst) M(store_16161616) M(gather_16161616) \
     M(load_a16)    M(load_a16_dst)  M(store_a16)   M(gather_a16)   \
     M(load_rg1616) M(load_rg1616_dst) M(store_rg1616) M(gather_rg1616) \
@@ -100,6 +100,9 @@ struct skcms_TransferFunction;
     M(matrix_3x3) M(matrix_3x4) M(matrix_4x5) M(matrix_4x3)        \
     M(parametric) M(gamma_) M(PQish) M(HLGish) M(HLGinvish)        \
     M(rgb_to_hsl) M(hsl_to_rgb)                                    \
+    M(css_lab_to_xyz) M(css_oklab_to_linear_srgb)                  \
+    M(css_hcl_to_lab)                                              \
+    M(css_hsl_to_srgb) M(css_hwb_to_srgb)                          \
     M(gauss_a_to_rgba)                                             \
     M(mirror_x)   M(repeat_x)                                      \
     M(mirror_y)   M(repeat_y)                                      \
@@ -118,7 +121,39 @@ struct skcms_TransferFunction;
     M(alter_2pt_conical_compensate_focal)                          \
     M(alter_2pt_conical_unswap)                                    \
     M(mask_2pt_conical_nan)                                        \
-    M(mask_2pt_conical_degenerates) M(apply_vector_mask)
+    M(mask_2pt_conical_degenerates) M(apply_vector_mask)           \
+    /* Dedicated SkSL stages begin here: */                                                   \
+    M(init_lane_masks) M(store_src_rg) M(immediate_f)                                         \
+    M(load_unmasked) M(store_unmasked) M(store_masked)                                        \
+    M(load_condition_mask) M(store_condition_mask) M(merge_condition_mask)                    \
+    M(load_loop_mask)      M(store_loop_mask)      M(mask_off_loop_mask)                      \
+    M(reenable_loop_mask)  M(merge_loop_mask)                                                 \
+    M(load_return_mask)    M(store_return_mask)    M(mask_off_return_mask)                    \
+    M(branch_if_any_active_lanes) M(branch_if_no_active_lanes) M(jump)                        \
+    M(bitwise_and) M(bitwise_or) M(bitwise_xor) M(bitwise_not)                                \
+    M(copy_slot_masked)    M(copy_2_slots_masked)                                             \
+    M(copy_3_slots_masked) M(copy_4_slots_masked)                                             \
+    M(copy_slot_unmasked)    M(copy_2_slots_unmasked)                                         \
+    M(copy_3_slots_unmasked) M(copy_4_slots_unmasked)                                         \
+    M(zero_slot_unmasked)    M(zero_2_slots_unmasked)                                         \
+    M(zero_3_slots_unmasked) M(zero_4_slots_unmasked)                                         \
+    M(swizzle_1) M(swizzle_2) M(swizzle_3) M(swizzle_4)                                       \
+    M(add_n_floats) M(add_float) M(add_2_floats) M(add_3_floats) M(add_4_floats)              \
+    M(add_n_ints)   M(add_int)   M(add_2_ints)   M(add_3_ints)   M(add_4_ints)                \
+    M(sub_n_floats) M(sub_float) M(sub_2_floats) M(sub_3_floats) M(sub_4_floats)              \
+    M(sub_n_ints)   M(sub_int)   M(sub_2_ints)   M(sub_3_ints)   M(sub_4_ints)                \
+    M(mul_n_floats) M(mul_float) M(mul_2_floats) M(mul_3_floats) M(mul_4_floats)              \
+    M(mul_n_ints)   M(mul_int)   M(mul_2_ints)   M(mul_3_ints)   M(mul_4_ints)                \
+    M(div_n_floats) M(div_float) M(div_2_floats) M(div_3_floats) M(div_4_floats)              \
+    M(div_n_ints)   M(div_int)   M(div_2_ints)   M(div_3_ints)   M(div_4_ints)                \
+    M(cmplt_n_floats) M(cmplt_float) M(cmplt_2_floats) M(cmplt_3_floats) M(cmplt_4_floats)    \
+    M(cmplt_n_ints)   M(cmplt_int)   M(cmplt_2_ints)   M(cmplt_3_ints)   M(cmplt_4_ints)      \
+    M(cmple_n_floats) M(cmple_float) M(cmple_2_floats) M(cmple_3_floats) M(cmple_4_floats)    \
+    M(cmple_n_ints)   M(cmple_int)   M(cmple_2_ints)   M(cmple_3_ints)   M(cmple_4_ints)      \
+    M(cmpeq_n_floats) M(cmpeq_float) M(cmpeq_2_floats) M(cmpeq_3_floats) M(cmpeq_4_floats)    \
+    M(cmpeq_n_ints)   M(cmpeq_int)   M(cmpeq_2_ints)   M(cmpeq_3_ints)   M(cmpeq_4_ints)      \
+    M(cmpne_n_floats) M(cmpne_float) M(cmpne_2_floats) M(cmpne_3_floats) M(cmpne_4_floats)    \
+    M(cmpne_n_ints)   M(cmpne_int)   M(cmpne_2_ints)   M(cmpne_3_ints)   M(cmpne_4_ints)
 
 // The combined list of all stages:
 #define SK_RASTER_PIPELINE_STAGES_ALL(M) \
@@ -132,6 +167,19 @@ struct skcms_TransferFunction;
 inline static constexpr int SkRasterPipeline_kMaxStride = 16;
 inline static constexpr int SkRasterPipeline_kMaxStride_highp = 8;
 
+// Raster pipeline programs are stored as a contiguous array of SkRasterPipelineStages.
+SK_BEGIN_REQUIRE_DENSE
+struct SkRasterPipelineStage {
+    // A function pointer from `stages_lowp` or `stages_highp`. The exact function pointer type
+    // varies depending on architecture (specifically, see `Stage` in SkRasterPipeline_opts.h).
+    void (*fn)();
+
+    // Data used by the stage function. Most context structures are declared at the top of
+    // SkRasterPipeline.h, and have names ending in Ctx (e.g. "SkRasterPipeline_SamplerCtx").
+    void* ctx;
+};
+SK_END_REQUIRE_DENSE
+
 // Structs representing the arguments to some common stages.
 
 struct SkRasterPipeline_MemoryCtx {
@@ -144,8 +192,9 @@ struct SkRasterPipeline_GatherCtx {
     int         stride;
     float       width;
     float       height;
-
     float       weights[16];  // for bicubic and bicubic_clamp_8888
+    // Controls whether pixel i-1 or i is selected when floating point sample position is exactly i.
+    bool        roundDownAtInteger = false;
 };
 
 // State shared by save_xy, accumulate, and bilinear_* / bicubic_*.
@@ -166,12 +215,22 @@ struct SkRasterPipeline_SamplerCtx {
 struct SkRasterPipeline_TileCtx {
     float scale;
     float invScale; // cache of 1/scale
+    // When in the reflection portion of mirror tiling we need to snap the opposite direction
+    // at integer sample points than when in the forward direction. This controls which way we bias
+    // in the reflection. It should be 1 if SkRasterPipeline_GatherCtx::roundDownAtInteger is true
+    // and otherwise -1.
+    int   mirrorBiasDir = -1;
 };
 
 struct SkRasterPipeline_DecalTileCtx {
     uint32_t mask[SkRasterPipeline_kMaxStride];
     float    limit_x;
     float    limit_y;
+    // These control which edge of the interval is included (i.e. closed interval at 0 or at limit).
+    // They should be set to limit_x and limit_y if SkRasterPipeline_GatherCtx::roundDownAtInteger
+    // is true and otherwise zero.
+    float    inclusiveEdge_x = 0;
+    float    inclusiveEdge_y = 0;
 };
 
 struct SkRasterPipeline_CallbackCtx {
@@ -194,7 +253,7 @@ struct SkRasterPipeline_RewindCtx {
     float dg[SkRasterPipeline_kMaxStride_highp];
     float db[SkRasterPipeline_kMaxStride_highp];
     float da[SkRasterPipeline_kMaxStride_highp];
-    void** program;
+    SkRasterPipelineStage* stage;
 };
 
 struct SkRasterPipeline_GradientCtx {
@@ -202,13 +261,11 @@ struct SkRasterPipeline_GradientCtx {
     float* fs[4];
     float* bs[4];
     float* ts;
-    bool interpolatedInPremul;
 };
 
 struct SkRasterPipeline_EvenlySpaced2StopGradientCtx {
     float f[4];
     float b[4];
-    bool interpolatedInPremul;
 };
 
 struct SkRasterPipeline_2PtConicalCtx {
@@ -227,6 +284,19 @@ struct SkRasterPipeline_EmbossCtx {
                                add;
 };
 
+struct SkRasterPipeline_TablesCtx {
+    const uint8_t *r, *g, *b, *a;
+};
+
+struct SkRasterPipeline_CopySlotsCtx {
+    float *dst, *src;
+};
+
+struct SkRasterPipeline_SwizzleCtx {
+    float *ptr;
+    uint16_t offsets[4];  // values must be byte offsets (4 * highp-stride * component-index)
+};
+
 class SkRasterPipeline {
 public:
     explicit SkRasterPipeline(SkArenaAlloc*);
@@ -239,7 +309,7 @@ public:
 
     void reset();
 
-    enum StockStage {
+    enum Stage {
     #define M(stage) stage,
         SK_RASTER_PIPELINE_STAGES_ALL(M)
     #undef M
@@ -250,9 +320,9 @@ public:
     static constexpr int kNumHighpStages = SK_RASTER_PIPELINE_STAGES_ALL(M);
 #undef M
 
-    void append(StockStage, void* = nullptr);
-    void append(StockStage stage, const void* ctx) { this->append(stage, const_cast<void*>(ctx)); }
-    void append(StockStage, uintptr_t ctx);
+    void append(Stage, void* = nullptr);
+    void append(Stage stage, const void* ctx) { this->append(stage, const_cast<void*>(ctx)); }
+    void append(Stage, uintptr_t ctx);
 
     // Append all stages to this pipeline.
     void extend(const SkRasterPipeline&);
@@ -263,6 +333,18 @@ public:
     // Allocates a thunk which amortizes run() setup cost in alloc.
     std::function<void(size_t, size_t, size_t, size_t)> compile() const;
 
+    // Callers can inspect the stage list for debugging purposes.
+    struct StageList {
+        StageList* prev;
+        Stage      stage;
+        void*      ctx;
+    };
+
+    static const char* GetStageName(Stage stage);
+    const StageList* getStageList() const { return fStages; }
+    int getNumStages() const { return fNumStages; }
+
+    // Prints the entire StageList using SkDebugf.
     void dump() const;
 
     // Appends a stage for the specified matrix.
@@ -284,11 +366,33 @@ public:
         this->append_set_rgb(alloc, color.vec());
     }
 
+    // Appends one or more `copy_n_slots_[un]masked` stages, based on `numSlots`.
+    void append_copy_slots_masked(SkArenaAlloc* alloc, float* dst, float* src, int numSlots);
+    void append_copy_slots_unmasked(SkArenaAlloc* alloc, float* dst, float* src, int numSlots);
+
+    // Appends one or more `zero_n_slots_unmasked` stages, based on `numSlots`.
+    void append_zero_slots_unmasked(float* dst, int numSlots);
+
+    // Appends a multi-slot math operation. `src` must be _immediately_ after `dst` in memory.
+    // `baseStage` must refer to an unbounded "apply_to_n_slots" stage, which must be immediately
+    // followed by specializations for 1-4 slots. For instance, {`add_n_floats`, `add_float`,
+    // `add_2_floats`, `add_3_floats`, `add_4_floats`} must be contiguous ops in the stage list,
+    // listed in that order; pass `add_n_floats` and we pick the appropriate op based on `numSlots`.
+    void append_adjacent_multi_slot_op(SkArenaAlloc* alloc,
+                                       SkRasterPipeline::Stage baseStage,
+                                       float* dst,
+                                       float* src,
+                                       int numSlots);
+
+    // Appends a math operation with two inputs (dst op src) and one output (dst).
+    // `src` must be _immediately_ after `dst` in memory.
+    void append_adjacent_single_slot_op(SkRasterPipeline::Stage stage, float* dst, float* src);
+
     void append_load    (SkColorType, const SkRasterPipeline_MemoryCtx*);
     void append_load_dst(SkColorType, const SkRasterPipeline_MemoryCtx*);
     void append_store   (SkColorType, const SkRasterPipeline_MemoryCtx*);
 
-    void append_gamut_clamp_if_normalized(const SkImageInfo&);
+    void append_clamp_if_normalized(const SkImageInfo&);
 
     void append_transfer_function(const skcms_TransferFunction&);
 
@@ -297,17 +401,14 @@ public:
     bool empty() const { return fStages == nullptr; }
 
 private:
-    struct StageList {
-        StageList* prev;
-        StockStage stage;
-        void*      ctx;
-    };
+    bool build_lowp_pipeline(SkRasterPipelineStage* ip) const;
+    void build_highp_pipeline(SkRasterPipelineStage* ip) const;
 
-    using StartPipelineFn = void(*)(size_t,size_t,size_t,size_t, void** program);
-    StartPipelineFn build_pipeline(void**) const;
+    using StartPipelineFn = void(*)(size_t,size_t,size_t,size_t, SkRasterPipelineStage* program);
+    StartPipelineFn build_pipeline(SkRasterPipelineStage*) const;
 
-    void unchecked_append(StockStage, void*);
-    int slots_needed() const;
+    void unchecked_append(Stage, void*);
+    int stages_needed() const;
 
     SkArenaAlloc*               fAlloc;
     SkRasterPipeline_RewindCtx* fRewindCtx;

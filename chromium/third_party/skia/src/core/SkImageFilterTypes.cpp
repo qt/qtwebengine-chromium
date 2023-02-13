@@ -55,6 +55,37 @@ static bool is_nearly_integer_translation(const skif::LayerSpace<SkMatrix>& m,
     return true;
 }
 
+static SkRect map_rect(const SkMatrix& matrix, const SkRect& rect) {
+    if (rect.isEmpty()) {
+        return SkRect::MakeEmpty();
+    }
+    return matrix.mapRect(rect);
+}
+
+static SkIRect map_rect(const SkMatrix& matrix, const SkIRect& rect) {
+    if (rect.isEmpty()) {
+        return SkIRect::MakeEmpty();
+    }
+    // Unfortunately, there is a range of integer values such that we have 1px precision as an int,
+    // but less precision as a float. This can lead to non-empty SkIRects becoming empty simply
+    // because of float casting. If we're already dealing with a float rect or having a float
+    // output, that's what we're stuck with; but if we are starting form an irect and desiring an
+    // SkIRect output, we go through efforts to preserve the 1px precision for simple transforms.
+    if (matrix.isScaleTranslate()) {
+        double l = (double)matrix.getScaleX()*rect.fLeft   + (double)matrix.getTranslateX();
+        double r = (double)matrix.getScaleX()*rect.fRight  + (double)matrix.getTranslateX();
+        double t = (double)matrix.getScaleY()*rect.fTop    + (double)matrix.getTranslateY();
+        double b = (double)matrix.getScaleY()*rect.fBottom + (double)matrix.getTranslateY();
+
+        return {sk_double_saturate2int(sk_double_floor(std::min(l, r) + kRoundEpsilon)),
+                sk_double_saturate2int(sk_double_floor(std::min(t, b) + kRoundEpsilon)),
+                sk_double_saturate2int(sk_double_ceil(std::max(l, r)  - kRoundEpsilon)),
+                sk_double_saturate2int(sk_double_ceil(std::max(t, b)  - kRoundEpsilon))};
+    } else {
+        return skif::RoundOut(matrix.mapRect(SkRect::Make(rect)));
+    }
+}
+
 namespace skif {
 
 SkIRect RoundOut(SkRect r) { return r.makeInset(kRoundEpsilon, kRoundEpsilon).roundOut(); }
@@ -129,12 +160,12 @@ bool Mapping::adjustLayerSpace(const SkMatrix& layer) {
 // Instantiate map specializations for the 6 geometric types used during filtering
 template<>
 SkRect Mapping::map<SkRect>(const SkRect& geom, const SkMatrix& matrix) {
-    return matrix.mapRect(geom);
+    return map_rect(matrix, geom);
 }
 
 template<>
 SkIRect Mapping::map<SkIRect>(const SkIRect& geom, const SkMatrix& matrix) {
-    return RoundOut(matrix.mapRect(SkRect::Make(geom)));
+    return map_rect(matrix, geom);
 }
 
 template<>
@@ -186,24 +217,18 @@ SkMatrix Mapping::map<SkMatrix>(const SkMatrix& m, const SkMatrix& matrix) {
     return inv;
 }
 
-sk_sp<SkSpecialImage> FilterResult::imageAndOffset(SkIPoint* offset) const {
-    if (!fImage) {
-        *offset = {0, 0};
-        return nullptr;
-    }
+LayerSpace<SkRect> LayerSpace<SkMatrix>::mapRect(const LayerSpace<SkRect>& r) const {
+    return LayerSpace<SkRect>(map_rect(fData, SkRect(r)));
+}
 
-    LayerSpace<SkIPoint> origin;
-    // TODO: When there are other tile modes than kDecal, imageAndOffset needs to apply them even if
-    // the transform is representable as an offset.
-    if (is_nearly_integer_translation(fTransform, &origin)) {
-        // Nothing to resolve
-        *offset = SkIPoint(origin);
-        return fImage;
-    } else {
-        // Legacy fallback requires us to produce a new image that matches this FilterResult but
-        // has no new properties legacy code can't handle.
-        return this->resolve(this->layerBounds()).imageAndOffset(offset);
-    }
+LayerSpace<SkIRect> LayerSpace<SkMatrix>::mapRect(const LayerSpace<SkIRect>& r) const {
+    return LayerSpace<SkIRect>(map_rect(fData, SkIRect(r)));
+}
+
+sk_sp<SkSpecialImage> FilterResult::imageAndOffset(SkIPoint* offset) const {
+    auto [image, origin] = this->resolve(fLayerBounds);
+    *offset = SkIPoint(origin);
+    return image;
 }
 
 FilterResult FilterResult::applyCrop(const Context& ctx,
@@ -218,42 +243,21 @@ FilterResult FilterResult::applyCrop(const Context& ctx,
 
     if (crop.contains(fLayerBounds)) {
         // The original crop does not affect the image (although the context's desired output might)
-        // We can tighten fLayerBounds to tightBounds without resolving the image, regardless of the
-        // transform type.
+        // We can tighten fLayerBounds to the desired output without resolving the image, regardless
+        // of the transform type.
         // TODO(michaelludwig): If the crop would use mirror or repeat, the above isn't true.
         FilterResult restrictedOutput = *this;
         SkAssertResult(restrictedOutput.fLayerBounds.intersect(ctx.desiredOutput()));
         return restrictedOutput;
     } else {
-        // The crop modifies the effective image. If the transform is axis-aligned, we can apply the
-        // crop to the special image directly w/o resolving the transformation. Otherwise the image
-        // is not pixel-aligned with the layer coordinate space, so the crop rect's edges aren't
-        // aligned with the image data and we have to resolve it first.
-
-        // // TODO(michaelludwig): Only valid for kDecal, although kClamp would only need 1 extra
-        // pixel of padding so some restriction could happen.
-        if (!tightBounds.intersect(fLayerBounds)) {
-            return {};
-        }
-
-        // TODO(michaelludwig): If we get to the point where all filter results track bounds in
-        // floating point, then we can extend this case to any S+T transform.
-        LayerSpace<SkIPoint> origin;
-        if (is_nearly_integer_translation(fTransform, &origin)) {
-            LayerSpace<IVector> originShift = tightBounds.topLeft() - origin;
-            auto subsetImage = fImage->makeSubset(SkIRect::MakeXYWH(originShift.x(),
-                                                                    originShift.y(),
-                                                                    tightBounds.width(),
-                                                                    tightBounds.height()));
-            return {std::move(subsetImage), tightBounds.topLeft()};
-        } else {
-            return this->resolve(tightBounds);
-        }
+        return this->resolve(tightBounds);
     }
 }
 
-static bool compatible_sampling(const SkSamplingOptions& current,
-                                SkSamplingOptions* next) {
+static bool compatible_sampling(const SkSamplingOptions& currentSampling,
+                                bool currentXformWontAffectNearest,
+                                SkSamplingOptions* nextSampling,
+                                bool nextXformWontAffectNearest) {
     // Both transforms could perform non-trivial sampling, but if they are similar enough we
     // assume performing one non-trivial sampling operation with the concatenated transform will
     // not be visually distinguishable from sampling twice.
@@ -261,22 +265,34 @@ static bool compatible_sampling(const SkSamplingOptions& current,
     // drawn with mipmapping, and the majority of filter steps produce images that are at the
     // proper scale and do not define mip levels. The main exception is the ::Image() filter
     // leaf but that doesn't use this system yet.
-    if (current.isAniso() && next->isAniso()) {
+    if (currentSampling.isAniso() && nextSampling->isAniso()) {
         // Assume we can get away with one sampling at the highest anisotropy level
-        *next =  SkSamplingOptions::Aniso(std::max(current.maxAniso, next->maxAniso));
+        *nextSampling =  SkSamplingOptions::Aniso(std::max(currentSampling.maxAniso,
+                                                           nextSampling->maxAniso));
         return true;
-    } else if (current.useCubic && (next->filter == SkFilterMode::kLinear ||
-                                    (next->useCubic && current.cubic.B == next->cubic.B &&
-                                                      current.cubic.C == next->cubic.C))) {
+    } else if (currentSampling.useCubic && (nextSampling->filter == SkFilterMode::kLinear ||
+                                            (nextSampling->useCubic &&
+                                             currentSampling.cubic.B == nextSampling->cubic.B &&
+                                             currentSampling.cubic.C == nextSampling->cubic.C))) {
         // Assume we can get away with the current bicubic filter, since the next is the same
         // or a bilerp that can be upgraded.
-        *next = current;
+        *nextSampling = currentSampling;
         return true;
-    } else if (next->useCubic && current.filter == SkFilterMode::kLinear) {
+    } else if (nextSampling->useCubic && currentSampling.filter == SkFilterMode::kLinear) {
         // Mirror of the above, assume we can just get away with next's cubic resampler
         return true;
-    } else if (current.filter == SkFilterMode::kLinear && next->filter == SkFilterMode::kLinear) {
+    } else if (currentSampling.filter == SkFilterMode::kLinear &&
+               nextSampling->filter == SkFilterMode::kLinear) {
         // Assume we can get away with a single bilerp vs. the two
+        return true;
+    } else if (nextSampling->filter == SkFilterMode::kNearest && currentXformWontAffectNearest) {
+        // The next transform and nearest-neighbor filtering isn't impacted by the current transform
+        SkASSERT(currentSampling.filter == SkFilterMode::kLinear);
+        return true;
+    } else if (currentSampling.filter == SkFilterMode::kNearest && nextXformWontAffectNearest) {
+        // The next transform doesn't change the nearest-neighbor filtering of the current transform
+        SkASSERT(nextSampling->filter == SkFilterMode::kLinear);
+        *nextSampling = currentSampling;
         return true;
     } else {
         // The current or next sampling is nearest neighbor, and will produce visible texels
@@ -297,12 +313,15 @@ FilterResult FilterResult::applyTransform(const Context& ctx,
     // We make sure the new sampling is bilerp (default) if the new transform doesn't matter
     // (and assert that the current is bilerp if its transform didn't matter). Bilerp can be
     // maximally combined, so simplifies the logic in compatible_sampling().
-    SkASSERT(!is_nearly_integer_translation(fTransform) || fSamplingOptions == kDefaultSampling);
-    SkSamplingOptions nextSampling = is_nearly_integer_translation(transform)
-            ? kDefaultSampling : sampling;
+    const bool currentXformIsInteger = is_nearly_integer_translation(fTransform);
+    const bool nextXformIsInteger = is_nearly_integer_translation(transform);
+
+    SkASSERT(!currentXformIsInteger || fSamplingOptions == kDefaultSampling);
+    SkSamplingOptions nextSampling = nextXformIsInteger ? kDefaultSampling : sampling;
 
     FilterResult transformed;
-    if (compatible_sampling(fSamplingOptions, &nextSampling)) {
+    if (compatible_sampling(fSamplingOptions, currentXformIsInteger,
+                            &nextSampling, nextXformIsInteger)) {
         // We can concat transforms and 'nextSampling' will be either fSamplingOptions,
         // sampling, or a merged combination depending on the two transforms in play.
         transformed = *this;
@@ -331,10 +350,11 @@ void FilterResult::concatTransform(const LayerSpace<SkMatrix>& transform,
     }
     fSamplingOptions = newSampling;
     fTransform.postConcat(transform);
-    // Rebuild the layer bounds and then restrict to the current desired output.
-    fLayerBounds = fTransform.mapRect(LayerSpace<SkRect>(SkRect::MakeIWH(fImage->width(),
-                                                                         fImage->height())))
-                             .roundOut();
+    // Rebuild the layer bounds and then restrict to the current desired output. The original value
+    // of fLayerBounds includes the image mapped by the original fTransform as well as any
+    // accumulated soft crops from desired outputs of prior stages. To prevent discarding that info,
+    // we map fLayerBounds by the additional transform, instead of re-mapping the image bounds.
+    fLayerBounds = transform.mapRect(fLayerBounds);
     if (!fLayerBounds.intersect(desiredOutput)) {
         // The transformed output doesn't touch the desired, so it would just be transparent black.
         // TODO: This intersection only applies when the tile mode is kDecal.
@@ -342,19 +362,47 @@ void FilterResult::concatTransform(const LayerSpace<SkMatrix>& transform,
     }
 }
 
-FilterResult FilterResult::resolve(const LayerSpace<SkIRect>& dstBounds) const {
-    // This assumes that 'dstBounds' has already been optimized to be as small as necessary for
-    // correctness given any further processing and desired output, and assuming kDecal sampling.
-    if (!fImage || dstBounds.isEmpty()) {
-        return {};
+std::pair<sk_sp<SkSpecialImage>, LayerSpace<SkIPoint>> FilterResult::resolve(
+        LayerSpace<SkIRect> dstBounds) const {
+    // TODO(michaelludwig): Only valid for kDecal, although kClamp would only need 1 extra
+    // pixel of padding so some restriction could happen. We also should skip the intersection if
+    // we need to include transparent black pixels.
+    if (!fImage || !dstBounds.intersect(fLayerBounds)) {
+        return {nullptr, {}};
     }
+
+    // TODO: This logic to skip a draw will also need to account for the tile mode, but we can
+    // always restrict to the intersection of dstBounds and the image's subset since we are
+    // currently always decal sampling.
+    // TODO(michaelludwig): If we get to the point where all filter results track bounds in
+    // floating point, then we can extend this case to any S+T transform.
+    LayerSpace<SkIPoint> origin;
+    if (is_nearly_integer_translation(fTransform, &origin)) {
+        LayerSpace<SkIRect> imageBounds(SkIRect::MakeXYWH(origin.x(), origin.y(),
+                                                          fImage->width(), fImage->height()));
+        if (!imageBounds.intersect(dstBounds)) {
+            return {nullptr, {}};
+        }
+
+        // Offset the image subset directly to avoid issues negating (origin). With the prior
+        // intersection (bounds - origin) will be >= 0, but (bounds + (-origin)) may not, (e.g.
+        // origin is INT_MIN).
+        SkIRect subset = { imageBounds.left() - origin.x(),
+                           imageBounds.top() - origin.y(),
+                           imageBounds.right() - origin.x(),
+                           imageBounds.bottom() - origin.y() };
+        SkASSERT(subset.fLeft >= 0 && subset.fTop >= 0 &&
+                 subset.fRight <= fImage->width() && subset.fBottom <= fImage->height());
+
+        return {fImage->makeSubset(subset), imageBounds.topLeft()};
+    } // else fall through and attempt a draw
 
     sk_sp<SkSpecialSurface> surface = fImage->makeSurface(fImage->colorType(),
                                                           fImage->getColorSpace(),
                                                           SkISize(dstBounds.size()),
                                                           kPremul_SkAlphaType, {});
     if (!surface) {
-        return {};
+        return {nullptr, {}};
     }
     SkCanvas* canvas = surface->getCanvas();
     // skbug.com/5075: GPU-backed special surfaces don't reset their contents.

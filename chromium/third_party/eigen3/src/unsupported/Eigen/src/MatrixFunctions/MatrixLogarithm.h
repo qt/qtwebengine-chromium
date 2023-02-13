@@ -136,7 +136,7 @@ void matrix_log_compute_pade(MatrixType& result, const MatrixType& T, int degree
   typedef typename NumTraits<typename MatrixType::Scalar>::Real RealScalar;
   const int minPadeDegree = 3;
   const int maxPadeDegree = 11;
-  assert(degree >= minPadeDegree && degree <= maxPadeDegree);
+  eigen_assert(degree >= minPadeDegree && degree <= maxPadeDegree);
   // FIXME this creates float-conversion-warnings if these are enabled.
   // Either manually convert each value, or disable the warning locally
   const RealScalar nodes[][maxPadeDegree] = { 

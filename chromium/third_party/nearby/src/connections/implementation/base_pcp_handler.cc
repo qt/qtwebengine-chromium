@@ -17,19 +17,24 @@
 #include <algorithm>
 #include <cassert>
 #include <cinttypes>
+#include <cstddef>
 #include <cstdlib>
 #include <limits>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "securegcm/d2d_connection_context_v1.h"
 #include "securegcm/ukey2_handshake.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/strings/escaping.h"
 #include "absl/types/span.h"
+#include "connections/connection_options.h"
 #include "connections/implementation/mediums/utils.h"
 #include "connections/implementation/offline_frames.h"
+#include "connections/medium_selector.h"
 #include "internal/platform/base64_utils.h"
 #include "internal/platform/bluetooth_utils.h"
 #include "internal/platform/logging.h"
@@ -193,7 +198,14 @@ BooleanMediumSelector BasePcpHandler::ComputeIntersectionOfSupportedMediums(
     their_mediums.push_back(GetDefaultUpgradeMedium());
   }
 
+  for (auto medium : their_mediums) {
+    NEARBY_LOGS(VERBOSE) << "Their supported medium name: "
+                         << proto::connections::Medium_Name(medium);
+  }
+
   for (Medium my_medium : GetConnectionMediumsByPriority()) {
+    NEARBY_LOGS(VERBOSE) << "Our supported medium name: "
+                         << proto::connections::Medium_Name(my_medium);
     if (std::find(their_mediums.begin(), their_mediums.end(), my_medium) !=
         their_mediums.end()) {
       // We use advertising options as a proxy to whether or not the local
@@ -381,29 +393,9 @@ void BasePcpHandler::OnEncryptionSuccessRunnable(
   // Set ourselves up so that we receive all acceptance/rejection messages
   endpoint_manager_->RegisterFrameProcessor(V1Frame::CONNECTION_RESPONSE, this);
 
-  ConnectionOptions connection_options;
-  connection_options.strategy = connection_info.connection_options.strategy;
+  ConnectionOptions connection_options = connection_info.connection_options;
   connection_options.allowed =
       ComputeIntersectionOfSupportedMediums(connection_info);
-  connection_options.auto_upgrade_bandwidth =
-      connection_info.connection_options.auto_upgrade_bandwidth;
-  connection_options.enforce_topology_constraints =
-      connection_info.connection_options.enforce_topology_constraints;
-  connection_options.low_power = connection_info.connection_options.low_power;
-  connection_options.enable_bluetooth_listening =
-      connection_info.connection_options.enable_bluetooth_listening;
-  connection_options.enable_webrtc_listening =
-      connection_info.connection_options.enable_webrtc_listening;
-  connection_options.is_out_of_band_connection =
-      connection_info.connection_options.is_out_of_band_connection;
-  connection_options.remote_bluetooth_mac_address =
-      connection_info.connection_options.remote_bluetooth_mac_address;
-  connection_options.fast_advertisement_service_uuid =
-      connection_info.connection_options.fast_advertisement_service_uuid;
-  connection_options.keep_alive_interval_millis =
-      connection_info.connection_options.keep_alive_interval_millis;
-  connection_options.keep_alive_timeout_millis =
-      connection_info.connection_options.keep_alive_timeout_millis;
 
   // Now we register our endpoint so that we can listen for both sides to
   // accept.
@@ -990,7 +982,7 @@ void BasePcpHandler::OnEndpointFound(
   NEARBY_LOGS(INFO) << "OnEndpointFound: id=" << endpoint_id << " [enter]";
 
   auto range = discovered_endpoints_.equal_range(endpoint->endpoint_id);
-
+  bool is_range_empty = range.first == range.second;
   DiscoveredEndpoint* owned_endpoint = nullptr;
   for (auto& item = range.first; item != range.second; ++item) {
     auto& discovered_endpoint = item->second;
@@ -1016,7 +1008,7 @@ void BasePcpHandler::OnEndpointFound(
 
   // Range is empty: this is the first endpoint we discovered so far.
   // Report this endpoint_id to client.
-  if (range.first == range.second) {
+  if (is_range_empty) {
     NEARBY_LOGS(INFO) << "Adding new endpoint: endpoint_id=" << endpoint_id;
     // And, as it's the first time, report it to the client.
     client->OnEndpointFound(
@@ -1193,6 +1185,20 @@ Exception BasePcpHandler::OnIncomingConnection(
     connection_options.keep_alive_timeout_millis =
         FeatureFlags::GetInstance().GetFlags().keep_alive_timeout_millis;
   }
+
+  const MediumMetadata& medium_metadata = connection_request.medium_metadata();
+  ConnectionInfo& connection_info = connection_options.connection_info;
+  connection_info.supports_5_ghz = medium_metadata.supports_5_ghz();
+  connection_info.bssid = medium_metadata.bssid();
+  connection_info.ap_frequency = medium_metadata.ap_frequency();
+  connection_info.ip_address = medium_metadata.ip_address();
+  NEARBY_LOGS(INFO) << connection_request.endpoint_id()
+                    << "'s WIFI information: is_supports_5_ghz="
+                    << connection_info.supports_5_ghz
+                    << "; bssid=" << connection_info.bssid
+                    << "; ap_frequency=" << connection_info.ap_frequency
+                    << "Mhz; ip_address in bytes format="
+                    << connection_info.ip_address;
 
   // We've successfully connected to the device, and are now about to jump on to
   // the EncryptionRunner thread to start running our encryption protocol. We'll
@@ -1448,13 +1454,19 @@ void BasePcpHandler::EvaluateConnectionResult(ClientProxy* client,
     return;
   }
 
+  Medium medium =
+      channel_manager_->GetChannelForEndpoint(endpoint_id)->GetMedium();
   client->GetAnalyticsRecorder().OnConnectionEstablished(
-      endpoint_id,
-      channel_manager_->GetChannelForEndpoint(endpoint_id)->GetMedium(),
-      connection_info.connection_token);
+      endpoint_id, medium, connection_info.connection_token);
 
   // Invoke the client callback to let it know of the connection result.
   client->OnConnectionAccepted(endpoint_id);
+
+  // Report the current bandwidth to the client
+  client->OnBandwidthChanged(endpoint_id, medium);
+
+  NEARBY_LOGS(INFO) << "Connection accepted on Medium:"
+                    << proto::connections::Medium_Name(medium);
 
   // Kick off the bandwidth upgrade for incoming connections.
   if (connection_info.is_incoming &&

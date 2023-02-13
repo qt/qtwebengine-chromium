@@ -61,6 +61,7 @@ cc_library(
         "credential_storage.h",
         "server_sync.h",
         "wifi.h",
+        "wifi_direct.h",
         "wifi_hotspot.h",
         "wifi_lan.h",
     ],
@@ -79,7 +80,10 @@ cc_library(
         "//internal/platform:uuid",
         "//internal/proto:credential_cc_proto",
         "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/functional:any_invocable",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
     ],
 )
 

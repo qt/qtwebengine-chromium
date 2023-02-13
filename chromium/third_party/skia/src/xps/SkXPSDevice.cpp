@@ -24,10 +24,12 @@
 
 #include "include/core/SkColor.h"
 #include "include/core/SkData.h"
+#include "include/core/SkEncodedImageFormat.h"
 #include "include/core/SkImage.h"
 #include "include/core/SkImageEncoder.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkPathEffect.h"
+#include "include/core/SkPathUtils.h"
 #include "include/core/SkPoint.h"
 #include "include/core/SkShader.h"
 #include "include/core/SkSize.h"
@@ -1513,7 +1515,7 @@ void SkXPSDevice::drawPath(const SkPath& platonicPath,
             fillablePath = &modifiedPath;
             pathIsMutable = true;
         }
-        bool fill = paint->getFillPath(*skeletalPath, fillablePath);
+        bool fill = skpathutils::FillPathWithPaint(*skeletalPath, *paint, fillablePath);
 
         SkPaint* writablePaint = paint.writable();
         writablePaint->setPathEffect(nullptr);

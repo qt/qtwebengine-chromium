@@ -17,6 +17,8 @@
 #include "src/core/SkRectPriv.h"
 #include "src/gpu/ganesh/geometry/GrPathUtils.h"
 
+#if !defined(SK_ENABLE_OPTIMIZE_SIZE)
+
 namespace {
 // TODO: should we make this real (i.e. src/core) and distinguish it from
 //       pathops SkDPoint?
@@ -383,7 +385,7 @@ static inline void add_cubic(const SkPoint pts[4],
                              PathSegmentArray* segments) {
     SkSTArray<15, SkPoint, true> quads;
     GrPathUtils::convertCubicToQuads(pts, SK_Scalar1, &quads);
-    int count = quads.count();
+    int count = quads.size();
     for (int q = 0; q < count; q += 3) {
         add_quad(&quads[q], segments);
     }
@@ -629,7 +631,7 @@ static float distance_to_segment(const SkPoint& point,
 static void calculate_distance_field_data(PathSegmentArray* segments,
                                           DFData* dataPtr,
                                           int width, int height) {
-    int count = segments->count();
+    int count = segments->size();
     // for each segment
     for (int a = 0; a < count; ++a) {
         PathSegment& segment = (*segments)[a];
@@ -862,3 +864,5 @@ bool GrGenerateDistanceFieldFromPath(unsigned char* distanceField,
     }
     return true;
 }
+
+#endif // SK_ENABLE_OPTIMIZE_SIZE

@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2016 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,9 +8,9 @@
 
 #include "core/fpdfapi/page/cpdf_image.h"
 #include "core/fpdfapi/page/cpdf_imageobject.h"
+#include "core/fpdfapi/page/cpdf_pageimagecache.h"
 #include "core/fpdfapi/page/cpdf_pageobject.h"
 #include "core/fpdfapi/page/cpdf_pageobjectholder.h"
-#include "core/fpdfapi/render/cpdf_pagerendercache.h"
 #include "core/fpdfapi/render/cpdf_renderoptions.h"
 #include "core/fpdfapi/render/cpdf_renderstatus.h"
 #include "core/fxcrt/pauseindicator_iface.h"
@@ -47,8 +47,8 @@ void CPDF_ProgressiveRenderer::Continue(PauseIndicatorIface* pPause) {
       }
       m_pCurrentLayer = m_pContext->GetLayer(m_LayerIndex);
       m_LastObjectRendered = m_pCurrentLayer->GetObjectHolder()->end();
-      m_pRenderStatus = std::make_unique<CPDF_RenderStatus>(m_pContext.Get(),
-                                                            m_pDevice.Get());
+      m_pRenderStatus =
+          std::make_unique<CPDF_RenderStatus>(m_pContext, m_pDevice);
       if (m_pOptions)
         m_pRenderStatus->SetOptions(*m_pOptions);
       m_pRenderStatus->SetTransparency(

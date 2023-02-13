@@ -325,7 +325,7 @@ void GpuAssistedBase::CreateDevice(const VkDeviceCreateInfo *pCreateInfo) {
 
     VkResult result1 = UtilInitializeVma(instance, physical_device, device, &vmaAllocator);
     assert(result1 == VK_SUCCESS);
-    desc_set_manager = layer_data::make_unique<UtilDescriptorSetManager>(device, static_cast<uint32_t>(bindings_.size()));
+    desc_set_manager = std::make_unique<UtilDescriptorSetManager>(device, static_cast<uint32_t>(bindings_.size()));
 
     const VkDescriptorSetLayoutCreateInfo debug_desc_layout_info = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO, NULL, 0,
                                                                     static_cast<uint32_t>(bindings_.size()), bindings_.data()};
@@ -365,6 +365,9 @@ void GpuAssistedBase::PreCallRecordDestroyDevice(VkDevice device, const VkAlloca
     }
     ValidationStateTracker::PreCallRecordDestroyDevice(device, pAllocator);
     // State Tracker can end up making vma calls through callbacks - don't destroy allocator until ST is done
+    if (output_buffer_pool) {
+        vmaDestroyPool(vmaAllocator, output_buffer_pool);
+    }
     if (vmaAllocator) {
         vmaDestroyAllocator(vmaAllocator);
     }
@@ -631,7 +634,7 @@ void GpuAssistedBase::PreCallRecordCreateGraphicsPipelines(VkDevice device, VkPi
     std::vector<safe_VkGraphicsPipelineCreateInfo> new_pipeline_create_infos;
     create_graphics_pipeline_api_state *cgpl_state = reinterpret_cast<create_graphics_pipeline_api_state *>(cgpl_state_data);
     PreCallRecordPipelineCreations(count, pCreateInfos, pAllocator, pPipelines, cgpl_state->pipe_state, &new_pipeline_create_infos,
-                                   VK_PIPELINE_BIND_POINT_GRAPHICS);
+                                   VK_PIPELINE_BIND_POINT_GRAPHICS, *cgpl_state);
     cgpl_state->modified_create_infos = new_pipeline_create_infos;
     cgpl_state->pCreateInfos = reinterpret_cast<VkGraphicsPipelineCreateInfo *>(cgpl_state->modified_create_infos.data());
 }
@@ -644,7 +647,7 @@ void GpuAssistedBase::PreCallRecordCreateComputePipelines(VkDevice device, VkPip
     std::vector<safe_VkComputePipelineCreateInfo> new_pipeline_create_infos;
     auto *ccpl_state = reinterpret_cast<create_compute_pipeline_api_state *>(ccpl_state_data);
     PreCallRecordPipelineCreations(count, pCreateInfos, pAllocator, pPipelines, ccpl_state->pipe_state, &new_pipeline_create_infos,
-                                   VK_PIPELINE_BIND_POINT_COMPUTE);
+                                   VK_PIPELINE_BIND_POINT_COMPUTE, *ccpl_state);
     ccpl_state->modified_create_infos = new_pipeline_create_infos;
     ccpl_state->pCreateInfos = reinterpret_cast<VkComputePipelineCreateInfo *>(ccpl_state->modified_create_infos.data());
 }
@@ -657,7 +660,7 @@ void GpuAssistedBase::PreCallRecordCreateRayTracingPipelinesNV(VkDevice device, 
     std::vector<safe_VkRayTracingPipelineCreateInfoCommon> new_pipeline_create_infos;
     auto *crtpl_state = reinterpret_cast<create_ray_tracing_pipeline_api_state *>(crtpl_state_data);
     PreCallRecordPipelineCreations(count, pCreateInfos, pAllocator, pPipelines, crtpl_state->pipe_state, &new_pipeline_create_infos,
-                                   VK_PIPELINE_BIND_POINT_RAY_TRACING_NV);
+                                   VK_PIPELINE_BIND_POINT_RAY_TRACING_NV, *crtpl_state);
     crtpl_state->modified_create_infos = new_pipeline_create_infos;
     crtpl_state->pCreateInfos = reinterpret_cast<VkRayTracingPipelineCreateInfoNV *>(crtpl_state->modified_create_infos.data());
 }
@@ -671,7 +674,7 @@ void GpuAssistedBase::PreCallRecordCreateRayTracingPipelinesKHR(VkDevice device,
     std::vector<safe_VkRayTracingPipelineCreateInfoCommon> new_pipeline_create_infos;
     auto *crtpl_state = reinterpret_cast<create_ray_tracing_pipeline_khr_api_state *>(crtpl_state_data);
     PreCallRecordPipelineCreations(count, pCreateInfos, pAllocator, pPipelines, crtpl_state->pipe_state, &new_pipeline_create_infos,
-                                   VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR);
+                                   VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, *crtpl_state);
     crtpl_state->modified_create_infos = new_pipeline_create_infos;
     crtpl_state->pCreateInfos = reinterpret_cast<VkRayTracingPipelineCreateInfoKHR *>(crtpl_state->modified_create_infos.data());
 }
@@ -753,66 +756,60 @@ void GpuAssistedBase::PreCallRecordDestroyPipeline(VkDevice device, VkPipeline p
 }
 
 template <typename CreateInfo>
-struct CreatePipelineTraits {};
-template <>
-struct CreatePipelineTraits<VkGraphicsPipelineCreateInfo> {
-    using SafeType = safe_VkGraphicsPipelineCreateInfo;
-    static uint32_t GetStageCount(const VkGraphicsPipelineCreateInfo &createInfo) { return createInfo.stageCount; }
-    static VkShaderModule GetShaderModule(const VkGraphicsPipelineCreateInfo &createInfo, uint32_t stage) {
-        return createInfo.pStages[stage].module;
+VkShaderModule GetShaderModule(const CreateInfo &createInfo, VkShaderStageFlagBits stage) {
+    for (uint32_t i = 0; i < createInfo.stageCount; ++i) {
+        if (createInfo.pStages[i].stage == stage) {
+            return createInfo.pStages[i].module;
+        }
     }
-    static void SetShaderModule(SafeType *createInfo, VkShaderModule shader_module, uint32_t stage) {
-        createInfo->pStages[stage].module = shader_module;
-    }
-};
+    return {};
+}
 
 template <>
-struct CreatePipelineTraits<VkComputePipelineCreateInfo> {
-    using SafeType = safe_VkComputePipelineCreateInfo;
-    static uint32_t GetStageCount(const VkComputePipelineCreateInfo &createInfo) { return 1; }
-    static VkShaderModule GetShaderModule(const VkComputePipelineCreateInfo &createInfo, uint32_t stage) {
-        return createInfo.stage.module;
-    }
-    static void SetShaderModule(SafeType *createInfo, VkShaderModule shader_module, uint32_t stage) {
-        assert(stage == 0);
-        createInfo->stage.module = shader_module;
-    }
-};
+VkShaderModule GetShaderModule(const VkComputePipelineCreateInfo &createInfo, VkShaderStageFlagBits) {
+    return createInfo.stage.module;
+}
+
+template <typename SafeType>
+void SetShaderModule(SafeType &createInfo, const safe_VkPipelineShaderStageCreateInfo &stage_info, VkShaderModule shader_module,
+                     uint32_t stage_ci_index) {
+    createInfo.pStages[stage_ci_index] = stage_info;
+    createInfo.pStages[stage_ci_index].module = shader_module;
+}
 
 template <>
-struct CreatePipelineTraits<VkRayTracingPipelineCreateInfoNV> {
-    using SafeType = safe_VkRayTracingPipelineCreateInfoCommon;
-    static uint32_t GetStageCount(const VkRayTracingPipelineCreateInfoNV &createInfo) { return createInfo.stageCount; }
-    static VkShaderModule GetShaderModule(const VkRayTracingPipelineCreateInfoNV &createInfo, uint32_t stage) {
-        return createInfo.pStages[stage].module;
+void SetShaderModule(safe_VkComputePipelineCreateInfo &createInfo, const safe_VkPipelineShaderStageCreateInfo &stage_info,
+                     VkShaderModule shader_module, uint32_t stage_ci_index) {
+    assert(stage_ci_index == 0);
+    createInfo.stage = stage_info;
+    createInfo.stage.module = shader_module;
+}
+
+template <typename CreateInfo, typename StageInfo>
+StageInfo &GetShaderStageCI(CreateInfo &ci, VkShaderStageFlagBits stage) {
+    static StageInfo null_stage{};
+    for (uint32_t i = 0; i < ci.stageCount; ++i) {
+        if (ci.pStages[i].stage == stage) {
+            return ci.pStages[i];
+        }
     }
-    static void SetShaderModule(SafeType *createInfo, VkShaderModule shader_module, uint32_t stage) {
-        createInfo->pStages[stage].module = shader_module;
-    }
-};
+    return null_stage;
+}
 
 template <>
-struct CreatePipelineTraits<VkRayTracingPipelineCreateInfoKHR> {
-    using SafeType = safe_VkRayTracingPipelineCreateInfoCommon;
-    static uint32_t GetStageCount(const VkRayTracingPipelineCreateInfoKHR &createInfo) { return createInfo.stageCount; }
-    static VkShaderModule GetShaderModule(const VkRayTracingPipelineCreateInfoKHR &createInfo, uint32_t stage) {
-        return createInfo.pStages[stage].module;
-    }
-    static void SetShaderModule(SafeType *createInfo, VkShaderModule shader_module, uint32_t stage) {
-        createInfo->pStages[stage].module = shader_module;
-    }
-};
+safe_VkPipelineShaderStageCreateInfo &GetShaderStageCI(safe_VkComputePipelineCreateInfo &ci, VkShaderStageFlagBits) {
+    return ci.stage;
+}
 
 // Examine the pipelines to see if they use the debug descriptor set binding index.
 // If any do, create new non-instrumented shader modules and use them to replace the instrumented
 // shaders in the pipeline.  Return the (possibly) modified create infos to the caller.
-template <typename CreateInfo, typename SafeCreateInfo>
+template <typename CreateInfo, typename SafeCreateInfo, typename GPUAVState>
 void GpuAssistedBase::PreCallRecordPipelineCreations(uint32_t count, const CreateInfo *pCreateInfos,
                                                      const VkAllocationCallbacks *pAllocator, VkPipeline *pPipelines,
                                                      std::vector<std::shared_ptr<PIPELINE_STATE>> &pipe_state,
                                                      std::vector<SafeCreateInfo> *new_pipeline_create_infos,
-                                                     const VkPipelineBindPoint bind_point) {
-    using Accessor = CreatePipelineTraits<CreateInfo>;
+                                                     const VkPipelineBindPoint bind_point, GPUAVState &cgpl_state) {
     if (bind_point != VK_PIPELINE_BIND_POINT_GRAPHICS && bind_point != VK_PIPELINE_BIND_POINT_COMPUTE &&
         bind_point != VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR) {
         return;
@@ -821,41 +818,74 @@ void GpuAssistedBase::PreCallRecordPipelineCreations(uint32_t count, const Creat
     // Walk through all the pipelines, make a copy of each and flag each pipeline that contains a shader that uses the debug
     // descriptor set index.
     for (uint32_t pipeline = 0; pipeline < count; ++pipeline) {
-        uint32_t stageCount = Accessor::GetStageCount(pCreateInfos[pipeline]);
         const auto &pipe = pipe_state[pipeline];
-        new_pipeline_create_infos->push_back(pipe->GetCreateInfo<CreateInfo>());
+        // NOTE: since these are "safe" CreateInfos, this will create a deep copy via the safe copy constructor
+        auto new_pipeline_ci = pipe->GetCreateInfo<CreateInfo>();
 
-        if (!pipe->IsGraphicsLibrary()) {
-            bool replace_shaders = false;
-            if (pipe->active_slots.find(desc_set_bind_index) != pipe->active_slots.end()) {
-                replace_shaders = true;
+        bool replace_shaders = false;
+        if (pipe->active_slots.find(desc_set_bind_index) != pipe->active_slots.end()) {
+            replace_shaders = true;
+        }
+        // If the app requests all available sets, the pipeline layout was not modified at pipeline layout creation and the
+        // already instrumented shaders need to be replaced with uninstrumented shaders
+        const auto pipeline_layout = pipe->PipelineLayoutState();
+        if (pipeline_layout && pipeline_layout->set_layouts.size() >= adjusted_max_desc_sets) {
+            replace_shaders = true;
+        }
+
+        if (replace_shaders) {
+            for (uint32_t i = 0; i < static_cast<uint32_t>(pipe->stage_state.size()); ++i) {
+                const auto &stage = pipe->stage_state[i];
+                const auto &module_state = stage.module_state;
+
+                VkShaderModule shader_module;
+                auto create_info = LvlInitStruct<VkShaderModuleCreateInfo>();
+                create_info.pCode = module_state->words_.data();
+                create_info.codeSize = module_state->words_.size() * sizeof(uint32_t);
+                VkResult result = DispatchCreateShaderModule(device, &create_info, pAllocator, &shader_module);
+                if (result == VK_SUCCESS) {
+                    SetShaderModule(new_pipeline_ci, *stage.create_info, shader_module, i);
+                } else {
+                    ReportSetupProblem(device,
+                                       "Unable to replace instrumented shader with non-instrumented one.  "
+                                       "Device could become unstable.");
+                }
             }
-            // If the app requests all available sets, the pipeline layout was not modified at pipeline layout creation and the
-            // already instrumented shaders need to be replaced with uninstrumented shaders
-            const auto pipeline_layout = pipe->PipelineLayoutState();
-            if (pipeline_layout->set_layouts.size() >= adjusted_max_desc_sets) {
-                replace_shaders = true;
-            }
+        } else {
+            // !replace_shaders implies that the instrumented shaders should be used. However, if this is a non-executable pipeline
+            // library created with pre-raster or fragment shader state, it contains shaders that have not yet been instrumented
+            if (!pipe->HasFullState() && (pipe->pre_raster_state || pipe->fragment_shader_state)) {
+                for (const auto &stage : pipe->stage_state) {
+                    auto module_state = std::const_pointer_cast<SHADER_MODULE_STATE>(stage.module_state);
+                    if (!module_state->Handle()) {
+                        // If the shader module's handle is non-null, then it was defined with CreateShaderModule and covered by the
+                        // case above. Otherwise, it is being defined during CGPL time
+                        if (cgpl_state.shader_states.size() <= pipeline) {
+                            cgpl_state.shader_states.resize(pipeline + 1);
+                        }
+                        auto &csm_state = cgpl_state.shader_states[pipeline][stage.stage_flag];
+                        const auto pass =
+                            InstrumentShader(module_state->words_, csm_state.instrumented_pgm, &csm_state.unique_shader_id);
+                        if (pass) {
+                            module_state->gpu_validation_shader_id = csm_state.unique_shader_id;
 
-            if (replace_shaders) {
-                for (uint32_t stage = 0; stage < stageCount; ++stage) {
-                    const auto module_state = Get<SHADER_MODULE_STATE>(pipe->GetShaderModuleByCIIndex<CreateInfo>(stage));
-
-                    VkShaderModule shader_module;
-                    auto create_info = LvlInitStruct<VkShaderModuleCreateInfo>();
-                    create_info.pCode = module_state->words.data();
-                    create_info.codeSize = module_state->words.size() * sizeof(uint32_t);
-                    VkResult result = DispatchCreateShaderModule(device, &create_info, pAllocator, &shader_module);
-                    if (result == VK_SUCCESS) {
-                        Accessor::SetShaderModule(&(*new_pipeline_create_infos)[pipeline], shader_module, stage);
-                    } else {
-                        ReportSetupProblem(device,
-                                           "Unable to replace instrumented shader with non-instrumented one.  "
-                                           "Device could become unstable.");
+                            // Now we need to find the corresponding VkShaderModuleCreateInfo and update its shader code
+                            auto &stage_ci = GetShaderStageCI<SafeCreateInfo, safe_VkPipelineShaderStageCreateInfo>(
+                                new_pipeline_ci, stage.stage_flag);
+                            // We're modifying the copied, safe create info, which is ok to be non-const
+                            auto sm_ci =
+                                const_cast<safe_VkShaderModuleCreateInfo *>(reinterpret_cast<const safe_VkShaderModuleCreateInfo *>(
+                                    LvlFindInChain<VkShaderModuleCreateInfo>(stage_ci.pNext)));
+                            // module_state->Handle() == VK_NULL_HANDLE should imply sm_ci != nullptr, but checking here anyway
+                            if (sm_ci) {
+                                sm_ci->SetCode(csm_state.instrumented_pgm);
+                            }
+                        }
                     }
                 }
             }
         }
+        new_pipeline_create_infos->push_back(std::move(new_pipeline_ci));
     }
 }
 // For every pipeline:
@@ -874,34 +904,33 @@ void GpuAssistedBase::PostCallRecordPipelineCreations(const uint32_t count, cons
     }
     for (uint32_t pipeline = 0; pipeline < count; ++pipeline) {
         auto pipeline_state = Get<PIPELINE_STATE>(pPipelines[pipeline]);
-        if (!pipeline_state || pipeline_state->IsGraphicsLibrary()) continue;
+        if (!pipeline_state) continue;
 
-        const uint32_t stageCount = static_cast<uint32_t>(pipeline_state->stage_state.size());
-        assert(stageCount > 0);
+        if (!pipeline_state->stage_state.empty() &&
+            !(pipeline_state->GetPipelineCreateFlags() & VK_PIPELINE_CREATE_LIBRARY_BIT_KHR)) {
+            const auto pipeline_layout = pipeline_state->PipelineLayoutState();
+            for (auto &stage : pipeline_state->stage_state) {
+                auto &module_state = stage.module_state;
+                const auto shader_module = module_state->Handle();
 
-        const auto pipeline_layout = pipeline_state->PipelineLayoutState();
-        for (uint32_t stage = 0; stage < stageCount; ++stage) {
-            assert((bind_point != VK_PIPELINE_BIND_POINT_COMPUTE) || (stage == 0));
-            auto shader_module = pipeline_state->GetShaderModuleByCIIndex<CreateInfo>(stage);
-            auto module_state = Get<SHADER_MODULE_STATE>(shader_module);
+                if (pipeline_state->active_slots.find(desc_set_bind_index) != pipeline_state->active_slots.end() ||
+                    (pipeline_layout->set_layouts.size() >= adjusted_max_desc_sets)) {
+                    auto *modified_ci = reinterpret_cast<const CreateInfo *>(modified_create_infos[pipeline].ptr());
+                    auto uninstrumented_module = GetShaderModule(*modified_ci, stage.stage_flag);
+                    assert(uninstrumented_module != shader_module.Cast<VkShaderModule>());
+                    DispatchDestroyShaderModule(device, uninstrumented_module, pAllocator);
+                }
 
-            if (pipeline_state->active_slots.find(desc_set_bind_index) != pipeline_state->active_slots.end() ||
-                (pipeline_layout->set_layouts.size() >= adjusted_max_desc_sets)) {
-                auto *modified_ci = reinterpret_cast<const CreateInfo *>(modified_create_infos[pipeline].ptr());
-                auto uninstrumented_module = CreatePipelineTraits<CreateInfo>::GetShaderModule(*modified_ci, stage);
-                assert(uninstrumented_module != shader_module);
-                DispatchDestroyShaderModule(device, uninstrumented_module, pAllocator);
+                std::vector<unsigned int> code;
+                // Save the shader binary
+                // The core_validation ShaderModule tracker saves the binary too, but discards it when the ShaderModule
+                // is destroyed.  Applications may destroy ShaderModules after they are placed in a pipeline and before
+                // the pipeline is used, so we have to keep another copy.
+                if (module_state && module_state->has_valid_spirv) code = module_state->words_;
+
+                shader_map.insert_or_assign(module_state->gpu_validation_shader_id, pipeline_state->pipeline(),
+                                            shader_module.Cast<VkShaderModule>(), std::move(code));
             }
-
-            std::vector<unsigned int> code;
-            // Save the shader binary
-            // The core_validation ShaderModule tracker saves the binary too, but discards it when the ShaderModule
-            // is destroyed.  Applications may destroy ShaderModules after they are placed in a pipeline and before
-            // the pipeline is used, so we have to keep another copy.
-            if (module_state && module_state->has_valid_spirv) code = module_state->words;
-
-            shader_map.insert_or_assign(module_state->gpu_validation_shader_id, pipeline_state->pipeline(), shader_module,
-                                        std::move(code));
         }
     }
 }
@@ -1065,7 +1094,7 @@ void ReadOpSource(const SHADER_MODULE_STATE &module_state, const uint32_t report
 #define GCC_VERSION (__GNUC__ * 10000 + __GNUC_MINOR__ * 100 + __GNUC_PATCHLEVEL__)
 
 #if defined(__GNUC__) && GCC_VERSION < 40900
-bool GetLineAndFilename(const std::string string, uint32_t *linenumber, std::string &filename) {
+bool GetLineAndFilename(const std::string &string, uint32_t *linenumber, std::string &filename) {
     // # line <linenumber> "<filename>" or
     // #line <linenumber> "<filename>"
     std::vector<std::string> tokens;
@@ -1090,7 +1119,7 @@ bool GetLineAndFilename(const std::string string, uint32_t *linenumber, std::str
     return true;
 }
 #else
-bool GetLineAndFilename(const std::string string, uint32_t *linenumber, std::string &filename) {
+bool GetLineAndFilename(const std::string &string, uint32_t *linenumber, std::string &filename) {
     static const std::regex line_regex(  // matches #line directives
         "^"                              // beginning of line
         "\\s*"                           // optional whitespace
@@ -1105,7 +1134,7 @@ bool GetLineAndFilename(const std::string string, uint32_t *linenumber, std::str
 
     std::smatch captures;
 
-    bool found_line = std::regex_match(string, captures, line_regex);
+    const bool found_line = std::regex_match(string, captures, line_regex);
     if (!found_line) return false;
 
     // filename is optional and considered found only if the whitespace and the filename are captured
@@ -1125,15 +1154,15 @@ void UtilGenerateSourceMessages(const std::vector<uint32_t> &pgm, const uint32_t
     using namespace spvtools;
     std::ostringstream filename_stream;
     std::ostringstream source_stream;
-    SHADER_MODULE_STATE shader(pgm);
+    SHADER_MODULE_STATE module_state(pgm);
     // Find the OpLine just before the failing instruction indicated by the debug info.
     // SPIR-V can only be iterated in the forward direction due to its opcode/length encoding.
     uint32_t instruction_index = 0;
     uint32_t reported_file_id = 0;
     uint32_t reported_line_number = 0;
     uint32_t reported_column_number = 0;
-    if (shader.words.size() > 0) {
-        for (const auto &insn : shader) {
+    if (module_state.words_.size() > 0) {
+        for (const auto &insn : module_state) {
             if (insn.opcode() == spv::OpLine) {
                 reported_file_id = insn.word(1);
                 reported_line_number = insn.word(2);
@@ -1158,7 +1187,7 @@ void UtilGenerateSourceMessages(const std::vector<uint32_t> &pgm, const uint32_t
         } else {
             prefix = "Shader validation error occurred ";
         }
-        for (const auto &insn : shader) {
+        for (const auto &insn : module_state) {
             if ((insn.opcode() == spv::OpString) && (insn.len() >= 3) && (insn.word(1) == reported_file_id)) {
                 found_opstring = true;
                 reported_filename = (char *)&insn.word(2);
@@ -1187,7 +1216,7 @@ void UtilGenerateSourceMessages(const std::vector<uint32_t> &pgm, const uint32_t
     if ((reported_file_id != 0)) {
         // Read the source code and split it up into separate lines.
         std::vector<std::string> opsource_lines;
-        ReadOpSource(shader, reported_file_id, opsource_lines);
+        ReadOpSource(module_state, reported_file_id, opsource_lines);
         // Find the line in the OpSource content that corresponds to the reported error file and line.
         if (!opsource_lines.empty()) {
             uint32_t saved_line_number = 0;
@@ -1197,10 +1226,10 @@ void UtilGenerateSourceMessages(const std::vector<uint32_t> &pgm, const uint32_t
             for (auto it = opsource_lines.begin(); it != opsource_lines.end(); ++it) {
                 uint32_t parsed_line_number;
                 std::string parsed_filename;
-                bool found_line = GetLineAndFilename(*it, &parsed_line_number, parsed_filename);
+                const bool found_line = GetLineAndFilename(*it, &parsed_line_number, parsed_filename);
                 if (!found_line) continue;
 
-                bool found_filename = parsed_filename.size() > 0;
+                const bool found_filename = parsed_filename.size() > 0;
                 if (found_filename) {
                     current_filename = parsed_filename;
                 }

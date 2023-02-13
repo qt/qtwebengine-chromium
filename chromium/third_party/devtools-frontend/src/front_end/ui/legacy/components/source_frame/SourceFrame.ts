@@ -106,7 +106,6 @@ export class SourceFrameImpl extends Common.ObjectWrapper.eventMixin<EventTypes,
   private readonly lazyContent: () => Promise<TextUtils.ContentProvider.DeferredContent>;
   private prettyInternal: boolean;
   private rawContent: string|CodeMirror.Text|null;
-  private formattedContentPromise: Promise<Formatter.ScriptFormatter.FormattedContent>|null;
   private formattedMap: Formatter.ScriptFormatter.FormatterSourceMapping|null;
   private readonly prettyToggle: UI.Toolbar.ToolbarToggle;
   private shouldAutoPrettyPrint: boolean;
@@ -146,7 +145,6 @@ export class SourceFrameImpl extends Common.ObjectWrapper.eventMixin<EventTypes,
 
     this.prettyInternal = false;
     this.rawContent = null;
-    this.formattedContentPromise = null;
     this.formattedMap = null;
     this.prettyToggle = new UI.Toolbar.ToolbarToggle(i18nString(UIStrings.prettyPrint), 'largeicon-pretty-print');
     this.prettyToggle.addEventListener(UI.Toolbar.ToolbarButton.Events.Click, () => {
@@ -190,6 +188,26 @@ export class SourceFrameImpl extends Common.ObjectWrapper.eventMixin<EventTypes,
 
     this.wasmDisassemblyInternal = null;
     this.contentSet = false;
+
+    Common.Settings.Settings.instance()
+        .moduleSetting('textEditorIndent')
+        .addChangeListener(this.#textEditorIndentChanged, this);
+  }
+
+  disposeView(): void {
+    Common.Settings.Settings.instance()
+        .moduleSetting('textEditorIndent')
+        .removeChangeListener(this.#textEditorIndentChanged, this);
+  }
+
+  async #textEditorIndentChanged(): Promise<void> {
+    if (this.prettyInternal) {
+      // Indentation settings changed, which are used for pretty printing as well,
+      // so if the editor is currently pretty printed, just toggle the state here
+      // to apply the new indentation settings.
+      await this.setPretty(false);
+      await this.setPretty(true);
+    }
   }
 
   private placeholderEditorState(content: string): CodeMirror.EditorState {
@@ -208,7 +226,7 @@ export class SourceFrameImpl extends Common.ObjectWrapper.eventMixin<EventTypes,
       CodeMirror.EditorView.updateListener.of(update => this.dispatchEventToListeners(Events.EditorUpdate, update)),
       TextEditor.Config.baseConfiguration(doc),
       TextEditor.Config.closeBrackets,
-      TextEditor.Config.sourcesAutocompletion.instance(),
+      TextEditor.Config.autocompletion.instance(),
       TextEditor.Config.showWhitespace.instance(),
       TextEditor.Config.allowScrollPastEof.instance(),
       CodeMirror.Prec.lowest(TextEditor.Config.codeFolding.instance()),
@@ -310,7 +328,9 @@ export class SourceFrameImpl extends Common.ObjectWrapper.eventMixin<EventTypes,
     const startPos = textEditor.toLineColumn(selection.from), endPos = textEditor.toLineColumn(selection.to);
     let newSelection;
     if (this.prettyInternal) {
-      const formatInfo = await this.requestFormattedContent();
+      const content =
+          this.rawContent instanceof CodeMirror.Text ? this.rawContent.sliceString(0) : this.rawContent || '';
+      const formatInfo = await Formatter.ScriptFormatter.formatScriptContent(this.contentType, content);
       this.formattedMap = formatInfo.formattedMapping;
       await this.setContent(formatInfo.formattedContent);
       this.prettyBaseDoc = textEditor.state.doc;
@@ -512,13 +532,12 @@ export class SourceFrameImpl extends Common.ObjectWrapper.eventMixin<EventTypes,
       progressIndicator.setWorked(100);
       progressIndicator.done();
 
-      this.formattedContentPromise = null;
       this.formattedMap = null;
       this.prettyToggle.setEnabled(true);
 
       if (error) {
         this.loadError = true;
-        this.textEditor.editor.setState(this.placeholderEditorState(error));
+        this.textEditor.state = this.placeholderEditorState(error);
         this.prettyToggle.setEnabled(false);
       } else {
         if (this.shouldAutoPrettyPrint && TextUtils.TextUtils.isMinified(content || '')) {
@@ -529,15 +548,6 @@ export class SourceFrameImpl extends Common.ObjectWrapper.eventMixin<EventTypes,
       }
       this.contentSet = true;
     }
-  }
-
-  private requestFormattedContent(): Promise<Formatter.ScriptFormatter.FormattedContent> {
-    if (this.formattedContentPromise) {
-      return this.formattedContentPromise;
-    }
-    const content = this.rawContent instanceof CodeMirror.Text ? this.rawContent.sliceString(0) : this.rawContent || '';
-    this.formattedContentPromise = Formatter.ScriptFormatter.formatScriptContent(this.contentType, content);
-    return this.formattedContentPromise;
   }
 
   revealPosition(position: {lineNumber: number, columnNumber?: number}|number, shouldHighlight?: boolean): void {
@@ -645,7 +655,6 @@ export class SourceFrameImpl extends Common.ObjectWrapper.eventMixin<EventTypes,
     this.prettyBaseDoc = null;
     this.rawContent = this.textEditor.state.doc.toString();
     this.formattedMap = null;
-    this.formattedContentPromise = null;
     if (this.prettyInternal) {
       this.prettyInternal = false;
       this.updatePrettyPrintState();
@@ -653,42 +662,12 @@ export class SourceFrameImpl extends Common.ObjectWrapper.eventMixin<EventTypes,
     this.prettyToggle.setEnabled(true);
   }
 
-  private simplifyMimeType(content: string|CodeMirror.Text, mimeType: string): string {
-    if (!mimeType) {
-      return '';
-    }
-    // There are plenty of instances where TSX/JSX files are served with out the trailing x, i.e. JSX with a 'js' suffix
-    // which breaks the formatting. Therefore, if the mime type is TypeScript or JavaScript, we switch to the TSX/JSX
-    // superset so that we don't break formatting.
-    if (mimeType.indexOf('typescript') >= 0) {
-      return 'text/typescript-jsx';
-    }
-    if (mimeType.indexOf('javascript') >= 0 || mimeType.indexOf('jscript') >= 0 ||
-        mimeType.indexOf('ecmascript') >= 0) {
-      return 'text/jsx';
-    }
-    // A hack around the fact that files with "php" extension might be either standalone or html embedded php scripts.
-    if (mimeType === 'text/x-php') {
-      const strContent = typeof content === 'string' ? content : content.sliceString(0);
-      if (strContent.match(/\<\?.*\?\>/g)) {
-        return 'application/x-httpd-php';
-      }
-    }
-    if (mimeType === 'application/wasm') {
-      // text/webassembly is not a proper MIME type, but CodeMirror uses it for WAT syntax highlighting.
-      // We generally use application/wasm, which is the correct MIME type for Wasm binary data.
-      return 'text/webassembly';
-    }
-    return mimeType;
-  }
-
-  protected async getLanguageSupport(content: string|CodeMirror.Text): Promise<CodeMirror.Extension> {
-    const mimeType = this.simplifyMimeType(content, this.contentType) || '';
-    const languageDesc = await CodeHighlighter.CodeHighlighter.languageFromMIME(mimeType);
+  protected async getLanguageSupport(): Promise<CodeMirror.Extension> {
+    const languageDesc = await CodeHighlighter.CodeHighlighter.languageFromMIME(this.contentType);
     if (!languageDesc) {
       return [];
     }
-    if (mimeType === 'text/jsx') {
+    if (this.contentType === 'text/jsx') {
       return [
         languageDesc,
         CodeMirror.javascript.javascriptLanguage.data.of({autocomplete: CodeMirror.completeAnyWord}),
@@ -697,8 +676,8 @@ export class SourceFrameImpl extends Common.ObjectWrapper.eventMixin<EventTypes,
     return languageDesc;
   }
 
-  async updateLanguageMode(content: string): Promise<void> {
-    const langExtension = await this.getLanguageSupport(content);
+  async updateLanguageMode(): Promise<void> {
+    const langExtension = await this.getLanguageSupport();
     this.textEditor.dispatch({effects: config.language.reconfigure(langExtension)});
   }
 
@@ -709,7 +688,7 @@ export class SourceFrameImpl extends Common.ObjectWrapper.eventMixin<EventTypes,
     const scrollTop = textEditor.editor.scrollDOM.scrollTop;
     this.loadedInternal = true;
 
-    const languageSupport = await this.getLanguageSupport(content);
+    const languageSupport = await this.getLanguageSupport();
     const editorState = CodeMirror.EditorState.create({
       doc: content,
       extensions: [
@@ -720,7 +699,7 @@ export class SourceFrameImpl extends Common.ObjectWrapper.eventMixin<EventTypes,
       ],
     });
     this.baseDoc = editorState.doc;
-    textEditor.editor.setState(editorState);
+    textEditor.state = editorState;
     if (wasLoaded) {
       textEditor.editor.scrollDOM.scrollTop = scrollTop;
     }
@@ -1169,7 +1148,7 @@ function markNonBreakableLines(disassembly: Common.WasmDisassembly.WasmDisassemb
 const sourceFrameTheme = CodeMirror.EditorView.theme({
   '&.cm-editor': {height: '100%'},
   '.cm-scroller': {overflow: 'auto'},
-  '.cm-lineNumbers .cm-gutterElement.cm-nonBreakableLine': {color: 'var(--color-non-breakable-line)'},
+  '.cm-lineNumbers .cm-gutterElement.cm-nonBreakableLine': {color: 'var(--color-non-breakable-line) !important'},
   '.cm-searchMatch': {
     border: '1px solid var(--color-search-match-border)',
     borderRadius: '3px',
@@ -1184,6 +1163,6 @@ const sourceFrameTheme = CodeMirror.EditorView.theme({
     },
   },
   ':host-context(.pretty-printed) & .cm-lineNumbers .cm-gutterElement': {
-    color: 'var(--legacy-accent-color)',
+    color: 'var(--color-primary)',
   },
 });

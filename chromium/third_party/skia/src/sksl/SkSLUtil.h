@@ -8,15 +8,13 @@
 #ifndef SKSL_UTIL
 #define SKSL_UTIL
 
+#include "include/core/SkTypes.h"
 #include "include/sksl/SkSLVersion.h"
-#include "src/core/SkSLTypeShared.h"
 #include "src/sksl/SkSLGLSL.h"
 
 #include <memory>
 
-#ifndef SKSL_STANDALONE
-#include "include/core/SkTypes.h"
-#endif // SKSL_STANDALONE
+enum class SkSLType : char;
 
 namespace SkSL {
 
@@ -140,6 +138,8 @@ struct ShaderCaps {
     bool fRewriteMatrixVectorMultiply = false;
     // Rewrites matrix equality comparisons to avoid an Adreno driver bug. (skia:11308)
     bool fRewriteMatrixComparisons = false;
+    // Strips const from function parameters in the GLSL code generator. (skia:13858)
+    bool fRemoveConstFromFunctionParameters = false;
 
     const char* fVersionDeclString = "";
 

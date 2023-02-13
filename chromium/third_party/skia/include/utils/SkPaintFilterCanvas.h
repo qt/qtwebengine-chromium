@@ -8,7 +8,6 @@
 #ifndef SkPaintFilterCanvas_DEFINED
 #define SkPaintFilterCanvas_DEFINED
 
-#include "include/core/SkBlendMode.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkCanvasVirtualEnforcer.h"
 #include "include/core/SkColor.h"
@@ -42,6 +41,7 @@ class SkSurface;
 class SkSurfaceProps;
 class SkTextBlob;
 class SkVertices;
+enum class SkBlendMode;
 struct SkDrawShadowRec;
 struct SkPoint;
 struct SkRSXform;

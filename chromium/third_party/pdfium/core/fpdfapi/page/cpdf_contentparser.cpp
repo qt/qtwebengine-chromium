@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2016 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,7 +11,6 @@
 #include "constants/page_object.h"
 #include "core/fpdfapi/font/cpdf_type3char.h"
 #include "core/fpdfapi/page/cpdf_allstates.h"
-#include "core/fpdfapi/page/cpdf_form.h"
 #include "core/fpdfapi/page/cpdf_page.h"
 #include "core/fpdfapi/page/cpdf_pageobject.h"
 #include "core/fpdfapi/page/cpdf_path.h"
@@ -19,6 +18,7 @@
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_stream.h"
 #include "core/fpdfapi/parser/cpdf_stream_acc.h"
+#include "core/fxcrt/fixed_try_alloc_zeroed_data_vector.h"
 #include "core/fxcrt/fx_safe_types.h"
 #include "core/fxcrt/pauseindicator_iface.h"
 #include "core/fxcrt/span_util.h"
@@ -27,15 +27,8 @@
 #include "third_party/base/check.h"
 #include "third_party/base/check_op.h"
 
-CPDF_ContentParser::OwnedData::OwnedData(
-    std::unique_ptr<uint8_t, FxFreeDeleter> buffer,
-    uint32_t size)
-    : buffer(std::move(buffer)), size(size) {}
-
-CPDF_ContentParser::OwnedData::~OwnedData() = default;
-
 CPDF_ContentParser::CPDF_ContentParser(CPDF_Page* pPage)
-    : m_CurrentStage(Stage::kGetContent), m_pObjectHolder(pPage) {
+    : m_CurrentStage(Stage::kGetContent), m_pPageObjectHolder(pPage) {
   DCHECK(pPage);
   if (!pPage->GetDocument()) {
     m_CurrentStage = Stage::kComplete;
@@ -63,20 +56,23 @@ CPDF_ContentParser::CPDF_ContentParser(CPDF_Page* pPage)
   HandlePageContentFailure();
 }
 
-CPDF_ContentParser::CPDF_ContentParser(CPDF_Form* pForm,
+CPDF_ContentParser::CPDF_ContentParser(RetainPtr<const CPDF_Stream> pStream,
+                                       CPDF_PageObjectHolder* pPageObjectHolder,
                                        const CPDF_AllStates* pGraphicStates,
                                        const CFX_Matrix* pParentMatrix,
                                        CPDF_Type3Char* pType3Char,
                                        std::set<const uint8_t*>* pParsedSet)
     : m_CurrentStage(Stage::kParse),
-      m_pObjectHolder(pForm),
+      m_pPageObjectHolder(pPageObjectHolder),
       m_pType3Char(pType3Char) {
-  DCHECK(pForm);
-  CFX_Matrix form_matrix = pForm->GetDict()->GetMatrixFor("Matrix");
+  DCHECK(m_pPageObjectHolder);
+  CFX_Matrix form_matrix =
+      m_pPageObjectHolder->GetDict()->GetMatrixFor("Matrix");
   if (pGraphicStates)
     form_matrix.Concat(pGraphicStates->m_CTM);
 
-  RetainPtr<const CPDF_Array> pBBox = pForm->GetDict()->GetArrayFor("BBox");
+  RetainPtr<const CPDF_Array> pBBox =
+      m_pPageObjectHolder->GetDict()->GetArrayFor("BBox");
   CFX_FloatRect form_bbox;
   CPDF_Path ClipPath;
   if (pBBox) {
@@ -93,25 +89,27 @@ CPDF_ContentParser::CPDF_ContentParser(CPDF_Form* pForm,
   }
 
   RetainPtr<CPDF_Dictionary> pResources =
-      pForm->GetMutableDict()->GetMutableDictFor("Resources");
+      m_pPageObjectHolder->GetMutableDict()->GetMutableDictFor("Resources");
   m_pParser = std::make_unique<CPDF_StreamContentParser>(
-      pForm->GetDocument(), pForm->GetMutablePageResources(),
-      pForm->GetMutableResources(), pParentMatrix, pForm, std::move(pResources),
-      form_bbox, pGraphicStates, pParsedSet);
+      m_pPageObjectHolder->GetDocument(),
+      m_pPageObjectHolder->GetMutablePageResources(),
+      m_pPageObjectHolder->GetMutableResources(), pParentMatrix,
+      m_pPageObjectHolder, std::move(pResources), form_bbox, pGraphicStates,
+      pParsedSet);
   m_pParser->GetCurStates()->m_CTM = form_matrix;
   m_pParser->GetCurStates()->m_ParentMatrix = form_matrix;
   if (ClipPath.HasRef()) {
     m_pParser->GetCurStates()->m_ClipPath.AppendPathWithAutoMerge(
         ClipPath, CFX_FillRenderOptions::FillType::kWinding);
   }
-  if (pForm->GetTransparency().IsGroup()) {
+  if (m_pPageObjectHolder->GetTransparency().IsGroup()) {
     CPDF_GeneralState* pState = &m_pParser->GetCurStates()->m_GeneralState;
     pState->SetBlendType(BlendMode::kNormal);
     pState->SetStrokeAlpha(1.0f);
     pState->SetFillAlpha(1.0f);
     pState->SetSoftMask(nullptr);
   }
-  m_pSingleStream = pdfium::MakeRetain<CPDF_StreamAcc>(pForm->GetStream());
+  m_pSingleStream = pdfium::MakeRetain<CPDF_StreamAcc>(std::move(pStream));
   m_pSingleStream->LoadAllDataFiltered();
   m_Data = m_pSingleStream->GetSpan();
 }
@@ -146,9 +144,10 @@ bool CPDF_ContentParser::Continue(PauseIndicatorIface* pPause) {
 
 CPDF_ContentParser::Stage CPDF_ContentParser::GetContent() {
   DCHECK_EQ(m_CurrentStage, Stage::kGetContent);
-  DCHECK(m_pObjectHolder->IsPage());
+  DCHECK(m_pPageObjectHolder->IsPage());
   RetainPtr<const CPDF_Array> pContent =
-      m_pObjectHolder->GetDict()->GetArrayFor(pdfium::page_object::kContents);
+      m_pPageObjectHolder->GetDict()->GetArrayFor(
+          pdfium::page_object::kContents);
   RetainPtr<const CPDF_Stream> pStreamObj = ToStream(
       pContent ? pContent->GetDirectObjectAt(m_CurrentOffset) : nullptr);
   m_StreamArray[m_CurrentOffset] =
@@ -178,22 +177,21 @@ CPDF_ContentParser::Stage CPDF_ContentParser::PrepareContent() {
   }
 
   const size_t buffer_size = safe_size.ValueOrDie();
-  std::unique_ptr<uint8_t, FxFreeDeleter> buffer(
-      FX_TryAlloc(uint8_t, buffer_size));
-  if (!buffer) {
+  FixedTryAllocZeroedDataVector<uint8_t> buffer(buffer_size);
+  if (buffer.empty()) {
     m_Data.emplace<pdfium::span<const uint8_t>>();
     return Stage::kComplete;
   }
 
   size_t pos = 0;
-  auto data_span = pdfium::make_span(buffer.get(), buffer_size);
+  auto data_span = buffer.writable_span();
   for (const auto& stream : m_StreamArray) {
     fxcrt::spancpy(data_span.subspan(pos), stream->GetSpan());
     pos += stream->GetSize();
     data_span[pos++] = ' ';
   }
   m_StreamArray.clear();
-  m_Data.emplace<OwnedData>(std::move(buffer), buffer_size);
+  m_Data = std::move(buffer);
   return Stage::kParse;
 }
 
@@ -201,10 +199,10 @@ CPDF_ContentParser::Stage CPDF_ContentParser::Parse() {
   if (!m_pParser) {
     m_ParsedSet.clear();
     m_pParser = std::make_unique<CPDF_StreamContentParser>(
-        m_pObjectHolder->GetDocument(),
-        m_pObjectHolder->GetMutablePageResources(), nullptr, nullptr,
-        m_pObjectHolder.Get(), m_pObjectHolder->GetMutableResources(),
-        m_pObjectHolder->GetBBox(), nullptr, &m_ParsedSet);
+        m_pPageObjectHolder->GetDocument(),
+        m_pPageObjectHolder->GetMutablePageResources(), nullptr, nullptr,
+        m_pPageObjectHolder, m_pPageObjectHolder->GetMutableResources(),
+        m_pPageObjectHolder->GetBBox(), nullptr, &m_ParsedSet);
     m_pParser->GetCurStates()->m_ColorState.SetDefault();
   }
   if (m_CurrentOffset >= GetData().size())
@@ -225,7 +223,7 @@ CPDF_ContentParser::Stage CPDF_ContentParser::CheckClip() {
                                            m_pParser->GetType3Data());
   }
 
-  for (auto& pObj : *m_pObjectHolder) {
+  for (auto& pObj : *m_pPageObjectHolder) {
     if (!pObj->m_ClipPath.HasRef())
       continue;
     if (pObj->m_ClipPath.GetPathCount() != 1)
@@ -267,9 +265,7 @@ void CPDF_ContentParser::HandlePageContentFailure() {
 }
 
 pdfium::span<const uint8_t> CPDF_ContentParser::GetData() const {
-  if (is_owned()) {
-    const OwnedData& data = absl::get<OwnedData>(m_Data);
-    return pdfium::make_span(data.buffer.get(), data.size);
-  }
+  if (is_owned())
+    return absl::get<FixedTryAllocZeroedDataVector<uint8_t>>(m_Data).span();
   return absl::get<pdfium::span<const uint8_t>>(m_Data);
 }

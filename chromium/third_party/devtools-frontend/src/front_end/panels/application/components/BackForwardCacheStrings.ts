@@ -507,9 +507,17 @@ const UIStrings = {
  */
   errorDocument: 'Back/forward cache is disabled due to a document error.',
   /**
- *  @description Description text for not restored reason ErrorDocument.
+ *  @description Description text for not restored reason FencedFramesEmbedder.
  */
   fencedFramesEmbedder: 'Pages using FencedFrames cannot be stored in bfcache.',
+  /**
+ *  @description Description text for not restored reason KeepaliveRequest.
+ */
+  keepaliveRequest: 'Back/forward cache is disabled due to a keepalive request.',
+  /**
+ *  @description Empty string to roll protocol.
+ */
+  authorizationHeader: 'Back/forward cache is disabled due to a keepalive request.',
 };
 
 const str_ = i18n.i18n.registerUIStrings('panels/application/components/BackForwardCacheStrings.ts', UIStrings);
@@ -648,4 +656,6 @@ export const NotRestoredReasonDescription = {
       {name: i18nLazyString(UIStrings.embedderExtensionSentMessageToCachedFrame)},
   'ErrorDocument': {name: i18nLazyString(UIStrings.errorDocument)},
   'FencedFramesEmbedder': {name: i18nLazyString(UIStrings.fencedFramesEmbedder)},
+  'KeepaliveRequest': {name: i18nLazyString(UIStrings.keepaliveRequest)},
+  'AuthorizationHeader': {name: i18nLazyString(UIStrings.authorizationHeader)},
 };

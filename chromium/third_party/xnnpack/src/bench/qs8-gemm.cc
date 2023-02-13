@@ -13,8 +13,6 @@
 #include <random>
 #include <vector>
 
-#include <cpuinfo.h>
-
 #include <benchmark/benchmark.h>
 #ifdef BENCHMARK_RUY
 #include "ruy/ruy.h"
@@ -22,7 +20,6 @@
 #include "bench/gemm.h"
 #include "bench/utils.h"
 
-#include <xnnpack.h>
 #include <xnnpack/aligned-allocator.h>
 #include <xnnpack/common.h>
 #include <xnnpack/gemm.h>
@@ -39,10 +36,6 @@ static void GEMMBenchmark(benchmark::State& state,
   benchmark::utils::IsaCheckFunction isa_check = nullptr,
   bool extended_weights = false)
 {
-  if (!cpuinfo_initialize()) {
-    state.SkipWithError("cpuinfo initialization failed");
-    return;
-  }
   if (isa_check && !isa_check(state)) {
     return;
   }
@@ -221,7 +214,6 @@ static void ruy_st(benchmark::State& state, const char* net)
     xnn_init_qs8_conv_minmax_params_fn  init_params,
     benchmark::utils::IsaCheckFunction isa_check = nullptr)
   {
-    xnn_initialize(/*allocator=*/nullptr);
     xnn_code_buffer code_buffer;
     xnn_allocate_code_memory(&code_buffer, XNN_DEFAULT_CODE_BUFFER_SIZE);
     const size_t nc = state.range(1);

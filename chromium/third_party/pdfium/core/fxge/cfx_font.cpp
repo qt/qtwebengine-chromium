@@ -1,4 +1,4 @@
-// Copyright 2014 PDFium Authors. All rights reserved.
+// Copyright 2014 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -99,7 +99,7 @@ unsigned long FTStreamRead(FXFT_StreamRec* stream,
 
   IFX_SeekableReadStream* pFile =
       static_cast<IFX_SeekableReadStream*>(stream->descriptor.pointer);
-  return pFile && pFile->ReadBlockAtOffset(buffer, offset, count) ? count : 0;
+  return pFile && pFile->ReadBlockAtOffset({buffer, count}, offset) ? count : 0;
 }
 
 void FTStreamClose(FXFT_StreamRec* stream) {}
@@ -543,7 +543,7 @@ bool CFX_Font::IsFixedWidth() const {
   return m_Face && FXFT_Is_Face_fixedwidth(m_Face->GetRec()) != 0;
 }
 
-#if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
+#ifdef _SKIA_SUPPORT_
 bool CFX_Font::IsSubstFontBold() const {
   CFX_SubstFont* subst_font = GetSubstFont();
   return subst_font && subst_font->GetOriginalWeight() >= FXFONT_FW_BOLD;
@@ -628,6 +628,10 @@ absl::optional<FX_RECT> CFX_Font::GetBBox() const {
     bbox.bottom = (bbox.bottom * 1000) / em;
   }
   return result;
+}
+
+void CFX_Font::AllocSubData(size_t size) {
+  m_pSubData.reset(FX_Alloc(uint8_t, size));
 }
 
 RetainPtr<CFX_GlyphCache> CFX_Font::GetOrCreateGlyphCache() const {
@@ -786,7 +790,7 @@ int CFX_Font::GetSkewFromAngle(int angle) {
   return kAngleSkew[-angle];
 }
 
-#if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
+#ifdef _SKIA_SUPPORT_
 CFX_TypeFace* CFX_Font::GetDeviceCache() const {
   return GetOrCreateGlyphCache()->GetDeviceCache(this);
 }

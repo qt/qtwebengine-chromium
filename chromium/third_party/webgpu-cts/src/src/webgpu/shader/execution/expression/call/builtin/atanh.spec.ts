@@ -12,14 +12,33 @@ Note: The result is not mathematically meaningful when abs(e) >= 1.
 
 import { makeTestGroup } from '../../../../../../common/framework/test_group.js';
 import { GPUTest } from '../../../../../gpu_test.js';
+import { kValue } from '../../../../../util/constants.js';
 import { TypeF32 } from '../../../../../util/conversion.js';
 import { atanhInterval } from '../../../../../util/f32_interval.js';
 import { biasedRange, fullF32Range } from '../../../../../util/math.js';
-import { allInputSources, Case, makeUnaryToF32IntervalCase, run } from '../../expression.js';
+import { makeCaseCache } from '../../case_cache.js';
+import { allInputSources, generateUnaryToF32IntervalCases, run } from '../../expression.js';
 
 import { builtin } from './builtin.js';
 
 export const g = makeTestGroup(GPUTest);
+
+const inputs = [
+  ...biasedRange(kValue.f32.negative.less_than_one, -0.9, 20), // discontinuity at x = -1
+  -1,
+  ...biasedRange(kValue.f32.positive.less_than_one, 0.9, 20), // discontinuity at x = 1
+  1,
+  ...fullF32Range(),
+];
+
+export const d = makeCaseCache('atanh', {
+  f32_const: () => {
+    return generateUnaryToF32IntervalCases(inputs, 'f32-only', atanhInterval);
+  },
+  f32_non_const: () => {
+    return generateUnaryToF32IntervalCases(inputs, 'unfiltered', atanhInterval);
+  },
+});
 
 g.test('abstract_float')
   .specURL('https://www.w3.org/TR/WGSL/#float-builtin-functions')
@@ -36,15 +55,7 @@ g.test('f32')
     u.combine('inputSource', allInputSources).combine('vectorize', [undefined, 2, 3, 4] as const)
   )
   .fn(async t => {
-    const makeCase = (n: number): Case => {
-      return makeUnaryToF32IntervalCase(n, atanhInterval);
-    };
-
-    const cases = [
-      ...biasedRange(-1, -0.9, 20), // discontinuity at x = -1
-      ...biasedRange(1, 0.9, 20), // discontinuity at x = 1
-      ...fullF32Range(),
-    ].map(makeCase);
+    const cases = await d.get(t.params.inputSource === 'const' ? 'f32_const' : 'f32_non_const');
     await run(t, builtin('atanh'), [TypeF32], TypeF32, t.params, cases);
   });
 

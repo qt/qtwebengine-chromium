@@ -205,6 +205,8 @@ class ParameterValidationOutputGenerator(OutputGenerator):
             'vkCmdDrawMeshTasksNV',
             'vkCmdDrawMeshTasksIndirectNV',
             'vkCmdDrawMeshTasksIndirectCountNV',
+            'vkCmdDrawMeshTasksEXT',
+            'vkCmdDrawMeshTasksIndirectEXT',
             'vkAllocateMemory',
             'vkCreateAccelerationStructureNV',
             'vkCreateAccelerationStructureKHR',
@@ -305,9 +307,11 @@ class ParameterValidationOutputGenerator(OutputGenerator):
             ]
 
         # Structure fields to ignore
-        self.structMemberBlacklist = { 'VkWriteDescriptorSet' : ['dstSet'], 'VkAccelerationStructureGeometryKHR' :['geometry'] }
+        self.structMemberBlacklist = { 'VkWriteDescriptorSet' : ['dstSet'], 'VkAccelerationStructureGeometryKHR' :['geometry'], 'VkDescriptorDataEXT' :['pSampler'] }
         # Validation conditions for some special case struct members that are conditionally validated
         self.structMemberValidationConditions = { 'VkPipelineColorBlendStateCreateInfo' : { 'logicOp' : '{}logicOpEnable == VK_TRUE' } }
+        # FlagBits that should also be array
+        self.flagBitsAsArray = ['VkShaderStageFlags']
         # Header version
         self.headerVersion = None
         # Internal state - accumulators for different inner block text
@@ -321,6 +325,7 @@ class ParameterValidationOutputGenerator(OutputGenerator):
         self.enumRanges = set()                           # Set of enum names
         self.enum_values_definitions = dict()             # [enum, string] containing enumerated type map definitions
         self.flag_values_definitions = dict()             # [flag, string] containing flag type map definitions
+        self.flag_array_values_definitions = dict()       # [flag, string] containing flag type map definitions to be used as an array
         self.stype_version_dict = dict()                  # String containing structtype to version map data
         self.flags = set()                                # Map of flags typenames
         self.flagBits = dict()                            # Map of flag bits typename to list of values
@@ -335,6 +340,7 @@ class ParameterValidationOutputGenerator(OutputGenerator):
         self.alias_dict = dict()                          # Dict of cmd|struct aliases
         self.header_file = False                          # Header file generation flag
         self.source_file = False                          # Source file generation flag
+        self.enum_file = False                            # Enum helper header file generation flag
         self.instance_extension_list = ''                 # List of instance extension name defines
         self.device_extension_list = ''                   # List of device extension name defines
         self.returnedonly_structs = []                    # List of structs with 'returnonly' attribute
@@ -355,10 +361,10 @@ class ParameterValidationOutputGenerator(OutputGenerator):
         copyright += ' * Copyright (c) 2015-2022 The Khronos Group Inc.\n'
         copyright += ' * Copyright (c) 2015-2022 LunarG, Inc.\n'
         copyright += ' * Copyright (C) 2015-2022 Google Inc.\n'
+        copyright += ' * Copyright (c) 2015-2017 Valve Corporation\n'
         copyright += ' *\n'
         copyright += ' * Licensed under the Apache License, Version 2.0 (the "License");\n'
         copyright += ' * you may not use this file except in compliance with the License.\n'
-        copyright += ' * Copyright (c) 2015-2017 Valve Corporation\n'
         copyright += ' * You may obtain a copy of the License at\n'
         copyright += ' *\n'
         copyright += ' *     http://www.apache.org/licenses/LICENSE-2.0\n'
@@ -406,17 +412,18 @@ class ParameterValidationOutputGenerator(OutputGenerator):
         OutputGenerator.beginFile(self, genOpts)
         self.header_file = (genOpts.filename == 'parameter_validation.h')
         self.source_file = (genOpts.filename == 'parameter_validation.cpp')
+        self.enum_file = (genOpts.filename == 'enum_flag_bits.h')
 
-        if not self.header_file and not self.source_file:
+        if not self.header_file and not self.source_file and not self.enum_file:
             print("Error: Output Filenames have changed, update generator source.\n")
             sys.exit(1)
 
-        if self.source_file or self.header_file:
+        if self.source_file or self.header_file or self.enum_file:
             # Output Copyright text
             s = self.GenerateCopyright()
             write(s, file=self.outFile)
 
-        if self.header_file:
+        if not self.source_file:
             return
 
         stype_map = ''
@@ -464,13 +471,15 @@ class ParameterValidationOutputGenerator(OutputGenerator):
         write('#include "chassis.h"', file=self.outFile)
         self.newline()
         write('#include "stateless_validation.h"', file=self.outFile)
+        write('#include "enum_flag_bits.h"', file=self.outFile)
         self.newline()
     #
     # Called at end-time for final content output
     def endFile(self):
-        if self.source_file:
-            # C-specific
-            self.newline()
+        if self.enum_file:
+            # Write the declaration for the HeaderVersion
+            if self.headerVersion:
+                write('const uint32_t GeneratedVulkanHeaderVersion = {};'.format(self.headerVersion), file=self.outFile)
 
             # Don't need flag/enum lists if app can never call it to be validated
             # But need to save everything as not all information is known until endFile()
@@ -482,13 +491,15 @@ class ParameterValidationOutputGenerator(OutputGenerator):
                 if flag in self.called_types or flagBits in self.called_types:
                     write(string, file=self.outFile)
 
+            for flag, string in self.flag_array_values_definitions.items():
+                # These are custom selected flags, so will always write
+                write(string, file=self.outFile)
+
             for enum, string in self.enum_values_definitions.items():
                 if enum in self.called_types:
                     write(string, file=self.outFile)
 
-            self.newline()
-            self.newline()
-
+        elif self.source_file:
             api_func  = 'bool StatelessValidation::CheckPromotedApiAgainstVulkanVersion(VkInstance instance, const char *api_name, const uint32_t promoted_version) const {\n'
             api_func += '    bool skip = false;\n'
             api_func += '    if (api_version < promoted_version) {\n'
@@ -631,7 +642,6 @@ class ParameterValidationOutputGenerator(OutputGenerator):
         # C-specific
         # Accumulate includes, defines, types, enums, function pointer typedefs, end function prototypes separately for this
         # feature. They're only printed in endFeature().
-        self.headerVersion = None
         self.stypes = []
         self.commands = []
         self.structMembers = []
@@ -652,6 +662,7 @@ class ParameterValidationOutputGenerator(OutputGenerator):
         # Add any defined extension dependencies to the base dependency list for this extension
         requires = interface.get('requires')
         if requires is not None:
+            # Comma (',') will be replaced with plus ('+') soon here to harmonize meaning: ','==OR '+'==AND in <require> tag and requires="" attr
             base_required_extensions.extend(requires.split(','))
         # Build dictionary of extension dependencies for each item in this extension
         self.required_extensions = dict()
@@ -660,8 +671,15 @@ class ParameterValidationOutputGenerator(OutputGenerator):
             required_extensions = list(base_required_extensions)
             # Add any additional extension dependencies specified in this require block
             additional_extensions = require_element.get('extension')
+            # require tags must split here by '+' as it is an AND operation according registry.adoc:
+            #    == Attributes of tag:require tags
+            #    attr:extension - optional, and only for tag:require tags.
+            #    String containing one or more API extension names separated by , or +.
+            #    Interfaces in the tag are only required if enabled extensions satisfy
+            #    the logical expression in the string, where , is interpreted as a
+            #    logical OR and '+' as a logical AND.
             if additional_extensions:
-                required_extensions.extend(additional_extensions.split(','))
+                required_extensions.extend(additional_extensions.split('+'))
             # Save full extension list for all named items
             for element in require_element.findall('*[@name]'):
                 self.required_extensions[element.get('name')] = required_extensions
@@ -699,19 +717,17 @@ class ParameterValidationOutputGenerator(OutputGenerator):
             self.processStructMemberData()
             # Generate the command parameter checking code from the captured data
             self.processCmdData()
-            # Write the declaration for the HeaderVersion
-            if self.headerVersion:
-                write('const uint32_t GeneratedVulkanHeaderVersion = {};'.format(self.headerVersion), file=self.outFile)
             # Write the declarations for the VkFlags values combining all flag bits
             for flag in sorted(self.newFlags):
                 flagBits = flag.replace('Flags', 'FlagBits')
                 if flagBits in self.flagBits:
                     bits = self.flagBits[flagBits]
-                    decl = 'const {} All{} = {}'.format(flag, flagBits, bits[0])
-                    for bit in bits[1:]:
-                        decl += '|' + bit
-                    decl += ';'
+                    decl = 'const {} All{} = {};'.format(flag, flagBits, '|'.join(bits))
                     self.flag_values_definitions[flag] = Guarded(self.featureExtraProtect, decl)
+                    if flag in self.flagBitsAsArray:
+                        decl = '[[maybe_unused]] constexpr std::array All%s = {%s};' % (flag, ','.join(bits))
+                        self.flag_array_values_definitions[flag] = Guarded(self.featureExtraProtect, decl)
+
             endif = '\n'
             if (self.featureExtraProtect is not None):
                 endif = '#endif // %s\n' % self.featureExtraProtect
@@ -745,7 +761,7 @@ class ParameterValidationOutputGenerator(OutputGenerator):
     # type declarations. The <member> tags are just like <param> tags - they are a declaration of a struct or union member.
     # Only simple member declarations are supported (no nested structs etc.)
     def genStruct(self, typeinfo, typeName, alias):
-        if not self.source_file:
+        if self.header_file:
             return
         # alias has already been recorded in genType, above
         OutputGenerator.genStruct(self, typeinfo, typeName, alias)
@@ -801,6 +817,10 @@ class ParameterValidationOutputGenerator(OutputGenerator):
                 if not returned_only and (not ispointer or isconst):
                     self.called_types.add(type)
 
+            # enum file just needs the called_types
+            if self.enum_file:
+                continue
+
             structextends = False
             membersInfo.append(self.CommandParam(type=type, name=name,
                                                 ispointer=ispointer,
@@ -828,7 +848,7 @@ class ParameterValidationOutputGenerator(OutputGenerator):
     # Capture group (e.g. C "enum" type) info to be used for param check code generation.
     # These are concatenated together with other types.
     def genGroup(self, groupinfo, groupName, alias):
-        if not self.source_file:
+        if self.header_file:
             return
         # record the name/alias pair
         if alias is not None:
@@ -842,7 +862,7 @@ class ParameterValidationOutputGenerator(OutputGenerator):
         elif 'FlagBits' in groupName:
             bits = []
             for elem in groupElem.findall('enum'):
-                if elem.get('supported') != 'disabled':
+                if elem.get('supported') != 'disabled' and elem.get('alias') is None:
                     bits.append(elem.get('name'))
             if bits:
                 self.flagBits[groupName] = bits
@@ -864,12 +884,12 @@ class ParameterValidationOutputGenerator(OutputGenerator):
                     enum_entry = '#ifdef %s\n' % self.featureExtraProtect
                 else:
                     enum_entry = ''
-                enum_entry += 'const std::vector<%s> All%sEnums = {' % (groupName, groupName)
+                entry = ''
                 for enum in groupElem:
                     name = enum.get('name')
-                    if name is not None and enum.get('supported') != 'disabled':
-                        enum_entry += '%s, ' % name
-                enum_entry += '};'
+                    if name is not None and enum.get('alias') is None and enum.get('supported') != 'disabled':
+                        entry += '%s, ' % name
+                enum_entry += '[[maybe_unused]] constexpr std::array All%sEnums = {%s};' % (groupName, entry)
                 if self.featureExtraProtect is not None:
                     enum_entry += '\n#endif // %s' % self.featureExtraProtect
                 self.enum_values_definitions[groupName] = enum_entry
@@ -896,7 +916,7 @@ class ParameterValidationOutputGenerator(OutputGenerator):
                 self.declarations += [ decl ]
                 if (self.featureExtraProtect is not None):
                     self.declarations += [ '#endif' ]
-        if self.source_file:
+        if self.source_file or self.enum_file:
             if name not in self.blacklist:
                 params = cmdinfo.elem.findall('param')
                 # Get list of array lengths
@@ -1071,7 +1091,7 @@ class ParameterValidationOutputGenerator(OutputGenerator):
             elements = name.split('->')
             # Open the if expression blocks
             for i in range(0, count):
-                checkedExpr.append(localIndent + 'if ({} != NULL) {{\n'.format('->'.join(elements[0:i+1])))
+                checkedExpr.append(localIndent + 'if ({} != nullptr) {{\n'.format('->'.join(elements[0:i+1])))
                 localIndent = self.incIndent(localIndent)
             # Add the validation expression
             for expr in exprs:
@@ -1149,7 +1169,7 @@ class ParameterValidationOutputGenerator(OutputGenerator):
         if lenValue:
             if lenValue.ispointer:
                 # This is assumed to be an output array with a pointer to a count value
-                raise('Unsupported parameter validation case: Output handle array elements are not NULL checked')
+                raise Exception('Unsupported parameter validation case: Output handle array elements are not NULL checked')
             else:
                 count_required_vuid = self.GetVuid(funcPrintName, "%s-arraylength" % (value.len))
                 # This is an array with an integer count value
@@ -1157,7 +1177,7 @@ class ParameterValidationOutputGenerator(OutputGenerator):
                     funcPrintName, lenValueRequired, valueRequired, count_required_vuid, ln=value.len, ldn=lenPrintName, dn=valuePrintName, vn=value.name, pf=prefix, **postProcSpec))
         else:
             # This is assumed to be an output handle pointer
-            raise('Unsupported parameter validation case: Output handles are not NULL checked')
+            raise Exception('Unsupported parameter validation case: Output handles are not NULL checked')
         return checkExpr
     #
     # Generate check string for an array of VkFlags values
@@ -1165,7 +1185,7 @@ class ParameterValidationOutputGenerator(OutputGenerator):
         checkExpr = []
         flagBitsName = value.type.replace('Flags', 'FlagBits')
         if not flagBitsName in self.flagBits:
-            raise('Unsupported parameter validation case: array of reserved VkFlags')
+            raise Exception('Unsupported parameter validation case: array of reserved VkFlags')
         else:
             allFlags = 'All' + flagBitsName
             checkExpr.append('skip |= validate_flags_array("{}", {ppp}"{}"{pps}, {ppp}"{}"{pps}, "{}", {}, {pf}{}, {pf}{}, {}, {});\n'.format(funcPrintName, lenPrintName, valuePrintName, flagBitsName, allFlags, value.len, value.name, lenValueRequired, valueRequired, pf=prefix, **postProcSpec))
@@ -1176,20 +1196,22 @@ class ParameterValidationOutputGenerator(OutputGenerator):
         checkExpr = []
         # Generate an array of acceptable VkStructureType values for pNext
         extStructCount = 0
-        extStructVar = 'NULL'
-        extStructNames = 'NULL'
+        extStructVar = 'nullptr'
+        extStructNames = 'nullptr'
+        extStructData = 'nullptr'
         pNextVuid = self.GetVuid(struct_type_name, "pNext-pNext")
         sTypeVuid = self.GetVuid(struct_type_name, "sType-unique")
         if value.extstructs:
             extStructVar = 'allowed_structs_{}'.format(struct_type_name)
-            extStructCount = 'ARRAY_SIZE({})'.format(extStructVar)
+            extStructCount = '{}.size()'.format(extStructVar)
+            extStructData = '{}.data()'.format(extStructVar)
             if struct_type_name == 'VkInstanceCreateInfo':
                 value.extstructs.append('VkInstanceLayerSettingsEXT')
-                self.structTypes['VkInstanceLayerSettingsEXT'] = 'static_cast<VkStructureType>(VK_STRUCTURE_TYPE_INSTANCE_LAYER_SETTINGS_EXT)'
+                self.structTypes['VkInstanceLayerSettingsEXT'] = 'VK_STRUCTURE_TYPE_INSTANCE_LAYER_SETTINGS_EXT'
             extStructNames = '"' + ', '.join(value.extstructs) + '"'
-            checkExpr.append('const VkStructureType {}[] = {{ {} }};\n'.format(extStructVar, ', '.join([self.structTypes[s] for s in value.extstructs])))
+            checkExpr.append('constexpr std::array {} = {{ {} }};\n'.format(extStructVar, ', '.join([self.structTypes[s] for s in value.extstructs])))
         checkExpr.append('skip |= validate_struct_pnext("{}", {ppp}"{}"{pps}, {}, {}{}, {}, {}, GeneratedVulkanHeaderVersion, {}, {});\n'.format(
-            funcPrintName, valuePrintName, extStructNames, prefix, value.name, extStructCount, extStructVar, pNextVuid, sTypeVuid, **postProcSpec))
+            funcPrintName, valuePrintName, extStructNames, prefix, value.name, extStructCount, extStructData, pNextVuid, sTypeVuid, **postProcSpec))
         return checkExpr
     #
     # Generate the pointer check string
@@ -1255,7 +1277,7 @@ class ParameterValidationOutputGenerator(OutputGenerator):
     def internalAllocationCheck(self, funcPrintName, prefix, name, complementaryName, postProcSpec):
         checkExpr = []
         vuid = '"VUID-VkAllocationCallbacks-pfnInternalAllocation-00635"'
-        checkExpr.append('if ({}{} != NULL)'.format(prefix, name))
+        checkExpr.append('if ({}{} != nullptr)'.format(prefix, name))
         checkExpr.append('{')
         local_indent = self.incIndent('')
         # Function pointers need a reinterpret_cast to void*
@@ -1342,7 +1364,7 @@ class ParameterValidationOutputGenerator(OutputGenerator):
     # Process struct pointer/array validation code, performing name substitution if required
     def expandStructPointerCode(self, prefix, value, lenValue, funcName, valueDisplayName, postProcSpec):
         expr = []
-        expr.append('if ({}{} != NULL)\n'.format(prefix, value.name))
+        expr.append('if ({}{} != nullptr)\n'.format(prefix, value.name))
         expr.append('{')
         indent = self.incIndent(None)
         if lenValue:
@@ -1584,17 +1606,34 @@ class ParameterValidationOutputGenerator(OutputGenerator):
             # Cannot validate extension dependencies for device extension APIs having a physical device as their dispatchable object
             if (command.name in self.required_extensions) and (self.extension_type != 'device' or command.params[0].type != 'VkPhysicalDevice'):
                 for ext in self.required_extensions[command.name]:
-                    ext_name_define = ''
-                    for extension in self.registry.extensions:
-                        if extension.attrib['name'] == ext:
-                            ext_name_define = GetNameDefine(extension)
-                            break
-                    ext_test = ''
-                    if command.params[0].type in ["VkInstance", "VkPhysicalDevice"] or command.name == 'vkCreateInstance':
-                        ext_test = 'if (!instance_extensions.%s) skip |= OutputExtensionError("%s", %s);\n' % (ext.lower(), command.name, ext_name_define)
+                    if ',' in ext:
+                        extor_list = ext.split(',')
+                        ext_test = ''
+                        ext_name_define = ''
+                        for extor in extor_list:
+                            for extension in self.registry.extensions:
+                                if extension.attrib['name'] == extor:
+                                    if ext_name_define != '':
+                                        ext_name_define += ' " or " '
+                                    ext_name_define += GetNameDefine(extension)
+                                    break
+                            if ext_test != '':
+                                ext_test += ' || '
+                            ext_test += 'IsExtEnabled(device_extensions.%s)' % (extor.lower())
+                        ext_test = 'if (!(%s)) skip |= OutputExtensionError("%s", %s);\n' % (ext_test, command.name, ext_name_define)
+                        lines.insert(0, ext_test)
                     else:
-                        ext_test = 'if (!IsExtEnabled(device_extensions.%s)) skip |= OutputExtensionError("%s", %s);\n' % (ext.lower(), command.name, ext_name_define)
-                    lines.insert(0, ext_test)
+                        ext_name_define = ''
+                        for extension in self.registry.extensions:
+                            if extension.attrib['name'] == ext:
+                                ext_name_define = GetNameDefine(extension)
+                                break
+                        ext_test = ''
+                        if command.params[0].type in ["VkInstance", "VkPhysicalDevice"] or command.name == 'vkCreateInstance':
+                            ext_test = 'if (!instance_extensions.%s) skip |= OutputExtensionError("%s", %s);\n' % (ext.lower(), command.name, ext_name_define)
+                        else:
+                            ext_test = 'if (!IsExtEnabled(device_extensions.%s)) skip |= OutputExtensionError("%s", %s);\n' % (ext.lower(), command.name, ext_name_define)
+                        lines.insert(0, ext_test)
             if lines:
                 func_sig = self.getCmdDef(command) + ' const {\n'
                 func_sig = func_sig.split('VKAPI_CALL vk')[1]

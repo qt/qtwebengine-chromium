@@ -713,8 +713,12 @@ FL+FR+FC+LFE+BL+BR+SL+SR
 FL+FR+FC+LFE+BL+BR+FLC+FRC
 @item 7.1(wide-side)
 FL+FR+FC+LFE+FLC+FRC+SL+SR
+@item 7.1(top)
+FL+FR+FC+LFE+BL+BR+TFL+TFR
 @item octagonal
 FL+FR+FC+BL+BR+BC+SL+SR
+@item cube
+FL+FR+BL+BR+TFL+TFR+TBL+TBR
 @item hexadecagonal
 FL+FR+FC+BL+BR+BC+SL+SR+WL+WR+TBL+TBR+TBC+TFC+TFL+TFR
 @item downmix

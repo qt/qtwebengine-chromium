@@ -19,6 +19,7 @@
 #include "include/private/SkShadowFlags.h"
 #include "include/private/SkTo.h"
 #include "include/private/chromium/Slug.h"
+#include "src/core/SkBlendModePriv.h"
 #include "src/core/SkCanvasPriv.h"
 #include "src/core/SkClipStack.h"
 #include "src/core/SkDraw.h"
@@ -822,6 +823,38 @@ sk_sp<SkSpecialImage> Device::snapSpecial(const SkIRect& subset, bool forceCopy)
                                                this->surfaceProps());
 }
 
+sk_sp<SkSpecialImage> Device::snapSpecialScaled(const SkIRect& subset, const SkISize& dstDims) {
+     ASSERT_SINGLE_OWNER
+
+    auto sdc = fSurfaceDrawContext.get();
+
+    // If we are wrapping a vulkan secondary command buffer, then we can't snap off a special image
+    // since it would require us to make a copy of the underlying VkImage which we don't have access
+    // to. Additionaly we can't stop and start the render pass that is used with the secondary
+    // command buffer.
+    if (sdc->wrapsVkSecondaryCB()) {
+        return nullptr;
+    }
+
+    SkASSERT(sdc->asSurfaceProxy());
+
+    auto scaledContext = sdc->rescale(sdc->imageInfo().makeDimensions(dstDims),
+                                      sdc->origin(),
+                                      subset,
+                                      RescaleGamma::kSrc,
+                                      RescaleMode::kLinear);
+    if (!scaledContext) {
+        return nullptr;
+    }
+
+    return SkSpecialImage::MakeDeferredFromGpu(fContext.get(),
+                                               SkIRect::MakeSize(dstDims),
+                                               kNeedNewImageUniqueID_SpecialImage,
+                                               scaledContext->readSurfaceView(),
+                                               GrColorInfo(this->imageInfo().colorInfo()),
+                                               this->surfaceProps());
+}
+
 void Device::drawDevice(SkBaseDevice* device,
                         const SkSamplingOptions& sampling,
                         const SkPaint& paint) {
@@ -955,6 +988,7 @@ void Device::drawMesh(const SkMesh& mesh, sk_sp<SkBlender> blender, const SkPain
 
 ///////////////////////////////////////////////////////////////////////////////
 
+#if !defined(SK_ENABLE_OPTIMIZE_SIZE)
 void Device::drawShadow(const SkPath& path, const SkDrawShadowRec& rec) {
 #if GR_TEST_UTILS
     if (fContext->priv().options().fAllPathsVolatile && !path.isVolatile()) {
@@ -970,6 +1004,7 @@ void Device::drawShadow(const SkPath& path, const SkDrawShadowRec& rec) {
         this->SkBaseDevice::drawShadow(path, rec);
     }
 }
+#endif  // SK_ENABLE_OPTIMIZE_SIZE
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -1305,19 +1340,6 @@ bool Device::replaceBackingProxy(SkSurface::ContentChangeMode mode) {
     return this->replaceBackingProxy(mode, sk_ref_sp(proxy->asRenderTargetProxy()),
                                      grColorType, ii.refColorSpace(), oldView.origin(),
                                      this->surfaceProps());
-}
-
-void Device::asyncReadPixels(const SkImageInfo& info,
-                             const SkIRect& srcRect,
-                             ReadPixelsCallback callback,
-                             ReadPixelsContext context) {
-    auto* sdc = fSurfaceDrawContext.get();
-    // Context TODO: Elevate direct context requirement to public API.
-    auto dContext = sdc->recordingContext()->asDirectContext();
-    if (!dContext) {
-        return;
-    }
-    sdc->asyncReadPixels(dContext, srcRect, info.colorType(), callback, context);
 }
 
 void Device::asyncRescaleAndReadPixels(const SkImageInfo& info,

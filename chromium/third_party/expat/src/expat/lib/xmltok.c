@@ -21,6 +21,7 @@
    Copyright (c) 2017      José Gutiérrez de la Concha <jose@zeroc.com>
    Copyright (c) 2019      David Loffredo <loffredo@steptools.com>
    Copyright (c) 2021      Dong-hee Na <donghee.na@python.org>
+   Copyright (c) 2022      Martin Ettl <ettl.martin78@googlemail.com>
    Licensed under the MIT license:
 
    Permission is  hereby granted,  free of charge,  to any  person obtaining
@@ -242,7 +243,7 @@ static int FASTCALL checkCharRefNumber(int);
 #endif
 
 #define SB_BYTE_TYPE(enc, p)                                                   \
-  (((struct normal_encoding *)(enc))->type[(unsigned char)*(p)])
+  (((const struct normal_encoding *)(enc))->type[(unsigned char)*(p)])
 
 #ifdef XML_MIN_SIZE
 static int PTRFASTCALL
@@ -296,7 +297,7 @@ sb_charMatches(const ENCODING *enc, const char *p, int c) {
 }
 #else
 /* c is an ASCII character */
-#  define CHAR_MATCHES(enc, p, c) (*(p) == c)
+#  define CHAR_MATCHES(enc, p, c) (*(p) == (c))
 #endif
 
 #define PREFIX(ident) normal_##ident
@@ -406,7 +407,7 @@ utf8_toUtf16(const ENCODING *enc, const char **fromP, const char *fromLim,
   unsigned short *to = *toP;
   const char *from = *fromP;
   while (from < fromLim && to < toLim) {
-    switch (((struct normal_encoding *)enc)->type[(unsigned char)*from]) {
+    switch (SB_BYTE_TYPE(enc, from)) {
     case BT_LEAD2:
       if (fromLim - from < 2) {
         res = XML_CONVERT_INPUT_INCOMPLETE;
@@ -714,33 +715,28 @@ unicode_byte_type(char hi, char lo) {
       return res;                                                              \
   }
 
-#define SET2(ptr, ch) (((ptr)[0] = ((ch)&0xff)), ((ptr)[1] = ((ch) >> 8)))
 #define GET_LO(ptr) ((unsigned char)(ptr)[0])
 #define GET_HI(ptr) ((unsigned char)(ptr)[1])
 
 DEFINE_UTF16_TO_UTF8(little2_)
 DEFINE_UTF16_TO_UTF16(little2_)
 
-#undef SET2
 #undef GET_LO
 #undef GET_HI
 
-#define SET2(ptr, ch) (((ptr)[0] = ((ch) >> 8)), ((ptr)[1] = ((ch)&0xFF)))
 #define GET_LO(ptr) ((unsigned char)(ptr)[1])
 #define GET_HI(ptr) ((unsigned char)(ptr)[0])
 
 DEFINE_UTF16_TO_UTF8(big2_)
 DEFINE_UTF16_TO_UTF16(big2_)
 
-#undef SET2
 #undef GET_LO
 #undef GET_HI
 
 #define LITTLE2_BYTE_TYPE(enc, p)                                              \
-  ((p)[1] == 0 ? ((struct normal_encoding *)(enc))->type[(unsigned char)*(p)]  \
-               : unicode_byte_type((p)[1], (p)[0]))
+  ((p)[1] == 0 ? SB_BYTE_TYPE(enc, p) : unicode_byte_type((p)[1], (p)[0]))
 #define LITTLE2_BYTE_TO_ASCII(p) ((p)[1] == 0 ? (p)[0] : -1)
-#define LITTLE2_CHAR_MATCHES(p, c) ((p)[1] == 0 && (p)[0] == c)
+#define LITTLE2_CHAR_MATCHES(p, c) ((p)[1] == 0 && (p)[0] == (c))
 #define LITTLE2_IS_NAME_CHAR_MINBPC(p)                                         \
   UCS2_GET_NAMING(namePages, (unsigned char)p[1], (unsigned char)p[0])
 #define LITTLE2_IS_NMSTRT_CHAR_MINBPC(p)                                       \
@@ -871,11 +867,9 @@ static const struct normal_encoding internal_little2_encoding
 #endif
 
 #define BIG2_BYTE_TYPE(enc, p)                                                 \
-  ((p)[0] == 0                                                                 \
-       ? ((struct normal_encoding *)(enc))->type[(unsigned char)(p)[1]]        \
-       : unicode_byte_type((p)[0], (p)[1]))
+  ((p)[0] == 0 ? SB_BYTE_TYPE(enc, p + 1) : unicode_byte_type((p)[0], (p)[1]))
 #define BIG2_BYTE_TO_ASCII(p) ((p)[0] == 0 ? (p)[1] : -1)
-#define BIG2_CHAR_MATCHES(p, c) ((p)[0] == 0 && (p)[1] == c)
+#define BIG2_CHAR_MATCHES(p, c) ((p)[0] == 0 && (p)[1] == (c))
 #define BIG2_IS_NAME_CHAR_MINBPC(p)                                            \
   UCS2_GET_NAMING(namePages, (unsigned char)p[0], (unsigned char)p[1])
 #define BIG2_IS_NMSTRT_CHAR_MINBPC(p)                                          \

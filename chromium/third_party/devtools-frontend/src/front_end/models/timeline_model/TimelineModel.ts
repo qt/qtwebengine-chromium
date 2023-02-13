@@ -337,8 +337,8 @@ export class TimelineModelImpl {
   targetByEvent(event: SDK.TracingModel.Event): SDK.Target.Target|null {
     // FIXME: Consider returning null for loaded traces.
     const workerId = this.workerIdByThread.get(event.thread);
-    const mainTarget = SDK.TargetManager.TargetManager.instance().mainTarget();
-    return workerId ? SDK.TargetManager.TargetManager.instance().targetById(workerId) : mainTarget;
+    const mainFrameTarget = SDK.TargetManager.TargetManager.instance().mainFrameTarget();
+    return workerId ? SDK.TargetManager.TargetManager.instance().targetById(workerId) : mainFrameTarget;
   }
 
   navStartTimes(): Map<string, SDK.TracingModel.Event> {
@@ -700,14 +700,18 @@ export class TimelineModelImpl {
   }
 
   private buildGPUEvents(tracingModel: SDK.TracingModel.TracingModel): void {
-    const thread = tracingModel.getThreadByName('GPU Process', 'CrGpuMain');
+    const thread =
+        tracingModel.getThreadByName('Gpu', 'CrGpuMain') || tracingModel.getThreadByName('GPU Process', 'CrGpuMain');
     if (!thread) {
       return;
     }
+
     const gpuEventName = RecordType.GPUTask;
     const track = this.ensureNamedTrack(TrackType.GPU);
     track.thread = thread;
-    track.events = thread.events().filter(event => event.name === gpuEventName);
+    track.events = Root.Runtime.experiments.isEnabled('timelineShowAllEvents') ?
+        thread.events() :
+        thread.events().filter(event => event.name === gpuEventName);
   }
 
   private buildLoadingEvents(tracingModel: SDK.TracingModel.TracingModel, events: SDK.TracingModel.Event[]): void {

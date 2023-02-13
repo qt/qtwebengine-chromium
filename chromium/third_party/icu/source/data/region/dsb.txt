@@ -306,6 +306,7 @@ dsb{
         CD{"Kongo (Demokratiska republika)"}
         CG{"Kongo (Republika)"}
         CI{"Słonowokósćowy pśibrjog"}
+        NZ{"Aotearoa Nowoseelandska"}
         TL{"Pódzajtšny Timor"}
     }
 }

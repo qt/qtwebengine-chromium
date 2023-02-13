@@ -30,7 +30,6 @@
 #pragma once
 
 #include "vulkan/vk_platform.h"
-#include "vulkan/vk_sdk_platform.h"
 #include <vulkan/vulkan.h>
 #include <vulkan/vk_layer.h>
 #include <vulkan/vk_icd.h>
@@ -99,14 +98,6 @@ struct loader_layer_functions {
     PFN_GetPhysicalDeviceProcAddr get_physical_device_proc_addr;
 };
 
-struct loader_override_expiration {
-    uint16_t year;
-    uint8_t month;
-    uint8_t day;
-    uint8_t hour;
-    uint8_t minute;
-};
-
 // This structure is used to store the json file version in a more manageable way.
 typedef struct {
     uint16_t major;
@@ -153,8 +144,6 @@ struct loader_layer_properties {
     uint32_t num_override_paths;
     char (*override_paths)[MAX_STRING_SIZE];
     bool is_override;
-    bool has_expiration;
-    struct loader_override_expiration expiration;
     bool keep;
     uint32_t num_blacklist_layers;
     char (*blacklist_layer_names)[MAX_STRING_SIZE];
@@ -173,6 +162,7 @@ typedef VkResult(VKAPI_PTR *PFN_vkDevExt)(VkDevice device);
 struct loader_dev_dispatch_table {
     VkLayerDispatchTable core_dispatch;
     PFN_vkDevExt ext_dispatch[MAX_NUM_UNKNOWN_EXTS];
+    struct loader_device_terminator_dispatch extension_terminator_dispatch;
 };
 
 // per CreateDevice structure
@@ -461,4 +451,30 @@ struct loader_phys_dev_per_icd {
 struct loader_msg_callback_map_entry {
     VkDebugReportCallbackEXT icd_obj;
     VkDebugReportCallbackEXT loader_obj;
+};
+
+typedef enum loader_filter_string_type {
+    FILTER_STRING_FULLNAME = 0,
+    FILTER_STRING_SUBSTRING,
+    FILTER_STRING_PREFIX,
+    FILTER_STRING_SUFFIX,
+    FILTER_STRING_SPECIAL,
+} loader_filter_string_type;
+
+struct loader_envvar_filter_value {
+    char value[VK_MAX_EXTENSION_NAME_SIZE];
+    size_t length;
+    loader_filter_string_type type;
+};
+
+#define MAX_ADDITIONAL_FILTERS 16
+struct loader_envvar_filter {
+    uint32_t count;
+    struct loader_envvar_filter_value filters[MAX_ADDITIONAL_FILTERS];
+};
+struct loader_envvar_disable_layers_filter {
+    struct loader_envvar_filter additional_filters;
+    bool disable_all;
+    bool disable_all_implicit;
+    bool disable_all_explicit;
 };

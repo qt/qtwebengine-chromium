@@ -94,6 +94,10 @@ using MallocFn = void* (*)(size_t);
 // Call free to release memory allocated with this function.
 void* AllocWithRetry(size_t size, MallocFn = base::Malloc);
 
+// Performs a malloc, with retry logic on failure. Returns nullptr on failure.
+// Call free to release memory allocated with this function.
+base::AllocationResult<void*> AllocAtLeastWithRetry(size_t size);
+
 V8_EXPORT_PRIVATE void* AlignedAllocWithRetry(size_t size, size_t alignment);
 V8_EXPORT_PRIVATE void AlignedFree(void* ptr);
 
@@ -255,15 +259,15 @@ class VirtualMemory final {
 
   // Sets permissions according to the access argument. address and size must be
   // multiples of CommitPageSize(). Returns true on success, otherwise false.
-  V8_EXPORT_PRIVATE bool SetPermissions(Address address, size_t size,
-                                        PageAllocator::Permission access);
+  V8_EXPORT_PRIVATE V8_WARN_UNUSED_RESULT bool SetPermissions(
+      Address address, size_t size, PageAllocator::Permission access);
 
   // Recommits discarded pages in the given range with given permissions.
   // Discarded pages must be recommitted with their original permissions
   // before they are used again. |address| and |size| must be multiples of
   // CommitPageSize(). Returns true on success, otherwise false.
-  V8_EXPORT_PRIVATE bool RecommitPages(Address address, size_t size,
-                                       PageAllocator::Permission access);
+  V8_EXPORT_PRIVATE V8_WARN_UNUSED_RESULT bool RecommitPages(
+      Address address, size_t size, PageAllocator::Permission access);
 
   // Frees memory in the given [address, address + size) range. address and size
   // should be operating system page-aligned. The next write to this

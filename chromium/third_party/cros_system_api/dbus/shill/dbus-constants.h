@@ -168,6 +168,10 @@ const char kActivationStateProperty[] = "Cellular.ActivationState";
 const char kActivationTypeProperty[] = "Cellular.ActivationType";
 const char kCellularAllowRoamingProperty[] = "Cellular.AllowRoaming";
 const char kCellularApnProperty[] = "Cellular.APN";
+const char kCellularLastConnectedDefaultApnProperty[] =
+    "Cellular.LastConnectedDefaultApnProperty";
+const char kCellularLastConnectedAttachApnProperty[] =
+    "Cellular.LastConnectedAttachApnProperty";
 const char kCellularLastGoodApnProperty[] = "Cellular.LastGoodAPN";
 const char kCellularLastAttachApnProperty[] = "Cellular.LastAttachAPN";
 const char kCellularPPPPasswordProperty[] = "Cellular.PPP.Password";
@@ -356,6 +360,9 @@ const char kPasspointCredentialsRoamingConsortiaProperty[] = "RoamingConsortia";
 const char kPasspointCredentialsMeteredOverrideProperty[] = "MeteredOverride";
 const char kPasspointCredentialsAndroidPackageNameProperty[] =
     "AndroidPackageName";
+const char kPasspointCredentialsFriendlyNameProperty[] = "FriendlyName";
+const char kPasspointCredentialsExpirationTimeMillisecondsProperty[] =
+    "ExpirationTimeMilliseconds";
 
 // Base Device property names.
 const char kAddressProperty[] = "Address";  // Also used for IPConfig.
@@ -645,10 +652,11 @@ const char kSecurityWpa2Wpa3Enterprise[] = "wpa2+wpa3-ent";
 const char kSecurityWpa3Enterprise[] = "wpa3-ent";
 
 // WiFi Band options.
-const char kBandAll[] = "all-bands";
 const char kBand2GHz[] = "2.4GHz";
 const char kBand5GHz[] = "5GHz";
 const char kBand6GHz[] = "6GHz";
+const char kBandAll[] = "all-bands";
+const char kBandUnknown[] = "unknown";
 
 // Compress option values as expected by OpenVPN.
 const char kOpenVPNCompressFramingOnly[] = "";
@@ -934,18 +942,19 @@ const char kTetheringStateIdle[] = "idle";
 const char kTetheringStateStarting[] = "starting";
 const char kTetheringStateStopping[] = "stopping";
 
-// kTetheringStatusErrorProperty values
-const char kTetheringErrorDownstreamFailure[] = "downstream_failure";
-const char kTetheringErrorInvalid[] = "invalid_properties";
-const char kTetheringErrorNetworkFailure[] = "network_failure";
-const char kTetheringErrorNotAllowed[] = "not_allowed";
-const char kTetheringErrorNoUpstream[] = "no_upstream";
-const char kTetheringErrorUpstreamFailure[] = "upstream_failure";
-const char kTetheringErrorUpstreamNotReady[] = "upstream_not_ready";
+// SetTetheringEnabled result values
+const char kTetheringEnableResultFailure[] = "failure";
+const char kTetheringEnableResultInvalidProperties[] = "invalid_properties";
+const char kTetheringEnableResultNotAllowed[] = "not_allowed";
+const char kTetheringEnableResultSuccess[] = "success";
+const char kTetheringEnableResultUpstreamNotAvailable[] =
+    "upstream_not_available";
 
 // kCheckTetheringReadinessFunction return status
-const char kTetheringReadinessReady[] = "ready";
 const char kTetheringReadinessNotAllowed[] = "not_allowed";
+const char kTetheringReadinessReady[] = "ready";
+const char kTetheringReadinessUpstreamNetworkNotAvailable[] =
+    "upstream_network_not_available";
 
 }  // namespace shill
 

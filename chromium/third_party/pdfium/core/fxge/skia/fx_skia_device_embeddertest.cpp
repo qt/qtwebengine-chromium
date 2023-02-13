@@ -1,6 +1,10 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2016 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+
+#include "core/fxge/skia/fx_skia_device.h"
+
+#include <memory>
 
 #include "core/fxge/cfx_defaultrenderdevice.h"
 #include "core/fxge/cfx_fillrenderoptions.h"
@@ -9,7 +13,6 @@
 #include "core/fxge/cfx_path.h"
 #include "core/fxge/cfx_renderdevice.h"
 #include "core/fxge/cfx_textrenderoptions.h"
-#include "core/fxge/skia/fx_skia_device.h"
 #include "core/fxge/text_char_pos.h"
 #include "fpdfsdk/cpdfsdk_helpers.h"
 #include "public/cpp/fpdf_scopers.h"
@@ -130,30 +133,25 @@ void Harness(void (*Test)(CFX_SkiaDeviceDriver*, const State&),
   ScopedFPDFBitmap bitmap(FPDFBitmap_Create(kWidth, kHeight, 1));
   ASSERT_TRUE(bitmap);
   FPDFBitmap_FillRect(bitmap.get(), 0, 0, kWidth, kHeight, 0x00000000);
-  CFX_DefaultRenderDevice device;
   RetainPtr<CFX_DIBitmap> pBitmap(CFXDIBitmapFromFPDFBitmap(bitmap.get()));
-  device.Attach(pBitmap);
-  auto* driver = static_cast<CFX_SkiaDeviceDriver*>(device.GetDeviceDriver());
-  (*Test)(driver, state);
+  auto driver =
+      std::make_unique<CFX_SkiaDeviceDriver>(pBitmap, false, nullptr, false);
+  (*Test)(driver.get(), state);
   driver->Flush();
   uint32_t pixel = pBitmap->GetPixel(0, 0);
   EXPECT_EQ(state.m_pixel, pixel);
-#ifdef SK_DEBUG
-  if (!driver)  // force dump to be linked in so it can be called from debugger
-    driver->Dump();
-#endif
 }
 
 }  // namespace
 
 TEST(fxge, SkiaStateEmpty) {
-  if (!CFX_DefaultRenderDevice::SkiaVariantIsDefaultRenderer())
+  if (!CFX_DefaultRenderDevice::SkiaIsDefaultRenderer())
     return;
   Harness(&EmptyTest, {});
 }
 
 TEST(fxge, SkiaStatePath) {
-  if (!CFX_DefaultRenderDevice::SkiaVariantIsDefaultRenderer())
+  if (!CFX_DefaultRenderDevice::SkiaIsDefaultRenderer())
     return;
   Harness(&CommonTest, {State::Change::kNo, State::Save::kYes,
                         State::Clip::kSame, State::Graphic::kPath, 0xFF112233});
@@ -168,7 +166,6 @@ TEST(fxge, SkiaStatePath) {
                         State::Graphic::kPath, 0xFF112233});
 }
 
-#if defined(_SKIA_SUPPORT_)
 // TODO(crbug.com/pdfium/11): Fix this test and enable.
 TEST(fxge, DISABLED_SkiaStateText) {
   if (!CFX_DefaultRenderDevice::SkiaIsDefaultRenderer())
@@ -180,10 +177,9 @@ TEST(fxge, DISABLED_SkiaStateText) {
   Harness(&CommonTest, {State::Change::kNo, State::Save::kYes,
                         State::Clip::kSame, State::Graphic::kText, 0xFF445566});
 }
-#endif
 
 TEST(fxge, SkiaStateOOSClip) {
-  if (!CFX_DefaultRenderDevice::SkiaVariantIsDefaultRenderer())
+  if (!CFX_DefaultRenderDevice::SkiaIsDefaultRenderer())
     return;
   Harness(&OutOfSequenceClipTest, {});
 }

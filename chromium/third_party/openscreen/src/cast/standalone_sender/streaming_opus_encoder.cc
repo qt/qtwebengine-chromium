@@ -15,7 +15,7 @@
 namespace openscreen {
 namespace cast {
 
-using openscreen::operator<<;  // To pretty-print chrono values.
+using clock_operators::operator<<;
 
 namespace {
 

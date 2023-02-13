@@ -235,6 +235,11 @@ $pure $es3 $genHType fwidth($genHType p);
 $pure half4  unpremul(half4  color) { return half4 (color.rgb / max(color.a, 0.0001), color.a); }
 $pure float4 unpremul(float4 color) { return float4(color.rgb / max(color.a, 0.0001), color.a); }
 
+// Similar, but used for polar-space CSS colors
+$export $pure half4 $unpremul_polar(half4 color) {
+    return half4(color.r, color.gb / max(color.a, 0.0001), color.a);
+}
+
 // Convert RGBA -> HSLA (including unpremul).
 //
 // Based on work by Sam Hocevar, Emil Persson, and Ian Taylor [1][2][3].  High-level ideas:
@@ -294,4 +299,91 @@ $export $pure half3 $hsl_to_rgb(half3 hsl) {
 
 $export $pure half4 $hsl_to_rgb(half3 hsl, half a) {
     return saturate(half4($hsl_to_rgb(hsl) * a, a));
+}
+
+// Color conversion functions used in gradient interpolation, based on
+// https://www.w3.org/TR/css-color-4/#color-conversion-code
+// TODO(skia:13108): For all of these, we can eliminate any linear math at the beginning
+// (by removing the corresponding linear math at the end of the CPU code).
+$export $pure half3 $css_lab_to_xyz(half3 lab) {
+    const half k = 24389 / 27.0;
+    const half e = 216 / 24389.0;
+
+    half3 f;
+    f[1] = (lab[0] + 16) / 116;
+    f[0] = (lab[1] / 500) + f[1];
+    f[2] = f[1] - (lab[2] / 200);
+
+    half3 f_cubed = pow(f, half3(3));
+
+    half3 xyz = half3(
+        f_cubed[0] > e ? f_cubed[0] : (116 * f[0] - 16) / k,
+        lab[0] > k * e ? f_cubed[1] : lab[0] / k,
+        f_cubed[2] > e ? f_cubed[2] : (116 * f[2] - 16) / k
+    );
+
+    const half3 D50 = half3(0.3457 / 0.3585, 1.0, (1.0 - 0.3457 - 0.3585) / 0.3585);
+    return xyz * D50;
+}
+
+// Skia stores all polar colors with hue in the first component, so this "LCH -> Lab" transform
+// actually takes "HCL". This is also used to do the same polar transform for OkHCL to OkLAB.
+// See similar comments & logic in SkGradientShaderBase.cpp.
+$pure half3 $css_hcl_to_lab(half3 hcl) {
+    return half3(
+        hcl[2],
+        hcl[1] * cos(radians(hcl[0])),
+        hcl[1] * sin(radians(hcl[0]))
+    );
+}
+
+$export $pure half3 $css_hcl_to_xyz(half3 hcl) {
+    return $css_lab_to_xyz($css_hcl_to_lab(hcl));
+}
+
+$export $pure half3 $css_oklab_to_linear_srgb(half3 oklab) {
+    half l_ = oklab.x + 0.3963377774 * oklab.y + 0.2158037573 * oklab.z,
+         m_ = oklab.x - 0.1055613458 * oklab.y - 0.0638541728 * oklab.z,
+         s_ = oklab.x - 0.0894841775 * oklab.y - 1.2914855480 * oklab.z;
+
+    half l = l_*l_*l_,
+         m = m_*m_*m_,
+         s = s_*s_*s_;
+
+    return half3(
+        +4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+        -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+        -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s
+    );
+}
+
+$export $pure half3 $css_okhcl_to_linear_srgb(half3 okhcl) {
+    return $css_oklab_to_linear_srgb($css_hcl_to_lab(okhcl));
+}
+
+// TODO(skia:13108): Use our optimized version (though it has different range)
+// Doing so might require fixing (re-deriving?) the math for the HWB version below
+$export $pure half3 $css_hsl_to_srgb(half3 hsl) {
+    hsl.x = mod(hsl.x, 360);
+    if (hsl.x < 0) {
+        hsl.x += 360;
+    }
+
+    hsl.yz /= 100;
+
+    half3 k = mod(half3(0, 8, 4) + hsl.x/30, 12);
+    half a = hsl.y * min(hsl.z, 1 - hsl.z);
+    return hsl.z - a * clamp(min(k - 3, 9 - k), -1, 1);
+}
+
+$export $pure half3 $css_hwb_to_srgb(half3 hwb) {
+    hwb.yz /= 100;
+    if (hwb.y + hwb.z >= 1) {
+        half gray = hwb.y / (hwb.y + hwb.z);
+        return half3(gray);
+    }
+    half3 rgb = $css_hsl_to_srgb(half3(hwb.x, 100, 50));
+    rgb *= (1 - hwb.y - hwb.z);
+    rgb += hwb.y;
+    return rgb;
 }

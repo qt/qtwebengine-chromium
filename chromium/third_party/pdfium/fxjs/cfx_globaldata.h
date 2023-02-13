@@ -1,4 +1,4 @@
-// Copyright 2014 PDFium Authors. All rights reserved.
+// Copyright 2014 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -33,7 +33,7 @@ class CFX_GlobalData {
     ~Element();
 
     CFX_KeyValue data;
-    bool bPersistent;
+    bool bPersistent = false;
   };
 
   static CFX_GlobalData* GetRetainedInstance(Delegate* pDelegate);

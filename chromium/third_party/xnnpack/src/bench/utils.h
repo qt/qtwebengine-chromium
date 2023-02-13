@@ -9,7 +9,8 @@
 #include <cstdint>
 
 #include <xnnpack.h>
-#include <xnnpack/allocator.h>
+#include <xnnpack/common.h>
+#include <xnnpack/memory.h>
 
 #include <benchmark/benchmark.h>
 
@@ -84,6 +85,10 @@ bool CheckVFP(benchmark::State& state);
 // If ARMv6 extensions are unsupported, report error in benchmark state, and return false.
 bool CheckARMV6(benchmark::State& state);
 
+// Check if ARM FP16-ARITH extension is supported.
+// If FP16-ARITH is unsupported, report error in benchmark state, and return false.
+bool CheckFP16ARITH(benchmark::State& state);
+
 // Check if ARM NEON extension is supported.
 // If NEON is unsupported, report error in benchmark state, and return false.
 bool CheckNEON(benchmark::State& state);
@@ -148,6 +153,10 @@ bool CheckAVX512F(benchmark::State& state);
 // If SKX-level AVX512 extensions are unsupported, report error in benchmark state, and return false.
 bool CheckAVX512SKX(benchmark::State& state);
 
+// Check if x86 VBMI + SKX-level AVX512 extensions (AVX512F, AVX512CD, AVX512BW, AVX512DQ, and AVX512VL) are supported.
+// If VBMI or SKX-level AVX512 extensions are unsupported, report error in benchmark state, and return false.
+bool CheckAVX512VBMI(benchmark::State& state);
+
 template <class T>
 inline T DivideRoundUp(T x, T q) {
   return x / q + T(x % q != 0);
@@ -163,6 +172,8 @@ inline T Doz(T a, T b) {
   return a >= b ? a - b : T(0);
 }
 
+#if XNN_PLATFORM_JIT
+
 // A struct that uses RAII pattern to allocate and release code memory.
 struct CodeMemoryHelper {
   CodeMemoryHelper();
@@ -171,6 +182,8 @@ struct CodeMemoryHelper {
   xnn_code_buffer buffer;
   xnn_status status;
 };
+
+#endif  // XNN_PLATFORM_JIT
 
 }  // namespace utils
 }  // namespace benchmark

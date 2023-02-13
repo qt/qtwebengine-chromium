@@ -1,5 +1,4 @@
-// Copyright (c) 2006, Google Inc.
-// All rights reserved.
+// Copyright 2006 Google LLC
 //
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are
@@ -11,7 +10,7 @@
 // copyright notice, this list of conditions and the following disclaimer
 // in the documentation and/or other materials provided with the
 // distribution.
-//    * Neither the name of Google Inc. nor the names of its
+//    * Neither the name of Google LLC nor the names of its
 // contributors may be used to endorse or promote products derived from
 // this software without specific prior written permission.
 //
@@ -32,6 +31,7 @@
 #include <assert.h>
 
 #include <algorithm>
+#include <limits>
 #include <map>
 #include <string>
 #include <utility>
@@ -44,6 +44,7 @@
 #include "google_breakpad/processor/process_state.h"
 #include "google_breakpad/processor/exploitability.h"
 #include "google_breakpad/processor/stack_frame_symbolizer.h"
+#include "processor/disassembler_objdump.h"
 #include "processor/logging.h"
 #include "processor/stackwalker_x86.h"
 #include "processor/symbolic_constants_win.h"
@@ -118,7 +119,7 @@ ProcessResult MinidumpProcessor::Process(
     has_requesting_thread = exception->GetThreadID(&requesting_thread_id);
 
     process_state->crash_reason_ = GetCrashReason(
-        dump, &process_state->crash_address_);
+        dump, &process_state->crash_address_, enable_objdump_);
 
     process_state->exception_record_.set_code(
         exception->exception()->exception_record.exception_code,
@@ -759,8 +760,82 @@ bool MinidumpProcessor::GetProcessCreateTime(Minidump* dump,
   return true;
 }
 
+static bool IsCanonicalAddress(uint64_t address) {
+  uint64_t sign_bit = (address >> 63) & 1;
+  for (int shift = 48; shift < 63; ++shift) {
+    if (sign_bit != ((address >> shift) & 1)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+static void CalculateFaultAddressFromInstruction(Minidump* dump,
+                                                 uint64_t* address) {
+  MinidumpException* exception = dump->GetException();
+  if (exception == NULL) {
+    BPLOG(INFO) << "Failed to get exception.";
+    return;
+  }
+
+  MinidumpContext* context = exception->GetContext();
+  if (context == NULL) {
+    BPLOG(INFO) << "Failed to get exception context.";
+    return;
+  }
+
+  uint64_t instruction_ptr = 0;
+  if (!context->GetInstructionPointer(&instruction_ptr)) {
+    BPLOG(INFO) << "Failed to get instruction pointer.";
+    return;
+  }
+
+  // Get memory region containing instruction pointer.
+  MinidumpMemoryList* memory_list = dump->GetMemoryList();
+  MinidumpMemoryRegion* memory_region =
+    memory_list ?
+    memory_list->GetMemoryRegionForAddress(instruction_ptr) : NULL;
+  if (!memory_region) {
+    BPLOG(INFO) << "No memory region around instruction pointer.";
+    return;
+  }
+
+  DisassemblerObjdump disassembler(context->GetContextCPU(), memory_region,
+                                   instruction_ptr);
+  fprintf(stderr, "%s %s %s\n", disassembler.operation().c_str(),
+    disassembler.src().c_str(), disassembler.dest().c_str());
+  if (!disassembler.IsValid()) {
+    BPLOG(INFO) << "Disassembling fault instruction failed.";
+    return;
+  }
+
+  // It's possible that we reach here when the faulting address is already
+  // correct, so we only update it if we find that at least one of the src/dest
+  // addresses is non-canonical. If both are non-canonical, we arbitrarily set
+  // it to the larger of the two, as this is more likely to be a known poison
+  // value.
+
+  bool valid_read, valid_write;
+  uint64_t read_address, write_address;
+
+  valid_read = disassembler.CalculateSrcAddress(*context, read_address);
+  valid_read &= !IsCanonicalAddress(read_address);
+
+  valid_write = disassembler.CalculateDestAddress(*context, write_address);
+  valid_write &= !IsCanonicalAddress(write_address);
+
+  if (valid_read && valid_write) {
+    *address = read_address > write_address ? read_address : write_address;
+  } else if (valid_read) {
+    *address = read_address;
+  } else if (valid_write) {
+    *address = write_address;
+  }
+}
+
 // static
-string MinidumpProcessor::GetCrashReason(Minidump* dump, uint64_t* address) {
+string MinidumpProcessor::GetCrashReason(Minidump* dump, uint64_t* address,
+                                         bool enable_objdump) {
   MinidumpException* exception = dump->GetException();
   if (!exception)
     return "";
@@ -1986,6 +2061,15 @@ string MinidumpProcessor::GetCrashReason(Minidump* dump, uint64_t* address) {
     *address = GetAddressForArchitecture(
       static_cast<MDCPUArchitecture>(raw_system_info->processor_architecture),
       *address);
+
+    // For invalid accesses to non-canonical addresses, amd64 cpus don't provide
+    // the fault address, so recover it from the disassembly and register state
+    // if possible.
+    if (enable_objdump
+        && raw_system_info->processor_architecture == MD_CPU_ARCHITECTURE_AMD64
+        && std::numeric_limits<uint64_t>::max() == *address) {
+      CalculateFaultAddressFromInstruction(dump, address);
+    }
   }
 
   return reason;

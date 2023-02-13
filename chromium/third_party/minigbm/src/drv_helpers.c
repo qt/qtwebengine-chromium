@@ -163,7 +163,7 @@ static const struct planar_layout *layout_from_format(uint32_t format)
 		return &packed_8bpp_layout;
 
 	default:
-		drv_log("UNKNOWN FORMAT %d\n", format);
+		drv_loge("UNKNOWN FORMAT %d\n", format);
 		return NULL;
 	}
 }
@@ -361,7 +361,7 @@ int drv_dumb_bo_create_ex(struct bo *bo, uint32_t width, uint32_t height, uint32
 
 	ret = drmIoctl(bo->drv->fd, DRM_IOCTL_MODE_CREATE_DUMB, &create_dumb);
 	if (ret) {
-		drv_log("DRM_IOCTL_MODE_CREATE_DUMB failed (%d, %d)\n", bo->drv->fd, errno);
+		drv_loge("DRM_IOCTL_MODE_CREATE_DUMB failed (%d, %d)\n", bo->drv->fd, errno);
 		return -errno;
 	}
 
@@ -388,7 +388,7 @@ int drv_dumb_bo_destroy(struct bo *bo)
 	destroy_dumb.handle = bo->handles[0].u32;
 	ret = drmIoctl(bo->drv->fd, DRM_IOCTL_MODE_DESTROY_DUMB, &destroy_dumb);
 	if (ret) {
-		drv_log("DRM_IOCTL_MODE_DESTROY_DUMB failed (handle=%x)\n", bo->handles[0].u32);
+		drv_loge("DRM_IOCTL_MODE_DESTROY_DUMB failed (handle=%x)\n", bo->handles[0].u32);
 		return -errno;
 	}
 
@@ -414,8 +414,8 @@ int drv_gem_bo_destroy(struct bo *bo)
 
 		ret = drmIoctl(bo->drv->fd, DRM_IOCTL_GEM_CLOSE, &gem_close);
 		if (ret) {
-			drv_log("DRM_IOCTL_GEM_CLOSE failed (handle=%x) error %d\n",
-				bo->handles[plane].u32, ret);
+			drv_loge("DRM_IOCTL_GEM_CLOSE failed (handle=%x) error %d\n",
+				 bo->handles[plane].u32, ret);
 			error = -errno;
 		}
 	}
@@ -436,7 +436,7 @@ int drv_prime_bo_import(struct bo *bo, struct drv_import_fd_data *data)
 		ret = drmIoctl(bo->drv->fd, DRM_IOCTL_PRIME_FD_TO_HANDLE, &prime_handle);
 
 		if (ret) {
-			drv_log("DRM_IOCTL_PRIME_FD_TO_HANDLE failed (fd=%u)\n", prime_handle.fd);
+			drv_loge("DRM_IOCTL_PRIME_FD_TO_HANDLE failed (fd=%u)\n", prime_handle.fd);
 
 			/*
 			 * Need to call GEM close on planes that were opened,
@@ -467,7 +467,7 @@ void *drv_dumb_bo_map(struct bo *bo, struct vma *vma, size_t plane, uint32_t map
 
 	ret = drmIoctl(bo->drv->fd, DRM_IOCTL_MODE_MAP_DUMB, &map_dumb);
 	if (ret) {
-		drv_log("DRM_IOCTL_MODE_MAP_DUMB failed\n");
+		drv_loge("DRM_IOCTL_MODE_MAP_DUMB failed\n");
 		return MAP_FAILED;
 	}
 

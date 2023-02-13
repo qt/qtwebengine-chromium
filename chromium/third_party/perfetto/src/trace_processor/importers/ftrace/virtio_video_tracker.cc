@@ -23,9 +23,9 @@
 #include "perfetto/ext/base/string_utils.h"
 #include "perfetto/protozero/field.h"
 #include "src/trace_processor/importers/common/args_tracker.h"
+#include "src/trace_processor/importers/common/async_track_set_tracker.h"
 #include "src/trace_processor/importers/common/slice_tracker.h"
 #include "src/trace_processor/importers/ftrace/virtio_video_tracker.h"
-#include "src/trace_processor/importers/proto/async_track_set_tracker.h"
 
 #include "protos/perfetto/trace/ftrace/ftrace_event.pbzero.h"
 #include "protos/perfetto/trace/ftrace/virtio_video.pbzero.h"
@@ -86,7 +86,7 @@ void VirtioVideoTracker::ParseVirtioVideoEvent(uint64_t fld_id,
     case FtraceEvent::kVirtioVideoResourceQueueFieldNumber: {
       VirtioVideoResourceQueueFtraceEvent::Decoder pb_evt(blob.data, blob.size);
 
-      uint64_t hash = base::Hash::Combine(
+      uint64_t hash = base::Hasher::Combine(
           pb_evt.stream_id(), pb_evt.resource_id(), pb_evt.queue_type());
 
       base::StackString<64> name("Resource #%" PRIu32, pb_evt.resource_id());
@@ -104,7 +104,7 @@ void VirtioVideoTracker::ParseVirtioVideoEvent(uint64_t fld_id,
       VirtioVideoResourceQueueDoneFtraceEvent::Decoder pb_evt(blob.data,
                                                               blob.size);
 
-      uint64_t hash = base::Hash::Combine(
+      uint64_t hash = base::Hasher::Combine(
           pb_evt.stream_id(), pb_evt.resource_id(), pb_evt.queue_type());
 
       TrackSetId track_set_id =

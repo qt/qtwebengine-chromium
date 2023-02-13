@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2016 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -124,7 +124,7 @@ CPDF_Type3Char* CPDF_Type3Font::LoadChar(uint32_t charcode) {
     return nullptr;
 
   std::unique_ptr<CPDF_Font::FormIface> pForm = m_pFormFactory->CreateForm(
-      m_pDocument.Get(), m_pFontResources ? m_pFontResources : m_pPageResources,
+      m_pDocument, m_pFontResources ? m_pFontResources : m_pPageResources,
       pStream);
 
   auto pNewChar = std::make_unique<CPDF_Type3Char>();

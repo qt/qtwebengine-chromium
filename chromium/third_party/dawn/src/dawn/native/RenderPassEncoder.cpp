@@ -160,7 +160,10 @@ void RenderPassEncoder::APIEnd() {
 }
 
 void RenderPassEncoder::APIEndPass() {
-    GetDevice()->EmitDeprecationWarning("endPass() has been deprecated. Use end() instead.");
+    if (GetDevice()->ConsumedError(DAWN_MAKE_DEPRECATION_ERROR(
+            GetDevice(), "endPass() has been deprecated. Use end() instead."))) {
+        return;
+    }
     APIEnd();
 }
 
@@ -400,7 +403,8 @@ void RenderPassEncoder::APIWriteTimestamp(QuerySetBase* querySet, uint32_t query
         this,
         [&](CommandAllocator* allocator) -> MaybeError {
             if (IsValidationEnabled()) {
-                DAWN_TRY(ValidateTimestampQuery(GetDevice(), querySet, queryIndex));
+                DAWN_TRY(ValidateTimestampQuery(GetDevice(), querySet, queryIndex,
+                                                Feature::TimestampQueryInsidePasses));
                 DAWN_TRY_CONTEXT(ValidateQueryIndexOverwrite(
                                      querySet, queryIndex, mUsageTracker.GetQueryAvailabilityMap()),
                                  "validating the timestamp query index (%u) of %s", queryIndex,

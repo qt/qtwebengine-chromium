@@ -18,6 +18,11 @@ const char kResumeFromHibernateMethod[] = "ResumeFromHibernate";
 const char kResumeFromHibernateASMethod[] = "ResumeFromHibernateAS";
 const char kAbortResumeMethod[] = "AbortResume";
 
+// When this file exists at boot, a resume from hibernation is in progress.
+// It is deleted if the resume is aborted.
+const char kHibernateResumeInProgressFile[] =
+    "/run/hibernate/resume_in_progress";
+
 }  // namespace hiberman
 
 #endif  // SYSTEM_API_DBUS_HIBERMAN_DBUS_CONSTANTS_H_

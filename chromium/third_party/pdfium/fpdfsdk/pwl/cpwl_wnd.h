@@ -1,4 +1,4 @@
-// Copyright 2014 PDFium Authors. All rights reserved.
+// Copyright 2014 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -201,11 +201,11 @@ class CPWL_Wnd : public Observable {
   void RemoveFlag(uint32_t dwFlags);
   void SetClipRect(const CFX_FloatRect& rect);
 
-  CPWL_Wnd* GetParentWindow() const { return m_pParent.Get(); }
   IPWL_FillerNotify::PerWindowData* GetAttachedData() const {
     return m_pAttachedData.get();
   }
   std::unique_ptr<IPWL_FillerNotify::PerWindowData> CloneAttachedData() const;
+  std::vector<UnownedPtr<CPWL_Wnd>> GetAncestors();
 
   bool WndHitTest(const CFX_PointF& point) const;
   bool ClientHitTest(const CFX_PointF& point) const;
@@ -238,9 +238,10 @@ class CPWL_Wnd : public Observable {
     return m_CreationParams.pTimerHandler.Get();
   }
   IPWL_FillerNotify* GetFillerNotify() const {
-    return m_CreationParams.pFillerNotify.Get();
+    return m_CreationParams.pFillerNotify;
   }
 
+  CPWL_Wnd* GetParentWindow() const { return m_pParent; }
   CPWL_ScrollBar* GetVScrollBar() const;
 
   // Returns |true| iff this instance is still allocated.
@@ -265,7 +266,7 @@ class CPWL_Wnd : public Observable {
   CFX_PointF GetCenterPoint() const;
   const CFX_FloatRect& GetClipRect() const;
 
-  IPVT_FontMap* GetFontMap() const { return m_CreationParams.pFontMap.Get(); }
+  IPVT_FontMap* GetFontMap() const { return m_CreationParams.pFontMap; }
 
  private:
   void DrawChildAppearance(CFX_RenderDevice* pDevice,

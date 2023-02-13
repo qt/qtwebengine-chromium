@@ -45,6 +45,7 @@ const char kArcVmCompleteBootMethod[] = "ArcVmCompleteBoot";
 const char kSetBalloonTimerMethod[] = "SetBalloonTimer";
 const char kGetVmGpuCachePathMethod[] = "GetVmGpuCachePath";
 const char kAddGroupPermissionMesaMethod[] = "AddGroupPermissionMesa";
+const char kGetVmLaunchAllowedMethod[] = "GetVmLaunchAllowed";
 
 const char kDiskImageProgressSignal[] = "DiskImageProgress";
 const char kDnsSettingsChangedSignal[] = "DnsSettingsChanged";

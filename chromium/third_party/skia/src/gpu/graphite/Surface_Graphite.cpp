@@ -26,8 +26,16 @@ Surface::Surface(sk_sp<Device> device)
 
 Surface::~Surface() {}
 
+SkImageInfo Surface::imageInfo() const {
+    return fDevice->imageInfo();
+}
+
 Recorder* Surface::onGetRecorder() {
     return fDevice->recorder();
+}
+
+TextureProxyView Surface::readSurfaceView() const {
+    return fDevice->readSurfaceView();
 }
 
 SkCanvas* Surface::onNewCanvas() { return new SkCanvas(fDevice); }
@@ -42,7 +50,20 @@ sk_sp<SkImage> Surface::onNewImageSnapshot(const SkIRect* subset) {
         return nullptr;
     }
 
-    srcView = fDevice->createCopy(subset, srcView.mipmapped());
+    return this->onMakeImageCopy(subset, srcView.mipmapped());
+}
+
+sk_sp<SkImage> Surface::onAsImage() {
+    TextureProxyView srcView = fDevice->readSurfaceView();
+    if (!srcView) {
+        return nullptr;
+    }
+
+    return sk_sp<Image>(new Image(std::move(srcView), this->imageInfo().colorInfo()));
+}
+
+sk_sp<SkImage> Surface::onMakeImageCopy(const SkIRect* subset, Mipmapped mipmapped) {
+    TextureProxyView srcView = fDevice->createCopy(subset, mipmapped);
     if (!srcView) {
         return nullptr;
     }
@@ -55,24 +76,6 @@ void Surface::onWritePixels(const SkPixmap& pixmap, int x, int y) {
 }
 
 bool Surface::onCopyOnWrite(ContentChangeMode) { return true; }
-
-bool Surface::onReadPixels(Context* context,
-                           Recorder* recorder,
-                           const SkPixmap& dst,
-                           int srcX,
-                           int srcY) {
-    return fDevice->readPixels(context, recorder, dst, srcX, srcY);
-}
-
-void Surface::onAsyncReadPixels(const SkImageInfo& info,
-                                          SkIRect srcRect,
-                                          ReadPixelsCallback callback,
-                                          ReadPixelsContext context) {
-    fDevice->asyncReadPixels(info,
-                             srcRect,
-                             callback,
-                             context);
-}
 
 void Surface::onAsyncRescaleAndReadPixels(const SkImageInfo& info,
                                           SkIRect srcRect,
@@ -119,6 +122,8 @@ GrSemaphoresSubmitted Surface::onFlush(BackendSurfaceAccess,
 }
 #endif
 
+TextureProxy* Surface::backingTextureProxy() { return fDevice->target(); }
+
 sk_sp<SkSurface> Surface::MakeGraphite(Recorder* recorder,
                                        const SkImageInfo& info,
                                        SkBudgeted budgeted,
@@ -132,6 +137,9 @@ sk_sp<SkSurface> Surface::MakeGraphite(Recorder* recorder,
         return nullptr;
     }
 
+    if (!device->target()->instantiate(recorder->priv().resourceProvider())) {
+        return nullptr;
+    }
     return sk_make_sp<Surface>(std::move(device));
 }
 

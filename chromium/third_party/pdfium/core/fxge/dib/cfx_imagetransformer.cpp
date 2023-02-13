@@ -1,4 +1,4 @@
-// Copyright 2017 PDFium Authors. All rights reserved.
+// Copyright 2017 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -246,30 +246,15 @@ void CFX_ImageTransformer::ContinueOther(PauseIndicatorIface* pPause) {
   if (!pTransformed->Create(m_result.Width(), m_result.Height(), format))
     return;
 
-  const uint8_t* pSrcMaskBuf = m_Storer.GetBitmap()->GetAlphaMaskBuffer();
   pTransformed->Clear(0);
-  RetainPtr<CFX_DIBitmap> pDestMask = pTransformed->GetAlphaMask();
-  if (pDestMask)
-    pDestMask->Clear(0);
 
   CFX_Matrix result2stretch(1.0f, 0.0f, 0.0f, 1.0f, m_result.left,
                             m_result.top);
   result2stretch.Concat(m_dest2stretch);
   result2stretch.Translate(-m_StretchClip.left, -m_StretchClip.top);
-  if (!pSrcMaskBuf && pDestMask) {
-    pDestMask->Clear(0xff000000);
-  } else if (pDestMask) {
-    CalcData calc_data = {
-        pDestMask.Get(),
-        result2stretch,
-        pSrcMaskBuf,
-        m_Storer.GetBitmap()->GetAlphaMaskPitch(),
-    };
-    CalcMask(calc_data);
-  }
 
   CalcData calc_data = {pTransformed.Get(), result2stretch,
-                        m_Storer.GetBitmap()->GetBuffer(),
+                        m_Storer.GetBitmap()->GetBuffer().data(),
                         m_Storer.GetBitmap()->GetPitch()};
   if (m_Storer.GetBitmap()->IsMaskFormat()) {
     CalcAlpha(calc_data);
@@ -285,13 +270,6 @@ void CFX_ImageTransformer::ContinueOther(PauseIndicatorIface* pPause) {
 
 RetainPtr<CFX_DIBitmap> CFX_ImageTransformer::DetachBitmap() {
   return m_Storer.Detach();
-}
-
-void CFX_ImageTransformer::CalcMask(const CalcData& calc_data) {
-  auto func = [&calc_data](const BilinearData& data, uint8_t* dest) {
-    *dest = BilinearInterpolate(calc_data.buf, data, 1, 0);
-  };
-  DoBilinearLoop(calc_data, m_result, m_StretchClip, 1, func);
 }
 
 void CFX_ImageTransformer::CalcAlpha(const CalcData& calc_data) {

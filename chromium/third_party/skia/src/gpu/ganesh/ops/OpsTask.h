@@ -16,6 +16,7 @@
 #include "include/gpu/GrRecordingContext.h"
 #include "include/private/SkTArray.h"
 #include "include/private/SkTDArray.h"
+#include "include/private/SkTypeTraits.h"
 #include "src/core/SkArenaAlloc.h"
 #include "src/core/SkClipStack.h"
 #include "src/core/SkStringUtils.h"
@@ -111,7 +112,7 @@ public:
               bool printDependencies,
               bool close) const override;
     const char* name() const final { return "Ops"; }
-    int numOpChains() const { return fOpChains.count(); }
+    int numOpChains() const { return fOpChains.size(); }
     const GrOp* getChain(int index) const { return fOpChains[index].head(); }
 #endif
 

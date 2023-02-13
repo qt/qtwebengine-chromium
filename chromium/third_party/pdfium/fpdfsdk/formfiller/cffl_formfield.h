@@ -1,4 +1,4 @@
-// Copyright 2014 PDFium Authors. All rights reserved.
+// Copyright 2014 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -132,7 +132,7 @@ class CFFL_FormField : public CPWL_Wnd::ProviderIface,
   CPDFSDK_PageView* GetCurPageView();
   void SetChangeMark();
 
-  CPDFSDK_Widget* GetSDKWidget() const { return m_pWidget.Get(); }
+  CPDFSDK_Widget* GetSDKWidget() const { return m_pWidget; }
 
   CFFL_PerWindowData* GetPerPWLWindowData(const CPDFSDK_PageView* pPageView);
   void ResetPWLWindowForValueAge(const CPDFSDK_PageView* pPageView,
@@ -140,7 +140,7 @@ class CFFL_FormField : public CPWL_Wnd::ProviderIface,
                                  uint32_t nValueAge);
 
  protected:
-  friend class CPWLComboBoxEditEmbedderTest;
+  friend class CPWLComboBoxEmbedderTest;
   friend class CPWLEditEmbedderTest;
   friend class CPWLSpecialButtonEmbedderTest;
 

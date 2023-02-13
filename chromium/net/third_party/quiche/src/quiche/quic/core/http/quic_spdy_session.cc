@@ -377,10 +377,7 @@ class QuicSpdySession::SpdyFramerVisitor
   }
 
   void OnPriorityUpdate(SpdyStreamId /*prioritized_stream_id*/,
-                        absl::string_view /*priority_field_value*/) override {
-    // TODO(b/171470299): Parse and call
-    // QuicSpdySession::OnPriorityUpdateForRequestStream().
-  }
+                        absl::string_view /*priority_field_value*/) override {}
 
   bool OnUnknownFrame(SpdyStreamId /*stream_id*/,
                       uint8_t /*frame_type*/) override {
@@ -530,12 +527,12 @@ void QuicSpdySession::FillSettingsFrame() {
       case HttpDatagramSupport::kDraft04:
         settings_.values[SETTINGS_H3_DATAGRAM_DRAFT04] = 1;
         break;
-      case HttpDatagramSupport::kDraft09:
-        settings_.values[SETTINGS_H3_DATAGRAM_DRAFT09] = 1;
+      case HttpDatagramSupport::kRfc:
+        settings_.values[SETTINGS_H3_DATAGRAM] = 1;
         break;
-      case HttpDatagramSupport::kDraft04And09:
+      case HttpDatagramSupport::kRfcAndDraft04:
+        settings_.values[SETTINGS_H3_DATAGRAM] = 1;
         settings_.values[SETTINGS_H3_DATAGRAM_DRAFT04] = 1;
-        settings_.values[SETTINGS_H3_DATAGRAM_DRAFT09] = 1;
         break;
     }
   }
@@ -623,8 +620,8 @@ void QuicSpdySession::OnPriorityFrame(
   stream->OnPriorityFrame(precedence);
 }
 
-bool QuicSpdySession::OnPriorityUpdateForRequestStream(QuicStreamId stream_id,
-                                                       int urgency) {
+bool QuicSpdySession::OnPriorityUpdateForRequestStream(
+    QuicStreamId stream_id, QuicStreamPriority priority) {
   if (perspective() == Perspective::IS_CLIENT ||
       !QuicUtils::IsBidirectionalStreamId(stream_id, version()) ||
       !QuicUtils::IsClientInitiatedStreamId(transport_version(), stream_id)) {
@@ -645,7 +642,7 @@ bool QuicSpdySession::OnPriorityUpdateForRequestStream(QuicStreamId stream_id,
     return false;
   }
 
-  if (MaybeSetStreamPriority(stream_id, spdy::SpdyStreamPrecedence(urgency))) {
+  if (MaybeSetStreamPriority(stream_id, priority)) {
     return true;
   }
 
@@ -653,7 +650,7 @@ bool QuicSpdySession::OnPriorityUpdateForRequestStream(QuicStreamId stream_id,
     return true;
   }
 
-  buffered_stream_priorities_[stream_id] = urgency;
+  buffered_stream_priorities_[stream_id] = priority;
 
   if (buffered_stream_priorities_.size() >
       10 * max_open_incoming_bidirectional_streams()) {
@@ -672,12 +669,6 @@ bool QuicSpdySession::OnPriorityUpdateForRequestStream(QuicStreamId stream_id,
     return false;
   }
 
-  return true;
-}
-
-bool QuicSpdySession::OnPriorityUpdateForPushStream(QuicStreamId /*push_id*/,
-                                                    int /*urgency*/) {
-  // TODO(b/147306124): Implement PRIORITY_UPDATE frames for pushed streams.
   return true;
 }
 
@@ -703,22 +694,22 @@ size_t QuicSpdySession::WriteHeadersOnHeadersStream(
       /* exclusive = */ false, std::move(ack_listener));
 }
 
-size_t QuicSpdySession::WritePriority(QuicStreamId id,
+size_t QuicSpdySession::WritePriority(QuicStreamId stream_id,
                                       QuicStreamId parent_stream_id, int weight,
                                       bool exclusive) {
   QUICHE_DCHECK(!VersionUsesHttp3(transport_version()));
-  SpdyPriorityIR priority_frame(id, parent_stream_id, weight, exclusive);
+  SpdyPriorityIR priority_frame(stream_id, parent_stream_id, weight, exclusive);
   SpdySerializedFrame frame(spdy_framer_.SerializeFrame(priority_frame));
   headers_stream()->WriteOrBufferData(
       absl::string_view(frame.data(), frame.size()), false, nullptr);
   return frame.size();
 }
 
-void QuicSpdySession::WriteHttp3PriorityUpdate(
-    const PriorityUpdateFrame& priority_update) {
+void QuicSpdySession::WriteHttp3PriorityUpdate(QuicStreamId stream_id,
+                                               QuicStreamPriority priority) {
   QUICHE_DCHECK(VersionUsesHttp3(transport_version()));
 
-  send_control_stream_->WritePriorityUpdate(priority_update);
+  send_control_stream_->WritePriorityUpdate(stream_id, priority);
 }
 
 void QuicSpdySession::OnHttp3GoAway(uint64_t id) {
@@ -851,7 +842,7 @@ void QuicSpdySession::OnStreamCreated(QuicSpdyStream* stream) {
     return;
   }
 
-  stream->SetPriority(spdy::SpdyStreamPrecedence(it->second));
+  stream->SetPriority(it->second);
   buffered_stream_priorities_.erase(it);
 }
 
@@ -1157,7 +1148,8 @@ bool QuicSpdySession::OnSetting(uint64_t id, uint64_t value) {
         HttpDatagramSupport local_http_datagram_support =
             LocalHttpDatagramSupport();
         if (local_http_datagram_support != HttpDatagramSupport::kDraft04 &&
-            local_http_datagram_support != HttpDatagramSupport::kDraft04And09) {
+            local_http_datagram_support !=
+                HttpDatagramSupport::kRfcAndDraft04) {
           break;
         }
         QUIC_DVLOG(1) << ENDPOINT
@@ -1169,21 +1161,23 @@ bool QuicSpdySession::OnSetting(uint64_t id, uint64_t value) {
         if (!VerifySettingIsZeroOrOne(id, value)) {
           return false;
         }
-        if (value && http_datagram_support_ != HttpDatagramSupport::kDraft09) {
-          // If both draft-04 and draft-09 are supported, use draft-09.
+        if (value && http_datagram_support_ != HttpDatagramSupport::kRfc) {
+          // If both RFC 9297 and draft-04 are supported, we use the RFC. This
+          // is implemented by ignoring SETTINGS_H3_DATAGRAM_DRAFT04 when we've
+          // already parsed SETTINGS_H3_DATAGRAM.
           http_datagram_support_ = HttpDatagramSupport::kDraft04;
         }
         break;
       }
-      case SETTINGS_H3_DATAGRAM_DRAFT09: {
+      case SETTINGS_H3_DATAGRAM: {
         HttpDatagramSupport local_http_datagram_support =
             LocalHttpDatagramSupport();
-        if (local_http_datagram_support != HttpDatagramSupport::kDraft09 &&
-            local_http_datagram_support != HttpDatagramSupport::kDraft04And09) {
+        if (local_http_datagram_support != HttpDatagramSupport::kRfc &&
+            local_http_datagram_support !=
+                HttpDatagramSupport::kRfcAndDraft04) {
           break;
         }
-        QUIC_DVLOG(1) << ENDPOINT
-                      << "SETTINGS_H3_DATAGRAM_DRAFT09 received with value "
+        QUIC_DVLOG(1) << ENDPOINT << "SETTINGS_H3_DATAGRAM received with value "
                       << value;
         if (!version().UsesHttp3()) {
           break;
@@ -1192,7 +1186,7 @@ bool QuicSpdySession::OnSetting(uint64_t id, uint64_t value) {
           return false;
         }
         if (value) {
-          http_datagram_support_ = HttpDatagramSupport::kDraft09;
+          http_datagram_support_ = HttpDatagramSupport::kRfc;
         }
         break;
       }
@@ -1830,10 +1824,10 @@ std::string HttpDatagramSupportToString(
       return "None";
     case HttpDatagramSupport::kDraft04:
       return "Draft04";
-    case HttpDatagramSupport::kDraft09:
-      return "Draft09";
-    case HttpDatagramSupport::kDraft04And09:
-      return "Draft04And09";
+    case HttpDatagramSupport::kRfc:
+      return "Rfc";
+    case HttpDatagramSupport::kRfcAndDraft04:
+      return "RfcAndDraft04";
   }
   return absl::StrCat("Unknown(", static_cast<int>(http_datagram_support), ")");
 }

@@ -14,7 +14,6 @@ import (
 	"flag"
 	"fmt"
 	"html/template"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -412,9 +411,9 @@ func (config *Config) parseHeader(path string) (*HeaderFile, error) {
 				lines = lines[1:]
 				lineNo++
 				break
-			}
+		 	}
 			if line == cppGuard {
-				return nil, fmt.Errorf("hit ending C++ guard while in section on line %d", lineNo)
+				return nil, fmt.Errorf("hit ending C++ guard while in section on line %d (possibly missing two empty lines ahead of guard?)", lineNo)
 			}
 
 			var comment []string
@@ -746,11 +745,11 @@ func generateIndex(outPath string, config *Config, headerDescriptions map[string
 }
 
 func copyFile(outPath string, inFilePath string) error {
-	bytes, err := ioutil.ReadFile(inFilePath)
+	bytes, err := os.ReadFile(inFilePath)
 	if err != nil {
 		return err
 	}
-	return ioutil.WriteFile(filepath.Join(outPath, filepath.Base(inFilePath)), bytes, 0666)
+	return os.WriteFile(filepath.Join(outPath, filepath.Base(inFilePath)), bytes, 0666)
 }
 
 func main() {
@@ -772,7 +771,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	configBytes, err := ioutil.ReadFile(*configFlag)
+	configBytes, err := os.ReadFile(*configFlag)
 	if err != nil {
 		fmt.Printf("Failed to open config file: %s\n", err)
 		os.Exit(1)

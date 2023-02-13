@@ -1,4 +1,4 @@
-// Copyright 2014 PDFium Authors. All rights reserved.
+// Copyright 2014 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -551,7 +551,7 @@ WideString CPWL_ListCtrl::GetText() const {
 
 void CPWL_ListCtrl::AddItem(const WideString& str) {
   auto pListItem = std::make_unique<Item>();
-  pListItem->SetFontMap(m_pFontMap.Get());
+  pListItem->SetFontMap(m_pFontMap);
   pListItem->SetFontSize(m_fFontSize);
   pListItem->SetText(str);
   m_ListItems.push_back(std::move(pListItem));

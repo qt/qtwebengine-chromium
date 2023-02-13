@@ -22,6 +22,7 @@
 #include "absl/status/statusor.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/variant.h"
+#include "internal/platform/implementation/credential_callbacks.h"
 #include "internal/proto/credential.pb.h"
 #include "presence/broadcast_request.h"
 #include "presence/power_mode.h"
@@ -47,7 +48,7 @@ struct BaseBroadcastRequest {
       const BroadcastRequest& request);
 
   struct BasePresence {
-    nearby::internal::IdentityType identity;
+    CredentialSelector credential_selector;
     Action action;
   };
   struct BaseFastPair {
@@ -80,6 +81,8 @@ class BasePresenceRequestBuilder {
   BasePresenceRequestBuilder& SetTxPower(int8_t tx_power);
   BasePresenceRequestBuilder& SetAction(const Action& action);
   BasePresenceRequestBuilder& SetPowerMode(PowerMode power_mode);
+  BasePresenceRequestBuilder& SetAccountName(absl::string_view account_name);
+  BasePresenceRequestBuilder& SetManagerAppId(absl::string_view manager_app_id);
 
   explicit operator BaseBroadcastRequest() const;
 
@@ -89,6 +92,8 @@ class BasePresenceRequestBuilder {
   int8_t tx_power_ = kUnspecifiedTxPower;
   Action action_;
   PowerMode power_mode_ = PowerMode::kNoPower;
+  std::string account_name_;
+  std::string manager_app_id_;
 };
 
 }  // namespace presence

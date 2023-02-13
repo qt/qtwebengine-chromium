@@ -249,7 +249,7 @@ TEST(CBSTest, GetASN1) {
   EXPECT_FALSE(CBS_get_optional_asn1_uint64(
       &data, &value, CBS_ASN1_CONTEXT_SPECIFIC | CBS_ASN1_CONSTRUCTED | 1, 42));
 
-  unsigned tag;
+  CBS_ASN1_TAG tag;
   CBS_init(&data, kData1, sizeof(kData1));
   ASSERT_TRUE(CBS_get_any_asn1(&data, &contents, &tag));
   EXPECT_EQ(CBS_ASN1_SEQUENCE, tag);
@@ -267,7 +267,7 @@ TEST(CBSTest, GetASN1) {
 TEST(CBSTest, ParseASN1Tag) {
   const struct {
     bool ok;
-    unsigned tag;
+    CBS_ASN1_TAG tag;
     std::vector<uint8_t> in;
   } kTests[] = {
       {true, CBS_ASN1_SEQUENCE, {0x30, 0}},
@@ -278,9 +278,9 @@ TEST(CBSTest, ParseASN1Tag) {
       {true,
        CBS_ASN1_PRIVATE | CBS_ASN1_CONSTRUCTED | 0x1fffffff,
        {0xff, 0x81, 0xff, 0xff, 0xff, 0x7f, 0}},
-      // Tag number fits in unsigned but not |CBS_ASN1_TAG_NUMBER_MASK|.
+      // Tag number fits in |uint32_t| but not |CBS_ASN1_TAG_NUMBER_MASK|.
       {false, 0, {0xff, 0x82, 0xff, 0xff, 0xff, 0x7f, 0}},
-      // Tag number does not fit in unsigned.
+      // Tag number does not fit in |uint32_t|.
       {false, 0, {0xff, 0x90, 0x80, 0x80, 0x80, 0, 0}},
       // Tag number is not minimally-encoded
       {false, 0, {0x5f, 0x80, 0x1f, 0}},
@@ -289,7 +289,7 @@ TEST(CBSTest, ParseASN1Tag) {
   };
   for (const auto &t : kTests) {
     SCOPED_TRACE(Bytes(t.in));
-    unsigned tag;
+    CBS_ASN1_TAG tag;
     CBS cbs, child;
     CBS_init(&cbs, t.in.data(), t.in.size());
     ASSERT_EQ(t.ok, !!CBS_get_any_asn1(&cbs, &child, &tag));
@@ -376,28 +376,36 @@ TEST(CBBTest, Basic) {
 }
 
 TEST(CBBTest, Fixed) {
-  bssl::ScopedCBB cbb;
+  CBB cbb;
   uint8_t buf[1];
   uint8_t *out_buf;
   size_t out_size;
 
-  ASSERT_TRUE(CBB_init_fixed(cbb.get(), NULL, 0));
-  ASSERT_TRUE(CBB_finish(cbb.get(), &out_buf, &out_size));
+  ASSERT_TRUE(CBB_init_fixed(&cbb, NULL, 0));
+  ASSERT_TRUE(CBB_finish(&cbb, &out_buf, &out_size));
   EXPECT_EQ(NULL, out_buf);
   EXPECT_EQ(0u, out_size);
 
-  cbb.Reset();
-  ASSERT_TRUE(CBB_init_fixed(cbb.get(), buf, 1));
-  ASSERT_TRUE(CBB_add_u8(cbb.get(), 1));
-  ASSERT_TRUE(CBB_finish(cbb.get(), &out_buf, &out_size));
+  ASSERT_TRUE(CBB_init_fixed(&cbb, buf, 1));
+  ASSERT_TRUE(CBB_add_u8(&cbb, 1));
+  ASSERT_TRUE(CBB_finish(&cbb, &out_buf, &out_size));
   EXPECT_EQ(buf, out_buf);
   EXPECT_EQ(1u, out_size);
   EXPECT_EQ(1u, buf[0]);
 
-  cbb.Reset();
-  ASSERT_TRUE(CBB_init_fixed(cbb.get(), buf, 1));
-  ASSERT_TRUE(CBB_add_u8(cbb.get(), 1));
-  EXPECT_FALSE(CBB_add_u8(cbb.get(), 2));
+  ASSERT_TRUE(CBB_init_fixed(&cbb, buf, 1));
+  ASSERT_TRUE(CBB_add_u8(&cbb, 1));
+  EXPECT_FALSE(CBB_add_u8(&cbb, 2));
+  // We do not need |CBB_cleanup| or |bssl::ScopedCBB| here because a fixed
+  // |CBB| has no allocations. Leak-checking tools will confirm there was
+  // nothing to clean up.
+
+  // However, it should be harmless to call |CBB_cleanup|.
+  CBB cbb2;
+  ASSERT_TRUE(CBB_init_fixed(&cbb2, buf, 1));
+  ASSERT_TRUE(CBB_add_u8(&cbb2, 1));
+  EXPECT_FALSE(CBB_add_u8(&cbb2, 2));
+  CBB_cleanup(&cbb2);
 }
 
 // Test that calling CBB_finish on a child does nothing.
@@ -694,7 +702,7 @@ struct BERTest {
   bool ok;
   bool ber_found;
   bool indefinite;
-  unsigned tag;
+  CBS_ASN1_TAG tag;
 };
 
 static const BERTest kBERTests[] = {
@@ -740,7 +748,7 @@ TEST(CBSTest, BERElementTest) {
     ASSERT_TRUE(DecodeHex(&in_bytes, test.in_hex));
     CBS in(in_bytes);
     CBS out;
-    unsigned tag;
+    CBS_ASN1_TAG tag;
     size_t header_len;
     int ber_found;
     int indefinite;

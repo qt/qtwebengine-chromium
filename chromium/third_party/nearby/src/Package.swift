@@ -4,6 +4,12 @@ import PackageDescription
 
 let package = Package(
   name: "NearbyConnections",
+  platforms: [
+    .iOS(.v11),
+    .macOS(.v10_13),
+    .tvOS(.v11),
+    .watchOS(.v4),
+  ],
   products: [
     // Products define the executables and libraries a package produces, and make them visible to other packages.
     .library(
@@ -417,6 +423,7 @@ let package = Package(
         "connections/implementation/offline_service_controller_test.cc",
         "connections/implementation/encryption_runner_test.cc",
         "connections/implementation/p2p_cluster_pcp_handler_test.cc",
+        "connections/implementation/p2p_point_to_point_pcp_handler_test.cc",
         "connections/implementation/base_pcp_handler_test.cc",
         "connections/implementation/injected_bluetooth_device_store_test.cc",
         "connections/implementation/internal_payload_factory_test.cc",
@@ -442,6 +449,7 @@ let package = Package(
         "connections/implementation/mediums/webrtc_test.cc",
         "connections/implementation/mediums/lost_entity_tracker_test.cc",
         "connections/implementation/mediums/bluetooth_radio_test.cc",
+        "connections/implementation/mediums/wifi_direct_test.cc",
         "connections/implementation/mediums/wifi_hotspot_test.cc",
         "connections/implementation/mediums/wifi_test.cc",
         "connections/implementation/endpoint_channel_manager_test.cc",
@@ -479,6 +487,8 @@ let package = Package(
         "internal/platform/count_down_latch_test.cc",
         "internal/platform/pipe_test.cc",
         "internal/platform/uuid_test.cc",
+        "internal/platform/wifi_lan_connection_info_test.cc",
+        "internal/platform/wifi_direct_test.cc",
         "internal/platform/wifi_hotspot_test.cc",
         "internal/platform/wifi_lan_test.cc",
         "internal/platform/wifi_test.cc",
@@ -491,6 +501,7 @@ let package = Package(
         "internal/platform/atomic_reference_test.cc",
         "internal/platform/logging_test.cc",
         "internal/platform/multi_thread_executor_test.cc",
+        "internal/platform/ble_connection_info_test.cc",
         "internal/platform/ble_test.cc",
         "internal/platform/ble_v2_test.cc",
         "internal/platform/prng_test.cc",
@@ -508,6 +519,7 @@ let package = Package(
         "internal/platform/bluetooth_adapter_test.cc",
         "internal/platform/byte_utils_test.cc",
         "internal/platform/direct_executor_test.cc",
+        "internal/platform/borrowable_test.cc",
         // simulation
         "connections/implementation/offline_simulation_user.cc",
         "connections/implementation/simulation_user.cc",

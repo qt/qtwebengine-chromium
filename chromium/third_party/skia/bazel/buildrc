@@ -90,7 +90,7 @@ build:enforce_iwyu --features=skia_enforce_iwyu --cc_output_directory_tag=iwyu \
                    --compilation_mode=dbg --keep_going \
                    --with_gl_standard=gl_standard --gpu_backend=gl_backend \
                    --gpu_backend=vulkan_backend --gpu_backend=dawn_backend \
-                   --enable_gpu_test_utils \
+                   --enable_gpu_test_utils --force_cpu_tests \
                    --include_fontmgr=custom_directory_fontmgr --include_fontmgr=custom_embedded_fontmgr \
                    --include_fontmgr=custom_empty_fontmgr --fontmgr_factory=custom_directory_fontmgr_factory \
                    --include_decoder=avif_decode_codec --include_decoder=gif_decode_codec \
@@ -101,10 +101,17 @@ build:enforce_iwyu --features=skia_enforce_iwyu --cc_output_directory_tag=iwyu \
                    --include_encoder=webp_encode_codec \
                    --with_harfbuzz --with_icu \
                    --enable_sksl_tracing \
-                   --enable_svg_canvas --enable_pdf_backend
+                   --enable_svg_canvas --enable_pdf_backend \
+                   --compile_generated_cpp_files_for_headers
 
+
+build:use_linux_rbe_pool --config=linux_rbe --remote_download_minimal
 
 build:cpu_only --cc_output_directory_tag=cpu_tests
+build:cpu_only_debug --config=cpu --config=debug
+build:cpu_only_release --config=cpu --config=release
+build:cpu_only_debug_rbe --config=cpu_only_debug --config=use_linux_rbe_pool
+build:cpu_only_release_rbe --config=cpu_only_release --config=use_linux_rbe_pool
 
 build:gl_ganesh --enable_gpu_test_utils --gpu_backend=gl_backend \
                  --cc_output_directory_tag=gl_ganesh
@@ -123,3 +130,7 @@ build:cpu --config=cpu_only
 build:gl --config=gl_ganesh
 build:vk --config=vulkan_ganesh
 build:dawn --config=dawn_ganesh
+
+# Layering check does not work without sandboxing because the system headers are not in the
+# right spot and so they are not found.
+build:no_sandbox --spawn_strategy=local --features=-layering_check

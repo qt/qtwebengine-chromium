@@ -24,11 +24,12 @@
 }
 
 .header-name {
-  color: var(--color-primary);
-  font-weight: 500;
+  color: var(--color-text-primary);
+  font-weight: 400;
   width: 160px;
   flex-shrink: 0;
   text-transform: capitalize;
+  overflow-wrap: break-word;
 }
 
 .header-editable .header-name {
@@ -36,7 +37,8 @@
 }
 
 .header-value {
-  word-break: break-all;
+  display: flex;
+  overflow-wrap: anywhere;
 }
 
 .header-badge-text {
@@ -87,7 +89,7 @@
   color: var(--color-link);
   text-decoration: underline;
   cursor: pointer;
-  padding: 2px 0; /* adjust focus ring size */
+  outline-offset: 2px;
 }
 
 .explanation .link {
@@ -96,6 +98,10 @@
 
 .inline-icon {
   vertical-align: middle;
+}
+
+.row-flex-icon {
+  margin: 4px 5px 0;
 }
 
 .header-value code {
@@ -129,27 +135,23 @@ x-link .inline-icon { /* stylelint-disable-line selector-type-no-unknown */
   padding-left: 5px;
 }
 
-.editable {
-  cursor: text;
-  color: var(--color-text-primary);
-  overflow-wrap: anywhere;
-  min-height: 18px;
-  line-height: 18px;
-  min-width: 0.5em;
-  background: transparent;
-  border: none;
-  outline: none;
-  display: inline-block;
-  font-family: var(--monospace-font-family);
-  font-size: var(--monospace-font-size);
+.inline-button {
+  vertical-align: middle;
 }
 
-.editable:hover,
-.editable:focus {
-  box-shadow: 0 0 0 1px var(--color-details-hairline);
-  border-radius: 2px;
+.row .inline-button {
+  opacity: 0%;
+  visibility: hidden;
+  transition: opacity 200ms;
 }
 
-.header-editable .header-name .editable {
-  color: var(--color-syntax-1);
+.row.header-overridden:focus-within .inline-button,
+.row.header-overridden:hover .inline-button {
+  opacity: 100%;
+  visibility: visible;
+}
+
+.row:hover .inline-button.enable-editing {
+  opacity: 100%;
+  visibility: visible;
 }

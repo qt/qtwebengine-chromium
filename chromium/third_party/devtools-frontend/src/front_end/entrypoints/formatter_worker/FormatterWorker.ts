@@ -39,9 +39,8 @@ import type * as CodeMirrorModule from '../../third_party/codemirror/codemirror-
 
 import {AcornTokenizer, ECMA_VERSION} from './AcornTokenizer.js';
 import {CSSFormatter} from './CSSFormatter.js';
-import {ESTreeWalker} from './ESTreeWalker.js';
 import {FormattedContentBuilder} from './FormattedContentBuilder.js';
-import {type FormatResult} from './FormatterActions.js';
+import {FormattableMediaTypes, type FormatResult} from './FormatterActions.js';
 import {HTMLFormatter} from './HTMLFormatter.js';
 import {IdentityFormatter} from './IdentityFormatter.js';
 import {JavaScriptFormatter} from './JavaScriptFormatter.js';
@@ -141,58 +140,6 @@ export function evaluatableJavaScriptSubstring(content: string): string {
   }
 }
 
-export function javaScriptIdentifiers(content: string): {
-  name: (string|undefined),
-  offset: number,
-}[] {
-  let root: Acorn.ESTree.Node|null = null;
-  try {
-    root = Acorn.parse(content, {ecmaVersion: ECMA_VERSION, ranges: false}) as Acorn.ESTree.Node | null;
-  } catch (e) {
-  }
-
-  const identifiers: Acorn.ESTree.Node[] = [];
-  const walker = new ESTreeWalker(beforeVisit);
-
-  function isFunction(node: Acorn.ESTree.Node): boolean {
-    return node.type === 'FunctionDeclaration' || node.type === 'FunctionExpression' ||
-        node.type === 'ArrowFunctionExpression';
-  }
-
-  function beforeVisit(node: Acorn.ESTree.Node): Object|undefined {
-    if (isFunction(node)) {
-      if (node.id) {
-        identifiers.push(node.id);
-      }
-      return ESTreeWalker.SkipSubtree;
-    }
-
-    if (node.type !== 'Identifier') {
-      return;
-    }
-
-    if (node.parent && node.parent.type === 'MemberExpression') {
-      const parent = (node.parent as Acorn.ESTree.MemberExpression);
-      if (parent.property === node && !parent.computed) {
-        return;
-      }
-    }
-    identifiers.push(node);
-    return;
-  }
-
-  if (!root || root.type !== 'Program' || root.body.length !== 1 || !isFunction(root.body[0])) {
-    return [];
-  }
-
-  const functionNode = (root.body[0] as Acorn.ESTree.FunctionDeclaration);
-  for (const param of functionNode.params) {
-    walker.walk(param);
-  }
-  walker.walk(functionNode.body);
-  return identifiers.map(id => ({name: 'name' in id && id.name || undefined, offset: id.start}));
-}
-
 export function format(mimeType: string, text: string, indentString?: string): FormatResult {
   // Default to a 4-space indent.
   indentString = indentString || '    ';
@@ -202,24 +149,25 @@ export function format(mimeType: string, text: string, indentString?: string): F
   const lineEndings = Platform.StringUtilities.findLineEndingIndexes(text);
   try {
     switch (mimeType) {
-      case 'text/html': {
+      case FormattableMediaTypes.TEXT_HTML: {
         const formatter = new HTMLFormatter(builder);
         formatter.format(text, lineEndings);
         break;
       }
-      case 'text/x-scss':
-      case 'text/css': {
+      case FormattableMediaTypes.TEXT_CSS:
+      case FormattableMediaTypes.TEXT_X_SCSS: {
         const formatter = new CSSFormatter(builder);
         formatter.format(text, lineEndings, 0, text.length);
         break;
       }
-      case 'text/javascript':
-      case 'application/javascript': {
+      case FormattableMediaTypes.APPLICATION_JAVASCRIPT:
+      case FormattableMediaTypes.TEXT_JAVASCRIPT: {
         const formatter = new JavaScriptFormatter(builder);
         formatter.format(text, lineEndings, 0, text.length);
         break;
       }
-      case 'application/json': {
+      case FormattableMediaTypes.APPLICATION_JSON:
+      case FormattableMediaTypes.APPLICATION_MANIFEST_JSON: {
         const formatter = new JSONFormatter(builder);
         formatter.format(text, lineEndings, 0, text.length);
         break;
@@ -241,76 +189,6 @@ export function format(mimeType: string, text: string, indentString?: string): F
     };
   }
   return result;
-}
-
-export function argumentsList(content: string): string[] {
-  if (content.length > 10000) {
-    return [];
-  }
-  let parsed: Acorn.ESTree.Node|null = null;
-  try {
-    parsed = Acorn.parse(`(${content})`, {ecmaVersion: ECMA_VERSION}) as Acorn.ESTree.Node | null;
-  } catch (e) {
-  }
-  if (!parsed) {
-    try {
-      parsed = Acorn.parse(`({${content}})`, {ecmaVersion: ECMA_VERSION}) as Acorn.ESTree.Node | null;
-    } catch (e) {
-    }
-  }
-  if (!parsed || !('body' in parsed) || !Array.isArray(parsed.body) || !parsed.body[0] ||
-      !('expression' in parsed.body[0])) {
-    return [];
-  }
-  const expression = parsed.body[0].expression;
-  let params: Acorn.ESTree.Pattern[]|null = null;
-  switch (expression.type) {
-    case 'ClassExpression': {
-      if (!expression.body.body) {
-        break;
-      }
-      const constructor =
-          expression.body.body.find(method => method.type === 'MethodDefinition' && method.kind === 'constructor') as
-          Acorn.ESTree.MethodDefinition;
-      if (constructor) {
-        params = constructor.value.params;
-      }
-      break;
-    }
-    case 'ObjectExpression': {
-      if (!expression.properties[0] || !('value' in expression.properties[0]) ||
-          !('params' in expression.properties[0].value)) {
-        break;
-      }
-      params = expression.properties[0].value.params;
-      break;
-    }
-    case 'FunctionExpression':
-    case 'ArrowFunctionExpression': {
-      params = expression.params;
-      break;
-    }
-  }
-  if (!params) {
-    return [];
-  }
-  return params.map(paramName);
-
-  function paramName(param: Acorn.ESTree.Node): string {
-    switch (param.type) {
-      case 'Identifier':
-        return param.name;
-      case 'AssignmentPattern':
-        return '?' + paramName(param.left);
-      case 'ObjectPattern':
-        return 'obj';
-      case 'ArrayPattern':
-        return 'arr';
-      case 'RestElement':
-        return '...' + paramName(param.argument);
-    }
-    return '?';
-  }
 }
 
 (function disableLoggingForTest(): void {

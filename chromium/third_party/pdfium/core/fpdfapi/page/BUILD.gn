@@ -1,4 +1,4 @@
-# Copyright 2018 The PDFium Authors. All rights reserved.
+# Copyright 2018 The PDFium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -49,6 +49,8 @@ source_set("page") {
     "cpdf_iccprofile.h",
     "cpdf_image.cpp",
     "cpdf_image.h",
+    "cpdf_imageloader.cpp",
+    "cpdf_imageloader.h",
     "cpdf_imageobject.cpp",
     "cpdf_imageobject.h",
     "cpdf_indexedcs.cpp",
@@ -59,6 +61,8 @@ source_set("page") {
     "cpdf_occontext.h",
     "cpdf_page.cpp",
     "cpdf_page.h",
+    "cpdf_pageimagecache.cpp",
+    "cpdf_pageimagecache.h",
     "cpdf_pagemodule.cpp",
     "cpdf_pagemodule.h",
     "cpdf_pageobject.cpp",
@@ -113,7 +117,7 @@ source_set("page") {
     "../parser",
   ]
   allow_circular_includes_from = []
-  if (pdf_use_skia || pdf_use_skia_paths) {
+  if (pdf_use_skia) {
     allow_circular_includes_from += [ "../../fxge" ]
   }
   visibility = [ "../../../*" ]
@@ -137,6 +141,7 @@ pdfium_unittest_source_set("unittests") {
     "cpdf_colorspace_unittest.cpp",
     "cpdf_devicecs_unittest.cpp",
     "cpdf_function_unittest.cpp",
+    "cpdf_pageimagecache_unittest.cpp",
     "cpdf_pageobjectholder_unittest.cpp",
     "cpdf_psengine_unittest.cpp",
     "cpdf_streamcontentparser_unittest.cpp",
@@ -145,6 +150,7 @@ pdfium_unittest_source_set("unittests") {
   deps = [
     ":page",
     "../parser",
+    "../render",
   ]
   pdfium_root_dir = "../../../"
 }

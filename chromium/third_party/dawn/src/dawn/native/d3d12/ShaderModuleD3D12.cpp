@@ -90,6 +90,7 @@ enum class Compiler { FXC, DXC };
     X(tint::transform::BindingRemapper::BindingPoints, remappedBindingPoints)               \
     X(tint::transform::BindingRemapper::AccessControls, remappedAccessControls)             \
     X(std::optional<tint::transform::SubstituteOverride::Config>, substituteOverrideConfig) \
+    X(std::bitset<kMaxInterStageShaderVariables>, interstageLocations)                      \
     X(LimitsForCompilationRequest, limits)                                                  \
     X(bool, disableSymbolRenaming)                                                          \
     X(bool, isRobustnessEnabled)                                                            \
@@ -297,6 +298,18 @@ ResultOrError<std::string> TranslateToHLSL(
     tint::transform::Manager transformManager;
     tint::transform::DataMap transformInputs;
 
+    // Run before the renamer so that the entry point name matches `entryPointName` still.
+    transformManager.Add<tint::transform::SingleEntryPoint>();
+    transformInputs.Add<tint::transform::SingleEntryPoint::Config>(r.entryPointName.data());
+
+    // Needs to run before all other transforms so that they can use builtin names safely.
+    transformManager.Add<tint::transform::Renamer>();
+    if (r.disableSymbolRenaming) {
+        // We still need to rename HLSL reserved keywords
+        transformInputs.Add<tint::transform::Renamer::Config>(
+            tint::transform::Renamer::Target::kHlslKeywords);
+    }
+
     if (!r.newBindingsMap.empty()) {
         transformManager.Add<tint::transform::MultiplanarExternalTexture>();
         transformInputs.Add<tint::transform::MultiplanarExternalTexture::NewBindingPoints>(
@@ -314,17 +327,6 @@ ResultOrError<std::string> TranslateToHLSL(
     }
 
     transformManager.Add<tint::transform::BindingRemapper>();
-
-    transformManager.Add<tint::transform::SingleEntryPoint>();
-    transformInputs.Add<tint::transform::SingleEntryPoint::Config>(r.entryPointName.data());
-
-    transformManager.Add<tint::transform::Renamer>();
-
-    if (r.disableSymbolRenaming) {
-        // We still need to rename HLSL reserved keywords
-        transformInputs.Add<tint::transform::Renamer::Config>(
-            tint::transform::Renamer::Target::kHlslKeywords);
-    }
 
     if (r.substituteOverrideConfig) {
         // This needs to run after SingleEntryPoint transform which removes unused overrides for
@@ -391,6 +393,14 @@ ResultOrError<std::string> TranslateToHLSL(
     // them as well. This would allow us to only upload root constants that are actually
     // read by the shader.
     options.array_length_from_uniform = r.arrayLengthFromUniform;
+
+    if (r.stage == SingleShaderStage::Vertex) {
+        // Now that only vertex shader can have interstage outputs.
+        // Pass in the actually used interstage locations for tint to potentially truncate unused
+        // outputs.
+        options.interstage_locations = r.interstageLocations;
+    }
+
     TRACE_EVENT0(tracePlatform.UnsafeGetValue(), General, "tint::writer::hlsl::Generate");
     auto result = tint::writer::hlsl::Generate(&transformedProgram, options);
     DAWN_INVALID_IF(!result.success, "An error occured while generating HLSL: %s", result.error);
@@ -455,10 +465,12 @@ MaybeError ShaderModule::Initialize(ShaderModuleParseResult* parseResult,
     return InitializeBase(parseResult, compilationMessages);
 }
 
-ResultOrError<CompiledShader> ShaderModule::Compile(const ProgrammableStage& programmableStage,
-                                                    SingleShaderStage stage,
-                                                    const PipelineLayout* layout,
-                                                    uint32_t compileFlags) {
+ResultOrError<CompiledShader> ShaderModule::Compile(
+    const ProgrammableStage& programmableStage,
+    SingleShaderStage stage,
+    const PipelineLayout* layout,
+    uint32_t compileFlags,
+    const std::bitset<kMaxInterStageShaderVariables>* usedInterstageVariables) {
     Device* device = ToBackend(GetDevice());
     TRACE_EVENT0(device->GetPlatform(), General, "ShaderModuleD3D12::Compile");
     ASSERT(!IsError());
@@ -474,15 +486,25 @@ ResultOrError<CompiledShader> ShaderModule::Compile(const ProgrammableStage& pro
     req.hlsl.disableWorkgroupInit = device->IsToggleEnabled(Toggle::DisableWorkgroupInit);
     req.hlsl.dumpShaders = device->IsToggleEnabled(Toggle::DumpShaders);
 
+    if (usedInterstageVariables) {
+        req.hlsl.interstageLocations = *usedInterstageVariables;
+    }
+
     req.bytecode.hasShaderF16Feature = device->HasFeature(Feature::ShaderF16);
     req.bytecode.compileFlags = compileFlags;
 
     if (device->IsToggleEnabled(Toggle::UseDXC)) {
+        // If UseDXC toggle are not forced to be disable, DXC should have been validated to be
+        // available.
+        ASSERT(ToBackend(device->GetAdapter())->GetBackend()->IsDXCAvailable());
+        // We can get the DXC version information since IsDXCAvailable() is true.
+        DxcVersionInfo dxcVersionInfo =
+            ToBackend(device->GetAdapter())->GetBackend()->GetDxcVersion();
+
         req.bytecode.compiler = Compiler::DXC;
         req.bytecode.dxcLibrary = device->GetDxcLibrary().Get();
         req.bytecode.dxcCompiler = device->GetDxcCompiler().Get();
-        DAWN_TRY_ASSIGN(req.bytecode.compilerVersion,
-                        ToBackend(device->GetAdapter())->GetBackend()->GetDXCompilerVersion());
+        req.bytecode.compilerVersion = dxcVersionInfo.DxcCompilerVersion;
         req.bytecode.dxcShaderProfile = device->GetDeviceInfo().shaderProfiles[stage];
     } else {
         req.bytecode.compiler = Compiler::FXC;
@@ -595,7 +617,6 @@ ResultOrError<CompiledShader> ShaderModule::Compile(const ProgrammableStage& pro
         std::ostringstream dumpedMsg;
         dumpedMsg << "/* Dumped generated HLSL */" << std::endl
                   << compiledShader->hlslSource << std::endl;
-        device->EmitLog(WGPULoggingType_Info, dumpedMsg.str().c_str());
 
         if (device->IsToggleEnabled(Toggle::UseDXC)) {
             dumpedMsg << "/* Dumped disassembled DXIL */" << std::endl;
@@ -617,8 +638,12 @@ ResultOrError<CompiledShader> ShaderModule::Compile(const ProgrammableStage& pro
             dumpedMsg << "/* Dumped disassembled DXBC */" << std::endl;
             ComPtr<ID3DBlob> disassembly;
             D3D12_SHADER_BYTECODE code = compiledShader->GetD3D12ShaderBytecode();
+            UINT flags =
+                // Some literals are printed as floats with precision(6) which is not enough
+                // precision for values very close to 0, so always print literals as hex values.
+                D3D_DISASM_PRINT_HEX_LITERALS;
             if (FAILED(device->GetFunctions()->d3dDisassemble(
-                    code.pShaderBytecode, code.BytecodeLength, 0, nullptr, &disassembly))) {
+                    code.pShaderBytecode, code.BytecodeLength, flags, nullptr, &disassembly))) {
                 dumpedMsg << "D3D disassemble failed" << std::endl;
             } else {
                 dumpedMsg << std::string_view(
@@ -629,9 +654,7 @@ ResultOrError<CompiledShader> ShaderModule::Compile(const ProgrammableStage& pro
         device->EmitLog(WGPULoggingType_Info, dumpedMsg.str().c_str());
     }
 
-    if (BlobCache* cache = device->GetBlobCache()) {
-        cache->EnsureStored(compiledShader);
-    }
+    device->GetBlobCache()->EnsureStored(compiledShader);
 
     // Clear the hlslSource. It is only used for logging and should not be used
     // outside of the compilation.

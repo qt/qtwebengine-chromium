@@ -5,6 +5,8 @@
 import("//build_overrides/build.gni")
 import("//cast/streaming/external_libraries.gni")
 
+visibility = [ "./*" ]
+
 # Define the executable target only when the build is configured to use the
 # standalone platform implementation; since this is itself a standalone
 # application.
@@ -22,6 +24,8 @@ if (!build_with_chromium) {
   }
 
   executable("cast_sender") {
+    testonly = true
+    visibility += [ "../..:gn_all" ]
     deps = [
       "../../discovery:dnssd",
       "../../discovery:public",

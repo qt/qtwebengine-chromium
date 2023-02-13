@@ -5,17 +5,33 @@
  * found in the LICENSE file.
  */
 
-#ifndef skgpu_graphite_RecorderPriv_DEFINED
-#define skgpu_graphite_RecorderPriv_DEFINED
+#ifndef skgpu_graphite_RecordingPriv_DEFINED
+#define skgpu_graphite_RecordingPriv_DEFINED
 
 #include "include/gpu/graphite/Recording.h"
 
 namespace skgpu::graphite {
 
+class Task;
+class Surface;
+
 class RecordingPriv {
 public:
-    bool addCommands(ResourceProvider*, CommandBuffer*);
+    bool hasVolatileLazyProxies() const;
+    bool instantiateVolatileLazyProxies(ResourceProvider*);
+    void deinstantiateVolatileLazyProxies();
+
+    bool hasNonVolatileLazyProxies() const;
+    bool instantiateNonVolatileLazyProxies(ResourceProvider*);
+
+#if GR_TEST_UTILS
+    int numVolatilePromiseImages() const;
+    int numNonVolatilePromiseImages() const;
+#endif
+
+    bool addCommands(ResourceProvider*, CommandBuffer*, Surface* targetSurface);
     void addResourceRef(sk_sp<Resource> resource);
+    void addTask(sk_sp<Task> task);
 
 private:
     explicit RecordingPriv(Recording* recorder) : fRecording(recorder) {}
@@ -37,4 +53,3 @@ inline RecordingPriv Recording::priv() {
 } // namespace skgpu::graphite
 
 #endif // skgpu_graphite_RecordingPriv_DEFINED
-

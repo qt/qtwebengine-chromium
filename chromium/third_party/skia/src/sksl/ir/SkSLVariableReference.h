@@ -9,6 +9,7 @@
 #define SKSL_VARIABLEREFERENCE
 
 #include "include/core/SkTypes.h"
+#include "include/private/SkSLIRNode.h"
 #include "include/sksl/SkSLPosition.h"
 #include "src/sksl/ir/SkSLExpression.h"
 
@@ -19,6 +20,7 @@
 namespace SkSL {
 
 class Variable;
+enum class OperatorPrecedence : uint8_t;
 
 enum class VariableRefKind : int8_t {
     kRead,
@@ -40,7 +42,7 @@ class VariableReference final : public Expression {
 public:
     using RefKind = VariableRefKind;
 
-    inline static constexpr Kind kExpressionKind = Kind::kVariableReference;
+    inline static constexpr Kind kIRNodeKind = Kind::kVariableReference;
 
     VariableReference(Position pos, const Variable* variable, RefKind refKind);
 

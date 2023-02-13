@@ -1,4 +1,4 @@
-// Copyright 2017 PDFium Authors. All rights reserved.
+// Copyright 2017 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -70,8 +70,8 @@ TEST(ObjectWalkerTest, CombinedObject) {
   auto array = pdfium::MakeRetain<CPDF_Array>();
   array->Append(pdfium::MakeRetain<CPDF_Reference>(nullptr, 0));
   array->Append(pdfium::MakeRetain<CPDF_Null>());
-  array->Append(pdfium::MakeRetain<CPDF_Stream>(
-      nullptr, 0, pdfium::MakeRetain<CPDF_Dictionary>()));
+  array->Append(
+      pdfium::MakeRetain<CPDF_Stream>(pdfium::MakeRetain<CPDF_Dictionary>()));
   dict->SetFor("3", std::move(array));
   // The last number for stream length.
   EXPECT_EQ(Walk(dict), "Dict Str Bool Arr Ref Null Stream Dict Num");
@@ -81,8 +81,7 @@ TEST(ObjectWalkerTest, GetParent) {
   auto level_4 = pdfium::MakeRetain<CPDF_Number>(0);
   auto level_3 = pdfium::MakeRetain<CPDF_Dictionary>();
   level_3->SetFor("Length", std::move(level_4));
-  auto level_2 =
-      pdfium::MakeRetain<CPDF_Stream>(nullptr, 0, std::move(level_3));
+  auto level_2 = pdfium::MakeRetain<CPDF_Stream>(std::move(level_3));
   auto level_1 = pdfium::MakeRetain<CPDF_Array>();
   level_1->Append(std::move(level_2));
   auto level_0 = pdfium::MakeRetain<CPDF_Dictionary>();
@@ -95,7 +94,7 @@ TEST(ObjectWalkerTest, GetParent) {
   CPDF_ObjectWalker walker(level_0);
   while (RetainPtr<const CPDF_Object> obj = walker.GetNext()) {
     EXPECT_EQ(cur_parent, walker.GetParent());
-    cur_parent = obj;
+    cur_parent = std::move(obj);
   }
 }
 

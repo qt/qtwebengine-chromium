@@ -483,7 +483,7 @@ struct TensorEvaluator<TensorChippingOp<DimId, ArgType>, Device>
   template <typename TensorBlock>
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void writeBlock(
       const TensorBlockDesc& desc, const TensorBlock& block) {
-    assert(this->m_impl.data() != NULL);
+    eigen_assert(this->m_impl.data() != NULL);
 
     const Index chip_dim = this->m_dim.actualDim();
 

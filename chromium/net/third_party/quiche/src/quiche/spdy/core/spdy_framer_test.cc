@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <limits>
+#include <memory>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -45,13 +46,14 @@ char frame_list_char[buffer_size] = "";
 
 class MockDebugVisitor : public SpdyFramerDebugVisitorInterface {
  public:
-  MOCK_METHOD4(OnSendCompressedFrame,
-               void(SpdyStreamId stream_id, SpdyFrameType type,
-                    size_t payload_len, size_t frame_len));
+  MOCK_METHOD(void, OnSendCompressedFrame,
+              (SpdyStreamId stream_id, SpdyFrameType type, size_t payload_len,
+               size_t frame_len),
+              (override));
 
-  MOCK_METHOD3(OnReceiveCompressedFrame,
-               void(SpdyStreamId stream_id, SpdyFrameType type,
-                    size_t frame_len));
+  MOCK_METHOD(void, OnReceiveCompressedFrame,
+              (SpdyStreamId stream_id, SpdyFrameType type, size_t frame_len),
+              (override));
 };
 
 MATCHER_P(IsFrameUnionOf, frame_list, "") {
@@ -595,7 +597,7 @@ class SpdyFramerTest : public quiche::test::QuicheTestWithParam<Output> {
   SpdyFramerTest()
       : output_(output_buffer, kSize),
         framer_(SpdyFramer::ENABLE_COMPRESSION),
-        deframer_(absl::make_unique<Http2DecoderAdapter>()) {}
+        deframer_(std::make_unique<Http2DecoderAdapter>()) {}
 
  protected:
   void SetUp() override {
@@ -4064,7 +4066,7 @@ TEST_P(SpdyFramerTest, DataFrameFlagsV4) {
           << Http2DecoderAdapter::SpdyFramerErrorToString(
                  deframer_->spdy_framer_error());
     }
-    deframer_ = absl::make_unique<Http2DecoderAdapter>();
+    deframer_ = std::make_unique<Http2DecoderAdapter>();
   } while (++flags != 0);
 }
 
@@ -4095,7 +4097,7 @@ TEST_P(SpdyFramerTest, RstStreamFrameFlags) {
               deframer_->spdy_framer_error())
         << Http2DecoderAdapter::SpdyFramerErrorToString(
                deframer_->spdy_framer_error());
-    deframer_ = absl::make_unique<Http2DecoderAdapter>();
+    deframer_ = std::make_unique<Http2DecoderAdapter>();
   } while (++flags != 0);
 }
 
@@ -4142,7 +4144,7 @@ TEST_P(SpdyFramerTest, SettingsFrameFlags) {
           << Http2DecoderAdapter::SpdyFramerErrorToString(
                  deframer_->spdy_framer_error());
     }
-    deframer_ = absl::make_unique<Http2DecoderAdapter>();
+    deframer_ = std::make_unique<Http2DecoderAdapter>();
   } while (++flags != 0);
 }
 
@@ -4177,7 +4179,7 @@ TEST_P(SpdyFramerTest, GoawayFrameFlags) {
               deframer_->spdy_framer_error())
         << Http2DecoderAdapter::SpdyFramerErrorToString(
                deframer_->spdy_framer_error());
-    deframer_ = absl::make_unique<Http2DecoderAdapter>();
+    deframer_ = std::make_unique<Http2DecoderAdapter>();
   } while (++flags != 0);
 }
 
@@ -4262,7 +4264,7 @@ TEST_P(SpdyFramerTest, PingFrameFlags) {
               deframer_->spdy_framer_error())
         << Http2DecoderAdapter::SpdyFramerErrorToString(
                deframer_->spdy_framer_error());
-    deframer_ = absl::make_unique<Http2DecoderAdapter>();
+    deframer_ = std::make_unique<Http2DecoderAdapter>();
   } while (++flags != 0);
 }
 
@@ -4289,7 +4291,7 @@ TEST_P(SpdyFramerTest, WindowUpdateFrameFlags) {
               deframer_->spdy_framer_error())
         << Http2DecoderAdapter::SpdyFramerErrorToString(
                deframer_->spdy_framer_error());
-    deframer_ = absl::make_unique<Http2DecoderAdapter>();
+    deframer_ = std::make_unique<Http2DecoderAdapter>();
   } while (++flags != 0);
 }
 
@@ -4437,7 +4439,7 @@ TEST_P(SpdyFramerTest, RstStreamStatusBounds) {
   EXPECT_EQ(Http2DecoderAdapter::SPDY_NO_ERROR, deframer_->spdy_framer_error())
       << Http2DecoderAdapter::SpdyFramerErrorToString(
              deframer_->spdy_framer_error());
-  deframer_ = absl::make_unique<Http2DecoderAdapter>();
+  deframer_ = std::make_unique<Http2DecoderAdapter>();
   deframer_->set_visitor(&visitor);
 
   EXPECT_CALL(visitor, OnCommonHeader(1, 4, 0x3, 0x0));

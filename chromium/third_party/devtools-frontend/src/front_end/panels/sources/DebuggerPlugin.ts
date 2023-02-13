@@ -165,6 +165,10 @@ const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 // Don't scan for possible breakpoints on a line beyond this position;
 const MAX_POSSIBLE_BREAKPOINT_LINE = 2500;
 
+// Limits on inline variable view computation.
+const MAX_CODE_SIZE_FOR_VALUE_DECORATIONS = 10000;
+const MAX_PROPERTIES_IN_SCOPE_FOR_VALUE_DECORATIONS = 500;
+
 type BreakpointDescription = {
   position: number,
   breakpoint: Bindings.BreakpointManager.Breakpoint,
@@ -327,6 +331,8 @@ export class DebuggerPlugin extends Plugin {
         const breakpoint =
             this.breakpoints.find(b => b.position >= line.from && b.position <= line.to)?.breakpoint || null;
         const isLogpoint = breakpoint ? breakpoint.condition().includes(LogpointPrefix) : false;
+        Host.userMetrics.breakpointEditDialogRevealedFrom(
+            Host.UserMetrics.BreakpointEditDialogRevealedFrom.KeyboardShortcut);
         this.editBreakpointCondition(line, breakpoint, null, isLogpoint);
         return true;
       },
@@ -337,7 +343,7 @@ export class DebuggerPlugin extends Plugin {
     // Start asynchronous actions that require access to the editor
     // instance
     this.editor = editor;
-    computeNonBreakableLines(editor.state, this.uiSourceCode).then(linePositions => {
+    computeNonBreakableLines(editor.state, this.transformer, this.uiSourceCode).then(linePositions => {
       if (linePositions.length) {
         editor.dispatch({effects: SourceFrame.SourceFrame.addNonBreakableLines.of(linePositions)});
       }
@@ -457,12 +463,16 @@ export class DebuggerPlugin extends Plugin {
         contextMenu.debugSection().appendItem(
             i18nString(UIStrings.addBreakpoint), this.createNewBreakpoint.bind(this, line, '', true));
         if (supportsConditionalBreakpoints) {
-          contextMenu.debugSection().appendItem(
-              i18nString(UIStrings.addConditionalBreakpoint),
-              this.editBreakpointCondition.bind(this, line, null, null, false /* preferLogpoint */));
-          contextMenu.debugSection().appendItem(
-              i18nString(UIStrings.addLogpoint),
-              this.editBreakpointCondition.bind(this, line, null, null, true /* preferLogpoint */));
+          contextMenu.debugSection().appendItem(i18nString(UIStrings.addConditionalBreakpoint), () => {
+            Host.userMetrics.breakpointEditDialogRevealedFrom(
+                Host.UserMetrics.BreakpointEditDialogRevealedFrom.LineGutterContextMenu);
+            this.editBreakpointCondition(line, null, null, false /* preferLogpoint */);
+          });
+          contextMenu.debugSection().appendItem(i18nString(UIStrings.addLogpoint), () => {
+            Host.userMetrics.breakpointEditDialogRevealedFrom(
+                Host.UserMetrics.BreakpointEditDialogRevealedFrom.LineGutterContextMenu);
+            this.editBreakpointCondition(line, null, null, true /* preferLogpoint */);
+          });
           contextMenu.debugSection().appendItem(
               i18nString(UIStrings.neverPauseHere), this.createNewBreakpoint.bind(this, line, 'false', true));
         }
@@ -475,9 +485,11 @@ export class DebuggerPlugin extends Plugin {
         // Editing breakpoints only make sense for conditional breakpoints
         // and logpoints and both are currently only available for JavaScript
         // debugging.
-        contextMenu.debugSection().appendItem(
-            i18nString(UIStrings.editBreakpoint),
-            this.editBreakpointCondition.bind(this, line, breakpoints[0], null, false /* preferLogpoint */));
+        contextMenu.debugSection().appendItem(i18nString(UIStrings.editBreakpoint), () => {
+          Host.userMetrics.breakpointEditDialogRevealedFrom(
+              Host.UserMetrics.BreakpointEditDialogRevealedFrom.BreakpointMarkerContextMenu);
+          this.editBreakpointCondition(line, breakpoints[0], null, false /* preferLogpoint */);
+        });
       }
       const hasEnabled = breakpoints.some(breakpoint => breakpoint.enabled());
       if (hasEnabled) {
@@ -626,61 +638,9 @@ export class DebuggerPlugin extends Plugin {
       textPosition -= 1;
     }
 
-    const textSelection = editor.state.selection.main;
-    let highlightRange: {from: number, to: number};
-
-    if (!textSelection.empty) {
-      if (textPosition < textSelection.from || textPosition > textSelection.to) {
-        return null;
-      }
-      highlightRange = textSelection;
-    } else if (this.uiSourceCode.mimeType() === 'application/wasm') {
-      const node = CodeMirror.syntaxTree(editor.state).resolveInner(textPosition, 1);
-      if (node.name !== 'Identifier') {
-        return null;
-      }
-      // For $label identifiers we can't show a meaningful preview (https://crbug.com/1155548),
-      // so we suppress them for now. Label identifiers can only appear as operands to control
-      // instructions[1].
-      //
-      // [1]: https://webassembly.github.io/spec/core/text/instructions.html#control-instructions
-      const controlInstructions = ['block', 'loop', 'if', 'else', 'end', 'br', 'br_if', 'br_table'];
-      for (let parent: CodeMirror.SyntaxNode|null = node.parent; parent; parent = parent.parent) {
-        if (parent.name === 'App') {
-          const firstChild = parent.firstChild;
-          const opName = firstChild?.name === 'Keyword' && editor.state.sliceDoc(firstChild.from, firstChild.to);
-          if (opName && controlInstructions.includes(opName)) {
-            return null;
-          }
-        }
-      }
-      highlightRange = node;
-    } else if (/^text\/(javascript|typescript|jsx)/.test(this.uiSourceCode.mimeType())) {
-      let node: CodeMirror.SyntaxNode|null = CodeMirror.syntaxTree(editor.state).resolveInner(textPosition, 1);
-      // Only do something if the cursor is over a leaf node.
-      if (node?.firstChild) {
-        return null;
-      }
-      while (
-          node && node.name !== 'this' && node.name !== 'VariableDefinition' && node.name !== 'VariableName' &&
-          node.name !== 'MemberExpression' &&
-          !(node.name === 'PropertyName' && node.parent?.name === 'PatternProperty' &&
-            node.nextSibling?.name !== ':') &&
-          !(node.name === 'PropertyDefinition' && node.parent?.name === 'Property' && node.nextSibling?.name !== ':')) {
-        node = node.parent;
-      }
-      if (!node) {
-        return null;
-      }
-      highlightRange = node;
-    } else {
-      // In other languages, just assume a token consisting entirely
-      // of identifier-like characters is an identifier.
-      const node: CodeMirror.SyntaxNode = CodeMirror.syntaxTree(editor.state).resolveInner(textPosition, 1);
-      if (node.to - node.from > 50 || /[^\w_\-$]/.test(editor.state.sliceDoc(node.from, node.to))) {
-        return null;
-      }
-      highlightRange = node;
+    const highlightRange = computePopoverHighlightRange(editor.state, this.uiSourceCode.mimeType(), textPosition);
+    if (!highlightRange) {
+      return null;
     }
 
     const highlightLine = editor.state.doc.lineAt(highlightRange.from);
@@ -698,35 +658,25 @@ export class DebuggerPlugin extends Plugin {
     const evaluationText = editor.state.sliceDoc(highlightRange.from, highlightRange.to);
 
     let objectPopoverHelper: ObjectUI.ObjectPopoverHelper.ObjectPopoverHelper|null = null;
-
-    async function evaluate(uiSourceCode: Workspace.UISourceCode.UISourceCode, evaluationText: string): Promise<{
-      object: SDK.RemoteObject.RemoteObject,
-      exceptionDetails?: Protocol.Runtime.ExceptionDetails,
-    }|{
-      error: string,
-    }|null> {
-      const resolvedText = await SourceMapScopes.NamesResolver.resolveExpression(
-          selectedCallFrame, evaluationText, uiSourceCode, highlightLine.number - 1,
-          highlightRange.from - highlightLine.from, highlightRange.to - highlightLine.from);
-      return await selectedCallFrame.evaluate({
-        expression: resolvedText || evaluationText,
-        objectGroup: 'popover',
-        includeCommandLineAPI: false,
-        silent: true,
-        returnByValue: false,
-        generatePreview: false,
-        throwOnSideEffect: undefined,
-        timeout: undefined,
-        disableBreaks: undefined,
-        replMode: undefined,
-        allowUnsafeEvalBlockedByCSP: undefined,
-      });
-    }
-
     return {
       box,
       show: async(popover: UI.GlassPane.GlassPane): Promise<boolean> => {
-        const result = await evaluate(this.uiSourceCode, evaluationText);
+        const resolvedText = await SourceMapScopes.NamesResolver.resolveExpression(
+            selectedCallFrame, evaluationText, this.uiSourceCode, highlightLine.number - 1,
+            highlightRange.from - highlightLine.from, highlightRange.to - highlightLine.from);
+        const result = await selectedCallFrame.evaluate({
+          expression: resolvedText || evaluationText,
+          objectGroup: 'popover',
+          includeCommandLineAPI: false,
+          silent: true,
+          returnByValue: false,
+          generatePreview: false,
+          throwOnSideEffect: undefined,
+          timeout: undefined,
+          disableBreaks: undefined,
+          replMode: undefined,
+          allowUnsafeEvalBlockedByCSP: undefined,
+        });
         if (!result || 'error' in result || !result.object ||
             (result.object.type === 'object' && result.object.subtype === 'error')) {
           return false;
@@ -860,6 +810,8 @@ export class DebuggerPlugin extends Plugin {
       if (!result.committed) {
         return;
       }
+
+      recordBreakpointWithConditionAdded(breakpoint?.condition(), result.condition);
       if (breakpoint) {
         breakpoint.setCondition(result.condition);
       } else if (location) {
@@ -879,12 +831,26 @@ export class DebuggerPlugin extends Plugin {
                                            }(),
                                                                                   side: 1,
                                          })
-                                         .range(line.from)])))),
+                                         .range(line.to)])))),
     });
     dialog.markAsExternallyManaged();
     dialog.show(decorationElement);
     dialog.focusEditor();
     this.activeBreakpointDialog = dialog;
+
+    function recordBreakpointWithConditionAdded(oldCondition: string|undefined, newCondition: string): void {
+      const isLogpoint = newCondition.includes(LogpointPrefix);
+      const isConditionalBreakpoint = newCondition.length !== 0 && !isLogpoint;
+
+      const wasLogpoint = oldCondition && oldCondition.includes(LogpointPrefix);
+      const wasConditionalBreakpoint = oldCondition && oldCondition.length !== 0 && !wasLogpoint;
+      if (isLogpoint && !wasLogpoint) {
+        Host.userMetrics.breakpointWithConditionAdded(Host.UserMetrics.BreakpointWithConditionAdded.Logpoint);
+      } else if (isConditionalBreakpoint && !wasConditionalBreakpoint) {
+        Host.userMetrics.breakpointWithConditionAdded(
+            Host.UserMetrics.BreakpointWithConditionAdded.ConditionalBreakpoint);
+      }
+    }
   }
 
   // Create decorations to indicate the current debugging position
@@ -916,9 +882,25 @@ export class DebuggerPlugin extends Plugin {
       return;
     }
     const decorations = this.executionLocation ? await this.computeValueDecorations() : null;
+    // After the `await` the DebuggerPlugin could have been disposed. Re-check `this.editor`.
+    if (!this.editor) {
+      return;
+    }
     if (decorations || this.editor.state.field(valueDecorations.field).size) {
       this.editor.dispatch({effects: valueDecorations.update.of(decorations || CodeMirror.Decoration.none)});
     }
+  }
+
+  async #rawLocationToEditorOffset(location: SDK.DebuggerModel.Location|null, url: Platform.DevToolsPath.UrlString):
+      Promise<number|null> {
+    const uiLocation = location &&
+        await Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance().rawLocationToUILocation(location);
+    if (!uiLocation || uiLocation.uiSourceCode.url() !== url) {
+      return null;
+    }
+    const offset = this.editor?.toOffset(
+        this.transformer.uiLocationToEditorLocation(uiLocation.lineNumber, uiLocation.columnNumber));
+    return offset ?? null;
   }
 
   private async computeValueDecorations(): Promise<CodeMirror.DecorationSet|null> {
@@ -936,47 +918,33 @@ export class DebuggerPlugin extends Plugin {
     if (!callFrame) {
       return null;
     }
+    const url = this.uiSourceCode.url();
 
-    const localScope = callFrame.localScope();
-    if (!localScope || !callFrame.functionLocation()) {
+    const rawLocationToEditorOffset: (location: SDK.DebuggerModel.Location|null) => Promise<number|null> = location =>
+        this.#rawLocationToEditorOffset(location, url);
+
+    const functionOffsetPromise = this.#rawLocationToEditorOffset(callFrame.functionLocation(), url);
+    const executionOffsetPromise = this.#rawLocationToEditorOffset(callFrame.location(), url);
+    const [functionOffset, executionOffset] = await Promise.all([functionOffsetPromise, executionOffsetPromise]);
+    if (!functionOffset || !executionOffset) {
       return null;
     }
 
-    const {properties} =
-        await SourceMapScopes.NamesResolver.resolveScopeInObject(localScope).getAllProperties(false, false);
-    if (!properties || !properties.length || properties.length > 500) {
+    if (functionOffset >= executionOffset || executionOffset - functionOffset > MAX_CODE_SIZE_FOR_VALUE_DECORATIONS) {
       return null;
     }
 
-    const functionUILocationPromise =
-        Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance().rawLocationToUILocation(
-            (callFrame.functionLocation() as SDK.DebuggerModel.Location));
-    const executionUILocationPromise =
-        Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance().rawLocationToUILocation(
-            callFrame.location());
-    const [functionUILocation, executionUILocation] =
-        await Promise.all([functionUILocationPromise, executionUILocationPromise]);
-    if (!functionUILocation || !executionUILocation ||
-        functionUILocation.uiSourceCode.url() !== this.uiSourceCode.url() ||
-        executionUILocation.uiSourceCode.url() !== this.uiSourceCode.url()) {
+    const variableNames = getVariableNamesByLine(this.editor.state, functionOffset, executionOffset, executionOffset);
+    if (variableNames.length === 0) {
       return null;
     }
 
-    const functionLocation =
-        this.transformer.uiLocationToEditorLocation(functionUILocation.lineNumber, functionUILocation.columnNumber);
-    const executionLocation =
-        this.transformer.uiLocationToEditorLocation(executionUILocation.lineNumber, executionUILocation.columnNumber);
-    if (functionLocation.lineNumber >= executionLocation.lineNumber ||
-        executionLocation.lineNumber - functionLocation.lineNumber > 500 || functionLocation.lineNumber < 0 ||
-        executionLocation.lineNumber >= this.editor.state.doc.lines) {
+    const scopeMappings = await computeScopeMappings(callFrame, rawLocationToEditorOffset);
+    if (scopeMappings.length === 0) {
       return null;
     }
 
-    const variableMap = new Map<string, SDK.RemoteObject.RemoteObject>(
-        properties.map(p => [p.name, p.value] as [string, SDK.RemoteObject.RemoteObject]));
-
-    const variablesByLine =
-        this.getVariablesByLine(this.editor.state, variableMap, functionLocation, executionLocation);
+    const variablesByLine = getVariableValuesByLine(scopeMappings, variableNames);
     if (!variablesByLine) {
       return null;
     }
@@ -985,54 +953,17 @@ export class DebuggerPlugin extends Plugin {
 
     for (const [line, names] of variablesByLine) {
       const prevLine = variablesByLine.get(line - 1);
-      let newNames = prevLine ? Array.from(names).filter(n => !prevLine.has(n)) : Array.from(names);
+      let newNames = prevLine ? Array.from(names).filter(n => prevLine.get(n[0]) !== n[1]) : Array.from(names);
       if (!newNames.length) {
         continue;
       }
       if (newNames.length > 10) {
         newNames = newNames.slice(0, 10);
       }
-      const pairs = newNames.map(name => [name, variableMap.get(name)] as [string, SDK.RemoteObject.RemoteObject]);
-      decorations.push(CodeMirror.Decoration.widget({widget: new ValueDecoration(pairs), side: 1})
+      decorations.push(CodeMirror.Decoration.widget({widget: new ValueDecoration(newNames), side: 1})
                            .range(this.editor.state.doc.line(line + 1).to));
     }
     return CodeMirror.Decoration.set(decorations, true);
-  }
-
-  getVariablesByLine(
-      editorState: CodeMirror.EditorState, variableMap: Map<string, unknown>,
-      fromLoc: {lineNumber: number, columnNumber: number},
-      toLoc: {lineNumber: number, columnNumber: number}): Map<number, Set<string>>|null {
-    const fromLine = editorState.doc.line(fromLoc.lineNumber + 1);
-    const fromPos = Math.min(fromLine.to, fromLine.from + fromLoc.columnNumber);
-    const toPos = editorState.doc.line(toLoc.lineNumber + 1).from;
-
-    const tree = CodeMirror.ensureSyntaxTree(editorState, toPos, 100);
-    if (!tree) {
-      return null;
-    }
-
-    const namesPerLine = new Map<number, Set<string>>();
-    let curLine = fromLine;
-    tree.iterate({
-      from: fromPos,
-      to: toPos,
-      enter: node => {
-        const varName = this.isVariableIdentifier(node.name) && editorState.sliceDoc(node.from, node.to);
-        if (varName && variableMap.has(varName)) {
-          if (node.from > curLine.to) {
-            curLine = editorState.doc.lineAt(node.from);
-          }
-          let names = namesPerLine.get(curLine.number - 1);
-          if (!names) {
-            names = new Set();
-            namesPerLine.set(curLine.number - 1, names);
-          }
-          names.add(varName);
-        }
-      },
-    });
-    return namesPerLine;
   }
 
   // Highlight the locations the debugger can continue to (when
@@ -1292,7 +1223,8 @@ export class DebuggerPlugin extends Plugin {
       this.breakpoints = this.fetchBreakpoints();
       const forBreakpoints = this.breakpoints;
       const decorations = await this.computeBreakpointDecoration(this.editor.state, forBreakpoints);
-      if (this.breakpoints === forBreakpoints &&
+      // After the `await` we could have disposed of this DebuggerPlugin, so re-check `this.editor`.
+      if (this.editor && this.breakpoints === forBreakpoints &&
           (decorations.gutter.size || this.editor.state.field(breakpointMarkers, false)?.gutter.size)) {
         this.editor.dispatch({effects: setBreakpointDeco.of(decorations)});
       }
@@ -1346,17 +1278,23 @@ export class DebuggerPlugin extends Plugin {
     }
     const contextMenu = new UI.ContextMenu.ContextMenu(event);
     if (breakpoint) {
-      contextMenu.debugSection().appendItem(
-          i18nString(UIStrings.editBreakpoint),
-          this.editBreakpointCondition.bind(this, line, breakpoint, null, false /* preferLogpoint */));
+      contextMenu.debugSection().appendItem(i18nString(UIStrings.editBreakpoint), () => {
+        Host.userMetrics.breakpointEditDialogRevealedFrom(
+            Host.UserMetrics.BreakpointEditDialogRevealedFrom.BreakpointMarkerContextMenu);
+        this.editBreakpointCondition(line, breakpoint, null, false /* preferLogpoint */);
+      });
     } else {
       const uiLocation = this.transformer.editorLocationToUILocation(line.number - 1, position - line.from);
-      contextMenu.debugSection().appendItem(
-          i18nString(UIStrings.addConditionalBreakpoint),
-          this.editBreakpointCondition.bind(this, line, null, uiLocation, false /* preferLogpoint */));
-      contextMenu.debugSection().appendItem(
-          i18nString(UIStrings.addLogpoint),
-          this.editBreakpointCondition.bind(this, line, null, uiLocation, true /* preferLogpoint */));
+      contextMenu.debugSection().appendItem(i18nString(UIStrings.addConditionalBreakpoint), () => {
+        Host.userMetrics.breakpointEditDialogRevealedFrom(
+            Host.UserMetrics.BreakpointEditDialogRevealedFrom.BreakpointMarkerContextMenu);
+        this.editBreakpointCondition(line, null, uiLocation, false /* preferLogpoint */);
+      });
+      contextMenu.debugSection().appendItem(i18nString(UIStrings.addLogpoint), () => {
+        Host.userMetrics.breakpointEditDialogRevealedFrom(
+            Host.UserMetrics.BreakpointEditDialogRevealedFrom.BreakpointMarkerContextMenu);
+        this.editBreakpointCondition(line, null, uiLocation, true /* preferLogpoint */);
+      });
 
       contextMenu.debugSection().appendItem(
           i18nString(UIStrings.neverPauseHere),
@@ -1638,6 +1576,11 @@ export class DebuggerPlugin extends Plugin {
     debuggerPluginForUISourceCode.delete(this.uiSourceCode);
     super.dispose();
 
+    window.clearTimeout(this.refreshBreakpointsTimeout);
+    // Clear `this.editor` to signal that we are disposed. Any function from this `DebuggerPlugin` instance
+    // still running or scheduled will early return and not do any work.
+    this.editor = undefined;
+
     UI.Context.Context.instance().removeFlavorChangeListener(SDK.DebuggerModel.CallFrame, this.callFrameChanged, this);
     this.liveLocationPool.disposeAll();
   }
@@ -1695,11 +1638,14 @@ const infobarState = CodeMirror.StateField.define<UI.Infobar.Infobar[]>({
 // Enumerate non-breakable lines (lines without a known corresponding
 // position in the UISource).
 async function computeNonBreakableLines(
-    state: CodeMirror.EditorState, sourceCode: Workspace.UISourceCode.UISourceCode): Promise<readonly number[]> {
+    state: CodeMirror.EditorState, transformer: SourceFrame.SourceFrame.Transformer,
+    sourceCode: Workspace.UISourceCode.UISourceCode): Promise<readonly number[]> {
   const linePositions = [];
   if (Bindings.CompilerScriptMapping.CompilerScriptMapping.uiSourceCodeOrigin(sourceCode).length) {
     for (let i = 0; i < state.doc.lines; i++) {
-      const lineHasMapping = Bindings.CompilerScriptMapping.CompilerScriptMapping.uiLineHasMapping(sourceCode, i);
+      const {lineNumber} = transformer.editorLocationToUILocation(i, 0);
+      const lineHasMapping =
+          Bindings.CompilerScriptMapping.CompilerScriptMapping.uiLineHasMapping(sourceCode, lineNumber);
       if (!lineHasMapping) {
         linePositions.push(state.doc.line(i + 1).from);
       }
@@ -1714,7 +1660,8 @@ async function computeNonBreakableLines(
       return [];
     }
     for (let i = 0; i < state.doc.lines; i++) {
-      if (!mappedLines.has(i)) {
+      const {lineNumber} = transformer.editorLocationToUILocation(i, 0);
+      if (!mappedLines.has(lineNumber)) {
         linePositions.push(state.doc.line(i + 1).from);
       }
     }
@@ -1925,6 +1872,249 @@ class ValueDecoration extends CodeMirror.WidgetType {
 
 const valueDecorations = defineStatefulDecoration();
 
+function isVariableIdentifier(tokenType: string): boolean {
+  return tokenType === 'VariableName' || tokenType === 'VariableDefinition';
+}
+
+function isVariableDefinition(tokenType: string): boolean {
+  return tokenType === 'VariableDefinition';
+}
+
+function isLetConstDefinition(tokenType: string): boolean {
+  return tokenType === 'let' || tokenType === 'const';
+}
+
+function isScopeNode(tokenType: string): boolean {
+  return tokenType === 'Block' || tokenType === 'ForSpec';
+}
+
+class SiblingScopeVariables {
+  blockList: Set<string> = new Set<string>();
+  variables: {line: number, from: number, id: string}[] = [];
+}
+
+export function getVariableNamesByLine(
+    editorState: CodeMirror.EditorState, fromPos: number, toPos: number,
+    currentPos: number): {line: number, from: number, id: string}[] {
+  const fromLine = editorState.doc.lineAt(fromPos);
+  fromPos = Math.min(fromLine.to, fromPos);
+  toPos = editorState.doc.lineAt(toPos).from;
+
+  const tree = CodeMirror.ensureSyntaxTree(editorState, toPos, 100);
+  if (!tree) {
+    return [];
+  }
+
+  // Sibling scope is a scope that does not contain the current position.
+  // We will exclude variables that are defined (and used in those scopes (since we are currently outside of their lifetime).
+  function isSiblingScopeNode(node: {name: string, from: number, to: number}): boolean {
+    return isScopeNode(node.name) && (node.to < currentPos || currentPos < node.from);
+  }
+
+  const names: {line: number, from: number, id: string}[] = [];
+  let curLine = fromLine;
+  const siblingStack: SiblingScopeVariables[] = [];
+  let currentLetConstDefinition: CodeMirror.SyntaxNode|null = null;
+
+  function currentNames(): {line: number, from: number, id: string}[] {
+    return siblingStack.length ? siblingStack[siblingStack.length - 1].variables : names;
+  }
+
+  tree.iterate({
+    from: fromPos,
+    to: toPos,
+    enter: node => {
+      if (node.from < fromPos) {
+        return;
+      }
+
+      if (isLetConstDefinition(node.name)) {
+        currentLetConstDefinition = node.node.nextSibling;
+        return;
+      }
+
+      if (isSiblingScopeNode(node)) {
+        siblingStack.push(new SiblingScopeVariables());
+        return;
+      }
+
+      const varName = isVariableIdentifier(node.name) && editorState.sliceDoc(node.from, node.to);
+      if (!varName) {
+        return;
+      }
+
+      if (currentLetConstDefinition && isVariableDefinition(node.name) && siblingStack.length > 0) {
+        siblingStack[siblingStack.length - 1].blockList.add(varName);
+        return;
+      }
+
+      if (node.from > curLine.to) {
+        curLine = editorState.doc.lineAt(node.from);
+      }
+
+      currentNames().push({line: curLine.number - 1, from: node.from, id: varName});
+    },
+    leave: node => {
+      if (currentLetConstDefinition === node.node) {
+        currentLetConstDefinition = null;
+      } else if (isSiblingScopeNode(node)) {
+        const topScope = siblingStack.pop();
+        const nameList = currentNames();
+        for (const token of topScope?.variables ?? []) {
+          if (!topScope?.blockList.has(token.id)) {
+            nameList.push(token);
+          }
+        }
+      }
+    },
+  });
+  return names;
+}
+
+export async function computeScopeMappings(
+    callFrame: SDK.DebuggerModel.CallFrame,
+    rawLocationToEditorOffset: (l: SDK.DebuggerModel.Location|null) => Promise<number|null>):
+    Promise<{scopeStart: number, scopeEnd: number, variableMap: Map<string, SDK.RemoteObject.RemoteObject>}[]> {
+  const scopeMappings:
+      {scopeStart: number, scopeEnd: number, variableMap: Map<string, SDK.RemoteObject.RemoteObject>}[] = [];
+  for (const scope of callFrame.scopeChain()) {
+    const scopeStart = await rawLocationToEditorOffset(scope.startLocation());
+    if (!scopeStart) {
+      break;
+    }
+    const scopeEnd = await rawLocationToEditorOffset(scope.endLocation());
+    if (!scopeEnd) {
+      break;
+    }
+
+    const {properties} = await SourceMapScopes.NamesResolver.resolveScopeInObject(scope).getAllProperties(false, false);
+    if (!properties || properties.length > MAX_PROPERTIES_IN_SCOPE_FOR_VALUE_DECORATIONS) {
+      break;
+    }
+    const variableMap = new Map<string, SDK.RemoteObject.RemoteObject>(
+        properties.map(p => [p.name, p.value] as [string, SDK.RemoteObject.RemoteObject]));
+
+    scopeMappings.push({scopeStart, scopeEnd, variableMap});
+
+    // Let us only get mappings for block scopes until we see a surrounding function (local) scope.
+    if (scope.type() === Protocol.Debugger.ScopeType.Local) {
+      break;
+    }
+  }
+  return scopeMappings;
+}
+
+export function getVariableValuesByLine(
+    scopeMappings: {scopeStart: number, scopeEnd: number, variableMap: Map<string, SDK.RemoteObject.RemoteObject>}[],
+    variableNames: {line: number, from: number, id: string}[]): Map<number, Map<string, SDK.RemoteObject.RemoteObject>>|
+    null {
+  const namesPerLine = new Map<number, Map<string, SDK.RemoteObject.RemoteObject>>();
+  for (const {line, from, id} of variableNames) {
+    const varValue = findVariableInChain(id, from, scopeMappings);
+    if (!varValue) {
+      continue;
+    }
+    let names = namesPerLine.get(line);
+    if (!names) {
+      names = new Map();
+      namesPerLine.set(line, names);
+    }
+    names.set(id, varValue);
+  }
+  return namesPerLine;
+
+  function findVariableInChain(
+      name: string,
+      pos: number,
+      scopeMappings: {scopeStart: number, scopeEnd: number, variableMap: Map<string, SDK.RemoteObject.RemoteObject>}[],
+      ): SDK.RemoteObject.RemoteObject|null {
+    for (const scope of scopeMappings) {
+      if (pos < scope.scopeStart || pos >= scope.scopeEnd) {
+        continue;
+      }
+      const value = scope.variableMap.get(name);
+      if (value) {
+        return value;
+      }
+    }
+    return null;
+  }
+}
+
+// Pop-over
+
+export function computePopoverHighlightRange(state: CodeMirror.EditorState, mimeType: string, cursorPos: number): {
+  from: number,
+  to: number,
+}|null {
+  const {main} = state.selection;
+  if (!main.empty) {
+    if (cursorPos < main.from || main.to < cursorPos) {
+      return null;
+    }
+    return {from: main.from, to: main.to};
+  }
+
+  const node = CodeMirror.syntaxTree(state).resolveInner(cursorPos, 1);
+  // Only do something if the cursor is over a leaf node.
+  if (node.firstChild) {
+    return null;
+  }
+
+  switch (mimeType) {
+    case 'application/wasm': {
+      if (node.name !== 'Identifier') {
+        return null;
+      }
+      // For $label identifiers we can't show a meaningful preview (https://crbug.com/1155548),
+      // so we suppress them for now. Label identifiers can only appear as operands to control
+      // instructions[1].
+      //
+      // [1]: https://webassembly.github.io/spec/core/text/instructions.html#control-instructions
+      const controlInstructions = ['block', 'loop', 'if', 'else', 'end', 'br', 'br_if', 'br_table'];
+      for (let parent: CodeMirror.SyntaxNode|null = node.parent; parent; parent = parent.parent) {
+        if (parent.name === 'App') {
+          const firstChild = parent.firstChild;
+          const opName = firstChild?.name === 'Keyword' && state.sliceDoc(firstChild.from, firstChild.to);
+          if (opName && controlInstructions.includes(opName)) {
+            return null;
+          }
+        }
+      }
+      return {from: node.from, to: node.to};
+    }
+
+    case 'text/html':
+    case 'text/javascript':
+    case 'text/jsx':
+    case 'text/typescript':
+    case 'text/typescript-jsx': {
+      let current: CodeMirror.SyntaxNode|null = node;
+      while (current && current.name !== 'this' && current.name !== 'VariableDefinition' &&
+             current.name !== 'VariableName' && current.name !== 'MemberExpression' &&
+             !(current.name === 'PropertyName' && current.parent?.name === 'PatternProperty' &&
+               current.nextSibling?.name !== ':') &&
+             !(current.name === 'PropertyDefinition' && current.parent?.name === 'Property' &&
+               current.nextSibling?.name !== ':')) {
+        current = current.parent;
+      }
+      if (!current) {
+        return null;
+      }
+      return {from: current.from, to: current.to};
+    }
+
+    default: {
+      // In other languages, just assume a token consisting entirely
+      // of identifier-like characters is an identifier.
+      if (node.to - node.from > 50 || /[^\w_\-$]/.test(state.sliceDoc(node.from, node.to))) {
+        return null;
+      }
+      return {from: node.from, to: node.to};
+    }
+  }
+}
+
 // Evaluated expression mark for pop-over
 
 const evalExpressionMark = CodeMirror.Decoration.mark({class: 'cm-evaluatedExpression'});
@@ -1934,7 +2124,7 @@ const evalExpression = defineStatefulDecoration();
 // Styling for plugin-local elements
 
 const theme = CodeMirror.EditorView.baseTheme({
-  '.cm-lineNumbers .cm-gutterElement': {
+  '.cm-gutters .cm-gutter.cm-lineNumbers .cm-gutterElement': {
     '&:hover, &.cm-breakpoint': {
       borderStyle: 'solid',
       borderWidth: '1px 4px 1px 1px',
@@ -1970,7 +2160,7 @@ const theme = CodeMirror.EditorView.baseTheme({
       },
     },
   },
-  '&dark .cm-lineNumbers .cm-gutterElement': {
+  '&dark .cm-gutters .cm-gutter.cm-lineNumbers .cm-gutterElement': {
     '&:hover': {
       WebkitBorderImage: lineNumberArrow('#3c4043', '#3c4043'),
     },
@@ -1984,7 +2174,7 @@ const theme = CodeMirror.EditorView.baseTheme({
       WebkitBorderImage: lineNumberArrow('#E54D9B', '#d01884'),
     },
   },
-  ':host-context(.breakpoints-deactivated) & .cm-lineNumbers .cm-gutterElement.cm-breakpoint, .cm-lineNumbers .cm-gutterElement.cm-breakpoint-disabled':
+  ':host-context(.breakpoints-deactivated) & .cm-gutters .cm-gutter.cm-lineNumbers .cm-gutterElement.cm-breakpoint, .cm-gutters .cm-gutter.cm-lineNumbers .cm-gutterElement.cm-breakpoint-disabled':
       {
         color: '#1a73e8',
         WebkitBorderImage: lineNumberArrow('#d9e7fd', '#1a73e8'),
@@ -1997,7 +2187,7 @@ const theme = CodeMirror.EditorView.baseTheme({
           WebkitBorderImage: lineNumberArrow('#fdd7ec', '#f439a0'),
         },
       },
-  ':host-context(.breakpoints-deactivated) &dark .cm-lineNumbers .cm-gutterElement.cm-breakpoint, &dark .cm-lineNumbers .cm-gutterElement.cm-breakpoint-disabled':
+  ':host-context(.breakpoints-deactivated) &dark .cm-gutters .cm-gutter.cm-lineNumbers .cm-gutterElement.cm-breakpoint, &dark .cm-gutters .cm-gutter.cm-lineNumbers .cm-gutterElement.cm-breakpoint-disabled':
       {
         WebkitBorderImage: lineNumberArrow('#2a384e', '#1a73e8'),
         '&.cm-breakpoint-conditional': {

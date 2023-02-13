@@ -261,10 +261,10 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
       "mips (level >= 2) doesn't work correctly. Workaround this issue by detecting this case and "
       "rendering to a temporary texture instead (with copies before and after if needed).",
       "https://crbug.com/dawn/1071"}},
-    {Toggle::EnableBlobCache,
-     {"enable_blob_cache",
-      "Enables usage of the blob cache (backed by the platform cache if set/passed). Necessary for "
-      "any persistent caching capabilities, i.e. pipeline caching.",
+    {Toggle::DisableBlobCache,
+     {"disable_blob_cache",
+      "Disables usage of the blob cache (backed by the platform cache if set/passed). Prevents any "
+      "persistent caching capabilities, i.e. pipeline caching.",
       "https://crbug.com/dawn/549"}},
     {Toggle::D3D12ForceClearCopyableDepthStencilTextureOnCreation,
      {"d3d12_force_clear_copyable_depth_stencil_texture_on_creation",
@@ -283,12 +283,12 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
       "Toggle is enabled by default on the D3D12 platforms where CastingFullyTypedFormatSupported "
       "is false.",
       "https://crbug.com/dawn/1276"}},
-    {Toggle::D3D12AllocateExtraMemoryFor2DArrayTexture,
-     {"d3d12_allocate_extra_memory_for_2d_array_texture",
-      "Memory allocation for 2D array texture may be smaller than it should be on D3D12 on some "
-      "Intel devices. So texture access can be out-of-bound, which may cause critical security "
-      "issue. We can workaround this security issue via allocating extra memory and limiting its "
-      "access in itself.",
+    {Toggle::D3D12AllocateExtraMemoryFor2DArrayColorTexture,
+     {"d3d12_allocate_extra_memory_for_2d_array_color_texture",
+      "Memory allocation for 2D array color texture may be smaller than it should be on D3D12 on "
+      "some Intel devices. So texture access can be out-of-bound, which may cause critical "
+      "security issue. We can workaround this security issue via allocating extra memory and "
+      "limiting its access in itself.",
       "https://crbug.com/dawn/949"}},
     {Toggle::D3D12UseTempBufferInDepthStencilTextureAndBufferCopyWithNonZeroBufferOffset,
      {"d3d12_use_temp_buffer_in_depth_stencil_texture_and_buffer_copy_with_non_zero_buffer_offset",
@@ -306,9 +306,9 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
       "integer that is greater than 2^24 or smaller than -2^24). This toggle is also enabled on "
       "Intel GPUs on Metal backend due to a driver issue on Intel Metal driver.",
       "https://crbug.com/dawn/537"}},
-    {Toggle::MetalUseDummyBlitEncoderForWriteTimestamp,
-     {"metal_use_dummy_blit_encoder_for_write_timestamp",
-      "Add dummy blit command to blit encoder when encoding writeTimestamp as workaround on Metal."
+    {Toggle::MetalUseMockBlitEncoderForWriteTimestamp,
+     {"metal_use_mock_blit_encoder_for_write_timestamp",
+      "Add mock blit command to blit encoder when encoding writeTimestamp as workaround on Metal."
       "This toggle is enabled by default on Metal backend where GPU counters cannot be stored to"
       "sampleBufferAttachments on empty blit encoder.",
       "https://crbug.com/dawn/1473"}},
@@ -319,6 +319,19 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
       "default on Qualcomm GPUs, which have been observed experiencing a driver crash in this "
       "situation.",
       "https://crbug.com/dawn/1564"}},
+    {Toggle::D3D12Allocate2DTexturewithCopyDstAsCommittedResource,
+     {"d3d12_allocate_2d_texture_with_copy_dst_as_committed_resource",
+      "Allocate each 2D texture with CopyDst usage as committed resources instead of placed "
+      "resources. This toggle is enabled by default on D3D12 backends using Intel Gen9.5 and Gen11 "
+      "GPUs due to a driver issue on Intel D3D12 driver.",
+      "https://crbug.com/1237175"}},
+    {Toggle::DisallowDeprecatedAPIs,
+     {"disallow_deprecated_apis",
+      "Disallow all deprecated paths by changing the deprecation warnings to validation error for "
+      "these paths."
+      "This toggle is off by default. It is expected to turn on or get removed when WebGPU V1 "
+      "ships and stays stable.",
+      "https://crbug.com/dawn/1563"}},
     // Comment to separate the }} so it is clearer what to copy-paste to add a toggle.
 }};
 }  // anonymous namespace

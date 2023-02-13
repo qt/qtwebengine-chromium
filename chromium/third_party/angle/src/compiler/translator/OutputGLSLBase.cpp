@@ -296,7 +296,9 @@ void TOutputGLSLBase::writeLayoutQualifier(TIntermSymbol *variable)
 
 void TOutputGLSLBase::writeFieldLayoutQualifier(const TField *field)
 {
-    if (!field->type()->isMatrix() && !field->type()->isStructureContainingMatrices())
+    TLayoutQualifier layoutQualifier = field->type()->getLayoutQualifier();
+    if (!field->type()->isMatrix() && !field->type()->isStructureContainingMatrices() &&
+        layoutQualifier.imageInternalFormat == EiifUnspecified)
     {
         return;
     }
@@ -304,21 +306,30 @@ void TOutputGLSLBase::writeFieldLayoutQualifier(const TField *field)
     TInfoSinkBase &out = objSink();
 
     out << "layout(";
-    switch (field->type()->getLayoutQualifier().matrixPacking)
+    CommaSeparatedListItemPrefixGenerator listItemPrefix;
+    if (field->type()->isMatrix() || field->type()->isStructureContainingMatrices())
     {
-        case EmpUnspecified:
-        case EmpColumnMajor:
-            // Default matrix packing is column major.
-            out << "column_major";
-            break;
+        switch (layoutQualifier.matrixPacking)
+        {
+            case EmpUnspecified:
+            case EmpColumnMajor:
+                // Default matrix packing is column major.
+                out << listItemPrefix << "column_major";
+                break;
 
-        case EmpRowMajor:
-            out << "row_major";
-            break;
+            case EmpRowMajor:
+                out << listItemPrefix << "row_major";
+                break;
 
-        default:
-            UNREACHABLE();
-            break;
+            default:
+                UNREACHABLE();
+                break;
+        }
+    }
+    // EXT_shader_pixel_local_storage.
+    if (layoutQualifier.imageInternalFormat != EiifUnspecified)
+    {
+        out << listItemPrefix << getImageInternalFormatString(layoutQualifier.imageInternalFormat);
     }
     out << ") ";
 }
@@ -373,7 +384,9 @@ const char *TOutputGLSLBase::mapQualifierToString(TQualifier qualifier)
         // gl_ClipDistance / gl_CullDistance require different qualifiers based on shader type.
         case EvqClipDistance:
         case EvqCullDistance:
-            return mShaderType == GL_FRAGMENT_SHADER ? "in" : "out";
+            return (sh::IsGLSL130OrNewer(mOutput) || mShaderVersion > 100)
+                       ? (mShaderType == GL_FRAGMENT_SHADER ? "in" : "out")
+                       : "varying";
 
         // gl_LastFragColor / gl_LastFragData have no qualifiers.
         case EvqLastFragData:
@@ -1404,12 +1417,19 @@ void WriteTessEvaluationShaderLayoutQualifiers(TInfoSinkBase &out,
 // NeedsToWriteLayoutQualifier.
 bool TOutputGLSLBase::needsToWriteLayoutQualifier(const TType &type)
 {
+    const TLayoutQualifier &layoutQualifier = type.getLayoutQualifier();
+
     if (type.getBasicType() == EbtInterfaceBlock)
     {
+        if (type.getQualifier() == EvqPixelLocalEXT)
+        {
+            // We only use per-member EXT_shader_pixel_local_storage formats, so the PLS interface
+            // block will never have a layout qualifier.
+            ASSERT(layoutQualifier.imageInternalFormat == EiifUnspecified);
+            return false;
+        }
         return true;
     }
-
-    const TLayoutQualifier &layoutQualifier = type.getLayoutQualifier();
 
     if (IsFragmentOutput(type.getQualifier()) || type.getQualifier() == EvqVertexIn ||
         IsVarying(type.getQualifier()))

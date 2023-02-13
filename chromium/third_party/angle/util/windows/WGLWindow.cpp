@@ -397,6 +397,41 @@ EGLBoolean WGLWindow::destroyImageKHR(Image image)
     return EGL_FALSE;
 }
 
+WGLWindow::Sync WGLWindow::createSync(EGLDisplay dpy, EGLenum type, const EGLAttrib *attrib_list)
+{
+    return nullptr;
+}
+
+WGLWindow::Sync WGLWindow::createSyncKHR(EGLDisplay dpy, EGLenum type, const EGLint *attrib_list)
+{
+    return nullptr;
+}
+
+EGLBoolean WGLWindow::destroySync(EGLDisplay dpy, Sync sync)
+{
+    return EGL_FALSE;
+}
+
+EGLBoolean WGLWindow::destroySyncKHR(EGLDisplay dpy, Sync sync)
+{
+    return EGL_FALSE;
+}
+
+EGLint WGLWindow::clientWaitSync(EGLDisplay dpy, Sync sync, EGLint flags, EGLTimeKHR timeout)
+{
+    return EGL_FALSE;
+}
+
+EGLint WGLWindow::clientWaitSyncKHR(EGLDisplay dpy, Sync sync, EGLint flags, EGLTimeKHR timeout)
+{
+    return EGL_FALSE;
+}
+
+EGLint WGLWindow::getEGLError()
+{
+    return EGL_SUCCESS;
+}
+
 WGLWindow::Surface WGLWindow::createPbufferSurface(const EGLint *attrib_list)
 {
     std::cerr << "WGLWindow::createPbufferSurface not implemented.\n";

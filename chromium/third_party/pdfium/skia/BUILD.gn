@@ -1,4 +1,4 @@
-# Copyright (c) 2013 The Chromium Authors. All rights reserved.
+# Copyright 2013 The PDFium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -23,7 +23,10 @@ skia_support_pdf = false
 config("skia_config") {
   include_dirs = [ "//third_party/skia" ]
 
-  defines = [ "SK_USER_CONFIG_HEADER=\"../../skia/config/SkUserConfig.h\"" ]
+  defines = [
+    "SK_ENCODE_PNG",
+    "SK_USER_CONFIG_HEADER=\"../../skia/config/SkPdfiumUserConfig.h\"",
+  ]
 
   if (is_win) {
     defines += [ "SK_FREETYPE_MINIMUM_RUNTIME_VERSION=(((FREETYPE_MAJOR) * 0x01000000) | ((FREETYPE_MINOR) * 0x00010000) | ((FREETYPE_PATCH) * 0x00000100))" ]
@@ -65,6 +68,11 @@ config("skia_config") {
 # Internal-facing config for Skia library code.
 config("skia_library_config") {
   defines = []
+
+  # Skia uses C++17 language features in its internal code. Previously Skia was built with
+  # "-std=c++17". See http://crbug.com/1257145 for why this was a bad idea.
+  cflags_cc = [ "-Wno-c++17-extensions" ]
+  cflags_objcc = [ "-Wno-c++17-extensions" ]
 
   if (is_component_build) {
     defines += [ "SKIA_IMPLEMENTATION=1" ]
@@ -134,10 +142,6 @@ config("skia_library_config") {
       "/wd5041",  # out-of-line definition for constexpr static data member is
                   # not needed and is deprecated in C++17
     ]
-    cflags_cc = [ "/std:c++17" ]
-  } else {
-    cflags_cc = [ "-std=c++17" ]
-    cflags_objcc = [ "-std=c++17" ]
   }
 }
 
@@ -165,11 +169,12 @@ source_set("skcms") {
 component("skia") {
   sources = [
     # PDFium sources.
-    "config/SkUserConfig.h",
+    "config/SkPdfiumUserConfig.h",
     "ext/google_logging.cc",
   ]
 
   # The skia sources values are relative to the skia_dir, so we need to rebase.
+  sources += skia_core_public
   sources += skia_sksl_gpu_sources
   sources += skia_sksl_sources
   sources += skia_utils_sources
@@ -190,6 +195,7 @@ component("skia") {
     "//third_party/skia/src/fonts/SkFontMgr_indirect.cpp",
     "//third_party/skia/src/fonts/SkRemotableFontMgr.cpp",
     "//third_party/skia/src/images/SkImageEncoder.cpp",
+    "//third_party/skia/src/images/SkPngEncoder.cpp",
     "//third_party/skia/src/ports/SkGlobalInitialization_default.cpp",
     "//third_party/skia/src/ports/SkImageGenerator_none.cpp",
     "//third_party/skia/src/ports/SkOSFile_stdio.cpp",
@@ -328,6 +334,7 @@ component("skia") {
   deps = [
     ":skcms",
     ":skia_opts",
+    "../third_party:png",
     "../third_party:zlib",
     "//:freetype_common",
   ]
@@ -410,7 +417,14 @@ skia_source_set("skia_core_and_effects") {
   visibility = [ ":skia" ]
 }
 
-# Separated out so it can be compiled with different flags for SSE.
+# Bits that involve special vector-y hardware.
+if (current_cpu == "arm64") {
+  skia_source_set("skia_opts_crc32") {
+    sources = skia_opts.crc32_sources
+    cflags = [ "-march=armv8-a+crc" ]
+    visibility = [ ":skia_opts" ]
+  }
+}
 if (current_cpu == "x86" || current_cpu == "x64") {
   skia_source_set("skia_opts_sse3") {
     sources = skia_opts.ssse3_sources
@@ -498,7 +512,7 @@ skia_source_set("skia_opts") {
       }
     }
   } else if (current_cpu == "arm64") {
-    # Conditional and empty body needed to avoid assert() below.
+    deps = [ ":skia_opts_crc32" ]
   } else if (current_cpu == "mipsel" || current_cpu == "mips64el") {
     cflags += [ "-fomit-frame-pointer" ]
   } else {

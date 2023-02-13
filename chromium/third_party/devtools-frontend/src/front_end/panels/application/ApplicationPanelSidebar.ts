@@ -43,6 +43,7 @@ import * as SourceFrame from '../../ui/legacy/components/source_frame/source_fra
 import * as UI from '../../ui/legacy/legacy.js';
 
 import {BackForwardCacheTreeElement, ServiceWorkerCacheTreeElement} from './ApplicationPanelCacheSection.js';
+import {PreloadingTreeElement} from './ApplicationPanelPreloadingSection.js';
 import {ApplicationPanelTreeElement, ExpandableApplicationPanelTreeElement} from './ApplicationPanelTreeElement.js';
 import {AppManifestView} from './AppManifestView.js';
 import {BackgroundServiceModel} from './BackgroundServiceModel.js';
@@ -70,6 +71,15 @@ import {InterestGroupTreeElement} from './InterestGroupTreeElement.js';
 import {OpenedWindowDetailsView, WorkerDetailsView} from './OpenedWindowDetailsView.js';
 import {type ResourcesPanel} from './ResourcesPanel.js';
 import {ServiceWorkersView} from './ServiceWorkersView.js';
+
+import {SharedStorageListTreeElement} from './SharedStorageListTreeElement.js';
+import {
+  SharedStorageModel,
+  Events as SharedStorageModelEvents,
+  type SharedStorageForOrigin,
+} from './SharedStorageModel.js';
+import {SharedStorageTreeElement} from './SharedStorageTreeElement.js';
+
 import {StorageView} from './StorageView.js';
 import {TrustTokensTreeElement} from './TrustTokensTreeElement.js';
 import {ReportingApiTreeElement} from './ReportingApiTreeElement.js';
@@ -108,6 +118,10 @@ const UIStrings = {
   */
   backgroundServices: 'Background Services',
   /**
+  *@description Text in Application Panel Sidebar of the Application panel
+  */
+  preloadingAndPrerendering: 'Preloading & Prerendering',
+  /**
   *@description Text for rendering frames
   */
   frames: 'Frames',
@@ -115,6 +129,14 @@ const UIStrings = {
   *@description Text that appears on a button for the manifest resource type filter.
   */
   manifest: 'Manifest',
+  /**
+  *@description Text in App Manifest View of the Application panel
+  */
+  noManifestDetected: 'No manifest detected',
+  /**
+  *@description Text in App Manifest View of the Application panel
+  */
+  appManifest: 'App Manifest',
   /**
   *@description Text in Application Panel Sidebar of the Application panel
   */
@@ -204,6 +226,22 @@ function assertNotMainTarget(targetId: Protocol.Target.TargetID|'main'): asserts
   }
 }
 
+export namespace SharedStorageTreeElementDispatcher {
+  // TODO(crbug.com/1167717): Make this a const enum.
+  // eslint-disable-next-line rulesdir/const_enum
+  export enum Events {
+    SharedStorageTreeElementAdded = 'SharedStorageTreeElementAdded',
+  }
+
+  export interface SharedStorageTreeElementAddedEvent {
+    origin: string;
+  }
+
+  export type EventTypes = {
+    [Events.SharedStorageTreeElementAdded]: SharedStorageTreeElementAddedEvent,
+  };
+}
+
 export class ApplicationPanelSidebar extends UI.Widget.VBox implements SDK.TargetManager.Observer {
   panel: ResourcesPanel;
   private readonly sidebarTree: UI.TreeOutline.TreeOutlineInShadow;
@@ -217,6 +255,7 @@ export class ApplicationPanelSidebar extends UI.Widget.VBox implements SDK.Targe
   cookieListTreeElement: ExpandableApplicationPanelTreeElement;
   trustTokensTreeElement: TrustTokensTreeElement;
   cacheStorageListTreeElement: ServiceWorkerCacheTreeElement;
+  sharedStorageListTreeElement: SharedStorageListTreeElement;
   private backForwardCacheListTreeElement?: BackForwardCacheTreeElement;
   backgroundFetchTreeElement: BackgroundServiceTreeElement|undefined;
   backgroundSyncTreeElement: BackgroundServiceTreeElement|undefined;
@@ -225,6 +264,7 @@ export class ApplicationPanelSidebar extends UI.Widget.VBox implements SDK.Targe
   periodicBackgroundSyncTreeElement: BackgroundServiceTreeElement|undefined;
   pushMessagingTreeElement: BackgroundServiceTreeElement|undefined;
   reportingApiTreeElement: ReportingApiTreeElement|undefined;
+  preloadingTreeElement: PreloadingTreeElement|undefined;
   private readonly resourcesSection: ResourcesSection;
   private readonly databaseTableViews: Map<DatabaseModelDatabase, {
     [x: string]: DatabaseTableView,
@@ -232,12 +272,16 @@ export class ApplicationPanelSidebar extends UI.Widget.VBox implements SDK.Targe
   private databaseQueryViews: Map<DatabaseModelDatabase, DatabaseQueryView>;
   private readonly databaseTreeElements: Map<DatabaseModelDatabase, DatabaseTreeElement>;
   private domStorageTreeElements: Map<DOMStorage, DOMStorageTreeElement>;
+  private sharedStorageTreeElements: Map<string, SharedStorageTreeElement>;
   private domains: {
     [x: string]: boolean,
   };
+  // Holds main frame target.
   private target?: SDK.Target.Target;
   private databaseModel?: DatabaseModel|null;
   private previousHoveredElement?: FrameTreeElement;
+  readonly sharedStorageTreeElementDispatcher:
+      Common.ObjectWrapper.ObjectWrapper<SharedStorageTreeElementDispatcher.EventTypes>;
 
   constructor(panel: ResourcesPanel) {
     super();
@@ -316,6 +360,9 @@ export class ApplicationPanelSidebar extends UI.Widget.VBox implements SDK.Targe
     this.interestGroupTreeElement = new InterestGroupTreeElement(panel);
     storageTreeElement.appendChild(this.interestGroupTreeElement);
 
+    this.sharedStorageListTreeElement = new SharedStorageListTreeElement(panel);
+    storageTreeElement.appendChild(this.sharedStorageListTreeElement);
+
     const cacheSectionTitle = i18nString(UIStrings.cache);
     const cacheTreeElement = this.addSidebarSection(cacheSectionTitle);
     this.cacheStorageListTreeElement = new ServiceWorkerCacheTreeElement(panel);
@@ -356,6 +403,15 @@ export class ApplicationPanelSidebar extends UI.Widget.VBox implements SDK.Targe
       this.reportingApiTreeElement = new ReportingApiTreeElement(panel);
       backgroundServiceTreeElement.appendChild(this.reportingApiTreeElement);
     }
+
+    if (Root.Runtime.experiments.isEnabled(Root.Runtime.ExperimentName.PRELOADING_STATUS_PANEL)) {
+      const preloadingSectionTitle = i18nString(UIStrings.preloadingAndPrerendering);
+      const preloadingSectionTreeElement = this.addSidebarSection(preloadingSectionTitle);
+
+      this.preloadingTreeElement = new PreloadingTreeElement(panel);
+      preloadingSectionTreeElement.appendChild(this.preloadingTreeElement);
+    }
+
     const resourcesSectionTitle = i18nString(UIStrings.frames);
     const resourcesTreeElement = this.addSidebarSection(resourcesSectionTitle);
     this.resourcesSection = new ResourcesSection(panel, resourcesTreeElement);
@@ -364,6 +420,7 @@ export class ApplicationPanelSidebar extends UI.Widget.VBox implements SDK.Targe
     this.databaseQueryViews = new Map();
     this.databaseTreeElements = new Map();
     this.domStorageTreeElements = new Map();
+    this.sharedStorageTreeElements = new Map();
     this.domains = {};
 
     this.sidebarTree.contentElement.addEventListener('mousemove', this.onmousemove.bind(this), false);
@@ -391,6 +448,16 @@ export class ApplicationPanelSidebar extends UI.Widget.VBox implements SDK.Targe
       modelAdded: (model: InterestGroupStorageModel): void => this.interestGroupModelAdded(model),
       modelRemoved: (model: InterestGroupStorageModel): void => this.interestGroupModelRemoved(model),
     });
+    SDK.TargetManager.TargetManager.instance().observeModels(SharedStorageModel, {
+      modelAdded: (model: SharedStorageModel): Promise<void> => this.sharedStorageModelAdded(model).catch(err => {
+        console.error(err);
+      }),
+      modelRemoved: (model: SharedStorageModel): void => this.sharedStorageModelRemoved(model),
+    });
+
+    this.sharedStorageTreeElementDispatcher =
+        new Common.ObjectWrapper.ObjectWrapper<SharedStorageTreeElementDispatcher.EventTypes>();
+
     // Work-around for crbug.com/1152713: Something is wrong with custom scrollbars and size containment.
     // @ts-ignore
     this.contentElement.style.contain = 'layout style';
@@ -408,10 +475,12 @@ export class ApplicationPanelSidebar extends UI.Widget.VBox implements SDK.Targe
   }
 
   targetAdded(target: SDK.Target.Target): void {
-    if (this.target) {
+    if (target !== SDK.TargetManager.TargetManager.instance().mainFrameTarget()) {
       return;
     }
+
     this.target = target;
+
     this.databaseModel = target.model(DatabaseModel);
     if (this.databaseModel) {
       this.databaseModel.addEventListener(DatabaseModelEvents.DatabaseAdded, this.databaseAdded, this);
@@ -503,6 +572,15 @@ export class ApplicationPanelSidebar extends UI.Widget.VBox implements SDK.Targe
         this.pushMessagingTreeElement.initialize(backgroundServiceModel);
       }
     }
+
+    // The condition is equivalent to
+    // `Root.Runtime.experiments.isEnabled(Root.Runtime.ExperimentName.PRELOADING_STATUS_PANEL)`.
+    if (this.preloadingTreeElement) {
+      const prerenderingModel = this.target?.model(SDK.PrerenderingModel.PrerenderingModel);
+      if (prerenderingModel) {
+        this.preloadingTreeElement.initialize(prerenderingModel);
+      }
+    }
   }
 
   private domStorageModelAdded(model: DOMStorageModel): void {
@@ -526,6 +604,26 @@ export class ApplicationPanelSidebar extends UI.Widget.VBox implements SDK.Targe
   private interestGroupModelRemoved(model: InterestGroupStorageModel): void {
     model.disable();
     model.removeEventListener(InterestGroupModelEvents.InterestGroupAccess, this.interestGroupAccess, this);
+  }
+
+  private async sharedStorageModelAdded(model: SharedStorageModel): Promise<void> {
+    await model.enable();
+    for (const storage of model.storages()) {
+      await this.addSharedStorage(storage);
+    }
+    model.addEventListener(SharedStorageModelEvents.SharedStorageAdded, this.sharedStorageAdded, this);
+    model.addEventListener(SharedStorageModelEvents.SharedStorageRemoved, this.sharedStorageRemoved, this);
+    model.addEventListener(SharedStorageModelEvents.SharedStorageAccess, this.sharedStorageAccess, this);
+  }
+
+  private sharedStorageModelRemoved(model: SharedStorageModel): void {
+    model.disable();
+    for (const storage of model.storages()) {
+      this.removeSharedStorage(storage);
+    }
+    model.removeEventListener(SharedStorageModelEvents.SharedStorageAdded, this.sharedStorageAdded, this);
+    model.removeEventListener(SharedStorageModelEvents.SharedStorageRemoved, this.sharedStorageRemoved, this);
+    model.removeEventListener(SharedStorageModelEvents.SharedStorageAccess, this.sharedStorageAccess, this);
   }
 
   private resetWithFrames(): void {
@@ -661,6 +759,50 @@ export class ApplicationPanelSidebar extends UI.Widget.VBox implements SDK.Targe
       }
     }
     this.domStorageTreeElements.delete(domStorage);
+  }
+
+  private async sharedStorageAdded(event: Common.EventTarget.EventTargetEvent<SharedStorageForOrigin>): Promise<void> {
+    await this.addSharedStorage(event.data);
+  }
+
+  private async addSharedStorage(sharedStorage: SharedStorageForOrigin): Promise<void> {
+    const sharedStorageTreeElement = await SharedStorageTreeElement.createElement(this.panel, sharedStorage);
+
+    // A tree element for `sharedStorage.securityOrigin` may have been added while we were waiting for `sharedStorageTreeElement` to be created.
+    if (this.sharedStorageTreeElements.has(sharedStorage.securityOrigin)) {
+      return;
+    }
+    this.sharedStorageTreeElements.set(sharedStorage.securityOrigin, sharedStorageTreeElement);
+    this.sharedStorageListTreeElement.appendChild(sharedStorageTreeElement);
+    this.sharedStorageTreeElementDispatcher.dispatchEventToListeners(
+        SharedStorageTreeElementDispatcher.Events.SharedStorageTreeElementAdded,
+        {origin: sharedStorage.securityOrigin});
+  }
+
+  private sharedStorageRemoved(event: Common.EventTarget.EventTargetEvent<SharedStorageForOrigin>): void {
+    this.removeSharedStorage(event.data);
+  }
+
+  private removeSharedStorage(sharedStorage: SharedStorageForOrigin): void {
+    const treeElement = this.sharedStorageTreeElements.get(sharedStorage.securityOrigin);
+    if (!treeElement) {
+      return;
+    }
+    const wasSelected = treeElement.selected;
+    const parentListTreeElement = treeElement.parent;
+    if (parentListTreeElement) {
+      parentListTreeElement.removeChild(treeElement);
+      parentListTreeElement.setExpandable(parentListTreeElement.childCount() > 0);
+      if (wasSelected) {
+        parentListTreeElement.select();
+      }
+    }
+    this.sharedStorageTreeElements.delete(sharedStorage.securityOrigin);
+  }
+
+  private sharedStorageAccess(event: Common.EventTarget.EventTargetEvent<Protocol.Storage.SharedStorageAccessedEvent>):
+      void {
+    this.sharedStorageListTreeElement.addEvent(event.data);
   }
 
   selectDatabase(database: DatabaseModelDatabase): void {
@@ -964,7 +1106,10 @@ export class AppManifestTreeElement extends ApplicationPanelTreeElement {
     const icon = UI.Icon.Icon.create('mediumicon-manifest', 'resource-tree-item');
     this.setLeadingIcons([icon]);
     self.onInvokeElement(this.listItemElement, this.onInvoke.bind(this));
-    this.view = new AppManifestView();
+    const emptyView = new UI.EmptyWidget.EmptyWidget(i18nString(UIStrings.noManifestDetected));
+    // TODO(crbug.com/1156978): Replace UI.ReportView.ReportView with ReportView.ts web component.
+    const reportView = new UI.ReportView.ReportView(i18nString(UIStrings.appManifest));
+    this.view = new AppManifestView(emptyView, reportView, new Common.Throttler.Throttler(1000));
     UI.ARIAUtils.setAccessibleName(this.listItemElement, i18nString(UIStrings.onInvokeManifestAlert));
     const handleExpansion = (evt: Event): void => {
       this.setExpandable((evt as CustomEvent).detail);
@@ -1198,7 +1343,7 @@ export class IDBDatabaseTreeElement extends ApplicationPanelTreeElement {
   private view?: IDBDatabaseView;
 
   constructor(storagePanel: ResourcesPanel, model: IndexedDBModel, databaseId: DatabaseId) {
-    super(storagePanel, databaseId.name + ' - ' + databaseId.getOriginOrStorageKey(), false);
+    super(storagePanel, databaseId.name + ' - ' + databaseId.storageKey, false);
     this.model = model;
     this.databaseId = databaseId;
     this.idbObjectStoreTreeElements = new Map();
@@ -1208,8 +1353,7 @@ export class IDBDatabaseTreeElement extends ApplicationPanelTreeElement {
   }
 
   get itemURL(): Platform.DevToolsPath.UrlString {
-    return 'indexedDB://' + this.databaseId.getOriginOrStorageKey() + '/' + this.databaseId.name as
-        Platform.DevToolsPath.UrlString;
+    return 'indexedDB://' + this.databaseId.storageKey + '/' + this.databaseId.name as Platform.DevToolsPath.UrlString;
   }
 
   onattach(): void {
@@ -1323,8 +1467,8 @@ export class IDBObjectStoreTreeElement extends ApplicationPanelTreeElement {
   }
 
   get itemURL(): Platform.DevToolsPath.UrlString {
-    return 'indexedDB://' + this.databaseId.getOriginOrStorageKey() + '/' + this.databaseId.name + '/' +
-        this.objectStore.name as Platform.DevToolsPath.UrlString;
+    return 'indexedDB://' + this.databaseId.storageKey + '/' + this.databaseId.name + '/' + this.objectStore.name as
+        Platform.DevToolsPath.UrlString;
   }
 
   onattach(): void {
@@ -1460,8 +1604,8 @@ export class IDBIndexTreeElement extends ApplicationPanelTreeElement {
   }
 
   get itemURL(): Platform.DevToolsPath.UrlString {
-    return 'indexedDB://' + this.databaseId.getOriginOrStorageKey() + '/' + this.databaseId.name + '/' +
-        this.objectStore.name + '/' + this.index.name as Platform.DevToolsPath.UrlString;
+    return 'indexedDB://' + this.databaseId.storageKey + '/' + this.databaseId.name + '/' + this.objectStore.name +
+        '/' + this.index.name as Platform.DevToolsPath.UrlString;
   }
 
   markNeedsRefresh(): void {

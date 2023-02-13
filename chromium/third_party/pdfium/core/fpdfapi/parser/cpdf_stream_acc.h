@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2016 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,7 +12,7 @@
 #include <memory>
 
 #include "core/fxcrt/bytestring.h"
-#include "core/fxcrt/fx_memory_wrappers.h"
+#include "core/fxcrt/data_vector.h"
 #include "core/fxcrt/retain_ptr.h"
 #include "third_party/abseil-cpp/absl/types/variant.h"
 #include "third_party/base/span.h"
@@ -40,32 +40,20 @@ class CPDF_StreamAcc final : public Retainable {
   uint64_t KeyForCache() const;
   ByteString ComputeDigest() const;
   ByteString GetImageDecoder() const { return m_ImageDecoder; }
-  std::unique_ptr<uint8_t, FxFreeDeleter> DetachData();
+  DataVector<uint8_t> DetachData();
 
   int GetLength1ForTest() const;
 
  private:
-  // TODO(crbug.com/pdfium/1872): Replace with fxcrt::DataVector.
-  struct OwnedData {
-    OwnedData(std::unique_ptr<uint8_t, FxFreeDeleter> buffer, uint32_t size);
-    OwnedData(OwnedData&&);
-    OwnedData& operator=(OwnedData&&);
-    ~OwnedData();
-
-    std::unique_ptr<uint8_t, FxFreeDeleter> buffer;
-    uint32_t size;
-  };
-
   explicit CPDF_StreamAcc(RetainPtr<const CPDF_Stream> pStream);
   ~CPDF_StreamAcc() override;
 
   void LoadAllData(bool bRawAccess, uint32_t estimated_size, bool bImageAcc);
   void ProcessRawData();
   void ProcessFilteredData(uint32_t estimated_size, bool bImageAcc);
-  const uint8_t* GetData() const;
 
-  // Reads the raw data from |m_pStream|, or return nullptr on failure.
-  std::unique_ptr<uint8_t, FxFreeDeleter> ReadRawStream() const;
+  // Returns the raw data from `m_pStream`, or no data on failure.
+  DataVector<uint8_t> ReadRawStream() const;
 
   bool is_owned() const { return m_Data.index() == 1; }
 
@@ -73,7 +61,7 @@ class CPDF_StreamAcc final : public Retainable {
   RetainPtr<const CPDF_Dictionary> m_pImageParam;
   // Needs to outlive `m_Data` when the data is not owned.
   RetainPtr<const CPDF_Stream> const m_pStream;
-  absl::variant<pdfium::span<const uint8_t>, OwnedData> m_Data;
+  absl::variant<pdfium::span<const uint8_t>, DataVector<uint8_t>> m_Data;
 };
 
 #endif  // CORE_FPDFAPI_PARSER_CPDF_STREAM_ACC_H_

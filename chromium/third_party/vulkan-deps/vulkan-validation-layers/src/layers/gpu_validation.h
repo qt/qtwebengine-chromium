@@ -21,6 +21,7 @@
 #pragma once
 
 #include "gpu_utils.h"
+#include "pipeline_state.h"
 
 class GpuAssisted;
 
@@ -50,26 +51,26 @@ struct GpuAssistedPreDispatchResources {
 
 struct GpuAssistedBufferInfo {
     GpuAssistedDeviceMemoryBlock output_mem_block;
-    GpuAssistedDeviceMemoryBlock di_input_mem_block;   // Descriptor Indexing input
     GpuAssistedDeviceMemoryBlock bda_input_mem_block;  // Buffer Device Address input
     GpuAssistedPreDrawResources pre_draw_resources;
     GpuAssistedPreDispatchResources pre_dispatch_resources;
     VkDescriptorSet desc_set;
     VkDescriptorPool desc_pool;
     VkPipelineBindPoint pipeline_bind_point;
+    bool uses_robustness;
     CMD_TYPE cmd_type;
-    GpuAssistedBufferInfo(GpuAssistedDeviceMemoryBlock output_mem_block, GpuAssistedDeviceMemoryBlock di_input_mem_block,
+    GpuAssistedBufferInfo(GpuAssistedDeviceMemoryBlock output_mem_block,
                           GpuAssistedDeviceMemoryBlock bda_input_mem_block, GpuAssistedPreDrawResources pre_draw_resources,
                           GpuAssistedPreDispatchResources pre_dispatch_resources, VkDescriptorSet desc_set,
-                          VkDescriptorPool desc_pool, VkPipelineBindPoint pipeline_bind_point, CMD_TYPE cmd_type)
+                          VkDescriptorPool desc_pool, VkPipelineBindPoint pipeline_bind_point, bool uses_robustness, CMD_TYPE cmd_type)
         : output_mem_block(output_mem_block),
-          di_input_mem_block(di_input_mem_block),
           bda_input_mem_block(bda_input_mem_block),
           pre_draw_resources(pre_draw_resources),
           pre_dispatch_resources(pre_dispatch_resources),
           desc_set(desc_set),
           desc_pool(desc_pool),
           pipeline_bind_point(pipeline_bind_point),
+          uses_robustness(uses_robustness),
           cmd_type(cmd_type){};
 };
 
@@ -150,13 +151,15 @@ struct GpuAssistedCmdIndirectState {
 namespace gpuav_state {
 class CommandBuffer : public gpu_utils_state::CommandBuffer {
   public:
-    std::vector<GpuAssistedBufferInfo> gpuav_buffer_list;
+    std::vector<GpuAssistedBufferInfo> per_draw_buffer_list;
+    std::vector<GpuAssistedDeviceMemoryBlock> di_input_buffer_list;
     std::vector<GpuAssistedAccelerationStructureBuildValidationBufferInfo> as_validation_buffers;
+    VkBuffer current_input_buffer = VK_NULL_HANDLE;
 
     CommandBuffer(GpuAssisted* ga, VkCommandBuffer cb, const VkCommandBufferAllocateInfo* pCreateInfo,
                   const COMMAND_POOL_STATE* pool);
 
-    bool NeedsProcessing() const final { return !gpuav_buffer_list.empty() || has_build_as_cmd; }
+    bool NeedsProcessing() const final { return !per_draw_buffer_list.empty() || has_build_as_cmd; }
 
     void Process(VkQueue queue) final;
     void Reset() final;
@@ -193,7 +196,8 @@ class GpuAssisted : public GpuAssistedBase {
                                                       VkBuffer scratch, VkDeviceSize scratchOffset) override;
     void ProcessAccelerationStructureBuildValidationBuffer(VkQueue queue, gpuav_state::CommandBuffer* cb_node);
     void PreCallRecordDestroyRenderPass(VkDevice device, VkRenderPass renderPass, const VkAllocationCallbacks *pAllocator) override;
-    bool InstrumentShader(const VkShaderModuleCreateInfo* pCreateInfo, std::vector<uint32_t>& new_pgm, uint32_t* unique_shader_id);
+    bool InstrumentShader(const layer_data::span<const uint32_t>& input, std::vector<uint32_t>& new_pgm,
+                          uint32_t* unique_shader_id) override;
     void PreCallRecordCreateShaderModule(VkDevice device, const VkShaderModuleCreateInfo* pCreateInfo,
                                          const VkAllocationCallbacks* pAllocator, VkShaderModule* pShaderModule,
                                          void* csm_state_data) override;
@@ -203,6 +207,10 @@ class GpuAssisted : public GpuAssistedBase {
     void SetBindingState(uint32_t* data, uint32_t index, const cvdescriptorset::DescriptorBinding* binding);
     void UpdateInstrumentationBuffer(gpuav_state::CommandBuffer* cb_node);
     const GpuVuid& GetGpuVuid(CMD_TYPE cmd_type) const;
+    void PostCallRecordCmdBindDescriptorSets(VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint,
+                                            VkPipelineLayout layout, uint32_t firstSet, uint32_t descriptorSetCount,
+                                            const VkDescriptorSet* pDescriptorSets, uint32_t dynamicOffsetCount,
+                                            const uint32_t* pDynamicOffsets) override;
     void PreCallRecordQueueSubmit(VkQueue queue, uint32_t submitCount, const VkSubmitInfo* pSubmits, VkFence fence) override;
     void PreCallRecordQueueSubmit2KHR(VkQueue queue, uint32_t submitCount, const VkSubmitInfo2KHR* pSubmits,
                                       VkFence fence) override;
@@ -241,6 +249,13 @@ class GpuAssisted : public GpuAssistedBase {
     void PreCallRecordCmdDrawMeshTasksIndirectCountNV(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset,
                                                       VkBuffer countBuffer, VkDeviceSize countBufferOffset, uint32_t maxDrawCount,
                                                       uint32_t stride) override;
+    void PreCallRecordCmdDrawMeshTasksEXT(VkCommandBuffer commandBuffer, uint32_t groupCountX, uint32_t groupCountY,
+                                          uint32_t groupCountZ) override;
+    void PreCallRecordCmdDrawMeshTasksIndirectEXT(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset,
+                                                 uint32_t drawCount, uint32_t stride) override;
+    void PreCallRecordCmdDrawMeshTasksIndirectCountEXT(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset,
+                                                      VkBuffer countBuffer, VkDeviceSize countBufferOffset, uint32_t maxDrawCount,
+                                                      uint32_t stride) override;
     void PreCallRecordCmdDispatch(VkCommandBuffer commandBuffer, uint32_t x, uint32_t y, uint32_t z) override;
     void PreCallRecordCmdDispatchIndirect(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset) override;
     void PreCallRecordCmdDispatchBase(VkCommandBuffer commandBuffer, uint32_t baseGroupX, uint32_t baseGroupY, uint32_t baseGroupZ,
@@ -270,10 +285,10 @@ class GpuAssisted : public GpuAssistedBase {
     void PreCallRecordCmdTraceRaysIndirect2KHR(VkCommandBuffer commandBuffer, VkDeviceAddress indirectDeviceAddress) override;
     void AllocateValidationResources(const VkCommandBuffer cmd_buffer, const VkPipelineBindPoint bind_point, CMD_TYPE cmd,
                                      const GpuAssistedCmdIndirectState* indirect_state = nullptr);
-    void AllocatePreDrawValidationResources(GpuAssistedDeviceMemoryBlock output_block, GpuAssistedPreDrawResources& resources,
-                                            const VkRenderPass render_pass, VkPipeline* pPipeline,
-                                            const GpuAssistedCmdIndirectState* indirect_state);
-    void AllocatePreDispatchValidationResources(GpuAssistedDeviceMemoryBlock output_block,
+    void AllocatePreDrawValidationResources(const GpuAssistedDeviceMemoryBlock& output_block,
+                                            GpuAssistedPreDrawResources& resources, const VkRenderPass render_pass,
+                                            VkPipeline* pPipeline, const GpuAssistedCmdIndirectState* indirect_state);
+    void AllocatePreDispatchValidationResources(const GpuAssistedDeviceMemoryBlock& output_block,
                                                 GpuAssistedPreDispatchResources& resources,
                                                 const GpuAssistedCmdIndirectState* indirect_state);
     void PostCallRecordGetPhysicalDeviceProperties(VkPhysicalDevice physicalDevice,
@@ -295,10 +310,11 @@ class GpuAssisted : public GpuAssistedBase {
     bool buffer_oob_enabled;
     bool validate_draw_indirect;
     bool validate_dispatch_indirect;
-    VmaPool output_buffer_pool = VK_NULL_HANDLE;
+    bool warn_on_robust_oob;
     GpuAssistedAccelerationStructureBuildValidationState acceleration_structure_validation_state;
     GpuAssistedPreDrawValidationState pre_draw_validation_state;
     GpuAssistedPreDispatchValidationState pre_dispatch_validation_state;
 
     bool descriptor_indexing = false;
+    bool buffer_device_address;
 };

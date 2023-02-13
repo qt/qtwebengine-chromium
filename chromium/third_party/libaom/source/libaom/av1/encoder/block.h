@@ -326,7 +326,7 @@ typedef struct {
   //! The best color map found.
   uint8_t best_palette_color_map[MAX_PALETTE_SQUARE];
   //! A temporary buffer used for k-means clustering.
-  int kmeans_data_buf[2 * MAX_PALETTE_SQUARE];
+  int16_t kmeans_data_buf[2 * MAX_PALETTE_SQUARE];
 } PALETTE_BUFFER;
 
 /*! \brief Contains buffers used by av1_compound_type_rd()
@@ -942,6 +942,21 @@ typedef struct macroblock {
    *  once in the current frame.
    */
   int delta_qindex;
+
+  /*! \brief Difference between frame-level qindex and qindex used to
+   * compute rdmult (lambda).
+   *
+   * rdmult_delta_qindex is assigned the same as delta_qindex before qp sweep.
+   * During qp sweep, delta_qindex is changed and used to calculate the actual
+   * quant params, while rdmult_delta_qindex remains the same, and is used to
+   * calculate the rdmult in "set_deltaq_rdmult".
+   */
+  int rdmult_delta_qindex;
+
+  /*! \brief Current qindex (before being adjusted by delta_q_res) used to
+   * derive rdmult_delta_qindex.
+   */
+  int rdmult_cur_qindex;
 
   /*! \brief Rate-distortion multiplier.
    *

@@ -2802,19 +2802,22 @@ Maybe<bool> Object::SetDataProperty(LookupIterator* it, Handle<Object> value) {
   if (it->IsElement() && receiver->IsJSObject(isolate) &&
       JSObject::cast(*receiver).HasTypedArrayOrRabGsabTypedArrayElements(
           isolate)) {
+    auto receiver_ta = Handle<JSTypedArray>::cast(receiver);
     ElementsKind elements_kind = JSObject::cast(*receiver).GetElementsKind();
     if (IsBigIntTypedArrayElementsKind(elements_kind)) {
       ASSIGN_RETURN_ON_EXCEPTION_VALUE(isolate, to_assign,
                                        BigInt::FromObject(isolate, value),
                                        Nothing<bool>());
-      if (Handle<JSTypedArray>::cast(receiver)->IsDetachedOrOutOfBounds()) {
+      if (V8_UNLIKELY(receiver_ta->IsDetachedOrOutOfBounds() ||
+                      it->index() >= receiver_ta->GetLength())) {
         return Just(true);
       }
     } else if (!value->IsNumber() && !value->IsUndefined(isolate)) {
       ASSIGN_RETURN_ON_EXCEPTION_VALUE(isolate, to_assign,
                                        Object::ToNumber(isolate, value),
                                        Nothing<bool>());
-      if (Handle<JSTypedArray>::cast(receiver)->IsDetachedOrOutOfBounds()) {
+      if (V8_UNLIKELY(receiver_ta->IsDetachedOrOutOfBounds() ||
+                      it->index() >= receiver_ta->GetLength())) {
         return Just(true);
       }
     }
@@ -4449,10 +4452,12 @@ void DescriptorArray::Replace(InternalIndex index, Descriptor* descriptor) {
 // static
 void DescriptorArray::InitializeOrChangeEnumCache(
     Handle<DescriptorArray> descriptors, Isolate* isolate,
-    Handle<FixedArray> keys, Handle<FixedArray> indices) {
+    Handle<FixedArray> keys, Handle<FixedArray> indices,
+    AllocationType allocation_if_initialize) {
   EnumCache enum_cache = descriptors->enum_cache();
   if (enum_cache == ReadOnlyRoots(isolate).empty_enum_cache()) {
-    enum_cache = *isolate->factory()->NewEnumCache(keys, indices);
+    enum_cache = *isolate->factory()->NewEnumCache(keys, indices,
+                                                   allocation_if_initialize);
     descriptors->set_enum_cache(enum_cache);
   } else {
     enum_cache.set_keys(*keys);
@@ -5590,6 +5595,13 @@ MaybeHandle<Object> JSPromise::Resolve(Handle<JSPromise> promise,
     // is intact, as that guards the lookup path for the "then" property
     // on JSPromise instances which have the (initial) %PromisePrototype%.
     then = isolate->promise_then();
+  } else if (receiver->IsWasmObject()) {
+    // Special case: [[Get]] throws an exception for Wasm objects, but we want
+    // to be able to resolve promises with them, so pretend that we looked
+    // up "then" and it was undefined.
+    // TODO(v8:13523): Drop this special case after changing what [[Get]]
+    // does in general.
+    then = isolate->factory()->undefined_value();
   } else {
     then = JSReceiver::GetProperty(isolate, receiver,
                                    isolate->factory()->then_string());

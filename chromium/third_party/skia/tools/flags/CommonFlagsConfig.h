@@ -8,6 +8,7 @@
 #ifndef SK_COMMON_FLAGS_CONFIG_H
 #define SK_COMMON_FLAGS_CONFIG_H
 
+#include "include/core/SkColorSpace.h"
 #include "tools/flags/CommandLineFlags.h"
 #include "tools/gpu/GrContextFactory.h"
 
@@ -70,6 +71,8 @@ public:
                            bool                      useDDLSink,
                            bool                      OOPRish,
                            bool                      slug,
+                           bool                      serializedSlug,
+                           bool                      remoteSlug,
                            bool                      reducedShaders,
                            SurfType);
 
@@ -86,6 +89,8 @@ public:
     bool          getUseDDLSink() const { return fUseDDLSink; }
     bool          getOOPRish() const { return fOOPRish; }
     bool          getSlug() const { return fSlug; }
+    bool          getSerializedSlug() const { return fSerializeSlug; }
+    bool          getRemoteSlug() const { return fRemoteSlug; }
     bool          getReducedShaders() const { return fReducedShaders; }
     SurfType      getSurfType() const { return fSurfType; }
 
@@ -102,6 +107,8 @@ private:
     bool                fUseDDLSink;
     bool                fOOPRish;
     bool                fSlug;
+    bool                fSerializeSlug;
+    bool                fRemoteSlug;
     bool                fReducedShaders;
     SurfType            fSurfType;
 };
@@ -112,7 +119,7 @@ private:
 
 class SkCommandLineConfigGraphite : public SkCommandLineConfig {
 public:
-    using ContextType = skiatest::graphite::ContextFactory::ContextType;
+    using ContextType = sk_gpu_test::GrContextFactory::ContextType;
 
     SkCommandLineConfigGraphite(const SkString&           tag,
                                 const SkTArray<SkString>& viaParts,

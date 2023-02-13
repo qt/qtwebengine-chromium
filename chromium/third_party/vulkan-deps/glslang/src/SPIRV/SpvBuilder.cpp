@@ -71,9 +71,9 @@ Builder::Builder(unsigned int spvVersion, unsigned int magicNumber, SpvBuildLogg
     addressModel(AddressingModelLogical),
     memoryModel(MemoryModelGLSL450),
     builderNumber(magicNumber),
-    buildPoint(0),
+    buildPoint(nullptr),
     uniqueId(0),
-    entryPointFunction(0),
+    entryPointFunction(nullptr),
     generatingOpCodeForSpecConst(false),
     logger(buildLogger)
 {
@@ -1176,6 +1176,21 @@ Id Builder::makeRayQueryType()
 
     return type->getResultId();
 }
+
+Id Builder::makeHitObjectNVType()
+{
+    Instruction *type;
+    if (groupedTypes[OpTypeHitObjectNV].size() == 0) {
+        type = new Instruction(getUniqueId(), NoType, OpTypeHitObjectNV);
+        groupedTypes[OpTypeHitObjectNV].push_back(type);
+        constantsTypesGlobals.push_back(std::unique_ptr<Instruction>(type));
+        module.mapInstruction(type);
+    } else {
+        type = groupedTypes[OpTypeHitObjectNV].back();
+    }
+
+    return type->getResultId();
+}
 #endif
 
 Id Builder::getDerefTypeId(Id resultId) const
@@ -1675,7 +1690,7 @@ Id Builder::importNonSemanticShaderDebugInfoInstructions()
 
 Id Builder::findCompositeConstant(Op typeClass, Id typeId, const std::vector<Id>& comps)
 {
-    Instruction* constant = 0;
+    Instruction* constant = nullptr;
     bool found = false;
     for (int i = 0; i < (int)groupedConstants[typeClass].size(); ++i) {
         constant = groupedConstants[typeClass][i];
@@ -1702,7 +1717,7 @@ Id Builder::findCompositeConstant(Op typeClass, Id typeId, const std::vector<Id>
 
 Id Builder::findStructConstant(Id typeId, const std::vector<Id>& comps)
 {
-    Instruction* constant = 0;
+    Instruction* constant = nullptr;
     bool found = false;
     for (int i = 0; i < (int)groupedStructConstants[typeId].size(); ++i) {
         constant = groupedStructConstants[typeId][i];
@@ -3332,7 +3347,7 @@ Builder::If::If(Id cond, unsigned int ctrl, Builder& gb) :
     builder(gb),
     condition(cond),
     control(ctrl),
-    elseBlock(0)
+    elseBlock(nullptr)
 {
     function = &builder.getBuildPoint()->getParent();
 

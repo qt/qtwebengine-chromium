@@ -768,7 +768,7 @@ StackFrame::Type StackFrame::ComputeType(const StackFrameIteratorBase* iterator,
 #if V8_ENABLE_WEBASSEMBLY
     case WASM_TO_JS:
     case WASM:
-    case WASM_COMPILE_LAZY:
+    case WASM_LIFTOFF_SETUP:
     case WASM_EXIT:
     case WASM_DEBUG_BREAK:
     case JS_TO_WASM:
@@ -1116,11 +1116,11 @@ void VisitSpillSlot(Isolate* isolate, RootVisitor* v,
         HeapObject raw = HeapObject::cast(Object(*spill_slot.location()));
         MapWord map_word = raw.map_word(cage_base, kRelaxedLoad);
         HeapObject forwarded = map_word.IsForwardingAddress()
-                                   ? map_word.ToForwardingAddress()
+                                   ? map_word.ToForwardingAddress(raw)
                                    : raw;
         bool is_self_forwarded =
-            forwarded.map_word(cage_base, kRelaxedLoad).ptr() ==
-            forwarded.address();
+            forwarded.map_word(cage_base, kRelaxedLoad) ==
+            MapWord::FromForwardingAddress(forwarded, forwarded);
         if (is_self_forwarded) {
           // The object might be in a self-forwarding state if it's located
           // in new large object space. GC will fix this at a later stage.
@@ -1132,7 +1132,7 @@ void VisitSpillSlot(Isolate* isolate, RootVisitor* v,
           MapWord fwd_map_map_word =
               forwarded_map.map_word(cage_base, kRelaxedLoad);
           if (fwd_map_map_word.IsForwardingAddress()) {
-            forwarded_map = fwd_map_map_word.ToForwardingAddress();
+            forwarded_map = fwd_map_map_word.ToForwardingAddress(forwarded_map);
           }
           CHECK(forwarded_map.IsMap(cage_base));
         }
@@ -2351,32 +2351,33 @@ void OptimizedFrame::GetFunctions(
 
   TranslationArrayIterator it(data.TranslationByteArray(),
                               data.TranslationIndex(deopt_index).value());
-  TranslationOpcode opcode = TranslationOpcodeFromInt(it.NextUnsigned());
+  TranslationOpcode opcode = it.NextOpcode();
   DCHECK_EQ(TranslationOpcode::BEGIN, opcode);
-  it.Next();  // Skip frame count.
-  int jsframe_count = it.Next();
-  it.Next();  // Skip update feedback count.
+  it.NextOperand();  // Skip lookback distance.
+  it.NextOperand();  // Skip frame count.
+  int jsframe_count = it.NextOperand();
+  it.NextOperand();  // Skip update feedback count.
 
   // We insert the frames in reverse order because the frames
   // in the deoptimization translation are ordered bottom-to-top.
   while (jsframe_count != 0) {
-    opcode = TranslationOpcodeFromInt(it.NextUnsigned());
+    opcode = it.NextOpcode();
     if (opcode == TranslationOpcode::INTERPRETED_FRAME ||
         opcode == TranslationOpcode::JAVA_SCRIPT_BUILTIN_CONTINUATION_FRAME ||
         opcode == TranslationOpcode::
                       JAVA_SCRIPT_BUILTIN_CONTINUATION_WITH_CATCH_FRAME) {
-      it.Next();  // Skip bailout id.
+      it.NextOperand();  // Skip bailout id.
       jsframe_count--;
 
       // The second operand of the frame points to the function.
-      Object shared = literal_array.get(it.Next());
+      Object shared = literal_array.get(it.NextOperand());
       functions->push_back(SharedFunctionInfo::cast(shared));
 
       // Skip over remaining operands to advance to the next opcode.
-      it.Skip(TranslationOpcodeOperandCount(opcode) - 2);
+      it.SkipOperands(TranslationOpcodeOperandCount(opcode) - 2);
     } else {
       // Skip over operands to advance to the next opcode.
-      it.Skip(TranslationOpcodeOperandCount(opcode));
+      it.SkipOperands(TranslationOpcodeOperandCount(opcode));
     }
   }
 }
@@ -2500,7 +2501,7 @@ void WasmFrame::Print(StringStream* accumulator, PrintMode mode,
     return;
   }
   wasm::WasmCodeRefScope code_ref_scope;
-  accumulator->Add("Wasm [");
+  accumulator->Add(is_wasm_to_js() ? "Wasm-to-JS [" : "Wasm [");
   accumulator->PrintName(script().name());
   Address instruction_start = wasm_code()->instruction_start();
   base::Vector<const uint8_t> raw_func_name =
@@ -2631,6 +2632,15 @@ void WasmDebugBreakFrame::Print(StringStream* accumulator, PrintMode mode,
   if (mode != OVERVIEW) accumulator->Add("\n");
 }
 
+WasmInstanceObject WasmToJsFrame::wasm_instance() const {
+  // WasmToJsFrames hold the {WasmApiFunctionRef} object in the instance slot.
+  // Load the instance from there.
+  const int offset = WasmFrameConstants::kWasmInstanceOffset;
+  Object func_ref_obj(Memory<Address>(fp() + offset));
+  WasmApiFunctionRef func_ref = WasmApiFunctionRef::cast(func_ref_obj);
+  return WasmInstanceObject::cast(func_ref.instance());
+}
+
 void JsToWasmFrame::Iterate(RootVisitor* v) const {
   CodeLookupResult lookup_result = GetContainingCode(isolate(), pc());
   CHECK(lookup_result.IsFound());
@@ -2693,32 +2703,33 @@ void StackSwitchFrame::GetStateForJumpBuffer(wasm::JumpBuffer* jmpbuf,
   DCHECK_NE(*state->pc_address, kNullAddress);
 }
 
-int WasmCompileLazyFrame::GetFunctionIndex() const {
+int WasmLiftoffSetupFrame::GetDeclaredFunctionIndex() const {
   Object func_index(Memory<Address>(
-      sp() + WasmCompileLazyFrameConstants::kFunctionIndexOffset));
+      sp() + WasmLiftoffSetupFrameConstants::kDeclaredFunctionIndexOffset));
   return Smi::ToInt(func_index);
 }
 
-wasm::NativeModule* WasmCompileLazyFrame::GetNativeModule() const {
+wasm::NativeModule* WasmLiftoffSetupFrame::GetNativeModule() const {
   return *reinterpret_cast<wasm::NativeModule**>(
-      sp() + WasmCompileLazyFrameConstants::kNativeModuleOffset);
+      sp() + WasmLiftoffSetupFrameConstants::kNativeModuleOffset);
 }
 
-FullObjectSlot WasmCompileLazyFrame::wasm_instance_slot() const {
+FullObjectSlot WasmLiftoffSetupFrame::wasm_instance_slot() const {
   return FullObjectSlot(&Memory<Address>(
-      sp() + WasmCompileLazyFrameConstants::kWasmInstanceOffset));
+      sp() + WasmLiftoffSetupFrameConstants::kWasmInstanceOffset));
 }
 
-void WasmCompileLazyFrame::Iterate(RootVisitor* v) const {
+void WasmLiftoffSetupFrame::Iterate(RootVisitor* v) const {
   FullObjectSlot spilled_instance_slot(&Memory<Address>(
-      fp() + WasmCompileLazyFrameConstants::kInstanceSpillOffset));
+      fp() + WasmLiftoffSetupFrameConstants::kInstanceSpillOffset));
   v->VisitRootPointer(Root::kStackRoots, "spilled wasm instance",
                       spilled_instance_slot);
   v->VisitRootPointer(Root::kStackRoots, "wasm instance parameter",
                       wasm_instance_slot());
 
-  int func_index = GetFunctionIndex();
   wasm::NativeModule* native_module = GetNativeModule();
+  int func_index = GetDeclaredFunctionIndex() +
+                   native_module->module()->num_imported_functions;
 
   // Scan the spill slots of the parameter registers. Parameters in WebAssembly
   // get reordered such that first all value parameters get put into registers.
@@ -2743,42 +2754,39 @@ void WasmCompileLazyFrame::Iterate(RootVisitor* v) const {
   // There are no reference parameters, there is nothing to scan.
   if (num_ref_params == 0) return;
 
-  int num_int_params_in_registers = std::min(
-      num_int_params, WasmCompileLazyFrameConstants::kNumberOfSavedGpParamRegs);
-  int num_ref_params_in_registers = std::min(
-      num_ref_params, WasmCompileLazyFrameConstants::kNumberOfSavedGpParamRegs -
-                          num_int_params_in_registers);
+  int num_int_params_in_registers =
+      std::min(num_int_params,
+               WasmLiftoffSetupFrameConstants::kNumberOfSavedGpParamRegs);
+  int num_ref_params_in_registers =
+      std::min(num_ref_params,
+               WasmLiftoffSetupFrameConstants::kNumberOfSavedGpParamRegs -
+                   num_int_params_in_registers);
 
   for (int i = 0; i < num_ref_params_in_registers; ++i) {
     FullObjectSlot spill_slot(
-        fp() + WasmCompileLazyFrameConstants::kParameterSpillsOffset
+        fp() + WasmLiftoffSetupFrameConstants::kParameterSpillsOffset
                    [num_int_params_in_registers + i]);
 
     v->VisitRootPointer(Root::kStackRoots, "register parameter", spill_slot);
   }
 
   // Next we scan the slots of stack parameters.
-  // If there is no code, then lazy compilation failed (which can happen with
-  // lazy validation). In that case, just do not scan parameters, which will
-  // never be used anyway because the stack will get unwound when returning to
-  // the CEntry stub.
-  if (wasm::WasmCode* wasm_code = native_module->GetCode(func_index)) {
-    uint32_t first_tagged_stack_slot = wasm_code->first_tagged_parameter_slot();
-    uint32_t num_tagged_stack_slots = wasm_code->num_tagged_parameter_slots();
+  wasm::WasmCode* wasm_code = native_module->GetCode(func_index);
+  uint32_t first_tagged_stack_slot = wasm_code->first_tagged_parameter_slot();
+  uint32_t num_tagged_stack_slots = wasm_code->num_tagged_parameter_slots();
 
-    // Visit tagged parameters that have been passed to the function of this
-    // frame. Conceptionally these parameters belong to the parent frame.
-    // However, the exact count is only known by this frame (in the presence of
-    // tail calls, this information cannot be derived from the call site).
-    if (num_tagged_stack_slots > 0) {
-      FullObjectSlot tagged_parameter_base(&Memory<Address>(caller_sp()));
-      tagged_parameter_base += first_tagged_stack_slot;
-      FullObjectSlot tagged_parameter_limit =
-          tagged_parameter_base + num_tagged_stack_slots;
+  // Visit tagged parameters that have been passed to the function of this
+  // frame. Conceptionally these parameters belong to the parent frame.
+  // However, the exact count is only known by this frame (in the presence of
+  // tail calls, this information cannot be derived from the call site).
+  if (num_tagged_stack_slots > 0) {
+    FullObjectSlot tagged_parameter_base(&Memory<Address>(caller_sp()));
+    tagged_parameter_base += first_tagged_stack_slot;
+    FullObjectSlot tagged_parameter_limit =
+        tagged_parameter_base + num_tagged_stack_slots;
 
-      v->VisitRootPointers(Root::kStackRoots, "stack parameter",
-                           tagged_parameter_base, tagged_parameter_limit);
-    }
+    v->VisitRootPointers(Root::kStackRoots, "stack parameter",
+                         tagged_parameter_base, tagged_parameter_limit);
   }
 }
 #endif  // V8_ENABLE_WEBASSEMBLY

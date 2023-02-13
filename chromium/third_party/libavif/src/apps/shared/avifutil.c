@@ -64,17 +64,17 @@ static void avifImageDumpInternal(const avifImage * avif, uint32_t gridCols, uin
     printf(" * Matrix Coeffs. : %u\n", avif->matrixCoefficients);
 
     if (avif->icc.size != 0) {
-        printf(" * ICC Profile    : Present (" AVIF_FMT_ZU " bytes)\n", avif->icc.size);
+        printf(" * ICC Profile    : Present (%" AVIF_FMT_ZU " bytes)\n", avif->icc.size);
     } else {
         printf(" * ICC Profile    : Absent\n");
     }
     if (avif->xmp.size != 0) {
-        printf(" * XMP Metadata   : Present (" AVIF_FMT_ZU " bytes)\n", avif->xmp.size);
+        printf(" * XMP Metadata   : Present (%" AVIF_FMT_ZU " bytes)\n", avif->xmp.size);
     } else {
         printf(" * XMP Metadata   : Absent\n");
     }
     if (avif->exif.size != 0) {
-        printf(" * Exif Metadata  : Present (" AVIF_FMT_ZU " bytes)\n", avif->exif.size);
+        printf(" * Exif Metadata  : Present (%" AVIF_FMT_ZU " bytes)\n", avif->exif.size);
     } else {
         printf(" * Exif Metadata  : Absent\n");
     }
@@ -121,6 +121,9 @@ static void avifImageDumpInternal(const avifImage * avif, uint32_t gridCols, uin
         }
     }
     printf(" * Progressive    : %s\n", avifProgressiveStateToString(progressiveState));
+    if (avif->clli.maxCLL > 0 || avif->clli.maxPALL > 0) {
+        printf(" * CLLI           : %hu, %hu\n", avif->clli.maxCLL, avif->clli.maxPALL);
+    }
 }
 
 void avifImageDump(const avifImage * avif, uint32_t gridCols, uint32_t gridRows, avifProgressiveState progressiveState)
@@ -132,6 +135,15 @@ void avifImageDump(const avifImage * avif, uint32_t gridCols, uint32_t gridRows,
 void avifContainerDump(const avifDecoder * decoder)
 {
     avifImageDumpInternal(decoder->image, 0, 0, decoder->alphaPresent, decoder->progressiveState);
+    if ((decoder->progressiveState == AVIF_PROGRESSIVE_STATE_UNAVAILABLE) && (decoder->imageCount > 1)) {
+        if (decoder->repetitionCount == AVIF_REPETITION_COUNT_INFINITE) {
+            printf(" * Repeat Count   : Infinite\n");
+        } else if (decoder->repetitionCount == AVIF_REPETITION_COUNT_UNKNOWN) {
+            printf(" * Repeat Count   : Unknown\n");
+        } else {
+            printf(" * Repeat Count   : %d\n", decoder->repetitionCount);
+        }
+    }
 }
 
 void avifPrintVersions(void)

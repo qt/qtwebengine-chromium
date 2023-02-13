@@ -116,6 +116,7 @@ static const AVOption options[] = {
     QSV_OPTION_MAX_MIN_QP
     QSV_OPTION_SCENARIO
     QSV_OPTION_AVBR
+    QSV_OPTION_SKIP_FRAME
 
     { "cavlc",          "Enable CAVLC",                           OFFSET(qsv.cavlc),          AV_OPT_TYPE_BOOL, { .i64 = 0 },   0,          1, VE },
 #if QSV_HAVE_VCM
@@ -176,9 +177,8 @@ static const AVClass class = {
 static const FFCodecDefault qsv_enc_defaults[] = {
     { "b",         "1M"    },
     { "refs",      "0"     },
-    // same as the x264 default
-    { "g",         "250"   },
-    { "bf",        "3"     },
+    { "g",         "-1"    },
+    { "bf",        "-1"    },
     { "qmin",      "-1"    },
     { "qmax",      "-1"    },
     { "trellis",   "-1"    },

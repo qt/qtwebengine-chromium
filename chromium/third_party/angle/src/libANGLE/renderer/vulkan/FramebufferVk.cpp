@@ -25,7 +25,6 @@
 #include "libANGLE/renderer/vulkan/ResourceVk.h"
 #include "libANGLE/renderer/vulkan/SurfaceVk.h"
 #include "libANGLE/renderer/vulkan/vk_format_utils.h"
-#include "libANGLE/trace.h"
 
 namespace rx
 {
@@ -511,7 +510,7 @@ angle::Result FramebufferVk::clearImpl(const gl::Context *context,
     {
         // If a render pass is open with commands, it must be for this framebuffer.  Otherwise,
         // either FramebufferVk::syncState() or ContextVk::syncState() would have closed it.
-        ASSERT(contextVk->hasStartedRenderPassWithSerial(mLastRenderPassSerial));
+        ASSERT(contextVk->hasStartedRenderPassWithQueueSerial(mLastRenderPassQueueSerial));
 
         // Emit debug-util markers for this mid-render-pass clear
         ANGLE_TRY(
@@ -582,7 +581,8 @@ angle::Result FramebufferVk::clearImpl(const gl::Context *context,
             ASSERT(!preferDrawOverClearAttachments);
 
             // clearWithCommand will operate on deferred clears.
-            clearWithCommand(contextVk, scissoredRenderArea);
+            clearWithCommand(contextVk, scissoredRenderArea, ClearWithCommand::OptimizeWithLoadOp,
+                             &mDeferredClears);
 
             // clearWithCommand will clear only those attachments that have been used in the render
             // pass, and removes them from mDeferredClears.  Any deferred clears that are left can
@@ -639,6 +639,66 @@ angle::Result FramebufferVk::clearImpl(const gl::Context *context,
     if (!clearColorWithDraw)
     {
         clearColorBuffers.reset();
+    }
+
+    // If we reach here simply because the clear is scissored (as opposed to masked), use
+    // vkCmdClearAttachments to clear the attachments.  The attachments that are masked will
+    // continue to use a draw call.  For depth, vkCmdClearAttachments can always be used, and no
+    // shader/pipeline support would then be required (though this is pending removal of the
+    // preferDrawOverClearAttachments workaround).
+    //
+    // A potential optimization is to use loadOp=Clear for scissored clears, but care needs to be
+    // taken to either break the render pass on growRenderArea(), or to turn the op back to Load and
+    // revert to vkCmdClearAttachments.  This is not currently deemed necessary.
+    if (((clearColorBuffers.any() && !mEmulatedAlphaAttachmentMask.any() && !maskedClearColor) ||
+         clearDepthWithDraw || (clearStencilWithDraw && !maskedClearStencil)) &&
+        !preferDrawOverClearAttachments)
+    {
+        if (!contextVk->hasStartedRenderPass())
+        {
+            // Start a new render pass if necessary to record the commands.
+            vk::RenderPassCommandBuffer *commandBuffer;
+            ANGLE_TRY(contextVk->startRenderPass(scissoredRenderArea, &commandBuffer, nullptr));
+        }
+
+        // Build clear values
+        vk::ClearValuesArray clears;
+        if (!maskedClearColor && !mEmulatedAlphaAttachmentMask.any())
+        {
+            VkClearValue colorClearValue = {};
+            colorClearValue.color        = clearColorValue;
+            for (size_t colorIndexGL : clearColorBuffers)
+            {
+                clears.store(static_cast<uint32_t>(colorIndexGL), VK_IMAGE_ASPECT_COLOR_BIT,
+                             colorClearValue);
+            }
+            clearColorBuffers.reset();
+        }
+        VkImageAspectFlags dsAspectFlags = 0;
+        if (clearDepthWithDraw)
+        {
+            dsAspectFlags |= VK_IMAGE_ASPECT_DEPTH_BIT;
+            clearDepthWithDraw = false;
+        }
+        if (clearStencilWithDraw && !maskedClearStencil)
+        {
+            dsAspectFlags |= VK_IMAGE_ASPECT_STENCIL_BIT;
+            clearStencilWithDraw = false;
+        }
+        if (dsAspectFlags != 0)
+        {
+            VkClearValue dsClearValue = {};
+            dsClearValue.depthStencil = clearDepthStencilValue;
+            clears.store(vk::kUnpackedDepthIndex, dsAspectFlags, dsClearValue);
+        }
+
+        clearWithCommand(contextVk, scissoredRenderArea, ClearWithCommand::Always, &clears);
+
+        if (!clearColorBuffers.any() && !clearStencilWithDraw)
+        {
+            ASSERT(!clearDepthWithDraw);
+            return angle::Result::Continue;
+        }
     }
 
     // The most costly clear mode is when we need to mask out specific color channels or stencil
@@ -1237,7 +1297,8 @@ angle::Result FramebufferVk::blit(const gl::Context *context,
             bool isCurrentFramebufferValid = srcFramebufferVk->mCurrentFramebuffer.valid();
             if (isCurrentFramebufferValid)
             {
-                contextVk->restoreFinishedRenderPass(srcFramebufferVk->getLastRenderPassSerial());
+                contextVk->restoreFinishedRenderPass(
+                    srcFramebufferVk->getLastRenderPassQueueSerial());
             }
 
             // glBlitFramebuffer() needs to copy the read color attachment to all enabled
@@ -1248,8 +1309,8 @@ angle::Result FramebufferVk::blit(const gl::Context *context,
             bool canResolveWithSubpass = isCurrentFramebufferValid &&
                                          mState.getEnabledDrawBuffers().count() == 1 &&
                                          mCurrentFramebufferDesc.getLayerCount() == 1 &&
-                                         contextVk->hasStartedRenderPassWithSerial(
-                                             srcFramebufferVk->getLastRenderPassSerial());
+                                         contextVk->hasStartedRenderPassWithQueueSerial(
+                                             srcFramebufferVk->getLastRenderPassQueueSerial());
 
             // Additionally, when resolving with a resolve attachment, the src and destination
             // offsets must match, the render area must match the resolve area, and there should be
@@ -1692,7 +1753,7 @@ angle::Result FramebufferVk::invalidateImpl(ContextVk *contextVk,
     //- Bind FBO 2, draw
     //- Bind FBO 1, invalidate D/S
     // to invalidate the D/S of FBO 2 since it would be the currently active renderpass.
-    if (contextVk->hasStartedRenderPassWithSerial(mLastRenderPassSerial))
+    if (contextVk->hasStartedRenderPassWithQueueSerial(mLastRenderPassQueueSerial))
     {
         // Mark the invalidated attachments in the render pass for loadOp and storeOp determination
         // at its end.
@@ -2277,7 +2338,7 @@ angle::Result FramebufferVk::getFramebuffer(ContextVk *contextVk,
         return angle::Result::Continue;
     }
 
-    vk::RenderPass *compatibleRenderPass = nullptr;
+    const vk::RenderPass *compatibleRenderPass = nullptr;
     ANGLE_TRY(contextVk->getCompatibleRenderPass(mRenderPassDesc, &compatibleRenderPass));
 
     // If we've a Framebuffer provided by a Surface (default FBO/backbuffer), query it.
@@ -2591,7 +2652,10 @@ void FramebufferVk::redeferClearsImpl(ContextVk *contextVk)
     }
 }
 
-void FramebufferVk::clearWithCommand(ContextVk *contextVk, const gl::Rectangle &scissoredRenderArea)
+void FramebufferVk::clearWithCommand(ContextVk *contextVk,
+                                     const gl::Rectangle &scissoredRenderArea,
+                                     ClearWithCommand behavior,
+                                     vk::ClearValuesArray *clears)
 {
     // Clear is not affected by viewport, so ContextVk::updateScissor may have decided on a smaller
     // render area.  Grow the render area to the full framebuffer size as this clear path is taken
@@ -2602,15 +2666,17 @@ void FramebufferVk::clearWithCommand(ContextVk *contextVk, const gl::Rectangle &
 
     gl::AttachmentVector<VkClearAttachment> attachments;
 
+    const bool optimizeWithLoadOp = behavior == ClearWithCommand::OptimizeWithLoadOp;
+
     // Go through deferred clears and add them to the list of attachments to clear.  If any
     // attachment is unused, skip the clear.  clearWithLoadOp will follow and move the remaining
     // clears up to loadOp.
     vk::PackedAttachmentIndex colorIndexVk(0);
     for (size_t colorIndexGL : mState.getColorAttachmentsMask())
     {
-        if (mDeferredClears.getColorMask().test(colorIndexGL))
+        if (clears->getColorMask().test(colorIndexGL))
         {
-            if (!renderPassCommands->hasAnyColorAccess(colorIndexVk))
+            if (!renderPassCommands->hasAnyColorAccess(colorIndexVk) && optimizeWithLoadOp)
             {
                 // Skip this attachment, so we can use a renderpass loadOp to clear it instead.
                 // Note that if loadOp=Clear was already used for this color attachment, it will be
@@ -2622,8 +2688,8 @@ void FramebufferVk::clearWithCommand(ContextVk *contextVk, const gl::Rectangle &
 
             attachments.emplace_back(VkClearAttachment{VK_IMAGE_ASPECT_COLOR_BIT,
                                                        static_cast<uint32_t>(colorIndexGL),
-                                                       mDeferredClears[colorIndexGL]});
-            mDeferredClears.reset(colorIndexGL);
+                                                       (*clears)[colorIndexGL]});
+            clears->reset(colorIndexGL);
             ++contextVk->getPerfCounters().colorClearAttachments;
 
             renderPassCommands->onColorAccess(colorIndexVk, vk::ResourceAccess::Write);
@@ -2634,23 +2700,23 @@ void FramebufferVk::clearWithCommand(ContextVk *contextVk, const gl::Rectangle &
     // Add depth and stencil to list of attachments as needed.
     VkImageAspectFlags dsAspectFlags  = 0;
     VkClearValue dsClearValue         = {};
-    dsClearValue.depthStencil.depth   = mDeferredClears.getDepthValue();
-    dsClearValue.depthStencil.stencil = mDeferredClears.getStencilValue();
-    if (mDeferredClears.testDepth() && renderPassCommands->hasAnyDepthAccess())
+    dsClearValue.depthStencil.depth   = clears->getDepthValue();
+    dsClearValue.depthStencil.stencil = clears->getStencilValue();
+    if (clears->testDepth() && (renderPassCommands->hasAnyDepthAccess() || !optimizeWithLoadOp))
     {
         dsAspectFlags |= VK_IMAGE_ASPECT_DEPTH_BIT;
         // Explicitly mark a depth write because we are clearing the depth buffer.
         renderPassCommands->onDepthAccess(vk::ResourceAccess::Write);
-        mDeferredClears.reset(vk::kUnpackedDepthIndex);
+        clears->reset(vk::kUnpackedDepthIndex);
         ++contextVk->getPerfCounters().depthClearAttachments;
     }
 
-    if (mDeferredClears.testStencil() && renderPassCommands->hasAnyStencilAccess())
+    if (clears->testStencil() && (renderPassCommands->hasAnyStencilAccess() || !optimizeWithLoadOp))
     {
         dsAspectFlags |= VK_IMAGE_ASPECT_STENCIL_BIT;
         // Explicitly mark a stencil write because we are clearing the stencil buffer.
         renderPassCommands->onStencilAccess(vk::ResourceAccess::Write);
-        mDeferredClears.reset(vk::kUnpackedStencilIndex);
+        clears->reset(vk::kUnpackedStencilIndex);
         ++contextVk->getPerfCounters().stencilClearAttachments;
     }
 
@@ -2664,12 +2730,17 @@ void FramebufferVk::clearWithCommand(ContextVk *contextVk, const gl::Rectangle &
 
     if (attachments.empty())
     {
+        // If called with the intent to definitely clear something with vkCmdClearAttachments, there
+        // must have been something to clear!
+        ASSERT(optimizeWithLoadOp);
         return;
     }
 
     const uint32_t layerCount = mState.isMultiview() ? 1 : mCurrentFramebufferDesc.getLayerCount();
 
     VkClearRect rect                                     = {};
+    rect.rect.offset.x                                   = scissoredRenderArea.x;
+    rect.rect.offset.y                                   = scissoredRenderArea.y;
     rect.rect.extent.width                               = scissoredRenderArea.width;
     rect.rect.extent.height                              = scissoredRenderArea.height;
     rect.layerCount                                      = layerCount;
@@ -2984,7 +3055,8 @@ angle::Result FramebufferVk::startNewRenderPass(ContextVk *contextVk,
 
     ANGLE_TRY(contextVk->beginNewRenderPass(
         framebuffer, renderArea, mRenderPassDesc, renderPassAttachmentOps, colorIndexVk,
-        depthStencilAttachmentIndex, packedClearValues, commandBufferOut, &mLastRenderPassSerial));
+        depthStencilAttachmentIndex, packedClearValues, commandBufferOut));
+    mLastRenderPassQueueSerial = contextVk->getStartedRenderPassCommands().getQueueSerial();
 
     // Add the images to the renderpass tracking list (through onColorDraw).
     vk::PackedAttachmentIndex colorAttachmentIndex(0);

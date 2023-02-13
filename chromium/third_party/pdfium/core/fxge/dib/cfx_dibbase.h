@@ -1,4 +1,4 @@
-// Copyright 2017 PDFium Authors. All rights reserved.
+// Copyright 2017 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -34,7 +34,7 @@ class CFX_DIBBase : public Retainable {
 
   ~CFX_DIBBase() override;
 
-  virtual uint8_t* GetBuffer() const;
+  virtual pdfium::span<uint8_t> GetBuffer() const;
   virtual pdfium::span<const uint8_t> GetScanline(int line) const = 0;
   virtual bool SkipToScanline(int line, PauseIndicatorIface* pPause) const;
   virtual size_t GetEstimatedImageMemoryBurden() const;
@@ -75,17 +75,7 @@ class CFX_DIBBase : public Retainable {
   RetainPtr<CFX_DIBitmap> SwapXY(bool bXFlip, bool bYFlip) const;
   RetainPtr<CFX_DIBitmap> FlipImage(bool bXFlip, bool bYFlip) const;
 
-  bool HasAlphaMask() const { return !!m_pAlphaMask; }
-  uint32_t GetAlphaMaskPitch() const;
-  pdfium::span<const uint8_t> GetAlphaMaskScanline(int line) const;
-  pdfium::span<uint8_t> GetWritableAlphaMaskScanline(int line);
-  uint8_t* GetAlphaMaskBuffer();
-  RetainPtr<CFX_DIBitmap> GetAlphaMask();
   RetainPtr<CFX_DIBitmap> CloneAlphaMask() const;
-
-  // Copies into internally-owned mask.
-  bool SetAlphaMask(const RetainPtr<CFX_DIBBase>& pAlphaMask,
-                    const FX_RECT* pClip);
 
   bool GetOverlapRect(int& dest_left,
                       int& dest_top,
@@ -97,7 +87,7 @@ class CFX_DIBBase : public Retainable {
                       int& src_top,
                       const CFX_ClipRgn* pClipRgn) const;
 
-#if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
+#ifdef _SKIA_SUPPORT_
   void DebugVerifyBufferIsPreMultiplied(void* buffer) const;
 #endif
 
@@ -105,7 +95,7 @@ class CFX_DIBBase : public Retainable {
   CFX_DIBBase();
 
   static bool ConvertBuffer(FXDIB_Format dest_format,
-                            uint8_t* dest_buf,
+                            pdfium::span<uint8_t> dest_buf,
                             int dest_pitch,
                             int width,
                             int height,
@@ -116,14 +106,12 @@ class CFX_DIBBase : public Retainable {
 
   RetainPtr<CFX_DIBitmap> ClipToInternal(const FX_RECT* pClip) const;
   void BuildPalette();
-  bool BuildAlphaMask();
   int FindPalette(uint32_t color) const;
 
   FXDIB_Format m_Format = FXDIB_Format::kInvalid;
   int m_Width = 0;
   int m_Height = 0;
   uint32_t m_Pitch = 0;
-  RetainPtr<CFX_DIBitmap> m_pAlphaMask;
   DataVector<uint32_t> m_palette;
 };
 

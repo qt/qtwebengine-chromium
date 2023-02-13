@@ -306,6 +306,7 @@ hsb{
         CD{"Kongo (Demokratiska republika)"}
         CG{"Kongo (Republika)"}
         CI{"Słonowinowy pobrjóh"}
+        NZ{"Aotearoa Nowoseelandska"}
         TL{"Wuchodny Timor"}
     }
 }

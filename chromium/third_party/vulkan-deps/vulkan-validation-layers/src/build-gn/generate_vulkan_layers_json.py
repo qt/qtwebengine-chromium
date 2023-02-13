@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 # Copyright (C) 2016 The ANGLE Project Authors.
+# Copyright (c) 2022 LunarG, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -35,9 +36,10 @@ def glob_slash(dirname):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--icd', action='store_true')
+    parser.add_argument('--no-path-prefix', action='store_true')
     parser.add_argument('--platform', type=str, default=platform.system(),
         help='Target platform to build validation layers for: '
-             'Linux|Darwin|Windows|...')
+             'Linux|Darwin|Windows|Fuchsia|...')
     parser.add_argument('source_dir')
     parser.add_argument('target_dir')
     parser.add_argument('version_header', help='path to vulkan_core.h')
@@ -98,10 +100,14 @@ def main():
         return 1
 
     # Set json file prefix and suffix for generating files, default to Linux.
-    relative_path_prefix = '../lib'
+    if args.no_path_prefix:
+        relative_path_prefix = ''
+    elif args.platform == 'Windows':
+        relative_path_prefix = r'..\\'  # json-escaped, hence two backslashes.
+    else:
+        relative_path_prefix = '../lib'
     file_type_suffix = '.so'
     if args.platform == 'Windows':
-        relative_path_prefix = r'..\\'  # json-escaped, hence two backslashes.
         file_type_suffix = '.dll'
     elif args.platform == 'Darwin':
         file_type_suffix = '.dylib'
@@ -122,9 +128,9 @@ def main():
         with open(json_out_fname,'w') as json_out_file, \
              open(json_in_name) as infile:
             for line in infile:
-                line = line.replace('@RELATIVE_LAYER_BINARY@',
+                line = line.replace('@JSON_LIBRARY_PATH@',
                                     relative_path_prefix + layer_lib_name)
-                line = line.replace('@VK_VERSION@', '1.3.' + vk_version)
+                line = line.replace('@JSON_API_VERSION@', '1.3.' + vk_version)
                 json_out_file.write(line)
 
 if __name__ == '__main__':

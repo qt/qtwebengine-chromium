@@ -31,7 +31,7 @@
 import type * as Platform from '../platform/platform.js';
 import * as Root from '../root/root.js';
 
-import {Format, type Color} from './Color.js';
+import {Format, Legacy, type Color} from './Color.js';
 import {Console} from './Console.js';
 import {type GenericEvents, type EventDescriptor, type EventTargetEvent} from './EventTarget.js';
 import {ObjectWrapper} from './Object.js';
@@ -305,6 +305,23 @@ function removeSetting(setting: Setting<unknown>): void {
   setting.storage.remove(name);
 }
 
+export class Deprecation {
+  readonly disabled: boolean;
+  readonly warning: Platform.UIString.LocalizedString;
+  readonly experiment?: Root.Runtime.Experiment;
+
+  constructor({deprecationNotice}: SettingRegistration) {
+    if (!deprecationNotice) {
+      throw new Error('Cannot create deprecation info for a non-deprecated setting');
+    }
+    this.disabled = deprecationNotice.disabled;
+    this.warning = deprecationNotice.warning();
+    this.experiment = deprecationNotice.experiment ?
+        Root.Runtime.experiments.allConfigurableExperiments().find(e => e.name === deprecationNotice.experiment) :
+        undefined;
+  }
+}
+
 export class Setting<V> {
   #titleFunction?: () => Platform.UIString.LocalizedString;
   #titleInternal!: string;
@@ -315,6 +332,7 @@ export class Setting<V> {
   #serializer: Serializer<unknown, V> = JSON;
   #hadUserAction?: boolean;
   #disabled?: boolean;
+  #deprecation: Deprecation|null = null;
 
   constructor(
       readonly name: string, readonly defaultValue: V, private readonly eventSupport: ObjectWrapper<GenericEvents>,
@@ -425,6 +443,16 @@ export class Setting<V> {
 
   setRegistration(registration: SettingRegistration): void {
     this.#registration = registration;
+    const {deprecationNotice} = registration;
+    if (deprecationNotice?.disabled) {
+      const experiment = deprecationNotice.experiment ?
+          Root.Runtime.experiments.allConfigurableExperiments().find(e => e.name === deprecationNotice.experiment) :
+          undefined;
+      if ((!experiment || experiment.isEnabled())) {
+        this.set(this.defaultValue);
+        this.setDisabled(true);
+      }
+    }
   }
 
   type(): SettingType|null {
@@ -476,6 +504,16 @@ export class Setting<V> {
       return this.#registration.order || null;
     }
     return null;
+  }
+
+  get deprecation(): Deprecation|null {
+    if (!this.#registration || !this.#registration.deprecationNotice) {
+      return null;
+    }
+    if (!this.#deprecation) {
+      this.#deprecation = new Deprecation(this.#registration);
+    }
+    return this.#deprecation;
   }
 
   private printSettingsSavingError(message: string, name: string, value: string): void {
@@ -1116,6 +1154,9 @@ export function settingForTest(settingName: string): Setting<unknown> {
 
 export function detectColorFormat(color: Color): Format {
   const cf = Format;
+  if (!(color instanceof Legacy)) {
+    return cf.Original;
+  }
   let format;
   const formatSetting = Settings.instance().moduleSetting('colorFormat').get();
   if (formatSetting === cf.Original) {

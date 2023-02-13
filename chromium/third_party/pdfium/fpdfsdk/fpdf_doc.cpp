@@ -1,4 +1,4 @@
-// Copyright 2014 PDFium Authors. All rights reserved.
+// Copyright 2014 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -235,11 +235,6 @@ FPDFAction_GetURIPath(FPDF_DOCUMENT document,
   CPDF_Action cAction(pdfium::WrapRetain(CPDFDictionaryFromFPDFAction(action)));
   ByteString path = cAction.GetURI(pDoc);
 
-  // Table 206 in the ISO 32000-1:2008 spec states the type for the URI field is
-  // ASCII string. If the data is not 7-bit ASCII, consider that a failure.
-  if (!path.AsStringView().IsASCII())
-    return 0;
-
   const unsigned long len =
       pdfium::base::checked_cast<unsigned long>(path.GetLength() + 1);
   if (buffer && len <= buflen)
@@ -317,7 +312,8 @@ FPDF_EXPORT FPDF_LINK FPDF_CALLCONV FPDFLink_GetLinkAtPoint(FPDF_PAGE page,
   CPDF_Link link = pLinkList->GetLinkAtPoint(
       pPage, CFX_PointF(static_cast<float>(x), static_cast<float>(y)), nullptr);
 
-  return FPDFLinkFromCPDFDictionary(link.GetMutableDict().Get());
+  // Unretained reference in public API. NOLINTNEXTLINE
+  return FPDFLinkFromCPDFDictionary(link.GetMutableDict());
 }
 
 FPDF_EXPORT int FPDF_CALLCONV FPDFLink_GetLinkZOrderAtPoint(FPDF_PAGE page,

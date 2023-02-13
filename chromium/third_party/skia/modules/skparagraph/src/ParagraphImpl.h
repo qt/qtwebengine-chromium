@@ -68,6 +68,16 @@ struct ResolvedFontDescriptor {
     SkFont fFont;
     TextIndex fTextStart;
 };
+
+enum InternalState {
+  kUnknown = 0,
+  kIndexed = 1,     // Text is indexed
+  kShaped = 2,      // Text is shaped
+  kLineBroken = 5,
+  kFormatted = 6,
+  kDrawn = 7
+};
+
 /*
 struct BidiRegion {
     BidiRegion(size_t start, size_t end, uint8_t dir)
@@ -98,6 +108,7 @@ public:
 
     void layout(SkScalar width) override;
     void paint(SkCanvas* canvas, SkScalar x, SkScalar y) override;
+    void paint(ParagraphPainter* canvas, SkScalar x, SkScalar y) override;
     std::vector<TextBox> getRectsForRange(unsigned start,
                                           unsigned end,
                                           RectHeightStyle rectHeightStyle,
@@ -155,7 +166,7 @@ public:
         return clusterIndex;
     }
     Run& run(RunIndex runIndex) {
-        SkASSERT(runIndex < fRuns.size());
+        SkASSERT(runIndex < SkToSizeT(fRuns.size()));
         return fRuns[runIndex];
     }
 
@@ -164,7 +175,11 @@ public:
     Block& block(BlockIndex blockIndex);
     SkTArray<ResolvedFontDescriptor> resolvedFonts() const { return fFontSwitches; }
 
-    void markDirty() override { fState = kUnknown; }
+    void markDirty() override {
+        if (fState > kIndexed) {
+            fState = kIndexed;
+        }
+    }
 
     int32_t unresolvedGlyphs() override;
 
@@ -183,7 +198,6 @@ public:
     void breakShapedTextIntoLines(SkScalar maxWidth);
 
     void updateTextAlign(TextAlign textAlign) override;
-    void updateText(size_t from, SkString text) override;
     void updateFontSize(size_t from, size_t to, SkScalar fontSize) override;
     void updateForegroundPaint(size_t from, size_t to, SkPaint paint) override;
     void updateBackgroundPaint(size_t from, size_t to, SkPaint paint) override;

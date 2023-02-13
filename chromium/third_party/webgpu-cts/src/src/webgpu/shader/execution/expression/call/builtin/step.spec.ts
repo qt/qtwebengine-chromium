@@ -11,31 +11,19 @@ import { makeTestGroup } from '../../../../../../common/framework/test_group.js'
 import { GPUTest } from '../../../../../gpu_test.js';
 import { anyOf } from '../../../../../util/compare.js';
 import { f32, TypeF32 } from '../../../../../util/conversion.js';
-import { F32Interval, stepInterval } from '../../../../../util/f32_interval.js';
+import { stepInterval, toF32Interval } from '../../../../../util/f32_interval.js';
 import { fullF32Range, quantizeToF32 } from '../../../../../util/math.js';
+import { makeCaseCache } from '../../case_cache.js';
 import { allInputSources, Case, run } from '../../expression.js';
 
 import { builtin } from './builtin.js';
 
 export const g = makeTestGroup(GPUTest);
 
-g.test('abstract_float')
-  .specURL('https://www.w3.org/TR/WGSL/#float-builtin-functions')
-  .desc(`abstract float tests`)
-  .params(u =>
-    u.combine('inputSource', allInputSources).combine('vectorize', [undefined, 2, 3, 4] as const)
-  )
-  .unimplemented();
-
-g.test('f32')
-  .specURL('https://www.w3.org/TR/WGSL/#float-builtin-functions')
-  .desc(`f32 tests`)
-  .params(u =>
-    u.combine('inputSource', allInputSources).combine('vectorize', [undefined, 2, 3, 4] as const)
-  )
-  .fn(async t => {
-    const zeroInterval = new F32Interval(0, 0);
-    const oneInterval = new F32Interval(1, 1);
+export const d = makeCaseCache('step', {
+  f32: () => {
+    const zeroInterval = toF32Interval(0);
+    const oneInterval = toF32Interval(1);
 
     // stepInterval's return value isn't always interpreted as an acceptance
     // interval, so makeBinaryToF32IntervalCase cannot be used here.
@@ -65,6 +53,26 @@ g.test('f32')
       });
     });
 
+    return cases;
+  },
+});
+
+g.test('abstract_float')
+  .specURL('https://www.w3.org/TR/WGSL/#float-builtin-functions')
+  .desc(`abstract float tests`)
+  .params(u =>
+    u.combine('inputSource', allInputSources).combine('vectorize', [undefined, 2, 3, 4] as const)
+  )
+  .unimplemented();
+
+g.test('f32')
+  .specURL('https://www.w3.org/TR/WGSL/#float-builtin-functions')
+  .desc(`f32 tests`)
+  .params(u =>
+    u.combine('inputSource', allInputSources).combine('vectorize', [undefined, 2, 3, 4] as const)
+  )
+  .fn(async t => {
+    const cases = await d.get('f32');
     await run(t, builtin('step'), [TypeF32, TypeF32], TypeF32, t.params, cases);
   });
 

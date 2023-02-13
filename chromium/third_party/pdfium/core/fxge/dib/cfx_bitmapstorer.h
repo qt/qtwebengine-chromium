@@ -1,4 +1,4 @@
-// Copyright 2017 PDFium Authors. All rights reserved.
+// Copyright 2017 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -19,9 +19,7 @@ class CFX_BitmapStorer final : public ScanlineComposerIface {
   ~CFX_BitmapStorer() override;
 
   // ScanlineComposerIface:
-  void ComposeScanline(int line,
-                       pdfium::span<const uint8_t> scanline,
-                       pdfium::span<const uint8_t> scan_extra_alpha) override;
+  void ComposeScanline(int line, pdfium::span<const uint8_t> scanline) override;
   bool SetInfo(int width,
                int height,
                FXDIB_Format src_format,

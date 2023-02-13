@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "absl/base/macros.h"
+#include "absl/strings/escaping.h"
 #include "absl/strings/string_view.h"
 #include "quiche/quic/core/crypto/crypto_protocol.h"
 #include "quiche/quic/core/quic_connection_id.h"
@@ -44,6 +45,9 @@ const char* kCustomParameter1Value = "foo";
 const auto kCustomParameter2 =
     static_cast<TransportParameters::TransportParameterId>(0xff34);
 const char* kCustomParameter2Value = "bar";
+
+const char kFakeGoogleHandshakeMessage[] =
+    "01000106030392655f5230270d4964a4f99b15bbad220736d972aea97bf9ac494ead62e6";
 
 QuicConnectionId CreateFakeOriginalDestinationConnectionId() {
   return TestConnectionId(0x1337);
@@ -284,6 +288,8 @@ TEST_P(TransportParametersTest, CopyConstructor) {
       CreateFakeInitialSourceConnectionId();
   orig_params.retry_source_connection_id = CreateFakeRetrySourceConnectionId();
   orig_params.initial_round_trip_time_us.set_value(kFakeInitialRoundTripTime);
+  orig_params.google_handshake_message =
+      absl::HexStringToBytes(kFakeGoogleHandshakeMessage);
   orig_params.google_connection_options = CreateFakeGoogleConnectionOptions();
   orig_params.custom_parameters[kCustomParameter1] = kCustomParameter1Value;
   orig_params.custom_parameters[kCustomParameter2] = kCustomParameter2Value;
@@ -318,6 +324,8 @@ TEST_P(TransportParametersTest, RoundTripClient) {
   orig_params.initial_source_connection_id =
       CreateFakeInitialSourceConnectionId();
   orig_params.initial_round_trip_time_us.set_value(kFakeInitialRoundTripTime);
+  orig_params.google_handshake_message =
+      absl::HexStringToBytes(kFakeGoogleHandshakeMessage);
   orig_params.google_connection_options = CreateFakeGoogleConnectionOptions();
   orig_params.custom_parameters[kCustomParameter1] = kCustomParameter1Value;
   orig_params.custom_parameters[kCustomParameter2] = kCustomParameter2Value;
@@ -548,6 +556,12 @@ TEST_P(TransportParametersTest, ParseClientParams) {
       0x0f,  // parameter id
       0x08,  // length
       0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x23, 0x45,
+      // google_handshake_message
+      0x66, 0xab,  // parameter id
+      0x24,  // length
+      0x01, 0x00, 0x01, 0x06, 0x03, 0x03, 0x92, 0x65, 0x5f, 0x52, 0x30, 0x27,
+      0x0d, 0x49, 0x64, 0xa4, 0xf9, 0x9b, 0x15, 0xbb, 0xad, 0x22, 0x07, 0x36,
+      0xd9, 0x72, 0xae, 0xa9, 0x7b, 0xf9, 0xac, 0x49, 0x4e, 0xad, 0x62, 0xe6,
       // initial_round_trip_time_us
       0x71, 0x27,  // parameter id
       0x01,  // length
@@ -620,6 +634,8 @@ TEST_P(TransportParametersTest, ParseClientParams) {
   ASSERT_TRUE(new_params.google_connection_options.has_value());
   EXPECT_EQ(CreateFakeGoogleConnectionOptions(),
             new_params.google_connection_options.value());
+  EXPECT_EQ(absl::HexStringToBytes(kFakeGoogleHandshakeMessage),
+            new_params.google_handshake_message);
 }
 
 TEST_P(TransportParametersTest,
@@ -1022,6 +1038,56 @@ TEST_P(TransportParametersTest, SerializationOrderIsRandom) {
       return;
     }
   }
+}
+
+TEST_P(TransportParametersTest, Degrease) {
+  TransportParameters orig_params;
+  orig_params.perspective = Perspective::IS_CLIENT;
+  orig_params.legacy_version_information =
+      CreateFakeLegacyVersionInformationClient();
+  orig_params.version_information = CreateFakeVersionInformation();
+  orig_params.max_idle_timeout_ms.set_value(kFakeIdleTimeoutMilliseconds);
+  orig_params.max_udp_payload_size.set_value(kMaxPacketSizeForTest);
+  orig_params.initial_max_data.set_value(kFakeInitialMaxData);
+  orig_params.initial_max_stream_data_bidi_local.set_value(
+      kFakeInitialMaxStreamDataBidiLocal);
+  orig_params.initial_max_stream_data_bidi_remote.set_value(
+      kFakeInitialMaxStreamDataBidiRemote);
+  orig_params.initial_max_stream_data_uni.set_value(
+      kFakeInitialMaxStreamDataUni);
+  orig_params.initial_max_streams_bidi.set_value(kFakeInitialMaxStreamsBidi);
+  orig_params.initial_max_streams_uni.set_value(kFakeInitialMaxStreamsUni);
+  orig_params.ack_delay_exponent.set_value(kAckDelayExponentForTest);
+  orig_params.max_ack_delay.set_value(kMaxAckDelayForTest);
+  orig_params.min_ack_delay_us.set_value(kMinAckDelayUsForTest);
+  orig_params.disable_active_migration = kFakeDisableMigration;
+  orig_params.active_connection_id_limit.set_value(
+      kActiveConnectionIdLimitForTest);
+  orig_params.initial_source_connection_id =
+      CreateFakeInitialSourceConnectionId();
+  orig_params.initial_round_trip_time_us.set_value(kFakeInitialRoundTripTime);
+  orig_params.google_handshake_message =
+      absl::HexStringToBytes(kFakeGoogleHandshakeMessage);
+  orig_params.google_connection_options = CreateFakeGoogleConnectionOptions();
+  orig_params.custom_parameters[kCustomParameter1] = kCustomParameter1Value;
+  orig_params.custom_parameters[kCustomParameter2] = kCustomParameter2Value;
+
+  std::vector<uint8_t> serialized;
+  ASSERT_TRUE(SerializeTransportParameters(orig_params, &serialized));
+
+  TransportParameters new_params;
+  std::string error_details;
+  ASSERT_TRUE(ParseTransportParameters(version_, Perspective::IS_CLIENT,
+                                       serialized.data(), serialized.size(),
+                                       &new_params, &error_details))
+      << error_details;
+  EXPECT_TRUE(error_details.empty());
+
+  // Deserialized parameters have grease added.
+  EXPECT_NE(new_params, orig_params);
+
+  DegreaseTransportParameters(new_params);
+  EXPECT_EQ(new_params, orig_params);
 }
 
 class TransportParametersTicketSerializationTest : public QuicTest {

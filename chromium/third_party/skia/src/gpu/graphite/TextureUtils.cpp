@@ -39,14 +39,12 @@ std::tuple<TextureProxyView, SkColorType> MakeBitmapProxyView(Recorder* recorder
     if (bitmap.dimensions().area() <= 1) {
         mipmapped = Mipmapped::kNo;
     }
-    int mipLevelCount = (mipmapped == Mipmapped::kYes) ?
-            SkMipmap::ComputeLevelCount(bitmap.width(), bitmap.height()) + 1 : 1;
 
-    auto textureInfo = caps->getDefaultSampledTextureInfo(ct, mipLevelCount, Protected::kNo,
+    auto textureInfo = caps->getDefaultSampledTextureInfo(ct, mipmapped, Protected::kNo,
                                                           Renderable::kNo);
     if (!textureInfo.isValid()) {
         ct = kRGBA_8888_SkColorType;
-        textureInfo = caps->getDefaultSampledTextureInfo(ct, mipLevelCount, Protected::kNo,
+        textureInfo = caps->getDefaultSampledTextureInfo(ct, mipmapped, Protected::kNo,
                                                          Renderable::kNo);
     }
     SkASSERT(textureInfo.isValid());
@@ -66,6 +64,10 @@ std::tuple<TextureProxyView, SkColorType> MakeBitmapProxyView(Recorder* recorder
     if (!SkImageInfoIsValid(bmpToUpload.info())) {
         return {};
     }
+
+    int mipLevelCount = (mipmapped == Mipmapped::kYes) ?
+            SkMipmap::ComputeLevelCount(bitmap.width(), bitmap.height()) + 1 : 1;
+
 
     // setup MipLevels
     sk_sp<SkMipmap> mipmaps;
@@ -107,8 +109,8 @@ std::tuple<TextureProxyView, SkColorType> MakeBitmapProxyView(Recorder* recorder
 
     // Add UploadTask to Recorder
     UploadInstance upload = UploadInstance::Make(
-            recorder, proxy, ct, texels, SkIRect::MakeSize(bmpToUpload.dimensions()));
-    recorder->priv().add(UploadTask::Make(upload));
+            recorder, proxy, ct, texels, SkIRect::MakeSize(bmpToUpload.dimensions()), nullptr);
+    recorder->priv().add(UploadTask::Make(std::move(upload)));
 
     Swizzle swizzle = caps->getReadSwizzle(ct, textureInfo);
     return {{std::move(proxy), swizzle}, ct};
@@ -130,64 +132,6 @@ sk_sp<SkImage> MakeFromBitmap(Recorder* recorder,
              view.proxy()->mipmapped() == skgpu::graphite::Mipmapped::kYes);
     return sk_make_sp<skgpu::graphite::Image>(std::move(view),
                                               colorInfo.makeColorType(ct));
-}
-
-bool ReadPixelsHelper(FlushPendingWorkCallback&& flushPendingWork,
-                      Context* context,
-                      Recorder* recorder,
-                      TextureProxy* srcProxy,
-                      const SkImageInfo& dstInfo,
-                      void* dstPixels,
-                      size_t dstRowBytes,
-                      int srcX,
-                      int srcY) {
-    // TODO: Support more formats that we can read back into
-    if (dstInfo.colorType() != kRGBA_8888_SkColorType) {
-        return false;
-    }
-
-    ResourceProvider* resourceProvider = recorder->priv().resourceProvider();
-    size_t size = dstRowBytes * dstInfo.height();
-    sk_sp<Buffer> dstBuffer = resourceProvider->findOrCreateBuffer(size,
-                                                                   BufferType::kXferGpuToCpu,
-                                                                   PrioritizeGpuReads::kNo);
-    if (!dstBuffer) {
-        return false;
-    }
-
-    SkIRect srcRect = SkIRect::MakeXYWH(srcX, srcY, dstInfo.width(), dstInfo.height());
-    sk_sp<CopyTextureToBufferTask> copyTask = CopyTextureToBufferTask::Make(sk_ref_sp(srcProxy),
-                                                                            srcRect,
-                                                                            dstBuffer,
-                                                                            /*bufferOffset=*/0,
-                                                                            dstRowBytes);
-    if (!copyTask) {
-        return false;
-    }
-
-    sk_sp<SynchronizeToCpuTask> syncTask = SynchronizeToCpuTask::Make(dstBuffer);
-    if (!syncTask) {
-        return false;
-    }
-
-    flushPendingWork();
-    recorder->priv().add(std::move(copyTask));
-    recorder->priv().add(std::move(syncTask));
-
-    std::unique_ptr<Recording> recording = recorder->snap();
-    if (!recording) {
-        return false;
-    }
-    InsertRecordingInfo info;
-    info.fRecording = recording.get();
-    context->insertRecording(info);
-    context->submit(SyncToCpu::kYes);
-
-    void* mappedMemory = dstBuffer->map();
-
-    memcpy(dstPixels, mappedMemory, size);
-
-    return true;
 }
 
 } // namespace skgpu::graphite

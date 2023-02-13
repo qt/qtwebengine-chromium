@@ -8,6 +8,7 @@
 #include "src/gpu/ganesh/gl/builders/GrGLProgramBuilder.h"
 
 #include "include/gpu/GrDirectContext.h"
+#include "include/private/SkSLProgramKind.h"
 #include "src/core/SkAutoMalloc.h"
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkTraceEvent.h"
@@ -24,6 +25,7 @@
 #include "src/gpu/ganesh/gl/GrGLGpu.h"
 #include "src/gpu/ganesh/gl/GrGLProgram.h"
 #include "src/gpu/ganesh/gl/builders/GrGLProgramBuilder.h"
+#include "src/sksl/SkSLProgramSettings.h"
 #include "src/utils/SkShaderUtils.h"
 
 #include <memory>
@@ -187,7 +189,6 @@ void GrGLProgramBuilder::storeShaderInCache(const SkSL::Program::Inputs& inputs,
         // source cache, plus metadata to allow for a complete precompile
         GrPersistentCacheUtils::ShaderMetadata meta;
         meta.fSettings = settings;
-        meta.fHasCustomColorOutput = fFS.hasCustomColorOutput();
         meta.fHasSecondaryColorOutput = fFS.hasSecondaryOutput();
         for (auto attr : this->geometryProcessor().vertexAttributes()) {
             meta.fAttributeNames.emplace_back(attr.name());
@@ -409,13 +410,14 @@ void GrGLProgramBuilder::bindProgramResourceLocations(GrGLuint programID) {
     fUniformHandler.bindUniformLocations(programID, fGpu->glCaps());
 
     const GrGLCaps& caps = this->gpu()->glCaps();
-    if (fFS.hasCustomColorOutput() && caps.bindFragDataLocationSupport()) {
+    if (caps.bindFragDataLocationSupport()) {
+        SkASSERT(caps.shaderCaps()->mustDeclareFragmentShaderOutput());
         GL_CALL(BindFragDataLocation(programID, 0,
                                      GrGLSLFragmentShaderBuilder::DeclaredColorOutputName()));
-    }
-    if (fFS.hasSecondaryOutput() && caps.shaderCaps()->mustDeclareFragmentShaderOutput()) {
-        GL_CALL(BindFragDataLocationIndexed(programID, 0, 1,
+        if (fFS.hasSecondaryOutput()) {
+            GL_CALL(BindFragDataLocationIndexed(programID, 0, 1,
                                   GrGLSLFragmentShaderBuilder::DeclaredSecondaryColorOutputName()));
+        }
     }
 }
 
@@ -535,21 +537,23 @@ bool GrGLProgramBuilder::PrecompileProgram(GrDirectContext* dContext,
         return false;
     }
 
-    for (int i = 0; i < meta.fAttributeNames.count(); ++i) {
+    for (int i = 0; i < meta.fAttributeNames.size(); ++i) {
         GR_GL_CALL(glGpu->glInterface(), BindAttribLocation(programID, i,
                                                           meta.fAttributeNames[i].c_str()));
     }
 
     const GrGLCaps& caps = glGpu->glCaps();
-    if (meta.fHasCustomColorOutput && caps.bindFragDataLocationSupport()) {
+    if (caps.bindFragDataLocationSupport()) {
+        SkASSERT(caps.shaderCaps()->mustDeclareFragmentShaderOutput());
         GR_GL_CALL(glGpu->glInterface(),
                    BindFragDataLocation(programID, 0,
                                         GrGLSLFragmentShaderBuilder::DeclaredColorOutputName()));
-    }
-    if (meta.fHasSecondaryColorOutput && caps.shaderCaps()->mustDeclareFragmentShaderOutput()) {
-        GR_GL_CALL(glGpu->glInterface(),
-                   BindFragDataLocationIndexed(programID, 0, 1,
-                               GrGLSLFragmentShaderBuilder::DeclaredSecondaryColorOutputName()));
+
+        if (meta.fHasSecondaryColorOutput) {
+            GR_GL_CALL(glGpu->glInterface(),
+                       BindFragDataLocationIndexed(programID, 0, 1,
+                                  GrGLSLFragmentShaderBuilder::DeclaredSecondaryColorOutputName()));
+        }
     }
 
     GR_GL_CALL(glGpu->glInterface(), LinkProgram(programID));

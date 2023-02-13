@@ -435,6 +435,13 @@ typedef struct HIGH_LEVEL_SPEED_FEATURES {
    * levels and arf-q.
    */
   int num_frames_used_in_tf;
+
+  /*!
+   * Decide the bit estimation approach used in qindex decision.
+   * 0: estimate bits based on a constant value;
+   * 1: estimate bits more accurately based on the frame complexity.
+   */
+  int accurate_bit_estimate;
 } HIGH_LEVEL_SPEED_FEATURES;
 
 /*!
@@ -725,8 +732,8 @@ typedef struct MV_SPEED_FEATURES {
   // Motion search method (Diamond, NSTEP, Hex, Big Diamond, Square, etc).
   SEARCH_METHODS search_method;
 
-  // Enable the use of faster, less accurate mv search method on bsize >=
-  // BLOCK_32X32.
+  // Enable the use of faster, less accurate mv search method
+  // 0: disable, 1: if bsize >= BLOCK_32X32, 2: based on bsize, SAD and qp
   // TODO(chiyotsai@google.com): Take the clip's resolution and mv activity into
   // account.
   int use_bsize_dependent_search_method;
@@ -1046,6 +1053,7 @@ typedef struct INTERP_FILTER_SPEED_FEATURES {
   // dual_filter=0 case
   int skip_sharp_interp_filter_search;
 
+  // skip interpolation filter search for a block in chessboard pattern
   int cb_pred_filter_search;
 
   // adaptive interp_filter search to allow skip of certain filter types.
@@ -1477,8 +1485,19 @@ typedef struct REAL_TIME_SPEED_FEATURES {
   int fullpel_search_step_param;
 
   // Bit mask to enable or disable intra modes for each prediction block size
-  // separately, for nonrd pickmode.
+  // separately, for nonrd_pickmode.  Currently, the sf is not respected when
+  // 'force_intra_check' is true in 'estimate_intra_mode()' function. Also, H
+  // and V pred modes allowed through this sf can be further pruned when
+  //'prune_hv_pred_modes_using_src_sad' sf is true.
   int intra_y_mode_bsize_mask_nrd[BLOCK_SIZES];
+
+  // Prune H and V intra predition modes evalution in inter frame.
+  // The sf does not have any impact.
+  // i. when frame_source_sad is 1.1 times greater than avg_source_sad
+  // ii. when cyclic_refresh_segment_id_boosted is enabled
+  // iii. when SB level source sad is greater than kMedSad
+  // iv. when color sensitivity is non zero for both the chroma channels
+  bool prune_hv_pred_modes_using_src_sad;
 
   // Skips mode checks more aggressively in nonRD mode
   int nonrd_aggressive_skip;
@@ -1643,8 +1662,9 @@ typedef struct REAL_TIME_SPEED_FEATURES {
   // 2: If source sad <= kVeryLowSad
   int set_zeromv_skip_based_on_source_sad;
 
-  // Downgrades the subpel search to av1_find_best_sub_pixel_tree_pruned_more
-  // when either the fullpel search performed well, or when zeromv has low sad.
+  // Downgrades the block-level subpel motion search to
+  // av1_find_best_sub_pixel_tree_pruned_more for higher QP and when fullpel
+  // search performed well, zeromv has low sad or low source_var
   bool use_adaptive_subpel_search;
 
   // A flag used in RTC case to control frame_refs_short_signaling. Note that

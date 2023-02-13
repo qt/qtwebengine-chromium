@@ -9,6 +9,7 @@
 
 #include <limits>
 #include <sstream>
+#include <string>
 
 #include "cast/streaming/expanded_value_base.h"
 
@@ -108,6 +109,8 @@ class FrameId : public ExpandedValueBase<int64_t, FrameId> {
   static constexpr FrameId leader() { return FrameId(-1); }
 
   constexpr int64_t value() const { return value_; }
+
+  std::string ToString() const;
 
  private:
   friend class ExpandedValueBase<int64_t, FrameId>;

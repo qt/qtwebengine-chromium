@@ -13,7 +13,9 @@
 #include "include/private/SkSLLayout.h"
 #include "include/private/SkSLModifiers.h"
 #include "include/private/SkSLProgramKind.h"
+#include "include/private/SkSLString.h"
 #include "include/private/SkStringView.h"
+#include "include/private/SkTo.h"
 #include "include/sksl/SkSLErrorReporter.h"
 #include "include/sksl/SkSLPosition.h"
 #include "src/sksl/SkSLBuiltinTypes.h"
@@ -175,19 +177,14 @@ static bool check_main_signature(const Context& context, Position pos, const Typ
                p.modifiers().fLayout.fBuiltin == builtinID;
     };
 
-    auto paramIsInAttributes = [&](int idx) {
+    auto paramIsConstInAttributes = [&](int idx) {
         const Variable& p = *parameters[idx];
-        return typeIsValidForAttributes(p.type()) && p.modifiers().fFlags == 0;
+        return typeIsValidForAttributes(p.type()) && p.modifiers().fFlags == Modifiers::kConst_Flag;
     };
 
-    auto paramIsOutVaryings = [&](int idx) {
+    auto paramIsConstInVaryings = [&](int idx) {
         const Variable& p = *parameters[idx];
-        return typeIsValidForVaryings(p.type()) && p.modifiers().fFlags == Modifiers::kOut_Flag;
-    };
-
-    auto paramIsInVaryings = [&](int idx) {
-        const Variable& p = *parameters[idx];
-        return typeIsValidForVaryings(p.type()) && p.modifiers().fFlags == 0;
+        return typeIsValidForVaryings(p.type()) && p.modifiers().fFlags == Modifiers::kConst_Flag;
     };
 
     auto paramIsOutColor = [&](int idx) {
@@ -199,7 +196,8 @@ static bool check_main_signature(const Context& context, Position pos, const Typ
     auto paramIsDestColor  = [&](int n) { return paramIsBuiltinColor(n, SK_DEST_COLOR_BUILTIN); };
 
     switch (kind) {
-        case ProgramKind::kRuntimeColorFilter: {
+        case ProgramKind::kRuntimeColorFilter:
+        case ProgramKind::kPrivateRuntimeColorFilter: {
             // (half4|float4) main(half4|float4)
             if (!typeIsValidForColor(returnType)) {
                 errors.error(pos, "'main' must return: 'vec4', 'float4', or 'half4'");
@@ -225,7 +223,8 @@ static bool check_main_signature(const Context& context, Position pos, const Typ
             }
             break;
         }
-        case ProgramKind::kRuntimeBlender: {
+        case ProgramKind::kRuntimeBlender:
+        case ProgramKind::kPrivateRuntimeBlender: {
             // (half4|float4) main(half4|float4, half4|float4)
             if (!typeIsValidForColor(returnType)) {
                 errors.error(pos, "'main' must return: 'vec4', 'float4', or 'half4'");
@@ -241,28 +240,27 @@ static bool check_main_signature(const Context& context, Position pos, const Typ
             break;
         }
         case ProgramKind::kMeshVertex: {
-            // float2 main(Attributes, out Varyings)
-            if (!returnType.matches(*context.fTypes.fFloat2)) {
-                errors.error(pos, "'main' must return: 'vec2' or 'float2'");
+            // Varyings main(const Attributes)
+            if (!typeIsValidForVaryings(returnType)) {
+                errors.error(pos, "'main' must return 'Varyings'.");
                 return false;
             }
-            if (!(parameters.size() == 2 && paramIsInAttributes(0) && paramIsOutVaryings(1))) {
-                errors.error(pos, "'main' parameters must be (Attributes, out Varyings");
+            if (!(parameters.size() == 1 && paramIsConstInAttributes(0))) {
+                errors.error(pos, "'main' parameter must be 'const Attributes'.");
                 return false;
             }
             break;
         }
         case ProgramKind::kMeshFragment: {
-            // float2 main(Varyings) -or- float2 main(Varyings, out half4|float4) -or-
-            // void main(Varyings) -or- void main(Varyings, out half4|float4)
-            if (!returnType.matches(*context.fTypes.fFloat2) &&
-                !returnType.matches(*context.fTypes.fVoid)) {
-                errors.error(pos, "'main' must return: 'vec2', 'float2', 'or' 'void'");
+            // float2 main(const Varyings) -or- float2 main(const Varyings, out half4|float4)
+            if (!returnType.matches(*context.fTypes.fFloat2)) {
+                errors.error(pos, "'main' must return: 'vec2' or 'float2'");
                 return false;
             }
-            if (!((parameters.size() == 1 && paramIsInVaryings(0)) ||
-                  (parameters.size() == 2 && paramIsInVaryings(0) && paramIsOutColor(1)))) {
-                errors.error(pos, "'main' parameters must be (Varyings, (out (half4|float4))?)");
+            if (!((parameters.size() == 1 && paramIsConstInVaryings(0)) ||
+                  (parameters.size() == 2 && paramIsConstInVaryings(0) && paramIsOutColor(1)))) {
+                errors.error(pos,
+                             "'main' parameters must be (const Varyings, (out (half4|float4))?)");
                 return false;
             }
             break;
@@ -428,12 +426,16 @@ static bool find_existing_declaration(const Context& context,
                     return false;
                 }
             }
-            if (*modifiers != other->modifiers() || other->definition() || other->isBuiltin()) {
+            if (*modifiers != other->modifiers() || other->definition() || other->isIntrinsic()) {
                 errors.error(pos, "duplicate definition of '" + invalidDeclDescription() + "'");
                 return false;
             }
             *outExistingDecl = other;
             break;
+        }
+        if (!*outExistingDecl && entry->as<FunctionDeclaration>().isMain()) {
+            errors.error(pos, "duplicate definition of 'main'");
+            return false;
         }
     }
     return true;
@@ -445,7 +447,7 @@ FunctionDeclaration::FunctionDeclaration(Position pos,
                                          std::vector<Variable*> parameters,
                                          const Type* returnType,
                                          bool builtin)
-        : INHERITED(pos, kSymbolKind, name, /*type=*/nullptr)
+        : INHERITED(pos, kIRNodeKind, name, /*type=*/nullptr)
         , fDefinition(nullptr)
         , fModifiers(modifiers)
         , fParameters(std::move(parameters))
@@ -521,10 +523,9 @@ std::string FunctionDeclaration::description() const {
     std::string result =
             (modifierFlags ? Modifiers::DescribeFlags(modifierFlags) + " " : std::string()) +
             this->returnType().displayName() + " " + std::string(this->name()) + "(";
-    std::string separator;
+    auto separator = SkSL::String::Separator();
     for (const Variable* p : this->parameters()) {
-        result += separator;
-        separator = ", ";
+        result += separator();
         // We can't just say `p->description()` here, because occasionally might have added layout
         // flags onto parameters (like `layout(builtin=10009)`) and don't want to reproduce that.
         if (p->modifiers().fFlags) {
@@ -559,11 +560,11 @@ bool FunctionDeclaration::determineFinalTypes(const ExpressionArray& arguments,
                                               ParamTypes* outParameterTypes,
                                               const Type** outReturnType) const {
     const std::vector<Variable*>& parameters = this->parameters();
-    SkASSERT(arguments.size() == parameters.size());
+    SkASSERT(SkToSizeT(arguments.size()) == parameters.size());
 
     outParameterTypes->reserve_back(arguments.size());
     int genericIndex = -1;
-    for (size_t i = 0; i < arguments.size(); i++) {
+    for (int i = 0; i < arguments.size(); i++) {
         // Non-generic parameters are final as-is.
         const Type& parameterType = parameters[i]->type();
         if (!parameterType.isGeneric()) {

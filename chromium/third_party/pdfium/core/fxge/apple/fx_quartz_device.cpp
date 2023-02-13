@@ -1,10 +1,12 @@
-// Copyright 2014 PDFium Authors. All rights reserved.
+// Copyright 2014 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
 #include "core/fxge/apple/fx_quartz_device.h"
+
+#include <CoreGraphics/CoreGraphics.h>
 
 #include "core/fxcrt/fx_extension.h"
 #include "core/fxge/cfx_graphstatedata.h"
@@ -31,7 +33,7 @@ void* CQuartz2D::CreateGraphics(const RetainPtr<CFX_DIBitmap>& pBitmap) {
   }
   CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
   CGContextRef context = CGBitmapContextCreate(
-      pBitmap->GetBuffer(), pBitmap->GetWidth(), pBitmap->GetHeight(), 8,
+      pBitmap->GetBuffer().data(), pBitmap->GetWidth(), pBitmap->GetHeight(), 8,
       pBitmap->GetPitch(), colorSpace, bmpInfo);
   CGColorSpaceRelease(colorSpace);
   return context;

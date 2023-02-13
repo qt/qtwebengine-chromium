@@ -23,14 +23,14 @@ TINT_INSTANTIATE_TYPEINFO(tint::sem::Expression);
 namespace tint::sem {
 
 Expression::Expression(const ast::Expression* declaration,
-                       const sem::Type* type,
+                       const type::Type* type,
                        EvaluationStage stage,
                        const Statement* statement,
-                       const Constant* constant,
+                       const constant::Value* constant,
                        bool has_side_effects,
-                       const Variable* source_var /* = nullptr */)
+                       const Variable* root_ident /* = nullptr */)
     : declaration_(declaration),
-      source_variable_(source_var),
+      root_identifier_(root_ident),
       type_(type),
       stage_(stage),
       statement_(statement),

@@ -51,6 +51,12 @@
   #define XNN_ARCH_RISCV 0
 #endif
 
+#if defined(__hexagon__)
+  #define XNN_ARCH_HEXAGON 1
+#else
+  #define XNN_ARCH_HEXAGON 0
+#endif
+
 #if defined(__wasm__)
   #if defined(__wasm_relaxed_simd__)
     #define XNN_ARCH_WASM 0
@@ -120,6 +126,12 @@
   #define XNN_PLATFORM_FUCHSIA 1
 #else
   #define XNN_PLATFORM_FUCHSIA 0
+#endif
+
+#if defined(__hexagon__) && !defined(__linux__)
+  #define XNN_PLATFORM_QURT 1
+#else
+  #define XNN_PLATFORM_QURT 0
 #endif
 
 #if (XNN_ARCH_ARM || XNN_ARCH_ARM64) && !XNN_PLATFORM_IOS && !XNN_PLATFORM_FUCHSIA

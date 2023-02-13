@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2016 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -33,11 +33,12 @@
 #include "core/fpdfapi/parser/fpdf_parser_utility.h"
 #include "core/fxcodec/fx_codec.h"
 #include "core/fxcrt/data_vector.h"
-#include "core/fxcrt/fx_memory.h"
+#include "core/fxcrt/fx_2d_size.h"
 #include "core/fxcrt/fx_memory_wrappers.h"
 #include "core/fxcrt/fx_safe_types.h"
 #include "core/fxcrt/maybe_owned.h"
 #include "core/fxcrt/scoped_set_insertion.h"
+#include "core/fxcrt/span_util.h"
 #include "core/fxcrt/stl_util.h"
 #include "third_party/base/check.h"
 #include "third_party/base/check_op.h"
@@ -173,8 +174,8 @@ class CPDF_CalRGB final : public CPDF_ColorSpace {
 
   float m_WhitePoint[kBlackWhitePointCount] = {1.0f, 1.0f, 1.0f};
   float m_BlackPoint[kBlackWhitePointCount] = {0.0f, 0.0f, 0.0f};
-  float m_Gamma[kGammaCount];
-  float m_Matrix[kMatrixCount];
+  float m_Gamma[kGammaCount] = {};
+  float m_Matrix[kMatrixCount] = {};
   bool m_bHasGamma = false;
   bool m_bHasMatrix = false;
 };
@@ -210,7 +211,7 @@ class CPDF_LabCS final : public CPDF_ColorSpace {
 
   float m_WhitePoint[kBlackWhitePointCount] = {1.0f, 1.0f, 1.0f};
   float m_BlackPoint[kBlackWhitePointCount] = {0.0f, 0.0f, 0.0f};
-  float m_Ranges[kRangesCount];
+  float m_Ranges[kRangesCount] = {};
 };
 
 class CPDF_ICCBasedCS final : public CPDF_BasedCS {
@@ -425,17 +426,14 @@ void XYZ_to_sRGB_WhitePoint(float X,
 
 }  // namespace
 
-PatternValue::PatternValue() {
-  std::fill(std::begin(m_Comps), std::end(m_Comps), 0.0f);
-}
+PatternValue::PatternValue() = default;
 
 PatternValue::PatternValue(const PatternValue& that) = default;
 
 PatternValue::~PatternValue() = default;
 
 void PatternValue::SetComps(pdfium::span<const float> comps) {
-  CHECK(comps.size() <= m_Comps.size());
-  std::copy(std::begin(comps), std::end(comps), std::begin(m_Comps));
+  fxcrt::spancpy(pdfium::make_span(m_Comps), comps);
 }
 
 // static
@@ -480,7 +478,7 @@ RetainPtr<CPDF_ColorSpace> CPDF_ColorSpace::Load(
 
     CPDF_DictionaryLocker locker(std::move(pDict));
     for (const auto& it : locker) {
-      CPDF_Name* pValue = ToName(it.second.Get());
+      RetainPtr<const CPDF_Name> pValue = ToName(it.second);
       if (pValue) {
         RetainPtr<CPDF_ColorSpace> pRet =
             GetStockCSForName(pValue->GetString());

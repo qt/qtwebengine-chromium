@@ -1306,7 +1306,8 @@ struct drm_i915_gem_caching {
 #define I915_TILING_NONE	0
 #define I915_TILING_X		1
 #define I915_TILING_Y		2
-#define I915_TILING_LAST	I915_TILING_Y
+#define I915_TILING_4		9
+#define I915_TILING_LAST	I915_TILING_4
 
 #define I915_BIT_6_SWIZZLE_NONE		0
 #define I915_BIT_6_SWIZZLE_9		1

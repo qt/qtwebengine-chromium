@@ -1,4 +1,4 @@
-// Copyright 2014 PDFium Authors. All rights reserved.
+// Copyright 2014 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -155,8 +155,8 @@ void CJS_Global::DefineJSObjects(CFXJS_Engine* pEngine) {
 }
 
 CJS_Global::CJS_Global(v8::Local<v8::Object> pObject, CJS_Runtime* pRuntime)
-    : CJS_Object(pObject, pRuntime) {
-  m_pGlobalData = CFX_GlobalData::GetRetainedInstance(nullptr);
+    : CJS_Object(pObject, pRuntime),
+      m_pGlobalData(CFX_GlobalData::GetRetainedInstance(nullptr)) {
   UpdateGlobalPersistentVariables();
 }
 

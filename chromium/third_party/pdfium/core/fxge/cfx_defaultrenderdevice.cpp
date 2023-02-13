@@ -1,4 +1,4 @@
-// Copyright 2022 PDFium Authors. All rights reserved.
+// Copyright 2022 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -28,20 +28,6 @@ bool CFX_DefaultRenderDevice::SkiaIsDefaultRenderer() {
 #endif
 }
 
-// static
-bool CFX_DefaultRenderDevice::SkiaPathsIsDefaultRenderer() {
-#if defined(_SKIA_SUPPORT_PATHS_)
-  return true;
-#else
-  return false;
-#endif
-}
-
-// static
-bool CFX_DefaultRenderDevice::SkiaVariantIsDefaultRenderer() {
-  return SkiaIsDefaultRenderer() || SkiaPathsIsDefaultRenderer();
-}
-
 #if defined(_SKIA_SUPPORT_)
 // static
 void CFX_DefaultRenderDevice::SetDefaultRenderer(RendererType renderer_type) {
@@ -52,8 +38,8 @@ void CFX_DefaultRenderDevice::SetDefaultRenderer(RendererType renderer_type) {
 CFX_DefaultRenderDevice::CFX_DefaultRenderDevice() = default;
 
 CFX_DefaultRenderDevice::~CFX_DefaultRenderDevice() {
-#if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
-  if (SkiaVariantIsDefaultRenderer())
+#ifdef _SKIA_SUPPORT_
+  if (SkiaIsDefaultRenderer())
     Flush(true);
 #endif
 }
@@ -81,8 +67,8 @@ bool CFX_DefaultRenderDevice::CFX_DefaultRenderDevice::AttachImpl(
     bool bRgbByteOrder,
     RetainPtr<CFX_DIBitmap> pBackdropBitmap,
     bool bGroupKnockout) {
-#if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
-  if (SkiaVariantIsDefaultRenderer()) {
+#ifdef _SKIA_SUPPORT_
+  if (SkiaIsDefaultRenderer()) {
     return AttachSkiaImpl(pBitmap, bRgbByteOrder, pBackdropBitmap,
                           bGroupKnockout);
   }
@@ -94,8 +80,8 @@ bool CFX_DefaultRenderDevice::Create(int width,
                                      int height,
                                      FXDIB_Format format,
                                      RetainPtr<CFX_DIBitmap> pBackdropBitmap) {
-#if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
-  if (SkiaVariantIsDefaultRenderer())
+#ifdef _SKIA_SUPPORT_
+  if (SkiaIsDefaultRenderer())
     return CreateSkia(width, height, format, pBackdropBitmap);
 #endif
   return CreateAgg(width, height, format, pBackdropBitmap);

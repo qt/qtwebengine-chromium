@@ -25,15 +25,32 @@
 
 #define TILE_TYPE_LINEAR 0
 
-#if defined(MTK_MT8183) || defined(MTK_MT8186)
-#define SUPPORTS_YUV422_AND_HIGH_BIT_DEPTH_TEXTURING
+// clang-format off
+#if defined(MTK_MT8183) || \
+    defined(MTK_MT8186)
+// clang-format on
+#define SUPPORTS_YUV422
 #endif
 
 // All platforms except MT8173 should USE_NV12_FOR_HW_VIDEO_DECODING.
-#if defined(MTK_MT8183) || defined(MTK_MT8186) || defined(MTK_MT8192) || defined(MTK_MT8195)
+// clang-format off
+#if defined(MTK_MT8183) || \
+    defined(MTK_MT8186) || \
+    defined(MTK_MT8188G) || \
+    defined(MTK_MT8192) || \
+    defined(MTK_MT8195)
+// clang-format on
 #define USE_NV12_FOR_HW_VIDEO_DECODING
 #else
 #define DONT_USE_64_ALIGNMENT_FOR_VIDEO_BUFFERS
+#endif
+
+// For Mali Sigurd based GPUs, the texture unit reads outside the specified texture dimensions.
+// Therefore, certain formats require extra memory padding to its allocated surface to prevent the
+// hardware from reading outside an allocation. For YVU420, we need additional padding for the last
+// chroma plane.
+#if defined(MTK_MT8186)
+#define USE_EXTRA_PADDING_FOR_YVU420
 #endif
 
 struct mediatek_private_map_data {
@@ -48,12 +65,12 @@ static const uint32_t render_target_formats[] = { DRM_FORMAT_ABGR8888, DRM_FORMA
 
 // clang-format off
 static const uint32_t texture_source_formats[] = {
-#ifdef SUPPORTS_YUV422_AND_HIGH_BIT_DEPTH_TEXTURING
+#ifdef SUPPORTS_YUV422
 	DRM_FORMAT_NV21,
 	DRM_FORMAT_YUYV,
+#endif
 	DRM_FORMAT_ABGR2101010,
 	DRM_FORMAT_ABGR16161616F,
-#endif
 	DRM_FORMAT_NV12,
 	DRM_FORMAT_YVU420,
 	DRM_FORMAT_YVU420_ANDROID
@@ -62,6 +79,7 @@ static const uint32_t texture_source_formats[] = {
 static const uint32_t video_yuv_formats[] = {
 	DRM_FORMAT_NV21,
 	DRM_FORMAT_NV12,
+	DRM_FORMAT_YUYV,
 	DRM_FORMAT_YVU420,
 	DRM_FORMAT_YVU420_ANDROID
 };
@@ -89,6 +107,11 @@ static int mediatek_init(struct driver *drv)
 
 	drv_add_combination(drv, DRM_FORMAT_R8, &LINEAR_METADATA, BO_USE_SW_MASK | BO_USE_LINEAR);
 
+	/* YUYV format for video overlay and camera subsystem. */
+	drv_add_combination(drv, DRM_FORMAT_YUYV, &LINEAR_METADATA,
+			    BO_USE_HW_VIDEO_DECODER | BO_USE_SCANOUT | BO_USE_LINEAR |
+				BO_USE_TEXTURE);
+
 	/* Android CTS tests require this. */
 	drv_add_combination(drv, DRM_FORMAT_BGR888, &LINEAR_METADATA, BO_USE_SW_MASK);
 
@@ -109,7 +132,8 @@ static int mediatek_init(struct driver *drv)
 	 */
 	drv_modify_combination(drv, DRM_FORMAT_R8, &metadata,
 			       BO_USE_HW_VIDEO_DECODER | BO_USE_HW_VIDEO_ENCODER |
-				   BO_USE_CAMERA_READ | BO_USE_CAMERA_WRITE);
+				   BO_USE_CAMERA_READ | BO_USE_CAMERA_WRITE |
+				   BO_USE_GPU_DATA_BUFFER | BO_USE_SENSOR_DIRECT_DATA);
 
 	/* NV12 format for encoding and display. */
 	drv_modify_combination(drv, DRM_FORMAT_NV12, &metadata,
@@ -149,7 +173,7 @@ static int mediatek_bo_create_with_modifiers(struct bo *bo, uint32_t width, uint
 
 	if (!drv_has_modifier(modifiers, count, DRM_FORMAT_MOD_LINEAR)) {
 		errno = EINVAL;
-		drv_log("no usable modifier found\n");
+		drv_loge("no usable modifier found\n");
 		return -EINVAL;
 	}
 
@@ -179,7 +203,7 @@ static int mediatek_bo_create_with_modifiers(struct bo *bo, uint32_t width, uint
 
 		drv_bo_from_format_and_padding(bo, stride, aligned_height, format, padding);
 	} else {
-#ifdef SUPPORTS_YUV422_AND_HIGH_BIT_DEPTH_TEXTURING
+#ifdef SUPPORTS_YUV422
 		/*
 		 * JPEG Encoder Accelerator requires 16x16 alignment. We want the buffer
 		 * from camera can be put in JEA directly so align the height to 16
@@ -189,13 +213,42 @@ static int mediatek_bo_create_with_modifiers(struct bo *bo, uint32_t width, uint
 			height = ALIGN(height, 16);
 #endif
 		drv_bo_from_format(bo, stride, height, format);
+
+#ifdef USE_EXTRA_PADDING_FOR_YVU420
+		/*
+		 * Apply extra padding for YV12 if the height does not meet round up requirement and
+		 * the image is to be sampled by gpu.
+		 */
+		static const uint32_t required_round_up = 4;
+		const uint32_t height_mod = height % required_round_up;
+		if ((format == DRM_FORMAT_YVU420 || format == DRM_FORMAT_YVU420_ANDROID) &&
+		    (bo->meta.use_flags & BO_USE_TEXTURE) && height_mod) {
+			const uint32_t height_padding = required_round_up - height_mod;
+			const uint32_t u_padding =
+			    drv_size_from_format(format, bo->meta.strides[2], height_padding, 2);
+
+			bo->meta.total_size += u_padding;
+
+			/*
+			 * Since we are not aligning Y, we must make sure that its padding fits
+			 * inside the rest of the space allocated for the V/U planes.
+			 */
+			const uint32_t y_padding =
+			    drv_size_from_format(format, bo->meta.strides[0], height_padding, 0);
+			const uint32_t vu_size = drv_bo_get_plane_size(bo, 2) * 2;
+			if (y_padding > vu_size) {
+				/* Align with mali workaround to pad all 3 planes. */
+				bo->meta.total_size += y_padding + u_padding;
+			}
+		}
+#endif
 	}
 
 	gem_create.size = bo->meta.total_size;
 
 	ret = drmIoctl(bo->drv->fd, DRM_IOCTL_MTK_GEM_CREATE, &gem_create);
 	if (ret) {
-		drv_log("DRM_IOCTL_MTK_GEM_CREATE failed (size=%" PRIu64 ")\n", gem_create.size);
+		drv_loge("DRM_IOCTL_MTK_GEM_CREATE failed (size=%" PRIu64 ")\n", gem_create.size);
 		return -errno;
 	}
 
@@ -224,13 +277,13 @@ static void *mediatek_bo_map(struct bo *bo, struct vma *vma, size_t plane, uint3
 
 	ret = drmIoctl(bo->drv->fd, DRM_IOCTL_MTK_GEM_MAP_OFFSET, &gem_map);
 	if (ret) {
-		drv_log("DRM_IOCTL_MTK_GEM_MAP_OFFSET failed\n");
+		drv_loge("DRM_IOCTL_MTK_GEM_MAP_OFFSET failed\n");
 		return MAP_FAILED;
 	}
 
 	prime_fd = drv_bo_get_plane_fd(bo, 0);
 	if (prime_fd < 0) {
-		drv_log("Failed to get a prime fd\n");
+		drv_loge("Failed to get a prime fd\n");
 		return MAP_FAILED;
 	}
 
@@ -303,7 +356,7 @@ static int mediatek_bo_invalidate(struct bo *bo, struct mapping *mapping)
 
 		poll(&fds, 1, -1);
 		if (fds.revents != fds.events)
-			drv_log("poll prime_fd failed\n");
+			drv_loge("poll prime_fd failed\n");
 
 		if (priv->cached_addr)
 			memcpy(priv->cached_addr, priv->gem_addr, bo->meta.total_size);

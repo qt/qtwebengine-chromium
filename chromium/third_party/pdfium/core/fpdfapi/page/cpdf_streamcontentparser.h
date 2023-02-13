@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2016 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -56,9 +56,7 @@ class CPDF_StreamContentParser {
                  uint32_t start_offset,
                  uint32_t max_cost,
                  const std::vector<uint32_t>& stream_start_offsets);
-  CPDF_PageObjectHolder* GetPageObjectHolder() const {
-    return m_pObjectHolder.Get();
-  }
+  CPDF_PageObjectHolder* GetPageObjectHolder() const { return m_pObjectHolder; }
   CPDF_AllStates* GetCurStates() const { return m_pCurStates.get(); }
   bool IsColored() const { return m_bColored; }
   pdfium::span<const float> GetType3Data() const { return m_Type3Data; }
@@ -76,7 +74,7 @@ class CPDF_StreamContentParser {
     ContentParam();
     ~ContentParam();
 
-    Type m_Type;
+    Type m_Type = Type::kObject;
     FX_Number m_Number;
     ByteString m_Name;
     RetainPtr<CPDF_Object> m_pObject;

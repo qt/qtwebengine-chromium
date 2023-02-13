@@ -188,6 +188,9 @@ export class DebuggerModel extends SDKModel<EventTypes> {
         .moduleSetting('pauseOnCaughtException')
         .addChangeListener(this.pauseOnExceptionStateChanged, this);
     Common.Settings.Settings.instance()
+        .moduleSetting('pauseOnUncaughtException')
+        .addChangeListener(this.pauseOnExceptionStateChanged, this);
+    Common.Settings.Settings.instance()
         .moduleSetting('disableAsyncStackTraces')
         .addChangeListener(this.asyncStackTracesStateChanged, this);
     Common.Settings.Settings.instance()
@@ -342,15 +345,32 @@ export class DebuggerModel extends SDKModel<EventTypes> {
   }
 
   private pauseOnExceptionStateChanged(): void {
+    const pauseOnCaughtEnabled = Common.Settings.Settings.instance().moduleSetting('pauseOnCaughtException').get();
+    const breakpointViewExperimentEnabled =
+        Root.Runtime.experiments.isEnabled(Root.Runtime.ExperimentName.BREAKPOINT_VIEW);
     let state: Protocol.Debugger.SetPauseOnExceptionsRequestState;
-    if (!Common.Settings.Settings.instance().moduleSetting('pauseOnExceptionEnabled').get()) {
-      state = Protocol.Debugger.SetPauseOnExceptionsRequestState.None;
-    } else if (Common.Settings.Settings.instance().moduleSetting('pauseOnCaughtException').get()) {
-      state = Protocol.Debugger.SetPauseOnExceptionsRequestState.All;
-    } else {
-      state = Protocol.Debugger.SetPauseOnExceptionsRequestState.Uncaught;
-    }
 
+    if (breakpointViewExperimentEnabled) {
+      const pauseOnUncaughtEnabled =
+          Common.Settings.Settings.instance().moduleSetting('pauseOnUncaughtException').get();
+      if (pauseOnCaughtEnabled && pauseOnUncaughtEnabled) {
+        state = Protocol.Debugger.SetPauseOnExceptionsRequestState.All;
+      } else if (pauseOnCaughtEnabled) {
+        state = Protocol.Debugger.SetPauseOnExceptionsRequestState.Caught;
+      } else if (pauseOnUncaughtEnabled) {
+        state = Protocol.Debugger.SetPauseOnExceptionsRequestState.Uncaught;
+      } else {
+        state = Protocol.Debugger.SetPauseOnExceptionsRequestState.None;
+      }
+    } else {
+      if (!Common.Settings.Settings.instance().moduleSetting('pauseOnExceptionEnabled').get()) {
+        state = Protocol.Debugger.SetPauseOnExceptionsRequestState.None;
+      } else if (pauseOnCaughtEnabled) {
+        state = Protocol.Debugger.SetPauseOnExceptionsRequestState.All;
+      } else {
+        state = Protocol.Debugger.SetPauseOnExceptionsRequestState.Uncaught;
+      }
+    }
     void this.agent.invoke_setPauseOnExceptions({state});
   }
 
@@ -379,7 +399,8 @@ export class DebuggerModel extends SDKModel<EventTypes> {
       start: Location,
       end: Location,
     }[] = [];
-    if (this.#computeAutoStepRangesCallback && this.#debuggerPausedDetailsInternal) {
+    if (this.#computeAutoStepRangesCallback && this.#debuggerPausedDetailsInternal &&
+        this.#debuggerPausedDetailsInternal.callFrames.length > 0) {
       const [callFrame] = this.#debuggerPausedDetailsInternal.callFrames;
       ranges = await this.#computeAutoStepRangesCallback.call(null, mode, callFrame);
     }
@@ -485,10 +506,7 @@ export class DebuggerModel extends SDKModel<EventTypes> {
   }
 
   async removeBreakpoint(breakpointId: Protocol.Debugger.BreakpointId): Promise<void> {
-    const response = await this.agent.invoke_removeBreakpoint({breakpointId});
-    if (response.getError()) {
-      console.error('Failed to remove breakpoint: ' + response.getError());
-    }
+    await this.agent.invoke_removeBreakpoint({breakpointId});
   }
 
   async getPossibleBreakpoints(startLocation: Location, endLocation: Location|null, restrictToFunction: boolean):
@@ -868,9 +886,6 @@ export class DebuggerModel extends SDKModel<EventTypes> {
       callFrameId: Protocol.Debugger.CallFrameId): Promise<string|undefined> {
     const response = await this.agent.invoke_setVariableValue({scopeNumber, variableName, newValue, callFrameId});
     const error = response.getError();
-    if (error) {
-      console.error(error);
-    }
     return error;
   }
 
@@ -889,9 +904,6 @@ export class DebuggerModel extends SDKModel<EventTypes> {
   async setBlackboxPatterns(patterns: string[]): Promise<boolean> {
     const response = await this.agent.invoke_setBlackboxPatterns({patterns});
     const error = response.getError();
-    if (error) {
-      console.error(error);
-    }
     return !error;
   }
 
@@ -943,6 +955,7 @@ export const _debuggerIdToModel = new Map<string, DebuggerModel>();
 export enum PauseOnExceptionsState {
   DontPauseOnExceptions = 'none',
   PauseOnAllExceptions = 'all',
+  PauseOnCaughtExceptions = 'caught',
   PauseOnUncaughtExceptions = 'uncaught',
 }
 
@@ -1365,7 +1378,6 @@ export class CallFrame {
     });
     const error = response.getError();
     if (error) {
-      console.error(error);
       return {error: error};
     }
     return {object: runtimeModel.createRemoteObject(response.result), exceptionDetails: response.exceptionDetails};

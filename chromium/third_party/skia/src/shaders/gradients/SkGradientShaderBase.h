@@ -13,10 +13,10 @@
 #include "include/core/SkMatrix.h"
 #include "include/private/SkTArray.h"
 #include "include/private/SkTemplates.h"
-#include "src/core/SkArenaAlloc.h"
 #include "src/core/SkVM.h"
 #include "src/shaders/SkShaderBase.h"
 
+class SkArenaAlloc;
 class SkColorSpace;
 class SkRasterPipeline;
 class SkReadBuffer;
@@ -32,19 +32,17 @@ public:
 
         Descriptor(const SkColor4f colors[],
                    sk_sp<SkColorSpace> colorSpace,
-                   const SkScalar pos[],
+                   const SkScalar positions[],
                    int colorCount,
                    SkTileMode mode,
                    const Interpolation& interpolation);
 
         const SkColor4f*    fColors;
         sk_sp<SkColorSpace> fColorSpace;
-        const SkScalar*     fPos;
-        int                 fCount;
+        const SkScalar*     fPositions;
+        int                 fColorCount;  // length of fColors (and fPositions, if not nullptr)
         SkTileMode          fTileMode;
         Interpolation       fInterpolation;
-
-        void flatten(SkWriteBuffer&) const;
     };
 
     class DescriptorScope : public Descriptor {
@@ -53,14 +51,9 @@ public:
 
         bool unflatten(SkReadBuffer&, SkMatrix* legacyLocalMatrix);
 
-        // fColors and fPos always point into local memory, so they can be safely mutated
-        //
-        SkColor4f* mutableColors() { return const_cast<SkColor4f*>(fColors); }
-        SkScalar* mutablePos() { return const_cast<SkScalar*>(fPos); }
-
     private:
         SkSTArray<16, SkColor4f, true> fColorStorage;
-        SkSTArray<16, SkScalar , true> fPosStorage;
+        SkSTArray<16, SkScalar , true> fPositionStorage;
     };
 
     SkGradientShaderBase(const Descriptor& desc, const SkMatrix& ptsToUnit);
@@ -74,8 +67,8 @@ public:
 
     const SkMatrix& getGradientMatrix() const { return fPtsToUnit; }
 
-    static bool ValidGradient(const SkColor4f colors[], const SkScalar pos[], int count,
-                              SkTileMode tileMode);
+    static bool ValidGradient(const SkColor4f colors[], int count, SkTileMode tileMode,
+                              const Interpolation& interpolation);
 
     static sk_sp<SkShader> MakeDegenerateGradient(const SkColor4f colors[], const SkScalar pos[],
                                                   int colorCount, sk_sp<SkColorSpace> colorSpace,
@@ -95,9 +88,6 @@ public:
     static constexpr SkScalar kDegenerateThreshold = SK_Scalar1 / (1 << 15);
 
 protected:
-    class GradientShaderBase4fContext;
-
-    SkGradientShaderBase(SkReadBuffer& );
     void flatten(SkWriteBuffer&) const override;
 
     void commonAsAGradient(GradientInfo*) const;
@@ -117,42 +107,33 @@ protected:
     virtual skvm::F32 transformT(skvm::Builder*, skvm::Uniforms*,
                                  skvm::Coord coord, skvm::I32* mask) const = 0;
 
-    template <typename T, typename... Args>
-    static Context* CheckedMakeContext(SkArenaAlloc* alloc, Args&&... args) {
-        auto* ctx = alloc->make<T>(std::forward<Args>(args)...);
-        if (!ctx->isValid()) {
-            return nullptr;
-        }
-        return ctx;
-    }
-
     const SkMatrix fPtsToUnit;
     SkTileMode     fTileMode;
-    Interpolation  fInterpolation;
 
 public:
+    static void AppendGradientFillStages(SkRasterPipeline* p,
+                                         SkArenaAlloc* alloc,
+                                         const SkPMColor4f* colors,
+                                         const SkScalar* positions,
+                                         int count);
+
     SkScalar getPos(int i) const {
         SkASSERT(i < fColorCount);
-        return fOrigPos ? fOrigPos[i] : SkIntToScalar(i) / (fColorCount - 1);
+        return fPositions ? fPositions[i] : SkIntToScalar(i) / (fColorCount - 1);
     }
 
     SkColor getLegacyColor(int i) const {
         SkASSERT(i < fColorCount);
-        return fOrigColors4f[i].toSkColor();
+        return fColors[i].toSkColor();
     }
 
-    bool colorsCanConvertToSkColor() const {
-        bool canConvert = true;
-        for (int i = 0; i < fColorCount; ++i) {
-            canConvert &= fOrigColors4f[i].fitsInBytes();
-        }
-        return canConvert;
-    }
-
-    SkColor4f*          fOrigColors4f; // original colors, as floats
-    SkScalar*           fOrigPos;      // original positions
-    int                 fColorCount;
+    SkColor4f*          fColors;       // points into fStorage
+    SkScalar*           fPositions;    // points into fStorage, or nullptr
+    int                 fColorCount;   // length of fColors (and fPositions, if not nullptr)
     sk_sp<SkColorSpace> fColorSpace;   // color space of gradient stops
+    Interpolation       fInterpolation;
+    bool                fFirstStopIsImplicit;
+    bool                fLastStopIsImplicit;
 
     bool colorsAreOpaque() const { return fColorsAreOpaque; }
 
@@ -173,10 +154,10 @@ private:
 ///////////////////////////////////////////////////////////////////////////////
 
 struct SkColor4fXformer {
-    SkColor4fXformer(const SkColor4f* colors, int colorCount, SkColorSpace* src, SkColorSpace* dst);
+    SkColor4fXformer(const SkGradientShaderBase* shader, SkColorSpace* dst);
 
-    const SkColor4f*              fColors;
-    SkSTArray<4, SkColor4f, true> fStorage;
+    SkSTArray<4, SkPMColor4f, true> fColors;
+    sk_sp<SkColorSpace>             fIntermediateColorSpace;
 };
 
 struct SkColorConverter {

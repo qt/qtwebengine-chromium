@@ -732,25 +732,15 @@ MaybeHandle<WasmInstanceObject> InstanceBuilder::Build() {
   }
 
   //--------------------------------------------------------------------------
-  // Allocate type feedback vectors for functions.
+  // Allocate the array that will hold type feedback vectors.
   //--------------------------------------------------------------------------
   if (v8_flags.wasm_speculative_inlining) {
     int num_functions = static_cast<int>(module_->num_declared_functions);
-    Handle<FixedArray> vectors =
-        isolate_->factory()->NewFixedArray(num_functions, AllocationType::kOld);
+    // Zero-fill the array so we can do a quick Smi-check to test if a given
+    // slot was initialized.
+    Handle<FixedArray> vectors = isolate_->factory()->NewFixedArrayWithZeroes(
+        num_functions, AllocationType::kOld);
     instance->set_feedback_vectors(*vectors);
-    for (int i = 0; i < num_functions; i++) {
-      int func_index = module_->num_imported_functions + i;
-      int slots = NumFeedbackSlots(module_, func_index);
-      if (slots == 0) continue;
-      if (v8_flags.trace_wasm_speculative_inlining) {
-        PrintF("[Function %d (declared %d): allocating %d feedback slots]\n",
-               func_index, i, slots);
-      }
-      Handle<FixedArray> feedback =
-          isolate_->factory()->NewFixedArrayWithZeroes(slots);
-      vectors->set(i, *feedback);
-    }
   }
 
   //--------------------------------------------------------------------------
@@ -1128,15 +1118,18 @@ bool InstanceBuilder::ProcessImportedFunction(
   // well as functions constructed via other means (e.g. WebAssembly.Function).
   if (WasmExternalFunction::IsWasmExternalFunction(*value)) {
     WasmInstanceObject::SetWasmInternalFunction(
-        isolate_, instance, func_index,
+        instance, func_index,
         WasmInternalFunction::FromExternal(
             Handle<WasmExternalFunction>::cast(value), isolate_)
             .ToHandleChecked());
   }
   auto js_receiver = Handle<JSReceiver>::cast(value);
   const FunctionSig* expected_sig = module_->functions[func_index].sig;
-  auto resolved = compiler::ResolveWasmImportCall(js_receiver, expected_sig,
-                                                  module_, enabled_);
+  uint32_t sig_index = module_->functions[func_index].sig_index;
+  uint32_t canonical_type_index =
+      module_->isorecursive_canonical_type_ids[sig_index];
+  auto resolved = compiler::ResolveWasmImportCall(
+      js_receiver, expected_sig, canonical_type_index, module_, enabled_);
   compiler::WasmImportCallKind kind = resolved.kind;
   js_receiver = resolved.callable;
   switch (kind) {
@@ -1599,8 +1592,11 @@ void InstanceBuilder::CompileImportWrappers(
     auto js_receiver = Handle<JSReceiver>::cast(value);
     uint32_t func_index = module_->import_table[index].index;
     const FunctionSig* sig = module_->functions[func_index].sig;
-    auto resolved =
-        compiler::ResolveWasmImportCall(js_receiver, sig, module_, enabled_);
+    uint32_t sig_index = module_->functions[func_index].sig_index;
+    uint32_t canonical_type_index =
+        module_->isorecursive_canonical_type_ids[sig_index];
+    auto resolved = compiler::ResolveWasmImportCall(
+        js_receiver, sig, canonical_type_index, module_, enabled_);
     compiler::WasmImportCallKind kind = resolved.kind;
     if (kind == compiler::WasmImportCallKind::kWasmToWasm ||
         kind == compiler::WasmImportCallKind::kLinkError ||
@@ -1617,9 +1613,6 @@ void InstanceBuilder::CompileImportWrappers(
       expected_arity =
           shared.internal_formal_parameter_count_without_receiver();
     }
-    uint32_t canonical_type_index =
-        module_->isorecursive_canonical_type_ids[module_->functions[func_index]
-                                                     .sig_index];
     WasmImportWrapperCache::CacheKey key(kind, canonical_type_index,
                                          expected_arity, resolved.suspend);
     if (cache_scope[key] != nullptr) {
@@ -1747,9 +1740,8 @@ bool InstanceBuilder::AllocateMemory() {
   int maximum_pages = module_->has_maximum_pages
                           ? static_cast<int>(module_->maximum_pages)
                           : WasmMemoryObject::kNoMaximum;
-  auto shared = (module_->has_shared_memory && enabled_.has_threads())
-                    ? SharedFlag::kShared
-                    : SharedFlag::kNotShared;
+  auto shared =
+      module_->has_shared_memory ? SharedFlag::kShared : SharedFlag::kNotShared;
 
   auto mem_type = module_->is_memory64 ? WasmMemoryFlag::kWasmMemory64
                                        : WasmMemoryFlag::kWasmMemory32;
@@ -1781,7 +1773,7 @@ void InstanceBuilder::ProcessExports(Handle<WasmInstanceObject> instance) {
       Handle<Object> value = sanitized_imports_[index].value;
       if (WasmExternalFunction::IsWasmExternalFunction(*value)) {
         WasmInstanceObject::SetWasmInternalFunction(
-            isolate_, instance, import.index,
+            instance, import.index,
             WasmInternalFunction::FromExternal(
                 Handle<WasmExternalFunction>::cast(value), isolate_)
                 .ToHandleChecked());

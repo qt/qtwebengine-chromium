@@ -2,8 +2,10 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+visibility = [ "./*" ]
+
 source_set("quic") {
-  visibility = [ "../../impl/*" ]
+  visibility += [ "../*" ]
   public = [ "quic_connection.h" ]
   sources = [
     "quic_client.cc",
@@ -28,7 +30,7 @@ source_set("quic") {
 }
 
 source_set("test_support") {
-  visibility = [ "../..:unittests" ]
+  visibility += [ "../..:unittests" ]
   testonly = true
   public = []
   sources = [

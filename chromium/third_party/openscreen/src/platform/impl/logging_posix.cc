@@ -109,6 +109,12 @@ void LogWithLevel(LogLevel level,
   }
 }
 
+void LogTraceMessage(const std::string& message) {
+  const std::string to_write = message + '\n';
+  const auto bytes_written = write(g_log_fd, to_write.c_str(), to_write.size());
+  OSP_DCHECK(bytes_written);
+}
+
 [[noreturn]] void Break() {
 // Generally this will just resolve to an abort anyways, but gives the
 // compiler a chance to peform a more appropriate, target specific trap

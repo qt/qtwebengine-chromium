@@ -282,7 +282,7 @@ ImageRangeEncoder::ImageRangeEncoder(const IMAGE_STATE& image, const AspectParam
     VkImageSubresourceLayers subres_layers = {limits_.aspectMask, 0, 0, limits_.arrayLayer};
     linear_image_ = false;
 
-    // WORKAROUND for dev_sim and mock_icd not containing valid VkSubresourceLayout yet. Treat it as optimal image.
+    // WORKAROUND for profile and mock_icd not containing valid VkSubresourceLayout yet. Treat it as optimal image.
     if (image.createInfo.tiling == VK_IMAGE_TILING_LINEAR) {
         subres = {static_cast<VkImageAspectFlags>(AspectBit(0)), 0, 0};
         DispatchGetImageSubresourceLayout(image.store_device_as_workaround, image.image(), &subres, &layout);
@@ -612,8 +612,8 @@ void ImageRangeGenerator::SetUpSubresIncrementer() {
     } else if (is_3d || CoversAllLayers(full_range, subres_range_)) {
         if (!linear_image) {
             // Linear images are defined by the implementation and so we can't assume the ordering we use here
-            bool all_mips = (subres_range_.baseMipLevel == 0) && (subres_range_.levelCount == full_range.levelCount);
-            bool all_aspects = subres_range_.aspectMask == full_range.aspectMask;
+            const bool all_mips = (subres_range_.baseMipLevel == 0) && (subres_range_.levelCount == full_range.levelCount);
+            const bool all_aspects = subres_range_.aspectMask == full_range.aspectMask;
             if (all_aspects && all_mips) {
                 set_initial_pos_fn_ = &ImageRangeGenerator::SetInitialPosAllSubres;
             } else {

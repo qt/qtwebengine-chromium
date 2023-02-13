@@ -6,6 +6,8 @@ import("//build/config/data_headers_template.gni")
 import("//build_overrides/build.gni")
 assert(!build_with_chromium)
 
+visibility = [ "./*" ]
+
 data_headers("castv2_schema_headers") {
   namespace = "cast"
   sources = [
@@ -15,6 +17,8 @@ data_headers("castv2_schema_headers") {
 }
 
 source_set("castv2") {
+  visibility += [ "../streaming:common" ]
+  public = []
   sources = [
     "castv2/validation.cc",
     "castv2/validation.h",
@@ -29,6 +33,8 @@ source_set("castv2") {
   ]
 
   public_configs = [ "../../build:openscreen_include_dirs" ]
+
+  friend = [ ":unittests" ]
 }
 
 data_headers("streaming_examples") {
@@ -58,7 +64,8 @@ data_headers("receiver_examples") {
 
 source_set("unittests") {
   testonly = true
-
+  visibility += [ "../test:unittests" ]
+  public = []
   sources = [ "castv2/validation_unittest.cc" ]
 
   deps = [

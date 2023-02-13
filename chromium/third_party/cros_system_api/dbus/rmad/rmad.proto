@@ -145,6 +145,9 @@ enum RmadErrorCode {
 
   // Failed to record browser actions.
   RMAD_ERROR_CANNOT_RECORD_BROWSER_ACTION = 44;
+
+  // No USB found when performing a task that requires a USB.
+  RMAD_ERROR_USB_NOT_FOUND = 45;
 }
 
 // Defined Rmad components.

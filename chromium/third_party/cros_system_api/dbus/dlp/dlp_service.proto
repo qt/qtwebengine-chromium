@@ -55,6 +55,15 @@ enum FileAction {
 
   // File open.
   OPEN = 2;
+
+  // File copy.
+  COPY = 3;
+
+  // File move.
+  MOVE = 4;
+
+  // File share.
+  SHARE = 5;
 }
 
 message DlpFilesRule {

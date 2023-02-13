@@ -11,6 +11,7 @@
 #include "include/core/SkSpan.h"
 #include "include/core/SkTypes.h"
 #include "include/private/SkSLDefines.h"
+#include "include/private/SkSLIRNode.h"
 #include "include/private/SkSLModifiers.h"
 #include "include/private/SkSLSymbol.h"
 #include "include/sksl/SkSLPosition.h"
@@ -69,7 +70,7 @@ struct CoercionCost {
  */
 class Type : public Symbol {
 public:
-    inline static constexpr Kind kSymbolKind = Kind::kType;
+    inline static constexpr Kind kIRNodeKind = Kind::kType;
     inline static constexpr int kMaxAbbrevLength = 3;
     // Represents unspecified array dimensions, as in `int[]`.
     inline static constexpr int kUnsizedArray = -1;
@@ -90,6 +91,7 @@ public:
 
     enum class TypeKind : int8_t {
         kArray,
+        kAtomic,
         kGeneric,
         kLiteral,
         kMatrix,
@@ -166,8 +168,12 @@ public:
     static std::unique_ptr<Type> MakeSpecialType(const char* name, const char* abbrev,
                                                  Type::TypeKind typeKind);
 
-    /** Creates a struct type with the given fields. */
-    static std::unique_ptr<Type> MakeStructType(Position pos,
+    /**
+     * Creates a struct type with the given fields. Reports an error if the struct is not
+     * well-formed.
+     */
+    static std::unique_ptr<Type> MakeStructType(const Context& context,
+                                                Position pos,
                                                 std::string_view name,
                                                 std::vector<Field> fields,
                                                 bool interfaceBlock = false);
@@ -180,6 +186,9 @@ public:
     /** Create a vector type. */
     static std::unique_ptr<Type> MakeVectorType(std::string_view name, const char* abbrev,
                                                 const Type& componentType, int columns);
+
+    /** Create an atomic type. */
+    static std::unique_ptr<Type> MakeAtomicType(std::string_view name, const char* abbrev);
 
     template <typename T>
     bool is() const {
@@ -226,9 +235,6 @@ public:
     virtual bool isAllowedInES2() const {
         return true;
     }
-
-    /** Returns true if this type is either private, or contains a private field (recursively). */
-    virtual bool isPrivate() const;
 
     /** If this is an alias, returns the underlying type, otherwise returns this. */
     virtual const Type& resolve() const {
@@ -322,6 +328,7 @@ public:
      */
     bool isOpaque() const {
         switch (fTypeKind) {
+            case TypeKind::kAtomic:
             case TypeKind::kBlender:
             case TypeKind::kColorFilter:
             case TypeKind::kSampler:
@@ -448,6 +455,8 @@ public:
         return fTypeKind == TypeKind::kGeneric;
     }
 
+    bool isAtomic() const { return this->typeKind() == TypeKind::kAtomic; }
+
     virtual bool isScalar() const {
         return false;
     }
@@ -516,11 +525,7 @@ public:
 
     bool isOrContainsArray() const;
     bool isOrContainsUnsizedArray() const;
-
-    /**
-     * Returns true if this type is a struct that is too deeply nested.
-     */
-    bool isTooDeeplyNested() const;
+    bool isOrContainsAtomic() const;
 
     /**
      * Returns the corresponding vector or matrix type with the specified number of columns and
@@ -567,7 +572,7 @@ public:
 protected:
     Type(std::string_view name, const char* abbrev, TypeKind kind,
             Position pos = Position())
-        : INHERITED(pos, kSymbolKind, name)
+        : INHERITED(pos, kIRNodeKind, name)
         , fTypeKind(kind) {
         SkASSERT(strlen(abbrev) <= kMaxAbbrevLength);
         strcpy(fAbbreviatedName, abbrev);
@@ -584,8 +589,6 @@ protected:
                                       Position pos) const;
 
 private:
-    bool isTooDeeplyNested(int limit) const;
-
     using INHERITED = Symbol;
 
     char fAbbreviatedName[kMaxAbbrevLength + 1] = {};

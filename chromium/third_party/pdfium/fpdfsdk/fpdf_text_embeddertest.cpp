@@ -1,4 +1,4 @@
-// Copyright 2015 PDFium Authors. All rights reserved.
+// Copyright 2015 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -949,6 +949,67 @@ TEST_F(FPDFTextEmbedderTest, ToUnicode) {
   EXPECT_EQ(0U, FPDFText_GetUnicode(textpage, 0));
 
   FPDFText_ClosePage(textpage);
+  UnloadPage(page);
+}
+
+TEST_F(FPDFTextEmbedderTest, IsGenerated) {
+  ASSERT_TRUE(OpenDocument("hello_world.pdf"));
+  FPDF_PAGE page = LoadPage(0);
+  ASSERT_TRUE(page);
+
+  {
+    ScopedFPDFTextPage textpage(FPDFText_LoadPage(page));
+    ASSERT_TRUE(textpage);
+
+    EXPECT_EQ(static_cast<unsigned int>('H'),
+              FPDFText_GetUnicode(textpage.get(), 0));
+    EXPECT_EQ(0, FPDFText_IsGenerated(textpage.get(), 0));
+    EXPECT_EQ(static_cast<unsigned int>(' '),
+              FPDFText_GetUnicode(textpage.get(), 6));
+    EXPECT_EQ(0, FPDFText_IsGenerated(textpage.get(), 6));
+
+    EXPECT_EQ(static_cast<unsigned int>('\r'),
+              FPDFText_GetUnicode(textpage.get(), 13));
+    EXPECT_EQ(1, FPDFText_IsGenerated(textpage.get(), 13));
+    EXPECT_EQ(static_cast<unsigned int>('\n'),
+              FPDFText_GetUnicode(textpage.get(), 14));
+    EXPECT_EQ(1, FPDFText_IsGenerated(textpage.get(), 14));
+
+    EXPECT_EQ(-1, FPDFText_IsGenerated(textpage.get(), -1));
+    EXPECT_EQ(-1, FPDFText_IsGenerated(textpage.get(), kHelloGoodbyeTextSize));
+    EXPECT_EQ(-1, FPDFText_IsGenerated(nullptr, 6));
+  }
+
+  UnloadPage(page);
+}
+
+TEST_F(FPDFTextEmbedderTest, IsInvalidUnicode) {
+  ASSERT_TRUE(OpenDocument("bug_1388_2.pdf"));
+  FPDF_PAGE page = LoadPage(0);
+  ASSERT_TRUE(page);
+
+  {
+    constexpr int kExpectedCharCount = 5;
+    ScopedFPDFTextPage textpage(FPDFText_LoadPage(page));
+    ASSERT_TRUE(textpage);
+    EXPECT_EQ(kExpectedCharCount, FPDFText_CountChars(textpage.get()));
+
+    EXPECT_EQ(static_cast<unsigned int>('X'),
+              FPDFText_GetUnicode(textpage.get(), 0));
+    EXPECT_EQ(0, FPDFText_HasUnicodeMapError(textpage.get(), 0));
+    EXPECT_EQ(static_cast<unsigned int>(' '),
+              FPDFText_GetUnicode(textpage.get(), 1));
+    EXPECT_EQ(0, FPDFText_HasUnicodeMapError(textpage.get(), 1));
+
+    EXPECT_EQ(31u, FPDFText_GetUnicode(textpage.get(), 2));
+    EXPECT_EQ(1, FPDFText_HasUnicodeMapError(textpage.get(), 2));
+
+    EXPECT_EQ(-1, FPDFText_HasUnicodeMapError(textpage.get(), -1));
+    EXPECT_EQ(-1,
+              FPDFText_HasUnicodeMapError(textpage.get(), kExpectedCharCount));
+    EXPECT_EQ(-1, FPDFText_HasUnicodeMapError(nullptr, 0));
+  }
+
   UnloadPage(page);
 }
 

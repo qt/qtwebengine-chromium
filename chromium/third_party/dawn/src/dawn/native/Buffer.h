@@ -44,6 +44,7 @@ class BufferBase : public ApiObjectBase {
   public:
     enum class BufferState {
         Unmapped,
+        PendingMap,
         Mapped,
         MappedAtCreation,
         Destroyed,

@@ -26,11 +26,11 @@
 #include "src/gpu/ganesh/GrTracing.h"
 #include "src/gpu/ganesh/SkGr.h"
 
-DECLARE_SKMESSAGEBUS_MESSAGE(skgpu::UniqueKeyInvalidatedMessage, uint32_t, true);
+DECLARE_SKMESSAGEBUS_MESSAGE(skgpu::UniqueKeyInvalidatedMessage, uint32_t, true)
 
 DECLARE_SKMESSAGEBUS_MESSAGE(GrResourceCache::UnrefResourceMessage,
                              GrDirectContext::DirectContextID,
-                             /*AllowCopyableMessage=*/false);
+                             /*AllowCopyableMessage=*/false)
 
 #define ASSERT_SINGLE_OWNER SKGPU_ASSERT_SINGLE_OWNER(fSingleOwner)
 
@@ -440,10 +440,10 @@ void GrResourceCache::didChangeBudgetStatus(GrGpuResource* resource) {
 void GrResourceCache::purgeAsNeeded() {
     SkTArray<skgpu::UniqueKeyInvalidatedMessage> invalidKeyMsgs;
     fInvalidUniqueKeyInbox.poll(&invalidKeyMsgs);
-    if (invalidKeyMsgs.count()) {
+    if (invalidKeyMsgs.size()) {
         SkASSERT(fProxyProvider);
 
-        for (int i = 0; i < invalidKeyMsgs.count(); ++i) {
+        for (int i = 0; i < invalidKeyMsgs.size(); ++i) {
             if (invalidKeyMsgs[i].inThreadSafeCache()) {
                 fThreadSafeCache->remove(invalidKeyMsgs[i].key());
                 SkASSERT(!fThreadSafeCache->has(invalidKeyMsgs[i].key()));

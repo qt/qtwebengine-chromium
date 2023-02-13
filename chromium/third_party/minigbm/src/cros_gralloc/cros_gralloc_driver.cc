@@ -34,12 +34,12 @@ int memfd_create_wrapper(const char *name, unsigned int flags)
 #elif defined(__NR_memfd_create)
 	fd = syscall(__NR_memfd_create, name, flags);
 #else
-	drv_log("Failed to create memfd '%s': memfd_create not available.", name);
+	ALOGE("Failed to create memfd '%s': memfd_create not available.", name);
 	return -1;
 #endif
 
 	if (fd == -1)
-		drv_log("Failed to create memfd '%s': %s.\n", name, strerror(errno));
+		ALOGE("Failed to create memfd '%s': %s.", name, strerror(errno));
 
 	return fd;
 }
@@ -53,7 +53,7 @@ int memfd_create_reserved_region(const std::string &buffer_name, uint64_t reserv
 		return -errno;
 
 	if (ftruncate(reserved_region_fd, reserved_region_size)) {
-		drv_log("Failed to set reserved region size: %s.\n", strerror(errno));
+		ALOGE("Failed to set reserved region size: %s.", strerror(errno));
 		return -errno;
 	}
 
@@ -65,7 +65,7 @@ cros_gralloc_driver *cros_gralloc_driver::get_instance()
 	static cros_gralloc_driver s_instance;
 
 	if (!s_instance.is_initialized()) {
-		drv_log("Failed to initialize driver.\n");
+		ALOGE("Failed to initialize driver.");
 		return nullptr;
 	}
 
@@ -172,7 +172,7 @@ bool cros_gralloc_driver::get_resolved_format_and_use_flags(
 		resolved_use_flags &= ~BO_USE_HW_VIDEO_ENCODER;
 		combo = drv_get_combination(drv_.get(), resolved_format, resolved_use_flags);
 	}
-	if (!combo && (descriptor->droid_usage & BUFFER_USAGE_FRONT_RENDERING)) {
+	if (!combo && (descriptor->droid_usage & BUFFER_USAGE_FRONT_RENDERING_MASK)) {
 		resolved_use_flags &= ~BO_USE_FRONT_RENDERING;
 		resolved_use_flags |= BO_USE_LINEAR;
 		combo = drv_get_combination(drv_.get(), resolved_format, resolved_use_flags);
@@ -215,7 +215,7 @@ int cros_gralloc_driver::create_reserved_region(const std::string &buffer_name,
 	if (ret >= 0)
 		return ret;
 
-	drv_log("Failed to create_reserved_region.\n");
+	ALOGE("Failed to create_reserved_region.");
 	return -1;
 }
 
@@ -234,14 +234,14 @@ int32_t cros_gralloc_driver::allocate(const struct cros_gralloc_buffer_descripto
 	std::unique_ptr<cros_gralloc_buffer> buffer;
 
 	if (!get_resolved_format_and_use_flags(descriptor, &resolved_format, &resolved_use_flags)) {
-		drv_log("Failed to resolve format and use_flags.\n");
+		ALOGE("Failed to resolve format and use_flags.");
 		return -EINVAL;
 	}
 
 	bo = drv_bo_create(drv_.get(), descriptor->width, descriptor->height, resolved_format,
 			   resolved_use_flags);
 	if (!bo) {
-		drv_log("Failed to create bo.\n");
+		ALOGE("Failed to create bo.");
 		return -errno;
 	}
 
@@ -251,7 +251,7 @@ int32_t cros_gralloc_driver::allocate(const struct cros_gralloc_buffer_descripto
 	 * send more than one fd. GL/Vulkan drivers may also have to modified.
 	 */
 	if (drv_num_buffers_per_bo(bo) != 1) {
-		drv_log("Can only support one buffer per bo.\n");
+		ALOGE("Can only support one buffer per bo.");
 		goto destroy_bo;
 	}
 
@@ -308,7 +308,7 @@ int32_t cros_gralloc_driver::allocate(const struct cros_gralloc_buffer_descripto
 
 	buffer = cros_gralloc_buffer::create(bo, hnd);
 	if (!buffer) {
-		drv_log("Failed to allocate: failed to create cros_gralloc_buffer.\n");
+		ALOGE("Failed to allocate: failed to create cros_gralloc_buffer.");
 		ret = -1;
 		goto destroy_hnd;
 	}
@@ -342,7 +342,7 @@ int32_t cros_gralloc_driver::retain(buffer_handle_t handle)
 
 	auto hnd = cros_gralloc_convert_handle(handle);
 	if (!hnd) {
-		drv_log("Invalid handle.\n");
+		ALOGE("Invalid handle.");
 		return -EINVAL;
 	}
 
@@ -393,7 +393,7 @@ int32_t cros_gralloc_driver::retain(buffer_handle_t handle)
 
 		auto scoped_buffer = cros_gralloc_buffer::create(bo, hnd);
 		if (!scoped_buffer) {
-			drv_log("Failed to import: failed to create cros_gralloc_buffer.\n");
+			ALOGE("Failed to import: failed to create cros_gralloc_buffer.");
 			return -1;
 		}
 		buffer = scoped_buffer.get();
@@ -414,13 +414,13 @@ int32_t cros_gralloc_driver::release(buffer_handle_t handle)
 
 	auto hnd = cros_gralloc_convert_handle(handle);
 	if (!hnd) {
-		drv_log("Invalid handle.\n");
+		ALOGE("Invalid handle.");
 		return -EINVAL;
 	}
 
 	auto buffer = get_buffer(hnd);
 	if (!buffer) {
-		drv_log("Invalid reference (release() called on unregistered handle).\n");
+		ALOGE("Invalid reference (release() called on unregistered handle).");
 		return -EINVAL;
 	}
 
@@ -446,13 +446,13 @@ int32_t cros_gralloc_driver::lock(buffer_handle_t handle, int32_t acquire_fence,
 
 	auto hnd = cros_gralloc_convert_handle(handle);
 	if (!hnd) {
-		drv_log("Invalid handle.\n");
+		ALOGE("Invalid handle.");
 		return -EINVAL;
 	}
 
 	auto buffer = get_buffer(hnd);
 	if (!buffer) {
-		drv_log("Invalid reference (lock() called on unregistered handle).\n");
+		ALOGE("Invalid reference (lock() called on unregistered handle).");
 		return -EINVAL;
 	}
 
@@ -465,13 +465,13 @@ int32_t cros_gralloc_driver::unlock(buffer_handle_t handle, int32_t *release_fen
 
 	auto hnd = cros_gralloc_convert_handle(handle);
 	if (!hnd) {
-		drv_log("Invalid handle.\n");
+		ALOGE("Invalid handle.");
 		return -EINVAL;
 	}
 
 	auto buffer = get_buffer(hnd);
 	if (!buffer) {
-		drv_log("Invalid reference (unlock() called on unregistered handle).\n");
+		ALOGE("Invalid reference (unlock() called on unregistered handle).");
 		return -EINVAL;
 	}
 
@@ -491,13 +491,13 @@ int32_t cros_gralloc_driver::invalidate(buffer_handle_t handle)
 
 	auto hnd = cros_gralloc_convert_handle(handle);
 	if (!hnd) {
-		drv_log("Invalid handle.\n");
+		ALOGE("Invalid handle.");
 		return -EINVAL;
 	}
 
 	auto buffer = get_buffer(hnd);
 	if (!buffer) {
-		drv_log("Invalid reference (invalidate() called on unregistered handle).\n");
+		ALOGE("Invalid reference (invalidate() called on unregistered handle).");
 		return -EINVAL;
 	}
 
@@ -510,13 +510,13 @@ int32_t cros_gralloc_driver::flush(buffer_handle_t handle, int32_t *release_fenc
 
 	auto hnd = cros_gralloc_convert_handle(handle);
 	if (!hnd) {
-		drv_log("Invalid handle.\n");
+		ALOGE("Invalid handle.");
 		return -EINVAL;
 	}
 
 	auto buffer = get_buffer(hnd);
 	if (!buffer) {
-		drv_log("Invalid reference (flush() called on unregistered handle).\n");
+		ALOGE("Invalid reference (flush() called on unregistered handle).");
 		return -EINVAL;
 	}
 
@@ -536,13 +536,13 @@ int32_t cros_gralloc_driver::get_backing_store(buffer_handle_t handle, uint64_t 
 
 	auto hnd = cros_gralloc_convert_handle(handle);
 	if (!hnd) {
-		drv_log("Invalid handle.\n");
+		ALOGE("Invalid handle.");
 		return -EINVAL;
 	}
 
 	auto buffer = get_buffer(hnd);
 	if (!buffer) {
-		drv_log("Invalid reference (get_backing_store() called on unregistered handle).\n");
+		ALOGE("Invalid reference (get_backing_store() called on unregistered handle).");
 		return -EINVAL;
 	}
 
@@ -558,13 +558,13 @@ int32_t cros_gralloc_driver::resource_info(buffer_handle_t handle, uint32_t stri
 
 	auto hnd = cros_gralloc_convert_handle(handle);
 	if (!hnd) {
-		drv_log("Invalid handle.\n");
+		ALOGE("Invalid handle.");
 		return -EINVAL;
 	}
 
 	auto buffer = get_buffer(hnd);
 	if (!buffer) {
-		drv_log("Invalid reference (resource_info() called on unregistered handle).\n");
+		ALOGE("Invalid reference (resource_info() called on unregistered handle).");
 		return -EINVAL;
 	}
 
@@ -579,14 +579,13 @@ int32_t cros_gralloc_driver::get_reserved_region(buffer_handle_t handle,
 
 	auto hnd = cros_gralloc_convert_handle(handle);
 	if (!hnd) {
-		drv_log("Invalid handle.\n");
+		ALOGE("Invalid handle.");
 		return -EINVAL;
 	}
 
 	auto buffer = get_buffer(hnd);
 	if (!buffer) {
-		drv_log(
-		    "Invalid reference (get_reserved_region() called on unregistered handle).\n");
+		ALOGE("Invalid reference (get_reserved_region() called on unregistered handle).");
 		return -EINVAL;
 	}
 
@@ -620,7 +619,7 @@ void cros_gralloc_driver::with_buffer(cros_gralloc_handle_t hnd,
 
 	auto buffer = get_buffer(hnd);
 	if (!buffer) {
-		drv_log("Invalid reference (with_buffer() called on unregistered handle).\n");
+		ALOGE("Invalid reference (with_buffer() called on unregistered handle).");
 		return;
 	}
 

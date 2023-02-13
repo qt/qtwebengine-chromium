@@ -245,6 +245,12 @@ struct SK_API GrContextOptions {
     bool fSuppressMipmapSupport = false;
 
     /**
+     * If true, the TessellationPathRenderer will not be used for path rendering.
+     * If false, will fallback to any driver workarounds, if set.
+     */
+    bool fDisableTessellationPathRenderer = false;
+
+    /**
      * If true, and if supported, enables hardware tessellation in the caps.
      * DEPRECATED: This value is ignored; experimental hardware tessellation is always disabled.
      */
@@ -272,6 +278,15 @@ struct SK_API GrContextOptions {
      * If true, then allow to enable MSAA on new Intel GPUs.
      */
     bool fAllowMSAAOnNewIntel = false;
+
+    /**
+     * Currently on ARM Android we disable the use of GL TexStorage because of memory regressions.
+     * However, some clients may still want to use TexStorage. For example, TexStorage support is
+     * required for creating protected textures.
+     *
+     * This flag has no impact on non GL backends.
+     */
+    bool fAlwaysUseTexStorageWhenAvailable = false;
 
 #if GR_TEST_UTILS
     /**

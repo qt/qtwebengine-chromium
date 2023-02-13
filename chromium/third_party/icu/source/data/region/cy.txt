@@ -308,7 +308,9 @@ cy{
         CG{"Y Congo (Gweriniaeth)"}
         CI{"Arfordir Ifori"}
         CZ{"Gweriniaeth Tsiec"}
+        NZ{"Aotearoa Seland Newydd"}
         SZ{"Gwlad Swazi"}
         TL{"Dwyrain Timor"}
+        TR{"Türkiye"}
     }
 }

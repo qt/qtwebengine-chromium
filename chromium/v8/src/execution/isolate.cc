@@ -34,6 +34,7 @@
 #include "src/codegen/compilation-cache.h"
 #include "src/codegen/flush-instruction-cache.h"
 #include "src/common/assert-scope.h"
+#include "src/common/globals.h"
 #include "src/common/ptr-compr-inl.h"
 #include "src/compiler-dispatcher/lazy-compile-dispatcher.h"
 #include "src/compiler-dispatcher/optimizing-compile-dispatcher.h"
@@ -99,6 +100,7 @@
 #include "src/profiler/heap-profiler.h"
 #include "src/profiler/tracing-cpu-profiler.h"
 #include "src/regexp/regexp-stack.h"
+#include "src/roots/static-roots.h"
 #include "src/snapshot/embedded/embedded-data-inl.h"
 #include "src/snapshot/embedded/embedded-file-writer-interface.h"
 #include "src/snapshot/read-only-deserializer.h"
@@ -423,12 +425,26 @@ size_t Isolate::HashIsolateForEmbeddedBlob() {
   static constexpr size_t kSeed = 0;
   size_t hash = kSeed;
 
+  // Hash static entries of the roots table.
+  hash = base::hash_combine(hash, V8_STATIC_ROOTS_BOOL);
+#if V8_STATIC_ROOTS_BOOL
+  hash = base::hash_combine(hash,
+                            static_cast<int>(RootIndex::kReadOnlyRootsCount));
+  RootIndex i = RootIndex::kFirstReadOnlyRoot;
+  for (auto ptr : StaticReadOnlyRootsPointerTable) {
+    hash = base::hash_combine(ptr, hash);
+    hash = base::hash_combine(std::hash<std::string>{}(roots_table().name(i)),
+                              hash);
+    ++i;
+  }
+#endif  // V8_STATIC_ROOTS_BOOL
+
   // Hash data sections of builtin code objects.
   for (Builtin builtin = Builtins::kFirst; builtin <= Builtins::kLast;
        ++builtin) {
     CodeT codet = builtins()->code(builtin);
 
-    if (V8_REMOVE_BUILTINS_CODE_OBJECTS) {
+    if (V8_EXTERNAL_CODE_SPACE_BOOL) {
 #ifdef V8_EXTERNAL_CODE_SPACE
       DCHECK(Internals::HasHeapObjectTag(codet.ptr()));
       uint8_t* const code_ptr = reinterpret_cast<uint8_t*>(codet.address());
@@ -437,8 +453,6 @@ size_t Isolate::HashIsolateForEmbeddedBlob() {
       // hash code cage base and code entry point. Other data fields must
       // remain the same.
       static_assert(CodeDataContainer::kCodePointerFieldsStrongEndOffset ==
-                    CodeDataContainer::kCodeCageBaseUpper32BitsOffset);
-      static_assert(CodeDataContainer::kCodeCageBaseUpper32BitsOffsetEnd + 1 ==
                     CodeDataContainer::kCodeEntryPointOffset);
 
       static_assert(CodeDataContainer::kCodeEntryPointOffsetEnd + 1 ==
@@ -506,9 +520,9 @@ Isolate* Isolate::process_wide_shared_isolate_{nullptr};
 
 Isolate* Isolate::process_wide_shared_space_isolate_{nullptr};
 
-base::Thread::LocalStorageKey Isolate::isolate_key_;
-base::Thread::LocalStorageKey Isolate::per_isolate_thread_data_key_;
-std::atomic<bool> Isolate::isolate_key_created_{false};
+thread_local Isolate::PerIsolateThreadData* g_current_per_isolate_thread_data_
+    V8_CONSTINIT = nullptr;
+thread_local Isolate* g_current_isolate_ V8_CONSTINIT = nullptr;
 
 namespace {
 // A global counter for all generated Isolates, might overflow.
@@ -563,23 +577,7 @@ Isolate::PerIsolateThreadData* Isolate::FindPerThreadDataForThread(
   return per_thread;
 }
 
-void Isolate::InitializeOncePerProcess() {
-  isolate_key_ = base::Thread::CreateThreadLocalKey();
-  bool expected = false;
-  CHECK(isolate_key_created_.compare_exchange_strong(
-      expected, true, std::memory_order_relaxed));
-  per_isolate_thread_data_key_ = base::Thread::CreateThreadLocalKey();
-
-  Heap::InitializeOncePerProcess();
-}
-
-void Isolate::DisposeOncePerProcess() {
-  base::Thread::DeleteThreadLocalKey(isolate_key_);
-  bool expected = true;
-  CHECK(isolate_key_created_.compare_exchange_strong(
-      expected, false, std::memory_order_relaxed));
-  base::Thread::DeleteThreadLocalKey(per_isolate_thread_data_key_);
-}
+void Isolate::InitializeOncePerProcess() { Heap::InitializeOncePerProcess(); }
 
 Address Isolate::get_address_from_id(IsolateAddressId id) {
   return isolate_addresses_[id];
@@ -2127,11 +2125,10 @@ Object Isolate::UnwindAndFindHandler() {
                             visited_frames);
       }
 
-      case StackFrame::WASM_COMPILE_LAZY: {
-        // Can only fail directly on invocation. This happens if an invalid
-        // function was validated lazily.
-        DCHECK(v8_flags.wasm_lazy_validation);
-        break;
+      case StackFrame::WASM_LIFTOFF_SETUP: {
+        // The WasmLiftoffFrameSetup builtin doesn't throw, and doesn't call
+        // out to user code that could throw.
+        UNREACHABLE();
       }
 #endif  // V8_ENABLE_WEBASSEMBLY
 
@@ -2972,30 +2969,6 @@ bool Isolate::IsSharedArrayBufferConstructorEnabled(Handle<Context> context) {
   return false;
 }
 
-bool Isolate::IsWasmSimdEnabled(Handle<Context> context) {
-#if V8_ENABLE_WEBASSEMBLY
-  if (wasm_simd_enabled_callback()) {
-    v8::Local<v8::Context> api_context = v8::Utils::ToLocal(context);
-    return wasm_simd_enabled_callback()(api_context);
-  }
-  return v8_flags.experimental_wasm_simd;
-#else
-  return false;
-#endif  // V8_ENABLE_WEBASSEMBLY
-}
-
-bool Isolate::AreWasmExceptionsEnabled(Handle<Context> context) {
-#if V8_ENABLE_WEBASSEMBLY
-  if (wasm_exceptions_enabled_callback()) {
-    v8::Local<v8::Context> api_context = v8::Utils::ToLocal(context);
-    return wasm_exceptions_enabled_callback()(api_context);
-  }
-  return v8_flags.experimental_wasm_eh;
-#else
-  return false;
-#endif  // V8_ENABLE_WEBASSEMBLY
-}
-
 Handle<Context> Isolate::GetIncumbentContext() {
   JavaScriptFrameIterator it(this);
 
@@ -3097,6 +3070,30 @@ void Isolate::AddSharedWasmMemory(Handle<WasmMemoryObject> memory_object) {
       this, shared_wasm_memories, MaybeObjectHandle::Weak(memory_object));
   heap()->set_shared_wasm_memories(*shared_wasm_memories);
 }
+
+void Isolate::RecordStackSwitchForScanning() {
+  Object current = root(RootIndex::kActiveContinuation);
+  DCHECK(!current.IsUndefined());
+  thread_local_top()->stack_.ClearStackSegments();
+  wasm::StackMemory* stack = Managed<wasm::StackMemory>::cast(
+                                 WasmContinuationObject::cast(current).stack())
+                                 .get()
+                                 .get();
+  current = WasmContinuationObject::cast(current).parent();
+  thread_local_top()->stack_.SetStackStart(
+      reinterpret_cast<void*>(stack->base()));
+  // We don't need to add all inactive stacks. Only the ones in the active chain
+  // may contain cpp heap pointers.
+  while (!current.IsUndefined()) {
+    auto cont = WasmContinuationObject::cast(current);
+    auto* stack = Managed<wasm::StackMemory>::cast(cont.stack()).get().get();
+    thread_local_top()->stack_.AddStackSegment(
+        reinterpret_cast<const void*>(stack->base()),
+        reinterpret_cast<const void*>(stack->jmpbuf()->sp));
+    current = cont.parent();
+  }
+}
+
 #endif  // V8_ENABLE_WEBASSEMBLY
 
 Isolate::PerIsolateThreadData::~PerIsolateThreadData() {
@@ -3377,16 +3374,22 @@ void Isolate::Delete(Isolate* isolate) {
   // direct pointer. We don't use Enter/Exit here to avoid
   // initializing the thread data.
   PerIsolateThreadData* saved_data = isolate->CurrentPerIsolateThreadData();
-  DCHECK_EQ(true, isolate_key_created_.load(std::memory_order_relaxed));
-  Isolate* saved_isolate = reinterpret_cast<Isolate*>(
-      base::Thread::GetThreadLocal(isolate->isolate_key_));
+  Isolate* saved_isolate = isolate->TryGetCurrent();
   SetIsolateThreadLocals(isolate, nullptr);
   isolate->set_thread_id(ThreadId::Current());
+  isolate->thread_local_top()->stack_ =
+      saved_isolate ? std::move(saved_isolate->thread_local_top()->stack_)
+                    : ::heap::base::Stack(base::Stack::GetStackStart());
 
   bool owns_shared_isolate = isolate->owns_shared_isolate_;
   Isolate* maybe_shared_isolate = isolate->shared_isolate_;
 
   isolate->Deinit();
+
+  // Restore the saved isolate's stack.
+  if (saved_isolate)
+    saved_isolate->thread_local_top()->stack_ =
+        std::move(isolate->thread_local_top()->stack_);
 
 #ifdef DEBUG
   non_disposed_isolates_--;
@@ -3437,6 +3440,7 @@ Isolate::Isolate(std::unique_ptr<i::IsolateAllocator> isolate_allocator,
       isolate_allocator_(std::move(isolate_allocator)),
       id_(isolate_counter.fetch_add(1, std::memory_order_relaxed)),
       allocator_(new TracingAccountingAllocator(this)),
+      traced_handles_(this),
       builtins_(this),
 #if defined(DEBUG) || defined(VERIFY_HEAP)
       num_active_deserializers_(0),
@@ -3738,8 +3742,15 @@ void Isolate::Deinit() {
 
 void Isolate::SetIsolateThreadLocals(Isolate* isolate,
                                      PerIsolateThreadData* data) {
-  base::Thread::SetThreadLocal(isolate_key_, isolate);
-  base::Thread::SetThreadLocal(per_isolate_thread_data_key_, data);
+  g_current_isolate_ = isolate;
+  g_current_per_isolate_thread_data_ = data;
+
+  if (isolate && isolate->main_thread_local_isolate()) {
+    WriteBarrier::SetForThread(
+        isolate->main_thread_local_heap()->marking_barrier());
+  } else {
+    WriteBarrier::SetForThread(nullptr);
+  }
 }
 
 Isolate::~Isolate() {
@@ -4031,6 +4042,13 @@ bool Isolate::InitWithoutSnapshot() {
   return Init(nullptr, nullptr, nullptr, false);
 }
 
+bool Isolate::InitWithReadOnlySnapshot(SnapshotData* read_only_snapshot_data) {
+  DCHECK_NOT_NULL(read_only_snapshot_data);
+  // Without external code space builtin code objects are alocated in ro space
+  DCHECK(V8_EXTERNAL_CODE_SPACE_BOOL);
+  return Init(nullptr, read_only_snapshot_data, nullptr, false);
+}
+
 bool Isolate::InitWithSnapshot(SnapshotData* startup_snapshot_data,
                                SnapshotData* read_only_snapshot_data,
                                SnapshotData* shared_heap_snapshot_data,
@@ -4062,12 +4080,10 @@ void Isolate::AddCrashKeysForIsolateAndHeapPointers() {
   add_crash_key_callback_(v8::CrashKeyId::kReadonlySpaceFirstPageAddress,
                           ToHexString(ro_space_firstpage_address));
 
-  if (heap()->map_space()) {
-    const uintptr_t map_space_firstpage_address =
-        heap()->map_space()->FirstPageAddress();
-    add_crash_key_callback_(v8::CrashKeyId::kMapSpaceFirstPageAddress,
-                            ToHexString(map_space_firstpage_address));
-  }
+  const uintptr_t old_space_firstpage_address =
+      heap()->old_space()->FirstPageAddress();
+  add_crash_key_callback_(v8::CrashKeyId::kOldSpaceFirstPageAddress,
+                          ToHexString(old_space_firstpage_address));
 
   if (heap()->code_range_base()) {
     const uintptr_t code_range_base_address = heap()->code_range_base();
@@ -4075,7 +4091,7 @@ void Isolate::AddCrashKeysForIsolateAndHeapPointers() {
                             ToHexString(code_range_base_address));
   }
 
-  if (!V8_REMOVE_BUILTINS_CODE_OBJECTS || heap()->code_space()->first_page()) {
+  if (!V8_EXTERNAL_CODE_SPACE_BOOL || heap()->code_space()->first_page()) {
     const uintptr_t code_space_firstpage_address =
         heap()->code_space()->FirstPageAddress();
     add_crash_key_callback_(v8::CrashKeyId::kCodeSpaceFirstPageAddress,
@@ -4136,14 +4152,53 @@ VirtualMemoryCage* Isolate::GetPtrComprCodeCageForTesting() {
   return V8_EXTERNAL_CODE_SPACE_BOOL ? heap_.code_range() : GetPtrComprCage();
 }
 
+// If this check fails mksnapshot needs to be built without static roots and
+// then called with --static-roots to re-regenerate the static-roots.h file.
+void Isolate::VerifyStaticRoots() {
+#if V8_STATIC_ROOTS_BOOL
+  static_assert(ReadOnlyHeap::IsReadOnlySpaceShared(),
+                "Static read only roots are only supported when there is one "
+                "shared read only space per cage");
+#define STATIC_ROOTS_FAILED_MSG \
+  "Run `tools/dev/gen-static-roots.py` to update static-roots.h."
+  static_assert(static_cast<int>(RootIndex::kReadOnlyRootsCount) ==
+                    StaticReadOnlyRootsPointerTable.size(),
+                STATIC_ROOTS_FAILED_MSG);
+  auto& roots = roots_table();
+  RootIndex idx = RootIndex::kFirstReadOnlyRoot;
+  ReadOnlyPage* first_page = read_only_heap()->read_only_space()->pages()[0];
+  for (Tagged_t cmp_ptr : StaticReadOnlyRootsPointerTable) {
+    Address the_root = roots[idx];
+    Address ptr =
+        V8HeapCompressionScheme::DecompressTaggedPointer(cage_base(), cmp_ptr);
+    CHECK_WITH_MSG(the_root == ptr, STATIC_ROOTS_FAILED_MSG);
+    // All roots must fit on first page, since only this page is guaranteed to
+    // have a stable offset from the cage base. If this ever changes we need
+    // to load more pages with predictable offset at
+    // ReadOnlySpace::InitFromMemoryDump.
+    CHECK(first_page->Contains(the_root));
+    ++idx;
+  }
+#undef STATIC_ROOTS_FAILED_MSG
+#endif  // V8_STATIC_ROOTS_BOOL
+}
+
 bool Isolate::Init(SnapshotData* startup_snapshot_data,
                    SnapshotData* read_only_snapshot_data,
                    SnapshotData* shared_heap_snapshot_data, bool can_rehash) {
   TRACE_ISOLATE(init);
-  const bool create_heap_objects = (read_only_snapshot_data == nullptr);
-  // We either have all or none.
+
+#ifdef V8_COMPRESS_POINTERS_IN_SHARED_CAGE
+  CHECK_EQ(V8HeapCompressionScheme::base(), cage_base());
+#endif  // V8_COMPRESS_POINTERS_IN_SHARED_CAGE
+
+  const bool create_heap_objects = (shared_heap_snapshot_data == nullptr);
+  const bool setup_up_existing_read_only_roots =
+      create_heap_objects && (read_only_snapshot_data != nullptr);
+  // We either have both or none.
   DCHECK_EQ(create_heap_objects, startup_snapshot_data == nullptr);
-  DCHECK_EQ(create_heap_objects, shared_heap_snapshot_data == nullptr);
+  DCHECK_IMPLIES(setup_up_existing_read_only_roots,
+                 startup_snapshot_data == nullptr);
 
   // Code space setup requires the permissions to be set to default state.
   RwxMemoryWriteScope::SetDefaultPermissionsForNewThread();
@@ -4244,7 +4299,7 @@ bool Isolate::Init(SnapshotData* startup_snapshot_data,
 
   // Lock clients_mutex_ in order to prevent shared GCs from other clients
   // during deserialization.
-  base::Optional<base::MutexGuard> clients_guard;
+  base::Optional<base::RecursiveMutexGuard> clients_guard;
 
   if (Isolate* isolate =
           shared_isolate_ ? shared_isolate_ : attach_to_shared_space_isolate) {
@@ -4262,12 +4317,27 @@ bool Isolate::Init(SnapshotData* startup_snapshot_data,
   DCHECK_IMPLIES(shared_isolate(), !shared_space_isolate());
   DCHECK_IMPLIES(shared_space_isolate(), !shared_isolate());
 
+  isolate_data_.is_shared_space_isolate_flag_ = is_shared_heap_isolate();
+  isolate_data_.uses_shared_heap_flag_ = has_shared_heap();
+
+  if (attach_to_shared_space_isolate && !is_shared_space_isolate() &&
+      attach_to_shared_space_isolate->heap()
+          ->incremental_marking()
+          ->IsMajorMarking()) {
+    heap_.SetIsMarkingFlag(true);
+  }
+
   // SetUp the object heap.
   DCHECK(!heap_.HasBeenSetUp());
   heap_.SetUp(main_thread_local_heap());
   ReadOnlyHeap::SetUp(this, read_only_snapshot_data, can_rehash);
   heap_.SetUpSpaces(isolate_data_.new_allocation_info_,
                     isolate_data_.old_allocation_info_);
+
+  DCHECK_EQ(this, Isolate::Current());
+  PerIsolateThreadData* const current_data = CurrentPerIsolateThreadData();
+  DCHECK_EQ(current_data->isolate(), this);
+  SetIsolateThreadLocals(this, current_data);
 
   if (OwnsStringTables()) {
     string_table_ = std::make_shared<StringTable>(this);
@@ -4279,6 +4349,28 @@ bool Isolate::Init(SnapshotData* startup_snapshot_data,
     DCHECK(!is_shared_space_isolate());
     string_table_ = shared_heap_isolate()->string_table_;
     string_forwarding_table_ = shared_heap_isolate()->string_forwarding_table_;
+  }
+
+  // If we create an isolate from scratch, but based on existing read only
+  // roots, then we need to populate the string cache with its strings.
+  if (setup_up_existing_read_only_roots) {
+    HandleScope scope(this);
+    ReadOnlyHeapObjectIterator iterator(read_only_heap());
+    for (HeapObject object = iterator.Next(); !object.is_null();
+         object = iterator.Next()) {
+      if (object.IsInternalizedString()) {
+        auto s = String::cast(object);
+        Handle<String> str(s, this);
+        StringTableInsertionKey key(
+            this, str, DeserializingUserCodeOption::kNotDeserializingUserCode);
+        auto result = string_table()->LookupKey(this, &key);
+        // Since this is startup, there should be no duplicate entries in the
+        // string table, and the lookup should unconditionally add the given
+        // string.
+        DCHECK_EQ(*result, *str);
+        USE(result);
+      }
+    }
   }
 
   if (V8_SHORT_BUILTIN_CALLS_BOOL && v8_flags.short_builtin_calls) {
@@ -4295,8 +4387,7 @@ bool Isolate::Init(SnapshotData* startup_snapshot_data,
     // Additionally, enable if there is already a process-wide CodeRange that
     // has re-embedded builtins.
     if (COMPRESS_POINTERS_IN_SHARED_CAGE_BOOL) {
-      std::shared_ptr<CodeRange> code_range =
-          CodeRange::GetProcessWideCodeRange();
+      CodeRange* code_range = CodeRange::GetProcessWideCodeRange();
       if (code_range && code_range->embedded_blob_code_copy() != nullptr) {
         is_short_builtin_calls_enabled_ = true;
       }
@@ -4310,15 +4401,32 @@ bool Isolate::Init(SnapshotData* startup_snapshot_data,
     }
   }
 #ifdef V8_EXTERNAL_CODE_SPACE
-  if (heap_.code_range()) {
-    code_cage_base_ = ExternalCodeCompressionScheme::GetPtrComprCageBaseAddress(
-        heap_.code_range()->base());
-  } else {
-    CHECK(jitless_);
-    // In jitless mode the code space pages will be allocated in the main
-    // pointer compression cage.
-    code_cage_base_ =
-        ExternalCodeCompressionScheme::GetPtrComprCageBaseAddress(cage_base());
+  {
+    VirtualMemoryCage* code_cage;
+    if (heap_.code_range()) {
+      code_cage = heap_.code_range();
+    } else {
+      CHECK(jitless_);
+      // In jitless mode the code space pages will be allocated in the main
+      // pointer compression cage.
+      code_cage = GetPtrComprCage();
+    }
+    code_cage_base_ = ExternalCodeCompressionScheme::PrepareCageBaseAddress(
+        code_cage->base());
+#ifdef V8_COMPRESS_POINTERS_IN_SHARED_CAGE
+    CHECK_EQ(ExternalCodeCompressionScheme::base(), code_cage_base_);
+#endif  // V8_COMPRESS_POINTERS_IN_SHARED_CAGE
+
+    // Ensure that ExternalCodeCompressionScheme is applicable to all objects
+    // stored in the code cage.
+    using ComprScheme = ExternalCodeCompressionScheme;
+    Address base = code_cage->base();
+    Address last = base + code_cage->size() - 1;
+    PtrComprCageBase code_cage_base{code_cage_base_};
+    CHECK_EQ(base, ComprScheme::DecompressTaggedPointer(
+                       code_cage_base, ComprScheme::CompressTagged(base)));
+    CHECK_EQ(last, ComprScheme::DecompressTaggedPointer(
+                       code_cage_base, ComprScheme::CompressTagged(last)));
   }
 #endif  // V8_EXTERNAL_CODE_SPACE
 
@@ -4347,12 +4455,12 @@ bool Isolate::Init(SnapshotData* startup_snapshot_data,
 #endif  // defined(V8_OS_WIN)
 
   if (setup_delegate_ == nullptr) {
-    setup_delegate_ = new SetupIsolateDelegate(create_heap_objects);
+    setup_delegate_ = new SetupIsolateDelegate;
   }
 
   if (!v8_flags.inline_new) heap_.DisableInlineAllocation();
 
-  if (!setup_delegate_->SetupHeap(&heap_)) {
+  if (!setup_delegate_->SetupHeap(this, create_heap_objects)) {
     V8::FatalProcessOutOfMemory(this, "heap object creation");
   }
 
@@ -4373,7 +4481,7 @@ bool Isolate::Init(SnapshotData* startup_snapshot_data,
   if (create_heap_objects) {
     builtins_constants_table_builder_ = new BuiltinsConstantsTableBuilder(this);
 
-    setup_delegate_->SetupBuiltins(this);
+    setup_delegate_->SetupBuiltins(this, true);
 
     builtins_constants_table_builder_->Finalize();
     delete builtins_constants_table_builder_;
@@ -4381,7 +4489,7 @@ bool Isolate::Init(SnapshotData* startup_snapshot_data,
 
     CreateAndSetEmbeddedBlob();
   } else {
-    setup_delegate_->SetupBuiltins(this);
+    setup_delegate_->SetupBuiltins(this, false);
     MaybeRemapEmbeddedBuiltinsIntoCodeRange();
   }
 
@@ -4409,7 +4517,9 @@ bool Isolate::Init(SnapshotData* startup_snapshot_data,
     CodePageCollectionMemoryModificationScope modification_scope(heap());
 
     if (create_heap_objects) {
-      read_only_heap_->OnCreateHeapObjectsComplete(this);
+      if (!setup_up_existing_read_only_roots) {
+        read_only_heap_->OnCreateHeapObjectsComplete(this);
+      }
     } else {
       SharedHeapDeserializer shared_heap_deserializer(
           this, shared_heap_snapshot_data, can_rehash);
@@ -4419,6 +4529,7 @@ bool Isolate::Init(SnapshotData* startup_snapshot_data,
                                                can_rehash);
       startup_deserializer.DeserializeIntoIsolate();
     }
+    if (DEBUG_BOOL || create_heap_objects) VerifyStaticRoots();
     load_stub_cache_->Initialize();
     store_stub_cache_->Initialize();
     interpreter_->Initialize();
@@ -4711,7 +4822,8 @@ bool Isolate::NeedsSourcePositionsForProfiling() const {
       // Static conditions.
       v8_flags.trace_deopt || v8_flags.trace_turbo ||
       v8_flags.trace_turbo_graph || v8_flags.turbo_profiling ||
-      v8_flags.perf_prof || v8_flags.log_maps || v8_flags.log_ic ||
+      v8_flags.print_maglev_code || v8_flags.perf_prof || v8_flags.log_maps ||
+      v8_flags.log_ic ||
       // Dynamic conditions; changing any of these conditions triggers source
       // position collection for the entire heap
       // (CollectSourcePositionsForAllBytecodeArrays).
@@ -6092,9 +6204,9 @@ class DefaultWasmAsyncResolvePromiseTask : public v8::Task {
 
   void Run() override {
     v8::HandleScope scope(isolate_);
-    MicrotasksScope microtasks_scope(isolate_,
-                                     MicrotasksScope::kDoNotRunMicrotasks);
     v8::Local<v8::Context> context = context_.Get(isolate_);
+    MicrotasksScope microtasks_scope(context,
+                                     MicrotasksScope::kDoNotRunMicrotasks);
     v8::Local<v8::Promise::Resolver> resolver = resolver_.Get(isolate_);
     v8::Local<v8::Value> result = result_.Get(isolate_);
 

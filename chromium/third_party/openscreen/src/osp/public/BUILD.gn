@@ -3,8 +3,10 @@
 # found in the LICENSE file.
 import("//build_overrides/build.gni")
 
+visibility = [ "./*" ]
+
 source_set("public") {
-  visibility = [ "*" ]
+  visibility += [ "*" ]
   public = [
     "message_demuxer.h",
     "network_metrics.h",
@@ -55,6 +57,6 @@ source_set("public") {
 
 source_set("test_support") {
   testonly = true
-  visibility = [ "..:unittests" ]
+  visibility += [ "..:unittests" ]
   public = [ "testing/message_demuxer_test_support.h" ]
 }

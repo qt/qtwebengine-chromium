@@ -45,7 +45,11 @@ MtlCommandBuffer::MtlCommandBuffer(id<MTLCommandQueue> queue,
         , fSharedContext(sharedContext)
         , fResourceProvider(resourceProvider) {}
 
-MtlCommandBuffer::~MtlCommandBuffer() {}
+MtlCommandBuffer::~MtlCommandBuffer() {
+    SkASSERT(!fActiveRenderCommandEncoder);
+    SkASSERT(!fActiveComputeCommandEncoder);
+    SkASSERT(!fActiveBlitCommandEncoder);
+}
 
 bool MtlCommandBuffer::setNewCommandBufferResources() {
     return this->createNewMTLCommandBuffer();
@@ -102,10 +106,13 @@ bool MtlCommandBuffer::onAddRenderPass(const RenderPassDesc& renderPassDesc,
                                        const Texture* colorTexture,
                                        const Texture* resolveTexture,
                                        const Texture* depthStencilTexture,
+                                       SkRect viewport,
                                        const std::vector<std::unique_ptr<DrawPass>>& drawPasses) {
     if (!this->beginRenderPass(renderPassDesc, colorTexture, resolveTexture, depthStencilTexture)) {
         return false;
     }
+
+    this->setViewport(viewport.x(), viewport.y(), viewport.width(), viewport.height(), 0, 1);
 
     for (size_t i = 0; i < drawPasses.size(); ++i) {
         this->addDrawPass(drawPasses[i].get());
@@ -121,8 +128,7 @@ bool MtlCommandBuffer::onAddComputePass(const ComputePassDesc& computePassDesc,
     this->beginComputePass();
     this->bindComputePipeline(pipeline);
     for (const ResourceBinding& binding : bindings) {
-        this->bindBuffer(
-                binding.fResource.fBuffer.get(), binding.fResource.fOffset, binding.fIndex);
+        this->bindBuffer(binding.fBuffer.fBuffer, binding.fBuffer.fOffset, binding.fIndex);
     }
     this->dispatchThreadgroups(computePassDesc.fGlobalDispatchSize,
                                computePassDesc.fLocalDispatchSize);
@@ -288,16 +294,6 @@ void MtlCommandBuffer::addDrawPass(const DrawPass* drawPass) {
                                                 drawPass->getSampler(bts->fSamplerIndices[j]),
                                                 j);
                 }
-                break;
-            }
-            case DrawPassCommands::Type::kSetViewport: {
-                auto sv = static_cast<DrawPassCommands::SetViewport*>(cmdPtr);
-                this->setViewport(sv->fViewport.fLeft,
-                                  sv->fViewport.fTop,
-                                  sv->fViewport.width(),
-                                  sv->fViewport.height(),
-                                  sv->fMinDepth,
-                                  sv->fMaxDepth);
                 break;
             }
             case DrawPassCommands::Type::kSetScissor: {
@@ -604,6 +600,32 @@ static bool check_max_blit_width(int widthInPixels) {
     return true;
 }
 
+bool MtlCommandBuffer::onCopyBufferToBuffer(const Buffer* srcBuffer,
+                                            size_t srcOffset,
+                                            const Buffer* dstBuffer,
+                                            size_t dstOffset,
+                                            size_t size) {
+    SkASSERT(!fActiveRenderCommandEncoder);
+    SkASSERT(!fActiveComputeCommandEncoder);
+
+    id<MTLBuffer> mtlSrcBuffer = static_cast<const MtlBuffer*>(srcBuffer)->mtlBuffer();
+    id<MTLBuffer> mtlDstBuffer = static_cast<const MtlBuffer*>(dstBuffer)->mtlBuffer();
+
+    MtlBlitCommandEncoder* blitCmdEncoder = this->getBlitCommandEncoder();
+    if (!blitCmdEncoder) {
+        return false;
+    }
+
+#ifdef SK_ENABLE_MTL_DEBUG_INFO
+    blitCmdEncoder->pushDebugGroup(@"copyBufferToBuffer");
+#endif
+    blitCmdEncoder->copyBufferToBuffer(mtlSrcBuffer, srcOffset, mtlDstBuffer, dstOffset, size);
+#ifdef SK_ENABLE_MTL_DEBUG_INFO
+    blitCmdEncoder->popDebugGroup();
+#endif
+    return true;
+}
+
 bool MtlCommandBuffer::onCopyTextureToBuffer(const Texture* texture,
                                              SkIRect srcRect,
                                              const Buffer* buffer,
@@ -625,7 +647,7 @@ bool MtlCommandBuffer::onCopyTextureToBuffer(const Texture* texture,
     }
 
 #ifdef SK_ENABLE_MTL_DEBUG_INFO
-    blitCmdEncoder->pushDebugGroup(@"readOrTransferPixels");
+    blitCmdEncoder->pushDebugGroup(@"copyTextureToBuffer");
 #endif
     blitCmdEncoder->copyFromTexture(mtlTexture, srcRect, mtlBuffer, bufferOffset, bufferRowBytes);
 #ifdef SK_ENABLE_MTL_DEBUG_INFO
@@ -650,7 +672,7 @@ bool MtlCommandBuffer::onCopyBufferToTexture(const Buffer* buffer,
     }
 
 #ifdef SK_ENABLE_MTL_DEBUG_INFO
-    blitCmdEncoder->pushDebugGroup(@"uploadToTexture");
+    blitCmdEncoder->pushDebugGroup(@"copyBufferToTexture");
 #endif
     for (int i = 0; i < count; ++i) {
         if (!check_max_blit_width(copyData[i].fRect.width())) {
@@ -687,7 +709,7 @@ bool MtlCommandBuffer::onCopyTextureToTexture(const Texture* src,
     }
 
 #ifdef SK_ENABLE_MTL_DEBUG_INFO
-    blitCmdEncoder->pushDebugGroup(@"copyTextureAsBlit");
+    blitCmdEncoder->pushDebugGroup(@"copyTextureToTexture");
 #endif
 
     blitCmdEncoder->copyTextureToTexture(srcMtlTexture, srcRect, dstMtlTexture, dstPoint);

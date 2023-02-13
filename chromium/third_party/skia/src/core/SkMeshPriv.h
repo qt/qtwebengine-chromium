@@ -50,8 +50,6 @@ struct SkMeshSpecificationPriv {
 
     static SkAlphaType AlphaType(const SkMeshSpecification& spec) { return spec.fAlphaType; }
 
-    static bool HasLocalCoords(const SkMeshSpecification& spec) { return spec.fHasLocalCoords; }
-
     static SkSLType VaryingTypeAsSLType(Varying::Type type) {
         switch (type) {
             case Varying::Type::kFloat:  return SkSLType::kFloat;
@@ -88,6 +86,21 @@ struct SkMeshSpecificationPriv {
             case Attribute::Type::kUByte4_unorm: return SkSLType::kHalf4;
         }
         SkUNREACHABLE;
+    }
+
+    static int PassthroughLocalCoordsVaryingIndex(const SkMeshSpecification& spec) {
+        return spec.fPassthroughLocalCoordsVaryingIndex;
+    }
+
+    /**
+     * A varying is dead if it is never referenced OR it is only referenced as a passthrough for
+     * local coordinates. In the latter case it's index will returned as
+     * PassthroughLocalCoordsVaryingIndex. Our analysis is not very sophisticated so this is
+     * determined conservatively.
+     */
+    static bool VaryingIsDead(const SkMeshSpecification& spec, int v) {
+        SkASSERT(v >= 0 && SkToSizeT(v) < spec.fVaryings.size());
+        return (1 << v) & spec.fDeadVaryingMask;
     }
 };
 

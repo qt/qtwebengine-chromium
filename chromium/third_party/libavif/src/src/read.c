@@ -130,6 +130,7 @@ typedef struct avifProperty
         avifOperatingPointSelectorProperty a1op;
         avifLayerSelectorProperty lsel;
         avifAV1LayeredImageIndexingProperty a1lx;
+        avifContentLightLevelInformationBox clli;
     } u;
 } avifProperty;
 AVIF_ARRAY_DECLARE(avifPropertyArray, avifProperty, prop);
@@ -350,6 +351,10 @@ typedef struct avifTrack
     uint32_t premByID; // if non-zero, this track is premultiplied by Track #{premByID}
     uint32_t mediaTimescale;
     uint64_t mediaDuration;
+    uint64_t trackDuration;
+    uint64_t segmentDuration;
+    avifBool isRepeating;
+    int repetitionCount;
     uint32_t width;
     uint32_t height;
     avifSampleTable * sampleTable;
@@ -945,7 +950,7 @@ static avifResult avifDecoderItemMaxExtent(const avifDecoderItem * item, const a
                     return AVIF_RESULT_BMFF_PARSE_FAILED;
                 }
                 startOffset += remainingOffset;
-                extentSize -= remainingOffset;
+                extentSize -= (size_t)remainingOffset;
                 remainingOffset = 0;
             }
         }
@@ -1405,14 +1410,14 @@ static avifBool avifDecoderDataFillImageGrid(avifDecoderData * data,
             if (alpha) {
                 // A
                 for (unsigned int j = 0; j < heightToCopy; ++j) {
-                    uint8_t * src = &tile->image->alphaPlane[j * tile->image->alphaRowBytes];
+                    const uint8_t * src = &tile->image->alphaPlane[j * tile->image->alphaRowBytes];
                     uint8_t * dst = &dstImage->alphaPlane[(yaColOffset * pixelBytes) + ((yaRowOffset + j) * dstImage->alphaRowBytes)];
                     memcpy(dst, src, yaRowBytes);
                 }
             } else {
                 // Y
                 for (unsigned int j = 0; j < heightToCopy; ++j) {
-                    uint8_t * src = &tile->image->yuvPlanes[AVIF_CHAN_Y][j * tile->image->yuvRowBytes[AVIF_CHAN_Y]];
+                    const uint8_t * src = &tile->image->yuvPlanes[AVIF_CHAN_Y][j * tile->image->yuvRowBytes[AVIF_CHAN_Y]];
                     uint8_t * dst =
                         &dstImage->yuvPlanes[AVIF_CHAN_Y][(yaColOffset * pixelBytes) + ((yaRowOffset + j) * dstImage->yuvRowBytes[AVIF_CHAN_Y])];
                     memcpy(dst, src, yaRowBytes);
@@ -1428,12 +1433,12 @@ static avifBool avifDecoderDataFillImageGrid(avifDecoderData * data,
                 size_t uvRowOffset = yaRowOffset >> formatInfo.chromaShiftY;
                 size_t uvRowBytes = yaRowBytes >> formatInfo.chromaShiftX;
                 for (unsigned int j = 0; j < heightToCopy; ++j) {
-                    uint8_t * srcU = &tile->image->yuvPlanes[AVIF_CHAN_U][j * tile->image->yuvRowBytes[AVIF_CHAN_U]];
+                    const uint8_t * srcU = &tile->image->yuvPlanes[AVIF_CHAN_U][j * tile->image->yuvRowBytes[AVIF_CHAN_U]];
                     uint8_t * dstU =
                         &dstImage->yuvPlanes[AVIF_CHAN_U][(uvColOffset * pixelBytes) + ((uvRowOffset + j) * dstImage->yuvRowBytes[AVIF_CHAN_U])];
                     memcpy(dstU, srcU, uvRowBytes);
 
-                    uint8_t * srcV = &tile->image->yuvPlanes[AVIF_CHAN_V][j * tile->image->yuvRowBytes[AVIF_CHAN_V]];
+                    const uint8_t * srcV = &tile->image->yuvPlanes[AVIF_CHAN_V][j * tile->image->yuvRowBytes[AVIF_CHAN_V]];
                     uint8_t * dstV =
                         &dstImage->yuvPlanes[AVIF_CHAN_V][(uvColOffset * pixelBytes) + ((uvRowOffset + j) * dstImage->yuvRowBytes[AVIF_CHAN_V])];
                     memcpy(dstV, srcV, uvRowBytes);
@@ -1759,6 +1764,17 @@ static avifBool avifParseColourInformationBox(avifProperty * prop, uint64_t rawO
     return AVIF_TRUE;
 }
 
+static avifBool avifParseContentLightLevelInformationBox(avifProperty * prop, const uint8_t * raw, size_t rawLen, avifDiagnostics * diag)
+{
+    BEGIN_STREAM(s, raw, rawLen, diag, "Box[clli]");
+
+    avifContentLightLevelInformationBox * clli = &prop->u.clli;
+
+    AVIF_CHECK(avifROStreamReadU16(&s, &clli->maxCLL));  // unsigned int(16) max_content_light_level
+    AVIF_CHECK(avifROStreamReadU16(&s, &clli->maxPALL)); // unsigned int(16) max_pic_average_light_level
+    return AVIF_TRUE;
+}
+
 static avifBool avifParseAV1CodecConfigurationBox(const uint8_t * raw, size_t rawLen, avifCodecConfigurationBox * av1C, avifDiagnostics * diag)
 {
     BEGIN_STREAM(s, raw, rawLen, diag, "Box[av1C]");
@@ -1956,6 +1972,8 @@ static avifBool avifParseItemPropertyContainerBox(avifPropertyArray * properties
             AVIF_CHECK(avifParseLayerSelectorProperty(prop, avifROStreamCurrent(&s), header.size, diag));
         } else if (!memcmp(header.type, "a1lx", 4)) {
             AVIF_CHECK(avifParseAV1LayeredImageIndexingProperty(prop, avifROStreamCurrent(&s), header.size, diag));
+        } else if (!memcmp(header.type, "clli", 4)) {
+            AVIF_CHECK(avifParseContentLightLevelInformationBox(prop, avifROStreamCurrent(&s), header.size, diag));
         }
 
         AVIF_CHECK(avifROStreamSkip(&s, header.size));
@@ -2042,8 +2060,8 @@ static avifBool avifParseItemPropertyAssociation(avifMeta * meta, const uint8_t 
             // Copy property to item
             const avifProperty * srcProp = &meta->properties.prop[propertyIndex];
 
-            static const char * supportedTypes[] = { "ispe", "auxC", "colr", "av1C", "pasp", "clap",
-                                                     "irot", "imir", "pixi", "a1op", "lsel", "a1lx" };
+            static const char * supportedTypes[] = { "ispe", "auxC", "colr", "av1C", "pasp", "clap", "irot",
+                                                     "imir", "pixi", "a1op", "lsel", "a1lx", "clli" };
             size_t supportedTypesCount = sizeof(supportedTypes) / sizeof(supportedTypes[0]);
             avifBool supportedType = AVIF_FALSE;
             for (size_t i = 0; i < supportedTypesCount; ++i) {
@@ -2442,17 +2460,19 @@ static avifBool avifParseTrackHeaderBox(avifTrack * track,
     uint32_t ignored32, trackID;
     uint64_t ignored64;
     if (version == 1) {
-        AVIF_CHECK(avifROStreamReadU64(&s, &ignored64)); // unsigned int(64) creation_time;
-        AVIF_CHECK(avifROStreamReadU64(&s, &ignored64)); // unsigned int(64) modification_time;
-        AVIF_CHECK(avifROStreamReadU32(&s, &trackID));   // unsigned int(32) track_ID;
-        AVIF_CHECK(avifROStreamReadU32(&s, &ignored32)); // const unsigned int(32) reserved = 0;
-        AVIF_CHECK(avifROStreamReadU64(&s, &ignored64)); // unsigned int(64) duration;
+        AVIF_CHECK(avifROStreamReadU64(&s, &ignored64));            // unsigned int(64) creation_time;
+        AVIF_CHECK(avifROStreamReadU64(&s, &ignored64));            // unsigned int(64) modification_time;
+        AVIF_CHECK(avifROStreamReadU32(&s, &trackID));              // unsigned int(32) track_ID;
+        AVIF_CHECK(avifROStreamReadU32(&s, &ignored32));            // const unsigned int(32) reserved = 0;
+        AVIF_CHECK(avifROStreamReadU64(&s, &track->trackDuration)); // unsigned int(64) duration;
     } else if (version == 0) {
-        AVIF_CHECK(avifROStreamReadU32(&s, &ignored32)); // unsigned int(32) creation_time;
-        AVIF_CHECK(avifROStreamReadU32(&s, &ignored32)); // unsigned int(32) modification_time;
-        AVIF_CHECK(avifROStreamReadU32(&s, &trackID));   // unsigned int(32) track_ID;
-        AVIF_CHECK(avifROStreamReadU32(&s, &ignored32)); // const unsigned int(32) reserved = 0;
-        AVIF_CHECK(avifROStreamReadU32(&s, &ignored32)); // unsigned int(32) duration;
+        uint32_t trackDuration;
+        AVIF_CHECK(avifROStreamReadU32(&s, &ignored32));     // unsigned int(32) creation_time;
+        AVIF_CHECK(avifROStreamReadU32(&s, &ignored32));     // unsigned int(32) modification_time;
+        AVIF_CHECK(avifROStreamReadU32(&s, &trackID));       // unsigned int(32) track_ID;
+        AVIF_CHECK(avifROStreamReadU32(&s, &ignored32));     // const unsigned int(32) reserved = 0;
+        AVIF_CHECK(avifROStreamReadU32(&s, &trackDuration)); // unsigned int(32) duration;
+        track->trackDuration = (trackDuration == AVIF_INDEFINITE_DURATION32) ? AVIF_INDEFINITE_DURATION64 : trackDuration;
     } else {
         // Unsupported version
         avifDiagnosticsPrintf(diag, "Box[tkhd] has an unsupported version [%u]", version);
@@ -2770,12 +2790,78 @@ static avifBool avifTrackReferenceBox(avifTrack * track, const uint8_t * raw, si
     return AVIF_TRUE;
 }
 
+static avifBool avifParseEditListBox(avifTrack * track, const uint8_t * raw, size_t rawLen, avifDiagnostics * diag)
+{
+    BEGIN_STREAM(s, raw, rawLen, diag, "Box[elst]");
+
+    uint8_t version;
+    uint32_t flags;
+    AVIF_CHECK(avifROStreamReadVersionAndFlags(&s, &version, &flags));
+
+    if ((flags & 1) == 0) {
+        track->isRepeating = AVIF_FALSE;
+        return AVIF_TRUE;
+    }
+
+    track->isRepeating = AVIF_TRUE;
+    uint32_t entry_count;
+    AVIF_CHECK(avifROStreamReadU32(&s, &entry_count)); // unsigned int(32) entry_count;
+    if (entry_count != 1) {
+        avifDiagnosticsPrintf(diag, "Box[elst] contains an entry_count != 1 [%d]", entry_count);
+        return AVIF_FALSE;
+    }
+
+    if (version == 1) {
+        AVIF_CHECK(avifROStreamReadU64(&s, &track->segmentDuration)); // unsigned int(64) segment_duration;
+    } else if (version == 0) {
+        uint32_t segmentDuration;
+        AVIF_CHECK(avifROStreamReadU32(&s, &segmentDuration)); // unsigned int(32) segment_duration;
+        track->segmentDuration = segmentDuration;
+    } else {
+        // Unsupported version
+        avifDiagnosticsPrintf(diag, "Box[elst] has an unsupported version [%u]", version);
+        return AVIF_FALSE;
+    }
+    if (track->segmentDuration == 0) {
+        avifDiagnosticsPrintf(diag, "Box[elst] Invalid value for segment_duration (0).");
+        return AVIF_FALSE;
+    }
+    return AVIF_TRUE;
+}
+
+static avifBool avifParseEditBox(avifTrack * track, const uint8_t * raw, size_t rawLen, avifDiagnostics * diag)
+{
+    BEGIN_STREAM(s, raw, rawLen, diag, "Box[edts]");
+
+    avifBool elstBoxSeen = AVIF_FALSE;
+    while (avifROStreamHasBytesLeft(&s, 1)) {
+        avifBoxHeader header;
+        AVIF_CHECK(avifROStreamReadBoxHeader(&s, &header));
+
+        if (!memcmp(header.type, "elst", 4)) {
+            if (elstBoxSeen) {
+                avifDiagnosticsPrintf(diag, "More than one [elst] Box was found.");
+                return AVIF_FALSE;
+            }
+            AVIF_CHECK(avifParseEditListBox(track, avifROStreamCurrent(&s), header.size, diag));
+            elstBoxSeen = AVIF_TRUE;
+        }
+        AVIF_CHECK(avifROStreamSkip(&s, header.size));
+    }
+    if (!elstBoxSeen) {
+        avifDiagnosticsPrintf(diag, "Box[edts] contains no [elst] Box.");
+        return AVIF_FALSE;
+    }
+    return AVIF_TRUE;
+}
+
 static avifBool avifParseTrackBox(avifDecoderData * data, uint64_t rawOffset, const uint8_t * raw, size_t rawLen, uint32_t imageSizeLimit, uint32_t imageDimensionLimit)
 {
     BEGIN_STREAM(s, raw, rawLen, data->diag, "Box[trak]");
 
     avifTrack * track = avifDecoderDataCreateTrack(data);
 
+    avifBool edtsBoxSeen = AVIF_FALSE;
     while (avifROStreamHasBytesLeft(&s, 1)) {
         avifBoxHeader header;
         AVIF_CHECK(avifROStreamReadBoxHeader(&s, &header));
@@ -2788,10 +2874,52 @@ static avifBool avifParseTrackBox(avifDecoderData * data, uint64_t rawOffset, co
             AVIF_CHECK(avifParseMediaBox(track, rawOffset + avifROStreamOffset(&s), avifROStreamCurrent(&s), header.size, data->diag));
         } else if (!memcmp(header.type, "tref", 4)) {
             AVIF_CHECK(avifTrackReferenceBox(track, avifROStreamCurrent(&s), header.size, data->diag));
+        } else if (!memcmp(header.type, "edts", 4)) {
+            if (edtsBoxSeen) {
+                avifDiagnosticsPrintf(data->diag, "More than one [edts] Box was found.");
+                return AVIF_FALSE;
+            }
+            AVIF_CHECK(avifParseEditBox(track, avifROStreamCurrent(&s), header.size, data->diag));
+            edtsBoxSeen = AVIF_TRUE;
         }
 
         AVIF_CHECK(avifROStreamSkip(&s, header.size));
     }
+    if (!edtsBoxSeen) {
+        track->repetitionCount = AVIF_REPETITION_COUNT_UNKNOWN;
+    } else if (track->isRepeating) {
+        if (track->trackDuration == AVIF_INDEFINITE_DURATION64) {
+            // If isRepeating is true and the track duration is unknown/indefinite, then set the repetition count to infinite
+            // (Section 9.6.1 of ISO/IEC 23008-12 Part 12).
+            track->repetitionCount = AVIF_REPETITION_COUNT_INFINITE;
+        } else {
+            // Section 9.6.1. of ISO/IEC 23008-12 Part 12: 1, the entire edit list is repeated a sufficient number of times to
+            // equal the track duration.
+            //
+            // Since libavif uses repetitionCount (which is 0-based), we subtract the value by 1 to derive the number of
+            // repetitions.
+            assert(track->segmentDuration != 0);
+            // We specifically check for trackDuration == 0 here and not when it is actually read in order to accept files which
+            // inadvertently has a trackDuration of 0 without any edit lists.
+            if (track->trackDuration == 0) {
+                avifDiagnosticsPrintf(data->diag, "Invalid track duration 0.");
+                return AVIF_FALSE;
+            }
+            const uint64_t repetitionCount =
+                (track->trackDuration / track->segmentDuration) + (track->trackDuration % track->segmentDuration != 0) - 1;
+            if (repetitionCount > INT_MAX) {
+                // repetitionCount does not fit in an integer and hence it is
+                // likely to be a very large value. So, we just set it to
+                // infinite.
+                track->repetitionCount = AVIF_REPETITION_COUNT_INFINITE;
+            } else {
+                track->repetitionCount = (int)repetitionCount;
+            }
+        }
+    } else {
+        track->repetitionCount = 0;
+    }
+
     return AVIF_TRUE;
 }
 
@@ -3421,6 +3549,10 @@ avifResult avifDecoderReset(avifDecoder * decoder)
         } else {
             decoder->duration = 0;
         }
+        // If the alphaTrack->repetitionCount and colorTrack->repetitionCount are different, we will simply use the
+        // colorTrack's repetitionCount.
+        decoder->repetitionCount = colorTrack->repetitionCount;
+
         memset(&decoder->imageTiming, 0, sizeof(decoder->imageTiming)); // to be set in avifDecoderNextImage()
 
         decoder->image->width = colorTrack->width;
@@ -3683,6 +3815,11 @@ avifResult avifDecoderReset(avifDecoder * decoder)
         }
     }
 
+    const avifProperty * clliProp = avifPropertyArrayFind(colorProperties, "clli");
+    if (clliProp) {
+        decoder->image->clli = clliProp->u.clli;
+    }
+
     // Transformations
     const avifProperty * paspProp = avifPropertyArrayFind(colorProperties, "pasp");
     if (paspProp) {
@@ -3796,7 +3933,7 @@ static avifResult avifImageLimitedToFullAlpha(avifImage * image)
         return AVIF_RESULT_NOT_IMPLEMENTED;
     }
 
-    uint8_t * alphaPlane = image->alphaPlane;
+    const uint8_t * alphaPlane = image->alphaPlane;
     const uint32_t alphaRowBytes = image->alphaRowBytes;
 
     // We cannot do the range conversion in place since it will modify the
@@ -3810,17 +3947,17 @@ static avifResult avifImageLimitedToFullAlpha(avifImage * image)
 
     if (image->depth > 8) {
         for (uint32_t j = 0; j < image->height; ++j) {
-            uint8_t * srcRow = &alphaPlane[j * alphaRowBytes];
+            const uint8_t * srcRow = &alphaPlane[j * alphaRowBytes];
             uint8_t * dstRow = &image->alphaPlane[j * image->alphaRowBytes];
             for (uint32_t i = 0; i < image->width; ++i) {
-                int srcAlpha = *((uint16_t *)&srcRow[i * 2]);
+                int srcAlpha = *((const uint16_t *)&srcRow[i * 2]);
                 int dstAlpha = avifLimitedToFullY(image->depth, srcAlpha);
                 *((uint16_t *)&dstRow[i * 2]) = (uint16_t)dstAlpha;
             }
         }
     } else {
         for (uint32_t j = 0; j < image->height; ++j) {
-            uint8_t * srcRow = &alphaPlane[j * alphaRowBytes];
+            const uint8_t * srcRow = &alphaPlane[j * alphaRowBytes];
             uint8_t * dstRow = &image->alphaPlane[j * image->alphaRowBytes];
             for (uint32_t i = 0; i < image->width; ++i) {
                 int srcAlpha = srcRow[i];

@@ -307,6 +307,7 @@ br{
         CG{"Kongo (Republik)"}
         CI{"Aod Olifant"}
         CZ{"Republik Tchek"}
+        NZ{"Aotearoa Zeland-Nevez"}
         SZ{"Swaziland"}
         TL{"Timor ar Reter"}
     }

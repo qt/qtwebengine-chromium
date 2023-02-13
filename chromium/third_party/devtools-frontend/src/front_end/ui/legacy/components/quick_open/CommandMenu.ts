@@ -29,6 +29,10 @@ const UIStrings = {
   * @description Text for command suggestion of run a command
   */
   command: 'Command',
+  /**
+  * @description Hint text to indicate that a selected command is deprecated
+  */
+  deprecated: '— deprecated',
 };
 const str_ = i18n.i18n.registerUIStrings('ui/legacy/components/quick_open/CommandMenu.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
@@ -53,7 +57,8 @@ export class CommandMenu {
   }
 
   static createCommand(options: CreateCommandOptions): Command {
-    const {category, keys, title, shortcut, executeHandler, availableHandler, userActionCode} = options;
+    const {category, keys, title, shortcut, executeHandler, availableHandler, userActionCode, deprecationWarning} =
+        options;
 
     let handler = executeHandler;
     if (userActionCode) {
@@ -73,7 +78,7 @@ export class CommandMenu {
       };
     }
 
-    return new Command(category, title, keys, shortcut, handler, availableHandler);
+    return new Command(category, title, keys, shortcut, handler, availableHandler, deprecationWarning);
   }
 
   static createSettingCommand<V>(setting: Common.Settings.Setting<V>, title: string, value: V): Command {
@@ -89,6 +94,11 @@ export class CommandMenu {
       title,
       shortcut: '',
       executeHandler: (): void => {
+        if (setting.deprecation?.disabled &&
+            (!setting.deprecation?.experiment || setting.deprecation.experiment.isEnabled())) {
+          void Common.Revealer.reveal(setting);
+          return;
+        }
         setting.set(value);
         if (reloadRequired) {
           UI.InspectorView.InspectorView.instance().displayReloadRequiredWarning(
@@ -97,6 +107,7 @@ export class CommandMenu {
       },
       availableHandler,
       userActionCode: undefined,
+      deprecationWarning: setting.deprecation?.warning,
     });
 
     function availableHandler(): boolean {
@@ -197,25 +208,15 @@ export interface CreateCommandOptions {
   executeHandler: () => void;
   availableHandler?: () => boolean;
   userActionCode?: number;
+  deprecationWarning?: Platform.UIString.LocalizedString;
 }
-
-let commandMenuProviderInstance: CommandMenuProvider;
 
 export class CommandMenuProvider extends Provider {
   private commands: Command[];
-  private constructor() {
-    super();
-    this.commands = [];
-  }
-  static instance(opts: {
-    forceNew: boolean|null,
-  } = {forceNew: null}): CommandMenuProvider {
-    const {forceNew} = opts;
-    if (!commandMenuProviderInstance || forceNew) {
-      commandMenuProviderInstance = new CommandMenuProvider();
-    }
 
-    return commandMenuProviderInstance;
+  constructor(commandsForTest: Command[] = []) {
+    super();
+    this.commands = commandsForTest;
   }
 
   attach(): void {
@@ -282,6 +283,14 @@ export class CommandMenuProvider extends Provider {
 
     subtitleElement.textContent = command.shortcut();
 
+    const deprecationWarning = command.deprecationWarning();
+    if (deprecationWarning) {
+      const deprecatedTagElement = (titleElement.parentElement?.createChild('span', 'deprecated-tag') as HTMLElement);
+      if (deprecatedTagElement) {
+        deprecatedTagElement.textContent = i18nString(UIStrings.deprecated);
+        deprecatedTagElement.title = deprecationWarning;
+      }
+    }
     const tagElement = (titleElement.parentElement?.parentElement?.createChild('span', 'tag') as HTMLElement);
     if (!tagElement) {
       return;
@@ -332,16 +341,18 @@ export class Command {
   private readonly shortcutInternal: string;
   private readonly executeHandler: () => void;
   private readonly availableHandler?: () => boolean;
+  private readonly deprecationWarningInternal?: Platform.UIString.LocalizedString;
 
   constructor(
       category: string, title: string, key: string, shortcut: string, executeHandler: () => void,
-      availableHandler?: () => boolean) {
+      availableHandler?: () => boolean, deprecationWarning?: Platform.UIString.LocalizedString) {
     this.categoryInternal = category;
     this.titleInternal = title;
     this.keyInternal = category + '\0' + title + '\0' + key;
     this.shortcutInternal = shortcut;
     this.executeHandler = executeHandler;
     this.availableHandler = availableHandler;
+    this.deprecationWarningInternal = deprecationWarning;
   }
 
   category(): string {
@@ -366,6 +377,10 @@ export class Command {
 
   execute(): void {
     this.executeHandler();
+  }
+
+  deprecationWarning(): Platform.UIString.LocalizedString|undefined {
+    return this.deprecationWarningInternal;
   }
 }
 
@@ -392,7 +407,7 @@ export class ShowActionDelegate implements UI.ActionRegistration.ActionDelegate 
 registerProvider({
   prefix: '>',
   iconName: 'ic_command_run_command',
-  provider: () => Promise.resolve(CommandMenuProvider.instance()),
+  provider: () => Promise.resolve(new CommandMenuProvider()),
   titlePrefix: (): Common.UIString.LocalizedString => i18nString(UIStrings.run),
   titleSuggestion: (): Common.UIString.LocalizedString => i18nString(UIStrings.command),
 });

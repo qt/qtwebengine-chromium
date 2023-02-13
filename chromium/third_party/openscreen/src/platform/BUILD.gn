@@ -4,10 +4,12 @@
 
 import("//build_overrides/build.gni")
 
+visibility = [ "./*" ]
+
 # Source files that depend on nothing (all your base/ are belong to us).
 source_set("base") {
   defines = []
-  visibility = [ "*" ]
+  visibility += [ "*" ]
   public = [
     "base/error.h",
     "base/interface_info.h",
@@ -29,6 +31,7 @@ source_set("base") {
     "base/location.cc",
     "base/tls_credentials.cc",
     "base/trace_logging_activation.cc",
+    "base/trace_logging_types.cc",
     "base/trivial_clock_traits.cc",
     "base/udp_packet.cc",
   ]
@@ -39,10 +42,7 @@ source_set("base") {
 # Public API source files. May depend on nothing except :base.
 source_set("logging") {
   defines = []
-  visibility = [
-    ":*",
-    "../util/*",
-  ]
+  visibility += [ "../util/*" ]
 
   public = [ "api/logging.h" ]
 
@@ -52,7 +52,7 @@ source_set("logging") {
 # Public API source files. These may depend on nothing except :base.
 source_set("api") {
   defines = []
-  visibility = [ "*" ]
+  visibility += [ "*" ]
   public = [
     "api/export.h",
     "api/network_interface.h",
@@ -62,6 +62,7 @@ source_set("api") {
     "api/time.h",
     "api/tls_connection.h",
     "api/tls_connection_factory.h",
+    "api/trace_event.h",
     "api/trace_logging_platform.h",
     "api/udp_socket.h",
   ]
@@ -69,6 +70,7 @@ source_set("api") {
     "api/scoped_wake_lock.cc",
     "api/tls_connection.cc",
     "api/tls_connection_factory.cc",
+    "api/trace_event.cc",
     "api/trace_logging_platform.cc",
     "api/udp_socket.cc",
   ]
@@ -83,7 +85,7 @@ source_set("api") {
 if (!build_with_chromium) {
   source_set("standalone_impl") {
     defines = []
-    visibility = [ "../*" ]
+    visibility += [ "../*" ]
     public = [
       "impl/logging.h",
       "impl/network_interface.h",
@@ -173,7 +175,7 @@ if (!build_with_chromium) {
 # The main target, which either assumes an embedder will link-in the platform
 # API implementation elsewhere, or links-in the :standalone_impl in the build.
 source_set("platform") {
-  visibility = [ "*" ]
+  visibility += [ "*" ]
   public_deps = [ ":api" ]
   if (!build_with_chromium) {
     deps = [ ":standalone_impl" ]
@@ -183,7 +185,7 @@ source_set("platform") {
 # Test helpers, referenced in other Open Screen BUILD.gn test targets.
 source_set("test") {
   testonly = true
-  visibility = [ "../*" ]
+  visibility += [ "../*" ]
   public = [
     "test/fake_clock.h",
     "test/fake_task_runner.h",
@@ -228,7 +230,7 @@ source_set("test") {
 
 source_set("unittests") {
   testonly = true
-  visibility = [ "..:openscreen_unittests_all" ]
+  visibility += [ "..:openscreen_unittests_all" ]
   public = []
   sources = [
     "api/serial_delete_ptr_unittest.cc",

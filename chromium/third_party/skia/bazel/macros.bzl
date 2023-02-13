@@ -11,8 +11,10 @@ load("@py_deps//:requirements.bzl", _requirement = "requirement")
 load("@bazel_gazelle//:def.bzl", _gazelle = "gazelle")
 load("@emsdk//emscripten_toolchain:wasm_rules.bzl", _wasm_cc_binary = "wasm_cc_binary")
 load("@io_bazel_rules_go//go:def.bzl", _go_binary = "go_binary", _go_library = "go_library")
-load("//bazel:flags.bzl", _bool_flag = "bool_flag", _string_flag_with_values = "string_flag_with_values")
+load("//bazel:cc_binary_with_flags.bzl", "cc_binary_with_flags")
 load("//bazel:copts.bzl", "DEFAULT_COPTS", "DEFAULT_OBJC_COPTS")
+load("//bazel:flags.bzl", _bool_flag = "bool_flag", _string_flag_with_values = "string_flag_with_values")
+load("//bazel:generate_cpp_files_for_headers.bzl", _generate_cpp_files_for_headers = "generate_cpp_files_for_headers")
 load("//bazel:linkopts.bzl", "DEFAULT_LINKOPTS")
 
 # re-export symbols that are commonly used or that are not supported in G3
@@ -26,6 +28,7 @@ requirement = _requirement
 selects = _selects
 string_flag_with_values = _string_flag_with_values
 wasm_cc_binary = _wasm_cc_binary
+generate_cpp_files_for_headers = _generate_cpp_files_for_headers
 
 def select_multi(values_map):
     """select() but allowing multiple matches of the keys.
@@ -89,6 +92,20 @@ def skia_cc_binary(name, copts = DEFAULT_COPTS, linkopts = DEFAULT_LINKOPTS, **k
     """
     native.cc_binary(name = name, copts = copts, linkopts = linkopts, **kwargs)
 
+def skia_cc_binary_with_flags(
+        name,
+        copts = DEFAULT_COPTS,
+        linkopts = DEFAULT_LINKOPTS,
+        set_flags = None,
+        **kwargs):
+    cc_binary_with_flags(
+        name = name,
+        copts = copts,
+        linkopts = linkopts,
+        set_flags = set_flags,
+        **kwargs
+    )
+
 def skia_cc_library(name, copts = DEFAULT_COPTS, **kwargs):
     """A wrapper around cc_library for Skia C++ libraries.
 
@@ -137,6 +154,10 @@ def skia_cc_deps(name, visibility, deps = [], linkopts = [], textual_hdrs = [], 
 def skia_defines(name, visibility, defines):
     """A self-documenting wrapper around cc_library for defines"""
     native.cc_library(name = name, visibility = visibility, defines = defines)
+
+def skia_filegroup(**kwargs):
+    """A wrapper around filegroup allowing us to customize visibility in G3."""
+    native.filegroup(**kwargs)
 
 def skia_objc_library(name, copts = DEFAULT_OBJC_COPTS, **kwargs):
     """A wrapper around cc_library for Skia Objective C libraries.
@@ -211,11 +232,11 @@ def split_srcs_and_hdrs(name, files):
     if len(srcs) == 0 or len(hdrs) == 0:
         fail("The list consist of either only source or header files. No need to use this macro.")
 
-    native.filegroup(
+    skia_filegroup(
         name = name + "_srcs",
         srcs = srcs,
     )
-    native.filegroup(
+    skia_filegroup(
         name = name + "_hdrs",
         srcs = hdrs,
     )

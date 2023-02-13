@@ -1,4 +1,4 @@
-// Copyright 2017 PDFium Authors. All rights reserved.
+// Copyright 2017 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -38,6 +38,7 @@
 #include "fpdfsdk/cpdfsdk_helpers.h"
 #include "fpdfsdk/cpdfsdk_interactiveform.h"
 #include "third_party/base/check.h"
+#include "third_party/base/containers/contains.h"
 #include "third_party/base/numerics/safe_conversions.h"
 #include "third_party/base/ptr_util.h"
 
@@ -490,12 +491,7 @@ FPDFAnnot_UpdateObject(FPDF_ANNOTATION annot, FPDF_PAGEOBJECT obj) {
 
   // Check that the object is already in this annotation's object list.
   CPDF_Form* pForm = pAnnot->GetForm();
-  auto it =
-      std::find_if(pForm->begin(), pForm->end(),
-                   [pObj](const std::unique_ptr<CPDF_PageObject>& candidate) {
-                     return candidate.get() == pObj;
-                   });
-  if (it == pForm->end())
+  if (!pdfium::Contains(*pForm, fxcrt::MakeFakeUniquePtr(pObj)))
     return false;
 
   // Update the content stream data in the annotation's AP stream.
@@ -572,12 +568,7 @@ FPDFAnnot_AppendObject(FPDF_ANNOTATION annot, FPDF_PAGEOBJECT obj) {
   // Note that an object that came from a different annotation must not be
   // passed here, since an object cannot belong to more than one annotation.
   CPDF_Form* pForm = pAnnot->GetForm();
-  auto it =
-      std::find_if(pForm->begin(), pForm->end(),
-                   [pObj](const std::unique_ptr<CPDF_PageObject>& candidate) {
-                     return candidate.get() == pObj;
-                   });
-  if (it != pForm->end())
+  if (pdfium::Contains(*pForm, fxcrt::MakeFakeUniquePtr(pObj)))
     return false;
 
   // Append the object to the object list.
@@ -1424,8 +1415,9 @@ FPDF_EXPORT FPDF_LINK FPDF_CALLCONV FPDFAnnot_GetLink(FPDF_ANNOTATION annot) {
   if (FPDFAnnot_GetSubtype(annot) != FPDF_ANNOT_LINK)
     return nullptr;
 
+  // Unretained reference in public API. NOLINTNEXTLINE
   return FPDFLinkFromCPDFDictionary(
-      CPDFAnnotContextFromFPDFAnnotation(annot)->GetMutableAnnotDict().Get());
+      CPDFAnnotContextFromFPDFAnnotation(annot)->GetMutableAnnotDict());
 }
 
 FPDF_EXPORT int FPDF_CALLCONV

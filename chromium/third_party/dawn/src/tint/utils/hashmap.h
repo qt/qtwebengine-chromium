@@ -19,255 +19,248 @@
 #include <optional>
 #include <utility>
 
+#include "src/tint/debug.h"
 #include "src/tint/utils/hash.h"
-#include "src/tint/utils/hashset.h"
+#include "src/tint/utils/hashmap_base.h"
+#include "src/tint/utils/vector.h"
 
 namespace tint::utils {
 
 /// An unordered map that uses a robin-hood hashing algorithm.
-///
-/// Hashmap internally wraps a Hashset for providing a store for key-value pairs.
-///
-/// @see Hashset
-template <typename K,
-          typename V,
+template <typename KEY,
+          typename VALUE,
           size_t N,
-          typename HASH = Hasher<K>,
-          typename EQUAL = std::equal_to<K>>
-class Hashmap {
-    /// Entry holds a key and value pair, and is used as the element type of the underlying Hashset.
-    /// Entries are compared and hashed using only the #key.
-    /// @see Hasher
-    /// @see Equality
-    struct Entry {
-        /// Constructor from a key and value pair
-        Entry(K k, V v) : key(std::move(k)), value(std::move(v)) {}
-
-        /// Copy-constructor.
-        Entry(const Entry&) = default;
-
-        /// Move-constructor.
-        Entry(Entry&&) = default;
-
-        /// Copy-assignment operator
-        Entry& operator=(const Entry&) = default;
-
-        /// Move-assignment operator
-        Entry& operator=(Entry&&) = default;
-
-        K key;    /// The map entry key
-        V value;  /// The map entry value
-    };
-
-    /// Hash provider for the underlying Hashset.
-    /// Provides hash functions for an Entry or K.
-    /// The hash functions only consider the key of an entry.
-    struct Hasher {
-        /// Calculates a hash from an Entry
-        size_t operator()(const Entry& entry) const { return HASH()(entry.key); }
-        /// Calculates a hash from a K
-        size_t operator()(const K& key) const { return HASH()(key); }
-    };
-
-    /// Equality provider for the underlying Hashset.
-    /// Provides equality functions for an Entry or K to an Entry.
-    /// The equality functions only consider the key for equality.
-    struct Equality {
-        /// Compares an Entry to an Entry for equality.
-        bool operator()(const Entry& a, const Entry& b) const { return EQUAL()(a.key, b.key); }
-        /// Compares a K to an Entry for equality.
-        bool operator()(const K& a, const Entry& b) const { return EQUAL()(a, b.key); }
-    };
-
-    /// The underlying set
-    using Set = Hashset<Entry, N, Hasher, Equality>;
+          typename HASH = Hasher<KEY>,
+          typename EQUAL = std::equal_to<KEY>>
+class Hashmap : public HashmapBase<KEY, VALUE, N, HASH, EQUAL> {
+    using Base = HashmapBase<KEY, VALUE, N, HASH, EQUAL>;
+    using PutMode = typename Base::PutMode;
 
   public:
-    /// A Key and Value const-reference pair.
-    struct KeyValue {
-        /// key of a map entry
-        const K& key;
-        /// value of a map entry
-        const V& value;
+    /// The key type
+    using Key = KEY;
+    /// The value type
+    using Value = VALUE;
+    /// The key-value type for a map entry
+    using Entry = KeyValue<Key, Value>;
 
-        /// Equality operator
-        /// @param other the other KeyValue
-        /// @returns true if the key and value of this KeyValue are equal to other's.
-        bool operator==(const KeyValue& other) const {
-            return key == other.key && value == other.value;
-        }
-    };
+    /// Result of Add()
+    using AddResult = typename Base::PutResult;
 
-    /// STL-style alias to KeyValue.
-    /// Used by gmock for the `ElementsAre` checks.
-    using value_type = KeyValue;
+    /// Reference is returned by Hashmap::Find(), and performs dynamic Hashmap lookups.
+    /// The value returned by the Reference reflects the current state of the Hashmap, and so the
+    /// referenced value may change, or transition between valid or invalid based on the current
+    /// state of the Hashmap.
+    template <bool IS_CONST>
+    class ReferenceT {
+        /// `const Value` if IS_CONST, or `Value` if !IS_CONST
+        using T = std::conditional_t<IS_CONST, const Value, Value>;
 
-    /// Iterator for the map.
-    /// Iterators are invalidated if the map is modified.
-    class Iterator {
+        /// `const Hashmap` if IS_CONST, or `Hashmap` if !IS_CONST
+        using Map = std::conditional_t<IS_CONST, const Hashmap, Hashmap>;
+
       public:
-        /// @returns the key of the entry pointed to by this iterator
-        const K& Key() const { return it->key; }
+        /// @returns true if the reference is valid.
+        operator bool() const { return Get() != nullptr; }
 
-        /// @returns the value of the entry pointed to by this iterator
-        const V& Value() const { return it->value; }
+        /// @returns the pointer to the Value, or nullptr if the reference is invalid.
+        operator T*() const { return Get(); }
 
-        /// Increments the iterator
-        /// @returns this iterator
-        Iterator& operator++() {
-            ++it;
-            return *this;
+        /// @returns the pointer to the Value
+        /// @warning if the Hashmap does not contain a value for the reference, then this will
+        /// trigger a TINT_ASSERT, or invalid pointer dereference.
+        T* operator->() const {
+            auto* hashmap_reference_lookup = Get();
+            TINT_ASSERT(Utils, hashmap_reference_lookup != nullptr);
+            return hashmap_reference_lookup;
         }
 
-        /// Equality operator
-        /// @param other the other iterator to compare this iterator to
-        /// @returns true if this iterator is equal to other
-        bool operator==(const Iterator& other) const { return it == other.it; }
-
-        /// Inequality operator
-        /// @param other the other iterator to compare this iterator to
-        /// @returns true if this iterator is not equal to other
-        bool operator!=(const Iterator& other) const { return it != other.it; }
-
-        /// @returns a pair of key and value for the entry pointed to by this iterator
-        KeyValue operator*() const { return {Key(), Value()}; }
+        /// @returns the pointer to the Value, or nullptr if the reference is invalid.
+        T* Get() const {
+            auto generation = map_.Generation();
+            if (generation_ != generation) {
+                cached_ = map_.Lookup(key_);
+                generation_ = generation;
+            }
+            return cached_;
+        }
 
       private:
-        /// Friend class
-        friend class Hashmap;
+        friend Hashmap;
 
-        /// Underlying iterator type
-        using SetIterator = typename Set::Iterator;
+        /// Constructor
+        ReferenceT(Map& map, const Key& key)
+            : map_(map), key_(key), cached_(nullptr), generation_(map.Generation() - 1) {}
 
-        explicit Iterator(SetIterator i) : it(i) {}
+        /// Constructor
+        ReferenceT(Map& map, const Key& key, T* value)
+            : map_(map), key_(key), cached_(value), generation_(map.Generation()) {}
 
-        SetIterator it;
+        Map& map_;
+        const Key key_;
+        mutable T* cached_ = nullptr;
+        mutable size_t generation_ = 0;
     };
 
-    /// Removes all entries from the map.
-    void Clear() { set_.Clear(); }
+    /// A mutable reference returned by Find()
+    using Reference = ReferenceT</*IS_CONST*/ false>;
 
-    /// Adds the key-value pair to the map, if the map does not already contain an entry with a key
-    /// equal to `key`.
-    /// @param key the entry's key to add to the map
-    /// @param value the entry's value to add to the map
-    /// @returns true if the entry was added to the map, false if there was already an entry in the
-    ///          map with a key equal to `key`.
-    template <typename KEY, typename VALUE>
-    bool Add(KEY&& key, VALUE&& value) {
-        return set_.Add(Entry{std::forward<KEY>(key), std::forward<VALUE>(value)});
+    /// An immutable reference returned by Find()
+    using ConstReference = ReferenceT</*IS_CONST*/ true>;
+
+    /// Adds a value to the map, if the map does not already contain an entry with the key @p key.
+    /// @param key the entry key.
+    /// @param value the value of the entry to add to the map.
+    /// @returns A AddResult describing the result of the add
+    template <typename K, typename V>
+    AddResult Add(K&& key, V&& value) {
+        return this->template Put<PutMode::kAdd>(std::forward<K>(key), std::forward<V>(value));
     }
 
-    /// Adds the key-value pair to the map, replacing any entry with a key equal to `key`.
-    /// @param key the entry's key to add to the map
-    /// @param value the entry's value to add to the map
-    template <typename KEY, typename VALUE>
-    void Replace(KEY&& key, VALUE&& value) {
-        set_.Replace(Entry{std::forward<KEY>(key), std::forward<VALUE>(value)});
+    /// Adds a new entry to the map, replacing any entry that has a key equal to @p key.
+    /// @param key the entry key.
+    /// @param value the value of the entry to add to the map.
+    /// @returns A AddResult describing the result of the replace
+    template <typename K, typename V>
+    AddResult Replace(K&& key, V&& value) {
+        return this->template Put<PutMode::kReplace>(std::forward<K>(key), std::forward<V>(value));
     }
 
-    /// Searches for an entry with the given key value.
-    /// @param key the entry's key value to search for.
-    /// @returns the value of the entry with the given key, or no value if the entry was not found.
-    std::optional<V> Get(const K& key) {
-        if (auto* entry = set_.Find(key)) {
-            return entry->value;
+    /// @param key the key to search for.
+    /// @returns the value of the entry that is equal to `value`, or no value if the entry was not
+    ///          found.
+    std::optional<Value> Get(const Key& key) const {
+        if (auto [found, index] = this->IndexOf(key); found) {
+            return this->slots_[index].entry->value;
         }
         return std::nullopt;
     }
 
-    /// Searches for an entry with the given key value, adding and returning the result of
-    /// calling `create` if the entry was not found.
+    /// Searches for an entry with the given key, adding and returning the result of calling
+    /// @p create if the entry was not found.
     /// @note: Before calling `create`, the map will insert a zero-initialized value for the given
-    /// key, which will be replaced with the value returned by `create`. If `create` adds an entry
-    /// with `key` to this map, it will be replaced.
+    /// key, which will be replaced with the value returned by @p create. If @p create adds an entry
+    /// with @p key to this map, it will be replaced.
     /// @param key the entry's key value to search for.
     /// @param create the create function to call if the map does not contain the key.
     /// @returns the value of the entry.
-    template <typename CREATE>
-    V& GetOrCreate(const K& key, CREATE&& create) {
-        auto res = set_.Add(Entry{key, V{}});
-        if (res.action == AddAction::kAdded) {
-            // Store the set generation before calling create()
-            auto generation = set_.Generation();
+    template <typename K, typename CREATE>
+    Value& GetOrCreate(K&& key, CREATE&& create) {
+        auto res = Add(std::forward<K>(key), Value{});
+        if (res.action == MapAction::kAdded) {
+            // Store the map generation before calling create()
+            auto generation = this->Generation();
             // Call create(), which might modify this map.
             auto value = create();
             // Was this map mutated?
-            if (set_.Generation() == generation) {
+            if (this->Generation() == generation) {
                 // Calling create() did not touch the map. No need to lookup again.
-                res.entry->value = std::move(value);
+                *res.value = std::move(value);
             } else {
                 // Calling create() modified the map. Need to insert again.
-                res = set_.Replace(Entry{key, std::move(value)});
+                res = Replace(key, std::move(value));
             }
         }
-        return res.entry->value;
+        return *res.value;
     }
 
     /// Searches for an entry with the given key value, adding and returning a newly created
     /// zero-initialized value if the entry was not found.
     /// @param key the entry's key value to search for.
     /// @returns the value of the entry.
-    V& GetOrZero(const K& key) {
-        auto res = set_.Add(Entry{key, V{}});
-        return res.entry->value;
+    template <typename K>
+    Reference GetOrZero(K&& key) {
+        auto res = Add(std::forward<K>(key), Value{});
+        return Reference(*this, key, res.value);
     }
 
-    /// Searches for an entry with the given key value.
-    /// @param key the entry's key value to search for.
-    /// @returns the a pointer to the value of the entry with the given key, or nullptr if the entry
-    /// was not found.
-    /// @warning the pointer must not be used after the map is mutated
-    V* Find(const K& key) {
-        if (auto* entry = set_.Find(key)) {
-            return &entry->value;
+    /// @param key the key to search for.
+    /// @returns a reference to the entry that is equal to the given value.
+    Reference Find(const Key& key) { return Reference(*this, key); }
+
+    /// @param key the key to search for.
+    /// @returns a reference to the entry that is equal to the given value.
+    ConstReference Find(const Key& key) const { return ConstReference(*this, key); }
+
+    /// @returns the keys of the map as a vector.
+    /// @note the order of the returned vector is non-deterministic between compilers.
+    template <size_t N2 = N>
+    Vector<Key, N2> Keys() const {
+        Vector<Key, N2> out;
+        out.Reserve(this->Count());
+        for (auto it : *this) {
+            out.Push(it.key);
         }
-        return nullptr;
+        return out;
     }
 
-    /// Searches for an entry with the given key value.
-    /// @param key the entry's key value to search for.
-    /// @returns the a pointer to the value of the entry with the given key, or nullptr if the entry
-    /// was not found.
-    /// @warning the pointer must not be used after the map is mutated
-    const V* Find(const K& key) const {
-        if (auto* entry = set_.Find(key)) {
-            return &entry->value;
+    /// @returns the values of the map as a vector
+    /// @note the order of the returned vector is non-deterministic between compilers.
+    template <size_t N2 = N>
+    Vector<Value, N2> Values() const {
+        Vector<Value, N2> out;
+        out.Reserve(this->Count());
+        for (auto it : *this) {
+            out.Push(it.value);
         }
-        return nullptr;
+        return out;
     }
 
-    /// Removes an entry from the set with a key equal to `key`.
-    /// @param key the entry key value to remove.
-    /// @returns true if an entry was removed.
-    bool Remove(const K& key) { return set_.Remove(key); }
+    /// Equality operator
+    /// @param other the other Hashmap to compare this Hashmap to
+    /// @returns true if this Hashmap has the same key and value pairs as @p other
+    template <typename K, typename V, size_t N2>
+    bool operator==(const Hashmap<K, V, N2>& other) const {
+        if (this->Count() != other.Count()) {
+            return false;
+        }
+        for (auto it : *this) {
+            auto other_val = other.Find(it.key);
+            if (!other_val || it.value != *other_val) {
+                return false;
+            }
+        }
+        return true;
+    }
 
-    /// Checks whether an entry exists in the map with a key equal to `key`.
-    /// @param key the entry key value to search for.
-    /// @returns true if the map contains an entry with the given key.
-    bool Contains(const K& key) const { return set_.Contains(key); }
-
-    /// Pre-allocates memory so that the map can hold at least `capacity` entries.
-    /// @param capacity the new capacity of the map.
-    void Reserve(size_t capacity) { set_.Reserve(capacity); }
-
-    /// @returns the number of entries in the map.
-    size_t Count() const { return set_.Count(); }
-
-    /// @returns a monotonic counter which is incremented whenever the map is mutated.
-    size_t Generation() const { return set_.Generation(); }
-
-    /// @returns true if the map contains no entries.
-    bool IsEmpty() const { return set_.IsEmpty(); }
-
-    /// @returns an iterator to the start of the map
-    Iterator begin() const { return Iterator{set_.begin()}; }
-
-    /// @returns an iterator to the end of the map
-    Iterator end() const { return Iterator{set_.end()}; }
+    /// Inequality operator
+    /// @param other the other Hashmap to compare this Hashmap to
+    /// @returns false if this Hashmap has the same key and value pairs as @p other
+    template <typename K, typename V, size_t N2>
+    bool operator!=(const Hashmap<K, V, N2>& other) const {
+        return !(*this == other);
+    }
 
   private:
-    Set set_;
+    Value* Lookup(const Key& key) {
+        if (auto [found, index] = this->IndexOf(key); found) {
+            return &this->slots_[index].entry->value;
+        }
+        return nullptr;
+    }
+
+    const Value* Lookup(const Key& key) const {
+        if (auto [found, index] = this->IndexOf(key); found) {
+            return &this->slots_[index].entry->value;
+        }
+        return nullptr;
+    }
+};
+
+/// Hasher specialization for Hashmap
+template <typename K, typename V, size_t N, typename HASH, typename EQUAL>
+struct Hasher<Hashmap<K, V, N, HASH, EQUAL>> {
+    /// @param map the Hashmap to hash
+    /// @returns a hash of the map
+    size_t operator()(const Hashmap<K, V, N, HASH, EQUAL>& map) const {
+        auto hash = Hash(map.Count());
+        for (auto it : map) {
+            // Use an XOR to ensure that the non-deterministic ordering of the map still produces
+            // the same hash value for the same entries.
+            hash ^= Hash(it.key) * 31 + Hash(it.value);
+        }
+        return hash;
+    }
 };
 
 }  // namespace tint::utils

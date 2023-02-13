@@ -1,4 +1,4 @@
-// Copyright 2014 PDFium Authors. All rights reserved.
+// Copyright 2014 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,11 +12,13 @@
 
 #include <vector>
 
+#include "core/fxcrt/data_vector.h"
 #include "core/fxcrt/fx_string.h"
 #include "core/fxcrt/unowned_ptr.h"
 #include "core/fxge/cfx_textrenderoptions.h"
 #include "fxbarcode/BC_Library.h"
 #include "fxbarcode/BC_Writer.h"
+#include "third_party/base/span.h"
 
 class CFX_Font;
 class CFX_Matrix;
@@ -35,8 +37,7 @@ class CBC_OneDimWriter : public CBC_Writer {
   ~CBC_OneDimWriter() override;
 
   virtual bool RenderResult(WideStringView contents,
-                            uint8_t* code,
-                            int32_t codeLength);
+                            pdfium::span<const uint8_t> code);
   virtual bool CheckContentValidity(WideStringView contents) = 0;
   virtual WideString FilterContents(WideStringView contents) = 0;
   virtual void SetDataLength(int32_t length);
@@ -47,28 +48,17 @@ class CBC_OneDimWriter : public CBC_Writer {
   void SetFontStyle(int32_t style);
   void SetFontColor(FX_ARGB color);
 
-  uint8_t* Encode(const ByteString& contents,
-                  BC_TYPE format,
-                  int32_t& outWidth,
-                  int32_t& outHeight);
+  virtual DataVector<uint8_t> Encode(const ByteString& contents) = 0;
   bool RenderDeviceResult(CFX_RenderDevice* device,
                           const CFX_Matrix& matrix,
                           WideStringView contents);
   bool SetFont(CFX_Font* cFont);
 
  protected:
-  virtual uint8_t* EncodeWithHint(const ByteString& contents,
-                                  BC_TYPE format,
-                                  int32_t& outWidth,
-                                  int32_t& outHeight,
-                                  int32_t hints);
-  virtual uint8_t* EncodeImpl(const ByteString& contents,
-                              int32_t& outLength) = 0;
   virtual bool ShowChars(WideStringView contents,
                          CFX_RenderDevice* device,
                          const CFX_Matrix& matrix,
-                         int32_t barWidth,
-                         int32_t multiple);
+                         int32_t barWidth);
   void ShowDeviceChars(CFX_RenderDevice* device,
                        const CFX_Matrix& matrix,
                        const ByteString str,
@@ -83,13 +73,9 @@ class CBC_OneDimWriter : public CBC_Writer {
                     float geWidth,
                     int32_t fontSize,
                     float& charsLen);
-  int32_t AppendPattern(uint8_t* target,
-                        int32_t pos,
-                        const int8_t* pattern,
-                        int32_t patternLength,
-                        bool startColor);
-
-  void RenderVerticalBars(int32_t outputX, int32_t width);
+  pdfium::span<uint8_t> AppendPattern(pdfium::span<uint8_t> target,
+                                      pdfium::span<const uint8_t> pattern,
+                                      bool startColor);
 
   bool m_bPrintChecksum = true;
   bool m_bCalcChecksum = false;
@@ -107,7 +93,6 @@ class CBC_OneDimWriter : public CBC_Writer {
 
   std::vector<CFX_Path> m_output;
   int32_t m_barWidth;
-  int32_t m_multiple;
   float m_outputHScale;
 };
 

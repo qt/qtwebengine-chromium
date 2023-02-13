@@ -1,4 +1,4 @@
-// Copyright 2005 Google Inc. All Rights Reserved.
+// Copyright 2005 Google LLC
 // Author: chatham@google.com (Andrew Chatham)
 // Author: satorux@google.com (Satoru Takabayashi)
 //
@@ -39,6 +39,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <cstring>
 #include <map>
 #include <string>
 #include <vector>

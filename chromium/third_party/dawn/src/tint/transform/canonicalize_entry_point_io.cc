@@ -123,7 +123,7 @@ bool HasSampleMask(utils::VectorRef<const ast::Attribute*> attrs) {
 
 }  // namespace
 
-/// State holds the current transform state for a single entry point.
+/// PIMPL state for the transform
 struct CanonicalizeEntryPointIO::State {
     /// OutputValue represents a shader result that the wrapper function produces.
     struct OutputValue {
@@ -207,7 +207,7 @@ struct CanonicalizeEntryPointIO::State {
     /// @param attributes the attributes to apply to the shader input
     /// @returns an expression which evaluates to the value of the shader input
     const ast::Expression* AddInput(std::string name,
-                                    const sem::Type* type,
+                                    const type::Type* type,
                                     std::optional<uint32_t> location,
                                     utils::Vector<const ast::Attribute*, 8> attributes) {
         auto* ast_type = CreateASTTypeFor(ctx, type);
@@ -278,7 +278,7 @@ struct CanonicalizeEntryPointIO::State {
     /// @param attributes the attributes to apply to the shader output
     /// @param value the value of the shader output
     void AddOutput(std::string name,
-                   const sem::Type* type,
+                   const type::Type* type,
                    std::optional<uint32_t> location,
                    utils::Vector<const ast::Attribute*, 8> attributes,
                    const ast::Expression* value) {
@@ -359,10 +359,10 @@ struct CanonicalizeEntryPointIO::State {
                 continue;
             }
 
-            auto* member_ast = member->Declaration();
-            auto name = ctx.src->Symbols().NameFor(member_ast->symbol);
+            auto name = ctx.src->Symbols().NameFor(member->Name());
 
-            auto attributes = CloneShaderIOAttributes(member_ast->attributes, do_interpolate);
+            auto attributes =
+                CloneShaderIOAttributes(member->Declaration()->attributes, do_interpolate);
             auto* input_expr =
                 AddInput(name, member->Type(), member->Location(), std::move(attributes));
             inner_struct_values.Push(input_expr);
@@ -378,7 +378,7 @@ struct CanonicalizeEntryPointIO::State {
     /// function.
     /// @param inner_ret_type the original function return type
     /// @param original_result the result object produced by the original function
-    void ProcessReturnType(const sem::Type* inner_ret_type, Symbol original_result) {
+    void ProcessReturnType(const type::Type* inner_ret_type, Symbol original_result) {
         // Do not add interpolation attributes on fragment output
         bool do_interpolate = func_ast->PipelineStage() != ast::PipelineStage::kFragment;
         if (auto* str = inner_ret_type->As<sem::Struct>()) {
@@ -388,15 +388,15 @@ struct CanonicalizeEntryPointIO::State {
                     continue;
                 }
 
-                auto* member_ast = member->Declaration();
-                auto name = ctx.src->Symbols().NameFor(member_ast->symbol);
-                auto attributes = CloneShaderIOAttributes(member_ast->attributes, do_interpolate);
+                auto name = ctx.src->Symbols().NameFor(member->Name());
+                auto attributes =
+                    CloneShaderIOAttributes(member->Declaration()->attributes, do_interpolate);
 
                 // Extract the original structure member.
                 AddOutput(name, member->Type(), member->Location(), std::move(attributes),
                           ctx.dst->MemberAccessor(original_result, name));
             }
-        } else if (!inner_ret_type->Is<sem::Void>()) {
+        } else if (!inner_ret_type->Is<type::Void>()) {
             auto attributes =
                 CloneShaderIOAttributes(func_ast->return_type_attributes, do_interpolate);
 
@@ -421,7 +421,7 @@ struct CanonicalizeEntryPointIO::State {
 
         // No existing sample mask builtin was found, so create a new output value
         // using the fixed sample mask.
-        AddOutput("fixed_sample_mask", ctx.dst->create<sem::U32>(), std::nullopt,
+        AddOutput("fixed_sample_mask", ctx.dst->create<type::U32>(), std::nullopt,
                   {ctx.dst->Builtin(ast::BuiltinValue::kSampleMask)},
                   ctx.dst->Expr(u32(cfg.fixed_sample_mask)));
     }
@@ -429,7 +429,7 @@ struct CanonicalizeEntryPointIO::State {
     /// Add a point size builtin to the wrapper function output.
     void AddVertexPointSize() {
         // Create a new output value and assign it a literal 1.0 value.
-        AddOutput("vertex_point_size", ctx.dst->create<sem::F32>(), std::nullopt,
+        AddOutput("vertex_point_size", ctx.dst->create<type::F32>(), std::nullopt,
                   {ctx.dst->Builtin(ast::BuiltinValue::kPointSize)}, ctx.dst->Expr(1_f));
     }
 
@@ -576,7 +576,7 @@ struct CanonicalizeEntryPointIO::State {
         }
 
         // Exit early if there is no shader IO to handle.
-        if (func_sem->Parameters().Length() == 0 && func_sem->ReturnType()->Is<sem::Void>() &&
+        if (func_sem->Parameters().Length() == 0 && func_sem->ReturnType()->Is<type::Void>() &&
             !needs_fixed_sample_mask && !needs_vertex_point_size &&
             cfg.shader_style != ShaderStyle::kGlsl) {
             return;
@@ -604,7 +604,7 @@ struct CanonicalizeEntryPointIO::State {
 
         // Process the return type, and start building the wrapper function body.
         std::function<const ast::Type*()> wrapper_ret_type = [&] { return ctx.dst->ty.void_(); };
-        if (func_sem->ReturnType()->Is<sem::Void>()) {
+        if (func_sem->ReturnType()->Is<type::Void>()) {
             // The function call is just a statement with no result.
             wrapper_body.Push(ctx.dst->CallStmt(call_inner));
         } else {
@@ -754,13 +754,13 @@ struct CanonicalizeEntryPointIO::State {
     /// @returns the converted value which can be assigned to the GLSL builtin
     const ast::Expression* ToGLSLBuiltin(ast::BuiltinValue builtin,
                                          const ast::Expression* value,
-                                         const sem::Type*& type) {
+                                         const type::Type*& type) {
         switch (builtin) {
             case ast::BuiltinValue::kVertexIndex:
             case ast::BuiltinValue::kInstanceIndex:
             case ast::BuiltinValue::kSampleIndex:
             case ast::BuiltinValue::kSampleMask:
-                type = ctx.dst->create<sem::I32>();
+                type = ctx.dst->create<type::I32>();
                 value = ctx.dst->Bitcast(CreateASTTypeFor(ctx, type), value);
                 break;
             default:
@@ -770,17 +770,22 @@ struct CanonicalizeEntryPointIO::State {
     }
 };
 
-void CanonicalizeEntryPointIO::Run(CloneContext& ctx, const DataMap& inputs, DataMap&) const {
+Transform::ApplyResult CanonicalizeEntryPointIO::Apply(const Program* src,
+                                                       const DataMap& inputs,
+                                                       DataMap&) const {
+    ProgramBuilder b;
+    CloneContext ctx{&b, src, /* auto_clone_symbols */ true};
+
     auto* cfg = inputs.Get<Config>();
     if (cfg == nullptr) {
-        ctx.dst->Diagnostics().add_error(
-            diag::System::Transform, "missing transform data for " + std::string(TypeInfo().name));
-        return;
+        b.Diagnostics().add_error(diag::System::Transform,
+                                  "missing transform data for " + std::string(TypeInfo().name));
+        return Program(std::move(b));
     }
 
     // Remove entry point IO attributes from struct declarations.
     // New structures will be created for each entry point, as necessary.
-    for (auto* ty : ctx.src->AST().TypeDecls()) {
+    for (auto* ty : src->AST().TypeDecls()) {
         if (auto* struct_ty = ty->As<ast::Struct>()) {
             for (auto* member : struct_ty->members) {
                 for (auto* attr : member->attributes) {
@@ -792,7 +797,7 @@ void CanonicalizeEntryPointIO::Run(CloneContext& ctx, const DataMap& inputs, Dat
         }
     }
 
-    for (auto* func_ast : ctx.src->AST().Functions()) {
+    for (auto* func_ast : src->AST().Functions()) {
         if (!func_ast->IsEntryPoint()) {
             continue;
         }
@@ -802,6 +807,7 @@ void CanonicalizeEntryPointIO::Run(CloneContext& ctx, const DataMap& inputs, Dat
     }
 
     ctx.Clone();
+    return Program(std::move(b));
 }
 
 CanonicalizeEntryPointIO::Config::Config(ShaderStyle style,

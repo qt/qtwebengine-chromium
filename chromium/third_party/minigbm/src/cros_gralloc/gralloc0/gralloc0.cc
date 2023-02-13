@@ -84,10 +84,10 @@ static int gralloc0_alloc(alloc_device_t *dev, int w, int h, int format, int usa
 	descriptor.reserved_region_size = 0;
 
 	if (!mod->driver->is_supported(&descriptor)) {
-		drv_log("Unsupported combination -- HAL format: %u, HAL usage: %u, "
-			"drv_format: %4.4s, use_flags: %llu\n",
-			format, usage, reinterpret_cast<char *>(&descriptor.drm_format),
-			static_cast<unsigned long long>(descriptor.use_flags));
+		ALOGE("Unsupported combination -- HAL format: %u, HAL usage: %u, "
+		      "drv_format: %4.4s, use_flags: %llu",
+		      format, usage, reinterpret_cast<char *>(&descriptor.drm_format),
+		      static_cast<unsigned long long>(descriptor.use_flags));
 		return -EINVAL;
 	}
 
@@ -160,7 +160,7 @@ static int gralloc0_open(const struct hw_module_t *mod, const char *name, struct
 	}
 
 	if (strcmp(name, GRALLOC_HARDWARE_GPU0)) {
-		drv_log("Incorrect device name - %s.\n", name);
+		ALOGE("Incorrect device name - %s.", name);
 		return -EINVAL;
 	}
 
@@ -247,7 +247,7 @@ static int gralloc0_perform(struct gralloc_module_t const *module, int op, ...)
 		hnd = cros_gralloc_convert_handle(handle);
 		if (!hnd) {
 			va_end(args);
-			drv_log("Invalid handle.\n");
+			ALOGE("Invalid handle.");
 			return -EINVAL;
 		}
 		break;
@@ -351,12 +351,12 @@ static int gralloc0_lock_async(struct gralloc_module_t const *module, buffer_han
 
 	auto hnd = cros_gralloc_convert_handle(handle);
 	if (!hnd) {
-		drv_log("Invalid handle.\n");
+		ALOGE("Invalid handle.");
 		return -EINVAL;
 	}
 
 	if (hnd->droid_format == HAL_PIXEL_FORMAT_YCbCr_420_888) {
-		drv_log("HAL_PIXEL_FORMAT_YCbCr_*_888 format not compatible.\n");
+		ALOGE("HAL_PIXEL_FORMAT_YCbCr_*_888 format not compatible.");
 		return -EINVAL;
 	}
 
@@ -402,13 +402,13 @@ static int gralloc0_lock_async_ycbcr(struct gralloc_module_t const *module, buff
 
 	auto hnd = cros_gralloc_convert_handle(handle);
 	if (!hnd) {
-		drv_log("Invalid handle.\n");
+		ALOGE("Invalid handle.");
 		return -EINVAL;
 	}
 
 	if (!gralloc0_droid_yuv_format(hnd->droid_format) &&
 	    hnd->droid_format != HAL_PIXEL_FORMAT_IMPLEMENTATION_DEFINED) {
-		drv_log("Non-YUV format not compatible.\n");
+		ALOGE("Non-YUV format not compatible.");
 		return -EINVAL;
 	}
 

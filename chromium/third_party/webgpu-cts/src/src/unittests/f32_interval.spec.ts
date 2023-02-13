@@ -8,9 +8,11 @@ import { kValue } from '../webgpu/util/constants.js';
 import {
   absInterval,
   absoluteErrorInterval,
+  acosInterval,
   acoshAlternativeInterval,
   acoshPrimaryInterval,
   additionInterval,
+  asinInterval,
   asinhInterval,
   atanInterval,
   atan2Interval,
@@ -21,13 +23,17 @@ import {
   correctlyRoundedInterval,
   cosInterval,
   coshInterval,
+  crossInterval,
   degreesInterval,
+  distanceInterval,
   divisionInterval,
   dotInterval,
   expInterval,
   exp2Interval,
   F32Interval,
+  faceForwardIntervals,
   floorInterval,
+  fmaInterval,
   fractInterval,
   IntervalBounds,
   inverseSqrtInterval,
@@ -45,6 +51,8 @@ import {
   powInterval,
   quantizeToF16Interval,
   radiansInterval,
+  reflectInterval,
+  refractInterval,
   remainderInterval,
   roundInterval,
   saturateInterval,
@@ -57,10 +65,16 @@ import {
   subtractionInterval,
   tanInterval,
   tanhInterval,
+  toF32Vector,
   truncInterval,
   ulpInterval,
-  crossInterval,
-  toF32Vector,
+  unpack2x16floatInterval,
+  unpack2x16snormInterval,
+  unpack2x16unormInterval,
+  unpack4x8snormInterval,
+  unpack4x8unormInterval,
+  modfInterval,
+  toF32Interval,
 } from '../webgpu/util/f32_interval.js';
 import { hexToF32, hexToF64, oneULP } from '../webgpu/util/math.js';
 
@@ -392,8 +406,8 @@ g.test('span')
     ]
   )
   .fn(t => {
-    const intervals = t.params.intervals.map(x => new F32Interval(...x));
-    const expected = new F32Interval(...t.params.expected);
+    const intervals = t.params.intervals.map(toF32Interval);
+    const expected = toF32Interval(t.params.expected);
 
     const got = F32Interval.span(...intervals);
     t.expect(
@@ -450,7 +464,7 @@ g.test('correctlyRoundedInterval')
     ]
   )
   .fn(t => {
-    const expected = new F32Interval(...t.params.expected);
+    const expected = toF32Interval(t.params.expected);
 
     const got = correctlyRoundedInterval(t.params.value);
     t.expect(
@@ -524,7 +538,7 @@ g.test('absoluteErrorInterval')
     ]
   )
   .fn(t => {
-    const expected = new F32Interval(...t.params.expected);
+    const expected = toF32Interval(t.params.expected);
 
     const got = absoluteErrorInterval(t.params.value, t.params.error);
     t.expect(
@@ -598,7 +612,7 @@ g.test('ulpInterval')
     ]
   )
   .fn(t => {
-    const expected = new F32Interval(...t.params.expected);
+    const expected = toF32Interval(t.params.expected);
 
     const got = ulpInterval(t.params.value, t.params.num_ulp);
     t.expect(
@@ -645,12 +659,41 @@ g.test('absInterval')
     ]
   )
   .fn(t => {
-    const expected = new F32Interval(...t.params.expected);
+    const expected = toF32Interval(t.params.expected);
 
     const got = absInterval(t.params.input);
     t.expect(
       objectEquals(expected, got),
       `absInterval(${t.params.input}) returned ${got}. Expected ${expected}`
+    );
+  });
+
+g.test('acosInterval')
+  .paramsSubcasesOnly<PointToIntervalCase>(
+    // prettier-ignore
+    [
+      // Some of these are hard coded, since the error intervals are difficult to express in a closed human readable
+      // form due to the inherited nature of the errors.
+      //
+      // The acceptance interval @ x = -1 and 1 is kAny, because sqrt(1 - x*x) = sqrt(0), and sqrt is defined in terms of inverseqrt
+      // The acceptance interval @ x = 0 is kAny, because atan2 is not well defined/implemented at 0.
+      { input: kValue.f32.infinity.negative, expected: kAny },
+      { input: kValue.f32.negative.min, expected: kAny },
+      { input: -1, expected: kAny },
+      { input: -1/2, expected: [hexToF32(0x40060290), hexToF32(0x40061294)] },  // ~2π/3
+      { input: 0, expected: kAny },
+      { input: 1/2, expected: [hexToF32(0x3f85fa8f), hexToF32(0x3f861a95)] },  // ~π/3
+      { input: kValue.f32.positive.max, expected: kAny },
+      { input: kValue.f32.infinity.positive, expected: kAny },
+    ]
+  )
+  .fn(t => {
+    const expected = toF32Interval(t.params.expected);
+
+    const got = acosInterval(t.params.input);
+    t.expect(
+      objectEquals(expected, got),
+      `acosInterval(${t.params.input}) returned ${got}. Expected ${expected}`
     );
   });
 
@@ -672,7 +715,7 @@ g.test('acoshAlternativeInterval')
     ]
   )
   .fn(t => {
-    const expected = new F32Interval(...t.params.expected);
+    const expected = toF32Interval(t.params.expected);
 
     const got = acoshAlternativeInterval(t.params.input);
     t.expect(
@@ -699,12 +742,41 @@ g.test('acoshPrimaryInterval')
     ]
   )
   .fn(t => {
-    const expected = new F32Interval(...t.params.expected);
+    const expected = toF32Interval(t.params.expected);
 
     const got = acoshPrimaryInterval(t.params.input);
     t.expect(
       objectEquals(expected, got),
       `acoshInterval(${t.params.input}) returned ${got}. Expected ${expected}`
+    );
+  });
+
+g.test('asinInterval')
+  .paramsSubcasesOnly<PointToIntervalCase>(
+    // prettier-ignore
+    [
+      // Some of these are hard coded, since the error intervals are difficult to express in a closed human readable
+      // form due to the inherited nature of the errors.
+      //
+      // The acceptance interval @ x = -1 and 1 is kAny, because sqrt(1 - x*x) = sqrt(0), and sqrt is defined in terms of inversqrt
+      // The acceptance interval @ x = 0 is kAny, because atan2 is not well defined/implemented at 0.
+      { input: kValue.f32.infinity.negative, expected: kAny },
+      { input: kValue.f32.negative.min, expected: kAny },
+      { input: -1, expected: kAny },
+      { input: -1/2, expected: [hexToF32(0xbf061a99), hexToF32(0xbf05fa8b)] },  // ~-π/6
+      { input: 0, expected: kAny },
+      { input: 1/2, expected: [hexToF32(0x3f05fa8b), hexToF32(0x3f061a99)] },  // ~π/6
+      { input: kValue.f32.positive.max, expected: kAny },
+      { input: kValue.f32.infinity.positive, expected: kAny },
+    ]
+  )
+  .fn(t => {
+    const expected = toF32Interval(t.params.expected);
+
+    const got = asinInterval(t.params.input);
+    t.expect(
+      objectEquals(expected, got),
+      `asinInterval(${t.params.input}) returned ${got}. Expected ${expected}`
     );
   });
 
@@ -724,7 +796,7 @@ g.test('asinhInterval')
     ]
   )
   .fn(t => {
-    const expected = new F32Interval(...t.params.expected);
+    const expected = toF32Interval(t.params.expected);
 
     const got = asinhInterval(t.params.input);
     t.expect(
@@ -754,7 +826,7 @@ g.test('atanInterval')
     };
 
     t.params.expected = applyError(t.params.expected, error);
-    const expected = new F32Interval(...t.params.expected);
+    const expected = toF32Interval(t.params.expected);
 
     const got = atanInterval(t.params.input);
     t.expect(
@@ -781,7 +853,7 @@ g.test('atanhInterval')
     ]
   )
   .fn(t => {
-    const expected = new F32Interval(...t.params.expected);
+    const expected = toF32Interval(t.params.expected);
 
     const got = atanhInterval(t.params.input);
     t.expect(
@@ -824,7 +896,7 @@ g.test('ceilInterval')
     ]
   )
   .fn(t => {
-    const expected = new F32Interval(...t.params.expected);
+    const expected = toF32Interval(t.params.expected);
 
     const got = ceilInterval(t.params.input);
     t.expect(
@@ -858,7 +930,7 @@ g.test('cosInterval')
     };
 
     t.params.expected = applyError(t.params.expected, error);
-    const expected = new F32Interval(...t.params.expected);
+    const expected = toF32Interval(t.params.expected);
 
     const got = cosInterval(t.params.input);
     t.expect(
@@ -883,7 +955,7 @@ g.test('coshInterval')
     ]
   )
   .fn(t => {
-    const expected = new F32Interval(...t.params.expected);
+    const expected = toF32Interval(t.params.expected);
 
     const got = coshInterval(t.params.input);
     t.expect(
@@ -916,7 +988,7 @@ g.test('degreesInterval')
     ]
   )
   .fn(t => {
-    const expected = new F32Interval(...t.params.expected);
+    const expected = toF32Interval(t.params.expected);
 
     const got = degreesInterval(t.params.input);
     t.expect(
@@ -942,7 +1014,7 @@ g.test('expInterval')
     };
 
     t.params.expected = applyError(t.params.expected, error);
-    const expected = new F32Interval(...t.params.expected);
+    const expected = toF32Interval(t.params.expected);
 
     const got = expInterval(t.params.input);
     t.expect(
@@ -968,7 +1040,7 @@ g.test('exp2Interval')
     };
 
     t.params.expected = applyError(t.params.expected, error);
-    const expected = new F32Interval(...t.params.expected);
+    const expected = toF32Interval(t.params.expected);
 
     const got = exp2Interval(t.params.input);
     t.expect(
@@ -1011,7 +1083,7 @@ g.test('floorInterval')
     ]
   )
   .fn(t => {
-    const expected = new F32Interval(...t.params.expected);
+    const expected = toF32Interval(t.params.expected);
 
     const got = floorInterval(t.params.input);
     t.expect(
@@ -1044,7 +1116,7 @@ g.test('fractInterval')
     ]
   )
   .fn(t => {
-    const expected = new F32Interval(...t.params.expected);
+    const expected = toF32Interval(t.params.expected);
 
     const got = fractInterval(t.params.input);
     t.expect(
@@ -1072,7 +1144,7 @@ g.test('inverseSqrtInterval')
     };
 
     t.params.expected = applyError(t.params.expected, error);
-    const expected = new F32Interval(...t.params.expected);
+    const expected = toF32Interval(t.params.expected);
 
     const got = inverseSqrtInterval(t.params.input);
     t.expect(
@@ -1087,7 +1159,9 @@ g.test('lengthIntervalScalar')
     [
       // Some of these are hard coded, since the error intervals are difficult to express in a closed human readable
       // form due to the inherited nature of the errors.
-      {input: 0, expected: kAny },  // ~0
+      //
+      // length(0) = kAny, because length uses sqrt, which is defined as 1/inversesqrt
+      {input: 0, expected: kAny },
       {input: 1.0, expected: [hexToF64(0x3fefffff, 0x70000000), hexToF64(0x3ff00000, 0x90000000)] },  // ~1
       {input: -1.0, expected: [hexToF64(0x3fefffff, 0x70000000), hexToF64(0x3ff00000, 0x90000000)] },  // ~1
       {input: 0.1, expected: [hexToF64(0x3fb99998, 0x90000000), hexToF64(0x3fb9999a, 0x70000000)] },  // ~0.1
@@ -1111,7 +1185,7 @@ g.test('lengthIntervalScalar')
     ]
   )
   .fn(t => {
-    const expected = new F32Interval(...t.params.expected);
+    const expected = toF32Interval(t.params.expected);
 
     const got = lengthInterval(t.params.input);
     t.expect(
@@ -1140,7 +1214,7 @@ g.test('logInterval')
     };
 
     t.params.expected = applyError(t.params.expected, error);
-    const expected = new F32Interval(...t.params.expected);
+    const expected = toF32Interval(t.params.expected);
 
     const got = logInterval(t.params.input);
     t.expect(
@@ -1169,7 +1243,7 @@ g.test('log2Interval')
     };
 
     t.params.expected = applyError(t.params.expected, error);
-    const expected = new F32Interval(...t.params.expected);
+    const expected = toF32Interval(t.params.expected);
 
     const got = log2Interval(t.params.input);
     t.expect(
@@ -1206,7 +1280,7 @@ g.test('negationInterval')
     ]
   )
   .fn(t => {
-    const expected = new F32Interval(...t.params.expected);
+    const expected = toF32Interval(t.params.expected);
 
     const got = negationInterval(t.params.input);
     t.expect(
@@ -1225,13 +1299,13 @@ g.test('quantizeToF16Interval')
       { input: -1, expected: [-1] },
       { input: -0.1, expected: [hexToF32(0xbdcce000), hexToF32(0xbdccc000)] },  // ~-0.1
       { input: kValue.f16.negative.max, expected: [kValue.f16.negative.max] },
-      { input: kValue.f16.subnormal.negative.min, expected: [kValue.f16.subnormal.negative.min] },
-      { input: kValue.f16.subnormal.negative.max, expected: [kValue.f16.subnormal.negative.max] },
+      { input: kValue.f16.subnormal.negative.min, expected: [kValue.f16.subnormal.negative.min, 0] },
+      { input: kValue.f16.subnormal.negative.max, expected: [kValue.f16.subnormal.negative.max, 0] },
       { input: kValue.f32.subnormal.negative.max, expected: [kValue.f16.subnormal.negative.max, 0] },
       { input: 0, expected: [0] },
       { input: kValue.f32.subnormal.positive.min, expected: [0, kValue.f16.subnormal.positive.min] },
-      { input: kValue.f16.subnormal.positive.min, expected: [kValue.f16.subnormal.positive.min] },
-      { input: kValue.f16.subnormal.positive.max, expected: [kValue.f16.subnormal.positive.max] },
+      { input: kValue.f16.subnormal.positive.min, expected: [0, kValue.f16.subnormal.positive.min] },
+      { input: kValue.f16.subnormal.positive.max, expected: [0, kValue.f16.subnormal.positive.max] },
       { input: kValue.f16.positive.min, expected: [kValue.f16.positive.min] },
       { input: 0.1, expected: [hexToF32(0x3dccc000), hexToF32(0x3dcce000)] },  // ~0.1
       { input: 1, expected: [1] },
@@ -1241,7 +1315,7 @@ g.test('quantizeToF16Interval')
     ]
   )
   .fn(t => {
-    const expected = new F32Interval(...t.params.expected);
+    const expected = toF32Interval(t.params.expected);
 
     const got = quantizeToF16Interval(t.params.input);
     t.expect(
@@ -1272,7 +1346,7 @@ g.test('radiansInterval')
     ]
   )
   .fn(t => {
-    const expected = new F32Interval(...t.params.expected);
+    const expected = toF32Interval(t.params.expected);
 
     const got = radiansInterval(t.params.input);
     t.expect(
@@ -1319,7 +1393,7 @@ g.test('roundInterval')
     ]
   )
   .fn(t => {
-    const expected = new F32Interval(...t.params.expected);
+    const expected = toF32Interval(t.params.expected);
 
     const got = roundInterval(t.params.input);
     t.expect(
@@ -1358,7 +1432,7 @@ g.test('saturateInterval')
     ]
   )
   .fn(t => {
-    const expected = new F32Interval(...t.params.expected);
+    const expected = toF32Interval(t.params.expected);
 
     const got = saturateInterval(t.params.input);
     t.expect(
@@ -1391,7 +1465,7 @@ g.test('signInterval')
     ]
   )
   .fn(t => {
-    const expected = new F32Interval(...t.params.expected);
+    const expected = toF32Interval(t.params.expected);
 
     const got = signInterval(t.params.input);
     t.expect(
@@ -1423,7 +1497,7 @@ g.test('sinInterval')
     };
 
     t.params.expected = applyError(t.params.expected, error);
-    const expected = new F32Interval(...t.params.expected);
+    const expected = toF32Interval(t.params.expected);
 
     const got = sinInterval(t.params.input);
     t.expect(
@@ -1448,7 +1522,7 @@ g.test('sinhInterval')
     ]
   )
   .fn(t => {
-    const expected = new F32Interval(...t.params.expected);
+    const expected = toF32Interval(t.params.expected);
 
     const got = sinhInterval(t.params.input);
     t.expect(
@@ -1473,7 +1547,7 @@ g.test('sqrtInterval')
     ]
   )
   .fn(t => {
-    const expected = new F32Interval(...t.params.expected);
+    const expected = toF32Interval(t.params.expected);
 
     const got = sqrtInterval(t.params.input);
     t.expect(
@@ -1507,7 +1581,7 @@ g.test('tanInterval')
     ]
   )
   .fn(t => {
-    const expected = new F32Interval(...t.params.expected);
+    const expected = toF32Interval(t.params.expected);
 
     const got = tanInterval(t.params.input);
     t.expect(
@@ -1532,7 +1606,7 @@ g.test('tanhInterval')
     ]
   )
   .fn(t => {
-    const expected = new F32Interval(...t.params.expected);
+    const expected = toF32Interval(t.params.expected);
 
     const got = tanhInterval(t.params.input);
     t.expect(
@@ -1573,7 +1647,7 @@ g.test('truncInterval')
     ]
   )
   .fn(t => {
-    const expected = new F32Interval(...t.params.expected);
+    const expected = toF32Interval(t.params.expected);
 
     const got = truncInterval(t.params.input);
     t.expect(
@@ -1637,7 +1711,7 @@ g.test('additionInterval')
   )
   .fn(t => {
     const [x, y] = t.params.input;
-    const expected = new F32Interval(...t.params.expected);
+    const expected = toF32Interval(t.params.expected);
 
     const got = additionInterval(x, y);
     t.expect(
@@ -1692,12 +1766,63 @@ g.test('atan2Interval')
   )
   .fn(t => {
     const [y, x] = t.params.input;
-    const expected = new F32Interval(...t.params.expected);
+    const expected = toF32Interval(t.params.expected);
 
     const got = atan2Interval(y, x);
     t.expect(
       objectEquals(expected, got),
       `atan2Interval(${y}, ${x}) returned ${got}. Expected ${expected}`
+    );
+  });
+
+g.test('distanceIntervalScalar')
+  .paramsSubcasesOnly<BinaryToIntervalCase>(
+    // prettier-ignore
+    [
+      // Some of these are hard coded, since the error intervals are difficult
+      // to express in a closed human readable  form due to the inherited nature
+      // of the errors.
+      //
+      // distance(x, y), where x - y = 0 has an acceptance interval of kAny,
+      // because distance(x, y) = length(x - y), and length(0) = kAny
+      { input: [0, 0], expected: kAny },
+      { input: [1.0, 0], expected: [hexToF64(0x3fefffff, 0x70000000), hexToF64(0x3ff00000, 0x90000000)] },  // ~1
+      { input: [0.0, 1.0], expected: [hexToF64(0x3fefffff, 0x70000000), hexToF64(0x3ff00000, 0x90000000)] },  // ~1
+      { input: [1.0, 1.0], expected: kAny },
+      { input: [-0.0, -1.0], expected: [hexToF64(0x3fefffff, 0x70000000), hexToF64(0x3ff00000, 0x90000000)] },  // ~1
+      { input: [0.0, -1.0], expected: [hexToF64(0x3fefffff, 0x70000000), hexToF64(0x3ff00000, 0x90000000)] },  // ~1
+      { input: [-1.0, -1.0], expected: kAny },
+      { input: [0.1, 0], expected: [hexToF64(0x3fb99998, 0x90000000), hexToF64(0x3fb9999a, 0x70000000)] },  // ~0.1
+      { input: [0, 0.1], expected: [hexToF64(0x3fb99998, 0x90000000), hexToF64(0x3fb9999a, 0x70000000)] },  // ~0.1
+      { input: [-0.1, 0], expected: [hexToF64(0x3fb99998, 0x90000000), hexToF64(0x3fb9999a, 0x70000000)] },  // ~0.1
+      { input: [0, -0.1], expected: [hexToF64(0x3fb99998, 0x90000000), hexToF64(0x3fb9999a, 0x70000000)] },  // ~0.1
+      { input: [10.0, 0], expected: [hexToF64(0x4023ffff, 0x70000000), hexToF64(0x40240000, 0xb0000000)] },  // ~10
+      { input: [0, 10.0], expected: [hexToF64(0x4023ffff, 0x70000000), hexToF64(0x40240000, 0xb0000000)] },  // ~10
+      { input: [-10.0, 0], expected: [hexToF64(0x4023ffff, 0x70000000), hexToF64(0x40240000, 0xb0000000)] },  // ~10
+      { input: [0, -10.0], expected: [hexToF64(0x4023ffff, 0x70000000), hexToF64(0x40240000, 0xb0000000)] },  // ~10
+
+      // Subnormal Cases
+      { input: [kValue.f32.subnormal.negative.min, 0], expected: kAny },
+      { input: [kValue.f32.subnormal.negative.max, 0], expected: kAny },
+      { input: [kValue.f32.subnormal.positive.min, 0], expected: kAny },
+      { input: [kValue.f32.subnormal.positive.max, 0], expected: kAny },
+
+      // Edge cases
+      { input: [kValue.f32.infinity.positive, 0], expected: kAny },
+      { input: [kValue.f32.infinity.negative, 0], expected: kAny },
+      { input: [kValue.f32.negative.min, 0], expected: kAny },
+      { input: [kValue.f32.negative.max, 0], expected: kAny },
+      { input: [kValue.f32.positive.min, 0], expected: kAny },
+      { input: [kValue.f32.positive.max, 0], expected: kAny },
+    ]
+  )
+  .fn(t => {
+    const expected = toF32Interval(t.params.expected);
+
+    const got = distanceInterval(...t.params.input);
+    t.expect(
+      objectEquals(expected, got),
+      `distanceInterval(${t.params.input[0]}, ${t.params.input[1]}) returned ${got}. Expected ${expected}`
     );
   });
 
@@ -1744,7 +1869,7 @@ g.test('divisionInterval')
 
     const [x, y] = t.params.input;
     t.params.expected = applyError(t.params.expected, error);
-    const expected = new F32Interval(...t.params.expected);
+    const expected = toF32Interval(t.params.expected);
 
     const got = divisionInterval(x, y);
     t.expect(
@@ -1793,7 +1918,7 @@ g.test('ldexpInterval')
   )
   .fn(t => {
     const [x, y] = t.params.input;
-    const expected = new F32Interval(...t.params.expected);
+    const expected = toF32Interval(t.params.expected);
 
     const got = ldexpInterval(x, y);
     t.expect(
@@ -1850,7 +1975,7 @@ g.test('maxInterval')
   )
   .fn(t => {
     const [x, y] = t.params.input;
-    const expected = new F32Interval(...t.params.expected);
+    const expected = toF32Interval(t.params.expected);
 
     const got = maxInterval(x, y);
     t.expect(
@@ -1907,7 +2032,7 @@ g.test('minInterval')
   )
   .fn(t => {
     const [x, y] = t.params.input;
-    const expected = new F32Interval(...t.params.expected);
+    const expected = toF32Interval(t.params.expected);
 
     const got = minInterval(x, y);
     t.expect(
@@ -1970,7 +2095,7 @@ g.test('multiplicationInterval')
   )
   .fn(t => {
     const [x, y] = t.params.input;
-    const expected = new F32Interval(...t.params.expected);
+    const expected = toF32Interval(t.params.expected);
 
     const got = multiplicationInterval(x, y);
     t.expect(
@@ -2021,7 +2146,7 @@ g.test('remainderInterval')
   )
   .fn(t => {
     const [x, y] = t.params.input;
-    const expected = new F32Interval(...t.params.expected);
+    const expected = toF32Interval(t.params.expected);
 
     const got = remainderInterval(x, y);
     t.expect(
@@ -2054,7 +2179,7 @@ g.test('powInterval')
   )
   .fn(t => {
     const [x, y] = t.params.input;
-    const expected = new F32Interval(...t.params.expected);
+    const expected = toF32Interval(t.params.expected);
 
     const got = powInterval(x, y);
     t.expect(
@@ -2131,7 +2256,7 @@ g.test('stepInterval')
   )
   .fn(t => {
     const [edge, x] = t.params.input;
-    const expected = new F32Interval(...t.params.expected);
+    const expected = toF32Interval(t.params.expected);
 
     const got = stepInterval(edge, x);
     t.expect(
@@ -2188,7 +2313,7 @@ g.test('subtractionInterval')
   )
   .fn(t => {
     const [x, y] = t.params.input;
-    const expected = new F32Interval(...t.params.expected);
+    const expected = toF32Interval(t.params.expected);
 
     const got = subtractionInterval(x, y);
     t.expect(
@@ -2244,7 +2369,7 @@ g.test('clampMedianInterval')
   )
   .fn(t => {
     const [x, y, z] = t.params.input;
-    const expected = new F32Interval(...t.params.expected);
+    const expected = toF32Interval(t.params.expected);
 
     const got = clampMedianInterval(x, y, z);
     t.expect(
@@ -2295,12 +2420,62 @@ g.test('clampMinMaxInterval')
   )
   .fn(t => {
     const [x, y, z] = t.params.input;
-    const expected = new F32Interval(...t.params.expected);
+    const expected = toF32Interval(t.params.expected);
 
     const got = clampMinMaxInterval(x, y, z);
     t.expect(
       objectEquals(expected, got),
       `clampMinMaxInterval(${x}, ${y}, ${z}) returned ${got}. Expected ${expected}`
+    );
+  });
+
+g.test('fmaInterval')
+  .paramsSubcasesOnly<TernaryToIntervalCase>(
+    // prettier-ignore
+    [
+      // Normals
+      { input: [0, 0, 0], expected: [0] },
+      { input: [1, 0, 0], expected: [0] },
+      { input: [0, 1, 0], expected: [0] },
+      { input: [0, 0, 1], expected: [1] },
+      { input: [1, 0, 1], expected: [1] },
+      { input: [1, 1, 0], expected: [1] },
+      { input: [0, 1, 1], expected: [1] },
+      { input: [1, 1, 1], expected: [2] },
+      { input: [1, 10, 100], expected: [110] },
+      { input: [10, 1, 100], expected: [110] },
+      { input: [100, 1, 10], expected: [110] },
+      { input: [-10, 1, 100], expected: [90] },
+      { input: [10, 1, -100], expected: [-90] },
+      { input: [-10, 1, -100], expected: [-110] },
+      { input: [-10, -10, -10], expected: [90] },
+
+      // Subnormals
+      { input: [kValue.f32.subnormal.positive.max, 0, 0], expected: [0] },
+      { input: [0, kValue.f32.subnormal.positive.max, 0], expected: [0] },
+      { input: [0, 0, kValue.f32.subnormal.positive.max], expected: [0, kValue.f32.subnormal.positive.max] },
+      { input: [kValue.f32.subnormal.positive.max, 0, kValue.f32.subnormal.positive.max], expected: [0, kValue.f32.subnormal.positive.max] },
+      { input: [kValue.f32.subnormal.positive.max, kValue.f32.subnormal.positive.max, 0], expected: [0, kValue.f32.subnormal.positive.min] },
+      { input: [0, kValue.f32.subnormal.positive.max, kValue.f32.subnormal.positive.max], expected: [0, kValue.f32.subnormal.positive.max] },
+      { input: [kValue.f32.subnormal.positive.max, kValue.f32.subnormal.positive.max, kValue.f32.subnormal.positive.max], expected: [0, kValue.f32.positive.min] },
+      { input: [kValue.f32.subnormal.positive.max, kValue.f32.subnormal.positive.min, kValue.f32.subnormal.negative.max], expected: [kValue.f32.subnormal.negative.max, kValue.f32.subnormal.positive.min] },
+      { input: [kValue.f32.subnormal.positive.max, kValue.f32.subnormal.negative.min, kValue.f32.subnormal.negative.max], expected: [hexToF32(0x80000002), 0] },
+
+      // Infinities
+      { input: [0, 1, kValue.f32.infinity.positive], expected: kAny },
+      { input: [0, kValue.f32.infinity.positive, kValue.f32.infinity.positive], expected: kAny },
+      { input: [kValue.f32.infinity.negative, kValue.f32.infinity.positive, kValue.f32.infinity.positive], expected: kAny },
+      { input: [kValue.f32.infinity.negative, kValue.f32.infinity.positive, kValue.f32.infinity.negative], expected: kAny },
+      { input: [kValue.f32.positive.max, kValue.f32.positive.max, kValue.f32.subnormal.positive.min], expected: kAny },
+    ]
+  )
+  .fn(t => {
+    const expected = toF32Interval(t.params.expected);
+
+    const got = fmaInterval(...t.params.input);
+    t.expect(
+      objectEquals(expected, got),
+      `fmaInterval(${t.params.input.join(',')}) returned ${got}. Expected ${expected}`
     );
   });
 
@@ -2373,7 +2548,7 @@ g.test('mixImpreciseInterval')
   )
   .fn(t => {
     const [x, y, z] = t.params.input;
-    const expected = new F32Interval(...t.params.expected);
+    const expected = toF32Interval(t.params.expected);
 
     const got = mixImpreciseInterval(x, y, z);
     t.expect(
@@ -2451,7 +2626,7 @@ g.test('mixPreciseInterval')
   )
   .fn(t => {
     const [x, y, z] = t.params.input;
-    const expected = new F32Interval(...t.params.expected);
+    const expected = toF32Interval(t.params.expected);
 
     const got = mixPreciseInterval(x, y, z);
     t.expect(
@@ -2505,7 +2680,7 @@ g.test('smoothStepInterval')
   )
   .fn(t => {
     const [low, high, x] = t.params.input;
-    const expected = new F32Interval(...t.params.expected);
+    const expected = toF32Interval(t.params.expected);
 
     const got = smoothStepInterval(low, high, x);
     t.expect(
@@ -2513,6 +2688,207 @@ g.test('smoothStepInterval')
       `smoothStepInterval(${low}, ${high}, ${x}) returned ${got}. Expected ${expected}`
     );
   });
+
+interface PointToVectorCase {
+  input: number;
+  expected: IntervalBounds[];
+}
+
+// Scope for unpack* tests so that they can have constants for magic numbers
+// that don't pollute the global namespace or have unwieldy long names.
+{
+  const kZeroBounds: IntervalBounds = [hexToF32(0x81200000), hexToF32(0x01200000)];
+  const kOneBoundsSnorm: IntervalBounds = [
+    hexToF64(0x3fefffff, 0xa0000000),
+    hexToF64(0x3ff00000, 0x40000000),
+  ];
+  const kOneBoundsUnorm: IntervalBounds = [
+    hexToF64(0x3fefffff, 0xb0000000),
+    hexToF64(0x3ff00000, 0x28000000),
+  ];
+  const kNegOneBoundsSnorm: IntervalBounds = [
+    hexToF64(0xbff00000, 0x00000000),
+    hexToF64(0xbfefffff, 0xa0000000),
+  ];
+
+  const kHalfBounds2x16snorm: IntervalBounds = [
+    hexToF64(0x3fe0001f, 0xa0000000),
+    hexToF64(0x3fe00020, 0x80000000),
+  ]; // ~0.5..., due to lack of precision in i16
+  const kNegHalfBounds2x16snorm: IntervalBounds = [
+    hexToF64(0xbfdfffc0, 0x60000000),
+    hexToF64(0xbfdfffbf, 0x80000000),
+  ]; // ~-0.5..., due to lack of precision in i16
+
+  g.test('unpack2x16snormInterval')
+    .paramsSubcasesOnly<PointToVectorCase>(
+      // prettier-ignore
+      [
+        // Some of these are hard coded, since the error intervals are difficult to express in a closed human readable
+        // form due to the inherited nature of the errors.
+        { input: 0x00000000, expected: [kZeroBounds, kZeroBounds] },
+        { input: 0x00007fff, expected: [kOneBoundsSnorm, kZeroBounds] },
+        { input: 0x7fff0000, expected: [kZeroBounds, kOneBoundsSnorm] },
+        { input: 0x7fff7fff, expected: [kOneBoundsSnorm, kOneBoundsSnorm] },
+        { input: 0x80018001, expected: [kNegOneBoundsSnorm, kNegOneBoundsSnorm] },
+        { input: 0x40004000, expected: [kHalfBounds2x16snorm, kHalfBounds2x16snorm] },
+        { input: 0xc001c001, expected: [kNegHalfBounds2x16snorm, kNegHalfBounds2x16snorm] },
+      ]
+    )
+    .fn(t => {
+      const expected = toF32Vector(t.params.expected);
+
+      const got = unpack2x16snormInterval(t.params.input);
+
+      t.expect(
+        objectEquals(expected, got),
+        `unpack2x16snormInterval(${t.params.input}) returned [${got}]. Expected [${expected}]`
+      );
+    });
+
+  g.test('unpack2x16floatInterval')
+    .paramsSubcasesOnly<PointToVectorCase>(
+      // prettier-ignore
+      [
+        // Some of these are hard coded, since the error intervals are difficult to express in a closed human readable
+        // form due to the inherited nature of the errors.
+        // f16 normals
+        { input: 0x00000000, expected: [[0], [0]] },
+        { input: 0x80000000, expected: [[0], [0]] },
+        { input: 0x00008000, expected: [[0], [0]] },
+        { input: 0x80008000, expected: [[0], [0]] },
+        { input: 0x00003c00, expected: [[1], [0]] },
+        { input: 0x3c000000, expected: [[0], [1]] },
+        { input: 0x3c003c00, expected: [[1], [1]] },
+        { input: 0xbc00bc00, expected: [[-1], [-1]] },
+        { input: 0x49004900, expected: [[10], [10]] },
+        { input: 0xc900c900, expected: [[-10], [-10]] },
+
+        // f16 subnormals
+        { input: 0x000003ff, expected: [[0, kValue.f16.subnormal.positive.max], [0]] },
+        { input: 0x000083ff, expected: [[kValue.f16.subnormal.negative.min, 0], [0]] },
+
+        // f16 out of bounds
+        { input: 0x7c000000, expected: [kAny, kAny] },
+        { input: 0xffff0000, expected: [kAny, kAny] },
+      ]
+    )
+    .fn(t => {
+      const expected = toF32Vector(t.params.expected);
+
+      const got = unpack2x16floatInterval(t.params.input);
+
+      t.expect(
+        objectEquals(expected, got),
+        `unpack2x16floatInterval(${t.params.input}) returned [${got}]. Expected [${expected}]`
+      );
+    });
+
+  const kHalfBounds2x16unorm: IntervalBounds = [
+    hexToF64(0x3fe0000f, 0xb0000000),
+    hexToF64(0x3fe00010, 0x70000000),
+  ]; // ~0.5..., due to lack of precision in u16
+
+  g.test('unpack2x16unormInterval')
+    .paramsSubcasesOnly<PointToVectorCase>(
+      // prettier-ignore
+      [
+      // Some of these are hard coded, since the error intervals are difficult to express in a closed human readable
+      // form due to the inherited nature of the errors.
+      { input: 0x00000000, expected: [kZeroBounds, kZeroBounds] },
+      { input: 0x0000ffff, expected: [kOneBoundsUnorm, kZeroBounds] },
+      { input: 0xffff0000, expected: [kZeroBounds, kOneBoundsUnorm] },
+      { input: 0xffffffff, expected: [kOneBoundsUnorm, kOneBoundsUnorm] },
+      { input: 0x80008000, expected: [kHalfBounds2x16unorm, kHalfBounds2x16unorm] },
+    ]
+    )
+    .fn(t => {
+      const expected = toF32Vector(t.params.expected);
+
+      const got = unpack2x16unormInterval(t.params.input);
+
+      t.expect(
+        objectEquals(expected, got),
+        `unpack2x16unormInterval(${t.params.input}) returned [${got}]. Expected [${expected}]`
+      );
+    });
+
+  const kHalfBounds4x8snorm: IntervalBounds = [
+    hexToF64(0x3fe02040, 0x20000000),
+    hexToF64(0x3fe02041, 0x00000000),
+  ]; // ~0.50196..., due to lack of precision in i8
+  const kNegHalfBounds4x8snorm: IntervalBounds = [
+    hexToF64(0xbfdfbf7f, 0x60000000),
+    hexToF64(0xbfdfbf7e, 0x80000000),
+  ]; // ~-0.49606..., due to lack of precision in i8
+
+  g.test('unpack4x8snormInterval')
+    .paramsSubcasesOnly<PointToVectorCase>(
+      // prettier-ignore
+      [
+        // Some of these are hard coded, since the error intervals are difficult to express in a closed human readable
+        // form due to the inherited nature of the errors.
+        { input: 0x00000000, expected: [kZeroBounds, kZeroBounds, kZeroBounds, kZeroBounds] },
+        { input: 0x0000007f, expected: [kOneBoundsSnorm, kZeroBounds, kZeroBounds, kZeroBounds] },
+        { input: 0x00007f00, expected: [kZeroBounds, kOneBoundsSnorm, kZeroBounds, kZeroBounds] },
+        { input: 0x007f0000, expected: [kZeroBounds, kZeroBounds, kOneBoundsSnorm, kZeroBounds] },
+        { input: 0x7f000000, expected: [kZeroBounds, kZeroBounds, kZeroBounds, kOneBoundsSnorm] },
+        { input: 0x00007f7f, expected: [kOneBoundsSnorm, kOneBoundsSnorm, kZeroBounds, kZeroBounds] },
+        { input: 0x7f7f0000, expected: [kZeroBounds, kZeroBounds, kOneBoundsSnorm, kOneBoundsSnorm] },
+        { input: 0x7f007f00, expected: [kZeroBounds, kOneBoundsSnorm, kZeroBounds, kOneBoundsSnorm] },
+        { input: 0x007f007f, expected: [kOneBoundsSnorm, kZeroBounds, kOneBoundsSnorm, kZeroBounds] },
+        { input: 0x7f7f7f7f, expected: [kOneBoundsSnorm, kOneBoundsSnorm, kOneBoundsSnorm, kOneBoundsSnorm] },
+        { input: 0x81818181, expected: [kNegOneBoundsSnorm, kNegOneBoundsSnorm, kNegOneBoundsSnorm, kNegOneBoundsSnorm] },
+        { input: 0x40404040, expected: [kHalfBounds4x8snorm, kHalfBounds4x8snorm, kHalfBounds4x8snorm, kHalfBounds4x8snorm] },
+        { input: 0xc1c1c1c1, expected: [kNegHalfBounds4x8snorm, kNegHalfBounds4x8snorm, kNegHalfBounds4x8snorm, kNegHalfBounds4x8snorm] },
+      ]
+    )
+    .fn(t => {
+      const expected = toF32Vector(t.params.expected);
+
+      const got = unpack4x8snormInterval(t.params.input);
+
+      t.expect(
+        objectEquals(expected, got),
+        `unpack4x8snormInterval(${t.params.input}) returned [${got}]. Expected [${expected}]`
+      );
+    });
+
+  const kHalfBounds4x8unorm: IntervalBounds = [
+    hexToF64(0x3fe0100f, 0xb0000000),
+    hexToF64(0x3fe01010, 0x70000000),
+  ]; // ~0.50196..., due to lack of precision in u8
+
+  g.test('unpack4x8unormInterval')
+    .paramsSubcasesOnly<PointToVectorCase>(
+      // prettier-ignore
+      [
+        // Some of these are hard coded, since the error intervals are difficult to express in a closed human readable
+        // form due to the inherited nature of the errors.
+        { input: 0x00000000, expected: [kZeroBounds, kZeroBounds, kZeroBounds, kZeroBounds] },
+        { input: 0x000000ff, expected: [kOneBoundsUnorm, kZeroBounds, kZeroBounds, kZeroBounds] },
+        { input: 0x0000ff00, expected: [kZeroBounds, kOneBoundsUnorm, kZeroBounds, kZeroBounds] },
+        { input: 0x00ff0000, expected: [kZeroBounds, kZeroBounds, kOneBoundsUnorm, kZeroBounds] },
+        { input: 0xff000000, expected: [kZeroBounds, kZeroBounds, kZeroBounds, kOneBoundsUnorm] },
+        { input: 0x0000ffff, expected: [kOneBoundsUnorm, kOneBoundsUnorm, kZeroBounds, kZeroBounds] },
+        { input: 0xffff0000, expected: [kZeroBounds, kZeroBounds, kOneBoundsUnorm, kOneBoundsUnorm] },
+        { input: 0xff00ff00, expected: [kZeroBounds, kOneBoundsUnorm, kZeroBounds, kOneBoundsUnorm] },
+        { input: 0x00ff00ff, expected: [kOneBoundsUnorm, kZeroBounds, kOneBoundsUnorm, kZeroBounds] },
+        { input: 0xffffffff, expected: [kOneBoundsUnorm, kOneBoundsUnorm, kOneBoundsUnorm, kOneBoundsUnorm] },
+        { input: 0x80808080, expected: [kHalfBounds4x8unorm, kHalfBounds4x8unorm, kHalfBounds4x8unorm, kHalfBounds4x8unorm] },
+      ]
+    )
+    .fn(t => {
+      const expected = toF32Vector(t.params.expected);
+
+      const got = unpack4x8unormInterval(t.params.input);
+
+      t.expect(
+        objectEquals(expected, got),
+        `unpack4x8unormInterval(${t.params.input}) returned [${got}]. Expected [${expected}]`
+      );
+    });
+}
 
 interface VectorToIntervalCase {
   input: number[];
@@ -2554,7 +2930,7 @@ g.test('lengthIntervalVector')
     ]
   )
   .fn(t => {
-    const expected = new F32Interval(...t.params.expected);
+    const expected = toF32Interval(t.params.expected);
 
     const got = lengthInterval(t.params.input);
     t.expect(
@@ -2567,6 +2943,69 @@ interface VectorPairToIntervalCase {
   input: [number[], number[]];
   expected: IntervalBounds;
 }
+
+g.test('distanceIntervalVector')
+  .paramsSubcasesOnly<VectorPairToIntervalCase>(
+    // prettier-ignore
+    [
+      // Some of these are hard coded, since the error intervals are difficult
+      // to express in a closed human readable form due to the inherited nature
+      // of the errors.
+      //
+      // distance(x, y), where x - y = 0 has an acceptance interval of kAny,
+      // because distance(x, y) = length(x - y), and length(0) = kAny
+
+      // vec2
+      { input: [[1.0, 0.0], [1.0, 0.0]], expected: kAny },
+      { input: [[1.0, 0.0], [0.0, 0.0]], expected: [hexToF64(0x3fefffff, 0x70000000), hexToF64(0x3ff00000, 0x90000000)] },  // ~1
+      { input: [[0.0, 0.0], [1.0, 0.0]], expected: [hexToF64(0x3fefffff, 0x70000000), hexToF64(0x3ff00000, 0x90000000)] },  // ~1
+      { input: [[-1.0, 0.0], [0.0, 0.0]], expected: [hexToF64(0x3fefffff, 0x70000000), hexToF64(0x3ff00000, 0x90000000)] },  // ~1
+      { input: [[0.0, 0.0], [-1.0, 0.0]], expected: [hexToF64(0x3fefffff, 0x70000000), hexToF64(0x3ff00000, 0x90000000)] },  // ~1
+      { input: [[0.0, 1.0], [-1.0, 0.0]], expected: [hexToF64(0x3ff6a09d, 0xb0000000), hexToF64(0x3ff6a09f, 0x10000000)] },  // ~√2
+      { input: [[0.1, 0.0], [0.0, 0.0]], expected: [hexToF64(0x3fb99998, 0x90000000), hexToF64(0x3fb9999a, 0x70000000)] },  // ~0.1
+
+      // vec3
+      { input: [[1.0, 0.0, 0.0], [1.0, 0.0, 0.0]], expected: kAny },
+      { input: [[1.0, 0.0, 0.0], [0.0, 0.0, 0.0]], expected: [hexToF64(0x3fefffff, 0x70000000), hexToF64(0x3ff00000, 0x90000000)] },  // ~1
+      { input: [[0.0, 1.0, 0.0], [0.0, 0.0, 0.0]], expected: [hexToF64(0x3fefffff, 0x70000000), hexToF64(0x3ff00000, 0x90000000)] },  // ~1
+      { input: [[0.0, 0.0, 1.0], [0.0, 0.0, 0.0]], expected: [hexToF64(0x3fefffff, 0x70000000), hexToF64(0x3ff00000, 0x90000000)] },  // ~1
+      { input: [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]], expected: [hexToF64(0x3fefffff, 0x70000000), hexToF64(0x3ff00000, 0x90000000)] },  // ~1
+      { input: [[0.0, 0.0, 0.0], [0.0, 1.0, 0.0]], expected: [hexToF64(0x3fefffff, 0x70000000), hexToF64(0x3ff00000, 0x90000000)] },  // ~1
+      { input: [[0.0, 0.0, 0.0], [0.0, 0.0, 1.0]], expected: [hexToF64(0x3fefffff, 0x70000000), hexToF64(0x3ff00000, 0x90000000)] },  // ~1
+      { input: [[1.0, 1.0, 1.0], [0.0, 0.0, 0.0]], expected: [hexToF64(0x3ffbb67a, 0x10000000), hexToF64(0x3ffbb67b, 0xb0000000)] },  // ~√3
+      { input: [[0.0, 0.0, 0.0], [1.0, 1.0, 1.0]], expected: [hexToF64(0x3ffbb67a, 0x10000000), hexToF64(0x3ffbb67b, 0xb0000000)] },  // ~√3
+      { input: [[-1.0, -1.0, -1.0], [0.0, 0.0, 0.0]], expected: [hexToF64(0x3ffbb67a, 0x10000000), hexToF64(0x3ffbb67b, 0xb0000000)] },  // ~√3
+      { input: [[0.0, 0.0, 0.0], [-1.0, -1.0, -1.0]], expected: [hexToF64(0x3ffbb67a, 0x10000000), hexToF64(0x3ffbb67b, 0xb0000000)] },  // ~√3
+      { input: [[0.1, 0.0, 0.0], [0.0, 0.0, 0.0]], expected: [hexToF64(0x3fb99998, 0x90000000), hexToF64(0x3fb9999a, 0x70000000)] },  // ~0.1
+      { input: [[0.0, 0.0, 0.0], [0.1, 0.0, 0.0]], expected: [hexToF64(0x3fb99998, 0x90000000), hexToF64(0x3fb9999a, 0x70000000)] },  // ~0.1
+
+      // vec4
+      { input: [[1.0, 0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0]], expected: kAny },
+      { input: [[1.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0]], expected: [hexToF64(0x3fefffff, 0x70000000), hexToF64(0x3ff00000, 0x90000000)] },  // ~1
+      { input: [[0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0]], expected: [hexToF64(0x3fefffff, 0x70000000), hexToF64(0x3ff00000, 0x90000000)] },  // ~1
+      { input: [[0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 0.0]], expected: [hexToF64(0x3fefffff, 0x70000000), hexToF64(0x3ff00000, 0x90000000)] },  // ~1
+      { input: [[0.0, 0.0, 0.0, 1.0], [0.0, 0.0, 0.0, 0.0]], expected: [hexToF64(0x3fefffff, 0x70000000), hexToF64(0x3ff00000, 0x90000000)] },  // ~1
+      { input: [[0.0, 0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0]], expected: [hexToF64(0x3fefffff, 0x70000000), hexToF64(0x3ff00000, 0x90000000)] },  // ~1
+      { input: [[0.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0]], expected: [hexToF64(0x3fefffff, 0x70000000), hexToF64(0x3ff00000, 0x90000000)] },  // ~1
+      { input: [[0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0]], expected: [hexToF64(0x3fefffff, 0x70000000), hexToF64(0x3ff00000, 0x90000000)] },  // ~1
+      { input: [[0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 1.0]], expected: [hexToF64(0x3fefffff, 0x70000000), hexToF64(0x3ff00000, 0x90000000)] },  // ~1
+      { input: [[1.0, 1.0, 1.0, 1.0], [0.0, 0.0, 0.0, 0.0]], expected: [hexToF64(0x3fffffff, 0x70000000), hexToF64(0x40000000, 0x90000000)] },  // ~2
+      { input: [[0.0, 0.0, 0.0, 0.0], [1.0, 1.0, 1.0, 1.0]], expected: [hexToF64(0x3fffffff, 0x70000000), hexToF64(0x40000000, 0x90000000)] },  // ~2
+      { input: [[-1.0, 1.0, -1.0, 1.0], [0.0, 0.0, 0.0, 0.0]], expected: [hexToF64(0x3fffffff, 0x70000000), hexToF64(0x40000000, 0x90000000)] },  // ~2
+      { input: [[0.0, 0.0, 0.0, 0.0], [1.0, -1.0, 1.0, -1.0]], expected: [hexToF64(0x3fffffff, 0x70000000), hexToF64(0x40000000, 0x90000000)] },  // ~2
+      { input: [[0.1, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0]], expected: [hexToF64(0x3fb99998, 0x90000000), hexToF64(0x3fb9999a, 0x70000000)] },  // ~0.1
+      { input: [[0.0, 0.0, 0.0, 0.0], [0.1, 0.0, 0.0, 0.0]], expected: [hexToF64(0x3fb99998, 0x90000000), hexToF64(0x3fb9999a, 0x70000000)] },  // ~0.1
+    ]
+  )
+  .fn(t => {
+    const expected = toF32Interval(t.params.expected);
+
+    const got = distanceInterval(...t.params.input);
+    t.expect(
+      objectEquals(expected, got),
+      `distanceInterval([${t.params.input[0]}, ${t.params.input[1]}]) returned ${got}. Expected ${expected}`
+    );
+  });
 
 g.test('dotInterval')
   .paramsSubcasesOnly<VectorPairToIntervalCase>(
@@ -2602,7 +3041,7 @@ g.test('dotInterval')
   )
   .fn(t => {
     const [x, y] = t.params.input;
-    const expected = new F32Interval(...t.params.expected);
+    const expected = toF32Interval(t.params.expected);
 
     const got = dotInterval(x, y);
     t.expect(
@@ -2644,7 +3083,7 @@ g.test('normalizeInterval')
   )
   .fn(t => {
     const x = t.params.input;
-    const expected = t.params.expected.map(e => new F32Interval(...e));
+    const expected = toF32Vector(t.params.expected);
 
     const got = normalizeInterval(x);
     t.expect(
@@ -2698,5 +3137,233 @@ g.test('crossInterval')
     t.expect(
       objectEquals(expected, got),
       `crossInterval([${x}], [${y}]) returned ${got}. Expected ${expected}`
+    );
+  });
+
+g.test('reflectInterval')
+  .paramsSubcasesOnly<VectorPairToVectorCase>(
+    // prettier-ignore
+    [
+      // vec2s
+      { input: [[1.0, 0.0], [1.0, 0.0]], expected: [[-1.0], [0.0]] },
+      { input: [[1.0, 0.0], [0.0, 1.0]], expected: [[1.0], [0.0]] },
+      { input: [[0.0, 1.0], [0.0, 1.0]], expected: [[0.0], [-1.0]] },
+      { input: [[0.0, 1.0], [1.0, 0.0]], expected: [[0.0], [1.0]] },
+      { input: [[1.0, 1.0], [1.0, 1.0]], expected: [[-3.0], [-3.0]] },
+      { input: [[-1.0, -1.0], [1.0, 1.0]], expected: [[3.0], [3.0]] },
+      { input: [[0.1, 0.1], [1.0, 1.0]], expected: [[hexToF32(0xbe99999a), hexToF32(0xbe999998)], [hexToF32(0xbe99999a), hexToF32(0xbe999998)]] },  // [~-0.3, ~-0.3]
+      { input: [[kValue.f32.subnormal.positive.max, kValue.f32.subnormal.negative.max], [1.0, 1.0]], expected: [[hexToF32(0x80fffffe), hexToF32(0x00800001)], [hexToF32(0x80ffffff), hexToF32(0x00000002)]] },  // [~0.0, ~0.0]
+
+      // vec3s
+      { input: [[1.0, 0.0, 0.0], [1.0, 0.0, 0.0]], expected: [[-1.0], [0.0], [0.0]] },
+      { input: [[0.0, 1.0, 0.0], [1.0, 0.0, 0.0]], expected: [[0.0], [1.0], [0.0]] },
+      { input: [[0.0, 0.0, 1.0], [1.0, 0.0, 0.0]], expected: [[0.0], [0.0], [1.0]] },
+      { input: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], expected: [[1.0], [0.0], [0.0]] },
+      { input: [[1.0, 0.0, 0.0], [0.0, 0.0, 1.0]], expected: [[1.0], [0.0], [0.0]] },
+      { input: [[1.0, 1.0, 1.0], [1.0, 1.0, 1.0]], expected: [[-5.0], [-5.0], [-5.0]] },
+      { input: [[-1.0, -1.0, -1.0], [1.0, 1.0, 1.0]], expected: [[5.0], [5.0], [5.0]] },
+      { input: [[0.1, 0.1, 0.1], [1.0, 1.0, 1.0]], expected: [[hexToF32(0xbf000001), hexToF32(0xbefffffe)], [hexToF32(0xbf000001), hexToF32(0xbefffffe)], [hexToF32(0xbf000001), hexToF32(0xbefffffe)]] },  // [~-0.5, ~-0.5, ~-0.5]
+      { input: [[kValue.f32.subnormal.positive.max, kValue.f32.subnormal.negative.max, 0.0], [1.0, 1.0, 1.0]], expected: [[hexToF32(0x80fffffe), hexToF32(0x00800001)], [hexToF32(0x80ffffff), hexToF32(0x00000002)], [hexToF32(0x80fffffe), hexToF32(0x00000002)]] },  // [~0.0, ~0.0, ~0.0]
+
+      // vec4s
+      { input: [[1.0, 0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0]], expected: [[-1.0], [0.0], [0.0], [0.0]] },
+      { input: [[0.0, 1.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0]], expected: [[0.0], [1.0], [0.0], [0.0]] },
+      { input: [[0.0, 0.0, 1.0, 0.0], [1.0, 0.0, 0.0, 0.0]], expected: [[0.0], [0.0], [1.0], [0.0]] },
+      { input: [[0.0, 0.0, 0.0, 1.0], [1.0, 0.0, 0.0, 0.0]], expected: [[0.0], [0.0], [0.0], [1.0]] },
+      { input: [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0]], expected: [[1.0], [0.0], [0.0], [0.0]] },
+      { input: [[1.0, 0.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0]], expected: [[1.0], [0.0], [0.0], [0.0]] },
+      { input: [[1.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 1.0]], expected: [[1.0], [0.0], [0.0], [0.0]] },
+      { input: [[-1.0, -1.0, -1.0, -1.0], [1.0, 1.0, 1.0, 1.0]], expected: [[7.0], [7.0], [7.0], [7.0]] },
+      { input: [[0.1, 0.1, 0.1, 0.1], [1.0, 1.0, 1.0, 1.0]], expected: [[hexToF32(0xbf333335), hexToF32(0xbf333332)], [hexToF32(0xbf333335), hexToF32(0xbf333332)], [hexToF32(0xbf333335), hexToF32(0xbf333332)], [hexToF32(0xbf333335), hexToF32(0xbf333332)]] },  // [~-0.7, ~-0.7, ~-0.7, ~-0.7]
+      { input: [[kValue.f32.subnormal.positive.max, kValue.f32.subnormal.negative.max, 0.0, 0.0], [1.0, 1.0, 1.0, 1.0]], expected: [[hexToF32(0x80fffffe), hexToF32(0x00800001)], [hexToF32(0x80ffffff), hexToF32(0x00000002)], [hexToF32(0x80fffffe), hexToF32(0x00000002)], [hexToF32(0x80fffffe), hexToF32(0x00000002)]] },  // [~0.0, ~0.0, ~0.0, ~0.0]
+    ]
+  )
+  .fn(t => {
+    const [x, y] = t.params.input;
+    const expected = toF32Vector(t.params.expected);
+
+    const got = reflectInterval(x, y);
+    t.expect(
+      objectEquals(expected, got),
+      `reflectInterval([${x}], [${y}]) returned ${got}. Expected ${expected}`
+    );
+  });
+
+interface FaceForwardCase {
+  input: [number[], number[], number[]];
+  expected: (IntervalBounds[] | undefined)[];
+}
+
+g.test('faceForwardIntervals')
+  .paramsSubcasesOnly<FaceForwardCase>(
+    // prettier-ignore
+    [
+      // vec2
+      { input: [[1.0, 0.0], [1.0, 0.0], [1.0, 0.0]], expected: [[[-1.0], [0.0]]] },
+      { input: [[-1.0, 0.0], [1.0, 0.0], [1.0, 0.0]], expected: [[[1.0], [0.0]]] },
+      { input: [[1.0, 0.0], [-1.0, 1.0], [1.0, -1.0]], expected: [[[1.0], [0.0]]] },
+      { input: [[-1.0, 0.0], [-1.0, 1.0], [1.0, -1.0]], expected: [[[-1.0], [0.0]]] },
+      { input: [[10.0, 0.0], [10.0, 0.0], [10.0, 0.0]], expected: [[[-10.0], [0.0]]] },
+      { input: [[-10.0, 0.0], [10.0, 0.0], [10.0, 0.0]], expected: [[[10.0], [0.0]]] },
+      { input: [[10.0, 0.0], [-10.0, 10.0], [10.0, -10.0]], expected: [[[10.0], [0.0]]] },
+      { input: [[-10.0, 0.0], [-10.0, 10.0], [10.0, -10.0]], expected: [[[-10.0], [0.0]]] },
+      { input: [[0.1, 0.0], [0.1, 0.0], [0.1, 0.0]], expected: [[[hexToF32(0xbdcccccd), hexToF32(0xbdcccccc)], [0.0]]] },
+      { input: [[-0.1, 0.0], [0.1, 0.0], [0.1, 0.0]], expected: [[[hexToF32(0x3dcccccc), hexToF32(0x3dcccccd)], [0.0]]] },
+      { input: [[0.1, 0.0], [-0.1, 0.1], [0.1, -0.1]], expected: [[[hexToF32(0x3dcccccc), hexToF32(0x3dcccccd)], [0.0]]] },
+      { input: [[-0.1, 0.0], [-0.1, 0.1], [0.1, -0.1]], expected: [[[hexToF32(0xbdcccccd), hexToF32(0xbdcccccc)], [0.0]]] },
+
+      // vec3
+      { input: [[1.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 0.0, 0.0]], expected: [[[-1.0], [0.0], [0.0]]] },
+      { input: [[-1.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 0.0, 0.0]], expected: [[[1.0], [0.0], [0.0]]] },
+      { input: [[1.0, 0.0, 0.0], [-1.0, 1.0, 0.0], [1.0, -1.0, 0.0]], expected: [[[1.0], [0.0], [0.0]]] },
+      { input: [[-1.0, 0.0, 0.0], [-1.0, 1.0, 0.0], [1.0, -1.0, 0.0]], expected: [[[-1.0], [0.0], [0.0]]] },
+      { input: [[10.0, 0.0, 0.0], [10.0, 0.0, 0.0], [10.0, 0.0, 0.0]], expected: [[[-10.0], [0.0], [0.0]]] },
+      { input: [[-10.0, 0.0, 0.0], [10.0, 0.0, 0.0], [10.0, 0.0, 0.0]], expected: [[[10.0], [0.0], [0.0]]] },
+      { input: [[10.0, 0.0, 0.0], [-10.0, 10.0, 0.0], [10.0, -10.0, 0.0]], expected: [[[10.0], [0.0], [0.0]]] },
+      { input: [[-10.0, 0.0, 0.0], [-10.0, 10.0, 0.0], [10.0, -10.0, 0.0]], expected: [[[-10.0], [0.0], [0.0]]] },
+      { input: [[0.1, 0.0, 0.0], [0.1, 0.0, 0.0], [0.1, 0.0, 0.0]], expected: [[[hexToF32(0xbdcccccd), hexToF32(0xbdcccccc)], [0.0], [0.0]]] },
+      { input: [[-0.1, 0.0, 0.0], [0.1, 0.0, 0.0], [0.1, 0.0, 0.0]], expected: [[[hexToF32(0x3dcccccc), hexToF32(0x3dcccccd)], [0.0], [0.0]]] },
+      { input: [[0.1, 0.0, 0.0], [-0.1, 0.0, 0.0], [0.1, -0.0, 0.0]], expected: [[[hexToF32(0x3dcccccc), hexToF32(0x3dcccccd)], [0.0], [0.0]]] },
+      { input: [[-0.1, 0.0, 0.0], [-0.1, 0.0, 0.0], [0.1, -0.0, 0.0]], expected: [[[hexToF32(0xbdcccccd), hexToF32(0xbdcccccc)], [0.0], [0.0]]] },
+
+      // vec4
+      { input: [[1.0, 0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0]], expected: [[[-1.0], [0.0], [0.0], [0.0]]] },
+      { input: [[-1.0, 0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0]], expected: [[[1.0], [0.0], [0.0], [0.0]]] },
+      { input: [[1.0, 0.0, 0.0, 0.0], [-1.0, 1.0, 0.0, 0.0], [1.0, -1.0, 0.0, 0.0]], expected: [[[1.0], [0.0], [0.0], [0.0]]] },
+      { input: [[-1.0, 0.0, 0.0, 0.0], [-1.0, 1.0, 0.0, 0.0], [1.0, -1.0, 0.0, 0.0]], expected: [[[-1.0], [0.0], [0.0], [0.0]]] },
+      { input: [[10.0, 0.0, 0.0, 0.0], [10.0, 0.0, 0.0, 0.0], [10.0, 0.0, 0.0, 0.0]], expected: [[[-10.0], [0.0], [0.0], [0.0]]] },
+      { input: [[-10.0, 0.0, 0.0, 0.0], [10.0, 0.0, 0.0, 0.0], [10.0, 0.0, 0.0, 0.0]], expected: [[[10.0], [0.0], [0.0], [0.0]]] },
+      { input: [[10.0, 0.0, 0.0, 0.0], [-10.0, 10.0, 0.0, 0.0], [10.0, -10.0, 0.0, 0.0]], expected: [[[10.0], [0.0], [0.0], [0.0]]] },
+      { input: [[-10.0, 0.0, 0.0, 0.0], [-10.0, 10.0, 0.0, 0.0], [10.0, -10.0, 0.0, 0.0]], expected: [[[-10.0], [0.0], [0.0], [0.0]]] },
+      { input: [[0.1, 0.0, 0.0, 0.0], [0.1, 0.0, 0.0, 0.0], [0.1, 0.0, 0.0, 0.0]], expected: [[[hexToF32(0xbdcccccd), hexToF32(0xbdcccccc)], [0.0], [0.0], [0.0]]] },
+      { input: [[-0.1, 0.0, 0.0, 0.0], [0.1, 0.0, 0.0, 0.0], [0.1, 0.0, 0.0, 0.0]], expected: [[[hexToF32(0x3dcccccc), hexToF32(0x3dcccccd)], [0.0], [0.0], [0.0]]] },
+      { input: [[0.1, 0.0, 0.0, 0.0], [-0.1, 0.0, 0.0, 0.0], [0.1, -0.0, 0.0, 0.0]], expected: [[[hexToF32(0x3dcccccc), hexToF32(0x3dcccccd)], [0.0], [0.0], [0.0]]] },
+      { input: [[-0.1, 0.0, 0.0, 0.0], [-0.1, 0.0, 0.0, 0.0], [0.1, -0.0, 0.0, 0.0]], expected: [[[hexToF32(0xbdcccccd), hexToF32(0xbdcccccc)], [0.0], [0.0], [0.0]]] },
+
+      // dot(y, z) === 0
+      { input: [[1.0, 1.0], [1.0, 0.0], [0.0, 1.0]], expected:  [[[-1.0], [-1.0]]]},
+
+      // subnormals, also dot(y, z) spans 0
+      { input: [[kValue.f32.subnormal.positive.max, 0.0], [kValue.f32.subnormal.positive.min, 0.0], [kValue.f32.subnormal.negative.min, 0.0]], expected:  [[[0.0, kValue.f32.subnormal.positive.max], [0.0]], [[kValue.f32.subnormal.negative.min, 0], [0.0]]] },
+
+      // dot going OOB returns [undefined, x, -x]
+      { input: [[1.0, 1.0], [kValue.f32.positive.max, kValue.f32.positive.max], [kValue.f32.positive.max, kValue.f32.positive.max]], expected: [undefined, [[1], [1]], [[-1], [-1]]] },
+
+    ]
+  )
+  .fn(t => {
+    const [x, y, z] = t.params.input;
+    const expected = t.params.expected.map(e => (e !== undefined ? toF32Vector(e) : undefined));
+
+    const got = faceForwardIntervals(x, y, z);
+    t.expect(
+      objectEquals(expected, got),
+      `faceForwardInterval([${x}], [${y}], [${z}]) returned [${got}]. Expected [${expected}]`
+    );
+  });
+
+interface RefractCase {
+  input: [number[], number[], number];
+  expected: IntervalBounds[];
+}
+
+// Scope for refractInterval tests so that they can have constants for magic
+// numbers that don't pollute the global namespace or have unwieldy long names.
+{
+  const kNegativeOneBounds: IntervalBounds = [
+    hexToF64(0xbff00000, 0xc0000000),
+    hexToF64(0xbfefffff, 0x40000000),
+  ];
+
+  g.test('refractInterval')
+    .paramsSubcasesOnly<RefractCase>(
+      // Some of these are hard coded, since the error intervals are difficult
+      // to express in a closed human readable form due to the inherited nature
+      // of the errors.
+
+      // prettier-ignore
+      [
+      // k < 0
+      { input: [[1, 1], [0.1, 0], 10], expected: [[0], [0]] },
+
+      // k contains 0
+      { input: [[1, 1], [0.1, 0], 1.005038], expected: [kAny, kAny] },
+
+      // k > 0
+      // vec2
+      { input: [[1, 1], [1, 0], 1], expected: [kNegativeOneBounds, [1]] },
+      { input: [[1, -2], [3, 4], 5], expected: [[hexToF32(0x40ce87a4), hexToF32(0x40ce8840)],  // ~6.454...
+                                                [hexToF32(0xc100fae8), hexToF32(0xc100fa80)]] },  // ~-8.061...
+
+      // vec3
+      { input: [[1, 1, 1], [1, 0, 0], 1], expected: [kNegativeOneBounds, [1], [1]] },
+      { input: [[1, -2, 3], [-4, 5, -6], 7], expected: [[hexToF32(0x40d24480), hexToF32(0x40d24c00)],  // ~6.571...
+                                                        [hexToF32(0xc1576f80), hexToF32(0xc1576ad0)],  // ~-13.464...
+                                                        [hexToF32(0x41a2d9b0), hexToF32(0x41a2dc80)]] },  // ~20.356...
+
+      // vec4
+      { input: [[1, 1, 1, 1], [1, 0, 0, 0], 1], expected: [kNegativeOneBounds, [1], [1], [1]] },
+      { input: [[1, -2, 3,-4], [-5, 6, -7, 8], 9], expected: [[hexToF32(0x410ae480), hexToF32(0x410af240)],  // ~8.680...
+                                                              [hexToF32(0xc18cf7c0), hexToF32(0xc18cef80)],  // ~-17.620...
+                                                              [hexToF32(0x41d46cc0), hexToF32(0x41d47660)],  // ~26.553...
+                                                              [hexToF32(0xc20dfa80), hexToF32(0xc20df500)]] },  // ~-35.494...]
+    ]
+    )
+    .fn(t => {
+      const [i, s, r] = t.params.input;
+      const expected = toF32Vector(t.params.expected);
+
+      const got = refractInterval(i, s, r);
+      t.expect(
+        objectEquals(expected, got),
+        `refractIntervals([${i}], [${s}], ${r}) returned [${got}]. Expected [${expected}]`
+      );
+    });
+}
+
+interface ModfCase {
+  input: number;
+  fract: IntervalBounds;
+  whole: IntervalBounds;
+}
+
+g.test('modfInterval')
+  .paramsSubcasesOnly<ModfCase>(
+    // prettier-ignore
+    [
+      // Normals
+      { input: 0, fract: [0], whole: [0] },
+      { input: 1, fract: [0], whole: [1] },
+      { input: -1, fract: [0], whole: [-1] },
+      { input: 0.5, fract: [0.5], whole: [0] },
+      { input: -0.5, fract: [-0.5], whole: [0] },
+      { input: 2.5, fract: [0.5], whole: [2] },
+      { input: -2.5, fract: [-0.5], whole: [-2] },
+      { input: 10.0, fract: [0], whole: [10] },
+      { input: -10.0, fract: [0], whole: [-10] },
+
+      // Subnormals
+      { input: kValue.f32.subnormal.negative.min, fract: [kValue.f32.subnormal.negative.min, 0], whole: [0] },
+      { input: kValue.f32.subnormal.negative.max, fract: [kValue.f32.subnormal.negative.max, 0], whole: [0] },
+      { input: kValue.f32.subnormal.positive.min, fract: [0, kValue.f32.subnormal.positive.min], whole: [0] },
+      { input: kValue.f32.subnormal.positive.max, fract: [0, kValue.f32.subnormal.positive.max], whole: [0] },
+
+      // Boundaries
+      { input: kValue.f32.negative.min, fract: [0], whole: [kValue.f32.negative.min] },
+      { input: kValue.f32.negative.max, fract: [kValue.f32.negative.max], whole: [0] },
+      { input: kValue.f32.positive.min, fract: [kValue.f32.positive.min], whole: [0] },
+      { input: kValue.f32.positive.max, fract: [0], whole: [kValue.f32.positive.max] },
+    ]
+  )
+  .fn(t => {
+    const expected = {
+      fract: toF32Interval(t.params.fract),
+      whole: toF32Interval(t.params.whole),
+    };
+
+    const got = modfInterval(t.params.input);
+    t.expect(
+      objectEquals(expected, got),
+      `modfInterval([${t.params.input}) returned { fract: [${got.fract}], whole: [${got.whole}] }. Expected { fract: [${expected.fract}], whole: [${expected.whole}] }`
     );
   });

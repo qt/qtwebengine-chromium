@@ -186,7 +186,7 @@ std::string GetNextToken(std::string *token_list, const std::string &delimiter, 
 }
 
 // Given a string representation of a list of enable enum values, call the appropriate setter function
-void SetLocalEnableSetting(std::string list_of_enables, std::string delimiter, CHECK_ENABLED &enables) {
+void SetLocalEnableSetting(std::string list_of_enables, const std::string &delimiter, CHECK_ENABLED &enables) {
     size_t pos = 0;
     std::string token;
     while (list_of_enables.length() != 0) {
@@ -211,7 +211,7 @@ void SetLocalEnableSetting(std::string list_of_enables, std::string delimiter, C
 }
 
 // Given a string representation of a list of disable enum values, call the appropriate setter function
-void SetLocalDisableSetting(std::string list_of_disables, std::string delimiter, CHECK_DISABLED &disables) {
+void SetLocalDisableSetting(std::string list_of_disables, const std::string &delimiter, CHECK_DISABLED &disables) {
     size_t pos = 0;
     std::string token;
     while (list_of_disables.length() != 0) {
@@ -240,7 +240,7 @@ uint32_t TokenToUint(std::string &token) {
     return int_id;
 }
 
-void CreateFilterMessageIdList(std::string raw_id_list, std::string delimiter, std::vector<uint32_t> &filter_list) {
+void CreateFilterMessageIdList(std::string raw_id_list, const std::string &delimiter, std::vector<uint32_t> &filter_list) {
     size_t pos = 0;
     std::string token;
     while (raw_id_list.length() != 0) {
@@ -258,7 +258,7 @@ void CreateFilterMessageIdList(std::string raw_id_list, std::string delimiter, s
     }
 }
 
-void SetCustomStypeInfo(std::string raw_id_list, std::string delimiter) {
+void SetCustomStypeInfo(std::string raw_id_list, const std::string &delimiter) {
     size_t pos = 0;
     std::string token;
     // List format is a list of integer pairs
@@ -301,7 +301,7 @@ const VkLayerSettingsEXT *FindSettingsInChain(const void *next) {
     const VkBaseOutStructure *current = reinterpret_cast<const VkBaseOutStructure *>(next);
     const VkLayerSettingsEXT *found = nullptr;
     while (current) {
-        if (VK_STRUCTURE_TYPE_INSTANCE_LAYER_SETTINGS_EXT == static_cast<uint32_t>(current->sType)) {
+        if (VK_STRUCTURE_TYPE_INSTANCE_LAYER_SETTINGS_EXT == current->sType) {
             found = reinterpret_cast<const VkLayerSettingsEXT *>(current);
             current = nullptr;
         } else {
@@ -333,6 +333,9 @@ static bool SetBool(std::string &config_string, std::string &env_string, bool de
 
 // Process enables and disables set though the vk_layer_settings.txt config file or through an environment variable
 void ProcessConfigAndEnvSettings(ConfigAndEnvSettings *settings_data) {
+    // If not cleared, garbage has been seen in some Android run effecting the error message
+    custom_stype_info.clear();
+
     const auto layer_settings_ext = FindSettingsInChain(settings_data->pnext_chain);
     if (layer_settings_ext) {
         for (uint32_t i = 0; i < layer_settings_ext->settingCount; i++) {

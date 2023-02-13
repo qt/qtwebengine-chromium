@@ -36,7 +36,6 @@ static const size_t alphaURNSize = sizeof(alphaURN);
 static const char xmpContentType[] = AVIF_CONTENT_TYPE_XMP;
 static const size_t xmpContentTypeSize = sizeof(xmpContentType);
 
-static avifBool avifImageIsOpaque(const avifImage * image);
 static void writeConfigBox(avifRWStream * s, avifCodecConfigurationBox * cfg);
 
 // ---------------------------------------------------------------------------
@@ -204,10 +203,17 @@ typedef struct avifEncoderData
 {
     avifEncoderItemArray items;
     avifEncoderFrameArray frames;
+    // Map the encoder settings quality and qualityAlpha to quantizer and quantizerAlpha
+    int quantizer;
+    int quantizerAlpha;
     // tileRowsLog2 and tileColsLog2 are the actual tiling values after automatic tiling is handled
     int tileRowsLog2;
     int tileColsLog2;
     avifEncoder lastEncoder;
+    // lastQuantizer and lastQuantizerAlpha are the quantizer and quantizerAlpha values used last
+    // time
+    int lastQuantizer;
+    int lastQuantizerAlpha;
     // lastTileRowsLog2 and lastTileColsLog2 are the actual tiling values used last time
     int lastTileRowsLog2;
     int lastTileColsLog2;
@@ -385,10 +391,13 @@ avifEncoder * avifEncoderCreate(void)
     encoder->speed = AVIF_SPEED_DEFAULT;
     encoder->keyframeInterval = 0;
     encoder->timescale = 1;
-    encoder->minQuantizer = AVIF_QUANTIZER_LOSSLESS;
-    encoder->maxQuantizer = AVIF_QUANTIZER_LOSSLESS;
-    encoder->minQuantizerAlpha = AVIF_QUANTIZER_LOSSLESS;
-    encoder->maxQuantizerAlpha = AVIF_QUANTIZER_LOSSLESS;
+    encoder->repetitionCount = AVIF_REPETITION_COUNT_INFINITE;
+    encoder->quality = AVIF_QUALITY_DEFAULT;
+    encoder->qualityAlpha = AVIF_QUALITY_DEFAULT;
+    encoder->minQuantizer = AVIF_QUANTIZER_BEST_QUALITY;
+    encoder->maxQuantizer = AVIF_QUANTIZER_WORST_QUALITY;
+    encoder->minQuantizerAlpha = AVIF_QUANTIZER_BEST_QUALITY;
+    encoder->maxQuantizerAlpha = AVIF_QUANTIZER_WORST_QUALITY;
     encoder->tileRowsLog2 = 0;
     encoder->tileColsLog2 = 0;
     encoder->autoTiling = AVIF_FALSE;
@@ -421,10 +430,13 @@ static void avifEncoderBackupSettings(avifEncoder * encoder)
     lastEncoder->speed = encoder->speed;
     lastEncoder->keyframeInterval = encoder->keyframeInterval;
     lastEncoder->timescale = encoder->timescale;
+    lastEncoder->repetitionCount = encoder->repetitionCount;
     lastEncoder->minQuantizer = encoder->minQuantizer;
     lastEncoder->maxQuantizer = encoder->maxQuantizer;
     lastEncoder->minQuantizerAlpha = encoder->minQuantizerAlpha;
     lastEncoder->maxQuantizerAlpha = encoder->maxQuantizerAlpha;
+    encoder->data->lastQuantizer = encoder->data->quantizer;
+    encoder->data->lastQuantizerAlpha = encoder->data->quantizerAlpha;
     encoder->data->lastTileRowsLog2 = encoder->data->tileRowsLog2;
     encoder->data->lastTileColsLog2 = encoder->data->tileColsLog2;
 }
@@ -444,10 +456,16 @@ static avifBool avifEncoderDetectChanges(const avifEncoder * encoder, avifEncode
 
     if ((lastEncoder->codecChoice != encoder->codecChoice) || (lastEncoder->maxThreads != encoder->maxThreads) ||
         (lastEncoder->speed != encoder->speed) || (lastEncoder->keyframeInterval != encoder->keyframeInterval) ||
-        (lastEncoder->timescale != encoder->timescale)) {
+        (lastEncoder->timescale != encoder->timescale) || (lastEncoder->repetitionCount != encoder->repetitionCount)) {
         return AVIF_FALSE;
     }
 
+    if (encoder->data->lastQuantizer != encoder->data->quantizer) {
+        *encoderChanges |= AVIF_ENCODER_CHANGE_QUANTIZER;
+    }
+    if (encoder->data->lastQuantizerAlpha != encoder->data->quantizerAlpha) {
+        *encoderChanges |= AVIF_ENCODER_CHANGE_QUANTIZER_ALPHA;
+    }
     if (lastEncoder->minQuantizer != encoder->minQuantizer) {
         *encoderChanges |= AVIF_ENCODER_CHANGE_MIN_QUANTIZER;
     }
@@ -525,6 +543,20 @@ static void avifEncoderWriteColorProperties(avifRWStream * outputStream,
     avifRWStreamFinishBox(s, colr);
     if (dedup) {
         ipmaPush(ipma, avifItemPropertyDedupFinish(dedup, outputStream), AVIF_FALSE);
+    }
+
+    // Write Content Light Level Information, if present
+    if (imageMetadata->clli.maxCLL || imageMetadata->clli.maxPALL) {
+        if (dedup) {
+            avifItemPropertyDedupStart(dedup);
+        }
+        avifBoxMarker clli = avifRWStreamWriteBox(s, "clli", AVIF_BOX_SIZE_TBD);
+        avifRWStreamWriteU16(s, imageMetadata->clli.maxCLL);  // unsigned int(16) max_content_light_level;
+        avifRWStreamWriteU16(s, imageMetadata->clli.maxPALL); // unsigned int(16) max_pic_average_light_level;
+        avifRWStreamFinishBox(s, clli);
+        if (dedup) {
+            ipmaPush(ipma, avifItemPropertyDedupFinish(dedup, outputStream), AVIF_FALSE);
+        }
     }
 
     // Write (Optional) Transformations
@@ -692,8 +724,8 @@ static void avifWriteGridPayload(avifRWData * data, uint32_t gridCols, uint32_t 
 
 static avifResult avifEncoderDataCreateExifItem(avifEncoderData * data, const avifRWData * exif)
 {
-    uint32_t exifTiffHeaderOffset;
-    const avifResult result = avifGetExifTiffHeaderOffset(exif, &exifTiffHeaderOffset);
+    size_t exifTiffHeaderOffset;
+    const avifResult result = avifGetExifTiffHeaderOffset(exif->data, exif->size, &exifTiffHeaderOffset);
     if (result != AVIF_RESULT_OK) {
         // Couldn't find the TIFF header
         return result;
@@ -706,10 +738,10 @@ static avifResult avifEncoderDataCreateExifItem(avifEncoderData * data, const av
     exifItem->irefToID = data->primaryItemID;
     exifItem->irefType = "cdsc";
 
-    avifRWDataRealloc(&exifItem->metadataPayload, sizeof(uint32_t) + exif->size);
-    exifTiffHeaderOffset = avifHTONL(exifTiffHeaderOffset);
-    memcpy(exifItem->metadataPayload.data, &exifTiffHeaderOffset, sizeof(uint32_t));
-    memcpy(exifItem->metadataPayload.data + sizeof(uint32_t), exif->data, exif->size);
+    const uint32_t offset32bit = avifHTONL((uint32_t)exifTiffHeaderOffset);
+    avifRWDataRealloc(&exifItem->metadataPayload, sizeof(offset32bit) + exif->size);
+    memcpy(exifItem->metadataPayload.data, &offset32bit, sizeof(offset32bit));
+    memcpy(exifItem->metadataPayload.data + sizeof(offset32bit), exif->data, exif->size);
     return AVIF_RESULT_OK;
 }
 
@@ -728,50 +760,19 @@ static avifResult avifEncoderDataCreateXMPItem(avifEncoderData * data, const avi
     return AVIF_RESULT_OK;
 }
 
-// Copies the pixel from srcPlane to the already allocated dstPlane,
-// filling any extra row or column with border pixel values.
-static void avifCopyAndPadPlane(uint8_t * dstPlane,
-                                uint32_t dstRowBytes,
-                                uint32_t dstWidth,
-                                uint32_t dstHeight,
-                                const uint8_t * srcPlane,
-                                uint32_t srcRowBytes,
-                                uint32_t srcWidth,
-                                uint32_t srcHeight,
-                                uint32_t sampleByteCount)
-{
-    assert(dstWidth >= srcWidth);
-    assert(dstHeight >= srcHeight);
-    for (uint32_t j = 0; j < srcHeight; ++j) {
-        const uint8_t * srcRow = &srcPlane[j * (size_t)srcRowBytes];
-        uint8_t * dstRow = &dstPlane[j * (size_t)dstRowBytes];
-        // Copy srcWidth samples. srcRowBytes might be unrelated.
-        memcpy(dstRow, srcRow, (size_t)srcWidth * sampleByteCount);
-
-        // Pad columns.
-        if (dstWidth > srcWidth) {
-            if (sampleByteCount == 1) {
-                memset(&dstRow[srcWidth], dstRow[srcWidth - 1], dstWidth - srcWidth);
-            } else { // sampleByteCount == 2
-                uint16_t * dstRow16 = (uint16_t *)dstRow;
-                for (uint32_t x = srcWidth; x < dstWidth; ++x) {
-                    dstRow16[x] = dstRow16[srcWidth - 1];
-                }
-            }
-        }
-    }
-
-    // Pad rows.
-    for (uint32_t j = srcHeight; j < dstHeight; ++j) {
-        uint8_t * dstRow = &dstPlane[j * (size_t)dstRowBytes];
-        memcpy(dstRow, dstRow - dstRowBytes, (size_t)dstWidth * sampleByteCount);
-    }
-}
-
 // Same as avifImageCopy() but pads the dstImage with border pixel values to reach dstWidth and dstHeight.
 static avifImage * avifImageCopyAndPad(const avifImage * srcImage, uint32_t dstWidth, uint32_t dstHeight)
 {
-    avifImage * dstImage = avifImageCreate(dstWidth, dstHeight, srcImage->depth, srcImage->yuvFormat);
+    avifImage * dstImage = avifImageCreateEmpty();
+    // Copy all fields but do not allocate.
+    if (avifImageCopy(dstImage, srcImage, (avifPlanesFlag)0) != AVIF_RESULT_OK) {
+        avifImageDestroy(dstImage);
+        return NULL;
+    }
+    assert(dstWidth >= srcImage->width);
+    assert(dstHeight >= srcImage->height);
+    dstImage->width = dstWidth;
+    dstImage->height = dstHeight;
 
     if (srcImage->yuvPlanes[AVIF_CHAN_Y]) {
         const avifResult allocationResult = avifImageAllocatePlanes(dstImage, AVIF_PLANES_YUV);
@@ -779,51 +780,68 @@ static avifImage * avifImageCopyAndPad(const avifImage * srcImage, uint32_t dstW
             avifImageDestroy(dstImage);
             return NULL;
         }
-
-        avifPixelFormatInfo formatInfo;
-        avifGetPixelFormatInfo(srcImage->yuvFormat, &formatInfo);
-        const uint32_t srcUvWidth = (srcImage->width + formatInfo.chromaShiftX) >> formatInfo.chromaShiftX;
-        const uint32_t srcUvHeight = (srcImage->height + formatInfo.chromaShiftY) >> formatInfo.chromaShiftY;
-        const uint32_t dstUvWidth = (dstImage->width + formatInfo.chromaShiftX) >> formatInfo.chromaShiftX;
-        const uint32_t dstUvHeight = (dstImage->height + formatInfo.chromaShiftY) >> formatInfo.chromaShiftY;
-        for (int yuvPlane = 0; yuvPlane < 3; ++yuvPlane) {
-            if (!srcImage->yuvRowBytes[yuvPlane]) {
-                // Plane is absent. If we're copying from a source without
-                // them, mimic the source image's state by removing our copy.
-                avifFree(dstImage->yuvPlanes[yuvPlane]);
-                dstImage->yuvPlanes[yuvPlane] = NULL;
-                dstImage->yuvRowBytes[yuvPlane] = 0;
-                continue;
-            }
-            avifCopyAndPadPlane(dstImage->yuvPlanes[yuvPlane],
-                                dstImage->yuvRowBytes[yuvPlane],
-                                (yuvPlane == AVIF_CHAN_Y) ? dstImage->width : dstUvWidth,
-                                (yuvPlane == AVIF_CHAN_Y) ? dstImage->height : dstUvHeight,
-                                srcImage->yuvPlanes[yuvPlane],
-                                srcImage->yuvRowBytes[yuvPlane],
-                                (yuvPlane == AVIF_CHAN_Y) ? srcImage->width : srcUvWidth,
-                                (yuvPlane == AVIF_CHAN_Y) ? srcImage->height : srcUvHeight,
-                                avifImageUsesU16(srcImage) ? 2 : 1);
-        }
     }
-
     if (srcImage->alphaPlane) {
         const avifResult allocationResult = avifImageAllocatePlanes(dstImage, AVIF_PLANES_A);
         if (allocationResult != AVIF_RESULT_OK) {
             avifImageDestroy(dstImage);
             return NULL;
         }
-        avifCopyAndPadPlane(dstImage->alphaPlane,
-                            dstImage->alphaRowBytes,
-                            dstImage->width,
-                            dstImage->height,
-                            srcImage->alphaPlane,
-                            srcImage->alphaRowBytes,
-                            srcImage->width,
-                            srcImage->height,
-                            avifImageUsesU16(srcImage) ? 2 : 1);
+    }
+    const avifBool usesU16 = avifImageUsesU16(srcImage);
+    for (int plane = AVIF_CHAN_Y; plane <= AVIF_CHAN_A; ++plane) {
+        const uint8_t * srcRow = avifImagePlane(srcImage, plane);
+        const uint32_t srcRowBytes = avifImagePlaneRowBytes(srcImage, plane);
+        const uint32_t srcPlaneWidth = avifImagePlaneWidth(srcImage, plane);
+        const uint32_t srcPlaneHeight = avifImagePlaneHeight(srcImage, plane); // 0 for A if no alpha and 0 for UV if 4:0:0.
+        const size_t srcPlaneWidthBytes = (size_t)srcPlaneWidth << usesU16;
+
+        uint8_t * dstRow = avifImagePlane(dstImage, plane);
+        const uint32_t dstRowBytes = avifImagePlaneRowBytes(dstImage, plane);
+        const uint32_t dstPlaneWidth = avifImagePlaneWidth(dstImage, plane);
+        const uint32_t dstPlaneHeight = avifImagePlaneHeight(dstImage, plane); // 0 for A if no alpha and 0 for UV if 4:0:0.
+        const size_t dstPlaneWidthBytes = (size_t)dstPlaneWidth << usesU16;
+
+        for (uint32_t j = 0; j < srcPlaneHeight; ++j) {
+            memcpy(dstRow, srcRow, srcPlaneWidthBytes);
+
+            // Pad columns.
+            if (dstPlaneWidth > srcPlaneWidth) {
+                if (usesU16) {
+                    uint16_t * dstRow16 = (uint16_t *)dstRow;
+                    for (uint32_t x = srcPlaneWidth; x < dstPlaneWidth; ++x) {
+                        dstRow16[x] = dstRow16[srcPlaneWidth - 1];
+                    }
+                } else {
+                    memset(&dstRow[srcPlaneWidth], dstRow[srcPlaneWidth - 1], dstPlaneWidth - srcPlaneWidth);
+                }
+            }
+            srcRow += srcRowBytes;
+            dstRow += dstRowBytes;
+        }
+
+        // Pad rows.
+        for (uint32_t j = srcPlaneHeight; j < dstPlaneHeight; ++j) {
+            memcpy(dstRow, dstRow - dstRowBytes, dstPlaneWidthBytes);
+            dstRow += dstRowBytes;
+        }
     }
     return dstImage;
+}
+
+static int avifQualityToQuantizer(int quality, int minQuantizer, int maxQuantizer)
+{
+    int quantizer;
+    if (quality == AVIF_QUALITY_DEFAULT) {
+        // In older libavif releases, avifEncoder didn't have the quality and qualityAlpha fields.
+        // Supply a default value for quantizer.
+        quantizer = (minQuantizer + maxQuantizer) / 2;
+        quantizer = AVIF_CLAMP(quantizer, 0, 63);
+    } else {
+        quality = AVIF_CLAMP(quality, 0, 100);
+        quantizer = ((100 - quality) * 63 + 50) / 100;
+    }
+    return quantizer;
 }
 
 static avifResult avifEncoderAddImageInternal(avifEncoder * encoder,
@@ -927,6 +945,11 @@ static avifResult avifEncoderAddImageInternal(avifEncoder * encoder,
             return AVIF_RESULT_INVALID_ARGUMENT;
         }
     }
+
+    // -----------------------------------------------------------------------
+    // Map quality and qualityAlpha to quantizer and quantizerAlpha
+    encoder->data->quantizer = avifQualityToQuantizer(encoder->quality, encoder->minQuantizer, encoder->maxQuantizer);
+    encoder->data->quantizerAlpha = avifQualityToQuantizer(encoder->qualityAlpha, encoder->minQuantizerAlpha, encoder->maxQuantizerAlpha);
 
     // -----------------------------------------------------------------------
     // Handle automatic tiling
@@ -1135,12 +1158,14 @@ static avifResult avifEncoderAddImageInternal(avifEncoder * encoder,
                 }
                 cellImage = paddedCellImage;
             }
+            const int quantizer = item->alpha ? encoder->data->quantizerAlpha : encoder->data->quantizer;
             avifResult encodeResult = item->codec->encodeImage(item->codec,
                                                                encoder,
                                                                cellImage,
                                                                item->alpha,
                                                                encoder->data->tileRowsLog2,
                                                                encoder->data->tileColsLog2,
+                                                               quantizer,
                                                                encoderChanges,
                                                                addImageFlags,
                                                                item->encodeOutput);
@@ -1549,10 +1574,26 @@ avifResult avifEncoderFinish(avifEncoder * encoder, avifRWData * output)
             /* clang-format on */
         };
 
-        uint64_t durationInTimescales = 0;
+        if (encoder->repetitionCount < 0 && encoder->repetitionCount != AVIF_REPETITION_COUNT_INFINITE) {
+            return AVIF_RESULT_INVALID_ARGUMENT;
+        }
+
+        uint64_t framesDurationInTimescales = 0;
         for (uint32_t frameIndex = 0; frameIndex < encoder->data->frames.count; ++frameIndex) {
             const avifEncoderFrame * frame = &encoder->data->frames.frame[frameIndex];
-            durationInTimescales += frame->durationInTimescales;
+            framesDurationInTimescales += frame->durationInTimescales;
+        }
+        uint64_t durationInTimescales;
+        if (encoder->repetitionCount == AVIF_REPETITION_COUNT_INFINITE) {
+            durationInTimescales = AVIF_INDEFINITE_DURATION64;
+        } else {
+            uint64_t loopCount = encoder->repetitionCount + 1;
+            assert(framesDurationInTimescales != 0);
+            if (loopCount > UINT64_MAX / framesDurationInTimescales) {
+                // The multiplication will overflow uint64_t.
+                return AVIF_RESULT_INVALID_ARGUMENT;
+            }
+            durationInTimescales = framesDurationInTimescales * loopCount;
         }
 
         // -------------------------------------------------------------------
@@ -1617,6 +1658,17 @@ avifResult avifEncoderFinish(avifEncoder * encoder, avifRWData * output)
                 avifRWStreamFinishBox(&s, tref);
             }
 
+            avifBoxMarker edts = avifRWStreamWriteBox(&s, "edts", AVIF_BOX_SIZE_TBD);
+            uint32_t elstFlags = (encoder->repetitionCount != 0);
+            avifBoxMarker elst = avifRWStreamWriteFullBox(&s, "elst", AVIF_BOX_SIZE_TBD, 1, elstFlags);
+            avifRWStreamWriteU32(&s, 1);                          // unsigned int(32) entry_count;
+            avifRWStreamWriteU64(&s, framesDurationInTimescales); // unsigned int(64) segment_duration;
+            avifRWStreamWriteU64(&s, 0);                          // int(64) media_time;
+            avifRWStreamWriteU16(&s, 1);                          // int(16) media_rate_integer;
+            avifRWStreamWriteU16(&s, 0);                          // int(16) media_rate_fraction = 0;
+            avifRWStreamFinishBox(&s, elst);
+            avifRWStreamFinishBox(&s, edts);
+
             if (!item->alpha) {
                 avifEncoderWriteTrackMetaBox(encoder, &s);
             }
@@ -1627,7 +1679,7 @@ avifResult avifEncoderFinish(avifEncoder * encoder, avifRWData * output)
             avifRWStreamWriteU64(&s, now);                          // unsigned int(64) creation_time;
             avifRWStreamWriteU64(&s, now);                          // unsigned int(64) modification_time;
             avifRWStreamWriteU32(&s, (uint32_t)encoder->timescale); // unsigned int(32) timescale;
-            avifRWStreamWriteU64(&s, durationInTimescales);         // unsigned int(64) duration;
+            avifRWStreamWriteU64(&s, framesDurationInTimescales);   // unsigned int(64) duration;
             avifRWStreamWriteU16(&s, 21956);                        // bit(1) pad = 0; unsigned int(5)[3] language; ("und")
             avifRWStreamWriteU16(&s, 0);                            // unsigned int(16) pre_defined = 0;
             avifRWStreamFinishBox(&s, mdhd);
@@ -1653,63 +1705,12 @@ avifResult avifEncoderFinish(avifEncoder * encoder, avifRWData * output)
             avifRWStreamFinishBox(&s, dref);
             avifRWStreamFinishBox(&s, dinf);
 
+            // The boxes within the "stbl" box are ordered using the following recommendation in ISO/IEC 14496-12, Section 6.2.3:
+            // 4) It is recommended that the boxes within the Sample Table Box be in the following order: Sample Description
+            // (stsd), Time to Sample (stts), Sample to Chunk (stsc), Sample Size (stsz), Chunk Offset (stco).
+            //
+            // Any boxes not listed in the above line are placed in the end (after the "stco" box).
             avifBoxMarker stbl = avifRWStreamWriteBox(&s, "stbl", AVIF_BOX_SIZE_TBD);
-
-            avifBoxMarker stco = avifRWStreamWriteFullBox(&s, "stco", AVIF_BOX_SIZE_TBD, 0, 0);
-            avifRWStreamWriteU32(&s, 1);           // unsigned int(32) entry_count;
-            avifEncoderItemAddMdatFixup(item, &s); //
-            avifRWStreamWriteU32(&s, 1);           // unsigned int(32) chunk_offset; (set later)
-            avifRWStreamFinishBox(&s, stco);
-
-            avifBoxMarker stsc = avifRWStreamWriteFullBox(&s, "stsc", AVIF_BOX_SIZE_TBD, 0, 0);
-            avifRWStreamWriteU32(&s, 1);                                 // unsigned int(32) entry_count;
-            avifRWStreamWriteU32(&s, 1);                                 // unsigned int(32) first_chunk;
-            avifRWStreamWriteU32(&s, item->encodeOutput->samples.count); // unsigned int(32) samples_per_chunk;
-            avifRWStreamWriteU32(&s, 1);                                 // unsigned int(32) sample_description_index;
-            avifRWStreamFinishBox(&s, stsc);
-
-            avifBoxMarker stsz = avifRWStreamWriteFullBox(&s, "stsz", AVIF_BOX_SIZE_TBD, 0, 0);
-            avifRWStreamWriteU32(&s, 0);                                 // unsigned int(32) sample_size;
-            avifRWStreamWriteU32(&s, item->encodeOutput->samples.count); // unsigned int(32) sample_count;
-            for (uint32_t sampleIndex = 0; sampleIndex < item->encodeOutput->samples.count; ++sampleIndex) {
-                avifEncodeSample * sample = &item->encodeOutput->samples.sample[sampleIndex];
-                avifRWStreamWriteU32(&s, (uint32_t)sample->data.size); // unsigned int(32) entry_size;
-            }
-            avifRWStreamFinishBox(&s, stsz);
-
-            avifBoxMarker stss = avifRWStreamWriteFullBox(&s, "stss", AVIF_BOX_SIZE_TBD, 0, 0);
-            avifRWStreamWriteU32(&s, syncSamplesCount); // unsigned int(32) entry_count;
-            for (uint32_t sampleIndex = 0; sampleIndex < item->encodeOutput->samples.count; ++sampleIndex) {
-                avifEncodeSample * sample = &item->encodeOutput->samples.sample[sampleIndex];
-                if (sample->sync) {
-                    avifRWStreamWriteU32(&s, sampleIndex + 1); // unsigned int(32) sample_number;
-                }
-            }
-            avifRWStreamFinishBox(&s, stss);
-
-            avifBoxMarker stts = avifRWStreamWriteFullBox(&s, "stts", AVIF_BOX_SIZE_TBD, 0, 0);
-            size_t sttsEntryCountOffset = avifRWStreamOffset(&s);
-            uint32_t sttsEntryCount = 0;
-            avifRWStreamWriteU32(&s, 0); // unsigned int(32) entry_count;
-            for (uint32_t sampleCount = 0, frameIndex = 0; frameIndex < encoder->data->frames.count; ++frameIndex) {
-                avifEncoderFrame * frame = &encoder->data->frames.frame[frameIndex];
-                ++sampleCount;
-                if (frameIndex < (encoder->data->frames.count - 1)) {
-                    avifEncoderFrame * nextFrame = &encoder->data->frames.frame[frameIndex + 1];
-                    if (frame->durationInTimescales == nextFrame->durationInTimescales) {
-                        continue;
-                    }
-                }
-                avifRWStreamWriteU32(&s, sampleCount);                           // unsigned int(32) sample_count;
-                avifRWStreamWriteU32(&s, (uint32_t)frame->durationInTimescales); // unsigned int(32) sample_delta;
-                sampleCount = 0;
-                ++sttsEntryCount;
-            }
-            size_t prevOffset = avifRWStreamOffset(&s);
-            avifRWStreamSetOffset(&s, sttsEntryCountOffset);
-            avifRWStreamWriteU32(&s, sttsEntryCount);
-            avifRWStreamSetOffset(&s, prevOffset);
-            avifRWStreamFinishBox(&s, stts);
 
             avifBoxMarker stsd = avifRWStreamWriteFullBox(&s, "stsd", AVIF_BOX_SIZE_TBD, 0, 0);
             avifRWStreamWriteU32(&s, 1); // unsigned int(32) entry_count;
@@ -1750,6 +1751,62 @@ avifResult avifEncoderFinish(avifEncoder * encoder, avifRWData * output)
 
             avifRWStreamFinishBox(&s, av01);
             avifRWStreamFinishBox(&s, stsd);
+
+            avifBoxMarker stts = avifRWStreamWriteFullBox(&s, "stts", AVIF_BOX_SIZE_TBD, 0, 0);
+            size_t sttsEntryCountOffset = avifRWStreamOffset(&s);
+            uint32_t sttsEntryCount = 0;
+            avifRWStreamWriteU32(&s, 0); // unsigned int(32) entry_count;
+            for (uint32_t sampleCount = 0, frameIndex = 0; frameIndex < encoder->data->frames.count; ++frameIndex) {
+                avifEncoderFrame * frame = &encoder->data->frames.frame[frameIndex];
+                ++sampleCount;
+                if (frameIndex < (encoder->data->frames.count - 1)) {
+                    avifEncoderFrame * nextFrame = &encoder->data->frames.frame[frameIndex + 1];
+                    if (frame->durationInTimescales == nextFrame->durationInTimescales) {
+                        continue;
+                    }
+                }
+                avifRWStreamWriteU32(&s, sampleCount);                           // unsigned int(32) sample_count;
+                avifRWStreamWriteU32(&s, (uint32_t)frame->durationInTimescales); // unsigned int(32) sample_delta;
+                sampleCount = 0;
+                ++sttsEntryCount;
+            }
+            size_t prevOffset = avifRWStreamOffset(&s);
+            avifRWStreamSetOffset(&s, sttsEntryCountOffset);
+            avifRWStreamWriteU32(&s, sttsEntryCount);
+            avifRWStreamSetOffset(&s, prevOffset);
+            avifRWStreamFinishBox(&s, stts);
+
+            avifBoxMarker stsc = avifRWStreamWriteFullBox(&s, "stsc", AVIF_BOX_SIZE_TBD, 0, 0);
+            avifRWStreamWriteU32(&s, 1);                                 // unsigned int(32) entry_count;
+            avifRWStreamWriteU32(&s, 1);                                 // unsigned int(32) first_chunk;
+            avifRWStreamWriteU32(&s, item->encodeOutput->samples.count); // unsigned int(32) samples_per_chunk;
+            avifRWStreamWriteU32(&s, 1);                                 // unsigned int(32) sample_description_index;
+            avifRWStreamFinishBox(&s, stsc);
+
+            avifBoxMarker stsz = avifRWStreamWriteFullBox(&s, "stsz", AVIF_BOX_SIZE_TBD, 0, 0);
+            avifRWStreamWriteU32(&s, 0);                                 // unsigned int(32) sample_size;
+            avifRWStreamWriteU32(&s, item->encodeOutput->samples.count); // unsigned int(32) sample_count;
+            for (uint32_t sampleIndex = 0; sampleIndex < item->encodeOutput->samples.count; ++sampleIndex) {
+                avifEncodeSample * sample = &item->encodeOutput->samples.sample[sampleIndex];
+                avifRWStreamWriteU32(&s, (uint32_t)sample->data.size); // unsigned int(32) entry_size;
+            }
+            avifRWStreamFinishBox(&s, stsz);
+
+            avifBoxMarker stco = avifRWStreamWriteFullBox(&s, "stco", AVIF_BOX_SIZE_TBD, 0, 0);
+            avifRWStreamWriteU32(&s, 1);           // unsigned int(32) entry_count;
+            avifEncoderItemAddMdatFixup(item, &s); //
+            avifRWStreamWriteU32(&s, 1);           // unsigned int(32) chunk_offset; (set later)
+            avifRWStreamFinishBox(&s, stco);
+
+            avifBoxMarker stss = avifRWStreamWriteFullBox(&s, "stss", AVIF_BOX_SIZE_TBD, 0, 0);
+            avifRWStreamWriteU32(&s, syncSamplesCount); // unsigned int(32) entry_count;
+            for (uint32_t sampleIndex = 0; sampleIndex < item->encodeOutput->samples.count; ++sampleIndex) {
+                avifEncodeSample * sample = &item->encodeOutput->samples.sample[sampleIndex];
+                if (sample->sync) {
+                    avifRWStreamWriteU32(&s, sampleIndex + 1); // unsigned int(32) sample_number;
+                }
+            }
+            avifRWStreamFinishBox(&s, stss);
 
             avifRWStreamFinishBox(&s, stbl);
 
@@ -1859,34 +1916,6 @@ avifResult avifEncoderWrite(avifEncoder * encoder, const avifImage * image, avif
         return addImageResult;
     }
     return avifEncoderFinish(encoder, output);
-}
-
-static avifBool avifImageIsOpaque(const avifImage * image)
-{
-    if (!image->alphaPlane) {
-        return AVIF_TRUE;
-    }
-
-    int maxChannel = (1 << image->depth) - 1;
-    if (avifImageUsesU16(image)) {
-        for (uint32_t j = 0; j < image->height; ++j) {
-            for (uint32_t i = 0; i < image->width; ++i) {
-                uint16_t * p = (uint16_t *)&image->alphaPlane[(i * 2) + (j * image->alphaRowBytes)];
-                if (*p != maxChannel) {
-                    return AVIF_FALSE;
-                }
-            }
-        }
-    } else {
-        for (uint32_t j = 0; j < image->height; ++j) {
-            for (uint32_t i = 0; i < image->width; ++i) {
-                if (image->alphaPlane[i + (j * image->alphaRowBytes)] != maxChannel) {
-                    return AVIF_FALSE;
-                }
-            }
-        }
-    }
-    return AVIF_TRUE;
 }
 
 static void writeConfigBox(avifRWStream * s, avifCodecConfigurationBox * cfg)

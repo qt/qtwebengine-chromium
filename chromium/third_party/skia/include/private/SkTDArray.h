@@ -9,20 +9,16 @@
 #define SkTDArray_DEFINED
 
 #include "include/core/SkTypes.h"
-#include "include/private/SkMalloc.h"
 #include "include/private/SkTo.h"
 
 #include <algorithm>
 #include <cstddef>
-#include <climits>
 #include <initializer_list>
-#include <tuple>
-#include <utility>
 
 class SK_SPI SkTDStorage {
 public:
     explicit SkTDStorage(int sizeOfT);
-    SkTDStorage(const void* src, int count, int sizeOfT);
+    SkTDStorage(const void* src, int size, int sizeOfT);
 
     // Copy
     SkTDStorage(const SkTDStorage& that);
@@ -38,15 +34,15 @@ public:
     void swap(SkTDStorage& that);
 
     // Size routines
-    bool empty() const { return fCount == 0; }
-    void clear() { fCount = 0; }
-    int size() const { return fCount; }
-    void resize(int newCount);
-    size_t size_bytes() const { return this->bytes(fCount); }
+    bool empty() const { return fSize == 0; }
+    void clear() { fSize = 0; }
+    int size() const { return fSize; }
+    void resize(int newSize);
+    size_t size_bytes() const { return this->bytes(fSize); }
 
     // Capacity routines
-    int capacity() const { return fReserve; }
-    void reserve(int newReserve);
+    int capacity() const { return fCapacity; }
+    void reserve(int newCapacity);
     void shrink_to_fit();
 
     void* data() { return fStorage; }
@@ -68,8 +64,8 @@ public:
     void* insert(int index, int count, const void* src);
 
     void pop_back() {
-        SkASSERT(fCount > 0);
-        fCount--;
+        SkASSERT(fSize > 0);
+        fSize--;
     }
 
     friend bool operator==(const SkTDStorage& a, const SkTDStorage& b);
@@ -81,7 +77,7 @@ private:
     size_t bytes(int n) const { return SkToSizeT(n * fSizeOfT); }
     void* address(int n) { return fStorage + this->bytes(n); }
 
-    // Adds delta to fCount. Crash if outside [0, INT_MAX]
+    // Adds delta to fSize. Crash if outside [0, INT_MAX]
     int calculateSizeOrDie(int delta);
 
     // Move the tail of the array defined by the indexes tailStart and tailEnd to dstIndex. The
@@ -93,8 +89,8 @@ private:
 
     const int fSizeOfT;
     std::byte* fStorage{nullptr};
-    int fReserve{0};  // size of the allocation in fArray (#elements)
-    int fCount{0};    // logical number of elements (fCount <= fReserve)
+    int fCapacity{0};  // size of the allocation in fArray (#elements)
+    int fSize{0};    // logical number of elements (fSize <= fCapacity)
 };
 
 static inline void swap(SkTDStorage& a, SkTDStorage& b) {
@@ -188,7 +184,7 @@ public:
         fStorage.resize(count);
     }
 
-    void reserve(size_t n) {
+    void reserve(int n) {
         fStorage.reserve(n);
     }
 
@@ -219,46 +215,12 @@ public:
         fStorage.removeShuffle(index);
     }
 
-    int find(const T& elem) const {
-        const T* iter = this->begin();
-        const T* stop = this->end();
-
-        for (; iter < stop; iter++) {
-            if (*iter == elem) {
-                return SkToInt(iter - this->begin());
-            }
-        }
-        return -1;
-    }
-
     // routines to treat the array like a stack
     void push_back(const T& v) {
         this->append();
         this->back() = v;
     }
     void pop_back() { fStorage.pop_back(); }
-
-    void deleteAll() {
-        for (T p : *this) {
-            delete p;
-        }
-        this->reset();
-    }
-
-    void freeAll() {
-        for (T p : *this) {
-            sk_free(p);
-        }
-
-        this->reset();
-    }
-
-    void unrefAll() {
-        for (T p : *this) {
-            p->unref();
-        }
-        this->reset();
-    }
 
     void shrink_to_fit() {
         fStorage.shrink_to_fit();

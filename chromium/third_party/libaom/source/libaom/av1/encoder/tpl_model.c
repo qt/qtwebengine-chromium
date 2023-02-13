@@ -364,8 +364,8 @@ static void get_rate_distortion(
   for (int plane = 0; plane < num_planes; ++plane) {
     struct macroblockd_plane *pd = &xd->plane[plane];
     BLOCK_SIZE bsize_plane =
-        ss_size_lookup[txsize_to_bsize[tx_size]][pd->subsampling_x]
-                      [pd->subsampling_y];
+        av1_ss_size_lookup[txsize_to_bsize[tx_size]][pd->subsampling_x]
+                          [pd->subsampling_y];
 
     int dst_buffer_stride = rec_stride_pool[plane];
     int dst_mb_offset =
@@ -567,6 +567,19 @@ static AOM_INLINE void mode_estimation(AV1_COMP *cpi,
       best_intra_cost = intra_cost;
       best_mode = mode;
     }
+  }
+
+  int rate_cost = 1;
+
+  if (cpi->use_ducky_encode) {
+    get_rate_distortion(&rate_cost, &recon_error, &pred_error, src_diff, coeff,
+                        qcoeff, dqcoeff, cm, x, NULL, rec_buffer_pool,
+                        rec_stride_pool, tx_size, best_mode, mi_row, mi_col,
+                        use_y_only_rate_distortion, NULL);
+
+    tpl_stats->intra_dist = recon_error << TPL_DEP_COST_SCALE_LOG2;
+    tpl_stats->intra_sse = pred_error << TPL_DEP_COST_SCALE_LOG2;
+    tpl_stats->intra_rate = rate_cost;
   }
 
   if (cpi->third_pass_ctx &&
@@ -889,7 +902,7 @@ static AOM_INLINE void mode_estimation(AV1_COMP *cpi,
           ? tpl_data->src_ref_frame[comp_ref_frames[best_cmp_rf_idx][1]]
           : NULL,
     };
-    int rate_cost = 1;
+    rate_cost = 1;
     get_rate_distortion(&rate_cost, &recon_error, &pred_error, src_diff, coeff,
                         qcoeff, dqcoeff, cm, x, ref_frame_ptr, rec_buffer_pool,
                         rec_stride_pool, tx_size, best_mode, mi_row, mi_col,
@@ -906,7 +919,7 @@ static AOM_INLINE void mode_estimation(AV1_COMP *cpi,
   tpl_stats->srcrf_sse = pred_error << TPL_DEP_COST_SCALE_LOG2;
 
   // Final encode
-  int rate_cost = 0;
+  rate_cost = 0;
   const YV12_BUFFER_CONFIG *ref_frame_ptr[2];
 
   ref_frame_ptr[0] =
@@ -923,11 +936,12 @@ static AOM_INLINE void mode_estimation(AV1_COMP *cpi,
                       rec_stride_pool, tx_size, best_mode, mi_row, mi_col,
                       use_y_only_rate_distortion, tpl_txfm_stats);
 
-  tpl_stats->recrf_dist = recon_error << (TPL_DEP_COST_SCALE_LOG2);
+  tpl_stats->recrf_dist = recon_error << TPL_DEP_COST_SCALE_LOG2;
+  tpl_stats->recrf_sse = pred_error << TPL_DEP_COST_SCALE_LOG2;
   tpl_stats->recrf_rate = rate_cost;
 
   if (!is_inter_mode(best_mode)) {
-    tpl_stats->srcrf_dist = recon_error << (TPL_DEP_COST_SCALE_LOG2);
+    tpl_stats->srcrf_dist = recon_error << TPL_DEP_COST_SCALE_LOG2;
     tpl_stats->srcrf_rate = rate_cost;
     tpl_stats->srcrf_sse = pred_error << TPL_DEP_COST_SCALE_LOG2;
   }
@@ -1204,6 +1218,10 @@ static AOM_INLINE void init_mc_flow_dispenser(AV1_COMP *cpi, int frame_idx,
   tpl_reset_src_ref_frames(tpl_data);
   av1_tile_init(&xd->tile, cm, 0, 0);
 
+  const int boost_index = AOMMIN(15, (cpi->ppi->p_rc.gfu_boost / 100));
+  const int layer_depth = AOMMIN(gf_group->layer_depth[cpi->gf_frame_index], 6);
+  const FRAME_TYPE frame_type = cm->current_frame.frame_type;
+
   // Setup scaling factor
   av1_setup_scale_factors_for_frame(
       &tpl_data->sf, this_frame->y_crop_width, this_frame->y_crop_height,
@@ -1264,9 +1282,15 @@ static AOM_INLINE void init_mc_flow_dispenser(AV1_COMP *cpi, int frame_idx,
   xd->block_ref_scale_factors[0] = &tpl_data->sf;
   xd->block_ref_scale_factors[1] = &tpl_data->sf;
 
-  const int base_qindex = pframe_qindex;
+  const int base_qindex =
+      cpi->use_ducky_encode ? gf_group->q_val[frame_idx] : pframe_qindex;
   // Get rd multiplier set up.
-  rdmult = (int)av1_compute_rd_mult(cpi, base_qindex);
+  rdmult = (int)av1_compute_rd_mult(
+      base_qindex, cm->seq_params->bit_depth,
+      cpi->ppi->gf_group.update_type[cpi->gf_frame_index], layer_depth,
+      boost_index, frame_type, cpi->oxcf.q_cfg.use_fixed_qp_offsets,
+      is_stat_consumption_stage(cpi));
+
   if (rdmult < 1) rdmult = 1;
   av1_set_error_per_bit(&x->errorperbit, rdmult);
   av1_set_sad_per_bit(cpi, &x->sadperbit, base_qindex);
@@ -1280,8 +1304,11 @@ static AOM_INLINE void init_mc_flow_dispenser(AV1_COMP *cpi, int frame_idx,
   const FRAME_UPDATE_TYPE update_type =
       gf_group->update_type[cpi->gf_frame_index];
   tpl_frame->base_rdmult = av1_compute_rd_mult_based_on_qindex(
-                               bd_info.bit_depth, update_type, pframe_qindex) /
+                               bd_info.bit_depth, update_type, base_qindex) /
                            6;
+
+  if (cpi->use_ducky_encode)
+    tpl_frame->base_rdmult = gf_group->rdmult_val[frame_idx];
 
   av1_init_tpl_txfm_stats(tpl_txfm_stats);
 
@@ -1597,7 +1624,8 @@ int av1_tpl_stats_ready(const TplParams *tpl_data, int gf_frame_index) {
     return 0;
   }
   if (gf_frame_index >= MAX_TPL_FRAME_IDX) {
-    assert(gf_frame_index < MAX_TPL_FRAME_IDX && "Invalid gf_frame_index\n");
+    // The sub-GOP length exceeds the TPL buffer capacity.
+    // Hence the TPL related functions are disabled hereafter.
     return 0;
   }
   return tpl_data->tpl_frame[gf_frame_index].is_valid;
@@ -1630,6 +1658,8 @@ void av1_tpl_preload_rc_estimate(AV1_COMP *cpi,
   AV1_COMMON *cm = &cpi->common;
   GF_GROUP *gf_group = &cpi->ppi->gf_group;
   int bottom_index, top_index;
+  if (cpi->use_ducky_encode) return;
+
   cm->current_frame.frame_type = frame_params->frame_type;
   for (int gf_index = cpi->gf_frame_index; gf_index < gf_group->size;
        ++gf_index) {
@@ -1846,6 +1876,10 @@ void av1_tpl_rdmult_setup_sb(AV1_COMP *cpi, MACROBLOCK *const x,
                  cpi->gf_frame_index < cpi->ppi->gf_group.size));
   const int tpl_idx = cpi->gf_frame_index;
 
+  const int boost_index = AOMMIN(15, (cpi->ppi->p_rc.gfu_boost / 100));
+  const int layer_depth = AOMMIN(gf_group->layer_depth[cpi->gf_frame_index], 6);
+  const FRAME_TYPE frame_type = cm->current_frame.frame_type;
+
   if (tpl_idx >= MAX_TPL_FRAME_IDX) return;
   TplDepFrame *tpl_frame = &cpi->ppi->tpl_data.tpl_frame[tpl_idx];
   if (!tpl_frame->is_valid) return;
@@ -1881,11 +1915,24 @@ void av1_tpl_rdmult_setup_sb(AV1_COMP *cpi, MACROBLOCK *const x,
   }
 
   const CommonQuantParams *quant_params = &cm->quant_params;
+
+  const int orig_qindex_rdmult =
+      quant_params->base_qindex + quant_params->y_dc_delta_q;
   const int orig_rdmult = av1_compute_rd_mult(
-      cpi, quant_params->base_qindex + quant_params->y_dc_delta_q);
-  const int new_rdmult =
-      av1_compute_rd_mult(cpi, quant_params->base_qindex + x->delta_qindex +
-                                   quant_params->y_dc_delta_q);
+      orig_qindex_rdmult, cm->seq_params->bit_depth,
+      cpi->ppi->gf_group.update_type[cpi->gf_frame_index], layer_depth,
+      boost_index, frame_type, cpi->oxcf.q_cfg.use_fixed_qp_offsets,
+      is_stat_consumption_stage(cpi));
+
+  const int new_qindex_rdmult = quant_params->base_qindex +
+                                x->rdmult_delta_qindex +
+                                quant_params->y_dc_delta_q;
+  const int new_rdmult = av1_compute_rd_mult(
+      new_qindex_rdmult, cm->seq_params->bit_depth,
+      cpi->ppi->gf_group.update_type[cpi->gf_frame_index], layer_depth,
+      boost_index, frame_type, cpi->oxcf.q_cfg.use_fixed_qp_offsets,
+      is_stat_consumption_stage(cpi));
+
   const double scaling_factor = (double)new_rdmult / (double)orig_rdmult;
 
   double scale_adj = log(scaling_factor) - log_sum / base_block_count;
@@ -2031,9 +2078,16 @@ int av1_get_q_index_from_qstep_ratio(int leaf_qindex, double qstep_ratio,
   const double leaf_qstep = av1_dc_quant_QTX(leaf_qindex, 0, bit_depth);
   const double target_qstep = leaf_qstep * qstep_ratio;
   int qindex = leaf_qindex;
-  for (qindex = leaf_qindex; qindex > 0; --qindex) {
-    const double qstep = av1_dc_quant_QTX(qindex, 0, bit_depth);
-    if (qstep <= target_qstep) break;
+  if (qstep_ratio < 1.0) {
+    for (qindex = leaf_qindex; qindex > 0; --qindex) {
+      const double qstep = av1_dc_quant_QTX(qindex, 0, bit_depth);
+      if (qstep <= target_qstep) break;
+    }
+  } else {
+    for (qindex = leaf_qindex; qindex <= MAXQ; ++qindex) {
+      const double qstep = av1_dc_quant_QTX(qindex, 0, bit_depth);
+      if (qstep >= target_qstep) break;
+    }
   }
   return qindex;
 }

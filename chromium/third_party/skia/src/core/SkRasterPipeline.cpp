@@ -26,7 +26,7 @@ void SkRasterPipeline::reset() {
     fNumStages = 0;
 }
 
-void SkRasterPipeline::append(StockStage stage, void* ctx) {
+void SkRasterPipeline::append(Stage stage, void* ctx) {
     SkASSERT(stage !=           uniform_color);  // Please use append_constant_color().
     SkASSERT(stage != unbounded_uniform_color);  // Please use append_constant_color().
     SkASSERT(stage !=                 set_rgb);  // Please use append_set_rgb().
@@ -40,11 +40,11 @@ void SkRasterPipeline::append(StockStage stage, void* ctx) {
     SkASSERT(stage !=            stack_rewind);  // Please use append_stack_rewind().
     this->unchecked_append(stage, ctx);
 }
-void SkRasterPipeline::unchecked_append(StockStage stage, void* ctx) {
-    fStages = fAlloc->make<StageList>( StageList{fStages, stage, ctx} );
+void SkRasterPipeline::unchecked_append(Stage stage, void* ctx) {
+    fStages = fAlloc->make<StageList>(StageList{fStages, stage, ctx});
     fNumStages += 1;
 }
-void SkRasterPipeline::append(StockStage stage, uintptr_t ctx) {
+void SkRasterPipeline::append(Stage stage, uintptr_t ctx) {
     void* ptrCtx;
     memcpy(&ptrCtx, &ctx, sizeof(ctx));
     this->append(stage, ptrCtx);
@@ -70,17 +70,21 @@ void SkRasterPipeline::extend(const SkRasterPipeline& src) {
     fNumStages += src.fNumStages;
 }
 
+const char* SkRasterPipeline::GetStageName(SkRasterPipeline::Stage stage) {
+    const char* name = "";
+    switch (stage) {
+    #define M(x) case x: name = #x; break;
+        SK_RASTER_PIPELINE_STAGES_ALL(M)
+    #undef M
+    }
+    return name;
+}
+
 void SkRasterPipeline::dump() const {
     SkDebugf("SkRasterPipeline, %d stages\n", fNumStages);
     std::vector<const char*> stages;
     for (auto st = fStages; st; st = st->prev) {
-        const char* name = "";
-        switch (st->stage) {
-        #define M(x) case x: name = #x; break;
-            SK_RASTER_PIPELINE_STAGES_ALL(M)
-        #undef M
-        }
-        stages.push_back(name);
+        stages.push_back(GetStageName(st->stage));
     }
     std::reverse(stages.begin(), stages.end());
     for (const char* name : stages) {
@@ -135,6 +139,112 @@ void SkRasterPipeline::append_constant_color(SkArenaAlloc* alloc, const float rg
             this->unchecked_append(unbounded_uniform_color, ctx);
         }
     }
+}
+
+void SkRasterPipeline::append_copy_slots_masked(SkArenaAlloc* alloc,
+                                                float* dst,
+                                                float* src,
+                                                int numSlots) {
+    SkASSERT(numSlots >= 0);
+    while (numSlots > 4) {
+        this->append_copy_slots_masked(alloc, dst, src, /*numSlots=*/4);
+        dst += 4 * SkOpts::raster_pipeline_highp_stride;
+        src += 4 * SkOpts::raster_pipeline_highp_stride;
+        numSlots -= 4;
+    }
+
+    SkRasterPipeline::Stage stage;
+    switch (numSlots) {
+        case 0:  return;
+        case 1:  stage = SkRasterPipeline::copy_slot_masked;     break;
+        case 2:  stage = SkRasterPipeline::copy_2_slots_masked;  break;
+        case 3:  stage = SkRasterPipeline::copy_3_slots_masked;  break;
+        case 4:  stage = SkRasterPipeline::copy_4_slots_masked;  break;
+        default: SkUNREACHABLE;
+    }
+
+    auto ctx = alloc->make<SkRasterPipeline_CopySlotsCtx>();
+    ctx->dst = dst;
+    ctx->src = src;
+    this->unchecked_append(stage, ctx);
+}
+
+void SkRasterPipeline::append_copy_slots_unmasked(SkArenaAlloc* alloc,
+                                                  float* dst,
+                                                  float* src,
+                                                  int numSlots) {
+    SkASSERT(numSlots >= 0);
+    while (numSlots > 4) {
+        this->append_copy_slots_unmasked(alloc, dst, src, /*numSlots=*/4);
+        dst += 4 * SkOpts::raster_pipeline_highp_stride;
+        src += 4 * SkOpts::raster_pipeline_highp_stride;
+        numSlots -= 4;
+    }
+
+    SkRasterPipeline::Stage stage;
+    switch (numSlots) {
+        case 0:  return;
+        case 1:  stage = SkRasterPipeline::copy_slot_unmasked;     break;
+        case 2:  stage = SkRasterPipeline::copy_2_slots_unmasked;  break;
+        case 3:  stage = SkRasterPipeline::copy_3_slots_unmasked;  break;
+        case 4:  stage = SkRasterPipeline::copy_4_slots_unmasked;  break;
+        default: SkUNREACHABLE;
+    }
+
+    auto ctx = alloc->make<SkRasterPipeline_CopySlotsCtx>();
+    ctx->dst = dst;
+    ctx->src = src;
+    this->unchecked_append(stage, ctx);
+}
+
+void SkRasterPipeline::append_zero_slots_unmasked(float* dst, int numSlots) {
+    SkASSERT(numSlots >= 0);
+    while (numSlots > 4) {
+        this->append_zero_slots_unmasked(dst, /*numSlots=*/4);
+        dst += 4 * SkOpts::raster_pipeline_highp_stride;
+        numSlots -= 4;
+    }
+
+    SkRasterPipeline::Stage stage;
+    switch (numSlots) {
+        case 0:  return;
+        case 1:  stage = SkRasterPipeline::zero_slot_unmasked;     break;
+        case 2:  stage = SkRasterPipeline::zero_2_slots_unmasked;  break;
+        case 3:  stage = SkRasterPipeline::zero_3_slots_unmasked;  break;
+        case 4:  stage = SkRasterPipeline::zero_4_slots_unmasked;  break;
+        default: SkUNREACHABLE;
+    }
+
+    this->unchecked_append(stage, dst);
+}
+
+void SkRasterPipeline::append_adjacent_multi_slot_op(SkArenaAlloc* alloc,
+                                                     SkRasterPipeline::Stage baseStage,
+                                                     float* dst,
+                                                     float* src,
+                                                     int numSlots) {
+    // The source and destination must be directly next to one another.
+    SkASSERT(numSlots >= 0);
+    SkASSERT((dst + SkOpts::raster_pipeline_highp_stride * numSlots) == src);
+
+    if (numSlots > 4) {
+        auto ctx = alloc->make<SkRasterPipeline_CopySlotsCtx>();
+        ctx->dst = dst;
+        ctx->src = src;
+        this->unchecked_append(baseStage, ctx);
+        return;
+    } else if (numSlots > 0) {
+        auto specializedStage = (SkRasterPipeline::Stage)(baseStage + numSlots);
+        this->unchecked_append(specializedStage, dst);
+    }
+}
+
+void SkRasterPipeline::append_adjacent_single_slot_op(SkRasterPipeline::Stage stage,
+                                                      float* dst,
+                                                      float* src) {
+    // The source and destination must be directly next to one another.
+    SkASSERT((dst + SkOpts::raster_pipeline_highp_stride) == src);
+    this->unchecked_append(stage, dst);
 }
 
 void SkRasterPipeline::append_matrix(SkArenaAlloc* alloc, const SkMatrix& matrix) {
@@ -335,32 +445,27 @@ void SkRasterPipeline::append_store(SkColorType ct, const SkRasterPipeline_Memor
 
 void SkRasterPipeline::append_transfer_function(const skcms_TransferFunction& tf) {
     void* ctx = const_cast<void*>(static_cast<const void*>(&tf));
-    switch (classify_transfer_fn(tf)) {
-        case Bad_TF: SkASSERT(false); break;
+    switch (skcms_TransferFunction_getType(&tf)) {
+        case skcms_TFType_Invalid: SkASSERT(false); break;
 
-        case TFKind::sRGBish_TF:
+        case skcms_TFType_sRGBish:
             if (tf.a == 1 && tf.b == 0 && tf.c == 0 && tf.d == 0 && tf.e == 0 && tf.f == 0) {
                 this->unchecked_append(gamma_, ctx);
             } else {
                 this->unchecked_append(parametric, ctx);
             }
             break;
-        case PQish_TF:     this->unchecked_append(PQish,     ctx); break;
-        case HLGish_TF:    this->unchecked_append(HLGish,    ctx); break;
-        case HLGinvish_TF: this->unchecked_append(HLGinvish, ctx); break;
+        case skcms_TFType_PQish:     this->unchecked_append(PQish,     ctx); break;
+        case skcms_TFType_HLGish:    this->unchecked_append(HLGish,    ctx); break;
+        case skcms_TFType_HLGinvish: this->unchecked_append(HLGinvish, ctx); break;
     }
 }
 
-// Clamp premul values to [0,alpha] (logical [0,1]) to avoid the confusing
-// scenario of being able to store a logical color channel > 1.0 when alpha < 1.0.
-// Most software that works with normalized premul values expect r,g,b channels all <= a.
-//
-// In addition, GL clamps all its color channels to limits of the format just
-// before the blend step (~here).  To match that auto-clamp, we clamp alpha to
-// [0,1] too, just in case someone gave us a crazy alpha.
-void SkRasterPipeline::append_gamut_clamp_if_normalized(const SkImageInfo& info) {
-    if (info.alphaType() == kPremul_SkAlphaType && SkColorTypeIsNormalized(info.colorType())) {
-        this->unchecked_append(SkRasterPipeline::clamp_gamut, nullptr);
+// GPUs clamp all color channels to the limits of the format just before the blend step. To match
+// that auto-clamp, the RP blitter uses this helper immediately before appending blending stages.
+void SkRasterPipeline::append_clamp_if_normalized(const SkImageInfo& info) {
+    if (SkColorTypeIsNormalized(info.colorType())) {
+        this->unchecked_append(SkRasterPipeline::clamp_01, nullptr);
     }
 }
 
@@ -371,50 +476,65 @@ void SkRasterPipeline::append_stack_rewind() {
     this->unchecked_append(SkRasterPipeline::stack_rewind, fRewindCtx);
 }
 
-SkRasterPipeline::StartPipelineFn SkRasterPipeline::build_pipeline(void** ip) const {
-    // stack_checkpoint and stack_rewind are only implemented in highp. We only need these stages
-    // when generating long (or looping) pipelines from SkSL. The other stages used by the SkSL RP
-    // generator will only have highp implementations, because we can't execute SkSL code without
-    // floating point.
-    if (!gForceHighPrecisionRasterPipeline && !fRewindCtx) {
-        // We'll try to build a lowp pipeline, but if that fails fallback to a highp float pipeline.
-        void** reset_point = ip;
+static void prepend_to_pipeline(SkRasterPipelineStage*& ip, SkOpts::StageFn stageFn, void* ctx) {
+    --ip;
+    ip->fn = stageFn;
+    ip->ctx = ctx;
+}
 
-        // Stages are stored backwards in fStages, so we reverse here, back to front.
-        *--ip = (void*)SkOpts::just_return_lowp;
-        for (const StageList* st = fStages; st; st = st->prev) {
-            // All of the stages with lowp implementations come first in the enumeration. Any stage
-            // with a larger value only has a highp implementation.
-            if (st->stage >= kNumLowpStages || !SkOpts::stages_lowp[st->stage]) {
-                ip = reset_point;
-                break;
-            }
-            *--ip = st->ctx;
-            *--ip = (void*)SkOpts::stages_lowp[st->stage];
-        }
-        if (ip != reset_point) {
-            return SkOpts::start_pipeline_lowp;
-        }
+bool SkRasterPipeline::build_lowp_pipeline(SkRasterPipelineStage* ip) const {
+    if (gForceHighPrecisionRasterPipeline || fRewindCtx) {
+        return false;
     }
-
-    *--ip = (void*)SkOpts::just_return_highp;
+    // Stages are stored backwards in fStages; to compensate, we assemble the pipeline in reverse
+    // here, back to front.
+    prepend_to_pipeline(ip, SkOpts::just_return_lowp, /*ctx=*/nullptr);
     for (const StageList* st = fStages; st; st = st->prev) {
-        *--ip = st->ctx;
-        *--ip = (void*)SkOpts::stages_highp[st->stage];
+        if (st->stage >= kNumLowpStages || !SkOpts::stages_lowp[st->stage]) {
+            // This program contains a stage that doesn't exist in lowp.
+            return false;
+        }
+        prepend_to_pipeline(ip, SkOpts::stages_lowp[st->stage], st->ctx);
     }
+    return true;
+}
+
+void SkRasterPipeline::build_highp_pipeline(SkRasterPipelineStage* ip) const {
+    // We assemble the pipeline in reverse, since the stage list is stored backwards.
+    prepend_to_pipeline(ip, SkOpts::just_return_highp, /*ctx=*/nullptr);
+    for (const StageList* st = fStages; st; st = st->prev) {
+        prepend_to_pipeline(ip, SkOpts::stages_highp[st->stage], st->ctx);
+    }
+
+    // stack_checkpoint and stack_rewind are only implemented in highp. We only need these stages
+    // when generating long (or looping) pipelines from SkSL. The other stages used by the SkSL
+    // Raster Pipeline generator will only have highp implementations, because we can't execute SkSL
+    // code without floating point.
     if (fRewindCtx) {
-        *--ip = fRewindCtx;
-        *--ip = (void*)SkOpts::stages_highp[stack_checkpoint];
+        prepend_to_pipeline(ip, SkOpts::stages_highp[stack_checkpoint], fRewindCtx);
     }
+}
+
+SkRasterPipeline::StartPipelineFn SkRasterPipeline::build_pipeline(
+        SkRasterPipelineStage* ip) const {
+    // We try to build a lowp pipeline first; if that fails, we fall back to a highp float pipeline.
+    if (this->build_lowp_pipeline(ip)) {
+        return SkOpts::start_pipeline_lowp;
+    }
+
+    this->build_highp_pipeline(ip);
     return SkOpts::start_pipeline_highp;
 }
 
-int SkRasterPipeline::slots_needed() const {
-    // If we have any stack_rewind stages, we will also need to inject a stack_checkpoint
-    int stagesWithContext = fNumStages + (fRewindCtx ? 1 : 0);
+int SkRasterPipeline::stages_needed() const {
+    // Add 1 to budget for a `just_return` stage at the end.
+    int stages = fNumStages + 1;
 
-    // just_return has no context, all other stages do
-    return 2 * stagesWithContext + 1;
+    // If we have any stack_rewind stages, we will need to inject a stack_checkpoint stage.
+    if (fRewindCtx) {
+        stages += 1;
+    }
+    return stages;
 }
 
 void SkRasterPipeline::run(size_t x, size_t y, size_t w, size_t h) const {
@@ -422,12 +542,12 @@ void SkRasterPipeline::run(size_t x, size_t y, size_t w, size_t h) const {
         return;
     }
 
-    int slotsNeeded = this->slots_needed();
+    int stagesNeeded = this->stages_needed();
 
     // Best to not use fAlloc here... we can't bound how often run() will be called.
-    SkAutoSTMalloc<64, void*> program(slotsNeeded);
+    SkAutoSTMalloc<32, SkRasterPipelineStage> program(stagesNeeded);
 
-    auto start_pipeline = this->build_pipeline(program.get() + slotsNeeded);
+    auto start_pipeline = this->build_pipeline(program.get() + stagesNeeded);
     start_pipeline(x,y,x+w,y+h, program.get());
 }
 
@@ -436,11 +556,11 @@ std::function<void(size_t, size_t, size_t, size_t)> SkRasterPipeline::compile() 
         return [](size_t, size_t, size_t, size_t) {};
     }
 
-    int slotsNeeded = this->slots_needed();
+    int stagesNeeded = this->stages_needed();
 
-    void** program = fAlloc->makeArray<void*>(slotsNeeded);
+    SkRasterPipelineStage* program = fAlloc->makeArray<SkRasterPipelineStage>(stagesNeeded);
 
-    auto start_pipeline = this->build_pipeline(program + slotsNeeded);
+    auto start_pipeline = this->build_pipeline(program + stagesNeeded);
     return [=](size_t x, size_t y, size_t w, size_t h) {
         start_pipeline(x,y,x+w,y+h, program);
     };

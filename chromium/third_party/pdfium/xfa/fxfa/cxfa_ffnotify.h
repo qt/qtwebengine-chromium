@@ -1,4 +1,4 @@
-// Copyright 2014 PDFium Authors. All rights reserved.
+// Copyright 2014 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -18,7 +18,6 @@
 #include "xfa/fxfa/cxfa_ffdocview.h"
 #include "xfa/fxfa/parser/cxfa_document.h"
 
-class CXFA_FFWidgetHandler;
 class CXFA_LayoutItem;
 class CXFA_LayoutProcessor;
 class CXFA_Script;
@@ -69,9 +68,9 @@ class CXFA_FFNotify : public cppgc::GarbageCollected<CXFA_FFNotify> {
                                       bool bIsFormReady,
                                       bool bRecursive);
   void AddCalcValidate(CXFA_Node* pNode);
-  CXFA_FFDoc* GetFFDoc() const { return m_pDoc.Get(); }
+  CXFA_FFDoc* GetFFDoc() const { return m_pDoc; }
   CXFA_FFApp::CallbackIface* GetAppProvider();
-  CXFA_FFWidgetHandler* GetWidgetHandler();
+  void HandleWidgetEvent(CXFA_Node* pNode, CXFA_EventParam* pParam);
   void OpenDropDownList(CXFA_Node* pNode);
   void ResetData(CXFA_Node* pNode);
   CXFA_FFDocView::LayoutStatus GetLayoutStatus();

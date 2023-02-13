@@ -6,6 +6,7 @@
 #define SYSTEM_API_DBUS_PRIVATE_COMPUTING_DBUS_CONSTANTS_H_
 
 namespace private_computing {
+
 // Private Computing Device Active Daemon:
 constexpr char kPrivateComputingInterface[] = "org.chromium.PrivateComputing";
 constexpr char kPrivateComputingServicePath[] =
@@ -13,8 +14,9 @@ constexpr char kPrivateComputingServicePath[] =
 constexpr char kPrivateComputingServiceName[] = "org.chromium.PrivateComputing";
 
 // Private Computing Device Active methods:
-constexpr char kSaveStatusToPreservedFile[] = "SaveStatusToPreservedFile";
-constexpr char kGetStatusFromPreservedFile[] = "GetStatusFromPreservedFile";
+constexpr char kSaveLastPingDatesStatus[] = "SaveLastPingDatesStatus";
+constexpr char kGetLastPingDatesStatus[] = "GetLastPingDatesStatus";
+
 }  // namespace private_computing
 
 #endif  // SYSTEM_API_DBUS_PRIVATE_COMPUTING_DBUS_CONSTANTS_H_

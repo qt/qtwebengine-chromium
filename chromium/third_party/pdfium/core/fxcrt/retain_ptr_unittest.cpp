@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2016 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -136,7 +136,7 @@ TEST(RetainPtr, NullptrAssign) {
 TEST(RetainPtr, RawAssign) {
   PseudoRetainable obj;
   RetainPtr<PseudoRetainable> ptr;
-  ptr = &obj;
+  ptr = pdfium::WrapRetain(&obj);
   EXPECT_EQ(&obj, ptr);
 }
 

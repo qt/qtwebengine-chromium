@@ -102,6 +102,8 @@ def get_sanitizer_env(asan, lsan, msan, tsan, cfi_diag):
     if lsan:
       msan_options.append('detect_leaks=1')
     extra_env['MSAN_OPTIONS'] = ' '.join(msan_options)
+    extra_env['VK_ICD_FILENAMES'] = ''
+    extra_env['LIBGL_DRIVERS_PATH'] = ''
 
   if tsan:
     tsan_options = symbolization_options[:]

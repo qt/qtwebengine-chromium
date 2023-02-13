@@ -21,9 +21,7 @@
 namespace openscreen {
 namespace cast {
 
-// TODO(issuetracker.google.com/issues/155336511): Fix the declarations and then
-// remove this:
-using openscreen::operator<<;  // For std::chrono::duration pretty-printing.
+using clock_operators::operator<<;
 
 namespace {
 

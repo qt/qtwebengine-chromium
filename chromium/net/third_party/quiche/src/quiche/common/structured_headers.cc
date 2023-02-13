@@ -746,6 +746,7 @@ bool operator==(const Item& lhs, const Item& rhs) {
   return lhs.value_ == rhs.value_;
 }
 
+ParameterizedItem::ParameterizedItem() = default;
 ParameterizedItem::ParameterizedItem(const ParameterizedItem&) = default;
 ParameterizedItem& ParameterizedItem::operator=(const ParameterizedItem&) =
     default;
@@ -774,6 +775,7 @@ ParameterizedMember::ParameterizedMember(Item id, Parameters ps)
       params(std::move(ps)) {}
 ParameterizedMember::~ParameterizedMember() = default;
 
+ParameterisedIdentifier::ParameterisedIdentifier() = default;
 ParameterisedIdentifier::ParameterisedIdentifier(
     const ParameterisedIdentifier&) = default;
 ParameterisedIdentifier& ParameterisedIdentifier::operator=(
@@ -873,7 +875,7 @@ absl::optional<List> ParseList(absl::string_view str) {
   return absl::nullopt;
 }
 
-absl::optional<Dictionary> ParseDictionary(const absl::string_view& str) {
+absl::optional<Dictionary> ParseDictionary(absl::string_view str) {
   StructuredHeaderParser parser(str, StructuredHeaderParser::kFinal);
   absl::optional<Dictionary> dictionary = parser.ReadDictionary();
   if (dictionary && parser.FinishParsing()) return dictionary;

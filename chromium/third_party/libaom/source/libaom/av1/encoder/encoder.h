@@ -202,6 +202,7 @@ typedef enum {
   MOD_LR,           // Loop restoration filtering
   MOD_PACK_BS,      // Pack bitstream
   MOD_FRAME_ENC,    // Frame Parallel encode
+  MOD_AI,           // All intra
   NUM_MT_MODULES
 } MULTI_THREADED_MODULES;
 
@@ -231,6 +232,17 @@ typedef enum {
   LOOPFILTER_SELECTIVELY =
       3, /*!< Disable loopfilter on frames with low motion. */
 } LOOPFILTER_CONTROL;
+
+/*!\enum SKIP_APPLY_POSTPROC_FILTER
+ * \brief This enum controls the application of post-processing filters on a
+ * reconstructed frame.
+ */
+typedef enum {
+  SKIP_APPLY_RESTORATION = 1 << 0,
+  SKIP_APPLY_SUPERRES = 1 << 1,
+  SKIP_APPLY_CDEF = 1 << 2,
+  SKIP_APPLY_LOOPFILTER = 1 << 3,
+} SKIP_APPLY_POSTPROC_FILTER;
 
 /*!
  * \brief Encoder config related to resize.
@@ -1064,6 +1076,9 @@ typedef struct AV1EncoderConfig {
 
   // Max depth for the GOP after a key frame
   int kf_max_pyr_height;
+
+  // A flag to control if we enable the superblock qp sweep for a given lambda
+  int sb_qp_sweep;
   /*!\endcond */
 } AV1EncoderConfig;
 
@@ -1490,11 +1505,27 @@ typedef struct {
    */
   int thread_id_to_tile_id[MAX_NUM_THREADS];
 
+  /*!
+   * num_tile_cols_done[i] indicates the number of tile columns whose encoding
+   * is complete in the ith superblock row.
+   */
+  int *num_tile_cols_done;
+
+  /*!
+   * Number of superblock rows in a frame for which 'num_tile_cols_done' is
+   * allocated.
+   */
+  int allocated_sb_rows;
+
 #if CONFIG_MULTITHREAD
   /*!
    * Mutex lock used while dispatching jobs.
    */
   pthread_mutex_t *mutex_;
+  /*!
+   *  Condition variable used to dispatch loopfilter jobs.
+   */
+  pthread_cond_t *cond_;
 #endif
 
   /**
@@ -1675,6 +1706,12 @@ typedef struct MultiThreadInfo {
    * Buffers to be stored/restored before/after parallel encode.
    */
   RestoreStateBuffers restore_state_buf;
+
+  /*!
+   * In multi-threaded realtime encoding with row-mt enabled, pipeline
+   * loop-filtering after encoding.
+   */
+  int pipeline_lpf_mt_with_enc;
 } MultiThreadInfo;
 
 /*!\cond */
@@ -2333,6 +2370,10 @@ typedef struct DuckyEncodeFrameInfo {
   DUCKY_ENCODE_GOP_MODE gop_mode;
   int q_index;
   int rdmult;
+  // These two arrays are equivalent to std::vector<SuperblockEncodeParameters>
+  int *superblock_encode_qindex;
+  int *superblock_encode_rdmult;
+  int delta_q_enabled;
 } DuckyEncodeFrameInfo;
 
 typedef struct DuckyEncodeFrameResult {
@@ -2705,6 +2746,11 @@ typedef struct AV1_PRIMARY {
    * found in the frame update type with enum value equal to i
    */
   int valid_gm_model_found[FRAME_UPDATE_TYPES];
+
+  /*!
+   * Struct for the reference structure for RTC.
+   */
+  RTC_REF rtc_ref;
 } AV1_PRIMARY;
 
 /*!
@@ -3390,6 +3436,11 @@ typedef struct AV1_COMP {
   uint64_t *src_sad_blk_64x64;
 
   /*!
+   * SSE between the current frame and the reconstructed last frame
+   */
+  uint64_t rec_sse;
+
+  /*!
    * A flag to indicate whether the encoder is controlled by DuckyEncode or not.
    * 1:yes 0:no
    */
@@ -3406,11 +3457,6 @@ typedef struct AV1_COMP {
    * Frames since last frame with cdf update.
    */
   int frames_since_last_update;
-
-  /*!
-   * Struct for the reference structure for RTC.
-   */
-  RTC_REF rtc_ref;
 
   /*!
    * Block level thresholds to force zeromv-skip at partition level.
@@ -3855,7 +3901,7 @@ static INLINE int is_one_pass_rt_params(const AV1_COMP *cpi) {
 static INLINE int use_rtc_reference_structure_one_layer(const AV1_COMP *cpi) {
   return is_one_pass_rt_params(cpi) && cpi->ppi->number_spatial_layers == 1 &&
          cpi->ppi->number_temporal_layers == 1 &&
-         !cpi->rtc_ref.set_ref_frame_config;
+         !cpi->ppi->rtc_ref.set_ref_frame_config;
 }
 
 // Function return size of frame stats buffer
@@ -4074,6 +4120,11 @@ static INLINE int is_frame_resize_pending(const AV1_COMP *const cpi) {
            cpi->common.height != resize_pending_params->height));
 }
 
+// Check if loop filter is used.
+static INLINE int is_loopfilter_used(const AV1_COMMON *const cm) {
+  return !cm->features.coded_lossless && !cm->tiles.large_scale;
+}
+
 // Check if CDEF is used.
 static INLINE int is_cdef_used(const AV1_COMMON *const cm) {
   return cm->seq_params->enable_cdef && !cm->features.coded_lossless &&
@@ -4086,10 +4137,76 @@ static INLINE int is_restoration_used(const AV1_COMMON *const cm) {
          !cm->tiles.large_scale;
 }
 
+// Checks if post-processing filters need to be applied.
+// NOTE: This function decides if the application of different post-processing
+// filters on the reconstructed frame can be skipped at the encoder side.
+// However the computation of different filter parameters that are signaled in
+// the bitstream is still required.
+static INLINE unsigned int derive_skip_apply_postproc_filters(
+    const AV1_COMP *cpi, int use_loopfilter, int use_cdef, int use_superres,
+    int use_restoration) {
+  // Though CDEF parameter selection should be dependent on
+  // deblocked/loop-filtered pixels for cdef_pick_method <=
+  // CDEF_FAST_SEARCH_LVL5, CDEF strength values are calculated based on the
+  // pixel values that are not loop-filtered in svc real-time encoding mode.
+  // Hence this case is handled separately using the condition below.
+  if (cpi->ppi->rtc_ref.non_reference_frame)
+    return (SKIP_APPLY_LOOPFILTER | SKIP_APPLY_CDEF);
+
+  if (!cpi->oxcf.algo_cfg.skip_postproc_filtering || cpi->ppi->b_calculate_psnr)
+    return 0;
+  assert(cpi->oxcf.mode == ALLINTRA);
+
+  // The post-processing filters are applied one after the other in the
+  // following order: deblocking->cdef->superres->restoration. In case of
+  // ALLINTRA encoding, the reconstructed frame is not used as a reference
+  // frame. Hence, the application of these filters can be skipped when
+  // 1. filter parameters of the subsequent stages are not dependent on the
+  // filtered output of the current stage or
+  // 2. subsequent filtering stages are disabled
+  if (use_restoration) return SKIP_APPLY_RESTORATION;
+  if (use_superres) return SKIP_APPLY_SUPERRES;
+  if (use_cdef) {
+    // CDEF parameter selection is not dependent on the deblocked frame if
+    // cdef_pick_method is CDEF_PICK_FROM_Q. Hence the application of deblocking
+    // filters and cdef filters can be skipped in this case.
+    return (cpi->sf.lpf_sf.cdef_pick_method == CDEF_PICK_FROM_Q &&
+            use_loopfilter)
+               ? (SKIP_APPLY_LOOPFILTER | SKIP_APPLY_CDEF)
+               : SKIP_APPLY_CDEF;
+  }
+  if (use_loopfilter) return SKIP_APPLY_LOOPFILTER;
+
+  return 0;  // All post-processing stages disabled.
+}
+
+static INLINE void set_postproc_filter_default_params(AV1_COMMON *cm) {
+  struct loopfilter *const lf = &cm->lf;
+  CdefInfo *const cdef_info = &cm->cdef_info;
+  RestorationInfo *const rst_info = cm->rst_info;
+
+  lf->filter_level[0] = 0;
+  lf->filter_level[1] = 0;
+  cdef_info->cdef_bits = 0;
+  cdef_info->cdef_strengths[0] = 0;
+  cdef_info->nb_cdef_strengths = 1;
+  cdef_info->cdef_uv_strengths[0] = 0;
+  rst_info[0].frame_restoration_type = RESTORE_NONE;
+  rst_info[1].frame_restoration_type = RESTORE_NONE;
+  rst_info[2].frame_restoration_type = RESTORE_NONE;
+}
+
 static INLINE int is_inter_tx_size_search_level_one(
     const TX_SPEED_FEATURES *tx_sf) {
   return (tx_sf->inter_tx_size_search_init_depth_rect >= 1 &&
           tx_sf->inter_tx_size_search_init_depth_sqr >= 1);
+}
+
+static INLINE int get_lpf_opt_level(const SPEED_FEATURES *sf) {
+  int lpf_opt_level = 0;
+  if (is_inter_tx_size_search_level_one(&sf->tx_sf))
+    lpf_opt_level = (sf->lpf_sf.lpf_pick == LPF_PICK_FROM_Q) ? 2 : 1;
+  return lpf_opt_level;
 }
 
 // Enable switchable motion mode only if warp and OBMC tools are allowed

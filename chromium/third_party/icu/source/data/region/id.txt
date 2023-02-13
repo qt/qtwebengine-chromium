@@ -307,6 +307,8 @@ id{
         CD{"Kongo (RDK)"}
         CG{"Kongo (Republik)"}
         CZ{"Republik Ceko"}
+        NZ{"Aotearoa (Selandia Baru)"}
         TL{"Timor Timur"}
+        TR{"Turkiye"}
     }
 }

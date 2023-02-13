@@ -4,7 +4,7 @@
 
 /***************************************************************************
  *
- * Copyright (c) 2021 The Khronos Group Inc.
+ * Copyright (c) 2021-2022 The Khronos Group Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -38,6 +38,8 @@ static const std::array<const char *, CMD_RANGE_SIZE> kGeneratedMustBeRecordingL
     "VUID-vkCmdBeginRendering-commandBuffer-recording",
     "VUID-vkCmdBeginTransformFeedbackEXT-commandBuffer-recording",
     "VUID-vkCmdBeginVideoCodingKHR-commandBuffer-recording",
+    "VUID-vkCmdBindDescriptorBufferEmbeddedSamplersEXT-commandBuffer-recording",
+    "VUID-vkCmdBindDescriptorBuffersEXT-commandBuffer-recording",
     "VUID-vkCmdBindDescriptorSets-commandBuffer-recording",
     "VUID-vkCmdBindIndexBuffer-commandBuffer-recording",
     "VUID-vkCmdBindInvocationMaskHUAWEI-commandBuffer-recording",
@@ -74,7 +76,9 @@ static const std::array<const char *, CMD_RANGE_SIZE> kGeneratedMustBeRecordingL
     "VUID-vkCmdCopyImageToBuffer-commandBuffer-recording",
     "VUID-vkCmdCopyImageToBuffer2-commandBuffer-recording",
     "VUID-vkCmdCopyImageToBuffer2-commandBuffer-recording",
+    "VUID-vkCmdCopyMemoryIndirectNV-commandBuffer-recording",
     "VUID-vkCmdCopyMemoryToAccelerationStructureKHR-commandBuffer-recording",
+    "VUID-vkCmdCopyMemoryToImageIndirectNV-commandBuffer-recording",
     "VUID-vkCmdCopyMemoryToMicromapEXT-commandBuffer-recording",
     "VUID-vkCmdCopyMicromapEXT-commandBuffer-recording",
     "VUID-vkCmdCopyMicromapToMemoryEXT-commandBuffer-recording",
@@ -84,6 +88,8 @@ static const std::array<const char *, CMD_RANGE_SIZE> kGeneratedMustBeRecordingL
     "VUID-vkCmdDebugMarkerEndEXT-commandBuffer-recording",
     "VUID-vkCmdDebugMarkerInsertEXT-commandBuffer-recording",
     "VUID-vkCmdDecodeVideoKHR-commandBuffer-recording",
+    "VUID-vkCmdDecompressMemoryIndirectCountNV-commandBuffer-recording",
+    "VUID-vkCmdDecompressMemoryNV-commandBuffer-recording",
     "VUID-vkCmdDispatch-commandBuffer-recording",
     "VUID-vkCmdDispatchBase-commandBuffer-recording",
     "VUID-vkCmdDispatchBase-commandBuffer-recording",
@@ -175,6 +181,7 @@ static const std::array<const char *, CMD_RANGE_SIZE> kGeneratedMustBeRecordingL
     "VUID-vkCmdSetDepthTestEnable-commandBuffer-recording",
     "VUID-vkCmdSetDepthWriteEnable-commandBuffer-recording",
     "VUID-vkCmdSetDepthWriteEnable-commandBuffer-recording",
+    "VUID-vkCmdSetDescriptorBufferOffsetsEXT-commandBuffer-recording",
     "VUID-vkCmdSetDeviceMask-commandBuffer-recording",
     "VUID-vkCmdSetDeviceMask-commandBuffer-recording",
     "VUID-vkCmdSetDiscardRectangleEXT-commandBuffer-recording",
@@ -268,6 +275,8 @@ static const std::array<CommandSupportedQueueType, CMD_RANGE_SIZE> kGeneratedQue
     {VK_QUEUE_GRAPHICS_BIT, "VUID-vkCmdBeginRendering-commandBuffer-cmdpool"},
     {VK_QUEUE_GRAPHICS_BIT, "VUID-vkCmdBeginTransformFeedbackEXT-commandBuffer-cmdpool"},
     {VK_QUEUE_VIDEO_DECODE_BIT_KHR | VK_QUEUE_VIDEO_ENCODE_BIT_KHR, "VUID-vkCmdBeginVideoCodingKHR-commandBuffer-cmdpool"},
+    {VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdBindDescriptorBufferEmbeddedSamplersEXT-commandBuffer-cmdpool"},
+    {VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdBindDescriptorBuffersEXT-commandBuffer-cmdpool"},
     {VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdBindDescriptorSets-commandBuffer-cmdpool"},
     {VK_QUEUE_GRAPHICS_BIT, "VUID-vkCmdBindIndexBuffer-commandBuffer-cmdpool"},
     {VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdBindInvocationMaskHUAWEI-commandBuffer-cmdpool"},
@@ -304,7 +313,9 @@ static const std::array<CommandSupportedQueueType, CMD_RANGE_SIZE> kGeneratedQue
     {VK_QUEUE_TRANSFER_BIT | VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdCopyImageToBuffer-commandBuffer-cmdpool"},
     {VK_QUEUE_TRANSFER_BIT | VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdCopyImageToBuffer2-commandBuffer-cmdpool"},
     {VK_QUEUE_TRANSFER_BIT | VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdCopyImageToBuffer2-commandBuffer-cmdpool"},
+    {VK_QUEUE_TRANSFER_BIT | VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdCopyMemoryIndirectNV-commandBuffer-cmdpool"},
     {VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdCopyMemoryToAccelerationStructureKHR-commandBuffer-cmdpool"},
+    {VK_QUEUE_TRANSFER_BIT | VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdCopyMemoryToImageIndirectNV-commandBuffer-cmdpool"},
     {VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdCopyMemoryToMicromapEXT-commandBuffer-cmdpool"},
     {VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdCopyMicromapEXT-commandBuffer-cmdpool"},
     {VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdCopyMicromapToMemoryEXT-commandBuffer-cmdpool"},
@@ -314,6 +325,8 @@ static const std::array<CommandSupportedQueueType, CMD_RANGE_SIZE> kGeneratedQue
     {VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdDebugMarkerEndEXT-commandBuffer-cmdpool"},
     {VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdDebugMarkerInsertEXT-commandBuffer-cmdpool"},
     {VK_QUEUE_VIDEO_DECODE_BIT_KHR, "VUID-vkCmdDecodeVideoKHR-commandBuffer-cmdpool"},
+    {VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdDecompressMemoryIndirectCountNV-commandBuffer-cmdpool"},
+    {VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdDecompressMemoryNV-commandBuffer-cmdpool"},
     {VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdDispatch-commandBuffer-cmdpool"},
     {VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdDispatchBase-commandBuffer-cmdpool"},
     {VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdDispatchBase-commandBuffer-cmdpool"},
@@ -367,7 +380,7 @@ static const std::array<CommandSupportedQueueType, CMD_RANGE_SIZE> kGeneratedQue
     {VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_VIDEO_DECODE_BIT_KHR | VK_QUEUE_VIDEO_ENCODE_BIT_KHR, "VUID-vkCmdResetEvent-commandBuffer-cmdpool"},
     {VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_VIDEO_DECODE_BIT_KHR | VK_QUEUE_VIDEO_ENCODE_BIT_KHR, "VUID-vkCmdResetEvent2-commandBuffer-cmdpool"},
     {VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_VIDEO_DECODE_BIT_KHR | VK_QUEUE_VIDEO_ENCODE_BIT_KHR, "VUID-vkCmdResetEvent2-commandBuffer-cmdpool"},
-    {VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_VIDEO_DECODE_BIT_KHR | VK_QUEUE_VIDEO_ENCODE_BIT_KHR, "VUID-vkCmdResetQueryPool-commandBuffer-cmdpool"},
+    {VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_VIDEO_DECODE_BIT_KHR | VK_QUEUE_VIDEO_ENCODE_BIT_KHR | VK_QUEUE_OPTICAL_FLOW_BIT_NV, "VUID-vkCmdResetQueryPool-commandBuffer-cmdpool"},
     {VK_QUEUE_GRAPHICS_BIT, "VUID-vkCmdResolveImage-commandBuffer-cmdpool"},
     {VK_QUEUE_GRAPHICS_BIT, "VUID-vkCmdResolveImage2-commandBuffer-cmdpool"},
     {VK_QUEUE_GRAPHICS_BIT, "VUID-vkCmdResolveImage2-commandBuffer-cmdpool"},
@@ -405,6 +418,7 @@ static const std::array<CommandSupportedQueueType, CMD_RANGE_SIZE> kGeneratedQue
     {VK_QUEUE_GRAPHICS_BIT, "VUID-vkCmdSetDepthTestEnable-commandBuffer-cmdpool"},
     {VK_QUEUE_GRAPHICS_BIT, "VUID-vkCmdSetDepthWriteEnable-commandBuffer-cmdpool"},
     {VK_QUEUE_GRAPHICS_BIT, "VUID-vkCmdSetDepthWriteEnable-commandBuffer-cmdpool"},
+    {VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdSetDescriptorBufferOffsetsEXT-commandBuffer-cmdpool"},
     {VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT, "VUID-vkCmdSetDeviceMask-commandBuffer-cmdpool"},
     {VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT, "VUID-vkCmdSetDeviceMask-commandBuffer-cmdpool"},
     {VK_QUEUE_GRAPHICS_BIT, "VUID-vkCmdSetDiscardRectangleEXT-commandBuffer-cmdpool"},
@@ -476,7 +490,7 @@ static const std::array<CommandSupportedQueueType, CMD_RANGE_SIZE> kGeneratedQue
     {VK_QUEUE_TRANSFER_BIT | VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdWriteBufferMarker2AMD-commandBuffer-cmdpool"},
     {VK_QUEUE_TRANSFER_BIT | VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdWriteBufferMarkerAMD-commandBuffer-cmdpool"},
     {VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdWriteMicromapsPropertiesEXT-commandBuffer-cmdpool"},
-    {VK_QUEUE_TRANSFER_BIT | VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_VIDEO_DECODE_BIT_KHR | VK_QUEUE_VIDEO_ENCODE_BIT_KHR, "VUID-vkCmdWriteTimestamp-commandBuffer-cmdpool"},
+    {VK_QUEUE_TRANSFER_BIT | VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_VIDEO_DECODE_BIT_KHR | VK_QUEUE_VIDEO_ENCODE_BIT_KHR | VK_QUEUE_OPTICAL_FLOW_BIT_NV, "VUID-vkCmdWriteTimestamp-commandBuffer-cmdpool"},
     {VK_QUEUE_TRANSFER_BIT | VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_VIDEO_DECODE_BIT_KHR | VK_QUEUE_VIDEO_ENCODE_BIT_KHR, "VUID-vkCmdWriteTimestamp2-commandBuffer-cmdpool"},
     {VK_QUEUE_TRANSFER_BIT | VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_VIDEO_DECODE_BIT_KHR | VK_QUEUE_VIDEO_ENCODE_BIT_KHR, "VUID-vkCmdWriteTimestamp2-commandBuffer-cmdpool"},
 }};
@@ -503,6 +517,8 @@ static const std::array<CommandSupportedRenderPass, CMD_RANGE_SIZE> kGeneratedRe
     {CMD_RENDER_PASS_OUTSIDE, "VUID-vkCmdBeginRendering-renderpass"},
     {CMD_RENDER_PASS_INSIDE, "VUID-vkCmdBeginTransformFeedbackEXT-renderpass"},
     {CMD_RENDER_PASS_OUTSIDE, "VUID-vkCmdBeginVideoCodingKHR-renderpass"},
+    {CMD_RENDER_PASS_BOTH, kVUIDUndefined},
+    {CMD_RENDER_PASS_BOTH, kVUIDUndefined},
     {CMD_RENDER_PASS_BOTH, kVUIDUndefined},
     {CMD_RENDER_PASS_BOTH, kVUIDUndefined},
     {CMD_RENDER_PASS_OUTSIDE, "VUID-vkCmdBindInvocationMaskHUAWEI-renderpass"},
@@ -539,7 +555,9 @@ static const std::array<CommandSupportedRenderPass, CMD_RANGE_SIZE> kGeneratedRe
     {CMD_RENDER_PASS_OUTSIDE, "VUID-vkCmdCopyImageToBuffer-renderpass"},
     {CMD_RENDER_PASS_OUTSIDE, "VUID-vkCmdCopyImageToBuffer2-renderpass"},
     {CMD_RENDER_PASS_OUTSIDE, "VUID-vkCmdCopyImageToBuffer2-renderpass"},
+    {CMD_RENDER_PASS_OUTSIDE, "VUID-vkCmdCopyMemoryIndirectNV-renderpass"},
     {CMD_RENDER_PASS_OUTSIDE, "VUID-vkCmdCopyMemoryToAccelerationStructureKHR-renderpass"},
+    {CMD_RENDER_PASS_OUTSIDE, "VUID-vkCmdCopyMemoryToImageIndirectNV-renderpass"},
     {CMD_RENDER_PASS_OUTSIDE, "VUID-vkCmdCopyMemoryToMicromapEXT-renderpass"},
     {CMD_RENDER_PASS_OUTSIDE, "VUID-vkCmdCopyMicromapEXT-renderpass"},
     {CMD_RENDER_PASS_OUTSIDE, "VUID-vkCmdCopyMicromapToMemoryEXT-renderpass"},
@@ -549,6 +567,8 @@ static const std::array<CommandSupportedRenderPass, CMD_RANGE_SIZE> kGeneratedRe
     {CMD_RENDER_PASS_BOTH, kVUIDUndefined},
     {CMD_RENDER_PASS_BOTH, kVUIDUndefined},
     {CMD_RENDER_PASS_OUTSIDE, "VUID-vkCmdDecodeVideoKHR-renderpass"},
+    {CMD_RENDER_PASS_OUTSIDE, "VUID-vkCmdDecompressMemoryIndirectCountNV-renderpass"},
+    {CMD_RENDER_PASS_OUTSIDE, "VUID-vkCmdDecompressMemoryNV-renderpass"},
     {CMD_RENDER_PASS_OUTSIDE, "VUID-vkCmdDispatch-renderpass"},
     {CMD_RENDER_PASS_OUTSIDE, "VUID-vkCmdDispatchBase-renderpass"},
     {CMD_RENDER_PASS_OUTSIDE, "VUID-vkCmdDispatchBase-renderpass"},
@@ -606,6 +626,7 @@ static const std::array<CommandSupportedRenderPass, CMD_RANGE_SIZE> kGeneratedRe
     {CMD_RENDER_PASS_OUTSIDE, "VUID-vkCmdResolveImage-renderpass"},
     {CMD_RENDER_PASS_OUTSIDE, "VUID-vkCmdResolveImage2-renderpass"},
     {CMD_RENDER_PASS_OUTSIDE, "VUID-vkCmdResolveImage2-renderpass"},
+    {CMD_RENDER_PASS_BOTH, kVUIDUndefined},
     {CMD_RENDER_PASS_BOTH, kVUIDUndefined},
     {CMD_RENDER_PASS_BOTH, kVUIDUndefined},
     {CMD_RENDER_PASS_BOTH, kVUIDUndefined},
@@ -749,6 +770,8 @@ static const std::array<const char *, CMD_RANGE_SIZE> kGeneratedBufferLevelList 
     nullptr,
     nullptr,
     nullptr,
+    nullptr,
+    nullptr,
     "VUID-vkCmdControlVideoCodingKHR-bufferlevel",
     nullptr,
     nullptr,
@@ -774,7 +797,11 @@ static const std::array<const char *, CMD_RANGE_SIZE> kGeneratedBufferLevelList 
     nullptr,
     nullptr,
     nullptr,
+    nullptr,
+    nullptr,
     "VUID-vkCmdDecodeVideoKHR-bufferlevel",
+    nullptr,
+    nullptr,
     nullptr,
     nullptr,
     nullptr,
@@ -940,16 +967,17 @@ static const std::array<const char *, CMD_RANGE_SIZE> kGeneratedBufferLevelList 
     nullptr,
     nullptr,
     nullptr,
+    nullptr,
 }};
 
 // Used to handle all the implicit VUs that are autogenerated from the registry
-bool CoreChecks::ValidateCmd(const CMD_BUFFER_STATE *cb_state, const CMD_TYPE cmd) const {
+bool CoreChecks::ValidateCmd(const CMD_BUFFER_STATE &cb_state, const CMD_TYPE cmd) const {
     bool skip = false;
     const char *caller_name = CommandTypeString(cmd);
 
     // Validate the given command being added to the specified cmd buffer,
     // flagging errors if CB is not in the recording state or if there's an issue with the Cmd ordering
-    switch (cb_state->state) {
+    switch (cb_state.state) {
         case CB_RECORDING:
             skip |= ValidateCmdSubpassState(cb_state, cmd);
             break;
@@ -962,7 +990,7 @@ bool CoreChecks::ValidateCmd(const CMD_BUFFER_STATE *cb_state, const CMD_TYPE cm
         default:
             assert(cmd != CMD_NONE);
             const auto error = kGeneratedMustBeRecordingList[cmd];
-            skip |= LogError(cb_state->commandBuffer(), error, "You must call vkBeginCommandBuffer() before this call to %s.",
+            skip |= LogError(cb_state.commandBuffer(), error, "You must call vkBeginCommandBuffer() before this call to %s.",
                             caller_name);
     }
 
@@ -986,3 +1014,316 @@ bool CoreChecks::ValidateCmd(const CMD_BUFFER_STATE *cb_state, const CMD_TYPE cm
 
     return skip;
 }
+
+static VkDynamicState ConvertToDynamicState(CBDynamicStatus flag) {
+    switch (flag) {
+        case CB_DYNAMIC_VIEWPORT_SET:
+            return VK_DYNAMIC_STATE_VIEWPORT;
+        case CB_DYNAMIC_SCISSOR_SET:
+            return VK_DYNAMIC_STATE_SCISSOR;
+        case CB_DYNAMIC_LINE_WIDTH_SET:
+            return VK_DYNAMIC_STATE_LINE_WIDTH;
+        case CB_DYNAMIC_DEPTH_BIAS_SET:
+            return VK_DYNAMIC_STATE_DEPTH_BIAS;
+        case CB_DYNAMIC_BLEND_CONSTANTS_SET:
+            return VK_DYNAMIC_STATE_BLEND_CONSTANTS;
+        case CB_DYNAMIC_DEPTH_BOUNDS_SET:
+            return VK_DYNAMIC_STATE_DEPTH_BOUNDS;
+        case CB_DYNAMIC_STENCIL_COMPARE_MASK_SET:
+            return VK_DYNAMIC_STATE_STENCIL_COMPARE_MASK;
+        case CB_DYNAMIC_STENCIL_WRITE_MASK_SET:
+            return VK_DYNAMIC_STATE_STENCIL_WRITE_MASK;
+        case CB_DYNAMIC_STENCIL_REFERENCE_SET:
+            return VK_DYNAMIC_STATE_STENCIL_REFERENCE;
+        case CB_DYNAMIC_CULL_MODE_SET:
+            return VK_DYNAMIC_STATE_CULL_MODE;
+        case CB_DYNAMIC_FRONT_FACE_SET:
+            return VK_DYNAMIC_STATE_FRONT_FACE;
+        case CB_DYNAMIC_PRIMITIVE_TOPOLOGY_SET:
+            return VK_DYNAMIC_STATE_PRIMITIVE_TOPOLOGY;
+        case CB_DYNAMIC_VIEWPORT_WITH_COUNT_SET:
+            return VK_DYNAMIC_STATE_VIEWPORT_WITH_COUNT;
+        case CB_DYNAMIC_SCISSOR_WITH_COUNT_SET:
+            return VK_DYNAMIC_STATE_SCISSOR_WITH_COUNT;
+        case CB_DYNAMIC_VERTEX_INPUT_BINDING_STRIDE_SET:
+            return VK_DYNAMIC_STATE_VERTEX_INPUT_BINDING_STRIDE;
+        case CB_DYNAMIC_DEPTH_TEST_ENABLE_SET:
+            return VK_DYNAMIC_STATE_DEPTH_TEST_ENABLE;
+        case CB_DYNAMIC_DEPTH_WRITE_ENABLE_SET:
+            return VK_DYNAMIC_STATE_DEPTH_WRITE_ENABLE;
+        case CB_DYNAMIC_DEPTH_COMPARE_OP_SET:
+            return VK_DYNAMIC_STATE_DEPTH_COMPARE_OP;
+        case CB_DYNAMIC_DEPTH_BOUNDS_TEST_ENABLE_SET:
+            return VK_DYNAMIC_STATE_DEPTH_BOUNDS_TEST_ENABLE;
+        case CB_DYNAMIC_STENCIL_TEST_ENABLE_SET:
+            return VK_DYNAMIC_STATE_STENCIL_TEST_ENABLE;
+        case CB_DYNAMIC_STENCIL_OP_SET:
+            return VK_DYNAMIC_STATE_STENCIL_OP;
+        case CB_DYNAMIC_RASTERIZER_DISCARD_ENABLE_SET:
+            return VK_DYNAMIC_STATE_RASTERIZER_DISCARD_ENABLE;
+        case CB_DYNAMIC_DEPTH_BIAS_ENABLE_SET:
+            return VK_DYNAMIC_STATE_DEPTH_BIAS_ENABLE;
+        case CB_DYNAMIC_PRIMITIVE_RESTART_ENABLE_SET:
+            return VK_DYNAMIC_STATE_PRIMITIVE_RESTART_ENABLE;
+        case CB_DYNAMIC_VIEWPORT_W_SCALING_NV_SET:
+            return VK_DYNAMIC_STATE_VIEWPORT_W_SCALING_NV;
+        case CB_DYNAMIC_DISCARD_RECTANGLE_EXT_SET:
+            return VK_DYNAMIC_STATE_DISCARD_RECTANGLE_EXT;
+        case CB_DYNAMIC_SAMPLE_LOCATIONS_EXT_SET:
+            return VK_DYNAMIC_STATE_SAMPLE_LOCATIONS_EXT;
+        case CB_DYNAMIC_RAY_TRACING_PIPELINE_STACK_SIZE_KHR_SET:
+            return VK_DYNAMIC_STATE_RAY_TRACING_PIPELINE_STACK_SIZE_KHR;
+        case CB_DYNAMIC_VIEWPORT_SHADING_RATE_PALETTE_NV_SET:
+            return VK_DYNAMIC_STATE_VIEWPORT_SHADING_RATE_PALETTE_NV;
+        case CB_DYNAMIC_VIEWPORT_COARSE_SAMPLE_ORDER_NV_SET:
+            return VK_DYNAMIC_STATE_VIEWPORT_COARSE_SAMPLE_ORDER_NV;
+        case CB_DYNAMIC_EXCLUSIVE_SCISSOR_NV_SET:
+            return VK_DYNAMIC_STATE_EXCLUSIVE_SCISSOR_NV;
+        case CB_DYNAMIC_FRAGMENT_SHADING_RATE_KHR_SET:
+            return VK_DYNAMIC_STATE_FRAGMENT_SHADING_RATE_KHR;
+        case CB_DYNAMIC_LINE_STIPPLE_EXT_SET:
+            return VK_DYNAMIC_STATE_LINE_STIPPLE_EXT;
+        case CB_DYNAMIC_VERTEX_INPUT_EXT_SET:
+            return VK_DYNAMIC_STATE_VERTEX_INPUT_EXT;
+        case CB_DYNAMIC_PATCH_CONTROL_POINTS_EXT_SET:
+            return VK_DYNAMIC_STATE_PATCH_CONTROL_POINTS_EXT;
+        case CB_DYNAMIC_LOGIC_OP_EXT_SET:
+            return VK_DYNAMIC_STATE_LOGIC_OP_EXT;
+        case CB_DYNAMIC_COLOR_WRITE_ENABLE_EXT_SET:
+            return VK_DYNAMIC_STATE_COLOR_WRITE_ENABLE_EXT;
+        case CB_DYNAMIC_TESSELLATION_DOMAIN_ORIGIN_EXT_SET:
+            return VK_DYNAMIC_STATE_TESSELLATION_DOMAIN_ORIGIN_EXT;
+        case CB_DYNAMIC_DEPTH_CLAMP_ENABLE_EXT_SET:
+            return VK_DYNAMIC_STATE_DEPTH_CLAMP_ENABLE_EXT;
+        case CB_DYNAMIC_POLYGON_MODE_EXT_SET:
+            return VK_DYNAMIC_STATE_POLYGON_MODE_EXT;
+        case CB_DYNAMIC_RASTERIZATION_SAMPLES_EXT_SET:
+            return VK_DYNAMIC_STATE_RASTERIZATION_SAMPLES_EXT;
+        case CB_DYNAMIC_SAMPLE_MASK_EXT_SET:
+            return VK_DYNAMIC_STATE_SAMPLE_MASK_EXT;
+        case CB_DYNAMIC_ALPHA_TO_COVERAGE_ENABLE_EXT_SET:
+            return VK_DYNAMIC_STATE_ALPHA_TO_COVERAGE_ENABLE_EXT;
+        case CB_DYNAMIC_ALPHA_TO_ONE_ENABLE_EXT_SET:
+            return VK_DYNAMIC_STATE_ALPHA_TO_ONE_ENABLE_EXT;
+        case CB_DYNAMIC_LOGIC_OP_ENABLE_EXT_SET:
+            return VK_DYNAMIC_STATE_LOGIC_OP_ENABLE_EXT;
+        case CB_DYNAMIC_COLOR_BLEND_ENABLE_EXT_SET:
+            return VK_DYNAMIC_STATE_COLOR_BLEND_ENABLE_EXT;
+        case CB_DYNAMIC_COLOR_BLEND_EQUATION_EXT_SET:
+            return VK_DYNAMIC_STATE_COLOR_BLEND_EQUATION_EXT;
+        case CB_DYNAMIC_COLOR_WRITE_MASK_EXT_SET:
+            return VK_DYNAMIC_STATE_COLOR_WRITE_MASK_EXT;
+        case CB_DYNAMIC_RASTERIZATION_STREAM_EXT_SET:
+            return VK_DYNAMIC_STATE_RASTERIZATION_STREAM_EXT;
+        case CB_DYNAMIC_CONSERVATIVE_RASTERIZATION_MODE_EXT_SET:
+            return VK_DYNAMIC_STATE_CONSERVATIVE_RASTERIZATION_MODE_EXT;
+        case CB_DYNAMIC_EXTRA_PRIMITIVE_OVERESTIMATION_SIZE_EXT_SET:
+            return VK_DYNAMIC_STATE_EXTRA_PRIMITIVE_OVERESTIMATION_SIZE_EXT;
+        case CB_DYNAMIC_DEPTH_CLIP_ENABLE_EXT_SET:
+            return VK_DYNAMIC_STATE_DEPTH_CLIP_ENABLE_EXT;
+        case CB_DYNAMIC_SAMPLE_LOCATIONS_ENABLE_EXT_SET:
+            return VK_DYNAMIC_STATE_SAMPLE_LOCATIONS_ENABLE_EXT;
+        case CB_DYNAMIC_COLOR_BLEND_ADVANCED_EXT_SET:
+            return VK_DYNAMIC_STATE_COLOR_BLEND_ADVANCED_EXT;
+        case CB_DYNAMIC_PROVOKING_VERTEX_MODE_EXT_SET:
+            return VK_DYNAMIC_STATE_PROVOKING_VERTEX_MODE_EXT;
+        case CB_DYNAMIC_LINE_RASTERIZATION_MODE_EXT_SET:
+            return VK_DYNAMIC_STATE_LINE_RASTERIZATION_MODE_EXT;
+        case CB_DYNAMIC_LINE_STIPPLE_ENABLE_EXT_SET:
+            return VK_DYNAMIC_STATE_LINE_STIPPLE_ENABLE_EXT;
+        case CB_DYNAMIC_DEPTH_CLIP_NEGATIVE_ONE_TO_ONE_EXT_SET:
+            return VK_DYNAMIC_STATE_DEPTH_CLIP_NEGATIVE_ONE_TO_ONE_EXT;
+        case CB_DYNAMIC_VIEWPORT_W_SCALING_ENABLE_NV_SET:
+            return VK_DYNAMIC_STATE_VIEWPORT_W_SCALING_ENABLE_NV;
+        case CB_DYNAMIC_VIEWPORT_SWIZZLE_NV_SET:
+            return VK_DYNAMIC_STATE_VIEWPORT_SWIZZLE_NV;
+        case CB_DYNAMIC_COVERAGE_TO_COLOR_ENABLE_NV_SET:
+            return VK_DYNAMIC_STATE_COVERAGE_TO_COLOR_ENABLE_NV;
+        case CB_DYNAMIC_COVERAGE_TO_COLOR_LOCATION_NV_SET:
+            return VK_DYNAMIC_STATE_COVERAGE_TO_COLOR_LOCATION_NV;
+        case CB_DYNAMIC_COVERAGE_MODULATION_MODE_NV_SET:
+            return VK_DYNAMIC_STATE_COVERAGE_MODULATION_MODE_NV;
+        case CB_DYNAMIC_COVERAGE_MODULATION_TABLE_ENABLE_NV_SET:
+            return VK_DYNAMIC_STATE_COVERAGE_MODULATION_TABLE_ENABLE_NV;
+        case CB_DYNAMIC_COVERAGE_MODULATION_TABLE_NV_SET:
+            return VK_DYNAMIC_STATE_COVERAGE_MODULATION_TABLE_NV;
+        case CB_DYNAMIC_SHADING_RATE_IMAGE_ENABLE_NV_SET:
+            return VK_DYNAMIC_STATE_SHADING_RATE_IMAGE_ENABLE_NV;
+        case CB_DYNAMIC_REPRESENTATIVE_FRAGMENT_TEST_ENABLE_NV_SET:
+            return VK_DYNAMIC_STATE_REPRESENTATIVE_FRAGMENT_TEST_ENABLE_NV;
+        case CB_DYNAMIC_COVERAGE_REDUCTION_MODE_NV_SET:
+            return VK_DYNAMIC_STATE_COVERAGE_REDUCTION_MODE_NV;
+        default:
+            return VK_DYNAMIC_STATE_MAX_ENUM;
+    }
+}
+
+static CBDynamicStatus ConvertToCBDynamicStatus(VkDynamicState state) {
+    switch (state) {
+        case VK_DYNAMIC_STATE_VIEWPORT:
+            return CB_DYNAMIC_VIEWPORT_SET;
+        case VK_DYNAMIC_STATE_SCISSOR:
+            return CB_DYNAMIC_SCISSOR_SET;
+        case VK_DYNAMIC_STATE_LINE_WIDTH:
+            return CB_DYNAMIC_LINE_WIDTH_SET;
+        case VK_DYNAMIC_STATE_DEPTH_BIAS:
+            return CB_DYNAMIC_DEPTH_BIAS_SET;
+        case VK_DYNAMIC_STATE_BLEND_CONSTANTS:
+            return CB_DYNAMIC_BLEND_CONSTANTS_SET;
+        case VK_DYNAMIC_STATE_DEPTH_BOUNDS:
+            return CB_DYNAMIC_DEPTH_BOUNDS_SET;
+        case VK_DYNAMIC_STATE_STENCIL_COMPARE_MASK:
+            return CB_DYNAMIC_STENCIL_COMPARE_MASK_SET;
+        case VK_DYNAMIC_STATE_STENCIL_WRITE_MASK:
+            return CB_DYNAMIC_STENCIL_WRITE_MASK_SET;
+        case VK_DYNAMIC_STATE_STENCIL_REFERENCE:
+            return CB_DYNAMIC_STENCIL_REFERENCE_SET;
+        case VK_DYNAMIC_STATE_CULL_MODE:
+            return CB_DYNAMIC_CULL_MODE_SET;
+        case VK_DYNAMIC_STATE_FRONT_FACE:
+            return CB_DYNAMIC_FRONT_FACE_SET;
+        case VK_DYNAMIC_STATE_PRIMITIVE_TOPOLOGY:
+            return CB_DYNAMIC_PRIMITIVE_TOPOLOGY_SET;
+        case VK_DYNAMIC_STATE_VIEWPORT_WITH_COUNT:
+            return CB_DYNAMIC_VIEWPORT_WITH_COUNT_SET;
+        case VK_DYNAMIC_STATE_SCISSOR_WITH_COUNT:
+            return CB_DYNAMIC_SCISSOR_WITH_COUNT_SET;
+        case VK_DYNAMIC_STATE_VERTEX_INPUT_BINDING_STRIDE:
+            return CB_DYNAMIC_VERTEX_INPUT_BINDING_STRIDE_SET;
+        case VK_DYNAMIC_STATE_DEPTH_TEST_ENABLE:
+            return CB_DYNAMIC_DEPTH_TEST_ENABLE_SET;
+        case VK_DYNAMIC_STATE_DEPTH_WRITE_ENABLE:
+            return CB_DYNAMIC_DEPTH_WRITE_ENABLE_SET;
+        case VK_DYNAMIC_STATE_DEPTH_COMPARE_OP:
+            return CB_DYNAMIC_DEPTH_COMPARE_OP_SET;
+        case VK_DYNAMIC_STATE_DEPTH_BOUNDS_TEST_ENABLE:
+            return CB_DYNAMIC_DEPTH_BOUNDS_TEST_ENABLE_SET;
+        case VK_DYNAMIC_STATE_STENCIL_TEST_ENABLE:
+            return CB_DYNAMIC_STENCIL_TEST_ENABLE_SET;
+        case VK_DYNAMIC_STATE_STENCIL_OP:
+            return CB_DYNAMIC_STENCIL_OP_SET;
+        case VK_DYNAMIC_STATE_RASTERIZER_DISCARD_ENABLE:
+            return CB_DYNAMIC_RASTERIZER_DISCARD_ENABLE_SET;
+        case VK_DYNAMIC_STATE_DEPTH_BIAS_ENABLE:
+            return CB_DYNAMIC_DEPTH_BIAS_ENABLE_SET;
+        case VK_DYNAMIC_STATE_PRIMITIVE_RESTART_ENABLE:
+            return CB_DYNAMIC_PRIMITIVE_RESTART_ENABLE_SET;
+        case VK_DYNAMIC_STATE_VIEWPORT_W_SCALING_NV:
+            return CB_DYNAMIC_VIEWPORT_W_SCALING_NV_SET;
+        case VK_DYNAMIC_STATE_DISCARD_RECTANGLE_EXT:
+            return CB_DYNAMIC_DISCARD_RECTANGLE_EXT_SET;
+        case VK_DYNAMIC_STATE_SAMPLE_LOCATIONS_EXT:
+            return CB_DYNAMIC_SAMPLE_LOCATIONS_EXT_SET;
+        case VK_DYNAMIC_STATE_RAY_TRACING_PIPELINE_STACK_SIZE_KHR:
+            return CB_DYNAMIC_RAY_TRACING_PIPELINE_STACK_SIZE_KHR_SET;
+        case VK_DYNAMIC_STATE_VIEWPORT_SHADING_RATE_PALETTE_NV:
+            return CB_DYNAMIC_VIEWPORT_SHADING_RATE_PALETTE_NV_SET;
+        case VK_DYNAMIC_STATE_VIEWPORT_COARSE_SAMPLE_ORDER_NV:
+            return CB_DYNAMIC_VIEWPORT_COARSE_SAMPLE_ORDER_NV_SET;
+        case VK_DYNAMIC_STATE_EXCLUSIVE_SCISSOR_NV:
+            return CB_DYNAMIC_EXCLUSIVE_SCISSOR_NV_SET;
+        case VK_DYNAMIC_STATE_FRAGMENT_SHADING_RATE_KHR:
+            return CB_DYNAMIC_FRAGMENT_SHADING_RATE_KHR_SET;
+        case VK_DYNAMIC_STATE_LINE_STIPPLE_EXT:
+            return CB_DYNAMIC_LINE_STIPPLE_EXT_SET;
+        case VK_DYNAMIC_STATE_VERTEX_INPUT_EXT:
+            return CB_DYNAMIC_VERTEX_INPUT_EXT_SET;
+        case VK_DYNAMIC_STATE_PATCH_CONTROL_POINTS_EXT:
+            return CB_DYNAMIC_PATCH_CONTROL_POINTS_EXT_SET;
+        case VK_DYNAMIC_STATE_LOGIC_OP_EXT:
+            return CB_DYNAMIC_LOGIC_OP_EXT_SET;
+        case VK_DYNAMIC_STATE_COLOR_WRITE_ENABLE_EXT:
+            return CB_DYNAMIC_COLOR_WRITE_ENABLE_EXT_SET;
+        case VK_DYNAMIC_STATE_TESSELLATION_DOMAIN_ORIGIN_EXT:
+            return CB_DYNAMIC_TESSELLATION_DOMAIN_ORIGIN_EXT_SET;
+        case VK_DYNAMIC_STATE_DEPTH_CLAMP_ENABLE_EXT:
+            return CB_DYNAMIC_DEPTH_CLAMP_ENABLE_EXT_SET;
+        case VK_DYNAMIC_STATE_POLYGON_MODE_EXT:
+            return CB_DYNAMIC_POLYGON_MODE_EXT_SET;
+        case VK_DYNAMIC_STATE_RASTERIZATION_SAMPLES_EXT:
+            return CB_DYNAMIC_RASTERIZATION_SAMPLES_EXT_SET;
+        case VK_DYNAMIC_STATE_SAMPLE_MASK_EXT:
+            return CB_DYNAMIC_SAMPLE_MASK_EXT_SET;
+        case VK_DYNAMIC_STATE_ALPHA_TO_COVERAGE_ENABLE_EXT:
+            return CB_DYNAMIC_ALPHA_TO_COVERAGE_ENABLE_EXT_SET;
+        case VK_DYNAMIC_STATE_ALPHA_TO_ONE_ENABLE_EXT:
+            return CB_DYNAMIC_ALPHA_TO_ONE_ENABLE_EXT_SET;
+        case VK_DYNAMIC_STATE_LOGIC_OP_ENABLE_EXT:
+            return CB_DYNAMIC_LOGIC_OP_ENABLE_EXT_SET;
+        case VK_DYNAMIC_STATE_COLOR_BLEND_ENABLE_EXT:
+            return CB_DYNAMIC_COLOR_BLEND_ENABLE_EXT_SET;
+        case VK_DYNAMIC_STATE_COLOR_BLEND_EQUATION_EXT:
+            return CB_DYNAMIC_COLOR_BLEND_EQUATION_EXT_SET;
+        case VK_DYNAMIC_STATE_COLOR_WRITE_MASK_EXT:
+            return CB_DYNAMIC_COLOR_WRITE_MASK_EXT_SET;
+        case VK_DYNAMIC_STATE_RASTERIZATION_STREAM_EXT:
+            return CB_DYNAMIC_RASTERIZATION_STREAM_EXT_SET;
+        case VK_DYNAMIC_STATE_CONSERVATIVE_RASTERIZATION_MODE_EXT:
+            return CB_DYNAMIC_CONSERVATIVE_RASTERIZATION_MODE_EXT_SET;
+        case VK_DYNAMIC_STATE_EXTRA_PRIMITIVE_OVERESTIMATION_SIZE_EXT:
+            return CB_DYNAMIC_EXTRA_PRIMITIVE_OVERESTIMATION_SIZE_EXT_SET;
+        case VK_DYNAMIC_STATE_DEPTH_CLIP_ENABLE_EXT:
+            return CB_DYNAMIC_DEPTH_CLIP_ENABLE_EXT_SET;
+        case VK_DYNAMIC_STATE_SAMPLE_LOCATIONS_ENABLE_EXT:
+            return CB_DYNAMIC_SAMPLE_LOCATIONS_ENABLE_EXT_SET;
+        case VK_DYNAMIC_STATE_COLOR_BLEND_ADVANCED_EXT:
+            return CB_DYNAMIC_COLOR_BLEND_ADVANCED_EXT_SET;
+        case VK_DYNAMIC_STATE_PROVOKING_VERTEX_MODE_EXT:
+            return CB_DYNAMIC_PROVOKING_VERTEX_MODE_EXT_SET;
+        case VK_DYNAMIC_STATE_LINE_RASTERIZATION_MODE_EXT:
+            return CB_DYNAMIC_LINE_RASTERIZATION_MODE_EXT_SET;
+        case VK_DYNAMIC_STATE_LINE_STIPPLE_ENABLE_EXT:
+            return CB_DYNAMIC_LINE_STIPPLE_ENABLE_EXT_SET;
+        case VK_DYNAMIC_STATE_DEPTH_CLIP_NEGATIVE_ONE_TO_ONE_EXT:
+            return CB_DYNAMIC_DEPTH_CLIP_NEGATIVE_ONE_TO_ONE_EXT_SET;
+        case VK_DYNAMIC_STATE_VIEWPORT_W_SCALING_ENABLE_NV:
+            return CB_DYNAMIC_VIEWPORT_W_SCALING_ENABLE_NV_SET;
+        case VK_DYNAMIC_STATE_VIEWPORT_SWIZZLE_NV:
+            return CB_DYNAMIC_VIEWPORT_SWIZZLE_NV_SET;
+        case VK_DYNAMIC_STATE_COVERAGE_TO_COLOR_ENABLE_NV:
+            return CB_DYNAMIC_COVERAGE_TO_COLOR_ENABLE_NV_SET;
+        case VK_DYNAMIC_STATE_COVERAGE_TO_COLOR_LOCATION_NV:
+            return CB_DYNAMIC_COVERAGE_TO_COLOR_LOCATION_NV_SET;
+        case VK_DYNAMIC_STATE_COVERAGE_MODULATION_MODE_NV:
+            return CB_DYNAMIC_COVERAGE_MODULATION_MODE_NV_SET;
+        case VK_DYNAMIC_STATE_COVERAGE_MODULATION_TABLE_ENABLE_NV:
+            return CB_DYNAMIC_COVERAGE_MODULATION_TABLE_ENABLE_NV_SET;
+        case VK_DYNAMIC_STATE_COVERAGE_MODULATION_TABLE_NV:
+            return CB_DYNAMIC_COVERAGE_MODULATION_TABLE_NV_SET;
+        case VK_DYNAMIC_STATE_SHADING_RATE_IMAGE_ENABLE_NV:
+            return CB_DYNAMIC_SHADING_RATE_IMAGE_ENABLE_NV_SET;
+        case VK_DYNAMIC_STATE_REPRESENTATIVE_FRAGMENT_TEST_ENABLE_NV:
+            return CB_DYNAMIC_REPRESENTATIVE_FRAGMENT_TEST_ENABLE_NV_SET;
+        case VK_DYNAMIC_STATE_COVERAGE_REDUCTION_MODE_NV:
+            return CB_DYNAMIC_COVERAGE_REDUCTION_MODE_NV_SET;
+        default:
+            return CB_DYNAMIC_STATUS_NUM;
+    }
+}
+
+std::string DynamicStateString(CBDynamicFlags const &dynamic_state) {
+    std::string ret;
+    // enum is not zero based
+    for (int index = 1; index < CB_DYNAMIC_STATUS_NUM; ++index) {
+        CBDynamicStatus status = static_cast<CBDynamicStatus>(index);
+        if (dynamic_state[status]) {
+            if (!ret.empty()) ret.append("|");
+            ret.append(string_VkDynamicState(ConvertToDynamicState(status)));
+        }
+    }
+    if (ret.empty()) ret.append(string_VkDynamicState(ConvertToDynamicState(CB_DYNAMIC_STATUS_NUM)));
+    return ret;
+}
+
+CBDynamicFlags MakeStaticStateMask(VkPipelineDynamicStateCreateInfo const *info) {
+    // initially assume everything is static state
+    CBDynamicFlags flags(~CBDynamicFlags(0));
+
+    if (info) {
+        for (uint32_t i = 0; i < info->dynamicStateCount; i++) {
+            flags.reset(ConvertToCBDynamicStatus(info->pDynamicStates[i]));
+        }
+    }
+    return flags;
+}
+

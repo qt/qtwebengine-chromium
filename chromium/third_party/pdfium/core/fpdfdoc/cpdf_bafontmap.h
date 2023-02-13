@@ -1,4 +1,4 @@
-// Copyright 2014 PDFium Authors. All rights reserved.
+// Copyright 2014 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -41,7 +41,7 @@ class CPDF_BAFontMap final : public IPVT_FontMap {
     Data();
     ~Data();
 
-    FX_Charset nCharset;
+    FX_Charset nCharset = FX_Charset::kANSI;
     RetainPtr<CPDF_Font> pFont;
     ByteString sFontName;
   };

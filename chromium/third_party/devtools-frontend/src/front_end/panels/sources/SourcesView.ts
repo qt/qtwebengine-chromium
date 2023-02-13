@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import * as Common from '../../core/common/common.js';
+import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as Root from '../../core/root/root.js';
@@ -69,7 +70,7 @@ export class SourcesView extends Common.ObjectWrapper.eventMixin<EventTypes, typ
     super();
 
     this.element.id = 'sources-panel-sources-view';
-    this.setMinimumAndPreferredSizes(250, 52, 250, 100);
+    this.setMinimumAndPreferredSizes(88, 52, 150, 100);
 
     this.placeholderOptionArray = [];
     this.selectedIndex = 0;
@@ -92,12 +93,6 @@ export class SourcesView extends Common.ObjectWrapper.eventMixin<EventTypes, typ
     this.historyManager = new EditingLocationHistoryManager(this);
 
     this.toolbarContainerElementInternal = this.element.createChild('div', 'sources-toolbar');
-    if (!Root.Runtime.experiments.isEnabled('sourcesPrettyPrint')) {
-      const toolbarEditorActions = new UI.Toolbar.Toolbar('', this.toolbarContainerElementInternal);
-      for (const action of getRegisteredEditorActions()) {
-        toolbarEditorActions.appendToolbarItem(action.getOrCreateButton(this));
-      }
-    }
     this.scriptViewToolbar = new UI.Toolbar.Toolbar('', this.toolbarContainerElementInternal);
     this.scriptViewToolbar.element.style.flex = 'auto';
     this.bottomToolbarInternal = new UI.Toolbar.Toolbar('', this.toolbarContainerElementInternal);
@@ -191,7 +186,7 @@ export class SourcesView extends Common.ObjectWrapper.eventMixin<EventTypes, typ
 
   private placeholderOnKeyDown(event: Event): void {
     const keyboardEvent = (event as KeyboardEvent);
-    if (isEnterOrSpaceKey(keyboardEvent)) {
+    if (Platform.KeyboardUtilities.isEnterOrSpaceKey(keyboardEvent)) {
       this.placeholderOptionArray[this.selectedIndex].handler();
       return;
     }
@@ -349,6 +344,9 @@ export class SourcesView extends Common.ObjectWrapper.eventMixin<EventTypes, typ
     if (view instanceof UI.View.SimpleView) {
       void view.toolbarItems().then(items => {
         this.scriptViewToolbar.removeToolbarItems();
+        for (const action of getRegisteredEditorActions()) {
+          this.scriptViewToolbar.appendToolbarItem(action.getOrCreateButton(this));
+        }
         items.map(item => this.scriptViewToolbar.appendToolbarItem(item));
       });
     }
@@ -387,6 +385,8 @@ export class SourcesView extends Common.ObjectWrapper.eventMixin<EventTypes, typ
         Root.Runtime.experiments.isEnabled(Root.Runtime.ExperimentName.HEADER_OVERRIDES)) {
       sourceView = new Components.HeadersView.HeadersView(uiSourceCode);
     } else {
+      const mediaType = Common.ResourceType.ResourceType.mimeFromURL(uiSourceCode.url());
+      Host.userMetrics.sourcesPanelFileOpened(mediaType);
       sourceFrame = new UISourceCodeFrame(uiSourceCode);
     }
 
@@ -759,6 +759,12 @@ export class ActionDelegate implements UI.ActionRegistration.ActionDelegate {
         return true;
       case 'sources.jump-to-next-location':
         sourcesView.onJumpToNextLocation();
+        return true;
+      case 'sources.next-editor-tab':
+        sourcesView.editorContainer.selectNextTab();
+        return true;
+      case 'sources.previous-editor-tab':
+        sourcesView.editorContainer.selectPrevTab();
         return true;
       case 'sources.close-editor-tab':
         return sourcesView.onCloseEditorTab();

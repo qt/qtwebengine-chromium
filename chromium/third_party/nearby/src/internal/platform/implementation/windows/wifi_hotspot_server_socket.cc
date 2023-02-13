@@ -30,6 +30,10 @@ namespace nearby {
 namespace windows {
 namespace {
 using ::winrt::Windows::Networking::Sockets::SocketQualityOfService;
+
+constexpr int kMaxRetries = 3;
+constexpr int kRetryIntervalMilliSeconds = 300;
+
 }  // namespace
 
 WifiHotspotServerSocket::WifiHotspotServerSocket(int port) : port_(port) {}
@@ -107,11 +111,21 @@ Exception WifiHotspotServerSocket::Close() {
 
     NEARBY_LOGS(INFO) << __func__ << ": Close completed succesfully.";
     return {Exception::kSuccess};
+  } catch (std::exception exception) {
+    closed_ = true;
+    cond_.SignalAll();
+    NEARBY_LOGS(ERROR) << __func__ << ": Exception: " << exception.what();
+    return {Exception::kIo};
+  } catch (const winrt::hresult_error &error) {
+    closed_ = true;
+    cond_.SignalAll();
+    NEARBY_LOGS(ERROR) << __func__ << ": WinRT exception: " << error.code()
+                       << ": " << winrt::to_string(error.message());
+    return {Exception::kIo};
   } catch (...) {
     closed_ = true;
     cond_.SignalAll();
-
-    NEARBY_LOGS(INFO) << __func__ << ": Failed to close server socket.";
+    NEARBY_LOGS(ERROR) << __func__ << ": Unknown exeption.";
     return {Exception::kIo};
   }
 }
@@ -158,9 +172,18 @@ bool WifiHotspotServerSocket::listen() {
     }
 
     return true;
+  } catch (std::exception exception) {
+    NEARBY_LOGS(ERROR)
+        << __func__
+        << ": Cannot accept connection on preferred port. Exception: "
+        << exception.what();
+  } catch (const winrt::hresult_error &error) {
+    NEARBY_LOGS(ERROR)
+        << __func__
+        << ":Cannot accept connection on preferred port.  WinRT exception: "
+        << error.code() << ": " << winrt::to_string(error.message());
   } catch (...) {
-    // Cannot bind to the preferred port, will let system to assign port.
-    NEARBY_LOGS(WARNING) << "cannot accept connection on preferred port.";
+    NEARBY_LOGS(ERROR) << __func__ << ": Unknown exeption.";
   }
 
   try {
@@ -170,9 +193,16 @@ bool WifiHotspotServerSocket::listen() {
         std::stoi(stream_socket_listener_.Information().LocalPort().c_str());
     NEARBY_LOGS(INFO) << "Server Socket port: " << port_;
     return true;
+  } catch (std::exception exception) {
+    NEARBY_LOGS(ERROR) << __func__ << ": Cannot bind to any port. Exception: "
+                       << exception.what();
+  } catch (const winrt::hresult_error &error) {
+    NEARBY_LOGS(ERROR) << __func__
+                       << ": Cannot bind to any port. WinRT exception: "
+                       << error.code() << ": "
+                       << winrt::to_string(error.message());
   } catch (...) {
-    // Cannot bind to the preferred port, will let system to assign port.
-    NEARBY_LOGS(ERROR) << "cannot bind to any port.";
+    NEARBY_LOGS(ERROR) << __func__ << ": Unknown exeption.";
   }
 
   return false;
@@ -238,17 +268,18 @@ std::string WifiHotspotServerSocket::GetHotspotIpAddresses() const {
         }
       }
     }
-  } catch (std::exception exception) {
-    NEARBY_LOGS(ERROR) << __func__ << ": Exception to GetHotspotIpAddresses: "
-                       << exception.what();
     return {};
-  } catch (const winrt::hresult_error &ex) {
-    NEARBY_LOGS(ERROR) << __func__
-                       << ": Exception to GetHotspotIpAddresses: " << ex.code()
-                       << ": " << winrt::to_string(ex.message());
+  } catch (std::exception exception) {
+    NEARBY_LOGS(ERROR) << __func__ << ": Exception: " << exception.what();
+    return {};
+  } catch (const winrt::hresult_error &error) {
+    NEARBY_LOGS(ERROR) << __func__ << ": WinRT exception: " << error.code()
+                       << ": " << winrt::to_string(error.message());
+    return {};
+  } catch (...) {
+    NEARBY_LOGS(ERROR) << __func__ << ": Unknown exeption.";
     return {};
   }
-  return {};
 }
 
 }  // namespace windows

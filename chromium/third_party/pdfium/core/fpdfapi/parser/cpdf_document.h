@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2016 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -55,11 +55,12 @@ class CPDF_Document : public Observable,
         RetainPtr<const CPDF_Stream> pFontStream) = 0;
     virtual void MaybePurgeFontFileStreamAcc(
         RetainPtr<CPDF_StreamAcc>&& pStreamAcc) = 0;
+    virtual void MaybePurgeImage(uint32_t objnum) = 0;
 
     void SetDocument(CPDF_Document* pDoc) { m_pDoc = pDoc; }
 
    protected:
-    CPDF_Document* GetDocument() const { return m_pDoc.Get(); }
+    CPDF_Document* GetDocument() const { return m_pDoc; }
 
    private:
     UnownedPtr<CPDF_Document> m_pDoc;
@@ -73,7 +74,7 @@ class CPDF_Document : public Observable,
     void SetDocument(CPDF_Document* pDoc) { m_pDoc = pDoc; }
 
    protected:
-    CPDF_Document* GetDocument() const { return m_pDoc.Get(); }
+    CPDF_Document* GetDocument() const { return m_pDoc; }
 
    private:
     UnownedPtr<CPDF_Document> m_pDoc;
@@ -106,6 +107,12 @@ class CPDF_Document : public Observable,
   int GetPageIndex(uint32_t objnum);
   uint32_t GetUserPermissions() const;
 
+  // PageDataIface wrappers, try to avoid explicit getter calls.
+  RetainPtr<CPDF_StreamAcc> GetFontFileStreamAcc(
+      RetainPtr<const CPDF_Stream> pFontStream);
+  void MaybePurgeFontFileStreamAcc(RetainPtr<CPDF_StreamAcc>&& pStreamAcc);
+  void MaybePurgeImage(uint32_t objnum);
+
   // Returns a valid pointer, unless it is called during destruction.
   PageDataIface* GetPageData() const { return m_pDocPage.get(); }
   RenderDataIface* GetRenderData() const { return m_pDocRender.get(); }
@@ -128,9 +135,8 @@ class CPDF_Document : public Observable,
   bool TryInit() override;
   RetainPtr<CPDF_Object> ParseIndirectObject(uint32_t objnum) override;
 
-  CPDF_Parser::Error LoadDoc(
-      const RetainPtr<IFX_SeekableReadStream>& pFileAccess,
-      const ByteString& password);
+  CPDF_Parser::Error LoadDoc(RetainPtr<IFX_SeekableReadStream> pFileAccess,
+                             const ByteString& password);
   CPDF_Parser::Error LoadLinearizedDoc(RetainPtr<CPDF_ReadValidator> validator,
                                        const ByteString& password);
   bool has_valid_cross_reference_table() const {

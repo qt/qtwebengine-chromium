@@ -79,6 +79,7 @@ class CORE_EXPORT NGConstraintSpaceBuilder final {
     *inline_size = orthogonal_fallback_inline_size_;
   }
 
+  // |available_size| is logical for the writing-mode of the container.
   void SetAvailableSize(LogicalSize available_size) {
 #if DCHECK_IS_ON()
     is_available_size_set_ = true;
@@ -139,6 +140,12 @@ class CORE_EXPORT NGConstraintSpaceBuilder final {
   // taken up by the repeated header, so that offset 0 is exactly where the
   // non-repeated content starts / resumes after the repeated header.
   void ReserveSpaceInFragmentainer(LayoutUnit space) {
+    if (!space_.HasBlockFragmentation()) {
+      // It is possible to end up with a monolithic table section, even if
+      // things like containment and overflow don't apply. -webkit-line-clamp
+      // is at least one example.
+      return;
+    }
 #if DCHECK_IS_ON()
     DCHECK(is_fragmentainer_block_size_set_);
 #endif
@@ -167,6 +174,8 @@ class CORE_EXPORT NGConstraintSpaceBuilder final {
       return;
     space_.EnsureRareData()->is_inside_repeatable_content = b;
   }
+
+  void DisableFurtherFragmentation() { space_.DisableFurtherFragmentation(); }
 
   void SetIsFixedInlineSize(bool b) {
     if (LIKELY(is_in_parallel_flow_))
@@ -243,6 +252,8 @@ class CORE_EXPORT NGConstraintSpaceBuilder final {
 
   void SetIsInColumnBfc() { space_.EnsureRareData()->is_in_column_bfc = true; }
 
+  void SetIsPastBreak() { space_.EnsureRareData()->is_past_break = true; }
+
   void SetMinBlockSizeShouldEncompassIntrinsicSize() {
     space_.EnsureRareData()->min_block_size_should_encompass_intrinsic_size =
         true;
@@ -254,8 +265,14 @@ class CORE_EXPORT NGConstraintSpaceBuilder final {
     space_.EnsureRareData()->min_break_appeal = min_break_appeal;
   }
 
-  void SetShouldPropagateChildBreakValues() {
-    space_.EnsureRareData()->propagate_child_break_values = true;
+  void SetShouldPropagateChildBreakValues(
+      bool propagate_child_break_values = true) {
+    // Don't create rare data if `propagate_child_break_values` is already
+    // false.
+    if (!space_.HasRareData() && !propagate_child_break_values)
+      return;
+    space_.EnsureRareData()->propagate_child_break_values =
+        propagate_child_break_values;
   }
 
   void SetIsTableCell(bool is_table_cell) {
@@ -424,17 +441,6 @@ class CORE_EXPORT NGConstraintSpaceBuilder final {
     }
   }
 
-  void SetIsTableCellWithEffectiveRowspan(bool has_effective_rowspan) {
-#if DCHECK_IS_ON()
-    DCHECK(!is_table_cell_with_effective_rowspan_set_);
-    is_table_cell_with_effective_rowspan_set_ = true;
-#endif
-    if (has_effective_rowspan) {
-      space_.EnsureRareData()->SetIsTableCellWithEffectiveRowspan(
-          has_effective_rowspan);
-    }
-  }
-
   void SetIsTableCellChild(bool b) {
     space_.bitfields_.is_table_cell_child = b;
   }
@@ -583,7 +589,6 @@ class CORE_EXPORT NGConstraintSpaceBuilder final {
   bool is_table_cell_column_index_set_ = false;
   bool is_table_cell_hidden_for_paint_set_ = false;
   bool is_table_cell_with_collapsed_borders_set_ = false;
-  bool is_table_cell_with_effective_rowspan_set_ = false;
   bool is_custom_layout_data_set_ = false;
   bool is_lines_until_clamp_set_ = false;
   bool is_table_row_data_set_ = false;

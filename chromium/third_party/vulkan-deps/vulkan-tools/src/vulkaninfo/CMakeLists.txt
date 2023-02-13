@@ -61,7 +61,7 @@ if (NOT WIN32)
 endif()
 
 if(UNIX AND NOT APPLE) # i.e. Linux
-    include(FindPkgConfig)
+    find_package(PkgConfig)
     option(BUILD_WSI_XCB_SUPPORT "Build XCB WSI support" ON)
     option(BUILD_WSI_XLIB_SUPPORT "Build Xlib WSI support" ON)
     option(BUILD_WSI_WAYLAND_SUPPORT "Build Wayland WSI support" ON)
@@ -99,15 +99,10 @@ endif()
 if(APPLE)
     # We do this so vulkaninfo is linked to an individual library and NOT a framework.
     target_link_libraries(vulkaninfo ${Vulkan_LIBRARY} "-framework AppKit -framework QuartzCore")
-    target_include_directories(vulkaninfo PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/macOS/vulkaninfo ${VulkanHeaders_INCLUDE_DIR})
-else()
-    target_include_directories(vulkaninfo PRIVATE ${VulkanHeaders_INCLUDE_DIR})
+    target_include_directories(vulkaninfo PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/macOS/vulkaninfo)
 endif()
 
-# Create vulkaninfo application bundle for MacOS
-if(APPLE)
-    include(${CMAKE_CURRENT_SOURCE_DIR}/macOS/vulkaninfo.cmake)
-endif()
+target_link_libraries(vulkaninfo Vulkan::Headers)
 
 if(WIN32)
     target_compile_definitions(vulkaninfo PUBLIC -DVK_USE_PLATFORM_WIN32_KHR -DWIN32_LEAN_AND_MEAN -D_CRT_SECURE_NO_WARNINGS -DVK_NO_PROTOTYPES)

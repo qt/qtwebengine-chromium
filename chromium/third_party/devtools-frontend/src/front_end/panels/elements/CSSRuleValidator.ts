@@ -11,7 +11,9 @@ import {
   buildPropertyValue,
   isFlexContainer,
   isGridContainer,
+  isInlineElement,
   isMulticolContainer,
+  isPossiblyReplacedElement,
 } from './CSSRuleValidatorHelper.js';
 
 const UIStrings = {
@@ -98,8 +100,8 @@ export abstract class CSSRuleValidator {
   }
 
   abstract getHint(
-      propertyName: string, computedStyles?: Map<string, string>, parentComputedStyles?: Map<string, string>): Hint
-      |undefined;
+      propertyName: string, computedStyles?: Map<string, string>, parentComputedStyles?: Map<string, string>,
+      nodeName?: string): Hint|undefined;
 }
 
 export class AlignContentValidator extends CSSRuleValidator {
@@ -164,7 +166,7 @@ export class FlexItemValidator extends CSSRuleValidator {
     }
     const reasonPropertyDeclaration = buildPropertyDefinitionText('display', parentComputedStyles?.get('display'));
     const affectedPropertyDeclarationCode = buildPropertyName(propertyName);
-    const targeParentPropertyDeclaration = buildPropertyDefinitionText('display', 'flex');
+    const targetParentPropertyDeclaration = buildPropertyDefinitionText('display', 'flex');
 
     return new Hint(
         i18nString(UIStrings.ruleViolatedByParentElementRuleReason, {
@@ -173,7 +175,7 @@ export class FlexItemValidator extends CSSRuleValidator {
         }),
         i18nString(UIStrings.ruleViolatedByParentElementRuleFix, {
           'EXISTING_PARENT_ELEMENT_RULE': reasonPropertyDeclaration,
-          'TARGET_PARENT_ELEMENT_RULE': targeParentPropertyDeclaration,
+          'TARGET_PARENT_ELEMENT_RULE': targetParentPropertyDeclaration,
         }),
     );
   }
@@ -181,7 +183,7 @@ export class FlexItemValidator extends CSSRuleValidator {
 
 export class FlexContainerValidator extends CSSRuleValidator {
   constructor() {
-    super(['flex-direction', 'flex-flow', 'flex-wrap', 'justify-content']);
+    super(['flex-direction', 'flex-flow', 'flex-wrap']);
   }
 
   getMetricType(): Host.UserMetrics.CSSHintType {
@@ -267,6 +269,11 @@ export class GridItemValidator extends CSSRuleValidator {
       'grid-row',
       'grid-row-end',
       'grid-row-start',
+      // At the time of writing (November 2022), `justify-self` is only in effect in grid layout.
+      // There are no other browsers that support `justify-self` in other layouts.
+      // https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Box_Alignment/Box_Alignment_In_Block_Abspos_Tables
+      // TODO: move `justify-self` to other validator or change pop-over text if Chrome supports CSS Align in other layouts.
+      'justify-self',
     ]);
   }
 
@@ -287,7 +294,7 @@ export class GridItemValidator extends CSSRuleValidator {
       return;
     }
     const reasonPropertyDeclaration = buildPropertyDefinitionText('display', parentComputedStyles?.get('display'));
-    const targeParentPropertyDeclaration = buildPropertyDefinitionText('display', 'grid');
+    const targetParentPropertyDeclaration = buildPropertyDefinitionText('display', 'grid');
     const affectedPropertyDeclarationCode = buildPropertyName(propertyName);
 
     return new Hint(
@@ -297,7 +304,49 @@ export class GridItemValidator extends CSSRuleValidator {
         }),
         i18nString(UIStrings.ruleViolatedByParentElementRuleFix, {
           'EXISTING_PARENT_ELEMENT_RULE': reasonPropertyDeclaration,
-          'TARGET_PARENT_ELEMENT_RULE': targeParentPropertyDeclaration,
+          'TARGET_PARENT_ELEMENT_RULE': targetParentPropertyDeclaration,
+        }),
+    );
+  }
+}
+
+export class FlexOrGridItemValidator extends CSSRuleValidator {
+  constructor() {
+    super([
+      'place-self',
+      'align-self',
+    ]);
+  }
+
+  getMetricType(): Host.UserMetrics.CSSHintType {
+    return Host.UserMetrics.CSSHintType.FlexOrGridItem;
+  }
+
+  #isRuleValid(computedStyles?: Map<string, string>, parentComputedStyles?: Map<string, string>): boolean {
+    if (!parentComputedStyles) {
+      return true;
+    }
+    return isFlexContainer(parentComputedStyles) || isGridContainer(parentComputedStyles);
+  }
+
+  getHint(propertyName: string, computedStyles?: Map<string, string>, parentComputedStyles?: Map<string, string>): Hint
+      |undefined {
+    if (this.#isRuleValid(computedStyles, parentComputedStyles)) {
+      return;
+    }
+    const reasonPropertyDeclaration = buildPropertyDefinitionText('display', parentComputedStyles?.get('display'));
+    const targetParentPropertyDeclaration =
+        `${buildPropertyDefinitionText('display', 'flex')} or ${buildPropertyDefinitionText('display', 'grid')}`;
+    const affectedPropertyDeclarationCode = buildPropertyName(propertyName);
+
+    return new Hint(
+        i18nString(UIStrings.ruleViolatedByParentElementRuleReason, {
+          'REASON_PROPERTY_DECLARATION_CODE': reasonPropertyDeclaration,
+          'AFFECTED_PROPERTY_DECLARATION_CODE': affectedPropertyDeclarationCode,
+        }),
+        i18nString(UIStrings.ruleViolatedByParentElementRuleFix, {
+          'EXISTING_PARENT_ELEMENT_RULE': reasonPropertyDeclaration,
+          'TARGET_PARENT_ELEMENT_RULE': targetParentPropertyDeclaration,
         }),
     );
   }
@@ -307,9 +356,10 @@ export class FlexGridValidator extends CSSRuleValidator {
   constructor() {
     super([
       'order',
+      'justify-content',
       'align-content',
+      'place-content',  // Shorthand	<'align-content'> <'justify-content'>?
       'align-items',
-      'align-self',
     ]);
   }
 
@@ -520,13 +570,66 @@ export class ZIndexValidator extends CSSRuleValidator {
   }
 }
 
+/**
+ * Validates if CSS width/height are having an effect on an element.
+ * See "Applies to" in https://www.w3.org/TR/css-sizing-3/#propdef-width.
+ * See "Applies to" in https://www.w3.org/TR/css-sizing-3/#propdef-height.
+ */
+export class SizingValidator extends CSSRuleValidator {
+  constructor() {
+    super([
+      'width',
+      'height',
+    ]);
+  }
+
+  getMetricType(): Host.UserMetrics.CSSHintType {
+    return Host.UserMetrics.CSSHintType.Sizing;
+  }
+
+  #isRuleValid(computedStyles?: Map<string, string>, nodeName?: string): boolean {
+    if (!computedStyles || !nodeName) {
+      return true;
+    }
+    if (!isInlineElement(computedStyles)) {
+      return true;
+    }
+    // See https://html.spec.whatwg.org/multipage/rendering.html#replaced-elements.
+    return isPossiblyReplacedElement(nodeName);
+  }
+
+  getHint(
+      propertyName: string, computedStyles?: Map<string, string>, parentComputedStyles?: Map<string, string>,
+      nodeName?: string): Hint|undefined {
+    if (this.#isRuleValid(computedStyles, nodeName)) {
+      return;
+    }
+
+    const reasonPropertyDeclaration = buildPropertyDefinitionText('display', computedStyles?.get('display'));
+    const affectedPropertyDeclarationCode = buildPropertyName(propertyName);
+
+    return new Hint(
+        i18nString(UIStrings.ruleViolatedBySameElementRuleReason, {
+          'REASON_PROPERTY_DECLARATION_CODE': reasonPropertyDeclaration,
+          'AFFECTED_PROPERTY_DECLARATION_CODE': affectedPropertyDeclarationCode,
+        }),
+        i18nString(UIStrings.ruleViolatedBySameElementRuleFix, {
+          PROPERTY_NAME: buildPropertyName('display'),
+          PROPERTY_VALUE: buildPropertyValue(computedStyles?.get('display') as string),
+        }),
+    );
+  }
+}
+
 const CSS_RULE_VALIDATORS = [
   AlignContentValidator,
-  FlexItemValidator,
   FlexContainerValidator,
+  FlexGridValidator,
+  FlexItemValidator,
   GridContainerValidator,
   GridItemValidator,
-  FlexGridValidator,
+  FlexOrGridItemValidator,
+  SizingValidator,
   MulticolFlexGridValidator,
   PaddingValidator,
   PositionValidator,

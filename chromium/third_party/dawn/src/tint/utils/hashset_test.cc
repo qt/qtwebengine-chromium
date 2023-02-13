@@ -74,18 +74,12 @@ TEST(Hashset, Generation) {
     EXPECT_EQ(set.Generation(), 1u);
     set.Add(1);
     EXPECT_EQ(set.Generation(), 1u);
-    set.Replace(1);
-    EXPECT_EQ(set.Generation(), 2u);
     set.Add(2);
-    EXPECT_EQ(set.Generation(), 3u);
+    EXPECT_EQ(set.Generation(), 2u);
     set.Remove(1);
-    EXPECT_EQ(set.Generation(), 4u);
+    EXPECT_EQ(set.Generation(), 3u);
     set.Clear();
-    EXPECT_EQ(set.Generation(), 5u);
-    set.Find(2);
-    EXPECT_EQ(set.Generation(), 5u);
-    set.Get(2);
-    EXPECT_EQ(set.Generation(), 5u);
+    EXPECT_EQ(set.Generation(), 4u);
 }
 
 TEST(Hashset, Iterator) {
@@ -97,59 +91,46 @@ TEST(Hashset, Iterator) {
     EXPECT_THAT(set, testing::UnorderedElementsAre("one", "two", "three", "four"));
 }
 
+TEST(Hashset, Vector) {
+    Hashset<std::string, 8> set;
+    set.Add("one");
+    set.Add("four");
+    set.Add("three");
+    set.Add("two");
+    auto vec = set.Vector();
+    EXPECT_THAT(vec, testing::UnorderedElementsAre("one", "two", "three", "four"));
+}
+
 TEST(Hashset, Soak) {
     std::mt19937 rnd;
     std::unordered_set<std::string> reference;
     Hashset<std::string, 8> set;
     for (size_t i = 0; i < 1000000; i++) {
         std::string value = std::to_string(rnd() & 0x100);
-        switch (rnd() % 8) {
+        switch (rnd() % 5) {
             case 0: {  // Add
                 auto expected = reference.emplace(value).second;
                 ASSERT_EQ(set.Add(value), expected) << "i: " << i;
                 ASSERT_TRUE(set.Contains(value)) << "i: " << i;
                 break;
             }
-            case 1: {  // Replace
-                reference.emplace(value);
-                set.Replace(value);
-                ASSERT_TRUE(set.Contains(value)) << "i: " << i;
-                break;
-            }
-            case 2: {  // Remove
+            case 1: {  // Remove
                 auto expected = reference.erase(value) != 0;
                 ASSERT_EQ(set.Remove(value), expected) << "i: " << i;
                 ASSERT_FALSE(set.Contains(value)) << "i: " << i;
                 break;
             }
-            case 3: {  // Contains
+            case 2: {  // Contains
                 auto expected = reference.count(value) != 0;
                 ASSERT_EQ(set.Contains(value), expected) << "i: " << i;
                 break;
             }
-            case 4: {  // Get
-                if (reference.count(value) != 0) {
-                    ASSERT_TRUE(set.Get(value).has_value()) << "i: " << i;
-                    ASSERT_EQ(set.Get(value), value) << "i: " << i;
-                } else {
-                    ASSERT_FALSE(set.Get(value).has_value()) << "i: " << i;
-                }
-                break;
-            }
-            case 5: {  // Find
-                if (reference.count(value) != 0) {
-                    ASSERT_EQ(*set.Find(value), value) << "i: " << i;
-                } else {
-                    ASSERT_EQ(set.Find(value), nullptr) << "i: " << i;
-                }
-                break;
-            }
-            case 6: {  // Copy / Move
+            case 3: {  // Copy / Move
                 Hashset<std::string, 8> tmp(set);
                 set = std::move(tmp);
                 break;
             }
-            case 7: {  // Clear
+            case 4: {  // Clear
                 reference.clear();
                 set.Clear();
                 break;

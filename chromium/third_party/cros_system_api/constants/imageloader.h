@@ -14,6 +14,9 @@ const char kRelativeDlcManifestRootpath[] = "opt/google/dlc/";
 // The root path of all DLC module images.
 const char kDlcImageRootpath[] = "/var/cache/dlc/";
 
+// The default path where all imageloader managed images get mounted.
+const char kImageloaderMountBase[] = "/run/imageloader/";
+
 }  // namespace imageloader
 
 #endif  // SYSTEM_API_CONSTANTS_IMAGELOADER_H_

@@ -513,7 +513,7 @@ VkResult GraphicsPipeline::compileShaders(const VkAllocationCallbacks *pAllocato
 			module = vk::Cast(tempModule);
 		}
 
-		const PipelineCache::SpirvBinaryKey key(module->getBinary(), stageInfo.pSpecializationInfo, optimize);
+		const PipelineCache::SpirvBinaryKey key(module->getBinary(), stageInfo.pSpecializationInfo, robustBufferAccess, optimize);
 
 		if((pCreateInfo->flags & VK_PIPELINE_CREATE_FAIL_ON_PIPELINE_COMPILE_REQUIRED_BIT_EXT) &&
 		   (!pPipelineCache || !pPipelineCache->contains(key)))
@@ -585,12 +585,30 @@ VkResult ComputePipeline::compileShaders(const VkAllocationCallbacks *pAllocator
 	auto &stage = pCreateInfo->stage;
 	const ShaderModule *module = vk::Cast(stage.module);
 
+	// VK_EXT_graphics_pipeline_library allows VkShaderModuleCreateInfo to be chained to
+	// VkPipelineShaderStageCreateInfo, which is used if stageInfo.module is
+	// VK_NULL_HANDLE.
+	VkShaderModule tempModule = {};
+	if(stage.module == VK_NULL_HANDLE)
+	{
+		const auto *moduleCreateInfo = vk::GetExtendedStruct<VkShaderModuleCreateInfo>(stage.pNext,
+		                                                                               VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO);
+		ASSERT(moduleCreateInfo);
+		VkResult createResult = vk::ShaderModule::Create(nullptr, moduleCreateInfo, &tempModule);
+		if(createResult != VK_SUCCESS)
+		{
+			return createResult;
+		}
+
+		module = vk::Cast(tempModule);
+	}
+
 	ASSERT(shader.get() == nullptr);
 	ASSERT(program.get() == nullptr);
 
 	const bool optimize = true;  // TODO(b/251802301): Don't optimize when debugging shaders.
 
-	const PipelineCache::SpirvBinaryKey shaderKey(module->getBinary(), stage.pSpecializationInfo, optimize);
+	const PipelineCache::SpirvBinaryKey shaderKey(module->getBinary(), stage.pSpecializationInfo, robustBufferAccess, optimize);
 
 	if((pCreateInfo->flags & VK_PIPELINE_CREATE_FAIL_ON_PIPELINE_COMPILE_REQUIRED_BIT_EXT) &&
 	   (!pPipelineCache || !pPipelineCache->contains(shaderKey)))

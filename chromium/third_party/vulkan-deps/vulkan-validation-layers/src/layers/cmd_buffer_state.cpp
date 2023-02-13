@@ -76,163 +76,6 @@ const char *CommandTypeString(CMD_TYPE type) {
     return kGeneratedCommandNameList[type];
 }
 
-VkDynamicState ConvertToDynamicState(CBStatusFlagBits flag) {
-    switch (flag) {
-        case CBSTATUS_LINE_WIDTH_SET:
-            return VK_DYNAMIC_STATE_LINE_WIDTH;
-        case CBSTATUS_DEPTH_BIAS_SET:
-            return VK_DYNAMIC_STATE_DEPTH_BIAS;
-        case CBSTATUS_BLEND_CONSTANTS_SET:
-            return VK_DYNAMIC_STATE_BLEND_CONSTANTS;
-        case CBSTATUS_DEPTH_BOUNDS_SET:
-            return VK_DYNAMIC_STATE_DEPTH_BOUNDS;
-        case CBSTATUS_STENCIL_READ_MASK_SET:
-            return VK_DYNAMIC_STATE_STENCIL_COMPARE_MASK;
-        case CBSTATUS_STENCIL_WRITE_MASK_SET:
-            return VK_DYNAMIC_STATE_STENCIL_WRITE_MASK;
-        case CBSTATUS_STENCIL_REFERENCE_SET:
-            return VK_DYNAMIC_STATE_STENCIL_REFERENCE;
-        case CBSTATUS_VIEWPORT_SET:
-            return VK_DYNAMIC_STATE_VIEWPORT;
-        case CBSTATUS_SCISSOR_SET:
-            return VK_DYNAMIC_STATE_SCISSOR;
-        case CBSTATUS_EXCLUSIVE_SCISSOR_SET:
-            return VK_DYNAMIC_STATE_EXCLUSIVE_SCISSOR_NV;
-        case CBSTATUS_SHADING_RATE_PALETTE_SET:
-            return VK_DYNAMIC_STATE_VIEWPORT_SHADING_RATE_PALETTE_NV;
-        case CBSTATUS_LINE_STIPPLE_SET:
-            return VK_DYNAMIC_STATE_LINE_STIPPLE_EXT;
-        case CBSTATUS_VIEWPORT_W_SCALING_SET:
-            return VK_DYNAMIC_STATE_VIEWPORT_W_SCALING_NV;
-        case CBSTATUS_CULL_MODE_SET:
-            return VK_DYNAMIC_STATE_CULL_MODE_EXT;
-        case CBSTATUS_FRONT_FACE_SET:
-            return VK_DYNAMIC_STATE_FRONT_FACE_EXT;
-        case CBSTATUS_PRIMITIVE_TOPOLOGY_SET:
-            return VK_DYNAMIC_STATE_PRIMITIVE_TOPOLOGY_EXT;
-        case CBSTATUS_VIEWPORT_WITH_COUNT_SET:
-            return VK_DYNAMIC_STATE_VIEWPORT_WITH_COUNT_EXT;
-        case CBSTATUS_SCISSOR_WITH_COUNT_SET:
-            return VK_DYNAMIC_STATE_SCISSOR_WITH_COUNT_EXT;
-        case CBSTATUS_VERTEX_INPUT_BINDING_STRIDE_SET:
-            return VK_DYNAMIC_STATE_VERTEX_INPUT_BINDING_STRIDE_EXT;
-        case CBSTATUS_DEPTH_TEST_ENABLE_SET:
-            return VK_DYNAMIC_STATE_DEPTH_TEST_ENABLE_EXT;
-        case CBSTATUS_DEPTH_WRITE_ENABLE_SET:
-            return VK_DYNAMIC_STATE_DEPTH_WRITE_ENABLE_EXT;
-        case CBSTATUS_DEPTH_COMPARE_OP_SET:
-            return VK_DYNAMIC_STATE_DEPTH_COMPARE_OP_EXT;
-        case CBSTATUS_DEPTH_BOUNDS_TEST_ENABLE_SET:
-            return VK_DYNAMIC_STATE_DEPTH_BOUNDS_TEST_ENABLE_EXT;
-        case CBSTATUS_STENCIL_TEST_ENABLE_SET:
-            return VK_DYNAMIC_STATE_STENCIL_TEST_ENABLE_EXT;
-        case CBSTATUS_STENCIL_OP_SET:
-            return VK_DYNAMIC_STATE_STENCIL_OP_EXT;
-        case CBSTATUS_DISCARD_RECTANGLE_SET:
-            return VK_DYNAMIC_STATE_DISCARD_RECTANGLE_EXT;
-        case CBSTATUS_SAMPLE_LOCATIONS_SET:
-            return VK_DYNAMIC_STATE_SAMPLE_LOCATIONS_EXT;
-        case CBSTATUS_COARSE_SAMPLE_ORDER_SET:
-            return VK_DYNAMIC_STATE_VIEWPORT_COARSE_SAMPLE_ORDER_NV;
-        case CBSTATUS_PATCH_CONTROL_POINTS_SET:
-            return VK_DYNAMIC_STATE_PATCH_CONTROL_POINTS_EXT;
-        case CBSTATUS_RASTERIZER_DISCARD_ENABLE_SET:
-            return VK_DYNAMIC_STATE_RASTERIZER_DISCARD_ENABLE_EXT;
-        case CBSTATUS_DEPTH_BIAS_ENABLE_SET:
-            return VK_DYNAMIC_STATE_DEPTH_BIAS_ENABLE_EXT;
-        case CBSTATUS_LOGIC_OP_SET:
-            return VK_DYNAMIC_STATE_LOGIC_OP_EXT;
-        case CBSTATUS_PRIMITIVE_RESTART_ENABLE_SET:
-            return VK_DYNAMIC_STATE_PRIMITIVE_RESTART_ENABLE_EXT;
-        case CBSTATUS_VERTEX_INPUT_SET:
-            return VK_DYNAMIC_STATE_VERTEX_INPUT_EXT;
-        case CBSTATUS_COLOR_WRITE_ENABLE_SET:
-            return VK_DYNAMIC_STATE_COLOR_WRITE_ENABLE_EXT;
-        default:
-            // CBSTATUS_INDEX_BUFFER_BOUND is not in VkDynamicState
-            return VK_DYNAMIC_STATE_MAX_ENUM;
-    }
-    return VK_DYNAMIC_STATE_MAX_ENUM;
-}
-
-CBStatusFlagBits ConvertToCBStatusFlagBits(VkDynamicState state) {
-    switch (state) {
-        case VK_DYNAMIC_STATE_VIEWPORT:
-            return CBSTATUS_VIEWPORT_SET;
-        case VK_DYNAMIC_STATE_SCISSOR:
-            return CBSTATUS_SCISSOR_SET;
-        case VK_DYNAMIC_STATE_LINE_WIDTH:
-            return CBSTATUS_LINE_WIDTH_SET;
-        case VK_DYNAMIC_STATE_DEPTH_BIAS:
-            return CBSTATUS_DEPTH_BIAS_SET;
-        case VK_DYNAMIC_STATE_BLEND_CONSTANTS:
-            return CBSTATUS_BLEND_CONSTANTS_SET;
-        case VK_DYNAMIC_STATE_DEPTH_BOUNDS:
-            return CBSTATUS_DEPTH_BOUNDS_SET;
-        case VK_DYNAMIC_STATE_STENCIL_COMPARE_MASK:
-            return CBSTATUS_STENCIL_READ_MASK_SET;
-        case VK_DYNAMIC_STATE_STENCIL_WRITE_MASK:
-            return CBSTATUS_STENCIL_WRITE_MASK_SET;
-        case VK_DYNAMIC_STATE_STENCIL_REFERENCE:
-            return CBSTATUS_STENCIL_REFERENCE_SET;
-        case VK_DYNAMIC_STATE_VIEWPORT_W_SCALING_NV:
-            return CBSTATUS_VIEWPORT_W_SCALING_SET;
-        case VK_DYNAMIC_STATE_DISCARD_RECTANGLE_EXT:
-            return CBSTATUS_DISCARD_RECTANGLE_SET;
-        case VK_DYNAMIC_STATE_SAMPLE_LOCATIONS_EXT:
-            return CBSTATUS_SAMPLE_LOCATIONS_SET;
-        case VK_DYNAMIC_STATE_VIEWPORT_SHADING_RATE_PALETTE_NV:
-            return CBSTATUS_SHADING_RATE_PALETTE_SET;
-        case VK_DYNAMIC_STATE_VIEWPORT_COARSE_SAMPLE_ORDER_NV:
-            return CBSTATUS_COARSE_SAMPLE_ORDER_SET;
-        case VK_DYNAMIC_STATE_EXCLUSIVE_SCISSOR_NV:
-            return CBSTATUS_EXCLUSIVE_SCISSOR_SET;
-        case VK_DYNAMIC_STATE_LINE_STIPPLE_EXT:
-            return CBSTATUS_LINE_STIPPLE_SET;
-        case VK_DYNAMIC_STATE_CULL_MODE_EXT:
-            return CBSTATUS_CULL_MODE_SET;
-        case VK_DYNAMIC_STATE_FRONT_FACE_EXT:
-            return CBSTATUS_FRONT_FACE_SET;
-        case VK_DYNAMIC_STATE_PRIMITIVE_TOPOLOGY_EXT:
-            return CBSTATUS_PRIMITIVE_TOPOLOGY_SET;
-        case VK_DYNAMIC_STATE_VIEWPORT_WITH_COUNT_EXT:
-            return CBSTATUS_VIEWPORT_WITH_COUNT_SET;
-        case VK_DYNAMIC_STATE_SCISSOR_WITH_COUNT_EXT:
-            return CBSTATUS_SCISSOR_WITH_COUNT_SET;
-        case VK_DYNAMIC_STATE_VERTEX_INPUT_BINDING_STRIDE_EXT:
-            return CBSTATUS_VERTEX_INPUT_BINDING_STRIDE_SET;
-        case VK_DYNAMIC_STATE_DEPTH_TEST_ENABLE_EXT:
-            return CBSTATUS_DEPTH_TEST_ENABLE_SET;
-        case VK_DYNAMIC_STATE_DEPTH_WRITE_ENABLE_EXT:
-            return CBSTATUS_DEPTH_WRITE_ENABLE_SET;
-        case VK_DYNAMIC_STATE_DEPTH_COMPARE_OP_EXT:
-            return CBSTATUS_DEPTH_COMPARE_OP_SET;
-        case VK_DYNAMIC_STATE_DEPTH_BOUNDS_TEST_ENABLE_EXT:
-            return CBSTATUS_DEPTH_BOUNDS_TEST_ENABLE_SET;
-        case VK_DYNAMIC_STATE_STENCIL_TEST_ENABLE_EXT:
-            return CBSTATUS_STENCIL_TEST_ENABLE_SET;
-        case VK_DYNAMIC_STATE_STENCIL_OP_EXT:
-            return CBSTATUS_STENCIL_OP_SET;
-        case VK_DYNAMIC_STATE_PATCH_CONTROL_POINTS_EXT:
-            return CBSTATUS_PATCH_CONTROL_POINTS_SET;
-        case VK_DYNAMIC_STATE_RASTERIZER_DISCARD_ENABLE_EXT:
-            return CBSTATUS_RASTERIZER_DISCARD_ENABLE_SET;
-        case VK_DYNAMIC_STATE_DEPTH_BIAS_ENABLE_EXT:
-            return CBSTATUS_DEPTH_BIAS_ENABLE_SET;
-        case VK_DYNAMIC_STATE_LOGIC_OP_EXT:
-            return CBSTATUS_LOGIC_OP_SET;
-        case VK_DYNAMIC_STATE_PRIMITIVE_RESTART_ENABLE_EXT:
-            return CBSTATUS_PRIMITIVE_RESTART_ENABLE_SET;
-        case VK_DYNAMIC_STATE_VERTEX_INPUT_EXT:
-            return CBSTATUS_VERTEX_INPUT_SET;
-        case VK_DYNAMIC_STATE_COLOR_WRITE_ENABLE_EXT:
-            return CBSTATUS_COLOR_WRITE_ENABLE_SET;
-        default:
-            return CBSTATUS_NONE;
-    }
-    return CBSTATUS_NONE;
-}
-
 CMD_BUFFER_STATE::CMD_BUFFER_STATE(ValidationStateTracker *dev, VkCommandBuffer cb, const VkCommandBufferAllocateInfo *pCreateInfo,
                                    const COMMAND_POOL_STATE *pool)
     : REFCOUNTED_NODE(cb, kVulkanObjectTypeCommandBuffer),
@@ -274,12 +117,17 @@ void CMD_BUFFER_STATE::RemoveChild(std::shared_ptr<BASE_NODE> &child_node) {
 // Reset the command buffer state
 //  Maintain the createInfo and set state to CB_NEW, but clear all other state
 void CMD_BUFFER_STATE::Reset() {
-    assert(!InUse());
+    // Remove object bindings
+    for (const auto &obj : object_bindings) {
+        obj->RemoveParent(this);
+    }
+    object_bindings.clear();
+    broken_bindings.clear();
+
     // Reset CB state (note that createInfo is not cleared)
     memset(&beginInfo, 0, sizeof(VkCommandBufferBeginInfo));
     memset(&inheritanceInfo, 0, sizeof(VkCommandBufferInheritanceInfo));
     has_draw_cmd = false;
-    has_draw_cmd_in_current_render_pass = false;
     has_dispatch_cmd = false;
     has_trace_rays_cmd = false;
     has_build_as_cmd = false;
@@ -290,8 +138,8 @@ void CMD_BUFFER_STATE::Reset() {
     commandCount = 0;
     submitCount = 0;
     image_layout_change_count = 1;  // Start at 1. 0 is insert value for validation cache versions, s.t. new == dirty
-    status = 0;
-    static_status = 0;
+    status.reset();
+    static_status.reset();
     inheritedViewportDepths.clear();
     usedViewportScissorCount = 0;
     pipelineStaticViewportCount = 0;
@@ -318,7 +166,6 @@ void CMD_BUFFER_STATE::Reset() {
     attachments_view_states.clear();
     activeSubpassContents = VK_SUBPASS_CONTENTS_INLINE;
     activeSubpass = 0;
-    broken_bindings.clear();
     waitedEvents.clear();
     events.clear();
     writeEventsBeforeWait.clear();
@@ -341,20 +188,9 @@ void CMD_BUFFER_STATE::Reset() {
     eventUpdates.clear();
     queryUpdates.clear();
 
-    // Remove object bindings
-    for (const auto &obj : object_bindings) {
-        obj->RemoveParent(this);
-    }
-    object_bindings.clear();
-
     for (auto &item : lastBound) {
         item.Reset();
     }
-    // Remove this cmdBuffer's reference from each FrameBuffer's CB ref list
-    for (auto &framebuffer : framebuffers) {
-        framebuffer->RemoveParent(this);
-    }
-    framebuffers.clear();
     activeFramebuffer = VK_NULL_HANDLE;
     index_buffer_binding.reset();
 
@@ -451,32 +287,43 @@ void CMD_BUFFER_STATE::Destroy() {
 void CMD_BUFFER_STATE::NotifyInvalidate(const BASE_NODE::NodeList &invalid_nodes, bool unlink) {
     {
         auto guard = WriteLock();
-        if (state == CB_RECORDING) {
-            state = CB_INVALID_INCOMPLETE;
-        } else if (state == CB_RECORDED) {
-            state = CB_INVALID_COMPLETE;
-        }
         assert(!invalid_nodes.empty());
+        // Save all of the vulkan handles between the command buffer and the now invalid node
         LogObjectList log_list;
         for (auto &obj : invalid_nodes) {
             log_list.object_list.emplace_back(obj->Handle());
         }
-        broken_bindings.emplace(invalid_nodes[0]->Handle(), log_list);
 
-        if (unlink) {
-            for (auto &obj : invalid_nodes) {
-                object_bindings.erase(obj);
-                switch (obj->Type()) {
-                    case kVulkanObjectTypeCommandBuffer:
-                        linkedCommandBuffers.erase(static_cast<CMD_BUFFER_STATE *>(obj.get()));
-                        break;
-                    case kVulkanObjectTypeImage:
-                        image_layout_map.erase(static_cast<IMAGE_STATE *>(obj.get()));
-                        break;
-                    default:
-                        break;
-                }
+        bool found_invalid = false;
+        for (auto &obj : invalid_nodes) {
+            // Only record a broken binding if one of the nodes in the invalid chain is still
+            // being tracked by the command buffer. This is to try to avoid race conditions
+            // caused by separate CMD_BUFFER_STATE and BASE_NODE::parent_nodes locking.
+            if (object_bindings.erase(obj)) {
+                found_invalid = true;
             }
+            switch (obj->Type()) {
+                case kVulkanObjectTypeCommandBuffer:
+                    if (unlink) {
+                        linkedCommandBuffers.erase(static_cast<CMD_BUFFER_STATE *>(obj.get()));
+                    }
+                    break;
+                case kVulkanObjectTypeImage:
+                    if (unlink) {
+                        image_layout_map.erase(static_cast<IMAGE_STATE *>(obj.get()));
+                    }
+                    break;
+                default:
+                    break;
+            }
+        }
+        if (found_invalid) {
+            if (state == CB_RECORDING) {
+                state = CB_INVALID_INCOMPLETE;
+            } else if (state == CB_RECORDED) {
+                state = CB_INVALID_COMPLETE;
+            }
+            broken_bindings.emplace(invalid_nodes[0]->Handle(), log_list);
         }
     }
     BASE_NODE::NotifyInvalidate(invalid_nodes, unlink);
@@ -526,7 +373,7 @@ ImageSubresourceLayoutMap *CMD_BUFFER_STATE::GetImageSubresourceLayoutMap(const 
     return layout_map.get();
 }
 
-static bool SetQueryState(QueryObject object, QueryState value, QueryMap *localQueryToStateMap) {
+static bool SetQueryState(const QueryObject &object, QueryState value, QueryMap *localQueryToStateMap) {
     (*localQueryToStateMap)[object] = value;
     return false;
 }
@@ -686,11 +533,8 @@ void CMD_BUFFER_STATE::BeginRenderPass(CMD_TYPE cmd_type, const VkRenderPassBegi
 
     active_subpasses = nullptr;
     active_attachments = nullptr;
-    has_draw_cmd_in_current_render_pass = false;
 
     if (activeFramebuffer) {
-        framebuffers.insert(activeFramebuffer);
-
         // Set cb_state->active_subpasses
         active_subpasses = std::make_shared<std::vector<SUBPASS_INFO>>(activeFramebuffer->createInfo.attachmentCount);
         const auto &subpass = activeRenderPass->createInfo.pSubpasses[activeSubpass];
@@ -758,7 +602,6 @@ void CMD_BUFFER_STATE::BeginRendering(CMD_TYPE cmd_type, const VkRenderingInfo *
     hasRenderPassInstance = true;
 
     active_attachments = nullptr;
-    has_draw_cmd_in_current_render_pass = false;
     uint32_t attachment_count = (pRenderingInfo->colorAttachmentCount + 2) * 2;
 
     // Set cb_state->active_attachments & cb_state->attachments_view_states
@@ -837,8 +680,6 @@ void CMD_BUFFER_STATE::Begin(const VkCommandBufferBeginInfo *pBeginInfo) {
                     active_attachments = nullptr;
 
                     if (activeFramebuffer) {
-                        framebuffers.insert(activeFramebuffer);
-
                         // Set active_subpasses
                         active_subpasses = std::make_shared<std::vector<SUBPASS_INFO>>(activeFramebuffer->createInfo.attachmentCount);
                         const auto& subpass = activeRenderPass->createInfo.pSubpasses[activeSubpass];
@@ -858,7 +699,8 @@ void CMD_BUFFER_STATE::Begin(const VkCommandBufferBeginInfo *pBeginInfo) {
             }
             else
             {
-                auto inheritance_rendering_info = lvl_find_in_chain<VkCommandBufferInheritanceRenderingInfo>(beginInfo.pInheritanceInfo->pNext);
+                auto inheritance_rendering_info =
+                    LvlFindInChain<VkCommandBufferInheritanceRenderingInfo>(beginInfo.pInheritanceInfo->pNext);
                 if (inheritance_rendering_info) {
                     activeRenderPass = std::make_shared<RENDER_PASS_STATE>(inheritance_rendering_info);
                 }
@@ -967,28 +809,28 @@ void CMD_BUFFER_STATE::ExecuteCommands(uint32_t commandBuffersCount, const VkCom
     }
 }
 
-void CMD_BUFFER_STATE::PushDescriptorSetState(VkPipelineBindPoint pipelineBindPoint, PIPELINE_LAYOUT_STATE *pipeline_layout,
+void CMD_BUFFER_STATE::PushDescriptorSetState(VkPipelineBindPoint pipelineBindPoint, const PIPELINE_LAYOUT_STATE &pipeline_layout,
                                               uint32_t set, uint32_t descriptorWriteCount,
                                               const VkWriteDescriptorSet *pDescriptorWrites) {
     // Short circuit invalid updates
-    if (!pipeline_layout || (set >= pipeline_layout->set_layouts.size()) || !pipeline_layout->set_layouts[set] ||
-        !pipeline_layout->set_layouts[set]->IsPushDescriptor()) {
+    if ((set >= pipeline_layout.set_layouts.size()) || !pipeline_layout.set_layouts[set] ||
+        !pipeline_layout.set_layouts[set]->IsPushDescriptor()) {
         return;
     }
 
     // We need a descriptor set to update the bindings with, compatible with the passed layout
-    const auto &dsl = pipeline_layout->set_layouts[set];
+    const auto &dsl = pipeline_layout.set_layouts[set];
     const auto lv_bind_point = ConvertToLvlBindPoint(pipelineBindPoint);
     auto &last_bound = lastBound[lv_bind_point];
     auto &push_descriptor_set = last_bound.push_descriptor_set;
     // If we are disturbing the current push_desriptor_set clear it
-    if (!push_descriptor_set || !CompatForSet(set, last_bound, pipeline_layout->compat_for_set)) {
+    if (!push_descriptor_set || !IsBoundSetCompat(set, last_bound, pipeline_layout)) {
         last_bound.UnbindAndResetPushDescriptorSet(
             std::make_shared<cvdescriptorset::DescriptorSet>(VK_NULL_HANDLE, nullptr, dsl, 0, dev_data));
     }
 
     UpdateLastBoundDescriptorSets(pipelineBindPoint, pipeline_layout, set, 1, nullptr, push_descriptor_set, 0, nullptr);
-    last_bound.pipeline_layout = pipeline_layout->layout();
+    last_bound.pipeline_layout = pipeline_layout.layout();
 
     // Now that we have either the new or extant push_descriptor set ... do the write updates against it
     push_descriptor_set->PerformPushDescriptorsUpdate(dev_data, descriptorWriteCount, pDescriptorWrites);
@@ -997,15 +839,14 @@ void CMD_BUFFER_STATE::PushDescriptorSetState(VkPipelineBindPoint pipelineBindPo
 // Generic function to handle state update for all CmdDraw* type functions
 void CMD_BUFFER_STATE::UpdateDrawCmd(CMD_TYPE cmd_type) {
     has_draw_cmd = true;
-    has_draw_cmd_in_current_render_pass = true;
     UpdatePipelineState(cmd_type, VK_PIPELINE_BIND_POINT_GRAPHICS);
 
     // Update the consumed viewport/scissor count.
     uint32_t &used = usedViewportScissorCount;
     used = std::max(used, pipelineStaticViewportCount);
     used = std::max(used, pipelineStaticScissorCount);
-    usedDynamicViewportCount |= !!(dynamic_status & CBSTATUS_VIEWPORT_WITH_COUNT_SET);  // !! silences MSVC warn
-    usedDynamicScissorCount |= !!(dynamic_status & CBSTATUS_SCISSOR_WITH_COUNT_SET);
+    usedDynamicViewportCount |= dynamic_status[CB_DYNAMIC_VIEWPORT_WITH_COUNT_SET];
+    usedDynamicScissorCount |= dynamic_status[CB_DYNAMIC_SCISSOR_WITH_COUNT_SET];
 }
 
 // Generic function to handle state update for all CmdDispatch* type functions
@@ -1025,16 +866,17 @@ void CMD_BUFFER_STATE::UpdatePipelineState(CMD_TYPE cmd_type, const VkPipelineBi
     RecordCmd(cmd_type);
 
     const auto lv_bind_point = ConvertToLvlBindPoint(bind_point);
-    auto &state = lastBound[lv_bind_point];
-    PIPELINE_STATE *pipe = state.pipeline_state;
-    if (VK_NULL_HANDLE != state.pipeline_layout) {
+    auto &last_bound = lastBound[lv_bind_point];
+    PIPELINE_STATE *pipe = last_bound.pipeline_state;
+    if (VK_NULL_HANDLE != last_bound.pipeline_layout) {
         for (const auto &set_binding_pair : pipe->active_slots) {
             uint32_t set_index = set_binding_pair.first;
-            if (set_index >= state.per_set.size()) {
+            if (set_index >= last_bound.per_set.size()) {
                 continue;
             }
+            auto &set_info = last_bound.per_set[set_index];
             // Pull the set node
-            auto &descriptor_set = state.per_set[set_index].bound_descriptor_set;
+            auto &descriptor_set = set_info.bound_descriptor_set;
             if (!descriptor_set) {
                 continue;
             }
@@ -1053,18 +895,17 @@ void CMD_BUFFER_STATE::UpdatePipelineState(CMD_TYPE cmd_type, const VkPipelineBi
 
             // We can skip updating the state if "nothing" has changed since the last validation.
             // See CoreChecks::ValidateCmdBufDrawState for more details.
-            bool descriptor_set_changed =
-                !reduced_map.IsManyDescriptors() ||
-                // Update if descriptor set (or contents) has changed
-                state.per_set[set_index].validated_set != descriptor_set.get() ||
-                state.per_set[set_index].validated_set_change_count != descriptor_set->GetChangeCount() ||
-                (!dev_data->disabled[image_layout_validation] &&
-                 state.per_set[set_index].validated_set_image_layout_change_count != image_layout_change_count);
-            bool need_update = descriptor_set_changed ||
-                               // Update if previous bindingReqMap doesn't include new bindingReqMap
-                               !std::includes(state.per_set[set_index].validated_set_binding_req_map.begin(),
-                                              state.per_set[set_index].validated_set_binding_req_map.end(), binding_req_map.begin(),
-                                              binding_req_map.end());
+            const bool descriptor_set_changed = !reduced_map.IsManyDescriptors() ||
+                                                // Update if descriptor set (or contents) has changed
+                                                set_info.validated_set != descriptor_set.get() ||
+                                                set_info.validated_set_change_count != descriptor_set->GetChangeCount() ||
+                                                (!dev_data->disabled[image_layout_validation] &&
+                                                 set_info.validated_set_image_layout_change_count != image_layout_change_count);
+            const bool need_update =
+                descriptor_set_changed ||
+                // Update if previous bindingReqMap doesn't include new bindingReqMap
+                !std::includes(set_info.validated_set_binding_req_map.begin(), set_info.validated_set_binding_req_map.end(),
+                               binding_req_map.begin(), binding_req_map.end());
 
             if (need_update) {
                 if (!dev_data->disabled[command_buffer_state] && !descriptor_set->IsPushDescriptor()) {
@@ -1076,25 +917,25 @@ void CMD_BUFFER_STATE::UpdatePipelineState(CMD_TYPE cmd_type, const VkPipelineBi
                     // Only record the bindings that haven't already been recorded
                     BindingReqMap delta_reqs;
                     std::set_difference(binding_req_map.begin(), binding_req_map.end(),
-                                        state.per_set[set_index].validated_set_binding_req_map.begin(),
-                                        state.per_set[set_index].validated_set_binding_req_map.end(),
+                                        set_info.validated_set_binding_req_map.begin(),
+                                        set_info.validated_set_binding_req_map.end(),
                                         layer_data::insert_iterator<BindingReqMap>(delta_reqs, delta_reqs.begin()));
                     descriptor_set->UpdateDrawState(dev_data, this, cmd_type, pipe, delta_reqs);
                 } else {
                     descriptor_set->UpdateDrawState(dev_data, this, cmd_type, pipe, binding_req_map);
                 }
 
-                state.per_set[set_index].validated_set = descriptor_set.get();
-                state.per_set[set_index].validated_set_change_count = descriptor_set->GetChangeCount();
-                state.per_set[set_index].validated_set_image_layout_change_count = image_layout_change_count;
+                set_info.validated_set = descriptor_set.get();
+                set_info.validated_set_change_count = descriptor_set->GetChangeCount();
+                set_info.validated_set_image_layout_change_count = image_layout_change_count;
                 if (reduced_map.IsManyDescriptors()) {
                     // Check whether old == new before assigning, the equality check is much cheaper than
                     // freeing and reallocating the map.
-                    if (state.per_set[set_index].validated_set_binding_req_map != set_binding_pair.second) {
-                        state.per_set[set_index].validated_set_binding_req_map = set_binding_pair.second;
+                    if (set_info.validated_set_binding_req_map != set_binding_pair.second) {
+                        set_info.validated_set_binding_req_map = set_binding_pair.second;
                     }
                 } else {
-                    state.per_set[set_index].validated_set_binding_req_map = BindingReqMap();
+                    set_info.validated_set_binding_req_map = BindingReqMap();
                 }
             }
         }
@@ -1104,51 +945,53 @@ void CMD_BUFFER_STATE::UpdatePipelineState(CMD_TYPE cmd_type, const VkPipelineBi
     }
 }
 
+// Helper for descriptor set (and buffer) updates.
+static bool PushDescriptorCleanup(LAST_BOUND_STATE &last_bound, uint32_t set_idx) {
+    // All uses are from loops over per_set, but just in case..
+    assert(set_idx < last_bound.per_set.size());
+
+    auto ds = last_bound.per_set[set_idx].bound_descriptor_set.get();
+    if (ds && ds->IsPushDescriptor()) {
+        assert(ds == last_bound.push_descriptor_set.get());
+        last_bound.push_descriptor_set = nullptr;
+        return true;
+    }
+    return true;
+}
+
 // Update pipeline_layout bind points applying the "Pipeline Layout Compatibility" rules.
 // One of pDescriptorSets or push_descriptor_set should be nullptr, indicating whether this
 // is called for CmdBindDescriptorSets or CmdPushDescriptorSet.
 void CMD_BUFFER_STATE::UpdateLastBoundDescriptorSets(VkPipelineBindPoint pipeline_bind_point,
-                                                     const PIPELINE_LAYOUT_STATE *pipeline_layout, uint32_t first_set,
+                                                     const PIPELINE_LAYOUT_STATE &pipeline_layout, uint32_t first_set,
                                                      uint32_t set_count, const VkDescriptorSet *pDescriptorSets,
                                                      std::shared_ptr<cvdescriptorset::DescriptorSet> &push_descriptor_set,
                                                      uint32_t dynamic_offset_count, const uint32_t *p_dynamic_offsets) {
     assert((pDescriptorSets == nullptr) ^ (push_descriptor_set == nullptr));
-    // Defensive
-    assert(pipeline_layout);
-    if (!pipeline_layout) return;
 
     uint32_t required_size = first_set + set_count;
     const uint32_t last_binding_index = required_size - 1;
-    assert(last_binding_index < pipeline_layout->compat_for_set.size());
+    assert(last_binding_index < pipeline_layout.set_compat_ids.size());
 
     // Some useful shorthand
     const auto lv_bind_point = ConvertToLvlBindPoint(pipeline_bind_point);
     auto &last_bound = lastBound[lv_bind_point];
-    last_bound.pipeline_layout = pipeline_layout->layout();
-    auto &pipe_compat_ids = pipeline_layout->compat_for_set;
+    last_bound.pipeline_layout = pipeline_layout.layout();
+    auto &pipe_compat_ids = pipeline_layout.set_compat_ids;
     // Resize binding arrays
-    uint32_t last_set_index = first_set + set_count - 1;
-    if (last_set_index >= last_bound.per_set.size()) {
-        last_bound.per_set.resize(last_set_index + 1);
+    if (last_binding_index >= last_bound.per_set.size()) {
+        last_bound.per_set.resize(required_size);
     }
     const uint32_t current_size = static_cast<uint32_t>(last_bound.per_set.size());
-
-    // We need this three times in this function, but nowhere else
-    auto push_descriptor_cleanup = [&last_bound](const std::shared_ptr<cvdescriptorset::DescriptorSet> &ds) -> bool {
-        if (ds && ds->IsPushDescriptor()) {
-            assert(ds == last_bound.push_descriptor_set);
-            last_bound.push_descriptor_set = nullptr;
-            return true;
-        }
-        return false;
-    };
 
     // Clean up the "disturbed" before and after the range to be set
     if (required_size < current_size) {
         if (last_bound.per_set[last_binding_index].compat_id_for_set != pipe_compat_ids[last_binding_index]) {
             // We're disturbing those after last, we'll shrink below, but first need to check for and cleanup the push_descriptor
             for (auto set_idx = required_size; set_idx < current_size; ++set_idx) {
-                if (push_descriptor_cleanup(last_bound.per_set[set_idx].bound_descriptor_set)) break;
+                if (PushDescriptorCleanup(last_bound, set_idx)) {
+                    break;
+                }
             }
         } else {
             // We're not disturbing past last, so leave the upper binding data alone.
@@ -1163,11 +1006,11 @@ void CMD_BUFFER_STATE::UpdateLastBoundDescriptorSets(VkPipelineBindPoint pipelin
 
     // For any previously bound sets, need to set them to "invalid" if they were disturbed by this update
     for (uint32_t set_idx = 0; set_idx < first_set; ++set_idx) {
-        if (last_bound.per_set[set_idx].compat_id_for_set != pipe_compat_ids[set_idx]) {
-            push_descriptor_cleanup(last_bound.per_set[set_idx].bound_descriptor_set);
-            last_bound.per_set[set_idx].bound_descriptor_set = nullptr;
-            last_bound.per_set[set_idx].dynamicOffsets.clear();
-            last_bound.per_set[set_idx].compat_id_for_set = pipe_compat_ids[set_idx];
+        auto &set_info = last_bound.per_set[set_idx];
+        if (set_info.compat_id_for_set != pipe_compat_ids[set_idx]) {
+            PushDescriptorCleanup(last_bound, set_idx);
+            set_info.Reset();
+            set_info.compat_id_for_set = pipe_compat_ids[set_idx];
         }
     }
 
@@ -1175,29 +1018,88 @@ void CMD_BUFFER_STATE::UpdateLastBoundDescriptorSets(VkPipelineBindPoint pipelin
     const uint32_t *input_dynamic_offsets = p_dynamic_offsets;  // "read" pointer for dynamic offset data
     for (uint32_t input_idx = 0; input_idx < set_count; input_idx++) {
         auto set_idx = input_idx + first_set;  // set_idx is index within layout, input_idx is index within input descriptor sets
+        auto &set_info = last_bound.per_set[set_idx];
         auto descriptor_set =
             push_descriptor_set ? push_descriptor_set : dev_data->Get<cvdescriptorset::DescriptorSet>(pDescriptorSets[input_idx]);
 
+        set_info.Reset();
         // Record binding (or push)
         if (descriptor_set != last_bound.push_descriptor_set) {
             // Only cleanup the push descriptors if they aren't the currently used set.
-            push_descriptor_cleanup(last_bound.per_set[set_idx].bound_descriptor_set);
+            PushDescriptorCleanup(last_bound, set_idx);
         }
-        last_bound.per_set[set_idx].bound_descriptor_set = descriptor_set;
-        last_bound.per_set[set_idx].compat_id_for_set = pipe_compat_ids[set_idx];  // compat ids are canonical *per* set index
+        set_info.bound_descriptor_set = descriptor_set;
+        set_info.compat_id_for_set = pipe_compat_ids[set_idx];  // compat ids are canonical *per* set index
 
         if (descriptor_set) {
             auto set_dynamic_descriptor_count = descriptor_set->GetDynamicDescriptorCount();
             // TODO: Add logic for tracking push_descriptor offsets (here or in caller)
             if (set_dynamic_descriptor_count && input_dynamic_offsets) {
                 const uint32_t *end_offset = input_dynamic_offsets + set_dynamic_descriptor_count;
-                last_bound.per_set[set_idx].dynamicOffsets = std::vector<uint32_t>(input_dynamic_offsets, end_offset);
+                set_info.dynamicOffsets = std::vector<uint32_t>(input_dynamic_offsets, end_offset);
                 input_dynamic_offsets = end_offset;
                 assert(input_dynamic_offsets <= (p_dynamic_offsets + dynamic_offset_count));
             } else {
-                last_bound.per_set[set_idx].dynamicOffsets.clear();
+                set_info.dynamicOffsets.clear();
             }
         }
+    }
+}
+
+void CMD_BUFFER_STATE::UpdateLastBoundDescriptorBuffers(VkPipelineBindPoint pipeline_bind_point,
+                                                        const PIPELINE_LAYOUT_STATE &pipeline_layout, uint32_t first_set,
+                                                        uint32_t set_count, const uint32_t *buffer_indicies,
+                                                        const VkDeviceSize *buffer_offsets) {
+    uint32_t required_size = first_set + set_count;
+    const uint32_t last_binding_index = required_size - 1;
+    assert(last_binding_index < pipeline_layout.set_compat_ids.size());
+
+    // Some useful shorthand
+    const auto lv_bind_point = ConvertToLvlBindPoint(pipeline_bind_point);
+    auto &last_bound = lastBound[lv_bind_point];
+    last_bound.pipeline_layout = pipeline_layout.layout();
+    auto &pipe_compat_ids = pipeline_layout.set_compat_ids;
+    // Resize binding arrays
+    if (last_binding_index >= last_bound.per_set.size()) {
+        last_bound.per_set.resize(required_size);
+    }
+    const uint32_t current_size = static_cast<uint32_t>(last_bound.per_set.size());
+
+    // Clean up the "disturbed" before and after the range to be set
+    if (required_size < current_size) {
+        if (last_bound.per_set[last_binding_index].compat_id_for_set != pipe_compat_ids[last_binding_index]) {
+            // We're disturbing those after last, we'll shrink below, but first need to check for and cleanup the push_descriptor
+            for (auto set_idx = required_size; set_idx < current_size; ++set_idx) {
+                if (PushDescriptorCleanup(last_bound, set_idx)) {
+                    break;
+                }
+            }
+        } else {
+            // We're not disturbing past last, so leave the upper binding data alone.
+            required_size = current_size;
+        }
+    }
+
+    // We resize if we need more set entries or if those past "last" are disturbed
+    if (required_size != current_size) {
+        last_bound.per_set.resize(required_size);
+    }
+
+    // For any previously bound sets, need to set them to "invalid" if they were disturbed by this update
+    for (uint32_t set_idx = 0; set_idx < first_set; ++set_idx) {
+        PushDescriptorCleanup(last_bound, set_idx);
+        last_bound.per_set[set_idx].Reset();
+    }
+
+    // Now update the bound sets with the input sets
+    for (uint32_t input_idx = 0; input_idx < set_count; input_idx++) {
+        auto set_idx = input_idx + first_set;  // set_idx is index within layout, input_idx is index within input descriptor sets
+        auto &set_info = last_bound.per_set[set_idx];
+        set_info.Reset();
+
+        // Record binding
+        set_info.bound_descriptor_buffer = {buffer_indicies[input_idx], buffer_offsets[input_idx]};
+        set_info.compat_id_for_set = pipe_compat_ids[set_idx];  // compat ids are canonical *per* set index
     }
 }
 
@@ -1260,14 +1162,20 @@ void CMD_BUFFER_STATE::SetImageViewLayout(const IMAGE_VIEW_STATE &view_state, Vk
 
 void CMD_BUFFER_STATE::RecordCmd(CMD_TYPE cmd_type) { commandCount++; }
 
-void CMD_BUFFER_STATE::RecordStateCmd(CMD_TYPE cmd_type, CBStatusFlags state_bits) {
+void CMD_BUFFER_STATE::RecordStateCmd(CMD_TYPE cmd_type, CBDynamicStatus state) {
+    CBDynamicFlags state_bits;
+    state_bits.set(state);
+    RecordStateCmd(cmd_type, state_bits);
+}
+
+void CMD_BUFFER_STATE::RecordStateCmd(CMD_TYPE cmd_type, CBDynamicFlags const &state_bits) {
     RecordCmd(cmd_type);
     status |= state_bits;
     static_status &= ~state_bits;
 }
 
-void CMD_BUFFER_STATE::RecordColorWriteEnableStateCmd(CMD_TYPE cmd_type, CBStatusFlags state_bits, uint32_t attachment_count) {
-    RecordStateCmd(cmd_type, state_bits);
+void CMD_BUFFER_STATE::RecordColorWriteEnableStateCmd(CMD_TYPE cmd_type, CBDynamicStatus state, uint32_t attachment_count) {
+    RecordStateCmd(cmd_type, state);
     dynamicColorWriteEnableAttachmentCount = std::max(dynamicColorWriteEnableAttachmentCount, attachment_count);
 }
 
@@ -1425,7 +1333,10 @@ void CMD_BUFFER_STATE::Retire(uint32_t perf_submit_pass, const std::function<boo
     for (const auto &query_state_pair : local_query_to_state_map) {
         if (query_state_pair.second == QUERYSTATE_ENDED && !is_query_updated_after(query_state_pair.first)) {
             auto query_pool_state = dev_data->Get<QUERY_POOL_STATE>(query_state_pair.first.pool);
-            query_pool_state->SetQueryState(query_state_pair.first.query, query_state_pair.first.perf_pass, QUERYSTATE_AVAILABLE);
+            if (query_pool_state) {
+                query_pool_state->SetQueryState(query_state_pair.first.query, query_state_pair.first.perf_pass,
+                                                QUERYSTATE_AVAILABLE);
+            }
         }
     }
 }
@@ -1444,7 +1355,7 @@ void CMD_BUFFER_STATE::UnbindResources() {
 
     // Reset status of cb to force rebinding of all resources
     // Index buffer included
-    status = CBSTATUS_NONE;
+    status.reset();
 
     // Pipeline and descriptor sets
     lastBound[BindPoint_Graphics].Reset();

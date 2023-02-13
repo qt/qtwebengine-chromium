@@ -16,27 +16,26 @@
 
 #include <algorithm>
 #include <limits>
-#include <unordered_map>
 #include <utility>
 
 #include "src/tint/ast/binary_expression.h"
 #include "src/tint/program_builder.h"
-#include "src/tint/sem/abstract_float.h"
-#include "src/tint/sem/abstract_int.h"
-#include "src/tint/sem/abstract_numeric.h"
-#include "src/tint/sem/atomic.h"
-#include "src/tint/sem/depth_multisampled_texture.h"
-#include "src/tint/sem/depth_texture.h"
 #include "src/tint/sem/evaluation_stage.h"
-#include "src/tint/sem/external_texture.h"
-#include "src/tint/sem/multisampled_texture.h"
 #include "src/tint/sem/pipeline_stage_set.h"
-#include "src/tint/sem/sampled_texture.h"
-#include "src/tint/sem/storage_texture.h"
-#include "src/tint/sem/type_constructor.h"
 #include "src/tint/sem/type_conversion.h"
+#include "src/tint/sem/type_initializer.h"
+#include "src/tint/type/abstract_float.h"
+#include "src/tint/type/abstract_int.h"
+#include "src/tint/type/abstract_numeric.h"
+#include "src/tint/type/atomic.h"
+#include "src/tint/type/depth_multisampled_texture.h"
+#include "src/tint/type/depth_texture.h"
+#include "src/tint/type/external_texture.h"
+#include "src/tint/type/multisampled_texture.h"
+#include "src/tint/type/sampled_texture.h"
+#include "src/tint/type/storage_texture.h"
 #include "src/tint/utils/hash.h"
-#include "src/tint/utils/map.h"
+#include "src/tint/utils/hashmap.h"
 #include "src/tint/utils/math.h"
 #include "src/tint/utils/scoped_assignment.h"
 
@@ -56,14 +55,14 @@ constexpr static const size_t kNumFixedParams = 8;
 constexpr static const size_t kNumFixedCandidates = 8;
 
 /// A special type that matches all TypeMatchers
-class Any final : public Castable<Any, sem::Type> {
+class Any final : public Castable<Any, type::Type> {
   public:
-    Any() = default;
+    Any() : Base(type::Flags{}) {}
     ~Any() override = default;
 
-    // Stub implementations for sem::Type conformance.
+    // Stub implementations for type::Type conformance.
     size_t Hash() const override { return 0; }
-    bool Equals(const sem::Type&) const override { return false; }
+    bool Equals(const type::Type&) const override { return false; }
     std::string FriendlyName(const SymbolTable&) const override { return "<any>"; }
 };
 
@@ -123,7 +122,7 @@ class TemplateState {
     /// template type is replaced with `ty`, and `ty` is returned.
     /// If none of the above applies, then `ty` is a type mismatch for the template type, and
     /// nullptr is returned.
-    const sem::Type* Type(size_t idx, const sem::Type* ty) {
+    const type::Type* Type(size_t idx, const type::Type* ty) {
         if (idx >= types_.Length()) {
             types_.Resize(idx + 1);
         }
@@ -132,7 +131,7 @@ class TemplateState {
             t = ty;
             return ty;
         }
-        ty = sem::Type::Common(utils::Vector{t, ty});
+        ty = type::Type::Common(utils::Vector{t, ty});
         if (ty) {
             t = ty;
         }
@@ -155,7 +154,7 @@ class TemplateState {
     }
 
     /// Type returns the template type with index `idx`, or nullptr if the type was not defined.
-    const sem::Type* Type(size_t idx) const {
+    const type::Type* Type(size_t idx) const {
         if (idx >= types_.Length()) {
             return nullptr;
         }
@@ -163,7 +162,7 @@ class TemplateState {
     }
 
     /// SetType replaces the template type with index `idx` with type `ty`.
-    void SetType(size_t idx, const sem::Type* ty) {
+    void SetType(size_t idx, const type::Type* ty) {
         if (idx >= types_.Length()) {
             types_.Resize(idx + 1);
         }
@@ -179,7 +178,7 @@ class TemplateState {
     }
 
   private:
-    utils::Vector<const sem::Type*, 4> types_;
+    utils::Vector<const type::Type*, 4> types_;
     utils::Vector<Number, 2> numbers_;
 };
 
@@ -220,7 +219,7 @@ class MatchState {
     /// `ty`. If the type matches, the canonical expected type is returned. If the
     /// type `ty` does not match, then nullptr is returned.
     /// @note: The matcher indices are progressed on calling.
-    const sem::Type* Type(const sem::Type* ty);
+    const type::Type* Type(const type::Type* ty);
 
     /// Num uses the next NumMatcher from the matcher indices to match the number
     /// `num`. If the number matches, the canonical expected number is returned.
@@ -254,7 +253,7 @@ class TypeMatcher {
     /// Match may define and refine the template types and numbers in state.
     /// @param type the type to match
     /// @returns the canonicalized type on match, otherwise nullptr
-    virtual const sem::Type* Match(MatchState& state, const sem::Type* type) const = 0;
+    virtual const type::Type* Match(MatchState& state, const type::Type* type) const = 0;
 
     /// @return a string representation of the matcher. Used for printing error
     /// messages when no overload is found.
@@ -287,7 +286,7 @@ class TemplateTypeMatcher : public TypeMatcher {
     /// Constructor
     explicit TemplateTypeMatcher(size_t index) : index_(index) {}
 
-    const sem::Type* Match(MatchState& state, const sem::Type* type) const override {
+    const type::Type* Match(MatchState& state, const type::Type* type) const override {
         if (type->Is<Any>()) {
             return state.templates.Type(index_);
         }
@@ -338,7 +337,7 @@ using PipelineStage = ast::PipelineStage;
 enum class OverloadFlag {
     kIsBuiltin,                 // The overload is a builtin ('fn')
     kIsOperator,                // The overload is an operator ('op')
-    kIsConstructor,             // The overload is a type constructor ('ctor')
+    kIsInitializer,             // The overload is a type initializer ('ctor')
     kIsConverter,               // The overload is a type converter ('conv')
     kSupportsVertexPipeline,    // The overload can be used in vertex shaders
     kSupportsFragmentPipeline,  // The overload can be used in fragment shaders
@@ -349,72 +348,72 @@ enum class OverloadFlag {
 // An enum set of OverloadFlag, used by OperatorInfo
 using OverloadFlags = utils::EnumSet<OverloadFlag>;
 
-bool match_bool(MatchState&, const sem::Type* ty) {
-    return ty->IsAnyOf<Any, sem::Bool>();
+bool match_bool(MatchState&, const type::Type* ty) {
+    return ty->IsAnyOf<Any, type::Bool>();
 }
 
-const sem::AbstractFloat* build_fa(MatchState& state) {
-    return state.builder.create<sem::AbstractFloat>();
+const type::AbstractFloat* build_fa(MatchState& state) {
+    return state.builder.create<type::AbstractFloat>();
 }
 
-bool match_fa(MatchState& state, const sem::Type* ty) {
+bool match_fa(MatchState& state, const type::Type* ty) {
     return (state.earliest_eval_stage == sem::EvaluationStage::kConstant) &&
-           ty->IsAnyOf<Any, sem::AbstractNumeric>();
+           ty->IsAnyOf<Any, type::AbstractNumeric>();
 }
 
-const sem::AbstractInt* build_ia(MatchState& state) {
-    return state.builder.create<sem::AbstractInt>();
+const type::AbstractInt* build_ia(MatchState& state) {
+    return state.builder.create<type::AbstractInt>();
 }
 
-bool match_ia(MatchState& state, const sem::Type* ty) {
+bool match_ia(MatchState& state, const type::Type* ty) {
     return (state.earliest_eval_stage == sem::EvaluationStage::kConstant) &&
-           ty->IsAnyOf<Any, sem::AbstractInt>();
+           ty->IsAnyOf<Any, type::AbstractInt>();
 }
 
-const sem::Bool* build_bool(MatchState& state) {
-    return state.builder.create<sem::Bool>();
+const type::Bool* build_bool(MatchState& state) {
+    return state.builder.create<type::Bool>();
 }
 
-const sem::F16* build_f16(MatchState& state) {
-    return state.builder.create<sem::F16>();
+const type::F16* build_f16(MatchState& state) {
+    return state.builder.create<type::F16>();
 }
 
-bool match_f16(MatchState&, const sem::Type* ty) {
-    return ty->IsAnyOf<Any, sem::F16, sem::AbstractNumeric>();
+bool match_f16(MatchState&, const type::Type* ty) {
+    return ty->IsAnyOf<Any, type::F16, type::AbstractNumeric>();
 }
 
-const sem::F32* build_f32(MatchState& state) {
-    return state.builder.create<sem::F32>();
+const type::F32* build_f32(MatchState& state) {
+    return state.builder.create<type::F32>();
 }
 
-bool match_f32(MatchState&, const sem::Type* ty) {
-    return ty->IsAnyOf<Any, sem::F32, sem::AbstractNumeric>();
+bool match_f32(MatchState&, const type::Type* ty) {
+    return ty->IsAnyOf<Any, type::F32, type::AbstractNumeric>();
 }
 
-const sem::I32* build_i32(MatchState& state) {
-    return state.builder.create<sem::I32>();
+const type::I32* build_i32(MatchState& state) {
+    return state.builder.create<type::I32>();
 }
 
-bool match_i32(MatchState&, const sem::Type* ty) {
-    return ty->IsAnyOf<Any, sem::I32, sem::AbstractInt>();
+bool match_i32(MatchState&, const type::Type* ty) {
+    return ty->IsAnyOf<Any, type::I32, type::AbstractInt>();
 }
 
-const sem::U32* build_u32(MatchState& state) {
-    return state.builder.create<sem::U32>();
+const type::U32* build_u32(MatchState& state) {
+    return state.builder.create<type::U32>();
 }
 
-bool match_u32(MatchState&, const sem::Type* ty) {
-    return ty->IsAnyOf<Any, sem::U32, sem::AbstractInt>();
+bool match_u32(MatchState&, const type::Type* ty) {
+    return ty->IsAnyOf<Any, type::U32, type::AbstractInt>();
 }
 
-bool match_vec(MatchState&, const sem::Type* ty, Number& N, const sem::Type*& T) {
+bool match_vec(MatchState&, const type::Type* ty, Number& N, const type::Type*& T) {
     if (ty->Is<Any>()) {
         N = Number::any;
         T = ty;
         return true;
     }
 
-    if (auto* v = ty->As<sem::Vector>()) {
+    if (auto* v = ty->As<type::Vector>()) {
         N = v->Width();
         T = v->type();
         return true;
@@ -423,13 +422,13 @@ bool match_vec(MatchState&, const sem::Type* ty, Number& N, const sem::Type*& T)
 }
 
 template <uint32_t N>
-bool match_vec(MatchState&, const sem::Type* ty, const sem::Type*& T) {
+bool match_vec(MatchState&, const type::Type* ty, const type::Type*& T) {
     if (ty->Is<Any>()) {
         T = ty;
         return true;
     }
 
-    if (auto* v = ty->As<sem::Vector>()) {
+    if (auto* v = ty->As<type::Vector>()) {
         if (v->Width() == N) {
             T = v->type();
             return true;
@@ -438,13 +437,13 @@ bool match_vec(MatchState&, const sem::Type* ty, const sem::Type*& T) {
     return false;
 }
 
-const sem::Vector* build_vec(MatchState& state, Number N, const sem::Type* el) {
-    return state.builder.create<sem::Vector>(el, N.Value());
+const type::Vector* build_vec(MatchState& state, Number N, const type::Type* el) {
+    return state.builder.create<type::Vector>(el, N.Value());
 }
 
 template <uint32_t N>
-const sem::Vector* build_vec(MatchState& state, const sem::Type* el) {
-    return state.builder.create<sem::Vector>(el, N);
+const type::Vector* build_vec(MatchState& state, const type::Type* el) {
+    return state.builder.create<type::Vector>(el, N);
 }
 
 constexpr auto match_vec2 = match_vec<2>;
@@ -455,14 +454,14 @@ constexpr auto build_vec2 = build_vec<2>;
 constexpr auto build_vec3 = build_vec<3>;
 constexpr auto build_vec4 = build_vec<4>;
 
-bool match_mat(MatchState&, const sem::Type* ty, Number& M, Number& N, const sem::Type*& T) {
+bool match_mat(MatchState&, const type::Type* ty, Number& M, Number& N, const type::Type*& T) {
     if (ty->Is<Any>()) {
         M = Number::any;
         N = Number::any;
         T = ty;
         return true;
     }
-    if (auto* m = ty->As<sem::Matrix>()) {
+    if (auto* m = ty->As<type::Matrix>()) {
         M = m->columns();
         N = m->ColumnType()->Width();
         T = m->type();
@@ -472,12 +471,12 @@ bool match_mat(MatchState&, const sem::Type* ty, Number& M, Number& N, const sem
 }
 
 template <uint32_t C, uint32_t R>
-bool match_mat(MatchState&, const sem::Type* ty, const sem::Type*& T) {
+bool match_mat(MatchState&, const type::Type* ty, const type::Type*& T) {
     if (ty->Is<Any>()) {
         T = ty;
         return true;
     }
-    if (auto* m = ty->As<sem::Matrix>()) {
+    if (auto* m = ty->As<type::Matrix>()) {
         if (m->columns() == C && m->rows() == R) {
             T = m->type();
             return true;
@@ -486,15 +485,15 @@ bool match_mat(MatchState&, const sem::Type* ty, const sem::Type*& T) {
     return false;
 }
 
-const sem::Matrix* build_mat(MatchState& state, Number C, Number R, const sem::Type* T) {
-    auto* column_type = state.builder.create<sem::Vector>(T, R.Value());
-    return state.builder.create<sem::Matrix>(column_type, C.Value());
+const type::Matrix* build_mat(MatchState& state, Number C, Number R, const type::Type* T) {
+    auto* column_type = state.builder.create<type::Vector>(T, R.Value());
+    return state.builder.create<type::Matrix>(column_type, C.Value());
 }
 
 template <uint32_t C, uint32_t R>
-const sem::Matrix* build_mat(MatchState& state, const sem::Type* T) {
-    auto* column_type = state.builder.create<sem::Vector>(T, R);
-    return state.builder.create<sem::Matrix>(column_type, C);
+const type::Matrix* build_mat(MatchState& state, const type::Type* T) {
+    auto* column_type = state.builder.create<type::Vector>(T, R);
+    return state.builder.create<type::Matrix>(column_type, C);
 }
 
 constexpr auto build_mat2x2 = build_mat<2, 2>;
@@ -517,14 +516,14 @@ constexpr auto match_mat4x2 = match_mat<4, 2>;
 constexpr auto match_mat4x3 = match_mat<4, 3>;
 constexpr auto match_mat4x4 = match_mat<4, 4>;
 
-bool match_array(MatchState&, const sem::Type* ty, const sem::Type*& T) {
+bool match_array(MatchState&, const type::Type* ty, const type::Type*& T) {
     if (ty->Is<Any>()) {
         T = ty;
         return true;
     }
 
-    if (auto* a = ty->As<sem::Array>()) {
-        if (a->IsRuntimeSized()) {
+    if (auto* a = ty->As<type::Array>()) {
+        if (a->Count()->Is<type::RuntimeArrayCount>()) {
             T = a->ElemType();
             return true;
         }
@@ -532,16 +531,17 @@ bool match_array(MatchState&, const sem::Type* ty, const sem::Type*& T) {
     return false;
 }
 
-const sem::Array* build_array(MatchState& state, const sem::Type* el) {
-    return state.builder.create<sem::Array>(el,
-                                            /* count */ sem::RuntimeArrayCount{},
-                                            /* align */ 0u,
-                                            /* size */ 0u,
-                                            /* stride */ 0u,
-                                            /* stride_implicit */ 0u);
+const type::Array* build_array(MatchState& state, const type::Type* el) {
+    return state.builder.create<type::Array>(
+        el,
+        /* count */ state.builder.create<type::RuntimeArrayCount>(),
+        /* align */ 0u,
+        /* size */ 0u,
+        /* stride */ 0u,
+        /* stride_implicit */ 0u);
 }
 
-bool match_ptr(MatchState&, const sem::Type* ty, Number& S, const sem::Type*& T, Number& A) {
+bool match_ptr(MatchState&, const type::Type* ty, Number& S, const type::Type*& T, Number& A) {
     if (ty->Is<Any>()) {
         S = Number::any;
         T = ty;
@@ -549,7 +549,7 @@ bool match_ptr(MatchState&, const sem::Type* ty, Number& S, const sem::Type*& T,
         return true;
     }
 
-    if (auto* p = ty->As<sem::Pointer>()) {
+    if (auto* p = ty->As<type::Pointer>()) {
         S = Number(static_cast<uint32_t>(p->AddressSpace()));
         T = p->StoreType();
         A = Number(static_cast<uint32_t>(p->Access()));
@@ -558,60 +558,60 @@ bool match_ptr(MatchState&, const sem::Type* ty, Number& S, const sem::Type*& T,
     return false;
 }
 
-const sem::Pointer* build_ptr(MatchState& state, Number S, const sem::Type* T, Number& A) {
-    return state.builder.create<sem::Pointer>(T, static_cast<ast::AddressSpace>(S.Value()),
-                                              static_cast<ast::Access>(A.Value()));
+const type::Pointer* build_ptr(MatchState& state, Number S, const type::Type* T, Number& A) {
+    return state.builder.create<type::Pointer>(T, static_cast<ast::AddressSpace>(S.Value()),
+                                               static_cast<ast::Access>(A.Value()));
 }
 
-bool match_atomic(MatchState&, const sem::Type* ty, const sem::Type*& T) {
+bool match_atomic(MatchState&, const type::Type* ty, const type::Type*& T) {
     if (ty->Is<Any>()) {
         T = ty;
         return true;
     }
 
-    if (auto* a = ty->As<sem::Atomic>()) {
+    if (auto* a = ty->As<type::Atomic>()) {
         T = a->Type();
         return true;
     }
     return false;
 }
 
-const sem::Atomic* build_atomic(MatchState& state, const sem::Type* T) {
-    return state.builder.create<sem::Atomic>(T);
+const type::Atomic* build_atomic(MatchState& state, const type::Type* T) {
+    return state.builder.create<type::Atomic>(T);
 }
 
-bool match_sampler(MatchState&, const sem::Type* ty) {
+bool match_sampler(MatchState&, const type::Type* ty) {
     if (ty->Is<Any>()) {
         return true;
     }
-    return ty->Is([](const sem::Sampler* s) { return s->kind() == ast::SamplerKind::kSampler; });
+    return ty->Is([](const type::Sampler* s) { return s->kind() == ast::SamplerKind::kSampler; });
 }
 
-const sem::Sampler* build_sampler(MatchState& state) {
-    return state.builder.create<sem::Sampler>(ast::SamplerKind::kSampler);
+const type::Sampler* build_sampler(MatchState& state) {
+    return state.builder.create<type::Sampler>(ast::SamplerKind::kSampler);
 }
 
-bool match_sampler_comparison(MatchState&, const sem::Type* ty) {
+bool match_sampler_comparison(MatchState&, const type::Type* ty) {
     if (ty->Is<Any>()) {
         return true;
     }
     return ty->Is(
-        [](const sem::Sampler* s) { return s->kind() == ast::SamplerKind::kComparisonSampler; });
+        [](const type::Sampler* s) { return s->kind() == ast::SamplerKind::kComparisonSampler; });
 }
 
-const sem::Sampler* build_sampler_comparison(MatchState& state) {
-    return state.builder.create<sem::Sampler>(ast::SamplerKind::kComparisonSampler);
+const type::Sampler* build_sampler_comparison(MatchState& state) {
+    return state.builder.create<type::Sampler>(ast::SamplerKind::kComparisonSampler);
 }
 
 bool match_texture(MatchState&,
-                   const sem::Type* ty,
+                   const type::Type* ty,
                    ast::TextureDimension dim,
-                   const sem::Type*& T) {
+                   const type::Type*& T) {
     if (ty->Is<Any>()) {
         T = ty;
         return true;
     }
-    if (auto* v = ty->As<sem::SampledTexture>()) {
+    if (auto* v = ty->As<type::SampledTexture>()) {
         if (v->dim() == dim) {
             T = v->type();
             return true;
@@ -622,14 +622,14 @@ bool match_texture(MatchState&,
 
 #define JOIN(a, b) a##b
 
-#define DECLARE_SAMPLED_TEXTURE(suffix, dim)                                      \
-    bool JOIN(match_texture_, suffix)(MatchState & state, const sem::Type* ty,    \
-                                      const sem::Type*& T) {                      \
-        return match_texture(state, ty, dim, T);                                  \
-    }                                                                             \
-    const sem::SampledTexture* JOIN(build_texture_, suffix)(MatchState & state,   \
-                                                            const sem::Type* T) { \
-        return state.builder.create<sem::SampledTexture>(dim, T);                 \
+#define DECLARE_SAMPLED_TEXTURE(suffix, dim)                                        \
+    bool JOIN(match_texture_, suffix)(MatchState & state, const type::Type* ty,     \
+                                      const type::Type*& T) {                       \
+        return match_texture(state, ty, dim, T);                                    \
+    }                                                                               \
+    const type::SampledTexture* JOIN(build_texture_, suffix)(MatchState & state,    \
+                                                             const type::Type* T) { \
+        return state.builder.create<type::SampledTexture>(dim, T);                  \
     }
 
 DECLARE_SAMPLED_TEXTURE(1d, ast::TextureDimension::k1d)
@@ -641,14 +641,14 @@ DECLARE_SAMPLED_TEXTURE(cube_array, ast::TextureDimension::kCubeArray)
 #undef DECLARE_SAMPLED_TEXTURE
 
 bool match_texture_multisampled(MatchState&,
-                                const sem::Type* ty,
+                                const type::Type* ty,
                                 ast::TextureDimension dim,
-                                const sem::Type*& T) {
+                                const type::Type*& T) {
     if (ty->Is<Any>()) {
         T = ty;
         return true;
     }
-    if (auto* v = ty->As<sem::MultisampledTexture>()) {
+    if (auto* v = ty->As<type::MultisampledTexture>()) {
         if (v->dim() == dim) {
             T = v->type();
             return true;
@@ -657,32 +657,32 @@ bool match_texture_multisampled(MatchState&,
     return false;
 }
 
-#define DECLARE_MULTISAMPLED_TEXTURE(suffix, dim)                                           \
-    bool JOIN(match_texture_multisampled_, suffix)(MatchState & state, const sem::Type* ty, \
-                                                   const sem::Type*& T) {                   \
-        return match_texture_multisampled(state, ty, dim, T);                               \
-    }                                                                                       \
-    const sem::MultisampledTexture* JOIN(build_texture_multisampled_, suffix)(              \
-        MatchState & state, const sem::Type* T) {                                           \
-        return state.builder.create<sem::MultisampledTexture>(dim, T);                      \
+#define DECLARE_MULTISAMPLED_TEXTURE(suffix, dim)                                            \
+    bool JOIN(match_texture_multisampled_, suffix)(MatchState & state, const type::Type* ty, \
+                                                   const type::Type*& T) {                   \
+        return match_texture_multisampled(state, ty, dim, T);                                \
+    }                                                                                        \
+    const type::MultisampledTexture* JOIN(build_texture_multisampled_, suffix)(              \
+        MatchState & state, const type::Type* T) {                                           \
+        return state.builder.create<type::MultisampledTexture>(dim, T);                      \
     }
 
 DECLARE_MULTISAMPLED_TEXTURE(2d, ast::TextureDimension::k2d)
 #undef DECLARE_MULTISAMPLED_TEXTURE
 
-bool match_texture_depth(MatchState&, const sem::Type* ty, ast::TextureDimension dim) {
+bool match_texture_depth(MatchState&, const type::Type* ty, ast::TextureDimension dim) {
     if (ty->Is<Any>()) {
         return true;
     }
-    return ty->Is([&](const sem::DepthTexture* t) { return t->dim() == dim; });
+    return ty->Is([&](const type::DepthTexture* t) { return t->dim() == dim; });
 }
 
-#define DECLARE_DEPTH_TEXTURE(suffix, dim)                                             \
-    bool JOIN(match_texture_depth_, suffix)(MatchState & state, const sem::Type* ty) { \
-        return match_texture_depth(state, ty, dim);                                    \
-    }                                                                                  \
-    const sem::DepthTexture* JOIN(build_texture_depth_, suffix)(MatchState & state) {  \
-        return state.builder.create<sem::DepthTexture>(dim);                           \
+#define DECLARE_DEPTH_TEXTURE(suffix, dim)                                              \
+    bool JOIN(match_texture_depth_, suffix)(MatchState & state, const type::Type* ty) { \
+        return match_texture_depth(state, ty, dim);                                     \
+    }                                                                                   \
+    const type::DepthTexture* JOIN(build_texture_depth_, suffix)(MatchState & state) {  \
+        return state.builder.create<type::DepthTexture>(dim);                           \
     }
 
 DECLARE_DEPTH_TEXTURE(2d, ast::TextureDimension::k2d)
@@ -691,21 +691,21 @@ DECLARE_DEPTH_TEXTURE(cube, ast::TextureDimension::kCube)
 DECLARE_DEPTH_TEXTURE(cube_array, ast::TextureDimension::kCubeArray)
 #undef DECLARE_DEPTH_TEXTURE
 
-bool match_texture_depth_multisampled_2d(MatchState&, const sem::Type* ty) {
+bool match_texture_depth_multisampled_2d(MatchState&, const type::Type* ty) {
     if (ty->Is<Any>()) {
         return true;
     }
-    return ty->Is([&](const sem::DepthMultisampledTexture* t) {
+    return ty->Is([&](const type::DepthMultisampledTexture* t) {
         return t->dim() == ast::TextureDimension::k2d;
     });
 }
 
-sem::DepthMultisampledTexture* build_texture_depth_multisampled_2d(MatchState& state) {
-    return state.builder.create<sem::DepthMultisampledTexture>(ast::TextureDimension::k2d);
+type::DepthMultisampledTexture* build_texture_depth_multisampled_2d(MatchState& state) {
+    return state.builder.create<type::DepthMultisampledTexture>(ast::TextureDimension::k2d);
 }
 
 bool match_texture_storage(MatchState&,
-                           const sem::Type* ty,
+                           const type::Type* ty,
                            ast::TextureDimension dim,
                            Number& F,
                            Number& A) {
@@ -714,7 +714,7 @@ bool match_texture_storage(MatchState&,
         A = Number::any;
         return true;
     }
-    if (auto* v = ty->As<sem::StorageTexture>()) {
+    if (auto* v = ty->As<type::StorageTexture>()) {
         if (v->dim() == dim) {
             F = Number(static_cast<uint32_t>(v->texel_format()));
             A = Number(static_cast<uint32_t>(v->access()));
@@ -724,17 +724,17 @@ bool match_texture_storage(MatchState&,
     return false;
 }
 
-#define DECLARE_STORAGE_TEXTURE(suffix, dim)                                                      \
-    bool JOIN(match_texture_storage_, suffix)(MatchState & state, const sem::Type* ty, Number& F, \
-                                              Number& A) {                                        \
-        return match_texture_storage(state, ty, dim, F, A);                                       \
-    }                                                                                             \
-    const sem::StorageTexture* JOIN(build_texture_storage_, suffix)(MatchState & state, Number F, \
-                                                                    Number A) {                   \
-        auto format = static_cast<TexelFormat>(F.Value());                                        \
-        auto access = static_cast<Access>(A.Value());                                             \
-        auto* T = sem::StorageTexture::SubtypeFor(format, state.builder.Types());                 \
-        return state.builder.create<sem::StorageTexture>(dim, format, access, T);                 \
+#define DECLARE_STORAGE_TEXTURE(suffix, dim)                                                       \
+    bool JOIN(match_texture_storage_, suffix)(MatchState & state, const type::Type* ty, Number& F, \
+                                              Number& A) {                                         \
+        return match_texture_storage(state, ty, dim, F, A);                                        \
+    }                                                                                              \
+    const type::StorageTexture* JOIN(build_texture_storage_, suffix)(MatchState & state, Number F, \
+                                                                     Number A) {                   \
+        auto format = static_cast<TexelFormat>(F.Value());                                         \
+        auto access = static_cast<Access>(A.Value());                                              \
+        auto* T = type::StorageTexture::SubtypeFor(format, state.builder.Types());                 \
+        return state.builder.create<type::StorageTexture>(dim, format, access, T);                 \
     }
 
 DECLARE_STORAGE_TEXTURE(1d, ast::TextureDimension::k1d)
@@ -743,25 +743,25 @@ DECLARE_STORAGE_TEXTURE(2d_array, ast::TextureDimension::k2dArray)
 DECLARE_STORAGE_TEXTURE(3d, ast::TextureDimension::k3d)
 #undef DECLARE_STORAGE_TEXTURE
 
-bool match_texture_external(MatchState&, const sem::Type* ty) {
-    return ty->IsAnyOf<Any, sem::ExternalTexture>();
+bool match_texture_external(MatchState&, const type::Type* ty) {
+    return ty->IsAnyOf<Any, type::ExternalTexture>();
 }
 
-const sem::ExternalTexture* build_texture_external(MatchState& state) {
-    return state.builder.create<sem::ExternalTexture>();
+const type::ExternalTexture* build_texture_external(MatchState& state) {
+    return state.builder.create<type::ExternalTexture>();
 }
 
 // Builtin types starting with a _ prefix cannot be declared in WGSL, so they
 // can only be used as return types. Because of this, they must only match Any,
 // which is used as the return type matcher.
-bool match_modf_result(MatchState&, const sem::Type* ty, const sem::Type*& T) {
+bool match_modf_result(MatchState&, const type::Type* ty, const type::Type*& T) {
     if (!ty->Is<Any>()) {
         return false;
     }
     T = ty;
     return true;
 }
-bool match_modf_result_vec(MatchState&, const sem::Type* ty, Number& N, const sem::Type*& T) {
+bool match_modf_result_vec(MatchState&, const type::Type* ty, Number& N, const type::Type*& T) {
     if (!ty->Is<Any>()) {
         return false;
     }
@@ -769,14 +769,14 @@ bool match_modf_result_vec(MatchState&, const sem::Type* ty, Number& N, const se
     T = ty;
     return true;
 }
-bool match_frexp_result(MatchState&, const sem::Type* ty, const sem::Type*& T) {
+bool match_frexp_result(MatchState&, const type::Type* ty, const type::Type*& T) {
     if (!ty->Is<Any>()) {
         return false;
     }
     T = ty;
     return true;
 }
-bool match_frexp_result_vec(MatchState&, const sem::Type* ty, Number& N, const sem::Type*& T) {
+bool match_frexp_result_vec(MatchState&, const type::Type* ty, Number& N, const type::Type*& T) {
     if (!ty->Is<Any>()) {
         return false;
     }
@@ -785,7 +785,7 @@ bool match_frexp_result_vec(MatchState&, const sem::Type* ty, Number& N, const s
     return true;
 }
 
-bool match_atomic_compare_exchange_result(MatchState&, const sem::Type* ty, const sem::Type*& T) {
+bool match_atomic_compare_exchange_result(MatchState&, const type::Type* ty, const type::Type*& T) {
     if (ty->Is<Any>()) {
         T = ty;
         return true;
@@ -795,24 +795,25 @@ bool match_atomic_compare_exchange_result(MatchState&, const sem::Type* ty, cons
 
 struct NameAndType {
     std::string name;
-    const sem::Type* type;
+    const type::Type* type;
 };
-const sem::Struct* build_struct(MatchState& state,
-                                std::string name,
-                                std::initializer_list<NameAndType> member_names_and_types) {
+sem::Struct* build_struct(ProgramBuilder& b,
+                          std::string name,
+                          std::initializer_list<NameAndType> member_names_and_types) {
     uint32_t offset = 0;
     uint32_t max_align = 0;
-    sem::StructMemberList members;
+    utils::Vector<const sem::StructMember*, 4> members;
     for (auto& m : member_names_and_types) {
-        uint32_t align = m.type->Align();
+        uint32_t align = std::max<uint32_t>(m.type->Align(), 1);
         uint32_t size = m.type->Size();
         offset = utils::RoundUp(align, offset);
         max_align = std::max(max_align, align);
-        members.emplace_back(state.builder.create<sem::StructMember>(
+        members.Push(b.create<sem::StructMember>(
             /* declaration */ nullptr,
-            /* name */ state.builder.Sym(m.name),
+            /* source */ Source{},
+            /* name */ b.Sym(m.name),
             /* type */ m.type,
-            /* index */ static_cast<uint32_t>(members.size()),
+            /* index */ static_cast<uint32_t>(members.Length()),
             /* offset */ offset,
             /* align */ align,
             /* size */ size,
@@ -821,60 +822,143 @@ const sem::Struct* build_struct(MatchState& state,
     }
     uint32_t size_without_padding = offset;
     uint32_t size_with_padding = utils::RoundUp(max_align, offset);
-    return state.builder.create<sem::Struct>(
+    return b.create<sem::Struct>(
         /* declaration */ nullptr,
-        /* name */ state.builder.Sym(name),
-        /* members */ members,
+        /* source */ Source{},
+        /* name */ b.Sym(name),
+        /* members */ std::move(members),
         /* align */ max_align,
         /* size */ size_with_padding,
         /* size_no_padding */ size_without_padding);
 }
 
-const sem::Struct* build_modf_result(MatchState& state, const sem::Type* el) {
-    std::string display_name;
-    if (el->Is<sem::F16>()) {
-        display_name = "__modf_result_f16";
-    } else {
-        display_name = "__modf_result";
-    }
-    return build_struct(state, display_name, {{"fract", el}, {"whole", el}});
+const sem::Struct* build_modf_result(MatchState& state, const type::Type* el) {
+    auto build_f32 = [&] {
+        auto* ty = state.builder.create<type::F32>();
+        return build_struct(state.builder, "__modf_result_f32", {{"fract", ty}, {"whole", ty}});
+    };
+    auto build_f16 = [&] {
+        auto* ty = state.builder.create<type::F16>();
+        return build_struct(state.builder, "__modf_result_f16", {{"fract", ty}, {"whole", ty}});
+    };
+
+    return Switch(
+        el,                                             //
+        [&](const type::F32*) { return build_f32(); },  //
+        [&](const type::F16*) { return build_f16(); },  //
+        [&](const type::AbstractFloat*) {
+            auto* abstract = build_struct(state.builder, "__modf_result_abstract",
+                                          {{"fract", el}, {"whole", el}});
+            abstract->SetConcreteTypes(utils::Vector{build_f32(), build_f16()});
+            return abstract;
+        },
+        [&](Default) {
+            TINT_ICE(Resolver, state.builder.Diagnostics())
+                << "unhandled modf type: " << state.builder.FriendlyName(el);
+            return nullptr;
+        });
 }
-const sem::Struct* build_modf_result_vec(MatchState& state, Number& n, const sem::Type* el) {
-    std::string display_name;
-    if (el->Is<sem::F16>()) {
-        display_name = "__modf_result_vec" + std::to_string(n.Value()) + "_f16";
-    } else {
-        display_name = "__modf_result_vec" + std::to_string(n.Value());
-    }
-    auto* vec = state.builder.create<sem::Vector>(el, n.Value());
-    return build_struct(state, display_name, {{"fract", vec}, {"whole", vec}});
+
+const sem::Struct* build_modf_result_vec(MatchState& state, Number& n, const type::Type* el) {
+    auto prefix = "__modf_result_vec" + std::to_string(n.Value());
+    auto build_f32 = [&] {
+        auto* vec =
+            state.builder.create<type::Vector>(state.builder.create<type::F32>(), n.Value());
+        return build_struct(state.builder, prefix + "_f32", {{"fract", vec}, {"whole", vec}});
+    };
+    auto build_f16 = [&] {
+        auto* vec =
+            state.builder.create<type::Vector>(state.builder.create<type::F16>(), n.Value());
+        return build_struct(state.builder, prefix + "_f16", {{"fract", vec}, {"whole", vec}});
+    };
+
+    return Switch(
+        el,                                             //
+        [&](const type::F32*) { return build_f32(); },  //
+        [&](const type::F16*) { return build_f16(); },  //
+        [&](const type::AbstractFloat*) {
+            auto* vec = state.builder.create<type::Vector>(el, n.Value());
+            auto* abstract =
+                build_struct(state.builder, prefix + "_abstract", {{"fract", vec}, {"whole", vec}});
+            abstract->SetConcreteTypes(utils::Vector{build_f32(), build_f16()});
+            return abstract;
+        },
+        [&](Default) {
+            TINT_ICE(Resolver, state.builder.Diagnostics())
+                << "unhandled modf type: " << state.builder.FriendlyName(el);
+            return nullptr;
+        });
 }
-const sem::Struct* build_frexp_result(MatchState& state, const sem::Type* el) {
-    std::string display_name;
-    if (el->Is<sem::F16>()) {
-        display_name = "__frexp_result_f16";
-    } else {
-        display_name = "__frexp_result";
-    }
-    auto* i32 = state.builder.create<sem::I32>();
-    return build_struct(state, display_name, {{"sig", el}, {"exp", i32}});
+
+const sem::Struct* build_frexp_result(MatchState& state, const type::Type* el) {
+    auto build_f32 = [&] {
+        auto* f = state.builder.create<type::F32>();
+        auto* i = state.builder.create<type::I32>();
+        return build_struct(state.builder, "__frexp_result_f32", {{"fract", f}, {"exp", i}});
+    };
+    auto build_f16 = [&] {
+        auto* f = state.builder.create<type::F16>();
+        auto* i = state.builder.create<type::I32>();
+        return build_struct(state.builder, "__frexp_result_f16", {{"fract", f}, {"exp", i}});
+    };
+
+    return Switch(
+        el,                                             //
+        [&](const type::F32*) { return build_f32(); },  //
+        [&](const type::F16*) { return build_f16(); },  //
+        [&](const type::AbstractFloat*) {
+            auto* i = state.builder.create<type::AbstractInt>();
+            auto* abstract =
+                build_struct(state.builder, "__frexp_result_abstract", {{"fract", el}, {"exp", i}});
+            abstract->SetConcreteTypes(utils::Vector{build_f32(), build_f16()});
+            return abstract;
+        },
+        [&](Default) {
+            TINT_ICE(Resolver, state.builder.Diagnostics())
+                << "unhandled frexp type: " << state.builder.FriendlyName(el);
+            return nullptr;
+        });
 }
-const sem::Struct* build_frexp_result_vec(MatchState& state, Number& n, const sem::Type* el) {
-    std::string display_name;
-    if (el->Is<sem::F16>()) {
-        display_name = "__frexp_result_vec" + std::to_string(n.Value()) + "_f16";
-    } else {
-        display_name = "__frexp_result_vec" + std::to_string(n.Value());
-    }
-    auto* vec = state.builder.create<sem::Vector>(el, n.Value());
-    auto* vec_i32 = state.builder.create<sem::Vector>(state.builder.create<sem::I32>(), n.Value());
-    return build_struct(state, display_name, {{"sig", vec}, {"exp", vec_i32}});
+
+const sem::Struct* build_frexp_result_vec(MatchState& state, Number& n, const type::Type* el) {
+    auto prefix = "__frexp_result_vec" + std::to_string(n.Value());
+    auto build_f32 = [&] {
+        auto* f = state.builder.create<type::Vector>(state.builder.create<type::F32>(), n.Value());
+        auto* e = state.builder.create<type::Vector>(state.builder.create<type::I32>(), n.Value());
+        return build_struct(state.builder, prefix + "_f32", {{"fract", f}, {"exp", e}});
+    };
+    auto build_f16 = [&] {
+        auto* f = state.builder.create<type::Vector>(state.builder.create<type::F16>(), n.Value());
+        auto* e = state.builder.create<type::Vector>(state.builder.create<type::I32>(), n.Value());
+        return build_struct(state.builder, prefix + "_f16", {{"fract", f}, {"exp", e}});
+    };
+
+    return Switch(
+        el,                                             //
+        [&](const type::F32*) { return build_f32(); },  //
+        [&](const type::F16*) { return build_f16(); },  //
+        [&](const type::AbstractFloat*) {
+            auto* f = state.builder.create<type::Vector>(el, n.Value());
+            auto* e = state.builder.create<type::Vector>(state.builder.create<type::AbstractInt>(),
+                                                         n.Value());
+            auto* abstract =
+                build_struct(state.builder, prefix + "_abstract", {{"fract", f}, {"exp", e}});
+            abstract->SetConcreteTypes(utils::Vector{build_f32(), build_f16()});
+            return abstract;
+        },
+        [&](Default) {
+            TINT_ICE(Resolver, state.builder.Diagnostics())
+                << "unhandled frexp type: " << state.builder.FriendlyName(el);
+            return nullptr;
+        });
 }
-const sem::Struct* build_atomic_compare_exchange_result(MatchState& state, const sem::Type* ty) {
+
+const sem::Struct* build_atomic_compare_exchange_result(MatchState& state, const type::Type* ty) {
     return build_struct(
-        state, "__atomic_compare_exchange_result" + ty->FriendlyName(state.builder.Symbols()),
-        {{"old_value", const_cast<sem::Type*>(ty)},
-         {"exchanged", state.builder.create<sem::Bool>()}});
+        state.builder,
+        "__atomic_compare_exchange_result" + ty->FriendlyName(state.builder.Symbols()),
+        {{"old_value", const_cast<type::Type*>(ty)},
+         {"exchanged", state.builder.create<type::Bool>()}});
 }
 
 /// ParameterInfo describes a parameter
@@ -946,7 +1030,7 @@ struct IntrinsicPrototype {
     /// Parameter describes a single parameter
     struct Parameter {
         /// Parameter type
-        const sem::Type* const type;
+        const type::Type* const type;
         /// Parameter usage
         ParameterUsage const usage = ParameterUsage::kNone;
     };
@@ -965,7 +1049,7 @@ struct IntrinsicPrototype {
     };
 
     const OverloadInfo* overload = nullptr;
-    sem::Type const* return_type = nullptr;
+    type::Type const* return_type = nullptr;
     utils::Vector<Parameter, kNumFixedParams> parameters;
 };
 
@@ -991,21 +1075,26 @@ class Impl : public IntrinsicTable {
     explicit Impl(ProgramBuilder& builder);
 
     Builtin Lookup(sem::BuiltinType builtin_type,
-                   utils::VectorRef<const sem::Type*> args,
+                   utils::VectorRef<const type::Type*> args,
                    sem::EvaluationStage earliest_eval_stage,
                    const Source& source) override;
 
-    UnaryOperator Lookup(ast::UnaryOp op, const sem::Type* arg, const Source& source) override;
+    UnaryOperator Lookup(ast::UnaryOp op,
+                         const type::Type* arg,
+                         sem::EvaluationStage earliest_eval_stage,
+                         const Source& source) override;
 
     BinaryOperator Lookup(ast::BinaryOp op,
-                          const sem::Type* lhs,
-                          const sem::Type* rhs,
+                          const type::Type* lhs,
+                          const type::Type* rhs,
+                          sem::EvaluationStage earliest_eval_stage,
                           const Source& source,
                           bool is_compound) override;
 
-    CtorOrConv Lookup(CtorConvIntrinsic type,
-                      const sem::Type* template_arg,
-                      utils::VectorRef<const sem::Type*> args,
+    InitOrConv Lookup(InitConvIntrinsic type,
+                      const type::Type* template_arg,
+                      utils::VectorRef<const type::Type*> args,
+                      sem::EvaluationStage earliest_eval_stage,
                       const Source& source) override;
 
   private:
@@ -1050,7 +1139,7 @@ class Impl : public IntrinsicTable {
     ///          IntrinsicPrototype::return_type.
     IntrinsicPrototype MatchIntrinsic(const IntrinsicInfo& intrinsic,
                                       const char* intrinsic_name,
-                                      utils::VectorRef<const sem::Type*> args,
+                                      utils::VectorRef<const type::Type*> args,
                                       sem::EvaluationStage earliest_eval_stage,
                                       TemplateState templates,
                                       OnNoMatch on_no_match) const;
@@ -1063,7 +1152,7 @@ class Impl : public IntrinsicTable {
     ///                  template as `f32`.
     /// @returns the evaluated Candidate information.
     Candidate ScoreOverload(const OverloadInfo* overload,
-                            utils::VectorRef<const sem::Type*> args,
+                            utils::VectorRef<const type::Type*> args,
                             sem::EvaluationStage earliest_eval_stage,
                             TemplateState templates) const;
 
@@ -1079,7 +1168,7 @@ class Impl : public IntrinsicTable {
     /// @returns the resolved Candidate.
     Candidate ResolveCandidate(Candidates&& candidates,
                                const char* intrinsic_name,
-                               utils::VectorRef<const sem::Type*> args,
+                               utils::VectorRef<const type::Type*> args,
                                TemplateState templates) const;
 
     /// Match constructs a new MatchState
@@ -1103,16 +1192,16 @@ class Impl : public IntrinsicTable {
 
     /// Raises an error when no overload is a clear winner of overload resolution
     void ErrAmbiguousOverload(const char* intrinsic_name,
-                              utils::VectorRef<const sem::Type*> args,
+                              utils::VectorRef<const type::Type*> args,
                               TemplateState templates,
                               utils::VectorRef<Candidate> candidates) const;
 
     ProgramBuilder& builder;
     Matchers matchers;
-    std::unordered_map<IntrinsicPrototype, sem::Builtin*, IntrinsicPrototype::Hasher> builtins;
-    std::unordered_map<IntrinsicPrototype, sem::TypeConstructor*, IntrinsicPrototype::Hasher>
-        constructors;
-    std::unordered_map<IntrinsicPrototype, sem::TypeConversion*, IntrinsicPrototype::Hasher>
+    utils::Hashmap<IntrinsicPrototype, sem::Builtin*, 64, IntrinsicPrototype::Hasher> builtins;
+    utils::Hashmap<IntrinsicPrototype, sem::TypeInitializer*, 16, IntrinsicPrototype::Hasher>
+        initializers;
+    utils::Hashmap<IntrinsicPrototype, sem::TypeConversion*, 16, IntrinsicPrototype::Hasher>
         converters;
 };
 
@@ -1120,8 +1209,8 @@ class Impl : public IntrinsicTable {
 /// types.
 std::string CallSignature(ProgramBuilder& builder,
                           const char* intrinsic_name,
-                          utils::VectorRef<const sem::Type*> args,
-                          const sem::Type* template_arg = nullptr) {
+                          utils::VectorRef<const type::Type*> args,
+                          const type::Type* template_arg = nullptr) {
     std::stringstream ss;
     ss << intrinsic_name;
     if (template_arg) {
@@ -1154,7 +1243,7 @@ std::string TemplateNumberMatcher::String(MatchState* state) const {
 Impl::Impl(ProgramBuilder& b) : builder(b) {}
 
 Impl::Builtin Impl::Lookup(sem::BuiltinType builtin_type,
-                           utils::VectorRef<const sem::Type*> args,
+                           utils::VectorRef<const type::Type*> args,
                            sem::EvaluationStage earliest_eval_stage,
                            const Source& source) {
     const char* intrinsic_name = sem::str(builtin_type);
@@ -1180,7 +1269,7 @@ Impl::Builtin Impl::Lookup(sem::BuiltinType builtin_type,
     }
 
     // De-duplicate builtins that are identical.
-    auto* sem = utils::GetOrCreate(builtins, match, [&] {
+    auto* sem = builtins.GetOrCreate(match, [&] {
         utils::Vector<sem::Parameter*, kNumFixedParams> params;
         params.Reserve(match.parameters.Length());
         for (auto& p : match.parameters) {
@@ -1208,7 +1297,8 @@ Impl::Builtin Impl::Lookup(sem::BuiltinType builtin_type,
 }
 
 IntrinsicTable::UnaryOperator Impl::Lookup(ast::UnaryOp op,
-                                           const sem::Type* arg,
+                                           const type::Type* arg,
+                                           sem::EvaluationStage earliest_eval_stage,
                                            const Source& source) {
     auto [intrinsic_index, intrinsic_name] = [&]() -> std::pair<size_t, const char*> {
         switch (op) {
@@ -1240,7 +1330,7 @@ IntrinsicTable::UnaryOperator Impl::Lookup(ast::UnaryOp op,
 
     // Resolve the intrinsic overload
     auto match = MatchIntrinsic(kUnaryOperators[intrinsic_index], intrinsic_name, args,
-                                sem::EvaluationStage::kConstant, TemplateState{}, on_no_match);
+                                earliest_eval_stage, TemplateState{}, on_no_match);
     if (!match.overload) {
         return {};
     }
@@ -1253,8 +1343,9 @@ IntrinsicTable::UnaryOperator Impl::Lookup(ast::UnaryOp op,
 }
 
 IntrinsicTable::BinaryOperator Impl::Lookup(ast::BinaryOp op,
-                                            const sem::Type* lhs,
-                                            const sem::Type* rhs,
+                                            const type::Type* lhs,
+                                            const type::Type* rhs,
+                                            sem::EvaluationStage earliest_eval_stage,
                                             const Source& source,
                                             bool is_compound) {
     auto [intrinsic_index, intrinsic_name] = [&]() -> std::pair<size_t, const char*> {
@@ -1317,7 +1408,7 @@ IntrinsicTable::BinaryOperator Impl::Lookup(ast::BinaryOp op,
 
     // Resolve the intrinsic overload
     auto match = MatchIntrinsic(kBinaryOperators[intrinsic_index], intrinsic_name, args,
-                                sem::EvaluationStage::kConstant, TemplateState{}, on_no_match);
+                                earliest_eval_stage, TemplateState{}, on_no_match);
     if (!match.overload) {
         return {};
     }
@@ -1330,20 +1421,21 @@ IntrinsicTable::BinaryOperator Impl::Lookup(ast::BinaryOp op,
     };
 }
 
-IntrinsicTable::CtorOrConv Impl::Lookup(CtorConvIntrinsic type,
-                                        const sem::Type* template_arg,
-                                        utils::VectorRef<const sem::Type*> args,
+IntrinsicTable::InitOrConv Impl::Lookup(InitConvIntrinsic type,
+                                        const type::Type* template_arg,
+                                        utils::VectorRef<const type::Type*> args,
+                                        sem::EvaluationStage earliest_eval_stage,
                                         const Source& source) {
     auto name = str(type);
 
     // Generates an error when no overloads match the provided arguments
     auto on_no_match = [&](utils::VectorRef<Candidate> candidates) {
         std::stringstream ss;
-        ss << "no matching constructor for " << CallSignature(builder, name, args, template_arg)
+        ss << "no matching initializer for " << CallSignature(builder, name, args, template_arg)
            << std::endl;
         Candidates ctor, conv;
         for (auto candidate : candidates) {
-            if (candidate.overload->flags.Contains(OverloadFlag::kIsConstructor)) {
+            if (candidate.overload->flags.Contains(OverloadFlag::kIsInitializer)) {
                 ctor.Push(candidate);
             } else {
                 conv.Push(candidate);
@@ -1351,7 +1443,7 @@ IntrinsicTable::CtorOrConv Impl::Lookup(CtorConvIntrinsic type,
         }
         if (!ctor.IsEmpty()) {
             ss << std::endl
-               << ctor.Length() << " candidate constructor" << (ctor.Length() > 1 ? "s:" : ":")
+               << ctor.Length() << " candidate initializer" << (ctor.Length() > 1 ? "s:" : ":")
                << std::endl;
             PrintCandidates(ss, ctor, name);
         }
@@ -1371,14 +1463,14 @@ IntrinsicTable::CtorOrConv Impl::Lookup(CtorConvIntrinsic type,
     }
 
     // Resolve the intrinsic overload
-    auto match = MatchIntrinsic(kConstructorsAndConverters[static_cast<size_t>(type)], name, args,
-                                sem::EvaluationStage::kConstant, templates, on_no_match);
+    auto match = MatchIntrinsic(kInitializersAndConverters[static_cast<size_t>(type)], name, args,
+                                earliest_eval_stage, templates, on_no_match);
     if (!match.overload) {
         return {};
     }
 
-    // Was this overload a constructor or conversion?
-    if (match.overload->flags.Contains(OverloadFlag::kIsConstructor)) {
+    // Was this overload a initializer or conversion?
+    if (match.overload->flags.Contains(OverloadFlag::kIsInitializer)) {
         utils::Vector<const sem::Parameter*, 8> params;
         params.Reserve(match.parameters.Length());
         for (auto& p : match.parameters) {
@@ -1388,15 +1480,15 @@ IntrinsicTable::CtorOrConv Impl::Lookup(CtorConvIntrinsic type,
         }
         auto eval_stage = match.overload->const_eval_fn ? sem::EvaluationStage::kConstant
                                                         : sem::EvaluationStage::kRuntime;
-        auto* target = utils::GetOrCreate(constructors, match, [&]() {
-            return builder.create<sem::TypeConstructor>(match.return_type, std::move(params),
+        auto* target = initializers.GetOrCreate(match, [&]() {
+            return builder.create<sem::TypeInitializer>(match.return_type, std::move(params),
                                                         eval_stage);
         });
-        return CtorOrConv{target, match.overload->const_eval_fn};
+        return InitOrConv{target, match.overload->const_eval_fn};
     }
 
     // Conversion.
-    auto* target = utils::GetOrCreate(converters, match, [&]() {
+    auto* target = converters.GetOrCreate(match, [&]() {
         auto param = builder.create<sem::Parameter>(
             nullptr, 0u, match.parameters[0].type, ast::AddressSpace::kNone,
             ast::Access::kUndefined, match.parameters[0].usage);
@@ -1404,12 +1496,12 @@ IntrinsicTable::CtorOrConv Impl::Lookup(CtorConvIntrinsic type,
                                                         : sem::EvaluationStage::kRuntime;
         return builder.create<sem::TypeConversion>(match.return_type, param, eval_stage);
     });
-    return CtorOrConv{target, match.overload->const_eval_fn};
+    return InitOrConv{target, match.overload->const_eval_fn};
 }
 
 IntrinsicPrototype Impl::MatchIntrinsic(const IntrinsicInfo& intrinsic,
                                         const char* intrinsic_name,
-                                        utils::VectorRef<const sem::Type*> args,
+                                        utils::VectorRef<const type::Type*> args,
                                         sem::EvaluationStage earliest_eval_stage,
                                         TemplateState templates,
                                         OnNoMatch on_no_match) const {
@@ -1449,7 +1541,7 @@ IntrinsicPrototype Impl::MatchIntrinsic(const IntrinsicInfo& intrinsic,
     }
 
     // Build the return type
-    const sem::Type* return_type = nullptr;
+    const type::Type* return_type = nullptr;
     if (auto* indices = match.overload->return_matcher_indices) {
         Any any;
         return_type =
@@ -1459,14 +1551,14 @@ IntrinsicPrototype Impl::MatchIntrinsic(const IntrinsicInfo& intrinsic,
             return {};
         }
     } else {
-        return_type = builder.create<sem::Void>();
+        return_type = builder.create<type::Void>();
     }
 
     return IntrinsicPrototype{match.overload, return_type, std::move(match.parameters)};
 }
 
 Impl::Candidate Impl::ScoreOverload(const OverloadInfo* overload,
-                                    utils::VectorRef<const sem::Type*> args,
+                                    utils::VectorRef<const type::Type*> args,
                                     sem::EvaluationStage earliest_eval_stage,
                                     TemplateState templates) const {
     // Penalty weights for overload mismatching.
@@ -1566,7 +1658,7 @@ Impl::Candidate Impl::ScoreOverload(const OverloadInfo* overload,
 
 Impl::Candidate Impl::ResolveCandidate(Impl::Candidates&& candidates,
                                        const char* intrinsic_name,
-                                       utils::VectorRef<const sem::Type*> args,
+                                       utils::VectorRef<const type::Type*> args,
                                        TemplateState templates) const {
     utils::Vector<uint32_t, kNumFixedParams> best_ranks;
     best_ranks.Resize(args.Length(), 0xffffffff);
@@ -1579,7 +1671,7 @@ Impl::Candidate Impl::ResolveCandidate(Impl::Candidates&& candidates,
         bool some_won = false;   // An argument ranked less than the 'best' overload's argument
         bool some_lost = false;  // An argument ranked more than the 'best' overload's argument
         for (size_t i = 0; i < args.Length(); i++) {
-            auto rank = sem::Type::ConversionRank(args[i], candidate.parameters[i].type);
+            auto rank = type::Type::ConversionRank(args[i], candidate.parameters[i].type);
             if (best_ranks[i] > rank) {
                 best_ranks[i] = rank;
                 some_won = true;
@@ -1641,10 +1733,25 @@ void Impl::PrintOverload(std::ostream& ss,
                          const char* intrinsic_name) const {
     TemplateState templates;
 
+    // TODO(crbug.com/tint/1730): Use input evaluation stage to output only relevant overloads.
     auto earliest_eval_stage = sem::EvaluationStage::kConstant;
 
     ss << intrinsic_name;
-    if (overload->flags.Contains(OverloadFlag::kIsConverter) && overload->template_types) {
+
+    bool print_template_type = false;
+    if (overload->num_template_types > 0) {
+        if (overload->flags.Contains(OverloadFlag::kIsConverter)) {
+            // Print for conversions
+            // e.g. vec3<T>(vec3<U>) -> vec3<f32>
+            print_template_type = true;
+        } else if ((overload->num_parameters == 0) &&
+                   overload->flags.Contains(OverloadFlag::kIsInitializer)) {
+            // Print for initializers with no params
+            // e.g. vec2<T>() -> vec2<T>
+            print_template_type = true;
+        }
+    }
+    if (print_template_type) {
         ss << "<";
         ss << overload->template_types[0].name;
         ss << ">";
@@ -1703,7 +1810,7 @@ void Impl::PrintCandidates(std::ostream& ss,
     }
 }
 
-const sem::Type* MatchState::Type(const sem::Type* ty) {
+const type::Type* MatchState::Type(const type::Type* ty) {
     MatcherIndex matcher_index = *matcher_indices_++;
     auto* matcher = matchers.type[matcher_index];
     return matcher->Match(*this, ty);
@@ -1728,7 +1835,7 @@ std::string MatchState::NumName() {
 }
 
 void Impl::ErrAmbiguousOverload(const char* intrinsic_name,
-                                utils::VectorRef<const sem::Type*> args,
+                                utils::VectorRef<const type::Type*> args,
                                 TemplateState templates,
                                 utils::VectorRef<Candidate> candidates) const {
     std::stringstream ss;

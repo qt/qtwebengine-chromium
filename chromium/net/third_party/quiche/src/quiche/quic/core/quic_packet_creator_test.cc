@@ -14,8 +14,6 @@
 #include "absl/base/macros.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
-#include "quiche/quic/core/crypto/null_decrypter.h"
-#include "quiche/quic/core/crypto/null_encrypter.h"
 #include "quiche/quic/core/crypto/quic_decrypter.h"
 #include "quiche/quic/core/crypto/quic_encrypter.h"
 #include "quiche/quic/core/frames/quic_frame.h"
@@ -153,35 +151,36 @@ class QuicPacketCreatorTest : public QuicTestWithParam<TestParams> {
         .WillRepeatedly(Return(QuicPacketBuffer()));
     EXPECT_CALL(delegate_, GetSerializedPacketFate(_, _))
         .WillRepeatedly(Return(SEND_TO_WRITER));
-    creator_.SetEncrypter(ENCRYPTION_INITIAL, std::make_unique<NullEncrypter>(
-                                                  Perspective::IS_CLIENT));
-    creator_.SetEncrypter(ENCRYPTION_HANDSHAKE, std::make_unique<NullEncrypter>(
-                                                    Perspective::IS_CLIENT));
-    creator_.SetEncrypter(ENCRYPTION_ZERO_RTT, std::make_unique<NullEncrypter>(
-                                                   Perspective::IS_CLIENT));
+    creator_.SetEncrypter(
+        ENCRYPTION_INITIAL,
+        std::make_unique<TaggingEncrypter>(ENCRYPTION_INITIAL));
+    creator_.SetEncrypter(
+        ENCRYPTION_HANDSHAKE,
+        std::make_unique<TaggingEncrypter>(ENCRYPTION_HANDSHAKE));
+    creator_.SetEncrypter(
+        ENCRYPTION_ZERO_RTT,
+        std::make_unique<TaggingEncrypter>(ENCRYPTION_ZERO_RTT));
     creator_.SetEncrypter(
         ENCRYPTION_FORWARD_SECURE,
-        std::make_unique<NullEncrypter>(Perspective::IS_CLIENT));
+        std::make_unique<TaggingEncrypter>(ENCRYPTION_FORWARD_SECURE));
     client_framer_.set_visitor(&framer_visitor_);
     server_framer_.set_visitor(&framer_visitor_);
     client_framer_.set_data_producer(&producer_);
     if (server_framer_.version().KnowsWhichDecrypterToUse()) {
-      server_framer_.InstallDecrypter(
-          ENCRYPTION_INITIAL,
-          std::make_unique<NullDecrypter>(Perspective::IS_SERVER));
-      server_framer_.InstallDecrypter(
-          ENCRYPTION_ZERO_RTT,
-          std::make_unique<NullDecrypter>(Perspective::IS_SERVER));
-      server_framer_.InstallDecrypter(
-          ENCRYPTION_HANDSHAKE,
-          std::make_unique<NullDecrypter>(Perspective::IS_SERVER));
-      server_framer_.InstallDecrypter(
-          ENCRYPTION_FORWARD_SECURE,
-          std::make_unique<NullDecrypter>(Perspective::IS_SERVER));
+      server_framer_.InstallDecrypter(ENCRYPTION_INITIAL,
+                                      std::make_unique<TaggingDecrypter>());
+      server_framer_.InstallDecrypter(ENCRYPTION_ZERO_RTT,
+                                      std::make_unique<TaggingDecrypter>());
+      server_framer_.InstallDecrypter(ENCRYPTION_HANDSHAKE,
+                                      std::make_unique<TaggingDecrypter>());
+      server_framer_.InstallDecrypter(ENCRYPTION_FORWARD_SECURE,
+                                      std::make_unique<TaggingDecrypter>());
     } else {
-      server_framer_.SetDecrypter(
-          ENCRYPTION_INITIAL,
-          std::make_unique<NullDecrypter>(Perspective::IS_SERVER));
+      server_framer_.SetDecrypter(ENCRYPTION_INITIAL,
+                                  std::make_unique<TaggingDecrypter>());
+      server_framer_.SetAlternativeDecrypter(
+          ENCRYPTION_FORWARD_SECURE, std::make_unique<TaggingDecrypter>(),
+          false);
     }
   }
 
@@ -1816,7 +1815,7 @@ TEST_P(QuicPacketCreatorTest, GetGuaranteedLargestMessagePayload) {
   if (version.UsesTls()) {
     creator_.SetMaxDatagramFrameSize(kMaxAcceptedDatagramFrameSize);
   }
-  QuicPacketLength expected_largest_payload = 1219;
+  QuicPacketLength expected_largest_payload = 1215;
   if (version.HasLongHeaderLengths()) {
     expected_largest_payload -= 2;
   }
@@ -1867,7 +1866,7 @@ TEST_P(QuicPacketCreatorTest, GetCurrentLargestMessagePayload) {
   if (version.UsesTls()) {
     creator_.SetMaxDatagramFrameSize(kMaxAcceptedDatagramFrameSize);
   }
-  QuicPacketLength expected_largest_payload = 1219;
+  QuicPacketLength expected_largest_payload = 1215;
   if (version.SendsVariableLengthPacketNumberInLongHeader()) {
     expected_largest_payload += 3;
   }
@@ -2560,13 +2559,12 @@ class QuicPacketCreatorMultiplePacketsTest : public QuicTest {
         .WillRepeatedly(Return(SEND_TO_WRITER));
     creator_.SetEncrypter(
         ENCRYPTION_FORWARD_SECURE,
-        std::make_unique<NullEncrypter>(Perspective::IS_CLIENT));
+        std::make_unique<TaggingEncrypter>(ENCRYPTION_FORWARD_SECURE));
     creator_.set_encryption_level(ENCRYPTION_FORWARD_SECURE);
     framer_.set_data_producer(&producer_);
     if (simple_framer_.framer()->version().KnowsWhichDecrypterToUse()) {
       simple_framer_.framer()->InstallDecrypter(
-          ENCRYPTION_FORWARD_SECURE,
-          std::make_unique<NullDecrypter>(Perspective::IS_SERVER));
+          ENCRYPTION_FORWARD_SECURE, std::make_unique<TaggingDecrypter>());
     }
     creator_.AttachPacketFlusher();
   }
@@ -2922,14 +2920,14 @@ TEST_F(QuicPacketCreatorMultiplePacketsTest,
 
   // Packet is not fully padded, but we want to future packets to be larger.
   ASSERT_EQ(kDefaultMaxPacketSize, creator_.max_packet_length());
-  size_t expected_packet_length = 27;
+  size_t expected_packet_length = 31;
   if (QuicVersionUsesCryptoFrames(framer_.transport_version())) {
     // The framing of CRYPTO frames is slightly different than that of stream
     // frames, so the expected packet length differs slightly.
-    expected_packet_length = 28;
+    expected_packet_length = 32;
   }
   if (framer_.version().HasHeaderProtection()) {
-    expected_packet_length = 29;
+    expected_packet_length = 33;
   }
   EXPECT_EQ(expected_packet_length, packets_[0].encrypted_length);
 }
@@ -2991,7 +2989,7 @@ TEST_F(QuicPacketCreatorMultiplePacketsTest,
   // Set the packet size be enough for two stream frames with 0 stream offset,
   // but not enough for a stream frame of 0 offset and one with non-zero offset.
   size_t length =
-      NullEncrypter(Perspective::IS_CLIENT).GetCiphertextSize(0) +
+      TaggingEncrypter(0x00).GetCiphertextSize(0) +
       GetPacketHeaderSize(
           framer_.transport_version(),
           creator_.GetDestinationConnectionIdLength(),
@@ -3294,7 +3292,7 @@ TEST_F(QuicPacketCreatorMultiplePacketsTest, PacketTransmissionType) {
   // The first ConsumeData will fill the packet without flush.
   creator_.SetTransmissionType(LOSS_RETRANSMISSION);
 
-  size_t data_len = 1224;
+  size_t data_len = 1220;
   const std::string data(data_len, '?');
   QuicStreamId stream1_id = QuicUtils::GetFirstBidirectionalStreamId(
       framer_.transport_version(), Perspective::IS_CLIENT);
@@ -3331,17 +3329,14 @@ TEST_F(QuicPacketCreatorMultiplePacketsTest, PacketTransmissionType) {
 TEST_F(QuicPacketCreatorMultiplePacketsTest, TestConnectionIdLength) {
   QuicFramerPeer::SetPerspective(&framer_, Perspective::IS_SERVER);
   creator_.SetServerConnectionIdLength(0);
-  EXPECT_EQ(PACKET_0BYTE_CONNECTION_ID,
-            creator_.GetDestinationConnectionIdLength());
+  EXPECT_EQ(0, creator_.GetDestinationConnectionIdLength());
 
   for (size_t i = 1; i < 10; i++) {
     creator_.SetServerConnectionIdLength(i);
     if (framer_.version().HasIetfInvariantHeader()) {
-      EXPECT_EQ(PACKET_0BYTE_CONNECTION_ID,
-                creator_.GetDestinationConnectionIdLength());
+      EXPECT_EQ(0, creator_.GetDestinationConnectionIdLength());
     } else {
-      EXPECT_EQ(PACKET_8BYTE_CONNECTION_ID,
-                creator_.GetDestinationConnectionIdLength());
+      EXPECT_EQ(8, creator_.GetDestinationConnectionIdLength());
     }
   }
 }
@@ -3676,7 +3671,7 @@ TEST_F(QuicPacketCreatorMultiplePacketsTest,
   // Set the packet size be enough for one stream frame with 0 stream offset and
   // max size of random padding.
   size_t length =
-      NullEncrypter(Perspective::IS_CLIENT).GetCiphertextSize(0) +
+      TaggingEncrypter(0x00).GetCiphertextSize(0) +
       GetPacketHeaderSize(
           framer_.transport_version(),
           creator_.GetDestinationConnectionIdLength(),
@@ -3720,7 +3715,7 @@ TEST_F(QuicPacketCreatorMultiplePacketsTest,
   // Set the packet size be enough for one stream frame with 0 stream offset +
   // 1. One or more packets will accommodate.
   size_t length =
-      NullEncrypter(Perspective::IS_CLIENT).GetCiphertextSize(0) +
+      TaggingEncrypter(0x00).GetCiphertextSize(0) +
       GetPacketHeaderSize(
           framer_.transport_version(),
           creator_.GetDestinationConnectionIdLength(),
@@ -3771,7 +3766,7 @@ TEST_F(QuicPacketCreatorMultiplePacketsTest,
   // Set the packet size be enough for first frame with 0 stream offset + second
   // frame + 1 byte payload. two or more packets will accommodate.
   size_t length =
-      NullEncrypter(Perspective::IS_CLIENT).GetCiphertextSize(0) +
+      TaggingEncrypter(0x00).GetCiphertextSize(0) +
       GetPacketHeaderSize(
           framer_.transport_version(),
           creator_.GetDestinationConnectionIdLength(),
@@ -3888,7 +3883,7 @@ TEST_F(QuicPacketCreatorMultiplePacketsTest, ExtraPaddingNeeded) {
   ASSERT_FALSE(packets_[0].nonretransmittable_frames.empty());
   QuicFrame padding = packets_[0].nonretransmittable_frames[0];
   // Verify stream frame expansion is excluded.
-  padding.padding_frame.num_padding_bytes = 3;
+  EXPECT_EQ(3, padding.padding_frame.num_padding_bytes);
 }
 
 TEST_F(QuicPacketCreatorMultiplePacketsTest,

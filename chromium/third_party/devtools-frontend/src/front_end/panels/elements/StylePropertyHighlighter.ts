@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import type * as SDK from '../../core/sdk/sdk.js';
+import {highlightElement} from '../utils/utils.js';
 
 import {type StylePropertiesSection} from './StylePropertiesSection.js';
 import {StylePropertyTreeElement} from './StylePropertyTreeElement.js';
@@ -34,6 +35,16 @@ export class StylePropertyHighlighter {
         section.element.focus();
       }
     }
+  }
+
+  findAndHighlightSectionBlock(sectionBlockName: string): void {
+    const block = this.styleSidebarPane.getSectionBlockByName(sectionBlockName);
+    if (!block || block.sections.length === 0) {
+      return;
+    }
+    const [section] = block.sections;
+    section.showAllItems();
+    highlightElement(block.titleElement() as HTMLElement);
   }
 
   /**
@@ -88,13 +99,6 @@ export class StylePropertyHighlighter {
   }
 
   private scrollAndHighlightTreeElement(treeElement: StylePropertyTreeElement): void {
-    treeElement.listItemElement.scrollIntoViewIfNeeded();
-    treeElement.listItemElement.animate(
-        [
-          {offset: 0, backgroundColor: 'rgba(255, 255, 0, 0.2)'},
-          {offset: 0.1, backgroundColor: 'rgba(255, 255, 0, 0.7)'},
-          {offset: 1, backgroundColor: 'transparent'},
-        ],
-        {duration: 2000, easing: 'cubic-bezier(0, 0, 0.2, 1)'});
+    highlightElement(treeElement.listItemElement);
   }
 }

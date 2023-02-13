@@ -59,6 +59,7 @@ const char kSwapZramEnableWriteback[] = "SwapZramEnableWriteback";
 const char kSwapZramMarkIdle[] = "SwapZramMarkIdle";
 const char kSwapZramSetWritebackLimit[] = "SwapZramSetWritebackLimit";
 const char kSwapZramWriteback[] = "InitiateSwapZramWriteback";
+const char kSwapSetSwappiness[] = "SwapSetSwappiness";
 const char kBackupArcBugReport[] = "BackupArcBugReport";
 const char kDeleteArcBugReportBackup[] = "DeleteArcBugReportBackup";
 const char kKernelFeatureList[] = "KernelFeatureList";
@@ -149,6 +150,13 @@ enum FeedbackLogType {
   PERF_DATA = 7,
   OS_RELEASE_INFO = 8,
   VAR_LOG_FILES = 9,
+};
+
+// PrintscanDebugCategories flags. These values must align with those in
+// org.chromium.debug.xml.
+enum PrintscanDebugCategories {
+  PrintscanDebugCategory_PRINTING = 0x1,
+  PrintscanDebugCategory_SCANNING = 0x2,
 };
 
 // Debug log keys which should be substituted in the system info dialog.

@@ -1,4 +1,4 @@
-/* fcb1a62fefa945567301146eb98e3ad3413e823a41c4378e84e8b6b6f308d824 (2.4.7+)
+/* 5ab094ffadd6edfc94c3eee53af44a86951f9f1f0933ada3114bbce2bfb02c99 (2.5.0+)
                             __  __            _
                          ___\ \/ /_ __   __ _| |_
                         / _ \\  /| '_ \ / _` | __|
@@ -19,7 +19,7 @@
    Copyright (c) 2016      Gustavo Grieco <gustavo.grieco@imag.fr>
    Copyright (c) 2016      Pascal Cuoq <cuoq@trust-in-soft.com>
    Copyright (c) 2016      Ed Schouten <ed@nuxi.nl>
-   Copyright (c) 2017-2018 Rhodri James <rhodri@wildebeest.org.uk>
+   Copyright (c) 2017-2022 Rhodri James <rhodri@wildebeest.org.uk>
    Copyright (c) 2017      Václav Slavík <vaclav@slavik.io>
    Copyright (c) 2017      Viktor Szakats <commit@vsz.me>
    Copyright (c) 2017      Chanho Park <chanho61.park@samsung.com>
@@ -35,6 +35,7 @@
    Copyright (c) 2021      Dong-hee Na <donghee.na@python.org>
    Copyright (c) 2022      Samanta Navarro <ferivoz@riseup.net>
    Copyright (c) 2022      Jeffrey Walton <noloader@gmail.com>
+   Copyright (c) 2022      Jann Horn <jannh@google.com>
    Licensed under the MIT license:
 
    Permission is  hereby granted,  free of charge,  to any  person obtaining
@@ -61,8 +62,10 @@
 
 #include <expat_config.h>
 
-#if ! defined(_GNU_SOURCE)
-#  define _GNU_SOURCE 1 /* syscall prototype */
+#if defined(HAVE_SYSCALL_GETRANDOM)
+#  if ! defined(_GNU_SOURCE)
+#    define _GNU_SOURCE 1 /* syscall prototype */
+#  endif
 #endif
 
 #ifdef _WIN32
@@ -590,7 +593,6 @@ static unsigned long getDebugLevel(const char *variableName,
                                    unsigned long defaultDebugLevel);
 
 #define poolStart(pool) ((pool)->start)
-#define poolEnd(pool) ((pool)->ptr)
 #define poolLength(pool) ((pool)->ptr - (pool)->start)
 #define poolChop(pool) ((void)--(pool->ptr))
 #define poolLastChar(pool) (((pool)->ptr)[-1])
@@ -1068,6 +1070,14 @@ parserCreate(const XML_Char *encodingName,
   parserInit(parser, encodingName);
 
   if (encodingName && ! parser->m_protocolEncodingName) {
+    if (dtd) {
+      // We need to stop the upcoming call to XML_ParserFree from happily
+      // destroying parser->m_dtd because the DTD is shared with the parent
+      // parser and the only guard that keeps XML_ParserFree from destroying
+      // parser->m_dtd is parser->m_isParamEntity but it will be set to
+      // XML_TRUE only later in XML_ExternalEntityParserCreate (or not at all).
+      parser->m_dtd = NULL;
+    }
     XML_ParserFree(parser);
     return NULL;
   }
@@ -3011,9 +3021,6 @@ doContent(XML_Parser parser, int startTagLevel, const ENCODING *enc,
         int len;
         const char *rawName;
         TAG *tag = parser->m_tagStack;
-        parser->m_tagStack = tag->parent;
-        tag->parent = parser->m_freeTagList;
-        parser->m_freeTagList = tag;
         rawName = s + enc->minBytesPerChar * 2;
         len = XmlNameLength(enc, rawName);
         if (len != tag->rawNameLength
@@ -3021,6 +3028,9 @@ doContent(XML_Parser parser, int startTagLevel, const ENCODING *enc,
           *eventPP = rawName;
           return XML_ERROR_TAG_MISMATCH;
         }
+        parser->m_tagStack = tag->parent;
+        tag->parent = parser->m_freeTagList;
+        parser->m_freeTagList = tag;
         --parser->m_tagLevel;
         if (parser->m_endElementHandler) {
           const XML_Char *localPart;
@@ -3036,7 +3046,7 @@ doContent(XML_Parser parser, int startTagLevel, const ENCODING *enc,
             /* don't need to check for space - already done in storeAtts() */
             while (*localPart)
               *uri++ = *localPart++;
-            prefix = (XML_Char *)tag->name.prefix;
+            prefix = tag->name.prefix;
             if (parser->m_ns_triplets && prefix) {
               *uri++ = parser->m_namespaceSeparator;
               while (*prefix)
@@ -3132,8 +3142,8 @@ doContent(XML_Parser parser, int startTagLevel, const ENCODING *enc,
               (int)(dataPtr - (ICHAR *)parser->m_dataBuf));
         } else
           parser->m_characterDataHandler(
-              parser->m_handlerArg, (XML_Char *)s,
-              (int)((XML_Char *)end - (XML_Char *)s));
+              parser->m_handlerArg, (const XML_Char *)s,
+              (int)((const XML_Char *)end - (const XML_Char *)s));
       } else if (parser->m_defaultHandler)
         reportDefault(parser, enc, s, end);
       /* We are at the end of the final buffer, should we check for
@@ -3166,8 +3176,8 @@ doContent(XML_Parser parser, int startTagLevel, const ENCODING *enc,
             *eventPP = s;
           }
         } else
-          charDataHandler(parser->m_handlerArg, (XML_Char *)s,
-                          (int)((XML_Char *)next - (XML_Char *)s));
+          charDataHandler(parser->m_handlerArg, (const XML_Char *)s,
+                          (int)((const XML_Char *)next - (const XML_Char *)s));
       } else if (parser->m_defaultHandler)
         reportDefault(parser, enc, s, next);
     } break;
@@ -4082,8 +4092,8 @@ doCdataSection(XML_Parser parser, const ENCODING *enc, const char **startPtr,
             *eventPP = s;
           }
         } else
-          charDataHandler(parser->m_handlerArg, (XML_Char *)s,
-                          (int)((XML_Char *)next - (XML_Char *)s));
+          charDataHandler(parser->m_handlerArg, (const XML_Char *)s,
+                          (int)((const XML_Char *)next - (const XML_Char *)s));
       } else if (parser->m_defaultHandler)
         reportDefault(parser, enc, s, next);
     } break;
@@ -4271,7 +4281,7 @@ processXmlDecl(XML_Parser parser, int isGeneralTextEntity, const char *s,
   const XML_Char *storedEncName = NULL;
   const ENCODING *newEncoding = NULL;
   const char *version = NULL;
-  const char *versionend;
+  const char *versionend = NULL;
   const XML_Char *storedversion = NULL;
   int standalone = -1;
 
@@ -4975,10 +4985,10 @@ doProlog(XML_Parser parser, const ENCODING *enc, const char *s, const char *end,
               parser->m_handlerArg, parser->m_declElementType->name,
               parser->m_declAttributeId->name, parser->m_declAttributeType, 0,
               role == XML_ROLE_REQUIRED_ATTRIBUTE_VALUE);
-          poolClear(&parser->m_tempPool);
           handleDefault = XML_FALSE;
         }
       }
+      poolClear(&parser->m_tempPool);
       break;
     case XML_ROLE_DEFAULT_ATTRIBUTE_VALUE:
     case XML_ROLE_FIXED_ATTRIBUTE_VALUE:
@@ -5386,7 +5396,7 @@ doProlog(XML_Parser parser, const ENCODING *enc, const char *s, const char *end,
              *
              * If 'standalone' is false, the DTD must have no
              * parameter entities or we wouldn't have passed the outer
-             * 'if' statement.  That measn the only entity in the hash
+             * 'if' statement.  That means the only entity in the hash
              * table is the external subset name "#" which cannot be
              * given as a parameter entity name in XML syntax, so the
              * lookup must have returned NULL and we don't even reach
@@ -5798,19 +5808,27 @@ internalEntityProcessor(XML_Parser parser, const char *s, const char *end,
 
   if (result != XML_ERROR_NONE)
     return result;
-  else if (textEnd != next
-           && parser->m_parsingStatus.parsing == XML_SUSPENDED) {
+
+  if (textEnd != next && parser->m_parsingStatus.parsing == XML_SUSPENDED) {
     entity->processed = (int)(next - (const char *)entity->textPtr);
     return result;
-  } else {
+  }
+
 #ifdef XML_DTD
-    entityTrackingOnClose(parser, entity, __LINE__);
+  entityTrackingOnClose(parser, entity, __LINE__);
 #endif
-    entity->open = XML_FALSE;
-    parser->m_openInternalEntities = openEntity->next;
-    /* put openEntity back in list of free instances */
-    openEntity->next = parser->m_freeInternalEntities;
-    parser->m_freeInternalEntities = openEntity;
+  entity->open = XML_FALSE;
+  parser->m_openInternalEntities = openEntity->next;
+  /* put openEntity back in list of free instances */
+  openEntity->next = parser->m_freeInternalEntities;
+  parser->m_freeInternalEntities = openEntity;
+
+  // If there are more open entities we want to stop right here and have the
+  // upcoming call to XML_ResumeParser continue with entity content, or it would
+  // be ignored altogether.
+  if (parser->m_openInternalEntities != NULL
+      && parser->m_parsingStatus.parsing == XML_SUSPENDED) {
+    return XML_ERROR_NONE;
   }
 
 #ifdef XML_DTD
@@ -5826,10 +5844,15 @@ internalEntityProcessor(XML_Parser parser, const char *s, const char *end,
   {
     parser->m_processor = contentProcessor;
     /* see externalEntityContentProcessor vs contentProcessor */
-    return doContent(parser, parser->m_parentParser ? 1 : 0, parser->m_encoding,
-                     s, end, nextPtr,
-                     (XML_Bool)! parser->m_parsingStatus.finalBuffer,
-                     XML_ACCOUNT_DIRECT);
+    result = doContent(parser, parser->m_parentParser ? 1 : 0,
+                       parser->m_encoding, s, end, nextPtr,
+                       (XML_Bool)! parser->m_parsingStatus.finalBuffer,
+                       XML_ACCOUNT_DIRECT);
+    if (result == XML_ERROR_NONE) {
+      if (! storeRawNames(parser))
+        return XML_ERROR_NO_MEMORY;
+    }
+    return result;
   }
 }
 
@@ -6353,8 +6376,9 @@ reportDefault(XML_Parser parser, const ENCODING *enc, const char *s,
     } while ((convert_res != XML_CONVERT_COMPLETED)
              && (convert_res != XML_CONVERT_INPUT_INCOMPLETE));
   } else
-    parser->m_defaultHandler(parser->m_handlerArg, (XML_Char *)s,
-                             (int)((XML_Char *)end - (XML_Char *)s));
+    parser->m_defaultHandler(
+        parser->m_handlerArg, (const XML_Char *)s,
+        (int)((const XML_Char *)end - (const XML_Char *)s));
 }
 
 static int
@@ -7198,7 +7222,7 @@ poolAppend(STRING_POOL *pool, const ENCODING *enc, const char *ptr,
     return NULL;
   for (;;) {
     const enum XML_Convert_Result convert_res = XmlConvert(
-        enc, &ptr, end, (ICHAR **)&(pool->ptr), (ICHAR *)pool->end);
+        enc, &ptr, end, (ICHAR **)&(pool->ptr), (const ICHAR *)pool->end);
     if ((convert_res == XML_CONVERT_COMPLETED)
         || (convert_res == XML_CONVERT_INPUT_INCOMPLETE))
       break;
@@ -8371,9 +8395,9 @@ getDebugLevel(const char *variableName, unsigned long defaultDebugLevel) {
   const char *const value = valueOrNull;
 
   errno = 0;
-  char *afterValue = (char *)value;
+  char *afterValue = NULL;
   unsigned long debugLevel = strtoul(value, &afterValue, 10);
-  if ((errno != 0) || (afterValue[0] != '\0')) {
+  if ((errno != 0) || (afterValue == value) || (afterValue[0] != '\0')) {
     errno = 0;
     return defaultDebugLevel;
   }

@@ -1,4 +1,4 @@
-// Copyright 2019 Google Inc. All rights reserved.
+// Copyright 2019 Google LLC
 //
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are
@@ -10,7 +10,7 @@
 // copyright notice, this list of conditions and the following disclaimer
 // in the documentation and/or other materials provided with the
 // distribution.
-//     * Neither the name of Google Inc. nor the names of its
+//     * Neither the name of Google LLC nor the names of its
 // contributors may be used to endorse or promote products derived from
 // this software without specific prior written permission.
 //
@@ -69,6 +69,7 @@ const char* kNoExeMSSSServer = "http://msdl.microsoft.com/download/symbols/";
 const wchar_t* kSymbolUploadTypeBreakpad = L"BREAKPAD";
 const wchar_t* kSymbolUploadTypePE = L"PE";
 const wchar_t* kSymbolUploadTypePDB = L"PDB";
+const wchar_t* kConverterProductName = L"WinSymConv";
 
 // Windows stdio doesn't do line buffering.  Use this function to flush after
 // writing to stdout and stderr so that a log will be available if the
@@ -242,7 +243,7 @@ static bool UploadSymbolFile(const wstring& upload_symbol_url,
   FprintfFlush(stderr, "Uploading %s\n", symbol_file.c_str());
   if (!google_breakpad::SymUploadV2ProtocolSend(
           upload_symbol_url.c_str(), api_key.c_str(), &timeout_ms, debug_file_w,
-          debug_id_w, symbol_file_w, symbol_type,
+          debug_id_w, symbol_file_w, symbol_type, kConverterProductName,
           /*force=*/true)) {
     FprintfFlush(stderr,
                  "UploadSymbolFile: HTTPUpload::SendRequest failed "
@@ -303,7 +304,8 @@ static bool SafeToMakeExternalRequest(const MissingSymbolInfo& missing_info,
 
 // Converter options derived from command line parameters.
 struct ConverterOptions {
-  ConverterOptions() : report_fetch_failures(true), trace_symsrv(false) {}
+  ConverterOptions()
+      : report_fetch_failures(true), trace_symsrv(false), keep_files(false) {}
 
   ~ConverterOptions() {
   }
@@ -352,6 +354,9 @@ struct ConverterOptions {
 
   // If set then SymSrv callbacks are logged to stderr.
   bool trace_symsrv;
+
+  // If set then Breakpad/PE/PDB files won't be deleted after processing.
+  bool keep_files;
 
  private:
   // DISABLE_COPY_AND_ASSIGN
@@ -434,7 +439,8 @@ static void ConvertMissingSymbolFile(const MissingSymbolInfo& missing_info,
         UploadSymbolFile(options.upload_symbols_url, options.api_key,
                          missing_info.debug_file, missing_info.debug_identifier,
                          converted_file, kSymbolUploadTypeBreakpad);
-        remove(converted_file.c_str());
+        if (!options.keep_files)
+          remove(converted_file.c_str());
 
         // Upload PDB/PE if we have them
         if (!symbol_file.empty()) {
@@ -442,14 +448,16 @@ static void ConvertMissingSymbolFile(const MissingSymbolInfo& missing_info,
                            missing_info.debug_file,
                            missing_info.debug_identifier, symbol_file,
                            kSymbolUploadTypePDB);
-          remove(symbol_file.c_str());
+          if (!options.keep_files)
+            remove(symbol_file.c_str());
         }
         if (!pe_file.empty()) {
           UploadSymbolFile(options.upload_symbols_url, options.api_key,
                            missing_info.code_file,
                            missing_info.debug_identifier, pe_file,
                            kSymbolUploadTypePE);
-          remove(pe_file.c_str());
+          if (!options.keep_files)
+            remove(pe_file.c_str());
         }
 
         // Note: this does leave some directories behind that could be
@@ -540,20 +548,23 @@ static void ConvertMissingSymbolFile(const MissingSymbolInfo& missing_info,
       UploadSymbolFile(options.upload_symbols_url, options.api_key,
                        missing_info.debug_file, missing_info.debug_identifier,
                        converted_file, kSymbolUploadTypeBreakpad);
-      remove(converted_file.c_str());
+      if (!options.keep_files)
+        remove(converted_file.c_str());
 
       // Upload PDB/PE if we have them
       if (!symbol_file.empty()) {
         UploadSymbolFile(options.upload_symbols_url, options.api_key,
                          missing_info.debug_file, missing_info.debug_identifier,
                          symbol_file, kSymbolUploadTypePDB);
-        remove(symbol_file.c_str());
+        if (!options.keep_files)
+          remove(symbol_file.c_str());
       }
       if (!pe_file.empty()) {
         UploadSymbolFile(options.upload_symbols_url, options.api_key,
                          missing_info.code_file, missing_info.debug_identifier,
                          pe_file, kSymbolUploadTypePE);
-        remove(pe_file.c_str());
+        if (!options.keep_files)
+          remove(pe_file.c_str());
       }
 
       // Note: this does leave some directories behind that could be
@@ -647,7 +658,7 @@ static bool ReadFile(string file_name, string* contents) {
 static bool ConvertMissingSymbolsList(const ConverterOptions& options) {
   // Set param to indicate requesting for encoded response.
   map<wstring, wstring> parameters;
-  parameters[L"product"] = L"WinSymConv";
+  parameters[L"product"] = kConverterProductName;
   parameters[L"encoded"] = L"true";
   // Get the missing symbol list.
   string missing_symbol_list;
@@ -731,6 +742,8 @@ static int usage(const char* program_name) {
       "                               prevent external symbol requests\n"
       "    -tss                       If set then SymSrv callbacks will be\n"
       "                               traced to stderr.\n"
+      "    -keep-files                If set then don't delete Breakpad/PE/\n"
+      "                               PDB files after conversion.\n"
       " Note that any server specified by -f or -n that starts with \\filer\n"
       " will be treated as internal, and all others as external.\n",
       program_name);
@@ -768,17 +781,21 @@ int main(int argc, char** argv) {
   ConverterOptions options;
   options.report_fetch_failures = true;
 
-  // All arguments are paired.
-  if (argc % 2 != 1) {
-    return usage(argv[0]);
-  }
-
   string blacklist_regex_str;
   bool have_any_msss_servers = false;
-  for (int argi = 1; argi < argc; argi += 2) {
+  for (int argi = 1; argi < argc; argi++) {
     string option = argv[argi];
-    string value = argv[argi + 1];
+    if (option == "-tss") {
+      printf("Tracing SymSrv callbacks to stderr.\n");
+      options.trace_symsrv = true;
+      continue;
+    } else if (option == "-keep-files") {
+      printf("Keeping Breakpad/PE/PDB files after conversion.\n");
+      options.keep_files = true;
+      continue;
+    }
 
+    string value = argv[++argi];
     if (option == "-f") {
       AddServer(value,& options.full_internal_msss_servers,
                & options.full_external_msss_servers);
@@ -817,9 +834,6 @@ int main(int argc, char** argv) {
       printf("Getting the list of missing symbols from a file.  Fetch failures"
              " will not be reported.\n");
       options.report_fetch_failures = false;
-    } else if (option == "-tss") {
-      printf("Tracing SymSrv callbacks to stderr.\n");
-      options.trace_symsrv = true;
     } else if (option == "-t") {
       if (!WindowsStringUtils::safe_mbstowcs(
           value,

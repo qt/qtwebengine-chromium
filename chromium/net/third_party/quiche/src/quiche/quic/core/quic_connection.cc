@@ -32,7 +32,6 @@
 #include "quiche/quic/core/quic_connection_id.h"
 #include "quiche/quic/core/quic_constants.h"
 #include "quiche/quic/core/quic_error_codes.h"
-#include "quiche/quic/core/quic_legacy_version_encapsulator.h"
 #include "quiche/quic/core/quic_packet_creator.h"
 #include "quiche/quic/core/quic_packet_writer.h"
 #include "quiche/quic/core/quic_packets.h"
@@ -124,17 +123,6 @@ class SendAlarmDelegate : public QuicConnectionAlarmDelegate {
   }
 };
 
-class PingAlarmDelegate : public QuicConnectionAlarmDelegate {
- public:
-  using QuicConnectionAlarmDelegate::QuicConnectionAlarmDelegate;
-
-  void OnAlarm() override {
-    QUICHE_DCHECK(connection_->connected());
-    QUICHE_DCHECK(!GetQuicReloadableFlag(quic_use_ping_manager2));
-    connection_->OnPingTimeout();
-  }
-};
-
 class MtuDiscoveryAlarmDelegate : public QuicConnectionAlarmDelegate {
  public:
   using QuicConnectionAlarmDelegate::QuicConnectionAlarmDelegate;
@@ -188,7 +176,7 @@ class MultiPortProbingAlarmDelegate : public QuicConnectionAlarmDelegate {
   void OnAlarm() override {
     QUICHE_DCHECK(connection_->connected());
     QUIC_DLOG(INFO) << "Alternative path probing alarm fired";
-    connection_->ProbeMultiPortPath();
+    connection_->MaybeProbeMultiPortPath();
   }
 };
 
@@ -300,10 +288,6 @@ QuicConnection::QuicConnection(
       stop_waiting_count_(0),
       pending_retransmission_alarm_(false),
       defer_send_in_response_to_packets_(false),
-      keep_alive_ping_timeout_(QuicTime::Delta::FromSeconds(kPingTimeoutSecs)),
-      initial_retransmittable_on_wire_timeout_(QuicTime::Delta::Infinite()),
-      consecutive_retransmittable_on_wire_ping_count_(0),
-      retransmittable_on_wire_ping_count_(0),
       arena_(),
       ack_alarm_(alarm_factory_->CreateAlarm(arena_.New<AckAlarmDelegate>(this),
                                              &arena_)),
@@ -311,8 +295,6 @@ QuicConnection::QuicConnection(
           arena_.New<RetransmissionAlarmDelegate>(this), &arena_)),
       send_alarm_(alarm_factory_->CreateAlarm(
           arena_.New<SendAlarmDelegate>(this), &arena_)),
-      ping_alarm_(alarm_factory_->CreateAlarm(
-          arena_.New<PingAlarmDelegate>(this), &arena_)),
       mtu_discovery_alarm_(alarm_factory_->CreateAlarm(
           arena_.New<MtuDiscoveryAlarmDelegate>(this), &arena_)),
       process_undecryptable_packets_alarm_(alarm_factory_->CreateAlarm(
@@ -675,7 +657,8 @@ void QuicConnection::SetFromConfig(const QuicConfig& config) {
       GetQuicReloadableFlag(quic_connection_migration_use_new_cid_v2);
   if (config.HasReceivedMaxPacketSize()) {
     peer_max_packet_size_ = config.ReceivedMaxPacketSize();
-    MaybeUpdatePacketCreatorMaxPacketLengthAndPadding();
+    packet_creator_.SetMaxPacketLength(
+        GetLimitedMaxPacketSize(packet_creator_.max_packet_length()));
   }
   if (config.HasReceivedMaxDatagramFrameSize()) {
     packet_creator_.SetMaxDatagramFrameSize(
@@ -690,37 +673,11 @@ void QuicConnection::SetFromConfig(const QuicConfig& config) {
     UpdateReleaseTimeIntoFuture();
   }
 
-  multi_port_enabled_ =
+  if (perspective_ == Perspective::IS_CLIENT &&
       connection_migration_use_new_cid_ &&
-      config.HasClientSentConnectionOption(kMPQC, perspective_);
-  if (multi_port_enabled_) {
+      config.HasClientRequestedIndependentOption(kMPQC, perspective_)) {
     multi_port_stats_ = std::make_unique<MultiPortStats>();
   }
-}
-
-void QuicConnection::EnableLegacyVersionEncapsulation(
-    const std::string& server_name) {
-  if (perspective_ != Perspective::IS_CLIENT) {
-    QUIC_BUG(quic_bug_10511_1)
-        << "Cannot enable Legacy Version Encapsulation on the server";
-    return;
-  }
-  if (legacy_version_encapsulation_enabled_) {
-    QUIC_BUG(quic_bug_10511_2)
-        << "Do not call EnableLegacyVersionEncapsulation twice";
-    return;
-  }
-  if (!QuicHostnameUtils::IsValidSNI(server_name)) {
-    // Legacy Version Encapsulation is only used when SNI is transmitted.
-    QUIC_DLOG(INFO)
-        << "Refusing to use Legacy Version Encapsulation with invalid SNI \""
-        << server_name << "\"";
-    return;
-  }
-  QUIC_DLOG(INFO) << "Enabling Legacy Version Encapsulation with SNI \""
-                  << server_name << "\"";
-  legacy_version_encapsulation_enabled_ = true;
-  legacy_version_encapsulation_sni_ = server_name;
 }
 
 bool QuicConnection::MaybeTestLiveness() {
@@ -1385,11 +1342,7 @@ bool QuicConnection::OnStreamFrame(const QuicStreamFrame& frame) {
   MaybeUpdateAckTimeout();
   visitor_->OnStreamFrame(frame);
   stats_.stream_bytes_received += frame.data_length;
-  if (use_ping_manager_) {
-    ping_manager_.reset_consecutive_retransmittable_on_wire_count();
-  } else {
-    consecutive_retransmittable_on_wire_ping_count_ = 0;
-  }
+  ping_manager_.reset_consecutive_retransmittable_on_wire_count();
   return connected_;
 }
 
@@ -2040,7 +1993,7 @@ bool QuicConnection::OnNewConnectionIdFrame(
   if (!OnNewConnectionIdFrameInner(frame)) {
     return false;
   }
-  if (perspective_ == Perspective::IS_CLIENT && multi_port_enabled_) {
+  if (multi_port_stats_ != nullptr) {
     MaybeCreateMultiPortPath();
   }
   return true;
@@ -2441,29 +2394,6 @@ void QuicConnection::MaybeSendInResponseToPacket() {
   }
 }
 
-void QuicConnection::MaybeActivateLegacyVersionEncapsulation() {
-  if (!legacy_version_encapsulation_enabled_) {
-    return;
-  }
-  QUICHE_DCHECK(!legacy_version_encapsulation_in_progress_);
-  QUIC_BUG_IF(quic_bug_12714_19, !packet_creator_.CanSetMaxPacketLength())
-      << "Cannot activate Legacy Version Encapsulation mid-packet";
-  QUIC_BUG_IF(quic_bug_12714_20, coalesced_packet_.length() != 0u)
-      << "Cannot activate Legacy Version Encapsulation mid-coalesced-packet";
-  legacy_version_encapsulation_in_progress_ = true;
-  MaybeUpdatePacketCreatorMaxPacketLengthAndPadding();
-}
-void QuicConnection::MaybeDisactivateLegacyVersionEncapsulation() {
-  if (!legacy_version_encapsulation_in_progress_) {
-    return;
-  }
-  // Flush any remaining packet before disactivating encapsulation.
-  packet_creator_.FlushCurrentPacket();
-  QUICHE_DCHECK(legacy_version_encapsulation_enabled_);
-  legacy_version_encapsulation_in_progress_ = false;
-  MaybeUpdatePacketCreatorMaxPacketLengthAndPadding();
-}
-
 size_t QuicConnection::SendCryptoData(EncryptionLevel level,
                                       size_t write_length,
                                       QuicStreamOffset offset) {
@@ -2471,17 +2401,8 @@ size_t QuicConnection::SendCryptoData(EncryptionLevel level,
     QUIC_BUG(quic_bug_10511_18) << "Attempt to send empty crypto frame";
     return 0;
   }
-  if (level == ENCRYPTION_INITIAL) {
-    MaybeActivateLegacyVersionEncapsulation();
-  }
-  size_t consumed_length;
-  {
-    ScopedPacketFlusher flusher(this);
-    consumed_length =
-        packet_creator_.ConsumeCryptoData(level, write_length, offset);
-  }  // Added scope ensures packets are flushed before continuing.
-  MaybeDisactivateLegacyVersionEncapsulation();
-  return consumed_length;
+  ScopedPacketFlusher flusher(this);
+  return packet_creator_.ConsumeCryptoData(level, write_length, offset);
 }
 
 QuicConsumedData QuicConnection::SendStreamData(QuicStreamId id,
@@ -2493,22 +2414,15 @@ QuicConsumedData QuicConnection::SendStreamData(QuicStreamId id,
     return QuicConsumedData(0, false);
   }
 
-  if (packet_creator_.encryption_level() == ENCRYPTION_INITIAL &&
-      QuicUtils::IsCryptoStreamId(transport_version(), id)) {
-    MaybeActivateLegacyVersionEncapsulation();
-  }
-  if (version().CanSendCoalescedPackets() && !IsHandshakeConfirmed()) {
-    if (in_on_retransmission_time_out_ &&
-        coalesced_packet_.NumberOfPackets() == 0u) {
+  if (perspective_ == Perspective::IS_SERVER &&
+      version().CanSendCoalescedPackets() && !IsHandshakeConfirmed()) {
+    if (in_probe_time_out_ && coalesced_packet_.NumberOfPackets() == 0u) {
       // PTO fires while handshake is not confirmed. Do not preempt handshake
       // data with stream data.
       QUIC_CODE_COUNT(quic_try_to_send_half_rtt_data_when_pto_fires);
-      QUIC_DVLOG(1) << ENDPOINT
-                    << "Not PTOing stream data before handshake gets confirmed";
       return QuicConsumedData(0, false);
     }
-    if (perspective_ == Perspective::IS_SERVER &&
-        coalesced_packet_.ContainsPacketOfEncryptionLevel(ENCRYPTION_INITIAL) &&
+    if (coalesced_packet_.ContainsPacketOfEncryptionLevel(ENCRYPTION_INITIAL) &&
         coalesced_packet_.NumberOfPackets() == 1u) {
       // Handshake is not confirmed yet, if there is only an initial packet in
       // the coalescer, try to bundle an ENCRYPTION_HANDSHAKE packet before
@@ -2516,20 +2430,14 @@ QuicConsumedData QuicConnection::SendStreamData(QuicStreamId id,
       sent_packet_manager_.RetransmitDataOfSpaceIfAny(HANDSHAKE_DATA);
     }
   }
-  QuicConsumedData consumed_data(0, false);
-  {
-    // Opportunistically bundle an ack with every outgoing packet.
-    // Particularly, we want to bundle with handshake packets since we don't
-    // know which decrypter will be used on an ack packet following a handshake
-    // packet (a handshake packet from client to server could result in a REJ or
-    // a SHLO from the server, leading to two different decrypters at the
-    // server.)
-    ScopedPacketFlusher flusher(this);
-    consumed_data =
-        packet_creator_.ConsumeData(id, write_length, offset, state);
-  }  // Added scope ensures packets are flushed before continuing.
-  MaybeDisactivateLegacyVersionEncapsulation();
-  return consumed_data;
+  // Opportunistically bundle an ack with every outgoing packet.
+  // Particularly, we want to bundle with handshake packets since we don't
+  // know which decrypter will be used on an ack packet following a handshake
+  // packet (a handshake packet from client to server could result in a REJ or
+  // a SHLO from the server, leading to two different decrypters at the
+  // server.)
+  ScopedPacketFlusher flusher(this);
+  return packet_creator_.ConsumeData(id, write_length, offset, state);
 }
 
 bool QuicConnection::SendControlFrame(const QuicFrame& frame) {
@@ -2709,28 +2617,6 @@ std::string QuicConnection::UndecryptablePacketsInfo() const {
   return info;
 }
 
-void QuicConnection::MaybeUpdatePacketCreatorMaxPacketLengthAndPadding() {
-  QuicByteCount max_packet_length = GetLimitedMaxPacketSize(long_term_mtu_);
-  if (legacy_version_encapsulation_in_progress_) {
-    QUICHE_DCHECK(legacy_version_encapsulation_enabled_);
-    const QuicByteCount minimum_overhead =
-        QuicLegacyVersionEncapsulator::GetMinimumOverhead(
-            legacy_version_encapsulation_sni_);
-    if (max_packet_length < minimum_overhead) {
-      QUIC_BUG(quic_bug_10511_20)
-          << "Cannot apply Legacy Version Encapsulation overhead because "
-          << "max_packet_length " << max_packet_length << " < minimum_overhead "
-          << minimum_overhead;
-      legacy_version_encapsulation_in_progress_ = false;
-      legacy_version_encapsulation_enabled_ = false;
-      MaybeUpdatePacketCreatorMaxPacketLengthAndPadding();
-      return;
-    }
-    max_packet_length -= minimum_overhead;
-  }
-  packet_creator_.SetMaxPacketLength(max_packet_length);
-}
-
 void QuicConnection::ProcessUdpPacket(const QuicSocketAddress& self_address,
                                       const QuicSocketAddress& peer_address,
                                       const QuicReceivedPacket& packet) {
@@ -2820,7 +2706,7 @@ void QuicConnection::ProcessUdpPacket(const QuicSocketAddress& self_address,
        sent_packet_manager_.GetLargestObserved() >
            highest_packet_sent_before_effective_peer_migration_)) {
     if (perspective_ == Perspective::IS_SERVER) {
-      OnEffectivePeerMigrationValidated();
+      OnEffectivePeerMigrationValidated(/*is_migration_linkable=*/true);
     }
   }
 
@@ -3490,49 +3376,6 @@ bool QuicConnection::WritePacket(SerializedPacket* packet) {
         result = writer_->Flush();
       }
       break;
-    case LEGACY_VERSION_ENCAPSULATE: {
-      QUICHE_DCHECK(!is_mtu_discovery);
-      QUICHE_DCHECK_EQ(perspective_, Perspective::IS_CLIENT);
-      QUICHE_DCHECK_EQ(packet->encryption_level, ENCRYPTION_INITIAL);
-      QUICHE_DCHECK(legacy_version_encapsulation_enabled_);
-      QUICHE_DCHECK(legacy_version_encapsulation_in_progress_);
-      QuicPacketLength encapsulated_length =
-          QuicLegacyVersionEncapsulator::Encapsulate(
-              legacy_version_encapsulation_sni_,
-              absl::string_view(packet->encrypted_buffer,
-                                packet->encrypted_length),
-              default_path_.server_connection_id, framer_.creation_time(),
-              GetLimitedMaxPacketSize(long_term_mtu_),
-              const_cast<char*>(packet->encrypted_buffer));
-      if (encapsulated_length != 0) {
-        stats_.sent_legacy_version_encapsulated_packets++;
-        packet->encrypted_length = encapsulated_length;
-        encrypted_length = encapsulated_length;
-        QUIC_DVLOG(2)
-            << ENDPOINT
-            << "Successfully performed Legacy Version Encapsulation on "
-            << packet->encryption_level << " packet number " << packet_number
-            << " of length " << encrypted_length << ": " << std::endl
-            << quiche::QuicheTextUtils::HexDump(absl::string_view(
-                   packet->encrypted_buffer, encrypted_length));
-      } else {
-        QUIC_BUG(quic_bug_10511_24)
-            << ENDPOINT << "Failed to perform Legacy Version Encapsulation on "
-            << packet->encryption_level << " packet number " << packet_number
-            << " of length " << encrypted_length;
-      }
-      if (!buffered_packets_.empty() || HandleWriteBlocked()) {
-        // Buffer the packet.
-        buffered_packets_.emplace_back(*packet, self_address(),
-                                       send_to_address);
-      } else {  // Send the packet to the writer.
-        // writer_->WritePacket transfers buffer ownership back to the writer.
-        packet->release_encrypted_buffer = nullptr;
-        result = writer_->WritePacket(packet->encrypted_buffer,
-                                      encrypted_length, self_address().host(),
-                                      send_to_address, per_packet_options_);
-      }
-    } break;
     default:
       QUICHE_DCHECK(false);
       break;
@@ -4085,14 +3928,21 @@ void QuicConnection::OnHandshakeComplete() {
 
 void QuicConnection::MaybeCreateMultiPortPath() {
   QUICHE_DCHECK_EQ(Perspective::IS_CLIENT, perspective_);
+  QUIC_BUG_IF(quic_bug_12714_20, path_validator_.HasPendingPathValidation())
+      << "Pending validation exists when multi-port path is created.";
+  if (multi_port_stats_->num_multi_port_paths_created >=
+      kMaxNumMultiPortPaths) {
+    return;
+  }
   auto path_context = visitor_->CreateContextForMultiPortPath();
-  if (!path_context || path_validator_.HasPendingPathValidation()) {
+  if (!path_context) {
     return;
   }
   auto multi_port_validation_result_delegate =
       std::make_unique<MultiPortPathValidationResultDelegate>(this);
   multi_port_probing_alarm_->Cancel();
   multi_port_path_context_ = nullptr;
+  multi_port_stats_->num_multi_port_paths_created++;
   ValidatePath(std::move(path_context),
                std::move(multi_port_validation_result_delegate));
 }
@@ -4100,15 +3950,6 @@ void QuicConnection::MaybeCreateMultiPortPath() {
 void QuicConnection::SendOrQueuePacket(SerializedPacket packet) {
   // The caller of this function is responsible for checking CanWrite().
   WritePacket(&packet);
-}
-
-void QuicConnection::OnPingTimeout() {
-  QUICHE_DCHECK(!use_ping_manager_);
-  if (retransmission_alarm_->IsSet() ||
-      !visitor_->ShouldKeepConnectionAlive()) {
-    return;
-  }
-  SendPingAtLevel(framer().GetEncryptionLevelToSendApplicationData());
 }
 
 void QuicConnection::SendAck() {
@@ -4653,17 +4494,14 @@ void QuicConnection::CancelAllAlarms() {
   QUIC_DVLOG(1) << "Cancelling all QuicConnection alarms.";
 
   ack_alarm_->PermanentCancel();
-  if (use_ping_manager_) {
-    ping_manager_.Stop();
-  } else {
-    ping_alarm_->PermanentCancel();
-  }
+  ping_manager_.Stop();
   retransmission_alarm_->PermanentCancel();
   send_alarm_->PermanentCancel();
   mtu_discovery_alarm_->PermanentCancel();
   process_undecryptable_packets_alarm_->PermanentCancel();
   discard_previous_one_rtt_keys_alarm_->PermanentCancel();
   discard_zero_rtt_decryption_keys_alarm_->PermanentCancel();
+  multi_port_probing_alarm_->PermanentCancel();
   blackhole_detector_.StopDetection(/*permanent=*/true);
   idle_network_detector_.StopDetection();
 }
@@ -4675,7 +4513,7 @@ QuicByteCount QuicConnection::max_packet_length() const {
 void QuicConnection::SetMaxPacketLength(QuicByteCount length) {
   long_term_mtu_ = length;
   stats_.max_egress_mtu = std::max(stats_.max_egress_mtu, long_term_mtu_);
-  MaybeUpdatePacketCreatorMaxPacketLengthAndPadding();
+  packet_creator_.SetMaxPacketLength(GetLimitedMaxPacketSize(length));
 }
 
 bool QuicConnection::HasQueuedData() const {
@@ -4701,79 +4539,9 @@ void QuicConnection::SetPingAlarm() {
   if (!connected_) {
     return;
   }
-  if (use_ping_manager_) {
-    QUIC_RELOADABLE_FLAG_COUNT(quic_use_ping_manager2);
-    ping_manager_.SetAlarm(clock_->ApproximateNow(),
-                           visitor_->ShouldKeepConnectionAlive(),
-                           sent_packet_manager_.HasInFlightPackets());
-    return;
-  }
-  if (perspective_ == Perspective::IS_SERVER &&
-      initial_retransmittable_on_wire_timeout_.IsInfinite()) {
-    // The PING alarm exists to support two features:
-    // 1) clients send PINGs every 15s to prevent NAT timeouts,
-    // 2) both clients and servers can send retransmittable on the wire PINGs
-    // (ROWP) while ShouldKeepConnectionAlive is true and there is no packets in
-    // flight.
-    return;
-  }
-  if (!visitor_->ShouldKeepConnectionAlive()) {
-    ping_alarm_->Cancel();
-    // Don't send a ping unless the application (ie: HTTP/3) says to, usually
-    // because it is expecting a response from the server.
-    return;
-  }
-  if (initial_retransmittable_on_wire_timeout_.IsInfinite() ||
-      sent_packet_manager_.HasInFlightPackets() ||
-      retransmittable_on_wire_ping_count_ >
-          GetQuicFlag(quic_max_retransmittable_on_wire_ping_count)) {
-    if (perspective_ == Perspective::IS_CLIENT) {
-      // Clients send 15s PINGs to avoid NATs from timing out.
-      ping_alarm_->Update(clock_->ApproximateNow() + keep_alive_ping_timeout_,
-                          QuicTime::Delta::FromSeconds(1));
-    } else {
-      // Servers do not send 15s PINGs.
-      ping_alarm_->Cancel();
-    }
-    return;
-  }
-  QUICHE_DCHECK_LT(initial_retransmittable_on_wire_timeout_,
-                   keep_alive_ping_timeout_);
-  QuicTime::Delta retransmittable_on_wire_timeout =
-      initial_retransmittable_on_wire_timeout_;
-  int max_aggressive_retransmittable_on_wire_ping_count =
-      GetQuicFlag(quic_max_aggressive_retransmittable_on_wire_ping_count);
-  QUICHE_DCHECK_LE(0, max_aggressive_retransmittable_on_wire_ping_count);
-  if (consecutive_retransmittable_on_wire_ping_count_ >
-      max_aggressive_retransmittable_on_wire_ping_count) {
-    // Exponentially back off the timeout if the number of consecutive
-    // retransmittable on wire pings has exceeds the allowance.
-    int shift = consecutive_retransmittable_on_wire_ping_count_ -
-                max_aggressive_retransmittable_on_wire_ping_count;
-    retransmittable_on_wire_timeout =
-        initial_retransmittable_on_wire_timeout_ * (1 << shift);
-  }
-  // If it's already set to an earlier time, then don't update it.
-  if (ping_alarm_->IsSet() &&
-      ping_alarm_->deadline() <
-          clock_->ApproximateNow() + retransmittable_on_wire_timeout) {
-    return;
-  }
-
-  if (retransmittable_on_wire_timeout < keep_alive_ping_timeout_) {
-    // Use a shorter timeout if there are open streams, but nothing on the wire.
-    ping_alarm_->Update(
-        clock_->ApproximateNow() + retransmittable_on_wire_timeout,
-        kAlarmGranularity);
-    if (max_aggressive_retransmittable_on_wire_ping_count != 0) {
-      consecutive_retransmittable_on_wire_ping_count_++;
-    }
-    retransmittable_on_wire_ping_count_++;
-    return;
-  }
-
-  ping_alarm_->Update(clock_->ApproximateNow() + keep_alive_ping_timeout_,
-                      kAlarmGranularity);
+  ping_manager_.SetAlarm(clock_->ApproximateNow(),
+                         visitor_->ShouldKeepConnectionAlive(),
+                         sent_packet_manager_.HasInFlightPackets());
 }
 
 void QuicConnection::SetRetransmissionAlarm() {
@@ -5212,7 +4980,8 @@ void QuicConnection::DiscoverMtu() {
   QUICHE_DCHECK(!mtu_discovery_alarm_->IsSet());
 }
 
-void QuicConnection::OnEffectivePeerMigrationValidated() {
+void QuicConnection::OnEffectivePeerMigrationValidated(
+    bool /*is_migration_linkable*/) {
   if (active_effective_peer_migration_type_ == NO_CHANGE) {
     QUIC_BUG(quic_bug_10511_33) << "No migration underway.";
     return;
@@ -5410,7 +5179,9 @@ void QuicConnection::StartEffectivePeerMigration(AddressChangeType type) {
       // validation.
       ++stats_.num_peer_migration_to_proactively_validated_address;
     }
-    OnEffectivePeerMigrationValidated();
+    OnEffectivePeerMigrationValidated(
+        default_path_.server_connection_id ==
+        previous_default_path.server_connection_id);
     return;
   }
 
@@ -6164,10 +5935,6 @@ SerializedPacketFate QuicConnection::GetSerializedPacketFate(
   if (ShouldDiscardPacket(encryption_level)) {
     return DISCARD;
   }
-  if (legacy_version_encapsulation_in_progress_) {
-    QUICHE_DCHECK(!is_mtu_discovery);
-    return LEGACY_VERSION_ENCAPSULATE;
-  }
   if (version().CanSendCoalescedPackets() && !coalescing_done_ &&
       !is_mtu_discovery) {
     if (!IsHandshakeConfirmed()) {
@@ -6330,7 +6097,6 @@ void QuicConnection::OnBandwidthUpdateTimeout() {
 }
 
 void QuicConnection::OnKeepAliveTimeout() {
-  QUICHE_DCHECK(use_ping_manager_);
   if (retransmission_alarm_->IsSet() ||
       !visitor_->ShouldKeepConnectionAlive()) {
     return;
@@ -6339,7 +6105,6 @@ void QuicConnection::OnKeepAliveTimeout() {
 }
 
 void QuicConnection::OnRetransmittableOnWireTimeout() {
-  QUICHE_DCHECK(use_ping_manager_);
   if (retransmission_alarm_->IsSet() ||
       !visitor_->ShouldKeepConnectionAlive()) {
     return;
@@ -6492,6 +6257,15 @@ bool QuicConnection::ShouldDetectPathDegrading() const {
   if (!connected_) {
     return false;
   }
+  if (GetQuicReloadableFlag(
+          quic_no_path_degrading_before_handshake_confirmed) &&
+      SupportsMultiplePacketNumberSpaces()) {
+    QUIC_RELOADABLE_FLAG_COUNT_N(
+        quic_no_path_degrading_before_handshake_confirmed, 1, 2);
+    // No path degrading detection before handshake confirmed.
+    return perspective_ == Perspective::IS_CLIENT && IsHandshakeConfirmed() &&
+           !is_path_degrading_;
+  }
   // No path degrading detection before handshake completes.
   if (!idle_network_detector_.handshake_timeout().IsInfinite()) {
     return false;
@@ -6530,6 +6304,13 @@ QuicTime::Delta QuicConnection::CalculateNetworkBlackholeDelay(
 
 bool QuicConnection::ShouldDetectBlackhole() const {
   if (!connected_ || blackhole_detection_disabled_) {
+    return false;
+  }
+  if (GetQuicReloadableFlag(
+          quic_no_path_degrading_before_handshake_confirmed) &&
+      SupportsMultiplePacketNumberSpaces() && !IsHandshakeConfirmed()) {
+    QUIC_RELOADABLE_FLAG_COUNT_N(
+        quic_no_path_degrading_before_handshake_confirmed, 2, 2);
     return false;
   }
   // No blackhole detection before handshake completes.
@@ -7115,13 +6896,15 @@ void QuicConnection::OnMultiPortPathProbingSuccess(
   }
 }
 
-void QuicConnection::ProbeMultiPortPath() {
+void QuicConnection::MaybeProbeMultiPortPath() {
   if (!connected_ || path_validator_.HasPendingPathValidation() ||
       !multi_port_path_context_ ||
       alternative_path_.self_address !=
           multi_port_path_context_->self_address() ||
       alternative_path_.peer_address !=
-          multi_port_path_context_->peer_address()) {
+          multi_port_path_context_->peer_address() ||
+      !visitor_->ShouldKeepConnectionAlive() ||
+      multi_port_probing_alarm_->IsSet()) {
     return;
   }
   auto multi_port_validation_result_delegate =
@@ -7192,7 +6975,9 @@ void QuicConnection::ReversePathValidationResultDelegate::
           " Connection is connected: ", connection_->connected_);
       QUIC_BUG(quic_bug_10511_43) << error_detail;
     }
-    connection_->OnEffectivePeerMigrationValidated();
+    connection_->OnEffectivePeerMigrationValidated(
+        connection_->alternative_path_.server_connection_id ==
+        connection_->default_path_.server_connection_id);
   } else {
     QUICHE_DCHECK(connection_->IsAlternativePath(
         context->self_address(), context->effective_peer_address()));
@@ -7226,15 +7011,15 @@ void QuicConnection::ReversePathValidationResultDelegate::
 QuicConnection::ScopedRetransmissionTimeoutIndicator::
     ScopedRetransmissionTimeoutIndicator(QuicConnection* connection)
     : connection_(connection) {
-  QUICHE_DCHECK(!connection_->in_on_retransmission_time_out_)
+  QUICHE_DCHECK(!connection_->in_probe_time_out_)
       << "ScopedRetransmissionTimeoutIndicator is not supposed to be nested";
-  connection_->in_on_retransmission_time_out_ = true;
+  connection_->in_probe_time_out_ = true;
 }
 
 QuicConnection::ScopedRetransmissionTimeoutIndicator::
     ~ScopedRetransmissionTimeoutIndicator() {
-  QUICHE_DCHECK(connection_->in_on_retransmission_time_out_);
-  connection_->in_on_retransmission_time_out_ = false;
+  QUICHE_DCHECK(connection_->in_probe_time_out_);
+  connection_->in_probe_time_out_ = false;
 }
 
 void QuicConnection::RestoreToLastValidatedPath(
@@ -7293,23 +7078,13 @@ QuicConnection::OnPeerIpAddressChanged() {
 
 void QuicConnection::set_keep_alive_ping_timeout(
     QuicTime::Delta keep_alive_ping_timeout) {
-  if (use_ping_manager_) {
-    ping_manager_.set_keep_alive_timeout(keep_alive_ping_timeout);
-    return;
-  }
-  QUICHE_DCHECK(!ping_alarm_->IsSet());
-  keep_alive_ping_timeout_ = keep_alive_ping_timeout;
+  ping_manager_.set_keep_alive_timeout(keep_alive_ping_timeout);
 }
 
 void QuicConnection::set_initial_retransmittable_on_wire_timeout(
     QuicTime::Delta retransmittable_on_wire_timeout) {
-  if (use_ping_manager_) {
-    ping_manager_.set_initial_retransmittable_on_wire_timeout(
-        retransmittable_on_wire_timeout);
-    return;
-  }
-  QUICHE_DCHECK(!ping_alarm_->IsSet());
-  initial_retransmittable_on_wire_timeout_ = retransmittable_on_wire_timeout;
+  ping_manager_.set_initial_retransmittable_on_wire_timeout(
+      retransmittable_on_wire_timeout);
 }
 
 #undef ENDPOINT  // undef for jumbo builds

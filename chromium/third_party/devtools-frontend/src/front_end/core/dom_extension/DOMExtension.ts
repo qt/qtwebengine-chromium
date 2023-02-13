@@ -38,104 +38,6 @@
 
 import * as Platform from '../platform/platform.js';
 
-export function rangeOfWord(
-    rootNode: Node, offset: number, stopCharacters: string, stayWithinNode: Node, direction?: string): Range {
-  let startNode;
-  let startOffset = 0;
-  let endNode;
-  let endOffset = 0;
-
-  if (!stayWithinNode) {
-    stayWithinNode = rootNode;
-  }
-
-  if (!direction || direction === 'backward' || direction === 'both') {
-    let node: Node = rootNode;
-    while (node) {
-      if (node === stayWithinNode) {
-        if (!startNode) {
-          startNode = stayWithinNode;
-        }
-        break;
-      }
-
-      if (node.nodeType === Node.TEXT_NODE) {
-        const start = (node === rootNode ? (offset - 1) : (node.nodeValue.length - 1));
-        for (let i = start; i >= 0; --i) {
-          if (stopCharacters.indexOf(node.nodeValue[i]) !== -1) {
-            startNode = node;
-            startOffset = i + 1;
-            break;
-          }
-        }
-      }
-
-      if (startNode) {
-        break;
-      }
-
-      node = node.traversePreviousNode(stayWithinNode);
-    }
-
-    if (!startNode) {
-      startNode = stayWithinNode;
-      startOffset = 0;
-    }
-  } else {
-    startNode = rootNode;
-    startOffset = offset;
-  }
-
-  if (!direction || direction === 'forward' || direction === 'both') {
-    let node: (Node|null)|Node = rootNode;
-    while (node) {
-      if (node === stayWithinNode) {
-        if (!endNode) {
-          endNode = stayWithinNode;
-        }
-        break;
-      }
-
-      if (node.nodeType === Node.TEXT_NODE) {
-        const start = (node === rootNode ? offset : 0);
-        for (let i = start; i < node.nodeValue.length; ++i) {
-          if (stopCharacters.indexOf(node.nodeValue[i]) !== -1) {
-            endNode = node;
-            endOffset = i;
-            break;
-          }
-        }
-      }
-
-      if (endNode) {
-        break;
-      }
-
-      node = node.traverseNextNode(stayWithinNode);
-    }
-
-    if (!endNode) {
-      endNode = stayWithinNode;
-      endOffset = stayWithinNode.nodeType === Node.TEXT_NODE ? stayWithinNode.nodeValue.length :
-                                                               stayWithinNode.childNodes.length;
-    }
-  } else {
-    endNode = rootNode;
-    endOffset = offset;
-  }
-
-  const result = rootNode.ownerDocument.createRange();
-  result.setStart(startNode, startOffset);
-  result.setEnd(endNode, endOffset);
-
-  return result;
-}
-
-Node.prototype.rangeOfWord = function(
-    offset: number, stopCharacters: string, stayWithinNode: Node, direction?: string): Range {
-  return rangeOfWord(this, offset, stopCharacters, stayWithinNode, direction);
-};
-
 Node.prototype.traverseNextTextNode = function(stayWithin?: Node): Node|null {
   let node = this.traverseNextNode(stayWithin);
   if (!node) {
@@ -199,20 +101,6 @@ Node.prototype.enclosingNodeOrSelfWithClassList = function(classNames: string[],
   return null;
 };
 
-Node.prototype.enclosingShadowRoot = function(): Node|null {
-  let parentNode = this.parentNodeOrShadowHost();
-  while (parentNode) {
-    if (parentNode instanceof ShadowRoot) {
-      return parentNode;
-    }
-    parentNode = parentNode.parentNodeOrShadowHost();
-  }
-  return null;
-};
-
-Node.prototype.hasSameShadowRoot = function(node: Node): boolean {
-  return this.enclosingShadowRoot() === node.enclosingShadowRoot();
-};
 Node.prototype.parentElementOrShadowHost = function(): Element|null {
   if (this.nodeType === Node.DOCUMENT_FRAGMENT_NODE && this.host) {
     return this.host as Element;
@@ -368,23 +256,6 @@ Event.prototype.consume = function(preventDefault?: boolean): void {
     this.preventDefault();
   }
   this.handled = true;
-};
-
-Text.prototype.select = function(start?: number, end?: number): Text {
-  start = start || 0;
-  end = end || this.textContent.length;
-
-  if (start < 0) {
-    start = end + start;
-  }
-
-  const selection = this.getComponentSelection();
-  selection.removeAllRanges();
-  const range = this.ownerDocument.createRange();
-  range.setStart(this, start);
-  range.setEnd(this, end);
-  selection.addRange(range);
-  return this;
 };
 
 Element.prototype.selectionLeftOffset = function(): number|null {
@@ -546,15 +417,11 @@ Node.prototype.getComponentRoot = function(): Document|DocumentFragment|null {
 
 self.onInvokeElement = function(element: Element, callback: (arg0: Event) => void): void {
   element.addEventListener('keydown', event => {
-    if (self.isEnterOrSpaceKey(event)) {
+    if (Platform.KeyboardUtilities.isEnterOrSpaceKey(event)) {
       callback(event);
     }
   });
   element.addEventListener('click', event => callback(event));
-};
-
-self.isEnterOrSpaceKey = function(event: Event): boolean {
-  return event.key === 'Enter' || event.key === ' ';
 };
 
 // DevTools front-end still assumes that

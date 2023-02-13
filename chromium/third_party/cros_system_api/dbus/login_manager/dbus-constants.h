@@ -22,6 +22,7 @@ const char kSessionManagerLoginScreenStorageListKeys[] =
 const char kSessionManagerLoginScreenStorageDelete[] =
     "LoginScreenStorageDelete";
 const char kSessionManagerStartSession[] = "StartSession";
+const char kSessionManagerStartSessionEx[] = "StartSessionEx";
 const char kSessionManagerStopSession[] = "StopSession";
 const char kSessionManagerStopSessionWithReason[] = "StopSessionWithReason";
 const char kSessionManagerLoadShillProfile[] = "LoadShillProfile";

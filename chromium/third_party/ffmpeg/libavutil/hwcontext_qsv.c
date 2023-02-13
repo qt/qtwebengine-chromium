@@ -109,20 +109,39 @@ typedef struct QSVFramesContext {
 static const struct {
     enum AVPixelFormat pix_fmt;
     uint32_t           fourcc;
+    uint16_t           mfx_shift;
 } supported_pixel_formats[] = {
-    { AV_PIX_FMT_NV12, MFX_FOURCC_NV12 },
-    { AV_PIX_FMT_BGRA, MFX_FOURCC_RGB4 },
-    { AV_PIX_FMT_P010, MFX_FOURCC_P010 },
-    { AV_PIX_FMT_PAL8, MFX_FOURCC_P8   },
+    { AV_PIX_FMT_NV12, MFX_FOURCC_NV12, 0 },
+    { AV_PIX_FMT_BGRA, MFX_FOURCC_RGB4, 0 },
+    { AV_PIX_FMT_P010, MFX_FOURCC_P010, 1 },
+    { AV_PIX_FMT_PAL8, MFX_FOURCC_P8,   0 },
 #if CONFIG_VAAPI
     { AV_PIX_FMT_YUYV422,
-                       MFX_FOURCC_YUY2 },
+                       MFX_FOURCC_YUY2, 0 },
     { AV_PIX_FMT_Y210,
-                       MFX_FOURCC_Y210 },
+                       MFX_FOURCC_Y210, 1 },
     // VUYX is used for VAAPI child device,
     // the SDK only delares support for AYUV
     { AV_PIX_FMT_VUYX,
-                       MFX_FOURCC_AYUV },
+                       MFX_FOURCC_AYUV, 0 },
+    // XV30 is used for VAAPI child device,
+    // the SDK only delares support for Y410
+    { AV_PIX_FMT_XV30,
+                       MFX_FOURCC_Y410, 0 },
+#if QSV_VERSION_ATLEAST(1, 31)
+    // P012 is used for VAAPI child device,
+    // the SDK only delares support for P016
+    { AV_PIX_FMT_P012,
+                       MFX_FOURCC_P016, 1 },
+    // Y212 is used for VAAPI child device,
+    // the SDK only delares support for Y216
+    { AV_PIX_FMT_Y212,
+                       MFX_FOURCC_Y216, 1 },
+    // XV36 is used for VAAPI child device,
+    // the SDK only delares support for Y416
+    { AV_PIX_FMT_XV36,
+                       MFX_FOURCC_Y416, 1 },
+#endif
 #endif
 };
 
@@ -167,6 +186,16 @@ static uint32_t qsv_fourcc_from_pix_fmt(enum AVPixelFormat pix_fmt)
         if (supported_pixel_formats[i].pix_fmt == pix_fmt)
             return supported_pixel_formats[i].fourcc;
     }
+    return 0;
+}
+
+static uint16_t qsv_shift_from_pix_fmt(enum AVPixelFormat pix_fmt)
+{
+    for (int i = 0; i < FF_ARRAY_ELEMS(supported_pixel_formats); i++) {
+        if (supported_pixel_formats[i].pix_fmt == pix_fmt)
+            return supported_pixel_formats[i].mfx_shift;
+    }
+
     return 0;
 }
 
@@ -503,7 +532,7 @@ static int qsv_init_surface(AVHWFramesContext *ctx, mfxFrameSurface1 *surf)
 
     surf->Info.BitDepthLuma   = desc->comp[0].depth;
     surf->Info.BitDepthChroma = desc->comp[0].depth;
-    surf->Info.Shift          = desc->comp[0].depth > 8;
+    surf->Info.Shift          = qsv_shift_from_pix_fmt(ctx->sw_format);
 
     if (desc->log2_chroma_w && desc->log2_chroma_h)
         surf->Info.ChromaFormat   = MFX_CHROMAFORMAT_YUV420;
@@ -1478,6 +1507,7 @@ static int map_frame_to_surface(const AVFrame *frame, mfxFrameSurface1 *surface)
     switch (frame->format) {
     case AV_PIX_FMT_NV12:
     case AV_PIX_FMT_P010:
+    case AV_PIX_FMT_P012:
         surface->Data.Y  = frame->data[0];
         surface->Data.UV = frame->data[1];
         break;
@@ -1502,6 +1532,7 @@ static int map_frame_to_surface(const AVFrame *frame, mfxFrameSurface1 *surface)
         break;
 
     case AV_PIX_FMT_Y210:
+    case AV_PIX_FMT_Y212:
         surface->Data.Y16 = (mfxU16 *)frame->data[0];
         surface->Data.U16 = (mfxU16 *)frame->data[0] + 1;
         surface->Data.V16 = (mfxU16 *)frame->data[0] + 3;
@@ -1513,6 +1544,17 @@ static int map_frame_to_surface(const AVFrame *frame, mfxFrameSurface1 *surface)
         // Only set Data.A to a valid address, the SDK doesn't
         // use the value from the frame.
         surface->Data.A = frame->data[0] + 3;
+        break;
+    case AV_PIX_FMT_XV30:
+        surface->Data.U = frame->data[0];
+        break;
+    case AV_PIX_FMT_XV36:
+        surface->Data.U = frame->data[0];
+        surface->Data.Y = frame->data[0] + 2;
+        surface->Data.V = frame->data[0] + 4;
+        // Only set Data.A to a valid address, the SDK doesn't
+        // use the value from the frame.
+        surface->Data.A = frame->data[0] + 6;
         break;
 #endif
     default:

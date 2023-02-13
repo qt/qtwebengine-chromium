@@ -286,6 +286,12 @@ std::string Error::ToString() const {
   return ss.str();
 }
 
+std::string ToString(openscreen::Error::Code code) {
+  std::ostringstream ss;
+  ss << code;
+  return ss.str();
+}
+
 std::ostream& operator<<(std::ostream& out, const Error& error) {
   out << error.code() << " = \"" << error.message() << "\"";
   return out;

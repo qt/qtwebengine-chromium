@@ -19,6 +19,7 @@
 
 #include "perfetto/base/build_config.h"
 #include "protos/perfetto/trace/trace_packet.pbzero.h"
+#include "src/trace_processor/importers/common/parser_types.h"
 #include "src/trace_processor/importers/ftrace/ftrace_module.h"
 #include "src/trace_processor/importers/ftrace/ftrace_parser.h"
 #include "src/trace_processor/importers/ftrace/ftrace_tokenizer.h"
@@ -31,7 +32,7 @@ class TraceBlobView;
 
 class FtraceModuleImpl : public FtraceModule {
  public:
-  FtraceModuleImpl(TraceProcessorContext* context);
+  explicit FtraceModuleImpl(TraceProcessorContext* context);
 
   ModuleResult TokenizePacket(
       const protos::pbzero::TracePacket::Decoder& decoder,
@@ -40,14 +41,9 @@ class FtraceModuleImpl : public FtraceModule {
       PacketSequenceState* state,
       uint32_t field_id) override;
 
-  void ParseTracePacketData(const protos::pbzero::TracePacket_Decoder&,
-                            int64_t ts,
-                            const TracePacketData&,
-                            uint32_t /*field_id*/) override;
-
   void ParseFtraceEventData(uint32_t cpu,
                             int64_t ts,
-                            const FtraceEventData& data) override {
+                            const TracePacketData& data) override {
     util::Status res = parser_.ParseFtraceEvent(cpu, ts, data);
     if (!res.ok()) {
       PERFETTO_ELOG("%s", res.message().c_str());

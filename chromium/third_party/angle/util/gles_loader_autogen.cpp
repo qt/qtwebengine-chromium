@@ -10,6 +10,7 @@
 
 #include "gles_loader_autogen.h"
 
+extern "C" {
 ANGLE_UTIL_EXPORT PFNGLALPHAFUNCPROC l_glAlphaFunc;
 ANGLE_UTIL_EXPORT PFNGLCLIPPLANEFPROC l_glClipPlanef;
 ANGLE_UTIL_EXPORT PFNGLCOLOR4FPROC l_glColor4f;
@@ -578,8 +579,18 @@ ANGLE_UTIL_EXPORT PFNGLBEGINPIXELLOCALSTORAGEANGLEPROC l_glBeginPixelLocalStorag
 ANGLE_UTIL_EXPORT PFNGLENDPIXELLOCALSTORAGEANGLEPROC l_glEndPixelLocalStorageANGLE;
 ANGLE_UTIL_EXPORT PFNGLFRAMEBUFFERMEMORYLESSPIXELLOCALSTORAGEANGLEPROC
     l_glFramebufferMemorylessPixelLocalStorageANGLE;
+ANGLE_UTIL_EXPORT PFNGLFRAMEBUFFERPIXELLOCALCLEARVALUEFVANGLEPROC
+    l_glFramebufferPixelLocalClearValuefvANGLE;
+ANGLE_UTIL_EXPORT PFNGLFRAMEBUFFERPIXELLOCALCLEARVALUEIVANGLEPROC
+    l_glFramebufferPixelLocalClearValueivANGLE;
+ANGLE_UTIL_EXPORT PFNGLFRAMEBUFFERPIXELLOCALCLEARVALUEUIVANGLEPROC
+    l_glFramebufferPixelLocalClearValueuivANGLE;
 ANGLE_UTIL_EXPORT PFNGLFRAMEBUFFERTEXTUREPIXELLOCALSTORAGEANGLEPROC
     l_glFramebufferTexturePixelLocalStorageANGLE;
+ANGLE_UTIL_EXPORT PFNGLGETFRAMEBUFFERPIXELLOCALSTORAGEPARAMETERFVANGLEPROC
+    l_glGetFramebufferPixelLocalStorageParameterfvANGLE;
+ANGLE_UTIL_EXPORT PFNGLGETFRAMEBUFFERPIXELLOCALSTORAGEPARAMETERIVANGLEPROC
+    l_glGetFramebufferPixelLocalStorageParameterivANGLE;
 ANGLE_UTIL_EXPORT PFNGLPIXELLOCALSTORAGEBARRIERANGLEPROC l_glPixelLocalStorageBarrierANGLE;
 ANGLE_UTIL_EXPORT PFNGLINVALIDATETEXTUREANGLEPROC l_glInvalidateTextureANGLE;
 ANGLE_UTIL_EXPORT PFNGLTEXIMAGE2DEXTERNALANGLEPROC l_glTexImage2DExternalANGLE;
@@ -1730,9 +1741,24 @@ void LoadUtilGLES(LoadProc loadProc)
     l_glFramebufferMemorylessPixelLocalStorageANGLE =
         reinterpret_cast<PFNGLFRAMEBUFFERMEMORYLESSPIXELLOCALSTORAGEANGLEPROC>(
             loadProc("glFramebufferMemorylessPixelLocalStorageANGLE"));
+    l_glFramebufferPixelLocalClearValuefvANGLE =
+        reinterpret_cast<PFNGLFRAMEBUFFERPIXELLOCALCLEARVALUEFVANGLEPROC>(
+            loadProc("glFramebufferPixelLocalClearValuefvANGLE"));
+    l_glFramebufferPixelLocalClearValueivANGLE =
+        reinterpret_cast<PFNGLFRAMEBUFFERPIXELLOCALCLEARVALUEIVANGLEPROC>(
+            loadProc("glFramebufferPixelLocalClearValueivANGLE"));
+    l_glFramebufferPixelLocalClearValueuivANGLE =
+        reinterpret_cast<PFNGLFRAMEBUFFERPIXELLOCALCLEARVALUEUIVANGLEPROC>(
+            loadProc("glFramebufferPixelLocalClearValueuivANGLE"));
     l_glFramebufferTexturePixelLocalStorageANGLE =
         reinterpret_cast<PFNGLFRAMEBUFFERTEXTUREPIXELLOCALSTORAGEANGLEPROC>(
             loadProc("glFramebufferTexturePixelLocalStorageANGLE"));
+    l_glGetFramebufferPixelLocalStorageParameterfvANGLE =
+        reinterpret_cast<PFNGLGETFRAMEBUFFERPIXELLOCALSTORAGEPARAMETERFVANGLEPROC>(
+            loadProc("glGetFramebufferPixelLocalStorageParameterfvANGLE"));
+    l_glGetFramebufferPixelLocalStorageParameterivANGLE =
+        reinterpret_cast<PFNGLGETFRAMEBUFFERPIXELLOCALSTORAGEPARAMETERIVANGLEPROC>(
+            loadProc("glGetFramebufferPixelLocalStorageParameterivANGLE"));
     l_glPixelLocalStorageBarrierANGLE = reinterpret_cast<PFNGLPIXELLOCALSTORAGEBARRIERANGLEPROC>(
         loadProc("glPixelLocalStorageBarrierANGLE"));
     l_glInvalidateTextureANGLE =
@@ -2210,3 +2236,4 @@ void LoadUtilGLES(LoadProc loadProc)
     l_glTexGenxOES      = reinterpret_cast<PFNGLTEXGENXOESPROC>(loadProc("glTexGenxOES"));
     l_glTexGenxvOES     = reinterpret_cast<PFNGLTEXGENXVOESPROC>(loadProc("glTexGenxvOES"));
 }
+}  // extern "C"

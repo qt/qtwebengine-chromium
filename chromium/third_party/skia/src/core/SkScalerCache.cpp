@@ -304,8 +304,8 @@ std::tuple<SkRect, size_t> SkScalerCache::prepareForMaskDrawing(
     return {boundingRect.rect(), increase};
 }
 
+#if !defined(SK_DISABLE_SDF_TEXT)
 std::tuple<SkRect, size_t> SkScalerCache::prepareForSDFTDrawing(
-        SkScalar strikeToSourceScale,
         SkDrawableGlyphBuffer* accepted,
         SkSourceGlyphBuffer* rejected) {
     SkAutoMutexExclusive lock{fMu};
@@ -319,12 +319,12 @@ std::tuple<SkRect, size_t> SkScalerCache::prepareForSDFTDrawing(
             increase += glyphIncrease;
             if (!digest.isEmpty()) {
                 if (digest.canDrawAsSDFT()) {
-                    // The SDFT glyphs have 2-pixel wide padding that should not be used in
-                    // calculating the source rectangle.
                     const SkGlyphRect glyphBounds =
                             digest.bounds()
-                                    .inset(SK_DistanceFieldInset, SK_DistanceFieldInset)
-                                    .scaleAndOffset(strikeToSourceScale, pos);
+                                    // The SDFT glyphs have 2-pixel wide padding that should
+                                    // not be used in calculating the source rectangle.
+                                  .inset(SK_DistanceFieldInset, SK_DistanceFieldInset)
+                                  .offset(pos);
                     boundingRect = skglyph::rect_union(boundingRect, glyphBounds);
                     accepted->accept(packedID, glyphBounds.leftTop(), digest.maskFormat());
                 } else {
@@ -337,6 +337,7 @@ std::tuple<SkRect, size_t> SkScalerCache::prepareForSDFTDrawing(
 
     return {boundingRect.rect(), increase};
 }
+#endif
 
 size_t SkScalerCache::prepareForPathDrawing(
         SkDrawableGlyphBuffer* accepted, SkSourceGlyphBuffer* rejected) {

@@ -192,7 +192,8 @@ Shader::Shader(ShaderProgramManager *manager,
       mRefCount(0),
       mDeleteStatus(false),
       mResourceManager(manager),
-      mCurrentMaxComputeWorkGroupInvocations(0u)
+      mCurrentMaxComputeWorkGroupInvocations(0u),
+      mMaxComputeSharedMemory(0u)
 {
     ASSERT(mImplementation);
 }
@@ -433,6 +434,12 @@ void Shader::compile(const Context *context)
         options.validateLoopIndexing = true;
     }
 
+    // When clip and cull distances are used simultaneously, D3D11 can support up to four of each.
+    if (context->isWebGL() || mRendererLimitations.limitSimultaneousClipAndCullDistanceUsage)
+    {
+        options.limitSimultaneousClipAndCullDistanceUsage = true;
+    }
+
     if (context->getFrontendFeatures().scalarizeVecAndMatConstructorArgs.enabled)
     {
         options.scalarizeVecAndMatConstructorArgs = true;
@@ -505,8 +512,7 @@ void Shader::resolveCompile(const Context *context)
     }
 
     const ShShaderOutput outputType = mCompilingState->shCompilerInstance.getShaderOutputType();
-    const bool isBinaryOutput =
-        outputType == SH_SPIRV_VULKAN_OUTPUT || outputType == SH_SPIRV_METAL_OUTPUT;
+    const bool isBinaryOutput       = outputType == SH_SPIRV_VULKAN_OUTPUT;
 
     if (isBinaryOutput)
     {

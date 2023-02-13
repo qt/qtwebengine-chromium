@@ -6,7 +6,7 @@
 #                      \___/_/\_\ .__/ \__,_|\__|
 #                               |_| XML parser
 #
-# Copyright (c) 2017-2021 Sebastian Pipping <sebastian@pipping.org>
+# Copyright (c) 2017-2022 Sebastian Pipping <sebastian@pipping.org>
 # Copyright (c) 2018      Marco Maggi <marco.maggi-ipsu@poste.it>
 # Copyright (c) 2019      Mohammed Khajapasha <mohammed.khajapasha@intel.com>
 # Licensed under the MIT license:
@@ -51,11 +51,9 @@ _get_build_dir() {
 
     local char_part=
     if ${unicode_enabled}; then
-        if ${with_unsigned_char}; then
-            char_part=__ushort
-        else
-            char_part=__wchar_t
-        fi
+        char_part=__wchar_t
+    elif ${with_unsigned_char}; then
+        char_part=__uchar
     else
         char_part=__char
     fi
@@ -119,8 +117,8 @@ _copy_missing_mingw_libaries() {
     # * coverage GCC flags make them needed
     # * With WINEDLLPATH Wine looks for .dll.so in these folders, not .dll
     local target="$1"
-    local mingw_gcc_dll_dir="$(dirname "$(ls -1 /usr/lib*/gcc/i686-w64-mingw32/*/libgcc_s_sjlj-1.dll | head -n1)")"
-    for dll in libgcc_s_sjlj-1.dll libstdc++-6.dll; do
+    local mingw_gcc_dll_dir="$(dirname "$(ls -1 /usr/lib*/gcc/i686-w64-mingw32/*/{libgcc_s_sjlj-1.dll,libstdc++-6.dll} | head -n1)")"
+    for dll in libgcc_s_dw2-1.dll libgcc_s_sjlj-1.dll libstdc++-6.dll; do
         (
             set -x
             ln -s "${mingw_gcc_dll_dir}"/${dll} "${target}"/${dll}
@@ -139,7 +137,7 @@ _copy_missing_mingw_libaries() {
         done
     fi
 
-    for dll in libexpat{,w}.dll; do
+    for dll in libexpat{,w}-*.dll; do
         (
             set -x
             ln -s "${abs_build_dir}"/${dll} "${target}"/${dll}
@@ -230,9 +228,13 @@ _merge_coverage_info() {
 
 _clean_coverage_info() {
     local coverage_dir="$1"
-    local dir
-    for dir in CMakeFiles examples tests ; do
-        local pattern="*/${dir}/*"
+    local pattern
+    for pattern in \
+            '/usr/**mingw**/include/*' \
+            '*/CMakeFiles/*' \
+            '*/examples/*' \
+            '*/tests/*' \
+        ; do
         (
             set -x
             lcov -q -o "${coverage_dir}/${coverage_info}" -r "${coverage_dir}/${coverage_info}" "${pattern}"

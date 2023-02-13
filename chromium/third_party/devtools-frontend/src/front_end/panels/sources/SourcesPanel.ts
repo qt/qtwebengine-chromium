@@ -914,6 +914,13 @@ export class SourcesPanel extends UI.Panel.Panel implements UI.ContextMenu.Provi
       contextMenu.revealSection().appendItem(
           i18nString(UIStrings.revealInSidebar), this.handleContextMenuReveal.bind(this, uiSourceCode));
     }
+    // Ignore list only works for JavaScript debugging.
+    if (uiSourceCode.contentType().hasScripts() &&
+        Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance()
+            .scriptsForUISourceCode(uiSourceCode)
+            .every(script => script.isJavaScript())) {
+      this.callstackPane.appendIgnoreListURLContextMenuItems(contextMenu, uiSourceCode);
+    }
   }
 
   private appendUISourceCodeFrameItems(event: Event, contextMenu: UI.ContextMenu.ContextMenu, target: Object): void {
@@ -1056,7 +1063,12 @@ export class SourcesPanel extends UI.Panel.Panel implements UI.ContextMenu.Provi
   }
 
   private showFunctionDefinition(remoteObject: SDK.RemoteObject.RemoteObject): void {
-    void remoteObject.debuggerModel().functionDetailsPromise(remoteObject).then(this.didGetFunctionDetails.bind(this));
+    void SDK.RemoteObject.RemoteFunction.objectAsFunction(remoteObject)
+        .targetFunction()
+        .then(
+            targetFunction => targetFunction.debuggerModel()
+                                  .functionDetailsPromise(targetFunction)
+                                  .then(this.didGetFunctionDetails.bind(this)));
   }
 
   private async didGetFunctionDetails(response: {

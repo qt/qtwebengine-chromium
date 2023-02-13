@@ -125,12 +125,14 @@ fn zoo(@internal(disable_validation__ignore_address_space) @internal(disable_val
   *(tint_symbol) = (*(tint_symbol) * 2.0);
 }
 
+@internal(disable_validation__ignore_pointer_aliasing)
 fn bar(a : f32, b : f32, @internal(disable_validation__ignore_address_space) @internal(disable_validation__ignore_invalid_pointer_argument) tint_symbol_1 : ptr<private, f32>, @internal(disable_validation__ignore_address_space) @internal(disable_validation__ignore_invalid_pointer_argument) tint_symbol_2 : ptr<workgroup, f32>) {
   *(tint_symbol_1) = a;
   *(tint_symbol_2) = b;
   zoo(tint_symbol_1);
 }
 
+@internal(disable_validation__ignore_pointer_aliasing)
 fn foo(a : f32, @internal(disable_validation__ignore_address_space) @internal(disable_validation__ignore_invalid_pointer_argument) tint_symbol_3 : ptr<private, f32>, @internal(disable_validation__ignore_address_space) @internal(disable_validation__ignore_invalid_pointer_argument) tint_symbol_4 : ptr<workgroup, f32>) {
   let b : f32 = 2.0;
   bar(a, b, tint_symbol_3, tint_symbol_4);
@@ -188,6 +190,7 @@ fn main() {
   foo(1.0, &(tint_symbol_5), &(tint_symbol_6));
 }
 
+@internal(disable_validation__ignore_pointer_aliasing)
 fn foo(a : f32, @internal(disable_validation__ignore_address_space) @internal(disable_validation__ignore_invalid_pointer_argument) tint_symbol_3 : ptr<private, f32>, @internal(disable_validation__ignore_address_space) @internal(disable_validation__ignore_invalid_pointer_argument) tint_symbol_4 : ptr<workgroup, f32>) {
   let b : f32 = 2.0;
   bar(a, b, tint_symbol_3, tint_symbol_4);
@@ -197,6 +200,7 @@ fn foo(a : f32, @internal(disable_validation__ignore_address_space) @internal(di
 fn no_uses() {
 }
 
+@internal(disable_validation__ignore_pointer_aliasing)
 fn bar(a : f32, b : f32, @internal(disable_validation__ignore_address_space) @internal(disable_validation__ignore_invalid_pointer_argument) tint_symbol_1 : ptr<private, f32>, @internal(disable_validation__ignore_address_space) @internal(disable_validation__ignore_invalid_pointer_argument) tint_symbol_2 : ptr<workgroup, f32>) {
   *(tint_symbol_1) = a;
   *(tint_symbol_2) = b;
@@ -213,7 +217,7 @@ fn zoo(@internal(disable_validation__ignore_address_space) @internal(disable_val
     EXPECT_EQ(expect, str(got));
 }
 
-TEST_F(ModuleScopeVarToEntryPointParamTest, Constructors) {
+TEST_F(ModuleScopeVarToEntryPointParamTest, Initializers) {
     auto* src = R"(
 var<private> a : f32 = 1.0;
 var<private> b : f32 = f32();
@@ -238,7 +242,7 @@ fn main() {
     EXPECT_EQ(expect, str(got));
 }
 
-TEST_F(ModuleScopeVarToEntryPointParamTest, Constructors_OutOfOrder) {
+TEST_F(ModuleScopeVarToEntryPointParamTest, Initializers_OutOfOrder) {
     auto* src = R"(
 @compute @workgroup_size(1)
 fn main() {
@@ -325,7 +329,9 @@ fn main() {
     EXPECT_EQ(expect, str(got));
 }
 
-TEST_F(ModuleScopeVarToEntryPointParamTest, FoldAddressOfDeref) {
+// TODO(crbug.com/tint/1758): Requires support for workgroup pointer parameters, which is
+// unsupported until WGSL 1.1
+TEST_F(ModuleScopeVarToEntryPointParamTest, DISABLED_FoldAddressOfDeref) {
     auto* src = R"(
 var<workgroup> v : f32;
 
@@ -364,7 +370,9 @@ fn main() {
     EXPECT_EQ(expect, str(got));
 }
 
-TEST_F(ModuleScopeVarToEntryPointParamTest, FoldAddressOfDeref_OutOfOrder) {
+// TODO(crbug.com/tint/1758): Requires support for workgroup pointer parameters, which is
+// unsupported until WGSL 1.1
+TEST_F(ModuleScopeVarToEntryPointParamTest, DISABLED_FoldAddressOfDeref_OutOfOrder) {
     auto* src = R"(
 @compute @workgroup_size(1)
 fn main() {
@@ -998,7 +1006,7 @@ struct tint_symbol_2 {
 }
 
 @compute @workgroup_size(1)
-fn main(@internal(disable_validation__entry_point_parameter) tint_symbol_1 : ptr<workgroup, tint_symbol_2>) {
+fn main(@internal(disable_validation__entry_point_parameter) @internal(disable_validation__ignore_address_space) tint_symbol_1 : ptr<workgroup, tint_symbol_2>) {
   let tint_symbol : ptr<workgroup, mat2x2<f32>> = &((*(tint_symbol_1)).m);
   let x = *(tint_symbol);
 }
@@ -1039,7 +1047,7 @@ struct tint_symbol_2 {
 }
 
 @compute @workgroup_size(1)
-fn main(@internal(disable_validation__entry_point_parameter) tint_symbol_1 : ptr<workgroup, tint_symbol_2>) {
+fn main(@internal(disable_validation__entry_point_parameter) @internal(disable_validation__ignore_address_space) tint_symbol_1 : ptr<workgroup, tint_symbol_2>) {
   let tint_symbol : ptr<workgroup, array<S2, 4u>> = &((*(tint_symbol_1)).m);
   let x = *(tint_symbol);
 }
@@ -1080,7 +1088,7 @@ struct tint_symbol_3 {
 }
 
 @compute @workgroup_size(1)
-fn main(@internal(disable_validation__entry_point_parameter) tint_symbol_1 : ptr<workgroup, tint_symbol_3>) {
+fn main(@internal(disable_validation__entry_point_parameter) @internal(disable_validation__ignore_address_space) tint_symbol_1 : ptr<workgroup, tint_symbol_3>) {
   let tint_symbol : ptr<workgroup, S> = &((*(tint_symbol_1)).a);
   let tint_symbol_2 : ptr<workgroup, S> = &((*(tint_symbol_1)).b);
   let x = *(tint_symbol);
@@ -1122,7 +1130,7 @@ struct tint_symbol_3 {
 }
 
 @compute @workgroup_size(1)
-fn main(@internal(disable_validation__entry_point_parameter) tint_symbol_1 : ptr<workgroup, tint_symbol_3>) {
+fn main(@internal(disable_validation__entry_point_parameter) @internal(disable_validation__ignore_address_space) tint_symbol_1 : ptr<workgroup, tint_symbol_3>) {
   let tint_symbol : ptr<workgroup, S> = &((*(tint_symbol_1)).a);
   let tint_symbol_2 : ptr<workgroup, S> = &((*(tint_symbol_1)).b);
   let x = *(tint_symbol);

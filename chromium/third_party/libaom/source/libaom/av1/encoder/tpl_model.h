@@ -106,7 +106,10 @@ typedef struct TplTxfmStats {
 typedef struct TplDepStats {
   int64_t srcrf_sse;
   int64_t srcrf_dist;
+  int64_t recrf_sse;
   int64_t recrf_dist;
+  int64_t intra_sse;
+  int64_t intra_dist;
   int64_t cmp_recrf_dist[2];
   int64_t mc_dep_rate;
   int64_t mc_dep_dist;
@@ -115,6 +118,7 @@ typedef struct TplDepStats {
   int32_t inter_cost;
   int32_t srcrf_rate;
   int32_t recrf_rate;
+  int32_t intra_rate;
   int32_t cmp_recrf_rate[2];
   int_mv mv[INTER_REFS_PER_FRAME];
   int8_t ref_frame_index[2];

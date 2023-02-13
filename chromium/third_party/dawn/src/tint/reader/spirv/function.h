@@ -34,15 +34,13 @@ namespace tint::reader::spirv {
 //
 // The edge kinds are used in many ways.
 //
-// For example, consider the edges leaving a basic block and going to distinct
-// targets. If the total number of kForward + kIfBreak + kCaseFallThrough edges
-// is more than 1, then the block must be a structured header, i.e. it needs
-// a merge instruction to declare the control flow divergence and associated
-// reconvergence point.  Those those edge kinds count toward divergence
-// because SPIR-v is designed to easily map back to structured control flow
-// in GLSL (and C).  In GLSL and C, those forward-flow edges don't have a
-// special statement to express them.  The other forward edges: kSwitchBreak,
-// kLoopBreak, and kLoopContinue directly map to 'break', 'break', and
+// For example, consider the edges leaving a basic block and going to distinct targets. If the
+// total number of kForward + kIfBreak + kCaseFallThrough edges is more than 1, then the block must
+// be a structured header, i.e. it needs a merge instruction to declare the control flow divergence
+// and associated reconvergence point.  Those those edge kinds count toward divergence because
+// SPIR-V is designed to easily map back to structured control flow in GLSL (and C).  In GLSL and C,
+// those forward-flow edges don't have a special statement to express them.  The other forward
+// edges: kSwitchBreak, kLoopBreak, and kLoopContinue directly map to 'break', 'break', and
 // 'continue', respectively.
 enum class EdgeKind {
     // A back-edge: An edge from a node to one of its ancestors in a depth-first
@@ -64,7 +62,8 @@ enum class EdgeKind {
     // This can only occur for an "if" selection, i.e. where the selection
     // header ends in OpBranchConditional.
     kIfBreak,
-    // An edge from one switch case to the next sibling switch case.
+    // An edge from one switch case to the next sibling switch case. Note, this is not valid in WGSL
+    // at the moment and will trigger an ICE if encountered. It is here for completeness.
     kCaseFallThrough,
     // None of the above.
     kForward
@@ -708,8 +707,7 @@ class FunctionEmitter {
 
     /// Emits code for terminators, but that aren't part of entering or
     /// resolving structured control flow. That is, if the basic block
-    /// terminator calls for it, emit the fallthrough, break, continue, return,
-    /// or kill commands.
+    /// terminator calls for it, emit the fallthrough break, continue, return, or kill commands.
     /// @param block_info the block with the terminator to emit (if any)
     /// @returns false if emission failed
     bool EmitNormalTerminator(const BlockInfo& block_info);
@@ -722,39 +720,24 @@ class FunctionEmitter {
     /// @param src_info the source block
     /// @param dest_info the destination block
     /// @returns the new statement, or a null statement
-    const ast::Statement* MakeBranch(const BlockInfo& src_info, const BlockInfo& dest_info) const {
-        return MakeBranchDetailed(src_info, dest_info, false, nullptr);
+    const ast::Statement* MakeBranch(const BlockInfo& src_info, const BlockInfo& dest_info) {
+        return MakeBranchDetailed(src_info, dest_info, nullptr);
     }
 
     /// Returns a new statement to represent the given branch representing a
     /// "normal" terminator, as in the sense of EmitNormalTerminator.  If no
-    /// WGSL statement is required, the statement will be nullptr.
-    /// @param src_info the source block
-    /// @param dest_info the destination block
-    /// @returns the new statement, or a null statement
-    const ast::Statement* MakeForcedBranch(const BlockInfo& src_info,
-                                           const BlockInfo& dest_info) const {
-        return MakeBranchDetailed(src_info, dest_info, true, nullptr);
-    }
-
-    /// Returns a new statement to represent the given branch representing a
-    /// "normal" terminator, as in the sense of EmitNormalTerminator.  If no
-    /// WGSL statement is required, the statement will be nullptr. When `forced`
-    /// is false, this method tries to avoid emitting a 'break' statement when
-    /// that would be redundant in WGSL due to implicit breaking out of a switch.
-    /// When `forced` is true, the method won't try to avoid emitting that break.
-    /// If the control flow edge is an if-break for an if-selection with a
+    /// WGSL statement is required, the statement will be nullptr. This method tries to avoid
+    /// emitting a 'break' statement when that would be redundant in WGSL due to implicit breaking
+    /// out of a switch. If the control flow edge is an if-break for an if-selection with a
     /// control flow guard, then return that guard name via `flow_guard_name_ptr`
     /// when that parameter is not null.
     /// @param src_info the source block
     /// @param dest_info the destination block
-    /// @param forced if true, always emit the branch (if it exists in WGSL)
     /// @param flow_guard_name_ptr return parameter for control flow guard name
     /// @returns the new statement, or a null statement
     const ast::Statement* MakeBranchDetailed(const BlockInfo& src_info,
                                              const BlockInfo& dest_info,
-                                             bool forced,
-                                             std::string* flow_guard_name_ptr) const;
+                                             std::string* flow_guard_name_ptr);
 
     /// Returns a new if statement with the given statements as the then-clause
     /// and the else-clause.  Either or both clauses might be nullptr. If both
@@ -956,17 +939,15 @@ class FunctionEmitter {
     ExpressionList MakeCoordinateOperandsForImageAccess(
         const spvtools::opt::Instruction& image_access);
 
-    /// Returns the given value as an I32.  If it's already an I32 then this
-    /// return the given value.  Otherwise, wrap the value in a TypeConstructor
-    /// expression.
+    /// Returns the given value as an i32. If it's already an i32 then simply returns @p value.
+    /// Otherwise, wrap the value in a TypeInitializer expression.
     /// @param value the value to pass through or convert
-    /// @returns the value as an I32 value.
+    /// @returns the value as an i32 value.
     TypedExpression ToI32(TypedExpression value);
 
-    /// Returns the given value as a signed integer type of the same shape
-    /// if the value is unsigned scalar or vector, by wrapping the value
-    /// with a TypeConstructor expression.  Returns the value itself if the
-    /// value otherwise.
+    /// Returns the given value as a signed integer type of the same shape if the value is unsigned
+    /// scalar or vector, by wrapping the value with a TypeInitializer expression.  Returns the
+    /// value itself if the value was already signed.
     /// @param value the value to pass through or convert
     /// @returns the value itself, or converted to signed integral
     TypedExpression ToSignedIfUnsigned(TypedExpression value);
@@ -1003,6 +984,16 @@ class FunctionEmitter {
     /// @param decl the FunctionDeclaration to populate
     /// @returns true if emission has not yet failed.
     bool ParseFunctionDeclaration(FunctionDeclaration* decl);
+
+    /// @param obj a SPIR-V instruction with a result ID and a type ID
+    /// @returns true if the object is an image, a sampler, or a pointer to
+    /// an image or a sampler
+    bool IsHandleObj(const spvtools::opt::Instruction& obj);
+
+    /// @param obj a SPIR-V instruction with a result ID and a type ID
+    /// @returns true if the object is an image, a sampler, or a pointer to
+    /// an image or a sampler
+    bool IsHandleObj(const spvtools::opt::Instruction* obj);
 
     /// @returns the store type for the OpVariable instruction, or
     /// null on failure.
@@ -1277,7 +1268,7 @@ class FunctionEmitter {
     TypedExpression Dereference(TypedExpression expr);
 
     /// Creates a new `ast::Node` owned by the ProgramBuilder.
-    /// @param args the arguments to pass to the type constructor
+    /// @param args the arguments to pass to the type initializer
     /// @returns the node pointer
     template <typename T, typename... ARGS>
     T* create(ARGS&&... args) const {

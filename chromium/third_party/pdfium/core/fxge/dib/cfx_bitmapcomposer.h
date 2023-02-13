@@ -1,4 +1,4 @@
-// Copyright 2017 PDFium Authors. All rights reserved.
+// Copyright 2017 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -41,21 +41,14 @@ class CFX_BitmapComposer final : public ScanlineComposerIface {
                int height,
                FXDIB_Format src_format,
                pdfium::span<const uint32_t> src_palette) override;
-
-  void ComposeScanline(int line,
-                       pdfium::span<const uint8_t> scanline,
-                       pdfium::span<const uint8_t> scan_extra_alpha) override;
+  void ComposeScanline(int line, pdfium::span<const uint8_t> scanline) override;
 
  private:
   void DoCompose(pdfium::span<uint8_t> dest_scan,
                  pdfium::span<const uint8_t> src_scan,
                  int dest_width,
-                 pdfium::span<const uint8_t> clip_scan,
-                 pdfium::span<const uint8_t> src_extra_alpha,
-                 pdfium::span<uint8_t> dst_extra_alpha);
-  void ComposeScanlineV(int line,
-                        pdfium::span<const uint8_t> scanline,
-                        pdfium::span<const uint8_t> scan_extra_alpha);
+                 pdfium::span<const uint8_t> clip_scan);
+  void ComposeScanlineV(int line, pdfium::span<const uint8_t> scanline);
 
   RetainPtr<CFX_DIBitmap> m_pBitmap;
   UnownedPtr<const CFX_ClipRgn> m_pClipRgn;
@@ -76,7 +69,6 @@ class CFX_BitmapComposer final : public ScanlineComposerIface {
   DataVector<uint8_t> m_pScanlineV;
   DataVector<uint8_t> m_pClipScanV;
   DataVector<uint8_t> m_pAddClipScan;
-  DataVector<uint8_t> m_pScanlineAlphaV;
 };
 
 #endif  // CORE_FXGE_DIB_CFX_BITMAPCOMPOSER_H_

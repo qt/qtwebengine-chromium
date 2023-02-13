@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2016 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -54,7 +54,7 @@ class CPDF_StreamParser {
   WeakPtr<ByteStringPool> m_pPool;
   RetainPtr<CPDF_Object> m_pLastObj;
   pdfium::span<const uint8_t> m_pBuf;
-  uint8_t m_WordBuffer[kMaxWordLength + 1];  // Include space for NUL.
+  uint8_t m_WordBuffer[kMaxWordLength + 1] = {};  // Include space for NUL.
 };
 
 #endif  // CORE_FPDFAPI_PAGE_CPDF_STREAMPARSER_H_

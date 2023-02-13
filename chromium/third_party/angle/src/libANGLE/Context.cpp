@@ -22,6 +22,7 @@
 #include "common/platform.h"
 #include "common/system_utils.h"
 #include "common/utilities.h"
+#include "image_util/loadimage.h"
 #include "libANGLE/Buffer.h"
 #include "libANGLE/Compiler.h"
 #include "libANGLE/Display.h"
@@ -41,7 +42,7 @@
 #include "libANGLE/TransformFeedback.h"
 #include "libANGLE/VertexArray.h"
 #include "libANGLE/capture/FrameCapture.h"
-#include "libANGLE/capture/frame_capture_utils.h"
+#include "libANGLE/capture/serialize.h"
 #include "libANGLE/formatutils.h"
 #include "libANGLE/queryconversions.h"
 #include "libANGLE/queryutils.h"
@@ -498,8 +499,6 @@ Context::Context(egl::Display *display,
       mDrawFramebufferObserverBinding(this, kDrawFramebufferSubjectIndex),
       mReadFramebufferObserverBinding(this, kReadFramebufferSubjectIndex),
       mProgramPipelineObserverBinding(this, kProgramPipelineSubjectIndex),
-      mSingleThreadPool(nullptr),
-      mMultiThreadPool(nullptr),
       mFrameCapture(new angle::FrameCapture),
       mRefCount(0),
       mOverlay(mImplementation.get()),
@@ -752,6 +751,11 @@ void Context::initializeDefaultResources()
     mReadInvalidateDirtyBits.set(State::DIRTY_BIT_READ_FRAMEBUFFER_BINDING);
     mDrawInvalidateDirtyBits.set(State::DIRTY_BIT_DRAW_FRAMEBUFFER_BINDING);
 
+    // The implementation's internal load/store programs for EXT_shader_pixel_pixel_local_storage
+    // only need the draw framebuffer to be synced. The remaining state is managed internally.
+    mPixelLocalStorageEXTEnableDisableDirtyBits.set(State::DIRTY_BIT_DRAW_FRAMEBUFFER_BINDING);
+    mPixelLocalStorageEXTEnableDisableDirtyObjects.set(State::DIRTY_OBJECT_DRAW_FRAMEBUFFER);
+
     mOverlay.init();
 }
 
@@ -845,9 +849,6 @@ egl::Error Context::onDestroy(const egl::Display *display)
     mState.mFramebufferManager->release(this);
     mState.mMemoryObjectManager->release(this);
     mState.mSemaphoreManager->release(this);
-
-    mSingleThreadPool.reset();
-    mMultiThreadPool.reset();
 
     mImplementation->onDestroy(this);
 
@@ -4223,6 +4224,9 @@ void Context::initCaps()
         constexpr GLint maxSamples = 4;
         INFO() << "Limiting GL_MAX_SAMPLES to " << maxSamples;
         ANGLE_LIMIT_CAP(mState.mCaps.maxSamples, maxSamples);
+
+        // Test if we require shadow memory for coherent buffer tracking
+        getShareGroup()->getFrameCaptureShared()->determineMemoryProtectionSupport(this);
     }
 
     // Disable support for OES_get_program_binary
@@ -4234,47 +4238,73 @@ void Context::initCaps()
         mMemoryProgramCache = nullptr;
     }
 
-    if (mSupportedExtensions.shaderPixelLocalStorageANGLE)
+    // Initialize ANGLE_shader_pixel_local_storage caps based on frontend GL queries.
+    //
+    // The backend may have already initialized these caps with its own custom values, in which case
+    // maxPixelLocalStoragePlanes will already be nonzero and we can skip this step.
+    if (mSupportedExtensions.shaderPixelLocalStorageANGLE &&
+        mState.mCaps.maxPixelLocalStoragePlanes == 0)
     {
         int maxDrawableAttachments =
             std::min(mState.mCaps.maxDrawBuffers, mState.mCaps.maxColorAttachments);
-        ShPixelLocalStorageType plsType = mImplementation->getNativePixelLocalStorageType();
-        if (ShPixelLocalStorageTypeUsesImages(plsType))
+        switch (mImplementation->getNativePixelLocalStorageOptions().type)
         {
-            mState.mCaps.maxPixelLocalStoragePlanes =
-                mState.mCaps.maxShaderImageUniforms[ShaderType::Fragment];
-            ANGLE_LIMIT_CAP(mState.mCaps.maxPixelLocalStoragePlanes,
-                            IMPLEMENTATION_MAX_PIXEL_LOCAL_STORAGE_PLANES);
-            mState.mCaps.maxColorAttachmentsWithActivePixelLocalStorage =
-                mState.mCaps.maxColorAttachments;
-            mState.mCaps.maxCombinedDrawBuffersAndPixelLocalStoragePlanes = std::min<GLint>(
-                mState.mCaps.maxPixelLocalStoragePlanes +
-                    std::min(mState.mCaps.maxDrawBuffers, mState.mCaps.maxColorAttachments),
-                mState.mCaps.maxCombinedShaderOutputResources);
-        }
-        else
-        {
-            ASSERT(plsType == ShPixelLocalStorageType::FramebufferFetch);
-            mState.mCaps.maxPixelLocalStoragePlanes = maxDrawableAttachments;
-            ANGLE_LIMIT_CAP(mState.mCaps.maxPixelLocalStoragePlanes,
-                            IMPLEMENTATION_MAX_PIXEL_LOCAL_STORAGE_PLANES);
-            if (!mSupportedExtensions.drawBuffersIndexedAny())
-            {
-                // When pixel local storage is implemented as framebuffer attachments, we need to
-                // disable color masks and blending to its attachments. If the backend context
-                // doesn't have indexed blend and color mask support, then we will have have to
-                // disable them globally. This also means the application can't have its own draw
-                // buffers while PLS is active.
-                mState.mCaps.maxColorAttachmentsWithActivePixelLocalStorage = 0;
-            }
-            else
-            {
+            case ShPixelLocalStorageType::ImageLoadStore:
+                mState.mCaps.maxPixelLocalStoragePlanes =
+                    mState.mCaps.maxShaderImageUniforms[ShaderType::Fragment];
+                ANGLE_LIMIT_CAP(mState.mCaps.maxPixelLocalStoragePlanes,
+                                IMPLEMENTATION_MAX_PIXEL_LOCAL_STORAGE_PLANES);
                 mState.mCaps.maxColorAttachmentsWithActivePixelLocalStorage =
-                    maxDrawableAttachments - 1;
-            }
-            mState.mCaps.maxCombinedDrawBuffersAndPixelLocalStoragePlanes = maxDrawableAttachments;
+                    mState.mCaps.maxColorAttachments;
+                mState.mCaps.maxCombinedDrawBuffersAndPixelLocalStoragePlanes = std::min<GLint>(
+                    mState.mCaps.maxPixelLocalStoragePlanes +
+                        std::min(mState.mCaps.maxDrawBuffers, mState.mCaps.maxColorAttachments),
+                    mState.mCaps.maxCombinedShaderOutputResources);
+                break;
+
+            case ShPixelLocalStorageType::FramebufferFetch:
+                mState.mCaps.maxPixelLocalStoragePlanes = maxDrawableAttachments;
+                ANGLE_LIMIT_CAP(mState.mCaps.maxPixelLocalStoragePlanes,
+                                IMPLEMENTATION_MAX_PIXEL_LOCAL_STORAGE_PLANES);
+                if (!mSupportedExtensions.drawBuffersIndexedAny())
+                {
+                    // When pixel local storage is implemented as framebuffer attachments, we need
+                    // to disable color masks and blending to its attachments. If the backend
+                    // context doesn't have indexed blend and color mask support, then we will have
+                    // have to disable them globally. This also means the application can't have its
+                    // own draw buffers while PLS is active.
+                    mState.mCaps.maxColorAttachmentsWithActivePixelLocalStorage = 0;
+                }
+                else
+                {
+                    mState.mCaps.maxColorAttachmentsWithActivePixelLocalStorage =
+                        maxDrawableAttachments - 1;
+                }
+                mState.mCaps.maxCombinedDrawBuffersAndPixelLocalStoragePlanes =
+                    maxDrawableAttachments;
+                break;
+
+            case ShPixelLocalStorageType::PixelLocalStorageEXT:
+                mState.mCaps.maxPixelLocalStoragePlanes =
+                    mState.mCaps.maxShaderPixelLocalStorageFastSizeEXT / 4;
+                ASSERT(mState.mCaps.maxPixelLocalStoragePlanes >= 4);
+                ANGLE_LIMIT_CAP(mState.mCaps.maxPixelLocalStoragePlanes,
+                                IMPLEMENTATION_MAX_PIXEL_LOCAL_STORAGE_PLANES);
+                // EXT_shader_pixel_local_storage doesn't support rendering to color attachments.
+                mState.mCaps.maxColorAttachmentsWithActivePixelLocalStorage = 0;
+                mState.mCaps.maxCombinedDrawBuffersAndPixelLocalStoragePlanes =
+                    mState.mCaps.maxPixelLocalStoragePlanes;
+                break;
+
+            case ShPixelLocalStorageType::NotSupported:
+                UNREACHABLE();
+                break;
         }
     }
+    // Validate that pixel local storage caps were initialized within implementation limits. We
+    // can't just clamp this value here since it would potentially impact other caps.
+    ASSERT(mState.mCaps.maxPixelLocalStoragePlanes <=
+           IMPLEMENTATION_MAX_PIXEL_LOCAL_STORAGE_PLANES);
 
 #undef ANGLE_LIMIT_CAP
 #undef ANGLE_LOG_CAP_LIMIT
@@ -4411,14 +4441,6 @@ void Context::updateCaps()
     {
         mValidBufferBindings.set(BufferBinding::Texture);
     }
-
-    if (!mState.mExtensions.parallelShaderCompileKHR)
-    {
-        mSingleThreadPool = angle::WorkerThreadPool::Create(false);
-    }
-    mMultiThreadPool = angle::WorkerThreadPool::Create(
-        mState.mExtensions.parallelShaderCompileKHR ||
-        getFrontendFeatures().enableCompressingPipelineCacheInThreadPool.enabled);
 
     // Reinitialize some dirty bits that depend on extensions.
     if (mState.isRobustResourceInitEnabled())
@@ -5694,7 +5716,16 @@ void *Context::mapBufferRange(BufferBinding target,
         return nullptr;
     }
 
-    return buffer->getMapPointer();
+    // TODO: (anglebug.com/7821): Modify return value in entry point layer
+    angle::FrameCaptureShared *frameCaptureShared = getShareGroup()->getFrameCaptureShared();
+    if (frameCaptureShared->enabled())
+    {
+        return frameCaptureShared->maybeGetShadowMemoryPointer(buffer, length, access);
+    }
+    else
+    {
+        return buffer->getMapPointer();
+    }
 }
 
 void Context::flushMappedBufferRange(BufferBinding /*target*/,
@@ -9203,24 +9234,48 @@ void Context::framebufferTexturePixelLocalStorage(GLint plane,
     }
 }
 
-void Context::beginPixelLocalStorage(GLsizei planes, const GLenum loadops[], const void *cleardata)
+void Context::framebufferPixelLocalClearValuefv(GLint plane, const GLfloat value[])
 {
     Framebuffer *framebuffer = mState.getDrawFramebuffer();
     ASSERT(framebuffer);
     PixelLocalStorage &pls = framebuffer->getPixelLocalStorage(this);
-
-    pls.begin(this, planes, loadops, cleardata);
-    mState.setPixelLocalStorageActive(true);
+    pls.setClearValuef(plane, value);
 }
 
-void Context::endPixelLocalStorage()
+void Context::framebufferPixelLocalClearValueiv(GLint plane, const GLint value[])
+{
+    Framebuffer *framebuffer = mState.getDrawFramebuffer();
+    ASSERT(framebuffer);
+    PixelLocalStorage &pls = framebuffer->getPixelLocalStorage(this);
+    pls.setClearValuei(plane, value);
+}
+
+void Context::framebufferPixelLocalClearValueuiv(GLint plane, const GLuint value[])
+{
+    Framebuffer *framebuffer = mState.getDrawFramebuffer();
+    ASSERT(framebuffer);
+    PixelLocalStorage &pls = framebuffer->getPixelLocalStorage(this);
+    pls.setClearValueui(plane, value);
+}
+
+void Context::beginPixelLocalStorage(GLsizei n, const GLenum loadops[])
 {
     Framebuffer *framebuffer = mState.getDrawFramebuffer();
     ASSERT(framebuffer);
     PixelLocalStorage &pls = framebuffer->getPixelLocalStorage(this);
 
-    pls.end(this);
-    mState.setPixelLocalStorageActive(false);
+    pls.begin(this, n, loadops);
+    mState.setPixelLocalStorageActivePlanes(n);
+}
+
+void Context::endPixelLocalStorage(GLsizei n, const GLenum storeops[])
+{
+    Framebuffer *framebuffer = mState.getDrawFramebuffer();
+    ASSERT(framebuffer);
+    PixelLocalStorage &pls = framebuffer->getPixelLocalStorage(this);
+
+    pls.end(this, storeops);
+    mState.setPixelLocalStorageActivePlanes(0);
 }
 
 void Context::pixelLocalStorageBarrier()
@@ -9237,32 +9292,72 @@ void Context::pixelLocalStorageBarrier()
     pls.barrier(this);
 }
 
-void Context::eGLImageTargetTexStorage(GLenum target, GLeglImageOES image, const GLint *attrib_list)
+void Context::getFramebufferPixelLocalStorageParameterfv(GLint plane, GLenum pname, GLfloat *params)
+{
+    Framebuffer *framebuffer = mState.getDrawFramebuffer();
+    ASSERT(framebuffer);
+    PixelLocalStorage &pls = framebuffer->getPixelLocalStorage(this);
+
+    switch (pname)
+    {
+        case GL_PIXEL_LOCAL_CLEAR_VALUE_FLOAT_ANGLE:
+            pls.getPlane(plane).getClearValuef(params);
+            break;
+    }
+}
+
+void Context::getFramebufferPixelLocalStorageParameteriv(GLint plane, GLenum pname, GLint *params)
+{
+    Framebuffer *framebuffer = mState.getDrawFramebuffer();
+    ASSERT(framebuffer);
+    PixelLocalStorage &pls = framebuffer->getPixelLocalStorage(this);
+
+    switch (pname)
+    {
+        // GL_ANGLE_shader_pixel_local_storage.
+        case GL_PIXEL_LOCAL_FORMAT_ANGLE:
+        case GL_PIXEL_LOCAL_TEXTURE_NAME_ANGLE:
+        case GL_PIXEL_LOCAL_TEXTURE_LEVEL_ANGLE:
+        case GL_PIXEL_LOCAL_TEXTURE_LAYER_ANGLE:
+            *params = pls.getPlane(plane).getIntegeri(this, pname);
+            break;
+        case GL_PIXEL_LOCAL_CLEAR_VALUE_INT_ANGLE:
+            pls.getPlane(plane).getClearValuei(params);
+            break;
+        case GL_PIXEL_LOCAL_CLEAR_VALUE_UNSIGNED_INT_ANGLE:
+        {
+            GLuint valueui[4];
+            pls.getPlane(plane).getClearValueui(valueui);
+            memcpy(params, valueui, sizeof(valueui));
+            break;
+        }
+    }
+}
+
+void Context::eGLImageTargetTexStorage(GLenum target, egl::ImageID image, const GLint *attrib_list)
 {
     Texture *texture        = getTextureByType(FromGLenum<TextureType>(target));
-    egl::Image *imageObject = static_cast<egl::Image *>(image);
+    egl::Image *imageObject = mDisplay->getImage(image);
     ANGLE_CONTEXT_TRY(texture->setStorageEGLImageTarget(this, FromGLenum<TextureType>(target),
                                                         imageObject, attrib_list));
 }
 
 void Context::eGLImageTargetTextureStorage(GLuint texture,
-                                           GLeglImageOES image,
+                                           egl::ImageID image,
                                            const GLint *attrib_list)
-{
-    return;
-}
+{}
 
-void Context::eGLImageTargetTexture2D(TextureType target, GLeglImageOES image)
+void Context::eGLImageTargetTexture2D(TextureType target, egl::ImageID image)
 {
     Texture *texture        = getTextureByType(target);
-    egl::Image *imageObject = static_cast<egl::Image *>(image);
+    egl::Image *imageObject = mDisplay->getImage(image);
     ANGLE_CONTEXT_TRY(texture->setEGLImageTarget(this, target, imageObject));
 }
 
-void Context::eGLImageTargetRenderbufferStorage(GLenum target, GLeglImageOES image)
+void Context::eGLImageTargetRenderbufferStorage(GLenum target, egl::ImageID image)
 {
     Renderbuffer *renderbuffer = mState.getCurrentRenderbuffer();
-    egl::Image *imageObject    = static_cast<egl::Image *>(image);
+    egl::Image *imageObject    = mDisplay->getImage(image);
     ANGLE_CONTEXT_TRY(renderbuffer->setStorageEGLImageTarget(this, imageObject));
 }
 
@@ -9331,20 +9426,6 @@ bool Context::getIndexedQueryParameterInfo(GLenum target,
                 *numParams = 4;
                 return true;
             }
-        }
-    }
-
-    if (mSupportedExtensions.shaderPixelLocalStorageANGLE)
-    {
-        switch (target)
-        {
-            case GL_PIXEL_LOCAL_FORMAT_ANGLE:
-            case GL_PIXEL_LOCAL_TEXTURE_NAME_ANGLE:
-            case GL_PIXEL_LOCAL_TEXTURE_LEVEL_ANGLE:
-            case GL_PIXEL_LOCAL_TEXTURE_LAYER_ANGLE:
-                *type      = GL_INT;
-                *numParams = 1;
-                return true;
         }
     }
 
@@ -9449,14 +9530,10 @@ GLenum Context::getConvertedRenderbufferFormat(GLenum internalformat) const
 
 void Context::maxShaderCompilerThreads(GLuint count)
 {
-    GLuint oldCount = mState.getMaxShaderCompilerThreads();
+    // A count of zero specifies a request for no parallel compiling or linking.  This is handled in
+    // getShaderCompileThreadPool.  Otherwise the count itself has no effect as the pool is shared
+    // between contexts.
     mState.setMaxShaderCompilerThreads(count);
-    // A count of zero specifies a request for no parallel compiling or linking.
-    if ((oldCount == 0 || count == 0) && (oldCount != 0 || count != 0))
-    {
-        mMultiThreadPool = angle::WorkerThreadPool::Create(count > 0);
-    }
-    mMultiThreadPool->setMaxThreads(count);
     mImplementation->setMaxShaderCompilerThreads(count);
 }
 
@@ -9473,6 +9550,20 @@ void Context::getFramebufferParameterivMESA(GLenum target, GLenum pname, GLint *
 bool Context::isGLES1() const
 {
     return mState.isGLES1();
+}
+
+std::shared_ptr<angle::WorkerThreadPool> Context::getShaderCompileThreadPool() const
+{
+    if (mState.mExtensions.parallelShaderCompileKHR && mState.getMaxShaderCompilerThreads() > 0)
+    {
+        return mDisplay->getMultiThreadPool();
+    }
+    return mDisplay->getSingleThreadPool();
+}
+
+std::shared_ptr<angle::WorkerThreadPool> Context::getWorkerThreadPool() const
+{
+    return mDisplay->getMultiThreadPool();
 }
 
 void Context::onSubjectStateChange(angle::SubjectIndex index, angle::SubjectMessage message)
@@ -9685,7 +9776,7 @@ egl::Error Context::unsetDefaultFramebuffer()
     return egl::NoError();
 }
 
-void Context::onPreSwap() const
+void Context::onPreSwap()
 {
     // Dump frame capture if enabled.
     getShareGroup()->getFrameCaptureShared()->onEndFrame(this);
@@ -9953,6 +10044,27 @@ const angle::PerfMonitorCounterGroups &Context::getPerfMonitorCounterGroups() co
     return mImplementation->getPerfMonitorCounters();
 }
 
+void Context::drawPixelLocalStorageEXTEnable(GLsizei n,
+                                             const PixelLocalStoragePlane planes[],
+                                             const GLenum loadops[])
+{
+    ASSERT(mImplementation->getNativePixelLocalStorageOptions().type ==
+           ShPixelLocalStorageType::PixelLocalStorageEXT);
+    ANGLE_CONTEXT_TRY(syncState(mPixelLocalStorageEXTEnableDisableDirtyBits,
+                                mPixelLocalStorageEXTEnableDisableDirtyObjects, Command::Draw));
+    ANGLE_CONTEXT_TRY(mImplementation->drawPixelLocalStorageEXTEnable(this, n, planes, loadops));
+}
+
+void Context::drawPixelLocalStorageEXTDisable(const PixelLocalStoragePlane planes[],
+                                              const GLenum storeops[])
+{
+    ASSERT(mImplementation->getNativePixelLocalStorageOptions().type ==
+           ShPixelLocalStorageType::PixelLocalStorageEXT);
+    ANGLE_CONTEXT_TRY(syncState(mPixelLocalStorageEXTEnableDisableDirtyBits,
+                                mPixelLocalStorageEXTEnableDisableDirtyObjects, Command::Draw));
+    ANGLE_CONTEXT_TRY(mImplementation->drawPixelLocalStorageEXTDisable(this, planes, storeops));
+}
+
 // ErrorSet implementation.
 ErrorSet::ErrorSet(Context *context) : mContext(context) {}
 
@@ -9983,7 +10095,7 @@ void ErrorSet::handleError(GLenum errorCode,
 
     mContext->getState().getDebug().insertMessage(
         GL_DEBUG_SOURCE_API, GL_DEBUG_TYPE_ERROR, errorCode, GL_DEBUG_SEVERITY_HIGH,
-        std::move(formattedMessage), gl::LOG_WARN, angle::EntryPoint::GLInvalid);
+        std::move(formattedMessage), gl::LOG_WARN, angle::EntryPoint::Invalid);
 }
 
 void ErrorSet::validationError(angle::EntryPoint entryPoint, GLenum errorCode, const char *message)

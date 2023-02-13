@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2016 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -168,7 +168,7 @@ ByteStringView FindFullName(pdfium::span<const AbbrPair> table,
   return ByteStringView();
 }
 
-void ReplaceAbbr(CPDF_Object* pObj);
+void ReplaceAbbr(RetainPtr<CPDF_Object> pObj);
 
 void ReplaceAbbrInDictionary(CPDF_Dictionary* pDict) {
   std::vector<AbbrReplacementOp> replacements;
@@ -176,7 +176,6 @@ void ReplaceAbbrInDictionary(CPDF_Dictionary* pDict) {
     CPDF_DictionaryLocker locker(pDict);
     for (const auto& it : locker) {
       ByteString key = it.first;
-      CPDF_Object* value = it.second.Get();
       ByteStringView fullname =
           FindFullName(kInlineKeyAbbr, key.AsStringView());
       if (!fullname.IsEmpty()) {
@@ -187,7 +186,7 @@ void ReplaceAbbrInDictionary(CPDF_Dictionary* pDict) {
         replacements.push_back(op);
         key = fullname;
       }
-
+      RetainPtr<CPDF_Object> value = it.second;
       if (value->IsName()) {
         ByteString name = value->GetString();
         fullname = FindFullName(kInlineValueAbbr, name.AsStringView());
@@ -199,7 +198,7 @@ void ReplaceAbbrInDictionary(CPDF_Dictionary* pDict) {
           replacements.push_back(op);
         }
       } else {
-        ReplaceAbbr(value);
+        ReplaceAbbr(std::move(value));
       }
     }
   }
@@ -221,12 +220,12 @@ void ReplaceAbbrInArray(CPDF_Array* pArray) {
       if (!fullname.IsEmpty())
         pArray->SetNewAt<CPDF_Name>(i, ByteString(fullname));
     } else {
-      ReplaceAbbr(pElement.Get());
+      ReplaceAbbr(std::move(pElement));
     }
   }
 }
 
-void ReplaceAbbr(CPDF_Object* pObj) {
+void ReplaceAbbr(RetainPtr<CPDF_Object> pObj) {
   CPDF_Dictionary* pDict = pObj->AsMutableDictionary();
   if (pDict) {
     ReplaceAbbrInDictionary(pDict);
@@ -618,13 +617,12 @@ void CPDF_StreamContentParser::Handle_BeginImage() {
     ByteString key(word.Last(word.GetLength() - 1));
     auto pObj = m_pSyntax->ReadNextObject(false, false, 0);
     if (pObj && !pObj->IsInline()) {
-      pDict->SetNewFor<CPDF_Reference>(key, m_pDocument.Get(),
-                                       pObj->GetObjNum());
+      pDict->SetNewFor<CPDF_Reference>(key, m_pDocument, pObj->GetObjNum());
     } else {
       pDict->SetFor(key, std::move(pObj));
     }
   }
-  ReplaceAbbr(pDict.Get());
+  ReplaceAbbr(pDict);
   RetainPtr<const CPDF_Object> pCSObj;
   if (pDict->KeyExist("ColorSpace")) {
     pCSObj = pDict->GetDirectObjectFor("ColorSpace");
@@ -638,8 +636,8 @@ void CPDF_StreamContentParser::Handle_BeginImage() {
     }
   }
   pDict->SetNewFor<CPDF_Name>("Subtype", "Image");
-  RetainPtr<CPDF_Stream> pStream = m_pSyntax->ReadInlineStream(
-      m_pDocument.Get(), std::move(pDict), pCSObj.Get());
+  RetainPtr<CPDF_Stream> pStream =
+      m_pSyntax->ReadInlineStream(m_pDocument, std::move(pDict), pCSObj.Get());
   while (true) {
     CPDF_StreamParser::ElementType type = m_pSyntax->ParseNextElement();
     if (type == CPDF_StreamParser::ElementType::kEndOfData)
@@ -702,11 +700,11 @@ void CPDF_StreamContentParser::Handle_SetColorSpace_Stroke() {
 }
 
 void CPDF_StreamContentParser::Handle_SetDash() {
-  CPDF_Array* pArray = ToArray(GetObject(1));
+  RetainPtr<CPDF_Array> pArray = ToArray(GetObject(1));
   if (!pArray)
     return;
 
-  m_pCurStates->SetLineDash(pArray, GetNumber(0), 1.0f);
+  m_pCurStates->SetLineDash(pArray.Get(), GetNumber(0), 1.0f);
 }
 
 void CPDF_StreamContentParser::Handle_SetCharWidth() {
@@ -767,10 +765,9 @@ void CPDF_StreamContentParser::AddForm(RetainPtr<CPDF_Stream> pStream) {
   status.m_GraphState = m_pCurStates->m_GraphState;
   status.m_ColorState = m_pCurStates->m_ColorState;
   status.m_TextState = m_pCurStates->m_TextState;
-  auto form =
-      std::make_unique<CPDF_Form>(m_pDocument.Get(), m_pPageResources,
-                                  std::move(pStream), m_pResources.Get());
-  form->ParseContent(&status, nullptr, m_ParsedSet.Get());
+  auto form = std::make_unique<CPDF_Form>(
+      m_pDocument, m_pPageResources, std::move(pStream), m_pResources.Get());
+  form->ParseContent(&status, nullptr, m_ParsedSet);
 
   CFX_Matrix matrix = m_pCurStates->m_CTM * m_mtContentToUser;
   auto pFormObj = std::make_unique<CPDF_FormObject>(GetCurrentStreamIndex(),
@@ -791,15 +788,15 @@ CPDF_ImageObject* CPDF_StreamContentParser::AddImage(
 
   auto pImageObj = std::make_unique<CPDF_ImageObject>(GetCurrentStreamIndex());
   pImageObj->SetImage(
-      pdfium::MakeRetain<CPDF_Image>(m_pDocument.Get(), std::move(pStream)));
+      pdfium::MakeRetain<CPDF_Image>(m_pDocument, std::move(pStream)));
 
   return AddImageObject(std::move(pImageObj));
 }
 
 CPDF_ImageObject* CPDF_StreamContentParser::AddImage(uint32_t streamObjNum) {
   auto pImageObj = std::make_unique<CPDF_ImageObject>(GetCurrentStreamIndex());
-  pImageObj->SetImage(CPDF_DocPageData::FromDocument(m_pDocument.Get())
-                          ->GetImage(streamObjNum));
+  pImageObj->SetImage(
+      CPDF_DocPageData::FromDocument(m_pDocument)->GetImage(streamObjNum));
 
   return AddImageObject(std::move(pImageObj));
 }
@@ -810,7 +807,7 @@ CPDF_ImageObject* CPDF_StreamContentParser::AddImage(
     return nullptr;
 
   auto pImageObj = std::make_unique<CPDF_ImageObject>(GetCurrentStreamIndex());
-  pImageObj->SetImage(CPDF_DocPageData::FromDocument(m_pDocument.Get())
+  pImageObj->SetImage(CPDF_DocPageData::FromDocument(m_pDocument)
                           ->GetImage(pImage->GetStream()->GetObjNum()));
 
   return AddImageObject(std::move(pImageObj));
@@ -1038,7 +1035,7 @@ void CPDF_StreamContentParser::Handle_SetColor_Stroke() {
 }
 
 void CPDF_StreamContentParser::Handle_SetColorPS_Fill() {
-  CPDF_Object* pLastParam = GetObject(0);
+  RetainPtr<CPDF_Object> pLastParam = GetObject(0);
   if (!pLastParam)
     return;
 
@@ -1058,7 +1055,7 @@ void CPDF_StreamContentParser::Handle_SetColorPS_Fill() {
 }
 
 void CPDF_StreamContentParser::Handle_SetColorPS_Stroke() {
-  CPDF_Object* pLastParam = GetObject(0);
+  RetainPtr<CPDF_Object> pLastParam = GetObject(0);
   if (!pLastParam)
     return;
 
@@ -1151,10 +1148,9 @@ RetainPtr<CPDF_Font> CPDF_StreamContentParser::FindFont(
   RetainPtr<CPDF_Dictionary> pFontDict(
       ToDictionary(FindResourceObj("Font", name)));
   if (!pFontDict) {
-    return CPDF_Font::GetStockFont(m_pDocument.Get(),
-                                   CFX_Font::kDefaultAnsiFontName);
+    return CPDF_Font::GetStockFont(m_pDocument, CFX_Font::kDefaultAnsiFontName);
   }
-  RetainPtr<CPDF_Font> pFont = CPDF_DocPageData::FromDocument(m_pDocument.Get())
+  RetainPtr<CPDF_Font> pFont = CPDF_DocPageData::FromDocument(m_pDocument)
                                    ->GetFont(std::move(pFontDict));
   if (pFont && pFont->IsType3Font()) {
     pFont->AsType3Font()->SetPageResources(m_pResources.Get());
@@ -1183,13 +1179,13 @@ RetainPtr<CPDF_ColorSpace> CPDF_StreamContentParser::FindColorSpace(
 
       return CPDF_ColorSpace::GetStockCS(CPDF_ColorSpace::Family::kDeviceCMYK);
     }
-    return CPDF_DocPageData::FromDocument(m_pDocument.Get())
+    return CPDF_DocPageData::FromDocument(m_pDocument)
         ->GetColorSpace(pDefObj.Get(), nullptr);
   }
   RetainPtr<const CPDF_Object> pCSObj = FindResourceObj("ColorSpace", name);
   if (!pCSObj)
     return nullptr;
-  return CPDF_DocPageData::FromDocument(m_pDocument.Get())
+  return CPDF_DocPageData::FromDocument(m_pDocument)
       ->GetColorSpace(pCSObj.Get(), nullptr);
 }
 
@@ -1198,7 +1194,7 @@ RetainPtr<CPDF_Pattern> CPDF_StreamContentParser::FindPattern(
   RetainPtr<CPDF_Object> pPattern = FindResourceObj("Pattern", name);
   if (!pPattern || (!pPattern->IsDictionary() && !pPattern->IsStream()))
     return nullptr;
-  return CPDF_DocPageData::FromDocument(m_pDocument.Get())
+  return CPDF_DocPageData::FromDocument(m_pDocument)
       ->GetPattern(std::move(pPattern), m_pCurStates->m_ParentMatrix);
 }
 
@@ -1207,7 +1203,7 @@ RetainPtr<CPDF_ShadingPattern> CPDF_StreamContentParser::FindShading(
   RetainPtr<CPDF_Object> pPattern = FindResourceObj("Shading", name);
   if (!pPattern || (!pPattern->IsDictionary() && !pPattern->IsStream()))
     return nullptr;
-  return CPDF_DocPageData::FromDocument(m_pDocument.Get())
+  return CPDF_DocPageData::FromDocument(m_pDocument)
       ->GetShading(std::move(pPattern), m_pCurStates->m_ParentMatrix);
 }
 
@@ -1284,7 +1280,7 @@ void CPDF_StreamContentParser::Handle_ShowText() {
 }
 
 void CPDF_StreamContentParser::Handle_ShowText_Positioning() {
-  CPDF_Array* pArray = ToArray(GetObject(0));
+  RetainPtr<CPDF_Array> pArray = ToArray(GetObject(0));
   if (!pArray)
     return;
 
@@ -1439,7 +1435,7 @@ void CPDF_StreamContentParser::AddPathPoint(const CFX_PointF& point,
   } else if (m_PathPoints.empty()) {
     return;
   }
-  m_PathPoints.push_back(CFX_Path::Point(point, type, /*close=*/false));
+  m_PathPoints.emplace_back(point, type, /*close=*/false);
 }
 
 void CPDF_StreamContentParser::AddPathPointAndClose(
@@ -1449,7 +1445,7 @@ void CPDF_StreamContentParser::AddPathPointAndClose(
   if (m_PathPoints.empty())
     return;
 
-  m_PathPoints.push_back(CFX_Path::Point(point, type, /*close=*/true));
+  m_PathPoints.emplace_back(point, type, /*close=*/true);
 }
 
 void CPDF_StreamContentParser::AddPathObject(
@@ -1519,7 +1515,7 @@ uint32_t CPDF_StreamContentParser::Parse(
 
   m_StreamStartOffsets = stream_start_offsets;
 
-  ScopedSetInsertion<const uint8_t*> scopedInsert(m_ParsedSet.Get(),
+  ScopedSetInsertion<const uint8_t*> scopedInsert(m_ParsedSet,
                                                   pDataStart.data());
 
   uint32_t init_obj_count = m_pObjectHolder->GetPageObjectCount();

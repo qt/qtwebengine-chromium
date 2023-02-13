@@ -33,6 +33,7 @@ const char kInstallProfileFromActivationCode[] =
 const char kInstallPendingProfile[] = "InstallPendingProfile";
 const char kRefreshInstalledProfiles[] = "RefreshInstalledProfiles";
 const char kRequestPendingProfiles[] = "RequestPendingProfiles";
+const char kRefreshSmdxProfiles[] = "RefreshSmdxProfiles";
 const char kRequestInstalledProfiles[] = "RequestInstalledProfiles";
 const char kUninstallProfile[] = "UninstallProfile";
 const char kResetMemory[] = "ResetMemory";
@@ -48,6 +49,7 @@ const char kEidProperty[] = "Eid";
 const char kInstalledProfilesProperty[] = "InstalledProfiles";
 const char kIsActiveProperty[] = "IsActive";
 const char kPendingProfilesProperty[] = "PendingProfiles";
+const char kProfilesProperty[] = "Profiles";
 const char kPhysicalSlotProperty[] = "PhysicalSlot";
 
 }  // namespace euicc

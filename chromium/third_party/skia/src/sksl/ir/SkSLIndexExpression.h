@@ -8,6 +8,7 @@
 #ifndef SKSL_INDEX
 #define SKSL_INDEX
 
+#include "include/private/SkSLIRNode.h"
 #include "include/sksl/SkSLPosition.h"
 #include "src/sksl/ir/SkSLExpression.h"
 
@@ -27,11 +28,11 @@ enum class OperatorPrecedence : uint8_t;
  * An expression which extracts a value from an array or matrix, as in 'm[2]'.
  */
 struct IndexExpression final : public Expression {
-    inline static constexpr Kind kExpressionKind = Kind::kIndex;
+    inline static constexpr Kind kIRNodeKind = Kind::kIndex;
 
     IndexExpression(const Context& context, Position pos, std::unique_ptr<Expression> base,
                     std::unique_ptr<Expression> index)
-        : INHERITED(pos, kExpressionKind, &IndexType(context, base->type()))
+        : INHERITED(pos, kIRNodeKind, &IndexType(context, base->type()))
         , fBase(std::move(base))
         , fIndex(std::move(index)) {}
 

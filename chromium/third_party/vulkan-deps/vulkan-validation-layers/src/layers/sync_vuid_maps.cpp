@@ -41,8 +41,8 @@ const std::map<VkPipelineStageFlags2KHR, std::string> kFeatureNameMap{
     {VK_PIPELINE_STAGE_2_CONDITIONAL_RENDERING_BIT_EXT, "conditionalRendering"},
     {VK_PIPELINE_STAGE_2_FRAGMENT_DENSITY_PROCESS_BIT_EXT, "fragmentDensity"},
     {VK_PIPELINE_STAGE_2_TRANSFORM_FEEDBACK_BIT_EXT, "transformFeedback"},
-    {VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_NV, "meshShader"},
-    {VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_NV, "taskShader"},
+    {VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT, "meshShader"},
+    {VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT, "taskShader"},
     {VK_PIPELINE_STAGE_2_FRAGMENT_SHADING_RATE_ATTACHMENT_BIT_KHR, "shadingRate"},
     {VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, "rayTracing"},
     {VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR, "rayTracing"},
@@ -148,7 +148,7 @@ static const std::map<VkPipelineStageFlags2KHR, std::vector<Entry>> kStageMaskEr
          {Key(Struct::VkSubpassDependency2, Field::srcStageMask), "VUID-VkSubpassDependency2-srcStageMask-04090"},
          {Key(Struct::VkSubpassDependency2, Field::dstStageMask), "VUID-VkSubpassDependency2-dstStageMask-04090"},
      }},
-    {VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_NV,
+    {VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT,
      {
          {Key(Struct::VkBufferMemoryBarrier2, Field::dstStageMask), "VUID-VkBufferMemoryBarrier2-dstStageMask-03934"},
          {Key(Struct::VkBufferMemoryBarrier2, Field::srcStageMask), "VUID-VkBufferMemoryBarrier2-srcStageMask-03934"},
@@ -172,7 +172,7 @@ static const std::map<VkPipelineStageFlags2KHR, std::vector<Entry>> kStageMaskEr
          {Key(Struct::VkSubpassDependency2, Field::srcStageMask), "VUID-VkSubpassDependency2-srcStageMask-04095"},
          {Key(Struct::VkSubpassDependency2, Field::dstStageMask), "VUID-VkSubpassDependency2-dstStageMask-04095"},
      }},
-    {VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_NV,
+    {VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT,
      {
          {Key(Struct::VkBufferMemoryBarrier2, Field::dstStageMask), "VUID-VkBufferMemoryBarrier2-dstStageMask-03935"},
          {Key(Struct::VkBufferMemoryBarrier2, Field::srcStageMask), "VUID-VkBufferMemoryBarrier2-srcStageMask-03935"},
@@ -625,6 +625,15 @@ static const std::map<VkAccessFlags2KHR, std::array<Entry, 6>> kAccessMask2Commo
          {Key(Struct::VkImageMemoryBarrier2, Field::srcAccessMask), "VUID-VkImageMemoryBarrier2-srcAccessMask-04994"},
          {Key(Struct::VkImageMemoryBarrier2, Field::dstAccessMask), "VUID-VkImageMemoryBarrier2-dstAccessMask-04994"},
      }}},
+    {VK_ACCESS_2_DESCRIPTOR_BUFFER_READ_BIT_EXT,
+     {{
+         {Key(Struct::VkMemoryBarrier2, Field::srcAccessMask), "VUID-VkMemoryBarrier2-srcAccessMask-08118"},
+         {Key(Struct::VkMemoryBarrier2, Field::dstAccessMask), "VUID-VkMemoryBarrier2-dstAccessMask-08118"},
+         {Key(Struct::VkBufferMemoryBarrier2, Field::srcAccessMask), "VUID-VkBufferMemoryBarrier2-srcAccessMask-08118"},
+         {Key(Struct::VkBufferMemoryBarrier2, Field::dstAccessMask), "VUID-VkBufferMemoryBarrier2-dstAccessMask-08118"},
+         {Key(Struct::VkImageMemoryBarrier2, Field::srcAccessMask), "VUID-VkImageMemoryBarrier2-srcAccessMask-08118"},
+         {Key(Struct::VkImageMemoryBarrier2, Field::dstAccessMask), "VUID-VkImageMemoryBarrier2-dstAccessMask-08118"},
+     }}},
 };
 
 // commonvalidity/fine_sync_commands_common.txt
@@ -782,7 +791,7 @@ static const std::map<VkImageLayout, std::array<Entry, 2>> kImageLayoutErrors{
          {Key(Struct::VkImageMemoryBarrier), "VUID-VkImageMemoryBarrier-oldLayout-01213"},
          {Key(Struct::VkImageMemoryBarrier2), "VUID-VkImageMemoryBarrier2-oldLayout-01213"},
      }}},
-    {VK_IMAGE_LAYOUT_SHADING_RATE_OPTIMAL_NV,
+    {VK_IMAGE_LAYOUT_FRAGMENT_SHADING_RATE_ATTACHMENT_OPTIMAL_KHR,  // alias VK_IMAGE_LAYOUT_SHADING_RATE_OPTIMAL_NV
      {{
          {Key(Struct::VkImageMemoryBarrier), "VUID-VkImageMemoryBarrier-oldLayout-02088"},
          {Key(Struct::VkImageMemoryBarrier2), "VUID-VkImageMemoryBarrier2-oldLayout-02088"},
@@ -952,7 +961,6 @@ static const std::map<SubmitError, std::vector<Entry>> kSubmitErrors{
          {Key(Struct::VkSemaphoreSignalInfo), "VUID-VkSemaphoreSignalInfo-value-03258"},
          {Key(Struct::VkBindSparseInfo), "VUID-VkBindSparseInfo-pSignalSemaphores-03249"},
          {Key(Struct::VkSubmitInfo), "VUID-VkSubmitInfo-pSignalSemaphores-03242"},
-         {Key(Struct::VkSubmitInfo2), "VUID-VkSubmitInfo2-semaphore-03881"},
          {Key(Struct::VkSubmitInfo2), "VUID-VkSubmitInfo2-semaphore-03882"},
      }},
     {SubmitError::kSemAlreadySignalled,
@@ -961,15 +969,17 @@ static const std::map<SubmitError, std::vector<Entry>> kSubmitErrors{
          {Key(Func::vkQueueBindSparse), "VUID-vkQueueBindSparse-pSignalSemaphores-01115"},
          {Key(Func::vkQueueSubmit2), "VUID-vkQueueSubmit2-semaphore-03868"},
      }},
-    {SubmitError::kBinaryCannotBeSignalled,
+    {SubmitError::kOldBinaryCannotBeSignalled,
      {
          {Key(Func::vkQueueSubmit), "VUID-vkQueueSubmit-pWaitSemaphores-00069"},
          {Key(Func::vkQueueSubmit2), "VUID-vkQueueSubmit2-semaphore-03872"},
+         {Key(Func::vkQueueBindSparse), "VUID-vkQueueBindSparse-pWaitSemaphores-01117"},
      }},
-    {SubmitError::kTimelineCannotBeSignalled,
+    {SubmitError::kBinaryCannotBeSignalled,
      {
          {Key(Func::vkQueueSubmit), "VUID-vkQueueSubmit-pWaitSemaphores-03238"},
          {Key(Func::vkQueueSubmit2), "VUID-vkQueueSubmit2-semaphore-03873"},
+         {Key(Func::vkQueueBindSparse), "VUID-vkQueueBindSparse-pWaitSemaphores-03245"},
      }},
     {SubmitError::kTimelineSemMaxDiff,
      {
@@ -1027,6 +1037,12 @@ static const std::map<SubmitError, std::vector<Entry>> kSubmitErrors{
          {Key(Func::vkCmdSetEvent), "VUID-vkCmdSetEvent-stageMask-01149"},
          {Key(Func::vkCmdResetEvent), "VUID-vkCmdResetEvent-stageMask-01153"},
          {Key(Func::vkCmdResetEvent2), "VUID-vkCmdResetEvent2-stageMask-03830"},
+     }},
+    {SubmitError::kOtherQueueWaiting,
+     {
+         {Key(Func::vkQueueSubmit), "VUID-vkQueueSubmit-pWaitSemaphores-00068"},
+         {Key(Func::vkQueueBindSparse), "VUID-vkQueueBindSparse-pWaitSemaphores-01116"},
+         {Key(Func::vkQueueSubmit2), "VUID-vkQueueSubmit2-semaphore-03871"},
      }},
 };
 

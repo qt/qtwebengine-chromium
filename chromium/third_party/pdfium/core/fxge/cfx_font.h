@@ -1,4 +1,4 @@
-// Copyright 2017 PDFium Authors. All rights reserved.
+// Copyright 2017 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -23,7 +23,7 @@
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/base/span.h"
 
-#if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
+#ifdef _SKIA_SUPPORT_
 #include "core/fxge/fx_font.h"
 #endif
 
@@ -128,8 +128,8 @@ class CFX_Font {
   absl::optional<FX_RECT> GetBBox() const;
 
   bool IsEmbedded() const { return m_bEmbedded; }
-  uint8_t* GetSubData() const { return m_pGsubData.get(); }
-  void SetSubData(uint8_t* data) { m_pGsubData.reset(data); }
+  void AllocSubData(size_t size);
+  uint8_t* GetSubData() const { return m_pSubData.get(); }
   FontType GetFontType() const { return m_FontType; }
   void SetFontType(FontType type) { m_FontType = type; }
   uint64_t GetObjectTag() const { return m_ObjectTag; }
@@ -138,7 +138,7 @@ class CFX_Font {
   std::unique_ptr<CFX_Path> LoadGlyphPathImpl(uint32_t glyph_index,
                                               int dest_width) const;
 
-#if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
+#ifdef _SKIA_SUPPORT_
   CFX_TypeFace* GetDeviceCache() const;
   bool IsSubstFontBold() const;
 #endif
@@ -165,7 +165,7 @@ class CFX_Font {
   mutable RetainPtr<CFX_Face> m_Face;
   mutable RetainPtr<CFX_GlyphCache> m_GlyphCache;
   std::unique_ptr<CFX_SubstFont> m_pSubstFont;
-  std::unique_ptr<uint8_t, FxFreeDeleter> m_pGsubData;
+  std::unique_ptr<uint8_t, FxFreeDeleter> m_pSubData;
   DataVector<uint8_t> m_FontDataAllocation;
   pdfium::span<uint8_t> m_FontData;
   FontType m_FontType = FontType::kUnknown;

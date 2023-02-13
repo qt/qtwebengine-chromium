@@ -17,6 +17,8 @@
 #include "src/core/SkOSFile.h"
 #include "src/utils/SkOSPath.h"
 
+#include <cmath>
+
 #if defined(HAVE_VIDEO_DECODER)
     #include "experimental/ffmpeg/SkVideoDecoder.h"
     #include "include/core/SkStream.h"
@@ -100,6 +102,7 @@ ImageAsset::FrameData ImageAsset::getFrameData(float t) {
         this->getFrame(t),
         SkSamplingOptions(SkFilterMode::kLinear, SkMipmapMode::kNearest),
         SkMatrix::I(),
+        SkMatrix::kCenter_ScaleToFit,
     };
 }
 

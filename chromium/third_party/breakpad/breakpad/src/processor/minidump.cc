@@ -1,5 +1,4 @@
-// Copyright (c) 2010 Google Inc.
-// All rights reserved.
+// Copyright 2010 Google LLC
 //
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are
@@ -11,7 +10,7 @@
 // copyright notice, this list of conditions and the following disclaimer
 // in the documentation and/or other materials provided with the
 // distribution.
-//     * Neither the name of Google Inc. nor the names of its
+//     * Neither the name of Google LLC nor the names of its
 // contributors may be used to endorse or promote products derived from
 // this software without specific prior written permission.
 //
@@ -95,6 +94,10 @@ bool IsContextSizeUnique(uint32_t context_size) {
   if (context_size == sizeof(MDRawContextARM64_Old))
     num_matching_contexts++;
   if (context_size == sizeof(MDRawContextMIPS))
+    num_matching_contexts++;
+  if (context_size == sizeof(MDRawContextRISCV))
+    num_matching_contexts++;
+  if (context_size == sizeof(MDRawContextRISCV64))
     num_matching_contexts++;
   return num_matching_contexts == 1;
 }
@@ -1170,6 +1173,163 @@ bool MinidumpContext::Read(uint32_t expected_size) {
         break;
       }
 
+      case MD_CONTEXT_RISCV: {
+        if (expected_size != sizeof(MDRawContextRISCV)) {
+          BPLOG(ERROR) << "MinidumpContext RISCV size mismatch, "
+                       << expected_size
+                       << " != "
+                       << sizeof(MDRawContextRISCV);
+          return false;
+        }
+
+        scoped_ptr<MDRawContextRISCV> context_riscv(new MDRawContextRISCV());
+
+        // Set the context_flags member, which has already been read, and
+        // read the rest of the structure beginning with the first member
+        // after context_flags.
+        context_riscv->context_flags = context_flags;
+
+        size_t flags_size = sizeof(context_riscv->context_flags);
+        uint8_t* context_after_flags =
+            reinterpret_cast<uint8_t*>(context_riscv.get()) + flags_size;
+        if (!minidump_->ReadBytes(context_after_flags,
+                                  sizeof(MDRawContextRISCV) - flags_size)) {
+          BPLOG(ERROR) << "MinidumpContext could not read RISCV context";
+          return false;
+        }
+
+        // Do this after reading the entire MDRawContext structure because
+        // GetSystemInfo may seek minidump to a new position.
+        if (!CheckAgainstSystemInfo(cpu_type)) {
+          BPLOG(ERROR) << "MinidumpContext RISCV does not match system info";
+          return false;
+        }
+
+        if (minidump_->swap()) {
+          Swap(&context_riscv->pc);
+          Swap(&context_riscv->ra);
+          Swap(&context_riscv->sp);
+          Swap(&context_riscv->gp);
+          Swap(&context_riscv->tp);
+          Swap(&context_riscv->t0);
+          Swap(&context_riscv->t1);
+          Swap(&context_riscv->t2);
+          Swap(&context_riscv->s0);
+          Swap(&context_riscv->s1);
+          Swap(&context_riscv->a0);
+          Swap(&context_riscv->a1);
+          Swap(&context_riscv->a2);
+          Swap(&context_riscv->a3);
+          Swap(&context_riscv->a4);
+          Swap(&context_riscv->a5);
+          Swap(&context_riscv->a6);
+          Swap(&context_riscv->a7);
+          Swap(&context_riscv->s2);
+          Swap(&context_riscv->s3);
+          Swap(&context_riscv->s4);
+          Swap(&context_riscv->s5);
+          Swap(&context_riscv->s6);
+          Swap(&context_riscv->s7);
+          Swap(&context_riscv->s8);
+          Swap(&context_riscv->s9);
+          Swap(&context_riscv->s10);
+          Swap(&context_riscv->s11);
+          Swap(&context_riscv->t3);
+          Swap(&context_riscv->t4);
+          Swap(&context_riscv->t5);
+          Swap(&context_riscv->t6);
+
+          for (int fpr_index = 0;
+               fpr_index < MD_FLOATINGSAVEAREA_RISCV_FPR_COUNT;
+               ++fpr_index) {
+            Swap(&context_riscv->float_save.regs[fpr_index]);
+          }
+          Swap(&context_riscv->float_save.fpcsr);
+        }
+        SetContextRISCV(context_riscv.release());
+
+        break;
+      }
+
+      case MD_CONTEXT_RISCV64: {
+        if (expected_size != sizeof(MDRawContextRISCV64)) {
+          BPLOG(ERROR) << "MinidumpContext RISCV64 size mismatch, "
+                       << expected_size
+                       << " != "
+                       << sizeof(MDRawContextRISCV64);
+          return false;
+        }
+
+        scoped_ptr<MDRawContextRISCV64> context_riscv64(
+            new MDRawContextRISCV64());
+
+        // Set the context_flags member, which has already been read, and
+        // read the rest of the structure beginning with the first member
+        // after context_flags.
+        context_riscv64->context_flags = context_flags;
+
+        size_t flags_size = sizeof(context_riscv64->context_flags);
+        uint8_t* context_after_flags =
+            reinterpret_cast<uint8_t*>(context_riscv64.get()) + flags_size;
+        if (!minidump_->ReadBytes(context_after_flags,
+                                  sizeof(MDRawContextRISCV64) - flags_size)) {
+          BPLOG(ERROR) << "MinidumpContext could not read RISCV context";
+          return false;
+        }
+
+        // Do this after reading the entire MDRawContext structure because
+        // GetSystemInfo may seek minidump to a new position.
+        if (!CheckAgainstSystemInfo(cpu_type)) {
+          BPLOG(ERROR) << "MinidumpContext RISCV does not match system info";
+          return false;
+        }
+
+        if (minidump_->swap()) {
+          Swap(&context_riscv64->pc);
+          Swap(&context_riscv64->ra);
+          Swap(&context_riscv64->sp);
+          Swap(&context_riscv64->gp);
+          Swap(&context_riscv64->tp);
+          Swap(&context_riscv64->t0);
+          Swap(&context_riscv64->t1);
+          Swap(&context_riscv64->t2);
+          Swap(&context_riscv64->s0);
+          Swap(&context_riscv64->s1);
+          Swap(&context_riscv64->a0);
+          Swap(&context_riscv64->a1);
+          Swap(&context_riscv64->a2);
+          Swap(&context_riscv64->a3);
+          Swap(&context_riscv64->a4);
+          Swap(&context_riscv64->a5);
+          Swap(&context_riscv64->a6);
+          Swap(&context_riscv64->a7);
+          Swap(&context_riscv64->s2);
+          Swap(&context_riscv64->s3);
+          Swap(&context_riscv64->s4);
+          Swap(&context_riscv64->s5);
+          Swap(&context_riscv64->s6);
+          Swap(&context_riscv64->s7);
+          Swap(&context_riscv64->s8);
+          Swap(&context_riscv64->s9);
+          Swap(&context_riscv64->s10);
+          Swap(&context_riscv64->s11);
+          Swap(&context_riscv64->t3);
+          Swap(&context_riscv64->t4);
+          Swap(&context_riscv64->t5);
+          Swap(&context_riscv64->t6);
+
+          for (int fpr_index = 0;
+               fpr_index < MD_FLOATINGSAVEAREA_RISCV_FPR_COUNT;
+               ++fpr_index) {
+            Swap(&context_riscv64->float_save.regs[fpr_index]);
+          }
+          Swap(&context_riscv64->float_save.fpcsr);
+        }
+        SetContextRISCV64(context_riscv64.release());
+
+        break;
+      }
+
       default: {
         // Unknown context type - Don't log as an error yet. Let the
         // caller work that out.
@@ -1260,6 +1420,16 @@ bool MinidumpContext::CheckAgainstSystemInfo(uint32_t context_cpu_type) {
 
     case MD_CONTEXT_MIPS64:
       if (system_info_cpu_type == MD_CPU_ARCHITECTURE_MIPS64)
+        return_value = true;
+      break;
+
+    case MD_CONTEXT_RISCV:
+      if (system_info_cpu_type == MD_CPU_ARCHITECTURE_RISCV)
+       return_value = true;
+      break;
+
+    case MD_CONTEXT_RISCV64:
+      if (system_info_cpu_type == MD_CPU_ARCHITECTURE_RISCV64)
         return_value = true;
       break;
   }
@@ -3773,6 +3943,14 @@ string MinidumpSystemInfo::GetCPU() {
       cpu = "arm64";
       break;
 
+    case MD_CPU_ARCHITECTURE_RISCV:
+      cpu = "riscv";
+      break;
+
+    case MD_CPU_ARCHITECTURE_RISCV64:
+      cpu = "riscv64";
+      break;
+
     default:
       BPLOG(ERROR) << "MinidumpSystemInfo unknown CPU for architecture " <<
                       HexString(system_info_.processor_architecture);
@@ -5381,6 +5559,12 @@ bool Minidump::GetContextCPUFlagsFromSystemInfo(uint32_t* context_cpu_flags) {
         break;
       case MD_CPU_ARCHITECTURE_SPARC:
         *context_cpu_flags = MD_CONTEXT_SPARC;
+        break;
+      case MD_CPU_ARCHITECTURE_RISCV:
+        *context_cpu_flags = MD_CONTEXT_RISCV;
+        break;
+      case MD_CPU_ARCHITECTURE_RISCV64:
+        *context_cpu_flags = MD_CONTEXT_RISCV64;
         break;
       case MD_CPU_ARCHITECTURE_UNKNOWN:
         *context_cpu_flags = 0;

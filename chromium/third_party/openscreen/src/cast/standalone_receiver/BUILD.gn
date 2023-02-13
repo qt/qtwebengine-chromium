@@ -5,15 +5,18 @@
 import("//build_overrides/build.gni")
 import("//cast/streaming/external_libraries.gni")
 
+visibility = [ "./*" ]
+
 # Define the executable target only when the build is configured to use the
 # standalone platform implementation; since this is itself a standalone
 # application.
 #
 # See [external_libraries.md](../../build/config/external_libraries.md) for more information.
 if (!build_with_chromium) {
+  shared_public = [ "cast_service.h" ]
+
   shared_sources = [
     "cast_service.cc",
-    "cast_service.h",
     "mirroring_application.cc",
     "mirroring_application.h",
     "simple_remoting_receiver.cc",
@@ -36,6 +39,8 @@ if (!build_with_chromium) {
 
   if (have_external_libs) {
     source_set("standalone_receiver_sdl") {
+      testonly = true
+      public = shared_public
       sources = shared_sources
       deps = shared_deps
 
@@ -60,6 +65,8 @@ if (!build_with_chromium) {
   }
 
   source_set("standalone_receiver_dummy") {
+    testonly = true
+    public = shared_public
     sources = shared_sources
     deps = shared_deps
 
@@ -70,6 +77,8 @@ if (!build_with_chromium) {
   }
 
   executable("cast_receiver") {
+    testonly = true
+    visibility += [ "../..:gn_all" ]
     sources = [ "main.cc" ]
 
     deps = shared_deps + [ "../common:certificate_boringssl" ]

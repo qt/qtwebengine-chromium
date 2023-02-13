@@ -210,13 +210,18 @@ void TrackEventInternal::OnStart(const TrackEventCategoryRegistry& registry,
 }
 
 // static
-void TrackEventInternal::DisableTracing(
-    const TrackEventCategoryRegistry& registry,
-    const DataSourceBase::StopArgs& args) {
+void TrackEventInternal::OnStop(const TrackEventCategoryRegistry& registry,
+                                const DataSourceBase::StopArgs& args) {
   TrackEventSessionObserverRegistry::GetInstance()->ForEachObserverForRegistry(
       registry, [&](TrackEventSessionObserver* o) { o->OnStop(args); });
+}
+
+// static
+void TrackEventInternal::DisableTracing(
+    const TrackEventCategoryRegistry& registry,
+    uint32_t internal_instance_index) {
   for (size_t i = 0; i < registry.category_count(); i++)
-    registry.DisableCategoryForInstance(i, args.internal_instance_index);
+    registry.DisableCategoryForInstance(i, internal_instance_index);
 }
 
 // static
@@ -300,6 +305,21 @@ bool TrackEventInternal::IsCategoryEnabled(
           return NameMatchesPatternList(config.enabled_tags(), tag, match_type);
         })) {
       return true;
+    }
+
+    // 2.5. A special case for Chrome's legacy disabled-by-default categories.
+    // We treat them as having a "slow" tag with one exception: they can be
+    // enabled by a pattern if the pattern starts with "disabled-by-default-"
+    // itself.
+    if (match_type == MatchType::kExact &&
+        !strncmp(category.name, kLegacySlowPrefix, strlen(kLegacySlowPrefix))) {
+      for (const auto& pattern : config.enabled_categories()) {
+        if (!strncmp(pattern.c_str(), kLegacySlowPrefix,
+                     strlen(kLegacySlowPrefix)) &&
+            NameMatchesPattern(pattern, category.name, MatchType::kPattern)) {
+          return true;
+        }
+      }
     }
 
     // 3. Disabled categories.

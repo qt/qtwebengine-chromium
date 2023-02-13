@@ -1,4 +1,4 @@
-// Copyright 2017 PDFium Authors. All rights reserved.
+// Copyright 2017 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -60,7 +60,6 @@ class CFX_ImageTransformer {
   void ContinueRotate(PauseIndicatorIface* pPause);
   void ContinueOther(PauseIndicatorIface* pPause);
 
-  void CalcMask(const CalcData& calc_data);
   void CalcAlpha(const CalcData& calc_data);
   void CalcMono(const CalcData& calc_data);
   void CalcColor(const CalcData& calc_data, FXDIB_Format format, int Bpp);

@@ -1,4 +1,4 @@
-// Copyright 2017 PDFium Authors. All rights reserved.
+// Copyright 2017 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -95,23 +95,23 @@ bool CFX_ImageRenderer::Continue(PauseIndicatorIface* pPause) {
     return true;
 
   RetainPtr<CFX_DIBitmap> pBitmap = m_pTransformer->DetachBitmap();
-  if (!pBitmap || !pBitmap->GetBuffer())
+  if (!pBitmap || pBitmap->GetBuffer().empty())
     return false;
 
   if (pBitmap->IsMaskFormat()) {
     if (m_BitmapAlpha != 255)
       m_MaskColor = FXARGB_MUL_ALPHA(m_MaskColor, m_BitmapAlpha);
-    m_pDevice->CompositeMask(
-        m_pTransformer->result().left, m_pTransformer->result().top,
-        pBitmap->GetWidth(), pBitmap->GetHeight(), pBitmap, m_MaskColor, 0, 0,
-        BlendMode::kNormal, m_pClipRgn.Get(), m_bRgbByteOrder);
+    m_pDevice->CompositeMask(m_pTransformer->result().left,
+                             m_pTransformer->result().top, pBitmap->GetWidth(),
+                             pBitmap->GetHeight(), pBitmap, m_MaskColor, 0, 0,
+                             BlendMode::kNormal, m_pClipRgn, m_bRgbByteOrder);
   } else {
     if (m_BitmapAlpha != 255)
       pBitmap->MultiplyAlpha(m_BitmapAlpha);
     m_pDevice->CompositeBitmap(
         m_pTransformer->result().left, m_pTransformer->result().top,
         pBitmap->GetWidth(), pBitmap->GetHeight(), pBitmap, 0, 0,
-        BlendMode::kNormal, m_pClipRgn.Get(), m_bRgbByteOrder);
+        BlendMode::kNormal, m_pClipRgn, m_bRgbByteOrder);
   }
   return false;
 }

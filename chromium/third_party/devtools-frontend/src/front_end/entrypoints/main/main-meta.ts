@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import * as Common from '../../core/common/common.js';
+import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Workspace from '../../models/workspace/workspace.js';
 import * as Components from '../../ui/legacy/components/utils/utils.js';
@@ -213,6 +214,11 @@ const UIStrings = {
    * of syncing DevTools settings via Chrome Sync.
    */
   enableSync: 'Enable settings sync',
+  /**
+  *@description Tooltip for the colorFormat setting to inform of its deprecation
+  */
+  colorFormatSettingDisabled:
+      'This setting is deprecated because it is incompatible with modern color spaces. To reenable it, you can disable the according experiment.',
 };
 const str_ = i18n.i18n.registerUIStrings('entrypoints/main/main-meta.ts', UIStrings);
 const i18nLazyString = i18n.i18n.getLazilyComputedLocalizedString.bind(undefined, str_);
@@ -637,6 +643,7 @@ Common.Settings.registerSettingExtension({
   ],
 });
 
+// TODO(chromium:1392054) This setting is deprecated, to be removed after a grace period!
 Common.Settings.registerSettingExtension({
   category: Common.Settings.SettingCategory.APPEARANCE,
   storageType: Common.Settings.SettingStorageType.Synced,
@@ -669,13 +676,12 @@ Common.Settings.registerSettingExtension({
       raw: true,
     },
   ],
+  deprecationNotice: {
+    disabled: true,
+    warning: i18nLazyString(UIStrings.colorFormatSettingDisabled),
+    experiment: Root.Runtime.ExperimentName.DISABLE_COLOR_FORMAT_SETTING,
+  },
 });
-
-// Not all locales that are supported should also be made available in the
-// settings. Filter out pseudo locales e.g.
-function filterLocalesForSettings(): string[] {
-  return i18n.i18n.getAllSupportedDevToolsLocales().filter(locale => locale !== 'en-XL');
-}
 
 Common.Settings.registerSettingExtension({
   category: Common.Settings.SettingCategory.APPEARANCE,
@@ -690,7 +696,7 @@ Common.Settings.registerSettingExtension({
       title: i18nLazyString(UIStrings.browserLanguage),
       text: i18nLazyString(UIStrings.browserLanguage),
     },
-    ...filterLocalesForSettings().map(locale => createOptionForLocale(locale)),
+    ...i18n.i18n.getAllSupportedDevToolsLocales().sort().map(locale => createOptionForLocale(locale)),
   ],
   reloadRequired: true,
 });

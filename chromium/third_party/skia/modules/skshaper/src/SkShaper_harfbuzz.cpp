@@ -24,8 +24,8 @@
 #include "include/private/SkMutex.h"
 #include "include/private/SkTArray.h"
 #include "include/private/SkTFitsIn.h"
-#include "include/private/SkTemplates.h"
 #include "include/private/SkTo.h"
+#include "include/private/SkTypeTraits.h"
 #include "modules/skshaper/include/SkShaper.h"
 #include "modules/skunicode/include/SkUnicode.h"
 #include "src/core/SkLRUCache.h"
@@ -53,11 +53,10 @@ template <> struct is_bitmask_enum<hb_buffer_flags_t> : std::true_type {};
 }  // namespace sknonstd
 
 namespace {
-template <typename T,typename P,P* p> using resource = std::unique_ptr<T, SkFunctionWrapper<P, p>>;
-using HBBlob   = resource<hb_blob_t     , decltype(hb_blob_destroy)  , hb_blob_destroy  >;
-using HBFace   = resource<hb_face_t     , decltype(hb_face_destroy)  , hb_face_destroy  >;
-using HBFont   = resource<hb_font_t     , decltype(hb_font_destroy)  , hb_font_destroy  >;
-using HBBuffer = resource<hb_buffer_t   , decltype(hb_buffer_destroy), hb_buffer_destroy>;
+using HBBlob   = std::unique_ptr<hb_blob_t  , SkFunctionObject<hb_blob_destroy>  >;
+using HBFace   = std::unique_ptr<hb_face_t  , SkFunctionObject<hb_face_destroy>  >;
+using HBFont   = std::unique_ptr<hb_font_t  , SkFunctionObject<hb_font_destroy>  >;
+using HBBuffer = std::unique_ptr<hb_buffer_t, SkFunctionObject<hb_buffer_destroy>>;
 
 using SkUnicodeBidi = std::unique_ptr<SkBidiIterator>;
 using SkUnicodeBreak = std::unique_ptr<SkBreakIterator>;
@@ -635,14 +634,14 @@ struct ShapedRunGlyphIterator {
 
     ShapedGlyph* next() {
         const SkTArray<ShapedRun>& runs = *fRuns;
-        SkASSERT(fRunIndex < runs.count());
+        SkASSERT(fRunIndex < runs.size());
         SkASSERT(fGlyphIndex < runs[fRunIndex].fNumGlyphs);
 
         ++fGlyphIndex;
         if (fGlyphIndex == runs[fRunIndex].fNumGlyphs) {
             fGlyphIndex = 0;
             ++fRunIndex;
-            if (fRunIndex >= runs.count()) {
+            if (fRunIndex >= runs.size()) {
                 return nullptr;
             }
         }
@@ -651,7 +650,7 @@ struct ShapedRunGlyphIterator {
 
     ShapedGlyph* current() {
         const SkTArray<ShapedRun>& runs = *fRuns;
-        if (fRunIndex >= runs.count()) {
+        if (fRunIndex >= runs.size()) {
             return nullptr;
         }
         return &runs[fRunIndex].fGlyphs[fGlyphIndex];
@@ -916,12 +915,18 @@ void ShaperDrivenWrapper::wrap(char const * const utf8, size_t utf8Bytes,
                 SkVector advance = {0, 0};
                 modelText = std::make_unique<TextProps[]>(utf8runLength + 1);
                 size_t modelStartCluster = utf8Start - utf8;
+                size_t previousCluster = 0;
                 for (size_t i = 0; i < model.fNumGlyphs; ++i) {
                     SkASSERT(modelStartCluster <= model.fGlyphs[i].fCluster);
                     SkASSERT(                     model.fGlyphs[i].fCluster < (size_t)(utf8End - utf8));
                     if (!model.fGlyphs[i].fUnsafeToBreak) {
-                        modelText[model.fGlyphs[i].fCluster - modelStartCluster].glyphLen = i;
-                        modelText[model.fGlyphs[i].fCluster - modelStartCluster].advance = advance;
+                        // Store up to the first glyph in the cluster.
+                        size_t currentCluster = model.fGlyphs[i].fCluster - modelStartCluster;
+                        if (previousCluster != currentCluster) {
+                            previousCluster  = currentCluster;
+                            modelText[currentCluster].glyphLen = i;
+                            modelText[currentCluster].advance = advance;
+                        }
                     }
                     advance += model.fGlyphs[i].fAdvance;
                 }
@@ -986,7 +991,7 @@ void ShaperDrivenWrapper::wrap(char const * const utf8, size_t utf8Bytes,
             // If nothing fit (best score is negative) and the line is not empty
             if (width < line.fAdvance.fX + best.fAdvance.fX && !line.runs.empty()) {
                 emit(fUnicode.get(), line, handler);
-                line.runs.reset();
+                line.runs.clear();
                 line.fAdvance = {0, 0};
             } else {
                 if (bestUsesModelForGlyphs) {
@@ -1006,7 +1011,7 @@ void ShaperDrivenWrapper::wrap(char const * const utf8, size_t utf8Bytes,
                 // If item broken, emit line (prevent remainder from accidentally fitting)
                 if (utf8Start != utf8End) {
                     emit(fUnicode.get(), line, handler);
-                    line.runs.reset();
+                    line.runs.clear();
                     line.fAdvance = {0, 0};
                 }
             }

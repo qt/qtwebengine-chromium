@@ -1,4 +1,4 @@
-// Copyright 2014 PDFium Authors. All rights reserved.
+// Copyright 2014 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -35,7 +35,7 @@ namespace {
 
 constexpr size_t kPatternSize = 7;
 
-const int8_t CODE_PATTERNS[107][kPatternSize] = {
+const uint8_t kCodePatterns[107][kPatternSize] = {
     {2, 1, 2, 2, 2, 2, 0}, {2, 2, 2, 1, 2, 2, 0}, {2, 2, 2, 2, 2, 1, 0},
     {1, 2, 1, 2, 2, 3, 0}, {1, 2, 1, 3, 2, 2, 0}, {1, 3, 1, 2, 2, 2, 0},
     {1, 2, 2, 2, 1, 3, 0}, {1, 2, 2, 3, 1, 2, 0}, {1, 3, 2, 2, 1, 2, 0},
@@ -118,22 +118,9 @@ void CBC_OnedCode128Writer::SetTextLocation(BC_TEXT_LOC location) {
   m_locTextLoc = location;
 }
 
-uint8_t* CBC_OnedCode128Writer::EncodeWithHint(const ByteString& contents,
-                                               BC_TYPE format,
-                                               int32_t& outWidth,
-                                               int32_t& outHeight,
-                                               int32_t hints) {
-  if (format != BC_TYPE::kCode128)
-    return nullptr;
-
-  return CBC_OneDimWriter::EncodeWithHint(contents, format, outWidth, outHeight,
-                                          hints);
-}
-
-uint8_t* CBC_OnedCode128Writer::EncodeImpl(const ByteString& contents,
-                                           int32_t& outLength) {
+DataVector<uint8_t> CBC_OnedCode128Writer::Encode(const ByteString& contents) {
   if (contents.GetLength() < 1 || contents.GetLength() > 80)
-    return nullptr;
+    return DataVector<uint8_t>();
 
   std::vector<int32_t> patterns;
   int32_t checkSum = 0;
@@ -148,18 +135,17 @@ uint8_t* CBC_OnedCode128Writer::EncodeImpl(const ByteString& contents,
   m_iContentLen = contents.GetLength() + 3;
   int32_t codeWidth = 0;
   for (const auto& patternIndex : patterns) {
-    const int8_t* pattern = CODE_PATTERNS[patternIndex];
+    const uint8_t* pattern = kCodePatterns[patternIndex];
     for (size_t i = 0; i < kPatternSize; ++i)
       codeWidth += pattern[i];
   }
-  outLength = codeWidth;
-  std::unique_ptr<uint8_t, FxFreeDeleter> result(FX_Alloc(uint8_t, outLength));
-  int32_t pos = 0;
-  for (size_t i = 0; i < patterns.size(); ++i) {
-    const int8_t* pattern = CODE_PATTERNS[patterns[i]];
-    pos += AppendPattern(result.get(), pos, pattern, kPatternSize, true);
+  DataVector<uint8_t> result(codeWidth);
+  auto result_span = pdfium::make_span(result);
+  for (const int32_t pattern_index : patterns) {
+    const uint8_t* pattern = kCodePatterns[pattern_index];
+    result_span = AppendPattern(result_span, {pattern, kPatternSize}, true);
   }
-  return result.release();
+  return result;
 }
 
 // static

@@ -1,4 +1,4 @@
-// Copyright 2014 PDFium Authors. All rights reserved.
+// Copyright 2014 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -228,12 +228,11 @@ FPDFPage_TransFormWithClip(FPDF_PAGE page,
   if (matrix)
     WriteMatrix(text_buf, CFXMatrixFromFSMatrix(*matrix)) << " cm ";
 
-  auto pStream =
-      pDoc->NewIndirect<CPDF_Stream>(nullptr, 0, pDoc->New<CPDF_Dictionary>());
+  auto pStream = pDoc->NewIndirect<CPDF_Stream>(pDoc->New<CPDF_Dictionary>());
   pStream->SetDataFromStringstream(&text_buf);
 
   auto pEndStream =
-      pDoc->NewIndirect<CPDF_Stream>(nullptr, 0, pDoc->New<CPDF_Dictionary>());
+      pDoc->NewIndirect<CPDF_Stream>(pDoc->New<CPDF_Dictionary>());
   pEndStream->SetData(ByteStringView(" Q").raw_span());
 
   RetainPtr<CPDF_Array> pContentArray = ToArray(pContentObj);
@@ -406,8 +405,7 @@ FPDF_EXPORT void FPDF_CALLCONV FPDFPage_InsertClipPath(FPDF_PAGE page,
   if (!pDoc)
     return;
 
-  auto pStream =
-      pDoc->NewIndirect<CPDF_Stream>(nullptr, 0, pDoc->New<CPDF_Dictionary>());
+  auto pStream = pDoc->NewIndirect<CPDF_Stream>(pDoc->New<CPDF_Dictionary>());
   pStream->SetDataFromStringstream(&strClip);
 
   RetainPtr<CPDF_Array> pArray = ToArray(pContentObj);

@@ -229,9 +229,6 @@
     AF_WritingSystemClass  writing_system_class;
 
 
-    if ( !size )
-      return FT_THROW( Invalid_Size_Handle );
-
     FT_ZERO( &scaler );
 
     if ( !size_internal->autohint_metrics.x_scale                          ||

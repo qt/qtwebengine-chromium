@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2016 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -163,9 +163,10 @@ FPDF_StructElement_GetAttributeAtIndex(FPDF_STRUCTELEMENT struct_element,
     const CPDF_Array* array = attr_obj->AsArray();
     if (index < 0 || static_cast<size_t>(index) >= array->size())
       return nullptr;
+
     // TODO(tsepez): should embedder take a reference here?
-    return FPDFStructElementAttrFromCPDFDictionary(
-        array->GetDictAt(index).Get());
+    // Unretained reference in public API. NOLINTNEXTLINE
+    return FPDFStructElementAttrFromCPDFDictionary(array->GetDictAt(index));
   }
   return nullptr;
 }

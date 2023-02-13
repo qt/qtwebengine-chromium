@@ -308,6 +308,8 @@ zu{
         CG{"i-Congo (Republic)"}
         CI{"i-Ivory Coast"}
         CZ{"i-Czech Republic"}
+        NZ{"i-Aotearoa New Zealand"}
         TL{"i-East Timor"}
+        TR{"i-Türkiye"}
     }
 }

@@ -10,6 +10,7 @@
 #include "cast/standalone_sender/streaming_av1_encoder.h"
 #endif
 #include "cast/standalone_sender/streaming_vpx_encoder.h"
+#include "platform/base/trivial_clock_traits.h"
 #include "util/osp_logging.h"
 #include "util/trace_logging.h"
 
@@ -121,14 +122,17 @@ void LoopingFileSender::SendFileAgain() {
 void LoopingFileSender::OnAudioData(const float* interleaved_samples,
                                     int num_samples,
                                     Clock::time_point capture_time) {
-  TRACE_DEFAULT_SCOPED(TraceCategory::kStandaloneSender);
+  TRACE_SCOPED2(TraceCategory::kStandaloneSender, "OnAudioData", "num_samples",
+                std::to_string(num_samples), "capture_time",
+                ToString(capture_time));
   latest_frame_time_ = std::max(capture_time, latest_frame_time_);
   audio_encoder_.EncodeAndSend(interleaved_samples, num_samples, capture_time);
 }
 
 void LoopingFileSender::OnVideoFrame(const AVFrame& av_frame,
                                      Clock::time_point capture_time) {
-  TRACE_DEFAULT_SCOPED(TraceCategory::kStandaloneSender);
+  TRACE_SCOPED1(TraceCategory::kStandaloneSender, "OnVideoFrame",
+                "capture_time", ToString(capture_time));
   latest_frame_time_ = std::max(capture_time, latest_frame_time_);
   StreamingVideoEncoder::VideoFrame frame{};
   frame.width = av_frame.width - av_frame.crop_left - av_frame.crop_right;

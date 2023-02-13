@@ -1619,6 +1619,12 @@ void PostCallRecordCreateHeadlessSurfaceEXT(
     VkResult                                    result) override;
 
 
+void PostCallRecordReleaseSwapchainImagesEXT(
+    VkDevice                                    device,
+    const VkReleaseSwapchainImagesInfoEXT*      pReleaseInfo,
+    VkResult                                    result) override;
+
+
 void PostCallRecordCreateIndirectCommandsLayoutNV(
     VkDevice                                    device,
     const VkIndirectCommandsLayoutCreateInfoNV* pCreateInfo,
@@ -1656,6 +1662,41 @@ void PostCallRecordSetPrivateDataEXT(
     uint64_t                                    objectHandle,
     VkPrivateDataSlot                           privateDataSlot,
     uint64_t                                    data,
+    VkResult                                    result) override;
+
+
+void PostCallRecordGetBufferOpaqueCaptureDescriptorDataEXT(
+    VkDevice                                    device,
+    const VkBufferCaptureDescriptorDataInfoEXT* pInfo,
+    void*                                       pData,
+    VkResult                                    result) override;
+
+
+void PostCallRecordGetImageOpaqueCaptureDescriptorDataEXT(
+    VkDevice                                    device,
+    const VkImageCaptureDescriptorDataInfoEXT*  pInfo,
+    void*                                       pData,
+    VkResult                                    result) override;
+
+
+void PostCallRecordGetImageViewOpaqueCaptureDescriptorDataEXT(
+    VkDevice                                    device,
+    const VkImageViewCaptureDescriptorDataInfoEXT* pInfo,
+    void*                                       pData,
+    VkResult                                    result) override;
+
+
+void PostCallRecordGetSamplerOpaqueCaptureDescriptorDataEXT(
+    VkDevice                                    device,
+    const VkSamplerCaptureDescriptorDataInfoEXT* pInfo,
+    void*                                       pData,
+    VkResult                                    result) override;
+
+
+void PostCallRecordGetAccelerationStructureOpaqueCaptureDescriptorDataEXT(
+    VkDevice                                    device,
+    const VkAccelerationStructureCaptureDescriptorDataInfoEXT* pInfo,
+    void*                                       pData,
     VkResult                                    result) override;
 
 
@@ -2011,6 +2052,7 @@ const layer_data::unordered_map<std::string, DeprecationData>  deprecated_extens
     {"VK_EXT_tooling_info", {kExtPromoted, "VK_VERSION_1_3"}},
     {"VK_EXT_validation_flags", {kExtDeprecated, "VK_EXT_validation_features"}},
     {"VK_EXT_ycbcr_2plane_444_formats", {kExtPromoted, "VK_VERSION_1_3"}},
+    {"VK_IMG_format_pvrtc", {kExtDeprecated, ""}},
     {"VK_KHR_16bit_storage", {kExtPromoted, "VK_VERSION_1_1"}},
     {"VK_KHR_8bit_storage", {kExtPromoted, "VK_VERSION_1_2"}},
     {"VK_KHR_bind_memory2", {kExtPromoted, "VK_VERSION_1_1"}},

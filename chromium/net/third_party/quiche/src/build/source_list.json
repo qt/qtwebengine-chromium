@@ -306,7 +306,6 @@
     "quiche/quic/core/quic_interval.h",
     "quiche/quic/core/quic_interval_deque.h",
     "quiche/quic/core/quic_interval_set.h",
-    "quiche/quic/core/quic_legacy_version_encapsulator.h",
     "quiche/quic/core/quic_lru_cache.h",
     "quiche/quic/core/quic_mtu_discovery.h",
     "quiche/quic/core/quic_network_blackhole_detector.h",
@@ -328,6 +327,7 @@
     "quiche/quic/core/quic_stream.h",
     "quiche/quic/core/quic_stream_frame_data_producer.h",
     "quiche/quic/core/quic_stream_id_manager.h",
+    "quiche/quic/core/quic_stream_priority.h",
     "quiche/quic/core/quic_stream_send_buffer.h",
     "quiche/quic/core/quic_stream_sequencer.h",
     "quiche/quic/core/quic_stream_sequencer_buffer.h",
@@ -635,7 +635,6 @@
     "quiche/quic/core/quic_flow_controller.cc",
     "quiche/quic/core/quic_framer.cc",
     "quiche/quic/core/quic_idle_network_detector.cc",
-    "quiche/quic/core/quic_legacy_version_encapsulator.cc",
     "quiche/quic/core/quic_mtu_discovery.cc",
     "quiche/quic/core/quic_network_blackhole_detector.cc",
     "quiche/quic/core/quic_packet_creator.cc",
@@ -651,6 +650,7 @@
     "quiche/quic/core/quic_socket_address_coder.cc",
     "quiche/quic/core/quic_stream.cc",
     "quiche/quic/core/quic_stream_id_manager.cc",
+    "quiche/quic/core/quic_stream_priority.cc",
     "quiche/quic/core/quic_stream_send_buffer.cc",
     "quiche/quic/core/quic_stream_sequencer.cc",
     "quiche/quic/core/quic_stream_sequencer_buffer.cc",
@@ -969,7 +969,9 @@
     "quiche/quic/masque/masque_utils.h",
     "quiche/quic/platform/api/quic_udp_socket_platform_api.h",
     "quiche/quic/tools/quic_client_default_network_helper.h",
+    "quiche/quic/tools/quic_client_factory.h",
     "quiche/quic/tools/quic_default_client.h",
+    "quiche/quic/tools/quic_epoll_client_factory.h",
     "quiche/quic/tools/quic_server.h"
   ],
   "io_tool_support_srcs": [
@@ -994,6 +996,7 @@
     "quiche/quic/masque/masque_utils.cc",
     "quiche/quic/tools/quic_client_default_network_helper.cc",
     "quiche/quic/tools/quic_default_client.cc",
+    "quiche/quic/tools/quic_epoll_client_factory.cc",
     "quiche/quic/tools/quic_server.cc"
   ],
   "io_test_support_hdrs": [
@@ -1094,6 +1097,12 @@
     "quiche/http2/test_tools/http2_frame_builder_test.cc",
     "quiche/http2/test_tools/http2_random_test.cc",
     "quiche/http2/test_tools/random_decoder_test_base_test.cc",
+    "quiche/oblivious_http/buffers/oblivious_http_integration_test.cc",
+    "quiche/oblivious_http/buffers/oblivious_http_request_test.cc",
+    "quiche/oblivious_http/buffers/oblivious_http_response_test.cc",
+    "quiche/oblivious_http/common/oblivious_http_header_key_config_test.cc",
+    "quiche/oblivious_http/oblivious_http_client_test.cc",
+    "quiche/oblivious_http/oblivious_http_gateway_test.cc",
     "quiche/quic/core/congestion_control/bandwidth_sampler_test.cc",
     "quiche/quic/core/congestion_control/bbr2_simulator_test.cc",
     "quiche/quic/core/congestion_control/bbr_sender_test.cc",
@@ -1204,7 +1213,6 @@
     "quiche/quic/core/quic_interval_deque_test.cc",
     "quiche/quic/core/quic_interval_set_test.cc",
     "quiche/quic/core/quic_interval_test.cc",
-    "quiche/quic/core/quic_legacy_version_encapsulator_test.cc",
     "quiche/quic/core/quic_lru_cache_test.cc",
     "quiche/quic/core/quic_network_blackhole_detector_test.cc",
     "quiche/quic/core/quic_one_block_arena_test.cc",
@@ -1219,6 +1227,7 @@
     "quiche/quic/core/quic_session_test.cc",
     "quiche/quic/core/quic_socket_address_coder_test.cc",
     "quiche/quic/core/quic_stream_id_manager_test.cc",
+    "quiche/quic/core/quic_stream_priority_test.cc",
     "quiche/quic/core/quic_stream_send_buffer_test.cc",
     "quiche/quic/core/quic_stream_sequencer_buffer_test.cc",
     "quiche/quic/core/quic_stream_sequencer_test.cc",
@@ -1306,7 +1315,6 @@
     "quiche/quic/test_tools/fuzzing/quic_framer_process_data_packet_fuzzer.cc"
   ],
   "cli_tools_hdrs": [
-    "quiche/quic/tools/quic_epoll_client_factory.h",
     "quiche/quic/tools/quic_server_factory.h",
     "quiche/quic/tools/quic_toy_client.h",
     "quiche/quic/tools/quic_toy_server.h"
@@ -1318,7 +1326,6 @@
     "quiche/quic/tools/qpack_offline_decoder_bin.cc",
     "quiche/quic/tools/quic_client_bin.cc",
     "quiche/quic/tools/quic_client_interop_test_bin.cc",
-    "quiche/quic/tools/quic_epoll_client_factory.cc",
     "quiche/quic/tools/quic_packet_printer_bin.cc",
     "quiche/quic/tools/quic_reject_reason_decoder_bin.cc",
     "quiche/quic/tools/quic_server_bin.cc",
@@ -1439,6 +1446,20 @@
   ],
   "binary_http_srcs": [
     "quiche/binary_http/binary_http_message.cc"
+  ],
+  "oblivious_http_hdrs": [
+    "quiche/oblivious_http/buffers/oblivious_http_request.h",
+    "quiche/oblivious_http/buffers/oblivious_http_response.h",
+    "quiche/oblivious_http/common/oblivious_http_header_key_config.h",
+    "quiche/oblivious_http/oblivious_http_client.h",
+    "quiche/oblivious_http/oblivious_http_gateway.h"
+  ],
+  "oblivious_http_srcs": [
+    "quiche/oblivious_http/buffers/oblivious_http_request.cc",
+    "quiche/oblivious_http/buffers/oblivious_http_response.cc",
+    "quiche/oblivious_http/common/oblivious_http_header_key_config.cc",
+    "quiche/oblivious_http/oblivious_http_client.cc",
+    "quiche/oblivious_http/oblivious_http_gateway.cc"
   ],
   "qbone_hdrs": [
     "quiche/quic/qbone/bonnet/icmp_reachable.h",

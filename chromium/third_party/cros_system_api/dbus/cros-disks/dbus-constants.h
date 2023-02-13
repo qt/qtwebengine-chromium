@@ -5,7 +5,10 @@
 #ifndef SYSTEM_API_DBUS_CROS_DISKS_DBUS_CONSTANTS_H_
 #define SYSTEM_API_DBUS_CROS_DISKS_DBUS_CONSTANTS_H_
 
+#include <ostream>
+
 namespace cros_disks {
+
 const char kCrosDisksInterface[] = "org.chromium.CrosDisks";
 const char kCrosDisksServicePath[] = "/org/chromium/CrosDisks";
 const char kCrosDisksServiceName[] = "org.chromium.CrosDisks";
@@ -65,82 +68,113 @@ const char kFileSystemType[] = "FileSystemType";
 // Format options.
 const char kFormatLabelOption[] = "Label";
 
-// Enum values.
-// DeviceMediaType enum values are reported through UMA.
-// All values but DEVICE_MEDIA_NUM_VALUES should not be changed or removed.
-// Additional values can be added but DEVICE_MEDIA_NUM_VALUES should always
-// be the last value in the enum.
-enum DeviceMediaType {
-  DEVICE_MEDIA_UNKNOWN = 0,
-  DEVICE_MEDIA_USB = 1,
-  DEVICE_MEDIA_SD = 2,
-  DEVICE_MEDIA_OPTICAL_DISC = 3,
-  DEVICE_MEDIA_MOBILE = 4,
-  DEVICE_MEDIA_DVD = 5,
-  DEVICE_MEDIA_NUM_VALUES,
+// Device media type.
+// These values are persisted to logs. Entries should not be renumbered and
+// numeric values should never be reused.
+// See enum CrosDisksDeviceMediaType in tools/metrics/histograms/enums.xml.
+enum class DeviceType {
+  kUnknown = 0,
+  kUSB = 1,          // USB stick.
+  kSD = 2,           // SD card.
+  kOpticalDisc = 3,  // Optical disc, excluding DVD.
+  kMobile = 4,       // Storage on a mobile device (e.g. Android).
+  kDVD = 5,          // DVD.
+
+  kMaxValue = 5,
 };
 
-enum FormatErrorType {
-  FORMAT_ERROR_NONE = 0,
-  FORMAT_ERROR_UNKNOWN = 1,
-  FORMAT_ERROR_INTERNAL = 2,
-  FORMAT_ERROR_INVALID_DEVICE_PATH = 3,
-  FORMAT_ERROR_DEVICE_BEING_FORMATTED = 4,
-  FORMAT_ERROR_UNSUPPORTED_FILESYSTEM = 5,
-  FORMAT_ERROR_FORMAT_PROGRAM_NOT_FOUND = 6,
-  FORMAT_ERROR_FORMAT_PROGRAM_FAILED = 7,
-  FORMAT_ERROR_DEVICE_NOT_ALLOWED = 8,
-  FORMAT_ERROR_INVALID_OPTIONS = 9,
-  FORMAT_ERROR_LONG_NAME = 10,
-  FORMAT_ERROR_INVALID_CHARACTER = 11,
+// Format error reported by cros-disks.
+// These values are persisted to logs. Entries should not be renumbered and
+// numeric values should never be reused.
+// See enum CrosDisksClientFormatError in tools/metrics/histograms/enums.xml.
+enum class FormatError {
+  kSuccess = 0,
+  kUnknownError = 1,
+  kInternalError = 2,
+  kInvalidDevicePath = 3,
+  kDeviceBeingFormatted = 4,
+  kUnsupportedFilesystem = 5,
+  kFormatProgramNotFound = 6,
+  kFormatProgramFailed = 7,
+  kDeviceNotAllowed = 8,
+  kInvalidOptions = 9,
+  kLongName = 10,
+  kInvalidCharacter = 11,
+
+  kMaxValue = 11,
 };
 
-// TODO(crbug.com/1368408): After both Chrome and cros-disks use these enum
-// values, make these error values contiguous so that they can be directly
-// reported via UMA. See
-// https://source.chromium.org/chromium/chromium/src/+/main:chromeos/ash/components/dbus/cros_disks/cros_disks_client.h?q=MountError.
+// Mount or unmount error code.
 //
-// The *_EX values are used during the transition.
-enum MountErrorType {
-  MOUNT_ERROR_NONE = 0,
-  MOUNT_ERROR_UNKNOWN = 1,
-  MOUNT_ERROR_INTERNAL = 2,
-  MOUNT_ERROR_INVALID_ARGUMENT = 3,
-  MOUNT_ERROR_INVALID_PATH = 4,
-  MOUNT_ERROR_PATH_ALREADY_MOUNTED = 5,
-  MOUNT_ERROR_PATH_NOT_MOUNTED = 6,
-  MOUNT_ERROR_DIRECTORY_CREATION_FAILED = 7,
-  MOUNT_ERROR_INVALID_MOUNT_OPTIONS = 8,
-  MOUNT_ERROR_INVALID_UNMOUNT_OPTIONS = 9,
-  MOUNT_ERROR_INSUFFICIENT_PERMISSIONS = 10,
+// These values are persisted to logs. Entries should not be renumbered and
+// numeric values should never be reused.
+enum class MountError {
+  // Success.
+  kSuccess = 0,
+
+  // Generic error code.
+  kUnknownError = 1,
+
+  // Internal error.
+  kInternalError = 2,
+
+  // Invalid argument.
+  kInvalidArgument = 3,
+
+  // Invalid path.
+  kInvalidPath = 4,
+
+  // Not used.
+  kPathAlreadyMounted = 5,
+
+  // Tried to unmount a path that is not currently mounted.
+  kPathNotMounted = 6,
+
+  // Cannot create directory.
+  kDirectoryCreationFailed = 7,
+
+  // Invalid mount options.
+  kInvalidMountOptions = 8,
+
+  // Not used.
+  kInvalidUnmountOptions = 9,
+
+  // Insufficient permissions.
+  kInsufficientPermissions = 10,
 
   // The FUSE mounter cannot be found.
-  MOUNT_ERROR_MOUNT_PROGRAM_NOT_FOUND = 11,
+  kMountProgramNotFound = 11,
 
   // The FUSE mounter finished with an error.
-  MOUNT_ERROR_MOUNT_PROGRAM_FAILED = 12,
+  kMountProgramFailed = 12,
+
+  // The provided path to mount is invalid.
+  kInvalidDevicePath = 13,
+
+  // Cannot determine file system of the device.
+  kUnknownFilesystem = 14,
+
+  // The file system of the device is recognized but not supported.
+  kUnsupportedFilesystem = 15,
+
+  // Not used.
+  kInvalidArchive = 16,
 
   // Either the FUSE mounter needs a password, or the provided password is
   // incorrect.
-  MOUNT_ERROR_NEED_PASSWORD = 13,
-  MOUNT_ERROR_NEED_PASSWORD_EX = 117,
+  kNeedPassword = 17,
 
   // The FUSE mounter is currently launching, and it hasn't daemonized yet.
-  MOUNT_ERROR_IN_PROGRESS = 14,
-  MOUNT_ERROR_IN_PROGRESS_EX = 118,
+  kInProgress = 18,
 
   // The FUSE mounter was cancelled (killed) while it was launching.
-  MOUNT_ERROR_CANCELLED = 15,
-  MOUNT_ERROR_CANCELLED_EX = 119,
+  kCancelled = 19,
 
   // The device is busy.
-  MOUNT_ERROR_BUSY = 20,
+  kBusy = 20,
 
-  MOUNT_ERROR_INVALID_DEVICE_PATH = 100,
-  MOUNT_ERROR_UNKNOWN_FILESYSTEM = 101,
-  MOUNT_ERROR_UNSUPPORTED_FILESYSTEM = 102,
-  MOUNT_ERROR_INVALID_ARCHIVE = 201,
-  MOUNT_ERROR_UNSUPPORTED_ARCHIVE = 202,
+  // Modify when adding enum values.
+  kMaxValue = 20,
 };
 
 // MountSourceType enum values are solely used by Chrome/CrosDisks in
@@ -152,30 +186,163 @@ enum MountSourceType {
   MOUNT_SOURCE_NETWORK_STORAGE = 3,
 };
 
-enum PartitionErrorType {
-  PARTITION_ERROR_NONE = 0,
-  PARTITION_ERROR_UNKNOWN = 1,
-  PARTITION_ERROR_INTERNAL = 2,
-  PARTITION_ERROR_INVALID_DEVICE_PATH = 3,
-  PARTITION_ERROR_DEVICE_BEING_PARTITIONED = 4,
-  PARTITION_ERROR_PROGRAM_NOT_FOUND = 5,
-  PARTITION_ERROR_PROGRAM_FAILED = 6,
-  PARTITION_ERROR_DEVICE_NOT_ALLOWED = 7,
+// Partition error reported by cros-disks.
+enum class PartitionError {
+  kSuccess = 0,
+  kUnknownError = 1,
+  kInternalError = 2,
+  kInvalidDevicePath = 3,
+  kDeviceBeingPartitioned = 4,
+  kProgramNotFound = 5,
+  kProgramFailed = 6,
+  kDeviceNotAllowed = 7,
 };
 
-enum RenameErrorType {
-  RENAME_ERROR_NONE = 0,
-  RENAME_ERROR_UNKNOWN = 1,
-  RENAME_ERROR_INTERNAL = 2,
-  RENAME_ERROR_INVALID_DEVICE_PATH = 3,
-  RENAME_ERROR_DEVICE_BEING_RENAMED = 4,
-  RENAME_ERROR_UNSUPPORTED_FILESYSTEM = 5,
-  RENAME_ERROR_RENAME_PROGRAM_NOT_FOUND = 6,
-  RENAME_ERROR_RENAME_PROGRAM_FAILED = 7,
-  RENAME_ERROR_DEVICE_NOT_ALLOWED = 8,
-  RENAME_ERROR_LONG_NAME = 9,
-  RENAME_ERROR_INVALID_CHARACTER = 10,
+// Rename error reported by cros-disks.
+enum class RenameError {
+  kSuccess = 0,
+  kUnknownError = 1,
+  kInternalError = 2,
+  kInvalidDevicePath = 3,
+  kDeviceBeingRenamed = 4,
+  kUnsupportedFilesystem = 5,
+  kRenameProgramNotFound = 6,
+  kRenameProgramFailed = 7,
+  kDeviceNotAllowed = 8,
+  kLongName = 9,
+  kInvalidCharacter = 10,
 };
+
+// Output operators for logging and debugging.
+
+template <typename C>
+std::basic_ostream<C>& operator<<(std::basic_ostream<C>& out,
+                                  const DeviceType type) {
+  switch (type) {
+#define PRINT(s)         \
+  case DeviceType::k##s: \
+    return out << #s;
+    PRINT(Unknown)
+    PRINT(USB)
+    PRINT(SD)
+    PRINT(OpticalDisc)
+    PRINT(Mobile)
+    PRINT(DVD)
+#undef PRINT
+  }
+
+  return out << "DeviceType(" << std::underlying_type_t<DeviceType>(type)
+             << ")";
+}
+
+template <typename C>
+std::basic_ostream<C>& operator<<(std::basic_ostream<C>& out,
+                                  const MountError error) {
+  switch (error) {
+#define PRINT(s)         \
+  case MountError::k##s: \
+    return out << #s;
+    PRINT(Success)
+    PRINT(UnknownError)
+    PRINT(InternalError)
+    PRINT(InvalidArgument)
+    PRINT(InvalidPath)
+    PRINT(PathAlreadyMounted)
+    PRINT(PathNotMounted)
+    PRINT(DirectoryCreationFailed)
+    PRINT(InvalidMountOptions)
+    PRINT(InvalidUnmountOptions)
+    PRINT(InsufficientPermissions)
+    PRINT(MountProgramNotFound)
+    PRINT(MountProgramFailed)
+    PRINT(InvalidDevicePath)
+    PRINT(UnknownFilesystem)
+    PRINT(UnsupportedFilesystem)
+    PRINT(InvalidArchive)
+    PRINT(NeedPassword)
+    PRINT(InProgress)
+    PRINT(Cancelled)
+    PRINT(Busy)
+#undef PRINT
+  }
+
+  return out << "MountError(" << std::underlying_type_t<MountError>(error)
+             << ")";
+}
+
+template <typename C>
+std::basic_ostream<C>& operator<<(std::basic_ostream<C>& out,
+                                  const RenameError error) {
+  switch (error) {
+#define PRINT(s)          \
+  case RenameError::k##s: \
+    return out << #s;
+    PRINT(Success)
+    PRINT(UnknownError)
+    PRINT(InternalError)
+    PRINT(InvalidDevicePath)
+    PRINT(DeviceBeingRenamed)
+    PRINT(UnsupportedFilesystem)
+    PRINT(RenameProgramNotFound)
+    PRINT(RenameProgramFailed)
+    PRINT(DeviceNotAllowed)
+    PRINT(LongName)
+    PRINT(InvalidCharacter)
+#undef PRINT
+  }
+
+  return out << "RenameError(" << std::underlying_type_t<RenameError>(error)
+             << ")";
+}
+
+template <typename C>
+std::basic_ostream<C>& operator<<(std::basic_ostream<C>& out,
+                                  const FormatError error) {
+  switch (error) {
+#define PRINT(s)          \
+  case FormatError::k##s: \
+    return out << #s;
+    PRINT(Success)
+    PRINT(UnknownError)
+    PRINT(InternalError)
+    PRINT(InvalidDevicePath)
+    PRINT(DeviceBeingFormatted)
+    PRINT(UnsupportedFilesystem)
+    PRINT(FormatProgramNotFound)
+    PRINT(FormatProgramFailed)
+    PRINT(DeviceNotAllowed)
+    PRINT(InvalidOptions)
+    PRINT(LongName)
+    PRINT(InvalidCharacter)
+#undef PRINT
+  }
+
+  return out << "FormatError(" << std::underlying_type_t<FormatError>(error)
+             << ")";
+}
+
+template <typename C>
+std::basic_ostream<C>& operator<<(std::basic_ostream<C>& out,
+                                  const PartitionError error) {
+  switch (error) {
+#define PRINT(s)             \
+  case PartitionError::k##s: \
+    return out << #s;
+    PRINT(Success)
+    PRINT(UnknownError)
+    PRINT(InternalError)
+    PRINT(InvalidDevicePath)
+    PRINT(DeviceBeingPartitioned)
+    PRINT(ProgramNotFound)
+    PRINT(ProgramFailed)
+    PRINT(DeviceNotAllowed)
+#undef PRINT
+  }
+
+  return out << "PartitionError("
+             << std::underlying_type_t<PartitionError>(error) << ")";
+}
+
 }  // namespace cros_disks
 
 #endif  // SYSTEM_API_DBUS_CROS_DISKS_DBUS_CONSTANTS_H_

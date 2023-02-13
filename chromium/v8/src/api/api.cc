@@ -63,6 +63,7 @@
 #include "src/handles/global-handles.h"
 #include "src/handles/persistent-handles.h"
 #include "src/handles/shared-object-conveyor-handles.h"
+#include "src/handles/traced-handles.h"
 #include "src/heap/embedder-tracing.h"
 #include "src/heap/heap-inl.h"
 #include "src/heap/heap-write-barrier.h"
@@ -357,19 +358,12 @@ void V8::SetSnapshotDataBlob(StartupData* snapshot_blob) {
 namespace {
 
 #ifdef V8_ENABLE_SANDBOX
-// ArrayBufferAllocator to use when sandboxed pointers are used in which case
-// all ArrayBuffer backing stores need to be allocated inside the sandbox.
-// Note, the current implementation is extremely inefficient as it uses the
-// BoundedPageAllocator. In the future, we'll need a proper allocator
-// implementation.
+// ArrayBufferAllocator to use when the sandbox is enabled in which case all
+// ArrayBuffer backing stores need to be allocated inside the sandbox.
 class ArrayBufferAllocator : public v8::ArrayBuffer::Allocator {
  public:
-  ArrayBufferAllocator() { CHECK(page_allocator_); }
-
   void* Allocate(size_t length) override {
-    return page_allocator_->AllocatePages(nullptr, RoundUp(length, page_size_),
-                                          page_size_,
-                                          PageAllocator::kReadWrite);
+    return allocator_->Allocate(length);
   }
 
   void* AllocateUninitialized(size_t length) override {
@@ -377,12 +371,136 @@ class ArrayBufferAllocator : public v8::ArrayBuffer::Allocator {
   }
 
   void Free(void* data, size_t length) override {
-    page_allocator_->FreePages(data, RoundUp(length, page_size_));
+    return allocator_->Free(data);
   }
 
  private:
-  PageAllocator* page_allocator_ = internal::GetArrayBufferPageAllocator();
-  const size_t page_size_ = page_allocator_->AllocatePageSize();
+  // Backend allocator shared by all ArrayBufferAllocator instances. This way,
+  // there is a single region of virtual addres space reserved inside the
+  // sandbox from which all ArrayBufferAllocators allocate their memory,
+  // instead of each allocator creating their own region, which may cause
+  // address space exhaustion inside the sandbox.
+  // TODO(chromium:1340224): replace this with a more efficient allocator.
+  class BackendAllocator {
+   public:
+    BackendAllocator() {
+      CHECK(i::GetProcessWideSandbox()->is_initialized());
+      VirtualAddressSpace* vas = i::GetProcessWideSandbox()->address_space();
+      constexpr size_t max_backing_memory_size = 8ULL * i::GB;
+      constexpr size_t min_backing_memory_size = 1ULL * i::GB;
+      size_t backing_memory_size = max_backing_memory_size;
+      i::Address backing_memory_base = 0;
+      while (!backing_memory_base &&
+             backing_memory_size >= min_backing_memory_size) {
+        backing_memory_base = vas->AllocatePages(
+            VirtualAddressSpace::kNoHint, backing_memory_size, kChunkSize,
+            PagePermissions::kNoAccess);
+        if (!backing_memory_base) {
+          backing_memory_size /= 2;
+        }
+      }
+      if (!backing_memory_base) {
+        i::V8::FatalProcessOutOfMemory(
+            nullptr,
+            "Could not reserve backing memory for ArrayBufferAllocators");
+      }
+      DCHECK(IsAligned(backing_memory_base, kChunkSize));
+
+      region_alloc_ = std::make_unique<base::RegionAllocator>(
+          backing_memory_base, backing_memory_size, kAllocationGranularity);
+      end_of_accessible_region_ = region_alloc_->begin();
+
+      // Install a on-merge callback to discard or decommit unused pages.
+      region_alloc_->set_on_merge_callback([this](i::Address start,
+                                                  size_t size) {
+        mutex_.AssertHeld();
+        VirtualAddressSpace* vas = i::GetProcessWideSandbox()->address_space();
+        i::Address end = start + size;
+        if (end == region_alloc_->end() &&
+            start <= end_of_accessible_region_ - kChunkSize) {
+          // Can shrink the accessible region.
+          i::Address new_end_of_accessible_region = RoundUp(start, kChunkSize);
+          size_t size =
+              end_of_accessible_region_ - new_end_of_accessible_region;
+          CHECK(vas->DecommitPages(new_end_of_accessible_region, size));
+          end_of_accessible_region_ = new_end_of_accessible_region;
+        } else if (size >= 2 * kChunkSize) {
+          // Can discard pages. The pages stay accessible, so the size of the
+          // accessible region doesn't change.
+          i::Address chunk_start = RoundUp(start, kChunkSize);
+          i::Address chunk_end = RoundDown(start + size, kChunkSize);
+          CHECK(vas->DiscardSystemPages(chunk_start, chunk_end - chunk_start));
+        }
+      });
+    }
+
+    ~BackendAllocator() {
+      // The sandbox may already have been torn down, in which case there's no
+      // need to free any memory.
+      if (i::GetProcessWideSandbox()->is_initialized()) {
+        VirtualAddressSpace* vas = i::GetProcessWideSandbox()->address_space();
+        vas->FreePages(region_alloc_->begin(), region_alloc_->size());
+      }
+    }
+
+    BackendAllocator(const BackendAllocator&) = delete;
+    BackendAllocator& operator=(const BackendAllocator&) = delete;
+
+    void* Allocate(size_t length) {
+      base::MutexGuard guard(&mutex_);
+
+      length = RoundUp(length, kAllocationGranularity);
+      i::Address region = region_alloc_->AllocateRegion(length);
+      if (region == base::RegionAllocator::kAllocationFailure) return nullptr;
+
+      // Check if the memory is inside the accessible region. If not, grow it.
+      i::Address end = region + length;
+      size_t length_to_memset = length;
+      if (end > end_of_accessible_region_) {
+        VirtualAddressSpace* vas = i::GetProcessWideSandbox()->address_space();
+        i::Address new_end_of_accessible_region = RoundUp(end, kChunkSize);
+        size_t size = new_end_of_accessible_region - end_of_accessible_region_;
+        if (!vas->SetPagePermissions(end_of_accessible_region_, size,
+                                     PagePermissions::kReadWrite)) {
+          CHECK(region_alloc_->FreeRegion(region));
+          return nullptr;
+        }
+
+        // The pages that were inaccessible are guaranteed to be zeroed, so only
+        // memset until the previous end of the accessible region.
+        length_to_memset = end_of_accessible_region_ - region;
+        end_of_accessible_region_ = new_end_of_accessible_region;
+      }
+
+      void* mem = reinterpret_cast<void*>(region);
+      memset(mem, 0, length_to_memset);
+      return mem;
+    }
+
+    void Free(void* data) {
+      base::MutexGuard guard(&mutex_);
+      region_alloc_->FreeRegion(reinterpret_cast<i::Address>(data));
+    }
+
+    static BackendAllocator* SharedInstance() {
+      static base::LeakyObject<BackendAllocator> instance;
+      return instance.get();
+    }
+
+   private:
+    // Use a region allocator with a "page size" of 128 bytes as a reasonable
+    // compromise between the number of regions it has to manage and the amount
+    // of memory wasted due to rounding allocation sizes up to the page size.
+    static constexpr size_t kAllocationGranularity = 128;
+    // The backing memory's accessible region is grown in chunks of this size.
+    static constexpr size_t kChunkSize = 1 * i::MB;
+
+    std::unique_ptr<base::RegionAllocator> region_alloc_;
+    size_t end_of_accessible_region_;
+    base::Mutex mutex_;
+  };
+
+  BackendAllocator* allocator_ = BackendAllocator::SharedInstance();
 };
 
 #else
@@ -428,7 +546,7 @@ struct SnapshotCreatorData {
 
 SnapshotCreator::SnapshotCreator(Isolate* v8_isolate,
                                  const intptr_t* external_references,
-                                 StartupData* existing_snapshot) {
+                                 const StartupData* existing_snapshot) {
   SnapshotCreatorData* data = new SnapshotCreatorData(v8_isolate);
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(v8_isolate);
   i_isolate->set_array_buffer_allocator(&data->allocator_);
@@ -450,7 +568,7 @@ SnapshotCreator::SnapshotCreator(Isolate* v8_isolate,
 }
 
 SnapshotCreator::SnapshotCreator(const intptr_t* external_references,
-                                 StartupData* existing_snapshot)
+                                 const StartupData* existing_snapshot)
     : SnapshotCreator(Isolate::Allocate(), external_references,
                       existing_snapshot) {}
 
@@ -616,7 +734,10 @@ StartupData SnapshotCreator::CreateBlob(
   i::Snapshot::ClearReconstructableDataForSerialization(
       i_isolate, function_code_handling == FunctionCodeHandling::kClear);
 
-  i::GlobalSafepointScope global_safepoint(i_isolate);
+  i::SafepointKind safepoint_kind = i_isolate->has_shared_heap()
+                                        ? i::SafepointKind::kGlobal
+                                        : i::SafepointKind::kIsolate;
+  i::SafepointScope safepoint_scope(i_isolate, safepoint_kind);
   i::DisallowGarbageCollection no_gc_from_here_on;
 
   // Create a vector with all contexts and clear associated Persistent fields.
@@ -654,7 +775,7 @@ StartupData SnapshotCreator::CreateBlob(
 
   data->created_ = true;
   return i::Snapshot::Create(i_isolate, &contexts, embedder_fields_serializers,
-                             global_safepoint, no_gc_from_here_on);
+                             safepoint_scope, no_gc_from_here_on);
 }
 
 bool StartupData::CanBeRehashed() const {
@@ -792,8 +913,7 @@ i::Address* GlobalizeTracedReference(i::Isolate* i_isolate, i::Address* obj,
   Utils::ApiCheck((slot != nullptr), "v8::GlobalizeTracedReference",
                   "the address slot must be not null");
 #endif
-  i::Handle<i::Object> result =
-      i_isolate->global_handles()->CreateTraced(*obj, slot, store_mode);
+  auto result = i_isolate->traced_handles()->Create(*obj, slot, store_mode);
 #ifdef VERIFY_HEAP
   if (i::v8_flags.verify_heap) {
     i::Object(*obj).ObjectVerify(i_isolate);
@@ -803,16 +923,16 @@ i::Address* GlobalizeTracedReference(i::Isolate* i_isolate, i::Address* obj,
 }
 
 void MoveTracedReference(internal::Address** from, internal::Address** to) {
-  GlobalHandles::MoveTracedReference(from, to);
+  TracedHandles::Move(from, to);
 }
 
 void CopyTracedReference(const internal::Address* const* from,
                          internal::Address** to) {
-  GlobalHandles::CopyTracedReference(from, to);
+  TracedHandles::Copy(from, to);
 }
 
 void DisposeTracedReference(internal::Address* location) {
-  GlobalHandles::DestroyTracedReference(location);
+  TracedHandles::Destroy(location);
 }
 
 }  // namespace internal
@@ -3732,6 +3852,7 @@ bool Value::IsWasmModuleObject() const { return false; }
 #endif  // V8_ENABLE_WEBASSEMBLY
 VALUE_IS_SPECIFIC_TYPE(WeakMap, JSWeakMap)
 VALUE_IS_SPECIFIC_TYPE(WeakSet, JSWeakSet)
+VALUE_IS_SPECIFIC_TYPE(WeakRef, JSWeakRef)
 
 #undef VALUE_IS_SPECIFIC_TYPE
 
@@ -4070,8 +4191,16 @@ size_t v8::BackingStore::ByteLength() const {
   return reinterpret_cast<const i::BackingStore*>(this)->byte_length();
 }
 
+size_t v8::BackingStore::MaxByteLength() const {
+  return reinterpret_cast<const i::BackingStore*>(this)->max_byte_length();
+}
+
 bool v8::BackingStore::IsShared() const {
   return reinterpret_cast<const i::BackingStore*>(this)->is_shared();
+}
+
+bool v8::BackingStore::IsResizableByUserJavaScript() const {
+  return reinterpret_cast<const i::BackingStore*>(this)->is_resizable_by_js();
 }
 
 // static
@@ -6140,7 +6269,8 @@ void v8::Object::SetAlignedPointerInInternalField(int index, void* value) {
                       .store_aligned_pointer(obj->GetIsolate(), value),
                   location, "Unaligned pointer");
   DCHECK_EQ(value, GetAlignedPointerFromInternalField(index));
-  internal::WriteBarrier::MarkingFromInternalFields(i::JSObject::cast(*obj));
+  internal::WriteBarrier::CombinedBarrierFromInternalFields(
+      i::JSObject::cast(*obj), value);
 }
 
 void v8::Object::SetAlignedPointerInInternalFields(int argc, int indices[],
@@ -6163,7 +6293,8 @@ void v8::Object::SetAlignedPointerInInternalFields(int argc, int indices[],
                     location, "Unaligned pointer");
     DCHECK_EQ(value, GetAlignedPointerFromInternalField(index));
   }
-  internal::WriteBarrier::MarkingFromInternalFields(js_obj);
+  internal::WriteBarrier::CombinedBarrierFromInternalFields(js_obj, argc,
+                                                            values);
 }
 
 // --- E n v i r o n m e n t ---
@@ -6611,8 +6742,29 @@ v8::Isolate* Context::GetIsolate() {
 v8::MicrotaskQueue* Context::GetMicrotaskQueue() {
   i::Handle<i::Context> env = Utils::OpenHandle(this);
   Utils::ApiCheck(env->IsNativeContext(), "v8::Context::GetMicrotaskQueue",
-                  "Must be calld on a native context");
+                  "Must be called on a native context");
   return i::Handle<i::NativeContext>::cast(env)->microtask_queue();
+}
+
+void Context::SetMicrotaskQueue(v8::MicrotaskQueue* queue) {
+  i::Handle<i::Context> context = Utils::OpenHandle(this);
+  i::Isolate* i_isolate = context->GetIsolate();
+  Utils::ApiCheck(context->IsNativeContext(), "v8::Context::SetMicrotaskQueue",
+                  "Must be called on a native context");
+  i::Handle<i::NativeContext> native_context =
+      i::Handle<i::NativeContext>::cast(context);
+  i::HandleScopeImplementer* impl = i_isolate->handle_scope_implementer();
+  Utils::ApiCheck(!native_context->microtask_queue()->IsRunningMicrotasks(),
+                  "v8::Context::SetMicrotaskQueue",
+                  "Must not be running microtasks");
+  Utils::ApiCheck(
+      native_context->microtask_queue()->GetMicrotasksScopeDepth() == 0,
+      "v8::Context::SetMicrotaskQueue", "Must not have microtask scope pushed");
+  Utils::ApiCheck(impl->EnteredContextCount() == 0,
+                  "v8::Context::SetMicrotaskQueue()",
+                  "Cannot set Microtask Queue with an entered context");
+  native_context->set_microtask_queue(
+      i_isolate, static_cast<const i::MicrotaskQueue*>(queue));
 }
 
 v8::Local<v8::Object> Context::Global() {
@@ -7097,7 +7249,7 @@ bool v8::String::MakeExternal(v8::String::ExternalStringResource* resource) {
   // TODO(v8:12007): Consider adding
   // MakeExternal(Isolate*, ExternalStringResource*).
   i::Isolate* i_isolate;
-  if (obj.IsShared()) {
+  if (obj.InSharedWritableHeap()) {
     i_isolate = i::Isolate::Current();
   } else {
     // It is safe to call GetIsolateFromWritableHeapObject because
@@ -7130,7 +7282,7 @@ bool v8::String::MakeExternal(
   // TODO(v8:12007): Consider adding
   // MakeExternal(Isolate*, ExternalOneByteStringResource*).
   i::Isolate* i_isolate;
-  if (obj.IsShared()) {
+  if (obj.InSharedWritableHeap()) {
     i_isolate = i::Isolate::Current();
   } else {
     // It is safe to call GetIsolateFromWritableHeapObject because
@@ -8075,6 +8227,10 @@ bool v8::ArrayBuffer::IsDetachable() const {
   return Utils::OpenHandle(this)->is_detachable();
 }
 
+bool v8::ArrayBuffer::WasDetached() const {
+  return Utils::OpenHandle(this)->was_detached();
+}
+
 namespace {
 std::shared_ptr<i::BackingStore> ToInternal(
     std::shared_ptr<i::BackingStoreBase> backing_store) {
@@ -8082,19 +8238,42 @@ std::shared_ptr<i::BackingStore> ToInternal(
 }
 }  // namespace
 
-void v8::ArrayBuffer::Detach() {
+Maybe<bool> v8::ArrayBuffer::Detach(v8::Local<v8::Value> key) {
   i::Handle<i::JSArrayBuffer> obj = Utils::OpenHandle(this);
   i::Isolate* i_isolate = obj->GetIsolate();
   Utils::ApiCheck(obj->is_detachable(), "v8::ArrayBuffer::Detach",
                   "Only detachable ArrayBuffers can be detached");
-  API_RCS_SCOPE(i_isolate, ArrayBuffer, Detach);
-  ENTER_V8_NO_SCRIPT_NO_EXCEPTION(i_isolate);
-  obj->Detach();
+  ENTER_V8_NO_SCRIPT(
+      i_isolate, reinterpret_cast<v8::Isolate*>(i_isolate)->GetCurrentContext(),
+      ArrayBuffer, Detach, Nothing<bool>(), i::HandleScope);
+  if (!key.IsEmpty()) {
+    i::Handle<i::Object> i_key = Utils::OpenHandle(*key);
+    constexpr bool kForceForWasmMemory = false;
+    has_pending_exception =
+        i::JSArrayBuffer::Detach(obj, kForceForWasmMemory, i_key).IsNothing();
+  } else {
+    has_pending_exception = i::JSArrayBuffer::Detach(obj).IsNothing();
+  }
+  RETURN_ON_FAILED_EXECUTION_PRIMITIVE(bool);
+  return Just(true);
+}
+
+void v8::ArrayBuffer::Detach() { Detach(Local<Value>()).Check(); }
+
+void v8::ArrayBuffer::SetDetachKey(v8::Local<v8::Value> key) {
+  i::Handle<i::JSArrayBuffer> obj = Utils::OpenHandle(this);
+  i::Handle<i::Object> i_key = Utils::OpenHandle(*key);
+  obj->set_detach_key(*i_key);
 }
 
 size_t v8::ArrayBuffer::ByteLength() const {
   i::Handle<i::JSArrayBuffer> obj = Utils::OpenHandle(this);
-  return obj->byte_length();
+  return obj->GetByteLength();
+}
+
+size_t v8::ArrayBuffer::MaxByteLength() const {
+  i::Handle<i::JSArrayBuffer> obj = Utils::OpenHandle(this);
+  return obj->max_byte_length();
 }
 
 Local<ArrayBuffer> v8::ArrayBuffer::New(Isolate* v8_isolate,
@@ -8171,6 +8350,41 @@ std::unique_ptr<v8::BackingStore> v8::ArrayBuffer::NewBackingStore(
       static_cast<v8::BackingStore*>(backing_store.release()));
 }
 
+// static
+std::unique_ptr<BackingStore> v8::ArrayBuffer::NewResizableBackingStore(
+    size_t byte_length, size_t max_byte_length) {
+  Utils::ApiCheck(i::v8_flags.harmony_rab_gsab,
+                  "v8::ArrayBuffer::NewResizableBackingStore",
+                  "Constructing resizable ArrayBuffers is not supported");
+  Utils::ApiCheck(byte_length <= max_byte_length,
+                  "v8::ArrayBuffer::NewResizableBackingStore",
+                  "Cannot construct resizable ArrayBuffer, byte_length must be "
+                  "<= max_byte_length");
+  Utils::ApiCheck(
+      byte_length <= i::JSArrayBuffer::kMaxByteLength,
+      "v8::ArrayBuffer::NewResizableBackingStore",
+      "Cannot construct resizable ArrayBuffer, requested length is too big");
+
+  size_t page_size, initial_pages, max_pages;
+  if (i::JSArrayBuffer::GetResizableBackingStorePageConfiguration(
+          nullptr, byte_length, max_byte_length, i::kDontThrow, &page_size,
+          &initial_pages, &max_pages)
+          .IsNothing()) {
+    i::V8::FatalProcessOutOfMemory(nullptr,
+                                   "v8::ArrayBuffer::NewResizableBackingStore");
+  }
+  std::unique_ptr<i::BackingStoreBase> backing_store =
+      i::BackingStore::TryAllocateAndPartiallyCommitMemory(
+          nullptr, byte_length, max_byte_length, page_size, initial_pages,
+          max_pages, i::WasmMemoryFlag::kNotWasm, i::SharedFlag::kNotShared);
+  if (!backing_store) {
+    i::V8::FatalProcessOutOfMemory(nullptr,
+                                   "v8::ArrayBuffer::NewResizableBackingStore");
+  }
+  return std::unique_ptr<v8::BackingStore>(
+      static_cast<v8::BackingStore*>(backing_store.release()));
+}
+
 Local<ArrayBuffer> v8::ArrayBufferView::Buffer() {
   i::Handle<i::JSArrayBufferView> obj = Utils::OpenHandle(this);
   i::Handle<i::JSArrayBuffer> buffer;
@@ -8220,13 +8434,21 @@ size_t v8::ArrayBufferView::ByteOffset() {
 }
 
 size_t v8::ArrayBufferView::ByteLength() {
-  i::Handle<i::JSArrayBufferView> obj = Utils::OpenHandle(this);
-  return obj->WasDetached() ? 0 : obj->byte_length();
+  i::DisallowGarbageCollection no_gc;
+  i::JSArrayBufferView obj = *Utils::OpenHandle(this);
+  if (obj.WasDetached()) {
+    return 0;
+  }
+  if (obj.IsJSTypedArray()) {
+    return i::JSTypedArray::cast(obj).GetByteLength();
+  }
+  return i::JSDataView::cast(obj).GetByteLength();
 }
 
 size_t v8::TypedArray::Length() {
-  i::Handle<i::JSTypedArray> obj = Utils::OpenHandle(this);
-  return obj->WasDetached() ? 0 : obj->length();
+  i::DisallowGarbageCollection no_gc;
+  i::JSTypedArray obj = *Utils::OpenHandle(this);
+  return obj.WasDetached() ? 0 : obj.GetLength();
 }
 
 static_assert(
@@ -8275,6 +8497,7 @@ static_assert(
 TYPED_ARRAYS(TYPED_ARRAY_NEW)
 #undef TYPED_ARRAY_NEW
 
+// TODO(v8:11111): Support creating length tracking DataViews via the API.
 Local<DataView> DataView::New(Local<ArrayBuffer> array_buffer,
                               size_t byte_offset, size_t byte_length) {
   i::Handle<i::JSArrayBuffer> buffer = Utils::OpenHandle(*array_buffer);
@@ -8300,7 +8523,12 @@ Local<DataView> DataView::New(Local<SharedArrayBuffer> shared_array_buffer,
 
 size_t v8::SharedArrayBuffer::ByteLength() const {
   i::Handle<i::JSArrayBuffer> obj = Utils::OpenHandle(this);
-  return obj->byte_length();
+  return obj->GetByteLength();
+}
+
+size_t v8::SharedArrayBuffer::MaxByteLength() const {
+  i::Handle<i::JSArrayBuffer> obj = Utils::OpenHandle(this);
+  return obj->max_byte_length();
 }
 
 Local<SharedArrayBuffer> v8::SharedArrayBuffer::New(Isolate* v8_isolate,
@@ -9553,15 +9781,18 @@ CALLBACK_SETTER(WasmAsyncResolvePromiseCallback,
 CALLBACK_SETTER(WasmLoadSourceMapCallback, WasmLoadSourceMapCallback,
                 wasm_load_source_map_callback)
 
-CALLBACK_SETTER(WasmSimdEnabledCallback, WasmSimdEnabledCallback,
-                wasm_simd_enabled_callback)
-
-CALLBACK_SETTER(WasmExceptionsEnabledCallback, WasmExceptionsEnabledCallback,
-                wasm_exceptions_enabled_callback)
-
 CALLBACK_SETTER(SharedArrayBufferConstructorEnabledCallback,
                 SharedArrayBufferConstructorEnabledCallback,
                 sharedarraybuffer_constructor_enabled_callback)
+
+void Isolate::SetWasmExceptionsEnabledCallback(
+    WasmExceptionsEnabledCallback callback) {
+  // Exceptions are always enabled
+}
+
+void Isolate::SetWasmSimdEnabledCallback(WasmSimdEnabledCallback callback) {
+  // SIMD is always enabled
+}
 
 void Isolate::InstallConditionalFeatures(Local<Context> context) {
   v8::HandleScope handle_scope(this);
@@ -9720,6 +9951,11 @@ std::unique_ptr<MicrotaskQueue> MicrotaskQueue::New(Isolate* v8_isolate,
 MicrotasksScope::MicrotasksScope(Isolate* v8_isolate,
                                  MicrotasksScope::Type type)
     : MicrotasksScope(v8_isolate, nullptr, type) {}
+
+MicrotasksScope::MicrotasksScope(Local<Context> v8_context,
+                                 MicrotasksScope::Type type)
+    : MicrotasksScope(v8_context->GetIsolate(), v8_context->GetMicrotaskQueue(),
+                      type) {}
 
 MicrotasksScope::MicrotasksScope(Isolate* v8_isolate,
                                  MicrotaskQueue* microtask_queue,
@@ -10040,6 +10276,21 @@ int64_t CpuProfile::GetStartTime() const {
 int64_t CpuProfile::GetEndTime() const {
   const i::CpuProfile* profile = reinterpret_cast<const i::CpuProfile*>(this);
   return profile->end_time().since_origin().InMicroseconds();
+}
+
+static i::CpuProfile* ToInternal(const CpuProfile* profile) {
+  return const_cast<i::CpuProfile*>(
+      reinterpret_cast<const i::CpuProfile*>(profile));
+}
+
+void CpuProfile::Serialize(OutputStream* stream,
+                           CpuProfile::SerializationFormat format) const {
+  Utils::ApiCheck(format == kJSON, "v8::CpuProfile::Serialize",
+                  "Unknown serialization format");
+  Utils::ApiCheck(stream->GetChunkSize() > 0, "v8::CpuProfile::Serialize",
+                  "Invalid stream chunk size");
+  i::CpuProfileJSONSerializer serializer(ToInternal(this));
+  serializer.Serialize(stream);
 }
 
 int CpuProfile::GetSamplesCount() const {
@@ -10504,7 +10755,7 @@ void EmbedderHeapTracer::IterateTracedGlobalHandles(
     TracedGlobalHandleVisitor* visitor) {
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(v8_isolate_);
   i::DisallowGarbageCollection no_gc;
-  i_isolate->global_handles()->IterateTracedNodes(visitor);
+  i_isolate->traced_handles()->Iterate(visitor);
 }
 
 bool EmbedderHeapTracer::IsRootForNonTracingGC(

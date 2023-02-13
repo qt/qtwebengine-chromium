@@ -104,6 +104,8 @@ std::unique_ptr<WebContentsView> CreateWebContentsView(
   return rv;
 }
 
+class ScopedAllowBlockingForViewAura : public base::ScopedAllowBlocking {};
+
 namespace {
 
 using ::ui::mojom::DragOperation;
@@ -214,7 +216,7 @@ void PrepareDragForDownload(const DropData& drop_data,
                             base::UTF16ToUTF8(mime_type), default_name);
 
   // http://crbug.com/332579
-  base::ThreadRestrictions::ScopedAllowIO allow_file_operations;
+  ScopedAllowBlockingForViewAura allow_file_operations;
 
   base::FilePath temp_dir_path;
   if (!base::CreateNewTempDirectory(FILE_PATH_LITERAL("chrome_drag"),
@@ -1208,7 +1210,7 @@ void WebContentsViewAura::StartDragging(
   DragOperation result_op;
   {
     gfx::NativeView content_native_view = GetContentNativeView();
-    base::CurrentThread::ScopedNestableTaskAllower allow;
+    base::CurrentThread::ScopedAllowApplicationTasksInNativeNestedLoop allow;
     result_op =
         aura::client::GetDragDropClient(root_window)
             ->StartDragAndDrop(std::move(data), root_window,

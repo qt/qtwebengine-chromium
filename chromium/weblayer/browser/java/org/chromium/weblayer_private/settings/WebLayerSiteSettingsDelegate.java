@@ -77,6 +77,11 @@ public class WebLayerSiteSettingsDelegate
     }
 
     @Override
+    public boolean isPrivacySandboxSettings4Enabled() {
+        return false;
+    }
+
+    @Override
     public String getChannelIdForOrigin(String origin) {
         return null;
     }
@@ -173,6 +178,9 @@ public class WebLayerSiteSettingsDelegate
 
     @Override
     public void launchClearBrowsingDataDialog(Activity currentActivity) {}
+
+    @Override
+    public void notifyRequestDesktopSiteSettingsPageOpened() {}
 
     @Override
     public void onDestroyView() {}

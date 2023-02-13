@@ -9,14 +9,13 @@
 #define SkRefCnt_DEFINED
 
 #include "include/core/SkTypes.h"
-#include "include/private/SkTemplates.h"
 
-#include <atomic>       // std::atomic, std::memory_order_*
-#include <cstddef>      // std::nullptr_t
-#include <iosfwd>       // std::basic_ostream
-#include <memory>       // TODO: unused
-#include <type_traits>  // std::enable_if, std::is_convertible
-#include <utility>      // std::forward, std::swap
+#include <atomic>
+#include <cstddef>
+#include <cstdint>
+#include <iosfwd>
+#include <type_traits>
+#include <utility>
 
 /** \class SkRefCntBase
 
@@ -174,7 +173,7 @@ public:
 
     bool unique() const { return 1 == fRefCnt.load(std::memory_order_acquire); }
     void ref() const { (void)fRefCnt.fetch_add(+1, std::memory_order_relaxed); }
-    void  unref() const {
+    void unref() const {
         if (1 == fRefCnt.fetch_add(-1, std::memory_order_acq_rel)) {
             // restore the 1 for our destructor's assert
             SkDEBUGCODE(fRefCnt.store(1, std::memory_order_relaxed));

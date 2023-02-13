@@ -49,15 +49,17 @@ class CompilationResultResolver;
 class ErrorThrower;
 class ModuleCompiler;
 class NativeModule;
+class ProfileInformation;
 class StreamingDecoder;
 class WasmCode;
 struct WasmModule;
 
 V8_EXPORT_PRIVATE
 std::shared_ptr<NativeModule> CompileToNativeModule(
-    Isolate* isolate, const WasmFeatures& enabled, ErrorThrower* thrower,
-    std::shared_ptr<const WasmModule> module, const ModuleWireBytes& wire_bytes,
-    int compilation_id, v8::metrics::Recorder::ContextId context_id);
+    Isolate* isolate, WasmFeatures enabled_features, ErrorThrower* thrower,
+    std::shared_ptr<const WasmModule> module, ModuleWireBytes wire_bytes,
+    int compilation_id, v8::metrics::Recorder::ContextId context_id,
+    ProfileInformation* pgo_info);
 
 void RecompileNativeModule(NativeModule* native_module,
                            TieringState new_tiering_state);
@@ -78,7 +80,7 @@ WasmCode* CompileImportWrapper(
 // Triggered by the WasmCompileLazy builtin. The return value indicates whether
 // compilation was successful. Lazy compilation can fail only if validation is
 // also lazy.
-bool CompileLazy(Isolate*, Handle<WasmInstanceObject>, int func_index);
+bool CompileLazy(Isolate*, WasmInstanceObject, int func_index);
 
 // Throws the compilation error after failed lazy compilation.
 void ThrowLazyCompilationError(Isolate* isolate,
@@ -136,8 +138,8 @@ class WrapperQueue {
 // TODO(wasm): factor out common parts of this with the synchronous pipeline.
 class AsyncCompileJob {
  public:
-  AsyncCompileJob(Isolate* isolate, const WasmFeatures& enabled_features,
-                  std::unique_ptr<byte[]> bytes_copy, size_t length,
+  AsyncCompileJob(Isolate* isolate, WasmFeatures enabled_features,
+                  base::OwnedVector<const uint8_t> bytes,
                   Handle<Context> context, Handle<Context> incumbent_context,
                   const char* api_method_name,
                   std::shared_ptr<CompilationResultResolver> resolver,
@@ -162,11 +164,25 @@ class AsyncCompileJob {
   class CompilationStateCallback;
 
   // States of the AsyncCompileJob.
-  class DecodeModule;            // Step 1  (async)
-  class DecodeFail;              // Step 1b (sync)
-  class PrepareAndStartCompile;  // Step 2  (sync)
-  class CompileFailed;           // Step 3a (sync)
-  class CompileFinished;         // Step 3b (sync)
+  // Step 1 (async). Decodes the wasm module.
+  // --> Fail on decoding failure,
+  // --> PrepareAndStartCompile on success.
+  class DecodeModule;
+
+  // Step 2 (sync). Prepares runtime objects and starts background compilation.
+  // --> finish directly on native module cache hit,
+  // --> finish directly on validation error,
+  // --> trigger eager compilation, if any; FinishCompile is triggered when
+  // done.
+  class PrepareAndStartCompile;
+
+  // Step 3 (sync). Compilation finished. Finalize the module and resolve the
+  // promise.
+  class FinishCompilation;
+
+  // Step 4 (sync). Decoding, validation or compilation failed. Reject the
+  // promise.
+  class Fail;
 
   friend class AsyncStreamingProcessor;
 
@@ -215,12 +231,11 @@ class AsyncCompileJob {
 
   void FinishCompile(bool is_after_cache_hit);
 
-  void DecodeFailed(const WasmError&);
-  void AsyncCompileFailed();
+  void Failed();
 
   void AsyncCompileSucceeded(Handle<WasmModuleObject> result);
 
-  void FinishModule();
+  void FinishSuccessfully();
 
   void StartForegroundTask();
   void ExecuteForegroundTaskImmediately();
@@ -258,11 +273,10 @@ class AsyncCompileJob {
   const char* const api_method_name_;
   const WasmFeatures enabled_features_;
   const DynamicTiering dynamic_tiering_;
-  const bool wasm_lazy_compilation_;
   base::TimeTicks start_time_;
   // Copy of the module wire bytes, moved into the {native_module_} on its
   // creation.
-  std::unique_ptr<byte[]> bytes_copy_;
+  base::OwnedVector<const uint8_t> bytes_copy_;
   // Reference to the wire bytes (held in {bytes_copy_} or as part of
   // {native_module_}).
   ModuleWireBytes wire_bytes_;

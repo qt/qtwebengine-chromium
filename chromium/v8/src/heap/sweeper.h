@@ -13,6 +13,7 @@
 #include "src/base/platform/semaphore.h"
 #include "src/common/globals.h"
 #include "src/flags/flags.h"
+#include "src/heap/gc-tracer.h"
 #include "src/heap/pretenuring-handler.h"
 #include "src/heap/slot-set.h"
 #include "src/tasks/cancelable-task.h"
@@ -91,7 +92,7 @@ class Sweeper {
                          int required_freed_bytes, int max_pages = 0);
   int ParallelSweepPage(
       Page* page, AllocationSpace identity,
-      PretenturingHandler::PretenuringFeedbackMap* local_pretenuring_feedback,
+      PretenuringHandler::PretenuringFeedbackMap* local_pretenuring_feedback,
       SweepingMode sweeping_mode);
 
   void EnsurePageIsSwept(Page* page);
@@ -99,19 +100,25 @@ class Sweeper {
   int RawSweep(
       Page* p, FreeSpaceTreatmentMode free_space_treatment_mode,
       SweepingMode sweeping_mode, const base::MutexGuard& page_guard,
-      PretenturingHandler::PretenuringFeedbackMap* local_pretenuring_feedback);
+      PretenuringHandler::PretenuringFeedbackMap* local_pretenuring_feedback);
 
   // After calling this function sweeping is considered to be in progress
   // and the main thread can sweep lazily, but the background sweeper tasks
   // are not running yet.
   void StartSweeping(GarbageCollector collector);
   V8_EXPORT_PRIVATE void StartSweeperTasks();
-  void EnsureCompleted(
-      SweepingMode sweeping_mode = SweepingMode::kLazyOrConcurrent);
+  void EnsureCompleted();
+  void PauseAndEnsureNewSpaceCompleted();
   void DrainSweepingWorklistForSpace(AllocationSpace space);
   bool AreSweeperTasksRunning();
 
   Page* GetSweptPageSafe(PagedSpaceBase* space);
+
+  bool IsSweepingDoneForSpace(AllocationSpace space);
+
+  GCTracer::Scope::ScopeId GetTracingScope(AllocationSpace space,
+                                           bool is_joining_thread);
+  GCTracer::Scope::ScopeId GetTracingScopeForCompleteYoungSweep();
 
  private:
   NonAtomicMarkingState* marking_state() const { return marking_state_; }
@@ -123,7 +130,7 @@ class Sweeper {
 
   static const int kNumberOfSweepingSpaces =
       LAST_SWEEPABLE_SPACE - FIRST_SWEEPABLE_SPACE + 1;
-  static constexpr int kMaxSweeperTasks = 3;
+  static constexpr int kMaxSweeperTasks = kNumberOfSweepingSpaces;
 
   template <typename Callback>
   void ForAllSweepingSpaces(Callback callback) const {
@@ -132,7 +139,6 @@ class Sweeper {
     }
     callback(OLD_SPACE);
     callback(CODE_SPACE);
-    callback(MAP_SPACE);
     callback(SHARED_SPACE);
   }
 
@@ -201,9 +207,10 @@ class Sweeper {
   // path checks this flag to see whether it could support concurrent sweeping.
   std::atomic<bool> sweeping_in_progress_;
   bool should_reduce_memory_;
-  PretenturingHandler* const pretenuring_handler_;
-  PretenturingHandler::PretenuringFeedbackMap local_pretenuring_feedback_;
-  base::Optional<GarbageCollector> current_collector_;
+  bool should_sweep_non_new_spaces_ = false;
+  PretenuringHandler* const pretenuring_handler_;
+  PretenuringHandler::PretenuringFeedbackMap local_pretenuring_feedback_;
+  base::Optional<GarbageCollector> current_new_space_collector_;
 };
 
 }  // namespace internal

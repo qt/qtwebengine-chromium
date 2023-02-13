@@ -35,6 +35,11 @@ class TracingSession;
 
 namespace internal {
 
+struct DataSourceParams {
+  bool supports_multiple_instances;
+  bool requires_callbacks_under_lock;
+};
+
 struct DataSourceStaticState;
 
 // This class acts as a bridge between the public API methods and the
@@ -62,7 +67,7 @@ class PERFETTO_EXPORT_COMPONENT TracingMuxer {
   using DataSourceFactory = std::function<std::unique_ptr<DataSourceBase>()>;
   virtual bool RegisterDataSource(const DataSourceDescriptor&,
                                   DataSourceFactory,
-                                  bool supports_multiple_instances,
+                                  DataSourceParams,
                                   DataSourceStaticState*) = 0;
 
   // Updates the DataSourceDescriptor for the DataSource.
@@ -88,6 +93,15 @@ class PERFETTO_EXPORT_COMPONENT TracingMuxer {
                                    InterceptorFactory,
                                    InterceptorBase::TLSFactory,
                                    InterceptorBase::TracePacketCallback) = 0;
+
+  // Informs the tracing services to activate any of these triggers if any
+  // tracing session was waiting for them.
+  //
+  // Sends the trigger signal to all the initialized backends that are currently
+  // connected and that connect in the next `ttl_ms` milliseconds (but returns
+  // immediately anyway).
+  virtual void ActivateTriggers(const std::vector<std::string>&,
+                                uint32_t ttl_ms) = 0;
 
  protected:
   explicit TracingMuxer(Platform* platform) : platform_(platform) {}

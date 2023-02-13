@@ -29,12 +29,12 @@ import (
 // results.
 //
 // Update will:
-// • Remove any expectation lines that have a query where no results match.
-// • Remove expectations lines that are in a chunk which is not annotated with
-//   'KEEP', and all test results have the status 'Pass'.
-// • Remove chunks that have had all expectation lines removed.
-// • Appends new chunks for flaky and failing tests which are not covered by
-//   existing expectation lines.
+//   - Remove any expectation lines that have a query where no results match.
+//   - Remove expectations lines that are in a chunk which is not annotated with
+//     'KEEP', and all test results have the status 'Pass'.
+//   - Remove chunks that have had all expectation lines removed.
+//   - Appends new chunks for flaky and failing tests which are not covered by
+//     existing expectation lines.
 //
 // Update returns a list of diagnostics for things that should be addressed.
 //
@@ -93,8 +93,8 @@ type updater struct {
 }
 
 // Returns 'results' with additional 'consumed' results for tests that have
-// 'Skip' expectations. This fills in gaps for results, preventing tree 
-// reductions from marking skipped results as failure, which could result in 
+// 'Skip' expectations. This fills in gaps for results, preventing tree
+// reductions from marking skipped results as failure, which could result in
 // expectation collisions.
 func (c *Content) appendConsumedResultsForSkippedTests(results result.List,
 	testlist []query.Query,
@@ -103,15 +103,32 @@ func (c *Content) appendConsumedResultsForSkippedTests(results result.List,
 	for _, q := range testlist {
 		tree.Add(q, struct{}{})
 	}
-	for _, c := range c.Chunks {
-		for _, ex := range c.Expectations {
-			if container.NewSet(ex.Status...).Contains(string(result.Skip)) {
-				for _, variant := range variants {
-					if !variant.ContainsAll(ex.Tags) {
-						continue
-					}
-					glob, _ := tree.Glob(query.Parse(ex.Query))
-					for _, qd := range glob {
+	// For each variant...
+	for _, variant := range variants {
+		resultsForVariant := container.NewSet[string]()
+		for _, result := range results.FilterByVariant(variant) {
+			resultsForVariant.Add(result.Query.String())
+		}
+
+		// For each expectation...
+		for _, c := range c.Chunks {
+			for _, ex := range c.Expectations {
+				// Does this expectation apply for variant?
+				if !variant.ContainsAll(ex.Tags) {
+					continue // Nope.
+				}
+
+				// Does the expectation contain a Skip status?
+				if !container.NewSet(ex.Status...).Contains(string(result.Skip)) {
+					continue // Nope.
+				}
+
+				// Gather all the tests that apply to the expectation
+				glob, _ := tree.Glob(query.Parse(ex.Query))
+				for _, qd := range glob {
+					// If we don't have a result for the test, then append a
+					// synthetic 'consumed' result.
+					if !resultsForVariant.Contains(qd.Query.String()) {
 						results = append(results, result.Result{
 							Query:  qd.Query,
 							Tags:   variant,
@@ -539,10 +556,10 @@ func (u *updater) resultsToExpectations(results result.List, bug, comment string
 }
 
 // cleanupTags returns a copy of the provided results with:
-// • All tags not found in the expectations list removed
-// • All but the highest priority tag for any tag-set.
-//   The tag sets are defined by the `BEGIN TAG HEADER` / `END TAG HEADER`
-//   section at the top of the expectations file.
+//   - All tags not found in the expectations list removed
+//   - All but the highest priority tag for any tag-set.
+//     The tag sets are defined by the `BEGIN TAG HEADER` / `END TAG HEADER`
+//     section at the top of the expectations file.
 func (u *updater) cleanupTags(results result.List) result.List {
 	return results.TransformTags(func(t result.Tags) result.Tags {
 		type HighestPrioritySetTag struct {
@@ -570,11 +587,11 @@ func (u *updater) cleanupTags(results result.List) result.List {
 // treeReducer is a function that can be used by StatusTree.Reduce() to reduce
 // tree nodes with the same status.
 // treeReducer will collapse trees nodes if any of the following are true:
-// • All child nodes have the same status
-// • More than 75% of the child nodes have a non-pass status, and none of the
-//   children are consumed.
-// • There are more than 20 child nodes with a non-pass status, and none of the
-//   children are consumed.
+//   - All child nodes have the same status
+//   - More than 75% of the child nodes have a non-pass status, and none of the
+//     children are consumed.
+//   - There are more than 20 child nodes with a non-pass status, and none of the
+//     children are consumed.
 func treeReducer(statuses []result.Status) *result.Status {
 	counts := map[result.Status]int{}
 	for _, s := range statuses {

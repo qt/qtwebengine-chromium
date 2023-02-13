@@ -15,6 +15,7 @@
 #include "modules/skresources/include/SkResources.h"
 #include "src/core/SkOSFile.h"
 #include "src/sksl/codegen/SkSLVMCodeGenerator.h"
+#include "src/sksl/ir/SkSLProgram.h"
 #include "src/utils/SkOSPath.h"
 #include "tools/Resources.h"
 #include "tools/ToolUtils.h"
@@ -117,10 +118,10 @@ private:
 static int InputTextCallback(ImGuiInputTextCallbackData* data) {
     if (data->EventFlag == ImGuiInputTextFlags_CallbackResize) {
         SkString* s = (SkString*)data->UserData;
-        SkASSERT(data->Buf == s->writable_str());
+        SkASSERT(data->Buf == s->data());
         SkString tmp(data->Buf, data->BufTextLen);
         s->swap(tmp);
-        data->Buf = s->writable_str();
+        data->Buf = s->data();
     }
     return 0;
 }
@@ -158,11 +159,11 @@ public:
             if (lines > 1) {
                 ImGui::LabelText("##Label", "%s", name);
                 ImVec2 boxSize(-1.0f, ImGui::GetTextLineHeight() * (lines + 1));
-                fDirty = ImGui::InputTextMultiline(item(name), s.writable_str(), s.size() + 1,
+                fDirty = ImGui::InputTextMultiline(item(name), s.data(), s.size() + 1,
                                                    boxSize, flags, InputTextCallback, &s)
                       || fDirty;
             } else {
-                fDirty = ImGui::InputText(item(name), s.writable_str(), s.size() + 1, flags,
+                fDirty = ImGui::InputText(item(name), s.data(), s.size() + 1, flags,
                                           InputTextCallback, &s)
                       || fDirty;
             }
@@ -269,8 +270,8 @@ ParticlesSlide::ParticlesSlide() {
 }
 
 void ParticlesSlide::loadEffects(const char* dirname) {
-    fLoaded.reset();
-    fRunning.reset();
+    fLoaded.clear();
+    fRunning.clear();
     SkOSFile::Iter iter(dirname, ".json");
     for (SkString file; iter.next(&file); ) {
         LoadedEffect effect;
@@ -303,7 +304,7 @@ void ParticlesSlide::draw(SkCanvas* canvas) {
 
         static SkString dirname = GetResourcePath("particles");
         ImGuiInputTextFlags textFlags = ImGuiInputTextFlags_CallbackResize;
-        ImGui::InputText("Directory", dirname.writable_str(), dirname.size() + 1, textFlags,
+        ImGui::InputText("Directory", dirname.data(), dirname.size() + 1, textFlags,
                          InputTextCallback, &dirname);
 
         if (ImGui::Button("New")) {
@@ -337,7 +338,7 @@ void ParticlesSlide::draw(SkCanvas* canvas) {
         }
 
         SkGuiVisitor gui;
-        for (int i = 0; i < fLoaded.count(); ++i) {
+        for (int i = 0; i < fLoaded.size(); ++i) {
             ImGui::PushID(i);
             if (fAnimated && ImGui::Button("Play")) {
                 sk_sp<SkParticleEffect> effect(new SkParticleEffect(fLoaded[i].fParams));
@@ -347,7 +348,7 @@ void ParticlesSlide::draw(SkCanvas* canvas) {
             }
             ImGui::SameLine();
 
-            ImGui::InputText("##Name", fLoaded[i].fName.writable_str(), fLoaded[i].fName.size() + 1,
+            ImGui::InputText("##Name", fLoaded[i].fName.data(), fLoaded[i].fName.size() + 1,
                              textFlags, InputTextCallback, &fLoaded[i].fName);
 
             if (ImGui::TreeNode("##Details")) {
@@ -369,7 +370,7 @@ void ParticlesSlide::draw(SkCanvas* canvas) {
 
     // Another window to show all the running effects
     if (ImGui::Begin("Running")) {
-        for (int i = 0; i < fRunning.count(); ++i) {
+        for (int i = 0; i < fRunning.size(); ++i) {
             SkParticleEffect* effect = fRunning[i].fEffect.get();
             ImGui::PushID(effect);
 

@@ -300,15 +300,17 @@ fr{
     }
     Countries%short{
         GB{"R.-U."}
-        UN{"NU"}
+        UN{"ONU"}
         US{"É.-U."}
     }
     Countries%variant{
         CD{"Congo (RDC)"}
         CG{"République du Congo"}
-        CI{"​​République de Côte d’Ivoire"}
+        CI{"République de Côte d’Ivoire"}
         CZ{"République tchèque"}
+        NZ{"Aotearoa (Nouvelle-Zélande)"}
         SZ{"Swaziland"}
         TL{"Timor-Oriental"}
+        TR{"Türkiye"}
     }
 }

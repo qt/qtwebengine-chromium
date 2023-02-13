@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2016 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -92,6 +92,8 @@ class CFX_FontMapper {
 #endif  // PDF_ENABLE_XFA
 
  private:
+  friend class TestFontMapper;
+
   uint32_t GetChecksumFromTT(void* font_handle);
   ByteString GetPSNameFromTT(void* font_handle);
   ByteString MatchInstalledFonts(const ByteString& norm_name);

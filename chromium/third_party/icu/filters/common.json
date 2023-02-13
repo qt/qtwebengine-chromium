@@ -615,7 +615,8 @@
         "-/ExemplarCharactersNumbers",
         "-/ExemplarCharactersPunctuation",
         "-/measurementSystemNames",
-        "-/NumberElements/minimalPairs"
+        "-/NumberElements/minimalPairs",
+        "-/personNames"
       ]
     },
 // Based on filter_display_language_names

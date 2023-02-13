@@ -111,9 +111,6 @@ QuicByteCount GetReceivedFlowControlWindow(QuicSession* session,
 // static
 const SpdyPriority QuicStream::kDefaultPriority;
 
-// static
-const int QuicStream::kDefaultUrgency;
-
 PendingStream::PendingStream(QuicStreamId id, QuicSession* session)
     : id_(id),
       version_(session->version()),
@@ -342,7 +339,7 @@ QuicStream::QuicStream(QuicStreamId id, QuicSession* session,
       id_(id),
       session_(session),
       stream_delegate_(session),
-      precedence_(CalculateDefaultPriority(session)),
+      priority_(CalculateDefaultPriority(session->transport_version())),
       stream_bytes_read_(stream_bytes_read),
       stream_error_(QuicResetStreamError::NoError()),
       connection_error_(QUIC_NO_ERROR),
@@ -384,7 +381,7 @@ QuicStream::QuicStream(QuicStreamId id, QuicSession* session,
     CloseWriteSide();
   }
   if (type_ != CRYPTO) {
-    stream_delegate_->RegisterStreamPriority(id, is_static_, precedence_);
+    stream_delegate_->RegisterStreamPriority(id, is_static_, priority_);
   }
 }
 
@@ -635,16 +632,14 @@ void QuicStream::OnUnrecoverableError(QuicErrorCode error,
   stream_delegate_->OnStreamError(error, ietf_error, details);
 }
 
-const spdy::SpdyStreamPrecedence& QuicStream::precedence() const {
-  return precedence_;
-}
+const QuicStreamPriority& QuicStream::priority() const { return priority_; }
 
-void QuicStream::SetPriority(const spdy::SpdyStreamPrecedence& precedence) {
-  precedence_ = precedence;
+void QuicStream::SetPriority(const QuicStreamPriority& priority) {
+  priority_ = priority;
 
   MaybeSendPriorityUpdateFrame();
 
-  stream_delegate_->UpdateStreamPriority(id(), precedence);
+  stream_delegate_->UpdateStreamPriority(id(), priority);
 }
 
 void QuicStream::WriteOrBufferData(
@@ -746,20 +741,12 @@ void QuicStream::MaybeSendBlocked() {
     return;
   }
   connection_flow_controller_->MaybeSendBlocked();
-  if (GetQuicReloadableFlag(
-          quic_donot_mark_stream_write_blocked_if_write_side_closed)) {
-    QUIC_RELOADABLE_FLAG_COUNT(
-        quic_donot_mark_stream_write_blocked_if_write_side_closed);
-  }
 
   // If the stream is blocked by connection-level flow control but not by
   // stream-level flow control, add the stream to the write blocked list so that
   // the stream will be given a chance to write when a connection-level
   // WINDOW_UPDATE arrives.
-  if ((!GetQuicReloadableFlag(
-           quic_donot_mark_stream_write_blocked_if_write_side_closed) ||
-       !write_side_closed_) &&
-      connection_flow_controller_->IsBlocked() &&
+  if (!write_side_closed_ && connection_flow_controller_->IsBlocked() &&
       !flow_controller_->IsBlocked()) {
     session_->MarkConnectionLevelWriteBlocked(id());
   }
@@ -1300,11 +1287,7 @@ void QuicStream::WriteBufferedData(EncryptionLevel level) {
         was_draining_ = true;
       }
       CloseWriteSide();
-    } else if (
-        fin && !consumed_data.fin_consumed &&
-        (!GetQuicReloadableFlag(
-             quic_donot_mark_stream_write_blocked_if_write_side_closed) ||
-         !write_side_closed_)) {
+    } else if (fin && !consumed_data.fin_consumed && !write_side_closed_) {
       session_->MarkConnectionLevelWriteBlocked(id());
     }
   } else {
@@ -1439,12 +1422,15 @@ void QuicStream::UpdateReceiveWindowSize(QuicStreamOffset size) {
 }
 
 // static
-spdy::SpdyStreamPrecedence QuicStream::CalculateDefaultPriority(
-    const QuicSession* session) {
-  return spdy::SpdyStreamPrecedence(
-      VersionUsesHttp3(session->transport_version())
-          ? kDefaultUrgency
-          : QuicStream::kDefaultPriority);
+QuicStreamPriority QuicStream::CalculateDefaultPriority(
+    QuicTransportVersion version) {
+  if (VersionUsesHttp3(version)) {
+    return QuicStreamPriority{QuicStreamPriority::kDefaultUrgency,
+                              QuicStreamPriority::kDefaultIncremental};
+  } else {
+    return QuicStreamPriority{QuicStream::kDefaultPriority,
+                              QuicStreamPriority::kDefaultIncremental};
+  }
 }
 
 absl::optional<QuicByteCount> QuicStream::GetSendWindow() const {

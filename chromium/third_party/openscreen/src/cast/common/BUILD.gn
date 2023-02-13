@@ -6,7 +6,7 @@ import("//build_overrides/build.gni")
 import("//third_party/protobuf/proto_library.gni")
 import("../../testing/libfuzzer/fuzzer_test.gni")
 
-visibility = [ ":*" ]
+visibility = [ "./*" ]
 
 # TODO(jophba): remove if checks once Chrome uses the cast.gni file
 if (!build_with_chromium) {
@@ -59,12 +59,14 @@ source_set("certificate") {
 }
 
 source_set("certificate_boringssl") {
+  # Used in Chromium by fuzz tests in
+  # //components/media_router/common/providers/cast/channel. We don't
+  # use [ "*" ] here to prevent accidental usage of boringssl in Chromium.
   visibility += [
     "../..:openscreen_unittests",
     "../standalone_receiver:cast_receiver",
     "../standalone_sender:cast_sender",
     "../test:*",
-    "//components/cast_channel:openscreen_cast_auth_util_fuzzer",
     "//components/media_router/common/providers/cast/channel:openscreen_cast_auth_util_fuzzer",
   ]
   public = []

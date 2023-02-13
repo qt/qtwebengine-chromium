@@ -13,6 +13,8 @@
 #include "src/gpu/graphite/GpuWorkSubmission.h"
 #include "src/gpu/graphite/Log.h"
 #include "src/gpu/graphite/RecordingPriv.h"
+#include "src/gpu/graphite/Surface_Graphite.h"
+#include "src/gpu/graphite/Task.h"
 
 namespace skgpu::graphite {
 
@@ -31,22 +33,7 @@ QueueManager::~QueueManager() {
     this->checkForFinishedWork(SyncToCpu::kYes);
 }
 
-void QueueManager::addRecording(const InsertRecordingInfo& info,
-                                ResourceProvider* resourceProvider) {
-    sk_sp<RefCntedCallback> callback;
-    if (info.fFinishedProc) {
-        callback = RefCntedCallback::Make(info.fFinishedProc, info.fFinishedContext);
-    }
-
-    SkASSERT(info.fRecording);
-    if (!info.fRecording) {
-        if (callback) {
-            callback->setFailureResult();
-        }
-        SKGPU_LOG_W("No valid Recording passed into addRecording call");
-        return;
-    }
-
+bool QueueManager::setupCommandBuffer(ResourceProvider* resourceProvider) {
     if (!fCurrentCommandBuffer) {
         if (fAvailableCommandBuffers.size()) {
             fCurrentCommandBuffer = std::move(fAvailableCommandBuffers.back());
@@ -60,28 +47,135 @@ void QueueManager::addRecording(const InsertRecordingInfo& info,
         fCurrentCommandBuffer = this->getNewCommandBuffer(resourceProvider);
     }
     if (!fCurrentCommandBuffer) {
-        if (callback) {
-            callback->setFailureResult();
-        }
-        return;
+        return false;
     }
 
-    if (!info.fRecording->priv().addCommands(resourceProvider, fCurrentCommandBuffer.get())) {
+    return true;
+}
+
+bool QueueManager::addRecording(const InsertRecordingInfo& info,
+                                ResourceProvider* resourceProvider) {
+    sk_sp<RefCntedCallback> callback;
+    if (info.fFinishedProc) {
+        callback = RefCntedCallback::Make(info.fFinishedProc, info.fFinishedContext);
+    }
+
+    SkASSERT(info.fRecording);
+    if (!info.fRecording) {
         if (callback) {
             callback->setFailureResult();
         }
-        return;
+        SKGPU_LOG_E("No valid Recording passed into addRecording call");
+        return false;
+    }
+
+    if (info.fTargetSurface &&
+        !static_cast<const SkSurface_Base*>(info.fTargetSurface)->isGraphiteBacked()) {
+        if (callback) {
+            callback->setFailureResult();
+        }
+        SKGPU_LOG_E("Target surface passed into addRecording call is not graphite-backed");
+        return false;
+    }
+
+    if (!this->setupCommandBuffer(resourceProvider)) {
+        if (callback) {
+            callback->setFailureResult();
+        }
+        SKGPU_LOG_E("CommandBuffer creation failed");
+        return false;
+    }
+
+    if (info.fRecording->priv().hasNonVolatileLazyProxies()) {
+        if (!info.fRecording->priv().instantiateNonVolatileLazyProxies(resourceProvider)) {
+            if (callback) {
+                callback->setFailureResult();
+            }
+            SKGPU_LOG_E("Non-volatile PromiseImage instantiation has failed");
+            return false;
+        }
+    }
+
+    if (info.fRecording->priv().hasVolatileLazyProxies()) {
+        if (!info.fRecording->priv().instantiateVolatileLazyProxies(resourceProvider)) {
+            if (callback) {
+                callback->setFailureResult();
+            }
+            info.fRecording->priv().deinstantiateVolatileLazyProxies();
+            SKGPU_LOG_E("Volatile PromiseImage instantiation has failed");
+            return false;
+        }
+    }
+
+    if (!info.fRecording->priv().addCommands(resourceProvider,
+                                             fCurrentCommandBuffer.get(),
+                                             static_cast<Surface*>(info.fTargetSurface))) {
+        if (callback) {
+            callback->setFailureResult();
+        }
+        info.fRecording->priv().deinstantiateVolatileLazyProxies();
+        SKGPU_LOG_E("Adding Recording commands to the CommandBuffer has failed");
+        return false;
     }
 
     if (callback) {
         fCurrentCommandBuffer->addFinishedProc(std::move(callback));
     }
+
+    info.fRecording->priv().deinstantiateVolatileLazyProxies();
+    return true;
+}
+
+bool QueueManager::addTask(Task* task,
+                           ResourceProvider* resourceProvider) {
+    SkASSERT(task);
+    if (!task) {
+        SKGPU_LOG_E("No valid Task passed into addTask call");
+        return false;
+    }
+
+    if (!this->setupCommandBuffer(resourceProvider)) {
+        SKGPU_LOG_E("CommandBuffer creation failed");
+        return false;
+    }
+
+    if (!task->addCommands(resourceProvider, fCurrentCommandBuffer.get())) {
+        SKGPU_LOG_E("Adding Task commands to the CommandBuffer has failed");
+        return false;
+    }
+
+    return true;
+}
+
+bool QueueManager::addFinishInfo(const InsertFinishInfo& info,
+                                 ResourceProvider* resourceProvider) {
+    sk_sp<RefCntedCallback> callback;
+    if (info.fFinishedProc) {
+        callback = RefCntedCallback::Make(info.fFinishedProc, info.fFinishedContext);
+    }
+
+    if (!this->setupCommandBuffer(resourceProvider)) {
+        if (callback) {
+            callback->setFailureResult();
+        }
+        SKGPU_LOG_E("CommandBuffer creation failed");
+        return false;
+    }
+
+    if (callback) {
+        fCurrentCommandBuffer->addFinishedProc(std::move(callback));
+    }
+
+    return true;
 }
 
 bool QueueManager::submitToGpu() {
     if (!fCurrentCommandBuffer) {
+        // We warn because this probably representative of a bad client state, where they don't
+        // need to submit but didn't notice, but technically the submit itself is fine (no-op), so
+        // we return true.
         SKGPU_LOG_W("Submit called with no active command buffer!");
-        return false;
+        return true;
     }
 
 #ifdef SK_DEBUG

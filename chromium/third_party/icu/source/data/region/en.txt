@@ -311,7 +311,9 @@ en{
         CI{"Ivory Coast"}
         CV{"Cabo Verde"}
         CZ{"Czech Republic"}
+        NZ{"Aotearoa New Zealand"}
         SZ{"Swaziland"}
         TL{"East Timor"}
+        TR{"Türkiye"}
     }
 }

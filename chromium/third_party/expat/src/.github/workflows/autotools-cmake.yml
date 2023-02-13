@@ -5,7 +5,7 @@
 #                      \___/_/\_\ .__/ \__,_|\__|
 #                               |_| XML parser
 #
-# Copyright (c) 2021 Sebastian Pipping <sebastian@pipping.org>
+# Copyright (c) 2021-2022 Sebastian Pipping <sebastian@pipping.org>
 # Licensed under the MIT license:
 #
 # Permission is  hereby granted,  free of charge,  to any  person obtaining
@@ -41,7 +41,7 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: macos-10.15
+          - os: macos-11
             configure_args:
             cmake_args:
           - os: ubuntu-20.04
@@ -55,11 +55,13 @@ jobs:
         shell: bash
     runs-on: "${{ matrix.os }}"
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v3.1.0
 
     - name: (Linux) Install build dependencies
       if: "${{ runner.os == 'Linux' }}"
       run: |-
+        set -x
+        sudo apt-get update
         sudo apt-get install --yes --no-install-recommends -V \
             cmake \
             docbook2x \
@@ -117,18 +119,6 @@ jobs:
         set -x
         cd expat/expat-*.*.*/
 
-        if [[ "${{ matrix.configure_args }}" == *mingw* ]]; then
-          # There is one known difference between Autotools and CMake for MinGW:
-          #   Autotools: usr/local/bin/libexpat-<major>.dll
-          #   CMake:     usr/local/bin/libexpat.dll
-          # We patch the Autotools side in line here to get the differ below to empty.
-          mv build_autotools/ROOT/usr/local/bin/libexpat{-*,}.dll
-          ( cd build_autotools/ROOT/usr/local/lib*/cmake/expat-*/ \
-              && sed 's,libexpat-[0-9]\+\.dll,libexpat.dll,g' expat-noconfig.cmake > expat-noconfig-patched.cmake \
-              && ! diff -u0 expat-noconfig{,-patched}.cmake \
-              && mv expat-noconfig{-patched,}.cmake )
-        fi
-
         if [[ "${{ runner.os }}" == macOS ]]; then
           # Autotools' LT_LIB_M has a hardcoded exclude for "*-*-darwin*" hosts,
           # while macOS does have libm and is successfully found by CMake.
@@ -143,7 +133,7 @@ jobs:
             --exclude=xmlwf \
             --exclude=xmlwf.exe \
             --exclude=libexpat.a \
-            --exclude=libexpat.dll \
+            --exclude=libexpat-*.dll \
             --exclude=libexpat.dll.a \
             --exclude=libexpat.la \
             --exclude=libexpat.so\* \

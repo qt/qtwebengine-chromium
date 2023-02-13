@@ -78,7 +78,7 @@ typedef struct avifAlphaParams
     uint32_t height;
 
     uint32_t srcDepth;
-    uint8_t * srcPlane;
+    const uint8_t * srcPlane;
     uint32_t srcRowBytes;
     uint32_t srcOffsetBytes;
     uint32_t srcPixelBytes;
@@ -117,7 +117,6 @@ typedef struct avifReformatState
 
     uint32_t yuvChannelBytes;
     uint32_t rgbChannelBytes;
-    uint32_t rgbChannelCount;
     uint32_t rgbPixelBytes;
     uint32_t rgbOffsetBytesR;
     uint32_t rgbOffsetBytesG;
@@ -136,13 +135,7 @@ typedef struct avifReformatState
 
     avifPixelFormatInfo formatInfo;
 
-    // LUTs for going from YUV limited/full unorm -> full range RGB FP32
-    float unormFloatTableY[1 << 12];
-    float unormFloatTableUV[1 << 12];
-
     avifReformatMode mode;
-    // Used by avifImageYUVToRGB() only. avifImageRGBToYUV() uses a local variable (alphaMode) instead.
-    avifAlphaMultiplyMode toRGBAlphaMode;
 } avifReformatState;
 
 // Returns:
@@ -207,8 +200,6 @@ avifBool avifAreGridDimensionsValid(avifPixelFormat yuvFormat, uint32_t imageW, 
 // ---------------------------------------------------------------------------
 // Metadata
 
-// Validates the first bytes of the Exif payload and finds the TIFF header offset.
-avifResult avifGetExifTiffHeaderOffset(const avifRWData * exif, uint32_t * offset);
 // Attempts to parse the image->exif payload for Exif orientation and sets image->transformFlags, image->irot and
 // image->imir on success. Returns AVIF_RESULT_INVALID_EXIF_PAYLOAD on failure.
 avifResult avifImageExtractExifOrientationToIrotImir(avifImage * image);
@@ -291,6 +282,8 @@ typedef enum avifEncoderChange
     AVIF_ENCODER_CHANGE_MAX_QUANTIZER_ALPHA = (1u << 3),
     AVIF_ENCODER_CHANGE_TILE_ROWS_LOG2 = (1u << 4),
     AVIF_ENCODER_CHANGE_TILE_COLS_LOG2 = (1u << 5),
+    AVIF_ENCODER_CHANGE_QUANTIZER = (1u << 6),
+    AVIF_ENCODER_CHANGE_QUANTIZER_ALPHA = (1u << 7),
 
     AVIF_ENCODER_CHANGE_CODEC_SPECIFIC = (1u << 31)
 } avifEncoderChange;
@@ -310,6 +303,8 @@ typedef avifBool (*avifCodecGetNextImageFunc)(struct avifCodec * codec,
 // encoder->tileRowsLog2, encoder->tileColsLog2, and encoder->autoTiling. The caller of
 // avifCodecEncodeImageFunc is responsible for automatic tiling if encoder->autoTiling is set to
 // AVIF_TRUE. The actual tiling values are passed to avifCodecEncodeImageFunc as parameters.
+// Similarly, avifCodecEncodeImageFunc should use the quantizer parameter instead of
+// encoder->quality and encoder->qualityAlpha.
 //
 // Note: The caller of avifCodecEncodeImageFunc always passes encoder->data->tileRowsLog2 and
 // encoder->data->tileColsLog2 as the tileRowsLog2 and tileColsLog2 arguments. Because
@@ -322,6 +317,7 @@ typedef avifResult (*avifCodecEncodeImageFunc)(struct avifCodec * codec,
                                                avifBool alpha,
                                                int tileRowsLog2,
                                                int tileColsLog2,
+                                               int quantizer,
                                                avifEncoderChanges encoderChanges,
                                                avifAddImageFlags addImageFlags,
                                                avifCodecEncodeOutput * output);
@@ -474,6 +470,9 @@ typedef struct avifSequenceHeader
     avifCodecConfigurationBox av1C;
 } avifSequenceHeader;
 avifBool avifSequenceHeaderParse(avifSequenceHeader * header, const avifROData * sample);
+
+#define AVIF_INDEFINITE_DURATION64 UINT64_MAX
+#define AVIF_INDEFINITE_DURATION32 UINT32_MAX
 
 #ifdef __cplusplus
 } // extern "C"

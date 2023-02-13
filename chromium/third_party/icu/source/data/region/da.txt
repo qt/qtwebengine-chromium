@@ -70,7 +70,7 @@ da{
         BT{"Bhutan"}
         BV{"Bouvetøen"}
         BW{"Botswana"}
-        BY{"Hviderusland"}
+        BY{"Belarus"}
         BZ{"Belize"}
         CA{"Canada"}
         CC{"Cocosøerne"}
@@ -206,7 +206,7 @@ da{
         NF{"Norfolk Island"}
         NG{"Nigeria"}
         NI{"Nicaragua"}
-        NL{"Holland"}
+        NL{"Nederlandene"}
         NO{"Norge"}
         NP{"Nepal"}
         NR{"Nauru"}
@@ -305,6 +305,7 @@ da{
         CD{"Den Demokratiske Republik Congo (DRC)"}
         CG{"Republikken Congo"}
         CZ{"Den Tjekkiske Republik"}
+        NZ{"Aotearoa New Zealand"}
         SZ{"Swaziland"}
         TL{"Østtimor"}
     }

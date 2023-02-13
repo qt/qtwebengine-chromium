@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright 2020 The Chromium Authors. All rights reserved.
+# Copyright 2020 The PDFium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -56,9 +56,7 @@ class CheckChangeOnUploadTest(unittest.TestCase):
         'test_expected.pdf.0.png',
         'test_expected_win.pdf.1.png',
         'test_expected_skia.pdf.2.png',
-        'test_expected_skiapaths.pdf.3.png',
         'test_expected_skia_mac.pdf.4.png',
-        'test_expected_skiapaths_win.pdf.5.png',
         'notpng.cc',  # Check will be skipped for non-PNG files
     ]
     wrong_paths = [

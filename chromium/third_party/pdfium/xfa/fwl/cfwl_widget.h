@@ -1,4 +1,4 @@
-// Copyright 2014 PDFium Authors. All rights reserved.
+// Copyright 2014 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -146,7 +146,7 @@ class CFWL_Widget : public cppgc::GarbageCollected<CFWL_Widget>,
     return m_pDelegate ? m_pDelegate.Get() : this;
   }
 
-  CFWL_App* GetFWLApp() const { return m_pFWLApp.Get(); }
+  CFWL_App* GetFWLApp() const { return m_pFWLApp; }
   uint64_t GetEventKey() const { return m_nEventKey; }
   void SetEventKey(uint64_t key) { m_nEventKey = key; }
 

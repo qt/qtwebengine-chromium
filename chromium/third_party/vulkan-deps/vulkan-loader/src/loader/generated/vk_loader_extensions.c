@@ -98,8 +98,6 @@ VKAPI_ATTR bool VKAPI_CALL loader_icd_init_entries(struct loader_icd_term *icd_t
     LOOKUP_GIPA(GetPhysicalDeviceSurfacePresentModesKHR, false);
 
     // ---- VK_KHR_swapchain extension commands
-    LOOKUP_GIPA(CreateSwapchainKHR, false);
-    LOOKUP_GIPA(GetDeviceGroupSurfacePresentModesKHR, false);
     LOOKUP_GIPA(GetPhysicalDevicePresentRectanglesKHR, false);
 
     // ---- VK_KHR_display extension commands
@@ -110,9 +108,6 @@ VKAPI_ATTR bool VKAPI_CALL loader_icd_init_entries(struct loader_icd_term *icd_t
     LOOKUP_GIPA(CreateDisplayModeKHR, false);
     LOOKUP_GIPA(GetDisplayPlaneCapabilitiesKHR, false);
     LOOKUP_GIPA(CreateDisplayPlaneSurfaceKHR, false);
-
-    // ---- VK_KHR_display_swapchain extension commands
-    LOOKUP_GIPA(CreateSharedSwapchainsKHR, false);
 
     // ---- VK_KHR_xlib_surface extension commands
 #ifdef VK_USE_PLATFORM_XLIB_KHR
@@ -202,10 +197,6 @@ VKAPI_ATTR bool VKAPI_CALL loader_icd_init_entries(struct loader_icd_term *icd_t
     LOOKUP_GIPA(DestroyDebugReportCallbackEXT, false);
     LOOKUP_GIPA(DebugReportMessageEXT, false);
 
-    // ---- VK_EXT_debug_marker extension commands
-    LOOKUP_GIPA(DebugMarkerSetObjectTagEXT, false);
-    LOOKUP_GIPA(DebugMarkerSetObjectNameEXT, false);
-
     // ---- VK_GGP_stream_descriptor_surface extension commands
 #ifdef VK_USE_PLATFORM_GGP
     LOOKUP_GIPA(CreateStreamDescriptorSurfaceGGP, false);
@@ -244,14 +235,6 @@ VKAPI_ATTR bool VKAPI_CALL loader_icd_init_entries(struct loader_icd_term *icd_t
 #endif // VK_USE_PLATFORM_MACOS_MVK
 
     // ---- VK_EXT_debug_utils extension commands
-    LOOKUP_GIPA(SetDebugUtilsObjectNameEXT, false);
-    LOOKUP_GIPA(SetDebugUtilsObjectTagEXT, false);
-    LOOKUP_GIPA(QueueBeginDebugUtilsLabelEXT, false);
-    LOOKUP_GIPA(QueueEndDebugUtilsLabelEXT, false);
-    LOOKUP_GIPA(QueueInsertDebugUtilsLabelEXT, false);
-    LOOKUP_GIPA(CmdBeginDebugUtilsLabelEXT, false);
-    LOOKUP_GIPA(CmdEndDebugUtilsLabelEXT, false);
-    LOOKUP_GIPA(CmdInsertDebugUtilsLabelEXT, false);
     LOOKUP_GIPA(CreateDebugUtilsMessengerEXT, false);
     LOOKUP_GIPA(DestroyDebugUtilsMessengerEXT, false);
     LOOKUP_GIPA(SubmitDebugUtilsMessageEXT, false);
@@ -284,9 +267,6 @@ VKAPI_ATTR bool VKAPI_CALL loader_icd_init_entries(struct loader_icd_term *icd_t
     // ---- VK_EXT_full_screen_exclusive extension commands
 #ifdef VK_USE_PLATFORM_WIN32_KHR
     LOOKUP_GIPA(GetPhysicalDeviceSurfacePresentModes2EXT, false);
-#endif // VK_USE_PLATFORM_WIN32_KHR
-#ifdef VK_USE_PLATFORM_WIN32_KHR
-    LOOKUP_GIPA(GetDeviceGroupSurfacePresentModes2EXT, false);
 #endif // VK_USE_PLATFORM_WIN32_KHR
 
     // ---- VK_EXT_headless_surface extension commands
@@ -918,6 +898,9 @@ VKAPI_ATTR void VKAPI_CALL loader_init_device_extension_dispatch_table(struct lo
     table->CmdSetStencilTestEnableEXT = (PFN_vkCmdSetStencilTestEnableEXT)gdpa(dev, "vkCmdSetStencilTestEnableEXT");
     table->CmdSetStencilOpEXT = (PFN_vkCmdSetStencilOpEXT)gdpa(dev, "vkCmdSetStencilOpEXT");
 
+    // ---- VK_EXT_swapchain_maintenance1 extension commands
+    table->ReleaseSwapchainImagesEXT = (PFN_vkReleaseSwapchainImagesEXT)gdpa(dev, "vkReleaseSwapchainImagesEXT");
+
     // ---- VK_NV_device_generated_commands extension commands
     table->GetGeneratedCommandsMemoryRequirementsNV = (PFN_vkGetGeneratedCommandsMemoryRequirementsNV)gdpa(dev, "vkGetGeneratedCommandsMemoryRequirementsNV");
     table->CmdPreprocessGeneratedCommandsNV = (PFN_vkCmdPreprocessGeneratedCommandsNV)gdpa(dev, "vkCmdPreprocessGeneratedCommandsNV");
@@ -936,6 +919,19 @@ VKAPI_ATTR void VKAPI_CALL loader_init_device_extension_dispatch_table(struct lo
 #ifdef VK_USE_PLATFORM_METAL_EXT
     table->ExportMetalObjectsEXT = (PFN_vkExportMetalObjectsEXT)gdpa(dev, "vkExportMetalObjectsEXT");
 #endif // VK_USE_PLATFORM_METAL_EXT
+
+    // ---- VK_EXT_descriptor_buffer extension commands
+    table->GetDescriptorSetLayoutSizeEXT = (PFN_vkGetDescriptorSetLayoutSizeEXT)gdpa(dev, "vkGetDescriptorSetLayoutSizeEXT");
+    table->GetDescriptorSetLayoutBindingOffsetEXT = (PFN_vkGetDescriptorSetLayoutBindingOffsetEXT)gdpa(dev, "vkGetDescriptorSetLayoutBindingOffsetEXT");
+    table->GetDescriptorEXT = (PFN_vkGetDescriptorEXT)gdpa(dev, "vkGetDescriptorEXT");
+    table->CmdBindDescriptorBuffersEXT = (PFN_vkCmdBindDescriptorBuffersEXT)gdpa(dev, "vkCmdBindDescriptorBuffersEXT");
+    table->CmdSetDescriptorBufferOffsetsEXT = (PFN_vkCmdSetDescriptorBufferOffsetsEXT)gdpa(dev, "vkCmdSetDescriptorBufferOffsetsEXT");
+    table->CmdBindDescriptorBufferEmbeddedSamplersEXT = (PFN_vkCmdBindDescriptorBufferEmbeddedSamplersEXT)gdpa(dev, "vkCmdBindDescriptorBufferEmbeddedSamplersEXT");
+    table->GetBufferOpaqueCaptureDescriptorDataEXT = (PFN_vkGetBufferOpaqueCaptureDescriptorDataEXT)gdpa(dev, "vkGetBufferOpaqueCaptureDescriptorDataEXT");
+    table->GetImageOpaqueCaptureDescriptorDataEXT = (PFN_vkGetImageOpaqueCaptureDescriptorDataEXT)gdpa(dev, "vkGetImageOpaqueCaptureDescriptorDataEXT");
+    table->GetImageViewOpaqueCaptureDescriptorDataEXT = (PFN_vkGetImageViewOpaqueCaptureDescriptorDataEXT)gdpa(dev, "vkGetImageViewOpaqueCaptureDescriptorDataEXT");
+    table->GetSamplerOpaqueCaptureDescriptorDataEXT = (PFN_vkGetSamplerOpaqueCaptureDescriptorDataEXT)gdpa(dev, "vkGetSamplerOpaqueCaptureDescriptorDataEXT");
+    table->GetAccelerationStructureOpaqueCaptureDescriptorDataEXT = (PFN_vkGetAccelerationStructureOpaqueCaptureDescriptorDataEXT)gdpa(dev, "vkGetAccelerationStructureOpaqueCaptureDescriptorDataEXT");
 
     // ---- VK_NV_fragment_shading_rate_enums extension commands
     table->CmdSetFragmentShadingRateEnumNV = (PFN_vkCmdSetFragmentShadingRateEnumNV)gdpa(dev, "vkCmdSetFragmentShadingRateEnumNV");
@@ -1031,6 +1027,14 @@ VKAPI_ATTR void VKAPI_CALL loader_init_device_extension_dispatch_table(struct lo
     // ---- VK_VALVE_descriptor_set_host_mapping extension commands
     table->GetDescriptorSetLayoutHostMappingInfoVALVE = (PFN_vkGetDescriptorSetLayoutHostMappingInfoVALVE)gdpa(dev, "vkGetDescriptorSetLayoutHostMappingInfoVALVE");
     table->GetDescriptorSetHostMappingVALVE = (PFN_vkGetDescriptorSetHostMappingVALVE)gdpa(dev, "vkGetDescriptorSetHostMappingVALVE");
+
+    // ---- VK_NV_copy_memory_indirect extension commands
+    table->CmdCopyMemoryIndirectNV = (PFN_vkCmdCopyMemoryIndirectNV)gdpa(dev, "vkCmdCopyMemoryIndirectNV");
+    table->CmdCopyMemoryToImageIndirectNV = (PFN_vkCmdCopyMemoryToImageIndirectNV)gdpa(dev, "vkCmdCopyMemoryToImageIndirectNV");
+
+    // ---- VK_NV_memory_decompression extension commands
+    table->CmdDecompressMemoryNV = (PFN_vkCmdDecompressMemoryNV)gdpa(dev, "vkCmdDecompressMemoryNV");
+    table->CmdDecompressMemoryIndirectCountNV = (PFN_vkCmdDecompressMemoryIndirectCountNV)gdpa(dev, "vkCmdDecompressMemoryIndirectCountNV");
 
     // ---- VK_EXT_extended_dynamic_state3 extension commands
     table->CmdSetTessellationDomainOriginEXT = (PFN_vkCmdSetTessellationDomainOriginEXT)gdpa(dev, "vkCmdSetTessellationDomainOriginEXT");
@@ -1362,6 +1366,48 @@ VKAPI_ATTR void VKAPI_CALL loader_init_instance_extension_dispatch_table(VkLayer
 
     // ---- VK_NV_optical_flow extension commands
     table->GetPhysicalDeviceOpticalFlowImageFormatsNV = (PFN_vkGetPhysicalDeviceOpticalFlowImageFormatsNV)gpa(inst, "vkGetPhysicalDeviceOpticalFlowImageFormatsNV");
+}
+
+// Functions that required a terminator need to have a separate dispatch table which contains their corresponding
+// device function. This is used in the terminators themselves.
+void init_extension_device_proc_terminator_dispatch(struct loader_device *dev) {
+    struct loader_device_terminator_dispatch* dispatch = &dev->loader_dispatch.extension_terminator_dispatch;
+    PFN_vkGetDeviceProcAddr gpda = (PFN_vkGetDeviceProcAddr)dev->phys_dev_term->this_icd_term->dispatch.GetDeviceProcAddr;
+    // ---- VK_KHR_swapchain extension commands
+    if (dev->extensions.khr_swapchain_enabled)
+       dispatch->CreateSwapchainKHR = (PFN_vkCreateSwapchainKHR)gpda(dev->icd_device, "vkCreateSwapchainKHR");
+    if (dev->extensions.khr_swapchain_enabled)
+       dispatch->GetDeviceGroupSurfacePresentModesKHR = (PFN_vkGetDeviceGroupSurfacePresentModesKHR)gpda(dev->icd_device, "vkGetDeviceGroupSurfacePresentModesKHR");
+    // ---- VK_KHR_display_swapchain extension commands
+    if (dev->extensions.khr_display_swapchain_enabled)
+       dispatch->CreateSharedSwapchainsKHR = (PFN_vkCreateSharedSwapchainsKHR)gpda(dev->icd_device, "vkCreateSharedSwapchainsKHR");
+    // ---- VK_EXT_debug_marker extension commands
+    if (dev->extensions.ext_debug_marker_enabled)
+       dispatch->DebugMarkerSetObjectTagEXT = (PFN_vkDebugMarkerSetObjectTagEXT)gpda(dev->icd_device, "vkDebugMarkerSetObjectTagEXT");
+    if (dev->extensions.ext_debug_marker_enabled)
+       dispatch->DebugMarkerSetObjectNameEXT = (PFN_vkDebugMarkerSetObjectNameEXT)gpda(dev->icd_device, "vkDebugMarkerSetObjectNameEXT");
+    // ---- VK_EXT_debug_utils extension commands
+    if (dev->extensions.ext_debug_utils_enabled)
+       dispatch->SetDebugUtilsObjectNameEXT = (PFN_vkSetDebugUtilsObjectNameEXT)gpda(dev->icd_device, "vkSetDebugUtilsObjectNameEXT");
+    if (dev->extensions.ext_debug_utils_enabled)
+       dispatch->SetDebugUtilsObjectTagEXT = (PFN_vkSetDebugUtilsObjectTagEXT)gpda(dev->icd_device, "vkSetDebugUtilsObjectTagEXT");
+    if (dev->extensions.ext_debug_utils_enabled)
+       dispatch->QueueBeginDebugUtilsLabelEXT = (PFN_vkQueueBeginDebugUtilsLabelEXT)gpda(dev->icd_device, "vkQueueBeginDebugUtilsLabelEXT");
+    if (dev->extensions.ext_debug_utils_enabled)
+       dispatch->QueueEndDebugUtilsLabelEXT = (PFN_vkQueueEndDebugUtilsLabelEXT)gpda(dev->icd_device, "vkQueueEndDebugUtilsLabelEXT");
+    if (dev->extensions.ext_debug_utils_enabled)
+       dispatch->QueueInsertDebugUtilsLabelEXT = (PFN_vkQueueInsertDebugUtilsLabelEXT)gpda(dev->icd_device, "vkQueueInsertDebugUtilsLabelEXT");
+    if (dev->extensions.ext_debug_utils_enabled)
+       dispatch->CmdBeginDebugUtilsLabelEXT = (PFN_vkCmdBeginDebugUtilsLabelEXT)gpda(dev->icd_device, "vkCmdBeginDebugUtilsLabelEXT");
+    if (dev->extensions.ext_debug_utils_enabled)
+       dispatch->CmdEndDebugUtilsLabelEXT = (PFN_vkCmdEndDebugUtilsLabelEXT)gpda(dev->icd_device, "vkCmdEndDebugUtilsLabelEXT");
+    if (dev->extensions.ext_debug_utils_enabled)
+       dispatch->CmdInsertDebugUtilsLabelEXT = (PFN_vkCmdInsertDebugUtilsLabelEXT)gpda(dev->icd_device, "vkCmdInsertDebugUtilsLabelEXT");
+#ifdef VK_USE_PLATFORM_WIN32_KHR
+    // ---- VK_EXT_full_screen_exclusive extension commands
+    if (dev->extensions.ext_full_screen_exclusive_enabled && dev->extensions.khr_device_group_enabled)
+       dispatch->GetDeviceGroupSurfacePresentModes2EXT = (PFN_vkGetDeviceGroupSurfacePresentModes2EXT)gpda(dev->icd_device, "vkGetDeviceGroupSurfacePresentModes2EXT");
+#endif // None
 }
 
 // Device command lookup function
@@ -1943,6 +1989,9 @@ VKAPI_ATTR void* VKAPI_CALL loader_lookup_device_dispatch_table(const VkLayerDis
     if (!strcmp(name, "CmdSetStencilTestEnableEXT")) return (void *)table->CmdSetStencilTestEnableEXT;
     if (!strcmp(name, "CmdSetStencilOpEXT")) return (void *)table->CmdSetStencilOpEXT;
 
+    // ---- VK_EXT_swapchain_maintenance1 extension commands
+    if (!strcmp(name, "ReleaseSwapchainImagesEXT")) return (void *)table->ReleaseSwapchainImagesEXT;
+
     // ---- VK_NV_device_generated_commands extension commands
     if (!strcmp(name, "GetGeneratedCommandsMemoryRequirementsNV")) return (void *)table->GetGeneratedCommandsMemoryRequirementsNV;
     if (!strcmp(name, "CmdPreprocessGeneratedCommandsNV")) return (void *)table->CmdPreprocessGeneratedCommandsNV;
@@ -1961,6 +2010,19 @@ VKAPI_ATTR void* VKAPI_CALL loader_lookup_device_dispatch_table(const VkLayerDis
 #ifdef VK_USE_PLATFORM_METAL_EXT
     if (!strcmp(name, "ExportMetalObjectsEXT")) return (void *)table->ExportMetalObjectsEXT;
 #endif // VK_USE_PLATFORM_METAL_EXT
+
+    // ---- VK_EXT_descriptor_buffer extension commands
+    if (!strcmp(name, "GetDescriptorSetLayoutSizeEXT")) return (void *)table->GetDescriptorSetLayoutSizeEXT;
+    if (!strcmp(name, "GetDescriptorSetLayoutBindingOffsetEXT")) return (void *)table->GetDescriptorSetLayoutBindingOffsetEXT;
+    if (!strcmp(name, "GetDescriptorEXT")) return (void *)table->GetDescriptorEXT;
+    if (!strcmp(name, "CmdBindDescriptorBuffersEXT")) return (void *)table->CmdBindDescriptorBuffersEXT;
+    if (!strcmp(name, "CmdSetDescriptorBufferOffsetsEXT")) return (void *)table->CmdSetDescriptorBufferOffsetsEXT;
+    if (!strcmp(name, "CmdBindDescriptorBufferEmbeddedSamplersEXT")) return (void *)table->CmdBindDescriptorBufferEmbeddedSamplersEXT;
+    if (!strcmp(name, "GetBufferOpaqueCaptureDescriptorDataEXT")) return (void *)table->GetBufferOpaqueCaptureDescriptorDataEXT;
+    if (!strcmp(name, "GetImageOpaqueCaptureDescriptorDataEXT")) return (void *)table->GetImageOpaqueCaptureDescriptorDataEXT;
+    if (!strcmp(name, "GetImageViewOpaqueCaptureDescriptorDataEXT")) return (void *)table->GetImageViewOpaqueCaptureDescriptorDataEXT;
+    if (!strcmp(name, "GetSamplerOpaqueCaptureDescriptorDataEXT")) return (void *)table->GetSamplerOpaqueCaptureDescriptorDataEXT;
+    if (!strcmp(name, "GetAccelerationStructureOpaqueCaptureDescriptorDataEXT")) return (void *)table->GetAccelerationStructureOpaqueCaptureDescriptorDataEXT;
 
     // ---- VK_NV_fragment_shading_rate_enums extension commands
     if (!strcmp(name, "CmdSetFragmentShadingRateEnumNV")) return (void *)table->CmdSetFragmentShadingRateEnumNV;
@@ -2056,6 +2118,14 @@ VKAPI_ATTR void* VKAPI_CALL loader_lookup_device_dispatch_table(const VkLayerDis
     // ---- VK_VALVE_descriptor_set_host_mapping extension commands
     if (!strcmp(name, "GetDescriptorSetLayoutHostMappingInfoVALVE")) return (void *)table->GetDescriptorSetLayoutHostMappingInfoVALVE;
     if (!strcmp(name, "GetDescriptorSetHostMappingVALVE")) return (void *)table->GetDescriptorSetHostMappingVALVE;
+
+    // ---- VK_NV_copy_memory_indirect extension commands
+    if (!strcmp(name, "CmdCopyMemoryIndirectNV")) return (void *)table->CmdCopyMemoryIndirectNV;
+    if (!strcmp(name, "CmdCopyMemoryToImageIndirectNV")) return (void *)table->CmdCopyMemoryToImageIndirectNV;
+
+    // ---- VK_NV_memory_decompression extension commands
+    if (!strcmp(name, "CmdDecompressMemoryNV")) return (void *)table->CmdDecompressMemoryNV;
+    if (!strcmp(name, "CmdDecompressMemoryIndirectCountNV")) return (void *)table->CmdDecompressMemoryIndirectCountNV;
 
     // ---- VK_EXT_extended_dynamic_state3 extension commands
     if (!strcmp(name, "CmdSetTessellationDomainOriginEXT")) return (void *)table->CmdSetTessellationDomainOriginEXT;
@@ -3928,26 +3998,30 @@ VKAPI_ATTR VkResult VKAPI_CALL terminator_DebugMarkerSetObjectTagEXT(
     uint32_t icd_index = 0;
     struct loader_device *dev;
     struct loader_icd_term *icd_term = loader_get_icd_and_device(device, &dev, &icd_index);
-    if (NULL != icd_term && NULL != icd_term->dispatch.DebugMarkerSetObjectTagEXT) {
-        VkDebugMarkerObjectTagInfoEXT local_tag_info;
-        memcpy(&local_tag_info, pTagInfo, sizeof(VkDebugMarkerObjectTagInfoEXT));
-        // If this is a physical device, we have to replace it with the proper one for the next call.
-        if (pTagInfo->objectType == VK_DEBUG_REPORT_OBJECT_TYPE_PHYSICAL_DEVICE_EXT) {
-            struct loader_physical_device_term *phys_dev_term = (struct loader_physical_device_term *)(uintptr_t)pTagInfo->object;
-            local_tag_info.object = (uint64_t)(uintptr_t)phys_dev_term->phys_dev;
-        // If this is a KHR_surface, and the ICD has created its own, we have to replace it with the proper one for the next call.
-        } else if (pTagInfo->objectType == VK_DEBUG_REPORT_OBJECT_TYPE_SURFACE_KHR_EXT) {
-            if (NULL != icd_term && NULL != icd_term->dispatch.CreateSwapchainKHR) {
-                VkIcdSurface *icd_surface = (VkIcdSurface *)(uintptr_t)pTagInfo->object;
-                if (NULL != icd_surface->real_icd_surfaces) {
-                    local_tag_info.object = (uint64_t)icd_surface->real_icd_surfaces[icd_index];
-                }
+    if (NULL == icd_term || NULL == dev) {
+        loader_log(NULL, VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0, "DebugMarkerSetObjectTagEXT: Invalid device handle");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    VkDebugMarkerObjectTagInfoEXT local_tag_info;
+    memcpy(&local_tag_info, pTagInfo, sizeof(VkDebugMarkerObjectTagInfoEXT));
+    // If this is a physical device, we have to replace it with the proper one for the next call.
+    if (pTagInfo->objectType == VK_DEBUG_REPORT_OBJECT_TYPE_PHYSICAL_DEVICE_EXT) {
+        struct loader_physical_device_term *phys_dev_term = (struct loader_physical_device_term *)(uintptr_t)pTagInfo->object;
+        local_tag_info.object = (uint64_t)(uintptr_t)phys_dev_term->phys_dev;
+    // If this is a KHR_surface, and the ICD has created its own, we have to replace it with the proper one for the next call.
+    } else if (pTagInfo->objectType == VK_DEBUG_REPORT_OBJECT_TYPE_SURFACE_KHR_EXT) {
+        if (NULL != dev && NULL != dev->loader_dispatch.core_dispatch.CreateSwapchainKHR) {
+            VkIcdSurface *icd_surface = (VkIcdSurface *)(uintptr_t)pTagInfo->object;
+            if (NULL != icd_surface->real_icd_surfaces) {
+                local_tag_info.object = (uint64_t)icd_surface->real_icd_surfaces[icd_index];
             }
         }
-        return icd_term->dispatch.DebugMarkerSetObjectTagEXT(device, &local_tag_info);
-    } else {
-        return VK_SUCCESS;
     }
+    // Exit early if the driver does not support the function - this can happen as a layer or the loader itself supports
+    // debug utils but the driver does not.
+    if (NULL == dev->loader_dispatch.extension_terminator_dispatch.DebugMarkerSetObjectTagEXT)
+        return VK_SUCCESS;
+    return dev->loader_dispatch.extension_terminator_dispatch.DebugMarkerSetObjectTagEXT(device, &local_tag_info);
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL DebugMarkerSetObjectNameEXT(
@@ -3976,26 +4050,30 @@ VKAPI_ATTR VkResult VKAPI_CALL terminator_DebugMarkerSetObjectNameEXT(
     uint32_t icd_index = 0;
     struct loader_device *dev;
     struct loader_icd_term *icd_term = loader_get_icd_and_device(device, &dev, &icd_index);
-    if (NULL != icd_term && NULL != icd_term->dispatch.DebugMarkerSetObjectNameEXT) {
-        VkDebugMarkerObjectNameInfoEXT local_name_info;
-        memcpy(&local_name_info, pNameInfo, sizeof(VkDebugMarkerObjectNameInfoEXT));
-        // If this is a physical device, we have to replace it with the proper one for the next call.
-        if (pNameInfo->objectType == VK_DEBUG_REPORT_OBJECT_TYPE_PHYSICAL_DEVICE_EXT) {
-            struct loader_physical_device_term *phys_dev_term = (struct loader_physical_device_term *)(uintptr_t)pNameInfo->object;
-            local_name_info.object = (uint64_t)(uintptr_t)phys_dev_term->phys_dev;
-        // If this is a KHR_surface, and the ICD has created its own, we have to replace it with the proper one for the next call.
-        } else if (pNameInfo->objectType == VK_DEBUG_REPORT_OBJECT_TYPE_SURFACE_KHR_EXT) {
-            if (NULL != icd_term && NULL != icd_term->dispatch.CreateSwapchainKHR) {
-                VkIcdSurface *icd_surface = (VkIcdSurface *)(uintptr_t)pNameInfo->object;
-                if (NULL != icd_surface->real_icd_surfaces) {
-                    local_name_info.object = (uint64_t)icd_surface->real_icd_surfaces[icd_index];
-                }
+    if (NULL == icd_term || NULL == dev) {
+        loader_log(NULL, VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0, "DebugMarkerSetObjectNameEXT: Invalid device handle");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    VkDebugMarkerObjectNameInfoEXT local_name_info;
+    memcpy(&local_name_info, pNameInfo, sizeof(VkDebugMarkerObjectNameInfoEXT));
+    // If this is a physical device, we have to replace it with the proper one for the next call.
+    if (pNameInfo->objectType == VK_DEBUG_REPORT_OBJECT_TYPE_PHYSICAL_DEVICE_EXT) {
+        struct loader_physical_device_term *phys_dev_term = (struct loader_physical_device_term *)(uintptr_t)pNameInfo->object;
+        local_name_info.object = (uint64_t)(uintptr_t)phys_dev_term->phys_dev;
+    // If this is a KHR_surface, and the ICD has created its own, we have to replace it with the proper one for the next call.
+    } else if (pNameInfo->objectType == VK_DEBUG_REPORT_OBJECT_TYPE_SURFACE_KHR_EXT) {
+        if (NULL != dev && NULL != dev->loader_dispatch.core_dispatch.CreateSwapchainKHR) {
+            VkIcdSurface *icd_surface = (VkIcdSurface *)(uintptr_t)pNameInfo->object;
+            if (NULL != icd_surface->real_icd_surfaces) {
+                local_name_info.object = (uint64_t)icd_surface->real_icd_surfaces[icd_index];
             }
         }
-        return icd_term->dispatch.DebugMarkerSetObjectNameEXT(device, &local_name_info);
-    } else {
-        return VK_SUCCESS;
     }
+    // Exit early if the driver does not support the function - this can happen as a layer or the loader itself supports
+    // debug utils but the driver does not.
+    if (NULL == dev->loader_dispatch.extension_terminator_dispatch.DebugMarkerSetObjectNameEXT)
+        return VK_SUCCESS;
+    return dev->loader_dispatch.extension_terminator_dispatch.DebugMarkerSetObjectNameEXT(device, &local_name_info);
 }
 
 VKAPI_ATTR void VKAPI_CALL CmdDebugMarkerBeginEXT(
@@ -4530,26 +4608,30 @@ VKAPI_ATTR VkResult VKAPI_CALL terminator_SetDebugUtilsObjectNameEXT(
     uint32_t icd_index = 0;
     struct loader_device *dev;
     struct loader_icd_term *icd_term = loader_get_icd_and_device(device, &dev, &icd_index);
-    if (NULL != icd_term && NULL != icd_term->dispatch.SetDebugUtilsObjectNameEXT) {
-        VkDebugUtilsObjectNameInfoEXT local_name_info;
-        memcpy(&local_name_info, pNameInfo, sizeof(VkDebugUtilsObjectNameInfoEXT));
-        // If this is a physical device, we have to replace it with the proper one for the next call.
-        if (pNameInfo->objectType == VK_OBJECT_TYPE_PHYSICAL_DEVICE) {
-            struct loader_physical_device_term *phys_dev_term = (struct loader_physical_device_term *)(uintptr_t)pNameInfo->objectHandle;
-            local_name_info.objectHandle = (uint64_t)(uintptr_t)phys_dev_term->phys_dev;
-        // If this is a KHR_surface, and the ICD has created its own, we have to replace it with the proper one for the next call.
-        } else if (pNameInfo->objectType == VK_OBJECT_TYPE_SURFACE_KHR) {
-            if (NULL != icd_term && NULL != icd_term->dispatch.CreateSwapchainKHR) {
-                VkIcdSurface *icd_surface = (VkIcdSurface *)(uintptr_t)pNameInfo->objectHandle;
-                if (NULL != icd_surface->real_icd_surfaces) {
-                    local_name_info.objectHandle = (uint64_t)icd_surface->real_icd_surfaces[icd_index];
-                }
+    if (NULL == icd_term || NULL == dev) {
+        loader_log(NULL, VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0, "SetDebugUtilsObjectNameEXT: Invalid device handle");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    VkDebugUtilsObjectNameInfoEXT local_name_info;
+    memcpy(&local_name_info, pNameInfo, sizeof(VkDebugUtilsObjectNameInfoEXT));
+    // If this is a physical device, we have to replace it with the proper one for the next call.
+    if (pNameInfo->objectType == VK_OBJECT_TYPE_PHYSICAL_DEVICE) {
+        struct loader_physical_device_term *phys_dev_term = (struct loader_physical_device_term *)(uintptr_t)pNameInfo->objectHandle;
+        local_name_info.objectHandle = (uint64_t)(uintptr_t)phys_dev_term->phys_dev;
+    // If this is a KHR_surface, and the ICD has created its own, we have to replace it with the proper one for the next call.
+    } else if (pNameInfo->objectType == VK_OBJECT_TYPE_SURFACE_KHR) {
+        if (NULL != dev && NULL != dev->loader_dispatch.core_dispatch.CreateSwapchainKHR) {
+            VkIcdSurface *icd_surface = (VkIcdSurface *)(uintptr_t)pNameInfo->objectHandle;
+            if (NULL != icd_surface->real_icd_surfaces) {
+                local_name_info.objectHandle = (uint64_t)icd_surface->real_icd_surfaces[icd_index];
             }
         }
-        return icd_term->dispatch.SetDebugUtilsObjectNameEXT(device, &local_name_info);
-    } else {
-        return VK_SUCCESS;
     }
+    // Exit early if the driver does not support the function - this can happen as a layer or the loader itself supports
+    // debug utils but the driver does not.
+    if (NULL == dev->loader_dispatch.extension_terminator_dispatch.SetDebugUtilsObjectNameEXT)
+        return VK_SUCCESS;
+    return dev->loader_dispatch.extension_terminator_dispatch.SetDebugUtilsObjectNameEXT(device, &local_name_info);
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL SetDebugUtilsObjectTagEXT(
@@ -4582,26 +4664,30 @@ VKAPI_ATTR VkResult VKAPI_CALL terminator_SetDebugUtilsObjectTagEXT(
     uint32_t icd_index = 0;
     struct loader_device *dev;
     struct loader_icd_term *icd_term = loader_get_icd_and_device(device, &dev, &icd_index);
-    if (NULL != icd_term && NULL != icd_term->dispatch.SetDebugUtilsObjectTagEXT) {
-        VkDebugUtilsObjectTagInfoEXT local_tag_info;
-        memcpy(&local_tag_info, pTagInfo, sizeof(VkDebugUtilsObjectTagInfoEXT));
-        // If this is a physical device, we have to replace it with the proper one for the next call.
-        if (pTagInfo->objectType == VK_OBJECT_TYPE_PHYSICAL_DEVICE) {
-            struct loader_physical_device_term *phys_dev_term = (struct loader_physical_device_term *)(uintptr_t)pTagInfo->objectHandle;
-            local_tag_info.objectHandle = (uint64_t)(uintptr_t)phys_dev_term->phys_dev;
-        // If this is a KHR_surface, and the ICD has created its own, we have to replace it with the proper one for the next call.
-        } else if (pTagInfo->objectType == VK_OBJECT_TYPE_SURFACE_KHR) {
-            if (NULL != icd_term && NULL != icd_term->dispatch.CreateSwapchainKHR) {
-                VkIcdSurface *icd_surface = (VkIcdSurface *)(uintptr_t)pTagInfo->objectHandle;
-                if (NULL != icd_surface->real_icd_surfaces) {
-                    local_tag_info.objectHandle = (uint64_t)icd_surface->real_icd_surfaces[icd_index];
-                }
+    if (NULL == icd_term || NULL == dev) {
+        loader_log(NULL, VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0, "SetDebugUtilsObjectTagEXT: Invalid device handle");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    VkDebugUtilsObjectTagInfoEXT local_tag_info;
+    memcpy(&local_tag_info, pTagInfo, sizeof(VkDebugUtilsObjectTagInfoEXT));
+    // If this is a physical device, we have to replace it with the proper one for the next call.
+    if (pTagInfo->objectType == VK_OBJECT_TYPE_PHYSICAL_DEVICE) {
+        struct loader_physical_device_term *phys_dev_term = (struct loader_physical_device_term *)(uintptr_t)pTagInfo->objectHandle;
+        local_tag_info.objectHandle = (uint64_t)(uintptr_t)phys_dev_term->phys_dev;
+    // If this is a KHR_surface, and the ICD has created its own, we have to replace it with the proper one for the next call.
+    } else if (pTagInfo->objectType == VK_OBJECT_TYPE_SURFACE_KHR) {
+        if (NULL != dev && NULL != dev->loader_dispatch.core_dispatch.CreateSwapchainKHR) {
+            VkIcdSurface *icd_surface = (VkIcdSurface *)(uintptr_t)pTagInfo->objectHandle;
+            if (NULL != icd_surface->real_icd_surfaces) {
+                local_tag_info.objectHandle = (uint64_t)icd_surface->real_icd_surfaces[icd_index];
             }
         }
-        return icd_term->dispatch.SetDebugUtilsObjectTagEXT(device, &local_tag_info);
-    } else {
-        return VK_SUCCESS;
     }
+    // Exit early if the driver does not support the function - this can happen as a layer or the loader itself supports
+    // debug utils but the driver does not.
+    if (NULL == dev->loader_dispatch.extension_terminator_dispatch.SetDebugUtilsObjectTagEXT)
+        return VK_SUCCESS;
+    return dev->loader_dispatch.extension_terminator_dispatch.SetDebugUtilsObjectTagEXT(device, &local_tag_info);
 }
 
 VKAPI_ATTR void VKAPI_CALL QueueBeginDebugUtilsLabelEXT(
@@ -4622,12 +4708,14 @@ VKAPI_ATTR void VKAPI_CALL QueueBeginDebugUtilsLabelEXT(
 VKAPI_ATTR void VKAPI_CALL terminator_QueueBeginDebugUtilsLabelEXT(
     VkQueue                                     queue,
     const VkDebugUtilsLabelEXT*                 pLabelInfo) {
-    uint32_t icd_index = 0;
-    struct loader_device *dev;
-    struct loader_icd_term *icd_term = loader_get_icd_and_device(queue, &dev, &icd_index);
-    if (NULL != icd_term && NULL != icd_term->dispatch.QueueBeginDebugUtilsLabelEXT) {
-        icd_term->dispatch.QueueBeginDebugUtilsLabelEXT(queue, pLabelInfo);
+    struct loader_dev_dispatch_table *dispatch_table = loader_get_dev_dispatch(queue);
+    if (NULL == dispatch_table) {
+        loader_log(NULL, VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0, "VK_EXT_debug_utils: Invalid device handle");
+        abort(); /* Intentionally fail so user can correct issue. */
     }
+    // Only call down if the device supports the function
+    if (NULL != dispatch_table->extension_terminator_dispatch.QueueBeginDebugUtilsLabelEXT)
+        dispatch_table->extension_terminator_dispatch.QueueBeginDebugUtilsLabelEXT(queue, pLabelInfo);
 }
 
 VKAPI_ATTR void VKAPI_CALL QueueEndDebugUtilsLabelEXT(
@@ -4646,12 +4734,14 @@ VKAPI_ATTR void VKAPI_CALL QueueEndDebugUtilsLabelEXT(
 
 VKAPI_ATTR void VKAPI_CALL terminator_QueueEndDebugUtilsLabelEXT(
     VkQueue                                     queue) {
-    uint32_t icd_index = 0;
-    struct loader_device *dev;
-    struct loader_icd_term *icd_term = loader_get_icd_and_device(queue, &dev, &icd_index);
-    if (NULL != icd_term && NULL != icd_term->dispatch.QueueEndDebugUtilsLabelEXT) {
-        icd_term->dispatch.QueueEndDebugUtilsLabelEXT(queue);
+    struct loader_dev_dispatch_table *dispatch_table = loader_get_dev_dispatch(queue);
+    if (NULL == dispatch_table) {
+        loader_log(NULL, VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0, "VK_EXT_debug_utils: Invalid device handle");
+        abort(); /* Intentionally fail so user can correct issue. */
     }
+    // Only call down if the device supports the function
+    if (NULL != dispatch_table->extension_terminator_dispatch.QueueEndDebugUtilsLabelEXT)
+        dispatch_table->extension_terminator_dispatch.QueueEndDebugUtilsLabelEXT(queue);
 }
 
 VKAPI_ATTR void VKAPI_CALL QueueInsertDebugUtilsLabelEXT(
@@ -4672,12 +4762,14 @@ VKAPI_ATTR void VKAPI_CALL QueueInsertDebugUtilsLabelEXT(
 VKAPI_ATTR void VKAPI_CALL terminator_QueueInsertDebugUtilsLabelEXT(
     VkQueue                                     queue,
     const VkDebugUtilsLabelEXT*                 pLabelInfo) {
-    uint32_t icd_index = 0;
-    struct loader_device *dev;
-    struct loader_icd_term *icd_term = loader_get_icd_and_device(queue, &dev, &icd_index);
-    if (NULL != icd_term && NULL != icd_term->dispatch.QueueInsertDebugUtilsLabelEXT) {
-        icd_term->dispatch.QueueInsertDebugUtilsLabelEXT(queue, pLabelInfo);
+    struct loader_dev_dispatch_table *dispatch_table = loader_get_dev_dispatch(queue);
+    if (NULL == dispatch_table) {
+        loader_log(NULL, VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0, "VK_EXT_debug_utils: Invalid device handle");
+        abort(); /* Intentionally fail so user can correct issue. */
     }
+    // Only call down if the device supports the function
+    if (NULL != dispatch_table->extension_terminator_dispatch.QueueInsertDebugUtilsLabelEXT)
+        dispatch_table->extension_terminator_dispatch.QueueInsertDebugUtilsLabelEXT(queue, pLabelInfo);
 }
 
 VKAPI_ATTR void VKAPI_CALL CmdBeginDebugUtilsLabelEXT(
@@ -4698,12 +4790,14 @@ VKAPI_ATTR void VKAPI_CALL CmdBeginDebugUtilsLabelEXT(
 VKAPI_ATTR void VKAPI_CALL terminator_CmdBeginDebugUtilsLabelEXT(
     VkCommandBuffer                             commandBuffer,
     const VkDebugUtilsLabelEXT*                 pLabelInfo) {
-    uint32_t icd_index = 0;
-    struct loader_device *dev;
-    struct loader_icd_term *icd_term = loader_get_icd_and_device(commandBuffer, &dev, &icd_index);
-    if (NULL != icd_term && NULL != icd_term->dispatch.CmdBeginDebugUtilsLabelEXT) {
-        icd_term->dispatch.CmdBeginDebugUtilsLabelEXT(commandBuffer, pLabelInfo);
+    struct loader_dev_dispatch_table *dispatch_table = loader_get_dev_dispatch(commandBuffer);
+    if (NULL == dispatch_table) {
+        loader_log(NULL, VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0, "VK_EXT_debug_utils: Invalid device handle");
+        abort(); /* Intentionally fail so user can correct issue. */
     }
+    // Only call down if the device supports the function
+    if (NULL != dispatch_table->extension_terminator_dispatch.CmdBeginDebugUtilsLabelEXT)
+        dispatch_table->extension_terminator_dispatch.CmdBeginDebugUtilsLabelEXT(commandBuffer, pLabelInfo);
 }
 
 VKAPI_ATTR void VKAPI_CALL CmdEndDebugUtilsLabelEXT(
@@ -4722,12 +4816,14 @@ VKAPI_ATTR void VKAPI_CALL CmdEndDebugUtilsLabelEXT(
 
 VKAPI_ATTR void VKAPI_CALL terminator_CmdEndDebugUtilsLabelEXT(
     VkCommandBuffer                             commandBuffer) {
-    uint32_t icd_index = 0;
-    struct loader_device *dev;
-    struct loader_icd_term *icd_term = loader_get_icd_and_device(commandBuffer, &dev, &icd_index);
-    if (NULL != icd_term && NULL != icd_term->dispatch.CmdEndDebugUtilsLabelEXT) {
-        icd_term->dispatch.CmdEndDebugUtilsLabelEXT(commandBuffer);
+    struct loader_dev_dispatch_table *dispatch_table = loader_get_dev_dispatch(commandBuffer);
+    if (NULL == dispatch_table) {
+        loader_log(NULL, VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0, "VK_EXT_debug_utils: Invalid device handle");
+        abort(); /* Intentionally fail so user can correct issue. */
     }
+    // Only call down if the device supports the function
+    if (NULL != dispatch_table->extension_terminator_dispatch.CmdEndDebugUtilsLabelEXT)
+        dispatch_table->extension_terminator_dispatch.CmdEndDebugUtilsLabelEXT(commandBuffer);
 }
 
 VKAPI_ATTR void VKAPI_CALL CmdInsertDebugUtilsLabelEXT(
@@ -4748,12 +4844,14 @@ VKAPI_ATTR void VKAPI_CALL CmdInsertDebugUtilsLabelEXT(
 VKAPI_ATTR void VKAPI_CALL terminator_CmdInsertDebugUtilsLabelEXT(
     VkCommandBuffer                             commandBuffer,
     const VkDebugUtilsLabelEXT*                 pLabelInfo) {
-    uint32_t icd_index = 0;
-    struct loader_device *dev;
-    struct loader_icd_term *icd_term = loader_get_icd_and_device(commandBuffer, &dev, &icd_index);
-    if (NULL != icd_term && NULL != icd_term->dispatch.CmdInsertDebugUtilsLabelEXT) {
-        icd_term->dispatch.CmdInsertDebugUtilsLabelEXT(commandBuffer, pLabelInfo);
+    struct loader_dev_dispatch_table *dispatch_table = loader_get_dev_dispatch(commandBuffer);
+    if (NULL == dispatch_table) {
+        loader_log(NULL, VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0, "VK_EXT_debug_utils: Invalid device handle");
+        abort(); /* Intentionally fail so user can correct issue. */
     }
+    // Only call down if the device supports the function
+    if (NULL != dispatch_table->extension_terminator_dispatch.CmdInsertDebugUtilsLabelEXT)
+        dispatch_table->extension_terminator_dispatch.CmdInsertDebugUtilsLabelEXT(commandBuffer, pLabelInfo);
 }
 
 
@@ -5825,6 +5923,22 @@ VKAPI_ATTR void VKAPI_CALL CmdSetStencilOpEXT(
 }
 
 
+// ---- VK_EXT_swapchain_maintenance1 extension trampoline/terminators
+
+VKAPI_ATTR VkResult VKAPI_CALL ReleaseSwapchainImagesEXT(
+    VkDevice                                    device,
+    const VkReleaseSwapchainImagesInfoEXT*      pReleaseInfo) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(device);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkReleaseSwapchainImagesEXT: Invalid device "
+                   "[VUID-vkReleaseSwapchainImagesEXT-device-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    return disp->ReleaseSwapchainImagesEXT(device, pReleaseInfo);
+}
+
+
 // ---- VK_NV_device_generated_commands extension trampoline/terminators
 
 VKAPI_ATTR void VKAPI_CALL GetGeneratedCommandsMemoryRequirementsNV(
@@ -6059,6 +6173,170 @@ VKAPI_ATTR void VKAPI_CALL ExportMetalObjectsEXT(
 }
 
 #endif // VK_USE_PLATFORM_METAL_EXT
+
+// ---- VK_EXT_descriptor_buffer extension trampoline/terminators
+
+VKAPI_ATTR void VKAPI_CALL GetDescriptorSetLayoutSizeEXT(
+    VkDevice                                    device,
+    VkDescriptorSetLayout                       layout,
+    VkDeviceSize*                               pLayoutSizeInBytes) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(device);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkGetDescriptorSetLayoutSizeEXT: Invalid device "
+                   "[VUID-vkGetDescriptorSetLayoutSizeEXT-device-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    disp->GetDescriptorSetLayoutSizeEXT(device, layout, pLayoutSizeInBytes);
+}
+
+VKAPI_ATTR void VKAPI_CALL GetDescriptorSetLayoutBindingOffsetEXT(
+    VkDevice                                    device,
+    VkDescriptorSetLayout                       layout,
+    uint32_t                                    binding,
+    VkDeviceSize*                               pOffset) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(device);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkGetDescriptorSetLayoutBindingOffsetEXT: Invalid device "
+                   "[VUID-vkGetDescriptorSetLayoutBindingOffsetEXT-device-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    disp->GetDescriptorSetLayoutBindingOffsetEXT(device, layout, binding, pOffset);
+}
+
+VKAPI_ATTR void VKAPI_CALL GetDescriptorEXT(
+    VkDevice                                    device,
+    const VkDescriptorGetInfoEXT*               pDescriptorInfo,
+    size_t                                      dataSize,
+    void*                                       pDescriptor) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(device);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkGetDescriptorEXT: Invalid device "
+                   "[VUID-vkGetDescriptorEXT-device-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    disp->GetDescriptorEXT(device, pDescriptorInfo, dataSize, pDescriptor);
+}
+
+VKAPI_ATTR void VKAPI_CALL CmdBindDescriptorBuffersEXT(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    bufferCount,
+    const VkDescriptorBufferBindingInfoEXT*     pBindingInfos) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(commandBuffer);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkCmdBindDescriptorBuffersEXT: Invalid commandBuffer "
+                   "[VUID-vkCmdBindDescriptorBuffersEXT-commandBuffer-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    disp->CmdBindDescriptorBuffersEXT(commandBuffer, bufferCount, pBindingInfos);
+}
+
+VKAPI_ATTR void VKAPI_CALL CmdSetDescriptorBufferOffsetsEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkPipelineBindPoint                         pipelineBindPoint,
+    VkPipelineLayout                            layout,
+    uint32_t                                    firstSet,
+    uint32_t                                    setCount,
+    const uint32_t*                             pBufferIndices,
+    const VkDeviceSize*                         pOffsets) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(commandBuffer);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkCmdSetDescriptorBufferOffsetsEXT: Invalid commandBuffer "
+                   "[VUID-vkCmdSetDescriptorBufferOffsetsEXT-commandBuffer-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    disp->CmdSetDescriptorBufferOffsetsEXT(commandBuffer, pipelineBindPoint, layout, firstSet, setCount, pBufferIndices, pOffsets);
+}
+
+VKAPI_ATTR void VKAPI_CALL CmdBindDescriptorBufferEmbeddedSamplersEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkPipelineBindPoint                         pipelineBindPoint,
+    VkPipelineLayout                            layout,
+    uint32_t                                    set) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(commandBuffer);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkCmdBindDescriptorBufferEmbeddedSamplersEXT: Invalid commandBuffer "
+                   "[VUID-vkCmdBindDescriptorBufferEmbeddedSamplersEXT-commandBuffer-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    disp->CmdBindDescriptorBufferEmbeddedSamplersEXT(commandBuffer, pipelineBindPoint, layout, set);
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL GetBufferOpaqueCaptureDescriptorDataEXT(
+    VkDevice                                    device,
+    const VkBufferCaptureDescriptorDataInfoEXT* pInfo,
+    void*                                       pData) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(device);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkGetBufferOpaqueCaptureDescriptorDataEXT: Invalid device "
+                   "[VUID-vkGetBufferOpaqueCaptureDescriptorDataEXT-device-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    return disp->GetBufferOpaqueCaptureDescriptorDataEXT(device, pInfo, pData);
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL GetImageOpaqueCaptureDescriptorDataEXT(
+    VkDevice                                    device,
+    const VkImageCaptureDescriptorDataInfoEXT*  pInfo,
+    void*                                       pData) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(device);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkGetImageOpaqueCaptureDescriptorDataEXT: Invalid device "
+                   "[VUID-vkGetImageOpaqueCaptureDescriptorDataEXT-device-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    return disp->GetImageOpaqueCaptureDescriptorDataEXT(device, pInfo, pData);
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL GetImageViewOpaqueCaptureDescriptorDataEXT(
+    VkDevice                                    device,
+    const VkImageViewCaptureDescriptorDataInfoEXT* pInfo,
+    void*                                       pData) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(device);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkGetImageViewOpaqueCaptureDescriptorDataEXT: Invalid device "
+                   "[VUID-vkGetImageViewOpaqueCaptureDescriptorDataEXT-device-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    return disp->GetImageViewOpaqueCaptureDescriptorDataEXT(device, pInfo, pData);
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL GetSamplerOpaqueCaptureDescriptorDataEXT(
+    VkDevice                                    device,
+    const VkSamplerCaptureDescriptorDataInfoEXT* pInfo,
+    void*                                       pData) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(device);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkGetSamplerOpaqueCaptureDescriptorDataEXT: Invalid device "
+                   "[VUID-vkGetSamplerOpaqueCaptureDescriptorDataEXT-device-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    return disp->GetSamplerOpaqueCaptureDescriptorDataEXT(device, pInfo, pData);
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL GetAccelerationStructureOpaqueCaptureDescriptorDataEXT(
+    VkDevice                                    device,
+    const VkAccelerationStructureCaptureDescriptorDataInfoEXT* pInfo,
+    void*                                       pData) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(device);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkGetAccelerationStructureOpaqueCaptureDescriptorDataEXT: Invalid device "
+                   "[VUID-vkGetAccelerationStructureOpaqueCaptureDescriptorDataEXT-device-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    return disp->GetAccelerationStructureOpaqueCaptureDescriptorDataEXT(device, pInfo, pData);
+}
+
 
 // ---- VK_NV_fragment_shading_rate_enums extension trampoline/terminators
 
@@ -6804,6 +7082,74 @@ VKAPI_ATTR void VKAPI_CALL GetDescriptorSetHostMappingVALVE(
         abort(); /* Intentionally fail so user can correct issue. */
     }
     disp->GetDescriptorSetHostMappingVALVE(device, descriptorSet, ppData);
+}
+
+
+// ---- VK_NV_copy_memory_indirect extension trampoline/terminators
+
+VKAPI_ATTR void VKAPI_CALL CmdCopyMemoryIndirectNV(
+    VkCommandBuffer                             commandBuffer,
+    VkDeviceAddress                             copyBufferAddress,
+    uint32_t                                    copyCount,
+    uint32_t                                    stride) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(commandBuffer);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkCmdCopyMemoryIndirectNV: Invalid commandBuffer "
+                   "[VUID-vkCmdCopyMemoryIndirectNV-commandBuffer-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    disp->CmdCopyMemoryIndirectNV(commandBuffer, copyBufferAddress, copyCount, stride);
+}
+
+VKAPI_ATTR void VKAPI_CALL CmdCopyMemoryToImageIndirectNV(
+    VkCommandBuffer                             commandBuffer,
+    VkDeviceAddress                             copyBufferAddress,
+    uint32_t                                    copyCount,
+    uint32_t                                    stride,
+    VkImage                                     dstImage,
+    VkImageLayout                               dstImageLayout,
+    const VkImageSubresourceLayers*             pImageSubresources) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(commandBuffer);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkCmdCopyMemoryToImageIndirectNV: Invalid commandBuffer "
+                   "[VUID-vkCmdCopyMemoryToImageIndirectNV-commandBuffer-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    disp->CmdCopyMemoryToImageIndirectNV(commandBuffer, copyBufferAddress, copyCount, stride, dstImage, dstImageLayout, pImageSubresources);
+}
+
+
+// ---- VK_NV_memory_decompression extension trampoline/terminators
+
+VKAPI_ATTR void VKAPI_CALL CmdDecompressMemoryNV(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    decompressRegionCount,
+    const VkDecompressMemoryRegionNV*           pDecompressMemoryRegions) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(commandBuffer);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkCmdDecompressMemoryNV: Invalid commandBuffer "
+                   "[VUID-vkCmdDecompressMemoryNV-commandBuffer-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    disp->CmdDecompressMemoryNV(commandBuffer, decompressRegionCount, pDecompressMemoryRegions);
+}
+
+VKAPI_ATTR void VKAPI_CALL CmdDecompressMemoryIndirectCountNV(
+    VkCommandBuffer                             commandBuffer,
+    VkDeviceAddress                             indirectCommandsAddress,
+    VkDeviceAddress                             indirectCommandsCountAddress,
+    uint32_t                                    stride) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(commandBuffer);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkCmdDecompressMemoryIndirectCountNV: Invalid commandBuffer "
+                   "[VUID-vkCmdDecompressMemoryIndirectCountNV-commandBuffer-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    disp->CmdDecompressMemoryIndirectCountNV(commandBuffer, indirectCommandsAddress, indirectCommandsCountAddress, stride);
 }
 
 
@@ -8899,6 +9245,12 @@ bool extension_instance_gpa(struct loader_instance *ptr_instance, const char *na
         return true;
     }
 
+    // ---- VK_EXT_swapchain_maintenance1 extension commands
+    if (!strcmp("vkReleaseSwapchainImagesEXT", name)) {
+        *addr = (void *)ReleaseSwapchainImagesEXT;
+        return true;
+    }
+
     // ---- VK_NV_device_generated_commands extension commands
     if (!strcmp("vkGetGeneratedCommandsMemoryRequirementsNV", name)) {
         *addr = (void *)GetGeneratedCommandsMemoryRequirementsNV;
@@ -8964,6 +9316,52 @@ bool extension_instance_gpa(struct loader_instance *ptr_instance, const char *na
         return true;
     }
 #endif // VK_USE_PLATFORM_METAL_EXT
+
+    // ---- VK_EXT_descriptor_buffer extension commands
+    if (!strcmp("vkGetDescriptorSetLayoutSizeEXT", name)) {
+        *addr = (void *)GetDescriptorSetLayoutSizeEXT;
+        return true;
+    }
+    if (!strcmp("vkGetDescriptorSetLayoutBindingOffsetEXT", name)) {
+        *addr = (void *)GetDescriptorSetLayoutBindingOffsetEXT;
+        return true;
+    }
+    if (!strcmp("vkGetDescriptorEXT", name)) {
+        *addr = (void *)GetDescriptorEXT;
+        return true;
+    }
+    if (!strcmp("vkCmdBindDescriptorBuffersEXT", name)) {
+        *addr = (void *)CmdBindDescriptorBuffersEXT;
+        return true;
+    }
+    if (!strcmp("vkCmdSetDescriptorBufferOffsetsEXT", name)) {
+        *addr = (void *)CmdSetDescriptorBufferOffsetsEXT;
+        return true;
+    }
+    if (!strcmp("vkCmdBindDescriptorBufferEmbeddedSamplersEXT", name)) {
+        *addr = (void *)CmdBindDescriptorBufferEmbeddedSamplersEXT;
+        return true;
+    }
+    if (!strcmp("vkGetBufferOpaqueCaptureDescriptorDataEXT", name)) {
+        *addr = (void *)GetBufferOpaqueCaptureDescriptorDataEXT;
+        return true;
+    }
+    if (!strcmp("vkGetImageOpaqueCaptureDescriptorDataEXT", name)) {
+        *addr = (void *)GetImageOpaqueCaptureDescriptorDataEXT;
+        return true;
+    }
+    if (!strcmp("vkGetImageViewOpaqueCaptureDescriptorDataEXT", name)) {
+        *addr = (void *)GetImageViewOpaqueCaptureDescriptorDataEXT;
+        return true;
+    }
+    if (!strcmp("vkGetSamplerOpaqueCaptureDescriptorDataEXT", name)) {
+        *addr = (void *)GetSamplerOpaqueCaptureDescriptorDataEXT;
+        return true;
+    }
+    if (!strcmp("vkGetAccelerationStructureOpaqueCaptureDescriptorDataEXT", name)) {
+        *addr = (void *)GetAccelerationStructureOpaqueCaptureDescriptorDataEXT;
+        return true;
+    }
 
     // ---- VK_NV_fragment_shading_rate_enums extension commands
     if (!strcmp("vkCmdSetFragmentShadingRateEnumNV", name)) {
@@ -9200,6 +9598,26 @@ bool extension_instance_gpa(struct loader_instance *ptr_instance, const char *na
     }
     if (!strcmp("vkGetDescriptorSetHostMappingVALVE", name)) {
         *addr = (void *)GetDescriptorSetHostMappingVALVE;
+        return true;
+    }
+
+    // ---- VK_NV_copy_memory_indirect extension commands
+    if (!strcmp("vkCmdCopyMemoryIndirectNV", name)) {
+        *addr = (void *)CmdCopyMemoryIndirectNV;
+        return true;
+    }
+    if (!strcmp("vkCmdCopyMemoryToImageIndirectNV", name)) {
+        *addr = (void *)CmdCopyMemoryToImageIndirectNV;
+        return true;
+    }
+
+    // ---- VK_NV_memory_decompression extension commands
+    if (!strcmp("vkCmdDecompressMemoryNV", name)) {
+        *addr = (void *)CmdDecompressMemoryNV;
+        return true;
+    }
+    if (!strcmp("vkCmdDecompressMemoryIndirectCountNV", name)) {
+        *addr = (void *)CmdDecompressMemoryIndirectCountNV;
         return true;
     }
 
@@ -9535,64 +9953,90 @@ void extensions_create_instance(struct loader_instance *ptr_instance, const VkIn
 // Some device commands still need a terminator because the loader needs to unwrap something about them.
 // In many cases, the item needing unwrapping is a VkPhysicalDevice or VkSurfaceKHR object.  But there may be other items
 // in the future.
-PFN_vkVoidFunction get_extension_device_proc_terminator(struct loader_device *dev, const char *pName) {
-    PFN_vkVoidFunction addr = NULL;
-
+PFN_vkVoidFunction get_extension_device_proc_terminator(struct loader_device *dev, const char *name, bool* found_name) {
+    *found_name = false;
+    if (!name || name[0] != 'v' || name[1] != 'k') {
+        return NULL;
+    }
+    name += 2;
     // ---- VK_KHR_swapchain extension commands
-    if (dev->extensions.khr_swapchain_enabled) {
-        if(!strcmp(pName, "vkCreateSwapchainKHR")) {
-            addr = (PFN_vkVoidFunction)terminator_CreateSwapchainKHR;
-        } else if(!strcmp(pName, "vkGetDeviceGroupSurfacePresentModesKHR")) {
-            addr = (PFN_vkVoidFunction)terminator_GetDeviceGroupSurfacePresentModesKHR;
-        }
+    if (!strcmp(name, "CreateSwapchainKHR")) {
+        *found_name = true;
+        return dev->extensions.khr_swapchain_enabled ?
+            (PFN_vkVoidFunction)terminator_CreateSwapchainKHR : NULL;
     }
-
+    if (!strcmp(name, "GetDeviceGroupSurfacePresentModesKHR")) {
+        *found_name = true;
+        return dev->extensions.khr_swapchain_enabled ?
+            (PFN_vkVoidFunction)terminator_GetDeviceGroupSurfacePresentModesKHR : NULL;
+    }
     // ---- VK_KHR_display_swapchain extension commands
-    if (dev->extensions.khr_display_swapchain_enabled) {
-        if(!strcmp(pName, "vkCreateSharedSwapchainsKHR")) {
-            addr = (PFN_vkVoidFunction)terminator_CreateSharedSwapchainsKHR;
-        }
+    if (!strcmp(name, "CreateSharedSwapchainsKHR")) {
+        *found_name = true;
+        return dev->extensions.khr_display_swapchain_enabled ?
+            (PFN_vkVoidFunction)terminator_CreateSharedSwapchainsKHR : NULL;
     }
-
     // ---- VK_EXT_debug_marker extension commands
-    if (dev->extensions.ext_debug_marker_enabled) {
-        if(!strcmp(pName, "vkDebugMarkerSetObjectTagEXT")) {
-            addr = (PFN_vkVoidFunction)terminator_DebugMarkerSetObjectTagEXT;
-        } else if(!strcmp(pName, "vkDebugMarkerSetObjectNameEXT")) {
-            addr = (PFN_vkVoidFunction)terminator_DebugMarkerSetObjectNameEXT;
-        }
+    if (!strcmp(name, "DebugMarkerSetObjectTagEXT")) {
+        *found_name = true;
+        return dev->extensions.ext_debug_marker_enabled ?
+            (PFN_vkVoidFunction)terminator_DebugMarkerSetObjectTagEXT : NULL;
     }
-
+    if (!strcmp(name, "DebugMarkerSetObjectNameEXT")) {
+        *found_name = true;
+        return dev->extensions.ext_debug_marker_enabled ?
+            (PFN_vkVoidFunction)terminator_DebugMarkerSetObjectNameEXT : NULL;
+    }
     // ---- VK_EXT_debug_utils extension commands
-    if (dev->extensions.ext_debug_utils_enabled) {
-        if(!strcmp(pName, "vkSetDebugUtilsObjectNameEXT")) {
-            addr = (PFN_vkVoidFunction)terminator_SetDebugUtilsObjectNameEXT;
-        } else if(!strcmp(pName, "vkSetDebugUtilsObjectTagEXT")) {
-            addr = (PFN_vkVoidFunction)terminator_SetDebugUtilsObjectTagEXT;
-        } else if(!strcmp(pName, "vkQueueBeginDebugUtilsLabelEXT")) {
-            addr = (PFN_vkVoidFunction)terminator_QueueBeginDebugUtilsLabelEXT;
-        } else if(!strcmp(pName, "vkQueueEndDebugUtilsLabelEXT")) {
-            addr = (PFN_vkVoidFunction)terminator_QueueEndDebugUtilsLabelEXT;
-        } else if(!strcmp(pName, "vkQueueInsertDebugUtilsLabelEXT")) {
-            addr = (PFN_vkVoidFunction)terminator_QueueInsertDebugUtilsLabelEXT;
-        } else if(!strcmp(pName, "vkCmdBeginDebugUtilsLabelEXT")) {
-            addr = (PFN_vkVoidFunction)terminator_CmdBeginDebugUtilsLabelEXT;
-        } else if(!strcmp(pName, "vkCmdEndDebugUtilsLabelEXT")) {
-            addr = (PFN_vkVoidFunction)terminator_CmdEndDebugUtilsLabelEXT;
-        } else if(!strcmp(pName, "vkCmdInsertDebugUtilsLabelEXT")) {
-            addr = (PFN_vkVoidFunction)terminator_CmdInsertDebugUtilsLabelEXT;
-        }
+    if (!strcmp(name, "SetDebugUtilsObjectNameEXT")) {
+        *found_name = true;
+        return dev->extensions.ext_debug_utils_enabled ?
+            (PFN_vkVoidFunction)terminator_SetDebugUtilsObjectNameEXT : NULL;
+    }
+    if (!strcmp(name, "SetDebugUtilsObjectTagEXT")) {
+        *found_name = true;
+        return dev->extensions.ext_debug_utils_enabled ?
+            (PFN_vkVoidFunction)terminator_SetDebugUtilsObjectTagEXT : NULL;
+    }
+    if (!strcmp(name, "QueueBeginDebugUtilsLabelEXT")) {
+        *found_name = true;
+        return dev->extensions.ext_debug_utils_enabled ?
+            (PFN_vkVoidFunction)terminator_QueueBeginDebugUtilsLabelEXT : NULL;
+    }
+    if (!strcmp(name, "QueueEndDebugUtilsLabelEXT")) {
+        *found_name = true;
+        return dev->extensions.ext_debug_utils_enabled ?
+            (PFN_vkVoidFunction)terminator_QueueEndDebugUtilsLabelEXT : NULL;
+    }
+    if (!strcmp(name, "QueueInsertDebugUtilsLabelEXT")) {
+        *found_name = true;
+        return dev->extensions.ext_debug_utils_enabled ?
+            (PFN_vkVoidFunction)terminator_QueueInsertDebugUtilsLabelEXT : NULL;
+    }
+    if (!strcmp(name, "CmdBeginDebugUtilsLabelEXT")) {
+        *found_name = true;
+        return dev->extensions.ext_debug_utils_enabled ?
+            (PFN_vkVoidFunction)terminator_CmdBeginDebugUtilsLabelEXT : NULL;
+    }
+    if (!strcmp(name, "CmdEndDebugUtilsLabelEXT")) {
+        *found_name = true;
+        return dev->extensions.ext_debug_utils_enabled ?
+            (PFN_vkVoidFunction)terminator_CmdEndDebugUtilsLabelEXT : NULL;
+    }
+    if (!strcmp(name, "CmdInsertDebugUtilsLabelEXT")) {
+        *found_name = true;
+        return dev->extensions.ext_debug_utils_enabled ?
+            (PFN_vkVoidFunction)terminator_CmdInsertDebugUtilsLabelEXT : NULL;
     }
 #ifdef VK_USE_PLATFORM_WIN32_KHR
-
     // ---- VK_EXT_full_screen_exclusive extension commands
-    if (dev->extensions.ext_full_screen_exclusive_enabled && dev->extensions.khr_device_group_enabled) {
-        if(!strcmp(pName, "vkGetDeviceGroupSurfacePresentModes2EXT")) {
-            addr = (PFN_vkVoidFunction)terminator_GetDeviceGroupSurfacePresentModes2EXT;
-        }
+    if (!strcmp(name, "GetDeviceGroupSurfacePresentModes2EXT")) {
+        *found_name = true;
+        return dev->extensions.ext_full_screen_exclusive_enabled && dev->extensions.khr_device_group_enabled ?
+            (PFN_vkVoidFunction)terminator_GetDeviceGroupSurfacePresentModes2EXT : NULL;
     }
 #endif // None
-    return addr;
+    return NULL;
 }
 
 // This table contains the loader's instance dispatch table, which contains
@@ -9902,6 +10346,7 @@ const char *const LOADER_INSTANCE_EXTENSIONS[] = {
 #endif // VK_USE_PLATFORM_METAL_EXT
                                                   VK_EXT_VALIDATION_FEATURES_EXTENSION_NAME,
                                                   VK_EXT_HEADLESS_SURFACE_EXTENSION_NAME,
+                                                  VK_EXT_SURFACE_MAINTENANCE_1_EXTENSION_NAME,
                                                   VK_EXT_ACQUIRE_DRM_DISPLAY_EXTENSION_NAME,
 #ifdef VK_USE_PLATFORM_DIRECTFB_EXT
                                                   VK_EXT_DIRECTFB_SURFACE_EXTENSION_NAME,
@@ -9910,5 +10355,6 @@ const char *const LOADER_INSTANCE_EXTENSIONS[] = {
                                                   VK_QNX_SCREEN_SURFACE_EXTENSION_NAME,
 #endif // VK_USE_PLATFORM_SCREEN_QNX
                                                   VK_GOOGLE_SURFACELESS_QUERY_EXTENSION_NAME,
+                                                  VK_LUNARG_DIRECT_DRIVER_LOADING_EXTENSION_NAME,
                                                   NULL };
 

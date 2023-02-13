@@ -1,4 +1,4 @@
-// Copyright 2017 PDFium Authors. All rights reserved.
+// Copyright 2017 The PDFium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -24,7 +24,7 @@
 #include "core/fpdfapi/parser/cpdf_reference.h"
 #include "core/fpdfapi/parser/cpdf_stream.h"
 #include "core/fpdfapi/parser/cpdf_test_document.h"
-#include "core/fxcrt/fx_memory_wrappers.h"
+#include "core/fxcrt/data_vector.h"
 #include "core/fxge/cfx_fillrenderoptions.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -36,12 +36,13 @@ class CPDF_PageContentGeneratorTest : public TestWithPageModule {
     pGen->ProcessPath(buf, pPathObj);
   }
 
-  const CPDF_Dictionary* TestGetResource(CPDF_PageContentGenerator* pGen,
-                                         const ByteString& type,
-                                         const ByteString& name) {
+  RetainPtr<const CPDF_Dictionary> TestGetResource(
+      CPDF_PageContentGenerator* pGen,
+      const ByteString& type,
+      const ByteString& name) {
     RetainPtr<const CPDF_Dictionary> pResources =
         pGen->m_pObjHolder->GetResources();
-    return pResources->GetDictFor(type)->GetDictFor(name).Get();
+    return pResources->GetDictFor(type)->GetDictFor(name);
   }
 
   void TestProcessText(CPDF_PageContentGenerator* pGen,
@@ -215,7 +216,7 @@ TEST_F(CPDF_PageContentGeneratorTest, ProcessGraphics) {
   EXPECT_EQ(" gs 1 0 0 1 0 0 cm 1 2 m 3 4 l 5 6 l h B Q\n",
             pathString.Last(43));
   ASSERT_GT(pathString.GetLength(), 91U);
-  const CPDF_Dictionary* externalGS =
+  RetainPtr<const CPDF_Dictionary> externalGS =
       TestGetResource(&generator, "ExtGState",
                       pathString.Substr(48, pathString.GetLength() - 91));
   ASSERT_TRUE(externalGS);
@@ -289,13 +290,13 @@ TEST_F(CPDF_PageContentGeneratorTest, ProcessStandardText) {
   EXPECT_EQ(compareString1, firstString.First(compareString1.GetLength()));
   EXPECT_EQ(compareString2, midString.Last(compareString2.GetLength()));
   EXPECT_EQ(compareString3, lastString.Last(compareString3.GetLength()));
-  const CPDF_Dictionary* externalGS = TestGetResource(
+  RetainPtr<const CPDF_Dictionary> externalGS = TestGetResource(
       &generator, "ExtGState",
       midString.First(midString.GetLength() - compareString2.GetLength()));
   ASSERT_TRUE(externalGS);
   EXPECT_EQ(0.5f, externalGS->GetFloatFor("ca"));
   EXPECT_EQ(0.8f, externalGS->GetFloatFor("CA"));
-  const CPDF_Dictionary* fontDict = TestGetResource(
+  RetainPtr<const CPDF_Dictionary> fontDict = TestGetResource(
       &generator, "Font",
       lastString.First(lastString.GetLength() - compareString3.GetLength()));
   ASSERT_TRUE(fontDict);
@@ -364,7 +365,7 @@ TEST_F(CPDF_PageContentGeneratorTest, ProcessText) {
             textString.GetLength());
   EXPECT_EQ(compareString1, textString.First(compareString1.GetLength()));
   EXPECT_EQ(compareString2, textString.Last(compareString2.GetLength()));
-  const CPDF_Dictionary* fontDict = TestGetResource(
+  RetainPtr<const CPDF_Dictionary> fontDict = TestGetResource(
       &generator, "Font",
       textString.Substr(compareString1.GetLength(),
                         textString.GetLength() - compareString1.GetLength() -
@@ -385,8 +386,8 @@ TEST_F(CPDF_PageContentGeneratorTest, ProcessText) {
 TEST_F(CPDF_PageContentGeneratorTest, ProcessEmptyForm) {
   auto pDoc = std::make_unique<CPDF_TestDocument>();
   pDoc->CreateNewDoc();
-  auto pDict = pdfium::MakeRetain<CPDF_Dictionary>();
-  auto pStream = pdfium::MakeRetain<CPDF_Stream>(nullptr, 0, std::move(pDict));
+  auto pStream =
+      pdfium::MakeRetain<CPDF_Stream>(pdfium::MakeRetain<CPDF_Dictionary>());
 
   // Create an empty form.
   auto pTestForm = std::make_unique<CPDF_Form>(pDoc.get(), nullptr, pStream);
@@ -404,15 +405,12 @@ TEST_F(CPDF_PageContentGeneratorTest, ProcessEmptyForm) {
 TEST_F(CPDF_PageContentGeneratorTest, ProcessFormWithPath) {
   auto pDoc = std::make_unique<CPDF_TestDocument>();
   pDoc->CreateNewDoc();
-  auto pDict = pdfium::MakeRetain<CPDF_Dictionary>();
-  const char content[] =
+  static constexpr uint8_t kContents[] =
       "q 1 0 0 1 0 0 cm 3.102 4.6700001 m 5.4500012 .28999999 "
       "l 4.2399998 3.1499999 4.65 2.98 3.456 0.24 c 3.102 4.6700001 l h f Q\n";
-  size_t buf_len = std::size(content);
-  std::unique_ptr<uint8_t, FxFreeDeleter> buf(FX_AllocUninit(uint8_t, buf_len));
-  memcpy(buf.get(), content, buf_len);
-  auto pStream = pdfium::MakeRetain<CPDF_Stream>(std::move(buf), buf_len,
-                                                 std::move(pDict));
+  auto pStream = pdfium::MakeRetain<CPDF_Stream>(
+      DataVector<uint8_t>(std::begin(kContents), std::end(kContents)),
+      pdfium::MakeRetain<CPDF_Dictionary>());
 
   // Create a form with a non-empty stream.
   auto pTestForm = std::make_unique<CPDF_Form>(pDoc.get(), nullptr, pStream);

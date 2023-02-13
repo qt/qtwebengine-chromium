@@ -194,8 +194,9 @@
     #include "include/config/SkUserConfig.h"
 #endif
 // IWYU pragma: end_exports
-#include <stddef.h>
-#include <stdint.h>
+#include <climits>
+#include <cstddef>
+#include <cstdint>
 
 // Post SkUserConfig.h checks and such.
 #if !defined(SK_DEBUG) && !defined(SK_RELEASE)
@@ -420,14 +421,20 @@
 #define SK_HISTOGRAM_PERCENTAGE(name, percent_as_int) \
     SK_HISTOGRAM_EXACT_LINEAR(name, percent_as_int, 101)
 
+// The top-level define SK_ENABLE_OPTIMIZE_SIZE can be used to remove several large features at once
+#if defined(SK_ENABLE_OPTIMIZE_SIZE)
+#   define SK_FORCE_RASTER_PIPELINE_BLITTER
+#   define SK_DISABLE_SDF_TEXT
+#endif
+
 #ifndef SK_DISABLE_LEGACY_SHADERCONTEXT
-#define SK_ENABLE_LEGACY_SHADERCONTEXT
+#   define SK_ENABLE_LEGACY_SHADERCONTEXT
 #endif
 
 #ifdef SK_ENABLE_API_AVAILABLE
-#define SK_API_AVAILABLE API_AVAILABLE
+#   define SK_API_AVAILABLE API_AVAILABLE
 #else
-#define SK_API_AVAILABLE(...)
+#   define SK_API_AVAILABLE(...)
 #endif
 
 #if defined(SK_BUILD_FOR_LIBFUZZER) || defined(SK_BUILD_FOR_AFL_FUZZ)

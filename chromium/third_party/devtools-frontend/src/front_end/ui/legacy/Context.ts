@@ -7,7 +7,7 @@ import * as Root from '../../core/root/root.js';  // eslint-disable-line @typesc
 
 import {type ContextFlavorListener} from './ContextFlavorListener.js';
 
-let contextInstance: Context;
+let contextInstance: Context|undefined;
 
 interface ConstructorFn<T> {
   // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration
@@ -35,7 +35,11 @@ export class Context {
     return contextInstance;
   }
 
-  setFlavor<T>(flavorType: ConstructorFn<T>, flavorValue: T|null): void {
+  static removeInstance(): void {
+    contextInstance = undefined;
+  }
+
+  setFlavor<T extends Object>(flavorType: ConstructorFn<T>, flavorValue: T|null): void {
     const value = this.flavorsInternal.get(flavorType) || null;
     if (value === flavorValue) {
       return;
@@ -49,7 +53,7 @@ export class Context {
     this.dispatchFlavorChange(flavorType, flavorValue);
   }
 
-  private dispatchFlavorChange<T>(flavorType: ConstructorFn<T>, flavorValue: T|null): void {
+  private dispatchFlavorChange<T extends Object>(flavorType: ConstructorFn<T>, flavorValue: T|null): void {
     for (const extension of getRegisteredListeners()) {
       if (extension.contextTypes().includes(flavorType)) {
         void extension.loadListener().then(instance => instance.flavorChanged(flavorValue));

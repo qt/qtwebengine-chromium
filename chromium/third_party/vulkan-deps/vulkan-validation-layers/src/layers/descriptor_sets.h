@@ -86,7 +86,7 @@ class DESCRIPTOR_POOL_STATE : public BASE_NODE {
     TypeCountMap available_counts_;         // Available # of descriptors of each type in this pool
     layer_data::unordered_map<VkDescriptorSet, cvdescriptorset::DescriptorSet *> sets_;  // Collection of all sets in this pool
     ValidationStateTracker *dev_data_;
-    mutable ReadWriteLock lock_;
+    mutable std::shared_mutex lock_;
 };
 
 class UPDATE_TEMPLATE_STATE : public BASE_NODE {
@@ -306,12 +306,15 @@ class DescriptorSetLayout : public BASE_NODE {
     bool IsVariableDescriptorCount(uint32_t binding) const {
         return IsVariableDescriptorCountFromIndex(GetIndexFromBinding(binding));
     }
+    void SetLayoutSizeInBytes(const VkDeviceSize *layout_size_in_bytes_);
+    const VkDeviceSize* GetLayoutSizeInBytes() const;
 
     using BindingTypeStats = DescriptorSetLayoutDef::BindingTypeStats;
     const BindingTypeStats &GetBindingTypeStats() const { return layout_id_->GetBindingTypeStats(); }
 
   private:
     DescriptorSetLayoutId layout_id_;
+    std::unique_ptr<VkDeviceSize> layout_size_in_bytes;
 };
 
 /*
@@ -404,7 +407,7 @@ class ImageDescriptor : public Descriptor {
                      bool is_bindless) override;
     void CopyUpdate(DescriptorSet *set_state, const ValidationStateTracker *dev_data, const Descriptor *,
                     bool is_bindless) override;
-    void UpdateDrawState(ValidationStateTracker *, CMD_BUFFER_STATE *);
+    void UpdateDrawState(ValidationStateTracker *, CMD_BUFFER_STATE *cb_state);
     VkImageView GetImageView() const { return image_view_state_ ? image_view_state_->image_view() : VK_NULL_HANDLE; }
     const IMAGE_VIEW_STATE *GetImageViewState() const { return image_view_state_.get(); }
     IMAGE_VIEW_STATE *GetImageViewState() { return image_view_state_.get(); }
@@ -654,7 +657,7 @@ class MutableDescriptor : public Descriptor {
       const ACCELERATION_STRUCTURE_STATE *GetAccelerationStructureStateNV() const { return acc_state_nv_.get(); }
       ACCELERATION_STRUCTURE_STATE *GetAccelerationStructureStateNV() { return acc_state_nv_.get(); }
 
-      void UpdateDrawState(ValidationStateTracker *, CMD_BUFFER_STATE *);
+      void UpdateDrawState(ValidationStateTracker *, CMD_BUFFER_STATE *cb_state);
 
       bool AddParent(BASE_NODE *base_node) override;
       void RemoveParent(BASE_NODE *base_node) override;
@@ -852,7 +855,7 @@ class DescriptorSet : public BASE_NODE {
     VkDescriptorSet GetSet() const { return handle_.Cast<VkDescriptorSet>(); };
     // Bind given cmd_buffer to this descriptor set and
     // update CB image layout map with image/imagesampler descriptor image layouts
-    void UpdateDrawState(ValidationStateTracker *, CMD_BUFFER_STATE *, CMD_TYPE cmd_type, const PIPELINE_STATE *,
+    void UpdateDrawState(ValidationStateTracker *, CMD_BUFFER_STATE *cb_state, CMD_TYPE cmd_type, const PIPELINE_STATE *,
                          const BindingReqMap &);
 
     // Track work that has been bound or validated to avoid duplicate work, important when large descriptor arrays
@@ -860,7 +863,7 @@ class DescriptorSet : public BASE_NODE {
     typedef layer_data::unordered_set<uint32_t> TrackedBindings;
     static void FilterOneBindingReq(const BindingReqMap::value_type &binding_req_pair, BindingReqMap *out_req,
                                     const TrackedBindings &set, uint32_t limit);
-    void FilterBindingReqs(const CMD_BUFFER_STATE &, const PIPELINE_STATE &, const BindingReqMap &in_req,
+    void FilterBindingReqs(const CMD_BUFFER_STATE &cb_state, const PIPELINE_STATE &, const BindingReqMap &in_req,
                            BindingReqMap *out_req) const;
     void UpdateValidationCache(CMD_BUFFER_STATE &cb_state, const PIPELINE_STATE &pipeline, const BindingReqMap &updated_bindings);
 

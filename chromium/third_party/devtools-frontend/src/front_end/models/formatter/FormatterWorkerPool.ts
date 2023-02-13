@@ -125,14 +125,6 @@ export class FormatterWorkerPool {
     return this.runTask(FormatterActions.FormatterActions.FORMAT, parameters) as Promise<FormatterActions.FormatResult>;
   }
 
-  javaScriptIdentifiers(content: string): Promise<{
-    name: string,
-    offset: number,
-  }[]> {
-    return this.runTask(FormatterActions.FormatterActions.JAVASCRIPT_IDENTIFIERS, {content: content})
-        .then(ids => ids || []);
-  }
-
   javaScriptSubstitute(expression: string, mapping: Map<string, string>): Promise<string> {
     return this
         .runTask(
@@ -160,33 +152,6 @@ export class FormatterWorkerPool {
       const rules = (data || [] as CSSRule[]);
       callback(isLastChunk, rules);
     }
-  }
-
-  outlineForMimetype(content: string, mimeType: string, callback: (arg0: boolean, arg1: Array<OutlineItem>) => void):
-      boolean {
-    switch (mimeType) {
-      case 'text/html':
-        this.runChunkedTask(FormatterActions.FormatterActions.HTML_OUTLINE, {content: content}, callback);
-        return true;
-      case 'text/javascript':
-        this.runChunkedTask(FormatterActions.FormatterActions.JAVASCRIPT_OUTLINE, {content: content}, callback);
-        return true;
-      case 'text/css':
-        this.parseCSS(content, cssCallback);
-        return true;
-    }
-    return false;
-
-    function cssCallback(isLastChunk: boolean, rules: CSSRule[]): void {
-      callback(isLastChunk, rules.map(rule => {
-        const title = 'selectorText' in rule ? rule.selectorText : rule.atRule;
-        return {line: rule.lineNumber, subtitle: undefined, column: rule.columnNumber, title};
-      }));
-    }
-  }
-
-  argumentsList(content: string): Promise<string[]> {
-    return this.runTask(FormatterActions.FormatterActions.ARGUMENTS_LIST, {content}) as Promise<string[]>;
   }
 }
 

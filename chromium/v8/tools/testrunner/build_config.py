@@ -23,6 +23,9 @@ class BuildConfig(object):
 
     self.asan = build_config['is_asan']
     self.cfi_vptr = build_config['is_cfi']
+    self.component_build = build_config['is_component_build']
+    self.conservative_stack_scanning = build_config[
+        'v8_enable_conservative_stack_scanning']
     self.control_flow_integrity = build_config['v8_control_flow_integrity']
     self.concurrent_marking = build_config['v8_enable_concurrent_marking']
     self.single_generation = build_config['v8_enable_single_generation']
@@ -46,6 +49,7 @@ class BuildConfig(object):
     self.pointer_compression_shared_cage = build_config[
         'v8_enable_pointer_compression_shared_cage']
     self.shared_ro_heap = build_config['v8_enable_shared_ro_heap']
+    self.write_barriers = not build_config['v8_disable_write_barriers']
     self.sandbox = build_config['v8_enable_sandbox']
     self.third_party_heap = build_config['v8_enable_third_party_heap']
     self.webassembly = build_config['v8_enable_webassembly']
@@ -64,7 +68,8 @@ class BuildConfig(object):
   @property
   def no_js_shared_memory(self):
     return (not self.shared_ro_heap) or (
-        self.pointer_compression and not self.pointer_compression_shared_cage)
+        self.pointer_compression and
+        not self.pointer_compression_shared_cage) or (not self.write_barriers)
 
   @property
   def is_mips_arch(self):

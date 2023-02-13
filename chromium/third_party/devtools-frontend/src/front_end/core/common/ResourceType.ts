@@ -217,6 +217,9 @@ export class ResourceType {
   }
 
   static fromMimeTypeOverride(mimeType: string|null): ResourceType|null {
+    if (mimeType === 'application/manifest+json') {
+      return resourceTypes.Manifest;
+    }
     if (mimeType === 'application/wasm') {
       return resourceTypes.Wasm;
     }
@@ -283,6 +286,10 @@ export class ResourceType {
 
   isStyleSheet(): boolean {
     return this.#nameInternal === 'stylesheet' || this.#nameInternal === 'sm-stylesheet';
+  }
+
+  hasStyleSheets(): boolean {
+    return this.isStyleSheet() || this.isDocument();
   }
 
   isDocument(): boolean {
@@ -413,6 +420,10 @@ export const resourceTypeByExtension = new Map([
   ['tif', resourceTypes.Image],
   ['tiff', resourceTypes.Image],
 
+  ['vue', resourceTypes.Document],
+
+  ['webmanifest', resourceTypes.Manifest],
+
   ['webp', resourceTypes.Media],
 
   ['otf', resourceTypes.Font],
@@ -435,6 +446,7 @@ export const mimeTypeByExtension = new Map([
   ['xml', 'application/xml'],
   ['xsl', 'application/xml'],
   ['wasm', 'application/wasm'],
+  ['webmanifest', 'application/manifest+json'],
 
   // HTML Embedded Scripts, ASP], JSP
   ['asp', 'application/x-aspx'],
@@ -453,7 +465,7 @@ export const mimeTypeByExtension = new Map([
   ['coffee', 'text/x-coffeescript'],
 
   // Dart
-  ['dart', 'text/javascript'],
+  ['dart', 'application/vnd.dart'],
 
   // TypeScript
   ['ts', 'text/typescript'],
@@ -467,14 +479,23 @@ export const mimeTypeByExtension = new Map([
   // C#
   ['cs', 'text/x-csharp'],
 
+  // Go
+  ['go', 'text/x-go'],
+
   // Java
   ['java', 'text/x-java'],
+
+  // Kotlin
+  ['kt', 'text/x-kotlin'],
+
+  // Scala
+  ['scala', 'text/x-scala'],
 
   // Less
   ['less', 'text/x-less'],
 
   // PHP
-  ['php', 'text/x-php'],
+  ['php', 'application/x-httpd-php'],
   ['phtml', 'application/x-httpd-php'],
 
   // Python
@@ -483,7 +504,11 @@ export const mimeTypeByExtension = new Map([
   // Shell
   ['sh', 'text/x-sh'],
 
-  // SCSS
+  // Google Stylesheets (GSS)
+  ['gss', 'text/x-gss'],
+
+  // SASS (.sass & .scss)
+  ['sass', 'text/x-sass'],
   ['scss', 'text/x-scss'],
 
   // Video Text Tracks.
@@ -527,4 +552,10 @@ export const mimeTypeByExtension = new Map([
   ['ttf', 'font/ttf'],
   ['woff', 'font/woff'],
   ['woff2', 'font/woff2'],
+
+  // Svelte
+  ['svelte', 'text/x.svelte'],
+
+  // Vue
+  ['vue', 'text/html'],
 ]);

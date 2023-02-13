@@ -616,18 +616,19 @@ enum aome_enc_control_id {
    * point (OP), int parameter
    * Possible values are in the form of "ABxy".
    *  - AB: OP index.
-   *  - xy: Target level index for the OP. Can be values 0~23 (corresponding to
-   *    level 2.0 ~ 7.3, note levels 2.2, 2.3, 3.2, 3.3, 4.2, 4.3, 7.0, 7.1, 7.2
-   *    & 7.3 are undefined) or 24 (keep level stats only for level monitoring)
-   *    or 31 (maximum level parameter, no level-based constraints).
+   *  - xy: Target level index for the OP. Can be values 0~27 (corresponding to
+   *    level 2.0 ~ 8.3, note levels 2.2, 2.3, 3.2, 3.3, 4.2 & 4.3 are
+   *    undefined, and that levels 7.x and 8.x are in draft status), 31
+   *    (maximum parameters level, no level-based constraints) or 32 (keep
+   *    level stats only for level monitoring).
    *
    * E.g.:
    * - "0" means target level index 0 (2.0) for the 0th OP;
    * - "109" means target level index 9 (4.1) for the 1st OP;
    * - "1019" means target level index 19 (6.3) for the 10th OP.
    *
-   * If the target level is not specified for an OP, the maximum level parameter
-   * of 31 is used as default.
+   * If the target level is not specified for an OP, the maximum parameters
+   * level of 31 is used as default.
    */
   AV1E_SET_TARGET_SEQ_LEVEL_IDX = 54,
 
@@ -1466,6 +1467,17 @@ enum aome_enc_control_id {
    */
   AV1E_SET_SKIP_POSTPROC_FILTERING = 157,
 
+  /*!\brief Codec control function to enable the superblock level
+   * qp sweep in AV1 to ensure that end-to-end test runs well,
+   * unsigned int parameter.
+   *
+   * - 0 = disable (default)
+   * - 1 = enable
+   *
+   * \note This is only used in sb_qp_sweep unit test.
+   */
+  AV1E_ENABLE_SB_QP_SWEEP = 158,
+
   // Any new encoder control IDs should be added above.
   // Maximum allowed encoder control ID is 229.
   // No encoder control ID should be added below.
@@ -2084,6 +2096,9 @@ AOM_CTRL_USE_TYPE(AV1E_GET_NUM_OPERATING_POINTS, int *)
 
 AOM_CTRL_USE_TYPE(AV1E_SET_SKIP_POSTPROC_FILTERING, unsigned int)
 #define AOM_CTRL_AV1E_SET_SKIP_POSTPROC_FILTERING
+
+AOM_CTRL_USE_TYPE(AV1E_ENABLE_SB_QP_SWEEP, unsigned int)
+#define AOM_CTRL_AV1E_ENABLE_SB_QP_SWEEP
 
 /*!\endcond */
 /*! @} - end defgroup aom_encoder */

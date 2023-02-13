@@ -23,8 +23,8 @@
 #include "src/tint/sem/call.h"
 #include "src/tint/sem/expression.h"
 #include "src/tint/sem/index_accessor_expression.h"
-#include "src/tint/sem/reference.h"
 #include "src/tint/sem/statement.h"
+#include "src/tint/type/reference.h"
 
 TINT_INSTANTIATE_TYPEINFO(tint::transform::Robustness);
 TINT_INSTANTIATE_TYPEINFO(tint::transform::Robustness::Config);
@@ -33,35 +33,47 @@ using namespace tint::number_suffixes;  // NOLINT
 
 namespace tint::transform {
 
-/// State holds the current transform state
+/// PIMPL state for the transform
 struct Robustness::State {
-    /// The clone context
-    CloneContext& ctx;
+    /// Constructor
+    /// @param program the source program
+    /// @param omitted the omitted address spaces
+    State(const Program* program, std::unordered_set<ast::AddressSpace>&& omitted)
+        : src(program), omitted_address_spaces(std::move(omitted)) {}
 
-    /// Set of address spacees to not apply the transform to
-    std::unordered_set<ast::AddressSpace> omitted_classes;
-
-    /// Applies the transformation state to `ctx`.
-    void Transform() {
+    /// Runs the transform
+    /// @returns the new program or SkipTransform if the transform is not required
+    ApplyResult Run() {
         ctx.ReplaceAll([&](const ast::IndexAccessorExpression* expr) { return Transform(expr); });
         ctx.ReplaceAll([&](const ast::CallExpression* expr) { return Transform(expr); });
+
+        ctx.Clone();
+        return Program(std::move(b));
     }
+
+  private:
+    /// The source program
+    const Program* const src;
+    /// The target program builder
+    ProgramBuilder b;
+    /// The clone context
+    CloneContext ctx = {&b, src, /* auto_clone_symbols */ true};
+
+    /// Set of address spaces to not apply the transform to
+    std::unordered_set<ast::AddressSpace> omitted_address_spaces;
 
     /// Apply bounds clamping to array, vector and matrix indexing
     /// @param expr the array, vector or matrix index expression
     /// @return the clamped replacement expression, or nullptr if `expr` should be cloned without
     /// changes.
     const ast::IndexAccessorExpression* Transform(const ast::IndexAccessorExpression* expr) {
-        auto* sem =
-            ctx.src->Sem().Get(expr)->UnwrapMaterialize()->As<sem::IndexAccessorExpression>();
+        auto* sem = src->Sem().Get(expr)->UnwrapMaterialize()->As<sem::IndexAccessorExpression>();
         auto* ret_type = sem->Type();
 
-        auto* ref = ret_type->As<sem::Reference>();
-        if (ref && omitted_classes.count(ref->AddressSpace()) != 0) {
+        auto* ref = ret_type->As<type::Reference>();
+        if (ref && omitted_address_spaces.count(ref->AddressSpace()) != 0) {
             return nullptr;
         }
-
-        ProgramBuilder& b = *ctx.dst;
 
         // idx return the cloned index expression, as a u32.
         auto idx = [&]() -> const ast::Expression* {
@@ -74,7 +86,7 @@ struct Robustness::State {
 
         auto* clamped_idx = Switch(
             sem->Object()->Type()->UnwrapRef(),  //
-            [&](const sem::Vector* vec) -> const ast::Expression* {
+            [&](const type::Vector* vec) -> const ast::Expression* {
                 if (sem->Index()->ConstantValue()) {
                     // Index and size is constant.
                     // Validation will have rejected any OOB accesses.
@@ -83,7 +95,7 @@ struct Robustness::State {
 
                 return b.Call("min", idx(), u32(vec->Width() - 1u));
             },
-            [&](const sem::Matrix* mat) -> const ast::Expression* {
+            [&](const type::Matrix* mat) -> const ast::Expression* {
                 if (sem->Index()->ConstantValue()) {
                     // Index and size is constant.
                     // Validation will have rejected any OOB accesses.
@@ -92,9 +104,9 @@ struct Robustness::State {
 
                 return b.Call("min", idx(), u32(mat->columns() - 1u));
             },
-            [&](const sem::Array* arr) -> const ast::Expression* {
+            [&](const type::Array* arr) -> const ast::Expression* {
                 const ast::Expression* max = nullptr;
-                if (arr->IsRuntimeSized()) {
+                if (arr->Count()->Is<type::RuntimeArrayCount>()) {
                     // Size is unknown until runtime.
                     // Must clamp, even if the index is constant.
                     auto* arr_ptr = b.AddressOf(ctx.Clone(expr->object));
@@ -109,8 +121,8 @@ struct Robustness::State {
                 } else {
                     // Note: Don't be tempted to use the array override variable as an expression
                     // here, the name might be shadowed!
-                    ctx.dst->Diagnostics().add_error(diag::System::Transform,
-                                                     sem::Array::kErrExpectedConstantCount);
+                    b.Diagnostics().add_error(diag::System::Transform,
+                                              type::Array::kErrExpectedConstantCount);
                     return nullptr;
                 }
 
@@ -119,7 +131,7 @@ struct Robustness::State {
             [&](Default) {
                 TINT_ICE(Transform, b.Diagnostics())
                     << "unhandled object type in robustness of array index: "
-                    << ctx.src->FriendlyName(ret_type->UnwrapRef());
+                    << src->FriendlyName(ret_type->UnwrapRef());
                 return nullptr;
             });
 
@@ -127,9 +139,9 @@ struct Robustness::State {
             return nullptr;  // Clamping not needed
         }
 
-        auto src = ctx.Clone(expr->source);
-        auto* obj = ctx.Clone(expr->object);
-        return b.IndexAccessor(src, obj, clamped_idx);
+        auto idx_src = ctx.Clone(expr->source);
+        auto* idx_obj = ctx.Clone(expr->object);
+        return b.IndexAccessor(idx_src, idx_obj, clamped_idx);
     }
 
     /// @param type builtin type
@@ -145,14 +157,12 @@ struct Robustness::State {
     /// @return the clamped replacement call expression, or nullptr if `expr`
     /// should be cloned without changes.
     const ast::CallExpression* Transform(const ast::CallExpression* expr) {
-        auto* call = ctx.src->Sem().Get(expr)->UnwrapMaterialize()->As<sem::Call>();
+        auto* call = src->Sem().Get(expr)->UnwrapMaterialize()->As<sem::Call>();
         auto* call_target = call->Target();
         auto* builtin = call_target->As<sem::Builtin>();
         if (!builtin || !TextureBuiltinNeedsClamping(builtin->Type())) {
             return nullptr;  // No transform, just clone.
         }
-
-        ProgramBuilder& b = *ctx.dst;
 
         // Indices of the mandatory texture and coords parameters, and the optional
         // array and level parameters.
@@ -166,6 +176,32 @@ struct Robustness::State {
         auto* coords_arg = expr->args[static_cast<size_t>(coords_idx)];
         auto* coords_ty = builtin->Parameters()[static_cast<size_t>(coords_idx)]->Type();
 
+        auto width_of = [&](const type::Type* ty) {
+            if (auto* vec = ty->As<type::Vector>()) {
+                return vec->Width();
+            }
+            return 1u;
+        };
+        auto scalar_or_vec_ty = [&](const ast::Type* scalar, uint32_t width) -> const ast::Type* {
+            if (width > 1) {
+                return b.ty.vec(scalar, width);
+            }
+            return scalar;
+        };
+        auto scalar_or_vec = [&](const ast::Expression* scalar,
+                                 uint32_t width) -> const ast::Expression* {
+            if (width > 1) {
+                return b.Construct(b.ty.vec(nullptr, width), scalar);
+            }
+            return scalar;
+        };
+        auto cast_to_signed = [&](const ast::Expression* val, uint32_t width) {
+            return b.Construct(scalar_or_vec_ty(b.ty.i32(), width), val);
+        };
+        auto cast_to_unsigned = [&](const ast::Expression* val, uint32_t width) {
+            return b.Construct(scalar_or_vec_ty(b.ty.u32(), width), val);
+        };
+
         // If the level is provided, then we need to clamp this. As the level is
         // used by textureDimensions() and the texture[Load|Store]() calls, we need
         // to clamp both usages.
@@ -174,41 +210,68 @@ struct Robustness::State {
         std::function<const ast::Expression*()> level_arg;
         if (level_idx >= 0) {
             level_arg = [&] {
-                auto* arg = expr->args[static_cast<size_t>(level_idx)];
-                auto* num_levels = b.Call("textureNumLevels", ctx.Clone(texture_arg));
-                auto* zero = b.Expr(0_i);
-                auto* max = ctx.dst->Sub(num_levels, 1_i);
-                auto* clamped = b.Call("clamp", ctx.Clone(arg), zero, max);
-                return clamped;
+                const auto* arg = expr->args[static_cast<size_t>(level_idx)];
+                const auto* target_ty =
+                    builtin->Parameters()[static_cast<size_t>(level_idx)]->Type();
+                const auto* num_levels = b.Call("textureNumLevels", ctx.Clone(texture_arg));
+
+                // TODO(crbug.com/tint/1526) remove when num_levels returns u32
+                num_levels = cast_to_unsigned(num_levels, 1u);
+
+                const auto* unsigned_max = b.Sub(num_levels, 1_a);
+                if (target_ty->is_signed_integer_scalar()) {
+                    const auto* signed_max = cast_to_signed(unsigned_max, 1u);
+                    return b.Call("clamp", ctx.Clone(arg), 0_a, signed_max);
+                } else {
+                    return b.Call("min", ctx.Clone(arg), unsigned_max);
+                }
             };
         }
 
         // Clamp the coordinates argument
         {
-            auto* texture_dims =
+            const auto* target_ty = coords_ty;
+            const auto width = width_of(target_ty);
+            const auto* texture_dims =
                 level_arg ? b.Call("textureDimensions", ctx.Clone(texture_arg), level_arg())
                           : b.Call("textureDimensions", ctx.Clone(texture_arg));
-            auto* zero = b.Construct(CreateASTTypeFor(ctx, coords_ty));
-            auto* max =
-                ctx.dst->Sub(texture_dims, b.Construct(CreateASTTypeFor(ctx, coords_ty), 1_i));
-            auto* clamped_coords = b.Call("clamp", ctx.Clone(coords_arg), zero, max);
-            ctx.Replace(coords_arg, clamped_coords);
+
+            // TODO(crbug.com/tint/1526) remove when texture_dims returns u32 or vecN<u32>
+            texture_dims = cast_to_unsigned(texture_dims, width);
+
+            // texture_dims is u32 or vecN<u32>
+            const auto* unsigned_max = b.Sub(texture_dims, scalar_or_vec(b.Expr(1_a), width));
+            if (target_ty->is_signed_integer_scalar_or_vector()) {
+                const auto* zero = scalar_or_vec(b.Expr(0_a), width);
+                const auto* signed_max = cast_to_signed(unsigned_max, width);
+                ctx.Replace(coords_arg, b.Call("clamp", ctx.Clone(coords_arg), zero, signed_max));
+            } else {
+                ctx.Replace(coords_arg, b.Call("min", ctx.Clone(coords_arg), unsigned_max));
+            }
         }
 
         // Clamp the array_index argument, if provided
         if (array_idx >= 0) {
+            auto* target_ty = builtin->Parameters()[static_cast<size_t>(array_idx)]->Type();
             auto* arg = expr->args[static_cast<size_t>(array_idx)];
             auto* num_layers = b.Call("textureNumLayers", ctx.Clone(texture_arg));
-            auto* zero = b.Expr(0_i);
-            auto* max = ctx.dst->Sub(num_layers, 1_i);
-            auto* clamped = b.Call("clamp", ctx.Clone(arg), zero, max);
-            ctx.Replace(arg, clamped);
+
+            // TODO(crbug.com/tint/1526) remove when num_layers returns u32
+            num_layers = cast_to_unsigned(num_layers, 1u);
+
+            const auto* unsigned_max = b.Sub(num_layers, 1_a);
+            if (target_ty->is_signed_integer_scalar()) {
+                const auto* signed_max = cast_to_signed(unsigned_max, 1u);
+                ctx.Replace(arg, b.Call("clamp", ctx.Clone(arg), 0_a, signed_max));
+            } else {
+                ctx.Replace(arg, b.Call("min", ctx.Clone(arg), unsigned_max));
+            }
         }
 
         // Clamp the level argument, if provided
         if (level_idx >= 0) {
             auto* arg = expr->args[static_cast<size_t>(level_idx)];
-            ctx.Replace(arg, level_arg ? level_arg() : ctx.dst->Expr(0_i));
+            ctx.Replace(arg, level_arg ? level_arg() : b.Expr(0_a));
         }
 
         return nullptr;  // Clone, which will use the argument replacements above.
@@ -223,28 +286,27 @@ Robustness::Config& Robustness::Config::operator=(const Config&) = default;
 Robustness::Robustness() = default;
 Robustness::~Robustness() = default;
 
-void Robustness::Run(CloneContext& ctx, const DataMap& inputs, DataMap&) const {
+Transform::ApplyResult Robustness::Apply(const Program* src,
+                                         const DataMap& inputs,
+                                         DataMap&) const {
     Config cfg;
     if (auto* cfg_data = inputs.Get<Config>()) {
         cfg = *cfg_data;
     }
 
-    std::unordered_set<ast::AddressSpace> omitted_classes;
-    for (auto sc : cfg.omitted_classes) {
+    std::unordered_set<ast::AddressSpace> omitted_address_spaces;
+    for (auto sc : cfg.omitted_address_spaces) {
         switch (sc) {
             case AddressSpace::kUniform:
-                omitted_classes.insert(ast::AddressSpace::kUniform);
+                omitted_address_spaces.insert(ast::AddressSpace::kUniform);
                 break;
             case AddressSpace::kStorage:
-                omitted_classes.insert(ast::AddressSpace::kStorage);
+                omitted_address_spaces.insert(ast::AddressSpace::kStorage);
                 break;
         }
     }
 
-    State state{ctx, std::move(omitted_classes)};
-
-    state.Transform();
-    ctx.Clone();
+    return State{src, std::move(omitted_address_spaces)}.Run();
 }
 
 }  // namespace tint::transform

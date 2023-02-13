@@ -63,11 +63,6 @@ public:
     using ReadPixelsCallback = SkImage::ReadPixelsCallback;
     using ReadPixelsContext  = SkImage::ReadPixelsContext;
 
-    void asyncReadPixels(const SkImageInfo& info,
-                         const SkIRect& srcRect,
-                         ReadPixelsCallback callback,
-                         ReadPixelsContext context);
-
     void asyncRescaleAndReadPixels(const SkImageInfo& info,
                                    const SkIRect& srcRect,
                                    RescaleGamma rescaleGamma,
@@ -138,7 +133,9 @@ public:
 
     void drawVertices(const SkVertices*, sk_sp<SkBlender>, const SkPaint&, bool) override;
     void drawMesh(const SkMesh&, sk_sp<SkBlender>, const SkPaint&) override;
+#if !defined(SK_ENABLE_OPTIMIZE_SIZE)
     void drawShadow(const SkPath&, const SkDrawShadowRec&) override;
+#endif
     void drawAtlas(const SkRSXform[], const SkRect[], const SkColor[], int count, sk_sp<SkBlender>,
                    const SkPaint&) override;
 
@@ -163,6 +160,7 @@ public:
     sk_sp<SkSpecialImage> makeSpecial(const SkBitmap&) override;
     sk_sp<SkSpecialImage> makeSpecial(const SkImage*) override;
     sk_sp<SkSpecialImage> snapSpecial(const SkIRect& subset, bool forceCopy = false) override;
+    sk_sp<SkSpecialImage> snapSpecialScaled(const SkIRect& subset, const SkISize& dstDims) override;
 
     bool onAccessPixels(SkPixmap*) override;
 

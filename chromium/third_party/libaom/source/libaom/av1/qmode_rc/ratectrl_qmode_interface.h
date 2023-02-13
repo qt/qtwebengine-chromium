@@ -26,9 +26,14 @@ constexpr int kBlockRefCount = 2;
 struct MotionVector {
   int row;  // subpel row
   int col;  // subpel col
-  // TODO(b/241589513): Move this to TPLFrameStats; it's wasteful to code it
+  // TODO(b/241589513): Move this to TplFrameStats; it's wasteful to code it
   // separately for each block.
   int subpel_bits;  // number of fractional bits used by row/col
+};
+
+enum class TplPassCount {
+  kOneTplPass = 1,
+  kTwoTplPasses = 2,
 };
 
 struct RateControlParam {
@@ -42,21 +47,38 @@ struct RateControlParam {
 
   int base_q_index;
 
+  // If greater than 1, enables per-superblock q_index, and limits the number of
+  // unique q_index values which may be used in a frame (each of which will have
+  // its own unique rdmult value).
+  int max_distinct_q_indices_per_frame;
+
+  // If per-superblock q_index is enabled and this is greater than 1, enables
+  // additional per-superblock scaling of lambda, and limits the number of
+  // unique lambda scale values which may be used in a frame.
+  int max_distinct_lambda_scales_per_frame;
+
   int frame_width;
   int frame_height;
+
+  // Total number of TPL passes.
+  TplPassCount tpl_pass_count = TplPassCount::kOneTplPass;
+  // Current TPL pass number, 0 or 1 (for GetTplPassGopEncodeInfo).
+  int tpl_pass_index = 0;
 };
 
 struct TplBlockStats {
-  int16_t height;  // Pixel height.
-  int16_t width;   // Pixel width.
-  int16_t row;     // Pixel row of the top left corner.
-  int16_t col;     // Pixel col of the top lef corner.
-  int64_t intra_cost;
-  int64_t inter_cost;
+  int16_t height;      // Pixel height.
+  int16_t width;       // Pixel width.
+  int16_t row;         // Pixel row of the top left corner.
+  int16_t col;         // Pixel col of the top left corner.
+  int64_t intra_cost;  // Rd cost of the best intra mode.
+  int64_t inter_cost;  // Rd cost of the best inter mode.
 
   // Valid only if TplFrameStats::rate_dist_present is true:
-  int64_t recrf_rate;  // Bits when using recon as reference.
-  int64_t recrf_dist;  // Distortion when using recon as reference.
+  int64_t recrf_rate;      // Bits when using recon as reference.
+  int64_t recrf_dist;      // Distortion when using recon as reference.
+  int64_t intra_pred_err;  // Prediction residual of the intra mode.
+  int64_t inter_pred_err;  // Prediction residual of the inter mode.
 
   std::array<MotionVector, kBlockRefCount> mv;
   std::array<int, kBlockRefCount> ref_frame_index;
@@ -212,9 +234,35 @@ struct GopStruct {
 
 using GopStructList = std::vector<GopStruct>;
 
-struct FrameEncodeParameters {
+struct SuperblockEncodeParameters {
   int q_index;
   int rdmult;
+};
+
+struct FrameEncodeParameters {
+  // Base q_index for the frame.
+  int q_index;
+
+  // Frame level Lagrangian multiplier.
+  int rdmult;
+
+  // If max_distinct_q_indices_per_frame <= 1, this will be empty.
+  // Otherwise:
+  // - There must be one entry per 64x64 superblock, in row-major order
+  // - There may be no more than max_distinct_q_indices_per_frame unique q_index
+  //   values
+  // - All entries with the same q_index must have the same rdmult
+  // (If it's desired to use different rdmult values with the same q_index, this
+  // must be done with superblock_lambda_scales.)
+  std::vector<SuperblockEncodeParameters> superblock_encode_params;
+
+  // If max_distinct_q_indices_per_frame <= 1 or
+  // max_distinct_lambda_scales_per_frame <= 1, this will be empty. Otherwise,
+  // it will have one entry per 64x64 superblock, in row-major order, with no
+  // more than max_distinct_lambda_scales_per_frame unique values. Each entry
+  // should be multiplied by the rdmult in the corresponding superblock's entry
+  // in superblock_encode_params.
+  std::vector<float> superblock_lambda_scales;
 };
 
 struct FirstpassInfo {
@@ -239,6 +287,9 @@ struct TplFrameStats {
   int frame_height;
   bool rate_dist_present;  // True if recrf_rate and recrf_dist are populated.
   std::vector<TplBlockStats> block_stats_list;
+  // Optional stats computed with different settings, should be empty unless
+  // tpl_pass_count == kTwoTplPasses.
+  std::vector<TplBlockStats> alternate_block_stats_list;
 };
 
 struct TplGopStats {
@@ -271,10 +322,36 @@ class AV1RateControlQModeInterface {
   // ref_frame_table_snapshot_init; for subsequent GOPs, it should be the
   // final_snapshot returned on the previous call.
   //
+  // TODO(b/260859962): Remove these once all callers and overrides are gone.
   virtual StatusOr<GopEncodeInfo> GetGopEncodeInfo(
-      const GopStruct &gop_struct, const TplGopStats &tpl_gop_stats,
-      const std::vector<LookaheadStats> &lookahead_stats,
-      const RefFrameTable &ref_frame_table_snapshot_init) = 0;
+      const GopStruct &gop_struct AOM_UNUSED,
+      const TplGopStats &tpl_gop_stats AOM_UNUSED,
+      const std::vector<LookaheadStats> &lookahead_stats AOM_UNUSED,
+      const RefFrameTable &ref_frame_table_snapshot AOM_UNUSED) {
+    return Status{ AOM_CODEC_UNSUP_FEATURE, "Deprecated" };
+  }
+  virtual StatusOr<GopEncodeInfo> GetTplPassGopEncodeInfo(
+      const GopStruct &gop_struct AOM_UNUSED) {
+    return Status{ AOM_CODEC_UNSUP_FEATURE, "Deprecated" };
+  }
+
+  // Extensions to the API to pass in the first pass info. There should be stats
+  // for all frames starting from the first frame of the GOP and continuing to
+  // the end of the sequence.
+  // TODO(b/260859962): Make pure virtual once all derived classes implement it.
+  virtual StatusOr<GopEncodeInfo> GetGopEncodeInfo(
+      const GopStruct &gop_struct AOM_UNUSED,
+      const TplGopStats &tpl_gop_stats AOM_UNUSED,
+      const std::vector<LookaheadStats> &lookahead_stats AOM_UNUSED,
+      const FirstpassInfo &firstpass_info AOM_UNUSED,
+      const RefFrameTable &ref_frame_table_snapshot AOM_UNUSED) {
+    return Status{ AOM_CODEC_UNSUP_FEATURE, "Not yet implemented" };
+  }
+  virtual StatusOr<GopEncodeInfo> GetTplPassGopEncodeInfo(
+      const GopStruct &gop_struct AOM_UNUSED,
+      const FirstpassInfo &firstpass_info AOM_UNUSED) {
+    return Status{ AOM_CODEC_UNSUP_FEATURE, "Not yet implemented" };
+  }
 };
 }  // namespace aom
 

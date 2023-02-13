@@ -7,18 +7,29 @@ import("//third_party/libprotobuf-mutator/fuzzable_proto_library.gni")
 import("//third_party/protobuf/proto_library.gni")
 import("../../testing/libfuzzer/fuzzer_test.gni")
 
+# TODO(crbug.com/1378386): Update Chromium tests to not include private headers
+# noted by FIXME below.
+
+visibility = [ "./*" ]
+
 fuzzable_proto_library("remoting_proto") {
+  # Used in //components/cast_streaming in Chromium.
+  visibility += [ "*" ]
   sources = [ "remoting.proto" ]
 }
 
 source_set("streaming_configs") {
-  sources = [
+  # Used in //components/cast_streaming in Chromium.
+  visibility += [ "*" ]
+  public = [
     "capture_configs.h",
     "constants.h",
-    "message_fields.cc",
     "message_fields.h",
-    "resolution.cc",
     "resolution.h",
+  ]
+  sources = [
+    "message_fields.cc",
+    "resolution.cc",
   ]
 
   public_configs = [ "../../build:openscreen_include_dirs" ]
@@ -35,32 +46,40 @@ source_set("streaming_configs") {
 }
 
 source_set("common") {
+  # Used by multiple targets in Chromium.
+  visibility += [ "*" ]
+  public = [
+    "answer_messages.h",
+    "capture_recommendations.h",
+    "encoded_frame.h",
+    "environment.h",
+    "frame_id.h",
+    "offer_messages.h",
+    "rpc_messenger.h",
+    "rtp_time.h",
+    "sender_message.h",  # FIXME: Remove Chromium #include and make private
+    "session_messenger.h",
+    "ssrc.h",  # FIXME: Remove Chromium #include and make private
+  ]
   sources = [
     "answer_messages.cc",
-    "answer_messages.h",
     "capture_recommendations.cc",
-    "capture_recommendations.h",
     "clock_drift_smoother.cc",
     "clock_drift_smoother.h",
     "encoded_frame.cc",
-    "encoded_frame.h",
     "environment.cc",
-    "environment.h",
     "expanded_value_base.h",
     "frame_crypto.cc",
     "frame_crypto.h",
     "frame_id.cc",
-    "frame_id.h",
     "ntp_time.cc",
     "ntp_time.h",
     "offer_messages.cc",
-    "offer_messages.h",
     "packet_util.cc",
     "packet_util.h",
     "receiver_message.cc",
     "receiver_message.h",
     "rpc_messenger.cc",
-    "rpc_messenger.h",
     "rtcp_common.cc",
     "rtcp_common.h",
     "rtcp_session.cc",
@@ -68,15 +87,11 @@ source_set("common") {
     "rtp_defines.cc",
     "rtp_defines.h",
     "rtp_time.cc",
-    "rtp_time.h",
     "sender_message.cc",
-    "sender_message.h",
     "session_config.cc",
     "session_config.h",
     "session_messenger.cc",
-    "session_messenger.h",
     "ssrc.cc",
-    "ssrc.h",
   ]
 
   public_configs = [ "../../build:openscreen_include_dirs" ]
@@ -99,9 +114,24 @@ source_set("common") {
   if (!build_with_chromium) {
     deps += [ "../protocol:castv2" ]
   }
+
+  friend = [
+    ":unittests",
+    ":sender",
+    ":receiver",
+    ":compound_rtcp_parser_fuzzer",
+  ]
 }
 
 source_set("receiver") {
+  # Used by //components/cast_streaming and //chromecast/cast_core/browser in
+  # Chromium.
+  visibility += [ "*" ]
+  public = [
+    "receiver.h",
+    "receiver_constraints.h",
+    "receiver_session.h",
+  ]
   sources = [
     "compound_rtcp_builder.cc",
     "compound_rtcp_builder.h",
@@ -110,15 +140,12 @@ source_set("receiver") {
     "packet_receive_stats_tracker.cc",
     "packet_receive_stats_tracker.h",
     "receiver.cc",
-    "receiver.h",
     "receiver_base.cc",
     "receiver_base.h",
     "receiver_constraints.cc",
-    "receiver_constraints.h",
     "receiver_packet_router.cc",
     "receiver_packet_router.h",
     "receiver_session.cc",
-    "receiver_session.h",
     "rtp_packet_parser.cc",
     "rtp_packet_parser.h",
     "sender_report_parser.cc",
@@ -128,35 +155,50 @@ source_set("receiver") {
   public_deps = [ ":common" ]
 
   deps = [ "../../util" ]
+
+  friend = [
+    ":unittests",
+    ":rtp_packet_parser_fuzzer",
+    ":sender_report_parser_fuzzer",
+  ]
 }
 
 source_set("sender") {
+  # Used by //components/mirroring and //media/cast in Chromium.
+  visibility += [ "*" ]
+  public = [
+    "remoting_capabilities.h",  # FIXME: Only for Chromium tests.
+    "sender.h",
+    "sender_packet_router.h",  # FIXME: Only for Chromium tests.
+    "sender_session.h",
+  ]
   sources = [
     "bandwidth_estimator.cc",
     "bandwidth_estimator.h",
     "compound_rtcp_parser.cc",
     "compound_rtcp_parser.h",
-    "remoting_capabilities.h",
     "rtp_packetizer.cc",
     "rtp_packetizer.h",
     "sender.cc",
-    "sender.h",
     "sender_packet_router.cc",
-    "sender_packet_router.h",
     "sender_report_builder.cc",
     "sender_report_builder.h",
     "sender_session.cc",
-    "sender_session.h",
   ]
 
   public_deps = [ ":common" ]
 
   deps = [ "../../util" ]
+
+  friend = [
+    ":unittests",
+    ":compound_rtcp_parser_fuzzer",
+  ]
 }
 
 source_set("test_helpers") {
   testonly = true
-
+  public = []
   sources = [
     "testing/message_pipe.h",
     "testing/simple_message_port.h",
@@ -171,11 +213,14 @@ source_set("test_helpers") {
     "../../util",
     "../common:public",
   ]
+
+  friend = [ ":unittests" ]
 }
 
 source_set("unittests") {
   testonly = true
-
+  visibility += [ "../..:openscreen_unittests_all" ]
+  public = []
   sources = [
     "answer_messages_unittest.cc",
     "bandwidth_estimator_unittest.cc",
@@ -219,9 +264,14 @@ source_set("unittests") {
     "../../third_party/googletest:gtest",
     "../../util",
   ]
+  friend = [
+    ":sender",
+    ":receiver",
+  ]
 }
 
 openscreen_fuzzer_test("compound_rtcp_parser_fuzzer") {
+  public = []
   sources = [ "compound_rtcp_parser_fuzzer.cc" ]
 
   deps = [
@@ -236,6 +286,7 @@ openscreen_fuzzer_test("compound_rtcp_parser_fuzzer") {
 }
 
 openscreen_fuzzer_test("rtp_packet_parser_fuzzer") {
+  public = []
   sources = [ "rtp_packet_parser_fuzzer.cc" ]
 
   deps = [
@@ -250,6 +301,7 @@ openscreen_fuzzer_test("rtp_packet_parser_fuzzer") {
 }
 
 openscreen_fuzzer_test("sender_report_parser_fuzzer") {
+  public = []
   sources = [ "sender_report_parser_fuzzer.cc" ]
 
   deps = [

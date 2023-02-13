@@ -281,7 +281,7 @@ template<typename NewDimensions, typename ArgType, typename Device>
   template <typename TensorBlock>
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void writeBlock(
       const TensorBlockDesc& desc, const TensorBlock& block) {
-    assert(this->m_impl.data() != NULL);
+    eigen_assert(this->m_impl.data() != NULL);
 
     typedef typename TensorBlock::XprType TensorBlockExpr;
     typedef internal::TensorBlockAssignment<

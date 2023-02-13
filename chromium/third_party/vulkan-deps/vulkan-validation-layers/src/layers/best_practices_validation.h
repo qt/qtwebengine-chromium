@@ -251,11 +251,11 @@ class DeviceMemory : public DEVICE_MEMORY_STATE {
   public:
     DeviceMemory(VkDeviceMemory mem, const VkMemoryAllocateInfo* p_alloc_info, uint64_t fake_address,
                  const VkMemoryType& memory_type, const VkMemoryHeap& memory_heap,
-                 layer_data::optional<DedicatedBinding>&& dedicated_binding, uint32_t physical_device_count)
+                 std::optional<DedicatedBinding>&& dedicated_binding, uint32_t physical_device_count)
         : DEVICE_MEMORY_STATE(mem, p_alloc_info, fake_address, memory_type, memory_heap, std::move(dedicated_binding),
                               physical_device_count) {}
 
-    layer_data::optional<float> dynamic_priority; // VK_EXT_pageable_device_local_memory priority
+    std::optional<float> dynamic_priority; // VK_EXT_pageable_device_local_memory priority
 };
 
 struct AttachmentInfo {
@@ -359,7 +359,8 @@ class DescriptorPool : public DESCRIPTOR_POOL_STATE {
 class Pipeline : public PIPELINE_STATE {
   public:
     Pipeline(const ValidationStateTracker* state_data, const VkGraphicsPipelineCreateInfo* pCreateInfo,
-             std::shared_ptr<const RENDER_PASS_STATE>&& rpstate, std::shared_ptr<const PIPELINE_LAYOUT_STATE>&& layout);
+             std::shared_ptr<const RENDER_PASS_STATE>&& rpstate, std::shared_ptr<const PIPELINE_LAYOUT_STATE>&& layout,
+             CreateShaderModuleStates* csm_states);
 
     const std::vector<AttachmentInfo> access_framebuffer_attachments;
 };
@@ -487,6 +488,11 @@ class BestPractices : public ValidationStateTracker {
                                           const VkDependencyInfoKHR* pDependencyInfos) const override;
     bool PreCallValidateCmdWaitEvents2(VkCommandBuffer commandBuffer, uint32_t eventCount, const VkEvent* pEvents,
                                        const VkDependencyInfo* pDependencyInfos) const override;
+    bool ValidateAccessLayoutCombination(const std::string& api_name, VkAccessFlags2 access, VkImageLayout layout,
+                                         VkImageAspectFlags aspect) const;
+    bool ValidateImageMemoryBarrier(const std::string& api_name, VkImageLayout oldLayout, VkImageLayout newLayout,
+                                    VkAccessFlags2 srcAccessMask, VkAccessFlags2 dstAccessMask,
+                                    VkImageAspectFlags aspectMask) const;
     bool PreCallValidateCmdPipelineBarrier(VkCommandBuffer commandBuffer, VkPipelineStageFlags srcStageMask,
                                            VkPipelineStageFlags dstStageMask, VkDependencyFlags dependencyFlags,
                                            uint32_t memoryBarrierCount, const VkMemoryBarrier* pMemoryBarriers,
@@ -688,8 +694,9 @@ class BestPractices : public ValidationStateTracker {
     bool PreCallValidateCmdClearAttachments(VkCommandBuffer commandBuffer, uint32_t attachmentCount,
                                             const VkClearAttachment* pAttachments, uint32_t rectCount,
                                             const VkClearRect* pRects) const override;
-    void ValidateReturnCodes(const char* api_name, VkResult result, const std::vector<VkResult>& error_codes,
-                             const std::vector<VkResult>& success_codes) const;
+    void ValidateReturnCodes(const char* api_name, VkResult result, layer_data::span<const VkResult> error_codes,
+                             layer_data::span<const VkResult> success_codes) const;
+    bool ValidateCmdResolveImage(VkCommandBuffer command_buffer, VkImage src_image, VkImage dst_image, CMD_TYPE cmd_type) const;
     bool PreCallValidateCmdResolveImage(VkCommandBuffer commandBuffer, VkImage srcImage, VkImageLayout srcImageLayout,
                                         VkImage dstImage, VkImageLayout dstImageLayout, uint32_t regionCount,
                                         const VkImageResolve* pRegions) const override;
@@ -734,6 +741,15 @@ class BestPractices : public ValidationStateTracker {
     void PreCallRecordCmdBlitImage(VkCommandBuffer commandBuffer, VkImage srcImage, VkImageLayout srcImageLayout, VkImage dstImage,
                                    VkImageLayout dstImageLayout, uint32_t regionCount, const VkImageBlit* pRegions,
                                    VkFilter filter) override;
+    template <typename RegionType>
+    bool ValidateCmdBlitImage(VkCommandBuffer command_buffer, uint32_t region_count, const RegionType* regions,
+                              CMD_TYPE cmd_type) const;
+    bool PreCallValidateCmdBlitImage(VkCommandBuffer commandBuffer, VkImage srcImage, VkImageLayout srcImageLayout,
+                                     VkImage dstImage, VkImageLayout dstImageLayout, uint32_t regionCount,
+                                     const VkImageBlit* pRegions, VkFilter filter) const override;
+    bool PreCallValidateCmdBlitImage2KHR(VkCommandBuffer commandBuffer, const VkBlitImageInfo2KHR* pBlitImageInfo) const override;
+    bool PreCallValidateCmdBlitImage2(VkCommandBuffer commandBuffer, const VkBlitImageInfo2* pBlitImageInfo) const override;
+
     bool PreCallValidateCreateSampler(VkDevice device, const VkSamplerCreateInfo* pCreateInfo,
                                       const VkAllocationCallbacks* pAllocator, VkSampler* pSampler) const override;
     void ManualPostCallRecordQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pPresentInfo, VkResult result);
@@ -940,7 +956,7 @@ class BestPractices : public ValidationStateTracker {
     std::shared_ptr<DEVICE_MEMORY_STATE> CreateDeviceMemoryState(VkDeviceMemory mem, const VkMemoryAllocateInfo* p_alloc_info,
                                                                  uint64_t fake_address, const VkMemoryType& memory_type,
                                                                  const VkMemoryHeap& memory_heap,
-                                                                 layer_data::optional<DedicatedBinding>&& dedicated_binding,
+                                                                 std::optional<DedicatedBinding>&& dedicated_binding,
                                                                  uint32_t physical_device_count) final {
         return std::static_pointer_cast<DEVICE_MEMORY_STATE>(std::make_shared<bp_state::DeviceMemory>(
             mem, p_alloc_info, fake_address, memory_type, memory_heap, std::move(dedicated_binding), physical_device_count));
@@ -948,7 +964,8 @@ class BestPractices : public ValidationStateTracker {
 
     std::shared_ptr<PIPELINE_STATE> CreateGraphicsPipelineState(const VkGraphicsPipelineCreateInfo* pCreateInfo,
                                                                 std::shared_ptr<const RENDER_PASS_STATE>&& render_pass,
-                                                                std::shared_ptr<const PIPELINE_LAYOUT_STATE>&& layout) const final;
+                                                                std::shared_ptr<const PIPELINE_LAYOUT_STATE>&& layout,
+                                                                CreateShaderModuleStates* csm_states) const final;
 
   private:
     // CacheEntry and PostTransformLRUCacheModel are used on the stack
@@ -1052,11 +1069,11 @@ class BestPractices : public ValidationStateTracker {
         uint32_t memory_type_index = 0;
     };
     std::deque<MemoryFreeEvent> memory_free_events_;
-    mutable ReadWriteLock memory_free_events_lock_;
+    mutable std::shared_mutex memory_free_events_lock_;
 
     std::set<std::array<uint32_t, 4>> clear_colors_;
-    mutable ReadWriteLock clear_colors_lock_;
+    mutable std::shared_mutex clear_colors_lock_;
 
     layer_data::unordered_set<VkPipeline> pipelines_used_in_frame_;
-    mutable ReadWriteLock pipeline_lock_;
+    mutable std::shared_mutex pipeline_lock_;
 };

@@ -36,7 +36,6 @@ class Variable;
 class WhileStatement;
 }  // namespace tint::ast
 namespace tint::sem {
-class Array;
 class Expression;
 class ForLoopStatement;
 class Function;
@@ -47,10 +46,13 @@ class Statement;
 class Struct;
 class StructMember;
 class SwitchStatement;
-class Type;
 class Variable;
 class WhileStatement;
 }  // namespace tint::sem
+namespace tint::type {
+class Array;
+class Type;
+}  // namespace tint::type
 
 namespace tint::sem {
 
@@ -60,19 +62,19 @@ namespace tint::sem {
 /// rules will be used to infer the return type based on the argument type.
 struct TypeMappings {
     //! @cond Doxygen_Suppress
-    Array* operator()(ast::Array*);
+    type::Array* operator()(ast::Array*);
     Expression* operator()(ast::Expression*);
     ForLoopStatement* operator()(ast::ForLoopStatement*);
     Function* operator()(ast::Function*);
     IfStatement* operator()(ast::IfStatement*);
-    Node* operator()(ast::Node*);
+    CastableBase* operator()(ast::Node*);
     GlobalVariable* operator()(ast::Override*);
     Statement* operator()(ast::Statement*);
     Struct* operator()(ast::Struct*);
     StructMember* operator()(ast::StructMember*);
     SwitchStatement* operator()(ast::SwitchStatement*);
-    Type* operator()(ast::Type*);
-    Type* operator()(ast::TypeDecl*);
+    type::Type* operator()(ast::Type*);
+    type::Type* operator()(ast::TypeDecl*);
     Variable* operator()(ast::Variable*);
     WhileStatement* operator()(ast::WhileStatement*);
     //! @endcond

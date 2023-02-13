@@ -7,14 +7,15 @@
 
 #include "include/private/SkPathRef.h"
 
+#include "include/core/SkMatrix.h"
 #include "include/core/SkPath.h"
 #include "include/core/SkRRect.h"
 #include "include/private/SkOnce.h"
-#include "include/private/SkTo.h"
 #include "include/private/SkVx.h"
 #include "src/core/SkBuffer.h"
 #include "src/core/SkPathPriv.h"
-#include "src/core/SkSafeMath.h"
+
+#include <cstring>
 
 //////////////////////////////////////////////////////////////////////////////
 SkPathRef::Editor::Editor(sk_sp<SkPathRef>* pathRef,
@@ -28,7 +29,13 @@ SkPathRef::Editor::Editor(sk_sp<SkPathRef>* pathRef,
         (*pathRef)->incReserve(incReserveVerbs, incReservePoints);
     } else {
         SkPathRef* copy = new SkPathRef;
-        copy->copy(**pathRef, incReserveVerbs, incReservePoints);
+        // No need to copy if the existing ref is the empty ref (because it doesn't contain
+        // anything).
+        if (!(*pathRef)->isInitialEmptyPathRef()) {
+            copy->copy(**pathRef, incReserveVerbs, incReservePoints);
+        } else {
+            copy->incReserve(incReservePoints, incReservePoints);
+        }
         pathRef->reset(copy);
     }
     fPathRef = pathRef->get();
@@ -347,17 +354,17 @@ std::tuple<SkPoint*, SkScalar*> SkPathRef::growForVerbsInPath(const SkPathRef& p
     fIsRRect = false;
 
     if (int numVerbs = path.countVerbs()) {
-        memcpy(fVerbs.append(numVerbs), path.fVerbs.begin(), numVerbs * sizeof(fVerbs[0]));
+        memcpy(fVerbs.push_back_n(numVerbs), path.fVerbs.begin(), numVerbs * sizeof(fVerbs[0]));
     }
 
     SkPoint* pts = nullptr;
     if (int numPts = path.countPoints()) {
-        pts = fPoints.append(numPts);
+        pts = fPoints.push_back_n(numPts);
     }
 
     SkScalar* weights = nullptr;
     if (int numConics = path.countWeights()) {
-        weights = fConicWeights.append(numConics);
+        weights = fConicWeights.push_back_n(numConics);
     }
 
     SkDEBUGCODE(this->validate();)
@@ -407,12 +414,12 @@ SkPoint* SkPathRef::growForRepeatedVerb(int /*SkPath::Verb*/ verb,
     fIsOval = false;
     fIsRRect = false;
 
-    memset(fVerbs.append(numVbs), verb, numVbs);
+    memset(fVerbs.push_back_n(numVbs), verb, numVbs);
     if (SkPath::kConic_Verb == verb) {
         SkASSERT(weights);
-        *weights = fConicWeights.append(numVbs);
+        *weights = fConicWeights.push_back_n(numVbs);
     }
-    SkPoint* pts = fPoints.append(pCnt);
+    SkPoint* pts = fPoints.push_back_n(pCnt);
 
     SkDEBUGCODE(this->validate();)
     return pts;
@@ -460,11 +467,11 @@ SkPoint* SkPathRef::growForVerb(int /* SkPath::Verb*/ verb, SkScalar weight) {
     fIsOval = false;
     fIsRRect = false;
 
-    *fVerbs.append() = verb;
+    fVerbs.push_back(verb);
     if (SkPath::kConic_Verb == verb) {
-        *fConicWeights.append() = weight;
+        fConicWeights.push_back(weight);
     }
-    SkPoint* pts = fPoints.append(pCnt);
+    SkPoint* pts = fPoints.push_back_n(pCnt);
 
     SkDEBUGCODE(this->validate();)
     return pts;
@@ -692,6 +699,14 @@ bool SkPathRef::isValid() const {
         }
     }
     return true;
+}
+
+void SkPathRef::reset() {
+    commonReset();
+    fPoints.clear();
+    fVerbs.clear();
+    fConicWeights.clear();
+    SkDEBUGCODE(validate();)
 }
 
 bool SkPathRef::dataMatchesVerbs() const {

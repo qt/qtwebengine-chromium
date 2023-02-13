@@ -30,6 +30,7 @@
 #include "cmd_buffer_state.h"
 #include "state_tracker.h"
 #include "shader_module.h"
+#include "enum_flag_bits.h"
 
 static bool HasWriteableDescriptor(const std::vector<PipelineStageState::DescriptorUse> &descriptor_uses) {
     return std::any_of(descriptor_uses.begin(), descriptor_uses.end(),
@@ -41,15 +42,14 @@ static bool HasAtomicDescriptor(const std::vector<PipelineStageState::Descriptor
                        [](const PipelineStageState::DescriptorUse &use) { return use.second.is_atomic_operation; });
 }
 
-static bool WrotePrimitiveShadingRate(VkShaderStageFlagBits stage_flag, spirv_inst_iter entrypoint,
+static bool WrotePrimitiveShadingRate(VkShaderStageFlagBits stage_flag, std::optional<Instruction> entrypoint,
                                       const SHADER_MODULE_STATE *module_state) {
     bool primitiverate_written = false;
-    if (stage_flag == VK_SHADER_STAGE_VERTEX_BIT || stage_flag == VK_SHADER_STAGE_GEOMETRY_BIT ||
-        stage_flag == VK_SHADER_STAGE_MESH_BIT_NV) {
-        for (const auto &set : module_state->GetBuiltinDecorationList()) {
-            auto insn = module_state->at(set.offset);
-            if (set.builtin == spv::BuiltInPrimitiveShadingRateKHR) {
-                primitiverate_written = module_state->IsBuiltInWritten(insn, entrypoint);
+    if (entrypoint && (stage_flag == VK_SHADER_STAGE_VERTEX_BIT || stage_flag == VK_SHADER_STAGE_GEOMETRY_BIT ||
+                       stage_flag == VK_SHADER_STAGE_MESH_BIT_NV)) {
+        for (const Instruction *inst : module_state->GetBuiltinDecorationList()) {
+            if (inst->GetBuiltIn() == spv::BuiltInPrimitiveShadingRateKHR) {
+                primitiverate_written = module_state->IsBuiltInWritten(inst, *entrypoint);
             }
             if (primitiverate_written) {
                 break;
@@ -65,8 +65,7 @@ PipelineStageState::PipelineStageState(const safe_VkPipelineShaderStageCreateInf
       create_info(stage),
       stage_flag(stage->stage),
       entrypoint(module_state->FindEntrypoint(stage->pName, stage->stage)),
-      accessible_ids(module_state->MarkAccessibleIds(entrypoint)),
-      descriptor_uses(module_state->CollectInterfaceByDescriptorSlot(accessible_ids)),
+      descriptor_uses(module_state->CollectInterfaceByDescriptorSlot(entrypoint)),
       has_writable_descriptor(HasWriteableDescriptor(descriptor_uses)),
       has_atomic_descriptor(HasAtomicDescriptor(descriptor_uses)),
       wrote_primitive_shading_rate(WrotePrimitiveShadingRate(stage_flag, entrypoint, module_state.get())),
@@ -75,24 +74,29 @@ PipelineStageState::PipelineStageState(const safe_VkPipelineShaderStageCreateInf
 
 // static
 PIPELINE_STATE::StageStateVec PIPELINE_STATE::GetStageStates(const ValidationStateTracker &state_data,
-                                                             const PIPELINE_STATE &pipe_state) {
+                                                             const PIPELINE_STATE &pipe_state,
+                                                             CreateShaderModuleStates *csm_states) {
     PIPELINE_STATE::StageStateVec stage_states;
     // shader stages need to be recorded in pipeline order
     const auto stages = pipe_state.GetShaderStages();
 
-    for (uint32_t stage_idx = 0; stage_idx < 32; ++stage_idx) {
+    // stages such as VK_SHADER_STAGE_ALL are find as this code is only looking for exact matches, not bool logic
+    for (const auto &stage : AllVkShaderStageFlags) {
         bool stage_found = false;
-        const auto stage = static_cast<VkShaderStageFlagBits>(1 << stage_idx);
         for (const auto &shader_stage : stages) {
             if (shader_stage.stage == stage) {
                 auto module = state_data.Get<SHADER_MODULE_STATE>(shader_stage.module);
                 if (!module) {
+                    // See if the module is referenced in a library sub state
+                    module = pipe_state.GetSubStateShader(shader_stage.stage);
+                }
+
+                if (!module) {
                     // If module is null and there is a VkShaderModuleCreateInfo in the pNext chain of the stage info, then this
                     // module is part of a library and the state must be created
                     const auto shader_ci = LvlFindInChain<VkShaderModuleCreateInfo>(shader_stage.pNext);
-                    const uint32_t unique_shader_id = 0;
+                    const uint32_t unique_shader_id = (csm_states) ? (*csm_states)[stage].unique_shader_id : 0;
                     if (shader_ci) {
-                        // TODO GPU-AV rework required to get this value properly
                         module = state_data.CreateShaderModuleState(*shader_ci, unique_shader_id);
                     } else {
                         // shader_module_identifier could legally provide a null module handle
@@ -101,6 +105,7 @@ PIPELINE_STATE::StageStateVec PIPELINE_STATE::GetStageStates(const ValidationSta
                         module = state_data.CreateShaderModuleState(dummy_module_ci, unique_shader_id);
                     }
                 }
+
                 stage_states.emplace_back(&shader_stage, module);
                 stage_found = true;
             }
@@ -151,7 +156,7 @@ PIPELINE_STATE::StageStateVec PIPELINE_STATE::GetStageStates(const ValidationSta
 PIPELINE_STATE::ActiveSlotMap PIPELINE_STATE::GetActiveSlots(const StageStateVec &stage_states) {
     PIPELINE_STATE::ActiveSlotMap active_slots;
     for (const auto &stage : stage_states) {
-        if (stage.entrypoint == stage.module_state->end()) {
+        if (!stage.entrypoint) {
             continue;
         }
         // Capture descriptor uses for the pipeline
@@ -182,6 +187,7 @@ PIPELINE_STATE::ActiveSlotMap PIPELINE_STATE::GetActiveSlots(const StageStateVec
                     ++image_index;
                 }
             }
+            entry.write_without_formats_component_count_list = use.second.write_without_formats_component_count_list;
         }
     }
     return active_slots;
@@ -203,6 +209,32 @@ static uint32_t GetActiveShaders(const PIPELINE_STATE::StageStateVec &stages) {
     return result;
 }
 
+static bool UsesPipelineRobustness(const void *pNext, const PIPELINE_STATE::StageStateVec &stages) {
+    bool result = false;
+    const auto robustness_info = LvlFindInChain<VkPipelineRobustnessCreateInfoEXT>(pNext);
+    if (!robustness_info) {
+        return false;
+    }
+    result |= (robustness_info->storageBuffers == VK_PIPELINE_ROBUSTNESS_BUFFER_BEHAVIOR_ROBUST_BUFFER_ACCESS_2_EXT) ||
+              (robustness_info->storageBuffers == VK_PIPELINE_ROBUSTNESS_BUFFER_BEHAVIOR_ROBUST_BUFFER_ACCESS_EXT);
+    result |= (robustness_info->uniformBuffers == VK_PIPELINE_ROBUSTNESS_BUFFER_BEHAVIOR_ROBUST_BUFFER_ACCESS_2_EXT) ||
+              (robustness_info->uniformBuffers == VK_PIPELINE_ROBUSTNESS_BUFFER_BEHAVIOR_ROBUST_BUFFER_ACCESS_EXT);
+    if (!result) {
+        for (const auto &stage : stages) {
+            const auto stage_robustness_info = LvlFindInChain<VkPipelineRobustnessCreateInfoEXT>(stage.create_info->pNext);
+            if (stage_robustness_info) {
+                result |=
+                    (stage_robustness_info->storageBuffers == VK_PIPELINE_ROBUSTNESS_BUFFER_BEHAVIOR_ROBUST_BUFFER_ACCESS_2_EXT) ||
+                    (stage_robustness_info->storageBuffers == VK_PIPELINE_ROBUSTNESS_BUFFER_BEHAVIOR_ROBUST_BUFFER_ACCESS_EXT);
+                result |=
+                    (stage_robustness_info->uniformBuffers == VK_PIPELINE_ROBUSTNESS_BUFFER_BEHAVIOR_ROBUST_BUFFER_ACCESS_2_EXT) ||
+                    (stage_robustness_info->uniformBuffers == VK_PIPELINE_ROBUSTNESS_BUFFER_BEHAVIOR_ROBUST_BUFFER_ACCESS_EXT);
+            }
+        }
+    }
+    return result;
+}
+
 static bool UsesShaderModuleId(const PIPELINE_STATE::StageStateVec &stages) {
     bool result = false;
     for (const auto &stage : stages) {
@@ -215,25 +247,26 @@ static bool UsesShaderModuleId(const PIPELINE_STATE::StageStateVec &stages) {
 static layer_data::unordered_set<uint32_t> GetFSOutputLocations(const PIPELINE_STATE::StageStateVec &stage_states) {
     layer_data::unordered_set<uint32_t> result;
     for (const auto &stage : stage_states) {
-        if (stage.entrypoint == stage.module_state->end()) {
+        if (!stage.entrypoint) {
             continue;
         }
         if (stage.stage_flag == VK_SHADER_STAGE_FRAGMENT_BIT) {
-            result = stage.module_state->CollectWritableOutputLocationinFS(stage.entrypoint);
+            result = stage.module_state->CollectWritableOutputLocationinFS(*(stage.entrypoint));
             break;
         }
     }
     return result;
 }
 
-static VkPrimitiveTopology GetTopologyAtRasterizer(const PIPELINE_STATE::StageStateVec &stage_states,
-                                                   const safe_VkPipelineInputAssemblyStateCreateInfo *assembly_state) {
-    VkPrimitiveTopology result = assembly_state ? assembly_state->topology : static_cast<VkPrimitiveTopology>(0);
-    for (const auto &stage : stage_states) {
-        if (stage.entrypoint == stage.module_state->end()) {
+static VkPrimitiveTopology GetTopologyAtRasterizer(const PIPELINE_STATE &pipeline) {
+    auto result = (pipeline.vertex_input_state && pipeline.vertex_input_state->input_assembly_state)
+                      ? pipeline.vertex_input_state->input_assembly_state->topology
+                      : VK_PRIMITIVE_TOPOLOGY_MAX_ENUM;
+    for (const auto &stage : pipeline.stage_state) {
+        if (!stage.entrypoint) {
             continue;
         }
-        auto stage_topo = stage.module_state->GetTopology(stage.entrypoint);
+        auto stage_topo = stage.module_state->GetTopology(*(stage.entrypoint));
         if (stage_topo) {
             result = *stage_topo;
         }
@@ -269,7 +302,7 @@ std::shared_ptr<VertexInputState> PIPELINE_STATE::CreateVertexInputState(const P
 // static
 std::shared_ptr<PreRasterState> PIPELINE_STATE::CreatePreRasterState(const PIPELINE_STATE &p, const ValidationStateTracker &state,
                                                                      const safe_VkGraphicsPipelineCreateInfo &create_info,
-                                                                     std::shared_ptr<const RENDER_PASS_STATE> rp) {
+                                                                     const std::shared_ptr<const RENDER_PASS_STATE> &rp) {
     const auto lib_type = GetGraphicsLibType(create_info);
     if (lib_type & VK_GRAPHICS_PIPELINE_LIBRARY_PRE_RASTERIZATION_SHADERS_BIT_EXT) {  // Pre-raster graphics library
         return std::make_shared<PreRasterState>(p, state, create_info, rp);
@@ -294,7 +327,7 @@ std::shared_ptr<PreRasterState> PIPELINE_STATE::CreatePreRasterState(const PIPEL
 // static
 std::shared_ptr<FragmentShaderState> PIPELINE_STATE::CreateFragmentShaderState(
     const PIPELINE_STATE &p, const ValidationStateTracker &state, const VkGraphicsPipelineCreateInfo &create_info,
-    const safe_VkGraphicsPipelineCreateInfo &safe_create_info, std::shared_ptr<const RENDER_PASS_STATE> rp) {
+    const safe_VkGraphicsPipelineCreateInfo &safe_create_info, const std::shared_ptr<const RENDER_PASS_STATE> &rp) {
     const auto lib_type = GetGraphicsLibType(create_info);
     if (lib_type & VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_SHADER_BIT_EXT) {  // Fragment shader graphics library
         return std::make_shared<FragmentShaderState>(p, state, create_info, rp);
@@ -321,7 +354,7 @@ std::shared_ptr<FragmentShaderState> PIPELINE_STATE::CreateFragmentShaderState(
 // create_info.
 std::shared_ptr<FragmentOutputState> PIPELINE_STATE::CreateFragmentOutputState(
     const PIPELINE_STATE &p, const ValidationStateTracker &state, const VkGraphicsPipelineCreateInfo &create_info,
-    const safe_VkGraphicsPipelineCreateInfo &safe_create_info, std::shared_ptr<const RENDER_PASS_STATE> rp) {
+    const safe_VkGraphicsPipelineCreateInfo &safe_create_info, const std::shared_ptr<const RENDER_PASS_STATE> &rp) {
     const auto lib_type = GetGraphicsLibType(create_info);
     if (lib_type & VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_OUTPUT_INTERFACE_BIT_EXT) {  // Fragment output graphics library
         return std::make_shared<FragmentOutputState>(p, create_info, rp);
@@ -438,9 +471,58 @@ VkShaderModule PIPELINE_STATE::GetShaderModuleByCIIndex<VkRayTracingPipelineCrea
     return create_info.raytracing.pStages[i].module;
 }
 
+// TODO (ncesario) this needs to be automated. As a first step, need to leverage SubState::ValidShaderStages()
+std::shared_ptr<const SHADER_MODULE_STATE> PIPELINE_STATE::GetSubStateShader(VkShaderStageFlagBits state) const {
+    switch (state) {
+        case VK_SHADER_STAGE_VERTEX_BIT: {
+            const auto sub_state =
+                PIPELINE_STATE::GetSubState<VK_GRAPHICS_PIPELINE_LIBRARY_PRE_RASTERIZATION_SHADERS_BIT_EXT>(*this);
+            return (sub_state) ? sub_state->vertex_shader : nullptr;
+            break;
+        }
+        case VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT: {
+            const auto sub_state =
+                PIPELINE_STATE::GetSubState<VK_GRAPHICS_PIPELINE_LIBRARY_PRE_RASTERIZATION_SHADERS_BIT_EXT>(*this);
+            return (sub_state) ? sub_state->tessc_shader : nullptr;
+            break;
+        }
+        case VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT: {
+            const auto sub_state =
+                PIPELINE_STATE::GetSubState<VK_GRAPHICS_PIPELINE_LIBRARY_PRE_RASTERIZATION_SHADERS_BIT_EXT>(*this);
+            return (sub_state) ? sub_state->tesse_shader : nullptr;
+            break;
+        }
+        case VK_SHADER_STAGE_GEOMETRY_BIT: {
+            const auto sub_state =
+                PIPELINE_STATE::GetSubState<VK_GRAPHICS_PIPELINE_LIBRARY_PRE_RASTERIZATION_SHADERS_BIT_EXT>(*this);
+            return (sub_state) ? sub_state->geometry_shader : nullptr;
+            break;
+        }
+        case VK_SHADER_STAGE_TASK_BIT_EXT: {
+            const auto sub_state =
+                PIPELINE_STATE::GetSubState<VK_GRAPHICS_PIPELINE_LIBRARY_PRE_RASTERIZATION_SHADERS_BIT_EXT>(*this);
+            return (sub_state) ? sub_state->task_shader : nullptr;
+            break;
+        }
+        case VK_SHADER_STAGE_MESH_BIT_EXT: {
+            const auto sub_state =
+                PIPELINE_STATE::GetSubState<VK_GRAPHICS_PIPELINE_LIBRARY_PRE_RASTERIZATION_SHADERS_BIT_EXT>(*this);
+            return (sub_state) ? sub_state->mesh_shader : nullptr;
+            break;
+        }
+        case VK_SHADER_STAGE_FRAGMENT_BIT: {
+            const auto sub_state = PIPELINE_STATE::GetSubState<VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_SHADER_BIT_EXT>(*this);
+            return (sub_state) ? sub_state->fragment_shader : nullptr;
+            break;
+        };
+        default:
+            return {};
+    }
+}
+
 PIPELINE_STATE::PIPELINE_STATE(const ValidationStateTracker *state_data, const VkGraphicsPipelineCreateInfo *pCreateInfo,
                                std::shared_ptr<const RENDER_PASS_STATE> &&rpstate,
-                               std::shared_ptr<const PIPELINE_LAYOUT_STATE> &&layout)
+                               std::shared_ptr<const PIPELINE_LAYOUT_STATE> &&layout, CreateShaderModuleStates *csm_states)
     : BASE_NODE(static_cast<VkPipeline>(VK_NULL_HANDLE), kVulkanObjectTypePipeline),
       rp_state(rpstate),
       create_info(pCreateInfo, rpstate),
@@ -450,13 +532,16 @@ PIPELINE_STATE::PIPELINE_STATE(const ValidationStateTracker *state_data, const V
       fragment_shader_state(CreateFragmentShaderState(*this, *state_data, *pCreateInfo, create_info.graphics, rpstate)),
       fragment_output_state(CreateFragmentOutputState(*this, *state_data, *pCreateInfo, create_info.graphics, rpstate)),
       rendering_create_info(LvlFindInChain<VkPipelineRenderingCreateInfo>(PNext())),
-      stage_state(GetStageStates(*state_data, *this)),
+      stage_state(GetStageStates(*state_data, *this, csm_states)),
       fragmentShader_writable_output_location_list(GetFSOutputLocations(stage_state)),
       active_slots(GetActiveSlots(stage_state)),
       max_active_slot(GetMaxActiveSlot(active_slots)),
       active_shaders(GetActiveShaders(stage_state)),
-      topology_at_rasterizer(GetTopologyAtRasterizer(stage_state, create_info.graphics.pInputAssemblyState)),
-      uses_shader_module_id(UsesShaderModuleId(stage_state)) {
+      topology_at_rasterizer(GetTopologyAtRasterizer(*this)),
+      uses_shader_module_id(UsesShaderModuleId(stage_state)),
+      descriptor_buffer_mode((create_info.graphics.flags & VK_PIPELINE_CREATE_DESCRIPTOR_BUFFER_BIT_EXT) != 0),
+      uses_pipeline_robustness(UsesPipelineRobustness(PNext(), stage_state)),
+      csm_states(csm_states) {
     const auto link_info = LvlFindInChain<VkPipelineLibraryCreateInfoKHR>(PNext());
     if (link_info) {
         // accumulate dynamic state
@@ -517,27 +602,31 @@ PIPELINE_STATE::PIPELINE_STATE(const ValidationStateTracker *state_data, const V
 }
 
 PIPELINE_STATE::PIPELINE_STATE(const ValidationStateTracker *state_data, const VkComputePipelineCreateInfo *pCreateInfo,
-                               std::shared_ptr<const PIPELINE_LAYOUT_STATE> &&layout)
+                               std::shared_ptr<const PIPELINE_LAYOUT_STATE> &&layout, CreateShaderModuleStates *csm_states)
     : BASE_NODE(static_cast<VkPipeline>(VK_NULL_HANDLE), kVulkanObjectTypePipeline),
       create_info(pCreateInfo),
-      stage_state(GetStageStates(*state_data, *this)),
+      stage_state(GetStageStates(*state_data, *this, csm_states)),
       active_slots(GetActiveSlots(stage_state)),
       active_shaders(GetActiveShaders(stage_state)),
-      topology_at_rasterizer{},
       uses_shader_module_id(UsesShaderModuleId(stage_state)),
+      descriptor_buffer_mode((create_info.compute.flags & VK_PIPELINE_CREATE_DESCRIPTOR_BUFFER_BIT_EXT) != 0),
+      uses_pipeline_robustness(UsesPipelineRobustness(PNext(), stage_state)),
+      csm_states(csm_states),
       merged_graphics_layout(layout) {
     assert(active_shaders == VK_SHADER_STAGE_COMPUTE_BIT);
 }
 
 PIPELINE_STATE::PIPELINE_STATE(const ValidationStateTracker *state_data, const VkRayTracingPipelineCreateInfoKHR *pCreateInfo,
-                               std::shared_ptr<const PIPELINE_LAYOUT_STATE> &&layout)
+                               std::shared_ptr<const PIPELINE_LAYOUT_STATE> &&layout, CreateShaderModuleStates *csm_states)
     : BASE_NODE(static_cast<VkPipeline>(VK_NULL_HANDLE), kVulkanObjectTypePipeline),
       create_info(pCreateInfo),
-      stage_state(GetStageStates(*state_data, *this)),
+      stage_state(GetStageStates(*state_data, *this, csm_states)),
       active_slots(GetActiveSlots(stage_state)),
       active_shaders(GetActiveShaders(stage_state)),
-      topology_at_rasterizer{},
       uses_shader_module_id(UsesShaderModuleId(stage_state)),
+      descriptor_buffer_mode((create_info.raytracing.flags & VK_PIPELINE_CREATE_DESCRIPTOR_BUFFER_BIT_EXT) != 0),
+      uses_pipeline_robustness(UsesPipelineRobustness(PNext(), stage_state)),
+      csm_states(csm_states),
       merged_graphics_layout(std::move(layout)) {
     assert(0 == (active_shaders &
                  ~(VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR |
@@ -545,14 +634,16 @@ PIPELINE_STATE::PIPELINE_STATE(const ValidationStateTracker *state_data, const V
 }
 
 PIPELINE_STATE::PIPELINE_STATE(const ValidationStateTracker *state_data, const VkRayTracingPipelineCreateInfoNV *pCreateInfo,
-                               std::shared_ptr<const PIPELINE_LAYOUT_STATE> &&layout)
+                               std::shared_ptr<const PIPELINE_LAYOUT_STATE> &&layout, CreateShaderModuleStates *csm_states)
     : BASE_NODE(static_cast<VkPipeline>(VK_NULL_HANDLE), kVulkanObjectTypePipeline),
       create_info(pCreateInfo),
-      stage_state(GetStageStates(*state_data, *this)),
+      stage_state(GetStageStates(*state_data, *this, csm_states)),
       active_slots(GetActiveSlots(stage_state)),
       active_shaders(GetActiveShaders(stage_state)),
-      topology_at_rasterizer{},
       uses_shader_module_id(UsesShaderModuleId(stage_state)),
+      descriptor_buffer_mode((create_info.graphics.flags & VK_PIPELINE_CREATE_DESCRIPTOR_BUFFER_BIT_EXT) != 0),
+      uses_pipeline_robustness(UsesPipelineRobustness(PNext(), stage_state)),
+      csm_states(csm_states),
       merged_graphics_layout(std::move(layout)) {
     assert(0 == (active_shaders &
                  ~(VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR |

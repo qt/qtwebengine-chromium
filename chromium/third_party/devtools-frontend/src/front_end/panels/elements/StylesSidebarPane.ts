@@ -69,6 +69,7 @@ import {
 } from './StylePropertiesSection.js';
 
 import * as LayersWidget from './LayersWidget.js';
+import {assertNotNullOrUndefined} from '../../core/platform/platform.js';
 
 const UIStrings = {
   /**
@@ -212,6 +213,10 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
   private idleCallbackManager: IdleCallbackManager|null;
   private needsForceUpdate: boolean;
   private readonly resizeThrottler: Common.Throttler.Throttler;
+
+  private scrollerElement?: Element;
+  private readonly boundOnScroll: (event: Event) => void;
+
   private readonly imagePreviewPopover: ImagePreviewPopover;
   #hintPopoverHelper: UI.PopoverHelper.PopoverHelper;
   activeCSSAngle: InlineEditor.CSSAngle.CSSAngle|null;
@@ -275,6 +280,7 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
     this.contentElement.addEventListener('copy', this.clipboardCopy.bind(this));
     this.resizeThrottler = new Common.Throttler.Throttler(100);
 
+    this.boundOnScroll = this.onScroll.bind(this);
     this.imagePreviewPopover = new ImagePreviewPopover(this.contentElement, event => {
       const link = event.composedPath()[0];
       if (link instanceof Element) {
@@ -313,6 +319,10 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
     });
     this.#hintPopoverHelper.setTimeout(200);
     this.#hintPopoverHelper.setHasPadding(true);
+  }
+
+  private onScroll(_event: Event): void {
+    this.hideAllPopovers();
   }
 
   swatchPopoverHelper(): InlineEditor.SwatchPopoverHelper.SwatchPopoverHelper {
@@ -449,6 +459,10 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
 
   jumpToProperty(propertyName: string): void {
     this.decorator.findAndHighlightPropertyName(propertyName);
+  }
+
+  jumpToSectionBlock(section: string): void {
+    this.decorator.findAndHighlightSectionBlock(section);
   }
 
   forceUpdate(): void {
@@ -610,6 +624,19 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
     this.#updateAbortController?.abort();
     this.#updateAbortController = new AbortController();
     await this.#innerDoUpdate(this.#updateAbortController.signal);
+
+    // Hide all popovers when scrolling.
+    // Styles and Computed panels both have popover (e.g. imagePreviewPopover),
+    // so we need to bind both scroll events.
+    const scrollerElementLists =
+        this?.contentElement?.enclosingNodeOrSelfWithClass('style-panes-wrapper')
+            ?.parentElement?.querySelectorAll('.style-panes-wrapper') as unknown as NodeListOf<Element>;
+    if (scrollerElementLists.length > 0) {
+      for (const element of scrollerElementLists) {
+        this.scrollerElement = element;
+        this.scrollerElement.addEventListener('scroll', this.boundOnScroll, false);
+      }
+    }
   }
 
   async #innerDoUpdate(signal: AbortSignal): Promise<void> {
@@ -1167,6 +1194,14 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
       this.activeCSSAngle.minify();
       this.activeCSSAngle = null;
     }
+
+    if (this.#hintPopoverHelper) {
+      this.#hintPopoverHelper.hidePopover();
+    }
+  }
+
+  getSectionBlockByName(name: string): SectionBlock|undefined {
+    return this.sectionBlocks.find(block => block.titleElement()?.textContent === name);
   }
 
   allSections(): StylePropertiesSection[] {
@@ -1567,35 +1602,42 @@ export class SectionBlock {
 export class IdleCallbackManager {
   private discarded: boolean;
   private readonly promises: Promise<void>[];
+  private readonly queue: {fn: () => void, resolve: () => void, reject: (err: unknown) => void}[];
   constructor() {
     this.discarded = false;
     this.promises = [];
+    this.queue = [];
   }
 
   discard(): void {
     this.discarded = true;
   }
 
-  schedule(fn: () => void, timeout: number = 100): void {
+  schedule(fn: () => void): void {
     if (this.discarded) {
       return;
     }
-    this.promises.push(new Promise((resolve, reject) => {
-      const run = (): void => {
-        try {
-          fn();
-          resolve();
-        } catch (err) {
-          reject(err);
+    const promise = new Promise<void>((resolve, reject) => {
+      this.queue.push({fn, resolve, reject});
+    });
+    this.promises.push(promise);
+    this.scheduleIdleCallback(/* timeout=*/ 100);
+  }
+
+  protected scheduleIdleCallback(timeout: number): void {
+    window.requestIdleCallback(() => {
+      const next = this.queue.shift();
+      assertNotNullOrUndefined(next);
+
+      try {
+        if (!this.discarded) {
+          next.fn();
         }
-      };
-      window.requestIdleCallback(() => {
-        if (this.discarded) {
-          return resolve();
-        }
-        run();
-      }, {timeout});
-    }));
+        next.resolve();
+      } catch (err) {
+        next.reject(err);
+      }
+    }, {timeout});
   }
 
   awaitDone(): Promise<void[]> {
@@ -1769,6 +1811,29 @@ export class CSSPropertyPrompt extends UI.TextPrompt.TextPrompt {
     const anywhereResults: Array<CompletionResult> = [];
     if (!editingVariable) {
       this.cssCompletions.forEach(completion => filterCompletions.call(this, completion, false /* variable */));
+      // When and only when editing property names, we also include aliases for autocomplete.
+      if (this.isEditingName) {
+        SDK.CSSMetadata.cssMetadata().aliasesFor().forEach((canonicalProperty, alias) => {
+          const index = alias.toLowerCase().indexOf(lowerQuery);
+          if (index !== 0) {
+            return;
+          }
+          const aliasResult: CompletionResult = {
+            text: alias,
+            priority: SDK.CSSMetadata.cssMetadata().propertyUsageWeight(alias),
+            isCSSVariableColor: false,
+          };
+          const canonicalPropertyResult: CompletionResult = {
+            text: canonicalProperty,
+            priority: SDK.CSSMetadata.cssMetadata().propertyUsageWeight(canonicalProperty),
+            subtitle: `= ${alias}`,  // This explains why this canonicalProperty is prompted.
+            isCSSVariableColor: false,
+          };
+          // We add aliasResult *before* the canonicalProperty one because we want to prompt
+          // the alias one first, since it corresponds to what the user has typed.
+          prefixResults.push(aliasResult, canonicalPropertyResult);
+        });
+      }
     }
     const node = this.treeElement.node();
     if (this.isEditingName && node) {
@@ -1889,9 +1954,9 @@ export class CSSPropertyPrompt extends UI.TextPrompt.TextPrompt {
         const computedValue =
             this.treeElement.matchedStyles().computeCSSVariable(this.treeElement.property.ownerStyle, completion);
         if (computedValue) {
-          const color = Common.Color.Color.parse(computedValue);
+          const color = Common.Color.parse(computedValue);
           if (color) {
-            result.subtitleRenderer = swatchRenderer.bind(null, color);
+            result.subtitleRenderer = colorSwatchRenderer.bind(null, color);
             result.isCSSVariableColor = true;
           } else {
             result.subtitleRenderer = computedValueSubtitleRenderer.bind(null, computedValue);
@@ -1909,7 +1974,7 @@ export class CSSPropertyPrompt extends UI.TextPrompt.TextPrompt {
       }
     }
 
-    function swatchRenderer(color: Common.Color.Color): Element {
+    function colorSwatchRenderer(color: Common.Color.Color): Element {
       const swatch = new InlineEditor.ColorSwatch.ColorSwatch();
       swatch.renderColor(color);
       swatch.style.pointerEvents = 'none';
@@ -1964,6 +2029,7 @@ export class StylesSidebarPropertyRenderer {
   private varHandler: ((arg0: string) => Node)|null;
   private angleHandler: ((arg0: string) => Node)|null;
   private lengthHandler: ((arg0: string) => Node)|null;
+  private animationNameHandler: ((data: string) => Node)|null;
 
   constructor(rule: SDK.CSSRule.CSSRule|null, node: SDK.DOMModel.DOMNode|null, name: string, value: string) {
     this.rule = rule;
@@ -1976,6 +2042,7 @@ export class StylesSidebarPropertyRenderer {
     this.shadowHandler = null;
     this.gridHandler = null;
     this.varHandler = document.createTextNode.bind(document);
+    this.animationNameHandler = null;
     this.angleHandler = null;
     this.lengthHandler = null;
   }
@@ -2002,6 +2069,10 @@ export class StylesSidebarPropertyRenderer {
 
   setVarHandler(handler: (arg0: string) => Node): void {
     this.varHandler = handler;
+  }
+
+  setAnimationNameHandler(handler: (arg0: string) => Node): void {
+    this.animationNameHandler = handler;
   }
 
   setAngleHandler(handler: (arg0: string) => Node): void {
@@ -2050,13 +2121,20 @@ export class StylesSidebarPropertyRenderer {
 
     const regexes = [SDK.CSSMetadata.VariableRegex, SDK.CSSMetadata.URLRegex];
     const processors = [this.varHandler, this.processURL.bind(this)];
-    if (this.bezierHandler && metadata.isBezierAwareProperty(this.propertyName)) {
-      regexes.push(UI.Geometry.CubicBezier.Regex);
-      processors.push(this.bezierHandler);
-    }
+    // Handle `color` properties before handling other ones
+    // because color Regex is fairly narrow to only select real colors.
+    // However, some other Regexes like Bezier is very wide (text that
+    // contains keyword 'linear'. So, we're handling the narrowly matching
+    // handler first so that we will reduce the possibility of wrong matches.
+    // i.e. color(srgb-linear ...) matching as a bezier curve (because
+    // of the `linear` keyword)
     if (this.colorHandler && metadata.isColorAwareProperty(this.propertyName)) {
       regexes.push(Common.Color.Regex);
       processors.push(this.colorHandler);
+    }
+    if (this.bezierHandler && metadata.isBezierAwareProperty(this.propertyName)) {
+      regexes.push(UI.Geometry.CubicBezier.Regex);
+      processors.push(this.bezierHandler);
     }
     if (this.angleHandler && metadata.isAngleAwareProperty(this.propertyName)) {
       // TODO(changhaohan): crbug.com/1138628 refactor this to handle unitless 0 cases
@@ -2075,6 +2153,10 @@ export class StylesSidebarPropertyRenderer {
       // TODO(changhaohan): crbug.com/1138628 refactor this to handle unitless 0 cases
       regexes.push(InlineEditor.CSSLengthUtils.CSSLengthRegex);
       processors.push(this.lengthHandler);
+    }
+    if (this.propertyName === 'animation-name') {
+      regexes.push(/^.*$/g);
+      processors.push(this.animationNameHandler);
     }
     const results = TextUtils.TextUtils.Utils.splitStringByRegexes(this.propertyValue, regexes);
     for (let i = 0; i < results.length; i++) {

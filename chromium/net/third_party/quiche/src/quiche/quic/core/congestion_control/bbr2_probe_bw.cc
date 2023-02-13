@@ -10,7 +10,6 @@
 #include "quiche/quic/core/quic_time.h"
 #include "quiche/quic/core/quic_types.h"
 #include "quiche/quic/platform/api/quic_flag_utils.h"
-#include "quiche/quic/platform/api/quic_flags.h"
 #include "quiche/quic/platform/api/quic_logging.h"
 
 namespace quic {
@@ -198,11 +197,7 @@ Bbr2ProbeBwMode::AdaptUpperBoundsResult Bbr2ProbeBwMode::MaybeAdaptUpperBounds(
     if (cycle_.is_sample_from_probing) {
       cycle_.is_sample_from_probing = false;
       if (!send_state.is_app_limited ||
-          Params().probe_up_dont_exit_if_no_queue_) {
-        if (send_state.is_app_limited) {
-          // If there's excess loss or a queue is building, exit even if the
-          // last sample was app limited.
-        }
+          Params().max_probe_up_queue_rounds > 0) {
         const QuicByteCount inflight_target =
             sender_->GetTargetBytesInflight() * (1.0 - Params().beta);
         if (inflight_at_send >= inflight_target) {
@@ -354,38 +349,17 @@ void Bbr2ProbeBwMode::ProbeInflightHighUpward(
     // the number of bytes delivered in a round is larger inflight_hi.
     return;
   }
-  if (Params().probe_bw_check_cwnd_limited_before_aggregation_epoch) {
-    if (!model_->cwnd_limited_before_aggregation_epoch()) {
-      QUIC_DVLOG(3) << sender_
-                    << " Raising inflight_hi early return: Not cwnd limited "
-                       "before aggregation epoch.";
-      // Not fully utilizing cwnd, so can't safely grow.
+  if (Params().probe_up_simplify_inflight_hi) {
+    // Raise inflight_hi exponentially if it was utilized this round.
+    cycle_.probe_up_acked += congestion_event.bytes_acked;
+    if (!congestion_event.end_of_round_trip) {
       return;
     }
-  } else if (Params().probe_up_includes_acks_after_cwnd_limited) {
-    // Don't continue adding bytes to probe_up_acked if the sender was not
-    // app-limited after being inflight_hi limited at least once.
-    if (!cycle_.probe_up_app_limited_since_inflight_hi_limited_ ||
-        congestion_event.last_packet_send_state.is_app_limited) {
-      cycle_.probe_up_app_limited_since_inflight_hi_limited_ = false;
-      if (congestion_event.prior_bytes_in_flight <
-          congestion_event.prior_cwnd) {
-        QUIC_DVLOG(3) << sender_
-                      << " Raising inflight_hi early return: Not cwnd limited.";
-        // Not fully utilizing cwnd, so can't safely grow.
-        return;
-      }
-
-      if (congestion_event.prior_cwnd < model_->inflight_hi()) {
-        QUIC_DVLOG(3)
-            << sender_
-            << " Raising inflight_hi early return: inflight_hi not fully used.";
-        // Not fully using inflight_hi, so don't grow it.
-        return;
-      }
+    if (!model_->inflight_hi_limited_in_round() ||
+        model_->loss_events_in_round() > 0) {
+      cycle_.probe_up_acked = 0;
+      return;
     }
-    // Start a new period of adding bytes_acked, because inflight_hi limited.
-    cycle_.probe_up_app_limited_since_inflight_hi_limited_ = true;
   } else {
     if (congestion_event.prior_bytes_in_flight < congestion_event.prior_cwnd) {
       QUIC_DVLOG(3) << sender_
@@ -393,18 +367,20 @@ void Bbr2ProbeBwMode::ProbeInflightHighUpward(
       // Not fully utilizing cwnd, so can't safely grow.
       return;
     }
+
+    if (congestion_event.prior_cwnd < model_->inflight_hi()) {
+      QUIC_DVLOG(3)
+          << sender_
+          << " Raising inflight_hi early return: inflight_hi not fully used.";
+      // Not fully using inflight_hi, so don't grow it.
+      return;
+    }
+
+    // Increase inflight_hi by the number of probe_up_bytes within
+    // probe_up_acked.
+    cycle_.probe_up_acked += congestion_event.bytes_acked;
   }
 
-  if (congestion_event.prior_cwnd < model_->inflight_hi()) {
-    QUIC_DVLOG(3)
-        << sender_
-        << " Raising inflight_hi early return: inflight_hi not fully used.";
-    // Not fully using inflight_hi, so don't grow it.
-    return;
-  }
-
-  // Increase inflight_hi by the number of probe_up_bytes within probe_up_acked.
-  cycle_.probe_up_acked += congestion_event.bytes_acked;
   if (cycle_.probe_up_acked >= cycle_.probe_up_bytes) {
     uint64_t delta = cycle_.probe_up_acked / cycle_.probe_up_bytes;
     cycle_.probe_up_acked -= delta * cycle_.probe_up_bytes;
@@ -480,10 +456,16 @@ void Bbr2ProbeBwMode::UpdateProbeUp(
     // TCP uses min_rtt instead of a full round:
     //   HasPhaseLasted(model_->MinRtt(), congestion_event)
   } else if (cycle_.rounds_in_phase > 0) {
-    if (Params().probe_up_dont_exit_if_no_queue_) {
-      is_queuing = congestion_event.end_of_round_trip &&
-                   model_->CheckPersistentQueue(
-                       congestion_event, Params().probe_bw_probe_inflight_gain);
+    if (Params().max_probe_up_queue_rounds > 0) {
+      if (congestion_event.end_of_round_trip) {
+        model_->CheckPersistentQueue(congestion_event,
+                                     Params().full_bw_threshold);
+        if (model_->rounds_with_queueing() >=
+            Params().max_probe_up_queue_rounds) {
+          QUIC_RELOADABLE_FLAG_COUNT_N(quic_bbr2_probe_two_rounds, 1, 3);
+          is_queuing = true;
+        }
+      }
     } else {
       QuicByteCount queuing_threshold_extra_bytes =
           model_->QueueingThresholdExtraBytes();
@@ -491,7 +473,7 @@ void Bbr2ProbeBwMode::UpdateProbeUp(
         queuing_threshold_extra_bytes += model_->MaxAckHeight();
       }
       QuicByteCount queuing_threshold =
-          (Params().probe_bw_probe_inflight_gain * model_->BDP()) +
+          (Params().full_bw_threshold * model_->BDP()) +
           queuing_threshold_extra_bytes;
 
       is_queuing = congestion_event.bytes_in_flight >= queuing_threshold;

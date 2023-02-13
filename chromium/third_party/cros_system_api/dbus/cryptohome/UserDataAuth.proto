@@ -92,6 +92,8 @@ enum CryptohomeErrorCode {
   CRYPTOHOME_ERROR_UNUSABLE_VAULT = 53;
   CRYPTOHOME_REMOVE_CREDENTIALS_FAILED = 54;
   CRYPTOHOME_UPDATE_CREDENTIALS_FAILED = 55;
+  CRYPTOHOME_ERROR_RECOVERY_TRANSIENT = 56;
+  CRYPTOHOME_ERROR_RECOVERY_FATAL = 57;
   // Note: After adding new fields to this enum, the new enum should be added
   // to ash/components/login/auth/auth_session_authenticator.cc's
   // AuthSessionAuthenticator::ProcessCryptohomeError() so that Chromium
@@ -470,39 +472,6 @@ message RemoveKeyReply {
   CryptohomeErrorCode error = 1;
 }
 
-// Input parameters to MassRemoveKeys()
-message MassRemoveKeysRequest {
-  // The owner of the key to remove
-  cryptohome.AccountIdentifier account_id = 1;
-  // Authorization from the user
-  cryptohome.AuthorizationRequest authorization_request = 2;
-
-  // Remove all keys whose labels are NOT included in exempt_key_data.
-  repeated cryptohome.KeyData exempt_key_data = 3;
-}
-
-// Output parameters for MassRemoveKeys()
-message MassRemoveKeysReply {
-  // Indicates an error if error is not empty.
-  CryptohomeErrorCode error = 1;
-}
-
-// Input parameters to MigrateKey()
-message MigrateKeyRequest {
-  // The owner whose key are going to migrate
-  cryptohome.AccountIdentifier account_id = 1;
-  // Authorization from the user
-  cryptohome.AuthorizationRequest authorization_request = 2;
-  // The new secret for the key.
-  bytes secret = 3;
-}
-
-// Output parameters for MigrateKey()
-message MigrateKeyReply {
-  // Indicates an error if error is not empty.
-  CryptohomeErrorCode error = 1;
-}
-
 // StartFingerprintAuthSession sets BiometricsDaemon and the Fingerprint MCU to
 // match mode. EndFingerprintAuthSession sets them back to non-match mode.
 // A typical call sequence involves one or more other calls that actually wait
@@ -594,6 +563,17 @@ message GetHibernateSecretReply {
   bytes hibernate_secret = 2;
 }
 
+// Input parameters to GetEncryptionInfo()
+message GetEncryptionInfoRequest {}
+
+// Output parameters for GetEncryptionInfo()
+message GetEncryptionInfoReply {
+  // Indicates an error if |error| is not empty.
+  CryptohomeErrorCode error = 1;
+  // Set to true if keylocker is supported.
+  bool keylocker_supported = 2;
+}
+
 // TODO(b/126307305): For the messages, below, we'll need to add the
 // documentations for them.
 
@@ -632,10 +612,9 @@ enum DircryptoMigrationStatus {
 
 // The data that comes with DircryptoMigrationProgress signal.
 message DircryptoMigrationProgress {
-  // See cryptohome::dircrypto_data_migrator::MigrationHelper::ProgressCallback
-  // for more information.
-
-  // The status of the migration
+  // The status of the migration. If this is not
+  // |DIRCRYPTO_MIGRATION_IN_PROGRESS|, the following two fields |current_bytes|
+  // and |total_bytes| should be ignored as they are undefined.
   DircryptoMigrationStatus status = 1;
 
   // The amount of bytes that we've migrated over.
@@ -1605,6 +1584,45 @@ message ListAuthFactorsReply {
   repeated AuthFactorWithStatus configured_auth_factors_with_status = 5;
   // All of the auth factor types supported for this user.
   repeated AuthFactorType supported_auth_factors = 4;
+}
+
+message RecoveryExtendedInfoRequest {
+  // Max number of latest RecoveryIds to be returned.
+  uint32 max_depth = 1;
+}
+
+message RecoveryExtendedInfoReply {
+  // List of latest recovery_ids of the user or empty list if they do not exist.
+  // The list begins with the current recovery_id and contains |max_depth| or
+  // the total number of ids generated so far whichever is bigger.
+  repeated string recovery_ids = 1;
+}
+
+message GetAuthFactorExtendedInfoRequest {
+  // The account of a user.
+  cryptohome.AccountIdentifier account_id = 1;
+  // Label of the AuthFactor to be returned.
+  string auth_factor_label = 2;
+  // Specifies the bits of data expected in the response.
+  oneof extended_info {
+    RecoveryExtendedInfoRequest recovery_info_request = 3;
+  }
+}
+
+message GetAuthFactorExtendedInfoReply {
+  // Return the status of the request.
+  CryptohomeErrorCode error = 1;
+  // Indicate an error if this field exists.
+  // This field is replacing the |error| field above, for more information on
+  // which field to use and the process on the migration, see comment in
+  // CryptohomeErrorInfo.
+  CryptohomeErrorInfo error_info = 2;
+  // All of the auth factors configured for the user.
+  AuthFactor auth_factor = 3;
+  // Extended data for for the AuthFactor.
+  oneof extended_info {
+    RecoveryExtendedInfoReply recovery_info_reply = 4;
+  }
 }
 
 // GetRecoveryRequestRequest is built when a user is trying to get the
