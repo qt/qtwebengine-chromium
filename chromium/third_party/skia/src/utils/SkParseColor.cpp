@@ -8,6 +8,9 @@
 
 #include "include/utils/SkParse.h"
 
+#include <algorithm> // std::lower_bound
+#include <iterator>
+
 static constexpr const char* gColorNames[] = {
     "aliceblue",
     "antiquewhite",
