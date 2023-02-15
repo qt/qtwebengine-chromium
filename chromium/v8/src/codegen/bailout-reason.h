@@ -90,6 +90,7 @@ namespace internal {
   V(kNoReason, "no reason")                                                 \
                                                                             \
   V(kBailedOutDueToDependencyChange, "Bailed out due to dependency change") \
+  V(kConcurrentMapDeprecation, "Maps became deprecated during optimization") \
   V(kCodeGenerationFailed, "Code generation failed")                        \
   V(kCyclicObjectStateDetectedInEscapeAnalysis,                             \
     "Cyclic object state detected by escape analysis")                      \
