@@ -36,7 +36,7 @@
 #include <GL/wglext.h>
 #elif BUILDFLAG(IS_MAC)
 #include <OpenGL/OpenGL.h>
-#elif BUILDFLAG(IS_LINUX)
+#elif defined(USE_GLX)
 using Display = struct _XDisplay;
 using Bool = int;
 using Status = int;
@@ -45,6 +45,18 @@ using Colormap = XID;
 using Font = XID;
 using Pixmap = XID;
 using Window = XID;
+using GLXPixmap = XID;
+using GLXWindow = XID;
+using GLXDrawable = XID;
+using GLXPbuffer = XID;
+using GLXContextID = XID;
+using GLXContext = struct __GLXcontextRec*;
+using GLXFBConfig = struct __GLXFBConfigRec*;
+struct XVisualInfo;
+
+
+#include <GL/glxext.h>
+#include <GL/glxtokens.h>
 #endif
 
 // GLES2 defines not part of Desktop GL
@@ -541,7 +553,12 @@ struct GL_EXPORT DriverEGL {
 #if defined(USE_GLX)
 struct GL_EXPORT DriverGLX {
   void InitializeStaticBindings();
+#ifdef TOOLKIT_QT
+  void InitializeExtensionBindings(const std::string&);
+#else
   void InitializeExtensionBindings();
+#endif
+
   void ClearBindings();
 
   ProcsGLX fn;

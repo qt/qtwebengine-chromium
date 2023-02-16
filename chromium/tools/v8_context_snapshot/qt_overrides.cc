@@ -45,9 +45,6 @@ bool GLSurfaceGLX::IsCreateContextES2ProfileSupported() {
 bool GLSurfaceGLX::IsCreateContextSupported() {
   return false;
 }
-bool GLSurfaceGLX::InitializeExtensionSettingsOneOff() {
-  return false;
-}
 } // namespace gl
 #endif  // BUILDFLAG(IS_LINUX)
 

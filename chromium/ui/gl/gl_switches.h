@@ -83,7 +83,7 @@ GL_EXPORT extern const char kOverrideUseSoftwareGLForTests[];
 
 GL_EXPORT extern const char* const kGLSwitchesCopiedFromGpuProcessHost[];
 GL_EXPORT extern const size_t kGLSwitchesCopiedFromGpuProcessHostNumSwitches;
-
+GL_EXPORT extern const char kCreateDefaultGLContext[];
 }  // namespace switches
 
 namespace features {
