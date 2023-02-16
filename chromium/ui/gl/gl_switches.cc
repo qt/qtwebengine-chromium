@@ -169,6 +169,8 @@ const char* const kGLSwitchesCopiedFromGpuProcessHost[] = {
 const size_t kGLSwitchesCopiedFromGpuProcessHostNumSwitches =
     std::size(kGLSwitchesCopiedFromGpuProcessHost);
 
+const char kCreateDefaultGLContext[] = "create-default-gl-context";
+
 #if BUILDFLAG(IS_ANDROID)
 // On some Android emulators with software GL, ANGLE
 // is exposing the native fence sync extension but it doesn't
