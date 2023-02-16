@@ -20,7 +20,10 @@ declare_args() {
   # Whether service side logging (actual calls into the GL driver) is enabled
   # or not.
   enable_gpu_service_logging = false
+  use_glx = false
 }
+
+use_glx = ozone_platform_x11
 
 if (is_android) {
   import("//build/config/android/config.gni")
@@ -41,6 +44,12 @@ buildflag_header("buildflags") {
 
 config("gl_config") {
   defines = []
+  if (use_glx) {
+    defines += [
+      "GL_GLEXT_PROTOTYPES",
+      "USE_GLX",
+    ]
+  }
   if (use_egl) {
     defines += [ "USE_EGL" ]
   }
@@ -272,6 +281,8 @@ jumbo_component("gl") {
       "gl_surface_egl_x11_gles2.h",
       "native_pixmap_egl_x11_binding_helper.cc",
       "native_pixmap_egl_x11_binding_helper.h",
+      "gl_surface_glx_x11.cc",
+      "gl_surface_glx_x11.h",
     ]
 
     deps += [
@@ -289,6 +300,35 @@ jumbo_component("gl") {
     if (angle_shared_libvulkan && !is_chromeos) {
       data_deps += [ "//third_party/vulkan-deps/vulkan-loader/src:libvulkan" ]
     }
+  }
+
+  if (use_glx) {
+    sources += [
+      "gl_bindings_autogen_glx.cc",
+      "gl_bindings_autogen_glx.h",
+      "gl_context_glx.cc",
+      "gl_context_glx.h",
+      "gl_glx_api_implementation.cc",
+      "gl_glx_api_implementation.h",
+      "gl_image_glx.cc",
+      "gl_image_glx.h",
+      "gl_image_glx_native_pixmap.cc",
+      "gl_image_glx_native_pixmap.h",
+      "glx_util.cc",
+      "glx_util.h",
+    ]
+
+    if (!is_qtwebengine) {
+      sources += [
+        "gl_surface_glx.cc",
+        "gl_surface_glx.h",
+      ]
+   }
+
+    deps += [
+      "//ui/base/x",
+      "//ui/gfx/x",
+    ]
   }
 
   if (is_win) {
@@ -584,6 +624,10 @@ test("gl_unittests") {
       "gl_display_manager_unittest.cc",
       "test/egl_initialization_displays_unittest.cc",
     ]
+  }
+
+  if (use_glx) {
+    sources += [ "glx_api_unittest.cc" ]
   }
 
   if (is_win) {
