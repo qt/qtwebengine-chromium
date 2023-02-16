@@ -372,6 +372,7 @@ executable("decode_test") {
     ]
   }
 
+
   deps = [
     ":libva_stubs",
     "//base",
