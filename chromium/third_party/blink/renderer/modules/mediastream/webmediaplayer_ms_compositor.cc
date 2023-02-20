@@ -207,12 +207,8 @@ WebMediaPlayerMSCompositor::~WebMediaPlayerMSCompositor() {
   // Ensured by destructor traits.
   DCHECK(video_frame_compositor_task_runner_->BelongsToCurrentThread());
 
-  if (submitter_) {
-    video_frame_compositor_task_runner_->DeleteSoon(FROM_HERE,
-                                                    std::move(submitter_));
-  } else {
-    DCHECK(!video_frame_provider_client_)
-        << "Must call StopUsingProvider() before dtor!";
+  if (video_frame_provider_client_) {
+    video_frame_provider_client_->StopUsingProvider();
   }
 }
 
@@ -486,15 +482,6 @@ void WebMediaPlayerMSCompositor::ReplaceCurrentFrameWithACopy() {
           WrapRefCounted(this))));
 }
 
-void WebMediaPlayerMSCompositor::StopUsingProvider() {
-  DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
-  PostCrossThreadTask(
-      *video_frame_compositor_task_runner_, FROM_HERE,
-      CrossThreadBindOnce(
-          &WebMediaPlayerMSCompositor::StopUsingProviderInternal,
-          WrapRefCounted(this)));
-}
-
 bool WebMediaPlayerMSCompositor::MapTimestampsToRenderTimeTicks(
     const std::vector<base::TimeDelta>& timestamps,
     std::vector<base::TimeTicks>* wall_clock_times) {
@@ -717,13 +704,6 @@ void WebMediaPlayerMSCompositor::StopRenderingInternal() {
 
   if (video_frame_provider_client_)
     video_frame_provider_client_->StopRendering();
-}
-
-void WebMediaPlayerMSCompositor::StopUsingProviderInternal() {
-  DCHECK(video_frame_compositor_task_runner_->BelongsToCurrentThread());
-  if (video_frame_provider_client_)
-    video_frame_provider_client_->StopUsingProvider();
-  video_frame_provider_client_ = nullptr;
 }
 
 void WebMediaPlayerMSCompositor::ReplaceCurrentFrameWithACopyInternal() {
