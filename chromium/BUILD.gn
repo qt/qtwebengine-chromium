@@ -1742,7 +1742,8 @@ if (!is_ios && !is_android && !is_castos) {
   }
 }
 
-if (is_android) {
+if (is_android && host_os == "linux") {
+  # run only on linux host as this will duplicate toolchains and colide with mac ones
   group("optimize_gn_gen") {
     deps = [
       # These run expensive scripts in non-default toolchains. Generally, host
