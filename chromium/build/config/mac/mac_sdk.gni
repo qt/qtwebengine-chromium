@@ -11,7 +11,7 @@ import("//build/toolchain/siso.gni")
 import("//build/toolchain/toolchain.gni")
 
 assert(
-    current_os == "mac" || current_toolchain == default_toolchain ||
+    current_os == "mac" || current_os == "android" || current_toolchain == default_toolchain ||
     (current_os == "ios" && current_toolchain == "${default_toolchain}_blink"))
 
 declare_args() {
