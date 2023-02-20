@@ -1720,7 +1720,7 @@ if (!is_ios && !is_android && !is_castos && !is_cronet_build) {
   }
 }
 
-if (is_android && !is_cronet_build) {
+if (is_android && !is_cronet_build && host_os == "linux") {
   group("optimize_gn_gen") {
     deps = [
       # These run expensive scripts in non-default toolchains. Generally, host
