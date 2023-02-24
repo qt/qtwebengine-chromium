@@ -69,7 +69,10 @@ class V8_EXPORT_PRIVATE Operator : public NON_EXPORTED_BASE(ZoneObject) {
   // A small integer unique to all instances of a particular kind of operator,
   // useful for quick matching for specific kinds of operators. For fast access
   // the opcode is stored directly in the operator object.
-  constexpr Opcode opcode() const { return opcode_; }
+#if !defined(__GNUC__) || (__GNUC__ >= 8)
+  constexpr
+#endif
+  Opcode opcode() const { return opcode_; }
 
   // Returns a constant string representing the mnemonic of the operator,
   // without the static parameters. Useful for debugging.
