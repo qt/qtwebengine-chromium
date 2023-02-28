@@ -61,7 +61,7 @@ void HostFrameSinkManager::RegisterFrameSinkId(
   DCHECK(client);
 
   FrameSinkData& data = frame_sink_data_map_[frame_sink_id];
-  DCHECK(!data.IsFrameSinkRegistered());
+  CHECK(!data.IsFrameSinkRegistered());
   DCHECK(!data.has_created_compositor_frame_sink);
   data.client = client;
   data.report_activation = report_activation;
@@ -80,7 +80,7 @@ void HostFrameSinkManager::InvalidateFrameSinkId(
   DCHECK(frame_sink_id.is_valid());
 
   FrameSinkData& data = frame_sink_data_map_[frame_sink_id];
-  DCHECK(data.IsFrameSinkRegistered());
+  CHECK(data.IsFrameSinkRegistered());
 
   const bool destroy_synchronously =
 #if defined(TOOLKIT_QT)
@@ -208,6 +208,10 @@ bool HostFrameSinkManager::RegisterFrameSinkHierarchy(
   CHECK(parent_frame_sink_id.is_valid()) << parent_frame_sink_id;
   CHECK(child_frame_sink_id.is_valid()) << child_frame_sink_id;
 
+  FrameSinkData& parent_data = iter->second;
+  CHECK(!base::Contains(parent_data.children, child_frame_sink_id));
+  parent_data.children.push_back(child_frame_sink_id);
+
   // Register and store the parent.
   frame_sink_manager_->RegisterFrameSinkHierarchy(parent_frame_sink_id,
                                                   child_frame_sink_id);
@@ -215,10 +219,6 @@ bool HostFrameSinkManager::RegisterFrameSinkHierarchy(
   FrameSinkData& child_data = frame_sink_data_map_[child_frame_sink_id];
   DCHECK(!base::Contains(child_data.parents, parent_frame_sink_id));
   child_data.parents.push_back(parent_frame_sink_id);
-
-  FrameSinkData& parent_data = iter->second;
-  DCHECK(!base::Contains(parent_data.children, child_frame_sink_id));
-  parent_data.children.push_back(child_frame_sink_id);
 
   return true;
 }
@@ -232,8 +232,8 @@ void HostFrameSinkManager::UnregisterFrameSinkHierarchy(
   base::Erase(child_data.parents, parent_frame_sink_id);
 
   FrameSinkData& parent_data = frame_sink_data_map_[parent_frame_sink_id];
-  DCHECK(base::Contains(parent_data.children, child_frame_sink_id));
-  base::Erase(parent_data.children, child_frame_sink_id);
+  size_t num_erased = base::Erase(parent_data.children, child_frame_sink_id);
+  CHECK_EQ(num_erased, 1u);
 
   if (frame_sink_manager_)
     frame_sink_manager_->UnregisterFrameSinkHierarchy(parent_frame_sink_id,
