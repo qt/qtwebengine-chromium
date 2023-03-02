@@ -186,6 +186,8 @@ class GPU_GLES2_EXPORT SharedImageRepresentationFactory {
   // their destruction process.
   std::unique_ptr<GLTextureImageRepresentation> ProduceGLTexture(
       const Mailbox& mailbox);
+  std::unique_ptr<GLTextureImageRepresentation> ProduceRGBEmulationGLTexture(
+      const Mailbox& mailbox);
   std::unique_ptr<GLTexturePassthroughImageRepresentation>
   ProduceGLTexturePassthrough(const Mailbox& mailbox);
   std::unique_ptr<SkiaImageRepresentation> ProduceSkia(

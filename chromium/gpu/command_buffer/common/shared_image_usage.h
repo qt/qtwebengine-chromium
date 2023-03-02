@@ -70,6 +70,9 @@ enum SharedImageUsage : uint32_t {
   // `UploadFromMemory()` if it supports this usage. Clients should specify
   // SHARED_IMAGE_USAGE_CPU_WRITE if they need to write pixels to the image.
   SHARED_IMAGE_USAGE_CPU_UPLOAD = 1 << 18,
+
+  // Image will be used for RGB emulation in WebGL on Mac.
+  SHARED_IMAGE_USAGE_RGB_EMULATION = 19,
 };
 
 // Returns true if usage is a valid client usage.

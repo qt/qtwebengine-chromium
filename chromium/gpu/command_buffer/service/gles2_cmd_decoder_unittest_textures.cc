@@ -3086,7 +3086,7 @@ TEST_P(GLES2DecoderTest, CreateAndTexStorage2DSharedImageCHROMIUM) {
 
   auto& cmd = *GetImmediateAs<
       cmds::CreateAndTexStorage2DSharedImageINTERNALImmediate>();
-  cmd.Init(kNewClientId, mailbox.name);
+  cmd.Init(kNewClientId, GL_NONE, mailbox.name);
   EXPECT_EQ(error::kNoError, ExecuteImmediateCmd(cmd, sizeof(mailbox.name)));
   EXPECT_EQ(GL_NO_ERROR, GetGLError());
 
@@ -3116,7 +3116,7 @@ TEST_P(GLES2DecoderTest,
 
   auto& cmd = *GetImmediateAs<
       cmds::CreateAndTexStorage2DSharedImageINTERNALImmediate>();
-  cmd.Init(kNewClientId, mailbox.name);
+  cmd.Init(kNewClientId, GL_NONE, mailbox.name);
   EXPECT_EQ(error::kNoError, ExecuteImmediateCmd(cmd, sizeof(mailbox.name)));
 
   // CreateAndTexStorage2DSharedImage should fail if the mailbox is invalid.
@@ -3149,7 +3149,7 @@ TEST_P(GLES2DecoderTest,
 
   auto& cmd = *GetImmediateAs<
       cmds::CreateAndTexStorage2DSharedImageINTERNALImmediate>();
-  cmd.Init(client_texture_id_, mailbox.name);
+  cmd.Init(client_texture_id_, GL_NONE, mailbox.name);
   EXPECT_EQ(error::kNoError, ExecuteImmediateCmd(cmd, sizeof(mailbox.name)));
 
   // CreateAndTexStorage2DSharedImage should fail.
@@ -3174,7 +3174,7 @@ TEST_P(GLES2DecoderTest, BeginEndSharedImageAccessCRHOMIUM) {
 
   auto& cmd = *GetImmediateAs<
       cmds::CreateAndTexStorage2DSharedImageINTERNALImmediate>();
-  cmd.Init(kNewClientId, mailbox.name);
+  cmd.Init(kNewClientId, GL_NONE, mailbox.name);
   EXPECT_EQ(error::kNoError, ExecuteImmediateCmd(cmd, sizeof(mailbox.name)));
   EXPECT_EQ(GL_NO_ERROR, GetGLError());
 
@@ -3237,7 +3237,7 @@ TEST_P(GLES2DecoderTest, BeginSharedImageAccessDirectCHROMIUMCantBeginAccess) {
 
   auto& cmd = *GetImmediateAs<
       cmds::CreateAndTexStorage2DSharedImageINTERNALImmediate>();
-  cmd.Init(kNewClientId, mailbox.name);
+  cmd.Init(kNewClientId, GL_NONE, mailbox.name);
   EXPECT_EQ(error::kNoError, ExecuteImmediateCmd(cmd, sizeof(mailbox.name)));
   EXPECT_EQ(GL_NO_ERROR, GetGLError());
 

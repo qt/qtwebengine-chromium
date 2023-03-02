@@ -1213,6 +1213,7 @@ class GLES2DecoderImpl : public GLES2Decoder,
                                          const volatile GLbyte* key);
   void DoCreateAndTexStorage2DSharedImageINTERNAL(
       GLuint client_id,
+      GLenum internal_format,
       const volatile GLbyte* mailbox);
   void DoBeginSharedImageAccessDirectCHROMIUM(GLuint client_id, GLenum mode);
   void DoEndSharedImageAccessDirectCHROMIUM(GLuint client_id);
@@ -18469,6 +18470,7 @@ void GLES2DecoderImpl::DoCreateAndConsumeTextureINTERNAL(
 
 void GLES2DecoderImpl::DoCreateAndTexStorage2DSharedImageINTERNAL(
     GLuint client_id,
+    GLenum internal_format,
     const volatile GLbyte* mailbox_data) {
   TRACE_EVENT2("gpu",
                "GLES2DecoderImpl::DoCreateAndTexStorage2DSharedImageCHROMIUM",
@@ -18494,8 +18496,20 @@ void GLES2DecoderImpl::DoCreateAndTexStorage2DSharedImageINTERNAL(
     return;
   }
 
-  std::unique_ptr<GLTextureImageRepresentation> shared_image =
-      group_->shared_image_representation_factory()->ProduceGLTexture(mailbox);
+  std::unique_ptr<GLTextureImageRepresentation> shared_image;
+  if (internal_format == GL_RGB) {
+    shared_image = group_->shared_image_representation_factory()
+                       ->ProduceRGBEmulationGLTexture(mailbox);
+  } else if (internal_format == GL_NONE) {
+    shared_image =
+        group_->shared_image_representation_factory()->ProduceGLTexture(
+            mailbox);
+  } else {
+    LOCAL_SET_GL_ERROR(GL_INVALID_ENUM,
+                       "DoCreateAndTexStorage2DSharedImageINTERNAL",
+                       "invalid internal format");
+    return;
+  }
 
   if (!shared_image) {
     // Mailbox missing, generate a texture.

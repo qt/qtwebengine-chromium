@@ -59,6 +59,9 @@ class GPU_GLES2_EXPORT SharedImageManager
   std::unique_ptr<GLTextureImageRepresentation> ProduceGLTexture(
       const Mailbox& mailbox,
       MemoryTypeTracker* ref);
+  std::unique_ptr<GLTextureImageRepresentation> ProduceRGBEmulationGLTexture(
+      const Mailbox& mailbox,
+      MemoryTypeTracker* ref);
   std::unique_ptr<GLTexturePassthroughImageRepresentation>
   ProduceGLTexturePassthrough(const Mailbox& mailbox, MemoryTypeTracker* ref);
   std::unique_ptr<SkiaImageRepresentation> ProduceSkia(
