@@ -58,9 +58,7 @@ class VIZ_SERVICE_EXPORT OutputSurfaceProviderImpl
 
  private:
 #if defined(TOOLKIT_QT)
-  std::unique_ptr<OutputSurface> CreateSoftwareOutputSurface();
-  std::unique_ptr<OutputSurface> CreateGLOutputSurface(
-      scoped_refptr<VizProcessContextProvider> context_provider);
+  std::unique_ptr<OutputSurface> CreateSoftwareOutputSurface(const RendererSettings& renderer_settings);
 #endif
 
   std::unique_ptr<SoftwareOutputDevice> CreateSoftwareOutputDeviceForPlatform(

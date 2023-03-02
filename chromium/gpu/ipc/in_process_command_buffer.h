@@ -179,14 +179,6 @@ class GL_IN_PROCESS_CONTEXT_EXPORT InProcessCommandBuffer
 
   gpu::SharedImageInterface* GetSharedImageInterface() const;
 
-#ifdef TOOLKIT_QT
-  using GetTextureCallback = base::OnceCallback<void(unsigned int, std::unique_ptr<gl::GLFence>)>;
-  void GetTextureQt(unsigned int client_id,
-                    GetTextureCallback callback,
-                    const std::vector<SyncToken>& sync_token_fences);
-  void GetTextureQtOnGpuThread(unsigned int client_id, GetTextureCallback callback);
-#endif
-
  private:
   struct InitializeOnGpuThreadParams {
     const ContextCreationAttribs& attribs;
