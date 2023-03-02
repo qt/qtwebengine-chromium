@@ -895,8 +895,13 @@ PersistentMemoryAllocator::GetBlock(Reference ref, uint32_t type_id,
   if (ref % kAllocAlignment != 0)
     return nullptr;
   size += sizeof(BlockHeader);
-  if (ref + size > mem_size_)
+  uint32_t total_size;
+  if (!base::CheckAdd(ref, size).AssignIfValid(&total_size)) {
     return nullptr;
+  }
+  if (total_size > mem_size_) {
+    return nullptr;
+  }
 
   // Validation of referenced block-header.
   if (!free_ok) {
@@ -906,8 +911,13 @@ PersistentMemoryAllocator::GetBlock(Reference ref, uint32_t type_id,
       return nullptr;
     if (block->size < size)
       return nullptr;
-    if (ref + block->size > mem_size_)
+    uint32_t block_size;
+    if (!base::CheckAdd(ref, block->size).AssignIfValid(&block_size)) {
       return nullptr;
+    }
+    if (block_size > mem_size_) {
+      return nullptr;
+    }
     if (type_id != 0 &&
         block->type_id.load(std::memory_order_relaxed) != type_id) {
       return nullptr;
