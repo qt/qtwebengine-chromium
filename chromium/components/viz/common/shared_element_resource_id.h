@@ -5,6 +5,7 @@
 #ifndef COMPONENTS_VIZ_COMMON_SHARED_ELEMENT_RESOURCE_ID_H_
 #define COMPONENTS_VIZ_COMMON_SHARED_ELEMENT_RESOURCE_ID_H_
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
