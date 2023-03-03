@@ -6,6 +6,7 @@
 #define DEVICE_BASE_SYNCHRONIZATION_ONE_WRITER_SEQLOCK_H_
 
 #include <atomic>
+#include <cstdint>
 
 #include "base/atomicops.h"
 #include "base/macros.h"

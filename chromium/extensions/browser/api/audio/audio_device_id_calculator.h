@@ -5,6 +5,7 @@
 #ifndef EXTENSIONS_BROWSER_API_AUDIO_AUDIO_DEVICE_ID_CALCULATOR_H_
 #define EXTENSIONS_BROWSER_API_AUDIO_AUDIO_DEVICE_ID_CALCULATOR_H_
 
+#include <cstdint>
 #include <map>
 #include <string>
 

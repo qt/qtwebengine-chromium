@@ -11,6 +11,7 @@
 #ifndef CALL_RTP_DEMUXER_H_
 #define CALL_RTP_DEMUXER_H_
 
+#include <cstdint>
 #include <map>
 #include <set>
 #include <string>
