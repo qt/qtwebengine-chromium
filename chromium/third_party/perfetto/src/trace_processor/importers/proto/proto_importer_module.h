@@ -17,6 +17,8 @@
 #ifndef SRC_TRACE_PROCESSOR_IMPORTERS_PROTO_PROTO_IMPORTER_MODULE_H_
 #define SRC_TRACE_PROCESSOR_IMPORTERS_PROTO_PROTO_IMPORTER_MODULE_H_
 
+#include <cstdint>
+
 #include "perfetto/ext/base/optional.h"
 #include "perfetto/trace_processor/status.h"
 

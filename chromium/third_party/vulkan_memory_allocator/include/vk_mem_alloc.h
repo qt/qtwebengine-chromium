@@ -2393,6 +2393,10 @@ VMA_CALL_PRE void VMA_CALL_POST vmaFreeVirtualBlockStatsString(VmaVirtualBlock V
 #include <cstring>
 #include <utility>
 
+#if VMA_STATS_STRING_ENABLED
+#include <cstdio>
+#endif  // VMA_STATS_STRING_ENABLED
+
 #if VMA_RECORDING_ENABLED
     #include <chrono>
     #if defined(_WIN32)

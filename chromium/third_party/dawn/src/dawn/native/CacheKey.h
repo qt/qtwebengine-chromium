@@ -19,6 +19,7 @@
 #include "dawn/common/ityp_array.h"
 
 #include <bitset>
+#include <cstdint>
 #include <iostream>
 #include <limits>
 #include <string>

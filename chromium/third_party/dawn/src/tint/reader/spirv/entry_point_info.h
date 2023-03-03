@@ -15,6 +15,7 @@
 #ifndef SRC_TINT_READER_SPIRV_ENTRY_POINT_INFO_H_
 #define SRC_TINT_READER_SPIRV_ENTRY_POINT_INFO_H_
 
+#include <cstdint>
 #include <string>
 #include <vector>
 

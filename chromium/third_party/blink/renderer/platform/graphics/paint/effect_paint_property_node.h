@@ -116,7 +116,7 @@ class PLATFORM_EXPORT EffectPaintPropertyNode
 
     // An identifier for a document transition shared element. `id.valid()`
     // returns true if this has been set, and false otherwise.
-    DocumentTransitionSharedElementId document_transition_shared_element_id;
+    blink::DocumentTransitionSharedElementId document_transition_shared_element_id;
 
     // An identifier to tag shared element resources generated and cached in the
     // Viz process. This generated resource can be used as content for other

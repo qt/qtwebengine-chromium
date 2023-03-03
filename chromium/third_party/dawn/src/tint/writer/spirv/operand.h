@@ -15,6 +15,7 @@
 #ifndef SRC_TINT_WRITER_SPIRV_OPERAND_H_
 #define SRC_TINT_WRITER_SPIRV_OPERAND_H_
 
+#include <cstdint>
 #include <string>
 #include <vector>
 

@@ -15,6 +15,7 @@
 #ifndef SRC_TINT_READER_WGSL_TOKEN_H_
 #define SRC_TINT_READER_WGSL_TOKEN_H_
 
+#include <cstdint>
 #include <string>
 #include <string_view>
 #include <variant>  // NOLINT: cpplint doesn't recognise this

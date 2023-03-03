@@ -23,6 +23,7 @@
 #if defined(__ANDROID__) || defined(__GLIBC__)
 #include <sys/types.h>
 #include <unistd.h>
+#include <cstdio>
 #endif
 #include <algorithm>
 #include <cassert>
