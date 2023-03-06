@@ -78,7 +78,8 @@ struct CORE_EXPORT GlobalScopeCreationParams final {
       bool parent_isolated_application_capability = false,
       InterfaceRegistry* interface_registry = nullptr,
       scoped_refptr<base::SingleThreadTaskRunner>
-          agent_group_scheduler_compositor_task_runner = nullptr);
+          agent_group_scheduler_compositor_task_runner = nullptr,
+      const SecurityOrigin* top_level_frame_security_origin = nullptr);
   GlobalScopeCreationParams(const GlobalScopeCreationParams&) = delete;
   GlobalScopeCreationParams& operator=(const GlobalScopeCreationParams&) =
       delete;
@@ -208,6 +209,11 @@ struct CORE_EXPORT GlobalScopeCreationParams final {
   // worker belongs to.
   scoped_refptr<base::SingleThreadTaskRunner>
       agent_group_scheduler_compositor_task_runner;
+
+  // The security origin of the top level frame associated with the worker. This
+  // can be used, for instance, to check if the top level frame has an opaque
+  // origin.
+  scoped_refptr<const SecurityOrigin> top_level_frame_security_origin;
 };
 
 }  // namespace blink
