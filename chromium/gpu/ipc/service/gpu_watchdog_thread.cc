@@ -37,7 +37,7 @@
 
 namespace gpu {
 
-base::TimeDelta GetGpuWatchdogTimeout() {
+base::TimeDelta GetGpuWatchdogTimeout(bool software_rendering) {
   std::string timeout_str =
       base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
           switches::kGpuWatchdogTimeoutSeconds);
@@ -50,17 +50,22 @@ base::TimeDelta GetGpuWatchdogTimeout() {
                  << timeout_str;
   }
 
+  base::TimeDelta timeout = kGpuWatchdogTimeout;
 #if BUILDFLAG(IS_WIN)
   if (base::win::GetVersion() >= base::win::Version::WIN10) {
     int num_of_processors = base::SysInfo::NumberOfProcessors();
-    if (num_of_processors > 8)
-      return (kGpuWatchdogTimeout - base::Seconds(10));
-    else if (num_of_processors <= 4)
-      return kGpuWatchdogTimeout + base::Seconds(5);
+    if (num_of_processors > 8) {
+      timeout -= base::Seconds(10);
+    } else if (num_of_processors <= 4) {
+      timeout += base::Seconds(5);
+    }
   }
 #endif
 
-  return kGpuWatchdogTimeout;
+  if (software_rendering) {
+    timeout *= kSoftwareRenderingFactor;
+  }
+  return timeout;
 }
 
 GpuWatchdogThread::GpuWatchdogThread(base::TimeDelta timeout,
@@ -161,9 +166,22 @@ std::unique_ptr<GpuWatchdogThread> GpuWatchdogThread::Create(
 // static
 std::unique_ptr<GpuWatchdogThread> GpuWatchdogThread::Create(
     bool start_backgrounded,
+    bool software_rendering,
     const std::string& thread_name) {
-  return Create(start_backgrounded, GetGpuWatchdogTimeout(), kInitFactor,
-                kRestartFactor, /*test_mode=*/false, thread_name);
+  return Create(start_backgrounded, GetGpuWatchdogTimeout(software_rendering),
+                kInitFactor, kRestartFactor, /*test_mode=*/false, thread_name);
+}
+
+// static
+std::unique_ptr<GpuWatchdogThread> GpuWatchdogThread::Create(
+    bool start_backgrounded,
+    const GpuWatchdogThread* existing_watchdog,
+    const std::string& thread_name) {
+  DCHECK(existing_watchdog);
+  return Create(start_backgrounded, existing_watchdog->watchdog_timeout_,
+                existing_watchdog->watchdog_init_factor_,
+                existing_watchdog->watchdog_restart_factor_,
+                /*test_mode=*/false, thread_name);
 }
 
 // Android Chrome goes to the background. Called from the gpu io thread.

@@ -181,22 +181,21 @@ bool CompositorGpuThread::Initialize() {
   StartWithOptions(std::move(thread_options));
 
   // Wait until thread is started and Init() is executed in order to return
-  // updated |init_succeded_|.
+  // updated |init_succeeded_|.
   WaitUntilThreadStarted();
-  return init_succeded_;
+  return init_succeeded_;
 }
 
 void CompositorGpuThread::Init() {
   const auto& gpu_preferences = gpu_channel_manager_->gpu_preferences();
-  if (enable_watchdog_) {
+  if (enable_watchdog_ && gpu_channel_manager_->watchdog()) {
     watchdog_thread_ = gpu::GpuWatchdogThread::Create(
-        gpu_preferences.watchdog_starts_backgrounded, "GpuWatchdog_Compositor");
+        gpu_preferences.watchdog_starts_backgrounded,
+        gpu_channel_manager_->watchdog(), "GpuWatchdog_Compositor");
   }
 
-  if (!watchdog_thread_)
-    return;
   watchdog_thread_->OnInitComplete();
-  init_succeded_ = true;
+  init_succeeded_ = true;
 }
 
 void CompositorGpuThread::CleanUp() {
