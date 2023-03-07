@@ -64,8 +64,12 @@ bool CFFL_CheckBox::OnChar(CPDFSDK_Annot* pAnnot,
 
       CPWL_CheckBox* pWnd = GetCheckBox(pPageView, true);
       if (pWnd && !pWnd->IsReadOnly()) {
+        ObservedPtr<CPWL_CheckBox> pObservedBox(pWnd);
         CPDFSDK_Widget* pWidget = ToCPDFSDKWidget(pAnnot);
-        pWnd->SetCheck(!pWidget->IsChecked());
+        const bool is_checked = pWidget->IsChecked();
+        if (pObservedBox) {
+          pObservedBox->SetCheck(!is_checked);
+        }
       }
 
       return CommitData(pPageView, nFlags);
@@ -86,8 +90,12 @@ bool CFFL_CheckBox::OnLButtonUp(CPDFSDK_PageView* pPageView,
 
   CPWL_CheckBox* pWnd = GetCheckBox(pPageView, true);
   if (pWnd) {
+    ObservedPtr<CPWL_CheckBox> pObservedBox(pWnd);
     CPDFSDK_Widget* pWidget = ToCPDFSDKWidget(pAnnot);
-    pWnd->SetCheck(!pWidget->IsChecked());
+    const bool is_checked = pWidget->IsChecked();
+    if (pObservedBox) {
+      pObservedBox->SetCheck(!is_checked);
+    }
   }
 
   return CommitData(pPageView, nFlags);
