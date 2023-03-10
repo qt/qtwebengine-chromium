@@ -502,16 +502,9 @@ void CFXJS_Engine::InitializeEngine() {
   for (uint32_t i = 1; i <= maxID; ++i) {
     CFXJS_ObjDefinition* pObjDef = pIsolateData->ObjDefinitionForID(i);
     if (pObjDef->m_ObjType == FXJSOBJTYPE_GLOBAL) {
-      CFXJS_PerObjectData::SetInObject(new CFXJS_PerObjectData(i),
-                                       v8Context->Global()
-                                           ->GetPrototype()
-                                           ->ToObject(v8Context)
-                                           .ToLocalChecked());
+      CFXJS_PerObjectData::SetInObject(new CFXJS_PerObjectData(i), pThis);
       if (pObjDef->m_pConstructor) {
-        pObjDef->m_pConstructor(this, v8Context->Global()
-                                          ->GetPrototype()
-                                          ->ToObject(v8Context)
-                                          .ToLocalChecked());
+        pObjDef->m_pConstructor(this, pThis, pThisProxy);
       }
     } else if (pObjDef->m_ObjType == FXJSOBJTYPE_STATIC) {
       v8::Local<v8::String> pObjName = NewString(pObjDef->m_ObjName.Get());
@@ -609,7 +602,7 @@ v8::Local<v8::Object> CFXJS_Engine::NewFXJSBoundObject(uint32_t nObjDefnID,
   CFXJS_PerObjectData* pObjData = new CFXJS_PerObjectData(nObjDefnID);
   CFXJS_PerObjectData::SetInObject(pObjData, obj);
   if (pObjDef->m_pConstructor)
-    pObjDef->m_pConstructor(this, obj);
+    pObjDef->m_pConstructor(this, obj, obj);
 
   if (type == FXJSOBJTYPE_DYNAMIC) {
     auto* pIsolateData = FXJS_PerIsolateData::Get(GetIsolate());
