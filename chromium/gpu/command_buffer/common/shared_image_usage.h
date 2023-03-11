@@ -72,7 +72,7 @@ enum SharedImageUsage : uint32_t {
   SHARED_IMAGE_USAGE_CPU_UPLOAD = 1 << 18,
 
   // Image will be used for RGB emulation in WebGL on Mac.
-  SHARED_IMAGE_USAGE_RGB_EMULATION = 19,
+  SHARED_IMAGE_USAGE_RGB_EMULATION = 1 << 19,
 };
 
 // Returns true if usage is a valid client usage.
