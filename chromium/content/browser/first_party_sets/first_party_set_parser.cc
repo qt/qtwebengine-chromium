@@ -304,7 +304,7 @@ base::expected<SetsAndAliases, ParseError> ParseSet(
                /*.field_name =*/ kFirstPartySetAssociatedSitesField,
               /*.site_type =*/ net::SiteType::kAssociated,
               /*.size_limit =*/ absl::make_optional(
-                  features::kFirstPartySetsMaxAssociatedSites.Get()),
+                  ::features::kFirstPartySetsMaxAssociatedSites.Get()),
            },
            {
                /*.field_name =*/ kFirstPartySetServiceSitesField,
