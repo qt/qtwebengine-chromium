@@ -758,6 +758,8 @@ std::unique_ptr<OverlayImageRepresentation> D3DImageBacking::ProduceOverlay(
         size(), internal_format, data_type, color_space(), d3d11_texture_,
         array_slice_, plane_index_, swap_chain_);
   }
+  if (dxgi_shared_handle_state_)
+    static_cast<gl::GLImageD3D*>(gl_image.get())->shared_handle() = dxgi_shared_handle_state_->GetSharedHandle();
   return std::make_unique<OverlayD3DImageRepresentation>(manager, this, tracker,
                                                          std::move(gl_image));
 }
