@@ -97,11 +97,6 @@ jumbo_component("service") {
       "gpu_memory_buffer_factory_dxgi.h",
       "image_transport_surface_win.cc",
     ]
-    if (is_qtwebengine) {
-      sources -= [
-        "image_transport_surface_win.cc",
-      ]
-    }
     libs += [
       "d3d11.lib",
       "dcomp.lib",
