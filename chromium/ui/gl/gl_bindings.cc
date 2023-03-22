@@ -57,7 +57,7 @@ void DisplayExtensionsEGL::UpdateConditionalExtensionSettings(
 }
 
 // static
-#if !defined(TOOLKIT_QT)
+#if !defined(TOOLKIT_QT) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
 std::string DisplayExtensionsEGL::GetPlatformExtensions(EGLDisplay display) {
   if (display == EGL_NO_DISPLAY)
     return "";
