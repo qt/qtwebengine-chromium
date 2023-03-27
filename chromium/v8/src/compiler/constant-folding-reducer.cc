@@ -66,7 +66,8 @@ Reduction ConstantFoldingReducer::Reduce(Node* node) {
   DisallowHeapAccess no_heap_access;
   if (!NodeProperties::IsConstant(node) && NodeProperties::IsTyped(node) &&
       node->op()->HasProperty(Operator::kEliminatable) &&
-      node->opcode() != IrOpcode::kFinishRegion) {
+      node->opcode() != IrOpcode::kFinishRegion &&
+      node->opcode() != IrOpcode::kTypeGuard) {
     Node* constant = TryGetConstant(jsgraph(), node);
     if (constant != nullptr) {
       DCHECK(NodeProperties::IsTyped(constant));
