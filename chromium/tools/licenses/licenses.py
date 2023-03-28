@@ -894,8 +894,10 @@ def GetThirdPartyDepsFromGNDepsOutput(
   return third_party_deps
 
 
-def FindThirdPartyDeps(gn_out_dir: str,
+def FindThirdPartyDeps(gn_binary : str,
+                       gn_out_dir: str,
                        gn_target: str,
+                       gn_generate: bool,
                        target_os: str,
                        extra_third_party_dirs: Optional[List[str]] = None,
                        extra_allowed_dirs: Optional[List[str]] = None):
@@ -909,11 +911,14 @@ def FindThirdPartyDeps(gn_out_dir: str,
   try:
     with tempfile.TemporaryDirectory(dir=gn_out_dir) as tmp_dir:
       shutil.copy(os.path.join(gn_out_dir, "args.gn"), tmp_dir)
-      subprocess.check_output(
-          [_GnBinary(), "gen",
-           "--root=%s" % _REPOSITORY_ROOT, tmp_dir])
+      if not gn_generate:
+          subprocess.check_output(
+              [gn_binary, "gen",
+              "--root=%s" % _REPOSITORY_ROOT, tmp_dir])
+      else:
+         tmp_dir = gn_out_dir
       gn_deps = subprocess.check_output([
-          _GnBinary(), "desc",
+          gn_binary, "desc",
           "--root=%s" % _REPOSITORY_ROOT, tmp_dir, gn_target, "deps",
           "--as=buildfile", "--all"
       ])
@@ -963,8 +968,10 @@ def GenerateCredits(file_template_file,
                     reciprocal_template_file,
                     output_file,
                     target_os,
+                    gn_binary,
                     gn_out_dir,
                     gn_target,
+                    gn_generate,
                     extra_third_party_dirs=None,
                     depfile=None,
                     enable_warnings=False):
@@ -1001,7 +1008,7 @@ def GenerateCredits(file_template_file,
     }
 
   if gn_target:
-    third_party_dirs = FindThirdPartyDeps(gn_out_dir, gn_target, target_os,
+    third_party_dirs = FindThirdPartyDeps(gn_binary, gn_out_dir, gn_target, gn_generate, target_os,
                                           extra_third_party_dirs)
 
     # Sanity-check to raise a build error if invalid gn_... settings are
@@ -1148,6 +1155,7 @@ def GenerateLicenseFile(args: argparse.Namespace):
 
   if args.gn_target is not None:
     third_party_dirs = FindThirdPartyDeps(args.gn_out_dir, args.gn_target,
+                                          args.gn_generate,
                                           args.target_os,
                                           extra_third_party_dirs,
                                           args.extra_allowed_dirs)
@@ -1282,6 +1290,7 @@ def GenerateLicenseFilePlainText(
 
     The LICENSE file contains licenses of both Chromium and third-party
     libraries which gn_target depends on. """
+
   # Start with Chromium's LICENSE file.
   content = [read_file(os.path.join(repo_root, 'LICENSE'))]
 
@@ -1385,6 +1394,8 @@ def main():
       '--spdx-doc-namespace',
       default='https://chromium.googlesource.com/chromium/src/tools/',
       help='Specify the document namespace for the SPDX doc')
+  parser.add_argument('--gn-binary', help="GN binary location.")
+  parser.add_argument('--gn-generate', action='store_false', help='Generates gn project.')
   parser.add_argument(
       '--enable-warnings',
       action='store_true',
@@ -1400,13 +1411,19 @@ def main():
   args.extra_allowed_dirs = action_helpers.parse_gn_list(
       args.extra_allowed_dirs)
 
+  if not args.gn_binary:
+    gn_binary = _GnBinary()
+  else:
+    gn_binary = args.gn_binary
+
   if args.command == 'scan':
     if not ScanThirdPartyDirs():
       return 1
   elif args.command == 'credits':
     if not GenerateCredits(
         args.file_template, args.entry_template, args.reciprocal_template,
-        args.output_file, args.target_os, args.gn_out_dir, args.gn_target,
+        args.output_file, args.target_os, gn_binary, args.gn_out_dir,
+        args.gn_target, args.gn_generate,
         args.extra_third_party_dirs, args.depfile, args.enable_warnings):
       return 1
   elif args.command == 'license_file':
