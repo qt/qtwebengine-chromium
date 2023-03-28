@@ -121,7 +121,7 @@ void GetV8FilePath(const char* file_name, base::FilePath* path_out) {
   // This is the path within the .apk.
   *path_out =
       base::FilePath(FILE_PATH_LITERAL("assets")).AppendASCII(file_name);
-#elif BUILDFLAG(IS_MAC)
+#elif BUILDFLAG(IS_MAC) && !defined(TOOLKIT_QT)
   base::ScopedCFTypeRef<CFStringRef> bundle_resource(
       base::SysUTF8ToCFStringRef(file_name));
   *path_out = base::mac::PathForFrameworkBundleResource(bundle_resource);
