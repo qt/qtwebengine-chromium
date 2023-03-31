@@ -530,6 +530,21 @@ bool InternalFormat::isDepthOrStencil() const
     return depthBits != 0 || stencilBits != 0;
 }
 
+GLuint InternalFormat::getEGLConfigBufferSize() const
+{
+    // EGL config's EGL_BUFFER_SIZE is measured in bits and is the sum of all the color channels for
+    // color formats or the luma channels for luma formats. It ignores unused bits so compute the
+    // bit count by summing instead of using pixelBytes.
+    if (isLUMA())
+    {
+        return luminanceBits + alphaBits;
+    }
+    else
+    {
+        return redBits + greenBits + blueBits + alphaBits;
+    }
+}
+
 Format::Format(GLenum internalFormat) : Format(GetSizedInternalFormatInfo(internalFormat)) {}
 
 Format::Format(const InternalFormat &internalFormat) : info(&internalFormat) {}
@@ -1079,12 +1094,12 @@ static InternalFormatInfoMap BuildInternalFormatInfoMap()
     AddRGBAFormat(&map, GL_BGRA8_SRGB_ANGLEX, true,  8,  8,  8,  8, 0, GL_BGRA_EXT,     GL_UNSIGNED_BYTE,                  GL_UNSIGNED_NORMALIZED, true,  NeverSupported,                                    AlwaysSupported, AlwaysSupported,                                   AlwaysSupported,                               AlwaysSupported);
 
     // Special format which is not really supported, so always false for all supports.
-    AddRGBAFormat(&map, GL_BGRX8_ANGLEX,      true,  8,  8,  8,  0, 0, GL_BGRA_EXT,     GL_UNSIGNED_BYTE,                  GL_UNSIGNED_NORMALIZED, false, NeverSupported,                                    NeverSupported,  NeverSupported,                                    NeverSupported,                                NeverSupported);
+    AddRGBAXFormat(&map, GL_BGRX8_ANGLEX,      true,  FB< 8,  8,  8,  0, 8, 0>(), GL_BGRA_EXT,     GL_UNSIGNED_BYTE,                  GL_UNSIGNED_NORMALIZED, false, NeverSupported,                         NeverSupported,  NeverSupported,                                     NeverSupported,                                NeverSupported);
     AddRGBAFormat(&map, GL_BGR565_ANGLEX,     true,  5,  6,  5,  0, 0, GL_BGRA_EXT,     GL_UNSIGNED_SHORT_5_6_5,           GL_UNSIGNED_NORMALIZED, false, NeverSupported,                                    NeverSupported,  NeverSupported,                                    NeverSupported,                                NeverSupported);
     AddRGBAFormat(&map, GL_BGR10_A2_ANGLEX,   true, 10, 10, 10,  2, 0, GL_BGRA_EXT,     GL_UNSIGNED_INT_2_10_10_10_REV,    GL_UNSIGNED_NORMALIZED, false, NeverSupported,                                    NeverSupported,  NeverSupported,                                    NeverSupported,                                NeverSupported);
 
     // Special format to emulate RGB8 with RGBA8 within ANGLE.
-    AddRGBAFormat(&map, GL_RGBX8_ANGLE,      true,   8,  8,  8,  0, 0, GL_RGB,          GL_UNSIGNED_BYTE,                  GL_UNSIGNED_NORMALIZED, false, AlwaysSupported,                                   AlwaysSupported, AlwaysSupported,                                   AlwaysSupported,                               NeverSupported);
+AddRGBAXFormat(&map, GL_RGBX8_ANGLE,      true,   FB< 8,  8,  8,  0, 8, 0>(), GL_RGB,          GL_UNSIGNED_BYTE,                  GL_UNSIGNED_NORMALIZED, false, AlwaysSupported,                                   AlwaysSupported, AlwaysSupported,                                   AlwaysSupported,                               NeverSupported);
 
     // This format is supported on ES 2.0 with two extensions, so keep it out-of-line to not widen the table above even more.
     //                 | Internal format     |sized| R | G | B | A |S | Format         | Type                             | Component type        | SRGB | Texture supported                                                                            | Filterable     | Texture attachment                               | Renderbuffer                                   | Blend
