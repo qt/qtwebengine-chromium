@@ -50,10 +50,7 @@ import {LanguageExtensionEndpoint} from './LanguageExtensionEndpoint.js';
 
 const extensionOriginSymbol = Symbol('extensionOrigin');
 
-const kAllowedOrigins = [
-  'chrome://newtab',
-  'chrome://new-tab-page',
-].map(url => (new URL(url)).origin);
+const kAllowedOrigins = [].map(url => (new URL(url)).origin);
 
 /** @type {?ExtensionServer} */
 let extensionServerInstance;
