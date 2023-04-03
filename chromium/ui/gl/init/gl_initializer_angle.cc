@@ -4,16 +4,16 @@
 
 #include "ui/gl/init/gl_initializer.h"
 
-#include <EGL/egl.h>
+extern "C" {
+typedef void (*__eglMustCastToProperFunctionPointerType)(void);
+extern __eglMustCastToProperFunctionPointerType EGL_GetProcAddress(const char *procname);
+}
 
 namespace gl {
 namespace init {
 
 bool InitializeStaticANGLEEGL() {
-#pragma push_macro("eglGetProcAddress")
-#undef eglGetProcAddress
-  SetGLGetProcAddressProc(&eglGetProcAddress);
-#pragma pop_macro("eglGetProcAddress")
+  SetGLGetProcAddressProc(&EGL_GetProcAddress);
   return true;
 }
 
