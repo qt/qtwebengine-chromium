@@ -4,7 +4,10 @@
 
 #include "ui/gl/init/gl_initializer.h"
 
-#include <EGL/egl.h>
+extern "C" {
+typedef void (*__eglMustCastToProperFunctionPointerType)(void);
+extern __eglMustCastToProperFunctionPointerType EGL_GetProcAddress(const char *procname);
+}
 
 extern "C" {
 // The ANGLE internal eglGetProcAddress

@@ -9,6 +9,7 @@
 
 #include "angle_gl.h"
 
+#if !defined(ANGLE_STATIC)
 #include "libGLESv2/entry_points_gles_1_0_autogen.h"
 #include "libGLESv2/entry_points_gles_2_0_autogen.h"
 #include "libGLESv2/entry_points_gles_3_0_autogen.h"
@@ -6019,3 +6020,4 @@ glStartTilingQCOM(GLuint x, GLuint y, GLuint width, GLuint height, GLbitfield pr
 }
 
 }  // extern "C"
+#endif
