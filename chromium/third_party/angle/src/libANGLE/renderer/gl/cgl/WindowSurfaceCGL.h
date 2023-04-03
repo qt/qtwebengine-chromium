@@ -18,7 +18,8 @@ struct __IOSurface;
 typedef __IOSurface *IOSurfaceRef;
 
 // WebKit's build process requires that every Objective-C class name has the prefix "Web".
-@class WebSwapCGLLayer;
+// ### Changed to QWE for QtWebEngine
+@class QWESwapCGLLayer;
 
 namespace rx
 {
@@ -89,7 +90,7 @@ class WindowSurfaceCGL : public SurfaceGL
                                      gl::Framebuffer *framebuffer) override;
 
   private:
-    WebSwapCGLLayer *mSwapLayer;
+    QWESwapCGLLayer *mSwapLayer;
     SharedSwapState mSwapState;
     uint64_t mCurrentSwapId;
 

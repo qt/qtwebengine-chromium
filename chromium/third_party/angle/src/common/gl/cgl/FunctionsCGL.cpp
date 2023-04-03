@@ -9,7 +9,7 @@
 #include "common/gl/cgl/FunctionsCGL.h"
 #include "common/platform.h"
 
-#if defined(ANGLE_PLATFORM_MACOS) || defined(ANGLE_PLATFORM_MACCATALYST)
+#if (defined(ANGLE_PLATFORM_MACOS) || defined(ANGLE_PLATFORM_MACCATALYST)) && !defined(ANGLE_STATIC)
 
 SOFT_LINK_FRAMEWORK_SOURCE(OpenGL)
 

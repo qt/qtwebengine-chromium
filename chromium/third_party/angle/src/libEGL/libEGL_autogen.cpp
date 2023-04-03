@@ -10,6 +10,7 @@
 #include "anglebase/no_destructor.h"
 #include "common/system_utils.h"
 
+#if !defined(ANGLE_STATIC)
 #include <memory>
 
 #if defined(ANGLE_USE_EGL_LOADER)
@@ -915,3 +916,4 @@ EGLBoolean EGLAPIENTRY eglStreamConsumerGLTextureExternalAttribsNV(EGLDisplay dp
 }
 
 }  // extern "C"
+#endif
