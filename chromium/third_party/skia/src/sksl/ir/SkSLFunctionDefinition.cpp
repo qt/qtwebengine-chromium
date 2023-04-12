@@ -21,6 +21,7 @@
 #include "src/sksl/transform/SkSLProgramWriter.h"
 
 #include <forward_list>
+#include <vector>
 
 namespace SkSL {
 
@@ -78,10 +79,31 @@ std::unique_ptr<FunctionDefinition> FunctionDefinition::Convert(const Context& c
     class Finalizer : public ProgramWriter {
     public:
         Finalizer(const Context& context, const FunctionDeclaration& function,
+                  Position pos,
                   FunctionSet* referencedBuiltinFunctions)
             : fContext(context)
             , fFunction(function)
-            , fReferencedBuiltinFunctions(referencedBuiltinFunctions) {}
+            , fReferencedBuiltinFunctions(referencedBuiltinFunctions) {
+            // Function parameters count as local variables.
+            for (const Variable* var : function.parameters()) {
+                this->addLocalVariable(var, pos);
+            }
+        }
+
+        void addLocalVariable(const Variable* var, Position pos) {
+            // We count the number of slots used, but don't consider the precision of the base type.
+            // In practice, this reflects what GPUs actually do pretty well. (i.e., RelaxedPrecision
+            // math doesn't mean your variable takes less space.) We also don't attempt to reclaim
+            // slots at the end of a Block.
+            size_t prevSlotsUsed = fSlotsUsed;
+            fSlotsUsed = SkSafeMath::Add(fSlotsUsed, var->type().slotCount());
+            // To avoid overzealous error reporting, only trigger the error at the first
+            // place where the stack limit is exceeded.
+            if (prevSlotsUsed < kVariableSlotLimit && fSlotsUsed >= kVariableSlotLimit) {
+                fContext.fErrors->error(pos, "variable '" + std::string(var->name()) +
+                                             "' exceeds the stack size limit");
+            }
+        }
 
         ~Finalizer() override {
             SkASSERT(fBreakableLevel == 0);
@@ -145,21 +167,8 @@ std::unique_ptr<FunctionDefinition> FunctionDefinition::Convert(const Context& c
         bool visitStatement(Statement& stmt) override {
             switch (stmt.kind()) {
                 case Statement::Kind::kVarDeclaration: {
-                    // We count the number of slots used, but don't consider the precision of the
-                    // base type. In practice, this reflects what GPUs really do pretty well.
-                    // (i.e., RelaxedPrecision math doesn't mean your variable takes less space.)
-                    // We also don't attempt to reclaim slots at the end of a Block.
-                    size_t prevSlotsUsed = fSlotsUsed;
-                    fSlotsUsed = SkSafeMath::Add(
-                            fSlotsUsed, stmt.as<VarDeclaration>().var().type().slotCount());
-                    // To avoid overzealous error reporting, only trigger the error at the first
-                    // place where the stack limit is exceeded.
-                    if (prevSlotsUsed < kVariableSlotLimit && fSlotsUsed >= kVariableSlotLimit) {
-                        fContext.fErrors->error(
-                                stmt.fPosition,
-                                "variable '" + std::string(stmt.as<VarDeclaration>().var().name()) +
-                                "' exceeds the stack size limit");
-                    }
+                    const Variable& var = stmt.as<VarDeclaration>().var();
+                    this->addLocalVariable(&var, stmt.fPosition);
                     break;
                 }
                 case Statement::Kind::kReturn: {
@@ -254,7 +263,7 @@ std::unique_ptr<FunctionDefinition> FunctionDefinition::Convert(const Context& c
     };
 
     FunctionSet referencedBuiltinFunctions;
-    Finalizer(context, function, &referencedBuiltinFunctions).visitStatement(*body);
+    Finalizer(context, function, pos, &referencedBuiltinFunctions).visitStatement(*body);
     if (function.isMain() && context.fConfig->fKind == ProgramKind::kVertex) {
         append_rtadjust_fixup_to_vertex_main(context, function, body->as<Block>());
     }
