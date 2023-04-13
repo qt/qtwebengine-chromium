@@ -1543,11 +1543,18 @@ void WebFrameWidgetBase::AddEditCommandForNextKeyEvent(const WebString& name,
 }
 
 bool WebFrameWidgetBase::HandleCurrentKeyboardEvent() {
-  bool did_execute_command = false;
+  if (edit_commands_.IsEmpty()) {
+    return false;
+  }
   WebLocalFrame* frame = FocusedWebLocalFrameInWidget();
   if (!frame)
     frame = local_root_;
-  for (const auto& command : edit_commands_) {
+  bool did_execute_command = false;
+  // Executing an edit command can run JS and we can end up reassigning
+  // `edit_commands_` so move it to a stack variable before iterating on it.
+  Vector<mojom::blink::EditCommandPtr> edit_commands =
+      std::move(edit_commands_);
+  for (const auto& command : edit_commands) {
     // In gtk and cocoa, it's possible to bind multiple edit commands to one
     // key (but it's the exception). Once one edit command is not executed, it
     // seems safest to not execute the rest.
