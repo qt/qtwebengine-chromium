@@ -15,6 +15,8 @@
 #ifndef SRC_DAWN_NATIVE_VULKAN_BUFFERVK_H_
 #define SRC_DAWN_NATIVE_VULKAN_BUFFERVK_H_
 
+#include <set>
+
 #include "dawn/native/Buffer.h"
 
 #include "dawn/common/SerialQueue.h"
@@ -25,6 +27,7 @@ namespace dawn::native::vulkan {
 
 struct CommandRecordingContext;
 class Device;
+struct VulkanFunctions;
 
 class Buffer final : public BufferBase {
   public:
@@ -36,10 +39,11 @@ class Buffer final : public BufferBase {
     // `commands`.
     // TODO(crbug.com/dawn/851): coalesce barriers and do them early when possible.
     void TransitionUsageNow(CommandRecordingContext* recordingContext, wgpu::BufferUsage usage);
-    bool TransitionUsageAndGetResourceBarrier(wgpu::BufferUsage usage,
-                                              VkBufferMemoryBarrier* barrier,
-                                              VkPipelineStageFlags* srcStages,
-                                              VkPipelineStageFlags* dstStages);
+    bool TrackUsageAndGetResourceBarrier(CommandRecordingContext* recordingContext,
+                                         wgpu::BufferUsage usage,
+                                         VkBufferMemoryBarrier* barrier,
+                                         VkPipelineStageFlags* srcStages,
+                                         VkPipelineStageFlags* dstStages);
 
     // All the Ensure methods return true if the buffer was initialized to zero.
     bool EnsureDataInitialized(CommandRecordingContext* recordingContext);
@@ -51,6 +55,10 @@ class Buffer final : public BufferBase {
 
     // Dawn API
     void SetLabelImpl() override;
+
+    static void TransitionMappableBuffersEagerly(const VulkanFunctions& fn,
+                                                 CommandRecordingContext* recordingContext,
+                                                 const std::set<Ref<Buffer>>& buffers);
 
   private:
     ~Buffer() override;
@@ -68,7 +76,7 @@ class Buffer final : public BufferBase {
     void DestroyImpl() override;
     bool IsCPUWritableAtCreation() const override;
     MaybeError MapAtCreationImpl() override;
-    void* GetMappedPointerImpl() override;
+    void* GetMappedPointer() override;
 
     VkBuffer mHandle = VK_NULL_HANDLE;
     ResourceMemoryAllocation mMemoryAllocation;

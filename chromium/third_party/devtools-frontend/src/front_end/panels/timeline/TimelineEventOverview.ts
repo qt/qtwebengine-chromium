@@ -35,6 +35,7 @@ import * as TimelineModel from '../../models/timeline_model/timeline_model.js';
 import * as PerfUI from '../../ui/legacy/components/perf_ui/perf_ui.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import * as Coverage from '../coverage/coverage.js';
+import * as Root from '../../core/root/root.js';
 import * as Protocol from '../../generated/protocol.js';
 
 import {type PerformanceModel} from './PerformanceModel.js';
@@ -43,26 +44,26 @@ import {TimelineUIUtils, type EventDispatchTypeDescriptor, type TimelineCategory
 
 const UIStrings = {
   /**
-  *@description Short for Network. Label for the network requests section of the Performance panel.
-  */
+   *@description Short for Network. Label for the network requests section of the Performance panel.
+   */
   net: 'NET',
   /**
-  *@description Text in Timeline Event Overview of the Performance panel
-  */
+   *@description Text in Timeline Event Overview of the Performance panel
+   */
   cpu: 'CPU',
   /**
-  *@description Text in Timeline Event Overview of the Performance panel
-  */
+   *@description Text in Timeline Event Overview of the Performance panel
+   */
   heap: 'HEAP',
   /**
-  *@description Heap size label text content in Timeline Event Overview of the Performance panel
-  *@example {10 MB} PH1
-  *@example {30 MB} PH2
-  */
+   *@description Heap size label text content in Timeline Event Overview of the Performance panel
+   *@example {10 MB} PH1
+   *@example {30 MB} PH2
+   */
   sSDash: '{PH1} – {PH2}',
   /**
-  *@description Text in Timeline Event Overview of the Performance panel
-  */
+   *@description Text in Timeline Event Overview of the Performance panel
+   */
   coverage: 'COVERAGE',
 };
 const str_ = i18n.i18n.registerUIStrings('panels/timeline/TimelineEventOverview.ts', UIStrings);
@@ -208,6 +209,7 @@ export class TimelineEventOverviewCPUActivity extends TimelineEventOverview {
     if (!this.model) {
       return;
     }
+    const showSystemNode = Root.Runtime.experiments.isEnabled('timelineDoNotSkipSystemNodesOfCpuProfile');
     const timelineModel = this.model.timelineModel();
     const quantSizePx = 4 * window.devicePixelRatio;
     const width = this.width();
@@ -222,7 +224,7 @@ export class TimelineEventOverviewCPUActivity extends TimelineEventOverview {
     const otherIndex = categoryOrder.indexOf('other');
     const idleIndex = 0;
     console.assert(idleIndex === categoryOrder.indexOf('idle'));
-    for (let i = idleIndex + 1; i < categoryOrder.length; ++i) {
+    for (let i = 0; i < categoryOrder.length; ++i) {
       categoryToIndex.set(categories[categoryOrder[i]], i);
     }
 
@@ -265,7 +267,12 @@ export class TimelineEventOverviewCPUActivity extends TimelineEventOverview {
       function onEventStart(e: SDK.TracingModel.Event): void {
         const index = categoryIndexStack.length ? categoryIndexStack[categoryIndexStack.length - 1] : idleIndex;
         quantizer.appendInterval(e.startTime, (index as number));
-        categoryIndexStack.push(categoryToIndex.get(TimelineUIUtils.eventStyle(e).category) || otherIndex);
+        const categoryIndex = categoryToIndex.get(TimelineUIUtils.eventStyle(e).category);
+        if (showSystemNode) {
+          categoryIndexStack.push(categoryIndex !== undefined ? categoryIndex : otherIndex);
+        } else {
+          categoryIndexStack.push(categoryIndex || otherIndex);
+        }
       }
 
       function onEventEnd(e: SDK.TracingModel.Event): void {

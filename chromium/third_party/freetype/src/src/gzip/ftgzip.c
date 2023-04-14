@@ -8,7 +8,7 @@
  * parse compressed PCF fonts, as found with many X11 server
  * distributions.
  *
- * Copyright (C) 2002-2022 by
+ * Copyright (C) 2002-2023 by
  * David Turner, Robert Wilhelm, and Werner Lemberg.
  *
  * This file is part of the FreeType project, and may only be used,
@@ -90,7 +90,9 @@
 
 #if defined( __GNUC__ )
 #pragma GCC diagnostic push
+#ifndef __cplusplus
 #pragma GCC diagnostic ignored "-Wstrict-prototypes"
+#endif
 #pragma GCC diagnostic ignored "-Wimplicit-fallthrough"
 #pragma GCC diagnostic ignored "-Wredundant-decls"
 #endif

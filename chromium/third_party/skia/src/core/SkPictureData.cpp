@@ -9,8 +9,8 @@
 
 #include "include/core/SkImageGenerator.h"
 #include "include/core/SkTypeface.h"
-#include "include/private/SkTo.h"
-#include "src/core/SkAutoMalloc.h"
+#include "include/private/base/SkTo.h"
+#include "src/base/SkAutoMalloc.h"
 #include "src/core/SkPicturePriv.h"
 #include "src/core/SkPictureRecord.h"
 #include "src/core/SkReadBuffer.h"
@@ -24,6 +24,8 @@
 #if SK_SUPPORT_GPU
 #include "include/private/chromium/Slug.h"
 #endif
+
+using namespace skia_private;
 
 template <typename T> int SafeCount(const T* obj) {
     return obj ? obj->size() : 0;
@@ -100,7 +102,7 @@ static void write_tag_size(SkWStream* stream, uint32_t tag, size_t size) {
 void SkPictureData::WriteFactories(SkWStream* stream, const SkFactorySet& rec) {
     int count = rec.count();
 
-    SkAutoSTMalloc<16, SkFlattenable::Factory> storage(count);
+    AutoSTMalloc<16, SkFlattenable::Factory> storage(count);
     SkFlattenable::Factory* array = (SkFlattenable::Factory*)storage.get();
     rec.copyToArray(array);
 
@@ -131,7 +133,7 @@ void SkPictureData::WriteTypefaces(SkWStream* stream, const SkRefCntSet& rec,
 
     write_tag_size(stream, SK_PICT_TYPEFACE_TAG, count);
 
-    SkAutoSTMalloc<16, SkTypeface*> storage(count);
+    AutoSTMalloc<16, SkTypeface*> storage(count);
     SkTypeface** array = (SkTypeface**)storage.get();
     rec.copyToArray((SkRefCnt**)array);
 

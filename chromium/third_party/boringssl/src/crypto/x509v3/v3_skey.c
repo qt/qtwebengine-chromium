@@ -1,4 +1,3 @@
-/* v3_skey.c */
 /*
  * Written by Dr Stephen N Henson (steve@openssl.org) for the OpenSSL project
  * 1999.
@@ -73,12 +72,12 @@ char *i2s_ASN1_OCTET_STRING(const X509V3_EXT_METHOD *method,
 }
 
 ASN1_OCTET_STRING *s2i_ASN1_OCTET_STRING(const X509V3_EXT_METHOD *method,
-                                         X509V3_CTX *ctx, const char *str) {
+                                         const X509V3_CTX *ctx,
+                                         const char *str) {
   ASN1_OCTET_STRING *oct;
   long length;
 
   if (!(oct = ASN1_OCTET_STRING_new())) {
-    OPENSSL_PUT_ERROR(X509V3, ERR_R_MALLOC_FAILURE);
     return NULL;
   }
 
@@ -97,7 +96,7 @@ static char *i2s_ASN1_OCTET_STRING_cb(const X509V3_EXT_METHOD *method,
   return i2s_ASN1_OCTET_STRING(method, ext);
 }
 
-static void *s2i_skey_id(const X509V3_EXT_METHOD *method, X509V3_CTX *ctx,
+static void *s2i_skey_id(const X509V3_EXT_METHOD *method, const X509V3_CTX *ctx,
                          const char *str) {
   ASN1_OCTET_STRING *oct;
   ASN1_BIT_STRING *pk;
@@ -109,11 +108,10 @@ static void *s2i_skey_id(const X509V3_EXT_METHOD *method, X509V3_CTX *ctx,
   }
 
   if (!(oct = ASN1_OCTET_STRING_new())) {
-    OPENSSL_PUT_ERROR(X509V3, ERR_R_MALLOC_FAILURE);
     return NULL;
   }
 
-  if (ctx && (ctx->flags == CTX_TEST)) {
+  if (ctx && (ctx->flags == X509V3_CTX_TEST)) {
     return oct;
   }
 
@@ -138,7 +136,6 @@ static void *s2i_skey_id(const X509V3_EXT_METHOD *method, X509V3_CTX *ctx,
   }
 
   if (!ASN1_OCTET_STRING_set(oct, pkey_dig, diglen)) {
-    OPENSSL_PUT_ERROR(X509V3, ERR_R_MALLOC_FAILURE);
     goto err;
   }
 

@@ -294,7 +294,7 @@ struct minmax_coeff_visitor<Derived, is_min, PropagateNumbers> : coeff_visitor<D
       Packet mask = pcmp_eq(pset1<Packet>(value), p);
       Index max_idx = PacketSize - static_cast<Index>(predux_max(pand(range, mask)));
       this->res = value;
-      this->row = Derived::IsRowMajor ? i : i + max_idx;;
+      this->row = Derived::IsRowMajor ? i : i + max_idx;
       this->col = Derived::IsRowMajor ? j + max_idx : j;
     }
   }
@@ -342,7 +342,7 @@ template<typename Scalar, bool is_min, int NaNPropagation>
 struct functor_traits<minmax_coeff_visitor<Scalar, is_min, NaNPropagation> > {
   enum {
     Cost = NumTraits<Scalar>::AddCost,
-    PacketAccess = true
+    PacketAccess = packet_traits<Scalar>::HasCmp
   };
 };
 

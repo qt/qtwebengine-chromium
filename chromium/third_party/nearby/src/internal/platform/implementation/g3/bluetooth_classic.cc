@@ -18,13 +18,12 @@
 #include <string>
 
 #include "absl/synchronization/mutex.h"
-#include "internal/platform/implementation/bluetooth_classic.h"
 #include "internal/platform/cancellation_flag_listener.h"
+#include "internal/platform/implementation/bluetooth_classic.h"
+#include "internal/platform/implementation/g3/bluetooth_adapter.h"
 #include "internal/platform/logging.h"
 #include "internal/platform/medium_environment.h"
-#include "internal/platform/implementation/g3/bluetooth_adapter.h"
 
-namespace location {
 namespace nearby {
 namespace g3 {
 
@@ -140,7 +139,8 @@ bool BluetoothServerSocket::Connect(BluetoothSocket& socket) {
   return true;
 }
 
-void BluetoothServerSocket::SetCloseNotifier(std::function<void()> notifier) {
+void BluetoothServerSocket::SetCloseNotifier(
+    absl::AnyInvocable<void()> notifier) {
   absl::MutexLock lock(&mutex_);
   close_notifier_ = std::move(notifier);
 }
@@ -219,7 +219,7 @@ std::unique_ptr<api::BluetoothSocket> BluetoothClassicMedium::ConnectToService(
   {
     absl::MutexLock medium_lock(&medium->mutex_);
     auto item = medium->sockets_.find(service_uuid);
-    server_socket = item != sockets_.end() ? item->second : nullptr;
+    server_socket = item != medium->sockets_.end() ? item->second : nullptr;
     if (server_socket == nullptr) {
       NEARBY_LOGS(ERROR) << "Failed to find BT Server socket: uuid="
                          << service_uuid;
@@ -275,4 +275,3 @@ api::BluetoothDevice* BluetoothClassicMedium::GetRemoteDevice(
 
 }  // namespace g3
 }  // namespace nearby
-}  // namespace location

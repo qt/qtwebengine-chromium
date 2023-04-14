@@ -85,34 +85,48 @@ TEST(HeaderValidatorTest, ValueHasInvalidChar) {
   // These characters should be allowed. (Not exhaustive.)
   for (const char* c :
        {"!", "3", "a", "_", "|", "~", "\\", "<", ";", "[", "=", "A", "\t"}) {
+    const std::string value = absl::StrCat("val", c, "ue");
+    EXPECT_TRUE(
+        HeaderValidator::IsValidHeaderValue(value, ObsTextOption::kDisallow));
     HeaderValidator::HeaderStatus status =
-        v.ValidateSingleHeader("name", absl::StrCat("val", c, "ue"));
+        v.ValidateSingleHeader("name", value);
     EXPECT_EQ(HeaderValidator::HEADER_OK, status);
   }
   // These should not.
   for (const char* c : {"\r", "\n"}) {
+    const std::string value = absl::StrCat("val", c, "ue");
+    EXPECT_FALSE(
+        HeaderValidator::IsValidHeaderValue(value, ObsTextOption::kDisallow));
     HeaderValidator::HeaderStatus status =
-        v.ValidateSingleHeader("name", absl::StrCat("val", c, "ue"));
+        v.ValidateSingleHeader("name", value);
     EXPECT_EQ(HeaderValidator::HEADER_FIELD_INVALID, status);
   }
   // Test nul separately.
   {
+    const std::string value("val\0ue", 6);
+    EXPECT_FALSE(
+        HeaderValidator::IsValidHeaderValue(value, ObsTextOption::kDisallow));
     HeaderValidator::HeaderStatus status =
-        v.ValidateSingleHeader("name", absl::string_view("val\0ue", 6));
+        v.ValidateSingleHeader("name", value);
     EXPECT_EQ(HeaderValidator::HEADER_FIELD_INVALID, status);
   }
   {
+    const std::string obs_text_value = "val\xa9ue";
     // Test that obs-text is disallowed by default.
     EXPECT_EQ(HeaderValidator::HEADER_FIELD_INVALID,
-              v.ValidateSingleHeader("name", "val\xa9ue"));
+              v.ValidateSingleHeader("name", obs_text_value));
     // Test that obs-text is disallowed when configured.
     v.SetObsTextOption(ObsTextOption::kDisallow);
+    EXPECT_FALSE(HeaderValidator::IsValidHeaderValue(obs_text_value,
+                                                     ObsTextOption::kDisallow));
     EXPECT_EQ(HeaderValidator::HEADER_FIELD_INVALID,
-              v.ValidateSingleHeader("name", "val\xa9ue"));
+              v.ValidateSingleHeader("name", obs_text_value));
     // Test that obs-text is allowed when configured.
     v.SetObsTextOption(ObsTextOption::kAllow);
+    EXPECT_TRUE(HeaderValidator::IsValidHeaderValue(obs_text_value,
+                                                    ObsTextOption::kAllow));
     EXPECT_EQ(HeaderValidator::HEADER_OK,
-              v.ValidateSingleHeader("name", "val\xa9ue"));
+              v.ValidateSingleHeader("name", obs_text_value));
   }
 }
 
@@ -150,45 +164,59 @@ TEST(HeaderValidatorTest, AuthorityHasInvalidChar) {
   for (absl::string_view key : {":authority", "host"}) {
     // These characters should be allowed. (Not exhaustive.)
     for (const absl::string_view c : {"1", "-", "!", ":", "+", "=", ","}) {
+      const std::string value = absl::StrCat("ho", c, "st.example.com");
+      EXPECT_TRUE(HeaderValidator::IsValidAuthority(value));
+
       HeaderValidator v;
       v.StartHeaderBlock();
-      HeaderValidator::HeaderStatus status =
-          v.ValidateSingleHeader(key, absl::StrCat("ho", c, "st.example.com"));
+      HeaderValidator::HeaderStatus status = v.ValidateSingleHeader(key, value);
       EXPECT_EQ(HeaderValidator::HEADER_OK, status);
     }
     // These should not.
     for (const absl::string_view c : {"\r", "\n", "|", "\\", "`"}) {
+      const std::string value = absl::StrCat("ho", c, "st.example.com");
+      EXPECT_FALSE(HeaderValidator::IsValidAuthority(value));
+
       HeaderValidator v;
       v.StartHeaderBlock();
-      HeaderValidator::HeaderStatus status =
-          v.ValidateSingleHeader(key, absl::StrCat("ho", c, "st.example.com"));
+      HeaderValidator::HeaderStatus status = v.ValidateSingleHeader(key, value);
       EXPECT_EQ(HeaderValidator::HEADER_FIELD_INVALID, status);
     }
 
     {
       // IPv4 example
+      const std::string value = "123.45.67.89";
+      EXPECT_TRUE(HeaderValidator::IsValidAuthority(value));
+
       HeaderValidator v;
       v.StartHeaderBlock();
-      HeaderValidator::HeaderStatus status =
-          v.ValidateSingleHeader(key, "123.45.67.89");
+      HeaderValidator::HeaderStatus status = v.ValidateSingleHeader(key, value);
       EXPECT_EQ(HeaderValidator::HEADER_OK, status);
     }
 
     {
       // IPv6 examples
+      const std::string value1 = "2001:0db8:85a3:0000:0000:8a2e:0370:7334";
+      EXPECT_TRUE(HeaderValidator::IsValidAuthority(value1));
+
       HeaderValidator v;
       v.StartHeaderBlock();
-      HeaderValidator::HeaderStatus status = v.ValidateSingleHeader(
-          key, "2001:0db8:85a3:0000:0000:8a2e:0370:7334");
+      HeaderValidator::HeaderStatus status =
+          v.ValidateSingleHeader(key, value1);
       EXPECT_EQ(HeaderValidator::HEADER_OK, status);
+
+      const std::string value2 = "[::1]:80";
+      EXPECT_TRUE(HeaderValidator::IsValidAuthority(value2));
       HeaderValidator v2;
       v2.StartHeaderBlock();
-      status = v2.ValidateSingleHeader(key, "[::1]:80");
+      status = v2.ValidateSingleHeader(key, value2);
       EXPECT_EQ(HeaderValidator::HEADER_OK, status);
     }
 
     {
       // Empty field
+      EXPECT_TRUE(HeaderValidator::IsValidAuthority(""));
+
       HeaderValidator v;
       v.StartHeaderBlock();
       HeaderValidator::HeaderStatus status = v.ValidateSingleHeader(key, "");

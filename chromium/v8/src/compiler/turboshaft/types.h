@@ -9,12 +9,38 @@
 #include <limits>
 
 #include "src/base/container-utils.h"
+#include "src/base/export-template.h"
 #include "src/base/logging.h"
 #include "src/base/small-vector.h"
 #include "src/common/globals.h"
+#include "src/compiler/turboshaft/fast-hash.h"
+#include "src/numbers/conversions.h"
 #include "src/objects/turboshaft-types.h"
 #include "src/utils/ostreams.h"
 #include "src/zone/zone-containers.h"
+
+#ifdef DEBUG
+#define TURBOSHAFT_TRACE_TYPING(...)                     \
+  do {                                                   \
+    if (V8_UNLIKELY(v8_flags.turboshaft_trace_typing)) { \
+      PrintF(__VA_ARGS__);                               \
+    }                                                    \
+  } while (false)
+
+#define TURBOSHAFT_TRACE_TYPING_WITH_COLOR(colorcode, str, ...)           \
+  TURBOSHAFT_TRACE_TYPING(                                                \
+      (v8_flags.log_colour ? ("\033[" colorcode "m" str "\033[m") : str), \
+      __VA_ARGS__)
+#define TURBOSHAFT_TRACE_TYPING_OK(str, ...) \
+  TURBOSHAFT_TRACE_TYPING_WITH_COLOR("32", str, __VA_ARGS__)
+#define TURBOSHAFT_TRACE_TYPING_FAIL(str, ...) \
+  TURBOSHAFT_TRACE_TYPING_WITH_COLOR("31", str, __VA_ARGS__)
+#else
+#define TURBOSHAFT_TRACE_TYPING(...) ((void)0)
+#define TURBOSHAFT_TRACE_TYPING_WITH_COLOR(colorcode, str, ...) ((void)0)
+#define TURBOSHAFT_TRACE_TYPING_OK(str, ...) ((void)0)
+#define TURBOSHAFT_TRACE_TYPING_FAIL(str, ...) ((void)0)
+#endif  // DEBUG
 
 namespace v8::internal {
 class Factory;
@@ -33,6 +59,16 @@ inline bool is_unique_and_sorted(const T& container) {
     if (!(*cur < *next)) return false;
   }
   return true;
+}
+
+template <typename T>
+inline bool is_minus_zero(T value) {
+  return IsMinusZero(value);
+}
+
+template <typename T>
+inline bool is_float_special_value(T value) {
+  return std::isnan(value) || is_minus_zero(value);
 }
 
 template <size_t Bits>
@@ -59,7 +95,7 @@ struct TypeForBits<64> {
 // A workaround is to add a dummy value which is zero initialized by default.
 // More information as well as a sample reproducible code can be found at the
 // comment section of this CL crrev.com/c/4057111
-// TODO: Remove dummy once all platforms are using gcc >= 9.
+// TODO(nicohartmann@): Remove dummy once all platforms are using gcc >= 9.
 struct Payload_Empty {
   uint8_t dummy = 0;
 };
@@ -119,6 +155,7 @@ template <size_t Bits>
 class WordType;
 template <size_t Bits>
 class FloatType;
+class TupleType;
 
 using Word32Type = WordType<32>;
 using Word64Type = WordType<64>;
@@ -134,6 +171,7 @@ class V8_EXPORT_PRIVATE Type {
     kWord64,
     kFloat32,
     kFloat64,
+    kTuple,
     kAny,
   };
 
@@ -165,6 +203,7 @@ class V8_EXPORT_PRIVATE Type {
   inline bool IsWord64() const { return kind_ == Kind::kWord64; }
   inline bool IsFloat32() const { return kind_ == Kind::kFloat32; }
   inline bool IsFloat64() const { return kind_ == Kind::kFloat64; }
+  inline bool IsTuple() const { return kind_ == Kind::kTuple; }
   inline bool IsAny() const { return kind_ == Kind::kAny; }
   template <size_t B>
   inline bool IsWord() const {
@@ -179,6 +218,7 @@ class V8_EXPORT_PRIVATE Type {
   inline const Word64Type& AsWord64() const;
   inline const Float32Type& AsFloat32() const;
   inline const Float64Type& AsFloat64() const;
+  inline const TupleType& AsTuple() const;
   template <size_t B>
   inline const auto& AsWord() const {
     if constexpr (B == 32)
@@ -189,6 +229,7 @@ class V8_EXPORT_PRIVATE Type {
 
   // Comparison
   bool Equals(const Type& other) const;
+  bool IsSubtypeOf(const Type& other) const;
 
   // Printing
   void PrintTo(std::ostream& stream) const;
@@ -200,6 +241,9 @@ class V8_EXPORT_PRIVATE Type {
   }
 
   // Other functions
+  static Type LeastUpperBound(const Type& lhs, const Type& rhs, Zone* zone);
+  static base::Optional<Type> ParseFromString(const std::string_view& str,
+                                              Zone* zone);
   Handle<TurboshaftType> AllocateOnHeap(Factory* factory) const;
 
  protected:
@@ -220,21 +264,28 @@ class V8_EXPORT_PRIVATE Type {
   }
 
   template <typename Payload>
-  const Payload& payload() const {
+  const Payload& get_payload() const {
     static_assert(sizeof(Payload) <= sizeof(payload_));
     return *reinterpret_cast<const Payload*>(&payload_[0]);
   }
 
-  Kind kind_;
-  uint8_t sub_kind_;
-  uint8_t set_size_;
-  uint8_t reserved_;
-  uint32_t bitfield_;
+  union {
+    struct {
+      Kind kind_;
+      uint8_t sub_kind_;
+      uint8_t set_size_;
+      uint8_t reserved_;
+      uint32_t bitfield_;
+    };
+    // {header_} can be  used for faster hashing or comparison.
+    uint64_t header_;
+  };
 
  private:
-  // Access through payload<>().
+  // Access through get_payload<>().
   uint64_t payload_[2];  // Type specific data
 
+  friend struct fast_hash<Type>;
   explicit Type(Kind kind) : Type(kind, 0, 0, 0, 0, detail::Payload_Empty{}) {
     DCHECK(kind == Kind::kInvalid || kind == Kind::kNone || kind == Kind::kAny);
   }
@@ -242,7 +293,7 @@ class V8_EXPORT_PRIVATE Type {
 static_assert(sizeof(Type) == 24);
 
 template <size_t Bits>
-class WordType : public Type {
+class EXPORT_TEMPLATE_DECLARE(V8_EXPORT_PRIVATE) WordType : public Type {
   static_assert(Bits == 32 || Bits == 64);
   friend class Type;
   static constexpr int kMaxInlineSetSize = 2;
@@ -341,11 +392,11 @@ class WordType : public Type {
   // Accessors
   word_t range_from() const {
     DCHECK(is_range());
-    return payload<Payload_Range>().min;
+    return get_payload<Payload_Range>().min;
   }
   word_t range_to() const {
     DCHECK(is_range());
-    return payload<Payload_Range>().max;
+    return get_payload<Payload_Range>().max;
   }
   std::pair<word_t, word_t> range() const {
     DCHECK(is_range());
@@ -364,10 +415,10 @@ class WordType : public Type {
   base::Vector<const word_t> set_elements() const {
     DCHECK(is_set());
     if (set_size() <= kMaxInlineSetSize) {
-      return base::Vector<const word_t>(payload<Payload_InlineSet>().elements,
-                                        set_size());
+      return base::Vector<const word_t>(
+          get_payload<Payload_InlineSet>().elements, set_size());
     } else {
-      return base::Vector<const word_t>(payload<Payload_OutlineSet>().array,
+      return base::Vector<const word_t>(get_payload<Payload_OutlineSet>().array,
                                         set_size());
     }
   }
@@ -376,6 +427,10 @@ class WordType : public Type {
     DCHECK(is_set());
     DCHECK_EQ(set_size(), 1);
     return set_element(0);
+  }
+  bool is_constant(word_t value) const {
+    if (auto c = try_get_constant()) return *c == value;
+    return false;
   }
   word_t unsigned_min() const {
     switch (sub_kind()) {
@@ -397,7 +452,8 @@ class WordType : public Type {
 
   // Misc
   bool Contains(word_t value) const;
-  bool Equals(const WordType<Bits>& other) const;
+  bool Equals(const WordType& other) const;
+  bool IsSubtypeOf(const WordType& other) const;
   static WordType LeastUpperBound(const WordType& lhs, const WordType& rhs,
                                   Zone* zone);
   static Type Intersect(const WordType& lhs, const WordType& rhs,
@@ -418,7 +474,7 @@ class WordType : public Type {
 };
 
 template <size_t Bits>
-class FloatType : public Type {
+class EXPORT_TEMPLATE_DECLARE(V8_EXPORT_PRIVATE) FloatType : public Type {
   static_assert(Bits == 32 || Bits == 64);
   friend class Type;
   static constexpr int kMaxInlineSetSize = 2;
@@ -426,7 +482,7 @@ class FloatType : public Type {
   enum class SubKind : uint8_t {
     kRange,
     kSet,
-    kOnlyNan,
+    kOnlySpecialValues,
   };
 
  public:
@@ -437,13 +493,25 @@ class FloatType : public Type {
   enum Special : uint32_t {
     kNoSpecialValues = 0x0,
     kNaN = 0x1,
+    kMinusZero = 0x2,
   };
 
   // Constructors
-  static FloatType NaN() {
-    return FloatType{SubKind::kOnlyNan, 0, Special::kNaN, Payload_OnlyNan{}};
+  static FloatType OnlySpecialValues(uint32_t special_values) {
+    DCHECK_NE(0, special_values);
+    return FloatType{SubKind::kOnlySpecialValues, 0, special_values,
+                     Payload_OnlySpecial{}};
   }
-  static FloatType Any(uint32_t special_values = Special::kNaN) {
+  static FloatType NaN() {
+    return FloatType{SubKind::kOnlySpecialValues, 0, Special::kNaN,
+                     Payload_OnlySpecial{}};
+  }
+  static FloatType MinusZero() {
+    return FloatType{SubKind::kOnlySpecialValues, 0, Special::kMinusZero,
+                     Payload_OnlySpecial{}};
+  }
+  static FloatType Any(uint32_t special_values = Special::kNaN |
+                                                 Special::kMinusZero) {
     return FloatType::Range(-std::numeric_limits<float_t>::infinity(),
                             std::numeric_limits<float_t>::infinity(),
                             special_values, nullptr);
@@ -453,8 +521,10 @@ class FloatType : public Type {
   }
   static FloatType Range(float_t min, float_t max, uint32_t special_values,
                          Zone* zone) {
-    DCHECK(!std::isnan(min));
-    DCHECK(!std::isnan(max));
+    special_values |= IdentifyMinusZero(min);
+    special_values |= IdentifyMinusZero(max);
+    DCHECK(!detail::is_float_special_value(min));
+    DCHECK(!detail::is_float_special_value(max));
     DCHECK_LE(min, max);
     if (min == max) return Set({min}, zone);
     return FloatType{SubKind::kRange, 0, special_values,
@@ -498,7 +568,11 @@ class FloatType : public Type {
       Payload_InlineSet p;
       DCHECK_LT(0, elements.size());
       p.elements[0] = elements[0];
-      if (elements.size() > 1) p.elements[1] = elements[1];
+      special_values |= IdentifyMinusZero(p.elements[0]);
+      if (elements.size() > 1) {
+        p.elements[1] = elements[1];
+        special_values |= IdentifyMinusZero(p.elements[1]);
+      }
       return FloatType{SubKind::kSet, static_cast<uint8_t>(elements.size()),
                        special_values, p};
     } else {
@@ -506,7 +580,10 @@ class FloatType : public Type {
       Payload_OutlineSet p;
       p.array = zone->NewArray<float_t>(elements.size());
       DCHECK_NOT_NULL(p.array);
-      for (size_t i = 0; i < elements.size(); ++i) p.array[i] = elements[i];
+      for (size_t i = 0; i < elements.size(); ++i) {
+        p.array[i] = elements[i];
+        special_values |= IdentifyMinusZero(p.array[i]);
+      }
       return FloatType{SubKind::kSet, static_cast<uint8_t>(elements.size()),
                        special_values, p};
     }
@@ -516,9 +593,12 @@ class FloatType : public Type {
   }
 
   // Checks
-  bool is_only_nan() const {
-    DCHECK_IMPLIES(sub_kind() == SubKind::kOnlyNan, has_nan());
-    return sub_kind() == SubKind::kOnlyNan;
+  bool is_only_special_values() const {
+    return sub_kind() == SubKind::kOnlySpecialValues;
+  }
+  bool is_only_nan() const { return is_only_special_values() && has_nan(); }
+  bool is_only_minus_zero() const {
+    return is_only_special_values() && has_minus_zero();
   }
   bool is_range() const { return sub_kind() == SubKind::kRange; }
   bool is_set() const { return sub_kind() == SubKind::kSet; }
@@ -529,19 +609,23 @@ class FloatType : public Type {
   }
   bool is_constant() const {
     DCHECK_EQ(set_size_ > 0, is_set());
-    return set_size_ == 1 && !has_nan();
+    return set_size_ == 1 && !has_special_values();
   }
   uint32_t special_values() const { return bitfield_; }
+  bool has_special_values() const { return special_values() != 0; }
   bool has_nan() const { return (special_values() & Special::kNaN) != 0; }
+  bool has_minus_zero() const {
+    return (special_values() & Special::kMinusZero) != 0;
+  }
 
   // Accessors
   float_t range_min() const {
     DCHECK(is_range());
-    return payload<Payload_Range>().min;
+    return get_payload<Payload_Range>().min;
   }
   float_t range_max() const {
     DCHECK(is_range());
-    return payload<Payload_Range>().max;
+    return get_payload<Payload_Range>().max;
   }
   std::pair<float_t, float_t> range() const {
     DCHECK(is_range());
@@ -560,30 +644,40 @@ class FloatType : public Type {
   base::Vector<const float_t> set_elements() const {
     DCHECK(is_set());
     if (set_size() <= kMaxInlineSetSize) {
-      return base::Vector<const float_t>(payload<Payload_InlineSet>().elements,
-                                         set_size());
+      return base::Vector<const float_t>(
+          get_payload<Payload_InlineSet>().elements, set_size());
     } else {
-      return base::Vector<const float_t>(payload<Payload_OutlineSet>().array,
-                                         set_size());
+      return base::Vector<const float_t>(
+          get_payload<Payload_OutlineSet>().array, set_size());
     }
   }
   float_t min() const {
     switch (sub_kind()) {
-      case SubKind::kOnlyNan:
+      case SubKind::kOnlySpecialValues:
+        if (has_minus_zero()) return float_t{-0.0};
+        DCHECK(is_only_nan());
         return nan_v<Bits>;
       case SubKind::kRange:
+        if (has_minus_zero()) return std::min(float_t{-0.0}, range_min());
         return range_min();
       case SubKind::kSet:
+        if (has_minus_zero()) return std::min(float_t{-0.0}, set_element(0));
         return set_element(0);
     }
   }
   float_t max() const {
     switch (sub_kind()) {
-      case SubKind::kOnlyNan:
+      case SubKind::kOnlySpecialValues:
+        if (has_minus_zero()) return float_t{-0.0};
+        DCHECK(is_only_nan());
         return nan_v<Bits>;
       case SubKind::kRange:
+        if (has_minus_zero()) return std::max(float_t{-0.0}, range_max());
         return range_max();
       case SubKind::kSet:
+        if (has_minus_zero()) {
+          return std::max(float_t{-0.0}, set_element(set_size() - 1));
+        }
         return set_element(set_size() - 1);
     }
   }
@@ -594,10 +688,44 @@ class FloatType : public Type {
     DCHECK_EQ(set_size(), 1);
     return set_element(0);
   }
+  bool is_constant(float_t value) const {
+    if (V8_UNLIKELY(std::isnan(value))) return is_only_nan();
+    if (V8_UNLIKELY(IsMinusZero(value))) return is_only_minus_zero();
+    if (auto c = try_get_constant()) return *c == value;
+    return false;
+  }
+  // Returns the minimium value of a range or set, ignoring any special values
+  // (in contrast to min() above).
+  float_t range_or_set_min() const {
+    switch (sub_kind()) {
+      case SubKind::kOnlySpecialValues:
+        UNREACHABLE();
+      case SubKind::kRange:
+        return range_min();
+      case SubKind::kSet:
+        return set_element(0);
+    }
+  }
+  // Returns the maximum value of a range or set, ignoring any special values
+  // (in contrast to max() above).
+  float_t range_or_set_max() const {
+    switch (sub_kind()) {
+      case SubKind::kOnlySpecialValues:
+        UNREACHABLE();
+      case SubKind::kRange:
+        return range_max();
+      case SubKind::kSet:
+        return set_element(set_size() - 1);
+    }
+  }
+  std::pair<float_t, float_t> range_or_set_minmax() const {
+    return {range_or_set_min(), range_or_set_max()};
+  }
 
   // Misc
   bool Contains(float_t value) const;
   bool Equals(const FloatType& other) const;
+  bool IsSubtypeOf(const FloatType& other) const;
   static FloatType LeastUpperBound(const FloatType& lhs, const FloatType& rhs,
                                    Zone* zone);
   static Type Intersect(const FloatType& lhs, const FloatType& rhs, Zone* zone);
@@ -605,20 +733,91 @@ class FloatType : public Type {
   Handle<TurboshaftType> AllocateOnHeap(Factory* factory) const;
 
  private:
+  // This helper turns a -0 into a 0 in {value} and returns the
+  // Special::kMinusZero flag in that case. Otherwise the {value} is unchanged
+  // and Special::kNoSpecialValues is returned.
+  static uint32_t IdentifyMinusZero(float_t& value) {
+    if (V8_UNLIKELY(detail::is_minus_zero(value))) {
+      value = float_t{0};
+      return Special::kMinusZero;
+    }
+    return Special::kNoSpecialValues;
+  }
+  static FloatType ReplacedSpecialValues(const FloatType& t,
+                                         uint32_t special_values) {
+    auto result = t;
+    result.bitfield_ = special_values;
+    DCHECK_EQ(result.bitfield_, result.special_values());
+    return result;
+  }
+
   static constexpr Kind KIND = Bits == 32 ? Kind::kFloat32 : Kind::kFloat64;
   SubKind sub_kind() const { return static_cast<SubKind>(sub_kind_); }
   using Payload_Range = detail::Payload_Range<float_t>;
   using Payload_InlineSet = detail::Payload_InlineSet<float_t>;
   using Payload_OutlineSet = detail::Payload_OutlineSet<float_t>;
-  using Payload_OnlyNan = detail::Payload_Empty;
+  using Payload_OnlySpecial = detail::Payload_Empty;
 
   template <typename Payload>
   FloatType(SubKind sub_kind, uint8_t set_size, uint32_t special_values,
             const Payload& payload)
       : Type(KIND, static_cast<uint8_t>(sub_kind), set_size, special_values, 0,
              payload) {
-    DCHECK_EQ(special_values & ~Special::kNaN, 0);
+    DCHECK_EQ(special_values & ~(Special::kNaN | Special::kMinusZero), 0);
   }
+};
+
+class TupleType : public Type {
+ public:
+  static constexpr int kMaxTupleSize = std::numeric_limits<uint8_t>::max();
+
+  // Constructors
+  static TupleType Tuple(const Type& element0, const Type& element1,
+                         Zone* zone) {
+    Payload p;
+    p.array = zone->NewArray<Type>(2);
+    DCHECK_NOT_NULL(p.array);
+    p.array[0] = element0;
+    p.array[1] = element1;
+    return TupleType{2, p};
+  }
+
+  static TupleType Tuple(const base::Vector<Type>& elements, Zone* zone) {
+    DCHECK_LE(elements.size(), kMaxTupleSize);
+    Payload p;
+    p.array = zone->NewArray<Type>(elements.size());
+    DCHECK_NOT_NULL(p.array);
+    for (size_t i = 0; i < elements.size(); ++i) {
+      p.array[i] = elements[i];
+    }
+    return TupleType{static_cast<uint8_t>(elements.size()), p};
+  }
+
+  // Accessors
+  int size() const { return static_cast<int>(set_size_); }
+  const Type& element(int index) const {
+    DCHECK_LE(0, index);
+    DCHECK_LT(index, size());
+    return get_payload<Payload>().array[index];
+  }
+  base::Vector<Type> elements() const {
+    return base::Vector<Type>{get_payload<Payload>().array,
+                              static_cast<size_t>(size())};
+  }
+
+  // Misc
+  bool Equals(const TupleType& other) const;
+  bool IsSubtypeOf(const TupleType& other) const;
+  static Type LeastUpperBound(const TupleType& lhs, const TupleType& rhs,
+                              Zone* zone);
+  void PrintTo(std::ostream& stream) const;
+
+ private:
+  static constexpr Kind KIND = Kind::kTuple;
+  using Payload = detail::Payload_OutlineSet<Type>;
+
+  TupleType(uint8_t tuple_size, const Payload& payload)
+      : Type(KIND, 0, tuple_size, 0, 0, payload) {}
 };
 
 const Word32Type& Type::AsWord32() const {
@@ -635,9 +834,36 @@ const Float32Type& Type::AsFloat32() const {
   DCHECK(IsFloat32());
   return *static_cast<const Float32Type*>(this);
 }
+
 const Float64Type& Type::AsFloat64() const {
   DCHECK(IsFloat64());
   return *static_cast<const Float64Type*>(this);
+}
+
+const TupleType& Type::AsTuple() const {
+  DCHECK(IsTuple());
+  return *static_cast<const TupleType*>(this);
+}
+
+inline std::ostream& operator<<(std::ostream& stream, Type::Kind kind) {
+  switch (kind) {
+    case Type::Kind::kInvalid:
+      return stream << "Invalid";
+    case Type::Kind::kNone:
+      return stream << "None";
+    case Type::Kind::kWord32:
+      return stream << "Word32";
+    case Type::Kind::kWord64:
+      return stream << "Word64";
+    case Type::Kind::kFloat32:
+      return stream << "Float32";
+    case Type::Kind::kFloat64:
+      return stream << "Float64";
+    case Type::Kind::kTuple:
+      return stream << "Tuple";
+    case Type::Kind::kAny:
+      return stream << "Any";
+  }
 }
 
 inline std::ostream& operator<<(std::ostream& stream, const Type& type) {
@@ -648,6 +874,42 @@ inline std::ostream& operator<<(std::ostream& stream, const Type& type) {
 inline bool operator==(const Type& lhs, const Type& rhs) {
   return lhs.Equals(rhs);
 }
+
+template <>
+struct fast_hash<Type> {
+  size_t operator()(const Type& v) const {
+    // TODO(nicohartmann@): Fix fast_hash for outline payload once this is
+    // required.
+    UNREACHABLE();
+    // return fast_hash_combine(v.header_, v.payload_[0], v.payload_[1]);
+  }
+};
+
+// The below exports of the explicitly instantiated template instances produce
+// build errors on v8_linux64_gcc_light_compile_dbg build with
+//
+// error: type attributes ignored after type is already defined
+// [-Werror=attributes] extern template class
+// EXPORT_TEMPLATE_DECLARE(V8_EXPORT_PRIVATE) WordType<32>;
+//
+// No combination of export macros seems to be able to resolve this issue
+// although they seem to work for other classes. A temporary workaround is to
+// disable this warning here locally.
+// TODO(nicohartmann@): Ideally, we would find a better solution than to disable
+// the warning.
+#if V8_CC_GNU
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wattributes"
+#endif  // V8_CC_GNU
+
+extern template class EXPORT_TEMPLATE_DECLARE(V8_EXPORT_PRIVATE) WordType<32>;
+extern template class EXPORT_TEMPLATE_DECLARE(V8_EXPORT_PRIVATE) WordType<64>;
+extern template class EXPORT_TEMPLATE_DECLARE(V8_EXPORT_PRIVATE) FloatType<32>;
+extern template class EXPORT_TEMPLATE_DECLARE(V8_EXPORT_PRIVATE) FloatType<64>;
+
+#if V8_CC_GNU
+#pragma GCC diagnostic pop
+#endif  // V8_CC_GNU
 
 }  // namespace v8::internal::compiler::turboshaft
 

@@ -1,4 +1,4 @@
-load("//bazel:macros.bzl", "exports_files_legacy", "skia_filegroup", "split_srcs_and_hdrs")
+load("//bazel:macros.bzl", "bool_flag", "exports_files_legacy", "skia_filegroup", "split_srcs_and_hdrs")
 
 licenses(["notice"])
 
@@ -52,8 +52,6 @@ VK_FILES = [
     "GrVkSampler.h",
     "GrVkSamplerYcbcrConversion.cpp",
     "GrVkSamplerYcbcrConversion.h",
-    "GrVkSecondaryCBDrawContext.cpp",
-    "GrVkSecondaryCBDrawContext_impl.h",
     "GrVkSemaphore.cpp",
     "GrVkSemaphore.h",
     "GrVkTexture.cpp",
@@ -74,9 +72,24 @@ split_srcs_and_hdrs(
     files = VK_FILES,
 )
 
+bool_flag(
+    name = "enable_secondary_draw_context",
+    default = False,
+)
+
+skia_filegroup(
+    name = "vk_chromium_srcs",
+    srcs = ["GrVkSecondaryCBDrawContext.cpp"],
+)
+
 skia_filegroup(
     name = "srcs",
-    srcs = [":vk_srcs"],
+    srcs = [
+        ":vk_srcs",
+    ] + select({
+        ":enable_secondary_draw_context_true": [":vk_chromium_srcs"],
+        "//conditions:default": [],
+    }),
     visibility = ["//src/gpu/ganesh:__pkg__"],
 )
 

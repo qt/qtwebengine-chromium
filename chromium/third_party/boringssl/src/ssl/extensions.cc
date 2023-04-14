@@ -205,7 +205,14 @@ static bool tls1_check_duplicate_extensions(const CBS *cbs) {
 }
 
 static bool is_post_quantum_group(uint16_t id) {
-  return id == SSL_CURVE_CECPQ2;
+  switch (id) {
+    case SSL_CURVE_CECPQ2:
+    case SSL_CURVE_X25519KYBER768:
+    case SSL_CURVE_P256KYBER768:
+      return true;
+    default:
+      return false;
+  }
 }
 
 bool ssl_client_hello_init(const SSL *ssl, SSL_CLIENT_HELLO *out,
@@ -340,8 +347,8 @@ bool tls1_get_shared_group(SSL_HANDSHAKE *hs, uint16_t *out_group_id) {
   for (uint16_t pref_group : pref) {
     for (uint16_t supp_group : supp) {
       if (pref_group == supp_group &&
-          // CECPQ2(b) doesn't fit in the u8-length-prefixed ECPoint field in
-          // TLS 1.2 and below.
+          // Post-quantum key agreements don't fit in the u8-length-prefixed
+          // ECPoint field in TLS 1.2 and below.
           (ssl_protocol_version(ssl) >= TLS1_3_VERSION ||
            !is_post_quantum_group(pref_group))) {
         *out_group_id = pref_group;
@@ -2300,11 +2307,13 @@ bool ssl_setup_key_shares(SSL_HANDSHAKE *hs, uint16_t override_group_id) {
 
     group_id = groups[0];
 
-    if (is_post_quantum_group(group_id) && groups.size() >= 2) {
-      // CECPQ2(b) is not sent as the only initial key share. We'll include the
-      // 2nd preference group too to avoid round-trips.
-      second_group_id = groups[1];
-      assert(second_group_id != group_id);
+    // We'll try to include one post-quantum and one classical initial key
+    // share.
+    for (size_t i = 1; i < groups.size() && second_group_id == 0; i++) {
+      if (is_post_quantum_group(group_id) != is_post_quantum_group(groups[i])) {
+        second_group_id = groups[i];
+        assert(second_group_id != group_id);
+      }
     }
   }
 
@@ -3935,7 +3944,6 @@ static enum ssl_ticket_aead_result_t ssl_decrypt_ticket_with_method(
     Span<const uint8_t> ticket) {
   Array<uint8_t> plaintext;
   if (!plaintext.Init(ticket.size())) {
-    OPENSSL_PUT_ERROR(SSL, ERR_R_MALLOC_FAILURE);
     return ssl_ticket_aead_error;
   }
 

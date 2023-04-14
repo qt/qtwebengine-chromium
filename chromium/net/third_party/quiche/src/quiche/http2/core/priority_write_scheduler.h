@@ -16,7 +16,8 @@
 
 #include "absl/container/flat_hash_map.h"
 #include "absl/strings/str_cat.h"
-#include "quiche/http2/core/write_scheduler.h"
+#include "absl/time/time.h"
+#include "absl/types/optional.h"
 #include "quiche/common/platform/api/quiche_bug_tracker.h"
 #include "quiche/common/platform/api/quiche_export.h"
 #include "quiche/common/platform/api/quiche_logging.h"
@@ -30,45 +31,45 @@ template <typename StreamIdType>
 class PriorityWriteSchedulerPeer;
 }
 
-// WriteScheduler implementation that manages the order in which streams are
-// written using the SPDY priority scheme described at:
-// https://www.chromium.org/spdy/spdy-protocol/spdy-protocol-draft3-1#TOC-2.3.3-Stream-priority
+// SpdyPriority is an integer type, so this functor can be used both as
+// PriorityTypeToInt and as IntToPriorityType.
+struct QUICHE_EXPORT SpdyPriorityToSpdyPriority {
+  spdy::SpdyPriority operator()(spdy::SpdyPriority priority) {
+    return priority;
+  }
+};
+
+// PriorityWriteScheduler manages the order in which HTTP/2 or HTTP/3 streams
+// are written. Each stream has a priority of type PriorityType. This includes
+// an integer between 0 and 7, and optionally other information that is stored
+// but otherwise ignored by this class.  Higher priority (lower integer value)
+// streams are always given precedence over lower priority (higher value)
+// streams, as long as the higher priority stream is not blocked.
 //
-// Internally, PriorityWriteScheduler consists of 8 PriorityInfo objects, one
-// for each priority value.  Each PriorityInfo contains a list of streams of
-// that priority that are ready to write, as well as a timestamp of the last
-// I/O event that occurred for a stream of that priority.
+// Each stream can be in one of two states: ready or not ready (for writing).
+// Ready state is changed by calling the MarkStreamReady() and
+// MarkStreamNotReady() methods. Only streams in the ready state can be returned
+// by PopNextReadyStream(). When returned by that method, the stream's state
+// changes to not ready.
 //
-template <typename StreamIdType>
-class QUICHE_EXPORT PriorityWriteScheduler
-    : public WriteScheduler<StreamIdType> {
+template <typename StreamIdType, typename PriorityType = spdy::SpdyPriority,
+          typename PriorityTypeToInt = SpdyPriorityToSpdyPriority,
+          typename IntToPriorityType = SpdyPriorityToSpdyPriority>
+class QUICHE_EXPORT PriorityWriteScheduler {
  public:
-  using typename WriteScheduler<StreamIdType>::StreamPrecedenceType;
+  static constexpr int kHighestPriority = 0;
+  static constexpr int kLowestPriority = 7;
 
-  // Creates scheduler with no streams.
-  PriorityWriteScheduler() : PriorityWriteScheduler(spdy::kHttp2RootStreamId) {}
-  explicit PriorityWriteScheduler(StreamIdType root_stream_id)
-      : root_stream_id_(root_stream_id) {}
+  static_assert(spdy::kV3HighestPriority == kHighestPriority);
+  static_assert(spdy::kV3LowestPriority == kLowestPriority);
 
-  void RegisterStream(StreamIdType stream_id,
-                      const StreamPrecedenceType& precedence) override {
-    // TODO(mpw): verify |precedence.is_spdy3_priority() == true| once
-    //   Http2PriorityWriteScheduler enabled for HTTP/2.
-
-    // parent_id not used here, but may as well validate it.  However,
-    // parent_id may legitimately not be registered yet--see b/15676312.
-    StreamIdType parent_id = precedence.parent_id();
-    QUICHE_DVLOG_IF(
-        1, parent_id != root_stream_id_ && !StreamRegistered(parent_id))
-        << "Parent stream " << parent_id << " not registered";
-
-    if (stream_id == root_stream_id_) {
-      QUICHE_BUG(spdy_bug_19_1)
-          << "Stream " << root_stream_id_ << " already registered";
-      return;
-    }
+  // Registers new stream `stream_id` with the scheduler, assigning it the
+  // given priority.
+  //
+  // Preconditions: `stream_id` should be unregistered.
+  void RegisterStream(StreamIdType stream_id, PriorityType priority) {
     auto stream_info = std::make_unique<StreamInfo>(
-        StreamInfo{precedence.spdy3_priority(), stream_id, false});
+        StreamInfo{std::move(priority), stream_id, false});
     bool inserted =
         stream_infos_.insert(std::make_pair(stream_id, std::move(stream_info)))
             .second;
@@ -76,7 +77,11 @@ class QUICHE_EXPORT PriorityWriteScheduler
         << "Stream " << stream_id << " already registered";
   }
 
-  void UnregisterStream(StreamIdType stream_id) override {
+  // Unregisters the given stream from the scheduler, which will no longer keep
+  // state for it.
+  //
+  // Preconditions: `stream_id` should be registered.
+  void UnregisterStream(StreamIdType stream_id) {
     auto it = stream_infos_.find(stream_id);
     if (it == stream_infos_.end()) {
       QUICHE_BUG(spdy_bug_19_3) << "Stream " << stream_id << " not registered";
@@ -84,102 +89,121 @@ class QUICHE_EXPORT PriorityWriteScheduler
     }
     const StreamInfo* const stream_info = it->second.get();
     if (stream_info->ready) {
-      bool erased = Erase(&priority_infos_[stream_info->priority].ready_list,
-                          stream_info);
+      bool erased =
+          Erase(&priority_infos_[PriorityTypeToInt()(stream_info->priority)]
+                     .ready_list,
+                stream_info);
       QUICHE_DCHECK(erased);
     }
     stream_infos_.erase(it);
   }
 
-  bool StreamRegistered(StreamIdType stream_id) const override {
+  // Returns true if the given stream is currently registered.
+  bool StreamRegistered(StreamIdType stream_id) const {
     return stream_infos_.find(stream_id) != stream_infos_.end();
   }
 
-  StreamPrecedenceType GetStreamPrecedence(
-      StreamIdType stream_id) const override {
+  // Returns the priority of the specified stream.
+  //
+  // Preconditions: `stream_id` should be registered.
+  PriorityType GetStreamPriority(StreamIdType stream_id) const {
     auto it = stream_infos_.find(stream_id);
     if (it == stream_infos_.end()) {
       QUICHE_DVLOG(1) << "Stream " << stream_id << " not registered";
-      return StreamPrecedenceType(spdy::kV3LowestPriority);
+      return IntToPriorityType()(kLowestPriority);
     }
-    return StreamPrecedenceType(it->second->priority);
+    return it->second->priority;
   }
 
-  void UpdateStreamPrecedence(StreamIdType stream_id,
-                              const StreamPrecedenceType& precedence) override {
-    // TODO(mpw): verify |precedence.is_spdy3_priority() == true| once
-    //   Http2PriorityWriteScheduler enabled for HTTP/2.
-
-    // parent_id not used here, but may as well validate it.  However,
-    // parent_id may legitimately not be registered yet--see b/15676312.
-    StreamIdType parent_id = precedence.parent_id();
-    QUICHE_DVLOG_IF(
-        1, parent_id != root_stream_id_ && !StreamRegistered(parent_id))
-        << "Parent stream " << parent_id << " not registered";
-
+  // Updates the priority of the given stream.
+  //
+  // Preconditions: `stream_id` should be registered.
+  void UpdateStreamPriority(StreamIdType stream_id, PriorityType priority) {
     auto it = stream_infos_.find(stream_id);
     if (it == stream_infos_.end()) {
       // TODO(mpw): add to stream_infos_ on demand--see b/15676312.
       QUICHE_DVLOG(1) << "Stream " << stream_id << " not registered";
       return;
     }
+
     StreamInfo* const stream_info = it->second.get();
-    spdy::SpdyPriority new_priority = precedence.spdy3_priority();
-    if (stream_info->priority == new_priority) {
+    if (stream_info->priority == priority) {
       return;
     }
-    if (stream_info->ready) {
-      bool erased = Erase(&priority_infos_[stream_info->priority].ready_list,
-                          stream_info);
+
+    // Only move `stream_info` to a different bucket if the integral priority
+    // value changes.
+    if (PriorityTypeToInt()(stream_info->priority) !=
+            PriorityTypeToInt()(priority) &&
+        stream_info->ready) {
+      bool erased =
+          Erase(&priority_infos_[PriorityTypeToInt()(stream_info->priority)]
+                     .ready_list,
+                stream_info);
       QUICHE_DCHECK(erased);
-      priority_infos_[new_priority].ready_list.push_back(stream_info);
+      priority_infos_[PriorityTypeToInt()(priority)].ready_list.push_back(
+          stream_info);
       ++num_ready_streams_;
     }
-    stream_info->priority = new_priority;
+
+    // But override `priority` for the stream regardless of the integral value,
+    // because it might contain additional information.
+    stream_info->priority = std::move(priority);
   }
 
-  std::vector<StreamIdType> GetStreamChildren(
-      StreamIdType /*stream_id*/) const override {
-    return std::vector<StreamIdType>();
-  }
-
-  void RecordStreamEventTime(StreamIdType stream_id,
-                             int64_t now_in_usec) override {
+  // Records time of a read/write event for the given stream.
+  //
+  // Preconditions: `stream_id` should be registered.
+  void RecordStreamEventTime(StreamIdType stream_id, absl::Time now) {
     auto it = stream_infos_.find(stream_id);
     if (it == stream_infos_.end()) {
       QUICHE_BUG(spdy_bug_19_4) << "Stream " << stream_id << " not registered";
       return;
     }
-    PriorityInfo& priority_info = priority_infos_[it->second->priority];
-    priority_info.last_event_time_usec =
-        std::max(priority_info.last_event_time_usec, now_in_usec);
+    PriorityInfo& priority_info =
+        priority_infos_[PriorityTypeToInt()(it->second->priority)];
+    priority_info.last_event_time =
+        std::max(priority_info.last_event_time, absl::make_optional(now));
   }
 
-  int64_t GetLatestEventWithPrecedence(StreamIdType stream_id) const override {
+  // Returns time of the last read/write event for a stream with higher priority
+  // than the priority of the given stream, or nullopt if there is no such
+  // event.
+  //
+  // Preconditions: `stream_id` should be registered.
+  absl::optional<absl::Time> GetLatestEventWithPriority(
+      StreamIdType stream_id) const {
     auto it = stream_infos_.find(stream_id);
     if (it == stream_infos_.end()) {
       QUICHE_BUG(spdy_bug_19_5) << "Stream " << stream_id << " not registered";
-      return 0;
+      return absl::nullopt;
     }
-    int64_t last_event_time_usec = 0;
+    absl::optional<absl::Time> last_event_time;
     const StreamInfo* const stream_info = it->second.get();
-    for (spdy::SpdyPriority p = spdy::kV3HighestPriority;
-         p < stream_info->priority; ++p) {
-      last_event_time_usec = std::max(last_event_time_usec,
-                                      priority_infos_[p].last_event_time_usec);
+    for (int p = kHighestPriority;
+         p < PriorityTypeToInt()(stream_info->priority); ++p) {
+      last_event_time =
+          std::max(last_event_time, priority_infos_[p].last_event_time);
     }
-    return last_event_time_usec;
+    return last_event_time;
   }
 
-  StreamIdType PopNextReadyStream() override {
-    return std::get<0>(PopNextReadyStreamAndPrecedence());
+  // If the scheduler has any ready streams, returns the next scheduled
+  // ready stream, in the process transitioning the stream from ready to not
+  // ready.
+  //
+  // Preconditions: `HasReadyStreams() == true`
+  StreamIdType PopNextReadyStream() {
+    return std::get<0>(PopNextReadyStreamAndPriority());
   }
 
-  // Returns the next ready stream and its precedence.
-  std::tuple<StreamIdType, StreamPrecedenceType>
-  PopNextReadyStreamAndPrecedence() override {
-    for (spdy::SpdyPriority p = spdy::kV3HighestPriority;
-         p <= spdy::kV3LowestPriority; ++p) {
+  // If the scheduler has any ready streams, returns the next scheduled
+  // ready stream and its priority, in the process transitioning the stream from
+  // ready to not ready.
+  //
+  // Preconditions: `HasReadyStreams() == true`
+  std::tuple<StreamIdType, PriorityType> PopNextReadyStreamAndPriority() {
+    for (int p = kHighestPriority; p <= kLowestPriority; ++p) {
       ReadyList& ready_list = priority_infos_[p].ready_list;
       if (!ready_list.empty()) {
         StreamInfo* const info = ready_list.front();
@@ -189,15 +213,19 @@ class QUICHE_EXPORT PriorityWriteScheduler
         QUICHE_DCHECK(stream_infos_.find(info->stream_id) !=
                       stream_infos_.end());
         info->ready = false;
-        return std::make_tuple(info->stream_id,
-                               StreamPrecedenceType(info->priority));
+        return std::make_tuple(info->stream_id, info->priority);
       }
     }
     QUICHE_BUG(spdy_bug_19_6) << "No ready streams available";
-    return std::make_tuple(0, StreamPrecedenceType(spdy::kV3LowestPriority));
+    return std::make_tuple(0, IntToPriorityType()(kLowestPriority));
   }
 
-  bool ShouldYield(StreamIdType stream_id) const override {
+  // Returns true if there's another stream ahead of the given stream in the
+  // scheduling queue.  This function can be called to see if the given stream
+  // should yield work to another stream.
+  //
+  // Preconditions: `stream_id` should be registered.
+  bool ShouldYield(StreamIdType stream_id) const {
     auto it = stream_infos_.find(stream_id);
     if (it == stream_infos_.end()) {
       QUICHE_BUG(spdy_bug_19_7) << "Stream " << stream_id << " not registered";
@@ -206,8 +234,8 @@ class QUICHE_EXPORT PriorityWriteScheduler
 
     // If there's a higher priority stream, this stream should yield.
     const StreamInfo* const stream_info = it->second.get();
-    for (spdy::SpdyPriority p = spdy::kV3HighestPriority;
-         p < stream_info->priority; ++p) {
+    for (int p = kHighestPriority;
+         p < PriorityTypeToInt()(stream_info->priority); ++p) {
       if (!priority_infos_[p].ready_list.empty()) {
         return true;
       }
@@ -215,7 +243,8 @@ class QUICHE_EXPORT PriorityWriteScheduler
 
     // If this priority level is empty, or this stream is the next up, there's
     // no need to yield.
-    const auto& ready_list = priority_infos_[it->second->priority].ready_list;
+    const auto& ready_list =
+        priority_infos_[PriorityTypeToInt()(it->second->priority)].ready_list;
     if (ready_list.empty() || ready_list.front()->stream_id == stream_id) {
       return false;
     }
@@ -225,7 +254,12 @@ class QUICHE_EXPORT PriorityWriteScheduler
     return true;
   }
 
-  void MarkStreamReady(StreamIdType stream_id, bool add_to_front) override {
+  // Marks the stream as ready to write. If the stream was already ready, does
+  // nothing. If add_to_front is true, the stream is scheduled ahead of other
+  // streams of the same priority/weight, otherwise it is scheduled behind them.
+  //
+  // Preconditions: `stream_id` should be registered.
+  void MarkStreamReady(StreamIdType stream_id, bool add_to_front) {
     auto it = stream_infos_.find(stream_id);
     if (it == stream_infos_.end()) {
       QUICHE_BUG(spdy_bug_19_8) << "Stream " << stream_id << " not registered";
@@ -235,7 +269,8 @@ class QUICHE_EXPORT PriorityWriteScheduler
     if (stream_info->ready) {
       return;
     }
-    ReadyList& ready_list = priority_infos_[stream_info->priority].ready_list;
+    ReadyList& ready_list =
+        priority_infos_[PriorityTypeToInt()(stream_info->priority)].ready_list;
     if (add_to_front) {
       ready_list.push_front(stream_info);
     } else {
@@ -245,7 +280,11 @@ class QUICHE_EXPORT PriorityWriteScheduler
     stream_info->ready = true;
   }
 
-  void MarkStreamNotReady(StreamIdType stream_id) override {
+  // Marks the stream as not ready to write. If the stream is not registered or
+  // not ready, does nothing.
+  //
+  // Preconditions: `stream_id` should be registered.
+  void MarkStreamNotReady(StreamIdType stream_id) {
     auto it = stream_infos_.find(stream_id);
     if (it == stream_infos_.end()) {
       QUICHE_BUG(spdy_bug_19_9) << "Stream " << stream_id << " not registered";
@@ -255,28 +294,31 @@ class QUICHE_EXPORT PriorityWriteScheduler
     if (!stream_info->ready) {
       return;
     }
-    bool erased =
-        Erase(&priority_infos_[stream_info->priority].ready_list, stream_info);
+    bool erased = Erase(
+        &priority_infos_[PriorityTypeToInt()(stream_info->priority)].ready_list,
+        stream_info);
     QUICHE_DCHECK(erased);
     stream_info->ready = false;
   }
 
-  // Returns true iff the number of ready streams is non-zero.
-  bool HasReadyStreams() const override { return num_ready_streams_ > 0; }
+  // Returns true iff the scheduler has any ready streams.
+  bool HasReadyStreams() const { return num_ready_streams_ > 0; }
 
-  // Returns the number of ready streams.
-  size_t NumReadyStreams() const override { return num_ready_streams_; }
+  // Returns the number of streams currently marked ready.
+  size_t NumReadyStreams() const { return num_ready_streams_; }
 
-  size_t NumRegisteredStreams() const override { return stream_infos_.size(); }
+  // Returns the number of registered streams.
+  size_t NumRegisteredStreams() const { return stream_infos_.size(); }
 
-  std::string DebugString() const override {
+  // Returns summary of internal state, for logging/debugging.
+  std::string DebugString() const {
     return absl::StrCat(
         "PriorityWriteScheduler {num_streams=", stream_infos_.size(),
         " num_ready_streams=", NumReadyStreams(), "}");
   }
 
-  // Returns true if a stream is ready.
-  bool IsStreamReady(StreamIdType stream_id) const override {
+  // Returns true if stream with `stream_id` is ready.
+  bool IsStreamReady(StreamIdType stream_id) const {
     auto it = stream_infos_.find(stream_id);
     if (it == stream_infos_.end()) {
       QUICHE_DLOG(INFO) << "Stream " << stream_id << " not registered";
@@ -288,10 +330,11 @@ class QUICHE_EXPORT PriorityWriteScheduler
  private:
   friend class test::PriorityWriteSchedulerPeer<StreamIdType>;
 
-  // State kept for all registered streams. All ready streams have ready = true
-  // and should be present in priority_infos_[priority].ready_list.
+  // State kept for all registered streams.
+  // All ready streams have `ready == true` and should be present in
+  // `priority_infos_[priority].ready_list`.
   struct QUICHE_EXPORT StreamInfo {
-    spdy::SpdyPriority priority;
+    PriorityType priority;
     StreamIdType stream_id;
     bool ready;
   };
@@ -303,8 +346,8 @@ class QUICHE_EXPORT PriorityWriteScheduler
   struct QUICHE_EXPORT PriorityInfo {
     // IDs of streams that are ready to write.
     ReadyList ready_list;
-    // Time of latest write event for stream of this priority, in microseconds.
-    int64_t last_event_time_usec = 0;
+    // Time of latest write event for stream of this priority.
+    absl::optional<absl::Time> last_event_time;
   };
 
   // Use std::unique_ptr, because absl::flat_hash_map does not have pointer
@@ -328,10 +371,9 @@ class QUICHE_EXPORT PriorityWriteScheduler
   // Number of ready streams.
   size_t num_ready_streams_ = 0;
   // Per-priority state, including ready lists.
-  PriorityInfo priority_infos_[spdy::kV3LowestPriority + 1];
+  PriorityInfo priority_infos_[kLowestPriority + 1];
   // StreamInfos for all registered streams.
   StreamInfoMap stream_infos_;
-  StreamIdType root_stream_id_;
 };
 
 }  // namespace http2

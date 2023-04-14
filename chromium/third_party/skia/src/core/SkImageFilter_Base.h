@@ -11,8 +11,8 @@
 #include "include/core/SkColorSpace.h"
 #include "include/core/SkImageFilter.h"
 #include "include/core/SkImageInfo.h"
-#include "include/private/SkTArray.h"
-#include "include/private/SkTemplates.h"
+#include "include/private/base/SkTArray.h"
+#include "include/private/base/SkTemplates.h"
 
 #include "src/core/SkImageFilterTypes.h"
 
@@ -428,7 +428,7 @@ private:
     virtual skif::LayerSpace<SkIRect> onGetOutputLayerBounds(
             const skif::Mapping& mapping, const skif::LayerSpace<SkIRect>& contentBounds) const;
 
-    SkAutoSTArray<2, sk_sp<SkImageFilter>> fInputs;
+    skia_private::AutoSTArray<2, sk_sp<SkImageFilter>> fInputs;
 
     bool fUsesSrcInput;
     CropRect fCropRect;

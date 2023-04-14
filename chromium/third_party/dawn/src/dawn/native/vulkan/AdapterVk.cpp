@@ -77,7 +77,7 @@ VulkanInstance* Adapter::GetVulkanInstance() const {
     return mVulkanInstance.Get();
 }
 
-bool Adapter::IsDepthStencilFormatSupported(VkFormat format) {
+bool Adapter::IsDepthStencilFormatSupported(VkFormat format) const {
     ASSERT(format == VK_FORMAT_D16_UNORM_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT ||
            format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_S8_UINT);
 
@@ -140,10 +140,7 @@ MaybeError Adapter::InitializeImpl() {
             break;
     }
 
-    return {};
-}
-
-MaybeError Adapter::InitializeSupportedFeaturesImpl() {
+    // Check for essential Vulkan extensions and features
     // Needed for viewport Y-flip.
     if (!mDeviceInfo.HasExt(DeviceExt::Maintenance1)) {
         return DAWN_INTERNAL_ERROR("Vulkan 1.1 or Vulkan 1.0 with KHR_Maintenance1 required.");
@@ -182,6 +179,10 @@ MaybeError Adapter::InitializeSupportedFeaturesImpl() {
         return DAWN_INTERNAL_ERROR("Vulkan sampleRateShading feature required.");
     }
 
+    return {};
+}
+
+void Adapter::InitializeSupportedFeaturesImpl() {
     // Initialize supported extensions
     if (mDeviceInfo.features.textureCompressionBC == VK_TRUE) {
         mSupportedFeatures.EnableFeature(Feature::TextureCompressionBC);
@@ -232,28 +233,35 @@ MaybeError Adapter::InitializeSupportedFeaturesImpl() {
         mSupportedFeatures.EnableFeature(Feature::ChromiumExperimentalDp4a);
     }
 
-    if (mDeviceInfo.HasExt(DeviceExt::DepthClipEnable) &&
+    // unclippedDepth=true translates to depthClipEnable=false, depthClamp=true
+    if (mDeviceInfo.features.depthClamp == VK_TRUE &&
+        mDeviceInfo.HasExt(DeviceExt::DepthClipEnable) &&
         mDeviceInfo.depthClipEnableFeatures.depthClipEnable == VK_TRUE) {
         mSupportedFeatures.EnableFeature(Feature::DepthClipControl);
     }
 
-    VkFormatProperties properties;
+    VkFormatProperties rg11b10Properties;
     mVulkanInstance->GetFunctions().GetPhysicalDeviceFormatProperties(
-        mPhysicalDevice, VK_FORMAT_B10G11R11_UFLOAT_PACK32, &properties);
+        mPhysicalDevice, VK_FORMAT_B10G11R11_UFLOAT_PACK32, &rg11b10Properties);
 
     if (IsSubset(static_cast<VkFormatFeatureFlags>(VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT |
                                                    VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BLEND_BIT),
-                 properties.optimalTilingFeatures)) {
+                 rg11b10Properties.optimalTilingFeatures)) {
         mSupportedFeatures.EnableFeature(Feature::RG11B10UfloatRenderable);
     }
 
-#if defined(DAWN_USE_SYNC_FDS)
+    VkFormatProperties bgra8unormProperties;
+    mVulkanInstance->GetFunctions().GetPhysicalDeviceFormatProperties(
+        mPhysicalDevice, VK_FORMAT_B8G8R8A8_UNORM, &bgra8unormProperties);
+    if (bgra8unormProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT) {
+        mSupportedFeatures.EnableFeature(Feature::BGRA8UnormStorage);
+    }
+
+#if DAWN_PLATFORM_IS(ANDROID) || DAWN_PLATFORM_IS(CHROMEOS)
     // TODO(chromium:1258986): Precisely enable the feature by querying the device's format
     // features.
     mSupportedFeatures.EnableFeature(Feature::MultiPlanarFormats);
-#endif
-
-    return {};
+#endif  // DAWN_PLATFORM_IS(ANDROID) || DAWN_PLATFORM_IS(CHROMEOS)
 }
 
 MaybeError Adapter::InitializeSupportedLimitsImpl(CombinedLimits* limits) {
@@ -439,20 +447,70 @@ bool Adapter::SupportsExternalImages() const {
                                                      mVulkanInstance->GetFunctions());
 }
 
-ResultOrError<Ref<DeviceBase>> Adapter::CreateDeviceImpl(
-    const DeviceDescriptor* descriptor,
-    const TripleStateTogglesSet& userProvidedToggles) {
-    return Device::Create(this, descriptor, userProvidedToggles);
+void Adapter::SetupBackendDeviceToggles(TogglesState* deviceToggles) const {
+    // TODO(crbug.com/dawn/857): tighten this workaround when this issue is fixed in both
+    // Vulkan SPEC and drivers.
+    deviceToggles->Default(Toggle::UseTemporaryBufferInCompressedTextureToTextureCopy, true);
+
+    if (IsAndroidQualcomm()) {
+        // dawn:1564: Clearing a depth/stencil buffer in a render pass and then sampling it in a
+        // compute pass in the same command buffer causes a crash on Qualcomm GPUs. To work around
+        // that bug, split the command buffer any time we can detect that situation.
+        deviceToggles->Default(
+            Toggle::VulkanSplitCommandBufferOnDepthStencilComputeSampleAfterRenderPass, true);
+
+        // dawn:1569: Qualcomm devices have a bug resolving into a non-zero level of an array
+        // texture. Work around it by resolving into a single level texture and then copying into
+        // the intended layer.
+        deviceToggles->Default(Toggle::AlwaysResolveIntoZeroLevelAndLayer, true);
+    }
+
+    // The environment can request to various options for depth-stencil formats that could be
+    // unavailable. Override the decision if it is not applicable.
+    bool supportsD32s8 = IsDepthStencilFormatSupported(VK_FORMAT_D32_SFLOAT_S8_UINT);
+    bool supportsD24s8 = IsDepthStencilFormatSupported(VK_FORMAT_D24_UNORM_S8_UINT);
+    bool supportsS8 = IsDepthStencilFormatSupported(VK_FORMAT_S8_UINT);
+
+    ASSERT(supportsD32s8 || supportsD24s8);
+
+    if (!supportsD24s8) {
+        deviceToggles->ForceSet(Toggle::VulkanUseD32S8, true);
+    }
+    if (!supportsD32s8) {
+        deviceToggles->ForceSet(Toggle::VulkanUseD32S8, false);
+    }
+    // By default try to use D32S8 for Depth24PlusStencil8
+    deviceToggles->Default(Toggle::VulkanUseD32S8, true);
+
+    if (!supportsS8) {
+        deviceToggles->ForceSet(Toggle::VulkanUseS8, false);
+    }
+    // By default try to use S8 if available.
+    deviceToggles->Default(Toggle::VulkanUseS8, true);
+
+    // The environment can only request to use VK_KHR_zero_initialize_workgroup_memory when the
+    // extension is available. Override the decision if it is no applicable.
+    if (!GetDeviceInfo().HasExt(DeviceExt::ZeroInitializeWorkgroupMemory)) {
+        deviceToggles->ForceSet(Toggle::VulkanUseZeroInitializeWorkgroupMemoryExtension, false);
+    }
+    // By default try to initialize workgroup memory with OpConstantNull according to the Vulkan
+    // extension VK_KHR_zero_initialize_workgroup_memory.
+    deviceToggles->Default(Toggle::VulkanUseZeroInitializeWorkgroupMemoryExtension, true);
 }
 
-MaybeError Adapter::ValidateFeatureSupportedWithTogglesImpl(
+ResultOrError<Ref<DeviceBase>> Adapter::CreateDeviceImpl(const DeviceDescriptor* descriptor,
+                                                         const TogglesState& deviceToggles) {
+    return Device::Create(this, descriptor, deviceToggles);
+}
+
+MaybeError Adapter::ValidateFeatureSupportedWithDeviceTogglesImpl(
     wgpu::FeatureName feature,
-    const TripleStateTogglesSet& userProvidedToggles) {
+    const TogglesState& deviceToggles) {
     return {};
 }
 
 // Android devices with Qualcomm GPUs have a myriad of known issues. (dawn:1549)
-bool Adapter::IsAndroidQualcomm() {
+bool Adapter::IsAndroidQualcomm() const {
 #if DAWN_PLATFORM_IS(ANDROID)
     return gpu_info::IsQualcomm(GetVendorId());
 #else

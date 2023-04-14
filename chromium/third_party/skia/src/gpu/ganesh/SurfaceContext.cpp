@@ -32,6 +32,8 @@
 
 #include <memory>
 
+using namespace skia_private;
+
 #define ASSERT_SINGLE_OWNER         SKGPU_ASSERT_SINGLE_OWNER(this->singleOwner())
 #define RETURN_FALSE_IF_ABANDONED   if (this->fContext->abandoned()) { return false;   }
 #define RETURN_NULLPTR_IF_ABANDONED if (this->fContext->abandoned()) { return nullptr; }
@@ -184,7 +186,7 @@ bool SurfaceContext::readPixels(GrDirectContext* dContext, GrPixmap dst, SkIPoin
                                                                      this->colorInfo().colorType());
             sk_sp<GrSurfaceProxy> copy;
             static constexpr auto kFit = SkBackingFit::kExact;
-            static constexpr auto kBudgeted = SkBudgeted::kYes;
+            static constexpr auto kBudgeted = skgpu::Budgeted::kYes;
             static constexpr auto kMipMapped = GrMipmapped::kNo;
             if (restrictions.fMustCopyWholeSrc) {
                 copy = GrSurfaceProxy::Copy(fContext,
@@ -429,7 +431,7 @@ bool SurfaceContext::internalWritePixels(GrDirectContext* dContext,
                 1,
                 GrMipmapped::kNo,
                 SkBackingFit::kApprox,
-                SkBudgeted::kYes,
+                skgpu::Budgeted::kYes,
                 GrProtected::kNo,
                 /*label=*/"SurfaceContext_InternalWritePixels");
         if (!tempProxy) {
@@ -507,7 +509,7 @@ bool SurfaceContext::internalWritePixels(GrDirectContext* dContext,
 
     auto tmpData = tmpSize ? SkData::MakeUninitialized(tmpSize) : nullptr;
     void*    tmp = tmpSize ? tmpData->writable_data()           : nullptr;
-    SkAutoSTArray<15, GrMipLevel> srcLevels(numLevels);
+    AutoSTArray<15, GrMipLevel> srcLevels(numLevels);
     bool ownAllStorage = true;
     for (int i = 0; i < numLevels; ++i) {
         if (convertAll || (mustBeTight && src[i].rowBytes() != src[i].info().minRowBytes())) {
@@ -760,13 +762,14 @@ void SurfaceContext::asyncRescaleAndReadPixelsYUV420(GrDirectContext* dContext,
         x = y = 0;
         srcView = tempFC->readSurfaceView();
     } else if (!srcView.asTextureProxy()) {
-        srcView = GrSurfaceProxyView::Copy(fContext,
-                                           std::move(srcView),
-                                           GrMipmapped::kNo,
-                                           srcRect,
-                                           SkBackingFit::kApprox,
-                                           SkBudgeted::kYes,
-                                           /*label=*/"SurfaceContext_AsyncRescaleAndReadPixelsYUV420");
+        srcView = GrSurfaceProxyView::Copy(
+                fContext,
+                std::move(srcView),
+                GrMipmapped::kNo,
+                srcRect,
+                SkBackingFit::kApprox,
+                skgpu::Budgeted::kYes,
+                /*label=*/"SurfaceContext_AsyncRescaleAndReadPixelsYUV420");
         if (!srcView) {
             // If we can't get a texture copy of the contents then give up.
             callback(callbackContext, nullptr);
@@ -1062,8 +1065,12 @@ bool SurfaceContext::rescaleInto(SurfaceFillContext* dst,
         if (!texView.asTextureProxy()) {
             // TODO: If copying supported specifying a renderable copy then we could return the copy
             // when there are no other conversions.
-            texView = GrSurfaceProxyView::Copy(fContext, std::move(texView), GrMipmapped::kNo,
-                                               srcRect, SkBackingFit::kApprox, SkBudgeted::kNo,
+            texView = GrSurfaceProxyView::Copy(fContext,
+                                               std::move(texView),
+                                               GrMipmapped::kNo,
+                                               srcRect,
+                                               SkBackingFit::kApprox,
+                                               skgpu::Budgeted::kNo,
                                                "SurfaceContext_RescaleInto");
             if (texView) {
                 SkASSERT(texView.asTextureProxy());

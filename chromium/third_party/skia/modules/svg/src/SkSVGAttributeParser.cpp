@@ -5,11 +5,11 @@
  * found in the LICENSE file.
  */
 
-#include "include/private/SkTPin.h"
+#include "include/private/base/SkTPin.h"
 #include "include/utils/SkParse.h"
 #include "modules/svg/include/SkSVGAttributeParser.h"
 #include "modules/svg/include/SkSVGTypes.h"
-#include "src/utils/SkUTF.h"
+#include "src/base/SkUTF.h"
 
 namespace {
 

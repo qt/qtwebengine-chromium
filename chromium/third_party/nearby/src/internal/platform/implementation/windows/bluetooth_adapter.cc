@@ -14,6 +14,14 @@
 
 #include "internal/platform/implementation/windows/bluetooth_adapter.h"
 
+// clang-format off
+#include <windows.h>   // These two headers must be defined
+#include <winioctl.h>  // first and in this order, otherwise
+                       // the MSVC compiler emits a warning
+                       // 'CTL_CODE undefined. Include winioctl.h or wdm.h'
+                       // See https://screenshot.googleplex.com/BYB9QnoHT6eP6oc
+// clang-format on
+
 #include <bthdef.h>
 #include <bthioctl.h>
 #include <cfgmgr32.h>
@@ -23,8 +31,6 @@
 #include <setupapi.h>
 #include <stdio.h>
 #include <usbiodef.h>
-#include <windows.h>   // These two headers must be defined
-#include <winioctl.h>  // first and in this order
 
 #include <string>
 
@@ -45,7 +51,6 @@ typedef std::basic_string<TCHAR> tstring;
 
 #define BLUETOOTH_RADIO_REGISTRY_NAME_KEY "Local Name"
 
-namespace location {
 namespace nearby {
 namespace windows {
 namespace {
@@ -199,12 +204,10 @@ void BluetoothAdapter::RestoreRadioNameIfNecessary() {
   std::string settings_path(kLocalSettingsFileName);
 
   auto full_path =
-      location::nearby::api::ImplementationPlatform::GetAppDataPath(
-          settings_path);
+      nearby::api::ImplementationPlatform::GetAppDataPath(settings_path);
 
   auto settings_file =
-      location::nearby::api::ImplementationPlatform::CreateInputFile(full_path,
-                                                                     0);
+      nearby::api::ImplementationPlatform::CreateInputFile(full_path, 0);
   if (settings_file == nullptr) {
     return;
   }
@@ -245,12 +248,10 @@ void BluetoothAdapter::StoreRadioNames(absl::string_view original_radio_name,
 
   std::string settings_path(kLocalSettingsFileName);
   auto full_path =
-      location::nearby::api::ImplementationPlatform::GetAppDataPath(
-          settings_path);
+      nearby::api::ImplementationPlatform::GetAppDataPath(settings_path);
 
   auto settings_file =
-      location::nearby::api::ImplementationPlatform::CreateOutputFile(
-          full_path);
+      nearby::api::ImplementationPlatform::CreateOutputFile(full_path);
 
   if (settings_file == nullptr) {
     return;
@@ -760,4 +761,3 @@ std::string BluetoothAdapter::GetNameFromComputerName() const {
 
 }  // namespace windows
 }  // namespace nearby
-}  // namespace location

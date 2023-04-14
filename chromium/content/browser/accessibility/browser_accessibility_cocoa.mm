@@ -1598,7 +1598,12 @@ bool content::IsNSRange(id value) {
     // CHECK() but caused too many crashes, with unknown cause.
     return nil;
   }
-  CHECK(root_manager->GetParentView());
+  if (!root_manager->GetParentView()) {
+    // TODO(crbug.com/1425682) Find out why this happens, there should always be
+    // a parent view. This used to be a CHECK() but caused too many crashes.
+    // Repro steps are available in the bug.
+    return nil;
+  }
   return root_manager->GetWindow();  // Can be null for inactive tabs.
 }
 
@@ -2153,10 +2158,16 @@ bool content::IsNSRange(id value) {
     if (range.IsNull())
       return nil;
 
-    startObject = _owner->manager()->GetFromAXNode(range.anchor()->GetAnchor());
-    endObject = _owner->manager()->GetFromAXNode(range.focus()->GetAnchor());
-    startOffset = range.anchor()->text_offset();
-    endOffset = range.focus()->text_offset();
+    const AXPosition anchor = range.anchor()->AsTextPosition();
+    const AXPosition focus = range.focus()->AsTextPosition();
+    if (!anchor || !focus) {
+      return nil;
+    }
+
+    startObject = _owner->manager()->GetFromAXNode(anchor->GetAnchor());
+    endObject = _owner->manager()->GetFromAXNode(focus->GetAnchor());
+    startOffset = anchor->text_offset();
+    endOffset = focus->text_offset();
     DCHECK(startObject && endObject);
     DCHECK_GE(startOffset, 0);
     DCHECK_GE(endOffset, 0);
@@ -2667,7 +2678,12 @@ bool content::IsNSRange(id value) {
     }
   }
   if ([attribute
-          isEqualToString:NSAccessibilitySelectedTextMarkerRangeAttribute]) {
+          isEqualToString:NSAccessibilitySelectedTextMarkerRangeAttribute] &&
+      // Condition also on when this node is editable. VoiceOver as of Mac 13
+      // sets selections as users navigate on read only content. This has
+      // adverse side effects on VoiceOver's a11y focus causing loops in
+      // navigation.
+      _owner->HasState(ax::mojom::State::kEditable)) {
     AXRange range = AXTextMarkerRangeToAXRange(value);
     if (range.IsNull())
       return;

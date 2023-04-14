@@ -196,7 +196,7 @@ enum aome_enc_control_id {
    */
   AOME_SET_SCALEMODE = 11,
 
-  /*!\brief Codec control function to set encoder spatial layer id, unsigned int
+  /*!\brief Codec control function to set encoder spatial layer id, int
    * parameter.
    */
   AOME_SET_SPATIAL_LAYER_ID = 12,
@@ -1478,6 +1478,24 @@ enum aome_enc_control_id {
    */
   AV1E_ENABLE_SB_QP_SWEEP = 158,
 
+  /*!\brief Codec control to set quantizer for the next frame.
+   *
+   * This will turn off cyclic refresh. Only applicable to 1-pass.
+   */
+  AV1E_SET_QUANTIZER_ONE_PASS = 159,
+
+  /*!\brief Codec control to enable the rate distribution guided delta
+   * quantization in all intra mode. It requires --deltaq-mode=3, also
+   * an input file which contains rate distribution for each 16x16 block,
+   * passed in by --rate-distribution-info=rate_distribution.csv.
+   */
+  AV1E_ENABLE_RATE_GUIDE_DELTAQ = 160,
+
+  /*!\brief Codec control to set the input file for rate distribution used
+   * in all intra mode. It requires --enable-rate-guide-deltaq=1.
+   */
+  AV1E_SET_RATE_DISTRIBUTION_INFO = 161,
+
   // Any new encoder control IDs should be added above.
   // Maximum allowed encoder control ID is 229.
   // No encoder control ID should be added below.
@@ -1494,7 +1512,9 @@ typedef enum aom_scaling_mode_1d {
   AOME_THREEFOUR = 3,
   AOME_ONEFOUR = 4,
   AOME_ONEEIGHT = 5,
-  AOME_ONETWO = 6
+  AOME_ONETWO = 6,
+  AOME_TWOTHREE = 7,
+  AOME_ONETHREE = 8
 } AOM_SCALING_MODE;
 
 /*!\brief Max number of segments
@@ -1660,7 +1680,7 @@ AOM_CTRL_USE_TYPE(AOME_SET_ACTIVEMAP, aom_active_map_t *)
 AOM_CTRL_USE_TYPE(AOME_SET_SCALEMODE, aom_scaling_mode_t *)
 #define AOM_CTRL_AOME_SET_SCALEMODE
 
-AOM_CTRL_USE_TYPE(AOME_SET_SPATIAL_LAYER_ID, unsigned int)
+AOM_CTRL_USE_TYPE(AOME_SET_SPATIAL_LAYER_ID, int)
 #define AOM_CTRL_AOME_SET_SPATIAL_LAYER_ID
 
 AOM_CTRL_USE_TYPE(AOME_SET_CPUUSED, int)
@@ -2052,6 +2072,12 @@ AOM_CTRL_USE_TYPE(AV1E_SET_DV_COST_UPD_FREQ, unsigned int)
 AOM_CTRL_USE_TYPE(AV1E_SET_PARTITION_INFO_PATH, const char *)
 #define AOM_CTRL_AV1E_SET_PARTITION_INFO_PATH
 
+AOM_CTRL_USE_TYPE(AV1E_ENABLE_RATE_GUIDE_DELTAQ, unsigned int)
+#define AOM_CTRL_AV1E_ENABLE_RATE_GUIDE_DELTAQ
+
+AOM_CTRL_USE_TYPE(AV1E_SET_RATE_DISTRIBUTION_INFO, const char *)
+#define AOM_CTRL_AV1E_SET_RATE_DISTRIBUTION_INFO
+
 AOM_CTRL_USE_TYPE(AV1E_SET_EXTERNAL_PARTITION, aom_ext_part_funcs_t *)
 #define AOM_CTRL_AV1E_SET_EXTERNAL_PARTITION
 
@@ -2099,6 +2125,9 @@ AOM_CTRL_USE_TYPE(AV1E_SET_SKIP_POSTPROC_FILTERING, unsigned int)
 
 AOM_CTRL_USE_TYPE(AV1E_ENABLE_SB_QP_SWEEP, unsigned int)
 #define AOM_CTRL_AV1E_ENABLE_SB_QP_SWEEP
+
+AOM_CTRL_USE_TYPE(AV1E_SET_QUANTIZER_ONE_PASS, int)
+#define AOM_CTRL_AV1E_SET_QUANTIZER_ONE_PASS
 
 /*!\endcond */
 /*! @} - end defgroup aom_encoder */

@@ -539,11 +539,7 @@ class TracedHandlesImpl final {
   size_t used_size_bytes() const { return sizeof(TracedNode) * used_nodes_; }
   size_t total_size_bytes() const { return block_size_bytes_; }
 
-  START_ALLOW_USE_DEPRECATED()
-
-  void Iterate(v8::EmbedderHeapTracer::TracedGlobalHandleVisitor* visitor);
-
-  END_ALLOW_USE_DEPRECATED()
+  bool HasYoung() const { return !young_nodes_.empty(); }
 
  private:
   TracedNode* AllocateNode();
@@ -894,6 +890,8 @@ void TracedHandlesImpl::ComputeWeaknessForYoungObjects(
   if (is_marking_) return;
 
   auto* const handler = isolate_->heap()->GetEmbedderRootsHandler();
+  if (!handler) return;
+
   for (TracedNode* node : young_nodes_) {
     if (node->is_in_use()) {
       DCHECK(node->is_root());
@@ -912,12 +910,14 @@ void TracedHandlesImpl::ProcessYoungObjects(
   if (!v8_flags.reclaim_unmodified_wrappers) return;
 
   auto* const handler = isolate_->heap()->GetEmbedderRootsHandler();
+  if (!handler) return;
+
   for (TracedNode* node : young_nodes_) {
     if (!node->is_in_use()) continue;
 
-    CHECK_IMPLIES(node->is_root(),
-                  !should_reset_handle(isolate_->heap(), node->location()));
-    if (should_reset_handle(isolate_->heap(), node->location())) {
+    bool should_reset = should_reset_handle(isolate_->heap(), node->location());
+    CHECK_IMPLIES(node->is_root(), !should_reset);
+    if (should_reset) {
       CHECK(!is_marking_);
       v8::Value* value = ToApi<v8::Value>(node->handle());
       handler->ResetRoot(
@@ -928,8 +928,10 @@ void TracedHandlesImpl::ProcessYoungObjects(
     } else {
       if (!node->is_root()) {
         node->set_root(true);
-        visitor->VisitRootPointer(Root::kGlobalHandles, nullptr,
-                                  node->location());
+        if (visitor) {
+          visitor->VisitRootPointer(Root::kGlobalHandles, nullptr,
+                                    node->location());
+        }
       }
     }
   }
@@ -995,23 +997,6 @@ void TracedHandlesImpl::IterateYoungRootsWithOldHostsForTesting(
     visitor->VisitRootPointer(Root::kTracedHandles, nullptr, node->location());
   }
 }
-
-START_ALLOW_USE_DEPRECATED()
-
-void TracedHandlesImpl::Iterate(
-    v8::EmbedderHeapTracer::TracedGlobalHandleVisitor* visitor) {
-  for (auto* block : blocks_) {
-    for (auto* node : *block) {
-      if (node->is_in_use()) {
-        v8::Value* value = ToApi<v8::Value>(node->handle());
-        visitor->VisitTracedReference(
-            *reinterpret_cast<v8::TracedReference<v8::Value>*>(&value));
-      }
-    }
-  }
-}
-
-END_ALLOW_USE_DEPRECATED()
 
 TracedHandles::TracedHandles(Isolate* isolate)
     : impl_(std::make_unique<TracedHandlesImpl>(isolate)) {}
@@ -1092,15 +1077,6 @@ size_t TracedHandles::used_size_bytes() const {
   return impl_->used_size_bytes();
 }
 
-START_ALLOW_USE_DEPRECATED()
-
-void TracedHandles::Iterate(
-    v8::EmbedderHeapTracer::TracedGlobalHandleVisitor* visitor) {
-  impl_->Iterate(visitor);
-}
-
-END_ALLOW_USE_DEPRECATED()
-
 // static
 void TracedHandles::Destroy(Address* location) {
   if (!location) return;
@@ -1180,5 +1156,7 @@ Object TracedHandles::MarkConservatively(Address* inner_location,
   if (!node.is_in_use<AccessMode::ATOMIC>()) return Smi::zero();
   return MarkObject(node.object(), node, mark_mode);
 }
+
+bool TracedHandles::HasYoung() const { return impl_->HasYoung(); }
 
 }  // namespace v8::internal

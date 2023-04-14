@@ -33,7 +33,6 @@
 #include "dawn/native/d3d12/Forward.h"
 #include "dawn/native/d3d12/HeapD3D12.h"
 #include "dawn/native/d3d12/ResourceAllocatorManagerD3D12.h"
-#include "dawn/native/d3d12/StagingBufferD3D12.h"
 #include "dawn/native/d3d12/StagingDescriptorAllocatorD3D12.h"
 #include "dawn/native/d3d12/TextureCopySplitter.h"
 #include "dawn/native/d3d12/UtilsD3D12.h"
@@ -612,9 +611,10 @@ MaybeError Texture::InitializeAsInternalTexture() {
         bytesPerBlock = GetFormat().GetAspectInfo(wgpu::TextureAspect::All).block.byteSize;
     }
     bool forceAllocateAsCommittedResource =
-        device->IsToggleEnabled(Toggle::D3D12Allocate2DTexturewithCopyDstAsCommittedResource) &&
+        (device->IsToggleEnabled(
+            Toggle::D3D12Allocate2DTextureWithCopyDstOrRenderAttachmentAsCommittedResource)) &&
         GetDimension() == wgpu::TextureDimension::e2D &&
-        (GetInternalUsage() & wgpu::TextureUsage::CopyDst);
+        (GetInternalUsage() & (wgpu::TextureUsage::CopyDst | wgpu::TextureUsage::RenderAttachment));
     DAWN_TRY_ASSIGN(mResourceAllocation,
                     device->AllocateMemory(D3D12_HEAP_TYPE_DEFAULT, resourceDescriptor,
                                            D3D12_RESOURCE_STATE_COMMON, bytesPerBlock,
@@ -1189,7 +1189,7 @@ MaybeError Texture::ClearTexture(CommandRecordingContext* commandContext,
                     textureCopy.aspect = aspect;
                     RecordBufferTextureCopyWithBufferHandle(
                         BufferTextureCopyDirection::B2T, commandList,
-                        ToBackend(uploadHandle.stagingBuffer)->GetResource(),
+                        ToBackend(uploadHandle.stagingBuffer)->GetD3D12Resource(),
                         uploadHandle.startOffset, bytesPerRow, largestMipSize.height, textureCopy,
                         copySize);
                 }

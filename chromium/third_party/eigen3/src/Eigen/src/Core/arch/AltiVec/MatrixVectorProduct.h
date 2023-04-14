@@ -599,7 +599,7 @@ EIGEN_ALWAYS_INLINE Packet2cf pcplxflip2(Packet2cf a)
 
 EIGEN_ALWAYS_INLINE Packet1cd pcplxflip2(Packet1cd a)
 {
-#ifdef __VSX__
+#ifdef EIGEN_VECTORIZE_VSX
     return Packet1cd(__builtin_vsx_xxpermdi(a.v, a.v, 2));
 #else
     return Packet1cd(Packet2d(vec_perm(Packet16uc(a.v), Packet16uc(a.v), p16uc_COMPLEX64_XORFLIP)));
@@ -610,7 +610,7 @@ EIGEN_ALWAYS_INLINE Packet1cd pcplxflip2(Packet1cd a)
 EIGEN_ALWAYS_INLINE Packet4f pload_complex_half(std::complex<float>* src)
 {
     Packet4f t;
-#ifdef __VSX__
+#ifdef EIGEN_VECTORIZE_VSX
     // Load float64/two float32 (doubleword alignment)
     __asm__("lxsdx %x0,%y1" : "=wa" (t) : "Z" (*src));
 #else
@@ -636,7 +636,7 @@ EIGEN_ALWAYS_INLINE void pload_realimag(RhsScalar* src, Packet4f& r, Packet4f& i
 template<typename RhsScalar>
 EIGEN_ALWAYS_INLINE void pload_realimag(RhsScalar* src, Packet2d& r, Packet2d& i)
 {
-#ifdef __VSX__
+#ifdef EIGEN_VECTORIZE_VSX
     __asm__("lxvdsx %x0,%y1" : "=wa" (r) : "Z" (*(reinterpret_cast<double*>(src) + 0)));
     __asm__("lxvdsx %x0,%y1" : "=wa" (i) : "Z" (*(reinterpret_cast<double*>(src) + 1)));
 #else
@@ -675,7 +675,7 @@ EIGEN_ALWAYS_INLINE void pload_realimag_row(RhsScalar* src, Packet2d& r, Packet2
 /** \internal load and splat a complex value into a vector - column-wise */
 EIGEN_ALWAYS_INLINE Packet4f pload_realimag_combine(std::complex<float>* src)
 {
-#ifdef __VSX__
+#ifdef EIGEN_VECTORIZE_VSX
     Packet4f ret;
     __asm__("lxvdsx %x0,%y1" : "=wa" (ret) : "Z" (*(reinterpret_cast<double*>(src) + 0)));
     return ret;

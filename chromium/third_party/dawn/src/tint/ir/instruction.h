@@ -18,6 +18,8 @@
 #include <ostream>
 
 #include "src/tint/castable.h"
+#include "src/tint/ir/value.h"
+#include "src/tint/symbol_table.h"
 
 namespace tint::ir {
 
@@ -32,14 +34,22 @@ class Instruction : public Castable<Instruction> {
     Instruction& operator=(const Instruction& instr) = delete;
     Instruction& operator=(Instruction&& instr) = delete;
 
+    /// @returns the result value for the instruction
+    Value* Result() const { return result_; }
+
     /// Write the instruction to the given stream
     /// @param out the stream to write to
+    /// @param st the symbol table
     /// @returns the stream
-    virtual std::ostream& ToString(std::ostream& out) const = 0;
+    virtual std::ostream& ToString(std::ostream& out, const SymbolTable& st) const = 0;
 
   protected:
     /// Constructor
-    Instruction();
+    /// @param result the result value
+    explicit Instruction(Value* result);
+
+  private:
+    Value* result_ = nullptr;
 };
 
 }  // namespace tint::ir

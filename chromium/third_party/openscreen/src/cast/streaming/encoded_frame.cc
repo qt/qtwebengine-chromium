@@ -13,7 +13,7 @@ EncodedFrame::EncodedFrame(Dependency dependency,
                            RtpTimeTicks rtp_timestamp,
                            Clock::time_point reference_time,
                            std::chrono::milliseconds new_playout_delay,
-                           absl::Span<uint8_t> data)
+                           ByteView data)
     : dependency(dependency),
       frame_id(frame_id),
       referenced_frame_id(referenced_frame_id),

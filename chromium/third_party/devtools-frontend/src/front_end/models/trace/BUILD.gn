@@ -7,18 +7,15 @@ import("../../../scripts/build/ninja/devtools_module.gni")
 import("../visibility.gni")
 
 devtools_module("trace") {
-  sources = [
-    "ModelImpl.ts",
-    "TraceProcessor.ts",
-  ]
+  sources = [ "ModelImpl.ts" ]
 
   deps = [
     "../../core/common:bundle",
     "../../core/platform:bundle",
     "handlers:bundle",
     "helpers:bundle",
-    "sdk_services:bundle",
     "types:bundle",
+    "worker:worker_entrypoint",
   ]
 }
 
@@ -29,8 +26,8 @@ devtools_entrypoint("bundle") {
 
   visibility = [
     ":*",
-    "../../../test/unittests/front_end/helpers/*",
-    "../../../test/unittests/front_end/models/trace/*",
+    "../../../test/unittests/front_end/*",
+    "../../core/sdk/*",
     "../../panels/timeline/*",
   ]
 

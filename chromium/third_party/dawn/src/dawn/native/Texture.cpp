@@ -84,14 +84,13 @@ MaybeError ValidateCanViewTextureAs(const DeviceBase* device,
             "The formats must be compatible, and the view format "
             "must be passed in the list of view formats on texture creation.",
             viewFormat.format, format.format);
-    } else {
-        // The view format is compatible, but not in the list.
-        return DAWN_VALIDATION_ERROR(
-            "%s was not created with the texture view format (%s) "
-            "in the list of compatible view formats.",
-            texture, viewFormat.format);
     }
-    return {};
+
+    // The view format is compatible, but not in the list.
+    return DAWN_VALIDATION_ERROR(
+        "%s was not created with the texture view format (%s) "
+        "in the list of compatible view formats.",
+        texture, viewFormat.format);
 }
 
 bool IsTextureViewDimensionCompatibleWithTextureDimension(
@@ -372,20 +371,11 @@ MaybeError ValidateTextureDescriptor(const DeviceBase* device,
     // Depth/stencil formats are valid for 2D textures only. Metal has this limit. And D3D12
     // doesn't support depth/stencil formats on 3D textures.
     DAWN_INVALID_IF(descriptor->dimension != wgpu::TextureDimension::e2D &&
-                        (format->aspects & (Aspect::Depth | Aspect::Stencil)) != 0,
+                        (format->aspects & (Aspect::Depth | Aspect::Stencil)),
                     "The dimension (%s) of a texture with a depth/stencil format (%s) is not 2D.",
                     descriptor->dimension, format->format);
 
     DAWN_TRY(ValidateTextureSize(device, descriptor, format));
-
-    // TODO(crbug.com/dawn/838): Implement a workaround for this issue.
-    // Readbacks from the non-zero mip of a stencil texture may contain garbage data.
-    DAWN_INVALID_IF(device->IsToggleEnabled(Toggle::DisallowUnsafeAPIs) && format->HasStencil() &&
-                        descriptor->mipLevelCount > 1 &&
-                        device->GetAdapter()->GetBackendType() == wgpu::BackendType::Metal,
-                    "https://crbug.com/dawn/838: Stencil textures with more than one mip level are "
-                    "disabled on Metal.");
-
     return {};
 }
 
@@ -553,16 +543,43 @@ TextureBase::TextureBase(DeviceBase* device,
         mInternalUsage |= internalUsageDesc->internalUsage;
     }
     GetObjectTrackingList()->Track(this);
+
+    // dawn:1569: If a texture with multiple array layers or mip levels is specified as a texture
+    // attachment when this toggle is active, it needs to be given CopyDst usage internally.
+    bool applyAlwaysResolveIntoZeroLevelAndLayerToggle =
+        device->IsToggleEnabled(Toggle::AlwaysResolveIntoZeroLevelAndLayer) &&
+        (GetArrayLayers() > 1 || GetNumMipLevels() > 1) &&
+        (GetInternalUsage() & wgpu::TextureUsage::RenderAttachment);
+    if (applyAlwaysResolveIntoZeroLevelAndLayerToggle) {
+        AddInternalUsage(wgpu::TextureUsage::CopyDst);
+    }
+
+    if (mFormat.HasStencil() && (mInternalUsage & wgpu::TextureUsage::CopyDst) &&
+        device->IsToggleEnabled(Toggle::UseBlitForBufferToStencilTextureCopy)) {
+        // Add render attachment usage so we can blit to the stencil texture
+        // in a render pass.
+        AddInternalUsage(wgpu::TextureUsage::RenderAttachment);
+    }
+    if (mFormat.HasDepth() && (mInternalUsage & wgpu::TextureUsage::CopyDst) &&
+        device->IsToggleEnabled(Toggle::UseBlitForBufferToDepthTextureCopy)) {
+        // Add render attachment usage so we can blit to the depth texture
+        // in a render pass.
+        AddInternalUsage(wgpu::TextureUsage::RenderAttachment);
+    }
+    if (mFormat.HasDepth() &&
+        device->IsToggleEnabled(Toggle::UseBlitForDepthTextureToTextureCopyToNonzeroSubresource)) {
+        if (mInternalUsage & wgpu::TextureUsage::CopySrc) {
+            AddInternalUsage(wgpu::TextureUsage::TextureBinding);
+        }
+        if (mInternalUsage & wgpu::TextureUsage::CopyDst) {
+            AddInternalUsage(wgpu::TextureUsage::RenderAttachment);
+        }
+    }
 }
 
 TextureBase::~TextureBase() = default;
 
 static constexpr Format kUnusedFormat;
-
-TextureBase::TextureBase(DeviceBase* device, TextureState state)
-    : ApiObjectBase(device, kLabelNotImplemented), mFormat(kUnusedFormat), mState(state) {
-    GetObjectTrackingList()->Track(this);
-}
 
 TextureBase::TextureBase(DeviceBase* device,
                          const TextureDescriptor* descriptor,
@@ -785,10 +802,6 @@ TextureViewBase* TextureBase::APICreateView(const TextureViewDescriptor* descrip
 }
 
 void TextureBase::APIDestroy() {
-    if (GetDevice()->ConsumedError(ValidateDestroy(), "calling %s.Destroy().", this)) {
-        return;
-    }
-    ASSERT(!IsError());
     Destroy();
 }
 
@@ -823,11 +836,6 @@ wgpu::TextureUsage TextureBase::APIGetUsage() const {
     return mUsage;
 }
 
-MaybeError TextureBase::ValidateDestroy() const {
-    DAWN_TRY(GetDevice()->ValidateObject(this));
-    return {};
-}
-
 // TextureViewBase
 
 TextureViewBase::TextureViewBase(TextureBase* texture, const TextureViewDescriptor* descriptor)
@@ -838,13 +846,6 @@ TextureViewBase::TextureViewBase(TextureBase* texture, const TextureViewDescript
       mRange({ConvertViewAspect(mFormat, descriptor->aspect),
               {descriptor->baseArrayLayer, descriptor->arrayLayerCount},
               {descriptor->baseMipLevel, descriptor->mipLevelCount}}) {
-    GetObjectTrackingList()->Track(this);
-}
-
-TextureViewBase::TextureViewBase(TextureBase* texture)
-    : ApiObjectBase(texture->GetDevice(), kLabelNotImplemented),
-      mTexture(texture),
-      mFormat(kUnusedFormat) {
     GetObjectTrackingList()->Track(this);
 }
 

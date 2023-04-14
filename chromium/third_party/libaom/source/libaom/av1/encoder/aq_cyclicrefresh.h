@@ -54,6 +54,10 @@ struct CYCLIC_REFRESH {
    */
   int sb_index;
   /*!
+   *Superblock index cyclic refresh index last frame
+   */
+  int last_sb_index;
+  /*!
    * Controls how long block will need to wait to be refreshed again, in
    * excess of the cycle time, i.e., in the case of all zero motion, block
    * will be refreshed every (100/percent_refresh + time_for_refresh) frames.

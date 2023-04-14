@@ -22,6 +22,7 @@
 #include "src/tint/ast/pipeline_stage.h"
 #include "src/tint/program_builder.h"
 #include "src/tint/resolver/sem_helper.h"
+#include "src/tint/scope_stack.h"
 #include "src/tint/sem/evaluation_stage.h"
 #include "src/tint/source.h"
 #include "src/tint/utils/hash.h"
@@ -60,7 +61,6 @@ class LoopStatement;
 class Materialize;
 class Statement;
 class SwitchStatement;
-class TypeInitializer;
 class WhileStatement;
 }  // namespace tint::sem
 namespace tint::type {
@@ -74,7 +74,7 @@ struct TypeAndAddressSpace {
     /// The type
     const type::Type* type;
     /// The address space
-    ast::AddressSpace address_space;
+    builtin::AddressSpace address_space;
 
     /// Equality operator
     /// @param other the other TypeAndAddressSpace to compare this TypeAndAddressSpace to
@@ -83,6 +83,9 @@ struct TypeAndAddressSpace {
         return type == other.type && address_space == other.address_space;
     }
 };
+
+/// DiagnosticFilterStack is a scoped stack of diagnostic filters.
+using DiagnosticFilterStack = ScopeStack<builtin::DiagnosticRule, builtin::DiagnosticSeverity>;
 
 /// Validation logic for various ast nodes. The validations in general should
 /// be shallow and depend on the resolver to call on children. The validations
@@ -98,7 +101,7 @@ class Validator {
     /// @param valid_type_storage_layouts a set of validated type layouts by address space
     Validator(ProgramBuilder* builder,
               SemHelper& helper,
-              const ast::Extensions& enabled_extensions,
+              const builtin::Extensions& enabled_extensions,
               const utils::Hashmap<const type::Type*, const Source*, 8>& atomic_composite_info,
               utils::Hashset<TypeAndAddressSpace, 8>& valid_type_storage_layouts);
     ~Validator();
@@ -117,6 +120,18 @@ class Validator {
     /// @param msg the note message
     /// @param source the note source
     void AddNote(const std::string& msg, const Source& source) const;
+
+    /// Adds the given message to the diagnostics with current severity for the given rule.
+    /// @param rule the diagnostic trigger rule
+    /// @param msg the diagnostic message
+    /// @param source the diagnostic source
+    /// @returns false if the diagnostic is an error for the given trigger rule
+    bool AddDiagnostic(builtin::DiagnosticRule rule,
+                       const std::string& msg,
+                       const Source& source) const;
+
+    /// @returns the diagnostic filter stack
+    DiagnosticFilterStack& DiagnosticFilters() { return diagnostic_filters_; }
 
     /// @param type the given type
     /// @returns true if the given type is a plain type
@@ -169,13 +184,13 @@ class Validator {
     /// @param a the atomic ast node
     /// @param s the atomic sem node
     /// @returns true on success, false otherwise.
-    bool Atomic(const ast::Atomic* a, const type::Atomic* s) const;
+    bool Atomic(const ast::TemplatedIdentifier* a, const type::Atomic* s) const;
 
     /// Validates a pointer type
     /// @param a the pointer ast node
     /// @param s the pointer sem node
     /// @returns true on success, false otherwise.
-    bool Pointer(const ast::Pointer* a, const type::Pointer* s) const;
+    bool Pointer(const ast::TemplatedIdentifier* a, const type::Pointer* s) const;
 
     /// Validates an assignment
     /// @param a the assignment statement
@@ -229,7 +244,7 @@ class Validator {
     /// @param latest_stage the latest evaluation stage that the expression can be evaluated
     /// @param constraint the 'thing' that is imposing the contraint. e.g. "var declaration"
     /// @returns true if @p expr is evaluated in or before @p latest_stage, false otherwise
-    bool EvaluationStage(const sem::Expression* expr,
+    bool EvaluationStage(const sem::ValueExpression* expr,
                          sem::EvaluationStage latest_stage,
                          std::string_view constraint) const;
 
@@ -327,10 +342,10 @@ class Validator {
     bool Materialize(const type::Type* to, const type::Type* from, const Source& source) const;
 
     /// Validates a matrix
-    /// @param ty the matrix to validate
+    /// @param el_ty the matrix element type to validate
     /// @param source the source of the matrix
     /// @returns true on success, false otherwise
-    bool Matrix(const type::Matrix* ty, const Source& source) const;
+    bool Matrix(const type::Type* el_ty, const Source& source) const;
 
     /// Validates a function parameter
     /// @param func the function the variable is for
@@ -356,8 +371,9 @@ class Validator {
 
     /// Validates a storage texture
     /// @param t the texture to validate
+    /// @param source the source of the texture
     /// @returns true on success, false otherwise
-    bool StorageTexture(const ast::StorageTexture* t) const;
+    bool StorageTexture(const type::StorageTexture* t, const Source& source) const;
 
     /// Validates a sampled texture
     /// @param t the texture to validate
@@ -418,26 +434,31 @@ class Validator {
     /// @param initializer the RHS initializer expression
     /// @returns true on succes, false otherwise
     bool VariableInitializer(const ast::Variable* v,
-                             ast::AddressSpace address_space,
+                             builtin::AddressSpace address_space,
                              const type::Type* storage_type,
-                             const sem::Expression* initializer) const;
+                             const sem::ValueExpression* initializer) const;
 
     /// Validates a vector
-    /// @param ty the vector to validate
+    /// @param el_ty the vector element type to validate
     /// @param source the source of the vector
     /// @returns true on success, false otherwise
-    bool Vector(const type::Vector* ty, const Source& source) const;
+    bool Vector(const type::Type* el_ty, const Source& source) const;
 
-    /// Validates an array initializer
+    /// Validates an array constructor
     /// @param ctor the call expresion to validate
     /// @param arr_type the type of the array
     /// @returns true on success, false otherwise
-    bool ArrayInitializer(const ast::CallExpression* ctor, const type::Array* arr_type) const;
+    bool ArrayConstructor(const ast::CallExpression* ctor, const type::Array* arr_type) const;
 
     /// Validates a texture builtin function
     /// @param call the builtin call to validate
     /// @returns true on success, false otherwise
     bool TextureBuiltinFunction(const sem::Call* call) const;
+
+    /// Validates a workgroupUniformLoad builtin function
+    /// @param call the builtin call to validate
+    /// @returns true on success, false otherwise
+    bool WorkgroupUniformLoad(const sem::Call* call) const;
 
     /// Validates an optional builtin function and its required extension.
     /// @param call the builtin call to validate
@@ -454,12 +475,19 @@ class Validator {
     /// @returns true on success, false otherwise.
     bool NoDuplicateAttributes(utils::VectorRef<const ast::Attribute*> attributes) const;
 
+    /// Validates a set of diagnostic controls.
+    /// @param controls the diagnostic controls to validate
+    /// @param use the place where the controls are being used ("directive" or "attribute")
+    /// @returns true on success, false otherwise.
+    bool DiagnosticControls(utils::VectorRef<const ast::DiagnosticControl*> controls,
+                            const char* use) const;
+
     /// Validates a address space layout
     /// @param type the type to validate
     /// @param sc the address space
     /// @param source the source of the type
     /// @returns true on success, false otherwise
-    bool AddressSpaceLayout(const type::Type* type, ast::AddressSpace sc, Source source) const;
+    bool AddressSpaceLayout(const type::Type* type, builtin::AddressSpace sc, Source source) const;
 
     /// @returns true if the attribute list contains a
     /// ast::DisableValidationAttribute with the validation mode equal to
@@ -513,14 +541,15 @@ class Validator {
     /// @param source the source for the error
     /// @returns true on success, false if an error was raised.
     bool CheckTypeAccessAddressSpace(const type::Type* store_ty,
-                                     ast::Access access,
-                                     ast::AddressSpace address_space,
+                                     builtin::Access access,
+                                     builtin::AddressSpace address_space,
                                      utils::VectorRef<const tint::ast::Attribute*> attributes,
                                      const Source& source) const;
     SymbolTable& symbols_;
     diag::List& diagnostics_;
     SemHelper& sem_;
-    const ast::Extensions& enabled_extensions_;
+    DiagnosticFilterStack diagnostic_filters_;
+    const builtin::Extensions& enabled_extensions_;
     const utils::Hashmap<const type::Type*, const Source*, 8>& atomic_composite_info_;
     utils::Hashset<TypeAndAddressSpace, 8>& valid_type_storage_layouts_;
 };

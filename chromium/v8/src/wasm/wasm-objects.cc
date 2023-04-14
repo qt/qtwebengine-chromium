@@ -280,9 +280,9 @@ void WasmTableObject::SetFunctionTableEntry(Isolate* isolate,
                                             Handle<FixedArray> entries,
                                             int entry_index,
                                             Handle<Object> entry) {
-  if (entry->IsNull(isolate)) {
+  if (entry->IsWasmNull(isolate)) {
     ClearDispatchTables(isolate, table, entry_index);  // Degenerate case.
-    entries->set(entry_index, ReadOnlyRoots(isolate).null_value());
+    entries->set(entry_index, ReadOnlyRoots(isolate).wasm_null());
     return;
   }
   Handle<Object> external =
@@ -307,6 +307,7 @@ void WasmTableObject::SetFunctionTableEntry(Isolate* isolate,
   entries->set(entry_index, *entry);
 }
 
+// TODO(manoskouk): Does this need to be handlified?
 void WasmTableObject::Set(Isolate* isolate, Handle<WasmTableObject> table,
                           uint32_t index, Handle<Object> entry) {
   // Callers need to perform bounds checks, type check, and error handling.
@@ -362,7 +363,7 @@ Handle<Object> WasmTableObject::Get(Isolate* isolate,
 
   Handle<Object> entry(entries->get(entry_index), isolate);
 
-  if (entry->IsNull(isolate)) {
+  if (entry->IsWasmNull(isolate)) {
     return entry;
   }
 
@@ -598,7 +599,7 @@ void WasmTableObject::GetFunctionTableEntry(
   *is_valid = true;
   Handle<Object> element(table->entries().get(entry_index), isolate);
 
-  *is_null = element->IsNull(isolate);
+  *is_null = element->IsWasmNull(isolate);
   if (*is_null) return;
 
   if (element->IsWasmInternalFunction()) {
@@ -1150,10 +1151,7 @@ Handle<WasmInstanceObject> WasmInstanceObject::New(
       FixedUInt32Array::New(isolate, num_data_segments);
   instance->set_data_segment_sizes(*data_segment_sizes);
 
-  int num_elem_segments = static_cast<int>(module->elem_segments.size());
-  Handle<FixedUInt8Array> dropped_elem_segments =
-      FixedUInt8Array::New(isolate, num_elem_segments);
-  instance->set_dropped_elem_segments(*dropped_elem_segments);
+  instance->set_element_segments(*isolate->factory()->empty_fixed_array());
 
   Handle<FixedArray> imported_function_refs =
       isolate->factory()->NewFixedArray(num_imported_functions);
@@ -1206,7 +1204,6 @@ Handle<WasmInstanceObject> WasmInstanceObject::New(
   }
 
   InitDataSegmentArrays(instance, module_object);
-  InitElemSegmentArrays(instance, module_object);
 
   return instance;
 }
@@ -1237,20 +1234,6 @@ void WasmInstanceObject::InitDataSegmentArrays(
     // behavior.
     instance->data_segment_sizes().set(
         static_cast<int>(i), segment.active ? 0 : source_bytes.length());
-  }
-}
-
-void WasmInstanceObject::InitElemSegmentArrays(
-    Handle<WasmInstanceObject> instance,
-    Handle<WasmModuleObject> module_object) {
-  auto module = module_object->module();
-  auto num_elem_segments = module->elem_segments.size();
-  for (size_t i = 0; i < num_elem_segments; ++i) {
-    instance->dropped_elem_segments().set(
-        static_cast<int>(i), module->elem_segments[i].status ==
-                                     wasm::WasmElemSegment::kStatusDeclarative
-                                 ? 1
-                                 : 0);
   }
 }
 
@@ -1323,11 +1306,37 @@ bool WasmInstanceObject::CopyTableEntries(Isolate* isolate,
 base::Optional<MessageTemplate> WasmInstanceObject::InitTableEntries(
     Isolate* isolate, Handle<WasmInstanceObject> instance, uint32_t table_index,
     uint32_t segment_index, uint32_t dst, uint32_t src, uint32_t count) {
-  // Note that this implementation just calls through to module instantiation.
-  // This is intentional, so that the runtime only depends on the object
-  // methods, and not the module instantiation logic.
-  return wasm::LoadElemSegment(isolate, instance, table_index, segment_index,
-                               dst, src, count);
+  AccountingAllocator allocator;
+  // This {Zone} will be used only by the temporary WasmFullDecoder allocated
+  // down the line from this call. Therefore it is safe to stack-allocate it
+  // here.
+  Zone zone(&allocator, "LoadElemSegment");
+
+  Handle<WasmTableObject> table_object = handle(
+      WasmTableObject::cast(instance->tables().get(table_index)), isolate);
+
+  // If needed, try to lazily initialize the element segment.
+  base::Optional<MessageTemplate> opt_error =
+      wasm::InitializeElementSegment(&zone, isolate, instance, segment_index);
+  if (opt_error.has_value()) return opt_error;
+
+  Handle<FixedArray> elem_segment =
+      handle(FixedArray::cast(instance->element_segments().get(segment_index)),
+             isolate);
+  if (!base::IsInBounds<uint64_t>(dst, count, table_object->current_length())) {
+    return {MessageTemplate::kWasmTrapTableOutOfBounds};
+  }
+  if (!base::IsInBounds<uint64_t>(src, count, elem_segment->length())) {
+    return {MessageTemplate::kWasmTrapElementSegmentOutOfBounds};
+  }
+
+  for (size_t i = 0; i < count; i++) {
+    WasmTableObject::Set(
+        isolate, table_object, static_cast<int>(dst + i),
+        handle(elem_segment->get(static_cast<int>(src + i)), isolate));
+  }
+
+  return {};
 }
 
 MaybeHandle<WasmInternalFunction> WasmInstanceObject::GetWasmInternalFunction(
@@ -1358,10 +1367,10 @@ WasmInstanceObject::GetOrCreateWasmInternalFunction(
 
   MaybeObject entry = isolate->heap()->js_to_wasm_wrappers().Get(wrapper_index);
 
-  Handle<CodeT> wrapper;
-  // {entry} can be cleared, {undefined}, or a ready {CodeT}.
-  if (entry.IsStrongOrWeak() && entry.GetHeapObject().IsCodeT()) {
-    wrapper = handle(CodeT::cast(entry.GetHeapObject()), isolate);
+  Handle<Code> wrapper;
+  // {entry} can be cleared, {undefined}, or a ready {Code}.
+  if (entry.IsStrongOrWeak() && entry.GetHeapObject().IsCode()) {
+    wrapper = handle(Code::cast(entry.GetHeapObject()), isolate);
   } else {
     // The wrapper may not exist yet if no function in the exports section has
     // this signature. We compile it and store the wrapper in the module for
@@ -1421,11 +1430,8 @@ void WasmInstanceObject::ImportWasmJSFunctionIntoTable(
   if (sig_in_module != module_canonical_ids.end()) {
     wasm::NativeModule* native_module =
         instance->module_object().native_module();
-    // TODO(wasm): Cache and reuse wrapper code, to avoid repeated compilation
-    // and permissions switching.
-    const wasm::WasmFeatures enabled = native_module->enabled_features();
-    auto resolved = compiler::ResolveWasmImportCall(
-        callable, sig, canonical_sig_index, instance->module(), enabled);
+    auto resolved =
+        compiler::ResolveWasmImportCall(callable, sig, canonical_sig_index);
     compiler::WasmImportCallKind kind = resolved.kind;
     callable = resolved.callable;  // Update to ultimate target.
     DCHECK_NE(compiler::WasmImportCallKind::kLinkError, kind);
@@ -1446,7 +1452,7 @@ void WasmInstanceObject::ImportWasmJSFunctionIntoTable(
         result.tagged_parameter_slots,
         result.protected_instructions_data.as_vector(),
         result.source_positions.as_vector(), GetCodeKind(result),
-        wasm::ExecutionTier::kNone, wasm::kNoDebugging);
+        wasm::ExecutionTier::kNone, wasm::kNotForDebugging);
     wasm::WasmCode* published_code =
         native_module->PublishCode(std::move(wasm_code));
     isolate->counters()->wasm_generated_code_size()->Increment(
@@ -1585,6 +1591,7 @@ void WasmArray::SetTaggedElement(uint32_t index, Handle<Object> value,
 // static
 Handle<WasmTagObject> WasmTagObject::New(Isolate* isolate,
                                          const wasm::FunctionSig* sig,
+                                         uint32_t canonical_type_index,
                                          Handle<HeapObject> tag) {
   Handle<JSFunction> tag_cons(isolate->native_context()->wasm_tag_constructor(),
                               isolate);
@@ -1604,23 +1611,15 @@ Handle<WasmTagObject> WasmTagObject::New(Isolate* isolate,
       isolate->factory()->NewJSObject(tag_cons, AllocationType::kOld);
   Handle<WasmTagObject> tag_wrapper = Handle<WasmTagObject>::cast(tag_object);
   tag_wrapper->set_serialized_signature(*serialized_sig);
+  tag_wrapper->set_canonical_type_index(canonical_type_index);
   tag_wrapper->set_tag(*tag);
 
   return tag_wrapper;
 }
 
-// TODO(7748): Integrate this with type canonicalization.
-bool WasmTagObject::MatchesSignature(const wasm::FunctionSig* sig) {
-  DCHECK_EQ(0, sig->return_count());
-  DCHECK_LE(sig->parameter_count(), std::numeric_limits<int>::max());
-  int sig_size = static_cast<int>(sig->parameter_count());
-  if (sig_size != serialized_signature().length()) return false;
-  for (int index = 0; index < sig_size; ++index) {
-    if (sig->GetParam(index) != serialized_signature().get(index)) {
-      return false;
-    }
-  }
-  return true;
+bool WasmTagObject::MatchesSignature(uint32_t expected_canonical_type_index) {
+  return wasm::GetWasmEngine()->type_canonicalizer()->IsCanonicalSubtype(
+      this->canonical_type_index(), expected_canonical_type_index);
 }
 
 const wasm::FunctionSig* WasmCapiFunction::GetSignature(Zone* zone) const {
@@ -1826,7 +1825,11 @@ size_t ComputeEncodedElementSize(wasm::ValueType type) {
 
 // static
 uint32_t WasmExceptionPackage::GetEncodedSize(const wasm::WasmTag* tag) {
-  const wasm::WasmTagSig* sig = tag->sig;
+  return GetEncodedSize(tag->sig);
+}
+
+// static
+uint32_t WasmExceptionPackage::GetEncodedSize(const wasm::WasmTagSig* sig) {
   uint32_t encoded_size = 0;
   for (size_t i = 0; i < sig->parameter_count(); ++i) {
     switch (sig->GetParam(i).kind()) {
@@ -1862,7 +1865,7 @@ uint32_t WasmExceptionPackage::GetEncodedSize(const wasm::WasmTag* tag) {
 bool WasmExportedFunction::IsWasmExportedFunction(Object object) {
   if (!object.IsJSFunction()) return false;
   JSFunction js_function = JSFunction::cast(object);
-  CodeT code = js_function.code();
+  Code code = js_function.code();
   if (CodeKind::JS_TO_WASM_FUNCTION != code.kind() &&
       code.builtin_id() != Builtin::kGenericJSToWasmWrapper &&
       code.builtin_id() != Builtin::kWasmReturnPromiseOnSuspend) {
@@ -1896,8 +1899,6 @@ Handle<WasmCapiFunction> WasmCapiFunction::New(
   // call target (which is an address pointing into the C++ binary).
   call_target = ExternalReference::Create(call_target).address();
 
-  // TODO(7748): Support proper typing for external functions. That requires
-  // global (cross-module) canonicalization of signatures/RTTs.
   Handle<Map> rtt = isolate->factory()->wasm_internal_function_map();
   Handle<WasmCapiFunctionData> fun_data =
       isolate->factory()->NewWasmCapiFunctionData(
@@ -1922,7 +1923,7 @@ int WasmExportedFunction::function_index() {
 
 Handle<WasmExportedFunction> WasmExportedFunction::New(
     Isolate* isolate, Handle<WasmInstanceObject> instance, int func_index,
-    int arity, Handle<CodeT> export_wrapper) {
+    int arity, Handle<Code> export_wrapper) {
   DCHECK(
       CodeKind::JS_TO_WASM_FUNCTION == export_wrapper->kind() ||
       (export_wrapper->is_builtin() &&
@@ -2058,9 +2059,8 @@ Handle<WasmJSFunction> WasmJSFunction::New(Isolate* isolate,
   }
   // TODO(wasm): Think about caching and sharing the JS-to-JS wrappers per
   // signature instead of compiling a new one for every instantiation.
-  Handle<CodeT> wrapper_code = ToCodeT(
-      compiler::CompileJSToJSWrapper(isolate, sig, nullptr).ToHandleChecked(),
-      isolate);
+  Handle<Code> wrapper_code =
+      compiler::CompileJSToJSWrapper(isolate, sig, nullptr).ToHandleChecked();
 
   // WasmJSFunctions use on-heap Code objects as call targets, so we can't
   // cache the target address, unless the WasmJSFunction wraps a
@@ -2071,8 +2071,6 @@ Handle<WasmJSFunction> WasmJSFunction::New(Isolate* isolate,
   }
 
   Factory* factory = isolate->factory();
-  // TODO(7748): Support proper typing for external functions. That requires
-  // global (cross-module) canonicalization of signatures/RTTs.
   Handle<Map> rtt = factory->wasm_internal_function_map();
   Handle<WasmJSFunctionData> function_data = factory->NewWasmJSFunctionData(
       call_target, callable, return_count, parameter_count, serialized_sig,
@@ -2092,11 +2090,10 @@ Handle<WasmJSFunction> WasmJSFunction::New(Isolate* isolate,
     }
     // TODO(wasm): Think about caching and sharing the wasm-to-JS wrappers per
     // signature instead of compiling a new one for every instantiation.
-    Handle<CodeT> wasm_to_js_wrapper_code =
-        ToCodeT(compiler::CompileWasmToJSWrapper(isolate, sig, kind,
-                                                 expected_arity, suspend)
-                    .ToHandleChecked(),
-                isolate);
+    Handle<Code> wasm_to_js_wrapper_code =
+        compiler::CompileWasmToJSWrapper(isolate, sig, kind, expected_arity,
+                                         suspend)
+            .ToHandleChecked();
     function_data->internal().set_code(*wasm_to_js_wrapper_code);
   }
 
@@ -2243,182 +2240,171 @@ namespace wasm {
 MaybeHandle<Object> JSToWasmObject(Isolate* isolate, Handle<Object> value,
                                    ValueType expected_canonical,
                                    const char** error_message) {
-  DCHECK(expected_canonical.is_reference());
-  switch (expected_canonical.kind()) {
-    case kRefNull:
-      if (value->IsNull(isolate)) {
-        HeapType::Representation repr =
-            expected_canonical.heap_representation();
-        switch (repr) {
-          case HeapType::kStringViewWtf8:
-            *error_message = "stringview_wtf8 has no JS representation";
-            return {};
-          case HeapType::kStringViewWtf16:
-            *error_message = "stringview_wtf16 has no JS representation";
-            return {};
-          case HeapType::kStringViewIter:
-            *error_message = "stringview_iter has no JS representation";
-            return {};
-          default:
-            return value;
-        }
-      }
-      V8_FALLTHROUGH;
-    case kRef: {
-      // TODO(7748): Streamline interaction of undefined and (ref any).
-      HeapType::Representation repr = expected_canonical.heap_representation();
-      switch (repr) {
-        case HeapType::kFunc: {
-          if (!(WasmExternalFunction::IsWasmExternalFunction(*value) ||
-                WasmCapiFunction::IsWasmCapiFunction(*value))) {
-            *error_message =
-                "function-typed object must be null (if nullable) or a Wasm "
-                "function object";
-            return {};
-          }
-          return MaybeHandle<Object>(Handle<JSFunction>::cast(value)
-                                         ->shared()
-                                         .wasm_function_data()
-                                         .internal(),
-                                     isolate);
-        }
-        case HeapType::kExtern: {
-          if (!value->IsNull(isolate)) return value;
-          *error_message = "null is not allowed for (ref extern)";
-          return {};
-        }
-        case HeapType::kAny: {
-          if (value->IsSmi()) return CanonicalizeSmi(value, isolate);
-          if (value->IsHeapNumber()) {
-            return CanonicalizeHeapNumber(value, isolate);
-          }
-          if (!value->IsNull(isolate)) return value;
-          *error_message = "null is not allowed for (ref any)";
-          return {};
-        }
-        case HeapType::kStruct: {
-          if (value->IsWasmStruct() ||
-              (value->IsWasmArray() && v8_flags.wasm_gc_structref_as_dataref)) {
-            return value;
-          }
-          *error_message =
-              "structref object must be null (if nullable) or a wasm struct";
-          return {};
-        }
-        case HeapType::kArray: {
-          if (value->IsWasmArray()) {
-            return value;
-          }
-          *error_message =
-              "arrayref object must be null (if nullable) or a wasm array";
-          return {};
-        }
-        case HeapType::kEq: {
-          if (value->IsSmi()) {
-            Handle<Object> truncated = CanonicalizeSmi(value, isolate);
-            if (truncated->IsSmi()) return truncated;
-          } else if (value->IsHeapNumber()) {
-            Handle<Object> truncated = CanonicalizeHeapNumber(value, isolate);
-            if (truncated->IsSmi()) return truncated;
-          } else if (value->IsWasmStruct() || value->IsWasmArray()) {
-            return value;
-          }
-          *error_message =
-              "eqref object must be null (if nullable), or a wasm "
-              "struct/array, or a Number that fits in i31ref range";
-          return {};
-        }
-        case HeapType::kI31: {
-          if (value->IsSmi()) {
-            Handle<Object> truncated = CanonicalizeSmi(value, isolate);
-            if (truncated->IsSmi()) return truncated;
-          } else if (value->IsHeapNumber()) {
-            Handle<Object> truncated = CanonicalizeHeapNumber(value, isolate);
-            if (truncated->IsSmi()) return truncated;
-          }
-          *error_message =
-              "i31ref object must be null (if nullable) or a Number that fits "
-              "in i31ref range";
-          return {};
-        }
-        case HeapType::kString:
-          if (value->IsString()) return value;
-          *error_message = "wrong type (expected a string)";
-          return {};
-        case HeapType::kStringViewWtf8:
-          *error_message = "stringview_wtf8 has no JS representation";
-          return {};
-        case HeapType::kStringViewWtf16:
-          *error_message = "stringview_wtf16 has no JS representation";
-          return {};
-        case HeapType::kStringViewIter:
-          *error_message = "stringview_iter has no JS representation";
-          return {};
-        default: {
-          auto type_canonicalizer = GetWasmEngine()->type_canonicalizer();
+  DCHECK(expected_canonical.is_object_reference());
+  if (expected_canonical.kind() == kRefNull && value->IsNull(isolate)) {
+    switch (expected_canonical.heap_representation()) {
+      case HeapType::kStringViewWtf8:
+        *error_message = "stringview_wtf8 has no JS representation";
+        return {};
+      case HeapType::kStringViewWtf16:
+        *error_message = "stringview_wtf16 has no JS representation";
+        return {};
+      case HeapType::kStringViewIter:
+        *error_message = "stringview_iter has no JS representation";
+        return {};
+      default:
+        bool is_extern_subtype =
+            expected_canonical.heap_representation() == HeapType::kExtern ||
+            expected_canonical.heap_representation() == HeapType::kNoExtern;
+        return is_extern_subtype ? value : isolate->factory()->wasm_null();
+    }
+  }
 
-          if (WasmExportedFunction::IsWasmExportedFunction(*value)) {
-            WasmExportedFunction function = WasmExportedFunction::cast(*value);
-            uint32_t real_type_index = function.shared()
-                                           .wasm_exported_function_data()
-                                           .canonical_type_index();
-            if (!type_canonicalizer->IsCanonicalSubtype(
-                    real_type_index, expected_canonical.ref_index())) {
-              *error_message =
-                  "assigned exported function has to be a subtype of the "
-                  "expected type";
-              return {};
-            }
-            return WasmInternalFunction::FromExternal(value, isolate);
-          } else if (WasmJSFunction::IsWasmJSFunction(*value)) {
-            if (!Handle<WasmJSFunction>::cast(value)->MatchesSignature(
-                    expected_canonical.ref_index())) {
-              *error_message =
-                  "assigned WebAssembly.Function has to be a subtype of the "
-                  "expected type";
-              return {};
-            }
-            return WasmInternalFunction::FromExternal(value, isolate);
-          } else if (WasmCapiFunction::IsWasmCapiFunction(*value)) {
-            if (!Handle<WasmCapiFunction>::cast(value)->MatchesSignature(
-                    expected_canonical.ref_index())) {
-              *error_message =
-                  "assigned C API function has to be a subtype of the expected "
-                  "type";
-              return {};
-            }
-            return WasmInternalFunction::FromExternal(value, isolate);
-          } else if (value->IsWasmStruct() || value->IsWasmArray()) {
-            auto wasm_obj = Handle<WasmObject>::cast(value);
-            WasmTypeInfo type_info = wasm_obj->map().wasm_type_info();
-            uint32_t real_idx = type_info.type_index();
-            const WasmModule* real_module = type_info.instance().module();
-            uint32_t real_canonical_index =
-                real_module->isorecursive_canonical_type_ids[real_idx];
-            if (!type_canonicalizer->IsCanonicalSubtype(
-                    real_canonical_index, expected_canonical.ref_index())) {
-              *error_message = "object is not a subtype of expected type";
-              return {};
-            }
-            return value;
-          } else {
-            *error_message = "JS object does not match expected wasm type";
-            return {};
-          }
+  // TODO(7748): Streamline interaction of undefined and (ref any).
+  switch (expected_canonical.heap_representation()) {
+    case HeapType::kFunc: {
+      if (!(WasmExternalFunction::IsWasmExternalFunction(*value) ||
+            WasmCapiFunction::IsWasmCapiFunction(*value))) {
+        *error_message =
+            "function-typed object must be null (if nullable) or a Wasm "
+            "function object";
+        return {};
+      }
+      return MaybeHandle<Object>(Handle<JSFunction>::cast(value)
+                                     ->shared()
+                                     .wasm_function_data()
+                                     .internal(),
+                                 isolate);
+    }
+    case HeapType::kExtern: {
+      if (!value->IsNull(isolate)) return value;
+      *error_message = "null is not allowed for (ref extern)";
+      return {};
+    }
+    case HeapType::kAny: {
+      if (value->IsSmi()) return CanonicalizeSmi(value, isolate);
+      if (value->IsHeapNumber()) {
+        return CanonicalizeHeapNumber(value, isolate);
+      }
+      if (!value->IsNull(isolate)) return value;
+      *error_message = "null is not allowed for (ref any)";
+      return {};
+    }
+    case HeapType::kStruct: {
+      if (value->IsWasmStruct()) {
+        return value;
+      }
+      *error_message =
+          "structref object must be null (if nullable) or a wasm struct";
+      return {};
+    }
+    case HeapType::kArray: {
+      if (value->IsWasmArray()) {
+        return value;
+      }
+      *error_message =
+          "arrayref object must be null (if nullable) or a wasm array";
+      return {};
+    }
+    case HeapType::kEq: {
+      if (value->IsSmi()) {
+        Handle<Object> truncated = CanonicalizeSmi(value, isolate);
+        if (truncated->IsSmi()) return truncated;
+      } else if (value->IsHeapNumber()) {
+        Handle<Object> truncated = CanonicalizeHeapNumber(value, isolate);
+        if (truncated->IsSmi()) return truncated;
+      } else if (value->IsWasmStruct() || value->IsWasmArray()) {
+        return value;
+      }
+      *error_message =
+          "eqref object must be null (if nullable), or a wasm "
+          "struct/array, or a Number that fits in i31ref range";
+      return {};
+    }
+    case HeapType::kI31: {
+      if (value->IsSmi()) {
+        Handle<Object> truncated = CanonicalizeSmi(value, isolate);
+        if (truncated->IsSmi()) return truncated;
+      } else if (value->IsHeapNumber()) {
+        Handle<Object> truncated = CanonicalizeHeapNumber(value, isolate);
+        if (truncated->IsSmi()) return truncated;
+      }
+      *error_message =
+          "i31ref object must be null (if nullable) or a Number that fits "
+          "in i31ref range";
+      return {};
+    }
+    case HeapType::kString:
+      if (value->IsString()) return value;
+      *error_message = "wrong type (expected a string)";
+      return {};
+    case HeapType::kStringViewWtf8:
+      *error_message = "stringview_wtf8 has no JS representation";
+      return {};
+    case HeapType::kStringViewWtf16:
+      *error_message = "stringview_wtf16 has no JS representation";
+      return {};
+    case HeapType::kStringViewIter:
+      *error_message = "stringview_iter has no JS representation";
+      return {};
+    case HeapType::kNoFunc:
+    case HeapType::kNoExtern:
+    case HeapType::kNone: {
+      *error_message = "only null allowed for null types";
+      return {};
+    }
+    default: {
+      auto type_canonicalizer = GetWasmEngine()->type_canonicalizer();
+
+      if (WasmExportedFunction::IsWasmExportedFunction(*value)) {
+        WasmExportedFunction function = WasmExportedFunction::cast(*value);
+        uint32_t real_type_index = function.shared()
+                                       .wasm_exported_function_data()
+                                       .canonical_type_index();
+        if (!type_canonicalizer->IsCanonicalSubtype(
+                real_type_index, expected_canonical.ref_index())) {
+          *error_message =
+              "assigned exported function has to be a subtype of the "
+              "expected type";
+          return {};
         }
+        return WasmInternalFunction::FromExternal(value, isolate);
+      } else if (WasmJSFunction::IsWasmJSFunction(*value)) {
+        if (!WasmJSFunction::cast(*value).MatchesSignature(
+                expected_canonical.ref_index())) {
+          *error_message =
+              "assigned WebAssembly.Function has to be a subtype of the "
+              "expected type";
+          return {};
+        }
+        return WasmInternalFunction::FromExternal(value, isolate);
+      } else if (WasmCapiFunction::IsWasmCapiFunction(*value)) {
+        if (!WasmCapiFunction::cast(*value).MatchesSignature(
+                expected_canonical.ref_index())) {
+          *error_message =
+              "assigned C API function has to be a subtype of the expected "
+              "type";
+          return {};
+        }
+        return WasmInternalFunction::FromExternal(value, isolate);
+      } else if (value->IsWasmStruct() || value->IsWasmArray()) {
+        auto wasm_obj = Handle<WasmObject>::cast(value);
+        WasmTypeInfo type_info = wasm_obj->map().wasm_type_info();
+        uint32_t real_idx = type_info.type_index();
+        const WasmModule* real_module = type_info.instance().module();
+        uint32_t real_canonical_index =
+            real_module->isorecursive_canonical_type_ids[real_idx];
+        if (!type_canonicalizer->IsCanonicalSubtype(
+                real_canonical_index, expected_canonical.ref_index())) {
+          *error_message = "object is not a subtype of expected type";
+          return {};
+        }
+        return value;
+      } else {
+        *error_message = "JS object does not match expected wasm type";
+        return {};
       }
     }
-    case kRtt:
-    case kI8:
-    case kI16:
-    case kI32:
-    case kI64:
-    case kF32:
-    case kF64:
-    case kS128:
-    case kVoid:
-    case kBottom:
-      UNREACHABLE();
   }
 }
 
@@ -2434,6 +2420,51 @@ MaybeHandle<Object> JSToWasmObject(Isolate* isolate, const WasmModule* module,
         canonical_index, expected_canonical.nullability());
   }
   return JSToWasmObject(isolate, value, expected_canonical, error_message);
+}
+
+MaybeHandle<Object> WasmToJSObject(Isolate* isolate, Handle<Object> value,
+                                   HeapType type, const char** error_message) {
+  switch (type.representation()) {
+    case i::wasm::HeapType::kExtern:
+    case i::wasm::HeapType::kString:
+    case i::wasm::HeapType::kI31:
+    case i::wasm::HeapType::kStruct:
+    case i::wasm::HeapType::kArray:
+    case i::wasm::HeapType::kEq:
+    case i::wasm::HeapType::kAny:
+      return value->IsWasmNull() ? isolate->factory()->null_value() : value;
+    case i::wasm::HeapType::kFunc: {
+      if (value->IsWasmNull()) {
+        return isolate->factory()->null_value();
+      } else {
+        DCHECK(value->IsWasmInternalFunction());
+        return handle(
+            i::Handle<i::WasmInternalFunction>::cast(value)->external(),
+            isolate);
+      }
+    }
+    case i::wasm::HeapType::kStringViewWtf8:
+      *error_message = "stringview_wtf8 has no JS representation";
+      return {};
+    case i::wasm::HeapType::kStringViewWtf16:
+      *error_message = "stringview_wtf16 has no JS representation";
+      return {};
+    case i::wasm::HeapType::kStringViewIter:
+      *error_message = "stringview_iter has no JS representation";
+      return {};
+    case i::wasm::HeapType::kBottom:
+      UNREACHABLE();
+    default:
+      if (value->IsWasmNull()) {
+        return isolate->factory()->null_value();
+      } else if (value->IsWasmInternalFunction()) {
+        return handle(
+            i::Handle<i::WasmInternalFunction>::cast(value)->external(),
+            isolate);
+      } else {
+        return value;
+      }
+  }
 }
 
 }  // namespace wasm

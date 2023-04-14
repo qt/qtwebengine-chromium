@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import * as Common from '../../core/common/common.js';
+import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Bindings from '../../models/bindings/bindings.js';
 import * as ColorPicker from '../../ui/legacy/components/color_picker/color_picker.js';
@@ -15,14 +16,14 @@ import {type StylesSidebarPane} from './StylesSidebarPane.js';
 
 const UIStrings = {
   /**
-  * @description Tooltip text for an icon that opens the cubic bezier editor, which is a tool that
-  * allows the user to edit cubic-bezier CSS properties directly.
-  */
+   * @description Tooltip text for an icon that opens the cubic bezier editor, which is a tool that
+   * allows the user to edit cubic-bezier CSS properties directly.
+   */
   openCubicBezierEditor: 'Open cubic bezier editor',
   /**
-  * @description Tooltip text for an icon that opens shadow editor. The shadow editor is a tool
-  * which allows the user to edit CSS shadow properties.
-  */
+   * @description Tooltip text for an icon that opens shadow editor. The shadow editor is a tool
+   * which allows the user to edit CSS shadow properties.
+   */
   openShadowEditor: 'Open shadow editor',
 };
 const str_ = i18n.i18n.registerUIStrings('panels/elements/ColorSwatchPopoverIcon.ts', UIStrings);
@@ -106,7 +107,15 @@ export class BezierPopoverIcon {
   }
 }
 
-export class ColorSwatchPopoverIcon {
+export const enum ColorSwatchPopoverIconEvents {
+  ColorChanged = 'colorchanged',
+}
+
+export type ColorSwatchPopoverIconEventTypes = {
+  [ColorSwatchPopoverIconEvents.ColorChanged]: string,
+};
+
+export class ColorSwatchPopoverIcon extends Common.ObjectWrapper.ObjectWrapper<ColorSwatchPopoverIconEventTypes> {
   private treeElement: StylePropertyTreeElement;
   private readonly swatchPopoverHelper: InlineEditor.SwatchPopoverHelper.SwatchPopoverHelper;
   private swatch: InlineEditor.ColorSwatch.ColorSwatch;
@@ -120,6 +129,8 @@ export class ColorSwatchPopoverIcon {
   constructor(
       treeElement: StylePropertyTreeElement, swatchPopoverHelper: InlineEditor.SwatchPopoverHelper.SwatchPopoverHelper,
       swatch: InlineEditor.ColorSwatch.ColorSwatch) {
+    super();
+
     this.treeElement = treeElement;
     this.swatchPopoverHelper = swatchPopoverHelper;
     this.swatch = swatch;
@@ -173,15 +184,12 @@ export class ColorSwatchPopoverIcon {
       return;
     }
 
-    const color = this.swatch.getColor()?.asLegacyColor();
-    let format = this.swatch.getFormat();
+    const color = this.swatch.getColor();
+    const format = this.swatch.getFormat();
     if (!color || !format) {
       return;
     }
 
-    if (format === Common.Color.Format.Original) {
-      format = color.format();
-    }
     this.spectrum = new ColorPicker.Spectrum.Spectrum(this.contrastInfo);
     this.spectrum.setColor(color, format);
     this.spectrum.addPalette(this.generateCSSVariablesPalette());
@@ -203,20 +211,22 @@ export class ColorSwatchPopoverIcon {
     }
 
     UI.Context.Context.instance().setFlavor(ColorSwatchPopoverIcon, this);
+    Host.userMetrics.colorPickerOpenedFrom(Host.UserMetrics.ColorPickerOpenedFrom.StylesPane);
   }
 
   private spectrumResized(): void {
     this.swatchPopoverHelper.reposition();
   }
 
-  private spectrumChanged(event: Common.EventTarget.EventTargetEvent<string>): void {
+  private async spectrumChanged(event: Common.EventTarget.EventTargetEvent<string>): Promise<void> {
     const color = Common.Color.parse(event.data);
     if (!color) {
       return;
     }
 
     const colorName = this.spectrum ? this.spectrum.colorName() : undefined;
-    const text = colorName && colorName.startsWith('--') ? `var(${colorName})` : color.asString();
+    const text =
+        colorName && colorName.startsWith('--') ? `var(${colorName})` : (color.getAuthoredText() ?? color.asString());
 
     this.swatch.renderColor(color);
     const value = this.swatch.firstElementChild;
@@ -225,7 +235,10 @@ export class ColorSwatchPopoverIcon {
       this.swatch.createChild('span').textContent = text;
     }
 
-    void this.treeElement.applyStyleText(this.treeElement.renderedPropertyText(), false);
+    // `asString` somehow can return null.
+    if (text) {
+      this.dispatchEventToListeners(ColorSwatchPopoverIconEvents.ColorChanged, text);
+    }
   }
 
   private onScroll(_event: Event): void {

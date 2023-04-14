@@ -11,8 +11,8 @@
 #include "include/gpu/GrBackendSemaphore.h"
 #include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/GrDirectContext.h"
+#include "src/base/SkMathPriv.h"
 #include "src/core/SkCompressedDataUtils.h"
-#include "src/core/SkMathPriv.h"
 #include "src/core/SkMipmap.h"
 #include "src/gpu/ganesh/GrAttachment.h"
 #include "src/gpu/ganesh/GrBackendUtils.h"
@@ -101,7 +101,7 @@ sk_sp<GrTexture> GrGpu::createTextureCommon(SkISize dimensions,
                                             GrTextureType textureType,
                                             GrRenderable renderable,
                                             int renderTargetSampleCnt,
-                                            SkBudgeted budgeted,
+                                            skgpu::Budgeted budgeted,
                                             GrProtected isProtected,
                                             int mipLevelCount,
                                             uint32_t levelClearMask,
@@ -158,7 +158,7 @@ sk_sp<GrTexture> GrGpu::createTexture(SkISize dimensions,
                                       GrRenderable renderable,
                                       int renderTargetSampleCnt,
                                       GrMipmapped mipmapped,
-                                      SkBudgeted budgeted,
+                                      skgpu::Budgeted budgeted,
                                       GrProtected isProtected,
                                       std::string_view label) {
     int mipLevelCount = 1;
@@ -190,7 +190,7 @@ sk_sp<GrTexture> GrGpu::createTexture(SkISize dimensions,
                                       GrTextureType textureType,
                                       GrRenderable renderable,
                                       int renderTargetSampleCnt,
-                                      SkBudgeted budgeted,
+                                      skgpu::Budgeted budgeted,
                                       GrProtected isProtected,
                                       GrColorType textureColorType,
                                       GrColorType srcColorType,
@@ -258,7 +258,7 @@ sk_sp<GrTexture> GrGpu::createTexture(SkISize dimensions,
 
 sk_sp<GrTexture> GrGpu::createCompressedTexture(SkISize dimensions,
                                                 const GrBackendFormat& format,
-                                                SkBudgeted budgeted,
+                                                skgpu::Budgeted budgeted,
                                                 GrMipmapped mipmapped,
                                                 GrProtected isProtected,
                                                 const void* data,

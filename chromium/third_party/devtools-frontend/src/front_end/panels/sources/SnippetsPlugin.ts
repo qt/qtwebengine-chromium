@@ -14,12 +14,12 @@ import {Plugin} from './Plugin.js';
 
 const UIStrings = {
   /**
-  *@description Text in Snippets Plugin of the Sources panel
-  */
+   *@description Text in Snippets Plugin of the Sources panel
+   */
   enter: '⌘+Enter',
   /**
-  *@description Text in Snippets Plugin of the Sources panel
-  */
+   *@description Text in Snippets Plugin of the Sources panel
+   */
   ctrlenter: 'Ctrl+Enter',
 };
 const str_ = i18n.i18n.registerUIStrings('panels/sources/SnippetsPlugin.ts', UIStrings);
@@ -30,7 +30,7 @@ export class SnippetsPlugin extends Plugin {
     return Snippets.ScriptSnippetFileSystem.isSnippetsUISourceCode(uiSourceCode);
   }
 
-  async rightToolbarItems(): Promise<UI.Toolbar.ToolbarItem[]> {
+  rightToolbarItems(): UI.Toolbar.ToolbarItem[] {
     const runSnippet = UI.Toolbar.Toolbar.createActionButtonForId('debugger.run-snippet');
     runSnippet.setText(Host.Platform.isMac() ? i18nString(UIStrings.enter) : i18nString(UIStrings.ctrlenter));
 

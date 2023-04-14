@@ -126,6 +126,7 @@ class CFFL_InteractiveFormFiller final : public IPWL_FillerNotify {
 
   WideString GetText(CPDFSDK_Widget* pWidget);
   WideString GetSelectedText(CPDFSDK_Widget* pWidget);
+  void ReplaceAndKeepSelection(CPDFSDK_Widget* pWidget, const WideString& text);
   void ReplaceSelection(CPDFSDK_Widget* pWidget, const WideString& text);
   bool SelectAllText(CPDFSDK_Widget* pWidget);
 
@@ -202,7 +203,7 @@ class CFFL_InteractiveFormFiller final : public IPWL_FillerNotify {
 #endif  // PDF_ENABLE_XFA
 
   bool IsFillingAllowed(CPDFSDK_Widget* pWidget) const;
-  CFFL_FormField* GetFormField(CPDFSDK_Widget* pAnnot);
+  CFFL_FormField* GetFormField(CPDFSDK_Widget* pWidget);
   CFFL_FormField* GetOrCreateFormField(CPDFSDK_Widget* pWidget);
   void UnregisterFormField(CPDFSDK_Widget* pWidget);
 

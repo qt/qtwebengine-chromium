@@ -54,7 +54,7 @@ class RtpPacketizerTest : public testing::Test {
     for (int i = 0; i < payload_size; ++i) {
       buffer[i] = static_cast<uint8_t>(i);
     }
-    frame.data = absl::Span<uint8_t>(buffer.get(), payload_size);
+    frame.data = ByteView(buffer.get(), payload_size);
 
     return crypto_.Encrypt(frame);
   }

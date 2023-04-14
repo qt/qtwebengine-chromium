@@ -15,7 +15,7 @@
 #define EIGEN_TEST_NO_LONGDOUBLE
 #define EIGEN_TEST_NO_COMPLEX
 #define EIGEN_DEFAULT_DENSE_INDEX_TYPE int64_t
-#include <SYCL/sycl.hpp>
+#include <CL/sycl.hpp>
 #include <fstream>
 #include <iostream>
 #include <chrono>
@@ -56,9 +56,9 @@ void contraction(const Device& device_, TensorIndex num_iters, TensorIndex m_, T
 
   // Initialize the content of the memory pools to prevent asan from
   // complaining.
-  device_.fill(a_, m_ * k_, T(12));
-  device_.fill(b_, k_ * n_, T(23));
-  device_.fill(c_, m_ * n_, T(31));
+  device_.fill(a_, a_ + (m_ * k_), T(12));
+  device_.fill(b_, b_ + (k_ * n_), T(23));
+  device_.fill(c_, c_ + (m_ * n_), T(31));
 
   Eigen::array<TensorIndex, 2> sizeA;
   sizeA[0] = m_;
@@ -110,9 +110,9 @@ void contractionRowMajor(const Device& device_, TensorIndex num_iters, TensorInd
 
   // Initialize the content of the memory pools to prevent asan from
   // complaining.
-  device_.memset(a_, 12, m_ * k_ * sizeof(T));
-  device_.memset(b_, 23, k_ * n_ * sizeof(T));
-  device_.memset(c_, 31, m_ * n_ * sizeof(T));
+  device_.memset(a_, T(12), T(m_ * k_ * sizeof(T)));
+  device_.memset(b_, T(23), T(k_ * n_ * sizeof(T)));
+  device_.memset(c_, T(31), T(m_ * n_ * sizeof(T)));
 
   Eigen::array<TensorIndex, 2> sizeA;
   sizeA[0] = m_;

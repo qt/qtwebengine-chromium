@@ -6,15 +6,15 @@
  */
 
 #include "include/core/SkExecutor.h"
-#include "include/private/SkMutex.h"
-#include "include/private/SkSemaphore.h"
 #include "include/private/SkSpinlock.h"
-#include "include/private/SkTArray.h"
+#include "include/private/base/SkMutex.h"
+#include "include/private/base/SkSemaphore.h"
+#include "include/private/base/SkTArray.h"
 #include <deque>
 #include <thread>
 
 #if defined(SK_BUILD_FOR_WIN)
-    #include "src/core/SkLeanWindows.h"
+    #include "src/base/SkLeanWindows.h"
     static int num_cores() {
         SYSTEM_INFO sysinfo;
         GetNativeSystemInfo(&sysinfo);

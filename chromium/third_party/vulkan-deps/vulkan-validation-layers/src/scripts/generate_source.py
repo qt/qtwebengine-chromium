@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-# Copyright (c) 2021-2022 The Khronos Group Inc.
-# Copyright (c) 2021-2022 Valve Corporation
-# Copyright (c) 2021-2022 LunarG, Inc.
-# Copyright (c) 2021-2022 Google Inc.
+# Copyright (c) 2021-2023 The Khronos Group Inc.
+# Copyright (c) 2021-2023 Valve Corporation
+# Copyright (c) 2021-2023 LunarG, Inc.
+# Copyright (c) 2021-2023 Google Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,8 +15,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#
-# Author: Mike Schuchardt <mikes@lunarg.com>
 
 import argparse
 import filecmp
@@ -26,6 +24,7 @@ import subprocess
 import sys
 import tempfile
 import difflib
+import json
 
 import common_codegen
 
@@ -36,6 +35,7 @@ def main(argv):
     parser = argparse.ArgumentParser(description='Generate source code for this repository')
     parser.add_argument('registry', metavar='REGISTRY_PATH', help='path to the Vulkan-Headers registry directory')
     parser.add_argument('grammar', metavar='GRAMMAR_PATH', help='path to the SPIRV-Headers grammar directory')
+    parser.add_argument('--generated-version', help='sets the header version used to generate the repo')
     group = parser.add_mutually_exclusive_group()
     group.add_argument('-i', '--incremental', action='store_true', help='only update repo files that change')
     group.add_argument('-v', '--verify', action='store_true', help='verify repo files match generator output')
@@ -55,8 +55,8 @@ def main(argv):
                                               "parameter_validation.cpp",
                                               "parameter_validation.h",
                                               "enum_flag_bits.h",
-                                              "synchronization_validation_types.cpp",
-                                              "synchronization_validation_types.h",
+                                              "sync_validation_types.cpp",
+                                              "sync_validation_types.h",
                                               "thread_safety.cpp",
                                               "thread_safety.h",
                                               "vk_dispatch_table_helper.h",
@@ -77,9 +77,7 @@ def main(argv):
                                               "command_validation.cpp",
                                               "command_validation.h",
                                               "vk_format_utils.cpp",
-                                              "vk_format_utils.h",
-                                              "corechecks_optick_instrumentation.cpp",
-                                              "corechecks_optick_instrumentation.h"]],
+                                              "vk_format_utils.h"]],
                 [common_codegen.repo_relative('scripts/vk_validation_stats.py'),
                  os.path.abspath(os.path.join(args.registry, 'validusage.json')),
                  '-export_header'],
@@ -90,6 +88,20 @@ def main(argv):
                  '-o', 'spirv_tools_commit_id.h']]
 
     repo_dir = common_codegen.repo_relative('layers/generated')
+
+    # Update the api_version in the respective json files
+    if args.generated_version:
+        json_files = []
+        json_files.append(common_codegen.repo_relative('layers/json/VkLayer_khronos_validation.json.in'))
+        json_files.append(common_codegen.repo_relative('tests/layers/VkLayer_device_profile_api.json.in'))
+        for json_file in json_files:
+            with open(json_file) as f:
+                data = json.load(f)
+
+            data["layer"]["api_version"] = args.generated_version
+
+            with open(json_file, mode='w', encoding='utf-8', newline='\n') as f:
+                f.write(json.dumps(data, indent=4))
 
     # get directory where generators will run
     if args.verify or args.incremental:

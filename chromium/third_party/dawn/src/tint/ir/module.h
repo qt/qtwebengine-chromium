@@ -17,9 +17,13 @@
 
 #include <string>
 
+#include "src/tint/constant/value.h"
 #include "src/tint/ir/function.h"
 #include "src/tint/ir/instruction.h"
 #include "src/tint/ir/value.h"
+#include "src/tint/program_id.h"
+#include "src/tint/symbol_table.h"
+#include "src/tint/type/manager.h"
 #include "src/tint/utils/block_allocator.h"
 #include "src/tint/utils/result.h"
 #include "src/tint/utils/vector.h"
@@ -48,8 +52,7 @@ class Module {
     static Result FromProgram(const Program* program);
 
     /// Constructor
-    /// @param program the program this module was constructed from
-    explicit Module(const Program* program);
+    Module();
     /// Move constructor
     /// @param o the module to move from
     Module(Module&& o);
@@ -66,8 +69,15 @@ class Module {
     ///  (Note, this will probably turn into a utils::Result, just stubbing for now)
     const Program* ToProgram() const;
 
+  private:
+    /// Program Id required to create other components
+    ProgramID prog_id_;
+
+  public:
     /// The flow node allocator
     utils::BlockAllocator<FlowNode> flow_nodes;
+    /// The constant allocator
+    utils::BlockAllocator<constant::Value> constants;
     /// The value allocator
     utils::BlockAllocator<Value> values;
     /// The instruction allocator
@@ -78,8 +88,11 @@ class Module {
     /// List of indexes into the functions list for the entry points
     utils::Vector<Function*, 8> entry_points;
 
-    /// The source ast::Program this module was constucted from
-    const Program* program;
+    /// The type manager for the module
+    type::Manager types;
+
+    /// The symbol table for the module
+    SymbolTable symbols{prog_id_};
 };
 
 }  // namespace tint::ir

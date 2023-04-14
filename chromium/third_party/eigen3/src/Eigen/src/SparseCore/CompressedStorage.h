@@ -132,15 +132,7 @@ class CompressedStorage
     /** \returns the largest \c k in [start,end) such that for all \c j in [start,k) index[\c j]\<\a key */
     inline Index searchLowerIndex(Index start, Index end, Index key) const
     {
-      while(end>start)
-      {
-        Index mid = (end+start)>>1;
-        if (m_indices[mid]<key)
-          start = mid+1;
-        else
-          end = mid;
-      }
-      return start;
+      return static_cast<Index>(std::distance(m_indices, std::lower_bound(m_indices + start, m_indices + end, key)));
     }
 
     /** \returns the stored value at index \a key
@@ -198,20 +190,11 @@ class CompressedStorage
       return m_values[id];
     }
 
-    void moveChunk(Index from, Index to, Index chunkSize)
+    inline void moveChunk(Index from, Index to, Index chunkSize)
     {
-      eigen_internal_assert(to+chunkSize <= m_size);
-      if(to>from && from+chunkSize>to)
-      {
-        // move backward
-        internal::smart_memmove(m_values+from,  m_values+from+chunkSize,  m_values+to);
-        internal::smart_memmove(m_indices+from, m_indices+from+chunkSize, m_indices+to);
-      }
-      else
-      {
-        internal::smart_copy(m_values+from,  m_values+from+chunkSize,  m_values+to);
-        internal::smart_copy(m_indices+from, m_indices+from+chunkSize, m_indices+to);
-      }
+      eigen_internal_assert(chunkSize >= 0 && to+chunkSize <= m_size);
+      internal::smart_memmove(m_values + from, m_values + from + chunkSize, m_values + to);
+      internal::smart_memmove(m_indices + from, m_indices + from + chunkSize, m_indices + to);
     }
 
   protected:

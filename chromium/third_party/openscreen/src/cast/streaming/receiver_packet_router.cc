@@ -8,6 +8,7 @@
 
 #include "cast/streaming/packet_util.h"
 #include "cast/streaming/receiver.h"
+#include "platform/base/span.h"
 #include "util/osp_logging.h"
 #include "util/stringprintf.h"
 
@@ -53,7 +54,7 @@ void ReceiverPacketRouter::SendRtcpPacket(absl::Span<const uint8_t> packet) {
     return;
   }
 
-  environment_->SendPacket(packet);
+  environment_->SendPacket(ByteView(packet.data(), packet.size()));
 }
 
 void ReceiverPacketRouter::OnReceivedPacket(const IPEndpoint& source,

@@ -11,10 +11,14 @@
 #include "include/effects/SkGradientShader.h"
 
 #include "include/core/SkMatrix.h"
-#include "include/private/SkTArray.h"
-#include "include/private/SkTemplates.h"
+#include "include/private/base/SkTArray.h"
+#include "include/private/base/SkTemplates.h"
 #include "src/core/SkVM.h"
 #include "src/shaders/SkShaderBase.h"
+
+#ifdef SK_GRAPHITE_ENABLED
+#include "src/gpu/graphite/KeyHelpers.h"
+#endif
 
 class SkArenaAlloc;
 class SkColorSpace;
@@ -94,11 +98,16 @@ protected:
 
     bool onAsLuminanceColor(SkColor*) const override;
 
-    bool onAppendStages(const SkStageRec&) const override;
+    bool appendStages(const SkStageRec&, const MatrixRec&) const override;
 
-    skvm::Color onProgram(skvm::Builder*, skvm::Coord device, skvm::Coord local, skvm::Color paint,
-                          const SkMatrixProvider&, const SkMatrix* localM, const SkColorInfo& dstCS,
-                          skvm::Uniforms* uniforms, SkArenaAlloc* alloc) const override;
+    skvm::Color program(skvm::Builder*,
+                        skvm::Coord device,
+                        skvm::Coord local,
+                        skvm::Color paint,
+                        const MatrixRec&,
+                        const SkColorInfo& dstCS,
+                        skvm::Uniforms* uniforms,
+                        SkArenaAlloc* alloc) const override;
 
     virtual void appendGradientStages(SkArenaAlloc* alloc, SkRasterPipeline* tPipeline,
                                       SkRasterPipeline* postPipeline) const = 0;
@@ -109,6 +118,15 @@ protected:
 
     const SkMatrix fPtsToUnit;
     SkTileMode     fTileMode;
+
+#ifdef SK_GRAPHITE_ENABLED
+    static void MakeInterpolatedToDst(const skgpu::graphite::KeyContext&,
+                                      skgpu::graphite::PaintParamsKeyBuilder*,
+                                      skgpu::graphite::PipelineDataGatherer*,
+                                      const skgpu::graphite::GradientShaderBlocks::GradientData&,
+                                      const SkGradientShaderBase::Interpolation&,
+                                      SkColorSpace* intermediateCS);
+#endif
 
 public:
     static void AppendGradientFillStages(SkRasterPipeline* p,
@@ -144,7 +162,7 @@ private:
     inline static constexpr size_t kInlineStopCount   = 4;
     inline static constexpr size_t kInlineStorageSize = (sizeof(SkColor4f) + sizeof(SkScalar))
                                                * kInlineStopCount;
-    SkAutoSTMalloc<kInlineStorageSize, uint8_t> fStorage;
+    skia_private::AutoSTMalloc<kInlineStorageSize, uint8_t> fStorage;
 
     bool                                        fColorsAreOpaque;
 

@@ -21,36 +21,40 @@ const {render, html} = LitHtml;
 
 const UIStrings = {
   /**
-  *@description Comment used in decoded X-Client-Data HTTP header output in Headers View of the Network panel
-  */
+   *@description Comment used in decoded X-Client-Data HTTP header output in Headers View of the Network panel
+   */
   activeClientExperimentVariation: 'Active `client experiment variation IDs`.',
   /**
-  *@description Comment used in decoded X-Client-Data HTTP header output in Headers View of the Network panel
-  */
+   *@description Comment used in decoded X-Client-Data HTTP header output in Headers View of the Network panel
+   */
   activeClientExperimentVariationIds: 'Active `client experiment variation IDs` that trigger server-side behavior.',
   /**
-  *@description Text in Headers View of the Network panel for X-Client-Data HTTP headers
-  */
+   *@description Text in Headers View of the Network panel for X-Client-Data HTTP headers
+   */
   decoded: 'Decoded:',
   /**
-  *@description The title of a button to enable overriding a HTTP header.
-  */
+   *@description The title of a button to enable overriding a HTTP header.
+   */
   editHeader: 'Override header',
   /**
-  *@description Description of which letters the name of an HTTP header may contain (a-z, A-Z, 0-9, '-', or '_').
-  */
-  headerNamesOnlyLetters: 'Header names should contain only letters, digits, dashes or underscores',
+   *@description Description of which letters the name of an HTTP header may contain (a-z, A-Z, 0-9, '-', or '_').
+   */
+  headerNamesOnlyLetters: 'Header names should contain only letters, digits, hyphens or underscores',
   /**
-  *@description Text that is usually a hyperlink to more documentation
-  */
+   *@description Text that is usually a hyperlink to more documentation
+   */
   learnMore: 'Learn more',
   /**
-  *@description Text for a link to the issues panel
-  */
+   *@description Text for a link to the issues panel
+   */
   learnMoreInTheIssuesTab: 'Learn more in the issues tab',
   /**
-  *@description The title of a button which removes a HTTP header override.
-  */
+   *@description Hover text prompting the user to reload the whole page or refresh the particular request, so that the changes they made take effect.
+   */
+  reloadPrompt: 'Refresh the page/request for these changes to take effect',
+  /**
+   *@description The title of a button which removes a HTTP header override.
+   */
   removeOverride: 'Remove this header override',
 };
 
@@ -62,6 +66,14 @@ const editIconUrl = new URL('../../../Images/edit-icon.svg', import.meta.url).to
 
 export const isValidHeaderName = (headerName: string): boolean => {
   return /^[a-z0-9_\-]+$/i.test(headerName);
+};
+
+export const compareHeaders = (first: string|null|undefined, second: string|null|undefined): boolean => {
+  // Replaces non-breaking spaces(NBSPs) with regular spaces.
+  // When working with contenteditables, their content can contain (non-obvious) NBSPs.
+  // It would be tricky to get rid of NBSPs during editing and saving, so we just
+  // handle them after reading them in.
+  return first?.replaceAll('\xa0', ' ') === second?.replaceAll('\xa0', ' ');
 };
 
 export class HeaderEditedEvent extends Event {
@@ -134,12 +146,20 @@ export class HeaderSectionRow extends HTMLElement {
       'header-highlight': Boolean(this.#header.highlight),
       'header-overridden': Boolean(this.#header.isOverride) || this.#isHeaderValueEdited,
       'header-editable': Boolean(this.#header.valueEditable),
+      'header-deleted': Boolean(this.#header.isDeleted),
     });
 
     // The header name is only editable when the header value is editable as well.
     // This ensures the header name's editability reacts correctly to enabling or
     // disabling local overrides.
     const isHeaderNameEditable = this.#header.nameEditable && this.#header.valueEditable;
+
+    // Case 1: Headers which were just now added via the 'Add header button'.
+    //         'nameEditable' is true only for such headers.
+    // Case 2: Headers for which the user clicked the 'remove' button.
+    // Case 3: Headers for which there is a mismatch between original header
+    //         value and current header value.
+    const showReloadInfoIcon = this.#header.nameEditable || this.#header.isDeleted || this.#isHeaderValueEdited;
 
     // Disabled until https://crbug.com/1079231 is fixed.
     // clang-format off
@@ -150,7 +170,7 @@ export class HeaderSectionRow extends HTMLElement {
             html`<div class="header-badge header-badge-text">${i18n.i18n.lockedString('not-set')}</div> ` :
             LitHtml.nothing
           }
-          ${!this.#isValidHeaderName ?
+          ${isHeaderNameEditable && !this.#isValidHeaderName ?
             html`<${IconButton.Icon.Icon.litTagName} class="inline-icon disallowed-characters" title=${UIStrings.headerNamesOnlyLetters} .data=${{
               iconName: 'error_icon',
               width: '12px',
@@ -158,7 +178,7 @@ export class HeaderSectionRow extends HTMLElement {
             } as IconButton.Icon.IconData}>
             </${IconButton.Icon.Icon.litTagName}>` : LitHtml.nothing
           }
-          ${isHeaderNameEditable ?
+          ${isHeaderNameEditable && !this.#header.isDeleted ?
             html`<${EditableSpan.litTagName}
               @focusout=${this.#onHeaderNameFocusOut}
               @keydown=${this.#onKeyDown}
@@ -174,6 +194,15 @@ export class HeaderSectionRow extends HTMLElement {
         >
           ${this.#renderHeaderValue()}
         </div>
+        ${showReloadInfoIcon ?
+          html`<${IconButton.Icon.Icon.litTagName} class="row-flex-icon flex-right" title=${UIStrings.reloadPrompt} .data=${{
+            iconName: 'info-icon',
+            width: '12px',
+            height: '12px',
+            color: 'var(--color-text-secondary)',
+          } as IconButton.Icon.IconData}>
+          </${IconButton.Icon.Icon.litTagName}>` : LitHtml.nothing
+        }
       </div>
       ${this.#maybeRenderBlockedDetails(this.#header.blockedDetails)}
     `, this.#shadow, {host: this});
@@ -184,12 +213,12 @@ export class HeaderSectionRow extends HTMLElement {
     if (!this.#header) {
       return LitHtml.nothing;
     }
-    if (!this.#header.valueEditable) {
+    if (this.#header.isDeleted || !this.#header.valueEditable) {
       // clang-format off
       return html`
       ${this.#header.value || ''}
       ${this.#maybeRenderHeaderValueSuffix(this.#header)}
-      ${this.#header.isResponseHeader ? html`
+      ${this.#header.isResponseHeader && !this.#header.isDeleted ? html`
         <${Buttons.Button.Button.litTagName}
           title=${i18nString(UIStrings.editHeader)}
           .size=${Buttons.Button.Size.TINY}
@@ -335,7 +364,7 @@ export class HeaderSectionRow extends HTMLElement {
       return;
     }
     const headerValue = target.value.trim();
-    if (headerValue !== this.#header.value) {
+    if (!compareHeaders(headerValue, this.#header.value?.trim())) {
       this.#header.value = headerValue;
       this.dispatchEvent(new HeaderEditedEvent(this.#header.name, headerValue));
       void ComponentHelpers.ScheduledRender.scheduleRender(this, this.#boundRender);
@@ -355,7 +384,7 @@ export class HeaderSectionRow extends HTMLElement {
     // If the header name has been edited to '', reset it to its previous value.
     if (headerName === '') {
       target.value = this.#header.name;
-    } else if (headerName !== this.#header.name) {
+    } else if (!compareHeaders(headerName, this.#header.name.trim())) {
       this.#header.name = headerName;
       this.dispatchEvent(new HeaderEditedEvent(headerName, this.#header.value || ''));
       void ComponentHelpers.ScheduledRender.scheduleRender(this, this.#boundRender);
@@ -458,6 +487,7 @@ export interface HeaderEditorDescriptor {
   isOverride?: boolean;
   valueEditable?: boolean;
   nameEditable?: boolean;
+  isDeleted?: boolean;
 }
 
 export type HeaderDescriptor = HeaderDetailsDescriptor&HeaderEditorDescriptor;

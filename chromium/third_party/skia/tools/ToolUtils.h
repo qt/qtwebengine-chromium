@@ -25,10 +25,10 @@
 #include "include/core/SkSurface.h"
 #include "include/core/SkTypeface.h"
 #include "include/core/SkTypes.h"
-#include "include/private/SkTArray.h"
-#include "include/private/SkTDArray.h"
-#include "include/utils/SkRandom.h"
-#include "src/core/SkTInternalLList.h"
+#include "include/private/base/SkTArray.h"
+#include "include/private/base/SkTDArray.h"
+#include "src/base/SkRandom.h"
+#include "src/base/SkTInternalLList.h"
 #include "tools/SkMetaData.h"
 
 #ifdef SK_GRAPHITE_ENABLED

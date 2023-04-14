@@ -17,10 +17,12 @@ import * as UI from '../../ui/legacy/legacy.js';
 import {ConsolePanel} from './ConsolePanel.js';
 import consolePromptStyles from './consolePrompt.css.js';
 
+const {Direction} = TextEditor.TextEditorHistory;
+
 const UIStrings = {
   /**
-  *@description Text in Console Prompt of the Console panel
-  */
+   *@description Text in Console Prompt of the Console panel
+   */
   consolePrompt: 'Console prompt',
 };
 const str_ = i18n.i18n.registerUIStrings('panels/console/ConsolePrompt.ts', UIStrings);
@@ -28,7 +30,7 @@ const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 export class ConsolePrompt extends Common.ObjectWrapper.eventMixin<EventTypes, typeof UI.Widget.Widget>(
     UI.Widget.Widget) {
   private addCompletionsFromHistory: boolean;
-  private historyInternal: ConsoleHistoryManager;
+  private historyInternal: TextEditor.AutocompleteHistory.AutocompleteHistory;
   private initialText: string;
   private editor: TextEditor.TextEditor.TextEditor;
   private readonly eagerPreviewElement: HTMLDivElement;
@@ -47,10 +49,13 @@ export class ConsolePrompt extends Common.ObjectWrapper.eventMixin<EventTypes, t
   // console drawer should be hidden as a whole.
   #argumentHintsState: CodeMirror.StateField<CodeMirror.Tooltip|null>;
 
+  #editorHistory: TextEditor.TextEditorHistory.TextEditorHistory;
+
   constructor() {
     super();
     this.addCompletionsFromHistory = true;
-    this.historyInternal = new ConsoleHistoryManager();
+    this.historyInternal = new TextEditor.AutocompleteHistory.AutocompleteHistory(
+        Common.Settings.Settings.instance().createLocalSetting('consoleHistory', []));
 
     this.initialText = '';
     this.eagerPreviewElement = document.createElement('div');
@@ -89,7 +94,7 @@ export class ConsolePrompt extends Common.ObjectWrapper.eventMixin<EventTypes, t
       TextEditor.Config.autocompletion.instance(),
       CodeMirror.javascript.javascriptLanguage.data.of({
         autocomplete: (context: CodeMirror.CompletionContext): CodeMirror.CompletionResult | null =>
-            this.historyCompletions(context),
+            this.addCompletionsFromHistory ? this.#editorHistory.historyCompletions(context) : null,
       }),
       CodeMirror.EditorView.contentAttributes.of({'aria-label': i18nString(UIStrings.consolePrompt)}),
       CodeMirror.EditorView.lineWrapping,
@@ -108,6 +113,7 @@ export class ConsolePrompt extends Common.ObjectWrapper.eventMixin<EventTypes, t
       }
     });
     editorContainerElement.appendChild(this.editor);
+    this.#editorHistory = new TextEditor.TextEditorHistory.TextEditorHistory(this.editor, this.historyInternal);
 
     if (this.hasFocus()) {
       this.focus();
@@ -145,8 +151,15 @@ export class ConsolePrompt extends Common.ObjectWrapper.eventMixin<EventTypes, t
 
   private async requestPreview(): Promise<void> {
     const id = ++this.requestPreviewCurrent;
-    const text = TextEditor.Config.contentIncludingHint(this.editor.editor).trim();
+    let text = TextEditor.Config.contentIncludingHint(this.editor.editor).trim();
     const executionContext = UI.Context.Context.instance().flavor(SDK.RuntimeModel.ExecutionContext);
+    if (Root.Runtime.experiments.isEnabled('evaluateExpressionsWithSourceMaps') && executionContext) {
+      const callFrame = executionContext.debuggerModel.selectedCallFrame();
+      if (callFrame) {
+        const nameMap = await SourceMapScopes.NamesResolver.allVariablesInCallFrame(callFrame);
+        text = await this.substituteNames(text, nameMap);
+      }
+    }
     const {preview, result} = await ObjectUI.JavaScriptREPL.JavaScriptREPL.evaluateAndBuildPreview(
         text, true /* throwOnSideEffect */, true /* replMode */, 500 /* timeout */);
     if (this.requestPreviewCurrent !== id) {
@@ -180,7 +193,7 @@ export class ConsolePrompt extends Common.ObjectWrapper.eventMixin<EventTypes, t
     }
   }
 
-  history(): ConsoleHistoryManager {
+  history(): TextEditor.AutocompleteHistory.AutocompleteHistory {
     return this.historyInternal;
   }
 
@@ -214,10 +227,10 @@ export class ConsolePrompt extends Common.ObjectWrapper.eventMixin<EventTypes, t
 
   private editorKeymap(): readonly CodeMirror.KeyBinding[] {
     return [
-      {key: 'ArrowUp', run: (): boolean => this.moveHistory(-1)},
-      {key: 'ArrowDown', run: (): boolean => this.moveHistory(1)},
-      {mac: 'Ctrl-p', run: (): boolean => this.moveHistory(-1, true)},
-      {mac: 'Ctrl-n', run: (): boolean => this.moveHistory(1, true)},
+      {key: 'ArrowUp', run: (): boolean => this.#editorHistory.moveHistory(Direction.BACKWARD)},
+      {key: 'ArrowDown', run: (): boolean => this.#editorHistory.moveHistory(Direction.FORWARD)},
+      {mac: 'Ctrl-p', run: (): boolean => this.#editorHistory.moveHistory(Direction.BACKWARD, true)},
+      {mac: 'Ctrl-n', run: (): boolean => this.#editorHistory.moveHistory(Direction.FORWARD, true)},
       {
         key: 'Escape',
         run: (): boolean => {
@@ -233,47 +246,6 @@ export class ConsolePrompt extends Common.ObjectWrapper.eventMixin<EventTypes, t
         shift: CodeMirror.insertNewlineAndIndent,
       },
     ];
-  }
-
-  private moveHistory(dir: -1|1, force = false): boolean {
-    const {editor} = this.editor, {main} = editor.state.selection;
-    if (!force) {
-      if (!main.empty) {
-        return false;
-      }
-      const cursorCoords = editor.coordsAtPos(main.head);
-      const endCoords = editor.coordsAtPos(dir < 0 ? 0 : editor.state.doc.length);
-      // Check if there are wrapped lines in this direction, and let
-      // the cursor move normally if there are.
-      if (cursorCoords && endCoords &&
-          (dir < 0 ? cursorCoords.top > endCoords.top + 5 : cursorCoords.bottom < endCoords.bottom - 5)) {
-        return false;
-      }
-    }
-
-    const history = this.historyInternal;
-    const newText = dir < 0 ? history.previous(this.text()) : history.next();
-    if (newText === undefined) {
-      return false;
-    }
-
-    // Change the prompt input to the history content, and scroll to the end to
-    // bring the full content (potentially multiple lines) into view.
-    const cursorPos = newText.length;
-    this.editor.dispatch({
-      changes: {from: 0, to: this.editor.state.doc.length, insert: newText},
-      selection: CodeMirror.EditorSelection.cursor(cursorPos),
-      scrollIntoView: true,
-    });
-    if (dir < 0) {
-      // If we are going back in history, put the cursor to the end of the first line
-      // so that the user can quickly go further back in history.
-      const firstLineBreak = newText.search(/\n|$/);
-      this.editor.dispatch({
-        selection: CodeMirror.EditorSelection.cursor(firstLineBreak),
-      });
-    }
-    return true;
   }
 
   private async enterWillEvaluate(): Promise<boolean> {
@@ -347,111 +319,11 @@ export class ConsolePrompt extends Common.ObjectWrapper.eventMixin<EventTypes, t
     }
   }
 
-  private historyCompletions(context: CodeMirror.CompletionContext): CodeMirror.CompletionResult|null {
-    const text = this.text();
-    if (!this.addCompletionsFromHistory || !this.isCaretAtEndOfPrompt() || (!text.length && !context.explicit)) {
-      return null;
-    }
-    const result = [];
-    const set = new Set<string>();
-    const data = this.historyInternal.historyData();
-    for (let i = data.length - 1; i >= 0 && result.length < 50; --i) {
-      const item = data[i];
-      if (!item.startsWith(text)) {
-        continue;
-      }
-      if (set.has(item)) {
-        continue;
-      }
-      set.add(item);
-      result.push({label: item, type: 'secondary', boost: -1e5});
-    }
-    return result.length ? {
-      from: 0,
-      to: text.length,
-      options: result,
-    } :
-                           null;
-  }
-
   focus(): void {
     this.editor.focus();
   }
 
   private editorSetForTest(): void {
-  }
-}
-
-export class ConsoleHistoryManager {
-  private data: string[];
-  private historyOffset: number;
-  private uncommittedIsTop?: boolean;
-  constructor() {
-    this.data = [];
-
-    /**
-     * 1-based entry in the history stack.
-     */
-    this.historyOffset = 1;
-  }
-
-  historyData(): string[] {
-    return this.data;
-  }
-
-  setHistoryData(data: string[]): void {
-    this.data = data.slice();
-    this.historyOffset = 1;
-  }
-
-  /**
-   * Pushes a committed text into the history.
-   */
-  pushHistoryItem(text: string): void {
-    if (this.uncommittedIsTop) {
-      this.data.pop();
-      delete this.uncommittedIsTop;
-    }
-
-    this.historyOffset = 1;
-    if (text === this.currentHistoryItem()) {
-      return;
-    }
-    this.data.push(text);
-  }
-
-  /**
-   * Pushes the current (uncommitted) text into the history.
-   */
-  private pushCurrentText(currentText: string): void {
-    if (this.uncommittedIsTop) {
-      this.data.pop();
-    }  // Throw away obsolete uncommitted text.
-    this.uncommittedIsTop = true;
-    this.data.push(currentText);
-  }
-
-  previous(currentText: string): string|undefined {
-    if (this.historyOffset > this.data.length) {
-      return undefined;
-    }
-    if (this.historyOffset === 1) {
-      this.pushCurrentText(currentText);
-    }
-    ++this.historyOffset;
-    return this.currentHistoryItem();
-  }
-
-  next(): string|undefined {
-    if (this.historyOffset === 1) {
-      return undefined;
-    }
-    --this.historyOffset;
-    return this.currentHistoryItem();
-  }
-
-  private currentHistoryItem(): string|undefined {
-    return this.data[this.data.length - this.historyOffset];
   }
 }
 

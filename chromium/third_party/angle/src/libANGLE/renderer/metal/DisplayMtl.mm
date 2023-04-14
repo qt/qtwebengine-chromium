@@ -26,6 +26,7 @@
 #include "libANGLE/renderer/metal/mtl_common.h"
 #include "libANGLE/renderer/metal/shaders/mtl_default_shaders_src_autogen.inc"
 #include "libANGLE/trace.h"
+#include "mtl_command_buffer.h"
 #include "platform/PlatformMethods.h"
 
 #ifdef ANGLE_METAL_XCODE_BUILDS_SHADERS
@@ -139,6 +140,14 @@ angle::Result DisplayMtl::initializeImpl(egl::Display *display)
         }
 
         mMetalDeviceVendorId = mtl::GetDeviceVendorId(mMetalDevice);
+
+        // TODO(anglebug.com/7952): GPUs that don't support Mac GPU family 2 or greater are
+        // unsupported by the Metal backend.
+        if (!supportsEitherGPUFamily(1, 2))
+        {
+            ANGLE_MTL_LOG("Could not initialize: Metal device does not support Mac GPU family 2.");
+            return angle::Result::Stop;
+        }
 
         mCmdQueue.set([[mMetalDevice newCommandQueue] ANGLE_MTL_AUTORELEASE]);
 
@@ -318,6 +327,16 @@ egl::Error DisplayMtl::waitNative(const gl::Context *context, EGLint engine)
     return egl::NoError();
 }
 
+egl::Error DisplayMtl::waitUntilWorkScheduled()
+{
+    for (auto context : mState.contextSet)
+    {
+        auto contextMtl = GetImplAs<ContextMtl>(context);
+        contextMtl->flushCommandBuffer(mtl::WaitUntilScheduled);
+    }
+    return egl::NoError();
+}
+
 SurfaceImpl *DisplayMtl::createWindowSurface(const egl::SurfaceState &state,
                                              EGLNativeWindowType window,
                                              const egl::AttributeMap &attribs)
@@ -452,6 +471,7 @@ void DisplayMtl::generateExtensions(egl::DisplayExtensions *outExtensions) const
     outExtensions->displayTextureShareGroup   = true;
     outExtensions->displaySemaphoreShareGroup = true;
     outExtensions->mtlTextureClientBuffer     = true;
+    outExtensions->waitUntilWorkScheduled     = true;
 
     if (mFeatures.hasEvents.enabled)
     {
@@ -476,7 +496,10 @@ void DisplayMtl::generateExtensions(egl::DisplayExtensions *outExtensions) const
     outExtensions->mtlSyncSharedEventANGLE = true;
 }
 
-void DisplayMtl::generateCaps(egl::Caps *outCaps) const {}
+void DisplayMtl::generateCaps(egl::Caps *outCaps) const
+{
+    outCaps->textureNPOT = true;
+}
 
 void DisplayMtl::populateFeatureList(angle::FeatureList *features)
 {
@@ -872,7 +895,7 @@ void DisplayMtl::ensureCapsInitialized() const
     // GL_OES_get_program_binary
     mNativeCaps.programBinaryFormats.push_back(GL_PROGRAM_BINARY_ANGLE);
 
-    // GL_APPLE_clip_distance
+    // GL_APPLE_clip_distance / GL_ANGLE_clip_cull_distance
     mNativeCaps.maxClipDistances = 8;
 
     // Metal doesn't support GL_TEXTURE_COMPARE_MODE=GL_NONE for shadow samplers
@@ -910,6 +933,7 @@ void DisplayMtl::initializeExtensions() const
     mNativeExtensions.framebufferBlitANGLE          = true;
     mNativeExtensions.framebufferBlitNV             = true;
     mNativeExtensions.framebufferMultisampleANGLE   = true;
+    mNativeExtensions.polygonOffsetClampEXT         = true;
     mNativeExtensions.copyTextureCHROMIUM           = true;
     mNativeExtensions.copyCompressedTextureCHROMIUM = false;
 
@@ -964,8 +988,8 @@ void DisplayMtl::initializeExtensions() const
 
     mNativeExtensions.occlusionQueryBooleanEXT = true;
 
-    mNativeExtensions.disjointTimerQueryEXT = false;
-    mNativeCaps.queryCounterBitsTimeElapsed = 0;
+    mNativeExtensions.disjointTimerQueryEXT = true;
+    mNativeCaps.queryCounterBitsTimeElapsed = 64;
     mNativeCaps.queryCounterBitsTimestamp   = 0;
 
     mNativeExtensions.textureFilterAnisotropicEXT = true;
@@ -986,6 +1010,9 @@ void DisplayMtl::initializeExtensions() const
 
     // GL_APPLE_clip_distance
     mNativeExtensions.clipDistanceAPPLE = true;
+
+    // GL_ANGLE_clip_cull_distance
+    mNativeExtensions.clipCullDistanceANGLE = true;
 
     // GL_NV_pixel_buffer_object
     mNativeExtensions.pixelBufferObjectNV = true;
@@ -1015,6 +1042,13 @@ void DisplayMtl::initializeExtensions() const
     // Metal uses the opposite provoking vertex as GLES so emulation is required to use the GLES
     // behaviour. Allow users to change the provoking vertex for improved performance.
     mNativeExtensions.provokingVertexANGLE = true;
+
+    // GL_EXT_blend_func_extended
+    if (ANGLE_APPLE_AVAILABLE_XCI(10.12, 11.0, 13.1))
+    {
+        mNativeExtensions.blendFuncExtendedEXT = true;
+        mNativeCaps.maxDualSourceDrawBuffers   = 1;
+    }
 
     // GL_ANGLE_shader_pixel_local_storage.
     if (!mFeatures.disableProgrammableBlending.enabled && supportsAppleGPUFamily(1))
@@ -1212,17 +1246,14 @@ void DisplayMtl::initializeFeatures()
 
     ANGLE_FEATURE_CONDITION((&mFeatures), preemptivelyStartProvokingVertexCommandBuffer, isAMD());
 
-    ANGLE_FEATURE_CONDITION((&mFeatures), alwaysUseStagedBufferUpdates, isAMD());
-    ANGLE_FEATURE_CONDITION((&mFeatures), alwaysUseManagedStorageModeForBuffers, isAMD());
-
-    ANGLE_FEATURE_CONDITION((&mFeatures), alwaysUseSharedStorageModeForBuffers, isIntel());
-    ANGLE_FEATURE_CONDITION((&mFeatures), useShadowBuffersWhenAppropriate, isIntel());
-
-    // At least one of these must not be set.
-    ASSERT(!mFeatures.alwaysUseManagedStorageModeForBuffers.enabled ||
-           !mFeatures.alwaysUseSharedStorageModeForBuffers.enabled);
-
     ANGLE_FEATURE_CONDITION((&mFeatures), uploadDataToIosurfacesWithStagingBuffers, isAMD());
+
+    // Render passes can be rendered without attachments on Apple4 , mac2 hardware.
+    ANGLE_FEATURE_CONDITION(&(mFeatures), allowRenderpassWithoutAttachment,
+                            supportsEitherGPUFamily(4, 2));
+
+    ANGLE_FEATURE_CONDITION((&mFeatures), enableInMemoryMtlLibraryCache, true);
+    ANGLE_FEATURE_CONDITION((&mFeatures), enableParallelMtlLibraryCompilation, true);
 
     ApplyFeatureOverrides(&mFeatures, getState());
 }

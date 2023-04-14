@@ -576,8 +576,7 @@ void CPDF_RenderStatus::ProcessClipPath(const CPDF_ClipPath& ClipPath,
     CFX_FillRenderOptions fill_options(CFX_FillRenderOptions::WindingOptions());
     if (m_Options.GetOptions().bNoTextSmooth)
       fill_options.aliased_path = true;
-    m_pDevice->SetClip_PathFill(*pTextClippingPath.get(), nullptr,
-                                fill_options);
+    m_pDevice->SetClip_PathFill(*pTextClippingPath, nullptr, fill_options);
     pTextClippingPath.reset();
   }
 }
@@ -1286,7 +1285,7 @@ void CPDF_RenderStatus::CompositeDIBitmap(
       }
 #if defined(_SKIA_SUPPORT_)
       if (CFX_DefaultRenderDevice::SkiaIsDefaultRenderer())
-        CFX_SkiaDeviceDriver::PreMultiply(pDIBitmap);
+        pDIBitmap->PreMultiply();
 #endif
       if (m_pDevice->SetDIBits(pDIBitmap, left, top)) {
         return;

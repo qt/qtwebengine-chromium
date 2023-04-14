@@ -179,8 +179,8 @@ void BalsaHeaders::ParseTokenList(absl::string_view header_value,
   if (header_value.empty()) {
     return;
   }
-  const char* start = header_value.begin();
-  const char* end = header_value.end();
+  const char* start = header_value.data();
+  const char* end = header_value.data() + header_value.size();
   while (true) {
     // Cast `*start` to unsigned char to make values above 127 rank as expected
     // on platforms with signed char, where such values are represented as

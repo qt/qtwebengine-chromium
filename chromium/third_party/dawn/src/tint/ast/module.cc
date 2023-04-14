@@ -28,7 +28,7 @@ Module::Module(ProgramID pid, NodeID nid, const Source& src) : Base(pid, nid, sr
 Module::Module(ProgramID pid,
                NodeID nid,
                const Source& src,
-               utils::VectorRef<const ast::Node*> global_decls)
+               utils::VectorRef<const Node*> global_decls)
     : Base(pid, nid, src), global_declarations_(std::move(global_decls)) {
     for (auto* decl : global_declarations_) {
         if (decl == nullptr) {
@@ -41,9 +41,9 @@ Module::Module(ProgramID pid,
 
 Module::~Module() = default;
 
-const ast::TypeDecl* Module::LookupType(Symbol name) const {
+const TypeDecl* Module::LookupType(Symbol name) const {
     for (auto* ty : TypeDecls()) {
-        if (ty->name == name) {
+        if (ty->name->symbol == name) {
             return ty;
         }
     }
@@ -59,7 +59,7 @@ void Module::AddGlobalDeclaration(const tint::ast::Node* decl) {
 void Module::BinGlobalDeclaration(const tint::ast::Node* decl, diag::List& diags) {
     Switch(
         decl,  //
-        [&](const ast::TypeDecl* type) {
+        [&](const TypeDecl* type) {
             TINT_ASSERT_PROGRAM_IDS_EQUAL_IF_VALID(AST, type, program_id);
             type_decls_.Push(type);
         },
@@ -71,46 +71,57 @@ void Module::BinGlobalDeclaration(const tint::ast::Node* decl, diag::List& diags
             TINT_ASSERT_PROGRAM_IDS_EQUAL_IF_VALID(AST, var, program_id);
             global_variables_.Push(var);
         },
+        [&](const DiagnosticDirective* diagnostic) {
+            TINT_ASSERT_PROGRAM_IDS_EQUAL_IF_VALID(AST, diagnostic, program_id);
+            diagnostic_directives_.Push(diagnostic);
+        },
         [&](const Enable* enable) {
             TINT_ASSERT_PROGRAM_IDS_EQUAL_IF_VALID(AST, enable, program_id);
             enables_.Push(enable);
         },
-        [&](const StaticAssert* assertion) {
+        [&](const ConstAssert* assertion) {
             TINT_ASSERT_PROGRAM_IDS_EQUAL_IF_VALID(AST, assertion, program_id);
-            static_asserts_.Push(assertion);
+            const_asserts_.Push(assertion);
         },
         [&](Default) { TINT_ICE(AST, diags) << "Unknown global declaration type"; });
 }
 
-void Module::AddEnable(const ast::Enable* enable) {
+void Module::AddDiagnosticDirective(const DiagnosticDirective* directive) {
+    TINT_ASSERT(AST, directive);
+    TINT_ASSERT_PROGRAM_IDS_EQUAL_IF_VALID(AST, directive, program_id);
+    global_declarations_.Push(directive);
+    diagnostic_directives_.Push(directive);
+}
+
+void Module::AddEnable(const Enable* enable) {
     TINT_ASSERT(AST, enable);
     TINT_ASSERT_PROGRAM_IDS_EQUAL_IF_VALID(AST, enable, program_id);
     global_declarations_.Push(enable);
     enables_.Push(enable);
 }
 
-void Module::AddGlobalVariable(const ast::Variable* var) {
+void Module::AddGlobalVariable(const Variable* var) {
     TINT_ASSERT(AST, var);
     TINT_ASSERT_PROGRAM_IDS_EQUAL_IF_VALID(AST, var, program_id);
     global_variables_.Push(var);
     global_declarations_.Push(var);
 }
 
-void Module::AddStaticAssert(const StaticAssert* assertion) {
+void Module::AddConstAssert(const ConstAssert* assertion) {
     TINT_ASSERT(AST, assertion);
     TINT_ASSERT_PROGRAM_IDS_EQUAL_IF_VALID(AST, assertion, program_id);
-    static_asserts_.Push(assertion);
+    const_asserts_.Push(assertion);
     global_declarations_.Push(assertion);
 }
 
-void Module::AddTypeDecl(const ast::TypeDecl* type) {
+void Module::AddTypeDecl(const TypeDecl* type) {
     TINT_ASSERT(AST, type);
     TINT_ASSERT_PROGRAM_IDS_EQUAL_IF_VALID(AST, type, program_id);
     type_decls_.Push(type);
     global_declarations_.Push(type);
 }
 
-void Module::AddFunction(const ast::Function* func) {
+void Module::AddFunction(const Function* func) {
     TINT_ASSERT(AST, func);
     TINT_ASSERT_PROGRAM_IDS_EQUAL_IF_VALID(AST, func, program_id);
     functions_.Push(func);
@@ -132,9 +143,10 @@ void Module::Copy(CloneContext* ctx, const Module* src) {
     functions_.Clear();
     global_variables_.Clear();
     enables_.Clear();
+    diagnostic_directives_.Clear();
 
     for (auto* decl : global_declarations_) {
-        if (!decl) {
+        if (TINT_UNLIKELY(!decl)) {
             TINT_ICE(AST, ctx->dst->Diagnostics()) << "src global declaration was nullptr";
             continue;
         }

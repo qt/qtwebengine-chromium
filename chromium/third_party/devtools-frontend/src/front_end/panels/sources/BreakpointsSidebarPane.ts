@@ -11,7 +11,6 @@ import * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as Workspace from '../../models/workspace/workspace.js';
 import * as UI from '../../ui/legacy/legacy.js';
 
-import {LogpointPrefix, LogpointSuffix} from './BreakpointEditDialog.js';
 import * as SourcesComponents from './components/components.js';
 
 let breakpointsSidebarPaneInstance: BreakpointsSidebarPane;
@@ -245,12 +244,13 @@ export class BreakpointsSidebarController implements UI.ContextFlavorListener.Co
       this.#getHitUILocation(),
     ]);
 
-    const urlToGroup = new Map<Platform.DevToolsPath.UrlString, SourcesComponents.BreakpointsView.BreakpointGroup>();
+    const scriptIdToGroup = new Map<string, SourcesComponents.BreakpointsView.BreakpointGroup>();
 
     for (let idx = 0; idx < locationsGroupedById.length; idx++) {
       const locations = locationsGroupedById[idx];
       const fstLocation = locations[0];
       const sourceURL = fstLocation.uiLocation.uiSourceCode.url();
+      const scriptId = fstLocation.uiLocation.uiSourceCode.canononicalScriptId();
       const uiLocation = fstLocation.uiLocation;
 
       const isHit = selectedUILocation !== null &&
@@ -282,7 +282,7 @@ export class BreakpointsSidebarController implements UI.ContextFlavorListener.Co
       };
       this.#breakpointItemToLocationMap.set(item, locations);
 
-      let group = urlToGroup.get(sourceURL);
+      let group = scriptIdToGroup.get(scriptId);
       if (group) {
         group.breakpointItems.push(item);
         group.expanded ||= expanded;
@@ -295,7 +295,7 @@ export class BreakpointsSidebarController implements UI.ContextFlavorListener.Co
           expanded,
           breakpointItems: [item],
         };
-        urlToGroup.set(sourceURL, group);
+        scriptIdToGroup.set(scriptId, group);
       }
     }
     return {
@@ -303,7 +303,7 @@ export class BreakpointsSidebarController implements UI.ContextFlavorListener.Co
       pauseOnCaughtExceptions,
       pauseOnUncaughtExceptions,
       independentPauseToggles,
-      groups: Array.from(urlToGroup.values()),
+      groups: Array.from(scriptIdToGroup.values()),
     };
   }
 
@@ -342,17 +342,17 @@ export class BreakpointsSidebarController implements UI.ContextFlavorListener.Co
   #getBreakpointTypeAndDetails(locations: Bindings.BreakpointManager.BreakpointLocation[]):
       {type: SourcesComponents.BreakpointsView.BreakpointType, hoverText?: string} {
     const breakpointWithCondition = locations.find(location => Boolean(location.breakpoint.condition()));
-    let hoverText = breakpointWithCondition?.breakpoint.condition();
-    let type = SourcesComponents.BreakpointsView.BreakpointType.REGULAR_BREAKPOINT;
-    if (breakpointWithCondition && hoverText) {
-      if (hoverText.startsWith(LogpointPrefix) && hoverText.endsWith(LogpointSuffix)) {
-        type = SourcesComponents.BreakpointsView.BreakpointType.LOGPOINT;
-        hoverText = hoverText.slice(LogpointPrefix.length, hoverText.length - LogpointSuffix.length);
-      } else {
-        type = SourcesComponents.BreakpointsView.BreakpointType.CONDITIONAL_BREAKPOINT;
-      }
+    const breakpoint = breakpointWithCondition?.breakpoint;
+    if (!breakpoint || !breakpoint.condition()) {
+      return {type: SourcesComponents.BreakpointsView.BreakpointType.REGULAR_BREAKPOINT};
     }
-    return {type, hoverText};
+
+    const condition = breakpoint.condition();
+    if (breakpoint.isLogpoint()) {
+      return {type: SourcesComponents.BreakpointsView.BreakpointType.LOGPOINT, hoverText: condition};
+    }
+
+    return {type: SourcesComponents.BreakpointsView.BreakpointType.CONDITIONAL_BREAKPOINT, hoverText: condition};
   }
 
   #getLocationsForBreakpointItem(breakpointItem: SourcesComponents.BreakpointsView.BreakpointItem):

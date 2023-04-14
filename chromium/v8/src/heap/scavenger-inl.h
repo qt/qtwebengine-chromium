@@ -135,7 +135,7 @@ CopyAndForwardResult Scavenger::SemiSpaceCopyObject(
 
   HeapObject target;
   if (allocation.To(&target)) {
-    DCHECK(heap()->non_atomic_marking_state()->IsWhite(target));
+    DCHECK(heap()->marking_state()->IsWhite(target));
     const bool self_success =
         MigrateObject(map, object, target, object_size, kPromoteIntoLocalHeap);
     if (!self_success) {
@@ -298,7 +298,7 @@ SlotCallbackResult Scavenger::EvacuateThinString(Map map, THeapObjectSlot slot,
   static_assert(std::is_same<THeapObjectSlot, FullHeapObjectSlot>::value ||
                     std::is_same<THeapObjectSlot, HeapObjectSlot>::value,
                 "Only FullHeapObjectSlot and HeapObjectSlot are expected here");
-  if (!is_incremental_marking_ && shortcut_strings_) {
+  if (shortcut_strings_) {
     // The ThinString should die after Scavenge, so avoid writing the proper
     // forwarding pointer and instead just signal the actual object as forwarded
     // reference.
@@ -326,7 +326,7 @@ SlotCallbackResult Scavenger::EvacuateShortcutCandidate(Map map,
                 "Only FullHeapObjectSlot and HeapObjectSlot are expected here");
   DCHECK(IsShortcutCandidate(map.instance_type()));
 
-  if (!is_incremental_marking_ && shortcut_strings_ &&
+  if (shortcut_strings_ &&
       object.unchecked_second() == ReadOnlyRoots(heap()).empty_string()) {
     HeapObject first = HeapObject::cast(object.unchecked_first());
 
@@ -484,8 +484,10 @@ class ScavengeVisitor final : public NewSpaceVisitor<ScavengeVisitor> {
                                MaybeObjectSlot end) final;
   V8_INLINE void VisitCodePointer(HeapObject host, CodeObjectSlot slot) final;
 
-  V8_INLINE void VisitCodeTarget(Code host, RelocInfo* rinfo) final;
-  V8_INLINE void VisitEmbeddedPointer(Code host, RelocInfo* rinfo) final;
+  V8_INLINE void VisitCodeTarget(InstructionStream host,
+                                 RelocInfo* rinfo) final;
+  V8_INLINE void VisitEmbeddedPointer(InstructionStream host,
+                                      RelocInfo* rinfo) final;
   V8_INLINE int VisitEphemeronHashTable(Map map, EphemeronHashTable object);
   V8_INLINE int VisitJSArrayBuffer(Map map, JSArrayBuffer object);
   V8_INLINE int VisitJSApiObject(Map map, JSObject object);
@@ -512,24 +514,28 @@ void ScavengeVisitor::VisitPointers(HeapObject host, MaybeObjectSlot start,
 
 void ScavengeVisitor::VisitCodePointer(HeapObject host, CodeObjectSlot slot) {
   CHECK(V8_EXTERNAL_CODE_SPACE_BOOL);
-  // Code slots never appear in new space because CodeDataContainers, the
-  // only object that can contain code pointers, are always allocated in
-  // the old space.
+  // InstructionStream slots never appear in new space because
+  // Code objects, the only object that can contain code pointers, are
+  // always allocated in the old space.
   UNREACHABLE();
 }
 
-void ScavengeVisitor::VisitCodeTarget(Code host, RelocInfo* rinfo) {
-  Code target = Code::GetCodeFromTargetAddress(rinfo->target_address());
+void ScavengeVisitor::VisitCodeTarget(InstructionStream host,
+                                      RelocInfo* rinfo) {
+  InstructionStream target =
+      InstructionStream::FromTargetAddress(rinfo->target_address());
 #ifdef DEBUG
-  Code old_target = target;
+  InstructionStream old_target = target;
 #endif
   FullObjectSlot slot(&target);
   VisitHeapObjectImpl(slot, target);
-  // Code objects are never in new-space, so the slot contents must not change.
+  // InstructionStream objects are never in new-space, so the slot contents must
+  // not change.
   DCHECK_EQ(old_target, target);
 }
 
-void ScavengeVisitor::VisitEmbeddedPointer(Code host, RelocInfo* rinfo) {
+void ScavengeVisitor::VisitEmbeddedPointer(InstructionStream host,
+                                           RelocInfo* rinfo) {
   HeapObject heap_object = rinfo->target_object(cage_base());
 #ifdef DEBUG
   HeapObject old_heap_object = heap_object;

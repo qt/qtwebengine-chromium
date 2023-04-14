@@ -607,6 +607,8 @@ if (aom_config("CONFIG_AV1_ENCODER") eq "yes"){
     add_proto qw/void aom_fdct4x4_lp/, "const int16_t *input, int16_t *output, int stride";
     specialize qw/aom_fdct4x4_lp neon sse2/;
 
+    # 8x8 DCT transform for psnr-hvs. Unlike other transforms isn't compatible
+    # with av1 scan orders, because it does two transposes.
     add_proto qw/void aom_fdct8x8/, "const int16_t *input, tran_low_t *output, int stride";
     specialize qw/aom_fdct8x8 neon sse2/, "$ssse3_x86_64";
     # High bit depth
@@ -957,7 +959,7 @@ if (aom_config("CONFIG_AV1_ENCODER") eq "yes") {
   foreach (@encoder_block_sizes) {
     ($w, $h) = @$_;
     add_proto qw/unsigned int/, "aom_masked_sad${w}x${h}", "const uint8_t *src, int src_stride, const uint8_t *ref, int ref_stride, const uint8_t *second_pred, const uint8_t *msk, int msk_stride, int invert_mask";
-    specialize "aom_masked_sad${w}x${h}", qw/ssse3 avx2/;
+    specialize "aom_masked_sad${w}x${h}", qw/ssse3 avx2 neon/;
   }
 
   if (aom_config("CONFIG_AV1_HIGHBITDEPTH") eq "yes") {
@@ -1238,7 +1240,7 @@ if (aom_config("CONFIG_AV1_ENCODER") eq "yes") {
   # hamadard transform and satd for implmenting temporal dependency model
   #
   add_proto qw/void aom_hadamard_4x4/, "const int16_t *src_diff, ptrdiff_t src_stride, tran_low_t *coeff";
-  specialize qw/aom_hadamard_4x4 sse2/;
+  specialize qw/aom_hadamard_4x4 sse2 neon/;
 
   add_proto qw/void aom_hadamard_8x8/, "const int16_t *src_diff, ptrdiff_t src_stride, tran_low_t *coeff";
   specialize qw/aom_hadamard_8x8 sse2 neon/;
@@ -1247,7 +1249,7 @@ if (aom_config("CONFIG_AV1_ENCODER") eq "yes") {
   specialize qw/aom_hadamard_16x16 avx2 sse2 neon/;
 
   add_proto qw/void aom_hadamard_32x32/, "const int16_t *src_diff, ptrdiff_t src_stride, tran_low_t *coeff";
-  specialize qw/aom_hadamard_32x32 avx2 sse2/;
+  specialize qw/aom_hadamard_32x32 avx2 sse2 neon/;
 
   add_proto qw/void aom_hadamard_lp_8x8/, "const int16_t *src_diff, ptrdiff_t src_stride, int16_t *coeff";
   specialize qw/aom_hadamard_lp_8x8 sse2 neon/;
@@ -1309,7 +1311,7 @@ if (aom_config("CONFIG_AV1_ENCODER") eq "yes") {
   specialize qw/aom_get_var_sse_sum_8x8_quad        avx2 sse2 neon/;
 
   add_proto qw/void aom_get_var_sse_sum_16x16_dual/, "const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int ref_stride, uint32_t *sse16x16, unsigned int *tot_sse, int *tot_sum, uint32_t *var16x16";
-  specialize qw/aom_get_var_sse_sum_16x16_dual        avx2/;
+  specialize qw/aom_get_var_sse_sum_16x16_dual        avx2 sse2 neon/;
 
   add_proto qw/unsigned int aom_mse16x16/, "const uint8_t *src_ptr, int  source_stride, const uint8_t *ref_ptr, int  recon_stride, unsigned int *sse";
   add_proto qw/unsigned int aom_mse16x8/, "const uint8_t *src_ptr, int  source_stride, const uint8_t *ref_ptr, int  recon_stride, unsigned int *sse";
@@ -1543,7 +1545,7 @@ if (aom_config("CONFIG_AV1_ENCODER") eq "yes") {
       ($w, $h) = @$_;
       add_proto qw/unsigned int/, "aom_obmc_variance${w}x${h}", "const uint8_t *pre, int pre_stride, const int32_t *wsrc, const int32_t *mask, unsigned int *sse";
       add_proto qw/unsigned int/, "aom_obmc_sub_pixel_variance${w}x${h}", "const uint8_t *pre, int pre_stride, int xoffset, int yoffset, const int32_t *wsrc, const int32_t *mask, unsigned int *sse";
-      specialize "aom_obmc_variance${w}x${h}", qw/sse4_1 avx2/;
+      specialize "aom_obmc_variance${w}x${h}", qw/sse4_1 avx2 neon/;
       specialize "aom_obmc_sub_pixel_variance${w}x${h}", q/sse4_1/;
     }
 
@@ -2037,8 +2039,11 @@ if (aom_config("CONFIG_AV1_ENCODER") eq "yes") {
 
   # Flow estimation library
   if (aom_config("CONFIG_REALTIME_ONLY") ne "yes") {
-    add_proto qw/double av1_compute_cross_correlation/, "unsigned char *im1, int stride1, int x1, int y1, unsigned char *im2, int stride2, int x2, int y2";
+    add_proto qw/double av1_compute_cross_correlation/, "const unsigned char *im1, int stride1, int x1, int y1, const unsigned char *im2, int stride2, int x2, int y2";
     specialize qw/av1_compute_cross_correlation sse4_1 avx2/;
+
+    add_proto qw/void aom_compute_flow_at_point/, "const uint8_t *frm, const uint8_t *ref, int x, int y, int width, int height, int stride, double *u, double *v";
+    specialize qw/aom_compute_flow_at_point sse4_1/;
   }
 
 }  # CONFIG_AV1_ENCODER

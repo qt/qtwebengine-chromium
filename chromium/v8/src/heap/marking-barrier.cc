@@ -18,6 +18,7 @@
 #include "src/heap/safepoint.h"
 #include "src/objects/heap-object.h"
 #include "src/objects/js-array-buffer.h"
+#include "src/objects/objects-inl.h"
 
 namespace v8 {
 namespace internal {
@@ -31,7 +32,7 @@ MarkingBarrier::MarkingBarrier(LocalHeap* local_heap)
       minor_worklist_(*minor_collector_->marking_worklists()->shared()),
       marking_state_(isolate()),
       is_main_thread_barrier_(local_heap->is_main_thread()),
-      uses_shared_heap_(isolate()->has_shared_heap()),
+      uses_shared_heap_(isolate()->has_shared_space()),
       is_shared_space_isolate_(isolate()->is_shared_space_isolate()) {}
 
 MarkingBarrier::~MarkingBarrier() { DCHECK(typed_slots_map_.empty()); }
@@ -43,12 +44,8 @@ void MarkingBarrier::Write(HeapObject host, HeapObjectSlot slot,
   DCHECK(MemoryChunk::FromHeapObject(host)->IsMarking());
   MarkValue(host, value);
 
-  if (slot.address()) {
-    if (is_compacting_ ||
-        (shared_heap_worklist_.has_value() && host.InSharedWritableHeap())) {
-      DCHECK_IMPLIES(is_compacting_, is_major());
-      MarkCompactCollector::RecordSlot(host, slot, value);
-    }
+  if (slot.address() && IsCompacting(host)) {
+    MarkCompactCollector::RecordSlot(host, slot, value);
   }
 }
 
@@ -64,11 +61,12 @@ void MarkingBarrier::WriteWithoutHost(HeapObject value) {
       return;
     }
   }
-
+  if (value.InReadOnlySpace()) return;
   MarkValueLocal(value);
 }
 
-void MarkingBarrier::Write(Code host, RelocInfo* reloc_info, HeapObject value) {
+void MarkingBarrier::Write(InstructionStream host, RelocInfo* reloc_info,
+                           HeapObject value) {
   DCHECK(IsCurrentMarkingBarrier(host));
   DCHECK(!host.InSharedWritableHeap());
   DCHECK(is_activated_ || shared_heap_worklist_.has_value());
@@ -158,7 +156,7 @@ void MarkingBarrier::Write(DescriptorArray descriptor_array,
   }
 }
 
-void MarkingBarrier::RecordRelocSlot(Code host, RelocInfo* rinfo,
+void MarkingBarrier::RecordRelocSlot(InstructionStream host, RelocInfo* rinfo,
                                      HeapObject target) {
   DCHECK(IsCurrentMarkingBarrier(host));
   if (!MarkCompactCollector::ShouldRecordRelocSlot(host, rinfo, target)) return;
@@ -190,7 +188,8 @@ void ActivateSpaces(Heap* heap) {
   ActivateSpace(heap->old_space());
   {
     CodePageHeaderModificationScope rwx_write_scope(
-        "Modification of Code page header flags requires write access");
+        "Modification of InstructionStream page header flags requires write "
+        "access");
     ActivateSpace(heap->code_space());
   }
   ActivateSpace(heap->new_space());
@@ -209,7 +208,8 @@ void ActivateSpaces(Heap* heap) {
 
   {
     CodePageHeaderModificationScope rwx_write_scope(
-        "Modification of Code page header flags requires write access");
+        "Modification of InstructionStream page header flags requires write "
+        "access");
     for (LargePage* p : *heap->code_lo_space()) {
       p->SetOldGenerationPageFlags(true);
     }
@@ -270,12 +270,12 @@ void MarkingBarrier::ActivateAll(Heap* heap, bool is_compacting,
                                                 marking_barrier_type);
       });
 
-  if (heap->isolate()->is_shared_heap_isolate()) {
+  if (heap->isolate()->is_shared_space_isolate()) {
     heap->isolate()
         ->shared_heap_isolate()
         ->global_safepoint()
         ->IterateClientIsolates([](Isolate* client) {
-          if (client->is_shared_heap_isolate()) return;
+          if (client->is_shared_space_isolate()) return;
           // Force the RecordWrite builtin into the incremental marking code
           // path.
           client->heap()->SetIsMarkingFlag(true);
@@ -315,12 +315,12 @@ void MarkingBarrier::DeactivateAll(Heap* heap) {
     local_heap->marking_barrier()->Deactivate();
   });
 
-  if (heap->isolate()->is_shared_heap_isolate()) {
+  if (heap->isolate()->is_shared_space_isolate()) {
     heap->isolate()
         ->shared_heap_isolate()
         ->global_safepoint()
         ->IterateClientIsolates([](Isolate* client) {
-          if (client->is_shared_heap_isolate()) return;
+          if (client->is_shared_space_isolate()) return;
           // We can't just simply disable the marking barrier for all clients. A
           // client may still need it to be set for incremental marking in the
           // local heap.
@@ -353,12 +353,12 @@ void MarkingBarrier::PublishAll(Heap* heap) {
     local_heap->marking_barrier()->PublishIfNeeded();
   });
 
-  if (heap->isolate()->is_shared_heap_isolate()) {
+  if (heap->isolate()->is_shared_space_isolate()) {
     heap->isolate()
         ->shared_heap_isolate()
         ->global_safepoint()
         ->IterateClientIsolates([](Isolate* client) {
-          if (client->is_shared_heap_isolate()) return;
+          if (client->is_shared_space_isolate()) return;
           client->heap()->safepoint()->IterateLocalHeaps(
               [](LocalHeap* local_heap) {
                 local_heap->marking_barrier()->PublishSharedIfNeeded();
@@ -408,7 +408,6 @@ Isolate* MarkingBarrier::isolate() const { return heap_->isolate(); }
 void MarkingBarrier::AssertMarkingIsActivated() const { DCHECK(is_activated_); }
 
 void MarkingBarrier::AssertSharedMarkingIsActivated() const {
-  DCHECK(v8_flags.shared_space);
   DCHECK(shared_heap_worklist_.has_value());
 }
 #endif  // DEBUG

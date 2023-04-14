@@ -22,11 +22,11 @@
 
 static void f32_velu(
   benchmark::State& state,
-  xnn_f32_velu_ukernel_function elu,
+  xnn_f32_velu_ukernel_fn elu,
   xnn_init_f32_elu_params_fn init_params,
   benchmark::utils::IsaCheckFunction isa_check = nullptr)
 {
-  if (isa_check && !isa_check(state)) {
+  if (isa_check != nullptr && !isa_check(state)) {
     return;
   }
 
@@ -801,6 +801,132 @@ static void f32_velu(
     ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
     ->UseRealTime();
 #endif  // XNN_ARCH_X86 || XNN_ARCH_X86_64
+
+#if XNN_ARCH_WASMRELAXEDSIMD
+  BENCHMARK_CAPTURE(f32_velu, wasmrelaxedsimd_fma_lut16_p3_x4,
+                    xnn_f32_velu_ukernel__wasmrelaxedsimd_fma_rr2_lut16_p3_x4,
+                    xnn_init_f32_elu_wasmsimd_rr2_lut16_p3_params)
+    ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
+    ->UseRealTime();
+  BENCHMARK_CAPTURE(f32_velu, wasmrelaxedsimd_fma_lut16_p3_x8,
+                    xnn_f32_velu_ukernel__wasmrelaxedsimd_fma_rr2_lut16_p3_x8,
+                    xnn_init_f32_elu_wasmsimd_rr2_lut16_p3_params)
+    ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
+    ->UseRealTime();
+  BENCHMARK_CAPTURE(f32_velu, wasmrelaxedsimd_fma_lut16_p3_x12,
+                    xnn_f32_velu_ukernel__wasmrelaxedsimd_fma_rr2_lut16_p3_x12,
+                    xnn_init_f32_elu_wasmsimd_rr2_lut16_p3_params)
+    ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
+    ->UseRealTime();
+  BENCHMARK_CAPTURE(f32_velu, wasmrelaxedsimd_fma_lut16_p3_x16,
+                    xnn_f32_velu_ukernel__wasmrelaxedsimd_fma_rr2_lut16_p3_x16,
+                    xnn_init_f32_elu_wasmsimd_rr2_lut16_p3_params)
+    ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
+    ->UseRealTime();
+  BENCHMARK_CAPTURE(f32_velu, wasmrelaxedsimd_fma_lut16_p3_x20,
+                    xnn_f32_velu_ukernel__wasmrelaxedsimd_fma_rr2_lut16_p3_x20,
+                    xnn_init_f32_elu_wasmsimd_rr2_lut16_p3_params)
+    ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
+    ->UseRealTime();
+  BENCHMARK_CAPTURE(f32_velu, wasmrelaxedsimd_fma_lut16_p3_x24,
+                    xnn_f32_velu_ukernel__wasmrelaxedsimd_fma_rr2_lut16_p3_x24,
+                    xnn_init_f32_elu_wasmsimd_rr2_lut16_p3_params)
+    ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
+    ->UseRealTime();
+
+  BENCHMARK_CAPTURE(f32_velu, wasmrelaxedsimd_fma_p6_x4,
+                    xnn_f32_velu_ukernel__wasmrelaxedsimd_fma_rr2_p6_x4,
+                    xnn_init_f32_elu_wasmsimd_rr2_p6_params)
+    ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
+    ->UseRealTime();
+  BENCHMARK_CAPTURE(f32_velu, wasmrelaxedsimd_fma_p6_x8,
+                    xnn_f32_velu_ukernel__wasmrelaxedsimd_fma_rr2_p6_x8,
+                    xnn_init_f32_elu_wasmsimd_rr2_p6_params)
+    ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
+    ->UseRealTime();
+  BENCHMARK_CAPTURE(f32_velu, wasmrelaxedsimd_fma_p6_x12,
+                    xnn_f32_velu_ukernel__wasmrelaxedsimd_fma_rr2_p6_x12,
+                    xnn_init_f32_elu_wasmsimd_rr2_p6_params)
+    ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
+    ->UseRealTime();
+  BENCHMARK_CAPTURE(f32_velu, wasmrelaxedsimd_fma_p6_x16,
+                    xnn_f32_velu_ukernel__wasmrelaxedsimd_fma_rr2_p6_x16,
+                    xnn_init_f32_elu_wasmsimd_rr2_p6_params)
+    ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
+    ->UseRealTime();
+  BENCHMARK_CAPTURE(f32_velu, wasmrelaxedsimd_fma_p6_x20,
+                    xnn_f32_velu_ukernel__wasmrelaxedsimd_fma_rr2_p6_x20,
+                    xnn_init_f32_elu_wasmsimd_rr2_p6_params)
+    ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
+    ->UseRealTime();
+  BENCHMARK_CAPTURE(f32_velu, wasmrelaxedsimd_fma_p6_x24,
+                    xnn_f32_velu_ukernel__wasmrelaxedsimd_fma_rr2_p6_x24,
+                    xnn_init_f32_elu_wasmsimd_rr2_p6_params)
+    ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
+    ->UseRealTime();
+
+  BENCHMARK_CAPTURE(f32_velu, wasmrelaxedsimd_lut16_p3_x4,
+                    xnn_f32_velu_ukernel__wasmrelaxedsimd_rr2_lut16_p3_x4,
+                    xnn_init_f32_elu_wasmsimd_rr2_lut16_p3_params)
+    ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
+    ->UseRealTime();
+  BENCHMARK_CAPTURE(f32_velu, wasmrelaxedsimd_lut16_p3_x8,
+                    xnn_f32_velu_ukernel__wasmrelaxedsimd_rr2_lut16_p3_x8,
+                    xnn_init_f32_elu_wasmsimd_rr2_lut16_p3_params)
+    ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
+    ->UseRealTime();
+  BENCHMARK_CAPTURE(f32_velu, wasmrelaxedsimd_lut16_p3_x12,
+                    xnn_f32_velu_ukernel__wasmrelaxedsimd_rr2_lut16_p3_x12,
+                    xnn_init_f32_elu_wasmsimd_rr2_lut16_p3_params)
+    ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
+    ->UseRealTime();
+  BENCHMARK_CAPTURE(f32_velu, wasmrelaxedsimd_lut16_p3_x16,
+                    xnn_f32_velu_ukernel__wasmrelaxedsimd_rr2_lut16_p3_x16,
+                    xnn_init_f32_elu_wasmsimd_rr2_lut16_p3_params)
+    ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
+    ->UseRealTime();
+  BENCHMARK_CAPTURE(f32_velu, wasmrelaxedsimd_lut16_p3_x20,
+                    xnn_f32_velu_ukernel__wasmrelaxedsimd_rr2_lut16_p3_x20,
+                    xnn_init_f32_elu_wasmsimd_rr2_lut16_p3_params)
+    ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
+    ->UseRealTime();
+  BENCHMARK_CAPTURE(f32_velu, wasmrelaxedsimd_lut16_p3_x24,
+                    xnn_f32_velu_ukernel__wasmrelaxedsimd_rr2_lut16_p3_x24,
+                    xnn_init_f32_elu_wasmsimd_rr2_lut16_p3_params)
+    ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
+    ->UseRealTime();
+
+  BENCHMARK_CAPTURE(f32_velu, wasmrelaxedsimd_p6_x4,
+                    xnn_f32_velu_ukernel__wasmrelaxedsimd_rr2_p6_x4,
+                    xnn_init_f32_elu_wasmsimd_rr2_p6_params)
+    ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
+    ->UseRealTime();
+  BENCHMARK_CAPTURE(f32_velu, wasmrelaxedsimd_p6_x8,
+                    xnn_f32_velu_ukernel__wasmrelaxedsimd_rr2_p6_x8,
+                    xnn_init_f32_elu_wasmsimd_rr2_p6_params)
+    ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
+    ->UseRealTime();
+  BENCHMARK_CAPTURE(f32_velu, wasmrelaxedsimd_p6_x12,
+                    xnn_f32_velu_ukernel__wasmrelaxedsimd_rr2_p6_x12,
+                    xnn_init_f32_elu_wasmsimd_rr2_p6_params)
+    ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
+    ->UseRealTime();
+  BENCHMARK_CAPTURE(f32_velu, wasmrelaxedsimd_p6_x16,
+                    xnn_f32_velu_ukernel__wasmrelaxedsimd_rr2_p6_x16,
+                    xnn_init_f32_elu_wasmsimd_rr2_p6_params)
+    ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
+    ->UseRealTime();
+  BENCHMARK_CAPTURE(f32_velu, wasmrelaxedsimd_p6_x20,
+                    xnn_f32_velu_ukernel__wasmrelaxedsimd_rr2_p6_x20,
+                    xnn_init_f32_elu_wasmsimd_rr2_p6_params)
+    ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
+    ->UseRealTime();
+  BENCHMARK_CAPTURE(f32_velu, wasmrelaxedsimd_p6_x24,
+                    xnn_f32_velu_ukernel__wasmrelaxedsimd_rr2_p6_x24,
+                    xnn_init_f32_elu_wasmsimd_rr2_p6_params)
+    ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
+    ->UseRealTime();
+#endif  // XNN_ARCH_WASMSIMD
 
 #if XNN_ARCH_WASMSIMD || XNN_ARCH_WASMRELAXEDSIMD
   BENCHMARK_CAPTURE(f32_velu, wasmsimd_arm_lut16_p3_x4,

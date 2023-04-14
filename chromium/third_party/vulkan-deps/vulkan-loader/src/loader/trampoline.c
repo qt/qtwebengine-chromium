@@ -1,8 +1,8 @@
 /*
  *
- * Copyright (c) 2015-2022 The Khronos Group Inc.
- * Copyright (c) 2015-2022 Valve Corporation
- * Copyright (c) 2015-2022 LunarG, Inc.
+ * Copyright (c) 2015-2023 The Khronos Group Inc.
+ * Copyright (c) 2015-2023 Valve Corporation
+ * Copyright (c) 2015-2023 LunarG, Inc.
  * Copyright (C) 2015 Google Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -38,7 +38,7 @@
 
 // Trampoline entrypoints are in this file for core Vulkan commands
 
-/* vkGetInstanceProcAddr: Get global level or instance level entrypoint addressess.
+/* vkGetInstanceProcAddr: Get global level or instance level entrypoint addresses.
  * @param instance
  * @param pName
  * @return
@@ -55,7 +55,7 @@
  *
  * Note:
  * Vulkan header updated 1.2.193 changed the behavior of vkGetInstanceProcAddr for global entrypoints. They used to always be
- * returned regardless of the value of the instance paramtere. The spec was amended in this version to only allow querying global
+ * returned regardless of the value of the instance parameter. The spec was amended in this version to only allow querying global
  * level entrypoints with a NULL instance. However, as to not break old applications, the new behavior is only applied if the
  * instance passed in is both valid and minor version is greater than 1.2, which was when this change in behavior occurred. Only
  * instances with a newer version will get the new behavior.
@@ -521,13 +521,14 @@ LOADER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(const VkInstanceCr
         }
     }
 
-    // Scan/discover all ICD libraries
-    memset(&ptr_instance->icd_tramp_list, 0, sizeof(ptr_instance->icd_tramp_list));
+    // Scan/discover all System and Environment Variable ICD libraries
     bool skipped_portability_drivers = false;
-    res = loader_icd_scan(ptr_instance, &ptr_instance->icd_tramp_list, &skipped_portability_drivers);
+    res = loader_icd_scan(ptr_instance, &ptr_instance->icd_tramp_list, pCreateInfo, &skipped_portability_drivers);
     if (res == VK_ERROR_OUT_OF_HOST_MEMORY) {
         goto out;
-    } else if (ptr_instance->icd_tramp_list.count == 0) {
+    }
+
+    if (ptr_instance->icd_tramp_list.count == 0) {
         // No drivers found
         if (skipped_portability_drivers) {
             loader_log(
@@ -700,8 +701,8 @@ LOADER_EXPORT VKAPI_ATTR void VKAPI_CALL vkDestroyInstance(VkInstance instance, 
     loader_instance_heap_free(ptr_instance, ptr_instance);
     loader_platform_thread_unlock_mutex(&loader_lock);
 
-    // Unload preloaded layers, so if vkEnumerateInstanceExtensionProperties or vkCreateInstance is called again, the ICD's are up
-    // to date
+    // Unload preloaded layers, so if vkEnumerateInstanceExtensionProperties or vkCreateInstance is called again, the ICD's are
+    // up to date
     loader_unload_preloaded_icds();
 }
 
@@ -793,9 +794,9 @@ LOADER_EXPORT VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceProperties(VkPhysica
     const VkLayerInstanceDispatchTable *disp;
     VkPhysicalDevice unwrapped_phys_dev = loader_unwrap_physical_device(physicalDevice);
     if (VK_NULL_HANDLE == unwrapped_phys_dev) {
-        loader_log(
-            NULL, VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
-            "vkGetPhysicalDeviceProperties: Invalid physicalDevice [VUID-vkGetPhysicalDeviceProperties-physicalDevice-parameter]");
+        loader_log(NULL, VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkGetPhysicalDeviceProperties: Invalid physicalDevice "
+                   "[VUID-vkGetPhysicalDeviceProperties-physicalDevice-parameter]");
         abort(); /* Intentionally fail so user can correct issue. */
     }
     disp = loader_get_instance_layer_dispatch(physicalDevice);
@@ -2131,7 +2132,7 @@ LOADER_EXPORT VKAPI_ATTR void VKAPI_CALL vkCmdCopyImage(VkCommandBuffer commandB
     const VkLayerDispatchTable *disp = loader_get_dispatch(commandBuffer);
     if (NULL == disp) {
         loader_log(NULL, VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
-                   "vkCmdCopyImage: Invalid commandBuffer [VUID-vkCmdCopyImage-devcommandBufferice-parameter]");
+                   "vkCmdCopyImage: Invalid commandBuffer [VUID-vkCmdCopyImage-commandBuffer-parameter]");
         abort(); /* Intentionally fail so user can correct issue. */
     }
 
@@ -2930,9 +2931,9 @@ LOADER_EXPORT VKAPI_ATTR void VKAPI_CALL vkCmdDrawIndexedIndirectCount(VkCommand
                                                                        uint32_t stride) {
     const VkLayerDispatchTable *disp = loader_get_dispatch(commandBuffer);
     if (NULL == disp) {
-        loader_log(
-            NULL, VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
-            "vkCmdDrawIndexedIndirectCount: Invalid commandBuffer [VUID-vkCmdDrawIndexedIndirectCount-commandBuffer-parameter]");
+        loader_log(NULL, VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkCmdDrawIndexedIndirectCount: Invalid commandBuffer "
+                   "[VUID-vkCmdDrawIndexedIndirectCount-commandBuffer-parameter]");
         abort(); /* Intentionally fail so user can correct issue. */
     }
     disp->CmdDrawIndexedIndirectCount(commandBuffer, buffer, offset, countBuffer, countBufferOffset, maxDrawCount, stride);
@@ -2995,9 +2996,9 @@ LOADER_EXPORT VKAPI_ATTR uint64_t VKAPI_CALL
 vkGetDeviceMemoryOpaqueCaptureAddress(VkDevice device, const VkDeviceMemoryOpaqueCaptureAddressInfo *pInfo) {
     const VkLayerDispatchTable *disp = loader_get_dispatch(device);
     if (NULL == disp) {
-        loader_log(
-            NULL, VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
-            "vkGetDeviceMemoryOpaqueCaptureAddress: Invalid device [VUID-vkGetDeviceMemoryOpaqueCaptureAddress-device-parameter]");
+        loader_log(NULL, VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkGetDeviceMemoryOpaqueCaptureAddress: Invalid device "
+                   "[VUID-vkGetDeviceMemoryOpaqueCaptureAddress-device-parameter]");
         abort(); /* Intentionally fail so user can correct issue. */
     }
     return disp->GetDeviceMemoryOpaqueCaptureAddress(device, pInfo);

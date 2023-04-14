@@ -25,8 +25,8 @@ namespace {
 using GlslSanitizerTest = TestHelper;
 
 TEST_F(GlslSanitizerTest, Call_ArrayLength) {
-    auto* s = Structure("my_struct", utils::Vector{Member(0, "a", ty.array<f32>(4))});
-    GlobalVar("b", ty.Of(s), ast::AddressSpace::kStorage, ast::Access::kRead, Binding(1_a),
+    auto* s = Structure("my_struct", utils::Vector{Member(0, "a", ty.array<f32>())});
+    GlobalVar("b", ty.Of(s), builtin::AddressSpace::kStorage, builtin::Access::kRead, Binding(1_a),
               Group(2_a));
 
     Func("a_func", utils::Empty, ty.void_(),
@@ -64,9 +64,9 @@ void main() {
 TEST_F(GlslSanitizerTest, Call_ArrayLength_OtherMembersInStruct) {
     auto* s = Structure("my_struct", utils::Vector{
                                          Member(0, "z", ty.f32()),
-                                         Member(4, "a", ty.array<f32>(4)),
+                                         Member(4, "a", ty.array<f32>()),
                                      });
-    GlobalVar("b", ty.Of(s), ast::AddressSpace::kStorage, ast::Access::kRead, Binding(1_a),
+    GlobalVar("b", ty.Of(s), builtin::AddressSpace::kStorage, builtin::Access::kRead, Binding(1_a),
               Group(2_a));
 
     Func("a_func", utils::Empty, ty.void_(),
@@ -104,8 +104,8 @@ void main() {
 }
 
 TEST_F(GlslSanitizerTest, Call_ArrayLength_ViaLets) {
-    auto* s = Structure("my_struct", utils::Vector{Member(0, "a", ty.array<f32>(4))});
-    GlobalVar("b", ty.Of(s), ast::AddressSpace::kStorage, ast::Access::kRead, Binding(1_a),
+    auto* s = Structure("my_struct", utils::Vector{Member(0, "a", ty.array<f32>())});
+    GlobalVar("b", ty.Of(s), builtin::AddressSpace::kStorage, builtin::Access::kRead, Binding(1_a),
               Group(2_a));
 
     auto* p = Let("p", AddressOf("b"));
@@ -187,7 +187,7 @@ TEST_F(GlslSanitizerTest, PromoteStructInitializerToConstVar) {
                                    Member("c", ty.i32()),
                                });
     auto* runtime_value = Var("runtime_value", Expr(3_f));
-    auto* struct_init = Construct(ty.Of(str), 1_i, vec3<f32>(2_f, runtime_value, 4_f), 4_i);
+    auto* struct_init = Call(ty.Of(str), 1_i, vec3<f32>(2_f, runtime_value, 4_f), 4_i);
     auto* struct_access = MemberAccessor(struct_init, "b");
     auto* pos = Var("pos", ty.vec3<f32>(), struct_access);
 
@@ -233,7 +233,7 @@ TEST_F(GlslSanitizerTest, InlinePtrLetsBasic) {
     // let p : ptr<function, i32> = &v;
     // let x : i32 = *p;
     auto* v = Var("v", ty.i32());
-    auto* p = Let("p", ty.pointer<i32>(ast::AddressSpace::kFunction), AddressOf(v));
+    auto* p = Let("p", ty.pointer<i32>(builtin::AddressSpace::kFunction), AddressOf(v));
     auto* x = Var("x", ty.i32(), Deref(p));
 
     Func("main", utils::Empty, ty.void_(),
@@ -274,11 +274,12 @@ TEST_F(GlslSanitizerTest, InlinePtrLetsComplexChain) {
     // let vp : ptr<function, vec4<f32>> = &(*mp)[2i];
     // let v : vec4<f32> = *vp;
     auto* a = Var("a", ty.array(ty.mat4x4<f32>(), 4_u));
-    auto* ap = Let("ap", ty.pointer(ty.array(ty.mat4x4<f32>(), 4_u), ast::AddressSpace::kFunction),
-                   AddressOf(a));
-    auto* mp = Let("mp", ty.pointer(ty.mat4x4<f32>(), ast::AddressSpace::kFunction),
+    auto* ap =
+        Let("ap", ty.pointer(ty.array(ty.mat4x4<f32>(), 4_u), builtin::AddressSpace::kFunction),
+            AddressOf(a));
+    auto* mp = Let("mp", ty.pointer(ty.mat4x4<f32>(), builtin::AddressSpace::kFunction),
                    AddressOf(IndexAccessor(Deref(ap), 3_i)));
-    auto* vp = Let("vp", ty.pointer(ty.vec4<f32>(), ast::AddressSpace::kFunction),
+    auto* vp = Let("vp", ty.pointer(ty.vec4<f32>(), builtin::AddressSpace::kFunction),
                    AddressOf(IndexAccessor(Deref(mp), 2_i)));
     auto* v = Var("v", ty.vec4<f32>(), Deref(vp));
 

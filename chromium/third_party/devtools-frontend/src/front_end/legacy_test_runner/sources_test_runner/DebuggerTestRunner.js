@@ -430,7 +430,7 @@ SourcesTestRunner.showScriptSourcePromise = function(scriptName) {
   return new Promise(resolve => SourcesTestRunner.showScriptSource(scriptName, resolve));
 };
 
-SourcesTestRunner.waitForScriptSource = function(scriptName, callback) {
+SourcesTestRunner.waitForScriptSource = function(scriptName, callback, contentType) {
   const panel = UI.panels.sources;
   const uiSourceCodes = panel.workspace.uiSourceCodes();
 
@@ -439,7 +439,8 @@ SourcesTestRunner.waitForScriptSource = function(scriptName, callback) {
       continue;
     }
 
-    if (uiSourceCodes[i].name() === scriptName) {
+    if (uiSourceCodes[i].name() === scriptName &&
+        (uiSourceCodes[i].contentType() === contentType || contentType === undefined)) {
       callback(uiSourceCodes[i]);
       return;
     }
@@ -447,7 +448,7 @@ SourcesTestRunner.waitForScriptSource = function(scriptName, callback) {
 
   TestRunner.addSniffer(
       Sources.SourcesView.prototype, 'addUISourceCode',
-      SourcesTestRunner.waitForScriptSource.bind(SourcesTestRunner, scriptName, callback));
+      SourcesTestRunner.waitForScriptSource.bind(SourcesTestRunner, scriptName, callback, contentType));
 };
 
 SourcesTestRunner.objectForPopover = function(sourceFrame, lineNumber, columnNumber) {
@@ -490,6 +491,9 @@ SourcesTestRunner.toggleBreakpoint = async function(sourceFrame, lineNumber, dis
 };
 
 SourcesTestRunner.waitBreakpointSidebarPane = function(waitUntilResolved) {
+  if (Root.Runtime.experiments.isEnabled('breakpointView')) {
+    throw new Error('The breakpoint sidebar pane content is only available for the old breakpoint sidebar.');
+  }
   return new Promise(
              resolve =>
                  TestRunner.addSniffer(Sources.JavaScriptBreakpointsSidebarPane.prototype, 'didUpdateForTest', resolve))
@@ -509,6 +513,9 @@ SourcesTestRunner.waitBreakpointSidebarPane = function(waitUntilResolved) {
 };
 
 SourcesTestRunner.breakpointsSidebarPaneContent = function() {
+  if (Root.Runtime.experiments.isEnabled('breakpointView')) {
+    throw new Error('The breakpoint sidebar pane content is only available for the old breakpoint sidebar.');
+  }
   const pane = Sources.JavaScriptBreakpointsSidebarPane.instance();
   const empty = pane.emptyElement;
 

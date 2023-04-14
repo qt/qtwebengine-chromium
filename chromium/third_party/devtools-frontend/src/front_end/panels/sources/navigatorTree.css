@@ -68,6 +68,10 @@
   --override-image-font-tree-item-color: rgb(101 170 85);
 }
 
+.navigator-file-tree-item.pending-display {
+  display: none;
+}
+
 .navigator-file-tree-item .icon {
   background: var(--override-file-tree-item-color);
 }
@@ -75,6 +79,10 @@
 .navigator-fs-tree-item:not(.has-mapped-files):not(.selected) > :not(.selection),
 .navigator-fs-folder-tree-item:not(.has-mapped-files):not(.selected) > :not(.selection) {
   filter: grayscale(50%);
+  opacity: 50%;
+}
+
+.is-ignore-listed {
   opacity: 50%;
 }
 

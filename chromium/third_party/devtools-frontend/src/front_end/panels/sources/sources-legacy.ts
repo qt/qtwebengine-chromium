@@ -16,9 +16,6 @@ Sources.AddSourceMapURLDialog = SourcesModule.AddSourceMapURLDialog.AddSourceMap
 
 /** @constructor */
 Sources.BreakpointEditDialog = SourcesModule.BreakpointEditDialog.BreakpointEditDialog;
-
-Sources.BreakpointEditDialog.LogpointPrefix = SourcesModule.BreakpointEditDialog.LogpointPrefix;
-Sources.BreakpointEditDialog._LogpointSuffix = SourcesModule.BreakpointEditDialog.LogpointSuffix;
 Sources.BreakpointEditDialog.BreakpointType = SourcesModule.BreakpointEditDialog.BreakpointType;
 
 /** @constructor */
@@ -212,10 +209,6 @@ Sources.TabbedEditorContainer = SourcesModule.TabbedEditorContainer.TabbedEditor
 
 /** @enum {symbol} */
 Sources.TabbedEditorContainer.Events = SourcesModule.TabbedEditorContainer.Events;
-
-Sources.TabbedEditorContainer._tabId = SourcesModule.TabbedEditorContainer.tabId;
-Sources.TabbedEditorContainer.maximalPreviouslyViewedFilesCount =
-    SourcesModule.TabbedEditorContainer.maximalPreviouslyViewedFilesCount;
 
 /** @constructor */
 Sources.TabbedEditorContainer.HistoryItem = SourcesModule.TabbedEditorContainer.HistoryItem;

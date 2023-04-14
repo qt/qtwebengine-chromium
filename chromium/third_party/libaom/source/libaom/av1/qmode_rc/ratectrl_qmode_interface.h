@@ -24,11 +24,8 @@ namespace aom {
 constexpr int kBlockRefCount = 2;
 
 struct MotionVector {
-  int row;  // subpel row
-  int col;  // subpel col
-  // TODO(b/241589513): Move this to TplFrameStats; it's wasteful to code it
-  // separately for each block.
-  int subpel_bits;  // number of fractional bits used by row/col
+  int16_t row;  // row offset in pixels
+  int16_t col;  // column offset in pixels
 };
 
 enum class TplPassCount {
@@ -64,24 +61,6 @@ struct RateControlParam {
   TplPassCount tpl_pass_count = TplPassCount::kOneTplPass;
   // Current TPL pass number, 0 or 1 (for GetTplPassGopEncodeInfo).
   int tpl_pass_index = 0;
-};
-
-struct TplBlockStats {
-  int16_t height;      // Pixel height.
-  int16_t width;       // Pixel width.
-  int16_t row;         // Pixel row of the top left corner.
-  int16_t col;         // Pixel col of the top left corner.
-  int64_t intra_cost;  // Rd cost of the best intra mode.
-  int64_t inter_cost;  // Rd cost of the best inter mode.
-
-  // Valid only if TplFrameStats::rate_dist_present is true:
-  int64_t recrf_rate;      // Bits when using recon as reference.
-  int64_t recrf_dist;      // Distortion when using recon as reference.
-  int64_t intra_pred_err;  // Prediction residual of the intra mode.
-  int64_t inter_pred_err;  // Prediction residual of the inter mode.
-
-  std::array<MotionVector, kBlockRefCount> mv;
-  std::array<int, kBlockRefCount> ref_frame_index;
 };
 
 // gop frame type used for facilitate setting up GopFrame
@@ -229,6 +208,9 @@ struct GopStruct {
   // TODO(jingning): This can be removed once the framework is up running.
   int display_tracker;  // Track the number of frames displayed proceeding a
                         // current coding frame.
+  double base_q_ratio;  // The adjustment ratio, based on which the base QP
+                        // index of this Gop will be adjusted from
+                        // RateControlParam::base_q_index.
   std::vector<GopFrame> gop_frame_list;
 };
 
@@ -281,6 +263,24 @@ struct GopEncodeInfo {
   RefFrameTable final_snapshot;  // RefFrameTable snapshot after coding this GOP
 };
 
+struct TplBlockStats {
+  int16_t height;      // Pixel height.
+  int16_t width;       // Pixel width.
+  int16_t row;         // Pixel row of the top left corner.
+  int16_t col;         // Pixel col of the top left corner.
+  int64_t intra_cost;  // Rd cost of the best intra mode.
+  int64_t inter_cost;  // Rd cost of the best inter mode.
+
+  // Valid only if TplFrameStats::rate_dist_present is true:
+  int64_t recrf_rate;      // Bits when using recon as reference.
+  int64_t recrf_dist;      // Distortion when using recon as reference.
+  int64_t intra_pred_err;  // Prediction residual of the intra mode.
+  int64_t inter_pred_err;  // Prediction residual of the inter mode.
+
+  std::array<MotionVector, kBlockRefCount> mv;
+  std::array<int, kBlockRefCount> ref_frame_index;
+};
+
 struct TplFrameStats {
   int min_block_size;
   int frame_width;
@@ -311,47 +311,28 @@ class AV1RateControlQModeInterface {
   virtual StatusOr<GopStructList> DetermineGopInfo(
       const FirstpassInfo &firstpass_info) = 0;
 
-  // Accepts GOP structure and TPL info from the encoder and returns q index and
-  // rdmult for each frame. This should be called with consecutive GOPs as
-  // returned by DetermineGopInfo.
+  // Accepts GOP structure, TPL info, and first pass stats from the encoder and
+  // returns per-frame (and optionally per-superblock) q index and rdmult. This
+  // should be called with consecutive GOPs as returned by DetermineGopInfo.
   //
   // GOP structure and TPL info from zero or more subsequent GOPs may optionally
   // be passed in lookahead_stats.
   //
+  // Stats starting at the first frame of the GOP and extending at least through
+  // any lookup GOPs should be passed in firstpass_info.
+  //
   // For the first GOP, a default-constructed RefFrameTable may be passed in as
   // ref_frame_table_snapshot_init; for subsequent GOPs, it should be the
   // final_snapshot returned on the previous call.
-  //
-  // TODO(b/260859962): Remove these once all callers and overrides are gone.
   virtual StatusOr<GopEncodeInfo> GetGopEncodeInfo(
-      const GopStruct &gop_struct AOM_UNUSED,
-      const TplGopStats &tpl_gop_stats AOM_UNUSED,
-      const std::vector<LookaheadStats> &lookahead_stats AOM_UNUSED,
-      const RefFrameTable &ref_frame_table_snapshot AOM_UNUSED) {
-    return Status{ AOM_CODEC_UNSUP_FEATURE, "Deprecated" };
-  }
+      const GopStruct &gop_struct, const TplGopStats &tpl_gop_stats,
+      const std::vector<LookaheadStats> &lookahead_stats,
+      const FirstpassInfo &firstpass_info,
+      const RefFrameTable &ref_frame_table_snapshot) = 0;
+  // Similar to GetGopEncodeInfo but for the TPL pass. The returned encode info
+  // is only per-frame level, never per-superblock.
   virtual StatusOr<GopEncodeInfo> GetTplPassGopEncodeInfo(
-      const GopStruct &gop_struct AOM_UNUSED) {
-    return Status{ AOM_CODEC_UNSUP_FEATURE, "Deprecated" };
-  }
-
-  // Extensions to the API to pass in the first pass info. There should be stats
-  // for all frames starting from the first frame of the GOP and continuing to
-  // the end of the sequence.
-  // TODO(b/260859962): Make pure virtual once all derived classes implement it.
-  virtual StatusOr<GopEncodeInfo> GetGopEncodeInfo(
-      const GopStruct &gop_struct AOM_UNUSED,
-      const TplGopStats &tpl_gop_stats AOM_UNUSED,
-      const std::vector<LookaheadStats> &lookahead_stats AOM_UNUSED,
-      const FirstpassInfo &firstpass_info AOM_UNUSED,
-      const RefFrameTable &ref_frame_table_snapshot AOM_UNUSED) {
-    return Status{ AOM_CODEC_UNSUP_FEATURE, "Not yet implemented" };
-  }
-  virtual StatusOr<GopEncodeInfo> GetTplPassGopEncodeInfo(
-      const GopStruct &gop_struct AOM_UNUSED,
-      const FirstpassInfo &firstpass_info AOM_UNUSED) {
-    return Status{ AOM_CODEC_UNSUP_FEATURE, "Not yet implemented" };
-  }
+      const GopStruct &gop_struct, const FirstpassInfo &firstpass_info) = 0;
 };
 }  // namespace aom
 

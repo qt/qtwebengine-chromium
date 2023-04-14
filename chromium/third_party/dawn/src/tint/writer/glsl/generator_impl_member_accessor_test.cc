@@ -23,63 +23,63 @@ namespace {
 
 using ::testing::HasSubstr;
 
-using create_type_func_ptr = const ast::Type* (*)(const ProgramBuilder::TypesBuilder& ty);
+using create_type_func_ptr = ast::Type (*)(const ProgramBuilder::TypesBuilder& ty);
 
-inline const ast::Type* ty_i32(const ProgramBuilder::TypesBuilder& ty) {
+inline ast::Type ty_i32(const ProgramBuilder::TypesBuilder& ty) {
     return ty.i32();
 }
-inline const ast::Type* ty_u32(const ProgramBuilder::TypesBuilder& ty) {
+inline ast::Type ty_u32(const ProgramBuilder::TypesBuilder& ty) {
     return ty.u32();
 }
-inline const ast::Type* ty_f32(const ProgramBuilder::TypesBuilder& ty) {
+inline ast::Type ty_f32(const ProgramBuilder::TypesBuilder& ty) {
     return ty.f32();
 }
 template <typename T>
-inline const ast::Type* ty_vec2(const ProgramBuilder::TypesBuilder& ty) {
+inline ast::Type ty_vec2(const ProgramBuilder::TypesBuilder& ty) {
     return ty.vec2<T>();
 }
 template <typename T>
-inline const ast::Type* ty_vec3(const ProgramBuilder::TypesBuilder& ty) {
+inline ast::Type ty_vec3(const ProgramBuilder::TypesBuilder& ty) {
     return ty.vec3<T>();
 }
 template <typename T>
-inline const ast::Type* ty_vec4(const ProgramBuilder::TypesBuilder& ty) {
+inline ast::Type ty_vec4(const ProgramBuilder::TypesBuilder& ty) {
     return ty.vec4<T>();
 }
 template <typename T>
-inline const ast::Type* ty_mat2x2(const ProgramBuilder::TypesBuilder& ty) {
+inline ast::Type ty_mat2x2(const ProgramBuilder::TypesBuilder& ty) {
     return ty.mat2x2<T>();
 }
 template <typename T>
-inline const ast::Type* ty_mat2x3(const ProgramBuilder::TypesBuilder& ty) {
+inline ast::Type ty_mat2x3(const ProgramBuilder::TypesBuilder& ty) {
     return ty.mat2x3<T>();
 }
 template <typename T>
-inline const ast::Type* ty_mat2x4(const ProgramBuilder::TypesBuilder& ty) {
+inline ast::Type ty_mat2x4(const ProgramBuilder::TypesBuilder& ty) {
     return ty.mat2x4<T>();
 }
 template <typename T>
-inline const ast::Type* ty_mat3x2(const ProgramBuilder::TypesBuilder& ty) {
+inline ast::Type ty_mat3x2(const ProgramBuilder::TypesBuilder& ty) {
     return ty.mat3x2<T>();
 }
 template <typename T>
-inline const ast::Type* ty_mat3x3(const ProgramBuilder::TypesBuilder& ty) {
+inline ast::Type ty_mat3x3(const ProgramBuilder::TypesBuilder& ty) {
     return ty.mat3x3<T>();
 }
 template <typename T>
-inline const ast::Type* ty_mat3x4(const ProgramBuilder::TypesBuilder& ty) {
+inline ast::Type ty_mat3x4(const ProgramBuilder::TypesBuilder& ty) {
     return ty.mat3x4<T>();
 }
 template <typename T>
-inline const ast::Type* ty_mat4x2(const ProgramBuilder::TypesBuilder& ty) {
+inline ast::Type ty_mat4x2(const ProgramBuilder::TypesBuilder& ty) {
     return ty.mat4x2<T>();
 }
 template <typename T>
-inline const ast::Type* ty_mat4x3(const ProgramBuilder::TypesBuilder& ty) {
+inline ast::Type ty_mat4x3(const ProgramBuilder::TypesBuilder& ty) {
     return ty.mat4x3<T>();
 }
 template <typename T>
-inline const ast::Type* ty_mat4x4(const ProgramBuilder::TypesBuilder& ty) {
+inline ast::Type ty_mat4x4(const ProgramBuilder::TypesBuilder& ty) {
     return ty.mat4x4<T>();
 }
 
@@ -91,8 +91,8 @@ class GlslGeneratorImplTest_MemberAccessorBase : public BASE {
 
         auto* s = b.Structure("Data", members);
 
-        b.GlobalVar("data", b.ty.Of(s), ast::AddressSpace::kStorage, ast::Access::kReadWrite,
-                    b.Group(1_a), b.Binding(0_a));
+        b.GlobalVar("data", b.ty.Of(s), builtin::AddressSpace::kStorage,
+                    builtin::Access::kReadWrite, b.Group(1_a), b.Binding(0_a));
     }
 
     void SetupFunction(utils::VectorRef<const ast::Statement*> statements) {
@@ -112,7 +112,7 @@ using GlslGeneratorImplTest_MemberAccessorWithParam =
 
 TEST_F(GlslGeneratorImplTest_MemberAccessor, EmitExpression_MemberAccessor) {
     auto* s = Structure("Data", utils::Vector{Member("mem", ty.f32())});
-    GlobalVar("str", ty.Of(s), ast::AddressSpace::kPrivate);
+    GlobalVar("str", ty.Of(s), builtin::AddressSpace::kPrivate);
 
     auto* expr = MemberAccessor("str", "mem");
     WrapInFunction(Var("expr", ty.f32(), expr));
@@ -144,10 +144,7 @@ struct TypeCase {
     std::string expected;
 };
 inline std::ostream& operator<<(std::ostream& out, TypeCase c) {
-    ProgramBuilder b;
-    auto* ty = c.member_type(b.ty);
-    out << ty->FriendlyName(b.Symbols());
-    return out;
+    return out << c.expected;
 }
 
 using GlslGeneratorImplTest_MemberAccessor_StorageBufferLoad =
@@ -219,7 +216,7 @@ TEST_P(GlslGeneratorImplTest_MemberAccessor_StorageBufferStore, Test) {
     });
 
     SetupFunction(utils::Vector{
-        Decl(Var("value", p.member_type(ty), Construct(p.member_type(ty)))),
+        Decl(Var("value", p.member_type(ty), Call(p.member_type(ty)))),
         Assign(MemberAccessor("data", "b"), Expr("value")),
     });
 
@@ -267,7 +264,7 @@ TEST_F(GlslGeneratorImplTest_MemberAccessor, StorageBuffer_Store_Matrix_Empty) {
     });
 
     SetupFunction(utils::Vector{
-        Assign(MemberAccessor("data", "b"), Construct(ty.mat2x3<f32>())),
+        Assign(MemberAccessor("data", "b"), Call(ty.mat2x3<f32>())),
     });
 
     GeneratorImpl& gen = SanitizeAndBuild();
@@ -359,7 +356,7 @@ TEST_F(GlslGeneratorImplTest_MemberAccessor,
 
     SetupStorageBuffer(utils::Vector{
         Member("z", ty.f32()),
-        Member("a", ty.array<i32, 5>(4)),
+        Member("a", ty.array<i32, 5>()),
     });
 
     SetupFunction(utils::Vector{
@@ -404,7 +401,7 @@ TEST_F(GlslGeneratorImplTest_MemberAccessor,
 
     SetupStorageBuffer(utils::Vector{
         Member("z", ty.f32()),
-        Member("a", ty.array<i32, 5>(4)),
+        Member("a", ty.array<i32, 5>()),
     });
 
     SetupFunction(utils::Vector{
@@ -454,7 +451,7 @@ TEST_F(GlslGeneratorImplTest_MemberAccessor, StorageBuffer_Store_ToArray) {
 
     SetupStorageBuffer(utils::Vector{
         Member("z", ty.f32()),
-        Member("a", ty.array<i32, 5>(4)),
+        Member("a", ty.array<i32, 5>()),
     });
 
     SetupFunction(utils::Vector{
@@ -507,7 +504,7 @@ TEST_F(GlslGeneratorImplTest_MemberAccessor, StorageBuffer_Load_MultiLevel) {
                                      });
 
     SetupStorageBuffer(utils::Vector{
-        Member("c", ty.array(ty.Of(inner), 4_u, 32)),
+        Member("c", ty.array(ty.Of(inner), 4_u)),
     });
 
     SetupFunction(utils::Vector{
@@ -566,7 +563,7 @@ TEST_F(GlslGeneratorImplTest_MemberAccessor, StorageBuffer_Load_MultiLevel_Swizz
                                      });
 
     SetupStorageBuffer(utils::Vector{
-        Member("c", ty.array(ty.Of(inner), 4_u, 32)),
+        Member("c", ty.array(ty.Of(inner), 4_u)),
     });
 
     SetupFunction(utils::Vector{
@@ -628,7 +625,7 @@ TEST_F(GlslGeneratorImplTest_MemberAccessor,
                                      });
 
     SetupStorageBuffer(utils::Vector{
-        Member("c", ty.array(ty.Of(inner), 4_u, 32)),
+        Member("c", ty.array(ty.Of(inner), 4_u)),
     });
 
     SetupFunction(utils::Vector{
@@ -689,7 +686,7 @@ TEST_F(GlslGeneratorImplTest_MemberAccessor, StorageBuffer_Load_MultiLevel_Index
                                      });
 
     SetupStorageBuffer(utils::Vector{
-        Member("c", ty.array(ty.Of(inner), 4_u, 32)),
+        Member("c", ty.array(ty.Of(inner), 4_u)),
     });
 
     SetupFunction(utils::Vector{
@@ -750,7 +747,7 @@ TEST_F(GlslGeneratorImplTest_MemberAccessor, StorageBuffer_Store_MultiLevel) {
                                      });
 
     SetupStorageBuffer(utils::Vector{
-        Member("c", ty.array(ty.Of(inner), 4_u, 32)),
+        Member("c", ty.array(ty.Of(inner), 4_u)),
     });
 
     SetupFunction(utils::Vector{
@@ -810,7 +807,7 @@ TEST_F(GlslGeneratorImplTest_MemberAccessor, StorageBuffer_Store_Swizzle_SingleL
                                      });
 
     SetupStorageBuffer(utils::Vector{
-        Member("c", ty.array(ty.Of(inner), 4_u, 32)),
+        Member("c", ty.array(ty.Of(inner), 4_u)),
     });
 
     SetupFunction(utils::Vector{

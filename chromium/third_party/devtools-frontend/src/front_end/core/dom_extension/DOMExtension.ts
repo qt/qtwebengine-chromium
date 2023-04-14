@@ -43,9 +43,8 @@ Node.prototype.traverseNextTextNode = function(stayWithin?: Node): Node|null {
   if (!node) {
     return null;
   }
-  const nonTextTags = {'STYLE': 1, 'SCRIPT': 1};
-  while (node &&
-         (node.nodeType !== Node.TEXT_NODE || nonTextTags[node.parentElement ? node.parentElement.nodeName : ''])) {
+  const nonTextTags = {'STYLE': 1, 'SCRIPT': 1, '#document-fragment': 1};
+  while (node && (node.nodeType !== Node.TEXT_NODE || nonTextTags[node.parentNode ? node.parentNode.nodeName : ''])) {
     node = node.traverseNextNode(stayWithin);
   }
 
@@ -187,22 +186,6 @@ Element.prototype.createChild = function(elementName: string, className?: string
 
 DocumentFragment.prototype.createChild = Element.prototype.createChild;
 
-Element.prototype.totalOffsetLeft = function(): number {
-  return this.totalOffset().left;
-};
-
-Element.prototype.totalOffsetTop = function(): number {
-  return this.totalOffset().top;
-};
-
-Element.prototype.totalOffset = function(): {
-  left: number,
-  top: number,
-} {
-  const rect = this.getBoundingClientRect();
-  return {left: rect.left, top: rect.top};
-};
-
 self.AnchorBox = class {
   constructor(x?: number, y?: number, width?: number, height?: number) {
     this.x = x || 0;
@@ -236,8 +219,8 @@ Element.prototype.boxInWindow = function(targetWindow?: Window|null): AnchorBox 
   let curElement: Element = this;
   let curWindow: Window|((Window & typeof globalThis) | null) = this.ownerDocument.defaultView;
   while (curWindow && curElement) {
-    anchorBox.x += curElement.totalOffsetLeft();
-    anchorBox.y += curElement.totalOffsetTop();
+    anchorBox.x += curElement.getBoundingClientRect().left;
+    anchorBox.y += curElement.getBoundingClientRect().top;
     if (curWindow === targetWindow) {
       break;
     }
@@ -258,28 +241,6 @@ Event.prototype.consume = function(preventDefault?: boolean): void {
   this.handled = true;
 };
 
-Element.prototype.selectionLeftOffset = function(): number|null {
-  // Calculate selection offset relative to the current element.
-
-  const selection = this.getComponentSelection();
-  if (!selection.containsNode(this, true)) {
-    return null;
-  }
-
-  let leftOffset = selection.anchorOffset;
-  let node: ChildNode|(Node | null) = selection.anchorNode;
-
-  while (node !== this) {
-    while (node.previousSibling) {
-      node = node.previousSibling;
-      leftOffset += node.textContent.length;
-    }
-    node = node.parentNodeOrShadowHost();
-  }
-
-  return leftOffset;
-};
-
 Node.prototype.deepTextContent = function(): string {
   return this.childTextNodes()
       .map(function(node) {
@@ -291,9 +252,9 @@ Node.prototype.deepTextContent = function(): string {
 Node.prototype.childTextNodes = function(): Node[] {
   let node = this.traverseNextTextNode(this);
   const result = [];
-  const nonTextTags = {'STYLE': 1, 'SCRIPT': 1};
+  const nonTextTags = {'STYLE': 1, 'SCRIPT': 1, '#document-fragment': 1};
   while (node) {
-    if (!nonTextTags[node.parentElement ? node.parentElement.nodeName : '']) {
+    if (!nonTextTags[node.parentNode ? node.parentNode.nodeName : '']) {
       result.push(node);
     }
     node = node.traverseNextTextNode(this);

@@ -271,7 +271,7 @@ static void init_input_filter(FilterGraph *fg, AVFilterInOut *in)
                    "matches no streams.\n", p, fg->graph_desc);
             exit_program(1);
         }
-        ist = input_streams[input_files[file_idx]->ist_index + st->index];
+        ist = input_files[file_idx]->streams[st->index];
         if (ist->user_set_discard == AVDISCARD_ALL) {
             av_log(NULL, AV_LOG_FATAL, "Stream specifier '%s' in filtergraph description %s "
                    "matches a disabled input stream.\n", p, fg->graph_desc);
@@ -279,14 +279,13 @@ static void init_input_filter(FilterGraph *fg, AVFilterInOut *in)
         }
     } else {
         /* find the first unused stream of corresponding type */
-        for (i = 0; i < nb_input_streams; i++) {
-            ist = input_streams[i];
+        for (ist = ist_iter(NULL); ist; ist = ist_iter(ist)) {
             if (ist->user_set_discard == AVDISCARD_ALL)
                 continue;
             if (ist->dec_ctx->codec_type == type && ist->discard)
                 break;
         }
-        if (i == nb_input_streams) {
+        if (!ist) {
             av_log(NULL, AV_LOG_FATAL, "Cannot find a matching stream for "
                    "unlabeled input pad %d on filter %s\n", in->pad_idx,
                    in->filter_ctx->name);
@@ -453,8 +452,7 @@ static int configure_output_video_filter(FilterGraph *fg, OutputFilter *ofilter,
         snprintf(args, sizeof(args), "%d:%d",
                  ofilter->width, ofilter->height);
 
-        while ((e = av_dict_get(ost->sws_dict, "", e,
-                                AV_DICT_IGNORE_SUFFIX))) {
+        while ((e = av_dict_iterate(ost->sws_dict, e))) {
             av_strlcatf(args, sizeof(args), ":%s=%s", e->key, e->value);
         }
 
@@ -974,39 +972,34 @@ int configure_filtergraph(FilterGraph *fg)
 
     if (simple) {
         OutputStream *ost = fg->outputs[0]->ost;
-        char args[512];
-        const AVDictionaryEntry *e = NULL;
 
         if (filter_nbthreads) {
             ret = av_opt_set(fg->graph, "threads", filter_nbthreads, 0);
             if (ret < 0)
                 goto fail;
         } else {
+            const AVDictionaryEntry *e = NULL;
             e = av_dict_get(ost->encoder_opts, "threads", NULL, 0);
             if (e)
                 av_opt_set(fg->graph, "threads", e->value, 0);
         }
 
-        args[0] = 0;
-        e       = NULL;
-        while ((e = av_dict_get(ost->sws_dict, "", e,
-                                AV_DICT_IGNORE_SUFFIX))) {
-            av_strlcatf(args, sizeof(args), "%s=%s:", e->key, e->value);
-        }
-        if (strlen(args)) {
-            args[strlen(args)-1] = 0;
-            fg->graph->scale_sws_opts = av_strdup(args);
+        if (av_dict_count(ost->sws_dict)) {
+            ret = av_dict_get_string(ost->sws_dict,
+                                     &fg->graph->scale_sws_opts,
+                                     '=', ':');
+            if (ret < 0)
+                goto fail;
         }
 
-        args[0] = 0;
-        e       = NULL;
-        while ((e = av_dict_get(ost->swr_opts, "", e,
-                                AV_DICT_IGNORE_SUFFIX))) {
-            av_strlcatf(args, sizeof(args), "%s=%s:", e->key, e->value);
+        if (av_dict_count(ost->swr_opts)) {
+            char *args;
+            ret = av_dict_get_string(ost->swr_opts, &args, '=', ':');
+            if (ret < 0)
+                goto fail;
+            av_opt_set(fg->graph, "aresample_swr_opts", args, 0);
+            av_free(args);
         }
-        if (strlen(args))
-            args[strlen(args)-1] = 0;
-        av_opt_set(fg->graph, "aresample_swr_opts", args, 0);
     } else {
         fg->graph->nb_threads = filter_complex_nbthreads;
     }

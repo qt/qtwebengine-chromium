@@ -43,10 +43,12 @@
 #include "third_party/abseil-cpp/absl/types/optional.h"
 
 #ifdef _WIN32
+#include <crtdbg.h>
+#include <errhandlingapi.h>
 #include <io.h>
 #else
 #include <unistd.h>
-#endif
+#endif  // _WIN32
 
 #ifdef ENABLE_CALLGRIND
 #include <valgrind/callgrind.h>
@@ -60,7 +62,11 @@
 #include "third_party/skia/include/core/SkPixmap.h"           // nogncheck
 #include "third_party/skia/include/core/SkRefCnt.h"           // nogncheck
 #include "third_party/skia/include/core/SkSurface.h"          // nogncheck
+
+#ifdef BUILD_WITH_CHROMIUM
+#include "samples/chromium_support/discardable_memory_allocator.h"  // nogncheck
 #endif
+#endif  // PDF_ENABLE_SKIA
 
 #ifdef PDF_ENABLE_V8
 #include "testing/v8_initializer.h"
@@ -1423,9 +1429,23 @@ constexpr char kUsageString[] =
     "  --time=<number> - Seconds since the epoch to set system time.\n"
     "";
 
+void SetUpErrorHandling() {
+#ifdef _WIN32
+  // Suppress various Windows error reporting mechanisms that can pop up dialog
+  // boxes and cause the program to hang.
+  SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOALIGNMENTFAULTEXCEPT |
+               SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX);
+  _set_error_mode(_OUT_TO_STDERR);
+  _set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
+  _CrtSetReportMode(_CRT_ASSERT, _CRTDBG_MODE_FILE | _CRTDBG_MODE_DEBUG);
+  _CrtSetReportFile(_CRT_ASSERT, _CRTDBG_FILE_STDERR);
+#endif  // _WIN32
+}
+
 }  // namespace
 
 int main(int argc, const char* argv[]) {
+  SetUpErrorHandling();
   setlocale(LC_CTYPE, "en_US.UTF-8");  // For printf() of high-characters.
 
   std::vector<std::string> args(argv, argv + argc);
@@ -1446,14 +1466,23 @@ int main(int argc, const char* argv[]) {
     return 1;
   }
 
+  const FPDF_RENDERER_TYPE renderer_type =
+      options.use_renderer_type.value_or(GetDefaultRendererType());
+#if defined(PDF_ENABLE_SKIA) && defined(BUILD_WITH_CHROMIUM)
+  if (renderer_type == FPDF_RENDERERTYPE_SKIA) {
+    // Needed to support Chromium's copy of Skia, which uses a
+    // DiscardableMemoryAllocator.
+    chromium_support::InitializeDiscardableMemoryAllocator();
+  }
+#endif
+
   FPDF_LIBRARY_CONFIG config;
   config.version = 4;
   config.m_pUserFontPaths = nullptr;
   config.m_pIsolate = nullptr;
   config.m_v8EmbedderSlot = 0;
   config.m_pPlatform = nullptr;
-  config.m_RendererType =
-      options.use_renderer_type.value_or(GetDefaultRendererType());
+  config.m_RendererType = renderer_type;
 
   std::function<void()> idler = []() {};
 #ifdef PDF_ENABLE_V8

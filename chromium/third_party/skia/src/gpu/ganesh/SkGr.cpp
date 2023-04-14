@@ -22,7 +22,7 @@
 #include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/GrRecordingContext.h"
 #include "include/private/SkIDChangeListener.h"
-#include "include/private/SkTPin.h"
+#include "include/private/base/SkTPin.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/core/SkBlendModePriv.h"
 #include "src/core/SkBlenderBase.h"
@@ -106,7 +106,7 @@ sk_sp<GrSurfaceProxy> GrCopyBaseMipMapToTextureProxy(GrRecordingContext* ctx,
                                                      sk_sp<GrSurfaceProxy> baseProxy,
                                                      GrSurfaceOrigin origin,
                                                      std::string_view label,
-                                                     SkBudgeted budgeted) {
+                                                     skgpu::Budgeted budgeted) {
     SkASSERT(baseProxy);
 
     // We don't allow this for promise proxies i.e. if they need mips they need to give them
@@ -128,7 +128,7 @@ sk_sp<GrSurfaceProxy> GrCopyBaseMipMapToTextureProxy(GrRecordingContext* ctx,
 
 GrSurfaceProxyView GrCopyBaseMipMapToView(GrRecordingContext* context,
                                           GrSurfaceProxyView src,
-                                          SkBudgeted budgeted) {
+                                          skgpu::Budgeted budgeted) {
     auto origin = src.origin();
     auto swizzle = src.swizzle();
     auto proxy = src.refProxy();
@@ -160,7 +160,7 @@ static sk_sp<GrTextureProxy> make_bmp_proxy(GrProxyProvider* proxyProvider,
                                             GrColorType ct,
                                             GrMipmapped mipmapped,
                                             SkBackingFit fit,
-                                            SkBudgeted budgeted) {
+                                            skgpu::Budgeted budgeted) {
     SkBitmap bmpToUpload;
     if (ct != SkColorTypeToGrColorType(bitmap.info().colorType())) {
         SkColorType skCT = GrColorTypeToSkColorType(ct);
@@ -205,12 +205,8 @@ GrMakeCachedBitmapProxyView(GrRecordingContext* rContext,
 
     sk_sp<GrTextureProxy> proxy = proxyProvider->findOrCreateProxyByUniqueKey(key);
     if (!proxy) {
-        proxy = make_bmp_proxy(proxyProvider,
-                               bitmap,
-                               ct,
-                               mipmapped,
-                               SkBackingFit::kExact,
-                               SkBudgeted::kYes);
+        proxy = make_bmp_proxy(
+                proxyProvider, bitmap, ct, mipmapped, SkBackingFit::kExact, skgpu::Budgeted::kYes);
         if (!proxy) {
             return {};
         }
@@ -245,12 +241,12 @@ GrMakeCachedBitmapProxyView(GrRecordingContext* rContext,
     return {{std::move(mippedProxy), kTopLeft_GrSurfaceOrigin, swizzle}, ct};
 }
 
-std::tuple<GrSurfaceProxyView, GrColorType>
-GrMakeUncachedBitmapProxyView(GrRecordingContext* rContext,
-                              const SkBitmap& bitmap,
-                              GrMipmapped mipmapped,
-                              SkBackingFit fit,
-                              SkBudgeted budgeted) {
+std::tuple<GrSurfaceProxyView, GrColorType> GrMakeUncachedBitmapProxyView(
+        GrRecordingContext* rContext,
+        const SkBitmap& bitmap,
+        GrMipmapped mipmapped,
+        SkBackingFit fit,
+        skgpu::Budgeted budgeted) {
     GrProxyProvider* proxyProvider = rContext->priv().proxyProvider();
     const GrCaps* caps = rContext->priv().caps();
 
@@ -432,7 +428,7 @@ static inline bool skpaint_to_grpaint_impl(
         GrRecordingContext* context,
         const GrColorInfo& dstColorInfo,
         const SkPaint& skPaint,
-        const SkMatrixProvider& matrixProvider,
+        const SkMatrix& ctm,
         std::optional<std::unique_ptr<GrFragmentProcessor>> shaderFP,
         SkBlender* primColorBlender,
         const SkSurfaceProps& surfaceProps,
@@ -440,7 +436,7 @@ static inline bool skpaint_to_grpaint_impl(
     // Convert SkPaint color to 4f format in the destination color space
     SkColor4f origColor = SkColor4fPrepForDst(skPaint.getColor4f(), dstColorInfo);
 
-    GrFPArgs fpArgs(context, matrixProvider, &dstColorInfo, surfaceProps);
+    GrFPArgs fpArgs(context, &dstColorInfo, surfaceProps);
 
     // Setup the initial color considering the shader, the SkPaint color, and the presence or not
     // of per-vertex colors.
@@ -451,7 +447,7 @@ static inline bool skpaint_to_grpaint_impl(
             paintFP = std::move(*shaderFP);
         } else {
             if (const SkShaderBase* shader = as_SB(skPaint.getShader())) {
-                paintFP = shader->asFragmentProcessor(fpArgs);
+                paintFP = shader->asFragmentProcessor(fpArgs, SkShaderBase::MatrixRec(ctm));
                 if (paintFP == nullptr) {
                     return false;
                 }
@@ -562,7 +558,7 @@ static inline bool skpaint_to_grpaint_impl(
 
     SkMaskFilterBase* maskFilter = as_MFB(skPaint.getMaskFilter());
     if (maskFilter) {
-        if (auto mfFP = maskFilter->asFragmentProcessor(fpArgs)) {
+        if (auto mfFP = maskFilter->asFragmentProcessor(fpArgs, ctm)) {
             grPaint->setCoverageFragmentProcessor(std::move(mfFP));
         }
     }
@@ -621,13 +617,13 @@ static inline bool skpaint_to_grpaint_impl(
 bool SkPaintToGrPaint(GrRecordingContext* context,
                       const GrColorInfo& dstColorInfo,
                       const SkPaint& skPaint,
-                      const SkMatrixProvider& matrixProvider,
+                      const SkMatrix& ctm,
                       const SkSurfaceProps& surfaceProps,
                       GrPaint* grPaint) {
     return skpaint_to_grpaint_impl(context,
                                    dstColorInfo,
                                    skPaint,
-                                   matrixProvider,
+                                   ctm,
                                    /*shaderFP=*/std::nullopt,
                                    /*primColorBlender=*/nullptr,
                                    surfaceProps,
@@ -638,14 +634,14 @@ bool SkPaintToGrPaint(GrRecordingContext* context,
 bool SkPaintToGrPaintReplaceShader(GrRecordingContext* context,
                                    const GrColorInfo& dstColorInfo,
                                    const SkPaint& skPaint,
-                                   const SkMatrixProvider& matrixProvider,
+                                   const SkMatrix& ctm,
                                    std::unique_ptr<GrFragmentProcessor> shaderFP,
                                    const SkSurfaceProps& surfaceProps,
                                    GrPaint* grPaint) {
     return skpaint_to_grpaint_impl(context,
                                    dstColorInfo,
                                    skPaint,
-                                   matrixProvider,
+                                   ctm,
                                    std::move(shaderFP),
                                    /*primColorBlender=*/nullptr,
                                    surfaceProps,
@@ -657,14 +653,14 @@ bool SkPaintToGrPaintReplaceShader(GrRecordingContext* context,
 bool SkPaintToGrPaintWithBlend(GrRecordingContext* context,
                                const GrColorInfo& dstColorInfo,
                                const SkPaint& skPaint,
-                               const SkMatrixProvider& matrixProvider,
+                               const SkMatrix& ctm,
                                SkBlender* primColorBlender,
                                const SkSurfaceProps& surfaceProps,
                                GrPaint* grPaint) {
     return skpaint_to_grpaint_impl(context,
                                    dstColorInfo,
                                    skPaint,
-                                   matrixProvider,
+                                   ctm,
                                    /*shaderFP=*/std::nullopt,
                                    primColorBlender,
                                    surfaceProps,

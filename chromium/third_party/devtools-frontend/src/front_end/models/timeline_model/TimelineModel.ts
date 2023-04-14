@@ -42,28 +42,28 @@ import {TimelineJSProfileProcessor} from './TimelineJSProfile.js';
 
 const UIStrings = {
   /**
-  *@description Text for the name of a thread of the page
-  *@example {1} PH1
-  */
+   *@description Text for the name of a thread of the page
+   *@example {1} PH1
+   */
   threadS: 'Thread {PH1}',
   /**
-  *@description Text shown when rendering the User Interactions track in the Performance panel
-  */
+   *@description Text shown when rendering the User Interactions track in the Performance panel
+   */
   userInteractions: 'User Interactions',
   /**
-  *@description Title of a worker in the timeline flame chart of the Performance panel
-  *@example {https://google.com} PH1
-  */
+   *@description Title of a worker in the timeline flame chart of the Performance panel
+   *@example {https://google.com} PH1
+   */
   workerS: '`Worker` — {PH1}',
   /**
-  *@description Title of a worker in the timeline flame chart of the Performance panel
-  */
+   *@description Title of a worker in the timeline flame chart of the Performance panel
+   */
   dedicatedWorker: 'Dedicated `Worker`',
   /**
-  *@description Title of a worker in the timeline flame chart of the Performance panel
-  *@example {FormatterWorker} PH1
-  *@example {https://google.com} PH2
-  */
+   *@description Title of a worker in the timeline flame chart of the Performance panel
+   *@example {FormatterWorker} PH1
+   *@example {https://google.com} PH2
+   */
   workerSS: '`Worker`: {PH1} — {PH2}',
 
   /**
@@ -220,6 +220,17 @@ export class TimelineModelImpl {
     return Math.max(index, 0);
   }
 
+  mainFrameID(): string {
+    return this.mainFrame.frameId;
+  }
+
+  /**
+   * Determines if an event is potentially a marker event. A marker event here
+   * is a single moment in time that we want to highlight on the timeline, such as
+   * the LCP point. This method does not filter out events: for example, it treats
+   * every LCP Candidate event as a potential marker event. The logic to pick the
+   * right candidate to use is implemeneted in the TimelineFlameChartDataProvider.
+   **/
   isMarkerEvent(event: SDK.TracingModel.Event): boolean {
     switch (event.name) {
       case RecordType.TimeStamp:
@@ -303,6 +314,11 @@ export class TimelineModelImpl {
     return this.isNavigationStartEvent(event) &&
         (event.args['data']['isOutermostMainFrame'] ?? event.args['data']['isLoadingMainFrame']) &&
         event.args['data']['documentLoaderURL'];
+  }
+
+  static isJsFrameEvent(event: SDK.TracingModel.Event): boolean {
+    return event.name === RecordType.JSFrame || event.name === RecordType.JSIdleFrame ||
+        event.name === RecordType.JSSystemFrame;
   }
 
   static globalEventId(event: SDK.TracingModel.Event, field: string): string {
@@ -714,7 +730,8 @@ export class TimelineModelImpl {
         thread.events().filter(event => event.name === gpuEventName);
   }
 
-  private buildLoadingEvents(tracingModel: SDK.TracingModel.TracingModel, events: SDK.TracingModel.Event[]): void {
+  private buildLoadingEvents(tracingModel: SDK.TracingModel.TracingModel, layoutShiftEvents: SDK.TracingModel.Event[]):
+      void {
     const thread = tracingModel.getThreadByName('Renderer', 'CrRendererMain');
     if (!thread) {
       return;
@@ -722,7 +739,7 @@ export class TimelineModelImpl {
     const experienceCategory = 'experience';
     const track = this.ensureNamedTrack(TrackType.Experience);
     track.thread = thread;
-    track.events = events;
+    track.events = layoutShiftEvents;
 
     // Even though the event comes from 'loading', in order to color it differently we
     // rename its category.
@@ -738,6 +755,7 @@ export class TimelineModelImpl {
         }
       }
     }
+    assignLayoutShiftsToClusters(layoutShiftEvents);
   }
 
   private resetProcessingState(): void {
@@ -851,7 +869,10 @@ export class TimelineModelImpl {
     if (jsSamples && jsSamples.length) {
       events = Platform.ArrayUtilities.mergeOrdered(events, jsSamples, SDK.TracingModel.Event.orderedCompareStartTime);
     }
-    if (jsSamples || events.some(e => e.name === RecordType.JSSample)) {
+    if (jsSamples ||
+        events.some(
+            e => e.name === RecordType.JSSample || e.name === RecordType.JSSystemSample ||
+                e.name === RecordType.JSIdleSample)) {
       const jsFrameEvents = TimelineJSProfileProcessor.generateJSFrameEvents(events, {
         showAllEvents: Root.Runtime.experiments.isEnabled('timelineShowAllEvents'),
         showRuntimeCallStats: Root.Runtime.experiments.isEnabled('timelineV8RuntimeCallStats'),
@@ -1071,7 +1092,8 @@ export class TimelineModelImpl {
         // `callFrameOrProfileNode` can also be a `SDK.ProfileTreeModel.ProfileNode` for JSSample; that class
         // has accessors to mimic a `CallFrame`, but apparently we don't adjust stack traces in that case. Whether
         // we should is unclear.
-        if (event.name !== RecordType.JSSample) {
+        if (event.name !== RecordType.JSSample && event.name !== RecordType.JSSystemSample &&
+            event.name !== RecordType.JSIdleSample) {
           // We need to copy the data so we can safely modify it below.
           const frame = {...callFrameOrProfileNode};
           // TraceEvents come with 1-based line & column numbers. The frontend code
@@ -1599,6 +1621,51 @@ export class TimelineModelImpl {
   }
 }
 
+// TODO(crbug.com/1386091) This helper can be removed once the Experience track uses the data of the
+// new engine.
+export function assignLayoutShiftsToClusters(layoutShifts: readonly SDK.TracingModel.Event[]): void {
+  const gapTimeInMs = 1000;
+  const limitTimeInMs = 5000;
+  let firstTimestamp = Number.NEGATIVE_INFINITY;
+  let previousTimestamp = Number.NEGATIVE_INFINITY;
+  let currentClusterId = 0;
+  let currentClusterScore = 0;
+  let currentCluster = new Set<SDK.TracingModel.Event>();
+
+  for (const event of layoutShifts) {
+    if (event.args['data']['had_recent_input'] || event.args['data']['weighted_score_delta'] === undefined) {
+      continue;
+    }
+
+    if (event.startTime - firstTimestamp > limitTimeInMs || event.startTime - previousTimestamp > gapTimeInMs) {
+      // This means the event does not fit into the current session/cluster, so we need to start a new cluster.
+      firstTimestamp = event.startTime;
+
+      // Update all the layout shifts we found in this cluster to associate them with the cluster.
+      for (const layoutShift of currentCluster) {
+        layoutShift.args['data']['_current_cluster_score'] = currentClusterScore;
+        layoutShift.args['data']['_current_cluster_id'] = currentClusterId;
+      }
+
+      // Increment the cluster ID and reset the data.
+      currentClusterId += 1;
+      currentClusterScore = 0;
+      currentCluster = new Set();
+    }
+
+    // Store the timestamp of the previous layout shift.
+    previousTimestamp = event.startTime;
+    // Update the score of the current cluster and store this event in that cluster
+    currentClusterScore += event.args['data']['weighted_score_delta'];
+    currentCluster.add(event);
+  }
+
+  // The last cluster we find may not get closed out - so if not, update all the shifts that we associate with it.
+  for (const layoutShift of currentCluster) {
+    layoutShift.args['data']['_current_cluster_score'] = currentClusterScore;
+    layoutShift.args['data']['_current_cluster_id'] = currentClusterId;
+  }
+}
 // TODO(crbug.com/1167717): Make this a const enum again
 // eslint-disable-next-line rulesdir/const_enum
 export enum RecordType {
@@ -1621,6 +1688,7 @@ export enum RecordType {
   RecalculateStyles = 'RecalculateStyles',
   UpdateLayoutTree = 'UpdateLayoutTree',
   InvalidateLayout = 'InvalidateLayout',
+  Layerize = 'Layerize',
   Layout = 'Layout',
   LayoutShift = 'LayoutShift',
   UpdateLayer = 'UpdateLayer',
@@ -1632,6 +1700,7 @@ export enum RecordType {
   Rasterize = 'Rasterize',
   RasterTask = 'RasterTask',
   ScrollLayer = 'ScrollLayer',
+  Commit = 'Commit',
   CompositeLayers = 'CompositeLayers',
   ComputeIntersections = 'IntersectionObserverController::computeIntersections',
   InteractiveTime = 'InteractiveTime',
@@ -1691,8 +1760,20 @@ export enum RecordType {
   GCEvent = 'GCEvent',
   MajorGC = 'MajorGC',
   MinorGC = 'MinorGC',
+
+  // The following types are used for CPUProfile.
+  // JSRoot is used for the root node.
+  // JSIdleFrame and JSIdleSample are used for idle nodes.
+  // JSSystemFrame and JSSystemSample are used for other system nodes.
+  // JSFrame and JSSample are used for other nodes, and will be categorized as |scripting|.
   JSFrame = 'JSFrame',
   JSSample = 'JSSample',
+  JSIdleFrame = 'JSIdleFrame',
+  JSIdleSample = 'JSIdleSample',
+  JSSystemFrame = 'JSSystemFrame',
+  JSSystemSample = 'JSSystemSample',
+  JSRoot = 'JSRoot',
+
   // V8Sample events are coming from tracing and contain raw stacks with function addresses.
   // After being processed with help of JitCodeAdded and JitCodeMoved events they
   // get translated into function infos and stored as stacks in JSSample events.
@@ -1724,6 +1805,7 @@ export enum RecordType {
   SetLayerTreeId = 'SetLayerTreeId',
   TracingStartedInPage = 'TracingStartedInPage',
   TracingSessionIdForWorker = 'TracingSessionIdForWorker',
+  StartProfiling = 'CpuProfiler::StartProfiling',
 
   DecodeImage = 'Decode Image',
   ResizeImage = 'Resize Image',
@@ -1867,7 +1949,7 @@ export class Track {
         this.syncEventsInternal = [];
         break;
       }
-      const syncEvent = new SDK.TracingModel.Event(
+      const syncEvent = new SDK.TracingModel.ConstructedEvent(
           event.categoriesString, event.name, SDK.TracingModel.Phase.Complete, startTime, event.thread);
       syncEvent.setEndTime(endTime);
       syncEvent.addArgs(event.args);
@@ -2196,7 +2278,6 @@ export class InvalidationTrackingEvent {
 
 export class InvalidationTracker {
   private lastRecalcStyle: SDK.TracingModel.Event|null;
-  private lastPaintWithLayer: SDK.TracingModel.Event|null;
   didPaint: boolean;
   private invalidations: {
     [x: string]: InvalidationTrackingEvent[],
@@ -2206,7 +2287,6 @@ export class InvalidationTracker {
   };
   constructor() {
     this.lastRecalcStyle = null;
-    this.lastPaintWithLayer = null;
     this.didPaint = false;
     this.initializePerFrameState();
     this.invalidations = {};
@@ -2404,7 +2484,6 @@ export class InvalidationTracker {
     this.invalidationsByNodeId = {};
 
     this.lastRecalcStyle = null;
-    this.lastPaintWithLayer = null;
     this.didPaint = false;
   }
 }

@@ -47,10 +47,12 @@ static constexpr FeatureEnumAndInfoList kFeatureNameAndInfoList = {{
       "https://bugs.chromium.org/p/dawn/issues/detail?id=955", FeatureInfo::FeatureState::Stable}},
     {Feature::PipelineStatisticsQuery,
      {"pipeline-statistics-query", "Support Pipeline Statistics Query",
-      "https://bugs.chromium.org/p/dawn/issues/detail?id=434", FeatureInfo::FeatureState::Stable}},
+      "https://bugs.chromium.org/p/dawn/issues/detail?id=434",
+      FeatureInfo::FeatureState::Experimental}},
     {Feature::TimestampQuery,
      {"timestamp-query", "Support Timestamp Query",
-      "https://bugs.chromium.org/p/dawn/issues/detail?id=434", FeatureInfo::FeatureState::Stable}},
+      "https://bugs.chromium.org/p/dawn/issues/detail?id=434",
+      FeatureInfo::FeatureState::Experimental}},
     {Feature::TimestampQueryInsidePasses,
      {"timestamp-query-inside-passes", "Support Timestamp Query inside render/compute pass",
       "https://bugs.chromium.org/p/dawn/issues/detail?id=434",
@@ -77,6 +79,9 @@ static constexpr FeatureEnumAndInfoList kFeatureNameAndInfoList = {{
       "Allows the RENDER_ATTACHMENT usage on textures with format \"rg11b10ufloat\", and also "
       "allows textures of that format to be multisampled.",
       "https://bugs.chromium.org/p/dawn/issues/detail?id=1518", FeatureInfo::FeatureState::Stable}},
+    {Feature::BGRA8UnormStorage,
+     {"bgra8unorm-storage", "Allows the STORAGE usage on textures with format \"bgra8unorm\".",
+      "https://bugs.chromium.org/p/dawn/issues/detail?id=1591", FeatureInfo::FeatureState::Stable}},
     {Feature::DawnInternalUsages,
      {"dawn-internal-usages",
       "Add internal usages to resources to affect how the texture is allocated, but not "
@@ -132,6 +137,8 @@ Feature FromAPIFeature(wgpu::FeatureName feature) {
             return Feature::ShaderF16;
         case wgpu::FeatureName::RG11B10UfloatRenderable:
             return Feature::RG11B10UfloatRenderable;
+        case wgpu::FeatureName::BGRA8UnormStorage:
+            return Feature::BGRA8UnormStorage;
     }
     return Feature::InvalidEnum;
 }
@@ -168,6 +175,8 @@ wgpu::FeatureName ToAPIFeature(Feature feature) {
             return wgpu::FeatureName::ShaderF16;
         case Feature::RG11B10UfloatRenderable:
             return wgpu::FeatureName::RG11B10UfloatRenderable;
+        case Feature::BGRA8UnormStorage:
+            return wgpu::FeatureName::BGRA8UnormStorage;
 
         case Feature::EnumCount:
             break;

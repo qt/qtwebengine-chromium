@@ -11,7 +11,7 @@
 #include "include/core/SkStream.h"
 #include "include/core/SkSurface.h"
 #include "include/encode/SkPngEncoder.h"
-#include "include/private/SkTPin.h"
+#include "include/private/base/SkTPin.h"
 #include "modules/skottie/include/Skottie.h"
 #include "modules/skottie/utils/SkottieUtils.h"
 #include "modules/skresources/include/SkResources.h"
@@ -325,12 +325,12 @@ private:
         fCtx = fFactory.getContextInfo(sk_gpu_test::GrContextFactory::kGL_ContextType)
                            .directContext();
         fSurface =
-            SkSurface::MakeRenderTarget(fCtx,
-                                        SkBudgeted::kNo,
-                                        SkImageInfo::MakeN32Premul(FLAGS_width, FLAGS_height),
-                                        0,
-                                        GrSurfaceOrigin::kTopLeft_GrSurfaceOrigin,
-                                        nullptr);
+                SkSurface::MakeRenderTarget(fCtx,
+                                            skgpu::Budgeted::kNo,
+                                            SkImageInfo::MakeN32Premul(FLAGS_width, FLAGS_height),
+                                            0,
+                                            GrSurfaceOrigin::kTopLeft_GrSurfaceOrigin,
+                                            nullptr);
         if (fSurface) {
             fSurface->getCanvas()->concat(matrix);
         } else {

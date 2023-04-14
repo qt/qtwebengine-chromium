@@ -835,7 +835,7 @@ static bool DetermineStencilIndex8Support(const TextureCapsMap &textureCaps)
         GL_STENCIL_INDEX8,
     };
 
-    return GetFormatSupport(textureCaps, requiredFormats, false, false, true, false, false);
+    return GetFormatSupport(textureCaps, requiredFormats, true, false, true, false, false);
 }
 
 void Extensions::setTextureExtensionSupport(const TextureCapsMap &textureCaps)
@@ -1280,6 +1280,7 @@ std::vector<std::string> DisplayExtensions::getStrings() const
     InsertExtensionString("EGL_ANGLE_timestamp_surface_attribute",               timestampSurfaceAttributeANGLE,     &extensionStrings);
     InsertExtensionString("EGL_ANDROID_recordable",                              recordable,                         &extensionStrings);
     InsertExtensionString("EGL_ANGLE_power_preference",                          powerPreference,                    &extensionStrings);
+    InsertExtensionString("EGL_ANGLE_wait_until_work_scheduled",                 waitUntilWorkScheduled,             &extensionStrings);
     InsertExtensionString("EGL_ANGLE_image_d3d11_texture",                       imageD3D11Texture,                  &extensionStrings);
     InsertExtensionString("EGL_ANDROID_create_native_client_buffer",             createNativeClientBufferANDROID,    &extensionStrings);
     InsertExtensionString("EGL_ANDROID_get_native_client_buffer",                getNativeClientBufferANDROID,       &extensionStrings);

@@ -19,7 +19,6 @@
 #include "connections/listeners.h"
 #include "internal/platform/byte_array.h"
 
-namespace location {
 namespace nearby {
 namespace connections {
 namespace mediums {
@@ -29,15 +28,14 @@ struct DataChannelListener {
   // Called when the data channel is open and the socket wraper is ready to
   // read and write.
   std::function<void(WebRtcSocketWrapper)> data_channel_open_cb =
-      DefaultCallback<WebRtcSocketWrapper>();
+      [](WebRtcSocketWrapper) {};
 
   // Called when the data channel is closed.
-  std::function<void()> data_channel_closed_cb = DefaultCallback<>();
+  std::function<void()> data_channel_closed_cb = []() {};
 };
 
 }  // namespace mediums
 }  // namespace connections
 }  // namespace nearby
-}  // namespace location
 
 #endif  // CORE_INTERNAL_MEDIUMS_WEBRTC_DATA_CHANNEL_LISTENER_H_

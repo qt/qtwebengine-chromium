@@ -2,41 +2,21 @@
 
 Vulkan header files and API registry
 
-The contents of this repository are largely obtained from other repositories
-and are collected, coordinated, and curated here.
+## Contributing
 
-If proposing changes to any file originating from a different repository,
-please propose such changes in that repository, rather than Vulkan-Headers.
-Files in this repository originate from:
+See the [CONTRIBUTING.md](CONTRIBUTING.md)
 
-### Specification repository (https://github.com/KhronosGroup/Vulkan-Docs)
+## Building
 
-* registry/*.py
-* registry/spec_tools/*.py
-* registry/profiles/*.json
-* All files under include/vulkan/ which are *not* listed explicitly as originating from another repository.
+See [BUILD.md](BUILD.md)
 
-### This repository (https://github.com/KhronosGroup/Vulkan-Headers)
+## SDK Support
 
-* BUILD.gn
-* BUILD.md
-* CMakeLists.txt
-* cmake/*
-* CODE_OF_CONDUCT.md
-* LICENSE.txt
-* README.md
-* Non-API headers
-  * include/vulkan/vk_icd.h
-  * include/vulkan/vk_layer.h
-  * include/vulkan/vk_sdk_platform.h
+Vulkan-Headers are shipped as part of the official [Vulkan-SDK](https://www.lunarg.com/vulkan-sdk/)
 
-### Vulkan C++ Binding Repository (https://github.com/KhronosGroup/Vulkan-Hpp)
+## C/C++ Package Manager Support
 
-As of the Vulkan-Docs 1.2.182 spec update, the Vulkan-Hpp headers have been
-split into multiple files. All of those files are now included in this
-repository.
-
-* include/vulkan/*.hpp
+`Vulkan-Headers` are also supported by both [conan](https://conan.io/) & [vcpkg](https://learn.microsoft.com/en-us/vcpkg/).
 
 ## Version Tagging Scheme
 
@@ -47,5 +27,3 @@ specification release are tagged using the following format:
 **Note**: Marked version releases have undergone thorough testing but do not
 imply the same quality level as SDK tags. SDK tags follow the
 `sdk-<`_`version`_`>.<`_`patch`_`>` format (e.g., `sdk-1.1.92.0`).
-
-This scheme was adopted following the 1.1.96 Vulkan specification release.

@@ -122,6 +122,7 @@ const ExtensionInfoMap &GetExtensionInfoMap()
         map["GL_KHR_parallel_shader_compile"] = enableableExtension(&Extensions::parallelShaderCompileKHR);
         map["GL_AMD_performance_monitor"] = esOnlyExtension(&Extensions::performanceMonitorAMD);
         map["GL_NV_pixel_buffer_object"] = enableableExtension(&Extensions::pixelBufferObjectNV);
+        map["GL_EXT_polygon_offset_clamp"] = enableableExtension(&Extensions::polygonOffsetClampEXT);
         map["GL_EXT_primitive_bounding_box"] = esOnlyExtension(&Extensions::primitiveBoundingBoxEXT);
         map["GL_OES_primitive_bounding_box"] = esOnlyExtension(&Extensions::primitiveBoundingBoxOES);
         map["GL_EXT_protected_textures"] = enableableExtension(&Extensions::protectedTexturesEXT);
@@ -139,6 +140,7 @@ const ExtensionInfoMap &GetExtensionInfoMap()
         map["GL_EXT_semaphore"] = enableableExtension(&Extensions::semaphoreEXT);
         map["GL_EXT_semaphore_fd"] = enableableExtension(&Extensions::semaphoreFdEXT);
         map["GL_EXT_separate_shader_objects"] = enableableExtension(&Extensions::separateShaderObjectsEXT);
+        map["GL_ARM_shader_framebuffer_fetch"] = enableableExtension(&Extensions::shaderFramebufferFetchARM);
         map["GL_EXT_shader_framebuffer_fetch"] = enableableExtension(&Extensions::shaderFramebufferFetchEXT);
         map["GL_EXT_shader_framebuffer_fetch_non_coherent"] = enableableExtension(&Extensions::shaderFramebufferFetchNonCoherentEXT);
         map["GL_OES_shader_image_atomic"] = enableableExtension(&Extensions::shaderImageAtomicOES);
@@ -181,6 +183,7 @@ const ExtensionInfoMap &GetExtensionInfoMap()
         map["GL_EXT_texture_format_sRGB_override"] = esOnlyExtension(&Extensions::textureFormatSRGBOverrideEXT);
         map["GL_OES_texture_half_float"] = enableableExtension(&Extensions::textureHalfFloatOES);
         map["GL_OES_texture_half_float_linear"] = enableableExtension(&Extensions::textureHalfFloatLinearOES);
+        map["GL_EXT_texture_mirror_clamp_to_edge"] = enableableExtension(&Extensions::textureMirrorClampToEdgeEXT);
         map["GL_EXT_texture_norm16"] = enableableExtension(&Extensions::textureNorm16EXT);
         map["GL_OES_texture_npot"] = enableableExtension(&Extensions::textureNpotOES);
         map["GL_EXT_texture_rg"] = enableableExtension(&Extensions::textureRgEXT);
@@ -207,6 +210,7 @@ const ExtensionInfoMap &GetExtensionInfoMap()
         map["GL_CHROMIUM_bind_generates_resource"] = esOnlyExtension(&Extensions::bindGeneratesResourceCHROMIUM);
         map["GL_CHROMIUM_bind_uniform_location"] = esOnlyExtension(&Extensions::bindUniformLocationCHROMIUM);
         map["GL_ANGLE_client_arrays"] = esOnlyExtension(&Extensions::clientArraysANGLE);
+        map["GL_ANGLE_clip_cull_distance"] = enableableExtension(&Extensions::clipCullDistanceANGLE);
         map["GL_CHROMIUM_color_buffer_float_rgb"] = enableableExtension(&Extensions::colorBufferFloatRgbCHROMIUM);
         map["GL_CHROMIUM_color_buffer_float_rgba"] = enableableExtension(&Extensions::colorBufferFloatRgbaCHROMIUM);
         map["GL_ANGLE_compressed_texture_etc"] = enableableExtension(&Extensions::compressedTextureEtcANGLE);
@@ -237,6 +241,7 @@ const ExtensionInfoMap &GetExtensionInfoMap()
         map["GL_ANGLE_robust_fragment_shader_output"] = enableableExtension(&Extensions::robustFragmentShaderOutputANGLE);
         map["GL_ANGLE_robust_resource_initialization"] = esOnlyExtension(&Extensions::robustResourceInitializationANGLE);
         map["GL_ANGLE_semaphore_fuchsia"] = enableableExtension(&Extensions::semaphoreFuchsiaANGLE);
+        map["GL_ANGLE_shader_binary"] = esOnlyExtension(&Extensions::shaderBinaryANGLE);
         map["GL_ANGLE_shader_pixel_local_storage"] = esOnlyExtension(&Extensions::shaderPixelLocalStorageANGLE);
         map["GL_ANGLE_shader_pixel_local_storage_coherent"] = esOnlyExtension(&Extensions::shaderPixelLocalStorageCoherentANGLE);
         map["GL_CHROMIUM_sync_query"] = enableableExtension(&Extensions::syncQueryCHROMIUM);

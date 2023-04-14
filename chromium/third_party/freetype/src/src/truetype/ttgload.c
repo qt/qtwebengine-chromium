@@ -4,7 +4,7 @@
  *
  *   TrueType Glyph Loader (body).
  *
- * Copyright (C) 1996-2022 by
+ * Copyright (C) 1996-2023 by
  * David Turner, Robert Wilhelm, and Werner Lemberg.
  *
  * This file is part of the FreeType project, and may only be used,
@@ -737,19 +737,19 @@
 
         if ( subglyph->flags & WE_HAVE_A_SCALE )
           FT_TRACE7(( "      scaling: %f\n",
-                      subglyph->transform.xx / 65536.0 ));
+                      (double)subglyph->transform.xx / 65536 ));
         else if ( subglyph->flags & WE_HAVE_AN_XY_SCALE )
           FT_TRACE7(( "      scaling: x=%f, y=%f\n",
-                      subglyph->transform.xx / 65536.0,
-                      subglyph->transform.yy / 65536.0 ));
+                      (double)subglyph->transform.xx / 65536,
+                      (double)subglyph->transform.yy / 65536 ));
         else if ( subglyph->flags & WE_HAVE_A_2X2 )
         {
           FT_TRACE7(( "      scaling: xx=%f, yx=%f\n",
-                      subglyph->transform.xx / 65536.0,
-                      subglyph->transform.yx / 65536.0 ));
+                      (double)subglyph->transform.xx / 65536,
+                      (double)subglyph->transform.yx / 65536 ));
           FT_TRACE7(( "               xy=%f, yy=%f\n",
-                      subglyph->transform.xy / 65536.0,
-                      subglyph->transform.yy / 65536.0 ));
+                      (double)subglyph->transform.xy / 65536,
+                      (double)subglyph->transform.yy / 65536 ));
         }
 
         subglyph++;
@@ -2269,8 +2269,8 @@
                    FT_UInt       glyph_index,
                    FT_Int32      load_flags )
   {
-    TT_Face             face = (TT_Face)glyph->face;
-    SFNT_Service        sfnt = (SFNT_Service)face->sfnt;
+    TT_Face             face   = (TT_Face)glyph->face;
+    SFNT_Service        sfnt   = (SFNT_Service)face->sfnt;
     FT_Stream           stream = face->root.stream;
     FT_Error            error;
     TT_SBit_MetricsRec  sbit_metrics;
@@ -2326,7 +2326,7 @@
                   FT_Int32      load_flags,
                   FT_Bool       glyf_table_only )
   {
-    TT_Face    face = (TT_Face)glyph->face;
+    TT_Face    face   = (TT_Face)glyph->face;
     FT_Stream  stream = face->root.stream;
 
 #ifdef TT_USE_BYTECODE_INTERPRETER
@@ -2334,7 +2334,7 @@
     FT_Bool    pedantic = FT_BOOL( load_flags & FT_LOAD_PEDANTIC );
 #if defined TT_SUPPORT_SUBPIXEL_HINTING_INFINALITY || \
     defined TT_SUPPORT_SUBPIXEL_HINTING_MINIMAL
-    TT_Driver  driver = (TT_Driver)FT_FACE_DRIVER( glyph->face );
+    TT_Driver  driver   = (TT_Driver)FT_FACE_DRIVER( glyph->face );
 #endif
 #endif
 

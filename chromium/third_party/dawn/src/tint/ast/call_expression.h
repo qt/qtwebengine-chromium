@@ -19,7 +19,6 @@
 
 // Forward declarations
 namespace tint::ast {
-class Type;
 class IdentifierExpression;
 }  // namespace tint::ast
 
@@ -28,32 +27,20 @@ namespace tint::ast {
 /// A call expression - represents either a:
 /// * sem::Function
 /// * sem::Builtin
-/// * sem::TypeConstructor
-/// * sem::TypeConversion
+/// * sem::ValueConstructor
+/// * sem::ValueConversion
 class CallExpression final : public Castable<CallExpression, Expression> {
   public:
     /// Constructor
     /// @param pid the identifier of the program that owns this node
     /// @param nid the unique node identifier
     /// @param source the call expression source
-    /// @param name the function or type name
+    /// @param target the target of the call
     /// @param args the arguments
     CallExpression(ProgramID pid,
                    NodeID nid,
                    const Source& source,
-                   const IdentifierExpression* name,
-                   utils::VectorRef<const Expression*> args);
-
-    /// Constructor
-    /// @param pid the identifier of the program that owns this node
-    /// @param nid the unique node identifier
-    /// @param source the call expression source
-    /// @param type the type
-    /// @param args the arguments
-    CallExpression(ProgramID pid,
-                   NodeID nid,
-                   const Source& source,
-                   const Type* type,
+                   const IdentifierExpression* target,
                    utils::VectorRef<const Expression*> args);
 
     /// Move constructor
@@ -66,18 +53,8 @@ class CallExpression final : public Castable<CallExpression, Expression> {
     /// @return the newly cloned node
     const CallExpression* Clone(CloneContext* ctx) const override;
 
-    /// Target is either an identifier, or a Type.
-    /// One of these must be nullptr and the other a non-nullptr.
-    struct Target {
-        /// name is a function or builtin to call, or type name to construct or
-        /// cast-to
-        const IdentifierExpression* name = nullptr;
-        /// type to construct or cast-to
-        const Type* type = nullptr;
-    };
-
-    /// The target function
-    const Target target;
+    /// The target function or type
+    const IdentifierExpression* target;
 
     /// The arguments
     const utils::Vector<const Expression*, 8> args;

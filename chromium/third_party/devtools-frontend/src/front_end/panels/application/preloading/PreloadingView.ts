@@ -19,21 +19,39 @@ type PrerenderingAttemptWithId = SDK.PrerenderingModel.PrerenderingAttemptWithId
 
 const UIStrings = {
   /**
-  *@description Text to clear content
-  */
+   *@description Text to clear content
+   */
   clearNotOngoing: 'Clear not ongoing',
   /**
-  *@description Text in grid and details
-  */
+   *@description Text in grid and details
+   */
   statusPrerendering: 'Prerendering',
   /**
-  *@description Text in grid and details
-  */
+   *@description Text in grid and details
+   */
   statusActivated: 'Activated',
   /**
-  *@description Text in grid and details
-  */
+   *@description Text in grid and details
+   */
   statusDiscarded: 'Discarded',
+  /**
+   *@description Title in infobar
+   */
+  warningTitlePreloadingDisabledByFeatureFlag: 'Preloading was disabled, but is force-enabled now',
+  /**
+   *@description Detail in infobar
+   */
+  warningDetailPreloadingDisabledByFeatureFlag:
+      'Preloading is forced-enabled because DevTools is open. When DevTools is closed, prerendering will be disabled because this browser session is part of a holdback group used for performance comparisons.',
+  /**
+   *@description Title in infobar
+   */
+  warningTitlePrerenderingDisabledByFeatureFlag: 'Prerendering was disabled, but is force-enabled now',
+  /**
+   *@description Detail in infobar
+   */
+  warningDetailPrerenderingDisabledByFeatureFlag:
+      'Prerendering is forced-enabled because DevTools is open. When DevTools is closed, prerendering will be disabled because this browser session is part of a holdback group used for performance comparisons.',
 };
 const str_ = i18n.i18n.registerUIStrings('panels/application/preloading/PreloadingView.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
@@ -64,15 +82,22 @@ class PrerenderingUIUtils {
   }
 }
 
+interface FeatureFlags {
+  preloadingHoldback: boolean|null;
+  prerender2Holdback: boolean|null;
+}
+
 export class PreloadingView extends UI.Widget.VBox {
   private readonly model: SDK.PrerenderingModel.PrerenderingModel;
   private focused: PreloadingId|null = null;
 
+  private readonly infobarContainer: HTMLDivElement;
   private readonly toolbar: UI.Toolbar.Toolbar;
   private readonly splitWidget: UI.SplitWidget.SplitWidget;
   private readonly grid = new PreloadingComponents.PreloadingGrid.PreloadingGrid();
   private readonly bottomContainer: UI.Widget.VBox;
   private details = new PreloadingComponents.PreloadingDetailsReportView.PreloadingDetailsReportView();
+  private readonly featureFlagWarningsPromise: Promise<void>;
 
   constructor(model: SDK.PrerenderingModel.PrerenderingModel) {
     super(/* isWebComponent */ true, /* delegatesFocus */ false);
@@ -83,6 +108,7 @@ export class PreloadingView extends UI.Widget.VBox {
     this.model.addEventListener(SDK.PrerenderingModel.Events.PrerenderingAttemptsRemoved, this.onModelUpdated, this);
 
     // this (VBox)
+    //   +- infobarContainer
     //   +- toolbar (| [clear] |)
     //   +- splitWidget
     //        +- topContainer
@@ -92,6 +118,10 @@ export class PreloadingView extends UI.Widget.VBox {
     //
     // - If an row selected, PreloadingDetailsReportView shows details of it.
     // - If not, PreloadingDetailsReportView shows some messages.
+
+    this.infobarContainer = document.createElement('div');
+    this.infobarContainer.classList.add('flex-none');
+    this.contentElement.insertBefore(this.infobarContainer, this.contentElement.firstChild);
 
     this.toolbar = new UI.Toolbar.Toolbar('preloading-toolbar', this.contentElement);
 
@@ -119,6 +149,8 @@ export class PreloadingView extends UI.Widget.VBox {
     this.grid.addEventListener('cellfocused', this.onCellFocused.bind(this));
     topContainer.contentElement.appendChild(this.grid);
     this.bottomContainer.contentElement.appendChild(this.details);
+
+    this.featureFlagWarningsPromise = this.getFeatureFlags().then(x => this.onGetFeatureFlags(x));
   }
 
   wasShown(): void {
@@ -163,11 +195,55 @@ export class PreloadingView extends UI.Widget.VBox {
     this.model.clearNotOngoing();
   }
 
+  async getFeatureFlags(): Promise<FeatureFlags> {
+    const preloadingHoldbackPromise = this.model.target().systemInfo().invoke_getFeatureState({
+      featureState: 'PreloadingHoldback',
+    });
+    const prerender2HoldbackPromise = this.model.target().systemInfo().invoke_getFeatureState({
+      featureState: 'PrerenderHoldback',
+    });
+    return {
+      preloadingHoldback: (await preloadingHoldbackPromise).featureEnabled ?? null,
+      prerender2Holdback: (await prerender2HoldbackPromise).featureEnabled ?? null,
+    };
+  }
+
+  // Shows warnings if features are disabled by feature flags.
+  private onGetFeatureFlags(flags: FeatureFlags): void {
+    if (flags.preloadingHoldback === true) {
+      this.showInfobar(
+          i18nString(UIStrings.warningTitlePreloadingDisabledByFeatureFlag),
+          i18nString(UIStrings.warningDetailPreloadingDisabledByFeatureFlag));
+    }
+
+    if (flags.prerender2Holdback === true) {
+      this.showInfobar(
+          i18nString(UIStrings.warningTitlePrerenderingDisabledByFeatureFlag),
+          i18nString(UIStrings.warningDetailPrerenderingDisabledByFeatureFlag));
+    }
+  }
+
+  private showInfobar(titleText: string, detailsText: string): void {
+    const infobar = new UI.Infobar.Infobar(
+        UI.Infobar.Type.Warning, /* text */ titleText, /* actions? */ undefined, /* disableSetting? */ undefined);
+    infobar.setParentView(this);
+    infobar.createDetailsRowMessage(detailsText);
+    this.infobarContainer.appendChild(infobar.element);
+  }
+
+  getInfobarContainerForTest(): HTMLDivElement {
+    return this.infobarContainer;
+  }
+
   getGridForTest(): PreloadingComponents.PreloadingGrid.PreloadingGrid {
     return this.grid;
   }
 
   getDetailsForTest(): PreloadingComponents.PreloadingDetailsReportView.PreloadingDetailsReportView {
     return this.details;
+  }
+
+  getFeatureFlagWarningsPromiseForTest(): Promise<void> {
+    return this.featureFlagWarningsPromise;
   }
 }

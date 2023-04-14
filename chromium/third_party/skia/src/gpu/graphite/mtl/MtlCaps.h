@@ -45,8 +45,6 @@ public:
     bool isMac() const { return fGPUFamily == GPUFamily::kMac; }
     bool isApple()const  { return fGPUFamily == GPUFamily::kApple; }
 
-    size_t getMinBufferAlignment() const { return this->isMac() ? 4 : 1; }
-
     bool isRenderable(const TextureInfo&) const override;
 
     void buildKeyForTexture(SkISize dimensions,
@@ -81,8 +79,6 @@ private:
     bool isTexturable(MTLPixelFormat) const;
     bool isRenderable(MTLPixelFormat, uint32_t numSamples) const;
     uint32_t maxRenderTargetSampleCount(MTLPixelFormat) const;
-
-    size_t getTransferBufferAlignment(size_t bytesPerPixel) const override;
 
     bool supportsWritePixels(const TextureInfo&) const override;
     bool supportsReadPixels(const TextureInfo&) const override;
@@ -120,7 +116,7 @@ private:
         std::unique_ptr<ColorTypeInfo[]> fColorTypeInfos;
         int fColorTypeInfoCount = 0;
     };
-    inline static constexpr size_t kNumMtlFormats = 10;
+    inline static constexpr size_t kNumMtlFormats = 12;
 
     static size_t GetFormatIndex(MTLPixelFormat);
     FormatInfo fFormatTable[kNumMtlFormats];

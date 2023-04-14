@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-# Copyright (c) 2015-2022 The Khronos Group Inc.
-# Copyright (c) 2015-2022 Valve Corporation
-# Copyright (c) 2015-2022 LunarG, Inc.
-# Copyright (c) 2015-2022 Google Inc.
+# Copyright (c) 2015-2023 The Khronos Group Inc.
+# Copyright (c) 2015-2023 Valve Corporation
+# Copyright (c) 2015-2023 LunarG, Inc.
+# Copyright (c) 2015-2023 Google Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,11 +15,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#
-# Author: Tobin Ehlis <tobine@google.com>
-# Author: Dave Houlton <daveh@lunarg.com>
-# Author: Shannon McPherson <shannon@lunarg.com>
-
 import argparse
 import common_codegen
 import csv
@@ -28,43 +23,51 @@ import html
 import json
 import operator
 import os
-import platform
 import re
 import sys
-import time
 import unicodedata
 import subprocess
 from collections import defaultdict
 from collections import OrderedDict
+from dataclasses import dataclass
 
 verbose_mode = False
-txt_db = False
-csv_db = False
-html_db = False
-txt_filename = "validation_error_database.txt"
-csv_filename = "validation_error_database.csv"
-html_filename = "validation_error_database.html"
-header_filename = "vk_validation_error_messages.h"
 vuid_prefixes = ['VUID-', 'UNASSIGNED-', 'kVUID_']
-spirvtools_path = None # default is to not search for repo
 
 # Hard-coded flags that could be command line args, if we decide that's useful
 ignore_unassigned = True # These are not found in layer code unless they appear explicitly (most don't), so produce false positives
 
 layer_source_files = [common_codegen.repo_relative(path) for path in [
-    'layers/buffer_validation.cpp',
-    'layers/core_validation.cpp',
-    'layers/descriptor_sets.cpp',
-    'layers/descriptor_validation.cpp',
-    'layers/drawdispatch.cpp',
-    'layers/gpu_vuids.h',
-    'layers/parameter_validation_utils.cpp',
+    'layers/core_checks/android_validation.cpp',
+    'layers/core_checks/buffer_validation.cpp',
+    'layers/state_tracker/cmd_buffer_state.cpp', # some Video VUIDs are in here
+    'layers/core_checks/cmd_buffer_dynamic_validation.cpp',
+    'layers/core_checks/cmd_buffer_validation.cpp',
+    'layers/core_checks/copy_blit_resolve_validation.cpp',
+    'layers/state_tracker/descriptor_sets.cpp',
+    'layers/core_checks/descriptor_validation.cpp',
+    'layers/core_checks/device_validation.cpp',
+    'layers/core_checks/device_memory_validation.cpp',
+    'layers/core_checks/drawdispatch_validation.cpp',
+    'layers/core_checks/external_object_validation.cpp',
+    'layers/gpu_validation/gpu_vuids.h',
+    'layers/stateless/parameter_validation_utils.cpp',
+    'layers/core_checks/image_validation.cpp',
+    'layers/core_checks/image_layout_validation.cpp',
+    'layers/core_checks/pipeline_validation.cpp',
     'layers/object_tracker_utils.cpp',
-    'layers/shader_module.cpp',
-    'layers/shader_validation.cpp',
-    'layers/stateless_validation.h',
-    'layers/synchronization_validation.cpp',
-    'layers/sync_vuid_maps.cpp',
+    'layers/core_checks/query_validation.cpp',
+    'layers/core_checks/queue_validation.cpp',
+    'layers/core_checks/ray_tracing_validation.cpp',
+    'layers/core_checks/render_pass_validation.cpp',
+    'layers/state_tracker/shader_module.cpp',
+    'layers/core_checks/shader_validation.cpp',
+    'layers/core_checks/synchronization_validation.cpp',
+    'layers/stateless/stateless_validation.h',
+    'layers/sync/sync_validation.cpp',
+    'layers/sync/sync_vuid_maps.cpp',
+    'layers/core_checks/video_validation.cpp',
+    'layers/core_checks/wsi_validation.cpp',
     'layers/generated/parameter_validation.cpp',
     'layers/generated/object_tracker.cpp',
     'layers/generated/spirv_validation_helper.cpp',
@@ -74,8 +77,8 @@ layer_source_files = [common_codegen.repo_relative(path) for path in [
 test_source_files = glob.glob(os.path.join(common_codegen.repo_relative('tests'), '*.cpp'))
 
 unassigned_vuid_files = [common_codegen.repo_relative(path) for path in [
-    'layers/best_practices_error_enums.h',
-    'layers/stateless_validation.h',
+    'layers/best_practices/best_practices_error_enums.h',
+    'layers/stateless/stateless_validation.h',
     'layers/core_validation_error_enums.h',
     'layers/object_lifetime_validation.h'
 ]]
@@ -84,43 +87,6 @@ unassigned_vuid_files = [common_codegen.repo_relative(path) for path in [
 # Paths are relative from root of SPIR-V Tools repo
 spirvtools_source_files = ["source/val/validation_state.cpp"]
 spirvtools_test_files = ["test/val/*.cpp"]
-
-def printHelp():
-    print ("Usage:")
-    print ("  python vk_validation_stats.py <json_file>")
-    print ("                                [ -c ]")
-    print ("                                [ -todo ]")
-    print ("                                [ -vuid <vuid_name> ]")
-    print ("                                [ -unassigned ]")
-    print ("                                [ -spirvtools [ <path_to_spirv_tools_repo>] ]")
-    print ("                                [ -text [ <text_out_filename>] ]")
-    print ("                                [ -csv  [ <csv_out_filename>]  ]")
-    print ("                                [ -html [ <html_out_filename>] ]")
-    print ("                                [ -export_header ]")
-    print ("                                [ -summary ]")
-    print ("                                [ -verbose ]")
-    print ("                                [ -help ]")
-    print ("\n  The vk_validation_stats script parses validation layer source files to")
-    print ("  determine the set of valid usage checks and tests currently implemented,")
-    print ("  and generates coverage values by comparing against the full set of valid")
-    print ("  usage identifiers in the Vulkan-Headers registry file 'validusage.json'")
-    print ("\nArguments: ")
-    print (" <json-file>        (required) registry file 'validusage.json'")
-    print (" -c                 report consistency warnings")
-    print (" -todo              report unimplemented VUIDs")
-    print (" -vuid <vuid_name>  report status of individual VUID <vuid_name>")
-    print (" -unassigned        report unassigned VUIDs")
-    print (" -spirvtools [path] when pointed to root directory of SPIRV-Tools repo, will search")
-    print ("                    the repo for VUs that are implemented there")
-    print (" -text [filename]   output the error database text to <text_database_filename>,")
-    print ("                    defaults to 'validation_error_database.txt'")
-    print (" -csv [filename]    output the error database in csv to <csv_database_filename>,")
-    print ("                    defaults to 'validation_error_database.csv'")
-    print (" -html [filename]   output the error database in html to <html_database_filename>,")
-    print ("                    defaults to 'validation_error_database.html'")
-    print (" -export_header     export a new VUID error text header file to <%s>" % header_filename)
-    print (" -summary           output summary of VUID coverage")
-    print (" -verbose           show your work (to stdout)")
 
 class ValidationJSON:
     def __init__(self, filename):
@@ -478,8 +444,8 @@ class OutputDatabase:
 /*
  * Vulkan
  *
- * Copyright (c) 2016-2022 Google Inc.
- * Copyright (c) 2016-2022 LunarG, Inc.
+ * Copyright (c) 2016-2023 Google Inc.
+ * Copyright (c) 2016-2023 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -492,9 +458,6 @@ class OutputDatabase:
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *
- * Author: Tobin Ehlis <tobine@google.com>
- * Author: Dave Houlton <daveh@lunarg.com>
  */
 
 #pragma once
@@ -513,9 +476,9 @@ static const vuid_spec_text_pair vuid_spec_text[] = {
 """
         self.header_postamble = """};
 """
-    def dump_txt(self, only_unimplemented = False):
-        print("\n Dumping database to text file: %s" % txt_filename)
-        with open (txt_filename, 'w') as txt:
+    def dump_txt(self, filename, only_unimplemented=False):
+        print(f'\nDumping database to text file: {filename}')
+        with open (filename, 'w') as txt:
             txt.write("## VUID Database\n")
             txt.write("## Format: VUID_NAME | CHECKED | SPIRV-TOOL | TEST | TYPE | API/STRUCT | EXTENSION | VUID_TEXT\n##\n")
             vuid_list = list(self.vj.all_vuids)
@@ -542,9 +505,9 @@ static const vuid_spec_text_pair vuid_spec_text[] = {
 
                     txt.write("%s | %s | %s | %s | %s | %s | %s | %s\n" % (vuid, checked, test, spirv, db_entry['type'], db_entry['api'], db_entry['ext'], db_entry['text']))
 
-    def dump_csv(self, only_unimplemented = False):
-        print("\n Dumping database to csv file: %s" % csv_filename)
-        with open (csv_filename, 'w', newline='') as csvfile:
+    def dump_csv(self, filename, only_unimplemented=False):
+        print(f'\nDumping database to csv file: {filename}')
+        with open (filename, 'w', newline='') as csvfile:
             cw = csv.writer(csvfile)
             cw.writerow(['VUID_NAME','CHECKED','SPIRV-TOOL', 'TEST','TYPE','API/STRUCT','EXTENSION','VUID_TEXT'])
             vuid_list = list(self.vj.all_vuids)
@@ -576,11 +539,11 @@ static const vuid_spec_text_pair vuid_spec_text[] = {
                     row.append(db_entry['text'])
                     cw.writerow(row)
 
-    def dump_html(self, only_unimplemented = False):
-        print("\n Dumping database to html file: %s" % html_filename)
+    def dump_html(self, filename, only_unimplemented=False):
+        print(f'\nDumping database to html file: {filename}')
         preamble = '<!DOCTYPE html>\n<html>\n<head>\n<style>\ntable, th, td {\n border: 1px solid black;\n border-collapse: collapse; \n}\n</style>\n<body>\n<h2>Valid Usage Database</h2>\n<font size="2" face="Arial">\n<table style="width:100%">\n'
         headers = '<tr><th>VUID NAME</th><th>CHECKED</th><th>SPIRV-TOOL</th><th>TEST</th><th>TYPE</th><th>API/STRUCT</th><th>EXTENSION</th><th>VUID TEXT</th></tr>\n'
-        with open (html_filename, 'w') as hfile:
+        with open(filename, 'w') as hfile:
             hfile.write(preamble)
             hfile.write(headers)
             vuid_list = list(self.vj.all_vuids)
@@ -609,6 +572,28 @@ static const vuid_spec_text_pair vuid_spec_text[] = {
                     hfile.write('<th>%s</th>' % db_entry['ext'])
                     hfile.write('<th>%s</th></tr>\n' % db_entry['text'])
             hfile.write('</table>\n</body>\n</html>\n')
+
+    def dump_extension_coverage(self, filename):
+        print(f'\nDumping extension coverage report to file: {filename}')
+        @dataclass
+        class ExtEntry:
+            checked = 0
+            total = 0
+        ext_db = defaultdict(ExtEntry)
+        vuid_list = list(self.vj.all_vuids)
+        for vuid in vuid_list:
+            for db_entry in self.vj.vuid_db[vuid]:
+                for ext_name in set(re.findall(r'\w+', db_entry['ext'])):
+                    ext_db[ext_name].total += 1
+                    if vuid in self.vs.all_vuids:
+                        ext_db[ext_name].checked += 1
+
+        with open (filename, 'w', newline='') as csvfile:
+            cw = csv.writer(csvfile)
+            cw.writerow(['EXTENSION','CHECKED','TOTAL','COVERAGE'])
+            for ext_name in sorted(ext_db):
+                ext_entry = ext_db[ext_name]
+                cw.writerow([ext_name, ext_entry.checked, ext_entry.total, ext_entry.checked/ext_entry.total])
 
     # make list of spec versions containing given VUID
     @staticmethod
@@ -678,10 +663,10 @@ static const vuid_spec_text_pair vuid_spec_text[] = {
         return edition_list_out
 
 
-    def export_header(self):
+    def export_header(self, filename):
         if verbose_mode:
-            print("\n Exporting header file to: %s" % header_filename)
-        with open (header_filename, 'w', newline='\n') as hfile:
+            print("\n Exporting header file to: %s" % filename)
+        with open (filename, 'w', newline='\n') as hfile:
             hfile.write(self.header_version)
             hfile.write(self.header_preamble)
             vuid_list = list(self.vj.all_vuids)
@@ -744,84 +729,49 @@ class SpirvValidation:
 
 
 def main(argv):
+    TXT_FILENAME = "validation_error_database.txt"
+    CSV_FILENAME = "validation_error_database.csv"
+    HTML_FILENAME = "validation_error_database.html"
+    HEADER_FILENAME = "vk_validation_error_messages.h"
+    EXTENSION_COVERAGE_FILENAME = "validation_extension_coverage.csv"
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('json_file', help="registry file 'validusage.json'")
+    parser.add_argument('-c', action='store_true',
+                        help='report consistency warnings')
+    parser.add_argument('-todo', action='store_true',
+                        help='report unimplemented VUIDs')
+    parser.add_argument('-unassigned', action='store_true',
+                        help='report unassigned VUIDs')
+    parser.add_argument('-vuid', metavar='VUID_NAME',
+                        help='report status of individual VUID <VUID_NAME>')
+    parser.add_argument('-spirvtools', metavar='PATH',
+                        help='when pointed to root directory of SPIRV-Tools repo, will search the repo for VUs that are implemented there')
+    parser.add_argument('-text', nargs='?', const=TXT_FILENAME, metavar='FILENAME',
+                        help=f'export the error database in text format to <FILENAME>, defaults to {TXT_FILENAME}')
+    parser.add_argument('-csv', nargs='?', const=CSV_FILENAME, metavar='FILENAME',
+                        help=f'export the error database in csv format to <FILENAME>, defaults to {CSV_FILENAME}')
+    parser.add_argument('-html', nargs='?', const=HTML_FILENAME, metavar='FILENAME',
+                        help=f'export the error database in html format to <FILENAME>, defaults to {HTML_FILENAME}')
+    parser.add_argument('-extension_coverage', nargs='?', const=EXTENSION_COVERAGE_FILENAME, metavar='FILENAME',
+                        help=f'export an extension coverage report to <FILENAME>, defaults to {EXTENSION_COVERAGE_FILENAME}')
+    parser.add_argument('-export_header', action='store_true',
+                        help=f'export a new VUID error text header file to {HEADER_FILENAME}')
+    parser.add_argument('-summary', action='store_true',
+                        help='output summary of VUID coverage')
+    parser.add_argument('-verbose', action='store_true',
+                        help='show your work (to stdout)')
+    args = parser.parse_args()
+
     global verbose_mode
-    global txt_filename
-    global csv_filename
-    global html_filename
-    global spirvtools_path
-
-    run_consistency = False
-    report_unimplemented = False
-    report_unassigned = False
-    get_vuid_status = ''
-    txt_out = False
-    csv_out = False
-    html_out = False
-    header_out = False
-    show_summary = False
-
-    if (1 > len(argv)):
-        printHelp()
-        sys.exit()
-
-    # Parse script args
-    json_filename = argv[0]
-    i = 1
-    while (i < len(argv)):
-        arg = argv[i]
-        i = i + 1
-        if (arg == '-c'):
-            run_consistency = True
-        elif (arg == '-vuid'):
-            get_vuid_status = argv[i]
-            i = i + 1
-        elif (arg == '-todo'):
-            report_unimplemented = True
-        elif (arg == '-unassigned'):
-            report_unassigned = True
-        elif (arg == '-spirvtools'):
-            spirvtools_path = argv[i]
-            i = i + 1
-        elif (arg == '-text'):
-            txt_out = True
-            # Set filename if supplied, else use default
-            if i < len(argv) and not argv[i].startswith('-'):
-                txt_filename = argv[i]
-                i = i + 1
-        elif (arg == '-csv'):
-            csv_out = True
-            # Set filename if supplied, else use default
-            if i < len(argv) and not argv[i].startswith('-'):
-                csv_filename = argv[i]
-                i = i + 1
-        elif (arg == '-html'):
-            html_out = True
-            # Set filename if supplied, else use default
-            if i < len(argv) and not argv[i].startswith('-'):
-                html_filename = argv[i]
-                i = i + 1
-        elif (arg == '-export_header'):
-            header_out = True
-        elif (arg in ['-verbose']):
-            verbose_mode = True
-        elif (arg in ['-summary']):
-            show_summary = True
-        elif (arg in ['-help', '-h']):
-            printHelp()
-            sys.exit()
-        else:
-            print("Unrecognized argument: %s\n" % arg)
-            printHelp()
-            sys.exit()
-
-    result = 0 # Non-zero result indicates an error case
+    verbose_mode = args.verbose
 
     # Load in SPIRV-Tools if passed in
-    spirv_val = SpirvValidation(spirvtools_path)
+    spirv_val = SpirvValidation(args.spirvtools)
     spirv_val.load(verbose_mode)
 
     # Parse validusage json
-    val_json = ValidationJSON(json_filename)
+    val_json = ValidationJSON(args.json_file)
     val_json.read()
     exp_json = len(val_json.explicit_vuids)
     imp_json = len(val_json.implicit_vuids)
@@ -877,7 +827,7 @@ def main(argv):
         print("  %d unassigned" % len(val_tests.unassigned_vuids))
 
     # Process stats
-    if show_summary:
+    if args.summary:
         if spirv_val.enabled:
             print("\nValidation Statistics (using validusage.json version %s and SPIRV-Tools version %s)" % (val_json.apiversion, spirv_val.version))
         else:
@@ -901,24 +851,24 @@ def main(argv):
         print("  Overall VUIDs tested:  %.1f%% (%d tested vs %d checks)" % ((100.0 * all_tests / all_checks), all_tests, all_checks))
 
     # Report status of a single VUID
-    if len(get_vuid_status) > 1:
-        print("\n\nChecking status of <%s>" % get_vuid_status);
-        if get_vuid_status not in val_json.all_vuids and not get_vuid_status.startswith('UNASSIGNED-'):
+    if args.vuid:
+        print("\n\nChecking status of <%s>" % args.vuid);
+        if args.vuid not in val_json.all_vuids and not args.vuid.startswith('UNASSIGNED-'):
             print('  Not a valid VUID string.')
         else:
-            if get_vuid_status in val_source.explicit_vuids:
+            if args.vuid in val_source.explicit_vuids:
                 print('  Implemented!')
-                line_list = val_source.vuid_count_dict[get_vuid_status]['file_line']
+                line_list = val_source.vuid_count_dict[args.vuid]['file_line']
                 for line in line_list:
                     print('    => %s' % line)
-            elif get_vuid_status in val_source.implicit_vuids:
+            elif args.vuid in val_source.implicit_vuids:
                 print('  Implemented! (Implicit)')
-                line_list = val_source.vuid_count_dict[get_vuid_status]['file_line']
+                line_list = val_source.vuid_count_dict[args.vuid]['file_line']
                 for line in line_list:
                     print('    => %s' % line)
             else:
                 print('  Not implemented.')
-            if get_vuid_status in val_tests.all_vuids:
+            if args.vuid in val_tests.all_vuids:
                 print('  Has a test!')
                 test_list = val_tests.vuid_to_tests[get_vuid_status]
                 for test in test_list:
@@ -927,7 +877,7 @@ def main(argv):
                 print('  Not tested.')
 
     # Report unimplemented explicit VUIDs
-    if report_unimplemented:
+    if args.todo:
         unim_explicit = val_json.explicit_vuids - val_source.explicit_vuids
         print("\n\n%d explicit VUID checks remain unimplemented:" % len(unim_explicit))
         ulist = list(unim_explicit)
@@ -936,7 +886,7 @@ def main(argv):
             print("  => %s" % vuid)
 
     # Report unassigned VUIDs
-    if report_unassigned:
+    if args.unassigned:
         # TODO: I do not really want VUIDs created for warnings though here
         print("\n\n%d checks without a spec VUID:" % len(val_source.unassigned_vuids))
         ulist = list(val_source.unassigned_vuids)
@@ -956,7 +906,7 @@ def main(argv):
                 print('    => %s' % test)
 
     # Consistency tests
-    if run_consistency:
+    if args.c:
         print("\n\nRunning consistency tests...")
         con = Consistency(val_json.all_vuids, val_source.all_vuids, val_tests.all_vuids)
         ok = con.undef_vuids_in_layer_code()
@@ -968,15 +918,16 @@ def main(argv):
 
     # Output database in requested format(s)
     db_out = OutputDatabase(val_json, val_source, val_tests, spirv_val)
-    if txt_out:
-        db_out.dump_txt(report_unimplemented)
-    if csv_out:
-        db_out.dump_csv(report_unimplemented)
-    if html_out:
-        db_out.dump_html(report_unimplemented)
-    if header_out:
-        db_out.export_header()
-    return result
+    if args.text:
+        db_out.dump_txt(args.text, args.todo)
+    if args.csv:
+        db_out.dump_csv(args.csv, args.todo)
+    if args.html:
+        db_out.dump_html(args.html, args.todo)
+    if args.extension_coverage:
+        db_out.dump_extension_coverage(args.extension_coverage)
+    if args.export_header:
+        db_out.export_header(HEADER_FILENAME)
 
 if __name__ == "__main__":
     sys.exit(main(sys.argv[1:]))

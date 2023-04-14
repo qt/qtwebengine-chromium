@@ -26,6 +26,34 @@ clang_prefix_amd64 = "clang+llvm-15.0.1-x86_64-apple-darwin"
 clang_sha256_amd64 = "0b2f1a811e68d011344103274733b7670c15bbe08b2a3a5140ccad8e19d9311e"
 clang_url_amd64 = "https://github.com/llvm/llvm-project/releases/download/llvmorg-15.0.1/clang+llvm-15.0.1-x86_64-apple-darwin.tar.xz"
 
+def _get_system_xcode_path(ctx):
+    # https://developer.apple.com/library/archive/technotes/tn2339/_index.html
+    res = ctx.execute(["xcode-select", "-p"])
+    if res.return_code != 0:
+        fail("Error Getting XCode path: " + res.stderr)
+    return res.stdout.rstrip()
+
+def _delete_macos_sdk_symlinks(ctx):
+    ctx.delete("./symlinks/xcode/MacSDK/usr")
+    ctx.delete("./symlinks/xcode/MacSDK/Frameworks")
+
+def _create_macos_sdk_symlinks(ctx):
+    system_xcode_path = _get_system_xcode_path(ctx)
+
+    # https://bazel.build/rules/lib/actions#symlink
+    ctx.symlink(
+        # from =
+        system_xcode_path + "/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr",
+        # to =
+        "./symlinks/xcode/MacSDK/usr",
+    )
+    ctx.symlink(
+        # from =
+        system_xcode_path + "/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/System/Library/Frameworks",
+        # to =
+        "./symlinks/xcode/MacSDK/Frameworks",
+    )
+
 def _download_mac_toolchain_impl(ctx):
     # https://bazel.build/rules/lib/repository_ctx#os
     # https://bazel.build/rules/lib/repository_os
@@ -54,30 +82,16 @@ def _download_mac_toolchain_impl(ctx):
     # For now, we can grab the user's Xcode path by calling xcode-select and create a symlink in
     # our toolchain directory to refer to during compilation.
 
-    # https://developer.apple.com/library/archive/technotes/tn2339/_index.html
-    res = ctx.execute(["xcode-select", "-p"])
-
-    # https://bazel.build/rules/lib/actions#symlink
-    ctx.symlink(
-        # from =
-        res.stdout.rstrip() + "/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr",
-        # to =
-        "./symlinks/xcode/MacSDK/usr",
-    )
-    ctx.symlink(
-        # from =
-        res.stdout.rstrip() + "/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/System/Library/Frameworks",
-        # to =
-        "./symlinks/xcode/MacSDK/Frameworks",
-    )
+    _delete_macos_sdk_symlinks(ctx)
+    _create_macos_sdk_symlinks(ctx)
 
     # This list of files lines up with _make_default_flags() in mac_toolchain_config.bzl
     # It is all locations that our toolchain could find a system header.
     builtin_include_directories = [
         "include/c++/v1",
         "lib/clang/15.0.1/include",
-        "symlinks/xcode/Frameworks",
-        "symlinks/xcode/include",
+        "symlinks/xcode/MacSDK/Frameworks",
+        "symlinks/xcode/MacSDK/usr/include",
     ]
 
     generate_system_module_map(
@@ -159,7 +173,13 @@ filegroup(
         "lib/libc++.a",
         "lib/libc++abi.a",
         "lib/libunwind.a",
-    ],
+    ] + glob(
+        include = [
+            # libc++.tbd and libSystem.tbd live here.
+            "symlinks/xcode/MacSDK/usr/lib/*",
+        ],
+        allow_empty = False,
+    ),
     visibility = ["//visibility:public"],
 )
 """,

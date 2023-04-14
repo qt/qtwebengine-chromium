@@ -11,6 +11,9 @@ lucicfg.check_version(min = "1.31.3", message = "Update depot_tools")
 # Use LUCI Scheduler BBv2 names and add Scheduler realms configs.
 lucicfg.enable_experiment("crbug.com/1182002")
 
+# Fail build when merge script fails.
+build_experiments = {"chromium_swarming.expose_merge_script_failures": 100}
+
 lucicfg.config(
     fail_on_warnings = True,
     lint_checks = [
@@ -292,6 +295,7 @@ def angle_builder(name, cpu):
         bucket = "ci",
         triggered_by = ["main-poller"],
         executable = "recipe:angle",
+        experiments = build_experiments,
         service_account = "angle-ci-builder@chops-service-accounts.iam.gserviceaccount.com",
         properties = ci_properties,
         dimensions = dimensions,
@@ -316,8 +320,7 @@ def angle_builder(name, cpu):
     )
 
     # Do not include perf tests in "try".
-    # TSAN is also excluded from "try" due to excessive flakiness: crbug.com/1275223
-    if not is_perf and not is_tsan:
+    if not is_perf:
         luci.list_view_entry(
             list_view = "try",
             builder = "try/" + name,
@@ -327,6 +330,7 @@ def angle_builder(name, cpu):
             name = name,
             bucket = "try",
             executable = "recipe:angle",
+            experiments = build_experiments,
             service_account = "angle-try-builder@chops-service-accounts.iam.gserviceaccount.com",
             properties = properties,
             dimensions = dimensions,
@@ -375,6 +379,7 @@ luci.builder(
     name = "presubmit",
     bucket = "try",
     executable = "recipe:run_presubmit",
+    experiments = build_experiments,
     service_account = "angle-try-builder@chops-service-accounts.iam.gserviceaccount.com",
     build_numbers = True,
     dimensions = {
@@ -432,6 +437,7 @@ angle_builder("linux-trace", cpu = "x64")
 angle_builder("win-trace", cpu = "x64")
 
 angle_builder("android-pixel4-perf", cpu = "arm64")
+angle_builder("android-pixel6-perf", cpu = "arm64")
 angle_builder("linux-intel-uhd630-perf", cpu = "x64")
 angle_builder("linux-nvidia-gtx1660-perf", cpu = "x64")
 angle_builder("win10-intel-uhd630-perf", cpu = "x64")

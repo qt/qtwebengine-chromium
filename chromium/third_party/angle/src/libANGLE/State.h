@@ -213,6 +213,11 @@ class State : angle::NonCopyable
 
     // Stencil state maniupulation
     bool isStencilTestEnabled() const { return mDepthStencil.stencilTest; }
+    bool isStencilWriteEnabled() const
+    {
+        return mDepthStencil.stencilTest &&
+               !(mDepthStencil.isStencilNoOp() && mDepthStencil.isStencilBackNoOp());
+    }
     void setStencilTest(bool enabled);
     void setStencilParams(GLenum stencilFunc, GLint stencilRef, GLuint stencilMask);
     void setStencilBackParams(GLenum stencilBackFunc, GLint stencilBackRef, GLuint stencilBackMask);
@@ -230,7 +235,7 @@ class State : angle::NonCopyable
     // Depth bias/polygon offset state manipulation
     bool isPolygonOffsetFillEnabled() const { return mRasterizer.polygonOffsetFill; }
     void setPolygonOffsetFill(bool enabled);
-    void setPolygonOffsetParams(GLfloat factor, GLfloat units);
+    void setPolygonOffsetParams(GLfloat factor, GLfloat units, GLfloat clamp);
 
     // Multisample coverage state manipulation
     bool isSampleAlphaToCoverageEnabled() const { return mSampleAlphaToCoverage; }
@@ -1188,7 +1193,7 @@ class State : angle::NonCopyable
     // GL_KHR_parallel_shader_compile
     GLuint mMaxShaderCompilerThreads;
 
-    // GL_APPLE_clip_distance/GL_EXT_clip_cull_distance
+    // GL_APPLE_clip_distance / GL_EXT_clip_cull_distance / GL_ANGLE_clip_cull_distance
     ClipDistanceEnableBits mClipDistancesEnabled;
 
     // GL_EXT_tessellation_shader
@@ -1236,6 +1241,9 @@ class State : angle::NonCopyable
     // QCOM_shading_rate
     bool mShadingRatePreserveAspectRatio;
     ShadingRate mShadingRate;
+
+    // GL_ARM_shader_framebuffer_fetch
+    bool mFetchPerSample;
 };
 
 ANGLE_INLINE angle::Result State::syncDirtyObjects(const Context *context,

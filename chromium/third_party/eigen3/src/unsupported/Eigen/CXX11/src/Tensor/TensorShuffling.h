@@ -390,13 +390,13 @@ struct TensorEvaluator<TensorShufflingOp<Shuffle, ArgType>, Device>
       : Base(op, device)
   { }
 
-  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE CoeffReturnType& coeffRef(Index index)
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE CoeffReturnType& coeffRef(Index index) const
   {
     return this->m_impl.coeffRef(this->srcCoeff(index));
   }
 
   template <int StoreMode> EIGEN_STRONG_INLINE
-  void writePacket(Index index, const PacketReturnType& x)
+  void writePacket(Index index, const PacketReturnType& x) const
   {
     EIGEN_ALIGN_MAX std::remove_const_t<CoeffReturnType> values[PacketSize];
     internal::pstore<CoeffReturnType, PacketReturnType>(values, x);

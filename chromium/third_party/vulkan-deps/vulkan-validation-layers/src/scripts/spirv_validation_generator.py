@@ -1,6 +1,6 @@
 #!/usr/bin/python3 -i
 #
-# Copyright (c) 2020-2022 The Khronos Group Inc.
+# Copyright (c) 2020-2023 The Khronos Group Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,8 +13,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#
-# Author: Spencer Fricke <s.fricke@samsung.com>
 
 import os,re,sys,string,json
 import xml.etree.ElementTree as etree
@@ -99,6 +97,7 @@ class SpirvValidationHelperOutputGenerator(OutputGenerator):
             'TextureBlockMatchQCOM',
             'TextureBoxFilterQCOM',
             'TextureSampleWeightedQCOM',
+            'ClusterCullingShadingHUAWEI',
         ]
 
         # There are some enums that share the same value in the SPIR-V header.
@@ -198,7 +197,7 @@ class SpirvValidationHelperOutputGenerator(OutputGenerator):
         copyright += '\n'
         copyright += '/***************************************************************************\n'
         copyright += ' *\n'
-        copyright += ' * Copyright (c) 2020-2022 The Khronos Group Inc.\n'
+        copyright += ' * Copyright (c) 2020-2023 The Khronos Group Inc.\n'
         copyright += ' *\n'
         copyright += ' * Licensed under the Apache License, Version 2.0 (the "License");\n'
         copyright += ' * you may not use this file except in compliance with the License.\n'
@@ -212,8 +211,6 @@ class SpirvValidationHelperOutputGenerator(OutputGenerator):
         copyright += ' * See the License for the specific language governing permissions and\n'
         copyright += ' * limitations under the License.\n'
         copyright += ' *\n'
-        copyright += ' * Author: Spencer Fricke <s.fricke@samsung.com>\n'
-        copyright += ' *\n'
         copyright += ' * This file is related to anything that is found in the Vulkan XML related\n'
         copyright += ' * to SPIR-V. Anything related to the SPIR-V grammar belongs in spirv_grammar_helper\n'
         copyright += ' *\n'
@@ -223,9 +220,9 @@ class SpirvValidationHelperOutputGenerator(OutputGenerator):
         write('#include <functional>', file=self.outFile)
         write('#include <spirv/unified1/spirv.hpp>', file=self.outFile)
         write('#include "vk_extension_helper.h"', file=self.outFile)
-        write('#include "shader_module.h"', file=self.outFile)
-        write('#include "device_state.h"', file=self.outFile)
-        write('#include "core_validation.h"', file=self.outFile)
+        write('#include "state_tracker/shader_module.h"', file=self.outFile)
+        write('#include "state_tracker/device_state.h"', file=self.outFile)
+        write('#include "core_checks/core_validation.h"', file=self.outFile)
         write(self.featurePointer(), file=self.outFile)
         write(self.mapStructDeclarations(), file=self.outFile)
     #

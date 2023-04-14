@@ -14,6 +14,7 @@
 #include "config/av1_rtcd.h"
 #include "av1/encoder/encoder.h"
 #include "av1/encoder/temporal_filter.h"
+#include "aom_dsp/mathutils.h"
 #include "aom_dsp/arm/mem_neon.h"
 #include "aom_dsp/arm/sum_neon.h"
 
@@ -77,7 +78,7 @@ static void apply_temporal_filter(
     unsigned int *accumulator, uint16_t *count, uint8_t *frame_abs_diff,
     uint32_t *luma_sse_sum, const double inv_num_ref_pixels,
     const double decay_factor, const double inv_factor,
-    const double weight_factor, double *d_factor) {
+    const double weight_factor, double *d_factor, int tf_wgt_calc_lvl) {
   assert(((block_width == 16) || (block_width == 32)) &&
          ((block_height == 16) || (block_height == 32)));
 
@@ -142,24 +143,49 @@ static void apply_temporal_filter(
   }
 
   // Perform filtering.
-  for (unsigned int i = 0, k = 0; i < block_height; i++) {
-    for (unsigned int j = 0; j < block_width; j++, k++) {
-      const int pixel_value = frame[i * stride + j];
-      uint32_t diff_sse = acc_5x5_neon[i][j] + luma_sse_sum[i * BW + j];
+  if (tf_wgt_calc_lvl == 0) {
+    for (unsigned int i = 0, k = 0; i < block_height; i++) {
+      for (unsigned int j = 0; j < block_width; j++, k++) {
+        const int pixel_value = frame[i * stride + j];
+        uint32_t diff_sse = acc_5x5_neon[i][j] + luma_sse_sum[i * BW + j];
 
-      const double window_error = diff_sse * inv_num_ref_pixels;
-      const int subblock_idx =
-          (i >= block_height / 2) * 2 + (j >= block_width / 2);
-      const double block_error = (double)subblock_mses[subblock_idx];
-      const double combined_error =
-          weight_factor * window_error + block_error * inv_factor;
-      // Compute filter weight.
-      double scaled_error =
-          combined_error * d_factor[subblock_idx] * decay_factor;
-      scaled_error = AOMMIN(scaled_error, 7);
-      const int weight = (int)(exp(-scaled_error) * TF_WEIGHT_SCALE);
-      accumulator[k] += weight * pixel_value;
-      count[k] += weight;
+        const double window_error = diff_sse * inv_num_ref_pixels;
+        const int subblock_idx =
+            (i >= block_height / 2) * 2 + (j >= block_width / 2);
+        const double block_error = (double)subblock_mses[subblock_idx];
+        const double combined_error =
+            weight_factor * window_error + block_error * inv_factor;
+        // Compute filter weight.
+        double scaled_error =
+            combined_error * d_factor[subblock_idx] * decay_factor;
+        scaled_error = AOMMIN(scaled_error, 7);
+        const int weight = (int)(exp(-scaled_error) * TF_WEIGHT_SCALE);
+        accumulator[k] += weight * pixel_value;
+        count[k] += weight;
+      }
+    }
+  } else {
+    for (unsigned int i = 0, k = 0; i < block_height; i++) {
+      for (unsigned int j = 0; j < block_width; j++, k++) {
+        const int pixel_value = frame[i * stride + j];
+        uint32_t diff_sse = acc_5x5_neon[i][j] + luma_sse_sum[i * BW + j];
+
+        const double window_error = diff_sse * inv_num_ref_pixels;
+        const int subblock_idx =
+            (i >= block_height / 2) * 2 + (j >= block_width / 2);
+        const double block_error = (double)subblock_mses[subblock_idx];
+        const double combined_error =
+            weight_factor * window_error + block_error * inv_factor;
+        // Compute filter weight.
+        double scaled_error =
+            combined_error * d_factor[subblock_idx] * decay_factor;
+        scaled_error = AOMMIN(scaled_error, 7);
+        const float fweight =
+            approx_exp((float)-scaled_error) * TF_WEIGHT_SCALE;
+        const int weight = iroundpf(fweight);
+        accumulator[k] += weight * pixel_value;
+        count[k] += weight;
+      }
     }
   }
 }
@@ -225,7 +251,7 @@ static void apply_temporal_filter(
     unsigned int *accumulator, uint16_t *count, uint16_t *frame_sse,
     uint32_t *luma_sse_sum, const double inv_num_ref_pixels,
     const double decay_factor, const double inv_factor,
-    const double weight_factor, double *d_factor) {
+    const double weight_factor, double *d_factor, int tf_wgt_calc_lvl) {
   assert(((block_width == 16) || (block_width == 32)) &&
          ((block_height == 16) || (block_height == 32)));
 
@@ -273,24 +299,49 @@ static void apply_temporal_filter(
   }
 
   // Perform filtering.
-  for (unsigned int i = 0, k = 0; i < block_height; i++) {
-    for (unsigned int j = 0; j < block_width; j++, k++) {
-      const int pixel_value = frame[i * stride + j];
-      uint32_t diff_sse = acc_5x5_neon[i][j] + luma_sse_sum[i * BW + j];
+  if (tf_wgt_calc_lvl == 0) {
+    for (unsigned int i = 0, k = 0; i < block_height; i++) {
+      for (unsigned int j = 0; j < block_width; j++, k++) {
+        const int pixel_value = frame[i * stride + j];
+        uint32_t diff_sse = acc_5x5_neon[i][j] + luma_sse_sum[i * BW + j];
 
-      const double window_error = diff_sse * inv_num_ref_pixels;
-      const int subblock_idx =
-          (i >= block_height / 2) * 2 + (j >= block_width / 2);
-      const double block_error = (double)subblock_mses[subblock_idx];
-      const double combined_error =
-          weight_factor * window_error + block_error * inv_factor;
-      // Compute filter weight.
-      double scaled_error =
-          combined_error * d_factor[subblock_idx] * decay_factor;
-      scaled_error = AOMMIN(scaled_error, 7);
-      const int weight = (int)(exp(-scaled_error) * TF_WEIGHT_SCALE);
-      accumulator[k] += weight * pixel_value;
-      count[k] += weight;
+        const double window_error = diff_sse * inv_num_ref_pixels;
+        const int subblock_idx =
+            (i >= block_height / 2) * 2 + (j >= block_width / 2);
+        const double block_error = (double)subblock_mses[subblock_idx];
+        const double combined_error =
+            weight_factor * window_error + block_error * inv_factor;
+        // Compute filter weight.
+        double scaled_error =
+            combined_error * d_factor[subblock_idx] * decay_factor;
+        scaled_error = AOMMIN(scaled_error, 7);
+        const int weight = (int)(exp(-scaled_error) * TF_WEIGHT_SCALE);
+        accumulator[k] += weight * pixel_value;
+        count[k] += weight;
+      }
+    }
+  } else {
+    for (unsigned int i = 0, k = 0; i < block_height; i++) {
+      for (unsigned int j = 0; j < block_width; j++, k++) {
+        const int pixel_value = frame[i * stride + j];
+        uint32_t diff_sse = acc_5x5_neon[i][j] + luma_sse_sum[i * BW + j];
+
+        const double window_error = diff_sse * inv_num_ref_pixels;
+        const int subblock_idx =
+            (i >= block_height / 2) * 2 + (j >= block_width / 2);
+        const double block_error = (double)subblock_mses[subblock_idx];
+        const double combined_error =
+            weight_factor * window_error + block_error * inv_factor;
+        // Compute filter weight.
+        double scaled_error =
+            combined_error * d_factor[subblock_idx] * decay_factor;
+        scaled_error = AOMMIN(scaled_error, 7);
+        const float fweight =
+            approx_exp((float)-scaled_error) * TF_WEIGHT_SCALE;
+        const int weight = iroundpf(fweight);
+        accumulator[k] += weight * pixel_value;
+        count[k] += weight;
+      }
     }
   }
 }
@@ -302,7 +353,8 @@ void av1_apply_temporal_filter_neon(
     const BLOCK_SIZE block_size, const int mb_row, const int mb_col,
     const int num_planes, const double *noise_levels, const MV *subblock_mvs,
     const int *subblock_mses, const int q_factor, const int filter_strength,
-    const uint8_t *pred, uint32_t *accum, uint16_t *count) {
+    int tf_wgt_calc_lvl, const uint8_t *pred, uint32_t *accum,
+    uint16_t *count) {
   const int is_high_bitdepth = frame_to_filter->flags & YV12_FLAG_HIGHBITDEPTH;
   assert(block_size == BLOCK_32X32 && "Only support 32x32 block with Neon!");
   assert(TF_WINDOW_LENGTH == 5 && "Only support window length 5 with Neon!");
@@ -403,7 +455,7 @@ void av1_apply_temporal_filter_neon(
                           subblock_mses, accum + plane_offset,
                           count + plane_offset, frame_abs_diff, luma_sse_sum,
                           inv_num_ref_pixels, decay_factor, inv_factor,
-                          weight_factor, d_factor);
+                          weight_factor, d_factor, tf_wgt_calc_lvl);
 #else   // !(defined(__aarch64__) && defined(__ARM_FEATURE_DOTPROD))
     if (plane == AOM_PLANE_U) {
       for (unsigned int i = 0; i < plane_h; i++) {
@@ -422,10 +474,11 @@ void av1_apply_temporal_filter_neon(
     get_squared_error(ref, frame_stride, pred + plane_offset, plane_w, plane_w,
                       plane_h, frame_sse, SSE_STRIDE);
 
-    apply_temporal_filter(
-        pred + plane_offset, plane_w, plane_w, plane_h, subblock_mses,
-        accum + plane_offset, count + plane_offset, frame_sse, luma_sse_sum,
-        inv_num_ref_pixels, decay_factor, inv_factor, weight_factor, d_factor);
+    apply_temporal_filter(pred + plane_offset, plane_w, plane_w, plane_h,
+                          subblock_mses, accum + plane_offset,
+                          count + plane_offset, frame_sse, luma_sse_sum,
+                          inv_num_ref_pixels, decay_factor, inv_factor,
+                          weight_factor, d_factor, tf_wgt_calc_lvl);
 #endif  // defined(__aarch64__) && defined(__ARM_FEATURE_DOTPROD)
 
     plane_offset += plane_h * plane_w;

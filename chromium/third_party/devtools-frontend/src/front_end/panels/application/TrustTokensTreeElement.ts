@@ -14,8 +14,8 @@ import * as Host from '../../core/host/host.js';
 
 const UIStrings = {
   /**
-  *@description Hover text for an info icon in the Trust Token panel
-  */
+   *@description Hover text for an info icon in the Trust Token panel
+   */
   trustTokens: 'Trust Tokens',
 };
 const str_ = i18n.i18n.registerUIStrings('panels/application/TrustTokensTreeElement.ts', UIStrings);
@@ -66,8 +66,8 @@ export class TrustTokensViewWidgetWrapper extends UI.ThrottledWidget.ThrottledWi
     const {tokens} = await mainTarget.storageAgent().invoke_getTrustTokens();
     this.trustTokensView.data = {
       tokens,
-      deleteClickHandler: (issuer: string): void => {
-        void mainTarget.storageAgent().invoke_clearTrustTokens({issuerOrigin: issuer});
+      deleteClickHandler: (_issuer: string): void => {
+        void mainTarget.storageAgent().invoke_clearTrustTokens({issuerOrigin: _issuer});
       },
     };
 

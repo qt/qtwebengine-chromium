@@ -4,10 +4,10 @@
 
 /***************************************************************************
  *
- * Copyright (c) 2015-2022 The Khronos Group Inc.
- * Copyright (c) 2015-2022 Valve Corporation
- * Copyright (c) 2015-2022 LunarG, Inc.
- * Copyright (c) 2015-2022 Google Inc.
+ * Copyright (c) 2015-2023 The Khronos Group Inc.
+ * Copyright (c) 2015-2023 Valve Corporation
+ * Copyright (c) 2015-2023 LunarG, Inc.
+ * Copyright (c) 2015-2023 Google Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,17 +20,13 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *
- * Author: Mark Lobodzinski <mark@lunarg.com>
- * Author: Dave Houlton <daveh@lunarg.com>
- *
  ****************************************************************************/
 
 
 #include "chassis.h"
 #include "object_lifetime_validation.h"
 
-ReadLockGuard ObjectLifetimes::ReadLock() { return ReadLockGuard(validation_object_mutex, std::defer_lock); }
+ReadLockGuard ObjectLifetimes::ReadLock() const { return ReadLockGuard(validation_object_mutex, std::defer_lock); }
 WriteLockGuard ObjectLifetimes::WriteLock() { return WriteLockGuard(validation_object_mutex, std::defer_lock); }
 
 
@@ -3476,8 +3472,6 @@ bool ObjectLifetimes::PreCallValidateGetPhysicalDeviceWin32PresentationSupportKH
 }
 #endif // VK_USE_PLATFORM_WIN32_KHR
 
-#ifdef VK_ENABLE_BETA_EXTENSIONS
-
 bool ObjectLifetimes::PreCallValidateGetPhysicalDeviceVideoCapabilitiesKHR(
     VkPhysicalDevice                            physicalDevice,
     const VkVideoProfileInfoKHR*                pVideoProfile,
@@ -3487,9 +3481,6 @@ bool ObjectLifetimes::PreCallValidateGetPhysicalDeviceVideoCapabilitiesKHR(
 
     return skip;
 }
-#endif // VK_ENABLE_BETA_EXTENSIONS
-
-#ifdef VK_ENABLE_BETA_EXTENSIONS
 
 bool ObjectLifetimes::PreCallValidateGetPhysicalDeviceVideoFormatPropertiesKHR(
     VkPhysicalDevice                            physicalDevice,
@@ -3501,9 +3492,6 @@ bool ObjectLifetimes::PreCallValidateGetPhysicalDeviceVideoFormatPropertiesKHR(
 
     return skip;
 }
-#endif // VK_ENABLE_BETA_EXTENSIONS
-
-#ifdef VK_ENABLE_BETA_EXTENSIONS
 
 bool ObjectLifetimes::PreCallValidateCreateVideoSessionKHR(
     VkDevice                                    device,
@@ -3526,9 +3514,6 @@ void ObjectLifetimes::PostCallRecordCreateVideoSessionKHR(
     CreateObject(*pVideoSession, kVulkanObjectTypeVideoSessionKHR, pAllocator);
 
 }
-#endif // VK_ENABLE_BETA_EXTENSIONS
-
-#ifdef VK_ENABLE_BETA_EXTENSIONS
 
 bool ObjectLifetimes::PreCallValidateDestroyVideoSessionKHR(
     VkDevice                                    device,
@@ -3537,7 +3522,7 @@ bool ObjectLifetimes::PreCallValidateDestroyVideoSessionKHR(
     bool skip = false;
     skip |= ValidateObject(device, kVulkanObjectTypeDevice, false, "VUID-vkDestroyVideoSessionKHR-device-parameter", kVUIDUndefined);
     skip |= ValidateObject(videoSession, kVulkanObjectTypeVideoSessionKHR, true, "VUID-vkDestroyVideoSessionKHR-videoSession-parameter", "VUID-vkDestroyVideoSessionKHR-videoSession-parent");
-    skip |= ValidateDestroyObject(videoSession, kVulkanObjectTypeVideoSessionKHR, pAllocator, kVUIDUndefined, kVUIDUndefined);
+    skip |= ValidateDestroyObject(videoSession, kVulkanObjectTypeVideoSessionKHR, pAllocator, "VUID-vkDestroyVideoSessionKHR-videoSession-07193", "VUID-vkDestroyVideoSessionKHR-videoSession-07194");
 
     return skip;
 }
@@ -3549,9 +3534,6 @@ void ObjectLifetimes::PreCallRecordDestroyVideoSessionKHR(
     RecordDestroyObject(videoSession, kVulkanObjectTypeVideoSessionKHR);
 
 }
-#endif // VK_ENABLE_BETA_EXTENSIONS
-
-#ifdef VK_ENABLE_BETA_EXTENSIONS
 
 bool ObjectLifetimes::PreCallValidateGetVideoSessionMemoryRequirementsKHR(
     VkDevice                                    device,
@@ -3564,9 +3546,6 @@ bool ObjectLifetimes::PreCallValidateGetVideoSessionMemoryRequirementsKHR(
 
     return skip;
 }
-#endif // VK_ENABLE_BETA_EXTENSIONS
-
-#ifdef VK_ENABLE_BETA_EXTENSIONS
 
 bool ObjectLifetimes::PreCallValidateBindVideoSessionMemoryKHR(
     VkDevice                                    device,
@@ -3584,9 +3563,6 @@ bool ObjectLifetimes::PreCallValidateBindVideoSessionMemoryKHR(
 
     return skip;
 }
-#endif // VK_ENABLE_BETA_EXTENSIONS
-
-#ifdef VK_ENABLE_BETA_EXTENSIONS
 
 bool ObjectLifetimes::PreCallValidateCreateVideoSessionParametersKHR(
     VkDevice                                    device,
@@ -3613,9 +3589,6 @@ void ObjectLifetimes::PostCallRecordCreateVideoSessionParametersKHR(
     CreateObject(*pVideoSessionParameters, kVulkanObjectTypeVideoSessionParametersKHR, pAllocator);
 
 }
-#endif // VK_ENABLE_BETA_EXTENSIONS
-
-#ifdef VK_ENABLE_BETA_EXTENSIONS
 
 bool ObjectLifetimes::PreCallValidateUpdateVideoSessionParametersKHR(
     VkDevice                                    device,
@@ -3627,9 +3600,6 @@ bool ObjectLifetimes::PreCallValidateUpdateVideoSessionParametersKHR(
 
     return skip;
 }
-#endif // VK_ENABLE_BETA_EXTENSIONS
-
-#ifdef VK_ENABLE_BETA_EXTENSIONS
 
 bool ObjectLifetimes::PreCallValidateDestroyVideoSessionParametersKHR(
     VkDevice                                    device,
@@ -3638,7 +3608,7 @@ bool ObjectLifetimes::PreCallValidateDestroyVideoSessionParametersKHR(
     bool skip = false;
     skip |= ValidateObject(device, kVulkanObjectTypeDevice, false, "VUID-vkDestroyVideoSessionParametersKHR-device-parameter", kVUIDUndefined);
     skip |= ValidateObject(videoSessionParameters, kVulkanObjectTypeVideoSessionParametersKHR, true, "VUID-vkDestroyVideoSessionParametersKHR-videoSessionParameters-parameter", kVUIDUndefined);
-    skip |= ValidateDestroyObject(videoSessionParameters, kVulkanObjectTypeVideoSessionParametersKHR, pAllocator, kVUIDUndefined, kVUIDUndefined);
+    skip |= ValidateDestroyObject(videoSessionParameters, kVulkanObjectTypeVideoSessionParametersKHR, pAllocator, "VUID-vkDestroyVideoSessionParametersKHR-videoSessionParameters-07213", "VUID-vkDestroyVideoSessionParametersKHR-videoSessionParameters-07214");
 
     return skip;
 }
@@ -3650,9 +3620,6 @@ void ObjectLifetimes::PreCallRecordDestroyVideoSessionParametersKHR(
     RecordDestroyObject(videoSessionParameters, kVulkanObjectTypeVideoSessionParametersKHR);
 
 }
-#endif // VK_ENABLE_BETA_EXTENSIONS
-
-#ifdef VK_ENABLE_BETA_EXTENSIONS
 
 bool ObjectLifetimes::PreCallValidateCmdBeginVideoCodingKHR(
     VkCommandBuffer                             commandBuffer,
@@ -3673,9 +3640,6 @@ bool ObjectLifetimes::PreCallValidateCmdBeginVideoCodingKHR(
 
     return skip;
 }
-#endif // VK_ENABLE_BETA_EXTENSIONS
-
-#ifdef VK_ENABLE_BETA_EXTENSIONS
 
 bool ObjectLifetimes::PreCallValidateCmdEndVideoCodingKHR(
     VkCommandBuffer                             commandBuffer,
@@ -3685,9 +3649,6 @@ bool ObjectLifetimes::PreCallValidateCmdEndVideoCodingKHR(
 
     return skip;
 }
-#endif // VK_ENABLE_BETA_EXTENSIONS
-
-#ifdef VK_ENABLE_BETA_EXTENSIONS
 
 bool ObjectLifetimes::PreCallValidateCmdControlVideoCodingKHR(
     VkCommandBuffer                             commandBuffer,
@@ -3697,9 +3658,6 @@ bool ObjectLifetimes::PreCallValidateCmdControlVideoCodingKHR(
 
     return skip;
 }
-#endif // VK_ENABLE_BETA_EXTENSIONS
-
-#ifdef VK_ENABLE_BETA_EXTENSIONS
 
 bool ObjectLifetimes::PreCallValidateCmdDecodeVideoKHR(
     VkCommandBuffer                             commandBuffer,
@@ -3725,7 +3683,6 @@ bool ObjectLifetimes::PreCallValidateCmdDecodeVideoKHR(
 
     return skip;
 }
-#endif // VK_ENABLE_BETA_EXTENSIONS
 
 bool ObjectLifetimes::PreCallValidateCmdBeginRenderingKHR(
     VkCommandBuffer                             commandBuffer,
@@ -7728,6 +7685,28 @@ bool ObjectLifetimes::PreCallValidateGetMicromapBuildSizesEXT(
     if (pBuildInfo) {
         skip |= ValidateObject(pBuildInfo->dstMicromap, kVulkanObjectTypeMicromapEXT, true, kVUIDUndefined, kVUIDUndefined);
     }
+
+    return skip;
+}
+
+bool ObjectLifetimes::PreCallValidateCmdDrawClusterHUAWEI(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    groupCountX,
+    uint32_t                                    groupCountY,
+    uint32_t                                    groupCountZ) const {
+    bool skip = false;
+    skip |= ValidateObject(commandBuffer, kVulkanObjectTypeCommandBuffer, false, "VUID-vkCmdDrawClusterHUAWEI-commandBuffer-parameter", kVUIDUndefined);
+
+    return skip;
+}
+
+bool ObjectLifetimes::PreCallValidateCmdDrawClusterIndirectHUAWEI(
+    VkCommandBuffer                             commandBuffer,
+    VkBuffer                                    buffer,
+    VkDeviceSize                                offset) const {
+    bool skip = false;
+    skip |= ValidateObject(commandBuffer, kVulkanObjectTypeCommandBuffer, false, "VUID-vkCmdDrawClusterIndirectHUAWEI-commandBuffer-parameter", "VUID-vkCmdDrawClusterIndirectHUAWEI-commonparent");
+    skip |= ValidateObject(buffer, kVulkanObjectTypeBuffer, false, "VUID-vkCmdDrawClusterIndirectHUAWEI-buffer-parameter", "VUID-vkCmdDrawClusterIndirectHUAWEI-commonparent");
 
     return skip;
 }

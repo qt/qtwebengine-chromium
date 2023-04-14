@@ -24,7 +24,6 @@
 #include "internal/platform/implementation/credential_storage.h"
 #include "internal/platform/implementation/platform.h"
 
-namespace location {
 namespace nearby {
 
 /*
@@ -43,15 +42,20 @@ class CredentialStorageImpl : public api::CredentialStorage {
 
   void SaveCredentials(
       absl::string_view manager_app_id, absl::string_view account_name,
-      const std::vector<PrivateCredential>& private_credentials,
-      const std::vector<PublicCredential>& public_credentials,
+      const std::vector<LocalCredential>& private_credentials,
+      const std::vector<SharedCredential>& public_credentials,
       PublicCredentialType public_credential_type,
       SaveCredentialsResultCallback callback) override;
 
+  void UpdateLocalCredential(absl::string_view manager_app_id,
+                               absl::string_view account_name,
+                               nearby::internal::LocalCredential credential,
+                               SaveCredentialsResultCallback callback) override;
+
   // Used to fetch private creds when broadcasting.
-  void GetPrivateCredentials(
+  void GetLocalCredentials(
       const CredentialSelector& credential_selector,
-      GetPrivateCredentialsResultCallback callback) override;
+      GetLocalCredentialsResultCallback callback) override;
 
   // Used to fetch remote public creds when scanning.
   void GetPublicCredentials(
@@ -64,6 +68,5 @@ class CredentialStorageImpl : public api::CredentialStorage {
 };
 
 }  // namespace nearby
-}  // namespace location
 
 #endif  // THIRD_PARTY_NEARBY_INTERNAL_PLATFORM_CREDENTIAL_STORAGE_IMPL_H_

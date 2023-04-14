@@ -139,6 +139,12 @@ static const struct arg_enum_list color_primaries_enum[] = {
   { "ebu3213", AOM_CICP_CP_EBU_3213 },
   { NULL, 0 }
 };
+
+static const struct arg_enum_list global_motion_method_enum[] = {
+  { "feature-match", GLOBAL_MOTION_METHOD_FEATURE_MATCH },
+  { "disflow", GLOBAL_MOTION_METHOD_DISFLOW },
+  { NULL, 0 }
+};
 #endif  // CONFIG_AV1_ENCODER
 
 const av1_codec_arg_definitions_t g_av1_codec_arg_defs = {
@@ -495,6 +501,16 @@ const av1_codec_arg_definitions_t g_av1_codec_arg_defs = {
 #endif
   .partition_info_path = ARG_DEF(NULL, "partition-info-path", 1,
                                  "Partition information read and write path"),
+  .enable_rate_guide_deltaq =
+      ARG_DEF(NULL, "enable-rate-guide-deltaq", 1,
+              "Enable rate guide deltaq (1), by default off (0)."
+              "It requires --deltaq-mode=3."
+              "If turned on, it requires to read an input file "
+              "by --rate-distribution-info"),
+  .rate_distribution_info =
+      ARG_DEF(NULL, "rate-distribution-info", 1,
+              "Rate distribution information input."
+              "It requires --enable-rate-guide-deltaq=1."),
   .film_grain_test = ARG_DEF(
       NULL, "film-grain-test", 1,
       "Film grain test vectors (0: none (default), 1: test-1  2: test-2, "
@@ -683,5 +699,9 @@ const av1_codec_arg_definitions_t g_av1_codec_arg_defs = {
       ARG_DEF(NULL, "sb-qp-sweep", 1,
               "When set to 1, enable the superblock level qp sweep for a "
               "given lambda to minimize the rdcost."),
+  .global_motion_method = ARG_DEF_ENUM(NULL, "global-motion-method", 1,
+                                       "Global motion search method "
+                                       "(default: feature-match)",
+                                       global_motion_method_enum),
 #endif  // CONFIG_AV1_ENCODER
 };

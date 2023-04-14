@@ -29,7 +29,7 @@ TEST_F(F16Test, Creation) {
 TEST_F(F16Test, Hash) {
     auto* a = create<F16>();
     auto* b = create<F16>();
-    EXPECT_EQ(a->Hash(), b->Hash());
+    EXPECT_EQ(a->unique_hash, b->unique_hash);
 }
 
 TEST_F(F16Test, Equals) {
@@ -42,6 +42,16 @@ TEST_F(F16Test, Equals) {
 TEST_F(F16Test, FriendlyName) {
     F16 f;
     EXPECT_EQ(f.FriendlyName(Symbols()), "f16");
+}
+
+TEST_F(F16Test, Clone) {
+    auto* a = create<F16>();
+
+    type::Manager mgr;
+    type::CloneContext ctx{{nullptr}, {nullptr, &mgr}};
+
+    auto* b = a->Clone(ctx);
+    ASSERT_TRUE(b->Is<F16>());
 }
 
 }  // namespace

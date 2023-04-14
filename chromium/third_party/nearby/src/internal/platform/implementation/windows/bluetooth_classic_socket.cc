@@ -14,30 +14,50 @@
 
 #include "internal/platform/implementation/windows/bluetooth_classic_socket.h"
 
+#include <cstring>
 #include <exception>
+#include <memory>
 #include <utility>
 
-#include "internal/platform/implementation/windows/generated/winrt/Windows.Networking.Sockets.h"
-#include "internal/platform/implementation/windows/generated/winrt/base.h"
+#include "internal/platform/feature_flags.h"
 #include "internal/platform/logging.h"
+#include "winrt/Windows.Devices.Bluetooth.h"
+#include "winrt/Windows.Networking.Sockets.h"
+#include "winrt/base.h"
 
-namespace location {
 namespace nearby {
 namespace windows {
+namespace {
+using ::winrt::Windows::Devices::Bluetooth::BluetoothConnectionStatus;
+}
 
 BluetoothSocket::BluetoothSocket(StreamSocket streamSocket)
     : windows_socket_(streamSocket) {
-  bluetooth_device_ = std::make_unique<BluetoothDevice>(
+  NEARBY_LOGS(INFO) << __func__ << ": Initialize bluetooth socket.";
+  native_bluetooth_device_ =
       winrt::Windows::Devices::Bluetooth::BluetoothDevice::FromHostNameAsync(
           windows_socket_.Information().RemoteHostName())
-          .get());
+          .get();
+  if (FeatureFlags::GetInstance()
+          .GetFlags()
+          .enable_bluetooth_connection_status_track) {
+    NEARBY_LOGS(INFO)
+        << "Flag enable_bluetooth_connection_status_track is enabled.";
+    connection_status_changed_token_ =
+        native_bluetooth_device_.ConnectionStatusChanged(
+            {this, &BluetoothSocket::Listener_ConnectionStatusChanged});
+  }
+
+  bluetooth_device_ =
+      std::make_unique<BluetoothDevice>(native_bluetooth_device_);
+
   input_stream_ = BluetoothInputStream(windows_socket_.InputStream());
   output_stream_ = BluetoothOutputStream(windows_socket_.OutputStream());
 }
 
 BluetoothSocket::BluetoothSocket() {}
 
-BluetoothSocket::~BluetoothSocket() {}
+BluetoothSocket::~BluetoothSocket() { Close(); }
 
 // NOTE:
 // It is an undefined behavior if GetInputStream() or GetOutputStream() is
@@ -54,14 +74,29 @@ OutputStream& BluetoothSocket::GetOutputStream() { return output_stream_; }
 // After this call object should be treated as not connected.
 // Returns Exception::kIo on error, Exception::kSuccess otherwise.
 Exception BluetoothSocket::Close() {
+  NEARBY_LOGS(INFO) << __func__ << ": Close bluetooth socket.";
+
   // The Close method aborts any pending operations and releases all unmanaged
   // resources associated with the StreamSocket object, including the Input and
   // Output streams
   try {
+    if (is_bluetooth_socket_closed_ || native_bluetooth_device_ == nullptr) {
+      return {Exception::kSuccess};
+    }
+
     if (windows_socket_ != nullptr) {
       windows_socket_.Close();
-      windows_socket_ = nullptr;
     }
+
+    if (FeatureFlags::GetInstance()
+            .GetFlags()
+            .enable_bluetooth_connection_status_track) {
+      native_bluetooth_device_.ConnectionStatusChanged(
+          connection_status_changed_token_);
+    }
+
+    native_bluetooth_device_.Close();
+    is_bluetooth_socket_closed_ = true;
     return {Exception::kSuccess};
   } catch (std::exception exception) {
     NEARBY_LOGS(ERROR) << __func__ << ": Exception: " << exception.what();
@@ -112,10 +147,23 @@ bool BluetoothSocket::Connect(HostName connectionHostName,
     auto info = windows_socket_.Information();
     auto hostName = info.RemoteHostName();
 
-    bluetooth_device_ = std::make_unique<BluetoothDevice>(
+    native_bluetooth_device_ =
         winrt::Windows::Devices::Bluetooth::BluetoothDevice::FromHostNameAsync(
             windows_socket_.Information().RemoteHostName())
-            .get());
+            .get();
+
+    if (FeatureFlags::GetInstance()
+            .GetFlags()
+            .enable_bluetooth_connection_status_track) {
+      NEARBY_LOGS(INFO)
+          << "Flag enable_bluetooth_connection_status_track is enabled.";
+      connection_status_changed_token_ =
+          native_bluetooth_device_.ConnectionStatusChanged(
+              {this, &BluetoothSocket::Listener_ConnectionStatusChanged});
+    }
+
+    bluetooth_device_ =
+        std::make_unique<BluetoothDevice>(native_bluetooth_device_);
 
     input_stream_ = BluetoothInputStream(windows_socket_.InputStream());
     output_stream_ = BluetoothOutputStream(windows_socket_.OutputStream());
@@ -139,20 +187,24 @@ bool BluetoothSocket::Connect(HostName connectionHostName,
 
 BluetoothSocket::BluetoothInputStream::BluetoothInputStream(
     IInputStream stream) {
-  winrt_stream_ = stream;
+  winrt_input_stream_ = stream;
 }
 
 ExceptionOr<ByteArray> BluetoothSocket::BluetoothInputStream::Read(
     std::int64_t size) {
   try {
-    if (winrt_stream_ == nullptr) {
+    if (size <= 0 || size > kMaxTransmitPacketSize) {
+      NEARBY_LOGS(ERROR) << __func__
+                         << ": Invalid transmit packet size: " << size;
       return {Exception::kIo};
     }
 
-    Buffer buffer = Buffer(size);
+    // Init the read buffer.
+    read_buffer_.Length(0);
 
-    auto ibuffer =
-        winrt_stream_.ReadAsync(buffer, size, InputStreamOptions::None).get();
+    auto ibuffer = winrt_input_stream_
+                       .ReadAsync(read_buffer_, size, InputStreamOptions::None)
+                       .get();
 
     if (ibuffer.Length() != size) {
       NEARBY_LOGS(WARNING) << __func__ << ": Got " << ibuffer.Length()
@@ -181,13 +233,12 @@ IAsyncAction BluetoothSocket::CancelIOAsync() {
 }
 
 Exception BluetoothSocket::BluetoothInputStream::Close() {
-  try {
-    if (winrt_stream_ == nullptr) {
-      return {Exception::kSuccess};  // Already closed, don't error out
-    }
+  NEARBY_LOGS(INFO) << __func__ << ": Close bluetooth input stream.";
 
-    winrt_stream_.Close();
-    winrt_stream_ = nullptr;
+  try {
+    if (winrt_input_stream_ != nullptr) {
+      winrt_input_stream_.Close();
+    }
     return {Exception::kSuccess};
   } catch (std::exception exception) {
     NEARBY_LOGS(ERROR) << __func__ << ": Exception: " << exception.what();
@@ -204,20 +255,22 @@ Exception BluetoothSocket::BluetoothInputStream::Close() {
 
 BluetoothSocket::BluetoothOutputStream::BluetoothOutputStream(
     IOutputStream stream) {
-  winrt_stream_ = stream;
+  winrt_output_stream_ = stream;
 }
 
 Exception BluetoothSocket::BluetoothOutputStream::Write(const ByteArray& data) {
   try {
-    if (winrt_stream_ == nullptr) {
+    if (data.size() > kMaxTransmitPacketSize) {
+      NEARBY_LOGS(ERROR) << __func__ << ": Transmit packet size " << data.size()
+                         << " is too big.";
       return {Exception::kIo};
     }
 
-    Buffer buffer = Buffer(data.size());
-    std::memcpy(buffer.data(), data.data(), data.size());
-    buffer.Length(data.size());
+    std::memcpy(write_buffer_.data(), data.data(), data.size());
+    write_buffer_.Length(data.size());
 
-    winrt::hresult hresult = winrt_stream_.WriteAsync(buffer).get();
+    winrt::hresult hresult =
+        winrt_output_stream_.WriteAsync(write_buffer_).get();
     return {Exception::kSuccess};
   } catch (std::exception exception) {
     NEARBY_LOGS(ERROR) << __func__ << ": Exception: " << exception.what();
@@ -234,11 +287,11 @@ Exception BluetoothSocket::BluetoothOutputStream::Write(const ByteArray& data) {
 
 Exception BluetoothSocket::BluetoothOutputStream::Flush() {
   try {
-    if (winrt_stream_ == nullptr) {
+    if (winrt_output_stream_ == nullptr) {
       return {Exception::kSuccess};
     }
 
-    winrt_stream_.FlushAsync().get();
+    winrt_output_stream_.FlushAsync().get();
     return {Exception::kSuccess};
   } catch (std::exception exception) {
     NEARBY_LOGS(ERROR) << __func__ << ": Exception: " << exception.what();
@@ -254,13 +307,11 @@ Exception BluetoothSocket::BluetoothOutputStream::Flush() {
 }
 
 Exception BluetoothSocket::BluetoothOutputStream::Close() {
+  NEARBY_LOGS(INFO) << __func__ << ": Close bluetooth output stream.";
   try {
-    if (winrt_stream_ == nullptr) {
-      return {Exception::kSuccess};  // Already closed, don't error out
+    if (winrt_output_stream_ != nullptr) {
+      winrt_output_stream_.Close();
     }
-
-    winrt_stream_.Close();
-    winrt_stream_ = nullptr;
     return {Exception::kSuccess};
   } catch (std::exception exception) {
     NEARBY_LOGS(ERROR) << __func__ << ": Exception: " << exception.what();
@@ -275,6 +326,22 @@ Exception BluetoothSocket::BluetoothOutputStream::Close() {
   }
 }
 
+winrt::fire_and_forget BluetoothSocket::Listener_ConnectionStatusChanged(
+    winrt::Windows::Devices::Bluetooth::BluetoothDevice device,
+    winrt::Windows::Foundation::IInspectable const& args) {
+  // During bandwidth upgrade, Bluetooth connection may be dropped due to
+  // unknown reasons. To track this issue, add a log to track the issue.
+  // Based on test, the args is empty, so cannot provide more information on
+  // the status change.
+  BluetoothConnectionStatus connection_status = device.ConnectionStatus();
+  NEARBY_LOGS(WARNING) << __func__
+                       << ": Bluetooth connection status changed to:"
+                       << ((connection_status ==
+                            BluetoothConnectionStatus::Connected)
+                               ? "Connected"
+                               : "Disconnected");
+  return {};
+}
+
 }  // namespace windows
 }  // namespace nearby
-}  // namespace location

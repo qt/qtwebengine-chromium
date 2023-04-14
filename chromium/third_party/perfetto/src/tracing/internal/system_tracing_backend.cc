@@ -36,14 +36,14 @@ namespace perfetto {
 namespace internal {
 
 // static
-TracingBackend* SystemTracingBackend::GetInstance() {
-  static auto* instance = new SystemTracingBackend();
+TracingProducerBackend* SystemProducerTracingBackend::GetInstance() {
+  static auto* instance = new SystemProducerTracingBackend();
   return instance;
 }
 
-SystemTracingBackend::SystemTracingBackend() {}
+SystemProducerTracingBackend::SystemProducerTracingBackend() {}
 
-std::unique_ptr<ProducerEndpoint> SystemTracingBackend::ConnectProducer(
+std::unique_ptr<ProducerEndpoint> SystemProducerTracingBackend::ConnectProducer(
     const ConnectProducerArgs& args) {
   PERFETTO_DCHECK(args.task_runner->RunsTasksOnCurrentThread());
 
@@ -74,7 +74,15 @@ std::unique_ptr<ProducerEndpoint> SystemTracingBackend::ConnectProducer(
   return endpoint;
 }
 
-std::unique_ptr<ConsumerEndpoint> SystemTracingBackend::ConnectConsumer(
+// static
+TracingConsumerBackend* SystemConsumerTracingBackend::GetInstance() {
+  static auto* instance = new SystemConsumerTracingBackend();
+  return instance;
+}
+
+SystemConsumerTracingBackend::SystemConsumerTracingBackend() {}
+
+std::unique_ptr<ConsumerEndpoint> SystemConsumerTracingBackend::ConnectConsumer(
     const ConnectConsumerArgs& args) {
 #if PERFETTO_BUILDFLAG(PERFETTO_SYSTEM_CONSUMER)
   auto endpoint = ConsumerIPCClient::Connect(GetConsumerSocket(), args.consumer,

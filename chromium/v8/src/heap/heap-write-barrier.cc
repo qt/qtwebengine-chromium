@@ -4,7 +4,6 @@
 
 #include "src/heap/heap-write-barrier.h"
 
-#include "src/heap/embedder-tracing.h"
 #include "src/heap/heap-write-barrier-inl.h"
 #include "src/heap/marking-barrier.h"
 #include "src/heap/remembered-set.h"
@@ -58,19 +57,18 @@ void WriteBarrier::MarkingSlowFromGlobalHandle(HeapObject value) {
 
 // static
 void WriteBarrier::MarkingSlowFromInternalFields(Heap* heap, JSObject host) {
-  auto* local_embedder_heap_tracer = heap->local_embedder_heap_tracer();
-  if (!local_embedder_heap_tracer->InUse()) return;
-
-  local_embedder_heap_tracer->EmbedderWriteBarrier(heap, host);
+  if (auto* cpp_heap = heap->cpp_heap()) {
+    CppHeap::From(cpp_heap)->WriteBarrier(host);
+  }
 }
 
-void WriteBarrier::MarkingSlow(Code host, RelocInfo* reloc_info,
+void WriteBarrier::MarkingSlow(InstructionStream host, RelocInfo* reloc_info,
                                HeapObject value) {
   MarkingBarrier* marking_barrier = CurrentMarkingBarrier(host);
   marking_barrier->Write(host, reloc_info, value);
 }
 
-void WriteBarrier::SharedSlow(Code host, RelocInfo* reloc_info,
+void WriteBarrier::SharedSlow(InstructionStream host, RelocInfo* reloc_info,
                               HeapObject value) {
   MarkCompactCollector::RecordRelocSlotInfo info =
       MarkCompactCollector::ProcessRelocInfo(host, reloc_info, value);
@@ -106,8 +104,6 @@ int WriteBarrier::MarkingFromCode(Address raw_host, Address raw_slot) {
   }
 #endif
 
-  DCHECK_IMPLIES(host.InSharedWritableHeap(), v8_flags.shared_space);
-
 #if DEBUG
   Heap* heap = MemoryChunk::FromHeapObject(host)->heap();
   DCHECK(heap->incremental_marking()->IsMarking());
@@ -117,7 +113,7 @@ int WriteBarrier::MarkingFromCode(Address raw_host, Address raw_slot) {
   // shared space but only from the shared space isolate (= the main isolate).
   MarkingBarrier* barrier = CurrentMarkingBarrier(host);
   DCHECK_IMPLIES(host.InSharedWritableHeap(),
-                 barrier->heap()->isolate()->is_shared_heap_isolate());
+                 barrier->heap()->isolate()->is_shared_space_isolate());
   barrier->AssertMarkingIsActivated();
 #endif  // DEBUG
 
@@ -133,7 +129,6 @@ int WriteBarrier::SharedMarkingFromCode(Address raw_host, Address raw_slot) {
   MaybeObject value(raw_value);
 
   DCHECK(host.InSharedWritableHeap());
-  DCHECK(v8_flags.shared_space);
 
 #if DEBUG
   Heap* heap = MemoryChunk::FromHeapObject(host)->heap();
@@ -144,7 +139,7 @@ int WriteBarrier::SharedMarkingFromCode(Address raw_host, Address raw_slot) {
   // The shared marking barrier will only be reached from client isolates (=
   // worker isolates).
   MarkingBarrier* barrier = CurrentMarkingBarrier(host);
-  DCHECK(!barrier->heap()->isolate()->is_shared_heap_isolate());
+  DCHECK(!barrier->heap()->isolate()->is_shared_space_isolate());
   barrier->AssertSharedMarkingIsActivated();
 #endif  // DEBUG
 
@@ -175,9 +170,11 @@ bool WriteBarrier::IsImmortalImmovableHeapObject(HeapObject object) {
   // immovable. Objects on a page that can get compacted are movable and can be
   // filtered out.
   if (!chunk->IsFlagSet(MemoryChunk::NEVER_EVACUATE)) return false;
-  // Now we know the object is immovable, check whether it is also immortal.
-  // Builtins are roots and therefore always kept alive by the GC.
-  return object.IsCode() && Code::cast(object).is_builtin();
+  // Builtins don't have InstructionStream objects (instead, they point
+  // directly into off-heap code streams).
+  DCHECK_IMPLIES(object.IsInstructionStream(),
+                 !InstructionStream::cast(object).is_builtin());
+  return false;
 }
 #endif
 

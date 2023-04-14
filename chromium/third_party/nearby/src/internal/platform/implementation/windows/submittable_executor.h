@@ -18,14 +18,13 @@
 #include "internal/platform/implementation/submittable_executor.h"
 #include "internal/platform/implementation/windows/executor.h"
 
-namespace location {
 namespace nearby {
 namespace windows {
 
 // Main interface to be used by platform as a base class for
 // - MultiThreadExecutorWrapper
 // - SingleThreadExecutorWrapper
-// Platform must override bool submit(std::function<void()>) method.
+// Platform must override bool submit(absl::AnyInvocable<void()>) method.
 class SubmittableExecutor : public api::SubmittableExecutor {
  public:
   SubmittableExecutor();
@@ -45,11 +44,10 @@ class SubmittableExecutor : public api::SubmittableExecutor {
 
  private:
   std::unique_ptr<nearby::windows::Executor> executor_;
-  std::atomic_bool shut_down_;
+  std::atomic_bool shut_down_ = false;
 };
 
 }  // namespace windows
 }  // namespace nearby
-}  // namespace location
 
 #endif  // PLATFORM_IMPL_WINDOWS_SUBMITTABLE_EXECUTOR_H_

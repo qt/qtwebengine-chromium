@@ -628,7 +628,7 @@ void aom_lpf_vertical_14_neon(uint8_t *src, int stride, const uint8_t *blimit,
   // row1: x p6 p5 p4 p3 p2 p1 p0 | q0 q1 q2 q3 q4 q5 q6 y
   // row2: x p6 p5 p4 p3 p2 p1 p0 | q0 q1 q2 q3 q4 q5 q6 y
   // row3: x p6 p5 p4 p3 p2 p1 p0 | q0 q1 q2 q3 q4 q5 q6 y
-  load_u8_8x16(src - 8, stride, &row0, &row1, &row2, &row3);
+  load_u8_16x4(src - 8, stride, &row0, &row1, &row2, &row3);
 
   pxp3 = vget_low_u8(row0);
   p6p2 = vget_low_u8(row1);

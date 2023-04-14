@@ -9,7 +9,6 @@
 
 #include "absl/strings/string_view.h"
 #include "absl/types/optional.h"
-#include "quiche/quic/core/http/capsule.h"
 #include "quiche/quic/core/http/quic_spdy_session.h"
 #include "quiche/quic/core/http/quic_spdy_stream.h"
 #include "quiche/quic/core/quic_data_reader.h"
@@ -20,7 +19,9 @@
 #include "quiche/quic/core/quic_utils.h"
 #include "quiche/quic/core/quic_versions.h"
 #include "quiche/quic/platform/api/quic_bug_tracker.h"
+#include "quiche/common/capsule.h"
 #include "quiche/common/platform/api/quiche_logging.h"
+#include "quiche/web_transport/web_transport.h"
 
 #define ENDPOINT \
   (session_->perspective() == Perspective::IS_SERVER ? "Server: " : "Client: ")
@@ -107,7 +108,7 @@ void WebTransportHttp3::CloseSession(WebTransportSessionError error_code,
   QuicConnection::ScopedPacketFlusher flusher(
       connect_stream_->spdy_session()->connection());
   connect_stream_->WriteCapsule(
-      Capsule::CloseWebTransportSession(error_code, error_message),
+      quiche::Capsule::CloseWebTransportSession(error_code, error_message),
       /*fin=*/true);
 }
 
@@ -266,10 +267,10 @@ WebTransportStream* WebTransportHttp3::OpenOutgoingUnidirectionalStream() {
   return stream->interface();
 }
 
-MessageStatus WebTransportHttp3::SendOrQueueDatagram(
-    quiche::QuicheMemSlice datagram) {
-  return connect_stream_->SendHttp3Datagram(
-      absl::string_view(datagram.data(), datagram.length()));
+webtransport::DatagramStatus WebTransportHttp3::SendOrQueueDatagram(
+    absl::string_view datagram) {
+  return MessageStatusToWebTransportStatus(
+      connect_stream_->SendHttp3Datagram(datagram));
 }
 
 QuicByteCount WebTransportHttp3::GetMaxDatagramSize() const {
@@ -277,8 +278,9 @@ QuicByteCount WebTransportHttp3::GetMaxDatagramSize() const {
 }
 
 void WebTransportHttp3::SetDatagramMaxTimeInQueue(
-    QuicTime::Delta max_time_in_queue) {
-  connect_stream_->SetMaxDatagramTimeInQueue(max_time_in_queue);
+    absl::Duration max_time_in_queue) {
+  connect_stream_->SetMaxDatagramTimeInQueue(
+      QuicTime::Delta::FromAbsl(max_time_in_queue));
 }
 
 void WebTransportHttp3::OnHttp3Datagram(QuicStreamId stream_id,
@@ -438,7 +440,7 @@ absl::optional<WebTransportStreamError> Http3ErrorToWebTransport(
   uint64_t shifted = http3_error_code - kWebTransportMappedErrorCodeFirst;
   uint64_t result = shifted - shifted / 0x1f;
   QUICHE_DCHECK_LE(result, std::numeric_limits<uint8_t>::max());
-  return result;
+  return static_cast<WebTransportStreamError>(result);
 }
 
 WebTransportStreamError Http3ErrorToWebTransportOrDefault(

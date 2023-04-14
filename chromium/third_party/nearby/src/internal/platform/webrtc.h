@@ -21,7 +21,6 @@
 #include "internal/platform/implementation/webrtc.h"
 #include "webrtc/api/peer_connection_interface.h"
 
-namespace location {
 namespace nearby {
 
 class WebRtcSignalingMessenger final {
@@ -45,8 +44,8 @@ class WebRtcSignalingMessenger final {
   bool StartReceivingMessages(
       OnSignalingMessageCallback on_message_callback,
       OnSignalingCompleteCallback on_complete_callback) {
-    return impl_->StartReceivingMessages(on_message_callback,
-                                         on_complete_callback);
+    return impl_->StartReceivingMessages(std::move(on_message_callback),
+                                         std::move(on_complete_callback));
   }
 
   void StopReceivingMessages() { impl_->StopReceivingMessages(); }
@@ -82,7 +81,7 @@ class WebRtcMedium final {
   // Returns a signaling messenger for sending WebRTC signaling messages.
   std::unique_ptr<WebRtcSignalingMessenger> GetSignalingMessenger(
       absl::string_view self_id,
-      const connections::LocationHint& location_hint) {
+      const location::nearby::connections::LocationHint& location_hint) {
     return std::make_unique<WebRtcSignalingMessenger>(
         impl_->GetSignalingMessenger(self_id, location_hint));
   }
@@ -94,6 +93,5 @@ class WebRtcMedium final {
 };
 
 }  // namespace nearby
-}  // namespace location
 
 #endif  // PLATFORM_PUBLIC_WEBRTC_H_

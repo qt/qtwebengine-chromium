@@ -38,7 +38,6 @@
 #include "internal/platform/runnable.h"
 #include "internal/platform/single_thread_executor.h"
 
-namespace location {
 namespace nearby {
 namespace connections {
 
@@ -75,8 +74,9 @@ class EndpointManager {
     // or rvalue reference. Rvalue references are discouraged by go/cstyle,
     // and that leaves us with mutable lvalue reference.
     virtual void OnIncomingFrame(
-        OfflineFrame& offline_frame, const std::string& from_endpoint_id,
-        ClientProxy* to_client, proto::connections::Medium current_medium,
+        location::nearby::connections::OfflineFrame& offline_frame,
+        const std::string& from_endpoint_id, ClientProxy* to_client,
+        location::nearby::proto::connections::Medium current_medium,
         analytics::PacketMetaData& packet_meta_data) = 0;
 
     // Implementations must call barrier.CountDown() once
@@ -97,20 +97,22 @@ class EndpointManager {
   // up the OfflineServiceController implementation.
   // FrameProcessor* instances are of dynamic duration and survive all sessions.
   // Blocks until registration is complete.
-  void RegisterFrameProcessor(V1Frame::FrameType frame_type,
-                              FrameProcessor* processor);
-  void UnregisterFrameProcessor(V1Frame::FrameType frame_type,
-                                const FrameProcessor* processor);
+  void RegisterFrameProcessor(
+      location::nearby::connections::V1Frame::FrameType frame_type,
+      FrameProcessor* processor);
+  void UnregisterFrameProcessor(
+      location::nearby::connections::V1Frame::FrameType frame_type,
+      const FrameProcessor* processor);
 
   // Invoked from the different PcpHandler implementations (of which there can
   // be only one at a time).
   // Blocks until registration is complete.
-  void RegisterEndpoint(ClientProxy* client, const std::string& endpoint_id,
-                        const ConnectionResponseInfo& info,
-                        const ConnectionOptions& connection_options,
-                        std::unique_ptr<EndpointChannel> channel,
-                        const ConnectionListener& listener,
-                        const std::string& connection_token);
+  void RegisterEndpoint(
+      ClientProxy* client, const std::string& endpoint_id,
+      const ConnectionResponseInfo& info,
+      const ConnectionOptions& connection_options,
+      std::unique_ptr<EndpointChannel> channel,
+      const ConnectionListener& listener, const std::string& connection_token);
   // Called when a client explicitly asks to disconnect from this endpoint. In
   // this case, we do not notify the client of onDisconnected().
   void UnregisterEndpoint(ClientProxy* client, const std::string& endpoint_id);
@@ -123,13 +125,17 @@ class EndpointManager {
   //
   // Invoked from the PayloadManager's sendPayload() method.
   std::vector<std::string> SendPayloadChunk(
-      const PayloadTransferFrame::PayloadHeader& payload_header,
-      const PayloadTransferFrame::PayloadChunk& payload_chunk,
+      const location::nearby::connections::PayloadTransferFrame::PayloadHeader&
+          payload_header,
+      const location::nearby::connections::PayloadTransferFrame::PayloadChunk&
+          payload_chunk,
       const std::vector<std::string>& endpoint_ids,
       analytics::PacketMetaData& packet_meta_data);
   std::vector<std::string> SendControlMessage(
-      const PayloadTransferFrame::PayloadHeader& payload_header,
-      const PayloadTransferFrame::ControlMessage& control_message,
+      const location::nearby::connections::PayloadTransferFrame::PayloadHeader&
+          payload_header,
+      const location::nearby::connections::PayloadTransferFrame::ControlMessage&
+          control_message,
       const std::vector<std::string>& endpoint_ids);
 
   // Called when we internally want to get rid of the endpoint, without the
@@ -209,7 +215,8 @@ class EndpointManager {
     friend class LockedFrameProcessor;
   };
 
-  LockedFrameProcessor GetFrameProcessor(V1Frame::FrameType frame_type);
+  LockedFrameProcessor GetFrameProcessor(
+      location::nearby::connections::V1Frame::FrameType frame_type);
 
   ExceptionOr<bool> HandleData(const std::string& endpoint_id,
                                ClientProxy* client_proxy,
@@ -238,8 +245,11 @@ class EndpointManager {
   static void WaitForLatch(const std::string& method_name,
                            CountDownLatch* latch, std::int32_t timeout_millis);
 
+  // We set this to 11s to provide sufficient time for an in-progress WebRTC
+  // bandwidth upgrade to resolve. This is chosen to be slightly longer than the
+  // 10s timeout in WebRtc::AttemptToConnect().
   static constexpr absl::Duration kProcessEndpointDisconnectionTimeout =
-      absl::Milliseconds(2000);
+      absl::Milliseconds(11000);
   static constexpr absl::Time kInvalidTimestamp = absl::InfinitePast();
 
   // It should be noted that this method may be called multiple times (because
@@ -271,7 +281,8 @@ class EndpointManager {
   EndpointChannelManager* channel_manager_;
 
   RecursiveMutex frame_processors_lock_;
-  absl::flat_hash_map<V1Frame::FrameType, FrameProcessorWithMutex>
+  absl::flat_hash_map<location::nearby::connections::V1Frame::FrameType,
+                      FrameProcessorWithMutex>
       frame_processors_ ABSL_GUARDED_BY(frame_processors_lock_);
 
   // We keep track of all registered channel endpoints here.
@@ -288,6 +299,5 @@ bool operator<(const EndpointManager::FrameProcessor& lhs,
 
 }  // namespace connections
 }  // namespace nearby
-}  // namespace location
 
 #endif  // CORE_INTERNAL_ENDPOINT_MANAGER_H_

@@ -10,9 +10,12 @@
  */
 
 #include <arm_neon.h>
+
 #include "config/aom_config.h"
 #include "config/aom_dsp_rtcd.h"
+
 #include "aom/aom_integer.h"
+#include "aom_dsp/arm/mem_neon.h"
 #include "aom_dsp/arm/sum_neon.h"
 
 #if defined(__ARM_FEATURE_DOTPROD)
@@ -289,24 +292,13 @@ static INLINE unsigned int sad4xh_neon(const uint8_t *src_ptr, int src_stride,
 
   int i = h / 2;
   do {
-    uint32x2_t s, r;
-    uint32_t s0, s1, r0, r1;
+    uint8x8_t s = load_unaligned_u8(src_ptr, src_stride);
+    uint8x8_t r = load_unaligned_u8(ref_ptr, ref_stride);
 
-    memcpy(&s0, src_ptr, 4);
-    memcpy(&r0, ref_ptr, 4);
-    s = vdup_n_u32(s0);
-    r = vdup_n_u32(r0);
-    src_ptr += src_stride;
-    ref_ptr += ref_stride;
+    sum = vabal_u8(sum, s, r);
 
-    memcpy(&s1, src_ptr, 4);
-    memcpy(&r1, ref_ptr, 4);
-    s = vset_lane_u32(s1, s, 1);
-    r = vset_lane_u32(r1, r, 1);
-    src_ptr += src_stride;
-    ref_ptr += ref_stride;
-
-    sum = vabal_u8(sum, vreinterpret_u8_u32(s), vreinterpret_u8_u32(r));
+    src_ptr += 2 * src_stride;
+    ref_ptr += 2 * ref_stride;
   } while (--i != 0);
 
   return horizontal_add_u16x8(sum);
@@ -732,28 +724,15 @@ static INLINE unsigned int sad4xh_avg_neon(const uint8_t *src_ptr,
 
   int i = h / 2;
   do {
-    uint32x2_t s, r;
-    uint32_t s0, s1, r0, r1;
-    uint8x8_t p, avg;
+    uint8x8_t s = load_unaligned_u8(src_ptr, src_stride);
+    uint8x8_t r = load_unaligned_u8(ref_ptr, ref_stride);
+    uint8x8_t p = vld1_u8(second_pred);
 
-    memcpy(&s0, src_ptr, 4);
-    memcpy(&r0, ref_ptr, 4);
-    s = vdup_n_u32(s0);
-    r = vdup_n_u32(r0);
-    src_ptr += src_stride;
-    ref_ptr += ref_stride;
+    uint8x8_t avg = vrhadd_u8(r, p);
+    sum = vabal_u8(sum, s, avg);
 
-    memcpy(&s1, src_ptr, 4);
-    memcpy(&r1, ref_ptr, 4);
-    s = vset_lane_u32(s1, s, 1);
-    r = vset_lane_u32(r1, r, 1);
-    src_ptr += src_stride;
-    ref_ptr += ref_stride;
-
-    p = vld1_u8(second_pred);
-    avg = vrhadd_u8(vreinterpret_u8_u32(r), p);
-
-    sum = vabal_u8(sum, vreinterpret_u8_u32(s), avg);
+    src_ptr += 2 * src_stride;
+    ref_ptr += 2 * ref_stride;
     second_pred += 8;
   } while (--i != 0);
 

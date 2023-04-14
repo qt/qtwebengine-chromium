@@ -37,8 +37,6 @@ static const size_t xmpContentTypeSize = sizeof(xmpContentType);
 // can't be more than 4 unique tuples right now.
 #define MAX_IPMA_VERSION_AND_FLAGS_SEEN 4
 
-#define MAX_AV1_LAYER_COUNT 4
-
 // ---------------------------------------------------------------------------
 // Box data structures
 
@@ -577,7 +575,7 @@ static avifBool avifCodecDecodeInputFillFromDecoderItem(avifCodecDecodeInput * d
         sample->itemID = item->id;
         sample->offset = 0;
         sample->size = sampleSize;
-        assert(lselProp->u.lsel.layerID < MAX_AV1_LAYER_COUNT);
+        assert(lselProp->u.lsel.layerID < AVIF_MAX_AV1_LAYER_COUNT);
         sample->spatialID = (uint8_t)lselProp->u.lsel.layerID;
         sample->sync = AVIF_TRUE;
     } else if (allowProgressive && item->progressive) {
@@ -1617,7 +1615,7 @@ static avifBool avifParseItemLocationBox(avifMeta * meta, const uint8_t * raw, s
             }
         }
 
-        uint16_t dataReferenceIndex;                                      // unsigned int(16) data_ref rence_index;
+        uint16_t dataReferenceIndex;                                      // unsigned int(16) data_reference_index;
         AVIF_CHECK(avifROStreamReadU16(&s, &dataReferenceIndex));         //
         uint64_t baseOffset;                                              // unsigned int(base_offset_size*8) base_offset;
         AVIF_CHECK(avifROStreamReadUX8(&s, &baseOffset, baseOffsetSize)); //
@@ -1899,7 +1897,7 @@ static avifBool avifParseLayerSelectorProperty(avifProperty * prop, const uint8_
 
     avifLayerSelectorProperty * lsel = &prop->u.lsel;
     AVIF_CHECK(avifROStreamReadU16(&s, &lsel->layerID));
-    if ((lsel->layerID != 0xFFFF) && (lsel->layerID >= MAX_AV1_LAYER_COUNT)) {
+    if ((lsel->layerID != 0xFFFF) && (lsel->layerID >= AVIF_MAX_AV1_LAYER_COUNT)) {
         avifDiagnosticsPrintf(diag, "Box[lsel] contains an unsupported layer [%u]", lsel->layerID);
         return AVIF_FALSE;
     }
@@ -1929,7 +1927,7 @@ static avifBool avifParseAV1LayeredImageIndexingProperty(avifProperty * prop, co
         }
     }
 
-    // Layer sizes will be validated layer (when the item's size is known)
+    // Layer sizes will be validated later (when the item's size is known)
     return AVIF_TRUE;
 }
 

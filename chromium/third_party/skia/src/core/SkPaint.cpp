@@ -18,8 +18,8 @@
 #include "include/core/SkScalar.h"
 #include "include/core/SkShader.h"
 #include "include/core/SkStrokeRec.h"
-#include "include/private/SkTPin.h"
-#include "include/private/SkTo.h"
+#include "include/private/base/SkTPin.h"
+#include "include/private/base/SkTo.h"
 #include "src/core/SkBlenderBase.h"
 #include "src/core/SkColorFilterBase.h"
 #include "src/core/SkColorSpacePriv.h"
@@ -292,18 +292,3 @@ bool SkPaint::nothingToDraw() const {
     }
     return false;
 }
-
-#if defined(SK_LEGACY_GET_FILL_PATH)
-#include "include/core/SkPathUtils.h"
-
-bool SkPaint::getFillPath(const SkPath& src, SkPath* dst, const SkRect* cullRect,
-                          SkScalar resScale) const {
-    return skpathutils::FillPathWithPaint(src, *this, dst, cullRect, resScale);
-}
-
-bool SkPaint::getFillPath(const SkPath& src, SkPath* dst, const SkRect* cullRect,
-                          const SkMatrix& ctm) const {
-    return skpathutils::FillPathWithPaint(src, *this, dst, cullRect, ctm);
-}
-
-#endif

@@ -29,9 +29,8 @@
 #include "internal/platform/mutex.h"
 #include "internal/platform/mutex_lock.h"
 #include "internal/platform/output_stream.h"
-#include "internal/platform/wifi_hotspot_credential.h"
+#include "internal/platform/wifi_credential.h"
 
-namespace location {
 namespace nearby {
 
 // Socket class for both SoftAP ( created through accept connection from STA)
@@ -215,6 +214,5 @@ class WifiHotspotMedium {
 };
 
 }  // namespace nearby
-}  // namespace location
 
 #endif  // PLATFORM_PUBLIC_WIFI_HOTSPOT_H_

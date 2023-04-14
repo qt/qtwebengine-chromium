@@ -20,6 +20,7 @@ module.exports = {
     'mocha',
     'rulesdir',
     'import',
+    'jsdoc',
   ],
 
   'parserOptions': {'ecmaVersion': 9, 'sourceType': 'module'},
@@ -128,6 +129,11 @@ module.exports = {
     // DevTools specific rules
     'rulesdir/es_modules_import': 2,
     'rulesdir/check_license_header': 2,
+    /**
+     * Ensures that JS Doc comments are properly aligned - all the starting
+     * `*` are in the right place.
+     */
+    'jsdoc/check-alignment': 2,
   },
   'overrides': [{
     'files': ['*.ts'],

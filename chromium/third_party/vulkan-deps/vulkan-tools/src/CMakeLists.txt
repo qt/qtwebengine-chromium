@@ -1,6 +1,6 @@
 # ~~~
-# Copyright (c) 2014-2022 Valve Corporation
-# Copyright (c) 2014-2022 LunarG, Inc.
+# Copyright (c) 2014-2023 Valve Corporation
+# Copyright (c) 2014-2023 LunarG, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ~~~
-cmake_minimum_required(VERSION 3.10.2)
+cmake_minimum_required(VERSION 3.17.2)
 
 project(Vulkan-Tools)
 
@@ -93,22 +93,6 @@ message(STATUS "Vulkan Lib = ${Vulkan_LIBRARY}")
 
 include(GNUInstallDirs)
 
-if(WIN32 AND CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
-    # Windows: if install locations not set by user, set install prefix to "<build_dir>\install".
-    set(CMAKE_INSTALL_PREFIX "${CMAKE_BINARY_DIR}/install" CACHE PATH "default install path" FORCE)
-endif()
-
-# uninstall target
-if(NOT TARGET uninstall)
-    configure_file("${CMAKE_CURRENT_SOURCE_DIR}/cmake/cmake_uninstall.cmake.in"
-                   "${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake"
-                   IMMEDIATE
-                   @ONLY)
-
-    add_custom_target(uninstall COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake)
-    set_target_properties(uninstall PROPERTIES FOLDER ${TOOLS_HELPER_FOLDER})
-endif()
-
 option(BUILD_WERROR "Treat compiler warnings as errors" ON)
 if(CMAKE_COMPILER_IS_GNUCC OR CMAKE_C_COMPILER_ID MATCHES "Clang")
     set(COMMON_COMPILE_FLAGS "-Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers")
@@ -145,6 +129,7 @@ elseif(MSVC)
     if(BUILD_WERROR)
         add_compile_options("/WX")
     endif()
+    add_compile_options("/W3")
     # Warn about nested declarations
     add_compile_options("/w34456")
     # Warn about potentially uninitialized variables
@@ -158,10 +143,9 @@ endif()
 
 # Optional codegen target
 if(PYTHONINTERP_FOUND)
-    get_target_property(VulkanRegistry_DIR Vulkan::Registry INTERFACE_INCLUDE_DIRECTORIES)
     add_custom_target(VulkanTools_generated_source
                       COMMAND ${PYTHON_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/generate_source.py
-                              ${VulkanRegistry_DIR} --incremental
+                              ${VULKAN_HEADERS_REGISTRY_DIRECTORY} --incremental
                       )
 else()
     message("WARNING: VulkanTools_generated_source target requires python 3")

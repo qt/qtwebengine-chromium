@@ -28,16 +28,13 @@ class Vector final : public Castable<Vector, Type> {
     /// @param subtype the vector element type
     /// @param size the number of elements in the vector
     Vector(Type const* subtype, uint32_t size);
-    /// Move constructor
-    Vector(Vector&&);
+
+    /// Destructor
     ~Vector() override;
 
-    /// @returns a hash of the type.
-    size_t Hash() const override;
-
-    /// @param other the other type to compare against
-    /// @returns true if the this type is equal to the given type
-    bool Equals(const Type& other) const override;
+    /// @param other the other node to compare against
+    /// @returns true if the this type is equal to @p other
+    bool Equals(const UniqueNode& other) const override;
 
     /// @returns the type of the vector elements
     const Type* type() const { return subtype_; }
@@ -64,6 +61,10 @@ class Vector final : public Castable<Vector, Type> {
     /// @param width the width of the vector
     /// @returns the alignment in bytes of a vector of the given width.
     static uint32_t AlignOf(uint32_t width);
+
+    /// @param ctx the clone context
+    /// @returns a clone of this type
+    Vector* Clone(CloneContext& ctx) const override;
 
   private:
     Type const* const subtype_;

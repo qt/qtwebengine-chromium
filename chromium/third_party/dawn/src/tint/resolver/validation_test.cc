@@ -30,6 +30,7 @@
 #include "src/tint/ast/switch_statement.h"
 #include "src/tint/ast/unary_op_expression.h"
 #include "src/tint/ast/variable_decl_statement.h"
+#include "src/tint/builtin/builtin_value.h"
 #include "src/tint/resolver/resolver_test_helper.h"
 #include "src/tint/sem/call.h"
 #include "src/tint/sem/function.h"
@@ -37,6 +38,7 @@
 #include "src/tint/sem/statement.h"
 #include "src/tint/sem/variable.h"
 #include "src/tint/type/sampled_texture.h"
+#include "src/tint/type/texture_dimension.h"
 
 using ::testing::ElementsAre;
 using ::testing::HasSubstr;
@@ -61,8 +63,8 @@ class FakeExpr final : public Castable<FakeExpr, ast::Expression> {
 };
 
 TEST_F(ResolverValidationTest, WorkgroupMemoryUsedInVertexStage) {
-    GlobalVar(Source{{1, 2}}, "wg", ty.vec4<f32>(), ast::AddressSpace::kWorkgroup);
-    GlobalVar("dst", ty.vec4<f32>(), ast::AddressSpace::kPrivate);
+    GlobalVar(Source{{1, 2}}, "wg", ty.vec4<f32>(), builtin::AddressSpace::kWorkgroup);
+    GlobalVar("dst", ty.vec4<f32>(), builtin::AddressSpace::kPrivate);
     auto* stmt = Assign(Expr("dst"), Expr(Source{{3, 4}}, "wg"));
 
     Func(Source{{9, 10}}, "f0", utils::Empty, ty.vec4<f32>(),
@@ -74,7 +76,7 @@ TEST_F(ResolverValidationTest, WorkgroupMemoryUsedInVertexStage) {
              Stage(ast::PipelineStage::kVertex),
          },
          utils::Vector{
-             Builtin(ast::BuiltinValue::kPosition),
+             Builtin(builtin::BuiltinValue::kPosition),
          });
 
     EXPECT_FALSE(r()->Resolve());
@@ -93,8 +95,8 @@ TEST_F(ResolverValidationTest, WorkgroupMemoryUsedInFragmentStage) {
     //  f1();
     //}
 
-    GlobalVar(Source{{1, 2}}, "wg", ty.vec4<f32>(), ast::AddressSpace::kWorkgroup);
-    GlobalVar("dst", ty.vec4<f32>(), ast::AddressSpace::kPrivate);
+    GlobalVar(Source{{1, 2}}, "wg", ty.vec4<f32>(), builtin::AddressSpace::kWorkgroup);
+    GlobalVar("dst", ty.vec4<f32>(), builtin::AddressSpace::kPrivate);
     auto* stmt = Assign(Expr("dst"), Expr(Source{{3, 4}}, "wg"));
 
     Func(Source{{5, 6}}, "f2", utils::Empty, ty.void_(), utils::Vector{stmt});
@@ -133,7 +135,7 @@ TEST_F(ResolverValidationTest, Stmt_If_NonBool) {
 
     EXPECT_FALSE(r()->Resolve());
 
-    EXPECT_EQ(r()->error(), "12:34 error: if statement condition must be bool, got f32");
+    EXPECT_EQ(r()->error(), R"(12:34 error: if statement condition must be bool, got f32)");
 }
 
 TEST_F(ResolverValidationTest, Stmt_ElseIf_NonBool) {
@@ -143,7 +145,7 @@ TEST_F(ResolverValidationTest, Stmt_ElseIf_NonBool) {
 
     EXPECT_FALSE(r()->Resolve());
 
-    EXPECT_EQ(r()->error(), "12:34 error: if statement condition must be bool, got f32");
+    EXPECT_EQ(r()->error(), R"(12:34 error: if statement condition must be bool, got f32)");
 }
 
 TEST_F(ResolverValidationTest, Expr_ErrUnknownExprType) {
@@ -157,41 +159,6 @@ TEST_F(ResolverValidationTest, Expr_ErrUnknownExprType) {
         "tint::resolver::FakeExpr");
 }
 
-TEST_F(ResolverValidationTest, Expr_DontCall_Function) {
-    Func("func", utils::Empty, ty.void_(), utils::Empty, {});
-    WrapInFunction(Expr(Source{{{3, 3}, {3, 8}}}, "func"));
-
-    EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), "3:8 error: missing '(' for function call");
-}
-
-TEST_F(ResolverValidationTest, Expr_DontCall_Builtin) {
-    WrapInFunction(Expr(Source{{{3, 3}, {3, 8}}}, "round"));
-
-    EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), "3:8 error: missing '(' for builtin call");
-}
-
-TEST_F(ResolverValidationTest, Expr_DontCall_Type) {
-    Alias("T", ty.u32());
-    WrapInFunction(Expr(Source{{{3, 3}, {3, 8}}}, "T"));
-
-    EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), "3:8 error: missing '(' for type initializer or cast");
-}
-
-TEST_F(ResolverValidationTest, AssignmentStmt_InvalidLHS_BuiltinFunctionName) {
-    // normalize = 2;
-
-    auto* lhs = Expr(Source{{12, 34}}, "normalize");
-    auto* rhs = Expr(2_i);
-    auto* assign = Assign(lhs, rhs);
-    WrapInFunction(assign);
-
-    EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), "12:34 error: missing '(' for builtin call");
-}
-
 TEST_F(ResolverValidationTest, UsingUndefinedVariable_Fail) {
     // b = 2;
 
@@ -201,7 +168,7 @@ TEST_F(ResolverValidationTest, UsingUndefinedVariable_Fail) {
     WrapInFunction(assign);
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), "12:34 error: unknown identifier: 'b'");
+    EXPECT_EQ(r()->error(), R"(12:34 error: unresolved identifier 'b')");
 }
 
 TEST_F(ResolverValidationTest, UsingUndefinedVariableInBlockStatement_Fail) {
@@ -216,7 +183,7 @@ TEST_F(ResolverValidationTest, UsingUndefinedVariableInBlockStatement_Fail) {
     WrapInFunction(body);
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), "12:34 error: unknown identifier: 'b'");
+    EXPECT_EQ(r()->error(), R"(12:34 error: unresolved identifier 'b')");
 }
 
 TEST_F(ResolverValidationTest, UsingUndefinedVariableGlobalVariable_Pass) {
@@ -226,7 +193,7 @@ TEST_F(ResolverValidationTest, UsingUndefinedVariableGlobalVariable_Pass) {
     //   return;
     // }
 
-    GlobalVar("global_var", ty.f32(), ast::AddressSpace::kPrivate, Expr(2.1_f));
+    GlobalVar("global_var", ty.f32(), builtin::AddressSpace::kPrivate, Expr(2.1_f));
 
     Func("my_func", utils::Empty, ty.void_(),
          utils::Vector{
@@ -256,7 +223,7 @@ TEST_F(ResolverValidationTest, UsingUndefinedVariableInnerScope_Fail) {
     WrapInFunction(outer_body);
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), "12:34 error: unknown identifier: 'a'");
+    EXPECT_EQ(r()->error(), R"(12:34 error: unresolved identifier 'a')");
 }
 
 TEST_F(ResolverValidationTest, UsingUndefinedVariableOuterScope_Pass) {
@@ -296,11 +263,11 @@ TEST_F(ResolverValidationTest, UsingUndefinedVariableDifferentScope_Fail) {
     WrapInFunction(outer_body);
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), "12:34 error: unknown identifier: 'a'");
+    EXPECT_EQ(r()->error(), R"(12:34 error: unresolved identifier 'a')");
 }
 
 TEST_F(ResolverValidationTest, AddressSpace_FunctionVariableWorkgroupClass) {
-    auto* var = Var("var", ty.i32(), ast::AddressSpace::kWorkgroup);
+    auto* var = Var("var", ty.i32(), builtin::AddressSpace::kWorkgroup);
 
     Func("func", utils::Empty, ty.void_(),
          utils::Vector{
@@ -314,7 +281,7 @@ TEST_F(ResolverValidationTest, AddressSpace_FunctionVariableWorkgroupClass) {
 }
 
 TEST_F(ResolverValidationTest, AddressSpace_FunctionVariableI32) {
-    auto* var = Var("s", ty.i32(), ast::AddressSpace::kPrivate);
+    auto* var = Var("s", ty.i32(), builtin::AddressSpace::kPrivate);
 
     Func("func", utils::Empty, ty.void_(),
          utils::Vector{
@@ -328,43 +295,42 @@ TEST_F(ResolverValidationTest, AddressSpace_FunctionVariableI32) {
 }
 
 TEST_F(ResolverValidationTest, AddressSpace_SamplerExplicitAddressSpace) {
-    auto* t = ty.sampler(ast::SamplerKind::kSampler);
-    GlobalVar(Source{{12, 34}}, "var", t, ast::AddressSpace::kHandle, Binding(0_a), Group(0_a));
+    auto t = ty.sampler(type::SamplerKind::kSampler);
+    GlobalVar(Source{{12, 34}}, "var", t, builtin::AddressSpace::kPrivate, Binding(0_a),
+              Group(0_a));
 
     EXPECT_FALSE(r()->Resolve());
 
     EXPECT_EQ(r()->error(),
-              R"(12:34 error: variables of type 'sampler' must not have a address space)");
+              R"(12:34 error: variables of type 'sampler' must not specifiy an address space)");
 }
 
 TEST_F(ResolverValidationTest, AddressSpace_TextureExplicitAddressSpace) {
-    auto* t = ty.sampled_texture(ast::TextureDimension::k1d, ty.f32());
-    GlobalVar(Source{{12, 34}}, "var", t, ast::AddressSpace::kHandle, Binding(0_a), Group(0_a));
+    auto t = ty.sampled_texture(type::TextureDimension::k1d, ty.f32());
+    GlobalVar(Source{{12, 34}}, "var", t, builtin::AddressSpace::kFunction, Binding(0_a),
+              Group(0_a));
 
     EXPECT_FALSE(r()->Resolve()) << r()->error();
 
-    EXPECT_EQ(r()->error(),
-              R"(12:34 error: variables of type 'texture_1d<f32>' must not have a address space)");
+    EXPECT_EQ(
+        r()->error(),
+        R"(12:34 error: variables of type 'texture_1d<f32>' must not specifiy an address space)");
 }
 
 TEST_F(ResolverValidationTest, Expr_MemberAccessor_VectorSwizzle_BadChar) {
-    GlobalVar("my_vec", ty.vec3<f32>(), ast::AddressSpace::kPrivate);
+    GlobalVar("my_vec", ty.vec3<f32>(), builtin::AddressSpace::kPrivate);
 
-    auto* ident = Expr(Source{{{3, 3}, {3, 7}}}, "xyqz");
-
-    auto* mem = MemberAccessor("my_vec", ident);
+    auto* mem = MemberAccessor("my_vec", Ident(Source{{{3, 3}, {3, 7}}}, "xyqz"));
     WrapInFunction(mem);
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), "3:5 error: invalid vector swizzle character");
+    EXPECT_EQ(r()->error(), R"(3:5 error: invalid vector swizzle character)");
 }
 
 TEST_F(ResolverValidationTest, Expr_MemberAccessor_VectorSwizzle_MixedChars) {
-    GlobalVar("my_vec", ty.vec4<f32>(), ast::AddressSpace::kPrivate);
+    GlobalVar("my_vec", ty.vec4<f32>(), builtin::AddressSpace::kPrivate);
 
-    auto* ident = Expr(Source{{{3, 3}, {3, 7}}}, "rgyw");
-
-    auto* mem = MemberAccessor("my_vec", ident);
+    auto* mem = MemberAccessor("my_vec", Ident(Source{{{3, 3}, {3, 7}}}, "rgyw"));
     WrapInFunction(mem);
 
     EXPECT_FALSE(r()->Resolve());
@@ -373,43 +339,40 @@ TEST_F(ResolverValidationTest, Expr_MemberAccessor_VectorSwizzle_MixedChars) {
 }
 
 TEST_F(ResolverValidationTest, Expr_MemberAccessor_VectorSwizzle_BadLength) {
-    GlobalVar("my_vec", ty.vec3<f32>(), ast::AddressSpace::kPrivate);
+    GlobalVar("my_vec", ty.vec3<f32>(), builtin::AddressSpace::kPrivate);
 
-    auto* ident = Expr(Source{{{3, 3}, {3, 8}}}, "zzzzz");
-    auto* mem = MemberAccessor("my_vec", ident);
+    auto* mem = MemberAccessor("my_vec", Ident(Source{{{3, 3}, {3, 8}}}, "zzzzz"));
     WrapInFunction(mem);
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), "3:3 error: invalid vector swizzle size");
+    EXPECT_EQ(r()->error(), R"(3:3 error: invalid vector swizzle size)");
 }
 
 TEST_F(ResolverValidationTest, Expr_MemberAccessor_VectorSwizzle_BadIndex) {
-    GlobalVar("my_vec", ty.vec2<f32>(), ast::AddressSpace::kPrivate);
+    GlobalVar("my_vec", ty.vec2<f32>(), builtin::AddressSpace::kPrivate);
 
-    auto* ident = Expr(Source{{3, 3}}, "z");
-    auto* mem = MemberAccessor("my_vec", ident);
+    auto* mem = MemberAccessor("my_vec", Ident(Source{{3, 3}}, "z"));
     WrapInFunction(mem);
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), "3:3 error: invalid vector swizzle member");
+    EXPECT_EQ(r()->error(), R"(3:3 error: invalid vector swizzle member)");
 }
 
 TEST_F(ResolverValidationTest, Expr_MemberAccessor_BadParent) {
     // var param: vec4<f32>
     // let ret: f32 = *(&param).x;
     auto* param = Var("param", ty.vec4<f32>());
-    auto* x = Expr(Source{{{3, 3}, {3, 8}}}, "x");
 
-    auto* addressOf_expr = AddressOf(Source{{12, 34}}, param);
-    auto* accessor_expr = MemberAccessor(addressOf_expr, x);
+    auto* addressOf_expr = AddressOf(param);
+    auto* accessor_expr = MemberAccessor(addressOf_expr, Ident(Source{{12, 34}}, "x"));
     auto* star_p = Deref(accessor_expr);
     auto* ret = Var("r", ty.f32(), star_p);
     WrapInFunction(Decl(param), Decl(ret));
 
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(),
-              "12:34 error: invalid member accessor expression. Expected vector "
-              "or struct, got 'ptr<function, vec4<f32>, read_write>'");
+              "12:34 error: invalid member accessor expression. Expected vector or struct, got "
+              "'ptr<function, vec4<f32>, read_write>'");
 }
 
 TEST_F(ResolverValidationTest, EXpr_MemberAccessor_FuncGoodParent) {
@@ -417,10 +380,9 @@ TEST_F(ResolverValidationTest, EXpr_MemberAccessor_FuncGoodParent) {
     //     let x: f32 = (*p).z;
     //     return x;
     // }
-    auto* p = Param("p", ty.pointer(ty.vec4<f32>(), ast::AddressSpace::kFunction));
+    auto* p = Param("p", ty.pointer(ty.vec4<f32>(), builtin::AddressSpace::kFunction));
     auto* star_p = Deref(p);
-    auto* z = Expr(Source{{{3, 3}, {3, 8}}}, "z");
-    auto* accessor_expr = MemberAccessor(star_p, z);
+    auto* accessor_expr = MemberAccessor(star_p, "z");
     auto* x = Var("x", ty.f32(), accessor_expr);
     Func("func", utils::Vector{p}, ty.f32(),
          utils::Vector{
@@ -435,9 +397,8 @@ TEST_F(ResolverValidationTest, EXpr_MemberAccessor_FuncBadParent) {
     //     let x: f32 = *p.z;
     //     return x;
     // }
-    auto* p = Param("p", ty.pointer(ty.vec4<f32>(), ast::AddressSpace::kFunction));
-    auto* z = Expr(Source{{{3, 3}, {3, 8}}}, "z");
-    auto* accessor_expr = MemberAccessor(p, z);
+    auto* p = Param("p", ty.pointer(ty.vec4<f32>(), builtin::AddressSpace::kFunction));
+    auto* accessor_expr = MemberAccessor(p, Ident(Source{{12, 34}}, "z"));
     auto* star_p = Deref(accessor_expr);
     auto* x = Var("x", ty.f32(), star_p);
     Func("func", utils::Vector{p}, ty.f32(),
@@ -448,8 +409,8 @@ TEST_F(ResolverValidationTest, EXpr_MemberAccessor_FuncBadParent) {
 
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(),
-              "error: invalid member accessor expression. "
-              "Expected vector or struct, got 'ptr<function, vec4<f32>, read_write>'");
+              "12:34 error: invalid member accessor expression. Expected vector or struct, got "
+              "'ptr<function, vec4<f32>, read_write>'");
 }
 
 TEST_F(ResolverValidationTest,
@@ -792,7 +753,8 @@ TEST_F(ResolverTest, Stmt_Loop_ContinueInContinuing_Direct) {
               Continue(Source{{12, 34}}))));
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), "12:34 error: continuing blocks must not contain a continue statement");
+    EXPECT_EQ(r()->error(),
+              R"(12:34 error: continuing blocks must not contain a continue statement)");
 }
 
 TEST_F(ResolverTest, Stmt_Loop_ContinueInContinuing_Indirect) {
@@ -939,7 +901,8 @@ TEST_F(ResolverTest, Stmt_ForLoop_ContinueInContinuing_Direct) {
                        Block(Break())));
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), "12:34 error: continuing blocks must not contain a continue statement");
+    EXPECT_EQ(r()->error(),
+              R"(12:34 error: continuing blocks must not contain a continue statement)");
 }
 
 TEST_F(ResolverTest, Stmt_ForLoop_ContinueInContinuing_Indirect) {
@@ -973,7 +936,7 @@ TEST_F(ResolverTest, Stmt_ForLoop_CondIsNotBool) {
     WrapInFunction(For(nullptr, Expr(Source{{12, 34}}, 1_f), nullptr, Block()));
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), "12:34 error: for-loop condition must be bool, got f32");
+    EXPECT_EQ(r()->error(), R"(12:34 error: for-loop condition must be bool, got f32)");
 }
 
 TEST_F(ResolverTest, Stmt_While_CondIsBoolRef) {
@@ -993,7 +956,7 @@ TEST_F(ResolverTest, Stmt_While_CondIsNotBool) {
     WrapInFunction(While(Expr(Source{{12, 34}}, 1_f), Block()));
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), "12:34 error: while condition must be bool, got f32");
+    EXPECT_EQ(r()->error(), R"(12:34 error: while condition must be bool, got f32)");
 }
 
 TEST_F(ResolverValidationTest, Stmt_ContinueInLoop) {
@@ -1005,7 +968,7 @@ TEST_F(ResolverValidationTest, Stmt_ContinueInLoop) {
 TEST_F(ResolverValidationTest, Stmt_ContinueNotInLoop) {
     WrapInFunction(Continue(Source{{12, 34}}));
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), "12:34 error: continue statement must be in a loop");
+    EXPECT_EQ(r()->error(), R"(12:34 error: continue statement must be in a loop)");
 }
 
 TEST_F(ResolverValidationTest, Stmt_BreakInLoop) {
@@ -1165,7 +1128,7 @@ TEST_F(ResolverValidationTest, Stmt_BreakInIfInContinuingNotLast) {
 TEST_F(ResolverValidationTest, Stmt_BreakNotInLoopOrSwitch) {
     WrapInFunction(Break(Source{{12, 34}}));
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), "12:34 error: break statement must be in a loop or switch case");
+    EXPECT_EQ(r()->error(), R"(12:34 error: break statement must be in a loop or switch case)");
 }
 
 TEST_F(ResolverValidationTest, StructMemberDuplicateName) {
@@ -1206,7 +1169,8 @@ TEST_F(ResolverValidationTest, NegativeStructMemberAlignAttribute) {
                    });
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), "12:34 error: @align value must be a positive, power-of-two integer");
+    EXPECT_EQ(r()->error(),
+              R"(12:34 error: @align value must be a positive, power-of-two integer)");
 }
 
 TEST_F(ResolverValidationTest, NonPOTStructMemberAlignAttribute) {
@@ -1215,7 +1179,8 @@ TEST_F(ResolverValidationTest, NonPOTStructMemberAlignAttribute) {
                    });
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), "12:34 error: @align value must be a positive, power-of-two integer");
+    EXPECT_EQ(r()->error(),
+              R"(12:34 error: @align value must be a positive, power-of-two integer)");
 }
 
 TEST_F(ResolverValidationTest, ZeroStructMemberAlignAttribute) {
@@ -1224,7 +1189,8 @@ TEST_F(ResolverValidationTest, ZeroStructMemberAlignAttribute) {
                    });
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), "12:34 error: @align value must be a positive, power-of-two integer");
+    EXPECT_EQ(r()->error(),
+              R"(12:34 error: @align value must be a positive, power-of-two integer)");
 }
 
 TEST_F(ResolverValidationTest, ZeroStructMemberSizeAttribute) {
@@ -1233,7 +1199,7 @@ TEST_F(ResolverValidationTest, ZeroStructMemberSizeAttribute) {
                    });
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), "12:34 error: @size must be at least as big as the type's size (4)");
+    EXPECT_EQ(r()->error(), R"(12:34 error: @size must be at least as big as the type's size (4))");
 }
 
 TEST_F(ResolverValidationTest, OffsetAndSizeAttribute) {
@@ -1243,7 +1209,7 @@ TEST_F(ResolverValidationTest, OffsetAndSizeAttribute) {
                    });
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), "12:34 error: @offset cannot be used with @align or @size");
+    EXPECT_EQ(r()->error(), R"(12:34 error: @offset cannot be used with @align or @size)");
 }
 
 TEST_F(ResolverValidationTest, OffsetAndAlignAttribute) {
@@ -1253,7 +1219,7 @@ TEST_F(ResolverValidationTest, OffsetAndAlignAttribute) {
                    });
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), "12:34 error: @offset cannot be used with @align or @size");
+    EXPECT_EQ(r()->error(), R"(12:34 error: @offset cannot be used with @align or @size)");
 }
 
 TEST_F(ResolverValidationTest, OffsetAndAlignAndSizeAttribute) {
@@ -1263,39 +1229,40 @@ TEST_F(ResolverValidationTest, OffsetAndAlignAndSizeAttribute) {
                    });
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), "12:34 error: @offset cannot be used with @align or @size");
+    EXPECT_EQ(r()->error(), R"(12:34 error: @offset cannot be used with @align or @size)");
 }
 
 TEST_F(ResolverTest, Expr_Initializer_Cast_Pointer) {
     auto* vf = Var("vf", ty.f32());
     auto* c =
-        Construct(Source{{12, 34}}, ty.pointer<i32>(ast::AddressSpace::kFunction), ExprList(vf));
-    auto* ip = Let("ip", ty.pointer<i32>(ast::AddressSpace::kFunction), c);
+        Call(Source{{12, 34}}, ty.pointer<i32>(builtin::AddressSpace::kFunction), ExprList(vf));
+    auto* ip = Let("ip", ty.pointer<i32>(builtin::AddressSpace::kFunction), c);
     WrapInFunction(Decl(vf), Decl(ip));
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), "12:34 error: type is not constructible");
+    EXPECT_EQ(r()->error(), R"(12:34 error: type is not constructible)");
 }
 
 TEST_F(ResolverTest, I32_Overflow) {
-    GlobalVar("v", ty.i32(), ast::AddressSpace::kPrivate, Expr(Source{{12, 24}}, 2147483648_a));
+    GlobalVar("v", ty.i32(), builtin::AddressSpace::kPrivate, Expr(Source{{12, 24}}, 2147483648_a));
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), "12:24 error: value 2147483648 cannot be represented as 'i32'");
+    EXPECT_EQ(r()->error(), R"(12:24 error: value 2147483648 cannot be represented as 'i32')");
 }
 
 TEST_F(ResolverTest, I32_Underflow) {
-    GlobalVar("v", ty.i32(), ast::AddressSpace::kPrivate, Expr(Source{{12, 24}}, -2147483649_a));
+    GlobalVar("v", ty.i32(), builtin::AddressSpace::kPrivate,
+              Expr(Source{{12, 24}}, -2147483649_a));
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), "12:24 error: value -2147483649 cannot be represented as 'i32'");
+    EXPECT_EQ(r()->error(), R"(12:24 error: value -2147483649 cannot be represented as 'i32')");
 }
 
 TEST_F(ResolverTest, U32_Overflow) {
-    GlobalVar("v", ty.u32(), ast::AddressSpace::kPrivate, Expr(Source{{12, 24}}, 4294967296_a));
+    GlobalVar("v", ty.u32(), builtin::AddressSpace::kPrivate, Expr(Source{{12, 24}}, 4294967296_a));
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), "12:24 error: value 4294967296 cannot be represented as 'u32'");
+    EXPECT_EQ(r()->error(), R"(12:24 error: value 4294967296 cannot be represented as 'u32')");
 }
 
 //    var a: array<i32,2>;
@@ -1312,7 +1279,8 @@ TEST_F(ResolverTest, PointerIndexing_Fail) {
     WrapInFunction(a, idx);
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), "error: cannot index type 'ptr<function, array<i32, 2>, read_write>'");
+    EXPECT_EQ(r()->error(),
+              R"(error: cannot index type 'ptr<function, array<i32, 2>, read_write>')");
 }
 
 }  // namespace

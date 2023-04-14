@@ -20,9 +20,10 @@
 
 #include "src/tint/program_builder.h"
 #include "src/tint/sem/call.h"
-#include "src/tint/sem/expression.h"
 #include "src/tint/sem/member_accessor_expression.h"
-#include "src/tint/sem/type_initializer.h"
+#include "src/tint/sem/type_expression.h"
+#include "src/tint/sem/value_constructor.h"
+#include "src/tint/sem/value_expression.h"
 #include "src/tint/transform/simplify_pointers.h"
 #include "src/tint/utils/hash.h"
 #include "src/tint/utils/map.h"
@@ -36,8 +37,8 @@ using DecomposedArrays = std::unordered_map<const type::Array*, Symbol>;
 
 bool ShouldRun(const Program* program) {
     for (auto* node : program->ASTNodes().Objects()) {
-        if (auto* ast = node->As<ast::Array>()) {
-            if (ast::GetAttribute<ast::StrideAttribute>(ast->attributes)) {
+        if (auto* ident = node->As<ast::TemplatedIdentifier>()) {
+            if (ast::GetAttribute<ast::StrideAttribute>(ident->attributes)) {
                 return true;
             }
         }
@@ -73,27 +74,45 @@ Transform::ApplyResult DecomposeStridedArray::Apply(const Program* src,
     // stride for the array element type, then replace the array element type with
     // a structure, holding a single field with a @size attribute equal to the
     // array stride.
-    ctx.ReplaceAll([&](const ast::Array* ast) -> const ast::Array* {
-        if (auto* arr = sem.Get(ast)) {
-            if (!arr->IsStrideImplicit()) {
-                auto el_ty = utils::GetOrCreate(decomposed, arr, [&] {
-                    auto name = b.Symbols().New("strided_arr");
-                    auto* member_ty = ctx.Clone(ast->type);
-                    auto* member = b.Member(kMemberName, member_ty,
-                                            utils::Vector{
-                                                b.MemberSize(AInt(arr->Stride())),
-                                            });
-                    b.Structure(name, utils::Vector{member});
-                    return name;
-                });
-                auto* count = ctx.Clone(ast->count);
-                return b.ty.array(b.ty.type_name(el_ty), count);
+    ctx.ReplaceAll([&](const ast::IdentifierExpression* expr) -> const ast::IdentifierExpression* {
+        auto* ident = expr->identifier->As<ast::TemplatedIdentifier>();
+        if (!ident) {
+            return nullptr;
+        }
+        auto* type_expr = sem.Get<sem::TypeExpression>(expr);
+        if (!type_expr) {
+            return nullptr;
+        }
+        auto* arr = type_expr->Type()->As<type::Array>();
+        if (!arr) {
+            return nullptr;
+        }
+        if (!arr->IsStrideImplicit()) {
+            auto el_ty = utils::GetOrCreate(decomposed, arr, [&] {
+                auto name = b.Symbols().New("strided_arr");
+                auto* member_ty = ctx.Clone(ident->arguments[0]->As<ast::IdentifierExpression>());
+                auto* member = b.Member(kMemberName, ast::Type{member_ty},
+                                        utils::Vector{
+                                            b.MemberSize(AInt(arr->Stride())),
+                                        });
+                b.Structure(name, utils::Vector{member});
+                return name;
+            });
+            if (ident->arguments.Length() > 1) {
+                auto* count = ctx.Clone(ident->arguments[1]);
+                return b.Expr(b.ty.array(b.ty(el_ty), count));
+            } else {
+                return b.Expr(b.ty.array(b.ty(el_ty)));
             }
-            if (ast::GetAttribute<ast::StrideAttribute>(ast->attributes)) {
-                // Strip the @stride attribute
-                auto* ty = ctx.Clone(ast->type);
-                auto* count = ctx.Clone(ast->count);
-                return b.ty.array(ty, count);
+        }
+        if (ast::GetAttribute<ast::StrideAttribute>(ident->attributes)) {
+            // Strip the @stride attribute
+            auto* ty = ctx.Clone(ident->arguments[0]->As<ast::IdentifierExpression>());
+            if (ident->arguments.Length() > 1) {
+                auto* count = ctx.Clone(ident->arguments[1]);
+                return b.Expr(b.ty.array(ast::Type{ty}, count));
+            } else {
+                return b.Expr(b.ty.array(ast::Type{ty}));
             }
         }
         return nullptr;
@@ -115,30 +134,24 @@ Transform::ApplyResult DecomposeStridedArray::Apply(const Program* src,
         return nullptr;
     });
 
-    // Find all array type initializer expressions for array types that have had
-    // their element changed to a single field structure. These initializers are
-    // adjusted to wrap each of the arguments with an additional initializer for
-    // the new element structure type.
-    // Example:
+    // Find all constructor expressions for array types that have had their element changed to a
+    // single field structure. These constructors are adjusted to wrap each of the arguments with an
+    // additional initializer for the new element structure type. Example:
     //   `@stride(32) array<i32, 3>(1, 2, 3)`
     // ->
     //   `array<strided_arr, 3>(strided_arr(1), strided_arr(2), strided_arr(3))`
     ctx.ReplaceAll([&](const ast::CallExpression* expr) -> const ast::Expression* {
         if (!expr->args.IsEmpty()) {
             if (auto* call = sem.Get(expr)->UnwrapMaterialize()->As<sem::Call>()) {
-                if (auto* ctor = call->Target()->As<sem::TypeInitializer>()) {
+                if (auto* ctor = call->Target()->As<sem::ValueConstructor>()) {
                     if (auto* arr = ctor->ReturnType()->As<type::Array>()) {
                         // Begin by cloning the array initializer type or name
                         // If this is an unaliased array, this may add a new entry to
                         // decomposed.
                         // If this is an aliased array, decomposed should already be
                         // populated with any strided aliases.
-                        ast::CallExpression::Target target;
-                        if (expr->target.type) {
-                            target.type = ctx.Clone(expr->target.type);
-                        } else {
-                            target.name = ctx.Clone(expr->target.name);
-                        }
+
+                        auto* target = ctx.Clone(expr->target);
 
                         utils::Vector<const ast::Expression*, 8> args;
                         if (auto it = decomposed.find(arr); it != decomposed.end()) {
@@ -150,8 +163,7 @@ Transform::ApplyResult DecomposeStridedArray::Apply(const Program* src,
                             args = ctx.Clone(expr->args);
                         }
 
-                        return target.type ? b.Construct(target.type, std::move(args))
-                                           : b.Call(target.name, std::move(args));
+                        return b.Call(target, std::move(args));
                     }
                 }
             }

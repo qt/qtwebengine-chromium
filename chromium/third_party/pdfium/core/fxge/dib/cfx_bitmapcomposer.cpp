@@ -14,6 +14,7 @@
 #include "core/fxcrt/span_util.h"
 #include "core/fxge/cfx_cliprgn.h"
 #include "core/fxge/dib/cfx_dibitmap.h"
+#include "third_party/base/check_op.h"
 
 CFX_BitmapComposer::CFX_BitmapComposer() = default;
 
@@ -51,8 +52,10 @@ bool CFX_BitmapComposer::SetInfo(int width,
                                  int height,
                                  FXDIB_Format src_format,
                                  pdfium::span<const uint32_t> src_palette) {
+  DCHECK_NE(src_format, FXDIB_Format::k1bppMask);
+  DCHECK_NE(src_format, FXDIB_Format::k1bppRgb);
   m_SrcFormat = src_format;
-  if (!m_Compositor.Init(m_pBitmap->GetFormat(), src_format, width, src_palette,
+  if (!m_Compositor.Init(m_pBitmap->GetFormat(), src_format, src_palette,
                          m_MaskColor, m_BlendMode,
                          m_pClipMask != nullptr || (m_BitmapAlpha < 255),
                          m_bRgbByteOrder)) {
@@ -86,7 +89,7 @@ void CFX_BitmapComposer::DoCompose(pdfium::span<uint8_t> dest_scan,
   if (m_SrcFormat == FXDIB_Format::k8bppMask) {
     m_Compositor.CompositeByteMaskLine(dest_scan, src_scan, dest_width,
                                        clip_scan);
-  } else if (GetBppFromFormat(m_SrcFormat) == 8) {
+  } else if (m_SrcFormat == FXDIB_Format::k8bppRgb) {
     m_Compositor.CompositePalBitmapLine(dest_scan, src_scan, 0, dest_width,
                                         clip_scan);
   } else {

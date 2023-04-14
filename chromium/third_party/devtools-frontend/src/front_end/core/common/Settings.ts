@@ -31,7 +31,7 @@
 import type * as Platform from '../platform/platform.js';
 import * as Root from '../root/root.js';
 
-import {Format, Legacy, type Color} from './Color.js';
+import {Format, type Color} from './Color.js';
 import {Console} from './Console.js';
 import {type GenericEvents, type EventDescriptor, type EventTargetEvent} from './EventTarget.js';
 import {ObjectWrapper} from './Object.js';
@@ -585,7 +585,7 @@ export class VersionController {
   }
 
   static get currentVersion(): number {
-    return 31;
+    return 35;
   }
 
   updateVersion(): void {
@@ -1089,6 +1089,87 @@ export class VersionController {
     removeSetting(recordingsSetting);
   }
 
+  updateVersionFrom31To32(): void {
+    // Introduce the new 'resourceTypeName' property on stored breakpoints. Prior to
+    // this change we synchronized the breakpoint only by URL, but since we don't
+    // know on which resource type the given breakpoint was set, we just assume
+    // 'script' here to keep things simple.
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const breakpointsSetting = Settings.instance().createLocalSetting<any>('breakpoints', []);
+    const breakpoints = breakpointsSetting.get();
+    for (const breakpoint of breakpoints) {
+      breakpoint['resourceTypeName'] = 'script';
+    }
+    breakpointsSetting.set(breakpoints);
+  }
+
+  updateVersionFrom32To33(): void {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const previouslyViewedFilesSetting = Settings.instance().createLocalSetting<any>('previouslyViewedFiles', []);
+    let previouslyViewedFiles = previouslyViewedFilesSetting.get();
+
+    // Discard old 'previouslyViewedFiles' items that don't have a 'url' property.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    previouslyViewedFiles = previouslyViewedFiles.filter((previouslyViewedFile: any) => 'url' in previouslyViewedFile);
+
+    // Introduce the new 'resourceTypeName' property on previously viewed files.
+    // Prior to this change we only keyed them based on the URL, but since we
+    // don't know which resource type the given file had, we just assume 'script'
+    // here to keep things simple.
+    for (const previouslyViewedFile of previouslyViewedFiles) {
+      previouslyViewedFile['resourceTypeName'] = 'script';
+    }
+
+    previouslyViewedFilesSetting.set(previouslyViewedFiles);
+  }
+
+  updateVersionFrom33To34(): void {
+    // Introduces the 'isLogpoint' property on stored breakpoints. This information was
+    // previously encoded in the 'condition' itself. This migration leaves the condition
+    // alone but ensures that 'isLogpoint' is accurate for already stored breakpoints.
+    // This enables us to use the 'isLogpoint' property in code.
+    // A separate migration will remove the special encoding from the condition itself
+    // once all refactorings are done.
+
+    // The prefix/suffix are hardcoded here, since these constants will be removed in
+    // the future.
+    const logpointPrefix = '/** DEVTOOLS_LOGPOINT */ console.log(';
+    const logpointSuffix = ')';
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const breakpointsSetting = Settings.instance().createLocalSetting<any>('breakpoints', []);
+    const breakpoints = breakpointsSetting.get();
+    for (const breakpoint of breakpoints) {
+      const isLogpoint =
+          breakpoint.condition.startsWith(logpointPrefix) && breakpoint.condition.endsWith(logpointSuffix);
+      breakpoint['isLogpoint'] = isLogpoint;
+    }
+    breakpointsSetting.set(breakpoints);
+  }
+
+  updateVersionFrom34To35(): void {
+    // Uses the 'isLogpoint' property on stored breakpoints to remove the prefix/suffix
+    // from logpoints. This way, we store the entered log point condition as the user
+    // entered it.
+
+    // The prefix/suffix are hardcoded here, since these constants will be removed in
+    // the future.
+    const logpointPrefix = '/** DEVTOOLS_LOGPOINT */ console.log(';
+    const logpointSuffix = ')';
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const breakpointsSetting = Settings.instance().createLocalSetting<any>('breakpoints', []);
+    const breakpoints = breakpointsSetting.get();
+    for (const breakpoint of breakpoints) {
+      const {condition, isLogpoint} = breakpoint;
+      if (isLogpoint) {
+        breakpoint.condition = condition.slice(logpointPrefix.length, condition.length - logpointSuffix.length);
+      }
+    }
+    breakpointsSetting.set(breakpoints);
+  }
+
   private migrateSettingsFromLocalStorage(): void {
     // This step migrates all the settings except for the ones below into the browser profile.
     const localSettings = new Set<string>([
@@ -1153,24 +1234,18 @@ export function settingForTest(settingName: string): Setting<unknown> {
 }
 
 export function detectColorFormat(color: Color): Format {
-  const cf = Format;
-  if (!(color instanceof Legacy)) {
-    return cf.Original;
-  }
   let format;
   const formatSetting = Settings.instance().moduleSetting('colorFormat').get();
-  if (formatSetting === cf.Original) {
-    format = cf.Original;
-  } else if (formatSetting === cf.RGB) {
-    format = cf.RGB;
-  } else if (formatSetting === cf.HSL) {
-    format = cf.HSL;
-  } else if (formatSetting === cf.HWB) {
-    format = cf.HWB;
-  } else if (formatSetting === cf.HEX) {
-    format = color.detectHEXFormat();
+  if (formatSetting === Format.RGB) {
+    format = Format.RGB;
+  } else if (formatSetting === Format.HSL) {
+    format = Format.HSL;
+  } else if (formatSetting === Format.HWB) {
+    format = Format.HWB;
+  } else if (formatSetting === Format.HEX) {
+    format = color.asLegacyColor().detectHEXFormat();
   } else {
-    format = cf.RGB;
+    format = color.format();
   }
 
   return format;

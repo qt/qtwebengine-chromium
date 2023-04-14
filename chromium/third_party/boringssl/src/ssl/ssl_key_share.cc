@@ -162,7 +162,6 @@ class X25519KeyShare : public SSLKeyShare {
 
     Array<uint8_t> secret;
     if (!secret.Init(32)) {
-      OPENSSL_PUT_ERROR(SSL, ERR_R_MALLOC_FAILURE);
       return false;
     }
 
@@ -227,7 +226,6 @@ class CECPQ2KeyShare : public SSLKeyShare {
               uint8_t *out_alert, Span<const uint8_t> peer_key) override {
     Array<uint8_t> secret;
     if (!secret.Init(32 + HRSS_KEY_BYTES)) {
-      OPENSSL_PUT_ERROR(SSL, ERR_R_MALLOC_FAILURE);
       return false;
     }
 
@@ -265,7 +263,6 @@ class CECPQ2KeyShare : public SSLKeyShare {
 
     Array<uint8_t> secret;
     if (!secret.Init(32 + HRSS_KEY_BYTES)) {
-      OPENSSL_PUT_ERROR(SSL, ERR_R_MALLOC_FAILURE);
       return false;
     }
 
@@ -290,6 +287,54 @@ class CECPQ2KeyShare : public SSLKeyShare {
   HRSS_private_key hrss_private_key_;
 };
 
+class X25519Kyber768KeyShare : public SSLKeyShare {
+ public:
+  X25519Kyber768KeyShare() {}
+
+  uint16_t GroupID() const override { return SSL_CURVE_X25519KYBER768; }
+
+  bool Offer(CBB *out) override {
+    // There is no implementation on Kyber in BoringSSL. BoringSSL must be
+    // patched for this key agreement to be workable. It is not enabled by
+    // default.
+    return false;
+  }
+
+  bool Accept(CBB *out_public_key, Array<uint8_t> *out_secret,
+              uint8_t *out_alert, Span<const uint8_t> peer_key) override {
+    return false;
+  }
+
+  bool Finish(Array<uint8_t> *out_secret, uint8_t *out_alert,
+              Span<const uint8_t> peer_key) override {
+    return false;
+  }
+};
+
+class P256Kyber768KeyShare : public SSLKeyShare {
+ public:
+  P256Kyber768KeyShare() {}
+
+  uint16_t GroupID() const override { return SSL_CURVE_P256KYBER768; }
+
+  bool Offer(CBB *out) override {
+    // There is no implementation on Kyber in BoringSSL. BoringSSL must be
+    // patched for this key agreement to be workable. It is not enabled by
+    // default.
+    return false;
+  }
+
+  bool Accept(CBB *out_public_key, Array<uint8_t> *out_secret,
+              uint8_t *out_alert, Span<const uint8_t> peer_key) override {
+    return false;
+  }
+
+  bool Finish(Array<uint8_t> *out_secret, uint8_t *out_alert,
+              Span<const uint8_t> peer_key) override {
+    return false;
+  }
+};
+
 constexpr NamedGroup kNamedGroups[] = {
     {NID_secp224r1, SSL_CURVE_SECP224R1, "P-224", "secp224r1"},
     {NID_X9_62_prime256v1, SSL_CURVE_SECP256R1, "P-256", "prime256v1"},
@@ -297,6 +342,9 @@ constexpr NamedGroup kNamedGroups[] = {
     {NID_secp521r1, SSL_CURVE_SECP521R1, "P-521", "secp521r1"},
     {NID_X25519, SSL_CURVE_X25519, "X25519", "x25519"},
     {NID_CECPQ2, SSL_CURVE_CECPQ2, "CECPQ2", "CECPQ2"},
+    {NID_X25519Kyber768, SSL_CURVE_X25519KYBER768, "X25519KYBER",
+     "X25519Kyber"},
+    {NID_P256Kyber768, SSL_CURVE_P256KYBER768, "P256KYBER", "P256Kyber"},
 };
 
 }  // namespace
@@ -308,21 +356,21 @@ Span<const NamedGroup> NamedGroups() {
 UniquePtr<SSLKeyShare> SSLKeyShare::Create(uint16_t group_id) {
   switch (group_id) {
     case SSL_CURVE_SECP224R1:
-      return UniquePtr<SSLKeyShare>(
-          New<ECKeyShare>(NID_secp224r1, SSL_CURVE_SECP224R1));
+      return MakeUnique<ECKeyShare>(NID_secp224r1, SSL_CURVE_SECP224R1);
     case SSL_CURVE_SECP256R1:
-      return UniquePtr<SSLKeyShare>(
-          New<ECKeyShare>(NID_X9_62_prime256v1, SSL_CURVE_SECP256R1));
+      return MakeUnique<ECKeyShare>(NID_X9_62_prime256v1, SSL_CURVE_SECP256R1);
     case SSL_CURVE_SECP384R1:
-      return UniquePtr<SSLKeyShare>(
-          New<ECKeyShare>(NID_secp384r1, SSL_CURVE_SECP384R1));
+      return MakeUnique<ECKeyShare>(NID_secp384r1, SSL_CURVE_SECP384R1);
     case SSL_CURVE_SECP521R1:
-      return UniquePtr<SSLKeyShare>(
-          New<ECKeyShare>(NID_secp521r1, SSL_CURVE_SECP521R1));
+      return MakeUnique<ECKeyShare>(NID_secp521r1, SSL_CURVE_SECP521R1);
     case SSL_CURVE_X25519:
-      return UniquePtr<SSLKeyShare>(New<X25519KeyShare>());
+      return MakeUnique<X25519KeyShare>();
     case SSL_CURVE_CECPQ2:
-      return UniquePtr<SSLKeyShare>(New<CECPQ2KeyShare>());
+      return MakeUnique<CECPQ2KeyShare>();
+    case SSL_CURVE_X25519KYBER768:
+      return MakeUnique<X25519Kyber768KeyShare>();
+    case SSL_CURVE_P256KYBER768:
+      return MakeUnique<P256Kyber768KeyShare>();
     default:
       return nullptr;
   }

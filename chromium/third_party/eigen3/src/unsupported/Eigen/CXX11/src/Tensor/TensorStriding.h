@@ -288,13 +288,13 @@ struct TensorEvaluator<TensorStridingOp<Strides, ArgType>, Device>
   typedef typename PacketType<CoeffReturnType, Device>::type PacketReturnType;
   static constexpr int PacketSize = PacketType<CoeffReturnType, Device>::size;
 
-  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Scalar& coeffRef(Index index)
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Scalar& coeffRef(Index index) const
   {
     return this->m_impl.coeffRef(this->srcCoeff(index));
   }
 
   template <int StoreMode> EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE
-  void writePacket(Index index, const PacketReturnType& x)
+  void writePacket(Index index, const PacketReturnType& x) const
   {
     EIGEN_STATIC_ASSERT((PacketSize > 1), YOU_MADE_A_PROGRAMMING_MISTAKE)
     eigen_assert(index+PacketSize-1 < this->dimensions().TotalSize());

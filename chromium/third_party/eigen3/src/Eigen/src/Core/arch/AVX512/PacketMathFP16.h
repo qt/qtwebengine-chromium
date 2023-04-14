@@ -17,7 +17,7 @@ namespace Eigen {
 namespace internal {
 
 // Disable the code for older versions of gcc that don't support many of the required avx512 math instrinsics.
-#if EIGEN_GNUC_AT_LEAST(5, 3) || EIGEN_COMP_CLANG || EIGEN_COMP_MSVC >= 1923 || EIGEN_COMP_ICC >= 1900
+#if EIGEN_GNUC_STRICT_AT_LEAST(5,3,0) || EIGEN_COMP_CLANG || EIGEN_COMP_MSVC >= 1923 || EIGEN_COMP_ICC >= 1900
 #define EIGEN_HAS_AVX512_MATH 1
 #else
 #define EIGEN_HAS_AVX512_MATH 0
@@ -194,6 +194,13 @@ EIGEN_STRONG_INLINE Packet32h ploadquad<Packet32h>(const Eigen::half* from) {
 template <>
 EIGEN_STRONG_INLINE Packet32h pabs<Packet32h>(const Packet32h& a) {
   return _mm512_abs_ph(a);
+}
+
+// psignbit
+
+template <>
+EIGEN_STRONG_INLINE Packet32h psignbit<Packet32h>(const Packet32h& a) {
+  return _mm512_castsi512_ph(_mm512_srai_epi16(_mm512_castph_si512(a), 15));
 }
 
 // pmin

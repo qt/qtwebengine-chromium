@@ -18,11 +18,12 @@
 #include <memory>
 #include <utility>
 
+#include "perfetto/base/compiler.h"
 #include "src/trace_processor/importers/common/parser_types.h"
 #include "src/trace_processor/importers/fuchsia/fuchsia_record.h"
 #include "src/trace_processor/sorter/trace_sorter.h"
-#include "src/trace_processor/sorter/trace_sorter_queue.h"
 #include "src/trace_processor/storage/trace_storage.h"
+#include "src/trace_processor/util/bump_allocator.h"
 
 namespace perfetto {
 namespace trace_processor {
@@ -45,9 +46,7 @@ TraceSorter::~TraceSorter() {
   // that now.
   for (auto& queue : queues_) {
     for (const auto& event : queue.events_) {
-      // Calling this function without using the packet the same
-      // as just calling the destructor for the element.
-      EvictVariadic(event);
+      ExtractAndDiscardTokenizedObject(event);
     }
   }
 }
@@ -66,7 +65,7 @@ void TraceSorter::Queue::Sort() {
   auto sort_end = events_.begin() + static_cast<ssize_t>(sort_start_idx_);
   PERFETTO_DCHECK(std::is_sorted(events_.begin(), sort_end));
   auto sort_begin = std::lower_bound(events_.begin(), sort_end, sort_min_ts_,
-                                     &TimestampedDescriptor::Compare);
+                                     &TimestampedEvent::Compare);
   std::sort(sort_begin, events_.end());
   sort_start_idx_ = 0;
   sort_min_ts_ = 0;
@@ -95,7 +94,8 @@ void TraceSorter::Queue::Sort() {
 // to avoid re-scanning all the queues all the times) but doesn't seem worth it.
 // With Android traces (that have 8 CPUs) this function accounts for ~1-3% cpu
 // time in a profiler.
-void TraceSorter::SortAndExtractEventsUntilPacket(uint64_t limit_offset) {
+void TraceSorter::SortAndExtractEventsUntilAllocId(
+    BumpAllocator::AllocId limit_alloc_id) {
   constexpr int64_t kTsMax = std::numeric_limits<int64_t>::max();
   for (;;) {
     size_t min_queue_idx = 0;  // The index of the queue with the min(ts).
@@ -106,204 +106,184 @@ void TraceSorter::SortAndExtractEventsUntilPacket(uint64_t limit_offset) {
 
     // This loop identifies the queue which starts with the earliest event and
     // also remembers the earliest event of the 2nd queue (in min_queue_ts[1]).
-    bool has_queues_with_expired_events = false;
+    bool all_queues_empty = true;
     for (size_t i = 0; i < queues_.size(); i++) {
       auto& queue = queues_[i];
       if (queue.events_.empty())
         continue;
-      PERFETTO_DCHECK(queue.min_ts_ >= global_min_ts_);
-      PERFETTO_DCHECK(queue.max_ts_ <= global_max_ts_);
-      if (!has_queues_with_expired_events || queue.min_ts_ < min_queue_ts[0]) {
+      all_queues_empty = false;
+
+      PERFETTO_DCHECK(queue.max_ts_ <= append_max_ts_);
+      if (queue.min_ts_ < min_queue_ts[0]) {
         min_queue_ts[1] = min_queue_ts[0];
         min_queue_ts[0] = queue.min_ts_;
         min_queue_idx = i;
-        has_queues_with_expired_events = true;
       } else if (queue.min_ts_ < min_queue_ts[1]) {
         min_queue_ts[1] = queue.min_ts_;
       }
     }
-    if (!has_queues_with_expired_events) {
-      // All the queues have events that start after the window (i.e. they are
-      // too recent and not eligible to be extracted given the current window).
+    if (all_queues_empty)
       break;
-    }
 
     Queue& queue = queues_[min_queue_idx];
     auto& events = queue.events_;
     if (queue.needs_sorting())
       queue.Sort();
     PERFETTO_DCHECK(queue.min_ts_ == events.front().ts);
-    PERFETTO_DCHECK(queue.min_ts_ == global_min_ts_);
 
     // Now that we identified the min-queue, extract all events from it until
     // we hit either: (1) the min-ts of the 2nd queue or (2) the packet index
     // limit, whichever comes first.
     size_t num_extracted = 0;
     for (auto& event : events) {
-      if (event.descriptor.offset() >= limit_offset ||
-          event.ts > min_queue_ts[1]) {
+      if (event.alloc_id >= limit_alloc_id) {
+        break;
+      }
+
+      if (event.ts > min_queue_ts[1]) {
+        // We should never hit this condition on the first extraction as by
+        // the algorithm above (event.ts =) min_queue_ts[0] <= min_queue[1].
+        PERFETTO_DCHECK(num_extracted > 0);
         break;
       }
 
       ++num_extracted;
-      MaybePushAndEvictEvent(min_queue_idx, event);
+      MaybeExtractEvent(min_queue_idx, event);
     }  // for (event: events)
 
-    if (!num_extracted) {
-      // No events can be extracted from any of the queues. This means that
-      // either we hit the window or all queues are empty.
+    // The earliest event cannot be extracted without going past the limit.
+    if (!num_extracted)
       break;
-    }
 
     // Now remove the entries from the event buffer and update the queue-local
     // and global time bounds.
     events.erase_front(num_extracted);
+    events.shrink_to_fit();
 
-    // After evicting elements we can empty memory in the front of the
-    // queue.
-    variadic_queue_.FreeMemory();
+    // Since we likely just removed a bunch of items try to reduce the memory
+    // usage of the token buffer.
+    token_buffer_.FreeMemory();
 
-    // Update the global_{min,max}_ts to reflect the bounds after extraction.
+    // Update the queue timestamps to reflect the bounds after extraction.
     if (events.empty()) {
       queue.min_ts_ = kTsMax;
       queue.max_ts_ = 0;
-      global_min_ts_ = min_queue_ts[1];
-
-      // If we extraced the max entry from a queue (i.e. we emptied the queue)
-      // we need to recompute the global max, because it might have been the one
-      // just extracted.
-      global_max_ts_ = 0;
-      for (auto& q : queues_)
-        global_max_ts_ = std::max(global_max_ts_, q.max_ts_);
     } else {
       queue.min_ts_ = queue.events_.front().ts;
-      global_min_ts_ = std::min(queue.min_ts_, min_queue_ts[1]);
     }
   }  // for(;;)
-
-#if PERFETTO_DCHECK_IS_ON()
-  // Check that the global min/max are consistent.
-  int64_t dbg_min_ts = kTsMax;
-  int64_t dbg_max_ts = 0;
-  for (auto& q : queues_) {
-    dbg_min_ts = std::min(dbg_min_ts, q.min_ts_);
-    dbg_max_ts = std::max(dbg_max_ts, q.max_ts_);
-  }
-  PERFETTO_DCHECK(global_min_ts_ == dbg_min_ts);
-  PERFETTO_DCHECK(global_max_ts_ == dbg_max_ts);
-#endif
 }
 
-void TraceSorter::EvictVariadic(const TimestampedDescriptor& ts_desc) {
-  switch (ts_desc.descriptor.type()) {
-    case EventType::kTracePacket:
-      EvictTypedVariadic<TracePacketData>(ts_desc);
+void TraceSorter::ParseTracePacket(const TimestampedEvent& event) {
+  TraceTokenBuffer::Id id = GetTokenBufferId(event);
+  switch (static_cast<TimestampedEvent::Type>(event.event_type)) {
+    case TimestampedEvent::Type::kTracePacket:
+      parser_->ParseTracePacket(event.ts,
+                                token_buffer_.Extract<TracePacketData>(id));
       return;
-    case EventType::kTrackEvent:
-      EvictTypedVariadic<TrackEventData>(ts_desc);
+    case TimestampedEvent::Type::kTrackEvent:
+      parser_->ParseTrackEvent(event.ts,
+                               token_buffer_.Extract<TrackEventData>(id));
       return;
-    case EventType::kFuchsiaRecord:
-      EvictTypedVariadic<FuchsiaRecord>(ts_desc);
+    case TimestampedEvent::Type::kFuchsiaRecord:
+      parser_->ParseFuchsiaRecord(event.ts,
+                                  token_buffer_.Extract<FuchsiaRecord>(id));
       return;
-    case EventType::kJsonValue:
-      EvictTypedVariadic<std::string>(ts_desc);
+    case TimestampedEvent::Type::kJsonValue:
+      parser_->ParseJsonPacket(
+          event.ts, std::move(token_buffer_.Extract<JsonEvent>(id).value));
       return;
-    case EventType::kSystraceLine:
-      EvictTypedVariadic<SystraceLine>(ts_desc);
+    case TimestampedEvent::Type::kSystraceLine:
+      parser_->ParseSystraceLine(event.ts,
+                                 token_buffer_.Extract<SystraceLine>(id));
       return;
-    case EventType::kInlineSchedSwitch:
-      EvictTypedVariadic<InlineSchedSwitch>(ts_desc);
-      return;
-    case EventType::kInlineSchedWaking:
-      EvictTypedVariadic<InlineSchedWaking>(ts_desc);
-      return;
-    case EventType::kFtraceEvent:
-      EvictTypedVariadic<TracePacketData>(ts_desc);
-      return;
-    case EventType::kInvalid:
-      PERFETTO_FATAL("Invalid event type");
-  }
-  PERFETTO_FATAL("For GCC");
-}
-
-void TraceSorter::ParseTracePacket(const TimestampedDescriptor& ts_desc) {
-  switch (ts_desc.descriptor.type()) {
-    case EventType::kTracePacket:
-      parser_->ParseTracePacket(ts_desc.ts,
-                                EvictTypedVariadic<TracePacketData>(ts_desc));
-      return;
-    case EventType::kTrackEvent:
-      parser_->ParseTrackEvent(ts_desc.ts,
-                               EvictTypedVariadic<TrackEventData>(ts_desc));
-      return;
-    case EventType::kFuchsiaRecord:
-      parser_->ParseFuchsiaRecord(ts_desc.ts,
-                                  EvictTypedVariadic<FuchsiaRecord>(ts_desc));
-      return;
-    case EventType::kJsonValue:
-      parser_->ParseJsonPacket(ts_desc.ts,
-                               EvictTypedVariadic<std::string>(ts_desc));
-      return;
-    case EventType::kSystraceLine:
-      parser_->ParseSystraceLine(ts_desc.ts,
-                                 EvictTypedVariadic<SystraceLine>(ts_desc));
-      return;
-    case EventType::kInlineSchedSwitch:
-    case EventType::kInlineSchedWaking:
-    case EventType::kFtraceEvent:
-    case EventType::kInvalid:
+    case TimestampedEvent::Type::kInlineSchedSwitch:
+    case TimestampedEvent::Type::kInlineSchedWaking:
+    case TimestampedEvent::Type::kFtraceEvent:
       PERFETTO_FATAL("Invalid event type");
   }
   PERFETTO_FATAL("For GCC");
 }
 
 void TraceSorter::ParseFtracePacket(uint32_t cpu,
-                                    const TimestampedDescriptor& ts_desc) {
-  switch (ts_desc.descriptor.type()) {
-    case EventType::kInlineSchedSwitch:
+                                    const TimestampedEvent& event) {
+  TraceTokenBuffer::Id id = GetTokenBufferId(event);
+  switch (static_cast<TimestampedEvent::Type>(event.event_type)) {
+    case TimestampedEvent::Type::kInlineSchedSwitch:
       parser_->ParseInlineSchedSwitch(
-          cpu, ts_desc.ts, EvictTypedVariadic<InlineSchedSwitch>(ts_desc));
+          cpu, event.ts, token_buffer_.Extract<InlineSchedSwitch>(id));
       return;
-    case EventType::kInlineSchedWaking:
+    case TimestampedEvent::Type::kInlineSchedWaking:
       parser_->ParseInlineSchedWaking(
-          cpu, ts_desc.ts, EvictTypedVariadic<InlineSchedWaking>(ts_desc));
+          cpu, event.ts, token_buffer_.Extract<InlineSchedWaking>(id));
       return;
-    case EventType::kFtraceEvent:
-      parser_->ParseFtraceEvent(cpu, ts_desc.ts,
-                                EvictTypedVariadic<TracePacketData>(ts_desc));
+    case TimestampedEvent::Type::kFtraceEvent:
+      parser_->ParseFtraceEvent(cpu, event.ts,
+                                token_buffer_.Extract<TracePacketData>(id));
       return;
-    case EventType::kTrackEvent:
-    case EventType::kSystraceLine:
-    case EventType::kTracePacket:
-    case EventType::kJsonValue:
-    case EventType::kFuchsiaRecord:
-    case EventType::kInvalid:
+    case TimestampedEvent::Type::kTrackEvent:
+    case TimestampedEvent::Type::kSystraceLine:
+    case TimestampedEvent::Type::kTracePacket:
+    case TimestampedEvent::Type::kJsonValue:
+    case TimestampedEvent::Type::kFuchsiaRecord:
       PERFETTO_FATAL("Invalid event type");
   }
   PERFETTO_FATAL("For GCC");
 }
 
-void TraceSorter::MaybePushAndEvictEvent(size_t queue_idx,
-                                         const TimestampedDescriptor& ts_desc) {
-  int64_t timestamp = ts_desc.ts;
+void TraceSorter::ExtractAndDiscardTokenizedObject(
+    const TimestampedEvent& event) {
+  TraceTokenBuffer::Id id = GetTokenBufferId(event);
+  switch (static_cast<TimestampedEvent::Type>(event.event_type)) {
+    case TimestampedEvent::Type::kTracePacket:
+      base::ignore_result(token_buffer_.Extract<TracePacketData>(id));
+      return;
+    case TimestampedEvent::Type::kTrackEvent:
+      base::ignore_result(token_buffer_.Extract<TrackEventData>(id));
+      return;
+    case TimestampedEvent::Type::kFuchsiaRecord:
+      base::ignore_result(token_buffer_.Extract<FuchsiaRecord>(id));
+      return;
+    case TimestampedEvent::Type::kJsonValue:
+      base::ignore_result(token_buffer_.Extract<JsonEvent>(id));
+      return;
+    case TimestampedEvent::Type::kSystraceLine:
+      base::ignore_result(token_buffer_.Extract<SystraceLine>(id));
+      return;
+    case TimestampedEvent::Type::kInlineSchedSwitch:
+      base::ignore_result(token_buffer_.Extract<InlineSchedSwitch>(id));
+      return;
+    case TimestampedEvent::Type::kInlineSchedWaking:
+      base::ignore_result(token_buffer_.Extract<InlineSchedWaking>(id));
+      return;
+    case TimestampedEvent::Type::kFtraceEvent:
+      base::ignore_result(token_buffer_.Extract<TracePacketData>(id));
+      return;
+  }
+  PERFETTO_FATAL("For GCC");
+}
+
+void TraceSorter::MaybeExtractEvent(size_t queue_idx,
+                                    const TimestampedEvent& event) {
+  int64_t timestamp = event.ts;
   if (timestamp < latest_pushed_event_ts_)
     context_->storage->IncrementStats(stats::sorter_push_event_out_of_order);
 
   latest_pushed_event_ts_ = std::max(latest_pushed_event_ts_, timestamp);
 
   if (PERFETTO_UNLIKELY(bypass_next_stage_for_testing_)) {
-    // In standard run the object would be evicted by Parsing{F}tracePacket.
-    // Without it we need to evict it manually.
-    EvictVariadic(ts_desc);
+    // Parse* would extract this event and push it to the next stage. Since we
+    // are skipping that, just extract and discard it.
+    ExtractAndDiscardTokenizedObject(event);
     return;
   }
 
   if (queue_idx == 0) {
-    ParseTracePacket(ts_desc);
+    ParseTracePacket(event);
   } else {
     // Ftrace queues start at offset 1. So queues_[1] = cpu[0] and so on.
     uint32_t cpu = static_cast<uint32_t>(queue_idx - 1);
-    ParseFtracePacket(cpu, ts_desc);
+    ParseFtracePacket(cpu, event);
   }
 }
 

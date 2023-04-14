@@ -17,11 +17,19 @@
 
 #include <vector>
 
-#include "src/tint/ast/access.h"
+#include "src/tint/builtin/access.h"
+#include "src/tint/builtin/texel_format.h"
 #include "src/tint/program_builder.h"
 #include "src/tint/type/storage_texture.h"
+#include "src/tint/type/texture_dimension.h"
 
 namespace tint::ast::builtin::test {
+
+/// The name of the texture global variable used by the tests.
+static constexpr const char* kTextureName = "Texture";
+
+/// The name of the sampler global variable used by the tests.
+static constexpr const char* kSamplerName = "Sampler";
 
 enum class TextureKind { kRegular, kDepth, kDepthMultisampled, kMultisampled, kStorage };
 enum class TextureDataType { kF32, kU32, kI32 };
@@ -177,35 +185,38 @@ bool ReturnsVoid(ValidTextureOverload texture_overload);
 
 /// Describes a texture builtin overload
 struct TextureOverloadCase {
-    /// Args is a list of ast::Expression used as arguments to the texture overload case.
-    using Args = utils::Vector<const ast::Expression*, 8>;
+    /// Args is a list of Expression used as arguments to the texture overload case.
+    using Args = utils::Vector<const Expression*, 8>;
 
     /// Constructor for textureSample...() functions
     TextureOverloadCase(ValidTextureOverload,
                         const char*,
                         TextureKind,
-                        ast::SamplerKind,
-                        ast::TextureDimension,
+                        type::SamplerKind,
+                        type::TextureDimension,
                         TextureDataType,
                         const char*,
-                        std::function<Args(ProgramBuilder*)>);
+                        std::function<Args(ProgramBuilder*)>,
+                        bool /* returns_value */);
     /// Constructor for textureLoad() functions with non-storage textures
     TextureOverloadCase(ValidTextureOverload,
                         const char*,
                         TextureKind,
-                        ast::TextureDimension,
+                        type::TextureDimension,
                         TextureDataType,
                         const char*,
-                        std::function<Args(ProgramBuilder*)>);
+                        std::function<Args(ProgramBuilder*)>,
+                        bool /* returns_value */);
     /// Constructor for textureLoad() with storage textures
     TextureOverloadCase(ValidTextureOverload,
                         const char*,
-                        Access,
-                        ast::TexelFormat,
-                        ast::TextureDimension,
+                        tint::builtin::Access,
+                        tint::builtin::TexelFormat,
+                        type::TextureDimension,
                         TextureDataType,
                         const char*,
-                        std::function<Args(ProgramBuilder*)>);
+                        std::function<Args(ProgramBuilder*)>,
+                        bool /* returns_value */);
     /// Copy constructor
     TextureOverloadCase(const TextureOverloadCase&);
     /// Destructor
@@ -217,15 +228,15 @@ struct TextureOverloadCase {
 
     /// @param builder the AST builder used for the test
     /// @returns the vector component type of the texture function return value
-    const ast::Type* BuildResultVectorComponentType(ProgramBuilder* builder) const;
+    Type BuildResultVectorComponentType(ProgramBuilder* builder) const;
     /// @param builder the AST builder used for the test
     /// @returns a variable holding the test texture, automatically registered as
     /// a global variable.
-    const ast::Variable* BuildTextureVariable(ProgramBuilder* builder) const;
+    const Variable* BuildTextureVariable(ProgramBuilder* builder) const;
     /// @param builder the AST builder used for the test
     /// @returns a Variable holding the test sampler, automatically registered as
     /// a global variable.
-    const ast::Variable* BuildSamplerVariable(ProgramBuilder* builder) const;
+    const Variable* BuildSamplerVariable(ProgramBuilder* builder) const;
 
     /// The enumerator for this overload
     const ValidTextureOverload overload;
@@ -235,21 +246,23 @@ struct TextureOverloadCase {
     const TextureKind texture_kind;
     /// The sampler kind for the sampler parameter
     /// Used only when texture_kind is not kStorage
-    ast::SamplerKind const sampler_kind = ast::SamplerKind::kSampler;
+    type::SamplerKind const sampler_kind = type::SamplerKind::kSampler;
     /// The access control for the storage texture
     /// Used only when texture_kind is kStorage
-    Access const access = Access::kReadWrite;
+    tint::builtin::Access const access = tint::builtin::Access::kReadWrite;
     /// The image format for the storage texture
     /// Used only when texture_kind is kStorage
-    ast::TexelFormat const texel_format = ast::TexelFormat::kUndefined;
+    tint::builtin::TexelFormat const texel_format = tint::builtin::TexelFormat::kUndefined;
     /// The dimensions of the texture parameter
-    ast::TextureDimension const texture_dimension;
+    type::TextureDimension const texture_dimension;
     /// The data type of the texture parameter
     const TextureDataType texture_data_type;
     /// Name of the function. e.g. `textureSample`, `textureSampleGrad`, etc
     const char* const function;
     /// A function that builds the AST arguments for the overload
     std::function<Args(ProgramBuilder*)> const args;
+    /// True if the function returns a value
+    const bool returns_value;
 };
 
 std::ostream& operator<<(std::ostream& out, const TextureOverloadCase& data);

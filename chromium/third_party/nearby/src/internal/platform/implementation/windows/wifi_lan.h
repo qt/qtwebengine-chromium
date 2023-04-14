@@ -23,7 +23,6 @@
 
 // Standard C/C++ headers
 #include <exception>
-#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -35,8 +34,8 @@
 #include "absl/synchronization/mutex.h"
 #include "absl/time/time.h"
 #include "absl/types/optional.h"
-#include "internal/platform/count_down_latch.h"
 #include "internal/platform/cancellation_flag_listener.h"
+#include "internal/platform/count_down_latch.h"
 #include "internal/platform/exception.h"
 #include "internal/platform/implementation/wifi_lan.h"
 #include "internal/platform/implementation/windows/scheduled_executor.h"
@@ -56,7 +55,6 @@
 #include "internal/platform/implementation/windows/generated/winrt/Windows.Storage.Streams.h"
 #include "internal/platform/implementation/windows/generated/winrt/base.h"
 
-namespace location {
 namespace nearby {
 namespace windows {
 
@@ -188,7 +186,7 @@ class WifiLanServerSocket : public api::WifiLanServerSocket {
   // Called by the server side of a connection before passing ownership of
   // WifiLanServerSocker to user, to track validity of a pointer to this
   // server socket.
-  void SetCloseNotifier(std::function<void()> notifier);
+  void SetCloseNotifier(absl::AnyInvocable<void()> notifier);
 
   // Returns Exception::kIo on error, Exception::kSuccess otherwise.
   Exception Close() override;
@@ -202,9 +200,6 @@ class WifiLanServerSocket : public api::WifiLanServerSocket {
       StreamSocketListener listener,
       StreamSocketListenerConnectionReceivedEventArgs const& args);
 
-  // Retrieves IP addresses from local machine
-  std::vector<std::string> GetIpAddresses() const;
-
   mutable absl::Mutex mutex_;
   absl::CondVar cond_;
   std::deque<StreamSocket> pending_sockets_ ABSL_GUARDED_BY(mutex_);
@@ -212,7 +207,7 @@ class WifiLanServerSocket : public api::WifiLanServerSocket {
   winrt::event_token listener_event_token_{};
 
   // Close notifier
-  std::function<void()> close_notifier_ = nullptr;
+  absl::AnyInvocable<void()> close_notifier_ = nullptr;
 
   // IP addresses of the computer. mDNS uses them to advertise.
   std::vector<std::string> ip_addresses_{};
@@ -375,12 +370,11 @@ class WifiLanMedium : public api::WifiLanMedium {
   std::shared_ptr<api::Cancelable> connection_timeout_ = nullptr;
 
   // Listener to connect cancellation.
-  std::unique_ptr<location::nearby::CancellationFlagListener>
+  std::unique_ptr<nearby::CancellationFlagListener>
       connection_cancellation_listener_ = nullptr;
 };
 
 }  // namespace windows
 }  // namespace nearby
-}  // namespace location
 
 #endif  // PLATFORM_IMPL_WINDOWS_WIFI_LAN_H_

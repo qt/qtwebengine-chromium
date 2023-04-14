@@ -9,8 +9,9 @@
 #include "include/core/SkPaint.h"
 #include "include/core/SkPixmap.h"
 #include "include/core/SkShader.h"
-#include "include/private/SkTo.h"
-#include "src/core/SkArenaAlloc.h"
+#include "include/private/base/SkTo.h"
+#include "src/base/SkArenaAlloc.h"
+#include "src/base/SkUtils.h"
 #include "src/core/SkBlendModePriv.h"
 #include "src/core/SkBlitter.h"
 #include "src/core/SkColorFilterBase.h"
@@ -19,7 +20,6 @@
 #include "src/core/SkMatrixProvider.h"
 #include "src/core/SkOpts.h"
 #include "src/core/SkRasterPipeline.h"
-#include "src/core/SkUtils.h"
 #include "src/shaders/SkShaderBase.h"
 
 #define SK_BLITTER_TRACE_IS_RASTER_PIPELINE
@@ -92,7 +92,7 @@ private:
 
 SkBlitter* SkCreateRasterPipelineBlitter(const SkPixmap& dst,
                                          const SkPaint& paint,
-                                         const SkMatrixProvider& matrixProvider,
+                                         const SkMatrix& ctm,
                                          SkArenaAlloc* alloc,
                                          sk_sp<SkShader> clipShader,
                                          const SkSurfaceProps& props) {
@@ -123,10 +123,9 @@ SkBlitter* SkCreateRasterPipelineBlitter(const SkPixmap& dst,
     bool is_opaque    = shader->isOpaque() && paintColor.fA == 1.0f;
     bool is_constant  = shader->isConstant();
 
-    if (shader->appendStages(
-                {&shaderPipeline, alloc, dstCT, dstCS, paint, nullptr, matrixProvider, props})) {
+    if (shader->appendRootStages({&shaderPipeline, alloc, dstCT, dstCS, paint, props}, ctm)) {
         if (paintColor.fA != 1.0f) {
-            shaderPipeline.append(SkRasterPipeline::scale_1_float,
+            shaderPipeline.append(SkRasterPipelineOp::scale_1_float,
                                   alloc->make<float>(paintColor.fA));
         }
         return SkRasterPipelineBlitter::Create(dst, paint, alloc,
@@ -174,17 +173,15 @@ SkBlitter* SkRasterPipelineBlitter::Create(const SkPixmap& dst,
         SkPaint clipPaint;  // just need default values
         SkColorType clipCT = kRGBA_8888_SkColorType;
         SkColorSpace* clipCS = nullptr;
-        SkMatrixProvider clipMatrixProvider(SkMatrix::I());
         SkSurfaceProps props{}; // default OK; clipShader doesn't render text
-        SkStageRec rec = {clipP, alloc, clipCT, clipCS, clipPaint, nullptr, clipMatrixProvider,
-                          props};
-        if (as_SB(clipShader)->appendStages(rec)) {
+        SkStageRec rec = {clipP, alloc, clipCT, clipCS, clipPaint, props};
+        if (as_SB(clipShader)->appendRootStages(rec, SkMatrix::I())) {
             struct Storage {
                 // large enough for highp (float) or lowp(U16)
                 float   fA[SkRasterPipeline_kMaxStride];
             };
             auto storage = alloc->make<Storage>();
-            clipP->append(SkRasterPipeline::store_src_a, storage->fA);
+            clipP->append(SkRasterPipelineOp::store_src_a, storage->fA);
             blitter->fClipShaderBuffer = storage->fA;
             is_constant = false;
         } else {
@@ -197,10 +194,8 @@ SkBlitter* SkRasterPipelineBlitter::Create(const SkPixmap& dst,
 
     // If there's a color filter it comes next.
     if (auto colorFilter = paint.getColorFilter()) {
-        SkMatrixProvider matrixProvider(SkMatrix::I());
         SkSurfaceProps props{}; // default OK; colorFilter doesn't render text
-        SkStageRec rec = {colorPipeline, alloc, dst.colorType(), dst.colorSpace(), paint, nullptr,
-                          matrixProvider, props};
+        SkStageRec rec = {colorPipeline, alloc, dst.colorType(), dst.colorSpace(), paint, props};
         if (!as_CFB(colorFilter)->appendStages(rec, is_opaque)) {
             return nullptr;
         }
@@ -234,6 +229,7 @@ SkBlitter* SkRasterPipelineBlitter::Create(const SkPixmap& dst,
 
             case kUnknown_SkColorType:
             case kAlpha_8_SkColorType:
+            case kBGR_101010x_XR_SkColorType:
             case kRGBA_F16_SkColorType:
             case kRGBA_F16Norm_SkColorType:
             case kRGBA_F32_SkColorType:
@@ -247,7 +243,7 @@ SkBlitter* SkRasterPipelineBlitter::Create(const SkPixmap& dst,
                 break;
         }
         if (blitter->fDitherRate > 0.0f) {
-            colorPipeline->append(SkRasterPipeline::dither, &blitter->fDitherRate);
+            colorPipeline->append(SkRasterPipelineOp::dither, &blitter->fDitherRate);
         }
     }
 
@@ -261,7 +257,7 @@ SkBlitter* SkRasterPipelineBlitter::Create(const SkPixmap& dst,
         // here allows the color pipeline to still run in lowp (we'll use uniform_color, rather than
         // unbounded_uniform_color).
         colorPipeline->append_clamp_if_normalized(dst.info());
-        colorPipeline->append(SkRasterPipeline::store_f32, &constantColorPtr);
+        colorPipeline->append(SkRasterPipelineOp::store_f32, &constantColorPtr);
         colorPipeline->run(0,0,1,1);
         colorPipeline->reset();
         colorPipeline->append_constant_color(alloc, constantColor);
@@ -321,26 +317,26 @@ SkBlitter* SkRasterPipelineBlitter::Create(const SkPixmap& dst,
 void SkRasterPipelineBlitter::append_load_dst(SkRasterPipeline* p) const {
     p->append_load_dst(fDst.info().colorType(), &fDstPtr);
     if (fDst.info().alphaType() == kUnpremul_SkAlphaType) {
-        p->append(SkRasterPipeline::premul_dst);
+        p->append(SkRasterPipelineOp::premul_dst);
     }
 }
 
 void SkRasterPipelineBlitter::append_store(SkRasterPipeline* p) const {
     if (fDst.info().alphaType() == kUnpremul_SkAlphaType) {
-        p->append(SkRasterPipeline::unpremul);
+        p->append(SkRasterPipelineOp::unpremul);
     }
     p->append_store(fDst.info().colorType(), &fDstPtr);
 }
 
 void SkRasterPipelineBlitter::append_clip_scale(SkRasterPipeline* p) const {
     if (fClipShaderBuffer) {
-        p->append(SkRasterPipeline::scale_native, fClipShaderBuffer);
+        p->append(SkRasterPipelineOp::scale_native, fClipShaderBuffer);
     }
 }
 
 void SkRasterPipelineBlitter::append_clip_lerp(SkRasterPipeline* p) const {
     if (fClipShaderBuffer) {
-        p->append(SkRasterPipeline::lerp_native, fClipShaderBuffer);
+        p->append(SkRasterPipelineOp::lerp_native, fClipShaderBuffer);
     }
 }
 
@@ -373,10 +369,10 @@ void SkRasterPipelineBlitter::blitRectWithTrace(int x, int y, int w, int h, bool
                 && fDst.info().alphaType() != kUnpremul_SkAlphaType
                 && fDitherRate == 0.0f) {
             if (fDst.info().colorType() == kBGRA_8888_SkColorType) {
-                p.append(SkRasterPipeline::swap_rb);
+                p.append(SkRasterPipelineOp::swap_rb);
             }
             this->append_clip_scale(&p);
-            p.append(SkRasterPipeline::srcover_rgba_8888, &fDstPtr);
+            p.append(SkRasterPipelineOp::srcover_rgba_8888, &fDstPtr);
         } else {
             if (fBlend != SkBlendMode::kSrc) {
                 this->append_load_dst(&p);
@@ -401,14 +397,14 @@ void SkRasterPipelineBlitter::blitAntiH(int x, int y, const SkAlpha aa[], const 
         p.extend(fColorPipeline);
         p.append_clamp_if_normalized(fDst.info());
         if (SkBlendMode_ShouldPreScaleCoverage(fBlend, /*rgb_coverage=*/false)) {
-            p.append(SkRasterPipeline::scale_1_float, &fCurrentCoverage);
+            p.append(SkRasterPipelineOp::scale_1_float, &fCurrentCoverage);
             this->append_clip_scale(&p);
             this->append_load_dst(&p);
             SkBlendMode_AppendStages(fBlend, &p);
         } else {
             this->append_load_dst(&p);
             SkBlendMode_AppendStages(fBlend, &p);
-            p.append(SkRasterPipeline::lerp_1_float, &fCurrentCoverage);
+            p.append(SkRasterPipelineOp::lerp_1_float, &fCurrentCoverage);
             this->append_clip_lerp(&p);
         }
 
@@ -510,14 +506,14 @@ void SkRasterPipelineBlitter::blitMask(const SkMask& mask, const SkIRect& clip) 
         p.extend(fColorPipeline);
         p.append_clamp_if_normalized(fDst.info());
         if (SkBlendMode_ShouldPreScaleCoverage(fBlend, /*rgb_coverage=*/false)) {
-            p.append(SkRasterPipeline::scale_u8, &fMaskPtr);
+            p.append(SkRasterPipelineOp::scale_u8, &fMaskPtr);
             this->append_clip_scale(&p);
             this->append_load_dst(&p);
             SkBlendMode_AppendStages(fBlend, &p);
         } else {
             this->append_load_dst(&p);
             SkBlendMode_AppendStages(fBlend, &p);
-            p.append(SkRasterPipeline::lerp_u8, &fMaskPtr);
+            p.append(SkRasterPipelineOp::lerp_u8, &fMaskPtr);
             this->append_clip_lerp(&p);
         }
         this->append_store(&p);
@@ -530,13 +526,13 @@ void SkRasterPipelineBlitter::blitMask(const SkMask& mask, const SkIRect& clip) 
         if (SkBlendMode_ShouldPreScaleCoverage(fBlend, /*rgb_coverage=*/true)) {
             // Somewhat unusually, scale_565 needs dst loaded first.
             this->append_load_dst(&p);
-            p.append(SkRasterPipeline::scale_565, &fMaskPtr);
+            p.append(SkRasterPipelineOp::scale_565, &fMaskPtr);
             this->append_clip_scale(&p);
             SkBlendMode_AppendStages(fBlend, &p);
         } else {
             this->append_load_dst(&p);
             SkBlendMode_AppendStages(fBlend, &p);
-            p.append(SkRasterPipeline::lerp_565, &fMaskPtr);
+            p.append(SkRasterPipelineOp::lerp_565, &fMaskPtr);
             this->append_clip_lerp(&p);
         }
         this->append_store(&p);
@@ -546,18 +542,18 @@ void SkRasterPipelineBlitter::blitMask(const SkMask& mask, const SkIRect& clip) 
         SkRasterPipeline p(fAlloc);
         p.extend(fColorPipeline);
         // This bit is where we differ from kA8_Format:
-        p.append(SkRasterPipeline::emboss, &fEmbossCtx);
+        p.append(SkRasterPipelineOp::emboss, &fEmbossCtx);
         // Now onward just as kA8.
         p.append_clamp_if_normalized(fDst.info());
         if (SkBlendMode_ShouldPreScaleCoverage(fBlend, /*rgb_coverage=*/false)) {
-            p.append(SkRasterPipeline::scale_u8, &fMaskPtr);
+            p.append(SkRasterPipelineOp::scale_u8, &fMaskPtr);
             this->append_clip_scale(&p);
             this->append_load_dst(&p);
             SkBlendMode_AppendStages(fBlend, &p);
         } else {
             this->append_load_dst(&p);
             SkBlendMode_AppendStages(fBlend, &p);
-            p.append(SkRasterPipeline::lerp_u8, &fMaskPtr);
+            p.append(SkRasterPipelineOp::lerp_u8, &fMaskPtr);
             this->append_clip_lerp(&p);
         }
         this->append_store(&p);

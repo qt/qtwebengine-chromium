@@ -12,6 +12,7 @@
 #include "quiche/quic/core/quic_connection_id.h"
 #include "quiche/quic/core/quic_connection_stats.h"
 #include "quiche/quic/core/quic_packets.h"
+#include "quiche/quic/core/quic_path_validator.h"
 #include "quiche/quic/core/quic_types.h"
 #include "quiche/quic/platform/api/quic_socket_address.h"
 
@@ -201,6 +202,10 @@ class QuicConnectionPeer {
 
   static QuicConnection::PathState* GetDefaultPath(QuicConnection* connection);
 
+  static bool IsDefaultPath(QuicConnection* connection,
+                            const QuicSocketAddress& self_address,
+                            const QuicSocketAddress& peer_address);
+
   static QuicConnection::PathState* GetAlternativePath(
       QuicConnection* connection);
 
@@ -228,6 +233,17 @@ class QuicConnectionPeer {
   static QuicAlarm* GetMultiPortProbingAlarm(QuicConnection* connection);
 
   static void SetInProbeTimeOut(QuicConnection* connection, bool value);
+
+  static QuicSocketAddress GetReceivedServerPreferredAddress(
+      QuicConnection* connection);
+
+  static QuicSocketAddress GetSentServerPreferredAddress(
+      QuicConnection* connection);
+
+  static QuicEcnCounts* GetEcnCounts(QuicConnection* connection,
+                                     PacketNumberSpace packet_number_space);
+
+  static bool TestLastReceivedPacketInfoDefaults();
 };
 
 }  // namespace test

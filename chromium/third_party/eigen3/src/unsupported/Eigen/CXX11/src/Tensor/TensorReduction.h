@@ -895,7 +895,7 @@ static constexpr bool RunningOnGPU = false;
   // binding placeholder accessors to a command group handler for SYCL
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void bind(cl::sycl::handler &cgh) const {
     m_impl.bind(cgh);
-    m_result.bind(cgh);
+    if(m_result) m_result.bind(cgh);
   }
 #endif
 

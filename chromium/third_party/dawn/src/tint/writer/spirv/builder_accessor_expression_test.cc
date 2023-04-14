@@ -580,8 +580,8 @@ TEST_F(BuilderTest, Let_IndexAccessor_Nested_Array_f32) {
     // var x = pos[1u][0u];
 
     auto* pos = Let("pos", ty.array(ty.vec2<f32>(), 3_u),
-                    Construct(ty.array(ty.vec2<f32>(), 3_u), vec2<f32>(0_f, 0.5_f),
-                              vec2<f32>(-0.5_f, -0.5_f), vec2<f32>(0.5_f, -0.5_f)));
+                    Call(ty.array(ty.vec2<f32>(), 3_u), vec2<f32>(0_f, 0.5_f),
+                         vec2<f32>(-0.5_f, -0.5_f), vec2<f32>(0.5_f, -0.5_f)));
     auto* x = Var("x", IndexAccessor(IndexAccessor(pos, 1_u), 0_u));
     WrapInFunction(pos, x);
 
@@ -627,8 +627,8 @@ TEST_F(BuilderTest, Const_IndexAccessor_Nested_Array_f32) {
     // var x = pos[1u][0u];
 
     auto* pos = Const("pos", ty.array(ty.vec2<f32>(), 3_u),
-                      Construct(ty.array(ty.vec2<f32>(), 3_u), vec2<f32>(0_f, 0.5_f),
-                                vec2<f32>(-0.5_f, -0.5_f), vec2<f32>(0.5_f, -0.5_f)));
+                      Call(ty.array(ty.vec2<f32>(), 3_u), vec2<f32>(0_f, 0.5_f),
+                           vec2<f32>(-0.5_f, -0.5_f), vec2<f32>(0.5_f, -0.5_f)));
     auto* x = Var("x", IndexAccessor(IndexAccessor(pos, 1_u), 0_u));
     WrapInFunction(pos, x);
 
@@ -741,9 +741,9 @@ TEST_F(BuilderTest, Let_IndexAccessor_Matrix) {
     // let a : mat2x2<f32>(vec2<f32>(1., 2.), vec2<f32>(3., 4.));
     // var x = a[1i]
 
-    auto* a = Let("a", ty.mat2x2<f32>(),
-                  Construct(ty.mat2x2<f32>(), Construct(ty.vec2<f32>(), 1_f, 2_f),
-                            Construct(ty.vec2<f32>(), 3_f, 4_f)));
+    auto* a =
+        Let("a", ty.mat2x2<f32>(),
+            Call(ty.mat2x2<f32>(), Call(ty.vec2<f32>(), 1_f, 2_f), Call(ty.vec2<f32>(), 3_f, 4_f)));
     auto* x = Var("x", IndexAccessor("a", 1_i));
     WrapInFunction(a, x);
 
@@ -783,9 +783,9 @@ TEST_F(BuilderTest, Const_IndexAccessor_Matrix) {
     // const a : mat2x2<f32>(vec2<f32>(1., 2.), vec2<f32>(3., 4.));
     // var x = a[1i]
 
-    auto* a = Const("a", ty.mat2x2<f32>(),
-                    Construct(ty.mat2x2<f32>(), Construct(ty.vec2<f32>(), 1_f, 2_f),
-                              Construct(ty.vec2<f32>(), 3_f, 4_f)));
+    auto* a = Const(
+        "a", ty.mat2x2<f32>(),
+        Call(ty.mat2x2<f32>(), Call(ty.vec2<f32>(), 1_f, 2_f), Call(ty.vec2<f32>(), 3_f, 4_f)));
     auto* x = Var("x", IndexAccessor("a", 1_i));
     WrapInFunction(a, x);
 
@@ -994,7 +994,7 @@ TEST_F(BuilderTest, MemberAccessor_NonPointer) {
                                          Member("b", ty.f32()),
                                      });
 
-    auto* var = Let("ident", ty.Of(s), Construct(ty.Of(s), 0_f, 0_f));
+    auto* var = Let("ident", ty.Of(s), Call(ty.Of(s), 0_f, 0_f));
 
     auto* expr = MemberAccessor("ident", "b");
     WrapInFunction(var, expr);
@@ -1035,8 +1035,8 @@ TEST_F(BuilderTest, MemberAccessor_Nested_NonPointer) {
 
     auto* s_type = Structure("my_struct", utils::Vector{Member("inner", ty.Of(inner_struct))});
 
-    auto* var = Let("ident", ty.Of(s_type),
-                    Construct(ty.Of(s_type), Construct(ty.Of(inner_struct), 0_f, 0_f)));
+    auto* var =
+        Let("ident", ty.Of(s_type), Call(ty.Of(s_type), Call(ty.Of(inner_struct), 0_f, 0_f)));
     auto* expr = MemberAccessor(MemberAccessor("ident", "inner"), "b");
     WrapInFunction(var, expr);
 
@@ -1263,12 +1263,12 @@ TEST_F(BuilderTest, MemberAccessor_Swizzle_MultipleNames) {
 %7 = OpTypeVector %8 3
 %6 = OpTypePointer Function %7
 %9 = OpConstantNull %7
-%10 = OpTypeVector %8 2
+%11 = OpTypeVector %8 2
 )");
     EXPECT_EQ(DumpInstructions(b.functions()[0].variables()), R"(%5 = OpVariable %6 Function %9
 )");
-    EXPECT_EQ(DumpInstructions(b.functions()[0].instructions()), R"(%11 = OpLoad %7 %5
-%12 = OpVectorShuffle %10 %11 %11 1 0
+    EXPECT_EQ(DumpInstructions(b.functions()[0].instructions()), R"(%10 = OpLoad %7 %5
+%12 = OpVectorShuffle %11 %10 %10 1 0
 OpReturn
 )");
 
@@ -1384,10 +1384,10 @@ TEST_F(BuilderTest, IndexAccessor_Mixed_ArrayAndMember) {
     auto* c_type = Structure("C", utils::Vector{Member("baz", ty.vec3<f32>())});
 
     auto* b_type = Structure("B", utils::Vector{Member("bar", ty.Of(c_type))});
-    auto* b_ary_type = ty.array(ty.Of(b_type), 3_u);
+    auto b_ary_type = ty.array(ty.Of(b_type), 3_u);
     auto* a_type = Structure("A", utils::Vector{Member("foo", b_ary_type)});
 
-    auto* a_ary_type = ty.array(ty.Of(a_type), 2_u);
+    auto a_ary_type = ty.array(ty.Of(a_type), 2_u);
     auto* var = Var("index", a_ary_type);
     auto* expr = MemberAccessor(
         MemberAccessor(

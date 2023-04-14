@@ -15,31 +15,31 @@ import HeadersViewStyles from './HeadersView.css.js';
 
 const UIStrings = {
   /**
-  *@description The title of a button that adds a field to input a header in the editor form.
-  */
+   *@description The title of a button that adds a field to input a header in the editor form.
+   */
   addHeader: 'Add a header',
   /**
-  *@description The title of a button that removes a field to input a header in the editor form.
-  */
+   *@description The title of a button that removes a field to input a header in the editor form.
+   */
   removeHeader: 'Remove this header',
   /**
-  *@description The title of a button that removes a section for defining header overrides in the editor form.
-  */
+   *@description The title of a button that removes a section for defining header overrides in the editor form.
+   */
   removeBlock: 'Remove this \'`ApplyTo`\'-section',
   /**
-  *@description Error message for files which cannot not be parsed.
-  *@example {.headers} PH1
-  */
+   *@description Error message for files which cannot not be parsed.
+   *@example {.headers} PH1
+   */
   errorWhenParsing: 'Error when parsing \'\'{PH1}\'\'.',
   /**
-  *@description Explainer for files which cannot be parsed.
-  *@example {.headers} PH1
-  */
+   *@description Explainer for files which cannot be parsed.
+   *@example {.headers} PH1
+   */
   parsingErrorExplainer:
       'This is most likely due to a syntax error in \'\'{PH1}\'\'. Try opening this file in an external editor to fix the error or delete the file and re-create the override.',
   /**
-  *@description Button text for a button which adds an additional header override rule.
-  */
+   *@description Button text for a button which adds an additional header override rule.
+   */
   addOverrideRule: 'Add override rule',
 };
 const str_ = i18n.i18n.registerUIStrings('panels/sources/components/HeadersView.ts', UIStrings);
@@ -91,7 +91,6 @@ export class HeadersView extends UI.View.SimpleView {
 
   commitEditing(): void {
     this.#uiSourceCode.commitWorkingCopy();
-    Persistence.NetworkPersistenceManager.NetworkPersistenceManager.instance().updateInterceptionPatterns();
   }
 
   #onWorkingCopyChanged(): void {
@@ -138,6 +137,7 @@ export class HeadersViewComponent extends HTMLElement {
     this.#shadow.addEventListener('input', this.#onInput.bind(this));
     this.#shadow.addEventListener('keydown', this.#onKeyDown.bind(this));
     this.#shadow.addEventListener('paste', this.#onPaste.bind(this));
+    this.addEventListener('contextmenu', this.#onContextMenu.bind(this));
   }
 
   connectedCallback(): void {
@@ -218,6 +218,15 @@ export class HeadersViewComponent extends HTMLElement {
     // clear selection
     const selection = window.getSelection();
     selection?.removeAllRanges();
+  }
+
+  #onContextMenu(event: Event): void {
+    if (!this.#uiSourceCode) {
+      return;
+    }
+    const contextMenu = new UI.ContextMenu.ContextMenu(event);
+    contextMenu.appendApplicableItems(this.#uiSourceCode);
+    void contextMenu.show();
   }
 
   #generateNextHeaderName(headers: Protocol.Fetch.HeaderEntry[]): string {

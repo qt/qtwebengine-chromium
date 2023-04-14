@@ -17,14 +17,15 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <functional>
 #include <limits>
 #include <map>
 #include <memory>
 #include <set>
 #include <string>
+#include <vector>
 
 #include "absl/container/flat_hash_map.h"
+#include "absl/status/status.h"
 #include "absl/strings/string_view.h"
 #include "internal/platform/byte_array.h"
 #include "internal/platform/cancellation_flag.h"
@@ -34,7 +35,6 @@
 #include "internal/platform/output_stream.h"
 #include "internal/platform/uuid.h"
 
-namespace location {
 namespace nearby {
 namespace api {
 namespace ble_v2 {
@@ -46,12 +46,6 @@ enum class TxPowerLevel {
   kLow = 2,
   kMedium = 3,
   kHigh = 4,
-};
-
-enum class BleOperationStatus {
-  kUnknown = 0,
-  kSucceeded = 1,
-  kFailed = 2,
 };
 
 // https://developer.android.com/reference/android/bluetooth/le/AdvertisingSetParameters.Builder
@@ -83,7 +77,7 @@ struct BleAdvertisementData {
   // iOS    : 16 bit service UUID (type=0x03) + LocalName data (type=0x08)
   // Windows: Service data (type=0x16)
   // Android: 16 bit service UUID (type=0x03) + Service data (type=0x16)
-  absl::flat_hash_map<Uuid, location::nearby::ByteArray> service_data;
+  absl::flat_hash_map<Uuid, nearby::ByteArray> service_data;
 };
 
 // Opaque wrapper over a BLE peripheral. Must be able to uniquely identify a
@@ -219,9 +213,8 @@ class GattServer {
   //
   // Locally updates the value of a characteristic and returns whether or not
   // it was successful.
-  virtual bool UpdateCharacteristic(
-      const GattCharacteristic& characteristic,
-      const location::nearby::ByteArray& value) = 0;
+  virtual bool UpdateCharacteristic(const GattCharacteristic& characteristic,
+                                    const nearby::ByteArray& value) = 0;
 
   // Stops a GATT server.
   virtual void Stop() = 0;
@@ -231,19 +224,19 @@ class GattServer {
 struct ClientGattConnectionCallback {
  public:
   // Called when the client is disconnected from the GATT server.
-  std::function<void()> disconnected_cb = DefaultCallback<>();
+  absl::AnyInvocable<void()> disconnected_cb = []() {};
 };
 
 // Callback for asynchronous events on the server side of a GATT connection.
 struct ServerGattConnectionCallback {
   // Called when a remote peripheral connected to us and subscribed to one of
   // our characteristics.
-  std::function<void(const GattCharacteristic& characteristic)>
+  absl::AnyInvocable<void(const GattCharacteristic& characteristic)>
       characteristic_subscription_cb;
 
   // Called when a remote peripheral unsubscribed from one of our
   // characteristics.
-  std::function<void(const GattCharacteristic& characteristic)>
+  absl::AnyInvocable<void(const GattCharacteristic& characteristic)>
       characteristic_unsubscription_cb;
 };
 
@@ -305,11 +298,11 @@ class BleMedium {
       AdvertiseParameters advertise_set_parameters) = 0;
 
   struct AdvertisingCallback {
-    std::function<void(BleOperationStatus)> start_advertising_result;
+    absl::AnyInvocable<void(absl::Status)> start_advertising_result;
   };
 
   struct AdvertisingSession {
-    std::function<BleOperationStatus()> stop_advertising;
+    absl::AnyInvocable<absl::Status()> stop_advertising;
   };
 
   // Async interface for StartAdertising.
@@ -339,10 +332,9 @@ class BleMedium {
   // The peripheral is owned by platform implementation and it should outlive
   // for the whole peripheral(device) connection life cycle.
   struct ScanCallback {
-    std::function<void(BlePeripheral& peripheral,
-                       BleAdvertisementData advertisement_data)>
-        advertisement_found_cb =
-            DefaultCallback<BlePeripheral&, BleAdvertisementData>();
+    absl::AnyInvocable<void(BlePeripheral& peripheral,
+                            BleAdvertisementData advertisement_data)>
+        advertisement_found_cb = [](BlePeripheral&, BleAdvertisementData) {};
   };
 
   // https://developer.android.com/reference/android/bluetooth/le/BluetoothLeScanner.html#startScan(java.util.List%3Candroid.bluetooth.le.ScanFilter%3E,%20android.bluetooth.le.ScanSettings,%20android.bluetooth.le.ScanCallback)
@@ -366,16 +358,15 @@ class BleMedium {
   virtual bool StopScanning() = 0;
 
   struct ScanningSession {
-    std::function<BleOperationStatus()> stop_scanning;
+    absl::AnyInvocable<absl::Status()> stop_scanning;
   };
 
   struct ScanningCallback {
-    std::function<void(BleOperationStatus)> start_scanning_result =
-        DefaultCallback<BleOperationStatus>();
-    std::function<void(BlePeripheral& peripheral,
-                       BleAdvertisementData advertisement_data)>
-        advertisement_found_cb =
-            DefaultCallback<BlePeripheral&, BleAdvertisementData>();
+    absl::AnyInvocable<void(absl::Status)> start_scanning_result =
+        [](absl::Status) {};
+    absl::AnyInvocable<void(BlePeripheral& peripheral,
+                            BleAdvertisementData advertisement_data)>
+        advertisement_found_cb = [](BlePeripheral&, BleAdvertisementData) {};
   };
 
   // Async interface for StartScanning.
@@ -430,6 +421,5 @@ class BleMedium {
 }  // namespace ble_v2
 }  // namespace api
 }  // namespace nearby
-}  // namespace location
 
 #endif  // PLATFORM_API_BLE_V2_H_

@@ -16,11 +16,11 @@
 #include "include/private/SkSLProgramElement.h"
 #include "include/private/SkSLStatement.h"
 #include "include/private/SkSLString.h"
-#include "include/private/SkStringView.h"
-#include "include/private/SkTArray.h"
+#include "include/private/base/SkTArray.h"
 #include "include/sksl/SkSLErrorReporter.h"
 #include "include/sksl/SkSLOperator.h"
 #include "include/sksl/SkSLPosition.h"
+#include "src/base/SkStringView.h"
 #include "src/sksl/SkSLAnalysis.h"
 #include "src/sksl/SkSLBuiltinTypes.h"
 #include "src/sksl/SkSLCompiler.h"
@@ -180,10 +180,8 @@ std::string GLSLCodeGenerator::getTypeName(const Type& raw) {
             else if (type.matches(*fContext.fTypes.fUShort)) {
                 return "uint";
             }
-            else {
-                return std::string(type.name());
-            }
-            break;
+
+            return std::string(type.name());
         }
         default:
             return std::string(type.name());
@@ -1589,6 +1587,14 @@ void GLSLCodeGenerator::writeSwitchStatement(const SwitchStatement& s) {
     if (s.cases().size() == 1 && s.cases().front()->as<SwitchCase>().isDefault()) {
         this->writeLine("case 0:");
     }
+
+    // The GLSL spec insists that the last case in a switch statement must have an associated
+    // statement. In practice, the Apple GLSL compiler crashes if that statement is a no-op, such as
+    // a semicolon or an empty brace pair. (This is filed as FB11992149.) It also crashes if we put
+    // two `break` statements in a row. To work around this while honoring the rules of the
+    // standard, we inject an extra break if and only if the last switch-case block is empty.
+    bool foundEmptyCase = false;
+
     for (const std::unique_ptr<Statement>& stmt : s.cases()) {
         const SwitchCase& c = stmt->as<SwitchCase>();
         if (c.isDefault()) {
@@ -1598,12 +1604,20 @@ void GLSLCodeGenerator::writeSwitchStatement(const SwitchStatement& s) {
             this->write(std::to_string(c.value()));
             this->writeLine(":");
         }
-        if (!c.statement()->isEmpty()) {
+        if (c.statement()->isEmpty()) {
+            foundEmptyCase = true;
+        } else {
+            foundEmptyCase = false;
             fIndentation++;
             this->writeStatement(*c.statement());
             this->finishLine();
             fIndentation--;
         }
+    }
+    if (foundEmptyCase) {
+        fIndentation++;
+        this->writeLine("break;");
+        fIndentation--;
     }
     fIndentation--;
     this->finishLine();

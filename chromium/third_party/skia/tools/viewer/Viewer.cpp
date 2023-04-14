@@ -14,9 +14,10 @@
 #include "include/core/SkStream.h"
 #include "include/core/SkSurface.h"
 #include "include/gpu/GrDirectContext.h"
-#include "include/private/SkTPin.h"
-#include "include/private/SkTo.h"
+#include "include/private/base/SkTPin.h"
+#include "include/private/base/SkTo.h"
 #include "include/utils/SkPaintFilterCanvas.h"
+#include "src/base/SkTSort.h"
 #include "src/core/SkAutoPixmapStorage.h"
 #include "src/core/SkColorSpacePriv.h"
 #include "src/core/SkImagePriv.h"
@@ -26,7 +27,6 @@
 #include "src/core/SkScan.h"
 #include "src/core/SkStringUtils.h"
 #include "src/core/SkSurfacePriv.h"
-#include "src/core/SkTSort.h"
 #include "src/core/SkTaskGroup.h"
 #include "src/core/SkTextBlobPriv.h"
 #include "src/core/SkVMBlitter.h"
@@ -49,7 +49,6 @@
 #include "tools/viewer/GMSlide.h"
 #include "tools/viewer/ImageSlide.h"
 #include "tools/viewer/MSKPSlide.h"
-#include "tools/viewer/ParticlesSlide.h"
 #include "tools/viewer/SKPSlide.h"
 #include "tools/viewer/SkSLDebuggerSlide.h"
 #include "tools/viewer/SkSLSlide.h"
@@ -337,8 +336,6 @@ extern bool gUseSkVMBlitter;
 extern bool gSkVMAllowJIT;
 extern bool gSkVMJITViaDylib;
 
-static bool ColrV1VariationsEnabledForTest() { return true; }
-
 Viewer::Viewer(int argc, char** argv, void* platformData)
     : fCurrentSlide(-1)
     , fRefresh(false)
@@ -372,7 +369,6 @@ Viewer::Viewer(int argc, char** argv, void* platformData)
 #if defined(SK_ENABLE_SVG)
     SkGraphics::SetOpenTypeSVGDecoderFactory(SkSVGOpenTypeSVGDecoder::Make);
 #endif
-    SkGraphics::SetVariableColrV1EnabledFunc(ColrV1VariationsEnabledForTest);
 
     gPathRendererNames[GpuPathRenderers::kDefault] = "Default Path Renderers";
     gPathRendererNames[GpuPathRenderers::kAtlas] = "Atlas (tessellation)";
@@ -1527,7 +1523,7 @@ void Viewer::drawSlide(SkSurface* surface) {
     if (fSaveToSKP) {
         SkPictureRecorder recorder;
         SkCanvas* recorderCanvas = recorder.beginRecording(SkRect::Make(this->currentSlideSize()));
-        fSlides[fCurrentSlide]->draw(fWindow->graphiteContext(), recorderCanvas);
+        fSlides[fCurrentSlide]->draw(recorderCanvas);
         sk_sp<SkPicture> picture(recorder.finishRecordingAsPicture());
         SkFILEWStream stream("sample_app.skp");
         picture->serialize(&stream);
@@ -1595,7 +1591,7 @@ void Viewer::drawSlide(SkSurface* surface) {
             for (int x = 0; x < fWindow->width(); x += tileW) {
                 SkAutoCanvasRestore acr(slideCanvas, true);
                 slideCanvas->clipRect(SkRect::MakeXYWH(x, y, tileW, tileH));
-                fSlides[fCurrentSlide]->draw(fWindow->graphiteContext(), slideCanvas);
+                fSlides[fCurrentSlide]->draw(slideCanvas);
             }
         }
 
@@ -1619,9 +1615,9 @@ void Viewer::drawSlide(SkSurface* surface) {
             OveridePaintFilterCanvas filterCanvas(slideCanvas,
                                                   &fPaint, &fPaintOverrides,
                                                   &fFont, &fFontOverrides);
-            fSlides[fCurrentSlide]->draw(fWindow->graphiteContext(), &filterCanvas);
+            fSlides[fCurrentSlide]->draw(&filterCanvas);
         } else {
-            fSlides[fCurrentSlide]->draw(fWindow->graphiteContext(), slideCanvas);
+            fSlides[fCurrentSlide]->draw(slideCanvas);
         }
     }
     fStatsLayer.endTiming(fPaintTimer);
@@ -1813,15 +1809,12 @@ bool Viewer::onPinch(skui::InputState state, float scale, float x, float y) {
         case skui::InputState::kDown:
             fGesture.startZoom();
             return true;
-            break;
         case skui::InputState::kMove:
             fGesture.updateZoom(scale, x, y, x, y);
             return true;
-            break;
         case skui::InputState::kUp:
             fGesture.endZoom();
             return true;
-            break;
         default:
             SkASSERT(false);
             break;

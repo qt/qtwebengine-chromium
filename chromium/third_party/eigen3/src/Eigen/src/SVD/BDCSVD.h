@@ -236,7 +236,6 @@ public:
   }
 
 private:
-  void allocate(Index rows, Index cols, unsigned int computationOptions);
   BDCSVD& compute_impl(const MatrixType& matrix, unsigned int computationOptions);
   void divide(Index firstCol, Index lastCol, Index firstRowW, Index firstColW, Index shift);
   void computeSVDofM(Index firstCol, Index n, MatrixXr& U, VectorType& singVals, MatrixXr& V);
@@ -254,6 +253,7 @@ private:
   void computeBaseCase(SVDType& svd, Index n, Index firstCol, Index firstRowW, Index firstColW, Index shift);
 
  protected:
+  void allocate(Index rows, Index cols, unsigned int computationOptions);
   MatrixXr m_naiveU, m_naiveV;
   MatrixXr m_computed;
   Index m_nRec;

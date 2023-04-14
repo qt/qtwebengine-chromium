@@ -83,7 +83,7 @@ std::ostream& operator<<(std::ostream& o, const ErrorCase& c) {
 
 using ResolverConstEvalBinaryOpTest = ResolverTestWithParam<std::tuple<ast::BinaryOp, Case>>;
 TEST_P(ResolverConstEvalBinaryOpTest, Test) {
-    Enable(ast::Extension::kF16);
+    Enable(builtin::Extension::kF16);
     auto op = std::get<0>(GetParam());
     auto& c = std::get<1>(GetParam());
 
@@ -896,7 +896,7 @@ TEST_F(ResolverConstEvalTest, NotAndOrOfVecs) {
     ASSERT_NE(value, nullptr);
     EXPECT_TYPE(value->Type(), sem->Type());
 
-    auto* expected_sem = Sem().Get(expected_expr);
+    auto* expected_sem = Sem().GetVal(expected_expr);
     const constant::Value* expected_value = expected_sem->ConstantValue();
     ASSERT_NE(expected_value, nullptr);
     EXPECT_TYPE(expected_value->Type(), expected_sem->Type());
@@ -1374,12 +1374,12 @@ static void ValidateAnd(const sem::Info& sem, const ast::BinaryExpression* binar
     auto* lhs = binary->lhs;
     auto* rhs = binary->rhs;
 
-    auto* lhs_sem = sem.Get(lhs);
+    auto* lhs_sem = sem.GetVal(lhs);
     ASSERT_TRUE(lhs_sem->ConstantValue());
     EXPECT_EQ(lhs_sem->ConstantValue()->ValueAs<bool>(), false);
     EXPECT_EQ(lhs_sem->Stage(), sem::EvaluationStage::kConstant);
 
-    auto* rhs_sem = sem.Get(rhs);
+    auto* rhs_sem = sem.GetVal(rhs);
     EXPECT_EQ(rhs_sem->ConstantValue(), nullptr);
     EXPECT_EQ(rhs_sem->Stage(), sem::EvaluationStage::kNotEvaluated);
 
@@ -1394,12 +1394,12 @@ static void ValidateOr(const sem::Info& sem, const ast::BinaryExpression* binary
     auto* lhs = binary->lhs;
     auto* rhs = binary->rhs;
 
-    auto* lhs_sem = sem.Get(lhs);
+    auto* lhs_sem = sem.GetVal(lhs);
     ASSERT_TRUE(lhs_sem->ConstantValue());
     EXPECT_EQ(lhs_sem->ConstantValue()->ValueAs<bool>(), true);
     EXPECT_EQ(lhs_sem->Stage(), sem::EvaluationStage::kConstant);
 
-    auto* rhs_sem = sem.Get(rhs);
+    auto* rhs_sem = sem.GetVal(rhs);
     EXPECT_EQ(rhs_sem->ConstantValue(), nullptr);
     EXPECT_EQ(rhs_sem->Stage(), sem::EvaluationStage::kNotEvaluated);
 
@@ -1775,8 +1775,7 @@ TEST_F(ResolverConstEvalTest, ShortCircuit_Or_Error_Index) {
 // Short-Circuit Bitcast
 ////////////////////////////////////////////////
 
-// @TODO(crbug.com/tint/1581): Enable once const eval of bitcast is implemented
-TEST_F(ResolverConstEvalTest, DISABLED_ShortCircuit_And_Invalid_Bitcast) {
+TEST_F(ResolverConstEvalTest, ShortCircuit_And_Invalid_Bitcast) {
     // const one = 1;
     // const a = 0x7F800000;
     // const result = (one == 0) && (bitcast<f32>(a) == 0.0);
@@ -1791,8 +1790,7 @@ TEST_F(ResolverConstEvalTest, DISABLED_ShortCircuit_And_Invalid_Bitcast) {
     ValidateAnd(Sem(), binary);
 }
 
-// @TODO(crbug.com/tint/1581): Enable once const eval of bitcast is implemented
-TEST_F(ResolverConstEvalTest, DISABLED_NonShortCircuit_And_Invalid_Bitcast) {
+TEST_F(ResolverConstEvalTest, NonShortCircuit_And_Invalid_Bitcast) {
     // const one = 1;
     // const a = 0x7F800000;
     // const result = (one == 1) && (bitcast<f32>(a) == 0.0);
@@ -1804,27 +1802,30 @@ TEST_F(ResolverConstEvalTest, DISABLED_NonShortCircuit_And_Invalid_Bitcast) {
     GlobalConst("result", binary);
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), "12:34 error: value not representable as f32 message here");
+    EXPECT_EQ(r()->error(), "12:34 error: value inf cannot be represented as 'f32'");
 }
 
-// @TODO(crbug.com/tint/1581): Enable once const eval of bitcast is implemented
-TEST_F(ResolverConstEvalTest, DISABLED_ShortCircuit_And_Error_Bitcast) {
+TEST_F(ResolverConstEvalTest, ShortCircuit_And_Error_Bitcast) {
     // const one = 1;
     // const a = 0x7F800000;
     // const result = (one == 0) && (bitcast<f32>(a) == 0i);
     GlobalConst("one", Expr(1_a));
     GlobalConst("a", Expr(0x7F800000_a));
     auto* lhs = Equal("one", 0_a);
-    auto* rhs = Equal(Source{{12, 34}}, Bitcast(ty.f32(), "a"), 0_i);
+    auto* rhs = Equal(Source{{12, 34}}, Bitcast<f32>("a"), 0_i);
     auto* binary = LogicalAnd(lhs, rhs);
     GlobalConst("result", binary);
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), R"(12:34 error: no matching overload message here)");
+    EXPECT_EQ(r()->error(), R"(12:34 error: no matching overload for operator == (f32, i32)
+
+2 candidate operators:
+  operator == (T, T) -> bool  where: T is abstract-int, abstract-float, f32, f16, i32, u32 or bool
+  operator == (vecN<T>, vecN<T>) -> vecN<bool>  where: T is abstract-int, abstract-float, f32, f16, i32, u32 or bool
+)");
 }
 
-// @TODO(crbug.com/tint/1581): Enable once const eval of bitcast is implemented
-TEST_F(ResolverConstEvalTest, DISABLED_ShortCircuit_Or_Invalid_Bitcast) {
+TEST_F(ResolverConstEvalTest, ShortCircuit_Or_Invalid_Bitcast) {
     // const one = 1;
     // const a = 0x7F800000;
     // const result = (one == 1) || (bitcast<f32>(a) == 0.0);
@@ -1839,8 +1840,7 @@ TEST_F(ResolverConstEvalTest, DISABLED_ShortCircuit_Or_Invalid_Bitcast) {
     ValidateOr(Sem(), binary);
 }
 
-// @TODO(crbug.com/tint/1581): Enable once const eval of bitcast is implemented
-TEST_F(ResolverConstEvalTest, DISABLED_NonShortCircuit_Or_Invalid_Bitcast) {
+TEST_F(ResolverConstEvalTest, NonShortCircuit_Or_Invalid_Bitcast) {
     // const one = 1;
     // const a = 0x7F800000;
     // const result = (one == 0) || (bitcast<f32>(a) == 0.0);
@@ -1852,27 +1852,31 @@ TEST_F(ResolverConstEvalTest, DISABLED_NonShortCircuit_Or_Invalid_Bitcast) {
     GlobalConst("result", binary);
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), "12:34 error: value not representable as f32 message here");
+    EXPECT_EQ(r()->error(), "12:34 error: value inf cannot be represented as 'f32'");
 }
 
-// @TODO(crbug.com/tint/1581): Enable once const eval of bitcast is implemented
-TEST_F(ResolverConstEvalTest, DISABLED_ShortCircuit_Or_Error_Bitcast) {
+TEST_F(ResolverConstEvalTest, ShortCircuit_Or_Error_Bitcast) {
     // const one = 1;
     // const a = 0x7F800000;
     // const result = (one == 1) || (bitcast<f32>(a) == 0i);
     GlobalConst("one", Expr(1_a));
     GlobalConst("a", Expr(0x7F800000_a));
     auto* lhs = Equal("one", 1_a);
-    auto* rhs = Equal(Source{{12, 34}}, Bitcast(ty.f32(), "a"), 0_i);
+    auto* rhs = Equal(Source{{12, 34}}, Bitcast<f32>("a"), 0_i);
     auto* binary = LogicalOr(lhs, rhs);
     GlobalConst("result", binary);
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), R"(12:34 error: no matching overload message here)");
+    EXPECT_EQ(r()->error(), R"(12:34 error: no matching overload for operator == (f32, i32)
+
+2 candidate operators:
+  operator == (T, T) -> bool  where: T is abstract-int, abstract-float, f32, f16, i32, u32 or bool
+  operator == (vecN<T>, vecN<T>) -> vecN<bool>  where: T is abstract-int, abstract-float, f32, f16, i32, u32 or bool
+)");
 }
 
 ////////////////////////////////////////////////
-// Short-Circuit Type Init/Convert
+// Short-Circuit value construction / conversion
 ////////////////////////////////////////////////
 
 // NOTE: Cannot demonstrate short-circuiting an invalid init/convert as const eval of init/convert
@@ -1888,9 +1892,9 @@ TEST_F(ResolverConstEvalTest, ShortCircuit_And_Error_Init) {
 
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(),
-              R"(12:34 error: no matching initializer for vec2<f32>(abstract-float, bool)
+              R"(12:34 error: no matching constructor for vec2<f32>(abstract-float, bool)
 
-4 candidate initializers:
+4 candidate constructors:
   vec2(x: T, y: T) -> vec2<T>  where: T is abstract-int, abstract-float, f32, f16, i32, u32 or bool
   vec2(T) -> vec2<T>  where: T is abstract-int, abstract-float, f32, f16, i32, u32 or bool
   vec2(vec2<T>) -> vec2<T>  where: T is abstract-int, abstract-float, f32, f16, i32, u32 or bool
@@ -1915,9 +1919,9 @@ TEST_F(ResolverConstEvalTest, ShortCircuit_Or_Error_Init) {
 
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(),
-              R"(12:34 error: no matching initializer for vec2<f32>(abstract-float, bool)
+              R"(12:34 error: no matching constructor for vec2<f32>(abstract-float, bool)
 
-4 candidate initializers:
+4 candidate constructors:
   vec2(x: T, y: T) -> vec2<T>  where: T is abstract-int, abstract-float, f32, f16, i32, u32 or bool
   vec2(T) -> vec2<T>  where: T is abstract-int, abstract-float, f32, f16, i32, u32 or bool
   vec2(vec2<T>) -> vec2<T>  where: T is abstract-int, abstract-float, f32, f16, i32, u32 or bool
@@ -1949,14 +1953,12 @@ TEST_F(ResolverConstEvalTest, ShortCircuit_And_Error_StructInit) {
     Structure("S", utils::Vector{Member("a", ty.i32()), Member("b", ty.f32())});
     GlobalConst("one", Expr(1_a));
     auto* lhs = Equal("one", 0_a);
-    auto* rhs = Equal(
-        MemberAccessor(Construct(ty.type_name("S"), Expr(1_a), Expr(Source{{12, 34}}, true)), "a"),
-        0_a);
+    auto* rhs = Equal(MemberAccessor(Call("S", Expr(1_a), Expr(Source{{12, 34}}, true)), "a"), 0_a);
     GlobalConst("result", LogicalAnd(lhs, rhs));
 
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(),
-              "12:34 error: type in struct initializer does not match struct member type: "
+              "12:34 error: type in structure constructor does not match struct member type: "
               "expected 'f32', found 'bool'");
 }
 
@@ -1970,14 +1972,12 @@ TEST_F(ResolverConstEvalTest, ShortCircuit_Or_Error_StructInit) {
     Structure("S", utils::Vector{Member("a", ty.i32()), Member("b", ty.f32())});
     GlobalConst("one", Expr(1_a));
     auto* lhs = Equal("one", 1_a);
-    auto* rhs = Equal(
-        MemberAccessor(Construct(ty.type_name("S"), Expr(1_a), Expr(Source{{12, 34}}, true)), "a"),
-        0_a);
+    auto* rhs = Equal(MemberAccessor(Call("S", Expr(1_a), Expr(Source{{12, 34}}, true)), "a"), 0_a);
     GlobalConst("result", LogicalOr(lhs, rhs));
 
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(),
-              "12:34 error: type in struct initializer does not match struct member type: "
+              "12:34 error: type in structure constructor does not match struct member type: "
               "expected 'f32', found 'bool'");
 }
 
@@ -2144,10 +2144,10 @@ TEST_F(ResolverConstEvalTest, ShortCircuit_And_Error_MemberAccess) {
     // const one = 1;
     // const result = (one == 0) && (s.c == 0);
     Structure("S", utils::Vector{Member("a", ty.i32()), Member("b", ty.f32())});
-    GlobalConst("s", Construct(ty.type_name("S"), Expr(1_a), Expr(2.0_a)));
+    GlobalConst("s", Call("S", Expr(1_a), Expr(2.0_a)));
     GlobalConst("one", Expr(1_a));
     auto* lhs = Equal("one", 0_a);
-    auto* rhs = Equal(MemberAccessor(Source{{12, 34}}, "s", Expr("c")), 0_a);
+    auto* rhs = Equal(MemberAccessor(Source{{12, 34}}, "s", "c"), 0_a);
     GlobalConst("result", LogicalAnd(lhs, rhs));
 
     EXPECT_FALSE(r()->Resolve());
@@ -2163,10 +2163,10 @@ TEST_F(ResolverConstEvalTest, ShortCircuit_Or_Error_MemberAccess) {
     // const one = 1;
     // const result = (one == 1) || (s.c == 0);
     Structure("S", utils::Vector{Member("a", ty.i32()), Member("b", ty.f32())});
-    GlobalConst("s", Construct(ty.type_name("S"), Expr(1_a), Expr(2.0_a)));
+    GlobalConst("s", Call("S", Expr(1_a), Expr(2.0_a)));
     GlobalConst("one", Expr(1_a));
     auto* lhs = Equal("one", 1_a);
-    auto* rhs = Equal(MemberAccessor(Source{{12, 34}}, "s", Expr("c")), 0_a);
+    auto* rhs = Equal(MemberAccessor(Source{{12, 34}}, "s", "c"), 0_a);
     GlobalConst("result", LogicalOr(lhs, rhs));
 
     EXPECT_FALSE(r()->Resolve());
@@ -2185,7 +2185,7 @@ TEST_F(ResolverConstEvalTest, ShortCircuit_And_Error_Swizzle) {
     // const result = (one == 0) && (vec2(1, 2).z == 0);
     GlobalConst("one", Expr(1_a));
     auto* lhs = Equal("one", 0_a);
-    auto* rhs = Equal(MemberAccessor(vec2<AInt>(1_a, 2_a), Expr(Source{{12, 34}}, "z")), 0_a);
+    auto* rhs = Equal(MemberAccessor(vec2<Infer>(1_a, 2_a), Ident(Source{{12, 34}}, "z")), 0_a);
     GlobalConst("result", LogicalAnd(lhs, rhs));
 
     EXPECT_FALSE(r()->Resolve());
@@ -2197,11 +2197,37 @@ TEST_F(ResolverConstEvalTest, ShortCircuit_Or_Error_Swizzle) {
     // const result = (one == 1) || (vec2(1, 2).z == 0);
     GlobalConst("one", Expr(1_a));
     auto* lhs = Equal("one", 1_a);
-    auto* rhs = Equal(MemberAccessor(vec2<AInt>(1_a, 2_a), Expr(Source{{12, 34}}, "z")), 0_a);
+    auto* rhs = Equal(MemberAccessor(vec2<Infer>(1_a, 2_a), Ident(Source{{12, 34}}, "z")), 0_a);
     GlobalConst("result", LogicalOr(lhs, rhs));
 
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(), "12:34 error: invalid vector swizzle member");
+}
+
+////////////////////////////////////////////////
+// Short-Circuit Mixed Constant and Runtime
+////////////////////////////////////////////////
+
+TEST_F(ResolverConstEvalTest, ShortCircuit_And_MixedConstantAndRuntime) {
+    // var j : i32;
+    // let result = false && j < (0 - 8);
+    auto* j = Decl(Var("j", ty.i32()));
+    auto* binary = LogicalAnd(Expr(false), LessThan("j", Sub(0_a, 8_a)));
+    auto* result = Let("result", binary);
+    WrapInFunction(j, result);
+    EXPECT_TRUE(r()->Resolve()) << r()->error();
+    ValidateAnd(Sem(), binary);
+}
+
+TEST_F(ResolverConstEvalTest, ShortCircuit_Or_MixedConstantAndRuntime) {
+    // var j : i32;
+    // let result = true || j < (0 - 8);
+    auto* j = Decl(Var("j", ty.i32()));
+    auto* binary = LogicalOr(Expr(true), LessThan("j", Sub(0_a, 8_a)));
+    auto* result = Let("result", binary);
+    WrapInFunction(j, result);
+    EXPECT_TRUE(r()->Resolve()) << r()->error();
+    ValidateOr(Sem(), binary);
 }
 
 ////////////////////////////////////////////////

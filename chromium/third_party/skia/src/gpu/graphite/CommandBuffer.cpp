@@ -60,6 +60,7 @@ bool CommandBuffer::addRenderPass(const RenderPassDesc& renderPassDesc,
                                   sk_sp<Texture> depthStencilTexture,
                                   SkRect viewport,
                                   const std::vector<std::unique_ptr<DrawPass>>& drawPasses) {
+    fRenderPassSize = colorTexture->dimensions();
     if (!this->onAddRenderPass(renderPassDesc,
                                colorTexture.get(),
                                resolveTexture.get(),
@@ -191,6 +192,18 @@ bool CommandBuffer::synchronizeBufferToCpu(sk_sp<Buffer> buffer) {
         this->trackResource(std::move(buffer));
         SkDEBUGCODE(fHasWork = true;)
     }
+
+    return true;
+}
+
+bool CommandBuffer::clearBuffer(const Buffer* buffer, size_t offset, size_t size) {
+    SkASSERT(buffer);
+
+    if (!this->onClearBuffer(buffer, offset, size)) {
+        return false;
+    }
+
+    SkDEBUGCODE(fHasWork = true;)
 
     return true;
 }

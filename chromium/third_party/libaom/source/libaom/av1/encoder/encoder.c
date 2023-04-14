@@ -27,6 +27,7 @@
 #include "aom_dsp/noise_util.h"
 #include "aom_dsp/noise_model.h"
 #endif
+#include "aom_dsp/flow_estimation/corner_detect.h"
 #include "aom_dsp/psnr.h"
 #if CONFIG_INTERNAL_STATS
 #include "aom_dsp/ssim.h"
@@ -124,6 +125,14 @@ static INLINE void Scale2Ratio(AOM_SCALING_MODE mode, int *hr, int *hs) {
     case AOME_ONETWO:
       *hr = 1;
       *hs = 2;
+      break;
+    case AOME_TWOTHREE:
+      *hr = 2;
+      *hs = 3;
+      break;
+    case AOME_ONETHREE:
+      *hr = 1;
+      *hs = 3;
       break;
     default:
       *hr = 1;
@@ -639,6 +648,9 @@ static void init_config(struct AV1_COMP *cpi, const AV1EncoderConfig *oxcf) {
   resize_pending_params->width = 0;
   resize_pending_params->height = 0;
 
+  // Setup identity scale factor
+  av1_setup_scale_factors_for_frame(&cm->sf_identity, 1, 1, 1, 1);
+
   init_buffer_indices(&cpi->force_intpel_info, cm->remapped_ref_idx);
 
   av1_noise_estimate_init(&cpi->noise_estimate, cm->width, cm->height);
@@ -895,6 +907,18 @@ void av1_change_config(struct AV1_COMP *cpi, const AV1EncoderConfig *oxcf,
   if (lap_lag_in_frames != -1) {
     cpi->oxcf.gf_cfg.lag_in_frames = lap_lag_in_frames;
   }
+
+#if CONFIG_REALTIME_ONLY
+  assert(!oxcf->tool_cfg.enable_global_motion);
+  cpi->image_pyramid_levels = 0;
+#else
+  if (oxcf->tool_cfg.enable_global_motion) {
+    cpi->image_pyramid_levels =
+        global_motion_pyr_levels[oxcf->global_motion_method];
+  } else {
+    cpi->image_pyramid_levels = 0;
+  }
+#endif  // CONFIG_REALTIME_ONLY
 }
 
 static INLINE void init_frame_info(FRAME_INFO *frame_info,
@@ -1492,11 +1516,17 @@ AV1_COMP *av1_create_compressor(AV1_PRIMARY *ppi, const AV1EncoderConfig *oxcf,
   av1_zero(cpi->partition_stats);
 #endif  // CONFIG_COLLECT_PARTITION_STATS
 
-  /* av1_init_quantizer() is first called here. Add check in
-   * av1_frame_init_quantizer() so that av1_init_quantizer is only
-   * called later when needed. This will avoid unnecessary calls of
-   * av1_init_quantizer() for every frame.
-   */
+  // Initialize the members of DeltaQuantParams with INT_MAX to ensure that
+  // the quantizer tables are correctly initialized using the default deltaq
+  // parameters when av1_init_quantizer is called for the first time.
+  DeltaQuantParams *const prev_deltaq_params =
+      &cpi->enc_quant_dequant_params.prev_deltaq_params;
+  prev_deltaq_params->y_dc_delta_q = INT_MAX;
+  prev_deltaq_params->u_dc_delta_q = INT_MAX;
+  prev_deltaq_params->v_dc_delta_q = INT_MAX;
+  prev_deltaq_params->u_ac_delta_q = INT_MAX;
+  prev_deltaq_params->v_ac_delta_q = INT_MAX;
+
   av1_init_quantizer(&cpi->enc_quant_dequant_params, &cm->quant_params,
                      cm->seq_params->bit_depth);
   av1_qm_init(&cm->quant_params, av1_num_planes(cm));
@@ -2029,7 +2059,7 @@ static void init_ref_frame_bufs(AV1_COMP *cpi) {
   }
 #ifndef NDEBUG
   BufferPool *const pool = cm->buffer_pool;
-  for (i = 0; i < FRAME_BUFFERS; ++i) {
+  for (i = 0; i < pool->num_frame_bufs; ++i) {
     assert(pool->frame_bufs[i].ref_count == 0);
   }
 #endif
@@ -2172,7 +2202,7 @@ void av1_set_frame_size(AV1_COMP *cpi, int width, int height) {
           &cm->cur_frame->buf, cm->width, cm->height, seq_params->subsampling_x,
           seq_params->subsampling_y, seq_params->use_highbitdepth,
           cpi->oxcf.border_in_pixels, cm->features.byte_alignment, NULL, NULL,
-          NULL, cpi->oxcf.tool_cfg.enable_global_motion, 0))
+          NULL, cpi->image_pyramid_levels, 0))
     aom_internal_error(cm->error, AOM_CODEC_MEM_ERROR,
                        "Failed to allocate frame buffer");
 
@@ -2468,7 +2498,7 @@ static int encode_without_recode(AV1_COMP *cpi) {
             &cpi->svc.source_last_TL0, cpi->oxcf.frm_dim_cfg.width,
             cpi->oxcf.frm_dim_cfg.height, seq_params->subsampling_x,
             seq_params->subsampling_y, seq_params->use_highbitdepth,
-            cpi->oxcf.border_in_pixels, cm->features.byte_alignment, 0)) {
+            cpi->oxcf.border_in_pixels, cm->features.byte_alignment, 0, 0)) {
       aom_internal_error(cm->error, AOM_CODEC_MEM_ERROR,
                          "Failed to allocate buffer for source_last_TL0");
     }
@@ -2517,8 +2547,7 @@ static int encode_without_recode(AV1_COMP *cpi) {
 
   cpi->source = av1_realloc_and_scale_if_required(
       cm, unscaled, &cpi->scaled_source, filter_scaler, phase_scaler, true,
-      false, cpi->oxcf.border_in_pixels,
-      cpi->oxcf.tool_cfg.enable_global_motion);
+      false, cpi->oxcf.border_in_pixels, cpi->image_pyramid_levels);
   if (frame_is_intra_only(cm) || resize_pending != 0) {
     memset(cpi->consec_zero_mv, 0,
            ((cm->mi_params.mi_rows * cm->mi_params.mi_cols) >> 2) *
@@ -2529,7 +2558,7 @@ static int encode_without_recode(AV1_COMP *cpi) {
     cpi->last_source = av1_realloc_and_scale_if_required(
         cm, cpi->unscaled_last_source, &cpi->scaled_last_source, filter_scaler,
         phase_scaler, true, false, cpi->oxcf.border_in_pixels,
-        cpi->oxcf.tool_cfg.enable_global_motion);
+        cpi->image_pyramid_levels);
   }
 
   if (cpi->sf.rt_sf.use_temporal_noise_estimate) {
@@ -2584,9 +2613,8 @@ static int encode_without_recode(AV1_COMP *cpi) {
   av1_set_quantizer(cm, q_cfg->qm_minlevel, q_cfg->qm_maxlevel, q,
                     q_cfg->enable_chroma_deltaq, q_cfg->enable_hdr_deltaq);
   av1_set_speed_features_qindex_dependent(cpi, cpi->oxcf.speed);
-  if ((q_cfg->deltaq_mode != NO_DELTA_Q) || q_cfg->enable_chroma_deltaq)
-    av1_init_quantizer(&cpi->enc_quant_dequant_params, &cm->quant_params,
-                       cm->seq_params->bit_depth);
+  av1_init_quantizer(&cpi->enc_quant_dequant_params, &cm->quant_params,
+                     cm->seq_params->bit_depth);
   av1_set_variance_partition_thresholds(cpi, q, 0);
   av1_setup_frame(cpi);
 
@@ -2599,9 +2627,8 @@ static int encode_without_recode(AV1_COMP *cpi) {
       av1_set_quantizer(cm, q_cfg->qm_minlevel, q_cfg->qm_maxlevel, q,
                         q_cfg->enable_chroma_deltaq, q_cfg->enable_hdr_deltaq);
       av1_set_speed_features_qindex_dependent(cpi, cpi->oxcf.speed);
-      if (q_cfg->deltaq_mode != NO_DELTA_Q || q_cfg->enable_chroma_deltaq)
-        av1_init_quantizer(&cpi->enc_quant_dequant_params, &cm->quant_params,
-                           cm->seq_params->bit_depth);
+      av1_init_quantizer(&cpi->enc_quant_dequant_params, &cm->quant_params,
+                         cm->seq_params->bit_depth);
       av1_set_variance_partition_thresholds(cpi, q, 0);
       if (frame_is_intra_only(cm) || cm->features.error_resilient_mode ||
           cm->features.primary_ref_frame == PRIMARY_REF_NONE)
@@ -2640,7 +2667,7 @@ static int encode_without_recode(AV1_COMP *cpi) {
               &cpi->orig_source, cpi->oxcf.frm_dim_cfg.width,
               cpi->oxcf.frm_dim_cfg.height, seq_params->subsampling_x,
               seq_params->subsampling_y, seq_params->use_highbitdepth,
-              cpi->oxcf.border_in_pixels, cm->features.byte_alignment, 0))
+              cpi->oxcf.border_in_pixels, cm->features.byte_alignment, 0, 0))
         aom_internal_error(cm->error, AOM_CODEC_MEM_ERROR,
                            "Failed to allocate scaled buffer");
     }
@@ -2714,7 +2741,6 @@ static int encode_with_recode_loop(AV1_COMP *cpi, size_t *size, uint8_t *dest) {
       cpi->sf.interp_sf.adaptive_interp_filter_search)
     cpi->interp_search_flags.interp_filter_search_mask =
         av1_setup_interp_filter_search_mask(cpi);
-  cpi->source->buf_8bit_valid = 0;
 
   av1_setup_frame_size(cpi);
 
@@ -2789,8 +2815,7 @@ static int encode_with_recode_loop(AV1_COMP *cpi, size_t *size, uint8_t *dest) {
     }
     cpi->source = av1_realloc_and_scale_if_required(
         cm, cpi->unscaled_source, &cpi->scaled_source, EIGHTTAP_REGULAR, 0,
-        false, false, cpi->oxcf.border_in_pixels,
-        cpi->oxcf.tool_cfg.enable_global_motion);
+        false, false, cpi->oxcf.border_in_pixels, cpi->image_pyramid_levels);
 
 #if CONFIG_TUNE_BUTTERAUGLI
     if (oxcf->tune_cfg.tuning == AOM_TUNE_BUTTERAUGLI) {
@@ -2810,7 +2835,7 @@ static int encode_with_recode_loop(AV1_COMP *cpi, size_t *size, uint8_t *dest) {
       cpi->last_source = av1_realloc_and_scale_if_required(
           cm, cpi->unscaled_last_source, &cpi->scaled_last_source,
           EIGHTTAP_REGULAR, 0, false, false, cpi->oxcf.border_in_pixels,
-          cpi->oxcf.tool_cfg.enable_global_motion);
+          cpi->image_pyramid_levels);
     }
 
     int scale_references = 0;
@@ -2889,10 +2914,8 @@ static int encode_with_recode_loop(AV1_COMP *cpi, size_t *size, uint8_t *dest) {
     av1_set_quantizer(cm, q_cfg->qm_minlevel, q_cfg->qm_maxlevel, q,
                       q_cfg->enable_chroma_deltaq, q_cfg->enable_hdr_deltaq);
     av1_set_speed_features_qindex_dependent(cpi, oxcf->speed);
-
-    if (q_cfg->deltaq_mode != NO_DELTA_Q || q_cfg->enable_chroma_deltaq)
-      av1_init_quantizer(&cpi->enc_quant_dequant_params, &cm->quant_params,
-                         cm->seq_params->bit_depth);
+    av1_init_quantizer(&cpi->enc_quant_dequant_params, &cm->quant_params,
+                       cm->seq_params->bit_depth);
 
     av1_set_variance_partition_thresholds(cpi, q, 0);
 
@@ -3776,6 +3799,15 @@ static int encode_frame_to_data_rate(AV1_COMP *cpi, size_t *size,
     features->disable_cdf_update = 1;
   }
 
+#if !CONFIG_REALTIME_ONLY
+  if (cpi->oxcf.tool_cfg.enable_global_motion && !frame_is_intra_only(cm)) {
+    // Flush any stale global motion information, which may be left over
+    // from a previous frame
+    aom_invalidate_pyramid(cpi->source->y_pyramid);
+    av1_invalidate_corner_list(cpi->source->corners);
+  }
+#endif  // !CONFIG_REALTIME_ONLY
+
   int largest_tile_id = 0;
   if (av1_superres_in_recode_allowed(cpi)) {
     if (encode_with_and_without_superres(cpi, size, dest, &largest_tile_id) !=
@@ -3863,6 +3895,9 @@ static int encode_frame_to_data_rate(AV1_COMP *cpi, size_t *size,
   } else {
     cpi->frames_since_last_update = 1;
   }
+
+  if (cpi->svc.spatial_layer_id == cpi->svc.number_spatial_layers - 1)
+    cpi->svc.prev_number_spatial_layers = cpi->svc.number_spatial_layers;
 
   // Clear the one shot update flags for segmentation map and mode/ref loop
   // filter deltas.
@@ -4046,7 +4081,8 @@ int av1_receive_raw_frame(AV1_COMP *cpi, aom_enc_frame_flags_t frame_flags,
 #endif  //  CONFIG_DENOISE
 
   if (av1_lookahead_push(cpi->ppi->lookahead, sd, time_stamp, end_time,
-                         use_highbitdepth, frame_flags)) {
+                         use_highbitdepth, cpi->image_pyramid_levels,
+                         frame_flags)) {
     aom_internal_error(cm->error, AOM_CODEC_ERROR,
                        "av1_lookahead_push() failed");
     res = -1;
@@ -4498,6 +4534,13 @@ void av1_post_encode_updates(AV1_COMP *const cpi,
   }
 #endif
 
+#if CONFIG_OUTPUT_FRAME_SIZE
+  FILE *f = fopen("frame_sizes.csv", "a");
+  fprintf(f, "%d,", 8 * (int)cpi_data->frame_size);
+  fprintf(f, "%d\n", cm->quant_params.base_qindex);
+  fclose(f);
+#endif  // CONFIG_OUTPUT_FRAME_SIZE
+
   if (!is_stat_generation_stage(cpi) && !cpi->is_dropped_frame) {
     // Before calling refresh_reference_frames(), copy ppi->ref_frame_map_copy
     // to cm->ref_frame_map for frame_parallel_level 2 frame in a parallel
@@ -4690,6 +4733,9 @@ int av1_get_compressed_data(AV1_COMP *cpi, AV1_COMP_DATA *const cpi_data) {
   }
 #endif
 
+  // Reset the flag to 0 afer encoding.
+  cpi->rc.use_external_qp_one_pass = 0;
+
   if (result == -1) {
     cm->error->setjmp = 0;
     // Returning -1 indicates no frame encoded; more input is required
@@ -4738,7 +4784,7 @@ void av1_scale_references_fpmt(AV1_COMP *cpi, int *ref_buffers_used_map) {
 
       RefCntBuffer *buf = get_ref_frame_buf(cm, ref_frame);
       cpi->scaled_ref_buf[ref_frame - 1] = buf;
-      for (int i = 0; i < FRAME_BUFFERS; ++i) {
+      for (int i = 0; i < cm->buffer_pool->num_frame_bufs; ++i) {
         if (&cm->buffer_pool->frame_bufs[i] == buf) {
           *ref_buffers_used_map |= (1 << i);
         }
@@ -4753,7 +4799,7 @@ void av1_scale_references_fpmt(AV1_COMP *cpi, int *ref_buffers_used_map) {
 // corresponding to frames in a parallel encode set.
 void av1_increment_scaled_ref_counts_fpmt(BufferPool *buffer_pool,
                                           int ref_buffers_used_map) {
-  for (int i = 0; i < FRAME_BUFFERS; ++i) {
+  for (int i = 0; i < buffer_pool->num_frame_bufs; ++i) {
     if (ref_buffers_used_map & (1 << i)) {
       ++buffer_pool->frame_bufs[i].ref_count;
     }
@@ -4776,7 +4822,7 @@ void av1_release_scaled_references_fpmt(AV1_COMP *cpi) {
 // corresponding to frames in a parallel encode set.
 void av1_decrement_ref_counts_fpmt(BufferPool *buffer_pool,
                                    int ref_buffers_used_map) {
-  for (int i = 0; i < FRAME_BUFFERS; ++i) {
+  for (int i = 0; i < buffer_pool->num_frame_bufs; ++i) {
     if (ref_buffers_used_map & (1 << i)) {
       --buffer_pool->frame_bufs[i].ref_count;
     }
@@ -5059,7 +5105,8 @@ int av1_set_internal_size(AV1EncoderConfig *const oxcf,
                           AOM_SCALING_MODE vert_mode) {
   int hr = 0, hs = 0, vr = 0, vs = 0;
 
-  if (horiz_mode > AOME_ONETWO || vert_mode > AOME_ONETWO) return -1;
+  // Checks for invalid AOM_SCALING_MODE values.
+  if (horiz_mode > AOME_ONETHREE || vert_mode > AOME_ONETHREE) return -1;
 
   Scale2Ratio(horiz_mode, &hr, &hs);
   Scale2Ratio(vert_mode, &vr, &vs);

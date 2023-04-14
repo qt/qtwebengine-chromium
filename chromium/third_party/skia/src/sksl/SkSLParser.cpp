@@ -11,13 +11,13 @@
 #include "include/private/SkSLModifiers.h"
 #include "include/private/SkSLProgramElement.h"
 #include "include/private/SkSLString.h"
-#include "include/private/SkTHash.h"
 #include "include/sksl/DSLBlock.h"
 #include "include/sksl/DSLCase.h"
 #include "include/sksl/DSLFunction.h"
 #include "include/sksl/DSLVar.h"
 #include "include/sksl/SkSLOperator.h"
 #include "include/sksl/SkSLVersion.h"
+#include "src/core/SkTHash.h"
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLConstantFolder.h"
 #include "src/sksl/SkSLThreadContext.h"
@@ -881,7 +881,8 @@ DSLLayout Parser::layout() {
         COLOR,
         SPIRV,
         METAL,
-        GL
+        GL,
+        WGSL
     };
 
     using LayoutMap = SkTHashMap<std::string_view, LayoutToken>;
@@ -902,6 +903,7 @@ DSLLayout Parser::layout() {
             {"spirv",                       LayoutToken::SPIRV},
             {"metal",                       LayoutToken::METAL},
             {"gl",                          LayoutToken::GL},
+            {"wgsl",                        LayoutToken::WGSL},
     };
 
     DSLLayout result;
@@ -923,6 +925,9 @@ DSLLayout Parser::layout() {
                         break;
                     case LayoutToken::GL:
                         result.gl(this->position(t));
+                        break;
+                    case LayoutToken::WGSL:
+                        result.wgsl(this->position(t));
                         break;
                     case LayoutToken::ORIGIN_UPPER_LEFT:
                         result.originUpperLeft(this->position(t));

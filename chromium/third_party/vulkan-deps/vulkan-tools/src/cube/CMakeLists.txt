@@ -49,19 +49,20 @@ else()
 endif()
 
 if(UNIX AND NOT APPLE) # i.e. Linux
-    find_package(PkgConfig)
     option(BUILD_WSI_XCB_SUPPORT "Build XCB WSI support" ON)
     option(BUILD_WSI_XLIB_SUPPORT "Build Xlib WSI support" ON)
     option(BUILD_WSI_WAYLAND_SUPPORT "Build Wayland WSI support" ON)
     option(BUILD_WSI_DIRECTFB_SUPPORT "Build DirectFB WSI support" OFF)
     set(CUBE_WSI_SELECTION "XCB" CACHE STRING "Select WSI target for vkcube (XCB, XLIB, WAYLAND, DIRECTFB, DISPLAY)")
 
+    find_package(PkgConfig REQUIRED QUIET) # Use PkgConfig to find Linux system libraries
+
     if(BUILD_WSI_XCB_SUPPORT)
-        find_package(XCB REQUIRED)
+        pkg_check_modules(XCB REQUIRED QUIET IMPORTED_TARGET xcb)
     endif()
 
     if(BUILD_WSI_XLIB_SUPPORT)
-        find_package(X11 REQUIRED)
+        pkg_check_modules(X11 REQUIRED QUIET IMPORTED_TARGET x11)
     endif()
 
     if(BUILD_WSI_WAYLAND_SUPPORT)
@@ -107,8 +108,7 @@ if(UNIX AND NOT APPLE) # i.e. Linux
     endif()
 
     if(BUILD_WSI_DIRECTFB_SUPPORT)
-        find_package(DirectFB REQUIRED)
-        include_directories(${DIRECTFB_INCLUDE_DIR})
+        pkg_check_modules(DirectFB REQUIRED QUIET IMPORTED_TARGET directfb)
     endif()
 endif()
 
@@ -134,15 +134,13 @@ elseif(UNIX AND NOT APPLE) # i.e. Linux
         if(NOT BUILD_WSI_XCB_SUPPORT)
             message(FATAL_ERROR "Selected XCB for vkcube build but not building Xcb support")
         endif()
-        set(CUBE_INCLUDE_DIRS ${XCB_INCLUDE_DIRS} ${CUBE_INCLUDE_DIRS})
-        link_libraries(${XCB_LIBRARIES})
+        link_libraries(PkgConfig::XCB)
         set(CUBE_PLATFORM VK_USE_PLATFORM_XCB_KHR)
     elseif(CUBE_WSI_SELECTION STREQUAL "XLIB")
         if(NOT BUILD_WSI_XLIB_SUPPORT)
             message(FATAL_ERROR "Selected XLIB for vkcube build but not building Xlib support")
         endif()
-        set(CUBE_INCLUDE_DIRS ${X11_INCLUDE_DIR} ${CUBE_INCLUDE_DIRS})
-        link_libraries(${X11_LIBRARIES})
+        link_libraries(PkgConfig::X11)
         set(CUBE_PLATFORM VK_USE_PLATFORM_XLIB_KHR)
     elseif(CUBE_WSI_SELECTION STREQUAL "WAYLAND")
         if(NOT BUILD_WSI_WAYLAND_SUPPORT)
@@ -162,8 +160,7 @@ elseif(UNIX AND NOT APPLE) # i.e. Linux
         if(NOT BUILD_WSI_DIRECTFB_SUPPORT)
             message(FATAL_ERROR "Selected DIRECTFB for vkcube build but not building DirectFB support")
         endif()
-        set(CUBE_INCLUDE_DIRS ${DIRECTFB_INCLUDE_DIR} ${CUBE_INCLUDE_DIRS})
-        link_libraries(${DIRECTFB_LIBRARIES})
+        link_libraries(PkgConfig::DirectFB)
         set(CUBE_PLATFORM VK_USE_PLATFORM_DIRECTFB_EXT)
     elseif(CUBE_WSI_SELECTION STREQUAL "DISPLAY")
         set(CUBE_PLATFORM VK_USE_PLATFORM_DISPLAY_KHR)

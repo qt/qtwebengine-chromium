@@ -19,7 +19,7 @@ namespace tint::writer::spirv {
 namespace {
 
 struct TestData {
-    ast::TexelFormat ast_format;
+    builtin::TexelFormat ast_format;
     SpvImageFormat_ spv_format;
     bool extended_format = false;
 };
@@ -45,46 +45,47 @@ TEST_P(ImageFormatConversionTest, ImageFormatConversion) {
     }
 }
 
-INSTANTIATE_TEST_SUITE_P(BuilderTest,
-                         ImageFormatConversionTest,
-                         testing::Values(
-                             /* WGSL unsupported formats
-                       TestData{ast::TexelFormat::kR8Unorm, SpvImageFormatR8, true},
-                       TestData{ast::TexelFormat::kR8Snorm, SpvImageFormatR8Snorm, true},
-                       TestData{ast::TexelFormat::kR8Uint, SpvImageFormatR8ui, true},
-                       TestData{ast::TexelFormat::kR8Sint, SpvImageFormatR8i, true},
-                       TestData{ast::TexelFormat::kR16Uint, SpvImageFormatR16ui, true},
-                       TestData{ast::TexelFormat::kR16Sint, SpvImageFormatR16i, true},
-                       TestData{ast::TexelFormat::kR16Float, SpvImageFormatR16f, true},
-                       TestData{ast::TexelFormat::kRg8Unorm, SpvImageFormatRg8, true},
-                       TestData{ast::TexelFormat::kRg8Snorm, SpvImageFormatRg8Snorm, true},
-                       TestData{ast::TexelFormat::kRg8Uint, SpvImageFormatRg8ui, true},
-                       TestData{ast::TexelFormat::kRg8Sint, SpvImageFormatRg8i, true},
-                       TestData{ast::TexelFormat::kRg16Uint, SpvImageFormatRg16ui, true},
-                       TestData{ast::TexelFormat::kRg16Sint, SpvImageFormatRg16i, true},
-                       TestData{ast::TexelFormat::kRg16Float, SpvImageFormatRg16f, true},
-                       TestData{ast::TexelFormat::kRgba8UnormSrgb, SpvImageFormatUnknown},
-                       TestData{ast::TexelFormat::kBgra8Unorm, SpvImageFormatUnknown},
-                       TestData{ast::TexelFormat::kBgra8UnormSrgb, SpvImageFormatUnknown},
-                       TestData{ast::TexelFormat::kRgb10A2Unorm, SpvImageFormatRgb10A2, true},
-                       TestData{ast::TexelFormat::kRg11B10Float, SpvImageFormatR11fG11fB10f, true},
-                     */
-                             TestData{ast::TexelFormat::kR32Uint, SpvImageFormatR32ui},
-                             TestData{ast::TexelFormat::kR32Sint, SpvImageFormatR32i},
-                             TestData{ast::TexelFormat::kR32Float, SpvImageFormatR32f},
-                             TestData{ast::TexelFormat::kRgba8Unorm, SpvImageFormatRgba8},
-                             TestData{ast::TexelFormat::kRgba8Snorm, SpvImageFormatRgba8Snorm},
-                             TestData{ast::TexelFormat::kRgba8Uint, SpvImageFormatRgba8ui},
-                             TestData{ast::TexelFormat::kRgba8Sint, SpvImageFormatRgba8i},
-                             TestData{ast::TexelFormat::kRg32Uint, SpvImageFormatRg32ui, true},
-                             TestData{ast::TexelFormat::kRg32Sint, SpvImageFormatRg32i, true},
-                             TestData{ast::TexelFormat::kRg32Float, SpvImageFormatRg32f, true},
-                             TestData{ast::TexelFormat::kRgba16Uint, SpvImageFormatRgba16ui},
-                             TestData{ast::TexelFormat::kRgba16Sint, SpvImageFormatRgba16i},
-                             TestData{ast::TexelFormat::kRgba16Float, SpvImageFormatRgba16f},
-                             TestData{ast::TexelFormat::kRgba32Uint, SpvImageFormatRgba32ui},
-                             TestData{ast::TexelFormat::kRgba32Sint, SpvImageFormatRgba32i},
-                             TestData{ast::TexelFormat::kRgba32Float, SpvImageFormatRgba32f}));
+INSTANTIATE_TEST_SUITE_P(
+    BuilderTest,
+    ImageFormatConversionTest,
+    testing::Values(
+        /* WGSL unsupported formats
+  TestData{builtin::TexelFormat::kR8Unorm, SpvImageFormatR8, true},
+  TestData{builtin::TexelFormat::kR8Snorm, SpvImageFormatR8Snorm, true},
+  TestData{builtin::TexelFormat::kR8Uint, SpvImageFormatR8ui, true},
+  TestData{builtin::TexelFormat::kR8Sint, SpvImageFormatR8i, true},
+  TestData{builtin::TexelFormat::kR16Uint, SpvImageFormatR16ui, true},
+  TestData{builtin::TexelFormat::kR16Sint, SpvImageFormatR16i, true},
+  TestData{builtin::TexelFormat::kR16Float, SpvImageFormatR16f, true},
+  TestData{builtin::TexelFormat::kRg8Unorm, SpvImageFormatRg8, true},
+  TestData{builtin::TexelFormat::kRg8Snorm, SpvImageFormatRg8Snorm, true},
+  TestData{builtin::TexelFormat::kRg8Uint, SpvImageFormatRg8ui, true},
+  TestData{builtin::TexelFormat::kRg8Sint, SpvImageFormatRg8i, true},
+  TestData{builtin::TexelFormat::kRg16Uint, SpvImageFormatRg16ui, true},
+  TestData{builtin::TexelFormat::kRg16Sint, SpvImageFormatRg16i, true},
+  TestData{builtin::TexelFormat::kRg16Float, SpvImageFormatRg16f, true},
+  TestData{builtin::TexelFormat::kRgba8UnormSrgb, SpvImageFormatUnknown},
+  TestData{builtin::TexelFormat::kBgra8Unorm, SpvImageFormatUnknown},
+  TestData{builtin::TexelFormat::kBgra8UnormSrgb, SpvImageFormatUnknown},
+  TestData{builtin::TexelFormat::kRgb10A2Unorm, SpvImageFormatRgb10A2, true},
+  TestData{builtin::TexelFormat::kRg11B10Float, SpvImageFormatR11fG11fB10f, true},
+*/
+        TestData{builtin::TexelFormat::kR32Uint, SpvImageFormatR32ui},
+        TestData{builtin::TexelFormat::kR32Sint, SpvImageFormatR32i},
+        TestData{builtin::TexelFormat::kR32Float, SpvImageFormatR32f},
+        TestData{builtin::TexelFormat::kRgba8Unorm, SpvImageFormatRgba8},
+        TestData{builtin::TexelFormat::kRgba8Snorm, SpvImageFormatRgba8Snorm},
+        TestData{builtin::TexelFormat::kRgba8Uint, SpvImageFormatRgba8ui},
+        TestData{builtin::TexelFormat::kRgba8Sint, SpvImageFormatRgba8i},
+        TestData{builtin::TexelFormat::kRg32Uint, SpvImageFormatRg32ui, true},
+        TestData{builtin::TexelFormat::kRg32Sint, SpvImageFormatRg32i, true},
+        TestData{builtin::TexelFormat::kRg32Float, SpvImageFormatRg32f, true},
+        TestData{builtin::TexelFormat::kRgba16Uint, SpvImageFormatRgba16ui},
+        TestData{builtin::TexelFormat::kRgba16Sint, SpvImageFormatRgba16i},
+        TestData{builtin::TexelFormat::kRgba16Float, SpvImageFormatRgba16f},
+        TestData{builtin::TexelFormat::kRgba32Uint, SpvImageFormatRgba32ui},
+        TestData{builtin::TexelFormat::kRgba32Sint, SpvImageFormatRgba32i},
+        TestData{builtin::TexelFormat::kRgba32Float, SpvImageFormatRgba32f}));
 
 }  // namespace
 }  // namespace tint::writer::spirv

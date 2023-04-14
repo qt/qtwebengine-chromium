@@ -68,10 +68,11 @@ class ResourceUse final
     void setSerial(SerialIndex index, Serial serial)
     {
         ASSERT(index != kInvalidQueueSerialIndex);
-        if (mSerials.size() <= index)
+        if (ANGLE_UNLIKELY(mSerials.size() <= index))
         {
             mSerials.resize(index + 1, kZeroSerial);
         }
+        ASSERT(mSerials[index] <= serial);
         mSerials[index] = serial;
     }
 
@@ -101,11 +102,25 @@ class ResourceUse final
                mSerials[queuSerial.getIndex()] > queuSerial.getSerial();
     }
 
+    // Returns true if all serials are less than or equal
+    bool operator<=(const AtomicQueueSerialFixedArray &serials) const
+    {
+        ASSERT(mSerials.size() <= serials.size());
+        for (SerialIndex i = 0; i < mSerials.size(); ++i)
+        {
+            if (mSerials[i] > serials[i])
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
     bool usedByCommandBuffer(const QueueSerial &commandBufferQueueSerial) const
     {
+        ASSERT(commandBufferQueueSerial.valid());
         // Return true if we have the exact queue serial in the array.
-        return commandBufferQueueSerial.valid() &&
-               mSerials.size() > commandBufferQueueSerial.getIndex() &&
+        return mSerials.size() > commandBufferQueueSerial.getIndex() &&
                mSerials[commandBufferQueueSerial.getIndex()] ==
                    commandBufferQueueSerial.getSerial();
     }
@@ -131,6 +146,7 @@ class ResourceUse final
     // The most recent time of use in a VkQueue.
     Serials mSerials;
 };
+std::ostream &operator<<(std::ostream &os, const ResourceUse &use);
 
 class SharedGarbage
 {
@@ -142,7 +158,7 @@ class SharedGarbage
     SharedGarbage &operator=(SharedGarbage &&rhs);
 
     bool destroyIfComplete(RendererVk *renderer);
-    bool hasUnsubmittedUse(RendererVk *renderer) const;
+    bool hasResourceUseSubmitted(RendererVk *renderer) const;
 
   private:
     ResourceUse mLifetime;

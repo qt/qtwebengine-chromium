@@ -154,7 +154,7 @@ struct functor_traits<swap_assign_op<Scalar> > {
   enum {
     Cost = 3 * NumTraits<Scalar>::ReadCost,
     PacketAccess = 
-    #if defined(EIGEN_VECTORIZE_AVX) && EIGEN_COMP_CLANG && (EIGEN_COMP_CLANG<800 || defined(__apple_build_version__))
+    #if defined(EIGEN_VECTORIZE_AVX) && (EIGEN_CLANG_STRICT_LESS_THAN(8,0,0) || EIGEN_COMP_CLANGAPPLE)
     // This is a partial workaround for a bug in clang generating bad code
     // when mixing 256/512 bits loads and 128 bits moves.
     // See http://eigen.tuxfamily.org/bz/show_bug.cgi?id=1684

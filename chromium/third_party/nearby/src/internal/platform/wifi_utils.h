@@ -15,12 +15,13 @@
 #ifndef PLATFORM_BASE_WIFI_UTILS_H_
 #define PLATFORM_BASE_WIFI_UTILS_H_
 
+#include <string>
+
 #include "internal/platform/implementation/wifi.h"
 
-namespace location {
 namespace nearby {
 
-using ::location::nearby::api::WifiBandType;
+using ::nearby::api::WifiBandType;
 
 class WifiUtils {
  public:
@@ -47,9 +48,10 @@ class WifiUtils {
 
   static int ConvertChannelToFrequencyMhz(int channel, WifiBandType band_type);
   static int ConvertFrequencyMhzToChannel(int freq_mhz);
+
+  static bool ValidateIPV4(std::string ipv4);
 };
 
 }  // namespace nearby
-}  // namespace location
 
 #endif  // PLATFORM_BASE_WIFI_UTILS_H_

@@ -20,8 +20,8 @@
 
 #include "src/tint/program_builder.h"
 #include "src/tint/sem/call.h"
-#include "src/tint/sem/expression.h"
-#include "src/tint/sem/type_conversion.h"
+#include "src/tint/sem/value_conversion.h"
+#include "src/tint/sem/value_expression.h"
 #include "src/tint/type/abstract_numeric.h"
 #include "src/tint/utils/hash.h"
 #include "src/tint/utils/map.h"
@@ -34,9 +34,10 @@ namespace {
 
 bool ShouldRun(const Program* program) {
     for (auto* node : program->ASTNodes().Objects()) {
-        if (auto* sem = program->Sem().Get<sem::Expression>(node)) {
+        if (auto* sem = program->Sem().GetVal(node)) {
             if (auto* call = sem->UnwrapMaterialize()->As<sem::Call>()) {
-                if (call->Target()->Is<sem::TypeConversion>() && call->Type()->Is<type::Matrix>()) {
+                if (call->Target()->Is<sem::ValueConversion>() &&
+                    call->Type()->Is<type::Matrix>()) {
                     auto& args = call->Arguments();
                     if (args.Length() == 1 && args[0]->Type()->UnwrapRef()->is_float_matrix()) {
                         return true;
@@ -71,7 +72,7 @@ Transform::ApplyResult VectorizeMatrixConversions::Apply(const Program* src,
 
     ctx.ReplaceAll([&](const ast::CallExpression* expr) -> const ast::CallExpression* {
         auto* call = src->Sem().Get(expr)->UnwrapMaterialize()->As<sem::Call>();
-        auto* ty_conv = call->Target()->As<sem::TypeConversion>();
+        auto* ty_conv = call->Target()->As<sem::ValueConversion>();
         if (!ty_conv) {
             return nullptr;
         }
@@ -93,7 +94,8 @@ Transform::ApplyResult VectorizeMatrixConversions::Apply(const Program* src,
         }
 
         // The source and destination type of a matrix conversion must have a same shape.
-        if (!(src_type->rows() == dst_type->rows() && src_type->columns() == dst_type->columns())) {
+        if (TINT_UNLIKELY(!(src_type->rows() == dst_type->rows() &&
+                            src_type->columns() == dst_type->columns()))) {
             TINT_ICE(Transform, b.Diagnostics())
                 << "source and destination matrix has different shape in matrix conversion";
             return nullptr;
@@ -105,9 +107,9 @@ Transform::ApplyResult VectorizeMatrixConversions::Apply(const Program* src,
                 auto* src_matrix_expr = src_expression_builder();
                 auto* src_column_expr = b.IndexAccessor(src_matrix_expr, b.Expr(tint::AInt(c)));
                 columns.Push(
-                    b.Construct(CreateASTTypeFor(ctx, dst_type->ColumnType()), src_column_expr));
+                    b.Call(CreateASTTypeFor(ctx, dst_type->ColumnType()), src_column_expr));
             }
-            return b.Construct(CreateASTTypeFor(ctx, dst_type), columns);
+            return b.Call(CreateASTTypeFor(ctx, dst_type), columns);
         };
 
         // Replace the matrix conversion to column vector conversions and a matrix construction.

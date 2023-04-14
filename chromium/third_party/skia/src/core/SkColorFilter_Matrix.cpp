@@ -39,6 +39,8 @@ public:
 
     explicit SkColorFilter_Matrix(const float array[20], Domain);
 
+    bool appendStages(const SkStageRec& rec, bool shaderIsOpaque) const override;
+
     bool onIsAlphaUnchanged() const override { return fAlphaIsUnchanged; }
 
 #if SK_SUPPORT_GPU
@@ -60,7 +62,6 @@ private:
     void flatten(SkWriteBuffer&) const override;
     bool onAsAColorMatrix(float matrix[20]) const override;
 
-    bool onAppendStages(const SkStageRec& rec, bool shaderIsOpaque) const override;
     skvm::Color onProgram(skvm::Builder*, skvm::Color,
                           const SkColorInfo& dst,
                           skvm::Uniforms* uniforms, SkArenaAlloc*) const override;
@@ -102,17 +103,17 @@ bool SkColorFilter_Matrix::onAsAColorMatrix(float matrix[20]) const {
     return true;
 }
 
-bool SkColorFilter_Matrix::onAppendStages(const SkStageRec& rec, bool shaderIsOpaque) const {
+bool SkColorFilter_Matrix::appendStages(const SkStageRec& rec, bool shaderIsOpaque) const {
     const bool willStayOpaque = shaderIsOpaque && fAlphaIsUnchanged,
                          hsla = fDomain == Domain::kHSLA;
 
     SkRasterPipeline* p = rec.fPipeline;
-    if (!shaderIsOpaque) { p->append(SkRasterPipeline::unpremul); }
-    if (           hsla) { p->append(SkRasterPipeline::rgb_to_hsl); }
-    if (           true) { p->append(SkRasterPipeline::matrix_4x5, fMatrix); }
-    if (           hsla) { p->append(SkRasterPipeline::hsl_to_rgb); }
-    if (           true) { p->append(SkRasterPipeline::clamp_01); }
-    if (!willStayOpaque) { p->append(SkRasterPipeline::premul); }
+    if (!shaderIsOpaque) { p->append(SkRasterPipelineOp::unpremul); }
+    if (           hsla) { p->append(SkRasterPipelineOp::rgb_to_hsl); }
+    if (           true) { p->append(SkRasterPipelineOp::matrix_4x5, fMatrix); }
+    if (           hsla) { p->append(SkRasterPipelineOp::hsl_to_rgb); }
+    if (           true) { p->append(SkRasterPipelineOp::clamp_01); }
+    if (!willStayOpaque) { p->append(SkRasterPipelineOp::premul); }
     return true;
 }
 

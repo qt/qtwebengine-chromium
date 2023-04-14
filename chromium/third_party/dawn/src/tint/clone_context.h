@@ -26,6 +26,7 @@
 #include "src/tint/program_id.h"
 #include "src/tint/symbol.h"
 #include "src/tint/traits.h"
+#include "src/tint/utils/compiler_macros.h"
 #include "src/tint/utils/hashmap.h"
 #include "src/tint/utils/hashset.h"
 #include "src/tint/utils/vector.h"
@@ -39,6 +40,7 @@ class ProgramBuilder;
 namespace tint::ast {
 class FunctionList;
 class Node;
+struct Type;
 }  // namespace tint::ast
 
 namespace tint {
@@ -140,6 +142,11 @@ class CloneContext {
         auto* c = a->Clone(this);
         return CheckedCast<T>(c);
     }
+
+    /// Clones the ast::Type `ty` into the ProgramBuilder #dst
+    /// @param ty the AST type.
+    /// @return the cloned node
+    ast::Type Clone(const ast::Type& ty);
 
     /// Clones the Source `s` into #dst
     /// TODO(bclayton) - Currently this 'clone' is a shallow copy. If/when
@@ -300,8 +307,9 @@ class CloneContext {
         using TPtr = traits::ParameterType<F, 0>;
         using T = typename std::remove_pointer<TPtr>::type;
         for (auto& transform : transforms_) {
-            if (transform.typeinfo->Is(&TypeInfo::Of<T>()) ||
-                TypeInfo::Of<T>().Is(transform.typeinfo)) {
+            bool already_registered = transform.typeinfo->Is(&TypeInfo::Of<T>()) ||
+                                      TypeInfo::Of<T>().Is(transform.typeinfo);
+            if (TINT_UNLIKELY(already_registered)) {
                 TINT_ICE(Clone, Diagnostics())
                     << "ReplaceAll() called with a handler for type " << TypeInfo::Of<T>().name
                     << " that is already handled by a handler for type "
@@ -326,7 +334,7 @@ class CloneContext {
     /// register a SymbolTransform more than once will result in an ICE.
     /// @returns this CloneContext so calls can be chained
     CloneContext& ReplaceAll(const SymbolTransform& replacer) {
-        if (symbol_transform_) {
+        if (TINT_UNLIKELY(symbol_transform_)) {
             TINT_ICE(Clone, Diagnostics()) << "ReplaceAll(const SymbolTransform&) called "
                                               "multiple times on the same CloneContext";
             return *this;
@@ -383,7 +391,7 @@ class CloneContext {
     template <typename T, size_t N, typename OBJECT>
     CloneContext& Remove(const utils::Vector<T, N>& vector, OBJECT* object) {
         TINT_ASSERT_PROGRAM_IDS_EQUAL_IF_VALID(Clone, src, object);
-        if (std::find(vector.begin(), vector.end(), object) == vector.end()) {
+        if (TINT_UNLIKELY((std::find(vector.begin(), vector.end(), object) == vector.end()))) {
             TINT_ICE(Clone, Diagnostics())
                 << "CloneContext::Remove() vector does not contain object";
             return *this;
@@ -450,7 +458,7 @@ class CloneContext {
                                const OBJECT* object) {
         TINT_ASSERT_PROGRAM_IDS_EQUAL_IF_VALID(Clone, src, before);
         TINT_ASSERT_PROGRAM_IDS_EQUAL_IF_VALID(Clone, dst, object);
-        if (std::find(vector.begin(), vector.end(), before) == vector.end()) {
+        if (TINT_UNLIKELY((std::find(vector.begin(), vector.end(), before) == vector.end()))) {
             TINT_ICE(Clone, Diagnostics())
                 << "CloneContext::InsertBefore() vector does not contain before";
             return *this;
@@ -492,7 +500,7 @@ class CloneContext {
                               const OBJECT* object) {
         TINT_ASSERT_PROGRAM_IDS_EQUAL_IF_VALID(Clone, src, after);
         TINT_ASSERT_PROGRAM_IDS_EQUAL_IF_VALID(Clone, dst, object);
-        if (std::find(vector.begin(), vector.end(), after) == vector.end()) {
+        if (TINT_UNLIKELY((std::find(vector.begin(), vector.end(), after) == vector.end()))) {
             TINT_ICE(Clone, Diagnostics())
                 << "CloneContext::InsertAfter() vector does not contain after";
             return *this;
@@ -583,7 +591,8 @@ class CloneContext {
         if (obj == nullptr) {
             return nullptr;
         }
-        if (const TO* cast = obj->template As<TO>()) {
+        const TO* cast = obj->template As<TO>();
+        if (TINT_LIKELY(cast)) {
             return cast;
         }
         CheckedCastFailure(obj, TypeInfo::Of<TO>());

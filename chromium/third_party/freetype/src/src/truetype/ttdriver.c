@@ -4,7 +4,7 @@
  *
  *   TrueType font driver implementation (body).
  *
- * Copyright (C) 1996-2022 by
+ * Copyright (C) 1996-2023 by
  * David Turner, Robert Wilhelm, and Werner Lemberg.
  *
  * This file is part of the FreeType project, and may only be used,
@@ -104,23 +104,6 @@
         driver->interpreter_version = interpreter_version;
       else
         error = FT_ERR( Unimplemented_Feature );
-
-      return error;
-    }
-
-    if ( !ft_strcmp( property_name, "TEMPORARY-enable-variable-colrv1" ) )
-    {
-      /* This flag is temporary and can't be set with environment variables. */
-      if ( !value_is_string )
-      {
-        FT_Bool*  bv = (FT_Bool*)value;
-
-        if ( *bv == TRUE || *bv == FALSE)
-          driver->enable_variable_colrv1 = *bv;
-        else
-          error = FT_ERR( Unimplemented_Feature );
-      } else
-        error = FT_ERR( Invalid_Argument );
 
       return error;
     }

@@ -33,8 +33,8 @@
 #include <memory>
 #include <utility>
 
-#include "base/callback_helpers.h"
 #include "base/feature_list.h"
+#include "base/functional/callback_helpers.h"
 #include "base/memory/ptr_util.h"
 #include "base/metrics/field_trial_params.h"
 #include "base/metrics/histogram_functions.h"
@@ -689,6 +689,14 @@ bool ServiceWorkerGlobalScope::AddEventListenerInternal(
     AddConsoleMessage(MakeGarbageCollected<ConsoleMessage>(
         mojom::ConsoleMessageSource::kJavaScript,
         mojom::ConsoleMessageLevel::kWarning, message));
+    // Count the update of fetch handlers after the initial evaluation.
+    if (event_type == event_type_names::kFetch) {
+      UseCounter::Count(
+          this,
+          WebFeature::kServiceWorkerFetchHandlerUpdateAfterInitialization);
+    }
+    UseCounter::Count(this,
+                      WebFeature::kServiceWorkerAddHandlerAfterInitialization);
   }
   return WorkerGlobalScope::AddEventListenerInternal(event_type, listener,
                                                      options);
@@ -2619,20 +2627,45 @@ ServiceWorkerGlobalScope::FetchHandlerType() {
   if (!elv) {
     return mojom::blink::ServiceWorkerFetchHandlerType::kNoHandler;
   }
-  v8::Isolate* isolate = GetIsolate();
-  v8::HandleScope handle_scope(isolate);
+
+  ScriptState* script_state = ScriptController()->GetScriptState();
+  // Do not remove this, |scope| is needed by `GetListenerObject`.
+  ScriptState::Scope scope(script_state);
+
   // TODO(crbug.com/1349613): revisit the way to implement this.
   // The following code returns kEmptyFetchHandler if all handlers are nop.
   for (RegisteredEventListener& e : *elv) {
-    EventTarget* et = EventTarget::Create(ScriptController()->GetScriptState());
+    EventTarget* et = EventTarget::Create(script_state);
     v8::Local<v8::Value> v =
-        To<JSBasedEventListener>(e.Callback())->GetEffectiveFunction(*et);
-    if (!v->IsFunction() ||
+        To<JSBasedEventListener>(e.Callback())->GetListenerObject(*et);
+    if (v.IsEmpty() || !v->IsFunction() ||
         !v.As<v8::Function>()->Experimental_IsNopFunction()) {
       return mojom::blink::ServiceWorkerFetchHandlerType::kNotSkippable;
     }
   }
+  AddConsoleMessage(MakeGarbageCollected<ConsoleMessage>(
+      mojom::blink::ConsoleMessageSource::kJavaScript,
+      mojom::blink::ConsoleMessageLevel::kWarning,
+      "Fetch event handler is recognized as no-op. "
+      "No-op fetch handler may bring overhead during navigation. "
+      "Consider removing the handler if possible."));
   return mojom::blink::ServiceWorkerFetchHandlerType::kEmptyFetchHandler;
+}
+
+bool ServiceWorkerGlobalScope::SetAttributeEventListener(
+    const AtomicString& event_type,
+    EventListener* listener) {
+  // Count the modification of fetch handlers after the initial evaluation.
+  if (did_evaluate_script_) {
+    if (event_type == event_type_names::kFetch) {
+      UseCounter::Count(
+          this,
+          WebFeature::kServiceWorkerFetchHandlerModifiedAfterInitialization);
+    }
+    UseCounter::Count(
+        this, WebFeature::kServiceWorkerSetAttributeHandlerAfterInitialization);
+  }
+  return WorkerGlobalScope::SetAttributeEventListener(event_type, listener);
 }
 
 }  // namespace blink

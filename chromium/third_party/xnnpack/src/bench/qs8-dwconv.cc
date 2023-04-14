@@ -26,12 +26,12 @@
 
 
 static void DWConvBenchmark(benchmark::State& state,
-  xnn_qs8_dwconv_minmax_unipass_ukernel_function dwconv,
+  xnn_qs8_dwconv_minmax_unipass_ukernel_fn dwconv,
   xnn_init_qs8_conv_minmax_params_fn init_params,
   uint32_t channel_tile, uint32_t primary_tile,
   benchmark::utils::IsaCheckFunction isa_check = nullptr)
 {
-  if (isa_check && !isa_check(state)) {
+  if (isa_check != nullptr && !isa_check(state)) {
     return;
   }
 
@@ -46,7 +46,7 @@ static void DWConvBenchmark(benchmark::State& state,
   const size_t channels = state.range(8);
 
   const size_t kernel_size = kernel_height * kernel_width;
-  if (kernel_size != primary_tile) {
+  if (kernel_size > primary_tile) {
     state.SkipWithError("kernel size mismatch");
     return;
   }
@@ -64,7 +64,7 @@ static void DWConvBenchmark(benchmark::State& state,
   const size_t output_height = (input_height + padding_height - effective_kernel_height) / subsampling + 1;
   const size_t output_width = (input_width + padding_width - effective_kernel_width) / subsampling + 1;
   const size_t output_size = output_height * output_width;
-  const size_t step_width = dilation == 1 ? subsampling : kernel_width;
+  const size_t step_width = dilation == 1 ? std::min(subsampling, kernel_width) : kernel_width;
   const size_t step_height = kernel_size + (output_width - 1) * step_width * kernel_height;
 
   const size_t c_stride = benchmark::utils::RoundUp<size_t>(channels, channel_tile);
@@ -81,14 +81,15 @@ static void DWConvBenchmark(benchmark::State& state,
   const size_t k_elements = kernel_size * c_stride;
   const size_t b_elements = c_stride;
   const size_t w_size = k_elements * sizeof(int8_t) + b_elements * sizeof(int32_t);
-  const size_t i_elements = output_height * step_height;
+  // Can read (primary_tile - kernel_size) elements after end of indirection buffer.
+  const size_t i_elements = (primary_tile - kernel_size) + output_height * step_height;
   const size_t c_elements = output_size * channels;
   const size_t num_buffers = 1 +
     benchmark::utils::DivideRoundUp<size_t>(benchmark::utils::GetMaxCacheSize(),
       (c_elements * sizeof(int8_t) + w_size) + sizeof(void*) * i_elements);
 
   std::vector<char, AlignedAllocator<char, 64>> w(w_size * num_buffers);
-  std::fill(w.begin(), w.end(), 0.0f);
+  std::fill(w.begin(), w.end(), 0);
   struct xnn_qs8_packing_params packing_params;
   packing_params.input_zero_point = 0;
   xnn_pack_qs8_dwconv_ghw_w(primary_tile, kernel_height, kernel_width, channels, channel_tile,
@@ -122,7 +123,7 @@ static void DWConvBenchmark(benchmark::State& state,
   }
 
   std::vector<int8_t> c(c_elements * num_buffers);
-  std::fill(c.begin(), c.end(), std::nanf(""));
+  std::fill(c.begin(), c.end(), INT8_C(0));
 
   xnn_qs8_conv_minmax_params params;
   init_params(&params,
@@ -161,476 +162,476 @@ static void DWConvBenchmark(benchmark::State& state,
 
 
 #if XNN_ARCH_ARM || XNN_ARCH_ARM64
-  static void qs8_dwconv_up8x9__neon_mul8_ld64(benchmark::State& state, const char* net) {
+  static void qs8_dwconv_9p8c__neon_mul8_ld64(benchmark::State& state, const char* net) {
     DWConvBenchmark(state,
-      xnn_qs8_dwconv_minmax_rndnu_ukernel_up8x9__neon_mul8_ld64,
+      xnn_qs8_dwconv_minmax_rndnu_ukernel_9p8c__neon_mul8_ld64,
       xnn_init_qs8_conv_minmax_rndnu_neon_params,
       8 /* channel tile */, 9 /* primary tile */, benchmark::utils::CheckNEON);
   }
-  static void qs8_dwconv_up16x9__neon_mul8_ld64(benchmark::State& state, const char* net) {
+  static void qs8_dwconv_9p16c__neon_mul8_ld64(benchmark::State& state, const char* net) {
     DWConvBenchmark(state,
-      xnn_qs8_dwconv_minmax_rndnu_ukernel_up16x9__neon_mul8_ld64,
+      xnn_qs8_dwconv_minmax_rndnu_ukernel_9p16c__neon_mul8_ld64,
       xnn_init_qs8_conv_minmax_rndnu_neon_params,
       16 /* channel tile */, 9 /* primary tile */, benchmark::utils::CheckNEON);
   }
-  static void qs8_dwconv_up16x9__neon_mul8_ld128(benchmark::State& state, const char* net) {
+  static void qs8_dwconv_9p16c__neon_mul8_ld128(benchmark::State& state, const char* net) {
     DWConvBenchmark(state,
-      xnn_qs8_dwconv_minmax_rndnu_ukernel_up16x9__neon_mul8_ld128,
+      xnn_qs8_dwconv_minmax_rndnu_ukernel_9p16c__neon_mul8_ld128,
       xnn_init_qs8_conv_minmax_rndnu_neon_params,
       16 /* channel tile */, 9 /* primary tile */, benchmark::utils::CheckNEON);
   }
-  static void qs8_dwconv_up8x9__neon_mla8_ld64(benchmark::State& state, const char* net) {
+  static void qs8_dwconv_9p8c__neon_mla8_ld64(benchmark::State& state, const char* net) {
     DWConvBenchmark(state,
-      xnn_qs8_dwconv_minmax_rndnu_ukernel_up8x9__neon_mla8_ld64,
+      xnn_qs8_dwconv_minmax_rndnu_ukernel_9p8c__neon_mla8_ld64,
       xnn_init_qs8_conv_minmax_rndnu_neon_params,
       8 /* channel tile */, 9 /* primary tile */, benchmark::utils::CheckNEON);
   }
-  static void qs8_dwconv_up16x9__neon_mla8_ld64(benchmark::State& state, const char* net) {
+  static void qs8_dwconv_9p16c__neon_mla8_ld64(benchmark::State& state, const char* net) {
     DWConvBenchmark(state,
-      xnn_qs8_dwconv_minmax_rndnu_ukernel_up16x9__neon_mla8_ld64,
+      xnn_qs8_dwconv_minmax_rndnu_ukernel_9p16c__neon_mla8_ld64,
       xnn_init_qs8_conv_minmax_rndnu_neon_params,
       16 /* channel tile */, 9 /* primary tile */, benchmark::utils::CheckNEON);
   }
-  static void qs8_dwconv_up16x9__neon_mla8_ld128(benchmark::State& state, const char* net) {
+  static void qs8_dwconv_9p16c__neon_mla8_ld128(benchmark::State& state, const char* net) {
     DWConvBenchmark(state,
-      xnn_qs8_dwconv_minmax_rndnu_ukernel_up16x9__neon_mla8_ld128,
+      xnn_qs8_dwconv_minmax_rndnu_ukernel_9p16c__neon_mla8_ld128,
       xnn_init_qs8_conv_minmax_rndnu_neon_params,
       16 /* channel tile */, 9 /* primary tile */, benchmark::utils::CheckNEON);
   }
-  static void qs8_dwconv_up8x9__neon_mul16(benchmark::State& state, const char* net) {
+  static void qs8_dwconv_9p8c__neon_mul16(benchmark::State& state, const char* net) {
     DWConvBenchmark(state,
-      xnn_qs8_dwconv_minmax_rndnu_ukernel_up8x9__neon_mul16,
+      xnn_qs8_dwconv_minmax_rndnu_ukernel_9p8c__neon_mul16,
       xnn_init_qs8_conv_minmax_rndnu_neon_params,
       8 /* channel tile */, 9 /* primary tile */, benchmark::utils::CheckNEON);
   }
-  static void qs8_dwconv_up16x9__neon_mul16(benchmark::State& state, const char* net) {
+  static void qs8_dwconv_9p16c__neon_mul16(benchmark::State& state, const char* net) {
     DWConvBenchmark(state,
-      xnn_qs8_dwconv_minmax_rndnu_ukernel_up16x9__neon_mul16,
+      xnn_qs8_dwconv_minmax_rndnu_ukernel_9p16c__neon_mul16,
       xnn_init_qs8_conv_minmax_rndnu_neon_params,
       16 /* channel tile */, 9 /* primary tile */, benchmark::utils::CheckNEON);
   }
-  static void qs8_dwconv_up24x9__neon_mul16(benchmark::State& state, const char* net) {
+  static void qs8_dwconv_9p24c__neon_mul16(benchmark::State& state, const char* net) {
     DWConvBenchmark(state,
-      xnn_qs8_dwconv_minmax_rndnu_ukernel_up24x9__neon_mul16,
+      xnn_qs8_dwconv_minmax_rndnu_ukernel_9p24c__neon_mul16,
       xnn_init_qs8_conv_minmax_rndnu_neon_params,
       24 /* channel tile */, 9 /* primary tile */, benchmark::utils::CheckNEON);
   }
-  static void qs8_dwconv_up32x9__neon_mul16(benchmark::State& state, const char* net) {
+  static void qs8_dwconv_9p32c__neon_mul16(benchmark::State& state, const char* net) {
     DWConvBenchmark(state,
-      xnn_qs8_dwconv_minmax_rndnu_ukernel_up32x9__neon_mul16,
+      xnn_qs8_dwconv_minmax_rndnu_ukernel_9p32c__neon_mul16,
       xnn_init_qs8_conv_minmax_rndnu_neon_params,
       32 /* channel tile */, 9 /* primary tile */, benchmark::utils::CheckNEON);
   }
-  static void qs8_dwconv_up8x25__neon_mul8_ld64(benchmark::State& state, const char* net) {
+  static void qs8_dwconv_25p8c__neon_mul8_ld64(benchmark::State& state, const char* net) {
     DWConvBenchmark(state,
-      xnn_qs8_dwconv_minmax_rndnu_ukernel_up8x25__neon_mul8_ld64,
+      xnn_qs8_dwconv_minmax_rndnu_ukernel_25p8c__neon_mul8_ld64,
       xnn_init_qs8_conv_minmax_rndnu_neon_params,
       8 /* channel tile */, 25 /* primary tile */, benchmark::utils::CheckNEON);
   }
-  static void qs8_dwconv_up16x25__neon_mul8_ld64(benchmark::State& state, const char* net) {
+  static void qs8_dwconv_25p16c__neon_mul8_ld64(benchmark::State& state, const char* net) {
     DWConvBenchmark(state,
-      xnn_qs8_dwconv_minmax_rndnu_ukernel_up16x25__neon_mul8_ld64,
+      xnn_qs8_dwconv_minmax_rndnu_ukernel_25p16c__neon_mul8_ld64,
       xnn_init_qs8_conv_minmax_rndnu_neon_params,
       16 /* channel tile */, 25 /* primary tile */, benchmark::utils::CheckNEON);
   }
-  static void qs8_dwconv_up16x25__neon_mul8_ld128(benchmark::State& state, const char* net) {
+  static void qs8_dwconv_25p16c__neon_mul8_ld128(benchmark::State& state, const char* net) {
     DWConvBenchmark(state,
-      xnn_qs8_dwconv_minmax_rndnu_ukernel_up16x25__neon_mul8_ld128,
+      xnn_qs8_dwconv_minmax_rndnu_ukernel_25p16c__neon_mul8_ld128,
       xnn_init_qs8_conv_minmax_rndnu_neon_params,
       16 /* channel tile */, 25 /* primary tile */, benchmark::utils::CheckNEON);
   }
-  static void qs8_dwconv_up8x25__neon_mla8_ld64(benchmark::State& state, const char* net) {
+  static void qs8_dwconv_25p8c__neon_mla8_ld64(benchmark::State& state, const char* net) {
     DWConvBenchmark(state,
-      xnn_qs8_dwconv_minmax_rndnu_ukernel_up8x25__neon_mla8_ld64,
+      xnn_qs8_dwconv_minmax_rndnu_ukernel_25p8c__neon_mla8_ld64,
       xnn_init_qs8_conv_minmax_rndnu_neon_params,
       8 /* channel tile */, 25 /* primary tile */, benchmark::utils::CheckNEON);
   }
-  static void qs8_dwconv_up16x25__neon_mla8_ld64(benchmark::State& state, const char* net) {
+  static void qs8_dwconv_25p16c__neon_mla8_ld64(benchmark::State& state, const char* net) {
     DWConvBenchmark(state,
-      xnn_qs8_dwconv_minmax_rndnu_ukernel_up16x25__neon_mla8_ld64,
+      xnn_qs8_dwconv_minmax_rndnu_ukernel_25p16c__neon_mla8_ld64,
       xnn_init_qs8_conv_minmax_rndnu_neon_params,
       16 /* channel tile */, 25 /* primary tile */, benchmark::utils::CheckNEON);
   }
-  static void qs8_dwconv_up16x25__neon_mla8_ld128(benchmark::State& state, const char* net) {
+  static void qs8_dwconv_25p16c__neon_mla8_ld128(benchmark::State& state, const char* net) {
     DWConvBenchmark(state,
-      xnn_qs8_dwconv_minmax_rndnu_ukernel_up16x25__neon_mla8_ld128,
+      xnn_qs8_dwconv_minmax_rndnu_ukernel_25p16c__neon_mla8_ld128,
       xnn_init_qs8_conv_minmax_rndnu_neon_params,
       16 /* channel tile */, 25 /* primary tile */, benchmark::utils::CheckNEON);
   }
-  static void qs8_dwconv_up8x25__neon_mul16(benchmark::State& state, const char* net) {
+  static void qs8_dwconv_25p8c__neon_mul16(benchmark::State& state, const char* net) {
     DWConvBenchmark(state,
-      xnn_qs8_dwconv_minmax_rndnu_ukernel_up8x25__neon_mul16,
+      xnn_qs8_dwconv_minmax_rndnu_ukernel_25p8c__neon_mul16,
       xnn_init_qs8_conv_minmax_rndnu_neon_params,
       8 /* channel tile */, 25 /* primary tile */, benchmark::utils::CheckNEON);
   }
-  static void qs8_dwconv_up16x25__neon_mul16(benchmark::State& state, const char* net) {
+  static void qs8_dwconv_25p16c__neon_mul16(benchmark::State& state, const char* net) {
     DWConvBenchmark(state,
-      xnn_qs8_dwconv_minmax_rndnu_ukernel_up16x25__neon_mul16,
+      xnn_qs8_dwconv_minmax_rndnu_ukernel_25p16c__neon_mul16,
       xnn_init_qs8_conv_minmax_rndnu_neon_params,
       16 /* channel tile */, 25 /* primary tile */, benchmark::utils::CheckNEON);
   }
-  static void qs8_dwconv_up24x25__neon_mul16(benchmark::State& state, const char* net) {
+  static void qs8_dwconv_25p24c__neon_mul16(benchmark::State& state, const char* net) {
     DWConvBenchmark(state,
-      xnn_qs8_dwconv_minmax_rndnu_ukernel_up24x25__neon_mul16,
+      xnn_qs8_dwconv_minmax_rndnu_ukernel_25p24c__neon_mul16,
       xnn_init_qs8_conv_minmax_rndnu_neon_params,
       24 /* channel tile */, 25 /* primary tile */, benchmark::utils::CheckNEON);
   }
-  static void qs8_dwconv_up32x25__neon_mul16(benchmark::State& state, const char* net) {
+  static void qs8_dwconv_25p32c__neon_mul16(benchmark::State& state, const char* net) {
     DWConvBenchmark(state,
-      xnn_qs8_dwconv_minmax_rndnu_ukernel_up32x25__neon_mul16,
+      xnn_qs8_dwconv_minmax_rndnu_ukernel_25p32c__neon_mul16,
       xnn_init_qs8_conv_minmax_rndnu_neon_params,
       32 /* channel tile */, 25 /* primary tile */, benchmark::utils::CheckNEON);
   }
 
-  BENCHMARK_DWCONV(qs8_dwconv_up8x9__neon_mul8_ld64);
-  BENCHMARK_DWCONV(qs8_dwconv_up16x9__neon_mul8_ld64);
-  BENCHMARK_DWCONV(qs8_dwconv_up16x9__neon_mul8_ld128);
-  BENCHMARK_DWCONV(qs8_dwconv_up8x9__neon_mla8_ld64);
-  BENCHMARK_DWCONV(qs8_dwconv_up16x9__neon_mla8_ld64);
-  BENCHMARK_DWCONV(qs8_dwconv_up16x9__neon_mla8_ld128);
-  BENCHMARK_DWCONV(qs8_dwconv_up8x9__neon_mul16);
-  BENCHMARK_DWCONV(qs8_dwconv_up16x9__neon_mul16);
-  BENCHMARK_DWCONV(qs8_dwconv_up24x9__neon_mul16);
-  BENCHMARK_DWCONV(qs8_dwconv_up32x9__neon_mul16);
-  BENCHMARK_DWCONV(qs8_dwconv_up8x25__neon_mul8_ld64);
-  BENCHMARK_DWCONV(qs8_dwconv_up16x25__neon_mul8_ld64);
-  BENCHMARK_DWCONV(qs8_dwconv_up16x25__neon_mul8_ld128);
-  BENCHMARK_DWCONV(qs8_dwconv_up8x25__neon_mla8_ld64);
-  BENCHMARK_DWCONV(qs8_dwconv_up16x25__neon_mla8_ld64);
-  BENCHMARK_DWCONV(qs8_dwconv_up16x25__neon_mla8_ld128);
-  BENCHMARK_DWCONV(qs8_dwconv_up8x25__neon_mul16);
-  BENCHMARK_DWCONV(qs8_dwconv_up16x25__neon_mul16);
-  BENCHMARK_DWCONV(qs8_dwconv_up24x25__neon_mul16);
-  BENCHMARK_DWCONV(qs8_dwconv_up32x25__neon_mul16);
+  BENCHMARK_DWCONV(qs8_dwconv_9p8c__neon_mul8_ld64);
+  BENCHMARK_DWCONV(qs8_dwconv_9p16c__neon_mul8_ld64);
+  BENCHMARK_DWCONV(qs8_dwconv_9p16c__neon_mul8_ld128);
+  BENCHMARK_DWCONV(qs8_dwconv_9p8c__neon_mla8_ld64);
+  BENCHMARK_DWCONV(qs8_dwconv_9p16c__neon_mla8_ld64);
+  BENCHMARK_DWCONV(qs8_dwconv_9p16c__neon_mla8_ld128);
+  BENCHMARK_DWCONV(qs8_dwconv_9p8c__neon_mul16);
+  BENCHMARK_DWCONV(qs8_dwconv_9p16c__neon_mul16);
+  BENCHMARK_DWCONV(qs8_dwconv_9p24c__neon_mul16);
+  BENCHMARK_DWCONV(qs8_dwconv_9p32c__neon_mul16);
+  BENCHMARK_DWCONV(qs8_dwconv_25p8c__neon_mul8_ld64);
+  BENCHMARK_DWCONV(qs8_dwconv_25p16c__neon_mul8_ld64);
+  BENCHMARK_DWCONV(qs8_dwconv_25p16c__neon_mul8_ld128);
+  BENCHMARK_DWCONV(qs8_dwconv_25p8c__neon_mla8_ld64);
+  BENCHMARK_DWCONV(qs8_dwconv_25p16c__neon_mla8_ld64);
+  BENCHMARK_DWCONV(qs8_dwconv_25p16c__neon_mla8_ld128);
+  BENCHMARK_DWCONV(qs8_dwconv_25p8c__neon_mul16);
+  BENCHMARK_DWCONV(qs8_dwconv_25p16c__neon_mul16);
+  BENCHMARK_DWCONV(qs8_dwconv_25p24c__neon_mul16);
+  BENCHMARK_DWCONV(qs8_dwconv_25p32c__neon_mul16);
 #endif  // XNN_ARCH_ARM || XNN_ARCH_ARM64
 
 
 #if XNN_ARCH_X86 || XNN_ARCH_X86_64
-  static void qs8_dwconv_up16x9__avx512skx_mul32(benchmark::State& state, const char* net) {
+  static void qs8_dwconv_9p16c__avx512skx_mul32(benchmark::State& state, const char* net) {
     DWConvBenchmark(state,
-      xnn_qs8_dwconv_minmax_fp32_ukernel_up16x9__avx512skx_mul32,
+      xnn_qs8_dwconv_minmax_fp32_ukernel_9p16c__avx512skx_mul32,
       xnn_init_qs8_conv_minmax_fp32_avx512_params,
       16 /* channel tile */, 9 /* primary tile */, benchmark::utils::CheckAVX512SKX);
   }
-  static void qs8_dwconv_up32x9__avx512skx_mul32(benchmark::State& state, const char* net) {
+  static void qs8_dwconv_9p32c__avx512skx_mul32(benchmark::State& state, const char* net) {
     DWConvBenchmark(state,
-      xnn_qs8_dwconv_minmax_fp32_ukernel_up32x9__avx512skx_mul32,
+      xnn_qs8_dwconv_minmax_fp32_ukernel_9p32c__avx512skx_mul32,
       xnn_init_qs8_conv_minmax_fp32_avx512_params,
       32 /* channel tile */, 9 /* primary tile */, benchmark::utils::CheckAVX512SKX);
   }
-  static void qs8_dwconv_up16x9__avx2_mul16_vpmovsx(benchmark::State& state, const char* net) {
+  static void qs8_dwconv_9p16c__avx2_mul16_vpmovsx(benchmark::State& state, const char* net) {
     DWConvBenchmark(state,
-      xnn_qs8_dwconv_minmax_fp32_ukernel_up16x9__avx2_mul16_vpmovsx,
+      xnn_qs8_dwconv_minmax_fp32_ukernel_9p16c__avx2_mul16_vpmovsx,
       xnn_init_qs8_conv_minmax_fp32_avx2_params,
       16 /* channel tile */, 9 /* primary tile */, benchmark::utils::CheckAVX2);
   }
-  static void qs8_dwconv_up32x9__avx2_mul16_vpmovsx(benchmark::State& state, const char* net) {
+  static void qs8_dwconv_9p32c__avx2_mul16_vpmovsx(benchmark::State& state, const char* net) {
     DWConvBenchmark(state,
-      xnn_qs8_dwconv_minmax_fp32_ukernel_up32x9__avx2_mul16_vpmovsx,
+      xnn_qs8_dwconv_minmax_fp32_ukernel_9p32c__avx2_mul16_vpmovsx,
       xnn_init_qs8_conv_minmax_fp32_avx2_params,
       32 /* channel tile */, 9 /* primary tile */, benchmark::utils::CheckAVX2);
   }
-  static void qs8_dwconv_up16x9__avx2_mul16_vpunpck(benchmark::State& state, const char* net) {
+  static void qs8_dwconv_9p16c__avx2_mul16_vpunpck(benchmark::State& state, const char* net) {
     DWConvBenchmark(state,
-      xnn_qs8_dwconv_minmax_fp32_ukernel_up16x9__avx2_mul16_vpunpck,
+      xnn_qs8_dwconv_minmax_fp32_ukernel_9p16c__avx2_mul16_vpunpck,
       xnn_init_qs8_conv_minmax_fp32_avx2_params,
       16 /* channel tile */, 9 /* primary tile */, benchmark::utils::CheckAVX2);
   }
-  static void qs8_dwconv_up32x9__avx2_mul16_vpunpck(benchmark::State& state, const char* net) {
+  static void qs8_dwconv_9p32c__avx2_mul16_vpunpck(benchmark::State& state, const char* net) {
     DWConvBenchmark(state,
-      xnn_qs8_dwconv_minmax_fp32_ukernel_up32x9__avx2_mul16_vpunpck,
+      xnn_qs8_dwconv_minmax_fp32_ukernel_9p32c__avx2_mul16_vpunpck,
       xnn_init_qs8_conv_minmax_fp32_avx2_params,
       32 /* channel tile */, 9 /* primary tile */, benchmark::utils::CheckAVX2);
   }
-  static void qs8_dwconv_up16x9__avx2_mul16_add16_vpunpck(benchmark::State& state, const char* net) {
+  static void qs8_dwconv_9p16c__avx2_mul16_add16_vpunpck(benchmark::State& state, const char* net) {
     DWConvBenchmark(state,
-      xnn_qs8_dwconv_minmax_fp32_ukernel_up16x9__avx2_mul16_add16_vpunpck,
+      xnn_qs8_dwconv_minmax_fp32_ukernel_9p16c__avx2_mul16_add16_vpunpck,
       xnn_init_qs8_conv_minmax_fp32_avx2_params,
       16 /* channel tile */, 9 /* primary tile */, benchmark::utils::CheckAVX2);
   }
-  static void qs8_dwconv_up32x9__avx2_mul16_add16_vpunpck(benchmark::State& state, const char* net) {
+  static void qs8_dwconv_9p32c__avx2_mul16_add16_vpunpck(benchmark::State& state, const char* net) {
     DWConvBenchmark(state,
-      xnn_qs8_dwconv_minmax_fp32_ukernel_up32x9__avx2_mul16_add16_vpunpck,
+      xnn_qs8_dwconv_minmax_fp32_ukernel_9p32c__avx2_mul16_add16_vpunpck,
       xnn_init_qs8_conv_minmax_fp32_avx2_params,
       32 /* channel tile */, 9 /* primary tile */, benchmark::utils::CheckAVX2);
   }
-  static void qs8_dwconv_up8x9__avx2_mul32(benchmark::State& state, const char* net) {
+  static void qs8_dwconv_9p8c__avx2_mul32(benchmark::State& state, const char* net) {
     DWConvBenchmark(state,
-      xnn_qs8_dwconv_minmax_fp32_ukernel_up8x9__avx2_mul32,
+      xnn_qs8_dwconv_minmax_fp32_ukernel_9p8c__avx2_mul32,
       xnn_init_qs8_conv_minmax_fp32_avx2_params,
       8 /* channel tile */, 9 /* primary tile */, benchmark::utils::CheckAVX2);
   }
-  static void qs8_dwconv_up16x9__avx2_mul32(benchmark::State& state, const char* net) {
+  static void qs8_dwconv_9p16c__avx2_mul32(benchmark::State& state, const char* net) {
     DWConvBenchmark(state,
-      xnn_qs8_dwconv_minmax_fp32_ukernel_up16x9__avx2_mul32,
+      xnn_qs8_dwconv_minmax_fp32_ukernel_9p16c__avx2_mul32,
       xnn_init_qs8_conv_minmax_fp32_avx2_params,
       16 /* channel tile */, 9 /* primary tile */, benchmark::utils::CheckAVX2);
   }
-  static void qs8_dwconv_up32x9__avx2_mul32(benchmark::State& state, const char* net) {
+  static void qs8_dwconv_9p32c__avx2_mul32(benchmark::State& state, const char* net) {
     DWConvBenchmark(state,
-      xnn_qs8_dwconv_minmax_fp32_ukernel_up32x9__avx2_mul32,
+      xnn_qs8_dwconv_minmax_fp32_ukernel_9p32c__avx2_mul32,
       xnn_init_qs8_conv_minmax_fp32_avx2_params,
       32 /* channel tile */, 9 /* primary tile */, benchmark::utils::CheckAVX2);
   }
-  static void qs8_dwconv_up8x9__xop_mul16_add16(benchmark::State& state, const char* net) {
+  static void qs8_dwconv_9p8c__xop_mul16_add16(benchmark::State& state, const char* net) {
     DWConvBenchmark(state,
-      xnn_qs8_dwconv_minmax_fp32_ukernel_up8x9__xop_mul16_add16,
+      xnn_qs8_dwconv_minmax_fp32_ukernel_9p8c__xop_mul16_add16,
       xnn_init_qs8_conv_minmax_fp32_sse4_params,
       8 /* channel tile */, 9 /* primary tile */, benchmark::utils::CheckXOP);
   }
-  static void qs8_dwconv_up16x9__xop_mul16_add16(benchmark::State& state, const char* net) {
+  static void qs8_dwconv_9p16c__xop_mul16_add16(benchmark::State& state, const char* net) {
     DWConvBenchmark(state,
-      xnn_qs8_dwconv_minmax_fp32_ukernel_up16x9__xop_mul16_add16,
+      xnn_qs8_dwconv_minmax_fp32_ukernel_9p16c__xop_mul16_add16,
       xnn_init_qs8_conv_minmax_fp32_sse4_params,
       16 /* channel tile */, 9 /* primary tile */, benchmark::utils::CheckXOP);
   }
-  static void qs8_dwconv_up8x9__avx_mul16(benchmark::State& state, const char* net) {
+  static void qs8_dwconv_9p8c__avx_mul16(benchmark::State& state, const char* net) {
     DWConvBenchmark(state,
-      xnn_qs8_dwconv_minmax_fp32_ukernel_up8x9__avx_mul16,
+      xnn_qs8_dwconv_minmax_fp32_ukernel_9p8c__avx_mul16,
       xnn_init_qs8_conv_minmax_fp32_sse4_params,
       8 /* channel tile */, 9 /* primary tile */, benchmark::utils::CheckAVX);
   }
-  static void qs8_dwconv_up16x9__avx_mul16(benchmark::State& state, const char* net) {
+  static void qs8_dwconv_9p16c__avx_mul16(benchmark::State& state, const char* net) {
     DWConvBenchmark(state,
-      xnn_qs8_dwconv_minmax_fp32_ukernel_up16x9__avx_mul16,
+      xnn_qs8_dwconv_minmax_fp32_ukernel_9p16c__avx_mul16,
       xnn_init_qs8_conv_minmax_fp32_sse4_params,
       16 /* channel tile */, 9 /* primary tile */, benchmark::utils::CheckAVX);
   }
-  static void qs8_dwconv_up8x9__avx_mul16_add16(benchmark::State& state, const char* net) {
+  static void qs8_dwconv_9p8c__avx_mul16_add16(benchmark::State& state, const char* net) {
     DWConvBenchmark(state,
-      xnn_qs8_dwconv_minmax_fp32_ukernel_up8x9__avx_mul16_add16,
+      xnn_qs8_dwconv_minmax_fp32_ukernel_9p8c__avx_mul16_add16,
       xnn_init_qs8_conv_minmax_fp32_sse4_params,
       8 /* channel tile */, 9 /* primary tile */, benchmark::utils::CheckAVX);
   }
-  static void qs8_dwconv_up16x9__avx_mul16_add16(benchmark::State& state, const char* net) {
+  static void qs8_dwconv_9p16c__avx_mul16_add16(benchmark::State& state, const char* net) {
     DWConvBenchmark(state,
-      xnn_qs8_dwconv_minmax_fp32_ukernel_up16x9__avx_mul16_add16,
+      xnn_qs8_dwconv_minmax_fp32_ukernel_9p16c__avx_mul16_add16,
       xnn_init_qs8_conv_minmax_fp32_sse4_params,
       16 /* channel tile */, 9 /* primary tile */, benchmark::utils::CheckAVX);
   }
-  static void qs8_dwconv_up8x9__avx_mul32(benchmark::State& state, const char* net) {
+  static void qs8_dwconv_9p8c__avx_mul32(benchmark::State& state, const char* net) {
     DWConvBenchmark(state,
-      xnn_qs8_dwconv_minmax_fp32_ukernel_up8x9__avx_mul32,
+      xnn_qs8_dwconv_minmax_fp32_ukernel_9p8c__avx_mul32,
       xnn_init_qs8_conv_minmax_fp32_sse4_params,
       8 /* channel tile */, 9 /* primary tile */, benchmark::utils::CheckAVX);
   }
-  static void qs8_dwconv_up16x9__avx_mul32(benchmark::State& state, const char* net) {
+  static void qs8_dwconv_9p16c__avx_mul32(benchmark::State& state, const char* net) {
     DWConvBenchmark(state,
-      xnn_qs8_dwconv_minmax_fp32_ukernel_up16x9__avx_mul32,
+      xnn_qs8_dwconv_minmax_fp32_ukernel_9p16c__avx_mul32,
       xnn_init_qs8_conv_minmax_fp32_sse4_params,
       16 /* channel tile */, 9 /* primary tile */, benchmark::utils::CheckAVX);
   }
-  static void qs8_dwconv_up8x9__sse41_mul16(benchmark::State& state, const char* net) {
+  static void qs8_dwconv_9p8c__sse41_mul16(benchmark::State& state, const char* net) {
     DWConvBenchmark(state,
-      xnn_qs8_dwconv_minmax_fp32_ukernel_up8x9__sse41_mul16,
+      xnn_qs8_dwconv_minmax_fp32_ukernel_9p8c__sse41_mul16,
       xnn_init_qs8_conv_minmax_fp32_sse4_params,
       8 /* channel tile */, 9 /* primary tile */, benchmark::utils::CheckSSE41);
   }
-  static void qs8_dwconv_up16x9__sse41_mul16(benchmark::State& state, const char* net) {
+  static void qs8_dwconv_9p16c__sse41_mul16(benchmark::State& state, const char* net) {
     DWConvBenchmark(state,
-      xnn_qs8_dwconv_minmax_fp32_ukernel_up16x9__sse41_mul16,
+      xnn_qs8_dwconv_minmax_fp32_ukernel_9p16c__sse41_mul16,
       xnn_init_qs8_conv_minmax_fp32_sse4_params,
       16 /* channel tile */, 9 /* primary tile */, benchmark::utils::CheckSSE41);
   }
-  static void qs8_dwconv_up8x9__sse41_mul16_add16(benchmark::State& state, const char* net) {
+  static void qs8_dwconv_9p8c__sse41_mul16_add16(benchmark::State& state, const char* net) {
     DWConvBenchmark(state,
-      xnn_qs8_dwconv_minmax_fp32_ukernel_up8x9__sse41_mul16_add16,
+      xnn_qs8_dwconv_minmax_fp32_ukernel_9p8c__sse41_mul16_add16,
       xnn_init_qs8_conv_minmax_fp32_sse4_params,
       8 /* channel tile */, 9 /* primary tile */, benchmark::utils::CheckSSE41);
   }
-  static void qs8_dwconv_up16x9__sse41_mul16_add16(benchmark::State& state, const char* net) {
+  static void qs8_dwconv_9p16c__sse41_mul16_add16(benchmark::State& state, const char* net) {
     DWConvBenchmark(state,
-      xnn_qs8_dwconv_minmax_fp32_ukernel_up16x9__sse41_mul16_add16,
+      xnn_qs8_dwconv_minmax_fp32_ukernel_9p16c__sse41_mul16_add16,
       xnn_init_qs8_conv_minmax_fp32_sse4_params,
       16 /* channel tile */, 9 /* primary tile */, benchmark::utils::CheckSSE41);
   }
-  static void qs8_dwconv_up8x9__sse41_mul32(benchmark::State& state, const char* net) {
+  static void qs8_dwconv_9p8c__sse41_mul32(benchmark::State& state, const char* net) {
     DWConvBenchmark(state,
-      xnn_qs8_dwconv_minmax_fp32_ukernel_up8x9__sse41_mul32,
+      xnn_qs8_dwconv_minmax_fp32_ukernel_9p8c__sse41_mul32,
       xnn_init_qs8_conv_minmax_fp32_sse4_params,
       8 /* channel tile */, 9 /* primary tile */, benchmark::utils::CheckSSE41);
   }
-  static void qs8_dwconv_up16x9__sse41_mul32(benchmark::State& state, const char* net) {
+  static void qs8_dwconv_9p16c__sse41_mul32(benchmark::State& state, const char* net) {
     DWConvBenchmark(state,
-      xnn_qs8_dwconv_minmax_fp32_ukernel_up16x9__sse41_mul32,
+      xnn_qs8_dwconv_minmax_fp32_ukernel_9p16c__sse41_mul32,
       xnn_init_qs8_conv_minmax_fp32_sse4_params,
       16 /* channel tile */, 9 /* primary tile */, benchmark::utils::CheckSSE41);
   }
-  static void qs8_dwconv_up8x9__sse2_mul16(benchmark::State& state, const char* net) {
+  static void qs8_dwconv_9p8c__sse2_mul16(benchmark::State& state, const char* net) {
     DWConvBenchmark(state,
-      xnn_qs8_dwconv_minmax_fp32_ukernel_up8x9__sse2_mul16,
+      xnn_qs8_dwconv_minmax_fp32_ukernel_9p8c__sse2_mul16,
       xnn_init_qs8_conv_minmax_fp32_sse2_params,
       8 /* channel tile */, 9 /* primary tile */);
   }
-  static void qs8_dwconv_up16x9__sse2_mul16(benchmark::State& state, const char* net) {
+  static void qs8_dwconv_9p16c__sse2_mul16(benchmark::State& state, const char* net) {
     DWConvBenchmark(state,
-      xnn_qs8_dwconv_minmax_fp32_ukernel_up16x9__sse2_mul16,
+      xnn_qs8_dwconv_minmax_fp32_ukernel_9p16c__sse2_mul16,
       xnn_init_qs8_conv_minmax_fp32_sse2_params,
       16 /* channel tile */, 9 /* primary tile */);
   }
-  static void qs8_dwconv_up8x9__sse2_mul16_add16(benchmark::State& state, const char* net) {
+  static void qs8_dwconv_9p8c__sse2_mul16_add16(benchmark::State& state, const char* net) {
     DWConvBenchmark(state,
-      xnn_qs8_dwconv_minmax_fp32_ukernel_up8x9__sse2_mul16_add16,
+      xnn_qs8_dwconv_minmax_fp32_ukernel_9p8c__sse2_mul16_add16,
       xnn_init_qs8_conv_minmax_fp32_sse2_params,
       8 /* channel tile */, 9 /* primary tile */);
   }
-  static void qs8_dwconv_up16x9__sse2_mul16_add16(benchmark::State& state, const char* net) {
+  static void qs8_dwconv_9p16c__sse2_mul16_add16(benchmark::State& state, const char* net) {
     DWConvBenchmark(state,
-      xnn_qs8_dwconv_minmax_fp32_ukernel_up16x9__sse2_mul16_add16,
+      xnn_qs8_dwconv_minmax_fp32_ukernel_9p16c__sse2_mul16_add16,
       xnn_init_qs8_conv_minmax_fp32_sse2_params,
       16 /* channel tile */, 9 /* primary tile */);
   }
 
-  BENCHMARK_DWCONV(qs8_dwconv_up16x9__avx512skx_mul32);
-  BENCHMARK_DWCONV(qs8_dwconv_up32x9__avx512skx_mul32);
+  BENCHMARK_DWCONV(qs8_dwconv_9p16c__avx512skx_mul32);
+  BENCHMARK_DWCONV(qs8_dwconv_9p32c__avx512skx_mul32);
 
-  BENCHMARK_DWCONV(qs8_dwconv_up16x9__avx2_mul16_vpmovsx);
-  BENCHMARK_DWCONV(qs8_dwconv_up32x9__avx2_mul16_vpmovsx);
-  BENCHMARK_DWCONV(qs8_dwconv_up16x9__avx2_mul16_vpunpck);
-  BENCHMARK_DWCONV(qs8_dwconv_up32x9__avx2_mul16_vpunpck);
-  BENCHMARK_DWCONV(qs8_dwconv_up16x9__avx2_mul16_add16_vpunpck);
-  BENCHMARK_DWCONV(qs8_dwconv_up32x9__avx2_mul16_add16_vpunpck);
-  BENCHMARK_DWCONV(qs8_dwconv_up8x9__avx2_mul32);
-  BENCHMARK_DWCONV(qs8_dwconv_up16x9__avx2_mul32);
-  BENCHMARK_DWCONV(qs8_dwconv_up32x9__avx2_mul32);
+  BENCHMARK_DWCONV(qs8_dwconv_9p16c__avx2_mul16_vpmovsx);
+  BENCHMARK_DWCONV(qs8_dwconv_9p32c__avx2_mul16_vpmovsx);
+  BENCHMARK_DWCONV(qs8_dwconv_9p16c__avx2_mul16_vpunpck);
+  BENCHMARK_DWCONV(qs8_dwconv_9p32c__avx2_mul16_vpunpck);
+  BENCHMARK_DWCONV(qs8_dwconv_9p16c__avx2_mul16_add16_vpunpck);
+  BENCHMARK_DWCONV(qs8_dwconv_9p32c__avx2_mul16_add16_vpunpck);
+  BENCHMARK_DWCONV(qs8_dwconv_9p8c__avx2_mul32);
+  BENCHMARK_DWCONV(qs8_dwconv_9p16c__avx2_mul32);
+  BENCHMARK_DWCONV(qs8_dwconv_9p32c__avx2_mul32);
 
-  BENCHMARK_DWCONV(qs8_dwconv_up8x9__xop_mul16_add16);
-  BENCHMARK_DWCONV(qs8_dwconv_up16x9__xop_mul16_add16);
+  BENCHMARK_DWCONV(qs8_dwconv_9p8c__xop_mul16_add16);
+  BENCHMARK_DWCONV(qs8_dwconv_9p16c__xop_mul16_add16);
 
-  BENCHMARK_DWCONV(qs8_dwconv_up8x9__avx_mul16);
-  BENCHMARK_DWCONV(qs8_dwconv_up16x9__avx_mul16);
-  BENCHMARK_DWCONV(qs8_dwconv_up8x9__avx_mul16_add16);
-  BENCHMARK_DWCONV(qs8_dwconv_up16x9__avx_mul16_add16);
-  BENCHMARK_DWCONV(qs8_dwconv_up8x9__avx_mul32);
-  BENCHMARK_DWCONV(qs8_dwconv_up16x9__avx_mul32);
+  BENCHMARK_DWCONV(qs8_dwconv_9p8c__avx_mul16);
+  BENCHMARK_DWCONV(qs8_dwconv_9p16c__avx_mul16);
+  BENCHMARK_DWCONV(qs8_dwconv_9p8c__avx_mul16_add16);
+  BENCHMARK_DWCONV(qs8_dwconv_9p16c__avx_mul16_add16);
+  BENCHMARK_DWCONV(qs8_dwconv_9p8c__avx_mul32);
+  BENCHMARK_DWCONV(qs8_dwconv_9p16c__avx_mul32);
 
-  BENCHMARK_DWCONV(qs8_dwconv_up8x9__sse41_mul16);
-  BENCHMARK_DWCONV(qs8_dwconv_up16x9__sse41_mul16);
-  BENCHMARK_DWCONV(qs8_dwconv_up8x9__sse41_mul16_add16);
-  BENCHMARK_DWCONV(qs8_dwconv_up16x9__sse41_mul16_add16);
-  BENCHMARK_DWCONV(qs8_dwconv_up8x9__sse41_mul32);
-  BENCHMARK_DWCONV(qs8_dwconv_up16x9__sse41_mul32);
+  BENCHMARK_DWCONV(qs8_dwconv_9p8c__sse41_mul16);
+  BENCHMARK_DWCONV(qs8_dwconv_9p16c__sse41_mul16);
+  BENCHMARK_DWCONV(qs8_dwconv_9p8c__sse41_mul16_add16);
+  BENCHMARK_DWCONV(qs8_dwconv_9p16c__sse41_mul16_add16);
+  BENCHMARK_DWCONV(qs8_dwconv_9p8c__sse41_mul32);
+  BENCHMARK_DWCONV(qs8_dwconv_9p16c__sse41_mul32);
 
-  BENCHMARK_DWCONV(qs8_dwconv_up8x9__sse2_mul16);
-  BENCHMARK_DWCONV(qs8_dwconv_up16x9__sse2_mul16);
-  BENCHMARK_DWCONV(qs8_dwconv_up8x9__sse2_mul16_add16);
-  BENCHMARK_DWCONV(qs8_dwconv_up16x9__sse2_mul16_add16);
+  BENCHMARK_DWCONV(qs8_dwconv_9p8c__sse2_mul16);
+  BENCHMARK_DWCONV(qs8_dwconv_9p16c__sse2_mul16);
+  BENCHMARK_DWCONV(qs8_dwconv_9p8c__sse2_mul16_add16);
+  BENCHMARK_DWCONV(qs8_dwconv_9p16c__sse2_mul16_add16);
 #endif  // XNN_ARCH_X86 || XNN_ARCH_X86_64
 
 
 #if XNN_ARCH_WASMSIMD || XNN_ARCH_WASMRELAXEDSIMD
-  static void qs8_dwconv_up8x9__wasmsimd_mul16(benchmark::State& state, const char* net) {
+  static void qs8_dwconv_9p8c__wasmsimd_mul16(benchmark::State& state, const char* net) {
     DWConvBenchmark(state,
-      xnn_qs8_dwconv_minmax_fp32_ukernel_up8x9__wasmsimd_mul16,
+      xnn_qs8_dwconv_minmax_fp32_ukernel_9p8c__wasmsimd_mul16,
       xnn_init_qs8_conv_minmax_fp32_wasmsimd_params,
       8 /* channel tile */, 9 /* primary tile */);
   }
-  static void qs8_dwconv_up16x9__wasmsimd_mul16(benchmark::State& state, const char* net) {
+  static void qs8_dwconv_9p16c__wasmsimd_mul16(benchmark::State& state, const char* net) {
     DWConvBenchmark(state,
-      xnn_qs8_dwconv_minmax_fp32_ukernel_up16x9__wasmsimd_mul16,
+      xnn_qs8_dwconv_minmax_fp32_ukernel_9p16c__wasmsimd_mul16,
       xnn_init_qs8_conv_minmax_fp32_wasmsimd_params,
       16 /* channel tile */, 9 /* primary tile */);
   }
 
-  BENCHMARK_DWCONV(qs8_dwconv_up8x9__wasmsimd_mul16);
-  BENCHMARK_DWCONV(qs8_dwconv_up16x9__wasmsimd_mul16);
+  BENCHMARK_DWCONV(qs8_dwconv_9p8c__wasmsimd_mul16);
+  BENCHMARK_DWCONV(qs8_dwconv_9p16c__wasmsimd_mul16);
 #endif  // XNN_ARCH_WASMSIMD || XNN_ARCH_WASMRELAXEDSIMD
 
 
 #if XNN_ARCH_WASM || XNN_ARCH_WASMSIMD || XNN_ARCH_WASMRELAXEDSIMD
-  static void qs8_dwconv_up1x9__wasm_fmagic(benchmark::State& state, const char* net) {
+  static void qs8_dwconv_9p1c__wasm_fmagic(benchmark::State& state, const char* net) {
     DWConvBenchmark(state,
-      xnn_qs8_dwconv_minmax_fp32_ukernel_up1x9__wasm_fmagic,
+      xnn_qs8_dwconv_minmax_fp32_ukernel_9p1c__wasm_fmagic,
       xnn_init_qs8_conv_minmax_fp32_scalar_fmagic_params,
       1 /* channel tile */, 9 /* primary tile */);
   }
-  static void qs8_dwconv_up2x9__wasm_fmagic(benchmark::State& state, const char* net) {
+  static void qs8_dwconv_9p2c__wasm_fmagic(benchmark::State& state, const char* net) {
     DWConvBenchmark(state,
-      xnn_qs8_dwconv_minmax_fp32_ukernel_up2x9__wasm_fmagic,
+      xnn_qs8_dwconv_minmax_fp32_ukernel_9p2c__wasm_fmagic,
       xnn_init_qs8_conv_minmax_fp32_scalar_fmagic_params,
       2 /* channel tile */, 9 /* primary tile */);
   }
-  static void qs8_dwconv_up4x9__wasm_fmagic(benchmark::State& state, const char* net) {
+  static void qs8_dwconv_9p4c__wasm_fmagic(benchmark::State& state, const char* net) {
     DWConvBenchmark(state,
-      xnn_qs8_dwconv_minmax_fp32_ukernel_up4x9__wasm_fmagic,
+      xnn_qs8_dwconv_minmax_fp32_ukernel_9p4c__wasm_fmagic,
       xnn_init_qs8_conv_minmax_fp32_scalar_fmagic_params,
       4 /* channel tile */, 9 /* primary tile */);
   }
 
-  BENCHMARK_DWCONV(qs8_dwconv_up1x9__wasm_fmagic);
-  BENCHMARK_DWCONV(qs8_dwconv_up2x9__wasm_fmagic);
-  BENCHMARK_DWCONV(qs8_dwconv_up4x9__wasm_fmagic);
+  BENCHMARK_DWCONV(qs8_dwconv_9p1c__wasm_fmagic);
+  BENCHMARK_DWCONV(qs8_dwconv_9p2c__wasm_fmagic);
+  BENCHMARK_DWCONV(qs8_dwconv_9p4c__wasm_fmagic);
 #endif  // XNN_ARCH_WASM || XNN_ARCH_WASMSIMD || XNN_ARCH_WASMRELAXEDSIMD
 
 
-static void qs8_dwconv_up1x9__scalar_fmagic(benchmark::State& state, const char* net) {
+static void qs8_dwconv_9p1c__scalar_fmagic(benchmark::State& state, const char* net) {
   DWConvBenchmark(state,
-    xnn_qs8_dwconv_minmax_fp32_ukernel_up1x9__scalar_fmagic,
+    xnn_qs8_dwconv_minmax_fp32_ukernel_9p1c__scalar_fmagic,
     xnn_init_qs8_conv_minmax_fp32_scalar_fmagic_params,
     1 /* channel tile */, 9 /* primary tile */);
 }
-static void qs8_dwconv_up2x9__scalar_fmagic(benchmark::State& state, const char* net) {
+static void qs8_dwconv_9p2c__scalar_fmagic(benchmark::State& state, const char* net) {
   DWConvBenchmark(state,
-    xnn_qs8_dwconv_minmax_fp32_ukernel_up2x9__scalar_fmagic,
+    xnn_qs8_dwconv_minmax_fp32_ukernel_9p2c__scalar_fmagic,
     xnn_init_qs8_conv_minmax_fp32_scalar_fmagic_params,
     2 /* channel tile */, 9 /* primary tile */);
 }
-static void qs8_dwconv_up4x9__scalar_fmagic(benchmark::State& state, const char* net) {
+static void qs8_dwconv_9p4c__scalar_fmagic(benchmark::State& state, const char* net) {
   DWConvBenchmark(state,
-    xnn_qs8_dwconv_minmax_fp32_ukernel_up4x9__scalar_fmagic,
+    xnn_qs8_dwconv_minmax_fp32_ukernel_9p4c__scalar_fmagic,
     xnn_init_qs8_conv_minmax_fp32_scalar_fmagic_params,
     4 /* channel tile */, 9 /* primary tile */);
 }
 
-static void qs8_dwconv_up1x9__scalar_imagic(benchmark::State& state, const char* net) {
+static void qs8_dwconv_9p1c__scalar_imagic(benchmark::State& state, const char* net) {
   DWConvBenchmark(state,
-    xnn_qs8_dwconv_minmax_fp32_ukernel_up1x9__scalar_imagic,
+    xnn_qs8_dwconv_minmax_fp32_ukernel_9p1c__scalar_imagic,
     xnn_init_qs8_conv_minmax_fp32_scalar_imagic_params,
     1 /* channel tile */, 9 /* primary tile */);
 }
-static void qs8_dwconv_up2x9__scalar_imagic(benchmark::State& state, const char* net) {
+static void qs8_dwconv_9p2c__scalar_imagic(benchmark::State& state, const char* net) {
   DWConvBenchmark(state,
-    xnn_qs8_dwconv_minmax_fp32_ukernel_up2x9__scalar_imagic,
+    xnn_qs8_dwconv_minmax_fp32_ukernel_9p2c__scalar_imagic,
     xnn_init_qs8_conv_minmax_fp32_scalar_imagic_params,
     2 /* channel tile */, 9 /* primary tile */);
 }
-static void qs8_dwconv_up4x9__scalar_imagic(benchmark::State& state, const char* net) {
+static void qs8_dwconv_9p4c__scalar_imagic(benchmark::State& state, const char* net) {
   DWConvBenchmark(state,
-    xnn_qs8_dwconv_minmax_fp32_ukernel_up4x9__scalar_imagic,
+    xnn_qs8_dwconv_minmax_fp32_ukernel_9p4c__scalar_imagic,
     xnn_init_qs8_conv_minmax_fp32_scalar_imagic_params,
     4 /* channel tile */, 9 /* primary tile */);
 }
 
-static void qs8_dwconv_up1x9__scalar_lrintf(benchmark::State& state, const char* net) {
+static void qs8_dwconv_9p1c__scalar_lrintf(benchmark::State& state, const char* net) {
   DWConvBenchmark(state,
-    xnn_qs8_dwconv_minmax_fp32_ukernel_up1x9__scalar_lrintf,
+    xnn_qs8_dwconv_minmax_fp32_ukernel_9p1c__scalar_lrintf,
     xnn_init_qs8_conv_minmax_fp32_scalar_lrintf_params,
     1 /* channel tile */, 9 /* primary tile */);
 }
-static void qs8_dwconv_up2x9__scalar_lrintf(benchmark::State& state, const char* net) {
+static void qs8_dwconv_9p2c__scalar_lrintf(benchmark::State& state, const char* net) {
   DWConvBenchmark(state,
-    xnn_qs8_dwconv_minmax_fp32_ukernel_up2x9__scalar_lrintf,
+    xnn_qs8_dwconv_minmax_fp32_ukernel_9p2c__scalar_lrintf,
     xnn_init_qs8_conv_minmax_fp32_scalar_lrintf_params,
     2 /* channel tile */, 9 /* primary tile */);
 }
-static void qs8_dwconv_up4x9__scalar_lrintf(benchmark::State& state, const char* net) {
+static void qs8_dwconv_9p4c__scalar_lrintf(benchmark::State& state, const char* net) {
   DWConvBenchmark(state,
-    xnn_qs8_dwconv_minmax_fp32_ukernel_up4x9__scalar_lrintf,
+    xnn_qs8_dwconv_minmax_fp32_ukernel_9p4c__scalar_lrintf,
     xnn_init_qs8_conv_minmax_fp32_scalar_lrintf_params,
     4 /* channel tile */, 9 /* primary tile */);
 }
 
-BENCHMARK_DWCONV(qs8_dwconv_up1x9__scalar_fmagic);
-BENCHMARK_DWCONV(qs8_dwconv_up2x9__scalar_fmagic);
-BENCHMARK_DWCONV(qs8_dwconv_up4x9__scalar_fmagic);
+BENCHMARK_DWCONV(qs8_dwconv_9p1c__scalar_fmagic);
+BENCHMARK_DWCONV(qs8_dwconv_9p2c__scalar_fmagic);
+BENCHMARK_DWCONV(qs8_dwconv_9p4c__scalar_fmagic);
 
-BENCHMARK_DWCONV(qs8_dwconv_up1x9__scalar_imagic);
-BENCHMARK_DWCONV(qs8_dwconv_up2x9__scalar_imagic);
-BENCHMARK_DWCONV(qs8_dwconv_up4x9__scalar_imagic);
+BENCHMARK_DWCONV(qs8_dwconv_9p1c__scalar_imagic);
+BENCHMARK_DWCONV(qs8_dwconv_9p2c__scalar_imagic);
+BENCHMARK_DWCONV(qs8_dwconv_9p4c__scalar_imagic);
 
-BENCHMARK_DWCONV(qs8_dwconv_up1x9__scalar_lrintf);
-BENCHMARK_DWCONV(qs8_dwconv_up2x9__scalar_lrintf);
-BENCHMARK_DWCONV(qs8_dwconv_up4x9__scalar_lrintf);
+BENCHMARK_DWCONV(qs8_dwconv_9p1c__scalar_lrintf);
+BENCHMARK_DWCONV(qs8_dwconv_9p2c__scalar_lrintf);
+BENCHMARK_DWCONV(qs8_dwconv_9p4c__scalar_lrintf);
 
 
 #ifndef XNNPACK_BENCHMARK_NO_MAIN

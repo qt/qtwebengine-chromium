@@ -20,7 +20,7 @@
 #include "src/tint/program_builder.h"
 #include "src/tint/sem/call.h"
 #include "src/tint/sem/statement.h"
-#include "src/tint/sem/type_initializer.h"
+#include "src/tint/sem/value_constructor.h"
 #include "src/tint/transform/utils/hoist_to_decl_before.h"
 #include "src/tint/type/struct.h"
 #include "src/tint/utils/hashset.h"
@@ -41,7 +41,7 @@ Transform::ApplyResult PromoteInitializersToLet::Apply(const Program* src,
 
     // Returns true if the expression should be hoisted to a new let statement before the
     // expression's statement.
-    auto should_hoist = [&](const sem::Expression* expr) {
+    auto should_hoist = [&](const sem::ValueExpression* expr) {
         if (!expr->Type()->IsAnyOf<type::Array, type::Struct>()) {
             // We only care about array and struct initializers
             return false;
@@ -58,8 +58,8 @@ Transform::ApplyResult PromoteInitializersToLet::Apply(const Program* src,
             }
 
             auto* ctor = root_expr->UnwrapMaterialize()->As<sem::Call>();
-            if (!ctor || !ctor->Target()->Is<sem::TypeInitializer>()) {
-                // Root expression is not a type constructor. Not interested in this.
+            if (!ctor || !ctor->Target()->Is<sem::ValueConstructor>()) {
+                // Root expression is not a value constructor. Not interested in this.
                 return false;
             }
         }
@@ -77,13 +77,13 @@ Transform::ApplyResult PromoteInitializersToLet::Apply(const Program* src,
     };
 
     // A list of expressions that should be hoisted.
-    utils::Vector<const sem::Expression*, 32> to_hoist;
+    utils::Vector<const sem::ValueExpression*, 32> to_hoist;
     // A set of expressions that are constant, which _may_ need to be hoisted.
     utils::Hashset<const ast::Expression*, 32> const_chains;
 
     // Walk the AST nodes. This order guarantees that leaf-expressions are visited first.
     for (auto* node : src->ASTNodes().Objects()) {
-        if (auto* sem = src->Sem().Get<sem::Expression>(node)) {
+        if (auto* sem = src->Sem().GetVal(node)) {
             auto* stmt = sem->Stmt();
             if (!stmt) {
                 // Expression is outside of a statement. This usually means the expression is part
@@ -118,7 +118,7 @@ Transform::ApplyResult PromoteInitializersToLet::Apply(const Program* src,
     // After walking the full AST, const_chains only contains the outer-most constant expressions.
     // Check if any of these need hoisting, and append those to to_hoist.
     for (auto* expr : const_chains) {
-        if (auto* sem = src->Sem().Get(expr); should_hoist(sem)) {
+        if (auto* sem = src->Sem().GetVal(expr); should_hoist(sem)) {
             to_hoist.Push(sem);
         }
     }
@@ -134,7 +134,7 @@ Transform::ApplyResult PromoteInitializersToLet::Apply(const Program* src,
         return expr_a->Declaration()->node_id < expr_b->Declaration()->node_id;
     });
 
-    // Hoist all the expression in to_hoist  to a constant variable, declared just before the
+    // Hoist all the expressions in to_hoist to a constant variable, declared just before the
     // statement of usage.
     HoistToDeclBefore hoist_to_decl_before(ctx);
     for (auto* expr : to_hoist) {

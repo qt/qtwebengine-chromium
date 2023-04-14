@@ -19,6 +19,8 @@
 #include <unordered_map>
 #include <utility>
 
+#include "src/tint/ast/type.h"
+#include "src/tint/constant/clone_context.h"
 #include "src/tint/diagnostic/diagnostic.h"
 #include "src/tint/ir/builder.h"
 #include "src/tint/ir/flow_node.h"
@@ -31,19 +33,25 @@ namespace tint {
 class Program;
 }  // namespace tint
 namespace tint::ast {
+class Attribute;
 class BinaryExpression;
+class BitcastExpression;
 class BlockStatement;
 class BreakIfStatement;
 class BreakStatement;
 class ContinueStatement;
+class Expression;
 class ForLoopStatement;
 class Function;
 class IfStatement;
 class LoopStatement;
 class LiteralExpression;
+class Node;
 class ReturnStatement;
 class Statement;
+class SwitchStatement;
 class WhileStatement;
+class Variable;
 }  // namespace tint::ast
 namespace tint::ir {
 class Block;
@@ -140,7 +148,7 @@ class BuilderImpl {
     /// Emits an expression
     /// @param expr the expression to emit
     /// @returns true if successful, false otherwise
-    utils::Result<const Value*> EmitExpression(const ast::Expression* expr);
+    utils::Result<Value*> EmitExpression(const ast::Expression* expr);
 
     /// Emits a variable
     /// @param var the variable to emit
@@ -150,17 +158,17 @@ class BuilderImpl {
     /// Emits a binary expression
     /// @param expr the binary expression
     /// @returns the value storing the result if successful, utils::Failure otherwise
-    utils::Result<const Value*> EmitBinary(const ast::BinaryExpression* expr);
+    utils::Result<Value*> EmitBinary(const ast::BinaryExpression* expr);
+
+    /// Emits a bitcast expression
+    /// @param expr the bitcast expression
+    /// @returns the value storing the result if successful, utils::Failure otherwise
+    utils::Result<Value*> EmitBitcast(const ast::BitcastExpression* expr);
 
     /// Emits a literal expression
     /// @param lit the literal to emit
     /// @returns true if successful, false otherwise
-    utils::Result<const Value*> EmitLiteral(const ast::LiteralExpression* lit);
-
-    /// Emits a type
-    /// @param ty the type to emit
-    /// @returns true if successful, false otherwise
-    bool EmitType(const ast::Type* ty);
+    utils::Result<Value*> EmitLiteral(const ast::LiteralExpression* lit);
 
     /// Emits a set of attributes
     /// @param attrs the attributes to emit
@@ -194,10 +202,14 @@ class BuilderImpl {
   private:
     enum class ControlFlags { kNone, kExcludeSwitch };
 
-    void BranchTo(ir::FlowNode* node);
+    void BranchTo(ir::FlowNode* node, utils::VectorRef<Value*> args = {});
     void BranchToIfNeeded(ir::FlowNode* node);
 
     FlowNode* FindEnclosingControl(ControlFlags flags);
+
+    const Program* program_ = nullptr;
+
+    Symbol CloneSymbol(Symbol sym) const;
 
     diag::List diagnostics_;
 
@@ -206,6 +218,8 @@ class BuilderImpl {
     /// Map from ast nodes to flow nodes, used to retrieve the flow node for a given AST node.
     /// Used for testing purposes.
     std::unordered_map<const ast::Node*, const FlowNode*> ast_to_flow_;
+
+    constant::CloneContext clone_ctx_;
 };
 
 }  // namespace tint::ir

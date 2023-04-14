@@ -8,7 +8,7 @@
 #define SK_OPTS_NS sksl_minify_standalone
 #include "include/core/SkStream.h"
 #include "include/private/SkSLProgramKind.h"
-#include "include/private/SkStringView.h"
+#include "src/base/SkStringView.h"
 #include "src/core/SkCpu.h"
 #include "src/core/SkOpts.h"
 #include "src/opts/SkChecksum_opts.h"
@@ -45,8 +45,9 @@ void SkDebugf(const char format[], ...) {
 }
 
 namespace SkOpts {
-    decltype(hash_fn) hash_fn = sksl_minify_standalone::hash_fn;
-    decltype(interpret_skvm) interpret_skvm;
+    decltype(hash_fn) hash_fn = SK_OPTS_NS::hash_fn;
+    decltype(interpret_skvm) interpret_skvm = SK_OPTS_NS::interpret_skvm;
+    size_t raster_pipeline_highp_stride = 1;
 }
 
 static std::string base_name(const std::string& path) {

@@ -134,6 +134,7 @@
 #define EGL_ANGLE_platform_angle_device_id
 #define EGL_PLATFORM_ANGLE_DEVICE_ID_HIGH_ANGLE 0x34D6
 #define EGL_PLATFORM_ANGLE_DEVICE_ID_LOW_ANGLE 0x34D7
+#define EGL_PLATFORM_ANGLE_DISPLAY_KEY_ANGLE 0x34DC
 #endif /* EGL_ANGLE_platform_angle_device_id */
 
 #ifndef EGL_ANGLE_x11_visual
@@ -290,6 +291,14 @@ EGLAPI void EGLAPIENTRY eglHandleGPUSwitchANGLE(EGLDisplay dpy);
 EGLAPI void EGLAPIENTRY eglForceGPUSwitchANGLE(EGLDisplay dpy, EGLint gpuIDHigh, EGLint gpuIDLow);
 #endif
 #endif /* EGL_ANGLE_power_preference */
+
+#ifndef EGL_ANGLE_wait_until_work_scheduled
+#define EGL_ANGLE_wait_until_work_scheduled 1
+typedef void(EGLAPIENTRYP PFNEGLWAITUNTILWORKSCHEDULEDANGLEPROC) (EGLDisplay dpy);
+#ifdef EGL_EGLEXT_PROTOTYPES
+EGLAPI void EGLAPIENTRY eglWaitUntilWorkScheduledANGLE(EGLDisplay dpy);
+#endif
+#endif /* EGL_ANGLE_wait_until_work_scheduled */
 
 #ifndef EGL_ANGLE_feature_control
 #define EGL_ANGLE_feature_control 1

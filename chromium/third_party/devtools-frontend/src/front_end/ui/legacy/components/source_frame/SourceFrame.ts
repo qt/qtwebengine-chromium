@@ -40,45 +40,45 @@ import * as UI from '../../legacy.js';
 
 const UIStrings = {
   /**
-  *@description Text for the source of something
-  */
+   *@description Text for the source of something
+   */
   source: 'Source',
   /**
-  *@description Text to pretty print a file
-  */
+   *@description Text to pretty print a file
+   */
   prettyPrint: 'Pretty print',
   /**
-  *@description Text when something is loading
-  */
+   *@description Text when something is loading
+   */
   loading: 'Loading…',
   /**
-  * @description Shown at the bottom of the Sources panel when the user has made multiple
-  * simultaneous text selections in the text editor.
-  * @example {2} PH1
-  */
+   * @description Shown at the bottom of the Sources panel when the user has made multiple
+   * simultaneous text selections in the text editor.
+   * @example {2} PH1
+   */
   dSelectionRegions: '{PH1} selection regions',
   /**
-  * @description Position indicator in Source Frame of the Sources panel. The placeholder is a
-  * hexadecimal number value, which is why it is prefixed with '0x'.
-  * @example {abc} PH1
-  */
+   * @description Position indicator in Source Frame of the Sources panel. The placeholder is a
+   * hexadecimal number value, which is why it is prefixed with '0x'.
+   * @example {abc} PH1
+   */
   bytecodePositionXs: 'Bytecode position `0x`{PH1}',
   /**
-  *@description Text in Source Frame of the Sources panel
-  *@example {2} PH1
-  *@example {2} PH2
-  */
+   *@description Text in Source Frame of the Sources panel
+   *@example {2} PH1
+   *@example {2} PH2
+   */
   lineSColumnS: 'Line {PH1}, Column {PH2}',
   /**
-  *@description Text in Source Frame of the Sources panel
-  *@example {2} PH1
-  */
+   *@description Text in Source Frame of the Sources panel
+   *@example {2} PH1
+   */
   dCharactersSelected: '{PH1} characters selected',
   /**
-  *@description Text in Source Frame of the Sources panel
-  *@example {2} PH1
-  *@example {2} PH2
-  */
+   *@description Text in Source Frame of the Sources panel
+   *@example {2} PH1
+   *@example {2} PH2
+   */
   dLinesDCharactersSelected: '{PH1} lines, {PH2} characters selected',
 };
 const str_ = i18n.i18n.registerUIStrings('ui/legacy/components/source_frame/SourceFrame.ts', UIStrings);
@@ -662,22 +662,28 @@ export class SourceFrameImpl extends Common.ObjectWrapper.eventMixin<EventTypes,
     this.prettyToggle.setEnabled(true);
   }
 
-  protected async getLanguageSupport(): Promise<CodeMirror.Extension> {
-    const languageDesc = await CodeHighlighter.CodeHighlighter.languageFromMIME(this.contentType);
+  protected async getLanguageSupport(content: string|CodeMirror.Text): Promise<CodeMirror.Extension> {
+    // This is a pretty horrible work-around for webpack-based Vue2 setups. See
+    // https://crbug.com/1416562 for the full story behind this.
+    let {contentType} = this;
+    if (contentType === 'text/x.vue') {
+      content = typeof content === 'string' ? content : content.sliceString(0);
+      if (!content.trimStart().startsWith('<')) {
+        contentType = 'text/javascript';
+      }
+    }
+    const languageDesc = await CodeHighlighter.CodeHighlighter.languageFromMIME(contentType);
     if (!languageDesc) {
       return [];
     }
-    if (this.contentType === 'text/jsx') {
-      return [
-        languageDesc,
-        CodeMirror.javascript.javascriptLanguage.data.of({autocomplete: CodeMirror.completeAnyWord}),
-      ];
-    }
-    return languageDesc;
+    return [
+      languageDesc,
+      CodeMirror.javascript.javascriptLanguage.data.of({autocomplete: CodeMirror.completeAnyWord}),
+    ];
   }
 
-  async updateLanguageMode(): Promise<void> {
-    const langExtension = await this.getLanguageSupport();
+  async updateLanguageMode(content: string): Promise<void> {
+    const langExtension = await this.getLanguageSupport(content);
     this.textEditor.dispatch({effects: config.language.reconfigure(langExtension)});
   }
 
@@ -688,7 +694,7 @@ export class SourceFrameImpl extends Common.ObjectWrapper.eventMixin<EventTypes,
     const scrollTop = textEditor.editor.scrollDOM.scrollTop;
     this.loadedInternal = true;
 
-    const languageSupport = await this.getLanguageSupport();
+    const languageSupport = await this.getLanguageSupport(content);
     const editorState = CodeMirror.EditorState.create({
       doc: content,
       extensions: [
@@ -781,7 +787,7 @@ export class SourceFrameImpl extends Common.ObjectWrapper.eventMixin<EventTypes,
     this.searchRegex = null;
   }
 
-  searchCanceled(): void {
+  onSearchCanceled(): void {
     const range = this.currentSearchResultIndex !== -1 ? this.searchResults[this.currentSearchResultIndex] : null;
     this.resetSearch();
     if (!this.loaded) {

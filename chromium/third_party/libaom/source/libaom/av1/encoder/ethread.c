@@ -2220,7 +2220,7 @@ static AOM_INLINE void switch_direction(AV1_COMP *cpi, int *frame_idx,
 static AOM_INLINE void init_gm_thread_data(
     const GlobalMotionInfo *gm_info, GlobalMotionThreadData *thread_data) {
   for (int m = 0; m < RANSAC_NUM_MOTIONS; m++) {
-    MotionModel motion_params = thread_data->params_by_motion[m];
+    MotionModel motion_params = thread_data->motion_models[m];
     av1_zero(motion_params.params);
     motion_params.num_inliers = 0;
   }
@@ -2277,10 +2277,9 @@ static int gm_mt_worker_hook(void *arg1, void *unused) {
 
     // Compute global motion for the given ref_buf_idx.
     av1_compute_gm_for_valid_ref_frames(
-        cpi, gm_info->ref_buf, ref_buf_idx, gm_info->num_src_corners,
-        gm_info->src_corners, gm_info->src_buffer,
-        gm_thread_data->params_by_motion, gm_thread_data->segment_map,
-        gm_info->segment_map_w, gm_info->segment_map_h);
+        cpi, gm_info->ref_buf, ref_buf_idx, gm_thread_data->motion_models,
+        gm_thread_data->segment_map, gm_info->segment_map_w,
+        gm_info->segment_map_h);
 
 #if CONFIG_MULTITHREAD
     pthread_mutex_lock(gm_mt_mutex_);
@@ -2358,7 +2357,7 @@ void av1_gm_dealloc(AV1GlobalMotionSync *gm_sync_data) {
       aom_free(thread_data->segment_map);
 
       for (int m = 0; m < RANSAC_NUM_MOTIONS; m++)
-        aom_free(thread_data->params_by_motion[m].inliers);
+        aom_free(thread_data->motion_models[m].inliers);
     }
     aom_free(gm_sync_data->thread_data);
   }
@@ -2387,8 +2386,8 @@ static AOM_INLINE void gm_alloc(AV1_COMP *cpi, int num_workers) {
 
     for (int m = 0; m < RANSAC_NUM_MOTIONS; m++) {
       CHECK_MEM_ERROR(
-          cm, thread_data->params_by_motion[m].inliers,
-          aom_malloc(sizeof(*thread_data->params_by_motion[m].inliers) * 2 *
+          cm, thread_data->motion_models[m].inliers,
+          aom_malloc(sizeof(*thread_data->motion_models[m].inliers) * 2 *
                      MAX_CORNERS));
     }
   }
@@ -2418,7 +2417,6 @@ void av1_global_motion_estimation_mt(AV1_COMP *cpi) {
 #endif  // !CONFIG_REALTIME_ONLY
 
 // Allocate memory for row synchronization
-// TODO(chengchen): do we need dealloc? where?
 static void wiener_var_sync_mem_alloc(
     AV1EncRowMultiThreadSync *const row_mt_sync, AV1_COMMON *const cm,
     const int rows) {
@@ -2450,6 +2448,34 @@ static void wiener_var_sync_mem_alloc(
   row_mt_sync->sync_range = 1;
 }
 
+// Deallocate row based multi-threading synchronization related mutex and data
+static void wiener_var_sync_mem_dealloc(AV1EncRowMultiThreadSync *row_mt_sync) {
+  if (row_mt_sync != NULL) {
+#if CONFIG_MULTITHREAD
+    int i;
+
+    if (row_mt_sync->mutex_ != NULL) {
+      for (i = 0; i < row_mt_sync->rows; ++i) {
+        pthread_mutex_destroy(&row_mt_sync->mutex_[i]);
+      }
+      aom_free(row_mt_sync->mutex_);
+    }
+    if (row_mt_sync->cond_ != NULL) {
+      for (i = 0; i < row_mt_sync->rows; ++i) {
+        pthread_cond_destroy(&row_mt_sync->cond_[i]);
+      }
+      aom_free(row_mt_sync->cond_);
+    }
+#endif  // CONFIG_MULTITHREAD
+    aom_free(row_mt_sync->num_finished_cols);
+
+    // clear the structure as the source of this call may be dynamic change
+    // in tiles in which case this call will be followed by an _alloc()
+    // which may fail.
+    av1_zero(*row_mt_sync);
+  }
+}
+
 static AOM_INLINE void prepare_wiener_var_workers(AV1_COMP *const cpi,
                                                   AVxWorkerHook hook,
                                                   const int num_workers) {
@@ -2463,12 +2489,20 @@ static AOM_INLINE void prepare_wiener_var_workers(AV1_COMP *const cpi,
     worker->data2 = NULL;
 
     thread_data->thread_id = i;
-    // Set the starting tile for each thread.
-    thread_data->start = i;
+    // Set the starting tile for each thread, in this case the preprocessing
+    // stage does not need tiles. So we set it to 0.
+    thread_data->start = 0;
 
     thread_data->cpi = cpi;
-    thread_data->td = &cpi->td;
-    thread_data->td->mb = cpi->td.mb;
+    if (i == 0) {
+      thread_data->td = &cpi->td;
+    } else {
+      thread_data->td = thread_data->original_td;
+    }
+
+    if (thread_data->td != &cpi->td) {
+      thread_data->td->mb = cpi->td.mb;
+    }
   }
 }
 
@@ -2476,6 +2510,8 @@ static int cal_mb_wiener_var_hook(void *arg1, void *unused) {
   (void)unused;
   EncWorkerData *const thread_data = (EncWorkerData *)arg1;
   AV1_COMP *const cpi = thread_data->cpi;
+  MACROBLOCK *x = &thread_data->td->mb;
+  MACROBLOCKD *xd = &x->e_mbd;
   const BLOCK_SIZE bsize = cpi->weber_bsize;
   const int mb_step = mi_size_wide[bsize];
   AV1EncRowMultiThreadSync *const row_mt_sync = &cpi->tile_data[0].row_mt_sync;
@@ -2502,8 +2538,9 @@ static int cal_mb_wiener_var_hook(void *arg1, void *unused) {
 #endif
     if (!has_jobs) break;
     // TODO(chengchen): properly accumulate the distortion and rate.
-    av1_calc_mb_wiener_var_row(cpi, current_mi_row, src_diff, coeff, qcoeff,
-                               dqcoeff, &sum_rec_distortion, &sum_est_rate);
+    av1_calc_mb_wiener_var_row(cpi, x, xd, current_mi_row, src_diff, coeff,
+                               qcoeff, dqcoeff, &sum_rec_distortion,
+                               &sum_est_rate);
 #if CONFIG_MULTITHREAD
     pthread_mutex_lock(enc_row_mt_mutex_);
 #endif
@@ -2551,6 +2588,8 @@ void av1_calc_mb_wiener_var_mt(AV1_COMP *cpi, int num_workers,
   prepare_wiener_var_workers(cpi, cal_mb_wiener_var_hook, num_workers);
   launch_workers(mt_info, num_workers);
   sync_enc_workers(mt_info, cm, num_workers);
+
+  wiener_var_sync_mem_dealloc(row_mt_sync);
 }
 
 // Compare and order tiles based on absolute sum of tx coeffs.

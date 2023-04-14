@@ -19,7 +19,6 @@
 
 #include "internal/platform/mutex_lock.h"
 
-namespace location {
 namespace nearby {
 
 bool WifiLanMedium::StartAdvertising(const NsdServiceInfo& nsd_service_info) {
@@ -81,7 +80,7 @@ bool WifiLanMedium::StartDiscovery(const std::string& service_id,
                 << ", service_name=" << service_info.GetServiceName();
 
             std::string service_id = it->second->service_id;
-            DiscoveredServiceCallback medium_callback =
+            DiscoveredServiceCallback& medium_callback =
                 it->second->medium_callback;
             medium_callback.service_discovered_cb(service_info, service_id);
           },
@@ -107,7 +106,7 @@ bool WifiLanMedium::StartDiscovery(const std::string& service_id,
             const auto& it = service_type_to_callback_map_.find(service_type);
             if (it != service_type_to_callback_map_.end()) {
               std::string service_id = it->second->service_id;
-              DiscoveredServiceCallback medium_callback =
+              DiscoveredServiceCallback& medium_callback =
                   it->second->medium_callback;
               medium_callback.service_lost_cb(service_info, service_id);
             }
@@ -174,4 +173,3 @@ WifiLanSocket WifiLanMedium::ConnectToService(
 }
 
 }  // namespace nearby
-}  // namespace location

@@ -218,15 +218,27 @@ export class TextRange {
     return JSON.stringify(this);
   }
 
+  /**
+   * Checks whether this {@link TextRange} contains the location identified by the
+   * {@link lineNumber} and {@link columnNumber}. The beginning of the text range is
+   * considered inclusive while the end of the text range is considered exclusive
+   * for this comparison, meaning that for example a range `(0,1)-(1,4)` contains the
+   * location `(0,1)` but does not contain the location `(1,4)`.
+   *
+   * @param lineNumber the location's line offset.
+   * @param columnNumber the location's column offset.
+   * @returns `true` if the location identified by {@link lineNumber} and {@link columnNumber}
+   *          is contained within this text range.
+   */
   containsLocation(lineNumber: number, columnNumber: number): boolean {
     if (this.startLine === this.endLine) {
-      return this.startLine === lineNumber && this.startColumn <= columnNumber && columnNumber <= this.endColumn;
+      return this.startLine === lineNumber && this.startColumn <= columnNumber && columnNumber < this.endColumn;
     }
     if (this.startLine === lineNumber) {
       return this.startColumn <= columnNumber;
     }
     if (this.endLine === lineNumber) {
-      return columnNumber <= this.endColumn;
+      return columnNumber < this.endColumn;
     }
     return this.startLine < lineNumber && lineNumber < this.endLine;
   }
@@ -237,6 +249,40 @@ export class TextRange {
 
   get end(): {lineNumber: number, columnNumber: number} {
     return {lineNumber: this.endLine, columnNumber: this.endColumn};
+  }
+
+  /**
+   * Checks whether this and `that` {@link TextRange} overlap and if they do, computes the
+   * intersection range. If they don't overlap an empty text range is returned instead (for
+   * which {@link #isEmpty()} yields `true`).
+   *
+   * The beginning of text ranges is considered to be includes while the end of the text
+   * ranges is considered exclusive for the intersection, meaning that for example intersecting
+   * `(0,1)-(1,4)` and `(1,4)-(1,6)` yields an empty range.
+   *
+   * @param that the other text range.
+   * @returns the intersection of this and `that` text range, which might be empty if their don't
+   *          overlap.
+   */
+  intersection(that: TextRange): TextRange {
+    let {startLine, startColumn} = this;
+    if (startLine < that.startLine) {
+      startLine = that.startLine;
+      startColumn = that.startColumn;
+    } else if (startLine === that.startLine) {
+      startColumn = Math.max(startColumn, that.startColumn);
+    }
+    let {endLine, endColumn} = this;
+    if (endLine > that.endLine) {
+      endLine = that.endLine;
+      endColumn = that.endColumn;
+    } else if (endLine === that.endLine) {
+      endColumn = Math.min(endColumn, that.endColumn);
+    }
+    if (startLine > endLine || (startLine === endLine && startColumn >= endColumn)) {
+      return new TextRange(0, 0, 0, 0);
+    }
+    return new TextRange(startLine, startColumn, endLine, endColumn);
   }
 }
 

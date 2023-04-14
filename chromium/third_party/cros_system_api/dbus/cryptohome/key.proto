@@ -59,8 +59,6 @@ message ChallengePublicKeyInfo {
 
 // Policies which determine how a key can be used. |GetSupportedKeyPolicies|
 // request can be used to determine if a given policy value is supported.
-// This message is also used inside of |GetKeyDataReply|, which allows clients
-// to query current key state without submitting an authentication attempt.
 message KeyPolicy {
   // Is this key additionally protected from brute force attacks as a low
   // entropy credential? For such keys, delays between subsequent unsuccessful

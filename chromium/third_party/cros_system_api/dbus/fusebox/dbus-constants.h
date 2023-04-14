@@ -36,6 +36,7 @@ const char kCloseMethod[] = "Close";
 const char kClose2Method[] = "Close2";
 const char kCloseFDMethod[] = "CloseFD";
 const char kCreateMethod[] = "Create";
+const char kRenameMethod[] = "Rename";
 const char kUnlinkMethod[] = "Unlink";
 
 // FuseBoxService other methods.

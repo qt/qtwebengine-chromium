@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 
 # Copyright 2017 The Glslang Authors. All rights reserved.
-# Copyright (c) 2018 Valve Corporation
-# Copyright (c) 2018-2022 LunarG, Inc.
+# Copyright (c) 2018-2023 Valve Corporation
+# Copyright (c) 2018-2023 LunarG, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -206,11 +206,6 @@ A list of options to pass to CMake during the generation phase.
 A list of environment variables where one must be set to "true"
 (case-insensitive) in order for this repo to be fetched and built.
 This list can be used to specify repos that should be built only in CI.
-Typically, this list might contain "TRAVIS" and/or "APPVEYOR" because
-each of these CI systems sets an environment variable with its own
-name to "true".  Note that this could also be (ab)used to control
-the processing of the repo with any environment variable.  The default
-is an empty list, which means that the repo is always processed.
 
 - build_step (optional)
 
@@ -492,32 +487,14 @@ class GoodRepo(object):
 
     def CMakeBuild(self):
         """Build CMake command for the build phase and execute it"""
-        cmake_cmd = ['cmake', '--build', self.build_dir, '--target', 'install']
+        cmake_cmd = ['cmake', '--build', self.build_dir, '--target', 'install', '--config', CONFIG_MAP[self._args.config]]
         if self._args.do_clean:
             cmake_cmd.append('--clean-first')
 
-        if platform.system() == 'Windows':
-            cmake_cmd.append('--config')
-            cmake_cmd.append(CONFIG_MAP[self._args.config])
-
-        # TODO: CMake 3.12 introduced gained --parallel [<jobs>] and -j [<jobs>] options
-        if platform.system() == 'Linux' or platform.system() == 'Darwin':
-            cmake_cmd.append('--')
-            num_make_jobs = multiprocessing.cpu_count()
-            env_make_jobs = os.environ.get('MAKE_JOBS', None)
-            if env_make_jobs is not None:
-                try:
-                    num_make_jobs = min(num_make_jobs, int(env_make_jobs))
-                except ValueError:
-                    print('warning: environment variable MAKE_JOBS has non-numeric value "{}".  '
-                          'Using {} (CPU count) instead.'.format(env_make_jobs, num_make_jobs))
-            
-            # Xcode doesn't have a '-j' flag, Xcode build performs parallel builds by default.
-            if self._args.generator != "Xcode":
-                cmake_cmd.append('-j{}'.format(num_make_jobs))
-        if platform.system() == 'Windows' and self._args.generator != "Ninja":
-            cmake_cmd.append('--')
-            cmake_cmd.append('/maxcpucount')
+        # Ninja is parallel by default
+        if self._args.generator != "Ninja":
+            cmake_cmd.append('--parallel')
+            cmake_cmd.append(format(multiprocessing.cpu_count()))
 
         if VERBOSE:
             print("CMake command: " + " ".join(cmake_cmd))
@@ -627,7 +604,7 @@ def main():
         '--ref',
         dest='ref',
         default='',
-        help="Override 'commit' with git reference. E.g., 'origin/master'")
+        help="Override 'commit' with git reference. E.g., 'origin/main'")
     parser.add_argument(
         '--no-build',
         dest='do_build',

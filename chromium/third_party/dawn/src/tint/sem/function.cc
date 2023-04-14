@@ -15,6 +15,8 @@
 #include "src/tint/sem/function.h"
 
 #include "src/tint/ast/function.h"
+#include "src/tint/ast/identifier.h"
+#include "src/tint/ast/must_use_attribute.h"
 #include "src/tint/sem/variable.h"
 #include "src/tint/type/depth_texture.h"
 #include "src/tint/type/external_texture.h"
@@ -42,7 +44,10 @@ Function::Function(const ast::Function* declaration,
                    type::Type* return_type,
                    std::optional<uint32_t> return_location,
                    utils::VectorRef<Parameter*> parameters)
-    : Base(return_type, SetOwner(std::move(parameters), this), EvaluationStage::kRuntime),
+    : Base(return_type,
+           SetOwner(std::move(parameters), this),
+           EvaluationStage::kRuntime,
+           ast::HasAttribute<ast::MustUseAttribute>(declaration->attributes)),
       declaration_(declaration),
       workgroup_size_{1, 1, 1},
       return_location_(return_location) {}
@@ -68,7 +73,7 @@ Function::VariableBindings Function::TransitivelyReferencedUniformVariables() co
     VariableBindings ret;
 
     for (auto* global : TransitivelyReferencedGlobals()) {
-        if (global->AddressSpace() != ast::AddressSpace::kUniform) {
+        if (global->AddressSpace() != builtin::AddressSpace::kUniform) {
             continue;
         }
 
@@ -83,7 +88,7 @@ Function::VariableBindings Function::TransitivelyReferencedStorageBufferVariable
     VariableBindings ret;
 
     for (auto* global : TransitivelyReferencedGlobals()) {
-        if (global->AddressSpace() != ast::AddressSpace::kStorage) {
+        if (global->AddressSpace() != builtin::AddressSpace::kStorage) {
             continue;
         }
 
@@ -110,11 +115,11 @@ Function::TransitivelyReferencedBuiltinVariables() const {
 }
 
 Function::VariableBindings Function::TransitivelyReferencedSamplerVariables() const {
-    return TransitivelyReferencedSamplerVariablesImpl(ast::SamplerKind::kSampler);
+    return TransitivelyReferencedSamplerVariablesImpl(type::SamplerKind::kSampler);
 }
 
 Function::VariableBindings Function::TransitivelyReferencedComparisonSamplerVariables() const {
-    return TransitivelyReferencedSamplerVariablesImpl(ast::SamplerKind::kComparisonSampler);
+    return TransitivelyReferencedSamplerVariablesImpl(type::SamplerKind::kComparisonSampler);
 }
 
 Function::VariableBindings Function::TransitivelyReferencedSampledTextureVariables() const {
@@ -141,7 +146,7 @@ Function::VariableBindings Function::TransitivelyReferencedVariablesOfType(
 
 bool Function::HasAncestorEntryPoint(Symbol symbol) const {
     for (const auto* point : ancestor_entry_points_) {
-        if (point->Declaration()->symbol == symbol) {
+        if (point->Declaration()->name->symbol == symbol) {
             return true;
         }
     }
@@ -149,7 +154,7 @@ bool Function::HasAncestorEntryPoint(Symbol symbol) const {
 }
 
 Function::VariableBindings Function::TransitivelyReferencedSamplerVariablesImpl(
-    ast::SamplerKind kind) const {
+    type::SamplerKind kind) const {
     VariableBindings ret;
 
     for (auto* global : TransitivelyReferencedGlobals()) {

@@ -21,7 +21,9 @@
 
 #include "file/base/path.h"
 #include "absl/memory/memory.h"
+#include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
+#include "absl/strings/string_view.h"
 #include "absl/time/time.h"
 #include "internal/platform/implementation/atomic_boolean.h"
 #include "internal/platform/implementation/atomic_reference.h"
@@ -46,11 +48,13 @@
 #include "internal/platform/implementation/g3/bluetooth_classic.h"
 #include "internal/platform/implementation/g3/condition_variable.h"
 #include "internal/platform/implementation/g3/credential_storage_impl.h"
+#include "internal/platform/implementation/g3/device_info.h"
 #include "internal/platform/implementation/g3/log_message.h"
 #include "internal/platform/implementation/g3/multi_thread_executor.h"
 #include "internal/platform/implementation/g3/mutex.h"
 #include "internal/platform/implementation/g3/scheduled_executor.h"
 #include "internal/platform/implementation/g3/single_thread_executor.h"
+#include "internal/platform/implementation/g3/timer.h"
 #include "internal/platform/implementation/g3/wifi.h"
 #include "internal/platform/implementation/g3/wifi_direct.h"
 #include "internal/platform/implementation/g3/wifi_hotspot.h"
@@ -59,7 +63,6 @@
 #include "internal/platform/implementation/wifi.h"
 #include "internal/platform/medium_environment.h"
 
-namespace location {
 namespace nearby {
 namespace api {
 
@@ -205,6 +208,11 @@ std::unique_ptr<WebRtcMedium> ImplementationPlatform::CreateWebRtcMedium() {
 }
 #endif
 
+absl::StatusOr<WebResponse> ImplementationPlatform::SendRequest(
+    const api::WebRequest& request) {
+  return absl::UnimplementedError("");
+}
+
 std::unique_ptr<Mutex> ImplementationPlatform::CreateMutex(Mutex::Mode mode) {
   if (mode == Mutex::Mode::kRecursive)
     return std::make_unique<g3::RecursiveMutex>();
@@ -218,6 +226,14 @@ ImplementationPlatform::CreateConditionVariable(Mutex* mutex) {
       new g3::ConditionVariable(static_cast<g3::Mutex*>(mutex)));
 }
 
+std::unique_ptr<Timer> ImplementationPlatform::CreateTimer() {
+  return std::make_unique<g3::Timer>();
+}
+
+std::unique_ptr<nearby::api::DeviceInfo>
+ImplementationPlatform::CreateDeviceInfo() {
+  return std::make_unique<g3::DeviceInfo>();
+}
+
 }  // namespace api
 }  // namespace nearby
-}  // namespace location

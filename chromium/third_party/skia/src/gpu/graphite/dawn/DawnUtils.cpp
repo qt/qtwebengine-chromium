@@ -5,15 +5,42 @@
  * found in the LICENSE file.
  */
 
-#include "src/gpu/graphite/dawn/DawnUtils.h"
+#include "include/gpu/graphite/dawn/DawnUtils.h"
+#include "src/gpu/graphite/dawn/DawnUtilsPriv.h"
 
 #include "include/gpu/ShaderErrorHandler.h"
+#include "include/gpu/graphite/Context.h"
+#include "include/gpu/graphite/dawn/DawnBackendContext.h"
+#include "src/gpu/graphite/ContextPriv.h"
+#include "src/gpu/graphite/dawn/DawnQueueManager.h"
 #include "src/gpu/graphite/dawn/DawnSharedContext.h"
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLProgramSettings.h"
 #include "src/utils/SkShaderUtils.h"
 
 namespace skgpu::graphite {
+
+namespace ContextFactory {
+std::unique_ptr<Context> MakeDawn(const DawnBackendContext& backendContext,
+                                  const ContextOptions& options) {
+    sk_sp<SharedContext> sharedContext = DawnSharedContext::Make(backendContext, options);
+    if (!sharedContext) {
+        return nullptr;
+    }
+
+    auto queueManager =
+            std::make_unique<DawnQueueManager>(backendContext.fQueue, sharedContext.get());
+    if (!queueManager) {
+        return nullptr;
+    }
+
+    auto context = ContextCtorAccessor::MakeContext(std::move(sharedContext),
+                                                    std::move(queueManager),
+                                                    options);
+    SkASSERT(context);
+    return context;
+}
+} // namespace ContextFactory
 
 bool DawnFormatIsDepthOrStencil(wgpu::TextureFormat format) {
     switch (format) {
@@ -63,12 +90,11 @@ wgpu::TextureFormat DawnDepthStencilFlagsToFormat(SkEnumBitMask<DepthStencilFlag
 }
 
 // Print the source code for all shaders generated.
-#if defined(SK_DEBUG)
+#ifdef SK_PRINT_SKSL_SHADERS
 static constexpr bool gPrintSKSL  = true;
 #else
 static constexpr bool gPrintSKSL  = false;
 #endif
-
 bool SkSLToSPIRV(SkSL::Compiler* compiler,
                  const std::string& sksl,
                  SkSL::ProgramKind programKind,
@@ -106,8 +132,16 @@ wgpu::ShaderModule DawnCompileSPIRVShaderModule(const DawnSharedContext* sharedC
     spirvDesc.codeSize = spirv.size() / 4;
     spirvDesc.code = reinterpret_cast<const uint32_t*>(spirv.c_str());
 
+    // Skia often generates shaders that select a texture/sampler conditionally based on an
+    // attribute (specifically in the case of texture atlas indexing). We disable derivative
+    // uniformity warnings as we expect Skia's behavior to result in well-defined values.
+    wgpu::DawnShaderModuleSPIRVOptionsDescriptor dawnSpirvOptions;
+    dawnSpirvOptions.allowNonUniformDerivatives = true;
+
     wgpu::ShaderModuleDescriptor desc;
     desc.nextInChain = &spirvDesc;
+    spirvDesc.nextInChain = &dawnSpirvOptions;
+
     return sharedContext->device().CreateShaderModule(&desc);
 }
 

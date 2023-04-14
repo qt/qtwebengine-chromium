@@ -32,7 +32,7 @@ class CommandRecordingContext;
 class Device;
 struct MTLSharedEventAndSignalValue;
 
-MTLPixelFormat MetalPixelFormat(wgpu::TextureFormat format);
+MTLPixelFormat MetalPixelFormat(const DeviceBase* device, wgpu::TextureFormat format);
 MaybeError ValidateIOSurfaceCanBeWrapped(const DeviceBase* device,
                                          const TextureDescriptor* descriptor,
                                          IOSurfaceRef ioSurface);
@@ -55,6 +55,9 @@ class Texture final : public TextureBase {
     IOSurfaceRef GetIOSurface();
     NSPRef<id<MTLTexture>> CreateFormatView(wgpu::TextureFormat format);
 
+    bool ShouldKeepInitialized() const;
+
+    MTLBlitOption ComputeMTLBlitOption(Aspect aspect) const;
     void EnsureSubresourceContentInitialized(CommandRecordingContext* commandContext,
                                              const SubresourceRange& range);
 
@@ -104,8 +107,8 @@ class TextureView final : public TextureViewBase {
   private:
     using TextureViewBase::TextureViewBase;
     MaybeError Initialize(const TextureViewDescriptor* descriptor);
+    void DestroyImpl() override;
 
-    // TODO(crbug.com/dawn/1355): Clear this reference on texture destroy.
     NSPRef<id<MTLTexture>> mMtlTextureView;
 };
 

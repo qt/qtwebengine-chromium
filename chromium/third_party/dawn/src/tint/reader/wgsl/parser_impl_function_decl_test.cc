@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "src/tint/ast/test_helper.h"
 #include "src/tint/ast/workgroup_attribute.h"
 #include "src/tint/reader/wgsl/parser_impl_test_helper.h"
 #include "src/tint/utils/string.h"
@@ -31,16 +32,14 @@ TEST_F(ParserImplTest, FunctionDecl) {
     EXPECT_TRUE(f.matched);
     ASSERT_NE(f.value, nullptr);
 
-    EXPECT_EQ(f->symbol, p->builder().Symbols().Get("main"));
-    ASSERT_NE(f->return_type, nullptr);
-    EXPECT_TRUE(f->return_type->Is<ast::Void>());
+    EXPECT_EQ(f->name->symbol, p->builder().Symbols().Get("main"));
+    EXPECT_EQ(f->return_type, nullptr);
 
     ASSERT_EQ(f->params.Length(), 2u);
-    EXPECT_EQ(f->params[0]->symbol, p->builder().Symbols().Get("a"));
-    EXPECT_EQ(f->params[1]->symbol, p->builder().Symbols().Get("b"));
+    EXPECT_EQ(f->params[0]->name->symbol, p->builder().Symbols().Get("a"));
+    EXPECT_EQ(f->params[1]->name->symbol, p->builder().Symbols().Get("b"));
 
-    ASSERT_NE(f->return_type, nullptr);
-    EXPECT_TRUE(f->return_type->Is<ast::Void>());
+    EXPECT_EQ(f->return_type, nullptr);
 
     auto* body = f->body;
     ASSERT_EQ(body->statements.Length(), 1u);
@@ -76,16 +75,14 @@ TEST_F(ParserImplTest, FunctionDecl_Unicode) {
     EXPECT_TRUE(f.matched);
     ASSERT_NE(f.value, nullptr);
 
-    EXPECT_EQ(f->symbol, p->builder().Symbols().Get(function_ident));
-    ASSERT_NE(f->return_type, nullptr);
-    EXPECT_TRUE(f->return_type->Is<ast::Void>());
+    EXPECT_EQ(f->name->symbol, p->builder().Symbols().Get(function_ident));
+    EXPECT_EQ(f->return_type, nullptr);
 
     ASSERT_EQ(f->params.Length(), 2u);
-    EXPECT_EQ(f->params[0]->symbol, p->builder().Symbols().Get(param_a_ident));
-    EXPECT_EQ(f->params[1]->symbol, p->builder().Symbols().Get(param_b_ident));
+    EXPECT_EQ(f->params[0]->name->symbol, p->builder().Symbols().Get(param_a_ident));
+    EXPECT_EQ(f->params[1]->name->symbol, p->builder().Symbols().Get(param_b_ident));
 
-    ASSERT_NE(f->return_type, nullptr);
-    EXPECT_TRUE(f->return_type->Is<ast::Void>());
+    EXPECT_EQ(f->return_type, nullptr);
 
     auto* body = f->body;
     ASSERT_EQ(body->statements.Length(), 1u);
@@ -104,9 +101,8 @@ TEST_F(ParserImplTest, FunctionDecl_AttributeList) {
     EXPECT_TRUE(f.matched);
     ASSERT_NE(f.value, nullptr);
 
-    EXPECT_EQ(f->symbol, p->builder().Symbols().Get("main"));
-    ASSERT_NE(f->return_type, nullptr);
-    EXPECT_TRUE(f->return_type->Is<ast::Void>());
+    EXPECT_EQ(f->name->symbol, p->builder().Symbols().Get("main"));
+    EXPECT_EQ(f->return_type, nullptr);
     ASSERT_EQ(f->params.Length(), 0u);
 
     auto& attributes = f->attributes;
@@ -149,9 +145,8 @@ fn main() { return; })");
     EXPECT_TRUE(f.matched);
     ASSERT_NE(f.value, nullptr);
 
-    EXPECT_EQ(f->symbol, p->builder().Symbols().Get("main"));
-    ASSERT_NE(f->return_type, nullptr);
-    EXPECT_TRUE(f->return_type->Is<ast::Void>());
+    EXPECT_EQ(f->name->symbol, p->builder().Symbols().Get("main"));
+    EXPECT_EQ(f->return_type, nullptr);
     ASSERT_EQ(f->params.Length(), 0u);
 
     auto& attributes = f->attributes;
@@ -198,9 +193,8 @@ fn main() { return; })");
     EXPECT_TRUE(f.matched);
     ASSERT_NE(f.value, nullptr);
 
-    EXPECT_EQ(f->symbol, p->builder().Symbols().Get("main"));
-    ASSERT_NE(f->return_type, nullptr);
-    EXPECT_TRUE(f->return_type->Is<ast::Void>());
+    EXPECT_EQ(f->name->symbol, p->builder().Symbols().Get("main"));
+    EXPECT_EQ(f->return_type, nullptr);
     ASSERT_EQ(f->params.Length(), 0u);
 
     auto& attrs = f->attributes;
@@ -244,9 +238,11 @@ TEST_F(ParserImplTest, FunctionDecl_ReturnTypeAttributeList) {
     EXPECT_TRUE(f.matched);
     ASSERT_NE(f.value, nullptr);
 
-    EXPECT_EQ(f->symbol, p->builder().Symbols().Get("main"));
+    EXPECT_EQ(f->name->symbol, p->builder().Symbols().Get("main"));
     ASSERT_NE(f->return_type, nullptr);
-    EXPECT_TRUE(f->return_type->Is<ast::F32>());
+
+    ast::CheckIdentifier(p->builder().Symbols(), f->return_type, "f32");
+
     ASSERT_EQ(f->params.Length(), 0u);
 
     auto& attributes = f->attributes;
@@ -264,6 +260,23 @@ TEST_F(ParserImplTest, FunctionDecl_ReturnTypeAttributeList) {
     auto* body = f->body;
     ASSERT_EQ(body->statements.Length(), 1u);
     EXPECT_TRUE(body->statements[0]->Is<ast::ReturnStatement>());
+}
+
+TEST_F(ParserImplTest, FunctionDecl_MustUse) {
+    auto p = parser("@must_use fn main() { return; }");
+    auto attrs = p->attribute_list();
+    EXPECT_FALSE(p->has_error()) << p->error();
+    ASSERT_FALSE(attrs.errored);
+    ASSERT_TRUE(attrs.matched);
+    auto f = p->function_decl(attrs.value);
+    EXPECT_FALSE(p->has_error()) << p->error();
+    EXPECT_FALSE(f.errored);
+    EXPECT_TRUE(f.matched);
+    ASSERT_NE(f.value, nullptr);
+
+    auto& attributes = f->attributes;
+    ASSERT_EQ(attributes.Length(), 1u);
+    ASSERT_TRUE(attributes[0]->Is<ast::MustUseAttribute>());
 }
 
 TEST_F(ParserImplTest, FunctionDecl_InvalidHeader) {
@@ -305,7 +318,7 @@ TEST_F(ParserImplTest, FunctionDecl_MissingLeftBrace) {
     EXPECT_FALSE(f.matched);
     EXPECT_TRUE(p->has_error());
     EXPECT_EQ(f.value, nullptr);
-    EXPECT_EQ(p->error(), "1:11: expected '{'");
+    EXPECT_EQ(p->error(), "1:11: expected '{' for function body");
 }
 
 }  // namespace

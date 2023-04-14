@@ -20,9 +20,9 @@
 #include "src/tint/ast/assignment_statement.h"
 #include "src/tint/ast/traverse_expressions.h"
 #include "src/tint/program_builder.h"
-#include "src/tint/sem/expression.h"
 #include "src/tint/sem/member_accessor_expression.h"
 #include "src/tint/sem/statement.h"
+#include "src/tint/sem/value_expression.h"
 #include "src/tint/sem/variable.h"
 #include "src/tint/transform/simplify_pointers.h"
 #include "src/tint/type/reference.h"
@@ -47,43 +47,56 @@ struct LocalizeStructArrayAssignment::State {
             utils::Vector<const ast::Statement*, 4> insert_after_stmts;
         } s;
 
-        ctx.ReplaceAll([&](const ast::AssignmentStatement* assign_stmt) -> const ast::Statement* {
-            // Process if it's an assignment statement to a dynamically indexed array
-            // within a struct on a function or private storage variable. This
-            // specific use-case is what FXC fails to compile with:
-            // error X3500: array reference cannot be used as an l-value; not natively
-            // addressable
-            if (!ContainsStructArrayIndex(assign_stmt->lhs)) {
-                return nullptr;
+        bool made_changes = false;
+
+        for (auto* node : ctx.src->ASTNodes().Objects()) {
+            if (auto* assign_stmt = node->As<ast::AssignmentStatement>()) {
+                // Process if it's an assignment statement to a dynamically indexed array
+                // within a struct on a function or private storage variable. This
+                // specific use-case is what FXC fails to compile with:
+                // error X3500: array reference cannot be used as an l-value; not natively
+                // addressable
+                if (!ContainsStructArrayIndex(assign_stmt->lhs)) {
+                    continue;
+                }
+                auto og = GetOriginatingTypeAndAddressSpace(assign_stmt);
+                if (!(og.first->Is<sem::Struct>() &&
+                      (og.second == builtin::AddressSpace::kFunction ||
+                       og.second == builtin::AddressSpace::kPrivate))) {
+                    continue;
+                }
+
+                ctx.Replace(assign_stmt, [&, assign_stmt] {
+                    // Reset shared state for this assignment statement
+                    s = Shared{};
+
+                    const ast::Expression* new_lhs = nullptr;
+                    {
+                        TINT_SCOPED_ASSIGNMENT(s.process_nested_nodes, true);
+                        new_lhs = ctx.Clone(assign_stmt->lhs);
+                    }
+
+                    auto* new_assign_stmt = b.Assign(new_lhs, ctx.Clone(assign_stmt->rhs));
+
+                    // Combine insert_before_stmts + new_assign_stmt + insert_after_stmts into
+                    // a block and return it
+                    auto stmts = std::move(s.insert_before_stmts);
+                    stmts.Reserve(1 + s.insert_after_stmts.Length());
+                    stmts.Push(new_assign_stmt);
+                    for (auto* stmt : s.insert_after_stmts) {
+                        stmts.Push(stmt);
+                    }
+
+                    return b.Block(std::move(stmts));
+                });
+
+                made_changes = true;
             }
-            auto og = GetOriginatingTypeAndAddressSpace(assign_stmt);
-            if (!(og.first->Is<sem::Struct>() && (og.second == ast::AddressSpace::kFunction ||
-                                                  og.second == ast::AddressSpace::kPrivate))) {
-                return nullptr;
-            }
+        }
 
-            // Reset shared state for this assignment statement
-            s = Shared{};
-
-            const ast::Expression* new_lhs = nullptr;
-            {
-                TINT_SCOPED_ASSIGNMENT(s.process_nested_nodes, true);
-                new_lhs = ctx.Clone(assign_stmt->lhs);
-            }
-
-            auto* new_assign_stmt = b.Assign(new_lhs, ctx.Clone(assign_stmt->rhs));
-
-            // Combine insert_before_stmts + new_assign_stmt + insert_after_stmts into
-            // a block and return it
-            auto stmts = std::move(s.insert_before_stmts);
-            stmts.Reserve(1 + s.insert_after_stmts.Length());
-            stmts.Push(new_assign_stmt);
-            for (auto* stmt : s.insert_after_stmts) {
-                stmts.Push(stmt);
-            }
-
-            return b.Block(std::move(stmts));
-        });
+        if (!made_changes) {
+            return SkipTransform;
+        }
 
         ctx.ReplaceAll(
             [&](const ast::IndexAccessorExpression* index_access) -> const ast::Expression* {
@@ -152,7 +165,7 @@ struct LocalizeStructArrayAssignment::State {
         ast::TraverseExpressions(
             expr, b.Diagnostics(), [&](const ast::IndexAccessorExpression* ia) {
                 // Indexing using a runtime value?
-                auto* idx_sem = src->Sem().Get(ia->index);
+                auto* idx_sem = src->Sem().GetVal(ia->index);
                 if (!idx_sem->ConstantValue()) {
                     // Indexing a member access expr?
                     if (auto* ma = ia->object->As<ast::MemberAccessorExpression>()) {
@@ -172,27 +185,30 @@ struct LocalizeStructArrayAssignment::State {
     // Returns the type and address space of the originating variable of the lhs
     // of the assignment statement.
     // See https://www.w3.org/TR/WGSL/#originating-variable-section
-    std::pair<const type::Type*, ast::AddressSpace> GetOriginatingTypeAndAddressSpace(
+    std::pair<const type::Type*, builtin::AddressSpace> GetOriginatingTypeAndAddressSpace(
         const ast::AssignmentStatement* assign_stmt) {
-        auto* root_ident = src->Sem().Get(assign_stmt->lhs)->RootIdentifier();
-        if (!root_ident) {
+        auto* root_ident = src->Sem().GetVal(assign_stmt->lhs)->RootIdentifier();
+        if (TINT_UNLIKELY(!root_ident)) {
             TINT_ICE(Transform, b.Diagnostics())
                 << "Unable to determine originating variable for lhs of assignment "
                    "statement";
             return {};
         }
 
-        auto* type = root_ident->Type();
-        if (auto* ref = type->As<type::Reference>()) {
-            return {ref->StoreType(), ref->AddressSpace()};
-        } else if (auto* ptr = type->As<type::Pointer>()) {
-            return {ptr->StoreType(), ptr->AddressSpace()};
-        }
-
-        TINT_ICE(Transform, b.Diagnostics())
-            << "Expecting to find variable of type pointer or reference on lhs "
-               "of assignment statement";
-        return {};
+        return Switch(
+            root_ident->Type(),  //
+            [&](const type::Reference* ref) {
+                return std::make_pair(ref->StoreType(), ref->AddressSpace());
+            },
+            [&](const type::Pointer* ptr) {
+                return std::make_pair(ptr->StoreType(), ptr->AddressSpace());
+            },
+            [&](Default) {
+                TINT_ICE(Transform, b.Diagnostics())
+                    << "Expecting to find variable of type pointer or reference on lhs "
+                       "of assignment statement";
+                return std::pair<const type::Type*, builtin::AddressSpace>{};
+            });
     }
 };
 

@@ -23,13 +23,13 @@ namespace tint::ast {
 Var::Var(ProgramID pid,
          NodeID nid,
          const Source& src,
-         const Symbol& sym,
-         const ast::Type* ty,
-         AddressSpace address_space,
-         Access access,
+         const Identifier* n,
+         Type ty,
+         const Expression* address_space,
+         const Expression* access,
          const Expression* init,
          utils::VectorRef<const Attribute*> attrs)
-    : Base(pid, nid, src, sym, ty, init, std::move(attrs)),
+    : Base(pid, nid, src, n, ty, init, std::move(attrs)),
       declared_address_space(address_space),
       declared_access(access) {}
 
@@ -43,12 +43,13 @@ const char* Var::Kind() const {
 
 const Var* Var::Clone(CloneContext* ctx) const {
     auto src = ctx->Clone(source);
-    auto sym = ctx->Clone(symbol);
-    auto* ty = ctx->Clone(type);
+    auto* n = ctx->Clone(name);
+    auto ty = ctx->Clone(type);
+    auto* address_space = ctx->Clone(declared_address_space);
+    auto* access = ctx->Clone(declared_access);
     auto* init = ctx->Clone(initializer);
     auto attrs = ctx->Clone(attributes);
-    return ctx->dst->create<Var>(src, sym, ty, declared_address_space, declared_access, init,
-                                 std::move(attrs));
+    return ctx->dst->create<Var>(src, n, ty, address_space, access, init, std::move(attrs));
 }
 
 }  // namespace tint::ast

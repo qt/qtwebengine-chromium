@@ -111,23 +111,6 @@ ResultOrError<SavedMetalAttachment> PatchAttachmentWithTemporary(
     return result;
 }
 
-// Same as PatchAttachmentWithTemporary but for the resolve attachment.
-ResultOrError<SavedMetalAttachment> PatchResolveAttachmentWithTemporary(
-    Device* device,
-    MTLRenderPassAttachmentDescriptor* attachment) {
-    SavedMetalAttachment result;
-    DAWN_TRY_ASSIGN(
-        result, SaveAttachmentCreateTemporary(device, attachment.resolveTexture,
-                                              attachment.resolveLevel, attachment.resolveSlice));
-
-    // Replace the resolve attachment with the tempoary.
-    attachment.resolveTexture = result.temporary.Get();
-    attachment.resolveLevel = 0;
-    attachment.resolveSlice = 0;
-
-    return result;
-}
-
 // Helper function for Toggle EmulateStoreAndMSAAResolve
 void ResolveInAnotherRenderPass(
     CommandRecordingContext* commandContext,
@@ -157,7 +140,28 @@ void ResolveInAnotherRenderPass(
     commandContext->BeginRender(mtlRenderPassForResolve);
     commandContext->EndRender();
 }
+
 }  // anonymous namespace
+
+Aspect GetDepthStencilAspects(MTLPixelFormat format) {
+    switch (format) {
+        case MTLPixelFormatDepth16Unorm:
+        case MTLPixelFormatDepth32Float:
+            return Aspect::Depth;
+
+#if DAWN_PLATFORM_IS(MACOS)
+        case MTLPixelFormatDepth24Unorm_Stencil8:
+#endif
+        case MTLPixelFormatDepth32Float_Stencil8:
+            return Aspect::Depth | Aspect::Stencil;
+
+        case MTLPixelFormatStencil8:
+            return Aspect::Stencil;
+
+        default:
+            UNREACHABLE();
+    }
+}
 
 MTLCompareFunction ToMetalCompareFunction(wgpu::CompareFunction compareFunction) {
     switch (compareFunction) {
@@ -196,12 +200,15 @@ TextureBufferCopySplit ComputeTextureBufferCopySplit(const Texture* texture,
     const Format textureFormat = texture->GetFormat();
     const TexelBlockInfo& blockInfo = textureFormat.GetAspectInfo(aspect).block;
 
-    // When copying textures from/to an unpacked buffer, the Metal validation layer doesn't
-    // compute the correct range when checking if the buffer is big enough to contain the
-    // data for the whole copy. Instead of looking at the position of the last texel in the
-    // buffer, it computes the volume of the 3D box with bytesPerRow * (rowsPerImage /
-    // format.blockHeight) * copySize.depthOrArrayLayers. For example considering the pixel
-    // buffer below where in memory, each row data (D) of the texture is followed by some
+    // When copying textures from/to an unpacked buffer, the Metal validation layer has 3
+    // issues.
+    //
+    // 1. The metal validation layer doesn't compute the correct range when checking if the
+    // buffer is big enough to contain the data for the whole copy. Instead of looking at
+    // the position of the last texel in the buffer, it computes the volume of the 3D box
+    // with bytesPerRow * (rowsPerImage / format.blockHeight) * copySize.depthOrArrayLayers.
+    // For example considering the pixel buffer below where in memory, each row data (D) of
+    // the texture is followed by some
     // padding data (P):
     //     |DDDDDDD|PP|
     //     |DDDDDDD|PP|
@@ -213,6 +220,28 @@ TextureBufferCopySplit ComputeTextureBufferCopySplit(const Texture* texture,
 
     // We work around this limitation by detecting when Metal would complain and copy the
     // last image and row separately using tight sourceBytesPerRow or sourceBytesPerImage.
+
+    // 2. Metal requires `destinationBytesPerRow` is less than or equal to the size
+    // of the maximum texture dimension in bytes.
+
+    // 3. Some Metal Drivers (Intel Pre MacOS 13.1?) Incorrectly calculation the size
+    // needed for the destination buffer. Their calculation is something like
+    //
+    //   sizeNeeded = bufferOffset + desintationBytesPerImage * numImages +
+    //                destinationBytesPerRow * (numRows - 1) +
+    //                bytesPerPixel * width
+    //
+    // where as it should be
+    //
+    //   sizeNeeded = bufferOffset + desintationBytesPerImage * (numImages - 1) +
+    //                destinationBytesPerRow * (numRows - 1) +
+    //                bytesPerPixel * width
+    //
+    // since you won't actually go to the next image if there is only 1 image.
+    //
+    // The workaround is if you're only copying a single row then pass 0 for
+    // destinationBytesPerImage
+
     uint32_t bytesPerImage = bytesPerRow * rowsPerImage;
 
     // Metal validation layer requires that if the texture's pixel format is a compressed
@@ -222,32 +251,63 @@ TextureBufferCopySplit ComputeTextureBufferCopySplit(const Texture* texture,
     const Extent3D clampedCopyExtent =
         texture->ClampToMipLevelVirtualSize(mipLevel, origin, copyExtent);
 
-    // Check whether buffer size is big enough.
-    bool needWorkaround = bufferSize - bufferOffset < bytesPerImage * copyExtent.depthOrArrayLayers;
-    if (!needWorkaround) {
-        copy.count = 1;
-        copy.copies[0].bufferOffset = bufferOffset;
-        copy.copies[0].bytesPerRow = bytesPerRow;
-        copy.copies[0].bytesPerImage = bytesPerImage;
-        copy.copies[0].textureOrigin = origin;
-        copy.copies[0].copyExtent = {clampedCopyExtent.width, clampedCopyExtent.height,
-                                     copyExtent.depthOrArrayLayers};
+    // Note: all current GPUs have a 3D texture size limit of 2048 and otherwise 16348
+    // for non-3D textures except for Apple2 GPUs (iPhone6) which has a non-3D texture
+    // limit of 8192. Dawn doesn't support Apple2 GPUs
+    // See: https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf
+    const uint32_t kMetalMax3DTextureDimensions = 2048u;
+    const uint32_t kMetalMaxNon3DTextureDimensions = 16384u;
+    uint32_t maxTextureDimension = texture->GetDimension() == wgpu::TextureDimension::e3D
+                                       ? kMetalMax3DTextureDimensions
+                                       : kMetalMaxNon3DTextureDimensions;
+    uint32_t bytesPerPixel = blockInfo.byteSize;
+    uint32_t maxBytesPerRow = maxTextureDimension * bytesPerPixel;
+
+    bool needCopyRowByRow = bytesPerRow > maxBytesPerRow;
+    if (needCopyRowByRow) {
+        // handle workaround case 2
+        // Since we're copying a row at a time bytesPerRow shouldn't matter but just to
+        // try to have it make sense, pass correct or max valid value
+        const uint32_t localBytesPerRow = std::min(bytesPerRow, maxBytesPerRow);
+        const uint32_t localBytesPerImage = 0;  // workaround case 3
+        ASSERT(copyExtent.height % blockInfo.height == 0);
+        ASSERT(copyExtent.width % blockInfo.width == 0);
+        const uint32_t blockRows = copyExtent.height / blockInfo.height;
+        for (uint32_t slice = 0; slice < copyExtent.depthOrArrayLayers; ++slice) {
+            for (uint32_t blockRow = 0; blockRow < blockRows; ++blockRow) {
+                copy.push_back(TextureBufferCopySplit::CopyInfo(
+                    bufferOffset + slice * rowsPerImage * bytesPerRow + blockRow * bytesPerRow,
+                    localBytesPerRow, localBytesPerImage,
+                    {origin.x, origin.y + blockRow * blockInfo.height, origin.z + slice},
+                    {clampedCopyExtent.width, blockInfo.height, 1}));
+            }
+        }
         return copy;
     }
 
+    // Check whether buffer size is big enough.
+    bool needCopyLastImageAndLastRowSeparately =
+        bufferSize - bufferOffset < bytesPerImage * copyExtent.depthOrArrayLayers;
+    if (!needCopyLastImageAndLastRowSeparately) {
+        const uint32_t localBytesPerImage =
+            copyExtent.depthOrArrayLayers == 1 ? 0 : bytesPerImage;  // workaround case 3
+        copy.push_back(TextureBufferCopySplit::CopyInfo(
+            bufferOffset, bytesPerRow, localBytesPerImage, origin,
+            {clampedCopyExtent.width, clampedCopyExtent.height, copyExtent.depthOrArrayLayers}));
+        return copy;
+    }
+
+    // handle workaround case 1
     uint64_t currentOffset = bufferOffset;
 
     // Doing all the copy except the last image.
     if (copyExtent.depthOrArrayLayers > 1) {
-        copy.copies[copy.count].bufferOffset = currentOffset;
-        copy.copies[copy.count].bytesPerRow = bytesPerRow;
-        copy.copies[copy.count].bytesPerImage = bytesPerImage;
-        copy.copies[copy.count].textureOrigin = origin;
-        copy.copies[copy.count].copyExtent = {clampedCopyExtent.width, clampedCopyExtent.height,
-                                              copyExtent.depthOrArrayLayers - 1};
-
-        ++copy.count;
-
+        const uint32_t localDepthOrArrayLayers = copyExtent.depthOrArrayLayers - 1;
+        const uint32_t localBytesPerImage =
+            localDepthOrArrayLayers == 1 ? 0 : bytesPerImage;  // workaround case 3
+        copy.push_back(TextureBufferCopySplit::CopyInfo(
+            currentOffset, bytesPerRow, localBytesPerImage, origin,
+            {clampedCopyExtent.width, clampedCopyExtent.height, localDepthOrArrayLayers}));
         // Update offset to copy to the last image.
         currentOffset += (copyExtent.depthOrArrayLayers - 1) * bytesPerImage;
     }
@@ -255,18 +315,13 @@ TextureBufferCopySplit ComputeTextureBufferCopySplit(const Texture* texture,
     // Doing all the copy in last image except the last row.
     uint32_t copyBlockRowCount = copyExtent.height / blockInfo.height;
     if (copyBlockRowCount > 1) {
-        copy.copies[copy.count].bufferOffset = currentOffset;
-        copy.copies[copy.count].bytesPerRow = bytesPerRow;
-        copy.copies[copy.count].bytesPerImage = bytesPerRow * (copyBlockRowCount - 1);
-        copy.copies[copy.count].textureOrigin = {origin.x, origin.y,
-                                                 origin.z + copyExtent.depthOrArrayLayers - 1};
-
         ASSERT(copyExtent.height - blockInfo.height <
                texture->GetMipLevelSingleSubresourceVirtualSize(mipLevel).height);
-        copy.copies[copy.count].copyExtent = {clampedCopyExtent.width,
-                                              copyExtent.height - blockInfo.height, 1};
-
-        ++copy.count;
+        const uint32_t localBytesPerImage = 0;  // workaround case 3
+        copy.push_back(TextureBufferCopySplit::CopyInfo(
+            currentOffset, bytesPerRow, localBytesPerImage,
+            {origin.x, origin.y, origin.z + copyExtent.depthOrArrayLayers - 1},
+            {clampedCopyExtent.width, copyExtent.height - blockInfo.height, 1}));
 
         // Update offset to copy to the last row.
         currentOffset += (copyBlockRowCount - 1) * bytesPerRow;
@@ -275,18 +330,16 @@ TextureBufferCopySplit ComputeTextureBufferCopySplit(const Texture* texture,
     // Doing the last row copy with the exact number of bytes in last row.
     // Workaround this issue in a way just like the copy to a 1D texture.
     uint32_t lastRowDataSize = (copyExtent.width / blockInfo.width) * blockInfo.byteSize;
+    uint32_t lastImageDataSize = 0;  // workaround case 3
     uint32_t lastRowCopyExtentHeight =
         blockInfo.height + clampedCopyExtent.height - copyExtent.height;
     ASSERT(lastRowCopyExtentHeight <= blockInfo.height);
 
-    copy.copies[copy.count].bufferOffset = currentOffset;
-    copy.copies[copy.count].bytesPerRow = lastRowDataSize;
-    copy.copies[copy.count].bytesPerImage = lastRowDataSize;
-    copy.copies[copy.count].textureOrigin = {origin.x,
-                                             origin.y + copyExtent.height - blockInfo.height,
-                                             origin.z + copyExtent.depthOrArrayLayers - 1};
-    copy.copies[copy.count].copyExtent = {clampedCopyExtent.width, lastRowCopyExtentHeight, 1};
-    ++copy.count;
+    copy.push_back(
+        TextureBufferCopySplit::CopyInfo(currentOffset, lastRowDataSize, lastImageDataSize,
+                                         {origin.x, origin.y + copyExtent.height - blockInfo.height,
+                                          origin.z + copyExtent.depthOrArrayLayers - 1},
+                                         {clampedCopyExtent.width, lastRowCopyExtentHeight, 1}));
 
     return copy;
 }
@@ -304,25 +357,6 @@ void EnsureDestinationTextureInitialized(CommandRecordingContext* commandContext
     }
 }
 
-MTLBlitOption ComputeMTLBlitOption(const Format& format, Aspect aspect) {
-    ASSERT(HasOneBit(aspect));
-    ASSERT(format.aspects & aspect);
-
-    if (IsSubset(Aspect::Depth | Aspect::Stencil, format.aspects)) {
-        // We only provide a blit option if the format has both depth and stencil.
-        // It is invalid to provide a blit option otherwise.
-        switch (aspect) {
-            case Aspect::Depth:
-                return MTLBlitOptionDepthFromDepthStencil;
-            case Aspect::Stencil:
-                return MTLBlitOptionStencilFromDepthStencil;
-            default:
-                UNREACHABLE();
-        }
-    }
-    return MTLBlitOptionNone;
-}
-
 MaybeError EncodeMetalRenderPass(Device* device,
                                  CommandRecordingContext* commandContext,
                                  MTLRenderPassDescriptor* mtlRenderPass,
@@ -334,42 +368,31 @@ MaybeError EncodeMetalRenderPass(Device* device,
     // workarounds to happen at the same time, it handles workarounds one by one and calls
     // itself recursively to handle the next workaround if needed.
 
-    // Handle Toggle AlwaysResolveIntoZeroLevelAndLayer. We must handle this before applying
-    // the store + MSAA resolve workaround, otherwise this toggle will never be handled because
-    // the resolve texture is removed when applying the store + MSAA resolve workaround.
-    if (device->IsToggleEnabled(Toggle::AlwaysResolveIntoZeroLevelAndLayer)) {
-        std::array<SavedMetalAttachment, kMaxColorAttachments> trueResolveAttachments = {};
-        bool workaroundUsed = false;
-        for (uint32_t i = 0; i < kMaxColorAttachments; ++i) {
-            if (mtlRenderPass.colorAttachments[i].resolveTexture == nullptr) {
-                continue;
+    // Handle the workaround where both depth and stencil attachments must be set for a
+    // combined depth-stencil format, not just one.
+    if (device->IsToggleEnabled(
+            Toggle::MetalUseBothDepthAndStencilAttachmentsForCombinedDepthStencilFormats)) {
+        const bool hasDepthAttachment = mtlRenderPass.depthAttachment.texture != nil;
+        const bool hasStencilAttachment = mtlRenderPass.stencilAttachment.texture != nil;
+
+        if (hasDepthAttachment && !hasStencilAttachment) {
+            if (GetDepthStencilAspects([mtlRenderPass.depthAttachment.texture pixelFormat]) &
+                Aspect::Stencil) {
+                mtlRenderPass.stencilAttachment.texture = mtlRenderPass.depthAttachment.texture;
+                mtlRenderPass.stencilAttachment.level = mtlRenderPass.depthAttachment.level;
+                mtlRenderPass.stencilAttachment.slice = mtlRenderPass.depthAttachment.slice;
+                mtlRenderPass.stencilAttachment.loadAction = MTLLoadActionLoad;
+                mtlRenderPass.stencilAttachment.storeAction = MTLStoreActionStore;
             }
-
-            if (mtlRenderPass.colorAttachments[i].resolveLevel == 0 &&
-                mtlRenderPass.colorAttachments[i].resolveSlice == 0) {
-                continue;
+        } else if (hasStencilAttachment && !hasDepthAttachment) {
+            if (GetDepthStencilAspects([mtlRenderPass.stencilAttachment.texture pixelFormat]) &
+                Aspect::Depth) {
+                mtlRenderPass.depthAttachment.texture = mtlRenderPass.stencilAttachment.texture;
+                mtlRenderPass.depthAttachment.level = mtlRenderPass.stencilAttachment.level;
+                mtlRenderPass.depthAttachment.slice = mtlRenderPass.stencilAttachment.slice;
+                mtlRenderPass.depthAttachment.loadAction = MTLLoadActionLoad;
+                mtlRenderPass.depthAttachment.storeAction = MTLStoreActionStore;
             }
-
-            DAWN_TRY_ASSIGN(
-                trueResolveAttachments[i],
-                PatchResolveAttachmentWithTemporary(device, mtlRenderPass.colorAttachments[i]));
-            workaroundUsed = true;
-        }
-
-        // If we need to use a temporary resolve texture we need to copy the result of MSAA
-        // resolve back to the true resolve targets.
-        if (workaroundUsed) {
-            DAWN_TRY(EncodeMetalRenderPass(device, commandContext, mtlRenderPass, width, height,
-                                           std::move(encodeInside), renderPassCmd));
-
-            for (uint32_t i = 0; i < kMaxColorAttachments; ++i) {
-                if (trueResolveAttachments[i].texture == nullptr) {
-                    continue;
-                }
-
-                trueResolveAttachments[i].CopyFromTemporaryToAttachment(commandContext);
-            }
-            return {};
         }
     }
 

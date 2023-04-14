@@ -4,9 +4,9 @@
 
 /***************************************************************************
  *
- * Copyright (c) 2015-2022 The Khronos Group Inc.
- * Copyright (c) 2015-2022 Valve Corporation
- * Copyright (c) 2015-2022 LunarG, Inc.
+ * Copyright (c) 2015-2023 The Khronos Group Inc.
+ * Copyright (c) 2015-2023 Valve Corporation
+ * Copyright (c) 2015-2023 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,11 +19,6 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *
- * Author: Mark Lobodzinski <mark@lunarg.com>
- * Author: Dave Houlton <daveh@lunarg.com>
- * Author: Spencer Fricke <s.fricke@samsung.com>
- *
  ****************************************************************************/
 
 #include "vk_format_utils.h"
@@ -73,7 +68,7 @@ struct hash<VkFormat> {
 }
 
 // clang-format off
-static const layer_data::unordered_map<VkFormat, FORMAT_INFO> kVkFormatTable = {
+static const vvl::unordered_map<VkFormat, FORMAT_INFO> kVkFormatTable = {
     {VK_FORMAT_A1R5G5B5_UNORM_PACK16,
         {FORMAT_COMPATIBILITY_CLASS::_16BIT, 2, 1, {1, 1, 1}, 4,
         {{COMPONENT_TYPE::A, 1}, {COMPONENT_TYPE::R, 5}, {COMPONENT_TYPE::G, 5}, {COMPONENT_TYPE::B, 5}} }},
@@ -838,7 +833,7 @@ struct MULTIPLANE_COMPATIBILITY {
 
 // Source: Vulkan spec Table 47. Plane Format Compatibility Table
 // clang-format off
-static const layer_data::unordered_map<VkFormat, MULTIPLANE_COMPATIBILITY> kVkMultiplaneCompatibilityMap {
+static const vvl::unordered_map<VkFormat, MULTIPLANE_COMPATIBILITY> kVkMultiplaneCompatibilityMap {
     { VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16, {{
         { 1, 1, VK_FORMAT_R10X6_UNORM_PACK16 },
         { 2, 2, VK_FORMAT_R10X6G10X6_UNORM_2PACK16 }
@@ -1905,7 +1900,17 @@ double FormatTexelSize(VkFormat format, VkImageAspectFlags aspectMask) {
     return texel_size;
 }
 
-static bool FormatHasComponent(VkFormat format, COMPONENT_TYPE component) {
+bool FormatHasComponentSize(VkFormat format, uint32_t size) {
+    auto item = kVkFormatTable.find(format);
+    if (item == kVkFormatTable.end()) {
+        return false;
+    }
+    const COMPONENT_INFO* begin = item->second.components;
+    const COMPONENT_INFO* end = item->second.components + FORMAT_MAX_COMPONENTS;
+    return std::find_if(begin, end, [size](const COMPONENT_INFO& info) { return info.size == size; }) != end;
+}
+
+static bool FormatHasComponentType(VkFormat format, COMPONENT_TYPE component) {
     auto item = kVkFormatTable.find(format);
     if (item == kVkFormatTable.end()) {
         return false;
@@ -1916,18 +1921,18 @@ static bool FormatHasComponent(VkFormat format, COMPONENT_TYPE component) {
 }
 
 bool FormatHasRed(VkFormat format) {
-    return FormatHasComponent(format, COMPONENT_TYPE::R);
+    return FormatHasComponentType(format, COMPONENT_TYPE::R);
 }
 
 bool FormatHasGreen(VkFormat format) {
-    return FormatHasComponent(format, COMPONENT_TYPE::G);
+    return FormatHasComponentType(format, COMPONENT_TYPE::G);
 }
 
 bool FormatHasBlue(VkFormat format) {
-    return FormatHasComponent(format, COMPONENT_TYPE::B);
+    return FormatHasComponentType(format, COMPONENT_TYPE::B);
 }
 
 bool FormatHasAlpha(VkFormat format) {
-    return FormatHasComponent(format, COMPONENT_TYPE::A);
+    return FormatHasComponentType(format, COMPONENT_TYPE::A);
 }
 

@@ -12,8 +12,8 @@ import xmlViewStyles from './xmlView.css.legacy.js';
 
 const UIStrings = {
   /**
-  *@description Text to find an item
-  */
+   *@description Text to find an item
+   */
   find: 'Find',
 };
 const str_ = i18n.i18n.registerUIStrings('ui/legacy/components/source_frame/XMLView.ts', UIStrings);
@@ -162,7 +162,7 @@ export class XMLView extends UI.Widget.Widget implements UI.SearchableView.Searc
     this.updateSearchIndex(0);
   }
 
-  searchCanceled(): void {
+  onSearchCanceled(): void {
     this.searchConfig = null;
     this.currentSearchTreeElements = [];
     this.innerSearchCanceled();

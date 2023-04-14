@@ -26,6 +26,7 @@
 #include "dawn/native/AttachmentState.h"
 #include "dawn/native/BindGroup.h"
 #include "dawn/native/BindGroupLayout.h"
+#include "dawn/native/BlitBufferToDepthStencil.h"
 #include "dawn/native/BlobCache.h"
 #include "dawn/native/Buffer.h"
 #include "dawn/native/ChainUtils_autogen.h"
@@ -124,6 +125,7 @@ struct LoggingCallbackTask : CallbackTask {
     std::string mMessage;
     void* mUserdata;
 };
+}  // anonymous namespace
 
 ResultOrError<Ref<PipelineLayoutBase>> ValidateLayoutAndGetComputePipelineDescriptorWithDefaults(
     DeviceBase* device,
@@ -166,24 +168,18 @@ ResultOrError<Ref<PipelineLayoutBase>> ValidateLayoutAndGetRenderPipelineDescrip
     return layoutRef;
 }
 
-}  // anonymous namespace
-
 // DeviceBase
 
 DeviceBase::DeviceBase(AdapterBase* adapter,
                        const DeviceDescriptor* descriptor,
-                       const TripleStateTogglesSet& userProvidedToggles)
-    : mAdapter(adapter),
-      mEnabledToggles(userProvidedToggles.providedTogglesEnabled),
-      mOverridenToggles(userProvidedToggles.togglesIsProvided),
-      mNextPipelineCompatibilityToken(1) {
+                       const TogglesState& deviceToggles)
+    : mAdapter(adapter), mToggles(deviceToggles), mNextPipelineCompatibilityToken(1) {
     mAdapter->GetInstance()->IncrementDeviceCountForTesting();
     ASSERT(descriptor != nullptr);
 
     AdapterProperties adapterProperties;
     adapter->APIGetProperties(&adapterProperties);
 
-    SetDefaultToggles();
     ApplyFeatures(descriptor);
 
     DawnCacheDeviceDescriptor defaultCacheDesc = {};
@@ -209,11 +205,11 @@ DeviceBase::DeviceBase(AdapterBase* adapter,
     // descriptor is added (and probably handled here), the cache key recording needs to be
     // updated.
     StreamIn(&mDeviceCacheKey, kDawnVersion, adapterProperties, mEnabledFeatures.featuresBitSet,
-             mEnabledToggles.toggleBitset, cacheDesc);
+             mToggles, cacheDesc);
 }
 
-DeviceBase::DeviceBase() : mState(State::Alive) {
-    mCaches = std::make_unique<DeviceBase::Caches>();
+DeviceBase::DeviceBase() : mState(State::Alive), mToggles(ToggleStage::Device) {
+    mFormatTable = BuildFormatTable(this);
 }
 
 DeviceBase::~DeviceBase() {
@@ -549,10 +545,10 @@ void DeviceBase::APISetLoggingCallback(wgpu::LoggingCallback callback, void* use
     // resetting) the resources pointed by such pointer may be freed. Flush all deferred
     // callback tasks to guarantee we are never going to use the previous callback after
     // this call.
+    FlushCallbackTaskQueue();
     if (IsLost()) {
         return;
     }
-    FlushCallbackTaskQueue();
     mLoggingCallback = callback;
     mLoggingUserdata = userdata;
 }
@@ -563,10 +559,10 @@ void DeviceBase::APISetUncapturedErrorCallback(wgpu::ErrorCallback callback, voi
     // resetting) the resources pointed by such pointer may be freed. Flush all deferred
     // callback tasks to guarantee we are never going to use the previous callback after
     // this call.
+    FlushCallbackTaskQueue();
     if (IsLost()) {
         return;
     }
-    FlushCallbackTaskQueue();
     mUncapturedErrorCallback = callback;
     mUncapturedErrorUserdata = userdata;
 }
@@ -577,10 +573,10 @@ void DeviceBase::APISetDeviceLostCallback(wgpu::DeviceLostCallback callback, voi
     // resetting) the resources pointed by such pointer may be freed. Flush all deferred
     // callback tasks to guarantee we are never going to use the previous callback after
     // this call.
+    FlushCallbackTaskQueue();
     if (IsLost()) {
         return;
     }
-    FlushCallbackTaskQueue();
     mDeviceLostCallback = callback;
     mDeviceLostUserdata = userdata;
 }
@@ -619,8 +615,9 @@ BlobCache* DeviceBase::GetBlobCache() {
     // generate cache keys. We can lift the dependency once we also cache frontend parsing,
     // transformations, and reflection.
     return mAdapter->GetInstance()->GetBlobCache(!IsToggleEnabled(Toggle::DisableBlobCache));
-#endif
+#else
     return mAdapter->GetInstance()->GetBlobCache(false);
+#endif
 }
 
 Blob DeviceBase::LoadCachedBlob(const CacheKey& key) {
@@ -1076,9 +1073,10 @@ void DeviceBase::APICreateComputePipelineAsync(const ComputePipelineDescriptor* 
     // callback.
     if (maybeResult.IsError()) {
         std::unique_ptr<ErrorData> error = maybeResult.AcquireError();
+        WGPUCreatePipelineAsyncStatus status =
+            CreatePipelineAsyncStatusFromErrorType(error->GetType());
         // TODO(crbug.com/dawn/1122): Call callbacks only on wgpuInstanceProcessEvents
-        callback(WGPUCreatePipelineAsyncStatus_Error, nullptr, error->GetMessage().c_str(),
-                 userdata);
+        callback(status, nullptr, error->GetMessage().c_str(), userdata);
     }
 }
 PipelineLayoutBase* DeviceBase::APICreatePipelineLayout(
@@ -1119,9 +1117,10 @@ void DeviceBase::APICreateRenderPipelineAsync(const RenderPipelineDescriptor* de
     // callback.
     if (maybeResult.IsError()) {
         std::unique_ptr<ErrorData> error = maybeResult.AcquireError();
+        WGPUCreatePipelineAsyncStatus status =
+            CreatePipelineAsyncStatusFromErrorType(error->GetType());
         // TODO(crbug.com/dawn/1122): Call callbacks only on wgpuInstanceProcessEvents
-        callback(WGPUCreatePipelineAsyncStatus_Error, nullptr, error->GetMessage().c_str(),
-                 userdata);
+        callback(status, nullptr, error->GetMessage().c_str(), userdata);
     }
 }
 RenderBundleEncoder* DeviceBase::APICreateRenderBundleEncoder(
@@ -1386,6 +1385,10 @@ void DeviceBase::APIInjectError(wgpu::ErrorType type, const char* message) {
     HandleError(FromWGPUErrorType(type), message);
 }
 
+void DeviceBase::APIValidateTextureDescriptor(const TextureDescriptor* desc) {
+    ConsumedError(ValidateTextureDescriptor(this, desc));
+}
+
 QueueBase* DeviceBase::GetQueue() const {
     ASSERT(mQueue != nullptr);
     return mQueue.Get();
@@ -1514,21 +1517,19 @@ MaybeError DeviceBase::CreateComputePipelineAsync(const ComputePipelineDescripto
 void DeviceBase::InitializeComputePipelineAsyncImpl(Ref<ComputePipelineBase> computePipeline,
                                                     WGPUCreateComputePipelineAsyncCallback callback,
                                                     void* userdata) {
-    Ref<ComputePipelineBase> result;
-    std::string errorMessage;
-
     MaybeError maybeError = computePipeline->Initialize();
     if (maybeError.IsError()) {
         std::unique_ptr<ErrorData> error = maybeError.AcquireError();
-        errorMessage = error->GetMessage();
+        WGPUCreatePipelineAsyncStatus status =
+            CreatePipelineAsyncStatusFromErrorType(error->GetType());
+        mCallbackTaskManager->AddCallbackTask(
+            std::make_unique<CreateComputePipelineAsyncCallbackTask>(status, error->GetMessage(),
+                                                                     callback, userdata));
     } else {
-        result = AddOrGetCachedComputePipeline(std::move(computePipeline));
+        mCallbackTaskManager->AddCallbackTask(
+            std::make_unique<CreateComputePipelineAsyncCallbackTask>(
+                AddOrGetCachedComputePipeline(std::move(computePipeline)), callback, userdata));
     }
-
-    std::unique_ptr<CreateComputePipelineAsyncCallbackTask> callbackTask =
-        std::make_unique<CreateComputePipelineAsyncCallbackTask>(std::move(result), errorMessage,
-                                                                 callback, userdata);
-    mCallbackTaskManager->AddCallbackTask(std::move(callbackTask));
 }
 
 // This function is overwritten with the async version on the backends
@@ -1536,21 +1537,19 @@ void DeviceBase::InitializeComputePipelineAsyncImpl(Ref<ComputePipelineBase> com
 void DeviceBase::InitializeRenderPipelineAsyncImpl(Ref<RenderPipelineBase> renderPipeline,
                                                    WGPUCreateRenderPipelineAsyncCallback callback,
                                                    void* userdata) {
-    Ref<RenderPipelineBase> result;
-    std::string errorMessage;
-
     MaybeError maybeError = renderPipeline->Initialize();
     if (maybeError.IsError()) {
         std::unique_ptr<ErrorData> error = maybeError.AcquireError();
-        errorMessage = error->GetMessage();
+        WGPUCreatePipelineAsyncStatus status =
+            CreatePipelineAsyncStatusFromErrorType(error->GetType());
+        mCallbackTaskManager->AddCallbackTask(
+            std::make_unique<CreateRenderPipelineAsyncCallbackTask>(status, error->GetMessage(),
+                                                                    callback, userdata));
     } else {
-        result = AddOrGetCachedRenderPipeline(std::move(renderPipeline));
+        mCallbackTaskManager->AddCallbackTask(
+            std::make_unique<CreateRenderPipelineAsyncCallbackTask>(
+                AddOrGetCachedRenderPipeline(std::move(renderPipeline)), callback, userdata));
     }
-
-    std::unique_ptr<CreateRenderPipelineAsyncCallbackTask> callbackTask =
-        std::make_unique<CreateRenderPipelineAsyncCallbackTask>(std::move(result), errorMessage,
-                                                                callback, userdata);
-    mCallbackTaskManager->AddCallbackTask(std::move(callbackTask));
 }
 
 ResultOrError<Ref<PipelineLayoutBase>> DeviceBase::CreatePipelineLayout(
@@ -1748,30 +1747,15 @@ DynamicUploader* DeviceBase::GetDynamicUploader() const {
 // The Toggle device facility
 
 std::vector<const char*> DeviceBase::GetTogglesUsed() const {
-    return mEnabledToggles.GetContainedToggleNames();
+    return mToggles.GetEnabledToggleNames();
 }
 
 bool DeviceBase::IsToggleEnabled(Toggle toggle) const {
-    return mEnabledToggles.Has(toggle);
+    return mToggles.IsEnabled(toggle);
 }
 
-void DeviceBase::SetToggle(Toggle toggle, bool isEnabled) {
-    if (!mOverridenToggles.Has(toggle)) {
-        mEnabledToggles.Set(toggle, isEnabled);
-    }
-}
-
-void DeviceBase::ForceSetToggle(Toggle toggle, bool isEnabled) {
-    if (mOverridenToggles.Has(toggle) && mEnabledToggles.Has(toggle) != isEnabled) {
-        dawn::WarningLog() << "Forcing toggle \"" << ToggleEnumToName(toggle) << "\" to "
-                           << isEnabled << " when it was overriden to be " << !isEnabled;
-    }
-    mEnabledToggles.Set(toggle, isEnabled);
-}
-
-void DeviceBase::SetDefaultToggles() {
-    SetToggle(Toggle::LazyClearResourceOnFirstUse, true);
-    SetToggle(Toggle::DisallowUnsafeAPIs, true);
+void DeviceBase::ForceSetToggleForTesting(Toggle toggle, bool isEnabled) {
+    mToggles.ForceSet(toggle, isEnabled);
 }
 
 void DeviceBase::FlushCallbackTaskQueue() {
@@ -1805,7 +1789,6 @@ dawn::platform::WorkerTaskPool* DeviceBase::GetWorkerTaskPool() const {
 
 void DeviceBase::AddComputePipelineAsyncCallbackTask(
     Ref<ComputePipelineBase> pipeline,
-    std::string errorMessage,
     WGPUCreateComputePipelineAsyncCallback callback,
     void* userdata) {
     // CreateComputePipelineAsyncWaitableCallbackTask is declared as an internal class as it
@@ -1817,21 +1800,19 @@ void DeviceBase::AddComputePipelineAsyncCallbackTask(
             // TODO(dawn:529): call AddOrGetCachedComputePipeline() asynchronously in
             // CreateComputePipelineAsyncTaskImpl::Run() when the front-end pipeline cache is
             // thread-safe.
-            if (mPipeline.Get() != nullptr) {
-                mPipeline = mPipeline->GetDevice()->AddOrGetCachedComputePipeline(mPipeline);
-            }
+            ASSERT(mPipeline != nullptr);
+            mPipeline = mPipeline->GetDevice()->AddOrGetCachedComputePipeline(mPipeline);
 
             CreateComputePipelineAsyncCallbackTask::Finish();
         }
     };
 
     mCallbackTaskManager->AddCallbackTask(
-        std::make_unique<CreateComputePipelineAsyncWaitableCallbackTask>(
-            std::move(pipeline), errorMessage, callback, userdata));
+        std::make_unique<CreateComputePipelineAsyncWaitableCallbackTask>(std::move(pipeline),
+                                                                         callback, userdata));
 }
 
 void DeviceBase::AddRenderPipelineAsyncCallbackTask(Ref<RenderPipelineBase> pipeline,
-                                                    std::string errorMessage,
                                                     WGPUCreateRenderPipelineAsyncCallback callback,
                                                     void* userdata) {
     // CreateRenderPipelineAsyncWaitableCallbackTask is declared as an internal class as it
@@ -1853,8 +1834,8 @@ void DeviceBase::AddRenderPipelineAsyncCallbackTask(Ref<RenderPipelineBase> pipe
     };
 
     mCallbackTaskManager->AddCallbackTask(
-        std::make_unique<CreateRenderPipelineAsyncWaitableCallbackTask>(
-            std::move(pipeline), errorMessage, callback, userdata));
+        std::make_unique<CreateRenderPipelineAsyncWaitableCallbackTask>(std::move(pipeline),
+                                                                        callback, userdata));
 }
 
 PipelineCompatibilityToken DeviceBase::GetNextPipelineCompatibilityToken() {
@@ -1920,7 +1901,7 @@ ExecutionSerial DeviceBase::GetScheduledWorkDoneSerial() const {
     return HasPendingCommands() ? GetPendingCommandSerial() : GetLastSubmittedCommandSerial();
 }
 
-MaybeError DeviceBase::CopyFromStagingToBuffer(StagingBufferBase* source,
+MaybeError DeviceBase::CopyFromStagingToBuffer(BufferBase* source,
                                                uint64_t sourceOffset,
                                                BufferBase* destination,
                                                uint64_t destinationOffset,
@@ -1933,15 +1914,36 @@ MaybeError DeviceBase::CopyFromStagingToBuffer(StagingBufferBase* source,
     return {};
 }
 
-MaybeError DeviceBase::CopyFromStagingToTexture(const StagingBufferBase* source,
+MaybeError DeviceBase::CopyFromStagingToTexture(BufferBase* source,
                                                 const TextureDataLayout& src,
-                                                TextureCopy* dst,
+                                                const TextureCopy& dst,
                                                 const Extent3D& copySizePixels) {
-    DAWN_TRY(CopyFromStagingToTextureImpl(source, src, dst, copySizePixels));
+    if (dst.aspect == Aspect::Depth &&
+        IsToggleEnabled(Toggle::UseBlitForBufferToDepthTextureCopy)) {
+        DAWN_TRY_CONTEXT(BlitStagingBufferToDepth(this, source, src, dst, copySizePixels),
+                         "copying from staging buffer to depth aspect of %s using blit workaround.",
+                         dst.texture.Get());
+    } else if (dst.aspect == Aspect::Stencil &&
+               IsToggleEnabled(Toggle::UseBlitForBufferToStencilTextureCopy)) {
+        DAWN_TRY_CONTEXT(
+            BlitStagingBufferToStencil(this, source, src, dst, copySizePixels),
+            "copying from staging buffer to stencil aspect of %s using blit workaround.",
+            dst.texture.Get());
+    } else {
+        DAWN_TRY(CopyFromStagingToTextureImpl(source, src, dst, copySizePixels));
+    }
+
     if (GetDynamicUploader()->ShouldFlush()) {
         ForceEventualFlushOfCommands();
     }
     return {};
+}
+
+IgnoreLazyClearCountScope::IgnoreLazyClearCountScope(DeviceBase* device)
+    : mDevice(device), mLazyClearCountForTesting(device->mLazyClearCountForTesting) {}
+
+IgnoreLazyClearCountScope::~IgnoreLazyClearCountScope() {
+    mDevice->mLazyClearCountForTesting = mLazyClearCountForTesting;
 }
 
 }  // namespace dawn::native

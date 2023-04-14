@@ -14,28 +14,23 @@
 
 #include "src/tint/type/f16.h"
 
-#include "src/tint/program_builder.h"
+#include "src/tint/type/manager.h"
 
 TINT_INSTANTIATE_TYPEINFO(tint::type::F16);
 
 namespace tint::type {
 
 F16::F16()
-    : Base(type::Flags{
-          Flag::kConstructable,
-          Flag::kCreationFixedFootprint,
-          Flag::kFixedFootprint,
-      }) {}
-
-F16::F16(F16&&) = default;
+    : Base(static_cast<size_t>(TypeInfo::Of<F16>().full_hashcode),
+           type::Flags{
+               Flag::kConstructable,
+               Flag::kCreationFixedFootprint,
+               Flag::kFixedFootprint,
+           }) {}
 
 F16::~F16() = default;
 
-size_t F16::Hash() const {
-    return static_cast<size_t>(TypeInfo::Of<F16>().full_hashcode);
-}
-
-bool F16::Equals(const Type& other) const {
+bool F16::Equals(const UniqueNode& other) const {
     return other.Is<F16>();
 }
 
@@ -49,6 +44,10 @@ uint32_t F16::Size() const {
 
 uint32_t F16::Align() const {
     return 2;
+}
+
+F16* F16::Clone(CloneContext& ctx) const {
+    return ctx.dst.mgr->Get<F16>();
 }
 
 }  // namespace tint::type

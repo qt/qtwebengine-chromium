@@ -4,10 +4,10 @@
 
 /***************************************************************************
  *
- * Copyright (c) 2015-2022 The Khronos Group Inc.
- * Copyright (c) 2015-2022 Valve Corporation
- * Copyright (c) 2015-2022 LunarG, Inc.
- * Copyright (c) 2015-2022 Google Inc.
+ * Copyright (c) 2015-2023 The Khronos Group Inc.
+ * Copyright (c) 2015-2023 Valve Corporation
+ * Copyright (c) 2015-2023 LunarG, Inc.
+ * Copyright (c) 2015-2023 Google Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,14 +20,6 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *
- * Author: Mark Lobodzinski <mark@lunarg.com>
- * Author: Courtney Goeltzenleuchter <courtneygo@google.com>
- * Author: Tobin Ehlis <tobine@google.com>
- * Author: Chris Forbes <chrisforbes@google.com>
- * Author: John Zulauf<jzulauf@lunarg.com>
- * Author: Tony Barbour <tony@lunarg.com>
- *
  ****************************************************************************/
 
 
@@ -60,10 +52,8 @@ static inline const char* string_VkResult(VkResult input_value)
             return "VK_ERROR_FRAGMENTED_POOL";
         case VK_ERROR_FULL_SCREEN_EXCLUSIVE_MODE_LOST_EXT:
             return "VK_ERROR_FULL_SCREEN_EXCLUSIVE_MODE_LOST_EXT";
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_ERROR_IMAGE_USAGE_NOT_SUPPORTED_KHR:
             return "VK_ERROR_IMAGE_USAGE_NOT_SUPPORTED_KHR";
-#endif // VK_ENABLE_BETA_EXTENSIONS
         case VK_ERROR_INCOMPATIBLE_DISPLAY_KHR:
             return "VK_ERROR_INCOMPATIBLE_DISPLAY_KHR";
         case VK_ERROR_INCOMPATIBLE_DRIVER:
@@ -102,26 +92,16 @@ static inline const char* string_VkResult(VkResult input_value)
             return "VK_ERROR_UNKNOWN";
         case VK_ERROR_VALIDATION_FAILED_EXT:
             return "VK_ERROR_VALIDATION_FAILED_EXT";
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_ERROR_VIDEO_PICTURE_LAYOUT_NOT_SUPPORTED_KHR:
             return "VK_ERROR_VIDEO_PICTURE_LAYOUT_NOT_SUPPORTED_KHR";
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_ERROR_VIDEO_PROFILE_CODEC_NOT_SUPPORTED_KHR:
             return "VK_ERROR_VIDEO_PROFILE_CODEC_NOT_SUPPORTED_KHR";
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_ERROR_VIDEO_PROFILE_FORMAT_NOT_SUPPORTED_KHR:
             return "VK_ERROR_VIDEO_PROFILE_FORMAT_NOT_SUPPORTED_KHR";
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_ERROR_VIDEO_PROFILE_OPERATION_NOT_SUPPORTED_KHR:
             return "VK_ERROR_VIDEO_PROFILE_OPERATION_NOT_SUPPORTED_KHR";
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_ERROR_VIDEO_STD_VERSION_NOT_SUPPORTED_KHR:
             return "VK_ERROR_VIDEO_STD_VERSION_NOT_SUPPORTED_KHR";
-#endif // VK_ENABLE_BETA_EXTENSIONS
         case VK_EVENT_RESET:
             return "VK_EVENT_RESET";
         case VK_EVENT_SET:
@@ -231,10 +211,8 @@ static inline const char* string_VkStructureType(VkStructureType input_value)
             return "VK_STRUCTURE_TYPE_BIND_IMAGE_PLANE_MEMORY_INFO";
         case VK_STRUCTURE_TYPE_BIND_SPARSE_INFO:
             return "VK_STRUCTURE_TYPE_BIND_SPARSE_INFO";
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_STRUCTURE_TYPE_BIND_VIDEO_SESSION_MEMORY_INFO_KHR:
             return "VK_STRUCTURE_TYPE_BIND_VIDEO_SESSION_MEMORY_INFO_KHR";
-#endif // VK_ENABLE_BETA_EXTENSIONS
         case VK_STRUCTURE_TYPE_BLIT_IMAGE_INFO_2:
             return "VK_STRUCTURE_TYPE_BLIT_IMAGE_INFO_2";
         case VK_STRUCTURE_TYPE_BUFFER_CAPTURE_DESCRIPTOR_DATA_INFO_EXT:
@@ -783,6 +761,10 @@ static inline const char* string_VkStructureType(VkStructureType input_value)
             return "VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES";
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES_EXT:
             return "VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES_EXT";
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CLUSTER_CULLING_SHADER_FEATURES_HUAWEI:
+            return "VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CLUSTER_CULLING_SHADER_FEATURES_HUAWEI";
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CLUSTER_CULLING_SHADER_PROPERTIES_HUAWEI:
+            return "VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CLUSTER_CULLING_SHADER_PROPERTIES_HUAWEI";
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COHERENT_MEMORY_FEATURES_AMD:
             return "VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COHERENT_MEMORY_FEATURES_AMD";
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COLOR_WRITE_ENABLE_FEATURES_EXT:
@@ -1017,6 +999,8 @@ static inline const char* string_VkStructureType(VkStructureType input_value)
             return "VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_CREATION_CACHE_CONTROL_FEATURES";
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_EXECUTABLE_PROPERTIES_FEATURES_KHR:
             return "VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_EXECUTABLE_PROPERTIES_FEATURES_KHR";
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_LIBRARY_GROUP_HANDLES_FEATURES_EXT:
+            return "VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_LIBRARY_GROUP_HANDLES_FEATURES_EXT";
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_PROPERTIES_FEATURES_EXT:
             return "VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_PROPERTIES_FEATURES_EXT";
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_PROTECTED_ACCESS_FEATURES_EXT:
@@ -1195,10 +1179,8 @@ static inline const char* string_VkStructureType(VkStructureType input_value)
             return "VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_ATTRIBUTE_DIVISOR_PROPERTIES_EXT";
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_INPUT_DYNAMIC_STATE_FEATURES_EXT:
             return "VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_INPUT_DYNAMIC_STATE_FEATURES_EXT";
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_FORMAT_INFO_KHR:
             return "VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_FORMAT_INFO_KHR";
-#endif // VK_ENABLE_BETA_EXTENSIONS
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES:
             return "VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES";
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_PROPERTIES:
@@ -1347,14 +1329,10 @@ static inline const char* string_VkStructureType(VkStructureType input_value)
             return "VK_STRUCTURE_TYPE_QUEUE_FAMILY_GLOBAL_PRIORITY_PROPERTIES_KHR";
         case VK_STRUCTURE_TYPE_QUEUE_FAMILY_PROPERTIES_2:
             return "VK_STRUCTURE_TYPE_QUEUE_FAMILY_PROPERTIES_2";
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_STRUCTURE_TYPE_QUEUE_FAMILY_QUERY_RESULT_STATUS_PROPERTIES_KHR:
             return "VK_STRUCTURE_TYPE_QUEUE_FAMILY_QUERY_RESULT_STATUS_PROPERTIES_KHR";
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_STRUCTURE_TYPE_QUEUE_FAMILY_VIDEO_PROPERTIES_KHR:
             return "VK_STRUCTURE_TYPE_QUEUE_FAMILY_VIDEO_PROPERTIES_KHR";
-#endif // VK_ENABLE_BETA_EXTENSIONS
         case VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR:
             return "VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR";
         case VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_NV:
@@ -1529,78 +1507,42 @@ static inline const char* string_VkStructureType(VkStructureType input_value)
             return "VK_STRUCTURE_TYPE_VERTEX_INPUT_ATTRIBUTE_DESCRIPTION_2_EXT";
         case VK_STRUCTURE_TYPE_VERTEX_INPUT_BINDING_DESCRIPTION_2_EXT:
             return "VK_STRUCTURE_TYPE_VERTEX_INPUT_BINDING_DESCRIPTION_2_EXT";
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_STRUCTURE_TYPE_VIDEO_BEGIN_CODING_INFO_KHR:
             return "VK_STRUCTURE_TYPE_VIDEO_BEGIN_CODING_INFO_KHR";
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_STRUCTURE_TYPE_VIDEO_CAPABILITIES_KHR:
             return "VK_STRUCTURE_TYPE_VIDEO_CAPABILITIES_KHR";
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_STRUCTURE_TYPE_VIDEO_CODING_CONTROL_INFO_KHR:
             return "VK_STRUCTURE_TYPE_VIDEO_CODING_CONTROL_INFO_KHR";
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_STRUCTURE_TYPE_VIDEO_DECODE_CAPABILITIES_KHR:
             return "VK_STRUCTURE_TYPE_VIDEO_DECODE_CAPABILITIES_KHR";
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
-        case VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_CAPABILITIES_EXT:
-            return "VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_CAPABILITIES_EXT";
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
-        case VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_DPB_SLOT_INFO_EXT:
-            return "VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_DPB_SLOT_INFO_EXT";
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
-        case VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_PICTURE_INFO_EXT:
-            return "VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_PICTURE_INFO_EXT";
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
-        case VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_PROFILE_INFO_EXT:
-            return "VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_PROFILE_INFO_EXT";
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
-        case VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_SESSION_PARAMETERS_ADD_INFO_EXT:
-            return "VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_SESSION_PARAMETERS_ADD_INFO_EXT";
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
-        case VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_SESSION_PARAMETERS_CREATE_INFO_EXT:
-            return "VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_SESSION_PARAMETERS_CREATE_INFO_EXT";
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
-        case VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_CAPABILITIES_EXT:
-            return "VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_CAPABILITIES_EXT";
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
-        case VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_DPB_SLOT_INFO_EXT:
-            return "VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_DPB_SLOT_INFO_EXT";
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
-        case VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_PICTURE_INFO_EXT:
-            return "VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_PICTURE_INFO_EXT";
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
-        case VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_PROFILE_INFO_EXT:
-            return "VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_PROFILE_INFO_EXT";
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
-        case VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_SESSION_PARAMETERS_ADD_INFO_EXT:
-            return "VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_SESSION_PARAMETERS_ADD_INFO_EXT";
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
-        case VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_SESSION_PARAMETERS_CREATE_INFO_EXT:
-            return "VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_SESSION_PARAMETERS_CREATE_INFO_EXT";
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
+        case VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_CAPABILITIES_KHR:
+            return "VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_CAPABILITIES_KHR";
+        case VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_DPB_SLOT_INFO_KHR:
+            return "VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_DPB_SLOT_INFO_KHR";
+        case VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_PICTURE_INFO_KHR:
+            return "VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_PICTURE_INFO_KHR";
+        case VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_PROFILE_INFO_KHR:
+            return "VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_PROFILE_INFO_KHR";
+        case VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_SESSION_PARAMETERS_ADD_INFO_KHR:
+            return "VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_SESSION_PARAMETERS_ADD_INFO_KHR";
+        case VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_SESSION_PARAMETERS_CREATE_INFO_KHR:
+            return "VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_SESSION_PARAMETERS_CREATE_INFO_KHR";
+        case VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_CAPABILITIES_KHR:
+            return "VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_CAPABILITIES_KHR";
+        case VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_DPB_SLOT_INFO_KHR:
+            return "VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_DPB_SLOT_INFO_KHR";
+        case VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_PICTURE_INFO_KHR:
+            return "VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_PICTURE_INFO_KHR";
+        case VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_PROFILE_INFO_KHR:
+            return "VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_PROFILE_INFO_KHR";
+        case VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_SESSION_PARAMETERS_ADD_INFO_KHR:
+            return "VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_SESSION_PARAMETERS_ADD_INFO_KHR";
+        case VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_SESSION_PARAMETERS_CREATE_INFO_KHR:
+            return "VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_SESSION_PARAMETERS_CREATE_INFO_KHR";
         case VK_STRUCTURE_TYPE_VIDEO_DECODE_INFO_KHR:
             return "VK_STRUCTURE_TYPE_VIDEO_DECODE_INFO_KHR";
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_STRUCTURE_TYPE_VIDEO_DECODE_USAGE_INFO_KHR:
             return "VK_STRUCTURE_TYPE_VIDEO_DECODE_USAGE_INFO_KHR";
-#endif // VK_ENABLE_BETA_EXTENSIONS
 #ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_STRUCTURE_TYPE_VIDEO_ENCODE_CAPABILITIES_KHR:
             return "VK_STRUCTURE_TYPE_VIDEO_ENCODE_CAPABILITIES_KHR";
@@ -1709,46 +1651,26 @@ static inline const char* string_VkStructureType(VkStructureType input_value)
         case VK_STRUCTURE_TYPE_VIDEO_ENCODE_USAGE_INFO_KHR:
             return "VK_STRUCTURE_TYPE_VIDEO_ENCODE_USAGE_INFO_KHR";
 #endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_STRUCTURE_TYPE_VIDEO_END_CODING_INFO_KHR:
             return "VK_STRUCTURE_TYPE_VIDEO_END_CODING_INFO_KHR";
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_STRUCTURE_TYPE_VIDEO_FORMAT_PROPERTIES_KHR:
             return "VK_STRUCTURE_TYPE_VIDEO_FORMAT_PROPERTIES_KHR";
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR:
             return "VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR";
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_STRUCTURE_TYPE_VIDEO_PROFILE_INFO_KHR:
             return "VK_STRUCTURE_TYPE_VIDEO_PROFILE_INFO_KHR";
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_STRUCTURE_TYPE_VIDEO_PROFILE_LIST_INFO_KHR:
             return "VK_STRUCTURE_TYPE_VIDEO_PROFILE_LIST_INFO_KHR";
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR:
             return "VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR";
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_STRUCTURE_TYPE_VIDEO_SESSION_CREATE_INFO_KHR:
             return "VK_STRUCTURE_TYPE_VIDEO_SESSION_CREATE_INFO_KHR";
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_STRUCTURE_TYPE_VIDEO_SESSION_MEMORY_REQUIREMENTS_KHR:
             return "VK_STRUCTURE_TYPE_VIDEO_SESSION_MEMORY_REQUIREMENTS_KHR";
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_STRUCTURE_TYPE_VIDEO_SESSION_PARAMETERS_CREATE_INFO_KHR:
             return "VK_STRUCTURE_TYPE_VIDEO_SESSION_PARAMETERS_CREATE_INFO_KHR";
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_STRUCTURE_TYPE_VIDEO_SESSION_PARAMETERS_UPDATE_INFO_KHR:
             return "VK_STRUCTURE_TYPE_VIDEO_SESSION_PARAMETERS_UPDATE_INFO_KHR";
-#endif // VK_ENABLE_BETA_EXTENSIONS
         case VK_STRUCTURE_TYPE_VI_SURFACE_CREATE_INFO_NN:
             return "VK_STRUCTURE_TYPE_VI_SURFACE_CREATE_INFO_NN";
         case VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR:
@@ -1866,7 +1788,7 @@ static inline std::string string_VkAccessFlags(VkAccessFlags input_value)
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkAccessFlagBits(static_cast<VkAccessFlagBits>(0)));
+    if (ret.empty()) ret.append("VkAccessFlags(0)");
     return ret;
 }
 
@@ -1918,18 +1840,12 @@ static inline const char* string_VkImageLayout(VkImageLayout input_value)
             return "VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL";
         case VK_IMAGE_LAYOUT_UNDEFINED:
             return "VK_IMAGE_LAYOUT_UNDEFINED";
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR:
             return "VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR";
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR:
             return "VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR";
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_IMAGE_LAYOUT_VIDEO_DECODE_SRC_KHR:
             return "VK_IMAGE_LAYOUT_VIDEO_DECODE_SRC_KHR";
-#endif // VK_ENABLE_BETA_EXTENSIONS
 #ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_IMAGE_LAYOUT_VIDEO_ENCODE_DPB_KHR:
             return "VK_IMAGE_LAYOUT_VIDEO_ENCODE_DPB_KHR";
@@ -1992,7 +1908,7 @@ static inline std::string string_VkImageAspectFlags(VkImageAspectFlags input_val
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkImageAspectFlagBits(static_cast<VkImageAspectFlagBits>(0)));
+    if (ret.empty()) ret.append("VkImageAspectFlags(0)");
     return ret;
 }
 
@@ -2092,14 +2008,10 @@ static inline const char* string_VkObjectType(VkObjectType input_value)
             return "VK_OBJECT_TYPE_UNKNOWN";
         case VK_OBJECT_TYPE_VALIDATION_CACHE_EXT:
             return "VK_OBJECT_TYPE_VALIDATION_CACHE_EXT";
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_OBJECT_TYPE_VIDEO_SESSION_KHR:
             return "VK_OBJECT_TYPE_VIDEO_SESSION_KHR";
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_OBJECT_TYPE_VIDEO_SESSION_PARAMETERS_KHR:
             return "VK_OBJECT_TYPE_VIDEO_SESSION_PARAMETERS_KHR";
-#endif // VK_ENABLE_BETA_EXTENSIONS
         default:
             return "Unhandled VkObjectType";
     }
@@ -2719,14 +2631,10 @@ static inline const char* string_VkFormatFeatureFlagBits(VkFormatFeatureFlagBits
             return "VK_FORMAT_FEATURE_UNIFORM_TEXEL_BUFFER_BIT";
         case VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT:
             return "VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT";
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_FORMAT_FEATURE_VIDEO_DECODE_DPB_BIT_KHR:
             return "VK_FORMAT_FEATURE_VIDEO_DECODE_DPB_BIT_KHR";
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_FORMAT_FEATURE_VIDEO_DECODE_OUTPUT_BIT_KHR:
             return "VK_FORMAT_FEATURE_VIDEO_DECODE_OUTPUT_BIT_KHR";
-#endif // VK_ENABLE_BETA_EXTENSIONS
 #ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_FORMAT_FEATURE_VIDEO_ENCODE_DPB_BIT_KHR:
             return "VK_FORMAT_FEATURE_VIDEO_ENCODE_DPB_BIT_KHR";
@@ -2752,7 +2660,7 @@ static inline std::string string_VkFormatFeatureFlags(VkFormatFeatureFlags input
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkFormatFeatureFlagBits(static_cast<VkFormatFeatureFlagBits>(0)));
+    if (ret.empty()) ret.append("VkFormatFeatureFlags(0)");
     return ret;
 }
 
@@ -2815,7 +2723,7 @@ static inline std::string string_VkImageCreateFlags(VkImageCreateFlags input_val
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkImageCreateFlagBits(static_cast<VkImageCreateFlagBits>(0)));
+    if (ret.empty()) ret.append("VkImageCreateFlags(0)");
     return ret;
 }
 
@@ -2854,7 +2762,7 @@ static inline std::string string_VkSampleCountFlags(VkSampleCountFlags input_val
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkSampleCountFlagBits(static_cast<VkSampleCountFlagBits>(0)));
+    if (ret.empty()) ret.append("VkSampleCountFlags(0)");
     return ret;
 }
 
@@ -2920,18 +2828,12 @@ static inline const char* string_VkImageUsageFlagBits(VkImageUsageFlagBits input
             return "VK_IMAGE_USAGE_TRANSFER_SRC_BIT";
         case VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT:
             return "VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT";
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR:
             return "VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR";
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR:
             return "VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR";
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_IMAGE_USAGE_VIDEO_DECODE_SRC_BIT_KHR:
             return "VK_IMAGE_USAGE_VIDEO_DECODE_SRC_BIT_KHR";
-#endif // VK_ENABLE_BETA_EXTENSIONS
 #ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_IMAGE_USAGE_VIDEO_ENCODE_DPB_BIT_KHR:
             return "VK_IMAGE_USAGE_VIDEO_ENCODE_DPB_BIT_KHR";
@@ -2961,7 +2863,7 @@ static inline std::string string_VkImageUsageFlags(VkImageUsageFlags input_value
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkImageUsageFlagBits(static_cast<VkImageUsageFlagBits>(0)));
+    if (ret.empty()) ret.append("VkImageUsageFlags(0)");
     return ret;
 }
 
@@ -2988,7 +2890,7 @@ static inline std::string string_VkInstanceCreateFlags(VkInstanceCreateFlags inp
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkInstanceCreateFlagBits(static_cast<VkInstanceCreateFlagBits>(0)));
+    if (ret.empty()) ret.append("VkInstanceCreateFlags(0)");
     return ret;
 }
 
@@ -3017,7 +2919,7 @@ static inline std::string string_VkMemoryHeapFlags(VkMemoryHeapFlags input_value
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkMemoryHeapFlagBits(static_cast<VkMemoryHeapFlagBits>(0)));
+    if (ret.empty()) ret.append("VkMemoryHeapFlags(0)");
     return ret;
 }
 
@@ -3060,7 +2962,7 @@ static inline std::string string_VkMemoryPropertyFlags(VkMemoryPropertyFlags inp
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkMemoryPropertyFlagBits(static_cast<VkMemoryPropertyFlagBits>(0)));
+    if (ret.empty()) ret.append("VkMemoryPropertyFlags(0)");
     return ret;
 }
 
@@ -3099,10 +3001,8 @@ static inline const char* string_VkQueueFlagBits(VkQueueFlagBits input_value)
             return "VK_QUEUE_SPARSE_BINDING_BIT";
         case VK_QUEUE_TRANSFER_BIT:
             return "VK_QUEUE_TRANSFER_BIT";
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_QUEUE_VIDEO_DECODE_BIT_KHR:
             return "VK_QUEUE_VIDEO_DECODE_BIT_KHR";
-#endif // VK_ENABLE_BETA_EXTENSIONS
 #ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_QUEUE_VIDEO_ENCODE_BIT_KHR:
             return "VK_QUEUE_VIDEO_ENCODE_BIT_KHR";
@@ -3124,7 +3024,7 @@ static inline std::string string_VkQueueFlags(VkQueueFlags input_value)
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkQueueFlagBits(static_cast<VkQueueFlagBits>(0)));
+    if (ret.empty()) ret.append("VkQueueFlags(0)");
     return ret;
 }
 
@@ -3151,7 +3051,7 @@ static inline std::string string_VkDeviceQueueCreateFlags(VkDeviceQueueCreateFla
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkDeviceQueueCreateFlagBits(static_cast<VkDeviceQueueCreateFlagBits>(0)));
+    if (ret.empty()) ret.append("VkDeviceQueueCreateFlags(0)");
     return ret;
 }
 
@@ -3230,7 +3130,7 @@ static inline std::string string_VkPipelineStageFlags(VkPipelineStageFlags input
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkPipelineStageFlagBits(static_cast<VkPipelineStageFlagBits>(0)));
+    if (ret.empty()) ret.append("VkPipelineStageFlags(0)");
     return ret;
 }
 
@@ -3257,7 +3157,7 @@ static inline std::string string_VkSparseMemoryBindFlags(VkSparseMemoryBindFlags
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkSparseMemoryBindFlagBits(static_cast<VkSparseMemoryBindFlagBits>(0)));
+    if (ret.empty()) ret.append("VkSparseMemoryBindFlags(0)");
     return ret;
 }
 
@@ -3288,7 +3188,7 @@ static inline std::string string_VkSparseImageFormatFlags(VkSparseImageFormatFla
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkSparseImageFormatFlagBits(static_cast<VkSparseImageFormatFlagBits>(0)));
+    if (ret.empty()) ret.append("VkSparseImageFormatFlags(0)");
     return ret;
 }
 
@@ -3315,7 +3215,7 @@ static inline std::string string_VkFenceCreateFlags(VkFenceCreateFlags input_val
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkFenceCreateFlagBits(static_cast<VkFenceCreateFlagBits>(0)));
+    if (ret.empty()) ret.append("VkFenceCreateFlags(0)");
     return ret;
 }
 
@@ -3342,7 +3242,7 @@ static inline std::string string_VkEventCreateFlags(VkEventCreateFlags input_val
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkEventCreateFlagBits(static_cast<VkEventCreateFlagBits>(0)));
+    if (ret.empty()) ret.append("VkEventCreateFlags(0)");
     return ret;
 }
 
@@ -3354,6 +3254,8 @@ static inline const char* string_VkQueryPipelineStatisticFlagBits(VkQueryPipelin
             return "VK_QUERY_PIPELINE_STATISTIC_CLIPPING_INVOCATIONS_BIT";
         case VK_QUERY_PIPELINE_STATISTIC_CLIPPING_PRIMITIVES_BIT:
             return "VK_QUERY_PIPELINE_STATISTIC_CLIPPING_PRIMITIVES_BIT";
+        case VK_QUERY_PIPELINE_STATISTIC_CLUSTER_CULLING_SHADER_INVOCATIONS_BIT_HUAWEI:
+            return "VK_QUERY_PIPELINE_STATISTIC_CLUSTER_CULLING_SHADER_INVOCATIONS_BIT_HUAWEI";
         case VK_QUERY_PIPELINE_STATISTIC_COMPUTE_SHADER_INVOCATIONS_BIT:
             return "VK_QUERY_PIPELINE_STATISTIC_COMPUTE_SHADER_INVOCATIONS_BIT";
         case VK_QUERY_PIPELINE_STATISTIC_FRAGMENT_SHADER_INVOCATIONS_BIT:
@@ -3393,7 +3295,7 @@ static inline std::string string_VkQueryPipelineStatisticFlags(VkQueryPipelineSt
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkQueryPipelineStatisticFlagBits(static_cast<VkQueryPipelineStatisticFlagBits>(0)));
+    if (ret.empty()) ret.append("VkQueryPipelineStatisticFlags(0)");
     return ret;
 }
 
@@ -3427,10 +3329,8 @@ static inline const char* string_VkQueryType(VkQueryType input_value)
             return "VK_QUERY_TYPE_PIPELINE_STATISTICS";
         case VK_QUERY_TYPE_PRIMITIVES_GENERATED_EXT:
             return "VK_QUERY_TYPE_PRIMITIVES_GENERATED_EXT";
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_QUERY_TYPE_RESULT_STATUS_ONLY_KHR:
             return "VK_QUERY_TYPE_RESULT_STATUS_ONLY_KHR";
-#endif // VK_ENABLE_BETA_EXTENSIONS
         case VK_QUERY_TYPE_TIMESTAMP:
             return "VK_QUERY_TYPE_TIMESTAMP";
         case VK_QUERY_TYPE_TRANSFORM_FEEDBACK_STREAM_EXT:
@@ -3456,10 +3356,8 @@ static inline const char* string_VkQueryResultFlagBits(VkQueryResultFlagBits inp
             return "VK_QUERY_RESULT_WAIT_BIT";
         case VK_QUERY_RESULT_WITH_AVAILABILITY_BIT:
             return "VK_QUERY_RESULT_WITH_AVAILABILITY_BIT";
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_QUERY_RESULT_WITH_STATUS_BIT_KHR:
             return "VK_QUERY_RESULT_WITH_STATUS_BIT_KHR";
-#endif // VK_ENABLE_BETA_EXTENSIONS
         default:
             return "Unhandled VkQueryResultFlagBits";
     }
@@ -3477,7 +3375,7 @@ static inline std::string string_VkQueryResultFlags(VkQueryResultFlags input_val
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkQueryResultFlagBits(static_cast<VkQueryResultFlagBits>(0)));
+    if (ret.empty()) ret.append("VkQueryResultFlags(0)");
     return ret;
 }
 
@@ -3514,7 +3412,7 @@ static inline std::string string_VkBufferCreateFlags(VkBufferCreateFlags input_v
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkBufferCreateFlagBits(static_cast<VkBufferCreateFlagBits>(0)));
+    if (ret.empty()) ret.append("VkBufferCreateFlags(0)");
     return ret;
 }
 
@@ -3564,14 +3462,10 @@ static inline const char* string_VkBufferUsageFlagBits(VkBufferUsageFlagBits inp
             return "VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT";
         case VK_BUFFER_USAGE_VERTEX_BUFFER_BIT:
             return "VK_BUFFER_USAGE_VERTEX_BUFFER_BIT";
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_BUFFER_USAGE_VIDEO_DECODE_DST_BIT_KHR:
             return "VK_BUFFER_USAGE_VIDEO_DECODE_DST_BIT_KHR";
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_BUFFER_USAGE_VIDEO_DECODE_SRC_BIT_KHR:
             return "VK_BUFFER_USAGE_VIDEO_DECODE_SRC_BIT_KHR";
-#endif // VK_ENABLE_BETA_EXTENSIONS
 #ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_BUFFER_USAGE_VIDEO_ENCODE_DST_BIT_KHR:
             return "VK_BUFFER_USAGE_VIDEO_ENCODE_DST_BIT_KHR";
@@ -3597,7 +3491,7 @@ static inline std::string string_VkBufferUsageFlags(VkBufferUsageFlags input_val
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkBufferUsageFlagBits(static_cast<VkBufferUsageFlagBits>(0)));
+    if (ret.empty()) ret.append("VkBufferUsageFlags(0)");
     return ret;
 }
 
@@ -3664,7 +3558,7 @@ static inline std::string string_VkImageViewCreateFlags(VkImageViewCreateFlags i
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkImageViewCreateFlagBits(static_cast<VkImageViewCreateFlagBits>(0)));
+    if (ret.empty()) ret.append("VkImageViewCreateFlags(0)");
     return ret;
 }
 
@@ -3714,7 +3608,7 @@ static inline std::string string_VkPipelineCacheCreateFlags(VkPipelineCacheCreat
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkPipelineCacheCreateFlagBits(static_cast<VkPipelineCacheCreateFlagBits>(0)));
+    if (ret.empty()) ret.append("VkPipelineCacheCreateFlags(0)");
     return ret;
 }
 
@@ -3905,7 +3799,7 @@ static inline std::string string_VkColorComponentFlags(VkColorComponentFlags inp
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkColorComponentFlagBits(static_cast<VkColorComponentFlagBits>(0)));
+    if (ret.empty()) ret.append("VkColorComponentFlags(0)");
     return ret;
 }
 
@@ -4015,7 +3909,7 @@ static inline std::string string_VkPipelineCreateFlags(VkPipelineCreateFlags inp
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkPipelineCreateFlagBits(static_cast<VkPipelineCreateFlagBits>(0)));
+    if (ret.empty()) ret.append("VkPipelineCreateFlags(0)");
     return ret;
 }
 
@@ -4044,7 +3938,7 @@ static inline std::string string_VkPipelineShaderStageCreateFlags(VkPipelineShad
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkPipelineShaderStageCreateFlagBits(static_cast<VkPipelineShaderStageCreateFlagBits>(0)));
+    if (ret.empty()) ret.append("VkPipelineShaderStageCreateFlags(0)");
     return ret;
 }
 
@@ -4062,6 +3956,8 @@ static inline const char* string_VkShaderStageFlagBits(VkShaderStageFlagBits inp
             return "VK_SHADER_STAGE_CALLABLE_BIT_KHR";
         case VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR:
             return "VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR";
+        case VK_SHADER_STAGE_CLUSTER_CULLING_BIT_HUAWEI:
+            return "VK_SHADER_STAGE_CLUSTER_CULLING_BIT_HUAWEI";
         case VK_SHADER_STAGE_COMPUTE_BIT:
             return "VK_SHADER_STAGE_COMPUTE_BIT";
         case VK_SHADER_STAGE_FRAGMENT_BIT:
@@ -4105,7 +4001,7 @@ static inline std::string string_VkShaderStageFlags(VkShaderStageFlags input_val
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkShaderStageFlagBits(static_cast<VkShaderStageFlagBits>(0)));
+    if (ret.empty()) ret.append("VkShaderStageFlags(0)");
     return ret;
 }
 
@@ -4138,7 +4034,7 @@ static inline std::string string_VkCullModeFlags(VkCullModeFlags input_value)
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkCullModeFlagBits(static_cast<VkCullModeFlagBits>(0)));
+    if (ret.empty()) ret.append("VkCullModeFlags(0)");
     return ret;
 }
 
@@ -4386,7 +4282,7 @@ static inline std::string string_VkPipelineDepthStencilStateCreateFlags(VkPipeli
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkPipelineDepthStencilStateCreateFlagBits(static_cast<VkPipelineDepthStencilStateCreateFlagBits>(0)));
+    if (ret.empty()) ret.append("VkPipelineDepthStencilStateCreateFlags(0)");
     return ret;
 }
 
@@ -4438,7 +4334,7 @@ static inline std::string string_VkPipelineColorBlendStateCreateFlags(VkPipeline
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkPipelineColorBlendStateCreateFlagBits(static_cast<VkPipelineColorBlendStateCreateFlagBits>(0)));
+    if (ret.empty()) ret.append("VkPipelineColorBlendStateCreateFlags(0)");
     return ret;
 }
 
@@ -4506,7 +4402,7 @@ static inline std::string string_VkPipelineLayoutCreateFlags(VkPipelineLayoutCre
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkPipelineLayoutCreateFlagBits(static_cast<VkPipelineLayoutCreateFlagBits>(0)));
+    if (ret.empty()) ret.append("VkPipelineLayoutCreateFlags(0)");
     return ret;
 }
 
@@ -4600,7 +4496,7 @@ static inline std::string string_VkSamplerCreateFlags(VkSamplerCreateFlags input
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkSamplerCreateFlagBits(static_cast<VkSamplerCreateFlagBits>(0)));
+    if (ret.empty()) ret.append("VkSamplerCreateFlags(0)");
     return ret;
 }
 
@@ -4644,7 +4540,7 @@ static inline std::string string_VkDescriptorPoolCreateFlags(VkDescriptorPoolCre
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkDescriptorPoolCreateFlagBits(static_cast<VkDescriptorPoolCreateFlagBits>(0)));
+    if (ret.empty()) ret.append("VkDescriptorPoolCreateFlags(0)");
     return ret;
 }
 
@@ -4722,7 +4618,7 @@ static inline std::string string_VkDescriptorSetLayoutCreateFlags(VkDescriptorSe
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkDescriptorSetLayoutCreateFlagBits(static_cast<VkDescriptorSetLayoutCreateFlagBits>(0)));
+    if (ret.empty()) ret.append("VkDescriptorSetLayoutCreateFlags(0)");
     return ret;
 }
 
@@ -4749,7 +4645,7 @@ static inline std::string string_VkAttachmentDescriptionFlags(VkAttachmentDescri
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkAttachmentDescriptionFlagBits(static_cast<VkAttachmentDescriptionFlagBits>(0)));
+    if (ret.empty()) ret.append("VkAttachmentDescriptionFlags(0)");
     return ret;
 }
 
@@ -4814,7 +4710,7 @@ static inline std::string string_VkDependencyFlags(VkDependencyFlags input_value
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkDependencyFlagBits(static_cast<VkDependencyFlagBits>(0)));
+    if (ret.empty()) ret.append("VkDependencyFlags(0)");
     return ret;
 }
 
@@ -4841,7 +4737,7 @@ static inline std::string string_VkFramebufferCreateFlags(VkFramebufferCreateFla
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkFramebufferCreateFlagBits(static_cast<VkFramebufferCreateFlagBits>(0)));
+    if (ret.empty()) ret.append("VkFramebufferCreateFlags(0)");
     return ret;
 }
 
@@ -4885,7 +4781,7 @@ static inline std::string string_VkRenderPassCreateFlags(VkRenderPassCreateFlags
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkRenderPassCreateFlagBits(static_cast<VkRenderPassCreateFlagBits>(0)));
+    if (ret.empty()) ret.append("VkRenderPassCreateFlags(0)");
     return ret;
 }
 
@@ -4926,7 +4822,7 @@ static inline std::string string_VkSubpassDescriptionFlags(VkSubpassDescriptionF
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkSubpassDescriptionFlagBits(static_cast<VkSubpassDescriptionFlagBits>(0)));
+    if (ret.empty()) ret.append("VkSubpassDescriptionFlags(0)");
     return ret;
 }
 
@@ -4957,7 +4853,7 @@ static inline std::string string_VkCommandPoolCreateFlags(VkCommandPoolCreateFla
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkCommandPoolCreateFlagBits(static_cast<VkCommandPoolCreateFlagBits>(0)));
+    if (ret.empty()) ret.append("VkCommandPoolCreateFlags(0)");
     return ret;
 }
 
@@ -4984,7 +4880,7 @@ static inline std::string string_VkCommandPoolResetFlags(VkCommandPoolResetFlags
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkCommandPoolResetFlagBits(static_cast<VkCommandPoolResetFlagBits>(0)));
+    if (ret.empty()) ret.append("VkCommandPoolResetFlags(0)");
     return ret;
 }
 
@@ -5028,7 +4924,7 @@ static inline std::string string_VkCommandBufferUsageFlags(VkCommandBufferUsageF
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkCommandBufferUsageFlagBits(static_cast<VkCommandBufferUsageFlagBits>(0)));
+    if (ret.empty()) ret.append("VkCommandBufferUsageFlags(0)");
     return ret;
 }
 
@@ -5055,7 +4951,7 @@ static inline std::string string_VkQueryControlFlags(VkQueryControlFlags input_v
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkQueryControlFlagBits(static_cast<VkQueryControlFlagBits>(0)));
+    if (ret.empty()) ret.append("VkQueryControlFlags(0)");
     return ret;
 }
 
@@ -5082,7 +4978,7 @@ static inline std::string string_VkCommandBufferResetFlags(VkCommandBufferResetF
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkCommandBufferResetFlagBits(static_cast<VkCommandBufferResetFlagBits>(0)));
+    if (ret.empty()) ret.append("VkCommandBufferResetFlags(0)");
     return ret;
 }
 
@@ -5130,7 +5026,7 @@ static inline std::string string_VkStencilFaceFlags(VkStencilFaceFlags input_val
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkStencilFaceFlagBits(static_cast<VkStencilFaceFlagBits>(0)));
+    if (ret.empty()) ret.append("VkStencilFaceFlags(0)");
     return ret;
 }
 
@@ -5186,7 +5082,7 @@ static inline std::string string_VkSubgroupFeatureFlags(VkSubgroupFeatureFlags i
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkSubgroupFeatureFlagBits(static_cast<VkSubgroupFeatureFlagBits>(0)));
+    if (ret.empty()) ret.append("VkSubgroupFeatureFlags(0)");
     return ret;
 }
 
@@ -5219,7 +5115,7 @@ static inline std::string string_VkPeerMemoryFeatureFlags(VkPeerMemoryFeatureFla
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkPeerMemoryFeatureFlagBits(static_cast<VkPeerMemoryFeatureFlagBits>(0)));
+    if (ret.empty()) ret.append("VkPeerMemoryFeatureFlags(0)");
     return ret;
 }
 
@@ -5250,7 +5146,7 @@ static inline std::string string_VkMemoryAllocateFlags(VkMemoryAllocateFlags inp
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkMemoryAllocateFlagBits(static_cast<VkMemoryAllocateFlagBits>(0)));
+    if (ret.empty()) ret.append("VkMemoryAllocateFlags(0)");
     return ret;
 }
 
@@ -5385,7 +5281,7 @@ static inline std::string string_VkExternalMemoryHandleTypeFlags(VkExternalMemor
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkExternalMemoryHandleTypeFlagBits(static_cast<VkExternalMemoryHandleTypeFlagBits>(0)));
+    if (ret.empty()) ret.append("VkExternalMemoryHandleTypeFlags(0)");
     return ret;
 }
 
@@ -5416,7 +5312,7 @@ static inline std::string string_VkExternalMemoryFeatureFlags(VkExternalMemoryFe
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkExternalMemoryFeatureFlagBits(static_cast<VkExternalMemoryFeatureFlagBits>(0)));
+    if (ret.empty()) ret.append("VkExternalMemoryFeatureFlags(0)");
     return ret;
 }
 
@@ -5449,7 +5345,7 @@ static inline std::string string_VkExternalFenceHandleTypeFlags(VkExternalFenceH
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkExternalFenceHandleTypeFlagBits(static_cast<VkExternalFenceHandleTypeFlagBits>(0)));
+    if (ret.empty()) ret.append("VkExternalFenceHandleTypeFlags(0)");
     return ret;
 }
 
@@ -5478,7 +5374,7 @@ static inline std::string string_VkExternalFenceFeatureFlags(VkExternalFenceFeat
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkExternalFenceFeatureFlagBits(static_cast<VkExternalFenceFeatureFlagBits>(0)));
+    if (ret.empty()) ret.append("VkExternalFenceFeatureFlags(0)");
     return ret;
 }
 
@@ -5505,7 +5401,7 @@ static inline std::string string_VkFenceImportFlags(VkFenceImportFlags input_val
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkFenceImportFlagBits(static_cast<VkFenceImportFlagBits>(0)));
+    if (ret.empty()) ret.append("VkFenceImportFlags(0)");
     return ret;
 }
 
@@ -5532,7 +5428,7 @@ static inline std::string string_VkSemaphoreImportFlags(VkSemaphoreImportFlags i
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkSemaphoreImportFlagBits(static_cast<VkSemaphoreImportFlagBits>(0)));
+    if (ret.empty()) ret.append("VkSemaphoreImportFlags(0)");
     return ret;
 }
 
@@ -5569,7 +5465,7 @@ static inline std::string string_VkExternalSemaphoreHandleTypeFlags(VkExternalSe
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkExternalSemaphoreHandleTypeFlagBits(static_cast<VkExternalSemaphoreHandleTypeFlagBits>(0)));
+    if (ret.empty()) ret.append("VkExternalSemaphoreHandleTypeFlags(0)");
     return ret;
 }
 
@@ -5598,7 +5494,7 @@ static inline std::string string_VkExternalSemaphoreFeatureFlags(VkExternalSemap
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkExternalSemaphoreFeatureFlagBits(static_cast<VkExternalSemaphoreFeatureFlagBits>(0)));
+    if (ret.empty()) ret.append("VkExternalSemaphoreFeatureFlags(0)");
     return ret;
 }
 
@@ -5620,6 +5516,8 @@ static inline const char* string_VkDriverId(VkDriverId input_value)
             return "VK_DRIVER_ID_GGP_PROPRIETARY";
         case VK_DRIVER_ID_GOOGLE_SWIFTSHADER:
             return "VK_DRIVER_ID_GOOGLE_SWIFTSHADER";
+        case VK_DRIVER_ID_IMAGINATION_OPEN_SOURCE_MESA:
+            return "VK_DRIVER_ID_IMAGINATION_OPEN_SOURCE_MESA";
         case VK_DRIVER_ID_IMAGINATION_PROPRIETARY:
             return "VK_DRIVER_ID_IMAGINATION_PROPRIETARY";
         case VK_DRIVER_ID_INTEL_OPEN_SOURCE_MESA:
@@ -5705,7 +5603,7 @@ static inline std::string string_VkResolveModeFlags(VkResolveModeFlags input_val
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkResolveModeFlagBits(static_cast<VkResolveModeFlagBits>(0)));
+    if (ret.empty()) ret.append("VkResolveModeFlags(0)");
     return ret;
 }
 
@@ -5738,7 +5636,7 @@ static inline std::string string_VkDescriptorBindingFlags(VkDescriptorBindingFla
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkDescriptorBindingFlagBits(static_cast<VkDescriptorBindingFlagBits>(0)));
+    if (ret.empty()) ret.append("VkDescriptorBindingFlags(0)");
     return ret;
 }
 
@@ -5793,7 +5691,7 @@ static inline std::string string_VkSemaphoreWaitFlags(VkSemaphoreWaitFlags input
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkSemaphoreWaitFlagBits(static_cast<VkSemaphoreWaitFlagBits>(0)));
+    if (ret.empty()) ret.append("VkSemaphoreWaitFlags(0)");
     return ret;
 }
 
@@ -5824,7 +5722,7 @@ static inline std::string string_VkPipelineCreationFeedbackFlags(VkPipelineCreat
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkPipelineCreationFeedbackFlagBits(static_cast<VkPipelineCreationFeedbackFlagBits>(0)));
+    if (ret.empty()) ret.append("VkPipelineCreationFeedbackFlags(0)");
     return ret;
 }
 
@@ -5863,7 +5761,7 @@ static inline std::string string_VkToolPurposeFlags(VkToolPurposeFlags input_val
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkToolPurposeFlagBits(static_cast<VkToolPurposeFlagBits>(0)));
+    if (ret.empty()) ret.append("VkToolPurposeFlags(0)");
     return ret;
 }
 
@@ -5887,6 +5785,8 @@ static inline const char* string_VkPipelineStageFlagBits2(uint64_t input_value)
             return "VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT";
         case VK_PIPELINE_STAGE_2_CLEAR_BIT:
             return "VK_PIPELINE_STAGE_2_CLEAR_BIT";
+        case VK_PIPELINE_STAGE_2_CLUSTER_CULLING_SHADER_BIT_HUAWEI:
+            return "VK_PIPELINE_STAGE_2_CLUSTER_CULLING_SHADER_BIT_HUAWEI";
         case VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT:
             return "VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT";
         case VK_PIPELINE_STAGE_2_COMMAND_PREPROCESS_BIT_NV:
@@ -5949,10 +5849,8 @@ static inline const char* string_VkPipelineStageFlagBits2(uint64_t input_value)
             return "VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT";
         case VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT:
             return "VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT";
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_PIPELINE_STAGE_2_VIDEO_DECODE_BIT_KHR:
             return "VK_PIPELINE_STAGE_2_VIDEO_DECODE_BIT_KHR";
-#endif // VK_ENABLE_BETA_EXTENSIONS
 #ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_PIPELINE_STAGE_2_VIDEO_ENCODE_BIT_KHR:
             return "VK_PIPELINE_STAGE_2_VIDEO_ENCODE_BIT_KHR";
@@ -5974,7 +5872,7 @@ static inline std::string string_VkPipelineStageFlags2(VkPipelineStageFlags2 inp
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkPipelineStageFlagBits2(static_cast<uint64_t>(0)));
+    if (ret.empty()) ret.append("VkPipelineStageFlags2(0)");
     return ret;
 }
 
@@ -6060,14 +5958,10 @@ static inline const char* string_VkAccessFlagBits2(uint64_t input_value)
             return "VK_ACCESS_2_UNIFORM_READ_BIT";
         case VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT:
             return "VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT";
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_ACCESS_2_VIDEO_DECODE_READ_BIT_KHR:
             return "VK_ACCESS_2_VIDEO_DECODE_READ_BIT_KHR";
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_ACCESS_2_VIDEO_DECODE_WRITE_BIT_KHR:
             return "VK_ACCESS_2_VIDEO_DECODE_WRITE_BIT_KHR";
-#endif // VK_ENABLE_BETA_EXTENSIONS
 #ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_ACCESS_2_VIDEO_ENCODE_READ_BIT_KHR:
             return "VK_ACCESS_2_VIDEO_ENCODE_READ_BIT_KHR";
@@ -6093,7 +5987,7 @@ static inline std::string string_VkAccessFlags2(VkAccessFlags2 input_value)
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkAccessFlagBits2(static_cast<uint64_t>(0)));
+    if (ret.empty()) ret.append("VkAccessFlags2(0)");
     return ret;
 }
 
@@ -6120,7 +6014,7 @@ static inline std::string string_VkSubmitFlags(VkSubmitFlags input_value)
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkSubmitFlagBits(static_cast<VkSubmitFlagBits>(0)));
+    if (ret.empty()) ret.append("VkSubmitFlags(0)");
     return ret;
 }
 
@@ -6153,7 +6047,7 @@ static inline std::string string_VkRenderingFlags(VkRenderingFlags input_value)
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkRenderingFlagBits(static_cast<VkRenderingFlagBits>(0)));
+    if (ret.empty()) ret.append("VkRenderingFlags(0)");
     return ret;
 }
 
@@ -6233,14 +6127,10 @@ static inline const char* string_VkFormatFeatureFlagBits2(uint64_t input_value)
             return "VK_FORMAT_FEATURE_2_UNIFORM_TEXEL_BUFFER_BIT";
         case VK_FORMAT_FEATURE_2_VERTEX_BUFFER_BIT:
             return "VK_FORMAT_FEATURE_2_VERTEX_BUFFER_BIT";
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_FORMAT_FEATURE_2_VIDEO_DECODE_DPB_BIT_KHR:
             return "VK_FORMAT_FEATURE_2_VIDEO_DECODE_DPB_BIT_KHR";
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_FORMAT_FEATURE_2_VIDEO_DECODE_OUTPUT_BIT_KHR:
             return "VK_FORMAT_FEATURE_2_VIDEO_DECODE_OUTPUT_BIT_KHR";
-#endif // VK_ENABLE_BETA_EXTENSIONS
 #ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_FORMAT_FEATURE_2_VIDEO_ENCODE_DPB_BIT_KHR:
             return "VK_FORMAT_FEATURE_2_VIDEO_ENCODE_DPB_BIT_KHR";
@@ -6270,7 +6160,7 @@ static inline std::string string_VkFormatFeatureFlags2(VkFormatFeatureFlags2 inp
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkFormatFeatureFlagBits2(static_cast<uint64_t>(0)));
+    if (ret.empty()) ret.append("VkFormatFeatureFlags2(0)");
     return ret;
 }
 
@@ -6313,7 +6203,7 @@ static inline std::string string_VkSurfaceTransformFlagsKHR(VkSurfaceTransformFl
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkSurfaceTransformFlagBitsKHR(static_cast<VkSurfaceTransformFlagBitsKHR>(0)));
+    if (ret.empty()) ret.append("VkSurfaceTransformFlagsKHR(0)");
     return ret;
 }
 
@@ -6408,7 +6298,7 @@ static inline std::string string_VkCompositeAlphaFlagsKHR(VkCompositeAlphaFlagsK
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkCompositeAlphaFlagBitsKHR(static_cast<VkCompositeAlphaFlagBitsKHR>(0)));
+    if (ret.empty()) ret.append("VkCompositeAlphaFlagsKHR(0)");
     return ret;
 }
 
@@ -6441,7 +6331,7 @@ static inline std::string string_VkSwapchainCreateFlagsKHR(VkSwapchainCreateFlag
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkSwapchainCreateFlagBitsKHR(static_cast<VkSwapchainCreateFlagBitsKHR>(0)));
+    if (ret.empty()) ret.append("VkSwapchainCreateFlagsKHR(0)");
     return ret;
 }
 
@@ -6474,7 +6364,7 @@ static inline std::string string_VkDeviceGroupPresentModeFlagsKHR(VkDeviceGroupP
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkDeviceGroupPresentModeFlagBitsKHR(static_cast<VkDeviceGroupPresentModeFlagBitsKHR>(0)));
+    if (ret.empty()) ret.append("VkDeviceGroupPresentModeFlagsKHR(0)");
     return ret;
 }
 
@@ -6507,25 +6397,18 @@ static inline std::string string_VkDisplayPlaneAlphaFlagsKHR(VkDisplayPlaneAlpha
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkDisplayPlaneAlphaFlagBitsKHR(static_cast<VkDisplayPlaneAlphaFlagBitsKHR>(0)));
+    if (ret.empty()) ret.append("VkDisplayPlaneAlphaFlagsKHR(0)");
     return ret;
 }
-
-
-#ifdef VK_ENABLE_BETA_EXTENSIONS
 
 static inline const char* string_VkVideoCodecOperationFlagBitsKHR(VkVideoCodecOperationFlagBitsKHR input_value)
 {
     switch (input_value)
     {
-#ifdef VK_ENABLE_BETA_EXTENSIONS
-        case VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_EXT:
-            return "VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_EXT";
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
-        case VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_EXT:
-            return "VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_EXT";
-#endif // VK_ENABLE_BETA_EXTENSIONS
+        case VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR:
+            return "VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR";
+        case VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR:
+            return "VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR";
 #ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_EXT:
             return "VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_EXT";
@@ -6553,13 +6436,9 @@ static inline std::string string_VkVideoCodecOperationFlagsKHR(VkVideoCodecOpera
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkVideoCodecOperationFlagBitsKHR(static_cast<VkVideoCodecOperationFlagBitsKHR>(0)));
+    if (ret.empty()) ret.append("VkVideoCodecOperationFlagsKHR(0)");
     return ret;
 }
-#endif // VK_ENABLE_BETA_EXTENSIONS
-
-
-#ifdef VK_ENABLE_BETA_EXTENSIONS
 
 static inline const char* string_VkVideoChromaSubsamplingFlagBitsKHR(VkVideoChromaSubsamplingFlagBitsKHR input_value)
 {
@@ -6592,13 +6471,9 @@ static inline std::string string_VkVideoChromaSubsamplingFlagsKHR(VkVideoChromaS
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkVideoChromaSubsamplingFlagBitsKHR(static_cast<VkVideoChromaSubsamplingFlagBitsKHR>(0)));
+    if (ret.empty()) ret.append("VkVideoChromaSubsamplingFlagsKHR(0)");
     return ret;
 }
-#endif // VK_ENABLE_BETA_EXTENSIONS
-
-
-#ifdef VK_ENABLE_BETA_EXTENSIONS
 
 static inline const char* string_VkVideoComponentBitDepthFlagBitsKHR(VkVideoComponentBitDepthFlagBitsKHR input_value)
 {
@@ -6629,13 +6504,9 @@ static inline std::string string_VkVideoComponentBitDepthFlagsKHR(VkVideoCompone
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkVideoComponentBitDepthFlagBitsKHR(static_cast<VkVideoComponentBitDepthFlagBitsKHR>(0)));
+    if (ret.empty()) ret.append("VkVideoComponentBitDepthFlagsKHR(0)");
     return ret;
 }
-#endif // VK_ENABLE_BETA_EXTENSIONS
-
-
-#ifdef VK_ENABLE_BETA_EXTENSIONS
 
 static inline const char* string_VkVideoCapabilityFlagBitsKHR(VkVideoCapabilityFlagBitsKHR input_value)
 {
@@ -6662,13 +6533,9 @@ static inline std::string string_VkVideoCapabilityFlagsKHR(VkVideoCapabilityFlag
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkVideoCapabilityFlagBitsKHR(static_cast<VkVideoCapabilityFlagBitsKHR>(0)));
+    if (ret.empty()) ret.append("VkVideoCapabilityFlagsKHR(0)");
     return ret;
 }
-#endif // VK_ENABLE_BETA_EXTENSIONS
-
-
-#ifdef VK_ENABLE_BETA_EXTENSIONS
 
 static inline const char* string_VkVideoSessionCreateFlagBitsKHR(VkVideoSessionCreateFlagBitsKHR input_value)
 {
@@ -6693,13 +6560,9 @@ static inline std::string string_VkVideoSessionCreateFlagsKHR(VkVideoSessionCrea
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkVideoSessionCreateFlagBitsKHR(static_cast<VkVideoSessionCreateFlagBitsKHR>(0)));
+    if (ret.empty()) ret.append("VkVideoSessionCreateFlagsKHR(0)");
     return ret;
 }
-#endif // VK_ENABLE_BETA_EXTENSIONS
-
-
-#ifdef VK_ENABLE_BETA_EXTENSIONS
 
 static inline const char* string_VkVideoCodingControlFlagBitsKHR(VkVideoCodingControlFlagBitsKHR input_value)
 {
@@ -6732,13 +6595,9 @@ static inline std::string string_VkVideoCodingControlFlagsKHR(VkVideoCodingContr
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkVideoCodingControlFlagBitsKHR(static_cast<VkVideoCodingControlFlagBitsKHR>(0)));
+    if (ret.empty()) ret.append("VkVideoCodingControlFlagsKHR(0)");
     return ret;
 }
-#endif // VK_ENABLE_BETA_EXTENSIONS
-
-
-#ifdef VK_ENABLE_BETA_EXTENSIONS
 
 static inline const char* string_VkQueryResultStatusKHR(VkQueryResultStatusKHR input_value)
 {
@@ -6754,10 +6613,6 @@ static inline const char* string_VkQueryResultStatusKHR(VkQueryResultStatusKHR i
             return "Unhandled VkQueryResultStatusKHR";
     }
 }
-#endif // VK_ENABLE_BETA_EXTENSIONS
-
-
-#ifdef VK_ENABLE_BETA_EXTENSIONS
 
 static inline const char* string_VkVideoDecodeCapabilityFlagBitsKHR(VkVideoDecodeCapabilityFlagBitsKHR input_value)
 {
@@ -6784,13 +6639,9 @@ static inline std::string string_VkVideoDecodeCapabilityFlagsKHR(VkVideoDecodeCa
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkVideoDecodeCapabilityFlagBitsKHR(static_cast<VkVideoDecodeCapabilityFlagBitsKHR>(0)));
+    if (ret.empty()) ret.append("VkVideoDecodeCapabilityFlagsKHR(0)");
     return ret;
 }
-#endif // VK_ENABLE_BETA_EXTENSIONS
-
-
-#ifdef VK_ENABLE_BETA_EXTENSIONS
 
 static inline const char* string_VkVideoDecodeUsageFlagBitsKHR(VkVideoDecodeUsageFlagBitsKHR input_value)
 {
@@ -6821,10 +6672,40 @@ static inline std::string string_VkVideoDecodeUsageFlagsKHR(VkVideoDecodeUsageFl
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkVideoDecodeUsageFlagBitsKHR(static_cast<VkVideoDecodeUsageFlagBitsKHR>(0)));
+    if (ret.empty()) ret.append("VkVideoDecodeUsageFlagsKHR(0)");
     return ret;
 }
-#endif // VK_ENABLE_BETA_EXTENSIONS
+
+static inline const char* string_VkVideoDecodeH264PictureLayoutFlagBitsKHR(VkVideoDecodeH264PictureLayoutFlagBitsKHR input_value)
+{
+    switch (input_value)
+    {
+        case VK_VIDEO_DECODE_H264_PICTURE_LAYOUT_INTERLACED_INTERLEAVED_LINES_BIT_KHR:
+            return "VK_VIDEO_DECODE_H264_PICTURE_LAYOUT_INTERLACED_INTERLEAVED_LINES_BIT_KHR";
+        case VK_VIDEO_DECODE_H264_PICTURE_LAYOUT_INTERLACED_SEPARATE_PLANES_BIT_KHR:
+            return "VK_VIDEO_DECODE_H264_PICTURE_LAYOUT_INTERLACED_SEPARATE_PLANES_BIT_KHR";
+        case VK_VIDEO_DECODE_H264_PICTURE_LAYOUT_PROGRESSIVE_KHR:
+            return "VK_VIDEO_DECODE_H264_PICTURE_LAYOUT_PROGRESSIVE_KHR";
+        default:
+            return "Unhandled VkVideoDecodeH264PictureLayoutFlagBitsKHR";
+    }
+}
+
+static inline std::string string_VkVideoDecodeH264PictureLayoutFlagsKHR(VkVideoDecodeH264PictureLayoutFlagsKHR input_value)
+{
+    std::string ret;
+    int index = 0;
+    while(input_value) {
+        if (input_value & 1) {
+            if( !ret.empty()) ret.append("|");
+            ret.append(string_VkVideoDecodeH264PictureLayoutFlagBitsKHR(static_cast<VkVideoDecodeH264PictureLayoutFlagBitsKHR>(1U << index)));
+        }
+        ++index;
+        input_value >>= 1;
+    }
+    if (ret.empty()) ret.append("VkVideoDecodeH264PictureLayoutFlagsKHR(0)");
+    return ret;
+}
 
 static inline const char* string_VkRenderingFlagBitsKHR(VkRenderingFlagBitsKHR input_value)
 {
@@ -6855,7 +6736,7 @@ static inline std::string string_VkRenderingFlagsKHR(VkRenderingFlagsKHR input_v
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkRenderingFlagBitsKHR(static_cast<VkRenderingFlagBitsKHR>(0)));
+    if (ret.empty()) ret.append("VkRenderingFlagsKHR(0)");
     return ret;
 }
 
@@ -6888,7 +6769,7 @@ static inline std::string string_VkPeerMemoryFeatureFlagsKHR(VkPeerMemoryFeature
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkPeerMemoryFeatureFlagBitsKHR(static_cast<VkPeerMemoryFeatureFlagBitsKHR>(0)));
+    if (ret.empty()) ret.append("VkPeerMemoryFeatureFlagsKHR(0)");
     return ret;
 }
 
@@ -6919,7 +6800,7 @@ static inline std::string string_VkMemoryAllocateFlagsKHR(VkMemoryAllocateFlagsK
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkMemoryAllocateFlagBitsKHR(static_cast<VkMemoryAllocateFlagBitsKHR>(0)));
+    if (ret.empty()) ret.append("VkMemoryAllocateFlagsKHR(0)");
     return ret;
 }
 
@@ -6970,7 +6851,7 @@ static inline std::string string_VkExternalMemoryHandleTypeFlagsKHR(VkExternalMe
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkExternalMemoryHandleTypeFlagBitsKHR(static_cast<VkExternalMemoryHandleTypeFlagBitsKHR>(0)));
+    if (ret.empty()) ret.append("VkExternalMemoryHandleTypeFlagsKHR(0)");
     return ret;
 }
 
@@ -7001,7 +6882,7 @@ static inline std::string string_VkExternalMemoryFeatureFlagsKHR(VkExternalMemor
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkExternalMemoryFeatureFlagBitsKHR(static_cast<VkExternalMemoryFeatureFlagBitsKHR>(0)));
+    if (ret.empty()) ret.append("VkExternalMemoryFeatureFlagsKHR(0)");
     return ret;
 }
 
@@ -7038,7 +6919,7 @@ static inline std::string string_VkExternalSemaphoreHandleTypeFlagsKHR(VkExterna
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkExternalSemaphoreHandleTypeFlagBitsKHR(static_cast<VkExternalSemaphoreHandleTypeFlagBitsKHR>(0)));
+    if (ret.empty()) ret.append("VkExternalSemaphoreHandleTypeFlagsKHR(0)");
     return ret;
 }
 
@@ -7067,7 +6948,7 @@ static inline std::string string_VkExternalSemaphoreFeatureFlagsKHR(VkExternalSe
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkExternalSemaphoreFeatureFlagBitsKHR(static_cast<VkExternalSemaphoreFeatureFlagBitsKHR>(0)));
+    if (ret.empty()) ret.append("VkExternalSemaphoreFeatureFlagsKHR(0)");
     return ret;
 }
 
@@ -7094,7 +6975,7 @@ static inline std::string string_VkSemaphoreImportFlagsKHR(VkSemaphoreImportFlag
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkSemaphoreImportFlagBitsKHR(static_cast<VkSemaphoreImportFlagBitsKHR>(0)));
+    if (ret.empty()) ret.append("VkSemaphoreImportFlagsKHR(0)");
     return ret;
 }
 
@@ -7140,7 +7021,7 @@ static inline std::string string_VkExternalFenceHandleTypeFlagsKHR(VkExternalFen
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkExternalFenceHandleTypeFlagBitsKHR(static_cast<VkExternalFenceHandleTypeFlagBitsKHR>(0)));
+    if (ret.empty()) ret.append("VkExternalFenceHandleTypeFlagsKHR(0)");
     return ret;
 }
 
@@ -7169,7 +7050,7 @@ static inline std::string string_VkExternalFenceFeatureFlagsKHR(VkExternalFenceF
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkExternalFenceFeatureFlagBitsKHR(static_cast<VkExternalFenceFeatureFlagBitsKHR>(0)));
+    if (ret.empty()) ret.append("VkExternalFenceFeatureFlagsKHR(0)");
     return ret;
 }
 
@@ -7196,7 +7077,7 @@ static inline std::string string_VkFenceImportFlagsKHR(VkFenceImportFlagsKHR inp
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkFenceImportFlagBitsKHR(static_cast<VkFenceImportFlagBitsKHR>(0)));
+    if (ret.empty()) ret.append("VkFenceImportFlagsKHR(0)");
     return ret;
 }
 
@@ -7292,7 +7173,7 @@ static inline std::string string_VkPerformanceCounterDescriptionFlagsKHR(VkPerfo
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkPerformanceCounterDescriptionFlagBitsKHR(static_cast<VkPerformanceCounterDescriptionFlagBitsKHR>(0)));
+    if (ret.empty()) ret.append("VkPerformanceCounterDescriptionFlagsKHR(0)");
     return ret;
 }
 
@@ -7402,6 +7283,8 @@ static inline const char* string_VkDriverIdKHR(VkDriverIdKHR input_value)
             return "VK_DRIVER_ID_GGP_PROPRIETARY";
         case VK_DRIVER_ID_GOOGLE_SWIFTSHADER:
             return "VK_DRIVER_ID_GOOGLE_SWIFTSHADER";
+        case VK_DRIVER_ID_IMAGINATION_OPEN_SOURCE_MESA:
+            return "VK_DRIVER_ID_IMAGINATION_OPEN_SOURCE_MESA";
         case VK_DRIVER_ID_IMAGINATION_PROPRIETARY:
             return "VK_DRIVER_ID_IMAGINATION_PROPRIETARY";
         case VK_DRIVER_ID_INTEL_OPEN_SOURCE_MESA:
@@ -7487,7 +7370,7 @@ static inline std::string string_VkResolveModeFlagsKHR(VkResolveModeFlagsKHR inp
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkResolveModeFlagBitsKHR(static_cast<VkResolveModeFlagBitsKHR>(0)));
+    if (ret.empty()) ret.append("VkResolveModeFlagsKHR(0)");
     return ret;
 }
 
@@ -7527,7 +7410,7 @@ static inline std::string string_VkSemaphoreWaitFlagsKHR(VkSemaphoreWaitFlagsKHR
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkSemaphoreWaitFlagBitsKHR(static_cast<VkSemaphoreWaitFlagBitsKHR>(0)));
+    if (ret.empty()) ret.append("VkSemaphoreWaitFlagsKHR(0)");
     return ret;
 }
 
@@ -7593,7 +7476,7 @@ static inline std::string string_VkVideoEncodeCapabilityFlagsKHR(VkVideoEncodeCa
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkVideoEncodeCapabilityFlagBitsKHR(static_cast<VkVideoEncodeCapabilityFlagBitsKHR>(0)));
+    if (ret.empty()) ret.append("VkVideoEncodeCapabilityFlagsKHR(0)");
     return ret;
 }
 #endif // VK_ENABLE_BETA_EXTENSIONS
@@ -7628,7 +7511,7 @@ static inline std::string string_VkVideoEncodeRateControlModeFlagsKHR(VkVideoEnc
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkVideoEncodeRateControlModeFlagBitsKHR(static_cast<VkVideoEncodeRateControlModeFlagBitsKHR>(0)));
+    if (ret.empty()) ret.append("VkVideoEncodeRateControlModeFlagsKHR(0)");
     return ret;
 }
 #endif // VK_ENABLE_BETA_EXTENSIONS
@@ -7667,7 +7550,7 @@ static inline std::string string_VkVideoEncodeUsageFlagsKHR(VkVideoEncodeUsageFl
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkVideoEncodeUsageFlagBitsKHR(static_cast<VkVideoEncodeUsageFlagBitsKHR>(0)));
+    if (ret.empty()) ret.append("VkVideoEncodeUsageFlagsKHR(0)");
     return ret;
 }
 #endif // VK_ENABLE_BETA_EXTENSIONS
@@ -7704,7 +7587,7 @@ static inline std::string string_VkVideoEncodeContentFlagsKHR(VkVideoEncodeConte
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkVideoEncodeContentFlagBitsKHR(static_cast<VkVideoEncodeContentFlagBitsKHR>(0)));
+    if (ret.empty()) ret.append("VkVideoEncodeContentFlagsKHR(0)");
     return ret;
 }
 #endif // VK_ENABLE_BETA_EXTENSIONS
@@ -7752,6 +7635,8 @@ static inline const char* string_VkPipelineStageFlagBits2KHR(uint64_t input_valu
             return "VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT";
         case VK_PIPELINE_STAGE_2_CLEAR_BIT:
             return "VK_PIPELINE_STAGE_2_CLEAR_BIT";
+        case VK_PIPELINE_STAGE_2_CLUSTER_CULLING_SHADER_BIT_HUAWEI:
+            return "VK_PIPELINE_STAGE_2_CLUSTER_CULLING_SHADER_BIT_HUAWEI";
         case VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT:
             return "VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT";
         case VK_PIPELINE_STAGE_2_COMMAND_PREPROCESS_BIT_NV:
@@ -7814,10 +7699,8 @@ static inline const char* string_VkPipelineStageFlagBits2KHR(uint64_t input_valu
             return "VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT";
         case VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT:
             return "VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT";
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_PIPELINE_STAGE_2_VIDEO_DECODE_BIT_KHR:
             return "VK_PIPELINE_STAGE_2_VIDEO_DECODE_BIT_KHR";
-#endif // VK_ENABLE_BETA_EXTENSIONS
 #ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_PIPELINE_STAGE_2_VIDEO_ENCODE_BIT_KHR:
             return "VK_PIPELINE_STAGE_2_VIDEO_ENCODE_BIT_KHR";
@@ -7839,7 +7722,7 @@ static inline std::string string_VkPipelineStageFlags2KHR(VkPipelineStageFlags2K
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkPipelineStageFlagBits2KHR(static_cast<uint64_t>(0)));
+    if (ret.empty()) ret.append("VkPipelineStageFlags2KHR(0)");
     return ret;
 }
 
@@ -7925,14 +7808,10 @@ static inline const char* string_VkAccessFlagBits2KHR(uint64_t input_value)
             return "VK_ACCESS_2_UNIFORM_READ_BIT";
         case VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT:
             return "VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT";
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_ACCESS_2_VIDEO_DECODE_READ_BIT_KHR:
             return "VK_ACCESS_2_VIDEO_DECODE_READ_BIT_KHR";
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_ACCESS_2_VIDEO_DECODE_WRITE_BIT_KHR:
             return "VK_ACCESS_2_VIDEO_DECODE_WRITE_BIT_KHR";
-#endif // VK_ENABLE_BETA_EXTENSIONS
 #ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_ACCESS_2_VIDEO_ENCODE_READ_BIT_KHR:
             return "VK_ACCESS_2_VIDEO_ENCODE_READ_BIT_KHR";
@@ -7958,7 +7837,7 @@ static inline std::string string_VkAccessFlags2KHR(VkAccessFlags2KHR input_value
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkAccessFlagBits2KHR(static_cast<uint64_t>(0)));
+    if (ret.empty()) ret.append("VkAccessFlags2KHR(0)");
     return ret;
 }
 
@@ -7985,7 +7864,7 @@ static inline std::string string_VkSubmitFlagsKHR(VkSubmitFlagsKHR input_value)
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkSubmitFlagBitsKHR(static_cast<VkSubmitFlagBitsKHR>(0)));
+    if (ret.empty()) ret.append("VkSubmitFlagsKHR(0)");
     return ret;
 }
 
@@ -8065,14 +7944,10 @@ static inline const char* string_VkFormatFeatureFlagBits2KHR(uint64_t input_valu
             return "VK_FORMAT_FEATURE_2_UNIFORM_TEXEL_BUFFER_BIT";
         case VK_FORMAT_FEATURE_2_VERTEX_BUFFER_BIT:
             return "VK_FORMAT_FEATURE_2_VERTEX_BUFFER_BIT";
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_FORMAT_FEATURE_2_VIDEO_DECODE_DPB_BIT_KHR:
             return "VK_FORMAT_FEATURE_2_VIDEO_DECODE_DPB_BIT_KHR";
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_FORMAT_FEATURE_2_VIDEO_DECODE_OUTPUT_BIT_KHR:
             return "VK_FORMAT_FEATURE_2_VIDEO_DECODE_OUTPUT_BIT_KHR";
-#endif // VK_ENABLE_BETA_EXTENSIONS
 #ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_FORMAT_FEATURE_2_VIDEO_ENCODE_DPB_BIT_KHR:
             return "VK_FORMAT_FEATURE_2_VIDEO_ENCODE_DPB_BIT_KHR";
@@ -8102,7 +7977,7 @@ static inline std::string string_VkFormatFeatureFlags2KHR(VkFormatFeatureFlags2K
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkFormatFeatureFlagBits2KHR(static_cast<uint64_t>(0)));
+    if (ret.empty()) ret.append("VkFormatFeatureFlags2KHR(0)");
     return ret;
 }
 
@@ -8137,7 +8012,7 @@ static inline std::string string_VkDebugReportFlagsEXT(VkDebugReportFlagsEXT inp
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkDebugReportFlagBitsEXT(static_cast<VkDebugReportFlagBitsEXT>(0)));
+    if (ret.empty()) ret.append("VkDebugReportFlagsEXT(0)");
     return ret;
 }
 
@@ -8315,7 +8190,7 @@ static inline std::string string_VkVideoEncodeH264CapabilityFlagsEXT(VkVideoEnco
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkVideoEncodeH264CapabilityFlagBitsEXT(static_cast<VkVideoEncodeH264CapabilityFlagBitsEXT>(0)));
+    if (ret.empty()) ret.append("VkVideoEncodeH264CapabilityFlagsEXT(0)");
     return ret;
 }
 #endif // VK_ENABLE_BETA_EXTENSIONS
@@ -8350,7 +8225,7 @@ static inline std::string string_VkVideoEncodeH264InputModeFlagsEXT(VkVideoEncod
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkVideoEncodeH264InputModeFlagBitsEXT(static_cast<VkVideoEncodeH264InputModeFlagBitsEXT>(0)));
+    if (ret.empty()) ret.append("VkVideoEncodeH264InputModeFlagsEXT(0)");
     return ret;
 }
 #endif // VK_ENABLE_BETA_EXTENSIONS
@@ -8385,7 +8260,7 @@ static inline std::string string_VkVideoEncodeH264OutputModeFlagsEXT(VkVideoEnco
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkVideoEncodeH264OutputModeFlagBitsEXT(static_cast<VkVideoEncodeH264OutputModeFlagBitsEXT>(0)));
+    if (ret.empty()) ret.append("VkVideoEncodeH264OutputModeFlagsEXT(0)");
     return ret;
 }
 #endif // VK_ENABLE_BETA_EXTENSIONS
@@ -8485,7 +8360,7 @@ static inline std::string string_VkVideoEncodeH265CapabilityFlagsEXT(VkVideoEnco
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkVideoEncodeH265CapabilityFlagBitsEXT(static_cast<VkVideoEncodeH265CapabilityFlagBitsEXT>(0)));
+    if (ret.empty()) ret.append("VkVideoEncodeH265CapabilityFlagsEXT(0)");
     return ret;
 }
 #endif // VK_ENABLE_BETA_EXTENSIONS
@@ -8520,7 +8395,7 @@ static inline std::string string_VkVideoEncodeH265InputModeFlagsEXT(VkVideoEncod
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkVideoEncodeH265InputModeFlagBitsEXT(static_cast<VkVideoEncodeH265InputModeFlagBitsEXT>(0)));
+    if (ret.empty()) ret.append("VkVideoEncodeH265InputModeFlagsEXT(0)");
     return ret;
 }
 #endif // VK_ENABLE_BETA_EXTENSIONS
@@ -8555,7 +8430,7 @@ static inline std::string string_VkVideoEncodeH265OutputModeFlagsEXT(VkVideoEnco
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkVideoEncodeH265OutputModeFlagBitsEXT(static_cast<VkVideoEncodeH265OutputModeFlagBitsEXT>(0)));
+    if (ret.empty()) ret.append("VkVideoEncodeH265OutputModeFlagsEXT(0)");
     return ret;
 }
 #endif // VK_ENABLE_BETA_EXTENSIONS
@@ -8590,7 +8465,7 @@ static inline std::string string_VkVideoEncodeH265CtbSizeFlagsEXT(VkVideoEncodeH
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkVideoEncodeH265CtbSizeFlagBitsEXT(static_cast<VkVideoEncodeH265CtbSizeFlagBitsEXT>(0)));
+    if (ret.empty()) ret.append("VkVideoEncodeH265CtbSizeFlagsEXT(0)");
     return ret;
 }
 #endif // VK_ENABLE_BETA_EXTENSIONS
@@ -8627,7 +8502,7 @@ static inline std::string string_VkVideoEncodeH265TransformBlockSizeFlagsEXT(VkV
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkVideoEncodeH265TransformBlockSizeFlagBitsEXT(static_cast<VkVideoEncodeH265TransformBlockSizeFlagBitsEXT>(0)));
+    if (ret.empty()) ret.append("VkVideoEncodeH265TransformBlockSizeFlagsEXT(0)");
     return ret;
 }
 #endif // VK_ENABLE_BETA_EXTENSIONS
@@ -8648,41 +8523,6 @@ static inline const char* string_VkVideoEncodeH265RateControlStructureEXT(VkVide
         default:
             return "Unhandled VkVideoEncodeH265RateControlStructureEXT";
     }
-}
-#endif // VK_ENABLE_BETA_EXTENSIONS
-
-
-#ifdef VK_ENABLE_BETA_EXTENSIONS
-
-static inline const char* string_VkVideoDecodeH264PictureLayoutFlagBitsEXT(VkVideoDecodeH264PictureLayoutFlagBitsEXT input_value)
-{
-    switch (input_value)
-    {
-        case VK_VIDEO_DECODE_H264_PICTURE_LAYOUT_INTERLACED_INTERLEAVED_LINES_BIT_EXT:
-            return "VK_VIDEO_DECODE_H264_PICTURE_LAYOUT_INTERLACED_INTERLEAVED_LINES_BIT_EXT";
-        case VK_VIDEO_DECODE_H264_PICTURE_LAYOUT_INTERLACED_SEPARATE_PLANES_BIT_EXT:
-            return "VK_VIDEO_DECODE_H264_PICTURE_LAYOUT_INTERLACED_SEPARATE_PLANES_BIT_EXT";
-        case VK_VIDEO_DECODE_H264_PICTURE_LAYOUT_PROGRESSIVE_EXT:
-            return "VK_VIDEO_DECODE_H264_PICTURE_LAYOUT_PROGRESSIVE_EXT";
-        default:
-            return "Unhandled VkVideoDecodeH264PictureLayoutFlagBitsEXT";
-    }
-}
-
-static inline std::string string_VkVideoDecodeH264PictureLayoutFlagsEXT(VkVideoDecodeH264PictureLayoutFlagsEXT input_value)
-{
-    std::string ret;
-    int index = 0;
-    while(input_value) {
-        if (input_value & 1) {
-            if( !ret.empty()) ret.append("|");
-            ret.append(string_VkVideoDecodeH264PictureLayoutFlagBitsEXT(static_cast<VkVideoDecodeH264PictureLayoutFlagBitsEXT>(1U << index)));
-        }
-        ++index;
-        input_value >>= 1;
-    }
-    if( ret.empty()) ret.append(string_VkVideoDecodeH264PictureLayoutFlagBitsEXT(static_cast<VkVideoDecodeH264PictureLayoutFlagBitsEXT>(0)));
-    return ret;
 }
 #endif // VK_ENABLE_BETA_EXTENSIONS
 
@@ -8730,7 +8570,7 @@ static inline std::string string_VkExternalMemoryHandleTypeFlagsNV(VkExternalMem
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkExternalMemoryHandleTypeFlagBitsNV(static_cast<VkExternalMemoryHandleTypeFlagBitsNV>(0)));
+    if (ret.empty()) ret.append("VkExternalMemoryHandleTypeFlagsNV(0)");
     return ret;
 }
 
@@ -8761,7 +8601,7 @@ static inline std::string string_VkExternalMemoryFeatureFlagsNV(VkExternalMemory
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkExternalMemoryFeatureFlagBitsNV(static_cast<VkExternalMemoryFeatureFlagBitsNV>(0)));
+    if (ret.empty()) ret.append("VkExternalMemoryFeatureFlagsNV(0)");
     return ret;
 }
 
@@ -8835,7 +8675,7 @@ static inline std::string string_VkConditionalRenderingFlagsEXT(VkConditionalRen
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkConditionalRenderingFlagBitsEXT(static_cast<VkConditionalRenderingFlagBitsEXT>(0)));
+    if (ret.empty()) ret.append("VkConditionalRenderingFlagsEXT(0)");
     return ret;
 }
 
@@ -8862,7 +8702,7 @@ static inline std::string string_VkSurfaceCounterFlagsEXT(VkSurfaceCounterFlagsE
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkSurfaceCounterFlagBitsEXT(static_cast<VkSurfaceCounterFlagBitsEXT>(0)));
+    if (ret.empty()) ret.append("VkSurfaceCounterFlagsEXT(0)");
     return ret;
 }
 
@@ -8985,7 +8825,7 @@ static inline std::string string_VkDebugUtilsMessageSeverityFlagsEXT(VkDebugUtil
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkDebugUtilsMessageSeverityFlagBitsEXT(static_cast<VkDebugUtilsMessageSeverityFlagBitsEXT>(0)));
+    if (ret.empty()) ret.append("VkDebugUtilsMessageSeverityFlagsEXT(0)");
     return ret;
 }
 
@@ -9018,7 +8858,7 @@ static inline std::string string_VkDebugUtilsMessageTypeFlagsEXT(VkDebugUtilsMes
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkDebugUtilsMessageTypeFlagBitsEXT(static_cast<VkDebugUtilsMessageTypeFlagBitsEXT>(0)));
+    if (ret.empty()) ret.append("VkDebugUtilsMessageTypeFlagsEXT(0)");
     return ret;
 }
 
@@ -9109,7 +8949,7 @@ static inline std::string string_VkDescriptorBindingFlagsEXT(VkDescriptorBinding
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkDescriptorBindingFlagBitsEXT(static_cast<VkDescriptorBindingFlagBitsEXT>(0)));
+    if (ret.empty()) ret.append("VkDescriptorBindingFlagsEXT(0)");
     return ret;
 }
 
@@ -9278,7 +9118,7 @@ static inline std::string string_VkGeometryFlagsKHR(VkGeometryFlagsKHR input_val
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkGeometryFlagBitsKHR(static_cast<VkGeometryFlagBitsKHR>(0)));
+    if (ret.empty()) ret.append("VkGeometryFlagsKHR(0)");
     return ret;
 }
 
@@ -9307,7 +9147,7 @@ static inline std::string string_VkGeometryFlagsNV(VkGeometryFlagsNV input_value
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkGeometryFlagBitsNV(static_cast<VkGeometryFlagBitsNV>(0)));
+    if (ret.empty()) ret.append("VkGeometryFlagsNV(0)");
     return ret;
 }
 
@@ -9344,7 +9184,7 @@ static inline std::string string_VkGeometryInstanceFlagsKHR(VkGeometryInstanceFl
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkGeometryInstanceFlagBitsKHR(static_cast<VkGeometryInstanceFlagBitsKHR>(0)));
+    if (ret.empty()) ret.append("VkGeometryInstanceFlagsKHR(0)");
     return ret;
 }
 
@@ -9381,7 +9221,7 @@ static inline std::string string_VkGeometryInstanceFlagsNV(VkGeometryInstanceFla
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkGeometryInstanceFlagBitsNV(static_cast<VkGeometryInstanceFlagBitsNV>(0)));
+    if (ret.empty()) ret.append("VkGeometryInstanceFlagsNV(0)");
     return ret;
 }
 
@@ -9424,7 +9264,7 @@ static inline std::string string_VkBuildAccelerationStructureFlagsKHR(VkBuildAcc
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkBuildAccelerationStructureFlagBitsKHR(static_cast<VkBuildAccelerationStructureFlagBitsKHR>(0)));
+    if (ret.empty()) ret.append("VkBuildAccelerationStructureFlagsKHR(0)");
     return ret;
 }
 
@@ -9467,7 +9307,7 @@ static inline std::string string_VkBuildAccelerationStructureFlagsNV(VkBuildAcce
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkBuildAccelerationStructureFlagBitsNV(static_cast<VkBuildAccelerationStructureFlagBitsNV>(0)));
+    if (ret.empty()) ret.append("VkBuildAccelerationStructureFlagsNV(0)");
     return ret;
 }
 
@@ -9596,7 +9436,7 @@ static inline std::string string_VkPipelineCreationFeedbackFlagsEXT(VkPipelineCr
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkPipelineCreationFeedbackFlagBitsEXT(static_cast<VkPipelineCreationFeedbackFlagBitsEXT>(0)));
+    if (ret.empty()) ret.append("VkPipelineCreationFeedbackFlagsEXT(0)");
     return ret;
 }
 
@@ -9702,7 +9542,7 @@ static inline std::string string_VkToolPurposeFlagsEXT(VkToolPurposeFlagsEXT inp
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkToolPurposeFlagBitsEXT(static_cast<VkToolPurposeFlagBitsEXT>(0)));
+    if (ret.empty()) ret.append("VkToolPurposeFlagsEXT(0)");
     return ret;
 }
 
@@ -9889,7 +9729,7 @@ static inline std::string string_VkPresentScalingFlagsEXT(VkPresentScalingFlagsE
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkPresentScalingFlagBitsEXT(static_cast<VkPresentScalingFlagBitsEXT>(0)));
+    if (ret.empty()) ret.append("VkPresentScalingFlagsEXT(0)");
     return ret;
 }
 
@@ -9920,7 +9760,7 @@ static inline std::string string_VkPresentGravityFlagsEXT(VkPresentGravityFlagsE
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkPresentGravityFlagBitsEXT(static_cast<VkPresentGravityFlagBitsEXT>(0)));
+    if (ret.empty()) ret.append("VkPresentGravityFlagsEXT(0)");
     return ret;
 }
 
@@ -9947,7 +9787,7 @@ static inline std::string string_VkIndirectStateFlagsNV(VkIndirectStateFlagsNV i
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkIndirectStateFlagBitsNV(static_cast<VkIndirectStateFlagBitsNV>(0)));
+    if (ret.empty()) ret.append("VkIndirectStateFlagsNV(0)");
     return ret;
 }
 
@@ -10005,7 +9845,7 @@ static inline std::string string_VkIndirectCommandsLayoutUsageFlagsNV(VkIndirect
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkIndirectCommandsLayoutUsageFlagBitsNV(static_cast<VkIndirectCommandsLayoutUsageFlagBitsNV>(0)));
+    if (ret.empty()) ret.append("VkIndirectCommandsLayoutUsageFlagsNV(0)");
     return ret;
 }
 
@@ -10057,7 +9897,7 @@ static inline std::string string_VkDeviceDiagnosticsConfigFlagsNV(VkDeviceDiagno
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkDeviceDiagnosticsConfigFlagBitsNV(static_cast<VkDeviceDiagnosticsConfigFlagBitsNV>(0)));
+    if (ret.empty()) ret.append("VkDeviceDiagnosticsConfigFlagsNV(0)");
     return ret;
 }
 
@@ -10097,7 +9937,7 @@ static inline std::string string_VkExportMetalObjectTypeFlagsEXT(VkExportMetalOb
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkExportMetalObjectTypeFlagBitsEXT(static_cast<VkExportMetalObjectTypeFlagBitsEXT>(0)));
+    if (ret.empty()) ret.append("VkExportMetalObjectTypeFlagsEXT(0)");
     return ret;
 }
 #endif // VK_USE_PLATFORM_METAL_EXT
@@ -10131,7 +9971,7 @@ static inline std::string string_VkGraphicsPipelineLibraryFlagsEXT(VkGraphicsPip
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkGraphicsPipelineLibraryFlagBitsEXT(static_cast<VkGraphicsPipelineLibraryFlagBitsEXT>(0)));
+    if (ret.empty()) ret.append("VkGraphicsPipelineLibraryFlagsEXT(0)");
     return ret;
 }
 
@@ -10225,7 +10065,7 @@ static inline std::string string_VkImageCompressionFlagsEXT(VkImageCompressionFl
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkImageCompressionFlagBitsEXT(static_cast<VkImageCompressionFlagBitsEXT>(0)));
+    if (ret.empty()) ret.append("VkImageCompressionFlagsEXT(0)");
     return ret;
 }
 
@@ -10300,7 +10140,7 @@ static inline std::string string_VkImageCompressionFixedRateFlagsEXT(VkImageComp
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkImageCompressionFixedRateFlagBitsEXT(static_cast<VkImageCompressionFixedRateFlagBitsEXT>(0)));
+    if (ret.empty()) ret.append("VkImageCompressionFixedRateFlagsEXT(0)");
     return ret;
 }
 
@@ -10361,7 +10201,7 @@ static inline std::string string_VkDeviceAddressBindingFlagsEXT(VkDeviceAddressB
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkDeviceAddressBindingFlagBitsEXT(static_cast<VkDeviceAddressBindingFlagBitsEXT>(0)));
+    if (ret.empty()) ret.append("VkDeviceAddressBindingFlagsEXT(0)");
     return ret;
 }
 
@@ -10412,7 +10252,7 @@ static inline std::string string_VkImageConstraintsInfoFlagsFUCHSIA(VkImageConst
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkImageConstraintsInfoFlagBitsFUCHSIA(static_cast<VkImageConstraintsInfoFlagBitsFUCHSIA>(0)));
+    if (ret.empty()) ret.append("VkImageConstraintsInfoFlagsFUCHSIA(0)");
     return ret;
 }
 #endif // VK_USE_PLATFORM_FUCHSIA
@@ -10455,7 +10295,7 @@ static inline std::string string_VkBuildMicromapFlagsEXT(VkBuildMicromapFlagsEXT
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkBuildMicromapFlagBitsEXT(static_cast<VkBuildMicromapFlagBitsEXT>(0)));
+    if (ret.empty()) ret.append("VkBuildMicromapFlagsEXT(0)");
     return ret;
 }
 
@@ -10493,7 +10333,7 @@ static inline std::string string_VkMicromapCreateFlagsEXT(VkMicromapCreateFlagsE
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkMicromapCreateFlagBitsEXT(static_cast<VkMicromapCreateFlagBitsEXT>(0)));
+    if (ret.empty()) ret.append("VkMicromapCreateFlagsEXT(0)");
     return ret;
 }
 
@@ -10595,7 +10435,7 @@ static inline std::string string_VkMemoryDecompressionMethodFlagsNV(VkMemoryDeco
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkMemoryDecompressionMethodFlagBitsNV(static_cast<uint64_t>(0)));
+    if (ret.empty()) ret.append("VkMemoryDecompressionMethodFlagsNV(0)");
     return ret;
 }
 
@@ -10680,7 +10520,7 @@ static inline std::string string_VkOpticalFlowGridSizeFlagsNV(VkOpticalFlowGridS
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkOpticalFlowGridSizeFlagBitsNV(static_cast<VkOpticalFlowGridSizeFlagBitsNV>(0)));
+    if (ret.empty()) ret.append("VkOpticalFlowGridSizeFlagsNV(0)");
     return ret;
 }
 
@@ -10717,7 +10557,7 @@ static inline std::string string_VkOpticalFlowUsageFlagsNV(VkOpticalFlowUsageFla
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkOpticalFlowUsageFlagBitsNV(static_cast<VkOpticalFlowUsageFlagBitsNV>(0)));
+    if (ret.empty()) ret.append("VkOpticalFlowUsageFlagsNV(0)");
     return ret;
 }
 
@@ -10796,7 +10636,7 @@ static inline std::string string_VkOpticalFlowSessionCreateFlagsNV(VkOpticalFlow
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkOpticalFlowSessionCreateFlagBitsNV(static_cast<VkOpticalFlowSessionCreateFlagBitsNV>(0)));
+    if (ret.empty()) ret.append("VkOpticalFlowSessionCreateFlagsNV(0)");
     return ret;
 }
 
@@ -10823,7 +10663,7 @@ static inline std::string string_VkOpticalFlowExecuteFlagsNV(VkOpticalFlowExecut
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkOpticalFlowExecuteFlagBitsNV(static_cast<VkOpticalFlowExecuteFlagBitsNV>(0)));
+    if (ret.empty()) ret.append("VkOpticalFlowExecuteFlagsNV(0)");
     return ret;
 }
 
@@ -10880,7 +10720,7 @@ static inline std::string string_VkAccelerationStructureCreateFlagsKHR(VkAcceler
         ++index;
         input_value >>= 1;
     }
-    if( ret.empty()) ret.append(string_VkAccelerationStructureCreateFlagBitsKHR(static_cast<VkAccelerationStructureCreateFlagBitsKHR>(0)));
+    if (ret.empty()) ret.append("VkAccelerationStructureCreateFlagsKHR(0)");
     return ret;
 }
 

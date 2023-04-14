@@ -326,11 +326,11 @@ struct PackedAttachmentOpsDesc final
     uint16_t isStencilInvalidated : 1;
     uint16_t padding1 : 6;
 
-    // 4-bits to force pad the structure to exactly 2 bytes.  Note that we currently don't support
-    // any of the extension layouts, whose values start at 1'000'000'000.
-    uint16_t initialLayout : 4;
-    uint16_t finalLayout : 4;
-    uint16_t padding2 : 8;
+    // Layouts take values from ImageLayout, so they are small.  Layouts that are possible here are
+    // placed at the beginning of that enum.
+    uint16_t initialLayout : 5;
+    uint16_t finalLayout : 5;
+    uint16_t padding2 : 6;
 };
 
 static_assert(sizeof(PackedAttachmentOpsDesc) == 4, "Size check failed");
@@ -727,6 +727,8 @@ class GraphicsPipelineDesc final
                            angle::FormatID format,
                            bool compressed,
                            GLuint relativeOffset);
+    void setVertexShaderComponentTypes(gl::AttributesMask activeAttribLocations,
+                                       gl::ComponentTypeMask componentTypeMask);
     void updateVertexShaderComponentTypes(GraphicsPipelineTransitionBits *transition,
                                           gl::AttributesMask activeAttribLocations,
                                           gl::ComponentTypeMask componentTypeMask);
@@ -1516,9 +1518,10 @@ struct DescriptorInfoDesc
     uint32_t imageViewSerialOrOffset;
     uint32_t imageLayoutOrRange;  // Packed VkImageLayout
     uint32_t imageSubresourceRange;
+    uint32_t binding;  // TODO(anglebug.com/7974): Could be made implicit?
 };
 
-static_assert(sizeof(DescriptorInfoDesc) == 16, "Size mismatch");
+static_assert(sizeof(DescriptorInfoDesc) == 20, "Size mismatch");
 
 // Generic description of a descriptor set. Used as a key when indexing descriptor set caches. The
 // key storage is an angle:FixedVector. Beyond a certain fixed size we'll end up using heap memory
@@ -1598,7 +1601,8 @@ class DescriptorSetDesc
         return mWriteDescriptors[bindingIndex].descriptorCount;
     }
 
-    void updateDescriptorSet(UpdateDescriptorSetsBuilder *updateBuilder,
+    void updateDescriptorSet(Context *context,
+                             UpdateDescriptorSetsBuilder *updateBuilder,
                              const DescriptorDescHandles *handles,
                              VkDescriptorSet descriptorSet) const;
 
@@ -1716,7 +1720,8 @@ class DescriptorSetDescBuilder final
                                            PipelineType pipelineType,
                                            const SharedDescriptorSetCacheKey &sharedCacheKey);
 
-    void updateDescriptorSet(UpdateDescriptorSetsBuilder *updateBuilder,
+    void updateDescriptorSet(Context *context,
+                             UpdateDescriptorSetsBuilder *updateBuilder,
                              VkDescriptorSet descriptorSet) const;
 
     // If sharedCacheKey is not null, it means a new cache entry for descriptoret has been created.
@@ -1757,7 +1762,9 @@ class DescriptorSetDescBuilder final
 };
 
 // Specialized update for textures.
-void UpdatePreCacheActiveTextures(const std::vector<gl::SamplerBinding> &samplerBindings,
+void UpdatePreCacheActiveTextures(const gl::ProgramExecutable &executable,
+                                  const ProgramExecutableVk &executableVk,
+                                  const std::vector<gl::SamplerBinding> &samplerBindings,
                                   const gl::ActiveTextureMask &activeTextures,
                                   const gl::ActiveTextureArray<TextureVk *> &textures,
                                   const gl::SamplerBindingVector &samplers,
@@ -2176,7 +2183,7 @@ class RenderPassCache final : angle::NonCopyable
     RenderPassCache();
     ~RenderPassCache();
 
-    void destroy(RendererVk *rendererVk);
+    void destroy(ContextVk *contextVk);
     void clear(ContextVk *contextVk);
 
     ANGLE_INLINE angle::Result getCompatibleRenderPass(ContextVk *contextVk,
@@ -2196,7 +2203,7 @@ class RenderPassCache final : angle::NonCopyable
         }
 
         mCompatibleRenderPassCacheStats.missAndIncrementSize();
-        return addRenderPass(contextVk, desc, renderPassOut);
+        return addCompatibleRenderPass(contextVk, desc, renderPassOut);
     }
 
     angle::Result getRenderPassWithOps(ContextVk *contextVk,
@@ -2211,9 +2218,9 @@ class RenderPassCache final : angle::NonCopyable
                                            bool updatePerfCounters,
                                            const vk::RenderPass **renderPassOut);
 
-    angle::Result addRenderPass(ContextVk *contextVk,
-                                const vk::RenderPassDesc &desc,
-                                const vk::RenderPass **renderPassOut);
+    angle::Result addCompatibleRenderPass(ContextVk *contextVk,
+                                          const vk::RenderPassDesc &desc,
+                                          const vk::RenderPass **renderPassOut);
 
     // Use a two-layer caching scheme. The top level matches the "compatible" RenderPass elements.
     // The second layer caches the attachment load/store ops and initial/final layout.

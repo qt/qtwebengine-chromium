@@ -380,7 +380,7 @@ void StreamingAv1Encoder::SendEncodedFrame(WorkUnitWithResults results) {
   }
   frame.rtp_timestamp = results.rtp_timestamp;
   frame.reference_time = results.reference_time;
-  frame.data = absl::Span<uint8_t>(results.payload);
+  frame.data = ByteBuffer(results.payload);
 
   if (sender_->EnqueueFrame(frame) != Sender::OK) {
     // Since the frame will not be sent, the encoder's frame dependency chain

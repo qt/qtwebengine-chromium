@@ -5,8 +5,8 @@ import PackageDescription
 let package = Package(
   name: "NearbyConnections",
   platforms: [
-    .iOS(.v11),
-    .macOS(.v10_13),
+    .iOS(.v13),
+    .macOS(.v10_15),
     .tvOS(.v11),
     .watchOS(.v4),
   ],
@@ -25,8 +25,8 @@ let package = Package(
     // Dependencies declare other packages that this package depends on.
     .package(
       name: "abseil",
-      url: "https://github.com/firebase/abseil-cpp-SwiftPM.git",
-      branch: "main"
+      url: "https://github.com/bourdakos1/abseil-cpp-SwiftPM.git",
+      branch: "cxx17"
     ),
     .package(
       name: "BoringSSL-GRPC",
@@ -380,18 +380,19 @@ let package = Package(
       ],
       path: ".",
       exclude: [
+        "compiled_proto/connections/cpp",
         "presence",
         "embedded",
-        "connections/clients/windows",
+        "connections/c",
+        "connections/dart",
         "connections/clients/ios",
-        "connections/clients/swift/NearbyConnections",
-        "connections/clients/swift/NearbyCoreAdapter/BUILD",
-        "connections/clients/swift/NearbyCoreAdapter/Tests",
-        "connections/samples",
+        "connections/swift/NearbyConnections",
+        "connections/swift/NearbyCoreAdapter/BUILD",
+        "connections/swift/NearbyCoreAdapter/Tests",
         "docs",
         "internal/platform/implementation/g3",
-        "internal/platform/implementation/ios/Tests",
-        "internal/platform/implementation/ios/Mediums/Ble/Sockets/Tests",
+        "internal/platform/implementation/apple/Tests",
+        "internal/platform/implementation/apple/Mediums/Ble/Sockets/Tests",
         "internal/platform/implementation/windows",
         "third_party",
         "CONTRIBUTING.md",
@@ -409,13 +410,15 @@ let package = Package(
         "internal/crypto/BUILD",
         "internal/crypto/BUILD.gn",
         "internal/platform/implementation/shared/BUILD",
-        "internal/platform/implementation/ios/Mediums/BUILD",
-        "internal/platform/implementation/ios/Mediums/Ble/Sockets/BUILD",
-        "internal/platform/implementation/ios/Tests/BUILD",
-        "internal/platform/implementation/ios/BUILD",
+        "internal/platform/implementation/apple/Mediums/BUILD",
+        "internal/platform/implementation/apple/Mediums/Ble/Sockets/BUILD",
+        "internal/platform/implementation/apple/Tests/BUILD",
+        "internal/platform/implementation/apple/BUILD",
         "internal/platform/implementation/BUILD",
         "internal/platform/BUILD",
         "internal/analytics/BUILD",
+        "internal/network/BUILD",
+        "internal/base/BUILD",
         // tests
         "connections/listeners_test.cc",
         "connections/strategy_test.cc",
@@ -431,6 +434,7 @@ let package = Package(
         "connections/implementation/payload_manager_test.cc",
         "connections/implementation/offline_frames_validator_test.cc",
         "connections/implementation/service_controller_router_test.cc",
+        "connections/implementation/wifi_direct_bwu_test.cc",
         "connections/implementation/wifi_hotspot_test.cc",
         "connections/implementation/analytics/analytics_recorder_test.cc",
         "connections/implementation/analytics/throughput_recorder_test.cc",
@@ -464,6 +468,7 @@ let package = Package(
         "connections/core_test.cc",
         "connections/status_test.cc",
         "connections/payload_test.cc",
+        "internal/base/bluetooth_address_test.cc",
         "internal/crypto/aead_unittest.cc",
         "internal/crypto/ec_private_key_unittest.cc",
         "internal/crypto/ec_signature_creator_unittest.cc",
@@ -486,6 +491,8 @@ let package = Package(
         "internal/platform/scheduled_executor_test.cc",
         "internal/platform/count_down_latch_test.cc",
         "internal/platform/pipe_test.cc",
+        "internal/platform/timer_impl_test.cc",
+        "internal/platform/task_runner_impl_test.cc",
         "internal/platform/uuid_test.cc",
         "internal/platform/wifi_lan_connection_info_test.cc",
         "internal/platform/wifi_direct_test.cc",
@@ -505,11 +512,11 @@ let package = Package(
         "internal/platform/ble_test.cc",
         "internal/platform/ble_v2_test.cc",
         "internal/platform/prng_test.cc",
-        "internal/platform/implementation/ios/count_down_latch_test.cc",
-        "internal/platform/implementation/ios/condition_variable_test.cc",
-        "internal/platform/implementation/ios/mutex_test.cc",
-        "internal/platform/implementation/ios/atomic_boolean_test.cc",
-        "internal/platform/implementation/ios/atomic_uint32_test.cc",
+        "internal/platform/implementation/apple/count_down_latch_test.cc",
+        "internal/platform/implementation/apple/condition_variable_test.cc",
+        "internal/platform/implementation/apple/mutex_test.cc",
+        "internal/platform/implementation/apple/atomic_boolean_test.cc",
+        "internal/platform/implementation/apple/atomic_uint32_test.cc",
         "internal/platform/implementation/shared/file_test.cc",
         "internal/platform/atomic_boolean_test.cc",
         "internal/platform/exception_test.cc",
@@ -520,6 +527,13 @@ let package = Package(
         "internal/platform/byte_utils_test.cc",
         "internal/platform/direct_executor_test.cc",
         "internal/platform/borrowable_test.cc",
+        "internal/platform/implementation/windows/http_loader_test.cc",
+        "internal/network/utils_test.cc",
+        "internal/network/url_test.cc",
+        "internal/network/http_response_test.cc",
+        "internal/network/http_request_test.cc",
+        "internal/network/http_client_impl_test.cc",
+        "internal/network/http_status_code_test.cc",
         // simulation
         "connections/implementation/offline_simulation_user.cc",
         "connections/implementation/simulation_user.cc",
@@ -542,7 +556,7 @@ let package = Package(
         "internal",
         "proto",
       ],
-      publicHeadersPath: "connections/clients/swift/NearbyCoreAdapter/Sources/Public",
+      publicHeadersPath: "connections/swift/NearbyCoreAdapter/Sources/Public",
       cSettings: [
         .headerSearchPath("./"),
         .headerSearchPath("compiled_proto/"),
@@ -556,11 +570,12 @@ let package = Package(
       path: ".",
       exclude: [
         "compiled_proto",
-        "connections/clients/windows",
+        "connections/c",
+        "connections/dart",
         "connections/clients/ios",
-        "connections/clients/swift/NearbyCoreAdapter",
-        "connections/clients/swift/NearbyConnections/BUILD",
-        "connections/clients/swift/NearbyConnections/Tests",
+        "connections/swift/NearbyCoreAdapter",
+        "connections/swift/NearbyConnections/BUILD",
+        "connections/swift/NearbyConnections/Tests",
         "connections/BUILD",
         "connections/discovery_options.cc",
         "connections/status.cc",
@@ -575,7 +590,6 @@ let package = Package(
         "connections/strategy.cc",
         "connections/payload_test.cc",
         "connections/implementation",
-        "connections/samples",
         "docs",
         "embedded",
         "internal",
@@ -588,20 +602,20 @@ let package = Package(
         "WORKSPACE",
       ],
       sources: [
-        "connections/clients/swift/NearbyConnections/Sources"
+        "connections/swift/NearbyConnections/Sources"
       ]
     ),
     .testTarget(
       name: "NearbyCoreAdapterTests",
       dependencies: ["NearbyCoreAdapter"],
-      path: "connections/clients/swift/NearbyCoreAdapter/Tests"
+      path: "connections/swift/NearbyCoreAdapter/Tests"
     ),
     .testTarget(
       name: "NearbyConnectionsTests",
       dependencies: ["NearbyConnections"],
-      path: "connections/clients/swift/NearbyConnections/Tests"
+      path: "connections/swift/NearbyConnections/Tests"
     ),
   ],
   cLanguageStandard: .c99,
-  cxxLanguageStandard: CXXLanguageStandard.gnucxx14
+  cxxLanguageStandard: .cxx17
 )

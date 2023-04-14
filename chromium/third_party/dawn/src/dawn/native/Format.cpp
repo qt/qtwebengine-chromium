@@ -69,19 +69,19 @@ bool Format::IsColor() const {
 }
 
 bool Format::HasDepth() const {
-    return (aspects & Aspect::Depth) != 0;
+    return aspects & Aspect::Depth;
 }
 
 bool Format::HasStencil() const {
-    return (aspects & Aspect::Stencil) != 0;
+    return aspects & Aspect::Stencil;
 }
 
 bool Format::HasDepthOrStencil() const {
-    return (aspects & (Aspect::Depth | Aspect::Stencil)) != 0;
+    return aspects & (Aspect::Depth | Aspect::Stencil);
 }
 
 bool Format::IsMultiPlanar() const {
-    return (aspects & (Aspect::Plane0 | Aspect::Plane1)) != 0;
+    return aspects & (Aspect::Plane0 | Aspect::Plane1);
 }
 
 bool Format::CopyCompatibleWith(const Format& format) const {
@@ -212,7 +212,7 @@ FormatTable BuildFormatTable(const DeviceBase* device) {
                         UNREACHABLE();
                 }
             } else {
-                ASSERT((sampleTypes & SampleTypeBit::Float) != 0);
+                ASSERT(sampleTypes & SampleTypeBit::Float);
                 firstAspect->baseType = wgpu::TextureComponentType::Float;
             }
             firstAspect->supportedSampleTypes = sampleTypes;
@@ -368,12 +368,14 @@ FormatTable BuildFormatTable(const DeviceBase* device) {
         AddColorFormat(wgpu::TextureFormat::RGBA8Snorm, false, true, false, false, 4, kAnyFloat, 4);
         AddColorFormat(wgpu::TextureFormat::RGBA8Uint, true, true, true, false, 4, SampleTypeBit::Uint, 4, 4, 1);
         AddColorFormat(wgpu::TextureFormat::RGBA8Sint, true, true, true, false, 4, SampleTypeBit::Sint, 4, 4, 1);
-        AddColorFormat(wgpu::TextureFormat::BGRA8Unorm, true, false, true, true, 4, kAnyFloat, 4, 8, 1);
+
+        bool BGRA8UnormSupportsStorageUsage = device->HasFeature(Feature::BGRA8UnormStorage);
+        AddColorFormat(wgpu::TextureFormat::BGRA8Unorm, true, BGRA8UnormSupportsStorageUsage, true, true, 4, kAnyFloat, 4, 8, 1);
         AddColorFormat(wgpu::TextureFormat::BGRA8UnormSrgb, true, false, true, true, 4, kAnyFloat, 4, 8, 1, wgpu::TextureFormat::BGRA8Unorm);
         AddColorFormat(wgpu::TextureFormat::RGB10A2Unorm, true, false, true, true, 4, kAnyFloat, 4, 8, 4);
 
         bool isRG11B10UfloatRenderable = device->HasFeature(Feature::RG11B10UfloatRenderable);
-        AddColorFormat(wgpu::TextureFormat::RG11B10Ufloat, isRG11B10UfloatRenderable, false, isRG11B10UfloatRenderable, false, 4, kAnyFloat, 3, 8, 4);
+        AddColorFormat(wgpu::TextureFormat::RG11B10Ufloat, isRG11B10UfloatRenderable, false, isRG11B10UfloatRenderable, isRG11B10UfloatRenderable, 4, kAnyFloat, 3, 8, 4);
         AddColorFormat(wgpu::TextureFormat::RGB9E5Ufloat, false, false, false, false, 4, kAnyFloat, 3);
 
         // 8 bytes color formats

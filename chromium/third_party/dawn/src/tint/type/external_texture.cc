@@ -14,28 +14,29 @@
 
 #include "src/tint/type/external_texture.h"
 
-#include "src/tint/program_builder.h"
+#include "src/tint/type/manager.h"
+#include "src/tint/type/texture_dimension.h"
 
 TINT_INSTANTIATE_TYPEINFO(tint::type::ExternalTexture);
 
 namespace tint::type {
 
-ExternalTexture::ExternalTexture() : Base(ast::TextureDimension::k2d) {}
-
-ExternalTexture::ExternalTexture(ExternalTexture&&) = default;
+ExternalTexture::ExternalTexture()
+    : Base(static_cast<size_t>(TypeInfo::Of<ExternalTexture>().full_hashcode),
+           TextureDimension::k2d) {}
 
 ExternalTexture::~ExternalTexture() = default;
 
-size_t ExternalTexture::Hash() const {
-    return static_cast<size_t>(TypeInfo::Of<ExternalTexture>().full_hashcode);
-}
-
-bool ExternalTexture::Equals(const Type& other) const {
+bool ExternalTexture::Equals(const UniqueNode& other) const {
     return other.Is<ExternalTexture>();
 }
 
 std::string ExternalTexture::FriendlyName(const SymbolTable&) const {
     return "texture_external";
+}
+
+ExternalTexture* ExternalTexture::Clone(CloneContext& ctx) const {
+    return ctx.dst.mgr->Get<ExternalTexture>();
 }
 
 }  // namespace tint::type

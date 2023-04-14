@@ -21,10 +21,10 @@
 
 void filterbank_accumulate(
     benchmark::State& state,
-    xnn_u32_filterbank_accumulate_ukernel_function filterbank_accumulate,
+    xnn_u32_filterbank_accumulate_ukernel_fn filterbank_accumulate,
     benchmark::utils::IsaCheckFunction isa_check = nullptr)
 {
-  if (isa_check && !isa_check(state)) {
+  if (isa_check != nullptr && !isa_check(state)) {
     return;
   }
   const size_t rows = state.range(0);
@@ -36,7 +36,7 @@ void filterbank_accumulate(
   std::vector<uint16_t, AlignedAllocator<uint16_t, 64>> weights(input_size * 2);
   std::vector<uint64_t, AlignedAllocator<uint64_t, 64>> output(rows);
   std::iota(input.begin(), input.end(), 0);
-  std::fill(weight_widths.begin(), weight_widths.end(), batch);
+  std::fill(weight_widths.begin(), weight_widths.end(), static_cast<uint8_t>(batch));
   std::iota(weights.begin(), weights.end(), 0);
   std::iota(output.begin(), output.end(), 0);
 
@@ -69,9 +69,9 @@ static void BenchmarkKernelSize(benchmark::internal::Benchmark* b)
 }
 
 #if XNN_ARCH_ARM && XNN_ENABLE_ASSEMBLY
-BENCHMARK_CAPTURE(filterbank_accumulate, u32_aarch32_arm_x1,   xnn_u32_filterbank_accumulate_ukernel__aarch32_arm_x1)->Apply(BenchmarkKernelSize)->UseRealTime();
-BENCHMARK_CAPTURE(filterbank_accumulate, u32_aarch32_neon_x1,  xnn_u32_filterbank_accumulate_ukernel__aarch32_neon_x1, benchmark::utils::CheckNEON)->Apply(BenchmarkKernelSize)->UseRealTime();
-BENCHMARK_CAPTURE(filterbank_accumulate, u32_aarch32_neon_x2,  xnn_u32_filterbank_accumulate_ukernel__aarch32_neon_x2, benchmark::utils::CheckNEON)->Apply(BenchmarkKernelSize)->UseRealTime();
+BENCHMARK_CAPTURE(filterbank_accumulate, u32_aarch32_arm_x1,   xnn_u32_filterbank_accumulate_ukernel__asm_aarch32_arm_x1)->Apply(BenchmarkKernelSize)->UseRealTime();
+BENCHMARK_CAPTURE(filterbank_accumulate, u32_aarch32_neon_x1,  xnn_u32_filterbank_accumulate_ukernel__asm_aarch32_neon_x1, benchmark::utils::CheckNEON)->Apply(BenchmarkKernelSize)->UseRealTime();
+BENCHMARK_CAPTURE(filterbank_accumulate, u32_aarch32_neon_x2,  xnn_u32_filterbank_accumulate_ukernel__asm_aarch32_neon_x2, benchmark::utils::CheckNEON)->Apply(BenchmarkKernelSize)->UseRealTime();
 #endif  // XNN_ARCH_ARM && XNN_ENABLE_ASSEMBLY
 
 #if XNN_ARCH_ARM || XNN_ARCH_ARM64

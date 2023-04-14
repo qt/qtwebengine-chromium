@@ -7,6 +7,7 @@
 
 #include "src/gpu/ganesh/mtl/GrMtlAttachment.h"
 
+#include "include/gpu/GpuTypes.h"
 #include "include/gpu/GrBackendSurface.h"
 #include "src/gpu/ganesh/mtl/GrMtlGpu.h"
 #include "src/gpu/ganesh/mtl/GrMtlUtil.h"
@@ -21,7 +22,7 @@ GrMtlAttachment::GrMtlAttachment(GrMtlGpu* gpu,
                                  SkISize dimensions,
                                  UsageFlags supportedUsages,
                                  id<MTLTexture> texture,
-                                 SkBudgeted budgeted,
+                                 skgpu::Budgeted budgeted,
                                  std::string_view label)
         : GrAttachment(gpu, dimensions, supportedUsages, texture.sampleCount,
                        texture.mipmapLevelCount > 1 ? GrMipmapped::kYes : GrMipmapped::kNo,
@@ -54,7 +55,7 @@ sk_sp<GrMtlAttachment> GrMtlAttachment::MakeStencil(GrMtlGpu* gpu,
         storageMode = MTLStorageModePrivate;
     }
     return GrMtlAttachment::Make(gpu, dimensions, UsageFlags::kStencilAttachment, sampleCnt, format,
-                                 /*mipLevels=*/1, textureUsage, storageMode, SkBudgeted::kYes);
+                                 /*mipLevels=*/1, textureUsage, storageMode, skgpu::Budgeted::kYes);
 }
 
 sk_sp<GrMtlAttachment> GrMtlAttachment::MakeMSAA(GrMtlGpu* gpu,
@@ -68,7 +69,7 @@ sk_sp<GrMtlAttachment> GrMtlAttachment::MakeMSAA(GrMtlGpu* gpu,
         storageMode = MTLStorageModePrivate;
     }
     return GrMtlAttachment::Make(gpu, dimensions, UsageFlags::kColorAttachment, sampleCnt, format,
-                                 /*mipLevels=*/1, textureUsage, storageMode, SkBudgeted::kYes);
+                                 /*mipLevels=*/1, textureUsage, storageMode, skgpu::Budgeted::kYes);
 }
 
 sk_sp<GrMtlAttachment> GrMtlAttachment::MakeTexture(GrMtlGpu* gpu,
@@ -77,7 +78,7 @@ sk_sp<GrMtlAttachment> GrMtlAttachment::MakeTexture(GrMtlGpu* gpu,
                                                     uint32_t mipLevels,
                                                     GrRenderable renderable,
                                                     int numSamples,
-                                                    SkBudgeted budgeted) {
+                                                    skgpu::Budgeted budgeted) {
     int textureUsage = 0;
     int storageMode = 0;
     if (@available(macOS 10.11, iOS 9.0, *)) {
@@ -104,7 +105,7 @@ sk_sp<GrMtlAttachment> GrMtlAttachment::Make(GrMtlGpu* gpu,
                                              uint32_t mipLevels,
                                              int mtlTextureUsage,
                                              int mtlStorageMode,
-                                             SkBudgeted budgeted) {
+                                             skgpu::Budgeted budgeted) {
     auto desc = [[MTLTextureDescriptor alloc] init];
     desc.textureType = (sampleCnt > 1) ? MTLTextureType2DMultisample : MTLTextureType2D;
     desc.pixelFormat = format;

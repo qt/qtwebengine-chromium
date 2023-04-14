@@ -15,16 +15,17 @@
 #ifndef THIRD_PARTY_NEARBY_INTERNAL_PLATFORM_IMPLEMENTATION_CREDENTIAL_CALLBACKS_H_
 #define THIRD_PARTY_NEARBY_INTERNAL_PLATFORM_IMPLEMENTATION_CREDENTIAL_CALLBACKS_H_
 
-#include <functional>
 #include <ostream>
 #include <string>
 #include <vector>
 
 #include "absl/functional/any_invocable.h"
 #include "absl/status/status.h"
+#include "absl/status/statusor.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/string_view.h"
 #include "internal/proto/credential.pb.h"
+#include "internal/proto/local_credential.pb.h"
 
 namespace nearby {
 namespace presence {
@@ -42,6 +43,17 @@ struct CredentialSelector {
                  credential_selector.account_name,
                  static_cast<int>(credential_selector.identity_type));
   }
+  template <typename H>
+  friend H AbslHashValue(H h, const CredentialSelector& selector) {
+    return H::combine(std::move(h), selector.manager_app_id,
+                      selector.account_name, selector.identity_type);
+  }
+  friend bool operator==(const CredentialSelector& a,
+                         const CredentialSelector& b) {
+    return a.manager_app_id == b.manager_app_id &&
+           a.account_name == b.account_name &&
+           a.identity_type == b.identity_type;
+  }
 };
 
 enum class PublicCredentialType {
@@ -53,8 +65,9 @@ struct SaveCredentialsResultCallback {
   absl::AnyInvocable<void(absl::Status)> credentials_saved_cb;
 };
 
-struct GenerateCredentialsCallback {
-  absl::AnyInvocable<void(std::vector<nearby::internal::PublicCredential>)>
+struct GenerateCredentialsResultCallback {
+  absl::AnyInvocable<void(
+      absl::StatusOr<std::vector<nearby::internal::SharedCredential>>)>
       credentials_generated_cb;
 };
 
@@ -62,16 +75,16 @@ struct UpdateRemotePublicCredentialsCallback {
   absl::AnyInvocable<void(absl::Status)> credentials_updated_cb;
 };
 
-struct GetPrivateCredentialsResultCallback {
-  absl::AnyInvocable<void(std::vector<::nearby::internal::PrivateCredential>)>
+struct GetLocalCredentialsResultCallback {
+  absl::AnyInvocable<void(
+      absl::StatusOr<std::vector<nearby::internal::LocalCredential>>)>
       credentials_fetched_cb;
-  absl::AnyInvocable<void(absl::Status)> get_credentials_failed_cb;
 };
 
 struct GetPublicCredentialsResultCallback {
-  absl::AnyInvocable<void(std::vector<::nearby::internal::PublicCredential>)>
+  absl::AnyInvocable<void(
+      absl::StatusOr<std::vector<nearby::internal::SharedCredential>>)>
       credentials_fetched_cb;
-  absl::AnyInvocable<void(absl::Status)> get_credentials_failed_cb;
 };
 
 inline std::ostream& operator<<(std::ostream& os,

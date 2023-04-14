@@ -18,9 +18,9 @@
 #include "include/core/SkRSXform.h"
 #include "include/core/SkSpan.h"
 #include "include/core/SkTypes.h"
-#include "include/private/SkTemplates.h"
+#include "include/private/base/SkTemplates.h"
+#include "src/base/SkZip.h"
 #include "src/core/SkGlyphBuffer.h"
-#include "src/core/SkZip.h"
 
 class SkBaseDevice;
 class SkCanvas;
@@ -113,6 +113,13 @@ public:
         }
         return glyphCount;
     }
+    size_t maxGlyphRunSize() const {
+        size_t size = 0;
+        for (const GlyphRun& run : *this) {
+            size = std::max(run.runSize(), size);
+        }
+        return size;
+    }
 
     bool hasRSXForm() const {
         for (const GlyphRun& run : *this) {
@@ -182,9 +189,9 @@ private:
             const SkTextBlob* blob, const SkRect& bounds, SkPoint origin);
 
     int fMaxTotalRunSize{0};
-    SkAutoTMalloc<SkPoint> fPositions;
+    skia_private::AutoTMalloc<SkPoint> fPositions;
     int fMaxScaledRotations{0};
-    SkAutoTMalloc<SkVector> fScaledRotations;
+    skia_private::AutoTMalloc<SkVector> fScaledRotations;
 
     std::vector<GlyphRun> fGlyphRunListStorage;
     std::optional<GlyphRunList> fGlyphRunList;  // Defaults to no value;

@@ -10,8 +10,10 @@
 #include "include/core/SkData.h"
 #include "include/core/SkImage.h"
 #include "include/core/SkM44.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkShader.h"
 #include "include/core/SkTileMode.h"
-#include "include/private/SkTo.h"
+#include "include/private/base/SkTo.h"
 #include "modules/jetski/src/Utils.h"
 
 namespace {

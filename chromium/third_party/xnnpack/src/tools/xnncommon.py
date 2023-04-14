@@ -26,6 +26,7 @@ _ARCH_TO_MACRO_MAP = {
   "x86-32": "XNN_ARCH_X86",
   "x86-64": "XNN_ARCH_X86_64",
   "hexagon": "XNN_ARCH_HEXAGON",
+  "riscv": "XNN_ARCH_RISCV",
   "wasm": "XNN_ARCH_WASM",
   "wasmsimd": "XNN_ARCH_WASMSIMD",
   "wasmrelaxedsimd": "XNN_ARCH_WASMRELAXEDSIMD",
@@ -34,10 +35,11 @@ _ARCH_TO_MACRO_MAP = {
 # Mapping from ISA extension to macro guarding build-time enabled/disabled
 # status for the ISA. Only ISAs that can be enabled/disabled have an entry.
 _ISA_TO_MACRO_MAP = {
-  "fp16arith": "XNN_ENABLE_ARM_FP16",
-  "neonfp16arith": "XNN_ENABLE_ARM_FP16",
+  "fp16arith": "XNN_ENABLE_ARM_FP16_SCALAR",
+  "neonfp16arith": "XNN_ENABLE_ARM_FP16_VECTOR",
   "neonbf16": "XNN_ENABLE_ARM_BF16",
   "neondot": "XNN_ENABLE_ARM_DOTPROD",
+  "rvv": "XNN_ENABLE_RISCV_VECTOR",
 }
 
 _ISA_TO_ARCH_MAP = {
@@ -62,9 +64,11 @@ _ISA_TO_ARCH_MAP = {
   "avx512f": ["x86-32", "x86-64"],
   "avx512skx": ["x86-32", "x86-64"],
   "avx512vbmi": ["x86-32", "x86-64"],
+  "rvv": ["riscv"],
   "wasm32": ["wasm", "wasmsimd"],
   "wasm": ["wasm", "wasmsimd", "wasmrelaxedsimd"],
   "wasmsimd": ["wasmsimd", "wasmrelaxedsimd"],
+  "wasmpshufb": ["wasmrelaxedsimd"],
   "wasmrelaxedsimd": ["wasmrelaxedsimd"],
 }
 
@@ -90,12 +94,15 @@ _ISA_TO_CHECK_MAP = {
   "avx512f": "TEST_REQUIRES_X86_AVX512F",
   "avx512skx": "TEST_REQUIRES_X86_AVX512SKX",
   "avx512vbmi": "TEST_REQUIRES_X86_AVX512VBMI",
+  "rvv": "TEST_REQUIRES_RISCV_VECTOR",
+  "wasmpshufb": "TEST_REQUIRES_WASM_PSHUFB",
 }
 
 
 def parse_target_name(target_name):
   arch = list()
   isa = None
+  assembly = False
   for target_part in target_name.split("_"):
     if target_part in _ARCH_TO_MACRO_MAP:
       if target_part in _ISA_TO_ARCH_MAP:
@@ -105,10 +112,12 @@ def parse_target_name(target_name):
         arch = [target_part]
     elif target_part in _ISA_TO_ARCH_MAP:
       isa = target_part
+    elif target_part == "asm":
+      assembly = True
   if isa and not arch:
     arch = _ISA_TO_ARCH_MAP[isa]
 
-  return arch, isa
+  return arch, isa, assembly
 
 
 def generate_isa_check_macro(isa):
@@ -116,10 +125,7 @@ def generate_isa_check_macro(isa):
 
 
 def arch_to_macro(arch, isa):
-  if arch == "aarch32" and isa == "neondot":
-    return _ARCH_TO_MACRO_MAP[arch] + " && !XNN_PLATFORM_IOS"
-  else:
-    return _ARCH_TO_MACRO_MAP[arch]
+  return _ARCH_TO_MACRO_MAP[arch]
 
 
 def postprocess_test_case(test_case, arch, isa, assembly=False, jit=False):

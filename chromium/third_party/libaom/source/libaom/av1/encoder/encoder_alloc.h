@@ -311,6 +311,14 @@ static AOM_INLINE void dealloc_compressor_data(AV1_COMP *cpi) {
   aom_free(cpi->mb_weber_stats);
   cpi->mb_weber_stats = NULL;
 
+  if (cpi->oxcf.enable_rate_guide_deltaq) {
+    aom_free(cpi->prep_rate_estimates);
+    cpi->prep_rate_estimates = NULL;
+
+    aom_free(cpi->ext_rate_distribution);
+    cpi->ext_rate_distribution = NULL;
+  }
+
   aom_free(cpi->mb_delta_q);
   cpi->mb_delta_q = NULL;
 }
@@ -379,7 +387,7 @@ static AOM_INLINE YV12_BUFFER_CONFIG *realloc_and_scale_source(
           cm->seq_params->subsampling_x, cm->seq_params->subsampling_y,
           cm->seq_params->use_highbitdepth, AOM_BORDER_IN_PIXELS,
           cm->features.byte_alignment, NULL, NULL, NULL,
-          cpi->oxcf.tool_cfg.enable_global_motion, 0))
+          cpi->image_pyramid_levels, 0))
     aom_internal_error(cm->error, AOM_CODEC_MEM_ERROR,
                        "Failed to reallocate scaled source buffer");
   assert(cpi->scaled_source.y_crop_width == scaled_width);

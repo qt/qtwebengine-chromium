@@ -467,7 +467,7 @@ bool CPWL_Edit::OnMouseWheel(Mask<FWL_EVENTFLAG> nFlag,
 }
 
 void CPWL_Edit::OnDestroy() {
-  m_pCaret.Release();
+  m_pCaret.ExtractAsDangling();
 }
 
 bool CPWL_Edit::IsWndHorV() const {
@@ -485,6 +485,10 @@ void CPWL_Edit::SetCursor() {
 
 WideString CPWL_Edit::GetSelectedText() {
   return m_pEditImpl->GetSelectedText();
+}
+
+void CPWL_Edit::ReplaceAndKeepSelection(const WideString& text) {
+  m_pEditImpl->ReplaceAndKeepSelection(text);
 }
 
 void CPWL_Edit::ReplaceSelection(const WideString& text) {

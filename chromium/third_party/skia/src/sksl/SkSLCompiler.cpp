@@ -11,6 +11,7 @@
 #include "include/private/SkSLIRNode.h"
 #include "include/private/SkSLProgramKind.h"
 #include "include/private/SkSLSymbol.h"
+#include "include/private/base/SkDebug.h"
 #include "include/sksl/DSLCore.h"
 #include "include/sksl/DSLModifiers.h"
 #include "include/sksl/DSLType.h"
@@ -25,8 +26,6 @@
 #include "src/sksl/SkSLStringStream.h"
 #include "src/sksl/analysis/SkSLProgramUsage.h"
 #include "src/sksl/ir/SkSLExpression.h"
-#include "src/sksl/ir/SkSLExternalFunction.h"
-#include "src/sksl/ir/SkSLExternalFunctionReference.h"
 #include "src/sksl/ir/SkSLField.h"
 #include "src/sksl/ir/SkSLFieldAccess.h"
 #include "src/sksl/ir/SkSLFunctionDeclaration.h"
@@ -148,12 +147,12 @@ Compiler::~Compiler() {}
 const Module* Compiler::moduleForProgramKind(ProgramKind kind) {
     auto m = ModuleLoader::Get();
     switch (kind) {
-        case ProgramKind::kVertex:                return m.loadVertexModule(this);           break;
-        case ProgramKind::kFragment:              return m.loadFragmentModule(this);         break;
-        case ProgramKind::kCompute:               return m.loadComputeModule(this);          break;
-        case ProgramKind::kGraphiteVertex:        return m.loadGraphiteVertexModule(this);   break;
-        case ProgramKind::kGraphiteFragment:      return m.loadGraphiteFragmentModule(this); break;
-        case ProgramKind::kPrivateRuntimeShader:  return m.loadPrivateRTShaderModule(this);  break;
+        case ProgramKind::kVertex:                return m.loadVertexModule(this);
+        case ProgramKind::kFragment:              return m.loadFragmentModule(this);
+        case ProgramKind::kCompute:               return m.loadComputeModule(this);
+        case ProgramKind::kGraphiteVertex:        return m.loadGraphiteVertexModule(this);
+        case ProgramKind::kGraphiteFragment:      return m.loadGraphiteFragmentModule(this);
+        case ProgramKind::kPrivateRuntimeShader:  return m.loadPrivateRTShaderModule(this);
         case ProgramKind::kRuntimeColorFilter:
         case ProgramKind::kRuntimeShader:
         case ProgramKind::kRuntimeBlender:
@@ -161,7 +160,7 @@ const Module* Compiler::moduleForProgramKind(ProgramKind kind) {
         case ProgramKind::kPrivateRuntimeBlender:
         case ProgramKind::kMeshVertex:
         case ProgramKind::kMeshFragment:
-        case ProgramKind::kGeneric:               return m.loadPublicModule(this);           break;
+        case ProgramKind::kGeneric:               return m.loadPublicModule(this);
     }
     SkUNREACHABLE;
 }
@@ -201,9 +200,6 @@ void Compiler::FinalizeSettings(ProgramSettings* settings, ProgramKind kind) {
         // For "generic" interpreter programs, leave all functions intact. (The SkVM API supports
         // calling any function, not just 'main').
         settings->fRemoveDeadFunctions = false;
-    } else {
-        // Only generic programs (limited to CPU) are able to use external functions.
-        SkASSERT(!settings->fExternalFunctions);
     }
 
     // Runtime effects always allow narrowing conversions.
@@ -285,10 +281,6 @@ std::unique_ptr<Expression> Compiler::convertIdentifier(Position pos, std::strin
             dsl::DSLModifiers modifiers;
             dsl::DSLType dslType(result->name(), &modifiers, pos);
             return TypeReference::Convert(*fContext, pos, &dslType.skslType());
-        }
-        case Symbol::Kind::kExternal: {
-            const ExternalFunction* r = &result->as<ExternalFunction>();
-            return std::make_unique<ExternalFunctionReference>(pos, r);
         }
         default:
             SK_ABORT("unsupported symbol type %d\n", (int) result->kind());

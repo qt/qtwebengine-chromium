@@ -8,13 +8,14 @@
 #ifndef GrTypes_DEFINED
 #define GrTypes_DEFINED
 
-#include "include/core/SkMath.h"
 #include "include/core/SkTypes.h"
-#include "include/gpu/GrConfig.h"
+#include "include/private/base/SkTo.h" // IWYU pragma: keep
 
+#include <cstddef>
+#include <cstdint>
 class GrBackendSemaphore;
-class SkImage;
-class SkSurface;
+
+namespace skgpu { enum class Mipmapped : bool; }
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -122,12 +123,10 @@ static constexpr GrBackendApi kMock_GrBackend = GrBackendApi::kMock;
 /**
  * Used to say whether a texture has mip levels allocated or not.
  */
-enum class GrMipmapped : bool {
-    kNo = false,
-    kYes = true
-};
-/** Deprecated legacy alias of GrMipmapped. */
-using GrMipMapped = GrMipmapped;
+/** Deprecated legacy alias of skgpu::Mipmapped. */
+using GrMipmapped = skgpu::Mipmapped;
+/** Deprecated legacy alias of skgpu::Mipmapped. */
+using GrMipMapped = skgpu::Mipmapped;
 
 /*
  * Can a GrBackendObject be rendered to?

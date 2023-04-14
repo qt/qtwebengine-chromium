@@ -12,11 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "gmock/gmock.h"
 #include "src/tint/resolver/resolver.h"
 #include "src/tint/resolver/resolver_test_helper.h"
 #include "src/tint/type/reference.h"
-
-#include "gmock/gmock.h"
+#include "src/tint/type/texture_dimension.h"
 
 namespace tint::resolver {
 namespace {
@@ -41,7 +41,7 @@ TEST_F(ResolverVariableTest, LocalVar_NoInitializer) {
     //   var a : A;
     // }
 
-    Enable(ast::Extension::kF16);
+    Enable(builtin::Extension::kF16);
 
     auto* S = Structure("S", utils::Vector{Member("i", ty.i32())});
     auto* A = Alias("A", ty.Of(S));
@@ -106,7 +106,7 @@ TEST_F(ResolverVariableTest, LocalVar_WithInitializer) {
     //   var a : A = A(1);
     // }
 
-    Enable(ast::Extension::kF16);
+    Enable(builtin::Extension::kF16);
 
     auto* S = Structure("S", utils::Vector{Member("i", ty.i32())});
     auto* A = Alias("A", ty.Of(S));
@@ -116,8 +116,8 @@ TEST_F(ResolverVariableTest, LocalVar_WithInitializer) {
     auto* f_c = Expr(1_f);
     auto* h_c = Expr(1_h);
     auto* b_c = Expr(true);
-    auto* s_c = Construct(ty.Of(S), Expr(1_i));
-    auto* a_c = Construct(ty.Of(A), Expr(1_i));
+    auto* s_c = Call(ty.Of(S), Expr(1_i));
+    auto* a_c = Call(ty.Of(A), Expr(1_i));
 
     auto* i = Var("i", ty.i32(), i_c);
     auto* u = Var("u", ty.u32(), u_c);
@@ -149,12 +149,12 @@ TEST_F(ResolverVariableTest, LocalVar_WithInitializer) {
     ASSERT_TRUE(TypeOf(s)->Is<type::Reference>());
     ASSERT_TRUE(TypeOf(a)->Is<type::Reference>());
 
-    EXPECT_EQ(TypeOf(i)->As<type::Reference>()->Access(), ast::Access::kReadWrite);
-    EXPECT_EQ(TypeOf(u)->As<type::Reference>()->Access(), ast::Access::kReadWrite);
-    EXPECT_EQ(TypeOf(f)->As<type::Reference>()->Access(), ast::Access::kReadWrite);
-    EXPECT_EQ(TypeOf(b)->As<type::Reference>()->Access(), ast::Access::kReadWrite);
-    EXPECT_EQ(TypeOf(s)->As<type::Reference>()->Access(), ast::Access::kReadWrite);
-    EXPECT_EQ(TypeOf(a)->As<type::Reference>()->Access(), ast::Access::kReadWrite);
+    EXPECT_EQ(TypeOf(i)->As<type::Reference>()->Access(), builtin::Access::kReadWrite);
+    EXPECT_EQ(TypeOf(u)->As<type::Reference>()->Access(), builtin::Access::kReadWrite);
+    EXPECT_EQ(TypeOf(f)->As<type::Reference>()->Access(), builtin::Access::kReadWrite);
+    EXPECT_EQ(TypeOf(b)->As<type::Reference>()->Access(), builtin::Access::kReadWrite);
+    EXPECT_EQ(TypeOf(s)->As<type::Reference>()->Access(), builtin::Access::kReadWrite);
+    EXPECT_EQ(TypeOf(a)->As<type::Reference>()->Access(), builtin::Access::kReadWrite);
 
     EXPECT_TRUE(TypeOf(i)->As<type::Reference>()->StoreType()->Is<type::I32>());
     EXPECT_TRUE(TypeOf(u)->As<type::Reference>()->StoreType()->Is<type::U32>());
@@ -238,7 +238,7 @@ TEST_F(ResolverVariableTest, LocalVar_ShadowsGlobalVar) {
     //   var a = a;
     // }
 
-    auto* g = GlobalVar("a", ty.i32(), ast::AddressSpace::kPrivate);
+    auto* g = GlobalVar("a", ty.i32(), builtin::AddressSpace::kPrivate);
     auto* v = Var("a", Expr("a"));
     Func("F", utils::Empty, ty.void_(), utils::Vector{Decl(v)});
 
@@ -249,7 +249,8 @@ TEST_F(ResolverVariableTest, LocalVar_ShadowsGlobalVar) {
     ASSERT_NE(local, nullptr);
     EXPECT_EQ(local->Shadows(), global);
 
-    auto* user_v = Sem().Get<sem::VariableUser>(local->Declaration()->initializer);
+    auto* user_v =
+        Sem().GetVal(local->Declaration()->initializer)->UnwrapLoad()->As<sem::VariableUser>();
     ASSERT_NE(user_v, nullptr);
     EXPECT_EQ(user_v->Variable(), global);
 }
@@ -298,7 +299,8 @@ TEST_F(ResolverVariableTest, LocalVar_ShadowsLocalVar) {
     ASSERT_NE(local_y, nullptr);
     EXPECT_EQ(local_y->Shadows(), local_x);
 
-    auto* user_y = Sem().Get<sem::VariableUser>(local_y->Declaration()->initializer);
+    auto* user_y =
+        Sem().GetVal(local_y->Declaration()->initializer)->UnwrapLoad()->As<sem::VariableUser>();
     ASSERT_NE(user_y, nullptr);
     EXPECT_EQ(user_y->Variable(), local_x);
 }
@@ -368,7 +370,7 @@ TEST_F(ResolverVariableTest, LocalVar_ShadowsParam) {
 
     ASSERT_TRUE(r()->Resolve()) << r()->error();
 
-    auto* param = Sem().Get<sem::Parameter>(p);
+    auto* param = Sem().Get(p);
     auto* local = Sem().Get<sem::LocalVariable>(v);
 
     ASSERT_NE(param, nullptr);
@@ -397,7 +399,7 @@ TEST_F(ResolverVariableTest, LocalLet) {
     //   let p : pointer<function, i32> = &v;
     // }
 
-    Enable(ast::Extension::kF16);
+    Enable(builtin::Extension::kF16);
 
     auto* S = Structure("S", utils::Vector{Member("i", ty.i32())});
     auto* A = Alias("A", ty.Of(S));
@@ -408,8 +410,8 @@ TEST_F(ResolverVariableTest, LocalLet) {
     auto* f_c = Expr(1_f);
     auto* h_c = Expr(1_h);
     auto* b_c = Expr(true);
-    auto* s_c = Construct(ty.Of(S), Expr(1_i));
-    auto* a_c = Construct(ty.Of(A), Expr(1_i));
+    auto* s_c = Call(ty.Of(S), Expr(1_i));
+    auto* a_c = Call(ty.Of(A), Expr(1_i));
     auto* p_c = AddressOf(v);
 
     auto* i = Let("i", ty.i32(), i_c);
@@ -419,7 +421,7 @@ TEST_F(ResolverVariableTest, LocalLet) {
     auto* b = Let("b", ty.bool_(), b_c);
     auto* s = Let("s", ty.Of(S), s_c);
     auto* a = Let("a", ty.Of(A), a_c);
-    auto* p = Let("p", ty.pointer<i32>(ast::AddressSpace::kFunction), p_c);
+    auto* p = Let("p", ty.pointer<i32>(builtin::AddressSpace::kFunction), p_c);
 
     Func("F", utils::Empty, ty.void_(),
          utils::Vector{
@@ -470,8 +472,8 @@ TEST_F(ResolverVariableTest, LocalLet_InheritsAccessFromOriginatingVariable) {
     // }
     auto* inner = Structure("Inner", utils::Vector{Member("arr", ty.array<i32, 4>())});
     auto* buf = Structure("S", utils::Vector{Member("inner", ty.Of(inner))});
-    auto* storage = GlobalVar("s", ty.Of(buf), ast::AddressSpace::kStorage, ast::Access::kReadWrite,
-                              Binding(0_a), Group(0_a));
+    auto* storage = GlobalVar("s", ty.Of(buf), builtin::AddressSpace::kStorage,
+                              builtin::Access::kReadWrite, Binding(0_a), Group(0_a));
 
     auto* expr = IndexAccessor(MemberAccessor(MemberAccessor(storage, "inner"), "arr"), 3_i);
     auto* ptr = Let("p", AddressOf(expr));
@@ -483,8 +485,8 @@ TEST_F(ResolverVariableTest, LocalLet_InheritsAccessFromOriginatingVariable) {
     ASSERT_TRUE(TypeOf(expr)->Is<type::Reference>());
     ASSERT_TRUE(TypeOf(ptr)->Is<type::Pointer>());
 
-    EXPECT_EQ(TypeOf(expr)->As<type::Reference>()->Access(), ast::Access::kReadWrite);
-    EXPECT_EQ(TypeOf(ptr)->As<type::Pointer>()->Access(), ast::Access::kReadWrite);
+    EXPECT_EQ(TypeOf(expr)->As<type::Reference>()->Access(), builtin::Access::kReadWrite);
+    EXPECT_EQ(TypeOf(ptr)->As<type::Pointer>()->Access(), builtin::Access::kReadWrite);
 }
 
 TEST_F(ResolverVariableTest, LocalLet_ShadowsAlias) {
@@ -552,7 +554,7 @@ TEST_F(ResolverVariableTest, LocalLet_ShadowsGlobalVar) {
     //   let a = a;
     // }
 
-    auto* g = GlobalVar("a", ty.i32(), ast::AddressSpace::kPrivate);
+    auto* g = GlobalVar("a", ty.i32(), builtin::AddressSpace::kPrivate);
     auto* l = Let("a", Expr("a"));
     Func("F", utils::Empty, ty.void_(), utils::Vector{Decl(l)});
 
@@ -563,7 +565,8 @@ TEST_F(ResolverVariableTest, LocalLet_ShadowsGlobalVar) {
     ASSERT_NE(local, nullptr);
     EXPECT_EQ(local->Shadows(), global);
 
-    auto* user = Sem().Get<sem::VariableUser>(local->Declaration()->initializer);
+    auto* user =
+        Sem().GetVal(local->Declaration()->initializer)->UnwrapLoad()->As<sem::VariableUser>();
     ASSERT_NE(user, nullptr);
     EXPECT_EQ(user->Variable(), global);
 }
@@ -612,7 +615,8 @@ TEST_F(ResolverVariableTest, LocalLet_ShadowsLocalVar) {
     ASSERT_NE(local_l, nullptr);
     EXPECT_EQ(local_l->Shadows(), local_v);
 
-    auto* user = Sem().Get<sem::VariableUser>(local_l->Declaration()->initializer);
+    auto* user =
+        Sem().GetVal(local_l->Declaration()->initializer)->UnwrapLoad()->As<sem::VariableUser>();
     ASSERT_NE(user, nullptr);
     EXPECT_EQ(user->Variable(), local_v);
 }
@@ -762,7 +766,7 @@ TEST_F(ResolverVariableTest, LocalConst_ShadowsGlobalVar) {
     //   const a = 1i;
     // }
 
-    auto* g = GlobalVar("a", ty.i32(), ast::AddressSpace::kPrivate);
+    auto* g = GlobalVar("a", ty.i32(), builtin::AddressSpace::kPrivate);
     auto* c = Const("a", Expr(1_i));
     Func("F", utils::Empty, ty.void_(), utils::Vector{Decl(c)});
 
@@ -898,7 +902,7 @@ TEST_F(ResolverVariableTest, LocalConst_ExplicitType_Decls) {
     auto* c_vu32 = Const("e", ty.vec3<u32>(), vec3<u32>());
     auto* c_vf32 = Const("f", ty.vec3<f32>(), vec3<f32>());
     auto* c_mf32 = Const("g", ty.mat3x3<f32>(), mat3x3<f32>());
-    auto* c_s = Const("h", ty.type_name("S"), Construct(ty.type_name("S")));
+    auto* c_s = Const("h", ty("S"), Call("S"));
 
     WrapInFunction(c_i32, c_u32, c_f32, c_vi32, c_vu32, c_vf32, c_mf32, c_s);
 
@@ -943,14 +947,14 @@ TEST_F(ResolverVariableTest, LocalConst_ImplicitType_Decls) {
     auto* c_vi32 = Const("f", vec3<i32>());
     auto* c_vu32 = Const("g", vec3<u32>());
     auto* c_vf32 = Const("h", vec3<f32>());
-    auto* c_vai = Const("i", Construct(ty.vec(nullptr, 3), Expr(0_a)));
-    auto* c_vaf = Const("j", Construct(ty.vec(nullptr, 3), Expr(0._a)));
+    auto* c_vai = Const("i", Call(ty.vec<Infer>(3), Expr(0_a)));
+    auto* c_vaf = Const("j", Call(ty.vec<Infer>(3), Expr(0._a)));
     auto* c_mf32 = Const("k", mat3x3<f32>());
-    auto* c_maf32 = Const("l", Construct(ty.mat(nullptr, 3, 3),  //
-                                         Construct(ty.vec(nullptr, 3), Expr(0._a)),
-                                         Construct(ty.vec(nullptr, 3), Expr(0._a)),
-                                         Construct(ty.vec(nullptr, 3), Expr(0._a))));
-    auto* c_s = Const("m", Construct(ty.type_name("S")));
+    auto* c_maf32 =
+        Const("l", Call(ty.mat3x3<Infer>(),  //
+                        Call(ty.vec<Infer>(3), Expr(0._a)), Call(ty.vec<Infer>(3), Expr(0._a)),
+                        Call(ty.vec<Infer>(3), Expr(0._a))));
+    auto* c_s = Const("m", Call("S"));
 
     WrapInFunction(c_i32, c_u32, c_f32, c_ai, c_af, c_vi32, c_vu32, c_vf32, c_vai, c_vaf, c_mf32,
                    c_maf32, c_s);
@@ -1033,14 +1037,14 @@ TEST_F(ResolverVariableTest, GlobalVar_AddressSpace) {
     // https://gpuweb.github.io/gpuweb/wgsl/#storage-class
 
     auto* buf = Structure("S", utils::Vector{Member("m", ty.i32())});
-    auto* private_ = GlobalVar("p", ty.i32(), ast::AddressSpace::kPrivate);
-    auto* workgroup = GlobalVar("w", ty.i32(), ast::AddressSpace::kWorkgroup);
+    auto* private_ = GlobalVar("p", ty.i32(), builtin::AddressSpace::kPrivate);
+    auto* workgroup = GlobalVar("w", ty.i32(), builtin::AddressSpace::kWorkgroup);
     auto* uniform =
-        GlobalVar("ub", ty.Of(buf), ast::AddressSpace::kUniform, Binding(0_a), Group(0_a));
+        GlobalVar("ub", ty.Of(buf), builtin::AddressSpace::kUniform, Binding(0_a), Group(0_a));
     auto* storage =
-        GlobalVar("sb", ty.Of(buf), ast::AddressSpace::kStorage, Binding(1_a), Group(0_a));
+        GlobalVar("sb", ty.Of(buf), builtin::AddressSpace::kStorage, Binding(1_a), Group(0_a));
     auto* handle =
-        GlobalVar("h", ty.depth_texture(ast::TextureDimension::k2d), Binding(2_a), Group(0_a));
+        GlobalVar("h", ty.depth_texture(type::TextureDimension::k2d), Binding(2_a), Group(0_a));
 
     ASSERT_TRUE(r()->Resolve()) << r()->error();
 
@@ -1050,25 +1054,25 @@ TEST_F(ResolverVariableTest, GlobalVar_AddressSpace) {
     ASSERT_TRUE(TypeOf(storage)->Is<type::Reference>());
     ASSERT_TRUE(TypeOf(handle)->Is<type::Reference>());
 
-    EXPECT_EQ(TypeOf(private_)->As<type::Reference>()->Access(), ast::Access::kReadWrite);
-    EXPECT_EQ(TypeOf(workgroup)->As<type::Reference>()->Access(), ast::Access::kReadWrite);
-    EXPECT_EQ(TypeOf(uniform)->As<type::Reference>()->Access(), ast::Access::kRead);
-    EXPECT_EQ(TypeOf(storage)->As<type::Reference>()->Access(), ast::Access::kRead);
-    EXPECT_EQ(TypeOf(handle)->As<type::Reference>()->Access(), ast::Access::kRead);
+    EXPECT_EQ(TypeOf(private_)->As<type::Reference>()->Access(), builtin::Access::kReadWrite);
+    EXPECT_EQ(TypeOf(workgroup)->As<type::Reference>()->Access(), builtin::Access::kReadWrite);
+    EXPECT_EQ(TypeOf(uniform)->As<type::Reference>()->Access(), builtin::Access::kRead);
+    EXPECT_EQ(TypeOf(storage)->As<type::Reference>()->Access(), builtin::Access::kRead);
+    EXPECT_EQ(TypeOf(handle)->As<type::Reference>()->Access(), builtin::Access::kRead);
 }
 
 TEST_F(ResolverVariableTest, GlobalVar_ExplicitAddressSpace) {
     // https://gpuweb.github.io/gpuweb/wgsl/#storage-class
 
     auto* buf = Structure("S", utils::Vector{Member("m", ty.i32())});
-    auto* storage = GlobalVar("sb", ty.Of(buf), ast::AddressSpace::kStorage,
-                              ast::Access::kReadWrite, Binding(1_a), Group(0_a));
+    auto* storage = GlobalVar("sb", ty.Of(buf), builtin::AddressSpace::kStorage,
+                              builtin::Access::kReadWrite, Binding(1_a), Group(0_a));
 
     ASSERT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_TRUE(TypeOf(storage)->Is<type::Reference>());
 
-    EXPECT_EQ(TypeOf(storage)->As<type::Reference>()->Access(), ast::Access::kReadWrite);
+    EXPECT_EQ(TypeOf(storage)->As<type::Reference>()->Access(), builtin::Access::kReadWrite);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1119,13 +1123,13 @@ TEST_F(ResolverVariableTest, GlobalConst_ImplicitType_Decls) {
     auto* c_vi32 = GlobalConst("f", vec3<i32>());
     auto* c_vu32 = GlobalConst("g", vec3<u32>());
     auto* c_vf32 = GlobalConst("h", vec3<f32>());
-    auto* c_vai = GlobalConst("i", Construct(ty.vec(nullptr, 3), Expr(0_a)));
-    auto* c_vaf = GlobalConst("j", Construct(ty.vec(nullptr, 3), Expr(0._a)));
+    auto* c_vai = GlobalConst("i", Call(ty.vec<Infer>(3), Expr(0_a)));
+    auto* c_vaf = GlobalConst("j", Call(ty.vec<Infer>(3), Expr(0._a)));
     auto* c_mf32 = GlobalConst("k", mat3x3<f32>());
-    auto* c_maf32 = GlobalConst("l", Construct(ty.mat(nullptr, 3, 3),  //
-                                               Construct(ty.vec(nullptr, 3), Expr(0._a)),
-                                               Construct(ty.vec(nullptr, 3), Expr(0._a)),
-                                               Construct(ty.vec(nullptr, 3), Expr(0._a))));
+    auto* c_maf32 = GlobalConst(
+        "l", Call(ty.mat3x3<Infer>(),  //
+                  Call(ty.vec<Infer>(3), Expr(0._a)), Call(ty.vec<Infer>(3), Expr(0._a)),
+                  Call(ty.vec<Infer>(3), Expr(0._a))));
 
     ASSERT_TRUE(r()->Resolve()) << r()->error();
 
@@ -1218,7 +1222,7 @@ TEST_F(ResolverVariableTest, Param_ShadowsGlobalVar) {
     // fn F(a : bool) {
     // }
 
-    auto* g = GlobalVar("a", ty.i32(), ast::AddressSpace::kPrivate);
+    auto* g = GlobalVar("a", ty.i32(), builtin::AddressSpace::kPrivate);
     auto* p = Param("a", ty.bool_());
     Func("F", utils::Vector{p}, ty.void_(), utils::Empty);
 
@@ -1261,7 +1265,7 @@ TEST_F(ResolverVariableTest, Param_ShadowsAlias) {
     // }
 
     auto* a = Alias("a", ty.i32());
-    auto* p = Param("a", ty.type_name("a"));
+    auto* p = Param("a", ty("a"));
     Func("F", utils::Vector{p}, ty.void_(), utils::Empty);
 
     ASSERT_TRUE(r()->Resolve()) << r()->error();

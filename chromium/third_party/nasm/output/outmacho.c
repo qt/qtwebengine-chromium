@@ -2469,8 +2469,13 @@ bool macho_set_min_os(const char *str) {
 
     unsigned short major = 0, minor = 0, subminor = 0;
     int count = sscanf(version, "%hu.%hu.%hu", &major, &minor, &subminor);
-    /* at least major and minor must be given */
-    if (count < 2) {
+    if (count < 1) {
+        nasm_free((char *)platform_ver);
+        return false;
+    }
+
+    /* Pre-macOS 11 at least major and minor must be given */
+    if (platform == PLATFORM_MACOS && major < 11 && count < 2) {
         nasm_free((char *)platform_ver);
         return false;
     }

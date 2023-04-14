@@ -49,14 +49,14 @@ static void ComputeError(
 }
 
 static void ExpM1Error(benchmark::State& state,
-  xnn_f32_unary_math_function expm1,
+  xnn_f32_unary_math_fn expm1,
   benchmark::utils::IsaCheckFunction isa_check = nullptr)
 {
   if (!cpuinfo_initialize()) {
     state.SkipWithError("failed cpuinfo init");
     return;
   }
-  if (isa_check && !isa_check(state)) {
+  if (isa_check != nullptr && !isa_check(state)) {
     return;
   }
 

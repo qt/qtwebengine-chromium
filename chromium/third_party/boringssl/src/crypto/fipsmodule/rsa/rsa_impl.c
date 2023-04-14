@@ -85,6 +85,13 @@ int rsa_check_public_key(const RSA *rsa) {
     return 0;
   }
 
+  // RSA moduli must be odd. In addition to being necessary for RSA in general,
+  // we cannot setup Montgomery reduction with even moduli.
+  if (!BN_is_odd(rsa->n)) {
+    OPENSSL_PUT_ERROR(RSA, RSA_R_BAD_RSA_PARAMETERS);
+    return 0;
+  }
+
   // Mitigate DoS attacks by limiting the exponent size. 33 bits was chosen as
   // the limit based on the recommendations in [1] and [2]. Windows CryptoAPI
   // doesn't support values larger than 32 bits [3], so it is unlikely that
@@ -288,7 +295,6 @@ int RSA_encrypt(RSA *rsa, size_t *out_len, uint8_t *out, size_t max_out,
   result = BN_CTX_get(ctx);
   buf = OPENSSL_malloc(rsa_size);
   if (!f || !result || !buf) {
-    OPENSSL_PUT_ERROR(RSA, ERR_R_MALLOC_FAILURE);
     goto err;
   }
 
@@ -491,7 +497,6 @@ int rsa_default_sign_raw(RSA *rsa, size_t *out_len, uint8_t *out,
 
   buf = OPENSSL_malloc(rsa_size);
   if (buf == NULL) {
-    OPENSSL_PUT_ERROR(RSA, ERR_R_MALLOC_FAILURE);
     goto err;
   }
 
@@ -544,7 +549,6 @@ int rsa_default_decrypt(RSA *rsa, size_t *out_len, uint8_t *out, size_t max_out,
     // Allocate a temporary buffer to hold the padded plaintext.
     buf = OPENSSL_malloc(rsa_size);
     if (buf == NULL) {
-      OPENSSL_PUT_ERROR(RSA, ERR_R_MALLOC_FAILURE);
       goto err;
     }
   }
@@ -626,7 +630,6 @@ int rsa_verify_raw_no_self_test(RSA *rsa, size_t *out_len, uint8_t *out,
   f = BN_CTX_get(ctx);
   result = BN_CTX_get(ctx);
   if (f == NULL || result == NULL) {
-    OPENSSL_PUT_ERROR(RSA, ERR_R_MALLOC_FAILURE);
     goto err;
   }
 
@@ -636,7 +639,6 @@ int rsa_verify_raw_no_self_test(RSA *rsa, size_t *out_len, uint8_t *out,
     // Allocate a temporary buffer to hold the padded plaintext.
     buf = OPENSSL_malloc(rsa_size);
     if (buf == NULL) {
-      OPENSSL_PUT_ERROR(RSA, ERR_R_MALLOC_FAILURE);
       goto err;
     }
   }
@@ -718,10 +720,11 @@ int rsa_default_private_transform(RSA *rsa, uint8_t *out, const uint8_t *in,
   result = BN_CTX_get(ctx);
 
   if (f == NULL || result == NULL) {
-    OPENSSL_PUT_ERROR(RSA, ERR_R_MALLOC_FAILURE);
     goto err;
   }
 
+  // The caller should have ensured this.
+  assert(len == BN_num_bytes(rsa->n));
   if (BN_bin2bn(in, len, f) == NULL) {
     goto err;
   }
@@ -783,16 +786,16 @@ int rsa_default_private_transform(RSA *rsa, uint8_t *out, const uint8_t *in,
   // works when the CRT isn't used. That attack is much less likely to succeed
   // than the CRT attack, but there have likely been improvements since 1997.
   //
-  // This check is cheap assuming |e| is small; it almost always is.
+  // This check is cheap assuming |e| is small, which we require in
+  // |rsa_check_public_key|.
   if (rsa->e != NULL) {
     BIGNUM *vrfy = BN_CTX_get(ctx);
     if (vrfy == NULL ||
         !BN_mod_exp_mont(vrfy, result, rsa->e, rsa->n, ctx, rsa->mont_n) ||
-        !BN_equal_consttime(vrfy, f)) {
+        !constant_time_declassify_int(BN_equal_consttime(vrfy, f))) {
       OPENSSL_PUT_ERROR(RSA, ERR_R_INTERNAL_ERROR);
       goto err;
     }
-
   }
 
   if (do_blinding &&
@@ -806,6 +809,7 @@ int rsa_default_private_transform(RSA *rsa, uint8_t *out, const uint8_t *in,
   //
   // See Falko Strenzke, "Manger's Attack revisited", ICICS 2010.
   assert(result->width == rsa->mont_n->N.width);
+  bn_assert_fits_in_bytes(result, len);
   if (!BN_bn2bin_padded(out, len, result)) {
     OPENSSL_PUT_ERROR(RSA, ERR_R_INTERNAL_ERROR);
     goto err;
@@ -924,11 +928,18 @@ static int mod_exp(BIGNUM *r0, const BIGNUM *I, RSA *rsa, BN_CTX *ctx) {
       // so it is correct mod q. Finally, the result is bounded by [m1, n + m1),
       // and the result is at least |m1|, so this must be the unique answer in
       // [0, n).
-      !bn_mul_consttime(r0, r0, q, ctx) ||
-      !bn_uadd_consttime(r0, r0, m1) ||
-      // The result should be bounded by |n|, but fixed-width operations may
-      // bound the width slightly higher, so fix it.
-      !bn_resize_words(r0, n->width)) {
+      !bn_mul_consttime(r0, r0, q, ctx) ||  //
+      !bn_uadd_consttime(r0, r0, m1)) {
+    goto err;
+  }
+
+  // The result should be bounded by |n|, but fixed-width operations may
+  // bound the width slightly higher, so fix it. This trips constant-time checks
+  // because a naive data flow analysis does not realize the excess words are
+  // publicly zero.
+  assert(BN_cmp(r0, n) < 0);
+  bn_assert_fits_in_bytes(r0, BN_num_bytes(n));
+  if (!bn_resize_words(r0, n->width)) {
     goto err;
   }
 

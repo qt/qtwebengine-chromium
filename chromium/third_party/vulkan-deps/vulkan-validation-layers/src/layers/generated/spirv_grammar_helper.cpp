@@ -4,7 +4,7 @@
 
 /***************************************************************************
  *
- * Copyright (c) 2021-2022 The Khronos Group Inc.
+ * Copyright (c) 2021-2023 The Khronos Group Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,8 +18,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * Author: Spencer Fricke <s.fricke@samsung.com>
- *
  * This file is related to anything that is found in the SPIR-V grammar
  * file found in the SPIRV-Headers. Mainly used for SPIR-V util functions.
  *
@@ -27,7 +25,7 @@
 
 #include "vk_layer_data.h"
 #include "spirv_grammar_helper.h"
-#include "shader_instruction.h"
+#include "state_tracker/shader_instruction.h"
 
 // All information related to each SPIR-V opcode instruction
 struct InstructionInfo {
@@ -43,7 +41,7 @@ struct InstructionInfo {
 // of a given SPIR-V opcode instruction
 //
 // clang-format off
-static const layer_data::unordered_map<uint32_t, InstructionInfo> kInstructionTable {
+static const vvl::unordered_map<uint32_t, InstructionInfo> kInstructionTable {
     {spv::OpNop, {"OpNop", false, false, 0, 0, 0}},
     {spv::OpUndef, {"OpUndef", true, true, 0, 0, 0}},
     {spv::OpSourceContinued, {"OpSourceContinued", false, false, 0, 0, 0}},

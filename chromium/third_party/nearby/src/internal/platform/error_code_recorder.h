@@ -15,11 +15,9 @@
 #ifndef PLATFORM_BASE_ERROR_CODE_RECORDER_H_
 #define PLATFORM_BASE_ERROR_CODE_RECORDER_H_
 
-#include <functional>
-
+#include "absl/functional/any_invocable.h"
 #include "internal/platform/error_code_params.h"
 
-namespace location {
 namespace nearby {
 
 // Deploys the error code of the platform medium to the analytics recorder.
@@ -28,7 +26,7 @@ namespace nearby {
 // medium platform supported whenever error occurred.
 class ErrorCodeRecorder {
  public:
-  using ErrorCodeListener = std::function<void(const ErrorCodeParams&)>;
+  using ErrorCodeListener = absl::AnyInvocable<void(const ErrorCodeParams&)>;
 
   explicit ErrorCodeRecorder(ErrorCodeListener listener) {
     listener_ = std::move(listener);
@@ -81,6 +79,5 @@ class ErrorCodeRecorder {
 };
 
 }  // namespace nearby
-}  // namespace location
 
 #endif  // PLATFORM_BASE_ERROR_CODE_RECORDER_H_

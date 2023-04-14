@@ -15,7 +15,6 @@
 #include "internal/platform/multi_thread_executor.h"
 
 #include <atomic>
-#include <functional>
 
 #include "gtest/gtest.h"
 #include "absl/synchronization/mutex.h"
@@ -23,7 +22,6 @@
 #include "absl/time/time.h"
 #include "internal/platform/exception.h"
 
-namespace location {
 namespace nearby {
 
 namespace {
@@ -135,4 +133,3 @@ TEST(MultiThreadExecutorTest, ThreadCheck_SubmitCallable) {
   EXPECT_EQ(future.Get().result(), 0);
 }
 }  // namespace nearby
-}  // namespace location

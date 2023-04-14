@@ -9,6 +9,7 @@
 #define skgpu_graphite_ResourceTypes_DEFINED
 
 #include "include/gpu/graphite/GraphiteTypes.h"
+#include "include/private/base/SkTo.h"
 #include "src/core/SkEnumBitMask.h"
 
 namespace skgpu::graphite {
@@ -34,15 +35,22 @@ SK_MAKE_BITMASK_OPS(DepthStencilFlags);
 /**
  * What a GPU buffer will be used for
  */
-enum class BufferType {
+enum class BufferType : int {
     kVertex,
     kIndex,
     kXferCpuToGpu,
     kXferGpuToCpu,
     kUniform,
     kStorage,
+
+    // GPU-only buffer types
+    kIndirect,
+    kVertexStorage,
+    kIndexStorage,
+
+    kLast = kIndexStorage,
 };
-static const int kBufferTypeCount = static_cast<int>(BufferType::kStorage) + 1;
+static const int kBufferTypeCount = static_cast<int>(BufferType::kLast) + 1;
 
 /**
  * Data layout requirements on host-shareable buffer contents.

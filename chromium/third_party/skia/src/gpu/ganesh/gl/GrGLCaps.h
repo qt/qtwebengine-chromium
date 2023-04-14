@@ -11,9 +11,9 @@
 
 #include <functional>
 #include "include/private/SkChecksum.h"
-#include "include/private/SkTArray.h"
-#include "include/private/SkTHash.h"
+#include "include/private/base/SkTArray.h"
 #include "include/private/gpu/ganesh/GrGLTypesPriv.h"
+#include "src/core/SkTHash.h"
 #include "src/gpu/Swizzle.h"
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/gl/GrGLAttachment.h"
@@ -475,7 +475,10 @@ public:
     /* Is there support for enabling/disabling sRGB writes for sRGB-capable color buffers? */
     bool srgbWriteControl() const { return fSRGBWriteControl; }
 
-    /** Skip checks for GL errors, shader compilation success, program link success. */
+    /**
+     * Skip checks for GL errors and framebuffer completeness. Note that this does not skip
+     *  checking shader compilation and program linking status.
+     */
     bool skipErrorChecks() const { return fSkipErrorChecks; }
 
     bool supportsProtected() const { return fSupportsProtected; }

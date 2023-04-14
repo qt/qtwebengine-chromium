@@ -9,16 +9,16 @@ import * as UI from '../../ui/legacy/legacy.js';
 
 const UIStrings = {
   /**
-  *@description Tooltip text that appears when hovering over largeicon pan button in Transform Controller of the Layers panel
-  */
+   *@description Tooltip text that appears when hovering over largeicon pan button in Transform Controller of the Layers panel
+   */
   panModeX: 'Pan mode (X)',
   /**
-  *@description Tooltip text that appears when hovering over largeicon rotate button in Transform Controller of the Layers panel
-  */
+   *@description Tooltip text that appears when hovering over largeicon rotate button in Transform Controller of the Layers panel
+   */
   rotateModeV: 'Rotate mode (V)',
   /**
-  *@description Tooltip text that appears when hovering over the largeicon center button in the Transform Controller of the Layers panel
-  */
+   *@description Tooltip text that appears when hovering over the largeicon center button in the Transform Controller of the Layers panel
+   */
   resetTransform: 'Reset transform (0)',
 };
 const str_ = i18n.i18n.registerUIStrings('panels/layer_viewer/TransformController.ts', UIStrings);
@@ -223,8 +223,8 @@ export class TransformController extends Common.ObjectWrapper.ObjectWrapper<Even
     const mouseEvent = event as WheelEvent;
     const scaleFactor = Math.pow(zoomFactor, -mouseEvent.deltaY * wheelZoomSpeed);
     this.onScale(
-        scaleFactor, mouseEvent.clientX - this.element.totalOffsetLeft(),
-        mouseEvent.clientY - this.element.totalOffsetTop());
+        scaleFactor, mouseEvent.clientX - this.element.getBoundingClientRect().left,
+        mouseEvent.clientY - this.element.getBoundingClientRect().top);
   }
 
   private onDrag(event: Event): void {

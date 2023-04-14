@@ -51,8 +51,8 @@ class CPWL_EditImpl {
                 const CFX_FloatRect& rcClip,
                 const CFX_PointF& ptOffset,
                 const CPVT_WordRange* pRange,
-                IPWL_FillerNotify* pHandler,
-                IPWL_FillerNotify::PerWindowData* pWindowData);
+                IPWL_FillerNotify* pFillerNotify,
+                IPWL_FillerNotify::PerWindowData* pSystemData);
 
   void SetFontMap(IPVT_FontMap* pFontMap);
   void SetNotify(CPWL_Edit* pNotify);
@@ -99,6 +99,7 @@ class CPWL_EditImpl {
   bool Delete();
   bool ClearSelection();
   bool InsertText(const WideString& sText, FX_Charset charset);
+  void ReplaceAndKeepSelection(const WideString& text);
   void ReplaceSelection(const WideString& text);
   bool Redo();
   bool Undo();

@@ -1,9 +1,9 @@
 #!/usr/bin/python3 -i
 #
-# Copyright (c) 2015-2022 The Khronos Group Inc.
-# Copyright (c) 2015-2022 Valve Corporation
-# Copyright (c) 2015-2022 LunarG, Inc.
-# Copyright (c) 2015-2022 Google Inc.
+# Copyright (c) 2015-2023 The Khronos Group Inc.
+# Copyright (c) 2015-2023 Valve Corporation
+# Copyright (c) 2015-2023 LunarG, Inc.
+# Copyright (c) 2015-2023 Google Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,9 +16,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#
-# Author: John Zulauf <jzulauf@lunarg.com>
-# Author: Jeremy Gebben <jeremyg@lunarg.com>
 import os
 import json
 import re
@@ -283,6 +280,7 @@ unordered_stages =  [
   'VK_PIPELINE_STAGE_2_RESOLVE_BIT',
   'VK_PIPELINE_STAGE_2_BLIT_BIT',
   'VK_PIPELINE_STAGE_2_CLEAR_BIT',
+  'VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_COPY_BIT_KHR',
   'VK_PIPELINE_STAGE_2_HOST_BIT',
   'VK_PIPELINE_STAGE_2_COMMAND_PREPROCESS_BIT_NV',
   'VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR',
@@ -489,6 +487,7 @@ VK_PIPELINE_STAGE_2_COMMAND_PREPROCESS_BIT_NV
 VK_PIPELINE_STAGE_2_CONDITIONAL_RENDERING_BIT_EXT
 VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR
 VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR
+VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_COPY_BIT_KHR
 VK_PIPELINE_STAGE_2_VIDEO_DECODE_BIT_KHR
 VK_PIPELINE_STAGE_2_VIDEO_ENCODE_BIT_KHR
 VK_PIPELINE_STAGE_2_SUBPASS_SHADING_BIT_HUAWEI
@@ -567,6 +566,7 @@ snippet_pipeline_stages_supported = '''
 |ename:VK_PIPELINE_STAGE_2_CLEAR_BIT                      | ename:VK_QUEUE_GRAPHICS_BIT, ename:VK_QUEUE_COMPUTE_BIT or ename:VK_QUEUE_TRANSFER_BIT
 |ename:VK_PIPELINE_STAGE_2_RESOLVE_BIT                    | ename:VK_QUEUE_GRAPHICS_BIT, ename:VK_QUEUE_COMPUTE_BIT or ename:VK_QUEUE_TRANSFER_BIT
 |ename:VK_PIPELINE_STAGE_2_BLIT_BIT                       | ename:VK_QUEUE_GRAPHICS_BIT, ename:VK_QUEUE_COMPUTE_BIT or ename:VK_QUEUE_TRANSFER_BIT
+|ename:VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_COPY_BIT_KHR  | ename:VK_QUEUE_GRAPHICS_BIT, ename:VK_QUEUE_COMPUTE_BIT or ename:VK_QUEUE_TRANSFER_BIT
 |ename:VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT                   | None required
 |ename:VK_PIPELINE_STAGE_2_HOST_BIT                             | None required
 |ename:VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT                     | ename:VK_QUEUE_GRAPHICS_BIT
@@ -689,7 +689,7 @@ def StageAccessEnums(stage_accesses, config):
 
     map_name = var_prefix + 'StageAccessIndexByStageAccessBit'
     output.append('// Map of the StageAccessIndices from the StageAccess Bit')
-    typename = 'layer_data::unordered_map<{}, {}>'.format(sync_mask_name, ordinal_name)
+    typename = 'vvl::unordered_map<{}, {}>'.format(sync_mask_name, ordinal_name)
     if config['is_source']:
         output.append('const {}& {}() {{'.format(typename, map_name))
         output.append('{}static const {} variable = {{'.format(indent, typename))
@@ -878,7 +878,7 @@ def AllCommandsByQueueCapability(stage_order, stage_queue_table, config):
     expanded = ('VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT', 'VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT',
                 'VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT', 'VK_PIPELINE_STAGE_2_PRE_RASTERIZATION_SHADERS_BIT')
     for stage in stage_order:
-        if (stage in expanded) or (vvl_fake_extension in stage) : 
+        if (stage in expanded) or (vvl_fake_extension in stage) :
             continue
 
         queue_flag_list = stage_queue_table[stage]
@@ -970,7 +970,7 @@ def GenSyncTypeHelper(gen, is_source) :
     enums_in_bit_order = EnumsInBitOrder(gen.sync_enum)
 
     if config['is_source']:
-        lines.extend(('#include "synchronization_validation_types.h"', ''))
+        lines.extend(('#include "sync_validation_types.h"', ''))
     else:
         lines.extend(('#pragma once', '', '#include <array>', '#include <bitset>', '#include <map>', '#include <stdint.h>', '#include <vulkan/vulkan.h>',
                  '#include "vk_layer_data.h"'))

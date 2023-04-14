@@ -341,6 +341,12 @@ OPENSSL_EXPORT int EVP_BytesToKey(const EVP_CIPHER *type, const EVP_MD *md,
 #define EVP_CIPH_GCM_MODE 0x6
 #define EVP_CIPH_XTS_MODE 0x7
 
+// The following values are never returned from |EVP_CIPHER_mode| and are
+// included only to make it easier to compile code with BoringSSL.
+#define EVP_CIPH_CCM_MODE 0x8
+#define EVP_CIPH_OCB_MODE 0x9
+#define EVP_CIPH_WRAP_MODE 0xa
+
 
 // Cipher flags (for |EVP_CIPHER_flags|).
 
@@ -449,6 +455,12 @@ OPENSSL_EXPORT const EVP_CIPHER *EVP_get_cipherbyname(const char *name);
 // These AEADs are deprecated AES-GCM implementations that set
 // |EVP_CIPH_FLAG_CUSTOM_CIPHER|. Use |EVP_aead_aes_128_gcm| and
 // |EVP_aead_aes_256_gcm| instead.
+//
+// WARNING: Although these APIs allow streaming an individual AES-GCM operation,
+// this is not secure. Until calling |EVP_DecryptFinal_ex|, the tag has not yet
+// been checked and output released by |EVP_DecryptUpdate| is unauthenticated
+// and easily manipulated by attackers. Callers must buffer the output and may
+// not act on it until the entire operation is complete.
 OPENSSL_EXPORT const EVP_CIPHER *EVP_aes_128_gcm(void);
 OPENSSL_EXPORT const EVP_CIPHER *EVP_aes_256_gcm(void);
 
@@ -500,9 +512,6 @@ OPENSSL_EXPORT const EVP_CIPHER *EVP_cast5_cbc(void);
 
 // The following flags do nothing and are included only to make it easier to
 // compile code with BoringSSL.
-#define EVP_CIPH_CCM_MODE (-1)
-#define EVP_CIPH_OCB_MODE (-2)
-#define EVP_CIPH_WRAP_MODE (-3)
 #define EVP_CIPHER_CTX_FLAG_WRAP_ALLOW 0
 
 // EVP_CIPHER_CTX_set_flags does nothing.

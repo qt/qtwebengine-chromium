@@ -52,6 +52,41 @@ The following url parameters change how the harness runs:
 - `runnow=1` runs all matching tests on page load.
 - `debug=1` enables verbose debug logging from tests.
 - `worker=1` runs the tests on a Web Worker instead of the main thread.
+- `power_preference=low-power` runs most tests passing `powerPreference: low-power` to `requestAdapter`
+- `power_preference=high-performance` runs most tests passing `powerPreference: high-performance` to `requestAdapter`
+
+### Web Platform Tests (wpt) - Ref Tests
+
+You can inspect the actual and reference pages for web platform reftests in the standalone
+runner by navigating to them. For example, by loading:
+
+ - `http://localhost:8080/out/webgpu/web_platform/reftests/canvas_clear.https.html`
+ - `http://localhost:8080/out/webgpu/web_platform/reftests/ref/canvas_clear-ref.html`
+
+You can also run a minimal ref test runner.
+
+ - open 2 terminals / command lines.
+ - in one, `npm start`
+ - in the other, `node tools/run_wpt_ref_tests <path-to-browser-executable> [name-of-test]`
+
+Without `[name-of-test]` all ref tests will be run. `[name-of-test]` is just a simple check for
+substring so passing in `rgba` will run every test with `rgba` in its filename.
+
+Examples:
+
+MacOS
+
+```
+# Chrome
+node tools/run_wpt_ref_tests /Applications/Google\ Chrome\ Canary.app/Contents/MacOS/Google\ Chrome\ Canary
+```
+
+Windows
+
+```
+# Chrome
+node .\tools\run_wpt_ref_tests "C:\Users\your-user-name\AppData\Local\Google\Chrome SxS\Application\chrome.exe"
+```
 
 ## Editor
 
@@ -61,7 +96,7 @@ This is optional, but highly recommended: it automatically adds `import` lines a
 provides robust completions, cross-references, renames, error highlighting,
 deprecation highlighting, and type/JSDoc popups.
 
-Open the `cts.code-workspace` workspace file to load settings convienient for this project.
+Open the `cts.code-workspace` workspace file to load settings convenient for this project.
 You can make local configuration changes in `.vscode/`, which is untracked by Git.
 
 ## Pull Requests

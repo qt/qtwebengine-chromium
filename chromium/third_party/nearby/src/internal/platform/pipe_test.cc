@@ -19,12 +19,12 @@
 #include <atomic>
 #include <cstring>
 #include <string>
+#include <utility>
 
 #include "gtest/gtest.h"
 #include "internal/platform/prng.h"
 #include "internal/platform/runnable.h"
 
-namespace location {
 namespace nearby {
 
 TEST(PipeTest, ConstructorDestructorWorks) {
@@ -163,7 +163,7 @@ class Thread {
   ~Thread() { pthread_attr_destroy(&attr_); }
 
   void Start(Runnable runnable) {
-    runnable_ = runnable;
+    runnable_ = std::move(runnable);
 
     pthread_create(&thread_, &attr_, Thread::Body, this);
   }
@@ -341,4 +341,3 @@ TEST(PipeTest, ConcurrentWriteAndRead) {
 }
 
 }  // namespace nearby
-}  // namespace location

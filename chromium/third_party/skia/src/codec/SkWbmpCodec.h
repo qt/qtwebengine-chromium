@@ -10,7 +10,7 @@
 
 #include "include/codec/SkCodec.h"
 #include "include/core/SkTypes.h"
-#include "include/private/SkTemplates.h"
+#include "include/private/base/SkTemplates.h"
 #include "src/codec/SkSwizzler.h"
 
 #include <cstddef>
@@ -60,7 +60,7 @@ private:
 
     // Used for scanline decodes:
     std::unique_ptr<SkSwizzler> fSwizzler;
-    SkAutoTMalloc<uint8_t>      fSrcBuffer;
+    skia_private::AutoTMalloc<uint8_t>      fSrcBuffer;
 
     int onGetScanlines(void* dst, int count, size_t dstRowBytes) override;
     bool onSkipScanlines(int count) override;

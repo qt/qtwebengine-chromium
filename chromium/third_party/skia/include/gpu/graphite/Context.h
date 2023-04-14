@@ -14,13 +14,11 @@
 #include "include/gpu/graphite/ContextOptions.h"
 #include "include/gpu/graphite/GraphiteTypes.h"
 #include "include/gpu/graphite/Recorder.h"
-#include "include/private/SingleOwner.h"
+#include "include/private/base/SingleOwner.h"
 
 #include <memory>
 
 class SkRuntimeEffect;
-
-namespace skgpu { struct VulkanBackendContext; }
 
 namespace skgpu::graphite {
 
@@ -29,10 +27,9 @@ class Buffer;
 class ClientMappedBufferManager;
 class Context;
 class ContextPriv;
-struct DawnBackendContext;
 class GlobalCache;
-struct MtlBackendContext;
 class PaintOptions;
+class PlotUploadTracker;
 class QueueManager;
 class Recording;
 class ResourceProvider;
@@ -47,17 +44,6 @@ public:
     Context& operator=(Context&&) = delete;
 
     ~Context();
-
-#ifdef SK_DAWN
-    static std::unique_ptr<Context> MakeDawn(const DawnBackendContext&, const ContextOptions&);
-#endif
-#ifdef SK_METAL
-    static std::unique_ptr<Context> MakeMetal(const MtlBackendContext&, const ContextOptions&);
-#endif
-
-#ifdef SK_VULKAN
-    static std::unique_ptr<Context> MakeVulkan(const VulkanBackendContext&, const ContextOptions&);
-#endif
 
     BackendApi backend() const;
 
@@ -82,10 +68,6 @@ public:
      * Checks whether any asynchronous work is complete and if so calls related callbacks.
      */
     void checkAsyncWorkCompletion();
-
-#ifdef SK_ENABLE_PRECOMPILE
-    void precompile(const PaintOptions&);
-#endif
 
     /**
      * Called to delete the passed in BackendTexture. This should only be called if the
@@ -126,8 +108,13 @@ protected:
 
 private:
     friend class ContextPriv;
+    friend class ContextCtorAccessor;
 
     SingleOwner* singleOwner() const { return &fSingleOwner; }
+
+    // Must be called in Make() to handle one-time GPU setup operations that can possibly fail and
+    // require Context::Make() to return a nullptr.
+    bool finishInitialization();
 
     void asyncReadPixels(const TextureProxy* textureProxy,
                          const SkImageInfo& srcImageInfo,
@@ -156,6 +143,7 @@ private:
     std::unique_ptr<ResourceProvider> fResourceProvider;
     std::unique_ptr<QueueManager> fQueueManager;
     std::unique_ptr<ClientMappedBufferManager> fMappedBufferManager;
+    std::unique_ptr<PlotUploadTracker> fPlotUploadTracker;
 
     // In debug builds we guard against improper thread handling. This guard is passed to the
     // ResourceCache for the Context.

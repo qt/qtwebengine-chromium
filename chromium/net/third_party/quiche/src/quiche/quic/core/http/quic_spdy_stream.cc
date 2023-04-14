@@ -14,7 +14,6 @@
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
 #include "quiche/http2/http2_constants.h"
-#include "quiche/quic/core/http/capsule.h"
 #include "quiche/quic/core/http/http_constants.h"
 #include "quiche/quic/core/http/http_decoder.h"
 #include "quiche/quic/core/http/http_frames.h"
@@ -32,11 +31,14 @@
 #include "quiche/quic/platform/api/quic_flag_utils.h"
 #include "quiche/quic/platform/api/quic_flags.h"
 #include "quiche/quic/platform/api/quic_logging.h"
+#include "quiche/common/capsule.h"
 #include "quiche/common/quiche_mem_slice_storage.h"
 #include "quiche/common/quiche_text_utils.h"
 #include "quiche/spdy/core/spdy_protocol.h"
 
-using spdy::Http2HeaderBlock;
+using ::quiche::Capsule;
+using ::quiche::CapsuleType;
+using ::spdy::Http2HeaderBlock;
 
 namespace quic {
 
@@ -1170,28 +1172,12 @@ size_t QuicSpdyStream::WriteHeadersImpl(
       send_buffer().stream_offset(),
       send_buffer().stream_offset() + headers_frame_header.length());
 
-  if (GetQuicReloadableFlag(quic_one_write_for_headers)) {
-    QUIC_RELOADABLE_FLAG_COUNT(quic_one_write_for_headers);
-
-    QUIC_DLOG(INFO) << ENDPOINT << "Stream " << id()
-                    << " is writing HEADERS frame header of length "
-                    << headers_frame_header.length()
-                    << ", and payload of length " << encoded_headers.length()
-                    << " with fin " << fin;
-    WriteOrBufferData(absl::StrCat(headers_frame_header, encoded_headers), fin,
-                      /*ack_listener=*/nullptr);
-  } else {
-    QUIC_DLOG(INFO) << ENDPOINT << "Stream " << id()
-                    << " is writing HEADERS frame header of length "
-                    << headers_frame_header.length();
-    WriteOrBufferData(headers_frame_header, /* fin = */ false,
-                      /* ack_listener = */ nullptr);
-
-    QUIC_DLOG(INFO) << ENDPOINT << "Stream " << id()
-                    << " is writing HEADERS frame payload of length "
-                    << encoded_headers.length() << " with fin " << fin;
-    WriteOrBufferData(encoded_headers, fin, nullptr);
-  }
+  QUIC_DLOG(INFO) << ENDPOINT << "Stream " << id()
+                  << " is writing HEADERS frame header of length "
+                  << headers_frame_header.length() << ", and payload of length "
+                  << encoded_headers.length() << " with fin " << fin;
+  WriteOrBufferData(absl::StrCat(headers_frame_header, encoded_headers), fin,
+                    /*ack_listener=*/nullptr);
 
   QuicSpdySession::LogHeaderCompressionRatioHistogram(
       /* using_qpack = */ true,
@@ -1403,11 +1389,21 @@ bool QuicSpdyStream::OnCapsule(const Capsule& capsule) {
       }
       return connect_ip_visitor_->OnRouteAdvertisementCapsule(
           capsule.route_advertisement_capsule());
+
+    // Ignore WebTransport over HTTP/2 capsules.
+    case CapsuleType::WT_RESET_STREAM:
+    case CapsuleType::WT_STOP_SENDING:
+    case CapsuleType::WT_STREAM:
+    case CapsuleType::WT_STREAM_WITH_FIN:
+    case CapsuleType::WT_MAX_STREAM_DATA:
+    case CapsuleType::WT_MAX_STREAMS_BIDI:
+    case CapsuleType::WT_MAX_STREAMS_UNIDI:
+      return true;
   }
   return true;
 }
 
-void QuicSpdyStream::OnCapsuleParseFailure(const std::string& error_message) {
+void QuicSpdyStream::OnCapsuleParseFailure(absl::string_view error_message) {
   QUIC_DLOG(ERROR) << ENDPOINT << "Capsule parse failure: " << error_message;
   Reset(QUIC_BAD_APPLICATION_PAYLOAD);
 }
@@ -1460,7 +1456,7 @@ void QuicSpdyStream::RegisterHttp3DatagramVisitor(
   }
   datagram_visitor_ = visitor;
   QUICHE_DCHECK(!capsule_parser_);
-  capsule_parser_ = std::make_unique<CapsuleParser>(this);
+  capsule_parser_ = std::make_unique<quiche::CapsuleParser>(this);
 }
 
 void QuicSpdyStream::UnregisterHttp3DatagramVisitor() {

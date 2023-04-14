@@ -27,6 +27,7 @@
 #include "../imageio/webpdec.h"
 #include "./stopwatch.h"
 #include "./unicode.h"
+#include "sharpyuv/sharpyuv.h"
 #include "webp/encode.h"
 
 #ifndef WEBP_DLL
@@ -832,8 +833,12 @@ int main(int argc, const char* argv[]) {
 #endif
     } else if (!strcmp(argv[c], "-version")) {
       const int version = WebPGetEncoderVersion();
+      const int sharpyuv_version = SharpYuvGetVersion();
       printf("%d.%d.%d\n",
              (version >> 16) & 0xff, (version >> 8) & 0xff, version & 0xff);
+      printf("libsharpyuv: %d.%d.%d\n",
+             (sharpyuv_version >> 24) & 0xff, (sharpyuv_version >> 16) & 0xffff,
+             sharpyuv_version & 0xff);
       FREE_WARGV_AND_RETURN(0);
     } else if (!strcmp(argv[c], "-progress")) {
       show_progress = 1;
@@ -1140,9 +1145,10 @@ int main(int argc, const char* argv[]) {
       }
 
       picture.use_argb = 1;
-      if (!ReadWebP(memory_writer.mem, memory_writer.size, &picture,
-                    /*keep_alpha=*/WebPPictureHasTransparency(&picture),
-                    /*metadata=*/NULL)) {
+      if (!ReadWebP(
+              memory_writer.mem, memory_writer.size, &picture,
+              /*keep_alpha=*/WebPPictureHasTransparency(&original_picture),
+              /*metadata=*/NULL)) {
         fprintf(stderr, "Error! Cannot decode encoded WebP bitstream\n");
         fprintf(stderr, "Error code: %d (%s)\n", picture.error_code,
                 kErrorMessages[picture.error_code]);

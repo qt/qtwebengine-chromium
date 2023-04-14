@@ -19,6 +19,7 @@
 
 #include <stdint.h>
 
+#include "aom_mem/aom_mem.h"
 #include "config/aom_config.h"
 #include "config/aom_scale_rtcd.h"
 
@@ -2042,8 +2043,9 @@ static void calculate_gf_length(AV1_COMP *cpi, int max_gop_length,
                 temp_accu_coeff *= stats[n].cor_coeff;
                 this_score +=
                     temp_accu_coeff *
-                    (1 - stats[n].noise_var /
-                             AOMMAX(regions[this_reg].avg_intra_err, 0.001));
+                    sqrt(AOMMAX(0.5,
+                                1 - stats[n].noise_var /
+                                        AOMMAX(stats[n].intra_error, 0.001)));
                 count_f++;
               }
               // preceding frames
@@ -2053,8 +2055,9 @@ static void calculate_gf_length(AV1_COMP *cpi, int max_gop_length,
                 temp_accu_coeff *= stats[n].cor_coeff;
                 this_score +=
                     temp_accu_coeff *
-                    (1 - stats[n].noise_var /
-                             AOMMAX(regions[this_reg].avg_intra_err, 0.001));
+                    sqrt(AOMMAX(0.5,
+                                1 - stats[n].noise_var /
+                                        AOMMAX(stats[n].intra_error, 0.001)));
               }
 
               if (this_score > best_score) {
@@ -3508,6 +3511,39 @@ void av1_mark_flashes(FIRSTPASS_STATS *first_stats,
   }
 }
 
+// Smooth-out the noise variance so it is more stable
+// TODO(bohanli): Use a better low-pass filter than averaging
+static void smooth_filter_noise(FIRSTPASS_STATS *first_stats,
+                                FIRSTPASS_STATS *last_stats) {
+  int len = (int)(last_stats - first_stats);
+  double *smooth_noise = aom_malloc(len * sizeof(*smooth_noise));
+  if (!smooth_noise) return;
+
+  for (int i = 0; i < len; i++) {
+    double total_noise = 0;
+    double total_wt = 0;
+    for (int j = -HALF_FILT_LEN; j <= HALF_FILT_LEN; j++) {
+      int idx = AOMMIN(AOMMAX(i + j, 0), len - 1);
+      if (first_stats[idx].is_flash) continue;
+
+      total_noise += first_stats[idx].noise_var;
+      total_wt += 1.0;
+    }
+    if (total_wt > 0.01) {
+      total_noise /= total_wt;
+    } else {
+      total_noise = first_stats[i].noise_var;
+    }
+    smooth_noise[i] = total_noise;
+  }
+
+  for (int i = 0; i < len; i++) {
+    first_stats[i].noise_var = smooth_noise[i];
+  }
+
+  aom_free(smooth_noise);
+}
+
 // Estimate the noise variance of each frame from the first pass stats
 void av1_estimate_noise(FIRSTPASS_STATS *first_stats,
                         FIRSTPASS_STATS *last_stats) {
@@ -3595,6 +3631,8 @@ void av1_estimate_noise(FIRSTPASS_STATS *first_stats,
        this_stats++) {
     this_stats->noise_var = (first_stats + 2)->noise_var;
   }
+
+  smooth_filter_noise(first_stats, last_stats);
 }
 
 // Estimate correlation coefficient of each frame with its previous frame.
@@ -3676,17 +3714,6 @@ void av1_get_second_pass_params(AV1_COMP *cpi,
 
   if (oxcf->rc_cfg.mode == AOM_Q)
     rc->active_worst_quality = oxcf->rc_cfg.cq_level;
-  FIRSTPASS_STATS this_frame;
-  av1_zero(this_frame);
-  // call above fn
-  if (is_stat_consumption_stage(cpi)) {
-    if (cpi->gf_frame_index < gf_group->size || rc->frames_to_key == 0) {
-      process_first_pass_stats(cpi, &this_frame);
-      update_total_stats = 1;
-    }
-  } else {
-    rc->active_worst_quality = oxcf->rc_cfg.cq_level;
-  }
 
   if (cpi->gf_frame_index == gf_group->size) {
     if (cpi->ppi->lap_enabled && cpi->ppi->p_rc.enable_scenecut_detection) {
@@ -3697,6 +3724,18 @@ void av1_get_second_pass_params(AV1_COMP *cpi,
       if (frames_to_key != -1)
         rc->frames_to_key = AOMMIN(rc->frames_to_key, frames_to_key);
     }
+  }
+
+  FIRSTPASS_STATS this_frame;
+  av1_zero(this_frame);
+  // call above fn
+  if (is_stat_consumption_stage(cpi)) {
+    if (cpi->gf_frame_index < gf_group->size || rc->frames_to_key == 0) {
+      process_first_pass_stats(cpi, &this_frame);
+      update_total_stats = 1;
+    }
+  } else {
+    rc->active_worst_quality = oxcf->rc_cfg.cq_level;
   }
 
   // Keyframe and section processing.

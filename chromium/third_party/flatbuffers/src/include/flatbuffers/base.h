@@ -32,7 +32,7 @@
 #include <cstdlib>
 #include <cstring>
 
-#if defined(ARDUINO) && !defined(ARDUINOSTL_M_H)
+#if defined(ARDUINO) && !defined(ARDUINOSTL_M_H) && defined(__AVR__)
   #include <utility.h>
 #else
   #include <utility>
@@ -138,9 +138,9 @@
   #endif
 #endif // !defined(FLATBUFFERS_LITTLEENDIAN)
 
-#define FLATBUFFERS_VERSION_MAJOR 22
-#define FLATBUFFERS_VERSION_MINOR 9
-#define FLATBUFFERS_VERSION_REVISION 29
+#define FLATBUFFERS_VERSION_MAJOR 23
+#define FLATBUFFERS_VERSION_MINOR 1
+#define FLATBUFFERS_VERSION_REVISION 21
 #define FLATBUFFERS_STRING_EXPAND(X) #X
 #define FLATBUFFERS_STRING(X) FLATBUFFERS_STRING_EXPAND(X)
 namespace flatbuffers {
@@ -233,7 +233,7 @@ namespace flatbuffers {
       }
       #define FLATBUFFERS_HAS_STRING_VIEW 1
     // Check for absl::string_view
-    #elif __has_include("absl/strings/string_view.h")
+    #elif __has_include("absl/strings/string_view.h") && (__cplusplus >= 201411)
       #include "absl/strings/string_view.h"
       namespace flatbuffers {
         typedef absl::string_view string_view;

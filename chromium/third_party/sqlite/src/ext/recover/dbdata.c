@@ -164,6 +164,9 @@ static int dbdataConnect(
   DbdataTable *pTab = 0;
   int rc = sqlite3_declare_vtab(db, pAux ? DBPTR_SCHEMA : DBDATA_SCHEMA);
 
+  (void)argc;
+  (void)argv;
+  (void)pzErr;
   if( rc==SQLITE_OK ){
     pTab = (DbdataTable*)sqlite3_malloc64(sizeof(DbdataTable));
     if( pTab==0 ){
@@ -509,10 +512,14 @@ static int dbdataNext(sqlite3_vtab_cursor *pCursor){
         if( pCsr->bOnePage==0 && pCsr->iPgno>pCsr->szDb ) return SQLITE_OK;
         rc = dbdataLoadPage(pCsr, pCsr->iPgno, &pCsr->aPage, &pCsr->nPage);
         if( rc!=SQLITE_OK ) return rc;
-        if( pCsr->aPage ) break;
+        if( pCsr->aPage && pCsr->nPage>=256 ) break;
+        sqlite3_free(pCsr->aPage);
+        pCsr->aPage = 0;
         if( pCsr->bOnePage ) return SQLITE_OK;
         pCsr->iPgno++;
       }
+
+      assert( iOff+3+2<=pCsr->nPage );
       pCsr->iCell = pTab->bPtr ? -2 : 0;
       pCsr->nCell = get_uint16(&pCsr->aPage[iOff+3]);
     }
@@ -747,8 +754,7 @@ static int dbdataGetEncoding(DbdataCursor *pCsr){
   int nPg1 = 0;
   u8 *aPg1 = 0;
   rc = dbdataLoadPage(pCsr, 1, &aPg1, &nPg1);
-  assert( rc!=SQLITE_OK || nPg1==0 || nPg1>=512 );
-  if( rc==SQLITE_OK && nPg1>0 ){
+  if( rc==SQLITE_OK && nPg1>=(56+4) ){
     pCsr->enc = get_uint32(&aPg1[56]);
   }
   sqlite3_free(aPg1);
@@ -768,6 +774,8 @@ static int dbdataFilter(
   DbdataTable *pTab = (DbdataTable*)pCursor->pVtab;
   int rc = SQLITE_OK;
   const char *zSchema = "main";
+  (void)idxStr;
+  (void)argc;
 
   dbdataResetCursor(pCsr);
   assert( pCsr->iPgno==1 );
@@ -936,6 +944,7 @@ int sqlite3_dbdata_init(
   const sqlite3_api_routines *pApi
 ){
   SQLITE_EXTENSION_INIT2(pApi);
+  (void)pzErrMsg;
   return sqlite3DbdataRegister(db);
 }
 

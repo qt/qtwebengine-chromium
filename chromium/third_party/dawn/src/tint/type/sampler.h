@@ -17,7 +17,7 @@
 
 #include <string>
 
-#include "src/tint/ast/sampler.h"
+#include "src/tint/type/sampler_kind.h"
 #include "src/tint/type/type.h"
 
 namespace tint::type {
@@ -27,31 +27,32 @@ class Sampler final : public Castable<Sampler, Type> {
   public:
     /// Constructor
     /// @param kind the kind of sampler
-    explicit Sampler(ast::SamplerKind kind);
-    /// Move constructor
-    Sampler(Sampler&&);
+    explicit Sampler(SamplerKind kind);
+
+    /// Destructor
     ~Sampler() override;
 
-    /// @returns a hash of the type.
-    size_t Hash() const override;
-
-    /// @param other the other type to compare against
-    /// @returns true if the this type is equal to the given type
-    bool Equals(const Type& other) const override;
+    /// @param other the other node to compare against
+    /// @returns true if the this type is equal to @p other
+    bool Equals(const UniqueNode& other) const override;
 
     /// @returns the sampler type
-    ast::SamplerKind kind() const { return kind_; }
+    SamplerKind kind() const { return kind_; }
 
     /// @returns true if this is a comparison sampler
-    bool IsComparison() const { return kind_ == ast::SamplerKind::kComparisonSampler; }
+    bool IsComparison() const { return kind_ == SamplerKind::kComparisonSampler; }
 
     /// @param symbols the program's symbol table
     /// @returns the name for this type that closely resembles how it would be
     /// declared in WGSL.
     std::string FriendlyName(const SymbolTable& symbols) const override;
 
+    /// @param ctx the clone context
+    /// @returns a clone of this type
+    Sampler* Clone(CloneContext& ctx) const override;
+
   private:
-    ast::SamplerKind const kind_;
+    SamplerKind const kind_;
 };
 
 }  // namespace tint::type

@@ -2,69 +2,70 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {type Chrome} from '../../../extension-api/ExtensionAPI.js';  // eslint-disable-line rulesdir/es_modules_import
 import * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import type * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
+import * as TextUtils from '../text_utils/text_utils.js';
 import * as Workspace from '../workspace/workspace.js';
-import {type Chrome} from '../../../extension-api/ExtensionAPI.js';  // eslint-disable-line rulesdir/es_modules_import
 
 import {ContentProviderBasedProject} from './ContentProviderBasedProject.js';
 
+import {assertNotNullOrUndefined} from '../../core/platform/platform.js';
 import {type DebuggerWorkspaceBinding} from './DebuggerWorkspaceBinding.js';
 import {NetworkProject} from './NetworkProject.js';
-import {assertNotNullOrUndefined} from '../../core/platform/platform.js';
 
 const UIStrings = {
   /**
-  *@description Error message that is displayed in the Console when language #plugins report errors
-  *@example {File not found} PH1
-  */
+   *@description Error message that is displayed in the Console when language #plugins report errors
+   *@example {File not found} PH1
+   */
   errorInDebuggerLanguagePlugin: 'Error in debugger language plugin: {PH1}',
   /**
-  *@description Status message that is shown in the Console when debugging information is being
-  *loaded. The 2nd and 3rd placeholders are URLs.
-  *@example {C/C++ DevTools Support (DWARF)} PH1
-  *@example {http://web.dev/file.wasm} PH2
-  *@example {http://web.dev/file.wasm.debug.wasm} PH3
-  */
+   *@description Status message that is shown in the Console when debugging information is being
+   *loaded. The 2nd and 3rd placeholders are URLs.
+   *@example {C/C++ DevTools Support (DWARF)} PH1
+   *@example {http://web.dev/file.wasm} PH2
+   *@example {http://web.dev/file.wasm.debug.wasm} PH3
+   */
   loadingDebugSymbolsForVia: '[{PH1}] Loading debug symbols for {PH2} (via {PH3})...',
   /**
-  *@description Status message that is shown in the Console when debugging information is being loaded
-  *@example {C/C++ DevTools Support (DWARF)} PH1
-  *@example {http://web.dev/file.wasm} PH2
-  */
+   *@description Status message that is shown in the Console when debugging information is being loaded
+   *@example {C/C++ DevTools Support (DWARF)} PH1
+   *@example {http://web.dev/file.wasm} PH2
+   */
   loadingDebugSymbolsFor: '[{PH1}] Loading debug symbols for {PH2}...',
   /**
-  *@description Warning message that is displayed in the Console when debugging information was loaded, but no source files were found
-  *@example {C/C++ DevTools Support (DWARF)} PH1
-  *@example {http://web.dev/file.wasm} PH2
-  */
+   *@description Warning message that is displayed in the Console when debugging information was loaded, but no source files were found
+   *@example {C/C++ DevTools Support (DWARF)} PH1
+   *@example {http://web.dev/file.wasm} PH2
+   */
   loadedDebugSymbolsForButDidnt: '[{PH1}] Loaded debug symbols for {PH2}, but didn\'t find any source files',
   /**
-  *@description Status message that is shown in the Console when debugging information is successfully loaded
-  *@example {C/C++ DevTools Support (DWARF)} PH1
-  *@example {http://web.dev/file.wasm} PH2
-  *@example {42} PH3
-  */
+   *@description Status message that is shown in the Console when debugging information is successfully loaded
+   *@example {C/C++ DevTools Support (DWARF)} PH1
+   *@example {http://web.dev/file.wasm} PH2
+   *@example {42} PH3
+   */
   loadedDebugSymbolsForFound: '[{PH1}] Loaded debug symbols for {PH2}, found {PH3} source file(s)',
   /**
-  *@description Error message that is displayed in the Console when debugging information cannot be loaded
-  *@example {C/C++ DevTools Support (DWARF)} PH1
-  *@example {http://web.dev/file.wasm} PH2
-  *@example {File not found} PH3
-  */
+   *@description Error message that is displayed in the Console when debugging information cannot be loaded
+   *@example {C/C++ DevTools Support (DWARF)} PH1
+   *@example {http://web.dev/file.wasm} PH2
+   *@example {File not found} PH3
+   */
   failedToLoadDebugSymbolsFor: '[{PH1}] Failed to load debug symbols for {PH2} ({PH3})',
   /**
-  *@description Error message that is displayed in UI debugging information cannot be found for a call frame
-  *@example {main} PH1
-  */
+   *@description Error message that is displayed in UI debugging information cannot be found for a call frame
+   *@example {main} PH1
+   */
   failedToLoadDebugSymbolsForFunction: 'No debug information for function "{PH1}"',
   /**
-  *@description Error message that is displayed in UI when a file needed for debugging information for a call frame is missing
-  *@example {mainp.debug.wasm.dwp} PH1
-  */
+   *@description Error message that is displayed in UI when a file needed for debugging information for a call frame is missing
+   *@example {mainp.debug.wasm.dwp} PH1
+   */
   debugSymbolsIncomplete: 'The debug information for function {PH1} is incomplete',
 };
 const str_ = i18n.i18n.registerUIStrings('models/bindings/DebuggerLanguagePlugins.ts', UIStrings);
@@ -716,6 +717,9 @@ export class SourceScope implements SDK.DebuggerModel.ScopeChainEntry {
   constructor(
       callFrame: SDK.DebuggerModel.CallFrame, stopId: StopId, type: string, typeName: string, icon: string|undefined,
       plugin: DebuggerLanguagePlugin) {
+    if (icon && new URL(icon).protocol !== 'data:') {
+      throw new Error('The icon must be a data:-URL');
+    }
     this.#callFrameInternal = callFrame;
     this.#typeInternal = type;
     this.#typeNameInternal = typeName;
@@ -1217,6 +1221,39 @@ export class DebuggerLanguagePluginManager implements
     return locationRanges.map(({start}) => start);
   }
 
+  async uiLocationRangeToRawLocationRanges(
+      uiSourceCode: Workspace.UISourceCode.UISourceCode,
+      textRange: TextUtils.TextRange.TextRange): Promise<SDK.DebuggerModel.LocationRange[]|null> {
+    const locationRangesPromises = [];
+    for (let line = textRange.startLine; line <= textRange.endLine; ++line) {
+      locationRangesPromises.push(this.uiLocationToRawLocationRanges(uiSourceCode, line));
+    }
+    const ranges = [];
+    for (const locationRanges of await Promise.all(locationRangesPromises)) {
+      if (locationRanges === null) {
+        return null;
+      }
+      for (const range of locationRanges) {
+        const [startLocation, endLocation] = await Promise.all([
+          this.rawLocationToUILocation(range.start),
+          this.rawLocationToUILocation(range.end),
+        ]);
+        if (startLocation === null || endLocation === null) {
+          continue;
+        }
+        // Report all ranges that somehow intersect with the `textRange`. It's the
+        // responsibility of the caller to filter / clamp these ranges appropriately.
+        const overlap = textRange.intersection(new TextUtils.TextRange.TextRange(
+            startLocation.lineNumber, startLocation.columnNumber ?? 0, endLocation.lineNumber,
+            endLocation.columnNumber ?? Infinity));
+        if (!overlap.isEmpty()) {
+          ranges.push(range);
+        }
+      }
+    }
+    return ranges;
+  }
+
   scriptsForUISourceCode(uiSourceCode: Workspace.UISourceCode.UISourceCode): SDK.Script.Script[] {
     for (const modelData of this.#debuggerModelToData.values()) {
       const scripts = modelData.uiSourceCodeToScripts.get(uiSourceCode);
@@ -1470,11 +1507,11 @@ export class DebuggerLanguagePluginManager implements
     }
   }
 
-  async getMappedLines(uiSourceCode: Workspace.UISourceCode.UISourceCode): Promise<Set<number>|undefined> {
+  async getMappedLines(uiSourceCode: Workspace.UISourceCode.UISourceCode): Promise<Set<number>|null> {
     const rawModuleIds =
         await Promise.all(this.scriptsForUISourceCode(uiSourceCode).map(s => this.rawModuleIdAndPluginForScript(s)));
 
-    let mappedLines: Set<number>|undefined;
+    let mappedLines: Set<number>|null = null;
     for (const {rawModuleId, plugin} of rawModuleIds) {
       if (!plugin) {
         continue;
@@ -1484,12 +1521,9 @@ export class DebuggerLanguagePluginManager implements
       if (lines === undefined) {
         continue;
       }
-      if (mappedLines === undefined) {
+      if (mappedLines === null) {
         mappedLines = new Set(lines);
       } else {
-        /**
-         * @param {number} l
-         */
         lines.forEach(l => (mappedLines as Set<number>).add(l));
       }
     }

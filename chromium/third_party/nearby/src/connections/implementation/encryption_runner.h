@@ -25,7 +25,6 @@
 #include "internal/platform/scheduled_executor.h"
 #include "internal/platform/single_thread_executor.h"
 
-namespace location {
 namespace nearby {
 namespace connections {
 
@@ -45,10 +44,9 @@ class EncryptionRunner {
                        std::unique_ptr<securegcm::UKey2Handshake> ukey2,
                        const std::string& auth_token,
                        const ByteArray& raw_auth_token)>
-        on_success_cb =
-            DefaultCallback<const std::string&,
-                            std::unique_ptr<securegcm::UKey2Handshake>,
-                            const std::string&, const ByteArray&>();
+        on_success_cb = [](const std::string&,
+                           std::unique_ptr<securegcm::UKey2Handshake>,
+                           const std::string&, const ByteArray&) {};
 
     // Encryption has failed. The remote_endpoint_id and channel are given so
     // that any pending state can be cleaned up.
@@ -61,7 +59,7 @@ class EncryptionRunner {
     // @EncryptionRunnerThread
     std::function<void(const std::string& endpoint_id,
                        EndpointChannel* channel)>
-        on_failure_cb = DefaultCallback<const std::string&, EndpointChannel*>();
+        on_failure_cb = [](const std::string&, EndpointChannel*) {};
   };
 
   // @AnyThread
@@ -81,6 +79,5 @@ class EncryptionRunner {
 
 }  // namespace connections
 }  // namespace nearby
-}  // namespace location
 
 #endif  // CORE_INTERNAL_ENCRYPTION_RUNNER_H_

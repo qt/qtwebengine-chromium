@@ -14,16 +14,16 @@ import {MaxDeviceSize, MinDeviceSize, Insets} from './DeviceModeModel.js';
 
 const UIStrings = {
   /**
-  *@description Title of the Laptop with touch device
-  */
+   *@description Title of the Laptop with touch device
+   */
   laptopWithTouch: 'Laptop with touch',
   /**
-  *@description Title of the Laptop with HiDPI screen device
-  */
+   *@description Title of the Laptop with HiDPI screen device
+   */
   laptopWithHiDPIScreen: 'Laptop with HiDPI screen',
   /**
-  *@description Title of the Laptop with MDPI screen device
-  */
+   *@description Title of the Laptop with MDPI screen device
+   */
   laptopWithMDPIScreen: 'Laptop with MDPI screen',
 };
 const str_ = i18n.i18n.registerUIStrings('models/emulation/EmulatedDevices.ts', UIStrings);
@@ -852,7 +852,7 @@ const emulatedDevices = [
     },
     'capabilities': ['touch', 'mobile'],
     'user-agent':
-        'Mozilla/5.0 (iPad; CPU OS 13_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/87.0.4280.77 Mobile/15E148 Safari/604.1',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.82 Safari/537.36',
     'type': 'tablet',
   },
   {
@@ -1747,6 +1747,32 @@ const emulatedDevices = [
         'Mozilla/5.0 (Linux; Android 6.0.1; Moto G (4)) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/%s Mobile Safari/537.36',
     'user-agent-metadata':
         {'platform': 'Android', 'platformVersion': '6.0.1', 'architecture': '', 'model': 'Moto G (4)', 'mobile': true},
+    'type': 'phone',
+  },
+  {
+    'show-by-default': false,
+    'title': 'Moto G Power',
+    'screen': {
+      'device-pixel-ratio': 1.75,
+      'horizontal': {
+        'width': 823,
+        'height': 412,
+      },
+      'vertical': {
+        'width': 412,
+        'height': 823,
+      },
+    },
+    'capabilities': ['touch', 'mobile'],
+    'user-agent':
+        'Mozilla/5.0 (Linux; Android 11; moto g power (2022)) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/%s Mobile Safari/537.36',
+    'user-agent-metadata': {
+      'platform': 'Android',
+      'platformVersion': '11',
+      'architecture': '',
+      'model': 'moto g power (2022)',
+      'mobile': true,
+    },
     'type': 'phone',
   },
   // DEVICE-LIST-END

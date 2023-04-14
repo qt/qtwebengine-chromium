@@ -2848,6 +2848,8 @@ glMultiDrawElementsInstancedBaseVertexBaseInstanceANGLE(GLenum mode,
         mode, counts, type, indices, instanceCounts, baseVertices, baseInstances, drawcount);
 }
 
+// GL_ANGLE_clip_cull_distance
+
 // GL_ANGLE_copy_texture_3d
 void GL_APIENTRY glCopyTexture3DANGLE(GLuint sourceId,
                                       GLint sourceLevel,
@@ -3899,6 +3901,8 @@ void GL_APIENTRY glReleaseTexturesANGLE(GLuint numTextures, const GLuint *textur
 
 // GL_ARB_sync
 
+// GL_ARM_shader_framebuffer_fetch
+
 // GL_CHROMIUM_bind_uniform_location
 void GL_APIENTRY glBindUniformLocationCHROMIUM(GLuint program, GLint location, const GLchar *name)
 {
@@ -4485,6 +4489,12 @@ void GL_APIENTRY glRenderbufferStorageMultisampleEXT(GLenum target,
 
 // GL_EXT_occlusion_query_boolean
 
+// GL_EXT_polygon_offset_clamp
+void GL_APIENTRY glPolygonOffsetClampEXT(GLfloat factor, GLfloat units, GLfloat clamp)
+{
+    return GL_PolygonOffsetClampEXT(factor, units, clamp);
+}
+
 // GL_EXT_primitive_bounding_box
 void GL_APIENTRY glPrimitiveBoundingBoxEXT(GLfloat minX,
                                            GLfloat minY,
@@ -4995,6 +5005,8 @@ void GL_APIENTRY glTexBufferRangeEXT(GLenum target,
 // GL_EXT_texture_format_BGRA8888
 
 // GL_EXT_texture_format_sRGB_override
+
+// GL_EXT_texture_mirror_clamp_to_edge
 
 // GL_EXT_texture_norm16
 

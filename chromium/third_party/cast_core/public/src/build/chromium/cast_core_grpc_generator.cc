@@ -72,7 +72,7 @@ std::string ReplaceString(const std::string& input,
 class SimpleErrorCollector : public MultiFileErrorCollector {
  public:
   void AddError(const std::string& filename, int line, int column,
-                const std::string& message) override {
+                   const std::string& message) override {
     std::cerr << "[ERROR] " << filename << ", Line " << line << ", Column "
               << column << ": " << message << std::endl;
   }

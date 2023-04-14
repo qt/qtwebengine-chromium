@@ -25,7 +25,6 @@
 #include "internal/platform/implementation/windows/ble.h"
 #include "internal/platform/implementation/windows/bluetooth_adapter.h"
 
-namespace location {
 namespace nearby {
 namespace windows {
 namespace {
@@ -230,8 +229,7 @@ TEST(BleMedium, DISABLED_StartAdvertising_ExtendedAdvertising) {
 
   ByteArray advertising_data(advertising_data_byte_array);
 
-  EXPECT_TRUE(
-      ble_medium.StartAdvertising("NearbyShare", advertising_data, ""));
+  EXPECT_TRUE(ble_medium.StartAdvertising("NearbyShare", advertising_data, ""));
 }
 
 TEST(BleMedium, DISABLED_StopAdvertising) {
@@ -255,35 +253,30 @@ TEST(BleMedium, DISABLED_StartScanning) {
   BluetoothAdapter bluetoothAdapter;
   BleMedium ble_medium(bluetoothAdapter);
 
-  BleMedium::DiscoveredPeripheralCallback discovered_peripheral_callback = {
-      .peripheral_discovered_cb = [this](api::BlePeripheral& peripheral,
-                                         const std::string& service_id,
-                                         bool fast_advertisement) {},
-      .peripheral_lost_cb = [this](api::BlePeripheral& peripheral,
-                                   const std::string& service_id) {}};
-
-  EXPECT_TRUE(ble_medium.StartScanning("NearbyShare", "\xfe\xf3",
-                                       discovered_peripheral_callback));
+  EXPECT_TRUE(ble_medium.StartScanning(
+      "NearbyShare", "\xfe\xf3",
+      {.peripheral_discovered_cb = [](api::BlePeripheral& peripheral,
+                                      const std::string& service_id,
+                                      bool fast_advertisement) {},
+       .peripheral_lost_cb = [](api::BlePeripheral& peripheral,
+                                const std::string& service_id) {}}));
 }
 
 TEST(BleMedium, DISABLED_ReceiveAdvertisement) {
   absl::Notification advertisement_received_notification;
-
   BluetoothAdapter bluetoothAdapter;
   BleMedium ble_medium(bluetoothAdapter);
 
-  BleMedium::DiscoveredPeripheralCallback discovered_peripheral_callback = {
-      .peripheral_discovered_cb =
-          [this, &advertisement_received_notification](
-              api::BlePeripheral& peripheral, const std::string& service_id,
-              bool fast_advertisement) {
-            advertisement_received_notification.Notify();
-          },
-      .peripheral_lost_cb = [this](api::BlePeripheral& peripheral,
-                                   const std::string& service_id) {}};
+  EXPECT_TRUE(ble_medium.StartScanning(
+      "NearbyShare", "\xfe\xf3",
+      {.peripheral_discovered_cb =
+           [&](api::BlePeripheral& peripheral, const std::string& service_id,
+               bool fast_advertisement) {
+             advertisement_received_notification.Notify();
+           },
+       .peripheral_lost_cb = [](api::BlePeripheral& peripheral,
+                                const std::string& service_id) {}}));
 
-  EXPECT_TRUE(ble_medium.StartScanning("NearbyShare", "\xfe\xf3",
-                                       discovered_peripheral_callback));
   EXPECT_TRUE(
       advertisement_received_notification.WaitForNotificationWithTimeout(
           absl::Seconds(5)));
@@ -293,19 +286,17 @@ TEST(BleMedium, DISABLED_StopScanning) {
   BluetoothAdapter bluetoothAdapter;
   BleMedium ble_medium(bluetoothAdapter);
 
-  BleMedium::DiscoveredPeripheralCallback discovered_peripheral_callback = {
-      .peripheral_discovered_cb =
-          [this](api::BlePeripheral& peripheral, const std::string& service_id,
-                 bool fast_advertisement) { EXPECT_TRUE(fast_advertisement); },
-      .peripheral_lost_cb = [this](api::BlePeripheral& peripheral,
-                                   const std::string& service_id) {}};
+  EXPECT_TRUE(ble_medium.StartScanning(
+      "NearbyShare", "\xfe\xf3",
+      {.peripheral_discovered_cb =
+           [](api::BlePeripheral& peripheral, const std::string& service_id,
+              bool fast_advertisement) { EXPECT_TRUE(fast_advertisement); },
+       .peripheral_lost_cb = [](api::BlePeripheral& peripheral,
+                                const std::string& service_id) {}}));
 
-  EXPECT_TRUE(ble_medium.StartScanning("NearbyShare", "\xfe\xf3",
-                                       discovered_peripheral_callback));
   EXPECT_TRUE(ble_medium.StopScanning("NearbyShare"));
 }
 
 }  // namespace
 }  // namespace windows
 }  // namespace nearby
-}  // namespace location

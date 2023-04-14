@@ -6,7 +6,7 @@
  */
 
 #include "include/private/SkSLProgramElement.h"
-#include "include/private/SkStringView.h"
+#include "src/base/SkStringView.h"
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLContext.h"
 #include "src/sksl/SkSLProgramSettings.h"

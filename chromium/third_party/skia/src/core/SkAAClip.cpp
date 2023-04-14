@@ -9,9 +9,9 @@
 
 #include "include/core/SkPath.h"
 #include "include/private/SkColorData.h"
-#include "include/private/SkMacros.h"
-#include "include/private/SkTDArray.h"
-#include "include/private/SkTo.h"
+#include "include/private/base/SkMacros.h"
+#include "include/private/base/SkTDArray.h"
+#include "include/private/base/SkTo.h"
 #include "src/core/SkBlitter.h"
 #include "src/core/SkRectPriv.h"
 #include "src/core/SkScan.h"

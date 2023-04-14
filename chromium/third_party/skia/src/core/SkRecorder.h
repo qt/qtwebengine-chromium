@@ -9,7 +9,7 @@
 #define SkRecorder_DEFINED
 
 #include "include/core/SkCanvasVirtualEnforcer.h"
-#include "include/private/SkTDArray.h"
+#include "include/private/base/SkTDArray.h"
 #include "include/utils/SkNoDrawCanvas.h"
 #include "src/core/SkBigPicture.h"
 #include "src/core/SkRecord.h"
@@ -101,6 +101,9 @@ public:
                      SkBlendMode, const SkSamplingOptions&, const SkRect*, const SkPaint*) override;
 
     void onDrawVerticesObject(const SkVertices*, SkBlendMode, const SkPaint&) override;
+#ifdef SK_ENABLE_SKSL
+    void onDrawMesh(const SkMesh&, sk_sp<SkBlender>, const SkPaint&) override;
+#endif
     void onDrawShadowRec(const SkPath&, const SkDrawShadowRec&) override;
 
     void onClipRect(const SkRect& rect, SkClipOp, ClipEdgeStyle) override;

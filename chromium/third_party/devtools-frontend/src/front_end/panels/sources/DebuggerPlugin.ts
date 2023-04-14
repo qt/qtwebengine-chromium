@@ -46,114 +46,116 @@ import * as UI from '../../ui/legacy/legacy.js';
 import type * as TextEditor from '../../ui/components/text_editor/text_editor.js';
 
 import {AddDebugInfoURLDialog} from './AddSourceMapURLDialog.js';
-import {BreakpointEditDialog, LogpointPrefix} from './BreakpointEditDialog.js';
+import {BreakpointEditDialog, type BreakpointEditDialogResult} from './BreakpointEditDialog.js';
 import {Plugin} from './Plugin.js';
 import {ScriptFormatterEditorAction} from './ScriptFormatterEditorAction.js';
 import {SourcesPanel} from './SourcesPanel.js';
 import {getRegisteredEditorActions} from './SourcesView.js';
 
+const {EMPTY_BREAKPOINT_CONDITION, NEVER_PAUSE_HERE_CONDITION} = Bindings.BreakpointManager;
+
 const UIStrings = {
   /**
-  *@description Text in Debugger Plugin of the Sources panel
-  */
+   *@description Text in Debugger Plugin of the Sources panel
+   */
   thisScriptIsOnTheDebuggersIgnore: 'This script is on the debugger\'s ignore list',
   /**
-  *@description Text to stop preventing the debugger from stepping into library code
-  */
+   *@description Text to stop preventing the debugger from stepping into library code
+   */
   removeFromIgnoreList: 'Remove from ignore list',
   /**
-  *@description Text of a button in the Sources panel Debugger Plugin to configure ignore listing in Settings
-  */
+   *@description Text of a button in the Sources panel Debugger Plugin to configure ignore listing in Settings
+   */
   configure: 'Configure',
   /**
-  *@description Text in Debugger Plugin of the Sources panel
-  */
+   *@description Text in Debugger Plugin of the Sources panel
+   */
   sourceMapFoundButIgnoredForFile: 'Source map found, but ignored for file on ignore list.',
   /**
-  *@description Text to add a breakpoint
-  */
+   *@description Text to add a breakpoint
+   */
   addBreakpoint: 'Add breakpoint',
   /**
-  *@description A context menu item in the Debugger Plugin of the Sources panel
-  */
+   *@description A context menu item in the Debugger Plugin of the Sources panel
+   */
   addConditionalBreakpoint: 'Add conditional breakpoint…',
   /**
-  *@description A context menu item in the Debugger Plugin of the Sources panel
-  */
+   *@description A context menu item in the Debugger Plugin of the Sources panel
+   */
   addLogpoint: 'Add logpoint…',
   /**
-  *@description A context menu item in the Debugger Plugin of the Sources panel
-  */
+   *@description A context menu item in the Debugger Plugin of the Sources panel
+   */
   neverPauseHere: 'Never pause here',
   /**
-  *@description Context menu command to delete/remove a breakpoint that the user
-  *has set. One line of code can have multiple breakpoints. Always >= 1 breakpoint.
-  */
+   *@description Context menu command to delete/remove a breakpoint that the user
+   *has set. One line of code can have multiple breakpoints. Always >= 1 breakpoint.
+   */
   removeBreakpoint: '{n, plural, =1 {Remove breakpoint} other {Remove all breakpoints in line}}',
   /**
-  *@description A context menu item in the Debugger Plugin of the Sources panel
-  */
+   *@description A context menu item in the Debugger Plugin of the Sources panel
+   */
   editBreakpoint: 'Edit breakpoint…',
   /**
-  *@description Context menu command to disable (but not delete) a breakpoint
-  *that the user has set. One line of code can have multiple breakpoints. Always
-  *>= 1 breakpoint.
-  */
+   *@description Context menu command to disable (but not delete) a breakpoint
+   *that the user has set. One line of code can have multiple breakpoints. Always
+   *>= 1 breakpoint.
+   */
   disableBreakpoint: '{n, plural, =1 {Disable breakpoint} other {Disable all breakpoints in line}}',
   /**
-  *@description Context menu command to enable a breakpoint that the user has
-  *set. One line of code can have multiple breakpoints. Always >= 1 breakpoint.
-  */
+   *@description Context menu command to enable a breakpoint that the user has
+   *set. One line of code can have multiple breakpoints. Always >= 1 breakpoint.
+   */
   enableBreakpoint: '{n, plural, =1 {Enable breakpoint} other {Enable all breakpoints in line}}',
   /**
-  *@description Text in Debugger Plugin of the Sources panel
-  */
+   *@description Text in Debugger Plugin of the Sources panel
+   */
   addSourceMap: 'Add source map…',
   /**
-  *@description Text in Debugger Plugin of the Sources panel
-  */
+   *@description Text in Debugger Plugin of the Sources panel
+   */
   addWasmDebugInfo: 'Add DWARF debug info…',
   /**
-  *@description Text in Debugger Plugin of the Sources panel
-  */
+   *@description Text in Debugger Plugin of the Sources panel
+   */
   sourceMapDetected: 'Source map detected.',
   /**
-  *@description Text in Debugger Plugin of the Sources panel
-  */
+   *@description Text in Debugger Plugin of the Sources panel
+   */
   prettyprintThisMinifiedFile: 'Pretty-print this minified file?',
   /**
-  *@description Label of a button in the Sources panel to pretty-print the current file
-  */
+   *@description Label of a button in the Sources panel to pretty-print the current file
+   */
   prettyprint: 'Pretty-print',
   /**
-  *@description Text in Debugger Plugin pretty-print details message of the Sources panel
-  *@example {Debug} PH1
-  */
+   *@description Text in Debugger Plugin pretty-print details message of the Sources panel
+   *@example {Debug} PH1
+   */
   prettyprintingWillFormatThisFile:
       'Pretty-printing will format this file in a new tab where you can continue debugging. You can also pretty-print this file by clicking the {PH1} button on the bottom status bar.',
   /**
-  *@description Title of the Filtered List WidgetProvider of Quick Open
-  *@example {Ctrl+P Ctrl+O} PH1
-  */
+   *@description Title of the Filtered List WidgetProvider of Quick Open
+   *@example {Ctrl+P Ctrl+O} PH1
+   */
   associatedFilesAreAvailable: 'Associated files are available via file tree or {PH1}.',
   /**
-  *@description Text in Debugger Plugin of the Sources panel
-  */
+   *@description Text in Debugger Plugin of the Sources panel
+   */
   associatedFilesShouldBeAdded:
       'Associated files should be added to the file tree. You can debug these resolved source files as regular JavaScript files.',
   /**
-  *@description Text in Debugger Plugin of the Sources panel
-  */
+   *@description Text in Debugger Plugin of the Sources panel
+   */
   theDebuggerWillSkipStepping: 'The debugger will skip stepping through this script, and will not stop on exceptions.',
   /**
-  *@description Error message that is displayed in UI when a file needed for debugging information for a call frame is missing
-  *@example {src/myapp.debug.wasm.dwp} PH1
-  */
+   *@description Error message that is displayed in UI when a file needed for debugging information for a call frame is missing
+   *@example {src/myapp.debug.wasm.dwp} PH1
+   */
   debugFileNotFound: 'Failed to load debug file "{PH1}".',
   /**
-  *@description Error message that is displayed when no debug info could be loaded
-  *@example {app.wasm} PH1
-  */
+   *@description Error message that is displayed when no debug info could be loaded
+   *@example {app.wasm} PH1
+   */
   debugInfoNotFound: 'Failed to load any debug info for {PH1}.',
 };
 const str_ = i18n.i18n.registerUIStrings('panels/sources/DebuggerPlugin.ts', UIStrings);
@@ -330,10 +332,9 @@ export class DebuggerPlugin extends Plugin {
         const line = selectionLine(this.editor);
         const breakpoint =
             this.breakpoints.find(b => b.position >= line.from && b.position <= line.to)?.breakpoint || null;
-        const isLogpoint = breakpoint ? breakpoint.condition().includes(LogpointPrefix) : false;
         Host.userMetrics.breakpointEditDialogRevealedFrom(
             Host.UserMetrics.BreakpointEditDialogRevealedFrom.KeyboardShortcut);
-        this.editBreakpointCondition(line, breakpoint, null, isLogpoint);
+        this.editBreakpointCondition(line, breakpoint, null, breakpoint?.isLogpoint());
         return true;
       },
     });
@@ -348,8 +349,14 @@ export class DebuggerPlugin extends Plugin {
         editor.dispatch({effects: SourceFrame.SourceFrame.addNonBreakableLines.of(linePositions)});
       }
     }, console.error);
+    if (this.ignoreListInfobar) {
+      this.attachInfobar(this.ignoreListInfobar);
+    }
     if (this.missingDebugInfoBar) {
       this.attachInfobar(this.missingDebugInfoBar);
+    }
+    if (this.sourceMapInfobar) {
+      this.attachInfobar(this.sourceMapInfobar);
     }
     if (!this.muted) {
       void this.refreshBreakpoints();
@@ -443,8 +450,7 @@ export class DebuggerPlugin extends Plugin {
     if (!line) {
       return;
     }
-    const isLogpoint = breakpoint.condition().includes(LogpointPrefix);
-    this.editBreakpointCondition(line, breakpoint, null, isLogpoint);
+    this.editBreakpointCondition(line, breakpoint, null, breakpoint.isLogpoint());
   }
 
   populateLineGutterContextMenu(contextMenu: UI.ContextMenu.ContextMenu, editorLineNumber: number): void {
@@ -461,20 +467,24 @@ export class DebuggerPlugin extends Plugin {
     if (!breakpoints.length) {
       if (this.editor && SourceFrame.SourceFrame.isBreakableLine(this.editor.state, line)) {
         contextMenu.debugSection().appendItem(
-            i18nString(UIStrings.addBreakpoint), this.createNewBreakpoint.bind(this, line, '', true));
+            i18nString(UIStrings.addBreakpoint),
+            this.createNewBreakpoint.bind(
+                this, line, EMPTY_BREAKPOINT_CONDITION, /* enabled */ true, /* isLogpoint */ false));
         if (supportsConditionalBreakpoints) {
           contextMenu.debugSection().appendItem(i18nString(UIStrings.addConditionalBreakpoint), () => {
             Host.userMetrics.breakpointEditDialogRevealedFrom(
                 Host.UserMetrics.BreakpointEditDialogRevealedFrom.LineGutterContextMenu);
-            this.editBreakpointCondition(line, null, null, false /* preferLogpoint */);
+            this.editBreakpointCondition(line, null, null, false /* isLogpoint */);
           });
           contextMenu.debugSection().appendItem(i18nString(UIStrings.addLogpoint), () => {
             Host.userMetrics.breakpointEditDialogRevealedFrom(
                 Host.UserMetrics.BreakpointEditDialogRevealedFrom.LineGutterContextMenu);
-            this.editBreakpointCondition(line, null, null, true /* preferLogpoint */);
+            this.editBreakpointCondition(line, null, null, true /* isLogpoint */);
           });
           contextMenu.debugSection().appendItem(
-              i18nString(UIStrings.neverPauseHere), this.createNewBreakpoint.bind(this, line, 'false', true));
+              i18nString(UIStrings.neverPauseHere),
+              this.createNewBreakpoint.bind(
+                  this, line, NEVER_PAUSE_HERE_CONDITION, /* enabled */ true, /* isLogpoint */ false));
         }
       }
     } else {
@@ -488,7 +498,7 @@ export class DebuggerPlugin extends Plugin {
         contextMenu.debugSection().appendItem(i18nString(UIStrings.editBreakpoint), () => {
           Host.userMetrics.breakpointEditDialogRevealedFrom(
               Host.UserMetrics.BreakpointEditDialogRevealedFrom.BreakpointMarkerContextMenu);
-          this.editBreakpointCondition(line, breakpoints[0], null, false /* preferLogpoint */);
+          this.editBreakpointCondition(line, breakpoints[0], null);
         });
       }
       const hasEnabled = breakpoints.some(breakpoint => breakpoint.enabled());
@@ -798,12 +808,19 @@ export class DebuggerPlugin extends Plugin {
         lineNumber: number,
         columnNumber: number,
       }|null,
-      preferLogpoint?: boolean): void {
+      isLogpoint?: boolean): void {
+    if (breakpoint?.isRemoved) {
+      // This method can get called for stale breakpoints, e.g. via the revealer.
+      // In that case we don't show the edit dialog as to not resurrect the breakpoint
+      // unintentionally.
+      return;
+    }
     const editor = this.editor as TextEditor.TextEditor.TextEditor;
     const oldCondition = breakpoint ? breakpoint.condition() : '';
+    const isLogpointForDialog = breakpoint?.isLogpoint() ?? Boolean(isLogpoint);
     const decorationElement = document.createElement('div');
     const compartment = new CodeMirror.Compartment();
-    const dialog = new BreakpointEditDialog(line.number - 1, oldCondition, Boolean(preferLogpoint), async result => {
+    const dialog = new BreakpointEditDialog(line.number - 1, oldCondition, isLogpointForDialog, async result => {
       this.activeBreakpointDialog = null;
       dialog.detach();
       editor.dispatch({effects: compartment.reconfigure([])});
@@ -811,13 +828,14 @@ export class DebuggerPlugin extends Plugin {
         return;
       }
 
-      recordBreakpointWithConditionAdded(breakpoint?.condition(), result.condition);
+      recordBreakpointWithConditionAdded(result);
       if (breakpoint) {
-        breakpoint.setCondition(result.condition);
+        breakpoint.setCondition(result.condition, result.isLogpoint);
       } else if (location) {
-        await this.setBreakpoint(location.lineNumber, location.columnNumber, result.condition, true);
+        await this.setBreakpoint(
+            location.lineNumber, location.columnNumber, result.condition, /* enabled */ true, result.isLogpoint);
       } else {
-        await this.createNewBreakpoint(line, result.condition, true);
+        await this.createNewBreakpoint(line, result.condition, /* enabled */ true, result.isLogpoint);
       }
     });
     editor.dispatch({
@@ -838,11 +856,11 @@ export class DebuggerPlugin extends Plugin {
     dialog.focusEditor();
     this.activeBreakpointDialog = dialog;
 
-    function recordBreakpointWithConditionAdded(oldCondition: string|undefined, newCondition: string): void {
-      const isLogpoint = newCondition.includes(LogpointPrefix);
+    function recordBreakpointWithConditionAdded(result: BreakpointEditDialogResult): void {
+      const {condition: newCondition, isLogpoint} = result;
       const isConditionalBreakpoint = newCondition.length !== 0 && !isLogpoint;
 
-      const wasLogpoint = oldCondition && oldCondition.includes(LogpointPrefix);
+      const wasLogpoint = breakpoint?.isLogpoint();
       const wasConditionalBreakpoint = oldCondition && oldCondition.length !== 0 && !wasLogpoint;
       if (isLogpoint && !wasLogpoint) {
         Host.userMetrics.breakpointWithConditionAdded(Host.UserMetrics.BreakpointWithConditionAdded.Logpoint);
@@ -1164,7 +1182,7 @@ export class DebuggerPlugin extends Plugin {
       if (!main.bound()) {
         gutterClass += ' cm-breakpoint-unbound';
       }
-      if (main.condition().includes(LogpointPrefix)) {
+      if (main.isLogpoint()) {
         gutterClass += ' cm-breakpoint-logpoint';
       } else if (main.condition()) {
         gutterClass += ' cm-breakpoint-conditional';
@@ -1209,12 +1227,12 @@ export class DebuggerPlugin extends Plugin {
     this.breakpoints = [];
     await Promise.all(breakpoints.map(async description => {
       const {breakpoint, position} = description;
-      const condition = breakpoint.condition(), enabled = breakpoint.enabled();
+      const condition = breakpoint.condition(), enabled = breakpoint.enabled(), isLogpoint = breakpoint.isLogpoint();
       await breakpoint.remove(false);
       const editorLocation = editor.toLineColumn(position);
       const uiLocation =
           this.transformer.editorLocationToUILocation(editorLocation.lineNumber, editorLocation.columnNumber);
-      await this.setBreakpoint(uiLocation.lineNumber, uiLocation.columnNumber, condition, enabled);
+      await this.setBreakpoint(uiLocation.lineNumber, uiLocation.columnNumber, condition, enabled, isLogpoint);
     }));
   }
 
@@ -1259,7 +1277,9 @@ export class DebuggerPlugin extends Plugin {
       const editorLocation = this.editor.editor.posAtDOM(event.target as unknown as HTMLElement);
       const line = this.editor.state.doc.lineAt(editorLocation);
       const uiLocation = this.transformer.editorLocationToUILocation(line.number - 1, editorLocation - line.from);
-      void this.setBreakpoint(uiLocation.lineNumber, uiLocation.columnNumber, '', true);
+      void this.setBreakpoint(
+          uiLocation.lineNumber, uiLocation.columnNumber, EMPTY_BREAKPOINT_CONDITION, /* enabled */ true,
+          /* isLogpoint */ false);
     }
   }
 
@@ -1281,7 +1301,7 @@ export class DebuggerPlugin extends Plugin {
       contextMenu.debugSection().appendItem(i18nString(UIStrings.editBreakpoint), () => {
         Host.userMetrics.breakpointEditDialogRevealedFrom(
             Host.UserMetrics.BreakpointEditDialogRevealedFrom.BreakpointMarkerContextMenu);
-        this.editBreakpointCondition(line, breakpoint, null, false /* preferLogpoint */);
+        this.editBreakpointCondition(line, breakpoint, null);
       });
     } else {
       const uiLocation = this.transformer.editorLocationToUILocation(line.number - 1, position - line.from);
@@ -1298,7 +1318,9 @@ export class DebuggerPlugin extends Plugin {
 
       contextMenu.debugSection().appendItem(
           i18nString(UIStrings.neverPauseHere),
-          this.setBreakpoint.bind(this, uiLocation.lineNumber, uiLocation.columnNumber, 'false', true));
+          () => this.setBreakpoint(
+              uiLocation.lineNumber, uiLocation.columnNumber, NEVER_PAUSE_HERE_CONDITION, /* enabled */ true,
+              /* isLogpoint */ false));
     }
     void contextMenu.show();
   }
@@ -1462,7 +1484,7 @@ export class DebuggerPlugin extends Plugin {
 
     const breakpoints = this.lineBreakpoints(line);
     if (!breakpoints.length) {
-      await this.createNewBreakpoint(line, '', true);
+      await this.createNewBreakpoint(line, EMPTY_BREAKPOINT_CONDITION, /* enabled */ true, /* isLogpoint */ false);
       return;
     }
     const hasDisabled = breakpoints.some(b => !b.enabled());
@@ -1475,20 +1497,23 @@ export class DebuggerPlugin extends Plugin {
     }
   }
 
-  private async createNewBreakpoint(line: CodeMirror.Line, condition: string, enabled: boolean): Promise<void> {
+  private async createNewBreakpoint(
+      line: CodeMirror.Line, condition: Bindings.BreakpointManager.UserCondition, enabled: boolean,
+      isLogpoint: boolean): Promise<void> {
     if (!this.editor || !SourceFrame.SourceFrame.isBreakableLine(this.editor.state, line)) {
       return;
     }
     Host.userMetrics.actionTaken(Host.UserMetrics.Action.ScriptsBreakpointSet);
     const origin = this.transformer.editorLocationToUILocation(line.number - 1);
-    await this.setBreakpoint(origin.lineNumber, origin.columnNumber, condition, enabled);
+    await this.setBreakpoint(origin.lineNumber, origin.columnNumber, condition, enabled, isLogpoint);
   }
 
-  private async setBreakpoint(lineNumber: number, columnNumber: number|undefined, condition: string, enabled: boolean):
-      Promise<void> {
+  private async setBreakpoint(
+      lineNumber: number, columnNumber: number|undefined, condition: Bindings.BreakpointManager.UserCondition,
+      enabled: boolean, isLogpoint: boolean): Promise<void> {
     Common.Settings.Settings.instance().moduleSetting('breakpointsActive').set(true);
     await this.breakpointManager.setBreakpoint(
-        this.uiSourceCode, lineNumber, columnNumber, condition, enabled,
+        this.uiSourceCode, lineNumber, columnNumber, condition, enabled, isLogpoint,
         Bindings.BreakpointManager.BreakpointOrigin.USER_ACTION);
     this.breakpointWasSetForTest(lineNumber, columnNumber, condition, enabled);
   }
@@ -1640,30 +1665,16 @@ const infobarState = CodeMirror.StateField.define<UI.Infobar.Infobar[]>({
 async function computeNonBreakableLines(
     state: CodeMirror.EditorState, transformer: SourceFrame.SourceFrame.Transformer,
     sourceCode: Workspace.UISourceCode.UISourceCode): Promise<readonly number[]> {
+  const debuggerWorkspaceBinding = Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance();
+  const mappedLines = await debuggerWorkspaceBinding.getMappedLines(sourceCode);
+  if (!mappedLines) {
+    return [];
+  }
   const linePositions = [];
-  if (Bindings.CompilerScriptMapping.CompilerScriptMapping.uiSourceCodeOrigin(sourceCode).length) {
-    for (let i = 0; i < state.doc.lines; i++) {
-      const {lineNumber} = transformer.editorLocationToUILocation(i, 0);
-      const lineHasMapping =
-          Bindings.CompilerScriptMapping.CompilerScriptMapping.uiLineHasMapping(sourceCode, lineNumber);
-      if (!lineHasMapping) {
-        linePositions.push(state.doc.line(i + 1).from);
-      }
-    }
-  } else {
-    const {pluginManager} = Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance();
-    if (!pluginManager) {
-      return [];
-    }
-    const mappedLines = await pluginManager.getMappedLines(sourceCode);
-    if (!mappedLines) {
-      return [];
-    }
-    for (let i = 0; i < state.doc.lines; i++) {
-      const {lineNumber} = transformer.editorLocationToUILocation(i, 0);
-      if (!mappedLines.has(lineNumber)) {
-        linePositions.push(state.doc.line(i + 1).from);
-      }
+  for (let i = 0; i < state.doc.lines; i++) {
+    const {lineNumber} = transformer.editorLocationToUILocation(i, 0);
+    if (!mappedLines.has(lineNumber)) {
+      linePositions.push(state.doc.line(i + 1).from);
     }
   }
   return linePositions;
@@ -1728,10 +1739,9 @@ class BreakpointInlineMarker extends CodeMirror.WidgetType {
     super();
     // Eagerly compute DOM class so that the widget is recreated when it changes.
     this.class = 'cm-inlineBreakpoint';
-    const condition = breakpoint ? breakpoint.condition() : '';
-    if (condition.includes(LogpointPrefix)) {
+    if (breakpoint?.isLogpoint()) {
       this.class += ' cm-inlineBreakpoint-logpoint';
-    } else if (condition) {
+    } else if (breakpoint?.condition()) {
       this.class += ' cm-inlineBreakpoint-conditional';
     }
     if (!breakpoint?.enabled()) {
@@ -2055,7 +2065,12 @@ export function computePopoverHighlightRange(state: CodeMirror.EditorState, mime
     return {from: main.from, to: main.to};
   }
 
-  const node = CodeMirror.syntaxTree(state).resolveInner(cursorPos, 1);
+  const tree = CodeMirror.ensureSyntaxTree(state, cursorPos, 5 * 1000);
+  if (!tree) {
+    return null;
+  }
+
+  const node = tree.resolveInner(cursorPos, 1);
   // Only do something if the cursor is over a leaf node.
   if (node.firstChild) {
     return null;

@@ -81,7 +81,8 @@ V8_EXPORT_PRIVATE bool ValidateAndDecodeLocalDeclsForTesting(
     const byte* start, const byte* end, Zone* zone);
 
 V8_EXPORT_PRIVATE BitVector* AnalyzeLoopAssignmentForTesting(
-    Zone* zone, uint32_t num_locals, const byte* start, const byte* end);
+    Zone* zone, uint32_t num_locals, const byte* start, const byte* end,
+    bool* loop_is_innermost);
 
 // Computes the length of the opcode at the given address.
 V8_EXPORT_PRIVATE unsigned OpcodeLength(const byte* pc, const byte* end);
@@ -189,7 +190,8 @@ class V8_EXPORT_PRIVATE BytecodeIterator : public NON_EXPORTED_BASE(Decoder) {
   bool has_next() { return pc_ < end_; }
 
   WasmOpcode prefixed_opcode() {
-    return read_prefixed_opcode<Decoder::NoValidationTag>(pc_);
+    auto [opcode, length] = read_prefixed_opcode<Decoder::NoValidationTag>(pc_);
+    return opcode;
   }
 };
 

@@ -41,7 +41,7 @@ TEST_F(MatrixTest, Hash) {
     auto* a = create<Matrix>(create<Vector>(create<I32>(), 3u), 4u);
     auto* b = create<Matrix>(create<Vector>(create<I32>(), 3u), 4u);
 
-    EXPECT_EQ(a->Hash(), b->Hash());
+    EXPECT_EQ(a->unique_hash, b->unique_hash);
 }
 
 TEST_F(MatrixTest, Equals) {
@@ -63,6 +63,18 @@ TEST_F(MatrixTest, FriendlyName) {
     Vector c{&i32, 3};
     Matrix m{&c, 2};
     EXPECT_EQ(m.FriendlyName(Symbols()), "mat2x3<i32>");
+}
+
+TEST_F(MatrixTest, Clone) {
+    auto* a = create<Matrix>(create<Vector>(create<I32>(), 3u), 4u);
+
+    type::Manager mgr;
+    type::CloneContext ctx{{nullptr}, {nullptr, &mgr}};
+
+    auto* mat = a->Clone(ctx);
+    EXPECT_TRUE(mat->type()->Is<I32>());
+    EXPECT_EQ(mat->rows(), 3u);
+    EXPECT_EQ(mat->columns(), 4u);
 }
 
 }  // namespace

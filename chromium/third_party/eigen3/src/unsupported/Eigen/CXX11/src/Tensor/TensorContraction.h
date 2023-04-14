@@ -362,10 +362,8 @@ class TensorContractionOp : public TensorBase<TensorContractionOp<Indices, LhsXp
     const OutputKernelType m_output_kernel;
 };
 
-
 template<typename Derived>
-struct TensorContractionEvaluatorBase : internal::no_assignment_operator
-{
+struct TensorContractionEvaluatorBase {
   typedef typename internal::traits<Derived>::Indices Indices;
   typedef typename internal::traits<Derived>::LeftArgType LeftArgType;
   typedef typename internal::traits<Derived>::RightArgType RightArgType;

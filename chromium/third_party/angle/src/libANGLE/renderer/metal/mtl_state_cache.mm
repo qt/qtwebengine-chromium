@@ -150,7 +150,9 @@ AutoObjCPtr<MTLRenderPipelineDescriptor *> CreateMTLRenderPipelineDescriptor(
     }
     ANGLE_OBJC_CP_PROPERTY(objCDesc.get(), desc.outputDescriptor, depthAttachmentPixelFormat);
     ANGLE_OBJC_CP_PROPERTY(objCDesc.get(), desc.outputDescriptor, stencilAttachmentPixelFormat);
+    ANGLE_APPLE_ALLOW_DEPRECATED_BEGIN
     ANGLE_OBJC_CP_PROPERTY(objCDesc.get(), desc.outputDescriptor, sampleCount);
+    ANGLE_APPLE_ALLOW_DEPRECATED_END
 
 #if ANGLE_MTL_PRIMITIVE_TOPOLOGY_CLASS_AVAILABLE
     ANGLE_OBJC_CP_PROPERTY(objCDesc.get(), desc, inputPrimitiveTopology);
@@ -949,6 +951,63 @@ AutoObjCPtr<id<MTLRenderPipelineState>> RenderPipelineCache::insertRenderPipelin
     return re.first->second;
 }
 
+static bool ValidateRenderPipelineState(const MTLRenderPipelineDescriptor *descriptor,
+                                        ContextMtl *context,
+                                        const mtl::ContextDevice &device)
+{
+
+    // Ensure there is at least one valid render target.
+    bool hasValidRenderTarget              = false;
+    const NSUInteger maxColorRenderTargets = GetMaxNumberOfRenderTargetsForDevice(device);
+    for (NSUInteger i = 0; i < maxColorRenderTargets; ++i)
+    {
+        auto colorAttachment = descriptor.colorAttachments[i];
+        if (colorAttachment && colorAttachment.pixelFormat != MTLPixelFormatInvalid)
+        {
+            hasValidRenderTarget = true;
+            break;
+        }
+    }
+
+    if (!hasValidRenderTarget && descriptor.depthAttachmentPixelFormat != MTLPixelFormatInvalid)
+    {
+        hasValidRenderTarget = true;
+    }
+
+    if (!hasValidRenderTarget && descriptor.stencilAttachmentPixelFormat != MTLPixelFormatInvalid)
+    {
+        hasValidRenderTarget = true;
+    }
+
+    if (!hasValidRenderTarget &&
+        !context->getDisplay()->getFeatures().allowRenderpassWithoutAttachment.enabled)
+    {
+        ANGLE_MTL_HANDLE_ERROR(
+            context, "Render pipeline requires at least one render target for this device.",
+            GL_INVALID_OPERATION);
+        return false;
+    }
+
+    // Ensure the device can support the storage requirement for render targets.
+    if (DeviceHasMaximumRenderTargetSize(device))
+    {
+        // TODO: Is the use of NSUInteger in 32 bit systems ok without any overflow checking?
+        NSUInteger maxSize = GetMaxRenderTargetSizeForDeviceInBytes(device);
+        NSUInteger renderTargetSize =
+            ComputeTotalSizeUsedForMTLRenderPipelineDescriptor(descriptor, context, device);
+        if (renderTargetSize > maxSize)
+        {
+            std::stringstream errorStream;
+            errorStream << "This set of render targets requires " << renderTargetSize
+                        << " bytes of pixel storage. This device supports " << maxSize << " bytes.";
+            ANGLE_MTL_HANDLE_ERROR(context, errorStream.str().c_str(), GL_INVALID_OPERATION);
+            return false;
+        }
+    }
+
+    return true;
+}
+
 AutoObjCPtr<id<MTLRenderPipelineState>> RenderPipelineCache::createRenderPipelineState(
     ContextMtl *context,
     const RenderPipelineDesc &originalDesc,
@@ -1026,6 +1085,11 @@ AutoObjCPtr<id<MTLRenderPipelineState>> RenderPipelineCache::createRenderPipelin
                 ANGLE_MTL_HANDLE_ERROR(context, errorStream.str().c_str(), GL_INVALID_OPERATION);
                 return nil;
             }
+        }
+
+        if (!ValidateRenderPipelineState(objCDesc, context, metalDevice))
+        {
+            return nil;
         }
 
         // Special attribute slot for default attribute

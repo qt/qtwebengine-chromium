@@ -1,6 +1,6 @@
-/* Copyright (c) 2020-2022 The Khronos Group Inc.
- * Copyright (c) 2020-2022 Valve Corporation
- * Copyright (c) 2020-2022 LunarG, Inc.
+/* Copyright (c) 2020-2023 The Khronos Group Inc.
+ * Copyright (c) 2020-2023 Valve Corporation
+ * Copyright (c) 2020-2023 LunarG, Inc.
  * Modifications Copyright (C) 2020 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,13 +14,10 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *
- * Author: Mark Lobodzinski <mark@lunarg.com>
- * Author: John Zulauf <jzulauf@lunarg.com>
- * Author: Nadav Geva <nadav.geva@amd.com>
  */
 
 #include "layer_options.h"
+#include "xxhash.h"
 
 // Set the local disable flag for the appropriate VALIDATION_CHECK_DISABLE enum
 void SetValidationDisable(CHECK_DISABLED &disable_data, const ValidationCheckDisables disable_id) {
@@ -98,6 +95,7 @@ void SetValidationEnable(CHECK_ENABLED &enable_data, const ValidationCheckEnable
             break;
         case VALIDATION_CHECK_ENABLE_SYNCHRONIZATION_VALIDATION_QUEUE_SUBMIT:
             enable_data[sync_validation_queue_submit] = true;
+            break;
         default:
             assert(true);
     }
@@ -247,7 +245,7 @@ void CreateFilterMessageIdList(std::string raw_id_list, const std::string &delim
         token = GetNextToken(&raw_id_list, delimiter, &pos);
         uint32_t int_id = TokenToUint(token);
         if (int_id == 0) {
-            const uint32_t id_hash = XXH32(token.data(), token.size(), 8);  // String
+            const uint32_t id_hash = vvl_vuid_hash(token);
             if (id_hash != 0) {
                 int_id = id_hash;
             }

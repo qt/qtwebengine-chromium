@@ -12,7 +12,8 @@
 #include "include/core/SkSize.h"
 #include "include/core/SkTypes.h"
 #include "include/gpu/GrTypes.h"
-#include "include/private/SkTypeTraits.h"
+#include "include/private/base/SkTo.h"
+#include "include/private/base/SkTypeTraits.h"
 #include "src/gpu/Swizzle.h"
 #include "src/gpu/ganesh/GrSurfaceProxy.h"
 
@@ -23,7 +24,12 @@
 class GrRecordingContext;
 class GrRenderTargetProxy;
 class GrTextureProxy;
+enum class SkBackingFit;
 struct SkIRect;
+namespace skgpu {
+enum class Budgeted : bool;
+enum class Mipmapped : bool;
+}
 
 class GrSurfaceProxyView {
 public:
@@ -51,7 +57,7 @@ public:
     int height() const { return this->proxy()->height(); }
     SkISize dimensions() const { return this->proxy()->dimensions(); }
 
-    GrMipmapped mipmapped() const;
+    skgpu::Mipmapped mipmapped() const;
 
     GrSurfaceProxy* proxy() const { return fProxy.get(); }
     sk_sp<GrSurfaceProxy> refProxy() const { return fProxy; }
@@ -77,17 +83,17 @@ public:
     // the same origin and swizzle as the src view.
     static GrSurfaceProxyView Copy(GrRecordingContext* context,
                                    GrSurfaceProxyView src,
-                                   GrMipmapped mipmapped,
+                                   skgpu::Mipmapped mipmapped,
                                    SkIRect srcRect,
                                    SkBackingFit fit,
-                                   SkBudgeted budgeted,
+                                   skgpu::Budgeted budgeted,
                                    std::string_view label);
 
     static GrSurfaceProxyView Copy(GrRecordingContext* rContext,
                                    GrSurfaceProxyView src,
-                                   GrMipmapped mipmapped,
+                                   skgpu::Mipmapped mipmapped,
                                    SkBackingFit fit,
-                                   SkBudgeted budgeted,
+                                   skgpu::Budgeted budgeted,
                                    std::string_view label);
 
     // This does not reset the origin or swizzle, so the View can still be used to access those

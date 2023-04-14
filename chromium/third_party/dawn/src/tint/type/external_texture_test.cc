@@ -19,6 +19,7 @@
 #include "src/tint/type/sampled_texture.h"
 #include "src/tint/type/storage_texture.h"
 #include "src/tint/type/test_helper.h"
+#include "src/tint/type/texture_dimension.h"
 
 namespace tint::type {
 namespace {
@@ -34,7 +35,7 @@ TEST_F(ExternalTextureTest, Creation) {
 TEST_F(ExternalTextureTest, Hash) {
     auto* a = create<ExternalTexture>();
     auto* b = create<ExternalTexture>();
-    EXPECT_EQ(a->Hash(), b->Hash());
+    EXPECT_EQ(a->unique_hash, b->unique_hash);
 }
 
 TEST_F(ExternalTextureTest, Equals) {
@@ -58,12 +59,22 @@ TEST_F(ExternalTextureTest, IsTexture) {
 TEST_F(ExternalTextureTest, Dim) {
     F32 f32;
     ExternalTexture s;
-    EXPECT_EQ(s.dim(), ast::TextureDimension::k2d);
+    EXPECT_EQ(s.dim(), TextureDimension::k2d);
 }
 
 TEST_F(ExternalTextureTest, FriendlyName) {
     ExternalTexture s;
     EXPECT_EQ(s.FriendlyName(Symbols()), "texture_external");
+}
+
+TEST_F(ExternalTextureTest, Clone) {
+    auto* a = create<ExternalTexture>();
+
+    type::Manager mgr;
+    type::CloneContext ctx{{nullptr}, {nullptr, &mgr}};
+
+    auto* b = a->Clone(ctx);
+    ASSERT_TRUE(b->Is<ExternalTexture>());
 }
 
 }  // namespace

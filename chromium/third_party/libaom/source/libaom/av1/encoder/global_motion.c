@@ -206,6 +206,7 @@ int64_t av1_warp_error(WarpedMotionParams *wm, int use_hbd, int bd,
                        int p_height, int p_stride, int subsampling_x,
                        int subsampling_y, int64_t best_error,
                        uint8_t *segment_map, int segment_map_stride) {
+  force_wmtype(wm, wm->wmtype);
   if (wm->wmtype <= AFFINE)
     if (!av1_get_shear_params(wm)) return INT64_MAX;
 #if CONFIG_AV1_HIGHBITDEPTH

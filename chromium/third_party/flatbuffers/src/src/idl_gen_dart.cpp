@@ -15,7 +15,10 @@
  */
 
 // independent from idl_parser, since this code is not needed for most clients
+#include "idl_gen_dart.h"
+
 #include <cassert>
+#include <cmath>
 
 #include "flatbuffers/code_generators.h"
 #include "flatbuffers/flatbuffers.h"
@@ -69,7 +72,7 @@ static std::set<std::string> DartKeywords() {
     "dynamic",  "implements", "set",
   };
 }
-} // namespace
+}  // namespace
 
 const std::string _kFb = "fb";
 
@@ -84,6 +87,27 @@ class DartGenerator : public BaseGenerator {
       : BaseGenerator(parser, path, file_name, "", ".", "dart"),
         namer_(WithFlagOptions(DartDefaultConfig(), parser.opts, path),
                DartKeywords()) {}
+
+  template<typename T>
+  void import_generator(const std::vector<T *> &definitions,
+                         const std::string &included,
+                         std::set<std::string> &imports) {
+    for (const auto &item : definitions) {
+      if (item->file == included) {
+        std::string component = namer_.Namespace(*item->defined_namespace);
+        std::string filebase =
+            flatbuffers::StripPath(flatbuffers::StripExtension(item->file));
+        std::string filename =
+            namer_.File(filebase + (component.empty() ? "" : "_" + component));
+
+        imports.emplace("import './" + filename + "'" +
+                        (component.empty()
+                             ? ";\n"
+                             : " as " + ImportAliasName(component) + ";\n"));
+      }
+    }
+  }
+
   // Iterate through all definitions we haven't generate code for (enums,
   // structs, and tables) and output them to a single file.
   bool generate() {
@@ -91,6 +115,20 @@ class DartGenerator : public BaseGenerator {
     namespace_code_map namespace_code;
     GenerateEnums(namespace_code);
     GenerateStructs(namespace_code);
+
+    std::set<std::string> imports;
+
+    for (const auto &included_file : parser_.GetIncludedFiles()) {
+      if (included_file.filename == parser_.file_being_parsed_) continue;
+
+      import_generator(parser_.structs_.vec, included_file.filename, imports);
+      import_generator(parser_.enums_.vec, included_file.filename, imports);
+    }
+
+    std::string import_code = "";
+    for (const auto &file : imports) { import_code += file; }
+
+    import_code += import_code.empty() ? "" : "\n";
 
     for (auto kv = namespace_code.begin(); kv != namespace_code.end(); ++kv) {
       code.clear();
@@ -112,7 +150,10 @@ class DartGenerator : public BaseGenerator {
                   "' as " + ImportAliasName(kv2->first) + ";\n";
         }
       }
+
       code += "\n";
+      code += import_code;
+
       code += kv->second;
 
       if (!SaveFile(Filename(kv->first).c_str(), code, false)) { return false; }
@@ -721,16 +762,17 @@ class DartGenerator : public BaseGenerator {
     if (!value.constant.empty() && value.constant != "0") {
       if (IsBool(value.type.base_type)) {
         return "true";
-      } else if (value.constant == "nan" || value.constant == "+nan" ||
-                 value.constant == "-nan") {
-        return "double.nan";
-      } else if (value.constant == "inf" || value.constant == "+inf") {
-        return "double.infinity";
-      } else if (value.constant == "-inf") {
-        return "double.negativeInfinity";
-      } else {
-        return value.constant;
       }
+      if (IsScalar(value.type.base_type)) {
+        if (StringIsFlatbufferNan(value.constant)) {
+          return "double.nan";
+        } else if (StringIsFlatbufferPositiveInfinity(value.constant)) {
+          return "double.infinity";
+        } else if (StringIsFlatbufferNegativeInfinity(value.constant)) {
+          return "double.negativeInfinity";
+        }
+      }
+      return value.constant;
     } else if (IsBool(value.type.base_type)) {
       return "false";
     } else if (IsScalar(value.type.base_type) && !IsUnion(value.type)) {
@@ -1100,6 +1142,60 @@ std::string DartMakeRule(const Parser &parser, const std::string &path,
     make_rule += " " + *it;
   }
   return make_rule;
+}
+
+namespace {
+
+class DartCodeGenerator : public CodeGenerator {
+ public:
+  Status GenerateCode(const Parser &parser, const std::string &path,
+                      const std::string &filename) override {
+    if (!GenerateDart(parser, path, filename)) { return Status::ERROR; }
+    return Status::OK;
+  }
+
+  Status GenerateCode(const uint8_t *buffer, int64_t length) override {
+    (void)buffer;
+    (void)length;
+    return Status::NOT_IMPLEMENTED;
+  }
+
+  Status GenerateMakeRule(const Parser &parser, const std::string &path,
+                          const std::string &filename,
+                          std::string &output) override {
+    output = DartMakeRule(parser, path, filename);
+    return Status::OK;
+  }
+
+  Status GenerateGrpcCode(const Parser &parser, const std::string &path,
+                          const std::string &filename) override {
+    (void)parser;
+    (void)path;
+    (void)filename;
+    return Status::NOT_IMPLEMENTED;
+  }
+
+  Status GenerateRootFile(const Parser &parser,
+                          const std::string &path) override {
+    (void)parser;
+    (void)path;
+    return Status::NOT_IMPLEMENTED;
+  }
+
+  bool IsSchemaOnly() const override { return true; }
+
+  bool SupportsBfbsGeneration() const override { return false; }
+
+  bool SupportsRootFileGeneration() const override { return false; }
+
+  IDLOptions::Language Language() const override { return IDLOptions::kDart; }
+
+  std::string LanguageName() const override { return "Dart"; }
+};
+}  // namespace
+
+std::unique_ptr<CodeGenerator> NewDartCodeGenerator() {
+  return std::unique_ptr<DartCodeGenerator>(new DartCodeGenerator());
 }
 
 }  // namespace flatbuffers

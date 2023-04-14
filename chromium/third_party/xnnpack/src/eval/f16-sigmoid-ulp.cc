@@ -55,14 +55,14 @@ static void ComputeError(
 }
 
 static void SigmoidError(benchmark::State& state,
-  xnn_f16_unary_math_function sigmoid,
+  xnn_f16_unary_math_fn sigmoid,
   benchmark::utils::IsaCheckFunction isa_check = nullptr)
 {
   if (!cpuinfo_initialize()) {
     state.SkipWithError("failed cpuinfo init");
     return;
   }
-  if (isa_check && !isa_check(state)) {
+  if (isa_check != nullptr && !isa_check(state)) {
     return;
   }
 
@@ -136,30 +136,30 @@ static void SigmoidError(benchmark::State& state,
   state.counters["ULPERROR"] = benchmark::Counter(max_ulp_error);
 }
 
-#if XNN_ENABLE_ARM_FP16 && XNN_ARCH_ARM64
-  BENCHMARK_CAPTURE(SigmoidError, neonfp16arith_rr1_p2_div,
-                    xnn_math_f16_sigmoid__neonfp16arith_rr1_p2_div,
+#if XNN_ENABLE_ARM_FP16_VECTOR && XNN_ARCH_ARM64
+  BENCHMARK_CAPTURE(SigmoidError, aarch64_neonfp16arith_rr1_p2_div,
+                    xnn_math_f16_sigmoid__aarch64_neonfp16arith_rr1_p2_div,
                     benchmark::utils::CheckNEONFP16ARITH)
     ->Unit(benchmark::kMillisecond)
     ->Iterations(1);
-  BENCHMARK_CAPTURE(SigmoidError, neonfp16arith_rr1_p3_div,
-                    xnn_math_f16_sigmoid__neonfp16arith_rr1_p3_div,
+  BENCHMARK_CAPTURE(SigmoidError, aarch64_neonfp16arith_rr1_p3_div,
+                    xnn_math_f16_sigmoid__aarch64_neonfp16arith_rr1_p3_div,
                     benchmark::utils::CheckNEONFP16ARITH)
     ->Unit(benchmark::kMillisecond)
     ->Iterations(1);
-  BENCHMARK_CAPTURE(SigmoidError, neonfp16arith_rr2_p2_div,
-                    xnn_math_f16_sigmoid__neonfp16arith_rr2_p2_div,
+  BENCHMARK_CAPTURE(SigmoidError, aarch64_neonfp16arith_rr2_p2_div,
+                    xnn_math_f16_sigmoid__aarch64_neonfp16arith_rr2_p2_div,
                     benchmark::utils::CheckNEONFP16ARITH)
     ->Unit(benchmark::kMillisecond)
     ->Iterations(1);
-  BENCHMARK_CAPTURE(SigmoidError, neonfp16arith_rr2_p3_div,
-                    xnn_math_f16_sigmoid__neonfp16arith_rr2_p3_div,
+  BENCHMARK_CAPTURE(SigmoidError, aarch64_neonfp16arith_rr2_p3_div,
+                    xnn_math_f16_sigmoid__aarch64_neonfp16arith_rr2_p3_div,
                     benchmark::utils::CheckNEONFP16ARITH)
     ->Unit(benchmark::kMillisecond)
     ->Iterations(1);
-#endif  // XNN_ENABLE_ARM_FP16 && XNN_ARCH_ARM64
+#endif  // XNN_ENABLE_ARM_FP16_VECTOR && XNN_ARCH_ARM64
 
-#if XNN_ENABLE_ARM_FP16 && (XNN_ARCH_ARM || XNN_ARCH_ARM64)
+#if XNN_ENABLE_ARM_FP16_VECTOR && (XNN_ARCH_ARM || XNN_ARCH_ARM64)
   BENCHMARK_CAPTURE(SigmoidError, neonfp16arith_rr2_p2_nr1fma,
                     xnn_math_f16_sigmoid__neonfp16arith_rr2_p2_nr1fma,
                     benchmark::utils::CheckNEONFP16ARITH)
@@ -190,7 +190,7 @@ static void SigmoidError(benchmark::State& state,
                     benchmark::utils::CheckNEONFP16ARITH)
     ->Unit(benchmark::kMillisecond)
     ->Iterations(1);
-#endif  // XNN_ENABLE_ARM_FP16 && (XNN_ARCH_ARM || XNN_ARCH_ARM64)
+#endif  // XNN_ENABLE_ARM_FP16_VECTOR && (XNN_ARCH_ARM || XNN_ARCH_ARM64)
 
 #if XNN_ARCH_X86 || XNN_ARCH_X86_64
   BENCHMARK_CAPTURE(SigmoidError, avx2_rr1_p2_div,

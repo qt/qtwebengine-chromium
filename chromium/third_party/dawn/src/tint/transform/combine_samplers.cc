@@ -115,7 +115,7 @@ struct CombineSamplers::State {
         if (it != binding_info->binding_map.end()) {
             name = it->second;
         }
-        const ast::Type* type = CreateCombinedASTTypeFor(texture_var, sampler_var);
+        ast::Type type = CreateCombinedASTTypeFor(texture_var, sampler_var);
         Symbol symbol = ctx.dst->Symbols().New(name);
         return ctx.dst->GlobalVar(symbol, type, Attributes());
     }
@@ -123,27 +123,26 @@ struct CombineSamplers::State {
     /// Creates placeholder global sampler variables.
     /// @param kind the sampler kind to create for
     /// @returns the newly-created global variable
-    const ast::Variable* CreatePlaceholder(ast::SamplerKind kind) {
-        const ast::Type* type = ctx.dst->ty.sampler(kind);
-        const char* name = kind == ast::SamplerKind::kComparisonSampler
+    const ast::Variable* CreatePlaceholder(type::SamplerKind kind) {
+        ast::Type type = ctx.dst->ty.sampler(kind);
+        const char* name = kind == type::SamplerKind::kComparisonSampler
                                ? "placeholder_comparison_sampler"
                                : "placeholder_sampler";
         Symbol symbol = ctx.dst->Symbols().New(name);
         return ctx.dst->GlobalVar(symbol, type, Attributes());
     }
 
-    /// Creates ast::Type for a given texture and sampler variable pair.
+    /// Creates ast::Identifier for a given texture and sampler variable pair.
     /// Depth textures with no samplers are turned into the corresponding
     /// f32 texture (e.g., texture_depth_2d -> texture_2d<f32>).
     /// @param texture the texture variable of interest
     /// @param sampler the texture variable of interest
     /// @returns the newly-created type
-    const ast::Type* CreateCombinedASTTypeFor(const sem::Variable* texture,
-                                              const sem::Variable* sampler) {
+    ast::Type CreateCombinedASTTypeFor(const sem::Variable* texture, const sem::Variable* sampler) {
         const type::Type* texture_type = texture->Type()->UnwrapRef();
         const type::DepthTexture* depth = texture_type->As<type::DepthTexture>();
         if (depth && !sampler) {
-            return ctx.dst->create<ast::SampledTexture>(depth->dim(), ctx.dst->create<ast::F32>());
+            return ctx.dst->ty.sampled_texture(depth->dim(), ctx.dst->ty.f32());
         } else {
             return CreateASTTypeFor(ctx, texture_type);
         }
@@ -158,7 +157,7 @@ struct CombineSamplers::State {
         // by combined samplers.
         for (auto* global : ctx.src->AST().GlobalVariables()) {
             auto* global_sem = sem.Get(global)->As<sem::GlobalVariable>();
-            auto* type = sem.Get(global->type);
+            auto* type = ctx.src->TypeOf(global->type);
             if (tint::IsAnyOf<type::Texture, type::Sampler>(type) &&
                 !type->Is<type::StorageTexture>()) {
                 ctx.Remove(ctx.src->AST().GlobalDeclarations(), global);
@@ -185,10 +184,10 @@ struct CombineSamplers::State {
                     const sem::Variable* texture_var = pair.first;
                     const sem::Variable* sampler_var = pair.second;
                     std::string name =
-                        ctx.src->Symbols().NameFor(texture_var->Declaration()->symbol);
+                        ctx.src->Symbols().NameFor(texture_var->Declaration()->name->symbol);
                     if (sampler_var) {
-                        name +=
-                            "_" + ctx.src->Symbols().NameFor(sampler_var->Declaration()->symbol);
+                        name += "_" + ctx.src->Symbols().NameFor(
+                                          sampler_var->Declaration()->name->symbol);
                     }
                     if (IsGlobal(pair)) {
                         // Both texture and sampler are global; add a new global variable
@@ -199,7 +198,7 @@ struct CombineSamplers::State {
                     } else {
                         // Either texture or sampler (or both) is a function parameter;
                         // add a new function parameter to represent the combined sampler.
-                        auto* type = CreateCombinedASTTypeFor(texture_var, sampler_var);
+                        ast::Type type = CreateCombinedASTTypeFor(texture_var, sampler_var);
                         auto* var = ctx.dst->Param(ctx.dst->Symbols().New(name), type);
                         params.Push(var);
                         function_combined_texture_samplers_[fn][pair] = var;
@@ -214,12 +213,12 @@ struct CombineSamplers::State {
                 }
                 // Create a new function signature that differs only in the parameter
                 // list.
-                auto symbol = ctx.Clone(ast_fn->symbol);
-                auto* return_type = ctx.Clone(ast_fn->return_type);
+                auto name = ctx.Clone(ast_fn->name);
+                auto return_type = ctx.Clone(ast_fn->return_type);
                 auto* body = ctx.Clone(ast_fn->body);
                 auto attributes = ctx.Clone(ast_fn->attributes);
                 auto return_type_attributes = ctx.Clone(ast_fn->return_type_attributes);
-                return ctx.dst->create<ast::Function>(symbol, params, return_type, body,
+                return ctx.dst->create<ast::Function>(name, params, return_type, body,
                                                       std::move(attributes),
                                                       std::move(return_type_attributes));
             }
@@ -240,19 +239,20 @@ struct CombineSamplers::State {
                     if (texture_index == -1) {
                         return nullptr;
                     }
-                    const sem::Expression* texture =
+                    const sem::ValueExpression* texture =
                         call->Arguments()[static_cast<size_t>(texture_index)];
                     // We don't want to combine storage textures with anything, since
                     // they never have associated samplers in GLSL.
                     if (texture->Type()->UnwrapRef()->Is<type::StorageTexture>()) {
                         return nullptr;
                     }
-                    const sem::Expression* sampler =
+                    const sem::ValueExpression* sampler =
                         sampler_index != -1 ? call->Arguments()[static_cast<size_t>(sampler_index)]
                                             : nullptr;
-                    auto* texture_var = texture->As<sem::VariableUser>()->Variable();
+                    auto* texture_var = texture->UnwrapLoad()->As<sem::VariableUser>()->Variable();
                     auto* sampler_var =
-                        sampler ? sampler->As<sem::VariableUser>()->Variable() : nullptr;
+                        sampler ? sampler->UnwrapLoad()->As<sem::VariableUser>()->Variable()
+                                : nullptr;
                     sem::VariablePair new_pair(texture_var, sampler_var);
                     for (auto* arg : expr->args) {
                         auto* type = ctx.src->TypeOf(arg)->UnwrapRef();
@@ -262,21 +262,20 @@ struct CombineSamplers::State {
                                     ? global_combined_texture_samplers_[new_pair]
                                     : function_combined_texture_samplers_[call->Stmt()->Function()]
                                                                          [new_pair];
-                            args.Push(ctx.dst->Expr(var->symbol));
+                            args.Push(ctx.dst->Expr(var->name->symbol));
                         } else if (auto* sampler_type = type->As<type::Sampler>()) {
-                            ast::SamplerKind kind = sampler_type->kind();
-                            int index = (kind == ast::SamplerKind::kSampler) ? 0 : 1;
+                            type::SamplerKind kind = sampler_type->kind();
+                            int index = (kind == type::SamplerKind::kSampler) ? 0 : 1;
                             const ast::Variable*& p = placeholder_samplers_[index];
                             if (!p) {
                                 p = CreatePlaceholder(kind);
                             }
-                            args.Push(ctx.dst->Expr(p->symbol));
+                            args.Push(ctx.dst->Expr(p->name->symbol));
                         } else {
                             args.Push(ctx.Clone(arg));
                         }
                     }
-                    const ast::Expression* value =
-                        ctx.dst->Call(ctx.Clone(expr->target.name), args);
+                    const ast::Expression* value = ctx.dst->Call(ctx.Clone(expr->target), args);
                     if (builtin->Type() == sem::BuiltinType::kTextureLoad &&
                         texture_var->Type()->UnwrapRef()->Is<type::DepthTexture>() &&
                         !call->Stmt()->Declaration()->Is<ast::CallStatement>()) {
@@ -295,13 +294,16 @@ struct CombineSamplers::State {
                         const sem::Variable* texture_var = pair.first;
                         const sem::Variable* sampler_var = pair.second;
                         if (auto* param = texture_var->As<sem::Parameter>()) {
-                            const sem::Expression* texture = call->Arguments()[param->Index()];
-                            texture_var = texture->As<sem::VariableUser>()->Variable();
+                            const sem::ValueExpression* texture = call->Arguments()[param->Index()];
+                            texture_var =
+                                texture->UnwrapLoad()->As<sem::VariableUser>()->Variable();
                         }
                         if (sampler_var) {
                             if (auto* param = sampler_var->As<sem::Parameter>()) {
-                                const sem::Expression* sampler = call->Arguments()[param->Index()];
-                                sampler_var = sampler->As<sem::VariableUser>()->Variable();
+                                const sem::ValueExpression* sampler =
+                                    call->Arguments()[param->Index()];
+                                sampler_var =
+                                    sampler->UnwrapLoad()->As<sem::VariableUser>()->Variable();
                             }
                         }
                         sem::VariablePair new_pair(texture_var, sampler_var);
@@ -313,7 +315,7 @@ struct CombineSamplers::State {
                                 ? global_combined_texture_samplers_[new_pair]
                                 : function_combined_texture_samplers_[call->Stmt()->Function()]
                                                                      [new_pair];
-                        auto* arg = ctx.dst->Expr(var->symbol);
+                        auto* arg = ctx.dst->Expr(var->name->symbol);
                         args.Push(arg);
                     }
                     // Append all of the remaining non-texture and non-sampler
@@ -325,7 +327,7 @@ struct CombineSamplers::State {
                             args.Push(ctx.Clone(arg));
                         }
                     }
-                    return ctx.dst->Call(ctx.Clone(expr->target.name), args);
+                    return ctx.dst->Call(ctx.Clone(expr->target), args);
                 }
             }
             return nullptr;

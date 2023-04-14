@@ -19,7 +19,6 @@
 
 #include "internal/platform/implementation/atomic_boolean.h"
 
-namespace location {
 namespace nearby {
 namespace windows {
 
@@ -35,11 +34,10 @@ class AtomicBoolean : public api::AtomicBoolean {
   bool Set(bool value) override { return atomic_boolean_.exchange(value); };
 
  private:
-  std::atomic_bool atomic_boolean_;
+  std::atomic_bool atomic_boolean_ = false;
 };
 
 }  // namespace windows
 }  // namespace nearby
-}  // namespace location
 
 #endif  // PLATFORM_IMPL_WINDOWS_ATOMIC_BOOLEAN_H_

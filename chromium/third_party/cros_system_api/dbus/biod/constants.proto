@@ -48,3 +48,9 @@ enum ScanResult {
   SCAN_RESULT_NO_MATCH = 10000;  // Scan was success, but no template matched.
   SCAN_RESULT_MAX = 10001;
 }
+
+// Included in biod's BiometricsManagerStatusChanged.
+enum BiometricsManagerStatus {
+  INITIALIZED = 1;
+  // In the future, other values such as ERROR and UNINITIALIZED may be added.
+}

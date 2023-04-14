@@ -373,6 +373,11 @@ void QuicFixedSocketAddress::SetSendValue(const QuicSocketAddress& value) {
   send_value_ = value;
 }
 
+void QuicFixedSocketAddress::ClearSendValue() {
+  has_send_value_ = false;
+  send_value_ = QuicSocketAddress();
+}
+
 bool QuicFixedSocketAddress::HasReceivedValue() const {
   return has_receive_value_;
 }
@@ -850,28 +855,13 @@ bool QuicConfig::DisableConnectionMigration() const {
 
 void QuicConfig::SetIPv6AlternateServerAddressToSend(
     const QuicSocketAddress& alternate_server_address_ipv6) {
-  if (!alternate_server_address_ipv6.host().IsIPv6()) {
+  if (!alternate_server_address_ipv6.Normalized().host().IsIPv6()) {
     QUIC_BUG(quic_bug_10575_9)
         << "Cannot use SetIPv6AlternateServerAddressToSend with "
         << alternate_server_address_ipv6;
     return;
   }
   alternate_server_address_ipv6_.SetSendValue(alternate_server_address_ipv6);
-}
-
-void QuicConfig::SetIPv6AlternateServerAddressToSend(
-    const QuicSocketAddress& alternate_server_address_ipv6,
-    const QuicConnectionId& connection_id,
-    const StatelessResetToken& stateless_reset_token) {
-  if (!alternate_server_address_ipv6.host().IsIPv6()) {
-    QUIC_BUG(quic_bug_10575_10)
-        << "Cannot use SetIPv6AlternateServerAddressToSend with "
-        << alternate_server_address_ipv6;
-    return;
-  }
-  alternate_server_address_ipv6_.SetSendValue(alternate_server_address_ipv6);
-  preferred_address_connection_id_and_token_ =
-      std::make_pair(connection_id, stateless_reset_token);
 }
 
 bool QuicConfig::HasReceivedIPv6AlternateServerAddress() const {
@@ -894,21 +884,6 @@ void QuicConfig::SetIPv4AlternateServerAddressToSend(
   alternate_server_address_ipv4_.SetSendValue(alternate_server_address_ipv4);
 }
 
-void QuicConfig::SetIPv4AlternateServerAddressToSend(
-    const QuicSocketAddress& alternate_server_address_ipv4,
-    const QuicConnectionId& connection_id,
-    const StatelessResetToken& stateless_reset_token) {
-  if (!alternate_server_address_ipv4.host().IsIPv4()) {
-    QUIC_BUG(quic_bug_10575_12)
-        << "Cannot use SetIPv4AlternateServerAddressToSend with "
-        << alternate_server_address_ipv4;
-    return;
-  }
-  alternate_server_address_ipv4_.SetSendValue(alternate_server_address_ipv4);
-  preferred_address_connection_id_and_token_ =
-      std::make_pair(connection_id, stateless_reset_token);
-}
-
 bool QuicConfig::HasReceivedIPv4AlternateServerAddress() const {
   return alternate_server_address_ipv4_.HasReceivedValue();
 }
@@ -916,6 +891,20 @@ bool QuicConfig::HasReceivedIPv4AlternateServerAddress() const {
 const QuicSocketAddress& QuicConfig::ReceivedIPv4AlternateServerAddress()
     const {
   return alternate_server_address_ipv4_.GetReceivedValue();
+}
+
+void QuicConfig::SetPreferredAddressConnectionIdAndTokenToSend(
+    const QuicConnectionId& connection_id,
+    const StatelessResetToken& stateless_reset_token) {
+  if ((!alternate_server_address_ipv4_.HasSendValue() &&
+       !alternate_server_address_ipv6_.HasSendValue()) ||
+      preferred_address_connection_id_and_token_.has_value()) {
+    QUIC_BUG(quic_bug_10575_17)
+        << "Can not send connection ID and token for preferred address";
+    return;
+  }
+  preferred_address_connection_id_and_token_ =
+      std::make_pair(connection_id, stateless_reset_token);
 }
 
 bool QuicConfig::HasReceivedPreferredAddressConnectionIdAndToken() const {
@@ -1417,6 +1406,29 @@ QuicErrorCode QuicConfig::ProcessTransportParameters(
 void QuicConfig::ClearGoogleHandshakeMessage() {
   google_handshake_message_to_send_.reset();
   received_google_handshake_message_.reset();
+}
+
+absl::optional<QuicSocketAddress> QuicConfig::GetPreferredAddressToSend(
+    quiche::IpAddressFamily address_family) const {
+  if (alternate_server_address_ipv6_.HasSendValue() &&
+      address_family == quiche::IpAddressFamily::IP_V6) {
+    return alternate_server_address_ipv6_.GetSendValue();
+  }
+
+  if (alternate_server_address_ipv4_.HasSendValue() &&
+      address_family == quiche::IpAddressFamily::IP_V4) {
+    return alternate_server_address_ipv4_.GetSendValue();
+  }
+  return absl::nullopt;
+}
+
+void QuicConfig::ClearAlternateServerAddressToSend(
+    quiche::IpAddressFamily address_family) {
+  if (address_family == quiche::IpAddressFamily::IP_V4) {
+    alternate_server_address_ipv4_.ClearSendValue();
+  } else if (address_family == quiche::IpAddressFamily::IP_V6) {
+    alternate_server_address_ipv6_.ClearSendValue();
+  }
 }
 
 }  // namespace quic

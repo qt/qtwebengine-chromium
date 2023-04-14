@@ -23,10 +23,10 @@
 
 static void qu8_requantization(
   benchmark::State& state,
-  xnn_qu8_requantization_function requantize,
+  xnn_qu8_requantization_fn requantize,
   benchmark::utils::IsaCheckFunction isa_check = nullptr)
 {
-  if (isa_check && !isa_check(state)) {
+  if (isa_check != nullptr && !isa_check(state)) {
     return;
   }
 
@@ -98,8 +98,8 @@ static void qu8_requantization(
                     benchmark::utils::CheckSSSE3)
     ->Apply(benchmark::utils::UnaryElementwiseParameters<int32_t, uint8_t>)
     ->UseRealTime();
-  BENCHMARK_CAPTURE(qu8_requantization, gemmlowp__sse4,
-                    xnn_qu8_requantize_gemmlowp__sse4,
+  BENCHMARK_CAPTURE(qu8_requantization, gemmlowp__sse41,
+                    xnn_qu8_requantize_gemmlowp__sse41,
                     benchmark::utils::CheckSSE41)
     ->Apply(benchmark::utils::UnaryElementwiseParameters<int32_t, uint8_t>)
     ->UseRealTime();
@@ -113,8 +113,8 @@ static void qu8_requantization(
                     benchmark::utils::CheckSSSE3)
     ->Apply(benchmark::utils::UnaryElementwiseParameters<int32_t, uint8_t>)
     ->UseRealTime();
-  BENCHMARK_CAPTURE(qu8_requantization, rndna__sse4,
-                    xnn_qu8_requantize_rndna__sse4,
+  BENCHMARK_CAPTURE(qu8_requantization, rndna__sse41,
+                    xnn_qu8_requantize_rndna__sse41,
                     benchmark::utils::CheckSSE41)
     ->Apply(benchmark::utils::UnaryElementwiseParameters<int32_t, uint8_t>)
     ->UseRealTime();

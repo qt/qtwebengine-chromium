@@ -106,7 +106,7 @@ constexpr uint32_t kMaxShaderXFBs = gl::IMPLEMENTATION_MAX_TRANSFORM_FEEDBACK_SE
 // The max size of a buffer that will be allocated in shared memory.
 // NOTE(hqle): This is just a hint. There is no official document on what is the max allowed size
 // for shared memory.
-constexpr size_t kSharedMemBufferMaxBufSizeHint = 256 * 1024;
+constexpr size_t kSharedMemBufferMaxBufSizeHint = 128 * 1024;
 
 constexpr size_t kDefaultAttributeSize = 4 * sizeof(float);
 
@@ -179,6 +179,12 @@ constexpr gl::Version kMaxSupportedGLVersion = gl::Version(3, 0);
 constexpr MTLBlitOption kBlitOptionRowLinearPVRTC = MTLBlitOptionNone;
 #else
 constexpr MTLBlitOption kBlitOptionRowLinearPVRTC          = MTLBlitOptionRowLinearPVRTC;
+#endif
+
+#if defined(__MAC_10_14) && (TARGET_OS_OSX || TARGET_OS_MACCATALYST)
+constexpr MTLBarrierScope kBarrierScopeRenderTargets = MTLBarrierScopeRenderTargets;
+#else
+constexpr MTLBarrierScope kBarrierScopeRenderTargets       = MTLBarrierScope(0);
 #endif
 
 #if defined(__IPHONE_13_0) || defined(__MAC_10_15)

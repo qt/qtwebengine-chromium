@@ -7,7 +7,8 @@
 #include "src/pathops/SkPathWriter.h"
 
 #include "include/core/SkTypes.h"
-#include "src/core/SkTSort.h"
+#include "include/private/base/SkMath.h"
+#include "src/base/SkTSort.h"
 #include "src/pathops/SkOpSegment.h"
 #include "src/pathops/SkOpSpan.h"
 #include "src/pathops/SkPathOpsDebug.h"

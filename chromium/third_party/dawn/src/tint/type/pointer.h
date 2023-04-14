@@ -17,8 +17,8 @@
 
 #include <string>
 
-#include "src/tint/ast/access.h"
-#include "src/tint/ast/address_space.h"
+#include "src/tint/builtin/access.h"
+#include "src/tint/builtin/address_space.h"
 #include "src/tint/type/type.h"
 
 namespace tint::type {
@@ -30,37 +30,37 @@ class Pointer final : public Castable<Pointer, Type> {
     /// @param subtype the pointee type
     /// @param address_space the address space of the pointer
     /// @param access the resolved access control of the reference
-    Pointer(const Type* subtype, ast::AddressSpace address_space, ast::Access access);
+    Pointer(const Type* subtype, builtin::AddressSpace address_space, builtin::Access access);
 
-    /// Move constructor
-    Pointer(Pointer&&);
+    /// Destructor
     ~Pointer() override;
 
-    /// @returns a hash of the type.
-    size_t Hash() const override;
-
-    /// @param other the other type to compare against
-    /// @returns true if the this type is equal to the given type
-    bool Equals(const Type& other) const override;
+    /// @param other the other node to compare against
+    /// @returns true if the this type is equal to @p other
+    bool Equals(const UniqueNode& other) const override;
 
     /// @returns the pointee type
     const Type* StoreType() const { return subtype_; }
 
     /// @returns the address space of the pointer
-    ast::AddressSpace AddressSpace() const { return address_space_; }
+    builtin::AddressSpace AddressSpace() const { return address_space_; }
 
     /// @returns the access control of the reference
-    ast::Access Access() const { return access_; }
+    builtin::Access Access() const { return access_; }
 
     /// @param symbols the program's symbol table
     /// @returns the name for this type that closely resembles how it would be
     /// declared in WGSL.
     std::string FriendlyName(const SymbolTable& symbols) const override;
 
+    /// @param ctx the clone context
+    /// @returns a clone of this type
+    Pointer* Clone(CloneContext& ctx) const override;
+
   private:
     Type const* const subtype_;
-    ast::AddressSpace const address_space_;
-    ast::Access const access_;
+    builtin::AddressSpace const address_space_;
+    builtin::Access const access_;
 };
 
 }  // namespace tint::type

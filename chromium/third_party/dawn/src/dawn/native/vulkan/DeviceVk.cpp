@@ -40,7 +40,6 @@
 #include "dawn/native/vulkan/ResourceMemoryAllocatorVk.h"
 #include "dawn/native/vulkan/SamplerVk.h"
 #include "dawn/native/vulkan/ShaderModuleVk.h"
-#include "dawn/native/vulkan/StagingBufferVk.h"
 #include "dawn/native/vulkan/SwapChainVk.h"
 #include "dawn/native/vulkan/TextureVk.h"
 #include "dawn/native/vulkan/UtilsVulkan.h"
@@ -91,19 +90,16 @@ void DestroyCommandPoolAndBuffer(const VulkanFunctions& fn,
 // static
 ResultOrError<Ref<Device>> Device::Create(Adapter* adapter,
                                           const DeviceDescriptor* descriptor,
-                                          const TripleStateTogglesSet& userProvidedToggles) {
-    Ref<Device> device = AcquireRef(new Device(adapter, descriptor, userProvidedToggles));
+                                          const TogglesState& deviceToggles) {
+    Ref<Device> device = AcquireRef(new Device(adapter, descriptor, deviceToggles));
     DAWN_TRY(device->Initialize(descriptor));
     return device;
 }
 
 Device::Device(Adapter* adapter,
                const DeviceDescriptor* descriptor,
-               const TripleStateTogglesSet& userProvidedToggles)
-    : DeviceBase(adapter, descriptor, userProvidedToggles),
-      mDebugPrefix(GetNextDeviceDebugPrefix()) {
-    InitTogglesFromDriver();
-}
+               const TogglesState& deviceToggles)
+    : DeviceBase(adapter, descriptor, deviceToggles), mDebugPrefix(GetNextDeviceDebugPrefix()) {}
 
 MaybeError Device::Initialize(const DeviceDescriptor* descriptor) {
     // Copy the adapter's device info to the device so that we can change the "knobs"
@@ -140,14 +136,6 @@ MaybeError Device::Initialize(const DeviceDescriptor* descriptor) {
     mExternalSemaphoreService = std::make_unique<external_semaphore::Service>(this);
 
     DAWN_TRY(PrepareRecordingContext());
-
-    // The environment can request to various options for depth-stencil formats that could be
-    // unavailable. Override the decision if it is not applicable.
-    ApplyDepthStencilFormatToggles();
-
-    // The environment can only request to use VK_KHR_zero_initialize_workgroup_memory when the
-    // extension is available. Override the decision if it is no applicable.
-    ApplyUseZeroInitializeWorkgroupMemoryExtensionToggle();
 
     SetLabelImpl();
 
@@ -317,6 +305,12 @@ void Device::ForceEventualFlushOfCommands() {
 MaybeError Device::SubmitPendingCommands() {
     if (!mRecordingContext.needsSubmit) {
         return {};
+    }
+
+    if (!mRecordingContext.mappableBuffersForEagerTransition.empty()) {
+        // Transition mappable buffers back to map usages with the submit.
+        Buffer::TransitionMappableBuffersEagerly(
+            fn, &mRecordingContext, mRecordingContext.mappableBuffersForEagerTransition);
     }
 
     ScopedSignalSemaphore scopedSignalSemaphore(this, VK_NULL_HANDLE);
@@ -505,6 +499,7 @@ ResultOrError<VulkanDeviceKnobs> Device::CreateDevice(VkPhysicalDevice physicalD
         ASSERT(deviceInfo.HasExt(DeviceExt::DepthClipEnable) &&
                deviceInfo.depthClipEnableFeatures.depthClipEnable == VK_TRUE);
 
+        usedKnobs.features.depthClamp = VK_TRUE;
         usedKnobs.depthClipEnableFeatures.depthClipEnable = VK_TRUE;
         featuresChain.Add(&usedKnobs.depthClipEnableFeatures,
                           VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_CLIP_ENABLE_FEATURES_EXT);
@@ -621,57 +616,6 @@ uint32_t Device::FindComputeSubgroupSize() const {
 
 void Device::GatherQueueFromDevice() {
     fn.GetDeviceQueue(mVkDevice, mQueueFamily, 0, &mQueue);
-}
-
-// Note that this function is called before mDeviceInfo is initialized.
-void Device::InitTogglesFromDriver() {
-    // TODO(crbug.com/dawn/857): tighten this workaround when this issue is fixed in both
-    // Vulkan SPEC and drivers.
-    SetToggle(Toggle::UseTemporaryBufferInCompressedTextureToTextureCopy, true);
-
-    // By default try to use D32S8 for Depth24PlusStencil8
-    SetToggle(Toggle::VulkanUseD32S8, true);
-
-    // By default try to initialize workgroup memory with OpConstantNull according to the Vulkan
-    // extension VK_KHR_zero_initialize_workgroup_memory.
-    SetToggle(Toggle::VulkanUseZeroInitializeWorkgroupMemoryExtension, true);
-
-    // By default try to use S8 if available.
-    SetToggle(Toggle::VulkanUseS8, true);
-
-    // dawn:1564: Clearing a depth/stencil buffer in a render pass and then sampling it in a
-    // compute pass in the same command buffer causes a crash on Qualcomm GPUs. To work around that
-    // bug, split the command buffer any time we can detect that situation.
-    if (ToBackend(GetAdapter())->IsAndroidQualcomm()) {
-        ForceSetToggle(Toggle::VulkanSplitCommandBufferOnDepthStencilComputeSampleAfterRenderPass,
-                       true);
-    }
-}
-
-void Device::ApplyDepthStencilFormatToggles() {
-    bool supportsD32s8 =
-        ToBackend(GetAdapter())->IsDepthStencilFormatSupported(VK_FORMAT_D32_SFLOAT_S8_UINT);
-    bool supportsD24s8 =
-        ToBackend(GetAdapter())->IsDepthStencilFormatSupported(VK_FORMAT_D24_UNORM_S8_UINT);
-    bool supportsS8 = ToBackend(GetAdapter())->IsDepthStencilFormatSupported(VK_FORMAT_S8_UINT);
-
-    ASSERT(supportsD32s8 || supportsD24s8);
-
-    if (!supportsD24s8) {
-        ForceSetToggle(Toggle::VulkanUseD32S8, true);
-    }
-    if (!supportsD32s8) {
-        ForceSetToggle(Toggle::VulkanUseD32S8, false);
-    }
-    if (!supportsS8) {
-        ForceSetToggle(Toggle::VulkanUseS8, false);
-    }
-}
-
-void Device::ApplyUseZeroInitializeWorkgroupMemoryExtensionToggle() {
-    if (!mDeviceInfo.HasExt(DeviceExt::ZeroInitializeWorkgroupMemory)) {
-        ForceSetToggle(Toggle::VulkanUseZeroInitializeWorkgroupMemoryExtension, false);
-    }
 }
 
 VulkanFunctions* Device::GetMutableFunctions() {
@@ -818,13 +762,7 @@ void Device::RecycleCompletedCommands() {
     mCommandsInFlight.ClearUpTo(GetCompletedCommandSerial());
 }
 
-ResultOrError<std::unique_ptr<StagingBufferBase>> Device::CreateStagingBuffer(size_t size) {
-    std::unique_ptr<StagingBufferBase> stagingBuffer = std::make_unique<StagingBuffer>(size, this);
-    DAWN_TRY(stagingBuffer->Initialize());
-    return std::move(stagingBuffer);
-}
-
-MaybeError Device::CopyFromStagingToBufferImpl(StagingBufferBase* source,
+MaybeError Device::CopyFromStagingToBufferImpl(BufferBase* source,
                                                uint64_t sourceOffset,
                                                BufferBase* destination,
                                                uint64_t destinationOffset,
@@ -852,15 +790,15 @@ MaybeError Device::CopyFromStagingToBufferImpl(StagingBufferBase* source,
     copy.dstOffset = destinationOffset;
     copy.size = size;
 
-    this->fn.CmdCopyBuffer(recordingContext->commandBuffer, ToBackend(source)->GetBufferHandle(),
+    this->fn.CmdCopyBuffer(recordingContext->commandBuffer, ToBackend(source)->GetHandle(),
                            ToBackend(destination)->GetHandle(), 1, &copy);
 
     return {};
 }
 
-MaybeError Device::CopyFromStagingToTextureImpl(const StagingBufferBase* source,
+MaybeError Device::CopyFromStagingToTextureImpl(const BufferBase* source,
                                                 const TextureDataLayout& src,
-                                                TextureCopy* dst,
+                                                const TextureCopy& dst,
                                                 const Extent3D& copySizePixels) {
     // There is no need of a barrier to make host writes available and visible to the copy
     // operation for HOST_COHERENT memory. The Vulkan spec for vkQueueSubmit describes that it
@@ -869,28 +807,27 @@ MaybeError Device::CopyFromStagingToTextureImpl(const StagingBufferBase* source,
     CommandRecordingContext* recordingContext =
         GetPendingRecordingContext(DeviceBase::SubmitMode::Passive);
 
-    VkBufferImageCopy region = ComputeBufferImageCopyRegion(src, *dst, copySizePixels);
+    VkBufferImageCopy region = ComputeBufferImageCopyRegion(src, dst, copySizePixels);
     VkImageSubresourceLayers subresource = region.imageSubresource;
 
-    SubresourceRange range = GetSubresourcesAffectedByCopy(*dst, copySizePixels);
+    SubresourceRange range = GetSubresourcesAffectedByCopy(dst, copySizePixels);
 
-    if (IsCompleteSubresourceCopiedTo(dst->texture.Get(), copySizePixels, subresource.mipLevel)) {
+    if (IsCompleteSubresourceCopiedTo(dst.texture.Get(), copySizePixels, subresource.mipLevel)) {
         // Since texture has been overwritten, it has been "initialized"
-        dst->texture->SetIsSubresourceContentInitialized(true, range);
+        dst.texture->SetIsSubresourceContentInitialized(true, range);
     } else {
-        ToBackend(dst->texture)->EnsureSubresourceContentInitialized(recordingContext, range);
+        ToBackend(dst.texture)->EnsureSubresourceContentInitialized(recordingContext, range);
     }
     // Insert pipeline barrier to ensure correct ordering with previous memory operations on the
     // texture.
-    ToBackend(dst->texture)
+    ToBackend(dst.texture)
         ->TransitionUsageNow(recordingContext, wgpu::TextureUsage::CopyDst, range);
-    VkImage dstImage = ToBackend(dst->texture)->GetHandle();
+    VkImage dstImage = ToBackend(dst.texture)->GetHandle();
 
     // Dawn guarantees dstImage be in the TRANSFER_DST_OPTIMAL layout after the
     // copy command.
-    this->fn.CmdCopyBufferToImage(recordingContext->commandBuffer,
-                                  ToBackend(source)->GetBufferHandle(), dstImage,
-                                  VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+    this->fn.CmdCopyBufferToImage(recordingContext->commandBuffer, ToBackend(source)->GetHandle(),
+                                  dstImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
     return {};
 }
 

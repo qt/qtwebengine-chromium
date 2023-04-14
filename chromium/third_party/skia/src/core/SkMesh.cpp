@@ -10,13 +10,13 @@
 #ifdef SK_ENABLE_SKSL
 #include "include/core/SkColorSpace.h"
 #include "include/core/SkData.h"
-#include "include/core/SkMath.h"
 #include "include/private/SkOpts_spi.h"
 #include "include/private/SkSLProgramElement.h"
 #include "include/private/SkSLProgramKind.h"
+#include "include/private/base/SkMath.h"
+#include "src/base/SkSafeMath.h"
 #include "src/core/SkMeshPriv.h"
 #include "src/core/SkRuntimeEffectPriv.h"
-#include "src/core/SkSafeMath.h"
 #include "src/sksl/SkSLAnalysis.h"
 #include "src/sksl/SkSLBuiltinTypes.h"
 #include "src/sksl/SkSLCompiler.h"
@@ -657,8 +657,9 @@ sk_sp<IndexBuffer> SkMesh::MakeIndexBuffer(GrDirectContext* dc, const void* data
     }
 #if SK_SUPPORT_GPU
     return SkMeshPriv::GpuIndexBuffer::Make(dc, data, size);
-#endif
+#else
     return nullptr;
+#endif
 }
 
 sk_sp<IndexBuffer> SkMesh::CopyIndexBuffer(GrDirectContext* dc, sk_sp<IndexBuffer> src) {
@@ -679,8 +680,9 @@ sk_sp<VertexBuffer> SkMesh::MakeVertexBuffer(GrDirectContext* dc, const void* da
     }
 #if SK_SUPPORT_GPU
     return SkMeshPriv::GpuVertexBuffer::Make(dc, data, size);
-#endif
+#else
     return nullptr;
+#endif
 }
 
 sk_sp<VertexBuffer> SkMesh::CopyVertexBuffer(GrDirectContext* dc, sk_sp<VertexBuffer> src) {

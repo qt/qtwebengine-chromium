@@ -78,10 +78,10 @@ TEST_P(ParserImplReservedKeywordTest, StructMember) {
 }
 TEST_P(ParserImplReservedKeywordTest, Alias) {
     auto name = GetParam();
-    auto p = parser("type " + name + " = i32;");
+    auto p = parser("alias " + name + " = i32;");
     EXPECT_FALSE(p->Parse());
     EXPECT_TRUE(p->has_error());
-    EXPECT_EQ(p->error(), "1:6: '" + name + "' is a reserved keyword");
+    EXPECT_EQ(p->error(), "1:7: '" + name + "' is a reserved keyword");
 }
 INSTANTIATE_TEST_SUITE_P(ParserImplReservedKeywordTest,
                          ParserImplReservedKeywordTest,
@@ -152,7 +152,6 @@ INSTANTIATE_TEST_SUITE_P(ParserImplReservedKeywordTest,
                                          "inout",
                                          "instanceof",
                                          "interface",
-                                         "invariant",
                                          "layout",
                                          "lowp",
                                          "macro",
@@ -194,7 +193,6 @@ INSTANTIATE_TEST_SUITE_P(ParserImplReservedKeywordTest,
                                          "regardless",
                                          "register",
                                          "reinterpret_cast",
-                                         "requires",
                                          "resource",
                                          "restrict",
                                          "self",
@@ -205,6 +203,7 @@ INSTANTIATE_TEST_SUITE_P(ParserImplReservedKeywordTest,
                                          "smooth",
                                          "snorm",
                                          "static",
+                                         "static_assert",
                                          "static_cast",
                                          "std",
                                          "subroutine",

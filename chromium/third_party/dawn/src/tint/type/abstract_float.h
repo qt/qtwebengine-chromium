@@ -28,20 +28,20 @@ class AbstractFloat final : public Castable<AbstractFloat, AbstractNumeric> {
     /// Constructor
     AbstractFloat();
 
-    /// Move constructor
-    AbstractFloat(AbstractFloat&&);
+    /// Destructor
     ~AbstractFloat() override;
-
-    /// @returns a hash of the type.
-    size_t Hash() const override;
 
     /// @param other the other type to compare against
     /// @returns true if this type is equal to the given type
-    bool Equals(const Type& other) const override;
+    bool Equals(const UniqueNode& other) const override;
 
     /// @param symbols the program's symbol table
     /// @returns the name for this type when printed in diagnostics.
     std::string FriendlyName(const SymbolTable& symbols) const override;
+
+    /// @param ctx the clone context
+    /// @returns a clone of this type
+    AbstractFloat* Clone(CloneContext& ctx) const override;
 };
 
 }  // namespace tint::type

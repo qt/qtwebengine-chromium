@@ -23,11 +23,8 @@ using UnshadowTest = TransformTest;
 
 TEST_F(UnshadowTest, EmptyModule) {
     auto* src = "";
-    auto* expect = "";
 
-    auto got = Run<Unshadow>(src);
-
-    EXPECT_EQ(expect, str(got));
+    EXPECT_FALSE(ShouldRun<Unshadow>(src));
 }
 
 TEST_F(UnshadowTest, Noop) {
@@ -48,16 +45,12 @@ fn F(c : i32) {
 }
 )";
 
-    auto* expect = src;
-
-    auto got = Run<Unshadow>(src);
-
-    EXPECT_EQ(expect, str(got));
+    EXPECT_FALSE(ShouldRun<Unshadow>(src));
 }
 
 TEST_F(UnshadowTest, LocalShadowsAlias) {
     auto* src = R"(
-type a = i32;
+alias a = i32;
 
 fn X() {
   var a = false;
@@ -73,7 +66,7 @@ fn Z() {
 )";
 
     auto* expect = R"(
-type a = i32;
+alias a = i32;
 
 fn X() {
   var a_1 = false;
@@ -107,7 +100,7 @@ fn Z() {
   const a = true;
 }
 
-type a = i32;
+alias a = i32;
 )";
 
     auto* expect = R"(
@@ -123,7 +116,7 @@ fn Z() {
   const a_3 = true;
 }
 
-type a = i32;
+alias a = i32;
 )";
 
     auto got = Run<Unshadow>(src);
@@ -698,7 +691,7 @@ const a : i32 = 1;
 
 TEST_F(UnshadowTest, ParamShadowsAlias) {
     auto* src = R"(
-type a = i32;
+alias a = i32;
 
 fn F(a : a) {
   {
@@ -711,7 +704,7 @@ fn F(a : a) {
 )";
 
     auto* expect = R"(
-type a = i32;
+alias a = i32;
 
 fn F(a_1 : a) {
   {
@@ -739,7 +732,7 @@ fn F(a : a) {
   }
 }
 
-type a = i32;
+alias a = i32;
 )";
 
     auto* expect = R"(
@@ -752,7 +745,33 @@ fn F(a_1 : a) {
   }
 }
 
-type a = i32;
+alias a = i32;
+)";
+
+    auto got = Run<Unshadow>(src);
+
+    EXPECT_EQ(expect, str(got));
+}
+
+TEST_F(UnshadowTest, RenamedVarHasUsers) {
+    auto* src = R"(
+fn F() {
+  var a : bool;
+  {
+    var a : i32;
+    var b = a + 1;
+  }
+}
+)";
+
+    auto* expect = R"(
+fn F() {
+  var a : bool;
+  {
+    var a_1 : i32;
+    var b = (a_1 + 1);
+  }
+}
 )";
 
     auto got = Run<Unshadow>(src);

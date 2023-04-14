@@ -189,6 +189,7 @@ bool loadMarket(SparseMatrixType& mat, const std::string& filename)
         readsizes = true;
         mat.resize(M,N);
         mat.reserve(NNZ);
+        elements.reserve(NNZ);
       }
     }
     else

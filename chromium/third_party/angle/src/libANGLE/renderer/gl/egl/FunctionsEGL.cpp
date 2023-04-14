@@ -29,6 +29,19 @@ bool SetPtr(T *dst, void *src)
     }
     return false;
 }
+
+bool IsValidPlatformTypeForPlatformDisplayConnection(EGLAttrib platformType)
+{
+    switch (platformType)
+    {
+        case EGL_PLATFORM_SURFACELESS_MESA:
+            return true;
+        default:
+            break;
+    }
+    return false;
+}
+
 }  // namespace
 
 namespace rx
@@ -175,8 +188,16 @@ FunctionsEGL::~FunctionsEGL()
     SafeDelete(mFnPtrs);
 }
 
-egl::Error FunctionsEGL::initialize(EGLNativeDisplayType nativeDisplay)
+egl::Error FunctionsEGL::initialize(EGLAttrib platformType, EGLNativeDisplayType nativeDisplay)
 {
+#define ANGLE_GET_PROC_OR_WARNING(MEMBER, NAME)                \
+    do                                                         \
+    {                                                          \
+        if (!SetPtr(MEMBER, getProcAddress(#NAME)))            \
+        {                                                      \
+            WARN() << "Could not load EGL entry point " #NAME; \
+        }                                                      \
+    } while (0)
 #define ANGLE_GET_PROC_OR_ERROR(MEMBER, NAME)                                           \
     do                                                                                  \
     {                                                                                   \
@@ -210,7 +231,15 @@ egl::Error FunctionsEGL::initialize(EGLNativeDisplayType nativeDisplay)
     ANGLE_GET_PROC_OR_ERROR(&mFnPtrs->surfaceAttribPtr, eglSurfaceAttrib);
     ANGLE_GET_PROC_OR_ERROR(&mFnPtrs->swapIntervalPtr, eglSwapInterval);
 
-    mEGLDisplay = mFnPtrs->getDisplayPtr(nativeDisplay);
+    if (IsValidPlatformTypeForPlatformDisplayConnection(platformType))
+    {
+        mEGLDisplay = getPlatformDisplay(platformType, nativeDisplay);
+    }
+    else
+    {
+        mEGLDisplay = mFnPtrs->getDisplayPtr(nativeDisplay);
+    }
+
     if (mEGLDisplay != EGL_NO_DISPLAY)
     {
         if (mFnPtrs->initializePtr(mEGLDisplay, &majorVersion, &minorVersion) != EGL_TRUE)
@@ -236,6 +265,9 @@ egl::Error FunctionsEGL::initialize(EGLNativeDisplayType nativeDisplay)
     {
         return egl::Error(mFnPtrs->getErrorPtr(), "Failed to bind API in system egl");
     }
+
+    vendorString  = queryString(EGL_VENDOR);
+    versionString = queryString(EGL_VERSION);
 
     ANGLE_GET_PROC_OR_ERROR(&mFnPtrs->getCurrentContextPtr, eglGetCurrentContext);
 
@@ -309,43 +341,12 @@ egl::Error FunctionsEGL::initialize(EGLNativeDisplayType nativeDisplay)
 
     if (hasExtension("EGL_EXT_image_dma_buf_import_modifiers"))
     {
-        std::string eglVendor  = queryString(EGL_VENDOR);
-        std::string eglVersion = queryString(EGL_VERSION);
-
-        if (eglVendor.find("ARM") != std::string::npos &&
-            eglVersion.find("r26p0-01rel0") != std::string::npos)
-        {
-            // https://anglebug.com/7664
-            // Disable EGL_EXT_image_dma_buf_import_modifiers on old Mali drivers
-            mExtensions.erase(
-                std::remove_if(mExtensions.begin(), mExtensions.end(),
-                               [](const std::string &extension) {
-                                   return extension.compare(
-                                              "EGL_EXT_image_dma_buf_import_modifiers") == 0;
-                               }),
-                mExtensions.end());
-        }
-        else
-        {
-            // https://anglebug.com/7664
-            // Some drivers, notably older versions of ANGLE, announce this extension without
-            // implementing the following functions. Fail softly in such cases.
-            if (!SetPtr(&mFnPtrs->queryDmaBufFormatsEXTPtr,
-                        getProcAddress("eglQueryDmaBufFormatsEXT")) ||
-                !SetPtr(&mFnPtrs->queryDmaBufModifiersEXTPtr,
-                        getProcAddress("eglQueryDmaBufModifiersEXT")))
-            {
-                mFnPtrs->queryDmaBufFormatsEXTPtr   = nullptr;
-                mFnPtrs->queryDmaBufModifiersEXTPtr = nullptr;
-                mExtensions.erase(
-                    std::remove_if(mExtensions.begin(), mExtensions.end(),
-                                   [](const std::string &extension) {
-                                       return extension.compare(
-                                                  "EGL_EXT_image_dma_buf_import_modifiers") == 0;
-                                   }),
-                    mExtensions.end());
-            }
-        }
+        // https://anglebug.com/7664
+        // Some drivers, notably older versions of ANGLE, announce this extension without
+        // implementing the following functions. DisplayEGL checks for this case and disables the
+        // extension.
+        ANGLE_GET_PROC_OR_WARNING(&mFnPtrs->queryDmaBufFormatsEXTPtr, eglQueryDmaBufFormatsEXT);
+        ANGLE_GET_PROC_OR_WARNING(&mFnPtrs->queryDmaBufModifiersEXTPtr, eglQueryDmaBufModifiersEXT);
     }
 
     // EGL_EXT_device_query is only advertised in extension string in the
@@ -370,6 +371,43 @@ egl::Error FunctionsEGL::terminate()
         return egl::NoError();
     }
     return egl::Error(mFnPtrs->getErrorPtr());
+}
+
+EGLDisplay FunctionsEGL::getPlatformDisplay(EGLAttrib platformType,
+                                            EGLNativeDisplayType nativeDisplay)
+{
+    // As in getNativeDisplay(), querying EGL_EXTENSIONS string and loading it into the mExtensions
+    // vector will at this point retrieve the client extensions since mEGLDisplay is still
+    // EGL_NO_DISPLAY. This is desired, and mExtensions will later be reinitialized with the display
+    // extensions once the display is created and initialized.
+    const char *extensions = queryString(EGL_EXTENSIONS);
+    if (!extensions)
+    {
+        return EGL_NO_DISPLAY;
+    }
+    angle::SplitStringAlongWhitespace(extensions, &mExtensions);
+
+    PFNEGLGETPLATFORMDISPLAYEXTPROC getPlatformDisplayEXTPtr;
+    if (!hasExtension("EGL_EXT_platform_base") ||
+        !SetPtr(&getPlatformDisplayEXTPtr, getProcAddress("eglGetPlatformDisplayEXT")))
+    {
+        return EGL_NO_DISPLAY;
+    }
+
+    ASSERT(IsValidPlatformTypeForPlatformDisplayConnection(platformType));
+    switch (platformType)
+    {
+        case EGL_PLATFORM_SURFACELESS_MESA:
+            if (!hasExtension("EGL_MESA_platform_surfaceless"))
+                return EGL_NO_DISPLAY;
+            break;
+        default:
+            UNREACHABLE();
+            return EGL_NO_DISPLAY;
+    }
+
+    return getPlatformDisplayEXTPtr(static_cast<EGLenum>(platformType),
+                                    reinterpret_cast<void *>(nativeDisplay), nullptr);
 }
 
 EGLDisplay FunctionsEGL::getNativeDisplay(int *major, int *minor)
@@ -454,6 +492,12 @@ FunctionsGL *FunctionsEGL::makeFunctionsGL(void) const
 bool FunctionsEGL::hasExtension(const char *extension) const
 {
     return std::find(mExtensions.begin(), mExtensions.end(), extension) != mExtensions.end();
+}
+
+bool FunctionsEGL::hasDmaBufImportModifierFunctions() const
+{
+    return mFnPtrs->queryDmaBufFormatsEXTPtr != nullptr &&
+           mFnPtrs->queryDmaBufModifiersEXTPtr != nullptr;
 }
 
 EGLDisplay FunctionsEGL::getDisplay() const

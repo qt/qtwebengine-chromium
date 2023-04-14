@@ -12,6 +12,7 @@
 #include "cast/streaming/session_config.h"
 #include "cast/streaming/ssrc.h"
 #include "platform/api/time.h"
+#include "platform/base/span.h"
 
 namespace openscreen {
 namespace cast {
@@ -94,7 +95,7 @@ class ReceiverBase {
   // |buffer| must point to a sufficiently-sized buffer that will be populated
   // with the frame's payload data. Upon return |frame->data| will be set to the
   // portion of the buffer that was populated.
-  virtual EncodedFrame ConsumeNextFrame(absl::Span<uint8_t> buffer) = 0;
+  virtual EncodedFrame ConsumeNextFrame(ByteBuffer buffer) = 0;
 
   // The default "player processing time" amount. See SetPlayerProcessingTime().
   // This value is based on real world experimentation, however may vary

@@ -745,7 +745,7 @@ template<typename ExpressionType, int Direction> class VectorwiseOp
 #   endif
 
   protected:
-    Index redux_length() const
+    EIGEN_DEVICE_FUNC Index redux_length() const
     {
       return Direction==Vertical ? m_matrix.rows() : m_matrix.cols();
     }

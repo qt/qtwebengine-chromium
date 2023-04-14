@@ -8,6 +8,9 @@
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
 
 #include "include/core/SkBitmap.h"
+#include "include/core/SkColorSpace.h"
+#include "include/core/SkDeferredDisplayList.h"
+#include "include/core/SkTypes.h"
 #include "include/gpu/GrContextThreadSafeProxy.h"
 #include "include/gpu/GrDirectContext.h"
 #include "src/core/SkRuntimeEffectPriv.h"
@@ -29,6 +32,7 @@
 #include "src/image/SkImage_Gpu.h"
 #include "src/text/gpu/TextBlobRedrawCoordinator.h"
 
+using namespace  skia_private;
 using MaskFormat = skgpu::MaskFormat;
 
 #define ASSERT_OWNED_PROXY(P) \
@@ -230,7 +234,7 @@ static std::unique_ptr<GrFragmentProcessor> make_unpremul_effect(
 
 static bool test_for_preserving_PM_conversions(GrDirectContext* dContext) {
     static constexpr int kSize = 256;
-    SkAutoTMalloc<uint32_t> data(kSize * kSize * 3);
+    AutoTMalloc<uint32_t> data(kSize * kSize * 3);
     uint32_t* srcData = data.get();
 
     // Fill with every possible premultiplied A, color channel value. There will be 256-y duplicate

@@ -113,6 +113,7 @@ enum loader_layer_library_status {
 
     LOADER_LAYER_LIB_ERROR_WRONG_BIT_TYPE = 20,
     LOADER_LAYER_LIB_ERROR_FAILED_TO_LOAD = 21,
+    LOADER_LAYER_LIB_ERROR_OUT_OF_MEMORY = 22,
 };
 
 enum layer_type_flags {
@@ -264,6 +265,9 @@ struct loader_instance {
     char *phys_dev_ext_disp_functions[MAX_NUM_UNKNOWN_EXTS];
 
     struct loader_msg_callback_map_entry *icd_msg_callback_map;
+
+    uint32_t enabled_layer_count;
+    char **enabled_layer_names;
 
     struct loader_layer_list instance_layer_list;
     bool override_layer_present;

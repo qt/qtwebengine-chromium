@@ -22,15 +22,24 @@
 #include "connections/implementation/offline_frames_validator.h"
 #include "connections/status.h"
 #include "internal/platform/byte_array.h"
+#include "connections/implementation/proto/offline_wire_formats.pb.h"
 
-namespace location {
 namespace nearby {
 namespace connections {
 namespace parser {
 namespace {
 
-using ExceptionOrOfflineFrame = ExceptionOr<OfflineFrame>;
+using ExceptionOrOfflineFrame =
+    ExceptionOr<::location::nearby::connections::OfflineFrame>;
 using MessageLite = ::google::protobuf::MessageLite;
+using ::location::nearby::connections::BandwidthUpgradeNegotiationFrame;
+using ::location::nearby::connections::ConnectionRequestFrame;
+using ::location::nearby::connections::ConnectionResponseFrame;
+using ::location::nearby::connections::LocationHint;
+using ::location::nearby::connections::OfflineFrame;
+using ::location::nearby::connections::OsInfo;
+using ::location::nearby::connections::PayloadTransferFrame;
+using ::location::nearby::connections::V1Frame;
 
 ByteArray ToBytes(OfflineFrame&& frame) {
   ByteArray bytes(frame.ByteSizeLong());
@@ -103,7 +112,7 @@ ByteArray ForConnectionRequest(const ConnectionInfo& conection_info) {
   return ToBytes(std::move(frame));
 }
 
-ByteArray ForConnectionResponse(std::int32_t status) {
+ByteArray ForConnectionResponse(std::int32_t status, const OsInfo& os_info) {
   OfflineFrame frame;
 
   frame.set_version(OfflineFrame::V1);
@@ -118,6 +127,7 @@ ByteArray ForConnectionResponse(std::int32_t status) {
   sub_frame->set_response(status == Status::kSuccess
                               ? ConnectionResponseFrame::ACCEPT
                               : ConnectionResponseFrame::REJECT);
+  *sub_frame->mutable_os_info() = os_info;
 
   return ToBytes(std::move(frame));
 }
@@ -232,7 +242,8 @@ ByteArray ForBwuWifiDirectPathAvailable(const std::string& ssid,
                                         const std::string& password,
                                         std::int32_t port,
                                         std::int32_t frequency,
-                                        bool supports_disabling_encryption) {
+                                        bool supports_disabling_encryption,
+                                        const std::string& gateway) {
   OfflineFrame frame;
 
   frame.set_version(OfflineFrame::V1);
@@ -252,6 +263,7 @@ ByteArray ForBwuWifiDirectPathAvailable(const std::string& ssid,
   wifi_direct_credentials->set_password(password);
   wifi_direct_credentials->set_port(port);
   wifi_direct_credentials->set_frequency(frequency);
+  wifi_direct_credentials->set_gateway(gateway);
 
   return ToBytes(std::move(frame));
 }
@@ -504,4 +516,3 @@ std::vector<Medium> ConnectionRequestMediumsToMediums(
 }  // namespace parser
 }  // namespace connections
 }  // namespace nearby
-}  // namespace location

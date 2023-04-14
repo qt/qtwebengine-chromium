@@ -15,14 +15,12 @@
 #ifndef PLATFORM_OS_NAME_H_
 #define PLATFORM_OS_NAME_H_
 
-namespace location {
 namespace nearby {
 namespace api {
 
-enum class OSName { kLinux, kWindows, kiOS, kChromeOS };
+enum class OSName { kLinux, kWindows, kApple, kChromeOS, kAndroid };
 
 }  // namespace api
 }  // namespace nearby
-}  // namespace location
 
 #endif  // PLATFORM_OS_NAME_H_

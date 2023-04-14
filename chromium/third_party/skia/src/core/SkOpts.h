@@ -10,7 +10,7 @@
 
 #include "include/core/SkTypes.h"
 #include "include/private/SkOpts_spi.h"
-#include "src/core/SkRasterPipeline.h"
+#include "src/core/SkRasterPipelineOpList.h"
 #include "src/core/SkXfermodePriv.h"
 
 /**
@@ -59,6 +59,7 @@
  */
 
 struct SkBitmapProcState;
+struct SkRasterPipelineStage;
 namespace skvm {
 struct InterpreterInstruction;
 class TraceHook;
@@ -95,7 +96,7 @@ namespace SkOpts {
                            grayA_to_rgbA;   // i.e. expand to color channels and premultiply
 
     extern void (*memset16)(uint16_t[], uint16_t, int);
-    extern void SK_SPI(*memset32)(uint32_t[], uint32_t, int);
+    extern void (*memset32)(uint32_t[], uint32_t, int);
     extern void (*memset64)(uint64_t[], uint64_t, int);
 
     extern void (*rect_memset16)(uint16_t[], uint16_t, int, size_t, int);
@@ -115,11 +116,11 @@ namespace SkOpts {
     extern void (*S32_alpha_D32_filter_DXDY)(const SkBitmapProcState&,
                                              const uint32_t* xy, int count, SkPMColor*);
 
-    // We can't necessarily express the type of SkJumper stage functions here,
+    // We can't necessarily express the type of SkRasterPipeline stage functions here,
     // so we just use this void(*)(void) as a stand-in.
     using StageFn = void(*)(void);
-    extern StageFn stages_highp[SkRasterPipeline::kNumHighpStages], just_return_highp;
-    extern StageFn stages_lowp [SkRasterPipeline::kNumLowpStages ], just_return_lowp;
+    extern StageFn ops_highp[kNumRasterPipelineHighpOps], just_return_highp;
+    extern StageFn ops_lowp [kNumRasterPipelineLowpOps ], just_return_lowp;
 
     extern void (*start_pipeline_highp)(size_t,size_t,size_t,size_t, SkRasterPipelineStage*);
     extern void (*start_pipeline_lowp )(size_t,size_t,size_t,size_t, SkRasterPipelineStage*);
@@ -133,19 +134,4 @@ namespace SkOpts {
                                   int nargs, int n, void* args[]);
 }  // namespace SkOpts
 
-/** Similar to memset(), but it assigns a 16, 32, or 64-bit value into the buffer.
-    @param buffer   The memory to have value copied into it
-    @param value    The value to be copied into buffer
-    @param count    The number of times value should be copied into the buffer.
-*/
-static inline void sk_memset16(uint16_t buffer[], uint16_t value, int count) {
-    SkOpts::memset16(buffer, value, count);
-}
-static inline void sk_memset32(uint32_t buffer[], uint32_t value, int count) {
-    SkOpts::memset32(buffer, value, count);
-}
-static inline void sk_memset64(uint64_t buffer[], uint64_t value, int count) {
-    SkOpts::memset64(buffer, value, count);
-}
-
-#endif//SkOpts_DEFINED
+#endif // SkOpts_DEFINED

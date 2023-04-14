@@ -15,7 +15,8 @@
 #ifndef SRC_TINT_SEM_MODULE_H_
 #define SRC_TINT_SEM_MODULE_H_
 
-#include "src/tint/ast/extension.h"
+#include "src/tint/ast/diagnostic_control.h"
+#include "src/tint/builtin/extension.h"
 #include "src/tint/sem/node.h"
 #include "src/tint/utils/vector.h"
 
@@ -33,7 +34,7 @@ class Module final : public Castable<Module, Node> {
     /// Constructor
     /// @param dep_ordered_decls the dependency-ordered module-scope declarations
     /// @param extensions the list of enabled extensions in the module
-    Module(utils::VectorRef<const ast::Node*> dep_ordered_decls, ast::Extensions extensions);
+    Module(utils::VectorRef<const ast::Node*> dep_ordered_decls, builtin::Extensions extensions);
 
     /// Destructor
     ~Module() override;
@@ -44,11 +45,24 @@ class Module final : public Castable<Module, Node> {
     }
 
     /// @returns the list of enabled extensions in the module
-    const ast::Extensions& Extensions() const { return extensions_; }
+    const builtin::Extensions& Extensions() const { return extensions_; }
+
+    /// Modifies the severity of a specific diagnostic rule for this module.
+    /// @param rule the diagnostic rule
+    /// @param severity the new diagnostic severity
+    void SetDiagnosticSeverity(builtin::DiagnosticRule rule, builtin::DiagnosticSeverity severity) {
+        diagnostic_severities_[rule] = severity;
+    }
+
+    /// @returns the diagnostic severity modifications applied to this module
+    const builtin::DiagnosticRuleSeverities& DiagnosticSeverities() const {
+        return diagnostic_severities_;
+    }
 
   private:
     const utils::Vector<const ast::Node*, 64> dep_ordered_decls_;
-    ast::Extensions extensions_;
+    builtin::Extensions extensions_;
+    builtin::DiagnosticRuleSeverities diagnostic_severities_;
 };
 
 }  // namespace tint::sem

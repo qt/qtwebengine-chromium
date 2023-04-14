@@ -318,6 +318,9 @@ function(common_compile_options TARGET)
     target_compile_options(${TARGET} PRIVATE
       -fno-exceptions
       -fno-rtti
+
+      -Wno-deprecated-builtins
+      -Wno-unknown-warning-option
     )
 
     if (${DAWN_ENABLE_MSAN})
@@ -340,10 +343,11 @@ function(common_compile_options TARGET)
   endif()
 
   if (DAWN_EMIT_COVERAGE)
+    target_compile_definitions(${TARGET} PRIVATE "DAWN_EMIT_COVERAGE")
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
         target_compile_options(${TARGET} PRIVATE "--coverage")
         target_link_options(${TARGET} PRIVATE "gcov")
-    elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    elseif(COMPILER_IS_CLANG OR COMPILER_IS_CLANG_CL)
         target_compile_options(${TARGET} PRIVATE "-fprofile-instr-generate" "-fcoverage-mapping")
         target_link_options(${TARGET} PRIVATE "-fprofile-instr-generate" "-fcoverage-mapping")
     else()
@@ -447,10 +451,13 @@ if((CMAKE_CXX_COMPILER_ID STREQUAL "Clang") AND (CMAKE_CXX_SIMULATE_ID STREQUAL 
   set(COMPILER_IS_CLANG_CL TRUE)
 endif()
 
-if((CMAKE_CXX_COMPILER_ID STREQUAL "GNU") OR
-    (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang") OR
+if((CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang") OR
     ((CMAKE_CXX_COMPILER_ID STREQUAL "Clang") AND
      (NOT COMPILER_IS_CLANG_CL)))
+  set(COMPILER_IS_CLANG TRUE)
+endif()
+
+if((CMAKE_CXX_COMPILER_ID STREQUAL "GNU") OR COMPILER_IS_CLANG)
   set(COMPILER_IS_LIKE_GNU TRUE)
 endif()
 
@@ -540,6 +547,7 @@ function(tint_default_compile_options TARGET)
     -Wno-return-std-move-in-c++11
     -Wno-unknown-warning-option
     -Wno-undefined-var-template
+    -Wno-unsafe-buffer-usage
     -Wno-used-but-marked-unused
     -Weverything
   )
@@ -550,8 +558,7 @@ function(tint_default_compile_options TARGET)
       ${COMMON_GNU_OPTIONS}
     )
 
-    if (("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang") OR
-        ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "AppleClang"))
+    if (COMPILER_IS_CLANG)
       target_compile_options(${TARGET} PRIVATE
         ${COMMON_CLANG_OPTIONS}
       )
@@ -650,9 +657,11 @@ add_custom_target(tint-format
   COMMENT "Running formatter"
   VERBATIM)
 
+if (DAWN_EMIT_COVERAGE)
+  add_subdirectory(tools/src/cmd/turbo-cov)
 
-if (DAWN_EMIT_COVERAGE AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-  # Generates a lcov.info file at the project root.
+  # The tint-generate-coverage target generates a lcov.info file at the project
+  # root, holding the code coverage for all the tint_unitests.
   # This can be used by tools such as VSCode's Coverage Gutters extension to
   # visualize code coverage in the editor.
   get_filename_component(CLANG_BIN_DIR ${CMAKE_C_COMPILER} DIRECTORY)

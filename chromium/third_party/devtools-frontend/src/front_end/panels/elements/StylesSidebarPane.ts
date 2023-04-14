@@ -71,102 +71,112 @@ import {
 import * as LayersWidget from './LayersWidget.js';
 import {assertNotNullOrUndefined} from '../../core/platform/platform.js';
 
+import {WebCustomData} from './WebCustomData.js';
+
 const UIStrings = {
   /**
-  *@description No matches element text content in Styles Sidebar Pane of the Elements panel
-  */
+   *@description No matches element text content in Styles Sidebar Pane of the Elements panel
+   */
   noMatchingSelectorOrStyle: 'No matching selector or style',
   /**
-  *@description Text in Styles Sidebar Pane of the Elements panel
-  */
+  /**
+   *@description Text to announce the result of the filter input in the Styles Sidebar Pane of the Elements panel
+   */
+  visibleSelectors: '{n, plural, =1 {# visible selector listed below} other {# visible selectors listed below}}',
+  /**
+   *@description Text in Styles Sidebar Pane of the Elements panel
+   */
   invalidPropertyValue: 'Invalid property value',
   /**
-  *@description Text in Styles Sidebar Pane of the Elements panel
-  */
+   *@description Text in Styles Sidebar Pane of the Elements panel
+   */
   unknownPropertyName: 'Unknown property name',
   /**
-  *@description Text to filter result items
-  */
+   *@description Text to filter result items
+   */
   filter: 'Filter',
   /**
-  *@description ARIA accessible name in Styles Sidebar Pane of the Elements panel
-  */
+   *@description ARIA accessible name in Styles Sidebar Pane of the Elements panel
+   */
   filterStyles: 'Filter Styles',
   /**
-  *@description Separator element text content in Styles Sidebar Pane of the Elements panel
-  *@example {scrollbar-corner} PH1
-  */
+   *@description Separator element text content in Styles Sidebar Pane of the Elements panel
+   *@example {scrollbar-corner} PH1
+   */
   pseudoSElement: 'Pseudo ::{PH1} element',
   /**
-  *@description Text of a DOM element in Styles Sidebar Pane of the Elements panel
-  */
+   *@description Text of a DOM element in Styles Sidebar Pane of the Elements panel
+   */
   inheritedFroms: 'Inherited from ',
   /**
-  *@description Text of an inherited psuedo element in Styles Sidebar Pane of the Elements panel
-  *@example {highlight} PH1
-  */
+   *@description Text of an inherited psuedo element in Styles Sidebar Pane of the Elements panel
+   *@example {highlight} PH1
+   */
   inheritedFromSPseudoOf: 'Inherited from ::{PH1} pseudo of ',
   /**
-  *@description Title of  in styles sidebar pane of the elements panel
-  *@example {Ctrl} PH1
-  */
+   *@description Title of  in styles sidebar pane of the elements panel
+   *@example {Ctrl} PH1
+   */
   incrementdecrementWithMousewheelOne:
       'Increment/decrement with mousewheel or up/down keys. {PH1}: R ±1, Shift: G ±1, Alt: B ±1',
   /**
-  *@description Title of  in styles sidebar pane of the elements panel
-  *@example {Ctrl} PH1
-  */
+   *@description Title of  in styles sidebar pane of the elements panel
+   *@example {Ctrl} PH1
+   */
   incrementdecrementWithMousewheelHundred:
       'Increment/decrement with mousewheel or up/down keys. {PH1}: ±100, Shift: ±10, Alt: ±0.1',
   /**
-  *@description Announcement string for invalid properties.
-  *@example {Invalid property value} PH1
-  *@example {font-size} PH2
-  *@example {invalidValue} PH3
-  */
+   *@description Announcement string for invalid properties.
+   *@example {Invalid property value} PH1
+   *@example {font-size} PH2
+   *@example {invalidValue} PH3
+   */
   invalidString: '{PH1}, property name: {PH2}, property value: {PH3}',
   /**
-  *@description Tooltip text that appears when hovering over the largeicon add button in the Styles Sidebar Pane of the Elements panel
-  */
+   *@description Tooltip text that appears when hovering over the largeicon add button in the Styles Sidebar Pane of the Elements panel
+   */
   newStyleRule: 'New Style Rule',
   /**
-  *@description Text that is announced by the screen reader when the user focuses on an input field for entering the name of a CSS property in the Styles panel
-  *@example {margin} PH1
-  */
+   *@description Text that is announced by the screen reader when the user focuses on an input field for entering the name of a CSS property in the Styles panel
+   *@example {margin} PH1
+   */
   cssPropertyName: '`CSS` property name: {PH1}',
   /**
-  *@description Text that is announced by the screen reader when the user focuses on an input field for entering the value of a CSS property in the Styles panel
-  *@example {10px} PH1
-  */
+   *@description Text that is announced by the screen reader when the user focuses on an input field for entering the value of a CSS property in the Styles panel
+   *@example {10px} PH1
+   */
   cssPropertyValue: '`CSS` property value: {PH1}',
   /**
-  *@description Tooltip text that appears when hovering over the rendering button in the Styles Sidebar Pane of the Elements panel
-  */
+   *@description Tooltip text that appears when hovering over the rendering button in the Styles Sidebar Pane of the Elements panel
+   */
   toggleRenderingEmulations: 'Toggle common rendering emulations',
   /**
-  *@description Rendering emulation option for toggling the automatic dark mode
-  */
+   *@description Rendering emulation option for toggling the automatic dark mode
+   */
   automaticDarkMode: 'Automatic dark mode',
   /**
-  *@description Tooltip text that appears when hovering over the css changes button in the Styles Sidebar Pane of the Elements panel
-  */
+   *@description Tooltip text that appears when hovering over the css changes button in the Styles Sidebar Pane of the Elements panel
+   */
   copyAllCSSChanges: 'Copy all the CSS changes',
   /**
-  *@description Tooltip text that appears after clicking on the copy CSS changes button
-  */
+   *@description Tooltip text that appears after clicking on the copy CSS changes button
+   */
   copiedToClipboard: 'Copied to clipboard',
   /**
-  *@description Text displayed on layer separators in the styles sidebar pane.
-  */
+   *@description Text displayed on layer separators in the styles sidebar pane.
+   */
   layer: 'Layer',
   /**
-  *@description Tooltip text for the link in the sidebar pane layer separators that reveals the layer in the layer tree view.
-  */
+   *@description Tooltip text for the link in the sidebar pane layer separators that reveals the layer in the layer tree view.
+   */
   clickToRevealLayer: 'Click to reveal layer in layer tree',
 };
 
 const str_ = i18n.i18n.registerUIStrings('panels/elements/StylesSidebarPane.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
+
+// Number of ms elapsed with no keypresses to determine is the input is finished, to announce results
+const FILTER_IDLE_PERIOD = 500;
 
 // Highlightable properties are those that can be hovered in the sidebar to trigger a specific
 // highlighting mode on the current element.
@@ -196,6 +206,8 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
   private pendingWidgetToggle: UI.Toolbar.ToolbarToggle|null;
   private toolbar: UI.Toolbar.Toolbar|null;
   private toolbarPaneElement: HTMLElement;
+  private lastFilterChange: number|null;
+  private visibleSections: number|null;
   private noMatchesElement: HTMLElement;
   private sectionsContainer: HTMLElement;
   sectionByElement: WeakMap<Node, StylePropertiesSection>;
@@ -218,6 +230,7 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
   private readonly boundOnScroll: (event: Event) => void;
 
   private readonly imagePreviewPopover: ImagePreviewPopover;
+  #webCustomData?: WebCustomData;
   #hintPopoverHelper: UI.PopoverHelper.PopoverHelper;
   activeCSSAngle: InlineEditor.CSSAngle.CSSAngle|null;
   #urlToChangeTracker: Map<Platform.DevToolsPath.UrlString, ChangeTracker> = new Map();
@@ -244,6 +257,8 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
     this.pendingWidget = null;
     this.pendingWidgetToggle = null;
     this.toolbar = null;
+    this.lastFilterChange = null;
+    this.visibleSections = null;
     this.toolbarPaneElement = this.createStylesSidebarToolbar();
     this.computedStyleModelInternal = new ComputedStyleModel();
 
@@ -291,33 +306,65 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
 
     this.activeCSSAngle = null;
 
-    this.#hintPopoverHelper = new UI.PopoverHelper.PopoverHelper(this.contentElement, event => {
-      const icon = event.composedPath()[0] as Element;
-
-      if (!icon) {
-        return null;
-      }
-
-      if (!icon.matches('.hint')) {
-        return null;
-      }
-
-      const hint = activeHints.get(icon);
-
-      if (!hint) {
-        return null;
-      }
-
-      return {
-        box: icon.boxInWindow(),
-        show: async(popover: UI.GlassPane.GlassPane): Promise<boolean> => {
-          const popupElement = new ElementsComponents.CSSHintDetailsView.CSSHintDetailsView(hint);
-          popover.contentElement.appendChild(popupElement);
-          return true;
-        },
-      };
+    const showDocumentationSetting =
+        Common.Settings.Settings.instance().moduleSetting('showCSSPropertyDocumentationOnHover');
+    showDocumentationSetting.addChangeListener(event => {
+      const metricType = Boolean(event.data) ? Host.UserMetrics.CSSPropertyDocumentation.ToggledOn :
+                                               Host.UserMetrics.CSSPropertyDocumentation.ToggledOff;
+      Host.userMetrics.cssPropertyDocumentation(metricType);
     });
-    this.#hintPopoverHelper.setTimeout(200);
+    if (showDocumentationSetting.get()) {
+      this.#webCustomData = WebCustomData.create();
+    }
+
+    this.#hintPopoverHelper = new UI.PopoverHelper.PopoverHelper(this.contentElement, event => {
+      const hoveredNode = event.composedPath()[0] as Element;
+
+      if (!hoveredNode) {
+        return null;
+      }
+
+      if (hoveredNode.matches('.hint')) {
+        const hint = activeHints.get(hoveredNode);
+
+        if (hint) {
+          return {
+            box: hoveredNode.boxInWindow(),
+            show: async(popover: UI.GlassPane.GlassPane): Promise<boolean> => {
+              const popupElement = new ElementsComponents.CSSHintDetailsView.CSSHintDetailsView(hint);
+              popover.contentElement.appendChild(popupElement);
+              return true;
+            },
+          };
+        }
+      }
+
+      if (showDocumentationSetting.get() && hoveredNode.matches('.webkit-css-property')) {
+        if (!this.#webCustomData) {
+          this.#webCustomData = WebCustomData.create();
+        }
+
+        const cssPropertyName = hoveredNode.textContent;
+        const cssProperty = cssPropertyName && this.#webCustomData.findCssProperty(cssPropertyName);
+
+        if (cssProperty) {
+          return {
+            box: hoveredNode.boxInWindow(),
+            show: async(popover: UI.GlassPane.GlassPane): Promise<boolean> => {
+              const popupElement = new ElementsComponents.CSSPropertyDocsView.CSSPropertyDocsView(cssProperty);
+              popover.contentElement.appendChild(popupElement);
+              Host.userMetrics.cssPropertyDocumentation(Host.UserMetrics.CSSPropertyDocumentation.Shown);
+              return true;
+            },
+          };
+        }
+      }
+
+      return null;
+    });
+
+    this.#hintPopoverHelper.setDisableOnClick(true);
+    this.#hintPopoverHelper.setTimeout(300);
     this.#hintPopoverHelper.setHasPadding(true);
   }
 
@@ -583,9 +630,20 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
   }
 
   private onFilterChanged(regex: RegExp|null): void {
+    this.lastFilterChange = Date.now();
     this.filterRegexInternal = regex;
     this.updateFilter();
     this.resetFocus();
+    setTimeout(() => {
+      if (this.lastFilterChange) {
+        const stillTyping = Date.now() - this.lastFilterChange < FILTER_IDLE_PERIOD;
+        if (!stillTyping) {
+          UI.ARIAUtils.alert(
+              this.visibleSections ? i18nString(UIStrings.visibleSelectors, {n: this.visibleSections}) :
+                                     i18nString(UIStrings.noMatchingSelectorOrStyle));
+        }
+      }
+    }, FILTER_IDLE_PERIOD);
   }
 
   refreshUpdate(editedSection: StylePropertiesSection, editedTreeElement?: StylePropertyTreeElement): void {
@@ -1176,10 +1234,14 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
 
   private updateFilter(): void {
     let hasAnyVisibleBlock = false;
+    let visibleSections = 0;
     for (const block of this.sectionBlocks) {
-      hasAnyVisibleBlock = block.updateFilter() || hasAnyVisibleBlock;
+      visibleSections += block.updateFilter();
+      hasAnyVisibleBlock = Boolean(visibleSections) || hasAnyVisibleBlock;
     }
     this.noMatchesElement.classList.toggle('hidden', Boolean(hasAnyVisibleBlock));
+
+    this.visibleSections = visibleSections;
   }
 
   willHide(): void {
@@ -1583,15 +1645,17 @@ export class SectionBlock {
     return new SectionBlock(separatorElement);
   }
 
-  updateFilter(): boolean {
+  updateFilter(): number {
     let hasAnyVisibleSection = false;
+    let numVisibleSections = 0;
     for (const section of this.sections) {
+      numVisibleSections += section.updateFilter() ? 1 : 0;
       hasAnyVisibleSection = section.updateFilter() || hasAnyVisibleSection;
     }
     if (this.titleElementInternal) {
       this.titleElementInternal.classList.toggle('hidden', !hasAnyVisibleSection);
     }
-    return Boolean(hasAnyVisibleSection);
+    return numVisibleSections;
   }
 
   titleElement(): Element|null {
@@ -2019,9 +2083,10 @@ export function escapeUrlAsCssComment(urlText: string): string {
 export class StylesSidebarPropertyRenderer {
   private rule: SDK.CSSRule.CSSRule|null;
   private node: SDK.DOMModel.DOMNode|null;
-  private propertyName: string;
-  private propertyValue: string;
+  readonly propertyName: string;
+  readonly propertyValue: string;
   private colorHandler: ((arg0: string) => Node)|null;
+  private colorMixHandler: ((arg0: string) => Node)|null;
   private bezierHandler: ((arg0: string) => Node)|null;
   private fontHandler: ((arg0: string) => Node)|null;
   private shadowHandler: ((arg0: string, arg1: string) => Node)|null;
@@ -2037,6 +2102,7 @@ export class StylesSidebarPropertyRenderer {
     this.propertyName = name;
     this.propertyValue = value;
     this.colorHandler = null;
+    this.colorMixHandler = null;
     this.bezierHandler = null;
     this.fontHandler = null;
     this.shadowHandler = null;
@@ -2049,6 +2115,10 @@ export class StylesSidebarPropertyRenderer {
 
   setColorHandler(handler: (arg0: string) => Node): void {
     this.colorHandler = handler;
+  }
+
+  setColorMixHandler(handler: (arg0: string) => Node): void {
+    this.colorMixHandler = handler;
   }
 
   setBezierHandler(handler: (arg0: string) => Node): void {
@@ -2119,8 +2189,21 @@ export class StylesSidebarPropertyRenderer {
       UI.Tooltip.Tooltip.install(valueElement, unescapeCssString(this.propertyValue));
     }
 
-    const regexes = [SDK.CSSMetadata.VariableRegex, SDK.CSSMetadata.URLRegex];
-    const processors = [this.varHandler, this.processURL.bind(this)];
+    const regexes = [];
+    const processors = [];
+
+    // Push `color-mix` handler before pushing regex handler because
+    // `color-mix` can contain variables inside and we want to handle
+    // it as `color-mix` swatch that displays a variable swatch inside
+    // `color: color-mix(in srgb, var(--a), var(--b))` should be handled
+    // by colorMixHandler not varHandler.
+    if (this.colorMixHandler && metadata.isColorAwareProperty(this.propertyName)) {
+      regexes.push(Common.Color.ColorMixRegex);
+      processors.push(this.colorMixHandler);
+    }
+
+    regexes.push(SDK.CSSMetadata.VariableRegex, SDK.CSSMetadata.URLRegex);
+    processors.push(this.varHandler, this.processURL.bind(this));
     // Handle `color` properties before handling other ones
     // because color Regex is fairly narrow to only select real colors.
     // However, some other Regexes like Bezier is very wide (text that

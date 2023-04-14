@@ -9,7 +9,7 @@
 
 #include "include/core/SkString.h"
 #include "include/core/SkTypes.h"
-#include "include/private/SkStringView.h"
+#include "src/base/SkStringView.h"
 #include "src/sksl/ir/SkSLSymbolTable.h"
 
 #include <algorithm>

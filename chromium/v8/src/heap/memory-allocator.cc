@@ -247,7 +247,8 @@ void MemoryAllocator::FreeMemoryRegion(v8::PageAllocator* page_allocator,
 
 Address MemoryAllocator::AllocateAlignedMemory(
     size_t chunk_size, size_t area_size, size_t alignment,
-    Executability executable, void* hint, VirtualMemory* controller) {
+    AllocationSpace space, Executability executable, void* hint,
+    VirtualMemory* controller) {
   v8::PageAllocator* page_allocator = this->page_allocator(executable);
   DCHECK_LT(area_size, chunk_size);
 
@@ -278,9 +279,9 @@ Address MemoryAllocator::AllocateAlignedMemory(
   } else {
     // No guard page between page header and object area. This allows us to make
     // all OS pages for both regions readable+writable at once.
-    const size_t commit_size =
-        ::RoundUp(MemoryChunkLayout::ObjectStartOffsetInDataPage() + area_size,
-                  GetCommitPageSize());
+    const size_t commit_size = ::RoundUp(
+        MemoryChunkLayout::ObjectStartOffsetInMemoryChunk(space) + area_size,
+        GetCommitPageSize());
 
     if (reservation.SetPermissions(base, commit_size,
                                    PageAllocator::kReadWrite)) {
@@ -306,6 +307,7 @@ Address MemoryAllocator::HandleAllocationFailure(Executability executable) {
 }
 
 size_t MemoryAllocator::ComputeChunkSize(size_t area_size,
+                                         AllocationSpace space,
                                          Executability executable) {
   if (executable == EXECUTABLE) {
     //
@@ -340,8 +342,9 @@ size_t MemoryAllocator::ComputeChunkSize(size_t area_size,
   //
   DCHECK_EQ(executable, NOT_EXECUTABLE);
 
-  return ::RoundUp(MemoryChunkLayout::ObjectStartOffsetInDataPage() + area_size,
-                   GetCommitPageSize());
+  return ::RoundUp(
+      MemoryChunkLayout::ObjectStartOffsetInMemoryChunk(space) + area_size,
+      GetCommitPageSize());
 }
 
 base::Optional<MemoryAllocator::MemoryChunkAllocationResult>
@@ -361,12 +364,13 @@ MemoryAllocator::AllocateUninitializedChunkAt(BaseSpace* space,
 #endif
 
   VirtualMemory reservation;
-  size_t chunk_size = ComputeChunkSize(area_size, executable);
+  size_t chunk_size =
+      ComputeChunkSize(area_size, space->identity(), executable);
   DCHECK_EQ(chunk_size % GetCommitPageSize(), 0);
 
   Address base = AllocateAlignedMemory(
-      chunk_size, area_size, MemoryChunk::kAlignment, executable,
-      reinterpret_cast<void*>(hint), &reservation);
+      chunk_size, area_size, MemoryChunk::kAlignment, space->identity(),
+      executable, reinterpret_cast<void*>(hint), &reservation);
   if (base == kNullAddress) return {};
 
   size_ += reservation.size();
@@ -387,9 +391,11 @@ MemoryAllocator::AllocateUninitializedChunkAt(BaseSpace* space,
     } else {
       DCHECK_EQ(executable, NOT_EXECUTABLE);
       // Zap both page header and object area at once. No guard page in-between.
-      ZapBlock(base,
-               MemoryChunkLayout::ObjectStartOffsetInDataPage() + area_size,
-               kZapValue);
+      ZapBlock(
+          base,
+          MemoryChunkLayout::ObjectStartOffsetInMemoryChunk(space->identity()) +
+              area_size,
+          kZapValue);
     }
   }
 
@@ -474,17 +480,6 @@ void MemoryAllocator::UnregisterMemoryChunk(MemoryChunk* chunk) {
 void MemoryAllocator::UnregisterReadOnlyPage(ReadOnlyPage* page) {
   DCHECK(!page->executable());
   UnregisterBasicMemoryChunk(page, NOT_EXECUTABLE);
-}
-
-void MemoryAllocator::TakeOverLargePage(LargePage* page,
-                                        MemoryAllocator* current_owner) {
-  DCHECK_EQ(page->executable(), NOT_EXECUTABLE);
-  if (this == current_owner) return;
-  current_owner->size_ -= page->size();
-  current_owner->RecordLargePageDestroyed(*page);
-
-  size_ += page->size();
-  RecordLargePageCreated(*page);
 }
 
 void MemoryAllocator::FreeReadOnlyPage(ReadOnlyPage* chunk) {
@@ -785,19 +780,20 @@ bool MemoryAllocator::SetPermissionsOnExecutableMemoryChunk(VirtualMemory* vm,
   return false;
 }
 
+// static
 const MemoryChunk* MemoryAllocator::LookupChunkContainingAddress(
-    Address addr) const {
-  base::MutexGuard guard(&pages_mutex_);
+    const NormalPagesSet& normal_pages, const LargePagesSet& large_pages,
+    Address addr) {
   BasicMemoryChunk* chunk = BasicMemoryChunk::FromAddress(addr);
-  if (auto it = normal_pages_.find(static_cast<Page*>(chunk));
-      it != normal_pages_.end()) {
+  if (auto it = normal_pages.find(static_cast<Page*>(chunk));
+      it != normal_pages.end()) {
     // The chunk is a normal page.
     DCHECK_LE(chunk->address(), addr);
     if (chunk->Contains(addr)) return *it;
-  } else if (auto it = large_pages_.upper_bound(static_cast<LargePage*>(chunk));
-             it != large_pages_.begin()) {
+  } else if (auto it = large_pages.upper_bound(static_cast<LargePage*>(chunk));
+             it != large_pages.begin()) {
     // The chunk could be inside a large page.
-    DCHECK_IMPLIES(it != large_pages_.end(), addr < (*it)->address());
+    DCHECK_IMPLIES(it != large_pages.end(), addr < (*it)->address());
     auto* large_page = *std::next(it, -1);
     DCHECK_NOT_NULL(large_page);
     DCHECK_LE(large_page->address(), addr);
@@ -805,6 +801,14 @@ const MemoryChunk* MemoryAllocator::LookupChunkContainingAddress(
   }
   // Not found in any page.
   return nullptr;
+}
+
+const MemoryChunk* MemoryAllocator::LookupChunkContainingAddress(
+    Address addr) const {
+  // All threads should be either parked or in a safepoint whenever this method
+  // is called, thus pages cannot be allocated or freed at the same time and a
+  // mutex is not required here,
+  return LookupChunkContainingAddress(normal_pages_, large_pages_, addr);
 }
 
 void MemoryAllocator::RecordNormalPageCreated(const Page& page) {
@@ -816,6 +820,8 @@ void MemoryAllocator::RecordNormalPageCreated(const Page& page) {
 
 void MemoryAllocator::RecordNormalPageDestroyed(const Page& page) {
   base::MutexGuard guard(&pages_mutex_);
+  DCHECK_IMPLIES(v8_flags.minor_mc && isolate_->heap()->sweeping_in_progress(),
+                 isolate_->heap()->tracer()->IsInAtomicPause());
   auto size = normal_pages_.erase(&page);
   USE(size);
   DCHECK_EQ(1u, size);
@@ -830,6 +836,8 @@ void MemoryAllocator::RecordLargePageCreated(const LargePage& page) {
 
 void MemoryAllocator::RecordLargePageDestroyed(const LargePage& page) {
   base::MutexGuard guard(&pages_mutex_);
+  DCHECK_IMPLIES(v8_flags.minor_mc && isolate_->heap()->sweeping_in_progress(),
+                 isolate_->heap()->tracer()->IsInAtomicPause());
   auto size = large_pages_.erase(&page);
   USE(size);
   DCHECK_EQ(1u, size);

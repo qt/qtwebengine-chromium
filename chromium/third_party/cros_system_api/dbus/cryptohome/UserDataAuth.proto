@@ -94,6 +94,7 @@ enum CryptohomeErrorCode {
   CRYPTOHOME_UPDATE_CREDENTIALS_FAILED = 55;
   CRYPTOHOME_ERROR_RECOVERY_TRANSIENT = 56;
   CRYPTOHOME_ERROR_RECOVERY_FATAL = 57;
+  CRYPTOHOME_ERROR_BIOMETRICS_BUSY = 58;
   // Note: After adding new fields to this enum, the new enum should be added
   // to ash/components/login/auth/auth_session_authenticator.cc's
   // AuthSessionAuthenticator::ProcessCryptohomeError() so that Chromium
@@ -398,29 +399,6 @@ message ListKeysReply {
   CryptohomeErrorInfo error_info = 3;
 }
 
-// Input parameters to GetKeyData()
-message GetKeyDataRequest {
-  // The keys whose data to retrieve, is the key whose owner is identified
-  // by account_id.
-  cryptohome.AccountIdentifier account_id = 1;
-  // Provide user authentication if necessary (currently not required).
-  cryptohome.AuthorizationRequest authorization_request = 2;
-  // |key| must supply at least one attribute and all others will be treated as
-  // wildcards.  Currently only |key.data().label()| may be supplied.  Like
-  // AuthorizationRequest, support can be added for queries by
-  // |key.data().type()| to return all keys of a certain class, testing
-  // |key.secret()|, or |key.data().provider_data()| entries.
-  cryptohome.Key key = 3;
-}
-
-// Output parameters for GetKeyData()
-message GetKeyDataReply {
-  // Indicates an error if error is not empty.
-  CryptohomeErrorCode error = 1;
-  // The data associated with those keys.
-  repeated cryptohome.KeyData key_data = 2;
-}
-
 // Input parameters to CheckKey()
 message CheckKeyRequest {
   // We only check against keys that belongs to the user identified by
@@ -434,40 +412,6 @@ message CheckKeyRequest {
 
 // Output parameters for CheckKey()
 message CheckKeyReply {
-  // Indicates an error if error is not empty.
-  CryptohomeErrorCode error = 1;
-}
-
-// Input parameters to AddKey()
-message AddKeyRequest {
-  // The owner of the new key.
-  cryptohome.AccountIdentifier account_id = 1;
-  // The authentication data of the new key.
-  cryptohome.AuthorizationRequest authorization_request = 2;
-  // The key to add.
-  cryptohome.Key key = 3;
-  // Do we delete the existing key if it already exists?
-  bool clobber_if_exists = 4;
-}
-
-// Output parameters for AddKey()
-message AddKeyReply {
-  // Indicates an error if error is not empty.
-  CryptohomeErrorCode error = 1;
-}
-
-// Input parameters to RemoveKey()
-message RemoveKeyRequest {
-  // The owner of the key to remove
-  cryptohome.AccountIdentifier account_id = 1;
-  // Authorization from the user
-  cryptohome.AuthorizationRequest authorization_request = 2;
-  // Only key.data().label() is used at present.
-  cryptohome.Key key = 3;
-}
-
-// Output parameters for RemoveKey()
-message RemoveKeyReply {
   // Indicates an error if error is not empty.
   CryptohomeErrorCode error = 1;
 }
@@ -724,7 +668,7 @@ message AuthFactorWithStatus {
 }
 
 message StartAuthSessionReply {
-  reserved 7;
+  reserved 4, 7;
 
   // Error if any to start the Auth Session
   // TODO(b/229807416): Remove once CryptohomeError refactor is complete.
@@ -733,9 +677,6 @@ message StartAuthSessionReply {
   bytes auth_session_id = 2;
   // True if the user that the Auth Session is created for exists or not.
   bool user_exists = 3;
-  // Map to return label and public key data for the authentication credential
-  // to be sent in. This will be empty if user_exists is set to false.
-  map<string, cryptohome.KeyData> key_label_data = 4;
 
   // List of AuthFactors configured and available for authentication in the
   // context of this session.
@@ -746,53 +687,6 @@ message StartAuthSessionReply {
   // on which field to use and the process on the migration, see comment in
   // CryptohomeErrorInfo.
   CryptohomeErrorInfo error_info = 6;
-}
-
-message AddCredentialsRequest {
-  reserved 4;
-  // Serialized form of token that is used to identify Auth Session that needs
-  // to be authenticated.
-  bytes auth_session_id = 1;
-  // Authorization data from the user.
-  cryptohome.AuthorizationRequest authorization = 2;
-  // Adding a new credentials for an existing user?
-  bool add_more_credentials = 3;
-}
-
-message AddCredentialsReply {
-  // Error if any to add new credentials with the Auth Session.
-  CryptohomeErrorCode error = 1;
-
-  // Indicate an error if this field exists.
-  // This field is replacing the |error| field above, for more information on
-  // which field to use and the process on the migration, see comment in
-  // CryptohomeErrorInfo.
-  CryptohomeErrorInfo error_info = 2;
-}
-
-message AuthenticateAuthSessionRequest {
-  // Serialized form of token that is used to identify Auth Session that needs
-  // to be authenticated.
-  bytes auth_session_id = 1;
-  // Authorization data from the user.
-  cryptohome.AuthorizationRequest authorization = 2;
-}
-
-message AuthenticateAuthSessionReply {
-  // Error if any to authenticate the Auth Session.
-  // TODO(b/229807416): Remove once CryptohomeError refactor is complete.
-  CryptohomeErrorCode error = 1;
-  // Returns if the Auth Session is authenticated.
-  bool authenticated = 2;
-
-  // Indicate an error if this field exists.
-  // This field is replacing the |error| field above, for more information on
-  // which field to use and the process on the migration, see comment in
-  // CryptohomeErrorInfo.
-  CryptohomeErrorInfo error_info = 3;
-
-  // The time left in the current AuthSession after authentication.
-  optional uint32 seconds_left = 4;
 }
 
 message InvalidateAuthSessionRequest {
@@ -834,30 +728,6 @@ message ExtendAuthSessionReply {
   CryptohomeErrorInfo error_info = 2;
   // The time left in the current AuthSession after extension.
   optional uint32 seconds_left = 3;
-}
-
-message UpdateCredentialRequest {
-  // Serialized form of token that is used to identify Auth Session that will
-  // be used to update credentials.
-  bytes auth_session_id = 1;
-  // Label of the credential that will be updated by this request.
-  // If this is empty, it would be considered a password keyset as those keysets
-  // do not have any label stored for them.
-  string old_credential_label = 2;
-  // Authorization data from the user for the new credential. The label in this
-  // request should match |old_credential_label|.
-  cryptohome.AuthorizationRequest authorization = 3;
-}
-
-message UpdateCredentialReply {
-  // Error if any to update credential.
-  CryptohomeErrorCode error = 1;
-
-  // Indicate an error if this field exists.
-  // This field is replacing the |error| field above, for more information on
-  // which field to use and the process on the migration, see comment in
-  // CryptohomeErrorInfo.
-  CryptohomeErrorInfo error_info = 2;
 }
 
 message CreatePersistentUserRequest {
@@ -1474,6 +1344,9 @@ message AuthenticateAuthFactorRequest {
   // AuthFactor cannot be authenticated without an active AuthSession running.
   // This id would be used to associate the AuthFactor to an AuthSession.
   bytes auth_session_id = 1;
+  // Deprecated.
+  // TODO(b/265151254): Remove once migration to |auth_factor_labels| is
+  // complete.
   // The AuthFactor label would be used to determine the AuthFactor that
   // needs to be authenticated. If the label does not exist, the call would
   // return an error.
@@ -1481,6 +1354,12 @@ message AuthenticateAuthFactorRequest {
   // In some cases, such as password, the secret would be user supplied. In
   // those cases the secret can be passed here.
   AuthInput auth_input = 3;
+  // The AuthFactor labels would be used to determine the AuthFactors that
+  // needs to be authenticated. For the most cases, there should only be one
+  // label. For legacy fingerprint which is unlock only,  no label should be
+  // specified as there is no legacy fingerprint auth factor. For sign-in
+  // fingerprint, more than one labels can be specified.
+  repeated string auth_factor_labels = 4;
 }
 
 message AuthenticateAuthFactorReply {
@@ -1493,7 +1372,7 @@ message AuthenticateAuthFactorReply {
   // which field to use and the process on the migration, see comment in
   // CryptohomeErrorInfo.
   CryptohomeErrorInfo error_info = 2;
-  // Returns if the Auth Session is authenticated.
+  // DEPRECATED. Use |authorized_for| instead.
   bool authenticated = 3;
   // The intents that the Auth Session has been authorized for. This starts from
   // an empty set when the session is created, and is updated when a factor is
@@ -1735,4 +1614,11 @@ message AuthEnrollmentProgress {
   oneof progress {
     FingerprintEnrollmentProgress fingerprint_progress = 3;
   }
+}
+
+// The message included in signal AuthScanDoneSignal
+message AuthScanDone {
+  // The result of the latest scan. Note that this doesn't represent the match
+  // result, but just whether the scan is successful.
+  AuthScanResult scan_result = 1;
 }

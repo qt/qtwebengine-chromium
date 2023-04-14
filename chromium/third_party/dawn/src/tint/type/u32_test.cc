@@ -29,7 +29,7 @@ TEST_F(U32Test, Creation) {
 TEST_F(U32Test, Hash) {
     auto* a = create<U32>();
     auto* b = create<U32>();
-    EXPECT_EQ(a->Hash(), b->Hash());
+    EXPECT_EQ(a->unique_hash, b->unique_hash);
 }
 
 TEST_F(U32Test, Equals) {
@@ -42,6 +42,16 @@ TEST_F(U32Test, Equals) {
 TEST_F(U32Test, FriendlyName) {
     U32 u;
     EXPECT_EQ(u.FriendlyName(Symbols()), "u32");
+}
+
+TEST_F(U32Test, Clone) {
+    auto* a = create<U32>();
+
+    type::Manager mgr;
+    type::CloneContext ctx{{nullptr}, {nullptr, &mgr}};
+
+    auto* b = a->Clone(ctx);
+    ASSERT_TRUE(b->Is<U32>());
 }
 
 }  // namespace

@@ -1,6 +1,6 @@
 #!/usr/bin/python3 -i
 #
-# Copyright (c) 2021-2022 The Khronos Group Inc.
+# Copyright (c) 2021-2023 The Khronos Group Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,8 +13,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#
-# Author: Spencer Fricke <s.fricke@samsung.com>
 
 import os,re,sys,string,json
 import xml.etree.ElementTree as etree
@@ -140,7 +138,7 @@ class SpirvGrammarHelperOutputGenerator(OutputGenerator):
         copyright += '\n'
         copyright += '/***************************************************************************\n'
         copyright += ' *\n'
-        copyright += ' * Copyright (c) 2021-2022 The Khronos Group Inc.\n'
+        copyright += ' * Copyright (c) 2021-2023 The Khronos Group Inc.\n'
         copyright += ' *\n'
         copyright += ' * Licensed under the Apache License, Version 2.0 (the "License");\n'
         copyright += ' * you may not use this file except in compliance with the License.\n'
@@ -154,8 +152,6 @@ class SpirvGrammarHelperOutputGenerator(OutputGenerator):
         copyright += ' * See the License for the specific language governing permissions and\n'
         copyright += ' * limitations under the License.\n'
         copyright += ' *\n'
-        copyright += ' * Author: Spencer Fricke <s.fricke@samsung.com>\n'
-        copyright += ' *\n'
         copyright += ' * This file is related to anything that is found in the SPIR-V grammar\n'
         copyright += ' * file found in the SPIRV-Headers. Mainly used for SPIR-V util functions.\n'
         copyright += ' *\n'
@@ -165,7 +161,7 @@ class SpirvGrammarHelperOutputGenerator(OutputGenerator):
         if self.sourceFile:
             write('#include "vk_layer_data.h"', file=self.outFile)
             write('#include "spirv_grammar_helper.h"', file=self.outFile)
-            write('#include "shader_instruction.h"', file=self.outFile)
+            write('#include "state_tracker/shader_instruction.h"', file=self.outFile)
         elif self.headerFile:
             write('#pragma once', file=self.outFile)
             write('#include <cstdint>', file=self.outFile)
@@ -306,7 +302,7 @@ class SpirvGrammarHelperOutputGenerator(OutputGenerator):
             output += '// of a given SPIR-V opcode instruction\n'
             output += '//\n'
             output += '// clang-format off\n'
-            output += 'static const layer_data::unordered_map<uint32_t, InstructionInfo> kInstructionTable {\n'
+            output += 'static const vvl::unordered_map<uint32_t, InstructionInfo> kInstructionTable {\n'
             for opcode, info in sorted(self.opcodes.items()):
                 output += f'    {{spv::{info["name"]}, {{"{info["name"]}", {info["hasType"]}, {info["hasResult"]}, {info["memoryScopePosition"]}, {info["executionScopePosition"]}, {info["imageOperandsPosition"]}}}}},\n'
             output += '};\n'

@@ -58,6 +58,7 @@ devtools_module("sdk") {
     "PageResourceLoader.ts",
     "PaintProfiler.ts",
     "PerformanceMetricsModel.ts",
+    "PreloadingModel.ts",
     "PrerenderingModel.ts",
     "ProfileTreeModel.ts",
     "RemoteObject.ts",
@@ -76,6 +77,7 @@ devtools_module("sdk") {
     "StorageKeyManager.ts",
     "Target.ts",
     "TargetManager.ts",
+    "TraceSDKServices.ts",
     "TracingManager.ts",
     "TracingModel.ts",
     "WebAuthnModel.ts",
@@ -91,6 +93,7 @@ devtools_module("sdk") {
     "../../generated",
     "../../generated:protocol",
     "../../models/text_utils:bundle",
+    "../../models/trace:bundle",
   ]
 }
 

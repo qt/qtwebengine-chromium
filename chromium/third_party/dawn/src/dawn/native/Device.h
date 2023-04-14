@@ -33,7 +33,6 @@
 #include "dawn/native/ObjectBase.h"
 #include "dawn/native/ObjectType_autogen.h"
 #include "dawn/native/RefCountedWithExternalCount.h"
-#include "dawn/native/StagingBuffer.h"
 #include "dawn/native/Toggles.h"
 #include "dawn/native/UsageValidationMode.h"
 
@@ -64,7 +63,7 @@ class DeviceBase : public RefCountedWithExternalCount {
   public:
     DeviceBase(AdapterBase* adapter,
                const DeviceDescriptor* descriptor,
-               const TripleStateTogglesSet& userProvidedToggles);
+               const TogglesState& deviceToggles);
     ~DeviceBase() override;
 
     // Handles the error, causing a device loss if applicable. Almost always when a device loss
@@ -140,7 +139,7 @@ class DeviceBase : public RefCountedWithExternalCount {
     MaybeError ValidateObject(const ApiObjectBase* object) const;
 
     AdapterBase* GetAdapter() const;
-    dawn::platform::Platform* GetPlatform() const;
+    virtual dawn::platform::Platform* GetPlatform() const;
 
     // Returns the Format corresponding to the wgpu::TextureFormat or an error if the format
     // isn't a valid wgpu::TextureFormat or isn't supported by this device.
@@ -284,6 +283,7 @@ class DeviceBase : public RefCountedWithExternalCount {
     size_t APIEnumerateFeatures(wgpu::FeatureName* features) const;
     void APIInjectError(wgpu::ErrorType type, const char* message);
     bool APITick();
+    void APIValidateTextureDescriptor(const TextureDescriptor* desc);
 
     void APISetDeviceLostCallback(wgpu::DeviceLostCallback callback, void* userdata);
     void APISetUncapturedErrorCallback(wgpu::ErrorCallback callback, void* userdata);
@@ -297,15 +297,14 @@ class DeviceBase : public RefCountedWithExternalCount {
     Blob LoadCachedBlob(const CacheKey& key);
     void StoreCachedBlob(const CacheKey& key, const Blob& blob);
 
-    virtual ResultOrError<std::unique_ptr<StagingBufferBase>> CreateStagingBuffer(size_t size) = 0;
-    MaybeError CopyFromStagingToBuffer(StagingBufferBase* source,
+    MaybeError CopyFromStagingToBuffer(BufferBase* source,
                                        uint64_t sourceOffset,
                                        BufferBase* destination,
                                        uint64_t destinationOffset,
                                        uint64_t size);
-    MaybeError CopyFromStagingToTexture(const StagingBufferBase* source,
+    MaybeError CopyFromStagingToTexture(BufferBase* source,
                                         const TextureDataLayout& src,
-                                        TextureCopy* dst,
+                                        const TextureCopy& dst,
                                         const Extent3D& copySizePixels);
 
     DynamicUploader* GetDynamicUploader() const;
@@ -348,6 +347,8 @@ class DeviceBase : public RefCountedWithExternalCount {
     void APIForceLoss(wgpu::DeviceLostReason reason, const char* message);
     QueueBase* GetQueue() const;
 
+    friend class IgnoreLazyClearCountScope;
+
     // Check for passed fences and set the new completed serial
     MaybeError CheckPassedSerials();
 
@@ -378,11 +379,9 @@ class DeviceBase : public RefCountedWithExternalCount {
     dawn::platform::WorkerTaskPool* GetWorkerTaskPool() const;
 
     void AddComputePipelineAsyncCallbackTask(Ref<ComputePipelineBase> pipeline,
-                                             std::string errorMessage,
                                              WGPUCreateComputePipelineAsyncCallback callback,
                                              void* userdata);
     void AddRenderPipelineAsyncCallbackTask(Ref<RenderPipelineBase> pipeline,
-                                            std::string errorMessage,
                                             WGPUCreateRenderPipelineAsyncCallback callback,
                                             void* userdata);
 
@@ -418,8 +417,7 @@ class DeviceBase : public RefCountedWithExternalCount {
     // Constructor used only for mocking and testing.
     DeviceBase();
 
-    void SetToggle(Toggle toggle, bool isEnabled);
-    void ForceSetToggle(Toggle toggle, bool isEnabled);
+    void ForceSetToggleForTesting(Toggle toggle, bool isEnabled);
 
     MaybeError Initialize(Ref<QueueBase> defaultQueue);
     void DestroyObjects();
@@ -489,8 +487,6 @@ class DeviceBase : public RefCountedWithExternalCount {
 
     void ApplyFeatures(const DeviceDescriptor* deviceDescriptor);
 
-    void SetDefaultToggles();
-
     void SetWGSLExtensionAllowList();
 
     void ConsumeError(std::unique_ptr<ErrorData> error);
@@ -524,14 +520,14 @@ class DeviceBase : public RefCountedWithExternalCount {
     // Indicates whether the backend has pending commands to be submitted as soon as possible.
     virtual bool HasPendingCommands() const = 0;
 
-    virtual MaybeError CopyFromStagingToBufferImpl(StagingBufferBase* source,
+    virtual MaybeError CopyFromStagingToBufferImpl(BufferBase* source,
                                                    uint64_t sourceOffset,
                                                    BufferBase* destination,
                                                    uint64_t destinationOffset,
                                                    uint64_t size) = 0;
-    virtual MaybeError CopyFromStagingToTextureImpl(const StagingBufferBase* source,
+    virtual MaybeError CopyFromStagingToTextureImpl(const BufferBase* source,
                                                     const TextureDataLayout& src,
-                                                    TextureCopy* dst,
+                                                    const TextureCopy& dst,
                                                     const Extent3D& copySizePixels) = 0;
 
     wgpu::ErrorCallback mUncapturedErrorCallback = nullptr;
@@ -569,8 +565,8 @@ class DeviceBase : public RefCountedWithExternalCount {
 
     FormatTable mFormatTable;
 
-    TogglesSet mEnabledToggles;
-    TogglesSet mOverridenToggles;
+    TogglesState mToggles;
+
     size_t mLazyClearCountForTesting = 0;
     std::atomic_uint64_t mNextPipelineCompatibilityToken;
 
@@ -584,6 +580,29 @@ class DeviceBase : public RefCountedWithExternalCount {
     std::unique_ptr<dawn::platform::WorkerTaskPool> mWorkerTaskPool;
     std::string mLabel;
     CacheKey mDeviceCacheKey;
+};
+
+ResultOrError<Ref<PipelineLayoutBase>> ValidateLayoutAndGetComputePipelineDescriptorWithDefaults(
+    DeviceBase* device,
+    const ComputePipelineDescriptor& descriptor,
+    ComputePipelineDescriptor* outDescriptor);
+
+ResultOrError<Ref<PipelineLayoutBase>> ValidateLayoutAndGetRenderPipelineDescriptorWithDefaults(
+    DeviceBase* device,
+    const RenderPipelineDescriptor& descriptor,
+    RenderPipelineDescriptor* outDescriptor);
+
+class IgnoreLazyClearCountScope : public NonMovable {
+  public:
+    explicit IgnoreLazyClearCountScope(DeviceBase* device);
+    ~IgnoreLazyClearCountScope();
+
+  private:
+    // Disable heap allocation
+    void* operator new(size_t) = delete;
+
+    DeviceBase* mDevice;
+    size_t mLazyClearCountForTesting;
 };
 
 }  // namespace dawn::native

@@ -20,6 +20,7 @@
 #include <utility>
 
 #include "src/tint/symbol_table.h"
+#include "src/tint/type/manager.h"
 #include "src/tint/utils/hash.h"
 
 TINT_INSTANTIATE_TYPEINFO(tint::type::Struct);
@@ -56,7 +57,7 @@ Struct::Struct(tint::Source source,
                uint32_t align,
                uint32_t size,
                uint32_t size_no_padding)
-    : Base(FlagsFrom(members)),
+    : Base(utils::Hash(TypeInfo::Of<Struct>().full_hashcode, name), FlagsFrom(members)),
       source_(source),
       name_(name),
       members_(std::move(members)),
@@ -66,11 +67,7 @@ Struct::Struct(tint::Source source,
 
 Struct::~Struct() = default;
 
-size_t Struct::Hash() const {
-    return utils::Hash(TypeInfo::Of<Struct>().full_hashcode, name_);
-}
-
-bool Struct::Equals(const Type& other) const {
+bool Struct::Equals(const UniqueNode& other) const {
     if (auto* o = other.As<Struct>()) {
         return o->name_ == name_;
     }
@@ -164,6 +161,16 @@ std::string Struct::Layout(const tint::SymbolTable& symbols) const {
     return ss.str();
 }
 
+Struct* Struct::Clone(CloneContext& ctx) const {
+    auto sym = ctx.dst.st->Register(ctx.src.st->NameFor(name_));
+
+    utils::Vector<const StructMember*, 4> members;
+    for (const auto& mem : members_) {
+        members.Push(mem->Clone(ctx));
+    }
+    return ctx.dst.mgr->Get<Struct>(source_, sym, members, align_, size_, size_no_padding_);
+}
+
 StructMember::StructMember(tint::Source source,
                            Symbol name,
                            const type::Type* type,
@@ -182,5 +189,12 @@ StructMember::StructMember(tint::Source source,
       location_(location) {}
 
 StructMember::~StructMember() = default;
+
+StructMember* StructMember::Clone(CloneContext& ctx) const {
+    auto sym = ctx.dst.st->Register(ctx.src.st->NameFor(name_));
+    auto* ty = type_->Clone(ctx);
+    return ctx.dst.mgr->Get<StructMember>(source_, sym, ty, index_, offset_, align_, size_,
+                                          location_);
+}
 
 }  // namespace tint::type

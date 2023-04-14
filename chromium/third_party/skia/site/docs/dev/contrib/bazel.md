@@ -66,9 +66,6 @@ Our Bazel toolchain assumes you have `xcode-select` in your path so that we may 
 user's current Xcode directory in the toolchain's cache. Make sure `xcode-select -p`
 returns a valid path.
 
-Your Xcode path should resemble `/Applications/Xcode.app/Contents/Developer/`. Either move your
-Xcode or use `xcode-select` to use the Xcode in this location.
-
 ## .bazelrc Tips
 You should make a [.bazelrc file](https://bazel.build/docs/bazelrc) in your home directory where
 you can specify settings that apply only to you. These can augment or replace the ones we define

@@ -245,6 +245,8 @@ static int pix_fmt_to_mfx_fourcc(int format)
         return MFX_FOURCC_YUY2;
     case AV_PIX_FMT_BGRA:
         return MFX_FOURCC_RGB4;
+    case AV_PIX_FMT_P010:
+        return MFX_FOURCC_P010;
     }
 
     return MFX_FOURCC_NV12;
@@ -324,6 +326,14 @@ static int fill_frameinfo_by_link(mfxFrameInfo *frameinfo, AVFilterLink *link)
     frameinfo->CropH          = link->h;
     frameinfo->FrameRateExtN  = link->frame_rate.num;
     frameinfo->FrameRateExtD  = link->frame_rate.den;
+
+    /* Apparently VPP in the SDK requires the frame rate to be set to some value, otherwise
+     * init will fail */
+    if (frameinfo->FrameRateExtD == 0 || frameinfo->FrameRateExtN == 0) {
+        frameinfo->FrameRateExtN = 25;
+        frameinfo->FrameRateExtD = 1;
+    }
+
     frameinfo->AspectRatioW   = link->sample_aspect_ratio.num ? link->sample_aspect_ratio.num : 1;
     frameinfo->AspectRatioH   = link->sample_aspect_ratio.den ? link->sample_aspect_ratio.den : 1;
 
@@ -487,15 +497,19 @@ static QSVFrame *query_frame(QSVVPPContext *s, AVFilterLink *outlink)
         if (!out_frame->frame)
             return NULL;
 
-        out_frame->frame->width  = outlink->w;
-        out_frame->frame->height = outlink->h;
-
         ret = map_frame_to_surface(out_frame->frame,
                                    &out_frame->surface);
         if (ret < 0)
             return NULL;
     }
 
+    if (outlink->frame_rate.num && outlink->frame_rate.den)
+        out_frame->frame->duration = av_rescale_q(1, av_inv_q(outlink->frame_rate), outlink->time_base);
+    else
+        out_frame->frame->duration = 0;
+
+    out_frame->frame->width  = outlink->w;
+    out_frame->frame->height = outlink->h;
     out_frame->surface.Info = s->vpp_param.vpp.Out;
 
     return out_frame;
@@ -673,15 +687,11 @@ static int init_vpp_session(AVFilterContext *avctx, QSVVPPContext *s)
     return 0;
 }
 
-int ff_qsvvpp_create(AVFilterContext *avctx, QSVVPPContext **vpp, QSVVPPParam *param)
+int ff_qsvvpp_init(AVFilterContext *avctx, QSVVPPParam *param)
 {
     int i;
     int ret;
-    QSVVPPContext *s;
-
-    s = av_mallocz(sizeof(*s));
-    if (!s)
-        return AVERROR(ENOMEM);
+    QSVVPPContext *s = avctx->priv;
 
     s->filter_frame  = param->filter_frame;
     if (!s->filter_frame)
@@ -753,14 +763,13 @@ int ff_qsvvpp_create(AVFilterContext *avctx, QSVVPPContext **vpp, QSVVPPParam *p
     s->got_frame = 0;
 
     /** keep fifo size at least 1. Even when async_depth is 0, fifo is used. */
-    s->async_fifo  = av_fifo_alloc2(param->async_depth + 1, sizeof(QSVAsyncFrame), 0);
-    s->async_depth = param->async_depth;
+    s->async_fifo  = av_fifo_alloc2(s->async_depth + 1, sizeof(QSVAsyncFrame), 0);
     if (!s->async_fifo) {
         ret = AVERROR(ENOMEM);
         goto failed;
     }
 
-    s->vpp_param.AsyncDepth = param->async_depth;
+    s->vpp_param.AsyncDepth = s->async_depth;
 
     if (IS_SYSTEM_MEMORY(s->in_mem_mode))
         s->vpp_param.IOPattern |= MFX_IOPATTERN_IN_SYSTEM_MEMORY;
@@ -791,25 +800,22 @@ int ff_qsvvpp_create(AVFilterContext *avctx, QSVVPPContext **vpp, QSVVPPParam *p
     } else if (ret > 0)
         ff_qsvvpp_print_warning(avctx, ret, "Warning When creating qsvvpp");
 
-    *vpp = s;
     return 0;
 
 failed:
-    ff_qsvvpp_free(&s);
+    ff_qsvvpp_close(avctx);
 
     return ret;
 }
 
-int ff_qsvvpp_free(QSVVPPContext **vpp)
+int ff_qsvvpp_close(AVFilterContext *avctx)
 {
-    QSVVPPContext *s = *vpp;
-
-    if (!s)
-        return 0;
+    QSVVPPContext *s = avctx->priv;
 
     if (s->session) {
         MFXVideoVPP_Close(s->session);
         MFXClose(s->session);
+        s->session = NULL;
     }
 
     /* release all the resources */
@@ -822,7 +828,6 @@ int ff_qsvvpp_free(QSVVPPContext **vpp)
 #endif
     av_freep(&s->frame_infos);
     av_fifo_freep2(&s->async_fifo);
-    av_freep(vpp);
 
     return 0;
 }
@@ -834,7 +839,7 @@ int ff_qsvvpp_filter_frame(QSVVPPContext *s, AVFilterLink *inlink, AVFrame *picr
     QSVAsyncFrame     aframe;
     mfxSyncPoint      sync;
     QSVFrame         *in_frame, *out_frame;
-    int               ret, filter_ret;
+    int               ret, ret1, filter_ret;
 
     while (s->eof && av_fifo_read(s->async_fifo, &aframe, 1) >= 0) {
         if (MFXVideoCORE_SyncOperation(s->session, aframe.sync, 1000) < 0)
@@ -891,8 +896,13 @@ int ff_qsvvpp_filter_frame(QSVVPPContext *s, AVFilterLink *inlink, AVFrame *picr
             av_fifo_read(s->async_fifo, &aframe, 1);
 
             do {
-                ret = MFXVideoCORE_SyncOperation(s->session, aframe.sync, 1000);
-            } while (ret == MFX_WRN_IN_EXECUTION);
+                ret1 = MFXVideoCORE_SyncOperation(s->session, aframe.sync, 1000);
+            } while (ret1 == MFX_WRN_IN_EXECUTION);
+
+            if (ret1 < 0) {
+                ret = ret1;
+                break;
+            }
 
             filter_ret = s->filter_frame(outlink, aframe.frame->frame);
             if (filter_ret < 0) {
@@ -1003,3 +1013,16 @@ int ff_qsvvpp_create_mfx_session(void *ctx,
 }
 
 #endif
+
+AVFrame *ff_qsvvpp_get_video_buffer(AVFilterLink *inlink, int w, int h)
+{
+    /* When process YUV420 frames, FFmpeg uses same alignment on Y/U/V
+     * planes. VPL and MSDK use Y plane's pitch / 2 as U/V planes's
+     * pitch, which makes U/V planes 16-bytes aligned. We need to set a
+     * separate alignment to meet runtime's behaviour.
+    */
+    return ff_default_get_video_buffer2(inlink,
+                                        FFALIGN(inlink->w, 32),
+                                        FFALIGN(inlink->h, 32),
+                                        16);
+}

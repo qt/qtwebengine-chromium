@@ -245,6 +245,7 @@ struct EntryPointMetadata {
     std::unordered_set<std::string> initializedOverrides;
 
     bool usesNumWorkgroups = false;
+    bool usesFragDepth = false;
     // Used at render pipeline validation.
     bool usesSampleMaskOutput = false;
 };
@@ -285,8 +286,6 @@ class ShaderModuleBase : public ApiObjectBase, public CachedObject {
     OwnedCompilationMessages* GetCompilationMessages() const;
 
   protected:
-    // Constructor used only for mocking and testing.
-    explicit ShaderModuleBase(DeviceBase* device);
     void DestroyImpl() override;
 
     MaybeError InitializeBase(ShaderModuleParseResult* parseResult,

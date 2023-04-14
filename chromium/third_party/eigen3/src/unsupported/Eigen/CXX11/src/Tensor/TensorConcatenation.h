@@ -331,7 +331,7 @@ template<typename Axis, typename LeftArgType, typename RightArgType, typename De
   typedef typename XprType::CoeffReturnType CoeffReturnType;
   typedef typename PacketType<CoeffReturnType, Device>::type PacketReturnType;
 
-  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE CoeffReturnType& coeffRef(Index index)
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE CoeffReturnType& coeffRef(Index index) const
   {
     // Collect dimension-wise indices (subs).
     array<Index, Base::NumDims> subs;
@@ -360,7 +360,7 @@ template<typename Axis, typename LeftArgType, typename RightArgType, typename De
   }
 
   template <int StoreMode> EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE
-  void writePacket(Index index, const PacketReturnType& x)
+  void writePacket(Index index, const PacketReturnType& x) const
   {
     const int packetSize = PacketType<CoeffReturnType, Device>::size;
     EIGEN_STATIC_ASSERT((packetSize > 1), YOU_MADE_A_PROGRAMMING_MISTAKE)

@@ -12,9 +12,12 @@
 
 ## Requirements
 
-1. Python >= 3.7 (3.6 may work, 3.5 and earlier is not supported)
-1. CMake >= 3.10.2
-1. C++ >= c++17 compiler. See platform-specific sections below for supported compiler versions.
+1. CMake >= 3.17.2
+2. C++ >= c++17 compiler. See platform-specific sections below for supported compiler versions.
+3. Python >= 3.7 (3.6 may work, 3.5 and earlier is not supported)
+
+NOTE: Python is needed for working on generated code, and helping grab dependencies.
+While it's not technically required, it's practically required for most users.
 
 ## Building Overview
 
@@ -32,23 +35,10 @@ python3 ../scripts/update_deps.py --dir ../external --arch x64 --config debug
 cmake -G Ninja -C ../external/helper.cmake -DCMAKE_BUILD_TYPE=Debug ..
 
 # Windows
-python3 ..\scripts\update_deps.py --dir ..\external --arch x64 --config debug
+python ..\scripts\update_deps.py --dir ..\external --arch x64 --config debug
 cmake -A x64 -C ..\external\helper.cmake -DCMAKE_BUILD_TYPE=Debug ..
 
 cmake --build . --config Debug
-```
-### CCACHE
-
-There are 2 methods to enable CCACHE:
-
-```bash
-# 1) Set environment variables
-# Requires CMake 3.17 (https://cmake.org/cmake/help/latest/envvar/CMAKE_LANG_COMPILER_LAUNCHER.html)
-export CMAKE_CXX_COMPILER_LAUNCHER=/usr/bin/ccache
-export CMAKE_C_COMPILER_LAUNCHER=/usr/bin/ccache
-
-# 2) Pass in cache variables`
-cmake ... -D CMAKE_CXX_COMPILER_LAUNCHER=/usr/bin/ccache -D CMAKE_C_COMPILER_LAUNCHER=/usr/bin/ccache
 ```
 
 ## Generated source code
@@ -111,6 +101,10 @@ version of that dependency.
 - [robin-hood-hashing repository](https://github.com/martinus/robin-hood-hashing)
     - This is a header-only reimplementation of `std::unordered_map` and `std::unordered_set` which provides substantial performance improvements on all platforms.
     - You must clone this repository and build its `install` target
+- [mimalloc repository](https://github.com/microsoft/mimalloc)
+    - This is a reimplementation of malloc()/free() and their c++ equivalents.
+    - It is currently only used for windows 64 bit builds, where it is statically linked into the layer.
+    - For window 64 bit builds, you must clone this repository and build its `install` target
 
 For running the tests:
 
@@ -164,24 +158,19 @@ directories and place them in any location (see option `--dir` in the
   `VVL_CPP_STANDARD` option at cmake generation time. Current code is written
   to compile under C++17.
 
-## Cmake
+## CMake
 
-### EXPORT_COMPILE_COMMANDS
+### Warnings as errors off by default!
 
-There are 2 methods to enable exporting compile commands:
+By default `BUILD_WERROR` is `OFF`
 
+The idiom for open source projects is to NOT enable warnings as errors.
 
-```bash
-# 1) Set environment variables
-# Requires CMake 3.17 (https://cmake.org/cmake/help/latest/envvar/CMAKE_EXPORT_COMPILE_COMMANDS.html)
-export CMAKE_EXPORT_COMPILE_COMMANDS=ON
+System package managers, and language package managers have to build on multiple different platforms and compilers.
 
-# 2) Pass in cache variables
-cmake ... -D CMAKE_EXPORT_COMPILE_COMMANDS=ON
-```
+By defaulting to `ON` we cause issues for package managers since there is no standard way to disable warnings until CMake 3.24
 
-NOTE: Modern tools will generally enable exporting compile commands for you (e.g. VSCode).
-Also `CMAKE_EXPORT_COMPILE_COMMANDS` is implemented only by Makefile and Ninja generators. For other generators, this option is ignored.
+Add `-D BUILD_WERROR=ON` to your workflow. Or use the `dev` preset shown below which will also enabling warnings as errors.
 
 ### CMakePresets.json (3.21+)
 
@@ -201,10 +190,10 @@ cmake -S . -B build/ --preset dev
 - Microsoft [Visual Studio](https://www.visualstudio.com/)
   - Versions
     - [2022](https://www.visualstudio.com/vs/downloads/)
-    - [2015-2019](https://www.visualstudio.com/vs/older-downloads/)
+    - [2017-2019](https://www.visualstudio.com/vs/older-downloads/)
   - The Community Edition of each of the above versions is sufficient, as
     well as any more capable edition.
-- [CMake 3.10.2](https://cmake.org/files/v3.10/cmake-3.10.2-win64-x64.zip) is the minimum CMake version supported.  [CMake 3.19.3](https://cmake.org/files/v3.19/cmake-3.19.3-win64-x64.zip) is recommended.
+- [CMake 3.17.2](https://cmake.org/files/v3.17/cmake-3.17.2-win64-x64.zip) is the minimum CMake version supported.  [CMake 3.19.3](https://cmake.org/files/v3.19/cmake-3.19.3-win64-x64.zip) is recommended.
   - Use the installer option to add CMake to the system PATH
 - Git Client Support
   - [Git for Windows](http://git-scm.com/download/win) is a popular solution
@@ -257,7 +246,7 @@ that the minimum officially supported C++17 compiler version is GCC 7.3.0,
 although earlier versions may work. It should be straightforward to adapt this
 repository to other Linux distributions.
 
-[CMake 3.10.2](https://cmake.org/files/v3.10/cmake-3.10.2-Linux-x86_64.tar.gz) is recommended.
+[CMake 3.17.2](https://cmake.org/files/v3.17/cmake-3.17.2-Linux-x86_64.tar.gz) is recommended.
 
 ```bash
 sudo apt-get install git build-essential libx11-xcb-dev \
@@ -366,13 +355,9 @@ you can get it with something like the following:
 
 #### Additional OSX System Requirements
 
-Tested on OSX version 10.13.3
+Tested on OSX version 10.15
 
 Setup Homebrew and components
-
-- Follow instructions on [brew.sh](http://brew.sh) to get Homebrew installed.
-
-      /usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
 
 - Ensure Homebrew is at the beginning of your PATH:
 
@@ -419,8 +404,7 @@ Follow the setup steps for Linux or OSX above, then from your terminal:
 
 #### Windows
 
-Follow the setup steps for Windows above, then from Developer Command Prompt
-for VS2015:
+Follow the setup steps for Windows above, then from the Developer Command Prompt:
 
     cd build-android
     update_external_sources_android.bat
@@ -430,17 +414,14 @@ for VS2015:
 
 ### MacOS Build Requirements
 
-Tested on OSX version 10.12
+Tested on OSX version 10.15
 
 NOTE: To force the OSX version set the environment variable [MACOSX_DEPLOYMENT_TARGET](https://cmake.org/cmake/help/latest/envvar/MACOSX_DEPLOYMENT_TARGET.html) when building VVL and it's dependencies.
 
-[CMake 3.10.2](https://cmake.org/files/v3.10/cmake-3.10.2-Darwin-x86_64.tar.gz) is recommended.
+[CMake 3.17.2](https://cmake.org/files/v3.17/cmake-3.17.2-Darwin-x86_64.tar.gz) is recommended.
 
 Setup Homebrew and components
 
-- Follow instructions on [brew.sh](http://brew.sh) to get Homebrew installed.
-
-      /usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
 
 - Ensure Homebrew is at the beginning of your PATH:
 
@@ -458,85 +439,35 @@ To create and open an Xcode project:
 
 ```bash
 cmake -G Xcode -C ../external/helper.cmake -DCMAKE_BUILD_TYPE=Debug ..
-open VULKAN.xcodeproj
+cmake --open .
 ```
 
 Within Xcode, you can select Debug or Release builds in the Build Settings of the project.
 
 ## Installed Files
 
-The `install` target installs the following files under the directory
-indicated by *install_dir*:
+The installation depends on the target platform
 
-- *install_dir*`/lib` : The Vulkan validation layer libraries
-- *install_dir*`/share/vulkan/explicit_layer.d` : The Vulkan validation layer
-  JSON files (Linux and MacOS)
+For UNIX operating systems:
 
-The `uninstall` target can be used to remove the above files from the install
-directory.
+- *install_dir*`/lib` : The Vulkan validation layer library
+- *install_dir*`/share/vulkan/explicit_layer.d` : The VkLayer_khronos_validation.json manifest
 
-### Windows Install Target
+For WIN32/MINGW:
 
-The CMake project also generates an "install" target that you can use to copy
-the primary build artifacts to a specific location using a "bin, include, lib"
-style directory structure. This may be useful for collecting the artifacts and
-providing them to another project that is dependent on them.
+- *install_dir*`/bin` : The Vulkan validation layer library
+- *install_dir*`/bin` : The VkLayer_khronos_validation.json manifest
 
-The default location is `$CMAKE_BINARY_DIR\install`, but can be changed with
-the `CMAKE_INSTALL_PREFIX` variable when first generating the project build
-files with CMake.
+### Software Installation
 
-You can build the install target from the command line with:
+After you have built your project you can install using CMake's install functionality.
 
-    cmake --build . --config Release --target install
+CMake Docs:
+- [Software Installation Guide](https://cmake.org/cmake/help/latest/guide/user-interaction/index.html#software-installation)
+- [CLI for installing a project](https://cmake.org/cmake/help/latest/manual/cmake.1.html#install-a-project)
 
-or build the `INSTALL` target from the Visual Studio solution explorer.
-
-### Linux Install Target
-
-Installing the files resulting from your build to the systems directories is
-optional since environment variables can usually be used instead to locate the
-binaries. There are also risks with interfering with binaries installed by
-packages. If you are certain that you would like to install your binaries to
-system directories, you can proceed with these instructions.
-
-Assuming that you've built the code as described above and the current
-directory is still `build`, you can execute:
-
-    sudo make install
-
-This command installs files to `/usr/local` if no `CMAKE_INSTALL_PREFIX` is
-specified when creating the build files with CMake:
-
-- `/usr/local/lib`:  Vulkan layers shared objects
-- `/usr/local/share/vulkan/explicit_layer.d`:  Layer JSON files
-
-You may need to run `ldconfig` in order to refresh the system loader search
-cache on some Linux systems.
-
-You can further customize the installation location by setting additional
-CMake variables to override their defaults. For example, if you would like to
-install to `/tmp/build` instead of `/usr/local`, on your CMake command line
-specify:
-
-    -DCMAKE_INSTALL_PREFIX=/tmp/build
-
-Then run `make install` as before. The install step places the files in
-`/tmp/build`. This may be useful for collecting the artifacts and providing
-them to another project that is dependent on them.
-
-See the CMake documentation for more details on using these variables to
-further customize your installation.
-
-Also see the `LoaderAndLayerInterface` document in the `loader` folder of the
-Vulkan-Loader repository for more information about loader and layer
-operation.
-
-> Note: For Linux, the default value for `CMAKE_INSTALL_PREFIX` is
-> `/usr/local`, which would be used if you do not specify
-> `CMAKE_INSTALL_PREFIX`. In this case, you may need to use `sudo` to install
-> to system directories later when you run `make install`.
-
-To uninstall the files from the system directories, you can execute:
-
-    sudo make uninstall
+```sh
+# EX: Installs Release artifacts into `build/install` directory.
+# NOTE: --config is only needed for multi-config generators (Visual Studio, Xcode, etc)
+cmake --install build/ --config Release --prefix build/install
+```

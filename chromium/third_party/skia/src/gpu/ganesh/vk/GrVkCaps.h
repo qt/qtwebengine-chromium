@@ -9,7 +9,7 @@
 #define GrVkCaps_DEFINED
 
 #include "include/gpu/vk/GrVkTypes.h"
-#include "include/private/SkTDArray.h"
+#include "include/private/base/SkTDArray.h"
 #include "src/gpu/ganesh/GrCaps.h"
 
 class GrVkRenderTarget;
@@ -285,6 +285,9 @@ private:
     };
 
     enum class IntelGPUType {
+        // 9th gen
+        kSkyLake,
+
         // 11th gen
         kIceLake,
 
@@ -299,6 +302,8 @@ private:
     static IntelGPUType GetIntelGPUType(uint32_t deviceID);
     static int GetIntelGen(IntelGPUType type) {
         switch (type) {
+            case IntelGPUType::kSkyLake:
+                return 9;
             case IntelGPUType::kIceLake:
                 return 11;
             case IntelGPUType::kRocketLake: // fall through

@@ -4,7 +4,7 @@
  *
  *   TrueType and OpenType embedded bitmap support (body).
  *
- * Copyright (C) 2005-2022 by
+ * Copyright (C) 2005-2023 by
  * David Turner, Robert Wilhelm, and Werner Lemberg.
  *
  * Copyright 2013 by Google, Inc.
@@ -1193,7 +1193,7 @@
           goto Fail;
 
         p += 1;  /* skip padding */
-        /* fall-through */
+        FALL_THROUGH;
 
       case 9:
         loader = tt_sbit_decoder_load_compound;
@@ -1593,7 +1593,7 @@
     return error;
   }
 
-  FT_LOCAL( FT_Error )
+  FT_LOCAL_DEF( FT_Error )
   tt_face_load_sbit_image( TT_Face              face,
                            FT_ULong             strike_index,
                            FT_UInt              glyph_index,

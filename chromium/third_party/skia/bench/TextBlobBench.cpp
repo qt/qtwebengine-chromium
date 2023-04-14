@@ -13,8 +13,8 @@
 #include "include/core/SkString.h"
 #include "include/core/SkTextBlob.h"
 #include "include/core/SkTypeface.h"
-#include "include/private/SkTemplates.h"
-#include "include/utils/SkRandom.h"
+#include "include/private/base/SkTemplates.h"
+#include "src/base/SkRandom.h"
 #include "tools/Resources.h"
 
 #include "tools/ToolUtils.h"

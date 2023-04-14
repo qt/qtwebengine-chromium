@@ -2301,7 +2301,8 @@ static void pick_sb_modes_nonrd(AV1_COMP *const cpi, TileDataEnc *tile_data,
     // here. Check to see is skipping cdef is allowed.
     const int allow_cdef_skipping =
         cpi->rc.frames_since_key > 10 && !cpi->rc.high_source_sad &&
-        !(x->color_sensitivity[0] || x->color_sensitivity[1]);
+        !(x->color_sensitivity[COLOR_SENS_IDX(AOM_PLANE_U)] ||
+          x->color_sensitivity[COLOR_SENS_IDX(AOM_PLANE_V)]);
 
     // Find the corresponding 64x64 block. It'll be the 128x128 block if that's
     // the block size.
@@ -2538,6 +2539,7 @@ static void try_merge(AV1_COMP *const cpi, ThreadData *td,
   MACROBLOCK *const x = &td->mb;
   MACROBLOCKD *const xd = &x->e_mbd;
   const ModeCosts *mode_costs = &x->mode_costs;
+  const int num_planes = av1_num_planes(cm);
   // Only square blocks from 8x8 to 128x128 are supported
   assert(bsize >= BLOCK_8X8 && bsize <= BLOCK_128X128);
   const int bs = mi_size_wide[bsize];
@@ -2547,7 +2549,7 @@ static void try_merge(AV1_COMP *const cpi, ThreadData *td,
   RD_STATS split_rdc, none_rdc;
   av1_invalid_rd_stats(&split_rdc);
   av1_invalid_rd_stats(&none_rdc);
-  av1_save_context(x, &x_ctx, mi_row, mi_col, bsize, 3);
+  av1_save_context(x, &x_ctx, mi_row, mi_col, bsize, num_planes);
   xd->above_txfm_context =
       cm->above_contexts.txfm[tile_info->tile_row] + mi_col;
   xd->left_txfm_context =
@@ -2562,7 +2564,7 @@ static void try_merge(AV1_COMP *const cpi, ThreadData *td,
                       pc_tree->none);
   none_rdc.rate += mode_costs->partition_cost[pl][PARTITION_NONE];
   none_rdc.rdcost = RDCOST(x->rdmult, none_rdc.rate, none_rdc.dist);
-  av1_restore_context(x, &x_ctx, mi_row, mi_col, bsize, 3);
+  av1_restore_context(x, &x_ctx, mi_row, mi_col, bsize, num_planes);
 
   if (cpi->sf.rt_sf.nonrd_check_partition_merge_mode < 2 ||
       none_rdc.skip_txfm != 1 || pc_tree->none->mic.mode == NEWMV) {
@@ -2608,7 +2610,7 @@ static void try_merge(AV1_COMP *const cpi, ThreadData *td,
                          1, subsize, PARTITION_NONE, pc_tree->split[i]->none,
                          NULL);
       }
-      av1_restore_context(x, &x_ctx, mi_row, mi_col, bsize, 3);
+      av1_restore_context(x, &x_ctx, mi_row, mi_col, bsize, num_planes);
       split_rdc.rdcost = RDCOST(x->rdmult, split_rdc.rate, split_rdc.dist);
     }
   }
@@ -2755,12 +2757,12 @@ static void direct_partition_merging(AV1_COMP *cpi, ThreadData *td,
       frame_mv[i][j].as_int = INVALID_MV;
     }
   }
-  x->color_sensitivity[0] = x->color_sensitivity_sb[0];
-  x->color_sensitivity[1] = x->color_sensitivity_sb[1];
+  av1_copy(x->color_sensitivity, x->color_sensitivity_sb);
   skip_pred_mv = (x->nonrd_prune_ref_frame_search > 2 &&
-                  x->color_sensitivity[0] != 2 && x->color_sensitivity[1] != 2);
+                  x->color_sensitivity[COLOR_SENS_IDX(AOM_PLANE_U)] != 2 &&
+                  x->color_sensitivity[COLOR_SENS_IDX(AOM_PLANE_V)] != 2);
 
-  find_predictors(cpi, x, ref_frame, frame_mv, tile_data, yv12_mb, bsize,
+  find_predictors(cpi, x, ref_frame, frame_mv, yv12_mb, bsize,
                   force_skip_low_temp_var, skip_pred_mv);
 
   int continue_merging = 1;
@@ -2776,8 +2778,8 @@ static void direct_partition_merging(AV1_COMP *cpi, ThreadData *td,
     // calling find_predictors() again.
     av1_set_offsets_without_segment_id(cpi, &tile_data->tile_info, x, mi_row,
                                        mi_col, this_mi[0]->bsize);
-    find_predictors(cpi, x, ref_frame, frame_mv, tile_data, yv12_mb,
-                    this_mi[0]->bsize, force_skip_low_temp_var, skip_pred_mv);
+    find_predictors(cpi, x, ref_frame, frame_mv, yv12_mb, this_mi[0]->bsize,
+                    force_skip_low_temp_var, skip_pred_mv);
   } else {
     struct scale_factors *sf = get_ref_scale_factors(cm, ref_frame);
     const int is_scaled = av1_is_scaled(sf);
@@ -5372,27 +5374,41 @@ BEGIN_PARTITION_SEARCH:
   start_timing(cpi, none_partition_search_time);
 #endif
 
-  // Further pruning or in some cases reverse pruning when allintra is set
-  // This code helps visual and in some cases metrics quality where the current
-  // block comprises at least one very low variance sub-block and at least one
-  // where the variance is much higher.
-  //
-  // The idea is that in such cases there is danger of ringing and other visual
-  // artifacts from a high variance feature such as an edge into a very low
-  // variance region.
-  //
-  // The approach taken is to force break down / split to a smaller block size
-  // to try and separate out the low variance and well predicted blocks from the
-  // more complex ones and to prevent propagation of ringing over a large
-  // region.
-  if ((cpi->oxcf.mode == ALLINTRA) && (bsize >= BLOCK_16X16)) {
-    double var_min, var_max;
-    log_sub_block_var(cpi, x, bsize, &var_min, &var_max);
+  if (cpi->oxcf.mode == ALLINTRA) {
+    const bool bsize_at_least_16x16 = (bsize >= BLOCK_16X16);
+    const bool prune_rect_part_using_4x4_var_deviation =
+        (cpi->sf.part_sf.prune_rect_part_using_4x4_var_deviation &&
+         !x->must_find_valid_partition);
 
-    if ((var_min < 0.272) && ((var_max - var_min) > 3.0)) {
-      part_search_state.partition_none_allowed = 0;
-      part_search_state.terminate_partition_search = 0;
-      part_search_state.do_square_split = 1;
+    if (bsize_at_least_16x16 || prune_rect_part_using_4x4_var_deviation) {
+      double var_min, var_max;
+      log_sub_block_var(cpi, x, bsize, &var_min, &var_max);
+
+      // Further pruning or in some cases reverse pruning when allintra is set.
+      // This code helps visual and in some cases metrics quality where the
+      // current block comprises at least one very low variance sub-block and at
+      // least one where the variance is much higher.
+      //
+      // The idea is that in such cases there is danger of ringing and other
+      // visual artifacts from a high variance feature such as an edge into a
+      // very low variance region.
+      //
+      // The approach taken is to force break down / split to a smaller block
+      // size to try and separate out the low variance and well predicted blocks
+      // from the more complex ones and to prevent propagation of ringing over a
+      // large region.
+      if (bsize_at_least_16x16 && (var_min < 0.272) &&
+          ((var_max - var_min) > 3.0)) {
+        part_search_state.partition_none_allowed = 0;
+        part_search_state.terminate_partition_search = 0;
+        part_search_state.do_square_split = 1;
+      } else if (prune_rect_part_using_4x4_var_deviation &&
+                 (var_max - var_min < 3.0)) {
+        // Prune rectangular partitions if the variance deviation of 4x4
+        // sub-blocks within the block is less than a threshold (derived
+        // empirically).
+        part_search_state.do_rectangular_split = 0;
+      }
     }
   }
 

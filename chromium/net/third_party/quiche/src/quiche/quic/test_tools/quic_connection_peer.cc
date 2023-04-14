@@ -503,6 +503,13 @@ QuicConnection::PathState* QuicConnectionPeer::GetDefaultPath(
 }
 
 // static
+bool QuicConnectionPeer::IsDefaultPath(QuicConnection* connection,
+                                       const QuicSocketAddress& self_address,
+                                       const QuicSocketAddress& peer_address) {
+  return connection->IsDefaultPath(self_address, peer_address);
+}
+
+// static
 QuicConnection::PathState* QuicConnectionPeer::GetAlternativePath(
     QuicConnection* connection) {
   return &connection->alternative_path_;
@@ -561,6 +568,60 @@ void QuicConnectionPeer::FlushCoalescedPacket(QuicConnection* connection) {
 void QuicConnectionPeer::SetInProbeTimeOut(QuicConnection* connection,
                                            bool value) {
   connection->in_probe_time_out_ = value;
+}
+
+// static
+QuicSocketAddress QuicConnectionPeer::GetReceivedServerPreferredAddress(
+    QuicConnection* connection) {
+  return connection->received_server_preferred_address_;
+}
+
+// static
+QuicSocketAddress QuicConnectionPeer::GetSentServerPreferredAddress(
+    QuicConnection* connection) {
+  return connection->sent_server_preferred_address_;
+}
+
+// static
+QuicEcnCounts* QuicConnectionPeer::GetEcnCounts(
+    QuicConnection* connection, PacketNumberSpace packet_number_space) {
+  return &connection->peer_ack_ecn_counts_[packet_number_space];
+}
+
+// static
+bool QuicConnectionPeer::TestLastReceivedPacketInfoDefaults() {
+  QuicConnection::ReceivedPacketInfo info{QuicTime::Zero()};
+  QUIC_DVLOG(2)
+      << "QuicConnectionPeer::TestLastReceivedPacketInfoDefaults"
+      << " dest_addr passed: "
+      << (info.destination_address == QuicSocketAddress())
+      << " source_addr passed: " << (info.source_address == QuicSocketAddress())
+      << " receipt_time passed: " << (info.receipt_time == QuicTime::Zero())
+      << " received_bytes_counted passed: " << !info.received_bytes_counted
+      << " destination_connection_id passed: "
+      << (info.destination_connection_id == QuicConnectionId())
+      << " length passed: " << (info.length == 0)
+      << " decrypted passed: " << !info.decrypted << " decrypted_level passed: "
+      << (info.decrypted_level == ENCRYPTION_INITIAL)
+      << " frames.empty passed: " << info.frames.empty()
+      << " ecn_codepoint passed: " << (info.ecn_codepoint == ECN_NOT_ECT)
+      << " sizeof(ReceivedPacketInfo) passed: "
+      << (sizeof(size_t) != 8 ||
+          sizeof(QuicConnection::ReceivedPacketInfo) == 280);
+  return info.destination_address == QuicSocketAddress() &&
+         info.source_address == QuicSocketAddress() &&
+         info.receipt_time == QuicTime::Zero() &&
+         !info.received_bytes_counted && info.length == 0 &&
+         info.destination_connection_id == QuicConnectionId() &&
+         !info.decrypted && info.decrypted_level == ENCRYPTION_INITIAL &&
+         // There's no simple way to compare all the values of QuicPacketHeader.
+         info.frames.empty() && info.ecn_codepoint == ECN_NOT_ECT &&
+         info.actual_destination_address == QuicSocketAddress() &&
+         // If the condition below fails, the contents of ReceivedPacketInfo
+         // have changed. Please add the relevant conditions and update the
+         // length below.
+         (sizeof(size_t) != 8 ||
+          sizeof(QuicConnection::ReceivedPacketInfo) == 280);
 }
 
 }  // namespace test

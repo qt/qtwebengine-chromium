@@ -15,13 +15,13 @@ $ABC = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 #include <xnnpack/intrinsics-polyfill.h>
 
 
-void xnn_f32_dwconv_minmax_ukernel_up${CHANNEL_TILE}x${KERNEL_TILE}__avx512f${"" if ACCUMULATORS == 1 else "_acc%d" % ACCUMULATORS}(
+void xnn_f32_dwconv_minmax_ukernel_${KERNEL_TILE}p${CHANNEL_TILE}c__avx512f${"" if ACCUMULATORS == 1 else "_acc%d" % ACCUMULATORS}(
     size_t channels,
     size_t output_width,
     const float** input,
     const float* weights,
     float* output,
-    size_t input_stride,
+    intptr_t input_stride,
     size_t output_increment,
     size_t input_offset,
     const float* zero,

@@ -9,7 +9,7 @@
 #include "include/core/SkScalar.h"
 #include "include/core/SkSpan.h"
 #include "include/core/SkTypes.h"
-#include "include/private/SkTArray.h"
+#include "include/private/base/SkTArray.h"
 #include "modules/skparagraph/include/DartTypes.h"
 #include "modules/skparagraph/include/TextStyle.h"
 #include "modules/skshaper/include/SkShaper.h"
@@ -143,6 +143,7 @@ public:
     void iterateThroughClusters(const ClusterVisitor& visitor);
 
     std::tuple<bool, ClusterIndex, ClusterIndex> findLimitingClusters(TextRange text) const;
+    std::tuple<bool, TextIndex, TextIndex> findLimitingGlyphClusters(TextRange text) const;
     std::tuple<bool, TextIndex, TextIndex> findLimitingGraphemes(TextRange text) const;
     SkSpan<const SkGlyphID> glyphs() const {
         return SkSpan<const SkGlyphID>(fGlyphs.begin(), fGlyphs.size());

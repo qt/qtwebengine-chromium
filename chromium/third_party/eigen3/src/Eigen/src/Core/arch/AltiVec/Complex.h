@@ -18,7 +18,7 @@ namespace Eigen {
 namespace internal {
 
 static Packet4ui  p4ui_CONJ_XOR = vec_mergeh((Packet4ui)p4i_ZERO, (Packet4ui)p4f_MZERO);//{ 0x00000000, 0x80000000, 0x00000000, 0x80000000 };
-#ifdef __VSX__
+#ifdef EIGEN_VECTORIZE_VSX
 #if defined(_BIG_ENDIAN)
 static Packet2ul  p2ul_CONJ_XOR1 = (Packet2ul) vec_sld((Packet4ui) p2d_MZERO, (Packet4ui) p2l_ZERO, 8);//{ 0x8000000000000000, 0x0000000000000000 };
 static Packet2ul  p2ul_CONJ_XOR2 = (Packet2ul) vec_sld((Packet4ui) p2l_ZERO,  (Packet4ui) p2d_MZERO, 8);//{ 0x8000000000000000, 0x0000000000000000 };
@@ -103,7 +103,7 @@ template<> struct packet_traits<std::complex<float> >  : default_packet_traits
     HasMin    = 0,
     HasMax    = 0,
     HasSqrt   = 1,
-#ifdef __VSX__
+#ifdef EIGEN_VECTORIZE_VSX
     HasBlend  = 1,
 #endif
     HasSetLinear = 0
@@ -115,7 +115,7 @@ template<> struct unpacket_traits<Packet2cf> { typedef std::complex<float> type;
 template<> EIGEN_STRONG_INLINE Packet2cf pset1<Packet2cf>(const std::complex<float>&  from)
 {
   Packet2cf res;
-#ifdef __VSX__
+#ifdef EIGEN_VECTORIZE_VSX
   // Load a single std::complex<float> from memory and duplicate
   //
   // Using pload would read past the end of the reference in this case
@@ -151,7 +151,7 @@ template<> EIGEN_ALWAYS_INLINE void pstoreu_partial<std::complex<float> >(std::c
 EIGEN_STRONG_INLINE Packet2cf pload2(const std::complex<float>& from0, const std::complex<float>& from1)
 {
   Packet4f res0, res1;
-#ifdef __VSX__
+#ifdef EIGEN_VECTORIZE_VSX
   // Load two std::complex<float> from memory and combine
   __asm__ ("lxsdx %x0,%y1" : "=wa" (res0) : "Z" (from0));
   __asm__ ("lxsdx %x0,%y1" : "=wa" (res1) : "Z" (from1));
@@ -269,7 +269,7 @@ template<> EIGEN_STRONG_INLINE Packet2cf pcplxflip<Packet2cf>(const Packet2cf& x
 
 EIGEN_STRONG_INLINE void ptranspose(PacketBlock<Packet2cf,2>& kernel)
 {
-#ifdef __VSX__
+#ifdef EIGEN_VECTORIZE_VSX
   Packet4f tmp = reinterpret_cast<Packet4f>(vec_mergeh(reinterpret_cast<Packet2d>(kernel.packet[0].v), reinterpret_cast<Packet2d>(kernel.packet[1].v)));
   kernel.packet[1].v = reinterpret_cast<Packet4f>(vec_mergel(reinterpret_cast<Packet2d>(kernel.packet[0].v), reinterpret_cast<Packet2d>(kernel.packet[1].v)));
 #else
@@ -284,7 +284,7 @@ template<> EIGEN_STRONG_INLINE Packet2cf pcmp_eq(const Packet2cf& a, const Packe
   return Packet2cf(vec_and(eq, vec_perm(eq, eq, p16uc_COMPLEX32_REV)));
 }
 
-#ifdef __VSX__
+#ifdef EIGEN_VECTORIZE_VSX
 template<> EIGEN_STRONG_INLINE Packet2cf pblend(const Selector<2>& ifPacket, const Packet2cf& thenPacket, const Packet2cf& elsePacket) {
   Packet2cf result;
   result.v = reinterpret_cast<Packet4f>(pblend<Packet2d>(ifPacket, reinterpret_cast<Packet2d>(thenPacket.v), reinterpret_cast<Packet2d>(elsePacket.v)));
@@ -298,7 +298,7 @@ template<> EIGEN_STRONG_INLINE Packet2cf psqrt<Packet2cf>(const Packet2cf& a)
 }
 
 //---------- double ----------
-#ifdef __VSX__
+#ifdef EIGEN_VECTORIZE_VSX
 struct Packet1cd
 {
   EIGEN_STRONG_INLINE Packet1cd() {}

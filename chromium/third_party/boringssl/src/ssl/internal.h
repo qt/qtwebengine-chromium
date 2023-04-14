@@ -195,7 +195,6 @@ template <typename T, typename... Args>
 T *New(Args &&... args) {
   void *t = OPENSSL_malloc(sizeof(T));
   if (t == nullptr) {
-    OPENSSL_PUT_ERROR(SSL, ERR_R_MALLOC_FAILURE);
     return nullptr;
   }
   return new (t) T(std::forward<Args>(args)...);
@@ -315,7 +314,6 @@ class Array {
     }
     data_ = reinterpret_cast<T *>(OPENSSL_malloc(new_size * sizeof(T)));
     if (data_ == nullptr) {
-      OPENSSL_PUT_ERROR(SSL, ERR_R_MALLOC_FAILURE);
       return false;
     }
     size_ = new_size;
@@ -1108,7 +1106,7 @@ class SSLKeyShare {
 struct NamedGroup {
   int nid;
   uint16_t group_id;
-  const char name[8], alias[11];
+  const char name[12], alias[12];
 };
 
 // NamedGroups returns all supported groups.
@@ -2762,6 +2760,11 @@ struct SSL3_STATE {
   // used_hello_retry_request is whether the handshake used a TLS 1.3
   // HelloRetryRequest message.
   bool used_hello_retry_request : 1;
+
+  // was_key_usage_invalid is whether the handshake succeeded despite using a
+  // TLS mode which was incompatible with the leaf certificate's keyUsage
+  // extension.
+  bool was_key_usage_invalid : 1;
 
   // hs_buf is the buffer of handshake data to process.
   UniquePtr<BUF_MEM> hs_buf;

@@ -30,6 +30,7 @@ class Isolate;
 
 typedef uintptr_t Address;
 static const Address kNullAddress = 0;
+static const Address kLocalTaggedNullAddress = 1;
 
 constexpr int KB = 1024;
 constexpr int MB = KB * 1024;
@@ -150,6 +151,7 @@ const int kSmiMinValue = static_cast<int>(PlatformSmiTagging::kSmiMinValue);
 const int kSmiMaxValue = static_cast<int>(PlatformSmiTagging::kSmiMaxValue);
 constexpr bool SmiValuesAre31Bits() { return kSmiValueSize == 31; }
 constexpr bool SmiValuesAre32Bits() { return kSmiValueSize == 32; }
+constexpr bool Is64() { return kApiSystemPointerSize == sizeof(int64_t); }
 
 V8_INLINE static constexpr internal::Address IntToSmi(int value) {
   return (static_cast<Address>(value) << (kSmiTagSize + kSmiShiftSize)) |
@@ -242,6 +244,7 @@ static_assert(1ULL << (64 - kBoundedSizeShift) ==
 
 #ifdef V8_COMPRESS_POINTERS
 
+#ifdef V8_TARGET_OS_ANDROID
 // The size of the virtual memory reservation for an external pointer table.
 // This determines the maximum number of entries in a table. Using a maximum
 // size allows omitting bounds checks on table accesses if the indices are
@@ -249,14 +252,18 @@ static_assert(1ULL << (64 - kBoundedSizeShift) ==
 // value must be a power of two.
 static const size_t kExternalPointerTableReservationSize = 512 * MB;
 
-// The maximum number of entries in an external pointer table.
-static const size_t kMaxExternalPointers =
-    kExternalPointerTableReservationSize / kApiSystemPointerSize;
-
 // The external pointer table indices stored in HeapObjects as external
 // pointers are shifted to the left by this amount to guarantee that they are
 // smaller than the maximum table size.
 static const uint32_t kExternalPointerIndexShift = 6;
+#else
+static const size_t kExternalPointerTableReservationSize = 1024 * MB;
+static const uint32_t kExternalPointerIndexShift = 5;
+#endif  // V8_TARGET_OS_ANDROID
+
+// The maximum number of entries in an external pointer table.
+static const size_t kMaxExternalPointers =
+    kExternalPointerTableReservationSize / kApiSystemPointerSize;
 static_assert((1 << (32 - kExternalPointerIndexShift)) == kMaxExternalPointers,
               "kExternalPointerTableReservationSize and "
               "kExternalPointerIndexShift don't match");
@@ -802,7 +809,7 @@ class Internals {
     return addr & -static_cast<intptr_t>(kPtrComprCageBaseAlignment);
   }
 
-  V8_INLINE static internal::Address DecompressTaggedAnyField(
+  V8_INLINE static internal::Address DecompressTaggedField(
       internal::Address heap_object_ptr, uint32_t value) {
     internal::Address base =
         GetPtrComprCageBaseFromOnHeapAddress(heap_object_ptr);
@@ -843,6 +850,19 @@ class BackingStoreBase {};
 // The maximum value in enum GarbageCollectionReason, defined in heap.h.
 // This is needed for histograms sampling garbage collection reasons.
 constexpr int kGarbageCollectionReasonMaxValue = 27;
+
+class ValueHelper final {
+  using A = internal::Address;
+
+ public:
+  static A ValueToAddress(const Data* value) {
+#ifdef V8_ENABLE_CONSERVATIVE_STACK_SCANNING
+    return reinterpret_cast<const A>(value);
+#else
+    return *reinterpret_cast<const A*>(value);
+#endif
+  }
+};
 
 }  // namespace internal
 

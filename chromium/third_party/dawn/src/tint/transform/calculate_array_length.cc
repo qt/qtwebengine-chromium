@@ -104,21 +104,20 @@ Transform::ApplyResult CalculateArrayLength::Apply(const Program* src,
     auto get_buffer_size_intrinsic = [&](const type::Reference* buffer_type) {
         return utils::GetOrCreate(buffer_size_intrinsics, buffer_type, [&] {
             auto name = b.Sym();
-            auto* type = CreateASTTypeFor(ctx, buffer_type);
+            auto type = CreateASTTypeFor(ctx, buffer_type);
             auto* disable_validation = b.Disable(ast::DisabledValidation::kFunctionParameter);
-            b.AST().AddFunction(b.create<ast::Function>(
+            b.Func(
                 name,
                 utils::Vector{
                     b.Param("buffer",
                             b.ty.pointer(type, buffer_type->AddressSpace(), buffer_type->Access()),
                             utils::Vector{disable_validation}),
-                    b.Param("result", b.ty.pointer(b.ty.u32(), ast::AddressSpace::kFunction)),
+                    b.Param("result", b.ty.pointer(b.ty.u32(), builtin::AddressSpace::kFunction)),
                 },
                 b.ty.void_(), nullptr,
                 utils::Vector{
                     b.ASTNodes().Create<BufferSizeIntrinsic>(b.ID(), b.AllocateNodeID()),
-                },
-                utils::Empty));
+                });
 
             return name;
         });
@@ -152,16 +151,16 @@ Transform::ApplyResult CalculateArrayLength::Apply(const Program* src,
                     //   arrayLength(&array_var)
                     auto* arg = call_expr->args[0];
                     auto* address_of = arg->As<ast::UnaryOpExpression>();
-                    if (!address_of || address_of->op != ast::UnaryOp::kAddressOf) {
+                    if (TINT_UNLIKELY(!address_of || address_of->op != ast::UnaryOp::kAddressOf)) {
                         TINT_ICE(Transform, b.Diagnostics())
                             << "arrayLength() expected address-of, got " << arg->TypeInfo().name;
                     }
                     auto* storage_buffer_expr = address_of->expr;
                     if (auto* accessor = storage_buffer_expr->As<ast::MemberAccessorExpression>()) {
-                        storage_buffer_expr = accessor->structure;
+                        storage_buffer_expr = accessor->object;
                     }
                     auto* storage_buffer_sem = sem.Get<sem::VariableUser>(storage_buffer_expr);
-                    if (!storage_buffer_sem) {
+                    if (TINT_UNLIKELY(!storage_buffer_sem)) {
                         TINT_ICE(Transform, b.Diagnostics())
                             << "expected form of arrayLength argument to be &array_var or "
                                "&struct_var.array_member";
@@ -192,7 +191,7 @@ Transform::ApplyResult CalculateArrayLength::Apply(const Program* src,
                                 // translated to:
                                 //  X.GetDimensions(ARGS..) by the writer
                                 buffer_size, b.AddressOf(ctx.Clone(storage_buffer_expr)),
-                                b.AddressOf(b.Expr(buffer_size_result->variable->symbol))));
+                                b.AddressOf(b.Expr(buffer_size_result->variable->name->symbol))));
 
                             // Calculate actual array length
                             //                total_storage_buffer_size - array_offset
@@ -213,7 +212,7 @@ Transform::ApplyResult CalculateArrayLength::Apply(const Program* src,
                                 },
                                 [&](const type::Array* arr) { return arr; });
 
-                            if (!array_type) {
+                            if (TINT_UNLIKELY(!array_type)) {
                                 TINT_ICE(Transform, b.Diagnostics())
                                     << "expected form of arrayLength argument to be "
                                        "&array_var or &struct_var.array_member";

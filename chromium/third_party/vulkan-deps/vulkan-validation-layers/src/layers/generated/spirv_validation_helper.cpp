@@ -4,7 +4,7 @@
 
 /***************************************************************************
  *
- * Copyright (c) 2020-2022 The Khronos Group Inc.
+ * Copyright (c) 2020-2023 The Khronos Group Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,8 +18,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * Author: Spencer Fricke <s.fricke@samsung.com>
- *
  * This file is related to anything that is found in the Vulkan XML related
  * to SPIR-V. Anything related to the SPIR-V grammar belongs in spirv_grammar_helper
  *
@@ -29,9 +27,9 @@
 #include <functional>
 #include <spirv/unified1/spirv.hpp>
 #include "vk_extension_helper.h"
-#include "shader_module.h"
-#include "device_state.h"
-#include "core_validation.h"
+#include "state_tracker/shader_module.h"
+#include "state_tracker/device_state.h"
+#include "core_checks/core_validation.h"
 
 struct FeaturePointer {
     // Callable object to test if this feature is enabled in the given aggregate feature struct
@@ -130,6 +128,8 @@ static const std::unordered_multimap<uint32_t, RequiredSpirvInfo> spirvCapabilit
     {spv::CapabilityAtomicFloat64MinMaxEXT, {0, &VkPhysicalDeviceShaderAtomicFloat2FeaturesEXT::shaderBufferFloat64AtomicMinMax, nullptr, ""}},
     {spv::CapabilityAtomicFloat64MinMaxEXT, {0, &VkPhysicalDeviceShaderAtomicFloat2FeaturesEXT::shaderSharedFloat64AtomicMinMax, nullptr, ""}},
     {spv::CapabilityClipDistance, {0, &VkPhysicalDeviceFeatures::shaderClipDistance, nullptr, ""}},
+    // Not found in current SPIR-V Headers
+    //    {spv::CapabilityClusterCullingShadingHUAWEI, {0, &VkPhysicalDeviceClusterCullingShaderFeaturesHUAWEI::clustercullingShader, nullptr, ""}},
     {spv::CapabilityComputeDerivativeGroupLinearNV, {0, &VkPhysicalDeviceComputeShaderDerivativesFeaturesNV::computeDerivativeGroupLinear, nullptr, ""}},
     {spv::CapabilityComputeDerivativeGroupQuadsNV, {0, &VkPhysicalDeviceComputeShaderDerivativesFeaturesNV::computeDerivativeGroupQuads, nullptr, ""}},
     {spv::CapabilityCooperativeMatrixNV, {0, &VkPhysicalDeviceCooperativeMatrixFeaturesNV::cooperativeMatrix, nullptr, ""}},

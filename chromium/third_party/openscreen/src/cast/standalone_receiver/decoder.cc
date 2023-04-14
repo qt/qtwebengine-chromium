@@ -10,6 +10,7 @@
 #include <sstream>
 #include <thread>
 
+#include "platform/base/span.h"
 #include "util/osp_logging.h"
 #include "util/std_util.h"
 #include "util/trace_logging.h"
@@ -46,14 +47,14 @@ void Decoder::Buffer::Resize(int new_size) {
   memset(buffer_.data() + new_size, 0, AV_INPUT_BUFFER_PADDING_SIZE);
 }
 
-absl::Span<const uint8_t> Decoder::Buffer::GetSpan() const {
-  return absl::Span<const uint8_t>(
-      buffer_.data(), buffer_.size() - AV_INPUT_BUFFER_PADDING_SIZE);
+ByteView Decoder::Buffer::AsByteView() const {
+  ByteView view(buffer_.data(), buffer_.size() - AV_INPUT_BUFFER_PADDING_SIZE);
+  return view;
 }
 
-absl::Span<uint8_t> Decoder::Buffer::GetSpan() {
-  return absl::Span<uint8_t>(buffer_.data(),
-                             buffer_.size() - AV_INPUT_BUFFER_PADDING_SIZE);
+ByteBuffer Decoder::Buffer::AsByteBuffer() {
+  return ByteBuffer(buffer_.data(),
+                    buffer_.size() - AV_INPUT_BUFFER_PADDING_SIZE);
 }
 
 Decoder::Client::Client() = default;
@@ -78,7 +79,7 @@ void Decoder::Decode(FrameId frame_id, const Decoder::Buffer& buffer) {
 
   // Parse the buffer for the required metadata and the packet to send to the
   // decoder.
-  const absl::Span<const uint8_t> input = buffer.GetSpan();
+  ByteView input = buffer.AsByteView();
   const int bytes_consumed = av_parser_parse2(
       parser_.get(), context_.get(), &packet_->data, &packet_->size,
       input.data(), input.size(), AV_NOPTS_VALUE, AV_NOPTS_VALUE, 0);

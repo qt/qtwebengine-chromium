@@ -12,11 +12,9 @@
 #include "include/core/SkCanvas.h"
 #include "include/core/SkFont.h"
 #include "include/core/SkTime.h"
-#include "include/private/SkNoncopyable.h"
-#include "include/private/SkTPin.h"
+#include "include/private/base/SkNoncopyable.h"
+#include "include/private/base/SkTPin.h"
 #include "modules/audioplayer/SkAudioPlayer.h"
-#include "modules/particles/include/SkParticleEffect.h"
-#include "modules/particles/include/SkParticleSerialization.h"
 #include "modules/skottie/include/Skottie.h"
 #include "modules/skottie/include/SkottieProperty.h"
 #include "modules/skottie/utils/SkottieUtils.h"
@@ -25,6 +23,7 @@
 #include "src/utils/SkOSPath.h"
 #include "tools/Resources.h"
 #include "tools/timer/TimeUtils.h"
+#include "tools/viewer/SkottieTextEditor.h"
 
 #include <cmath>
 #include <vector>
@@ -86,7 +85,7 @@ public:
     virtual ~Decorator() = default;
 
     // We pass in the Matrix and have the Decorator handle using it independently
-    // This is so decorators like particle effects can keep position on screen after moving.
+    // This is so decorators can keep position on screen after moving.
     virtual void render(SkCanvas*, double, const SkMatrix) = 0;
 };
 
@@ -139,57 +138,33 @@ private:
     std::unordered_map<std::string, sk_sp<SkData>> fResources;
 };
 
-class ParticleMarker final : public Decorator {
-public:
-    ~ParticleMarker() override = default;
-
-    static std::unique_ptr<Decorator> MakeConfetti() { return std::make_unique<ParticleMarker>("confetti.json"); }
-    static std::unique_ptr<Decorator> MakeSine() { return std::make_unique<ParticleMarker>("sinusoidal_emitter.json"); }
-    static std::unique_ptr<Decorator> MakeSkottie() { return std::make_unique<ParticleMarker>("skottie_particle.json"); }
-
-    explicit ParticleMarker(const char* effect_file) {
-        SkParticleEffect::RegisterParticleTypes();
-        auto params = sk_sp<SkParticleEffectParams>();
-        params.reset(new SkParticleEffectParams());
-        auto effectJsonPath = SkOSPath::Join(GetResourcePath("particles").c_str(), effect_file);
-        if (auto fileData = SkData::MakeFromFileName(effectJsonPath.c_str())) {
-            skjson::DOM dom(static_cast<const char*>(fileData->data()), fileData->size());
-            SkFromJsonVisitor fromJson(dom.root());
-            params->visitFields(&fromJson);
-            auto provider = sk_make_sp<TestingResourceProvider>();
-            params->prepare(provider.get());
-        } else {
-            SkDebugf("no particle effect file found at: %s\n", effectJsonPath.c_str());
-        }
-        fEffect = sk_make_sp<SkParticleEffect>(params);
-    }
-
-    void render(SkCanvas* canvas, double t, SkMatrix transform) override {
-        if (!fStarted || t < 0.01) {
-            fStarted = true;
-            fEffect->start(t, true, { 0, 0 }, { 0, -1 }, 1, { 0, 0 }, 0,
-                              { 1, 1, 1, 1 }, 0, 0);
-            fEffect->setPosition({0,0});
-        }
-        SkPoint p = {0,0};
-        transform.mapPoints(&p, 1);
-        fEffect->setPosition(p);
-        fEffect->update(t);
-        fEffect->draw(canvas);
-    }
-private:
-    sk_sp<SkParticleEffect> fEffect;
-    bool fStarted = false;
-};
-
 static const struct DecoratorRec {
     const char* fName;
     std::unique_ptr<Decorator>(*fFactory)();
 } kDecorators[] = {
     { "Simple marker",       SimpleMarker::Make },
-    { "Confetti",            ParticleMarker::MakeConfetti },
-    { "Sine Wave",           ParticleMarker::MakeSine },
-    { "Nested Skotties",     ParticleMarker::MakeSkottie },
+};
+
+class TextTracker final : public skottie::PropertyObserver {
+public:
+    explicit TextTracker(sk_sp<PropertyObserver> delegate) : fDelegate(std::move(delegate)) {}
+
+    std::vector<std::unique_ptr<skottie::TextPropertyHandle>>& props() {
+        return fTextProps;
+    }
+
+private:
+    void onTextProperty(const char node_name[],
+                        const LazyHandle<skottie::TextPropertyHandle>& lh) override {
+        fTextProps.push_back(lh());
+
+        if (fDelegate) {
+            fDelegate->onTextProperty(node_name, lh);
+        }
+    }
+
+    const sk_sp<PropertyObserver>                             fDelegate;
+    std::vector<std::unique_ptr<skottie::TextPropertyHandle>> fTextProps;
 };
 
 } // namespace
@@ -481,6 +456,8 @@ void SkottieSlide::init() {
                                                                            kInterceptPrefix);
 
     fTransformTracker = sk_make_sp<TransformTracker>();
+    auto text_tracker = sk_make_sp<TextTracker>(fTransformTracker);
+
     if (!fSlotManagerWrapper) {
         fSlotManagerWrapper = std::make_unique<SlotManagerWrapper>(resource_provider, this);
     }
@@ -494,7 +471,7 @@ void SkottieSlide::init() {
                .setPropertyObserver(fSlotManagerWrapper->getPropertyObserver());
     } else {
         builder.setResourceProvider(std::move(resource_provider))
-               .setPropertyObserver(fTransformTracker);
+               .setPropertyObserver(text_tracker);
     }
     fAnimation = builder.makeFromFile(fPath.c_str());
     fAnimationStats = builder.getStats();
@@ -508,6 +485,14 @@ void SkottieSlide::init() {
                  fAnimation->size().width(),
                  fAnimation->size().height());
         logger->report();
+
+        if (auto text_props = std::move(text_tracker->props()); !text_props.empty()) {
+            // Attach the editor to the first text layer, and track the rest as dependents.
+            auto editor_target = std::move(text_props[0]);
+            text_props.erase(text_props.cbegin());
+            fTextEditor = sk_make_sp<SkottieTextEditor>(std::move(editor_target),
+                                                        std::move(text_props));
+        }
     } else {
         SkDebugf("failed to load Bodymovin animation: %s\n", fPath.c_str());
     }
@@ -614,6 +599,10 @@ bool SkottieSlide::animate(double nanos) {
 }
 
 bool SkottieSlide::onChar(SkUnichar c) {
+    if (fTextEditor && fTextEditor->onCharInput(c)) {
+        return true;
+    }
+
     switch (c) {
     case 'I':
         fShowAnimationStats = !fShowAnimationStats;
@@ -628,12 +617,21 @@ bool SkottieSlide::onChar(SkUnichar c) {
     case 'M':
         fShowSlotManager = !fShowSlotManager;
         return true;
+    case 'E':
+        if (fTextEditor) {
+            fTextEditor->toggleEnabled();
+        }
+        return true;
     }
 
     return INHERITED::onChar(c);
 }
 
-bool SkottieSlide::onMouse(SkScalar x, SkScalar y, skui::InputState state, skui::ModifierKey) {
+bool SkottieSlide::onMouse(SkScalar x, SkScalar y, skui::InputState state, skui::ModifierKey mod) {
+    if (fTextEditor && fTextEditor->onMouseInput(x, y, state, mod)) {
+        return true;
+    }
+
     switch (state) {
     case skui::InputState::kUp:
         fShowAnimationInval = !fShowAnimationInval;

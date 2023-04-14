@@ -19,6 +19,8 @@
 #include <string>
 #include <variant>
 
+#include "src/tint/utils/slice.h"
+
 namespace tint::utils {
 
 /// @param str the string to apply replacements to
@@ -65,6 +67,14 @@ inline size_t HasPrefix(std::string_view str, std::string_view prefix) {
 /// @param b the second string
 /// @returns the Levenshtein distance between @p a and @p b
 size_t Distance(std::string_view a, std::string_view b);
+
+/// Suggest alternatives for an unrecognized string from a list of possible values.
+/// @param got the unrecognized string
+/// @param strings the list of possible values
+/// @param ss the stream to write the suggest and list of possible values to
+void SuggestAlternatives(std::string_view got,
+                         Slice<char const* const> strings,
+                         std::ostringstream& ss);
 
 }  // namespace tint::utils
 

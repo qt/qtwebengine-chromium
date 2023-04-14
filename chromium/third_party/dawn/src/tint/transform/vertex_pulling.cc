@@ -20,8 +20,10 @@
 #include "src/tint/ast/assignment_statement.h"
 #include "src/tint/ast/bitcast_expression.h"
 #include "src/tint/ast/variable_decl_statement.h"
+#include "src/tint/builtin/builtin_value.h"
 #include "src/tint/program_builder.h"
 #include "src/tint/sem/variable.h"
+#include "src/tint/utils/compiler_macros.h"
 #include "src/tint/utils/map.h"
 #include "src/tint/utils/math.h"
 
@@ -320,8 +322,9 @@ struct VertexPulling::State {
                                         });
         for (uint32_t i = 0; i < cfg.vertex_state.size(); ++i) {
             // The decorated variable with struct type
-            b.GlobalVar(GetVertexBufferName(i), b.ty.Of(struct_type), ast::AddressSpace::kStorage,
-                        ast::Access::kRead, b.Binding(AInt(i)), b.Group(AInt(cfg.pulling_group)));
+            b.GlobalVar(GetVertexBufferName(i), b.ty.Of(struct_type),
+                        builtin::AddressSpace::kStorage, builtin::Access::kRead, b.Binding(AInt(i)),
+                        b.Group(AInt(cfg.pulling_group)));
         }
     }
 
@@ -394,14 +397,14 @@ struct VertexPulling::State {
                 // Convert the fetched scalar/vector if WGSL variable is of `f16` types
                 if (var_dt.base_type == BaseWGSLType::kF16) {
                     // The type of the same element number of base type of target WGSL variable
-                    const ast::Type* loaded_data_target_type;
+                    ast::Type loaded_data_target_type;
                     if (fmt_dt.width == 1) {
                         loaded_data_target_type = b.ty.f16();
                     } else {
                         loaded_data_target_type = b.ty.vec(b.ty.f16(), fmt_dt.width);
                     }
 
-                    fetch = b.Construct(loaded_data_target_type, fetch);
+                    fetch = b.Call(loaded_data_target_type, fetch);
                 }
 
                 // The attribute value may not be of the desired vector width. If it is not, we'll
@@ -442,8 +445,7 @@ struct VertexPulling::State {
                         }
                     }
 
-                    const ast::Type* target_ty = CreateASTTypeFor(ctx, var.type);
-                    value = b.Construct(target_ty, values);
+                    value = b.Call(CreateASTTypeFor(ctx, var.type), values);
                 }
 
                 // Assign the value to the WGSL variable
@@ -734,7 +736,7 @@ struct VertexPulling::State {
                                    uint32_t offset,
                                    uint32_t buffer,
                                    uint32_t element_stride,
-                                   const ast::Type* base_type,
+                                   ast::Type base_type,
                                    VertexFormat base_format,
                                    uint32_t count) {
         utils::Vector<const ast::Expression*, 8> expr_list;
@@ -744,7 +746,7 @@ struct VertexPulling::State {
             expr_list.Push(LoadPrimitive(array_base, primitive_offset, buffer, base_format));
         }
 
-        return b.Construct(b.create<ast::Vector>(base_type, count), std::move(expr_list));
+        return b.Call(b.ty.vec(base_type, count), std::move(expr_list));
     }
 
     /// Process a non-struct entry point parameter.
@@ -755,8 +757,8 @@ struct VertexPulling::State {
     void ProcessNonStructParameter(const ast::Function* func, const ast::Parameter* param) {
         if (ast::HasAttribute<ast::LocationAttribute>(param->attributes)) {
             // Create a function-scope variable to replace the parameter.
-            auto func_var_sym = ctx.Clone(param->symbol);
-            auto* func_var_type = ctx.Clone(param->type);
+            auto func_var_sym = ctx.Clone(param->name->symbol);
+            auto func_var_type = ctx.Clone(param->type);
             auto* func_var = b.Var(func_var_sym, func_var_type);
             ctx.InsertFront(func->body->statements, b.Decl(func_var));
             // Capture mapping from location to the new variable.
@@ -766,21 +768,29 @@ struct VertexPulling::State {
             auto* sem = src->Sem().Get<sem::Parameter>(param);
             info.type = sem->Type();
 
-            if (!sem->Location().has_value()) {
+            if (TINT_UNLIKELY(!sem->Location().has_value())) {
                 TINT_ICE(Transform, b.Diagnostics()) << "Location missing value";
                 return;
             }
             location_info[sem->Location().value()] = info;
-        } else if (auto* builtin = ast::GetAttribute<ast::BuiltinAttribute>(param->attributes)) {
+        } else {
+            auto* builtin_attr = ast::GetAttribute<ast::BuiltinAttribute>(param->attributes);
+            if (TINT_UNLIKELY(!builtin_attr)) {
+                TINT_ICE(Transform, b.Diagnostics()) << "Invalid entry point parameter";
+                return;
+            }
+            auto builtin = src->Sem().Get(builtin_attr)->Value();
             // Check for existing vertex_index and instance_index builtins.
-            if (builtin->builtin == ast::BuiltinValue::kVertexIndex) {
-                vertex_index_expr = [this, param]() { return b.Expr(ctx.Clone(param->symbol)); };
-            } else if (builtin->builtin == ast::BuiltinValue::kInstanceIndex) {
-                instance_index_expr = [this, param]() { return b.Expr(ctx.Clone(param->symbol)); };
+            if (builtin == builtin::BuiltinValue::kVertexIndex) {
+                vertex_index_expr = [this, param]() {
+                    return b.Expr(ctx.Clone(param->name->symbol));
+                };
+            } else if (builtin == builtin::BuiltinValue::kInstanceIndex) {
+                instance_index_expr = [this, param]() {
+                    return b.Expr(ctx.Clone(param->name->symbol));
+                };
             }
             new_function_parameters.Push(ctx.Clone(param));
-        } else {
-            TINT_ICE(Transform, b.Diagnostics()) << "Invalid entry point parameter";
         }
     }
 
@@ -795,13 +805,13 @@ struct VertexPulling::State {
     void ProcessStructParameter(const ast::Function* func,
                                 const ast::Parameter* param,
                                 const ast::Struct* struct_ty) {
-        auto param_sym = ctx.Clone(param->symbol);
+        auto param_sym = ctx.Clone(param->name->symbol);
 
         // Process the struct members.
         bool has_locations = false;
         utils::Vector<const ast::StructMember*, 8> members_to_clone;
         for (auto* member : struct_ty->members) {
-            auto member_sym = ctx.Clone(member->symbol);
+            auto member_sym = ctx.Clone(member->name->symbol);
             std::function<const ast::Expression*()> member_expr = [this, param_sym, member_sym]() {
                 return b.MemberAccessor(param_sym, member_sym);
             };
@@ -817,17 +827,20 @@ struct VertexPulling::State {
                 TINT_ASSERT(Transform, sem->Location().has_value());
                 location_info[sem->Location().value()] = info;
                 has_locations = true;
-            } else if (auto* builtin =
-                           ast::GetAttribute<ast::BuiltinAttribute>(member->attributes)) {
+            } else {
+                auto* builtin_attr = ast::GetAttribute<ast::BuiltinAttribute>(member->attributes);
+                if (TINT_UNLIKELY(!builtin_attr)) {
+                    TINT_ICE(Transform, b.Diagnostics()) << "Invalid entry point parameter";
+                    return;
+                }
+                auto builtin = src->Sem().Get(builtin_attr)->Value();
                 // Check for existing vertex_index and instance_index builtins.
-                if (builtin->builtin == ast::BuiltinValue::kVertexIndex) {
+                if (builtin == builtin::BuiltinValue::kVertexIndex) {
                     vertex_index_expr = member_expr;
-                } else if (builtin->builtin == ast::BuiltinValue::kInstanceIndex) {
+                } else if (builtin == builtin::BuiltinValue::kInstanceIndex) {
                     instance_index_expr = member_expr;
                 }
                 members_to_clone.Push(member);
-            } else {
-                TINT_ICE(Transform, b.Diagnostics()) << "Invalid entry point parameter";
             }
         }
 
@@ -845,10 +858,10 @@ struct VertexPulling::State {
             // Create a new struct without the location attributes.
             utils::Vector<const ast::StructMember*, 8> new_members;
             for (auto* member : members_to_clone) {
-                auto member_sym = ctx.Clone(member->symbol);
-                auto* member_type = ctx.Clone(member->type);
+                auto member_name = ctx.Clone(member->name);
+                auto member_type = ctx.Clone(member->type);
                 auto member_attrs = ctx.Clone(member->attributes);
-                new_members.Push(b.Member(member_sym, member_type, std::move(member_attrs)));
+                new_members.Push(b.Member(member_name, member_type, std::move(member_attrs)));
             }
             auto* new_struct = b.Structure(b.Sym(), new_members);
 
@@ -858,7 +871,7 @@ struct VertexPulling::State {
 
             // Copy values from the new parameter to the function-scope variable.
             for (auto* member : members_to_clone) {
-                auto member_name = ctx.Clone(member->symbol);
+                auto member_name = ctx.Clone(member->name->symbol);
                 ctx.InsertFront(func->body->statements,
                                 b.Assign(b.MemberAccessor(func_var, member_name),
                                          b.MemberAccessor(new_param, member_name)));
@@ -890,7 +903,7 @@ struct VertexPulling::State {
                     auto name = b.Symbols().New("tint_pulling_vertex_index");
                     new_function_parameters.Push(
                         b.Param(name, b.ty.u32(),
-                                utils::Vector{b.Builtin(ast::BuiltinValue::kVertexIndex)}));
+                                utils::Vector{b.Builtin(builtin::BuiltinValue::kVertexIndex)}));
                     vertex_index_expr = [this, name]() { return b.Expr(name); };
                     break;
                 }
@@ -902,7 +915,7 @@ struct VertexPulling::State {
                     auto name = b.Symbols().New("tint_pulling_instance_index");
                     new_function_parameters.Push(
                         b.Param(name, b.ty.u32(),
-                                utils::Vector{b.Builtin(ast::BuiltinValue::kInstanceIndex)}));
+                                utils::Vector{b.Builtin(builtin::BuiltinValue::kInstanceIndex)}));
                     instance_index_expr = [this, name]() { return b.Expr(name); };
                     break;
                 }
@@ -915,14 +928,14 @@ struct VertexPulling::State {
         }
 
         // Rewrite the function header with the new parameters.
-        auto func_sym = ctx.Clone(func->symbol);
-        auto* ret_type = ctx.Clone(func->return_type);
+        auto func_sym = ctx.Clone(func->name->symbol);
+        auto ret_type = ctx.Clone(func->return_type);
         auto* body = ctx.Clone(func->body);
         auto attrs = ctx.Clone(func->attributes);
         auto ret_attrs = ctx.Clone(func->return_type_attributes);
         auto* new_func =
-            b.create<ast::Function>(func->source, func_sym, new_function_parameters, ret_type, body,
-                                    std::move(attrs), std::move(ret_attrs));
+            b.create<ast::Function>(func->source, b.Ident(func_sym), new_function_parameters,
+                                    ret_type, body, std::move(attrs), std::move(ret_attrs));
         ctx.Replace(func, new_func);
     }
 };

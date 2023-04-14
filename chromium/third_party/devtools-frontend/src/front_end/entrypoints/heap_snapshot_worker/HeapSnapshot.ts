@@ -1002,7 +1002,7 @@ export abstract class HeapSnapshot {
     }
 
     if (sortedIndexes && (!key || !this.#aggregatesSortedFlags[key])) {
-      this.sortAggregateIndexes(aggregates.aggregatesByClassName);
+      this.sortAggregateIndexes(aggregatesByClassName);
       if (key) {
         this.#aggregatesSortedFlags[key] = sortedIndexes;
       }
@@ -1641,18 +1641,18 @@ export abstract class HeapSnapshot {
   }
 
   /**
-    * The phase propagates whether a node is attached or detached through the
-    * graph and adjusts the low-level representation of nodes.
-    *
-    * State propagation:
-    * 1. Any object reachable from an attached object is itself attached.
-    * 2. Any object reachable from a detached object that is not already
-    *    attached is considered detached.
-    *
-    * Representation:
-    * - Name of any detached node is changed from "<Name>"" to
-    *   "Detached <Name>".
-    */
+   * The phase propagates whether a node is attached or detached through the
+   * graph and adjusts the low-level representation of nodes.
+   *
+   * State propagation:
+   * 1. Any object reachable from an attached object is itself attached.
+   * 2. Any object reachable from a detached object that is not already
+   *    attached is considered detached.
+   *
+   * Representation:
+   * - Name of any detached node is changed from "<Name>"" to
+   *   "Detached <Name>".
+   */
   private propagateDOMState(): void {
     if (this.#nodeDetachednessOffset === -1) {
       return;

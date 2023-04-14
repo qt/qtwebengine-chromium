@@ -55,8 +55,8 @@
  * [including the GNU Public Licence.]
  */
 
-#ifndef HEADER_ASN1_H
-#define HEADER_ASN1_H
+#ifndef OPENSSL_HEADER_ASN1_H
+#define OPENSSL_HEADER_ASN1_H
 
 #include <openssl/base.h>
 
@@ -213,37 +213,9 @@ OPENSSL_EXPORT const char *ASN1_tag2str(int tag);
 //
 // Note: If |out| and |*out| are both non-NULL, the object at |*out| is not
 // updated in-place. Instead, it is freed, and the pointer is updated to the
-// new object. This differs from OpenSSL, which behaves more like
-// |d2i_SAMPLE_with_reuse|. Callers are recommended to set |out| to NULL and
-// instead use the return value.
+// new object. This differs from OpenSSL. Callers are recommended to set |out|
+// to NULL and instead use the return value.
 SAMPLE *d2i_SAMPLE(SAMPLE **out, const uint8_t **inp, long len);
-
-// d2i_SAMPLE_with_reuse parses a structure from up to |len| bytes at |*inp|. On
-// success, it advances |*inp| by the number of bytes read and returns a
-// non-NULL pointer to an object containing the parsed structure. The object is
-// determined from |out| as follows:
-//
-// If |out| is NULL, the function places the result in a newly-allocated
-// |SAMPLE| object and returns it. This mode is recommended.
-//
-// If |out| is non-NULL, but |*out| is NULL, the function also places the result
-// in a newly-allocated |SAMPLE| object. It sets |*out| to this object and also
-// returns it.
-//
-// If |out| and |*out| are both non-NULL, the function updates the object at
-// |*out| in-place with the result and returns |*out|.
-//
-// If any of the above fail, the function returns NULL.
-//
-// This function does not reject trailing data in the input. This allows the
-// caller to parse a sequence of concatenated structures. Callers parsing only
-// one structure should check for trailing data by comparing the updated |*inp|
-// with the end of the input.
-//
-// WARNING: Callers should not rely on the in-place update mode. It often
-// produces the wrong result or breaks the type's internal invariants. Future
-// revisions of BoringSSL may standardize on the |d2i_SAMPLE| behavior.
-SAMPLE *d2i_SAMPLE_with_reuse(SAMPLE **out, const uint8_t **inp, long len);
 
 // i2d_SAMPLE marshals |in|. On error, it returns a negative value. On success,
 // it returns the length of the result and outputs it via |outp| as follows:
@@ -348,8 +320,8 @@ OPENSSL_EXPORT ASN1_VALUE *ASN1_item_new(const ASN1_ITEM *it);
 OPENSSL_EXPORT void ASN1_item_free(ASN1_VALUE *val, const ASN1_ITEM *it);
 
 // ASN1_item_d2i parses the ASN.1 type |it| from up to |len| bytes at |*inp|.
-// It behaves like |d2i_SAMPLE_with_reuse|, except that |out| and the return
-// value are cast to |ASN1_VALUE| pointers.
+// It behaves like |d2i_SAMPLE|, except that |out| and the return value are cast
+// to |ASN1_VALUE| pointers.
 //
 // TODO(https://crbug.com/boringssl/444): C strict aliasing forbids type-punning
 // |T*| and |ASN1_VALUE*| the way this function signature does. When that bug is
@@ -447,10 +419,22 @@ OPENSSL_EXPORT ASN1_STRING *ASN1_item_pack(void *obj, const ASN1_ITEM *it,
 // integer type. FALSE is zero, TRUE is 0xff, and an omitted OPTIONAL BOOLEAN is
 // -1.
 
+// ASN1_BOOLEAN_FALSE is FALSE as an |ASN1_BOOLEAN|.
+#define ASN1_BOOLEAN_FALSE 0
+
+// ASN1_BOOLEAN_TRUE is TRUE as an |ASN1_BOOLEAN|. Some code incorrectly uses
+// 1, so prefer |b != ASN1_BOOLEAN_FALSE| over |b == ASN1_BOOLEAN_TRUE|.
+#define ASN1_BOOLEAN_TRUE 0xff
+
+// ASN1_BOOLEAN_NONE, in contexts where the |ASN1_BOOLEAN| represents an
+// OPTIONAL BOOLEAN, is an omitted value. Using this value in other contexts is
+// undefined and may be misinterpreted as TRUE.
+#define ASN1_BOOLEAN_NONE (-1)
+
 // d2i_ASN1_BOOLEAN parses a DER-encoded ASN.1 BOOLEAN from up to |len| bytes at
 // |*inp|. On success, it advances |*inp| by the number of bytes read and
 // returns the result. If |out| is non-NULL, it additionally writes the result
-// to |*out|. On error, it returns -1.
+// to |*out|. On error, it returns |ASN1_BOOLEAN_NONE|.
 //
 // This function does not reject trailing data in the input. This allows the
 // caller to parse a sequence of concatenated structures. Callers parsing only
@@ -472,7 +456,8 @@ OPENSSL_EXPORT int i2d_ASN1_BOOLEAN(ASN1_BOOLEAN a, unsigned char **outp);
 
 // The following |ASN1_ITEM|s have ASN.1 type BOOLEAN and C type |ASN1_BOOLEAN|.
 // |ASN1_TBOOLEAN| and |ASN1_FBOOLEAN| must be marked OPTIONAL. When omitted,
-// they are parsed as TRUE and FALSE, respectively, rather than -1.
+// they are parsed as TRUE and FALSE, respectively, rather than
+// |ASN1_BOOLEAN_NONE|.
 DECLARE_ASN1_ITEM(ASN1_BOOLEAN)
 DECLARE_ASN1_ITEM(ASN1_TBOOLEAN)
 DECLARE_ASN1_ITEM(ASN1_FBOOLEAN)
@@ -641,7 +626,7 @@ OPENSSL_EXPORT void ASN1_VISIBLESTRING_free(ASN1_VISIBLESTRING *str);
 
 // The following functions parse up to |len| bytes from |*inp| as a
 // DER-encoded ASN.1 value of the corresponding type, as described in
-// |d2i_SAMPLE_with_reuse|.
+// |d2i_SAMPLE|.
 //
 // TODO(https://crbug.com/boringssl/354): This function currently also accepts
 // BER, but this will be removed in the future.
@@ -833,7 +818,7 @@ OPENSSL_EXPORT ASN1_STRING *DIRECTORYSTRING_new(void);
 OPENSSL_EXPORT void DIRECTORYSTRING_free(ASN1_STRING *str);
 
 // d2i_DIRECTORYSTRING parses up to |len| bytes from |*inp| as a DER-encoded
-// X.509 DirectoryString (RFC 5280), as described in |d2i_SAMPLE_with_reuse|.
+// X.509 DirectoryString (RFC 5280), as described in |d2i_SAMPLE|.
 //
 // TODO(https://crbug.com/boringssl/354): This function currently also accepts
 // BER, but this will be removed in the future.
@@ -866,7 +851,7 @@ OPENSSL_EXPORT ASN1_STRING *DISPLAYTEXT_new(void);
 OPENSSL_EXPORT void DISPLAYTEXT_free(ASN1_STRING *str);
 
 // d2i_DISPLAYTEXT parses up to |len| bytes from |*inp| as a DER-encoded X.509
-// DisplayText (RFC 5280), as described in |d2i_SAMPLE_with_reuse|.
+// DisplayText (RFC 5280), as described in |d2i_SAMPLE|.
 //
 // TODO(https://crbug.com/boringssl/354): This function currently also accepts
 // BER, but this will be removed in the future.
@@ -927,7 +912,7 @@ OPENSSL_EXPORT ASN1_BIT_STRING *ASN1_BIT_STRING_new(void);
 OPENSSL_EXPORT void ASN1_BIT_STRING_free(ASN1_BIT_STRING *str);
 
 // d2i_ASN1_BIT_STRING parses up to |len| bytes from |*inp| as a DER-encoded
-// ASN.1 BIT STRING, as described in |d2i_SAMPLE_with_reuse|.
+// ASN.1 BIT STRING, as described in |d2i_SAMPLE|.
 //
 // TODO(https://crbug.com/boringssl/354): This function currently also accepts
 // BER, but this will be removed in the future.
@@ -942,8 +927,7 @@ OPENSSL_EXPORT int i2d_ASN1_BIT_STRING(const ASN1_BIT_STRING *in,
 
 // c2i_ASN1_BIT_STRING decodes |len| bytes from |*inp| as the contents of a
 // DER-encoded BIT STRING, excluding the tag and length. It behaves like
-// |d2i_SAMPLE_with_reuse| except, on success, it always consumes all |len|
-// bytes.
+// |d2i_SAMPLE| except, on success, it always consumes all |len| bytes.
 //
 // TODO(https://crbug.com/boringssl/354): This function currently also accepts
 // BER, but this will be removed in the future.
@@ -1038,7 +1022,7 @@ OPENSSL_EXPORT void ASN1_INTEGER_free(ASN1_INTEGER *str);
 OPENSSL_EXPORT ASN1_INTEGER *ASN1_INTEGER_dup(const ASN1_INTEGER *x);
 
 // d2i_ASN1_INTEGER parses up to |len| bytes from |*inp| as a DER-encoded
-// ASN.1 INTEGER, as described in |d2i_SAMPLE_with_reuse|.
+// ASN.1 INTEGER, as described in |d2i_SAMPLE|.
 //
 // TODO(https://crbug.com/boringssl/354): This function currently also accepts
 // BER, but this will be removed in the future.
@@ -1051,8 +1035,7 @@ OPENSSL_EXPORT int i2d_ASN1_INTEGER(const ASN1_INTEGER *in, uint8_t **outp);
 
 // c2i_ASN1_INTEGER decodes |len| bytes from |*inp| as the contents of a
 // DER-encoded INTEGER, excluding the tag and length. It behaves like
-// |d2i_SAMPLE_with_reuse| except, on success, it always consumes all |len|
-// bytes.
+// |d2i_SAMPLE| except, on success, it always consumes all |len| bytes.
 //
 // TODO(https://crbug.com/boringssl/354): This function currently also accepts
 // some invalid inputs, but this will be removed in the future.
@@ -1123,7 +1106,7 @@ OPENSSL_EXPORT ASN1_ENUMERATED *ASN1_ENUMERATED_new(void);
 OPENSSL_EXPORT void ASN1_ENUMERATED_free(ASN1_ENUMERATED *str);
 
 // d2i_ASN1_ENUMERATED parses up to |len| bytes from |*inp| as a DER-encoded
-// ASN.1 ENUMERATED, as described in |d2i_SAMPLE_with_reuse|.
+// ASN.1 ENUMERATED, as described in |d2i_SAMPLE|.
 //
 // TODO(https://crbug.com/boringssl/354): This function currently also accepts
 // BER, but this will be removed in the future.
@@ -1201,7 +1184,7 @@ OPENSSL_EXPORT ASN1_UTCTIME *ASN1_UTCTIME_new(void);
 OPENSSL_EXPORT void ASN1_UTCTIME_free(ASN1_UTCTIME *str);
 
 // d2i_ASN1_UTCTIME parses up to |len| bytes from |*inp| as a DER-encoded
-// ASN.1 UTCTime, as described in |d2i_SAMPLE_with_reuse|.
+// ASN.1 UTCTime, as described in |d2i_SAMPLE|.
 //
 // TODO(https://crbug.com/boringssl/354): This function currently also accepts
 // BER, but this will be removed in the future.
@@ -1219,20 +1202,23 @@ DECLARE_ASN1_ITEM(ASN1_UTCTIME)
 // ASN1_UTCTIME_check returns one if |a| is a valid UTCTime and zero otherwise.
 OPENSSL_EXPORT int ASN1_UTCTIME_check(const ASN1_UTCTIME *a);
 
-// ASN1_UTCTIME_set represents |t| as a UTCTime and writes the result to |s|. It
-// returns |s| on success and NULL on error. If |s| is NULL, it returns a
-// newly-allocated |ASN1_UTCTIME| instead.
+// ASN1_UTCTIME_set represents |posix_time| as a UTCTime and writes the result
+// to |s|. It returns |s| on success and NULL on error. If |s| is NULL, it
+// returns a newly-allocated |ASN1_UTCTIME| instead.
 //
 // Note this function may fail if the time is out of range for UTCTime.
-OPENSSL_EXPORT ASN1_UTCTIME *ASN1_UTCTIME_set(ASN1_UTCTIME *s, time_t t);
+OPENSSL_EXPORT ASN1_UTCTIME *ASN1_UTCTIME_set(ASN1_UTCTIME *s,
+                                              int64_t posix_time);
 
-// ASN1_UTCTIME_adj adds |offset_day| days and |offset_sec| seconds to |t| and
-// writes the result to |s| as a UTCTime. It returns |s| on success and NULL on
-// error. If |s| is NULL, it returns a newly-allocated |ASN1_UTCTIME| instead.
+// ASN1_UTCTIME_adj adds |offset_day| days and |offset_sec| seconds to
+// |posix_time| and writes the result to |s| as a UTCTime. It returns |s| on
+// success and NULL on error. If |s| is NULL, it returns a newly-allocated
+// |ASN1_UTCTIME| instead.
 //
 // Note this function may fail if the time overflows or is out of range for
 // UTCTime.
-OPENSSL_EXPORT ASN1_UTCTIME *ASN1_UTCTIME_adj(ASN1_UTCTIME *s, time_t t,
+OPENSSL_EXPORT ASN1_UTCTIME *ASN1_UTCTIME_adj(ASN1_UTCTIME *s,
+                                              int64_t posix_time,
                                               int offset_day, long offset_sec);
 
 // ASN1_UTCTIME_set_string sets |s| to a UTCTime whose contents are a copy of
@@ -1255,7 +1241,7 @@ OPENSSL_EXPORT ASN1_GENERALIZEDTIME *ASN1_GENERALIZEDTIME_new(void);
 OPENSSL_EXPORT void ASN1_GENERALIZEDTIME_free(ASN1_GENERALIZEDTIME *str);
 
 // d2i_ASN1_GENERALIZEDTIME parses up to |len| bytes from |*inp| as a
-// DER-encoded ASN.1 GeneralizedTime, as described in |d2i_SAMPLE_with_reuse|.
+// DER-encoded ASN.1 GeneralizedTime, as described in |d2i_SAMPLE|.
 //
 // TODO(https://crbug.com/boringssl/354): This function currently also accepts
 // BER, but this will be removed in the future.
@@ -1275,23 +1261,24 @@ DECLARE_ASN1_ITEM(ASN1_GENERALIZEDTIME)
 // zero otherwise.
 OPENSSL_EXPORT int ASN1_GENERALIZEDTIME_check(const ASN1_GENERALIZEDTIME *a);
 
-// ASN1_GENERALIZEDTIME_set represents |t| as a GeneralizedTime and writes the
-// result to |s|. It returns |s| on success and NULL on error. If |s| is NULL,
-// it returns a newly-allocated |ASN1_GENERALIZEDTIME| instead.
+// ASN1_GENERALIZEDTIME_set represents |posix_time| as a GeneralizedTime and
+// writes the result to |s|. It returns |s| on success and NULL on error. If |s|
+// is NULL, it returns a newly-allocated |ASN1_GENERALIZEDTIME| instead.
 //
 // Note this function may fail if the time is out of range for GeneralizedTime.
 OPENSSL_EXPORT ASN1_GENERALIZEDTIME *ASN1_GENERALIZEDTIME_set(
-    ASN1_GENERALIZEDTIME *s, time_t t);
+    ASN1_GENERALIZEDTIME *s, int64_t posix_time);
 
 // ASN1_GENERALIZEDTIME_adj adds |offset_day| days and |offset_sec| seconds to
-// |t| and writes the result to |s| as a GeneralizedTime. It returns |s| on
-// success and NULL on error. If |s| is NULL, it returns a newly-allocated
-// |ASN1_GENERALIZEDTIME| instead.
+// |posix_time| and writes the result to |s| as a GeneralizedTime. It returns
+// |s| on success and NULL on error. If |s| is NULL, it returns a
+// newly-allocated |ASN1_GENERALIZEDTIME| instead.
 //
 // Note this function may fail if the time overflows or is out of range for
 // GeneralizedTime.
 OPENSSL_EXPORT ASN1_GENERALIZEDTIME *ASN1_GENERALIZEDTIME_adj(
-    ASN1_GENERALIZEDTIME *s, time_t t, int offset_day, long offset_sec);
+    ASN1_GENERALIZEDTIME *s, int64_t posix_time, int offset_day,
+    long offset_sec);
 
 // ASN1_GENERALIZEDTIME_set_string sets |s| to a GeneralizedTime whose contents
 // are a copy of |str|. It returns one on success and zero on error or if |str|
@@ -1313,7 +1300,7 @@ OPENSSL_EXPORT ASN1_TIME *ASN1_TIME_new(void);
 OPENSSL_EXPORT void ASN1_TIME_free(ASN1_TIME *str);
 
 // d2i_ASN1_TIME parses up to |len| bytes from |*inp| as a DER-encoded X.509
-// Time (RFC 5280), as described in |d2i_SAMPLE_with_reuse|.
+// Time (RFC 5280), as described in |d2i_SAMPLE|.
 //
 // TODO(https://crbug.com/boringssl/354): This function currently also accepts
 // BER, but this will be removed in the future.
@@ -1341,24 +1328,29 @@ DECLARE_ASN1_ITEM(ASN1_TIME)
 OPENSSL_EXPORT int ASN1_TIME_diff(int *out_days, int *out_seconds,
                                   const ASN1_TIME *from, const ASN1_TIME *to);
 
-// ASN1_TIME_set represents |t| as a GeneralizedTime or UTCTime and writes
-// the result to |s|. As in RFC 5280, section 4.1.2.5, it uses UTCTime when the
-// time fits and GeneralizedTime otherwise. It returns |s| on success and NULL
-// on error. If |s| is NULL, it returns a newly-allocated |ASN1_TIME| instead.
-//
-// Note this function may fail if the time is out of range for GeneralizedTime.
-OPENSSL_EXPORT ASN1_TIME *ASN1_TIME_set(ASN1_TIME *s, time_t t);
-
-// ASN1_TIME_adj adds |offset_day| days and |offset_sec| seconds to
-// |t| and writes the result to |s|. As in RFC 5280, section 4.1.2.5, it uses
+// ASN1_TIME_set_posix represents |posix_time| as a GeneralizedTime or UTCTime
+// and writes the result to |s|. As in RFC 5280, section 4.1.2.5, it uses
 // UTCTime when the time fits and GeneralizedTime otherwise. It returns |s| on
 // success and NULL on error. If |s| is NULL, it returns a newly-allocated
-// |ASN1_GENERALIZEDTIME| instead.
+// |ASN1_TIME| instead.
+//
+// Note this function may fail if the time is out of range for GeneralizedTime.
+OPENSSL_EXPORT ASN1_TIME *ASN1_TIME_set_posix(ASN1_TIME *s, int64_t posix_time);
+
+// ASN1_TIME_set is exactly the same as |ASN1_TIME_set_posix| but with a
+// time_t as input for compatibility.
+OPENSSL_EXPORT ASN1_TIME *ASN1_TIME_set(ASN1_TIME *s, time_t time);
+
+// ASN1_TIME_adj adds |offset_day| days and |offset_sec| seconds to
+// |posix_time| and writes the result to |s|. As in RFC 5280, section 4.1.2.5,
+// it uses UTCTime when the time fits and GeneralizedTime otherwise. It returns
+// |s| on success and NULL on error. If |s| is NULL, it returns a
+// newly-allocated |ASN1_GENERALIZEDTIME| instead.
 //
 // Note this function may fail if the time overflows or is out of range for
 // GeneralizedTime.
-OPENSSL_EXPORT ASN1_TIME *ASN1_TIME_adj(ASN1_TIME *s, time_t t, int offset_day,
-                                        long offset_sec);
+OPENSSL_EXPORT ASN1_TIME *ASN1_TIME_adj(ASN1_TIME *s, int64_t posix_time,
+                                        int offset_day, long offset_sec);
 
 // ASN1_TIME_check returns one if |t| is a valid UTCTime or GeneralizedTime, and
 // zero otherwise. |t|'s type determines which check is performed. This
@@ -1451,7 +1443,7 @@ OPENSSL_EXPORT ASN1_OBJECT *ASN1_OBJECT_create(int nid, const uint8_t *data,
 OPENSSL_EXPORT void ASN1_OBJECT_free(ASN1_OBJECT *a);
 
 // d2i_ASN1_OBJECT parses a DER-encoded ASN.1 OBJECT IDENTIFIER from up to |len|
-// bytes at |*inp|, as described in |d2i_SAMPLE_with_reuse|.
+// bytes at |*inp|, as described in |d2i_SAMPLE|.
 //
 // TODO(https://crbug.com/boringssl/354): This function currently also accepts
 // BER, but this will be removed in the future.
@@ -1464,8 +1456,7 @@ OPENSSL_EXPORT int i2d_ASN1_OBJECT(const ASN1_OBJECT *a, uint8_t **outp);
 
 // c2i_ASN1_OBJECT decodes |len| bytes from |*inp| as the contents of a
 // DER-encoded OBJECT IDENTIFIER, excluding the tag and length. It behaves like
-// |d2i_SAMPLE_with_reuse| except, on success, it always consumes all |len|
-// bytes.
+// |d2i_SAMPLE| except, on success, it always consumes all |len| bytes.
 OPENSSL_EXPORT ASN1_OBJECT *c2i_ASN1_OBJECT(ASN1_OBJECT **out,
                                             const uint8_t **inp, long len);
 
@@ -1555,10 +1546,10 @@ OPENSSL_EXPORT ASN1_TYPE *ASN1_TYPE_new(void);
 OPENSSL_EXPORT void ASN1_TYPE_free(ASN1_TYPE *a);
 
 // d2i_ASN1_TYPE parses up to |len| bytes from |*inp| as an ASN.1 value of any
-// type, as described in |d2i_SAMPLE_with_reuse|. Note this function only
-// validates primitive, universal types supported by this library. Values of
-// type |V_ASN1_SEQUENCE|, |V_ASN1_SET|, |V_ASN1_OTHER|, or an unsupported
-// primitive type must be validated by the caller when interpreting.
+// type, as described in |d2i_SAMPLE|. Note this function only validates
+// primitive, universal types supported by this library. Values of type
+// |V_ASN1_SEQUENCE|, |V_ASN1_SET|, |V_ASN1_OTHER|, or an unsupported primitive
+// type must be validated by the caller when interpreting.
 //
 // TODO(https://crbug.com/boringssl/354): This function currently also accepts
 // BER, but this will be removed in the future.
@@ -1602,9 +1593,9 @@ OPENSSL_EXPORT int ASN1_TYPE_cmp(const ASN1_TYPE *a, const ASN1_TYPE *b);
 typedef STACK_OF(ASN1_TYPE) ASN1_SEQUENCE_ANY;
 
 // d2i_ASN1_SEQUENCE_ANY parses up to |len| bytes from |*inp| as a DER-encoded
-// ASN.1 SEQUENCE OF ANY structure, as described in |d2i_SAMPLE_with_reuse|. The
-// resulting |ASN1_SEQUENCE_ANY| owns its contents and thus must be released
-// with |sk_ASN1_TYPE_pop_free| and |ASN1_TYPE_free|, not |sk_ASN1_TYPE_free|.
+// ASN.1 SEQUENCE OF ANY structure, as described in |d2i_SAMPLE|. The resulting
+// |ASN1_SEQUENCE_ANY| owns its contents and thus must be released with
+// |sk_ASN1_TYPE_pop_free| and |ASN1_TYPE_free|, not |sk_ASN1_TYPE_free|.
 //
 // TODO(https://crbug.com/boringssl/354): This function currently also accepts
 // BER, but this will be removed in the future.
@@ -1618,7 +1609,7 @@ OPENSSL_EXPORT int i2d_ASN1_SEQUENCE_ANY(const ASN1_SEQUENCE_ANY *in,
                                          uint8_t **outp);
 
 // d2i_ASN1_SET_ANY parses up to |len| bytes from |*inp| as a DER-encoded ASN.1
-// SET OF ANY structure, as described in |d2i_SAMPLE_with_reuse|. The resulting
+// SET OF ANY structure, as described in |d2i_SAMPLE|. The resulting
 // |ASN1_SEQUENCE_ANY| owns its contents and thus must be released with
 // |sk_ASN1_TYPE_pop_free| and |ASN1_TYPE_free|, not |sk_ASN1_TYPE_free|.
 //
@@ -1930,7 +1921,7 @@ OPENSSL_EXPORT void ASN1_PRINTABLE_free(ASN1_STRING *str);
 
 // d2i_ASN1_PRINTABLE parses up to |len| bytes from |*inp| as a DER-encoded
 // CHOICE of an ad-hoc subset of string-like types, as described in
-// |d2i_SAMPLE_with_reuse|.
+// |d2i_SAMPLE|.
 //
 // Do not use this. Despite, the name it has no connection to PrintableString or
 // printable characters. See https://crbug.com/boringssl/412.
@@ -2095,4 +2086,4 @@ BSSL_NAMESPACE_END
 #define ASN1_R_WRONG_INTEGER_TYPE 195
 #define ASN1_R_INVALID_INTEGER 196
 
-#endif
+#endif  // OPENSSL_HEADER_ASN1_H

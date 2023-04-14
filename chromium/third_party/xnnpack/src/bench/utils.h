@@ -117,6 +117,10 @@ bool CheckNEONBF16(benchmark::State& state);
 // If DOT is unsupported, report error in benchmark state, and return false.
 bool CheckNEONDOT(benchmark::State& state);
 
+// Check if RISC-V V (vector) extension is supported.
+// If V is unsupported, report error in benchmark state, and return false.
+bool CheckRVV(benchmark::State& state);
+
 // Check if x86 SSSE3 extension is supported.
 // If SSSE3 is unsupported, report error in benchmark state, and return false.
 bool CheckSSSE3(benchmark::State& state);
@@ -156,6 +160,10 @@ bool CheckAVX512SKX(benchmark::State& state);
 // Check if x86 VBMI + SKX-level AVX512 extensions (AVX512F, AVX512CD, AVX512BW, AVX512DQ, and AVX512VL) are supported.
 // If VBMI or SKX-level AVX512 extensions are unsupported, report error in benchmark state, and return false.
 bool CheckAVX512VBMI(benchmark::State& state);
+
+// Check if PSHUFB instruction is available in WAsm Relaxed SIMD as Relaxed Swizzle.
+// If WAsm PSHUFB is unsupported, report error in benchmark state, and return false.
+bool CheckWAsmPSHUFB(benchmark::State& state);
 
 template <class T>
 inline T DivideRoundUp(T x, T q) {

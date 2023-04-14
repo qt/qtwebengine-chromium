@@ -36,6 +36,7 @@
 #include "src/tint/ast/return_statement.h"
 #include "src/tint/ast/switch_statement.h"
 #include "src/tint/ast/unary_op_expression.h"
+#include "src/tint/builtin/builtin_value.h"
 #include "src/tint/program.h"
 #include "src/tint/scope_stack.h"
 #include "src/tint/sem/struct.h"
@@ -45,10 +46,10 @@
 
 // Forward declarations
 namespace tint::sem {
-class Call;
 class Builtin;
-class TypeInitializer;
-class TypeConversion;
+class Call;
+class ValueConstructor;
+class ValueConversion;
 }  // namespace tint::sem
 
 namespace tint::writer::msl {
@@ -143,22 +144,22 @@ class GeneratorImpl : public TextGenerator {
     /// @param builtin the builtin being called
     /// @returns true if the call expression is emitted
     bool EmitBuiltinCall(std::ostream& out, const sem::Call* call, const sem::Builtin* builtin);
-    /// Handles generating a type conversion expression
+    /// Handles generating a value conversion expression
     /// @param out the output of the expression stream
     /// @param call the call expression
-    /// @param conv the type conversion
+    /// @param conv the value conversion
     /// @returns true if the expression is emitted
     bool EmitTypeConversion(std::ostream& out,
                             const sem::Call* call,
-                            const sem::TypeConversion* conv);
-    /// Handles generating a type initializer
+                            const sem::ValueConversion* conv);
+    /// Handles generating a value constructor
     /// @param out the output of the expression stream
     /// @param call the call expression
-    /// @param ctor the type initializer
+    /// @param ctor the value constructor
     /// @returns true if the initializer is emitted
     bool EmitTypeInitializer(std::ostream& out,
                              const sem::Call* call,
-                             const sem::TypeInitializer* ctor);
+                             const sem::ValueConstructor* ctor);
     /// Handles generating a function call
     /// @param out the output of the expression stream
     /// @param call the call expression
@@ -326,7 +327,7 @@ class GeneratorImpl : public TextGenerator {
     /// @param out the output of the type stream
     /// @param sc the address space to generate
     /// @returns true if the address space is emitted
-    bool EmitAddressSpace(std::ostream& out, ast::AddressSpace sc);
+    bool EmitAddressSpace(std::ostream& out, builtin::AddressSpace sc);
     /// Handles generating a struct declaration. If the structure has already been emitted, then
     /// this function will simply return `true` without emitting anything.
     /// @param buffer the text buffer that the type declaration will be written to
@@ -360,14 +361,14 @@ class GeneratorImpl : public TextGenerator {
     /// Converts a builtin to an attribute name
     /// @param builtin the builtin to convert
     /// @returns the string name of the builtin or blank on error
-    std::string builtin_to_attribute(ast::BuiltinValue builtin) const;
+    std::string builtin_to_attribute(builtin::BuiltinValue builtin) const;
 
     /// Converts interpolation attributes to an MSL attribute
     /// @param type the interpolation type
     /// @param sampling the interpolation sampling
     /// @returns the string name of the attribute or blank on error
-    std::string interpolation_to_attribute(ast::InterpolationType type,
-                                           ast::InterpolationSampling sampling) const;
+    std::string interpolation_to_attribute(builtin::InterpolationType type,
+                                           builtin::InterpolationSampling sampling) const;
 
   private:
     // A pair of byte size and alignment `uint32_t`s.
@@ -410,7 +411,7 @@ class GeneratorImpl : public TextGenerator {
     /// Name of atomicCompareExchangeWeak() helper for the given pointer storage
     /// class and struct return type
     using ACEWKeyType =
-        utils::UnorderedKeyWrapper<std::tuple<ast::AddressSpace, const sem::Struct*>>;
+        utils::UnorderedKeyWrapper<std::tuple<builtin::AddressSpace, const sem::Struct*>>;
     std::unordered_map<ACEWKeyType, std::string> atomicCompareExchangeWeak_;
 
     /// Unique name of the 'TINT_INVARIANT' preprocessor define.

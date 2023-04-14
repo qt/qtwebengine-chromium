@@ -5,6 +5,7 @@
 import("//build/config/features.gni")
 import("//build/config/ui.gni")
 import("//testing/test.gni")
+import("//third_party/skia/gn/codec.gni")
 import("//third_party/skia/gn/shared_sources.gni")
 import("//third_party/skia/modules/skcms/skcms.gni")
 import("features.gni")
@@ -67,16 +68,11 @@ config("skia_config") {
 
 # Internal-facing config for Skia library code.
 config("skia_library_config") {
-  defines = []
-
-  # Skia uses C++17 language features in its internal code. Previously Skia was built with
-  # "-std=c++17". See http://crbug.com/1257145 for why this was a bad idea.
-  cflags_cc = [ "-Wno-c++17-extensions" ]
-  cflags_objcc = [ "-Wno-c++17-extensions" ]
-
-  if (is_component_build) {
-    defines += [ "SKIA_IMPLEMENTATION=1" ]
-  }
+  # Turn on SK_API to export Skia's public API
+  defines = [
+    "IS_SKIA_IMPL=1",
+    "SKIA_IMPLEMENTATION=1",
+  ]
 
   if (current_cpu == "arm") {
     if (arm_use_neon) {
@@ -178,20 +174,9 @@ component("skia") {
   sources += skia_sksl_gpu_sources
   sources += skia_sksl_sources
   sources += skia_utils_sources
+  sources += skia_codec_core
+  sources += skia_codec_decode_bmp
   sources += [
-    "//third_party/skia/src/codec/SkBmpBaseCodec.cpp",
-    "//third_party/skia/src/codec/SkBmpCodec.cpp",
-    "//third_party/skia/src/codec/SkBmpMaskCodec.cpp",
-    "//third_party/skia/src/codec/SkBmpRLECodec.cpp",
-    "//third_party/skia/src/codec/SkBmpStandardCodec.cpp",
-    "//third_party/skia/src/codec/SkCodec.cpp",
-    "//third_party/skia/src/codec/SkCodecImageGenerator.cpp",
-    "//third_party/skia/src/codec/SkColorTable.cpp",
-    "//third_party/skia/src/codec/SkMaskSwizzler.cpp",
-    "//third_party/skia/src/codec/SkMasks.cpp",
-    "//third_party/skia/src/codec/SkSampler.cpp",
-    "//third_party/skia/src/codec/SkSwizzler.cpp",
-    "//third_party/skia/src/codec/SkWbmpCodec.cpp",
     "//third_party/skia/src/fonts/SkFontMgr_indirect.cpp",
     "//third_party/skia/src/fonts/SkRemotableFontMgr.cpp",
     "//third_party/skia/src/images/SkImageEncoder.cpp",
@@ -210,17 +195,15 @@ component("skia") {
   # This and skia_opts are really the same conceptual target so share headers.
   allow_circular_includes_from = [ ":skia_opts" ]
 
-  if (current_cpu == "arm") {
-    sources += [ "//third_party/skia/src/core/SkUtilsArm.cpp" ]
-  }
-
   # GPU
   if (skia_support_gpu) {
-    sources += skia_gpu_sources
+    sources += skia_gpu_public
+    sources += skia_gpu_private
     sources += skia_null_gpu_sources
     sources += skia_shared_gpu_sources
     if (skia_use_gl) {
-      sources += skia_gl_gpu_sources
+      sources += skia_gpu_gl_public
+      sources += skia_gpu_gl_private
     }
   }
 
@@ -361,7 +344,6 @@ component("skia") {
 
   if (is_ios) {
     frameworks += [ "ImageIO.framework" ]
-    sources += [ "//third_party/skia/src/utils/mac/SkCreateCGImageRef.cpp" ]
   }
 
   if (skia_support_pdf) {
@@ -398,12 +380,9 @@ template("skia_source_set") {
 
     if (is_win) {
       cflags_cc = [
-        "/std:c++17",
         "/wd5041",  # out-of-line definition for constexpr static data member is
                     # not needed and is deprecated in C++17
       ]
-    } else {
-      cflags_cc = [ "-std=c++17" ]
     }
   }
 }

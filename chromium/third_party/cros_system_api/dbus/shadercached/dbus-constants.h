@@ -15,6 +15,7 @@ constexpr char kShaderCacheServiceName[] = "org.chromium.ShaderCache";
 constexpr char kInstallMethod[] = "Install";
 constexpr char kUninstallMethod[] = "Uninstall";
 constexpr char kPurgeMethod[] = "Purge";
+constexpr char kUnmountMethod[] = "Unmount";
 
 // Signals
 constexpr char kShaderCacheMountStatusChanged[] =

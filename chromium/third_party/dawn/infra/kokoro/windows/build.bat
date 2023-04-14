@@ -44,8 +44,8 @@ exit /b 0
 
 set ORIGINAL_SRC_DIR= %~dp0\..\..\..
 set TEMP_DIR=%TEMP%\dawn-temp
-set SRC_DIR="%TEMP_DIR%\dawn-src"
-set BUILD_DIR="%TEMP_DIR%\dawn-build"
+set SRC_DIR=%TEMP_DIR%\dawn-src
+set BUILD_DIR=%TEMP_DIR%\dawn-build
 
 cd /d %ORIGINAL_SRC_DIR%
 if not exist ".git\" (
@@ -105,6 +105,11 @@ copy scripts\standalone.gclient .gclient || goto :error
 call gclient sync || goto :error
 @echo off
 
+call :status "Adding the Ninja from DEPS to the PATH"
+@echo on
+set PATH=%SRC_DIR%\third_party\ninja;%PATH%
+@echo off
+
 call :status "Configuring build system"
 @echo on
 mkdir %BUILD_DIR%
@@ -151,9 +156,7 @@ cd /d %SRC_DIR% || goto :error
 rem Run tests with DXC, FXC and Metal validation
 set OLD_PATH=%PATH%
 set PATH=C:\Program Files\Metal Developer Tools\macos\bin;%PATH%
-where metal.exe
-set PATH=%DXC_PATH%;%D3DCOMPILER_PATH%;%OLD_PATH%
-call git bash -- ./test/tint/test-all.sh ../dawn-build/tint.exe --verbose || goto :error
+call git bash -- ./test/tint/test-all.sh %BUILD_DIR%/tint.exe --verbose || goto :error
 set PATH=%OLD_PATH%
 @echo off
 

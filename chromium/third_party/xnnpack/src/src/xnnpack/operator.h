@@ -16,15 +16,15 @@
 #include <xnnpack/allocator.h>
 #include <xnnpack/cache.h>
 #include <xnnpack/compute.h>
+#include <xnnpack/microkernel-type.h>
 #include <xnnpack/operator-type.h>
 #include <xnnpack/params.h>
-#include <xnnpack/ukernel-type.h>
 
 
 struct xnn_ukernel_conv2d {
   union {
-    xnn_conv_hwc2chw_ukernel_function hwc2chw_function;
-    xnn_conv_hwc_ukernel_function hwc_function;
+    xnn_conv_hwc2chw_ukernel_fn hwc2chw_fn;
+    xnn_conv_hwc_ukernel_fn hwc_fn;
   };
   uint8_t output_height_tile;
   uint8_t output_channel_tile;
@@ -32,18 +32,23 @@ struct xnn_ukernel_conv2d {
 
 struct xnn_ukernel_dwconv {
   union {
-    xnn_dwconv_unipass_ukernel_function unipass_function;
-    xnn_dwconv_multipass_ukernel_function multipass_function;
+    xnn_dwconv_unipass_ukernel_fn unipass_fn;
+    xnn_dwconv_multipass_ukernel_fn multipass_fn;
   };
   uint8_t primary_tile;
-  uint8_t incremental_tile;
+  uint8_t middle_tile;
+  uint8_t last_tile;
+  // For unipass, tile_size == primary_tile, otherwise it is calculated based on
+  // how many pass the middle_tile runs.
+  uint8_t tile_size;
 };
 
 // Direct 2D Depthwise Convolution
 struct xnn_ukernel_dwconv2d {
   union {
-    xnn_dwconv2d_chw_ukernel_function chw_function;
+    xnn_dwconv2d_chw_ukernel_fn chw_fn;
   };
+  xnn_update_chw_params_fn update_params;
   uint8_t output_width_tile;
 };
 
@@ -65,27 +70,27 @@ struct xnn_ukernel_igemm {
 };
 
 struct xnn_ukernel_spmm {
-  xnn_spmm_ukernel_function function;
+  xnn_spmm_ukernel_fn function;
   uint8_t mr;
 };
 
 struct xnn_ukernel_vmulcaddc {
-  xnn_vmulcaddc_ukernel_function function;
+  xnn_vmulcaddc_ukernel_fn function;
   uint8_t mr;
 };
 
 struct xnn_ukernel_vbinary {
-  xnn_vbinary_ukernel_function op_function;
-  xnn_vbinary_ukernel_function opc_function;
-  xnn_vbinary_ukernel_function ropc_function;
+  xnn_vbinary_ukernel_fn op_fn;
+  xnn_vbinary_ukernel_fn opc_fn;
+  xnn_vbinary_ukernel_fn ropc_fn;
 };
 
 struct xnn_ukernel_vunary {
-  xnn_vunary_ukernel_function function;
+  xnn_vunary_ukernel_fn function;
 };
 
 struct xnn_ukernel {
-  enum xnn_ukernel_type type;
+  enum xnn_microkernel_type type;
   union {
     struct xnn_ukernel_conv2d conv2d;
     struct xnn_ukernel_dwconv dwconv;
@@ -202,6 +207,7 @@ struct xnn_operator {
     union xnn_f32_sigmoid_params f32_sigmoid;
     union xnn_f32_sqrt_params f32_sqrt;
     // Parameters for Global Average Pooling in CHW layout
+    union xnn_f16_gavgpool_params f16_gavgpool;
     union xnn_f32_gavgpool_params f32_gavgpool;
     union xnn_f32_hswish_params f32_hswish;
     // Pixelwise Average Pooling normally use f16_minmax_params, but also initialize
@@ -216,6 +222,7 @@ struct xnn_operator {
       union xnn_f32_minmax_params f32_minmax;
       union xnn_f32_scaleminmax_params f32_scaleminmax;
     };
+    union xnn_f16_chw_params f16_chw;
     union xnn_f32_chw_params f32_chw;
     union xnn_f32_f16_cvt_params f32_f16_cvt;
     union xnn_f32_qs8_cvt_params f32_qs8_cvt;
@@ -310,59 +317,3 @@ XNN_INTERNAL enum xnn_status xnn_run_operator_with_index(
   size_t opdata_index,
   size_t operator_object_index,
   pthreadpool_t threadpool);
-
-static inline void* packed_weights(struct xnn_operator* op) {
-  if (op->weights_cache == NULL) {
-    return op->packed_weights.pointer;
-  } else {
-    return (void*) ((uintptr_t) op->weights_cache->cache.weights.start + op->packed_weights.offset);
-  }
-}
-
-static inline bool use_weights_cache(struct xnn_operator* op) {
-  return op->weights_cache != NULL;
-}
-
-// Get a pointer to a region to pack weights into. If weights cache is available, use it, returning to a pointer to the
-// cache's buffer, otherwise, allocate and return a pointer to a new region. Returns NULL on error.
-XNN_INTERNAL void* xnn_get_pointer_to_write_weights(
-  xnn_operator_t op,
-  size_t aligned_weights_size,
-  int padding_byte);
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-XNN_INTERNAL size_t xnn_compute_convolution_output_dimension(
-  size_t padded_input_dimension,
-  size_t kernel_dimension,
-  size_t dilation_dimension,
-  size_t subsampling_dimension);
-
-XNN_INTERNAL size_t xnn_compute_deconvolution_output_dimension(
-  size_t input_dimension,
-  size_t output_padding_dimension,
-  size_t adjustment_dimension,
-  size_t kernel_dimension,
-  size_t dilation_dimension,
-  size_t stride_dimension);
-
-XNN_INTERNAL size_t xnn_compute_unpooling_output_dimension(
-  size_t input_dimension,
-  size_t input_padding_dimension,
-  size_t kernel_dimension);
-
-XNN_INTERNAL uint32_t xnn_get_heuristic_mr_gemm(
-  size_t batch_size,
-  uint32_t max_mr,
-  uint32_t nr,
-  struct xnn_hmp_gemm_ukernel *gemm_cases);
-
-XNN_INTERNAL uint32_t xnn_get_heuristic_mr_igemm(
-  size_t batch_size,
-  uint32_t max_mr,
-  uint32_t nr,
-  struct xnn_hmp_igemm_ukernel *igemm_cases);
-#ifdef __cplusplus
-}
-#endif

@@ -51,21 +51,21 @@ import {type MarkerDecoratorRegistration} from './MarkerDecorator.js';
 
 const UIStrings = {
   /**
-  *@description ARIA accessible name in Elements Tree Outline of the Elements panel
-  */
+   *@description ARIA accessible name in Elements Tree Outline of the Elements panel
+   */
   pageDom: 'Page DOM',
   /**
-  *@description A context menu item to store a value as a global variable the Elements Panel
-  */
+   *@description A context menu item to store a value as a global variable the Elements Panel
+   */
   storeAsGlobalVariable: 'Store as global variable',
   /**
-  *@description Tree element expand all button element button text content in Elements Tree Outline of the Elements panel
-  *@example {3} PH1
-  */
+   *@description Tree element expand all button element button text content in Elements Tree Outline of the Elements panel
+   *@example {3} PH1
+   */
   showAllNodesDMore: 'Show All Nodes ({PH1} More)',
   /**
-  *@description Link text content in Elements Tree Outline of the Elements panel
-  */
+   *@description Link text content in Elements Tree Outline of the Elements panel
+   */
   reveal: 'reveal',
   /**
    * @description A context menu item to open the badge settings pane
@@ -555,14 +555,8 @@ export class ElementsTreeOutline extends
     if (!scrollContainer) {
       return null;
     }
-    // We choose this X coordinate based on the knowledge that our list
-    // items extend at least to the right edge of the outer <ol> container.
-    // In the no-word-wrap mode the outer <ol> may be wider than the tree container
-    // (and partially hidden), in which case we are left to use only its right boundary.
-    // We use .clientWidth to account for possible scrollbar, and subtract 6px
-    // for the width of the split widget (see splitWidget.css).
-    const x = scrollContainer.totalOffsetLeft() + scrollContainer.clientWidth - 6;
 
+    const x = event.pageX;
     const y = event.pageY;
 
     // Our list items have 1-pixel cracks between them vertically. We avoid
@@ -586,12 +580,9 @@ export class ElementsTreeOutline extends
 
   private onmousedown(event: MouseEvent): void {
     const element = this.treeElementFromEventInternal(event);
-
-    if (!element || element.isEventWithinDisclosureTriangle(event)) {
-      return;
+    if (element) {
+      element.select();
     }
-
-    element.select();
   }
 
   setHoverEffect(treeElement: UI.TreeOutline.TreeElement|null): void {
@@ -1690,6 +1681,20 @@ export class ShortcutTreeElement extends UI.TreeOutline.TreeElement {
 
   domModel(): SDK.DOMModel.DOMModel {
     return this.nodeShortcut.deferredNode.domModel();
+  }
+
+  private setLeftIndentOverlay(): void {
+    // We use parent's `--indent` value and add 24px to account for an extra level of indent.
+    let indent = 24;
+    if (this.parent && this.parent instanceof ElementsTreeElement) {
+      const parentIndent = parseFloat(this.parent.listItemElement.style.getPropertyValue('--indent')) || 0;
+      indent += parentIndent;
+    }
+    this.listItemElement.style.setProperty('--indent', indent + 'px');
+  }
+
+  onattach(): void {
+    this.setLeftIndentOverlay();
   }
 
   onselect(selectedByUser?: boolean): boolean {

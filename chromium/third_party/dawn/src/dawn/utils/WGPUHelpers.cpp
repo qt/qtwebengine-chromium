@@ -24,7 +24,9 @@
 #include "dawn/common/Log.h"
 #include "dawn/common/Numeric.h"
 
+#if TINT_BUILD_SPV_READER
 #include "spirv-tools/optimizer.hpp"
+#endif
 
 namespace {
 std::array<float, 12> kYuvToRGBMatrixBT709 = {1.164384f, 0.0f,       1.792741f,  -0.972945f,
@@ -38,7 +40,11 @@ std::array<float, 7> kGammaEncodeSrgb = {1 / 2.4, 1.137119, 0.0, 12.92, 0.003130
 }  // namespace
 
 namespace utils {
-wgpu::ShaderModule CreateShaderModuleFromASM(const wgpu::Device& device, const char* source) {
+#if TINT_BUILD_SPV_READER
+wgpu::ShaderModule CreateShaderModuleFromASM(
+    const wgpu::Device& device,
+    const char* source,
+    wgpu::DawnShaderModuleSPIRVOptionsDescriptor* spirv_options) {
     // Use SPIRV-Tools's C API to assemble the SPIR-V assembly text to binary. Because the types
     // aren't RAII, we don't return directly on success and instead always go through the code
     // path that destroys the SPIRV-Tools objects.
@@ -56,6 +62,7 @@ wgpu::ShaderModule CreateShaderModuleFromASM(const wgpu::Device& device, const c
         wgpu::ShaderModuleSPIRVDescriptor spirvDesc;
         spirvDesc.codeSize = static_cast<uint32_t>(spirv->wordCount);
         spirvDesc.code = spirv->code;
+        spirvDesc.nextInChain = spirv_options;
 
         wgpu::ShaderModuleDescriptor descriptor;
         descriptor.nextInChain = &spirvDesc;
@@ -73,6 +80,7 @@ wgpu::ShaderModule CreateShaderModuleFromASM(const wgpu::Device& device, const c
 
     return result;
 }
+#endif
 
 wgpu::ShaderModule CreateShaderModule(const wgpu::Device& device, const char* source) {
     wgpu::ShaderModuleWGSLDescriptor wgslDesc;

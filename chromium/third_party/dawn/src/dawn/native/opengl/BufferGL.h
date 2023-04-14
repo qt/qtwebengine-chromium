@@ -37,6 +37,8 @@ class Buffer final : public BufferBase {
     bool EnsureDataInitializedAsDestination(uint64_t offset, uint64_t size);
     bool EnsureDataInitializedAsDestination(const CopyTextureToBufferCmd* copy);
 
+    void TrackUsage() { MarkUsedInPendingCommands(); }
+
   private:
     Buffer(Device* device, const BufferDescriptor* descriptor, bool shouldLazyClear);
     ~Buffer() override;
@@ -45,7 +47,7 @@ class Buffer final : public BufferBase {
     void DestroyImpl() override;
     bool IsCPUWritableAtCreation() const override;
     MaybeError MapAtCreationImpl() override;
-    void* GetMappedPointerImpl() override;
+    void* GetMappedPointer() override;
 
     void InitializeToZero();
 

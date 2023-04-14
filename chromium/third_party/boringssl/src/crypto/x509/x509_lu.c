@@ -1,4 +1,3 @@
-/* crypto/x509/x509_lu.c */
 /* Copyright (C) 1995-1998 Eric Young (eay@cryptsoft.com)
  * All rights reserved.
  *
@@ -321,7 +320,6 @@ static int x509_store_add(X509_STORE *ctx, void *x, int is_crl) {
 
   X509_OBJECT *const obj = (X509_OBJECT *)OPENSSL_malloc(sizeof(X509_OBJECT));
   if (obj == NULL) {
-    OPENSSL_PUT_ERROR(X509, ERR_R_MALLOC_FAILURE);
     return 0;
   }
 

@@ -11,7 +11,7 @@
 #include "include/core/SkStream.h"
 #include "include/core/SkSurface.h"
 #include "include/core/SkTime.h"
-#include "include/private/SkTPin.h"
+#include "include/private/base/SkTPin.h"
 #include "modules/skottie/include/Skottie.h"
 #include "modules/skresources/include/SkResources.h"
 #include "src/utils/SkOSPath.h"
@@ -111,7 +111,7 @@ int main(int argc, char** argv) {
             if (FLAGS_gpu) {
                 grctx = factory.getContextInfo(contextType).directContext();
                 surf = SkSurface::MakeRenderTarget(grctx,
-                                                   SkBudgeted::kNo,
+                                                   skgpu::Budgeted::kNo,
                                                    info,
                                                    0,
                                                    GrSurfaceOrigin::kTopLeft_GrSurfaceOrigin,

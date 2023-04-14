@@ -1,4 +1,4 @@
-// Copyright 2021 Google LLC
+// Copyright 2021-2023 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -33,6 +33,9 @@
 #include <sstream>
 #include <string>
 
+#include "absl/status/statusor.h"
+#include "absl/strings/string_view.h"
+#include "internal/platform/implementation/http_loader.h"
 #include "internal/platform/implementation/shared/count_down_latch.h"
 #include "internal/platform/implementation/windows/atomic_boolean.h"
 #include "internal/platform/implementation/windows/atomic_reference.h"
@@ -41,10 +44,12 @@
 #include "internal/platform/implementation/windows/bluetooth_adapter.h"
 #include "internal/platform/implementation/windows/bluetooth_classic_medium.h"
 #include "internal/platform/implementation/windows/condition_variable.h"
+#include "internal/platform/implementation/windows/device_info.h"
 #include "internal/platform/implementation/windows/executor.h"
 #include "internal/platform/implementation/windows/file.h"
 #include "internal/platform/implementation/windows/file_path.h"
 #include "internal/platform/implementation/windows/future.h"
+#include "internal/platform/implementation/windows/http_loader.h"
 #include "internal/platform/implementation/windows/listenable_future.h"
 #include "internal/platform/implementation/windows/log_message.h"
 #include "internal/platform/implementation/windows/mutex.h"
@@ -52,6 +57,7 @@
 #include "internal/platform/implementation/windows/server_sync.h"
 #include "internal/platform/implementation/windows/settable_future.h"
 #include "internal/platform/implementation/windows/submittable_executor.h"
+#include "internal/platform/implementation/windows/timer.h"
 #include "internal/platform/implementation/windows/utils.h"
 #include "internal/platform/implementation/windows/webrtc.h"
 #include "internal/platform/implementation/windows/wifi.h"
@@ -59,7 +65,6 @@
 #include "internal/platform/implementation/windows/wifi_lan.h"
 #include "internal/platform/logging.h"
 
-namespace location {
 namespace nearby {
 namespace api {
 
@@ -186,7 +191,6 @@ ImplementationPlatform::CreateConditionVariable(Mutex* mutex) {
 ABSL_DEPRECATED("This interface will be deleted in the near future.")
 std::unique_ptr<InputFile> ImplementationPlatform::CreateInputFile(
     PayloadId payload_id, std::int64_t total_size) {
-  std::string parent_folder("");
   std::string file_name(std::to_string(payload_id));
   return windows::IOFile::CreateInputFile(GetDownloadPath(file_name),
                                           total_size);
@@ -210,15 +214,16 @@ std::unique_ptr<OutputFile> ImplementationPlatform::CreateOutputFile(
     const std::string& file_path) {
   std::string path(file_path);
 
-  std::string folder_path = path.substr(0, path.find_last_of('/'));
+  auto folder_path =
+      windows::string_to_wstring(path.substr(0, path.find_last_of('/')));
   // Verifies that a path is a valid directory.
-  // https://docs.microsoft.com/en-us/windows/win32/api/shlwapi/nf-shlwapi-pathisdirectorya
-  if (!PathIsDirectoryA(folder_path.data())) {
+  // https://docs.microsoft.com/en-us/windows/win32/api/shlwapi/nf-shlwapi-pathisdirectoryw
+  if (!PathIsDirectoryW(folder_path.data())) {
     // This function creates a file system folder whose fully qualified path is
     // given by pszPath. If one or more of the intermediate folders do not
     // exist, they are created as well.
-    // https://docs.microsoft.com/en-us/windows/win32/api/shlobj_core/nf-shlobj_core-shcreatedirectoryexa
-    int result = SHCreateDirectoryExA(0, folder_path.data(), nullptr);
+    // https://docs.microsoft.com/en-us/windows/win32/api/shlobj_core/nf-shlobj_core-shcreatedirectoryexw
+    int result = SHCreateDirectoryExW(nullptr, folder_path.data(), nullptr);
   }
 
   return windows::IOFile::CreateOutputFile(file_path);
@@ -295,9 +300,22 @@ ImplementationPlatform::CreateWifiDirectMedium() {
 
 // TODO(b/184975123): replace with real implementation.
 std::unique_ptr<WebRtcMedium> ImplementationPlatform::CreateWebRtcMedium() {
-  return absl::make_unique<windows::WebRtcMedium>();
+  return nullptr;
+}
+
+absl::StatusOr<WebResponse> ImplementationPlatform::SendRequest(
+    const WebRequest& request) {
+  windows::HttpLoader http_loader{request};
+  return http_loader.GetResponse();
+}
+
+std::unique_ptr<Timer> ImplementationPlatform::CreateTimer() {
+  return std::make_unique<windows::Timer>();
+}
+
+std::unique_ptr<DeviceInfo> ImplementationPlatform::CreateDeviceInfo() {
+  return std::make_unique<windows::DeviceInfo>();
 }
 
 }  // namespace api
 }  // namespace nearby
-}  // namespace location

@@ -15,6 +15,7 @@
 #include "include/gpu/graphite/Recorder.h"
 #include "include/gpu/graphite/Recording.h"
 #include "include/gpu/graphite/dawn/DawnBackendContext.h"
+#include "include/gpu/graphite/dawn/DawnUtils.h"
 #include "tools/ToolUtils.h"
 
 #include "dawn/dawn_proc.h"
@@ -44,8 +45,10 @@ void GraphiteDawnWindowContext::initializeContext(int width, int height) {
     skgpu::graphite::DawnBackendContext backendContext;
     backendContext.fDevice = fDevice;
     backendContext.fQueue = fDevice.GetQueue();
-    fGraphiteContext = skgpu::graphite::Context::MakeDawn(backendContext,
-                                                          skgpu::graphite::ContextOptions());
+    skgpu::graphite::ContextOptions contextOptions;
+    contextOptions.fStoreContextRefInRecorder = true; // Needed to make synchronous readPixels work
+    fGraphiteContext = skgpu::graphite::ContextFactory::MakeDawn(backendContext,
+                                                                 contextOptions);
     if (!fGraphiteContext) {
         SkASSERT(false);
         return;
@@ -75,7 +78,7 @@ void GraphiteDawnWindowContext::destroyContext() {
 sk_sp<SkSurface> GraphiteDawnWindowContext::getBackbufferSurface() {
     auto textureView = fSwapChain.GetCurrentTextureView();
     skgpu::graphite::DawnTextureInfo info(/*sampleCount=*/1,
-                                          skgpu::graphite::Mipmapped::kNo,
+                                          skgpu::Mipmapped::kNo,
                                           fSwapChainFormat,
                                           kTextureUsage);
     skgpu::graphite::BackendTexture backendTex(this->dimensions(),

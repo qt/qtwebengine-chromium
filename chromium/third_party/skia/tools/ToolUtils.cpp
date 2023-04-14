@@ -25,7 +25,7 @@
 #include "include/core/SkSurface.h"
 #include "include/core/SkTextBlob.h"
 #include "include/private/SkColorData.h"
-#include "include/private/SkFloatingPoint.h"
+#include "include/private/base/SkFloatingPoint.h"
 #include "src/core/SkFontPriv.h"
 
 #include <cmath>
@@ -52,6 +52,8 @@
 #ifdef SK_BUILD_FOR_WIN
 #include "include/ports/SkTypeface_win.h"
 #endif
+
+using namespace skia_private;
 
 namespace ToolUtils {
 
@@ -81,6 +83,7 @@ const char* colortype_name(SkColorType ct) {
         case kBGRA_1010102_SkColorType:       return "BGRA_1010102";
         case kRGB_101010x_SkColorType:        return "RGB_101010x";
         case kBGR_101010x_SkColorType:        return "BGR_101010x";
+        case kBGR_101010x_XR_SkColorType:     return "BGR_101010x_XR";
         case kGray_8_SkColorType:             return "Gray_8";
         case kRGBA_F16Norm_SkColorType:       return "RGBA_F16Norm";
         case kRGBA_F16_SkColorType:           return "RGBA_F16";
@@ -110,6 +113,7 @@ const char* colortype_depth(SkColorType ct) {
         case kBGRA_1010102_SkColorType:       return "1010102";
         case kRGB_101010x_SkColorType:        return "101010";
         case kBGR_101010x_SkColorType:        return "101010";
+        case kBGR_101010x_XR_SkColorType:     return "101010";
         case kGray_8_SkColorType:             return "G8";
         case kRGBA_F16Norm_SkColorType:       return "F16Norm";
         case kRGBA_F16_SkColorType:           return "F16";
@@ -271,7 +275,7 @@ void get_text_path(const SkFont&  font,
                    const SkPoint  pos[]) {
     SkAutoToGlyphs        atg(font, text, length, encoding);
     const int             count = atg.count();
-    SkAutoTArray<SkPoint> computedPos;
+    AutoTArray<SkPoint> computedPos;
     if (pos == nullptr) {
         computedPos.reset(count);
         font.getPos(atg.glyphs(), count, &computedPos[0]);
@@ -688,7 +692,7 @@ public:
     sk_sp<SkImage> findOrCreate(skgpu::graphite::Recorder* recorder,
                                 const SkImage* image,
                                 SkImage::RequiredImageProperties requiredProps) override {
-        if (requiredProps.fMipmapped == skgpu::graphite::Mipmapped::kNo) {
+        if (requiredProps.fMipmapped == skgpu::Mipmapped::kNo) {
             // If no mipmaps are required, check to see if we have a mipmapped version anyway -
             // since it can be used in that case.
             // TODO: we could get fancy and, if ever a mipmapped key eclipsed a non-mipmapped
@@ -701,7 +705,7 @@ public:
         }
 
         uint64_t key = ((uint64_t)image->uniqueID() << 32) |
-                       (requiredProps.fMipmapped == skgpu::graphite::Mipmapped::kYes ? 0x1 : 0x0);
+                       (requiredProps.fMipmapped == skgpu::Mipmapped::kYes ? 0x1 : 0x0);
 
         auto result = fCache.find(key);
         if (result != fCache.end()) {

@@ -11,7 +11,7 @@
 #include "include/core/SkColor.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkRefCnt.h"
-#include "include/private/SkTArray.h"
+#include "include/private/base/SkTArray.h"
 #include "src/gpu/graphite/AttachmentTypes.h"
 #include "src/gpu/graphite/CommandTypes.h"
 #include "src/gpu/graphite/ComputeTypes.h"
@@ -91,13 +91,22 @@ public:
                               sk_sp<Texture> dst,
                               SkIPoint dstPoint);
     bool synchronizeBufferToCpu(sk_sp<Buffer>);
+    bool clearBuffer(const Buffer* buffer, size_t offset, size_t size);
 
 #ifdef SK_ENABLE_PIET_GPU
     void renderPietScene(const skgpu::piet::Scene& scene, sk_sp<Texture> target);
 #endif
 
+    // This sets a translation to be applied to any subsequently added command, assuming these
+    // commands are part of a translated replay of a Graphite recording.
+    void setReplayTranslation(SkIVector translation) { fReplayTranslation = translation; }
+    void clearReplayTranslation() { fReplayTranslation = {0, 0}; }
+
 protected:
     CommandBuffer();
+
+    SkISize fRenderPassSize;
+    SkIVector fReplayTranslation;
 
 private:
     // Release all tracked Resources
@@ -135,6 +144,7 @@ private:
                                         const Texture* dst,
                                         SkIPoint dstPoint) = 0;
     virtual bool onSynchronizeBufferToCpu(const Buffer*, bool* outDidResultInWork) = 0;
+    virtual bool onClearBuffer(const Buffer*, size_t offset, size_t size) = 0;
 
 #ifdef SK_ENABLE_PIET_GPU
     virtual void onRenderPietScene(const skgpu::piet::Scene& scene, const Texture* target) = 0;

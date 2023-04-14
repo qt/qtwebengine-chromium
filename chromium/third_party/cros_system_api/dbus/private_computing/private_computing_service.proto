@@ -14,6 +14,24 @@ enum PrivateComputingUseCase {
   CROS_FRESNEL_DAILY = 1;
   CROS_FRESNEL_FIRST_ACTIVE = 2;
   CROS_FRESNEL_28DAY_ACTIVE = 3;
+  CROS_FRESNEL_CHURN_MONTHLY_COHORT = 4;
+  CROS_FRESNEL_CHURN_MONTHLY_OBSERVATION = 5;
+}
+
+// The observation statuses for the past three period and it will have
+// three observation periods will be overlapped.
+// Because the observation period has three months, the current period
+// means when the current month is the first month of this observation
+// period. For example, if current month is Jan., the current observation
+// period is Jan - Mar. And the current period minus 1 is Dec - Feb, the
+// current period minus 2 is Nov - Jan.
+message ChurnObservationStatus {
+  // The period status of current month is the first month of the period.
+  optional bool is_active_current_period_minus_0 = 1;
+  // The period status of current month is the second month of the period.
+  optional bool is_active_current_period_minus_1 = 2;
+  // The period  status of current month is the third month of the period.
+  optional bool is_active_current_period_minus_2 = 3;
 }
 
 // The preserved file will include the Daily, FirstActive, 28-Day
@@ -24,9 +42,20 @@ message ActiveStatus {
   // This field is deprecated and for migration to PDT dates.
   optional string last_ping_utc_date = 2 [deprecated = true];
 
-  // The last ping date for current use case.
-  // PDT date: YYYYMMDD
-  optional string last_ping_date = 3;
+  oneof ping_date_or_status {
+    // The last ping date for current use case.
+    // PDT date: YYYYMMDD
+    string last_ping_date = 3;
+    // This field is only used for Observation Use Case which represents
+    // the statuses of the last three observation periods.
+    ChurnObservationStatus period_status = 4;
+  }
+
+  // The 28 bits value of churn active status for past 18 months.
+  // The left 10 bits represent the number of months since Jan. 2020.
+  // The right 18 bits represet the device churn cohort active status
+  // for the past 18 months (1 is active, 0 is not active).
+  optional int32 churn_active_status = 5;
 }
 
 message SaveStatusRequest {

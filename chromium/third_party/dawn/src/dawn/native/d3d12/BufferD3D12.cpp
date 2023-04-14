@@ -203,25 +203,8 @@ bool Buffer::TrackUsageAndGetResourceBarrier(CommandRecordingContext* commandCon
     Heap* heap = ToBackend(mResourceAllocation.GetResourceHeap());
     commandContext->TrackHeapUsage(heap, GetDevice()->GetPendingCommandSerial());
 
-    // Return the resource barrier.
-    return TransitionUsageAndGetResourceBarrier(commandContext, barrier, newUsage);
-}
+    MarkUsedInPendingCommands();
 
-void Buffer::TrackUsageAndTransitionNow(CommandRecordingContext* commandContext,
-                                        wgpu::BufferUsage newUsage) {
-    D3D12_RESOURCE_BARRIER barrier;
-
-    if (TrackUsageAndGetResourceBarrier(commandContext, &barrier, newUsage)) {
-        commandContext->GetCommandList()->ResourceBarrier(1, &barrier);
-    }
-}
-
-// When true is returned, a D3D12_RESOURCE_BARRIER has been created and must be used in a
-// ResourceBarrier call. Failing to do so will cause the tracked state to become invalid and can
-// cause subsequent errors.
-bool Buffer::TransitionUsageAndGetResourceBarrier(CommandRecordingContext* commandContext,
-                                                  D3D12_RESOURCE_BARRIER* barrier,
-                                                  wgpu::BufferUsage newUsage) {
     // Resources in upload and readback heaps must be kept in the COPY_SOURCE/DEST state
     if (mFixedResourceState) {
         ASSERT(mLastUsage == newUsage);
@@ -296,6 +279,15 @@ bool Buffer::TransitionUsageAndGetResourceBarrier(CommandRecordingContext* comma
     barrier->Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
 
     return true;
+}
+
+void Buffer::TrackUsageAndTransitionNow(CommandRecordingContext* commandContext,
+                                        wgpu::BufferUsage newUsage) {
+    D3D12_RESOURCE_BARRIER barrier;
+
+    if (TrackUsageAndGetResourceBarrier(commandContext, &barrier, newUsage)) {
+        commandContext->GetCommandList()->ResourceBarrier(1, &barrier);
+    }
 }
 
 D3D12_GPU_VIRTUAL_ADDRESS Buffer::GetVA() const {
@@ -377,7 +369,7 @@ void Buffer::UnmapImpl() {
     ToBackend(GetDevice())->GetResidencyManager()->UnlockAllocation(heap);
 }
 
-void* Buffer::GetMappedPointerImpl() {
+void* Buffer::GetMappedPointer() {
     // The frontend asks that the pointer returned is from the start of the resource
     // irrespective of the offset passed in MapAsyncImpl, which is what mMappedData is.
     return mMappedData;

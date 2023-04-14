@@ -1,16 +1,17 @@
 # XNNPACK
 
-XNNPACK is a highly optimized library of floating-point neural network inference operators for ARM, WebAssembly, and x86 platforms. XNNPACK is not intended for direct use by deep learning practitioners and researchers; instead it provides low-level performance primitives for accelerating high-level machine learning frameworks, such as [TensorFlow Lite](https://www.tensorflow.org/lite), [TensorFlow.js](https://www.tensorflow.org/js), [PyTorch](https://pytorch.org/), [ONNX Runtime](https://onnxruntime.ai), and [MediaPipe](https://mediapipe.dev).
+XNNPACK is a highly optimized solution for neural network inference on ARM, x86, WebAssembly, and RISC-V platforms. XNNPACK is not intended for direct use by deep learning practitioners and researchers; instead it provides low-level performance primitives for accelerating high-level machine learning frameworks, such as [TensorFlow Lite](https://www.tensorflow.org/lite), [TensorFlow.js](https://www.tensorflow.org/js), [PyTorch](https://pytorch.org/), [ONNX Runtime](https://onnxruntime.ai), and [MediaPipe](https://mediapipe.dev).
 
 ## Supported Architectures
 
-- ARM64 on Android, Linux, macOS, and iOS (including WatchOS and tvOS)
+- ARM64 on Android, iOS, macOS, Linux, and Windows
 - ARMv7 (with NEON) on Android
 - ARMv6 (with VFPv2) on Linux
 - x86 and x86-64 (up to AVX512) on Windows, Linux, macOS, Android, and iOS simulator
 - WebAssembly MVP
 - WebAssembly SIMD
-- RISC-V (RV32GV and RV64GC)
+- [WebAssembly Relaxed SIMD](https://github.com/WebAssembly/relaxed-simd) (experimental)
+- RISC-V (RV32GC and RV64GC)
 
 ## Operator Coverage
 
@@ -94,6 +95,12 @@ The table below presents **multi-threaded** performance of XNNPACK library on th
 
 Benchmarked on Feb 8, 2022 with `end2end-bench --benchmark_min_time=5` on a Raspbian Buster build with CMake (`./scripts/build-local.sh`) and neural network models with randomized weights and inputs. INT8 inference was evaluated on per-channel quantization schema.
 
+## Minimum build requirements
+
+- C11
+- C++14
+- Python 3
+
 ## Publications
 
 - Marat Dukhan "The Indirect Convolution Algorithm". Presented on [Efficient Deep Learning for Compute Vision (ECV) 2019](https://sites.google.com/corp/view/ecv2019/) workshop ([slides](https://drive.google.com/file/d/1ZayB3By5ZxxQIRtN7UDq_JvPg1IYd3Ac/view), [paper on ArXiv](https://arxiv.org/abs/1907.02129)).
@@ -112,6 +119,7 @@ Benchmarked on Feb 8, 2022 with `end2end-bench --benchmark_min_time=5` on a Rasp
 - [TensorFlow Lite](https://blog.tensorflow.org/2020/07/accelerating-tensorflow-lite-xnnpack-integration.html).
 - [TensorFlow.js WebAssembly backend](https://blog.tensorflow.org/2020/03/introducing-webassembly-backend-for-tensorflow-js.html).
 - [PyTorch Mobile](https://pytorch.org/mobile).
+- [ONNX Runtime Mobile](https://onnxruntime.ai/docs/execution-providers/Xnnpack-ExecutionProvider.html)
 - [MediaPipe for the Web](https://developers.googleblog.com/2020/01/mediapipe-on-web.html).
 - [Alibaba HALO (Heterogeneity-Aware Lowering and Optimization)](https://github.com/alibaba/heterogeneity-aware-lowering-and-optimization)
 - [Samsung ONE (On-device Neural Engine)](https://github.com/Samsung/ONE)

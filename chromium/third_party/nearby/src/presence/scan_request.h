@@ -56,7 +56,7 @@ struct LegacyPresenceScanFilter {
 
   // Android T needs clients to provide remote public credentials in scan
   // requests.
-  std::vector<nearby::internal::PublicCredential> remote_public_credentials;
+  std::vector<nearby::internal::SharedCredential> remote_public_credentials;
 
   // A list of presence actions for matching. Matching condition is met as
   // long as there’s one or more equal actions between Scan actions and
@@ -107,15 +107,15 @@ inline bool operator!=(const LegacyPresenceScanFilter& a,
  * An encapsulation of various parameters for requesting nearby scans.
  */
 struct ScanRequest {
-  // Same as DeviceMetadata.account_name, to fetch private credential
+  // Same as Metadata.account_name, to fetch private credential
   // to broadcast.
   std::string account_name;
 
   // Specifies which manager app to use to get credendentials for scan.
   std::string manager_app_id;
 
-  // Used to specify which types of remote PublicCredential to use during the
-  // scan. If empty, use all available types of remote PublicCredential.
+  // Used to specify which types of remote SharedCredential to use during the
+  // scan. If empty, use all available types of remote SharedCredential.
   std::vector<nearby::internal::IdentityType> identity_types;
 
   // For new Nearby SDK client (like chromeOs and Android U), use

@@ -7,9 +7,9 @@
 
 #include "include/core/SkString.h"
 #include "include/private/SkColorData.h"
-#include "include/private/SkOnce.h"
+#include "include/private/base/SkOnce.h"
+#include "src/base/SkMathPriv.h"
 #include "src/core/SkBlendModePriv.h"
-#include "src/core/SkMathPriv.h"
 #include "src/core/SkOpts.h"
 #include "src/core/SkRasterPipeline.h"
 #include "src/core/SkReadBuffer.h"
@@ -43,13 +43,13 @@ public:
 
         if (SkBlendMode_ShouldPreScaleCoverage(fMode, /*rgb_coverage=*/false)) {
             if (aa) {
-                p.append(SkRasterPipeline::scale_u8, &aa_ctx);
+                p.append(SkRasterPipelineOp::scale_u8, &aa_ctx);
             }
             SkBlendMode_AppendStages(fMode, &p);
         } else {
             SkBlendMode_AppendStages(fMode, &p);
             if (aa) {
-                p.append(SkRasterPipeline::lerp_u8, &aa_ctx);
+                p.append(SkRasterPipelineOp::lerp_u8, &aa_ctx);
             }
         }
 
@@ -156,7 +156,6 @@ bool SkXfermode::IsOpaque(SkBlendMode mode, SrcColorOpacity opacityType) {
         default:
             return false;
     }
-    return false;
 }
 
 #if SK_SUPPORT_GPU

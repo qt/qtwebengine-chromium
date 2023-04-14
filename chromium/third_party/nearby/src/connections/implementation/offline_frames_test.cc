@@ -27,13 +27,16 @@
 #include "connections/implementation/proto/offline_wire_formats.pb.h"
 #include "internal/platform/byte_array.h"
 
-namespace location {
 namespace nearby {
 namespace connections {
 namespace parser {
 namespace {
 
-using Medium = proto::connections::Medium;
+using ::location::nearby::connections::OfflineFrame;
+using ::location::nearby::connections::OsInfo;
+using ::location::nearby::connections::PayloadTransferFrame;
+using ::location::nearby::connections::V1Frame;
+using Medium = ::location::nearby::proto::connections::Medium;
 using ::protobuf_matchers::EqualsProto;
 
 constexpr absl::string_view kEndpointId{"ABC"};
@@ -98,7 +101,12 @@ TEST(OfflineFramesTest, CanGenerateConnectionRequest) {
         endpoint_name: "XYZ"
         endpoint_info: "XYZ"
         nonce: 1234
-        medium_metadata: < supports_5_ghz: true bssid: "FF:FF:FF:FF:FF:FF" ip_address: "8xqT" ap_frequency: 2412 >
+        medium_metadata: <
+          supports_5_ghz: true
+          bssid: "FF:FF:FF:FF:FF:FF"
+          ip_address: "8xqT"
+          ap_frequency: 2412
+        >
         mediums: MDNS
         mediums: BLUETOOTH
         mediums: WIFI_HOTSPOT
@@ -137,9 +145,16 @@ TEST(OfflineFramesTest, CanGenerateConnectionResponse) {
     version: V1
     v1: <
       type: CONNECTION_RESPONSE
-      connection_response: < status: 1 response: REJECT >
+      connection_response: <
+        status: 1
+        response: REJECT
+        os_info { type: LINUX }
+      >
     >)pb";
-  ByteArray bytes = ForConnectionResponse(1);
+
+  OsInfo os_info;
+  os_info.set_type(OsInfo::LINUX);
+  ByteArray bytes = ForConnectionResponse(1, os_info);
   auto response = FromBytes(bytes);
   ASSERT_TRUE(response.ok());
   OfflineFrame message = FromBytes(bytes).result();
@@ -294,7 +309,8 @@ TEST(OfflineFramesTest, CanGenerateBwuWifiDirectPathAvailable) {
             ssid: "DIRECT-A0-0123456789AB"
             password: "password"
             port: 1000
-            frequency: 1000
+            frequency: 2412
+            gateway: "192.168.1.1"
           >
           supports_disabling_encryption: false
           supports_client_introduction_ack: true
@@ -302,7 +318,7 @@ TEST(OfflineFramesTest, CanGenerateBwuWifiDirectPathAvailable) {
       >
     >)pb";
   ByteArray bytes = ForBwuWifiDirectPathAvailable(
-      "DIRECT-A0-0123456789AB", "password", 1000, 1000, false);
+      "DIRECT-A0-0123456789AB", "password", 1000, 2412, false, "192.168.1.1");
   auto response = FromBytes(bytes);
   ASSERT_TRUE(response.ok());
   OfflineFrame message = FromBytes(bytes).result();
@@ -406,4 +422,3 @@ TEST(OfflineFramesTest, CanGenerateKeepAlive) {
 }  // namespace parser
 }  // namespace connections
 }  // namespace nearby
-}  // namespace location

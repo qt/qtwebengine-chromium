@@ -14,7 +14,9 @@
 
 #include "src/tint/type/pointer.h"
 
-#include "src/tint/program_builder.h"
+#include "src/tint/debug.h"
+#include "src/tint/diagnostic/diagnostic.h"
+#include "src/tint/type/manager.h"
 #include "src/tint/type/reference.h"
 #include "src/tint/utils/hash.h"
 
@@ -22,17 +24,17 @@ TINT_INSTANTIATE_TYPEINFO(tint::type::Pointer);
 
 namespace tint::type {
 
-Pointer::Pointer(const Type* subtype, ast::AddressSpace address_space, ast::Access access)
-    : Base(type::Flags{}), subtype_(subtype), address_space_(address_space), access_(access) {
+Pointer::Pointer(const Type* subtype, builtin::AddressSpace address_space, builtin::Access access)
+    : Base(utils::Hash(TypeInfo::Of<Pointer>().full_hashcode, address_space, subtype, access),
+           type::Flags{}),
+      subtype_(subtype),
+      address_space_(address_space),
+      access_(access) {
     TINT_ASSERT(Type, !subtype->Is<Reference>());
-    TINT_ASSERT(Type, access != ast::Access::kUndefined);
+    TINT_ASSERT(Type, access != builtin::Access::kUndefined);
 }
 
-size_t Pointer::Hash() const {
-    return utils::Hash(TypeInfo::Of<Pointer>().full_hashcode, address_space_, subtype_, access_);
-}
-
-bool Pointer::Equals(const Type& other) const {
+bool Pointer::Equals(const UniqueNode& other) const {
     if (auto* o = other.As<Pointer>()) {
         return o->address_space_ == address_space_ && o->subtype_ == subtype_ &&
                o->access_ == access_;
@@ -43,7 +45,7 @@ bool Pointer::Equals(const Type& other) const {
 std::string Pointer::FriendlyName(const SymbolTable& symbols) const {
     std::ostringstream out;
     out << "ptr<";
-    if (address_space_ != ast::AddressSpace::kNone) {
+    if (address_space_ != builtin::AddressSpace::kUndefined) {
         out << address_space_ << ", ";
     }
     out << subtype_->FriendlyName(symbols) << ", " << access_;
@@ -51,8 +53,11 @@ std::string Pointer::FriendlyName(const SymbolTable& symbols) const {
     return out.str();
 }
 
-Pointer::Pointer(Pointer&&) = default;
-
 Pointer::~Pointer() = default;
+
+Pointer* Pointer::Clone(CloneContext& ctx) const {
+    auto* ty = subtype_->Clone(ctx);
+    return ctx.dst.mgr->Get<Pointer>(ty, address_space_, access_);
+}
 
 }  // namespace tint::type

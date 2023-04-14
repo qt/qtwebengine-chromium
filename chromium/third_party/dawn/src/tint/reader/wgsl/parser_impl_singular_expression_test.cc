@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "src/tint/ast/test_helper.h"
 #include "src/tint/reader/wgsl/parser_impl_test_helper.h"
 
 namespace tint::reader::wgsl {
@@ -29,8 +30,8 @@ TEST_F(ParserImplTest, SingularExpression_Array_ConstantIndex) {
     auto* idx = e->As<ast::IndexAccessorExpression>();
 
     ASSERT_TRUE(idx->object->Is<ast::IdentifierExpression>());
-    auto* ident = idx->object->As<ast::IdentifierExpression>();
-    EXPECT_EQ(ident->symbol, p->builder().Symbols().Get("a"));
+    auto* ident_expr = idx->object->As<ast::IdentifierExpression>();
+    EXPECT_EQ(ident_expr->identifier->symbol, p->builder().Symbols().Get("a"));
 
     ASSERT_TRUE(idx->index->Is<ast::IntLiteralExpression>());
     EXPECT_EQ(idx->index->As<ast::IntLiteralExpression>()->value, 1);
@@ -50,8 +51,8 @@ TEST_F(ParserImplTest, SingularExpression_Array_ExpressionIndex) {
     auto* idx = e->As<ast::IndexAccessorExpression>();
 
     ASSERT_TRUE(idx->object->Is<ast::IdentifierExpression>());
-    auto* ident = idx->object->As<ast::IdentifierExpression>();
-    EXPECT_EQ(ident->symbol, p->builder().Symbols().Get("a"));
+    auto* ident_expr = idx->object->As<ast::IdentifierExpression>();
+    EXPECT_EQ(ident_expr->identifier->symbol, p->builder().Symbols().Get("a"));
 
     ASSERT_TRUE(idx->index->Is<ast::BinaryExpression>());
 }
@@ -97,7 +98,7 @@ TEST_F(ParserImplTest, SingularExpression_Call_Empty) {
     ASSERT_TRUE(e->Is<ast::CallExpression>());
     auto* c = e->As<ast::CallExpression>();
 
-    EXPECT_EQ(c->target.name->symbol, p->builder().Symbols().Get("a"));
+    ast::CheckIdentifier(p->builder().Symbols(), c->target, "a");
 
     EXPECT_EQ(c->args.Length(), 0u);
 }
@@ -113,7 +114,7 @@ TEST_F(ParserImplTest, SingularExpression_Call_WithArgs) {
     ASSERT_TRUE(e->Is<ast::CallExpression>());
     auto* c = e->As<ast::CallExpression>();
 
-    EXPECT_EQ(c->target.name->symbol, p->builder().Symbols().Get("test"));
+    ast::CheckIdentifier(p->builder().Symbols(), c->target, "test");
 
     EXPECT_EQ(c->args.Length(), 3u);
     EXPECT_TRUE(c->args[0]->Is<ast::IntLiteralExpression>());
@@ -163,12 +164,11 @@ TEST_F(ParserImplTest, SingularExpression_MemberAccessor) {
     ASSERT_TRUE(e->Is<ast::MemberAccessorExpression>());
 
     auto* m = e->As<ast::MemberAccessorExpression>();
-    ASSERT_TRUE(m->structure->Is<ast::IdentifierExpression>());
-    EXPECT_EQ(m->structure->As<ast::IdentifierExpression>()->symbol,
+    ASSERT_TRUE(m->object->Is<ast::IdentifierExpression>());
+    EXPECT_EQ(m->object->As<ast::IdentifierExpression>()->identifier->symbol,
               p->builder().Symbols().Get("a"));
 
-    ASSERT_TRUE(m->member->Is<ast::IdentifierExpression>());
-    EXPECT_EQ(m->member->As<ast::IdentifierExpression>()->symbol, p->builder().Symbols().Get("b"));
+    EXPECT_EQ(m->member->symbol, p->builder().Symbols().Get("b"));
 }
 
 TEST_F(ParserImplTest, SingularExpression_MemberAccesssor_InvalidIdent) {
@@ -214,18 +214,18 @@ TEST_F(ParserImplTest, SingularExpression_Array_NestedIndexAccessor) {
 
     const auto* outer_object = outer_accessor->object->As<ast::IdentifierExpression>();
     ASSERT_TRUE(outer_object);
-    EXPECT_EQ(outer_object->symbol, p->builder().Symbols().Get("a"));
+    EXPECT_EQ(outer_object->identifier->symbol, p->builder().Symbols().Get("a"));
 
     const auto* inner_accessor = outer_accessor->index->As<ast::IndexAccessorExpression>();
     ASSERT_TRUE(inner_accessor);
 
     const auto* inner_object = inner_accessor->object->As<ast::IdentifierExpression>();
     ASSERT_TRUE(inner_object);
-    EXPECT_EQ(inner_object->symbol, p->builder().Symbols().Get("b"));
+    EXPECT_EQ(inner_object->identifier->symbol, p->builder().Symbols().Get("b"));
 
     const auto* index_expr = inner_accessor->index->As<ast::IdentifierExpression>();
     ASSERT_TRUE(index_expr);
-    EXPECT_EQ(index_expr->symbol, p->builder().Symbols().Get("c"));
+    EXPECT_EQ(index_expr->identifier->symbol, p->builder().Symbols().Get("c"));
 }
 
 }  // namespace

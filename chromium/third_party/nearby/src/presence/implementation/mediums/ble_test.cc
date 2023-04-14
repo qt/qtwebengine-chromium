@@ -35,22 +35,17 @@ namespace nearby {
 namespace presence {
 namespace {
 
-using FeatureFlags = ::location::nearby::FeatureFlags::Flags;
-using BleOperationStatus = ::location::nearby::api::ble_v2::BleOperationStatus;
-using BleV2MediumStatus =
-    ::location::nearby::MediumEnvironment::BleV2MediumStatus;
-using ScanningSession =
-    ::location::nearby::api::ble_v2::BleMedium::ScanningSession;
-using TxPowerLevel = ::location::nearby::api::ble_v2::TxPowerLevel;
-using ScanningCallback =
-    ::location::nearby::api::ble_v2::BleMedium::ScanningCallback;
-using Uuid = ::location::nearby::Uuid;
-using ::location::nearby::api::ble_v2::BleAdvertisementData;
-using ::location::nearby::api::ble_v2::BlePeripheral;
+using FeatureFlags = ::nearby::FeatureFlags::Flags;
+using BleV2MediumStatus = ::nearby::MediumEnvironment::BleV2MediumStatus;
+using ScanningSession = ::nearby::api::ble_v2::BleMedium::ScanningSession;
+using TxPowerLevel = ::nearby::api::ble_v2::TxPowerLevel;
+using ScanningCallback = ::nearby::api::ble_v2::BleMedium::ScanningCallback;
+using Uuid = ::nearby::Uuid;
+using ::nearby::api::ble_v2::BleAdvertisementData;
+using ::nearby::api::ble_v2::BlePeripheral;
 using AdvertisingCallback =
-    ::location::nearby::api::ble_v2::BleMedium::AdvertisingCallback;
-using AdvertisingSession =
-    ::location::nearby::api::ble_v2::BleMedium::AdvertisingSession;
+    ::nearby::api::ble_v2::BleMedium::AdvertisingCallback;
+using AdvertisingSession = ::nearby::api::ble_v2::BleMedium::AdvertisingSession;
 
 constexpr FeatureFlags kTestCases[] = {
     FeatureFlags{},
@@ -90,8 +85,7 @@ class BleTest : public testing::TestWithParam<FeatureFlags> {
   absl::optional<BleV2MediumStatus> GetBleStatus(const Ble& ble) {
     return env_.GetBleV2MediumStatus(*ble.GetImpl());
   }
-  location::nearby::MediumEnvironment& env_{
-      location::nearby::MediumEnvironment::Instance()};
+  nearby::MediumEnvironment& env_{nearby::MediumEnvironment::Instance()};
 };
 
 INSTANTIATE_TEST_SUITE_P(ParametrisedBleTest, BleTest,
@@ -101,31 +95,30 @@ INSTANTIATE_TEST_SUITE_P(ParametrisedBleTest, BleTest,
 // are working as intended.
 TEST_P(BleTest, CanStartThenStopScanning) {
   env_.Start();
-  ::location::nearby::BluetoothAdapter adapter;
+  ::nearby::BluetoothAdapter adapter;
   Ble ble(adapter);
 
   ScanRequest scan_request{
       .power_mode = PowerMode::kBalanced,
   };
   ScanningCallback scanning_callback;
-  location::nearby::CountDownLatch started_scanning_latch(1);
+  nearby::CountDownLatch started_scanning_latch(1);
 
   std::unique_ptr<ScanningSession> scannning_session = ble.StartScanning(
-      scan_request,
-      ScanningCallback{
-          .start_scanning_result =
-              [&started_scanning_latch](BleOperationStatus status) {
-                if (status == BleOperationStatus::kSucceeded) {
-                  started_scanning_latch.CountDown();
-                }
-              },
-      });
+      scan_request, ScanningCallback{
+                        .start_scanning_result =
+                            [&started_scanning_latch](absl::Status status) {
+                              if (status.ok()) {
+                                started_scanning_latch.CountDown();
+                              }
+                            },
+                    });
 
   EXPECT_TRUE(started_scanning_latch.Await(kWaitDuration).result());
   EXPECT_TRUE(GetBleStatus(ble).has_value() &&
               GetBleStatus(ble).value().is_scanning == true);
-  BleOperationStatus stop_scanning_status = scannning_session->stop_scanning();
-  EXPECT_EQ(BleOperationStatus::kSucceeded, stop_scanning_status);
+  absl::Status stop_scanning_status = scannning_session->stop_scanning();
+  EXPECT_OK(stop_scanning_status);
   EXPECT_TRUE(GetBleStatus(ble).has_value() &&
               GetBleStatus(ble).value().is_scanning == false);
   env_.Stop();
@@ -135,17 +128,17 @@ TEST_P(BleTest, AdvertiseAndScan) {
   // Create two Ble devices, one advertises, the other one scans, and verify
   // that the NP advertisement was sent from one to the other.
   env_.Start();
-  location::nearby::BluetoothAdapter client_adapter;
+  nearby::BluetoothAdapter client_adapter;
   Ble client(client_adapter);
-  location::nearby::BluetoothAdapter server_adapter;
+  nearby::BluetoothAdapter server_adapter;
   Ble server(server_adapter);
   AdvertisementData advert_data = {.is_extended_advertisement = false,
                                    .content = "my advertisement"};
   ScanRequest scan_request{
       .power_mode = PowerMode::kBalanced,
   };
-  location::nearby::CountDownLatch advertise_latch(1);
-  location::nearby::CountDownLatch scan_latch(1);
+  nearby::CountDownLatch advertise_latch(1);
+  nearby::CountDownLatch scan_latch(1);
   std::vector<BleAdvertisementData> advertisements;
   std::unique_ptr<ScanningSession> scanning_session = client.StartScanning(
       scan_request,
@@ -155,19 +148,18 @@ TEST_P(BleTest, AdvertiseAndScan) {
                              advertisements.push_back(advertisement_data);
                              scan_latch.CountDown();
                            }});
-  std::unique_ptr<location::nearby::api::ble_v2::BleMedium::AdvertisingSession>
+  std::unique_ptr<nearby::api::ble_v2::BleMedium::AdvertisingSession>
       advertising_session = server.StartAdvertising(
           advert_data, PowerMode::kBalanced,
           AdvertisingCallback{
-              .start_advertising_result = [&](BleOperationStatus status) {
+              .start_advertising_result = [&](absl::Status status) {
                 advertise_latch.CountDown();
               }});
 
   EXPECT_TRUE(advertise_latch.Await(kWaitDuration).result());
   EXPECT_TRUE(scan_latch.Await(kWaitDuration).result());
-  EXPECT_EQ(scanning_session->stop_scanning(), BleOperationStatus::kSucceeded);
-  EXPECT_EQ(advertising_session->stop_advertising(),
-            BleOperationStatus::kSucceeded);
+  EXPECT_OK(scanning_session->stop_scanning());
+  EXPECT_OK(advertising_session->stop_advertising());
   ASSERT_FALSE(advertisements.empty());
   EXPECT_EQ(advertisements[0]
                 .service_data.find(kPresenceServiceUuid)

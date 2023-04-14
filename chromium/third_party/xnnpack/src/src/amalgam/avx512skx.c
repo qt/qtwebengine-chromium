@@ -67,7 +67,7 @@ void xnn_f32_f16_vcvt_ukernel__avx512skx_x16(
     const __m512 vf = _mm512_loadu_ps(input);
     input += 16;
 
-    _mm256_storeu_si256((__m256i*) o, _mm512_cvtps_ph(vf, _MM_FROUND_NO_EXC));
+    _mm256_storeu_si256((__m256i*) o, _mm512_cvtps_ph(vf, _MM_FROUND_NO_EXC | _MM_FROUND_TO_NEAREST_INT));
     o += 16;
   }
   if XNN_UNLIKELY(batch != 0) {
@@ -79,7 +79,7 @@ void xnn_f32_f16_vcvt_ukernel__avx512skx_x16(
     const __mmask16 vmask = _cvtu32_mask16((uint16_t) ((uint32_t) (UINT32_C(1) << batch) - UINT32_C(1)));
 
     const __m512 vf = _mm512_maskz_loadu_ps(vmask, input);
-    const __m256i vh = _mm512_cvtps_ph(vf, _MM_FROUND_NO_EXC);
+    const __m256i vh = _mm512_cvtps_ph(vf, _MM_FROUND_NO_EXC | _MM_FROUND_TO_NEAREST_INT);
     _mm256_mask_storeu_epi16(o, vmask, vh);
   }
 }
@@ -320,13 +320,13 @@ void xnn_f32_qu8_vcvt_ukernel__avx512skx_x128(
   }
 }
 
-void xnn_qc8_dwconv_minmax_fp32_ukernel_up32x25__avx512skx_mul32(
+void xnn_qc8_dwconv_minmax_fp32_ukernel_25p32c__avx512skx_mul32(
     size_t channels,
     size_t output_width,
     const int8_t** input,
     const void* weights,
     int8_t* output,
-    size_t input_stride,
+    intptr_t input_stride,
     size_t output_increment,
     size_t input_offset,
     const int8_t* zero,
@@ -926,13 +926,13 @@ void xnn_qc8_dwconv_minmax_fp32_ukernel_up32x25__avx512skx_mul32(
   } while (--output_width != 0);
 }
 
-void xnn_qc8_dwconv_minmax_fp32_ukernel_up32x3__avx512skx_mul32(
+void xnn_qc8_dwconv_minmax_fp32_ukernel_3p32c__avx512skx_mul32(
     size_t channels,
     size_t output_width,
     const int8_t** input,
     const void* weights,
     int8_t* output,
-    size_t input_stride,
+    intptr_t input_stride,
     size_t output_increment,
     size_t input_offset,
     const int8_t* zero,
@@ -1092,13 +1092,13 @@ void xnn_qc8_dwconv_minmax_fp32_ukernel_up32x3__avx512skx_mul32(
   } while (--output_width != 0);
 }
 
-void xnn_qc8_dwconv_minmax_fp32_ukernel_up32x9__avx512skx_mul32(
+void xnn_qc8_dwconv_minmax_fp32_ukernel_9p32c__avx512skx_mul32(
     size_t channels,
     size_t output_width,
     const int8_t** input,
     const void* weights,
     int8_t* output,
-    size_t input_stride,
+    intptr_t input_stride,
     size_t output_increment,
     size_t input_offset,
     const int8_t* zero,
@@ -1971,13 +1971,13 @@ void xnn_qc8_igemm_minmax_fp32_ukernel_4x16c8__avx512skx(
   } while (nc != 0);
 }
 
-void xnn_qs8_dwconv_minmax_fp32_ukernel_up32x25__avx512skx_mul32(
+void xnn_qs8_dwconv_minmax_fp32_ukernel_25p32c__avx512skx_mul32(
     size_t channels,
     size_t output_width,
     const int8_t** input,
     const void* weights,
     int8_t* output,
-    size_t input_stride,
+    intptr_t input_stride,
     size_t output_increment,
     size_t input_offset,
     const int8_t* zero,
@@ -2574,13 +2574,13 @@ void xnn_qs8_dwconv_minmax_fp32_ukernel_up32x25__avx512skx_mul32(
   } while (--output_width != 0);
 }
 
-void xnn_qs8_dwconv_minmax_fp32_ukernel_up32x9__avx512skx_mul32(
+void xnn_qs8_dwconv_minmax_fp32_ukernel_9p32c__avx512skx_mul32(
     size_t channels,
     size_t output_width,
     const int8_t** input,
     const void* weights,
     int8_t* output,
-    size_t input_stride,
+    intptr_t input_stride,
     size_t output_increment,
     size_t input_offset,
     const int8_t* zero,
@@ -3627,13 +3627,13 @@ void xnn_qs8_vaddc_minmax_ukernel__avx512skx_mul32_ld128_x16(
   }
 }
 
-void xnn_qu8_dwconv_minmax_fp32_ukernel_up32x25__avx512skx_mul32(
+void xnn_qu8_dwconv_minmax_fp32_ukernel_25p32c__avx512skx_mul32(
     size_t channels,
     size_t output_width,
     const uint8_t** input,
     const void* weights,
     uint8_t* output,
-    size_t input_stride,
+    intptr_t input_stride,
     size_t output_increment,
     size_t input_offset,
     const uint8_t* zero,
@@ -4231,13 +4231,13 @@ void xnn_qu8_dwconv_minmax_fp32_ukernel_up32x25__avx512skx_mul32(
   } while (--output_width != 0);
 }
 
-void xnn_qu8_dwconv_minmax_fp32_ukernel_up32x9__avx512skx_mul32(
+void xnn_qu8_dwconv_minmax_fp32_ukernel_9p32c__avx512skx_mul32(
     size_t channels,
     size_t output_width,
     const uint8_t** input,
     const void* weights,
     uint8_t* output,
-    size_t input_stride,
+    intptr_t input_stride,
     size_t output_increment,
     size_t input_offset,
     const uint8_t* zero,

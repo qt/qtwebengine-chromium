@@ -10,6 +10,10 @@
 #include "core/fxcrt/fx_safe_types.h"
 #include "third_party/base/no_destructor.h"
 
+#if !defined(PDF_USE_PARTITION_ALLOC)
+#error "File compiled under wrong build option."
+#endif
+
 namespace {
 
 constexpr partition_alloc::PartitionOptions kOptions = {
@@ -22,11 +26,13 @@ constexpr partition_alloc::PartitionOptions kOptions = {
     partition_alloc::PartitionOptions::UseConfigurablePool::kNo,
 };
 
+#ifndef V8_ENABLE_SANDBOX
 partition_alloc::PartitionAllocator& GetArrayBufferPartitionAllocator() {
   static pdfium::base::NoDestructor<partition_alloc::PartitionAllocator>
       s_array_buffer_allocator;
   return *s_array_buffer_allocator;
 }
+#endif  //  V8_ENABLE_SANDBOX
 
 partition_alloc::PartitionAllocator& GetGeneralPartitionAllocator() {
   static pdfium::base::NoDestructor<partition_alloc::PartitionAllocator>
@@ -97,13 +103,16 @@ void FX_InitializeMemoryAllocators() {
   static bool s_partition_allocators_initialized = false;
   if (!s_partition_allocators_initialized) {
     partition_alloc::PartitionAllocGlobalInit(FX_OutOfMemoryTerminate);
+#ifndef V8_ENABLE_SANDBOX
     GetArrayBufferPartitionAllocator().init(kOptions);
+#endif  // V8_ENABLE_SANDBOX
     GetGeneralPartitionAllocator().init(kOptions);
     GetStringPartitionAllocator().init(kOptions);
     s_partition_allocators_initialized = true;
   }
 }
 
+#ifndef V8_ENABLE_SANDBOX
 void* FX_ArrayBufferAllocate(size_t length) {
   return GetArrayBufferPartitionAllocator().root()->AllocWithFlags(
       partition_alloc::AllocFlags::kZeroFill, length, "FXArrayBuffer");
@@ -117,6 +126,7 @@ void* FX_ArrayBufferAllocateUninitialized(size_t length) {
 void FX_ArrayBufferFree(void* data) {
   GetArrayBufferPartitionAllocator().root()->Free(data);
 }
+#endif  // V8_ENABLE_SANDBOX
 
 void FX_Free(void* ptr) {
   // TODO(palmer): Removing this check exposes crashes when PDFium callers

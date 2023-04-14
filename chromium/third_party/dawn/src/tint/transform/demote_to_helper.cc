@@ -81,7 +81,7 @@ Transform::ApplyResult DemoteToHelper::Apply(const Program* src, const DataMap&,
 
     // Create a module-scope flag that indicates whether the current invocation has been discarded.
     auto flag = b.Symbols().New("tint_discarded");
-    b.GlobalVar(flag, ast::AddressSpace::kPrivate, b.Expr(false));
+    b.GlobalVar(flag, builtin::AddressSpace::kPrivate, b.Expr(false));
 
     // Replace all discard statements with a statement that marks the invocation as discarded.
     ctx.ReplaceAll([&](const ast::DiscardStatement*) -> const ast::Statement* {
@@ -123,14 +123,14 @@ Transform::ApplyResult DemoteToHelper::Apply(const Program* src, const DataMap&,
                 }
 
                 // Skip writes to invocation-private address spaces.
-                auto* ref = sem.Get(assign->lhs)->Type()->As<type::Reference>();
+                auto* ref = sem.GetVal(assign->lhs)->Type()->As<type::Reference>();
                 switch (ref->AddressSpace()) {
-                    case ast::AddressSpace::kStorage:
+                    case builtin::AddressSpace::kStorage:
                         // Need to mask these.
                         break;
-                    case ast::AddressSpace::kFunction:
-                    case ast::AddressSpace::kPrivate:
-                    case ast::AddressSpace::kOut:
+                    case builtin::AddressSpace::kFunction:
+                    case builtin::AddressSpace::kPrivate:
+                    case builtin::AddressSpace::kOut:
                         // Skip these.
                         return;
                     default:
@@ -177,7 +177,7 @@ Transform::ApplyResult DemoteToHelper::Apply(const Program* src, const DataMap&,
                         //   }
                         //   let y = x + tmp;
                         auto result = b.Sym();
-                        const ast::Type* result_ty = nullptr;
+                        ast::Type result_ty;
                         const ast::Statement* masked_call = nullptr;
                         if (builtin->Type() == sem::BuiltinType::kAtomicCompareExchangeWeak) {
                             // Special case for atomicCompareExchangeWeak as we cannot name its
@@ -187,7 +187,7 @@ Transform::ApplyResult DemoteToHelper::Apply(const Program* src, const DataMap&,
                             // Declare a struct to hold the result values.
                             auto* result_struct = sem_call->Type()->As<sem::Struct>();
                             auto* atomic_ty = result_struct->Members()[0]->Type();
-                            result_ty = b.ty.type_name(
+                            result_ty = b.ty(
                                 utils::GetOrCreate(atomic_cmpxchg_result_types, atomic_ty, [&]() {
                                     auto name = b.Sym();
                                     b.Structure(

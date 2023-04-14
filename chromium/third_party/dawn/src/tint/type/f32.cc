@@ -14,28 +14,23 @@
 
 #include "src/tint/type/f32.h"
 
-#include "src/tint/program_builder.h"
+#include "src/tint/type/manager.h"
 
 TINT_INSTANTIATE_TYPEINFO(tint::type::F32);
 
 namespace tint::type {
 
 F32::F32()
-    : Base(type::Flags{
-          Flag::kConstructable,
-          Flag::kCreationFixedFootprint,
-          Flag::kFixedFootprint,
-      }) {}
-
-F32::F32(F32&&) = default;
+    : Base(static_cast<size_t>(TypeInfo::Of<F32>().full_hashcode),
+           type::Flags{
+               Flag::kConstructable,
+               Flag::kCreationFixedFootprint,
+               Flag::kFixedFootprint,
+           }) {}
 
 F32::~F32() = default;
 
-size_t F32::Hash() const {
-    return static_cast<size_t>(TypeInfo::Of<F32>().full_hashcode);
-}
-
-bool F32::Equals(const Type& other) const {
+bool F32::Equals(const UniqueNode& other) const {
     return other.Is<F32>();
 }
 
@@ -49,6 +44,10 @@ uint32_t F32::Size() const {
 
 uint32_t F32::Align() const {
     return 4;
+}
+
+F32* F32::Clone(CloneContext& ctx) const {
+    return ctx.dst.mgr->Get<F32>();
 }
 
 }  // namespace tint::type

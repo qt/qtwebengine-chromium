@@ -12,13 +12,14 @@ Current builders include:
 | linux64_gcc_debug      | x86-64 | Ubuntu Linux 18.04     | gcc-7     | debug   |                        |
 | linux64_tsan           | x86-64 | Ubuntu Linux 18.04     | clang     | release | TSAN enabled           |
 | linux64_coverage_debug | x86-64 | Ubuntu Linux 18.04     | clang     | debug   | used for code coverage |
-| linux64_cast_e2e     | x86-64 | Ubuntu Linux 18.04     | clang     | debug   | Builds cast standalone |
+| linux_arm64_cast_debug | arm64  | Ubuntu Linux 18.04     | clang     | debug   | Builds cast standalone |
 | mac_debug              | x86-64 | Mac OS X/Xcode         | clang     | debug   |                        |
 | chromium_linux64_debug | x86-64 | Ubuntu Linux 18.04     | clang     | debug   | built with chromium    |
 | chromium_mac_debug     | x86-64 | Mac OS X 10.15         | clang     | debug   | built with chromium    |
 <br />
 
-[*] Tests run on Ubuntu 20.04, but are cross-compiled to arm64 with a debian stretch sysroot.
+[*] Tests run on Ubuntu 20.04, but are cross-compiled to arm64 with a debian
+sysroot.
 
 The chromium_ builders compile against Chromium top-of-tree to ensure that
 changes can be autorolled into Chromium.

@@ -402,7 +402,7 @@ struct check_transpose_aliasing_compile_time_selector<DestIsTransposed,CwiseBina
 template<typename Scalar, bool DestIsTransposed, typename OtherDerived>
 struct check_transpose_aliasing_run_time_selector
 {
-  static bool run(const Scalar* dest, const OtherDerived& src)
+  EIGEN_DEVICE_FUNC static bool run(const Scalar* dest, const OtherDerived& src)
   {
     return (bool(blas_traits<OtherDerived>::IsTransposed) != DestIsTransposed) && (dest!=0 && dest==(const Scalar*)extract_data(src));
   }
@@ -411,7 +411,7 @@ struct check_transpose_aliasing_run_time_selector
 template<typename Scalar, bool DestIsTransposed, typename BinOp, typename DerivedA, typename DerivedB>
 struct check_transpose_aliasing_run_time_selector<Scalar,DestIsTransposed,CwiseBinaryOp<BinOp,DerivedA,DerivedB> >
 {
-  static bool run(const Scalar* dest, const CwiseBinaryOp<BinOp,DerivedA,DerivedB>& src)
+  EIGEN_DEVICE_FUNC static bool run(const Scalar* dest, const CwiseBinaryOp<BinOp,DerivedA,DerivedB>& src)
   {
     return ((blas_traits<DerivedA>::IsTransposed != DestIsTransposed) && (dest!=0 && dest==(const Scalar*)extract_data(src.lhs())))
         || ((blas_traits<DerivedB>::IsTransposed != DestIsTransposed) && (dest!=0 && dest==(const Scalar*)extract_data(src.rhs())));
@@ -431,7 +431,7 @@ template<typename Derived, typename OtherDerived,
         >
 struct checkTransposeAliasing_impl
 {
-    static void run(const Derived& dst, const OtherDerived& other)
+    EIGEN_DEVICE_FUNC static void run(const Derived& dst, const OtherDerived& other)
     {
         eigen_assert((!check_transpose_aliasing_run_time_selector
                       <typename Derived::Scalar,blas_traits<Derived>::IsTransposed,OtherDerived>
@@ -445,13 +445,13 @@ struct checkTransposeAliasing_impl
 template<typename Derived, typename OtherDerived>
 struct checkTransposeAliasing_impl<Derived, OtherDerived, false>
 {
-    static void run(const Derived&, const OtherDerived&)
+    EIGEN_DEVICE_FUNC static void run(const Derived&, const OtherDerived&)
     {
     }
 };
 
 template<typename Dst, typename Src>
-void check_for_aliasing(const Dst &dst, const Src &src)
+EIGEN_DEVICE_FUNC inline void check_for_aliasing(const Dst &dst, const Src &src)
 {
   if((!Dst::IsVectorAtCompileTime) && dst.rows()>1 && dst.cols()>1)
     internal::checkTransposeAliasing_impl<Dst, Src>::run(dst, src);

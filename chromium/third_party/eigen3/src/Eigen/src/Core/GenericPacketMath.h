@@ -563,13 +563,13 @@ template<typename Packet> EIGEN_DEVICE_FUNC inline Packet
 parg(const Packet& a) { using numext::arg; return arg(a); }
 
 
-/** \internal \returns \a a logically shifted by N bits to the right */
+/** \internal \returns \a a arithmetically shifted by N bits to the right */
 template<int N> EIGEN_DEVICE_FUNC inline int
 parithmetic_shift_right(const int& a) { return a >> N; }
 template<int N> EIGEN_DEVICE_FUNC inline long int
 parithmetic_shift_right(const long int& a) { return a >> N; }
 
-/** \internal \returns \a a arithmetically shifted by N bits to the right */
+/** \internal \returns \a a logically shifted by N bits to the right */
 template<int N> EIGEN_DEVICE_FUNC inline int
 plogical_shift_right(const int& a) { return static_cast<int>(static_cast<unsigned int>(a) >> N); }
 template<int N> EIGEN_DEVICE_FUNC inline long int
@@ -1189,6 +1189,71 @@ EIGEN_DEVICE_FUNC inline Packet preciprocal(const Packet& a) {
 template<typename Packet> EIGEN_DECLARE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS
 Packet prsqrt(const Packet& a) {
   return preciprocal<Packet>(psqrt(a));
+}
+
+template <typename Packet, bool IsScalar = is_scalar<Packet>::value,
+    bool IsInteger = NumTraits<typename unpacket_traits<Packet>::type>::IsInteger>
+    struct psignbit_impl;
+template <typename Packet, bool IsInteger>
+struct psignbit_impl<Packet, true, IsInteger> {
+     EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE static constexpr Packet run(const Packet& a) { return numext::signbit(a); }
+};
+template <typename Packet>
+struct psignbit_impl<Packet, false, false> {
+    // generic implementation if not specialized in PacketMath.h
+    // slower than arithmetic shift
+    typedef typename unpacket_traits<Packet>::type Scalar;
+    EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE static Packet run(const Packet& a) {
+        const Packet cst_pos_one = pset1<Packet>(Scalar(1));
+        const Packet cst_neg_one = pset1<Packet>(Scalar(-1));
+        return pcmp_eq(por(pand(a, cst_neg_one), cst_pos_one), cst_neg_one);
+    }
+};
+template <typename Packet>
+struct psignbit_impl<Packet, false, true> {
+    // generic implementation for integer packets
+    EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE static constexpr Packet run(const Packet& a) { return pcmp_lt(a, pzero(a)); }
+};
+/** \internal \returns the sign bit of \a a as a bitmask*/
+template <typename Packet>
+EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE constexpr Packet
+psignbit(const Packet& a) { return psignbit_impl<Packet>::run(a); }
+
+/** \internal \returns the 2-argument arc tangent of \a y and \a x (coeff-wise) */
+template <typename Packet, std::enable_if_t<is_scalar<Packet>::value, int> = 0>
+EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE Packet patan2(const Packet& y, const Packet& x) {
+  return numext::atan2(y, x);
+}
+
+/** \internal \returns the 2-argument arc tangent of \a y and \a x (coeff-wise) */
+template <typename Packet, std::enable_if_t<!is_scalar<Packet>::value, int> = 0>
+EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE Packet patan2(const Packet& y, const Packet& x) {
+  typedef typename internal::unpacket_traits<Packet>::type Scalar;
+
+  // See https://en.cppreference.com/w/cpp/numeric/math/atan2
+  // for how corner cases are supposed to be handled according to the
+  // IEEE floating-point standard (IEC 60559).
+  const Packet kSignMask = pset1<Packet>(-Scalar(0));
+  const Packet kZero = pzero(x);
+  const Packet kOne = pset1<Packet>(Scalar(1));
+  const Packet kPi = pset1<Packet>(Scalar(EIGEN_PI));
+
+  const Packet x_has_signbit = psignbit(x);
+  const Packet y_signmask = pand(y, kSignMask);
+  const Packet x_signmask = pand(x, kSignMask);
+  const Packet result_signmask = pxor(y_signmask, x_signmask);
+  const Packet shift = por(pand(x_has_signbit, kPi), y_signmask);
+
+  const Packet x_and_y_are_same = pcmp_eq(pabs(x), pabs(y));
+  const Packet x_and_y_are_zero = pcmp_eq(por(x, y), kZero);
+
+  Packet arg = pdiv(y, x);
+  arg = pselect(x_and_y_are_same, por(kOne, result_signmask), arg);
+  arg = pselect(x_and_y_are_zero, result_signmask, arg);
+
+  Packet result = patan(arg);
+  result = padd(result, shift);
+  return result;
 }
 
 } // end namespace internal

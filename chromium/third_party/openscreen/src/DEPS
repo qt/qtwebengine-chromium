@@ -30,7 +30,7 @@ vars = {
   'checkout_clang_coverage_tools': True,
 
   # GN CIPD package version.
-  'gn_version': 'git_revision:ab9104586734cb45aa77c70ca5042edbcc9f6aa5',
+  'gn_version': 'git_revision:5e19d2fb166fbd4f6f32147fbb2f497091a54ad8',
   'clang_format_revision':    'e435ad79c17b1888b34df88d6a30a094936e3836',
 }
 
@@ -42,7 +42,7 @@ deps = {
   # https://chromium.googlesource.com/chromium/src/buildtools/+/refs/heads/main
   'buildtools': {
     'url': Var('chromium_git') + '/chromium/src/buildtools' +
-      '@' + 'c2e4795660817c2776dbabd778b92ed58c074032',
+      '@' + '3c7e3f1b8b1e4c0b6ec693430379cea682de78d6',
     'condition': 'not build_with_chromium',
   },
   'buildtools/clang_format/script': {
@@ -94,14 +94,14 @@ deps = {
   'third_party/libprotobuf-mutator/src': {
     'url': Var('chromium_git') +
       '/external/github.com/google/libprotobuf-mutator.git' +
-      '@' + '8942a9ba43d8bb196230c321d46d6a137957a719',
+      '@' + 'a304ec48dcf15d942607032151f7e9ee504b5dcf',
     'condition': 'not build_with_chromium',
   },
 
   'third_party/zlib/src': {
     'url': Var('github') +
       '/madler/zlib.git' +
-      '@' + '21767c654d31d2dccdde4330529775c6c5fd5389', # version 1.2.12
+      '@' + '04f42ceca40f73e2978b50e93806c2a18c1281fc', # version 1.2.13
     'condition': 'not build_with_chromium',
   },
 
@@ -112,10 +112,12 @@ deps = {
     'condition': 'not build_with_chromium',
   },
 
+  # googletest now recommends "living at head," which is a bit of a crapshoot
+  # because regressions land upstream frequently.  This is a known good revision.
   'third_party/googletest/src': {
     'url': Var('chromium_git') +
       '/external/github.com/google/googletest.git' +
-      '@' + 'af29db7ec28d6df1c7f0f745186884091e602e07',
+      '@' + 'b495f72f1f096135cf9cf8c7879b5b89250de50a',  # 2023-01-25
     'condition': 'not build_with_chromium',
   },
 
@@ -132,7 +134,7 @@ deps = {
   # To roll forward, use quiche_revision from chromium/src/DEPS.
   'third_party/quiche/src': {
     'url': Var('quiche_git') + '/quiche.git' +
-      '@' + 'b454d36994bc5f1b6794a7973858f8aa7ead654b',
+      '@' + '7b58beaec1f65b8e074ddb81796e34f3d6d83cf3',
     'condition': 'not build_with_chromium',
   },
 
@@ -140,13 +142,13 @@ deps = {
     Var('chromium_git') + '/external/github.com/intel/tinycbor.git' +
     '@' +  'd393c16f3eb30d0c47e6f9d92db62272f0ec4dc7',  # Version 0.6.0
 
-  # Abseil recommends living at head.  Chromium takes an Abseil snapshot
-  # irregularly, every 1-2 months. It's OK for us to come out slightly ahead
-  # of Chrome's copy here.
+  # Abseil recommends living at head; we take a revision from one of the LTS
+  # tags.  Chromium has forked abseil for reasons and it seems to be rolled
+  # frequently, but LTS should generally be safe for interop with Chromium code.
   'third_party/abseil/src': {
     'url': Var('chromium_git') +
       '/external/github.com/abseil/abseil-cpp.git' + '@' +
-      '273292d1cfc0a94a65082ee350509af1d113344d',  # lts_2022_06_23 
+      '78be63686ba732b25052be15f8d6dee891c05749',  # lts_2023_01_25
     'condition': 'not build_with_chromium',
   },
 
@@ -159,13 +161,13 @@ deps = {
 
   'third_party/modp_b64': {
     'url': Var('chromium_git') + '/chromium/src/third_party/modp_b64'
-    '@' + '9c5ac792b14461c78c804d6fb0bc60667bfdb09c',
+    '@' + '3643752c065d984647f0ded68a9a01926fb3b9cd',  # 2022-11-28
     'condition': 'not build_with_chromium',
   },
 
   'third_party/valijson/src': {
     'url': Var('github') + '/tristanpenman/valijson.git' +
-      '@' + '2dfc7499a31b84edef71189f4247919268ebc74e', # Version 0.6
+      '@' + '78ac8a737df56b5334354efe104ea8f99e2a2f00', # Version 1.0
     'condition': 'not build_with_chromium'
   }
 }

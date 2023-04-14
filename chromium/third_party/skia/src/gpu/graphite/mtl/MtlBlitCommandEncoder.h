@@ -43,6 +43,12 @@ public:
     }
 #endif
 
+    void fillBuffer(id<MTLBuffer> buffer, size_t bufferOffset, size_t bytes, uint8_t value) {
+        [(*fCommandEncoder) fillBuffer:buffer
+                                 range:NSMakeRange(bufferOffset, bytes)
+                                 value:value];
+    }
+
     void copyFromTexture(id<MTLTexture> texture,
                          SkIRect srcRect,
                          id<MTLBuffer> buffer,
@@ -110,8 +116,8 @@ public:
 private:
     MtlBlitCommandEncoder(const SharedContext* sharedContext,
                           sk_cfp<id<MTLBlitCommandEncoder>> encoder)
-        : Resource(sharedContext, Ownership::kOwned, SkBudgeted::kYes)
-        , fCommandEncoder(std::move(encoder)) {}
+            : Resource(sharedContext, Ownership::kOwned, skgpu::Budgeted::kYes)
+            , fCommandEncoder(std::move(encoder)) {}
 
     void freeGpuData() override {
         fCommandEncoder.reset();

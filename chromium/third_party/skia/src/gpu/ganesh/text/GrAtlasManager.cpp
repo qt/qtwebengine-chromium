@@ -9,8 +9,8 @@
 
 #include "include/core/SkColorSpace.h"
 #include "include/core/SkEncodedImageFormat.h"
+#include "src/base/SkAutoMalloc.h"
 #include "src/codec/SkMasks.h"
-#include "src/core/SkAutoMalloc.h"
 #include "src/core/SkDistanceFieldGen.h"
 #include "src/gpu/ganesh/GrImageInfo.h"
 #include "src/gpu/ganesh/GrMeshDrawTarget.h"
@@ -233,7 +233,7 @@ GrDrawOpAtlas::ErrorCode GrAtlasManager::addToAtlas(GrResourceProvider* resource
 
 void GrAtlasManager::addGlyphToBulkAndSetUseToken(skgpu::BulkUsePlotUpdater* updater,
                                                   MaskFormat format, Glyph* glyph,
-                                                  skgpu::DrawToken token) {
+                                                  skgpu::AtlasToken token) {
     SkASSERT(glyph);
     if (updater->add(glyph->fAtlasLocator)) {
         this->getAtlas(format)->setLastUseToken(glyph->fAtlasLocator, token);

@@ -11,9 +11,9 @@
 #include "include/private/SkSLLayout.h"
 #include "include/private/SkSLModifiers.h"
 #include "include/private/SkSLProgramElement.h"
-#include "include/private/SkTHash.h"
 #include "include/sksl/SkSLErrorReporter.h"
-#include "src/core/SkSafeMath.h"
+#include "src/base/SkSafeMath.h"
+#include "src/core/SkTHash.h"
 #include "src/sksl/SkSLAnalysis.h"
 #include "src/sksl/SkSLBuiltinTypes.h"
 #include "src/sksl/SkSLContext.h"
@@ -135,7 +135,6 @@ public:
                 }
                 break;
             }
-            case Expression::Kind::kExternalFunctionReference:
             case Expression::Kind::kFunctionReference:
             case Expression::Kind::kMethodReference:
             case Expression::Kind::kTypeReference:

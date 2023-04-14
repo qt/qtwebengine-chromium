@@ -4,7 +4,7 @@
  *
  *   FreeType PFR object methods (body).
  *
- * Copyright (C) 2002-2022 by
+ * Copyright (C) 2002-2023 by
  * David Turner, Robert Wilhelm, and Werner Lemberg.
  *
  * This file is part of the FreeType project, and may only be used,
@@ -490,7 +490,7 @@
     glyph1--;
     glyph2--;
 
-    /* check the array bounds, .notdef is automacally out */
+    /* check the array bounds, .notdef is automatically out */
     if ( glyph1 >= phy_font->num_chars ||
          glyph2 >= phy_font->num_chars )
       goto Exit;

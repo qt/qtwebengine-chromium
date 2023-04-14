@@ -17,7 +17,6 @@
 #include <algorithm>
 #include <string>
 
-namespace location {
 namespace nearby {
 namespace connections {
 
@@ -101,10 +100,6 @@ const ByteArray& Payload::AsBytes() const& {
   auto* result = absl::get_if<ByteArray>(&content_);
   return result ? *result : empty;
 }
-ByteArray&& Payload::AsBytes() && {
-  auto* result = absl::get_if<ByteArray>(&content_);
-  return result ? std::move(*result) : std::move(ByteArray());
-}
 // Returns InputStream* payload, if it has been defined, or nullptr.
 InputStream* Payload::AsStream() {
   auto* result = absl::get_if<std::function<InputStream&()>>(&content_);
@@ -144,4 +139,3 @@ const std::string& Payload::GetFileName() const { return file_name_; }
 
 }  // namespace connections
 }  // namespace nearby
-}  // namespace location

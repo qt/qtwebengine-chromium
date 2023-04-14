@@ -7,7 +7,7 @@
 
 #include "include/core/SkShader.h"
 #include "include/core/SkString.h"
-#include "src/core/SkArenaAlloc.h"
+#include "src/base/SkArenaAlloc.h"
 #include "src/core/SkColorFilterBase.h"
 #include "src/core/SkRasterPipeline.h"
 #include "src/core/SkReadBuffer.h"
@@ -55,12 +55,12 @@ void SkColorFilterShader::flatten(SkWriteBuffer& buffer) const {
     buffer.writeFlattenable(fFilter.get());
 }
 
-bool SkColorFilterShader::onAppendStages(const SkStageRec& rec) const {
-    if (!as_SB(fShader)->appendStages(rec)) {
+bool SkColorFilterShader::appendStages(const SkStageRec& rec, const MatrixRec& mRec) const {
+    if (!as_SB(fShader)->appendStages(rec, mRec)) {
         return false;
     }
     if (fAlpha != 1.0f) {
-        rec.fPipeline->append(SkRasterPipeline::scale_1_float, rec.fAlloc->make<float>(fAlpha));
+        rec.fPipeline->append(SkRasterPipelineOp::scale_1_float, rec.fAlloc->make<float>(fAlpha));
     }
     if (!fFilter->appendStages(rec, fShader->isOpaque())) {
         return false;
@@ -68,15 +68,16 @@ bool SkColorFilterShader::onAppendStages(const SkStageRec& rec) const {
     return true;
 }
 
-skvm::Color SkColorFilterShader::onProgram(skvm::Builder* p,
-                                           skvm::Coord device, skvm::Coord local, skvm::Color paint,
-                                           const SkMatrixProvider& matrices, const SkMatrix* localM,
-                                           const SkColorInfo& dst,
-                                           skvm::Uniforms* uniforms, SkArenaAlloc* alloc) const {
+skvm::Color SkColorFilterShader::program(skvm::Builder* p,
+                                         skvm::Coord device,
+                                         skvm::Coord local,
+                                         skvm::Color paint,
+                                         const MatrixRec& mRec,
+                                         const SkColorInfo& dst,
+                                         skvm::Uniforms* uniforms,
+                                         SkArenaAlloc* alloc) const {
     // Run the shader.
-    skvm::Color c = as_SB(fShader)->program(p, device,local, paint,
-                                            matrices,localM, dst,
-                                            uniforms,alloc);
+    skvm::Color c = as_SB(fShader)->program(p, device, local, paint, mRec, dst, uniforms, alloc);
     if (!c) {
         return {};
     }
@@ -96,10 +97,9 @@ skvm::Color SkColorFilterShader::onProgram(skvm::Builder* p,
 #if SK_SUPPORT_GPU
 /////////////////////////////////////////////////////////////////////
 
-
-std::unique_ptr<GrFragmentProcessor> SkColorFilterShader::asFragmentProcessor(
-        const GrFPArgs& args) const {
-    auto shaderFP = as_SB(fShader)->asFragmentProcessor(args);
+std::unique_ptr<GrFragmentProcessor>
+SkColorFilterShader::asFragmentProcessor(const GrFPArgs& args, const MatrixRec& mRec) const {
+    auto shaderFP = as_SB(fShader)->asFragmentProcessor(args, mRec);
     if (!shaderFP) {
         return nullptr;
     }

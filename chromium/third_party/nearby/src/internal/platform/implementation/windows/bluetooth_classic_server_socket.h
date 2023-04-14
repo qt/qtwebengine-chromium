@@ -17,7 +17,6 @@
 
 #include <Windows.h>
 
-#include <functional>
 #include <memory>
 #include <queue>
 #include <string>
@@ -28,7 +27,6 @@
 #include "internal/platform/implementation/windows/bluetooth_classic_socket.h"
 #include "internal/platform/implementation/windows/generated/winrt/base.h"
 
-namespace location {
 namespace nearby {
 namespace windows {
 
@@ -75,7 +73,7 @@ class BluetoothServerSocket : public api::BluetoothServerSocket {
   // Called by the server side of a connection before passing ownership of
   // WifiLanServerSocker to user, to track validity of a pointer to this
   // server socket.
-  void SetCloseNotifier(std::function<void()> notifier);
+  void SetCloseNotifier(absl::AnyInvocable<void()> notifier);
 
   bool listen();
 
@@ -99,7 +97,7 @@ class BluetoothServerSocket : public api::BluetoothServerSocket {
   winrt::event_token listener_event_token_{};
 
   // Close notifier
-  std::function<void()> close_notifier_ = nullptr;
+  absl::AnyInvocable<void()> close_notifier_ = nullptr;
 
   // IP addresses of the computer. mDNS uses them to advertise.
   std::vector<std::string> ip_addresses_{};
@@ -111,5 +109,5 @@ class BluetoothServerSocket : public api::BluetoothServerSocket {
 
 }  // namespace windows
 }  // namespace nearby
-}  // namespace location
+
 #endif  // PLATFORM_IMPL_WINDOWS_BLUETOOTH_CLASSIC_SERVER_SOCKET_H_

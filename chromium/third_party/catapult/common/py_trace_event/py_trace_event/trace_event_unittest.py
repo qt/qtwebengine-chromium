@@ -20,6 +20,12 @@ from py_trace_event.trace_event_impl import multiprocessing_shim
 from py_utils import tempfile_ext
 
 
+# Moving out for pickle serialization.
+def child(resp):
+  # test tracing is not controllable in the child
+  resp.put(trace_event.is_tracing_controllable())
+
+
 class TraceEventTests(unittest.TestCase):
 
   @contextlib.contextmanager
@@ -397,10 +403,6 @@ class TraceEventTests(unittest.TestCase):
 
   @unittest.skipIf(sys.platform == 'win32', 'crbug.com/945819')
   def testTracingControlDisabledInChildButNotInParent(self):
-    def child(resp):
-      # test tracing is not controllable in the child
-      resp.put(trace_event.is_tracing_controllable())
-
     with self._test_trace():
       q = multiprocessing.Queue()
       p = multiprocessing.Process(target=child, args=[q])

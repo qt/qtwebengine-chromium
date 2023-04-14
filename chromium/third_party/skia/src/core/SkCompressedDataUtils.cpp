@@ -11,8 +11,8 @@
 #include "include/core/SkColorPriv.h"
 #include "include/core/SkData.h"
 #include "include/private/SkColorData.h"
-#include "include/private/SkTPin.h"
-#include "src/core/SkMathPriv.h"
+#include "include/private/base/SkTPin.h"
+#include "src/base/SkMathPriv.h"
 #include "src/core/SkMipmap.h"
 
 struct ETC1Block {
@@ -240,7 +240,6 @@ bool SkDecompress(sk_sp<SkData> data,
     }
 
     SkUNREACHABLE;
-    return false;
 }
 
 size_t SkCompressedDataSize(SkImage::CompressionType type, SkISize dimensions,

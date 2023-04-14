@@ -227,6 +227,26 @@ class FPDFViewEmbedderTest : public EmbedderTest {
         page, format, /*bitmap_stride=*/0, expected_checksum);
   }
 
+#ifdef _SKIA_SUPPORT_
+  void TestRenderPageSkp(FPDF_PAGE page, const char* expected_checksum) {
+    int width = static_cast<int>(FPDF_GetPageWidth(page));
+    int height = static_cast<int>(FPDF_GetPageHeight(page));
+
+    FPDF_RECORDER opaque_recorder = FPDF_RenderPageSkp(page, width, height);
+    ASSERT_TRUE(opaque_recorder);
+
+    SkPictureRecorder* recorder =
+        reinterpret_cast<SkPictureRecorder*>(opaque_recorder);
+    sk_sp<SkPicture> picture = recorder->finishRecordingAsPicture();
+    delete recorder;
+    ASSERT_TRUE(picture);
+
+    ScopedFPDFBitmap bitmap = SkPictureToPdfiumBitmap(
+        std::move(picture), SkISize::Make(width, height));
+    CompareBitmap(bitmap.get(), width, height, expected_checksum);
+  }
+#endif  // _SKIA_SUPPORT_
+
  private:
   void TestRenderPageBitmapWithExternalMemoryImpl(
       FPDF_PAGE page,
@@ -505,6 +525,11 @@ TEST_F(FPDFViewEmbedderTest, LoadNonexistentDocument) {
 TEST_F(FPDFViewEmbedderTest, DocumentWithNoPageCount) {
   ASSERT_TRUE(OpenDocument("no_page_count.pdf"));
   ASSERT_EQ(6, FPDF_GetPageCount(document()));
+}
+
+TEST_F(FPDFViewEmbedderTest, DocumentWithEmptyPageTreeNode) {
+  ASSERT_TRUE(OpenDocument("page_tree_empty_node.pdf"));
+  ASSERT_EQ(2, FPDF_GetPageCount(document()));
 }
 
 // See https://crbug.com/pdfium/465
@@ -1448,6 +1473,21 @@ TEST_F(FPDFViewEmbedderTest, RenderBug664284WithNoNativeText) {
   UnloadPage(page);
 }
 
+// TODO(crbug.com/pdfium/1955): Remove this test once pixel tests can pass with
+// `reverse-byte-order` option.
+TEST_F(FPDFViewEmbedderTest, RenderBlueAndRedImagesWithReverByteOrderFlag) {
+  // When rendering with `FPDF_REVERSE_BYTE_ORDER` flag, the blue and red
+  // channels should be reversed.
+  ASSERT_TRUE(OpenDocument("bug_1396264.pdf"));
+  ScopedFPDFPage page(FPDF_LoadPage(document(), 0));
+  ASSERT_TRUE(page);
+
+  TestRenderPageBitmapWithFlags(page.get(), 0,
+                                "81e7f4498090977c848a21b5c6510d3a");
+  TestRenderPageBitmapWithFlags(page.get(), FPDF_REVERSE_BYTE_ORDER,
+                                "505ba6d1c7f4044c11c91873452a8bde");
+}
+
 TEST_F(FPDFViewEmbedderTest, RenderJpxLzwImageWithFlags) {
   static const char kNormalChecksum[] = "4bcd56cae1ca2622403e8af07242e71a";
   static const char kGrayscaleChecksum[] = "fe45ad56efe868ba82285fa5ffedc0cb";
@@ -1518,25 +1558,24 @@ TEST_F(FPDFViewEmbedderTest, RenderManyRectanglesWithAndWithoutExternalMemory) {
   FPDF_PAGE page = LoadPage(0);
   ASSERT_TRUE(page);
 
+  const char* bgr_checksum = []() {
+    if (CFX_DefaultRenderDevice::SkiaIsDefaultRenderer())
+      return "4d52e5cc1d4a8067bf918b85b232fff0";
+    return "ab6312e04c0d3f4e46fb302a45173d05";
+  }();
+  static constexpr int kBgrStride = 600;  // Width of 200 * 24 bits per pixel.
+  TestRenderPageBitmapWithInternalMemory(page, FPDFBitmap_BGR, bgr_checksum);
+  TestRenderPageBitmapWithInternalMemoryAndStride(page, FPDFBitmap_BGR,
+                                                  kBgrStride, bgr_checksum);
+  TestRenderPageBitmapWithExternalMemory(page, FPDFBitmap_BGR, bgr_checksum);
+  TestRenderPageBitmapWithExternalMemoryAndNoStride(page, FPDFBitmap_BGR,
+                                                    bgr_checksum);
+
   const char* gray_checksum = []() {
     if (CFX_DefaultRenderDevice::SkiaIsDefaultRenderer())
       return "3dfe1fc3889123d68e1748fefac65e72";
     return "b561c11edc44dc3972125a9b8744fa2f";
   }();
-
-  // TODO(crbug.com/pdfium/1489): Add a test for FPDFBitmap_BGR in Skia modes
-  // once Skia provides support for BGR24 format.
-  if (!CFX_DefaultRenderDevice::SkiaIsDefaultRenderer()) {
-    static const char kBgrChecksum[] = "ab6312e04c0d3f4e46fb302a45173d05";
-
-    static constexpr int kBgrStride = 600;  // Width of 200 * 24 bits per pixel.
-    TestRenderPageBitmapWithInternalMemory(page, FPDFBitmap_BGR, kBgrChecksum);
-    TestRenderPageBitmapWithInternalMemoryAndStride(page, FPDFBitmap_BGR,
-                                                    kBgrStride, kBgrChecksum);
-    TestRenderPageBitmapWithExternalMemory(page, FPDFBitmap_BGR, kBgrChecksum);
-    TestRenderPageBitmapWithExternalMemoryAndNoStride(page, FPDFBitmap_BGR,
-                                                      kBgrChecksum);
-  }
 
   TestRenderPageBitmapWithInternalMemory(page, FPDFBitmap_Gray, gray_checksum);
   static constexpr int kGrayStride = 200;  // Width of 200 * 8 bits per pixel.
@@ -1949,34 +1988,57 @@ TEST_F(FPDFViewEmbedderTest, GetTrailerEndsWhitespace) {
   EXPECT_EQ(kExpectedEnds, ends);
 }
 
+TEST_F(FPDFViewEmbedderTest, RenderXfaPage) {
+  ASSERT_TRUE(OpenDocument("simple_xfa.pdf"));
+
+  FPDF_PAGE page = LoadPage(0);
+  ASSERT_TRUE(page);
+
+  // Should always be blank, as we're not testing `FPDF_FFLDraw()` here.
+  TestRenderPageBitmapWithFlags(page, 0, pdfium::kBlankPage612By792Checksum);
+
+  UnloadPage(page);
+}
+
 #ifdef _SKIA_SUPPORT_
 TEST_F(FPDFViewEmbedderTest, RenderPageToSkp) {
-  if (!CFX_DefaultRenderDevice::SkiaIsDefaultRenderer())
+  if (!CFX_DefaultRenderDevice::SkiaIsDefaultRenderer()) {
     GTEST_SKIP() << "FPDF_RenderPageSkp() only makes sense with Skia";
+  }
 
   ASSERT_TRUE(OpenDocument("rectangles.pdf"));
 
   FPDF_PAGE page = LoadPage(0);
   ASSERT_TRUE(page);
 
-  constexpr SkISize kOutputSize = SkISize::Make(200, 300);
+  TestRenderPageSkp(page, pdfium::RectanglesChecksum());
 
-  FPDF_RECORDER opaque_recorder =
-      FPDF_RenderPageSkp(page, kOutputSize.width(), kOutputSize.height());
   UnloadPage(page);
-  ASSERT_TRUE(opaque_recorder);
+}
 
-  SkPictureRecorder* recorder =
-      reinterpret_cast<SkPictureRecorder*>(opaque_recorder);
-  sk_sp<SkPicture> picture = recorder->finishRecordingAsPicture();
-  delete recorder;
-  ASSERT_TRUE(picture);
+TEST_F(FPDFViewEmbedderTest, RenderXfaPageToSkp) {
+  if (!CFX_DefaultRenderDevice::SkiaIsDefaultRenderer()) {
+    GTEST_SKIP() << "FPDF_RenderPageSkp() only makes sense with Skia";
+  }
 
-  ScopedFPDFBitmap bitmap =
-      SkPictureToPdfiumBitmap(std::move(picture), kOutputSize);
-  ASSERT_TRUE(bitmap);
+  ASSERT_TRUE(OpenDocument("simple_xfa.pdf"));
 
-  CompareBitmap(bitmap.get(), kOutputSize.width(), kOutputSize.height(),
-                pdfium::RectanglesChecksum());
+  FPDF_PAGE page = LoadPage(0);
+  ASSERT_TRUE(page);
+
+  // Should always be blank, as we're not testing `FPDF_FFLRecord()` here.
+  TestRenderPageSkp(page, pdfium::kBlankPage612By792Checksum);
+
+  UnloadPage(page);
 }
 #endif  // _SKIA_SUPPORT_
+
+TEST_F(FPDFViewEmbedderTest, NoSmoothTextItalicOverlappingGlyphs) {
+  ASSERT_TRUE(OpenDocument("bug_1919.pdf"));
+  FPDF_PAGE page = LoadPage(0);
+  ASSERT_TRUE(page);
+
+  TestRenderPageBitmapWithFlags(page, FPDF_RENDER_NO_SMOOTHTEXT,
+                                "4ef1f65ab1ac76acb97a3540dcb10b4e");
+  UnloadPage(page);
+}

@@ -1,6 +1,6 @@
 #!/usr/bin/env python
-# Copyright (c) 2020-2022 Valve Corporation
-# Copyright (c) 2020-2022 LunarG, Inc.
+# Copyright (c) 2020-2023 Valve Corporation
+# Copyright (c) 2020-2023 LunarG, Inc.
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,12 +13,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#
-# Author: Mark Lobodzinski <mark@lunarg.com>
-# Author: Mike Schuchardt <mikes@lunarg.com>
-# Author: Nathaniel Cesario <nathaniel@lunarg.com>
-# Author: Karl Schultz <karl@lunarg.com>
-# Author: Tony Barbour <tony@lunarg.com>
 
 # Script to determine if source code in Pull Request is properly formatted.
 #
@@ -31,7 +25,7 @@
 # Notes:
 #    Exits with non 0 exit code if formatting is needed.
 #    Requires python3 to run correctly
-#    In standalone mode (outside of CI), changes must be rebased on master
+#    In standalone mode (outside of CI), changes must be rebased on main
 #        to get meaningful and complete results
 
 import os
@@ -59,8 +53,8 @@ def CPrint(msg_type, msg_string):
 #
 #
 # Check clang-formatting of source code diff
-def VerifyClangFormatSource(target_refspec, target_files):
-    CPrint('', "\nChecking PR source code for clang-format errors:")
+def VerifyClangFormatSource(commit, target_files):
+    target_refspec = f'{commit}^...{commit}'
     retval = 0
     good_file_pattern = re.compile('.*\\.(cpp|cc|c\+\+|cxx|c|h|hpp)$')
     diff_files_list = [item for item in target_files if good_file_pattern.search(item)]
@@ -74,48 +68,62 @@ def VerifyClangFormatSource(target_refspec, target_files):
             CPrint('ERR_MSG', "\nFound formatting errors!")
             CPrint('CONTENT', "\n" + diff_files_data)
             retval = 1
-    else:
-        CPrint('SUCCESS_MSG', "\nThe modified source code in PR has been properly clang-formatted.\n\n")
     return retval
 #
 #
 # Check copyright dates for modified files
-def VerifyCopyrights(target_refspec, target_files):
-    CPrint('', "\nChecking PR source files for correct copyright information:")
+def VerifyCopyrights(commit, target_files):
     retval = 0
-    current_year = str(date.today().year)
+    is_lunarg_author = False
+    authors = check_output(['git', 'log', '-n' , '1', '--format=%ae', commit])
+    for author in authors.split(b'\n'):
+        if author.endswith(b'@lunarg.com'):
+            is_lunarg_author = True
+            break
+
+    if not is_lunarg_author:
+        return 0
+
+    # Handle year changes by respecting when the author wrote the code, rather
+    # the day the script runs. This isn't exactly right yet, because really
+    # we should evaluate it commit's files against that commit's date.
+    commit_year = None
+    # get all the author dates in YYYY-MM-DD format
+    commit_dates = check_output(['git', 'log', '-n', '1', '--format=%as', commit])
+    for cd in commit_dates.split(b'\n'):
+        if len(cd) == 0:
+            continue
+        year = cd.split(b'-')[0]
+        if not commit_year or int(commit_year) < int(year):
+            commit_year = year.decode('utf-8')
     for file in target_files:
         if file is None or not os.path.isfile(file):
             continue
-        copyright_match = re.search('Copyright (.)*LunarG', open(file, encoding="utf-8", errors='ignore').read(1024))
-        if copyright_match and current_year not in copyright_match.group(0):
-            CPrint('ERR_MSG', '\n' + file + " has an out-of-date copyright notice.")
-            retval = 1;
-    if retval == 0:
-        CPrint('SUCCESS_MSG', "\nThe modified source files have correct copyright dates.\n\n")
+        for company in ["LunarG", "Valve"]:
+            # Capture the last year on the line as a separate match. It should be the highest (or only year of the range)
+            copyright_match = re.search('Copyright .*(\d{4}) ' + company, open(file, encoding="utf-8", errors='ignore').read(1024))
+            if copyright_match:
+                copyright_year = copyright_match.group(1)
+                if int(commit_year) > int(copyright_year):
+                    msg = 'Change written in {} but copyright ends in {}.'.format(commit_year, copyright_year)
+                    CPrint('ERR_MSG', '\n' + file + ' has an out-of-date ' + company + ' copyright notice. ' + msg)
+                    retval = 1
     return retval
 #
 #
 # Check commit message formats for commits in this PR/Branch
-def VerifyCommitMessageFormat(target_refspec, target_files):
-    CPrint('', "\nChecking PR commit messages for consistency issues:")
+def VerifyCommitMessageFormat(commit, target_files):
     retval = 0
 
     # Construct correct commit list
-    pr_commit_range_parms = ['git', 'log', '--no-merges', '--left-only', target_refspec, '--pretty=format:"XXXNEWLINEXXX"%n%B']
-
-    commit_data = check_output(pr_commit_range_parms)
-    commit_text = commit_data.decode('utf-8')
+    commit_text= check_output(['git', 'log', '-n', '1', '--pretty=format:%B', commit]).decode('utf-8')
     if commit_text is None:
-        CPrint('SUCCESS_MSG', "\nNo commit messages were found for format checks.\n")
         return retval
 
     msg_cur_line = 0
     msg_prev_line = ''
     for msg_line_text in commit_text.splitlines():
         msg_cur_line += 1
-        if 'XXXNEWLINEXXX' in msg_line_text:
-            msg_cur_line = 0
         line_length = len(msg_line_text)
 
         if msg_cur_line == 1:
@@ -163,9 +171,7 @@ def VerifyCommitMessageFormat(target_refspec, target_files):
                 CPrint('CONTENT', "     '" + msg_line_text + "'\n")
                 retval = 1
         msg_prev_line = msg_line_text
-    if retval == 0:
-        CPrint('SUCCESS_MSG', "\nThe commit messages are properly formatted.\n\n")
-    else:
+    if retval != 0:
         CPrint('HELP_MSG', "Commit Message Format Requirements:")
         CPrint('HELP_MSG', "-----------------------------------")
         CPrint('HELP_MSG', "o  Subject lines must be <= 64 characters in length")
@@ -181,15 +187,15 @@ def VerifyCommitMessageFormat(target_refspec, target_files):
         CPrint('HELP_MSG', "     state_tracker: Remove 'using std::*' statements")
         CPrint('HELP_MSG', "     stateless: Account for DynStateWithCount for multiViewport\n")
         CPrint('HELP_MSG', "Refer to this document for additional detail:")
-        CPrint('HELP_MSG', "https://github.com/KhronosGroup/Vulkan-ValidationLayers/blob/master/CONTRIBUTING.md#coding-conventions-and-formatting")
+        CPrint('HELP_MSG', "https://github.com/KhronosGroup/Vulkan-ValidationLayers/blob/main/CONTRIBUTING.md#coding-conventions-and-formatting")
     return retval
 
 #
 #
 # Check for test code assigning sType instead of using LvlInitStruct in this PR/Branch
-def VerifyTypeAssign(target_refspec, target_files):
-    CPrint('', "\nChecking test code for sType assignment instead of using LvlInitStruct:")
+def VerifyTypeAssign(commit, target_files):
     retval = 0
+    target_refspec = f'{commit}^...{commit}'
 
     test_files_list = [item for item in target_files if item.startswith('tests/')]
     test_files = ' '.join([str(elem) for elem in test_files_list])
@@ -220,7 +226,7 @@ def VerifyTypeAssign(target_refspec, target_files):
 #
 # Entrypoint
 def main():
-    DEFAULT_REFSPEC = 'origin/master'
+    DEFAULT_REFSPEC = 'origin/main'
 
     parser = argparse.ArgumentParser(description='''Usage: python3 ./scripts/check_code_format.py
     - Reqires python3 and clang-format 7.0+
@@ -228,58 +234,76 @@ def main():
     - May produce inaccurate clang-format results if local branch is not rebased on the TARGET_REFSPEC
     ''', formatter_class=RawDescriptionHelpFormatter)
     parser.add_argument('--target-refspec', metavar='TARGET_REFSPEC', type=str, dest='target_refspec', help = 'Refspec to '
-        + 'diff against (default is origin/master)', default=DEFAULT_REFSPEC)
+        + 'diff against (default is origin/main)', default=DEFAULT_REFSPEC)
     parser.add_argument('--base-refspec', metavar='BASE_REFSPEC', type=str, dest='base_refspec', help = 'Base refspec to '
         + ' compare (default is HEAD)', default='HEAD')
-    parser.add_argument('--fetch-main', dest='fetch_main', action='store_true', help='Fetch the master branch first.'
-        + ' Useful with --target-refspec=FETCH_HEAD to compare against what is currently on master')
+    parser.add_argument('--fetch-main', dest='fetch_main', action='store_true', help='Fetch the main branch first.'
+        + ' Useful with --target-refspec=FETCH_HEAD to compare against what is currently on main')
     args = parser.parse_args()
 
     if sys.version_info[0] != 3:
         print("This script requires Python 3. Run script with [-h] option for more details.")
         exit()
 
+    if os.path.isfile('check_code_format.py'):
+        os.chdir('..')
+
     target_refspec = args.target_refspec
     base_refspec = args.base_refspec
 
     if args.fetch_main:
-        print('Fetching master branch...')
-        subprocess.check_call(['git', 'fetch', 'https://github.com/KhronosGroup/Vulkan-ValidationLayers.git', 'master'])
+        print('Fetching main branch...')
+        subprocess.check_call(['git', 'fetch', 'https://github.com/KhronosGroup/Vulkan-ValidationLayers.git', 'main'])
 
     # Check if this is a merge commit
     commit_parents = check_output(['git', 'rev-list', '--parents', '-n', '1', 'HEAD'])
     if len(commit_parents.split(b' ')) > 2:
-        # If this is a merge commit, this is a PR being built, and has been merged into master for testing.
-        # The first parent (HEAD^) is going to be master, the second parent (HEAD^2) is going to be the PR commit.
+        # If this is a merge commit, this is a PR being built, and has been merged into main for testing.
+        # The first parent (HEAD^) is going to be main, the second parent (HEAD^2) is going to be the PR commit.
         # TODO (ncesario) We should *ONLY* get here when on github CI, building a PR. Should probably print a
         #      warning if this happens locally.
         target_refspec = 'HEAD^'
         base_refspec = 'HEAD^2'
 
-    diff_range = f'{target_refspec}...{base_refspec}'
-    rdiff_range = f'{base_refspec}...{target_refspec}'
+    orig_branch = check_output(['git', 'rev-parse', '--abbrev-ref', 'HEAD']).decode('utf-8').splitlines()[0]
+    if orig_branch == 'HEAD':
+        orig_branch = check_output(['git', 'rev-parse', 'HEAD']).decode('utf-8').splitlines()[0]
 
-    #
-    #
-    # Get list of files involved in this branch
-    target_files_data = subprocess.check_output(['git', 'diff', '--name-only', diff_range])
-    target_files = target_files_data.decode('utf-8')
-    target_files = target_files.split("\n")
+    commits = check_output(['git', 'log', '--format=%h', f'{base_refspec}...{target_refspec}']).split(b'\n')
+    commits.reverse()
 
-    if os.path.isfile('check_code_format.py'):
-        os.chdir('..')
+    # Run code format check on each commit in a PR so that we ensure that each commit is correct.
+    failure = 0
+    for c in commits:
+        if len(c) == 0:
+            continue
 
-    clang_format_failure = VerifyClangFormatSource(diff_range, target_files)
-    copyright_failure = VerifyCopyrights(diff_range, target_files)
-    commit_msg_failure = VerifyCommitMessageFormat(rdiff_range, target_files)
-    stype_assign_failure = VerifyTypeAssign(diff_range, target_files)
+        commit = c.decode('utf-8')
+        diff_range = f'{commit}^...{commit}'
+        rdiff_range = f'{commit}...{commit}^'
 
-    if clang_format_failure or copyright_failure or commit_msg_failure or stype_assign_failure:
-        CPrint('ERR_MSG', "\nOne or more format checks failed.\n\n")
+        commit_message = check_output(['git', 'log', '--pretty="%h %s"', diff_range])
+        CPrint('CONTENT', "\nChecking commit: " + commit_message.decode('utf-8'))
+
+        subprocess.run(['git', 'checkout', '-q', commit])
+
+        # Get list of files involved in this commit
+        target_files_data = subprocess.check_output(['git', 'log', '-n', '1', '--name-only', commit])
+        target_files = target_files_data.decode('utf-8')
+        target_files = target_files.split("\n")
+
+        failure |= VerifyClangFormatSource(commit, target_files)
+        failure |= VerifyCopyrights(commit, target_files)
+        failure |= VerifyCommitMessageFormat(commit, target_files)
+        failure |= VerifyTypeAssign(commit, target_files)
+
+    subprocess.run(['git', 'checkout', '-q', orig_branch])
+
+    if failure:
+        CPrint('ERR_MSG', "One or more format checks failed.\n")
         exit(1)
-    else:
-        CPrint('SUCCESS_MSG', "\nAll format checks passed.\n\n")
-        exit(0)
+
+    CPrint('SUCCESS_MSG', "All format checks passed.\n")
 
 if __name__ == '__main__':
   main()

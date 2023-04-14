@@ -42,14 +42,15 @@ import * as Protocol from '../../generated/protocol.js';
 import * as SourceFrame from '../../ui/legacy/components/source_frame/source_frame.js';
 import * as UI from '../../ui/legacy/legacy.js';
 
-import {BackForwardCacheTreeElement, ServiceWorkerCacheTreeElement} from './ApplicationPanelCacheSection.js';
-import {PreloadingTreeElement} from './ApplicationPanelPreloadingSection.js';
 import {ApplicationPanelTreeElement, ExpandableApplicationPanelTreeElement} from './ApplicationPanelTreeElement.js';
 import {AppManifestView} from './AppManifestView.js';
+import {BackForwardCacheTreeElement} from './BackForwardCacheTreeElement.js';
 import {BackgroundServiceModel} from './BackgroundServiceModel.js';
 import {BackgroundServiceView} from './BackgroundServiceView.js';
 import * as ApplicationComponents from './components/components.js';
+import {PreloadingTreeElement} from './PreloadingTreeElement.js';
 import resourcesSidebarStyles from './resourcesSidebar.css.js';
+import {ServiceWorkerCacheTreeElement} from './ServiceWorkerCacheTreeElement.js';
 
 import {DatabaseModel, Events as DatabaseModelEvents, type Database as DatabaseModelDatabase} from './DatabaseModel.js';
 import {DatabaseQueryView, Events as DatabaseQueryViewEvents} from './DatabaseQueryView.js';
@@ -86,117 +87,113 @@ import {ReportingApiTreeElement} from './ReportingApiTreeElement.js';
 
 const UIStrings = {
   /**
-  *@description Text in Application Panel Sidebar of the Application panel
-  */
+   *@description Text in Application Panel Sidebar of the Application panel
+   */
   application: 'Application',
   /**
-  *@description Text in Application Panel Sidebar of the Application panel
-  */
+   *@description Text in Application Panel Sidebar of the Application panel
+   */
   storage: 'Storage',
   /**
-  *@description Text in Application Panel Sidebar of the Application panel
-  */
+   *@description Text in Application Panel Sidebar of the Application panel
+   */
   localStorage: 'Local Storage',
   /**
-  *@description Text in Application Panel Sidebar of the Application panel
-  */
+   *@description Text in Application Panel Sidebar of the Application panel
+   */
   sessionStorage: 'Session Storage',
   /**
-  *@description Text in Application Panel Sidebar of the Application panel
-  */
+   *@description Text in Application Panel Sidebar of the Application panel
+   */
   webSql: 'Web SQL',
   /**
-  *@description Text for web cookies
-  */
+   *@description Text for web cookies
+   */
   cookies: 'Cookies',
   /**
-  *@description Text in Application Panel Sidebar of the Application panel
-  */
-  cache: 'Cache',
-  /**
-  *@description Text in Application Panel Sidebar of the Application panel
-  */
+   *@description Text in Application Panel Sidebar of the Application panel
+   */
   backgroundServices: 'Background Services',
   /**
-  *@description Text in Application Panel Sidebar of the Application panel
-  */
-  preloadingAndPrerendering: 'Preloading & Prerendering',
+   *@description Text in Application Panel Sidebar of the Application panel
+   */
+  preloading: 'Preloading',
   /**
-  *@description Text for rendering frames
-  */
+   *@description Text for rendering frames
+   */
   frames: 'Frames',
   /**
-  *@description Text that appears on a button for the manifest resource type filter.
-  */
+   *@description Text that appears on a button for the manifest resource type filter.
+   */
   manifest: 'Manifest',
   /**
-  *@description Text in App Manifest View of the Application panel
-  */
+   *@description Text in App Manifest View of the Application panel
+   */
   noManifestDetected: 'No manifest detected',
   /**
-  *@description Text in App Manifest View of the Application panel
-  */
+   *@description Text in App Manifest View of the Application panel
+   */
   appManifest: 'App Manifest',
   /**
-  *@description Text in Application Panel Sidebar of the Application panel
-  */
+   *@description Text in Application Panel Sidebar of the Application panel
+   */
   indexeddb: 'IndexedDB',
   /**
-  *@description A context menu item in the Application Panel Sidebar of the Application panel
-  */
+   *@description A context menu item in the Application Panel Sidebar of the Application panel
+   */
   refreshIndexeddb: 'Refresh IndexedDB',
   /**
-  *@description Tooltip in Application Panel Sidebar of the Application panel
-  *@example {1.0} PH1
-  */
+   *@description Tooltip in Application Panel Sidebar of the Application panel
+   *@example {1.0} PH1
+   */
   versionSEmpty: 'Version: {PH1} (empty)',
   /**
-  *@description Tooltip in Application Panel Sidebar of the Application panel
-  *@example {1.0} PH1
-  */
+   *@description Tooltip in Application Panel Sidebar of the Application panel
+   *@example {1.0} PH1
+   */
   versionS: 'Version: {PH1}',
   /**
-  *@description Text to clear content
-  */
+   *@description Text to clear content
+   */
   clear: 'Clear',
   /**
-  *@description Text in Application Panel Sidebar of the Application panel
-  *@example {"key path"} PH1
-  */
+   *@description Text in Application Panel Sidebar of the Application panel
+   *@example {"key path"} PH1
+   */
   keyPathS: 'Key path: {PH1}',
   /**
-  *@description Text in Application Panel Sidebar of the Application panel
-  */
+   *@description Text in Application Panel Sidebar of the Application panel
+   */
   localFiles: 'Local Files',
   /**
-  *@description Tooltip in Application Panel Sidebar of the Application panel
-  *@example {https://example.com} PH1
-  */
+   *@description Tooltip in Application Panel Sidebar of the Application panel
+   *@example {https://example.com} PH1
+   */
   cookiesUsedByFramesFromS: 'Cookies used by frames from {PH1}',
   /**
-  *@description Text in Frames View of the Application panel
-  */
+   *@description Text in Frames View of the Application panel
+   */
   openedWindows: 'Opened Windows',
   /**
-  *@description Label for plural of worker type: web workers
-  */
+   *@description Label for plural of worker type: web workers
+   */
   webWorkers: 'Web Workers',
   /**
-  *@description Label in frame tree for unavailable document
-  */
+   *@description Label in frame tree for unavailable document
+   */
   documentNotAvailable: 'Document not available',
   /**
-  *@description Description of content of unavailable document in Application panel
-  */
+   *@description Description of content of unavailable document in Application panel
+   */
   theContentOfThisDocumentHasBeen:
       'The content of this document has been generated dynamically via \'document.write()\'.',
   /**
-  *@description Text in Frames View of the Application panel
-  */
+   *@description Text in Frames View of the Application panel
+   */
   windowWithoutTitle: 'Window without title',
   /**
-  *@description Default name for worker
-  */
+   *@description Default name for worker
+   */
   worker: 'worker',
   /**
    * @description Aria text for screen reader to announce they can scroll to top of manifest if invoked
@@ -257,13 +254,13 @@ export class ApplicationPanelSidebar extends UI.Widget.VBox implements SDK.Targe
   cacheStorageListTreeElement: ServiceWorkerCacheTreeElement;
   sharedStorageListTreeElement: SharedStorageListTreeElement;
   private backForwardCacheListTreeElement?: BackForwardCacheTreeElement;
-  backgroundFetchTreeElement: BackgroundServiceTreeElement|undefined;
-  backgroundSyncTreeElement: BackgroundServiceTreeElement|undefined;
-  notificationsTreeElement: BackgroundServiceTreeElement|undefined;
-  paymentHandlerTreeElement: BackgroundServiceTreeElement|undefined;
-  periodicBackgroundSyncTreeElement: BackgroundServiceTreeElement|undefined;
-  pushMessagingTreeElement: BackgroundServiceTreeElement|undefined;
-  reportingApiTreeElement: ReportingApiTreeElement|undefined;
+  backgroundFetchTreeElement: BackgroundServiceTreeElement;
+  backgroundSyncTreeElement: BackgroundServiceTreeElement;
+  notificationsTreeElement: BackgroundServiceTreeElement;
+  paymentHandlerTreeElement: BackgroundServiceTreeElement;
+  periodicBackgroundSyncTreeElement: BackgroundServiceTreeElement;
+  pushMessagingTreeElement: BackgroundServiceTreeElement;
+  reportingApiTreeElement: ReportingApiTreeElement;
   preloadingTreeElement: PreloadingTreeElement|undefined;
   private readonly resourcesSection: ResourcesSection;
   private readonly databaseTableViews: Map<DatabaseModelDatabase, {
@@ -363,49 +360,38 @@ export class ApplicationPanelSidebar extends UI.Widget.VBox implements SDK.Targe
     this.sharedStorageListTreeElement = new SharedStorageListTreeElement(panel);
     storageTreeElement.appendChild(this.sharedStorageListTreeElement);
 
-    const cacheSectionTitle = i18nString(UIStrings.cache);
-    const cacheTreeElement = this.addSidebarSection(cacheSectionTitle);
     this.cacheStorageListTreeElement = new ServiceWorkerCacheTreeElement(panel);
-    cacheTreeElement.appendChild(this.cacheStorageListTreeElement);
+    storageTreeElement.appendChild(this.cacheStorageListTreeElement);
+
+    const backgroundServiceSectionTitle = i18nString(UIStrings.backgroundServices);
+    const backgroundServiceTreeElement = this.addSidebarSection(backgroundServiceSectionTitle);
 
     this.backForwardCacheListTreeElement = new BackForwardCacheTreeElement(panel);
-    cacheTreeElement.appendChild(this.backForwardCacheListTreeElement);
+    backgroundServiceTreeElement.appendChild(this.backForwardCacheListTreeElement);
+    this.backgroundFetchTreeElement =
+        new BackgroundServiceTreeElement(panel, Protocol.BackgroundService.ServiceName.BackgroundFetch);
+    backgroundServiceTreeElement.appendChild(this.backgroundFetchTreeElement);
+    this.backgroundSyncTreeElement =
+        new BackgroundServiceTreeElement(panel, Protocol.BackgroundService.ServiceName.BackgroundSync);
+    backgroundServiceTreeElement.appendChild(this.backgroundSyncTreeElement);
 
-    if (Root.Runtime.experiments.isEnabled('backgroundServices')) {
-      const backgroundServiceSectionTitle = i18nString(UIStrings.backgroundServices);
-      const backgroundServiceTreeElement = this.addSidebarSection(backgroundServiceSectionTitle);
-
-      this.backgroundFetchTreeElement =
-          new BackgroundServiceTreeElement(panel, Protocol.BackgroundService.ServiceName.BackgroundFetch);
-      backgroundServiceTreeElement.appendChild(this.backgroundFetchTreeElement);
-      this.backgroundSyncTreeElement =
-          new BackgroundServiceTreeElement(panel, Protocol.BackgroundService.ServiceName.BackgroundSync);
-      backgroundServiceTreeElement.appendChild(this.backgroundSyncTreeElement);
-
-      if (Root.Runtime.experiments.isEnabled('backgroundServicesNotifications')) {
-        this.notificationsTreeElement =
-            new BackgroundServiceTreeElement(panel, Protocol.BackgroundService.ServiceName.Notifications);
-        backgroundServiceTreeElement.appendChild(this.notificationsTreeElement);
-      }
-      if (Root.Runtime.experiments.isEnabled('backgroundServicesPaymentHandler')) {
-        this.paymentHandlerTreeElement =
-            new BackgroundServiceTreeElement(panel, Protocol.BackgroundService.ServiceName.PaymentHandler);
-        backgroundServiceTreeElement.appendChild(this.paymentHandlerTreeElement);
-      }
-      this.periodicBackgroundSyncTreeElement =
-          new BackgroundServiceTreeElement(panel, Protocol.BackgroundService.ServiceName.PeriodicBackgroundSync);
-      backgroundServiceTreeElement.appendChild(this.periodicBackgroundSyncTreeElement);
-      if (Root.Runtime.experiments.isEnabled('backgroundServicesPushMessaging')) {
-        this.pushMessagingTreeElement =
-            new BackgroundServiceTreeElement(panel, Protocol.BackgroundService.ServiceName.PushMessaging);
-        backgroundServiceTreeElement.appendChild(this.pushMessagingTreeElement);
-      }
-      this.reportingApiTreeElement = new ReportingApiTreeElement(panel);
-      backgroundServiceTreeElement.appendChild(this.reportingApiTreeElement);
-    }
+    this.notificationsTreeElement =
+        new BackgroundServiceTreeElement(panel, Protocol.BackgroundService.ServiceName.Notifications);
+    backgroundServiceTreeElement.appendChild(this.notificationsTreeElement);
+    this.paymentHandlerTreeElement =
+        new BackgroundServiceTreeElement(panel, Protocol.BackgroundService.ServiceName.PaymentHandler);
+    backgroundServiceTreeElement.appendChild(this.paymentHandlerTreeElement);
+    this.periodicBackgroundSyncTreeElement =
+        new BackgroundServiceTreeElement(panel, Protocol.BackgroundService.ServiceName.PeriodicBackgroundSync);
+    backgroundServiceTreeElement.appendChild(this.periodicBackgroundSyncTreeElement);
+    this.pushMessagingTreeElement =
+        new BackgroundServiceTreeElement(panel, Protocol.BackgroundService.ServiceName.PushMessaging);
+    backgroundServiceTreeElement.appendChild(this.pushMessagingTreeElement);
+    this.reportingApiTreeElement = new ReportingApiTreeElement(panel);
+    backgroundServiceTreeElement.appendChild(this.reportingApiTreeElement);
 
     if (Root.Runtime.experiments.isEnabled(Root.Runtime.ExperimentName.PRELOADING_STATUS_PANEL)) {
-      const preloadingSectionTitle = i18nString(UIStrings.preloadingAndPrerendering);
+      const preloadingSectionTitle = i18nString(UIStrings.preloading);
       const preloadingSectionTreeElement = this.addSidebarSection(preloadingSectionTitle);
 
       this.preloadingTreeElement = new PreloadingTreeElement(panel);
@@ -549,29 +535,14 @@ export class ApplicationPanelSidebar extends UI.Widget.VBox implements SDK.Targe
       interestGroupModel.enable();
     }
 
-    const cacheStorageModel = this.target && this.target.model(SDK.ServiceWorkerCacheModel.ServiceWorkerCacheModel);
-    if (cacheStorageModel) {
-      cacheStorageModel.enable();
-    }
-    const serviceWorkerCacheModel =
-        this.target && this.target.model(SDK.ServiceWorkerCacheModel.ServiceWorkerCacheModel) || null;
-    this.cacheStorageListTreeElement.initialize(serviceWorkerCacheModel);
+    this.cacheStorageListTreeElement.initialize();
     const backgroundServiceModel = this.target && this.target.model(BackgroundServiceModel) || null;
-    if (Root.Runtime.experiments.isEnabled('backgroundServices')) {
-      this.backgroundFetchTreeElement && this.backgroundFetchTreeElement.initialize(backgroundServiceModel);
-      this.backgroundSyncTreeElement && this.backgroundSyncTreeElement.initialize(backgroundServiceModel);
-      if (Root.Runtime.experiments.isEnabled('backgroundServicesNotifications') && this.notificationsTreeElement) {
-        this.notificationsTreeElement.initialize(backgroundServiceModel);
-      }
-      if (Root.Runtime.experiments.isEnabled('backgroundServicesPaymentHandler') && this.paymentHandlerTreeElement) {
-        this.paymentHandlerTreeElement.initialize(backgroundServiceModel);
-      }
-      this.periodicBackgroundSyncTreeElement &&
-          this.periodicBackgroundSyncTreeElement.initialize(backgroundServiceModel);
-      if (Root.Runtime.experiments.isEnabled('backgroundServicesPushMessaging') && this.pushMessagingTreeElement) {
-        this.pushMessagingTreeElement.initialize(backgroundServiceModel);
-      }
-    }
+    this.backgroundFetchTreeElement && this.backgroundFetchTreeElement.initialize(backgroundServiceModel);
+    this.backgroundSyncTreeElement && this.backgroundSyncTreeElement.initialize(backgroundServiceModel);
+    this.notificationsTreeElement.initialize(backgroundServiceModel);
+    this.paymentHandlerTreeElement.initialize(backgroundServiceModel);
+    this.periodicBackgroundSyncTreeElement.initialize(backgroundServiceModel);
+    this.pushMessagingTreeElement.initialize(backgroundServiceModel);
 
     // The condition is equivalent to
     // `Root.Runtime.experiments.isEnabled(Root.Runtime.ExperimentName.PRELOADING_STATUS_PANEL)`.
@@ -729,7 +700,7 @@ export class ApplicationPanelSidebar extends UI.Widget.VBox implements SDK.Targe
 
   private addDOMStorage(domStorage: DOMStorage): void {
     console.assert(!this.domStorageTreeElements.get(domStorage));
-    console.assert(Boolean(domStorage.storageKey) || Boolean(domStorage.securityOrigin));
+    console.assert(Boolean(domStorage.storageKey));
 
     const domStorageTreeElement = new DOMStorageTreeElement(this.panel, domStorage);
     this.domStorageTreeElements.set(domStorage, domStorageTreeElement);
@@ -1665,19 +1636,15 @@ export class IDBIndexTreeElement extends ApplicationPanelTreeElement {
 export class DOMStorageTreeElement extends ApplicationPanelTreeElement {
   private readonly domStorage: DOMStorage;
   constructor(storagePanel: ResourcesPanel, domStorage: DOMStorage) {
-    super(
-        storagePanel,
-        domStorage.securityOrigin ? domStorage.securityOrigin :
-                                    (domStorage.storageKey ? domStorage.storageKey : i18nString(UIStrings.localFiles)),
-        false);
+    super(storagePanel, domStorage.storageKey ? domStorage.storageKey : i18nString(UIStrings.localFiles), false);
     this.domStorage = domStorage;
     const icon = UI.Icon.Icon.create('mediumicon-table', 'resource-tree-item');
     this.setLeadingIcons([icon]);
   }
 
   get itemURL(): Platform.DevToolsPath.UrlString {
-    return 'storage://' + this.domStorage.securityOrigin + '/' +
-        (this.domStorage.isLocalStorage ? 'local' : 'session') as Platform.DevToolsPath.UrlString;
+    return 'storage://' + this.domStorage.storageKey + '/' + (this.domStorage.isLocalStorage ? 'local' : 'session') as
+        Platform.DevToolsPath.UrlString;
   }
 
   onselect(selectedByUser?: boolean): boolean {

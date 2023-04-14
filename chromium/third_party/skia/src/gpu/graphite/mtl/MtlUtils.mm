@@ -5,11 +5,15 @@
  * found in the LICENSE file.
  */
 
-#include "src/gpu/graphite/mtl/MtlUtils.h"
+#include "include/gpu/graphite/mtl/MtlUtils.h"
+#include "src/gpu/graphite/mtl/MtlUtilsPriv.h"
 
 #include "include/gpu/ShaderErrorHandler.h"
+#include "include/gpu/graphite/Context.h"
 #include "include/private/SkSLString.h"
 #include "src/core/SkTraceEvent.h"
+#include "src/gpu/graphite/ContextPriv.h"
+#include "src/gpu/graphite/mtl/MtlQueueManager.h"
 #include "src/gpu/graphite/mtl/MtlSharedContext.h"
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLProgramSettings.h"
@@ -20,6 +24,29 @@
 #endif
 
 namespace skgpu::graphite {
+
+namespace ContextFactory {
+
+std::unique_ptr<Context> MakeMetal(const MtlBackendContext& backendContext,
+                                   const ContextOptions& options) {
+    sk_sp<SharedContext> sharedContext = MtlSharedContext::Make(backendContext, options);
+    if (!sharedContext) {
+        return nullptr;
+    }
+
+    sk_cfp<id<MTLCommandQueue>> queue =
+            sk_ret_cfp((id<MTLCommandQueue>)(backendContext.fQueue.get()));
+    auto queueManager = std::make_unique<MtlQueueManager>(std::move(queue), sharedContext.get());
+    if (!queueManager) {
+        return nullptr;
+    }
+
+    return ContextCtorAccessor::MakeContext(std::move(sharedContext),
+                                            std::move(queueManager),
+                                            options);
+}
+
+} // namespace ContextFactory
 
 bool MtlFormatIsDepthOrStencil(MTLPixelFormat format) {
     switch (format) {
@@ -69,8 +96,17 @@ MTLPixelFormat MtlDepthStencilFlagsToFormat(SkEnumBitMask<DepthStencilFlags> mas
 }
 
 // Print the source code for all shaders generated.
+#ifdef SK_PRINT_SKSL_SHADERS
+static const bool gPrintSKSL = true;
+#else
 static const bool gPrintSKSL = false;
+#endif
+
+#ifdef SK_PRINT_NATIVE_SHADERS
+static const bool gPrintMSL = true;
+#else
 static const bool gPrintMSL = false;
+#endif
 
 bool SkSLToMSL(SkSL::Compiler* compiler,
                const std::string& sksl,
@@ -112,10 +148,13 @@ sk_cfp<id<MTLLibrary>> MtlCompileShaderLibrary(const MtlSharedContext* sharedCon
                                                const std::string& msl,
                                                ShaderErrorHandler* errorHandler) {
     TRACE_EVENT0("skia.shaders", "driver_compile_shader");
-    auto nsSource = [[NSString alloc] initWithBytesNoCopy:const_cast<char*>(msl.c_str())
-                                                   length:msl.size()
-                                                 encoding:NSUTF8StringEncoding
-                                             freeWhenDone:NO];
+    NSString* nsSource = [[NSString alloc] initWithBytesNoCopy:const_cast<char*>(msl.c_str())
+                                                        length:msl.size()
+                                                      encoding:NSUTF8StringEncoding
+                                                  freeWhenDone:NO];
+    if (!nsSource) {
+        return nil;
+    }
     MTLCompileOptions* options = [[MTLCompileOptions alloc] init];
     // array<> is supported in MSL 2.0 on MacOS 10.13+ and iOS 11+,
     // and in MSL 1.2 on iOS 10+ (but not MacOS).
@@ -129,9 +168,10 @@ sk_cfp<id<MTLLibrary>> MtlCompileShaderLibrary(const MtlSharedContext* sharedCon
 
     NSError* error = nil;
     // TODO: do we need a version with a timeout?
-    sk_cfp<id<MTLLibrary>> compiledLibrary([sharedContext->device() newLibraryWithSource:nsSource
-                                                                                 options:options
-                                                                                   error:&error]);
+    sk_cfp<id<MTLLibrary>> compiledLibrary(
+            [sharedContext->device() newLibraryWithSource:(NSString* _Nonnull)nsSource
+                                                  options:options
+                                                    error:&error]);
     if (!compiledLibrary) {
         errorHandler->compileError(msl.c_str(), error.debugDescription.UTF8String);
         return nil;

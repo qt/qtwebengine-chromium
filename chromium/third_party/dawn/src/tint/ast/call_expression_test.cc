@@ -27,9 +27,8 @@ TEST_F(CallExpressionTest, CreationIdentifier) {
         Expr("param2"),
     };
 
-    auto* stmt = create<CallExpression>(func, params);
-    EXPECT_EQ(stmt->target.name, func);
-    EXPECT_EQ(stmt->target.type, nullptr);
+    auto* stmt = Call(func, params);
+    EXPECT_EQ(stmt->target, func);
 
     const auto& vec = stmt->args;
     ASSERT_EQ(vec.Length(), 2u);
@@ -39,9 +38,8 @@ TEST_F(CallExpressionTest, CreationIdentifier) {
 
 TEST_F(CallExpressionTest, CreationIdentifier_WithSource) {
     auto* func = Expr("func");
-    auto* stmt = create<CallExpression>(Source{{20, 2}}, func, utils::Empty);
-    EXPECT_EQ(stmt->target.name, func);
-    EXPECT_EQ(stmt->target.type, nullptr);
+    auto* stmt = Call(Source{{20, 2}}, func);
+    EXPECT_EQ(stmt->target, func);
 
     auto src = stmt->source;
     EXPECT_EQ(src.range.begin.line, 20u);
@@ -49,15 +47,14 @@ TEST_F(CallExpressionTest, CreationIdentifier_WithSource) {
 }
 
 TEST_F(CallExpressionTest, CreationType) {
-    auto* type = ty.f32();
+    auto* type = Expr(ty.f32());
     utils::Vector params{
         Expr("param1"),
         Expr("param2"),
     };
 
-    auto* stmt = create<CallExpression>(type, params);
-    EXPECT_EQ(stmt->target.name, nullptr);
-    EXPECT_EQ(stmt->target.type, type);
+    auto* stmt = Call(type, params);
+    EXPECT_EQ(stmt->target, type);
 
     const auto& vec = stmt->args;
     ASSERT_EQ(vec.Length(), 2u);
@@ -66,10 +63,9 @@ TEST_F(CallExpressionTest, CreationType) {
 }
 
 TEST_F(CallExpressionTest, CreationType_WithSource) {
-    auto* type = ty.f32();
-    auto* stmt = create<CallExpression>(Source{{20, 2}}, type, utils::Empty);
-    EXPECT_EQ(stmt->target.name, nullptr);
-    EXPECT_EQ(stmt->target.type, type);
+    auto* type = Expr(ty.f32());
+    auto* stmt = Call(Source{{20, 2}}, type);
+    EXPECT_EQ(stmt->target, type);
 
     auto src = stmt->source;
     EXPECT_EQ(src.range.begin.line, 20u);
@@ -78,7 +74,7 @@ TEST_F(CallExpressionTest, CreationType_WithSource) {
 
 TEST_F(CallExpressionTest, IsCall) {
     auto* func = Expr("func");
-    auto* stmt = create<CallExpression>(func, utils::Empty);
+    auto* stmt = Call(func);
     EXPECT_TRUE(stmt->Is<CallExpression>());
 }
 
@@ -86,16 +82,7 @@ TEST_F(CallExpressionTest, Assert_Null_Identifier) {
     EXPECT_FATAL_FAILURE(
         {
             ProgramBuilder b;
-            b.create<CallExpression>(static_cast<IdentifierExpression*>(nullptr), utils::Empty);
-        },
-        "internal compiler error");
-}
-
-TEST_F(CallExpressionTest, Assert_Null_Type) {
-    EXPECT_FATAL_FAILURE(
-        {
-            ProgramBuilder b;
-            b.create<CallExpression>(static_cast<Type*>(nullptr), utils::Empty);
+            b.Call(static_cast<Identifier*>(nullptr));
         },
         "internal compiler error");
 }
@@ -104,11 +91,11 @@ TEST_F(CallExpressionTest, Assert_Null_Param) {
     EXPECT_FATAL_FAILURE(
         {
             ProgramBuilder b;
-            b.create<CallExpression>(b.Expr("func"), utils::Vector{
-                                                         b.Expr("param1"),
-                                                         nullptr,
-                                                         b.Expr("param2"),
-                                                     });
+            b.Call(b.Ident("func"), utils::Vector{
+                                        b.Expr("param1"),
+                                        nullptr,
+                                        b.Expr("param2"),
+                                    });
         },
         "internal compiler error");
 }
@@ -118,7 +105,7 @@ TEST_F(CallExpressionTest, Assert_DifferentProgramID_Identifier) {
         {
             ProgramBuilder b1;
             ProgramBuilder b2;
-            b1.create<CallExpression>(b2.Expr("func"), utils::Empty);
+            b1.Call(b2.Ident("func"));
         },
         "internal compiler error");
 }
@@ -128,7 +115,7 @@ TEST_F(CallExpressionTest, Assert_DifferentProgramID_Type) {
         {
             ProgramBuilder b1;
             ProgramBuilder b2;
-            b1.create<CallExpression>(b2.ty.f32(), utils::Empty);
+            b1.Call(b2.ty.f32());
         },
         "internal compiler error");
 }
@@ -138,7 +125,7 @@ TEST_F(CallExpressionTest, Assert_DifferentProgramID_Param) {
         {
             ProgramBuilder b1;
             ProgramBuilder b2;
-            b1.create<CallExpression>(b1.Expr("func"), utils::Vector{b2.Expr("param1")});
+            b1.Call(b1.Ident("func"), b2.Expr("param1"));
         },
         "internal compiler error");
 }

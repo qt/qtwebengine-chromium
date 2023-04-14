@@ -8,10 +8,15 @@
 #include "src/core/SkStrikeSpec.h"
 
 #include "include/core/SkGraphics.h"
+#include "include/core/SkPaint.h"
+#include "include/core/SkPathEffect.h"
+#include "include/effects/SkDashPathEffect.h"
+#include "src/base/SkTLazy.h"
 #include "src/core/SkDraw.h"
 #include "src/core/SkFontPriv.h"
+#include "src/core/SkGlyphBuffer.h"
+#include "src/core/SkStrike.h"
 #include "src/core/SkStrikeCache.h"
-#include "src/core/SkTLazy.h"
 
 #if SK_SUPPORT_GPU || defined(SK_GRAPHITE_ENABLED)
 #include "src/text/gpu/SDFMaskFilter.h"
@@ -161,17 +166,36 @@ SkStrikeSpec::MakeSDFT(const SkFont& font, const SkPaint& paint,
     auto [dfFont, strikeToSourceScale, matrixRange] = control.getSDFFont(font, deviceMatrix,
                                                                          textLocation);
 
+    // Adjust the stroke width by the scale factor for drawing the SDFT.
+    dfPaint.setStrokeWidth(paint.getStrokeWidth() / strikeToSourceScale);
+
+    // Check for dashing and adjust the intervals.
+    if (SkPathEffect* pathEffect = paint.getPathEffect(); pathEffect != nullptr) {
+        SkPathEffect::DashInfo dashInfo;
+        if (pathEffect->asADash(&dashInfo) == SkPathEffect::kDash_DashType) {
+            if (dashInfo.fCount > 0) {
+                // Allocate the intervals.
+                std::vector<SkScalar> scaledIntervals(dashInfo.fCount);
+                dashInfo.fIntervals = scaledIntervals.data();
+                // Call again to get the interval data.
+                (void)pathEffect->asADash(&dashInfo);
+                for (SkScalar& interval : scaledIntervals) {
+                    interval /= strikeToSourceScale;
+                }
+                auto scaledDashes = SkDashPathEffect::Make(scaledIntervals.data(),
+                                                           scaledIntervals.size(),
+                                                           dashInfo.fPhase / strikeToSourceScale);
+                dfPaint.setPathEffect(scaledDashes);
+            }
+        }
+    }
+
     // Fake-gamma and subpixel antialiasing are applied in the shader, so we ignore the
     // passed-in scaler context flags. (It's only used when we fall-back to bitmap text).
     SkScalerContextFlags flags = SkScalerContextFlags::kNone;
     SkStrikeSpec strikeSpec(dfFont, dfPaint, surfaceProps, flags, SkMatrix::I());
 
     return std::make_tuple(std::move(strikeSpec), strikeToSourceScale, matrixRange);
-}
-
-sk_sp<sktext::gpu::TextStrike> SkStrikeSpec::findOrCreateTextStrike(
-            sktext::gpu::StrikeCache* cache) const {
-    return cache->findOrCreateStrike(*this);
 }
 #endif
 
@@ -190,7 +214,7 @@ SkStrikeSpec::SkStrikeSpec(const SkFont& font, const SkPaint& paint,
     fTypeface = font.refTypefaceOrDefault();
 }
 
-sktext::ScopedStrikeForGPU SkStrikeSpec::findOrCreateScopedStrike(
+sk_sp<sktext::StrikeForGPU> SkStrikeSpec::findOrCreateScopedStrike(
         sktext::StrikeForGPUCacheInterface* cache) const {
     return cache->findOrCreateScopedStrike(*this);
 }

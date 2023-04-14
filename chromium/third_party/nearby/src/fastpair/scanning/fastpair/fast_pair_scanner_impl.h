@@ -15,38 +15,75 @@
 #ifndef THIRD_PARTY_NEARBY_FASTPAIR_SCANNING_FASTPAIR_FAST_PAIR_SCANNER_IMPL_H_
 #define THIRD_PARTY_NEARBY_FASTPAIR_SCANNING_FASTPAIR_FAST_PAIR_SCANNER_IMPL_H_
 
+#include <map>
+#include <memory>
+#include <set>
 #include <string>
+#include <vector>
 
 #include "fastpair/internal/ble/ble.h"
+#include "fastpair/scanning/fastpair/fast_pair_scanner.h"
+#include "internal/base/observer_list.h"
 #include "internal/platform/bluetooth_adapter.h"
+#include "internal/platform/byte_array.h"
+#include "internal/platform/task_runner.h"
 
-namespace location {
 namespace nearby {
 namespace fastpair {
 
-class FastPairScannerImpl {
+class FastPairScannerImpl : public FastPairScanner {
  public:
-  FastPairScannerImpl() = default;
-  FastPairScannerImpl(const FastPairScannerImpl&) = default;
-  FastPairScannerImpl& operator=(const FastPairScannerImpl&) = default;
+  class Factory {
+   public:
+    static std::shared_ptr<FastPairScanner> Create();
 
-  ~FastPairScannerImpl() = default;
+    static void SetFactoryForTesting(Factory* g_test_factory);
 
-  bool StartScanning();
-  bool StopScanning();
+   protected:
+    virtual ~Factory();
+    virtual std::shared_ptr<FastPairScanner> CreateInstance() = 0;
 
-  void OnDeviceFound(BlePeripheral& peripheral, const std::string& service_id,
-                     const ByteArray& advertisement_bytes,
-                     bool fast_advertisement);
-  void OnDeviceLost(BlePeripheral& peripheral,
-                         const std::string& service_id);
+   private:
+    static Factory* g_test_factory_;
+  };
+
+  FastPairScannerImpl();
+  FastPairScannerImpl(const FastPairScannerImpl&) = delete;
+  FastPairScannerImpl& operator=(const FastPairScannerImpl&) = delete;
+  ~FastPairScannerImpl() override = default;
+
+  // FastPairScanner::Observer
+  void AddObserver(FastPairScanner::Observer* observer) override;
+  void RemoveObserver(FastPairScanner::Observer* observer) override;
+
+  void StartScanning();
+  void StopScanning();
+
+  // Fast Pair discovered peripheral callback
+  void OnDeviceFound(const BlePeripheral& peripheral);
+  void OnDeviceLost(const BlePeripheral& peripheral);
+
+  void NotifyDeviceFound(const BlePeripheral& peripheral);
+  // Todo(b/267348348): Support Flags to control feature ramp
+  bool IsFastPairLowPowerEnabled() const { return false; }
+
+  // For unit test
+  Ble& GetBle() { return ble_; }
 
  private:
+  std::shared_ptr<TaskRunner> task_runner_;
+
+  // Map of a Bluetooth device address to a set of advertisement data we have
+  // seen.
+  absl::flat_hash_map<std::string, std::set<ByteArray>>
+      device_address_advertisement_data_map_;
+
+  BluetoothAdapter bluetooth_adapter_;
   Ble ble_;
+  ObserverList<FastPairScanner::Observer> observer_;
 };
 
 }  // namespace fastpair
 }  // namespace nearby
-}  // namespace location
 
 #endif  // THIRD_PARTY_NEARBY_FASTPAIR_SCANNING_FASTPAIR_FAST_PAIR_SCANNER_IMPL_H_

@@ -223,7 +223,6 @@ class PointerMapper {
         m_pointerMap.clear();
         EIGEN_THROW_X(
             std::out_of_range("The pointer is not registered in the map\n"));
-
       }
       --node;
     }
@@ -550,7 +549,7 @@ struct RangeAccess {
   static const auto is_place_holder = cl::sycl::access::placeholder::true_t;
   typedef T scalar_t;
   typedef scalar_t &ref_t;
-  typedef typename cl::sycl::global_ptr<scalar_t>::pointer_t ptr_t;
+  typedef scalar_t *ptr_t;
 
   // the accessor type does not necessarily the same as T
   typedef cl::sycl::accessor<scalar_t, 1, AcMd, global_access, is_place_holder>
@@ -570,7 +569,12 @@ struct RangeAccess {
   RangeAccess(std::nullptr_t) : RangeAccess() {}
   // This template parameter must be removed and scalar_t should be replaced
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE ptr_t get_pointer() const {
-    return (access_.get_pointer().get() + offset_);
+    typedef cl::sycl::multi_ptr<scalar_t,
+                                cl::sycl::access::address_space::generic_space,
+                                cl::sycl::access::decorated::no>
+        multi_ptr;
+    multi_ptr p(access_);
+    return (p + offset_).get_raw();
   }
   template <typename Index>
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE self_t &operator+=(Index offset) {

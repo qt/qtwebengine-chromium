@@ -4,7 +4,7 @@
  *
  *   FreeType API for controlling driver modules (specification only).
  *
- * Copyright (C) 2017-2022 by
+ * Copyright (C) 2017-2023 by
  * David Turner, Robert Wilhelm, and Werner Lemberg.
  *
  * This file is part of the FreeType project, and may only be used,
@@ -214,9 +214,9 @@ FT_BEGIN_HEADER
    *   itself, it is possible to control its behaviour with @FT_Property_Set
    *   and @FT_Property_Get.
    *
-   *   The TrueType driver's module name is 'truetype'; two properties are
-   *   available, @interpreter-version and @TEMPORARY-enable-variable-colrv1, as
-   *   documented in the @properties section.
+   *   The TrueType driver's module name is 'truetype'; a single property
+   *   @interpreter-version is available, as documented in the @properties
+   *   section.
    *
    *   To help understand the differences between interpreter versions, we
    *   introduce a list of definitions, kindly provided by Greg Hitchcock.
@@ -651,11 +651,8 @@ FT_BEGIN_HEADER
    *     Windows~98; only grayscale and B/W rasterizing is supported.
    *
    *   TT_INTERPRETER_VERSION_38 ::
-   *     Version~38 corresponds to MS rasterizer v.1.9; it is roughly
-   *     equivalent to the hinting provided by DirectWrite ClearType (as can
-   *     be found, for example, in the Internet Explorer~9 running on
-   *     Windows~7).  It is used in FreeType to select the 'Infinality'
-   *     subpixel hinting code.  The code may be removed in a future version.
+   *     Version~38 is the same Version~40. The original 'Infinality' code is
+   *     no longer available.
    *
    *   TT_INTERPRETER_VERSION_40 ::
    *     Version~40 corresponds to MS rasterizer v.2.1; it is roughly
@@ -760,7 +757,7 @@ FT_BEGIN_HEADER
    *
    */
 #define TT_INTERPRETER_VERSION_35  35
-#define TT_INTERPRETER_VERSION_38  38
+#define TT_INTERPRETER_VERSION_38  40
 #define TT_INTERPRETER_VERSION_40  40
 
 
@@ -818,49 +815,6 @@ FT_BEGIN_HEADER
    *
    * @since:
    *   2.5
-   */
-
-  /**************************************************************************
-   *
-   * @property:
-   *   TEMPORARY-enable-variable-colrv1
-   *
-   * @description:
-   *   Controls experimental support of variable COLRv1 and whether the COLRv1
-   *   implementation should take into account variation deltas. This tells the
-   *   COLRv1 API methods whether they should read from the font and apply
-   *   variable deltas to COLRv1 properties. The feature is default off.  When
-   *   on, variable COLRv1 deltas are applied for COLRv1 features for which they
-   *   are already implemented. When off, variable deltas are ignored even if
-   *   the respective PaintVar* table may already be understood.
-   *
-   *   WARNING: Temporary flag during development of variable COLRv1. This flag
-   *   will be removed, do not rely on it. Full variable COLRv1 support will be
-   *   announced separately.
-   *
-   * @note:
-   *   This property cannot be set via the `FREETYPE_PROPERTIES` environment
-   *   variable.
-   *
-   * @example:
-   *   The following example code demonstrates how to enable variable
-   *   COLRv1.
-   *
-   *   ```
-   *     FT_Library  library;
-   *     FT_Face     face;
-   *     FT_Bool     variable_colrv1 = TRUE;
-   *
-   *
-   *     FT_Init_FreeType( &library );
-   *
-   *     FT_Property_Set( library, "truetype",
-   *                               "TEMPORARY-enable-variable-colrv1",
-   *                               &variable_colr_v1 );
-   *   ```
-   *
-   * @since:
-   *   2.12.2
    */
 
   /**************************************************************************

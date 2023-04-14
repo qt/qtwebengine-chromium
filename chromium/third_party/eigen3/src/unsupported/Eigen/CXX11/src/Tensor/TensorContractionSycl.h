@@ -597,7 +597,7 @@ class TensorContractionKernel {
                                                                 const TripleDim triple_dim_)
       : TensorContractionKernel(scratch_, lhs_, rhs_, out_res_, groupSizeM_, 1, numTiles_, triple_dim_) {}
 
-  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void operator()(cl::sycl::nd_item<1> itemID) {
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void operator()(cl::sycl::nd_item<1> itemID) const {
     const StorageIndex linearLocalThreadId = itemID.get_local_id(0);
     const StorageIndex nLocalThreadId = linearLocalThreadId / Properties::LocalThreadSizeM;
     const StorageIndex mLocalThreadId = linearLocalThreadId % Properties::LocalThreadSizeM;
@@ -636,7 +636,7 @@ class TensorContractionKernel {
   // privateRes memory of Each computation the compute block function is independent of local and no local concepts as
   // it only compute the block on each thread's private memory space
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void compute_block_per_tile(OutScalar *lhs_block_ptr, OutScalar *rhs_block_ptr,
-                                                                    PacketReturnType *privateRes) {
+                                                                    PacketReturnType *privateRes) const {
     StorageIndex idx = 0;
     EIGEN_CONSTEXPR StorageIndex lhs_stride =
         contraction_tp == contraction_type::local ? (PacketSize * Properties::LocalThreadSizeM) : 1;
@@ -661,7 +661,7 @@ class TensorContractionKernel {
   // class.
   template <bool is_internal_block, StorageIndex PrivateNStride, typename OutPtr>
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void store(OutPtr *out_ptr, PacketReturnType *privateRes,
-                                                   StorageIndex mGlobalOffset, StorageIndex nGlobalOffset) {
+                                                   StorageIndex mGlobalOffset, StorageIndex nGlobalOffset) const {
     auto chk_bound = [&](const StorageIndex &mIndex, const StorageIndex &nIndex) EIGEN_DEVICE_FUNC {
       return (mIndex + PacketSize - 1 < triple_dim.M && nGlobalOffset + nIndex < triple_dim.N);
     };
@@ -713,7 +713,7 @@ class TensorContractionKernel {
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE
       std::enable_if_t<contract_tp == contraction_type::no_local>
       extract_block(const Input &inpt, PrivateReg private_ptr, const std::pair<StorageIndex, StorageIndex> &,
-                    const StorageIndex &ncOffset, const StorageIndex cOffset) {
+                    const StorageIndex &ncOffset, const StorageIndex cOffset) const {
     EIGEN_CONSTEXPR StorageIndex LocalThreadSizeNC =
         InputBlockProperties::is_rhs ? Properties::LocalThreadSizeN : Properties::LocalThreadSizeM;
     EIGEN_CONSTEXPR StorageIndex WorkLoadPerThreadNC =
@@ -833,7 +833,8 @@ class TensorContractionKernel {
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void compute_tile_per_panel(const cl::sycl::nd_item<1> &itemID,
                                                                     ThreadProperties<StorageIndex> &thread_properties,
                                                                     TiledMemory &tiled_input_block,
-                                                                    PacketReturnType *privateRes, bool &db_offset) {
+                                                                    PacketReturnType *privateRes, bool &db_offset) const {
+
     // Tiling the Rhs block from global to local memory
     extract_block<RHSBlockProperties, is_internal_block>(
         rhs, tiled_input_block.rhs_scratch_extract.ptr + (db_offset * Properties::TileSizeDimK * LSDR),
@@ -871,7 +872,7 @@ class TensorContractionKernel {
   template <bool is_internal_block, typename OutPtr>
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void compute_panel(const cl::sycl::nd_item<1> &itemID,
                                                            ThreadProperties<StorageIndex> &thread_properties,
-                                                           OutPtr out_ptr) {
+                                                           OutPtr out_ptr) const {
     auto tiled_input_block = TiledMemory{thread_properties, scratch.get_pointer()};
     // Allocate register space
     PacketReturnType privateRes[Properties::WorkLoadPerThreadM * Properties::WorkLoadPerThreadN / PacketSize] = {
@@ -897,7 +898,7 @@ class TensorContractionKernel {
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE
       std::enable_if_t<contract_tp == contraction_type::local>
       extract_block(const Input &inpt, Local local_ptr, const std::pair<StorageIndex, StorageIndex>& local_index,
-                    const StorageIndex &ncOffset, const StorageIndex cOffset) {
+                    const StorageIndex &ncOffset, const StorageIndex cOffset) const {
     EIGEN_CONSTEXPR StorageIndex TileSizeDimNC =
         InputBlockProperties::is_rhs ? Properties::TileSizeDimN : Properties::TileSizeDimM;
     EIGEN_CONSTEXPR StorageIndex LoadPerThread =
@@ -1035,7 +1036,7 @@ struct GeneralVectorTensor {
         nonContractDim(nonContractDim_),
         contractDim(contractDim_) {}
 
-  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void operator()(cl::sycl::nd_item<1> itemID) {
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void operator()(cl::sycl::nd_item<1> itemID) const {
     auto scratch_ptr = scratch.get_pointer();
     const StorageIndex linearLocalThreadId = itemID.get_local_id(0);
     StorageIndex nonContractId = is_lhs_vec ? linearLocalThreadId / Properties::LocalThreadSizeC
@@ -1252,7 +1253,8 @@ struct GeneralScalarContraction {
                            const StorageIndex rng_)
       : scratch(scratch_), lhs(lhs_), rhs(rhs_), out_res(out_res_), rng(rng_) {}
 
-  EIGEN_DEVICE_FUNC void operator()(cl::sycl::nd_item<1> itemID) {
+  EIGEN_DEVICE_FUNC void operator()(cl::sycl::nd_item<1> itemID) const {
+
     auto out_ptr = out_res.get_pointer();
     auto scratch_ptr = scratch.get_pointer().get();
 

@@ -22,6 +22,8 @@ const char kU2FGetAssertion[] = "GetAssertion";
 const char kU2FHasCredentials[] = "HasCredentials";
 const char kU2FHasLegacyCredentials[] = "HasLegacyCredentials";
 const char kU2FCancelWebAuthnFlow[] = "CancelWebAuthnFlow";
+const char kU2FIsPlatformAuthenticatorInitialized[] =
+    "IsPlatformAuthenticatorInitialized";
 const char kU2FIsUvpaa[] = "IsUvpaa";
 const char kU2FIsU2fEnabled[] = "IsU2fEnabled";
 const char kU2FCountCredentialsInTimeRange[] = "CountCredentialsInTimeRange";

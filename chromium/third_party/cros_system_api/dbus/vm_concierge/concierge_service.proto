@@ -38,6 +38,12 @@ message VirtualMachineSpec {
   // Optional path to the wayland server which should be passed into the VM. If
   // absent the default path (${XDG_RUNTIME_DIR}/wayland-0) will be used.
   string wayland_server = 6;
+
+  // ID of a DLC package that contains the BIOS img for this vm. If empty
+  // an `FdType` of `BIOS` is used from the `fds` field in `StartVmRequest` for
+  // the BIOS image. Both the DLC id and Fd are optional, for e.g. we could have
+  // neither if a kernel image or fd is passed in.
+  string bios_dlc_id = 7;
 }
 
 // The type of disk image.
@@ -835,6 +841,14 @@ message CreateDiskImageRequest {
   // used exclusively with sparse images. If this is true and disk_size is
   // non-zero, the request will fail.
   bool storage_ballooning = 9;
+
+  // Options passed to `mkfs` when creating a filesystem on the image. If
+  // unspecified, the default ones will be used.
+  repeated string mkfs_opts = 10;
+
+  // Options passed to `tune2fs` when creating a filesystem on the image. If
+  // unspecified or |filesystem_type| is not EXT4, `tune2fs` will not run.
+  repeated string tune2fs_opts = 11;
 }
 
 // Response to a CreateDiskImageRequest.
@@ -1361,4 +1375,59 @@ message GetVmLaunchAllowedResponse {
 
   // If not allowed, the reason why.
   string reason = 2;
+}
+
+message GetVmLogsRequest {
+  // The name of the VM to get logs for.
+  string name = 1;
+
+  // The owner of the vm.
+  string owner_id = 2;
+}
+
+message GetVmLogsResponse {
+  // The log for the vm.
+  string log = 1;
+}
+
+// Vmm swap operations.
+enum SwapOperation {
+  // Disable vmm swap.
+  DISABLE = 0;
+
+  // Enable vmm swap and staging memory.
+  ENABLE = 1;
+
+  // Swapout staged memory.
+  SWAPOUT = 2;
+}
+
+// Request sent to vm_concierge for executing vmm swap operation on a VM.
+message SwapVmRequest {
+  // The name of the VM.
+  string name = 1;
+
+  // The owner of the VM.
+  string owner_id = 2;
+
+  // The swap state changing operation.
+  SwapOperation operation = 3;
+}
+
+// Response to an SwapVmRequest.
+message SwapVmResponse {
+  // If true, the swap state changing operation of the VM was success.
+  bool success = 1;
+
+  // If the attempt to change swap state failed, the reason for failure.
+  string failure_reason = 2;
+}
+
+// Message used in the signal for when a VM enabled vmm swap.
+message VmSwappingSignal {
+  // The name of the VM.
+  string name = 1;
+
+  // The owner of the VM.
+  string owner_id = 2;
 }

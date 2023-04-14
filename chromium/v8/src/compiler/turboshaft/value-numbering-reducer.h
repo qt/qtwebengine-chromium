@@ -71,7 +71,8 @@ namespace turboshaft {
 template <class Next>
 class ValueNumberingReducer : public Next {
  public:
-  using Next::Asm;
+  TURBOSHAFT_REDUCER_BOILERPLATE()
+
   template <class... Args>
   explicit ValueNumberingReducer(const std::tuple<Args...>& args)
       : Next(args),
@@ -160,7 +161,7 @@ class ValueNumberingReducer : public Next {
             (!same_block_only ||
              entry.block == Asm().current_block()->index()) &&
             entry_op.Cast<Op>() == op) {
-          Asm().output_graph().RemoveLast();
+          Next::RemoveLast(op_idx);
           return entry.value;
         }
       }

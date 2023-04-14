@@ -1185,7 +1185,6 @@ class TensorBase : public TensorBase<Derived, ReadOnlyAccessors> {
       internal::TensorExecutor<const Assign, DefaultDevice>::run(assign, DefaultDevice());
       return derived();
     }
-
     EIGEN_DEVICE_FUNC
     EIGEN_STRONG_INLINE Derived& derived() { return *static_cast<Derived*>(this); }
     EIGEN_DEVICE_FUNC
@@ -1195,3 +1194,4 @@ class TensorBase : public TensorBase<Derived, ReadOnlyAccessors> {
 } // end namespace Eigen
 
 #endif // EIGEN_CXX11_TENSOR_TENSOR_BASE_H
+

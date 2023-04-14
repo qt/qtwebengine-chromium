@@ -5,6 +5,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import * as i18n from '../../core/i18n/i18n.js';
+import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import type * as Protocol from '../../generated/protocol.js';
 
@@ -12,9 +13,9 @@ import {RecordType, TimelineModelImpl} from './TimelineModel.js';
 
 const UIStrings = {
   /**
-  *@description Text for the name of a thread of the page
-  *@example {1} PH1
-  */
+   *@description Text for the name of a thread of the page
+   *@example {1} PH1
+   */
   threadS: 'Thread {PH1}',
 };
 const str_ = i18n.i18n.registerUIStrings('models/timeline_model/TimelineJSProfile.ts', UIStrings);
@@ -23,36 +24,90 @@ export class TimelineJSProfileProcessor {
   static generateTracingEventsFromCpuProfile(
       jsProfileModel: SDK.CPUProfileDataModel.CPUProfileDataModel,
       thread: SDK.TracingModel.Thread): SDK.TracingModel.Event[] {
-    const idleNode = jsProfileModel.idleNode;
-    const programNode = jsProfileModel.programNode || null;
-    const gcNode = jsProfileModel.gcNode;
     const samples = jsProfileModel.samples || [];
     const timestamps = jsProfileModel.timestamps;
     const jsEvents = [];
-    const nodeToStackMap = new Map<SDK.ProfileTreeModel.ProfileNode|null, Protocol.Runtime.CallFrame[]>();
-    nodeToStackMap.set(programNode, []);
-    for (let i = 0; i < samples.length; ++i) {
-      let node: SDK.ProfileTreeModel.ProfileNode|null = jsProfileModel.nodeByIndex(i);
-      if (!node) {
-        console.error(`Node with unknown id ${samples[i]} at index ${i}`);
-        continue;
-      }
-      if (node === gcNode || node === idleNode) {
-        continue;
-      }
-      let callFrames = nodeToStackMap.get(node);
-      if (!callFrames) {
-        callFrames = (new Array(node.depth + 1) as Protocol.Runtime.CallFrame[]);
-        nodeToStackMap.set(node, callFrames);
-        for (let j = 0; node.parent; node = node.parent) {
-          callFrames[j++] = (node as Protocol.Runtime.CallFrame);
+
+    if (Root.Runtime.experiments.isEnabled('timelineDoNotSkipSystemNodesOfCpuProfile')) {
+      // Node.js/Deno developers want to view the system nodes as well, but this might disturb the web user.
+      // So add a flag to guard this feature.
+      let prevNode: SDK.ProfileTreeModel.ProfileNode = jsProfileModel.root;
+      let prevCallFrames: Protocol.Runtime.CallFrame[] = [];
+      for (let i = 0; i < samples.length; ++i) {
+        const node: SDK.ProfileTreeModel.ProfileNode|null = jsProfileModel.nodeByIndex(i);
+        if (!node) {
+          console.error(`Node with unknown id ${samples[i]} at index ${i}`);
+          continue;
         }
+        let callFrames;
+        if (node === jsProfileModel.gcNode) {
+          if (prevNode === jsProfileModel.gcNode) {
+            // If the last recorded sample is also GC sample, we just use the same call frames.
+            callFrames = prevCallFrames;
+          } else {
+            // GC samples have no stack, so we just put GC node on top of the last recorded sample.
+            callFrames = [(node as Protocol.Runtime.CallFrame), ...prevCallFrames];
+          }
+        } else {
+          // For non Garbage Collection nodes, we just use its own call frames.
+          callFrames = new Array(node.depth + 1) as Protocol.Runtime.CallFrame[];
+          let currentNode = node;
+          for (let j = 0; currentNode.parent; currentNode = currentNode.parent) {
+            callFrames[j++] = (currentNode as Protocol.Runtime.CallFrame);
+          }
+        }
+        if (node === jsProfileModel.idleNode) {
+          const jsIdleEvent = new SDK.TracingModel.ConstructedEvent(
+              SDK.TracingModel.DevToolsTimelineEventCategory, RecordType.JSIdleSample, SDK.TracingModel.Phase.Instant,
+              timestamps[i], thread);
+          jsIdleEvent.args['data'] = {stackTrace: callFrames};
+          jsEvents.push(jsIdleEvent);
+        } else if (node === jsProfileModel.programNode || node === jsProfileModel.gcNode) {
+          const jsSystemEvent = new SDK.TracingModel.ConstructedEvent(
+              SDK.TracingModel.DevToolsTimelineEventCategory, RecordType.JSSystemSample, SDK.TracingModel.Phase.Instant,
+              timestamps[i], thread);
+          jsSystemEvent.args['data'] = {stackTrace: callFrames};
+          jsEvents.push(jsSystemEvent);
+        } else {
+          const jsSampleEvent = new SDK.TracingModel.ConstructedEvent(
+              SDK.TracingModel.DevToolsTimelineEventCategory, RecordType.JSSample, SDK.TracingModel.Phase.Instant,
+              timestamps[i], thread);
+          jsSampleEvent.args['data'] = {stackTrace: callFrames};
+          jsEvents.push(jsSampleEvent);
+        }
+
+        prevNode = node;
+        prevCallFrames = callFrames;
       }
-      const jsSampleEvent = new SDK.TracingModel.Event(
-          SDK.TracingModel.DevToolsTimelineEventCategory, RecordType.JSSample, SDK.TracingModel.Phase.Instant,
-          timestamps[i], thread);
-      jsSampleEvent.args['data'] = {stackTrace: callFrames};
-      jsEvents.push(jsSampleEvent);
+    } else {
+      const idleNode = jsProfileModel.idleNode;
+      const programNode = jsProfileModel.programNode || null;
+      const gcNode = jsProfileModel.gcNode;
+      const nodeToStackMap = new Map<SDK.ProfileTreeModel.ProfileNode|null, Protocol.Runtime.CallFrame[]>();
+      nodeToStackMap.set(programNode, []);
+      for (let i = 0; i < samples.length; ++i) {
+        let node: SDK.ProfileTreeModel.ProfileNode|null = jsProfileModel.nodeByIndex(i);
+        if (!node) {
+          console.error(`Node with unknown id ${samples[i]} at index ${i}`);
+          continue;
+        }
+        if (node === gcNode || node === idleNode) {
+          continue;
+        }
+        let callFrames = nodeToStackMap.get(node);
+        if (!callFrames) {
+          callFrames = (new Array(node.depth + 1) as Protocol.Runtime.CallFrame[]);
+          nodeToStackMap.set(node, callFrames);
+          for (let j = 0; node.parent; node = node.parent) {
+            callFrames[j++] = (node as Protocol.Runtime.CallFrame);
+          }
+        }
+        const jsSampleEvent = new SDK.TracingModel.ConstructedEvent(
+            SDK.TracingModel.DevToolsTimelineEventCategory, RecordType.JSSample, SDK.TracingModel.Phase.Instant,
+            timestamps[i], thread);
+        jsSampleEvent.args['data'] = {stackTrace: callFrames};
+        jsEvents.push(jsSampleEvent);
+      }
     }
     return jsEvents;
   }
@@ -77,6 +132,10 @@ export class TimelineJSProfileProcessor {
         case RecordType.V8Execute:
           return true;
       }
+      // Also consider any new v8 trace events. (eg 'V8.RunMicrotasks' and 'v8.run')
+      if (e.name.startsWith('v8') || e.name.startsWith('V8')) {
+        return true;
+      }
       return false;
     }
 
@@ -84,9 +143,19 @@ export class TimelineJSProfileProcessor {
     const jsFramesStack: SDK.TracingModel.Event[] = [];
     const lockedJsStackDepth: number[] = [];
     let ordinal = 0;
+    /**
+     * `isJSInvocationEvent()` relies on an allowlist of invocation events that will parent JSFrames.
+     * However in some situations (workers), we don't have those trace events.
+     * "fake" JSInvocations are created when we have active JSSamples but seemingly no explicit invocation.
+     */
     let fakeJSInvocation = false;
     const {showAllEvents, showRuntimeCallStats, showNativeFunctions} = config;
 
+    /**
+     * JSSamples are instant events, so any start events are not the samples.
+     * We expect they'll either be trace events happening within JS (eg forced layout),
+     * or, in the fakeJSInvocation case, the JS finished and we're seeing the subsequent event.
+     */
     function onStartEvent(e: SDK.TracingModel.Event): void {
       if (fakeJSInvocation) {
         truncateJSStack((lockedJsStackDepth.pop() as number), e.startTime);
@@ -102,7 +171,10 @@ export class TimelineJSProfileProcessor {
       e.ordinal = ++ordinal;
       if ((parent && isJSInvocationEvent(parent)) || fakeJSInvocation) {
         extractStackTrace(e);
-      } else if (e.name === RecordType.JSSample && jsFramesStack.length === 0) {
+      } else if (
+          (e.name === RecordType.JSSample || e.name === RecordType.JSSystemSample ||
+           e.name === RecordType.JSIdleSample) &&
+          e.args?.data?.stackTrace?.length && jsFramesStack.length === 0) {
         // Force JS Samples to show up even if we are not inside a JS invocation event, because we
         // can be missing the start of JS invocation events if we start tracing half-way through.
         // Pretend we have a top-level JS invocation event.
@@ -117,6 +189,10 @@ export class TimelineJSProfileProcessor {
       truncateJSStack((lockedJsStackDepth.pop() as number), (e.endTime as number));
     }
 
+    /**
+     * Set an explicit endTime for all active JSFrames.
+     * Basically, terminate them by defining their right edge.
+     */
     function truncateJSStack(depth: number, time: number): void {
       if (lockedJsStackDepth.length) {
         const lockedDepth = (lockedJsStackDepth[lockedJsStackDepth.length - 1] as number);
@@ -168,7 +244,9 @@ export class TimelineJSProfileProcessor {
     }
 
     function extractStackTrace(e: SDK.TracingModel.Event): void {
-      const callFrames: Protocol.Runtime.CallFrame[] = e.name === RecordType.JSSample ?
+      const callFrames: Protocol.Runtime.CallFrame[] =
+          (e.name === RecordType.JSSample || e.name === RecordType.JSSystemSample ||
+           e.name === RecordType.JSIdleSample) ?
           e.args['data']['stackTrace'].slice().reverse() :
           jsFramesStack.map(frameEvent => frameEvent.args['data']);
       filterStackFrames(callFrames);
@@ -181,14 +259,24 @@ export class TimelineJSProfileProcessor {
         if (!equalFrames(newFrame, oldFrame)) {
           break;
         }
+        // Scoot the right edge of this callFrame to the right
         jsFramesStack[i].setEndTime(Math.max((jsFramesStack[i].endTime as number), endTime));
       }
       truncateJSStack(i, e.startTime);
       for (; i < callFrames.length; ++i) {
         const frame = callFrames[i];
-        const jsFrameEvent = new SDK.TracingModel.Event(
-            SDK.TracingModel.DevToolsTimelineEventCategory, RecordType.JSFrame, SDK.TracingModel.Phase.Complete,
-            e.startTime, e.thread);
+        let jsFrameType = RecordType.JSFrame;
+        switch (e.name) {
+          case RecordType.JSIdleSample:
+            jsFrameType = RecordType.JSIdleFrame;
+            break;
+          case RecordType.JSSystemSample:
+            jsFrameType = RecordType.JSSystemFrame;
+            break;
+        }
+        const jsFrameEvent = new SDK.TracingModel.ConstructedEvent(
+            SDK.TracingModel.DevToolsTimelineEventCategory, jsFrameType, SDK.TracingModel.Phase.Complete, e.startTime,
+            e.thread);
         jsFrameEvent.ordinal = e.ordinal;
         jsFrameEvent.addArgs({data: frame});
         jsFrameEvent.setEndTime(endTime);
@@ -220,6 +308,7 @@ export class TimelineJSProfileProcessor {
   static buildTraceProfileFromCpuProfile(profile: any, tid: number, injectPageEvent: boolean, name?: string|null):
       SDK.TracingManager.EventPayload[] {
     const events: SDK.TracingManager.EventPayload[] = [];
+
     if (injectPageEvent) {
       appendEvent('TracingStartedInPage', {data: {'sessionId': '1'}}, 0, 0, 'M');
     }
@@ -230,55 +319,63 @@ export class TimelineJSProfileProcessor {
     if (!profile) {
       return events;
     }
-    const idToNode = new Map<any, any>();
-    const nodes = profile['nodes'];
-    for (let i = 0; i < nodes.length; ++i) {
-      idToNode.set(nodes[i].id, nodes[i]);
-    }
-    let programEvent: SDK.TracingManager.EventPayload|null = null;
-    let functionEvent: null|SDK.TracingManager.EventPayload = null;
-    let nextTime: number = profile.startTime;
-    let currentTime = 0;
-    const samples = profile['samples'];
-    const timeDeltas = profile['timeDeltas'];
-    for (let i = 0; i < samples.length; ++i) {
-      currentTime = nextTime;
-      nextTime += timeDeltas[i];
-      const node = idToNode.get(samples[i]);
-      const name = node.callFrame.functionName;
-      if (name === '(idle)') {
-        closeEvents();
-        continue;
+
+    if (Root.Runtime.experiments.isEnabled('timelineDoNotSkipSystemNodesOfCpuProfile')) {
+      // Append a root to show the start time of the profile (which is earlier than first sample), so the Performance
+      // panel won't truncate this time period.
+      appendEvent(RecordType.JSRoot, {}, profile.startTime, profile.endTime - profile.startTime, 'X', 'toplevel');
+    } else {
+      const idToNode = new Map<any, any>();
+      const nodes = profile['nodes'];
+      for (let i = 0; i < nodes.length; ++i) {
+        idToNode.set(nodes[i].id, nodes[i]);
       }
-      if (!programEvent) {
-        programEvent = appendEvent('MessageLoop::RunTask', {}, currentTime, 0, 'X', 'toplevel');
+      let programEvent: SDK.TracingManager.EventPayload|null = null;
+      let functionEvent: null|SDK.TracingManager.EventPayload = null;
+      let nextTime: number = profile.startTime;
+      let currentTime = 0;
+      const samples = profile['samples'];
+      const timeDeltas = profile['timeDeltas'];
+      for (let i = 0; i < samples.length; ++i) {
+        currentTime = nextTime;
+        nextTime += timeDeltas[i];
+        const node = idToNode.get(samples[i]);
+        const name = node.callFrame.functionName;
+        if (name === '(idle)') {
+          closeEvents();
+          continue;
+        }
+        if (!programEvent) {
+          programEvent = appendEvent('MessageLoop::RunTask', {}, currentTime, 0, 'X', 'toplevel');
+        }
+        if (name === '(program)') {
+          if (functionEvent) {
+            functionEvent.dur = currentTime - functionEvent.ts;
+            functionEvent = null;
+          }
+        } else {
+          // A JS function.
+          if (!functionEvent) {
+            functionEvent = appendEvent('FunctionCall', {data: {'sessionId': '1'}}, currentTime);
+          }
+        }
       }
-      if (name === '(program)') {
+      closeEvents();
+
+      function closeEvents(): void {
+        if (programEvent) {
+          programEvent.dur = currentTime - programEvent.ts;
+        }
         if (functionEvent) {
           functionEvent.dur = currentTime - functionEvent.ts;
-          functionEvent = null;
         }
-      } else {
-        // A JS function.
-        if (!functionEvent) {
-          functionEvent = appendEvent('FunctionCall', {data: {'sessionId': '1'}}, currentTime);
-        }
+        programEvent = null;
+        functionEvent = null;
       }
     }
-    closeEvents();
+
     appendEvent('CpuProfile', {data: {'cpuProfile': profile}}, profile.endTime, 0, 'I');
     return events;
-
-    function closeEvents(): void {
-      if (programEvent) {
-        programEvent.dur = currentTime - programEvent.ts;
-      }
-      if (functionEvent) {
-        functionEvent.dur = currentTime - functionEvent.ts;
-      }
-      programEvent = null;
-      functionEvent = null;
-    }
 
     function appendEvent(
         name: string, args: any, ts: number, dur?: number, ph?: string, cat?: string): SDK.TracingManager.EventPayload {

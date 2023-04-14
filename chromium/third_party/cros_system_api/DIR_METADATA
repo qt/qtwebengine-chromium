@@ -47,7 +47,7 @@ chromeos {
         project: "chromeos/config-internal"
         path: "test/plans/v2/ctpv1_compatible/hps_cq.star"
       }
-      path_regexps: "dbus/hps/.*"
+      path_regexps: "system_api/dbus/hps/.*"
     }
   }
 }

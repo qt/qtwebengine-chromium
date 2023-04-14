@@ -39,12 +39,12 @@ import {Events as WorkspaceImplEvents, type Project} from './WorkspaceImpl.js';
 
 const UIStrings = {
   /**
-  *@description Text for the index of something
-  */
+   *@description Text for the index of something
+   */
   index: '(index)',
   /**
-  *@description Text in UISource Code of the DevTools local workspace
-  */
+   *@description Text in UISource Code of the DevTools local workspace
+   */
   thisFileWasChangedExternally: 'This file was changed externally. Would you like to reload it?',
 };
 const str_ = i18n.i18n.registerUIStrings('models/workspace/UISourceCode.ts', UIStrings);
@@ -72,6 +72,7 @@ export class UISourceCode extends Common.ObjectWrapper.ObjectWrapper<EventTypes>
   private disableEditInternal: boolean;
   private contentEncodedInternal?: boolean;
   private isKnownThirdPartyInternal: boolean;
+  private isUnconditionallyIgnoreListedInternal: boolean;
 
   constructor(project: Project, url: Platform.DevToolsPath.UrlString, contentType: Common.ResourceType.ResourceType) {
     super();
@@ -83,9 +84,9 @@ export class UISourceCode extends Common.ObjectWrapper.ObjectWrapper<EventTypes>
       this.originInternal = parsedURL.securityOrigin();
       this.parentURLInternal =
           Common.ParsedURL.ParsedURL.concatenate(this.originInternal, parsedURL.folderPathComponents);
-      if (parsedURL.queryParams) {
-        // in case file name contains query params, it doesn't look like a normal file name anymore
-        // so it can as well remain encoded
+      if (parsedURL.queryParams && !(parsedURL.lastPathComponent && contentType.isFromSourceMap())) {
+        // If there is a query param, display it like a URL. Unless it is from a source map,
+        // in which case the query param is probably a hash that is best left hidden.
         this.nameInternal = parsedURL.lastPathComponent + '?' + parsedURL.queryParams;
       } else {
         // file name looks best decoded
@@ -110,6 +111,7 @@ export class UISourceCode extends Common.ObjectWrapper.ObjectWrapper<EventTypes>
     this.workingCopyGetter = null;
     this.disableEditInternal = false;
     this.isKnownThirdPartyInternal = false;
+    this.isUnconditionallyIgnoreListedInternal = false;
   }
 
   requestMetadata(): Promise<UISourceCodeMetadata|null> {
@@ -404,6 +406,21 @@ export class UISourceCode extends Common.ObjectWrapper.ObjectWrapper<EventTypes>
 
   markKnownThirdParty(): void {
     this.isKnownThirdPartyInternal = true;
+  }
+
+  /**
+   * {@link markAsUnconditionallyIgnoreListed}
+   */
+  isUnconditionallyIgnoreListed(): boolean {
+    return this.isUnconditionallyIgnoreListedInternal;
+  }
+
+  /**
+   * Unconditionally ignore list this UISourcecode, ignoring any user
+   * setting. We use this to mark breakpoint/logpoint condition scripts for now.
+   */
+  markAsUnconditionallyIgnoreListed(): void {
+    this.isUnconditionallyIgnoreListedInternal = true;
   }
 
   extension(): string {

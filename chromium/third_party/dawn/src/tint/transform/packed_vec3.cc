@@ -72,10 +72,16 @@ struct PackedVec3::State {
 
         // Walk the nodes, starting with the most deeply nested, finding all the AST expressions
         // that load a whole packed vector (not a scalar / swizzle of the vector).
-        utils::Hashset<const sem::Expression*, 16> refs;
+        utils::Hashset<const sem::ValueExpression*, 16> refs;
         for (auto* node : ctx.src->ASTNodes().Objects()) {
+            auto* sem_node = sem.Get(node);
+            if (sem_node) {
+                if (auto* expr = sem_node->As<sem::ValueExpression>()) {
+                    sem_node = expr->UnwrapLoad();
+                }
+            }
             Switch(
-                sem.Get(node),  //
+                sem_node,  //
                 [&](const sem::StructMemberAccess* access) {
                     if (members.Contains(access->Member())) {
                         // Access to a packed vector member. Seed the expression tracking.
@@ -84,11 +90,11 @@ struct PackedVec3::State {
                 },
                 [&](const sem::IndexAccessorExpression* access) {
                     // Not loading a whole packed vector. Ignore.
-                    refs.Remove(access->Object());
+                    refs.Remove(access->Object()->UnwrapLoad());
                 },
                 [&](const sem::Swizzle* access) {
                     // Not loading a whole packed vector. Ignore.
-                    refs.Remove(access->Object());
+                    refs.Remove(access->Object()->UnwrapLoad());
                 },
                 [&](const sem::VariableUser* user) {
                     auto* v = user->Variable();
@@ -98,12 +104,12 @@ struct PackedVec3::State {
                         refs.Add(user);  // then propagate tracking to pointer usage
                     }
                 },
-                [&](const sem::Expression* expr) {
+                [&](const sem::ValueExpression* expr) {
                     if (auto* unary = expr->Declaration()->As<ast::UnaryOpExpression>()) {
                         if (unary->op == ast::UnaryOp::kAddressOf ||
                             unary->op == ast::UnaryOp::kIndirection) {
                             // Memory access on the packed vector. Track these.
-                            auto* inner = sem.Get(unary->expr);
+                            auto* inner = sem.GetVal(unary->expr);
                             if (refs.Remove(inner)) {
                                 refs.Add(expr);
                             }
@@ -115,7 +121,7 @@ struct PackedVec3::State {
                 [&](const sem::Statement* e) {
                     if (auto* assign = e->Declaration()->As<ast::AssignmentStatement>()) {
                         // We don't want to cast packed_vectors if they're being assigned to.
-                        refs.Remove(sem.Get(assign->lhs));
+                        refs.Remove(sem.GetVal(assign->lhs));
                     }
                 });
         }
@@ -129,7 +135,7 @@ struct PackedVec3::State {
                 auto* expr = ref->Declaration();
                 ctx.Replace(expr, [this, vec_ty, expr] {  //
                     auto* packed = ctx.CloneWithoutTransform(expr);
-                    return b.Construct(CreateASTTypeFor(ctx, vec_ty), packed);
+                    return b.Call(CreateASTTypeFor(ctx, vec_ty), packed);
                 });
             }
         }

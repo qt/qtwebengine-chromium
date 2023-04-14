@@ -19,28 +19,28 @@
 #include <string>
 
 #include "src/tint/symbol_table.h"
-#include "src/tint/type/node.h"
+#include "src/tint/type/clone_context.h"
+#include "src/tint/type/unique_node.h"
 
 namespace tint::type {
 
 /// An array count
-class ArrayCount : public Castable<ArrayCount, Node> {
+class ArrayCount : public Castable<ArrayCount, UniqueNode> {
   public:
     ~ArrayCount() override;
-
-    /// @returns a hash of the array count.
-    virtual size_t Hash() const = 0;
-
-    /// @param t other array count
-    /// @returns true if this array count is equal to the given array count
-    virtual bool Equals(const ArrayCount& t) const = 0;
 
     /// @param symbols the symbol table
     /// @returns the friendly name for this array count
     virtual std::string FriendlyName(const SymbolTable& symbols) const = 0;
 
+    /// @param ctx the clone context
+    /// @returns a clone of this type
+    virtual ArrayCount* Clone(CloneContext& ctx) const = 0;
+
   protected:
-    ArrayCount();
+    /// Constructor
+    /// @param hash the unique hash of the node
+    explicit ArrayCount(size_t hash);
 };
 
 /// The variant of an ArrayCount when the array is a const-expression.
@@ -56,16 +56,17 @@ class ConstantArrayCount final : public Castable<ConstantArrayCount, ArrayCount>
     explicit ConstantArrayCount(uint32_t val);
     ~ConstantArrayCount() override;
 
-    /// @returns a hash of the array count.
-    size_t Hash() const override;
-
-    /// @param t other array count
-    /// @returns true if this array count is equal to the given array count
-    bool Equals(const ArrayCount& t) const override;
+    /// @param other the other object
+    /// @returns true if this array count is equal to other
+    bool Equals(const UniqueNode& other) const override;
 
     /// @param symbols the symbol table
     /// @returns the friendly name for this array count
     std::string FriendlyName(const SymbolTable& symbols) const override;
+
+    /// @param ctx the clone context
+    /// @returns a clone of this type
+    ConstantArrayCount* Clone(CloneContext& ctx) const override;
 
     /// The array count constant-expression value.
     uint32_t value;
@@ -82,41 +83,19 @@ class RuntimeArrayCount final : public Castable<RuntimeArrayCount, ArrayCount> {
     RuntimeArrayCount();
     ~RuntimeArrayCount() override;
 
-    /// @returns a hash of the array count.
-    size_t Hash() const override;
-
-    /// @param t other array count
-    /// @returns true if this array count is equal to the given array count
-    bool Equals(const ArrayCount& t) const override;
+    /// @param other the other object
+    /// @returns true if this array count is equal to other
+    bool Equals(const UniqueNode& other) const override;
 
     /// @param symbols the symbol table
     /// @returns the friendly name for this array count
     std::string FriendlyName(const SymbolTable& symbols) const override;
+
+    /// @param ctx the clone context
+    /// @returns a clone of this type
+    RuntimeArrayCount* Clone(CloneContext& ctx) const override;
 };
 
 }  // namespace tint::type
-
-namespace std {
-
-/// std::hash specialization for tint::type::ArrayCount
-template <>
-struct hash<tint::type::ArrayCount> {
-    /// @param a the array count to obtain a hash from
-    /// @returns the hash of the array count
-    size_t operator()(const tint::type::ArrayCount& a) const { return a.Hash(); }
-};
-
-/// std::equal_to specialization for tint::type::ArrayCount
-template <>
-struct equal_to<tint::type::ArrayCount> {
-    /// @param a the first array count to compare
-    /// @param b the second array count to compare
-    /// @returns true if the two array counts are equal
-    bool operator()(const tint::type::ArrayCount& a, const tint::type::ArrayCount& b) const {
-        return a.Equals(b);
-    }
-};
-
-}  // namespace std
 
 #endif  // SRC_TINT_TYPE_ARRAY_COUNT_H_

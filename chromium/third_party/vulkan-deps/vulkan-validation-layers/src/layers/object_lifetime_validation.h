@@ -1,7 +1,7 @@
-/* Copyright (c) 2015-2022 The Khronos Group Inc.
- * Copyright (c) 2015-2022 Valve Corporation
- * Copyright (c) 2015-2022 LunarG, Inc.
- * Copyright (C) 2015-2022 Google Inc.
+/* Copyright (c) 2015-2023 The Khronos Group Inc.
+ * Copyright (c) 2015-2023 Valve Corporation
+ * Copyright (c) 2015-2023 LunarG, Inc.
+ * Copyright (C) 2015-2023 Google Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,10 +14,6 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *
- * Author: Mark Lobodzinski <mark@lunarg.com>
- * Author: Jon Ashburn <jon@lunarg.com>
- * Author: Tobin Ehlis <tobine@google.com>
  */
 
 // clang-format off
@@ -43,7 +39,7 @@ struct ObjTrackState {
     VulkanObjectType object_type;                                  // Object type identifier
     ObjectStatusFlags status;                                      // Object state
     uint64_t parent_object;                                        // Parent object
-    std::unique_ptr<layer_data::unordered_set<uint64_t> > child_objects;  // Child objects (used for VkDescriptorPool only)
+    std::unique_ptr<vvl::unordered_set<uint64_t> > child_objects;  // Child objects (used for VkDescriptorPool only)
 };
 
 typedef vl_concurrent_unordered_map<uint64_t, std::shared_ptr<ObjTrackState>, 6> object_map_type;
@@ -53,7 +49,7 @@ class ObjectLifetimes : public ValidationObject {
     // Override chassis read/write locks for this validation object
     // This override takes a deferred lock. i.e. it is not acquired.
     // This class does its own locking with a shared mutex.
-    ReadLockGuard ReadLock() override;
+    ReadLockGuard ReadLock() const override;
     WriteLockGuard WriteLock() override;
 
     mutable std::shared_mutex object_lifetime_mutex;
@@ -200,7 +196,7 @@ class ObjectLifetimes : public ValidationObject {
             num_total_objects++;
 
             if (object_type == kVulkanObjectTypeDescriptorPool) {
-                pNewObjNode->child_objects.reset(new layer_data::unordered_set<uint64_t>);
+                pNewObjNode->child_objects.reset(new vvl::unordered_set<uint64_t>);
             }
         }
     }

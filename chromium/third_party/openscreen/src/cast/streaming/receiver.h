@@ -29,6 +29,7 @@
 #include "cast/streaming/session_config.h"
 #include "cast/streaming/ssrc.h"
 #include "platform/api/time.h"
+#include "platform/base/span.h"
 #include "util/alarm.h"
 
 namespace openscreen {
@@ -75,7 +76,7 @@ class ReceiverPacketRouter;
 //       std::vector<uint8_t> buffer;
 //       buffer.resize(next_frame_buffer_size);
 //       openscreen::cast::EncodedFrame encoded_frame =
-//           receiver_->ConsumeNextFrame(absl::Span<uint8_t>(buffer));
+//           receiver_->ConsumeNextFrame(buffer);
 //
 //       display_.RenderFrame(decoder_.DecodeFrame(encoded_frame.data));
 //
@@ -126,7 +127,7 @@ class Receiver : public ReceiverBase {
   void SetPlayerProcessingTime(Clock::duration needed_time) override;
   void RequestKeyFrame() override;
   int AdvanceToNextFrame() override;
-  EncodedFrame ConsumeNextFrame(absl::Span<uint8_t> buffer) override;
+  EncodedFrame ConsumeNextFrame(ByteBuffer buffer) override;
 
   // Allows setting picture loss indication for testing. In production, this
   // should be done using the config.

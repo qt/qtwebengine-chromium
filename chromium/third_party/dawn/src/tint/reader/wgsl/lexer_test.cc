@@ -989,7 +989,6 @@ INSTANTIATE_TEST_SUITE_P(LexerTest,
                                          TokenData{"&=", Token::Type::kAndEqual},
                                          TokenData{"|=", Token::Type::kOrEqual},
                                          TokenData{"^=", Token::Type::kXorEqual},
-                                         TokenData{">>=", Token::Type::kShiftRightEqual},
                                          TokenData{"<<=", Token::Type::kShiftLeftEqual}));
 
 using SplittablePunctuationTest = testing::TestWithParam<TokenData>;
@@ -1010,18 +1009,23 @@ TEST_P(SplittablePunctuationTest, Parses) {
         EXPECT_EQ(t.source().range.end.column, 1u + strlen(params.input));
     }
 
-    {
-        auto& t = list[1];
+    const size_t num_placeholders = list[0].NumPlaceholders();
+    EXPECT_GT(num_placeholders, 0u);
+    ASSERT_EQ(list.size(), 2u + num_placeholders);
+
+    for (size_t i = 0; i < num_placeholders; i++) {
+        auto& t = list[1 + i];
         EXPECT_TRUE(t.Is(Token::Type::kPlaceholder));
         EXPECT_EQ(t.source().range.begin.line, 1u);
-        EXPECT_EQ(t.source().range.begin.column, 2u);
+        EXPECT_EQ(t.source().range.begin.column, 2u + i);
         EXPECT_EQ(t.source().range.end.line, 1u);
         EXPECT_EQ(t.source().range.end.column, 1u + strlen(params.input));
     }
 
     {
-        auto& t = list[2];
-        EXPECT_EQ(t.source().range.begin.column, 1 + std::string(params.input).size());
+        auto& t = list.back();
+        EXPECT_TRUE(t.Is(Token::Type::kEOF));
+        EXPECT_EQ(t.source().range.begin.column, 2u + num_placeholders);
     }
 }
 INSTANTIATE_TEST_SUITE_P(LexerTest,
@@ -1029,7 +1033,8 @@ INSTANTIATE_TEST_SUITE_P(LexerTest,
                          testing::Values(TokenData{"&&", Token::Type::kAndAnd},
                                          TokenData{">=", Token::Type::kGreaterThanEqual},
                                          TokenData{"--", Token::Type::kMinusMinus},
-                                         TokenData{">>", Token::Type::kShiftRight}));
+                                         TokenData{">>", Token::Type::kShiftRight},
+                                         TokenData{">>=", Token::Type::kShiftRightEqual}));
 
 using KeywordTest = testing::TestWithParam<TokenData>;
 TEST_P(KeywordTest, Parses) {
@@ -1049,71 +1054,36 @@ TEST_P(KeywordTest, Parses) {
 
     EXPECT_EQ(list[1].source().range.begin.column, 1 + std::string(params.input).size());
 }
-INSTANTIATE_TEST_SUITE_P(
-    LexerTest,
-    KeywordTest,
-    testing::Values(TokenData{"array", Token::Type::kArray},
-                    TokenData{"bitcast", Token::Type::kBitcast},
-                    TokenData{"bool", Token::Type::kBool},
-                    TokenData{"break", Token::Type::kBreak},
-                    TokenData{"case", Token::Type::kCase},
-                    TokenData{"const", Token::Type::kConst},
-                    TokenData{"continue", Token::Type::kContinue},
-                    TokenData{"continuing", Token::Type::kContinuing},
-                    TokenData{"default", Token::Type::kDefault},
-                    TokenData{"discard", Token::Type::kDiscard},
-                    TokenData{"else", Token::Type::kElse},
-                    TokenData{"f32", Token::Type::kF32},
-                    TokenData{"fallthrough", Token::Type::kFallthrough},
-                    TokenData{"false", Token::Type::kFalse},
-                    TokenData{"fn", Token::Type::kFn},
-                    TokenData{"for", Token::Type::kFor},
-                    TokenData{"i32", Token::Type::kI32},
-                    TokenData{"if", Token::Type::kIf},
-                    TokenData{"let", Token::Type::kLet},
-                    TokenData{"loop", Token::Type::kLoop},
-                    TokenData{"mat2x2", Token::Type::kMat2x2},
-                    TokenData{"mat2x3", Token::Type::kMat2x3},
-                    TokenData{"mat2x4", Token::Type::kMat2x4},
-                    TokenData{"mat3x2", Token::Type::kMat3x2},
-                    TokenData{"mat3x3", Token::Type::kMat3x3},
-                    TokenData{"mat3x4", Token::Type::kMat3x4},
-                    TokenData{"mat4x2", Token::Type::kMat4x2},
-                    TokenData{"mat4x3", Token::Type::kMat4x3},
-                    TokenData{"mat4x4", Token::Type::kMat4x4},
-                    TokenData{"override", Token::Type::kOverride},
-                    TokenData{"ptr", Token::Type::kPtr},
-                    TokenData{"return", Token::Type::kReturn},
-                    TokenData{"sampler", Token::Type::kSampler},
-                    TokenData{"sampler_comparison", Token::Type::kComparisonSampler},
-                    TokenData{"static_assert", Token::Type::kStaticAssert},
-                    TokenData{"struct", Token::Type::kStruct},
-                    TokenData{"switch", Token::Type::kSwitch},
-                    TokenData{"texture_1d", Token::Type::kTextureSampled1d},
-                    TokenData{"texture_2d", Token::Type::kTextureSampled2d},
-                    TokenData{"texture_2d_array", Token::Type::kTextureSampled2dArray},
-                    TokenData{"texture_3d", Token::Type::kTextureSampled3d},
-                    TokenData{"texture_cube", Token::Type::kTextureSampledCube},
-                    TokenData{"texture_cube_array", Token::Type::kTextureSampledCubeArray},
-                    TokenData{"texture_depth_2d", Token::Type::kTextureDepth2d},
-                    TokenData{"texture_depth_2d_array", Token::Type::kTextureDepth2dArray},
-                    TokenData{"texture_depth_cube", Token::Type::kTextureDepthCube},
-                    TokenData{"texture_depth_cube_array", Token::Type::kTextureDepthCubeArray},
-                    TokenData{"texture_depth_multisampled_2d",
-                              Token::Type::kTextureDepthMultisampled2d},
-                    TokenData{"texture_multisampled_2d", Token::Type::kTextureMultisampled2d},
-                    TokenData{"texture_storage_1d", Token::Type::kTextureStorage1d},
-                    TokenData{"texture_storage_2d", Token::Type::kTextureStorage2d},
-                    TokenData{"texture_storage_2d_array", Token::Type::kTextureStorage2dArray},
-                    TokenData{"texture_storage_3d", Token::Type::kTextureStorage3d},
-                    TokenData{"true", Token::Type::kTrue},
-                    TokenData{"type", Token::Type::kType},
-                    TokenData{"u32", Token::Type::kU32},
-                    TokenData{"var", Token::Type::kVar},
-                    TokenData{"vec2", Token::Type::kVec2},
-                    TokenData{"vec3", Token::Type::kVec3},
-                    TokenData{"vec4", Token::Type::kVec4},
-                    TokenData{"while", Token::Type::kWhile}));
+INSTANTIATE_TEST_SUITE_P(LexerTest,
+                         KeywordTest,
+                         testing::Values(TokenData{"alias", Token::Type::kAlias},
+                                         TokenData{"bitcast", Token::Type::kBitcast},
+                                         TokenData{"break", Token::Type::kBreak},
+                                         TokenData{"case", Token::Type::kCase},
+                                         TokenData{"const", Token::Type::kConst},
+                                         TokenData{"const_assert", Token::Type::kConstAssert},
+                                         TokenData{"continue", Token::Type::kContinue},
+                                         TokenData{"continuing", Token::Type::kContinuing},
+                                         TokenData{"default", Token::Type::kDefault},
+                                         TokenData{"diagnostic", Token::Type::kDiagnostic},
+                                         TokenData{"discard", Token::Type::kDiscard},
+                                         TokenData{"else", Token::Type::kElse},
+                                         TokenData{"enable", Token::Type::kEnable},
+                                         TokenData{"fallthrough", Token::Type::kFallthrough},
+                                         TokenData{"false", Token::Type::kFalse},
+                                         TokenData{"fn", Token::Type::kFn},
+                                         TokenData{"for", Token::Type::kFor},
+                                         TokenData{"if", Token::Type::kIf},
+                                         TokenData{"let", Token::Type::kLet},
+                                         TokenData{"loop", Token::Type::kLoop},
+                                         TokenData{"override", Token::Type::kOverride},
+                                         TokenData{"return", Token::Type::kReturn},
+                                         TokenData{"requires", Token::Type::kRequires},
+                                         TokenData{"struct", Token::Type::kStruct},
+                                         TokenData{"switch", Token::Type::kSwitch},
+                                         TokenData{"true", Token::Type::kTrue},
+                                         TokenData{"var", Token::Type::kVar},
+                                         TokenData{"while", Token::Type::kWhile}));
 
 }  // namespace
 }  // namespace tint::reader::wgsl

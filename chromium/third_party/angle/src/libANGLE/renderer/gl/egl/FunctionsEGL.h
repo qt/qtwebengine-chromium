@@ -30,14 +30,17 @@ class FunctionsEGL
 
     int majorVersion;
     int minorVersion;
+    std::string vendorString;
+    std::string versionString;
 
-    egl::Error initialize(EGLNativeDisplayType nativeDisplay);
+    egl::Error initialize(EGLAttrib platformType, EGLNativeDisplayType nativeDisplay);
     egl::Error terminate();
 
     virtual void *getProcAddress(const char *name) const = 0;
 
     FunctionsGL *makeFunctionsGL() const;
     bool hasExtension(const char *extension) const;
+    bool hasDmaBufImportModifierFunctions() const;
     EGLDisplay getDisplay() const;
     EGLint getError() const;
 
@@ -122,6 +125,9 @@ class FunctionsEGL
     // use angle::NonCopyable so we replicated it here instead.
     FunctionsEGL(const FunctionsEGL &)   = delete;
     void operator=(const FunctionsEGL &) = delete;
+
+    // Helper mechanism for creating a display for the desired platform type.
+    EGLDisplay getPlatformDisplay(EGLAttrib platformType, EGLNativeDisplayType nativeDisplay);
 
     // Fallback mechanism for creating a display from a native device object.
     EGLDisplay getNativeDisplay(int *major, int *minor);

@@ -28,6 +28,8 @@
 
 #include "../../InternalHeaderCheck.h"
 
+#include "MatrixProductMMAbfloat16.h"
+
 namespace Eigen {
 
 namespace internal {

@@ -21,7 +21,6 @@
 
 #include "absl/strings/string_view.h"
 
-namespace location {
 namespace nearby {
 
 // A type 3 name-based
@@ -60,6 +59,7 @@ class Uuid final {
 
   // Hashable
   bool operator==(const Uuid &rhs) const;
+  bool operator!=(const Uuid &rhs) const;
   template <typename H>
   friend H AbslHashValue(H h, const Uuid &b) {
     return H::combine(std::move(h), b.most_sig_bits_, b.least_sig_bits_);
@@ -76,6 +76,5 @@ class Uuid final {
 };
 
 }  // namespace nearby
-}  // namespace location
 
 #endif  // THIRD_PARTY_NEARBY_INTERNAL_PLATFORM_UUID_H_

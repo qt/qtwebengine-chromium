@@ -90,7 +90,7 @@ int Environment::GetMaxPacketSize() const {
   }
 }
 
-void Environment::SendPacket(absl::Span<const uint8_t> packet) {
+void Environment::SendPacket(ByteView packet) {
   OSP_DCHECK(remote_endpoint_.address);
   OSP_DCHECK_NE(remote_endpoint_.port, 0);
   if (socket_) {

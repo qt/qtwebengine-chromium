@@ -17,9 +17,11 @@
 
 #include <xnnpack.h>
 #include <xnnpack/allocator.h>
+#include <xnnpack/common.h>
 #include <xnnpack/log.h>
 #include <xnnpack/math.h>
 #include <xnnpack/operator.h>
+#include <xnnpack/operator-utils.h>
 #include <xnnpack/pack.h>
 #include <xnnpack/params.h>
 
@@ -34,8 +36,8 @@ static enum xnn_status create_fully_connected_nc(
     uint32_t flags,
     uint32_t log2_filter_element_size,
     uint32_t bias_element_size,
-    xnn_pack_gemm_io_w_function pack_gemm_io_w,
-    xnn_pack_gemm_goi_w_function pack_gemm_goi_w,
+    xnn_pack_gemm_io_w_fn pack_gemm_io_w,
+    xnn_pack_gemm_goi_w_fn pack_gemm_goi_w,
     const void* packing_params,
     int packed_weights_padding_byte,
     const void* params,
@@ -128,6 +130,8 @@ static enum xnn_status create_fully_connected_nc(
       packed_weights_size, xnn_operator_type_to_string(operator_type));
     goto error;
   }
+  xnn_log_debug("allocated %zu bytes for packed weights in %s operator",
+    aligned_total_weights_size, xnn_operator_type_to_string(operator_type));
 
   if (flags & XNN_FLAG_TRANSPOSE_WEIGHTS) {
     pack_gemm_io_w(
@@ -161,7 +165,7 @@ static enum xnn_status create_fully_connected_nc(
   fully_connected_op->flags = flags;
 
   const size_t mr = gemm_parameters->mr;
-  fully_connected_op->ukernel.type = xnn_ukernel_type_gemm;
+  fully_connected_op->ukernel.type = xnn_microkernel_type_gemm;
   fully_connected_op->ukernel.gemm = (struct xnn_ukernel_gemm) {
     .mr = mr,
     .nr = nr,
@@ -339,11 +343,11 @@ enum xnn_status xnn_create_fully_connected_nc_f16(
   if XNN_LIKELY(xnn_params.f16.gemm.init.f16 != NULL) {
     xnn_params.f16.gemm.init.f16(&params, fp16_output_min, fp16_output_max);
   }
-  xnn_pack_gemm_io_w_function pack_gemm_io_w = (xnn_pack_gemm_io_w_function) xnn_pack_f16_gemm_io_w;
-  xnn_pack_gemm_goi_w_function pack_gemm_goi_w = (xnn_pack_gemm_goi_w_function) xnn_pack_f16_gemm_goi_w;
+  xnn_pack_gemm_io_w_fn pack_gemm_io_w = (xnn_pack_gemm_io_w_fn) xnn_pack_f16_gemm_io_w;
+  xnn_pack_gemm_goi_w_fn pack_gemm_goi_w = (xnn_pack_gemm_goi_w_fn) xnn_pack_f16_gemm_goi_w;
   if (flags & XNN_FLAG_FP32_STATIC_WEIGHTS) {
-    pack_gemm_io_w = (xnn_pack_gemm_io_w_function) xnn_pack_f32_to_f16_gemm_io_w;
-    pack_gemm_goi_w = (xnn_pack_gemm_goi_w_function) xnn_pack_f32_to_f16_gemm_goi_w;
+    pack_gemm_io_w = (xnn_pack_gemm_io_w_fn) xnn_pack_f32_to_f16_gemm_io_w;
+    pack_gemm_goi_w = (xnn_pack_gemm_goi_w_fn) xnn_pack_f32_to_f16_gemm_goi_w;
   }
   return create_fully_connected_nc(
     input_channels, output_channels,
@@ -412,8 +416,8 @@ enum xnn_status xnn_create_fully_connected_nc_f32(
     kernel, bias, flags,
     2 /* log2(sizeof(filter element)) = log2(sizeof(float)) */,
     sizeof(float) /* sizeof(bias element) */,
-    (xnn_pack_gemm_io_w_function) xnn_pack_f32_gemm_io_w,
-    (xnn_pack_gemm_goi_w_function) xnn_pack_f32_gemm_goi_w,
+    (xnn_pack_gemm_io_w_fn) xnn_pack_f32_gemm_io_w,
+    (xnn_pack_gemm_goi_w_fn) xnn_pack_f32_gemm_goi_w,
     NULL /* packing params */, 0 /* packed weights padding byte */,
     &params, sizeof(params),
     &xnn_params.f32.gemm, gemm_ukernels,
@@ -492,8 +496,8 @@ enum xnn_status xnn_create_fully_connected_nc_qs8(
     kernel, bias, flags,
     0 /* log2(sizeof(filter element)) = log2(sizeof(int8_t)) */,
     sizeof(int32_t) /* sizeof(bias element) */,
-    (xnn_pack_gemm_io_w_function) xnn_pack_qs8_gemm_io_w,
-    (xnn_pack_gemm_goi_w_function) xnn_pack_qs8_gemm_goi_w,
+    (xnn_pack_gemm_io_w_fn) xnn_pack_qs8_gemm_io_w,
+    (xnn_pack_gemm_goi_w_fn) xnn_pack_qs8_gemm_goi_w,
     &packing_params, 0 /* packed weights padding byte */,
     &params, sizeof(params),
     &xnn_params.qs8.gemm, &xnn_params.qs8.gemm.minmax,
@@ -575,8 +579,8 @@ enum xnn_status xnn_create_fully_connected_nc_qu8(
     kernel, bias, flags,
     0 /* log2(sizeof(filter element)) = log2(sizeof(uint8_t)) */,
     sizeof(int32_t) /* sizeof(bias element) */,
-    (xnn_pack_gemm_io_w_function) xnn_pack_qu8_gemm_io_w,
-    (xnn_pack_gemm_goi_w_function) xnn_pack_qu8_gemm_goi_w,
+    (xnn_pack_gemm_io_w_fn) xnn_pack_qu8_gemm_io_w,
+    (xnn_pack_gemm_goi_w_fn) xnn_pack_qu8_gemm_goi_w,
     &packing_params, kernel_zero_point /* packed weights padding byte */,
     &params, sizeof(params),
     &xnn_params.qu8.gemm, &xnn_params.qu8.gemm.minmax,

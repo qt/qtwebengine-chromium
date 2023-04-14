@@ -471,9 +471,9 @@ TEST_F(SenderSessionTest, HandlesCapabilitiesTimeout) {
   const Error error = session_->RequestCapabilities();
   EXPECT_TRUE(error.ok());
 
-  // No ANSWER received in time, should report an error.
+  // No CAPABILITIES_RESPONSE received in time, should report an error.
   EXPECT_CALL(client_, OnError(session_.get(),
-                               CodeEquals(Error::Code::kMessageTimeout)));
+                               CodeEquals(Error::Code::kRemotingNotSupported)));
   clock_.Advance(std::chrono::seconds(10));
 }
 

@@ -11,8 +11,9 @@
 #include "include/core/SkRect.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkTypes.h"
+#include "include/private/base/SkDebug.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
-#include "src/core/SkArenaAlloc.h"
+#include "src/base/SkArenaAlloc.h"
 #include "src/gpu/ganesh/GrSurfaceProxy.h"
 #include "src/gpu/ganesh/GrSurfaceProxyPriv.h"
 #include "src/text/gpu/SubRunAllocator.h"
@@ -26,7 +27,11 @@ class GrCaps;
 class GrResourceProvider;
 class GrSurface;
 enum class GrProtected : bool;
+enum class SkBackingFit;
 struct SkISize;
+namespace skgpu {
+enum class Budgeted : bool;
+}
 
 // GrArenas matches the lifetime of a single frame. It is created and held on the
 // SurfaceFillContext's RenderTargetProxy with the first call to get an arena. Each OpsTask
@@ -136,7 +141,7 @@ protected:
                         SkISize,
                         int sampleCount,
                         SkBackingFit,
-                        SkBudgeted,
+                        skgpu::Budgeted,
                         GrProtected,
                         GrInternalSurfaceFlags,
                         UseAllocator,
@@ -159,7 +164,7 @@ protected:
                         SkISize,
                         int sampleCount,
                         SkBackingFit,
-                        SkBudgeted,
+                        skgpu::Budgeted,
                         GrProtected,
                         GrInternalSurfaceFlags,
                         UseAllocator,

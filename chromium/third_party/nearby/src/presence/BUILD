@@ -52,24 +52,21 @@ cc_library(
         "device_motion.h",
         "discovery_filter.h",
         "discovery_options.h",
-        "listeners.h",
         "power_mode.h",
         "presence_action.h",
         "presence_device.h",
         "presence_zone.h",
         "scan_request.h",
         "scan_request_builder.h",
-        "status.h",
     ],
     deps = [
         "//internal:device",
         "//internal/crypto",
-        "//internal/platform:base",
         "//internal/platform:connection_info",
         "//internal/platform:logging",
         "//internal/platform/implementation:types",
         "//internal/proto:credential_cc_proto",
-        "//internal/proto:device_metadata_cc_proto",
+        "//internal/proto:metadata_cc_proto",
         "@com_google_absl//absl/functional:any_invocable",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/time",
@@ -91,21 +88,25 @@ cc_test(
         "presence_identity_test.cc",
         "presence_zone_test.cc",
         "scan_request_builder_test.cc",
-        "status_test.cc",
     ],
     shard_count = 6,
     deps = [
         ":types",
-        "//internal/platform:connection_info",
-        "//internal/platform:logging",
-        "//internal/platform/implementation/g3",  # build_cleaner: keep
-        "//internal/proto:credential_cc_proto",
-        "//internal/proto:device_metadata_cc_proto",
-        "@com_github_protobuf_matchers//protobuf-matchers",
+        "@com_github_protobuf_matchers//protobuf-matchers:protobuf-matchers",
+        "@com_google_googletest//:gtest_main",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:variant",
-        "@com_google_googletest//:gtest_main",
-    ],
+        "//internal/platform:connection_info",
+        "//internal/platform:logging",
+        "//internal/proto:credential_cc_proto",
+    ] + select({
+        "//tools/cc_target_os:windows": [
+            "//internal/platform/implementation/windows",
+        ],
+        "//conditions:default": [
+            "//internal/platform/implementation/g3",
+        ],
+    }),
 )
 
 cc_test(
@@ -117,12 +118,19 @@ cc_test(
     ],
     shard_count = 6,
     deps = [
-        "//internal/platform:uuid",
-        "//internal/platform/implementation/g3",  # build_cleaner: keep
-        "//internal/proto:credential_cc_proto",
-        "@com_github_protobuf_matchers//protobuf-matchers",
+        "@com_github_protobuf_matchers//protobuf-matchers:protobuf-matchers",
         "@com_google_googletest//:gtest_main",
-    ],
+        "//internal/platform:uuid",
+        "//internal/proto:credential_cc_proto",
+        "//internal/proto:local_credential_cc_proto",
+    ] + select({
+        "//tools/cc_target_os:windows": [
+            "//internal/platform/implementation/windows",
+        ],
+        "//conditions:default": [
+            "//internal/platform/implementation/g3",
+        ],
+    }),
 )
 
 cc_test(
@@ -136,9 +144,16 @@ cc_test(
     deps = [
         ":presence",
         ":types",
-        "//internal/platform:test_util",
-        "//internal/platform/implementation/g3",  # build_cleaner: keep
-        "@com_github_protobuf_matchers//protobuf-matchers",
+        "@com_github_protobuf_matchers//protobuf-matchers:protobuf-matchers",
         "@com_google_googletest//:gtest_main",
-    ],
+        "@com_google_absl//absl/status",
+        "//internal/platform:test_util",
+    ] + select({
+        "//tools/cc_target_os:windows": [
+            "//internal/platform/implementation/windows",
+        ],
+        "//conditions:default": [
+            "//internal/platform/implementation/g3",
+        ],
+    }),
 )

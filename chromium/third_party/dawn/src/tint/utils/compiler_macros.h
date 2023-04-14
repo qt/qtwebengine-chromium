@@ -19,7 +19,7 @@
 
 #define TINT_REQUIRE_SEMICOLON static_assert(true)
 
-#if defined(_MSC_VER)
+#if defined(_MSC_VER) && !defined(__clang__)
 ////////////////////////////////////////////////////////////////////////////////
 // MSVC
 ////////////////////////////////////////////////////////////////////////////////
@@ -30,6 +30,7 @@
 #define TINT_DISABLE_WARNING_SIGN_CONVERSION     /* currently no-op */
 #define TINT_DISABLE_WARNING_UNREACHABLE_CODE __pragma(warning(disable : 4702))
 #define TINT_DISABLE_WARNING_WEAK_VTABLES /* currently no-op */
+#define TINT_DISABLE_WARNING_FLOAT_EQUAL  /* currently no-op */
 
 // clang-format off
 #define TINT_BEGIN_DISABLE_WARNING(name)     \
@@ -40,6 +41,9 @@
     __pragma(warning(pop))                   \
     TINT_REQUIRE_SEMICOLON
 // clang-format on
+
+#define TINT_UNLIKELY(x) x /* currently no-op */
+#define TINT_LIKELY(x) x   /* currently no-op */
 #elif defined(__clang__)
 ////////////////////////////////////////////////////////////////////////////////
 // Clang
@@ -52,6 +56,7 @@
     _Pragma("clang diagnostic ignored \"-Wsign-conversion\"")
 #define TINT_DISABLE_WARNING_UNREACHABLE_CODE /* currently no-op */
 #define TINT_DISABLE_WARNING_WEAK_VTABLES _Pragma("clang diagnostic ignored \"-Wweak-vtables\"")
+#define TINT_DISABLE_WARNING_FLOAT_EQUAL _Pragma("clang diagnostic ignored \"-Wfloat-equal\"")
 
 // clang-format off
 #define TINT_BEGIN_DISABLE_WARNING(name)     \
@@ -62,6 +67,9 @@
     _Pragma("clang diagnostic pop")          \
     TINT_REQUIRE_SEMICOLON
 // clang-format on
+
+#define TINT_UNLIKELY(x) __builtin_expect(!!(x), false)
+#define TINT_LIKELY(x) __builtin_expect(!!(x), true)
 #elif defined(__GNUC__)
 ////////////////////////////////////////////////////////////////////////////////
 // GCC
@@ -74,6 +82,7 @@
 #define TINT_DISABLE_WARNING_SIGN_CONVERSION  /* currently no-op */
 #define TINT_DISABLE_WARNING_UNREACHABLE_CODE /* currently no-op */
 #define TINT_DISABLE_WARNING_WEAK_VTABLES     /* currently no-op */
+#define TINT_DISABLE_WARNING_FLOAT_EQUAL      /* currently no-op */
 
 // clang-format off
 #define TINT_BEGIN_DISABLE_WARNING(name)     \
@@ -84,12 +93,18 @@
     _Pragma("GCC diagnostic pop")            \
     TINT_REQUIRE_SEMICOLON
 // clang-format on
+
+#define TINT_UNLIKELY(x) __builtin_expect(!!(x), false)
+#define TINT_LIKELY(x) __builtin_expect(!!(x), true)
 #else
 ////////////////////////////////////////////////////////////////////////////////
 // Other
 ////////////////////////////////////////////////////////////////////////////////
 #define TINT_BEGIN_DISABLE_WARNING(name) TINT_REQUIRE_SEMICOLON
 #define TINT_END_DISABLE_WARNING(name) TINT_REQUIRE_SEMICOLON
+#define TINT_UNLIKELY(x) x
+#define TINT_LIKELY(x) x
+
 #endif
 
 #endif  // SRC_TINT_UTILS_COMPILER_MACROS_H_

@@ -128,6 +128,10 @@ message Read2ResponseProto {
 // and last response have a zero cookie value. The remaining RPCs will have the
 // same server-chosen, non-zero cookie value.
 //
+// This implies that whenever the server responds with a non-zero cookie value,
+// the client must follow up with another ReadDir2 request, even if the client
+// encounters an unrelated error (unrelated to the D-Bus + protobuf protocol).
+//
 // The request's cancel_error_code is typically zero but if not, it is echoed
 // in the response (which becomes the final response) and indicates that the
 // D-Bus client is cancelling the overall "read a directory" operation.
@@ -142,6 +146,17 @@ message ReadDir2ResponseProto {
   optional int32 posix_error_code = 1;
   optional uint64 cookie = 2;
   repeated DirEntryProto entries = 3;
+}
+
+// Rename renames a file.
+
+message RenameRequestProto {
+  optional string src_file_system_url = 3;
+  optional string dst_file_system_url = 6;
+}
+
+message RenameResponseProto {
+  optional int32 posix_error_code = 1;
 }
 
 // RmDir truly deletes (it does not "move to trash", an undo-able operation)

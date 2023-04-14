@@ -28,7 +28,6 @@
 #include "internal/platform/cancelable_alarm.h"
 #include "internal/platform/cancellation_flag.h"
 #include "internal/platform/future.h"
-#include "internal/platform/listeners.h"
 #include "internal/platform/mutex.h"
 #include "internal/platform/runnable.h"
 #include "internal/platform/scheduled_executor.h"
@@ -36,7 +35,6 @@
 #include "proto/mediums/web_rtc_signaling_frames.pb.h"
 #include "webrtc/api/jsep.h"
 
-namespace location {
 namespace nearby {
 namespace connections {
 namespace mediums {
@@ -44,7 +42,7 @@ namespace mediums {
 // Callback that is invoked when a new connection is accepted.
 struct AcceptedConnectionCallback {
   std::function<void(const std::string& service_id, WebRtcSocketWrapper socket)>
-      accepted_cb = DefaultCallback<const std::string&, WebRtcSocketWrapper>();
+      accepted_cb = [](const std::string&, WebRtcSocketWrapper) {};
 };
 
 // Entry point for connecting a data channel between two devices via WebRtc.
@@ -69,11 +67,10 @@ class WebRtc {
   // Prepares the device to accept incoming WebRtc connections. Returns a
   // boolean value indicating if the device has started accepting connections.
   // Runs on @MainThread.
-  bool StartAcceptingConnections(const std::string& service_id,
-                                 const WebrtcPeerId& self_peer_id,
-                                 const LocationHint& location_hint,
-                                 AcceptedConnectionCallback callback)
-      ABSL_LOCKS_EXCLUDED(mutex_);
+  bool StartAcceptingConnections(
+      const std::string& service_id, const WebrtcPeerId& self_peer_id,
+      const location::nearby::connections::LocationHint& location_hint,
+      AcceptedConnectionCallback callback) ABSL_LOCKS_EXCLUDED(mutex_);
 
   // Try to stop (accepting) the specific connection with provided service id.
   // Runs on @MainThread
@@ -83,11 +80,10 @@ class WebRtc {
   // Initiates a WebRtc connection with peer device identified by |peer_id|
   // with internal retry for maximum attempts of kConnectAttemptsLimit.
   // Runs on @MainThread.
-  WebRtcSocketWrapper Connect(const std::string& service_id,
-                              const WebrtcPeerId& peer_id,
-                              const LocationHint& location_hint,
-                              CancellationFlag* cancellation_flag)
-      ABSL_LOCKS_EXCLUDED(mutex_);
+  WebRtcSocketWrapper Connect(
+      const std::string& service_id, const WebrtcPeerId& peer_id,
+      const location::nearby::connections::LocationHint& location_hint,
+      CancellationFlag* cancellation_flag) ABSL_LOCKS_EXCLUDED(mutex_);
 
  private:
   static constexpr int kConnectAttemptsLimit = 3;
@@ -139,11 +135,10 @@ class WebRtc {
   // Attempt to initiates a WebRtc connection with peer device identified by
   // |peer_id|.
   // Runs on @MainThread.
-  WebRtcSocketWrapper AttemptToConnect(const std::string& service_id,
-                                       const WebrtcPeerId& peer_id,
-                                       const LocationHint& location_hint,
-                                       CancellationFlag* cancellation_flag)
-      ABSL_LOCKS_EXCLUDED(mutex_);
+  WebRtcSocketWrapper AttemptToConnect(
+      const std::string& service_id, const WebrtcPeerId& peer_id,
+      const location::nearby::connections::LocationHint& location_hint,
+      CancellationFlag* cancellation_flag) ABSL_LOCKS_EXCLUDED(mutex_);
 
   // Returns if the device is accepting connection with specific service id.
   // Runs on @MainThread.
@@ -213,7 +208,7 @@ class WebRtc {
   // Runs on |single_thread_executor_|.
   void ProcessLocalIceCandidate(
       const std::string& service_id, const WebrtcPeerId& remote_peer_id,
-      const ::location::nearby::mediums::IceCandidate ice_candidate)
+      const location::nearby::mediums::IceCandidate ice_candidate)
       ABSL_LOCKS_EXCLUDED(mutex_);
 
   // Runs on |single_thread_executor_|.
@@ -253,6 +248,5 @@ class WebRtc {
 }  // namespace mediums
 }  // namespace connections
 }  // namespace nearby
-}  // namespace location
 
 #endif  // CORE_INTERNAL_MEDIUMS_WEBRTC_H_

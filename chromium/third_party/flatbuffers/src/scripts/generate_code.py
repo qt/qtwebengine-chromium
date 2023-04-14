@@ -14,72 +14,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import argparse
 import filecmp
 import glob
-import platform
 import shutil
 import subprocess
 import generate_grpc_examples
 from pathlib import Path
-
-parser = argparse.ArgumentParser()
-parser.add_argument(
-    "--flatc",
-    help="path of the Flat C compiler relative to the root directory",
-)
-parser.add_argument("--cpp-0x", action="store_true", help="use --cpp-std c++ox")
-parser.add_argument(
-    "--skip-monster-extra",
-    action="store_true",
-    help="skip generating tests involving monster_extra.fbs",
-)
-parser.add_argument(
-    "--skip-gen-reflection",
-    action="store_true",
-    help="skip generating the reflection.fbs files",
-)
-args = parser.parse_args()
-
-# Get the path where this script is located so we can invoke the script from
-# any directory and have the paths work correctly.
-script_path = Path(__file__).parent.resolve()
-
-# Get the root path as an absolute path, so all derived paths are absolute.
-root_path = script_path.parent.absolute()
-
-# Get the location of the flatc executable, reading from the first command line
-# argument or defaulting to default names.
-flatc_exe = Path(
-    ("flatc" if not platform.system() == "Windows" else "flatc.exe")
-    if not args.flatc
-    else args.flatc
-)
-
-# Find and assert flatc compiler is present.
-if root_path in flatc_exe.parents:
-    flatc_exe = flatc_exe.relative_to(root_path)
-flatc_path = Path(root_path, flatc_exe)
-assert flatc_path.exists(), "Cannot find the flatc compiler " + str(flatc_path)
+from util import flatc, root_path, tests_path, args, flatc_path
 
 # Specify the other paths that will be referenced
-tests_path = Path(root_path, "tests")
 swift_code_gen = Path(root_path, "tests/swift/tests/CodeGenerationTests")
+ts_code_gen = Path(root_path, "tests/ts")
 samples_path = Path(root_path, "samples")
 reflection_path = Path(root_path, "reflection")
-
-# Execute the flatc compiler with the specified parameters
-def flatc(options, schema, prefix=None, include=None, data=None, cwd=tests_path):
-    cmd = [str(flatc_path)] + options
-    if prefix:
-        cmd += ["-o"] + [prefix]
-    if include:
-        cmd += ["-I"] + [include]
-    cmd += [schema] if isinstance(schema, str) else schema
-    if data:
-        cmd += [data] if isinstance(data, str) else data
-    result = subprocess.run(cmd, cwd=str(cwd), check=True)
-
 
 # Generate the code for flatbuffers reflection schema
 def flatc_reflection(options, location, target):
@@ -147,10 +94,10 @@ TS_OPTS = ["--ts", "--gen-name-strings"]
 LOBSTER_OPTS = ["--lobster"]
 SWIFT_OPTS = ["--swift", "--gen-json-emit", "--bfbs-filenames", str(tests_path)]
 SWIFT_OPTS_CODE_GEN = [
-    "--swift", 
+    "--swift",
     "--gen-json-emit",
     "--bfbs-filenames",
-    swift_code_gen
+    str(swift_code_gen)
 ]
 JAVA_OPTS = ["--java"]
 KOTLIN_OPTS = ["--kotlin"]
@@ -181,11 +128,25 @@ flatc(
 
 flatc(
     NO_INCL_OPTS
-    + TS_OPTS,
-    schema="monster_test.fbs",
-    prefix="ts",
+    + DART_OPTS,
+    schema="include_test/include_test1.fbs",
+    include="include_test/sub",
+)
+
+flatc(
+    NO_INCL_OPTS
+    + DART_OPTS,
+    schema="include_test/sub/include_test2.fbs",
     include="include_test",
-    data="monsterdata_test.json",
+)
+
+flatc(
+    NO_INCL_OPTS
+    + TS_OPTS,
+    cwd=ts_code_gen,
+    schema="../monster_test.fbs",
+    include="../include_test",
+    data="../monsterdata_test.json",
 )
 
 flatc(
@@ -250,37 +211,31 @@ flatc(
 
 flatc(
     BASE_OPTS + TS_OPTS,
-    prefix="ts/union_vector",
-    schema="union_vector/union_vector.fbs",
+    cwd=ts_code_gen,
+    prefix="union_vector",
+    schema="../union_vector/union_vector.fbs",
 )
 
 flatc(
     BASE_OPTS + TS_OPTS + ["--gen-name-strings", "--gen-mutable"],
-    include="include_test",
-    prefix="ts",
-    schema="monster_test.fbs",
-)
-
-# Generate the complete flat file TS of monster.
-flatc(
-    ["--ts", "--gen-all", "--ts-flat-files"],
-    include="include_test",
-    schema="monster_test.fbs",
-    prefix="ts/ts-flat-files"
+    cwd=ts_code_gen,
+    include="../include_test",
+    schema="../monster_test.fbs",
 )
 
 flatc(
     BASE_OPTS + TS_OPTS + ["-b"],
-    include="include_test",
-    prefix="ts",
-    schema="monster_test.fbs",
-    data="unicode_test.json",
+    cwd=ts_code_gen,
+    include="../include_test",
+    schema="../monster_test.fbs",
+    data="../unicode_test.json",
 )
 
 flatc(
     BASE_OPTS + TS_OPTS + ["--gen-name-strings"],
-    prefix="ts/union_vector",
-    schema="union_vector/union_vector.fbs",
+    cwd=ts_code_gen,
+    prefix="union_vector",
+    schema="../union_vector/union_vector.fbs",
 )
 
 flatc(
@@ -305,14 +260,14 @@ flatc(
 
 # Generate the annotated binary of the monster_test binary schema.
 flatc_annotate(
-    schema="../reflection/reflection.fbs", 
-    file="monster_test.bfbs", 
+    schema="../reflection/reflection.fbs",
+    file="monster_test.bfbs",
     include="include_test"
 )
 
 flatc_annotate(
-    schema="monster_test.fbs", 
-    file="monsterdata_test.mon", 
+    schema="monster_test.fbs",
+    file="monsterdata_test.mon",
     include="include_test"
 )
 
@@ -371,10 +326,16 @@ flatc(
 )
 
 
+flatc(
+    BASE_OPTS + PYTHON_OPTS,
+    schema="nested_union_test.fbs",
+)
+
+
 # Optional Scalars
 optional_scalars_schema = "optional_scalars.fbs"
 flatc(["--java", "--kotlin", "--lobster"], schema=optional_scalars_schema)
-flatc(TS_OPTS, schema=optional_scalars_schema, prefix="ts")
+flatc(TS_OPTS, cwd=ts_code_gen, schema="../optional_scalars.fbs")
 
 flatc(["--csharp", "--python", "--gen-object-api"], schema=optional_scalars_schema)
 
@@ -386,6 +347,13 @@ flatc(NO_INCL_OPTS + CPP_OPTS, schema=optional_scalars_schema)
 type_field_collsion_schema = "type_field_collsion.fbs"
 
 flatc(["--csharp", "--gen-object-api"], schema=type_field_collsion_schema)
+
+# Union / value collision
+flatc(
+    CS_OPTS + ["--gen-object-api", "--gen-onefile"],
+    prefix="union_value_collsion",
+    schema="union_value_collision.fbs"
+)
 
 # Generate string/vector default code for tests
 flatc(RUST_OPTS, prefix="more_defaults", schema="more_defaults.fbs")
@@ -426,6 +394,7 @@ flatc(
 )
 flatc(SWIFT_OPTS, schema="optional_scalars.fbs", prefix=swift_prefix)
 flatc(SWIFT_OPTS, schema="vector_has_test.fbs", prefix=swift_prefix)
+flatc(SWIFT_OPTS, schema="nan_inf_test.fbs", prefix=swift_prefix)
 flatc(
     SWIFT_OPTS + ["--gen-object-api"],
     schema="more_defaults.fbs",
@@ -448,6 +417,22 @@ flatc(
     schema="test_no_include.fbs",
     cwd=swift_code_gen
 )
+
+# Swift Wasm Tests
+swift_Wasm_prefix = "swift/Wasm.tests/Tests/FlatBuffers.Test.Swift.WasmTests"
+flatc(
+    SWIFT_OPTS + BASE_OPTS,
+    schema="monster_test.fbs",
+    include="include_test",
+    prefix=swift_Wasm_prefix,
+)
+
+# Nim Tests
+NIM_OPTS = BASE_OPTS + ["--nim"]
+flatc(NIM_OPTS, schema="monster_test.fbs", include="include_test")
+flatc(NIM_OPTS, schema="optional_scalars.fbs")
+flatc(NIM_OPTS, schema="more_defaults.fbs")
+flatc(NIM_OPTS, schema="MutatingBool.fbs")
 
 # --filename-suffix and --filename-ext tests
 flatc(

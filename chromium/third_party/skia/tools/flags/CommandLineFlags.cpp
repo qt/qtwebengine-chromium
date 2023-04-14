@@ -5,8 +5,8 @@
  * found in the LICENSE file.
  */
 
-#include "include/private/SkTDArray.h"
-#include "src/core/SkTSort.h"
+#include "include/private/base/SkTDArray.h"
+#include "src/base/SkTSort.h"
 #include "tools/flags/CommandLineFlags.h"
 
 #include <stdlib.h>
@@ -131,10 +131,9 @@ bool SkFlagInfo::match(const char* string) {
             }
         }
         return compareName->equals(string);
-    } else {
-        // Has no dash
-        return false;
     }
+
+    // Has no dash
     return false;
 }
 

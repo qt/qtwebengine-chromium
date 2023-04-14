@@ -88,6 +88,18 @@ cc_defaults {
             srcs: [
                 $arm64_srcs
             ],
+            // TODO(b/267542007): Re-enable stack tagging when miscompile is
+            // fixed
+            sanitize: {
+                memtag_stack: false,
+            },
+        },
+
+        riscv64: {
+            // TODO(b/254713216): Re-enable thinlto for targets failing the build
+            lto: {
+                thin: false,
+            },
         },
 
         x86: {
@@ -247,6 +259,9 @@ cc_defaults {
             "libvulkan",
             "libnativewindow",
         ],
+        static_libs: [
+            "libperfetto_client_experimental",
+        ],
         export_shared_lib_headers: [
             "libvulkan",
         ],
@@ -263,14 +278,6 @@ cc_defaults {
         "libpiex",
         "libexpat",
         "libft2",
-        // Required by Skottie
-        "libicu",
-        "libharfbuzz_ng",
-    ],
-    // Required by Skottie
-    cflags: [
-        "-DSK_SHAPER_HARFBUZZ_AVAILABLE",
-        "-DSK_UNICODE_AVAILABLE",
     ],
     static_libs: [
         "libwebp-decode",
@@ -505,12 +512,17 @@ def generate_args(target_os, enable_gpu, renderengine = False):
     'skia_include_multiframe_procs':        'false',
     # Required for some SKSL tests
     'skia_enable_sksl_tracing':             'true',
-    'skia_use_perfetto':                    'false'
+    # The two Perfetto integrations are currently mutually exclusive due to
+    # complexity.
+    'skia_use_perfetto':                    'false',
   }
   d['target_os'] = target_os
   if target_os == '"android"':
     d['skia_enable_tools'] = 'true'
     d['skia_include_multiframe_procs'] = 'true'
+    # Only enable for actual Android framework builds targeting Android devices.
+    # (E.g. disabled for host builds and SkQP)
+    d['skia_android_framework_use_perfetto'] = 'true'
 
   if enable_gpu:
     d['skia_use_vulkan']   = 'true'
@@ -531,6 +543,7 @@ def generate_args(target_os, enable_gpu, renderengine = False):
 
   if target_os == '"android"' and not renderengine:
     d['skia_use_libheif']  = 'true'
+    d['skia_use_jpeg_gainmaps'] = 'true'
   else:
     d['skia_use_libheif']  = 'false'
 
@@ -552,7 +565,6 @@ def generate_args(target_os, enable_gpu, renderengine = False):
     d['skia_use_fixed_gamma_text'] = 'true'
     d['skia_enable_fontmgr_custom_empty'] = 'true'
     d['skia_use_wuffs'] = 'true'
-    d['skia_enable_skottie'] = 'true'
 
   return d
 
@@ -626,18 +638,6 @@ win_srcs        = strip_headers(win_srcs)
 srcs = android_srcs.intersection(linux_srcs).intersection(mac_srcs)
 srcs = srcs.intersection(win_srcs)
 
-if (gn_args['skia_enable_skottie']):
-  # Skottie sits on top of skia, so we need to specify these sources to be built
-  # Python sets handle duplicate flags, source files, and includes for us
-  srcs.update(strip_slashes(js['targets']['//modules/skottie:skottie']['sources']))
-  gn_to_bp_utils.GrabDependentValues(js, '//modules/skottie:skottie', 'sources',
-                                     srcs, '//:skia')
-  srcs = strip_headers(srcs)
-
-  local_includes.update(strip_slashes(js['targets']['//modules/skottie:skottie']['include_dirs']))
-  gn_to_bp_utils.GrabDependentValues(js, '//modules/skottie:skottie', 'include_dirs',
-                                     local_includes, '//:skia')
-
 android_srcs    = android_srcs.difference(srcs)
 linux_srcs      =   linux_srcs.difference(srcs)
 mac_srcs        =     mac_srcs.difference(srcs)
@@ -692,6 +692,7 @@ gn_to_bp_utils.GrabDependentValues(js_skqp, '//:libskqp_app', 'defines',
 skqp_defines.add("SK_ENABLE_DUMP_GPU")
 skqp_defines.add("SK_BUILD_FOR_SKQP")
 skqp_defines.add("SK_ALLOW_STATIC_GLOBAL_INITIALIZERS=1")
+skqp_defines.remove("SK_USE_PERFETTO")
 
 skqp_srcs = strip_headers(skqp_srcs)
 skqp_cflags = gn_to_bp_utils.CleanupCFlags(skqp_cflags)

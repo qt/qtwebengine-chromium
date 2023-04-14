@@ -16,24 +16,22 @@
 #define PLATFORM_PUBLIC_SCHEDULED_EXECUTOR_H_
 
 #include <cstdint>
-#include <functional>
 #include <memory>
 
 #include "absl/base/thread_annotations.h"
 #include "absl/time/time.h"
-#include "internal/platform/implementation/platform.h"
-#include "internal/platform/implementation/scheduled_executor.h"
-#include "internal/platform/runnable.h"
 #include "internal/platform/cancelable.h"
 #include "internal/platform/cancellable_task.h"
+#include "internal/platform/implementation/platform.h"
+#include "internal/platform/implementation/scheduled_executor.h"
 #include "internal/platform/lockable.h"
 #include "internal/platform/monitored_runnable.h"
 #include "internal/platform/mutex.h"
 #include "internal/platform/mutex_lock.h"
+#include "internal/platform/runnable.h"
 #include "internal/platform/thread_check_callable.h"
 #include "internal/platform/thread_check_runnable.h"
 
-namespace location {
 namespace nearby {
 
 // An Executor that can schedule commands to run after a given delay, or to
@@ -104,6 +102,5 @@ class ABSL_LOCKABLE ScheduledExecutor final : public Lockable {
 };
 
 }  // namespace nearby
-}  // namespace location
 
 #endif  // PLATFORM_PUBLIC_SCHEDULED_EXECUTOR_H_

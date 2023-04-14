@@ -769,7 +769,7 @@ declare class EditorSelection {
     /**
     Create a selection range.
     */
-    static range(anchor: number, head: number, goalColumn?: number): SelectionRange;
+    static range(anchor: number, head: number, goalColumn?: number, bidiLevel?: number): SelectionRange;
 }
 
 declare type FacetConfig<Input, Output> = {
@@ -2057,7 +2057,7 @@ declare abstract class WidgetType {
     couldn't (in which case the widget will be redrawn). The default
     implementation just returns false.
     */
-    updateDOM(dom: HTMLElement): boolean;
+    updateDOM(dom: HTMLElement, view: EditorView): boolean;
     /**
     The estimated height this widget will have, to be used when
     estimating the height of content that hasn't been drawn. May
@@ -3936,9 +3936,9 @@ declare class LanguageDescription {
     static matchLanguageName(descs: readonly LanguageDescription[], name: string, fuzzy?: boolean): LanguageDescription | null;
 }
 /**
-Facet for overriding the unit by which indentation happens.
-Should be a string consisting either entirely of spaces or
-entirely of tabs. When not set, this defaults to 2 spaces.
+Facet for overriding the unit by which indentation happens. Should
+be a string consisting either entirely of the same whitespace
+character. When not set, this defaults to 2 spaces.
 */
 declare const indentUnit: Facet<string, string>;
 /**
@@ -3987,7 +3987,7 @@ declare class IndentContext {
         simulateBreak?: number;
         /**
         When `simulateBreak` is given, this can be used to make the
-        simulate break behave like a double line break.
+        simulated break behave like a double line break.
         */
         simulateDoubleBreak?: boolean;
     });
@@ -4280,6 +4280,7 @@ declare class StringStream {
     The current indent unit size.
     */
     indentUnit: number;
+    private overrideIndent?;
     /**
     The current position on the line.
     */
@@ -4301,7 +4302,7 @@ declare class StringStream {
     /**
     The current indent unit size.
     */
-    indentUnit: number);
+    indentUnit: number, overrideIndent?: number | undefined);
     /**
     True if we are at the end of the line.
     */
@@ -4907,6 +4908,23 @@ declare namespace _codemirror_lang_wast {
   };
 }
 
+/**
+A language provider for Vue templates.
+*/
+declare const vueLanguage: LRLanguage;
+/**
+Vue template support.
+*/
+declare function vue$1(): LanguageSupport;
+
+declare const _codemirror_lang_vue_vueLanguage: typeof vueLanguage;
+declare namespace _codemirror_lang_vue {
+  export {
+    vue$1 as vue,
+    _codemirror_lang_vue_vueLanguage as vueLanguage,
+  };
+}
+
 declare const parser: Parser
 
 declare const svelteLanguage: LRLanguage;
@@ -5315,6 +5333,23 @@ declare namespace _codemirror_lang_cpp {
 }
 
 /**
+A language provider for Angular Templates.
+*/
+declare const angularLanguage: LRLanguage;
+/**
+Angular Template language support.
+*/
+declare function angular$1(): LanguageSupport;
+
+declare const _codemirror_lang_angular_angularLanguage: typeof angularLanguage;
+declare namespace _codemirror_lang_angular {
+  export {
+    angular$1 as angular,
+    _codemirror_lang_angular_angularLanguage as angularLanguage,
+  };
+}
+
+/**
 Comment or uncomment the current selection. Will use line comments
 if available, otherwise falling back to block comments.
 */
@@ -5329,6 +5364,13 @@ interface HistoryConfig {
     apart and still be grouped together. Defaults to 500.
     */
     newGroupDelay?: number;
+    /**
+    By default, when close enough together in time, changes are
+    joined into an existing undo event if they touch any of the
+    changed ranges from that event. You can pass a custom predicate
+    here to influence that logic.
+    */
+    joinToEvent?: (tr: Transaction, isAdjacent: boolean) => boolean;
 }
 /**
 Create a history extension with the given configuration.
@@ -5508,7 +5550,7 @@ declare function htmlCompletionSourceWith(config: {
 }): (context: CompletionContext) => CompletionResult | null;
 
 declare type NestedLang = {
-    tag: "script" | "style" | "textarea";
+    tag: string;
     attrs?: (attrs: {
         [attr: string]: string;
     }) => boolean;
@@ -5554,10 +5596,10 @@ declare function html(config?: {
     */
     extraGlobalAttributes?: Record<string, null | readonly string[]>;
     /**
-    Register additional languages to parse the content of script,
-    style, or textarea tags. If given, `attrs` should be a function
-    that, given an object representing the tag's attributes, returns
-    `true` if this language applies.
+    Register additional languages to parse the content of specific
+    tags. If given, `attrs` should be a function that, given an
+    object representing the tag's attributes, returns `true` if this
+    language applies.
     */
     nestedLanguages?: NestedLang[];
     /**
@@ -5729,6 +5771,7 @@ to the surrounding word when the selection is empty.
 */
 declare const selectNextOccurrence: StateCommand;
 
+declare function angular(): Promise<typeof _codemirror_lang_angular>;
 declare function clojure(): Promise<StreamLanguage<unknown>>;
 declare function coffeescript(): Promise<StreamLanguage<unknown>>;
 declare function cpp(): Promise<typeof _codemirror_lang_cpp>;
@@ -5748,7 +5791,8 @@ declare function scss(): Promise<StreamLanguage<unknown>>;
 declare function shell(): Promise<StreamLanguage<unknown>>;
 declare function svelte(): Promise<typeof _replit_codemirror_lang_svelte>;
 declare function cssStreamParser(): Promise<any>;
+declare function vue(): Promise<typeof _codemirror_lang_vue>;
 declare function wast(): Promise<typeof _codemirror_lang_wast>;
 declare function xml(): Promise<typeof _codemirror_lang_xml>;
 
-export { Annotation, AnnotationType, ChangeDesc, ChangeSet, ChangeSpec, Command, Compartment, Completion, CompletionContext, CompletionResult, CompletionSource, Decoration, DecorationSet, EditorSelection, EditorState, EditorStateConfig, EditorView, Extension, Facet, GutterMarker, HighlightStyle, KeyBinding, LRParser, Language, LanguageSupport, Line$1 as Line, MapMode, MatchDecorator, NodeProp, NodeSet, NodeType, Panel, Parser, Prec, Range, RangeSet, RangeSetBuilder, SelectionRange, StateEffect, StateEffectType, StateField, StreamLanguage, StreamParser, StringStream, StyleModule, SyntaxNode, Tag, TagStyle, Text, TextIterator, Tooltip, TooltipView, Transaction, TransactionSpec, Tree, TreeCursor, ViewPlugin, ViewUpdate, WidgetType, acceptCompletion, autocompletion, bracketMatching, clojure, closeBrackets, closeBracketsKeymap, closeCompletion, codeFolding, coffeescript, completeAnyWord, completionStatus, cpp, index_d$2 as css, cssStreamParser, currentCompletions, cursorMatchingBracket, cursorSubwordBackward, cursorSubwordForward, dart, drawSelection, ensureSyntaxTree, foldGutter, foldKeymap, go, gss, gutter, gutters, highlightSelectionMatches, highlightSpecialChars, highlightTree, history, historyKeymap, index_d$1 as html, ifNotIn, indentLess, indentMore, indentOnInput, indentUnit, insertNewlineAndIndent, java, index_d as javascript, json, keymap, kotlin, less, lineNumberMarkers, lineNumbers, markdown, moveCompletionSelection, php, placeholder, python, redo, redoSelection, repositionTooltips, sass, scala, scrollPastEnd, scss, selectMatchingBracket, selectNextOccurrence, selectSubwordBackward, selectSubwordForward, selectedCompletion, selectedCompletionIndex, shell, showPanel, showTooltip, standardKeymap, startCompletion, svelte, syntaxHighlighting, syntaxTree, tags, toggleComment, tooltips, undo, undoSelection, wast, xml };
+export { Annotation, AnnotationType, ChangeDesc, ChangeSet, ChangeSpec, Command, Compartment, Completion, CompletionContext, CompletionResult, CompletionSource, Decoration, DecorationSet, EditorSelection, EditorState, EditorStateConfig, EditorView, Extension, Facet, GutterMarker, HighlightStyle, KeyBinding, LRParser, Language, LanguageSupport, Line$1 as Line, MapMode, MatchDecorator, NodeProp, NodeSet, NodeType, Panel, Parser, Prec, Range, RangeSet, RangeSetBuilder, SelectionRange, StateEffect, StateEffectType, StateField, StreamLanguage, StreamParser, StringStream, StyleModule, SyntaxNode, Tag, TagStyle, Text, TextIterator, Tooltip, TooltipView, Transaction, TransactionSpec, Tree, TreeCursor, ViewPlugin, ViewUpdate, WidgetType, acceptCompletion, angular, autocompletion, bracketMatching, clojure, closeBrackets, closeBracketsKeymap, closeCompletion, codeFolding, coffeescript, completeAnyWord, completionStatus, cpp, index_d$2 as css, cssStreamParser, currentCompletions, cursorMatchingBracket, cursorSubwordBackward, cursorSubwordForward, dart, drawSelection, ensureSyntaxTree, foldGutter, foldKeymap, go, gss, gutter, gutters, highlightSelectionMatches, highlightSpecialChars, highlightTree, history, historyKeymap, index_d$1 as html, ifNotIn, indentLess, indentMore, indentOnInput, indentUnit, insertNewlineAndIndent, java, index_d as javascript, json, keymap, kotlin, less, lineNumberMarkers, lineNumbers, markdown, moveCompletionSelection, php, placeholder, python, redo, redoSelection, repositionTooltips, sass, scala, scrollPastEnd, scss, selectMatchingBracket, selectNextOccurrence, selectSubwordBackward, selectSubwordForward, selectedCompletion, selectedCompletionIndex, shell, showPanel, showTooltip, standardKeymap, startCompletion, svelte, syntaxHighlighting, syntaxTree, tags, toggleComment, tooltips, undo, undoSelection, vue, wast, xml };

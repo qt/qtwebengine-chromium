@@ -256,9 +256,13 @@ export interface CanvasKit {
      * @param width - number of pixels of the width of the visible area.
      * @param height - number of pixels of the height of the visible area.
      * @param colorSpace
+     * @param sampleCount - sample count value from GL_SAMPLES. If not provided this will be looked up from
+     *                      the canvas.
+     * @param stencil - stencil count value from GL_STENCIL_BITS. If not provided this will be looked up
+     *                  from the WebGL Context.
      */
     MakeOnScreenGLSurface(ctx: GrDirectContext, width: number, height: number,
-                          colorSpace: ColorSpace): Surface | null;
+                          colorSpace: ColorSpace, sampleCount?: number, stencil?: number): Surface | null;
 
     /**
      * Creates a context that operates over the given WebGPU Device.
@@ -444,14 +448,6 @@ export interface CanvasKit {
     MakeManagedAnimation(json: string, assets?: Record<string, ArrayBuffer>,
                          filterPrefix?: string, soundMap?: SoundMap): ManagedSkottieAnimation;
 
-    /**
-     * Returns a Particles effect built from the provided json string and assets.
-     * Requires that Particles be compiled into CanvasKit
-     * @param json
-     * @param assets
-     */
-    MakeParticles(json: string, assets?: Record<string, ArrayBuffer>): Particles;
-
     // Constructors, i.e. things made with `new CanvasKit.Foo()`;
     readonly ImageData: ImageDataConstructor;
     readonly ParagraphStyle: ParagraphStyleConstructor;
@@ -543,7 +539,6 @@ export interface CanvasKit {
 
     readonly gpu?: boolean; // true if GPU code was compiled in
     readonly managed_skottie?: boolean; // true if advanced (managed) Skottie code was compiled in
-    readonly particles?: boolean; // true if Particles code was compiled in
     readonly rt_effect?: boolean; // true if RuntimeEffect was compiled in
     readonly skottie?: boolean; // true if base Skottie code was compiled in
 
@@ -927,7 +922,7 @@ export interface Paragraph extends EmbindObject<Paragraph> {
     getMaxIntrinsicWidth(): number;
     getMaxWidth(): number;
     getMinIntrinsicWidth(): number;
-    getRectsForPlaceholders(): Rect[];
+    getRectsForPlaceholders(): RectWithDirection[];
 
     /**
      * Returns bounding boxes that enclose all text in the range of glpyh indexes [start, end).
@@ -937,7 +932,7 @@ export interface Paragraph extends EmbindObject<Paragraph> {
      * @param wStyle
      */
     getRectsForRange(start: number, end: number, hStyle: RectHeightStyle,
-                     wStyle: RectWidthStyle): Rect[];
+                     wStyle: RectWidthStyle): RectWithDirection[];
 
     /**
      * Finds the first and last glyphs that define a word containing the glyph at index offset.
@@ -983,25 +978,35 @@ export interface ParagraphBuilder extends EmbindObject<ParagraphBuilder> {
     build(): Paragraph;
 
     /**
-     * Returns a Paragraph object that can be used to be layout and
-     * paint the text to an Canvas.
-     * @param bidiRegions is an array of unsigned integers that should be
-     * treated as triples (starting index, ending index, direction).
-     * Direction == 1 means left-to-right, direction == 0 is right-to-left. It's
-     * recommended to use `CanvasKit.TextDirection.RTL.value` or
-     * `CanvasKit.TextDirection.LTR.value` instead of hardcoding 0 or 1.
-     *
-     * The indices are expected to be relative to the UTF-16 representation of
-     * the text.
      * @param words is an array of word edges (starting or ending). You can
      * pass 2 elements (0 as a start of the entire text and text.size as the
-     * end). This information only needed for a specific API method getWords.
+     * end). This information is only needed for a specific API method getWords.
+     *
+     * The indices are expected to be relative to the UTF-8 representation of
+     * the text.
+     */
+    setWordsUtf8(words: InputWords): void;
+    /**
+     * @param words is an array of word edges (starting or ending). You can
+     * pass 2 elements (0 as a start of the entire text and text.size as the
+     * end). This information is only needed for a specific API method getWords.
      *
      * The indices are expected to be relative to the UTF-16 representation of
      * the text.
      *
      * The `Intl.Segmenter` API can be used as a source for this data.
+     */
+    setWordsUtf16(words: InputWords): void;
+
+    /**
+     * @param graphemes is an array of indexes in the input text that point
+     * to the start of each grapheme.
      *
+     * The indices are expected to be relative to the UTF-8 representation of
+     * the text.
+     */
+    setGraphemeBreaksUtf8(graphemes: InputGraphemes): void;
+    /**
      * @param graphemes is an array of indexes in the input text that point
      * to the start of each grapheme.
      *
@@ -1009,7 +1014,20 @@ export interface ParagraphBuilder extends EmbindObject<ParagraphBuilder> {
      * the text.
      *
      * The `Intl.Segmenter` API can be used as a source for this data.
+     */
+    setGraphemeBreaksUtf16(graphemes: InputGraphemes): void;
+
+    /**
+     * @param lineBreaks is an array of unsigned integers that should be
+     * treated as pairs (index, break type) that point to the places of possible
+     * line breaking if needed. It should include 0 as the first element.
+     * Break type == 0 means soft break, break type == 1 is a hard break.
      *
+     * The indices are expected to be relative to the UTF-8 representation of
+     * the text.
+     */
+    setLineBreaksUtf8(lineBreaks: InputLineBreaks): void;
+    /**
      * @param lineBreaks is an array of unsigned integers that should be
      * treated as pairs (index, break type) that point to the places of possible
      * line breaking if needed. It should include 0 as the first element.
@@ -1020,10 +1038,7 @@ export interface ParagraphBuilder extends EmbindObject<ParagraphBuilder> {
      *
      * Chrome's `v8BreakIterator` API can be used as a source for this data.
      */
-    buildWithClientInfo(bidiRegions?: InputBidiRegions | null,
-                        words?: InputWords | null,
-                        graphemes?: InputGraphemes | null,
-                        lineBreaks?: InputLineBreaks | null): Paragraph;
+    setLineBreaksUtf16(lineBreaks: InputLineBreaks): void;
 
     /**
      * Returns the entire Paragraph text (which is useful in case that text
@@ -1075,72 +1090,6 @@ export interface ParagraphStyle {
 export interface PositionWithAffinity {
     pos: number;
     affinity: Affinity;
-}
-
-/**
- * See SkParticleEffect.h for more details.
- */
-export interface Particles extends EmbindObject<Particles> {
-    /**
-     * Draws the current state of the particles on the given canvas.
-     * @param canvas
-     */
-    draw(canvas: Canvas): void;
-
-    /**
-     * Returns a Float32Array bound to the WASM memory of these uniforms. Changing these
-     * floats will change the corresponding uniforms instantly.
-     */
-    uniforms(): Float32Array;
-
-    /**
-     * Returns the nth uniform from the effect.
-     * @param index
-     */
-    getUniform(index: number): SkSLUniform;
-
-    /**
-     * Returns the number of uniforms on the effect.
-     */
-    getUniformCount(): number;
-
-    /**
-     * Returns the total number of floats across all uniforms on the effect. This is the length
-     * of the array returned by `uniforms()`. For example, an effect with a single float3 uniform,
-     * would return 1 from `getUniformCount()`, but 3 from `getUniformFloatCount()`.
-     */
-    getUniformFloatCount(): number;
-
-    /**
-     * Returns the name of the nth effect uniform.
-     * @param index
-     */
-    getUniformName(index: number): string;
-
-    /**
-     * Sets the base position of the effect.
-     * @param point
-     */
-    setPosition(point: InputPoint): void;
-
-    /**
-     * Sets the base rate of the effect.
-     * @param rate
-     */
-    setRate(rate: number): void;
-
-    /**
-     * Starts playing the effect.
-     * @param now
-     * @param looping
-     */
-    start(now: number, looping: boolean): void;
-
-    /**
-     * Updates the effect using the new time.
-     * @param now
-     */
-    update(now: number): void;
 }
 
 export interface SkSLUniform {
@@ -2843,8 +2792,10 @@ export interface Surface extends EmbindObject<Surface> {
      * draw multiple frames, e.g. of an animation.
      *
      * Node users should call getCanvas() and work with that canvas directly.
+     *
+     * Returns the animation id.
      */
-    requestAnimationFrame(drawFrame: (_: Canvas) => void): void;
+    requestAnimationFrame(drawFrame: (_: Canvas) => void): number;
 
     /**
      * If this surface is GPU-backed, return the sample count of the surface.
@@ -4047,14 +3998,20 @@ export type ColorMatrix = Float32Array;
  */
 export type IRect = Int32Array;
 /**
- * An Point is represented by 2 floats: (x, y).
+ * A Point is represented by 2 floats: (x, y).
  */
 export type Point = Float32Array;
 /**
- * An Rect is represented by 4 floats. In order, the floats correspond to left, top,
+ * A Rect is represented by 4 floats. In order, the floats correspond to left, top,
  * right, bottom. See Rect.h for more
  */
 export type Rect = Float32Array;
+
+export interface RectWithDirection {
+    rect: Rect;
+    dir: TextDirection;
+}
+
 /**
  * An RRect (rectangle with rounded corners) is represented by 12 floats. In order, the floats
  * correspond to left, top, right, bottom and then in pairs, the radiusX, radiusY for upper-left,

@@ -38,8 +38,6 @@ bool CFX_DIBitmap::Create(int width,
                           FXDIB_Format format,
                           uint8_t* pBuffer,
                           uint32_t pitch) {
-  DCHECK(!GetIsAlphaFromFormat(format) || format == FXDIB_Format::kArgb);
-
   m_pBuffer = nullptr;
   m_Format = format;
   m_Width = 0;
@@ -729,7 +727,7 @@ bool CFX_DIBitmap::CompositeBitmap(int dest_left,
     clip_box = pClipRgn->GetBox();
   }
   CFX_ScanlineCompositor compositor;
-  if (!compositor.Init(GetFormat(), pSrcBitmap->GetFormat(), width,
+  if (!compositor.Init(GetFormat(), pSrcBitmap->GetFormat(),
                        pSrcBitmap->GetPaletteSpan(), 0, blend_type,
                        pClipMask != nullptr, bRgbByteOrder)) {
     return false;
@@ -801,8 +799,8 @@ bool CFX_DIBitmap::CompositeMask(int dest_left,
   int src_bpp = pMask->GetBPP();
   int Bpp = GetBPP() / 8;
   CFX_ScanlineCompositor compositor;
-  if (!compositor.Init(GetFormat(), pMask->GetFormat(), width, {}, color,
-                       blend_type, pClipMask != nullptr, bRgbByteOrder)) {
+  if (!compositor.Init(GetFormat(), pMask->GetFormat(), {}, color, blend_type,
+                       pClipMask != nullptr, bRgbByteOrder)) {
     return false;
   }
   for (int row = 0; row < height; row++) {
@@ -823,6 +821,36 @@ bool CFX_DIBitmap::CompositeMask(int dest_left,
     }
   }
   return true;
+}
+
+void CFX_DIBitmap::CompositeOneBPPMask(int dest_left,
+                                       int dest_top,
+                                       int width,
+                                       int height,
+                                       const RetainPtr<CFX_DIBBase>& pSrcBitmap,
+                                       int src_left,
+                                       int src_top) {
+  if (GetBPP() != 1) {
+    return;
+  }
+
+  if (!GetOverlapRect(dest_left, dest_top, width, height,
+                      pSrcBitmap->GetWidth(), pSrcBitmap->GetHeight(), src_left,
+                      src_top, nullptr)) {
+    return;
+  }
+
+  for (int row = 0; row < height; ++row) {
+    uint8_t* dest_scan = m_pBuffer.Get() + (dest_top + row) * m_Pitch;
+    const uint8_t* src_scan = pSrcBitmap->GetScanline(src_top + row).data();
+    for (int col = 0; col < width; ++col) {
+      int src_idx = src_left + col;
+      int dest_idx = dest_left + col;
+      if (src_scan[src_idx / 8] & (1 << (7 - src_idx % 8))) {
+        dest_scan[dest_idx / 8] |= 1 << (7 - dest_idx % 8);
+      }
+    }
+  }
 }
 
 bool CFX_DIBitmap::CompositeRect(int left,
@@ -972,7 +1000,8 @@ bool CFX_DIBitmap::CompositeRect(int left,
 bool CFX_DIBitmap::ConvertFormat(FXDIB_Format dest_format) {
   DCHECK(dest_format == FXDIB_Format::k8bppMask ||
          dest_format == FXDIB_Format::kArgb ||
-         dest_format == kPlatformRGBFormat);
+         dest_format == FXDIB_Format::kRgb32 ||
+         dest_format == FXDIB_Format::kRgb);
 
   if (dest_format == m_Format)
     return true;

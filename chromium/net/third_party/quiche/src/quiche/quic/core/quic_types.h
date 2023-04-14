@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "absl/container/inlined_vector.h"
+#include "absl/strings/str_format.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/optional.h"
 #include "quiche/quic/core/quic_connection_id.h"
@@ -706,10 +707,10 @@ enum AckResult {
 
 // Indicates the fate of a serialized packet in WritePacket().
 enum SerializedPacketFate : uint8_t {
-  DISCARD,                     // Discard the packet.
-  COALESCE,                    // Try to coalesce packet.
-  BUFFER,                      // Buffer packet in buffered_packets_.
-  SEND_TO_WRITER,              // Send packet to writer.
+  DISCARD,         // Discard the packet.
+  COALESCE,        // Try to coalesce packet.
+  BUFFER,          // Buffer packet in buffered_packets_.
+  SEND_TO_WRITER,  // Send packet to writer.
 };
 
 QUIC_EXPORT_PRIVATE std::string SerializedPacketFateToString(
@@ -860,6 +861,42 @@ QUIC_EXPORT_PRIVATE bool operator==(const ParsedClientHello& a,
 
 QUIC_EXPORT_PRIVATE std::ostream& operator<<(
     std::ostream& os, const ParsedClientHello& parsed_chlo);
+
+// The two bits in the IP header for Explicit Congestion Notification can take
+// one of four values.
+enum QuicEcnCodepoint {
+  // The NOT-ECT codepoint, indicating the packet sender is not using (or the
+  // network has disabled) ECN.
+  ECN_NOT_ECT = 0,
+  // The ECT(0) codepoint, indicating the packet sender is using classic ECN
+  // (RFC3168).
+  ECN_ECT0 = 1,
+  // The ECT(1) codepoint, indicating the packet sender is using Low Latency,
+  // Low Loss, Scalable Throughput (L4S) ECN (RFC9330).
+  ECN_ECT1 = 2,
+  // The CE ("Congestion Experienced") codepoint, indicating the packet sender
+  // is using ECN, and a router is experiencing congestion.
+  ECN_CE = 3,
+};
+
+// This struct reports the Explicit Congestion Notification (ECN) contents of
+// the ACK_ECN frame. They are the cumulative number of QUIC packets received
+// for that codepoint in a given Packet Number Space.
+struct QUIC_EXPORT_PRIVATE QuicEcnCounts {
+  QuicEcnCounts() = default;
+  QuicEcnCounts(QuicPacketCount ect0, QuicPacketCount ect1, QuicPacketCount ce)
+      : ect0(ect0), ect1(ect1), ce(ce) {}
+
+  std::string ToString() const {
+    return absl::StrFormat("ECT(0): %s, ECT(1): %s, CE: %s",
+                           std::to_string(ect0), std::to_string(ect1),
+                           std::to_string(ce));
+  }
+
+  QuicPacketCount ect0 = 0;
+  QuicPacketCount ect1 = 0;
+  QuicPacketCount ce = 0;
+};
 
 }  // namespace quic
 

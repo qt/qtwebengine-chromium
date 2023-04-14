@@ -29,7 +29,6 @@
 #include "internal/platform/implementation/windows/generated/winrt/Windows.Foundation.h"
 #include "internal/platform/implementation/windows/generated/winrt/Windows.Networking.Connectivity.h"
 
-namespace location {
 namespace nearby {
 namespace windows {
 
@@ -117,7 +116,9 @@ class WifiMedium : public api::WifiMedium {
   // Since the WiFi interface capability won't change in the connection session,
   // we only need to query it once at the beginning
   void InitCapability();
-  std::string InternalGetIpAddress();
+  std::string InternalGetWifiIpAddress();
+  std::string InternalGetEthernetIpAddress();
+  void FillupEthernetParams();
 
   bool wifi_interface_valid_;
   api::WifiCapability wifi_capability_;
@@ -126,6 +127,5 @@ class WifiMedium : public api::WifiMedium {
 
 }  // namespace windows
 }  // namespace nearby
-}  // namespace location
 
 #endif  // PLATFORM_IMPL_WINDOWS_WIFI_H_

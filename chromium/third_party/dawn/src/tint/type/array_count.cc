@@ -14,23 +14,22 @@
 
 #include "src/tint/type/array_count.h"
 
+#include "src/tint/type/manager.h"
+
 TINT_INSTANTIATE_TYPEINFO(tint::type::ArrayCount);
 TINT_INSTANTIATE_TYPEINFO(tint::type::ConstantArrayCount);
 TINT_INSTANTIATE_TYPEINFO(tint::type::RuntimeArrayCount);
 
 namespace tint::type {
 
-ArrayCount::ArrayCount() : Base() {}
+ArrayCount::ArrayCount(size_t hash) : Base(hash) {}
 ArrayCount::~ArrayCount() = default;
 
-ConstantArrayCount::ConstantArrayCount(uint32_t val) : Base(), value(val) {}
+ConstantArrayCount::ConstantArrayCount(uint32_t val)
+    : Base(static_cast<size_t>(TypeInfo::Of<ConstantArrayCount>().full_hashcode)), value(val) {}
 ConstantArrayCount::~ConstantArrayCount() = default;
 
-size_t ConstantArrayCount::Hash() const {
-    return static_cast<size_t>(TypeInfo::Of<ConstantArrayCount>().full_hashcode);
-}
-
-bool ConstantArrayCount::Equals(const ArrayCount& other) const {
+bool ConstantArrayCount::Equals(const UniqueNode& other) const {
     if (auto* v = other.As<ConstantArrayCount>()) {
         return value == v->value;
     }
@@ -41,19 +40,24 @@ std::string ConstantArrayCount::FriendlyName(const SymbolTable&) const {
     return std::to_string(value);
 }
 
-RuntimeArrayCount::RuntimeArrayCount() : Base() {}
-RuntimeArrayCount::~RuntimeArrayCount() = default;
-
-size_t RuntimeArrayCount::Hash() const {
-    return static_cast<size_t>(TypeInfo::Of<RuntimeArrayCount>().full_hashcode);
+ConstantArrayCount* ConstantArrayCount::Clone(CloneContext& ctx) const {
+    return ctx.dst.mgr->Get<ConstantArrayCount>(value);
 }
 
-bool RuntimeArrayCount::Equals(const ArrayCount& other) const {
+RuntimeArrayCount::RuntimeArrayCount()
+    : Base(static_cast<size_t>(TypeInfo::Of<RuntimeArrayCount>().full_hashcode)) {}
+RuntimeArrayCount::~RuntimeArrayCount() = default;
+
+bool RuntimeArrayCount::Equals(const UniqueNode& other) const {
     return other.Is<RuntimeArrayCount>();
 }
 
 std::string RuntimeArrayCount::FriendlyName(const SymbolTable&) const {
     return "";
+}
+
+RuntimeArrayCount* RuntimeArrayCount::Clone(CloneContext& ctx) const {
+    return ctx.dst.mgr->Get<RuntimeArrayCount>();
 }
 
 }  // namespace tint::type

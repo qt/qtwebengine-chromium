@@ -2,10 +2,10 @@
 // This file is ***GENERATED***.  Do Not Edit.
 // See layer_chassis_generator.py for modifications.
 
-/* Copyright (c) 2015-2022 The Khronos Group Inc.
- * Copyright (c) 2015-2022 Valve Corporation
- * Copyright (c) 2015-2022 LunarG, Inc.
- * Copyright (c) 2015-2022 Google Inc.
+/* Copyright (c) 2015-2023 The Khronos Group Inc.
+ * Copyright (c) 2015-2023 Valve Corporation
+ * Copyright (c) 2015-2023 LunarG, Inc.
+ * Copyright (c) 2015-2023 Google Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,9 +18,6 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *
- * Author: Mark Lobodzinski <mark@lunarg.com>
- * Author: Nadav Geva <nadav.geva@amd.com>
  */
 #pragma once
 
@@ -35,6 +32,7 @@
 #include <memory>
 
 #include "vulkan/vulkan.h"
+#include "cast_utils.h"
 #include "vk_layer_settings_ext.h"
 #include "vk_layer_config.h"
 #include "vk_layer_data.h"
@@ -60,7 +58,7 @@ struct HashedUint64 {
     size_t operator()(const uint64_t &t) const { return t >> HASHED_UINT64_SHIFT; }
 
     static uint64_t hash(uint64_t id) {
-        uint64_t h = (uint64_t)layer_data::hash<uint64_t>()(id);
+        uint64_t h = (uint64_t)vvl::hash<uint64_t>()(id);
         id |= h << HASHED_UINT64_SHIFT;
         return id;
     }
@@ -1463,7 +1461,6 @@ VKAPI_ATTR VkBool32 VKAPI_CALL GetPhysicalDeviceWin32PresentationSupportKHR(
 #endif // VK_USE_PLATFORM_WIN32_KHR
 
 
-#ifdef VK_ENABLE_BETA_EXTENSIONS
 
 VKAPI_ATTR VkResult VKAPI_CALL GetPhysicalDeviceVideoCapabilitiesKHR(
     VkPhysicalDevice                            physicalDevice,
@@ -1526,14 +1523,12 @@ VKAPI_ATTR void VKAPI_CALL CmdEndVideoCodingKHR(
 VKAPI_ATTR void VKAPI_CALL CmdControlVideoCodingKHR(
     VkCommandBuffer                             commandBuffer,
     const VkVideoCodingControlInfoKHR*          pCodingControlInfo);
-#endif // VK_ENABLE_BETA_EXTENSIONS
 
-#ifdef VK_ENABLE_BETA_EXTENSIONS
 
 VKAPI_ATTR void VKAPI_CALL CmdDecodeVideoKHR(
     VkCommandBuffer                             commandBuffer,
     const VkVideoDecodeInfoKHR*                 pDecodeInfo);
-#endif // VK_ENABLE_BETA_EXTENSIONS
+
 
 
 VKAPI_ATTR void VKAPI_CALL CmdBeginRenderingKHR(
@@ -1908,6 +1903,7 @@ VKAPI_ATTR void VKAPI_CALL CmdDrawIndexedIndirectCountKHR(
 
 
 
+
 VKAPI_ATTR VkResult VKAPI_CALL GetSemaphoreCounterValueKHR(
     VkDevice                                    device,
     VkSemaphore                                 semaphore,
@@ -2263,9 +2259,6 @@ VKAPI_ATTR void VKAPI_CALL CmdDrawIndexedIndirectCountAMD(
 
 
 
-
-#ifdef VK_ENABLE_BETA_EXTENSIONS
-#endif // VK_ENABLE_BETA_EXTENSIONS
 
 #ifdef VK_ENABLE_BETA_EXTENSIONS
 #endif // VK_ENABLE_BETA_EXTENSIONS
@@ -2718,9 +2711,6 @@ VKAPI_ATTR VkResult VKAPI_CALL GetCalibratedTimestampsEXT(
     uint64_t*                                   pTimestamps,
     uint64_t*                                   pMaxDeviation);
 
-
-#ifdef VK_ENABLE_BETA_EXTENSIONS
-#endif // VK_ENABLE_BETA_EXTENSIONS
 
 
 
@@ -3432,6 +3422,18 @@ VKAPI_ATTR void VKAPI_CALL GetMicromapBuildSizesEXT(
 
 
 
+VKAPI_ATTR void VKAPI_CALL CmdDrawClusterHUAWEI(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    groupCountX,
+    uint32_t                                    groupCountY,
+    uint32_t                                    groupCountZ);
+
+VKAPI_ATTR void VKAPI_CALL CmdDrawClusterIndirectHUAWEI(
+    VkCommandBuffer                             commandBuffer,
+    VkBuffer                                    buffer,
+    VkDeviceSize                                offset);
+
+
 
 VKAPI_ATTR void VKAPI_CALL SetDeviceMemoryPriorityEXT(
     VkDevice                                    device,
@@ -3678,6 +3680,7 @@ VKAPI_ATTR VkResult VKAPI_CALL GetDynamicRenderingTilePropertiesQCOM(
     VkDevice                                    device,
     const VkRenderingInfo*                      pRenderingInfo,
     VkTilePropertiesQCOM*                       pProperties);
+
 
 
 
@@ -3979,8 +3982,8 @@ class ValidationObject {
 
         void InitObjectDispatchVectors();
 
-        std::shared_mutex validation_object_mutex;
-        virtual ReadLockGuard ReadLock() {
+        mutable std::shared_mutex validation_object_mutex;
+        virtual ReadLockGuard ReadLock() const {
             return ReadLockGuard(validation_object_mutex);
         }
         virtual WriteLockGuard WriteLock() {
@@ -4032,173 +4035,61 @@ class ValidationObject {
         }
 
         // Debug Logging Helpers
-        bool DECORATE_PRINTF(4, 5) LogError(const LogObjectList &objects, const std::string &vuid_text, const char *format, ...) const {
-            std::unique_lock<std::mutex> lock(report_data->debug_output_mutex);
-            // Avoid logging cost if msg is to be ignored
-            if (!LogMsgEnabled(report_data, vuid_text, VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
-                               VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT)) {
-                return false;
-            }
+        bool DECORATE_PRINTF(4, 5) LogError(const LogObjectList &objlist, const std::string &vuid_text, const char *format, ...) const {
             va_list argptr;
             va_start(argptr, format);
-            char *str;
-            if (-1 == vasprintf(&str, format, argptr)) {
-                str = nullptr;
-            }
+            const bool result = LogMsg(report_data, kErrorBit, objlist, vuid_text, format, argptr);
             va_end(argptr);
-            return LogMsgLocked(report_data, kErrorBit, objects, vuid_text, str);
+            return result;
         }
 
-        template <typename HANDLE_T>
-        bool DECORATE_PRINTF(4, 5) LogError(HANDLE_T src_object, const std::string &vuid_text, const char *format, ...) const {
-            std::unique_lock<std::mutex> lock(report_data->debug_output_mutex);
-            // Avoid logging cost if msg is to be ignored
-            if (!LogMsgEnabled(report_data, vuid_text, VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
-                               VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT)) {
-                return false;
-            }
+        bool DECORATE_PRINTF(4, 5) LogWarning(const LogObjectList &objlist, const std::string &vuid_text, const char *format, ...) const {
             va_list argptr;
             va_start(argptr, format);
-            char *str;
-            if (-1 == vasprintf(&str, format, argptr)) {
-                str = nullptr;
-            }
+            const bool result = LogMsg(report_data, kWarningBit, objlist, vuid_text, format, argptr);
             va_end(argptr);
-            LogObjectList single_object(src_object);
-            return LogMsgLocked(report_data, kErrorBit, single_object, vuid_text, str);
-
+            return result;
         }
 
-        bool DECORATE_PRINTF(4, 5) LogWarning(const LogObjectList &objects, const std::string &vuid_text, const char *format, ...) const {
-            std::unique_lock<std::mutex> lock(report_data->debug_output_mutex);
-            // Avoid logging cost if msg is to be ignored
-            if (!LogMsgEnabled(report_data, vuid_text, VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT,
-                               VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT)) {
-                return false;
-            }
+        bool DECORATE_PRINTF(4, 5) LogPerformanceWarning(const LogObjectList &objlist, const std::string &vuid_text, const char *format, ...) const {
             va_list argptr;
             va_start(argptr, format);
-            char *str;
-            if (-1 == vasprintf(&str, format, argptr)) {
-                str = nullptr;
-            }
+            const bool result = LogMsg(report_data, kPerformanceWarningBit, objlist, vuid_text, format, argptr);
             va_end(argptr);
-            return LogMsgLocked(report_data, kWarningBit, objects, vuid_text, str);
+            return result;
         }
 
-        template <typename HANDLE_T>
-        bool DECORATE_PRINTF(4, 5) LogWarning(HANDLE_T src_object, const std::string &vuid_text, const char *format, ...) const {
-            std::unique_lock<std::mutex> lock(report_data->debug_output_mutex);
-            // Avoid logging cost if msg is to be ignored
-            if (!LogMsgEnabled(report_data, vuid_text, VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT,
-                               VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT)) {
-                return false;
-            }
+        bool DECORATE_PRINTF(4, 5) LogInfo(const LogObjectList &objlist, const std::string &vuid_text, const char *format, ...) const {
             va_list argptr;
             va_start(argptr, format);
-            char *str;
-            if (-1 == vasprintf(&str, format, argptr)) {
-                str = nullptr;
-            }
+            const bool result = LogMsg(report_data, kInformationBit, objlist, vuid_text, format, argptr);
             va_end(argptr);
-            LogObjectList single_object(src_object);
-            return LogMsgLocked(report_data, kWarningBit, single_object, vuid_text, str);
-        }
-
-        bool DECORATE_PRINTF(4, 5) LogPerformanceWarning(const LogObjectList &objects, const std::string &vuid_text, const char *format, ...) const {
-            std::unique_lock<std::mutex> lock(report_data->debug_output_mutex);
-            // Avoid logging cost if msg is to be ignored
-            if (!LogMsgEnabled(report_data, vuid_text, VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT,
-                               VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT)) {
-                return false;
-            }
-            va_list argptr;
-            va_start(argptr, format);
-            char *str;
-            if (-1 == vasprintf(&str, format, argptr)) {
-                str = nullptr;
-            }
-            va_end(argptr);
-            return LogMsgLocked(report_data, kPerformanceWarningBit, objects, vuid_text, str);
-        }
-
-        template <typename HANDLE_T>
-        bool DECORATE_PRINTF(4, 5) LogPerformanceWarning(HANDLE_T src_object, const std::string &vuid_text, const char *format, ...) const {
-            std::unique_lock<std::mutex> lock(report_data->debug_output_mutex);
-            // Avoid logging cost if msg is to be ignored
-            if (!LogMsgEnabled(report_data, vuid_text, VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT,
-                               VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT)) {
-                return false;
-            }
-            va_list argptr;
-            va_start(argptr, format);
-            char *str;
-            if (-1 == vasprintf(&str, format, argptr)) {
-                str = nullptr;
-            }
-            va_end(argptr);
-            LogObjectList single_object(src_object);
-            return LogMsgLocked(report_data, kPerformanceWarningBit, single_object, vuid_text, str);
-        }
-
-        bool DECORATE_PRINTF(4, 5) LogInfo(const LogObjectList &objects, const std::string &vuid_text, const char *format, ...) const {
-            std::unique_lock<std::mutex> lock(report_data->debug_output_mutex);
-            // Avoid logging cost if msg is to be ignored
-            if (!LogMsgEnabled(report_data, vuid_text, VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT,
-                               VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT)) {
-                return false;
-            }
-            va_list argptr;
-            va_start(argptr, format);
-            char *str;
-            if (-1 == vasprintf(&str, format, argptr)) {
-                str = nullptr;
-            }
-            va_end(argptr);
-            return LogMsgLocked(report_data, kInformationBit, objects, vuid_text, str);
-        }
-
-        template <typename HANDLE_T>
-        bool DECORATE_PRINTF(4, 5) LogInfo(HANDLE_T src_object, const std::string &vuid_text, const char *format, ...) const {
-            std::unique_lock<std::mutex> lock(report_data->debug_output_mutex);
-            // Avoid logging cost if msg is to be ignored
-            if (!LogMsgEnabled(report_data, vuid_text, VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT,
-                               VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT)) {
-                return false;
-            }
-            va_list argptr;
-            va_start(argptr, format);
-            char *str;
-            if (-1 == vasprintf(&str, format, argptr)) {
-                str = nullptr;
-            }
-            va_end(argptr);
-            LogObjectList single_object(src_object);
-            return LogMsgLocked(report_data, kInformationBit, single_object, vuid_text, str);
+            return result;
         }
 
         // Handle Wrapping Data
         // Reverse map display handles
         vl_concurrent_unordered_map<VkDisplayKHR, uint64_t, 0> display_id_reverse_mapping;
         // Wrapping Descriptor Template Update structures requires access to the template createinfo structs
-        layer_data::unordered_map<uint64_t, std::unique_ptr<TEMPLATE_STATE>> desc_template_createinfo_map;
+        vvl::unordered_map<uint64_t, std::unique_ptr<TEMPLATE_STATE>> desc_template_createinfo_map;
         struct SubpassesUsageStates {
-            layer_data::unordered_set<uint32_t> subpasses_using_color_attachment;
-            layer_data::unordered_set<uint32_t> subpasses_using_depthstencil_attachment;
+            vvl::unordered_set<uint32_t> subpasses_using_color_attachment;
+            vvl::unordered_set<uint32_t> subpasses_using_depthstencil_attachment;
         };
         // Uses unwrapped handles
-        layer_data::unordered_map<VkRenderPass, SubpassesUsageStates> renderpasses_states;
+        vvl::unordered_map<VkRenderPass, SubpassesUsageStates> renderpasses_states;
         // Map of wrapped swapchain handles to arrays of wrapped swapchain image IDs
         // Each swapchain has an immutable list of wrapped swapchain image IDs -- always return these IDs if they exist
-        layer_data::unordered_map<VkSwapchainKHR, std::vector<VkImage>> swapchain_wrapped_image_handle_map;
+        vvl::unordered_map<VkSwapchainKHR, std::vector<VkImage>> swapchain_wrapped_image_handle_map;
         // Map of wrapped descriptor pools to set of wrapped descriptor sets allocated from each pool
-        layer_data::unordered_map<VkDescriptorPool, layer_data::unordered_set<VkDescriptorSet>> pool_descriptor_sets_map;
+        vvl::unordered_map<VkDescriptorPool, vvl::unordered_set<VkDescriptorSet>> pool_descriptor_sets_map;
 
 
         // Unwrap a handle.
         template <typename HandleType>
         HandleType Unwrap(HandleType wrappedHandle) {
-            auto iter = unique_id_mapping.find(reinterpret_cast<uint64_t const &>(wrappedHandle));
+            if (wrappedHandle == (HandleType)VK_NULL_HANDLE) return wrappedHandle;
+            auto iter = unique_id_mapping.find(CastToUint64(wrappedHandle));
             if (iter == unique_id_mapping.end())
                 return (HandleType)0;
             return (HandleType)iter->second;
@@ -4207,9 +4098,11 @@ class ValidationObject {
         // Wrap a newly created handle with a new unique ID, and return the new ID.
         template <typename HandleType>
         HandleType WrapNew(HandleType newlyCreatedHandle) {
+            if (newlyCreatedHandle == (HandleType)VK_NULL_HANDLE) return newlyCreatedHandle;
             auto unique_id = global_unique_id++;
             unique_id = HashedUint64::hash(unique_id);
-            unique_id_mapping.insert_or_assign(unique_id, reinterpret_cast<uint64_t const &>(newlyCreatedHandle));
+            assert(unique_id != 0); // can't be 0, otherwise unwrap will apply special rule for VK_NULL_HANDLE
+            unique_id_mapping.insert_or_assign(unique_id, CastToUint64(newlyCreatedHandle));
             return (HandleType)unique_id;
         }
 
@@ -4217,7 +4110,7 @@ class ValidationObject {
         VkDisplayKHR WrapDisplay(VkDisplayKHR newlyCreatedHandle, ValidationObject *map_data) {
             auto unique_id = global_unique_id++;
             unique_id = HashedUint64::hash(unique_id);
-            unique_id_mapping.insert_or_assign(unique_id, reinterpret_cast<uint64_t const &>(newlyCreatedHandle));
+            unique_id_mapping.insert_or_assign(unique_id, CastToUint64(newlyCreatedHandle));
             map_data->display_id_reverse_mapping.insert_or_assign(newlyCreatedHandle, unique_id);
             return (VkDisplayKHR)unique_id;
         }
@@ -4986,71 +4879,45 @@ class ValidationObject {
         virtual void PreCallRecordGetPhysicalDeviceWin32PresentationSupportKHR(VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex) {};
         virtual void PostCallRecordGetPhysicalDeviceWin32PresentationSupportKHR(VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex) {};
 #endif
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         virtual bool PreCallValidateGetPhysicalDeviceVideoCapabilitiesKHR(VkPhysicalDevice physicalDevice, const VkVideoProfileInfoKHR* pVideoProfile, VkVideoCapabilitiesKHR* pCapabilities) const { return false; };
         virtual void PreCallRecordGetPhysicalDeviceVideoCapabilitiesKHR(VkPhysicalDevice physicalDevice, const VkVideoProfileInfoKHR* pVideoProfile, VkVideoCapabilitiesKHR* pCapabilities) {};
         virtual void PostCallRecordGetPhysicalDeviceVideoCapabilitiesKHR(VkPhysicalDevice physicalDevice, const VkVideoProfileInfoKHR* pVideoProfile, VkVideoCapabilitiesKHR* pCapabilities, VkResult result) {};
-#endif
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         virtual bool PreCallValidateGetPhysicalDeviceVideoFormatPropertiesKHR(VkPhysicalDevice physicalDevice, const VkPhysicalDeviceVideoFormatInfoKHR* pVideoFormatInfo, uint32_t* pVideoFormatPropertyCount, VkVideoFormatPropertiesKHR* pVideoFormatProperties) const { return false; };
         virtual void PreCallRecordGetPhysicalDeviceVideoFormatPropertiesKHR(VkPhysicalDevice physicalDevice, const VkPhysicalDeviceVideoFormatInfoKHR* pVideoFormatInfo, uint32_t* pVideoFormatPropertyCount, VkVideoFormatPropertiesKHR* pVideoFormatProperties) {};
         virtual void PostCallRecordGetPhysicalDeviceVideoFormatPropertiesKHR(VkPhysicalDevice physicalDevice, const VkPhysicalDeviceVideoFormatInfoKHR* pVideoFormatInfo, uint32_t* pVideoFormatPropertyCount, VkVideoFormatPropertiesKHR* pVideoFormatProperties, VkResult result) {};
-#endif
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         virtual bool PreCallValidateCreateVideoSessionKHR(VkDevice device, const VkVideoSessionCreateInfoKHR* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkVideoSessionKHR* pVideoSession) const { return false; };
         virtual void PreCallRecordCreateVideoSessionKHR(VkDevice device, const VkVideoSessionCreateInfoKHR* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkVideoSessionKHR* pVideoSession) {};
         virtual void PostCallRecordCreateVideoSessionKHR(VkDevice device, const VkVideoSessionCreateInfoKHR* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkVideoSessionKHR* pVideoSession, VkResult result) {};
-#endif
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         virtual bool PreCallValidateDestroyVideoSessionKHR(VkDevice device, VkVideoSessionKHR videoSession, const VkAllocationCallbacks* pAllocator) const { return false; };
         virtual void PreCallRecordDestroyVideoSessionKHR(VkDevice device, VkVideoSessionKHR videoSession, const VkAllocationCallbacks* pAllocator) {};
         virtual void PostCallRecordDestroyVideoSessionKHR(VkDevice device, VkVideoSessionKHR videoSession, const VkAllocationCallbacks* pAllocator) {};
-#endif
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         virtual bool PreCallValidateGetVideoSessionMemoryRequirementsKHR(VkDevice device, VkVideoSessionKHR videoSession, uint32_t* pMemoryRequirementsCount, VkVideoSessionMemoryRequirementsKHR* pMemoryRequirements) const { return false; };
         virtual void PreCallRecordGetVideoSessionMemoryRequirementsKHR(VkDevice device, VkVideoSessionKHR videoSession, uint32_t* pMemoryRequirementsCount, VkVideoSessionMemoryRequirementsKHR* pMemoryRequirements) {};
         virtual void PostCallRecordGetVideoSessionMemoryRequirementsKHR(VkDevice device, VkVideoSessionKHR videoSession, uint32_t* pMemoryRequirementsCount, VkVideoSessionMemoryRequirementsKHR* pMemoryRequirements, VkResult result) {};
-#endif
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         virtual bool PreCallValidateBindVideoSessionMemoryKHR(VkDevice device, VkVideoSessionKHR videoSession, uint32_t bindSessionMemoryInfoCount, const VkBindVideoSessionMemoryInfoKHR* pBindSessionMemoryInfos) const { return false; };
         virtual void PreCallRecordBindVideoSessionMemoryKHR(VkDevice device, VkVideoSessionKHR videoSession, uint32_t bindSessionMemoryInfoCount, const VkBindVideoSessionMemoryInfoKHR* pBindSessionMemoryInfos) {};
         virtual void PostCallRecordBindVideoSessionMemoryKHR(VkDevice device, VkVideoSessionKHR videoSession, uint32_t bindSessionMemoryInfoCount, const VkBindVideoSessionMemoryInfoKHR* pBindSessionMemoryInfos, VkResult result) {};
-#endif
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         virtual bool PreCallValidateCreateVideoSessionParametersKHR(VkDevice device, const VkVideoSessionParametersCreateInfoKHR* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkVideoSessionParametersKHR* pVideoSessionParameters) const { return false; };
         virtual void PreCallRecordCreateVideoSessionParametersKHR(VkDevice device, const VkVideoSessionParametersCreateInfoKHR* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkVideoSessionParametersKHR* pVideoSessionParameters) {};
         virtual void PostCallRecordCreateVideoSessionParametersKHR(VkDevice device, const VkVideoSessionParametersCreateInfoKHR* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkVideoSessionParametersKHR* pVideoSessionParameters, VkResult result) {};
-#endif
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         virtual bool PreCallValidateUpdateVideoSessionParametersKHR(VkDevice device, VkVideoSessionParametersKHR videoSessionParameters, const VkVideoSessionParametersUpdateInfoKHR* pUpdateInfo) const { return false; };
         virtual void PreCallRecordUpdateVideoSessionParametersKHR(VkDevice device, VkVideoSessionParametersKHR videoSessionParameters, const VkVideoSessionParametersUpdateInfoKHR* pUpdateInfo) {};
         virtual void PostCallRecordUpdateVideoSessionParametersKHR(VkDevice device, VkVideoSessionParametersKHR videoSessionParameters, const VkVideoSessionParametersUpdateInfoKHR* pUpdateInfo, VkResult result) {};
-#endif
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         virtual bool PreCallValidateDestroyVideoSessionParametersKHR(VkDevice device, VkVideoSessionParametersKHR videoSessionParameters, const VkAllocationCallbacks* pAllocator) const { return false; };
         virtual void PreCallRecordDestroyVideoSessionParametersKHR(VkDevice device, VkVideoSessionParametersKHR videoSessionParameters, const VkAllocationCallbacks* pAllocator) {};
         virtual void PostCallRecordDestroyVideoSessionParametersKHR(VkDevice device, VkVideoSessionParametersKHR videoSessionParameters, const VkAllocationCallbacks* pAllocator) {};
-#endif
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         virtual bool PreCallValidateCmdBeginVideoCodingKHR(VkCommandBuffer commandBuffer, const VkVideoBeginCodingInfoKHR* pBeginInfo) const { return false; };
         virtual void PreCallRecordCmdBeginVideoCodingKHR(VkCommandBuffer commandBuffer, const VkVideoBeginCodingInfoKHR* pBeginInfo) {};
         virtual void PostCallRecordCmdBeginVideoCodingKHR(VkCommandBuffer commandBuffer, const VkVideoBeginCodingInfoKHR* pBeginInfo) {};
-#endif
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         virtual bool PreCallValidateCmdEndVideoCodingKHR(VkCommandBuffer commandBuffer, const VkVideoEndCodingInfoKHR* pEndCodingInfo) const { return false; };
         virtual void PreCallRecordCmdEndVideoCodingKHR(VkCommandBuffer commandBuffer, const VkVideoEndCodingInfoKHR* pEndCodingInfo) {};
         virtual void PostCallRecordCmdEndVideoCodingKHR(VkCommandBuffer commandBuffer, const VkVideoEndCodingInfoKHR* pEndCodingInfo) {};
-#endif
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         virtual bool PreCallValidateCmdControlVideoCodingKHR(VkCommandBuffer commandBuffer, const VkVideoCodingControlInfoKHR* pCodingControlInfo) const { return false; };
         virtual void PreCallRecordCmdControlVideoCodingKHR(VkCommandBuffer commandBuffer, const VkVideoCodingControlInfoKHR* pCodingControlInfo) {};
         virtual void PostCallRecordCmdControlVideoCodingKHR(VkCommandBuffer commandBuffer, const VkVideoCodingControlInfoKHR* pCodingControlInfo) {};
-#endif
-#ifdef VK_ENABLE_BETA_EXTENSIONS
         virtual bool PreCallValidateCmdDecodeVideoKHR(VkCommandBuffer commandBuffer, const VkVideoDecodeInfoKHR* pDecodeInfo) const { return false; };
         virtual void PreCallRecordCmdDecodeVideoKHR(VkCommandBuffer commandBuffer, const VkVideoDecodeInfoKHR* pDecodeInfo) {};
         virtual void PostCallRecordCmdDecodeVideoKHR(VkCommandBuffer commandBuffer, const VkVideoDecodeInfoKHR* pDecodeInfo) {};
-#endif
         virtual bool PreCallValidateCmdBeginRenderingKHR(VkCommandBuffer                   commandBuffer, const VkRenderingInfo*                              pRenderingInfo) const { return false; };
         virtual void PreCallRecordCmdBeginRenderingKHR(VkCommandBuffer                   commandBuffer, const VkRenderingInfo*                              pRenderingInfo) {};
         virtual void PostCallRecordCmdBeginRenderingKHR(VkCommandBuffer                   commandBuffer, const VkRenderingInfo*                              pRenderingInfo) {};
@@ -5991,6 +5858,12 @@ class ValidationObject {
         virtual bool PreCallValidateGetMicromapBuildSizesEXT(VkDevice                                            device, VkAccelerationStructureBuildTypeKHR                 buildType, const VkMicromapBuildInfoEXT*  pBuildInfo, VkMicromapBuildSizesInfoEXT*           pSizeInfo) const { return false; };
         virtual void PreCallRecordGetMicromapBuildSizesEXT(VkDevice                                            device, VkAccelerationStructureBuildTypeKHR                 buildType, const VkMicromapBuildInfoEXT*  pBuildInfo, VkMicromapBuildSizesInfoEXT*           pSizeInfo) {};
         virtual void PostCallRecordGetMicromapBuildSizesEXT(VkDevice                                            device, VkAccelerationStructureBuildTypeKHR                 buildType, const VkMicromapBuildInfoEXT*  pBuildInfo, VkMicromapBuildSizesInfoEXT*           pSizeInfo) {};
+        virtual bool PreCallValidateCmdDrawClusterHUAWEI(VkCommandBuffer commandBuffer, uint32_t groupCountX, uint32_t groupCountY, uint32_t groupCountZ) const { return false; };
+        virtual void PreCallRecordCmdDrawClusterHUAWEI(VkCommandBuffer commandBuffer, uint32_t groupCountX, uint32_t groupCountY, uint32_t groupCountZ) {};
+        virtual void PostCallRecordCmdDrawClusterHUAWEI(VkCommandBuffer commandBuffer, uint32_t groupCountX, uint32_t groupCountY, uint32_t groupCountZ) {};
+        virtual bool PreCallValidateCmdDrawClusterIndirectHUAWEI(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset) const { return false; };
+        virtual void PreCallRecordCmdDrawClusterIndirectHUAWEI(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset) {};
+        virtual void PostCallRecordCmdDrawClusterIndirectHUAWEI(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset) {};
         virtual bool PreCallValidateSetDeviceMemoryPriorityEXT(VkDevice       device, VkDeviceMemory memory, float          priority) const { return false; };
         virtual void PreCallRecordSetDeviceMemoryPriorityEXT(VkDevice       device, VkDeviceMemory memory, float          priority) {};
         virtual void PostCallRecordSetDeviceMemoryPriorityEXT(VkDevice       device, VkDeviceMemory memory, float          priority) {};
@@ -6290,6 +6163,10 @@ class ValidationObject {
         virtual void PreCallRecordCreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDevice* pDevice, void *modified_create_info) {
             PreCallRecordCreateDevice(physicalDevice, pCreateInfo, pAllocator, pDevice);
         };
+
+        template <typename T>
+        std::vector<T> ValidParamValues() const;
 };
 
 extern small_unordered_map<void*, ValidationObject*, 2> layer_data_map;
+#include "valid_param_values.h"

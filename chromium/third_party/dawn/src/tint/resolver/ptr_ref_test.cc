@@ -14,6 +14,7 @@
 
 #include "src/tint/resolver/resolver.h"
 #include "src/tint/resolver/resolver_test_helper.h"
+#include "src/tint/sem/load.h"
 #include "src/tint/type/reference.h"
 
 #include "gmock/gmock.h"
@@ -38,7 +39,7 @@ TEST_F(ResolverPtrRefTest, AddressOf) {
 
     ASSERT_TRUE(TypeOf(expr)->Is<type::Pointer>());
     EXPECT_TRUE(TypeOf(expr)->As<type::Pointer>()->StoreType()->Is<type::I32>());
-    EXPECT_EQ(TypeOf(expr)->As<type::Pointer>()->AddressSpace(), ast::AddressSpace::kFunction);
+    EXPECT_EQ(TypeOf(expr)->As<type::Pointer>()->AddressSpace(), builtin::AddressSpace::kFunction);
 }
 
 TEST_F(ResolverPtrRefTest, AddressOfThenDeref) {
@@ -52,8 +53,14 @@ TEST_F(ResolverPtrRefTest, AddressOfThenDeref) {
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
-    ASSERT_TRUE(TypeOf(expr)->Is<type::Reference>());
-    EXPECT_TRUE(TypeOf(expr)->As<type::Reference>()->StoreType()->Is<type::I32>());
+    auto* load = Sem().Get<sem::Load>(expr);
+    ASSERT_NE(load, nullptr);
+
+    auto* ref = load->Reference();
+    ASSERT_NE(ref, nullptr);
+
+    ASSERT_TRUE(ref->Type()->Is<type::Reference>());
+    EXPECT_TRUE(ref->Type()->As<type::Reference>()->StoreType()->Is<type::I32>());
 }
 
 TEST_F(ResolverPtrRefTest, DefaultPtrAddressSpace) {
@@ -61,27 +68,27 @@ TEST_F(ResolverPtrRefTest, DefaultPtrAddressSpace) {
 
     auto* buf = Structure("S", utils::Vector{Member("m", ty.i32())});
     auto* function = Var("f", ty.i32());
-    auto* private_ = GlobalVar("p", ty.i32(), ast::AddressSpace::kPrivate);
-    auto* workgroup = GlobalVar("w", ty.i32(), ast::AddressSpace::kWorkgroup);
+    auto* private_ = GlobalVar("p", ty.i32(), builtin::AddressSpace::kPrivate);
+    auto* workgroup = GlobalVar("w", ty.i32(), builtin::AddressSpace::kWorkgroup);
     auto* uniform =
-        GlobalVar("ub", ty.Of(buf), ast::AddressSpace::kUniform, Binding(0_a), Group(0_a));
+        GlobalVar("ub", ty.Of(buf), builtin::AddressSpace::kUniform, Binding(0_a), Group(0_a));
     auto* storage =
-        GlobalVar("sb", ty.Of(buf), ast::AddressSpace::kStorage, Binding(1_a), Group(0_a));
+        GlobalVar("sb", ty.Of(buf), builtin::AddressSpace::kStorage, Binding(1_a), Group(0_a));
 
     auto* function_ptr =
-        Let("f_ptr", ty.pointer(ty.i32(), ast::AddressSpace::kFunction), AddressOf(function));
+        Let("f_ptr", ty.pointer(ty.i32(), builtin::AddressSpace::kFunction), AddressOf(function));
     auto* private_ptr =
-        Let("p_ptr", ty.pointer(ty.i32(), ast::AddressSpace::kPrivate), AddressOf(private_));
+        Let("p_ptr", ty.pointer(ty.i32(), builtin::AddressSpace::kPrivate), AddressOf(private_));
     auto* workgroup_ptr =
-        Let("w_ptr", ty.pointer(ty.i32(), ast::AddressSpace::kWorkgroup), AddressOf(workgroup));
+        Let("w_ptr", ty.pointer(ty.i32(), builtin::AddressSpace::kWorkgroup), AddressOf(workgroup));
     auto* uniform_ptr =
-        Let("ub_ptr", ty.pointer(ty.Of(buf), ast::AddressSpace::kUniform), AddressOf(uniform));
+        Let("ub_ptr", ty.pointer(ty.Of(buf), builtin::AddressSpace::kUniform), AddressOf(uniform));
     auto* storage_ptr =
-        Let("sb_ptr", ty.pointer(ty.Of(buf), ast::AddressSpace::kStorage), AddressOf(storage));
+        Let("sb_ptr", ty.pointer(ty.Of(buf), builtin::AddressSpace::kStorage), AddressOf(storage));
 
     WrapInFunction(function, function_ptr, private_ptr, workgroup_ptr, uniform_ptr, storage_ptr);
 
-    EXPECT_TRUE(r()->Resolve()) << r()->error();
+    ASSERT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_TRUE(TypeOf(function_ptr)->Is<type::Pointer>())
         << "function_ptr is " << TypeOf(function_ptr)->TypeInfo().name;
@@ -94,11 +101,11 @@ TEST_F(ResolverPtrRefTest, DefaultPtrAddressSpace) {
     ASSERT_TRUE(TypeOf(storage_ptr)->Is<type::Pointer>())
         << "storage_ptr is " << TypeOf(storage_ptr)->TypeInfo().name;
 
-    EXPECT_EQ(TypeOf(function_ptr)->As<type::Pointer>()->Access(), ast::Access::kReadWrite);
-    EXPECT_EQ(TypeOf(private_ptr)->As<type::Pointer>()->Access(), ast::Access::kReadWrite);
-    EXPECT_EQ(TypeOf(workgroup_ptr)->As<type::Pointer>()->Access(), ast::Access::kReadWrite);
-    EXPECT_EQ(TypeOf(uniform_ptr)->As<type::Pointer>()->Access(), ast::Access::kRead);
-    EXPECT_EQ(TypeOf(storage_ptr)->As<type::Pointer>()->Access(), ast::Access::kRead);
+    EXPECT_EQ(TypeOf(function_ptr)->As<type::Pointer>()->Access(), builtin::Access::kReadWrite);
+    EXPECT_EQ(TypeOf(private_ptr)->As<type::Pointer>()->Access(), builtin::Access::kReadWrite);
+    EXPECT_EQ(TypeOf(workgroup_ptr)->As<type::Pointer>()->Access(), builtin::Access::kReadWrite);
+    EXPECT_EQ(TypeOf(uniform_ptr)->As<type::Pointer>()->Access(), builtin::Access::kRead);
+    EXPECT_EQ(TypeOf(storage_ptr)->As<type::Pointer>()->Access(), builtin::Access::kRead);
 }
 
 }  // namespace

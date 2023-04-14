@@ -17,8 +17,8 @@
 
 #include <cstdint>
 
-#include "src/tint/ast/storage_texture.h"
-#include "src/tint/ast/texture.h"
+#include "src/tint/builtin/texel_format.h"
+#include "src/tint/type/texture_dimension.h"
 #include "src/tint/type/type.h"
 
 namespace tint::inspector {
@@ -51,6 +51,7 @@ struct ResourceBinding {
     enum class TexelFormat {
         kNone = -1,
 
+        kBgra8Unorm,
         kRgba8Unorm,
         kRgba8Snorm,
         kRgba8Uint,
@@ -103,24 +104,24 @@ struct ResourceBinding {
     TexelFormat image_format;
 };
 
-/// Convert from internal ast::TextureDimension to public
+/// Convert from internal type::TextureDimension to public
 /// ResourceBinding::TextureDimension
 /// @param type_dim internal value to convert from
 /// @returns the publicly visible equivalent
 ResourceBinding::TextureDimension TypeTextureDimensionToResourceBindingTextureDimension(
-    const ast::TextureDimension& type_dim);
+    const type::TextureDimension& type_dim);
 
 /// Infer ResourceBinding::SampledKind for a given type::Type
 /// @param base_type internal type to infer from
 /// @returns the publicly visible equivalent
 ResourceBinding::SampledKind BaseTypeToSampledKind(const type::Type* base_type);
 
-/// Convert from internal ast::TexelFormat to public
+/// Convert from internal builtin::TexelFormat to public
 /// ResourceBinding::TexelFormat
 /// @param image_format internal value to convert from
 /// @returns the publicly visible equivalent
 ResourceBinding::TexelFormat TypeTexelFormatToResourceBindingTexelFormat(
-    const ast::TexelFormat& image_format);
+    const builtin::TexelFormat& image_format);
 
 }  // namespace tint::inspector
 

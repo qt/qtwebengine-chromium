@@ -16,6 +16,7 @@ namespace skgpu::graphite {
 
 class Caps;
 class GlobalCache;
+class RendererProvider;
 class ResourceProvider;
 class ShaderCodeDictionary;
 
@@ -32,6 +33,21 @@ public:
     }
     ShaderCodeDictionary* shaderCodeDictionary() {
         return fContext->fSharedContext->shaderCodeDictionary();
+    }
+    const GlobalCache* globalCache() const {
+        return fContext->fSharedContext->globalCache();
+    }
+    GlobalCache* globalCache() {
+        return fContext->fSharedContext->globalCache();
+    }
+    const RendererProvider* rendererProvider() const {
+        return fContext->fSharedContext->rendererProvider();
+    }
+    ResourceProvider* resourceProvider() const {
+        return fContext->fResourceProvider.get();
+    }
+    PlotUploadTracker* plotUploadTracker() const {
+        return fContext->fPlotUploadTracker.get();
     }
 
     void startCapture() {
@@ -69,6 +85,17 @@ inline ContextPriv Context::priv() { return ContextPriv(this); }
 inline const ContextPriv Context::priv() const {
     return ContextPriv(const_cast<Context *>(this));
 }
+
+// This class is friended by the Context and allows the backend ContextFactory functions to
+// trampoline through this to call the private Context ctor. We can't directly friend the factory
+// functions in Context because they are in a different namespace and we don't want to declare the
+// functions in Context.h
+class ContextCtorAccessor {
+public:
+    static std::unique_ptr<Context> MakeContext(sk_sp<SharedContext>,
+                                                std::unique_ptr<QueueManager>,
+                                                const ContextOptions&);
+};
 
 } // namespace skgpu::graphite
 

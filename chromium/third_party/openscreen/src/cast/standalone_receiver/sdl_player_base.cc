@@ -8,7 +8,6 @@
 #include <sstream>
 #include <utility>
 
-#include "absl/types/span.h"
 #include "cast/standalone_receiver/avcodec_glue.h"
 #include "cast/streaming/constants.h"
 #include "cast/streaming/encoded_frame.h"
@@ -102,7 +101,7 @@ void SDLPlayerBase::OnFramesReady(int buffer_size) {
   // Consume the next frame.
   const Clock::time_point start_time = now_();
   buffer_.Resize(buffer_size);
-  EncodedFrame frame = receiver_->ConsumeNextFrame(buffer_.GetSpan());
+  EncodedFrame frame = receiver_->ConsumeNextFrame(buffer_.AsByteBuffer());
 
   // Create the tracking state for the frame in the player pipeline.
   OSP_DCHECK_EQ(frames_to_render_.count(frame.frame_id), 0);

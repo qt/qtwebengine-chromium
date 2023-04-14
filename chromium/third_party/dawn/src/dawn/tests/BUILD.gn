@@ -127,18 +127,19 @@ if (build_with_chromium && is_win &&
   # The windows_sdk_path is acquired in visual_studio_version.gni.
   import("//build/config/win/visual_studio_version.gni")
 
-  # Windows 10 SDK version 10.0.20348.0 is required for building Chromium, and
-  # it provided DXC compiler and validator both of v1.6.
+  # Windows 10 SDK version 10.0.20348.0 provides DXC compiler and validator both
+  # of v1.6 and Chromium builds require this SDK version or higher.
   assert(defined(windows_sdk_path))
+  assert(defined(windows_sdk_version))
   assert(windows_sdk_path != "")
 
   # Declare a copy target to copy DXC binary from Windows SDK for running Dawn
   # end-to-end test in Chromium.
   copy("copy_dxc_binary") {
     sources = [
-      "$windows_sdk_path/bin/10.0.20348.0/$target_cpu/dxc.exe",
-      "$windows_sdk_path/bin/10.0.20348.0/$target_cpu/dxcompiler.dll",
-      "$windows_sdk_path/bin/10.0.20348.0/$target_cpu/dxil.dll",
+      "$windows_sdk_path/bin/$windows_sdk_version/$target_cpu/dxc.exe",
+      "$windows_sdk_path/bin/$windows_sdk_version/$target_cpu/dxcompiler.dll",
+      "$windows_sdk_path/bin/$windows_sdk_version/$target_cpu/dxil.dll",
     ]
 
     outputs = [ "$root_out_dir/{{source_file_part}}" ]
@@ -190,6 +191,7 @@ source_set("native_mocks_sources") {
 
   deps = [
     ":gmock_and_gtest",
+    "${dawn_root}/src/dawn:proc",
     "${dawn_root}/src/dawn/native:sources",
     "${dawn_root}/src/dawn/native:static",
     "${dawn_root}/src/dawn/utils",
@@ -209,6 +211,9 @@ source_set("native_mocks_sources") {
     "unittests/native/mocks/CommandBufferMock.h",
     "unittests/native/mocks/ComputePipelineMock.cpp",
     "unittests/native/mocks/ComputePipelineMock.h",
+    "unittests/native/mocks/DawnMockTest.cpp",
+    "unittests/native/mocks/DawnMockTest.h",
+    "unittests/native/mocks/DeviceMock.cpp",
     "unittests/native/mocks/DeviceMock.h",
     "unittests/native/mocks/ExternalTextureMock.cpp",
     "unittests/native/mocks/ExternalTextureMock.h",
@@ -216,6 +221,8 @@ source_set("native_mocks_sources") {
     "unittests/native/mocks/PipelineLayoutMock.h",
     "unittests/native/mocks/QuerySetMock.cpp",
     "unittests/native/mocks/QuerySetMock.h",
+    "unittests/native/mocks/QueueMock.cpp",
+    "unittests/native/mocks/QueueMock.h",
     "unittests/native/mocks/RenderPipelineMock.cpp",
     "unittests/native/mocks/RenderPipelineMock.h",
     "unittests/native/mocks/SamplerMock.cpp",
@@ -301,6 +308,7 @@ dawn_test("dawn_unittests") {
     "unittests/SystemUtilsTests.cpp",
     "unittests/ToBackendTests.cpp",
     "unittests/TypedIntegerTests.cpp",
+    "unittests/UnicodeTests.cpp",
     "unittests/native/BlobTests.cpp",
     "unittests/native/CacheRequestTests.cpp",
     "unittests/native/CommandBufferEncodingTests.cpp",
@@ -355,12 +363,14 @@ dawn_test("dawn_unittests") {
     "unittests/validation/VertexBufferValidationTests.cpp",
     "unittests/validation/VertexStateValidationTests.cpp",
     "unittests/validation/VideoViewsValidationTests.cpp",
+    "unittests/validation/WritableBufferBindingAliasingValidationTests.cpp",
     "unittests/validation/WriteBufferTests.cpp",
     "unittests/wire/WireAdapterTests.cpp",
     "unittests/wire/WireArgumentTests.cpp",
     "unittests/wire/WireBasicTests.cpp",
     "unittests/wire/WireBufferMappingTests.cpp",
     "unittests/wire/WireCreatePipelineAsyncTests.cpp",
+    "unittests/wire/WireDeviceLifetimeTests.cpp",
     "unittests/wire/WireDisconnectTests.cpp",
     "unittests/wire/WireErrorCallbackTests.cpp",
     "unittests/wire/WireExtensionTests.cpp",
@@ -506,6 +516,7 @@ source_set("end2end_tests_sources") {
     "end2end/ExperimentalDP4aTests.cpp",
     "end2end/ExternalTextureTests.cpp",
     "end2end/FirstIndexOffsetTests.cpp",
+    "end2end/FragDepthTests.cpp",
     "end2end/GpuMemorySynchronizationTests.cpp",
     "end2end/IndexFormatTests.cpp",
     "end2end/MaxLimitTests.cpp",
@@ -644,14 +655,21 @@ source_set("white_box_tests_sources") {
   if (dawn_enable_d3d12) {
     sources += [
       "white_box/D3D12DescriptorHeapTests.cpp",
-      "white_box/D3D12GPUTimestampCalibrationTests.cpp",
       "white_box/D3D12ResidencyTests.cpp",
       "white_box/D3D12ResourceHeapTests.cpp",
+      "white_box/GPUTimestampCalibrationTests.cpp",
+      "white_box/GPUTimestampCalibrationTests.h",
+      "white_box/GPUTimestampCalibrationTests_D3D12.cpp",
     ]
   }
 
   if (dawn_enable_metal) {
-    sources += [ "white_box/MetalAutoreleasePoolTests.mm" ]
+    sources += [
+      "white_box/GPUTimestampCalibrationTests.cpp",
+      "white_box/GPUTimestampCalibrationTests.h",
+      "white_box/GPUTimestampCalibrationTests_Metal.mm",
+      "white_box/MetalAutoreleasePoolTests.mm",
+    ]
   }
 
   if (dawn_enable_opengles) {

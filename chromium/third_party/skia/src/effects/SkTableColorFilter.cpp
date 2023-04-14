@@ -14,10 +14,12 @@
 #include "include/core/SkString.h"
 #include "include/core/SkTypes.h"
 #include "include/private/SkSLSampleUsage.h"
-#include "src/core/SkArenaAlloc.h"
+#include "src/base/SkArenaAlloc.h"
 #include "src/core/SkColorFilterBase.h"
 #include "src/core/SkEffectPriv.h"
 #include "src/core/SkRasterPipeline.h"
+#include "src/core/SkRasterPipelineOpContexts.h"
+#include "src/core/SkRasterPipelineOpList.h"
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkWriteBuffer.h"
 
@@ -38,6 +40,7 @@ class PipelineDataGatherer;
 #endif
 
 #if SK_SUPPORT_GPU
+#include "include/gpu/GpuTypes.h"
 #include "include/gpu/GrTypes.h"
 #include "src/gpu/ganesh/GrColorInfo.h"
 #include "src/gpu/ganesh/GrFragmentProcessor.h"
@@ -55,9 +58,9 @@ namespace skgpu { class KeyBuilder; }
 #if GR_TEST_UTILS
 #include "include/core/SkColorSpace.h"
 #include "include/core/SkSurfaceProps.h"
-#include "include/private/SkTo.h"
+#include "include/private/base/SkTo.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
-#include "include/utils/SkRandom.h"
+#include "src/base/SkRandom.h"
 #include "src/gpu/ganesh/GrTestUtils.h"
 #else
 class SkSurfaceProps;
@@ -97,10 +100,10 @@ public:
                   skgpu::graphite::PipelineDataGatherer*) const override;
 #endif
 
-    bool onAppendStages(const SkStageRec& rec, bool shaderIsOpaque) const override {
+    bool appendStages(const SkStageRec& rec, bool shaderIsOpaque) const override {
         SkRasterPipeline* p = rec.fPipeline;
         if (!shaderIsOpaque) {
-            p->append(SkRasterPipeline::unpremul);
+            p->append(SkRasterPipelineOp::unpremul);
         }
 
         SkRasterPipeline_TablesCtx* tables = rec.fAlloc->make<SkRasterPipeline_TablesCtx>();
@@ -108,11 +111,11 @@ public:
         tables->r = fBitmap.getAddr8(0, 1);
         tables->g = fBitmap.getAddr8(0, 2);
         tables->b = fBitmap.getAddr8(0, 3);
-        p->append(SkRasterPipeline::byte_tables, tables);
+        p->append(SkRasterPipelineOp::byte_tables, tables);
 
         bool definitelyOpaque = shaderIsOpaque && tables->a[0xff] == 0xff;
         if (!definitelyOpaque) {
-            p->append(SkRasterPipeline::premul);
+            p->append(SkRasterPipelineOp::premul);
         }
         return true;
     }
@@ -301,12 +304,12 @@ void SkTable_ColorFilter::addToKey(const skgpu::graphite::KeyContext& keyContext
     // TODO(b/239604347): remove this hack. This is just here until we determine what Graphite's
     // Recorder-level caching story is going to be.
     sk_sp<SkImage> image = SkImage::MakeFromBitmap(fBitmap);
-    image = image->makeTextureImage(keyContext.recorder(), { skgpu::graphite::Mipmapped::kNo });
+    image = image->makeTextureImage(keyContext.recorder(), { skgpu::Mipmapped::kNo });
 
     if (as_IB(image)->isGraphiteBacked()) {
         skgpu::graphite::Image* grImage = static_cast<skgpu::graphite::Image*>(image.get());
 
-        auto [view, _] = grImage->asView(keyContext.recorder(), skgpu::graphite::Mipmapped::kNo);
+        auto [view, _] = grImage->asView(keyContext.recorder(), skgpu::Mipmapped::kNo);
         data.fTextureProxy = view.refProxy();
     }
 

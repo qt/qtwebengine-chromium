@@ -19,7 +19,7 @@
 
 #include <cstdint>
 
-#include "flatbuffers/bfbs_generator.h"
+#include "flatbuffers/code_generator.h"
 #include "flatbuffers/reflection_generated.h"
 
 namespace flatbuffers {
@@ -38,8 +38,9 @@ static void ForAllObjects(
   for (auto it = objects->cbegin(); it != objects->cend(); ++it) { func(*it); }
 }
 
-static void ForAllEnumValues(const reflection::Enum *enum_def,
-                      std::function<void(const reflection::EnumVal *)> func) {
+static void ForAllEnumValues(
+    const reflection::Enum *enum_def,
+    std::function<void(const reflection::EnumVal *)> func) {
   for (auto it = enum_def->values()->cbegin(); it != enum_def->values()->cend();
        ++it) {
     func(*it);
@@ -91,24 +92,23 @@ static bool IsVector(const reflection::BaseType base_type) {
   return base_type == reflection::Vector;
 }
 
-} // namespace
+}  // namespace
 
 // A concrete base Flatbuffer Generator that specific language generators can
 // derive from.
-class BaseBfbsGenerator : public BfbsGenerator {
+class BaseBfbsGenerator : public CodeGenerator {
  public:
   virtual ~BaseBfbsGenerator() {}
   BaseBfbsGenerator() : schema_(nullptr) {}
 
-  virtual GeneratorStatus GenerateFromSchema(
+  virtual Status GenerateFromSchema(
       const reflection::Schema *schema) = 0;
 
-  //
   virtual uint64_t SupportedAdvancedFeatures() const = 0;
 
-  // Override of the Generator::generate method that does the initial
+  // Override of the Generator::GenerateCode method that does the initial
   // deserialization and verification steps.
-  GeneratorStatus Generate(const uint8_t *buffer,
+  Status GenerateCode(const uint8_t *buffer,
                            int64_t length) FLATBUFFERS_OVERRIDE {
     flatbuffers::Verifier verifier(buffer, static_cast<size_t>(length));
     if (!reflection::VerifySchemaBuffer(verifier)) {
@@ -124,23 +124,35 @@ class BaseBfbsGenerator : public BfbsGenerator {
       return FAILED_VERIFICATION;
     }
 
-    GeneratorStatus status = GenerateFromSchema(schema_);
+    Status status = GenerateFromSchema(schema_);
     schema_ = nullptr;
     return status;
   }
 
  protected:
-  const reflection::Object *GetObject(const reflection::Type *type) const {
-    if (type->index() >= 0 && IsStructOrTable(type->base_type())) {
+  // GetObject returns the underlying object struct of the given type
+  // if element_type is true and GetObject is a list of objects then
+  // GetObject will correctly return the object struct of the vector's elements
+  const reflection::Object *GetObject(const reflection::Type *type,
+                                      bool element_type = false) const {
+    const reflection::BaseType base_type =
+        element_type ? type->element() : type->base_type();
+    if (type->index() >= 0 && IsStructOrTable(base_type)) {
       return GetObjectByIndex(type->index());
     }
     return nullptr;
   }
 
-  const reflection::Enum *GetEnum(const reflection::Type *type) const {
+  // GetEnum returns the underlying enum struct of the given type
+  // if element_type is true and GetEnum is a list of enums then
+  // GetEnum will correctly return the enum struct of the vector's elements
+  const reflection::Enum *GetEnum(const reflection::Type *type,
+                                  bool element_type = false) const {
+    const reflection::BaseType base_type =
+        element_type ? type->element() : type->base_type();
     // TODO(derekbailey): it would be better to have a explicit list of allowed
     // base types, instead of negating Obj types.
-    if (type->index() >= 0 && !IsStructOrTable(type->base_type())) {
+    if (type->index() >= 0 && !IsStructOrTable(base_type)) {
       return GetEnumByIndex(type->index());
     }
     return nullptr;

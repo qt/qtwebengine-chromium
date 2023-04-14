@@ -5,6 +5,7 @@
 import * as Common from '../common/common.js';
 
 import {type EventPayload} from './TracingManager.js';
+import * as TraceEngine from '../../models/trace/trace.js';
 
 type IgnoreListArgs = {
   [key: string]: string|number|ObjectSnapshot,
@@ -26,6 +27,7 @@ export class TracingModel {
   readonly #profileGroups: Map<string, ProfileEventsGroup>;
   readonly #parsedCategories: Map<string, Set<string>>;
   readonly #mainFrameNavStartTimes: Map<string, Event>;
+  readonly #allEventsPayload: EventPayload[] = [];
 
   constructor(backingStorage: BackingStorage, shouldSaveToFile = true, title?: string) {
     this.#backingStorageInternal = backingStorage;
@@ -119,6 +121,10 @@ export class TracingModel {
     return null;
   }
 
+  allRawEvents(): readonly EventPayload[] {
+    return this.#allEventsPayload;
+  }
+
   devToolsMetadataEvents(): Event[] {
     return this.#devToolsMetadataEventsInternal;
   }
@@ -171,6 +177,7 @@ export class TracingModel {
   }
 
   private addEvent(payload: EventPayload): void {
+    this.#allEventsPayload.push(payload);
     let process = this.#processById.get(payload.pid);
     if (!process) {
       process = new Process(this, payload.pid);
@@ -198,7 +205,7 @@ export class TracingModel {
     // We do allow records for unrelated threads to arrive out-of-order,
     // so there's a chance we're getting records from the past.
     if (timestamp && timestamp < this.#minimumRecordTimeInternal &&
-        (payload.ph === phase.Begin || payload.ph === phase.Complete || payload.ph === phase.Instant) &&
+        eventPhasesOfInterestForTraceBounds.has(payload.ph) &&
         // UMA related events are ignored when calculating the minimumRecordTime because they might
         // be related to previous navigations that happened before the current trace started and
         // will currently not be displayed anyways.
@@ -225,14 +232,16 @@ export class TracingModel {
         const {isLoadingMainFrame, documentLoaderURL, navigationId, isOutermostMainFrame} = data;
         if ((isOutermostMainFrame ?? isLoadingMainFrame) && documentLoaderURL !== '') {
           const thread = process.threadById(payload.tid);
-          const navStartEvent = Event.fromPayload(payload, thread);
+          const navStartEvent = PayloadEvent.fromPayload(payload, thread);
           this.#mainFrameNavStartTimes.set(navigationId, navStartEvent);
         }
       }
     }
 
-    const endTimeStamp = (payload.ts + (payload.dur || 0)) / 1000;
-    this.#maximumRecordTimeInternal = Math.max(this.#maximumRecordTimeInternal, endTimeStamp);
+    if (eventPhasesOfInterestForTraceBounds.has(payload.ph)) {
+      const endTimeStamp = (payload.ts + (payload.dur || 0)) / 1000;
+      this.#maximumRecordTimeInternal = Math.max(this.#maximumRecordTimeInternal, endTimeStamp);
+    }
     const event = process.addEvent(payload);
     if (!event) {
       return;
@@ -458,10 +467,14 @@ export class TracingModel {
   }
 }
 
+// If this enum looks half complete, that is because we are currently removing
+// it in favour of the enum in the new trace engine
+// (models/trace/types/TraceEvents.ts). crbug.com/1417587 is tracking this
+// work.
+//
 // TODO(crbug.com/1167717): Make this a const enum again
 // eslint-disable-next-line rulesdir/const_enum
 export enum Phase {
-  Begin = 'B',
   End = 'E',
   Complete = 'X',
   Instant = 'I',
@@ -482,6 +495,13 @@ export enum Phase {
   SnapshotObject = 'O',
   DeleteObject = 'D',
 }
+
+export const eventPhasesOfInterestForTraceBounds: Set<string> = new Set([
+  TraceEngine.Types.TraceEvents.Phase.BEGIN,
+  Phase.End,
+  Phase.Complete,
+  Phase.Instant,
+]);
 
 export const MetadataEvent = {
   ProcessSortIndex: 'process_sort_index',
@@ -521,15 +541,17 @@ export class Event {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   args: any;
   id!: string|null;
-  // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration
-  // eslint-disable-next-line @typescript-eslint/naming-convention
-  bind_id!: string|null;
   ordinal: number;
   selfTime: number;
   endTime?: number;
   duration?: number;
 
-  constructor(categories: string|undefined, name: string, phase: Phase, startTime: number, thread: Thread) {
+  // The constructor is protected so that we ensure that only classes or
+  // subclasses can directly instantiate events. All other callers should
+  // either create ConstructedEvent instances, which have a public constructor,
+  // or use the static fromPayload method which can create an event instance
+  // from the trace payload.
+  protected constructor(categories: string|undefined, name: string, phase: Phase, startTime: number, thread: Thread) {
     this.categoriesString = categories || '';
     this.#parsedCategories = thread.getModel().parsedCategoriesForString(this.categoriesString);
     this.name = name;
@@ -540,25 +562,6 @@ export class Event {
     this.ordinal = 0;
 
     this.selfTime = 0;
-  }
-
-  static fromPayload(payload: EventPayload, thread: Thread): Event {
-    const event = new Event(payload.cat, payload.name, (payload.ph as Phase), payload.ts / 1000, thread);
-    if (payload.args) {
-      event.addArgs(payload.args);
-    }
-    if (typeof payload.dur === 'number') {
-      event.setEndTime((payload.ts + payload.dur) / 1000);
-    }
-    const id = TracingModel.extractId(payload);
-    if (typeof id !== 'undefined') {
-      event.id = id;
-    }
-    if (payload.bind_id) {
-      event.bind_id = payload.bind_id;
-    }
-
-    return event;
   }
 
   static compareStartTime(a: Event|null, b: Event|null): number {
@@ -615,19 +618,73 @@ export class Event {
   }
 }
 
-// eslint-disable-next-line rulesdir/enforce_custom_event_names, rulesdir/static_custom_event_names
-export class ObjectSnapshot extends Event {
+/**
+ * Represents a tracing event that is not directly linked to an individual
+ * object in the trace. We construct these events at times, particularly when
+ * building up the CPU profile data for JS Profiling.
+ **/
+export class ConstructedEvent extends Event {
+  // Because the constructor of Event is marked as protected, but we want
+  // people to be able to create constructed events, we override the
+  // constructor here, even though we are only calling super, in order to mark
+  // it as public.
+  constructor(categories: string|undefined, name: string, phase: Phase, startTime: number, thread: Thread) {
+    super(categories, name, phase, startTime, thread);
+  }
+}
+
+/**
+ * Represents a tracing event that has been created directly from an object in
+ * the trace file and therefore is guaranteed to have a payload associated with
+ * it. The only way to create these events is to use the static fromPayload
+ * method, which you must call with a payload.
+ **/
+export class PayloadEvent extends Event {
+  #rawPayload: EventPayload;
+
+  rawPayload(): EventPayload {
+    return this.#rawPayload;
+  }
+
+  protected constructor(
+      categories: string|undefined, name: string, phase: Phase, startTime: number, thread: Thread,
+      rawPayload: EventPayload) {
+    super(categories, name, phase, startTime, thread);
+    this.#rawPayload = rawPayload;
+  }
+
+  static fromPayload(payload: EventPayload, thread: Thread): PayloadEvent {
+    const event =
+        new PayloadEvent(payload.cat, payload.name, (payload.ph as Phase), payload.ts / 1000, thread, payload);
+    event.#rawPayload = payload;
+    if (payload.args) {
+      event.addArgs(payload.args);
+    }
+    if (typeof payload.dur === 'number') {
+      event.setEndTime((payload.ts + payload.dur) / 1000);
+    }
+    const id = TracingModel.extractId(payload);
+    if (typeof id !== 'undefined') {
+      event.id = id;
+    }
+
+    return event;
+  }
+}
+
+export class ObjectSnapshot extends PayloadEvent {
   #backingStorage: (() => Promise<string|null>)|null;
   #objectPromiseInternal: Promise<ObjectSnapshot|null>|null;
 
-  constructor(category: string|undefined, name: string, startTime: number, thread: Thread) {
-    super(category, name, Phase.SnapshotObject, startTime, thread);
+  private constructor(
+      category: string|undefined, name: string, startTime: number, thread: Thread, rawPayload: EventPayload) {
+    super(category, name, Phase.SnapshotObject, startTime, thread, rawPayload);
     this.#backingStorage = null;
     this.#objectPromiseInternal = null;
   }
 
   static fromPayload(payload: EventPayload, thread: Thread): ObjectSnapshot {
-    const snapshot = new ObjectSnapshot(payload.cat, payload.name, payload.ts / 1000, thread);
+    const snapshot = new ObjectSnapshot(payload.cat, payload.name, payload.ts / 1000, thread, payload);
     const id = TracingModel.extractId(payload);
     if (typeof id !== 'undefined') {
       snapshot.id = id;
@@ -684,8 +741,7 @@ export class ObjectSnapshot extends Event {
   }
 }
 
-// eslint-disable-next-line rulesdir/enforce_custom_event_names, rulesdir/static_custom_event_names
-export class AsyncEvent extends Event {
+export class AsyncEvent extends ConstructedEvent {
   steps: Event[];
   causedFrame: boolean;
 
@@ -806,39 +862,45 @@ export class Thread extends NamedObject {
     this.#lastTopLevelEvent = null;
   }
 
+  /**
+   * Whilst we are in the middle of migrating to the new Phase enum, we need to
+   * be able to compare events with the legacy phase to the new enum. This method
+   * does this by casting the event phase to a string, ensuring we can compare it
+   * against either enum. Once the migration is complete (crbug.com/1417587), we
+   * will be able to use === to compare with no TS errors and this method can be
+   * removed.
+   **/
+  #eventMatchesPhase(event: Event, phase: Phase|TraceEngine.Types.TraceEvents.Phase): boolean {
+    return (event.phase as string) === phase;
+  }
+
   tracingComplete(): void {
     this.#asyncEventsInternal.sort(Event.compareStartTime);
     this.#eventsInternal.sort(Event.compareStartTime);
-    const phases = Phase;
     const stack: Event[] = [];
     const toDelete = new Set<number>();
     for (let i = 0; i < this.#eventsInternal.length; ++i) {
       const e = this.#eventsInternal[i];
       e.ordinal = i;
-      switch (e.phase) {
-        case phases.End: {
-          toDelete.add(i);  // Mark for removal.
-          // Quietly ignore unbalanced close events, they're legit (we could have missed start one).
-          if (!stack.length) {
-            continue;
-          }
-          const top = stack.pop();
-          if (!top) {
-            continue;
-          }
-          if (top.name !== e.name || top.categoriesString !== e.categoriesString) {
-            console.error(
-                'B/E events mismatch at ' + top.startTime + ' (' + top.name + ') vs. ' + e.startTime + ' (' + e.name +
-                ')');
-          } else {
-            top.complete(e);
-          }
-          break;
+      if (this.#eventMatchesPhase(e, Phase.End)) {
+        toDelete.add(i);  // Mark for removal.
+        // Quietly ignore unbalanced close events, they're legit (we could have missed start one).
+        if (!stack.length) {
+          continue;
         }
-        case phases.Begin: {
-          stack.push(e);
-          break;
+        const top = stack.pop();
+        if (!top) {
+          continue;
         }
+        if (top.name !== e.name || top.categoriesString !== e.categoriesString) {
+          console.error(
+              'B/E events mismatch at ' + top.startTime + ' (' + top.name + ') vs. ' + e.startTime + ' (' + e.name +
+              ')');
+        } else {
+          top.complete(e);
+        }
+      } else if (this.#eventMatchesPhase(e, TraceEngine.Types.TraceEvents.Phase.BEGIN)) {
+        stack.push(e);
       }
     }
 
@@ -849,7 +911,7 @@ export class Thread extends NamedObject {
       if (event) {
         // Masquerade the event as Instant, so it's rendered to the user.
         // The ideal fix is resolving crbug.com/1021571, but handling that without a perfetto migration appears prohibitive
-        event.phase = phases.Instant;
+        event.phase = Phase.Instant;
       }
     }
     this.#eventsInternal = this.#eventsInternal.filter((_, idx) => !toDelete.has(idx));
@@ -857,7 +919,7 @@ export class Thread extends NamedObject {
 
   addEvent(payload: EventPayload): Event|null {
     const event = payload.ph === Phase.SnapshotObject ? ObjectSnapshot.fromPayload(payload, this) :
-                                                        Event.fromPayload(payload, this);
+                                                        PayloadEvent.fromPayload(payload, this);
     if (TracingModel.isTopLevelEvent(event)) {
       // Discard nested "top-level" events.
       const lastTopLevelEvent = this.#lastTopLevelEvent;

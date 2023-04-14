@@ -64,16 +64,6 @@ bool IsValidHeaderName(absl::string_view name) {
   return AllCharsInMap(name, valid_chars);
 }
 
-bool IsValidHeaderValue(absl::string_view value, ObsTextOption option) {
-  static const CharMap valid_chars =
-      BuildValidCharMap(kHttp2HeaderValueAllowedChars);
-  static const CharMap valid_chars_with_obs_text =
-      AllowObsText(BuildValidCharMap(kHttp2HeaderValueAllowedChars));
-  return AllCharsInMap(value, option == ObsTextOption::kAllow
-                                  ? valid_chars_with_obs_text
-                                  : valid_chars);
-}
-
 bool IsValidStatus(absl::string_view status) {
   static const CharMap valid_chars =
       BuildValidCharMap(kHttp2StatusValueAllowedChars);
@@ -246,6 +236,22 @@ bool HeaderValidator::FinishHeaderBlock(HeaderType type) {
   return false;
 }
 
+bool HeaderValidator::IsValidHeaderValue(absl::string_view value,
+                                         ObsTextOption option) {
+  static const CharMap valid_chars =
+      BuildValidCharMap(kHttp2HeaderValueAllowedChars);
+  static const CharMap valid_chars_with_obs_text =
+      AllowObsText(BuildValidCharMap(kHttp2HeaderValueAllowedChars));
+  return AllCharsInMap(value, option == ObsTextOption::kAllow
+                                  ? valid_chars_with_obs_text
+                                  : valid_chars);
+}
+
+bool HeaderValidator::IsValidAuthority(absl::string_view authority) {
+  static const CharMap valid_chars = BuildValidCharMap(kValidAuthorityChars);
+  return AllCharsInMap(authority, valid_chars);
+}
+
 HeaderValidator::ContentLengthStatus HeaderValidator::HandleContentLength(
     absl::string_view value) {
   if (value.empty()) {
@@ -278,8 +284,7 @@ HeaderValidator::ContentLengthStatus HeaderValidator::HandleContentLength(
 // Returns whether `authority` contains only characters from the `host` ABNF
 // from RFC 3986 section 3.2.2.
 bool HeaderValidator::ValidateAndSetAuthority(absl::string_view authority) {
-  static const CharMap valid_chars = BuildValidCharMap(kValidAuthorityChars);
-  if (!AllCharsInMap(authority, valid_chars)) {
+  if (!IsValidAuthority(authority)) {
     return false;
   }
   if (authority_.has_value() && authority != authority_.value()) {

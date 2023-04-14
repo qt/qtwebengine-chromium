@@ -95,6 +95,10 @@ struct DefaultDevice {
     return firstLevelCacheSize();
 #endif
   }
+  
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void synchronize() const {
+    // Nothing.  Default device operations are synchronous.
+  }
 
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE int majorDeviceVersion() const {
 #if !defined(EIGEN_GPU_COMPILE_PHASE)

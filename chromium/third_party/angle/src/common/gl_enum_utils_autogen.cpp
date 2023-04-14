@@ -1135,6 +1135,8 @@ const char *GLenumToString(GLESEnum enumGroup, unsigned int value)
                     return "GL_DOT3_RGBA";
                 case 0x8741:
                     return "GL_PROGRAM_BINARY_LENGTH";
+                case 0x8743:
+                    return "GL_MIRROR_CLAMP_TO_EDGE_EXT";
                 case 0x8764:
                     return "GL_BUFFER_SIZE";
                 case 0x8765:
@@ -1961,6 +1963,8 @@ const char *GLenumToString(GLESEnum enumGroup, unsigned int value)
                     return "GL_MAX_VARYING_VECTORS";
                 case 0x8DFD:
                     return "GL_MAX_FRAGMENT_UNIFORM_VECTORS";
+                case 0x8E1B:
+                    return "GL_POLYGON_OFFSET_CLAMP_EXT";
                 case 0x8E1E:
                     return "GL_MAX_COMBINED_TESS_CONTROL_UNIFORM_COMPONENTS";
                 case 0x8E1F:
@@ -2087,6 +2091,10 @@ const char *GLenumToString(GLESEnum enumGroup, unsigned int value)
                     return "GL_DRAW_INDIRECT_BUFFER_BINDING";
                 case 0x8F4F:
                     return "GL_VERTEX_BINDING_BUFFER";
+                case 0x8F65:
+                    return "GL_FETCH_PER_SAMPLE_ARM";
+                case 0x8F66:
+                    return "GL_FRAGMENT_SHADER_FRAMEBUFFER_FETCH_MRT_ARM";
                 case 0x8F94:
                     return "GL_R8_SNORM";
                 case 0x8F95:
@@ -3818,6 +3826,10 @@ const char *GLenumToString(GLESEnum enumGroup, unsigned int value)
                     return "GL_CLIP_PLANE4";
                 case 0x3005:
                     return "GL_CLIP_PLANE5";
+                case 0x3006:
+                    return "GL_CLIP_DISTANCE6_ANGLE";
+                case 0x3007:
+                    return "GL_CLIP_DISTANCE7_ANGLE";
                 case 0x4000:
                     return "GL_LIGHT0";
                 case 0x4001:
@@ -3866,6 +3878,8 @@ const char *GLenumToString(GLESEnum enumGroup, unsigned int value)
                     return "GL_PRIMITIVE_RESTART_FIXED_INDEX";
                 case 0x8E51:
                     return "GL_SAMPLE_MASK";
+                case 0x8F65:
+                    return "GL_FETCH_PER_SAMPLE_ARM";
                 case 0x92E0:
                     return "GL_DEBUG_OUTPUT";
                 case 0x96A5:
@@ -4731,6 +4745,10 @@ const char *GLenumToString(GLESEnum enumGroup, unsigned int value)
                     return "GL_MAX_VERTEX_ATTRIB_BINDINGS";
                 case 0x82E8:
                     return "GL_MAX_LABEL_LENGTH";
+                case 0x82F9:
+                    return "GL_MAX_CULL_DISTANCES_ANGLE";
+                case 0x82FA:
+                    return "GL_MAX_COMBINED_CLIP_AND_CULL_DISTANCES_ANGLE";
                 case 0x846D:
                     return "GL_ALIASED_POINT_SIZE_RANGE";
                 case 0x846E:
@@ -4887,6 +4905,10 @@ const char *GLenumToString(GLESEnum enumGroup, unsigned int value)
                     return "GL_MAX_TESS_CONTROL_UNIFORM_BLOCKS";
                 case 0x8E8A:
                     return "GL_MAX_TESS_EVALUATION_UNIFORM_BLOCKS";
+                case 0x8F65:
+                    return "GL_FETCH_PER_SAMPLE_ARM";
+                case 0x8F66:
+                    return "GL_FRAGMENT_SHADER_FRAMEBUFFER_FETCH_MRT_ARM";
                 case 0x90D3:
                     return "GL_SHADER_STORAGE_BUFFER_BINDING";
                 case 0x90D4:
@@ -20231,6 +20253,10 @@ unsigned int StringToGLenum(const char *str)
     {
         return 0x3000;
     }
+    if (strcmp(str, "GL_CLIP_DISTANCE0_ANGLE") == 0)
+    {
+        return 0x3000;
+    }
     if (strcmp(str, "GL_CLIP_DISTANCE0_APPLE") == 0)
     {
         return 0x3000;
@@ -20240,6 +20266,10 @@ unsigned int StringToGLenum(const char *str)
         return 0x3000;
     }
     if (strcmp(str, "GL_CLIP_DISTANCE1") == 0)
+    {
+        return 0x3001;
+    }
+    if (strcmp(str, "GL_CLIP_DISTANCE1_ANGLE") == 0)
     {
         return 0x3001;
     }
@@ -20255,6 +20285,10 @@ unsigned int StringToGLenum(const char *str)
     {
         return 0x3002;
     }
+    if (strcmp(str, "GL_CLIP_DISTANCE2_ANGLE") == 0)
+    {
+        return 0x3002;
+    }
     if (strcmp(str, "GL_CLIP_DISTANCE2_APPLE") == 0)
     {
         return 0x3002;
@@ -20264,6 +20298,10 @@ unsigned int StringToGLenum(const char *str)
         return 0x3002;
     }
     if (strcmp(str, "GL_CLIP_DISTANCE3") == 0)
+    {
+        return 0x3003;
+    }
+    if (strcmp(str, "GL_CLIP_DISTANCE3_ANGLE") == 0)
     {
         return 0x3003;
     }
@@ -20279,6 +20317,10 @@ unsigned int StringToGLenum(const char *str)
     {
         return 0x3004;
     }
+    if (strcmp(str, "GL_CLIP_DISTANCE4_ANGLE") == 0)
+    {
+        return 0x3004;
+    }
     if (strcmp(str, "GL_CLIP_DISTANCE4_APPLE") == 0)
     {
         return 0x3004;
@@ -20288,6 +20330,10 @@ unsigned int StringToGLenum(const char *str)
         return 0x3004;
     }
     if (strcmp(str, "GL_CLIP_DISTANCE5") == 0)
+    {
+        return 0x3005;
+    }
+    if (strcmp(str, "GL_CLIP_DISTANCE5_ANGLE") == 0)
     {
         return 0x3005;
     }
@@ -20303,6 +20349,10 @@ unsigned int StringToGLenum(const char *str)
     {
         return 0x3006;
     }
+    if (strcmp(str, "GL_CLIP_DISTANCE6_ANGLE") == 0)
+    {
+        return 0x3006;
+    }
     if (strcmp(str, "GL_CLIP_DISTANCE6_APPLE") == 0)
     {
         return 0x3006;
@@ -20312,6 +20362,10 @@ unsigned int StringToGLenum(const char *str)
         return 0x3006;
     }
     if (strcmp(str, "GL_CLIP_DISTANCE7") == 0)
+    {
+        return 0x3007;
+    }
+    if (strcmp(str, "GL_CLIP_DISTANCE7_ANGLE") == 0)
     {
         return 0x3007;
     }
@@ -29213,6 +29267,10 @@ unsigned int StringToGLenum(const char *str)
     {
         return 0x0D32;
     }
+    if (strcmp(str, "GL_MAX_CLIP_DISTANCES_ANGLE") == 0)
+    {
+        return 0x0D32;
+    }
     if (strcmp(str, "GL_MAX_CLIP_DISTANCES_APPLE") == 0)
     {
         return 0x0D32;
@@ -29278,6 +29336,10 @@ unsigned int StringToGLenum(const char *str)
         return 0x92D1;
     }
     if (strcmp(str, "GL_MAX_COMBINED_CLIP_AND_CULL_DISTANCES") == 0)
+    {
+        return 0x82FA;
+    }
+    if (strcmp(str, "GL_MAX_COMBINED_CLIP_AND_CULL_DISTANCES_ANGLE") == 0)
     {
         return 0x82FA;
     }
@@ -29474,6 +29536,10 @@ unsigned int StringToGLenum(const char *str)
         return 0x851C;
     }
     if (strcmp(str, "GL_MAX_CULL_DISTANCES") == 0)
+    {
+        return 0x82F9;
+    }
+    if (strcmp(str, "GL_MAX_CULL_DISTANCES_ANGLE") == 0)
     {
         return 0x82F9;
     }
@@ -42898,6 +42964,7 @@ unsigned int StringToGLenum(const char *str)
         return 0x87D7;
     }
 
+    printf("Unknown enum string: %s\n", str);
     UNREACHABLE();
     return 0;
 }

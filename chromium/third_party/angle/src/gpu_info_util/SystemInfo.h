@@ -109,9 +109,11 @@ constexpr VendorID kVendorID_ImgTec    = 0x1010;
 constexpr VendorID kVendorID_Intel     = 0x8086;
 constexpr VendorID kVendorID_NVIDIA    = 0x10DE;
 constexpr VendorID kVendorID_Qualcomm  = 0x5143;
+constexpr VendorID kVendorID_Samsung   = 0x144D;
 constexpr VendorID kVendorID_VMWare    = 0x15ad;
 constexpr VendorID kVendorID_Apple     = 0x106B;
 constexpr VendorID kVendorID_Microsoft = 0x1414;
+constexpr VendorID kVendorID_VirtIO    = 0x1AF4;
 
 // Known non-PCI (i.e. Khronos-registered) vendor IDs
 constexpr VendorID kVendorID_Vivante     = 0x10001;
@@ -135,10 +137,12 @@ bool IsIntel(VendorID vendorId);
 bool IsKazan(VendorID vendorId);
 bool IsNVIDIA(VendorID vendorId);
 bool IsQualcomm(VendorID vendorId);
+bool IsSamsung(VendorID vendorId);
 bool IsGoogle(VendorID vendorId);
 bool IsSwiftshader(VendorID vendorId);
 bool IsVeriSilicon(VendorID vendorId);
 bool IsVMWare(VendorID vendorId);
+bool IsVirtIO(VendorID vendorId);
 bool IsVivante(VendorID vendorId);
 bool IsApple(VendorID vendorId);
 bool IsMicrosoft(VendorID vendorId);

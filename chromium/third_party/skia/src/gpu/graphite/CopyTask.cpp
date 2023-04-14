@@ -18,16 +18,32 @@ namespace skgpu::graphite {
 sk_sp<CopyBufferToBufferTask> CopyBufferToBufferTask::Make(sk_sp<Buffer> srcBuffer,
                                                            sk_sp<Buffer> dstBuffer) {
     SkASSERT(srcBuffer);
-    SkASSERT(dstBuffer);
-    SkASSERT(srcBuffer->size() == dstBuffer->size());
-    return sk_sp<CopyBufferToBufferTask>(new CopyBufferToBufferTask(std::move(srcBuffer),
-                                                                    std::move(dstBuffer)));
+    const size_t size = srcBuffer->size(); // Get size before we move it into Make()
+    return Make(std::move(srcBuffer), 0, std::move(dstBuffer), 0, size);
 }
 
-CopyBufferToBufferTask::CopyBufferToBufferTask(sk_sp<Buffer> srcBuffer,
-                                               sk_sp<Buffer> dstBuffer)
+sk_sp<CopyBufferToBufferTask> CopyBufferToBufferTask::Make(sk_sp<Buffer> srcBuffer,
+                                                           size_t srcOffset,
+                                                           sk_sp<Buffer> dstBuffer,
+                                                           size_t dstOffset,
+                                                           size_t size) {
+    SkASSERT(srcBuffer);
+    SkASSERT(size <= srcBuffer->size() - srcOffset);
+    SkASSERT(dstBuffer);
+    SkASSERT(size <= dstBuffer->size() - dstOffset);
+    return sk_sp<CopyBufferToBufferTask>(new CopyBufferToBufferTask(std::move(srcBuffer), srcOffset,
+                                                                    std::move(dstBuffer), dstOffset,
+                                                                    size));
+}
+
+CopyBufferToBufferTask::CopyBufferToBufferTask(sk_sp<Buffer> srcBuffer, size_t srcOffset,
+                                               sk_sp<Buffer> dstBuffer, size_t dstOffset,
+                                               size_t size)
         : fSrcBuffer(std::move(srcBuffer))
-        , fDstBuffer(std::move(dstBuffer)) {}
+        , fSrcOffset(srcOffset)
+        , fDstBuffer(std::move(dstBuffer))
+        , fDstOffset(dstOffset)
+        , fSize(size) {}
 
 CopyBufferToBufferTask::~CopyBufferToBufferTask() = default;
 
@@ -35,8 +51,8 @@ bool CopyBufferToBufferTask::prepareResources(ResourceProvider*, const RuntimeEf
     return true;
 }
 
-bool CopyBufferToBufferTask::addCommands(ResourceProvider*, CommandBuffer* commandBuffer) {
-    return commandBuffer->copyBufferToBuffer(fSrcBuffer, 0, fDstBuffer, 0, fDstBuffer->size());
+bool CopyBufferToBufferTask::addCommands(Context*, CommandBuffer* commandBuffer, ReplayTargetData) {
+    return commandBuffer->copyBufferToBuffer(fSrcBuffer, fSrcOffset, fDstBuffer, fDstOffset, fSize);
 }
 
 sk_sp<CopyTextureToBufferTask> CopyTextureToBufferTask::Make(sk_sp<TextureProxy> textureProxy,
@@ -78,7 +94,9 @@ bool CopyTextureToBufferTask::prepareResources(ResourceProvider* resourceProvide
     return true;
 }
 
-bool CopyTextureToBufferTask::addCommands(ResourceProvider*, CommandBuffer* commandBuffer) {
+bool CopyTextureToBufferTask::addCommands(Context*,
+                                          CommandBuffer* commandBuffer,
+                                          ReplayTargetData) {
     return commandBuffer->copyTextureToBuffer(fTextureProxy->refTexture(),
                                               fSrcRect,
                                               std::move(fBuffer),
@@ -131,7 +149,9 @@ bool CopyTextureToTextureTask::prepareResources(ResourceProvider* resourceProvid
     return true;
 }
 
-bool CopyTextureToTextureTask::addCommands(ResourceProvider*, CommandBuffer* commandBuffer) {
+bool CopyTextureToTextureTask::addCommands(Context*,
+                                           CommandBuffer* commandBuffer,
+                                           ReplayTargetData) {
     return commandBuffer->copyTextureToTexture(fSrcProxy->refTexture(),
                                                fSrcRect,
                                                fDstProxy->refTexture(),

@@ -73,7 +73,7 @@ RetainPtr<CFX_DIBBase> PreMultiplyBitmapIfAlpha(
   if (CFX_DefaultRenderDevice::SkiaIsDefaultRenderer()) {
     RetainPtr<CFX_DIBitmap> premultiplied = base_bitmap->Realize();
     if (base_bitmap->IsAlphaFormat())
-      CFX_SkiaDeviceDriver::PreMultiply(premultiplied);
+      premultiplied->PreMultiply();
     return premultiplied;
   }
 #endif  // defined(_SKIA_SUPPORT_)
@@ -309,11 +309,11 @@ bool CPDF_ImageRenderer::DrawPatternImage() {
 
   CFX_Matrix new_matrix = GetDrawMatrix(rect);
   CFX_DefaultRenderDevice bitmap_device1;
-  if (!bitmap_device1.Create(rect.Width(), rect.Height(), FXDIB_Format::kRgb32,
+  if (!bitmap_device1.Create(rect.Width(), rect.Height(), FXDIB_Format::kArgb,
                              nullptr)) {
     return true;
   }
-  bitmap_device1.GetBitmap()->Clear(0xffffff);
+  bitmap_device1.GetBitmap()->Clear(0);
 
   CPDF_RenderStatus bitmap_render(m_pRenderStatus->GetContext(),
                                   &bitmap_device1);
@@ -366,7 +366,7 @@ bool CPDF_ImageRenderer::DrawMaskedImage() {
                              nullptr)) {
     return true;
   }
-  ClearBitmap(bitmap_device1, 0xffffff);
+  ClearBitmap(bitmap_device1, 0xffffffff);
   CPDF_RenderStatus bitmap_render(m_pRenderStatus->GetContext(),
                                   &bitmap_device1);
   bitmap_render.SetDropObjects(m_pRenderStatus->GetDropObjects());

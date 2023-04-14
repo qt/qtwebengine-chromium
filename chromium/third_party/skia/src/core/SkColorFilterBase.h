@@ -35,7 +35,7 @@ class PipelineDataGatherer;
 class SkColorFilterBase : public SkColorFilter {
 public:
     SK_WARN_UNUSED_RESULT
-    bool appendStages(const SkStageRec& rec, bool shaderIsOpaque) const;
+    virtual bool appendStages(const SkStageRec& rec, bool shaderIsOpaque) const = 0;
 
     SK_WARN_UNUSED_RESULT
     skvm::Color program(skvm::Builder*, skvm::Color,
@@ -105,8 +105,6 @@ protected:
     virtual bool onAsAColorMode(SkColor* color, SkBlendMode* bmode) const;
 
 private:
-    virtual bool onAppendStages(const SkStageRec& rec, bool shaderIsOpaque) const = 0;
-
     virtual skvm::Color onProgram(skvm::Builder*, skvm::Color,
                                   const SkColorInfo& dst, skvm::Uniforms*, SkArenaAlloc*) const = 0;
 
@@ -135,7 +133,7 @@ static inline sk_sp<SkColorFilterBase> as_CFB_sp(sk_sp<SkColorFilter> filter) {
 void SkRegisterComposeColorFilterFlattenable();
 void SkRegisterMatrixColorFilterFlattenable();
 void SkRegisterModeColorFilterFlattenable();
-void SkRegisterSRGBGammaColorFilterFlattenable();
+void SkRegisterColorSpaceXformColorFilterFlattenable();
 void SkRegisterTableColorFilterFlattenable();
 void SkRegisterWorkingFormatColorFilterFlattenable();
 

@@ -147,6 +147,10 @@ struct ThreadPoolDevice {
     // The l3 cache size is shared between all the cores.
     return l3CacheSize() / num_threads_;
   }
+  
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void synchronize() const {
+    // Nothing.  Threadpool device operations are synchronous.
+  }
 
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE int majorDeviceVersion() const {
     // Should return an enum that encodes the ISA supported by the CPU

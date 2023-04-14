@@ -19,6 +19,7 @@ import * as InterestGroupStorageView from './InterestGroupStorageView.js';
 import * as InterestGroupTreeElement from './InterestGroupTreeElement.js';
 import * as OpenedWindowDetailsView from './OpenedWindowDetailsView.js';
 import * as PreloadingView from './preloading/PreloadingView.js';
+import * as PreloadingTreeElement from './PreloadingTreeElement.js';
 import * as ReportingApiReportsView from './ReportingApiReportsView.js';
 import * as ReportingApiView from './ReportingApiView.js';
 import * as ResourcesPanel from './ResourcesPanel.js';
@@ -51,6 +52,7 @@ export {
   InterestGroupStorageView,
   InterestGroupTreeElement,
   OpenedWindowDetailsView,
+  PreloadingTreeElement,
   PreloadingView,
   ReportingApiReportsView,
   ReportingApiView,

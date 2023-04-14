@@ -10,6 +10,10 @@
 #include "include/core/SkImage.h"
 #include "src/core/SkNextID.h"
 
+#if SK_SUPPORT_GPU
+#include "include/gpu/GrRecordingContext.h"
+#endif
+
 SkImageGenerator::SkImageGenerator(const SkImageInfo& info, uint32_t uniqueID)
     : fInfo(info)
     , fUniqueID(kNeedNewImageUniqueID == uniqueID ? SkNextID::ImageID() : uniqueID)
@@ -51,6 +55,10 @@ GrSurfaceProxyView SkImageGenerator::generateTexture(GrRecordingContext* ctx,
                                                      GrImageTexGenPolicy texGenPolicy) {
     SkASSERT_RELEASE(fInfo.dimensions() == info.dimensions());
 
+    if (!ctx || ctx->abandoned()) {
+        return {};
+    }
+
     return this->onGenerateTexture(ctx, info, mipmapped, texGenPolicy);
 }
 
@@ -67,7 +75,7 @@ GrSurfaceProxyView SkImageGenerator::onGenerateTexture(GrRecordingContext*,
 
 sk_sp<SkImage> SkImageGenerator::makeTextureImage(skgpu::graphite::Recorder* recorder,
                                                   const SkImageInfo& info,
-                                                  skgpu::graphite::Mipmapped mipmapped) {
+                                                  skgpu::Mipmapped mipmapped) {
     // This still allows for a difference in colorType and colorSpace. Just no subsetting.
     if (fInfo.dimensions() != info.dimensions()) {
         return nullptr;
@@ -78,7 +86,7 @@ sk_sp<SkImage> SkImageGenerator::makeTextureImage(skgpu::graphite::Recorder* rec
 
 sk_sp<SkImage> SkImageGenerator::onMakeTextureImage(skgpu::graphite::Recorder*,
                                                     const SkImageInfo&,
-                                                    skgpu::graphite::Mipmapped) {
+                                                    skgpu::Mipmapped) {
     return nullptr;
 }
 

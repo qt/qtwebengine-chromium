@@ -182,6 +182,14 @@ message CancelWebAuthnFlowResponse {
   bool canceled = 1;
 }
 
+// Check whether the platform authenticator is initialized. Before initialized,
+// most operations will directly return an error.
+message IsPlatformAuthenticatorInitializedRequest {}
+
+message IsPlatformAuthenticatorInitializedResponse {
+  bool initialized = 1;
+}
+
 // Check whether user-verifying platform authenticator is available.
 message IsUvpaaRequest {}
 

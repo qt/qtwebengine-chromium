@@ -1,5 +1,34 @@
 # Tint changes during Origin Trial
 
+## Changes for M112
+
+### Breaking changes
+
+* Most builtin functions that return a value can no longer be used as a call statement. [tint:1844](crbug.com/tint/1844)
+* The `sig` member of the return type of `frexp()` has been renamed to `fract`. [tint:1766](crbug.com/tint/1766)
+* Calling a function with multiple pointer arguments that alias each other is now a error. [tint:1675](crbug.com/tint/1675)
+* `type` deprecation has been removed. `alias` must be used now. [tint:1812](crbug.com/tint/1812)
+* `static_assert` deprecation has been removed. `const_assert` must now be used. [tint:1807](crbug.com/tint/1807)
+
+## Changes for M111
+
+### New features
+
+* The `workgroupUniformLoad` builtin function is now supported. [tint:1780](crbug.com/tint/1780)
+* The `diagnostic` directive and `@diagnostic` attribute are now supported. [tint:1809](crbug.com/tint/1809)
+  * The attribute is currently only supported on function declarations.
+
+### Breaking changes
+
+* You may need to add parentheses to less-than or greater-than binary expressions that now parse as template lists. For example `a(b<c, d>e)` will need parentheses around `b<c` or `d>e`. [tint:1810](crbug.com/tint/1810).
+* Uniformity analysis failures are now an error [tint:880](crbug.com/tint/880)
+  * The `derivative_uniformity` diagnostic filter can be used to modify the severity if needed.
+
+## Deprecated Features
+
+* The keyword to alias a type has been renamed from `type` to `alias`. [tint:1812](crbug.com/tint/1812)
+* `static_assert` has been renamed to `const_assert`. [tint:1807](crbug.com/tint/1807)
+
 ## Changes for M110
 
 ### Breaking changes

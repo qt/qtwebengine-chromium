@@ -21,7 +21,6 @@
 #include "absl/strings/escaping.h"
 #include "internal/platform/implementation/crypto.h"
 
-namespace location {
 namespace nearby {
 namespace {
 std::ostream& write_hex(std::ostream& os, absl::string_view data) {
@@ -111,5 +110,6 @@ bool Uuid::operator==(const Uuid& rhs) const {
          GetLeastSigBits() == rhs.GetLeastSigBits();
 }
 
+bool Uuid::operator!=(const Uuid& rhs) const { return !(*this == rhs); }
+
 }  // namespace nearby
-}  // namespace location

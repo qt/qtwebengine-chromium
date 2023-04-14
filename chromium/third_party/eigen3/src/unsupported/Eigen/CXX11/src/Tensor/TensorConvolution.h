@@ -123,7 +123,9 @@ class IndexMapper {
         inputIndex += idx * m_inputStrides[d];
         p -= idx * m_gpuInputStrides[d];
       }
-      inputIndex += p * m_inputStrides[NumKernelDims];
+      if (NumKernelDims < NumDims) {
+        inputIndex += p * m_inputStrides[NumKernelDims];
+      }
     } else {
       std::ptrdiff_t limit = 0;
       if (NumKernelDims < NumDims) {
@@ -147,7 +149,9 @@ class IndexMapper {
         outputIndex += idx * m_outputStrides[d];
         p -= idx * m_gpuOutputStrides[d];
       }
-      outputIndex += p * m_outputStrides[NumKernelDims];
+      if (NumKernelDims < NumDims) {
+        outputIndex += p * m_outputStrides[NumKernelDims];
+      }
     } else {
       std::ptrdiff_t limit = 0;
       if (NumKernelDims < NumDims) {
@@ -386,7 +390,7 @@ struct TensorEvaluator<const TensorConvolutionOp<Indices, InputArgType, KernelAr
 
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE const Dimensions& dimensions() const { return m_dimensions; }
 
-  EIGEN_STRONG_INLINE bool evalSubExprsIfNeeded(Scalar*) {
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE bool evalSubExprsIfNeeded(Scalar*) {
     m_inputImpl.evalSubExprsIfNeeded(NULL);
     preloadKernel();
     return true;
@@ -824,7 +828,7 @@ struct TensorEvaluator<const TensorConvolutionOp<Indices, InputArgType, KernelAr
 
   EIGEN_DEVICE_FUNC const Dimensions& dimensions() const { return m_dimensions; }
 
-  EIGEN_STRONG_INLINE bool evalSubExprsIfNeeded(Scalar* data) {
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE bool evalSubExprsIfNeeded(Scalar* data) {
     preloadKernel();
     m_inputImpl.evalSubExprsIfNeeded(NULL);
     if (data) {
@@ -1112,9 +1116,6 @@ struct TensorEvaluator<const TensorConvolutionOp<Indices, InputArgType, KernelAr
   }
 
  private:
-  // No assignment (copies are needed by the kernels)
-  TensorEvaluator& operator = (const TensorEvaluator&);
-
   TensorEvaluator<InputArgType, GpuDevice> m_inputImpl;
   TensorEvaluator<KernelArgType, GpuDevice> m_kernelImpl;
   KernelArgType m_kernelArg;

@@ -29,7 +29,7 @@ TEST_F(F32Test, Creation) {
 TEST_F(F32Test, Hash) {
     auto* a = create<F32>();
     auto* b = create<F32>();
-    EXPECT_EQ(a->Hash(), b->Hash());
+    EXPECT_EQ(a->unique_hash, b->unique_hash);
 }
 
 TEST_F(F32Test, Equals) {
@@ -42,6 +42,16 @@ TEST_F(F32Test, Equals) {
 TEST_F(F32Test, FriendlyName) {
     F32 f;
     EXPECT_EQ(f.FriendlyName(Symbols()), "f32");
+}
+
+TEST_F(F32Test, Clone) {
+    auto* a = create<F32>();
+
+    type::Manager mgr;
+    type::CloneContext ctx{{nullptr}, {nullptr, &mgr}};
+
+    auto* b = a->Clone(ctx);
+    ASSERT_TRUE(b->Is<F32>());
 }
 
 }  // namespace

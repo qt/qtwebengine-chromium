@@ -268,7 +268,7 @@ void MockableQuicClient::UseWriter(QuicPacketWriterWrapper* writer) {
 void MockableQuicClient::set_peer_address(const QuicSocketAddress& address) {
   mockable_network_helper()->set_peer_address(address);
   if (client_session() != nullptr) {
-    client_session()->AddKnownServerAddress(address);
+    client_session()->connection()->AddKnownServerAddress(address);
   }
 }
 
@@ -708,6 +708,11 @@ size_t QuicTestClient::bytes_written() const {
   return bytes_written_;
 }
 
+absl::string_view QuicTestClient::partial_response_body() const {
+  return latest_created_stream_ == nullptr ? ""
+                                           : latest_created_stream_->data();
+}
+
 void QuicTestClient::OnClose(QuicSpdyStream* stream) {
   if (stream == nullptr) {
     return;
@@ -733,7 +738,7 @@ void QuicTestClient::OnClose(QuicSpdyStream* stream) {
           client_stream->headers_decompressed(),
           client_stream->response_headers(),
           client_stream->preliminary_headers(),
-          (buffer_body() ? client_stream->data() : ""),
+          (buffer_body() ? std::string(client_stream->data()) : ""),
           client_stream->received_trailers(),
           // Use NumBytesConsumed to avoid counting retransmitted stream frames.
           client_stream->total_body_bytes_read() +

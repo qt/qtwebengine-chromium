@@ -18,20 +18,19 @@
 #include <atomic>
 #include <cinttypes>
 #include <cstdint>
-#include <functional>
 #include <new>
 #include <string>
 #include <type_traits>
 #include <utility>
 
 #include "absl/container/flat_hash_set.h"
+#include "absl/status/status.h"
 #include "internal/platform/count_down_latch.h"
 #include "internal/platform/feature_flags.h"
 #include "internal/platform/implementation/ble_v2.h"
 #include "internal/platform/logging.h"
 #include "internal/platform/prng.h"
 
-namespace location {
 namespace nearby {
 
 MediumEnvironment& MediumEnvironment::Instance() {
@@ -318,8 +317,7 @@ void MediumEnvironment::OnWifiLanServiceStateChanged(
   }
 }
 
-void MediumEnvironment::RunOnMediumEnvironmentThread(
-    std::function<void()> runnable) {
+void MediumEnvironment::RunOnMediumEnvironmentThread(Runnable runnable) {
   job_count_++;
   executor_.Execute(std::move(runnable));
 }
@@ -353,7 +351,7 @@ void MediumEnvironment::UpdateBluetoothMedium(
     api::BluetoothClassicMedium& medium, BluetoothDiscoveryCallback callback) {
   if (!enabled_) return;
   RunOnMediumEnvironmentThread(
-      [this, &medium, callback = std::move(callback)]() {
+      [this, &medium, callback = std::move(callback)]() mutable {
         auto item = bluetooth_mediums_.find(&medium);
         if (item == bluetooth_mediums_.end()) return;
         auto& context = item->second;
@@ -432,7 +430,7 @@ void MediumEnvironment::UpdateBleMediumForScanning(
   if (!enabled_) return;
   RunOnMediumEnvironmentThread(
       [this, &medium, service_id, fast_advertisement_service_uuid,
-       callback = std::move(callback), enabled]() {
+       callback = std::move(callback), enabled]() mutable {
         auto item = ble_mediums_.find(&medium);
         if (item == ble_mediums_.end()) {
           NEARBY_LOGS(INFO)
@@ -468,7 +466,7 @@ void MediumEnvironment::UpdateBleMediumForAcceptedConnection(
     BleAcceptedConnectionCallback callback) {
   if (!enabled_) return;
   RunOnMediumEnvironmentThread(
-      [this, &medium, service_id, callback = std::move(callback)]() {
+      [this, &medium, service_id, callback = std::move(callback)]() mutable {
         auto item = ble_mediums_.find(&medium);
         if (item == ble_mediums_.end()) {
           NEARBY_LOGS(INFO)
@@ -582,7 +580,8 @@ void MediumEnvironment::UpdateBleV2MediumForScanning(
   RunOnMediumEnvironmentThread([this, &medium,
                                 scanning_service_uuid = scanning_service_uuid,
                                 internal_session_id = internal_session_id,
-                                callback = std::move(callback), enabled]() {
+                                callback = std::move(callback),
+                                enabled]() mutable {
     auto it = ble_v2_mediums_.find(&medium);
     if (it == ble_v2_mediums_.end()) {
       NEARBY_LOGS(INFO)
@@ -597,10 +596,9 @@ void MediumEnvironment::UpdateBleV2MediumForScanning(
                       << ", enabled=" << enabled;
     if (enabled) {
       context.scanning = true;
-      callback.start_scanning_result(
-          api::ble_v2::BleOperationStatus::kSucceeded);
-      context.scan_callback_map.insert(
-          {{scanning_service_uuid, internal_session_id}, std::move(callback)});
+      callback.start_scanning_result(absl::OkStatus());
+      context.scan_callback_map[{scanning_service_uuid, internal_session_id}] =
+          std::move(callback);
       absl::flat_hash_set<Uuid> scanning_service_uuids;
       for (auto& element : context.scan_callback_map) {
         scanning_service_uuids.insert(element.first.first);
@@ -725,7 +723,7 @@ MediumEnvironment::GetBleV2MediumStatus(const api::ble_v2::BleMedium& medium) {
       latch.CountDown();
       return;
     }
-    BleV2MediumContext context = it->second;
+    BleV2MediumContext& context = it->second;
 
     result = BleV2MediumStatus{.is_advertising = context.advertising,
                                .is_scanning = context.scanning};
@@ -743,7 +741,7 @@ void MediumEnvironment::RegisterWebRtcSignalingMessenger(
   RunOnMediumEnvironmentThread([this, self_id{std::string(self_id)},
                                 message_callback{std::move(message_callback)},
                                 complete_callback{
-                                    std::move(complete_callback)}]() {
+                                    std::move(complete_callback)}]() mutable {
     webrtc_signaling_message_callback_[self_id] = std::move(message_callback);
     webrtc_signaling_complete_callback_[self_id] = std::move(complete_callback);
     NEARBY_LOGS(INFO) << "Registered signaling message callback for id = "
@@ -876,7 +874,7 @@ void MediumEnvironment::UpdateWifiLanMediumForDiscovery(
     const std::string& service_type, bool enabled) {
   if (!enabled_) return;
   RunOnMediumEnvironmentThread([this, &medium, callback = std::move(callback),
-                                service_type, enabled]() {
+                                service_type, enabled]() mutable {
     auto item = wifi_lan_mediums_.find(&medium);
     if (item == wifi_lan_mediums_.end()) {
       NEARBY_LOGS(INFO)
@@ -961,7 +959,7 @@ api::WifiDirectMedium* MediumEnvironment::GetWifiDirectMedium(
 
 void MediumEnvironment::UpdateWifiDirectMediumForStartOrConnect(
     api::WifiDirectMedium& medium,
-    const HotspotCredentials* wifi_direct_credentials, bool is_go,
+    const WifiDirectCredentials* wifi_direct_credentials, bool is_go,
     bool enabled) {
   if (!enabled_) return;
 
@@ -1109,4 +1107,3 @@ void MediumEnvironment::SetFeatureFlags(const FeatureFlags::Flags& flags) {
 }
 
 }  // namespace nearby
-}  // namespace location

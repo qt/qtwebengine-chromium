@@ -226,6 +226,21 @@ static enum xnn_status initialize_workspace_blobs(
   return xnn_status_success;
 }
 
+// External inputs cannot be overwritten.
+// Static inputs cannot be overwritten.
+// Persistent tensors have their own space allocated at the front of the workspace.
+// If input has more than 1 consumer, we can't track all the consumers and update the first_consumer, so bail out.
+// Output memory fits in input memory. One of the inputs to a binary node could be implicitly broadcasted.
+static bool input_memory_can_be_reused(const xnn_subgraph_t subgraph, size_t input_id, size_t output_id)
+{
+  const struct xnn_value* input = &subgraph->values[input_id];
+  const struct xnn_value* output = &subgraph->values[output_id];
+  const bool output_memory_fits = xnn_tensor_get_size(subgraph, output_id) == xnn_tensor_get_size(subgraph, input_id);
+  assert(input->num_consumers != 0);
+  return !xnn_value_is_external(input) && !xnn_value_is_static(input) && !xnn_value_is_persistent(input)
+      && !xnn_value_is_persistent(output) && input->num_consumers == 1 && output_memory_fits;
+}
+
 // An in-place operation reuses the input tensor's memory for its output. Examples are element-wise unary operations
 // like activation functions. Usually, an output tensor is allocated space. For an in-place operation, we want the
 // output tensor to share the input tensor's memory. We do this by calling xnn_mark_tensor_as_reuse, which:
@@ -241,35 +256,49 @@ static void optimize_tensor_allocation_for_in_place_operations(
     struct xnn_node* node = &subgraph->nodes[n];
     switch (node->type) {
       case xnn_node_type_abs:
+      case xnn_node_type_add2:
       case xnn_node_type_bankers_rounding:
       case xnn_node_type_ceiling:
       case xnn_node_type_clamp:
       case xnn_node_type_copy:
+      case xnn_node_type_divide:
       case xnn_node_type_elu:
       case xnn_node_type_floor:
       case xnn_node_type_hardswish:
       case xnn_node_type_leaky_relu:
+      case xnn_node_type_maximum2:
+      case xnn_node_type_minimum2:
+      case xnn_node_type_multiply2:
       case xnn_node_type_negate:
       case xnn_node_type_prelu:
       case xnn_node_type_sigmoid:
       case xnn_node_type_softmax:
       case xnn_node_type_square:
       case xnn_node_type_square_root:
+      case xnn_node_type_squared_difference:
       case xnn_node_type_static_reshape:
+      case xnn_node_type_subtract:
         // Valid operation types that can be optimized.
         break;
       default:
         continue;
     }
-    struct xnn_value* output = &subgraph->values[node->outputs[0]];
-    const uint32_t input_id = node->inputs[0];
-    const struct xnn_value* input = &subgraph->values[input_id];
-    if (xnn_value_is_external_input(input) || xnn_value_is_persistent(output) || xnn_value_is_persistent(input) || input->num_consumers > 1) {
-      // External inputs cannot be overwritten.
-      // Persistent tensors have their own space allocated at the front of the workspace.
-      // TODO(zhin): consider aliasing input to output rather than output to input.
+
+    // Check all of the node's input to see which we can reuse.
+    uint32_t input_id = XNN_INVALID_VALUE_ID;
+    for (size_t i = 0; i < node->num_inputs; i++) {
+      if (input_memory_can_be_reused(subgraph, node->inputs[i], node->outputs[0])) {
+        input_id = node->inputs[i];
+        break;  // Found an input we can reuse, early exit.
+      }
+    }
+    // Check input_id and return if invalid.
+    if (input_id == XNN_INVALID_VALUE_ID) {
       continue;
     }
+
+    // TODO(zhin): consider aliasing input to output rather than output to input.
+    struct xnn_value* output = &subgraph->values[node->outputs[0]];
     if (output->num_consumers == 1) {
       uint32_t reuse_id = input_id;
       // If the tensor we are reusing is itself reused, find the "root tensor" to be reused.
@@ -408,6 +437,11 @@ enum xnn_status xnn_create_runtime_v4(
           xnn_add_value_allocation_tracker(&mem_alloc_tracker, i, round_up_po2(blob->size, XNN_EXTRA_BYTES));
           blob->allocation_type = xnn_allocation_type_workspace;
         }
+      } else if (value->fp16_compatible) {
+        // Value is static and has been converted to FP16 in a new buffer.
+        blob->allocation_type = xnn_allocation_type_dynamic;
+        // Runtime takes ownership of the data from subgraph.
+        value->data = NULL;
       } else {
         blob->allocation_type = xnn_allocation_type_static;
       }
@@ -583,8 +617,8 @@ enum xnn_status xnn_get_runtime_profiling_info(xnn_runtime_t runtime,
         if (opdata[i].operator_objects[0] != NULL) {
           const char* op_name = xnn_operator_type_to_string(opdata[i].operator_objects[0]->type);
           size_t op_name_len = strlen(op_name) + 1;
-          if (opdata[i].operator_objects[0]->ukernel.type != xnn_ukernel_type_default ) {
-            op_name_len += strlen(xnn_ukernel_type_to_string(opdata[i].operator_objects[0]->ukernel.type)) + 1;
+          if (opdata[i].operator_objects[0]->ukernel.type != xnn_microkernel_type_default ) {
+            op_name_len += strlen(xnn_microkernel_type_to_string(opdata[i].operator_objects[0]->ukernel.type)) + 1;
           }
           required_size += op_name_len;
         }
@@ -598,8 +632,8 @@ enum xnn_status xnn_get_runtime_profiling_info(xnn_runtime_t runtime,
           if (opdata[i].operator_objects[0] != NULL) {
             const char* op_name = xnn_operator_type_to_string(opdata[i].operator_objects[0]->type);
             size_t op_name_len = strlen(op_name) + 1;
-            if (opdata[i].operator_objects[0]->ukernel.type != xnn_ukernel_type_default ) {
-              const char* ukernel_type = xnn_ukernel_type_to_string(opdata[i].operator_objects[0]->ukernel.type);
+            if (opdata[i].operator_objects[0]->ukernel.type != xnn_microkernel_type_default ) {
+              const char* ukernel_type = xnn_microkernel_type_to_string(opdata[i].operator_objects[0]->ukernel.type);
               op_name_len += strlen(ukernel_type) + 1;
               snprintf(name_out, op_name_len, "%s %s", op_name, ukernel_type);
             } else {
@@ -683,7 +717,17 @@ enum xnn_status xnn_delete_runtime(
       }
       xnn_release_memory(runtime->opdata);
 
-      xnn_release_memory(runtime->blobs);
+      if (runtime->blobs != NULL) {
+        // Release the buffers created during FP16 rewrite.
+        for (size_t i = 0; i < runtime->num_blobs; i++) {
+          struct xnn_blob* blob = &runtime->blobs[i];
+          if (blob->allocation_type == xnn_allocation_type_dynamic) {
+            xnn_release_memory(blob->data);
+          }
+        }
+        xnn_release_memory(runtime->blobs);
+      }
+
       if (runtime->workspace != NULL) {
         // Remove this runtime from the list of users of the workspace.
         assert(runtime->workspace->first_user != NULL);

@@ -486,46 +486,6 @@ void LoadInterfaceBlock(BinaryInputStream *stream, InterfaceBlock *block)
     LoadShaderVariableBuffer(stream, block);
 }
 
-void WriteShInterfaceBlock(BinaryOutputStream *stream, const sh::InterfaceBlock &block)
-{
-    stream->writeString(block.name);
-    stream->writeString(block.mappedName);
-    stream->writeString(block.instanceName);
-    stream->writeInt(block.arraySize);
-    stream->writeEnum(block.layout);
-    stream->writeBool(block.isRowMajorLayout);
-    stream->writeInt(block.binding);
-    stream->writeBool(block.staticUse);
-    stream->writeBool(block.active);
-    stream->writeEnum(block.blockType);
-
-    stream->writeInt<size_t>(block.fields.size());
-    for (const sh::ShaderVariable &shaderVariable : block.fields)
-    {
-        WriteShaderVar(stream, shaderVariable);
-    }
-}
-
-void LoadShInterfaceBlock(BinaryInputStream *stream, sh::InterfaceBlock *block)
-{
-    block->name             = stream->readString();
-    block->mappedName       = stream->readString();
-    block->instanceName     = stream->readString();
-    block->arraySize        = stream->readInt<unsigned int>();
-    block->layout           = stream->readEnum<sh::BlockLayoutType>();
-    block->isRowMajorLayout = stream->readBool();
-    block->binding          = stream->readInt<int>();
-    block->staticUse        = stream->readBool();
-    block->active           = stream->readBool();
-    block->blockType        = stream->readEnum<sh::BlockType>();
-
-    block->fields.resize(stream->readInt<size_t>());
-    for (sh::ShaderVariable &variable : block->fields)
-    {
-        LoadShaderVar(stream, &variable);
-    }
-}
-
 // Saves the linking context for later use in resolveLink().
 struct Program::LinkingState
 {
@@ -651,93 +611,24 @@ bool IsActiveInterfaceBlock(const sh::InterfaceBlock &interfaceBlock)
 
 void WriteBlockMemberInfo(BinaryOutputStream *stream, const sh::BlockMemberInfo &var)
 {
+    stream->writeInt<GLenum>(var.type);
     stream->writeInt(var.arrayStride);
     stream->writeBool(var.isRowMajorMatrix);
     stream->writeInt(var.matrixStride);
+    stream->writeInt(var.arraySize);
     stream->writeInt(var.offset);
     stream->writeInt(var.topLevelArrayStride);
 }
 
 void LoadBlockMemberInfo(BinaryInputStream *stream, sh::BlockMemberInfo *var)
 {
+    var->type                = stream->readInt<GLenum>();
     var->arrayStride         = stream->readInt<int>();
     var->isRowMajorMatrix    = stream->readBool();
     var->matrixStride        = stream->readInt<int>();
+    var->arraySize           = stream->readInt<int>();
     var->offset              = stream->readInt<int>();
     var->topLevelArrayStride = stream->readInt<int>();
-}
-
-void WriteShaderVar(BinaryOutputStream *stream, const sh::ShaderVariable &var)
-{
-    stream->writeInt(var.type);
-    stream->writeInt(var.precision);
-    stream->writeString(var.name);
-    stream->writeString(var.mappedName);
-    stream->writeIntVector(var.arraySizes);
-    stream->writeBool(var.staticUse);
-    stream->writeBool(var.active);
-    stream->writeInt<size_t>(var.fields.size());
-    for (const sh::ShaderVariable &shaderVariable : var.fields)
-    {
-        WriteShaderVar(stream, shaderVariable);
-    }
-    stream->writeString(var.structOrBlockName);
-    stream->writeString(var.mappedStructOrBlockName);
-    stream->writeBool(var.isRowMajorLayout);
-    stream->writeInt(var.location);
-    stream->writeBool(var.hasImplicitLocation);
-    stream->writeInt(var.binding);
-    stream->writeInt(var.imageUnitFormat);
-    stream->writeInt(var.offset);
-    stream->writeBool(var.rasterOrdered);
-    stream->writeBool(var.readonly);
-    stream->writeBool(var.writeonly);
-    stream->writeBool(var.isFragmentInOut);
-    stream->writeInt(var.index);
-    stream->writeBool(var.yuv);
-    stream->writeEnum(var.interpolation);
-    stream->writeBool(var.isInvariant);
-    stream->writeBool(var.isShaderIOBlock);
-    stream->writeBool(var.isPatch);
-    stream->writeBool(var.texelFetchStaticUse);
-    stream->writeInt(var.getFlattenedOffsetInParentArrays());
-}
-
-void LoadShaderVar(gl::BinaryInputStream *stream, sh::ShaderVariable *var)
-{
-    var->type      = stream->readInt<GLenum>();
-    var->precision = stream->readInt<GLenum>();
-    stream->readString(&var->name);
-    stream->readString(&var->mappedName);
-    stream->readIntVector<unsigned int>(&var->arraySizes);
-    var->staticUse      = stream->readBool();
-    var->active         = stream->readBool();
-    size_t elementCount = stream->readInt<size_t>();
-    var->fields.resize(elementCount);
-    for (sh::ShaderVariable &variable : var->fields)
-    {
-        LoadShaderVar(stream, &variable);
-    }
-    stream->readString(&var->structOrBlockName);
-    stream->readString(&var->mappedStructOrBlockName);
-    var->isRowMajorLayout    = stream->readBool();
-    var->location            = stream->readInt<int>();
-    var->hasImplicitLocation = stream->readBool();
-    var->binding             = stream->readInt<int>();
-    var->imageUnitFormat     = stream->readInt<GLenum>();
-    var->offset              = stream->readInt<int>();
-    var->rasterOrdered       = stream->readBool();
-    var->readonly            = stream->readBool();
-    var->writeonly           = stream->readBool();
-    var->isFragmentInOut     = stream->readBool();
-    var->index               = stream->readInt<int>();
-    var->yuv                 = stream->readBool();
-    var->interpolation       = stream->readEnum<sh::InterpolationType>();
-    var->isInvariant         = stream->readBool();
-    var->isShaderIOBlock     = stream->readBool();
-    var->isPatch             = stream->readBool();
-    var->texelFetchStaticUse = stream->readBool();
-    var->setParentArrayIndex(stream->readInt<int>());
 }
 
 // VariableLocation implementation.
@@ -1191,6 +1082,12 @@ void Program::bindFragmentOutputIndex(GLuint index, const char *name)
 
 angle::Result Program::link(const Context *context)
 {
+    const angle::FrontendFeatures &frontendFeatures = context->getFrontendFeatures();
+    if (frontendFeatures.dumpShaderSource.enabled)
+    {
+        dumpProgramInfo();
+    }
+
     angle::Result result = linkImpl(context);
 
     // Avoid having two ProgramExecutables if the link failed and the Program had successfully
@@ -1338,7 +1235,8 @@ angle::Result Program::linkImpl(const Context *context)
         gl::Shader *vertexShader = mState.mAttachedShaders[ShaderType::Vertex];
         if (vertexShader)
         {
-            mState.mNumViews = vertexShader->getNumViews(context);
+            mState.mNumViews                     = vertexShader->getNumViews(context);
+            mState.mExecutable->mHasClipDistance = vertexShader->hasClipDistance();
             mState.mSpecConstUsageBits |= vertexShader->getSpecConstUsageBits();
         }
 
@@ -1566,11 +1464,6 @@ angle::Result Program::loadBinary(const Context *context,
     ASSERT(!mLinkingState);
     unlink();
     InfoLog &infoLog = mState.mExecutable->getInfoLog();
-
-    if (!angle::GetANGLEHasBinaryLoading())
-    {
-        return angle::Result::Incomplete;
-    }
 
     ASSERT(binaryFormat == GL_PROGRAM_BINARY_ANGLE);
     if (binaryFormat != GL_PROGRAM_BINARY_ANGLE)
@@ -3602,8 +3495,11 @@ angle::Result Program::serialize(const Context *context, angle::MemoryBuffer *bi
 {
     BinaryOutputStream stream;
 
-    stream.writeBytes(reinterpret_cast<const unsigned char *>(angle::GetANGLECommitHash()),
-                      angle::GetANGLECommitHashSize());
+    stream.writeBytes(
+        reinterpret_cast<const unsigned char *>(angle::GetANGLEShaderProgramVersion()),
+        angle::GetANGLEShaderProgramVersionHashSize());
+
+    stream.writeInt(angle::GetANGLESHVersion());
 
     // nullptr context is supported when computing binary length.
     if (context)
@@ -3697,11 +3593,21 @@ angle::Result Program::deserialize(const Context *context,
                                    BinaryInputStream &stream,
                                    InfoLog &infoLog)
 {
-    std::vector<uint8_t> commitString(angle::GetANGLECommitHashSize(), 0);
-    stream.readBytes(commitString.data(), commitString.size());
-    if (memcmp(commitString.data(), angle::GetANGLECommitHash(), commitString.size()) != 0)
+    std::vector<uint8_t> angleShaderProgramVersionString(
+        angle::GetANGLEShaderProgramVersionHashSize(), 0);
+    stream.readBytes(angleShaderProgramVersionString.data(),
+                     angleShaderProgramVersionString.size());
+    if (memcmp(angleShaderProgramVersionString.data(), angle::GetANGLEShaderProgramVersion(),
+               angleShaderProgramVersionString.size()) != 0)
     {
         infoLog << "Invalid program binary version.";
+        return angle::Result::Stop;
+    }
+
+    int angleSHVersion = stream.readInt<int>();
+    if (angleSHVersion != angle::GetANGLESHVersion())
+    {
+        infoLog << "cannot load program binaries across different angle sh version.";
         return angle::Result::Stop;
     }
 
@@ -3807,4 +3713,34 @@ void Program::postResolveLink(const gl::Context *context)
         mState.mBaseInstanceLocation = getUniformLocation("gl_BaseInstance").value;
     }
 }
+
+void Program::dumpProgramInfo() const
+{
+    std::stringstream dumpStream;
+    for (ShaderType shaderType : angle::AllEnums<ShaderType>())
+    {
+        gl::Shader *shader = mState.mAttachedShaders[shaderType];
+        if (shader)
+        {
+            dumpStream << shader->getType() << ": "
+                       << GetShaderDumpFileName(shader->getSourceHash()) << std::endl;
+        }
+    }
+
+    std::string dump = dumpStream.str();
+    size_t dumpHash  = std::hash<std::string>{}(dump);
+
+    std::stringstream pathStream;
+    std::string shaderDumpDir = GetShaderDumpFileDirectory();
+    if (!shaderDumpDir.empty())
+    {
+        pathStream << shaderDumpDir << "/";
+    }
+    pathStream << dumpHash << ".program";
+    std::string path = pathStream.str();
+
+    writeFile(path.c_str(), dump.c_str(), dump.length());
+    INFO() << "Dumped program: " << path;
+}
+
 }  // namespace gl

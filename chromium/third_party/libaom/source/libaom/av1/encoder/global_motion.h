@@ -34,9 +34,9 @@ typedef struct {
 
 typedef struct {
   // Array of structure which holds the global motion parameters for a given
-  // motion model. params_by_motion[i] holds the parameters for a given motion
+  // motion model. motion_models[i] holds the parameters for a given motion
   // model for the ith ransac motion.
-  MotionModel params_by_motion[RANSAC_NUM_MOTIONS];
+  MotionModel motion_models[RANSAC_NUM_MOTIONS];
 
   // Pointer to hold inliers from motion model.
   uint8_t *segment_map;

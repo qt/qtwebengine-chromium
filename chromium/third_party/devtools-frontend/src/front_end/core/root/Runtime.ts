@@ -25,7 +25,7 @@ export function getRemoteBase(location: string = self.location.toString()): {
     return null;
   }
 
-  return {base: `${url.origin}/remote/serve_file/${version[1]}/`, version: version[1]};
+  return {base: `devtools://devtools/remote/serve_file/${version[1]}/`, version: version[1]};
 }
 
 export class Runtime {
@@ -311,6 +311,7 @@ export enum ExperimentName {
   BREAKPOINT_VIEW = 'breakpointView',
   PRELOADING_STATUS_PANEL = 'preloadingStatusPanel',
   DISABLE_COLOR_FORMAT_SETTING = 'disableColorFormatSetting',
+  TIMELINE_AS_CONSOLE_PROFILE_RESULT_PANEL = 'timelineAsConsoleProfileResultPanel',
 }
 
 // TODO(crbug.com/1167717): Make this a const enum again

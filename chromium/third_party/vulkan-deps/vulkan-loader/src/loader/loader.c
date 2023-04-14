@@ -1,8 +1,8 @@
 /*
  *
- * Copyright (c) 2014-2022 The Khronos Group Inc.
- * Copyright (c) 2014-2022 Valve Corporation
- * Copyright (c) 2014-2022 LunarG, Inc.
+ * Copyright (c) 2014-2023 The Khronos Group Inc.
+ * Copyright (c) 2014-2023 Valve Corporation
+ * Copyright (c) 2014-2023 LunarG, Inc.
  * Copyright (C) 2015 Google Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -127,7 +127,7 @@ loader_api_version loader_combine_version(uint32_t major, uint32_t minor, uint32
 bool loader_check_version_meets_required(loader_api_version required, loader_api_version version) {
     // major version is satisfied
     return (version.major > required.major) ||
-           // major version is equal, minor version is patch version is gerater to minimum minor
+           // major version is equal, minor version is patch version is greater to minimum minor
            (version.major == required.major && version.minor > required.minor) ||
            // major and minor version are equal, patch version is greater or equal to minimum patch
            (version.major == required.major && version.minor == required.minor && version.patch >= required.patch);
@@ -169,6 +169,14 @@ void loader_handle_load_library_error(const struct loader_instance *inst, const 
         err_flag = VULKAN_LOADER_INFO_BIT;
         if (NULL != lib_status) {
             *lib_status = LOADER_LAYER_LIB_ERROR_WRONG_BIT_TYPE;
+        }
+    }
+    // Check if the error is due to lack of memory
+    // "with error 8" is the windows error code for OOM cases, aka ERROR_NOT_ENOUGH_MEMORY
+    // Linux doesn't have such a nice error message - only if there are reported issues should this be called
+    else if (strstr(error_message, " with error 8") != NULL) {
+        if (NULL != lib_status) {
+            *lib_status = LOADER_LAYER_LIB_ERROR_OUT_OF_MEMORY;
         }
     } else if (NULL != lib_status) {
         *lib_status = LOADER_LAYER_LIB_ERROR_FAILED_TO_LOAD;
@@ -1169,6 +1177,12 @@ VkResult loader_get_icd_loader_instance_extensions(const struct loader_instance 
     loader_add_to_ext_list(inst, inst_exts, sizeof(portability_enumeration_extension_info) / sizeof(VkExtensionProperties),
                            portability_enumeration_extension_info);
 
+    static const VkExtensionProperties direct_driver_loading_extension_info[] = {
+        {VK_LUNARG_DIRECT_DRIVER_LOADING_EXTENSION_NAME, VK_LUNARG_DIRECT_DRIVER_LOADING_SPEC_VERSION}};
+
+    // Add VK_LUNARG_direct_driver_loading
+    loader_add_to_ext_list(inst, inst_exts, sizeof(direct_driver_loading_extension_info) / sizeof(VkExtensionProperties),
+                           direct_driver_loading_extension_info);
 out:
     return res;
 }
@@ -1317,37 +1331,254 @@ bool loader_get_icd_interface_version(PFN_vkNegotiateLoaderICDInterfaceVersion f
 void loader_scanned_icd_clear(const struct loader_instance *inst, struct loader_icd_tramp_list *icd_tramp_list) {
     if (0 != icd_tramp_list->capacity) {
         for (uint32_t i = 0; i < icd_tramp_list->count; i++) {
-            loader_platform_close_library(icd_tramp_list->scanned_list[i].handle);
+            if (icd_tramp_list->scanned_list[i].handle) {
+                loader_platform_close_library(icd_tramp_list->scanned_list[i].handle);
+                icd_tramp_list->scanned_list[i].handle = NULL;
+            }
             loader_instance_heap_free(inst, icd_tramp_list->scanned_list[i].lib_name);
         }
         loader_instance_heap_free(inst, icd_tramp_list->scanned_list);
-        icd_tramp_list->capacity = 0;
-        icd_tramp_list->count = 0;
-        icd_tramp_list->scanned_list = NULL;
     }
+    icd_tramp_list->capacity = 0;
+    icd_tramp_list->count = 0;
+    icd_tramp_list->scanned_list = NULL;
 }
 
-static VkResult loader_scanned_icd_init(const struct loader_instance *inst, struct loader_icd_tramp_list *icd_tramp_list) {
-    VkResult err = VK_SUCCESS;
+VkResult loader_scanned_icd_init(const struct loader_instance *inst, struct loader_icd_tramp_list *icd_tramp_list) {
+    VkResult res = VK_SUCCESS;
     loader_scanned_icd_clear(inst, icd_tramp_list);
     icd_tramp_list->capacity = 8 * sizeof(struct loader_scanned_icd);
     icd_tramp_list->scanned_list = loader_instance_heap_alloc(inst, icd_tramp_list->capacity, VK_SYSTEM_ALLOCATION_SCOPE_INSTANCE);
     if (NULL == icd_tramp_list->scanned_list) {
         loader_log(inst, VULKAN_LOADER_ERROR_BIT, 0,
                    "loader_scanned_icd_init: Realloc failed for layer list when attempting to add new layer");
-        err = VK_ERROR_OUT_OF_HOST_MEMORY;
+        res = VK_ERROR_OUT_OF_HOST_MEMORY;
     }
-    return err;
+    return res;
+}
+
+VkResult loader_add_direct_driver(const struct loader_instance *inst, uint32_t index,
+                                  const VkDirectDriverLoadingInfoLUNARG *pDriver, struct loader_icd_tramp_list *icd_tramp_list) {
+    // Assume pDriver is valid, since there is no real way to check it. Calling code should make sure the pointer to the array of
+    // VkDirectDriverLoadingInfoLUNARG structures is non-null.
+    if (NULL == pDriver->pfnGetInstanceProcAddr) {
+        loader_log(
+            inst, VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_DRIVER_BIT, 0,
+            "loader_add_direct_driver: VkDirectDriverLoadingInfoLUNARG structure at index %d contains a NULL pointer for the "
+            "pfnGetInstanceProcAddr member, skipping.",
+            index);
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    PFN_vkGetInstanceProcAddr fp_get_proc_addr = pDriver->pfnGetInstanceProcAddr;
+    PFN_vkCreateInstance fp_create_inst = NULL;
+    PFN_vkEnumerateInstanceExtensionProperties fp_get_inst_ext_props = NULL;
+    PFN_GetPhysicalDeviceProcAddr fp_get_phys_dev_proc_addr = NULL;
+    PFN_vkNegotiateLoaderICDInterfaceVersion fp_negotiate_icd_version = NULL;
+#if defined(VK_USE_PLATFORM_WIN32_KHR)
+    PFN_vk_icdEnumerateAdapterPhysicalDevices fp_enum_dxgi_adapter_phys_devs = NULL;
+#endif
+    struct loader_scanned_icd *new_scanned_icd;
+    uint32_t interface_version = 0;
+
+    // Try to get the negotiate ICD interface version function
+    fp_negotiate_icd_version = (PFN_vk_icdNegotiateLoaderICDInterfaceVersion)pDriver->pfnGetInstanceProcAddr(
+        NULL, "vk_icdNegotiateLoaderICDInterfaceVersion");
+
+    if (NULL == fp_negotiate_icd_version) {
+        loader_log(inst, VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_DRIVER_BIT, 0,
+                   "loader_add_direct_driver: Could not get 'vk_icdNegotiateLoaderICDInterfaceVersion' from "
+                   "VkDirectDriverLoadingInfoLUNARG structure at "
+                   "index %d, skipping.",
+                   index);
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (!loader_get_icd_interface_version(fp_negotiate_icd_version, &interface_version)) {
+        loader_log(
+            inst, VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_DRIVER_BIT, 0,
+            "loader_add_direct_driver: VkDirectDriverLoadingInfoLUNARG structure at index %d supports interface version %d, "
+            "which is incompatible with the Loader Driver Interface version that supports the VK_LUNARG_direct_driver_loading "
+            "extension, skipping.",
+            index, interface_version);
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (interface_version < 7) {
+        loader_log(
+            inst, VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_DRIVER_BIT, 0,
+            "loader_add_direct_driver: VkDirectDriverLoadingInfoLUNARG structure at index %d supports interface version %d, "
+            "which is incompatible with the Loader Driver Interface version that supports the VK_LUNARG_direct_driver_loading "
+            "extension, skipping.",
+            index, interface_version);
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    fp_create_inst = (PFN_vkCreateInstance)pDriver->pfnGetInstanceProcAddr(NULL, "vkCreateInstance");
+    if (NULL == fp_create_inst) {
+        loader_log(inst, VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_DRIVER_BIT, 0,
+                   "loader_add_direct_driver: Could not get 'vkCreateInstance' from VkDirectDriverLoadingInfoLUNARG structure at "
+                   "index %d, skipping.",
+                   index);
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    fp_get_inst_ext_props =
+        (PFN_vkEnumerateInstanceExtensionProperties)pDriver->pfnGetInstanceProcAddr(NULL, "vkEnumerateInstanceExtensionProperties");
+    if (NULL == fp_get_inst_ext_props) {
+        loader_log(inst, VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_DRIVER_BIT, 0,
+                   "loader_add_direct_driver: Could not get 'vkEnumerateInstanceExtensionProperties' from "
+                   "VkDirectDriverLoadingInfoLUNARG structure at index %d, skipping.",
+                   index);
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    fp_get_phys_dev_proc_addr =
+        (PFN_vk_icdGetPhysicalDeviceProcAddr)pDriver->pfnGetInstanceProcAddr(NULL, "vk_icdGetPhysicalDeviceProcAddr");
+#if defined(VK_USE_PLATFORM_WIN32_KHR)
+    // Query "vk_icdEnumerateAdapterPhysicalDevices" with vk_icdGetInstanceProcAddr if the library reports interface version
+    // 7 or greater, otherwise fallback to loading it from the platform dynamic linker
+    fp_enum_dxgi_adapter_phys_devs =
+        (PFN_vk_icdEnumerateAdapterPhysicalDevices)pDriver->pfnGetInstanceProcAddr(NULL, "vk_icdEnumerateAdapterPhysicalDevices");
+#endif
+
+    // check for enough capacity
+    if ((icd_tramp_list->count * sizeof(struct loader_scanned_icd)) >= icd_tramp_list->capacity) {
+        void *new_ptr = loader_instance_heap_realloc(inst, icd_tramp_list->scanned_list, icd_tramp_list->capacity,
+                                                     icd_tramp_list->capacity * 2, VK_SYSTEM_ALLOCATION_SCOPE_INSTANCE);
+        if (NULL == new_ptr) {
+            loader_log(inst, VULKAN_LOADER_ERROR_BIT, 0, "loader_add_direct_driver: Realloc failed on icd library list for ICD %s");
+            return VK_ERROR_OUT_OF_HOST_MEMORY;
+        }
+        icd_tramp_list->scanned_list = new_ptr;
+
+        // double capacity
+        icd_tramp_list->capacity *= 2;
+    }
+
+    // Driver must be 1.1 to support version 7
+    uint32_t api_version = VK_API_VERSION_1_1;
+    PFN_vkEnumerateInstanceVersion icd_enumerate_instance_version =
+        (PFN_vkEnumerateInstanceVersion)pDriver->pfnGetInstanceProcAddr(NULL, "vkEnumerateInstanceVersion");
+
+    if (icd_enumerate_instance_version) {
+        VkResult res = icd_enumerate_instance_version(&api_version);
+        if (res != VK_SUCCESS) {
+            return res;
+        }
+    }
+
+    new_scanned_icd = &(icd_tramp_list->scanned_list[icd_tramp_list->count]);
+    new_scanned_icd->handle = NULL;
+    new_scanned_icd->api_version = api_version;
+    new_scanned_icd->GetInstanceProcAddr = fp_get_proc_addr;
+    new_scanned_icd->GetPhysicalDeviceProcAddr = fp_get_phys_dev_proc_addr;
+    new_scanned_icd->EnumerateInstanceExtensionProperties = fp_get_inst_ext_props;
+    new_scanned_icd->CreateInstance = fp_create_inst;
+#if defined(VK_USE_PLATFORM_WIN32_KHR)
+    new_scanned_icd->EnumerateAdapterPhysicalDevices = fp_enum_dxgi_adapter_phys_devs;
+#endif
+    new_scanned_icd->interface_version = interface_version;
+
+    new_scanned_icd->lib_name = NULL;
+    icd_tramp_list->count++;
+
+    loader_log(inst, VULKAN_LOADER_INFO_BIT | VULKAN_LOADER_DRIVER_BIT, 0,
+               "loader_add_direct_driver: Adding driver found in index %d of "
+               "VkDirectDriverLoadingListLUNARG::pDrivers structure. pfnGetInstanceProcAddr was set to %p",
+               index, pDriver->pfnGetInstanceProcAddr);
+
+    return VK_SUCCESS;
+}
+
+// Search through VkInstanceCreateInfo's pNext chain for any drivers from the direct driver loading extension and load them.
+VkResult loader_scan_for_direct_drivers(const struct loader_instance *inst, const VkInstanceCreateInfo *pCreateInfo,
+                                        struct loader_icd_tramp_list *icd_tramp_list, bool *direct_driver_loading_exclusive_mode) {
+    if (NULL == pCreateInfo) {
+        // Don't do this logic unless we are being called from vkCreateInstance, when pCreateInfo will be non-null
+        return VK_SUCCESS;
+    }
+    bool direct_driver_loading_enabled = false;
+    // Try to if VK_LUNARG_direct_driver_loading is enabled and if we are using it exclusively
+    // Skip this step if inst is NULL, aka when this function is being called before instance creation
+    if (inst != NULL && pCreateInfo->ppEnabledExtensionNames && pCreateInfo->enabledExtensionCount > 0) {
+        // Look through the enabled extension list, make sure VK_LUNARG_direct_driver_loading is present
+        for (uint32_t i = 0; i < pCreateInfo->enabledExtensionCount; i++) {
+            if (strcmp(pCreateInfo->ppEnabledExtensionNames[i], VK_LUNARG_DIRECT_DRIVER_LOADING_EXTENSION_NAME) == 0) {
+                direct_driver_loading_enabled = true;
+                break;
+            }
+        }
+    }
+    const VkDirectDriverLoadingListLUNARG *ddl_list = NULL;
+    // Find the VkDirectDriverLoadingListLUNARG struct in the pNext chain of vkInstanceCreateInfo
+    const VkBaseOutStructure *chain = pCreateInfo->pNext;
+    while (chain) {
+        if (chain->sType == VK_STRUCTURE_TYPE_DIRECT_DRIVER_LOADING_LIST_LUNARG) {
+            ddl_list = (VkDirectDriverLoadingListLUNARG *)chain;
+            break;
+        }
+        chain = (const VkBaseOutStructure *)chain->pNext;
+    }
+    if (NULL == ddl_list) {
+        if (direct_driver_loading_enabled) {
+            loader_log(
+                inst, VULKAN_LOADER_WARN_BIT | VULKAN_LOADER_DRIVER_BIT, 0,
+                "loader_scan_for_direct_drivers: The VK_LUNARG_direct_driver_loading extension was enabled but the pNext chain of "
+                "VkInstanceCreateInfo did not contain the "
+                "VkDirectDriverLoadingListLUNARG structure.");
+        }
+        // Always want to exit early if there was no VkDirectDriverLoadingListLUNARG in the pNext chain
+        return VK_SUCCESS;
+    }
+
+    if (!direct_driver_loading_enabled) {
+        loader_log(inst, VULKAN_LOADER_WARN_BIT | VULKAN_LOADER_DRIVER_BIT, 0,
+                   "loader_scan_for_direct_drivers: The pNext chain of VkInstanceCreateInfo contained the "
+                   "VkDirectDriverLoadingListLUNARG structure, but the VK_LUNARG_direct_driver_loading extension was "
+                   "not enabled.");
+        return VK_SUCCESS;
+    }
+    // If we are using exclusive mode, skip looking for any more drivers from system or environment variables
+    if (ddl_list->mode == VK_DIRECT_DRIVER_LOADING_MODE_EXCLUSIVE_LUNARG) {
+        *direct_driver_loading_exclusive_mode = true;
+        loader_log(inst, VULKAN_LOADER_INFO_BIT | VULKAN_LOADER_DRIVER_BIT, 0,
+                   "loader_scan_for_direct_drivers: The VK_LUNARG_direct_driver_loading extension is active and specified "
+                   "VK_DIRECT_DRIVER_LOADING_MODE_EXCLUSIVE_LUNARG, skipping system and environment "
+                   "variable driver search mechanisms.");
+    }
+    if (NULL == ddl_list->pDrivers) {
+        loader_log(inst, VULKAN_LOADER_WARN_BIT | VULKAN_LOADER_DRIVER_BIT, 0,
+                   "loader_scan_for_direct_drivers: The VkDirectDriverLoadingListLUNARG structure in the pNext chain of "
+                   "VkInstanceCreateInfo has a NULL pDrivers member.");
+        return VK_SUCCESS;
+    }
+    if (ddl_list->driverCount == 0) {
+        loader_log(inst, VULKAN_LOADER_WARN_BIT | VULKAN_LOADER_DRIVER_BIT, 0,
+                   "loader_scan_for_direct_drivers: The VkDirectDriverLoadingListLUNARG structure in the pNext chain of "
+                   "VkInstanceCreateInfo has a non-null pDrivers member but a driverCount member with a value "
+                   "of zero.");
+        return VK_SUCCESS;
+    }
+    // Go through all VkDirectDriverLoadingInfoLUNARG entries and add each driver
+    // Because icd_tramp's are prepended, this will result in the drivers appearing at the end
+    for (uint32_t i = 0; i < ddl_list->driverCount; i++) {
+        VkResult res = loader_add_direct_driver(inst, i, &ddl_list->pDrivers[i], icd_tramp_list);
+        if (res == VK_ERROR_OUT_OF_HOST_MEMORY) {
+            return res;
+        }
+    }
+
+    return VK_SUCCESS;
 }
 
 static VkResult loader_scanned_icd_add(const struct loader_instance *inst, struct loader_icd_tramp_list *icd_tramp_list,
                                        const char *filename, uint32_t api_version, enum loader_layer_library_status *lib_status) {
     loader_platform_dl_handle handle = NULL;
-    PFN_vkCreateInstance fp_create_inst;
-    PFN_vkEnumerateInstanceExtensionProperties fp_get_inst_ext_props;
-    PFN_vkGetInstanceProcAddr fp_get_proc_addr;
+    PFN_vkCreateInstance fp_create_inst = NULL;
+    PFN_vkEnumerateInstanceExtensionProperties fp_get_inst_ext_props = NULL;
+    PFN_vkGetInstanceProcAddr fp_get_proc_addr = NULL;
     PFN_GetPhysicalDeviceProcAddr fp_get_phys_dev_proc_addr = NULL;
-    PFN_vkNegotiateLoaderICDInterfaceVersion fp_negotiate_icd_version;
+    PFN_vkNegotiateLoaderICDInterfaceVersion fp_negotiate_icd_version = NULL;
 #if defined(VK_USE_PLATFORM_WIN32_KHR)
     PFN_vk_icdEnumerateAdapterPhysicalDevices fp_enum_dxgi_adapter_phys_devs = NULL;
 #endif
@@ -1373,13 +1604,33 @@ static VkResult loader_scanned_icd_add(const struct loader_instance *inst, struc
 #endif
     if (NULL == handle) {
         loader_handle_load_library_error(inst, filename, lib_status);
-        res = VK_ERROR_INCOMPATIBLE_DRIVER;
+        if (lib_status && *lib_status == LOADER_LAYER_LIB_ERROR_OUT_OF_MEMORY) {
+            res = VK_ERROR_OUT_OF_HOST_MEMORY;
+        } else {
+            res = VK_ERROR_INCOMPATIBLE_DRIVER;
+        }
         goto out;
     }
 
-    // Get and settle on an ICD interface version
+    // Try to load the driver's exported vk_icdNegotiateLoaderICDInterfaceVersion
     fp_negotiate_icd_version = loader_platform_get_proc_address(handle, "vk_icdNegotiateLoaderICDInterfaceVersion");
 
+    // If it isn't exported, we are dealing with either a v0, v1, or a v7 and up driver
+    if (NULL == fp_negotiate_icd_version) {
+        // Try to load the driver's exported vk_icdGetInstanceProcAddr - if this is a v7 or up driver, we can use it to get
+        // the driver's vk_icdNegotiateLoaderICDInterfaceVersion function
+        fp_get_proc_addr = loader_platform_get_proc_address(handle, "vk_icdGetInstanceProcAddr");
+
+        // If we successfully loaded vk_icdGetInstanceProcAddr, try to get vk_icdNegotiateLoaderICDInterfaceVersion
+        if (fp_get_proc_addr) {
+            fp_negotiate_icd_version =
+                (PFN_vk_icdNegotiateLoaderICDInterfaceVersion)fp_get_proc_addr(NULL, "vk_icdNegotiateLoaderICDInterfaceVersion");
+        }
+    }
+
+    // Try to negotiate the Loader and Driver Interface Versions
+    // loader_get_icd_interface_version will check if fp_negotiate_icd_version is NULL, so we don't have to.
+    // If it *is* NULL, that means this driver uses interface version 0 or 1
     if (!loader_get_icd_interface_version(fp_negotiate_icd_version, &interface_vers)) {
         loader_log(inst, VULKAN_LOADER_ERROR_BIT, 0,
                    "loader_scanned_icd_add: ICD %s doesn't support interface version compatible with loader, skip this ICD.",
@@ -1387,13 +1638,19 @@ static VkResult loader_scanned_icd_add(const struct loader_instance *inst, struc
         goto out;
     }
 
-    fp_get_proc_addr = loader_platform_get_proc_address(handle, "vk_icdGetInstanceProcAddr");
+    // If we didn't already query vk_icdGetInstanceProcAddr, try now
     if (NULL == fp_get_proc_addr) {
+        fp_get_proc_addr = loader_platform_get_proc_address(handle, "vk_icdGetInstanceProcAddr");
+    }
+
+    // If vk_icdGetInstanceProcAddr is NULL, this ICD is using version 0 and so we should respond accordingly.
+    if (NULL == fp_get_proc_addr) {
+        // Exporting vk_icdNegotiateLoaderICDInterfaceVersion but not vk_icdGetInstanceProcAddr violates Version 2's requirements,
+        // as for Version 2 to be supported Version 1 must also be supported
         if (interface_vers != 0) {
             loader_log(inst, VULKAN_LOADER_ERROR_BIT, 0,
                        "loader_scanned_icd_add: ICD %s reports an interface version of %d but doesn't export "
-                       "vk_icdGetInstanceProcAddr, skip "
-                       "this ICD.",
+                       "vk_icdGetInstanceProcAddr, skip this ICD.",
                        filename, interface_vers);
             goto out;
         }
@@ -1426,7 +1683,8 @@ static VkResult loader_scanned_icd_add(const struct loader_instance *inst, struc
             goto out;
         }
     } else {
-        // Use newer interface version 1 or later
+        // vk_icdGetInstanceProcAddr was successfully found, we can assume the version is at least one
+        // If vk_icdNegotiateLoaderICDInterfaceVersion was also found, interface_vers must be 2 or greater, so this check is fine
         if (interface_vers == 0) {
             interface_vers = 1;
         }
@@ -1447,9 +1705,23 @@ static VkResult loader_scanned_icd_add(const struct loader_instance *inst, struc
                        filename);
             goto out;
         }
-        fp_get_phys_dev_proc_addr = loader_platform_get_proc_address(handle, "vk_icdGetPhysicalDeviceProcAddr");
+        // Query "vk_icdGetPhysicalDeviceProcAddr" with vk_icdGetInstanceProcAddr if the library reports interface version 7 or
+        // greater, otherwise fallback to loading it from the platform dynamic linker
+        if (interface_vers >= 7) {
+            fp_get_phys_dev_proc_addr =
+                (PFN_vk_icdGetPhysicalDeviceProcAddr)fp_get_proc_addr(NULL, "vk_icdGetPhysicalDeviceProcAddr");
+        }
+        if (NULL == fp_get_phys_dev_proc_addr && interface_vers >= 3) {
+            fp_get_phys_dev_proc_addr = loader_platform_get_proc_address(handle, "vk_icdGetPhysicalDeviceProcAddr");
+        }
 #if defined(VK_USE_PLATFORM_WIN32_KHR)
-        if (interface_vers >= 6) {
+        // Query "vk_icdEnumerateAdapterPhysicalDevices" with vk_icdGetInstanceProcAddr if the library reports interface version 7
+        // or greater, otherwise fallback to loading it from the platform dynamic linker
+        if (interface_vers >= 7) {
+            fp_enum_dxgi_adapter_phys_devs =
+                (PFN_vk_icdEnumerateAdapterPhysicalDevices)fp_get_proc_addr(NULL, "vk_icdEnumerateAdapterPhysicalDevices");
+        }
+        if (NULL == fp_enum_dxgi_adapter_phys_devs && interface_vers >= 6) {
             fp_enum_dxgi_adapter_phys_devs = loader_platform_get_proc_address(handle, "vk_icdEnumerateAdapterPhysicalDevices");
         }
 #endif
@@ -1547,8 +1819,7 @@ void loader_preload_icds(void) {
         return;
     }
 
-    memset(&scanned_icds, 0, sizeof(scanned_icds));
-    VkResult result = loader_icd_scan(NULL, &scanned_icds, NULL);
+    VkResult result = loader_icd_scan(NULL, &scanned_icds, NULL, NULL);
     if (result != VK_SUCCESS) {
         loader_scanned_icd_clear(NULL, &scanned_icds);
     }
@@ -1611,15 +1882,13 @@ static void loader_expand_path(const char *path, const char *rel_base, size_t ou
 // @return - A string in out_fullpath of either the full path or file.
 static void loader_get_fullpath(const char *file, const char *in_dirs, size_t out_size, char *out_fullpath) {
     if (!loader_platform_is_path(file) && *in_dirs) {
-        char *dirs_copy, *dir, *next_dir;
-
-        dirs_copy = loader_stack_alloc(strlen(in_dirs) + 1);
+        char *dirs_copy = loader_stack_alloc(strlen(in_dirs) + 1);
         strcpy(dirs_copy, in_dirs);
 
         // find if file exists after prepending paths in given list
         // for (dir = dirs_copy; *dir && (next_dir = loader_get_next_path(dir)); dir = next_dir) {
-        dir = dirs_copy;
-        next_dir = loader_get_next_path(dir);
+        char *dir = dirs_copy;
+        char *next_dir = loader_get_next_path(dir);
         while (*dir && next_dir) {
             loader_platform_combine_path(out_fullpath, out_size, dir, file, NULL);
             if (loader_platform_file_exists(out_fullpath)) {
@@ -2771,7 +3040,7 @@ VkResult add_data_files(const struct loader_instance *inst, char *search_path, s
                 str_len = strlen(cur_file) + 1;
             }
             if (str_len > sizeof(temp_path)) {
-                loader_log(inst, VULKAN_LOADER_DEBUG_BIT, 0, "add_data_files: Path to %s too long\n", cur_file);
+                loader_log(inst, VULKAN_LOADER_DEBUG_BIT, 0, "add_data_files: Path to %s too long", cur_file);
                 continue;
             }
             strcpy(temp_path, cur_file);
@@ -2943,6 +3212,14 @@ static VkResult read_data_files_in_search_paths(const struct loader_instance *in
             break;
     }
 
+    // Log a message when VK_LAYER_PATH is set but the override layer paths take priority
+    if (manifest_type == LOADER_DATA_FILE_MANIFEST_EXPLICIT_LAYER && NULL != override_env && NULL != path_override) {
+        loader_log(inst, VULKAN_LOADER_INFO_BIT | VULKAN_LOADER_LAYER_BIT, 0,
+                   "Ignoring VK_LAYER_PATH. The Override layer is active and has override paths set, which takes priority. "
+                   "VK_LAYER_PATH is set to %s",
+                   override_env);
+    }
+
     if (path_override != NULL) {
         override_path = path_override;
     } else if (override_env != NULL) {
@@ -3036,8 +3313,7 @@ static VkResult read_data_files_in_search_paths(const struct loader_instance *in
                         memcpy(cur_path_ptr, relative_location, rel_size);
                         cur_path_ptr += rel_size;
                         *cur_path_ptr++ = PATH_SEPARATOR;
-                        // only for ICD manifests
-                        if (override_env != NULL && manifest_type == LOADER_DATA_FILE_MANIFEST_DRIVER) {
+                        if (manifest_type == LOADER_DATA_FILE_MANIFEST_DRIVER) {
                             use_first_found_manifest = true;
                         }
                     }
@@ -3459,7 +3735,7 @@ out:
 // Vulkan result
 // (on result == VK_SUCCESS) a list of icds that were discovered
 VkResult loader_icd_scan(const struct loader_instance *inst, struct loader_icd_tramp_list *icd_tramp_list,
-                         bool *skipped_portability_drivers) {
+                         const VkInstanceCreateInfo *pCreateInfo, bool *skipped_portability_drivers) {
     struct loader_data_files manifest_files;
     VkResult res = VK_SUCCESS;
     bool lockedMutex = false;
@@ -3469,6 +3745,23 @@ VkResult loader_icd_scan(const struct loader_instance *inst, struct loader_icd_t
     // Before we begin anything, init manifest_files to avoid a delete of garbage memory if
     // a failure occurs before allocating the manifest filename_list.
     memset(&manifest_files, 0, sizeof(struct loader_data_files));
+
+    // Set up the ICD Trampoline list so elements can be written into it.
+    res = loader_scanned_icd_init(inst, icd_tramp_list);
+    if (res == VK_ERROR_OUT_OF_HOST_MEMORY) {
+        return res;
+    }
+
+    bool direct_driver_loading_exclusive_mode = false;
+    res = loader_scan_for_direct_drivers(inst, pCreateInfo, icd_tramp_list, &direct_driver_loading_exclusive_mode);
+    if (res == VK_ERROR_OUT_OF_HOST_MEMORY) {
+        goto out;
+    }
+    if (direct_driver_loading_exclusive_mode) {
+        // Make sure to jump over the system & env-var driver discovery mechanisms if exclusive mode is set, even if no drivers
+        // were successfully found through the direct driver loading mechanism
+        goto out;
+    }
 
     // Parse the filter environment variables to determine if we have any special behavior
     res = parse_generic_filter_environment_var(inst, VK_DRIVERS_SELECT_ENV_VAR, &select_filter);
@@ -3480,14 +3773,9 @@ VkResult loader_icd_scan(const struct loader_instance *inst, struct loader_icd_t
         goto out;
     }
 
-    res = loader_scanned_icd_init(inst, icd_tramp_list);
-    if (VK_SUCCESS != res) {
-        goto out;
-    }
-
     // Get a list of manifest files for ICDs
     res = loader_get_data_files(inst, LOADER_DATA_FILE_MANIFEST_DRIVER, NULL, &manifest_files);
-    if (VK_SUCCESS != res || manifest_files.count == 0) {
+    if (VK_SUCCESS != res) {
         goto out;
     }
 
@@ -3554,6 +3842,7 @@ VkResult loader_icd_scan(const struct loader_instance *inst, struct loader_icd_t
                     break;
                 }
                 case LOADER_LAYER_LIB_SUCCESS_LOADED:
+                case LOADER_LAYER_LIB_ERROR_OUT_OF_MEMORY:
                     // Shouldn't be able to reach this but if it is, best to report a debug
                     loader_log(inst, VULKAN_LOADER_WARN_BIT | VULKAN_LOADER_DRIVER_BIT, 0,
                                "Shouldn't reach this. A valid version of requested ICD %s was loaded but something bad "
@@ -3957,9 +4246,9 @@ static VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL loader_gpa_instance_terminator(V
         return (PFN_vkVoidFunction)terminator_CreateDevice;
     }
 
-    // The VK_EXT_debug_utils functions need a special case here so the terminators can still be found from vkGetInstanceProcAddr
-    // This is because VK_EXT_debug_utils is an instance level extension with device level functions, and is 'supported' by the
-    // loader. There needs to be a terminator in case a driver doesn't support VK_EXT_debug_utils.
+    // The VK_EXT_debug_utils functions need a special case here so the terminators can still be found from
+    // vkGetInstanceProcAddr This is because VK_EXT_debug_utils is an instance level extension with device level functions, and
+    // is 'supported' by the loader. There needs to be a terminator in case a driver doesn't support VK_EXT_debug_utils.
     if (!strcmp(pName, "vkSetDebugUtilsObjectNameEXT")) {
         return (PFN_vkVoidFunction)terminator_SetDebugUtilsObjectNameEXT;
     }
@@ -4453,6 +4742,9 @@ VkResult loader_create_instance_chain(const VkInstanceCreateInfo *pCreateInfo, c
             }
 
             lib_handle = loader_open_layer_file(inst, layer_prop);
+            if (layer_prop->lib_status == LOADER_LAYER_LIB_ERROR_OUT_OF_MEMORY) {
+                return VK_ERROR_OUT_OF_HOST_MEMORY;
+            }
             if (!lib_handle) {
                 continue;
             }
@@ -4602,6 +4894,7 @@ VkResult loader_create_instance_chain(const VkInstanceCreateInfo *pCreateInfo, c
                                ending);
                     break;
                 case LOADER_LAYER_LIB_SUCCESS_LOADED:
+                case LOADER_LAYER_LIB_ERROR_OUT_OF_MEMORY:
                     // Shouldn't be able to reach this but if it is, best to report a debug
                     loader_log(inst, log_flag, 0,
                                "Shouldn't reach this. A valid version of requested layer %s was loaded but was not found in the "
@@ -4664,7 +4957,7 @@ VkResult loader_create_instance_chain(const VkInstanceCreateInfo *pCreateInfo, c
                 loader_log(inst, VULKAN_LOADER_LAYER_BIT, 0, "           Library:  %s", activated_layers[index].library);
                 loader_log(inst, VULKAN_LOADER_LAYER_BIT, 0, "     ||");
             }
-            loader_log(inst, VULKAN_LOADER_LAYER_BIT, 0, "   <Drivers>\n");
+            loader_log(inst, VULKAN_LOADER_LAYER_BIT, 0, "   <Drivers>");
         }
 
         res = fpCreateInstance(&loader_create_info, pAllocator, created_instance);
@@ -4679,6 +4972,20 @@ VkResult loader_create_instance_chain(const VkInstanceCreateInfo *pCreateInfo, c
         inst->instance = *created_instance;
     }
 
+    if (pCreateInfo->enabledLayerCount > 0 && pCreateInfo->ppEnabledLayerNames != NULL) {
+        inst->enabled_layer_count = pCreateInfo->enabledLayerCount;
+
+        inst->enabled_layer_names = (char **)loader_instance_heap_calloc(inst, sizeof(char *) * pCreateInfo->enabledLayerCount,
+                                                                         VK_SYSTEM_ALLOCATION_SCOPE_INSTANCE);
+
+        for (uint32_t i = 0, n = inst->enabled_layer_count; i < n; ++i) {
+            size_t size = strlen(pCreateInfo->ppEnabledLayerNames[i]) + 1;
+            inst->enabled_layer_names[i] =
+                (char *)loader_instance_heap_calloc(inst, sizeof(char) * size, VK_SYSTEM_ALLOCATION_SCOPE_INSTANCE);
+            strncpy(inst->enabled_layer_names[i], pCreateInfo->ppEnabledLayerNames[i], strlen(pCreateInfo->ppEnabledLayerNames[i]));
+        }
+    }
+
     return res;
 }
 
@@ -4691,12 +4998,12 @@ void loader_activate_instance_layer_extensions(struct loader_instance *inst, VkI
 VkResult loader_create_device_chain(const VkPhysicalDevice pd, const VkDeviceCreateInfo *pCreateInfo,
                                     const VkAllocationCallbacks *pAllocator, const struct loader_instance *inst,
                                     struct loader_device *dev, PFN_vkGetInstanceProcAddr callingLayer,
-                                    PFN_vkGetDeviceProcAddr *layerNextGDPA) __attribute__ ((optnone)) {
+                                    PFN_vkGetDeviceProcAddr *layerNextGDPA) __attribute__((optnone)) {
 #else
-    VkResult loader_create_device_chain(const VkPhysicalDevice pd, const VkDeviceCreateInfo *pCreateInfo,
-                                        const VkAllocationCallbacks *pAllocator, const struct loader_instance *inst,
-                                        struct loader_device *dev, PFN_vkGetInstanceProcAddr callingLayer,
-                                        PFN_vkGetDeviceProcAddr *layerNextGDPA) {
+VkResult loader_create_device_chain(const VkPhysicalDevice pd, const VkDeviceCreateInfo *pCreateInfo,
+                                    const VkAllocationCallbacks *pAllocator, const struct loader_instance *inst,
+                                    struct loader_device *dev, PFN_vkGetInstanceProcAddr callingLayer,
+                                    PFN_vkGetDeviceProcAddr *layerNextGDPA) {
 #endif
     uint32_t num_activated_layers = 0;
     struct activated_layer_info *activated_layers = NULL;
@@ -4710,6 +5017,34 @@ VkResult loader_create_device_chain(const VkPhysicalDevice pd, const VkDeviceCre
     PFN_vkGetInstanceProcAddr fpGIPA = NULL, nextGIPA = loader_gpa_instance_terminator;
 
     memcpy(&loader_create_info, pCreateInfo, sizeof(VkDeviceCreateInfo));
+
+    if (loader_create_info.enabledLayerCount > 0 && loader_create_info.ppEnabledLayerNames != NULL) {
+        bool invalid_device_layer_usage = false;
+
+        if (loader_create_info.enabledLayerCount != inst->enabled_layer_count && loader_create_info.enabledLayerCount > 0) {
+            invalid_device_layer_usage = true;
+        } else if (loader_create_info.enabledLayerCount > 0 && loader_create_info.ppEnabledLayerNames == NULL) {
+            invalid_device_layer_usage = true;
+        } else if (loader_create_info.enabledLayerCount == 0 && loader_create_info.ppEnabledLayerNames != NULL) {
+            invalid_device_layer_usage = true;
+        } else if (inst->enabled_layer_names != NULL) {
+            for (uint32_t i = 0; i < loader_create_info.enabledLayerCount; i++) {
+                const char *device_layer_names = loader_create_info.ppEnabledLayerNames[i];
+
+                if (strcmp(device_layer_names, inst->enabled_layer_names[i]) != 0) {
+                    invalid_device_layer_usage = true;
+                    break;
+                }
+            }
+        }
+
+        if (invalid_device_layer_usage) {
+            loader_log(
+                inst, VULKAN_LOADER_WARN_BIT, 0,
+                "loader_create_device_chain: Using deprecated and ignored 'ppEnabledLayerNames' member of 'VkDeviceCreateInfo' "
+                "when creating a Vulkan device.");
+        }
+    }
 
     // Before we continue, we need to find out if the KHR_device_group extension is in the enabled list.  If it is, we then
     // need to look for the corresponding VkDeviceGroupDeviceCreateInfoKHR struct in the device list.  This is because we
@@ -5516,6 +5851,15 @@ VKAPI_ATTR void VKAPI_CALL terminator_DestroyInstance(VkInstance instance, const
     }
     loader_free_dev_ext_table(ptr_instance);
     loader_free_phys_dev_ext_table(ptr_instance);
+
+    for (uint32_t i = 0, n = ptr_instance->enabled_layer_count; i < n; ++i) {
+        loader_instance_heap_free(ptr_instance, ptr_instance->enabled_layer_names[i]);
+    }
+
+    if (ptr_instance->enabled_layer_count > 0) {
+        loader_instance_heap_free(ptr_instance, ptr_instance->enabled_layer_names);
+        memset(&ptr_instance->enabled_layer_names, 0, sizeof(ptr_instance->enabled_layer_names));
+    }
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL terminator_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCreateInfo,
@@ -5732,7 +6076,7 @@ VKAPI_ATTR VkResult VKAPI_CALL terminator_CreateDevice(VkPhysicalDevice physical
     }
 
     loader_log(icd_term->this_instance, VULKAN_LOADER_LAYER_BIT | VULKAN_LOADER_DRIVER_BIT, 0,
-               "       Using \"%s\" with driver: \"%s\"\n", properties.deviceName, icd_term->scanned_icd->lib_name);
+               "       Using \"%s\" with driver: \"%s\"", properties.deviceName, icd_term->scanned_icd->lib_name);
 
     res = fpCreateDevice(phys_dev_term->phys_dev, &localCreateInfo, pAllocator, &dev->icd_device);
     if (res != VK_SUCCESS) {
@@ -5955,8 +6299,8 @@ bool is_linux_sort_enabled(struct loader_instance *inst) {
 }
 #endif  // LOADER_ENABLE_LINUX_SORT
 
-// Look for physical_device in the provided phys_devs list, return true if found and put the index into out_idx, otherwise return
-// false
+// Look for physical_device in the provided phys_devs list, return true if found and put the index into out_idx, otherwise
+// return false
 bool find_phys_dev(VkPhysicalDevice physical_device, uint32_t phys_devs_count, struct loader_physical_device_term **phys_devs,
                    uint32_t *out_idx) {
     if (NULL == phys_devs) return false;
@@ -5987,8 +6331,8 @@ VkResult check_and_add_to_new_phys_devs(struct loader_instance *inst, VkPhysical
         return VK_SUCCESS;
     }
 
-    // Exit in case something is already present - this shouldn't happen but better to be safe than overwrite existing data since
-    // this code has been refactored a half dozen times.
+    // Exit in case something is already present - this shouldn't happen but better to be safe than overwrite existing data
+    // since this code has been refactored a half dozen times.
     if (NULL != new_phys_devs[idx]) {
         return VK_SUCCESS;
     }
@@ -6551,7 +6895,7 @@ terminator_EnumerateInstanceExtensionProperties(const VkEnumerateInstanceExtensi
         loader_preload_icds();
 
         // Scan/discover all ICD libraries
-        res = loader_icd_scan(NULL, &icd_tramp_list, NULL);
+        res = loader_icd_scan(NULL, &icd_tramp_list, NULL, NULL);
         // EnumerateInstanceExtensionProperties can't return anything other than OOM or VK_ERROR_LAYER_NOT_PRESENT
         if ((VK_SUCCESS != res && icd_tramp_list.count > 0) || res == VK_ERROR_OUT_OF_HOST_MEMORY) {
             goto out;

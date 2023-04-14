@@ -28,16 +28,16 @@ namespace presence {
 
 absl::StatusOr<ScanSessionId> PresenceClient::StartScan(
     ScanRequest scan_request, ScanCallback callback) {
-  ::location::nearby::Borrowed<PresenceService*> borrowed = service_.Borrow();
+  ::nearby::Borrowed<PresenceService*> borrowed = service_.Borrow();
   if (!borrowed) {
     return absl::FailedPreconditionError(
         "Can't start scan, presence service is gone");
   }
-  return (*borrowed)->StartScan(scan_request, callback);
+  return (*borrowed)->StartScan(scan_request, std::move(callback));
 }
 
 void PresenceClient::StopScan(ScanSessionId id) {
-  ::location::nearby::Borrowed<PresenceService*> borrowed = service_.Borrow();
+  ::nearby::Borrowed<PresenceService*> borrowed = service_.Borrow();
   if (borrowed) {
     (*borrowed)->StopScan(id);
   }
@@ -45,16 +45,16 @@ void PresenceClient::StopScan(ScanSessionId id) {
 
 absl::StatusOr<BroadcastSessionId> PresenceClient::StartBroadcast(
     BroadcastRequest broadcast_request, BroadcastCallback callback) {
-  ::location::nearby::Borrowed<PresenceService*> borrowed = service_.Borrow();
+  ::nearby::Borrowed<PresenceService*> borrowed = service_.Borrow();
   if (!borrowed) {
     return absl::FailedPreconditionError(
         "Can't start broadcast, presence service is gone");
   }
-  return (*borrowed)->StartBroadcast(broadcast_request, callback);
+  return (*borrowed)->StartBroadcast(broadcast_request, std::move(callback));
 }
 
 void PresenceClient::StopBroadcast(BroadcastSessionId session_id) {
-  ::location::nearby::Borrowed<PresenceService*> borrowed = service_.Borrow();
+  ::nearby::Borrowed<PresenceService*> borrowed = service_.Borrow();
   if (borrowed) {
     (*borrowed)->StopBroadcast(session_id);
   } else {

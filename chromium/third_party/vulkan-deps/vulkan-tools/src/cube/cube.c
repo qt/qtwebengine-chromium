@@ -54,7 +54,6 @@
 #include <vulkan/vulkan.h>
 #endif
 
-#include <vulkan/vk_sdk_platform.h>
 #include "linmath.h"
 #include "object_type_string_helper.h"
 
@@ -528,15 +527,24 @@ VKAPI_ATTR VkBool32 VKAPI_CALL debug_messenger_callback(VkDebugUtilsMessageSever
         sprintf(tmp_message, "\n\tObjects - %d\n", pCallbackData->objectCount);
         strcat(message, tmp_message);
         for (uint32_t object = 0; object < pCallbackData->objectCount; ++object) {
-            if (NULL != pCallbackData->pObjects[object].pObjectName && strlen(pCallbackData->pObjects[object].pObjectName) > 0) {
-                sprintf(tmp_message, "\t\tObject[%d] - %s, Handle %p, Name \"%s\"\n", object,
-                        string_VkObjectType(pCallbackData->pObjects[object].objectType),
-                        (void *)(pCallbackData->pObjects[object].objectHandle), pCallbackData->pObjects[object].pObjectName);
+            sprintf(tmp_message, "\t\tObject[%d] - %s", object, string_VkObjectType(pCallbackData->pObjects[object].objectType));
+            strcat(message, tmp_message);
+
+            VkObjectType t = pCallbackData->pObjects[object].objectType;
+            if (t == VK_OBJECT_TYPE_INSTANCE || t == VK_OBJECT_TYPE_PHYSICAL_DEVICE || t == VK_OBJECT_TYPE_DEVICE ||
+                t == VK_OBJECT_TYPE_COMMAND_BUFFER || t == VK_OBJECT_TYPE_QUEUE) {
+                sprintf(tmp_message, ", Handle %p", (void *)(uintptr_t)(pCallbackData->pObjects[object].objectHandle));
+                strcat(message, tmp_message);
             } else {
-                sprintf(tmp_message, "\t\tObject[%d] - %s, Handle %p\n", object,
-                        string_VkObjectType(pCallbackData->pObjects[object].objectType),
-                        (void *)(pCallbackData->pObjects[object].objectHandle));
+                sprintf(tmp_message, ", Handle Ox%" PRIx64, (pCallbackData->pObjects[object].objectHandle));
+                strcat(message, tmp_message);
             }
+
+            if (NULL != pCallbackData->pObjects[object].pObjectName && strlen(pCallbackData->pObjects[object].pObjectName) > 0) {
+                sprintf(tmp_message, ", Name \"%s\"", pCallbackData->pObjects[object].pObjectName);
+                strcat(message, tmp_message);
+            }
+            sprintf(tmp_message, "\n");
             strcat(message, tmp_message);
         }
     }
@@ -624,6 +632,67 @@ bool CanPresentEarlier(uint64_t earliest, uint64_t actual, uint64_t margin, uint
 static void demo_resize(struct demo *demo);
 static void demo_create_surface(struct demo *demo);
 
+#if defined(__GNUC__) || defined(__clang__)
+#define DECORATE_PRINTF(_fmt_argnum, _first_param_num) __attribute__((format(printf, _fmt_argnum, _first_param_num)))
+#else
+#define DECORATE_PRINTF(_fmt_num, _first_param_num)
+#endif
+
+DECORATE_PRINTF(4, 5)
+static void demo_name_object(struct demo *demo, VkObjectType object_type, uint64_t vulkan_handle, const char *format, ...) {
+    if (!demo->validate) {
+        return;
+    }
+    VkResult U_ASSERT_ONLY err;
+    char name[1024];
+    va_list argptr;
+    va_start(argptr, format);
+    vsnprintf(name, sizeof(name), format, argptr);
+    va_end(argptr);
+    name[sizeof(name) - 1] = '\0';
+
+    VkDebugUtilsObjectNameInfoEXT obj_name = {
+        .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT,
+        .pNext = NULL,
+        .objectType = object_type,
+        .objectHandle = vulkan_handle,
+        .pObjectName = name,
+    };
+    err = demo->SetDebugUtilsObjectNameEXT(demo->device, &obj_name);
+    assert(!err);
+}
+
+DECORATE_PRINTF(4, 5)
+static void demo_push_cb_label(struct demo *demo, VkCommandBuffer cb, const float *color, const char *format, ...) {
+    if (!demo->validate) {
+        return;
+    }
+    char name[1024];
+    va_list argptr;
+    va_start(argptr, format);
+    vsnprintf(name, sizeof(name), format, argptr);
+    va_end(argptr);
+    name[sizeof(name) - 1] = '\0';
+
+    VkDebugUtilsLabelEXT label = {
+        .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT,
+        .pNext = NULL,
+        .pLabelName = name,
+    };
+    if (color) {
+        memcpy(label.color, color, sizeof(label.color));
+    }
+
+    demo->CmdBeginDebugUtilsLabelEXT(cb, &label);
+}
+
+static void demo_pop_cb_label(struct demo *demo, VkCommandBuffer cb) {
+    if (!demo->validate) {
+        return;
+    }
+    demo->CmdEndDebugUtilsLabelEXT(cb);
+}
+
 static bool memory_type_from_properties(struct demo *demo, uint32_t typeBits, VkFlags requirements_mask, uint32_t *typeIndex) {
     // Search memtypes to find first index with those properties
     for (uint32_t i = 0; i < VK_MAX_MEMORY_TYPES; i++) {
@@ -658,6 +727,7 @@ static void demo_flush_init_cmd(struct demo *demo) {
     }
     err = vkCreateFence(demo->device, &fence_ci, NULL, &fence);
     assert(!err);
+    demo_name_object(demo, VK_OBJECT_TYPE_FENCE, (uint64_t)fence, "InitFence");
 
     const VkCommandBuffer cmd_bufs[] = {demo->cmd};
     VkSubmitInfo submit_info = {.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
@@ -734,8 +804,6 @@ static void demo_set_image_layout(struct demo *demo, VkImage image, VkImageAspec
 }
 
 static void demo_draw_build_cmd(struct demo *demo, VkCommandBuffer cmd_buf) {
-    VkDebugUtilsLabelEXT label;
-    memset(&label, 0, sizeof(label));
     const VkCommandBufferBeginInfo cmd_buf_info = {
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
         .pNext = NULL,
@@ -762,40 +830,16 @@ static void demo_draw_build_cmd(struct demo *demo, VkCommandBuffer cmd_buf) {
 
     err = vkBeginCommandBuffer(cmd_buf, &cmd_buf_info);
 
-    if (demo->validate) {
-        // Set a name for the command buffer
-        VkDebugUtilsObjectNameInfoEXT cmd_buf_name = {
-            .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT,
-            .pNext = NULL,
-            .objectType = VK_OBJECT_TYPE_COMMAND_BUFFER,
-            .objectHandle = (uint64_t)cmd_buf,
-            .pObjectName = "CubeDrawCommandBuf",
-        };
-        demo->SetDebugUtilsObjectNameEXT(demo->device, &cmd_buf_name);
+    demo_name_object(demo, VK_OBJECT_TYPE_COMMAND_BUFFER, (uint64_t)cmd_buf, "CubeDrawCommandBuf");
 
-        label.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT;
-        label.pNext = NULL;
-        label.pLabelName = "DrawBegin";
-        label.color[0] = 0.4f;
-        label.color[1] = 0.3f;
-        label.color[2] = 0.2f;
-        label.color[3] = 0.1f;
-        demo->CmdBeginDebugUtilsLabelEXT(cmd_buf, &label);
-    }
+    const float begin_color[4] = {0.4f, 0.3f, 0.2f, 0.1f};
+    demo_push_cb_label(demo, cmd_buf, begin_color, "DrawBegin");
 
     assert(!err);
     vkCmdBeginRenderPass(cmd_buf, &rp_begin, VK_SUBPASS_CONTENTS_INLINE);
 
-    if (demo->validate) {
-        label.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT;
-        label.pNext = NULL;
-        label.pLabelName = "InsideRenderPass";
-        label.color[0] = 8.4f;
-        label.color[1] = 7.3f;
-        label.color[2] = 6.2f;
-        label.color[3] = 7.1f;
-        demo->CmdBeginDebugUtilsLabelEXT(cmd_buf, &label);
-    }
+    const float renderpass_color[4] = {8.4f, 7.3f, 6.2f, 7.1f};
+    demo_push_cb_label(demo, cmd_buf, renderpass_color, "InsideRenderPass");
 
     vkCmdBindPipeline(cmd_buf, VK_PIPELINE_BIND_POINT_GRAPHICS, demo->pipeline);
     vkCmdBindDescriptorSets(cmd_buf, VK_PIPELINE_BIND_POINT_GRAPHICS, demo->pipeline_layout, 0, 1,
@@ -824,28 +868,15 @@ static void demo_draw_build_cmd(struct demo *demo, VkCommandBuffer cmd_buf) {
     scissor.offset.y = 0;
     vkCmdSetScissor(cmd_buf, 0, 1, &scissor);
 
-    if (demo->validate) {
-        label.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT;
-        label.pNext = NULL;
-        label.pLabelName = "ActualDraw";
-        label.color[0] = -0.4f;
-        label.color[1] = -0.3f;
-        label.color[2] = -0.2f;
-        label.color[3] = -0.1f;
-        demo->CmdBeginDebugUtilsLabelEXT(cmd_buf, &label);
-    }
-
+    const float draw_color[4] = {-0.4f, -0.3f, -0.2f, -0.1f};
+    demo_push_cb_label(demo, cmd_buf, draw_color, "ActualDraw");
     vkCmdDraw(cmd_buf, 12 * 3, 1, 0, 0);
-    if (demo->validate) {
-        demo->CmdEndDebugUtilsLabelEXT(cmd_buf);
-    }
+    demo_pop_cb_label(demo, cmd_buf);
 
     // Note that ending the renderpass changes the image's layout from
     // COLOR_ATTACHMENT_OPTIMAL to PRESENT_SRC_KHR
     vkCmdEndRenderPass(cmd_buf);
-    if (demo->validate) {
-        demo->CmdEndDebugUtilsLabelEXT(cmd_buf);
-    }
+    demo_pop_cb_label(demo, cmd_buf);
 
     if (demo->separate_present_queue) {
         // We have to transfer ownership from the graphics queue family to the
@@ -867,9 +898,7 @@ static void demo_draw_build_cmd(struct demo *demo, VkCommandBuffer cmd_buf) {
         vkCmdPipelineBarrier(cmd_buf, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, NULL, 0,
                              NULL, 1, &image_ownership_barrier);
     }
-    if (demo->validate) {
-        demo->CmdEndDebugUtilsLabelEXT(cmd_buf);
-    }
+    demo_pop_cb_label(demo, cmd_buf);
     err = vkEndCommandBuffer(cmd_buf);
     assert(!err);
 }
@@ -1394,6 +1423,9 @@ static void demo_prepare_buffers(struct demo *demo) {
     assert(demo->swapchain_image_resources);
 
     for (i = 0; i < demo->swapchainImageCount; i++) {
+        demo_name_object(demo, VK_OBJECT_TYPE_IMAGE, (uint64_t)swapchainImages[i], "SwapchainImage(%u)", i);
+    }
+    for (i = 0; i < demo->swapchainImageCount; i++) {
         VkImageViewCreateInfo color_image_view = {
             .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
             .pNext = NULL,
@@ -1417,6 +1449,8 @@ static void demo_prepare_buffers(struct demo *demo) {
 
         err = vkCreateImageView(demo->device, &color_image_view, NULL, &demo->swapchain_image_resources[i].view);
         assert(!err);
+        demo_name_object(demo, VK_OBJECT_TYPE_IMAGE_VIEW, (uint64_t)demo->swapchain_image_resources[i].view, "SwapchainView(%u)",
+                         i);
     }
 
     if (demo->VK_GOOGLE_display_timing_enabled) {
@@ -1483,6 +1517,7 @@ static void demo_prepare_depth(struct demo *demo) {
     /* create image */
     err = vkCreateImage(demo->device, &image, NULL, &demo->depth.image);
     assert(!err);
+    demo_name_object(demo, VK_OBJECT_TYPE_IMAGE, (uint64_t)demo->depth.image, "DepthImage");
 
     vkGetImageMemoryRequirements(demo->device, demo->depth.image, &mem_reqs);
     assert(!err);
@@ -1499,6 +1534,7 @@ static void demo_prepare_depth(struct demo *demo) {
     /* allocate memory */
     err = vkAllocateMemory(demo->device, &demo->depth.mem_alloc, NULL, &demo->depth.mem);
     assert(!err);
+    demo_name_object(demo, VK_OBJECT_TYPE_DEVICE_MEMORY, (uint64_t)demo->depth.mem, "DepthMem");
 
     /* bind memory */
     err = vkBindImageMemory(demo->device, demo->depth.image, demo->depth.mem, 0);
@@ -1508,6 +1544,7 @@ static void demo_prepare_depth(struct demo *demo) {
     view.image = demo->depth.image;
     err = vkCreateImageView(demo->device, &view, NULL, &demo->depth.view);
     assert(!err);
+    demo_name_object(demo, VK_OBJECT_TYPE_IMAGE_VIEW, (uint64_t)demo->depth.view, "DepthView");
 }
 
 /* Convert ppm image data from header file into RGBA texture image */
@@ -1569,6 +1606,7 @@ static void demo_prepare_texture_buffer(struct demo *demo, const char *filename,
 
     err = vkCreateBuffer(demo->device, &buffer_create_info, NULL, &tex_obj->buffer);
     assert(!err);
+    demo_name_object(demo, VK_OBJECT_TYPE_BUFFER, (uint64_t)tex_obj->buffer, "TexBuffer(%s)", filename);
 
     VkMemoryRequirements mem_reqs;
     vkGetBufferMemoryRequirements(demo->device, tex_obj->buffer, &mem_reqs);
@@ -1584,6 +1622,7 @@ static void demo_prepare_texture_buffer(struct demo *demo, const char *filename,
 
     err = vkAllocateMemory(demo->device, &tex_obj->mem_alloc, NULL, &(tex_obj->mem));
     assert(!err);
+    demo_name_object(demo, VK_OBJECT_TYPE_DEVICE_MEMORY, (uint64_t)tex_obj->mem, "TexBufMemory(%s)", filename);
 
     /* bind memory */
     err = vkBindBufferMemory(demo->device, tex_obj->buffer, tex_obj->mem, 0);
@@ -1638,6 +1677,7 @@ static void demo_prepare_texture_image(struct demo *demo, const char *filename, 
 
     err = vkCreateImage(demo->device, &image_create_info, NULL, &tex_obj->image);
     assert(!err);
+    demo_name_object(demo, VK_OBJECT_TYPE_IMAGE, (uint64_t)tex_obj->image, "TexImage(%s)", filename);
 
     vkGetImageMemoryRequirements(demo->device, tex_obj->image, &mem_reqs);
 
@@ -1652,6 +1692,7 @@ static void demo_prepare_texture_image(struct demo *demo, const char *filename, 
     /* allocate memory */
     err = vkAllocateMemory(demo->device, &tex_obj->mem_alloc, NULL, &(tex_obj->mem));
     assert(!err);
+    demo_name_object(demo, VK_OBJECT_TYPE_DEVICE_MEMORY, (uint64_t)tex_obj->mem, "TexImageMem(%s)", filename);
 
     /* bind memory */
     err = vkBindImageMemory(demo->device, tex_obj->image, tex_obj->mem, 0);
@@ -1699,6 +1740,7 @@ static void demo_prepare_textures(struct demo *demo) {
         VkResult U_ASSERT_ONLY err;
 
         if ((props.linearTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT) && !demo->use_staging_buffer) {
+            demo_push_cb_label(demo, demo->cmd, NULL, "DirectTexture(%u)", i);
             /* Device can texture using linear textures */
             demo_prepare_texture_image(demo, tex_files[i], &demo->textures[i], VK_IMAGE_TILING_LINEAR, VK_IMAGE_USAGE_SAMPLED_BIT,
                                        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
@@ -1708,8 +1750,10 @@ static void demo_prepare_textures(struct demo *demo) {
                                   demo->textures[i].imageLayout, 0, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
                                   VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
             demo->staging_texture.image = 0;
+            demo_pop_cb_label(demo, demo->cmd);  // "DirectTexture"
         } else if (props.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT) {
             /* Must use staging buffer to copy linear texture to optimized */
+            demo_push_cb_label(demo, demo->cmd, NULL, "StagingTexture(%u)", i);
 
             memset(&demo->staging_texture, 0, sizeof(demo->staging_texture));
             demo_prepare_texture_buffer(demo, tex_files[i], &demo->staging_texture);
@@ -1722,6 +1766,8 @@ static void demo_prepare_textures(struct demo *demo) {
                                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 0, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
                                   VK_PIPELINE_STAGE_TRANSFER_BIT);
 
+            demo_push_cb_label(demo, demo->cmd, NULL, "StagingBufferCopy(%u)", i);
+
             VkBufferImageCopy copy_region = {
                 .bufferOffset = 0,
                 .bufferRowLength = demo->staging_texture.tex_width,
@@ -1733,10 +1779,12 @@ static void demo_prepare_textures(struct demo *demo) {
 
             vkCmdCopyBufferToImage(demo->cmd, demo->staging_texture.buffer, demo->textures[i].image,
                                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy_region);
+            demo_pop_cb_label(demo, demo->cmd);  // "StagingBufferCopy"
 
             demo_set_image_layout(demo, demo->textures[i].image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                                   demo->textures[i].imageLayout, VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
                                   VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+            demo_pop_cb_label(demo, demo->cmd);  // "StagingTexture"
 
         } else {
             /* Can't support VK_FORMAT_R8G8B8A8_UNORM !? */
@@ -1782,10 +1830,12 @@ static void demo_prepare_textures(struct demo *demo) {
         /* create sampler */
         err = vkCreateSampler(demo->device, &sampler, NULL, &demo->textures[i].sampler);
         assert(!err);
+        demo_name_object(demo, VK_OBJECT_TYPE_SAMPLER, (uint64_t)demo->textures[i].sampler, "Sampler(%u)", i);
 
         /* create image view */
         view.image = demo->textures[i].image;
         err = vkCreateImageView(demo->device, &view, NULL, &demo->textures[i].view);
+        demo_name_object(demo, VK_OBJECT_TYPE_IMAGE_VIEW, (uint64_t)demo->textures[i].view, "TexImageView(%u)", i);
         assert(!err);
     }
 }
@@ -1823,6 +1873,8 @@ void demo_prepare_cube_data_buffers(struct demo *demo) {
     for (unsigned int i = 0; i < demo->swapchainImageCount; i++) {
         err = vkCreateBuffer(demo->device, &buf_info, NULL, &demo->swapchain_image_resources[i].uniform_buffer);
         assert(!err);
+        demo_name_object(demo, VK_OBJECT_TYPE_BUFFER, (uint64_t)demo->swapchain_image_resources[i].uniform_buffer,
+                         "SwapchainUniformBuf(%u)", i);
 
         vkGetBufferMemoryRequirements(demo->device, demo->swapchain_image_resources[i].uniform_buffer, &mem_reqs);
 
@@ -1838,6 +1890,8 @@ void demo_prepare_cube_data_buffers(struct demo *demo) {
 
         err = vkAllocateMemory(demo->device, &mem_alloc, NULL, &demo->swapchain_image_resources[i].uniform_memory);
         assert(!err);
+        demo_name_object(demo, VK_OBJECT_TYPE_DEVICE_MEMORY, (uint64_t)demo->swapchain_image_resources[i].uniform_memory,
+                         "SwapchainUniformMem(%u)", i);
 
         err = vkMapMemory(demo->device, demo->swapchain_image_resources[i].uniform_memory, 0, VK_WHOLE_SIZE, 0,
                           &demo->swapchain_image_resources[i].uniform_memory_ptr);
@@ -1990,7 +2044,7 @@ static void demo_prepare_render_pass(struct demo *demo) {
     assert(!err);
 }
 
-static VkShaderModule demo_prepare_shader_module(struct demo *demo, const uint32_t *code, size_t size) {
+static VkShaderModule demo_prepare_shader_module(const char *name, struct demo *demo, const uint32_t *code, size_t size) {
     VkShaderModule module;
     VkShaderModuleCreateInfo moduleCreateInfo;
     VkResult U_ASSERT_ONLY err;
@@ -2003,6 +2057,7 @@ static VkShaderModule demo_prepare_shader_module(struct demo *demo, const uint32
 
     err = vkCreateShaderModule(demo->device, &moduleCreateInfo, NULL, &module);
     assert(!err);
+    demo_name_object(demo, VK_OBJECT_TYPE_SHADER_MODULE, (uint64_t)module, "%s", name);
 
     return module;
 }
@@ -2011,14 +2066,14 @@ static void demo_prepare_vs(struct demo *demo) {
     const uint32_t vs_code[] = {
 #include "cube.vert.inc"
     };
-    demo->vert_shader_module = demo_prepare_shader_module(demo, vs_code, sizeof(vs_code));
+    demo->vert_shader_module = demo_prepare_shader_module("cube.vert", demo, vs_code, sizeof(vs_code));
 }
 
 static void demo_prepare_fs(struct demo *demo) {
     const uint32_t fs_code[] = {
 #include "cube.frag.inc"
     };
-    demo->frag_shader_module = demo_prepare_shader_module(demo, fs_code, sizeof(fs_code));
+    demo->frag_shader_module = demo_prepare_shader_module("cube.frag", demo, fs_code, sizeof(fs_code));
 }
 
 static void demo_prepare_pipeline(struct demo *demo) {
@@ -2232,6 +2287,8 @@ static void demo_prepare_framebuffers(struct demo *demo) {
         attachments[0] = demo->swapchain_image_resources[i].view;
         err = vkCreateFramebuffer(demo->device, &fb_info, NULL, &demo->swapchain_image_resources[i].framebuffer);
         assert(!err);
+        demo_name_object(demo, VK_OBJECT_TYPE_FRAMEBUFFER, (uint64_t)demo->swapchain_image_resources[i].framebuffer,
+                         "Framebuffer(%u)", i);
     }
 }
 
@@ -2264,6 +2321,7 @@ static void demo_prepare(struct demo *demo) {
     };
     err = vkAllocateCommandBuffers(demo->device, &cmd, &demo->cmd);
     assert(!err);
+    demo_name_object(demo, VK_OBJECT_TYPE_COMMAND_BUFFER, (uint64_t)demo->cmd, "PrepareCB");
     VkCommandBufferBeginInfo cmd_buf_info = {
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
         .pNext = NULL,
@@ -2271,6 +2329,7 @@ static void demo_prepare(struct demo *demo) {
         .pInheritanceInfo = NULL,
     };
     err = vkBeginCommandBuffer(demo->cmd, &cmd_buf_info);
+    demo_push_cb_label(demo, demo->cmd, NULL, "Prepare");
     assert(!err);
 
     demo_prepare_depth(demo);
@@ -2307,6 +2366,8 @@ static void demo_prepare(struct demo *demo) {
                                            &demo->swapchain_image_resources[i].graphics_to_present_cmd);
             assert(!err);
             demo_build_image_ownership_cmd(demo, i);
+            demo_name_object(demo, VK_OBJECT_TYPE_COMMAND_BUFFER,
+                             (uint64_t)demo->swapchain_image_resources[i].graphics_to_present_cmd, "GfxToPresent(%u)", i);
         }
     }
 
@@ -2324,6 +2385,7 @@ static void demo_prepare(struct demo *demo) {
      * Prepare functions above may generate pipeline commands
      * that need to be flushed before beginning the render loop.
      */
+    demo_pop_cb_label(demo, demo->cmd);  // "Prepare"
     demo_flush_init_cmd(demo);
     if (demo->staging_texture.buffer) {
         demo_destroy_texture(demo, &demo->staging_texture);
@@ -3807,13 +3869,16 @@ static void demo_init_vk_swapchain(struct demo *demo) {
 
         err = vkCreateSemaphore(demo->device, &semaphoreCreateInfo, NULL, &demo->image_acquired_semaphores[i]);
         assert(!err);
+        demo_name_object(demo, VK_OBJECT_TYPE_SEMAPHORE, (uint64_t)demo->image_acquired_semaphores[i], "AcquireSem(%u)", i);
 
         err = vkCreateSemaphore(demo->device, &semaphoreCreateInfo, NULL, &demo->draw_complete_semaphores[i]);
         assert(!err);
+        demo_name_object(demo, VK_OBJECT_TYPE_SEMAPHORE, (uint64_t)demo->draw_complete_semaphores[i], "DrawCompleteSem(%u)", i);
 
         if (demo->separate_present_queue) {
             err = vkCreateSemaphore(demo->device, &semaphoreCreateInfo, NULL, &demo->image_ownership_semaphores[i]);
             assert(!err);
+            demo_name_object(demo, VK_OBJECT_TYPE_SEMAPHORE, (uint64_t)demo->image_ownership_semaphores[i], "ImageOwnerSem(%u)", i);
         }
     }
     demo->frame_index = 0;
@@ -4020,13 +4085,27 @@ static void demo_init(struct demo *demo, int argc, char **argv) {
             i++;
             continue;
         }
-        if (strcmp(argv[i], "--width") == 0 && i < argc - 1 && sscanf(argv[i + 1], "%d", &demo->width) == 1 && demo->width > 0) {
-            i++;
-            continue;
+        if (strcmp(argv[i], "--width") == 0) {
+            if (i < argc - 1 && sscanf(argv[i + 1], "%d", &demo->width) == 1) {
+                if (demo->width > 0) {
+                    i++;
+                    continue;
+                } else {
+                    ERR_EXIT("The --width parameter must be greater than 0", "User Error");
+                }
+            }
+            ERR_EXIT("The --width parameter must be followed by a number", "User Error");
         }
-        if (strcmp(argv[i], "--height") == 0 && i < argc - 1 && sscanf(argv[i + 1], "%d", &demo->height) == 1 && demo->height > 0) {
-            i++;
-            continue;
+        if (strcmp(argv[i], "--height") == 0) {
+            if (i < argc - 1 && sscanf(argv[i + 1], "%d", &demo->height) == 1) {
+                if (demo->height > 0) {
+                    i++;
+                    continue;
+                } else {
+                    ERR_EXIT("The --height parameter must be greater than 0", "User Error");
+                }
+            }
+            ERR_EXIT("The --height parameter must be followed by a number", "User Error");
         }
         if (strcmp(argv[i], "--suppress_popups") == 0) {
             demo->suppress_popups = true;

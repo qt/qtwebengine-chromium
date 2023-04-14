@@ -229,10 +229,7 @@ template<> struct packet_traits<int64_t> : default_packet_traits
     Vectorizable = 1,
     AlignedOnScalar = 1,
     HasCmp = 1,
-    size=4,
-
-    // requires AVX512
-    HasShift     = 0,
+    size=4
   };
 };
 #endif
@@ -360,6 +357,35 @@ template <int N>
 EIGEN_STRONG_INLINE Packet4l plogical_shift_left(Packet4l a) {
   return _mm256_slli_epi64(a, N);
 }
+#ifdef EIGEN_VECTORIZE_AVX512FP16
+template <int N>
+EIGEN_STRONG_INLINE Packet4l parithmetic_shift_right(Packet4l a) { return _mm256_srai_epi64(a, N); }
+#else
+template <int N>
+EIGEN_STRONG_INLINE std::enable_if_t< (N == 0), Packet4l> parithmetic_shift_right(Packet4l a) {
+  return a;
+}
+template <int N>
+EIGEN_STRONG_INLINE std::enable_if_t< (N > 0) && (N < 32), Packet4l> parithmetic_shift_right(Packet4l a) {
+  __m256i hi_word = _mm256_srai_epi32(a, N);
+  __m256i lo_word = _mm256_srli_epi64(a, N);
+  return _mm256_blend_epi32(hi_word, lo_word, 0b01010101);
+}
+template <int N>
+EIGEN_STRONG_INLINE std::enable_if_t< (N >= 32) && (N < 63), Packet4l> parithmetic_shift_right(Packet4l a) {
+  __m256i hi_word = _mm256_srai_epi32(a, 31);
+  __m256i lo_word = _mm256_shuffle_epi32(_mm256_srai_epi32(a, N - 32), (shuffle_mask<1, 1, 3, 3>::mask));
+  return _mm256_blend_epi32(hi_word, lo_word, 0b01010101);
+}
+template <int N>
+EIGEN_STRONG_INLINE std::enable_if_t< (N == 63), Packet4l> parithmetic_shift_right(Packet4l a) {
+  return _mm256_shuffle_epi32(_mm256_srai_epi32(a, 31), (shuffle_mask<1, 1, 3, 3>::mask));
+}
+template <int N>
+EIGEN_STRONG_INLINE std::enable_if_t< (N < 0) || (N > 63), Packet4l> parithmetic_shift_right(Packet4l a) {
+  return parithmetic_shift_right<int(N&63)>(a);
+}
+#endif
 template <>
 EIGEN_STRONG_INLINE Packet4l pload<Packet4l>(const int64_t* from) {
   EIGEN_DEBUG_ALIGNED_LOAD return _mm256_load_si256(reinterpret_cast<const __m256i*>(from));
@@ -518,11 +544,13 @@ template<> EIGEN_STRONG_INLINE Packet8i psub<Packet8i>(const Packet8i& a, const 
 
 template<> EIGEN_STRONG_INLINE Packet8f pnegate(const Packet8f& a)
 {
-  return _mm256_sub_ps(_mm256_set1_ps(0.0),a);
+  const Packet8f mask = _mm256_castsi256_ps(_mm256_set1_epi32(0x80000000));
+  return _mm256_xor_ps(a, mask);
 }
 template<> EIGEN_STRONG_INLINE Packet4d pnegate(const Packet4d& a)
 {
-  return _mm256_sub_pd(_mm256_set1_pd(0.0),a);
+  const Packet4d mask = _mm256_castsi256_pd(_mm256_set1_epi64x(0x8000000000000000ULL));
+  return _mm256_xor_pd(a, mask);
 }
 template<> EIGEN_STRONG_INLINE Packet8i pnegate(const Packet8i& a)
 {
@@ -642,7 +670,7 @@ template<> EIGEN_STRONG_INLINE Packet8i pcmp_eq(const Packet8i& a, const Packet8
 }
 
 template<> EIGEN_STRONG_INLINE Packet8f pmin<Packet8f>(const Packet8f& a, const Packet8f& b) {
-#if EIGEN_COMP_GNUC && EIGEN_COMP_GNUC < 63
+#if EIGEN_GNUC_STRICT_LESS_THAN(6,3,0)
   // There appears to be a bug in GCC, by which the optimizer may flip
   // the argument order in calls to _mm_min_ps/_mm_max_ps, so we have to
   // resort to inline ASM here. This is supposed to be fixed in gcc6.3,
@@ -656,7 +684,7 @@ template<> EIGEN_STRONG_INLINE Packet8f pmin<Packet8f>(const Packet8f& a, const 
 #endif
 }
 template<> EIGEN_STRONG_INLINE Packet4d pmin<Packet4d>(const Packet4d& a, const Packet4d& b) {
-#if EIGEN_COMP_GNUC && EIGEN_COMP_GNUC < 63
+#if EIGEN_GNUC_STRICT_LESS_THAN(6,3,0)
   // See pmin above
   Packet4d res;
   asm("vminpd %[a], %[b], %[res]" : [res] "=x" (res) : [a] "x" (a), [b] "x" (b));
@@ -677,7 +705,7 @@ template<> EIGEN_STRONG_INLINE Packet8i pmin<Packet8i>(const Packet8i& a, const 
 }
 
 template<> EIGEN_STRONG_INLINE Packet8f pmax<Packet8f>(const Packet8f& a, const Packet8f& b) {
-#if EIGEN_COMP_GNUC && EIGEN_COMP_GNUC < 63
+#if EIGEN_GNUC_STRICT_LESS_THAN(6,3,0)
   // See pmin above
   Packet8f res;
   asm("vmaxps %[a], %[b], %[res]" : [res] "=x" (res) : [a] "x" (a), [b] "x" (b));
@@ -688,7 +716,7 @@ template<> EIGEN_STRONG_INLINE Packet8f pmax<Packet8f>(const Packet8f& a, const 
 #endif
 }
 template<> EIGEN_STRONG_INLINE Packet4d pmax<Packet4d>(const Packet4d& a, const Packet4d& b) {
-#if EIGEN_COMP_GNUC && EIGEN_COMP_GNUC < 63
+#if EIGEN_GNUC_STRICT_LESS_THAN(6,3,0)
   // See pmin above
   Packet4d res;
   asm("vmaxpd %[a], %[b], %[res]" : [res] "=x" (res) : [a] "x" (a), [b] "x" (b));
@@ -1102,6 +1130,13 @@ template<> EIGEN_STRONG_INLINE Packet8i pabs(const Packet8i& a)
   return _mm256_insertf128_si256(_mm256_castsi128_si256(lo), (hi), 1);
 #endif
 }
+
+template<> EIGEN_STRONG_INLINE Packet8h  psignbit(const Packet8h&  a) { return _mm_srai_epi16(a, 15); }
+template<> EIGEN_STRONG_INLINE Packet8bf psignbit(const Packet8bf& a) { return _mm_srai_epi16(a, 15); }
+template<> EIGEN_STRONG_INLINE Packet8f  psignbit(const Packet8f&  a) { return _mm256_castsi256_ps(parithmetic_shift_right<31>((Packet8i)_mm256_castps_si256(a))); }
+#ifdef EIGEN_VECTORIZE_AVX2
+template<> EIGEN_STRONG_INLINE Packet4d  psignbit(const Packet4d& a)  { return _mm256_castsi256_pd(parithmetic_shift_right<63>((Packet4l)_mm256_castpd_si256(a))); }
+#endif
 
 template<> EIGEN_STRONG_INLINE Packet8f pfrexp<Packet8f>(const Packet8f& a, Packet8f& exponent) {
   return pfrexp_generic(a,exponent);

@@ -19,6 +19,7 @@
 #include <unordered_set>
 #include <utility>
 
+#include "src/tint/builtin/builtin_value.h"
 #include "src/tint/program_builder.h"
 #include "src/tint/sem/function.h"
 #include "src/tint/transform/canonicalize_entry_point_io.h"
@@ -33,7 +34,7 @@ namespace {
 bool ShouldRun(const Program* program) {
     for (auto* node : program->ASTNodes().Objects()) {
         if (auto* attr = node->As<ast::BuiltinAttribute>()) {
-            if (attr->builtin == ast::BuiltinValue::kNumWorkgroups) {
+            if (program->Sem().Get(attr)->Value() == builtin::BuiltinValue::kNumWorkgroups) {
                 return true;
             }
         }
@@ -100,14 +101,15 @@ Transform::ApplyResult NumWorkgroupsFromUniform::Apply(const Program* src,
             for (auto* member : str->Members()) {
                 auto* builtin =
                     ast::GetAttribute<ast::BuiltinAttribute>(member->Declaration()->attributes);
-                if (!builtin || builtin->builtin != ast::BuiltinValue::kNumWorkgroups) {
+                if (!builtin ||
+                    src->Sem().Get(builtin)->Value() != builtin::BuiltinValue::kNumWorkgroups) {
                     continue;
                 }
 
                 // Capture the symbols that would be used to access this member, which
                 // we will replace later. We currently have no way to get from the
                 // parameter directly to the member accessor expressions that use it.
-                to_replace.insert({param->Declaration()->symbol, member->Name()});
+                to_replace.insert({param->Declaration()->name->symbol, member->Name()});
 
                 // Remove the struct member.
                 // The CanonicalizeEntryPointIO transform will have generated this
@@ -158,9 +160,9 @@ Transform::ApplyResult NumWorkgroupsFromUniform::Apply(const Program* src,
                 binding = 0;
             }
 
-            num_workgroups_ubo =
-                b.GlobalVar(b.Sym(), b.ty.Of(num_workgroups_struct), ast::AddressSpace::kUniform,
-                            b.Group(AInt(group)), b.Binding(AInt(binding)));
+            num_workgroups_ubo = b.GlobalVar(b.Sym(), b.ty.Of(num_workgroups_struct),
+                                             builtin::AddressSpace::kUniform, b.Group(AInt(group)),
+                                             b.Binding(AInt(binding)));
         }
         return num_workgroups_ubo;
     };
@@ -172,13 +174,14 @@ Transform::ApplyResult NumWorkgroupsFromUniform::Apply(const Program* src,
         if (!accessor) {
             continue;
         }
-        auto* ident = accessor->structure->As<ast::IdentifierExpression>();
+        auto* ident = accessor->object->As<ast::IdentifierExpression>();
         if (!ident) {
             continue;
         }
 
-        if (to_replace.count({ident->symbol, accessor->member->symbol})) {
-            ctx.Replace(accessor, b.MemberAccessor(get_ubo()->symbol, kNumWorkgroupsMemberName));
+        if (to_replace.count({ident->identifier->symbol, accessor->member->symbol})) {
+            ctx.Replace(accessor,
+                        b.MemberAccessor(get_ubo()->name->symbol, kNumWorkgroupsMemberName));
         }
     }
 

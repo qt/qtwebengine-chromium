@@ -11,6 +11,9 @@ const char kFeaturedInterface[] = "org.chromium.featured";
 const char kFeaturedServicePath[] = "/org/chromium/featured";
 const char kFeaturedServiceName[] = "org.chromium.featured";
 
+// Methods.
+constexpr char kHandleSeedFetchedMethod[] = "HandleSeedFetched";
+
 }  // namespace featured
 
 #endif  // SYSTEM_API_DBUS_FEATURED_DBUS_CONSTANTS_H_

@@ -165,6 +165,8 @@ The toolchain files available at the time of this writing are:
  - armv7-linux-gcc.cmake
  - armv7-mingw-gcc.cmake
  - armv7s-ios.cmake
+ - ppc-linux-gcc.cmake
+ - riscv-linux-gcc.cmake
  - x86-ios-simulator.cmake
  - x86-linux.cmake
  - x86-macos.cmake
@@ -215,27 +217,26 @@ compiler documentation to determine which, if any, are available.
 ### Microsoft Visual Studio builds {#microsoft-visual-studio-builds}
 
 Building the AV1 codec library in Microsoft Visual Studio is supported. Visual
-Studio 2017 (15.0) or later is required. The following example demonstrates
+Studio 2019 (16.0) or later is required. The following example demonstrates
 generating projects and a solution for the Microsoft IDE:
 
 ~~~
     # This does not require a bash shell; Command Prompt (cmd.exe) is fine.
     # This assumes the build host is a Windows x64 computer.
 
-    # To build with Visual Studio 2019 for the x64 target:
+    # To create a Visual Studio 2022 solution for the x64 target:
+    $ cmake path/to/aom -G "Visual Studio 17 2022"
+
+    # To create a Visual Studio 2022 solution for the 32-bit x86 target:
+    $ cmake path/to/aom -G "Visual Studio 17 2022" -A Win32
+
+    # To create a Visual Studio 2019 solution for the x64 target:
     $ cmake path/to/aom -G "Visual Studio 16 2019"
-    $ cmake --build .
 
-    # To build with Visual Studio 2019 for the 32-bit x86 target:
+    # To create a Visual Studio 2019 solution for the 32-bit x86 target:
     $ cmake path/to/aom -G "Visual Studio 16 2019" -A Win32
-    $ cmake --build .
 
-    # To build with Visual Studio 2017 for the x64 target:
-    $ cmake path/to/aom -G "Visual Studio 15 2017" -T host=x64 -A x64
-    $ cmake --build .
-
-    # To build with Visual Studio 2017 for the 32-bit x86 target:
-    $ cmake path/to/aom -G "Visual Studio 15 2017" -T host=x64
+    # To build the solution:
     $ cmake --build .
 ~~~
 

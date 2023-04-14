@@ -13,7 +13,7 @@ g.test('many')
     `Tests execution of a huge number of compute passes using the same
 GPUComputePipeline.`
   )
-  .fn(async t => {
+  .fn(t => {
     const kNumElements = 64;
     const data = new Uint32Array([...iterRange(kNumElements, x => x)]);
     const buffer = t.makeBufferWithContents(data, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC);
@@ -43,7 +43,7 @@ GPUComputePipeline.`
       const pass = encoder.beginComputePass();
       pass.setPipeline(pipeline);
       pass.setBindGroup(0, bindGroup);
-      pass.dispatch(kNumElements);
+      pass.dispatchWorkgroups(kNumElements);
       pass.end();
       t.device.queue.submit([encoder.finish()]);
     }
@@ -58,7 +58,7 @@ g.test('pipeline_churn')
     `Tests execution of a huge number of compute passes which each use a different
 GPUComputePipeline.`
   )
-  .fn(async t => {
+  .fn(t => {
     const buffer = t.makeBufferWithContents(
       new Uint32Array([0]),
       GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
@@ -86,7 +86,7 @@ GPUComputePipeline.`
       const pass = encoder.beginComputePass();
       pass.setPipeline(pipeline);
       pass.setBindGroup(0, bindGroup);
-      pass.dispatch(1);
+      pass.dispatchWorkgroups(1);
       pass.end();
       t.device.queue.submit([encoder.finish()]);
     }
@@ -98,7 +98,7 @@ g.test('bind_group_churn')
     `Tests execution of compute passes which switch between a huge number of bind
 groups.`
   )
-  .fn(async t => {
+  .fn(t => {
     const kNumElements = 64;
     const data = new Uint32Array([...iterRange(kNumElements, x => x)]);
     const buffer1 = t.makeBufferWithContents(
@@ -140,7 +140,7 @@ groups.`
         ],
       });
       pass.setBindGroup(0, bindGroup);
-      pass.dispatch(kNumElements);
+      pass.dispatchWorkgroups(kNumElements);
     }
     pass.end();
     t.device.queue.submit([encoder.finish()]);
@@ -157,7 +157,7 @@ groups.`
 
 g.test('many_dispatches')
   .desc(`Tests execution of compute passes with a huge number of dispatch calls`)
-  .fn(async t => {
+  .fn(t => {
     const kNumElements = 64;
     const data = new Uint32Array([...iterRange(kNumElements, x => x)]);
     const buffer = t.makeBufferWithContents(data, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC);
@@ -185,7 +185,7 @@ g.test('many_dispatches')
     });
     pass.setBindGroup(0, bindGroup);
     for (let i = 0; i < kNumIterations; ++i) {
-      pass.dispatch(kNumElements);
+      pass.dispatchWorkgroups(kNumElements);
     }
     pass.end();
     t.device.queue.submit([encoder.finish()]);
@@ -231,7 +231,7 @@ g.test('huge_dispatches')
       const pass = encoder.beginComputePass();
       pass.setBindGroup(0, bindGroup);
       pass.setPipeline(pipeline);
-      pass.dispatch(kDimensions[0], kDimensions[1], kDimensions[2]);
+      pass.dispatchWorkgroups(kDimensions[0], kDimensions[1], kDimensions[2]);
       pass.end();
       t.device.queue.submit([encoder.finish()]);
       await t.device.queue.onSubmittedWorkDone();

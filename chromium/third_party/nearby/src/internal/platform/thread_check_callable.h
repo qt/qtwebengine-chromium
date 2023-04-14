@@ -19,7 +19,6 @@
 #include "internal/platform/callable.h"
 #include "internal/platform/lockable.h"
 
-namespace location {
 namespace nearby {
 
 // A callable that acquires a lockable resource while running.
@@ -27,10 +26,10 @@ namespace nearby {
 template <typename T>
 class ThreadCheckCallable {
  public:
-  ThreadCheckCallable(const Lockable *lockable, Callable<T> &&callable)
-      : lockable_{lockable}, callable_{callable} {}
+  ThreadCheckCallable(const Lockable *lockable, Callable<T> callable)
+      : lockable_(lockable), callable_(std::move(callable)) {}
 
-  ExceptionOr<T> operator()() const {
+  ExceptionOr<T> operator()() {
     ThreadLockHolder thread_lock(lockable_);
     return callable_();
   }
@@ -41,6 +40,5 @@ class ThreadCheckCallable {
 };
 
 }  // namespace nearby
-}  // namespace location
 
 #endif  // PLATFORM_PUBLIC_THREAD_CHECK_CALLABLE_H_

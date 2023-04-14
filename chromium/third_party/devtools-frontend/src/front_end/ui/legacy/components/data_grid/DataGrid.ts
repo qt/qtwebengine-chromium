@@ -35,70 +35,70 @@ import dataGridStyles from './dataGrid.css.js';
 
 const UIStrings = {
   /**
-  *@description Accessible text label for expandible nodes in datagrids
-  */
+   *@description Accessible text label for expandible nodes in datagrids
+   */
   expanded: 'expanded',
   /**
-  *@description accessible name for expandible nodes in datagrids
-  */
+   *@description accessible name for expandible nodes in datagrids
+   */
   collapsed: 'collapsed',
   /**
-  *@description Accessible text for datagrid
-  *@example {Coverage grid} PH1
-  *@example {expanded} PH2
-  */
+   *@description Accessible text for datagrid
+   *@example {Coverage grid} PH1
+   *@example {expanded} PH2
+   */
   sRowS: '{PH1} Row {PH2}',
   /**
-  *@description Number of rows in a grid
-  *@example {1} PH1
-  */
+   *@description Number of rows in a grid
+   *@example {1} PH1
+   */
   rowsS: 'Rows: {PH1}',
   /**
-  * @description Default Accessible Text for a Datagrid. This text is read to the user by a
-  * screenreader when they navigate to a table structure. The placeholders tell the user something
-  * brief about the table contents i.e. the topic and how much data is in it.
-  * @example {Network} PH1
-  * @example {Rows: 27} PH2
-  */
+   * @description Default Accessible Text for a Datagrid. This text is read to the user by a
+   * screenreader when they navigate to a table structure. The placeholders tell the user something
+   * brief about the table contents i.e. the topic and how much data is in it.
+   * @example {Network} PH1
+   * @example {Rows: 27} PH2
+   */
   sSUseTheUpAndDownArrowKeysTo:
       '{PH1} {PH2}, use the up and down arrow keys to navigate and interact with the rows of the table; Use browse mode to read cell by cell.',
   /**
-  *@description A context menu item in the Data Grid of a data grid
-  */
+   *@description A context menu item in the Data Grid of a data grid
+   */
   sortByString: 'Sort By',
   /**
-  *@description A context menu item in data grids to reset the columns to their default weight
-  */
+   *@description A context menu item in data grids to reset the columns to their default weight
+   */
   resetColumns: 'Reset Columns',
   /**
-  *@description A context menu item in data grids to list header options.
-  */
+   *@description A context menu item in data grids to list header options.
+   */
   headerOptions: 'Header Options',
   /**
-  *@description Text to refresh the page
-  */
+   *@description Text to refresh the page
+   */
   refresh: 'Refresh',
   /**
-  *@description A context menu item in the Data Grid of a data grid
-  */
+   *@description A context menu item in the Data Grid of a data grid
+   */
   addNew: 'Add new',
   /**
-  *@description A context menu item in the Data Grid of a data grid
-  *@example {pattern} PH1
-  */
+   *@description A context menu item in the Data Grid of a data grid
+   *@example {pattern} PH1
+   */
   editS: 'Edit "{PH1}"',
   /**
-  *@description Text to delete something
-  */
+   *@description Text to delete something
+   */
   delete: 'Delete',
   /**
-  *@description Depth of a node in the datagrid
-  *@example {1} PH1
-  */
+   *@description Depth of a node in the datagrid
+   *@example {1} PH1
+   */
   levelS: 'level {PH1}',
   /**
-  *@description Text exposed to screen readers on checked items.
-  */
+   *@description Text exposed to screen readers on checked items.
+   */
   checked: 'checked',
   /**
    *@description Accessible text indicating an empty row is created.
@@ -1456,7 +1456,7 @@ export class DataGridImpl<T> extends Common.ObjectWrapper.ObjectWrapper<EventTyp
 
     // Constrain the dragpoint to be within the containing div of the
     // datagrid.
-    let dragPoint: number = event.clientX - this.element.totalOffsetLeft();
+    let dragPoint: number = event.clientX - this.element.getBoundingClientRect().left;
     let leftEdgeOfPreviousColumn = 0;
     // Constrain the dragpoint to be within the space made up by the
     // column directly to the left and the column directly to the right.
@@ -1729,6 +1729,12 @@ export class DataGridNode<T> {
   }
 
   protected createCells(element: Element): void {
+    // Keep track of the focused cell before removing child elements.
+    let focusedCellClassName: string|undefined;
+    if (element.contains(document.activeElement)) {
+      focusedCellClassName = document.activeElement?.className;
+    }
+
     element.removeChildren();
     if (!this.dataGrid || !this.parent) {
       return;
@@ -1742,6 +1748,11 @@ export class DataGridNode<T> {
     for (let i = 0; i < columnsArray.length; ++i) {
       const column = columnsArray[i];
       const cell = element.appendChild(this.createCell(column.id));
+      // Restore focus back to active cell to avoid losing focus
+      // when the datagrid is resized and cells are recreated.
+      if (cell.className === focusedCellClassName) {
+        cell.focus();
+      }
       // Add each visibile cell to the node's accessible text by gathering 'Column Title: content'
 
       if (column.dataType === DataType.Boolean && this.data[column.id] === true) {
@@ -2331,7 +2342,7 @@ export class DataGridNode<T> {
       return false;
     }
 
-    const left = cell.totalOffsetLeft() + this.leftPadding;
+    const left = cell.getBoundingClientRect().left + this.leftPadding;
     return event.pageX >= left && event.pageX <= left + this.disclosureToggleWidth;
   }
 

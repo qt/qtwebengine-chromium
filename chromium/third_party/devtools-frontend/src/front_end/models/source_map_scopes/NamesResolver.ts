@@ -10,7 +10,7 @@ import type * as Workspace from '../workspace/workspace.js';
 import * as Protocol from '../../generated/protocol.js';
 
 interface CachedScopeMap {
-  sourceMap: SDK.SourceMap.SourceMap|null;
+  sourceMap: SDK.SourceMap.SourceMap|undefined;
   mappingPromise: Promise<{variableMapping: Map<string, string>, thisMapping: string|null}>;
 }
 
@@ -222,7 +222,7 @@ const resolveScope =
               .ScopeChainEntry): Promise<{variableMapping: Map<string, string>, thisMapping: string | null}> => {
   let cachedScopeMap = scopeToCachedIdentifiersMap.get(scope);
   const script = scope.callFrame().script;
-  const sourceMap = Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance().sourceMapForScript(script);
+  const sourceMap = script.debuggerModel.sourceMapManager().sourceMapForClient(script);
 
   if (!cachedScopeMap || cachedScopeMap.sourceMap !== sourceMap) {
     // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration)
@@ -461,9 +461,7 @@ export const resolveExpression = async(
   if (!script) {
     return '';
   }
-  const sourceMap =
-      (Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance().sourceMapForScript(script) as
-       SDK.SourceMap.TextSourceMap);
+  const sourceMap = script.debuggerModel.sourceMapManager().sourceMapForClient(script);
   if (!sourceMap) {
     return '';
   }
@@ -471,13 +469,13 @@ export const resolveExpression = async(
   if (!text) {
     return '';
   }
-  const textRange = sourceMap.reverseMapTextRange(
+  const textRanges = sourceMap.reverseMapTextRanges(
       uiSourceCode.url(),
       new TextUtils.TextRange.TextRange(lineNumber, startColumnNumber, lineNumber, endColumnNumber));
-  if (!textRange) {
+  if (textRanges.length !== 1) {
     return '';
   }
-  const subjectText = text.extract(textRange);
+  const subjectText = text.extract(textRanges[0]);
   if (!subjectText) {
     return '';
   }
@@ -661,12 +659,12 @@ async function getFunctionNameFromScopeStart(
   // To reduce the overhead of resolving function names,
   // we check for source maps first and immediately leave
   // this function if the script doesn't have a sourcemap.
-  const sourceMap = Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance().sourceMapForScript(script);
+  const sourceMap = script.debuggerModel.sourceMapManager().sourceMapForClient(script);
   if (!sourceMap) {
     return null;
   }
 
-  const name = sourceMap?.findEntry(lineNumber, columnNumber)?.name;
+  const name = sourceMap.findEntry(lineNumber, columnNumber)?.name;
   if (!name) {
     return null;
   }

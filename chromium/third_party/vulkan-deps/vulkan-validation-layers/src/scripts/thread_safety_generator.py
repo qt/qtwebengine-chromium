@@ -1,10 +1,10 @@
 #!/usr/bin/python3 -i
 #!/usr/bin/python3 -i
 #
-# Copyright (c) 2015-2022 The Khronos Group Inc.
-# Copyright (c) 2015-2022 Valve Corporation
-# Copyright (c) 2015-2022 LunarG, Inc.
-# Copyright (c) 2015-2022 Google Inc.
+# Copyright (c) 2015-2023 The Khronos Group Inc.
+# Copyright (c) 2015-2023 Valve Corporation
+# Copyright (c) 2015-2023 LunarG, Inc.
+# Copyright (c) 2015-2023 Google Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,9 +17,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#
-# Author: Mike Stroyan <stroyan@google.com>
-# Author: Mark Lobodzinski <mark@lunarg.com>
 
 import os,re,sys
 from generator import *
@@ -132,10 +129,10 @@ class ThreadOutputGenerator(OutputGenerator):
 // This file is ***GENERATED***.  Do Not Edit.
 // See thread_safety_generator.py for modifications.
 
-/* Copyright (c) 2015-2022 The Khronos Group Inc.
- * Copyright (c) 2015-2022 Valve Corporation
- * Copyright (c) 2015-2022 LunarG, Inc.
- * Copyright (c) 2015-2022 Google Inc.
+/* Copyright (c) 2015-2023 The Khronos Group Inc.
+ * Copyright (c) 2015-2023 Valve Corporation
+ * Copyright (c) 2015-2023 LunarG, Inc.
+ * Copyright (c) 2015-2023 Google Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -148,8 +145,6 @@ class ThreadOutputGenerator(OutputGenerator):
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *
- * Author: Mark Lobodzinski <mark@lunarg.com>
  */"""
 
  # Note that the inline_custom_header_preamble template below contains three embedded template expansion identifiers.
@@ -416,12 +411,12 @@ public:
 
     // Override chassis read/write locks for this validation object
     // This override takes a deferred lock. i.e. it is not acquired.
-    ReadLockGuard ReadLock() override;
+    ReadLockGuard ReadLock() const override;
     WriteLockGuard WriteLock() override;
 
     vl_concurrent_unordered_map<VkCommandBuffer, VkCommandPool, 6> command_pool_map;
-    layer_data::unordered_map<VkCommandPool, layer_data::unordered_set<VkCommandBuffer>> pool_command_buffers_map;
-    layer_data::unordered_map<VkDevice, layer_data::unordered_set<VkQueue>> device_queues_map;
+    vvl::unordered_map<VkCommandPool, vvl::unordered_set<VkCommandBuffer>> pool_command_buffers_map;
+    vvl::unordered_map<VkDevice, vvl::unordered_set<VkQueue>> device_queues_map;
 
     // Track per-descriptorsetlayout and per-descriptorset whether read_only is used.
     // This is used to (sloppily) implement the relaxed externsync rules for read_only
@@ -635,7 +630,7 @@ void PostCallRecordGetDrmDisplayEXT(
 
 
     inline_custom_source_preamble = """
-ReadLockGuard ThreadSafety::ReadLock() {
+ReadLockGuard ThreadSafety::ReadLock() const {
     return ReadLockGuard(validation_object_mutex, std::defer_lock);
 }
 

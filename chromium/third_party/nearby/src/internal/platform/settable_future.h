@@ -16,13 +16,13 @@
 #define PLATFORM_PUBLIC_SETTABLE_FUTURE_H_
 
 #include <utility>
+#include <vector>
 
 #include "internal/platform/condition_variable.h"
 #include "internal/platform/mutex.h"
 #include "internal/platform/mutex_lock.h"
 #include "internal/platform/system_clock.h"
 
-namespace location {
 namespace nearby {
 
 template <typename T>
@@ -116,13 +116,12 @@ class SettableFuture : public api::SettableFuture<T> {
 
   mutable Mutex mutex_;
   ConditionVariable completed_{&mutex_};
-  std::vector<std::pair<api::Executor*, std::function<void()>>> listeners_;
+  std::vector<std::pair<api::Executor*, Runnable>> listeners_;
   bool done_{false};
   T value_;
   Exception exception_{Exception::kFailed};
 };
 
 }  // namespace nearby
-}  // namespace location
 
 #endif  // PLATFORM_PUBLIC_SETTABLE_FUTURE_H_

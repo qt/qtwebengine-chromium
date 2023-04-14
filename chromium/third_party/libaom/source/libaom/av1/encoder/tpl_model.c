@@ -9,8 +9,9 @@
  * PATENTS file, you can obtain it at www.aomedia.org/license/patent.
  */
 
-#include <stdint.h>
+#include <assert.h>
 #include <float.h>
+#include <stdint.h>
 
 #include "av1/encoder/thirdpass.h"
 #include "config/aom_config.h"
@@ -190,7 +191,7 @@ void av1_setup_tpl_buffers(AV1_PRIMARY *const ppi,
             &tpl_data->tpl_rec_pool[frame], width, height,
             seq_params->subsampling_x, seq_params->subsampling_y,
             seq_params->use_highbitdepth, tpl_data->border_in_pixels,
-            byte_alignment, alloc_y_plane_only))
+            byte_alignment, 0, alloc_y_plane_only))
       aom_internal_error(&ppi->error, AOM_CODEC_MEM_ERROR,
                          "Failed to allocate frame buffer");
   }
@@ -217,8 +218,8 @@ static int rate_estimator(const tran_low_t *qcoeff, int eob, TX_SIZE tx_size) {
   int rate_cost = 1;
 
   for (int idx = 0; idx < eob; ++idx) {
-    int abs_level = abs(qcoeff[scan_order->scan[idx]]);
-    rate_cost += (int)(log(abs_level + 1.0) / log(2.0)) + 1 + (abs_level > 0);
+    unsigned int abs_level = abs(qcoeff[scan_order->scan[idx]]);
+    rate_cost += get_msb(abs_level + 1) + 1 + (abs_level > 0);
   }
 
   return (rate_cost << AV1_PROB_COST_SHIFT);
@@ -1314,6 +1315,10 @@ static AOM_INLINE void init_mc_flow_dispenser(AV1_COMP *cpi, int frame_idx,
 
   // Initialize x->mbmi_ext when compound predictions are enabled.
   if (cpi->sf.tpl_sf.allow_compound_pred) av1_zero(x->mbmi_ext);
+
+  // Set the pointer to null since mbmi is only allocated inside this function.
+  assert(xd->mi == &mbmi_ptr);
+  xd->mi = NULL;
 }
 
 // This function stores the motion estimation dependencies of all the blocks in

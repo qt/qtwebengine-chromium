@@ -103,6 +103,7 @@ set(ei_smoke_test_list
   sizeof
   sizeoverflow
   smallvectors
+  sparse_basic_1
   sparse_basic_3
   sparse_block_1
   sparse_extra_4

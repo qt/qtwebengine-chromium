@@ -29,8 +29,6 @@ BUILD_ENVVAR = 'OPENSCREEN_BUILD_DIR'
 LIBAOM_ENVVAR = 'OPENSCREEN_HAVE_LIBAOM'
 
 TEST_VIDEO_NAME = 'Contador_Glam.mp4'
-# NOTE: we use the HTTP protocol instead of HTTPS due to certificate issues
-# in the legacy urllib.request API.
 TEST_VIDEO_URL = ('https://storage.googleapis.com/openscreen_standalone/' +
                   TEST_VIDEO_NAME)
 
@@ -54,11 +52,11 @@ EXPECTED_RECEIVER_MESSAGES = [
 ]
 
 class VideoCodec(IntEnum):
-  """There are different messages printed by the receiver depending on the codec
-  chosen. """
-  Vp8 = 0
-  Vp9 = 1
-  Av1 = 2
+    """An enumeration of the video codecs that should be sent by the sender."""
+    VP8 = 0
+    VP9 = 1
+    AV1 = 2
+
 
 VIDEO_CODEC_SPECIFIC_RECEIVER_MESSAGES = [
   "Found codec: vp8 (known to FFMPEG as vp8)",
@@ -102,7 +100,7 @@ def _set_log_level(is_verbose):
 
 def _get_loopback_adapter_name():
     """Retrieves the name of the loopback adapter (lo on Linux/lo0 on Mac)."""
-    if sys.platform == 'linux' or sys.platform == 'linux2':
+    if sys.platform in ('linux', 'linux2'):
         return 'lo'
     if sys.platform == 'darwin':
         return 'lo0'
@@ -146,8 +144,8 @@ class TestFlags(IntFlag):
     Test flags, primarily used to control sender and receiver configuration
     to test different features of the standalone libraries.
     """
-    UseRemoting = 1
-    UseAndroidHack = 2
+    USE_REMOTING = 1
+    USE_ANDROID_HACK = 2
 
 
 class StandaloneCastTest(unittest.TestCase):
@@ -178,7 +176,9 @@ class StandaloneCastTest(unittest.TestCase):
             return
 
         logging.debug('Downloading video from %s', TEST_VIDEO_URL)
-        with request.urlopen(TEST_VIDEO_URL, context=ssl.SSLContext()) as url:
+        with request.urlopen(TEST_VIDEO_URL,
+                             context=ssl.SSLContext(
+                                 ssl.PROTOCOL_TLS_CLIENT)) as url:
             with open(cls.build_paths.test_video, 'wb') as file:
                 file.write(url.read())
 
@@ -192,16 +192,15 @@ class StandaloneCastTest(unittest.TestCase):
             return
 
         logging.debug('Credentials out of date, generating new ones...')
+        command = [
+            cls.build_paths.cast_receiver,
+            '-g',  # Generate certificate and private key.
+            '-v'  # Enable verbose logging.
+        ]
         try:
-            subprocess.check_output(
-                [
-                    cls.build_paths.cast_receiver,
-                    '-g',  # Generate certificate and private key.
-                    '-v'  # Enable verbose logging.
-                ],
-                stderr=subprocess.STDOUT)
-        except subprocess.CalledProcessError as e:
-            print('Generation failed with output: ', e.output.decode())
+            subprocess.check_output(command, stderr=subprocess.STDOUT)
+        except subprocess.CalledProcessError as error:
+            print('Generation failed with output: ', error.output.decode())
             raise
 
     def launch_receiver(self):
@@ -210,20 +209,19 @@ class StandaloneCastTest(unittest.TestCase):
         loopback = _get_loopback_adapter_name()
         self.assertTrue(loopback)
 
-        #pylint: disable = consider-using-with
-        return subprocess.Popen(
-            [
-                self.build_paths.cast_receiver,
-                '-d',
-                TEST_CERT_NAME,
-                '-p',
-                TEST_KEY_NAME,
-                '-x',  # Skip discovery, only necessary on Mac OS X.
-                '-v',  # Enable verbose logging.
-                loopback
-            ],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE)
+        command = [
+            self.build_paths.cast_receiver,
+            '-d',
+            TEST_CERT_NAME,
+            '-p',
+            TEST_KEY_NAME,
+            '-x',  # Skip discovery, only necessary on Mac OS X.
+            '-v',  # Enable verbose logging.
+            loopback
+        ]
+        return subprocess.Popen(command,
+                                stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE)
 
     def launch_sender(self, flags, codec=None):
         """Launches the sender process, running the test video file once."""
@@ -236,22 +234,22 @@ class StandaloneCastTest(unittest.TestCase):
             TEST_CERT_NAME,
             '-n'  # Only play the video once, and then exit.
         ]
-        if TestFlags.UseAndroidHack in flags:
+        if TestFlags.USE_ANDROID_HACK in flags:
             command.append('-a')
-        if TestFlags.UseRemoting in flags:
+        if TestFlags.USE_REMOTING in flags:
             command.append('-r')
 
         # The standalone sender sends VP8 if no codec command line argument is
         # passed.
         if codec:
-          command.append('-c')
-          if codec == VideoCodec.Vp8:
-            command.append('vp8')
-          elif codec == VideoCodec.Vp9:
-              command.append('vp9')
-          else:
-              self.assertTrue(codec == VideoCodec.Av1)
-              command.append('av1')
+            command.append('-c')
+            if codec == VideoCodec.VP8:
+                command.append('vp8')
+            elif codec == VideoCodec.VP9:
+                command.append('vp9')
+            else:
+                self.assertTrue(codec == VideoCodec.AV1)
+                command.append('av1')
 
         #pylint: disable = consider-using-with
         return subprocess.Popen(command,
@@ -263,20 +261,18 @@ class StandaloneCastTest(unittest.TestCase):
 
         # If a codec was not provided, we should make sure that the standalone
         # sender sent VP8.
-        if codec == None:
-          codec = VideoCodec.Vp8
+        if codec is None:
+            codec = VideoCodec.VP8
 
         for message in (EXPECTED_RECEIVER_MESSAGES +
                         [VIDEO_CODEC_SPECIFIC_RECEIVER_MESSAGES[codec]]):
             self.assertTrue(
                 message in logs[0],
-                'Missing log message: {}.\n{}'.format(message,
-                                                      MISSING_LOG_MESSAGE))
+                f'Missing log message: {message}.\n{MISSING_LOG_MESSAGE}')
         for message in EXPECTED_SENDER_MESSAGES:
             self.assertTrue(
                 message in logs[1],
-                'Missing log message: {}.\n{}'.format(message,
-                                                      MISSING_LOG_MESSAGE))
+                f'Missing log message: {message}.\n{MISSING_LOG_MESSAGE}')
         for log, prefix in logs, ["[ERROR:", "[FATAL:"]:
             self.assertTrue(prefix not in log, "Logs contained an error")
         logging.debug('Finished validating log output')
@@ -298,7 +294,7 @@ class StandaloneCastTest(unittest.TestCase):
 
         # TODO(issuetracker.google.com/194292855): standalones should exit zero.
         # Remoting causes the sender to exit with code -4.
-        if not TestFlags.UseRemoting in flags:
+        if not TestFlags.USE_REMOTING in flags:
             self.assertEqual(sender_process.returncode, 0,
                              'sender had non-zero exit code')
         return output
@@ -310,30 +306,30 @@ class StandaloneCastTest(unittest.TestCase):
 
     def test_remoting(self):
         """Tests that basic remoting works."""
-        output = self.get_output(TestFlags.UseRemoting)
+        output = self.get_output(TestFlags.USE_REMOTING)
         self.check_logs(output)
 
     def test_with_android_hack(self):
         """Tests that things work when the Android RTP hack is enabled."""
-        output = self.get_output(TestFlags.UseAndroidHack)
+        output = self.get_output(TestFlags.USE_ANDROID_HACK)
         self.check_logs(output)
 
     def test_vp8_flag(self):
-      """Tests that the VP8 flag works with standard settings."""
-      output = self.get_output([], VideoCodec.Vp8)
-      self.check_logs(output, VideoCodec.Vp8)
+        """Tests that the VP8 flag works with standard settings."""
+        output = self.get_output([], VideoCodec.VP8)
+        self.check_logs(output, VideoCodec.VP8)
 
     def test_vp9_flag(self):
-      """Tests that the VP9 flag works with standard settings."""
-      output = self.get_output([], VideoCodec.Vp9)
-      self.check_logs(output, VideoCodec.Vp9)
+        """Tests that the VP9 flag works with standard settings."""
+        output = self.get_output([], VideoCodec.VP9)
+        self.check_logs(output, VideoCodec.VP9)
 
     @unittest.skipUnless(os.getenv(LIBAOM_ENVVAR),
                         'Skipping AV1 test since LibAOM not installed.')
     def test_av1_flag(self):
-      """Tests that the AV1 flag works with standard settings."""
-      output = self.get_output([], VideoCodec.Av1)
-      self.check_logs(output, VideoCodec.Av1)
+        """Tests that the AV1 flag works with standard settings."""
+        output = self.get_output([], VideoCodec.AV1)
+        self.check_logs(output, VideoCodec.AV1)
 
 
 def parse_args():

@@ -26,12 +26,12 @@
 
 
 static void Im2ColGEMMBenchmark(benchmark::State& state,
-  xnn_f32_gemm_minmax_ukernel_function f32_gemm,
+  xnn_f32_gemm_minmax_ukernel_fn f32_gemm,
   uint32_t mr, uint32_t nr, uint32_t kr, uint32_t sr,
   xnn_init_f32_minmax_params_fn init_params,
   benchmark::utils::IsaCheckFunction isa_check = nullptr)
 {
-  if (isa_check && !isa_check(state)) {
+  if (isa_check != nullptr && !isa_check(state)) {
     return;
   }
 
@@ -142,12 +142,12 @@ static void Im2ColGEMMBenchmark(benchmark::State& state,
 
 
 #if XNN_ARCH_ARM64 && XNN_ENABLE_ASSEMBLY
-  static void f32_gemm_4x8__aarch64_neonfma_prfm_cortex_a75(benchmark::State& state, const char* net) {
-    Im2ColGEMMBenchmark(state, xnn_f32_gemm_minmax_ukernel_4x8__aarch64_neonfma_prfm_cortex_a75, 4, 8, 1, 1,
+  static void f32_gemm_4x8__asm_aarch64_neonfma_prfm_cortex_a75(benchmark::State& state, const char* net) {
+    Im2ColGEMMBenchmark(state, xnn_f32_gemm_minmax_ukernel_4x8__asm_aarch64_neonfma_prfm_cortex_a75, 4, 8, 1, 1,
       xnn_init_f32_minmax_scalar_params);
   }
 
-  BENCHMARK_CONV(f32_gemm_4x8__aarch64_neonfma_prfm_cortex_a75)
+  BENCHMARK_CONV(f32_gemm_4x8__asm_aarch64_neonfma_prfm_cortex_a75)
 #endif  // XNN_ARCH_ARM64 && XNN_ENABLE_ASSEMBLY
 
 

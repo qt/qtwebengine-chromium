@@ -16,10 +16,10 @@
 
 #include "gtest/gtest.h"
 #include "src/tint/resolver/resolver_test_helper.h"
-#include "src/tint/sem/expression.h"
 #include "src/tint/sem/for_loop_statement.h"
 #include "src/tint/sem/if_statement.h"
 #include "src/tint/sem/switch_statement.h"
+#include "src/tint/sem/value_expression.h"
 #include "src/tint/sem/while_statement.h"
 
 using namespace tint::number_suffixes;  // NOLINT
@@ -82,7 +82,7 @@ TEST_F(ResolverBehaviorTest, ExprIndex_Arr) {
     Func("ArrayDiscardOrNext", utils::Empty, ty.array<i32, 4>(),
          utils::Vector{
              If(true, Block(Discard())),
-             Return(Construct(ty.array<i32, 4>())),
+             Return(array<i32, 4>()),
          });
 
     auto* stmt = Decl(Var("lhs", ty.i32(), IndexAccessor(Call("ArrayDiscardOrNext"), 1_i)));

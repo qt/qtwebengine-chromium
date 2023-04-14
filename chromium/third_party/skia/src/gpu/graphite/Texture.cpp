@@ -17,7 +17,7 @@ Texture::Texture(const SharedContext* sharedContext,
                  const TextureInfo& info,
                  sk_sp<MutableTextureStateRef> mutableState,
                  Ownership ownership,
-                 SkBudgeted budgeted)
+                 skgpu::Budgeted budgeted)
         : Resource(sharedContext, ownership, budgeted)
         , fDimensions(dimensions)
         , fInfo(info)
@@ -28,5 +28,7 @@ Texture::~Texture() {}
 void Texture::setReleaseCallback(sk_sp<RefCntedCallback> releaseCallback) {
     fReleaseCallback = std::move(releaseCallback);
 }
+
+MutableTextureStateRef* Texture::mutableState() const { return fMutableState.get(); }
 
 } // namespace skgpu::graphite

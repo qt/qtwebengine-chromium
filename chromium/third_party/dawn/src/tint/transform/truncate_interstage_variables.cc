@@ -83,7 +83,7 @@ Transform::ApplyResult TruncateInterstageVariables::Apply(const Program* src,
         auto* func_sem = sem.Get(func_ast);
         auto* str = func_sem->ReturnType()->As<sem::Struct>();
 
-        if (!str) {
+        if (TINT_UNLIKELY(!str)) {
             TINT_ICE(Transform, ctx.dst->Diagnostics())
                 << "Entrypoint function return type is non-struct.\n"
                 << "TruncateInterstageVariables transform needs to run after "
@@ -141,13 +141,14 @@ Transform::ApplyResult TruncateInterstageVariables::Apply(const Program* src,
                 auto mapping_fn_sym = b.Symbols().New("truncate_shader_output");
                 b.Func(mapping_fn_sym,
                        utils::Vector{b.Param("io", ctx.Clone(func_ast->return_type))},
-                       b.ty.type_name(new_struct_sym),
-                       utils::Vector{b.Return(b.Construct(b.ty.type_name(new_struct_sym),
-                                                          std::move(initializer_exprs)))});
+                       b.ty(new_struct_sym),
+                       utils::Vector{
+                           b.Return(b.Call(new_struct_sym, std::move(initializer_exprs))),
+                       });
                 return TruncatedStructAndConverter{new_struct_sym, mapping_fn_sym};
             });
 
-        ctx.Replace(func_ast->return_type, b.ty.type_name(entry.truncated_struct));
+        ctx.Replace(func_ast->return_type.expr, b.Expr(entry.truncated_struct));
 
         entry_point_functions_to_truncate_functions.Add(func_sem, entry.truncate_fn);
     }

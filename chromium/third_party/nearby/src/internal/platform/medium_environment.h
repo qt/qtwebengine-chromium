@@ -16,7 +16,6 @@
 #define PLATFORM_BASE_MEDIUM_ENVIRONMENT_H_
 
 #include <atomic>
-#include <functional>
 #include <memory>
 #include <string>
 #include <utility>
@@ -42,9 +41,8 @@
 #include "internal/platform/mutex.h"
 #include "internal/platform/nsd_service_info.h"
 #include "internal/platform/single_thread_executor.h"
-#include "internal/platform/wifi_hotspot_credential.h"
+#include "internal/platform/wifi_credential.h"
 
-namespace location {
 namespace nearby {
 
 // Environment config that can control availability of certain mediums for
@@ -323,7 +321,7 @@ class MediumEnvironment {
   // medium is exposing Start WifiDirect event.
   void UpdateWifiDirectMediumForStartOrConnect(
       api::WifiDirectMedium& medium,
-      const HotspotCredentials* wifi_direct_credentials, bool is_go,
+      const WifiDirectCredentials* wifi_direct_credentials, bool is_go,
       bool enabled);
 
   // For unit test only
@@ -396,7 +394,7 @@ class MediumEnvironment {
     bool is_go = false;
     // Set "true" when GO is started or GC is connected
     bool is_active = false;
-    const HotspotCredentials* wifi_direct_credentials;
+    const WifiDirectCredentials* wifi_direct_credentials;
   };
 
   struct WifiHotspotMediumContext {
@@ -434,7 +432,7 @@ class MediumEnvironment {
                                     const NsdServiceInfo& service_info,
                                     bool enabled);
 
-  void RunOnMediumEnvironmentThread(std::function<void()> runnable);
+  void RunOnMediumEnvironmentThread(Runnable runnable);
 
   std::atomic_bool enabled_ = false;
   std::atomic_int job_count_ = 0;
@@ -452,11 +450,9 @@ class MediumEnvironment {
   absl::flat_hash_map<api::BleMedium*, BleMediumContext> ble_mediums_;
   absl::flat_hash_map<api::ble_v2::BleMedium*, BleV2MediumContext>
       ble_v2_mediums_;
-  absl::flat_hash_map<api::ble_v2::GattCharacteristic,
-                      location::nearby::ByteArray>
+  absl::flat_hash_map<api::ble_v2::GattCharacteristic, nearby::ByteArray>
       gatt_advertisement_bytes_;
-  absl::flat_hash_map<api::ble_v2::GattCharacteristic,
-                      location::nearby::ByteArray>
+  absl::flat_hash_map<api::ble_v2::GattCharacteristic, nearby::ByteArray>
       discovered_gatt_advertisement_bytes_;
 
 #ifndef NO_WEBRTC
@@ -484,6 +480,5 @@ class MediumEnvironment {
 };
 
 }  // namespace nearby
-}  // namespace location
 
 #endif  // PLATFORM_BASE_MEDIUM_ENVIRONMENT_H_

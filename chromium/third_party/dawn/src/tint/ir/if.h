@@ -15,7 +15,7 @@
 #ifndef SRC_TINT_IR_IF_H_
 #define SRC_TINT_IR_IF_H_
 
-#include "src/tint/ast/if_statement.h"
+#include "src/tint/ir/branch.h"
 #include "src/tint/ir/flow_node.h"
 #include "src/tint/ir/value.h"
 
@@ -30,20 +30,16 @@ namespace tint::ir {
 class If : public Castable<If, FlowNode> {
   public:
     /// Constructor
-    /// @param stmt the ast::IfStatement or ast::BreakIfStatement
-    explicit If(const ast::Statement* stmt);
+    If();
     ~If() override;
 
-    /// The ast::IfStatement or ast::BreakIfStatement source for this flow node.
-    const ast::Statement* source;
-
     /// The true branch block
-    Block* true_target = nullptr;
+    Branch true_ = {};
     /// The false branch block
-    Block* false_target = nullptr;
-    /// An block to reconvert the true/false barnches. The block always exists, but there maybe no
+    Branch false_ = {};
+    /// An block to converge the true/false branches. The block always exists, but there maybe no
     /// branches into it. (e.g. if both branches `return`)
-    Block* merge_target = nullptr;
+    Branch merge = {};
     /// Value holding the condition result
     const Value* condition = nullptr;
 };

@@ -17,9 +17,9 @@
 #include "include/core/SkTypes.h"
 #include "include/core/SkVertices.h"
 #include "include/private/SkColorData.h"
-#include "include/private/SkFloatingPoint.h"
-#include "include/private/SkTDArray.h"
-#include "include/private/SkTemplates.h"
+#include "include/private/base/SkFloatingPoint.h"
+#include "include/private/base/SkTDArray.h"
+#include "include/private/base/SkTemplates.h"
 #include "src/core/SkDrawShadowInfo.h"
 #include "src/core/SkGeometry.h"
 #include "src/core/SkPointPriv.h"
@@ -33,6 +33,8 @@
 #if SK_SUPPORT_GPU
 #include "src/gpu/ganesh/geometry/GrPathUtils.h"
 #endif
+
+using namespace skia_private;
 
 #if !defined(SK_ENABLE_OPTIMIZE_SIZE)
 
@@ -609,7 +611,7 @@ void SkBaseShadowTessellator::stitchConcaveRings(const SkTDArray<SkPoint>& umbra
                                                  const SkTDArray<SkPoint>& penumbraPolygon,
                                                  SkTDArray<int>* penumbraIndices) {
     // TODO: only create and fill indexMap when fTransparent is true?
-    SkAutoSTMalloc<64, uint16_t> indexMap(umbraPolygon.size());
+    AutoSTMalloc<64, uint16_t> indexMap(umbraPolygon.size());
 
     // find minimum indices
     int minIndex = 0;

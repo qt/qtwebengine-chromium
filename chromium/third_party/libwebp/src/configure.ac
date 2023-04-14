@@ -1,4 +1,4 @@
-AC_INIT([libwebp], [1.2.3],
+AC_INIT([libwebp], [1.3.0],
         [https://bugs.chromium.org/p/webp],,
         [https://developers.google.com/speed/webp])
 AC_CANONICAL_HOST
@@ -749,11 +749,13 @@ fi
 
 dnl =========================
 
+dnl Add an empty webp_libname_prefix variable for use in *.pc.in.
+AC_SUBST([webp_libname_prefix])
 AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_HEADERS([src/webp/config.h])
 AC_CONFIG_FILES([Makefile src/Makefile man/Makefile \
                  examples/Makefile extras/Makefile imageio/Makefile \
-                 sharpyuv/Makefile \
+                 sharpyuv/Makefile sharpyuv/libsharpyuv.pc \
                  src/dec/Makefile src/enc/Makefile src/dsp/Makefile \
                  src/demux/Makefile src/mux/Makefile \
                  src/utils/Makefile \

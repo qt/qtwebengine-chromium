@@ -17,6 +17,8 @@
 
 #include <memory>
 
+#include "dawn/common/NonCopyable.h"
+
 #include "dawn/native/Error.h"
 #include "dawn/native/Forward.h"
 #include "dawn/native/IntegerTypes.h"
@@ -71,7 +73,9 @@ class BufferBase : public ApiObjectBase {
     bool NeedsInitialization() const;
     bool IsDataInitialized() const;
     void SetIsDataInitialized();
+    void MarkUsedInPendingCommands();
 
+    virtual void* GetMappedPointer() = 0;
     void* GetMappedRange(size_t offset, size_t size, bool writable = true);
     void Unmap();
 
@@ -86,13 +90,12 @@ class BufferBase : public ApiObjectBase {
     void APIUnmap();
     void APIDestroy();
     wgpu::BufferUsage APIGetUsage() const;
+    wgpu::BufferMapState APIGetMapState() const;
     uint64_t APIGetSize() const;
 
   protected:
     BufferBase(DeviceBase* device, const BufferDescriptor* descriptor);
     BufferBase(DeviceBase* device, const BufferDescriptor* descriptor, ObjectBase::ErrorTag tag);
-    // Constructor used only for mocking and testing.
-    BufferBase(DeviceBase* device, BufferState state);
 
     void DestroyImpl() override;
 
@@ -102,15 +105,34 @@ class BufferBase : public ApiObjectBase {
 
     uint64_t mAllocatedSize = 0;
 
+    ExecutionSerial mLastUsageSerial = ExecutionSerial(0);
+
   private:
+    // A helper structure to enforce that the mapAsync callback is called only at the very end of
+    // methods that might trigger callbacks. Non-copyable but movable for the assertion in the
+    // destructor to ensure not to forget to call the callback
+    struct [[nodiscard]] PendingMappingCallback : public NonCopyable {
+        WGPUBufferMapCallback callback;
+        void* userdata;
+        WGPUBufferMapAsyncStatus status;
+
+        PendingMappingCallback();
+        ~PendingMappingCallback();
+
+        PendingMappingCallback(PendingMappingCallback&& other);
+        PendingMappingCallback& operator=(PendingMappingCallback&& other);
+
+        void Call();
+    };
+    PendingMappingCallback WillCallMappingCallback(MapRequestID mapID,
+                                                   WGPUBufferMapAsyncStatus status);
+
     virtual MaybeError MapAtCreationImpl() = 0;
     virtual MaybeError MapAsyncImpl(wgpu::MapMode mode, size_t offset, size_t size) = 0;
     virtual void UnmapImpl() = 0;
-    virtual void* GetMappedPointerImpl() = 0;
 
     virtual bool IsCPUWritableAtCreation() const = 0;
     MaybeError CopyFromStagingBuffer();
-    void CallMapCallback(MapRequestID mapID, WGPUBufferMapAsyncStatus status);
 
     MaybeError ValidateMapAsync(wgpu::MapMode mode,
                                 size_t offset,
@@ -118,17 +140,23 @@ class BufferBase : public ApiObjectBase {
                                 WGPUBufferMapAsyncStatus* status) const;
     MaybeError ValidateUnmap() const;
     bool CanGetMappedRange(bool writable, size_t offset, size_t size) const;
-    void UnmapInternal(WGPUBufferMapAsyncStatus callbackStatus);
+    PendingMappingCallback UnmapInternal(WGPUBufferMapAsyncStatus callbackStatus);
 
     uint64_t mSize = 0;
     wgpu::BufferUsage mUsage = wgpu::BufferUsage::None;
     BufferState mState;
     bool mIsDataInitialized = false;
 
-    std::unique_ptr<StagingBufferBase> mStagingBuffer;
+    // mStagingBuffer is used to implement mappedAtCreation for
+    // buffers with non-mappable usage. It is transiently allocated
+    // and released when the mappedAtCreation-buffer is unmapped.
+    // Because `mStagingBuffer` itself is directly mappable, it will
+    // not create another staging buffer.
+    // i.e. buffer->mStagingBuffer->mStagingBuffer... is not possible.
+    Ref<BufferBase> mStagingBuffer;
 
     WGPUBufferMapCallback mMapCallback = nullptr;
-    void* mMapUserdata = 0;
+    void* mMapUserdata = nullptr;
     MapRequestID mLastMapID = MapRequestID(0);
     wgpu::MapMode mMapMode = wgpu::MapMode::None;
     size_t mMapOffset = 0;

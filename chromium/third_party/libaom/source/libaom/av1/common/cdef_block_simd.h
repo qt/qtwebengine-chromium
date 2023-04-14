@@ -197,8 +197,16 @@ int SIMD_FUNC(cdef_find_dir)(const uint16_t *img, int stride, int32_t *var,
   return best_dir;
 }
 
+// Work around compiler out of memory issues with Win32 builds. This issue has
+// been observed with Visual Studio 2017, 2019, and 2022 (version 17.4).
+#if defined(_MSC_VER) && defined(_M_IX86) && _MSC_VER < 1940
+#define CDEF_INLINE static INLINE
+#else
+#define CDEF_INLINE SIMD_INLINE
+#endif
+
 // sign(a-b) * min(abs(a-b), max(0, threshold - (abs(a-b) >> adjdamp)))
-SIMD_INLINE v256 constrain16(v256 a, v256 b, unsigned int threshold,
+CDEF_INLINE v256 constrain16(v256 a, v256 b, unsigned int threshold,
                              unsigned int adjdamp) {
   v256 diff = v256_sub_16(a, b);
   const v256 sign = v256_shr_n_s16(diff, 15);
@@ -262,7 +270,7 @@ SIMD_INLINE v256 get_max_secondary(const int is_lowbd, v256 *tap, v256 max,
   return max;
 }
 
-SIMD_INLINE void filter_block_4x4(const int is_lowbd, void *dest, int dstride,
+CDEF_INLINE void filter_block_4x4(const int is_lowbd, void *dest, int dstride,
                                   const uint16_t *in, int pri_strength,
                                   int sec_strength, int dir, int pri_damping,
                                   int sec_damping, int coeff_shift, int height,
@@ -454,7 +462,7 @@ SIMD_INLINE void filter_block_4x4(const int is_lowbd, void *dest, int dstride,
   }
 }
 
-SIMD_INLINE void filter_block_8x8(const int is_lowbd, void *dest, int dstride,
+CDEF_INLINE void filter_block_8x8(const int is_lowbd, void *dest, int dstride,
                                   const uint16_t *in, int pri_strength,
                                   int sec_strength, int dir, int pri_damping,
                                   int sec_damping, int coeff_shift, int height,
@@ -666,14 +674,13 @@ void SIMD_FUNC(cdef_filter_8_0)(void *dest, int dstride, const uint16_t *in,
                                 int pri_damping, int sec_damping,
                                 int coeff_shift, int block_width,
                                 int block_height) {
-  uint8_t *dst8 = (uint8_t *)dest;
   if (block_width == 8) {
-    filter_block_8x8(/*is_lowbd=*/1, dst8, dstride, in, pri_strength,
+    filter_block_8x8(/*is_lowbd=*/1, dest, dstride, in, pri_strength,
                      sec_strength, dir, pri_damping, sec_damping, coeff_shift,
                      block_height, /*enable_primary=*/1,
                      /*enable_secondary=*/1);
   } else {
-    filter_block_4x4(/*is_lowbd=*/1, dst8, dstride, in, pri_strength,
+    filter_block_4x4(/*is_lowbd=*/1, dest, dstride, in, pri_strength,
                      sec_strength, dir, pri_damping, sec_damping, coeff_shift,
                      block_height, /*enable_primary=*/1,
                      /*enable_secondary=*/1);
@@ -685,14 +692,13 @@ void SIMD_FUNC(cdef_filter_8_1)(void *dest, int dstride, const uint16_t *in,
                                 int pri_damping, int sec_damping,
                                 int coeff_shift, int block_width,
                                 int block_height) {
-  uint8_t *dst8 = (uint8_t *)dest;
   if (block_width == 8) {
-    filter_block_8x8(/*is_lowbd=*/1, dst8, dstride, in, pri_strength,
+    filter_block_8x8(/*is_lowbd=*/1, dest, dstride, in, pri_strength,
                      sec_strength, dir, pri_damping, sec_damping, coeff_shift,
                      block_height, /*enable_primary=*/1,
                      /*enable_secondary=*/0);
   } else {
-    filter_block_4x4(/*is_lowbd=*/1, dst8, dstride, in, pri_strength,
+    filter_block_4x4(/*is_lowbd=*/1, dest, dstride, in, pri_strength,
                      sec_strength, dir, pri_damping, sec_damping, coeff_shift,
                      block_height, /*enable_primary=*/1,
                      /*enable_secondary=*/0);
@@ -703,14 +709,13 @@ void SIMD_FUNC(cdef_filter_8_2)(void *dest, int dstride, const uint16_t *in,
                                 int pri_damping, int sec_damping,
                                 int coeff_shift, int block_width,
                                 int block_height) {
-  uint8_t *dst8 = (uint8_t *)dest;
   if (block_width == 8) {
-    filter_block_8x8(/*is_lowbd=*/1, dst8, dstride, in, pri_strength,
+    filter_block_8x8(/*is_lowbd=*/1, dest, dstride, in, pri_strength,
                      sec_strength, dir, pri_damping, sec_damping, coeff_shift,
                      block_height, /*enable_primary=*/0,
                      /*enable_secondary=*/1);
   } else {
-    filter_block_4x4(/*is_lowbd=*/1, dst8, dstride, in, pri_strength,
+    filter_block_4x4(/*is_lowbd=*/1, dest, dstride, in, pri_strength,
                      sec_strength, dir, pri_damping, sec_damping, coeff_shift,
                      block_height, /*enable_primary=*/0,
                      /*enable_secondary=*/1);
@@ -722,7 +727,6 @@ void SIMD_FUNC(cdef_filter_8_3)(void *dest, int dstride, const uint16_t *in,
                                 int pri_damping, int sec_damping,
                                 int coeff_shift, int block_width,
                                 int block_height) {
-  uint8_t *dst8 = (uint8_t *)dest;
   (void)pri_strength;
   (void)sec_strength;
   (void)dir;
@@ -732,9 +736,9 @@ void SIMD_FUNC(cdef_filter_8_3)(void *dest, int dstride, const uint16_t *in,
   (void)block_width;
 
   if (block_width == 8) {
-    copy_block_8xh(/*is_lowbd=*/1, dst8, dstride, in, block_height);
+    copy_block_8xh(/*is_lowbd=*/1, dest, dstride, in, block_height);
   } else {
-    copy_block_4xh(/*is_lowbd=*/1, dst8, dstride, in, block_height);
+    copy_block_4xh(/*is_lowbd=*/1, dest, dstride, in, block_height);
   }
 }
 
@@ -743,14 +747,13 @@ void SIMD_FUNC(cdef_filter_16_0)(void *dest, int dstride, const uint16_t *in,
                                  int pri_damping, int sec_damping,
                                  int coeff_shift, int block_width,
                                  int block_height) {
-  uint16_t *dst16 = (uint16_t *)dest;
   if (block_width == 8) {
-    filter_block_8x8(/*is_lowbd=*/0, dst16, dstride, in, pri_strength,
+    filter_block_8x8(/*is_lowbd=*/0, dest, dstride, in, pri_strength,
                      sec_strength, dir, pri_damping, sec_damping, coeff_shift,
                      block_height, /*enable_primary=*/1,
                      /*enable_secondary=*/1);
   } else {
-    filter_block_4x4(/*is_lowbd=*/0, dst16, dstride, in, pri_strength,
+    filter_block_4x4(/*is_lowbd=*/0, dest, dstride, in, pri_strength,
                      sec_strength, dir, pri_damping, sec_damping, coeff_shift,
                      block_height, /*enable_primary=*/1,
                      /*enable_secondary=*/1);
@@ -762,14 +765,13 @@ void SIMD_FUNC(cdef_filter_16_1)(void *dest, int dstride, const uint16_t *in,
                                  int pri_damping, int sec_damping,
                                  int coeff_shift, int block_width,
                                  int block_height) {
-  uint16_t *dst16 = (uint16_t *)dest;
   if (block_width == 8) {
-    filter_block_8x8(/*is_lowbd=*/0, dst16, dstride, in, pri_strength,
+    filter_block_8x8(/*is_lowbd=*/0, dest, dstride, in, pri_strength,
                      sec_strength, dir, pri_damping, sec_damping, coeff_shift,
                      block_height, /*enable_primary=*/1,
                      /*enable_secondary=*/0);
   } else {
-    filter_block_4x4(/*is_lowbd=*/0, dst16, dstride, in, pri_strength,
+    filter_block_4x4(/*is_lowbd=*/0, dest, dstride, in, pri_strength,
                      sec_strength, dir, pri_damping, sec_damping, coeff_shift,
                      block_height, /*enable_primary=*/1,
                      /*enable_secondary=*/0);
@@ -780,14 +782,13 @@ void SIMD_FUNC(cdef_filter_16_2)(void *dest, int dstride, const uint16_t *in,
                                  int pri_damping, int sec_damping,
                                  int coeff_shift, int block_width,
                                  int block_height) {
-  uint16_t *dst16 = (uint16_t *)dest;
   if (block_width == 8) {
-    filter_block_8x8(/*is_lowbd=*/0, dst16, dstride, in, pri_strength,
+    filter_block_8x8(/*is_lowbd=*/0, dest, dstride, in, pri_strength,
                      sec_strength, dir, pri_damping, sec_damping, coeff_shift,
                      block_height, /*enable_primary=*/0,
                      /*enable_secondary=*/1);
   } else {
-    filter_block_4x4(/*is_lowbd=*/0, dst16, dstride, in, pri_strength,
+    filter_block_4x4(/*is_lowbd=*/0, dest, dstride, in, pri_strength,
                      sec_strength, dir, pri_damping, sec_damping, coeff_shift,
                      block_height, /*enable_primary=*/0,
                      /*enable_secondary=*/1);
@@ -799,7 +800,6 @@ void SIMD_FUNC(cdef_filter_16_3)(void *dest, int dstride, const uint16_t *in,
                                  int pri_damping, int sec_damping,
                                  int coeff_shift, int block_width,
                                  int block_height) {
-  uint16_t *dst16 = (uint16_t *)dest;
   (void)pri_strength;
   (void)sec_strength;
   (void)dir;
@@ -808,9 +808,9 @@ void SIMD_FUNC(cdef_filter_16_3)(void *dest, int dstride, const uint16_t *in,
   (void)coeff_shift;
   (void)block_width;
   if (block_width == 8) {
-    copy_block_8xh(/*is_lowbd=*/0, dst16, dstride, in, block_height);
+    copy_block_8xh(/*is_lowbd=*/0, dest, dstride, in, block_height);
   } else {
-    copy_block_4xh(/*is_lowbd=*/0, dst16, dstride, in, block_height);
+    copy_block_4xh(/*is_lowbd=*/0, dest, dstride, in, block_height);
   }
 }
 
@@ -828,5 +828,7 @@ void SIMD_FUNC(cdef_copy_rect8_16bit_to_16bit)(uint16_t *dst, int dstride,
     }
   }
 }
+
+#undef CDEF_INLINE
 
 #endif  // AOM_AV1_COMMON_CDEF_BLOCK_SIMD_H_

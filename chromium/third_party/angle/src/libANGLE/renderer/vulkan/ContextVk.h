@@ -37,6 +37,7 @@ class SyncHelper;
 class ProgramExecutableVk;
 class RendererVk;
 class WindowSurfaceVk;
+class OffscreenSurfaceVk;
 class ShareGroupVk;
 
 static constexpr uint32_t kMaxGpuEventNameLen = 32;
@@ -286,6 +287,8 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
     // Context switching
     angle::Result onMakeCurrent(const gl::Context *context) override;
     angle::Result onUnMakeCurrent(const gl::Context *context) override;
+    angle::Result onSurfaceUnMakeCurrent(WindowSurfaceVk *surface);
+    angle::Result onSurfaceUnMakeCurrent(OffscreenSurfaceVk *surface);
 
     // Native capabilities, unmodified by gl::Context.
     gl::Caps getNativeCaps() const override;
@@ -365,7 +368,7 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
 
     VkDevice getDevice() const;
     egl::ContextPriority getPriority() const { return mContextPriority; }
-    bool hasProtectedContent() const { return mState.hasProtectedContent(); }
+    vk::ProtectionType getProtectionType() const { return mProtectionType; }
 
     ANGLE_INLINE const angle::FeaturesVk &getFeatures() const { return mRenderer->getFeatures(); }
 
@@ -443,7 +446,6 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
                      const char *file,
                      const char *function,
                      unsigned int line) override;
-    const gl::ActiveTextureArray<TextureVk *> &getActiveImages() const { return mActiveImages; }
 
     angle::Result onIndexBufferChange(const vk::BufferHelper *currentIndexBuffer);
 
@@ -461,9 +463,6 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
             mCurrentGarbage.emplace_back(vk::GetGarbage(object));
         }
     }
-
-    // It would be nice if we didn't have to expose this for QueryVk::getResult.
-    angle::Result checkCompletedCommands();
 
     angle::Result getCompatibleRenderPass(const vk::RenderPassDesc &desc,
                                           const vk::RenderPass **renderPassOut);
@@ -589,20 +588,41 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
                                      vk::RenderPassCommandBuffer **commandBufferOut);
 
     // Only returns true if we have a started RP and we've run setupDraw.
-    bool hasStartedRenderPass() const
+    bool hasActiveRenderPass() const
     {
+        // If mRenderPassCommandBuffer is not null, mRenderPassCommands must already started, we
+        // call this active render pass. A started render pass will have null
+        // mRenderPassCommandBuffer after onRenderPassFinished call, we call this state started but
+        // inactive.
+        ASSERT(mRenderPassCommandBuffer == nullptr || mRenderPassCommands->started());
         // Checking mRenderPassCommandBuffer ensures we've called setupDraw.
-        return mRenderPassCommandBuffer && mRenderPassCommands->started();
+        return mRenderPassCommandBuffer != nullptr;
     }
 
     bool hasStartedRenderPassWithQueueSerial(const QueueSerial &queueSerial) const
     {
-        return hasStartedRenderPass() && mRenderPassCommands->getQueueSerial() == queueSerial;
+        return mRenderPassCommands->started() &&
+               mRenderPassCommands->getQueueSerial() == queueSerial;
     }
 
-    bool hasStartedRenderPassWithCommands() const
+    bool isRenderPassStartedAndUsesBuffer(const vk::BufferHelper &buffer) const
     {
-        return hasStartedRenderPass() && !mRenderPassCommands->getCommandBuffer().empty();
+        return mRenderPassCommands->started() && mRenderPassCommands->usesBuffer(buffer);
+    }
+
+    bool isRenderPassStartedAndUsesBufferForWrite(const vk::BufferHelper &buffer) const
+    {
+        return mRenderPassCommands->started() && mRenderPassCommands->usesBufferForWrite(buffer);
+    }
+
+    bool isRenderPassStartedAndUsesImage(const vk::ImageHelper &image) const
+    {
+        return mRenderPassCommands->started() && mRenderPassCommands->usesImage(image);
+    }
+
+    bool hasActiveRenderPassWithCommands() const
+    {
+        return hasActiveRenderPass() && !mRenderPassCommands->getCommandBuffer().empty();
     }
 
     vk::RenderPassCommandBufferHelper &getStartedRenderPassCommands()
@@ -610,9 +630,6 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
         ASSERT(mRenderPassCommands->started());
         return *mRenderPassCommands;
     }
-
-    // TODO(https://anglebug.com/4968): Support multiple open render passes.
-    void restoreFinishedRenderPass(const QueueSerial &queueSerial);
 
     uint32_t getCurrentSubpassIndex() const;
     uint32_t getCurrentViewCount() const;
@@ -735,10 +752,6 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
 
     std::ostringstream &getPipelineCacheGraphStream() { return mPipelineCacheGraph; }
 
-    // Add resource to the resource use list tracking the last CommandBuffer (i.e,
-    // RenderpassCommands if exists, or outsideRenderPassCommands)
-    void retainResource(vk::Resource *resource);
-
     // Whether VK_EXT_pipeline_robustness should be used to enable robust buffer access in the
     // pipeline.
     bool shouldUsePipelineRobustness() const
@@ -767,6 +780,8 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
     {
         return hasUnsubmittedUse(resource.getResourceUse());
     }
+
+    const QueueSerial &getLastSubmittedQueueSerial() const { return mLastSubmittedQueueSerial; }
 
   private:
     // Dirty bits.
@@ -1177,7 +1192,8 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
     template <typename CommandBufferHelperT>
     angle::Result handleDirtyShaderResourcesImpl(CommandBufferHelperT *commandBufferHelper,
                                                  PipelineType pipelineType);
-    void handleDirtyShaderBufferResourcesImpl(vk::CommandBufferHelperCommon *commandBufferHelper);
+    template <typename CommandBufferT>
+    void handleDirtyShaderBufferResourcesImpl(CommandBufferT *commandBufferHelper);
     template <typename CommandBufferHelperT>
     angle::Result handleDirtyDescriptorSetsImpl(CommandBufferHelperT *commandBufferHelper,
                                                 PipelineType pipelineType);
@@ -1253,8 +1269,9 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
         DirtyBits dirtyBitMask,
         UpdateDepthFeedbackLoopReason depthReason,
         UpdateDepthFeedbackLoopReason stencilReason);
-    bool shouldSwitchToReadOnlyDepthFeedbackLoopMode(gl::Texture *texture,
-                                                     gl::Command command) const;
+    bool shouldSwitchToReadOnlyDepthStencilFeedbackLoopMode(gl::Texture *texture,
+                                                            gl::Command command,
+                                                            bool isStencilTexture) const;
 
     angle::Result onResourceAccess(const vk::CommandBufferAccess &access);
     angle::Result flushCommandBuffersIfNecessary(const vk::CommandBufferAccess &access);
@@ -1441,6 +1458,16 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
     // We use a single pool for recording commands. We also keep a free list for pool recycling.
     vk::SecondaryCommandPools mCommandPools;
 
+    // Per context queue serial
+    SerialIndex mCurrentQueueSerialIndex;
+    QueueSerial mLastFlushedQueueSerial;
+    QueueSerial mLastSubmittedQueueSerial;
+    // All submitted queue serials over the life time of this context.
+    vk::ResourceUse mSubmittedResourceUse;
+
+    // The garbage list for single context use objects. The list will be GPU tracked by next
+    // submission queueSerial. Note: Resource based shared object should always be added to
+    // renderer's mSharedGarbage.
     vk::GarbageList mCurrentGarbage;
 
     RenderPassCache mRenderPassCache;
@@ -1511,9 +1538,12 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
     // buffer for the outside render pass.
     VkDeviceSize mTotalBufferToImageCopySize;
 
-    // Semaphores that must be waited on in the next submission.
+    // Semaphores that must be flushed before the current commands. Flushed semaphores will be
+    // waited on in the next submission.
     std::vector<VkSemaphore> mWaitSemaphores;
     std::vector<VkPipelineStageFlags> mWaitSemaphoreStageMasks;
+    // Whether this context has wait semaphores (flushed and unflushed) that must be submitted.
+    bool mHasWaitSemaphoresPendingSubmission;
 
     // Hold information from the last gpu clock sync for future gpu-to-cpu timestamp conversions.
     GpuClockSyncInfo mGpuClockSync;
@@ -1529,6 +1559,7 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
     gl::State::DirtyBits mPipelineDirtyBitsMask;
 
     egl::ContextPriority mContextPriority;
+    vk::ProtectionType mProtectionType;
 
     ShareGroupVk *mShareGroupVk;
 
@@ -1606,22 +1637,9 @@ ANGLE_INLINE angle::Result ContextVk::onVertexAttributeChange(size_t attribIndex
     return onVertexBufferChange(vertexBuffer);
 }
 
-ANGLE_INLINE void ContextVk::retainResource(vk::Resource *resource)
-{
-    if (hasStartedRenderPass())
-    {
-        mRenderPassCommands->retainResource(resource);
-    }
-    else
-    {
-        mOutsideRenderPassCommands->retainResource(resource);
-    }
-}
-
 ANGLE_INLINE bool ContextVk::hasUnsubmittedUse(const vk::ResourceUse &use) const
 {
-    return mCurrentQueueSerialIndex != kInvalidQueueSerialIndex &&
-           use > QueueSerial(mCurrentQueueSerialIndex, mLastSubmittedSerial);
+    return mCurrentQueueSerialIndex != kInvalidQueueSerialIndex && use > mLastSubmittedQueueSerial;
 }
 
 ANGLE_INLINE bool UseLineRaster(const ContextVk *contextVk, gl::PrimitiveMode mode)

@@ -31,6 +31,8 @@
 #  include <stdio.h>
 #endif  // FLATBUFFERS_PREFER_PRINTF
 
+#include <cmath>
+#include <limits>
 #include <string>
 
 namespace flatbuffers {
@@ -312,6 +314,7 @@ inline bool StringToFloatImpl(T *val, const char *const str) {
   strtoval_impl(val, str, const_cast<char **>(&end));
   auto done = (end != str) && (*end == '\0');
   if (!done) *val = 0;  // erase partial result
+  if (done && std::isnan(*val)) { *val = std::numeric_limits<T>::quiet_NaN(); }
   return done;
 }
 
@@ -390,6 +393,18 @@ inline int64_t StringToInt(const char *s, int base = 10) {
 inline uint64_t StringToUInt(const char *s, int base = 10) {
   uint64_t val;
   return StringToIntegerImpl(&val, s, base) ? val : 0;
+}
+
+inline bool StringIsFlatbufferNan(const std::string &s) {
+  return s == "nan" || s == "+nan" || s == "-nan";
+}
+
+inline bool StringIsFlatbufferPositiveInfinity(const std::string &s) {
+  return s == "inf" || s == "+inf" || s == "infinity" || s == "+infinity";
+}
+
+inline bool StringIsFlatbufferNegativeInfinity(const std::string &s) {
+  return s == "-inf" || s == "-infinity";
 }
 
 typedef bool (*LoadFileFunction)(const char *filename, bool binary,

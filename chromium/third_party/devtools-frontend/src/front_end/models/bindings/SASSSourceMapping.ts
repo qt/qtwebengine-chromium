@@ -29,9 +29,10 @@
  */
 
 import * as Common from '../../core/common/common.js';
+import type * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import type * as Protocol from '../../generated/protocol.js';
-import type * as Platform from '../../core/platform/platform.js';
+import * as TextUtils from '../text_utils/text_utils.js';
 import * as Workspace from '../workspace/workspace.js';
 
 import {ContentProviderBasedProject} from './ContentProviderBasedProject.js';
@@ -73,13 +74,13 @@ export class SASSSourceMapping implements SourceMapping {
           .EventTargetEvent<{client: SDK.CSSStyleSheetHeader.CSSStyleSheetHeader, sourceMap: SDK.SourceMap.SourceMap}>):
       Promise<void> {
     const header = event.data.client;
-    const sourceMap = (event.data.sourceMap as SDK.SourceMap.TextSourceMap);
+    const sourceMap = event.data.sourceMap;
     const project = this.#project;
     const bindings = this.#bindings;
     for (const sourceURL of sourceMap.sourceURLs()) {
       let binding = bindings.get(sourceURL);
       if (!binding) {
-        binding = new Binding(project, sourceURL);
+        binding = new Binding(project, sourceURL, header.createPageResourceLoadInitiator());
         bindings.set(sourceURL, binding);
       }
       binding.addSourceMap(sourceMap, header.frameId);
@@ -93,7 +94,7 @@ export class SASSSourceMapping implements SourceMapping {
           .EventTargetEvent<{client: SDK.CSSStyleSheetHeader.CSSStyleSheetHeader, sourceMap: SDK.SourceMap.SourceMap}>):
       Promise<void> {
     const header = event.data.client;
-    const sourceMap = (event.data.sourceMap as SDK.SourceMap.TextSourceMap);
+    const sourceMap = event.data.sourceMap;
     const bindings = this.#bindings;
     for (const sourceURL of sourceMap.sourceURLs()) {
       const binding = bindings.get(sourceURL);
@@ -146,7 +147,8 @@ export class SASSSourceMapping implements SourceMapping {
     const locations: SDK.CSSModel.CSSLocation[] = [];
     for (const sourceMap of binding.getReferringSourceMaps()) {
       const entries = sourceMap.findReverseEntries(uiSourceCode.url(), lineNumber, columnNumber);
-      for (const header of this.#sourceMapManager.clientsForSourceMap(sourceMap)) {
+      const header = this.#sourceMapManager.clientForSourceMap(sourceMap);
+      if (header) {
         locations.push(
             ...entries.map(entry => new SDK.CSSModel.CSSLocation(header, entry.lineNumber, entry.columnNumber)));
       }
@@ -173,12 +175,16 @@ const uiSourceCodeToBinding = new WeakMap<Workspace.UISourceCode.UISourceCode, B
 class Binding {
   readonly #project: ContentProviderBasedProject;
   readonly #url: Platform.DevToolsPath.UrlString;
-  referringSourceMaps: SDK.SourceMap.TextSourceMap[];
+  readonly #initiator: SDK.PageResourceLoader.PageResourceLoadInitiator;
+  referringSourceMaps: SDK.SourceMap.SourceMap[];
   uiSourceCode: Workspace.UISourceCode.UISourceCode|null;
 
-  constructor(project: ContentProviderBasedProject, url: Platform.DevToolsPath.UrlString) {
+  constructor(
+      project: ContentProviderBasedProject, url: Platform.DevToolsPath.UrlString,
+      initiator: SDK.PageResourceLoader.PageResourceLoadInitiator) {
     this.#project = project;
     this.#url = url;
+    this.#initiator = initiator;
 
     this.referringSourceMaps = [];
     this.uiSourceCode = null;
@@ -187,20 +193,22 @@ class Binding {
   private recreateUISourceCodeIfNeeded(frameId: Protocol.Page.FrameId): void {
     const sourceMap = this.referringSourceMaps[this.referringSourceMaps.length - 1];
 
-    const contentProvider =
-        sourceMap.sourceContentProvider(this.#url, Common.ResourceType.resourceTypes.SourceMapStyleSheet);
-    const newUISourceCode = this.#project.createUISourceCode(this.#url, contentProvider.contentType());
-    uiSourceCodeToBinding.set(newUISourceCode, this);
-    const mimeType =
-        Common.ResourceType.ResourceType.mimeFromURL(this.#url) || contentProvider.contentType().canonicalMimeType();
+    const contentType = Common.ResourceType.resourceTypes.SourceMapStyleSheet;
     const embeddedContent = sourceMap.embeddedContentByURL(this.#url);
+    const contentProvider = embeddedContent !== null ?
+        TextUtils.StaticContentProvider.StaticContentProvider.fromString(this.#url, contentType, embeddedContent) :
+        new SDK.CompilerSourceMappingContentProvider.CompilerSourceMappingContentProvider(
+            this.#url, contentType, this.#initiator);
+    const newUISourceCode = this.#project.createUISourceCode(this.#url, contentType);
+    uiSourceCodeToBinding.set(newUISourceCode, this);
+    const mimeType = Common.ResourceType.ResourceType.mimeFromURL(this.#url) || contentType.canonicalMimeType();
     const metadata = typeof embeddedContent === 'string' ?
         new Workspace.UISourceCode.UISourceCodeMetadata(null, embeddedContent.length) :
         null;
 
     if (this.uiSourceCode) {
       NetworkProject.cloneInitialFrameAttribution(this.uiSourceCode, newUISourceCode);
-      this.#project.removeFile(this.uiSourceCode.url());
+      this.#project.removeUISourceCode(this.uiSourceCode.url());
     } else {
       NetworkProject.setInitialFrameAttribution(newUISourceCode, frameId);
     }
@@ -208,7 +216,7 @@ class Binding {
     this.#project.addUISourceCodeWithProvider(this.uiSourceCode, contentProvider, metadata, mimeType);
   }
 
-  addSourceMap(sourceMap: SDK.SourceMap.TextSourceMap, frameId: Protocol.Page.FrameId): void {
+  addSourceMap(sourceMap: SDK.SourceMap.SourceMap, frameId: Protocol.Page.FrameId): void {
     if (this.uiSourceCode) {
       NetworkProject.addFrameAttribution(this.uiSourceCode, frameId);
     }
@@ -216,7 +224,7 @@ class Binding {
     this.recreateUISourceCodeIfNeeded(frameId);
   }
 
-  removeSourceMap(sourceMap: SDK.SourceMap.TextSourceMap, frameId: Protocol.Page.FrameId): void {
+  removeSourceMap(sourceMap: SDK.SourceMap.SourceMap, frameId: Protocol.Page.FrameId): void {
     const uiSourceCode = (this.uiSourceCode as Workspace.UISourceCode.UISourceCode);
     NetworkProject.removeFrameAttribution(uiSourceCode, frameId);
     const lastIndex = this.referringSourceMaps.lastIndexOf(sourceMap);
@@ -224,14 +232,14 @@ class Binding {
       this.referringSourceMaps.splice(lastIndex, 1);
     }
     if (!this.referringSourceMaps.length) {
-      this.#project.removeFile(uiSourceCode.url());
+      this.#project.removeUISourceCode(uiSourceCode.url());
       this.uiSourceCode = null;
     } else {
       this.recreateUISourceCodeIfNeeded(frameId);
     }
   }
 
-  getReferringSourceMaps(): Array<SDK.SourceMap.TextSourceMap> {
+  getReferringSourceMaps(): Array<SDK.SourceMap.SourceMap> {
     return this.referringSourceMaps;
   }
 

@@ -688,7 +688,7 @@ static int ogg_write_packet(AVFormatContext *s, AVPacket *pkt)
     int i;
 
     if (pkt)
-        return ogg_write_packet_internal(s, pkt);
+        return pkt->size ? ogg_write_packet_internal(s, pkt) : 0;
 
     for (i = 0; i < s->nb_streams; i++) {
         OGGStreamContext *oggstream = s->streams[i]->priv_data;

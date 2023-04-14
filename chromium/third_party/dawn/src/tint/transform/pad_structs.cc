@@ -22,7 +22,7 @@
 #include "src/tint/program_builder.h"
 #include "src/tint/sem/call.h"
 #include "src/tint/sem/module.h"
-#include "src/tint/sem/type_initializer.h"
+#include "src/tint/sem/value_constructor.h"
 
 using namespace tint::number_suffixes;  // NOLINT
 
@@ -59,7 +59,7 @@ Transform::ApplyResult PadStructs::Apply(const Program* src, const DataMap&, Dat
     utils::Hashset<const ast::StructMember*, 8> padding_members;
 
     ctx.ReplaceAll([&](const ast::Struct* ast_str) -> const ast::Struct* {
-        auto* str = sem.Get<sem::Struct>(ast_str);
+        auto* str = sem.Get(ast_str);
         if (!str || !str->IsHostShareable()) {
             return nullptr;
         }
@@ -75,12 +75,12 @@ Transform::ApplyResult PadStructs::Apply(const Program* src, const DataMap&, Dat
             }
 
             auto* ty = mem->Type();
-            const ast::Type* type = CreateASTTypeFor(ctx, ty);
+            auto type = CreateASTTypeFor(ctx, ty);
 
             new_members.Push(b.Member(name, type));
 
             uint32_t size = ty->Size();
-            if (ty->Is<sem::Struct>() && str->UsedAs(ast::AddressSpace::kUniform)) {
+            if (ty->Is<sem::Struct>() && str->UsedAs(builtin::AddressSpace::kUniform)) {
                 // std140 structs should be padded out to 16 bytes.
                 size = utils::RoundUp(16u, size);
             } else if (auto* array_ty = ty->As<type::Array>()) {
@@ -93,7 +93,7 @@ Transform::ApplyResult PadStructs::Apply(const Program* src, const DataMap&, Dat
 
         // Add any required padding after the last member, if it's not a runtime-sized array.
         uint32_t struct_size = str->Size();
-        if (str->UsedAs(ast::AddressSpace::kUniform)) {
+        if (str->UsedAs(builtin::AddressSpace::kUniform)) {
             struct_size = utils::RoundUp(16u, struct_size);
         }
         if (offset < struct_size && !has_runtime_sized_array) {
@@ -114,7 +114,7 @@ Transform::ApplyResult PadStructs::Apply(const Program* src, const DataMap&, Dat
         if (!call) {
             return nullptr;
         }
-        auto* cons = call->Target()->As<sem::TypeInitializer>();
+        auto* cons = call->Target()->As<sem::ValueConstructor>();
         if (!cons) {
             return nullptr;
         }
@@ -139,7 +139,7 @@ Transform::ApplyResult PadStructs::Apply(const Program* src, const DataMap&, Dat
                 arg++;
             }
         }
-        return b.Construct(CreateASTTypeFor(ctx, str), new_args);
+        return b.Call(CreateASTTypeFor(ctx, str), new_args);
     });
 
     ctx.Clone();

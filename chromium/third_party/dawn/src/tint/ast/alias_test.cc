@@ -13,19 +13,8 @@
 // limitations under the License.
 
 #include "src/tint/ast/alias.h"
-#include "src/tint/ast/access.h"
-#include "src/tint/ast/array.h"
-#include "src/tint/ast/bool.h"
-#include "src/tint/ast/f32.h"
-#include "src/tint/ast/i32.h"
-#include "src/tint/ast/matrix.h"
-#include "src/tint/ast/pointer.h"
-#include "src/tint/ast/sampler.h"
-#include "src/tint/ast/struct.h"
 #include "src/tint/ast/test_helper.h"
-#include "src/tint/ast/texture.h"
-#include "src/tint/ast/u32.h"
-#include "src/tint/ast/vector.h"
+#include "src/tint/builtin/access.h"
 
 namespace tint::ast {
 namespace {
@@ -33,10 +22,10 @@ namespace {
 using AstAliasTest = TestHelper;
 
 TEST_F(AstAliasTest, Create) {
-    auto* u32 = create<U32>();
+    auto u32 = ty.u32();
     auto* a = Alias("a_type", u32);
-    EXPECT_EQ(a->name, Symbol(1, ID()));
-    EXPECT_EQ(a->type, u32);
+    CheckIdentifier(Symbols(), a->name, "a_type");
+    CheckIdentifier(Symbols(), a->type, "u32");
 }
 
 }  // namespace

@@ -46,6 +46,11 @@ struct FeaturesVk : FeatureSetBase
         "The point size range reported from the API is inconsistent with the actual behavior",
         &members, "http://anglebug.com/2970"};
 
+    FeatureInfo supportsDepthClipEnable = {
+        "supportsDepthClipEnable", FeatureCategory::VulkanFeatures,
+        "VkDevice supports the VK_EXT_depth_clip_enable extension.", &members,
+        "http://anglebug.com/3970"};
+
     FeatureInfo depthClamping = {
         "depthClamping", FeatureCategory::VulkanWorkarounds,
         "The depth value is not clamped to [0,1] for floating point depth buffers.", &members,
@@ -55,6 +60,13 @@ struct FeaturesVk : FeatureSetBase
         "mutableMipmapTextureUpload", FeatureCategory::VulkanFeatures,
         "Enable uploading the previously defined mutable mipmap texture.", &members,
         "https://anglebug.com/7308"};
+
+    FeatureInfo supportsMemoryBudget = {
+        "supportsMemoryBudget",
+        FeatureCategory::VulkanFeatures,
+        "VkDevice supports the VK_EXT_memory_budget extension.",
+        &members,
+    };
 
     FeatureInfo supportsRenderpass2 = {
         "supportsRenderpass2",
@@ -312,6 +324,11 @@ struct FeaturesVk : FeatureSetBase
     FeatureInfo asyncCommandQueue = {"asyncCommandQueue", FeatureCategory::VulkanFeatures,
                                      "Use CommandQueue worker thread to dispatch work to GPU.",
                                      &members, "http://anglebug.com/4324"};
+
+    FeatureInfo slowAsyncCommandQueueForTesting = {
+        "slowAsyncCommandQueueForTesting", FeatureCategory::VulkanWorkarounds,
+        "Artificially slow down async command queue for threading testing", &members,
+        "https://anglebug.com/6574"};
 
     FeatureInfo supportsShaderFloat16 = {
         "supportsShaderFloat16", FeatureCategory::VulkanFeatures,
@@ -798,6 +815,27 @@ struct FeaturesVk : FeatureSetBase
         "supportsPipelineProtectedAccess", FeatureCategory::VulkanFeatures,
         "VkDevice supports the VK_EXT_pipeline_protected_access extension", &members,
         "https://anglebug.com/7714"};
+
+    FeatureInfo supportsMixedReadWriteDepthStencilLayouts = {
+        "supportsMixedReadWriteDepthStencilLayouts", FeatureCategory::VulkanFeatures,
+        "VkDevice supports the mixed read and write depth/stencil layouts introduced by "
+        "VK_KHR_maintenance2",
+        &members, "https://anglebug.com/7899"};
+
+    FeatureInfo supportsSwapchainMaintenance1 = {
+        "supportsSwapchainMaintenance1", FeatureCategory::VulkanFeatures,
+        "VkDevice supports the VK_EXT_surface_maintenance1 and VK_EXT_swapchain_maintenance1 "
+        "extensions",
+        &members, "https://anglebug.com/7847"};
+
+    FeatureInfo supportsGetMemoryRequirements2 = {
+        "supportsGetMemoryRequirements2", FeatureCategory::VulkanFeatures,
+        "VkDevice supports the VK_KHR_get_memory_requirements2 extension", &members,
+        "https://anglebug.com/4830"};
+
+    FeatureInfo supportsBindMemory2 = {"supportsBindMemory2", FeatureCategory::VulkanFeatures,
+                                       "VkDevice supports the VK_KHR_bind_memory2 extension",
+                                       &members, "https://anglebug.com/4966"};
 
     FeatureInfo preferSubmitOnAnySamplesPassedQueryEnd = {
         "preferSubmitOnAnySamplesPassedQueryEnd", FeatureCategory::VulkanWorkarounds,

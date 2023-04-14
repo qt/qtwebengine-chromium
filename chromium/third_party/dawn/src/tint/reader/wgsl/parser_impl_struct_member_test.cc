@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "src/tint/ast/test_helper.h"
 #include "src/tint/reader/wgsl/parser_impl_test_helper.h"
 
 namespace tint::reader::wgsl {
@@ -20,15 +21,13 @@ namespace {
 TEST_F(ParserImplTest, StructMember_Parses) {
     auto p = parser("a : i32,");
 
-    auto& builder = p->builder();
-
     auto m = p->expect_struct_member();
     ASSERT_FALSE(p->has_error());
     ASSERT_FALSE(m.errored);
     ASSERT_NE(m.value, nullptr);
 
-    EXPECT_EQ(m->symbol, builder.Symbols().Get("a"));
-    EXPECT_TRUE(m->type->Is<ast::I32>());
+    ast::CheckIdentifier(p->builder().Symbols(), m->name, "a");
+    ast::CheckIdentifier(p->builder().Symbols(), m->type, "i32");
     EXPECT_EQ(m->attributes.Length(), 0u);
 
     EXPECT_EQ(m->source.range, (Source::Range{{1u, 1u}, {1u, 2u}}));
@@ -38,15 +37,13 @@ TEST_F(ParserImplTest, StructMember_Parses) {
 TEST_F(ParserImplTest, StructMember_ParsesWithAlignAttribute) {
     auto p = parser("@align(2) a : i32,");
 
-    auto& builder = p->builder();
-
     auto m = p->expect_struct_member();
     ASSERT_FALSE(p->has_error());
     ASSERT_FALSE(m.errored);
     ASSERT_NE(m.value, nullptr);
 
-    EXPECT_EQ(m->symbol, builder.Symbols().Get("a"));
-    EXPECT_TRUE(m->type->Is<ast::I32>());
+    ast::CheckIdentifier(p->builder().Symbols(), m->name, "a");
+    ast::CheckIdentifier(p->builder().Symbols(), m->type, "i32");
     EXPECT_EQ(m->attributes.Length(), 1u);
     EXPECT_TRUE(m->attributes[0]->Is<ast::StructMemberAlignAttribute>());
 
@@ -63,15 +60,13 @@ TEST_F(ParserImplTest, StructMember_ParsesWithAlignAttribute) {
 TEST_F(ParserImplTest, StructMember_ParsesWithSizeAttribute) {
     auto p = parser("@size(2) a : i32,");
 
-    auto& builder = p->builder();
-
     auto m = p->expect_struct_member();
     ASSERT_FALSE(p->has_error());
     ASSERT_FALSE(m.errored);
     ASSERT_NE(m.value, nullptr);
 
-    EXPECT_EQ(m->symbol, builder.Symbols().Get("a"));
-    EXPECT_TRUE(m->type->Is<ast::I32>());
+    ast::CheckIdentifier(p->builder().Symbols(), m->name, "a");
+    ast::CheckIdentifier(p->builder().Symbols(), m->type, "i32");
     EXPECT_EQ(m->attributes.Length(), 1u);
     ASSERT_TRUE(m->attributes[0]->Is<ast::StructMemberSizeAttribute>());
     auto* s = m->attributes[0]->As<ast::StructMemberSizeAttribute>();
@@ -87,15 +82,13 @@ TEST_F(ParserImplTest, StructMember_ParsesWithMultipleattributes) {
     auto p = parser(R"(@size(2)
 @align(4) a : i32,)");
 
-    auto& builder = p->builder();
-
     auto m = p->expect_struct_member();
     ASSERT_FALSE(p->has_error());
     ASSERT_FALSE(m.errored);
     ASSERT_NE(m.value, nullptr);
 
-    EXPECT_EQ(m->symbol, builder.Symbols().Get("a"));
-    EXPECT_TRUE(m->type->Is<ast::I32>());
+    ast::CheckIdentifier(p->builder().Symbols(), m->name, "a");
+    ast::CheckIdentifier(p->builder().Symbols(), m->type, "i32");
     EXPECT_EQ(m->attributes.Length(), 2u);
     ASSERT_TRUE(m->attributes[0]->Is<ast::StructMemberSizeAttribute>());
     auto* size_attr = m->attributes[0]->As<ast::StructMemberSizeAttribute>();

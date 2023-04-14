@@ -21,9 +21,9 @@
 #include "src/tint/program_builder.h"
 #include "src/tint/sem/block_statement.h"
 #include "src/tint/sem/call.h"
-#include "src/tint/sem/expression.h"
 #include "src/tint/sem/index_accessor_expression.h"
 #include "src/tint/sem/statement.h"
+#include "src/tint/sem/value_expression.h"
 #include "src/tint/type/reference.h"
 
 TINT_INSTANTIATE_TYPEINFO(tint::transform::Robustness);
@@ -38,7 +38,7 @@ struct Robustness::State {
     /// Constructor
     /// @param program the source program
     /// @param omitted the omitted address spaces
-    State(const Program* program, std::unordered_set<ast::AddressSpace>&& omitted)
+    State(const Program* program, std::unordered_set<builtin::AddressSpace>&& omitted)
         : src(program), omitted_address_spaces(std::move(omitted)) {}
 
     /// Runs the transform
@@ -60,14 +60,14 @@ struct Robustness::State {
     CloneContext ctx = {&b, src, /* auto_clone_symbols */ true};
 
     /// Set of address spaces to not apply the transform to
-    std::unordered_set<ast::AddressSpace> omitted_address_spaces;
+    std::unordered_set<builtin::AddressSpace> omitted_address_spaces;
 
     /// Apply bounds clamping to array, vector and matrix indexing
     /// @param expr the array, vector or matrix index expression
     /// @return the clamped replacement expression, or nullptr if `expr` should be cloned without
     /// changes.
     const ast::IndexAccessorExpression* Transform(const ast::IndexAccessorExpression* expr) {
-        auto* sem = src->Sem().Get(expr)->UnwrapMaterialize()->As<sem::IndexAccessorExpression>();
+        auto* sem = src->Sem().Get(expr)->Unwrap()->As<sem::IndexAccessorExpression>();
         auto* ret_type = sem->Type();
 
         auto* ref = ret_type->As<type::Reference>();
@@ -78,8 +78,8 @@ struct Robustness::State {
         // idx return the cloned index expression, as a u32.
         auto idx = [&]() -> const ast::Expression* {
             auto* i = ctx.Clone(expr->index);
-            if (sem->Index()->Type()->UnwrapRef()->is_signed_integer_scalar()) {
-                return b.Construct(b.ty.u32(), i);  // u32(idx)
+            if (sem->Index()->Type()->is_signed_integer_scalar()) {
+                return b.Call<u32>(i);  // u32(idx)
             }
             return i;
         };
@@ -182,7 +182,7 @@ struct Robustness::State {
             }
             return 1u;
         };
-        auto scalar_or_vec_ty = [&](const ast::Type* scalar, uint32_t width) -> const ast::Type* {
+        auto scalar_or_vec_ty = [&](ast::Type scalar, uint32_t width) {
             if (width > 1) {
                 return b.ty.vec(scalar, width);
             }
@@ -191,15 +191,15 @@ struct Robustness::State {
         auto scalar_or_vec = [&](const ast::Expression* scalar,
                                  uint32_t width) -> const ast::Expression* {
             if (width > 1) {
-                return b.Construct(b.ty.vec(nullptr, width), scalar);
+                return b.Call(b.ty.vec<Infer>(width), scalar);
             }
             return scalar;
         };
         auto cast_to_signed = [&](const ast::Expression* val, uint32_t width) {
-            return b.Construct(scalar_or_vec_ty(b.ty.i32(), width), val);
+            return b.Call(scalar_or_vec_ty(b.ty.i32(), width), val);
         };
         auto cast_to_unsigned = [&](const ast::Expression* val, uint32_t width) {
-            return b.Construct(scalar_or_vec_ty(b.ty.u32(), width), val);
+            return b.Call(scalar_or_vec_ty(b.ty.u32(), width), val);
         };
 
         // If the level is provided, then we need to clamp this. As the level is
@@ -294,14 +294,14 @@ Transform::ApplyResult Robustness::Apply(const Program* src,
         cfg = *cfg_data;
     }
 
-    std::unordered_set<ast::AddressSpace> omitted_address_spaces;
+    std::unordered_set<builtin::AddressSpace> omitted_address_spaces;
     for (auto sc : cfg.omitted_address_spaces) {
         switch (sc) {
             case AddressSpace::kUniform:
-                omitted_address_spaces.insert(ast::AddressSpace::kUniform);
+                omitted_address_spaces.insert(builtin::AddressSpace::kUniform);
                 break;
             case AddressSpace::kStorage:
-                omitted_address_spaces.insert(ast::AddressSpace::kStorage);
+                omitted_address_spaces.insert(builtin::AddressSpace::kStorage);
                 break;
         }
     }

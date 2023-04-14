@@ -147,12 +147,8 @@ VKAPI_ATTR bool VKAPI_CALL loader_icd_init_entries(struct loader_icd_term *icd_t
 #endif // VK_USE_PLATFORM_WIN32_KHR
 
     // ---- VK_KHR_video_queue extension commands
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     LOOKUP_GIPA(GetPhysicalDeviceVideoCapabilitiesKHR, false);
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     LOOKUP_GIPA(GetPhysicalDeviceVideoFormatPropertiesKHR, false);
-#endif // VK_ENABLE_BETA_EXTENSIONS
 
     // ---- VK_KHR_get_physical_device_properties2 extension commands
     LOOKUP_GIPA(GetPhysicalDeviceFeatures2KHR, false);
@@ -533,41 +529,19 @@ VKAPI_ATTR void VKAPI_CALL loader_init_device_extension_dispatch_table(struct lo
     table->CreateSharedSwapchainsKHR = (PFN_vkCreateSharedSwapchainsKHR)gdpa(dev, "vkCreateSharedSwapchainsKHR");
 
     // ---- VK_KHR_video_queue extension commands
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     table->CreateVideoSessionKHR = (PFN_vkCreateVideoSessionKHR)gdpa(dev, "vkCreateVideoSessionKHR");
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     table->DestroyVideoSessionKHR = (PFN_vkDestroyVideoSessionKHR)gdpa(dev, "vkDestroyVideoSessionKHR");
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     table->GetVideoSessionMemoryRequirementsKHR = (PFN_vkGetVideoSessionMemoryRequirementsKHR)gdpa(dev, "vkGetVideoSessionMemoryRequirementsKHR");
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     table->BindVideoSessionMemoryKHR = (PFN_vkBindVideoSessionMemoryKHR)gdpa(dev, "vkBindVideoSessionMemoryKHR");
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     table->CreateVideoSessionParametersKHR = (PFN_vkCreateVideoSessionParametersKHR)gdpa(dev, "vkCreateVideoSessionParametersKHR");
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     table->UpdateVideoSessionParametersKHR = (PFN_vkUpdateVideoSessionParametersKHR)gdpa(dev, "vkUpdateVideoSessionParametersKHR");
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     table->DestroyVideoSessionParametersKHR = (PFN_vkDestroyVideoSessionParametersKHR)gdpa(dev, "vkDestroyVideoSessionParametersKHR");
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     table->CmdBeginVideoCodingKHR = (PFN_vkCmdBeginVideoCodingKHR)gdpa(dev, "vkCmdBeginVideoCodingKHR");
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     table->CmdEndVideoCodingKHR = (PFN_vkCmdEndVideoCodingKHR)gdpa(dev, "vkCmdEndVideoCodingKHR");
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     table->CmdControlVideoCodingKHR = (PFN_vkCmdControlVideoCodingKHR)gdpa(dev, "vkCmdControlVideoCodingKHR");
-#endif // VK_ENABLE_BETA_EXTENSIONS
 
     // ---- VK_KHR_video_decode_queue extension commands
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     table->CmdDecodeVideoKHR = (PFN_vkCmdDecodeVideoKHR)gdpa(dev, "vkCmdDecodeVideoKHR");
-#endif // VK_ENABLE_BETA_EXTENSIONS
 
     // ---- VK_KHR_dynamic_rendering extension commands
     table->CmdBeginRenderingKHR = (PFN_vkCmdBeginRenderingKHR)gdpa(dev, "vkCmdBeginRenderingKHR");
@@ -1021,6 +995,10 @@ VKAPI_ATTR void VKAPI_CALL loader_init_device_extension_dispatch_table(struct lo
     table->GetDeviceMicromapCompatibilityEXT = (PFN_vkGetDeviceMicromapCompatibilityEXT)gdpa(dev, "vkGetDeviceMicromapCompatibilityEXT");
     table->GetMicromapBuildSizesEXT = (PFN_vkGetMicromapBuildSizesEXT)gdpa(dev, "vkGetMicromapBuildSizesEXT");
 
+    // ---- VK_HUAWEI_cluster_culling_shader extension commands
+    table->CmdDrawClusterHUAWEI = (PFN_vkCmdDrawClusterHUAWEI)gdpa(dev, "vkCmdDrawClusterHUAWEI");
+    table->CmdDrawClusterIndirectHUAWEI = (PFN_vkCmdDrawClusterIndirectHUAWEI)gdpa(dev, "vkCmdDrawClusterIndirectHUAWEI");
+
     // ---- VK_EXT_pageable_device_local_memory extension commands
     table->SetDeviceMemoryPriorityEXT = (PFN_vkSetDeviceMemoryPriorityEXT)gdpa(dev, "vkSetDeviceMemoryPriorityEXT");
 
@@ -1211,12 +1189,8 @@ VKAPI_ATTR void VKAPI_CALL loader_init_instance_extension_dispatch_table(VkLayer
 #endif // VK_USE_PLATFORM_WIN32_KHR
 
     // ---- VK_KHR_video_queue extension commands
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     table->GetPhysicalDeviceVideoCapabilitiesKHR = (PFN_vkGetPhysicalDeviceVideoCapabilitiesKHR)gpa(inst, "vkGetPhysicalDeviceVideoCapabilitiesKHR");
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     table->GetPhysicalDeviceVideoFormatPropertiesKHR = (PFN_vkGetPhysicalDeviceVideoFormatPropertiesKHR)gpa(inst, "vkGetPhysicalDeviceVideoFormatPropertiesKHR");
-#endif // VK_ENABLE_BETA_EXTENSIONS
 
     // ---- VK_KHR_get_physical_device_properties2 extension commands
     table->GetPhysicalDeviceFeatures2KHR = (PFN_vkGetPhysicalDeviceFeatures2KHR)gpa(inst, "vkGetPhysicalDeviceFeatures2KHR");
@@ -1410,11 +1384,30 @@ void init_extension_device_proc_terminator_dispatch(struct loader_device *dev) {
 #endif // None
 }
 
+// These are prototypes for functions that need their trampoline called in all circumstances.
+// They are used in loader_lookup_device_dispatch_table but are defined afterwards.
+    // ---- VK_EXT_debug_marker extension commands
+VKAPI_ATTR VkResult VKAPI_CALL DebugMarkerSetObjectTagEXT(
+    VkDevice                                    device,
+    const VkDebugMarkerObjectTagInfoEXT*        pTagInfo);
+VKAPI_ATTR VkResult VKAPI_CALL DebugMarkerSetObjectNameEXT(
+    VkDevice                                    device,
+    const VkDebugMarkerObjectNameInfoEXT*       pNameInfo);
+    // ---- VK_EXT_debug_utils extension commands
+VKAPI_ATTR VkResult VKAPI_CALL SetDebugUtilsObjectNameEXT(
+    VkDevice                                    device,
+    const VkDebugUtilsObjectNameInfoEXT*        pNameInfo);
+VKAPI_ATTR VkResult VKAPI_CALL SetDebugUtilsObjectTagEXT(
+    VkDevice                                    device,
+    const VkDebugUtilsObjectTagInfoEXT*         pTagInfo);
+
 // Device command lookup function
 VKAPI_ATTR void* VKAPI_CALL loader_lookup_device_dispatch_table(const VkLayerDispatchTable *table, const char *name) {
     if (!name || name[0] != 'v' || name[1] != 'k') return NULL;
 
     name += 2;
+    struct loader_device* dev = (struct loader_device *)table;
+
 
     // ---- Core 1_0 commands
     if (!strcmp(name, "GetDeviceProcAddr")) return (void *)table->GetDeviceProcAddr;
@@ -1624,41 +1617,19 @@ VKAPI_ATTR void* VKAPI_CALL loader_lookup_device_dispatch_table(const VkLayerDis
     if (!strcmp(name, "CreateSharedSwapchainsKHR")) return (void *)table->CreateSharedSwapchainsKHR;
 
     // ---- VK_KHR_video_queue extension commands
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     if (!strcmp(name, "CreateVideoSessionKHR")) return (void *)table->CreateVideoSessionKHR;
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     if (!strcmp(name, "DestroyVideoSessionKHR")) return (void *)table->DestroyVideoSessionKHR;
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     if (!strcmp(name, "GetVideoSessionMemoryRequirementsKHR")) return (void *)table->GetVideoSessionMemoryRequirementsKHR;
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     if (!strcmp(name, "BindVideoSessionMemoryKHR")) return (void *)table->BindVideoSessionMemoryKHR;
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     if (!strcmp(name, "CreateVideoSessionParametersKHR")) return (void *)table->CreateVideoSessionParametersKHR;
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     if (!strcmp(name, "UpdateVideoSessionParametersKHR")) return (void *)table->UpdateVideoSessionParametersKHR;
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     if (!strcmp(name, "DestroyVideoSessionParametersKHR")) return (void *)table->DestroyVideoSessionParametersKHR;
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     if (!strcmp(name, "CmdBeginVideoCodingKHR")) return (void *)table->CmdBeginVideoCodingKHR;
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     if (!strcmp(name, "CmdEndVideoCodingKHR")) return (void *)table->CmdEndVideoCodingKHR;
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     if (!strcmp(name, "CmdControlVideoCodingKHR")) return (void *)table->CmdControlVideoCodingKHR;
-#endif // VK_ENABLE_BETA_EXTENSIONS
 
     // ---- VK_KHR_video_decode_queue extension commands
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     if (!strcmp(name, "CmdDecodeVideoKHR")) return (void *)table->CmdDecodeVideoKHR;
-#endif // VK_ENABLE_BETA_EXTENSIONS
 
     // ---- VK_KHR_dynamic_rendering extension commands
     if (!strcmp(name, "CmdBeginRenderingKHR")) return (void *)table->CmdBeginRenderingKHR;
@@ -1810,8 +1781,8 @@ VKAPI_ATTR void* VKAPI_CALL loader_lookup_device_dispatch_table(const VkLayerDis
     if (!strcmp(name, "GetDeviceImageSparseMemoryRequirementsKHR")) return (void *)table->GetDeviceImageSparseMemoryRequirementsKHR;
 
     // ---- VK_EXT_debug_marker extension commands
-    if (!strcmp(name, "DebugMarkerSetObjectTagEXT")) return (void *)table->DebugMarkerSetObjectTagEXT;
-    if (!strcmp(name, "DebugMarkerSetObjectNameEXT")) return (void *)table->DebugMarkerSetObjectNameEXT;
+    if (!strcmp(name, "DebugMarkerSetObjectTagEXT")) return dev->extensions.ext_debug_marker_enabled ? (void *)DebugMarkerSetObjectTagEXT : NULL;
+    if (!strcmp(name, "DebugMarkerSetObjectNameEXT")) return dev->extensions.ext_debug_marker_enabled ? (void *)DebugMarkerSetObjectNameEXT : NULL;
     if (!strcmp(name, "CmdDebugMarkerBeginEXT")) return (void *)table->CmdDebugMarkerBeginEXT;
     if (!strcmp(name, "CmdDebugMarkerEndEXT")) return (void *)table->CmdDebugMarkerEndEXT;
     if (!strcmp(name, "CmdDebugMarkerInsertEXT")) return (void *)table->CmdDebugMarkerInsertEXT;
@@ -1871,8 +1842,8 @@ VKAPI_ATTR void* VKAPI_CALL loader_lookup_device_dispatch_table(const VkLayerDis
     if (!strcmp(name, "SetHdrMetadataEXT")) return (void *)table->SetHdrMetadataEXT;
 
     // ---- VK_EXT_debug_utils extension commands
-    if (!strcmp(name, "SetDebugUtilsObjectNameEXT")) return (void *)table->SetDebugUtilsObjectNameEXT;
-    if (!strcmp(name, "SetDebugUtilsObjectTagEXT")) return (void *)table->SetDebugUtilsObjectTagEXT;
+    if (!strcmp(name, "SetDebugUtilsObjectNameEXT")) return dev->extensions.ext_debug_utils_enabled ? (void *)SetDebugUtilsObjectNameEXT : NULL;
+    if (!strcmp(name, "SetDebugUtilsObjectTagEXT")) return dev->extensions.ext_debug_utils_enabled ? (void *)SetDebugUtilsObjectTagEXT : NULL;
     if (!strcmp(name, "QueueBeginDebugUtilsLabelEXT")) return (void *)table->QueueBeginDebugUtilsLabelEXT;
     if (!strcmp(name, "QueueEndDebugUtilsLabelEXT")) return (void *)table->QueueEndDebugUtilsLabelEXT;
     if (!strcmp(name, "QueueInsertDebugUtilsLabelEXT")) return (void *)table->QueueInsertDebugUtilsLabelEXT;
@@ -2112,6 +2083,10 @@ VKAPI_ATTR void* VKAPI_CALL loader_lookup_device_dispatch_table(const VkLayerDis
     if (!strcmp(name, "GetDeviceMicromapCompatibilityEXT")) return (void *)table->GetDeviceMicromapCompatibilityEXT;
     if (!strcmp(name, "GetMicromapBuildSizesEXT")) return (void *)table->GetMicromapBuildSizesEXT;
 
+    // ---- VK_HUAWEI_cluster_culling_shader extension commands
+    if (!strcmp(name, "CmdDrawClusterHUAWEI")) return (void *)table->CmdDrawClusterHUAWEI;
+    if (!strcmp(name, "CmdDrawClusterIndirectHUAWEI")) return (void *)table->CmdDrawClusterIndirectHUAWEI;
+
     // ---- VK_EXT_pageable_device_local_memory extension commands
     if (!strcmp(name, "SetDeviceMemoryPriorityEXT")) return (void *)table->SetDeviceMemoryPriorityEXT;
 
@@ -2306,12 +2281,8 @@ VKAPI_ATTR void* VKAPI_CALL loader_lookup_instance_dispatch_table(const VkLayerI
 #endif // VK_USE_PLATFORM_WIN32_KHR
 
     // ---- VK_KHR_video_queue extension commands
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     if (!strcmp(name, "GetPhysicalDeviceVideoCapabilitiesKHR")) return (void *)table->GetPhysicalDeviceVideoCapabilitiesKHR;
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     if (!strcmp(name, "GetPhysicalDeviceVideoFormatPropertiesKHR")) return (void *)table->GetPhysicalDeviceVideoFormatPropertiesKHR;
-#endif // VK_ENABLE_BETA_EXTENSIONS
 
     // ---- VK_KHR_get_physical_device_properties2 extension commands
     if (!strcmp(name, "GetPhysicalDeviceFeatures2KHR")) return (void *)table->GetPhysicalDeviceFeatures2KHR;
@@ -2469,7 +2440,6 @@ VKAPI_ATTR void* VKAPI_CALL loader_lookup_instance_dispatch_table(const VkLayerI
 
 // ---- VK_KHR_video_queue extension trampoline/terminators
 
-#ifdef VK_ENABLE_BETA_EXTENSIONS
 VKAPI_ATTR VkResult VKAPI_CALL GetPhysicalDeviceVideoCapabilitiesKHR(
     VkPhysicalDevice                            physicalDevice,
     const VkVideoProfileInfoKHR*                pVideoProfile,
@@ -2500,8 +2470,6 @@ VKAPI_ATTR VkResult VKAPI_CALL terminator_GetPhysicalDeviceVideoCapabilitiesKHR(
     return icd_term->dispatch.GetPhysicalDeviceVideoCapabilitiesKHR(phys_dev_term->phys_dev, pVideoProfile, pCapabilities);
 }
 
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
 VKAPI_ATTR VkResult VKAPI_CALL GetPhysicalDeviceVideoFormatPropertiesKHR(
     VkPhysicalDevice                            physicalDevice,
     const VkPhysicalDeviceVideoFormatInfoKHR*   pVideoFormatInfo,
@@ -2534,8 +2502,6 @@ VKAPI_ATTR VkResult VKAPI_CALL terminator_GetPhysicalDeviceVideoFormatProperties
     return icd_term->dispatch.GetPhysicalDeviceVideoFormatPropertiesKHR(phys_dev_term->phys_dev, pVideoFormatInfo, pVideoFormatPropertyCount, pVideoFormatProperties);
 }
 
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
 VKAPI_ATTR VkResult VKAPI_CALL CreateVideoSessionKHR(
     VkDevice                                    device,
     const VkVideoSessionCreateInfoKHR*          pCreateInfo,
@@ -2551,8 +2517,6 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateVideoSessionKHR(
     return disp->CreateVideoSessionKHR(device, pCreateInfo, pAllocator, pVideoSession);
 }
 
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
 VKAPI_ATTR void VKAPI_CALL DestroyVideoSessionKHR(
     VkDevice                                    device,
     VkVideoSessionKHR                           videoSession,
@@ -2567,8 +2531,6 @@ VKAPI_ATTR void VKAPI_CALL DestroyVideoSessionKHR(
     disp->DestroyVideoSessionKHR(device, videoSession, pAllocator);
 }
 
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
 VKAPI_ATTR VkResult VKAPI_CALL GetVideoSessionMemoryRequirementsKHR(
     VkDevice                                    device,
     VkVideoSessionKHR                           videoSession,
@@ -2584,8 +2546,6 @@ VKAPI_ATTR VkResult VKAPI_CALL GetVideoSessionMemoryRequirementsKHR(
     return disp->GetVideoSessionMemoryRequirementsKHR(device, videoSession, pMemoryRequirementsCount, pMemoryRequirements);
 }
 
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
 VKAPI_ATTR VkResult VKAPI_CALL BindVideoSessionMemoryKHR(
     VkDevice                                    device,
     VkVideoSessionKHR                           videoSession,
@@ -2601,8 +2561,6 @@ VKAPI_ATTR VkResult VKAPI_CALL BindVideoSessionMemoryKHR(
     return disp->BindVideoSessionMemoryKHR(device, videoSession, bindSessionMemoryInfoCount, pBindSessionMemoryInfos);
 }
 
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
 VKAPI_ATTR VkResult VKAPI_CALL CreateVideoSessionParametersKHR(
     VkDevice                                    device,
     const VkVideoSessionParametersCreateInfoKHR* pCreateInfo,
@@ -2618,8 +2576,6 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateVideoSessionParametersKHR(
     return disp->CreateVideoSessionParametersKHR(device, pCreateInfo, pAllocator, pVideoSessionParameters);
 }
 
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
 VKAPI_ATTR VkResult VKAPI_CALL UpdateVideoSessionParametersKHR(
     VkDevice                                    device,
     VkVideoSessionParametersKHR                 videoSessionParameters,
@@ -2634,8 +2590,6 @@ VKAPI_ATTR VkResult VKAPI_CALL UpdateVideoSessionParametersKHR(
     return disp->UpdateVideoSessionParametersKHR(device, videoSessionParameters, pUpdateInfo);
 }
 
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
 VKAPI_ATTR void VKAPI_CALL DestroyVideoSessionParametersKHR(
     VkDevice                                    device,
     VkVideoSessionParametersKHR                 videoSessionParameters,
@@ -2650,8 +2604,6 @@ VKAPI_ATTR void VKAPI_CALL DestroyVideoSessionParametersKHR(
     disp->DestroyVideoSessionParametersKHR(device, videoSessionParameters, pAllocator);
 }
 
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
 VKAPI_ATTR void VKAPI_CALL CmdBeginVideoCodingKHR(
     VkCommandBuffer                             commandBuffer,
     const VkVideoBeginCodingInfoKHR*            pBeginInfo) {
@@ -2665,8 +2617,6 @@ VKAPI_ATTR void VKAPI_CALL CmdBeginVideoCodingKHR(
     disp->CmdBeginVideoCodingKHR(commandBuffer, pBeginInfo);
 }
 
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
 VKAPI_ATTR void VKAPI_CALL CmdEndVideoCodingKHR(
     VkCommandBuffer                             commandBuffer,
     const VkVideoEndCodingInfoKHR*              pEndCodingInfo) {
@@ -2680,8 +2630,6 @@ VKAPI_ATTR void VKAPI_CALL CmdEndVideoCodingKHR(
     disp->CmdEndVideoCodingKHR(commandBuffer, pEndCodingInfo);
 }
 
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
 VKAPI_ATTR void VKAPI_CALL CmdControlVideoCodingKHR(
     VkCommandBuffer                             commandBuffer,
     const VkVideoCodingControlInfoKHR*          pCodingControlInfo) {
@@ -2695,11 +2643,9 @@ VKAPI_ATTR void VKAPI_CALL CmdControlVideoCodingKHR(
     disp->CmdControlVideoCodingKHR(commandBuffer, pCodingControlInfo);
 }
 
-#endif // VK_ENABLE_BETA_EXTENSIONS
 
 // ---- VK_KHR_video_decode_queue extension trampoline/terminators
 
-#ifdef VK_ENABLE_BETA_EXTENSIONS
 VKAPI_ATTR void VKAPI_CALL CmdDecodeVideoKHR(
     VkCommandBuffer                             commandBuffer,
     const VkVideoDecodeInfoKHR*                 pDecodeInfo) {
@@ -2713,7 +2659,6 @@ VKAPI_ATTR void VKAPI_CALL CmdDecodeVideoKHR(
     disp->CmdDecodeVideoKHR(commandBuffer, pDecodeInfo);
 }
 
-#endif // VK_ENABLE_BETA_EXTENSIONS
 
 // ---- VK_KHR_dynamic_rendering extension trampoline/terminators
 
@@ -4016,6 +3961,9 @@ VKAPI_ATTR VkResult VKAPI_CALL terminator_DebugMarkerSetObjectTagEXT(
                 local_tag_info.object = (uint64_t)icd_surface->real_icd_surfaces[icd_index];
             }
         }
+    // If this is an instance we have to replace it with the proper one for the next call.
+    } else if (pTagInfo->objectType == VK_DEBUG_REPORT_OBJECT_TYPE_INSTANCE_EXT) {
+        local_tag_info.object = (uint64_t)(uintptr_t)icd_term->instance;
     }
     // Exit early if the driver does not support the function - this can happen as a layer or the loader itself supports
     // debug utils but the driver does not.
@@ -4068,6 +4016,9 @@ VKAPI_ATTR VkResult VKAPI_CALL terminator_DebugMarkerSetObjectNameEXT(
                 local_name_info.object = (uint64_t)icd_surface->real_icd_surfaces[icd_index];
             }
         }
+    // If this is an instance we have to replace it with the proper one for the next call.
+    } else if (pNameInfo->objectType == VK_DEBUG_REPORT_OBJECT_TYPE_INSTANCE_EXT) {
+        local_name_info.object = (uint64_t)(uintptr_t)icd_term->instance;
     }
     // Exit early if the driver does not support the function - this can happen as a layer or the loader itself supports
     // debug utils but the driver does not.
@@ -4626,6 +4577,9 @@ VKAPI_ATTR VkResult VKAPI_CALL terminator_SetDebugUtilsObjectNameEXT(
                 local_name_info.objectHandle = (uint64_t)icd_surface->real_icd_surfaces[icd_index];
             }
         }
+    // If this is an instance we have to replace it with the proper one for the next call.
+    } else if (pNameInfo->objectType == VK_OBJECT_TYPE_INSTANCE) {
+        local_name_info.objectHandle = (uint64_t)(uintptr_t)icd_term->instance;
     }
     // Exit early if the driver does not support the function - this can happen as a layer or the loader itself supports
     // debug utils but the driver does not.
@@ -4682,6 +4636,9 @@ VKAPI_ATTR VkResult VKAPI_CALL terminator_SetDebugUtilsObjectTagEXT(
                 local_tag_info.objectHandle = (uint64_t)icd_surface->real_icd_surfaces[icd_index];
             }
         }
+    // If this is an instance we have to replace it with the proper one for the next call.
+    } else if (pTagInfo->objectType == VK_OBJECT_TYPE_INSTANCE) {
+        local_tag_info.objectHandle = (uint64_t)(uintptr_t)icd_term->instance;
     }
     // Exit early if the driver does not support the function - this can happen as a layer or the loader itself supports
     // debug utils but the driver does not.
@@ -7037,6 +6994,38 @@ VKAPI_ATTR void VKAPI_CALL GetMicromapBuildSizesEXT(
 }
 
 
+// ---- VK_HUAWEI_cluster_culling_shader extension trampoline/terminators
+
+VKAPI_ATTR void VKAPI_CALL CmdDrawClusterHUAWEI(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    groupCountX,
+    uint32_t                                    groupCountY,
+    uint32_t                                    groupCountZ) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(commandBuffer);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkCmdDrawClusterHUAWEI: Invalid commandBuffer "
+                   "[VUID-vkCmdDrawClusterHUAWEI-commandBuffer-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    disp->CmdDrawClusterHUAWEI(commandBuffer, groupCountX, groupCountY, groupCountZ);
+}
+
+VKAPI_ATTR void VKAPI_CALL CmdDrawClusterIndirectHUAWEI(
+    VkCommandBuffer                             commandBuffer,
+    VkBuffer                                    buffer,
+    VkDeviceSize                                offset) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(commandBuffer);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkCmdDrawClusterIndirectHUAWEI: Invalid commandBuffer "
+                   "[VUID-vkCmdDrawClusterIndirectHUAWEI-commandBuffer-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    disp->CmdDrawClusterIndirectHUAWEI(commandBuffer, buffer, offset);
+}
+
+
 // ---- VK_EXT_pageable_device_local_memory extension trampoline/terminators
 
 VKAPI_ATTR void VKAPI_CALL SetDeviceMemoryPriorityEXT(
@@ -8126,86 +8115,60 @@ bool extension_instance_gpa(struct loader_instance *ptr_instance, const char *na
 
 
     // ---- VK_KHR_video_queue extension commands
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     if (!strcmp("vkGetPhysicalDeviceVideoCapabilitiesKHR", name)) {
         *addr = (void *)GetPhysicalDeviceVideoCapabilitiesKHR;
         return true;
     }
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     if (!strcmp("vkGetPhysicalDeviceVideoFormatPropertiesKHR", name)) {
         *addr = (void *)GetPhysicalDeviceVideoFormatPropertiesKHR;
         return true;
     }
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     if (!strcmp("vkCreateVideoSessionKHR", name)) {
         *addr = (void *)CreateVideoSessionKHR;
         return true;
     }
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     if (!strcmp("vkDestroyVideoSessionKHR", name)) {
         *addr = (void *)DestroyVideoSessionKHR;
         return true;
     }
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     if (!strcmp("vkGetVideoSessionMemoryRequirementsKHR", name)) {
         *addr = (void *)GetVideoSessionMemoryRequirementsKHR;
         return true;
     }
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     if (!strcmp("vkBindVideoSessionMemoryKHR", name)) {
         *addr = (void *)BindVideoSessionMemoryKHR;
         return true;
     }
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     if (!strcmp("vkCreateVideoSessionParametersKHR", name)) {
         *addr = (void *)CreateVideoSessionParametersKHR;
         return true;
     }
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     if (!strcmp("vkUpdateVideoSessionParametersKHR", name)) {
         *addr = (void *)UpdateVideoSessionParametersKHR;
         return true;
     }
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     if (!strcmp("vkDestroyVideoSessionParametersKHR", name)) {
         *addr = (void *)DestroyVideoSessionParametersKHR;
         return true;
     }
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     if (!strcmp("vkCmdBeginVideoCodingKHR", name)) {
         *addr = (void *)CmdBeginVideoCodingKHR;
         return true;
     }
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     if (!strcmp("vkCmdEndVideoCodingKHR", name)) {
         *addr = (void *)CmdEndVideoCodingKHR;
         return true;
     }
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     if (!strcmp("vkCmdControlVideoCodingKHR", name)) {
         *addr = (void *)CmdControlVideoCodingKHR;
         return true;
     }
-#endif // VK_ENABLE_BETA_EXTENSIONS
 
     // ---- VK_KHR_video_decode_queue extension commands
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     if (!strcmp("vkCmdDecodeVideoKHR", name)) {
         *addr = (void *)CmdDecodeVideoKHR;
         return true;
     }
-#endif // VK_ENABLE_BETA_EXTENSIONS
 
     // ---- VK_KHR_dynamic_rendering extension commands
     if (!strcmp("vkCmdBeginRenderingKHR", name)) {
@@ -9585,6 +9548,16 @@ bool extension_instance_gpa(struct loader_instance *ptr_instance, const char *na
         return true;
     }
 
+    // ---- VK_HUAWEI_cluster_culling_shader extension commands
+    if (!strcmp("vkCmdDrawClusterHUAWEI", name)) {
+        *addr = (void *)CmdDrawClusterHUAWEI;
+        return true;
+    }
+    if (!strcmp("vkCmdDrawClusterIndirectHUAWEI", name)) {
+        *addr = (void *)CmdDrawClusterIndirectHUAWEI;
+        return true;
+    }
+
     // ---- VK_EXT_pageable_device_local_memory extension commands
     if (!strcmp("vkSetDeviceMemoryPriorityEXT", name)) {
         *addr = (void *)SetDeviceMemoryPriorityEXT;
@@ -10131,12 +10104,8 @@ const VkLayerInstanceDispatchTable instance_disp = {
 #endif // VK_USE_PLATFORM_WIN32_KHR
 
     // ---- VK_KHR_video_queue extension commands
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     .GetPhysicalDeviceVideoCapabilitiesKHR = terminator_GetPhysicalDeviceVideoCapabilitiesKHR,
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     .GetPhysicalDeviceVideoFormatPropertiesKHR = terminator_GetPhysicalDeviceVideoFormatPropertiesKHR,
-#endif // VK_ENABLE_BETA_EXTENSIONS
 
     // ---- VK_KHR_get_physical_device_properties2 extension commands
     .GetPhysicalDeviceFeatures2KHR = terminator_GetPhysicalDeviceFeatures2,

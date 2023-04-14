@@ -15,7 +15,6 @@
 #include "internal/platform/single_thread_executor.h"
 
 #include <atomic>
-#include <functional>
 #include <string>
 
 #include "gtest/gtest.h"
@@ -23,7 +22,6 @@
 #include "absl/time/clock.h"
 #include "internal/platform/exception.h"
 
-namespace location {
 namespace nearby {
 
 TEST(SingleThreadExecutorTest, ConsructorDestructorWorks) {
@@ -136,4 +134,3 @@ TEST(SingleThreadExecutorTest, ThreadCheck_SubmitCallable) {
 }
 
 }  // namespace nearby
-}  // namespace location

@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2023 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -360,6 +360,12 @@ export const generatedProperties = [
   "keywords": [
    "none"
   ],
+  "name": "anchor-default"
+ },
+ {
+  "keywords": [
+   "none"
+  ],
   "name": "anchor-name"
  },
  {
@@ -380,6 +386,14 @@ export const generatedProperties = [
    "animation-name"
   ],
   "name": "animation"
+ },
+ {
+  "keywords": [
+   "replace",
+   "add",
+   "accumulate"
+  ],
+  "name": "animation-composition"
  },
  {
   "name": "animation-delay"
@@ -429,6 +443,19 @@ export const generatedProperties = [
    "paused"
   ],
   "name": "animation-play-state"
+ },
+ {
+  "longhands": [
+   "animation-range-start",
+   "animation-range-end"
+  ],
+  "name": "animation-range"
+ },
+ {
+  "name": "animation-range-end"
+ },
+ {
+  "name": "animation-range-start"
  },
  {
   "keywords": [
@@ -1582,7 +1609,12 @@ export const generatedProperties = [
    "font-stretch",
    "font-size",
    "line-height",
-   "font-family"
+   "font-family",
+   "font-optical-sizing",
+   "font-size-adjust",
+   "font-kerning",
+   "font-feature-settings",
+   "font-variation-settings"
   ],
   "name": "font"
  },
@@ -2917,18 +2949,12 @@ export const generatedProperties = [
  },
  {
   "longhands": [
-   "scroll-timeline-axis",
-   "scroll-timeline-name"
+   "scroll-timeline-name",
+   "scroll-timeline-axis"
   ],
   "name": "scroll-timeline"
  },
  {
-  "keywords": [
-   "block",
-   "inline",
-   "vertical",
-   "horizontal"
-  ],
   "name": "scroll-timeline-axis"
  },
  {
@@ -3318,6 +3344,13 @@ export const generatedProperties = [
  },
  {
   "keywords": [
+   "none",
+   "browser"
+  ],
+  "name": "top-layer"
+ },
+ {
+  "keywords": [
    "auto",
    "none",
    "pan-x",
@@ -3414,7 +3447,8 @@ export const generatedProperties = [
    "auto",
    "none",
    "text",
-   "all"
+   "all",
+   "contain"
   ],
   "name": "user-select"
  },
@@ -3649,6 +3683,11 @@ export const generatedPropertyValues = {
    "hanging"
   ]
  },
+ "anchor-default": {
+  "values": [
+   "none"
+  ]
+ },
  "anchor-name": {
   "values": [
    "none"
@@ -3657,6 +3696,13 @@ export const generatedPropertyValues = {
  "anchor-scroll": {
   "values": [
    "none"
+  ]
+ },
+ "animation-composition": {
+  "values": [
+   "replace",
+   "add",
+   "accumulate"
   ]
  },
  "animation-direction": {
@@ -5041,14 +5087,6 @@ export const generatedPropertyValues = {
    "proximity"
   ]
  },
- "scroll-timeline-axis": {
-  "values": [
-   "block",
-   "inline",
-   "vertical",
-   "horizontal"
-  ]
- },
  "scrollbar-gutter": {
   "values": [
    "auto",
@@ -5280,6 +5318,12 @@ export const generatedPropertyValues = {
    "auto"
   ]
  },
+ "top-layer": {
+  "values": [
+   "none",
+   "browser"
+  ]
+ },
  "touch-action": {
   "values": [
    "auto",
@@ -5346,7 +5390,8 @@ export const generatedPropertyValues = {
    "auto",
    "none",
    "text",
-   "all"
+   "all",
+   "contain"
   ]
  },
  "vector-effect": {

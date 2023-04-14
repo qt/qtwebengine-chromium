@@ -1,6 +1,6 @@
 # ~~~
-# Copyright (c) 2018-2019 Valve Corporation
-# Copyright (c) 2018-2019 LunarG, Inc.
+# Copyright (c) 2018-2023 Valve Corporation
+# Copyright (c) 2018-2023 LunarG, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,17 +21,18 @@ if(WIN32)
     # ~~~
     # Setup the vulkaninfo.rc file to contain the correct info
     # Optionally uses the VULKANINFO_BUILD_DLL_VERSIONINFO build option to allow setting the exact build version
-    # When VULKANINFO_BUILD_DLL_VERSIONINFO is not provided, "Dev Build" is added to the version string
+    # When VULKANINFO_BUILD_DLL_VERSIONINFO is not provided, "Dev Build" is added to the version strings
     # ~~~
+    string(TIMESTAMP CURRENT_YEAR "%Y")
+    set(VULKANINFO_CUR_COPYRIGHT_STR "${CURRENT_YEAR}")
     if ("$CACHE{VULKANINFO_BUILD_DLL_VERSIONINFO}" STREQUAL "")
-        # Default version - for when no version is provided
-        set(VULKANINFO_RC_VERSION "1.0.1111.2222")
+        set(VULKANINFO_RC_VERSION "${VulkanHeaders_VERSION}")
         set(VULKANINFO_VER_FILE_VERSION_STR "\"${VULKANINFO_RC_VERSION}.Dev Build\"")
-        set(VULKANINFO_VER_FILE_DESCRIPTION_STR "\"Vulkan Loader - Dev Build\"")
+        set(VULKANINFO_VER_FILE_DESCRIPTION_STR "\"Vulkaninfo - Dev Build\"")
     else()
         set(VULKANINFO_RC_VERSION "$CACHE{VULKANINFO_BUILD_DLL_VERSIONINFO}")
         set(VULKANINFO_VER_FILE_VERSION_STR "\"${VULKANINFO_RC_VERSION}\"")
-        set(VULKANINFO_VER_FILE_DESCRIPTION_STR "\"Vulkan Loader\"")
+        set(VULKANINFO_VER_FILE_DESCRIPTION_STR "\"vulkaninfo\"")
     endif()
 
     # RC file wants the value of FILEVERSION to separated by commas
@@ -61,23 +62,22 @@ if (NOT WIN32)
 endif()
 
 if(UNIX AND NOT APPLE) # i.e. Linux
-    find_package(PkgConfig)
     option(BUILD_WSI_XCB_SUPPORT "Build XCB WSI support" ON)
     option(BUILD_WSI_XLIB_SUPPORT "Build Xlib WSI support" ON)
     option(BUILD_WSI_WAYLAND_SUPPORT "Build Wayland WSI support" ON)
     option(BUILD_WSI_DIRECTFB_SUPPORT "Build DirectFB WSI support" OFF)
 
+    find_package(PkgConfig REQUIRED QUIET) # Use PkgConfig to find Linux system libraries
+
     if(BUILD_WSI_XCB_SUPPORT)
-        find_package(XCB REQUIRED)
-        target_include_directories(vulkaninfo PRIVATE ${XCB_INCLUDE_DIRS})
-        target_link_libraries(vulkaninfo ${XCB_LIBRARIES})
+        pkg_check_modules(XCB REQUIRED QUIET IMPORTED_TARGET xcb)
+        target_link_libraries(vulkaninfo PkgConfig::XCB)
         target_compile_definitions(vulkaninfo PRIVATE -DVK_USE_PLATFORM_XCB_KHR -DVK_NO_PROTOTYPES)
     endif()
 
     if(BUILD_WSI_XLIB_SUPPORT)
-        find_package(X11 REQUIRED)
-        target_include_directories(vulkaninfo PRIVATE ${X11_INCLUDE_DIR})
-        target_link_libraries(vulkaninfo ${X11_LIBRARIES})
+        pkg_check_modules(X11 REQUIRED QUIET IMPORTED_TARGET x11)
+        target_link_libraries(vulkaninfo PkgConfig::X11)
         target_compile_definitions(vulkaninfo PRIVATE -DVK_USE_PLATFORM_XLIB_KHR -DVK_NO_PROTOTYPES)
     endif()
 
@@ -89,9 +89,8 @@ if(UNIX AND NOT APPLE) # i.e. Linux
     endif()
 
     if(BUILD_WSI_DIRECTFB_SUPPORT)
-        find_package(DirectFB REQUIRED)
-        target_include_directories(vulkaninfo PRIVATE ${DIRECTFB_INCLUDE_DIR})
-        target_link_libraries(vulkaninfo ${DIRECTFB_LIBRARIES})
+        pkg_check_modules(DirectFB REQUIRED QUIET IMPORTED_TARGET directfb)
+        target_link_libraries(vulkaninfo PkgConfig::DirectFB)
         target_compile_definitions(vulkaninfo PRIVATE -DVK_USE_PLATFORM_DIRECTFB_EXT -DVK_NO_PROTOTYPES)
     endif()
 endif()

@@ -48,7 +48,7 @@ to work on an issue that is assigned, simply coordinate with the current assigne
   - Implemented VUID checks must be accompanied by relevant tests
   - Validation source code should be in a separate commit from the tests, unless there are interdependencies. The repo should compile and
     pass all tests after each commit.
-* Please base your fixes on the master branch. SDK branches are generally not updated except for critical fixes needed to repair an SDK release.
+* Please base your fixes on the `main` branch. SDK branches are generally not updated except for critical fixes needed to repair an SDK release.
 * The resulting Pull Request will be assigned to a repository maintainer. It is the maintainer's responsibility to ensure the Pull Request
   passes the Google/LunarG internal CI processes. Once the Pull Request has been approved and is passing internal CI, a repository maintainer
   will merge the PR.
@@ -104,10 +104,6 @@ that to be accepted into the repository, the pull request must [pass all tests](
 
 * [How to setup tests to run](./tests) and [overview for creating tests](docs/creating_tests.md).
 
-#### **GitHub Cloud CI Testing**
-Pull Requests to GitHub are tested in the cloud on Linux and Windows VMs. The Linux VMs use [Github Actions](https://github.com/KhronosGroup/Vulkan-ValidationLayers/actions) with the sequence of commands driven by the [ci_build.yml](https://github.com/KhronosGroup/Vulkan-ValidationLayers/blob/master/.github/workflows/ci_build.yml) file. The Windows VMs use [AppVeyor](https://ci.appveyor.com/project/Khronoswebmaster/vulkan-validationlayers/branch/master) with the sequence of commands driven by the [.appveyor.yml](https://github.com/KhronosGroup/Vulkan-ValidationLayers/blob/master/.appveyor.yml) file.
-
-The Linux testing includes iterating on all of the validation layer tests over multiple [different device](https://github.com/KhronosGroup/Vulkan-ValidationLayers/tree/master/tests/device_profiles) profiles using the [Profile Layer](https://github.com/KhronosGroup/Vulkan-Profiles) in combination with the [mock icd](https://github.com/KhronosGroup/Vulkan-Tools/tree/master/icd). This is a fast way to simulate testing across different devices. Any new tests must pass across all device profiles.
 
 #### **Special Considerations for Validation Layers**
 * **Validation Checks:**  Validation checks are carried out by the Khronos Validation layer. The CoreChecks validation object
@@ -122,29 +118,6 @@ output, the LogObjectList structure should be used.
 * **Generated Source Code:** The `layers/generated` directory contains source code that is created by several
 generator scripts in the `scripts` directory. All changes to these scripts _must_ be submitted with the
 corresponding generated output to keep the repository self-consistent. [Here for more information](docs/generated_code.md).
-
-#### Coding Conventions for [CMake](http://cmake.org) files
-
-* When editing configuration files for CMake, follow the style conventions of the surrounding code.
-  * The column limit is 132.
-  * The indent is 4 spaces.
-  * CMake functions are lower-case.
-  * Variable and keyword names are upper-case.
-* The format is defined by
-  [cmake-format](https://github.com/cheshirekow/cmake_format)
-  using the `cmake-format.py` file in the repository to define the settings.
-  See the cmake-format page for information about its simple markup for comments.
-* Disable reformatting of a block of comment lines by inserting
-  a `# ~~~` comment line before and after that block.
-* Disable any formatting of a block of lines by surrounding that block with
-  `# cmake-format: off` and `# cmake-format: on` comment lines.
-* To install: `sudo pip install cmake_format`
-* To run: `cmake-format --in-place $FILENAME`
-* **IMPORTANT (June 2018)** cmake-format v0.3.6 has a
-  [bug]( https://github.com/cheshirekow/cmake_format/issues/50)
-  that can corrupt the formatting of comment lines in CMake files.
-  A workaround is to use the following command _before_ running cmake-format:
-  `sed --in-place='' 's/^  *#/#/' $FILENAME`
 
 ### **Contributor License Agreement (CLA)**
 

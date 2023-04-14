@@ -10,7 +10,6 @@
 #include "openssl/crypto.h"
 #include "openssl/ssl.h"
 #include "quiche/quic/core/quic_crypto_stream.h"
-#include "quiche/quic/core/tls_client_handshaker.h"
 #include "quiche/quic/platform/api/quic_bug_tracker.h"
 #include "quiche/quic/platform/api/quic_stack_trace.h"
 
@@ -99,6 +98,7 @@ void TlsHandshaker::AdvanceHandshake() {
       << "is_server:" << SSL_is_server(ssl());
 
   QUIC_VLOG(1) << ENDPOINT << "Continuing handshake";
+  last_tls_alert_.reset();
   int rv = SSL_do_handshake(ssl());
 
   if (is_connection_closed()) {
@@ -152,7 +152,23 @@ void TlsHandshaker::AdvanceHandshake() {
     QUIC_VLOG(1) << "SSL_do_handshake failed; SSL_get_error returns "
                  << ssl_error;
     ERR_print_errors_fp(stderr);
-    CloseConnection(QUIC_HANDSHAKE_FAILED, "TLS handshake failed");
+    if (dont_close_connection_in_tls_alert_callback_ &&
+        last_tls_alert_.has_value()) {
+      QUIC_RELOADABLE_FLAG_COUNT_N(
+          quic_dont_close_connection_in_tls_alert_callback, 2, 2);
+      std::string error_details =
+          absl::StrCat("TLS handshake failure (",
+                       EncryptionLevelToString(last_tls_alert_->level), ") ",
+                       static_cast<int>(last_tls_alert_->desc), ": ",
+                       SSL_alert_desc_string_long(last_tls_alert_->desc));
+      QUIC_DLOG(ERROR) << error_details;
+      CloseConnection(TlsAlertToQuicErrorCode(last_tls_alert_->desc),
+                      static_cast<QuicIetfTransportErrorCodes>(
+                          CRYPTO_ERROR_FIRST + last_tls_alert_->desc),
+                      error_details);
+    } else {
+      CloseConnection(QUIC_HANDSHAKE_FAILED, "TLS handshake failed");
+    }
   }
 }
 
@@ -368,14 +384,23 @@ void TlsHandshaker::WriteMessage(EncryptionLevel level,
 void TlsHandshaker::FlushFlight() {}
 
 void TlsHandshaker::SendAlert(EncryptionLevel level, uint8_t desc) {
-  std::string error_details = absl::StrCat(
-      "TLS handshake failure (", EncryptionLevelToString(level), ") ",
-      static_cast<int>(desc), ": ", SSL_alert_desc_string_long(desc));
-  QUIC_DLOG(ERROR) << error_details;
-  CloseConnection(
-      TlsAlertToQuicErrorCode(desc),
-      static_cast<QuicIetfTransportErrorCodes>(CRYPTO_ERROR_FIRST + desc),
-      error_details);
+  if (dont_close_connection_in_tls_alert_callback_) {
+    QUIC_RELOADABLE_FLAG_COUNT_N(
+        quic_dont_close_connection_in_tls_alert_callback, 1, 2);
+    TlsAlert tls_alert;
+    tls_alert.level = level;
+    tls_alert.desc = desc;
+    last_tls_alert_ = tls_alert;
+  } else {
+    std::string error_details = absl::StrCat(
+        "TLS handshake failure (", EncryptionLevelToString(level), ") ",
+        static_cast<int>(desc), ": ", SSL_alert_desc_string_long(desc));
+    QUIC_DLOG(ERROR) << error_details;
+    CloseConnection(
+        TlsAlertToQuicErrorCode(desc),
+        static_cast<QuicIetfTransportErrorCodes>(CRYPTO_ERROR_FIRST + desc),
+        error_details);
+  }
 }
 
 }  // namespace quic

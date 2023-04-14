@@ -14,8 +14,9 @@
 #include "include/core/SkScalar.h"
 #include "include/core/SkTypes.h"
 #include "include/private/SkIDChangeListener.h"
-#include "include/private/SkTArray.h"
-#include "include/private/SkTo.h"
+#include "include/private/base/SkDebug.h"
+#include "include/private/base/SkTArray.h"
+#include "include/private/base/SkTo.h"
 
 #include <atomic>
 #include <cstddef>
@@ -25,19 +26,6 @@
 
 class SkMatrix;
 class SkRRect;
-class SkWBuffer;
-
-enum class SkPathConvexity {
-    kConvex,
-    kConcave,
-    kUnknown,
-};
-
-enum class SkPathFirstDirection {
-    kCW,         // == SkPathDirection::kCW
-    kCCW,        // == SkPathDirection::kCCW
-    kUnknown,
-};
 
 // These are computed from a stream of verbs
 struct SkPathVerbAnalysis {
@@ -327,24 +315,15 @@ public:
 
     bool operator== (const SkPathRef& ref) const;
 
-    /**
-     * Writes the path points and verbs to a buffer.
-     */
-    void writeToBuffer(SkWBuffer* buffer) const;
-
-    /**
-     * Gets the number of bytes that would be written in writeBuffer()
-     */
-    uint32_t writeSize() const;
-
     void interpolate(const SkPathRef& ending, SkScalar weight, SkPathRef* out) const;
 
     /**
      * Gets an ID that uniquely identifies the contents of the path ref. If two path refs have the
      * same ID then they have the same verbs and points. However, two path refs may have the same
      * contents but different genIDs.
+     * skbug.com/1762 for background on why fillType is necessary (for now).
      */
-    uint32_t genID() const;
+    uint32_t genID(uint8_t fillType) const;
 
     void addGenIDChangeListener(sk_sp<SkIDChangeListener>);   // Threadsafe.
     int genIDChangeListenerCount();                           // Threadsafe
@@ -372,7 +351,7 @@ private:
         kSegmentMask_SerializationShift = 0                 // requires 4 bits (deprecated)
     };
 
-    SkPathRef() {
+    SkPathRef(int numVerbs = 0, int numPoints = 0) {
         fBoundsIsDirty = true;    // this also invalidates fIsFinite
         fGenerationID = kEmptyGenID;
         fSegmentMask = 0;
@@ -381,6 +360,10 @@ private:
         // The next two values don't matter unless fIsOval or fIsRRect are true.
         fRRectOrOvalIsCCW = false;
         fRRectOrOvalStartIdx = 0xAC;
+        if (numPoints > 0)
+            fPoints.reserve_back(numPoints);
+        if (numVerbs > 0)
+            fVerbs.reserve_back(numVerbs);
         SkDEBUGCODE(fEditorsAttached.store(0);)
         SkDEBUGCODE(this->validate();)
     }
@@ -413,10 +396,12 @@ private:
     /** Makes additional room but does not change the counts or change the genID */
     void incReserve(int additionalVerbs, int additionalPoints) {
         SkDEBUGCODE(this->validate();)
+        // Use reserve() so that if there is not enough space, the array will grow with some
+        // additional space. This ensures repeated calls to grow won't always allocate.
         if (additionalPoints > 0)
-            fPoints.reserve_back(additionalPoints);
+            fPoints.reserve(fPoints.size() + additionalPoints);
         if (additionalVerbs > 0)
-            fVerbs.reserve_back(additionalVerbs);
+            fVerbs.reserve(fVerbs.size() + additionalVerbs);
         SkDEBUGCODE(this->validate();)
     }
 
@@ -440,9 +425,16 @@ private:
     void resetToSize(int verbCount, int pointCount, int conicCount,
                      int reserveVerbs = 0, int reservePoints = 0) {
         commonReset();
-        fPoints.reserve(pointCount + reservePoints);
+        // Use reserve_back() so the arrays are sized to exactly fit the data.
+        const int pointDelta = pointCount + reservePoints - fPoints.size();
+        if (pointDelta > 0) {
+            fPoints.reserve_back(pointDelta);
+        }
         fPoints.resize_back(pointCount);
-        fVerbs.reserve(verbCount + reserveVerbs);
+        const int verbDelta = verbCount + reserveVerbs - fVerbs.size();
+        if (verbDelta > 0) {
+            fVerbs.reserve_back(verbDelta);
+        }
         fVerbs.resize_back(verbCount);
         fConicWeights.resize_back(conicCount);
         SkDEBUGCODE(this->validate();)

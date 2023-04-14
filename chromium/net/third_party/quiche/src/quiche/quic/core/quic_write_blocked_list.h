@@ -12,21 +12,24 @@
 #include "absl/container/inlined_vector.h"
 #include "quiche/http2/core/priority_write_scheduler.h"
 #include "quiche/quic/core/quic_packets.h"
+#include "quiche/quic/core/quic_stream_priority.h"
 #include "quiche/quic/platform/api/quic_bug_tracker.h"
 #include "quiche/quic/platform/api/quic_export.h"
 #include "quiche/quic/platform/api/quic_flags.h"
+#include "quiche/spdy/core/spdy_protocol.h"
 
 namespace quic {
 
-// Keeps tracks of the QUIC streams that have data to write, sorted by
-// priority.  QUIC stream priority order is:
-// Crypto stream > Headers stream > Data streams by requested priority.
+// Keeps tracks of the order of QUIC streams that have data to write.
+// Static streams come first, in the order they were registered with
+// QuicWriteBlockedList.  They are followed by non-static streams, ordered by
+// priority.
 class QUIC_EXPORT_PRIVATE QuicWriteBlockedList {
  public:
-  explicit QuicWriteBlockedList(QuicTransportVersion version);
+  explicit QuicWriteBlockedList();
   QuicWriteBlockedList(const QuicWriteBlockedList&) = delete;
   QuicWriteBlockedList& operator=(const QuicWriteBlockedList&) = delete;
-  ~QuicWriteBlockedList();
+  ~QuicWriteBlockedList() = default;
 
   bool HasWriteBlockedDataStreams() const {
     return priority_write_scheduler_.HasReadyStreams();
@@ -47,36 +50,45 @@ class QUIC_EXPORT_PRIVATE QuicWriteBlockedList {
 
   bool ShouldYield(QuicStreamId id) const;
 
-  spdy::SpdyPriority GetSpdyPriorityofStream(QuicStreamId id) const {
-    return priority_write_scheduler_.GetStreamPrecedence(id).spdy3_priority();
+  QuicStreamPriority GetPriorityofStream(QuicStreamId id) const {
+    return priority_write_scheduler_.GetStreamPriority(id);
   }
 
-  // Pops the highest priority stream, special casing crypto and headers
-  // streams. Latches the most recently popped data stream for batch writing
-  // purposes.
+  // Pops the highest priority stream, special casing static streams. Latches
+  // the most recently popped data stream for batch writing purposes.
   QuicStreamId PopFront();
 
+  // Register a stream with given priority.
+  // `priority` is ignored for static streams.
   void RegisterStream(QuicStreamId stream_id, bool is_static_stream,
-                      const spdy::SpdyStreamPrecedence& precedence);
+                      const QuicStreamPriority& priority);
 
-  void UnregisterStream(QuicStreamId stream_id, bool is_static);
+  // Unregister a stream.  `stream_id` must be registered, either as a static
+  // stream or as a non-static stream.
+  void UnregisterStream(QuicStreamId stream_id);
 
+  // Updates the stored priority of a stream.  Must not be called for static
+  // streams.
   void UpdateStreamPriority(QuicStreamId stream_id,
-                            const spdy::SpdyStreamPrecedence& new_precedence);
+                            const QuicStreamPriority& new_priority);
 
   void UpdateBytesForStream(QuicStreamId stream_id, size_t bytes);
 
   // Pushes a stream to the back of the list for its priority level *unless* it
   // is latched for doing batched writes in which case it goes to the front of
   // the list for its priority level.
-  // Headers and crypto streams are special cased to always resume first.
+  // Static streams are special cased to always resume first.
+  // Stream must already be registered.
   void AddStream(QuicStreamId stream_id);
 
   // Returns true if stream with |stream_id| is write blocked.
   bool IsStreamBlocked(QuicStreamId stream_id) const;
 
  private:
-  http2::PriorityWriteScheduler<QuicStreamId> priority_write_scheduler_;
+  http2::PriorityWriteScheduler<QuicStreamId, QuicStreamPriority,
+                                QuicStreamPriorityToInt,
+                                IntToQuicStreamPriority>
+      priority_write_scheduler_;
 
   // If performing batch writes, this will be the stream ID of the stream doing
   // batch writes for this priority level.  We will allow this stream to write
@@ -114,9 +126,9 @@ class QUIC_EXPORT_PRIVATE QuicWriteBlockedList {
     // True if |id| is in the collection, regardless of its state.
     bool IsRegistered(QuicStreamId id) const;
 
-    // Remove |id| from the collection, if it is in the blocked state, reduce
-    // |num_blocked_| by 1.
-    void Unregister(QuicStreamId id);
+    // Remove |id| from the collection.  If it is in the blocked state, reduce
+    // |num_blocked_| by 1.  Returns true if |id| was in the collection.
+    bool Unregister(QuicStreamId id);
 
     // Set |id| to be blocked. If |id| is not already blocked, increase
     // |num_blocked_| by 1.

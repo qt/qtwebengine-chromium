@@ -121,7 +121,7 @@ TEST_F(ParserImplTest, LHSExpression_PostfixExpression_Array) {
     ASSERT_TRUE(access->object->Is<ast::IdentifierExpression>());
 
     auto* obj = access->object->As<ast::IdentifierExpression>();
-    EXPECT_EQ(obj->symbol, p->builder().Symbols().Get("a"));
+    EXPECT_EQ(obj->identifier->symbol, p->builder().Symbols().Get("a"));
 
     ASSERT_TRUE(access->index->Is<ast::IntLiteralExpression>());
     auto* idx = access->index->As<ast::IntLiteralExpression>();
@@ -143,14 +143,11 @@ TEST_F(ParserImplTest, LHSExpression_PostfixExpression) {
     ASSERT_TRUE(u->expr->Is<ast::MemberAccessorExpression>());
 
     auto* access = u->expr->As<ast::MemberAccessorExpression>();
-    ASSERT_TRUE(access->structure->Is<ast::IdentifierExpression>());
+    ASSERT_TRUE(access->object->Is<ast::IdentifierExpression>());
 
-    auto* struct_ident = access->structure->As<ast::IdentifierExpression>();
-    EXPECT_EQ(struct_ident->symbol, p->builder().Symbols().Get("a"));
-
-    ASSERT_TRUE(access->member->Is<ast::IdentifierExpression>());
-    auto* member_ident = access->member->As<ast::IdentifierExpression>();
-    EXPECT_EQ(member_ident->symbol, p->builder().Symbols().Get("foo"));
+    auto* struct_ident = access->object->As<ast::IdentifierExpression>();
+    EXPECT_EQ(struct_ident->identifier->symbol, p->builder().Symbols().Get("a"));
+    EXPECT_EQ(access->member->symbol, p->builder().Symbols().Get("foo"));
 }
 
 TEST_F(ParserImplTest, LHSExpression_InvalidPostfixExpression) {

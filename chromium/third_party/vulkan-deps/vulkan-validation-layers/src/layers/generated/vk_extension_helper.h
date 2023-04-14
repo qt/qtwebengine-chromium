@@ -4,10 +4,10 @@
 
 /***************************************************************************
  *
- * Copyright (c) 2015-2022 The Khronos Group Inc.
- * Copyright (c) 2015-2022 Valve Corporation
- * Copyright (c) 2015-2022 LunarG, Inc.
- * Copyright (c) 2015-2022 Google Inc.
+ * Copyright (c) 2015-2023 The Khronos Group Inc.
+ * Copyright (c) 2015-2023 Valve Corporation
+ * Copyright (c) 2015-2023 LunarG, Inc.
+ * Copyright (c) 2015-2023 Google Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,14 +20,6 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *
- * Author: Mark Lobodzinski <mark@lunarg.com>
- * Author: Courtney Goeltzenleuchter <courtneygo@google.com>
- * Author: Tobin Ehlis <tobine@google.com>
- * Author: Chris Forbes <chrisforbes@google.com>
- * Author: John Zulauf<jzulauf@lunarg.com>
- * Author: Tony Barbour <tony@lunarg.com>
- *
  ****************************************************************************/
 
 
@@ -36,6 +28,7 @@
 #include <string>
 #include <utility>
 #include <set>
+#include <array>
 #include <vector>
 #include <cassert>
 
@@ -114,7 +107,7 @@ struct InstanceExtensions {
        InstanceReqVec requirements;
     };
 
-    typedef layer_data::unordered_map<std::string,InstanceInfo> InstanceInfoMap;
+    typedef vvl::unordered_map<std::string,InstanceInfo> InstanceInfoMap;
     static const InstanceInfoMap &get_info_map() {
         static const InstanceInfoMap info_map = {
             {"VK_VERSION_1_1", InstanceInfo(&InstanceExtensions::vk_feature_version_1_1, {})},
@@ -244,16 +237,16 @@ struct InstanceExtensions {
 
     uint32_t InitFromInstanceCreateInfo(uint32_t requested_api_version, const VkInstanceCreateInfo *pCreateInfo) {
 
-        static const std::vector<const char *> V_1_1_promoted_instance_apis = {
+        constexpr std::array<const char*, 5> V_1_1_promoted_instance_apis = {
             VK_KHR_DEVICE_GROUP_CREATION_EXTENSION_NAME,
             VK_KHR_EXTERNAL_FENCE_CAPABILITIES_EXTENSION_NAME,
             VK_KHR_EXTERNAL_MEMORY_CAPABILITIES_EXTENSION_NAME,
             VK_KHR_EXTERNAL_SEMAPHORE_CAPABILITIES_EXTENSION_NAME,
             VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME,
         };
-        static const std::vector<const char *> V_1_2_promoted_instance_apis = {
+        constexpr std::array<const char*, 0> V_1_2_promoted_instance_apis = {
         };
-        static const std::vector<const char *> V_1_3_promoted_instance_apis = {
+        constexpr std::array<const char*, 0> V_1_3_promoted_instance_apis = {
         };
 
         // Initialize struct data, robust to invalid pCreateInfo
@@ -286,7 +279,7 @@ struct InstanceExtensions {
             }
         }
         // CreateInfo takes precedence over promoted
-        if (pCreateInfo->ppEnabledExtensionNames) {
+        if (pCreateInfo && pCreateInfo->ppEnabledExtensionNames) {
             for (uint32_t i = 0; i < pCreateInfo->enabledExtensionCount; i++) {
                 if (!pCreateInfo->ppEnabledExtensionNames[i]) continue;
                 auto info = get_info(pCreateInfo->ppEnabledExtensionNames[i]);
@@ -458,6 +451,7 @@ struct DeviceExtensions : public InstanceExtensions {
     ExtEnabled vk_ext_physical_device_drm{kNotEnabled};
     ExtEnabled vk_ext_pipeline_creation_cache_control{kNotEnabled};
     ExtEnabled vk_ext_pipeline_creation_feedback{kNotEnabled};
+    ExtEnabled vk_ext_pipeline_library_group_handles{kNotEnabled};
     ExtEnabled vk_ext_pipeline_properties{kNotEnabled};
     ExtEnabled vk_ext_pipeline_protected_access{kNotEnabled};
     ExtEnabled vk_ext_pipeline_robustness{kNotEnabled};
@@ -493,8 +487,6 @@ struct DeviceExtensions : public InstanceExtensions {
     ExtEnabled vk_ext_validation_cache{kNotEnabled};
     ExtEnabled vk_ext_vertex_attribute_divisor{kNotEnabled};
     ExtEnabled vk_ext_vertex_input_dynamic_state{kNotEnabled};
-    ExtEnabled vk_ext_video_decode_h264{kNotEnabled};
-    ExtEnabled vk_ext_video_decode_h265{kNotEnabled};
     ExtEnabled vk_ext_video_encode_h264{kNotEnabled};
     ExtEnabled vk_ext_video_encode_h265{kNotEnabled};
     ExtEnabled vk_ext_ycbcr_2plane_444_formats{kNotEnabled};
@@ -507,6 +499,7 @@ struct DeviceExtensions : public InstanceExtensions {
     ExtEnabled vk_google_display_timing{kNotEnabled};
     ExtEnabled vk_google_hlsl_functionality1{kNotEnabled};
     ExtEnabled vk_google_user_type{kNotEnabled};
+    ExtEnabled vk_huawei_cluster_culling_shader{kNotEnabled};
     ExtEnabled vk_huawei_invocation_mask{kNotEnabled};
     ExtEnabled vk_huawei_subpass_shading{kNotEnabled};
     ExtEnabled vk_img_filter_cubic{kNotEnabled};
@@ -584,6 +577,8 @@ struct DeviceExtensions : public InstanceExtensions {
     ExtEnabled vk_khr_timeline_semaphore{kNotEnabled};
     ExtEnabled vk_khr_uniform_buffer_standard_layout{kNotEnabled};
     ExtEnabled vk_khr_variable_pointers{kNotEnabled};
+    ExtEnabled vk_khr_video_decode_h264{kNotEnabled};
+    ExtEnabled vk_khr_video_decode_h265{kNotEnabled};
     ExtEnabled vk_khr_video_decode_queue{kNotEnabled};
     ExtEnabled vk_khr_video_encode_queue{kNotEnabled};
     ExtEnabled vk_khr_video_queue{kNotEnabled};
@@ -659,7 +654,7 @@ struct DeviceExtensions : public InstanceExtensions {
        DeviceReqVec requirements;
     };
 
-    typedef layer_data::unordered_map<std::string,DeviceInfo> DeviceInfoMap;
+    typedef vvl::unordered_map<std::string,DeviceInfo> DeviceInfoMap;
     static const DeviceInfoMap &get_info_map() {
         static const DeviceInfoMap info_map = {
             {"VK_VERSION_1_1", DeviceInfo(&DeviceExtensions::vk_feature_version_1_1, {})},
@@ -838,6 +833,10 @@ struct DeviceExtensions : public InstanceExtensions {
                            {&DeviceExtensions::vk_khr_get_physical_device_properties2, VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME}}})},
             {VK_EXT_PIPELINE_CREATION_CACHE_CONTROL_EXTENSION_NAME, DeviceInfo(&DeviceExtensions::vk_ext_pipeline_creation_cache_control, {})},
             {VK_EXT_PIPELINE_CREATION_FEEDBACK_EXTENSION_NAME, DeviceInfo(&DeviceExtensions::vk_ext_pipeline_creation_feedback, {})},
+            {VK_EXT_PIPELINE_LIBRARY_GROUP_HANDLES_EXTENSION_NAME, DeviceInfo(&DeviceExtensions::vk_ext_pipeline_library_group_handles, {{
+                           {&DeviceExtensions::vk_khr_ray_tracing_pipeline, VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME},
+                           {&DeviceExtensions::vk_khr_pipeline_library, VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME},
+                           {&DeviceExtensions::vk_feature_version_1_1, VK_VERSION_1_1_NAME}}})},
             {VK_EXT_PIPELINE_PROPERTIES_EXTENSION_NAME, DeviceInfo(&DeviceExtensions::vk_ext_pipeline_properties, {{
                            {&DeviceExtensions::vk_khr_get_physical_device_properties2, VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME}}})},
             {VK_EXT_PIPELINE_PROTECTED_ACCESS_EXTENSION_NAME, DeviceInfo(&DeviceExtensions::vk_ext_pipeline_protected_access, {{
@@ -900,14 +899,6 @@ struct DeviceExtensions : public InstanceExtensions {
             {VK_EXT_VERTEX_INPUT_DYNAMIC_STATE_EXTENSION_NAME, DeviceInfo(&DeviceExtensions::vk_ext_vertex_input_dynamic_state, {{
                            {&DeviceExtensions::vk_khr_get_physical_device_properties2, VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME}}})},
 #ifdef VK_ENABLE_BETA_EXTENSIONS
-            {VK_EXT_VIDEO_DECODE_H264_EXTENSION_NAME, DeviceInfo(&DeviceExtensions::vk_ext_video_decode_h264, {{
-                           {&DeviceExtensions::vk_khr_video_decode_queue, VK_KHR_VIDEO_DECODE_QUEUE_EXTENSION_NAME}}})},
-#endif
-#ifdef VK_ENABLE_BETA_EXTENSIONS
-            {VK_EXT_VIDEO_DECODE_H265_EXTENSION_NAME, DeviceInfo(&DeviceExtensions::vk_ext_video_decode_h265, {{
-                           {&DeviceExtensions::vk_khr_video_decode_queue, VK_KHR_VIDEO_DECODE_QUEUE_EXTENSION_NAME}}})},
-#endif
-#ifdef VK_ENABLE_BETA_EXTENSIONS
             {VK_EXT_VIDEO_ENCODE_H264_EXTENSION_NAME, DeviceInfo(&DeviceExtensions::vk_ext_video_encode_h264, {{
                            {&DeviceExtensions::vk_khr_video_encode_queue, VK_KHR_VIDEO_ENCODE_QUEUE_EXTENSION_NAME}}})},
 #endif
@@ -944,6 +935,8 @@ struct DeviceExtensions : public InstanceExtensions {
                            {&DeviceExtensions::vk_khr_swapchain, VK_KHR_SWAPCHAIN_EXTENSION_NAME}}})},
             {VK_GOOGLE_HLSL_FUNCTIONALITY_1_EXTENSION_NAME, DeviceInfo(&DeviceExtensions::vk_google_hlsl_functionality1, {})},
             {VK_GOOGLE_USER_TYPE_EXTENSION_NAME, DeviceInfo(&DeviceExtensions::vk_google_user_type, {})},
+            {VK_HUAWEI_CLUSTER_CULLING_SHADER_EXTENSION_NAME, DeviceInfo(&DeviceExtensions::vk_huawei_cluster_culling_shader, {{
+                           {&DeviceExtensions::vk_khr_get_physical_device_properties2, VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME}}})},
             {VK_HUAWEI_INVOCATION_MASK_EXTENSION_NAME, DeviceInfo(&DeviceExtensions::vk_huawei_invocation_mask, {{
                            {&DeviceExtensions::vk_khr_ray_tracing_pipeline, VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME},
                            {&DeviceExtensions::vk_khr_synchronization2, VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME}}})},
@@ -1115,22 +1108,22 @@ struct DeviceExtensions : public InstanceExtensions {
             {VK_KHR_VARIABLE_POINTERS_EXTENSION_NAME, DeviceInfo(&DeviceExtensions::vk_khr_variable_pointers, {{
                            {&DeviceExtensions::vk_khr_get_physical_device_properties2, VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME},
                            {&DeviceExtensions::vk_khr_storage_buffer_storage_class, VK_KHR_STORAGE_BUFFER_STORAGE_CLASS_EXTENSION_NAME}}})},
-#ifdef VK_ENABLE_BETA_EXTENSIONS
+            {VK_KHR_VIDEO_DECODE_H264_EXTENSION_NAME, DeviceInfo(&DeviceExtensions::vk_khr_video_decode_h264, {{
+                           {&DeviceExtensions::vk_khr_video_decode_queue, VK_KHR_VIDEO_DECODE_QUEUE_EXTENSION_NAME}}})},
+            {VK_KHR_VIDEO_DECODE_H265_EXTENSION_NAME, DeviceInfo(&DeviceExtensions::vk_khr_video_decode_h265, {{
+                           {&DeviceExtensions::vk_khr_video_decode_queue, VK_KHR_VIDEO_DECODE_QUEUE_EXTENSION_NAME}}})},
             {VK_KHR_VIDEO_DECODE_QUEUE_EXTENSION_NAME, DeviceInfo(&DeviceExtensions::vk_khr_video_decode_queue, {{
                            {&DeviceExtensions::vk_khr_video_queue, VK_KHR_VIDEO_QUEUE_EXTENSION_NAME},
                            {&DeviceExtensions::vk_khr_synchronization2, VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME}}})},
-#endif
 #ifdef VK_ENABLE_BETA_EXTENSIONS
             {VK_KHR_VIDEO_ENCODE_QUEUE_EXTENSION_NAME, DeviceInfo(&DeviceExtensions::vk_khr_video_encode_queue, {{
                            {&DeviceExtensions::vk_khr_video_queue, VK_KHR_VIDEO_QUEUE_EXTENSION_NAME},
                            {&DeviceExtensions::vk_khr_synchronization2, VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME}}})},
 #endif
-#ifdef VK_ENABLE_BETA_EXTENSIONS
             {VK_KHR_VIDEO_QUEUE_EXTENSION_NAME, DeviceInfo(&DeviceExtensions::vk_khr_video_queue, {{
                            {&DeviceExtensions::vk_khr_get_physical_device_properties2, VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME},
                            {&DeviceExtensions::vk_khr_synchronization2, VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME},
                            {&DeviceExtensions::vk_feature_version_1_1, VK_VERSION_1_1_NAME}}})},
-#endif
             {VK_KHR_VULKAN_MEMORY_MODEL_EXTENSION_NAME, DeviceInfo(&DeviceExtensions::vk_khr_vulkan_memory_model, {})},
 #ifdef VK_USE_PLATFORM_WIN32_KHR
             {VK_KHR_WIN32_KEYED_MUTEX_EXTENSION_NAME, DeviceInfo(&DeviceExtensions::vk_khr_win32_keyed_mutex, {{
@@ -1268,13 +1261,13 @@ struct DeviceExtensions : public InstanceExtensions {
     DeviceExtensions(const InstanceExtensions& instance_ext) : InstanceExtensions(instance_ext) {}
 
     uint32_t InitFromDeviceCreateInfo(const InstanceExtensions *instance_extensions, uint32_t requested_api_version,
-                                      const VkDeviceCreateInfo *pCreateInfo) {
+                                      const VkDeviceCreateInfo *pCreateInfo = nullptr) {
         // Initialize: this to defaults,  base class fields to input.
         assert(instance_extensions);
         *this = DeviceExtensions(*instance_extensions);
 
 
-        static const std::vector<const char *> V_1_1_promoted_device_apis = {
+        constexpr std::array<const char*, 18> V_1_1_promoted_device_apis = {
             VK_KHR_16BIT_STORAGE_EXTENSION_NAME,
             VK_KHR_BIND_MEMORY_2_EXTENSION_NAME,
             VK_KHR_DEDICATED_ALLOCATION_EXTENSION_NAME,
@@ -1294,7 +1287,13 @@ struct DeviceExtensions : public InstanceExtensions {
             VK_KHR_STORAGE_BUFFER_STORAGE_CLASS_EXTENSION_NAME,
             VK_KHR_VARIABLE_POINTERS_EXTENSION_NAME,
         };
-        static const std::vector<const char *> V_1_2_promoted_device_apis = {
+        constexpr std::array<const char*, 24> V_1_2_promoted_device_apis = {
+            VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME,
+            VK_EXT_HOST_QUERY_RESET_EXTENSION_NAME,
+            VK_EXT_SAMPLER_FILTER_MINMAX_EXTENSION_NAME,
+            VK_EXT_SCALAR_BLOCK_LAYOUT_EXTENSION_NAME,
+            VK_EXT_SEPARATE_STENCIL_USAGE_EXTENSION_NAME,
+            VK_EXT_SHADER_VIEWPORT_INDEX_LAYER_EXTENSION_NAME,
             VK_KHR_8BIT_STORAGE_EXTENSION_NAME,
             VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
             VK_KHR_CREATE_RENDERPASS_2_EXTENSION_NAME,
@@ -1313,23 +1312,9 @@ struct DeviceExtensions : public InstanceExtensions {
             VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME,
             VK_KHR_UNIFORM_BUFFER_STANDARD_LAYOUT_EXTENSION_NAME,
             VK_KHR_VULKAN_MEMORY_MODEL_EXTENSION_NAME,
-            VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME,
-            VK_EXT_HOST_QUERY_RESET_EXTENSION_NAME,
-            VK_EXT_SAMPLER_FILTER_MINMAX_EXTENSION_NAME,
-            VK_EXT_SCALAR_BLOCK_LAYOUT_EXTENSION_NAME,
-            VK_EXT_SEPARATE_STENCIL_USAGE_EXTENSION_NAME,
-            VK_EXT_SHADER_VIEWPORT_INDEX_LAYER_EXTENSION_NAME,
         };
-        static const std::vector<const char *> V_1_3_promoted_device_apis = {
-            VK_KHR_COPY_COMMANDS_2_EXTENSION_NAME,
-            VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME,
-            VK_KHR_FORMAT_FEATURE_FLAGS_2_EXTENSION_NAME,
-            VK_KHR_MAINTENANCE_4_EXTENSION_NAME,
-            VK_KHR_SHADER_INTEGER_DOT_PRODUCT_EXTENSION_NAME,
-            VK_KHR_SHADER_NON_SEMANTIC_INFO_EXTENSION_NAME,
-            VK_KHR_SHADER_TERMINATE_INVOCATION_EXTENSION_NAME,
-            VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME,
-            VK_KHR_ZERO_INITIALIZE_WORKGROUP_MEMORY_EXTENSION_NAME,
+        constexpr std::array<const char*, 23> V_1_3_promoted_device_apis = {
+            VK_EXT_4444_FORMATS_EXTENSION_NAME,
             VK_EXT_EXTENDED_DYNAMIC_STATE_EXTENSION_NAME,
             VK_EXT_EXTENDED_DYNAMIC_STATE_2_EXTENSION_NAME,
             VK_EXT_IMAGE_ROBUSTNESS_EXTENSION_NAME,
@@ -1342,6 +1327,16 @@ struct DeviceExtensions : public InstanceExtensions {
             VK_EXT_TEXEL_BUFFER_ALIGNMENT_EXTENSION_NAME,
             VK_EXT_TEXTURE_COMPRESSION_ASTC_HDR_EXTENSION_NAME,
             VK_EXT_TOOLING_INFO_EXTENSION_NAME,
+            VK_EXT_YCBCR_2PLANE_444_FORMATS_EXTENSION_NAME,
+            VK_KHR_COPY_COMMANDS_2_EXTENSION_NAME,
+            VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME,
+            VK_KHR_FORMAT_FEATURE_FLAGS_2_EXTENSION_NAME,
+            VK_KHR_MAINTENANCE_4_EXTENSION_NAME,
+            VK_KHR_SHADER_INTEGER_DOT_PRODUCT_EXTENSION_NAME,
+            VK_KHR_SHADER_NON_SEMANTIC_INFO_EXTENSION_NAME,
+            VK_KHR_SHADER_TERMINATE_INVOCATION_EXTENSION_NAME,
+            VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME,
+            VK_KHR_ZERO_INITIALIZE_WORKGROUP_MEMORY_EXTENSION_NAME,
         };
 
         // Initialize struct data, robust to invalid pCreateInfo
@@ -1374,7 +1369,7 @@ struct DeviceExtensions : public InstanceExtensions {
             }
         }
         // CreateInfo takes precedence over promoted
-        if (pCreateInfo->ppEnabledExtensionNames) {
+        if (pCreateInfo && pCreateInfo->ppEnabledExtensionNames) {
             for (uint32_t i = 0; i < pCreateInfo->enabledExtensionCount; i++) {
                 if (!pCreateInfo->ppEnabledExtensionNames[i]) continue;
                 auto info = get_info(pCreateInfo->ppEnabledExtensionNames[i]);
@@ -1480,6 +1475,7 @@ static const std::set<std::string> kDeviceExtensionNames = {
     VK_EXT_PHYSICAL_DEVICE_DRM_EXTENSION_NAME,
     VK_EXT_PIPELINE_CREATION_CACHE_CONTROL_EXTENSION_NAME,
     VK_EXT_PIPELINE_CREATION_FEEDBACK_EXTENSION_NAME,
+    VK_EXT_PIPELINE_LIBRARY_GROUP_HANDLES_EXTENSION_NAME,
     VK_EXT_PIPELINE_PROPERTIES_EXTENSION_NAME,
     VK_EXT_PIPELINE_PROTECTED_ACCESS_EXTENSION_NAME,
     VK_EXT_PIPELINE_ROBUSTNESS_EXTENSION_NAME,
@@ -1516,12 +1512,6 @@ static const std::set<std::string> kDeviceExtensionNames = {
     VK_EXT_VERTEX_ATTRIBUTE_DIVISOR_EXTENSION_NAME,
     VK_EXT_VERTEX_INPUT_DYNAMIC_STATE_EXTENSION_NAME,
 #ifdef VK_ENABLE_BETA_EXTENSIONS
-    VK_EXT_VIDEO_DECODE_H264_EXTENSION_NAME,
-#endif
-#ifdef VK_ENABLE_BETA_EXTENSIONS
-    VK_EXT_VIDEO_DECODE_H265_EXTENSION_NAME,
-#endif
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     VK_EXT_VIDEO_ENCODE_H264_EXTENSION_NAME,
 #endif
 #ifdef VK_ENABLE_BETA_EXTENSIONS
@@ -1545,6 +1535,7 @@ static const std::set<std::string> kDeviceExtensionNames = {
     VK_GOOGLE_DISPLAY_TIMING_EXTENSION_NAME,
     VK_GOOGLE_HLSL_FUNCTIONALITY_1_EXTENSION_NAME,
     VK_GOOGLE_USER_TYPE_EXTENSION_NAME,
+    VK_HUAWEI_CLUSTER_CULLING_SHADER_EXTENSION_NAME,
     VK_HUAWEI_INVOCATION_MASK_EXTENSION_NAME,
     VK_HUAWEI_SUBPASS_SHADING_EXTENSION_NAME,
     VK_IMG_FILTER_CUBIC_EXTENSION_NAME,
@@ -1630,15 +1621,13 @@ static const std::set<std::string> kDeviceExtensionNames = {
     VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME,
     VK_KHR_UNIFORM_BUFFER_STANDARD_LAYOUT_EXTENSION_NAME,
     VK_KHR_VARIABLE_POINTERS_EXTENSION_NAME,
-#ifdef VK_ENABLE_BETA_EXTENSIONS
+    VK_KHR_VIDEO_DECODE_H264_EXTENSION_NAME,
+    VK_KHR_VIDEO_DECODE_H265_EXTENSION_NAME,
     VK_KHR_VIDEO_DECODE_QUEUE_EXTENSION_NAME,
-#endif
 #ifdef VK_ENABLE_BETA_EXTENSIONS
     VK_KHR_VIDEO_ENCODE_QUEUE_EXTENSION_NAME,
 #endif
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     VK_KHR_VIDEO_QUEUE_EXTENSION_NAME,
-#endif
     VK_KHR_VULKAN_MEMORY_MODEL_EXTENSION_NAME,
 #ifdef VK_USE_PLATFORM_WIN32_KHR
     VK_KHR_WIN32_KEYED_MUTEX_EXTENSION_NAME,

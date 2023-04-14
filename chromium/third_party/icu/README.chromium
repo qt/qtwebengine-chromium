@@ -171,11 +171,16 @@ D. Local Modifications
 
 
 2. Breakiterator patches
-  - patches/wordbrk.patch for word.txt
+  - patches/wordbrk.patch for word.txt, word_POSIX.txt, and word_fi_sv.txt
     a. Move full stops (U+002E, U+FF0E) from MidNumLet to MidNum so that
        FQDN labels can be split at '.'
     b. Move fullwidth digits (U+FF10 - U+FF19) from Ideographic to Numeric.
        See http://unicode.org/cldr/trac/ticket/6555
+    c. Restore pre-ICU 72 behavior of breaking at '@'. The new upstream behavior
+       of not breaking at '@' interacted badly with the local change to break at
+       '.' (D.2.a above): although not breaking at '@' is intended to not break
+       within e-mail addresses, this is not possible with Chromium's
+       break-at-'.' behavior.
 
   - patches/khmer-dictbe.patch
     Adjust parameters to use a smaller Khmer dictionary (khmerdict.txt).
@@ -195,7 +200,7 @@ D. Local Modifications
      windowsZones.txt
      zoneinfo64.txt
 
-  As of Oct 13, 2022, the latest version is 2022e
+  As of Mar 31, 2023, the latest version is 2023c
   and the above files are available at the ICU github repos.
 
 4. Build-related changes
@@ -248,3 +253,7 @@ D. Local Modifications
 10. Patch ICU to fix mix usage of UBool which break win64_msvc
   - patches/fix-bool-mix-use.patch
   - https://github.com/unicode-org/icu/pull/2255
+
+11. Patch ICU en-CA date pattern back to y-MM-dd format
+    patches/revert-en-ca-date.patch
+  - upstream bug https://unicode-org.atlassian.net/browse/CLDR-16399

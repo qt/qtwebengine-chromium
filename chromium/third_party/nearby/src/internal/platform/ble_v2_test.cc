@@ -14,7 +14,6 @@
 
 #include "internal/platform/ble_v2.h"
 
-#include <functional>
 #include <memory>
 #include <string>
 #include <utility>
@@ -27,7 +26,6 @@
 #include "internal/platform/implementation/ble_v2.h"
 #include "internal/platform/medium_environment.h"
 
-namespace location {
 namespace nearby {
 namespace {
 
@@ -42,9 +40,9 @@ constexpr FeatureFlags kTestCases[] = {
     },
 };
 
-using ::location::nearby::api::ble_v2::BleAdvertisementData;
-using ::location::nearby::api::ble_v2::GattCharacteristic;
-using ::location::nearby::api::ble_v2::TxPowerLevel;
+using ::nearby::api::ble_v2::BleAdvertisementData;
+using ::nearby::api::ble_v2::GattCharacteristic;
+using ::nearby::api::ble_v2::TxPowerLevel;
 using ::testing::Optional;
 
 constexpr absl::Duration kWaitDuration = absl::Milliseconds(1000);
@@ -340,26 +338,19 @@ TEST_F(BleV2MediumTest, StartThenStopAsyncScanning) {
   Uuid service_uuid(1234, 5678);
   CountDownLatch found_latch_a(1);
 
-  std::function<void(api::ble_v2::BlePeripheral&, BleAdvertisementData)>
-      advertisement_found_cb_a =
-          [&found_latch_a](api::ble_v2::BlePeripheral& peripheral,
-                           BleAdvertisementData advertisement_data) -> void {
-    found_latch_a.CountDown();
-  };
-
   std::unique_ptr<api::ble_v2::BleMedium::ScanningSession> scanning_session_a =
       ble_a.StartScanning(
           service_uuid, kTxPowerLevel,
           api::ble_v2::BleMedium::ScanningCallback{
-              .advertisement_found_cb = advertisement_found_cb_a,
+              .advertisement_found_cb =
+                  [&](api::ble_v2::BlePeripheral& peripheral,
+                      BleAdvertisementData advertisement_data) -> void {
+                found_latch_a.CountDown();
+              },
           });
 
   EXPECT_TRUE(env_.GetBleV2MediumStatus(*ble_a.GetImpl()).value().is_scanning);
-  api::ble_v2::BleOperationStatus stop_result =
-      scanning_session_a->stop_scanning();
-
-  EXPECT_EQ(stop_result, api::ble_v2::BleOperationStatus::kSucceeded);
-
+  EXPECT_OK(scanning_session_a->stop_scanning());
   EXPECT_FALSE(env_.GetBleV2MediumStatus(*ble_a.GetImpl()).value().is_scanning);
   env_.Stop();
 }
@@ -373,42 +364,32 @@ TEST_F(BleV2MediumTest, CanStartMultipleAsyncScanning) {
   CountDownLatch found_latch_a(1);
   CountDownLatch found_latch_b(1);
 
-  std::function<void(api::ble_v2::BlePeripheral&, BleAdvertisementData)>
-      advertisement_found_cb_a =
-          [&found_latch_a](api::ble_v2::BlePeripheral& peripheral,
-                           BleAdvertisementData advertisement_data) -> void {
-    found_latch_a.CountDown();
-  };
-
-  std::function<void(api::ble_v2::BlePeripheral&, BleAdvertisementData)>
-      advertisement_found_cb_b =
-          [&found_latch_b](api::ble_v2::BlePeripheral& peripheral,
-                           BleAdvertisementData advertisement_data) -> void {
-    found_latch_b.CountDown();
-  };
-
   std::unique_ptr<api::ble_v2::BleMedium::ScanningSession> scanning_session_a =
       ble_a.StartScanning(
           service_uuid, kTxPowerLevel,
           api::ble_v2::BleMedium::ScanningCallback{
-              .advertisement_found_cb = advertisement_found_cb_a,
+              .advertisement_found_cb =
+                  [&](api::ble_v2::BlePeripheral& peripheral,
+                      BleAdvertisementData advertisement_data) -> void {
+                found_latch_a.CountDown();
+              },
           });
   std::unique_ptr<api::ble_v2::BleMedium::ScanningSession> scanning_session_b =
       ble_b.StartScanning(
           service_uuid, kTxPowerLevel,
           api::ble_v2::BleMedium::ScanningCallback{
-              .advertisement_found_cb = advertisement_found_cb_b,
+              .advertisement_found_cb =
+                  [&](api::ble_v2::BlePeripheral& peripheral,
+                      BleAdvertisementData advertisement_data) -> void {
+                found_latch_b.CountDown();
+              },
           });
 
   EXPECT_TRUE(env_.GetBleV2MediumStatus(*ble_a.GetImpl()).value().is_scanning);
   EXPECT_TRUE(env_.GetBleV2MediumStatus(*ble_b.GetImpl()).value().is_scanning);
 
-  api::ble_v2::BleOperationStatus stop_result_a =
-      scanning_session_a->stop_scanning();
-  EXPECT_EQ(stop_result_a, api::ble_v2::BleOperationStatus::kSucceeded);
-  api::ble_v2::BleOperationStatus stop_result_b =
-      scanning_session_b->stop_scanning();
-  EXPECT_EQ(stop_result_b, api::ble_v2::BleOperationStatus::kSucceeded);
+  EXPECT_OK(scanning_session_a->stop_scanning());
+  EXPECT_OK(scanning_session_b->stop_scanning());
 
   EXPECT_FALSE(env_.GetBleV2MediumStatus(*ble_a.GetImpl()).value().is_scanning);
   EXPECT_FALSE(env_.GetBleV2MediumStatus(*ble_b.GetImpl()).value().is_scanning);
@@ -426,18 +407,16 @@ TEST_F(BleV2MediumTest, CanStartAsyncScanningAndAdvertising) {
   ByteArray advertisement_header_bytes{std::string(kAdvertisementHeaderString)};
   CountDownLatch found_latch(1);
 
-  std::function<void(api::ble_v2::BlePeripheral&, BleAdvertisementData)>
-      advertisement_found_cb =
-          [&found_latch](api::ble_v2::BlePeripheral& peripheral,
-                         BleAdvertisementData advertisement_data) -> void {
-    found_latch.CountDown();
-  };
-
   std::unique_ptr<api::ble_v2::BleMedium::ScanningSession> scanning_session =
-      ble_a.StartScanning(service_uuid, kTxPowerLevel,
-                          api::ble_v2::BleMedium::ScanningCallback{
-                              .advertisement_found_cb = advertisement_found_cb,
-                          });
+      ble_a.StartScanning(
+          service_uuid, kTxPowerLevel,
+          api::ble_v2::BleMedium::ScanningCallback{
+              .advertisement_found_cb =
+                  [&](api::ble_v2::BlePeripheral& peripheral,
+                      BleAdvertisementData advertisement_data) -> void {
+                found_latch.CountDown();
+              },
+          });
 
   // Succeed to start regular advertisement.
   BleAdvertisementData advertising_data;
@@ -451,9 +430,7 @@ TEST_F(BleV2MediumTest, CanStartAsyncScanningAndAdvertising) {
   EXPECT_TRUE(
       env_.GetBleV2MediumStatus(*ble_b.GetImpl()).value().is_advertising);
   EXPECT_TRUE(found_latch.Await(kWaitDuration).result());
-  api::ble_v2::BleOperationStatus stop_scanning_result =
-      scanning_session->stop_scanning();
-  EXPECT_EQ(stop_scanning_result, api::ble_v2::BleOperationStatus::kSucceeded);
+  EXPECT_OK(scanning_session->stop_scanning());
 
   EXPECT_TRUE(ble_b.StopAdvertising());
   EXPECT_FALSE(env_.GetBleV2MediumStatus(*ble_a.GetImpl()).value().is_scanning);
@@ -557,4 +534,3 @@ TEST_F(BleV2MediumTest, GattClientConnectToGattServerWorks) {
 
 }  // namespace
 }  // namespace nearby
-}  // namespace location

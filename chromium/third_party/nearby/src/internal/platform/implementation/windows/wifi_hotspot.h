@@ -20,7 +20,7 @@
 #include <wlanapi.h>
 
 // Standard C/C++ headers
-#include <functional>
+
 #include <memory>
 #include <optional>
 #include <string>
@@ -44,7 +44,6 @@
 #include "internal/platform/implementation/windows/generated/winrt/Windows.Storage.Streams.h"
 #include "internal/platform/implementation/windows/generated/winrt/base.h"
 
-namespace location {
 namespace nearby {
 namespace windows {
 
@@ -186,7 +185,7 @@ class WifiHotspotServerSocket : public api::WifiHotspotServerSocket {
   // Called by the server side of a connection before passing ownership of
   // WifiHotspotServerSocker to user, to track validity of a pointer to this
   // server socket.
-  void SetCloseNotifier(std::function<void()> notifier);
+  void SetCloseNotifier(absl::AnyInvocable<void()> notifier);
 
   // Returns Exception::kIo on error, Exception::kSuccess otherwise.
   Exception Close() override;
@@ -212,7 +211,7 @@ class WifiHotspotServerSocket : public api::WifiHotspotServerSocket {
   winrt::event_token listener_event_token_{};
 
   // Close notifier
-  std::function<void()> close_notifier_ = nullptr;
+  absl::AnyInvocable<void()> close_notifier_ = nullptr;
 
   // IP addresses of the computer. mDNS uses them to advertise.
   std::vector<std::string> ip_addresses_{};
@@ -311,12 +310,11 @@ class WifiHotspotMedium : public api::WifiHotspotMedium {
   std::shared_ptr<api::Cancelable> connection_timeout_ = nullptr;
 
   // Listener to connect cancellation.
-  std::unique_ptr<location::nearby::CancellationFlagListener>
+  std::unique_ptr<nearby::CancellationFlagListener>
       connection_cancellation_listener_ = nullptr;
 };
 
 }  // namespace windows
 }  // namespace nearby
-}  // namespace location
 
 #endif  // PLATFORM_IMPL_WINDOWS_WIFI_HOTSPOT_H_

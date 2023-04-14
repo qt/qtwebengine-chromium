@@ -15,9 +15,10 @@
 #include "include/core/SkPoint.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkStrokeRec.h"
-#include "include/private/SkMalloc.h"
-#include "include/private/SkTemplates.h"
-#include "include/private/SkTo.h"
+#include "include/private/base/SkAlign.h"
+#include "include/private/base/SkTemplates.h"
+#include "include/private/base/SkMalloc.h"
+#include "include/private/base/SkTo.h"
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkWriteBuffer.h"
 #include "src/effects/SkDashImpl.h"
@@ -26,6 +27,8 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
+
+using namespace skia_private;
 
 SkDashImpl::SkDashImpl(const SkScalar intervals[], int count, SkScalar phase)
         : fPhase(0)
@@ -393,7 +396,7 @@ sk_sp<SkFlattenable> SkDashImpl::CreateProc(SkReadBuffer& buffer) {
         return nullptr;
     }
 
-    SkAutoSTArray<32, SkScalar> intervals(count);
+    AutoSTArray<32, SkScalar> intervals(count);
     if (buffer.readScalarArray(intervals.get(), count)) {
         return SkDashPathEffect::Make(intervals.get(), SkToInt(count), phase);
     }

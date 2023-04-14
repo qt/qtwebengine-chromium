@@ -416,7 +416,7 @@ export function textContentWithLineBreaks(node) {
   let ignoreFirst = false;
   while (currentNode.traverseNextNode(node)) {
     currentNode = currentNode.traverseNextNode(node);
-    if (currentNode.nodeType === Node.TEXT_NODE) {
+    if (currentNode.nodeType === Node.TEXT_NODE && currentNode.parentNode?.nodeType !== Node.DOCUMENT_FRAGMENT_NODE) {
       buffer += currentNode.nodeValue;
     } else if (currentNode.nodeName === 'LI' || currentNode.nodeName === 'TR') {
       if (!ignoreFirst) {
@@ -751,17 +751,17 @@ export function addScriptForFrame(url, content, frame) {
 export const formatters = {
 
   /**
- * @param {*} value
- * @return {string}
- */
+   * @param {*} value
+   * @return {string}
+   */
   formatAsTypeName(value) {
     return '<' + typeof value + '>';
   },
 
   /**
- * @param {*} value
- * @return {string}
- */
+   * @param {*} value
+   * @return {string}
+   */
   formatAsTypeNameOrNull(value) {
     if (value === null) {
       return 'null';
@@ -770,9 +770,9 @@ export const formatters = {
   },
 
   /**
- * @param {*} value
- * @return {string|!Date}
- */
+   * @param {*} value
+   * @return {string|!Date}
+   */
   formatAsRecentTime(value) {
     if (typeof value !== 'object' || !(value instanceof Date)) {
       return formatters.formatAsTypeName(value);
@@ -782,9 +782,9 @@ export const formatters = {
   },
 
   /**
- * @param {string} value
- * @return {string}
- */
+   * @param {string} value
+   * @return {string}
+   */
   formatAsURL(value) {
     if (!value) {
       return value;
@@ -797,9 +797,9 @@ export const formatters = {
   },
 
   /**
- * @param {string} value
- * @return {string}
- */
+   * @param {string} value
+   * @return {string}
+   */
   formatAsDescription(value) {
     if (!value) {
       return value;

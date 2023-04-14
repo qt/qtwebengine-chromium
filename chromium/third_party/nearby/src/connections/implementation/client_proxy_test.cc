@@ -15,6 +15,7 @@
 #include "connections/implementation/client_proxy.h"
 
 #include <cstdio>
+#include <optional>
 #include <string>
 
 #include "gmock/gmock.h"
@@ -32,11 +33,11 @@
 #include "internal/platform/feature_flags.h"
 #include "internal/platform/medium_environment.h"
 
-namespace location {
 namespace nearby {
 namespace connections {
 namespace {
 
+using ::location::nearby::connections::OsInfo;
 using ::testing::MockFunction;
 using ::testing::StrictMock;
 
@@ -249,9 +250,10 @@ class ClientProxyTest : public ::testing::TestWithParam<FeatureFlags::Flags> {
   MockConnectionListener mock_discovery_connection_;
   MockPayloadListener mock_discovery_payload_;
 
-  proto::connections::Medium medium_{proto::connections::Medium::BLUETOOTH};
-  std::vector<proto::connections::Medium> mediums_{
-      proto::connections::Medium::BLUETOOTH,
+  location::nearby::proto::connections::Medium medium_{
+      location::nearby::proto::connections::Medium::BLUETOOTH};
+  std::vector<location::nearby::proto::connections::Medium> mediums_{
+      location::nearby::proto::connections::Medium::BLUETOOTH,
   };
   Strategy strategy_{Strategy::kP2pPointToPoint};
   const std::string service_id_{"service"};
@@ -897,7 +899,33 @@ TEST_F(ClientProxyTest, LogSessionForResetClientProxy) {
   EXPECT_TRUE(client2_.GetAnalyticsRecorder().IsSessionLogged());
 }
 
+TEST_F(ClientProxyTest, GetLocalInfoCorrect) {
+  ClientProxy client;
+  // Default is g3 test Environment as LINUX.
+  EXPECT_EQ(client.GetLocalOsInfo().type(), OsInfo::LINUX);
+}
+
+TEST_F(ClientProxyTest, GetRemoteInfoNullWithoutConnections) {
+  Endpoint advertising_endpoint =
+      StartAdvertising(&client1_, advertising_connection_listener_);
+
+  EXPECT_FALSE(client1_.GetRemoteOsInfo(advertising_endpoint.id).has_value());
+}
+
+TEST_F(ClientProxyTest, SetRemoteInfoCorrect) {
+  Endpoint advertising_endpoint =
+      StartAdvertising(&client1_, advertising_connection_listener_);
+  OnAdvertisingConnectionInitiated(&client1_, advertising_endpoint);
+
+  OsInfo os_info;
+  os_info.set_type(OsInfo::ANDROID);
+  client1_.SetRemoteOsInfo(advertising_endpoint.id, os_info);
+
+  ASSERT_TRUE(client1_.GetRemoteOsInfo(advertising_endpoint.id).has_value());
+  EXPECT_EQ(client1_.GetRemoteOsInfo(advertising_endpoint.id).value().type(),
+            OsInfo::ANDROID);
+}
+
 }  // namespace
 }  // namespace connections
 }  // namespace nearby
-}  // namespace location

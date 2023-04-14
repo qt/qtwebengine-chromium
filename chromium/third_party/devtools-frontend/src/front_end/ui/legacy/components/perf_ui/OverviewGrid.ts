@@ -39,16 +39,16 @@ import overviewGridStyles from './overviewGrid.css.legacy.js';
 
 const UIStrings = {
   /**
-  *@description Label for the window for Overview grids
-  */
+   *@description Label for the window for Overview grids
+   */
   overviewGridWindow: 'Overview grid window',
   /**
-  *@description Label for left window resizer for Overview grids
-  */
+   *@description Label for left window resizer for Overview grids
+   */
   leftResizer: 'Left Resizer',
   /**
-  *@description Label for right window resizer for Overview grids
-  */
+   *@description Label for right window resizer for Overview grids
+   */
   rightResizer: 'Right Resizer',
 };
 const str_ = i18n.i18n.registerUIStrings('ui/legacy/components/perf_ui/OverviewGrid.ts', UIStrings);
@@ -275,7 +275,7 @@ export class Window extends Common.ObjectWrapper.ObjectWrapper<EventTypes> {
       return false;
     }
     const mouseEvent = (event as MouseEvent);
-    this.offsetLeft = this.parentElement.totalOffsetLeft();
+    this.offsetLeft = this.parentElement.getBoundingClientRect().left;
     const position = mouseEvent.x - this.offsetLeft;
     this.overviewWindowSelector = new WindowSelector(this.parentElement, position);
     return true;

@@ -91,6 +91,20 @@ struct quad_traits<double>
   };
 };
 
+template<>
+struct quad_traits<bfloat16>
+{
+  typedef Packet8bf                       vectortype;
+  typedef PacketBlock<vectortype,4>             type;
+  typedef vectortype                         rhstype;
+  enum
+  {
+    vectorsize = packet_traits<bfloat16>::size,
+    size = 8,
+    rows = 4
+  };
+};
+
 // MatrixProduct decomposes real/imaginary vectors into a real vector and an imaginary vector, this turned out
 // to be faster than Eigen's usual approach of having real/imaginary pairs on a single vector. This constants then
 // are responsible to extract from convert between Eigen's and MatrixProduct approach.
@@ -826,6 +840,420 @@ struct dhs_pack<double, DataMapper, Packet2d, StorageOrder, PanelMode, false>
     }
   }
 };
+
+#ifdef __MMA__
+// General template for lhs packing, bfloat16 specialization.
+template<typename DataMapper, int StorageOrder, bool PanelMode>
+struct dhs_pack<bfloat16, DataMapper, Packet8bf, StorageOrder, PanelMode, true>
+{
+  EIGEN_STRONG_INLINE void operator()(bfloat16* blockA, const DataMapper& lhs, Index depth, Index rows, Index stride, Index offset)
+  {
+    const Index vectorSize = quad_traits<bfloat16>::vectorsize;
+    Index ri = 0, j = 0;
+
+    for(; j + 2*vectorSize <= rows; j+=2*vectorSize)
+    {
+      const DataMapper lhs2 = lhs.getSubMapper(j, 0);
+      Index i = 0;
+
+      if(PanelMode) ri += 2*vectorSize*offset;
+
+      if(StorageOrder == ColMajor)
+      {
+        for(; i + 2 <= depth; i+=2)
+        {
+          PacketBlock<Packet8bf,4> block;
+
+          block.packet[0] = lhs2.template loadPacket<Packet8bf>(0 * vectorSize, i + 0);
+          block.packet[1] = lhs2.template loadPacket<Packet8bf>(1 * vectorSize, i + 0);
+          block.packet[2] = lhs2.template loadPacket<Packet8bf>(0 * vectorSize, i + 1);
+          block.packet[3] = lhs2.template loadPacket<Packet8bf>(1 * vectorSize, i + 1);
+
+          Packet8bf t0, t1;
+          t0              = vec_mergeh(block.packet[0].m_val, block.packet[2].m_val);
+          t1              = vec_mergel(block.packet[0].m_val, block.packet[2].m_val);
+          block.packet[2] = vec_mergeh(block.packet[1].m_val, block.packet[3].m_val);
+          block.packet[3] = vec_mergel(block.packet[1].m_val, block.packet[3].m_val);
+          block.packet[0] = t0;
+          block.packet[1] = t1;
+
+          storeBlock<bfloat16, Packet8bf, 4>(blockA + ri, block);
+
+          ri += 2*2*vectorSize;
+        }
+        if (depth & 1)
+        {
+          PacketBlock<Packet8bf,2> block;
+
+          block.packet[0] = lhs2.template loadPacket<Packet8bf>(0 * vectorSize, i + 0);
+          block.packet[1] = lhs2.template loadPacket<Packet8bf>(1 * vectorSize, i + 0);
+
+          storeBlock<bfloat16, Packet8bf, 2>(blockA + ri, block);
+
+          ri += 2*vectorSize;
+        }
+      } else {
+        for(; i + vectorSize <= depth; i+=vectorSize)
+        {
+          PacketBlock<Packet8bf,8> block1, block2;
+
+          bload<DataMapper, Packet8bf, 8, StorageOrder, false, 8>(block1, lhs2, 0 * vectorSize, i);
+          bload<DataMapper, Packet8bf, 8, StorageOrder, false, 8>(block2, lhs2, 1 * vectorSize, i);
+
+          Packet2ul v1[8], v2[8];
+
+          v1[0] = reinterpret_cast<Packet2ul>(vec_mergeh(reinterpret_cast<Packet4ui>(block1.packet[0].m_val), reinterpret_cast<Packet4ui>(block1.packet[1].m_val)));
+          v1[1] = reinterpret_cast<Packet2ul>(vec_mergel(reinterpret_cast<Packet4ui>(block1.packet[0].m_val), reinterpret_cast<Packet4ui>(block1.packet[1].m_val)));
+          v1[2] = reinterpret_cast<Packet2ul>(vec_mergeh(reinterpret_cast<Packet4ui>(block1.packet[2].m_val), reinterpret_cast<Packet4ui>(block1.packet[3].m_val)));
+          v1[3] = reinterpret_cast<Packet2ul>(vec_mergel(reinterpret_cast<Packet4ui>(block1.packet[2].m_val), reinterpret_cast<Packet4ui>(block1.packet[3].m_val)));
+          v1[4] = reinterpret_cast<Packet2ul>(vec_mergeh(reinterpret_cast<Packet4ui>(block1.packet[4].m_val), reinterpret_cast<Packet4ui>(block1.packet[5].m_val)));
+          v1[5] = reinterpret_cast<Packet2ul>(vec_mergel(reinterpret_cast<Packet4ui>(block1.packet[4].m_val), reinterpret_cast<Packet4ui>(block1.packet[5].m_val)));
+          v1[6] = reinterpret_cast<Packet2ul>(vec_mergeh(reinterpret_cast<Packet4ui>(block1.packet[6].m_val), reinterpret_cast<Packet4ui>(block1.packet[7].m_val)));
+          v1[7] = reinterpret_cast<Packet2ul>(vec_mergel(reinterpret_cast<Packet4ui>(block1.packet[6].m_val), reinterpret_cast<Packet4ui>(block1.packet[7].m_val)));
+          v2[0] = reinterpret_cast<Packet2ul>(vec_mergeh(reinterpret_cast<Packet4ui>(block2.packet[0].m_val), reinterpret_cast<Packet4ui>(block2.packet[1].m_val)));
+          v2[1] = reinterpret_cast<Packet2ul>(vec_mergel(reinterpret_cast<Packet4ui>(block2.packet[0].m_val), reinterpret_cast<Packet4ui>(block2.packet[1].m_val)));
+          v2[2] = reinterpret_cast<Packet2ul>(vec_mergeh(reinterpret_cast<Packet4ui>(block2.packet[2].m_val), reinterpret_cast<Packet4ui>(block2.packet[3].m_val)));
+          v2[3] = reinterpret_cast<Packet2ul>(vec_mergel(reinterpret_cast<Packet4ui>(block2.packet[2].m_val), reinterpret_cast<Packet4ui>(block2.packet[3].m_val)));
+          v2[4] = reinterpret_cast<Packet2ul>(vec_mergeh(reinterpret_cast<Packet4ui>(block2.packet[4].m_val), reinterpret_cast<Packet4ui>(block2.packet[5].m_val)));
+          v2[5] = reinterpret_cast<Packet2ul>(vec_mergel(reinterpret_cast<Packet4ui>(block2.packet[4].m_val), reinterpret_cast<Packet4ui>(block2.packet[5].m_val)));
+          v2[6] = reinterpret_cast<Packet2ul>(vec_mergeh(reinterpret_cast<Packet4ui>(block2.packet[6].m_val), reinterpret_cast<Packet4ui>(block2.packet[7].m_val)));
+          v2[7] = reinterpret_cast<Packet2ul>(vec_mergel(reinterpret_cast<Packet4ui>(block2.packet[6].m_val), reinterpret_cast<Packet4ui>(block2.packet[7].m_val)));
+
+          block1.packet[0] = reinterpret_cast<Packet8us>(vec_mergeh(v1[0],v1[2]));
+          block1.packet[2] = reinterpret_cast<Packet8us>(vec_mergel(v1[0],v1[2]));
+          block1.packet[4] = reinterpret_cast<Packet8us>(vec_mergeh(v1[1],v1[3]));
+          block1.packet[6] = reinterpret_cast<Packet8us>(vec_mergel(v1[1],v1[3]));
+          block1.packet[1] = reinterpret_cast<Packet8us>(vec_mergeh(v1[4],v1[6]));
+          block1.packet[3] = reinterpret_cast<Packet8us>(vec_mergel(v1[4],v1[6]));
+          block1.packet[5] = reinterpret_cast<Packet8us>(vec_mergeh(v1[5],v1[7]));
+          block1.packet[7] = reinterpret_cast<Packet8us>(vec_mergel(v1[5],v1[7]));
+          block2.packet[0] = reinterpret_cast<Packet8us>(vec_mergeh(v2[0],v2[2]));
+          block2.packet[2] = reinterpret_cast<Packet8us>(vec_mergel(v2[0],v2[2]));
+          block2.packet[4] = reinterpret_cast<Packet8us>(vec_mergeh(v2[1],v2[3]));
+          block2.packet[6] = reinterpret_cast<Packet8us>(vec_mergel(v2[1],v2[3]));
+          block2.packet[1] = reinterpret_cast<Packet8us>(vec_mergeh(v2[4],v2[6]));
+          block2.packet[3] = reinterpret_cast<Packet8us>(vec_mergel(v2[4],v2[6]));
+          block2.packet[5] = reinterpret_cast<Packet8us>(vec_mergeh(v2[5],v2[7]));
+          block2.packet[7] = reinterpret_cast<Packet8us>(vec_mergel(v2[5],v2[7]));
+
+
+          for(Index M = 0; M < 8; M+=2) {
+            pstore<bfloat16>(blockA + ri + (0 * vectorSize) + (2*vectorSize * M), block1.packet[M+0]);
+            pstore<bfloat16>(blockA + ri + (1 * vectorSize) + (2*vectorSize * M), block1.packet[M+1]);
+            pstore<bfloat16>(blockA + ri + (2 * vectorSize) + (2*vectorSize * M), block2.packet[M+0]);
+            pstore<bfloat16>(blockA + ri + (3 * vectorSize) + (2*vectorSize * M), block2.packet[M+1]);
+          }
+
+          ri += 2*vectorSize*vectorSize;
+        }
+        for(; i + 2 <= depth; i+=2)
+        {
+          for(Index M = 0; M < 2*vectorSize; M++) {
+            blockA[ri + (M * 2) + 0] = lhs2(M, i + 0);
+            blockA[ri + (M * 2) + 1] = lhs2(M, i + 1);
+          }
+
+          ri += 2*2*vectorSize;
+        }
+        if (depth & 1)
+        {
+          for(Index M = 0; M < 2*vectorSize; M++) {
+            blockA[ri + M] = lhs2(M, i);
+          }
+          ri += 2*vectorSize;
+        }
+      }
+
+      if(PanelMode) ri += 2*vectorSize*(stride - offset - depth);
+    }
+    for(; j + vectorSize <= rows; j+=vectorSize)
+    {
+      const DataMapper lhs2 = lhs.getSubMapper(j, 0);
+      Index i = 0;
+
+      if(PanelMode) ri += vectorSize*offset;
+
+      if(StorageOrder == ColMajor)
+      {
+        for(; i + 2 <= depth; i+=2)
+        {
+          PacketBlock<Packet8bf,2> block;
+
+          block.packet[0] = lhs2.template loadPacket<Packet8bf>(0 * vectorSize, i + 0);
+          block.packet[1] = lhs2.template loadPacket<Packet8bf>(0 * vectorSize, i + 1);
+
+          Packet8bf t0;
+          t0              = vec_mergeh(block.packet[0].m_val, block.packet[1].m_val);
+          block.packet[1] = vec_mergel(block.packet[0].m_val, block.packet[1].m_val);
+          block.packet[0] = t0;
+
+          storeBlock<bfloat16, Packet8bf, 2>(blockA + ri, block);
+
+          ri += 2*vectorSize;
+        }
+        if (depth & 1)
+        {
+          Packet8bf lhsV = lhs2.template loadPacket<Packet8bf>(0 * vectorSize, i + 0);
+          pstore<bfloat16>(blockA + ri, lhsV);
+
+          ri += vectorSize;
+        }
+      } else {
+        for(; i + vectorSize <= depth; i+=vectorSize)
+        {
+          PacketBlock<Packet8bf,8> block1;
+
+          bload<DataMapper, Packet8bf, 8, StorageOrder, false, 8>(block1, lhs2, 0 * vectorSize, i);
+
+          Packet2ul v1[8];
+
+          // This is transposing and interleaving data
+          v1[0] = reinterpret_cast<Packet2ul>(vec_mergeh(reinterpret_cast<Packet4ui>(block1.packet[0].m_val), reinterpret_cast<Packet4ui>(block1.packet[1].m_val)));
+          v1[1] = reinterpret_cast<Packet2ul>(vec_mergel(reinterpret_cast<Packet4ui>(block1.packet[0].m_val), reinterpret_cast<Packet4ui>(block1.packet[1].m_val)));
+          v1[2] = reinterpret_cast<Packet2ul>(vec_mergeh(reinterpret_cast<Packet4ui>(block1.packet[2].m_val), reinterpret_cast<Packet4ui>(block1.packet[3].m_val)));
+          v1[3] = reinterpret_cast<Packet2ul>(vec_mergel(reinterpret_cast<Packet4ui>(block1.packet[2].m_val), reinterpret_cast<Packet4ui>(block1.packet[3].m_val)));
+          v1[4] = reinterpret_cast<Packet2ul>(vec_mergeh(reinterpret_cast<Packet4ui>(block1.packet[4].m_val), reinterpret_cast<Packet4ui>(block1.packet[5].m_val)));
+          v1[5] = reinterpret_cast<Packet2ul>(vec_mergel(reinterpret_cast<Packet4ui>(block1.packet[4].m_val), reinterpret_cast<Packet4ui>(block1.packet[5].m_val)));
+          v1[6] = reinterpret_cast<Packet2ul>(vec_mergeh(reinterpret_cast<Packet4ui>(block1.packet[6].m_val), reinterpret_cast<Packet4ui>(block1.packet[7].m_val)));
+          v1[7] = reinterpret_cast<Packet2ul>(vec_mergel(reinterpret_cast<Packet4ui>(block1.packet[6].m_val), reinterpret_cast<Packet4ui>(block1.packet[7].m_val)));
+
+          block1.packet[0] = reinterpret_cast<Packet8us>(vec_mergeh(v1[0],v1[2]));
+          block1.packet[2] = reinterpret_cast<Packet8us>(vec_mergel(v1[0],v1[2]));
+          block1.packet[4] = reinterpret_cast<Packet8us>(vec_mergeh(v1[1],v1[3]));
+          block1.packet[6] = reinterpret_cast<Packet8us>(vec_mergel(v1[1],v1[3]));
+          block1.packet[1] = reinterpret_cast<Packet8us>(vec_mergeh(v1[4],v1[6]));
+          block1.packet[3] = reinterpret_cast<Packet8us>(vec_mergel(v1[4],v1[6]));
+          block1.packet[5] = reinterpret_cast<Packet8us>(vec_mergeh(v1[5],v1[7]));
+          block1.packet[7] = reinterpret_cast<Packet8us>(vec_mergel(v1[5],v1[7]));
+
+          for(Index M = 0; M < 8; M++) {
+            pstore<bfloat16>(blockA + ri + (vectorSize * M), block1.packet[M]);
+          }
+
+          ri += vectorSize*vectorSize;
+        }
+        for(; i + 2 <= depth; i+=2)
+        {
+          for(Index M = 0; M < vectorSize; M++) {
+            blockA[ri + (M * 2) + 0] = lhs2(M, i + 0);
+            blockA[ri + (M * 2) + 1] = lhs2(M, i + 1);
+          }
+
+          ri += 2*vectorSize;
+        }
+        if (depth & 1)
+        {
+          for(Index M = 0; M < vectorSize; M++) {
+            blockA[ri + M] = lhs2(M, i);
+          }
+
+          ri += vectorSize;
+        }
+      }
+
+      if(PanelMode) ri += vectorSize*(stride - offset - depth);
+    }
+    if(j + 4 <= rows)
+    {
+      const DataMapper lhs2 = lhs.getSubMapper(j, 0);
+      Index i = 0;
+
+      if(PanelMode) ri += 4*offset;
+
+      for(; i + 2 <= depth; i+=2)
+      {
+        if(StorageOrder == ColMajor)
+        {
+          PacketBlock<Packet8bf,2> block;
+
+          block.packet[0] = lhs2.template loadPacketPartial<Packet8bf>(0, i + 0, 4);
+          block.packet[1] = lhs2.template loadPacketPartial<Packet8bf>(0, i + 1, 4);
+
+          block.packet[0] = vec_mergeh(block.packet[0].m_val, block.packet[1].m_val);
+
+          pstore<bfloat16>(blockA + ri, block.packet[0]);
+        } else {
+          blockA[ri+0] = lhs2(0, i + 0);
+          blockA[ri+1] = lhs2(0, i + 1);
+          blockA[ri+2] = lhs2(1, i + 0);
+          blockA[ri+3] = lhs2(1, i + 1);
+          blockA[ri+4] = lhs2(2, i + 0);
+          blockA[ri+5] = lhs2(2, i + 1);
+          blockA[ri+6] = lhs2(3, i + 0);
+          blockA[ri+7] = lhs2(3, i + 1);
+        }
+
+        ri += 2*4;
+      }
+      if (depth & 1)
+      {
+        if(StorageOrder == ColMajor)
+        {
+          Packet8bf lhsV = lhs2.template loadPacketPartial<Packet8bf>(0, i + 0, 4);
+
+          pstore_partial<bfloat16>(blockA + ri, lhsV, 4);
+        } else {
+          blockA[ri+0] = lhs2(0, i);
+          blockA[ri+1] = lhs2(1, i);
+          blockA[ri+2] = lhs2(2, i);
+          blockA[ri+3] = lhs2(3, i);
+        }
+
+        ri += 4;
+      }
+
+      if(PanelMode) ri += 4*(stride - offset - depth);
+      j += 4;
+    }
+
+    if (j < rows)
+    {
+      if(PanelMode) ri += offset*(rows - j);
+
+      Index i = 0;
+      for(; i + 2 <= depth; i+=2)
+      {
+        Index k = j;
+        for(; k < rows; k++)
+        {
+          blockA[ri+0] = lhs(k, i + 0);
+          blockA[ri+1] = lhs(k, i + 1);
+          ri += 2;
+        }
+      }
+      if (depth & 1)
+      {
+        for(; j < rows; j++)
+        {
+          blockA[ri] = lhs(j, i);
+          ri += 1;
+        }
+      }
+    }
+  }
+};
+
+// General template for rhs packing, bfloat16 specialization.
+template<typename DataMapper, int StorageOrder, bool PanelMode>
+struct dhs_pack<bfloat16, DataMapper, Packet8bf, StorageOrder, PanelMode, false>
+{
+  EIGEN_STRONG_INLINE void operator()(bfloat16* blockB, const DataMapper& rhs, Index depth, Index cols, Index stride, Index offset)
+  {
+    const Index vectorSize = quad_traits<bfloat16>::vectorsize;
+    Index ri = 0, j = 0;
+
+    for(; j + 4 <= cols; j+=4)
+    {
+      const DataMapper rhs2 = rhs.getSubMapper(0, j);
+      Index i = 0;
+
+      if(PanelMode) ri += 4*offset;
+
+      for(; i + vectorSize <= depth; i+=vectorSize)
+      {
+        if(StorageOrder == ColMajor)
+        {
+          PacketBlock<Packet8bf,4> block;
+
+          bload<DataMapper, Packet8bf, 4, StorageOrder, false, 4>(block, rhs2, i, 0);
+
+          Packet2ul t0, t1, t2, t3;
+          t0 = reinterpret_cast<Packet2ul>(vec_mergeh(reinterpret_cast<Packet4ui>(block.packet[0].m_val), reinterpret_cast<Packet4ui>(block.packet[1].m_val)));
+          t1 = reinterpret_cast<Packet2ul>(vec_mergeh(reinterpret_cast<Packet4ui>(block.packet[2].m_val), reinterpret_cast<Packet4ui>(block.packet[3].m_val)));
+          t2 = reinterpret_cast<Packet2ul>(vec_mergel(reinterpret_cast<Packet4ui>(block.packet[0].m_val), reinterpret_cast<Packet4ui>(block.packet[1].m_val)));
+          t3 = reinterpret_cast<Packet2ul>(vec_mergel(reinterpret_cast<Packet4ui>(block.packet[2].m_val), reinterpret_cast<Packet4ui>(block.packet[3].m_val)));
+          block.packet[0] = reinterpret_cast<Packet8us>(vec_mergeh(t0, t1));
+          block.packet[1] = reinterpret_cast<Packet8us>(vec_mergel(t0, t1));
+          block.packet[2] = reinterpret_cast<Packet8us>(vec_mergeh(t2, t3));
+          block.packet[3] = reinterpret_cast<Packet8us>(vec_mergel(t2, t3));
+
+          storeBlock<bfloat16, Packet8bf, 4>(blockB + ri, block);
+        } else {
+          PacketBlock<Packet8bf,8> block;
+
+          for (int M = 0; M < 8; M++) {
+            block.packet[M] = rhs2.template loadPacketPartial<Packet8bf>(i + M, 0, 4);
+          }
+
+          block.packet[0] = vec_mergeh(block.packet[0].m_val, block.packet[1].m_val);
+          block.packet[1] = vec_mergeh(block.packet[2].m_val, block.packet[3].m_val);
+          block.packet[2] = vec_mergeh(block.packet[4].m_val, block.packet[5].m_val);
+          block.packet[3] = vec_mergeh(block.packet[6].m_val, block.packet[7].m_val);
+
+          const Index size = 16 / sizeof(bfloat16);
+
+          for (int M = 0; M < 4; M++) {
+            pstore<bfloat16>(blockB + ri + (M * size), block.packet[M]);
+          }
+        }
+
+        ri += 4*vectorSize;
+      }
+      for (; i + 2 <= depth; i += 2) {
+        if(StorageOrder == ColMajor)
+        {
+          blockB[ri+0] = rhs2(i + 0, 0);
+          blockB[ri+1] = rhs2(i + 1, 0);
+          blockB[ri+2] = rhs2(i + 0, 1);
+          blockB[ri+3] = rhs2(i + 1, 1);
+          blockB[ri+4] = rhs2(i + 0, 2);
+          blockB[ri+5] = rhs2(i + 1, 2);
+          blockB[ri+6] = rhs2(i + 0, 3);
+          blockB[ri+7] = rhs2(i + 1, 3);
+        } else {
+          PacketBlock<Packet8bf,2> block;
+
+          for (int M = 0; M < 2; M++) {
+            block.packet[M] = rhs2.template loadPacketPartial<Packet8bf>(i + M, 0, 4);
+          }
+
+          block.packet[0] = vec_mergeh(block.packet[0].m_val, block.packet[1].m_val);
+
+          pstore<bfloat16>(blockB + ri, block.packet[0]);
+        }
+
+        ri += 4*2;
+      }
+      if (depth & 1)
+      {
+        blockB[ri+0] = rhs2(i, 0);
+        blockB[ri+1] = rhs2(i, 1);
+        blockB[ri+2] = rhs2(i, 2);
+        blockB[ri+3] = rhs2(i, 3);
+
+        ri += 4;
+      }
+
+      if(PanelMode) ri += 4*(stride - offset - depth);
+    }
+
+    if (j < cols)
+    {
+      if(PanelMode) ri += offset*(cols - j);
+
+      Index i = 0;
+      for(; i + 2 <= depth; i+=2)
+      {
+        Index k = j;
+        for(; k < cols; k++)
+        {
+          blockB[ri+0] = rhs(i + 0, k);
+          blockB[ri+1] = rhs(i + 1, k);
+          ri += 2;
+        }
+      }
+      if (depth & 1)
+      {
+        for(; j < cols; j++)
+        {
+          blockB[ri] = rhs(i, j);
+          ri += 1;
+        }
+      }
+    }
+  }
+};
+#endif
 
 // General template for lhs complex packing, float64 specialization.
 template<typename DataMapper, typename Packet, typename PacketC, int StorageOrder, bool Conjugate, bool PanelMode>
@@ -2308,6 +2736,66 @@ void gemm_pack_rhs<double, Index, DataMapper, nr, RowMajor, Conjugate, PanelMode
 }
 #endif
 
+#ifdef __MMA__
+#if EIGEN_ALTIVEC_USE_CUSTOM_PACK
+template<typename Index, typename DataMapper, int nr, bool Conjugate, bool PanelMode>
+struct gemm_pack_rhs<bfloat16, Index, DataMapper, nr, ColMajor, Conjugate, PanelMode>
+{
+  void operator()(bfloat16* blockB, const DataMapper& rhs, Index depth, Index cols, Index stride=0, Index offset=0);
+};
+
+template<typename Index, typename DataMapper, int nr, bool Conjugate, bool PanelMode>
+void gemm_pack_rhs<bfloat16, Index, DataMapper, nr, ColMajor, Conjugate, PanelMode>
+  ::operator()(bfloat16* blockB, const DataMapper& rhs, Index depth, Index cols, Index stride, Index offset)
+{
+  dhs_pack<bfloat16, DataMapper, Packet8bf, ColMajor, PanelMode, false> pack;
+  pack(blockB, rhs, depth, cols, stride, offset);
+}
+
+template<typename Index, typename DataMapper, int nr, bool Conjugate, bool PanelMode>
+struct gemm_pack_rhs<bfloat16, Index, DataMapper, nr, RowMajor, Conjugate, PanelMode>
+{
+  void operator()(bfloat16* blockB, const DataMapper& rhs, Index depth, Index cols, Index stride=0, Index offset=0);
+};
+
+template<typename Index, typename DataMapper, int nr, bool Conjugate, bool PanelMode>
+void gemm_pack_rhs<bfloat16, Index, DataMapper, nr, RowMajor, Conjugate, PanelMode>
+  ::operator()(bfloat16* blockB, const DataMapper& rhs, Index depth, Index cols, Index stride, Index offset)
+{
+  dhs_pack<bfloat16, DataMapper, Packet8bf, RowMajor, PanelMode, false> pack;
+  pack(blockB, rhs, depth, cols, stride, offset);
+}
+#endif
+
+template<typename Index, typename DataMapper, int Pack1, int Pack2, typename Packet, bool Conjugate, bool PanelMode>
+struct gemm_pack_lhs<bfloat16, Index, DataMapper, Pack1, Pack2, Packet, ColMajor, Conjugate, PanelMode>
+{
+  void operator()(bfloat16* blockA, const DataMapper& lhs, Index depth, Index rows, Index stride=0, Index offset=0);
+};
+
+template<typename Index, typename DataMapper, int Pack1, int Pack2, typename Packet, bool Conjugate, bool PanelMode>
+void gemm_pack_lhs<bfloat16, Index, DataMapper, Pack1, Pack2, Packet, ColMajor, Conjugate, PanelMode>
+  ::operator()(bfloat16* blockA, const DataMapper& lhs, Index depth, Index rows, Index stride, Index offset)
+{
+  dhs_pack<bfloat16, DataMapper, Packet8bf, ColMajor, PanelMode, true> pack;
+  pack(blockA, lhs, depth, rows, stride, offset);
+}
+
+template<typename Index, typename DataMapper, int Pack1, int Pack2, typename Packet, bool Conjugate, bool PanelMode>
+struct gemm_pack_lhs<bfloat16, Index, DataMapper, Pack1, Pack2, Packet, RowMajor, Conjugate, PanelMode>
+{
+  void operator()(bfloat16* blockA, const DataMapper& lhs, Index depth, Index rows, Index stride=0, Index offset=0);
+};
+
+template<typename Index, typename DataMapper, int Pack1, int Pack2, typename Packet, bool Conjugate, bool PanelMode>
+void gemm_pack_lhs<bfloat16, Index, DataMapper, Pack1, Pack2, Packet, RowMajor, Conjugate, PanelMode>
+  ::operator()(bfloat16* blockA, const DataMapper& lhs, Index depth, Index rows, Index stride, Index offset)
+{
+  dhs_pack<bfloat16, DataMapper, Packet8bf, RowMajor, PanelMode, true> pack;
+  pack(blockA, lhs, depth, rows, stride, offset);
+}
+#endif
+
 template<typename Index, typename DataMapper, int Pack1, int Pack2, typename Packet, bool Conjugate, bool PanelMode>
 struct gemm_pack_lhs<float, Index, DataMapper, Pack1, Pack2, Packet, RowMajor, Conjugate, PanelMode>
 {
@@ -2781,6 +3269,31 @@ void gebp_kernel<double, std::complex<double>, Index, DataMapper, mr, nr, Conjug
     #endif
     gemm_function(res, blockA, blockB, rows, depth, cols, alpha, strideA, strideB, offsetA, offsetB);
   }
+
+#if defined(__MMA__)
+template<typename Index, typename DataMapper, int mr, int nr, bool ConjugateLhs, bool ConjugateRhs>
+struct gebp_kernel<bfloat16, bfloat16, Index, DataMapper, mr, nr, ConjugateLhs, ConjugateRhs>
+{
+  typedef typename quad_traits<bfloat16>::vectortype   Packet;
+  typedef typename quad_traits<bfloat16>::rhstype      RhsPacket;
+
+  void operator()(const DataMapper& res, const bfloat16* blockA, const bfloat16* blockB,
+                  Index rows, Index depth, Index cols, bfloat16 alpha,
+                  Index strideA=-1, Index strideB=-1, Index offsetA=0, Index offsetB=0);
+};
+
+template<typename Index, typename DataMapper, int mr, int nr, bool ConjugateLhs, bool ConjugateRhs>
+void gebp_kernel<bfloat16, bfloat16, Index, DataMapper, mr, nr, ConjugateLhs, ConjugateRhs>
+  ::operator()(const DataMapper& res, const bfloat16* blockA, const bfloat16* blockB,
+               Index rows, Index depth, Index cols, bfloat16 alpha,
+               Index strideA, Index strideB, Index offsetA, Index offsetB)
+  {
+    const Index accRows = quad_traits<bfloat16>::rows;
+    const Index accCols = quad_traits<bfloat16>::size;
+
+    Eigen::internal::gemmMMAbfloat16<Index, Packet, RhsPacket, DataMapper, accRows, accCols>(res, blockA, blockB, rows, depth, cols, alpha, strideA, strideB, offsetA, offsetB);
+  }
+#endif
 } // end namespace internal
 
 } // end namespace Eigen

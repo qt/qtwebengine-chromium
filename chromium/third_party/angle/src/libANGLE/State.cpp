@@ -428,7 +428,8 @@ State::State(const State *shareContextState,
       mBoundingBoxMaxZ(1.0f),
       mBoundingBoxMaxW(1.0f),
       mShadingRatePreserveAspectRatio(false),
-      mShadingRate(ShadingRate::Undefined)
+      mShadingRate(ShadingRate::Undefined),
+      mFetchPerSample(false)
 {}
 
 State::~State() {}
@@ -1132,11 +1133,12 @@ void State::setPolygonOffsetFill(bool enabled)
     }
 }
 
-void State::setPolygonOffsetParams(GLfloat factor, GLfloat units)
+void State::setPolygonOffsetParams(GLfloat factor, GLfloat units, GLfloat clamp)
 {
     // An application can pass NaN values here, so handle this gracefully
     mRasterizer.polygonOffsetFactor = factor != factor ? 0.0f : factor;
     mRasterizer.polygonOffsetUnits  = units != units ? 0.0f : units;
+    mRasterizer.polygonOffsetClamp  = clamp != clamp ? 0.0f : clamp;
     mDirtyBits.set(DIRTY_BIT_POLYGON_OFFSET);
 }
 
@@ -1346,7 +1348,7 @@ void State::setEnableFeature(GLenum feature, bool enabled)
         case GL_SAMPLE_SHADING:
             setSampleShading(enabled);
             return;
-        // GL_APPLE_clip_distance/GL_EXT_clip_cull_distance
+        // GL_APPLE_clip_distance / GL_EXT_clip_cull_distance / GL_ANGLE_clip_cull_distance
         case GL_CLIP_DISTANCE0_EXT:
         case GL_CLIP_DISTANCE1_EXT:
         case GL_CLIP_DISTANCE2_EXT:
@@ -1365,6 +1367,9 @@ void State::setEnableFeature(GLenum feature, bool enabled)
             break;
         case GL_SHADING_RATE_PRESERVE_ASPECT_RATIO_QCOM:
             mShadingRatePreserveAspectRatio = enabled;
+            return;
+        case GL_FETCH_PER_SAMPLE_ARM:
+            mFetchPerSample = enabled;
             return;
     }
 
@@ -1502,7 +1507,7 @@ bool State::getEnableFeature(GLenum feature) const
             return mTextureRectangleEnabled;
         case GL_SAMPLE_SHADING:
             return isSampleShadingEnabled();
-        // GL_APPLE_clip_distance/GL_EXT_clip_cull_distance
+        // GL_APPLE_clip_distance / GL_EXT_clip_cull_distance / GL_ANGLE_clip_cull_distance
         case GL_CLIP_DISTANCE0_EXT:
         case GL_CLIP_DISTANCE1_EXT:
         case GL_CLIP_DISTANCE2_EXT:
@@ -1520,6 +1525,8 @@ bool State::getEnableFeature(GLenum feature) const
             break;
         case GL_SHADING_RATE_PRESERVE_ASPECT_RATIO_QCOM:
             return mShadingRatePreserveAspectRatio;
+        case GL_FETCH_PER_SAMPLE_ARM:
+            return mFetchPerSample;
     }
 
     ASSERT(mClientVersion.major == 1);
@@ -2541,6 +2548,30 @@ void State::getBooleanv(GLenum pname, GLboolean *params) const
         case GL_ROBUST_FRAGMENT_SHADER_OUTPUT_ANGLE:
             *params = mExtensions.robustFragmentShaderOutputANGLE ? GL_TRUE : GL_FALSE;
             break;
+        // GL_APPLE_clip_distance / GL_EXT_clip_cull_distance / GL_ANGLE_clip_cull_distance
+        case GL_CLIP_DISTANCE0_EXT:
+        case GL_CLIP_DISTANCE1_EXT:
+        case GL_CLIP_DISTANCE2_EXT:
+        case GL_CLIP_DISTANCE3_EXT:
+        case GL_CLIP_DISTANCE4_EXT:
+        case GL_CLIP_DISTANCE5_EXT:
+        case GL_CLIP_DISTANCE6_EXT:
+        case GL_CLIP_DISTANCE7_EXT:
+            if (mClientVersion.major >= 2)
+            {
+                // If GLES version is 1, the GL_CLIP_DISTANCE0_EXT enum will be used as
+                // GL_CLIP_PLANE0 instead.
+                *params = mClipDistancesEnabled.test(pname - GL_CLIP_DISTANCE0_EXT);
+            }
+            break;
+        // GL_ARM_shader_framebuffer_fetch
+        case GL_FETCH_PER_SAMPLE_ARM:
+            *params = mFetchPerSample;
+            break;
+        // GL_ARM_shader_framebuffer_fetch
+        case GL_FRAGMENT_SHADER_FRAMEBUFFER_FETCH_MRT_ARM:
+            *params = mCaps.fragmentShaderFramebufferFetchMRT;
+            break;
         default:
             UNREACHABLE();
             break;
@@ -2569,6 +2600,9 @@ void State::getFloatv(GLenum pname, GLfloat *params) const
             break;
         case GL_POLYGON_OFFSET_UNITS:
             *params = mRasterizer.polygonOffsetUnits;
+            break;
+        case GL_POLYGON_OFFSET_CLAMP_EXT:
+            *params = mRasterizer.polygonOffsetClamp;
             break;
         case GL_DEPTH_RANGE:
             params[0] = mNearZ;
@@ -2665,6 +2699,14 @@ void State::getFloatv(GLenum pname, GLfloat *params) const
             break;
         case GL_CLIP_DEPTH_MODE_EXT:
             *params = static_cast<float>(mClipControlDepth);
+            break;
+        // GL_ARM_shader_framebuffer_fetch
+        case GL_FETCH_PER_SAMPLE_ARM:
+            *params = mFetchPerSample ? 1.0f : 0.0f;
+            break;
+        // GL_ARM_shader_framebuffer_fetch
+        case GL_FRAGMENT_SHADER_FRAMEBUFFER_FETCH_MRT_ARM:
+            *params = mCaps.fragmentShaderFramebufferFetchMRT ? 1.0f : 0.0f;
             break;
         default:
             UNREACHABLE();
@@ -3148,6 +3190,16 @@ angle::Result State::getIntegerv(const Context *context, GLenum pname, GLint *pa
         // GL_ANGLE_shader_pixel_local_storage
         case GL_PIXEL_LOCAL_STORAGE_ACTIVE_PLANES_ANGLE:
             *params = mPixelLocalStorageActivePlanes;
+            break;
+
+        // GL_ARM_shader_framebuffer_fetch
+        case GL_FETCH_PER_SAMPLE_ARM:
+            *params = mFetchPerSample ? 1 : 0;
+            break;
+
+        // GL_ARM_shader_framebuffer_fetch
+        case GL_FRAGMENT_SHADER_FRAMEBUFFER_FETCH_MRT_ARM:
+            *params = mCaps.fragmentShaderFramebufferFetchMRT ? 1 : 0;
             break;
 
         default:

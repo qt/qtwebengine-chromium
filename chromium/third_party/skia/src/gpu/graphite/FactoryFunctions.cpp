@@ -5,10 +5,6 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkTypes.h"
-
-#ifdef SK_ENABLE_PRECOMPILE
-
 #include "src/gpu/graphite/FactoryFunctions.h"
 
 #include "src/core/SkRuntimeEffectPriv.h"
@@ -307,7 +303,14 @@ private:
         GradientShaderBlocks::GradientData gradData(fType, kStopVariants[intrinsicCombination]);
 
         // TODO: we may need SkLocalMatrixShader-wrapped versions too
-        GradientShaderBlocks::BeginBlock(keyContext, builder, /* gatherer= */ nullptr, gradData);
+        ColorFilterShaderBlock::BeginBlock(keyContext, builder, /* gatherer= */ nullptr);
+            GradientShaderBlocks::BeginBlock(keyContext, builder,
+                                             /* gatherer= */ nullptr, gradData);
+            builder->endBlock();
+
+            ColorSpaceTransformBlock::BeginBlock(keyContext, builder,
+                                                 /* gatherer= */ nullptr, /* data= */ nullptr);
+            builder->endBlock();
         builder->endBlock();
     }
 
@@ -428,6 +431,29 @@ sk_sp<PrecompileMaskFilter> PrecompileMaskFilters::Blur() {
 }
 
 //--------------------------------------------------------------------------------------------------
+class PrecompileBlendColorFilter : public PrecompileColorFilter {
+public:
+    PrecompileBlendColorFilter() {}
+
+private:
+    void addToKey(const KeyContext& keyContext,
+                  int desiredCombination,
+                  PaintParamsKeyBuilder* builder) const override {
+        SkASSERT(desiredCombination == 0);
+
+        BlendColorFilterBlock::BeginBlock(keyContext,
+                                          builder,
+                                          /* gatherer= */ nullptr,
+                                          /* blendCFData= */ nullptr);
+        builder->endBlock();
+    }
+};
+
+sk_sp<PrecompileColorFilter> PrecompileColorFilters::Blend() {
+    return sk_make_sp<PrecompileBlendColorFilter>();
+}
+
+//--------------------------------------------------------------------------------------------------
 class PrecompileMatrixColorFilter : public PrecompileColorFilter {
 public:
     PrecompileMatrixColorFilter() {}
@@ -446,6 +472,10 @@ private:
 };
 
 sk_sp<PrecompileColorFilter> PrecompileColorFilters::Matrix() {
+    return sk_make_sp<PrecompileMatrixColorFilter>();
+}
+
+sk_sp<PrecompileColorFilter> PrecompileColorFilters::HSLAMatrix() {
     return sk_make_sp<PrecompileMatrixColorFilter>();
 }
 
@@ -677,5 +707,3 @@ sk_sp<PrecompileBlender> MakePrecompileBlender(
 } // namespace skgpu::graphite
 
 //--------------------------------------------------------------------------------------------------
-
-#endif // SK_ENABLE_PRECOMPILE

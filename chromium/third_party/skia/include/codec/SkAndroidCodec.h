@@ -15,7 +15,7 @@
 #include "include/core/SkSize.h"
 #include "include/core/SkTypes.h"
 #include "include/private/SkEncodedInfo.h"
-#include "include/private/SkNoncopyable.h"
+#include "include/private/base/SkNoncopyable.h"
 #include "modules/skcms/skcms.h"
 
 // TODO(kjlubick, bungeman) Replace these includes with forward declares
@@ -29,6 +29,7 @@
 class SkData;
 class SkPngChunkReader;
 class SkStream;
+struct SkGainmapInfo;
 struct SkIRect;
 
 /**
@@ -120,10 +121,8 @@ public:
     /**
      *  @param outputColorType Color type that the client will decode to.
      *  @param prefColorSpace  Preferred color space to decode to.
-     *                         This may not return |prefColorSpace| for a couple reasons.
-     *                         (1) Android Principles: 565 must be sRGB, F16 must be
-     *                             linear sRGB, transfer function must be parametric.
-     *                         (2) Codec Limitations: F16 requires a linear color space.
+     *                         This may not return |prefColorSpace| for
+     *                         specific color types.
      *
      *  Returns the appropriate color space to decode to.
      */
@@ -263,6 +262,23 @@ public:
     }
 
     SkCodec* codec() const { return fCodec.get(); }
+
+    /**
+     *  Retrieve the gainmap for an image.
+     *
+     *  @param outInfo                On success, this is populated with the parameters for
+     *                                rendering this gainmap. This parameter must be non-nullptr.
+     *
+     *  @param outGainmapImageStream  On success, this is populated with a stream from which the
+     *                                gainmap image may be decoded. This parameter is optional, and
+     *                                may be set to nullptr.
+     *
+     *  @return                       If this has a gainmap image and that gainmap image was
+     *                                successfully extracted then return true. Otherwise return
+     *                                false.
+     */
+    bool getAndroidGainmap(SkGainmapInfo* outInfo,
+                           std::unique_ptr<SkStream>* outGainmapImageStream);
 
 protected:
     SkAndroidCodec(SkCodec*);

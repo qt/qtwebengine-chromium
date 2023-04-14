@@ -23,9 +23,12 @@
 #include "absl/strings/string_view.h"
 #include "internal/platform/implementation/credential_callbacks.h"
 #include "internal/proto/credential.pb.h"
+#include "internal/proto/metadata.pb.h"
 
 namespace nearby {
 namespace presence {
+
+using SubscriberId = uint64_t;
 
 /*
  * The instance of CredentialManager is owned by {@code ServiceControllerImpl}.
@@ -44,23 +47,28 @@ class CredentialManager {
   // The user’s own public credentials won’t be saved on local credential
   // storage.
   virtual void GenerateCredentials(
-      const nearby::internal::DeviceMetadata& device_metadata,
+      const nearby::internal::Metadata& metadata,
       absl::string_view manager_app_id,
       const std::vector<nearby::internal::IdentityType>& identity_types,
       int credential_life_cycle_days, int contiguous_copy_of_credentials,
-      GenerateCredentialsCallback credentials_generated_cb) = 0;
+      GenerateCredentialsResultCallback credentials_generated_cb) = 0;
 
   // Update remote public credentials.
   virtual void UpdateRemotePublicCredentials(
       absl::string_view manager_app_id, absl::string_view account_name,
-      const std::vector<nearby::internal::PublicCredential>&
+      const std::vector<nearby::internal::SharedCredential>&
           remote_public_creds,
       UpdateRemotePublicCredentialsCallback credentials_updated_cb) = 0;
 
-  // Used to fetch private creds when broadcasting.
-  virtual void GetPrivateCredentials(
+  virtual void UpdateLocalCredential(
       const CredentialSelector& credential_selector,
-      GetPrivateCredentialsResultCallback callback) = 0;
+      nearby::internal::LocalCredential credential,
+      SaveCredentialsResultCallback result_callback) = 0;
+
+  // Used to fetch private creds when broadcasting.
+  virtual void GetLocalCredentials(
+      const CredentialSelector& credential_selector,
+      GetLocalCredentialsResultCallback callback) = 0;
 
   // Used to fetch remote public creds when scanning.
   virtual void GetPublicCredentials(
@@ -68,12 +76,25 @@ class CredentialManager {
       PublicCredentialType public_credential_type,
       GetPublicCredentialsResultCallback callback) = 0;
 
+  // Subscribes for public credentials updates. The `callback` is triggered when
+  // the public credentials are fetched initially, and then every time the
+  // credentials change.
+  virtual SubscriberId SubscribeForPublicCredentials(
+      const CredentialSelector& credential_selector,
+      PublicCredentialType public_credential_type,
+      GetPublicCredentialsResultCallback callback) = 0;
+
+  // Unsubscribes from public credentials updates. No new callbacks will be
+  // triggered after this function returns. If there is a callback already
+  // running, that callback may continue after
+  // `UnsubscribeFromPublicCredentials()` return.
+  virtual void UnsubscribeFromPublicCredentials(SubscriberId id) = 0;
+
   // Decrypts the device metadata from a public credential.
   // Returns an empty string if decryption fails.
-  virtual std::string DecryptDeviceMetadata(
-      absl::string_view device_metadata_encryption_key,
-      absl::string_view authenticity_key,
-      absl::string_view device_metadata_string) = 0;
+  virtual std::string DecryptMetadata(absl::string_view metadata_encryption_key,
+                                      absl::string_view key_seed,
+                                      absl::string_view metadata_string) = 0;
 };
 
 }  // namespace presence

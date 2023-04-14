@@ -29,7 +29,7 @@ TEST_F(BoolTest, Creation) {
 TEST_F(BoolTest, Hash) {
     auto* a = create<Bool>();
     auto* b = create<Bool>();
-    EXPECT_EQ(a->Hash(), b->Hash());
+    EXPECT_EQ(a->unique_hash, b->unique_hash);
 }
 
 TEST_F(BoolTest, Equals) {
@@ -42,6 +42,15 @@ TEST_F(BoolTest, Equals) {
 TEST_F(BoolTest, FriendlyName) {
     Bool b;
     EXPECT_EQ(b.FriendlyName(Symbols()), "bool");
+}
+
+TEST_F(BoolTest, Clone) {
+    auto* a = create<Bool>();
+    type::Manager mgr;
+    type::CloneContext ctx{{nullptr}, {nullptr, &mgr}};
+
+    auto* b = a->Clone(ctx);
+    ASSERT_TRUE(b->Is<Bool>());
 }
 
 }  // namespace

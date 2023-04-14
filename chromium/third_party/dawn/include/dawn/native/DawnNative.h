@@ -49,6 +49,12 @@ struct DAWN_NATIVE_EXPORT DawnDeviceDescriptor {
     const WGPURequiredLimits* requiredLimits = nullptr;
 };
 
+// Each toggle is assigned with a TogglesStage, indicating the validation and earliest usage
+// time of the toggle.
+// TODO(dawn:1495): Currently all toggles are device toggles, i.e. of Device toggle stage. Add
+// instance and adapter stages after instance and adapter toggles implemented.
+enum class ToggleStage { Device };
+
 // A struct to record the information of a toggle. A toggle is a code path in Dawn device that
 // can be manually configured to run or not outside Dawn, including workarounds, special
 // features and optimizations.
@@ -56,6 +62,7 @@ struct ToggleInfo {
     const char* name;
     const char* description;
     const char* url;
+    ToggleStage stage;
 };
 
 // A struct to record the information of a feature. A feature is a GPU feature that is not
@@ -173,6 +180,9 @@ class DAWN_NATIVE_EXPORT Instance {
 
     // Enable debug capture on Dawn startup
     void EnableBeginCaptureOnStartup(bool beginCaptureOnStartup);
+
+    // Enable / disable the adapter blocklist.
+    void EnableAdapterBlocklist(bool enable);
 
     // TODO(dawn:1374) Deprecate this once it is passed via the descriptor.
     void SetPlatform(dawn::platform::Platform* platform);

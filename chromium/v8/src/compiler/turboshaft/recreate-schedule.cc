@@ -177,6 +177,17 @@ void ScheduleBuilder::ProcessOperation(const Operation& op) {
   }
 }
 
+#define SHOULD_HAVE_BEEN_LOWERED(op) \
+  Node* ScheduleBuilder::ProcessOperation(const op##Op&) { UNREACHABLE(); }
+// These operations should have been lowered in previous reducers already.
+SHOULD_HAVE_BEEN_LOWERED(Allocate)
+SHOULD_HAVE_BEEN_LOWERED(ConvertToObject)
+SHOULD_HAVE_BEEN_LOWERED(DecodeExternalPointer)
+SHOULD_HAVE_BEEN_LOWERED(ObjectIs)
+SHOULD_HAVE_BEEN_LOWERED(Tag)
+SHOULD_HAVE_BEEN_LOWERED(Untag)
+#undef SHOULD_HAVE_BEEN_LOWERED
+
 Node* ScheduleBuilder::ProcessOperation(const WordBinopOp& op) {
   using Kind = WordBinopOp::Kind;
   const Operator* o;
@@ -549,6 +560,9 @@ Node* ScheduleBuilder::ProcessOperation(const EqualOp& op) {
     case RegisterRepresentation::Float64():
       o = machine.Float64Equal();
       break;
+    case RegisterRepresentation::Tagged():
+      o = machine.TaggedEqual();
+      break;
     default:
       UNREACHABLE();
   }
@@ -859,14 +873,6 @@ Node* ScheduleBuilder::ProcessOperation(const SelectOp& op) {
 Node* ScheduleBuilder::ProcessOperation(const PendingLoopPhiOp& op) {
   UNREACHABLE();
 }
-Node* ScheduleBuilder::ProcessOperation(const DecodeExternalPointerOp& op) {
-  // This should have been lowered before already.
-  UNREACHABLE();
-}
-Node* ScheduleBuilder::ProcessOperation(const AllocateOp& op) {
-  // This should have been lowered before already.
-  UNREACHABLE();
-}
 Node* ScheduleBuilder::ProcessOperation(const TupleOp& op) {
   // Tuples are only used for lowerings during reduction. Therefore, we can
   // assume that it is unused if it occurs at this point.
@@ -1084,6 +1090,15 @@ Node* ScheduleBuilder::ProcessOperation(const StaticAssertOp& op) {
   FATAL(
       "Expected Turbofan static assert to hold, but got non-true input:\n  %s",
       op.source);
+}
+Node* ScheduleBuilder::ProcessOperation(const CheckTurboshaftTypeOfOp& op) {
+  if (op.successful) return GetNode(op.input());
+
+  UnparkedScopeIfNeeded scope(broker);
+  AllowHandleDereference allow_handle_dereference;
+  FATAL("Checking type %s of operation %d:%s failed!",
+        op.type.ToString().c_str(), op.input().id(),
+        input_graph.Get(op.input()).ToString().c_str());
 }
 
 std::pair<Node*, MachineType> ScheduleBuilder::BuildDeoptInput(

@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <map>
+#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -35,8 +36,19 @@ CharT* data(std::basic_string<CharT, Traits, Allocator>& str) {
   return std::addressof(str[0]);
 }
 
-std::string Join(const std::vector<std::string>& strings,
-                 const char* delimiter);
+// Stringify a vector of objects that have an operator<< overload.
+template <typename T>
+std::string Join(const std::vector<T>& vec, const char* delimiter = ", ") {
+  std::stringstream ss;
+
+  auto it = vec.begin();
+  ss << *it;
+  for (++it; it != vec.end(); ++it) {
+    ss << delimiter << *it;
+  }
+
+  return ss.str();
+}
 
 template <typename Key, typename Value>
 void RemoveValueFromMap(std::map<Key, Value*>* map, Value* value) {

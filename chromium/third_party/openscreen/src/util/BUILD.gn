@@ -49,7 +49,6 @@ source_set("base") {
     "json/json_serialization.cc",
     "json/json_value.cc",
     "simple_fraction.cc",
-    "std_util.cc",
     "stringprintf.cc",
     "url.cc",
     "yet_another_bit_vector.cc",

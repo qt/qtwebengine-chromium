@@ -19,6 +19,7 @@
 #include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "absl/container/flat_hash_map.h"
 #include "internal/platform/single_thread_executor.h"
@@ -36,15 +37,13 @@ namespace presence {
 // Helping service controller to manage scan requests and callbacks.
 class ScanManager {
  public:
-  using SingleThreadExecutor = ::location::nearby::SingleThreadExecutor;
-  using Mutex = ::location::nearby::Mutex;
-  using MutexLock = ::location::nearby::MutexLock;
-  using ScanningSession =
-      ::location::nearby::api::ble_v2::BleMedium::ScanningSession;
-  using Runnable = ::location::nearby::Runnable;
-  using BleAdvertisementData =
-      ::location::nearby::api::ble_v2::BleAdvertisementData;
-  using PublicCredential = ::nearby::internal::PublicCredential;
+  using SingleThreadExecutor = ::nearby::SingleThreadExecutor;
+  using Mutex = ::nearby::Mutex;
+  using MutexLock = ::nearby::MutexLock;
+  using ScanningSession = ::nearby::api::ble_v2::BleMedium::ScanningSession;
+  using Runnable = ::nearby::Runnable;
+  using BleAdvertisementData = ::nearby::api::ble_v2::BleAdvertisementData;
+  using SharedCredential = ::nearby::internal::SharedCredential;
   using IdentityType = ::nearby::internal::IdentityType;
 
   ScanManager(Mediums& mediums, CredentialManager& credential_manager,
@@ -64,7 +63,7 @@ class ScanManager {
   struct ScanSessionState {
     ScanRequest request;
     ScanCallback callback;
-    absl::flat_hash_map<IdentityType, std::vector<PublicCredential>>
+    absl::flat_hash_map<IdentityType, std::vector<SharedCredential>>
         credentials;
     AdvertisementDecoder decoder;
     std::unique_ptr<ScanningSession> scanning_session;
@@ -75,7 +74,7 @@ class ScanManager {
   void FetchCredentials(ScanSessionId id, const ScanRequest& scan_request)
       ABSL_EXCLUSIVE_LOCKS_REQUIRED(*executor_);
   void UpdateCredentials(ScanSessionId id, IdentityType identity_type,
-                         std::vector<PublicCredential> credentials)
+                         std::vector<SharedCredential> credentials)
       ABSL_EXCLUSIVE_LOCKS_REQUIRED(*executor_);
   void RunOnServiceControllerThread(absl::string_view name, Runnable runnable) {
     executor_->Execute(std::string(name), std::move(runnable));

@@ -98,7 +98,7 @@ struct TensorEvaluator
     return m_data[index];
   }
 
-  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE CoeffReturnType& coeffRef(Index index) {
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE CoeffReturnType& coeffRef(Index index) const{
     eigen_assert(m_data != NULL);
     return m_data[index];
   }
@@ -122,7 +122,7 @@ struct TensorEvaluator
   }
 
   template <int StoreMode> EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE
-  void writePacket(Index index, const PacketReturnType& x)
+  void writePacket(Index index, const PacketReturnType& x) const
   {
     return internal::pstoret<Scalar, PacketReturnType, StoreMode>(m_data + index, x);
   }
@@ -137,7 +137,7 @@ struct TensorEvaluator
   }
 
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE CoeffReturnType&
-  coeffRef(const array<DenseIndex, NumCoords>& coords) {
+  coeffRef(const array<DenseIndex, NumCoords>& coords) const {
     eigen_assert(m_data != NULL);
     if (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       return m_data[m_dims.IndexOfColMajor(coords)];
@@ -978,7 +978,14 @@ struct TensorEvaluator<const TensorSelectOp<IfArgType, ThenArgType, ElseArgType>
   TensorEvaluator<ElseArgType, Device> m_elseImpl;
 };
 
-
 } // end namespace Eigen
+
+#if defined(EIGEN_USE_SYCL) && defined(SYCL_COMPILER_IS_DPCPP)
+template <typename Derived, typename Device>
+struct cl::sycl::is_device_copyable<
+    Eigen::TensorEvaluator<Derived, Device>,
+    std::enable_if_t<!std::is_trivially_copyable<
+        Eigen::TensorEvaluator<Derived, Device>>::value>> : std::true_type {};
+#endif
 
 #endif // EIGEN_CXX11_TENSOR_TENSOR_EVALUATOR_H

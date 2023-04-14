@@ -24,6 +24,8 @@ group("all") {
     ":system_api-dlcservice-goprotos",
     ":system_api-dlcservice-protos",
     ":system_api-dlp-protos",
+    ":system_api-featured-goprotos",
+    ":system_api-featured-protos",
     ":system_api-fusebox-protos",
     ":system_api-hps-goprotos",
     ":system_api-hps-protos",
@@ -113,6 +115,7 @@ proto_library("system_api-power_manager-protos") {
   proto_out_dir = "include/power_manager/proto_bindings"
   sources = [
     "${proto_in_dir}/backlight.proto",
+    "${proto_in_dir}/battery_saver.proto",
     "${proto_in_dir}/charge_history_state.proto",
     "${proto_in_dir}/idle.proto",
     "${proto_in_dir}/input_event.proto",
@@ -675,4 +678,17 @@ proto_library("system_api-arcvm_data_migrator-protos") {
   proto_out_dir = "include/arcvm_data_migrator/proto_bindings"
   sources = [ "${proto_in_dir}/arcvm_data_migrator.proto" ]
   standalone = true
+}
+
+proto_library("system_api-featured-protos") {
+  proto_in_dir = "dbus/featured"
+  proto_out_dir = "include/featured/proto_bindings"
+  sources = [ "${proto_in_dir}/featured.proto" ]
+  standalone = true
+}
+
+goproto_library("system_api-featured-goprotos") {
+  proto_in_dir = "dbus/featured"
+  proto_out_dir = "go/src/"
+  sources = [ "${proto_in_dir}/featured.proto" ]
 }

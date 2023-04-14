@@ -63,8 +63,8 @@ class VerifyPointersVisitor : public ObjectVisitorWithCageBases,
   void VisitPointers(HeapObject host, MaybeObjectSlot start,
                      MaybeObjectSlot end) override;
   void VisitCodePointer(HeapObject host, CodeObjectSlot slot) override;
-  void VisitCodeTarget(Code host, RelocInfo* rinfo) override;
-  void VisitEmbeddedPointer(Code host, RelocInfo* rinfo) override;
+  void VisitCodeTarget(InstructionStream host, RelocInfo* rinfo) override;
+  void VisitEmbeddedPointer(InstructionStream host, RelocInfo* rinfo) override;
 
   void VisitRootPointers(Root root, const char* description,
                          FullObjectSlot start, FullObjectSlot end) override;
@@ -99,10 +99,9 @@ void VerifyPointersVisitor::VisitPointers(HeapObject host,
 
 void VerifyPointersVisitor::VisitCodePointer(HeapObject host,
                                              CodeObjectSlot slot) {
-  CHECK(V8_EXTERNAL_CODE_SPACE_BOOL);
   Object maybe_code = slot.load(code_cage_base());
   HeapObject code;
-  // The slot might contain smi during CodeDataContainer creation.
+  // The slot might contain smi during Code creation.
   if (maybe_code.GetHeapObject(&code)) {
     VerifyCodeObjectImpl(code);
   } else {
@@ -134,10 +133,10 @@ void VerifyPointersVisitor::VerifyHeapObjectImpl(HeapObject heap_object) {
 }
 
 void VerifyPointersVisitor::VerifyCodeObjectImpl(HeapObject heap_object) {
-  CHECK(V8_EXTERNAL_CODE_SPACE_BOOL);
   CHECK(IsValidCodeObject(heap_, heap_object));
   CHECK(heap_object.map(cage_base()).IsMap());
-  CHECK(heap_object.map(cage_base()).instance_type() == CODE_TYPE);
+  CHECK(heap_object.map(cage_base()).instance_type() ==
+        INSTRUCTION_STREAM_TYPE);
 }
 
 template <typename TSlot>
@@ -165,12 +164,15 @@ void VerifyPointersVisitor::VerifyPointers(HeapObject host,
   VerifyPointersImpl(start, end);
 }
 
-void VerifyPointersVisitor::VisitCodeTarget(Code host, RelocInfo* rinfo) {
-  Code target = Code::GetCodeFromTargetAddress(rinfo->target_address());
+void VerifyPointersVisitor::VisitCodeTarget(InstructionStream host,
+                                            RelocInfo* rinfo) {
+  InstructionStream target =
+      InstructionStream::FromTargetAddress(rinfo->target_address());
   VerifyHeapObjectImpl(target);
 }
 
-void VerifyPointersVisitor::VisitEmbeddedPointer(Code host, RelocInfo* rinfo) {
+void VerifyPointersVisitor::VisitEmbeddedPointer(InstructionStream host,
+                                                 RelocInfo* rinfo) {
   VerifyHeapObjectImpl(rinfo->target_object(cage_base()));
 }
 
@@ -284,17 +286,16 @@ void HeapVerification::Verify() {
   CHECK(heap()->HasBeenSetUp());
   AllowGarbageCollection allow_gc;
   IgnoreLocalGCRequests ignore_gc_requests(heap());
-  SafepointKind safepoint_kind =
-      v8_flags.shared_space && isolate()->is_shared_heap_isolate()
-          ? SafepointKind::kGlobal
-          : SafepointKind::kIsolate;
+  SafepointKind safepoint_kind = isolate()->is_shared_space_isolate()
+                                     ? SafepointKind::kGlobal
+                                     : SafepointKind::kIsolate;
   SafepointScope safepoint_scope(isolate(), safepoint_kind);
   HandleScope scope(isolate());
 
   heap()->MakeHeapIterable();
 
-  heap()->array_buffer_sweeper()->EnsureFinished();
-
+  // TODO(v8:13257): Currently we don't iterate through the stack conservatively
+  // when verifying the heap.
   VerifyPointersVisitor visitor(heap());
   heap()->IterateRoots(&visitor,
                        base::EnumSet<SkipRoot>{SkipRoot::kConservativeStack});
@@ -350,8 +351,7 @@ void HeapVerification::VerifyPage(const BasicMemoryChunk* chunk) {
   CHECK(!current_chunk_.has_value());
   CHECK(!chunk->IsFlagSet(Page::PAGE_NEW_OLD_PROMOTION));
   CHECK(!chunk->IsFlagSet(Page::PAGE_NEW_NEW_PROMOTION));
-  CHECK(!chunk->IsFlagSet(Page::SHARED_HEAP_PROMOTION));
-  if (chunk->InReadOnlySpace()) {
+  if (V8_SHARED_RO_HEAP_BOOL && chunk->InReadOnlySpace()) {
     CHECK_NULL(chunk->owner());
   } else {
     CHECK_EQ(chunk->heap(), heap());
@@ -486,15 +486,15 @@ class SlotVerifyingVisitor : public ObjectVisitorWithCageBases {
   }
 
   void VisitCodePointer(HeapObject host, CodeObjectSlot slot) override {
-    CHECK(V8_EXTERNAL_CODE_SPACE_BOOL);
     if (ShouldHaveBeenRecorded(
             host, MaybeObject::FromObject(slot.load(code_cage_base())))) {
       CHECK_GT(untyped_->count(slot.address()), 0);
     }
   }
 
-  void VisitCodeTarget(Code host, RelocInfo* rinfo) override {
-    Object target = Code::GetCodeFromTargetAddress(rinfo->target_address());
+  void VisitCodeTarget(InstructionStream host, RelocInfo* rinfo) override {
+    Object target =
+        InstructionStream::FromTargetAddress(rinfo->target_address());
     if (ShouldHaveBeenRecorded(host, MaybeObject::FromObject(target))) {
       CHECK(InTypedSet(SlotType::kCodeEntry, rinfo->pc()) ||
             (rinfo->IsInConstantPool() &&
@@ -503,7 +503,7 @@ class SlotVerifyingVisitor : public ObjectVisitorWithCageBases {
     }
   }
 
-  void VisitEmbeddedPointer(Code host, RelocInfo* rinfo) override {
+  void VisitEmbeddedPointer(InstructionStream host, RelocInfo* rinfo) override {
     Object target = rinfo->target_object(cage_base());
     if (ShouldHaveBeenRecorded(host, MaybeObject::FromObject(target))) {
       CHECK(InTypedSet(SlotType::kEmbeddedObjectFull, rinfo->pc()) ||
@@ -622,9 +622,11 @@ class SlotCollectingVisitor final : public ObjectVisitor {
 #endif
   }
 
-  void VisitCodeTarget(Code host, RelocInfo* rinfo) final { UNREACHABLE(); }
+  void VisitCodeTarget(InstructionStream host, RelocInfo* rinfo) final {
+    UNREACHABLE();
+  }
 
-  void VisitEmbeddedPointer(Code host, RelocInfo* rinfo) override {
+  void VisitEmbeddedPointer(InstructionStream host, RelocInfo* rinfo) override {
     UNREACHABLE();
   }
 
@@ -683,6 +685,9 @@ void HeapVerification::VerifyRememberedSetFor(HeapObject object) {
 
     CHECK_NULL(chunk->slot_set<OLD_TO_OLD>());
     CHECK_NULL(chunk->typed_slot_set<OLD_TO_OLD>());
+
+    CHECK_NULL(chunk->slot_set<OLD_TO_SHARED>());
+    CHECK_NULL(chunk->typed_slot_set<OLD_TO_SHARED>());
   }
 
   // TODO(v8:11797): Add old to old slot set verification once all weak objects
@@ -702,28 +707,6 @@ void HeapVerifier::VerifyReadOnlyHeap(Heap* heap) {
 }
 
 // static
-void HeapVerifier::VerifySharedHeap(Heap* heap, Isolate* initiator) {
-  DCHECK(heap->IsShared());
-  Isolate* isolate = heap->isolate();
-
-  // Stop all client isolates attached to this isolate.
-  GlobalSafepointScope global_safepoint(initiator);
-
-  // Migrate shared isolate to the main thread of the initiator isolate.
-  v8::Locker locker(reinterpret_cast<v8::Isolate*>(isolate));
-  v8::Isolate::Scope isolate_scope(reinterpret_cast<v8::Isolate*>(isolate));
-
-  DCHECK_NOT_NULL(isolate->global_safepoint());
-
-  // Free all shared LABs to make the shared heap iterable.
-  isolate->global_safepoint()->IterateClientIsolates([](Isolate* client) {
-    client->heap()->FreeSharedLinearAllocationAreas();
-  });
-
-  HeapVerifier::VerifyHeap(heap);
-}
-
-// static
 void HeapVerifier::VerifyObjectLayoutChangeIsAllowed(Heap* heap,
                                                      HeapObject object) {
   if (object.InSharedWritableHeap()) {
@@ -732,7 +715,7 @@ void HeapVerifier::VerifyObjectLayoutChangeIsAllowed(Heap* heap,
     // Shared strings only change layout under GC, never concurrently.
     if (object.IsShared()) {
       Isolate* isolate = heap->isolate();
-      Isolate* shared_heap_isolate = isolate->is_shared_heap_isolate()
+      Isolate* shared_heap_isolate = isolate->is_shared_space_isolate()
                                          ? isolate
                                          : isolate->shared_heap_isolate();
       shared_heap_isolate->global_safepoint()->AssertActive();
@@ -784,10 +767,7 @@ void HeapVerifier::VerifySafeMapTransition(Heap* heap, HeapObject object,
   }
 
   if (object.IsString(cage_base) &&
-      (new_map == ReadOnlyRoots(heap).thin_string_map() ||
-       new_map == ReadOnlyRoots(heap).thin_one_byte_string_map() ||
-       new_map == ReadOnlyRoots(heap).shared_thin_string_map() ||
-       new_map == ReadOnlyRoots(heap).shared_thin_one_byte_string_map())) {
+      new_map == ReadOnlyRoots(heap).thin_string_map()) {
     // When transitioning a string to ThinString,
     // Heap::NotifyObjectLayoutChange doesn't need to be invoked because only
     // tagged fields are introduced.

@@ -14,28 +14,23 @@
 
 #include "src/tint/type/bool.h"
 
-#include "src/tint/program_builder.h"
+#include "src/tint/type/manager.h"
 
 TINT_INSTANTIATE_TYPEINFO(tint::type::Bool);
 
 namespace tint::type {
 
 Bool::Bool()
-    : Base(type::Flags{
-          Flag::kConstructable,
-          Flag::kCreationFixedFootprint,
-          Flag::kFixedFootprint,
-      }) {}
-
-Bool::Bool(Bool&&) = default;
+    : Base(static_cast<size_t>(TypeInfo::Of<Bool>().full_hashcode),
+           type::Flags{
+               Flag::kConstructable,
+               Flag::kCreationFixedFootprint,
+               Flag::kFixedFootprint,
+           }) {}
 
 Bool::~Bool() = default;
 
-size_t Bool::Hash() const {
-    return static_cast<size_t>(TypeInfo::Of<Bool>().full_hashcode);
-}
-
-bool Bool::Equals(const Type& other) const {
+bool Bool::Equals(const UniqueNode& other) const {
     return other.Is<Bool>();
 }
 
@@ -49,6 +44,10 @@ uint32_t Bool::Size() const {
 
 uint32_t Bool::Align() const {
     return 4;
+}
+
+Bool* Bool::Clone(CloneContext& ctx) const {
+    return ctx.dst.mgr->Get<Bool>();
 }
 
 }  // namespace tint::type

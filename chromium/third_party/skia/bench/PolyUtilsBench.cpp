@@ -8,9 +8,11 @@
 #include "bench/Benchmark.h"
 #include "include/core/SkPoint.h"
 #include "include/core/SkRect.h"
-#include "include/private/SkTDArray.h"
-#include "include/private/SkTemplates.h"
+#include "include/private/base/SkTDArray.h"
+#include "include/private/base/SkTemplates.h"
 #include "src/utils/SkPolyUtils.h"
+
+using namespace skia_private;
 
 #if !defined(SK_ENABLE_OPTIMIZE_SIZE)
 
@@ -88,7 +90,7 @@ protected:
                 break;
             case Type::kTessellateSimple:
                 if (SkIsSimplePolygon(poly.begin(), poly.size())) {
-                    SkAutoSTMalloc<64, uint16_t> indexMap(poly.size());
+                    AutoSTMalloc<64, uint16_t> indexMap(poly.size());
                     for (int i = 0; i < poly.size(); ++i) {
                         indexMap[i] = i;
                     }

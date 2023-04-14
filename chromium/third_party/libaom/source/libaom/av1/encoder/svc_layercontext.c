@@ -8,6 +8,7 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#include <assert.h>
 #include <math.h>
 
 #include "av1/encoder/encoder.h"
@@ -84,6 +85,7 @@ void av1_init_layer_context(AV1_COMP *const cpi) {
 bool av1_alloc_layer_context(AV1_COMP *cpi, int num_layers) {
   SVC *const svc = &cpi->svc;
   if (svc->layer_context == NULL || svc->num_allocated_layers < num_layers) {
+    assert(num_layers > 1);
     aom_free(svc->layer_context);
     svc->num_allocated_layers = 0;
     svc->layer_context =
@@ -99,10 +101,13 @@ void av1_update_layer_context_change_config(AV1_COMP *const cpi,
                                             const int64_t target_bandwidth) {
   const RATE_CONTROL *const rc = &cpi->rc;
   const PRIMARY_RATE_CONTROL *const p_rc = &cpi->ppi->p_rc;
+  AV1_COMMON *const cm = &cpi->common;
   SVC *const svc = &cpi->svc;
   int layer = 0;
   int64_t spatial_layer_target = 0;
   float bitrate_alloc = 1.0;
+  const int mi_rows = cm->mi_params.mi_rows;
+  const int mi_cols = cm->mi_params.mi_cols;
   for (int sl = 0; sl < svc->number_spatial_layers; ++sl) {
     for (int tl = 0; tl < svc->number_temporal_layers; ++tl) {
       layer = LAYER_IDS_TO_IDX(sl, tl, svc->number_temporal_layers);
@@ -134,6 +139,24 @@ void av1_update_layer_context_change_config(AV1_COMP *const cpi,
       lrc->rtc_external_ratectrl = rc->rtc_external_ratectrl;
       lrc->worst_quality = av1_quantizer_to_qindex(lc->max_q);
       lrc->best_quality = av1_quantizer_to_qindex(lc->min_q);
+      if (rc->use_external_qp_one_pass) {
+        lrc->worst_quality = rc->worst_quality;
+        lrc->best_quality = rc->best_quality;
+      }
+      // Reset the cyclic refresh parameters, if needed (map is NULL),
+      // or number of spatial layers has changed.
+      // Cyclic refresh is only applied on base temporal layer.
+      if (svc->number_spatial_layers > 1 && tl == 0 &&
+          (lc->map == NULL ||
+           svc->prev_number_spatial_layers != svc->number_spatial_layers)) {
+        lc->sb_index = 0;
+        lc->actual_num_seg1_blocks = 0;
+        lc->actual_num_seg2_blocks = 0;
+        lc->counter_encode_maxq_scene_change = 0;
+        if (lc->map) aom_free(lc->map);
+        CHECK_MEM_ERROR(cm, lc->map,
+                        aom_calloc(mi_rows * mi_cols, sizeof(*lc->map)));
+      }
     }
   }
 }

@@ -38,18 +38,19 @@
 #include "include/core/SkSurfaceProps.h"
 #include "include/core/SkTileMode.h"
 #include "include/core/SkTypeface.h"
-#include "include/private/SkNoncopyable.h"
-#include "include/private/SkTHash.h"
-#include "include/private/SkTPin.h"
-#include "include/private/SkTemplates.h"
-#include "include/private/SkTo.h"
+#include "include/private/base/SkDebug.h"
+#include "include/private/base/SkNoncopyable.h"
+#include "include/private/base/SkTPin.h"
+#include "include/private/base/SkTemplates.h"
+#include "include/private/base/SkTo.h"
 #include "include/svg/SkSVGCanvas.h"
 #include "include/utils/SkBase64.h"
+#include "src/base/SkTLazy.h"
 #include "src/core/SkAnnotationKeys.h"
 #include "src/core/SkClipStack.h"
 #include "src/core/SkDevice.h"
 #include "src/core/SkFontPriv.h"
-#include "src/core/SkTLazy.h"
+#include "src/core/SkTHash.h"
 #include "src/image/SkImage_Base.h"
 #include "src/shaders/SkShaderBase.h"
 #include "src/text/GlyphRun.h"
@@ -59,6 +60,8 @@
 #include <memory>
 #include <string>
 #include <utility>
+
+using namespace skia_private;
 
 #if SK_SUPPORT_GPU
 class SkMesh;
@@ -447,8 +450,8 @@ void SkSVGDevice::AutoElement::addGradientShaderResources(const SkShader* shader
         return;
     }
 
-    SkAutoSTArray<16, SkColor>  grColors(grInfo.fColorCount);
-    SkAutoSTArray<16, SkScalar> grOffsets(grInfo.fColorCount);
+    AutoSTArray<16, SkColor>  grColors(grInfo.fColorCount);
+    AutoSTArray<16, SkScalar> grOffsets(grInfo.fColorCount);
     grInfo.fColors = grColors.get();
     grInfo.fColorOffsets = grOffsets.get();
 
@@ -971,7 +974,7 @@ void SkSVGDevice::drawBitmapCommon(const MxCp& mc, const SkBitmap& bm, const SkP
     }
 
     size_t b64Size = SkBase64::Encode(pngData->data(), pngData->size(), nullptr);
-    SkAutoTMalloc<char> b64Data(b64Size);
+    AutoTMalloc<char> b64Data(b64Size);
     SkBase64::Encode(pngData->data(), pngData->size(), b64Data.get());
 
     SkString svgImageData("data:image/png;base64,");
@@ -1022,7 +1025,7 @@ public:
     SVGTextBuilder(SkPoint origin, const sktext::GlyphRun& glyphRun)
             : fOrigin(origin) {
         auto runSize = glyphRun.runSize();
-        SkAutoSTArray<64, SkUnichar> unichars(runSize);
+        AutoSTArray<64, SkUnichar> unichars(runSize);
         SkFontPriv::GlyphsToUnichars(glyphRun.font(), glyphRun.glyphsIDs().data(),
                                      runSize, unichars.get());
         auto positions = glyphRun.positions();

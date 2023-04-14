@@ -467,10 +467,18 @@ struct FeaturesGL : FeatureSetBase
         "packUnorm4x8 fails on Pixel 4 if it is not passed a highp vec4.", &members,
         "http://anglebug.com/7527"};
 
-    FeatureInfo disableClipCullDistance = {"disableClipCullDistance",
-                                           FeatureCategory::OpenGLWorkarounds,
-                                           "Shader compiler does not handle redeclared built-ins.",
-                                           &members, "https://anglebug.com/7763"};
+    FeatureInfo emulateClipDistanceState = {
+        "emulateClipDistanceState",
+        FeatureCategory::OpenGLWorkarounds,
+        "Some drivers ignore GL_CLIP_DISTANCEi_EXT state.",
+        &members,
+    };
+
+    FeatureInfo bindFramebufferForTimerQueries = {
+        "bindFramebufferForTimerQueries", FeatureCategory::OpenGLWorkarounds,
+        "Some drivers require a non-zero framebuffer when beginQuery for TimeElapsed or"
+        "Timestampis called.",
+        &members, "https://crbug.com/1356053"};
 
     FeatureInfo supportsFragmentShaderInterlockNV = {
         "supportsFragmentShaderInterlockNV", FeatureCategory::OpenGLFeatures,

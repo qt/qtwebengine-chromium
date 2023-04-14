@@ -11,9 +11,10 @@
 #include "include/core/SkColorFilter.h"
 #include "include/core/SkString.h"
 #include "include/private/SkColorData.h"
-#include "include/private/SkTo.h"
+#include "include/private/base/SkTo.h"
+#include "src/base/SkArenaAlloc.h"
+#include "src/base/SkTLazy.h"
 #include "src/core/SkAntiRun.h"
-#include "src/core/SkArenaAlloc.h"
 #include "src/core/SkMask.h"
 #include "src/core/SkMaskFilterBase.h"
 #include "src/core/SkMatrixProvider.h"
@@ -21,11 +22,12 @@
 #include "src/core/SkPaintPriv.h"
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkRegionPriv.h"
-#include "src/core/SkTLazy.h"
 #include "src/core/SkVMBlitter.h"
 #include "src/core/SkWriteBuffer.h"
 #include "src/core/SkXfermodeInterpretation.h"
 #include "src/shaders/SkShaderBase.h"
+
+using namespace skia_private;
 
 // Hacks for testing.
 bool gUseSkVMBlitter{false};
@@ -254,11 +256,11 @@ void SkBlitter::blitMask(const SkMask& mask, const SkIRect& clip) {
         }
     } else {
         int                         width = clip.width();
-        SkAutoSTMalloc<64, int16_t> runStorage(width + 1);
+        AutoSTMalloc<64, int16_t> runStorage(width + 1);
         int16_t*                    runs = runStorage.get();
         const uint8_t*              aa = mask.getAddr8(clip.fLeft, clip.fTop);
 
-        sk_memset16((uint16_t*)runs, 1, width);
+        SkOpts::memset16((uint16_t*)runs, 1, width);
         runs[width] = 0;
 
         int height = clip.height();
@@ -691,7 +693,7 @@ bool SkBlitter::UseLegacyBlitter(const SkPixmap& device,
 }
 
 SkBlitter* SkBlitter::Choose(const SkPixmap& device,
-                             const SkMatrixProvider& matrixProvider,
+                             const SkMatrix& ctm,
                              const SkPaint& origPaint,
                              SkArenaAlloc* alloc,
                              bool drawCoverage,
@@ -755,25 +757,26 @@ SkBlitter* SkBlitter::Choose(const SkPixmap& device,
         // We need to make sure that in case RP blitter cannot be created we use VM and
         // when VM blitter cannot be created we use RP
         if (gUseSkVMBlitter) {
-            if (auto blitter =
-                        SkVMBlitter::Make(device, *paint, matrixProvider, alloc, clipShader)) {
+            if (auto blitter = SkVMBlitter::Make(device, *paint, ctm, alloc, clipShader)) {
                 return blitter;
             }
         }
-        if (auto blitter = SkCreateRasterPipelineBlitter(
-                    device, *paint, matrixProvider, alloc, clipShader, props)) {
+        if (auto blitter = SkCreateRasterPipelineBlitter(device,
+                                                         *paint,
+                                                         ctm,
+                                                         alloc,
+                                                         clipShader,
+                                                         props)) {
             return blitter;
         }
         if (!gUseSkVMBlitter) {
-            if (auto blitter = SkVMBlitter::Make(device, *paint, matrixProvider,
-                                                 alloc, clipShader)) {
+            if (auto blitter = SkVMBlitter::Make(device, *paint, ctm, alloc, clipShader)) {
                 return blitter;
             }
         }
         return alloc->make<SkNullBlitter>();
     };
 
-    SkMatrix ctm = matrixProvider.localToDevice();
     // We'll end here for many interesting cases: color spaces, color filters, most color types.
     if (clipShader || !UseLegacyBlitter(device, *paint, ctm)) {
         return create_SkRP_or_SkVMBlitter();

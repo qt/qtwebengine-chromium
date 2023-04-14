@@ -25,6 +25,7 @@
 #include <vector>
 
 #include "src/tint/program_builder.h"
+#include "src/tint/reader/spirv/attributes.h"
 #include "src/tint/reader/spirv/construct.h"
 #include "src/tint/reader/spirv/parser_impl.h"
 
@@ -331,10 +332,10 @@ struct DefInfo {
         /// buffer expressed in the old style (with Uniform address space)
         /// that needs to be remapped to StorageBuffer address space.
         /// This is kInvalid for non-pointers.
-        ast::AddressSpace address_space = ast::AddressSpace::kUndefined;
+        builtin::AddressSpace address_space = builtin::AddressSpace::kUndefined;
 
         /// The declared access mode.
-        ast::Access access = ast::Access::kUndefined;
+        builtin::Access access = builtin::Access::kUndefined;
     };
 
     /// The expression to use when sinking pointers into their use.
@@ -368,7 +369,7 @@ inline std::ostream& operator<<(std::ostream& o, const DefInfo& di) {
     }
     o << " requires_named_let_def: " << (di.requires_named_let_def ? "true" : "false")
       << " requires_hoisted_var_def: " << (di.requires_hoisted_var_def ? "true" : "false");
-    if (di.pointer.address_space != ast::AddressSpace::kNone) {
+    if (di.pointer.address_space != builtin::AddressSpace::kUndefined) {
         o << " sc:" << int(di.pointer.address_space);
     }
     switch (di.skip) {
@@ -420,7 +421,6 @@ class StatementBuilder : public Castable<StatementBuilder, ast::Statement> {
 
 /// A FunctionEmitter emits a SPIR-V function onto a Tint AST module.
 class FunctionEmitter {
-    using AttributeList = utils::Vector<const ast::Attribute*, 8>;
     using StructMemberList = utils::Vector<const ast::StructMember*, 8>;
     using ExpressionList = utils::Vector<const ast::Expression*, 8>;
     using ParameterList = utils::Vector<const ast::Parameter*, 8>;
@@ -473,32 +473,31 @@ class FunctionEmitter {
     /// @returns false if emission failed.
     bool EmitEntryPointAsWrapper();
 
-    /// Creates one or more entry point input parameters corresponding to a
-    /// part of an input variable.  The part of the input variable is specfied
-    /// by the `index_prefix`, which successively indexes into the variable.
-    /// Also generates the assignment statements that copy the input parameter
-    /// to the corresponding part of the variable.  Assumes the variable
-    /// has already been created in the Private address space.
+    /// Creates one or more entry point input parameters corresponding to a part of an input
+    /// variable.  The part of the input variable is specfied by the `index_prefix`, which
+    /// successively indexes into the variable. Also generates the assignment statements that copy
+    /// the input parameter to the corresponding part of the variable.  Assumes the variable has
+    /// already been created in the Private address space.
     /// @param var_name The name of the variable
     /// @param var_type The store type of the variable
-    /// @param decos The variable's decorations
-    /// @param index_prefix Indices stepping into the variable, indicating
-    /// what part of the variable to populate.
-    /// @param tip_type The type of the component inside variable, after indexing
-    /// with the indices in `index_prefix`.
-    /// @param forced_param_type The type forced by WGSL, if the variable is a
-    /// builtin, otherwise the same as var_type.
+    /// @param attributes The variable's attributes
+    /// @param index_prefix Indices stepping into the variable, indicating what part of the variable
+    /// to populate.
+    /// @param tip_type The type of the component inside variable, after indexing with the indices
+    /// in `index_prefix`.
+    /// @param forced_param_type The type forced by WGSL, if the variable is a builtin, otherwise
+    /// the same as var_type.
     /// @param params The parameter list where the new parameter is appended.
     /// @param statements The statement list where the assignment is appended.
     /// @returns false if emission failed
     bool EmitPipelineInput(std::string var_name,
                            const Type* var_type,
-                           AttributeList* decos,
                            utils::Vector<int, 8> index_prefix,
                            const Type* tip_type,
                            const Type* forced_param_type,
-                           ParameterList* params,
-                           StatementList* statements);
+                           Attributes& attributes,
+                           ParameterList& params,
+                           StatementList& statements);
 
     /// Creates one or more struct members from an output variable, and the
     /// expressions that compute the value they contribute to the entry point
@@ -507,31 +506,31 @@ class FunctionEmitter {
     /// Assumes the variable has already been created in the Private address space
     /// @param var_name The name of the variable
     /// @param var_type The store type of the variable
-    /// @param decos The variable's decorations
     /// @param index_prefix Indices stepping into the variable, indicating what part of the variable
     /// to populate.
     /// @param tip_type The type of the component inside variable, after indexing with the indices
     /// in `index_prefix`.
     /// @param forced_member_type The type forced by WGSL, if the variable is a builtin, otherwise
     /// the same as var_type.
+    /// @param attributes The variable's attributes
     /// @param return_members The struct member list where the new member is added.
     /// @param return_exprs The expression list where the return expression is added.
     /// @returns false if emission failed
     bool EmitPipelineOutput(std::string var_name,
                             const Type* var_type,
-                            AttributeList* decos,
                             utils::Vector<int, 8> index_prefix,
                             const Type* tip_type,
                             const Type* forced_member_type,
-                            StructMemberList* return_members,
-                            ExpressionList* return_exprs);
+                            Attributes& attributes,
+                            StructMemberList& return_members,
+                            ExpressionList& return_exprs);
 
     /// Updates the attribute list, replacing an existing Location attribute
     /// with another having one higher location value. Does nothing if no
     /// location attribute exists.
     /// Assumes the list contains at most one Location attribute.
     /// @param attributes the attribute list to modify
-    void IncrementLocation(AttributeList* attributes);
+    void IncrementLocation(Attributes& attributes);
 
     /// Create an ast::BlockStatement representing the body of the function.
     /// This creates the statement stack, which is non-empty for the lifetime
@@ -916,14 +915,14 @@ class FunctionEmitter {
     /// index is out of range, i.e. 4 or higher.
     /// @param i index of the subcomponent
     /// @returns the identifier expression for the `i`'th component
-    ast::IdentifierExpression* Swizzle(uint32_t i);
+    const ast::Identifier* Swizzle(uint32_t i);
 
     /// Returns an identifier expression for the swizzle name of the first
     /// `n` elements of a vector.  Emits an error and returns nullptr if `n`
     /// is out of range, i.e. 4 or higher.
     /// @param n the number of components in the swizzle
     /// @returns the swizzle identifier for the first n elements of a vector
-    ast::IdentifierExpression* PrefixSwizzle(uint32_t n);
+    const ast::Identifier* PrefixSwizzle(uint32_t n);
 
     /// Converts SPIR-V image coordinates from an image access instruction
     /// (e.g. OpImageSampledImplicitLod) into an expression list consisting of
@@ -976,7 +975,7 @@ class FunctionEmitter {
         /// Function return type
         const Type* return_type;
         /// Function attributes
-        AttributeList attributes;
+        Attributes attributes;
     };
 
     /// Parse the function declaration, which comprises the name, parameters, and

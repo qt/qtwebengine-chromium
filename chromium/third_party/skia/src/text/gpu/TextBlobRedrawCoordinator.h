@@ -10,9 +10,9 @@
 
 #include "include/core/SkRefCnt.h"
 #include "include/private/SkSpinlock.h"
-#include "include/private/SkTArray.h"
-#include "include/private/SkTHash.h"
+#include "include/private/base/SkTArray.h"
 #include "src/core/SkMessageBus.h"
+#include "src/core/SkTHash.h"
 #include "src/core/SkTextBlobPriv.h"
 #include "src/text/gpu/TextBlob.h"
 

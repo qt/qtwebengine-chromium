@@ -27,20 +27,20 @@ import {Events as UISourceCodeFrameEvents, UISourceCodeFrame} from './UISourceCo
 
 const UIStrings = {
   /**
-  *@description Text to open a file
-  */
+   *@description Text to open a file
+   */
   openFile: 'Open file',
   /**
-  *@description Text to run commands
-  */
+   *@description Text to run commands
+   */
   runCommand: 'Run command',
   /**
-  *@description Text in Sources View of the Sources panel
-  */
+   *@description Text in Sources View of the Sources panel
+   */
   dropInAFolderToAddToWorkspace: 'Drop in a folder to add to workspace',
   /**
-  *@description Accessible label for Sources placeholder view actions list
-  */
+   *@description Accessible label for Sources placeholder view actions list
+   */
   sourceViewActions: 'Source View Actions',
 };
 const str_ = i18n.i18n.registerUIStrings('panels/sources/SourcesView.ts', UIStrings);
@@ -116,7 +116,11 @@ export class SourcesView extends Common.ObjectWrapper.eventMixin<EventTypes, typ
       const projects =
           Workspace.Workspace.WorkspaceImpl.instance().projectsForType(Workspace.Workspace.projectTypes.FileSystem);
       for (const project of projects) {
-        unsavedSourceCodes.push(...project.uiSourceCodes().filter(sourceCode => sourceCode.isDirty()));
+        for (const uiSourceCode of project.uiSourceCodes()) {
+          if (uiSourceCode.isDirty()) {
+            unsavedSourceCodes.push(uiSourceCode);
+          }
+        }
       }
 
       if (!unsavedSourceCodes.length) {
@@ -336,7 +340,7 @@ export class SourcesView extends Common.ObjectWrapper.eventMixin<EventTypes, typ
   private projectRemoved(event: Common.EventTarget.EventTargetEvent<Workspace.Workspace.Project>): void {
     const project = event.data;
     const uiSourceCodes = project.uiSourceCodes();
-    this.removeUISourceCodes(uiSourceCodes);
+    this.removeUISourceCodes([...uiSourceCodes]);
   }
 
   private updateScriptViewToolbarItems(): void {
@@ -531,9 +535,9 @@ export class SourcesView extends Common.ObjectWrapper.eventMixin<EventTypes, typ
         UISourceCodeFrameEvents.ToolbarItemsChanged, this.updateScriptViewToolbarItems, this);
   }
 
-  searchCanceled(): void {
+  onSearchCanceled(): void {
     if (this.searchView) {
-      this.searchView.searchCanceled();
+      this.searchView.onSearchCanceled();
     }
 
     delete this.searchView;
@@ -690,13 +694,11 @@ export class SwitchFileActionDelegate implements UI.ActionRegistration.ActionDel
       return namePrefix.toLowerCase();
     }
 
-    const uiSourceCodes = currentUISourceCode.project().uiSourceCodes();
     const candidates = [];
     const url = currentUISourceCode.parentURL();
     const name = currentUISourceCode.name();
     const namePrefix = fileNamePrefix(name);
-    for (let i = 0; i < uiSourceCodes.length; ++i) {
-      const uiSourceCode = uiSourceCodes[i];
+    for (const uiSourceCode of currentUISourceCode.project().uiSourceCodes()) {
       if (url !== uiSourceCode.parentURL()) {
         continue;
       }

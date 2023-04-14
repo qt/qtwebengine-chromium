@@ -181,6 +181,14 @@ void WebContentsDevToolsAgentHost::UpdateChildFrameTrees(
   auto_attacher_->UpdateChildFrameTrees(update_target_info);
 }
 
+void WebContentsDevToolsAgentHost::InspectElement(RenderFrameHost* frame_host,
+                                                  int x,
+                                                  int y) {
+  if (auto host = GetOrCreatePrimaryFrameAgent()) {
+    host->InspectElement(frame_host, x, y);
+  }
+}
+
 WebContentsDevToolsAgentHost::~WebContentsDevToolsAgentHost() {
   DCHECK(!web_contents());
 }
@@ -253,19 +261,22 @@ GURL WebContentsDevToolsAgentHost::GetFaviconURL() {
 }
 
 bool WebContentsDevToolsAgentHost::Activate() {
-  if (DevToolsAgentHost* host = GetPrimaryFrameAgent())
+  if (auto host = GetOrCreatePrimaryFrameAgent()) {
     return host->Activate();
+  }
   return false;
 }
 
 void WebContentsDevToolsAgentHost::Reload() {
-  if (DevToolsAgentHost* host = GetPrimaryFrameAgent())
+  if (auto host = GetOrCreatePrimaryFrameAgent()) {
     host->Reload();
+  }
 }
 
 bool WebContentsDevToolsAgentHost::Close() {
-  if (DevToolsAgentHost* host = GetPrimaryFrameAgent())
+  if (auto host = GetOrCreatePrimaryFrameAgent()) {
     return host->Close();
+  }
   return false;
 }
 
@@ -297,9 +308,20 @@ DevToolsAgentHostImpl* WebContentsDevToolsAgentHost::GetPrimaryFrameAgent() {
   return nullptr;
 }
 
+scoped_refptr<DevToolsAgentHost>
+WebContentsDevToolsAgentHost::GetOrCreatePrimaryFrameAgent() {
+  if (WebContents* wc = web_contents()) {
+    return RenderFrameDevToolsAgentHost::GetOrCreateFor(
+        static_cast<WebContentsImpl*>(web_contents())
+            ->GetPrimaryFrameTree()
+            .root());
+  }
+  return nullptr;
+}
+
 void WebContentsDevToolsAgentHost::WebContentsDestroyed() {
   DCHECK_EQ(this, FindAgentHost(web_contents()));
-  ForceDetachAllSessions();
+  auto retain_this = ForceDetachAllSessionsImpl();
   auto_attacher_.reset();
   g_agent_host_instances.Get().erase(web_contents());
   Observe(nullptr);

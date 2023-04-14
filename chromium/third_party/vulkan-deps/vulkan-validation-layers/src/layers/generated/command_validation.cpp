@@ -4,7 +4,7 @@
 
 /***************************************************************************
  *
- * Copyright (c) 2021-2022 The Khronos Group Inc.
+ * Copyright (c) 2021-2023 The Khronos Group Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,13 +17,10 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *
- * Author: Spencer Fricke <s.fricke@samsung.com>
- *
  ****************************************************************************/
 
 #include "vk_layer_logging.h"
-#include "core_validation.h"
+#include "core_checks/core_validation.h"
 
 static const std::array<const char *, CMD_RANGE_SIZE> kGeneratedMustBeRecordingList = {{
     kVUIDUndefined,
@@ -95,6 +92,8 @@ static const std::array<const char *, CMD_RANGE_SIZE> kGeneratedMustBeRecordingL
     "VUID-vkCmdDispatchBase-commandBuffer-recording",
     "VUID-vkCmdDispatchIndirect-commandBuffer-recording",
     "VUID-vkCmdDraw-commandBuffer-recording",
+    "VUID-vkCmdDrawClusterHUAWEI-commandBuffer-recording",
+    "VUID-vkCmdDrawClusterIndirectHUAWEI-commandBuffer-recording",
     "VUID-vkCmdDrawIndexed-commandBuffer-recording",
     "VUID-vkCmdDrawIndexedIndirect-commandBuffer-recording",
     "VUID-vkCmdDrawIndexedIndirectCount-commandBuffer-recording",
@@ -332,6 +331,8 @@ static const std::array<CommandSupportedQueueType, CMD_RANGE_SIZE> kGeneratedQue
     {VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdDispatchBase-commandBuffer-cmdpool"},
     {VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdDispatchIndirect-commandBuffer-cmdpool"},
     {VK_QUEUE_GRAPHICS_BIT, "VUID-vkCmdDraw-commandBuffer-cmdpool"},
+    {VK_QUEUE_GRAPHICS_BIT, "VUID-vkCmdDrawClusterHUAWEI-commandBuffer-cmdpool"},
+    {VK_QUEUE_GRAPHICS_BIT, "VUID-vkCmdDrawClusterIndirectHUAWEI-commandBuffer-cmdpool"},
     {VK_QUEUE_GRAPHICS_BIT, "VUID-vkCmdDrawIndexed-commandBuffer-cmdpool"},
     {VK_QUEUE_GRAPHICS_BIT, "VUID-vkCmdDrawIndexedIndirect-commandBuffer-cmdpool"},
     {VK_QUEUE_GRAPHICS_BIT, "VUID-vkCmdDrawIndexedIndirectCount-commandBuffer-cmdpool"},
@@ -574,6 +575,8 @@ static const std::array<CommandSupportedRenderPass, CMD_RANGE_SIZE> kGeneratedRe
     {CMD_RENDER_PASS_OUTSIDE, "VUID-vkCmdDispatchBase-renderpass"},
     {CMD_RENDER_PASS_OUTSIDE, "VUID-vkCmdDispatchIndirect-renderpass"},
     {CMD_RENDER_PASS_INSIDE, "VUID-vkCmdDraw-renderpass"},
+    {CMD_RENDER_PASS_INSIDE, "VUID-vkCmdDrawClusterHUAWEI-renderpass"},
+    {CMD_RENDER_PASS_INSIDE, "VUID-vkCmdDrawClusterIndirectHUAWEI-renderpass"},
     {CMD_RENDER_PASS_INSIDE, "VUID-vkCmdDrawIndexed-renderpass"},
     {CMD_RENDER_PASS_INSIDE, "VUID-vkCmdDrawIndexedIndirect-renderpass"},
     {CMD_RENDER_PASS_INSIDE, "VUID-vkCmdDrawIndexedIndirectCount-renderpass"},
@@ -737,6 +740,250 @@ static const std::array<CommandSupportedRenderPass, CMD_RANGE_SIZE> kGeneratedRe
     {CMD_RENDER_PASS_BOTH, kVUIDUndefined},
 }};
 
+enum CMD_VIDEO_CODING_TYPE {
+    CMD_VIDEO_CODING_INSIDE,
+    CMD_VIDEO_CODING_OUTSIDE,
+    CMD_VIDEO_CODING_BOTH
+};
+struct CommandSupportedVideoCoding {
+    CMD_VIDEO_CODING_TYPE videoCoding;
+    const char* vuid;
+};
+static const std::array<CommandSupportedVideoCoding, CMD_RANGE_SIZE> kGeneratedVideoCodingList = {{
+    {CMD_VIDEO_CODING_BOTH, kVUIDUndefined}, // CMD_NONE
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdBeginConditionalRenderingEXT-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdBeginDebugUtilsLabelEXT-videocoding"},
+    {CMD_VIDEO_CODING_BOTH, kVUIDUndefined},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdBeginQueryIndexedEXT-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdBeginRenderPass-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdBeginRenderPass2-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdBeginRenderPass2-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdBeginRendering-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdBeginRendering-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdBeginTransformFeedbackEXT-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdBeginVideoCodingKHR-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdBindDescriptorBufferEmbeddedSamplersEXT-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdBindDescriptorBuffersEXT-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdBindDescriptorSets-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdBindIndexBuffer-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdBindInvocationMaskHUAWEI-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdBindPipeline-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdBindPipelineShaderGroupNV-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdBindShadingRateImageNV-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdBindTransformFeedbackBuffersEXT-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdBindVertexBuffers-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdBindVertexBuffers2-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdBindVertexBuffers2-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdBlitImage-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdBlitImage2-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdBlitImage2-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdBuildAccelerationStructureNV-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdBuildAccelerationStructuresIndirectKHR-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdBuildAccelerationStructuresKHR-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdBuildMicromapsEXT-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdClearAttachments-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdClearColorImage-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdClearDepthStencilImage-videocoding"},
+    {CMD_VIDEO_CODING_INSIDE, "VUID-vkCmdControlVideoCodingKHR-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdCopyAccelerationStructureKHR-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdCopyAccelerationStructureNV-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdCopyAccelerationStructureToMemoryKHR-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdCopyBuffer-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdCopyBuffer2-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdCopyBuffer2-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdCopyBufferToImage-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdCopyBufferToImage2-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdCopyBufferToImage2-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdCopyImage-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdCopyImage2-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdCopyImage2-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdCopyImageToBuffer-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdCopyImageToBuffer2-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdCopyImageToBuffer2-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdCopyMemoryIndirectNV-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdCopyMemoryToAccelerationStructureKHR-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdCopyMemoryToImageIndirectNV-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdCopyMemoryToMicromapEXT-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdCopyMicromapEXT-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdCopyMicromapToMemoryEXT-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdCopyQueryPoolResults-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdCuLaunchKernelNVX-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdDebugMarkerBeginEXT-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdDebugMarkerEndEXT-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdDebugMarkerInsertEXT-videocoding"},
+    {CMD_VIDEO_CODING_INSIDE, "VUID-vkCmdDecodeVideoKHR-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdDecompressMemoryIndirectCountNV-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdDecompressMemoryNV-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdDispatch-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdDispatchBase-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdDispatchBase-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdDispatchIndirect-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdDraw-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdDrawClusterHUAWEI-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdDrawClusterIndirectHUAWEI-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdDrawIndexed-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdDrawIndexedIndirect-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdDrawIndexedIndirectCount-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdDrawIndexedIndirectCount-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdDrawIndexedIndirectCount-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdDrawIndirect-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdDrawIndirectByteCountEXT-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdDrawIndirectCount-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdDrawIndirectCount-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdDrawIndirectCount-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdDrawMeshTasksEXT-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdDrawMeshTasksIndirectCountEXT-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdDrawMeshTasksIndirectCountNV-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdDrawMeshTasksIndirectEXT-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdDrawMeshTasksIndirectNV-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdDrawMeshTasksNV-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdDrawMultiEXT-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdDrawMultiIndexedEXT-videocoding"},
+    {CMD_VIDEO_CODING_INSIDE, "VUID-vkCmdEncodeVideoKHR-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdEndConditionalRenderingEXT-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdEndDebugUtilsLabelEXT-videocoding"},
+    {CMD_VIDEO_CODING_BOTH, kVUIDUndefined},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdEndQueryIndexedEXT-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdEndRenderPass-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdEndRenderPass2-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdEndRenderPass2-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdEndRendering-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdEndRendering-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdEndTransformFeedbackEXT-videocoding"},
+    {CMD_VIDEO_CODING_INSIDE, "VUID-vkCmdEndVideoCodingKHR-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdExecuteCommands-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdExecuteGeneratedCommandsNV-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdFillBuffer-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdInsertDebugUtilsLabelEXT-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdNextSubpass-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdNextSubpass2-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdNextSubpass2-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdOpticalFlowExecuteNV-videocoding"},
+    {CMD_VIDEO_CODING_BOTH, kVUIDUndefined},
+    {CMD_VIDEO_CODING_BOTH, kVUIDUndefined},
+    {CMD_VIDEO_CODING_BOTH, kVUIDUndefined},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdPreprocessGeneratedCommandsNV-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdPushConstants-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdPushDescriptorSetKHR-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdPushDescriptorSetWithTemplateKHR-videocoding"},
+    {CMD_VIDEO_CODING_BOTH, kVUIDUndefined},
+    {CMD_VIDEO_CODING_BOTH, kVUIDUndefined},
+    {CMD_VIDEO_CODING_BOTH, kVUIDUndefined},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdResetQueryPool-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdResolveImage-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdResolveImage2-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdResolveImage2-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetAlphaToCoverageEnableEXT-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetAlphaToOneEnableEXT-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetBlendConstants-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetCheckpointNV-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetCoarseSampleOrderNV-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetColorBlendAdvancedEXT-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetColorBlendEnableEXT-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetColorBlendEquationEXT-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetColorWriteEnableEXT-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetColorWriteMaskEXT-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetConservativeRasterizationModeEXT-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetCoverageModulationModeNV-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetCoverageModulationTableEnableNV-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetCoverageModulationTableNV-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetCoverageReductionModeNV-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetCoverageToColorEnableNV-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetCoverageToColorLocationNV-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetCullMode-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetCullMode-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetDepthBias-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetDepthBiasEnable-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetDepthBiasEnable-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetDepthBounds-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetDepthBoundsTestEnable-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetDepthBoundsTestEnable-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetDepthClampEnableEXT-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetDepthClipEnableEXT-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetDepthClipNegativeOneToOneEXT-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetDepthCompareOp-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetDepthCompareOp-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetDepthTestEnable-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetDepthTestEnable-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetDepthWriteEnable-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetDepthWriteEnable-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetDescriptorBufferOffsetsEXT-videocoding"},
+    {CMD_VIDEO_CODING_BOTH, kVUIDUndefined},
+    {CMD_VIDEO_CODING_BOTH, kVUIDUndefined},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetDiscardRectangleEXT-videocoding"},
+    {CMD_VIDEO_CODING_BOTH, kVUIDUndefined},
+    {CMD_VIDEO_CODING_BOTH, kVUIDUndefined},
+    {CMD_VIDEO_CODING_BOTH, kVUIDUndefined},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetExclusiveScissorNV-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetExtraPrimitiveOverestimationSizeEXT-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetFragmentShadingRateEnumNV-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetFragmentShadingRateKHR-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetFrontFace-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetFrontFace-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetLineRasterizationModeEXT-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetLineStippleEXT-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetLineStippleEnableEXT-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetLineWidth-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetLogicOpEXT-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetLogicOpEnableEXT-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetPatchControlPointsEXT-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetPerformanceMarkerINTEL-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetPerformanceOverrideINTEL-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetPerformanceStreamMarkerINTEL-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetPolygonModeEXT-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetPrimitiveRestartEnable-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetPrimitiveRestartEnable-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetPrimitiveTopology-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetPrimitiveTopology-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetProvokingVertexModeEXT-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetRasterizationSamplesEXT-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetRasterizationStreamEXT-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetRasterizerDiscardEnable-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetRasterizerDiscardEnable-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetRayTracingPipelineStackSizeKHR-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetRepresentativeFragmentTestEnableNV-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetSampleLocationsEXT-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetSampleLocationsEnableEXT-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetSampleMaskEXT-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetScissor-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetScissorWithCount-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetScissorWithCount-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetShadingRateImageEnableNV-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetStencilCompareMask-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetStencilOp-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetStencilOp-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetStencilReference-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetStencilTestEnable-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetStencilTestEnable-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetStencilWriteMask-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetTessellationDomainOriginEXT-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetVertexInputEXT-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetViewport-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetViewportShadingRatePaletteNV-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetViewportSwizzleNV-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetViewportWScalingEnableNV-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetViewportWScalingNV-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetViewportWithCount-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetViewportWithCount-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSubpassShadingHUAWEI-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdTraceRaysIndirect2KHR-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdTraceRaysIndirectKHR-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdTraceRaysKHR-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdTraceRaysNV-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdUpdateBuffer-videocoding"},
+    {CMD_VIDEO_CODING_BOTH, kVUIDUndefined},
+    {CMD_VIDEO_CODING_BOTH, kVUIDUndefined},
+    {CMD_VIDEO_CODING_BOTH, kVUIDUndefined},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdWriteAccelerationStructuresPropertiesKHR-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdWriteAccelerationStructuresPropertiesNV-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdWriteBufferMarker2AMD-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdWriteBufferMarkerAMD-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdWriteMicromapsPropertiesEXT-videocoding"},
+    {CMD_VIDEO_CODING_BOTH, kVUIDUndefined},
+    {CMD_VIDEO_CODING_BOTH, kVUIDUndefined},
+    {CMD_VIDEO_CODING_BOTH, kVUIDUndefined},
+}};
+
 static const std::array<const char *, CMD_RANGE_SIZE> kGeneratedBufferLevelList = {{
     kVUIDUndefined, // CMD_NONE
     nullptr,
@@ -800,6 +1047,8 @@ static const std::array<const char *, CMD_RANGE_SIZE> kGeneratedBufferLevelList 
     nullptr,
     nullptr,
     "VUID-vkCmdDecodeVideoKHR-bufferlevel",
+    nullptr,
+    nullptr,
     nullptr,
     nullptr,
     nullptr,
@@ -1004,6 +1253,14 @@ bool CoreChecks::ValidateCmd(const CMD_BUFFER_STATE &cb_state, const CMD_TYPE cm
         skip |= OutsideRenderPass(cb_state, caller_name, supportedRenderPass.vuid);
     } else if (supportedRenderPass.renderPass == CMD_RENDER_PASS_OUTSIDE) {
         skip |= InsideRenderPass(cb_state, caller_name, supportedRenderPass.vuid);
+    }
+
+    // Validate if command is inside or outside a video coding scope if applicable
+    const auto supportedVideoCoding = kGeneratedVideoCodingList[cmd];
+    if (supportedVideoCoding.videoCoding == CMD_VIDEO_CODING_INSIDE) {
+        skip |= OutsideVideoCodingScope(cb_state, caller_name, supportedVideoCoding.vuid);
+    } else if (supportedVideoCoding.videoCoding == CMD_VIDEO_CODING_OUTSIDE) {
+        skip |= InsideVideoCodingScope(cb_state, caller_name, supportedVideoCoding.vuid);
     }
 
     // Validate if command has to be recorded in a primary command buffer
@@ -1301,7 +1558,11 @@ static CBDynamicStatus ConvertToCBDynamicStatus(VkDynamicState state) {
     }
 }
 
-std::string DynamicStateString(CBDynamicFlags const &dynamic_state) {
+const char* DynamicStateToString(CBDynamicStatus status) {
+    return string_VkDynamicState(ConvertToDynamicState(status));
+}
+
+std::string DynamicStatesToString(CBDynamicFlags const &dynamic_state) {
     std::string ret;
     // enum is not zero based
     for (int index = 1; index < CB_DYNAMIC_STATUS_NUM; ++index) {

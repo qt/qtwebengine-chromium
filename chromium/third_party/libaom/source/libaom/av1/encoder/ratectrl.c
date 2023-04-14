@@ -174,34 +174,30 @@ int av1_get_bpmb_enumerator(FRAME_TYPE frame_type,
   return enumerator;
 }
 
+static int get_init_ratio(double sse) { return (int)(300000 / sse); }
+
 int av1_rc_bits_per_mb(const AV1_COMP *cpi, FRAME_TYPE frame_type, int qindex,
                        double correction_factor, int accurate_estimate) {
   const AV1_COMMON *const cm = &cpi->common;
   const int is_screen_content_type = cpi->is_screen_content_type;
   const aom_bit_depth_t bit_depth = cm->seq_params->bit_depth;
   const double q = av1_convert_qindex_to_q(qindex, bit_depth);
+  int enumerator = av1_get_bpmb_enumerator(frame_type, is_screen_content_type);
 
-  const int min_dim = AOMMIN(cm->width, cm->height);
+  assert(correction_factor <= MAX_BPB_FACTOR &&
+         correction_factor >= MIN_BPB_FACTOR);
 
   if (frame_type != KEY_FRAME && accurate_estimate) {
     assert(cpi->rec_sse != UINT64_MAX);
     const int mbs = cm->mi_params.MBs;
-    const int res = (min_dim < 480) ? 0 : ((min_dim < 720) ? 1 : 2);
-    const double sse_over_q2 = (double)(cpi->rec_sse << BPER_MB_NORMBITS) /
-                               ((double)q * q) / (double)mbs;
-    const double coef[3][2] = {
-      { 0.535, 3000.0 },  // < 480
-      { 0.590, 3000.0 },  // < 720
-      { 0.485, 1000.0 }   // 720
-    };
-    int bits = (int)(coef[res][0] * sse_over_q2 + coef[res][1]);
-    return (int)(bits * correction_factor);
+    const double sse_sqrt =
+        (double)((int)sqrt((double)(cpi->rec_sse)) << BPER_MB_NORMBITS) /
+        (double)mbs;
+    const int ratio = (cpi->rc.bit_est_ratio == 0) ? get_init_ratio(sse_sqrt)
+                                                   : cpi->rc.bit_est_ratio;
+    // Clamp the enumerator to lower the q fluctuations.
+    enumerator = AOMMIN(AOMMAX((int)(ratio * sse_sqrt), 20000), 170000);
   }
-
-  const int enumerator =
-      av1_get_bpmb_enumerator(frame_type, is_screen_content_type);
-  assert(correction_factor <= MAX_BPB_FACTOR &&
-         correction_factor >= MIN_BPB_FACTOR);
 
   // q based adjustment to baseline enumerator
   return (int)(enumerator * correction_factor / q);
@@ -430,6 +426,7 @@ void av1_rc_init(const AV1EncoderConfig *oxcf, RATE_CONTROL *rc) {
   rc->resize_count = 0;
   rc->rtc_external_ratectrl = 0;
   rc->frame_level_fast_extra_bits = 0;
+  rc->use_external_qp_one_pass = 0;
 }
 
 int av1_rc_drop_frame(AV1_COMP *cpi) {
@@ -484,13 +481,29 @@ static int adjust_q_cbr(const AV1_COMP *cpi, int q, int active_worst_quality,
   const PRIMARY_RATE_CONTROL *const p_rc = &cpi->ppi->p_rc;
   const AV1_COMMON *const cm = &cpi->common;
   const RefreshFrameInfo *const refresh_frame = &cpi->refresh_frame;
-  const int max_delta_down = (cpi->oxcf.tune_cfg.content == AOM_CONTENT_SCREEN)
-                                 ? AOMMIN(8, AOMMAX(1, rc->q_1_frame / 16))
-                                 : AOMMIN(16, AOMMAX(1, rc->q_1_frame / 8));
+  int max_delta_down;
   const int max_delta_up = 20;
   const int change_avg_frame_bandwidth =
       abs(rc->avg_frame_bandwidth - rc->prev_avg_frame_bandwidth) >
       0.1 * (rc->avg_frame_bandwidth);
+
+  // Set the maximum adjustment down for Q for this frame.
+  if (cpi->oxcf.q_cfg.aq_mode == CYCLIC_REFRESH_AQ &&
+      cpi->cyclic_refresh->apply_cyclic_refresh) {
+    max_delta_down = AOMMIN(16, AOMMAX(1, rc->q_1_frame / 8));
+    // For static screen type content limit the Q drop till the start of the
+    // next refresh cycle.
+    if (cpi->is_screen_content_type) {
+      if (cpi->cyclic_refresh->sb_index > cpi->cyclic_refresh->last_sb_index) {
+        max_delta_down = AOMMIN(8, AOMMAX(1, rc->q_1_frame / 32));
+      }
+    }
+  } else {
+    max_delta_down = (cpi->is_screen_content_type)
+                         ? AOMMIN(8, AOMMAX(1, rc->q_1_frame / 16))
+                         : AOMMIN(16, AOMMAX(1, rc->q_1_frame / 8));
+  }
+
   // If resolution changes or avg_frame_bandwidth significantly changed,
   // then set this flag to indicate change in target bits per macroblock.
   const int change_target_bits_mb =
@@ -546,9 +559,9 @@ static int adjust_q_cbr(const AV1_COMP *cpi, int q, int active_worst_quality,
              cpi->oxcf.tune_cfg.content != AOM_CONTENT_SCREEN)
       q = rc->q_1_frame + max_delta_up;
   }
-  // For single spatial layer: if resolution has increased push q closer
+  // For non-svc (single layer): if resolution has increased push q closer
   // to the active_worst to avoid excess overshoot.
-  if (cpi->svc.number_spatial_layers <= 1 && cm->prev_frame &&
+  if (!cpi->ppi->use_svc && cm->prev_frame &&
       (width * height > 1.5 * cm->prev_frame->width * cm->prev_frame->height))
     q = (q + active_worst_quality) >> 1;
   return AOMMAX(AOMMIN(q, cpi->rc.worst_quality), cpi->rc.best_quality);
@@ -2048,7 +2061,8 @@ static void rc_compute_variance_onepass_rt(AV1_COMP *cpi) {
     pre_y += (pre_ystride << 6) - (sb_cols << 6);
   }
   assert(num_samples > 0);
-  if (num_samples > 0) cpi->rec_sse = fsse;
+  // Ensure rec_sse > 0
+  if (num_samples > 0) cpi->rec_sse = fsse > 0 ? fsse : 1;
 }
 
 int av1_rc_pick_q_and_bounds(AV1_COMP *cpi, int width, int height, int gf_index,
@@ -2167,6 +2181,19 @@ void av1_rc_postencode_update(AV1_COMP *cpi, uint64_t bytes_used) {
 
   // Post encode loop adjustment of Q prediction.
   av1_rc_update_rate_correction_factors(cpi, 0, cm->width, cm->height);
+
+  // Update bit estimation ratio.
+  if (cm->current_frame.frame_type != KEY_FRAME &&
+      cpi->sf.hl_sf.accurate_bit_estimate) {
+    const double q = av1_convert_qindex_to_q(cm->quant_params.base_qindex,
+                                             cm->seq_params->bit_depth);
+    const int this_bit_est_ratio =
+        (int)(rc->projected_frame_size * q / sqrt((double)cpi->rec_sse));
+    cpi->rc.bit_est_ratio =
+        cpi->rc.bit_est_ratio == 0
+            ? this_bit_est_ratio
+            : (7 * cpi->rc.bit_est_ratio + this_bit_est_ratio) / 8;
+  }
 
   // Keep a record of last Q and ambient average Q.
   if (current_frame->frame_type == KEY_FRAME) {
@@ -3068,19 +3095,21 @@ static void resize_reset_rc(AV1_COMP *cpi, int resize_width, int resize_height,
     if (qindex <= 120 * p_rc->last_q[INTER_FRAME] / 100)
       p_rc->rate_correction_factors[INTER_NORMAL] *= 1.5;
   }
-  // Apply the same rate control reset to all temporal layers.
-  for (int tl = 0; tl < svc->number_temporal_layers; tl++) {
-    LAYER_CONTEXT *lc = NULL;
-    lc = &svc->layer_context[svc->spatial_layer_id *
-                                 svc->number_temporal_layers +
-                             tl];
-    lc->rc.resize_state = rc->resize_state;
-    lc->p_rc.buffer_level = lc->p_rc.optimal_buffer_level;
-    lc->p_rc.bits_off_target = lc->p_rc.optimal_buffer_level;
-    lc->p_rc.rate_correction_factors[INTER_NORMAL] =
-        p_rc->rate_correction_factors[INTER_NORMAL];
-    lc->p_rc.avg_frame_qindex[INTER_FRAME] =
-        p_rc->avg_frame_qindex[INTER_FRAME];
+  if (svc->number_temporal_layers > 1) {
+    // Apply the same rate control reset to all temporal layers.
+    for (int tl = 0; tl < svc->number_temporal_layers; tl++) {
+      LAYER_CONTEXT *lc = NULL;
+      lc = &svc->layer_context[svc->spatial_layer_id *
+                                   svc->number_temporal_layers +
+                               tl];
+      lc->rc.resize_state = rc->resize_state;
+      lc->p_rc.buffer_level = lc->p_rc.optimal_buffer_level;
+      lc->p_rc.bits_off_target = lc->p_rc.optimal_buffer_level;
+      lc->p_rc.rate_correction_factors[INTER_NORMAL] =
+          p_rc->rate_correction_factors[INTER_NORMAL];
+      lc->p_rc.avg_frame_qindex[INTER_FRAME] =
+          p_rc->avg_frame_qindex[INTER_FRAME];
+    }
   }
 }
 

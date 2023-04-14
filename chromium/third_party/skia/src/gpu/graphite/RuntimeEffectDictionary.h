@@ -9,7 +9,8 @@
 #define skgpu_graphite_RuntimeEffectDictionary_DEFINED
 
 #include "include/core/SkRefCnt.h"
-#include "include/private/SkTHash.h"
+#include "include/effects/SkRuntimeEffect.h"
+#include "src/core/SkTHash.h"
 
 class SkRuntimeEffect;
 

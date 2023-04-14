@@ -445,7 +445,7 @@ EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bool operator >= (const half& a, const hal
 // of the functions, while the latter can only deal with one of them.
 #elif !defined(EIGEN_HAS_NATIVE_FP16) || (EIGEN_COMP_CLANG && !EIGEN_COMP_NVCC) // Emulate support for half floats
 
-#if EIGEN_COMP_CLANG && defined(EIGEN_CUDACC)
+#if EIGEN_COMP_CLANG && defined(EIGEN_GPUCC)
 // We need to provide emulated *host-side* FP16 operators for clang.
 #pragma push_macro("EIGEN_DEVICE_FUNC")
 #undef EIGEN_DEVICE_FUNC
@@ -510,7 +510,7 @@ EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bool operator >= (const half& a, const hal
   return float(a) >= float(b);
 }
 
-#if defined(__clang__) && defined(__CUDA__)
+#if EIGEN_COMP_CLANG && defined(EIGEN_GPUCC)
 #pragma pop_macro("EIGEN_DEVICE_FUNC")
 #endif
 #endif  // Emulate support for half floats

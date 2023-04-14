@@ -18,7 +18,6 @@
 #include "protobuf-matchers/protocol-buffer-matchers.h"
 #include "gtest/gtest.h"
 
-namespace location {
 namespace nearby {
 namespace {
 
@@ -85,7 +84,13 @@ TEST(WifiUtilsTest, ConvertFrequencyToChannel) {
             WifiUtils::kUnspecified);
 }
 
+TEST(WifiUtilsTest, Ipv4Validation) {
+  EXPECT_FALSE(WifiUtils::ValidateIPV4("12.34.212.46.37"));
+  EXPECT_FALSE(WifiUtils::ValidateIPV4("12.gt.212.46"));
+  EXPECT_FALSE(WifiUtils::ValidateIPV4("192.168.358.46"));
+  EXPECT_FALSE(WifiUtils::ValidateIPV4("192.-168.1.46"));
+  EXPECT_TRUE(WifiUtils::ValidateIPV4("192.168.1.46"));
+}
+
 }  // namespace
 }  // namespace nearby
-}  // namespace location
-

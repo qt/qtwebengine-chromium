@@ -160,8 +160,14 @@ export async function languageFromMIME(mimeType: string): Promise<CodeMirror.Lan
     case 'text/x-scss':
       return new CodeMirror.LanguageSupport(await CodeMirror.scss());
 
+    case 'text/x.angular':
+      return (await CodeMirror.angular()).angular();
+
     case 'text/x.svelte':
       return (await CodeMirror.svelte()).svelte();
+
+    case 'text/x.vue':
+      return (await CodeMirror.vue()).vue();
 
     default:
       return null;

@@ -3158,13 +3158,8 @@ TEST_P(QuicSessionTestServer, DonotPtoStreamDataBeforeHandshakeConfirmed) {
   // Buffered crypto data gets sent.
   EXPECT_CALL(*connection_, SendCryptoData(ENCRYPTION_INITIAL, _, _))
       .WillOnce(Return(350));
-  if (GetQuicReloadableFlag(
-          quic_donot_pto_stream_data_before_handshake_confirmed)) {
-    // Verify stream data is not sent on PTO before handshake confirmed.
-    EXPECT_CALL(*stream, OnCanWrite()).Times(0);
-  } else {
-    EXPECT_CALL(*stream, OnCanWrite());
-  }
+  // Verify stream data is not sent on PTO before handshake confirmed.
+  EXPECT_CALL(*stream, OnCanWrite()).Times(0);
 
   // Fire PTO.
   QuicConnectionPeer::SetInProbeTimeOut(connection_, true);
@@ -3177,6 +3172,62 @@ TEST_P(QuicSessionTestServer, SetStatelessResetTokenToSend) {
     return;
   }
   EXPECT_TRUE(session_.config()->HasStatelessResetTokenToSend());
+}
+
+TEST_P(QuicSessionTestServer,
+       SetServerPreferredAddressAccordingToAddressFamily) {
+  if (!session_.version().HasIetfQuicFrames()) {
+    return;
+  }
+  EXPECT_EQ(quiche::IpAddressFamily::IP_V4,
+            connection_->peer_address().host().address_family());
+  QuicConnectionPeer::SetEffectivePeerAddress(connection_,
+                                              connection_->peer_address());
+  QuicTagVector copt;
+  copt.push_back(kSPAD);
+  QuicConfigPeer::SetReceivedConnectionOptions(session_.config(), copt);
+  QuicSocketAddress preferred_address(QuicIpAddress::Loopback4(), 12345);
+  session_.config()->SetIPv4AlternateServerAddressToSend(preferred_address);
+  session_.config()->SetIPv6AlternateServerAddressToSend(
+      QuicSocketAddress(QuicIpAddress::Loopback6(), 12345));
+
+  connection_->SetDefaultEncryptionLevel(ENCRYPTION_FORWARD_SECURE);
+  session_.OnConfigNegotiated();
+  EXPECT_EQ(QuicSocketAddress(QuicIpAddress::Loopback4(), 12345),
+            session_.config()
+                ->GetPreferredAddressToSend(quiche::IpAddressFamily::IP_V4)
+                .value());
+  EXPECT_FALSE(session_.config()
+                   ->GetPreferredAddressToSend(quiche::IpAddressFamily::IP_V6)
+                   .has_value());
+  EXPECT_EQ(preferred_address,
+            QuicConnectionPeer::GetSentServerPreferredAddress(connection_));
+}
+
+TEST_P(QuicSessionTestServer, NoServerPreferredAddressIfAddressFamilyMismatch) {
+  if (!session_.version().HasIetfQuicFrames()) {
+    return;
+  }
+  EXPECT_EQ(quiche::IpAddressFamily::IP_V4,
+            connection_->peer_address().host().address_family());
+  QuicConnectionPeer::SetEffectivePeerAddress(connection_,
+                                              connection_->peer_address());
+  QuicTagVector copt;
+  copt.push_back(kSPAD);
+  QuicConfigPeer::SetReceivedConnectionOptions(session_.config(), copt);
+  session_.config()->SetIPv6AlternateServerAddressToSend(
+      QuicSocketAddress(QuicIpAddress::Loopback6(), 12345));
+
+  connection_->SetDefaultEncryptionLevel(ENCRYPTION_FORWARD_SECURE);
+  session_.OnConfigNegotiated();
+  EXPECT_FALSE(session_.config()
+                   ->GetPreferredAddressToSend(quiche::IpAddressFamily::IP_V4)
+                   .has_value());
+  EXPECT_FALSE(session_.config()
+                   ->GetPreferredAddressToSend(quiche::IpAddressFamily::IP_V6)
+                   .has_value());
+  EXPECT_FALSE(QuicConnectionPeer::GetSentServerPreferredAddress(connection_)
+                   .IsInitialized());
 }
 
 // A client test class that can be used when the automatic configuration is not

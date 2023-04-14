@@ -13,50 +13,50 @@ import {Events as ContrastInfoEvents, type ContrastInfo} from './ContrastInfo.js
 
 const UIStrings = {
   /**
-  *@description Label for when no contrast information is available in the color picker
-  */
+   *@description Label for when no contrast information is available in the color picker
+   */
   noContrastInformationAvailable: 'No contrast information available',
   /**
-  *@description Text of a DOM element in Contrast Details of the Color Picker
-  */
+   *@description Text of a DOM element in Contrast Details of the Color Picker
+   */
   contrastRatio: 'Contrast ratio',
   /**
-  *@description Text to show more content
-  */
+   *@description Text to show more content
+   */
   showMore: 'Show more',
   /**
-  *@description Choose bg color text content in Contrast Details of the Color Picker
-  */
+   *@description Choose bg color text content in Contrast Details of the Color Picker
+   */
   pickBackgroundColor: 'Pick background color',
   /**
-  *@description Tooltip text that appears when hovering over largeicon eyedropper button in Contrast Details of the Color Picker
-  */
+   *@description Tooltip text that appears when hovering over largeicon eyedropper button in Contrast Details of the Color Picker
+   */
   toggleBackgroundColorPicker: 'Toggle background color picker',
   /**
-  *@description Text of a button in Contrast Details of the Color Picker
-  *@example {rgba(0 0 0 / 100%) } PH1
-  */
+   *@description Text of a button in Contrast Details of the Color Picker
+   *@example {rgba(0 0 0 / 100%) } PH1
+   */
   useSuggestedColorStoFixLow: 'Use suggested color {PH1}to fix low contrast',
   /**
-  *@description Label for the APCA contrast in Color Picker
-  */
+   *@description Label for the APCA contrast in Color Picker
+   */
   apca: 'APCA',
   /**
-  *@description Label aa text content in Contrast Details of the Color Picker
-  */
+   *@description Label aa text content in Contrast Details of the Color Picker
+   */
   aa: 'AA',
   /**
-  *@description Text that starts with a colon and includes a placeholder
-  *@example {3.0} PH1
-  */
+   *@description Text that starts with a colon and includes a placeholder
+   *@example {3.0} PH1
+   */
   placeholderWithColon: ': {PH1}',
   /**
-  *@description Label aaa text content in Contrast Details of the Color Picker
-  */
+   *@description Label aaa text content in Contrast Details of the Color Picker
+   */
   aaa: 'AAA',
   /**
-  *@description Text to show less content
-  */
+   *@description Text to show less content
+   */
   showLess: 'Show less',
 };
 const str_ = i18n.i18n.registerUIStrings('ui/legacy/components/color_picker/ContrastDetails.ts', UIStrings);
@@ -220,8 +220,7 @@ export class ContrastDetails extends Common.ObjectWrapper.ObjectWrapper<EventTyp
   private createFixColorButton(parent: Element, suggestedColor: Common.Color.Color): HTMLElement {
     const button = parent.createChild('button', 'contrast-fix-button') as HTMLElement;
     const originalColorFormat = this.contrastInfo.colorFormat();
-    const colorFormat = originalColorFormat && originalColorFormat !== Common.Color.Format.Nickname &&
-            originalColorFormat !== Common.Color.Format.Original ?
+    const colorFormat = originalColorFormat && originalColorFormat !== Common.Color.Format.Nickname ?
         originalColorFormat :
         Common.Color.Format.HEXA;
     const formattedColor = suggestedColor.asString(colorFormat);
@@ -289,6 +288,7 @@ export class ContrastDetails extends Common.ObjectWrapper.ObjectWrapper<EventTyp
       labelAPCA.addEventListener('click', (_event: Event) => ContrastDetails.showHelp());
       this.elementInternal.classList.toggle('contrast-fail', !passesAPCA);
       this.contrastValueBubble.classList.toggle('contrast-aa', passesAPCA);
+      this.bgColorSwatch.setColors(fgColor, bgColor);
       return;
     }
 
@@ -485,6 +485,6 @@ export class Swatch {
     this.textPreview.style.color = fgColor.asString(Common.Color.Format.RGBA) as string;
     this.swatchInnerElement.style.backgroundColor = bgColor.asString(Common.Color.Format.RGBA) as string;
     // Show border if the swatch is white.
-    this.swatchElement.classList.toggle('swatch-inner-white', bgColor.hsla()[2] > 0.9);
+    this.swatchElement.classList.toggle('swatch-inner-white', bgColor.as(Common.Color.Format.HSL).l > 0.9);
   }
 }

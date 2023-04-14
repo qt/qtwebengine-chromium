@@ -26,15 +26,9 @@
 #include "aom/aomdx.h"
 #endif
 
-#if defined(_WIN32) || defined(__OS2__)
+#if defined(_WIN32)
 #include <io.h>
 #include <fcntl.h>
-
-#ifdef __OS2__
-#define _setmode setmode
-#define _fileno fileno
-#define _O_BINARY O_BINARY
-#endif
 #endif
 
 #define LOG_ERROR(label)               \
@@ -50,7 +44,7 @@
 
 FILE *set_binary_mode(FILE *stream) {
   (void)stream;
-#if defined(_WIN32) || defined(__OS2__)
+#if defined(_WIN32)
   _setmode(_fileno(stream), _O_BINARY);
 #endif
   return stream;

@@ -261,6 +261,15 @@ typedef struct {
 
   int prev_coded_width;
   int prev_coded_height;
+
+  // The ratio used for inter frames in bit estimation.
+  // TODO(yunqing): if golden frame is treated differently (e.g. gf_cbr_boost_
+  // pct > THR), consider to add bit_est_ratio_g for golden frames.
+  int bit_est_ratio;
+
+  // Whether use a fixed qp for the frame, bypassing internal rate control.
+  // This flag will reset to 0 after every frame.
+  int use_external_qp_one_pass;
   /*!\endcond */
 } RATE_CONTROL;
 

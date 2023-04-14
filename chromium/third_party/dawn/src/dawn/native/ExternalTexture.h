@@ -35,7 +35,7 @@ struct ExternalTextureParams {
     std::array<float, 8> gammaDecodingParams = {};
     std::array<float, 8> gammaEncodingParams = {};
     std::array<float, 12> gamutConversionMatrix = {};
-    std::array<float, 4> coordTransformMatrix = {};
+    std::array<float, 6> coordTransformMatrix = {};
 };
 
 MaybeError ValidateExternalTextureDescriptor(const DeviceBase* device,
@@ -60,18 +60,16 @@ class ExternalTextureBase : public ApiObjectBase {
     void APIDestroy();
 
   protected:
-    // Constructor used only for mocking and testing.
-    explicit ExternalTextureBase(DeviceBase* device);
+    ExternalTextureBase(DeviceBase* device, const ExternalTextureDescriptor* descriptor);
     void DestroyImpl() override;
+
+    MaybeError Initialize(DeviceBase* device, const ExternalTextureDescriptor* descriptor);
 
     ~ExternalTextureBase() override;
 
   private:
-    ExternalTextureBase(DeviceBase* device, const ExternalTextureDescriptor* descriptor);
-
     enum class ExternalTextureState { Alive, Destroyed };
     ExternalTextureBase(DeviceBase* device, ObjectBase::ErrorTag tag);
-    MaybeError Initialize(DeviceBase* device, const ExternalTextureDescriptor* descriptor);
 
     Ref<TextureBase> mPlaceholderTexture;
     Ref<BufferBase> mParamsBuffer;

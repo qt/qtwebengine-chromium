@@ -23,6 +23,7 @@
 #include "src/numbers/conversions.h"
 #include "src/objects/heap-number-inl.h"
 #include "src/objects/js-array-buffer-inl.h"
+#include "src/objects/js-array-buffer.h"
 #include "src/objects/js-array-inl.h"
 #include "src/objects/js-collection-inl.h"
 #include "src/objects/js-regexp-inl.h"
@@ -453,7 +454,8 @@ Maybe<bool> ValueSerializer::WriteObject(Handle<Object> object) {
       WriteBigInt(BigInt::cast(*object));
       return ThrowIfOutOfMemory();
     case JS_TYPED_ARRAY_TYPE:
-    case JS_DATA_VIEW_TYPE: {
+    case JS_DATA_VIEW_TYPE:
+    case JS_RAB_GSAB_DATA_VIEW_TYPE: {
       // Despite being JSReceivers, these have their wrapped buffer serialized
       // first. That makes this logic a little quirky, because it needs to
       // happen before we assign object IDs.
@@ -605,6 +607,7 @@ Maybe<bool> ValueSerializer::WriteJSReceiver(Handle<JSReceiver> receiver) {
       return WriteJSArrayBuffer(Handle<JSArrayBuffer>::cast(receiver));
     case JS_TYPED_ARRAY_TYPE:
     case JS_DATA_VIEW_TYPE:
+    case JS_RAB_GSAB_DATA_VIEW_TYPE:
       return WriteJSArrayBufferView(JSArrayBufferView::cast(*receiver));
     case JS_ERROR_TYPE:
       return WriteJSError(Handle<JSObject>::cast(receiver));
@@ -652,7 +655,7 @@ Maybe<bool> ValueSerializer::WriteJSObject(Handle<JSObject> object) {
     if (V8_LIKELY(!map_changed &&
                   details.location() == PropertyLocation::kField)) {
       DCHECK_EQ(PropertyKind::kData, details.kind());
-      FieldIndex field_index = FieldIndex::ForDescriptor(*map, i);
+      FieldIndex field_index = FieldIndex::ForDetails(*map, details);
       value = JSObject::FastPropertyAt(isolate_, object,
                                        details.representation(), field_index);
     } else {
@@ -979,8 +982,9 @@ Maybe<bool> ValueSerializer::WriteJSArrayBufferView(JSArrayBufferView view) {
 #undef TYPED_ARRAY_CASE
     }
   } else {
-    DCHECK(view.IsJSDataView());
-    if (JSDataView::cast(view).IsOutOfBounds()) {
+    DCHECK(view.IsJSDataViewOrRabGsabDataView());
+    if (view.IsJSRabGsabDataView() &&
+        JSRabGsabDataView::cast(view).IsOutOfBounds()) {
       DCHECK(v8_flags.harmony_rab_gsab);
       return ThrowDataCloneError(MessageTemplate::kDataCloneError,
                                  handle(view, isolate_));
@@ -1115,7 +1119,7 @@ Maybe<bool> ValueSerializer::WriteWasmMemory(Handle<WasmMemoryObject> object) {
 #endif  // V8_ENABLE_WEBASSEMBLY
 
 Maybe<bool> ValueSerializer::WriteSharedObject(Handle<HeapObject> object) {
-  if (!delegate_ || !isolate_->has_shared_heap()) {
+  if (!delegate_ || !isolate_->has_shared_space()) {
     return ThrowDataCloneError(MessageTemplate::kDataCloneError, object);
   }
 
@@ -2118,8 +2122,9 @@ MaybeHandle<JSArrayBufferView> ValueDeserializer::ReadJSArrayBufferView(
                                           is_backed_by_rab)) {
         return MaybeHandle<JSArrayBufferView>();
       }
-      Handle<JSDataView> data_view = isolate_->factory()->NewJSDataView(
-          buffer, byte_offset, byte_length, is_length_tracking);
+      Handle<JSDataViewOrRabGsabDataView> data_view =
+          isolate_->factory()->NewJSDataViewOrRabGsabDataView(
+              buffer, byte_offset, byte_length, is_length_tracking);
       CHECK_EQ(is_backed_by_rab, data_view->is_backed_by_rab());
       CHECK_EQ(is_length_tracking, data_view->is_length_tracking());
       AddObjectWithID(id, data_view);
@@ -2471,37 +2476,38 @@ Maybe<uint32_t> ValueDeserializer::ReadJSObjectProperties(
         // Deserializaton of |value| might have deprecated current |target|,
         // ensure we are working with the up-to-date version.
         target = Map::Update(isolate_, target);
-
-        InternalIndex descriptor(properties.size());
-        PropertyDetails details =
-            target->instance_descriptors(isolate_).GetDetails(descriptor);
-        Representation expected_representation = details.representation();
-        if (value->FitsRepresentation(expected_representation)) {
-          if (expected_representation.IsHeapObject() &&
-              !target->instance_descriptors(isolate_)
-                   .GetFieldType(descriptor)
-                   .NowContains(value)) {
-            Handle<FieldType> value_type =
-                value->OptimalType(isolate_, expected_representation);
-            MapUpdater::GeneralizeField(isolate_, target, descriptor,
-                                        details.constness(),
-                                        expected_representation, value_type);
-          }
-          DCHECK(target->instance_descriptors(isolate_)
+        if (!target->is_dictionary_map()) {
+          InternalIndex descriptor(properties.size());
+          PropertyDetails details =
+              target->instance_descriptors(isolate_).GetDetails(descriptor);
+          Representation expected_representation = details.representation();
+          if (value->FitsRepresentation(expected_representation)) {
+            if (expected_representation.IsHeapObject() &&
+                !target->instance_descriptors(isolate_)
                      .GetFieldType(descriptor)
-                     .NowContains(value));
-          properties.push_back(value);
-          map = target;
-          continue;
-        } else {
-          transitioning = false;
+                     .NowContains(value)) {
+              Handle<FieldType> value_type =
+                  value->OptimalType(isolate_, expected_representation);
+              MapUpdater::GeneralizeField(isolate_, target, descriptor,
+                                          details.constness(),
+                                          expected_representation, value_type);
+            }
+            DCHECK(target->instance_descriptors(isolate_)
+                       .GetFieldType(descriptor)
+                       .NowContains(value));
+            properties.push_back(value);
+            map = target;
+            continue;
+          }
         }
+        transitioning = false;
       }
 
       // Fell out of transitioning fast path. Commit the properties gathered so
       // far, and then start setting properties slowly instead.
       DCHECK(!transitioning);
       CHECK_LT(properties.size(), std::numeric_limits<uint32_t>::max());
+      CHECK(!map->is_dictionary_map());
       CommitProperties(object, map, properties);
       num_properties = static_cast<uint32_t>(properties.size());
 

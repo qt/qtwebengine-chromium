@@ -11,10 +11,10 @@
 #include "include/docs/SkPDFDocument.h"
 #include "include/gpu/GrContextOptions.h"
 #include "include/gpu/GrDirectContext.h"
-#include "include/private/SkTHash.h"
 #include "src/core/SkColorSpacePriv.h"
 #include "src/core/SkMD5.h"
 #include "src/core/SkOSFile.h"
+#include "src/core/SkTHash.h"
 #include "src/core/SkTaskGroup.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
 #include "src/gpu/ganesh/GrGpu.h"
@@ -144,10 +144,9 @@ static void init(Source* source, std::shared_ptr<skiagm::GM> gm) {
     source->size  = gm->getISize();
     source->tweak = [gm](GrContextOptions* options) { gm->modifyGrContextOptions(options); };
     source->draw  = [gm](SkCanvas* canvas) {
-        auto direct = GrAsDirectContext(canvas->recordingContext());
 
         SkString err;
-        switch (gm->gpuSetup(direct, canvas, &err)) {
+        switch (gm->gpuSetup(canvas, &err)) {
             case skiagm::DrawResult::kOk  : break;
             case skiagm::DrawResult::kSkip: return skip;
             case skiagm::DrawResult::kFail: return fail(err);
@@ -322,11 +321,8 @@ static sk_sp<SkImage> draw_with_gpu(std::function<bool(SkCanvas*)> draw,
 
     switch (surfaceType) {
         case SurfaceType::kDefault:
-            surface = SkSurface::MakeRenderTarget(context,
-                                                  SkBudgeted::kNo,
-                                                  info,
-                                                  FLAGS_samples,
-                                                  &props);
+            surface = SkSurface::MakeRenderTarget(
+                    context, skgpu::Budgeted::kNo, info, FLAGS_samples, &props);
             break;
 
         case SurfaceType::kBackendTexture:

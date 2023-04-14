@@ -17,6 +17,7 @@
 #include "src/tint/resolver/resolver_test_helper.h"
 #include "src/tint/sem/index_accessor_expression.h"
 #include "src/tint/sem/member_accessor_expression.h"
+#include "src/tint/type/texture_dimension.h"
 
 using namespace tint::number_suffixes;  // NOLINT
 
@@ -26,59 +27,59 @@ namespace {
 class ResolverRootIdentifierTest : public ResolverTest {};
 
 TEST_F(ResolverRootIdentifierTest, GlobalPrivateVar) {
-    auto* a = GlobalVar("a", ty.f32(), ast::AddressSpace::kPrivate);
+    auto* a = GlobalVar("a", ty.f32(), builtin::AddressSpace::kPrivate);
     auto* expr = Expr(a);
     WrapInFunction(expr);
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     auto* sem_a = Sem().Get(a);
-    EXPECT_EQ(Sem().Get(expr)->RootIdentifier(), sem_a);
+    EXPECT_EQ(Sem().GetVal(expr)->RootIdentifier(), sem_a);
 }
 
 TEST_F(ResolverRootIdentifierTest, GlobalWorkgroupVar) {
-    auto* a = GlobalVar("a", ty.f32(), ast::AddressSpace::kWorkgroup);
+    auto* a = GlobalVar("a", ty.f32(), builtin::AddressSpace::kWorkgroup);
     auto* expr = Expr(a);
     WrapInFunction(expr);
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     auto* sem_a = Sem().Get(a);
-    EXPECT_EQ(Sem().Get(expr)->RootIdentifier(), sem_a);
+    EXPECT_EQ(Sem().GetVal(expr)->RootIdentifier(), sem_a);
 }
 
 TEST_F(ResolverRootIdentifierTest, GlobalStorageVar) {
-    auto* a = GlobalVar("a", ty.f32(), ast::AddressSpace::kStorage, Group(0_a), Binding(0_a));
+    auto* a = GlobalVar("a", ty.f32(), builtin::AddressSpace::kStorage, Group(0_a), Binding(0_a));
     auto* expr = Expr(a);
     WrapInFunction(expr);
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     auto* sem_a = Sem().Get(a);
-    EXPECT_EQ(Sem().Get(expr)->RootIdentifier(), sem_a);
+    EXPECT_EQ(Sem().GetVal(expr)->RootIdentifier(), sem_a);
 }
 
 TEST_F(ResolverRootIdentifierTest, GlobalUniformVar) {
-    auto* a = GlobalVar("a", ty.f32(), ast::AddressSpace::kUniform, Group(0_a), Binding(0_a));
+    auto* a = GlobalVar("a", ty.f32(), builtin::AddressSpace::kUniform, Group(0_a), Binding(0_a));
     auto* expr = Expr(a);
     WrapInFunction(expr);
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     auto* sem_a = Sem().Get(a);
-    EXPECT_EQ(Sem().Get(expr)->RootIdentifier(), sem_a);
+    EXPECT_EQ(Sem().GetVal(expr)->RootIdentifier(), sem_a);
 }
 
 TEST_F(ResolverRootIdentifierTest, GlobalTextureVar) {
-    auto* a = GlobalVar("a", ty.sampled_texture(ast::TextureDimension::k2d, ty.f32()),
-                        ast::AddressSpace::kNone, Group(0_a), Binding(0_a));
+    auto* a = GlobalVar("a", ty.sampled_texture(type::TextureDimension::k2d, ty.f32()),
+                        builtin::AddressSpace::kUndefined, Group(0_a), Binding(0_a));
     auto* expr = Expr(a);
     WrapInFunction(Call("textureDimensions", expr));
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     auto* sem_a = Sem().Get(a);
-    EXPECT_EQ(Sem().Get(expr)->RootIdentifier(), sem_a);
+    EXPECT_EQ(Sem().GetVal(expr)->RootIdentifier(), sem_a);
 }
 
 TEST_F(ResolverRootIdentifierTest, GlobalOverride) {
@@ -89,7 +90,7 @@ TEST_F(ResolverRootIdentifierTest, GlobalOverride) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     auto* sem_a = Sem().Get(a);
-    EXPECT_EQ(Sem().Get(expr)->RootIdentifier(), sem_a);
+    EXPECT_EQ(Sem().GetVal(expr)->RootIdentifier(), sem_a);
 }
 
 TEST_F(ResolverRootIdentifierTest, GlobalConst) {
@@ -100,7 +101,7 @@ TEST_F(ResolverRootIdentifierTest, GlobalConst) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     auto* sem_a = Sem().Get(a);
-    EXPECT_EQ(Sem().Get(expr)->RootIdentifier(), sem_a);
+    EXPECT_EQ(Sem().GetVal(expr)->RootIdentifier(), sem_a);
 }
 
 TEST_F(ResolverRootIdentifierTest, FunctionVar) {
@@ -111,7 +112,7 @@ TEST_F(ResolverRootIdentifierTest, FunctionVar) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     auto* sem_a = Sem().Get(a);
-    EXPECT_EQ(Sem().Get(expr)->RootIdentifier(), sem_a);
+    EXPECT_EQ(Sem().GetVal(expr)->RootIdentifier(), sem_a);
 }
 
 TEST_F(ResolverRootIdentifierTest, FunctionLet) {
@@ -122,7 +123,7 @@ TEST_F(ResolverRootIdentifierTest, FunctionLet) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     auto* sem_a = Sem().Get(a);
-    EXPECT_EQ(Sem().Get(expr)->RootIdentifier(), sem_a);
+    EXPECT_EQ(Sem().GetVal(expr)->RootIdentifier(), sem_a);
 }
 
 TEST_F(ResolverRootIdentifierTest, Parameter) {
@@ -133,7 +134,7 @@ TEST_F(ResolverRootIdentifierTest, Parameter) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     auto* sem_a = Sem().Get(a);
-    EXPECT_EQ(Sem().Get(expr)->RootIdentifier(), sem_a);
+    EXPECT_EQ(Sem().GetVal(expr)->RootIdentifier(), sem_a);
 }
 
 TEST_F(ResolverRootIdentifierTest, PointerParameter) {
@@ -141,7 +142,7 @@ TEST_F(ResolverRootIdentifierTest, PointerParameter) {
     // {
     //   let b = a;
     // }
-    auto* param = Param("a", ty.pointer(ty.f32(), ast::AddressSpace::kFunction));
+    auto* param = Param("a", ty.pointer(ty.f32(), builtin::AddressSpace::kFunction));
     auto* expr_param = Expr(param);
     auto* let = Let("b", expr_param);
     auto* expr_let = Expr("b");
@@ -151,8 +152,8 @@ TEST_F(ResolverRootIdentifierTest, PointerParameter) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     auto* sem_param = Sem().Get(param);
-    EXPECT_EQ(Sem().Get(expr_param)->RootIdentifier(), sem_param);
-    EXPECT_EQ(Sem().Get(expr_let)->RootIdentifier(), sem_param);
+    EXPECT_EQ(Sem().GetVal(expr_param)->RootIdentifier(), sem_param);
+    EXPECT_EQ(Sem().GetVal(expr_let)->RootIdentifier(), sem_param);
 }
 
 TEST_F(ResolverRootIdentifierTest, VarCopyVar) {
@@ -170,8 +171,8 @@ TEST_F(ResolverRootIdentifierTest, VarCopyVar) {
 
     auto* sem_a = Sem().Get(a);
     auto* sem_b = Sem().Get(b);
-    EXPECT_EQ(Sem().Get(expr_a)->RootIdentifier(), sem_a);
-    EXPECT_EQ(Sem().Get(expr_b)->RootIdentifier(), sem_b);
+    EXPECT_EQ(Sem().GetVal(expr_a)->RootIdentifier(), sem_a);
+    EXPECT_EQ(Sem().GetVal(expr_b)->RootIdentifier(), sem_b);
 }
 
 TEST_F(ResolverRootIdentifierTest, LetCopyVar) {
@@ -189,8 +190,8 @@ TEST_F(ResolverRootIdentifierTest, LetCopyVar) {
 
     auto* sem_a = Sem().Get(a);
     auto* sem_b = Sem().Get(b);
-    EXPECT_EQ(Sem().Get(expr_a)->RootIdentifier(), sem_a);
-    EXPECT_EQ(Sem().Get(expr_b)->RootIdentifier(), sem_b);
+    EXPECT_EQ(Sem().GetVal(expr_a)->RootIdentifier(), sem_a);
+    EXPECT_EQ(Sem().GetVal(expr_b)->RootIdentifier(), sem_b);
 }
 
 TEST_F(ResolverRootIdentifierTest, ThroughIndexAccessor) {
@@ -198,7 +199,7 @@ TEST_F(ResolverRootIdentifierTest, ThroughIndexAccessor) {
     // {
     //   a[2i]
     // }
-    auto* a = GlobalVar("a", ty.array(ty.f32(), 4_u), ast::AddressSpace::kPrivate);
+    auto* a = GlobalVar("a", ty.array<f32, 4>(), builtin::AddressSpace::kPrivate);
     auto* expr = IndexAccessor(a, 2_i);
     WrapInFunction(expr);
 
@@ -215,7 +216,7 @@ TEST_F(ResolverRootIdentifierTest, ThroughMemberAccessor) {
     //   a.f
     // }
     auto* S = Structure("S", utils::Vector{Member("f", ty.f32())});
-    auto* a = GlobalVar("a", ty.Of(S), ast::AddressSpace::kPrivate);
+    auto* a = GlobalVar("a", ty.Of(S), builtin::AddressSpace::kPrivate);
     auto* expr = MemberAccessor(a, "f");
     WrapInFunction(expr);
 
@@ -231,7 +232,7 @@ TEST_F(ResolverRootIdentifierTest, ThroughPointers) {
     //   let a_ptr1 = &*&a;
     //   let a_ptr2 = &*a_ptr1;
     // }
-    auto* a = GlobalVar("a", ty.f32(), ast::AddressSpace::kPrivate);
+    auto* a = GlobalVar("a", ty.f32(), builtin::AddressSpace::kPrivate);
     auto* address_of_1 = AddressOf(a);
     auto* deref_1 = Deref(address_of_1);
     auto* address_of_2 = AddressOf(deref_1);

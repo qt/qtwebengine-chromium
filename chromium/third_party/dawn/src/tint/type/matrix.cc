@@ -14,7 +14,9 @@
 
 #include "src/tint/type/matrix.h"
 
-#include "src/tint/program_builder.h"
+#include "src/tint/debug.h"
+#include "src/tint/diagnostic/diagnostic.h"
+#include "src/tint/type/manager.h"
 #include "src/tint/type/vector.h"
 #include "src/tint/utils/hash.h"
 
@@ -23,11 +25,12 @@ TINT_INSTANTIATE_TYPEINFO(tint::type::Matrix);
 namespace tint::type {
 
 Matrix::Matrix(const Vector* column_type, uint32_t columns)
-    : Base(type::Flags{
-          Flag::kConstructable,
-          Flag::kCreationFixedFootprint,
-          Flag::kFixedFootprint,
-      }),
+    : Base(utils::Hash(TypeInfo::Of<Vector>().full_hashcode, columns, column_type),
+           type::Flags{
+               Flag::kConstructable,
+               Flag::kCreationFixedFootprint,
+               Flag::kFixedFootprint,
+           }),
       subtype_(column_type->type()),
       column_type_(column_type),
       rows_(column_type->Width()),
@@ -38,15 +41,9 @@ Matrix::Matrix(const Vector* column_type, uint32_t columns)
     TINT_ASSERT(AST, columns_ < 5);
 }
 
-Matrix::Matrix(Matrix&&) = default;
-
 Matrix::~Matrix() = default;
 
-size_t Matrix::Hash() const {
-    return utils::Hash(TypeInfo::Of<Vector>().full_hashcode, rows_, columns_, column_type_);
-}
-
-bool Matrix::Equals(const Type& other) const {
+bool Matrix::Equals(const UniqueNode& other) const {
     if (auto* v = other.As<Matrix>()) {
         return v->rows_ == rows_ && v->columns_ == columns_ && v->column_type_ == column_type_;
     }
@@ -69,6 +66,11 @@ uint32_t Matrix::Align() const {
 
 uint32_t Matrix::ColumnStride() const {
     return column_type_->Align();
+}
+
+Matrix* Matrix::Clone(CloneContext& ctx) const {
+    auto* col_ty = column_type_->Clone(ctx);
+    return ctx.dst.mgr->Get<Matrix>(col_ty, columns_);
 }
 
 }  // namespace tint::type

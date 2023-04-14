@@ -9,6 +9,7 @@
 #include <iterator>
 #include <limits>
 #include <memory>
+#include <tuple>
 #include <type_traits>
 
 #include "src/base/iterator.h"
@@ -22,7 +23,7 @@
 
 namespace v8::internal::compiler::turboshaft {
 
-template <template <class> class... Reducers>
+template <class Reducers>
 class Assembler;
 
 // `OperationBuffer` is a growable, Zone-allocated buffer to store Turboshaft
@@ -311,6 +312,7 @@ class Block : public RandomAccessStackDominatorNode<Block> {
   }
 
   // Returns the index of {target} in the predecessors of the current Block.
+  // If {target} is not a direct predecessor, returns -1.
   int GetPredecessorIndex(const Block* target) const {
     int pred_count = 0;
     int pred_reverse_index = -1;
@@ -322,7 +324,9 @@ class Block : public RandomAccessStackDominatorNode<Block> {
       }
       pred_count++;
     }
-    DCHECK_NE(pred_reverse_index, -1);
+    if (pred_reverse_index == -1) {
+      return -1;
+    }
     return pred_count - pred_reverse_index - 1;
   }
 
@@ -401,7 +405,7 @@ class Block : public RandomAccessStackDominatorNode<Block> {
   }
 
   friend class Graph;
-  template <template <class> class... Reducers>
+  template <class Reducers>
   friend class Assembler;
 
   Kind kind_;
@@ -429,7 +433,13 @@ class Graph {
         graph_zone_(graph_zone),
         source_positions_(graph_zone),
         operation_origins_(graph_zone),
-        operation_types_(graph_zone) {}
+        operation_types_(graph_zone)
+#ifdef DEBUG
+        ,
+        block_type_refinement_(graph_zone)
+#endif
+  {
+  }
 
   // Reset the graph to recycle its memory.
   void Reset() {
@@ -440,6 +450,9 @@ class Graph {
     operation_types_.Reset();
     next_block_ = 0;
     dominator_tree_depth_ = 0;
+#ifdef DEBUG
+    block_type_refinement_.Reset();
+#endif
   }
 
   V8_INLINE const Operation& Get(OpIndex i) const {
@@ -475,6 +488,14 @@ class Graph {
   }
 
   OpIndex Index(const Operation& op) const { return operations_.Index(op); }
+  BlockIndex BlockOf(OpIndex index) const {
+    auto it = std::upper_bound(
+        bound_blocks_.begin(), bound_blocks_.end(), index,
+        [](OpIndex value, const Block* b) { return value < b->begin_; });
+    DCHECK_NE(it, bound_blocks_.begin());
+    --it;
+    return (*it)->index();
+  }
 
   OpIndex NextIndex(const OpIndex idx) const { return operations_.Next(idx); }
   OpIndex PreviousIndex(const OpIndex idx) const {
@@ -730,6 +751,19 @@ class Graph {
     return operation_types_;
   }
   GrowingSidetable<Type>& operation_types() { return operation_types_; }
+#ifdef DEBUG
+  // Store refined types per block here for --trace-turbo printing.
+  // TODO(nicohartmann@): Remove this once we have a proper way to print
+  // type information inside the reducers.
+  const GrowingBlockSidetable<std::vector<std::pair<OpIndex, Type>>>&
+  block_type_refinement() const {
+    return block_type_refinement_;
+  }
+  GrowingBlockSidetable<std::vector<std::pair<OpIndex, Type>>>&
+  block_type_refinement() {
+    return block_type_refinement_;
+  }
+#endif  // DEBUG
 
   Graph& GetOrCreateCompanion() {
     if (!companion_) {
@@ -754,6 +788,7 @@ class Graph {
     std::swap(operation_origins_, companion.operation_origins_);
     std::swap(operation_types_, companion.operation_types_);
 #ifdef DEBUG
+    std::swap(block_type_refinement_, companion.block_type_refinement_);
     // Update generation index.
     DCHECK_EQ(generation_ + 1, companion.generation_);
     generation_ = companion.generation_++;
@@ -824,6 +859,10 @@ class Graph {
   GrowingSidetable<OpIndex> operation_origins_;
   uint32_t dominator_tree_depth_ = 0;
   GrowingSidetable<Type> operation_types_;
+#ifdef DEBUG
+  GrowingBlockSidetable<std::vector<std::pair<OpIndex, Type>>>
+      block_type_refinement_;
+#endif
 
   std::unique_ptr<Graph> companion_ = {};
 #ifdef DEBUG
@@ -834,6 +873,10 @@ class Graph {
 V8_INLINE OperationStorageSlot* AllocateOpStorage(Graph* graph,
                                                   size_t slot_count) {
   return graph->Allocate(slot_count);
+}
+
+V8_INLINE const Operation& Get(const Graph& graph, OpIndex index) {
+  return graph.Get(index);
 }
 
 V8_INLINE const Operation& Block::FirstOperation(const Graph& graph) const {

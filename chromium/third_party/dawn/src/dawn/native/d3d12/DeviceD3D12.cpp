@@ -44,7 +44,6 @@
 #include "dawn/native/d3d12/SamplerHeapCacheD3D12.h"
 #include "dawn/native/d3d12/ShaderModuleD3D12.h"
 #include "dawn/native/d3d12/ShaderVisibleDescriptorAllocatorD3D12.h"
-#include "dawn/native/d3d12/StagingBufferD3D12.h"
 #include "dawn/native/d3d12/StagingDescriptorAllocatorD3D12.h"
 #include "dawn/native/d3d12/SwapChainD3D12.h"
 #include "dawn/native/d3d12/UtilsD3D12.h"
@@ -65,15 +64,13 @@ static constexpr uint64_t kMaxDebugMessagesToPrint = 5;
 // static
 ResultOrError<Ref<Device>> Device::Create(Adapter* adapter,
                                           const DeviceDescriptor* descriptor,
-                                          const TripleStateTogglesSet& userProvidedToggles) {
-    Ref<Device> device = AcquireRef(new Device(adapter, descriptor, userProvidedToggles));
+                                          const TogglesState& deviceToggles) {
+    Ref<Device> device = AcquireRef(new Device(adapter, descriptor, deviceToggles));
     DAWN_TRY(device->Initialize(descriptor));
     return device;
 }
 
 MaybeError Device::Initialize(const DeviceDescriptor* descriptor) {
-    InitTogglesFromDriver();
-
     mD3d12Device = ToBackend(GetAdapter())->GetDevice();
 
     ASSERT(mD3d12Device != nullptr);
@@ -180,9 +177,8 @@ MaybeError Device::Initialize(const DeviceDescriptor* descriptor) {
     // device initialization to call NextSerial
     DAWN_TRY(NextSerial());
 
-    // The environment can only use DXC when it's available. Override the decision if it is not
-    // applicable.
-    DAWN_TRY(ApplyUseDxcToggle());
+    // Ensure DXC if use_dxc toggle is set.
+    DAWN_TRY(EnsureDXCIfRequired());
 
     DAWN_TRY(CreateZeroBuffer());
 
@@ -234,12 +230,10 @@ ComPtr<IDXGIFactory4> Device::GetFactory() const {
     return ToBackend(GetAdapter())->GetBackend()->GetFactory();
 }
 
-MaybeError Device::ApplyUseDxcToggle() {
-    if (!ToBackend(GetAdapter())->GetBackend()->IsDXCAvailable()) {
-        ForceSetToggle(Toggle::UseDXC, false);
-    }
-
+// Ensure DXC if use_dxc toggles are set and validated.
+MaybeError Device::EnsureDXCIfRequired() {
     if (IsToggleEnabled(Toggle::UseDXC)) {
+        ASSERT(ToBackend(GetAdapter())->GetBackend()->IsDXCAvailable());
         DAWN_TRY(ToBackend(GetAdapter())->GetBackend()->EnsureDxcCompiler());
         DAWN_TRY(ToBackend(GetAdapter())->GetBackend()->EnsureDxcLibrary());
         DAWN_TRY(ToBackend(GetAdapter())->GetBackend()->EnsureDxcValidator());
@@ -486,13 +480,7 @@ void Device::InitializeRenderPipelineAsyncImpl(Ref<RenderPipelineBase> renderPip
     RenderPipeline::InitializeAsync(std::move(renderPipeline), callback, userdata);
 }
 
-ResultOrError<std::unique_ptr<StagingBufferBase>> Device::CreateStagingBuffer(size_t size) {
-    std::unique_ptr<StagingBufferBase> stagingBuffer = std::make_unique<StagingBuffer>(size, this);
-    DAWN_TRY(stagingBuffer->Initialize());
-    return std::move(stagingBuffer);
-}
-
-MaybeError Device::CopyFromStagingToBufferImpl(StagingBufferBase* source,
+MaybeError Device::CopyFromStagingToBufferImpl(BufferBase* source,
                                                uint64_t sourceOffset,
                                                BufferBase* destination,
                                                uint64_t destinationOffset,
@@ -514,32 +502,32 @@ MaybeError Device::CopyFromStagingToBufferImpl(StagingBufferBase* source,
 }
 
 void Device::CopyFromStagingToBufferHelper(CommandRecordingContext* commandContext,
-                                           StagingBufferBase* source,
+                                           BufferBase* source,
                                            uint64_t sourceOffset,
                                            BufferBase* destination,
                                            uint64_t destinationOffset,
                                            uint64_t size) {
     ASSERT(commandContext != nullptr);
     Buffer* dstBuffer = ToBackend(destination);
-    StagingBuffer* srcBuffer = ToBackend(source);
+    Buffer* srcBuffer = ToBackend(source);
     dstBuffer->TrackUsageAndTransitionNow(commandContext, wgpu::BufferUsage::CopyDst);
 
-    commandContext->GetCommandList()->CopyBufferRegion(dstBuffer->GetD3D12Resource(),
-                                                       destinationOffset, srcBuffer->GetResource(),
-                                                       sourceOffset, size);
+    commandContext->GetCommandList()->CopyBufferRegion(
+        dstBuffer->GetD3D12Resource(), destinationOffset, srcBuffer->GetD3D12Resource(),
+        sourceOffset, size);
 }
 
-MaybeError Device::CopyFromStagingToTextureImpl(const StagingBufferBase* source,
+MaybeError Device::CopyFromStagingToTextureImpl(const BufferBase* source,
                                                 const TextureDataLayout& src,
-                                                TextureCopy* dst,
+                                                const TextureCopy& dst,
                                                 const Extent3D& copySizePixels) {
     CommandRecordingContext* commandContext;
     DAWN_TRY_ASSIGN(commandContext, GetPendingCommandContext(Device::SubmitMode::Passive));
-    Texture* texture = ToBackend(dst->texture.Get());
+    Texture* texture = ToBackend(dst.texture.Get());
 
-    SubresourceRange range = GetSubresourcesAffectedByCopy(*dst, copySizePixels);
+    SubresourceRange range = GetSubresourcesAffectedByCopy(dst, copySizePixels);
 
-    if (IsCompleteSubresourceCopiedTo(texture, copySizePixels, dst->mipLevel)) {
+    if (IsCompleteSubresourceCopiedTo(texture, copySizePixels, dst.mipLevel)) {
         texture->SetIsSubresourceContentInitialized(true, range);
     } else {
         texture->EnsureSubresourceContentInitialized(commandContext, range);
@@ -547,10 +535,10 @@ MaybeError Device::CopyFromStagingToTextureImpl(const StagingBufferBase* source,
 
     texture->TrackUsageAndTransitionNow(commandContext, wgpu::TextureUsage::CopyDst, range);
 
-    RecordBufferTextureCopyWithBufferHandle(
-        BufferTextureCopyDirection::B2T, commandContext->GetCommandList(),
-        ToBackend(source)->GetResource(), src.offset, src.bytesPerRow, src.rowsPerImage, *dst,
-        copySizePixels);
+    RecordBufferTextureCopyWithBufferHandle(BufferTextureCopyDirection::B2T,
+                                            commandContext->GetCommandList(),
+                                            ToBackend(source)->GetD3D12Resource(), src.offset,
+                                            src.bytesPerRow, src.rowsPerImage, dst, copySizePixels);
 
     return {};
 }
@@ -657,83 +645,6 @@ ComPtr<ID3D11On12Device> Device::GetOrCreateD3D11on12Device() {
 
 const D3D12DeviceInfo& Device::GetDeviceInfo() const {
     return ToBackend(GetAdapter())->GetDeviceInfo();
-}
-
-void Device::InitTogglesFromDriver() {
-    const bool useResourceHeapTier2 = (GetDeviceInfo().resourceHeapTier >= 2);
-    SetToggle(Toggle::UseD3D12ResourceHeapTier2, useResourceHeapTier2);
-    SetToggle(Toggle::UseD3D12RenderPass, GetDeviceInfo().supportsRenderPass);
-    SetToggle(Toggle::UseD3D12ResidencyManagement, true);
-    SetToggle(Toggle::UseDXC, false);
-    SetToggle(Toggle::D3D12AlwaysUseTypelessFormatsForCastableTexture,
-              !GetDeviceInfo().supportsCastingFullyTypedFormat);
-    SetToggle(Toggle::ApplyClearBigIntegerColorValueWithDraw, true);
-
-    // The restriction on the source box specifying a portion of the depth stencil texture in
-    // CopyTextureRegion() is only available on the D3D12 platforms which doesn't support
-    // programmable sample positions.
-    SetToggle(Toggle::D3D12UseTempBufferInDepthStencilTextureAndBufferCopyWithNonZeroBufferOffset,
-              GetDeviceInfo().programmableSamplePositionsTier == 0);
-
-    // Disable optimizations when using FXC
-    // See https://crbug.com/dawn/1203
-    SetToggle(Toggle::FxcOptimizations, false);
-
-    // By default use the maximum shader-visible heap size allowed.
-    SetToggle(Toggle::UseD3D12SmallShaderVisibleHeapForTesting, false);
-
-    uint32_t deviceId = GetAdapter()->GetDeviceId();
-    uint32_t vendorId = GetAdapter()->GetVendorId();
-
-    // Currently this workaround is only needed on Intel Gen9, Gen9.5 and Gen11 GPUs.
-    // See http://crbug.com/1161355 for more information.
-    if (gpu_info::IsIntelGen9(vendorId, deviceId) || gpu_info::IsIntelGen11(vendorId, deviceId)) {
-        const gpu_info::DriverVersion kFixedDriverVersion = {31, 0, 101, 2114};
-        if (gpu_info::CompareWindowsDriverVersion(vendorId, GetAdapter()->GetDriverVersion(),
-                                                  kFixedDriverVersion) < 0) {
-            SetToggle(
-                Toggle::UseTempBufferInSmallFormatTextureToTextureCopyFromGreaterToLessMipLevel,
-                true);
-        }
-    }
-
-    // Currently this workaround is only needed on Intel Gen9, Gen9.5 and Gen12 GPUs.
-    // See http://crbug.com/dawn/1487 for more information.
-    if (gpu_info::IsIntelGen9(vendorId, deviceId) || gpu_info::IsIntelGen12LP(vendorId, deviceId) ||
-        gpu_info::IsIntelGen12HP(vendorId, deviceId)) {
-        SetToggle(Toggle::D3D12ForceClearCopyableDepthStencilTextureOnCreation, true);
-    }
-
-    // Currently this workaround is only needed on Intel Gen12 GPUs.
-    // See http://crbug.com/dawn/1487 for more information.
-    if (gpu_info::IsIntelGen12LP(vendorId, deviceId) ||
-        gpu_info::IsIntelGen12HP(vendorId, deviceId)) {
-        SetToggle(Toggle::D3D12DontSetClearValueOnDepthTextureCreation, true);
-    }
-
-    // Currently this workaround is needed on any D3D12 backend for some particular situations.
-    // But we may need to limit it if D3D12 runtime fixes the bug on its new release. See
-    // https://crbug.com/dawn/1289 for more information.
-    // TODO(dawn:1289): Unset this toggle when we skip the split on the buffer-texture copy
-    // on the platforms where UnrestrictedBufferTextureCopyPitchSupported is true.
-    SetToggle(Toggle::D3D12SplitBufferTextureCopyForRowsPerImagePaddings, true);
-
-    // This workaround is only needed on Intel Gen12LP with driver prior to 30.0.101.1692.
-    // See http://crbug.com/dawn/949 for more information.
-    if (gpu_info::IsIntelGen12LP(vendorId, deviceId)) {
-        const gpu_info::DriverVersion kFixedDriverVersion = {30, 0, 101, 1692};
-        if (gpu_info::CompareWindowsDriverVersion(vendorId, GetAdapter()->GetDriverVersion(),
-                                                  kFixedDriverVersion) == -1) {
-            SetToggle(Toggle::D3D12AllocateExtraMemoryFor2DArrayColorTexture, true);
-        }
-    }
-
-    // Currently this workaround is only needed on Intel Gen9.5 and Gen11 GPUs.
-    // See http://crbug.com/1237175 for more information.
-    if ((gpu_info::IsIntelGen9(vendorId, deviceId) && !gpu_info::IsSkylake(deviceId)) ||
-        gpu_info::IsIntelGen11(vendorId, deviceId)) {
-        SetToggle(Toggle::D3D12Allocate2DTexturewithCopyDstAsCommittedResource, true);
-    }
 }
 
 MaybeError Device::WaitForIdleForDestruction() {

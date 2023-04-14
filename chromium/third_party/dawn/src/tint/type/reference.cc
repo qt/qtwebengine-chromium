@@ -14,24 +14,28 @@
 
 #include "src/tint/type/reference.h"
 
-#include "src/tint/program_builder.h"
+#include "src/tint/debug.h"
+#include "src/tint/diagnostic/diagnostic.h"
+#include "src/tint/type/manager.h"
 #include "src/tint/utils/hash.h"
 
 TINT_INSTANTIATE_TYPEINFO(tint::type::Reference);
 
 namespace tint::type {
 
-Reference::Reference(const Type* subtype, ast::AddressSpace address_space, ast::Access access)
-    : Base(type::Flags{}), subtype_(subtype), address_space_(address_space), access_(access) {
+Reference::Reference(const Type* subtype,
+                     builtin::AddressSpace address_space,
+                     builtin::Access access)
+    : Base(utils::Hash(TypeInfo::Of<Reference>().full_hashcode, address_space, subtype, access),
+           type::Flags{}),
+      subtype_(subtype),
+      address_space_(address_space),
+      access_(access) {
     TINT_ASSERT(Type, !subtype->Is<Reference>());
-    TINT_ASSERT(Type, access != ast::Access::kUndefined);
+    TINT_ASSERT(Type, access != builtin::Access::kUndefined);
 }
 
-size_t Reference::Hash() const {
-    return utils::Hash(TypeInfo::Of<Reference>().full_hashcode, address_space_, subtype_, access_);
-}
-
-bool Reference::Equals(const Type& other) const {
+bool Reference::Equals(const UniqueNode& other) const {
     if (auto* o = other.As<Reference>()) {
         return o->address_space_ == address_space_ && o->subtype_ == subtype_ &&
                o->access_ == access_;
@@ -42,7 +46,7 @@ bool Reference::Equals(const Type& other) const {
 std::string Reference::FriendlyName(const SymbolTable& symbols) const {
     std::ostringstream out;
     out << "ref<";
-    if (address_space_ != ast::AddressSpace::kNone) {
+    if (address_space_ != builtin::AddressSpace::kUndefined) {
         out << address_space_ << ", ";
     }
     out << subtype_->FriendlyName(symbols) << ", " << access_;
@@ -50,8 +54,11 @@ std::string Reference::FriendlyName(const SymbolTable& symbols) const {
     return out.str();
 }
 
-Reference::Reference(Reference&&) = default;
-
 Reference::~Reference() = default;
+
+Reference* Reference::Clone(CloneContext& ctx) const {
+    auto* ty = subtype_->Clone(ctx);
+    return ctx.dst.mgr->Get<Reference>(ty, address_space_, access_);
+}
 
 }  // namespace tint::type

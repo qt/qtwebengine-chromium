@@ -41,19 +41,20 @@ namespace nearby {
 namespace presence {
 namespace {
 
-using BleOperationStatus = ::location::nearby::api::ble_v2::BleOperationStatus;
-using AdvertisingSession =
-    ::location::nearby::api::ble_v2::BleMedium::AdvertisingSession;
+using AdvertisingSession = ::nearby::api::ble_v2::BleMedium::AdvertisingSession;
 using AdvertisingCallback =
-    ::location::nearby::api::ble_v2::BleMedium::AdvertisingCallback;
-using ::location::nearby::SingleThreadExecutor;
+    ::nearby::api::ble_v2::BleMedium::AdvertisingCallback;
+using ::nearby::SingleThreadExecutor;
 
-using CountDownLatch = ::location::nearby::CountDownLatch;
+using CountDownLatch = ::nearby::CountDownLatch;
 
 class ScanManagerTest : public testing::Test {
  protected:
   void SetUp() override { env_.Start(); }
-  void TearDown() override { env_.Stop(); }
+  void TearDown() override {
+    executor_.Shutdown();
+    env_.Stop();
+  }
 
   std::unique_ptr<AdvertisingSession> StartAdvertisingOn(Ble& ble) {
     PresenceBroadcast::BroadcastSection section = {
@@ -70,8 +71,7 @@ class ScanManagerTest : public testing::Test {
     EXPECT_OK(advertisement);
     std::unique_ptr<AdvertisingSession> session = ble.StartAdvertising(
         advertisement.value(), PowerMode::kLowPower,
-        AdvertisingCallback{
-            .start_advertising_result = [](BleOperationStatus) {}});
+        AdvertisingCallback{.start_advertising_result = [](absl::Status) {}});
     env_.Sync();
     return session;
   }
@@ -95,8 +95,8 @@ class ScanManagerTest : public testing::Test {
 
   ScanCallback MakeDefaultScanCallback() {
     return {.start_scan_cb =
-                [this](Status status) {
-                  if (status.Ok()) {
+                [this](absl::Status status) {
+                  if (status.ok()) {
                     start_latch_.CountDown();
                   }
                 },
@@ -112,19 +112,18 @@ class ScanManagerTest : public testing::Test {
   std::vector<DataElement> MakeDefaultExtendedProperties() {
     return {DataElement(ActionBit::kPresenceManagerAction)};
   }
-  CredentialManagerImpl credential_manager_;
-  location::nearby::MediumEnvironment& env_ = {
-      location::nearby::MediumEnvironment::Instance()};
+  SingleThreadExecutor executor_;
+  CredentialManagerImpl credential_manager_{&executor_};
+  nearby::MediumEnvironment& env_ = {nearby::MediumEnvironment::Instance()};
   CountDownLatch start_latch_{1};
   CountDownLatch found_latch_{1};
-  SingleThreadExecutor executor_;
 };
 
 TEST_F(ScanManagerTest, CanStartThenStopScanning) {
   Mediums mediums;
   ScanManager manager(mediums, credential_manager_, executor_);
   // Set up advertiser
-  location::nearby::BluetoothAdapter server_adapter;
+  nearby::BluetoothAdapter server_adapter;
   Ble ble2(server_adapter);
   std::unique_ptr<AdvertisingSession> advertising_session =
       StartAdvertisingOn(ble2);
@@ -162,7 +161,7 @@ TEST_F(ScanManagerTest, TestNoFilter) {
   Mediums mediums;
   ScanManager manager(mediums, credential_manager_, executor_);
   // Set up advertiser
-  location::nearby::BluetoothAdapter server_adapter;
+  nearby::BluetoothAdapter server_adapter;
   Ble ble2(server_adapter);
   std::unique_ptr<AdvertisingSession> advertising_session =
       StartAdvertisingOn(ble2);
@@ -181,33 +180,33 @@ TEST_F(ScanManagerTest, TestNoFilter) {
   EXPECT_EQ(manager.ScanningCallbacksLengthForTest(), 0);
 }
 
-TEST_F(ScanManagerTest, PresenceDeviceMetadataIsRetained) {
+TEST_F(ScanManagerTest, PresenceMetadataIsRetained) {
   Mediums mediums;
   ScanManager manager(mediums, credential_manager_, executor_);
   // Set up advertiser
-  location::nearby::BluetoothAdapter server_adapter;
+  nearby::BluetoothAdapter server_adapter;
   Ble ble2(server_adapter);
   std::unique_ptr<AdvertisingSession> advertising_session =
       StartAdvertisingOn(ble2);
   std::string address = server_adapter.GetMacAddress();
   ScanCallback callback = {
       .start_scan_cb =
-          [this](Status status) {
-            if (status.Ok()) {
+          [this](absl::Status status) {
+            if (status.ok()) {
               start_latch_.CountDown();
             }
           },
       .on_discovered_cb =
           [this, &address](PresenceDevice pd) {
-            if (pd.GetMetadata().has_bluetooth_mac_address() &&
-                pd.GetMetadata().bluetooth_mac_address() == address) {
+            if (pd.GetMetadata().bluetooth_mac_address() == address) {
               found_latch_.CountDown();
             }
           }};
   // Start scanning
   ScanRequest scan_request_no_filter = MakeDefaultScanRequest();
   scan_request_no_filter.scan_filters.clear();
-  auto scan_session = manager.StartScan(scan_request_no_filter, callback);
+  auto scan_session =
+      manager.StartScan(scan_request_no_filter, std::move(callback));
 
   ASSERT_EQ(manager.ScanningCallbacksLengthForTest(), 1);
   ASSERT_TRUE(mediums.GetBle().IsAvailable());
@@ -245,8 +244,8 @@ TEST_F(ScanManagerTest, StopOneSessionFromAnotherDeadlock) {
   ScanSessionId scan_session =
       manager.StartScan(scan_request_mismatch, MakeDefaultScanCallback());
   ScanCallback scanning_callback2 = {.start_scan_cb =
-                                         [&](Status status) {
-                                           if (status.Ok()) {
+                                         [&](absl::Status status) {
+                                           if (status.ok()) {
                                              start_latch2.CountDown();
                                            }
                                          },
@@ -263,7 +262,7 @@ TEST_F(ScanManagerTest, StopOneSessionFromAnotherDeadlock) {
   ASSERT_EQ(manager.ScanningCallbacksLengthForTest(), 2);
 
   // Set up advertiser
-  location::nearby::BluetoothAdapter server_adapter;
+  nearby::BluetoothAdapter server_adapter;
   Ble ble2(server_adapter);
   std::unique_ptr<AdvertisingSession> advertising_session =
       StartAdvertisingOn(ble2);
@@ -282,12 +281,12 @@ TEST_F(ScanManagerTest, StopOneSessionFromAnotherDeadlock) {
 TEST_F(ScanManagerTest, NoDeviceFoundAfterStopScan) {
   Mediums mediums;
   ScanManager manager(mediums, credential_manager_, executor_);
-  location::nearby::BluetoothAdapter server_adapter;
+  nearby::BluetoothAdapter server_adapter;
   Ble ble2(server_adapter);
   std::atomic_bool stopped = false;
   ScanSessionId scan_session = manager.StartScan(
       MakeDefaultScanRequest(),
-      ScanCallback{.start_scan_cb = [](Status status) {},
+      ScanCallback{.start_scan_cb = [](absl::Status status) {},
                    .on_discovered_cb =
                        [&](PresenceDevice pd) { EXPECT_FALSE(stopped); }});
 

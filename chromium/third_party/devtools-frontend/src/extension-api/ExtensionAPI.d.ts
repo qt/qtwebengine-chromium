@@ -47,8 +47,13 @@ export namespace Chrome {
     }
 
     export interface ExtensionPanel extends ExtensionView {
+      show(): void;
       onSearch: EventSink<(action: string, queryString?: string) => unknown>;
       createStatusBarButton(iconPath: string, tooltipText: string, disabled: boolean): Button;
+    }
+
+    export interface RecorderView extends ExtensionView {
+      show(): void;
     }
 
     export interface ExtensionSidebarPane extends ExtensionView {
@@ -171,9 +176,14 @@ export namespace Chrome {
       payload: unknown;
     }
 
-    export interface RecorderExtensionPlugin {
+    export type RecorderExtensionPlugin = RecorderExtensionExportPlugin|RecorderExtensionReplayPlugin;
+
+    export interface RecorderExtensionExportPlugin {
       stringify(recording: Record<string, any>): Promise<string>;
       stringifyStep(step: Record<string, any>): Promise<string>;
+    }
+    export interface RecorderExtensionReplayPlugin {
+      replay(recording: Record<string, any>): void;
     }
 
     export type RemoteObjectId = string;
@@ -273,7 +283,8 @@ export namespace Chrome {
       }>;
 
       /**
-       * Find locations in source files from a location in a raw module
+       * Retrieve function name(s) for the function(s) containing the rawLocation. This returns more than one entry if
+       * the location is inside of an inlined function with the innermost function at index 0.
        */
       getFunctionInfo(rawLocation: RawLocation):
           Promise<{frames: Array<FunctionInfo>}|{missingSymbolFiles: Array<string>}>;
@@ -329,10 +340,12 @@ export namespace Chrome {
       getWasmOp(op: number, stopId: unknown): Promise<WasmValue>;
     }
 
+
     export interface RecorderExtensions {
-      registerRecorderExtensionPlugin(plugin: RecorderExtensionPlugin, pluginName: string, mediaType: string):
+      registerRecorderExtensionPlugin(plugin: RecorderExtensionPlugin, pluginName: string, mediaType?: string):
           Promise<void>;
       unregisterRecorderExtensionPlugin(plugin: RecorderExtensionPlugin): Promise<void>;
+      createView(title: string, pagePath: string): Promise<RecorderView>;
     }
 
     export interface Chrome {

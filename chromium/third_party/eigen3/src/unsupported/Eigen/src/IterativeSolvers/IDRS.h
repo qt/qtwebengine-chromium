@@ -66,7 +66,6 @@ bool idrs(const MatrixType& A, const Rhs& b, Dest& x, const Preconditioner& prec
   const RealScalar tol = relres;
   const Index maxit = iter;
 
-  Index replacements = 0;
   bool trueres = false;
 
   FullPivLU<DenseMatrixType> lu_solver;
@@ -88,15 +87,14 @@ bool idrs(const MatrixType& A, const Rhs& b, Dest& x, const Preconditioner& prec
   }
   // from http://homepage.tudelft.nl/1w5b5/IDRS/manual.pdf
   // A peak in the residual is considered dangerously high if‖ri‖/‖b‖> C(tol/epsilon).
-  // With epsilon the
-  // relative machine precision. The factor tol/epsilon corresponds to the size of a
-  // finite precision number that is so large that the absolute round-off error in
-  // this number, when propagated through the process, makes it impossible to
-  // achieve the required accuracy.The factor C accounts for the accumulation of
-  // round-off errors. This parameter has beenset to 10−3.
-  // mp is epsilon/C
-  // 10^3 * eps is very conservative, so normally no residual replacements will take place.
-  // It only happens if things go very wrong. Too many restarts may ruin the convergence.
+  // With epsilon the relative machine precision. The factor tol/epsilon corresponds
+  // to the size of a finite precision number that is so large that the absolute
+  // round-off error in this number, when propagated through the process, makes it
+  // impossible to achieve the required accuracy. The factor C accounts for the
+  // accumulation of round-off errors. This parameter has been set to 10^{-3}.
+  // mp is epsilon/C 10^3 * eps is very conservative, so normally no residual
+  // replacements will take place. It only happens if things go very wrong. Too many
+  // restarts may ruin the convergence.
   const RealScalar mp = RealScalar(1e3) * NumTraits<Scalar>::epsilon();
 
   // Compute initial residual
@@ -224,7 +222,6 @@ bool idrs(const MatrixType& A, const Rhs& b, Dest& x, const Preconditioner& prec
     if (trueres && normr < normb) {
       r = b - A * x;
       trueres = false;
-      replacements++;
     }
 
     // Smoothing:

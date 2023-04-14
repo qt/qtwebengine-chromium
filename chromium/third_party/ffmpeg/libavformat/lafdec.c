@@ -21,6 +21,7 @@
 
 #include "libavutil/intreadwrite.h"
 #include "avformat.h"
+#include "avio_internal.h"
 #include "internal.h"
 
 #define MAX_STREAMS 4096
@@ -110,6 +111,9 @@ static int laf_read_header(AVFormatContext *ctx)
 
     sample_rate = avio_rl32(pb);
     duration = avio_rl64(pb) / st_count;
+
+    if (avio_feof(pb))
+        return AVERROR_INVALIDDATA;
 
     switch (quality) {
     case 0:
@@ -202,7 +206,7 @@ again:
         s->nb_stored = st_count;
         if (!st_count)
             return AVERROR_INVALIDDATA;
-        ret = avio_read(pb, s->data, st_count * st->codecpar->sample_rate * bpp);
+        ret = ffio_read_size(pb, s->data, st_count * st->codecpar->sample_rate * bpp);
         if (ret < 0)
             return ret;
     }
@@ -248,6 +252,15 @@ again:
     return 0;
 }
 
+static int laf_read_close(AVFormatContext *ctx)
+{
+    LAFContext *s = ctx->priv_data;
+
+    av_freep(&s->data);
+
+    return 0;
+}
+
 static int laf_read_seek(AVFormatContext *ctx, int stream_index,
                          int64_t timestamp, int flags)
 {
@@ -265,7 +278,9 @@ const AVInputFormat ff_laf_demuxer = {
     .read_probe     = laf_probe,
     .read_header    = laf_read_header,
     .read_packet    = laf_read_packet,
+    .read_close     = laf_read_close,
     .read_seek      = laf_read_seek,
     .extensions     = "laf",
     .flags          = AVFMT_GENERIC_INDEX,
+    .flags_internal = FF_FMT_INIT_CLEANUP,
 };

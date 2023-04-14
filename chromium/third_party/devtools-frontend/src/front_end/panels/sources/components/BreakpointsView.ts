@@ -8,42 +8,44 @@ import * as Platform from '../../../core/platform/platform.js';
 import {assertNotNullOrUndefined} from '../../../core/platform/platform.js';
 import * as ComponentHelpers from '../../../ui/components/helpers/helpers.js';
 import * as IconButton from '../../../ui/components/icon_button/icon_button.js';
+import * as Input from '../../../ui/components/input/input.js';
 import * as Coordinator from '../../../ui/components/render_coordinator/render_coordinator.js';
 import * as UI from '../../../ui/legacy/legacy.js';
 import * as LitHtml from '../../../ui/lit-html/lit-html.js';
 
 import breakpointsViewStyles from './breakpointsView.css.js';
-import {findNextNodeForKeyboardNavigation} from './BreakpointsViewUtils.js';
+
+import {findNextNodeForKeyboardNavigation, getDifferentiatingPathMap, type TitleInfo} from './BreakpointsViewUtils.js';
 
 const UIStrings = {
   /**
-  *@description Label for a checkbox to toggle pausing on uncaught exceptions in the breakpoint sidebar of the Sources panel. When the checkbox is checked, DevTools will pause if an uncaught exception is thrown at runtime.
-  */
+   *@description Label for a checkbox to toggle pausing on uncaught exceptions in the breakpoint sidebar of the Sources panel. When the checkbox is checked, DevTools will pause if an uncaught exception is thrown at runtime.
+   */
   pauseOnUncaughtExceptions: 'Pause on uncaught exceptions',
   /**
-  *@description Label for a checkbox to toggling pausing on caught exceptions in the breakpoint sidebar of the Sources panel. When the checkbox is checked, DevTools will pause if an exception is thrown, but caught (handled) at runtime.
-  */
+   *@description Label for a checkbox to toggling pausing on caught exceptions in the breakpoint sidebar of the Sources panel. When the checkbox is checked, DevTools will pause if an exception is thrown, but caught (handled) at runtime.
+   */
   pauseOnCaughtExceptions: 'Pause on caught exceptions',
   /**
-  *@description Text exposed to screen readers on checked items.
-  */
+   *@description Text exposed to screen readers on checked items.
+   */
   checked: 'checked',
   /**
-  *@description Accessible text exposed to screen readers when the screen reader encounters an unchecked checkbox.
-  */
+   *@description Accessible text exposed to screen readers when the screen reader encounters an unchecked checkbox.
+   */
   unchecked: 'unchecked',
   /**
-  *@description Accessible text for a breakpoint collection with a combination of checked states.
-  */
+   *@description Accessible text for a breakpoint collection with a combination of checked states.
+   */
   indeterminate: 'mixed',
   /**
-  *@description Accessibility label for hit breakpoints in the Sources panel.
-  *@example {checked} PH1
-  */
+   *@description Accessibility label for hit breakpoints in the Sources panel.
+   *@example {checked} PH1
+   */
   breakpointHit: '{PH1} breakpoint hit',
   /**
-  *@description Tooltip text that shows when hovered over a remove button that appears next to a filename in the breakpoint sidebar of the sources panel. Also used in the context menu for breakpoint groups.
-  */
+   *@description Tooltip text that shows when hovered over a remove button that appears next to a filename in the breakpoint sidebar of the sources panel. Also used in the context menu for breakpoint groups.
+   */
   removeAllBreakpointsInFile: 'Remove all breakpoints in file',
   /**
    *@description Context menu item in the Breakpoints Sidebar Pane of the Sources panel that disables all breakpoints in a file.
@@ -54,38 +56,38 @@ const UIStrings = {
    */
   enableAllBreakpointsInFile: 'Enable all breakpoints in file',
   /**
-  *@description Tooltip text that shows when hovered over an edit button that appears next to a breakpoint or conditional breakpoint in the breakpoint sidebar of the sources panel.
-  */
+   *@description Tooltip text that shows when hovered over an edit button that appears next to a breakpoint or conditional breakpoint in the breakpoint sidebar of the sources panel.
+   */
   editCondition: 'Edit condition',
   /**
-  *@description Tooltip text that shows when hovered over an edit button that appears next to a logpoint in the breakpoint sidebar of the sources panel.
-  */
+   *@description Tooltip text that shows when hovered over an edit button that appears next to a logpoint in the breakpoint sidebar of the sources panel.
+   */
   editLogpoint: 'Edit logpoint',
   /**
-  *@description Tooltip text that shows when hovered over a remove button that appears next to a breakpoint in the breakpoint sidebar of the sources panel. Also used in the context menu for breakpoint items.
-  */
+   *@description Tooltip text that shows when hovered over a remove button that appears next to a breakpoint in the breakpoint sidebar of the sources panel. Also used in the context menu for breakpoint items.
+   */
   removeBreakpoint: 'Remove breakpoint',
   /**
-  *@description Text to remove all breakpoints
-  */
+   *@description Text to remove all breakpoints
+   */
   removeAllBreakpoints: 'Remove all breakpoints',
   /**
-  *@description Text in Breakpoints Sidebar Pane of the Sources panel
-  */
+   *@description Text in Breakpoints Sidebar Pane of the Sources panel
+   */
   removeOtherBreakpoints: 'Remove other breakpoints',
   /**
-  *@description Context menu item that reveals the source code location of a breakpoint in the Sources panel.
-  */
+   *@description Context menu item that reveals the source code location of a breakpoint in the Sources panel.
+   */
   revealLocation: 'Reveal location',
   /**
-  *@description Tooltip text that shows when hovered over a piece of code of a breakpoint in the breakpoint sidebar of the sources panel. It shows the condition, on which the breakpoint will stop.
-  *@example {x < 3} PH1
-  */
+   *@description Tooltip text that shows when hovered over a piece of code of a breakpoint in the breakpoint sidebar of the sources panel. It shows the condition, on which the breakpoint will stop.
+   *@example {x < 3} PH1
+   */
   conditionCode: 'Condition: {PH1}',
   /**
-  *@description Tooltip text that shows when hovered over a piece of code of a breakpoint in the breakpoint sidebar of the sources panel. It shows what is going to be printed in the console, if execution hits this breakpoint.
-  *@example {'hello'} PH1
-  */
+   *@description Tooltip text that shows when hovered over a piece of code of a breakpoint in the breakpoint sidebar of the sources panel. It shows what is going to be printed in the console, if execution hits this breakpoint.
+   *@example {'hello'} PH1
+   */
   logpointCode: 'Logpoint: {PH1}',
 };
 const str_ = i18n.i18n.registerUIStrings('panels/sources/components/BreakpointsView.ts', UIStrings);
@@ -215,6 +217,8 @@ export class BreakpointsView extends HTMLElement {
 
   #breakpointsActive: boolean = true;
   #breakpointGroups: BreakpointGroup[] = [];
+  #urlToDifferentiatingPath: Map<Platform.DevToolsPath.UrlString, string> = new Map();
+
   #scheduledRender = false;
   #enqueuedRender = false;
 
@@ -225,11 +229,17 @@ export class BreakpointsView extends HTMLElement {
     this.#breakpointsActive = data.breakpointsActive;
     this.#breakpointGroups = data.groups;
 
+    const titleInfos: TitleInfo[] = [];
+    for (const group of data.groups) {
+      titleInfos.push({name: group.name, url: group.url});
+    }
+    this.#urlToDifferentiatingPath = getDifferentiatingPathMap(titleInfos);
+
     void this.#render();
   }
 
   connectedCallback(): void {
-    this.#shadow.adoptedStyleSheets = [breakpointsViewStyles];
+    this.#shadow.adoptedStyleSheets = [Input.checkboxStyles, breakpointsViewStyles];
   }
 
   async #render(): Promise<void> {
@@ -402,7 +412,7 @@ export class BreakpointsView extends HTMLElement {
     };
     // clang-format off
     return LitHtml.html`
-    <button data-remove-breakpoint @click=${clickHandler} title=${tooltipText}>
+    <button data-remove-breakpoint @click=${clickHandler} title=${tooltipText} aria-label=${tooltipText}>
     <${IconButton.Icon.Icon.litTagName} .data=${{
         iconName: 'close-icon',
         width: '10px',
@@ -485,23 +495,45 @@ export class BreakpointsView extends HTMLElement {
                    tabindex='-1'
                    @keydown=${this.#keyDownHandler}
                    @click=${clickHandler}>
-          <span class='group-header' aria-hidden=true>${this.#renderFileIcon()}<span class='group-header-title' title='${group.url}'>${group.name}</span></span>
-          <span class='group-hover-actions'>
-            ${this.#renderRemoveBreakpointButton(group.breakpointItems, i18nString(UIStrings.removeAllBreakpointsInFile))}
-          </span>
-        </summary>
+            <span class='group-header' aria-hidden=true><span class='group-icon-or-disable'>${this.#renderFileIcon()}${this.#renderGroupCheckbox(group)}</span><span class='group-header-title' title='${group.url}'>${group.name}<span class='group-header-differentiator'>${this.#urlToDifferentiatingPath.get(group.url)}</span></span></span>
+            <span class='group-hover-actions'>
+              ${this.#renderRemoveBreakpointButton(group.breakpointItems, i18nString(UIStrings.removeAllBreakpointsInFile))}
+            </span>
+          </summary>
         ${LitHtml.Directives.repeat(
           group.breakpointItems,
           item => item.id,
           (item, breakpointItemIndex) => this.#renderBreakpointEntry(item, group.editable, groupIndex, breakpointItemIndex))}
-      </div>
+      </details>
       `;
     // clang-format on
   }
 
+  #renderGroupCheckbox(group: BreakpointGroup): LitHtml.TemplateResult {
+    const groupCheckboxToggled = (e: Event): void => {
+      const element = e.target as HTMLInputElement;
+      const updatedStatus = element.checked ? BreakpointStatus.ENABLED : BreakpointStatus.DISABLED;
+      const itemsToUpdate = group.breakpointItems.filter(item => item.status !== updatedStatus);
+
+      itemsToUpdate.forEach(item => {
+        this.dispatchEvent(new CheckboxToggledEvent(item, element.checked));
+      });
+      e.consume();
+    };
+
+    const checked = group.breakpointItems.some(item => item.status === BreakpointStatus.ENABLED);
+    return LitHtml.html`
+      <input class='group-checkbox' type='checkbox'
+            aria-label=''
+            .checked=${checked}
+            @change=${groupCheckboxToggled}
+            tabindex=-1>
+    `;
+  }
+
   #renderFileIcon(): LitHtml.TemplateResult {
     return LitHtml.html`
-      <${IconButton.Icon.Icon.litTagName} .data=${
+      <${IconButton.Icon.Icon.litTagName} class='file-icon' .data=${
         {iconName: 'ic_file_script', color: 'var(--color-ic-file-script)', width: '16px', height: '16px'} as
         IconButton.Icon.IconWithName}></${IconButton.Icon.Icon.litTagName}>
     `;
@@ -580,7 +612,7 @@ export class BreakpointsView extends HTMLElement {
         <input type='checkbox'
               aria-label=${breakpointItem.location}
               ?indeterminate=${breakpointItem.status === BreakpointStatus.INDETERMINATE}
-              ?checked=${breakpointItem.status === BreakpointStatus.ENABLED}
+              .checked=${breakpointItem.status === BreakpointStatus.ENABLED}
               @change=${(e: Event): void => this.#onCheckboxToggled(e, breakpointItem)}
               tabindex=-1>
       </label>
@@ -643,7 +675,7 @@ export class BreakpointsView extends HTMLElement {
       const pauseOnCaughtCheckbox = this.#shadow.querySelector<HTMLInputElement>('[data-pause-on-caught-checkbox]');
       assertNotNullOrUndefined(pauseOnCaughtCheckbox);
       if (!checked && pauseOnCaughtCheckbox.checked) {
-        // If we can only pause on caught excpetions if we pause on uncaught exceptions, make sure to
+        // If we can only pause on caught exceptions if we pause on uncaught exceptions, make sure to
         // uncheck the pause on caught exception checkbox.
         pauseOnCaughtCheckbox.click();
       }

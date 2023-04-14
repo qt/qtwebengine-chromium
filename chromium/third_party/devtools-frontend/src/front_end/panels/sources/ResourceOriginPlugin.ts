@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 import * as i18n from '../../core/i18n/i18n.js';
-import type * as SDK from '../../core/sdk/sdk.js';
 import * as Bindings from '../../models/bindings/bindings.js';
 import type * as Workspace from '../../models/workspace/workspace.js';
 import * as Components from '../../ui/legacy/components/utils/utils.js';
@@ -13,17 +12,18 @@ import {Plugin} from './Plugin.js';
 
 const UIStrings = {
   /**
-  *@description Text in Resource Origin Plugin of the Sources panel
-  *@example {example.com} PH1
-  */
-  sourceMappedFromS: '(source mapped from {PH1})',
+   * @description Text in the bottom toolbar of the Sources panel that lists the source mapped origin scripts.
+   * @example {bundle.min.js} PH1
+   */
+  fromS: '(From {PH1})',
   /**
-  *@description Text in Resource Origin Plugin of the Sources panel
-  *@example {http://localhost/file.wasm} PH1
-  */
-  providedViaDebugInfoByS: '(provided via debug info by {PH1})',
+   * @description Tooltip text for links in the bottom toolbar of the Sources panel that point to source mapped scripts.
+   * @example {bundle.min.js} PH1
+   */
+  sourceMappedFromS: '(Source mapped from {PH1})',
 };
 const str_ = i18n.i18n.registerUIStrings('panels/sources/ResourceOriginPlugin.ts', UIStrings);
+const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 
 export class ResourceOriginPlugin extends Plugin {
   static accepts(uiSourceCode: Workspace.UISourceCode.UISourceCode): boolean {
@@ -31,51 +31,47 @@ export class ResourceOriginPlugin extends Plugin {
     return contentType.hasScripts() || contentType.isFromSourceMap();
   }
 
-  async rightToolbarItems(): Promise<UI.Toolbar.ToolbarItem[]> {
-    const originURLs = [
-      ...Bindings.CompilerScriptMapping.CompilerScriptMapping.uiSourceCodeOrigin(this.uiSourceCode),
-      ...Bindings.SASSSourceMapping.SASSSourceMapping.uiSourceOrigin(this.uiSourceCode),
-    ];
-    if (originURLs.length) {
-      return originURLs.map(originURL => {
-        const item = i18n.i18n.getFormatLocalizedString(
-            str_, UIStrings.sourceMappedFromS, {PH1: Components.Linkifier.Linkifier.linkifyURL(originURL)});
-        return new UI.Toolbar.ToolbarItem(item);
-      });
-    }
+  rightToolbarItems(): UI.Toolbar.ToolbarItem[] {
+    const debuggerWorkspaceBinding = Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance();
 
-    const pluginManager = Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance().pluginManager;
-    if (pluginManager) {
-      for (const originScript of pluginManager.scriptsForUISourceCode(this.uiSourceCode)) {
-        if (originScript.sourceURL) {
-          const item = i18n.i18n.getFormatLocalizedString(
-              str_, UIStrings.providedViaDebugInfoByS,
-              {PH1: Components.Linkifier.Linkifier.linkifyURL(originScript.sourceURL)});
-          return [new UI.Toolbar.ToolbarItem(item)];
+    // Handle source mapped scripts and stylesheets.
+    if (this.uiSourceCode.contentType().isFromSourceMap()) {
+      const links = [];
+      for (const script of debuggerWorkspaceBinding.scriptsForUISourceCode(this.uiSourceCode)) {
+        const uiSourceCode = debuggerWorkspaceBinding.uiSourceCodeForScript(script);
+        if (!uiSourceCode) {
+          continue;
         }
+        const url = uiSourceCode.url();
+        const text = Bindings.ResourceUtils.displayNameForURL(url);
+        const title = i18nString(UIStrings.sourceMappedFromS, {PH1: text});
+        links.push(Components.Linkifier.Linkifier.linkifyRevealable(uiSourceCode, text, url, title));
       }
+      for (const originURL of Bindings.SASSSourceMapping.SASSSourceMapping.uiSourceOrigin(this.uiSourceCode)) {
+        links.push(Components.Linkifier.Linkifier.linkifyURL(originURL));
+      }
+      if (links.length === 0) {
+        return [];
+      }
+      const element = document.createElement('span');
+      links.forEach((link, index) => {
+        if (index > 0) {
+          element.append(', ');
+        }
+        element.append(link);
+      });
+      return [new UI.Toolbar.ToolbarItem(i18n.i18n.getFormatLocalizedString(str_, UIStrings.fromS, {PH1: element}))];
     }
 
     // Handle anonymous scripts with an originStackTrace.
-    const script = await ResourceOriginPlugin.script(this.uiSourceCode);
-    if (!script || !script.originStackTrace) {
-      return [];
-    }
-    const link = linkifier.linkifyStackTraceTopFrame(script.debuggerModel.target(), script.originStackTrace);
-    return [new UI.Toolbar.ToolbarItem(link)];
-  }
-
-  private static async script(uiSourceCode: Workspace.UISourceCode.UISourceCode): Promise<SDK.Script.Script|null> {
-    const locations =
-        await Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance().uiLocationToRawLocations(
-            uiSourceCode, 0, 0);
-    for (const location of locations) {
-      const script = location.script();
-      if (script && script.originStackTrace) {
-        return script;
+    for (const script of debuggerWorkspaceBinding.scriptsForUISourceCode(this.uiSourceCode)) {
+      if (script.originStackTrace) {
+        const link = linkifier.linkifyStackTraceTopFrame(script.debuggerModel.target(), script.originStackTrace);
+        return [new UI.Toolbar.ToolbarItem(i18n.i18n.getFormatLocalizedString(str_, UIStrings.fromS, {PH1: link}))];
       }
     }
-    return null;
+
+    return [];
   }
 }
 

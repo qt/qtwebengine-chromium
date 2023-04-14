@@ -36,15 +36,15 @@ class Const final : public Castable<Const, Variable> {
     /// @param pid the identifier of the program that owns this node
     /// @param nid the unique node identifier
     /// @param source the variable source
-    /// @param sym the variable symbol
+    /// @param name the variable name
     /// @param type the declared variable type
     /// @param initializer the initializer expression. Must not be nullptr.
     /// @param attributes the variable attributes
     Const(ProgramID pid,
           NodeID nid,
           const Source& source,
-          const Symbol& sym,
-          const ast::Type* type,
+          const Identifier* name,
+          Type type,
           const Expression* initializer,
           utils::VectorRef<const Attribute*> attributes);
 

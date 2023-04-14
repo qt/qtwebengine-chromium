@@ -21,10 +21,10 @@
 
 static void f32_rmax(
   benchmark::State& state,
-  xnn_f32_rmax_ukernel_function f32_rmax,
+  xnn_f32_rmax_ukernel_fn f32_rmax,
   benchmark::utils::IsaCheckFunction isa_check = nullptr)
 {
-  if (isa_check && !isa_check(state)) {
+  if (isa_check != nullptr && !isa_check(state)) {
     return;
   }
 

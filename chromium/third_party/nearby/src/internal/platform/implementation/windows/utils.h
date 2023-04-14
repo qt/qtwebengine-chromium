@@ -15,8 +15,7 @@
 #ifndef PLATFORM_IMPL_WINDOWS_UTILS_H_
 #define PLATFORM_IMPL_WINDOWS_UTILS_H_
 
-#include <Windows.h>
-#include <stdio.h>
+#include <windows.h>
 
 #include <cstdint>
 #include <string>
@@ -24,10 +23,10 @@
 
 #include "absl/strings/string_view.h"
 #include "internal/platform/byte_array.h"
-#include "internal/platform/implementation/windows/generated/winrt/Windows.Foundation.h"
-#include "internal/platform/implementation/windows/generated/winrt/base.h"
+#include "internal/platform/uuid.h"
+#include "winrt/Windows.Foundation.h"
+#include "winrt/base.h"
 
-namespace location {
 namespace nearby {
 namespace windows {
 
@@ -46,6 +45,15 @@ ByteArray Sha256(absl::string_view input, size_t size);
 
 // Reads the IPv4 addresses
 std::vector<std::string> GetIpv4Addresses();
+std::vector<std::string> Get4BytesIpv4Addresses();
+
+// Help methods to convert between Uuid and winrt::guid
+Uuid winrt_guid_to_nearby_uuid(const ::winrt::guid& guid);
+winrt::guid nearby_uuid_to_winrt_guid(Uuid uuid);
+
+// Check whether Uuid and guid is the same value.
+bool is_nearby_uuid_equal_to_winrt_guid(const Uuid& uuid,
+                                     const ::winrt::guid& guid);
 
 namespace Constants {
 // The Id of the Service Name SDP attribute
@@ -57,6 +65,11 @@ const uint16_t SdpServiceNameAttributeId = 0x100;
 //    -  the Attribute Type size in the least significant 3 bits,
 //    -  the SDP Attribute Type value in the most significant 5 bits.
 const char SdpServiceNameAttributeType = (4 << 3) | 5;
+
+// Possible values for the adapter type. Refer to:
+// https://learn.microsoft.com/en-us/windows/win32/api/iptypes/ns-iptypes-ip_adapter_info
+const uint16_t kInterfaceTypeEthernet = 6;
+const uint16_t kInterfaceTypeWifi = 71;
 }  // namespace Constants
 
 class InspectableReader {
@@ -70,6 +83,5 @@ class InspectableReader {
 
 }  // namespace windows
 }  // namespace nearby
-}  // namespace location
 
 #endif  //  PLATFORM_IMPL_WINDOWS_UTILS_H_

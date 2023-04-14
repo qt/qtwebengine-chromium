@@ -9,8 +9,9 @@
 #include "include/core/SkRSXform.h"
 #include "include/core/SkTextBlob.h"
 #include "include/core/SkTypes.h"
-#include "include/private/SkTDArray.h"
+#include "include/private/base/SkTDArray.h"
 #include "include/private/chromium/Slug.h"
+#include "src/base/SkSafeMath.h"
 #include "src/core/SkCanvasPriv.h"
 #include "src/core/SkDrawShadowInfo.h"
 #include "src/core/SkFontPriv.h"
@@ -20,10 +21,11 @@
 #include "src/core/SkPicturePlayback.h"
 #include "src/core/SkPictureRecord.h"
 #include "src/core/SkReadBuffer.h"
-#include "src/core/SkSafeMath.h"
 #include "src/core/SkSamplingPriv.h"
 #include "src/core/SkVerticesPriv.h"
 #include "src/utils/SkPatchUtils.h"
+
+using namespace skia_private;
 
 static const SkRect* get_rect_ptr(SkReadBuffer* reader, SkRect* storage) {
     if (reader->readBool()) {
@@ -252,7 +254,8 @@ void SkPicturePlayback::handleOp(SkReadBuffer* reader,
             SkBlendMode mode = SkBlendMode::kDst;
             if (flags & DRAW_ATLAS_HAS_COLORS) {
                 colors = (const SkColor*)reader->skip(count, sizeof(SkColor));
-                mode = (SkBlendMode)reader->readUInt();
+                mode = reader->read32LE(SkBlendMode::kLastMode);
+                BREAK_ON_READ_ERROR(reader);
             }
             const SkRect* cull = nullptr;
             if (flags & DRAW_ATLAS_HAS_CULL) {
@@ -308,7 +311,8 @@ void SkPicturePlayback::handleOp(SkReadBuffer* reader,
             SkCanvas::QuadAAFlags aaFlags = static_cast<SkCanvas::QuadAAFlags>(reader->read32());
             SkColor4f color;
             reader->readColor4f(&color);
-            SkBlendMode blend = static_cast<SkBlendMode>(reader->read32());
+            SkBlendMode blend = reader->read32LE(SkBlendMode::kLastMode);
+            BREAK_ON_READ_ERROR(reader);
             bool hasClip = reader->readInt();
             SkPoint* clip = nullptr;
             if (hasClip) {
@@ -348,7 +352,7 @@ void SkPicturePlayback::handleOp(SkReadBuffer* reader,
             // the entries.
             int expectedClips = 0;
             int maxMatrixIndex = -1;
-            SkAutoTArray<SkCanvas::ImageSetEntry> set(cnt);
+            AutoTArray<SkCanvas::ImageSetEntry> set(cnt);
             for (int i = 0; i < cnt && reader->isValid(); ++i) {
                 set[i].fImage = sk_ref_sp(fPictureData->getImage(reader));
                 reader->readRect(&set[i].fSrcRect);

@@ -39,13 +39,14 @@ const char kStartArcVmMethod[] = "StartArcVm";
 const char kSetVmCpuRestrictionMethod[] = "SetVmCpuRestriction";
 const char kAdjustVmMethod[] = "AdjustVm";
 const char kReclaimVmMemoryMethod[] = "ReclaimVmMemory";
-const char kMakeRtVcpuMethod[] = "MakeRtVcpu";
 const char kListVmsMethod[] = "ListVms";
 const char kArcVmCompleteBootMethod[] = "ArcVmCompleteBoot";
 const char kSetBalloonTimerMethod[] = "SetBalloonTimer";
 const char kGetVmGpuCachePathMethod[] = "GetVmGpuCachePath";
 const char kAddGroupPermissionMesaMethod[] = "AddGroupPermissionMesa";
 const char kGetVmLaunchAllowedMethod[] = "GetVmLaunchAllowed";
+const char kGetVmLogsMethod[] = "GetVmLogs";
+const char kSwapVmMethod[] = "SwapVm";
 
 const char kDiskImageProgressSignal[] = "DiskImageProgress";
 const char kDnsSettingsChangedSignal[] = "DnsSettingsChanged";
@@ -53,6 +54,7 @@ const char kVmStartedSignal[] = "VmStartedSignal";
 const char kVmStartingUpSignal[] = "VmStartingUpSignal";
 const char kVmStoppedSignal[] = "VmStoppedSignal";
 const char kVmStoppingSignal[] = "VmStoppingSignal";
+const char kVmSwappingSignal[] = "VmSwappingSignal";
 
 }  // namespace concierge
 }  // namespace vm_tools

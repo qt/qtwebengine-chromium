@@ -48,7 +48,7 @@ class Device final : public DeviceBase {
   public:
     static ResultOrError<Ref<Device>> Create(Adapter* adapter,
                                              const DeviceDescriptor* descriptor,
-                                             const TripleStateTogglesSet& userProvidedToggles);
+                                             const TogglesState& deviceToggles);
     ~Device() override;
 
     MaybeError Initialize(const DeviceDescriptor* descriptor);
@@ -96,23 +96,22 @@ class Device final : public DeviceBase {
 
     MaybeError ExecutePendingCommandContext();
 
-    ResultOrError<std::unique_ptr<StagingBufferBase>> CreateStagingBuffer(size_t size) override;
-    MaybeError CopyFromStagingToBufferImpl(StagingBufferBase* source,
+    MaybeError CopyFromStagingToBufferImpl(BufferBase* source,
                                            uint64_t sourceOffset,
                                            BufferBase* destination,
                                            uint64_t destinationOffset,
                                            uint64_t size) override;
 
     void CopyFromStagingToBufferHelper(CommandRecordingContext* commandContext,
-                                       StagingBufferBase* source,
+                                       BufferBase* source,
                                        uint64_t sourceOffset,
                                        BufferBase* destination,
                                        uint64_t destinationOffset,
                                        uint64_t size);
 
-    MaybeError CopyFromStagingToTextureImpl(const StagingBufferBase* source,
+    MaybeError CopyFromStagingToTextureImpl(const BufferBase* source,
                                             const TextureDataLayout& src,
-                                            TextureCopy* dst,
+                                            const TextureCopy& dst,
                                             const Extent3D& copySizePixels) override;
 
     ResultOrError<ResourceHeapAllocation> AllocateMemory(
@@ -150,8 +149,6 @@ class Device final : public DeviceBase {
                                                 bool isInitialized);
 
     ComPtr<ID3D11On12Device> GetOrCreateD3D11on12Device();
-
-    void InitTogglesFromDriver();
 
     uint32_t GetOptimalBytesPerRowAlignment() const override;
     uint64_t GetOptimalBufferToTextureCopyOffsetAlignment() const override;
@@ -217,7 +214,7 @@ class Device final : public DeviceBase {
     MaybeError CheckDebugLayerAndGenerateErrors();
     void AppendDebugLayerMessages(ErrorData* error) override;
 
-    MaybeError ApplyUseDxcToggle();
+    MaybeError EnsureDXCIfRequired();
 
     MaybeError CreateZeroBuffer();
 

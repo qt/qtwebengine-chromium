@@ -18,7 +18,7 @@
 #include <string>
 #include <vector>
 
-#include "src/tint/ast/extension.h"
+#include "src/tint/builtin/extension.h"
 #include "src/tint/sem/builtin_type.h"
 #include "src/tint/sem/call_target.h"
 #include "src/tint/sem/pipeline_stage_set.h"
@@ -84,16 +84,16 @@ class Builtin final : public Castable<Builtin, CallTarget> {
     /// @param return_type the return type for the builtin call
     /// @param parameters the parameters for the builtin overload
     /// @param eval_stage the earliest evaluation stage for a call to the builtin
-    /// @param supported_stages the pipeline stages that this builtin can be
-    /// used in
-    /// @param is_deprecated true if the particular overload is considered
-    /// deprecated
+    /// @param supported_stages the pipeline stages that this builtin can be used in
+    /// @param is_deprecated true if the particular overload is considered deprecated
+    /// @param must_use true if the builtin was annotated with `@must_use`
     Builtin(BuiltinType type,
             const type::Type* return_type,
             utils::VectorRef<Parameter*> parameters,
             EvaluationStage eval_stage,
             PipelineStageSet supported_stages,
-            bool is_deprecated);
+            bool is_deprecated,
+            bool must_use);
 
     /// Destructor
     ~Builtin() override;
@@ -147,8 +147,8 @@ class Builtin final : public Castable<Builtin, CallTarget> {
     bool HasSideEffects() const;
 
     /// @returns the required extension of this builtin function. Returns
-    /// ast::Extension::kNone if no extension is required.
-    ast::Extension RequiredExtension() const;
+    /// builtin::Extension::kNone if no extension is required.
+    builtin::Extension RequiredExtension() const;
 
   private:
     const BuiltinType type_;

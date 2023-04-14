@@ -31,10 +31,10 @@
 #include "include/core/SkString.h"
 #include "include/core/SkSurface.h"
 #include "include/core/SkTime.h"
-#include "include/private/SkMacros.h"
-#include "src/core/SkAutoMalloc.h"
+#include "include/private/base/SkMacros.h"
+#include "src/base/SkAutoMalloc.h"
+#include "src/base/SkLeanWindows.h"
 #include "src/core/SkColorSpacePriv.h"
-#include "src/core/SkLeanWindows.h"
 #include "src/core/SkOSFile.h"
 #include "src/core/SkTaskGroup.h"
 #include "src/core/SkTraceEvent.h"
@@ -277,7 +277,10 @@ struct GPUTarget : public Target {
         SkSurfaceProps props(this->config.surfaceFlags, kRGB_H_SkPixelGeometry);
         this->surface = SkSurface::MakeRenderTarget(
                 this->factory->get(this->config.ctxType, this->config.ctxOverrides),
-                SkBudgeted::kNo, info, this->config.samples, &props);
+                skgpu::Budgeted::kNo,
+                info,
+                this->config.samples,
+                &props);
         this->contextInfo =
                 this->factory->getContextInfo(this->config.ctxType, this->config.ctxOverrides);
         if (!this->surface) {

@@ -34,15 +34,16 @@ class Adapter : public AdapterBase {
 
   private:
     MaybeError InitializeImpl() override;
-    MaybeError InitializeSupportedFeaturesImpl() override;
+    void InitializeSupportedFeaturesImpl() override;
     MaybeError InitializeSupportedLimitsImpl(CombinedLimits* limits) override;
-    ResultOrError<Ref<DeviceBase>> CreateDeviceImpl(
-        const DeviceDescriptor* descriptor,
-        const TripleStateTogglesSet& userProvidedToggles) override;
 
-    MaybeError ValidateFeatureSupportedWithTogglesImpl(
+    MaybeError ValidateFeatureSupportedWithDeviceTogglesImpl(
         wgpu::FeatureName feature,
-        const TripleStateTogglesSet& userProvidedToggles) override;
+        const TogglesState& deviceTogglesState) override;
+
+    void SetupBackendDeviceToggles(TogglesState* deviceToggles) const override;
+    ResultOrError<Ref<DeviceBase>> CreateDeviceImpl(const DeviceDescriptor* descriptor,
+                                                    const TogglesState& deviceToggles) override;
 
     OpenGLFunctions mFunctions;
     EGLFunctions mEGLFunctions;

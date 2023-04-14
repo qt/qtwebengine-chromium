@@ -129,17 +129,12 @@ sed   -i \
       /source\/common/ d
    }' icu.gypi
 
-# Update the major version number registered in version.gni.
-cat << EOF > version.gni
-# Copyright 2020 The Chromium Authors. All rights reserved.
-# Use of this source code is governed by a BSD-style license that can be
-# found in the LICENSE file.
-
-declare_args() {
-  # Contains the major version number of the ICU library, for dependencies that
-  # need different configuration based on the library version. Currently this
-  # is only useful in Fuchsia.
-  icu_major_version_number = "${major_version}"
+# Update the major version number registered in version.json.
+# The version is written out into a text file to allow other tools to
+# read it without parsing .gni files.
+cat << EOF > version.json
+{
+ "major_version": "${major_version}"
 }
 EOF
 

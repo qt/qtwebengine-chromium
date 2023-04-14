@@ -21,6 +21,7 @@
 #include <vector>
 
 #include "src/tint/ast/workgroup_attribute.h"
+#include "src/tint/builtin/builtin_value.h"
 #include "src/tint/program_builder.h"
 #include "src/tint/sem/function.h"
 #include "src/tint/sem/variable.h"
@@ -36,7 +37,8 @@ namespace {
 bool ShouldRun(const Program* program) {
     for (auto* global : program->AST().GlobalVariables()) {
         if (auto* var = global->As<ast::Var>()) {
-            if (var->declared_address_space == ast::AddressSpace::kWorkgroup) {
+            auto* v = program->Sem().Get(var);
+            if (v->AddressSpace() == builtin::AddressSpace::kWorkgroup) {
                 return true;
             }
         }
@@ -139,9 +141,9 @@ struct ZeroInitWorkgroupMemory::State {
         // workgroup storage variables used by `fn`. This will populate #statements.
         auto* func = sem.Get(fn);
         for (auto* var : func->TransitivelyReferencedGlobals()) {
-            if (var->AddressSpace() == ast::AddressSpace::kWorkgroup) {
+            if (var->AddressSpace() == builtin::AddressSpace::kWorkgroup) {
                 auto get_expr = [&](uint32_t num_values) {
-                    auto var_name = ctx.Clone(var->Declaration()->symbol);
+                    auto var_name = ctx.Clone(var->Declaration()->name->symbol);
                     return Expression{b.Expr(var_name), num_values, ArrayIndices{}};
                 };
                 if (!BuildZeroingStatements(var->Type()->UnwrapRef(), get_expr)) {
@@ -158,21 +160,23 @@ struct ZeroInitWorkgroupMemory::State {
         // parameter
         std::function<const ast::Expression*()> local_index;
         for (auto* param : fn->params) {
-            if (auto* builtin = ast::GetAttribute<ast::BuiltinAttribute>(param->attributes)) {
-                if (builtin->builtin == ast::BuiltinValue::kLocalInvocationIndex) {
-                    local_index = [=] { return b.Expr(ctx.Clone(param->symbol)); };
+            if (auto* builtin_attr = ast::GetAttribute<ast::BuiltinAttribute>(param->attributes)) {
+                auto builtin = sem.Get(builtin_attr)->Value();
+                if (builtin == builtin::BuiltinValue::kLocalInvocationIndex) {
+                    local_index = [=] { return b.Expr(ctx.Clone(param->name->symbol)); };
                     break;
                 }
             }
 
             if (auto* str = sem.Get(param)->Type()->As<sem::Struct>()) {
                 for (auto* member : str->Members()) {
-                    if (auto* builtin = ast::GetAttribute<ast::BuiltinAttribute>(
+                    if (auto* builtin_attr = ast::GetAttribute<ast::BuiltinAttribute>(
                             member->Declaration()->attributes)) {
-                        if (builtin->builtin == ast::BuiltinValue::kLocalInvocationIndex) {
+                        auto builtin = sem.Get(builtin_attr)->Value();
+                        if (builtin == builtin::BuiltinValue::kLocalInvocationIndex) {
                             local_index = [=] {
-                                auto* param_expr = b.Expr(ctx.Clone(param->symbol));
-                                auto member_name = ctx.Clone(member->Declaration()->symbol);
+                                auto* param_expr = b.Expr(ctx.Clone(param->name->symbol));
+                                auto* member_name = ctx.Clone(member->Declaration()->name);
                                 return b.MemberAccessor(param_expr, member_name);
                             };
                             break;
@@ -183,12 +187,11 @@ struct ZeroInitWorkgroupMemory::State {
         }
         if (!local_index) {
             // No existing local index parameter. Append one to the entry point.
-            auto* param = b.Param(b.Symbols().New("local_invocation_index"), b.ty.u32(),
-                                  utils::Vector{
-                                      b.Builtin(ast::BuiltinValue::kLocalInvocationIndex),
-                                  });
+            auto param_name = b.Symbols().New("local_invocation_index");
+            auto* local_invocation_index = b.Builtin(builtin::BuiltinValue::kLocalInvocationIndex);
+            auto* param = b.Param(param_name, b.ty.u32(), utils::Vector{local_invocation_index});
             ctx.InsertBack(fn->params, param);
-            local_index = [=] { return b.Expr(param->symbol); };
+            local_index = [=] { return b.Expr(param->name->symbol); };
         }
 
         // Take the zeroing statements and bin them by the number of iterations
@@ -297,14 +300,14 @@ struct ZeroInitWorkgroupMemory::State {
             if (!var) {
                 return false;
             }
-            auto* zero_init = b.Construct(CreateASTTypeFor(ctx, ty));
+            auto* zero_init = b.Call(CreateASTTypeFor(ctx, ty));
             statements.emplace_back(
                 Statement{b.Assign(var.expr, zero_init), var.num_iterations, var.array_indices});
             return true;
         }
 
         if (auto* atomic = ty->As<type::Atomic>()) {
-            auto* zero_init = b.Construct(CreateASTTypeFor(ctx, atomic->Type()));
+            auto* zero_init = b.Call(CreateASTTypeFor(ctx, atomic->Type()));
             auto expr = get_expr(1u);
             if (!expr) {
                 return false;
@@ -317,7 +320,7 @@ struct ZeroInitWorkgroupMemory::State {
 
         if (auto* str = ty->As<sem::Struct>()) {
             for (auto* member : str->Members()) {
-                auto name = ctx.Clone(member->Declaration()->symbol);
+                auto name = ctx.Clone(member->Declaration()->name->symbol);
                 auto get_member = [&](uint32_t num_values) {
                     auto s = get_expr(num_values);
                     if (!s) {
@@ -403,7 +406,7 @@ struct ZeroInitWorkgroupMemory::State {
             if (!expr) {
                 continue;
             }
-            auto* sem = ctx.src->Sem().Get(expr);
+            auto* sem = ctx.src->Sem().GetVal(expr);
             if (auto* c = sem->ConstantValue()) {
                 workgroup_size_const *= c->ValueAs<AInt>();
                 continue;
@@ -412,7 +415,7 @@ struct ZeroInitWorkgroupMemory::State {
             workgroup_size_expr = [this, expr, size = workgroup_size_expr] {
                 auto* e = ctx.Clone(expr);
                 if (ctx.src->TypeOf(expr)->UnwrapRef()->Is<type::I32>()) {
-                    e = b.Construct<u32>(e);
+                    e = b.Call<u32>(e);
                 }
                 return size ? b.Mul(size(), e) : e;
             };
@@ -433,9 +436,8 @@ struct ZeroInitWorkgroupMemory::State {
     }
 
     /// @returns true if a variable with store type `ty` can be efficiently zeroed
-    /// by assignment of a type initializer without operands. If
-    /// CanTriviallyZero() returns false, then the type needs to be
-    /// initialized by decomposing the initialization into multiple
+    /// by assignment of a value constructor without operands. If CanTriviallyZero() returns false,
+    /// then the type needs to be initialized by decomposing the initialization into multiple
     /// sub-initializations.
     /// @param ty the type to inspect
     bool CanTriviallyZero(const type::Type* ty) {

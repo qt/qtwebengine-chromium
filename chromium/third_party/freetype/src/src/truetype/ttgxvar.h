@@ -4,7 +4,7 @@
  *
  *   TrueType GX Font Variation loader (specification)
  *
- * Copyright (C) 2004-2022 by
+ * Copyright (C) 2004-2023 by
  * David Turner, Robert Wilhelm, Werner Lemberg and George Williams.
  *
  * This file is part of the FreeType project, and may only be used,
@@ -343,6 +343,7 @@ FT_BEGIN_HEADER
 #define TTAG_wdth  FT_MAKE_TAG( 'w', 'd', 't', 'h' )
 #define TTAG_opsz  FT_MAKE_TAG( 'o', 'p', 's', 'z' )
 #define TTAG_slnt  FT_MAKE_TAG( 's', 'l', 'n', 't' )
+#define TTAG_ital  FT_MAKE_TAG( 'i', 't', 'a', 'l' )
 
 
   FT_LOCAL( FT_Error )

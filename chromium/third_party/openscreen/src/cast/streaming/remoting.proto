@@ -62,6 +62,7 @@ message AudioDecoderConfig {
     kCodecMpegHAudio = 17;
     kCodecDTS = 18;
     kCodecDTSXP2 = 19;
+    kCodecDTSE = 20;
   }
 
   // Proto version of Chrome's media::SampleFormat.
@@ -317,8 +318,8 @@ message RendererClientOnVideoConfigChange {
 }
 
 message RemotingError {
-  enum PipelineStatus {
-    // These error codes correspond to those in //media/base/pipeline_status.h
+  enum ErrorType {
+    // Proto version of Chrome's media::PipelineStatus.
     kMediaPipelineNetwork = 1;
     kMediaPipelineDecode = 2;
     kMediaPipelineAbort = 3;
@@ -331,7 +332,7 @@ message RemotingError {
     kMediaPipelineDisconnected = 10;
     kMediaPipelineDemuxerCouldNotOpen = 11;
     kMediaPipelineDemuxerCouldNotParse = 12;
-    kMediaPipelineDemuxerNoSupportedStream = 13;
+    kMediaPipelineDemuxerNoSupportedStreams = 13;
     kMediaPipelineDemuxerDetectedHls = 14;
     kMediaPipelineDecoderNotSupported = 15;
     kMediaPipelineChunkDemuxerAppendFailed = 16;
@@ -340,7 +341,7 @@ message RemotingError {
     kMediaPipelineAudioRenderer = 19;
   }
 
-  optional PipelineStatus pipeline_status = 1;
+  optional ErrorType error_type = 1;
   optional string description = 2;
 }
 

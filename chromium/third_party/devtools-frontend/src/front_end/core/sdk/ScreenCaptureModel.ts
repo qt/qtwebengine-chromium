@@ -179,6 +179,12 @@ export class ScreenCaptureModel extends SDKModel<void> implements ProtocolProxyA
 
   prerenderAttemptCompleted(_params: Protocol.Page.PrerenderAttemptCompletedEvent): void {
   }
+
+  prefetchStatusUpdated(_params: Protocol.Page.PrefetchStatusUpdatedEvent): void {
+  }
+
+  prerenderStatusUpdated(_params: Protocol.Page.PrerenderStatusUpdatedEvent): void {
+  }
 }
 
 SDKModel.register(ScreenCaptureModel, {capabilities: Capability.ScreenCapture, autostart: false});

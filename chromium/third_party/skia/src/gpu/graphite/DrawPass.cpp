@@ -10,10 +10,10 @@
 #include "include/gpu/graphite/GraphiteTypes.h"
 #include "include/gpu/graphite/Recorder.h"
 #include "src/gpu/graphite/Buffer.h"
+#include "src/gpu/graphite/BufferManager.h"
 #include "src/gpu/graphite/Caps.h"
 #include "src/gpu/graphite/ContextPriv.h"
 #include "src/gpu/graphite/ContextUtils.h"
-#include "src/gpu/graphite/DrawBufferManager.h"
 #include "src/gpu/graphite/DrawContext.h"
 #include "src/gpu/graphite/DrawList.h"
 #include "src/gpu/graphite/DrawWriter.h"
@@ -33,8 +33,8 @@
 #include "src/gpu/graphite/UniformManager.h"
 #include "src/gpu/graphite/geom/BoundsManager.h"
 
-#include "src/core/SkMathPriv.h"
-#include "src/core/SkTBlockList.h"
+#include "src/base/SkMathPriv.h"
+#include "src/base/SkTBlockList.h"
 
 #include <algorithm>
 #include <unordered_map>
@@ -408,7 +408,7 @@ DrawPass::~DrawPass() = default;
 std::unique_ptr<DrawPass> DrawPass::Make(Recorder* recorder,
                                          std::unique_ptr<DrawList> draws,
                                          sk_sp<TextureProxy> target,
-                                         SkISize deviceSize,
+                                         const SkImageInfo& targetInfo,
                                          std::pair<LoadOp, StoreOp> ops,
                                          std::array<float, 4> clearColor) {
     // NOTE: This assert is here to ensure SortKey is as tightly packed as possible. Any change to
@@ -442,13 +442,14 @@ std::unique_ptr<DrawPass> DrawPass::Make(Recorder* recorder,
     GraphicsPipelineCache pipelineCache;
 
     // Geometry uniforms are currently always UBO-backed.
-    Layout geometryUniformLayout = recorder->priv().caps()->uniformBufferLayout();
+    const ResourceBindingRequirements& bindingReqs =
+            recorder->priv().caps()->resourceBindingRequirements();
+    Layout geometryUniformLayout = bindingReqs.fUniformBufferLayout;
     UniformSsboTracker geometrySsboTracker(/*useStorageBuffers=*/false);
 
     bool useStorageBuffers = recorder->priv().caps()->storageBufferPreferred();
-    Layout shadingUniformLayout = useStorageBuffers
-                                          ? recorder->priv().caps()->storageBufferLayout()
-                                          : recorder->priv().caps()->uniformBufferLayout();
+    Layout shadingUniformLayout =
+            useStorageBuffers ? bindingReqs.fStorageBufferLayout : bindingReqs.fUniformBufferLayout;
     UniformSsboTracker shadingSsboTracker(useStorageBuffers);
     TextureBindingTracker textureBindingTracker;
 
@@ -475,7 +476,8 @@ std::unique_ptr<DrawPass> DrawPass::Make(Recorder* recorder,
                                      &builder,
                                      shadingUniformLayout,
                                      draw.fDrawParams.transform(),
-                                     draw.fPaintParams.value());
+                                     draw.fPaintParams.value(),
+                                     targetInfo.colorInfo());
         } // else depth-only
 
         for (int stepIndex = 0; stepIndex < draw.fRenderer->numRenderSteps(); ++stepIndex) {
@@ -522,7 +524,7 @@ std::unique_ptr<DrawPass> DrawPass::Make(Recorder* recorder,
     // Used to record vertex/instance data, buffer binds, and draw calls
     DrawWriter drawWriter(&drawPass->fCommandList, bufferMgr);
     GraphicsPipelineCache::Index lastPipeline = GraphicsPipelineCache::kInvalidIndex;
-    SkIRect lastScissor = SkIRect::MakeSize(deviceSize);
+    SkIRect lastScissor = SkIRect::MakeSize(targetInfo.dimensions());
 
     SkASSERT(!drawPass->fTarget->isInstantiated() ||
              SkIRect::MakeSize(drawPass->fTarget->dimensions()).contains(lastScissor));
@@ -584,6 +586,7 @@ std::unique_ptr<DrawPass> DrawPass::Make(Recorder* recorder,
     // Finish recording draw calls for any collected data at the end of the loop
     drawWriter.flush();
 
+    drawPass->fBounds = passBounds.roundOut().asSkIRect();
 
     drawPass->fPipelineDescs   = pipelineCache.detach();
     drawPass->fSamplerDescs    = textureBindingTracker.detachSamplers();

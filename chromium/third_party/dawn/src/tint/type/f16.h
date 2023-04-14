@@ -26,16 +26,13 @@ class F16 final : public Castable<F16, Type> {
   public:
     /// Constructor
     F16();
-    /// Move constructor
-    F16(F16&&);
+
+    /// Destructor
     ~F16() override;
 
-    /// @returns a hash of the type.
-    size_t Hash() const override;
-
-    /// @param other the other type to compare against
-    /// @returns true if the this type is equal to the given type
-    bool Equals(const Type& other) const override;
+    /// @param other the other node to compare against
+    /// @returns true if the this type is equal to @p other
+    bool Equals(const UniqueNode& other) const override;
 
     /// @param symbols the program's symbol table
     /// @returns the name for this type that closely resembles how it would be
@@ -47,6 +44,10 @@ class F16 final : public Castable<F16, Type> {
 
     /// @returns the alignment in bytes of the type.
     uint32_t Align() const override;
+
+    /// @param ctx the clone context
+    /// @returns a clone of this type
+    F16* Clone(CloneContext& ctx) const override;
 };
 
 }  // namespace tint::type

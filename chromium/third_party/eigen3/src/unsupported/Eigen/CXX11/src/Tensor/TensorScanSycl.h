@@ -109,28 +109,28 @@ struct ScanKernelFunctor {
   template <scan_step sst = stp, typename Input>
   std::enable_if_t<sst == scan_step::first, CoeffReturnType> EIGEN_DEVICE_FUNC
       EIGEN_STRONG_INLINE
-      read(const Input &inpt, Index global_id) {
+      read(const Input &inpt, Index global_id) const {
     return inpt.coeff(global_id);
   }
 
   template <scan_step sst = stp, typename Input>
   std::enable_if_t<sst != scan_step::first, CoeffReturnType> EIGEN_DEVICE_FUNC
       EIGEN_STRONG_INLINE
-      read(const Input &inpt, Index global_id) {
+      read(const Input &inpt, Index global_id) const {
     return inpt[global_id];
   }
 
   template <scan_step sst = stp, typename InclusiveOp>
   std::enable_if_t<sst == scan_step::first> EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE
-  first_step_inclusive_Operation(InclusiveOp inclusive_op) {
+  first_step_inclusive_Operation(InclusiveOp inclusive_op) const {
     inclusive_op();
   }
 
   template <scan_step sst = stp, typename InclusiveOp>
   std::enable_if_t<sst != scan_step::first> EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE
-  first_step_inclusive_Operation(InclusiveOp) {}
+  first_step_inclusive_Operation(InclusiveOp) const {}
 
-  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void operator()(cl::sycl::nd_item<1> itemID) {
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void operator()(cl::sycl::nd_item<1> itemID) const {
     auto out_ptr = out_accessor.get_pointer();
     auto tmp_ptr = temp_accessor.get_pointer();
     auto scratch_ptr = scratch.get_pointer().get();
@@ -307,7 +307,7 @@ struct ScanAdjustmentKernelFunctor {
         scanParameters(scanParameters_),
         accumulator(accumulator_) {}
 
-  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void operator()(cl::sycl::nd_item<1> itemID) {
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void operator()(cl::sycl::nd_item<1> itemID) const {
     auto in_ptr = in_accessor.get_pointer();
     auto out_ptr = out_accessor.get_pointer();
 
@@ -473,7 +473,7 @@ struct ScanLauncher<Self, Reducer, Eigen::SyclDevice, vectorize> {
   typedef typename Self::CoeffReturnType CoeffReturnType;
   typedef typename Self::Storage Storage;
   typedef typename Self::EvaluatorPointerType EvaluatorPointerType;
-  void operator()(Self &self, EvaluatorPointerType data) {
+  void operator()(Self &self, EvaluatorPointerType data) const {
     const Index total_size = internal::array_prod(self.dimensions());
     const Index scan_size = self.size();
     const Index scan_stride = self.stride();

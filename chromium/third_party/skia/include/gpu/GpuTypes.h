@@ -26,6 +26,12 @@ enum class BackendApi : unsigned {
     kMock,
 };
 
+/** Indicates whether an allocation should count against a cache budget. */
+enum class Budgeted : bool {
+    kNo = false,
+    kYes = true,
+};
+
 /**
  * Value passed into various callbacks to tell the client the result of operations connected to a
  * specific callback. The actual interpretation of kFailed and kSuccess are dependent on the
@@ -36,6 +42,13 @@ enum class CallbackResult : bool {
     kSuccess = true,
 };
 
+/**
+ * Is the texture mipmapped or not
+ */
+enum class Mipmapped : bool {
+    kNo = false,
+    kYes = true,
+};
 
 /**
  * Is the data protected on the GPU or not.
@@ -46,5 +59,6 @@ enum class Protected : bool {
 };
 
 } // namespace skgpu
+
 
 #endif // skgpu_GpuTypes_DEFINED

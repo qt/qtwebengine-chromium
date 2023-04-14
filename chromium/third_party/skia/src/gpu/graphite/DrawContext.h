@@ -35,6 +35,7 @@ class Geometry;
 class Recorder;
 class Transform;
 
+class AtlasManager;
 class Caps;
 class DrawPass;
 class Task;
@@ -54,7 +55,8 @@ public:
 
     ~DrawContext() override;
 
-    const SkImageInfo&  imageInfo() const { return fImageInfo;    }
+    const SkImageInfo& imageInfo() const { return fImageInfo;    }
+    const SkColorInfo& colorInfo() const { return fImageInfo.colorInfo(); }
     TextureProxy* target()                { return fTarget.get(); }
     const TextureProxy* target()    const { return fTarget.get(); }
 
@@ -74,9 +76,11 @@ public:
                     const PaintParams* paint,
                     const StrokeStyle* stroke);
 
+    bool recordTextUploads(AtlasManager*);
     bool recordUpload(Recorder* recorder,
                       sk_sp<TextureProxy> targetProxy,
-                      SkColorType colorType,
+                      const SkColorInfo& srcColorInfo,
+                      const SkColorInfo& dstColorInfo,
                       const std::vector<MipLevel>& levels,
                       const SkIRect& dstRect,
                       std::unique_ptr<ConditionalUploadContext>);

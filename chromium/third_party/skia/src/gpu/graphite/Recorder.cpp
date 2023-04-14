@@ -13,14 +13,15 @@
 #include "include/gpu/graphite/GraphiteTypes.h"
 #include "include/gpu/graphite/ImageProvider.h"
 #include "include/gpu/graphite/Recording.h"
+
 #include "src/core/SkConvertPixels.h"
 #include "src/gpu/AtlasTypes.h"
+#include "src/gpu/graphite/BufferManager.h"
 #include "src/gpu/graphite/Caps.h"
 #include "src/gpu/graphite/CommandBuffer.h"
 #include "src/gpu/graphite/ContextPriv.h"
 #include "src/gpu/graphite/CopyTask.h"
 #include "src/gpu/graphite/Device.h"
-#include "src/gpu/graphite/DrawBufferManager.h"
 #include "src/gpu/graphite/GlobalCache.h"
 #include "src/gpu/graphite/Log.h"
 #include "src/gpu/graphite/PipelineData.h"
@@ -99,11 +100,10 @@ Recorder::Recorder(sk_sp<SharedContext> sharedContext,
     }
 
     fResourceProvider = fSharedContext->makeResourceProvider(this->singleOwner());
-    fDrawBufferManager.reset(
-            new DrawBufferManager(fResourceProvider.get(),
-                                  fSharedContext->caps()->requiredUniformBufferAlignment(),
-                                  fSharedContext->caps()->requiredStorageBufferAlignment()));
-    fUploadBufferManager.reset(new UploadBufferManager(fResourceProvider.get()));
+    fDrawBufferManager.reset( new DrawBufferManager(fResourceProvider.get(),
+                                                    fSharedContext->caps()));
+    fUploadBufferManager.reset(new UploadBufferManager(fResourceProvider.get(),
+                                                       fSharedContext->caps()));
     SkASSERT(fResourceProvider);
 }
 
@@ -152,10 +152,8 @@ std::unique_ptr<Recording> Recorder::snap() {
     if (!fGraph->prepareResources(fResourceProvider.get(), fRuntimeEffectDict.get())) {
         // Leaving 'fTrackedDevices' alone since they were flushed earlier and could still be
         // attached to extant SkSurfaces.
-        fDrawBufferManager.reset(
-                new DrawBufferManager(fResourceProvider.get(),
-                                      fSharedContext->caps()->requiredUniformBufferAlignment(),
-                                      fSharedContext->caps()->requiredStorageBufferAlignment()));
+        fDrawBufferManager.reset(new DrawBufferManager(fResourceProvider.get(),
+                                                       fSharedContext->caps()));
         fTextureDataCache = std::make_unique<TextureDataCache>();
         // We leave the UniformDataCache alone
         fGraph->reset();
@@ -180,7 +178,15 @@ std::unique_ptr<Recording> Recorder::snap() {
     fGraph = std::make_unique<TaskGraph>();
     fRuntimeEffectDict->reset();
     fTextureDataCache = std::make_unique<TextureDataCache>();
-    fAtlasManager->evictAtlases();
+
+    // inject an initial task to maintain atlas state for next Recording
+    auto uploads = std::make_unique<UploadList>();
+    fAtlasManager->recordUploads(uploads.get(), /*useCachedUploads=*/true);
+    if (uploads->size() > 0) {
+        sk_sp<Task> uploadTask = UploadTask::Make(uploads.get());
+        this->priv().add(std::move(uploadTask));
+    }
+
     return recording;
 }
 
@@ -280,19 +286,25 @@ bool Recorder::updateBackendTexture(const BackendTexture& backendTex,
 
     for (int i = 0; i < numLevels; ++i) {
         SkASSERT(srcData[i].addr());
-        SkASSERT(srcData[i].colorType() == ct);
+        SkASSERT(srcData[i].info().colorInfo() == srcData[0].info().colorInfo());
 
         mipLevels[i].fPixels = srcData[i].addr();
         mipLevels[i].fRowBytes = srcData[i].rowBytes();
     }
 
+    // Src and dst colorInfo are the same
+    const SkColorInfo& colorInfo = srcData[0].info().colorInfo();
+    // Add UploadTask to Recorder
     UploadInstance upload = UploadInstance::Make(this,
                                                  std::move(proxy),
-                                                 ct,
+                                                 colorInfo, colorInfo,
                                                  mipLevels,
                                                  SkIRect::MakeSize(backendTex.dimensions()),
                                                  nullptr);
-
+    if (!upload.isValid()) {
+        SKGPU_LOG_E("Recorder::updateBackendTexture: Could not create UploadInstance");
+        return false;
+    }
     sk_sp<Task> uploadTask = UploadTask::Make(std::move(upload));
 
     this->priv().add(std::move(uploadTask));

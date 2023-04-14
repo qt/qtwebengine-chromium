@@ -16,24 +16,22 @@
 #define PLATFORM_PUBLIC_SUBMITTABLE_EXECUTOR_H_
 
 #include <cstddef>
-#include <functional>
 #include <memory>
 #include <utility>
 
 #include "absl/base/thread_annotations.h"
+#include "internal/platform/callable.h"
+#include "internal/platform/future.h"
 #include "internal/platform/implementation/executor.h"
 #include "internal/platform/implementation/submittable_executor.h"
-#include "internal/platform/callable.h"
-#include "internal/platform/runnable.h"
-#include "internal/platform/future.h"
 #include "internal/platform/lockable.h"
 #include "internal/platform/monitored_runnable.h"
 #include "internal/platform/mutex.h"
 #include "internal/platform/mutex_lock.h"
+#include "internal/platform/runnable.h"
 #include "internal/platform/thread_check_callable.h"
 #include "internal/platform/thread_check_runnable.h"
 
-namespace location {
 namespace nearby {
 
 inline int GetCurrentTid() { return api::GetCurrentTid(); }
@@ -87,7 +85,7 @@ class ABSL_LOCKABLE SubmittableExecutor : public api::SubmittableExecutor,
     MutexLock lock(&mutex_);
     bool submitted =
         DoSubmit([callable = ThreadCheckCallable<T>(this, std::move(callable)),
-                  future]() {
+                  future]() mutable {
           ExceptionOr<T> result = callable();
           if (result.ok()) {
             future->Set(result.result());
@@ -125,6 +123,5 @@ class ABSL_LOCKABLE SubmittableExecutor : public api::SubmittableExecutor,
 };
 
 }  // namespace nearby
-}  // namespace location
 
 #endif  // PLATFORM_PUBLIC_SUBMITTABLE_EXECUTOR_H_

@@ -33,7 +33,7 @@ import type * as Platform from '../../core/platform/platform.js';
 import * as Common from '../common/common.js';
 import * as i18n from '../i18n/i18n.js';
 
-import {Location, type DebuggerModel} from './DebuggerModel.js';
+import {Location, type DebuggerModel, COND_BREAKPOINT_SOURCE_URL, LOGPOINT_SOURCE_URL} from './DebuggerModel.js';
 import {type FrameAssociated} from './FrameAssociated.js';
 import {type PageResourceLoadInitiator} from './PageResourceLoader.js';
 import {ResourceTreeModel} from './ResourceTreeModel.js';
@@ -42,12 +42,12 @@ import {type Target} from './Target.js';
 
 const UIStrings = {
   /**
-  *@description Error message for when a script can't be loaded which had been previously
-  */
+   *@description Error message for when a script can't be loaded which had been previously
+   */
   scriptRemovedOrDeleted: 'Script removed or deleted.',
   /**
-  *@description Error message when failing to load a script source text
-  */
+   *@description Error message when failing to load a script source text
+   */
   unableToFetchScriptSource: 'Unable to fetch script source.',
 };
 const str_ = i18n.i18n.registerUIStrings('core/sdk/Script.ts', UIStrings);
@@ -203,6 +203,10 @@ export class Script implements TextUtils.ContentProvider.ContentProvider, FrameA
     const {streamId, functionBodyOffsets, chunk: {lines, bytecodeOffsets}} = result;
     const lineChunks = [];
     const bytecodeOffsetChunks = [];
+    let totalLength = lines.reduce<number>((sum, line) => sum + line.length + 1, 0);
+    const truncationMessage = '<truncated>';
+    // This is a magic number used in code mirror which, when exceeded, sends it into an infinite loop.
+    const cmSizeLimit = 1000000000 - truncationMessage.length;
     if (streamId) {
       while (true) {
         const result = await this.debuggerModel.target().debuggerAgent().invoke_nextWasmDisassemblyChunk({streamId});
@@ -212,9 +216,16 @@ export class Script implements TextUtils.ContentProvider.ContentProvider, FrameA
         }
 
         const {chunk: {lines: linesChunk, bytecodeOffsets: bytecodeOffsetsChunk}} = result;
+        totalLength += linesChunk.reduce<number>((sum, line) => sum + line.length + 1, 0);
         if (linesChunk.length === 0) {
           break;
         }
+        if (totalLength >= cmSizeLimit) {
+          lineChunks.push([truncationMessage]);
+          bytecodeOffsetChunks.push([0]);
+          break;
+        }
+
         lineChunks.push(linesChunk);
         bytecodeOffsetChunks.push(bytecodeOffsetsChunk);
       }
@@ -276,15 +287,18 @@ export class Script implements TextUtils.ContentProvider.ContentProvider, FrameA
     return source + '\n //# sourceURL=' + this.sourceURL;
   }
 
-  async editSource(newSource: string): Promise<
-      {status: Protocol.Debugger.SetScriptSourceResponseStatus, exceptionDetails?: Protocol.Runtime.ExceptionDetails}> {
+  async editSource(newSource: string): Promise<{
+    changed: boolean,
+    status: Protocol.Debugger.SetScriptSourceResponseStatus,
+    exceptionDetails?: Protocol.Runtime.ExceptionDetails,
+  }> {
     newSource = Script.trimSourceURLComment(newSource);
     // We append correct #sourceURL to script for consistency only. It's not actually needed for things to work correctly.
     newSource = this.appendSourceURLCommentIfNeeded(newSource);
 
     const {content: oldSource} = await this.requestContent();
     if (oldSource === newSource) {
-      return {status: Protocol.Debugger.SetScriptSourceResponseStatus.Ok};
+      return {changed: false, status: Protocol.Debugger.SetScriptSourceResponseStatus.Ok};
     }
     const response = await this.debuggerModel.target().debuggerAgent().invoke_setScriptSource(
         {scriptId: this.scriptId, scriptSource: newSource, allowTopFrameEditing: true});
@@ -298,7 +312,7 @@ export class Script implements TextUtils.ContentProvider.ContentProvider, FrameA
       this.#contentPromise = Promise.resolve({content: newSource, isEncoded: false});
     }
 
-    return {status: response.status, exceptionDetails: response.exceptionDetails};
+    return {changed: true, status: response.status, exceptionDetails: response.exceptionDetails};
   }
 
   rawLocation(lineNumber: number, columnNumber: number): Location|null {
@@ -306,14 +320,6 @@ export class Script implements TextUtils.ContentProvider.ContentProvider, FrameA
       return new Location(this.debuggerModel, this.scriptId, lineNumber, columnNumber);
     }
     return null;
-  }
-
-  toRelativeLocation(location: Location): number[] {
-    console.assert(
-        location.scriptId === this.scriptId, '`toRelativeLocation` must be used with location of the same script');
-    const relativeLineNumber = location.lineNumber - this.lineOffset;
-    const relativeColumnNumber = (location.columnNumber || 0) - (relativeLineNumber === 0 ? this.columnOffset : 0);
-    return [relativeLineNumber, relativeColumnNumber];
   }
 
   isInlineScript(): boolean {
@@ -351,8 +357,67 @@ export class Script implements TextUtils.ContentProvider.ContentProvider, FrameA
     return this[frameIdSymbol];
   }
 
+  /**
+   * @returns true, iff this script originates from a breakpoint/logpoint condition
+   */
+  get isBreakpointCondition(): boolean {
+    return [COND_BREAKPOINT_SOURCE_URL, LOGPOINT_SOURCE_URL].includes(this.sourceURL);
+  }
+
   createPageResourceLoadInitiator(): PageResourceLoadInitiator {
     return {target: this.target(), frameId: this.frameId, initiatorUrl: this.embedderName()};
+  }
+
+  /**
+   * Translates the `rawLocation` from line and column number in terms of what V8 understands
+   * to a script relative location. Specifically this means that for inline `<script>`'s
+   * without a `//# sourceURL=` annotation, the line and column offset of the script
+   * content is subtracted to make the location within the script independent of the
+   * location of the `<script>` tag within the surrounding document.
+   *
+   * @param rawLocation the raw location in terms of what V8 understands.
+   * @returns the script relative line and column number for the {@link rawLocation}.
+   */
+  rawLocationToRelativeLocation(rawLocation: {lineNumber: number, columnNumber: number}):
+      {lineNumber: number, columnNumber: number};
+  rawLocationToRelativeLocation(rawLocation: {lineNumber: number, columnNumber: number|undefined}):
+      {lineNumber: number, columnNumber: number|undefined};
+  rawLocationToRelativeLocation(rawLocation: {lineNumber: number, columnNumber: number|undefined}):
+      {lineNumber: number, columnNumber: number|undefined} {
+    let {lineNumber, columnNumber} = rawLocation;
+    if (!this.hasSourceURL && this.isInlineScript()) {
+      lineNumber -= this.lineOffset;
+      if (lineNumber === 0 && columnNumber !== undefined) {
+        columnNumber -= this.columnOffset;
+      }
+    }
+    return {lineNumber, columnNumber};
+  }
+
+  /**
+   * Translates the `relativeLocation` from script relative line and column number to
+   * the raw location in terms of what V8 understands. Specifically this means that for
+   * inline `<script>`'s without a `//# sourceURL=` annotation, the line and column offset
+   * of the script content is added to make the location relative to the start of the
+   * surrounding document.
+   *
+   * @param relativeLocation the script relative location.
+   * @returns the raw location in terms of what V8 understands for the {@link relativeLocation}.
+   */
+  relativeLocationToRawLocation(relativeLocation: {lineNumber: number, columnNumber: number}):
+      {lineNumber: number, columnNumber: number};
+  relativeLocationToRawLocation(relativeLocation: {lineNumber: number, columnNumber: number|undefined}):
+      {lineNumber: number, columnNumber: number|undefined};
+  relativeLocationToRawLocation(relativeLocation: {lineNumber: number, columnNumber: number|undefined}):
+      {lineNumber: number, columnNumber: number|undefined} {
+    let {lineNumber, columnNumber} = relativeLocation;
+    if (!this.hasSourceURL && this.isInlineScript()) {
+      if (lineNumber === 0 && columnNumber !== undefined) {
+        columnNumber += this.columnOffset;
+      }
+      lineNumber += this.lineOffset;
+    }
+    return {lineNumber, columnNumber};
   }
 }
 

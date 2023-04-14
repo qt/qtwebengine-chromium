@@ -103,7 +103,7 @@ TEST_F(ResolverCallValidationTest, PointerArgument_VariableIdentExpr) {
     //   var z: i32 = 1i;
     //   foo(&z);
     // }
-    auto* param = Param("p", ty.pointer<i32>(ast::AddressSpace::kFunction));
+    auto* param = Param("p", ty.pointer<i32>(builtin::AddressSpace::kFunction));
     Func("foo", utils::Vector{param}, ty.void_(), utils::Empty);
     Func("main", utils::Empty, ty.void_(),
          utils::Vector{
@@ -120,7 +120,7 @@ TEST_F(ResolverCallValidationTest, PointerArgument_LetIdentExpr) {
     //   let z: i32 = 1i;
     //   foo(&z);
     // }
-    auto* param = Param("p", ty.pointer<i32>(ast::AddressSpace::kFunction));
+    auto* param = Param("p", ty.pointer<i32>(builtin::AddressSpace::kFunction));
     Func("foo", utils::Vector{param}, ty.void_(), utils::Empty);
     Func("main", utils::Empty, ty.void_(),
          utils::Vector{
@@ -142,7 +142,7 @@ TEST_F(ResolverCallValidationTest, PointerArgument_AddressOfFunctionMember) {
     auto* S = Structure("S", utils::Vector{
                                  Member("m", ty.i32()),
                              });
-    auto* param = Param("p", ty.pointer<i32>(ast::AddressSpace::kFunction));
+    auto* param = Param("p", ty.pointer<i32>(builtin::AddressSpace::kFunction));
     Func("foo", utils::Vector{param}, ty.void_(), utils::Empty);
     Func("main", utils::Empty, ty.void_(),
          utils::Vector{
@@ -165,11 +165,11 @@ TEST_F(ResolverCallValidationTest,
     //   var v : S;
     //   foo(&v.m);
     // }
-    Enable(ast::Extension::kChromiumExperimentalFullPtrParameters);
+    Enable(builtin::Extension::kChromiumExperimentalFullPtrParameters);
     auto* S = Structure("S", utils::Vector{
                                  Member("m", ty.i32()),
                              });
-    auto* param = Param("p", ty.pointer<i32>(ast::AddressSpace::kFunction));
+    auto* param = Param("p", ty.pointer<i32>(builtin::AddressSpace::kFunction));
     Func("foo", utils::Vector{param}, ty.void_(), utils::Empty);
     Func("main", utils::Empty, ty.void_(),
          utils::Vector{
@@ -189,11 +189,11 @@ TEST_F(ResolverCallValidationTest, PointerArgument_AddressOfLetMember) {
     auto* S = Structure("S", utils::Vector{
                                  Member("m", ty.i32()),
                              });
-    auto* param = Param("p", ty.pointer<i32>(ast::AddressSpace::kFunction));
+    auto* param = Param("p", ty.pointer<i32>(builtin::AddressSpace::kFunction));
     Func("foo", utils::Vector{param}, ty.void_(), utils::Empty);
     Func("main", utils::Empty, ty.void_(),
          utils::Vector{
-             Decl(Let("v", ty.Of(S), Construct(ty.Of(S)))),
+             Decl(Let("v", ty.Of(S), Call(ty.Of(S)))),
              CallStmt(Call("foo", AddressOf(MemberAccessor(Source{{12, 34}}, "v", "m")))),
          });
 
@@ -208,12 +208,12 @@ TEST_F(ResolverCallValidationTest, PointerArgument_FunctionParam) {
     // }
     Func("foo",
          utils::Vector{
-             Param("p", ty.pointer<i32>(ast::AddressSpace::kFunction)),
+             Param("p", ty.pointer<i32>(builtin::AddressSpace::kFunction)),
          },
          ty.void_(), utils::Empty);
     Func("bar",
          utils::Vector{
-             Param("p", ty.pointer<i32>(ast::AddressSpace::kFunction)),
+             Param("p", ty.pointer<i32>(builtin::AddressSpace::kFunction)),
          },
          ty.void_(),
          utils::Vector{
@@ -235,12 +235,12 @@ TEST_F(ResolverCallValidationTest, PointerArgument_FunctionParamWithMain) {
     // }
     Func("foo",
          utils::Vector{
-             Param("p", ty.pointer<i32>(ast::AddressSpace::kFunction)),
+             Param("p", ty.pointer<i32>(builtin::AddressSpace::kFunction)),
          },
          ty.void_(), utils::Empty);
     Func("bar",
          utils::Vector{
-             Param("p", ty.pointer<i32>(ast::AddressSpace::kFunction)),
+             Param("p", ty.pointer<i32>(builtin::AddressSpace::kFunction)),
          },
          ty.void_(),
          utils::Vector{
@@ -268,13 +268,13 @@ TEST_F(ResolverCallValidationTest, LetPointer) {
     // }
     Func("x",
          utils::Vector{
-             Param("p", ty.pointer<i32>(ast::AddressSpace::kFunction)),
+             Param("p", ty.pointer<i32>(builtin::AddressSpace::kFunction)),
          },
          ty.void_(), utils::Empty);
     Func("main", utils::Empty, ty.void_(),
          utils::Vector{
              Decl(Var("v", ty.i32())),
-             Decl(Let("p", ty.pointer(ty.i32(), ast::AddressSpace::kFunction), AddressOf("v"))),
+             Decl(Let("p", ty.pointer(ty.i32(), builtin::AddressSpace::kFunction), AddressOf("v"))),
              CallStmt(Call("x", "p")),
          },
          utils::Vector{
@@ -293,13 +293,13 @@ TEST_F(ResolverCallValidationTest, LetPointerPrivate) {
     // }
     Func("foo",
          utils::Vector{
-             Param("p", ty.pointer<i32>(ast::AddressSpace::kPrivate)),
+             Param("p", ty.pointer<i32>(builtin::AddressSpace::kPrivate)),
          },
          ty.void_(), utils::Empty);
-    GlobalVar("v", ty.i32(), ast::AddressSpace::kPrivate);
+    GlobalVar("v", ty.i32(), builtin::AddressSpace::kPrivate);
     Func("main", utils::Empty, ty.void_(),
          utils::Vector{
-             Decl(Let("p", ty.pointer(ty.i32(), ast::AddressSpace::kPrivate), AddressOf("v"))),
+             Decl(Let("p", ty.pointer(ty.i32(), builtin::AddressSpace::kPrivate), AddressOf("v"))),
              CallStmt(Call("foo", Expr(Source{{12, 34}}, "p"))),
          },
          utils::Vector{
@@ -318,13 +318,13 @@ TEST_F(ResolverCallValidationTest, LetPointer_NotWholeVar) {
     // }
     Func("foo",
          utils::Vector{
-             Param("p", ty.pointer<i32>(ast::AddressSpace::kFunction)),
+             Param("p", ty.pointer<i32>(builtin::AddressSpace::kFunction)),
          },
          ty.void_(), utils::Empty);
     Func("main", utils::Empty, ty.void_(),
          utils::Vector{
              Decl(Var("v", ty.array<i32, 4>())),
-             Decl(Let("p", ty.pointer(ty.i32(), ast::AddressSpace::kFunction),
+             Decl(Let("p", ty.pointer(ty.i32(), builtin::AddressSpace::kFunction),
                       AddressOf(IndexAccessor("v", 0_a)))),
              CallStmt(Call("foo", Expr(Source{{12, 34}}, "p"))),
          },
@@ -346,16 +346,16 @@ TEST_F(ResolverCallValidationTest, LetPointer_NotWholeVar_WithFullPtrParametersE
     //   let p: ptr<function, i32> = &(v[0]);
     //   x(p);
     // }
-    Enable(ast::Extension::kChromiumExperimentalFullPtrParameters);
+    Enable(builtin::Extension::kChromiumExperimentalFullPtrParameters);
     Func("foo",
          utils::Vector{
-             Param("p", ty.pointer<i32>(ast::AddressSpace::kFunction)),
+             Param("p", ty.pointer<i32>(builtin::AddressSpace::kFunction)),
          },
          ty.void_(), utils::Empty);
     Func("main", utils::Empty, ty.void_(),
          utils::Vector{
              Decl(Var("v", ty.array<i32, 4>())),
-             Decl(Let("p", ty.pointer(ty.i32(), ast::AddressSpace::kFunction),
+             Decl(Let("p", ty.pointer(ty.i32(), builtin::AddressSpace::kFunction),
                       AddressOf(IndexAccessor("v", 0_a)))),
              CallStmt(Call("foo", Expr(Source{{12, 34}}, "p"))),
          },
@@ -377,7 +377,7 @@ TEST_F(ResolverCallValidationTest, ComplexPointerChain) {
     // }
     Func("foo",
          utils::Vector{
-             Param("p", ty.pointer(ty.array<i32, 4>(), ast::AddressSpace::kFunction)),
+             Param("p", ty.pointer(ty.array<i32, 4>(), builtin::AddressSpace::kFunction)),
          },
          ty.void_(), utils::Empty);
     Func("main", utils::Empty, ty.void_(),
@@ -406,7 +406,7 @@ TEST_F(ResolverCallValidationTest, ComplexPointerChain_NotWholeVar) {
     // }
     Func("foo",
          utils::Vector{
-             Param("p", ty.pointer<i32>(ast::AddressSpace::kFunction)),
+             Param("p", ty.pointer<i32>(builtin::AddressSpace::kFunction)),
          },
          ty.void_(), utils::Empty);
     Func("main", utils::Empty, ty.void_(),
@@ -437,10 +437,10 @@ TEST_F(ResolverCallValidationTest, ComplexPointerChain_NotWholeVar_WithFullPtrPa
     //   let p3 = &(*p2)[0];
     //   foo(&*p);
     // }
-    Enable(ast::Extension::kChromiumExperimentalFullPtrParameters);
+    Enable(builtin::Extension::kChromiumExperimentalFullPtrParameters);
     Func("foo",
          utils::Vector{
-             Param("p", ty.pointer<i32>(ast::AddressSpace::kFunction)),
+             Param("p", ty.pointer<i32>(builtin::AddressSpace::kFunction)),
          },
          ty.void_(), utils::Empty);
     Func("main", utils::Empty, ty.void_(),
@@ -457,38 +457,25 @@ TEST_F(ResolverCallValidationTest, ComplexPointerChain_NotWholeVar_WithFullPtrPa
     EXPECT_TRUE(r()->Resolve());
 }
 
-TEST_F(ResolverCallValidationTest, CallVariable) {
-    // var v : i32;
-    // fn f() {
-    //   v();
-    // }
-    GlobalVar("v", ty.i32(), ast::AddressSpace::kPrivate);
+TEST_F(ResolverCallValidationTest, MustUseFunction) {
+    Func(Source{{56, 78}}, "fn_must_use", utils::Empty, ty.i32(), utils::Vector{Return(1_i)},
+         utils::Vector{MustUse()});
     Func("f", utils::Empty, ty.void_(),
-         utils::Vector{
-             CallStmt(Call(Source{{12, 34}}, "v")),
-         });
+         utils::Vector{CallStmt(Call(Source{{12, 34}}, "fn_must_use"))});
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), R"(error: cannot call variable 'v'
-note: 'v' declared here)");
+    EXPECT_EQ(
+        r()->error(),
+        R"(12:34 error: ignoring return value of function 'fn_must_use' annotated with @must_use
+56:78 note: function 'fn_must_use' declared here)");
 }
 
-TEST_F(ResolverCallValidationTest, CallVariableShadowsFunction) {
-    // fn x() {}
-    // fn f() {
-    //   var x : i32;
-    //   x();
-    // }
-    Func("x", utils::Empty, ty.void_(), utils::Empty);
+TEST_F(ResolverCallValidationTest, MustUseBuiltin) {
     Func("f", utils::Empty, ty.void_(),
-         utils::Vector{
-             Decl(Var(Source{{56, 78}}, "x", ty.i32())),
-             CallStmt(Call(Source{{12, 34}}, "x")),
-         });
+         utils::Vector{CallStmt(Call(Source{{12, 34}}, "max", 1_a, 2_a))});
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), R"(error: cannot call variable 'x'
-56:78 note: 'x' declared here)");
+    EXPECT_EQ(r()->error(), "12:34 error: ignoring return value of builtin 'max'");
 }
 
 }  // namespace

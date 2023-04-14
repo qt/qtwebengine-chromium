@@ -338,7 +338,6 @@ ReadOnlyPage::ReadOnlyPage(Heap* heap, BaseSpace* space, size_t chunk_size,
                        std::move(reservation)) {
   allocated_bytes_ = 0;
   SetFlags(Flag::NEVER_EVACUATE | Flag::READ_ONLY_HEAP);
-  heap->non_atomic_marking_state()->bitmap(this)->MarkAllBits();
 }
 
 void ReadOnlyPage::MakeHeaderRelocatable() {
@@ -442,8 +441,8 @@ class ReadOnlySpaceObjectIterator : public ObjectIterator {
       cur_addr_ += ALIGN_TO_ALLOCATION_ALIGNMENT(obj_size);
       DCHECK_LE(cur_addr_, cur_end_);
       if (!obj.IsFreeSpaceOrFiller()) {
-        if (obj.IsCode()) {
-          DCHECK(Code::cast(obj).is_builtin());
+        if (obj.IsInstructionStream()) {
+          DCHECK(InstructionStream::cast(obj).is_builtin());
           DCHECK_CODEOBJECT_SIZE(obj_size, space_);
         } else {
           DCHECK_OBJECT_SIZE(obj_size);
@@ -545,11 +544,6 @@ void ReadOnlySpace::FreeLinearAllocationArea() {
     return;
   }
 
-  // Clear the bits in the unused black area.
-  ReadOnlyPage* page = pages_.back();
-  heap()->marking_state()->bitmap(page)->ClearRange(
-      page->AddressToMarkbitIndex(top_), page->AddressToMarkbitIndex(limit_));
-
   heap()->CreateFillerObjectAt(top_, static_cast<int>(limit_ - top_));
 
   BasicMemoryChunk::UpdateHighWaterMark(top_);
@@ -561,6 +555,10 @@ void ReadOnlySpace::FreeLinearAllocationArea() {
 void ReadOnlySpace::EnsurePage() {
   if (pages_.empty()) EnsureSpaceForAllocation(1);
   CHECK(!pages_.empty());
+  // For all configurations where static roots are supported the read only roots
+  // are currently allocated in the first page of the cage.
+  CHECK_IMPLIES(V8_STATIC_ROOTS_BOOL,
+                heap_->isolate()->cage_base() == pages_.back()->address());
 }
 
 void ReadOnlySpace::EnsureSpaceForAllocation(int size_in_bytes) {
@@ -658,15 +656,9 @@ AllocationResult ReadOnlySpace::AllocateRawUnaligned(int size_in_bytes) {
 
 AllocationResult ReadOnlySpace::AllocateRaw(int size_in_bytes,
                                             AllocationAlignment alignment) {
-  AllocationResult result =
-      USE_ALLOCATION_ALIGNMENT_BOOL && alignment != kTaggedAligned
-          ? AllocateRawAligned(size_in_bytes, alignment)
-          : AllocateRawUnaligned(size_in_bytes);
-  HeapObject heap_obj;
-  if (result.To(&heap_obj)) {
-    DCHECK(heap()->marking_state()->IsBlack(heap_obj));
-  }
-  return result;
+  return USE_ALLOCATION_ALIGNMENT_BOOL && alignment != kTaggedAligned
+             ? AllocateRawAligned(size_in_bytes, alignment)
+             : AllocateRawUnaligned(size_in_bytes);
 }
 
 size_t ReadOnlyPage::ShrinkToHighWaterMark() {

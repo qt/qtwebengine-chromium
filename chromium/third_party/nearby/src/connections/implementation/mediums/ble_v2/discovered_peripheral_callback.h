@@ -22,7 +22,6 @@
 #include "internal/platform/bluetooth_adapter.h"
 #include "internal/platform/byte_array.h"
 
-namespace location {
 namespace nearby {
 namespace connections {
 namespace mediums {
@@ -33,18 +32,16 @@ struct DiscoveredPeripheralCallback {
                      const ByteArray& advertisement_bytes,
                      bool fast_advertisement)>
       peripheral_discovered_cb =
-          DefaultCallback<BleV2Peripheral, const std::string&, const ByteArray&,
-                          bool>();
+          [](BleV2Peripheral, const std::string&, const ByteArray&, bool) {};
   std::function<void(BleV2Peripheral peripheral, const std::string& service_id,
                      const ByteArray& advertisement_bytes,
                      bool fast_advertisement)>
-      peripheral_lost_cb = DefaultCallback<BleV2Peripheral, const std::string&,
-                                           const ByteArray&, bool>();
+      peripheral_lost_cb =
+          [](BleV2Peripheral, const std::string&, const ByteArray&, bool) {};
 };
 
 }  // namespace mediums
 }  // namespace connections
 }  // namespace nearby
-}  // namespace location
 
 #endif  // CORE_INTERNAL_MEDIUMS_BLE_V2_DISCOVERED_PERIPHERAL_CALLBACK_H_

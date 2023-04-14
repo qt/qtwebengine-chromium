@@ -30,6 +30,7 @@ load("./args.star", "args")
 load("./branches.star", "branches")
 load("./bootstrap.star", "register_bootstrap")
 load("./builder_config.star", "register_builder_config")
+load("./builder_health_indicators.star", "register_health_spec")
 load("./recipe_experiments.star", "register_recipe_experiments_ref")
 load("./sheriff_rotations.star", "register_sheriffed_builder")
 
@@ -57,23 +58,32 @@ os_category = struct(
 # The *_DEFAULT members enable distinguishing between a use that runs the
 # "current" version of the OS and a use that runs against a specific version
 # that happens to be the "current" version
-def os_enum(dimension, category):
-    return struct(dimension = dimension, category = category)
+def os_enum(category, dimension, dimension_overrides = None):
+    if dimension_overrides:
+        def get_dimension(bucket, builder):
+            return dimension_overrides.get(bucket, {}).get(builder, dimension)
+    else:
+        def get_dimension(_bucket, _builder):
+            return dimension
+
+    return struct(category = category, get_dimension = get_dimension)
 
 os = struct(
-    ANDROID = os_enum("Android", os_category.ANDROID),
-    LINUX_BIONIC = os_enum("Ubuntu-18.04", os_category.LINUX),
-    LINUX_FOCAL = os_enum("Ubuntu-20.04", os_category.LINUX),
-    LINUX_DEFAULT = os_enum("Ubuntu-18.04", os_category.LINUX),
-    MAC_10_15 = os_enum("Mac-10.15", os_category.MAC),
-    MAC_12 = os_enum("Mac-12", os_category.MAC),
-    MAC_13 = os_enum("Mac-13", os_category.MAC),
-    MAC_DEFAULT = os_enum("Mac-12", os_category.MAC),
-    MAC_ANY = os_enum("Mac", os_category.MAC),
-    WINDOWS_10 = os_enum("Windows-10", os_category.WINDOWS),
-    WINDOWS_11 = os_enum("Windows-11", os_category.WINDOWS),
-    WINDOWS_DEFAULT = os_enum("Windows-10", os_category.WINDOWS),
-    WINDOWS_ANY = os_enum("Windows", os_category.WINDOWS),
+    ANDROID = os_enum(os_category.ANDROID, "Android"),
+    LINUX_BIONIC = os_enum(os_category.LINUX, "Ubuntu-18.04"),
+    LINUX_FOCAL = os_enum(os_category.LINUX, "Ubuntu-20.04"),
+    # A migration off of bionic is in progress, builders identified in
+    # linux-default.json will have a different os dimension
+    LINUX_DEFAULT = os_enum(os_category.LINUX, "Ubuntu-18.04", json.decode(io.read_file("./linux-default.json"))),
+    MAC_10_15 = os_enum(os_category.MAC, "Mac-10.15"),
+    MAC_12 = os_enum(os_category.MAC, "Mac-12"),
+    MAC_13 = os_enum(os_category.MAC, "Mac-13"),
+    MAC_DEFAULT = os_enum(os_category.MAC, "Mac-12"),
+    MAC_ANY = os_enum(os_category.MAC, "Mac"),
+    WINDOWS_10 = os_enum(os_category.WINDOWS, "Windows-10"),
+    WINDOWS_11 = os_enum(os_category.WINDOWS, "Windows-11"),
+    WINDOWS_DEFAULT = os_enum(os_category.WINDOWS, "Windows-10"),
+    WINDOWS_ANY = os_enum(os_category.WINDOWS, "Windows"),
 )
 
 # The constants to be used for the goma_backend and goma_jobs parameters of the
@@ -140,7 +150,10 @@ reclient = struct(
 )
 
 def _rotation(name):
-    return branches.value({branches.MAIN: [name]})
+    return branches.value(
+        branch_selector = branches.selector.MAIN,
+        value = [name],
+    )
 
 # Sheriff rotations that a builder can be added to (only takes effect on trunk)
 # Arbitrary elements can't be added, new rotations must be added in SoM code
@@ -151,7 +164,6 @@ sheriff_rotations = struct(
     CFT = _rotation("cft"),
     FUCHSIA = _rotation("fuchsia"),
     CHROMIUM_CLANG = _rotation("chromium.clang"),
-    CHROMIUM_FUZZ = _rotation("chromium.fuzz"),
     CHROMIUM_GPU = _rotation("chromium.gpu"),
     IOS = _rotation("ios"),
 )
@@ -176,11 +188,11 @@ xcode = struct(
     # A newer Xcode 13 version used on beta bots.
     x13betabots = xcode_enum("13f17a"),
     # Xcode14 RC will be used to build Main iOS
-    x14main = xcode_enum("14b47b"),
+    x14main = xcode_enum("14c18"),
     # A newer Xcode 14 RC  used on beta bots.
-    x14betabots = xcode_enum("14b47b"),
+    x14betabots = xcode_enum("14c18"),
     # in use by ios-webkit-tot
-    x13wk = xcode_enum("13a1030dwk"),
+    x14wk = xcode_enum("14c18wk"),
 )
 
 # Free disk space in a machine reserved for build tasks.
@@ -289,7 +301,7 @@ def _code_coverage_property(
 
 _VALID_REPROXY_ENV_PREFIX_LIST = ["RBE_", "GLOG_", "GOMA_"]
 
-def _reclient_property(*, instance, service, jobs, rewrapper_env, profiler_service, publish_trace, cache_silo, ensure_verified, bootstrap_env, scandeps_server):
+def _reclient_property(*, instance, service, jobs, rewrapper_env, profiler_service, publish_trace, cache_silo, ensure_verified, bootstrap_env, scandeps_server, disable_bq_upload):
     reclient = {}
     instance = defaults.get_value("reclient_instance", instance)
     if not instance:
@@ -331,6 +343,9 @@ def _reclient_property(*, instance, service, jobs, rewrapper_env, profiler_servi
     ensure_verified = defaults.get_value("reclient_ensure_verified", ensure_verified)
     if ensure_verified:
         reclient["ensure_verified"] = True
+    disable_bq_upload = defaults.get_value("reclient_disable_bq_upload", disable_bq_upload)
+    if disable_bq_upload:
+        reclient["disable_bq_upload"] = True
 
     return reclient
 
@@ -403,13 +418,11 @@ defaults = args.defaults(
     reclient_bootstrap_env = None,
     reclient_profiler_service = None,
     reclient_publish_trace = None,
-    reclient_scandeps_server = False,
+    reclient_scandeps_server = None,
     reclient_cache_silo = None,
     reclient_ensure_verified = None,
-
-    # This is to enable luci.buildbucket.omit_python2 experiment.
-    # TODO(crbug.com/1362440): remove this after enabling this in all builders.
-    omit_python2 = True,
+    reclient_disable_bq_upload = None,
+    health_spec = None,
 
     # Provide vars for bucket and executable so users don't have to
     # unnecessarily make wrapper functions
@@ -422,7 +435,7 @@ defaults = args.defaults(
 def builder(
         *,
         name,
-        branch_selector = branches.MAIN,
+        branch_selector = branches.selector.MAIN,
         bucket = args.DEFAULT,
         executable = args.DEFAULT,
         notifies = None,
@@ -472,7 +485,8 @@ def builder(
         reclient_scandeps_server = args.DEFAULT,
         reclient_cache_silo = None,
         reclient_ensure_verified = None,
-        omit_python2 = args.DEFAULT,
+        reclient_disable_bq_upload = None,
+        health_spec = args.DEFAULT,
         **kwargs):
     """Define a builder.
 
@@ -652,9 +666,8 @@ def builder(
             remote caching. Has no effect if reclient_instance is not set.
         reclient_ensure_verified: If True, it verifies build artifacts. Has no
             effect if reclient_instance is not set.
-        omit_python2: If True, set luci.buildbucket.omit_python2 experiment.
-            TODO(crbug.com/1362440): remove this after enabling this in all
-            builders.
+        reclient_disable_bq_upload: If True, rbe_metrics will not be uploaded to
+            BigQuery after each build
         **kwargs: Additional keyword arguments to forward on to `luci.builder`.
 
     Returns:
@@ -691,15 +704,15 @@ def builder(
              "use reclient_instance and reclient_rewrapper_env instead")
     properties = dict(properties)
 
-    os = defaults.get_value("os", os)
-    if os:
-        dimensions["os"] = os.dimension
-
     # bucket might be the args.COMPUTE sentinel value if the caller didn't set
     # bucket in some way, which will result in a weird fully-qualified builder
     # dimension, but it shouldn't matter because the call to luci.builder will
     # fail without bucket being set
     bucket = defaults.get_value("bucket", bucket)
+
+    os = defaults.get_value("os", os)
+    if os:
+        dimensions["os"] = os.get_dimension(bucket, name)
 
     if override_builder_dimension:
         dimensions["builder"] = override_builder_dimension
@@ -795,6 +808,9 @@ def builder(
     if code_coverage != None:
         properties["$build/code_coverage"] = code_coverage
 
+    if reclient_scandeps_server == args.DEFAULT and os and os.category == os_category.MAC:
+        reclient_scandeps_server = True
+
     reclient = _reclient_property(
         instance = reclient_instance,
         service = reclient_service,
@@ -806,6 +822,7 @@ def builder(
         scandeps_server = reclient_scandeps_server,
         cache_silo = reclient_cache_silo,
         ensure_verified = reclient_ensure_verified,
+        disable_bq_upload = reclient_disable_bq_upload,
     )
     if reclient != None:
         properties["$build/reclient"] = reclient
@@ -831,13 +848,6 @@ def builder(
         kwargs["triggered_by"] = triggered_by
 
     experiments = kwargs.pop("experiments", None) or {}
-
-    # TODO: remove this after this experiment is removed from
-    # cr-buildbucket/settings.cfg (http://shortn/_cz2s9ql61X).
-    if defaults.get_value("omit_python2", omit_python2):
-        experiments["luci.buildbucket.omit_python2"] = 100
-    elif "luci.buildbucket.omit_python2" not in experiments:
-        experiments["luci.buildbucket.omit_python2"] = 0
 
     builder = branches.builder(
         name = name,
@@ -865,6 +875,9 @@ def builder(
     register_builder_config(bucket, name, builder_group, builder_spec, mirrors, try_settings)
 
     register_bootstrap(bucket, name, bootstrap, executable)
+
+    health_spec = defaults.get_value("health_spec", health_spec)
+    register_health_spec(bucket, name, health_spec)
 
     builder_name = "{}/{}".format(bucket, name)
 

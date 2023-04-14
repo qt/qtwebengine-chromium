@@ -1164,10 +1164,16 @@ ElementAccess AccessBuilder::ForTypedArrayElement(ExternalArrayType type,
                               MachineType::Float64(), kNoWriteBarrier};
       return access;
     }
-    case kExternalBigInt64Array:
-    case kExternalBigUint64Array:
-      // TODO(neis/jkummerow): Define appropriate types.
-      UNIMPLEMENTED();
+    case kExternalBigInt64Array: {
+      ElementAccess access = {taggedness, header_size, Type::SignedBigInt64(),
+                              MachineType::Int64(), kNoWriteBarrier};
+      return access;
+    }
+    case kExternalBigUint64Array: {
+      ElementAccess access = {taggedness, header_size, Type::UnsignedBigInt64(),
+                              MachineType::Uint64(), kNoWriteBarrier};
+      return access;
+    }
   }
   UNREACHABLE();
 }
@@ -1324,6 +1330,20 @@ FieldAccess AccessBuilder::ForDictionaryObjectHashIndex() {
       MachineType::TaggedSigned(),
       kNoWriteBarrier,
       "DictionaryObjectHashIndex"};
+  return access;
+}
+
+// static
+FieldAccess AccessBuilder::ForNameDictionaryFlagsIndex() {
+  FieldAccess access = {
+      kTaggedBase,
+      FixedArray::OffsetOfElementAt(NameDictionary::kFlagsIndex),
+      MaybeHandle<Name>(),
+      MaybeHandle<Map>(),
+      Type::SignedSmall(),
+      MachineType::TaggedSigned(),
+      kNoWriteBarrier,
+      "NameDictionaryFlagsIndex"};
   return access;
 }
 

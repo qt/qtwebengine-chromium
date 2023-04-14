@@ -13,7 +13,7 @@
 #include "src/gpu/MutableTextureStateRef.h"
 #include "src/gpu/graphite/mtl/MtlCaps.h"
 #include "src/gpu/graphite/mtl/MtlSharedContext.h"
-#include "src/gpu/graphite/mtl/MtlUtils.h"
+#include "src/gpu/graphite/mtl/MtlUtilsPriv.h"
 
 namespace skgpu::graphite {
 
@@ -89,14 +89,14 @@ MtlTexture::MtlTexture(const MtlSharedContext* sharedContext,
                        const TextureInfo& info,
                        sk_cfp<id<MTLTexture>> texture,
                        Ownership ownership,
-                       SkBudgeted budgeted)
+                       skgpu::Budgeted budgeted)
         : Texture(sharedContext, dimensions, info, /*mutableState=*/nullptr, ownership, budgeted)
         , fTexture(std::move(texture)) {}
 
 sk_sp<Texture> MtlTexture::Make(const MtlSharedContext* sharedContext,
                                 SkISize dimensions,
                                 const TextureInfo& info,
-                                SkBudgeted budgeted) {
+                                skgpu::Budgeted budgeted) {
     sk_cfp<id<MTLTexture>> texture = MakeMtlTexture(sharedContext, dimensions, info);
     if (!texture) {
         return nullptr;
@@ -118,7 +118,7 @@ sk_sp<Texture> MtlTexture::MakeWrapped(const MtlSharedContext* sharedContext,
                                          info,
                                          std::move(texture),
                                          Ownership::kWrapped,
-                                         SkBudgeted::kNo));
+                                         skgpu::Budgeted::kNo));
 }
 
 void MtlTexture::freeGpuData() {

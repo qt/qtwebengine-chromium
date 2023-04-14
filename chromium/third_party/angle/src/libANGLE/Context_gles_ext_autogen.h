@@ -75,6 +75,7 @@
                                    GLchar *source);                                                \
     /* GL_APPLE_clip_distance */                                                                   \
     /* GL_ARB_sync */                                                                              \
+    /* GL_ARM_shader_framebuffer_fetch */                                                          \
     /* GL_EXT_EGL_image_array */                                                                   \
     /* GL_EXT_EGL_image_external_wrap_modes */                                                     \
     /* GL_EXT_EGL_image_storage */                                                                 \
@@ -183,6 +184,8 @@
                                            GLsizei width, GLsizei height);                         \
     /* GL_EXT_multisampled_render_to_texture2 */                                                   \
     /* GL_EXT_occlusion_query_boolean */                                                           \
+    /* GL_EXT_polygon_offset_clamp */                                                              \
+    void polygonOffsetClamp(GLfloat factor, GLfloat units, GLfloat clamp);                         \
     /* GL_EXT_primitive_bounding_box */                                                            \
     /* GL_EXT_protected_textures */                                                                \
     /* GL_EXT_pvrtc_sRGB */                                                                        \
@@ -225,6 +228,7 @@
     /* GL_EXT_texture_filter_anisotropic */                                                        \
     /* GL_EXT_texture_format_BGRA8888 */                                                           \
     /* GL_EXT_texture_format_sRGB_override */                                                      \
+    /* GL_EXT_texture_mirror_clamp_to_edge */                                                      \
     /* GL_EXT_texture_norm16 */                                                                    \
     /* GL_EXT_texture_rg */                                                                        \
     /* GL_EXT_texture_sRGB_R8 */                                                                   \
@@ -352,6 +356,7 @@
         const GLuint *baseInstances, GLsizei drawcount);                                           \
     /* GL_ANGLE_base_vertex_base_instance_shader_builtin */                                        \
     /* GL_ANGLE_client_arrays */                                                                   \
+    /* GL_ANGLE_clip_cull_distance */                                                              \
     /* GL_ANGLE_compressed_texture_etc */                                                          \
     /* GL_ANGLE_copy_texture_3d */                                                                 \
     void copyTexture3D(TextureID sourceIdPacked, GLint sourceLevel,                                \
@@ -566,6 +571,7 @@
     /* GL_ANGLE_semaphore_fuchsia */                                                               \
     void importSemaphoreZirconHandle(SemaphoreID semaphorePacked, HandleType handleTypePacked,     \
                                      GLuint handle);                                               \
+    /* GL_ANGLE_shader_binary */                                                                   \
     /* GL_ANGLE_shader_pixel_local_storage */                                                      \
     void framebufferMemorylessPixelLocalStorage(GLint plane, GLenum internalformat);               \
     void framebufferTexturePixelLocalStorage(GLint plane, TextureID backingtexturePacked,          \

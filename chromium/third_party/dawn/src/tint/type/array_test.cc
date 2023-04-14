@@ -75,7 +75,7 @@ TEST_F(ArrayTest, Hash) {
     auto* a = create<Array>(create<U32>(), create<ConstantArrayCount>(2u), 4u, 8u, 32u, 16u);
     auto* b = create<Array>(create<U32>(), create<ConstantArrayCount>(2u), 4u, 8u, 32u, 16u);
 
-    EXPECT_EQ(a->Hash(), b->Hash());
+    EXPECT_EQ(a->unique_hash, b->unique_hash);
 }
 
 TEST_F(ArrayTest, Equals) {
@@ -162,6 +162,42 @@ TEST_F(ArrayTest, HasFixedFootprint) {
     EXPECT_TRUE(named_override_sized->HasFixedFootprint());
     EXPECT_TRUE(unnamed_override_sized->HasFixedFootprint());
     EXPECT_FALSE(runtime_sized->HasFixedFootprint());
+}
+
+TEST_F(ArrayTest, CloneSizedArray) {
+    auto* ary = create<Array>(create<U32>(), create<ConstantArrayCount>(2u), 4u, 8u, 32u, 16u);
+
+    type::Manager mgr;
+    type::CloneContext ctx{{nullptr}, {nullptr, &mgr}};
+
+    auto* val = ary->Clone(ctx);
+
+    ASSERT_NE(val, nullptr);
+    EXPECT_TRUE(val->ElemType()->Is<U32>());
+    EXPECT_TRUE(val->Count()->Is<ConstantArrayCount>());
+    EXPECT_EQ(val->Count()->As<ConstantArrayCount>()->value, 2u);
+    EXPECT_EQ(val->Align(), 4u);
+    EXPECT_EQ(val->Size(), 8u);
+    EXPECT_EQ(val->Stride(), 32u);
+    EXPECT_EQ(val->ImplicitStride(), 16u);
+    EXPECT_FALSE(val->IsStrideImplicit());
+}
+
+TEST_F(ArrayTest, CloneRuntimeArray) {
+    auto* ary = create<Array>(create<U32>(), create<RuntimeArrayCount>(), 4u, 8u, 32u, 32u);
+
+    type::Manager mgr;
+    type::CloneContext ctx{{nullptr}, {nullptr, &mgr}};
+
+    auto* val = ary->Clone(ctx);
+    ASSERT_NE(val, nullptr);
+    EXPECT_TRUE(val->ElemType()->Is<U32>());
+    EXPECT_TRUE(val->Count()->Is<RuntimeArrayCount>());
+    EXPECT_EQ(val->Align(), 4u);
+    EXPECT_EQ(val->Size(), 8u);
+    EXPECT_EQ(val->Stride(), 32u);
+    EXPECT_EQ(val->ImplicitStride(), 32u);
+    EXPECT_TRUE(val->IsStrideImplicit());
 }
 
 }  // namespace

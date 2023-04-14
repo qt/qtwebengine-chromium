@@ -22,11 +22,11 @@
 
 static void qu8_vlrelu(
   benchmark::State& state,
-  xnn_qu8_vlrelu_ukernel_function lrelu,
+  xnn_qu8_vlrelu_ukernel_fn lrelu,
   xnn_init_qu8_lrelu_params_fn init_params,
   benchmark::utils::IsaCheckFunction isa_check = nullptr)
 {
-  if (isa_check && !isa_check(state)) {
+  if (isa_check != nullptr && !isa_check(state)) {
     return;
   }
 

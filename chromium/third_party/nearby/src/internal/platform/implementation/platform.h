@@ -19,6 +19,7 @@
 #include <memory>
 #include <string>
 
+#include "absl/status/statusor.h"
 #include "absl/strings/string_view.h"
 #include "internal/platform/implementation/atomic_boolean.h"
 #include "internal/platform/implementation/atomic_reference.h"
@@ -30,6 +31,8 @@
 #include "internal/platform/implementation/count_down_latch.h"
 #include "internal/platform/implementation/credential_storage.h"
 #include "internal/platform/implementation/crypto.h"
+#include "internal/platform/implementation/device_info.h"
+#include "internal/platform/implementation/http_loader.h"
 #include "internal/platform/implementation/input_file.h"
 #include "internal/platform/implementation/log_message.h"
 #include "internal/platform/implementation/mutex.h"
@@ -39,6 +42,7 @@
 #include "internal/platform/implementation/settable_future.h"
 #include "internal/platform/implementation/submittable_executor.h"
 #include "internal/platform/implementation/system_clock.h"
+#include "internal/platform/implementation/timer.h"
 #ifndef NO_WEBRTC
 #include "internal/platform/implementation/webrtc.h"
 #endif
@@ -49,7 +53,6 @@
 #include "internal/platform/os_name.h"
 #include "internal/platform/payload_id.h"
 
-namespace location {
 namespace nearby {
 namespace api {
 
@@ -127,13 +130,23 @@ class ImplementationPlatform {
   static std::unique_ptr<WifiLanMedium> CreateWifiLanMedium();
   static std::unique_ptr<WifiHotspotMedium> CreateWifiHotspotMedium();
   static std::unique_ptr<WifiDirectMedium> CreateWifiDirectMedium();
+  static std::unique_ptr<Timer> CreateTimer();
+  static std::unique_ptr<DeviceInfo> CreateDeviceInfo();
 #ifndef NO_WEBRTC
   static std::unique_ptr<WebRtcMedium> CreateWebRtcMedium();
 #endif
+
+  // Gets HTTP response from remote server.
+  //
+  // @param request Webrequest
+  //
+  // @return returns absl::FailedPreconditionError if having platform error.
+  //         return WebResponse if HTTP status code between 200 and 300.
+  //         other cases will return absl Status in error.
+  static absl::StatusOr<WebResponse> SendRequest(const WebRequest& request);
 };
 
 }  // namespace api
 }  // namespace nearby
-}  // namespace location
 
 #endif  // PLATFORM_API_PLATFORM_H_

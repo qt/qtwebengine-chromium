@@ -358,7 +358,7 @@ target(link_target_type, "ffmpeg_internal") {
       configs += [ "//build/config/gcc:symbol_visibility_default" ]
     }
   }
-  if (is_mac) {
+  if (is_apple) {
     if (is_component_ffmpeg) {
       # Export all symbols when building as component.
       configs -= [ "//build/config/gcc:symbol_visibility_hidden" ]
@@ -366,6 +366,11 @@ target(link_target_type, "ffmpeg_internal") {
     }
 
     defines += [ "_DARWIN_C_SOURCE" ]
+    if (is_ios) {
+      libs -= [
+        "rt",
+      ]
+    }
   } else if (is_win) {
     defines += [
       "_ISOC99_SOURCE",

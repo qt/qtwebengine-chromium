@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/features.gni")
 import("//build/config/host_byteorder.gni")
 import("config.gni")
 import("sources.gni")
@@ -176,6 +177,14 @@ template("generate_icu_component") {
                              ])
       assert(fuchsia_output_name_postfix == "")
 
+      # If icu_use_target_out_dir is defined and set, then the component
+      # will be output in the regular target_out_dir, rather than the default
+      # root_build_dir.
+      # See README.fuchsia for details.
+      if (defined(icu_use_target_out_dir) && icu_use_target_out_dir) {
+        output_dir = target_out_dir
+      }
+
       # ICU uses RTTI, replace the default "no rtti" config (if applied).
       configs += [
         "//build/config:no_rtti",
@@ -202,6 +211,15 @@ template("generate_icu_component") {
                                "testonly",
                                "visibility",
                              ])
+
+      # If icu_use_target_output_dir is defined and set, then the component
+      # will be output in the regular target_out_dir, rather than the default
+      # root_build_dir.
+      # See README.fuchsia for details.
+      if (defined(icu_use_target_output_dir) && icu_use_target_output_dir) {
+        output_dir = target_out_dir
+      }
+
       if (is_fuchsia) {
         base_output_name = target_name
         if (defined(invoker.output_name)) {
@@ -370,7 +388,7 @@ if (is_android && enable_java_templates) {
 
 if (is_android) {
   data_dir = "android"
-} else if (is_ios) {
+} else if (is_ios && !use_blink) {
   data_dir = "ios"
 } else if (is_chromeos) {
   data_dir = "chromeos"
@@ -391,6 +409,23 @@ if (current_cpu == "mips" || current_cpu == "mips64" ||
 }
 data_bundle = "${data_bundle_prefix}.dat"
 
+# Some code paths end up not using these, marking them to avoid build
+# breaks.
+# See README.fuchsia for details.
+not_needed([
+             "data_bundle",
+             "data_bundle_prefix",
+             "data_dir",
+           ])
+
+if (icu_copy_icudata_to_root_build_dir) {
+  copy("copy_icudata") {
+    sources = [ "$data_dir/$data_bundle" ]
+    outputs = [ "$root_out_dir/$data_bundle" ]
+    data = [ "$root_out_dir/$data_bundle" ]
+  }
+}
+
 if (icu_use_data_file) {
   if (is_ios) {
     bundle_data("icudata") {
@@ -398,10 +433,13 @@ if (icu_use_data_file) {
       outputs = [ "{{bundle_resources_dir}}/{{source_file_part}}" ]
     }
   } else {
-    copy("icudata") {
-      sources = [ "$data_dir/$data_bundle" ]
-      outputs = [ "$root_out_dir/$data_bundle" ]
-      data = [ "$root_out_dir/$data_bundle" ]
+    group("icudata") {
+      if (icu_copy_icudata_to_root_build_dir) {
+        # Guarded by a flag, to avoid name clashes if other build processes
+        # also happen to generate the output file by the same name.
+        # See README.fuchsia for details.
+        public_deps = [ ":copy_icudata" ]
+      }
     }
   }
 

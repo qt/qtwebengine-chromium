@@ -44,7 +44,6 @@ Instructions for building this repository on Linux, Windows, and MacOS.
       - [Using The Vulkan Loader Library in this Repository on Linux](#using-the-vulkan-loader-library-in-this-repository-on-linux)
       - [WSI Support Build Options](#wsi-support-build-options)
       - [Linux Install to System Directories](#linux-install-to-system-directories)
-      - [Linux Uninstall](#linux-uninstall)
       - [Linux 32-bit support](#linux-32-bit-support)
   - [Building on MacOS](#building-on-macos)
     - [MacOS Development Environment Requirements](#macos-development-environment-requirements)
@@ -83,9 +82,6 @@ indicated by *install_dir*:
 
 - *install_dir*`/lib` : The Vulkan loader library
 - *install_dir*`/bin` : The Vulkan loader library DLL (Windows)
-
-The `uninstall` target can be used to remove the above files from the install
-directory.
 
 ## Repository Set-Up
 
@@ -296,7 +292,7 @@ cmake ... -D CMAKE_CXX_COMPILER_LAUNCHER=/usr/bin/ccache -D CMAKE_C_COMPILER_LAU
     - [2017 & 2019](https://www.visualstudio.com/vs/older-downloads/)
   - The Community Edition of each of the above versions is sufficient, as
     well as any more capable edition.
-- [CMake 3.10.2](https://cmake.org/files/v3.10/cmake-3.10.2-win64-x64.zip) is recommended.
+- [CMake 3.17.2](https://cmake.org/files/v3.17/cmake-3.17.2-win64-x64.zip) is recommended.
   - Use the installer option to add CMake to the system PATH
 - Git Client Support
   - [Git for Windows](http://git-scm.com/download/win) is a popular solution
@@ -434,7 +430,7 @@ that the minimum officially supported C++11 compiler version is GCC 5.4.0,
 although earlier versions may work. It should be straightforward to adapt this
 repository to other Linux distributions.
 
-[CMake 3.10.2](https://cmake.org/files/v3.10/cmake-3.10.2-Linux-x86_64.tar.gz) is recommended.
+[CMake 3.17.2](https://cmake.org/files/v3.17/cmake-3.17.2-Linux-x86_64.tar.gz) is recommended.
 
 #### Required Package List
 
@@ -577,13 +573,6 @@ Vulkan loader from the build directory, `build` in this example. This means
 that even after installing the loader to the system directories, these
 executables still use the loader from the build directory.
 
-#### Linux Uninstall
-
-To uninstall the files from the system directories, you can execute:
-
-    sudo make uninstall
-
-
 #### Linux 32-bit support
 
 Usage of this repository's contents in 32-bit Linux environments is not
@@ -622,11 +611,6 @@ NOTE: To force the OSX version set the environment variable [MACOSX_DEPLOYMENT_T
 
 Setup Homebrew and components
 
-- Follow instructions on [brew.sh](http://brew.sh) to get Homebrew installed.
-
-      /usr/bin/ruby -e "$(curl -fsSL \
-          https://raw.githubusercontent.com/Homebrew/install/master/install)"
-
 - Ensure Homebrew is at the beginning of your PATH:
 
       export PATH=/usr/local/bin:$PATH
@@ -643,16 +627,7 @@ Clone the Vulkan-ValidationLayers repository:
 
 ### MacOS build
 
-[CMake 3.10.2](https://cmake.org/files/v3.10/cmake-3.10.2-Darwin-x86_64.tar.gz) is recommended.
-
-#### CMake Generators
-
-This repository uses CMake to generate build or project files that are then
-used to build the repository. The CMake generators explicitly supported in
-this repository are:
-
-- Unix Makefiles
-- Xcode
+[CMake 3.17.2](https://cmake.org/files/v3.17/cmake-3.17.2-Darwin-x86_64.tar.gz) is recommended.
 
 #### Building with the Unix Makefiles Generator
 

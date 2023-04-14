@@ -29,7 +29,6 @@
 #include "internal/platform/payload_id.h"
 #include "internal/platform/prng.h"
 
-namespace location {
 namespace nearby {
 namespace connections {
 
@@ -84,7 +83,6 @@ class Payload {
 
   // Returns ByteArray payload, if it has been defined, or empty ByteArray.
   const ByteArray& AsBytes() const&;
-  ByteArray&& AsBytes() &&;
   // Returns InputStream* payload, if it has been defined, or nullptr.
   InputStream* AsStream();
   // Returns InputFile* payload, if it has been defined, or nullptr.
@@ -122,6 +120,5 @@ class Payload {
 
 }  // namespace connections
 }  // namespace nearby
-}  // namespace location
 
 #endif  // CORE_PAYLOAD_H_

@@ -21,7 +21,7 @@
 #include <string>
 #include <unordered_set>
 
-#include "src/tint/ast/address_space.h"
+#include "src/tint/builtin/address_space.h"
 #include "src/tint/symbol.h"
 #include "src/tint/type/node.h"
 #include "src/tint/type/type.h"
@@ -65,12 +65,9 @@ class Struct : public Castable<Struct, Type> {
     /// Destructor
     ~Struct() override;
 
-    /// @returns a hash of the type.
-    size_t Hash() const override;
-
-    /// @param other the other type to compare against
-    /// @returns true if the this type is equal to the given type
-    bool Equals(const Type& other) const override;
+    /// @param other the other node to compare against
+    /// @returns true if the this type is equal to @p other
+    bool Equals(const UniqueNode& other) const override;
 
     /// @returns the source of the structure
     tint::Source Source() const { return source_; }
@@ -103,22 +100,22 @@ class Struct : public Castable<Struct, Type> {
 
     /// Adds the AddressSpace usage to the structure.
     /// @param usage the storage usage
-    void AddUsage(ast::AddressSpace usage) { address_space_usage_.emplace(usage); }
+    void AddUsage(builtin::AddressSpace usage) { address_space_usage_.emplace(usage); }
 
     /// @returns the set of address space uses of this structure
-    const std::unordered_set<ast::AddressSpace>& AddressSpaceUsage() const {
+    const std::unordered_set<builtin::AddressSpace>& AddressSpaceUsage() const {
         return address_space_usage_;
     }
 
-    /// @param usage the ast::AddressSpace usage type to query
+    /// @param usage the AddressSpace usage type to query
     /// @returns true iff this structure has been used as the given address space
-    bool UsedAs(ast::AddressSpace usage) const { return address_space_usage_.count(usage) > 0; }
+    bool UsedAs(builtin::AddressSpace usage) const { return address_space_usage_.count(usage) > 0; }
 
     /// @returns true iff this structure has been used by address space that's
     /// host-shareable.
     bool IsHostShareable() const {
         for (auto sc : address_space_usage_) {
-            if (ast::IsHostShareable(sc)) {
+            if (builtin::IsHostShareable(sc)) {
                 return true;
             }
         }
@@ -152,6 +149,10 @@ class Struct : public Castable<Struct, Type> {
     /// @note only structures returned by builtins may be abstract (e.g. modf, frexp)
     utils::VectorRef<const Struct*> ConcreteTypes() const { return concrete_types_; }
 
+    /// @param ctx the clone context
+    /// @returns a clone of this type
+    Struct* Clone(CloneContext& ctx) const override;
+
   private:
     const tint::Source source_;
     const Symbol name_;
@@ -159,7 +160,7 @@ class Struct : public Castable<Struct, Type> {
     const uint32_t align_;
     const uint32_t size_;
     const uint32_t size_no_padding_;
-    std::unordered_set<ast::AddressSpace> address_space_usage_;
+    std::unordered_set<builtin::AddressSpace> address_space_usage_;
     std::unordered_set<PipelineStageUsage> pipeline_stage_uses_;
     utils::Vector<const Struct*, 2> concrete_types_;
 };
@@ -218,6 +219,10 @@ class StructMember : public Castable<StructMember, Node> {
 
     /// @returns the location, if set
     std::optional<uint32_t> Location() const { return location_; }
+
+    /// @param ctx the clone context
+    /// @returns a clone of this struct member
+    StructMember* Clone(CloneContext& ctx) const;
 
   private:
     const tint::Source source_;

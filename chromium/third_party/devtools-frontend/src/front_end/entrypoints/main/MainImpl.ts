@@ -57,57 +57,57 @@ import {ExecutionContextSelector} from './ExecutionContextSelector.js';
 
 const UIStrings = {
   /**
-  *@description Title of item in main
-  */
+   *@description Title of item in main
+   */
   customizeAndControlDevtools: 'Customize and control DevTools',
   /**
-  *@description Title element text content in Main
-  */
+   *@description Title element text content in Main
+   */
   dockSide: 'Dock side',
   /**
-  *@description Title element title in Main
-  *@example {Ctrl+Shift+D} PH1
-  */
+   *@description Title element title in Main
+   *@example {Ctrl+Shift+D} PH1
+   */
   placementOfDevtoolsRelativeToThe: 'Placement of DevTools relative to the page. ({PH1} to restore last position)',
   /**
-  *@description Text to undock the DevTools
-  */
+   *@description Text to undock the DevTools
+   */
   undockIntoSeparateWindow: 'Undock into separate window',
   /**
-  *@description Text to dock the DevTools to the bottom of the browser tab
-  */
+   *@description Text to dock the DevTools to the bottom of the browser tab
+   */
   dockToBottom: 'Dock to bottom',
   /**
-  *@description Text to dock the DevTools to the right of the browser tab
-  */
+   *@description Text to dock the DevTools to the right of the browser tab
+   */
   dockToRight: 'Dock to right',
   /**
-  *@description Text to dock the DevTools to the left of the browser tab
-  */
+   *@description Text to dock the DevTools to the left of the browser tab
+   */
   dockToLeft: 'Dock to left',
   /**
-  *@description Text in Main
-  */
+   *@description Text in Main
+   */
   focusDebuggee: 'Focus debuggee',
   /**
-  *@description Text in Main
-  */
+   *@description Text in Main
+   */
   hideConsoleDrawer: 'Hide console drawer',
   /**
-  *@description Text in Main
-  */
+   *@description Text in Main
+   */
   showConsoleDrawer: 'Show console drawer',
   /**
-  *@description A context menu item in the Main
-  */
+   *@description A context menu item in the Main
+   */
   moreTools: 'More tools',
   /**
-  *@description Text for the viewing the help options
-  */
+   *@description Text for the viewing the help options
+   */
   help: 'Help',
   /**
-  *@description Text describing how to navigate the dock side menu
-  */
+   *@description Text describing how to navigate the dock side menu
+   */
   dockSideNaviation: 'Use left and right arrow keys to navigate the options',
 };
 const str_ = i18n.i18n.registerUIStrings('entrypoints/main/MainImpl.ts', UIStrings);
@@ -275,13 +275,6 @@ export class MainImpl {
     Root.Runtime.experiments.register('applyCustomStylesheet', 'Allow extensions to load custom stylesheets');
     Root.Runtime.experiments.register('captureNodeCreationStacks', 'Capture node creation stacks');
     Root.Runtime.experiments.register('sourcesPrettyPrint', 'Automatically pretty print in the Sources Panel');
-    Root.Runtime.experiments.register('backgroundServices', 'Background web platform feature events', true);
-    Root.Runtime.experiments.register(
-        'backgroundServicesNotifications', 'Background services section for Notifications');
-    Root.Runtime.experiments.register(
-        'backgroundServicesPaymentHandler', 'Background services section for Payment Handler');
-    Root.Runtime.experiments.register(
-        'backgroundServicesPushMessaging', 'Background services section for Push Messaging');
     Root.Runtime.experiments.register(
         'ignoreListJSFramesOnTimeline', 'Ignore List for JavaScript frames on Timeline', true);
     Root.Runtime.experiments.register('inputEventsOnTimelineOverview', 'Input events on Timeline overview', true);
@@ -320,6 +313,8 @@ export class MainImpl {
     Root.Runtime.experiments.register(
         'timelineAsConsoleProfileResultPanel', 'View console.profile() results in the Performance panel for Node.js',
         true);
+    Root.Runtime.experiments.register(
+        'timelineDoNotSkipSystemNodesOfCpuProfile', 'View system nodes of CPUProfile in the Performance panel', true);
 
     // Debugging
     Root.Runtime.experiments.register(
@@ -426,6 +421,8 @@ export class MainImpl {
       Root.Runtime.ExperimentName.CSS_AUTHORING_HINTS,
       'sourcesPrettyPrint',
       Root.Runtime.ExperimentName.DISABLE_COLOR_FORMAT_SETTING,
+      Root.Runtime.ExperimentName.BREAKPOINT_VIEW,
+      Root.Runtime.ExperimentName.TIMELINE_AS_CONSOLE_PROFILE_RESULT_PANEL,
     ]);
 
     Root.Runtime.experiments.setNonConfigurableExperiments([
@@ -438,10 +435,6 @@ export class MainImpl {
       Root.Runtime.experiments.setServerEnabledExperiments(enabledExperiments.split(';'));
     }
     Root.Runtime.experiments.enableExperimentsTransiently([
-      'backgroundServices',
-      'backgroundServicesNotifications',
-      'backgroundServicesPushMessaging',
-      'backgroundServicesPaymentHandler',
       'bfcacheDisplayTree',
       'webauthnPane',
       'developerResourcesView',

@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "src/tint/ast/test_helper.h"
 #include "src/tint/reader/wgsl/parser_impl_test_helper.h"
 
 namespace tint::reader::wgsl {
@@ -25,8 +26,8 @@ TEST_F(ParserImplTest, ParamList_Single) {
     ASSERT_FALSE(e.errored);
     EXPECT_EQ(e.value.Length(), 1u);
 
-    EXPECT_EQ(e.value[0]->symbol, p->builder().Symbols().Get("a"));
-    EXPECT_TRUE(e.value[0]->type->Is<ast::I32>());
+    EXPECT_EQ(e.value[0]->name->symbol, p->builder().Symbols().Get("a"));
+    ast::CheckIdentifier(p->builder().Symbols(), e.value[0]->type, "i32");
     EXPECT_TRUE(e.value[0]->Is<ast::Parameter>());
 
     ASSERT_EQ(e.value[0]->source.range.begin.line, 1u);
@@ -43,8 +44,8 @@ TEST_F(ParserImplTest, ParamList_Multiple) {
     ASSERT_FALSE(e.errored);
     EXPECT_EQ(e.value.Length(), 3u);
 
-    EXPECT_EQ(e.value[0]->symbol, p->builder().Symbols().Get("a"));
-    EXPECT_TRUE(e.value[0]->type->Is<ast::I32>());
+    EXPECT_EQ(e.value[0]->name->symbol, p->builder().Symbols().Get("a"));
+    ast::CheckIdentifier(p->builder().Symbols(), e.value[0]->type, "i32");
     EXPECT_TRUE(e.value[0]->Is<ast::Parameter>());
 
     ASSERT_EQ(e.value[0]->source.range.begin.line, 1u);
@@ -52,8 +53,8 @@ TEST_F(ParserImplTest, ParamList_Multiple) {
     ASSERT_EQ(e.value[0]->source.range.end.line, 1u);
     ASSERT_EQ(e.value[0]->source.range.end.column, 2u);
 
-    EXPECT_EQ(e.value[1]->symbol, p->builder().Symbols().Get("b"));
-    EXPECT_TRUE(e.value[1]->type->Is<ast::F32>());
+    EXPECT_EQ(e.value[1]->name->symbol, p->builder().Symbols().Get("b"));
+    ast::CheckIdentifier(p->builder().Symbols(), e.value[1]->type, "f32");
     EXPECT_TRUE(e.value[1]->Is<ast::Parameter>());
 
     ASSERT_EQ(e.value[1]->source.range.begin.line, 1u);
@@ -61,10 +62,8 @@ TEST_F(ParserImplTest, ParamList_Multiple) {
     ASSERT_EQ(e.value[1]->source.range.end.line, 1u);
     ASSERT_EQ(e.value[1]->source.range.end.column, 11u);
 
-    EXPECT_EQ(e.value[2]->symbol, p->builder().Symbols().Get("c"));
-    ASSERT_TRUE(e.value[2]->type->Is<ast::Vector>());
-    ASSERT_TRUE(e.value[2]->type->As<ast::Vector>()->type->Is<ast::F32>());
-    EXPECT_EQ(e.value[2]->type->As<ast::Vector>()->width, 2u);
+    EXPECT_EQ(e.value[2]->name->symbol, p->builder().Symbols().Get("c"));
+    ast::CheckIdentifier(p->builder().Symbols(), e.value[2]->type, ast::Template("vec2", "f32"));
     EXPECT_TRUE(e.value[2]->Is<ast::Parameter>());
 
     ASSERT_EQ(e.value[2]->source.range.begin.line, 1u);
@@ -97,23 +96,22 @@ TEST_F(ParserImplTest, ParamList_Attributes) {
     ASSERT_FALSE(e.errored);
     ASSERT_EQ(e.value.Length(), 2u);
 
-    EXPECT_EQ(e.value[0]->symbol, p->builder().Symbols().Get("coord"));
-    ASSERT_TRUE(e.value[0]->type->Is<ast::Vector>());
-    EXPECT_TRUE(e.value[0]->type->As<ast::Vector>()->type->Is<ast::F32>());
-    EXPECT_EQ(e.value[0]->type->As<ast::Vector>()->width, 4u);
+    EXPECT_EQ(e.value[0]->name->symbol, p->builder().Symbols().Get("coord"));
+    ast::CheckIdentifier(p->builder().Symbols(), e.value[0]->type, ast::Template("vec4", "f32"));
     EXPECT_TRUE(e.value[0]->Is<ast::Parameter>());
     auto attrs_0 = e.value[0]->attributes;
     ASSERT_EQ(attrs_0.Length(), 1u);
     EXPECT_TRUE(attrs_0[0]->Is<ast::BuiltinAttribute>());
-    EXPECT_EQ(attrs_0[0]->As<ast::BuiltinAttribute>()->builtin, ast::BuiltinValue::kPosition);
+    ast::CheckIdentifier(p->builder().Symbols(), attrs_0[0]->As<ast::BuiltinAttribute>()->builtin,
+                         "position");
 
     ASSERT_EQ(e.value[0]->source.range.begin.line, 1u);
     ASSERT_EQ(e.value[0]->source.range.begin.column, 20u);
     ASSERT_EQ(e.value[0]->source.range.end.line, 1u);
     ASSERT_EQ(e.value[0]->source.range.end.column, 25u);
 
-    EXPECT_EQ(e.value[1]->symbol, p->builder().Symbols().Get("loc1"));
-    EXPECT_TRUE(e.value[1]->type->Is<ast::F32>());
+    EXPECT_EQ(e.value[1]->name->symbol, p->builder().Symbols().Get("loc1"));
+    ast::CheckIdentifier(p->builder().Symbols(), e.value[1]->type, "f32");
     EXPECT_TRUE(e.value[1]->Is<ast::Parameter>());
     auto attrs_1 = e.value[1]->attributes;
     ASSERT_EQ(attrs_1.Length(), 1u);

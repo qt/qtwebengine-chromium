@@ -34,16 +34,16 @@
   #include <new>
 #endif
 
-// Disable the ipa-cp-clone optimization flag with MinGW 6.x or newer (enabled by default with -O3)
+// Disable the ipa-cp-clone optimization flag with MinGW 6.x or older (enabled by default with -O3)
 // See http://eigen.tuxfamily.org/bz/show_bug.cgi?id=556 for details.
-#if EIGEN_COMP_MINGW && EIGEN_GNUC_AT_MOST(5,5)
+#if EIGEN_COMP_MINGW && EIGEN_GNUC_STRICT_LESS_THAN(6,0,0)
   #pragma GCC optimize ("-fno-ipa-cp-clone")
 #endif
 
 // Prevent ICC from specializing std::complex operators that silently fail
 // on device. This allows us to use our own device-compatible specializations
 // instead.
-#if defined(EIGEN_COMP_ICC) && defined(EIGEN_GPU_COMPILE_PHASE) \
+#if EIGEN_COMP_ICC && defined(EIGEN_GPU_COMPILE_PHASE) \
     && !defined(_OVERRIDE_COMPLEX_SPECIALIZATION_)
 #define _OVERRIDE_COMPLEX_SPECIALIZATION_ 1
 #endif
@@ -82,7 +82,6 @@
 #include <cstddef>
 #include <cstdlib>
 #include <cmath>
-#include <cassert>
 #include <functional>
 #ifndef EIGEN_NO_IO
   #include <sstream>
@@ -158,6 +157,7 @@ using std::ptrdiff_t;
 
 #include "src/Core/util/Constants.h"
 #include "src/Core/util/Meta.h"
+#include "src/Core/util/Assert.h"
 #include "src/Core/util/ForwardDeclarations.h"
 #include "src/Core/util/StaticAssert.h"
 #include "src/Core/util/XprHelper.h"
@@ -176,10 +176,6 @@ using std::ptrdiff_t;
 #include "src/Core/arch/Default/BFloat16.h"
 #include "src/Core/arch/Default/TypeCasting.h"
 #include "src/Core/arch/Default/GenericPacketMathFunctionsFwd.h"
-
-#ifndef EIGEN_GPU_COMPILE_PHASE
-  #include <csignal>
-#endif
 
 #if defined EIGEN_VECTORIZE_AVX512
   #if defined EIGEN_VECTORIZE_AVX512FP16

@@ -18,7 +18,6 @@
 #include "protobuf-matchers/protocol-buffer-matchers.h"
 #include "gtest/gtest.h"
 
-namespace location {
 namespace nearby {
 namespace connections {
 namespace {
@@ -31,6 +30,8 @@ TEST(BluetoothRadioTest, ConstructorDestructorWorks) {
 TEST(BluetoothRadioTest, CanEnable) {
   BluetoothRadio radio;
   EXPECT_TRUE(radio.IsAdapterValid());
+  EXPECT_TRUE(radio.IsEnabled());
+  EXPECT_TRUE(radio.Disable());
   EXPECT_FALSE(radio.IsEnabled());
   EXPECT_TRUE(radio.Enable());
   EXPECT_TRUE(radio.IsEnabled());
@@ -39,22 +40,11 @@ TEST(BluetoothRadioTest, CanEnable) {
 TEST(BluetoothRadioTest, CanDisable) {
   BluetoothRadio radio;
   EXPECT_TRUE(radio.IsAdapterValid());
-  EXPECT_FALSE(radio.IsEnabled());
-  EXPECT_TRUE(radio.Enable());
   EXPECT_TRUE(radio.IsEnabled());
   EXPECT_TRUE(radio.Disable());
   EXPECT_FALSE(radio.IsEnabled());
 }
 
-TEST(BluetoothRadioTest, CanToggle) {
-  BluetoothRadio radio;
-  EXPECT_TRUE(radio.IsAdapterValid());
-  EXPECT_FALSE(radio.IsEnabled());
-  EXPECT_TRUE(radio.Toggle());
-  EXPECT_TRUE(radio.IsEnabled());
-}
-
 }  // namespace
 }  // namespace connections
 }  // namespace nearby
-}  // namespace location

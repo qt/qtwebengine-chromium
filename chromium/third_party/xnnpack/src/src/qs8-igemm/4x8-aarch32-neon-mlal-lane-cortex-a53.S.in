@@ -19,7 +19,7 @@ $XMAX = "VMAX.U8" if DATATYPE == "QU8" else "VMAX.S8"
 $XXTL = "VMOVL.U8" if DATATYPE == "QU8" else "VMOVL.S8"
 $SQXTXN = "VQMOVUN.S16" if DATATYPE == "QU8" else "VQMOVN.S16"
 $XINT8_T = "uint8_t" if DATATYPE == "QU8" else "int8_t"
-// void xnn_${DATATYPE.lower()}_igemm_minmax_${REQUANTIZATION.lower()}_ukernel_4x8__aarch32_${ISA}_mlal_lane${"_prfm" if PREFETCH else ""}_cortex_a53
+// void xnn_${DATATYPE.lower()}_igemm_minmax_${REQUANTIZATION.lower()}_ukernel_4x8__asm_aarch32_${ISA}_mlal_lane${"_prfm" if PREFETCH else ""}_cortex_a53
 //     size_t mr,                                     (r0)
 //     size_t nc,                                      r1 -> sp + 56
 //     size_t kc,                                     (r2) -> r5 -> sp + 60
@@ -40,16 +40,14 @@ $XINT8_T = "uint8_t" if DATATYPE == "QU8" else "int8_t"
 // A1  r12  d2-d3 q1
 // A2  r10  d4-d5 q2
 // A3   r0  d6-d7 q3
-
 // B    r9  d8-d9 q4 q5
-
 // C0  r11 d16-d17  q8  d18-d19  q9
 // C1   r4 d20-d21 q10  d22-d23 q11
 // C2   r8 d24-d25 q12  d26-d27 q13
 // C3   r6 d28-d29 q14  d30-d31 q15
 
 // r1,r7 A53 gpr temporary loads
-// Unused d15
+// unused d15
 
 $if REQUANTIZATION == "RNDNU" and DATATYPE != "QU8":
   // params structure is 16 bytes
@@ -88,7 +86,7 @@ $else:
   //    int8_t output_max;          d13[7]
   //  } xnn_qs8_minmax_params.neonv8;
 
-BEGIN_FUNCTION xnn_${DATATYPE.lower()}_igemm_minmax_${REQUANTIZATION.lower()}_ukernel_4x8__aarch32_${ISA}_mlal_lane${"_prfm" if PREFETCH else ""}_cortex_a53
+BEGIN_FUNCTION xnn_${DATATYPE.lower()}_igemm_minmax_${REQUANTIZATION.lower()}_ukernel_4x8__asm_aarch32_${ISA}_mlal_lane${"_prfm" if PREFETCH else ""}_cortex_a53
         # Push 104 bytes
         # r1, r2 will be reloaded in outer loop.  r3 is ks
         PUSH    {r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, lr}   // +48
@@ -796,7 +794,7 @@ BEGIN_FUNCTION xnn_${DATATYPE.lower()}_igemm_minmax_${REQUANTIZATION.lower()}_uk
           ADD     sp, sp, 20              // skip pad of 8, r1, r2, r3
         POP     {r4, r5, r6, r7, r8, r9, r10, r11, pc}
 
-END_FUNCTION xnn_${DATATYPE.lower()}_igemm_minmax_${REQUANTIZATION.lower()}_ukernel_4x8__aarch32_${ISA}_mlal_lane${"_prfm" if PREFETCH else ""}_cortex_a53
+END_FUNCTION xnn_${DATATYPE.lower()}_igemm_minmax_${REQUANTIZATION.lower()}_ukernel_4x8__asm_aarch32_${ISA}_mlal_lane${"_prfm" if PREFETCH else ""}_cortex_a53
 
 #ifdef __ELF__
 .section ".note.GNU-stack","",%progbits

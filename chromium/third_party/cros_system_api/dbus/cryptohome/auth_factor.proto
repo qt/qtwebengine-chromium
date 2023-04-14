@@ -24,6 +24,7 @@ enum AuthFactorType {
   AUTH_FACTOR_TYPE_KIOSK = 4;
   AUTH_FACTOR_TYPE_SMART_CARD = 5;
   AUTH_FACTOR_TYPE_LEGACY_FINGERPRINT = 6;
+  AUTH_FACTOR_TYPE_FINGERPRINT = 7;
 }
 
 // Enum to define the purpose of AuthFactor preparation. This would be used
@@ -87,7 +88,7 @@ message CryptohomeRecoveryAuthInput {
   string device_user_id = 3;
 
   // These fields are used for `AuthenticateAuthFactor`:
-  // Serialized cryptorecovery::CryptoRecoveryEpochResponse.
+  // Serialized cryptohome.cryptorecovery.CryptoRecoveryEpochResponse.
   // An epoch response received from Recovery Mediator service containing epoch
   // beacon value for Cryptohome recovery flow.
   bytes epoch_response = 4;
@@ -95,6 +96,18 @@ message CryptohomeRecoveryAuthInput {
   // A response received from Recovery Mediator service and used by Cryptohome
   // recovery flow to derive the wrapping keys.
   bytes recovery_response = 5;
+  // The ledger info from the chrome side and used by Cryptohome
+  // recovery flow to determine which ledger is used.
+  message LedgerInfo {
+    // Ledger's name.
+    string name = 1;
+    // Ledger's public key hash.
+    // TODO(b/268054784): Remove this field if hash can be calculated.
+    uint32 key_hash = 2;
+    // Ledger's public key.
+    bytes public_key = 3;
+  }
+  LedgerInfo ledger_info = 6;
 }
 
 // Kiosk AuthFactor requires no secret to be passed for derivation and
@@ -117,6 +130,10 @@ message SmartCardAuthInput {
 // AuthenticateAuthFactorRequest.
 message LegacyFingerprintAuthInput {}
 
+// FingerprintAuthInput is empty. FingerprintAuthFactor does not require
+// user input any secret.
+message FingerprintAuthInput {}
+
 // AuthInput is a wrapper around any secret or input data that is required to
 // authenticate or create an AuthFactor on disk.
 message AuthInput {
@@ -130,6 +147,7 @@ message AuthInput {
     KioskAuthInput kiosk_input = 4;
     SmartCardAuthInput smart_card_input = 5;
     LegacyFingerprintAuthInput legacy_fingerprint_input = 6;
+    FingerprintAuthInput fingerprint_input = 7;
   }
 }
 
@@ -172,6 +190,8 @@ message CommonMetadata {
 
 message LegacyFingerprintMetadata {}
 
+message FingerprintMetadata {}
+
 // AuthFactor is a backing store for any secret stored on Chrome OS in the USS
 // World. This proto definition is used to communicate with the client side.
 // Once it is received on cryptohome side, this proto definition is converted to
@@ -202,6 +222,7 @@ message AuthFactor {
     KioskMetadata kiosk_metadata = 7;
     SmartCardMetadata smart_card_metadata = 8;
     LegacyFingerprintMetadata legacy_fingerprint_metadata = 11;
+    FingerprintMetadata fingerprint_metadata = 12;
   }
 
   reserved 3, 10;

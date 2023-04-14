@@ -5,7 +5,7 @@
 
 #include <xnnpack/assembly.h>
 
-# void xnn_f16_gemm${"inc" if INC else ""}_minmax_ukernel_1x8__aarch64_neonfp16arith_ld64(
+# void xnn_f16_gemm${"inc" if INC else ""}_minmax_ukernel_1x8__asm_aarch64_neonfp16arith_ld64(
 #     size_t mr,                (x0) - unused.  mr = 1
 #     size_t nc,                x1
 #     size_t kc,                x2 / x0
@@ -23,21 +23,14 @@ $else:
 
 # d8-d15, x19-x30 need to be preserved if used. x18 is reserved by the OS.
 
-# A pointer
-# x3  a0
-
-# C pointer
-# x6  c0
-
-# Vector register usage
-# A0   v0 v1
-# B   v20 v21 v22 v23
-# C   v24 v26
-
+# Register usage
+# A0  x3  v0 v1
+# B   x5 v20 v21 v22 v23
+# C0  x6 v24 v26
 # Clamp v4, v5
 
 
-BEGIN_FUNCTION xnn_f16_gemm${"inc" if INC else ""}_minmax_ukernel_1x8__aarch64_neonfp16arith_ld64
+BEGIN_FUNCTION xnn_f16_gemm${"inc" if INC else ""}_minmax_ukernel_1x8__asm_aarch64_neonfp16arith_ld64
 
         $if INC:
           # Load cn_stride, acc
@@ -137,7 +130,7 @@ BEGIN_FUNCTION xnn_f16_gemm${"inc" if INC else ""}_minmax_ukernel_1x8__aarch64_n
 9:
         RET
 
-END_FUNCTION xnn_f16_gemm${"inc" if INC else ""}_minmax_ukernel_1x8__aarch64_neonfp16arith_ld64
+END_FUNCTION xnn_f16_gemm${"inc" if INC else ""}_minmax_ukernel_1x8__asm_aarch64_neonfp16arith_ld64
 
 #ifdef __ELF__
 .section ".note.GNU-stack","",%progbits

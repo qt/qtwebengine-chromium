@@ -247,7 +247,7 @@ static AOM_INLINE void setup_delta_q(AV1_COMP *const cpi, ThreadData *td,
     const int sb_row = mi_row >> cm->seq_params->mib_size_log2;
     const int sb_col = mi_col >> cm->seq_params->mib_size_log2;
     const int sb_cols =
-        CEIL_POWER_OF_TWO(cm->mi_params.mi_cols, MAX_MIB_SIZE_LOG2);
+        CEIL_POWER_OF_TWO(cm->mi_params.mi_cols, cm->seq_params->mib_size_log2);
     const int sb_index = sb_row * sb_cols + sb_col;
     current_qindex =
         cpi->ducky_encode_info.frame_info.superblock_encode_qindex[sb_index];
@@ -1132,12 +1132,9 @@ static AOM_INLINE void encode_sb_row(AV1_COMP *cpi, ThreadData *td,
     av1_set_cost_upd_freq(cpi, td, tile_info, mi_row, mi_col);
 
     // Reset color coding related parameters
-    x->color_sensitivity_sb[0] = 0;
-    x->color_sensitivity_sb[1] = 0;
-    x->color_sensitivity_sb_g[0] = 0;
-    x->color_sensitivity_sb_g[1] = 0;
-    x->color_sensitivity[0] = 0;
-    x->color_sensitivity[1] = 0;
+    av1_zero(x->color_sensitivity_sb);
+    av1_zero(x->color_sensitivity_sb_g);
+    av1_zero(x->color_sensitivity);
     x->content_state_sb.source_sad_nonrd = kMedSad;
     x->content_state_sb.source_sad_rd = kMedSad;
     x->content_state_sb.lighting_change = 0;
@@ -2243,6 +2240,21 @@ void av1_encode_frame(AV1_COMP *cpi) {
   set_rel_frame_dist(&cpi->common, &cpi->ref_frame_dist_info,
                      cpi->ref_frame_flags);
   av1_setup_frame_sign_bias(cm);
+
+  // If global motion is enabled, then every buffer which is used as either
+  // a source or a ref frame should have an image pyramid allocated.
+  // Check here so that issues can be caught early in debug mode
+#if !defined(NDEBUG) && !CONFIG_REALTIME_ONLY
+  if (cpi->image_pyramid_levels > 0) {
+    assert(cpi->source->y_pyramid);
+    for (int ref_frame = LAST_FRAME; ref_frame <= ALTREF_FRAME; ++ref_frame) {
+      const RefCntBuffer *const buf = get_ref_frame_buf(cm, ref_frame);
+      if (buf != NULL) {
+        assert(buf->buf.y_pyramid);
+      }
+    }
+  }
+#endif  // !defined(NDEBUG) && !CONFIG_REALTIME_ONLY
 
 #if CONFIG_MISMATCH_DEBUG
   mismatch_reset_frame(num_planes);

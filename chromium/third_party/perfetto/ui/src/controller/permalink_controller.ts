@@ -25,6 +25,7 @@ import {EngineConfig, ObjectById, State} from '../common/state';
 import {STATE_VERSION} from '../common/state';
 import {
   BUCKET_NAME,
+  buggyToSha256,
   saveState,
   saveTrace,
   toSha256,
@@ -78,7 +79,7 @@ export class PermalinkController extends Controller<'main'> {
 
       PermalinkController.createPermalink(isRecordingConfig)
           .then((hash) => {
-            globals.dispatch(Actions.setPermalink({requestId, hash}));
+            frontendGlobals.dispatch(Actions.setPermalink({requestId, hash}));
           })
           .finally(() => {
             publishConversionJobStatusUpdate({
@@ -98,11 +99,12 @@ export class PermalinkController extends Controller<'main'> {
             const validConfig =
                 runValidator(recordConfigValidator, stateOrConfig as unknown)
                     .result;
-            globals.dispatch(Actions.setRecordConfig({config: validConfig}));
+            frontendGlobals.dispatch(
+                Actions.setRecordConfig({config: validConfig}));
             Router.navigate('#!/record');
             return;
           }
-          globals.dispatch(Actions.setState({newState: stateOrConfig}));
+          frontendGlobals.dispatch(Actions.setState({newState: stateOrConfig}));
           this.lastRequestId = stateOrConfig.permalink.requestId;
         });
   }
@@ -197,7 +199,14 @@ export class PermalinkController extends Controller<'main'> {
     const stateHash = await toSha256(text);
     const state = JSON.parse(text);
     if (stateHash !== id) {
-      throw new Error(`State hash does not match ${id} vs. ${stateHash}`);
+      // Old permalinks incorrectly dropped some digits from the
+      // hexdigest of the SHA256. We don't want to invalidate those
+      // links so we also compute the old string and try that here
+      // also.
+      const buggyStateHash = await buggyToSha256(text);
+      if (buggyStateHash !== id) {
+        throw new Error(`State hash does not match ${id} vs. ${stateHash}`);
+      }
     }
     if (!this.isRecordConfig(state)) {
       return this.upgradeState(state);
@@ -207,7 +216,7 @@ export class PermalinkController extends Controller<'main'> {
 
   private static updateStatus(msg: string): void {
     // TODO(hjd): Unify loading updates.
-    globals.dispatch(Actions.updateStatus({
+    frontendGlobals.dispatch(Actions.updateStatus({
       msg,
       timestamp: Date.now() / 1000,
     }));

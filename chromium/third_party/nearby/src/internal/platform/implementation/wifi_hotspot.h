@@ -21,9 +21,8 @@
 #include "internal/platform/input_stream.h"
 #include "internal/platform/listeners.h"
 #include "internal/platform/output_stream.h"
-#include "internal/platform/wifi_hotspot_credential.h"
+#include "internal/platform/wifi_credential.h"
 
-namespace location {
 namespace nearby {
 namespace api {
 
@@ -112,6 +111,5 @@ class WifiHotspotMedium {
 
 }  // namespace api
 }  // namespace nearby
-}  // namespace location
 
 #endif  // PLATFORM_API_WIFI_HOTSPOT_H_

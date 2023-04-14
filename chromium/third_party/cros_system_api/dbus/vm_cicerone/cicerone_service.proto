@@ -102,6 +102,10 @@ message ContainerStartedSignal {
 
   // The vsock port that sftp-server runs on.
   uint32 sftp_vsock_port = 7;
+
+  // A token used to identify the container, usually stored in
+  // /.dev/container_token.
+  string container_token = 8;
 }
 
 // Message used in the signal for when a container has shut down.
@@ -1826,6 +1830,9 @@ message ContainerInfo {
 
   // OPTIONAL: If using LXD, information about the OS.
   OsRelease os_release = 3;
+
+  // The token for the container. An empty string if not available.
+  string container_token = 4;
 }
 
 // Sent by chrome to query the list of containers and VMs that Cicerone knows

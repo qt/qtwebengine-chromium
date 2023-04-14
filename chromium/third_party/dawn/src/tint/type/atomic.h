@@ -28,16 +28,12 @@ class Atomic final : public Castable<Atomic, Type> {
     /// @param subtype the atomic type
     explicit Atomic(const type::Type* subtype);
 
-    /// Move constructor
-    Atomic(Atomic&&);
+    /// Destructor
     ~Atomic() override;
 
-    /// @returns a hash of the type.
-    size_t Hash() const override;
-
-    /// @param other the other type to compare against
-    /// @returns true if the this type is equal to the given type
-    bool Equals(const type::Type& other) const override;
+    /// @param other the other node to compare against
+    /// @returns true if the this type is equal to @p other
+    bool Equals(const type::UniqueNode& other) const override;
 
     /// @returns the atomic type
     const type::Type* Type() const { return subtype_; }
@@ -52,6 +48,10 @@ class Atomic final : public Castable<Atomic, Type> {
 
     /// @returns the alignment in bytes of the type.
     uint32_t Align() const override;
+
+    /// @param ctx the clone context
+    /// @returns a clone of this type
+    Atomic* Clone(CloneContext& ctx) const override;
 
   private:
     type::Type const* const subtype_;

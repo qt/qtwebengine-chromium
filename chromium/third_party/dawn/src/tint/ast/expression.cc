@@ -14,9 +14,6 @@
 
 #include "src/tint/ast/expression.h"
 
-#include "src/tint/sem/expression.h"
-#include "src/tint/sem/info.h"
-
 TINT_INSTANTIATE_TYPEINFO(tint::ast::Expression);
 
 namespace tint::ast {

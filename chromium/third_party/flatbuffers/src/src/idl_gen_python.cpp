@@ -16,6 +16,8 @@
 
 // independent from idl_parser, since this code is not needed for most clients
 
+#include "idl_gen_python.h"
+
 #include <cctype>
 #include <set>
 #include <string>
@@ -1108,10 +1110,22 @@ class PythonGenerator : public BaseGenerator {
 
     code += GenIndents(1) + "@classmethod";
     code += GenIndents(1) + "def InitFromBuf(cls, buf, pos):";
-    code += GenIndents(2) + "n = flatbuffers.encode.Get(flatbuffers.packer.uoffset, buf, 0)";
     code += GenIndents(2) + struct_var + " = " + struct_type + "()";
-    code += GenIndents(2) + struct_var + ".Init(buf, pos+n)";
+    code += GenIndents(2) + struct_var + ".Init(buf, pos)";
     code += GenIndents(2) + "return cls.InitFromObj(" + struct_var + ")";
+    code += "\n";
+  }
+
+  void InitializeFromPackedBuf(const StructDef &struct_def,
+                         std::string *code_ptr) const {
+    auto &code = *code_ptr;
+    const auto struct_var = namer_.Variable(struct_def);
+    const auto struct_type = namer_.Type(struct_def);
+
+    code += GenIndents(1) + "@classmethod";
+    code += GenIndents(1) + "def InitFromPackedBuf(cls, buf, pos=0):";
+    code += GenIndents(2) + "n = flatbuffers.encode.Get(flatbuffers.packer.uoffset, buf, pos)";
+    code += GenIndents(2) + "return cls.InitFromBuf(buf, pos+n)";
     code += "\n";
   }
 
@@ -1126,6 +1140,23 @@ class PythonGenerator : public BaseGenerator {
     code += GenIndents(2) + "x = " + struct_object + "()";
     code += GenIndents(2) + "x._UnPack(" + struct_var + ")";
     code += GenIndents(2) + "return x";
+    code += "\n";
+  }
+
+  void GenCompareOperator(const StructDef &struct_def, 
+                          std::string *code_ptr) const {
+    auto &code = *code_ptr;
+    code += GenIndents(1) + "def __eq__(self, other):";
+    code += GenIndents(2) + "return type(self) == type(other)";
+    for (auto it = struct_def.fields.vec.begin();
+            it != struct_def.fields.vec.end(); ++it) {
+          auto &field = **it;
+          if (field.deprecated) continue;
+
+          // Wrties the comparison statement for this field.
+          const auto field_field = namer_.Field(field);
+          code += " and \\" + GenIndents(3) + "self." + field_field + " == " + "other." + field_field;
+        }
     code += "\n";
   }
 
@@ -1148,8 +1179,8 @@ class PythonGenerator : public BaseGenerator {
       code += field_type + "()";
     }
     code += ") is not None:";
-    code += GenIndents(3) + "self." + field_field + " = " + field_type +
-            "T.InitFromObj(" + struct_var + "." + field_method + "(";
+    code += GenIndents(3) + "self." + field_field + " = " + namer_.ObjectType(field_type) +
+            + ".InitFromObj(" + struct_var + "." + field_method + "(";
     // A struct's accessor requires a struct buf instance.
     if (struct_def.fixed && field.value.type.base_type == BASE_TYPE_STRUCT) {
       code += field_type + "()";
@@ -1199,8 +1230,8 @@ class PythonGenerator : public BaseGenerator {
             "(i) is None:";
     code += GenIndents(5) + "self." + field_field + ".append(None)";
     code += GenIndents(4) + "else:";
-    code += GenIndents(5) + one_instance + " = " + field_type +
-            "T.InitFromObj(" + struct_var + "." + field_method + "(i))";
+    code += GenIndents(5) + one_instance + " = " + namer_.ObjectType(field_type) +
+            ".InitFromObj(" + struct_var + "." + field_method + "(i))";
     code +=
         GenIndents(5) + "self." + field_field + ".append(" + one_instance + ")";
   }
@@ -1230,8 +1261,8 @@ class PythonGenerator : public BaseGenerator {
             "(i) is None:";
     code += GenIndents(5) + "self." + field_field + ".append(None)";
     code += GenIndents(4) + "else:";
-    code += GenIndents(5) + one_instance + " = " + field_type +
-            "T.InitFromObj(" + struct_var + "." + field_method + "(i))";
+    code += GenIndents(5) + one_instance + " = " + namer_.ObjectType(field_type) +
+            ".InitFromObj(" + struct_var + "." + field_method + "(i))";
     code +=
         GenIndents(5) + "self." + field_field + ".append(" + one_instance + ")";
   }
@@ -1607,7 +1638,13 @@ class PythonGenerator : public BaseGenerator {
 
     InitializeFromBuf(struct_def, &code);
 
+    InitializeFromPackedBuf(struct_def, &code);
+
     InitializeFromObjForObject(struct_def, &code);
+
+    if (parser_.opts.gen_compare) {
+      GenCompareOperator(struct_def, &code);
+    }
 
     GenUnPack(struct_def, &code);
 
@@ -1875,6 +1912,60 @@ bool GeneratePython(const Parser &parser, const std::string &path,
                     const std::string &file_name) {
   python::PythonGenerator generator(parser, path, file_name);
   return generator.generate();
+}
+
+namespace {
+
+class PythonCodeGenerator : public CodeGenerator {
+ public:
+  Status GenerateCode(const Parser &parser, const std::string &path,
+                      const std::string &filename) override {
+    if (!GeneratePython(parser, path, filename)) { return Status::ERROR; }
+    return Status::OK;
+  }
+
+  Status GenerateCode(const uint8_t *buffer, int64_t length) override {
+    (void)buffer;
+    (void)length;
+    return Status::NOT_IMPLEMENTED;
+  }
+
+  Status GenerateMakeRule(const Parser &parser, const std::string &path,
+                          const std::string &filename,
+                          std::string &output) override {
+    (void)parser;
+    (void)path;
+    (void)filename;
+    (void)output;
+    return Status::NOT_IMPLEMENTED;
+  }
+
+  Status GenerateGrpcCode(const Parser &parser, const std::string &path,
+                          const std::string &filename) override {
+    if (!GeneratePythonGRPC(parser, path, filename)) { return Status::ERROR; }
+    return Status::OK;
+  }
+
+  Status GenerateRootFile(const Parser &parser,
+                          const std::string &path) override {
+    (void)parser;
+    (void)path;
+    return Status::NOT_IMPLEMENTED;
+  }
+
+  bool IsSchemaOnly() const override { return true; }
+
+  bool SupportsBfbsGeneration() const override { return false; }
+  bool SupportsRootFileGeneration() const override { return false; }
+
+  IDLOptions::Language Language() const override { return IDLOptions::kPython; }
+
+  std::string LanguageName() const override { return "Python"; }
+};
+}  // namespace
+
+std::unique_ptr<CodeGenerator> NewPythonCodeGenerator() {
+  return std::unique_ptr<PythonCodeGenerator>(new PythonCodeGenerator());
 }
 
 }  // namespace flatbuffers

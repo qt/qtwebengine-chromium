@@ -10,6 +10,7 @@ import * as SDK from '../../core/sdk/sdk.js';
 import type * as ReportRenderer from './LighthouseReporterTypes.js';
 import type * as Protocol from '../../generated/protocol.js';
 
+/* eslint-disable jsdoc/check-alignment */
 /**
  * @overview
                                                    ┌────────────┐
@@ -42,7 +43,8 @@ LighthouseWorkerService   ││          Either ConnectionProxy or LegacyPort  
  * All messages within ConnectionProxy/LegacyPort speak pure CDP.
  * The foundational CDP connection is `parallelConnection`.
  * All connections within the worker are not actual ParallelConnection's.
-*/
+ */
+/* eslint-enable jsdoc/check-alignment */
 
 let lastId = 1;
 
@@ -62,6 +64,7 @@ export class ProtocolService {
   private parallelConnection?: ProtocolClient.InspectorBackend.Connection;
   private lighthouseWorkerPromise?: Promise<Worker>;
   private lighthouseMessageUpdateCallback?: ((arg0: string) => void);
+  private removeDialogHandler?: () => void;
   private configForTesting?: Object;
 
   async attach(): Promise<void> {
@@ -89,6 +92,23 @@ export class ProtocolService {
       }
       this.dispatchProtocolMessage(message);
     });
+
+    // Lighthouse implements its own dialog handler like this, however its lifecycle ends when
+    // the internal Lighthouse session is disposed.
+    //
+    // If the page is reloaded near the end of the run (e.g. bfcache testing), the Lighthouse
+    // internal session can be disposed before a dialog message appears. This allows the dialog
+    // to block important Lighthouse teardown operations in LighthouseProtocolService.
+    //
+    // To ensure the teardown operations can proceed, we need a dialog handler which lasts until
+    // the LighthouseProtocolService detaches.
+    const dialogHandler = (): void => {
+      void mainTarget.pageAgent().invoke_handleJavaScriptDialog({accept: true});
+    };
+
+    resourceTreeModel.addEventListener(SDK.ResourceTreeModel.Events.JavaScriptDialogOpening, dialogHandler);
+    this.removeDialogHandler = (): void =>
+        resourceTreeModel.removeEventListener(SDK.ResourceTreeModel.Events.JavaScriptDialogOpening, dialogHandler);
 
     this.parallelConnection = connection;
     this.targetInfos = childTargetManager.targetInfos();
@@ -161,6 +181,7 @@ export class ProtocolService {
       await oldParallelConnection.disconnect();
     }
     await SDK.TargetManager.TargetManager.instance().resumeAllTargets();
+    this.removeDialogHandler?.();
   }
 
   registerStatusCallback(callback: (arg0: string) => void): void {

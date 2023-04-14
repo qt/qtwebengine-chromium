@@ -17,7 +17,7 @@
 
 #include <string>
 
-#include "src/tint/sem/expression.h"
+#include "src/tint/sem/value_expression.h"
 #include "src/tint/sem/variable.h"
 #include "src/tint/type/array_count.h"
 
@@ -36,16 +36,17 @@ class NamedOverrideArrayCount final : public Castable<NamedOverrideArrayCount, t
     explicit NamedOverrideArrayCount(const GlobalVariable* var);
     ~NamedOverrideArrayCount() override;
 
-    /// @returns a hash of the array count.
-    size_t Hash() const override;
-
-    /// @param t other array count
-    /// @returns true if this array count is equal to the given array count
-    bool Equals(const type::ArrayCount& t) const override;
+    /// @param other the other node
+    /// @returns true if this array count is equal @p other
+    bool Equals(const type::UniqueNode& other) const override;
 
     /// @param symbols the symbol table
     /// @returns the friendly name for this array count
     std::string FriendlyName(const SymbolTable& symbols) const override;
+
+    /// @param ctx the clone context
+    /// @returns a clone of this type
+    type::ArrayCount* Clone(type::CloneContext& ctx) const override;
 
     /// The `override` variable.
     const GlobalVariable* variable;
@@ -62,19 +63,20 @@ class UnnamedOverrideArrayCount final
   public:
     /// Constructor
     /// @param e the override expression
-    explicit UnnamedOverrideArrayCount(const Expression* e);
+    explicit UnnamedOverrideArrayCount(const ValueExpression* e);
     ~UnnamedOverrideArrayCount() override;
 
-    /// @returns a hash of the array count.
-    size_t Hash() const override;
-
-    /// @param t other array count
-    /// @returns true if this array count is equal to the given array count
-    bool Equals(const type::ArrayCount& t) const override;
+    /// @param other the other node
+    /// @returns true if this array count is equal @p other
+    bool Equals(const type::UniqueNode& other) const override;
 
     /// @param symbols the symbol table
     /// @returns the friendly name for this array count
     std::string FriendlyName(const SymbolTable& symbols) const override;
+
+    /// @param ctx the clone context
+    /// @returns a clone of this type
+    type::ArrayCount* Clone(type::CloneContext& ctx) const override;
 
     /// The unnamed override expression.
     /// Note: Each AST expression gets a unique semantic expression node, so two equivalent AST
@@ -88,7 +90,7 @@ class UnnamedOverrideArrayCount final
     /// ```
     // The array count for `a` and `b` have equivalent AST expressions, but the types for `a` and
     // `b` must not compare equal.
-    const Expression* expr;
+    const ValueExpression* expr;
 };
 
 }  // namespace tint::sem

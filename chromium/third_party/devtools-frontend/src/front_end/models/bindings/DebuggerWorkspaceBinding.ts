@@ -6,6 +6,7 @@ import type * as Common from '../../core/common/common.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
+import type * as TextUtils from '../text_utils/text_utils.js';
 import * as Workspace from '../workspace/workspace.js';
 
 import {CompilerScriptMapping} from './CompilerScriptMapping.js';
@@ -95,17 +96,9 @@ export class DebuggerWorkspaceBinding implements SDK.TargetManager.SDKModelObser
     }
   }
 
-  getCompilerScriptMappingForTest(debuggerModel: SDK.DebuggerModel.DebuggerModel): CompilerScriptMapping|null {
-    const model = this.#debuggerModelToData.get(debuggerModel);
-    if (!model) {
-      return null;
-    }
-    return model.compilerMapping;
-  }
-
   private async computeAutoStepRanges(mode: SDK.DebuggerModel.StepMode, callFrame: SDK.DebuggerModel.CallFrame):
-      Promise<RawLocationRange[]> {
-    function contained(location: SDK.DebuggerModel.Location, range: RawLocationRange): boolean {
+      Promise<SDK.DebuggerModel.LocationRange[]> {
+    function contained(location: SDK.DebuggerModel.Location, range: SDK.DebuggerModel.LocationRange): boolean {
       const {start, end} = range;
       if (start.scriptId !== location.scriptId) {
         return false;
@@ -127,7 +120,7 @@ export class DebuggerWorkspaceBinding implements SDK.TargetManager.SDKModelObser
       return [];
     }
     const pluginManager = this.pluginManager;
-    let ranges: RawLocationRange[] = [];
+    let ranges: SDK.DebuggerModel.LocationRange[] = [];
     if (pluginManager) {
       if (mode === SDK.DebuggerModel.StepMode.StepOut) {
         // Step out of inline function.
@@ -286,6 +279,14 @@ export class DebuggerWorkspaceBinding implements SDK.TargetManager.SDKModelObser
     return null;
   }
 
+  uiSourceCodeForScript(script: SDK.Script.Script): Workspace.UISourceCode.UISourceCode|null {
+    const modelData = this.#debuggerModelToData.get(script.debuggerModel);
+    if (!modelData) {
+      return null;
+    }
+    return modelData.uiSourceCodeForScript(script);
+  }
+
   waitForUISourceCodeAdded(url: Platform.DevToolsPath.UrlString, target: SDK.Target.Target):
       Promise<Workspace.UISourceCode.UISourceCode> {
     return new Promise(resolve => {
@@ -322,6 +323,50 @@ export class DebuggerWorkspaceBinding implements SDK.TargetManager.SDKModelObser
     return [];
   }
 
+  /**
+   * Computes all the raw location ranges that intersect with the {@link textRange} in the given
+   * {@link uiSourceCode}. The reverse mappings of the returned ranges must not be fully contained
+   * with the {@link textRange} and it's the responsibility of the caller to appropriately filter or
+   * clamp if desired.
+   *
+   * It's important to note that for a contiguous range in the {@link uiSourceCode} there can be a
+   * variety of non-contiguous raw location ranges that intersect with the {@link textRange}. A
+   * simple example is that of an HTML document with multiple inline `<script>`s in the same line,
+   * so just asking for the raw locations in this single line will return a set of location ranges
+   * in different scripts.
+   *
+   * This method returns an empty array if this {@link uiSourceCode} is not provided by any of the
+   * mappings for this instance.
+   *
+   * @param uiSourceCode the {@link UISourceCode} to which the {@link textRange} belongs.
+   * @param textRange the text range in terms of the UI.
+   * @returns the list of raw location ranges that intersect with the text range or `[]` if
+   *          the {@link uiSourceCode} does not belong to this instance.
+   */
+  async uiLocationRangeToRawLocationRanges(
+      uiSourceCode: Workspace.UISourceCode.UISourceCode,
+      textRange: TextUtils.TextRange.TextRange): Promise<SDK.DebuggerModel.LocationRange[]> {
+    for (const sourceMapping of this.#sourceMappings) {
+      const ranges = sourceMapping.uiLocationRangeToRawLocationRanges(uiSourceCode, textRange);
+      if (ranges) {
+        return ranges;
+      }
+    }
+    if (this.pluginManager !== null) {
+      const ranges = await this.pluginManager.uiLocationRangeToRawLocationRanges(uiSourceCode, textRange);
+      if (ranges) {
+        return ranges;
+      }
+    }
+    for (const modelData of this.#debuggerModelToData.values()) {
+      const ranges = modelData.uiLocationRangeToRawLocationRanges(uiSourceCode, textRange);
+      if (ranges) {
+        return ranges;
+      }
+    }
+    return [];
+  }
+
   uiLocationToRawLocationsForUnformattedJavaScript(
       uiSourceCode: Workspace.UISourceCode.UISourceCode, lineNumber: number,
       columnNumber: number): SDK.DebuggerModel.Location[] {
@@ -343,6 +388,30 @@ export class DebuggerWorkspaceBinding implements SDK.TargetManager.SDKModelObser
       }
     }
     return uiLocation;
+  }
+
+  /**
+   * Computes the set of lines in the {@link uiSourceCode} that map to scripts by either looking at
+   * the debug info (if any) or checking for inline scripts within documents. If this set cannot be
+   * computed or all the lines in the {@link uiSourceCode} correspond to lines in a script, `null`
+   * is returned here.
+   *
+   * @param uiSourceCode the source entity.
+   * @returns a set of known mapped lines for {@link uiSourceCode} or `null` if it's impossible to
+   *          determine the set or the {@link uiSourceCode} does not map to or include any scripts.
+   */
+  async getMappedLines(uiSourceCode: Workspace.UISourceCode.UISourceCode): Promise<Set<number>|null> {
+    for (const modelData of this.#debuggerModelToData.values()) {
+      const mappedLines = modelData.getMappedLines(uiSourceCode);
+      if (mappedLines !== null) {
+        return mappedLines;
+      }
+    }
+    const {pluginManager} = this;
+    if (!pluginManager) {
+      return null;
+    }
+    return await pluginManager.getMappedLines(uiSourceCode);
   }
 
   scriptFile(uiSourceCode: Workspace.UISourceCode.UISourceCode, debuggerModel: SDK.DebuggerModel.DebuggerModel):
@@ -374,14 +443,6 @@ export class DebuggerWorkspaceBinding implements SDK.TargetManager.SDKModelObser
     }
     const scripts = this.pluginManager.scriptsForUISourceCode(uiSourceCode);
     return scripts.every(script => script.isJavaScript());
-  }
-
-  sourceMapForScript(script: SDK.Script.Script): SDK.SourceMap.SourceMap|null {
-    const modelData = this.#debuggerModelToData.get(script.debuggerModel);
-    if (!modelData) {
-      return null;
-    }
-    return modelData.compilerMapping.sourceMapForScript(script);
   }
 
   private globalObjectCleared(event: Common.EventTarget.EventTargetEvent<SDK.DebuggerModel.DebuggerModel>): void {
@@ -485,6 +546,14 @@ class ModelData {
     return uiLocation;
   }
 
+  uiSourceCodeForScript(script: SDK.Script.Script): Workspace.UISourceCode.UISourceCode|null {
+    let uiSourceCode: Workspace.UISourceCode.UISourceCode|null = null;
+    uiSourceCode = uiSourceCode || this.#resourceScriptMapping.uiSourceCodeForScript(script);
+    uiSourceCode = uiSourceCode || this.#resourceMapping.uiSourceCodeForScript(script);
+    uiSourceCode = uiSourceCode || this.#defaultMapping.uiSourceCodeForScript(script);
+    return uiSourceCode;
+  }
+
   uiLocationToRawLocations(
       uiSourceCode: Workspace.UISourceCode.UISourceCode, lineNumber: number,
       columnNumber: number|undefined = 0): SDK.DebuggerModel.Location[] {
@@ -500,6 +569,24 @@ class ModelData {
         locations :
         this.#defaultMapping.uiLocationToRawLocations(uiSourceCode, lineNumber, columnNumber);
     return locations;
+  }
+
+  uiLocationRangeToRawLocationRanges(
+      uiSourceCode: Workspace.UISourceCode.UISourceCode,
+      textRange: TextUtils.TextRange.TextRange): SDK.DebuggerModel.LocationRange[]|null {
+    let ranges = this.compilerMapping.uiLocationRangeToRawLocationRanges(uiSourceCode, textRange);
+    ranges ??= this.#resourceScriptMapping.uiLocationRangeToRawLocationRanges(uiSourceCode, textRange);
+    ranges ??= this.#resourceMapping.uiLocationRangeToJSLocationRanges(uiSourceCode, textRange);
+    ranges ??= this.#defaultMapping.uiLocationRangeToRawLocationRanges(uiSourceCode, textRange);
+    return ranges;
+  }
+
+  getMappedLines(uiSourceCode: Workspace.UISourceCode.UISourceCode): Set<number>|null {
+    const mappedLines = this.compilerMapping.getMappedLines(uiSourceCode);
+    // TODO(crbug.com/1411431): The scripts from the ResourceMapping appear over time,
+    // and there's currently no way to inform the UI to update.
+    // mappedLines = mappedLines ?? this.#resourceMapping.getMappedLines(uiSourceCode);
+    return mappedLines;
   }
 
   private beforePaused(debuggerPausedDetails: SDK.DebuggerModel.DebuggerPausedDetails): boolean {
@@ -620,15 +707,14 @@ class StackTraceTopFrameLocation extends LiveLocationWithPool {
   }
 }
 
-export interface RawLocationRange {
-  start: SDK.DebuggerModel.Location;
-  end: SDK.DebuggerModel.Location;
-}
-
 export interface DebuggerSourceMapping {
   rawLocationToUILocation(rawLocation: SDK.DebuggerModel.Location): Workspace.UISourceCode.UILocation|null;
 
   uiLocationToRawLocations(
       uiSourceCode: Workspace.UISourceCode.UISourceCode, lineNumber: number,
       columnNumber?: number): SDK.DebuggerModel.Location[];
+
+  uiLocationRangeToRawLocationRanges(
+      uiSourceCode: Workspace.UISourceCode.UISourceCode,
+      textRange: TextUtils.TextRange.TextRange): SDK.DebuggerModel.LocationRange[]|null;
 }

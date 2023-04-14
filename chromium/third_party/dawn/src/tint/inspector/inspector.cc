@@ -19,15 +19,20 @@
 
 #include "src/tint/ast/bool_literal_expression.h"
 #include "src/tint/ast/call_expression.h"
-#include "src/tint/ast/extension.h"
 #include "src/tint/ast/float_literal_expression.h"
 #include "src/tint/ast/id_attribute.h"
+#include "src/tint/ast/identifier.h"
 #include "src/tint/ast/int_literal_expression.h"
 #include "src/tint/ast/interpolate_attribute.h"
 #include "src/tint/ast/location_attribute.h"
 #include "src/tint/ast/module.h"
 #include "src/tint/ast/override.h"
 #include "src/tint/ast/var.h"
+#include "src/tint/builtin/builtin_value.h"
+#include "src/tint/builtin/extension.h"
+#include "src/tint/builtin/interpolation_sampling.h"
+#include "src/tint/builtin/interpolation_type.h"
+#include "src/tint/sem/builtin_enum_expression.h"
 #include "src/tint/sem/call.h"
 #include "src/tint/sem/function.h"
 #include "src/tint/sem/module.h"
@@ -114,59 +119,6 @@ std::tuple<ComponentType, CompositionType> CalculateComponentAndComposition(
     return {componentType, compositionType};
 }
 
-std::tuple<InterpolationType, InterpolationSampling> CalculateInterpolationData(
-    const type::Type* type,
-    utils::VectorRef<const ast::Attribute*> attributes) {
-    auto* interpolation_attribute = ast::GetAttribute<ast::InterpolateAttribute>(attributes);
-    if (type->is_integer_scalar_or_vector()) {
-        return {InterpolationType::kFlat, InterpolationSampling::kNone};
-    }
-
-    if (!interpolation_attribute) {
-        return {InterpolationType::kPerspective, InterpolationSampling::kCenter};
-    }
-
-    auto ast_interpolation_type = interpolation_attribute->type;
-    auto ast_sampling_type = interpolation_attribute->sampling;
-    if (ast_interpolation_type != ast::InterpolationType::kFlat &&
-        ast_sampling_type == ast::InterpolationSampling::kUndefined) {
-        ast_sampling_type = ast::InterpolationSampling::kCenter;
-    }
-
-    auto interpolation_type = InterpolationType::kUnknown;
-    switch (ast_interpolation_type) {
-        case ast::InterpolationType::kPerspective:
-            interpolation_type = InterpolationType::kPerspective;
-            break;
-        case ast::InterpolationType::kLinear:
-            interpolation_type = InterpolationType::kLinear;
-            break;
-        case ast::InterpolationType::kFlat:
-            interpolation_type = InterpolationType::kFlat;
-            break;
-        case ast::InterpolationType::kUndefined:
-            break;
-    }
-
-    auto sampling_type = InterpolationSampling::kUnknown;
-    switch (ast_sampling_type) {
-        case ast::InterpolationSampling::kUndefined:
-            sampling_type = InterpolationSampling::kNone;
-            break;
-        case ast::InterpolationSampling::kCenter:
-            sampling_type = InterpolationSampling::kCenter;
-            break;
-        case ast::InterpolationSampling::kCentroid:
-            sampling_type = InterpolationSampling::kCentroid;
-            break;
-        case ast::InterpolationSampling::kSample:
-            sampling_type = InterpolationSampling::kSample;
-            break;
-    }
-
-    return {interpolation_type, sampling_type};
-}
-
 }  // namespace
 
 Inspector::Inspector(const Program* program) : program_(program) {}
@@ -180,8 +132,8 @@ EntryPoint Inspector::GetEntryPoint(const tint::ast::Function* func) {
 
     auto* sem = program_->Sem().Get(func);
 
-    entry_point.name = program_->Symbols().NameFor(func->symbol);
-    entry_point.remapped_name = program_->Symbols().NameFor(func->symbol);
+    entry_point.name = program_->Symbols().NameFor(func->name->symbol);
+    entry_point.remapped_name = program_->Symbols().NameFor(func->name->symbol);
 
     switch (func->PipelineStage()) {
         case ast::PipelineStage::kCompute: {
@@ -210,20 +162,20 @@ EntryPoint Inspector::GetEntryPoint(const tint::ast::Function* func) {
     }
 
     for (auto* param : sem->Parameters()) {
-        AddEntryPointInOutVariables(program_->Symbols().NameFor(param->Declaration()->symbol),
+        AddEntryPointInOutVariables(program_->Symbols().NameFor(param->Declaration()->name->symbol),
                                     param->Type(), param->Declaration()->attributes,
                                     param->Location(), entry_point.input_variables);
 
         entry_point.input_position_used |= ContainsBuiltin(
-            ast::BuiltinValue::kPosition, param->Type(), param->Declaration()->attributes);
+            builtin::BuiltinValue::kPosition, param->Type(), param->Declaration()->attributes);
         entry_point.front_facing_used |= ContainsBuiltin(
-            ast::BuiltinValue::kFrontFacing, param->Type(), param->Declaration()->attributes);
+            builtin::BuiltinValue::kFrontFacing, param->Type(), param->Declaration()->attributes);
         entry_point.sample_index_used |= ContainsBuiltin(
-            ast::BuiltinValue::kSampleIndex, param->Type(), param->Declaration()->attributes);
+            builtin::BuiltinValue::kSampleIndex, param->Type(), param->Declaration()->attributes);
         entry_point.input_sample_mask_used |= ContainsBuiltin(
-            ast::BuiltinValue::kSampleMask, param->Type(), param->Declaration()->attributes);
+            builtin::BuiltinValue::kSampleMask, param->Type(), param->Declaration()->attributes);
         entry_point.num_workgroups_used |= ContainsBuiltin(
-            ast::BuiltinValue::kNumWorkgroups, param->Type(), param->Declaration()->attributes);
+            builtin::BuiltinValue::kNumWorkgroups, param->Type(), param->Declaration()->attributes);
     }
 
     if (!sem->ReturnType()->Is<type::Void>()) {
@@ -231,15 +183,15 @@ EntryPoint Inspector::GetEntryPoint(const tint::ast::Function* func) {
                                     sem->ReturnLocation(), entry_point.output_variables);
 
         entry_point.output_sample_mask_used = ContainsBuiltin(
-            ast::BuiltinValue::kSampleMask, sem->ReturnType(), func->return_type_attributes);
+            builtin::BuiltinValue::kSampleMask, sem->ReturnType(), func->return_type_attributes);
         entry_point.frag_depth_used = ContainsBuiltin(
-            ast::BuiltinValue::kFragDepth, sem->ReturnType(), func->return_type_attributes);
+            builtin::BuiltinValue::kFragDepth, sem->ReturnType(), func->return_type_attributes);
     }
 
     for (auto* var : sem->TransitivelyReferencedGlobals()) {
         auto* decl = var->Declaration();
 
-        auto name = program_->Symbols().NameFor(decl->symbol);
+        auto name = program_->Symbols().NameFor(decl->name->symbol);
 
         auto* global = var->As<sem::GlobalVariable>();
         if (global && global->Declaration()->Is<ast::Override>()) {
@@ -334,7 +286,7 @@ std::map<std::string, OverrideId> Inspector::GetNamedOverrideIds() {
     for (auto* var : program_->AST().GlobalVariables()) {
         auto* global = program_->Sem().Get<sem::GlobalVariable>(var);
         if (global && global->Declaration()->Is<ast::Override>()) {
-            auto name = program_->Symbols().NameFor(var->symbol);
+            auto name = program_->Symbols().NameFor(var->name->symbol);
             result[name] = global->OverrideId();
         }
     }
@@ -540,7 +492,7 @@ std::vector<ResourceBinding> Inspector::GetExternalTextureResourceBindings(
                                       ResourceBinding::ResourceType::kExternalTexture);
 }
 
-utils::VectorRef<sem::SamplerTexturePair> Inspector::GetSamplerTextureUses(
+utils::VectorRef<SamplerTexturePair> Inspector::GetSamplerTextureUses(
     const std::string& entry_point) {
     auto* func = FindEntryPointByName(entry_point);
     if (!func) {
@@ -556,7 +508,7 @@ utils::VectorRef<sem::SamplerTexturePair> Inspector::GetSamplerTextureUses(
     return it->second;
 }
 
-std::vector<sem::SamplerTexturePair> Inspector::GetSamplerTextureUses(
+std::vector<SamplerTexturePair> Inspector::GetSamplerTextureUses(
     const std::string& entry_point,
     const sem::BindingPoint& placeholder) {
     auto* func = FindEntryPointByName(entry_point);
@@ -565,7 +517,7 @@ std::vector<sem::SamplerTexturePair> Inspector::GetSamplerTextureUses(
     }
     auto* func_sem = program_->Sem().Get(func);
 
-    std::vector<sem::SamplerTexturePair> new_pairs;
+    std::vector<SamplerTexturePair> new_pairs;
     for (auto pair : func_sem->TextureSamplerPairs()) {
         auto* texture = pair.first->As<sem::GlobalVariable>();
         auto* sampler = pair.second ? pair.second->As<sem::GlobalVariable>() : nullptr;
@@ -586,7 +538,7 @@ uint32_t Inspector::GetWorkgroupStorageSize(const std::string& entry_point) {
     uint32_t total_size = 0;
     auto* func_sem = program_->Sem().Get(func);
     for (const sem::Variable* var : func_sem->TransitivelyReferencedGlobals()) {
-        if (var->AddressSpace() == ast::AddressSpace::kWorkgroup) {
+        if (var->AddressSpace() == builtin::AddressSpace::kWorkgroup) {
             auto* ty = var->Type()->UnwrapRef();
             uint32_t align = ty->Align();
             uint32_t size = ty->Size();
@@ -680,7 +632,7 @@ void Inspector::AddEntryPointInOutVariables(std::string name,
     variables.push_back(stage_variable);
 }
 
-bool Inspector::ContainsBuiltin(ast::BuiltinValue builtin,
+bool Inspector::ContainsBuiltin(builtin::BuiltinValue builtin,
                                 const type::Type* type,
                                 utils::VectorRef<const ast::Attribute*> attributes) const {
     auto* unwrapped_type = type->UnwrapRef();
@@ -697,11 +649,10 @@ bool Inspector::ContainsBuiltin(ast::BuiltinValue builtin,
 
     // Base case: check for builtin
     auto* builtin_declaration = ast::GetAttribute<ast::BuiltinAttribute>(attributes);
-    if (!builtin_declaration || builtin_declaration->builtin != builtin) {
+    if (!builtin_declaration) {
         return false;
     }
-
-    return true;
+    return program_->Sem().Get(builtin_declaration)->Value() == builtin;
 }
 
 std::vector<ResourceBinding> Inspector::GetStorageBufferResourceBindingsImpl(
@@ -718,7 +669,7 @@ std::vector<ResourceBinding> Inspector::GetStorageBufferResourceBindingsImpl(
         auto* var = rsv.first;
         auto binding_info = rsv.second;
 
-        if (read_only != (var->Access() == ast::Access::kRead)) {
+        if (read_only != (var->Access() == builtin::Access::kRead)) {
             continue;
         }
 
@@ -824,7 +775,7 @@ void Inspector::GenerateSamplerTargets() {
     }
 
     sampler_targets_ = std::make_unique<
-        std::unordered_map<std::string, utils::UniqueVector<sem::SamplerTexturePair, 4>>>();
+        std::unordered_map<std::string, utils::UniqueVector<SamplerTexturePair, 4>>>();
 
     auto& sem = program_->Sem();
 
@@ -877,7 +828,7 @@ void Inspector::GenerateSamplerTargets() {
 
                                     for (auto* entry_point : entry_points) {
                                         const auto& ep_name = program_->Symbols().NameFor(
-                                            entry_point->Declaration()->symbol);
+                                            entry_point->Declaration()->name->symbol);
                                         (*sampler_targets_)[ep_name].Add(
                                             {sampler_binding_point, texture_binding_point});
                                     }
@@ -885,9 +836,73 @@ void Inspector::GenerateSamplerTargets() {
     }
 }
 
+std::tuple<InterpolationType, InterpolationSampling> Inspector::CalculateInterpolationData(
+    const type::Type* type,
+    utils::VectorRef<const ast::Attribute*> attributes) const {
+    auto* interpolation_attribute = ast::GetAttribute<ast::InterpolateAttribute>(attributes);
+    if (type->is_integer_scalar_or_vector()) {
+        return {InterpolationType::kFlat, InterpolationSampling::kNone};
+    }
+
+    if (!interpolation_attribute) {
+        return {InterpolationType::kPerspective, InterpolationSampling::kCenter};
+    }
+
+    auto& sem = program_->Sem();
+
+    auto ast_interpolation_type = sem.Get<sem::BuiltinEnumExpression<builtin::InterpolationType>>(
+                                         interpolation_attribute->type)
+                                      ->Value();
+
+    auto ast_sampling_type = builtin::InterpolationSampling::kUndefined;
+    if (interpolation_attribute->sampling) {
+        ast_sampling_type = sem.Get<sem::BuiltinEnumExpression<builtin::InterpolationSampling>>(
+                                   interpolation_attribute->sampling)
+                                ->Value();
+    }
+
+    if (ast_interpolation_type != builtin::InterpolationType::kFlat &&
+        ast_sampling_type == builtin::InterpolationSampling::kUndefined) {
+        ast_sampling_type = builtin::InterpolationSampling::kCenter;
+    }
+
+    auto interpolation_type = InterpolationType::kUnknown;
+    switch (ast_interpolation_type) {
+        case builtin::InterpolationType::kPerspective:
+            interpolation_type = InterpolationType::kPerspective;
+            break;
+        case builtin::InterpolationType::kLinear:
+            interpolation_type = InterpolationType::kLinear;
+            break;
+        case builtin::InterpolationType::kFlat:
+            interpolation_type = InterpolationType::kFlat;
+            break;
+        case builtin::InterpolationType::kUndefined:
+            break;
+    }
+
+    auto sampling_type = InterpolationSampling::kUnknown;
+    switch (ast_sampling_type) {
+        case builtin::InterpolationSampling::kUndefined:
+            sampling_type = InterpolationSampling::kNone;
+            break;
+        case builtin::InterpolationSampling::kCenter:
+            sampling_type = InterpolationSampling::kCenter;
+            break;
+        case builtin::InterpolationSampling::kCentroid:
+            sampling_type = InterpolationSampling::kCentroid;
+            break;
+        case builtin::InterpolationSampling::kSample:
+            sampling_type = InterpolationSampling::kSample;
+            break;
+    }
+
+    return {interpolation_type, sampling_type};
+}
+
 template <size_t N, typename F>
 void Inspector::GetOriginatingResources(std::array<const ast::Expression*, N> exprs, F&& callback) {
-    if (!program_->IsValid()) {
+    if (TINT_UNLIKELY(!program_->IsValid())) {
         TINT_ICE(Inspector, diagnostics_)
             << "attempting to get originating resources in invalid program";
         return;
@@ -900,7 +915,7 @@ void Inspector::GetOriginatingResources(std::array<const ast::Expression*, N> ex
     utils::UniqueVector<const ast::CallExpression*, 8> callsites;
 
     for (size_t i = 0; i < N; i++) {
-        const sem::Variable* root_ident = sem.Get(exprs[i])->RootIdentifier();
+        const sem::Variable* root_ident = sem.GetVal(exprs[i])->RootIdentifier();
         if (auto* global = root_ident->As<sem::GlobalVariable>()) {
             globals[i] = global;
         } else if (auto* param = root_ident->As<sem::Parameter>()) {

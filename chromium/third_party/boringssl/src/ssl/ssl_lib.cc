@@ -2148,7 +2148,6 @@ int SSL_set_tlsext_host_name(SSL *ssl, const char *name) {
   }
   ssl->hostname.reset(OPENSSL_strdup(name));
   if (ssl->hostname == nullptr) {
-    OPENSSL_PUT_ERROR(SSL, ERR_R_MALLOC_FAILURE);
     return 0;
   }
   return 1;
@@ -2805,6 +2804,10 @@ void SSL_set_enforce_rsa_key_usage(SSL *ssl, int enabled) {
     return;
   }
   ssl->config->enforce_rsa_key_usage = !!enabled;
+}
+
+int SSL_was_key_usage_invalid(const SSL *ssl) {
+  return ssl->s3->was_key_usage_invalid;
 }
 
 void SSL_set_renegotiate_mode(SSL *ssl, enum ssl_renegotiate_mode_t mode) {

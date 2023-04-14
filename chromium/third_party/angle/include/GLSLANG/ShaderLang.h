@@ -26,7 +26,7 @@
 
 // Version number for shader translation API.
 // It is incremented every time the API changes.
-#define ANGLE_SH_VERSION 315
+#define ANGLE_SH_VERSION 320
 
 enum ShShaderSpec
 {
@@ -414,8 +414,8 @@ struct ShCompileOptions
     // We may want to apply it generally.
     uint64_t passHighpToPackUnormSnormBuiltins : 1;
 
-    // When clip and cull distances are used simultaneously, D3D11 can support up to four of each.
-    uint64_t limitSimultaneousClipAndCullDistanceUsage : 1;
+    // Use an integer uniform to pass a bitset of enabled clip distances.
+    uint64_t emulateClipDistanceState : 1;
 
     ShCompileOptionsMetal metal;
     ShPixelLocalStorageOptions pls;
@@ -491,6 +491,7 @@ struct ShBuiltInResources
     int EXT_texture_buffer;
     int OES_sample_variables;
     int EXT_clip_cull_distance;
+    int ANGLE_clip_cull_distance;
     int EXT_primitive_bounding_box;
     int OES_primitive_bounding_box;
     int EXT_separate_shader_objects;
@@ -661,7 +662,7 @@ struct ShBuiltInResources
     // Subpixel bits used in rasterization.
     int SubPixelBits;
 
-    // APPLE_clip_distance/EXT_clip_cull_distance constant
+    // APPLE_clip_distance / EXT_clip_cull_distance / ANGLE_clip_cull_distance constants
     int MaxClipDistances;
     int MaxCullDistances;
     int MaxCombinedClipAndCullDistances;
@@ -683,7 +684,8 @@ using ShHandle = void *;
 
 namespace sh
 {
-using BinaryBlob = std::vector<uint32_t>;
+using BinaryBlob       = std::vector<uint32_t>;
+using ShaderBinaryBlob = std::vector<uint8_t>;
 
 //
 // Driver must call this first, once, before doing any other compiler operations.
@@ -773,6 +775,15 @@ const std::string &GetObjectCode(const ShHandle handle);
 // handle: Specifies the compiler
 const BinaryBlob &GetObjectBinaryBlob(const ShHandle handle);
 
+// Returns a full binary for a compiled shader, to be loaded with glShaderBinary during runtime.
+// Parameters:
+// handle: Specifies the compiler
+bool GetShaderBinary(const ShHandle handle,
+                     const char *const shaderStrings[],
+                     size_t numStrings,
+                     const ShCompileOptions &compileOptions,
+                     ShaderBinaryBlob *const binaryOut);
+
 // Returns a (original_name, hash) map containing all the user defined names in the shader,
 // including variable names, function names, struct names, and struct field names.
 // Parameters:
@@ -857,6 +868,9 @@ unsigned int GetImage2DRegisterIndex(const ShHandle handle);
 // handle: Specifies the compiler
 const std::set<std::string> *GetUsedImage2DFunctionNames(const ShHandle handle);
 
+uint8_t GetClipDistanceArraySize(const ShHandle handle);
+uint8_t GetCullDistanceArraySize(const ShHandle handle);
+bool HasClipDistanceInVertexShader(const ShHandle handle);
 bool HasDiscardInFragmentShader(const ShHandle handle);
 bool HasValidGeometryShaderInputPrimitiveType(const ShHandle handle);
 bool HasValidGeometryShaderOutputPrimitiveType(const ShHandle handle);

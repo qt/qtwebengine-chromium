@@ -177,7 +177,11 @@ Sender::EnqueueFrameResult Sender::EnqueueFrame(const EncodedFrame& frame) {
 }
 
 void Sender::CancelInFlightData() {
-  while (checkpoint_frame_id_ <= last_enqueued_frame_id_) {
+  TRACE_SCOPED1(TraceCategory::kSender, "CancelInFlightData",
+                "frames_in_flight",
+                std::to_string(last_enqueued_frame_id_ - checkpoint_frame_id_));
+
+  while (checkpoint_frame_id_ < last_enqueued_frame_id_) {
     ++checkpoint_frame_id_;
     CancelPendingFrame(checkpoint_frame_id_);
   }
@@ -377,6 +381,8 @@ void Sender::OnReceiverCheckpoint(FrameId frame_id,
 
 void Sender::OnReceiverHasFrames(std::vector<FrameId> acks) {
   OSP_DCHECK(!acks.empty() && AreElementsSortedAndUnique(acks));
+  TRACE_SCOPED1(TraceCategory::kSender, "OnReceiverHasFrames", "frame_ids",
+                Join(acks));
 
   if (acks.back() > last_enqueued_frame_id_) {
     OSP_LOG_ERROR << "Ignoring individual frame ACKs: ACKing frame "

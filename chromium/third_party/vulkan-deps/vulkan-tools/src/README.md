@@ -2,9 +2,19 @@
 
 This project provides Khronos official Vulkan Tools and Utilities for Windows, Linux, Android, and MacOS.
 
-## CI Build Status
-[![Build Status](https://github.com/KhronosGroup/Vulkan-Tools/workflows/CI%20Build/badge.svg?branch=master)](https://github.com/KhronosGroup/Vulkan-Tools/actions)
+## Default branch changed to 'main' 2023-01-16
 
+As discussed in #729, the default branch of this repository is now 'main'. This change should be largely transparent to repository users, since github rewrites many references to the old 'master' branch to 'main'. However, if you have a checked-out local clone, you may wish to take the following steps as recommended by github:
+
+```sh
+git branch -m master main
+git fetch origin
+git branch -u origin/main main
+git remote set-head origin -a
+```
+
+## CI Build Status
+[![Build Status](https://github.com/KhronosGroup/Vulkan-Tools/workflows/CI%20Build/badge.svg?branch=main)](https://github.com/KhronosGroup/Vulkan-Tools/actions)
 
 ## Introduction
 
@@ -42,7 +52,7 @@ This scheme was adopted following the 1.1.96 Vulkan specification release.
 ## License
 This work is released as open source under a Apache-style license from Khronos including a Khronos copyright.
 
-See COPYRIGHT.txt for a full list of licenses used in this repository.
+See LICENSE.txt for a full list of licenses used in this repository.
 
 ## Acknowledgements
 While this project has been developed primarily by LunarG, Inc., there are many other

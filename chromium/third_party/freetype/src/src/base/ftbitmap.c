@@ -4,7 +4,7 @@
  *
  *   FreeType utility functions for bitmaps (body).
  *
- * Copyright (C) 2004-2022 by
+ * Copyright (C) 2004-2023 by
  * David Turner, Robert Wilhelm, and Werner Lemberg.
  *
  * This file is part of the FreeType project, and may only be used,
@@ -519,8 +519,8 @@
     case FT_PIXEL_MODE_BGRA:
       {
         FT_Int  width = (FT_Int)source->width;
-        FT_Int  neg = ( target->pitch == 0 && source->pitch < 0 ) ||
-                        target->pitch  < 0;
+        FT_Int  neg   = ( target->pitch == 0 && source->pitch < 0 ) ||
+                          target->pitch  < 0;
 
 
         FT_Bitmap_Done( library, target );

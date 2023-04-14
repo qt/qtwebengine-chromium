@@ -205,6 +205,13 @@ config("openscreen_code") {
       ]
     }
 
+    if (sysroot != "") {
+      cflags += [
+        # Use the generated sysroot path, if any, for compilation.
+        "--sysroot=$sysroot",
+      ]
+    }
+
     cflags_objcc += cflags_cc
 
     ldflags += [ "-fcolor-diagnostics" ]

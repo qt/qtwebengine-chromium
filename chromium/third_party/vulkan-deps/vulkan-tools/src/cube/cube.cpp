@@ -41,7 +41,6 @@
 #define VULKAN_HPP_NO_EXCEPTIONS
 #define VULKAN_HPP_TYPESAFE_CONVERSION
 #include <vulkan/vulkan.hpp>
-#include <vulkan/vk_sdk_platform.h>
 
 #include "linmath.h"
 
@@ -889,13 +888,31 @@ void Demo::init(int argc, char **argv) {
             i++;
             continue;
         }
-        if (strcmp(argv[i], "--width") == 0 && i < argc - 1 && sscanf(argv[i + 1], "%" SCNu32, &width) == 1) {
-            i++;
-            continue;
+        if (strcmp(argv[i], "--width") == 0) {
+            int32_t in_width = 0;
+            if (i < argc - 1 && sscanf(argv[i + 1], "%d", &in_width) == 1) {
+                if (in_width > 0) {
+                    width = static_cast<uint32_t>(in_width);
+                    i++;
+                    continue;
+                } else {
+                    ERR_EXIT("The --width parameter must be greater than 0", "User Error");
+                }
+            }
+            ERR_EXIT("The --width parameter must be followed by a number", "User Error");
         }
-        if (strcmp(argv[i], "--height") == 0 && i < argc - 1 && sscanf(argv[i + 1], "%" SCNu32, &height) == 1) {
-            i++;
-            continue;
+        if (strcmp(argv[i], "--height") == 0) {
+            int32_t in_height = 0;
+            if (i < argc - 1 && sscanf(argv[i + 1], "%d", &height) == 1) {
+                if (height > 0) {
+                    height = static_cast<uint32_t>(in_height);
+                    i++;
+                    continue;
+                } else {
+                    ERR_EXIT("The --height parameter must be greater than 0", "User Error");
+                }
+            }
+            ERR_EXIT("The --height parameter must be followed by a number", "User Error");
         }
         if (strcmp(argv[i], "--suppress_popups") == 0) {
             suppress_popups = true;
@@ -1041,15 +1058,21 @@ VKAPI_ATTR VkBool32 VKAPI_CALL Demo::debug_messenger_callback(VkDebugUtilsMessag
     if (pCallbackData->objectCount > 0) {
         message << "\n\tObjects - " << pCallbackData->objectCount << "\n";
         for (uint32_t object = 0; object < pCallbackData->objectCount; ++object) {
-            if (NULL != pCallbackData->pObjects[object].pObjectName && strlen(pCallbackData->pObjects[object].pObjectName) > 0) {
-                message << "\t\tObject[" << object << "] - "
-                        << vk::to_string(vk::ObjectType(pCallbackData->pObjects[object].objectType)) << ", Handle "
-                        << pCallbackData->pObjects[object].objectHandle << ", Name \""
-                        << pCallbackData->pObjects[object].pObjectName << "\"\n";
+            message << "\t\tObject[" << object << "] - "
+                    << vk::to_string(vk::ObjectType(pCallbackData->pObjects[object].objectType)) << ", Handle ";
+
+            // Print handle correctly if it is a dispatchable handle - aka a pointer
+            VkObjectType t = pCallbackData->pObjects[object].objectType;
+            if (t == VK_OBJECT_TYPE_INSTANCE || t == VK_OBJECT_TYPE_PHYSICAL_DEVICE || t == VK_OBJECT_TYPE_DEVICE ||
+                t == VK_OBJECT_TYPE_COMMAND_BUFFER || t == VK_OBJECT_TYPE_QUEUE) {
+                message << reinterpret_cast<void*>(static_cast<uintptr_t>(pCallbackData->pObjects[object].objectHandle));
             } else {
-                message << "\t\tObject[" << object << "] - "
-                        << vk::to_string(vk::ObjectType(pCallbackData->pObjects[object].objectType)) << ", Handle "
-                        << pCallbackData->pObjects[object].objectHandle << "\n";
+                message << pCallbackData->pObjects[object].objectHandle;
+            }
+            if (NULL != pCallbackData->pObjects[object].pObjectName && strlen(pCallbackData->pObjects[object].pObjectName) > 0) {
+                message << ", Name \"" << pCallbackData->pObjects[object].pObjectName << "\"\n";
+            } else {
+                message << "\n";
             }
         }
     }

@@ -10,7 +10,7 @@
 #include <memory>
 
 #include "include/core/SkStream.h"
-#include "include/private/SkTo.h"
+#include "include/private/base/SkTo.h"
 #include "src/xml/SkXMLParser.h"
 #include "src/xml/SkXMLWriter.h"
 
@@ -176,7 +176,7 @@ const char* SkDOM::AttrIter::next(const char** value) {
 
 //////////////////////////////////////////////////////////////////////////////
 
-#include "include/private/SkTDArray.h"
+#include "include/private/base/SkTDArray.h"
 #include "src/xml/SkXMLParser.h"
 
 static char* dupstr(SkArenaAlloc* chunk, const char src[], size_t srcLen) {

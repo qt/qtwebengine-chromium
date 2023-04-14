@@ -370,6 +370,8 @@ export enum EnumeratedHistogram {
   LinearMemoryInspectorTarget = 'DevTools.LinearMemoryInspector.Target',
   Language = 'DevTools.Language',
   SyncSetting = 'DevTools.SyncSetting',
+  RecordingCodeToggled = 'DevTools.RecordingCodeToggled',
+  RecordingCopiedToClipboard = 'DevTools.RecordingCopiedToClipboard',
   RecordingEdited = 'DevTools.RecordingEdited',
   RecordingExported = 'DevTools.RecordingExported',
   RecordingReplayFinished = 'DevTools.RecordingReplayFinished',
@@ -382,4 +384,7 @@ export enum EnumeratedHistogram {
   ManifestSectionSelected = 'DevTools.ManifestSectionSelected',
   CSSHintShown = 'DevTools.CSSHintShown',
   LighthouseModeRun = 'DevTools.LighthouseModeRun',
+  ColorConvertedFrom = 'DevTools.ColorConvertedFrom',
+  ColorPickerOpenedFrom = 'DevTools.ColorPickerOpenedFrom',
+  CSSPropertyDocumentation = 'DevTools.CSSPropertyDocumentation',
 }

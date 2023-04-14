@@ -48,12 +48,13 @@ struct PreservePadding::State {
             Switch(
                 node,  //
                 [&](const ast::AssignmentStatement* assign) {
-                    auto* ty = sem.Get(assign->lhs)->Type();
+                    auto* ty = sem.GetVal(assign->lhs)->Type();
                     if (assign->lhs->Is<ast::PhonyExpression>()) {
                         // Ignore phony assignment.
                         return;
                     }
-                    if (ty->As<type::Reference>()->AddressSpace() != ast::AddressSpace::kStorage) {
+                    if (ty->As<type::Reference>()->AddressSpace() !=
+                        builtin::AddressSpace::kStorage) {
                         // We only care about assignments that write to variables in the storage
                         // address space, as nothing else is host-visible.
                         return;
@@ -66,7 +67,7 @@ struct PreservePadding::State {
                 [&](const ast::Enable* enable) {
                     // Check if the full pointer parameters extension is already enabled.
                     if (enable->extension ==
-                        ast::Extension::kChromiumExperimentalFullPtrParameters) {
+                        builtin::Extension::kChromiumExperimentalFullPtrParameters) {
                         ext_enabled = true;
                     }
                 });
@@ -80,7 +81,7 @@ struct PreservePadding::State {
             if (!assignments_to_transform.count(assign)) {
                 return nullptr;
             }
-            auto* ty = sem.Get(assign->lhs)->Type()->UnwrapRef();
+            auto* ty = sem.GetVal(assign->lhs)->Type()->UnwrapRef();
             return MakeAssignment(ty, ctx.Clone(assign->lhs), ctx.Clone(assign->rhs));
         });
 
@@ -112,16 +113,16 @@ struct PreservePadding::State {
         //
         // Since this requires passing pointers to the storage address space, this will also enable
         // the chromium_experimental_full_ptr_parameters extension.
-        constexpr const char* kDestParamName = "dest";
-        constexpr const char* kValueParamName = "value";
+        const char* kDestParamName = "dest";
+        const char* kValueParamName = "value";
         auto call_helper = [&](auto&& body) {
             EnableExtension();
             auto helper = helpers.GetOrCreate(ty, [&]() {
                 auto helper_name = b.Symbols().New("assign_and_preserve_padding");
                 utils::Vector<const ast::Parameter*, 2> params = {
                     b.Param(kDestParamName,
-                            b.ty.pointer(CreateASTTypeFor(ctx, ty), ast::AddressSpace::kStorage,
-                                         ast::Access::kReadWrite)),
+                            b.ty.pointer(CreateASTTypeFor(ctx, ty), builtin::AddressSpace::kStorage,
+                                         builtin::Access::kReadWrite)),
                     b.Param(kValueParamName, CreateASTTypeFor(ctx, ty)),
                 };
                 b.Func(helper_name, params, b.ty.void_(), body());
@@ -151,7 +152,7 @@ struct PreservePadding::State {
                 return call_helper([&]() {
                     utils::Vector<const ast::Statement*, 8> body;
                     for (auto member : str->Members()) {
-                        auto name = sym.NameFor(member->Declaration()->symbol);
+                        auto name = sym.NameFor(member->Declaration()->name->symbol);
                         body.Push(MakeAssignment(member->Type(),
                                                  b.MemberAccessor(b.Deref(kDestParamName), name),
                                                  b.MemberAccessor(kValueParamName, name)));
@@ -197,7 +198,7 @@ struct PreservePadding::State {
     /// Enable the full pointer parameters extension, if we have not already done so.
     void EnableExtension() {
         if (!ext_enabled) {
-            b.Enable(ast::Extension::kChromiumExperimentalFullPtrParameters);
+            b.Enable(builtin::Extension::kChromiumExperimentalFullPtrParameters);
             ext_enabled = true;
         }
     }

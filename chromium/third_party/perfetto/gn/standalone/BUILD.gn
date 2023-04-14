@@ -84,14 +84,15 @@ config("extra_warnings") {
       "-Wno-reserved-identifier",
       "-Wno-unknown-sanitizers",
       "-Wno-unknown-warning-option",
+      "-Wno-unsafe-buffer-usage",
     ]
   } else if (!is_clang && !is_win) {
     # Use return std::move(...) for compatibility with old GCC compilers.
-    cflags += [ "-Wno-redundant-move" ]
+    cflags_cc = [ "-Wno-redundant-move" ]
 
     # Use after free detection in GCC is still not good enough: it still fails
     # on very obvious false-positives in trace processor.
-    cflags += [ "-Wno-use-after-free" ]
+    cflags_cc += [ "-Wno-use-after-free" ]
   }
 }
 
@@ -110,40 +111,8 @@ config("no_rtti") {
   }
 }
 
-config("c++11") {
-  if (!perfetto_cpp11_until_q1_2023) {
-    visibility = []
-  }
-
-  # C++11 is the default on Windows.
-  if (!is_win) {
-    cflags_cc = [ "-std=c++11" ]
-  } else if (is_win && !is_clang) {
-    # Enable standards-conforming compiler behavior.
-    cflags_cc = [ "/permissive-" ]
-  }
-  defines = [ "PERFETTO_ALLOW_SUB_CPP17" ]
-}
-
-# Used in buildtools dependencies for standalone builds.
-config("c++14") {
-  if (perfetto_cpp11_until_q1_2023) {
-    visibility = [ "//buildtools:llvm_demangle" ]
-  } else {
-    visibility = []
-  }
-  if (is_win) {
-    cflags_cc = [ "/std:c++14" ]
-  } else {
-    cflags_cc = [ "-std=c++14" ]
-  }
-}
-
 # Used in buildtools dependencies for standalone builds.
 config("c++17") {
-  if (perfetto_cpp11_until_q1_2023) {
-    visibility = [ "//buildtools:libunwindstack" ]
-  }
   if (is_win) {
     cflags_cc = [ "/std:c++17" ]
   } else {

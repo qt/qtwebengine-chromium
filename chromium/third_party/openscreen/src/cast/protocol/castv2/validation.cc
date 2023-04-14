@@ -7,6 +7,7 @@
 #include <mutex>  // NOLINT
 #include <string>
 
+#include "absl/strings/str_join.h"
 #include "cast/protocol/castv2/receiver_schema_data.h"
 #include "cast/protocol/castv2/streaming_schema_data.h"
 #include "third_party/valijson/src/include/valijson/adapters/jsoncpp_adapter.hpp"
@@ -28,7 +29,7 @@ std::vector<Error> MapErrors(const valijson::ValidationResults& results) {
   std::vector<Error> errors;
   errors.reserve(results.numErrors());
   for (const auto& result : results) {
-    const std::string context = Join(result.context, ", ");
+    const std::string context = absl::StrJoin(result.context, ", ");
     errors.emplace_back(Error::Code::kJsonParseError,
                         StringPrintf("Node: %s, Message: %s", context.c_str(),
                                      result.description.c_str()));

@@ -10,9 +10,9 @@
 #include <string>
 #include <vector>
 
-#include "absl/types/span.h"
 #include "cast/standalone_receiver/avcodec_glue.h"
 #include "cast/streaming/frame_id.h"
+#include "platform/base/span.h"
 
 namespace openscreen {
 namespace cast {
@@ -28,8 +28,8 @@ class Decoder {
     ~Buffer();
 
     void Resize(int new_size);
-    absl::Span<const uint8_t> GetSpan() const;
-    absl::Span<uint8_t> GetSpan();
+    ByteView AsByteView() const;
+    ByteBuffer AsByteBuffer();
 
    private:
     std::vector<uint8_t> buffer_;

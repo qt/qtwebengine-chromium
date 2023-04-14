@@ -22,6 +22,7 @@
 
 #include "absl/base/thread_annotations.h"
 #include "absl/strings/string_view.h"
+#include "absl/types/optional.h"
 #include "internal/platform/single_thread_executor.h"
 #include "internal/proto/credential.pb.h"
 #include "presence/broadcast_request.h"
@@ -38,11 +39,11 @@ namespace presence {
 
 class BroadcastManager {
  public:
-  using SingleThreadExecutor = ::location::nearby::SingleThreadExecutor;
+  using SingleThreadExecutor = ::nearby::SingleThreadExecutor;
   using AdvertisingSession =
-      ::location::nearby::api::ble_v2::BleMedium::AdvertisingSession;
-  using Runnable = ::location::nearby::Runnable;
-  using PrivateCredential = internal::PrivateCredential;
+      ::nearby::api::ble_v2::BleMedium::AdvertisingSession;
+  using Runnable = ::nearby::Runnable;
+  using LocalCredential = internal::LocalCredential;
   BroadcastManager(Mediums& mediums, CredentialManager& credential_manager,
                    SingleThreadExecutor& executor) {
     mediums_ = &mediums, credential_manager_ = &credential_manager,
@@ -61,10 +62,11 @@ class BroadcastManager {
    public:
     explicit BroadcastSessionState(BroadcastCallback broadcast_callback,
                                    PowerMode power_mode)
-        : broadcast_callback_(broadcast_callback), power_mode_(power_mode) {}
+        : broadcast_callback_(std::move(broadcast_callback)),
+          power_mode_(power_mode) {}
 
     void SetAdvertisingSession(std::unique_ptr<AdvertisingSession> session);
-    void CallStartedCallback(Status status);
+    void CallStartedCallback(absl::Status status);
     void StopAdvertising();
 
     PowerMode GetPowerMode() { return power_mode_; }
@@ -75,16 +77,23 @@ class BroadcastManager {
     std::unique_ptr<AdvertisingSession> advertising_session_;
   };
   BroadcastSessionId GenerateBroadcastSessionId();
-  void NotifyStartCallbackStatus(BroadcastSessionId id, Status status);
+  void NotifyStartCallbackStatus(BroadcastSessionId id, absl::Status status);
   void RunOnServiceControllerThread(absl::string_view name, Runnable runnable) {
     executor_->Execute(std::string(name), std::move(runnable));
   }
   void FetchCredentials(BroadcastSessionId id,
                         BaseBroadcastRequest broadcast_request)
       ABSL_EXCLUSIVE_LOCKS_REQUIRED(*executor_);
+  absl::optional<LocalCredential> SelectCredential(
+      BaseBroadcastRequest& broadcast_request,
+      std::vector<LocalCredential> credentials);
 
-  void Advertise(BroadcastSessionId id, BaseBroadcastRequest broadcast_request,
-                 std::vector<PrivateCredential> credentials)
+  // Returns the private credential, if any, selected to generate the
+  // advertisement. A salt used in the advertisement is added to the returned
+  // private credential. The caller must save it in the storage.
+  absl::optional<LocalCredential> Advertise(
+      BroadcastSessionId id, BaseBroadcastRequest broadcast_request,
+      std::vector<LocalCredential> credentials)
       ABSL_EXCLUSIVE_LOCKS_REQUIRED(*executor_);
   absl::flat_hash_map<BroadcastSessionId, BroadcastSessionState> sessions_
       ABSL_GUARDED_BY(*executor_);

@@ -2,10 +2,10 @@
 // This file is ***GENERATED***.  Do Not Edit.
 // See thread_safety_generator.py for modifications.
 
-/* Copyright (c) 2015-2022 The Khronos Group Inc.
- * Copyright (c) 2015-2022 Valve Corporation
- * Copyright (c) 2015-2022 LunarG, Inc.
- * Copyright (c) 2015-2022 Google Inc.
+/* Copyright (c) 2015-2023 The Khronos Group Inc.
+ * Copyright (c) 2015-2023 Valve Corporation
+ * Copyright (c) 2015-2023 LunarG, Inc.
+ * Copyright (c) 2015-2023 Google Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,15 +18,13 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *
- * Author: Mark Lobodzinski <mark@lunarg.com>
  */
 #include "chassis.h"
 #include "layer_chassis_dispatch.h"
 #include "thread_safety.h"
 
 
-ReadLockGuard ThreadSafety::ReadLock() {
+ReadLockGuard ThreadSafety::ReadLock() const {
     return ReadLockGuard(validation_object_mutex, std::defer_lock);
 }
 
@@ -4638,8 +4636,6 @@ void ThreadSafety::PostCallRecordCreateWin32SurfaceKHR(
 }
 #endif // VK_USE_PLATFORM_WIN32_KHR
 
-#ifdef VK_ENABLE_BETA_EXTENSIONS
-
 void ThreadSafety::PreCallRecordCreateVideoSessionKHR(
     VkDevice                                    device,
     const VkVideoSessionCreateInfoKHR*          pCreateInfo,
@@ -4816,9 +4812,6 @@ void ThreadSafety::PostCallRecordCmdControlVideoCodingKHR(
     FinishWriteObject(commandBuffer, "vkCmdControlVideoCodingKHR");
     // Host access to commandBuffer must be externally synchronized
 }
-#endif // VK_ENABLE_BETA_EXTENSIONS
-
-#ifdef VK_ENABLE_BETA_EXTENSIONS
 
 void ThreadSafety::PreCallRecordCmdDecodeVideoKHR(
     VkCommandBuffer                             commandBuffer,
@@ -4833,7 +4826,6 @@ void ThreadSafety::PostCallRecordCmdDecodeVideoKHR(
     FinishWriteObject(commandBuffer, "vkCmdDecodeVideoKHR");
     // Host access to commandBuffer must be externally synchronized
 }
-#endif // VK_ENABLE_BETA_EXTENSIONS
 
 void ThreadSafety::PreCallRecordCmdBeginRenderingKHR(
     VkCommandBuffer                             commandBuffer,
@@ -6487,9 +6479,6 @@ void ThreadSafety::PostCallRecordCmdDrawIndexedIndirectCountAMD(
 #ifdef VK_ENABLE_BETA_EXTENSIONS
 #endif // VK_ENABLE_BETA_EXTENSIONS
 
-#ifdef VK_ENABLE_BETA_EXTENSIONS
-#endif // VK_ENABLE_BETA_EXTENSIONS
-
 void ThreadSafety::PreCallRecordGetShaderInfoAMD(
     VkDevice                                    device,
     VkPipeline                                  pipeline,
@@ -7571,9 +7560,6 @@ void ThreadSafety::PostCallRecordGetCalibratedTimestampsEXT(
     VkResult                                    result) {
     FinishReadObjectParentInstance(device, "vkGetCalibratedTimestampsEXT");
 }
-
-#ifdef VK_ENABLE_BETA_EXTENSIONS
-#endif // VK_ENABLE_BETA_EXTENSIONS
 
 #ifdef VK_USE_PLATFORM_GGP
 #endif // VK_USE_PLATFORM_GGP
@@ -9372,6 +9358,42 @@ void ThreadSafety::PostCallRecordGetMicromapBuildSizesEXT(
     const VkMicromapBuildInfoEXT*               pBuildInfo,
     VkMicromapBuildSizesInfoEXT*                pSizeInfo) {
     FinishReadObjectParentInstance(device, "vkGetMicromapBuildSizesEXT");
+}
+
+void ThreadSafety::PreCallRecordCmdDrawClusterHUAWEI(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    groupCountX,
+    uint32_t                                    groupCountY,
+    uint32_t                                    groupCountZ) {
+    StartWriteObject(commandBuffer, "vkCmdDrawClusterHUAWEI");
+    // Host access to commandBuffer must be externally synchronized
+}
+
+void ThreadSafety::PostCallRecordCmdDrawClusterHUAWEI(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    groupCountX,
+    uint32_t                                    groupCountY,
+    uint32_t                                    groupCountZ) {
+    FinishWriteObject(commandBuffer, "vkCmdDrawClusterHUAWEI");
+    // Host access to commandBuffer must be externally synchronized
+}
+
+void ThreadSafety::PreCallRecordCmdDrawClusterIndirectHUAWEI(
+    VkCommandBuffer                             commandBuffer,
+    VkBuffer                                    buffer,
+    VkDeviceSize                                offset) {
+    StartWriteObject(commandBuffer, "vkCmdDrawClusterIndirectHUAWEI");
+    StartReadObject(buffer, "vkCmdDrawClusterIndirectHUAWEI");
+    // Host access to commandBuffer must be externally synchronized
+}
+
+void ThreadSafety::PostCallRecordCmdDrawClusterIndirectHUAWEI(
+    VkCommandBuffer                             commandBuffer,
+    VkBuffer                                    buffer,
+    VkDeviceSize                                offset) {
+    FinishWriteObject(commandBuffer, "vkCmdDrawClusterIndirectHUAWEI");
+    FinishReadObject(buffer, "vkCmdDrawClusterIndirectHUAWEI");
+    // Host access to commandBuffer must be externally synchronized
 }
 
 void ThreadSafety::PreCallRecordSetDeviceMemoryPriorityEXT(

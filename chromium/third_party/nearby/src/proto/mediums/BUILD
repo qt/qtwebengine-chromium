@@ -23,29 +23,11 @@ proto_library(
     ],
 )
 
-java_lite_proto_library(
-    name = "nfc_frames_java_proto_lite",
-    visibility = [
-        "//java/com/google/android/gmscore/integ/modules/nearby/src/com/google/android/gms/nearby/mediums:__subpackages__",
-        "//javatests/com/google/android/gmscore/integ/modules/nearby/src/com/google/android/gms/nearby/mediums:__subpackages__",
-    ],
-    deps = [":nfc_frames_proto"],
-)
-
 proto_library(
     name = "wifi_aware_frames_proto",
     srcs = [
         "wifi_aware_frames.proto",
     ],
-)
-
-java_lite_proto_library(
-    name = "wifi_aware_frames_java_proto_lite",
-    visibility = [
-        "//java/com/google/android/gmscore/integ/modules/nearby/src/com/google/android/gms/nearby/mediums:__subpackages__",
-        "//javatests/com/google/android/gmscore/integ/modules/nearby/src/com/google/android/gms/nearby/mediums:__subpackages__",
-    ],
-    deps = [":wifi_aware_frames_proto"],
 )
 
 proto_library(
@@ -57,19 +39,7 @@ proto_library(
 
 cc_proto_library(
     name = "web_rtc_signaling_frames_cc_proto",
-    visibility = [
-        "//:__subpackages__",
-        "//location/nearby/connections:__subpackages__",
-    ],
-    deps = [":web_rtc_signaling_frames_proto"],
-)
-
-java_lite_proto_library(
-    name = "web_rtc_signaling_frames_java_proto_lite",
-    visibility = [
-        "//java/com/google/android/gmscore/integ/modules/nearby/src/com/google/android/gms/nearby/mediums:__subpackages__",
-        "//javatests/com/google/android/gmscore/integ/modules/nearby/src/com/google/android/gms/nearby/mediums:__subpackages__",
-    ],
+    visibility = ["//:__subpackages__"],
     deps = [":web_rtc_signaling_frames_proto"],
 )
 
@@ -78,15 +48,6 @@ proto_library(
     srcs = [
         "ble_frames.proto",
     ],
-)
-
-java_lite_proto_library(
-    name = "ble_frames_java_proto_lite",
-    visibility = [
-        "//java/com/google/android/gmscore/integ/modules/nearby/src/com/google/android/gms/nearby/mediums:__subpackages__",
-        "//javatests/com/google/android/gmscore/integ/modules/nearby/src/com/google/android/gms/nearby/mediums:__subpackages__",
-    ],
-    deps = [":ble_frames_proto"],
 )
 
 cc_proto_library(

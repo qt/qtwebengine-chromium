@@ -110,8 +110,9 @@ Builtin::Builtin(BuiltinType type,
                  utils::VectorRef<Parameter*> parameters,
                  EvaluationStage eval_stage,
                  PipelineStageSet supported_stages,
-                 bool is_deprecated)
-    : Base(return_type, SetOwner(std::move(parameters), this), eval_stage),
+                 bool is_deprecated,
+                 bool must_use)
+    : Base(return_type, SetOwner(std::move(parameters), this), eval_stage, must_use),
       type_(type),
       supported_stages_(supported_stages),
       is_deprecated_(is_deprecated) {}
@@ -171,6 +172,7 @@ bool Builtin::HasSideEffects() const {
         case sem::BuiltinType::kAtomicSub:
         case sem::BuiltinType::kAtomicXor:
         case sem::BuiltinType::kTextureStore:
+        case sem::BuiltinType::kWorkgroupUniformLoad:
             return true;
         default:
             break;
@@ -178,11 +180,11 @@ bool Builtin::HasSideEffects() const {
     return false;
 }
 
-ast::Extension Builtin::RequiredExtension() const {
+builtin::Extension Builtin::RequiredExtension() const {
     if (IsDP4a()) {
-        return ast::Extension::kChromiumExperimentalDp4A;
+        return builtin::Extension::kChromiumExperimentalDp4A;
     }
-    return ast::Extension::kUndefined;
+    return builtin::Extension::kUndefined;
 }
 
 }  // namespace tint::sem

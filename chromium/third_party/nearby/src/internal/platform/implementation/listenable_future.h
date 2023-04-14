@@ -15,15 +15,13 @@
 #ifndef PLATFORM_API_LISTENABLE_FUTURE_H_
 #define PLATFORM_API_LISTENABLE_FUTURE_H_
 
-#include <functional>
 #include <memory>
 
+#include "internal/platform/exception.h"
 #include "internal/platform/implementation/executor.h"
 #include "internal/platform/implementation/future.h"
-#include "internal/platform/exception.h"
 #include "internal/platform/runnable.h"
 
-namespace location {
 namespace nearby {
 namespace api {
 
@@ -40,6 +38,5 @@ class ListenableFuture : public Future<T> {
 
 }  // namespace api
 }  // namespace nearby
-}  // namespace location
 
 #endif  // PLATFORM_API_LISTENABLE_FUTURE_H_

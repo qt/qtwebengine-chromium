@@ -18,6 +18,7 @@
 #include <stddef.h>
 #include <string>
 
+#include "src/tint/number.h"
 #include "src/tint/type/type.h"
 #include "src/tint/utils/result.h"
 #include "src/tint/utils/vector.h"
@@ -34,7 +35,7 @@ namespace tint::constant {
 class Value;
 }  // namespace tint::constant
 namespace tint::sem {
-class Expression;
+class ValueExpression;
 }  // namespace tint::sem
 namespace tint::type {
 class StructMember;
@@ -68,7 +69,9 @@ class ConstEval {
 
     /// Constructor
     /// @param b the program builder
-    explicit ConstEval(ProgramBuilder& b);
+    /// @param use_runtime_semantics if `true`, use the behavior defined for runtime evaluation, and
+    ///                              emit overflow and range errors as warnings instead of errors
+    explicit ConstEval(ProgramBuilder& b, bool use_runtime_semantics = false);
 
     ////////////////////////////////////////////////////////////////////////////////////////////////
     // Constant value evaluation methods, to be called directly from Resolver
@@ -77,18 +80,23 @@ class ConstEval {
     /// @param ty the target type - must be an array or initializer
     /// @param args the input arguments
     /// @return the constructed value, or null if the value cannot be calculated
-    Result ArrayOrStructInit(const type::Type* ty, utils::VectorRef<const sem::Expression*> args);
+    Result ArrayOrStructCtor(const type::Type* ty,
+                             utils::VectorRef<const sem::ValueExpression*> args);
 
     /// @param ty the target type
-    /// @param expr the input expression
+    /// @param value the value being converted
+    /// @param source the source location
     /// @return the bit-cast of the given expression to the given type, or null if the value cannot
     ///         be calculated
-    Result Bitcast(const type::Type* ty, const sem::Expression* expr);
+    Result Bitcast(const type::Type* ty, const constant::Value* value, const Source& source);
 
+    /// @param ty the target type
     /// @param obj the object being indexed
     /// @param idx the index expression
     /// @return the result of the index, or null if the value cannot be calculated
-    Result Index(const sem::Expression* obj, const sem::Expression* idx);
+    Result Index(const type::Type* ty,
+                 const sem::ValueExpression* obj,
+                 const sem::ValueExpression* idx);
 
     /// @param ty the result type
     /// @param lit the literal AST node
@@ -98,14 +106,14 @@ class ConstEval {
     /// @param obj the object being accessed
     /// @param member the member
     /// @return the result of the member access, or null if the value cannot be calculated
-    Result MemberAccess(const sem::Expression* obj, const type::StructMember* member);
+    Result MemberAccess(const sem::ValueExpression* obj, const type::StructMember* member);
 
     /// @param ty the result type
     /// @param vector the vector being swizzled
     /// @param indices the swizzle indices
     /// @return the result of the swizzle, or null if the value cannot be calculated
     Result Swizzle(const type::Type* ty,
-                   const sem::Expression* vector,
+                   const sem::ValueExpression* vector,
                    utils::VectorRef<uint32_t> indices);
 
     /// Convert the `value` to `target_type`
@@ -119,7 +127,7 @@ class ConstEval {
     // Constant value evaluation methods, to be indirectly called via the intrinsic table
     ////////////////////////////////////////////////////////////////////////////////////////////////
 
-    /// Type conversion
+    /// Value conversion
     /// @param ty the result type
     /// @param args the input arguments
     /// @param source the source location
@@ -128,7 +136,7 @@ class ConstEval {
                 utils::VectorRef<const constant::Value*> args,
                 const Source& source);
 
-    /// Zero value type initializer
+    /// Zero value constructor
     /// @param ty the result type
     /// @param args the input arguments (no arguments provided)
     /// @param source the source location
@@ -137,7 +145,7 @@ class ConstEval {
                 utils::VectorRef<const constant::Value*> args,
                 const Source& source);
 
-    /// Identity value type initializer
+    /// Identity value constructor
     /// @param ty the result type
     /// @param args the input arguments
     /// @param source the source location
@@ -146,7 +154,7 @@ class ConstEval {
                     utils::VectorRef<const constant::Value*> args,
                     const Source& source);
 
-    /// Vector splat initializer
+    /// Vector splat constructor
     /// @param ty the vector type
     /// @param args the input arguments
     /// @param source the source location
@@ -155,7 +163,7 @@ class ConstEval {
                     utils::VectorRef<const constant::Value*> args,
                     const Source& source);
 
-    /// Vector initializer using scalars
+    /// Vector constructor using scalars
     /// @param ty the vector type
     /// @param args the input arguments
     /// @param source the source location
@@ -164,7 +172,7 @@ class ConstEval {
                     utils::VectorRef<const constant::Value*> args,
                     const Source& source);
 
-    /// Vector initializer using a mix of scalars and smaller vectors
+    /// Vector constructor using a mix of scalars and smaller vectors
     /// @param ty the vector type
     /// @param args the input arguments
     /// @param source the source location
@@ -173,7 +181,7 @@ class ConstEval {
                     utils::VectorRef<const constant::Value*> args,
                     const Source& source);
 
-    /// Matrix initializer using scalar values
+    /// Matrix constructor using scalar values
     /// @param ty the matrix type
     /// @param args the input arguments
     /// @param source the source location
@@ -182,7 +190,7 @@ class ConstEval {
                     utils::VectorRef<const constant::Value*> args,
                     const Source& source);
 
-    /// Matrix initializer using column vectors
+    /// Matrix constructor using column vectors
     /// @param ty the matrix type
     /// @param args the input arguments
     /// @param source the source location
@@ -725,6 +733,15 @@ class ConstEval {
                        utils::VectorRef<const constant::Value*> args,
                        const Source& source);
 
+    /// ldexp builtin
+    /// @param ty the expression type
+    /// @param args the input arguments
+    /// @param source the source location
+    /// @return the result value, or null if the value cannot be calculated
+    Result ldexp(const type::Type* ty,
+                 utils::VectorRef<const constant::Value*> args,
+                 const Source& source);
+
     /// length builtin
     /// @param ty the expression type
     /// @param args the input arguments
@@ -1077,6 +1094,17 @@ class ConstEval {
     /// Adds the given note message to the diagnostics
     void AddNote(const std::string& msg, const Source& source) const;
 
+    /// CreateScalar constructs and returns a constant::Scalar<T>.
+    /// @param source the source location
+    /// @param t the result type
+    /// @param v the scalar value
+    /// @return the constant value with the same type and value
+    template <typename T>
+    ConstEval::Result CreateScalar(const Source& source, const type::Type* t, T v);
+
+    /// ZeroValue returns a Constant for the zero-value of the type `type`.
+    const constant::Value* ZeroValue(const type::Type* type);
+
     /// Adds two Number<T>s
     /// @param source the source location
     /// @param a the lhs number
@@ -1393,6 +1421,7 @@ class ConstEval {
                const constant::Value* v2);
 
     ProgramBuilder& builder;
+    bool use_runtime_semantics_ = false;
 };
 
 }  // namespace tint::resolver

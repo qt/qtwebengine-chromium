@@ -14,27 +14,24 @@
 
 #include "src/tint/type/sampled_texture.h"
 
-#include "src/tint/program_builder.h"
+#include "src/tint/debug.h"
+#include "src/tint/diagnostic/diagnostic.h"
+#include "src/tint/type/manager.h"
+#include "src/tint/type/texture_dimension.h"
 #include "src/tint/utils/hash.h"
 
 TINT_INSTANTIATE_TYPEINFO(tint::type::SampledTexture);
 
 namespace tint::type {
 
-SampledTexture::SampledTexture(ast::TextureDimension dim, const Type* type)
-    : Base(dim), type_(type) {
+SampledTexture::SampledTexture(TextureDimension dim, const Type* type)
+    : Base(utils::Hash(TypeInfo::Of<SampledTexture>().full_hashcode, dim, type), dim), type_(type) {
     TINT_ASSERT(Type, type_);
 }
 
-SampledTexture::SampledTexture(SampledTexture&&) = default;
-
 SampledTexture::~SampledTexture() = default;
 
-size_t SampledTexture::Hash() const {
-    return utils::Hash(TypeInfo::Of<SampledTexture>().full_hashcode, dim(), type_);
-}
-
-bool SampledTexture::Equals(const Type& other) const {
+bool SampledTexture::Equals(const UniqueNode& other) const {
     if (auto* o = other.As<SampledTexture>()) {
         return o->dim() == dim() && o->type_ == type_;
     }
@@ -45,6 +42,11 @@ std::string SampledTexture::FriendlyName(const SymbolTable& symbols) const {
     std::ostringstream out;
     out << "texture_" << dim() << "<" << type_->FriendlyName(symbols) << ">";
     return out.str();
+}
+
+SampledTexture* SampledTexture::Clone(CloneContext& ctx) const {
+    auto* ty = type_->Clone(ctx);
+    return ctx.dst.mgr->Get<SampledTexture>(dim(), ty);
 }
 
 }  // namespace tint::type

@@ -144,7 +144,7 @@ void av1_init_obmc_buffer(OBMCBuffer *obmc_buffer);
 
 void av1_make_default_fullpel_ms_params(
     FULLPEL_MOTION_SEARCH_PARAMS *ms_params, const struct AV1_COMP *cpi,
-    const MACROBLOCK *x, BLOCK_SIZE bsize, const MV *ref_mv,
+    MACROBLOCK *x, BLOCK_SIZE bsize, const MV *ref_mv,
     const search_site_config search_sites[NUM_DISTINCT_SEARCH_METHODS],
     int fine_search_interval);
 
@@ -200,6 +200,17 @@ static const SEARCH_METHODS search_method_lookup[NUM_SEARCH_METHODS] = {
   BIGDIA,           // FAST_BIGDIA
   BIGDIA            // VFAST_DIAMOND
 };
+
+// Reinitialize the search site config.
+static AOM_INLINE void av1_refresh_search_site_config(
+    search_site_config *ss_cfg_buf, SEARCH_METHODS search_method,
+    const int ref_stride) {
+  const int level =
+      search_method == NSTEP_8PT || search_method == CLAMPED_DIAMOND;
+  search_method = search_method_lookup[search_method];
+  av1_init_motion_compensation[search_method](&ss_cfg_buf[search_method],
+                                              ref_stride, level);
+}
 
 // Mv beyond the range do not produce new/different prediction block.
 static INLINE void av1_set_mv_search_method(

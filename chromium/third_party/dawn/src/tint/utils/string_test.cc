@@ -58,5 +58,21 @@ TEST(StringTest, Distance) {
     EXPECT_EQ(Distance("", "Hello world"), 11u);
 }
 
+TEST(StringTest, SuggestAlternatives) {
+    {
+        const char* alternatives[] = {"hello world", "Hello World"};
+        std::ostringstream ss;
+        SuggestAlternatives("hello wordl", alternatives, ss);
+        EXPECT_EQ(ss.str(), R"(Did you mean 'hello world'?
+Possible values: 'hello world', 'Hello World')");
+    }
+    {
+        const char* alternatives[] = {"foobar", "something else"};
+        std::ostringstream ss;
+        SuggestAlternatives("hello world", alternatives, ss);
+        EXPECT_EQ(ss.str(), R"(Possible values: 'foobar', 'something else')");
+    }
+}
+
 }  // namespace
 }  // namespace tint::utils

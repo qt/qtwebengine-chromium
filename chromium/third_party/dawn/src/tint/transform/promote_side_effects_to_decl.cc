@@ -66,9 +66,8 @@ Transform::ApplyResult SimplifySideEffectStatements::Apply(const Program* src,
 
     HoistToDeclBefore hoist_to_decl_before(ctx);
     for (auto* node : ctx.src->ASTNodes().Objects()) {
-        if (auto* expr = node->As<ast::Expression>()) {
-            auto* sem_expr = src->Sem().Get(expr);
-            if (!sem_expr || !sem_expr->HasSideEffects()) {
+        if (auto* sem_expr = src->Sem().GetVal(node)) {
+            if (!sem_expr->HasSideEffects()) {
                 continue;
             }
 
@@ -107,7 +106,7 @@ class DecomposeSideEffects::CollectHoistsState : public StateBase {
     std::unordered_set<const ast::Expression*> no_side_effects;
 
     // Returns true if `expr` has side-effects. Unlike invoking
-    // sem::Expression::HasSideEffects(), this function takes into account whether
+    // sem::ValueExpression::HasSideEffects(), this function takes into account whether
     // `expr` has been hoisted, returning false in that case. Furthermore, it
     // returns the correct result on parent expression nodes by traversing the
     // expression tree, memoizing the results to ensure O(1) amortized lookup.
@@ -134,7 +133,7 @@ class DecomposeSideEffects::CollectHoistsState : public StateBase {
                 return false;
             },
             [&](const ast::MemberAccessorExpression* e) {
-                if (HasSideEffects(e->structure) || HasSideEffects(e->member)) {
+                if (HasSideEffects(e->object)) {
                     return true;
                 }
                 no_side_effects.insert(e);
@@ -216,7 +215,7 @@ class DecomposeSideEffects::CollectHoistsState : public StateBase {
             return false;
         };
 
-        auto binary_process = [&](auto* lhs, auto* rhs) {
+        auto binary_process = [&](const ast::Expression* lhs, const ast::Expression* rhs) {
             // If neither side causes side-effects, but at least one receives them,
             // let parent node hoist. This avoids over-hoisting side-effect receivers
             // of compound binary expressions (e.g. for "((a && b) && c) && f()", we
@@ -236,7 +235,8 @@ class DecomposeSideEffects::CollectHoistsState : public StateBase {
             return false;
         };
 
-        auto accessor_process = [&](auto* lhs, auto* rhs) {
+        auto accessor_process = [&](const ast::Expression* lhs,
+                                    const ast::Expression* rhs = nullptr) {
             auto maybe = process(lhs);
             // If lhs is a variable, let parent node hoist otherwise flush it right
             // away. This is to avoid over-hoisting the lhs of accessor chains (e.g.
@@ -247,7 +247,9 @@ class DecomposeSideEffects::CollectHoistsState : public StateBase {
                 Flush(maybe_hoist);
                 maybe = false;
             }
-            default_process(rhs);
+            if (rhs) {
+                default_process(rhs);
+            }
             return maybe;
         };
 
@@ -275,14 +277,14 @@ class DecomposeSideEffects::CollectHoistsState : public StateBase {
                 return true;
             },
             [&](const ast::IdentifierExpression* e) {
-                if (auto* sem_e = sem.Get(e)) {
-                    if (auto* var_user = sem_e->As<sem::VariableUser>()) {
+                if (auto* sem_e = sem.GetVal(e)) {
+                    if (auto* var_user = sem_e->UnwrapLoad()->As<sem::VariableUser>()) {
                         // Don't hoist constants.
                         if (var_user->ConstantValue()) {
                             return false;
                         }
                         // Don't hoist read-only variables as they cannot receive side-effects.
-                        if (var_user->Variable()->Access() == ast::Access::kRead) {
+                        if (var_user->Variable()->Access() == builtin::Access::kRead) {
                             return false;
                         }
                         // Don't hoist textures / samplers as they can't be placed into a let, nor
@@ -320,9 +322,7 @@ class DecomposeSideEffects::CollectHoistsState : public StateBase {
             [&](const ast::IndexAccessorExpression* e) {
                 return accessor_process(e->object, e->index);
             },
-            [&](const ast::MemberAccessorExpression* e) {
-                return accessor_process(e->structure, e->member);
-            },
+            [&](const ast::MemberAccessorExpression* e) { return accessor_process(e->object); },
             [&](const ast::LiteralExpression*) {
                 // Leaf
                 return false;
@@ -416,8 +416,8 @@ class DecomposeSideEffects::DecomposeState : public StateBase {
 
     // Returns true if `binary_expr` should be decomposed for short-circuit eval.
     bool IsLogicalWithSideEffects(const ast::BinaryExpression* binary_expr) {
-        return binary_expr->IsLogical() && (sem.Get(binary_expr->lhs)->HasSideEffects() ||
-                                            sem.Get(binary_expr->rhs)->HasSideEffects());
+        return binary_expr->IsLogical() && (sem.GetVal(binary_expr->lhs)->HasSideEffects() ||
+                                            sem.GetVal(binary_expr->rhs)->HasSideEffects());
     }
 
     // Recursive function used to decompose an expression for short-circuit eval.
@@ -512,17 +512,13 @@ class DecomposeSideEffects::DecomposeState : public StateBase {
                 return clone_maybe_hoisted(bitcast);
             },
             [&](const ast::CallExpression* call) {
-                if (call->target.name) {
-                    ctx.Replace(call->target.name, decompose(call->target.name));
-                }
                 for (auto* a : call->args) {
                     ctx.Replace(a, decompose(a));
                 }
                 return clone_maybe_hoisted(call);
             },
             [&](const ast::MemberAccessorExpression* member) {
-                ctx.Replace(member->structure, decompose(member->structure));
-                ctx.Replace(member->member, decompose(member->member));
+                ctx.Replace(member->object, decompose(member->object));
                 return clone_maybe_hoisted(member);
             },
             [&](const ast::UnaryOpExpression* unary) {
@@ -563,7 +559,8 @@ class DecomposeSideEffects::DecomposeState : public StateBase {
         return Switch(
             stmt,
             [&](const ast::AssignmentStatement* s) -> const ast::Statement* {
-                if (!sem.Get(s->lhs)->HasSideEffects() && !sem.Get(s->rhs)->HasSideEffects()) {
+                if (!sem.GetVal(s->lhs)->HasSideEffects() &&
+                    !sem.GetVal(s->rhs)->HasSideEffects()) {
                     return nullptr;
                 }
                 // rhs before lhs
@@ -583,7 +580,7 @@ class DecomposeSideEffects::DecomposeState : public StateBase {
                 return ctx.CloneWithoutTransform(s);
             },
             [&](const ast::ForLoopStatement* s) -> const ast::Statement* {
-                if (!s->condition || !sem.Get(s->condition)->HasSideEffects()) {
+                if (!s->condition || !sem.GetVal(s->condition)->HasSideEffects()) {
                     return nullptr;
                 }
                 tint::utils::Vector<const ast::Statement*, 8> stmts;
@@ -592,7 +589,7 @@ class DecomposeSideEffects::DecomposeState : public StateBase {
                 return ctx.CloneWithoutTransform(s);
             },
             [&](const ast::WhileStatement* s) -> const ast::Statement* {
-                if (!sem.Get(s->condition)->HasSideEffects()) {
+                if (!sem.GetVal(s->condition)->HasSideEffects()) {
                     return nullptr;
                 }
                 tint::utils::Vector<const ast::Statement*, 8> stmts;
@@ -601,7 +598,7 @@ class DecomposeSideEffects::DecomposeState : public StateBase {
                 return ctx.CloneWithoutTransform(s);
             },
             [&](const ast::IfStatement* s) -> const ast::Statement* {
-                if (!sem.Get(s->condition)->HasSideEffects()) {
+                if (!sem.GetVal(s->condition)->HasSideEffects()) {
                     return nullptr;
                 }
                 tint::utils::Vector<const ast::Statement*, 8> stmts;
@@ -610,7 +607,7 @@ class DecomposeSideEffects::DecomposeState : public StateBase {
                 return ctx.CloneWithoutTransform(s);
             },
             [&](const ast::ReturnStatement* s) -> const ast::Statement* {
-                if (!s->value || !sem.Get(s->value)->HasSideEffects()) {
+                if (!s->value || !sem.GetVal(s->value)->HasSideEffects()) {
                     return nullptr;
                 }
                 tint::utils::Vector<const ast::Statement*, 8> stmts;
@@ -629,7 +626,7 @@ class DecomposeSideEffects::DecomposeState : public StateBase {
             },
             [&](const ast::VariableDeclStatement* s) -> const ast::Statement* {
                 auto* var = s->variable;
-                if (!var->initializer || !sem.Get(var->initializer)->HasSideEffects()) {
+                if (!var->initializer || !sem.GetVal(var->initializer)->HasSideEffects()) {
                     return nullptr;
                 }
                 tint::utils::Vector<const ast::Statement*, 8> stmts;

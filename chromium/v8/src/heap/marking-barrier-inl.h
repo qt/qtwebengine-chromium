@@ -14,9 +14,13 @@ namespace v8 {
 namespace internal {
 
 void MarkingBarrier::MarkValue(HeapObject host, HeapObject value) {
+  if (value.InReadOnlySpace()) return;
+
   DCHECK(IsCurrentMarkingBarrier(host));
   DCHECK(is_activated_ || shared_heap_worklist_.has_value());
-  DCHECK(!marking_state_.IsImpossible(value));
+
+  DCHECK_IMPLIES(!value.InSharedWritableHeap() || is_shared_space_isolate_,
+                 !marking_state_.IsImpossible(value));
 
   // Host may have an impossible markbit pattern if manual allocation folding
   // is performed and host happens to be the last word of an allocated region.
@@ -57,7 +61,6 @@ void MarkingBarrier::MarkValueShared(HeapObject value) {
   DCHECK(value.InSharedHeap());
 
   // We should only reach this on client isolates (= worker isolates).
-  DCHECK(v8_flags.shared_space);
   DCHECK(!is_shared_space_isolate_);
   DCHECK(shared_heap_worklist_.has_value());
 
@@ -68,6 +71,7 @@ void MarkingBarrier::MarkValueShared(HeapObject value) {
 }
 
 void MarkingBarrier::MarkValueLocal(HeapObject value) {
+  DCHECK(!value.InReadOnlySpace());
   if (is_minor()) {
     // We do not need to insert into RememberedSet<OLD_TO_NEW> here because the
     // C++ marking barrier already does this for us.
@@ -86,19 +90,29 @@ void MarkingBarrier::MarkValueLocal(HeapObject value) {
 template <typename TSlot>
 inline void MarkingBarrier::MarkRange(HeapObject host, TSlot start, TSlot end) {
   auto* isolate = heap_->isolate();
-  const bool is_compacting = is_compacting_;
+  const bool record_slots =
+      IsCompacting(host) &&
+      !MemoryChunk::FromHeapObject(host)->ShouldSkipEvacuationSlotRecording();
   for (TSlot slot = start; slot < end; ++slot) {
     typename TSlot::TObject object = slot.Relaxed_Load();
     HeapObject heap_object;
     // Mark both, weak and strong edges.
     if (object.GetHeapObject(isolate, &heap_object)) {
       MarkValue(host, heap_object);
-      if (is_compacting) {
-        DCHECK(is_major());
+      if (record_slots) {
         major_collector_->RecordSlot(host, HeapObjectSlot(slot), heap_object);
       }
     }
   }
+}
+
+bool MarkingBarrier::IsCompacting(HeapObject object) const {
+  if (is_compacting_) {
+    DCHECK(is_major());
+    return true;
+  }
+
+  return shared_heap_worklist_.has_value() && object.InSharedWritableHeap();
 }
 
 bool MarkingBarrier::WhiteToGreyAndPush(HeapObject obj) {

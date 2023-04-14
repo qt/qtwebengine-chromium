@@ -11,6 +11,7 @@ import * as Bindings from '../../models/bindings/bindings.js';
 import * as TimelineModel from '../../models/timeline_model/timeline_model.js';
 import * as PerfUI from '../../ui/legacy/components/perf_ui/perf_ui.js';
 import * as UI from '../../ui/legacy/legacy.js';
+import type * as TraceEngine from '../../models/trace/trace.js';
 
 import {CountersGraph} from './CountersGraph.js';
 
@@ -31,10 +32,10 @@ import {WebVitalsIntegrator} from './WebVitalsTimelineUtils.js';
 
 const UIStrings = {
   /**
-  *@description Text in Timeline Flame Chart View of the Performance panel
-  *@example {Frame} PH1
-  *@example {10ms} PH2
-  */
+   *@description Text in Timeline Flame Chart View of the Performance panel
+   *@example {Frame} PH1
+   *@example {10ms} PH2
+   */
   sAtS: '{PH1} at {PH2}',
 };
 const str_ = i18n.i18n.registerUIStrings('panels/timeline/TimelineFlameChartView.ts', UIStrings);
@@ -301,14 +302,14 @@ export class TimelineFlameChartView extends UI.Widget.VBox implements PerfUI.Fla
     this.updateTrack();
   }
 
-  setModel(model: PerformanceModel|null): void {
+  setModel(model: PerformanceModel|null, newTraceEngineData: TraceEngine.Handlers.Types.TraceParseData|null): void {
     if (model === this.model) {
       return;
     }
     Common.EventTarget.removeEventListeners(this.eventListeners);
     this.model = model;
     this.selectedTrack = null;
-    this.mainDataProvider.setModel(this.model);
+    this.mainDataProvider.setModel(this.model, newTraceEngineData);
     this.networkDataProvider.setModel(this.model);
     if (this.model) {
       this.eventListeners = [
@@ -434,7 +435,8 @@ export class TimelineFlameChartView extends UI.Widget.VBox implements PerfUI.Fla
         this.mainFlameChart.scheduleUpdate();
       }
     }
-    this.delegate.select((dataProvider as TimelineFlameChartNetworkDataProvider).createSelection(entryIndex));
+    this.delegate.select((dataProvider as TimelineFlameChartNetworkDataProvider | TimelineFlameChartDataProvider)
+                             .createSelection(entryIndex));
   }
 
   resizeToPreferredHeights(): void {
@@ -511,7 +513,7 @@ export class TimelineFlameChartView extends UI.Widget.VBox implements PerfUI.Fla
     this.selectSearchResult(selectedIndex);
   }
 
-  searchCanceled(): void {
+  onSearchCanceled(): void {
     if (typeof this.selectedSearchResult !== 'undefined') {
       this.delegate.select(null);
     }

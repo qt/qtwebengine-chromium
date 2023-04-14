@@ -6,19 +6,20 @@ void bench_printhelp()
     cout<< " MATRIX FOLDER : \n";
     cout<< " The matrices for the benchmark should be collected in a folder specified with an environment variable EIGEN_MATRIXDIR \n";
     cout<< " The matrices are stored using the matrix market coordinate format \n";
-    cout<< " The matrix and associated right-hand side (rhs) files are named respectively \n";
-    cout<< " as MatrixName.mtx and MatrixName_b.mtx. If the rhs does not exist, a random one is generated. \n";
-    cout<< " If a matrix is SPD, the matrix should be named as MatrixName_SPD.mtx \n";
-    cout<< " If a true solution exists, it should be named as MatrixName_x.mtx; \n"     ;
-    cout<< " it will be used to compute the norm of the error relative to the computed solutions\n\n";
+    cout<< " The matrix and associated right-hand side (rhs) files are named respectively as MatrixName.mtx and MatrixName_b.mtx.\n";
+    cout<< " If the rhs does not exist, a random one is generated. \n";
+    cout<< " If a true solution exists, it should be named as MatrixName_x.mtx ; it will be used to compute the norm of the error \n";
+    cout<< " relative to the computed solutions. \n";
+    cout<< " If a matrix is SPD, the matrix should be named as MatrixName_SPD.mtx (then use MatrixName_SPD_b.mtx \n";
+    cout<< " and MatrixName_SPD_x.mtx for the rhs and the true solution).\n\n";
     cout<< " OPTIONS : \n"; 
     cout<< " -h or --help \n    print this help and return\n\n";
     cout<< " -d matrixdir \n    Use matrixdir as the matrix folder instead of the one specified in the environment variable EIGEN_MATRIXDIR\n\n"; 
     cout<< " -o outputfile.xml \n    Output the statistics to a xml file \n\n";
     cout<< " --eps <RelErr> Sets the relative tolerance for iterative solvers (default 1e-08) \n\n";
     cout<< " --maxits <MaxIts> Sets the maximum number of iterations (default 1000) \n\n";
-    
 }
+
 int main(int argc, char ** args)
 {
   

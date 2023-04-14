@@ -20,14 +20,12 @@
 
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
-#include "absl/time/clock.h"
 #include "internal/platform/atomic_boolean.h"
 #include "internal/platform/ble.h"
 #include "internal/platform/bluetooth_adapter.h"
 #include "internal/platform/multi_thread_executor.h"
 #include "internal/platform/mutex.h"
 
-namespace location {
 namespace nearby {
 namespace fastpair {
 
@@ -52,10 +50,6 @@ class Ble {
 
   // Returns true if the Bluetooth radio is currently enabled.
   bool IsEnabled() const;
-
-  // Turn BT radio Off, delay for kPauseBetweenToggle and then turn it On.
-  // This will block calling thread for at least kPauseBetweenToggle duration.
-  bool Toggle();
 
   // Returns true if Ble communications are supported by a platform.
   bool IsAvailable() const ABSL_LOCKS_EXCLUDED(mutex_);
@@ -96,7 +90,6 @@ class Ble {
   DiscoveredPeripheralCallback discovered_peripheral_callback_;
   BleMedium medium_ ABSL_GUARDED_BY(mutex_){adapter_};
   bool is_scanning_ = false;
-  static constexpr absl::Duration kPauseBetweenToggle = absl::Seconds(3);
 
   // Same as IsAvailable(), but must be called with mutex_ held.
   bool IsAvailableLocked() const ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
@@ -108,7 +101,7 @@ class Ble {
 
   bool IsInDesiredState(bool should_be_enabled) const;
 
-  // To be called in enable(), disable(), and toggle(). This will remember the
+  // To be called in enable() and disable(). This will remember the
   // original state of the ble before any ble state has been modified.
   // Returns false if Bluetooth doesn't exist on the device and the state cannot
   // be obtained.
@@ -125,6 +118,5 @@ class Ble {
 
 }  // namespace fastpair
 }  // namespace nearby
-}  // namespace location
 
 #endif  // THIRD_PARTY_NEARBY_FASTPAIR_INTERNAL_BLE_BLE_H_

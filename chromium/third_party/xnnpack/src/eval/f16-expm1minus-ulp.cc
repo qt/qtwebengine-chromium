@@ -49,14 +49,14 @@ static void ComputeError(
 
 static void ExpM1Error(
   benchmark::State& state,
-  xnn_f16_unary_math_function expm1,
+  xnn_f16_unary_math_fn expm1,
   benchmark::utils::IsaCheckFunction isa_check = nullptr)
 {
   if (!cpuinfo_initialize()) {
     state.SkipWithError("failed cpuinfo init");
     return;
   }
-  if (isa_check && !isa_check(state)) {
+  if (isa_check != nullptr && !isa_check(state)) {
     return;
   }
 
@@ -112,7 +112,7 @@ static void ExpM1Error(
   state.counters["ULPERROR"] = benchmark::Counter(max_ulp_error);
 }
 
-#if XNN_ENABLE_ARM_FP16 && (XNN_ARCH_ARM || XNN_ARCH_ARM64)
+#if XNN_ENABLE_ARM_FP16_VECTOR && (XNN_ARCH_ARM || XNN_ARCH_ARM64)
   BENCHMARK_CAPTURE(ExpM1Error, neonfp16arith_rr1_p3,
                     xnn_math_f16_expm1minus__neonfp16arith_rr1_p3,
                     benchmark::utils::CheckNEONFP16ARITH)
@@ -123,9 +123,14 @@ static void ExpM1Error(
                     benchmark::utils::CheckNEONFP16ARITH)
     ->Unit(benchmark::kMillisecond)
     ->Iterations(1);
-#endif  // XNN_ENABLE_ARM_FP16 && (XNN_ARCH_ARM || XNN_ARCH_ARM64)
+#endif  // XNN_ENABLE_ARM_FP16_VECTOR && (XNN_ARCH_ARM || XNN_ARCH_ARM64)
 
 #if XNN_ARCH_X86 || XNN_ARCH_X86_64
+  BENCHMARK_CAPTURE(ExpM1Error, avx2_rr1_p2,
+                    xnn_math_f16_expm1minus__avx2_rr1_p2,
+                    benchmark::utils::CheckAVX2)
+    ->Unit(benchmark::kMillisecond)
+    ->Iterations(1);
   BENCHMARK_CAPTURE(ExpM1Error, avx2_rr1_p3,
                     xnn_math_f16_expm1minus__avx2_rr1_p3,
                     benchmark::utils::CheckAVX2)

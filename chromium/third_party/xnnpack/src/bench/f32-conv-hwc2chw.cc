@@ -24,7 +24,7 @@
 
 
 static void f32_conv_hwc2chw(benchmark::State& state,
-  xnn_f32_conv_hwc2chw_ukernel_function conv,
+  xnn_f32_conv_hwc2chw_ukernel_fn conv,
   xnn_init_f32_minmax_params_fn init_params,
   uint32_t output_channels_tile,
   benchmark::utils::IsaCheckFunction isa_check = nullptr)
@@ -70,7 +70,7 @@ static void f32_conv_hwc2chw(benchmark::State& state,
   xnn_pack_f32_dconv_oki_w(
     output_channels, input_channels, output_channels_tile,
     kernel_size /* kernel height */, kernel_size /* kernel width */,
-    kernel.data(), bias.data(), packed_weights.data(), NULL);
+    kernel.data(), bias.data(), packed_weights.data(), nullptr);
   for (size_t n = 1; n < num_buffers; n++) {
     std::copy(packed_weights.cbegin(),
       packed_weights.cbegin() + weights_elements,
@@ -118,15 +118,15 @@ static void f32_conv_hwc2chw(benchmark::State& state,
 
 
 #if XNN_ARCH_ARM64
-  static void f32_conv_hwc2chw_3x3s2p1c3x4__neonfma_2x2(benchmark::State& state, const char* net) {
+  static void f32_conv_hwc2chw_3x3s2p1c3x4__aarch64_neonfma_2x2(benchmark::State& state, const char* net) {
     f32_conv_hwc2chw(state,
-      xnn_f32_conv_hwc2chw_ukernel_3x3s2p1c3x4__neonfma_2x2,
+      xnn_f32_conv_hwc2chw_ukernel_3x3s2p1c3x4__aarch64_neonfma_2x2,
       xnn_init_f32_minmax_scalar_params,
       4 /* output channel tile */,
       benchmark::utils::CheckNEONFMA);
   }
 
-  BENCHMARK_DCONV(f32_conv_hwc2chw_3x3s2p1c3x4__neonfma_2x2);
+  BENCHMARK_DCONV(f32_conv_hwc2chw_3x3s2p1c3x4__aarch64_neonfma_2x2);
 #endif
 
 

@@ -32,7 +32,7 @@ TEST_F(MultiplanarExternalTextureTest, ShouldRunEmptyModule) {
 
 TEST_F(MultiplanarExternalTextureTest, ShouldRunHasExternalTextureAlias) {
     auto* src = R"(
-type ET = texture_external;
+alias ET = texture_external;
 )";
 
     DataMap data;
@@ -138,7 +138,7 @@ struct ExternalTextureParams {
   gammaDecodeParams : GammaTransferParams,
   gammaEncodeParams : GammaTransferParams,
   gamutConversionMatrix : mat3x3<f32>,
-  rotationMatrix : mat2x2<f32>,
+  coordTransformationMatrix : mat3x2<f32>,
 }
 
 @group(0) @binding(1) var ext_tex_plane_1 : texture_2d<f32>;
@@ -194,7 +194,7 @@ struct ExternalTextureParams {
   gammaDecodeParams : GammaTransferParams,
   gammaEncodeParams : GammaTransferParams,
   gamutConversionMatrix : mat3x3<f32>,
-  rotationMatrix : mat2x2<f32>,
+  coordTransformationMatrix : mat3x2<f32>,
 }
 
 @group(0) @binding(1) var ext_tex_plane_1 : texture_2d<f32>;
@@ -249,7 +249,7 @@ struct ExternalTextureParams {
   gammaDecodeParams : GammaTransferParams,
   gammaEncodeParams : GammaTransferParams,
   gamutConversionMatrix : mat3x3<f32>,
-  rotationMatrix : mat2x2<f32>,
+  coordTransformationMatrix : mat3x2<f32>,
 }
 
 @group(0) @binding(2) var ext_tex_plane_1 : texture_2d<f32>;
@@ -268,7 +268,7 @@ fn gammaCorrection(v : vec3<f32>, params : GammaTransferParams) -> vec3<f32> {
 }
 
 fn textureSampleExternal(plane0 : texture_2d<f32>, plane1 : texture_2d<f32>, smp : sampler, coord : vec2<f32>, params : ExternalTextureParams) -> vec4<f32> {
-  let modifiedCoords = (((coord - 0.5f) * params.rotationMatrix) + 0.5f);
+  let modifiedCoords = (params.coordTransformationMatrix * vec3<f32>(coord, 1));
   let plane0_dims = vec2<f32>(textureDimensions(plane0, 0));
   let plane0_half_texel = (vec2<f32>(0.5) / plane0_dims);
   let plane0_clamped = clamp(modifiedCoords, plane0_half_texel, (1 - plane0_half_texel));
@@ -333,7 +333,7 @@ struct ExternalTextureParams {
   gammaDecodeParams : GammaTransferParams,
   gammaEncodeParams : GammaTransferParams,
   gamutConversionMatrix : mat3x3<f32>,
-  rotationMatrix : mat2x2<f32>,
+  coordTransformationMatrix : mat3x2<f32>,
 }
 
 @group(0) @binding(2) var ext_tex_plane_1 : texture_2d<f32>;
@@ -348,7 +348,7 @@ fn gammaCorrection(v : vec3<f32>, params : GammaTransferParams) -> vec3<f32> {
 }
 
 fn textureSampleExternal(plane0 : texture_2d<f32>, plane1 : texture_2d<f32>, smp : sampler, coord : vec2<f32>, params : ExternalTextureParams) -> vec4<f32> {
-  let modifiedCoords = (((coord - 0.5f) * params.rotationMatrix) + 0.5f);
+  let modifiedCoords = (params.coordTransformationMatrix * vec3<f32>(coord, 1));
   let plane0_dims = vec2<f32>(textureDimensions(plane0, 0));
   let plane0_half_texel = (vec2<f32>(0.5) / plane0_dims);
   let plane0_clamped = clamp(modifiedCoords, plane0_half_texel, (1 - plane0_half_texel));
@@ -418,7 +418,7 @@ struct ExternalTextureParams {
   gammaDecodeParams : GammaTransferParams,
   gammaEncodeParams : GammaTransferParams,
   gamutConversionMatrix : mat3x3<f32>,
-  rotationMatrix : mat2x2<f32>,
+  coordTransformationMatrix : mat3x2<f32>,
 }
 
 @group(0) @binding(1) var ext_tex_plane_1 : texture_2d<f32>;
@@ -435,11 +435,12 @@ fn gammaCorrection(v : vec3<f32>, params : GammaTransferParams) -> vec3<f32> {
 }
 
 fn textureLoadExternal(plane0 : texture_2d<f32>, plane1 : texture_2d<f32>, coord : vec2<i32>, params : ExternalTextureParams) -> vec4<f32> {
+  let coord1 = (coord >> vec2<u32>(1));
   var color : vec3<f32>;
   if ((params.numPlanes == 1)) {
     color = textureLoad(plane0, coord, 0).rgb;
   } else {
-    color = (vec4<f32>(textureLoad(plane0, coord, 0).r, textureLoad(plane1, coord, 0).rg, 1) * params.yuvToRgbConversionMatrix);
+    color = (vec4<f32>(textureLoad(plane0, coord, 0).r, textureLoad(plane1, coord1, 0).rg, 1) * params.yuvToRgbConversionMatrix);
   }
   if ((params.doYuvToRgbConversionOnly == 0)) {
     color = gammaCorrection(color, params.gammaDecodeParams);
@@ -450,11 +451,12 @@ fn textureLoadExternal(plane0 : texture_2d<f32>, plane1 : texture_2d<f32>, coord
 }
 
 fn textureLoadExternal_1(plane0 : texture_2d<f32>, plane1 : texture_2d<f32>, coord : vec2<u32>, params : ExternalTextureParams) -> vec4<f32> {
+  let coord1 = (coord >> vec2<u32>(1));
   var color : vec3<f32>;
   if ((params.numPlanes == 1)) {
     color = textureLoad(plane0, coord, 0).rgb;
   } else {
-    color = (vec4<f32>(textureLoad(plane0, coord, 0).r, textureLoad(plane1, coord, 0).rg, 1) * params.yuvToRgbConversionMatrix);
+    color = (vec4<f32>(textureLoad(plane0, coord, 0).r, textureLoad(plane1, coord1, 0).rg, 1) * params.yuvToRgbConversionMatrix);
   }
   if ((params.doYuvToRgbConversionOnly == 0)) {
     color = gammaCorrection(color, params.gammaDecodeParams);
@@ -511,7 +513,7 @@ struct ExternalTextureParams {
   gammaDecodeParams : GammaTransferParams,
   gammaEncodeParams : GammaTransferParams,
   gamutConversionMatrix : mat3x3<f32>,
-  rotationMatrix : mat2x2<f32>,
+  coordTransformationMatrix : mat3x2<f32>,
 }
 
 @group(0) @binding(1) var ext_tex_plane_1 : texture_2d<f32>;
@@ -526,11 +528,12 @@ fn gammaCorrection(v : vec3<f32>, params : GammaTransferParams) -> vec3<f32> {
 }
 
 fn textureLoadExternal(plane0 : texture_2d<f32>, plane1 : texture_2d<f32>, coord : vec2<i32>, params : ExternalTextureParams) -> vec4<f32> {
+  let coord1 = (coord >> vec2<u32>(1));
   var color : vec3<f32>;
   if ((params.numPlanes == 1)) {
     color = textureLoad(plane0, coord, 0).rgb;
   } else {
-    color = (vec4<f32>(textureLoad(plane0, coord, 0).r, textureLoad(plane1, coord, 0).rg, 1) * params.yuvToRgbConversionMatrix);
+    color = (vec4<f32>(textureLoad(plane0, coord, 0).r, textureLoad(plane1, coord1, 0).rg, 1) * params.yuvToRgbConversionMatrix);
   }
   if ((params.doYuvToRgbConversionOnly == 0)) {
     color = gammaCorrection(color, params.gammaDecodeParams);
@@ -541,11 +544,12 @@ fn textureLoadExternal(plane0 : texture_2d<f32>, plane1 : texture_2d<f32>, coord
 }
 
 fn textureLoadExternal_1(plane0 : texture_2d<f32>, plane1 : texture_2d<f32>, coord : vec2<u32>, params : ExternalTextureParams) -> vec4<f32> {
+  let coord1 = (coord >> vec2<u32>(1));
   var color : vec3<f32>;
   if ((params.numPlanes == 1)) {
     color = textureLoad(plane0, coord, 0).rgb;
   } else {
-    color = (vec4<f32>(textureLoad(plane0, coord, 0).r, textureLoad(plane1, coord, 0).rg, 1) * params.yuvToRgbConversionMatrix);
+    color = (vec4<f32>(textureLoad(plane0, coord, 0).r, textureLoad(plane1, coord1, 0).rg, 1) * params.yuvToRgbConversionMatrix);
   }
   if ((params.doYuvToRgbConversionOnly == 0)) {
     color = gammaCorrection(color, params.gammaDecodeParams);
@@ -603,7 +607,7 @@ struct ExternalTextureParams {
   gammaDecodeParams : GammaTransferParams,
   gammaEncodeParams : GammaTransferParams,
   gamutConversionMatrix : mat3x3<f32>,
-  rotationMatrix : mat2x2<f32>,
+  coordTransformationMatrix : mat3x2<f32>,
 }
 
 @group(0) @binding(2) var ext_tex_plane_1 : texture_2d<f32>;
@@ -622,7 +626,7 @@ fn gammaCorrection(v : vec3<f32>, params : GammaTransferParams) -> vec3<f32> {
 }
 
 fn textureSampleExternal(plane0 : texture_2d<f32>, plane1 : texture_2d<f32>, smp : sampler, coord : vec2<f32>, params : ExternalTextureParams) -> vec4<f32> {
-  let modifiedCoords = (((coord - 0.5f) * params.rotationMatrix) + 0.5f);
+  let modifiedCoords = (params.coordTransformationMatrix * vec3<f32>(coord, 1));
   let plane0_dims = vec2<f32>(textureDimensions(plane0, 0));
   let plane0_half_texel = (vec2<f32>(0.5) / plane0_dims);
   let plane0_clamped = clamp(modifiedCoords, plane0_half_texel, (1 - plane0_half_texel));
@@ -644,11 +648,12 @@ fn textureSampleExternal(plane0 : texture_2d<f32>, plane1 : texture_2d<f32>, smp
 }
 
 fn textureLoadExternal(plane0 : texture_2d<f32>, plane1 : texture_2d<f32>, coord : vec2<i32>, params : ExternalTextureParams) -> vec4<f32> {
+  let coord1 = (coord >> vec2<u32>(1));
   var color : vec3<f32>;
   if ((params.numPlanes == 1)) {
     color = textureLoad(plane0, coord, 0).rgb;
   } else {
-    color = (vec4<f32>(textureLoad(plane0, coord, 0).r, textureLoad(plane1, coord, 0).rg, 1) * params.yuvToRgbConversionMatrix);
+    color = (vec4<f32>(textureLoad(plane0, coord, 0).r, textureLoad(plane1, coord1, 0).rg, 1) * params.yuvToRgbConversionMatrix);
   }
   if ((params.doYuvToRgbConversionOnly == 0)) {
     color = gammaCorrection(color, params.gammaDecodeParams);
@@ -702,7 +707,7 @@ struct ExternalTextureParams {
   gammaDecodeParams : GammaTransferParams,
   gammaEncodeParams : GammaTransferParams,
   gamutConversionMatrix : mat3x3<f32>,
-  rotationMatrix : mat2x2<f32>,
+  coordTransformationMatrix : mat3x2<f32>,
 }
 
 @group(0) @binding(2) var ext_tex_plane_1 : texture_2d<f32>;
@@ -717,7 +722,7 @@ fn gammaCorrection(v : vec3<f32>, params : GammaTransferParams) -> vec3<f32> {
 }
 
 fn textureSampleExternal(plane0 : texture_2d<f32>, plane1 : texture_2d<f32>, smp : sampler, coord : vec2<f32>, params : ExternalTextureParams) -> vec4<f32> {
-  let modifiedCoords = (((coord - 0.5f) * params.rotationMatrix) + 0.5f);
+  let modifiedCoords = (params.coordTransformationMatrix * vec3<f32>(coord, 1));
   let plane0_dims = vec2<f32>(textureDimensions(plane0, 0));
   let plane0_half_texel = (vec2<f32>(0.5) / plane0_dims);
   let plane0_clamped = clamp(modifiedCoords, plane0_half_texel, (1 - plane0_half_texel));
@@ -739,11 +744,12 @@ fn textureSampleExternal(plane0 : texture_2d<f32>, plane1 : texture_2d<f32>, smp
 }
 
 fn textureLoadExternal(plane0 : texture_2d<f32>, plane1 : texture_2d<f32>, coord : vec2<i32>, params : ExternalTextureParams) -> vec4<f32> {
+  let coord1 = (coord >> vec2<u32>(1));
   var color : vec3<f32>;
   if ((params.numPlanes == 1)) {
     color = textureLoad(plane0, coord, 0).rgb;
   } else {
-    color = (vec4<f32>(textureLoad(plane0, coord, 0).r, textureLoad(plane1, coord, 0).rg, 1) * params.yuvToRgbConversionMatrix);
+    color = (vec4<f32>(textureLoad(plane0, coord, 0).r, textureLoad(plane1, coord1, 0).rg, 1) * params.yuvToRgbConversionMatrix);
   }
   if ((params.doYuvToRgbConversionOnly == 0)) {
     color = gammaCorrection(color, params.gammaDecodeParams);
@@ -807,7 +813,7 @@ struct ExternalTextureParams {
   gammaDecodeParams : GammaTransferParams,
   gammaEncodeParams : GammaTransferParams,
   gamutConversionMatrix : mat3x3<f32>,
-  rotationMatrix : mat2x2<f32>,
+  coordTransformationMatrix : mat3x2<f32>,
 }
 
 @group(0) @binding(4) var ext_tex_plane_1 : texture_2d<f32>;
@@ -844,7 +850,7 @@ fn gammaCorrection(v : vec3<f32>, params : GammaTransferParams) -> vec3<f32> {
 }
 
 fn textureSampleExternal(plane0 : texture_2d<f32>, plane1 : texture_2d<f32>, smp : sampler, coord : vec2<f32>, params : ExternalTextureParams) -> vec4<f32> {
-  let modifiedCoords = (((coord - 0.5f) * params.rotationMatrix) + 0.5f);
+  let modifiedCoords = (params.coordTransformationMatrix * vec3<f32>(coord, 1));
   let plane0_dims = vec2<f32>(textureDimensions(plane0, 0));
   let plane0_half_texel = (vec2<f32>(0.5) / plane0_dims);
   let plane0_clamped = clamp(modifiedCoords, plane0_half_texel, (1 - plane0_half_texel));
@@ -887,7 +893,7 @@ fn main(@builtin(position) coord : vec4<f32>) -> @location(0) vec4<f32> {
 TEST_F(MultiplanarExternalTextureTest, ExternalTexturePassedAsParam) {
     auto* src = R"(
 fn f(t : texture_external, s : sampler) {
-  textureSampleBaseClampToEdge(t, s, vec2<f32>(1.0, 2.0));
+  _ = textureSampleBaseClampToEdge(t, s, vec2<f32>(1.0, 2.0));
 }
 
 @group(0) @binding(0) var ext_tex : texture_external;
@@ -918,7 +924,7 @@ struct ExternalTextureParams {
   gammaDecodeParams : GammaTransferParams,
   gammaEncodeParams : GammaTransferParams,
   gamutConversionMatrix : mat3x3<f32>,
-  rotationMatrix : mat2x2<f32>,
+  coordTransformationMatrix : mat3x2<f32>,
 }
 
 @group(0) @binding(2) var ext_tex_plane_1 : texture_2d<f32>;
@@ -933,7 +939,7 @@ fn gammaCorrection(v : vec3<f32>, params : GammaTransferParams) -> vec3<f32> {
 }
 
 fn textureSampleExternal(plane0 : texture_2d<f32>, plane1 : texture_2d<f32>, smp : sampler, coord : vec2<f32>, params : ExternalTextureParams) -> vec4<f32> {
-  let modifiedCoords = (((coord - 0.5f) * params.rotationMatrix) + 0.5f);
+  let modifiedCoords = (params.coordTransformationMatrix * vec3<f32>(coord, 1));
   let plane0_dims = vec2<f32>(textureDimensions(plane0, 0));
   let plane0_half_texel = (vec2<f32>(0.5) / plane0_dims);
   let plane0_clamped = clamp(modifiedCoords, plane0_half_texel, (1 - plane0_half_texel));
@@ -955,7 +961,7 @@ fn textureSampleExternal(plane0 : texture_2d<f32>, plane1 : texture_2d<f32>, smp
 }
 
 fn f(t : texture_2d<f32>, ext_tex_plane_1_1 : texture_2d<f32>, ext_tex_params_1 : ExternalTextureParams, s : sampler) {
-  textureSampleExternal(t, ext_tex_plane_1_1, s, vec2<f32>(1.0, 2.0), ext_tex_params_1);
+  _ = textureSampleExternal(t, ext_tex_plane_1_1, s, vec2<f32>(1.0, 2.0), ext_tex_params_1);
 }
 
 @group(0) @binding(0) var ext_tex : texture_2d<f32>;
@@ -985,7 +991,7 @@ fn main() {
 }
 
 fn f(t : texture_external, s : sampler) {
-  textureSampleBaseClampToEdge(t, s, vec2<f32>(1.0, 2.0));
+  _ = textureSampleBaseClampToEdge(t, s, vec2<f32>(1.0, 2.0));
 }
 
 @group(0) @binding(0) var ext_tex : texture_external;
@@ -1011,7 +1017,7 @@ struct ExternalTextureParams {
   gammaDecodeParams : GammaTransferParams,
   gammaEncodeParams : GammaTransferParams,
   gamutConversionMatrix : mat3x3<f32>,
-  rotationMatrix : mat2x2<f32>,
+  coordTransformationMatrix : mat3x2<f32>,
 }
 
 @group(0) @binding(2) var ext_tex_plane_1 : texture_2d<f32>;
@@ -1031,7 +1037,7 @@ fn gammaCorrection(v : vec3<f32>, params : GammaTransferParams) -> vec3<f32> {
 }
 
 fn textureSampleExternal(plane0 : texture_2d<f32>, plane1 : texture_2d<f32>, smp : sampler, coord : vec2<f32>, params : ExternalTextureParams) -> vec4<f32> {
-  let modifiedCoords = (((coord - 0.5f) * params.rotationMatrix) + 0.5f);
+  let modifiedCoords = (params.coordTransformationMatrix * vec3<f32>(coord, 1));
   let plane0_dims = vec2<f32>(textureDimensions(plane0, 0));
   let plane0_half_texel = (vec2<f32>(0.5) / plane0_dims);
   let plane0_clamped = clamp(modifiedCoords, plane0_half_texel, (1 - plane0_half_texel));
@@ -1053,7 +1059,7 @@ fn textureSampleExternal(plane0 : texture_2d<f32>, plane1 : texture_2d<f32>, smp
 }
 
 fn f(t : texture_2d<f32>, ext_tex_plane_1_1 : texture_2d<f32>, ext_tex_params_1 : ExternalTextureParams, s : sampler) {
-  textureSampleExternal(t, ext_tex_plane_1_1, s, vec2<f32>(1.0, 2.0), ext_tex_params_1);
+  _ = textureSampleExternal(t, ext_tex_plane_1_1, s, vec2<f32>(1.0, 2.0), ext_tex_params_1);
 }
 
 @group(0) @binding(0) var ext_tex : texture_2d<f32>;
@@ -1073,7 +1079,7 @@ fn f(t : texture_2d<f32>, ext_tex_plane_1_1 : texture_2d<f32>, ext_tex_params_1 
 TEST_F(MultiplanarExternalTextureTest, ExternalTexturePassedAsSecondParam) {
     auto* src = R"(
 fn f(s : sampler, t : texture_external) {
-  textureSampleBaseClampToEdge(t, s, vec2<f32>(1.0, 2.0));
+  _ = textureSampleBaseClampToEdge(t, s, vec2<f32>(1.0, 2.0));
 }
 
 @group(0) @binding(0) var ext_tex : texture_external;
@@ -1104,7 +1110,7 @@ struct ExternalTextureParams {
   gammaDecodeParams : GammaTransferParams,
   gammaEncodeParams : GammaTransferParams,
   gamutConversionMatrix : mat3x3<f32>,
-  rotationMatrix : mat2x2<f32>,
+  coordTransformationMatrix : mat3x2<f32>,
 }
 
 @group(0) @binding(2) var ext_tex_plane_1 : texture_2d<f32>;
@@ -1119,7 +1125,7 @@ fn gammaCorrection(v : vec3<f32>, params : GammaTransferParams) -> vec3<f32> {
 }
 
 fn textureSampleExternal(plane0 : texture_2d<f32>, plane1 : texture_2d<f32>, smp : sampler, coord : vec2<f32>, params : ExternalTextureParams) -> vec4<f32> {
-  let modifiedCoords = (((coord - 0.5f) * params.rotationMatrix) + 0.5f);
+  let modifiedCoords = (params.coordTransformationMatrix * vec3<f32>(coord, 1));
   let plane0_dims = vec2<f32>(textureDimensions(plane0, 0));
   let plane0_half_texel = (vec2<f32>(0.5) / plane0_dims);
   let plane0_clamped = clamp(modifiedCoords, plane0_half_texel, (1 - plane0_half_texel));
@@ -1141,7 +1147,7 @@ fn textureSampleExternal(plane0 : texture_2d<f32>, plane1 : texture_2d<f32>, smp
 }
 
 fn f(s : sampler, t : texture_2d<f32>, ext_tex_plane_1_1 : texture_2d<f32>, ext_tex_params_1 : ExternalTextureParams) {
-  textureSampleExternal(t, ext_tex_plane_1_1, s, vec2<f32>(1.0, 2.0), ext_tex_params_1);
+  _ = textureSampleExternal(t, ext_tex_plane_1_1, s, vec2<f32>(1.0, 2.0), ext_tex_params_1);
 }
 
 @group(0) @binding(0) var ext_tex : texture_2d<f32>;
@@ -1166,8 +1172,8 @@ fn main() {
 TEST_F(MultiplanarExternalTextureTest, ExternalTexturePassedAsParamMultiple) {
     auto* src = R"(
 fn f(t : texture_external, s : sampler, t2 : texture_external) {
-  textureSampleBaseClampToEdge(t, s, vec2<f32>(1.0, 2.0));
-  textureSampleBaseClampToEdge(t2, s, vec2<f32>(1.0, 2.0));
+  _ = textureSampleBaseClampToEdge(t, s, vec2<f32>(1.0, 2.0));
+  _ = textureSampleBaseClampToEdge(t2, s, vec2<f32>(1.0, 2.0));
 }
 
 @group(0) @binding(0) var ext_tex : texture_external;
@@ -1199,7 +1205,7 @@ struct ExternalTextureParams {
   gammaDecodeParams : GammaTransferParams,
   gammaEncodeParams : GammaTransferParams,
   gamutConversionMatrix : mat3x3<f32>,
-  rotationMatrix : mat2x2<f32>,
+  coordTransformationMatrix : mat3x2<f32>,
 }
 
 @group(0) @binding(3) var ext_tex_plane_1 : texture_2d<f32>;
@@ -1218,7 +1224,7 @@ fn gammaCorrection(v : vec3<f32>, params : GammaTransferParams) -> vec3<f32> {
 }
 
 fn textureSampleExternal(plane0 : texture_2d<f32>, plane1 : texture_2d<f32>, smp : sampler, coord : vec2<f32>, params : ExternalTextureParams) -> vec4<f32> {
-  let modifiedCoords = (((coord - 0.5f) * params.rotationMatrix) + 0.5f);
+  let modifiedCoords = (params.coordTransformationMatrix * vec3<f32>(coord, 1));
   let plane0_dims = vec2<f32>(textureDimensions(plane0, 0));
   let plane0_half_texel = (vec2<f32>(0.5) / plane0_dims);
   let plane0_clamped = clamp(modifiedCoords, plane0_half_texel, (1 - plane0_half_texel));
@@ -1240,8 +1246,8 @@ fn textureSampleExternal(plane0 : texture_2d<f32>, plane1 : texture_2d<f32>, smp
 }
 
 fn f(t : texture_2d<f32>, ext_tex_plane_1_2 : texture_2d<f32>, ext_tex_params_2 : ExternalTextureParams, s : sampler, t2 : texture_2d<f32>, ext_tex_plane_1_3 : texture_2d<f32>, ext_tex_params_3 : ExternalTextureParams) {
-  textureSampleExternal(t, ext_tex_plane_1_2, s, vec2<f32>(1.0, 2.0), ext_tex_params_2);
-  textureSampleExternal(t2, ext_tex_plane_1_3, s, vec2<f32>(1.0, 2.0), ext_tex_params_3);
+  _ = textureSampleExternal(t, ext_tex_plane_1_2, s, vec2<f32>(1.0, 2.0), ext_tex_params_2);
+  _ = textureSampleExternal(t2, ext_tex_plane_1_3, s, vec2<f32>(1.0, 2.0), ext_tex_params_3);
 }
 
 @group(0) @binding(0) var ext_tex : texture_2d<f32>;
@@ -1274,8 +1280,8 @@ fn main() {
 }
 
 fn f(t : texture_external, s : sampler, t2 : texture_external) {
-  textureSampleBaseClampToEdge(t, s, vec2<f32>(1.0, 2.0));
-  textureSampleBaseClampToEdge(t2, s, vec2<f32>(1.0, 2.0));
+  _ = textureSampleBaseClampToEdge(t, s, vec2<f32>(1.0, 2.0));
+  _ = textureSampleBaseClampToEdge(t2, s, vec2<f32>(1.0, 2.0));
 }
 
 @group(0) @binding(0) var ext_tex : texture_external;
@@ -1303,7 +1309,7 @@ struct ExternalTextureParams {
   gammaDecodeParams : GammaTransferParams,
   gammaEncodeParams : GammaTransferParams,
   gamutConversionMatrix : mat3x3<f32>,
-  rotationMatrix : mat2x2<f32>,
+  coordTransformationMatrix : mat3x2<f32>,
 }
 
 @group(0) @binding(3) var ext_tex_plane_1 : texture_2d<f32>;
@@ -1327,7 +1333,7 @@ fn gammaCorrection(v : vec3<f32>, params : GammaTransferParams) -> vec3<f32> {
 }
 
 fn textureSampleExternal(plane0 : texture_2d<f32>, plane1 : texture_2d<f32>, smp : sampler, coord : vec2<f32>, params : ExternalTextureParams) -> vec4<f32> {
-  let modifiedCoords = (((coord - 0.5f) * params.rotationMatrix) + 0.5f);
+  let modifiedCoords = (params.coordTransformationMatrix * vec3<f32>(coord, 1));
   let plane0_dims = vec2<f32>(textureDimensions(plane0, 0));
   let plane0_half_texel = (vec2<f32>(0.5) / plane0_dims);
   let plane0_clamped = clamp(modifiedCoords, plane0_half_texel, (1 - plane0_half_texel));
@@ -1349,8 +1355,8 @@ fn textureSampleExternal(plane0 : texture_2d<f32>, plane1 : texture_2d<f32>, smp
 }
 
 fn f(t : texture_2d<f32>, ext_tex_plane_1_2 : texture_2d<f32>, ext_tex_params_2 : ExternalTextureParams, s : sampler, t2 : texture_2d<f32>, ext_tex_plane_1_3 : texture_2d<f32>, ext_tex_params_3 : ExternalTextureParams) {
-  textureSampleExternal(t, ext_tex_plane_1_2, s, vec2<f32>(1.0, 2.0), ext_tex_params_2);
-  textureSampleExternal(t2, ext_tex_plane_1_3, s, vec2<f32>(1.0, 2.0), ext_tex_params_3);
+  _ = textureSampleExternal(t, ext_tex_plane_1_2, s, vec2<f32>(1.0, 2.0), ext_tex_params_2);
+  _ = textureSampleExternal(t2, ext_tex_plane_1_3, s, vec2<f32>(1.0, 2.0), ext_tex_params_3);
 }
 
 @group(0) @binding(0) var ext_tex : texture_2d<f32>;
@@ -1373,7 +1379,7 @@ fn f(t : texture_2d<f32>, ext_tex_plane_1_2 : texture_2d<f32>, ext_tex_params_2 
 TEST_F(MultiplanarExternalTextureTest, ExternalTexturePassedAsParamNested) {
     auto* src = R"(
 fn nested(t : texture_external, s : sampler) {
-  textureSampleBaseClampToEdge(t, s, vec2<f32>(1.0, 2.0));
+  _ = textureSampleBaseClampToEdge(t, s, vec2<f32>(1.0, 2.0));
 }
 
 fn f(t : texture_external, s : sampler) {
@@ -1408,7 +1414,7 @@ struct ExternalTextureParams {
   gammaDecodeParams : GammaTransferParams,
   gammaEncodeParams : GammaTransferParams,
   gamutConversionMatrix : mat3x3<f32>,
-  rotationMatrix : mat2x2<f32>,
+  coordTransformationMatrix : mat3x2<f32>,
 }
 
 @group(0) @binding(2) var ext_tex_plane_1 : texture_2d<f32>;
@@ -1423,7 +1429,7 @@ fn gammaCorrection(v : vec3<f32>, params : GammaTransferParams) -> vec3<f32> {
 }
 
 fn textureSampleExternal(plane0 : texture_2d<f32>, plane1 : texture_2d<f32>, smp : sampler, coord : vec2<f32>, params : ExternalTextureParams) -> vec4<f32> {
-  let modifiedCoords = (((coord - 0.5f) * params.rotationMatrix) + 0.5f);
+  let modifiedCoords = (params.coordTransformationMatrix * vec3<f32>(coord, 1));
   let plane0_dims = vec2<f32>(textureDimensions(plane0, 0));
   let plane0_half_texel = (vec2<f32>(0.5) / plane0_dims);
   let plane0_clamped = clamp(modifiedCoords, plane0_half_texel, (1 - plane0_half_texel));
@@ -1445,7 +1451,7 @@ fn textureSampleExternal(plane0 : texture_2d<f32>, plane1 : texture_2d<f32>, smp
 }
 
 fn nested(t : texture_2d<f32>, ext_tex_plane_1_1 : texture_2d<f32>, ext_tex_params_1 : ExternalTextureParams, s : sampler) {
-  textureSampleExternal(t, ext_tex_plane_1_1, s, vec2<f32>(1.0, 2.0), ext_tex_params_1);
+  _ = textureSampleExternal(t, ext_tex_plane_1_1, s, vec2<f32>(1.0, 2.0), ext_tex_params_1);
 }
 
 fn f(t : texture_2d<f32>, ext_tex_plane_1_2 : texture_2d<f32>, ext_tex_params_2 : ExternalTextureParams, s : sampler) {
@@ -1474,7 +1480,7 @@ fn main() {
 TEST_F(MultiplanarExternalTextureTest, ExternalTexturePassedAsParamNested_OutOfOrder) {
     auto* src = R"(
 fn nested(t : texture_external, s : sampler) {
-  textureSampleBaseClampToEdge(t, s, vec2<f32>(1.0, 2.0));
+  _ = textureSampleBaseClampToEdge(t, s, vec2<f32>(1.0, 2.0));
 }
 
 fn f(t : texture_external, s : sampler) {
@@ -1509,7 +1515,7 @@ struct ExternalTextureParams {
   gammaDecodeParams : GammaTransferParams,
   gammaEncodeParams : GammaTransferParams,
   gamutConversionMatrix : mat3x3<f32>,
-  rotationMatrix : mat2x2<f32>,
+  coordTransformationMatrix : mat3x2<f32>,
 }
 
 @group(0) @binding(2) var ext_tex_plane_1 : texture_2d<f32>;
@@ -1524,7 +1530,7 @@ fn gammaCorrection(v : vec3<f32>, params : GammaTransferParams) -> vec3<f32> {
 }
 
 fn textureSampleExternal(plane0 : texture_2d<f32>, plane1 : texture_2d<f32>, smp : sampler, coord : vec2<f32>, params : ExternalTextureParams) -> vec4<f32> {
-  let modifiedCoords = (((coord - 0.5f) * params.rotationMatrix) + 0.5f);
+  let modifiedCoords = (params.coordTransformationMatrix * vec3<f32>(coord, 1));
   let plane0_dims = vec2<f32>(textureDimensions(plane0, 0));
   let plane0_half_texel = (vec2<f32>(0.5) / plane0_dims);
   let plane0_clamped = clamp(modifiedCoords, plane0_half_texel, (1 - plane0_half_texel));
@@ -1546,7 +1552,7 @@ fn textureSampleExternal(plane0 : texture_2d<f32>, plane1 : texture_2d<f32>, smp
 }
 
 fn nested(t : texture_2d<f32>, ext_tex_plane_1_1 : texture_2d<f32>, ext_tex_params_1 : ExternalTextureParams, s : sampler) {
-  textureSampleExternal(t, ext_tex_plane_1_1, s, vec2<f32>(1.0, 2.0), ext_tex_params_1);
+  _ = textureSampleExternal(t, ext_tex_plane_1_1, s, vec2<f32>(1.0, 2.0), ext_tex_params_1);
 }
 
 fn f(t : texture_2d<f32>, ext_tex_plane_1_2 : texture_2d<f32>, ext_tex_params_2 : ExternalTextureParams, s : sampler) {
@@ -1598,7 +1604,7 @@ struct ExternalTextureParams {
   gammaDecodeParams : GammaTransferParams,
   gammaEncodeParams : GammaTransferParams,
   gamutConversionMatrix : mat3x3<f32>,
-  rotationMatrix : mat2x2<f32>,
+  coordTransformationMatrix : mat3x2<f32>,
 }
 
 fn f(ext_tex : texture_2d<f32>, ext_tex_plane_1 : texture_2d<f32>, ext_tex_params : ExternalTextureParams) -> vec2<u32> {
@@ -1616,10 +1622,10 @@ fn f(ext_tex : texture_2d<f32>, ext_tex_plane_1 : texture_2d<f32>, ext_tex_param
 // Tests that the the transform handles aliases to external textures
 TEST_F(MultiplanarExternalTextureTest, ExternalTextureAlias) {
     auto* src = R"(
-type ET = texture_external;
+alias ET = texture_external;
 
 fn f(t : ET, s : sampler) {
-  textureSampleBaseClampToEdge(t, s, vec2<f32>(1.0, 2.0));
+  _ = textureSampleBaseClampToEdge(t, s, vec2<f32>(1.0, 2.0));
 }
 
 @group(0) @binding(0) var ext_tex : ET;
@@ -1650,14 +1656,14 @@ struct ExternalTextureParams {
   gammaDecodeParams : GammaTransferParams,
   gammaEncodeParams : GammaTransferParams,
   gamutConversionMatrix : mat3x3<f32>,
-  rotationMatrix : mat2x2<f32>,
+  coordTransformationMatrix : mat3x2<f32>,
 }
 
 @group(0) @binding(2) var ext_tex_plane_1 : texture_2d<f32>;
 
 @group(0) @binding(3) var<uniform> ext_tex_params : ExternalTextureParams;
 
-type ET = texture_external;
+alias ET = texture_external;
 
 fn gammaCorrection(v : vec3<f32>, params : GammaTransferParams) -> vec3<f32> {
   let cond = (abs(v) < vec3<f32>(params.D));
@@ -1667,7 +1673,7 @@ fn gammaCorrection(v : vec3<f32>, params : GammaTransferParams) -> vec3<f32> {
 }
 
 fn textureSampleExternal(plane0 : texture_2d<f32>, plane1 : texture_2d<f32>, smp : sampler, coord : vec2<f32>, params : ExternalTextureParams) -> vec4<f32> {
-  let modifiedCoords = (((coord - 0.5f) * params.rotationMatrix) + 0.5f);
+  let modifiedCoords = (params.coordTransformationMatrix * vec3<f32>(coord, 1));
   let plane0_dims = vec2<f32>(textureDimensions(plane0, 0));
   let plane0_half_texel = (vec2<f32>(0.5) / plane0_dims);
   let plane0_clamped = clamp(modifiedCoords, plane0_half_texel, (1 - plane0_half_texel));
@@ -1689,7 +1695,7 @@ fn textureSampleExternal(plane0 : texture_2d<f32>, plane1 : texture_2d<f32>, smp
 }
 
 fn f(t : texture_2d<f32>, ext_tex_plane_1_1 : texture_2d<f32>, ext_tex_params_1 : ExternalTextureParams, s : sampler) {
-  textureSampleExternal(t, ext_tex_plane_1_1, s, vec2<f32>(1.0, 2.0), ext_tex_params_1);
+  _ = textureSampleExternal(t, ext_tex_plane_1_1, s, vec2<f32>(1.0, 2.0), ext_tex_params_1);
 }
 
 @group(0) @binding(0) var ext_tex : texture_2d<f32>;
@@ -1718,13 +1724,13 @@ fn main() {
 }
 
 fn f(t : ET, s : sampler) {
-  textureSampleBaseClampToEdge(t, s, vec2<f32>(1.0, 2.0));
+  _ = textureSampleBaseClampToEdge(t, s, vec2<f32>(1.0, 2.0));
 }
 
 @group(0) @binding(0) var ext_tex : ET;
 @group(0) @binding(1) var smp : sampler;
 
-type ET = texture_external;
+alias ET = texture_external;
 )";
 
     auto* expect = R"(
@@ -1746,7 +1752,7 @@ struct ExternalTextureParams {
   gammaDecodeParams : GammaTransferParams,
   gammaEncodeParams : GammaTransferParams,
   gamutConversionMatrix : mat3x3<f32>,
-  rotationMatrix : mat2x2<f32>,
+  coordTransformationMatrix : mat3x2<f32>,
 }
 
 @group(0) @binding(2) var ext_tex_plane_1 : texture_2d<f32>;
@@ -1766,7 +1772,7 @@ fn gammaCorrection(v : vec3<f32>, params : GammaTransferParams) -> vec3<f32> {
 }
 
 fn textureSampleExternal(plane0 : texture_2d<f32>, plane1 : texture_2d<f32>, smp : sampler, coord : vec2<f32>, params : ExternalTextureParams) -> vec4<f32> {
-  let modifiedCoords = (((coord - 0.5f) * params.rotationMatrix) + 0.5f);
+  let modifiedCoords = (params.coordTransformationMatrix * vec3<f32>(coord, 1));
   let plane0_dims = vec2<f32>(textureDimensions(plane0, 0));
   let plane0_half_texel = (vec2<f32>(0.5) / plane0_dims);
   let plane0_clamped = clamp(modifiedCoords, plane0_half_texel, (1 - plane0_half_texel));
@@ -1788,14 +1794,14 @@ fn textureSampleExternal(plane0 : texture_2d<f32>, plane1 : texture_2d<f32>, smp
 }
 
 fn f(t : texture_2d<f32>, ext_tex_plane_1_1 : texture_2d<f32>, ext_tex_params_1 : ExternalTextureParams, s : sampler) {
-  textureSampleExternal(t, ext_tex_plane_1_1, s, vec2<f32>(1.0, 2.0), ext_tex_params_1);
+  _ = textureSampleExternal(t, ext_tex_plane_1_1, s, vec2<f32>(1.0, 2.0), ext_tex_params_1);
 }
 
 @group(0) @binding(0) var ext_tex : texture_2d<f32>;
 
 @group(0) @binding(1) var smp : sampler;
 
-type ET = texture_external;
+alias ET = texture_external;
 )";
     DataMap data;
     data.Add<MultiplanarExternalTexture::NewBindingPoints>(MultiplanarExternalTexture::BindingsMap{

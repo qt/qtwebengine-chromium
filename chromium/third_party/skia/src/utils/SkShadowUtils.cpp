@@ -22,9 +22,10 @@
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkVertices.h"
 #include "include/private/SkIDChangeListener.h"
-#include "include/private/SkTPin.h"
-#include "include/private/SkTemplates.h"
-#include "include/utils/SkRandom.h"
+#include "include/private/base/SkTPin.h"
+#include "include/private/base/SkTemplates.h"
+#include "include/private/base/SkTo.h"
+#include "src/base/SkRandom.h"
 #include "src/core/SkBlurMask.h"
 #include "src/core/SkColorFilterPriv.h"
 #include "src/core/SkDevice.h"
@@ -32,6 +33,7 @@
 #include "src/core/SkPathPriv.h"
 #include "src/core/SkResourceCache.h"
 #include "src/core/SkVerticesPriv.h"
+
 #if !defined(SK_ENABLE_OPTIMIZE_SIZE)
 #include "src/utils/SkShadowTessellator.h"
 #endif
@@ -47,6 +49,8 @@
 #include <memory>
 #include <new>
 #include <utility>
+
+using namespace skia_private;
 
 class SkRRect;
 
@@ -410,7 +414,7 @@ bool draw_shadow(const FACTORY& factory,
     FindContext<FACTORY> context(&path.viewMatrix(), &factory);
 
     SkResourceCache::Key* key = nullptr;
-    SkAutoSTArray<32 * 4, uint8_t> keyStorage;
+    AutoSTArray<32 * 4, uint8_t> keyStorage;
     int keyDataBytes = path.keyBytes();
     if (keyDataBytes >= 0) {
         keyStorage.reset(keyDataBytes + sizeof(SkResourceCache::Key));

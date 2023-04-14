@@ -4,14 +4,14 @@
 [1]: https://vulkan.lunarg.com/img/Vulkan_100px_Dec16.png "https://www.khronos.org/vulkan/"
 [2]: https://www.khronos.org/vulkan/
 
-# Architecture of the Vulkan Loader Interfaces
+# Architecture of the Vulkan Loader Interfaces <!-- omit from toc -->
 [![Creative Commons][3]][4]
 
-<!-- Copyright &copy; 2015-2022 LunarG, Inc. -->
+<!-- Copyright &copy; 2015-2023 LunarG, Inc. -->
 
 [3]: https://i.creativecommons.org/l/by-nd/4.0/88x31.png "Creative Commons License"
 [4]: https://creativecommons.org/licenses/by-nd/4.0/
-## Table of Contents
+## Table of Contents <!-- omit from toc -->
 
 - [Overview](#overview)
   - [Who Should Read This Document](#who-should-read-this-document)
@@ -47,6 +47,8 @@
   - [Case-Insensitive](#case-insensitive)
   - [Environment Variable Priority](#environment-variable-priority)
 - [Table of Debug Environment Variables](#table-of-debug-environment-variables)
+  - [Active Environment Variables](#active-environment-variables)
+  - [Deprecated Environment Variables](#deprecated-environment-variables)
 - [Glossary of Terms](#glossary-of-terms)
 
 ## Overview
@@ -224,7 +226,7 @@ In the future, VkConfig may have additional interactions with the Vulkan
 loader.
 
 More details on VkConfig can be found in its
-[GitHub documentation](https://github.com/LunarG/VulkanTools/blob/master/vkconfig/README.md).
+[GitHub documentation](https://github.com/LunarG/VulkanTools/blob/main/vkconfig/README.md).
 <br/>
 <br/>
 
@@ -779,10 +781,10 @@ discovery.
     </small></td>
     <td><small>
         export<br/>
-        &nbsp;&nbsp;VK_LOADER_DRIVERS_SELECT=nvidia<br/>
+        &nbsp;&nbsp;VK_LOADER_DRIVERS_SELECT=nvidia*<br/>
         <br/>
         set<br/>
-        &nbsp;&nbsp;VK_LOADER_DRIVERS_SELECT=nvidia<br/><br/>
+        &nbsp;&nbsp;VK_LOADER_DRIVERS_SELECT=nvidia*<br/><br/>
         The above would select only the Nvidia driver if it was present on the
         system and already visible to the loader.
     </small></td>
@@ -1188,6 +1190,33 @@ may be removed in a future loader release.
         See
         <a href="LoaderApplicationInterface.md#wsi-extensions">WSI Extensions</a>
         for more information.
+    </td>
+  </tr>
+  <tr>
+    <td>Exported Function</td>
+    <td>A function which is intended to be obtained through the platform specific
+        dynamic linker, specifically from a Driver or a Layer library.
+        Functions that are required to be exported are primarily the very first
+        functions the Loader calls on a Layer or Driver library. <br/>
+    </td>
+  </tr>
+  <tr>
+    <td>Exposed Function</td>
+    <td>A function which is intended to be obtained through a Querying Function, such as
+        `vkGetInstanceProcAddr`.
+        The exact Querying Function required for a specific exposed function varies
+        between Layers and Drivers, as well as between interface versions. <br/>
+    </td>
+  </tr>
+  <tr>
+    <td>Querying Functions</td>
+    <td>These are functions which allow the Loader to query other functions from
+        drivers and layers. These functions may be in the Vulkan API but also may be
+        from the private Loader and Driver Interface or the Loader and Layer Interface. <br/>
+        These functions are:
+        `vkGetInstanceProcAddr`, `vkGetDeviceProcAddr`,
+        `vk_icdGetInstanceProcAddr`, `vk_icdGetPhysicalDeviceProcAddr`, and
+        `vk_layerGetPhysicalDeviceProcAddr`.
     </td>
   </tr>
 </table>

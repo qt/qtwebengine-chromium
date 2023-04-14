@@ -24,7 +24,6 @@
 #include "internal/platform/logging.h"
 #include "internal/platform/runnable.h"
 
-namespace location {
 namespace nearby {
 namespace windows {
 
@@ -148,7 +147,7 @@ void ThreadPool::RunNextTask() {
       NEARBY_LOGS(VERBOSE) << __func__ << ": Run task(" << &tasks_.front()
                            << ").";
 
-      task = tasks_.front();
+      task = std::move(tasks_.front());
       tasks_.pop();
     }
   }
@@ -163,4 +162,3 @@ void ThreadPool::RunNextTask() {
 
 }  // namespace windows
 }  // namespace nearby
-}  // namespace location

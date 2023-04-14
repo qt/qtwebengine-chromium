@@ -180,27 +180,7 @@
         ],
         'shards': 4,
       },
-      {'name': 'gcmole_v2', 'variant': 'ia32'},
-      {'name': 'gcmole_v2', 'variant': 'x64'},
-      {'name': 'gcmole_v2', 'variant': 'arm'},
-      {'name': 'gcmole_v2', 'variant': 'arm64'},
-      # TODO(https://crbug.com/v8/12660): Remove v2 above after testing.
       {'name': 'gcmole_v3', 'variant': 'ia32', 'shards': 4},
-      {'name': 'gcmole_v3', 'variant': 'x64', 'shards': 4},
-      {'name': 'gcmole_v3', 'variant': 'arm', 'shards': 4},
-      {'name': 'gcmole_v3', 'variant': 'arm64', 'shards': 4},
-      {
-        'name': 'gcmole_v2',
-        'variant': 'x64',
-        'suffix': 'test single host',
-        'test_args': ['--test-run'],
-      },
-      {
-        'name': 'gcmole_v3',
-        'variant': 'x64',
-        'suffix': 'test multi host',
-        'test_args': ['--test-run'],
-      },
     ],
   },
   'v8_linux_optional_rel': {
@@ -350,6 +330,7 @@
       {'name': 'test262', 'variant': 'default', 'shards': 2},
       {'name': 'v8testing', 'shards': 10},
       {'name': 'v8testing', 'variant': 'extra', 'shards': 10},
+      {'name': 'gcmole_v3', 'variant': 'arm', 'shards': 4},
     ],
   },
   ##############################################################################
@@ -475,14 +456,12 @@
       {'name': 'webkit', 'variant': 'stress_sampling'},
       # Stress snapshot.
       {'name': 'mjsunit', 'variant': 'stress_snapshot'},
-      # Maglev.
-      {'name': 'mjsunit', 'variant': 'maglev'},
       # Stress maglev.
       {'name': 'mjsunit', 'variant': 'stress_maglev'},
+      # Stress maglev-inlining.
+      {'name': 'mjsunit', 'variant': 'maglev_inlining'},
       # Experimental regexp engine.
       {'name': 'mjsunit', 'variant': 'experimental_regexp'},
-      # Wasm write protect code space.
-      {'name': 'mjsunit', 'variant': 'wasm_write_protect_code'},
     ],
   },
   'v8_linux64_gc_stress_custom_snapshot_dbg': {
@@ -549,7 +528,7 @@
   },
   'v8_linux64_msan_rel': {
     'swarming_dimensions' : {
-      'os': 'Ubuntu-18.04',
+      'os': 'Ubuntu-20.04',
     },
     'tests': [
       {'name': 'test262', 'variant': 'default', 'shards': 2},
@@ -636,6 +615,20 @@
       {'name': 'v8testing', 'variant': 'stress_instruction_scheduling'},
       # Maglev -- move to extra once more architectures are supported.
       {'name': 'mjsunit', 'variant': 'maglev'},
+      # GCMole.
+      {'name': 'gcmole_v3', 'variant': 'x64', 'shards': 4},
+      {
+        'name': 'gcmole_v2',
+        'variant': 'x64',
+        'suffix': 'test single host',
+        'test_args': ['--test-run'],
+      },
+      {
+        'name': 'gcmole_v3',
+        'variant': 'x64',
+        'suffix': 'test multi host',
+        'test_args': ['--test-run'],
+      },
     ],
   },
   'v8_linux64_predictable_rel': {
@@ -670,6 +663,18 @@
       {'name': 'v8testing', 'variant': 'extra', 'shards': 5},
       {'name': 'v8testing', 'variant': 'slow_path', 'shards': 2},
       {'name': 'v8testing', 'variant': 'stress_concurrent_allocation', 'shards': 2},
+    ],
+  },
+  'v8_linux64_tsan_dbg': {
+    'swarming_dimensions' : {
+      'os': 'Ubuntu-18.04',
+    },
+    'tests': [
+      {'name': 'benchmarks', 'shards': 2},
+      {'name': 'mozilla', 'shards': 4},
+      {'name': 'test262', 'variant': 'default', 'shards': 5},
+      {'name': 'v8testing', 'shards': 12},
+      {'name': 'v8testing', 'variant': 'extra', 'shards': 10},
     ],
   },
   'v8_linux64_tsan_no_cm_rel': {
@@ -746,6 +751,7 @@
       {'name': 'test262', 'variant': 'default', 'shards': 4},
       {'name': 'v8testing', 'shards': 14},
       {'name': 'v8testing', 'variant': 'extra', 'shards': 14},
+      {'name': 'gcmole_v3', 'variant': 'arm64', 'shards': 4},
     ],
   },
   'v8_linux_arm64_cfi_rel': {
@@ -816,7 +822,7 @@
   'v8_win_dbg': {
     'swarming_dimensions' : {
       'cpu': 'x86-64',
-      'os': 'Windows-7-SP1',
+      'os': 'Windows-10-19045',
     },
     'tests': [
       {'name': 'mozilla'},
@@ -826,7 +832,7 @@
   'v8_win_rel': {
     'swarming_dimensions' : {
       'cpu': 'x86-64',
-      'os': 'Windows-7-SP1',
+      'os': 'Windows-10-19045',
     },
     'tests': [
       {'name': 'mozilla'},
@@ -940,6 +946,8 @@
     },
     'tests': [
       {'name': 'v8testing'},
+      # Maglev -- move to extra once more architectures are supported.
+      {'name': 'mjsunit', 'variant': 'maglev'},
     ],
   },
   'v8_mac_arm64_dbg': {
@@ -950,6 +958,8 @@
     },
     'tests': [
       {'name': 'v8testing'},
+      # Maglev -- move to extra once more architectures are supported.
+      {'name': 'mjsunit', 'variant': 'maglev'},
     ],
   },
   'v8_mac_arm64_full_dbg': {
@@ -960,6 +970,8 @@
     },
     'tests': [
       {'name': 'v8testing'},
+      # Maglev -- move to extra once more architectures are supported.
+      {'name': 'mjsunit', 'variant': 'maglev'},
     ],
   },
   'v8_mac_arm64_no_pointer_compression_dbg': {
@@ -1089,27 +1101,7 @@
         'test_args': ['--extra-flags', '--noenable-avx'],
         'shards': 2
       },
-      {'name': 'gcmole_v2', 'variant': 'ia32'},
-      {'name': 'gcmole_v2', 'variant': 'x64'},
-      {'name': 'gcmole_v2', 'variant': 'arm'},
-      {'name': 'gcmole_v2', 'variant': 'arm64'},
-      # TODO(https://crbug.com/v8/12660): Remove v2 above after testing.
       {'name': 'gcmole_v3', 'variant': 'ia32', 'shards': 4},
-      {'name': 'gcmole_v3', 'variant': 'x64', 'shards': 4},
-      {'name': 'gcmole_v3', 'variant': 'arm', 'shards': 4},
-      {'name': 'gcmole_v3', 'variant': 'arm64', 'shards': 4},
-      {
-        'name': 'gcmole_v2',
-        'variant': 'x64',
-        'suffix': 'test single host',
-        'test_args': ['--test-run'],
-      },
-      {
-        'name': 'gcmole_v3',
-        'variant': 'x64',
-        'suffix': 'test multi host',
-        'test_args': ['--test-run'],
-      },
     ],
   },
   'V8 Linux - arm64 - sim - CFI': {
@@ -1123,7 +1115,7 @@
   },
   'V8 Linux - arm64 - sim - MSAN': {
     'swarming_dimensions': {
-      'os': 'Ubuntu-18.04',
+      'os': 'Ubuntu-20.04',
     },
     'tests': [
       {'name': 'test262', 'variant': 'default', 'shards': 3},
@@ -1299,6 +1291,14 @@
       {'name': 'v8testing'},
     ],
   },
+  'V8 Linux PGO instrumentation - builder' : {
+    'swarming_dimensions': {
+      'os': 'Ubuntu-18.04',
+    },
+    'tests': [
+      {'name': 'pgo_instrumentation'}
+    ],
+  },
   'V8 Linux64': {
     'swarming_dimensions': {
       'cpu': 'x86-64-avx2',
@@ -1344,6 +1344,20 @@
         'name': 'v8testing',
         'suffix': 'noavx',
         'test_args': ['--extra-flags', '--noenable-avx']
+      },
+      # GCMole.
+      {'name': 'gcmole_v3', 'variant': 'x64', 'shards': 4},
+      {
+        'name': 'gcmole_v2',
+        'variant': 'x64',
+        'suffix': 'test single host',
+        'test_args': ['--test-run'],
+      },
+      {
+        'name': 'gcmole_v3',
+        'variant': 'x64',
+        'suffix': 'test multi host',
+        'test_args': ['--test-run'],
       },
     ],
   },
@@ -1457,14 +1471,12 @@
       {'name': 'webkit', 'variant': 'stress_sampling'},
       # Stress snapshot.
       {'name': 'mjsunit', 'variant': 'stress_snapshot'},
-      # Maglev.
-      {'name': 'mjsunit', 'variant': 'maglev'},
       # Stress maglev.
       {'name': 'mjsunit', 'variant': 'stress_maglev'},
+      # Stress maglev-inlining.
+      {'name': 'mjsunit', 'variant': 'maglev_inlining'},
       # Experimental regexp engine.
       {'name': 'mjsunit', 'variant': 'experimental_regexp'},
-      # Wasm write protect code space.
-      {'name': 'mjsunit', 'variant': 'wasm_write_protect_code'},
     ],
   },
   'V8 Linux64 - cppgc-non-default - debug': {
@@ -1523,14 +1535,12 @@
       {'name': 'webkit', 'variant': 'stress_sampling'},
       # Stress snapshot.
       {'name': 'mjsunit', 'variant': 'stress_snapshot'},
-      # Maglev.
-      {'name': 'mjsunit', 'variant': 'maglev'},
       # Stress maglev.
       {'name': 'mjsunit', 'variant': 'stress_maglev'},
+      # Stress maglev-inlining.
+      {'name': 'mjsunit', 'variant': 'maglev_inlining'},
       # Experimental regexp engine.
       {'name': 'mjsunit', 'variant': 'experimental_regexp'},
-      # Wasm write protect code space.
-      {'name': 'mjsunit', 'variant': 'wasm_write_protect_code'},
     ],
   },
   'V8 Linux64 gcc': {
@@ -1657,6 +1667,14 @@
       },
     ],
   },
+  'V8 Linux64 PGO instrumentation - builder' : {
+    'swarming_dimensions' : {
+      'os': 'Ubuntu-18.04',
+    },
+    'tests': [
+      {'name': 'pgo_instrumentation'}
+    ],
+  },
   'V8 Linux64 TSAN': {
     'swarming_dimensions' : {
       'os': 'Ubuntu-18.04',
@@ -1669,6 +1687,18 @@
       {'name': 'v8testing', 'variant': 'extra', 'shards': 5},
       {'name': 'v8testing', 'variant': 'slow_path', 'shards': 2},
       {'name': 'v8testing', 'variant': 'stress_concurrent_allocation', 'shards': 2},
+    ],
+  },
+  'V8 Linux64 TSAN - debug': {
+    'swarming_dimensions' : {
+      'os': 'Ubuntu-18.04',
+    },
+    'tests': [
+      {'name': 'benchmarks', 'shards': 2},
+      {'name': 'mozilla', 'shards': 4},
+      {'name': 'test262', 'variant': 'default', 'shards': 5},
+      {'name': 'v8testing', 'shards': 12},
+      {'name': 'v8testing', 'variant': 'extra', 'shards': 10},
     ],
   },
   'V8 Linux64 TSAN - stress-incremental-marking': {
@@ -1797,6 +1827,8 @@
     'tests': [
       {'name': 'v8testing'},
       {'name': 'v8testing', 'variant': 'extra'},
+      # Maglev -- move to extra once more architectures are supported.
+      {'name': 'mjsunit', 'variant': 'maglev'},
     ],
   },
   'V8 Mac - arm64 - debug': {
@@ -1813,6 +1845,8 @@
     'tests': [
       {'name': 'v8testing', 'shards': 2},
       {'name': 'v8testing', 'variant': 'extra', 'shards': 2},
+      # Maglev -- move to extra once more architectures are supported.
+      {'name': 'mjsunit', 'variant': 'maglev'},
     ],
   },
   'V8 Mac - arm64 - no pointer compression debug': {
@@ -1858,7 +1892,7 @@
   'V8 Win32': {
     'swarming_dimensions': {
       'cpu': 'x86-64',
-      'os': 'Windows-7-SP1',
+      'os': 'Windows-10-19045',
     },
     'tests': [
       {'name': 'mozilla'},
@@ -1869,12 +1903,21 @@
   'V8 Win32 - debug': {
     'swarming_dimensions': {
       'cpu': 'x86-64',
-      'os': 'Windows-7-SP1',
+      'os': 'Windows-10-19045',
     },
     'tests': [
       {'name': 'mozilla'},
       {'name': 'test262', 'variant': 'default', 'shards': 2},
       {'name': 'v8testing', 'shards': 5},
+    ],
+  },
+  'V8 Win32 PGO instrumentation - builder' : {
+    'swarming_dimensions': {
+      'cpu': 'x86-64',
+      'os': 'Windows-10-19045',
+    },
+    'tests': [
+      {'name': 'pgo_instrumentation'}
     ],
   },
   'V8 Win64': {
@@ -1915,6 +1958,14 @@
     },
     'tests': [
       {'name': 'v8testing', 'shards': 5},
+    ],
+  },
+  'V8 Win64 PGO instrumentation - builder' : {
+    'swarming_dimensions': {
+      'os': 'Windows-10-19045',
+    },
+    'tests': [
+      {'name': 'pgo_instrumentation'}
     ],
   },
   ##############################################################################
@@ -2056,6 +2107,8 @@
         'test_args': ['--novfp3'],
         'shards': 6
       },
+      # GCMole.
+      {'name': 'gcmole_v3', 'variant': 'arm', 'shards': 4},
     ],
   },
   'V8 Linux - arm - sim - debug': {
@@ -2137,6 +2190,7 @@
       {'name': 'test262', 'variant': 'default', 'shards': 2},
       {'name': 'v8testing', 'shards': 3},
       {'name': 'v8testing', 'variant': 'extra', 'shards': 2},
+      {'name': 'gcmole_v3', 'variant': 'arm64', 'shards': 4},
     ],
   },
   'V8 Linux - arm64 - sim - debug': {

@@ -1,6 +1,6 @@
 /* Copyright (c) 2021-2022 The Khronos Group Inc.
- * Copyright (c) 2021-2022 Valve Corporation
- * Copyright (c) 2021-2022 LunarG, Inc.
+ * Copyright (c) 2021-2023 Valve Corporation
+ * Copyright (c) 2021-2023 LunarG, Inc.
  * Copyright (C) 2021-2022 Google Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,8 +14,6 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *
- * Author: Jeremy Gebben <jeremyg@lunarg.com>
  */
 #pragma once
 
@@ -58,6 +56,7 @@ enum class Func {
     vkCreateRenderPass2,
     vkQueueBindSparse,
     vkSignalSemaphore,
+    vkQueuePresentKHR,
 };
 
 const std::string& String(Func func);
@@ -79,6 +78,7 @@ enum class Struct {
     VkSemaphoreSignalInfo,
     VkSemaphoreSubmitInfo,
     VkProtectedSubmitInfo,
+    VkPresentInfoKHR,
 };
 
 const std::string& String(Struct s);
@@ -128,7 +128,7 @@ enum class Field {
 const std::string& String(Field field);
 
 struct Location {
-    static const uint32_t kNoIndex = std::numeric_limits<uint32_t>::max();
+    static const uint32_t kNoIndex = vvl::kU32Max;
 
     // name of the vulkan function we're checking
     Func function;

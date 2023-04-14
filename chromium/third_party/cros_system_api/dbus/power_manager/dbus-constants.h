@@ -62,6 +62,8 @@ const char kSetExternalDisplayALSBrightnessMethod[] =
     "SetExternalDisplayALSBrightness";
 const char kGetExternalDisplayALSBrightnessMethod[] =
     "GetExternalDisplayALSBrightness";
+const char kGetBatterySaverModeState[] = "GetBatterySaverModeState";
+const char kSetBatterySaverModeState[] = "SetBatterySaverModeState";
 
 // Signals emitted by powerd.
 const char kScreenBrightnessChangedSignal[] = "ScreenBrightnessChanged";
@@ -83,6 +85,7 @@ const char kAmbientColorTemperatureChangedSignal[] =
 const char kLidClosedSignal[] = "LidClosed";
 const char kLidOpenedSignal[] = "LidOpened";
 const char kThermalEventSignal[] = "ThermalEvent";
+const char kBatterySaverModeStateChanged[] = "BatterySaverModeStateChanged";
 
 // Values
 const int kBrightnessTransitionGradual = 1;

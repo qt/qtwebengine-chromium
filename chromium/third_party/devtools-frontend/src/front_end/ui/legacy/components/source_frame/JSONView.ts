@@ -38,8 +38,8 @@ import jsonViewStyles from './jsonView.css.legacy.js';
 
 const UIStrings = {
   /**
-  *@description Text to find an item
-  */
+   *@description Text to find an item
+   */
   find: 'Find',
 };
 const str_ = i18n.i18n.registerUIStrings('ui/legacy/components/source_frame/JSONView.ts', UIStrings);
@@ -211,7 +211,7 @@ export class JSONView extends UI.Widget.VBox implements UI.SearchableView.Search
     this.searchableView.updateCurrentMatchIndex(index);
   }
 
-  searchCanceled(): void {
+  onSearchCanceled(): void {
     this.searchRegex = null;
     this.currentSearchTreeElements = [];
 
@@ -229,7 +229,7 @@ export class JSONView extends UI.Widget.VBox implements UI.SearchableView.Search
   performSearch(searchConfig: UI.SearchableView.SearchConfig, shouldJump: boolean, jumpBackwards?: boolean): void {
     let newIndex: number = this.currentSearchFocusIndex;
     const previousSearchFocusElement = this.currentSearchTreeElements[newIndex];
-    this.searchCanceled();
+    this.onSearchCanceled();
     this.searchRegex = searchConfig.toSearchRegex(true).regex;
 
     let element: UI.TreeOutline.TreeElement|null;

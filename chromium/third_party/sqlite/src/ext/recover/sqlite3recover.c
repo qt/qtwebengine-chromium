@@ -761,6 +761,7 @@ static void recoverEscapeCrnl(
   sqlite3_value **argv
 ){
   const char *zText = (const char*)sqlite3_value_text(argv[0]);
+  (void)argc;
   if( zText && zText[0]=='\'' ){
     int nText = sqlite3_value_bytes(argv[0]);
     int i;
@@ -913,7 +914,7 @@ static void recoverTransferSettings(sqlite3_recover *p){
       return;
     }
 
-    for(ii=0; ii<sizeof(aPragma)/sizeof(aPragma[0]); ii++){
+    for(ii=0; ii<(int)(sizeof(aPragma)/sizeof(aPragma[0])); ii++){
       const char *zPrag = aPragma[ii];
       sqlite3_stmt *p1 = 0;
       p1 = recoverPreparePrintf(p, p->dbIn, "PRAGMA %Q.%s", p->zDb, zPrag);
@@ -991,7 +992,9 @@ static int recoverOpenOutput(sqlite3_recover *p){
   }
 
   /* Register the custom user-functions with the output handle. */
-  for(ii=0; p->errCode==SQLITE_OK && ii<sizeof(aFunc)/sizeof(aFunc[0]); ii++){
+  for(ii=0;
+      p->errCode==SQLITE_OK && ii<(int)(sizeof(aFunc)/sizeof(aFunc[0]));
+      ii++){
     p->errCode = sqlite3_create_function(db, aFunc[ii].zName, 
         aFunc[ii].nArg, SQLITE_UTF8, (void*)p, aFunc[ii].xFunc, 0, 0
     );
@@ -2017,6 +2020,7 @@ static void recoverFinalCleanup(sqlite3_recover *p){
   p->pTblList = 0;
   sqlite3_finalize(p->pGetPage);
   p->pGetPage = 0;
+  sqlite3_file_control(p->dbIn, p->zDb, SQLITE_FCNTL_RESET_CACHE, 0);
 
   {
 #ifndef NDEBUG
@@ -2315,6 +2319,7 @@ static int recoverVfsRead(sqlite3_file *pFd, void *aBuf, int nByte, i64 iOff){
       **
       **   + first freelist page (32-bits at offset 32)
       **   + size of freelist (32-bits at offset 36)
+      **   + the wal-mode flags (16-bits at offset 18)
       **
       ** We also try to preserve the auto-vacuum, incr-value, user-version
       ** and application-id fields - all 32 bit quantities at offsets 
@@ -2378,14 +2383,15 @@ static int recoverVfsRead(sqlite3_file *pFd, void *aBuf, int nByte, i64 iOff){
       if( p->pPage1Cache ){
         p->pPage1Disk = &p->pPage1Cache[nByte];
         memcpy(p->pPage1Disk, aBuf, nByte);
-
+        aHdr[18] = a[18];
+        aHdr[19] = a[19];
         recoverPutU32(&aHdr[28], dbsz);
         recoverPutU32(&aHdr[56], enc);
         recoverPutU16(&aHdr[105], pgsz-nReserve);
         if( pgsz==65536 ) pgsz = 1;
         recoverPutU16(&aHdr[16], pgsz);
         aHdr[20] = nReserve;
-        for(ii=0; ii<sizeof(aPreserve)/sizeof(aPreserve[0]); ii++){
+        for(ii=0; ii<(int)(sizeof(aPreserve)/sizeof(aPreserve[0])); ii++){
           memcpy(&aHdr[aPreserve[ii]], &a[aPreserve[ii]], 4);
         }
         memcpy(aBuf, aHdr, sizeof(aHdr));
@@ -2509,10 +2515,16 @@ static int recoverVfsFetch(
   int iAmt, 
   void **pp
 ){
+  (void)pFd;
+  (void)iOff;
+  (void)iAmt;
   *pp = 0;
   return SQLITE_OK;
 }
 static int recoverVfsUnfetch(sqlite3_file *pFd, sqlite3_int64 iOff, void *p){
+  (void)pFd;
+  (void)iOff;
+  (void)p;
   return SQLITE_OK;
 }
 
@@ -2574,6 +2586,7 @@ static void recoverStep(sqlite3_recover *p){
       recoverOpenOutput(p);
 
       /* Open transactions on both the input and output databases. */
+      sqlite3_file_control(p->dbIn, p->zDb, SQLITE_FCNTL_RESET_CACHE, 0);
       recoverExec(p, p->dbIn, "PRAGMA writable_schema = on");
       recoverExec(p, p->dbIn, "BEGIN");
       if( p->errCode==SQLITE_OK ) p->bCloseTransaction = 1;

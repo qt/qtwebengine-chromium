@@ -46,6 +46,7 @@
 #include "src/objects/turbofan-types.h"
 #include "src/objects/turboshaft-types.h"
 #include "src/regexp/regexp.h"
+#include "src/utils/allocation.h"
 
 #if V8_ENABLE_WEBASSEMBLY
 #include "src/wasm/wasm-objects.h"
@@ -89,8 +90,10 @@ bool IsMutableMap(InstanceType instance_type, ElementsKind elements_kind) {
 
 bool SetupIsolateDelegate::SetupHeapInternal(Isolate* isolate) {
   auto heap = isolate->heap();
-  if (!isolate->read_only_heap()->init_complete()) {
+  if (!isolate->read_only_heap()->roots_init_complete()) {
     if (!heap->CreateReadOnlyHeapObjects()) return false;
+    isolate->VerifyStaticRoots();
+    isolate->read_only_heap()->OnCreateRootsComplete(isolate);
   }
 #ifdef DEBUG
   auto ro_size = heap->read_only_space()->Size();
@@ -249,8 +252,7 @@ void Heap::FinalizePartialMap(Map map) {
   map.set_dependent_code(DependentCode::empty_dependent_code(roots));
   map.set_raw_transitions(MaybeObject::FromSmi(Smi::zero()));
   map.SetInstanceDescriptors(isolate(), roots.empty_descriptor_array(), 0);
-  map.set_prototype(roots.null_value());
-  map.set_constructor_or_back_pointer(roots.null_value());
+  map.init_prototype_and_constructor_or_back_pointer(roots);
 }
 
 AllocationResult Heap::Allocate(Handle<Map> map,
@@ -439,8 +441,6 @@ bool Heap::CreateInitialReadOnlyMaps() {
     ALLOCATE_VARSIZE_MAP(FEEDBACK_VECTOR_TYPE, feedback_vector)
     ALLOCATE_PRIMITIVE_MAP(HEAP_NUMBER_TYPE, HeapNumber::kSize, heap_number,
                            Context::NUMBER_FUNCTION_INDEX)
-    ALLOCATE_PRIMITIVE_MAP(SYMBOL_TYPE, Symbol::kSize, symbol,
-                           Context::SYMBOL_FUNCTION_INDEX)
     ALLOCATE_MAP(FOREIGN_TYPE, Foreign::kSize, foreign)
     ALLOCATE_MAP(MEGA_DOM_HANDLER_TYPE, MegaDomHandler::kSize, mega_dom_handler)
 
@@ -455,6 +455,9 @@ bool Heap::CreateInitialReadOnlyMaps() {
     ALLOCATE_MAP(ODDBALL_TYPE, Oddball::kSize, self_reference_marker);
     ALLOCATE_MAP(ODDBALL_TYPE, Oddball::kSize, basic_block_counters_marker);
     ALLOCATE_VARSIZE_MAP(BIGINT_TYPE, bigint);
+
+    ALLOCATE_PRIMITIVE_MAP(SYMBOL_TYPE, Symbol::kSize, symbol,
+                           Context::SYMBOL_FUNCTION_INDEX)
 
     for (unsigned i = 0; i < arraysize(string_type_table); i++) {
       const StringTypeTable& entry = string_type_table[i];
@@ -495,7 +498,7 @@ bool Heap::CreateInitialReadOnlyMaps() {
     TORQUE_DEFINED_VARSIZE_INSTANCE_TYPE_LIST(TORQUE_ALLOCATE_VARSIZE_MAP);
 #undef TORQUE_ALLOCATE_VARSIZE_MAP
 
-    ALLOCATE_VARSIZE_MAP(CODE_TYPE, code)
+    ALLOCATE_VARSIZE_MAP(INSTRUCTION_STREAM_TYPE, instruction_stream)
 
     ALLOCATE_MAP(CELL_TYPE, Cell::kSize, cell);
     {
@@ -568,8 +571,7 @@ bool Heap::CreateInitialReadOnlyMaps() {
                  source_text_module)
     ALLOCATE_MAP(SYNTHETIC_MODULE_TYPE, SyntheticModule::kSize,
                  synthetic_module)
-    ALLOCATE_MAP(CODE_DATA_CONTAINER_TYPE, CodeDataContainer::kSize,
-                 code_data_container)
+    ALLOCATE_MAP(CODE_TYPE, Code::kSize, code)
 
     IF_WASM(ALLOCATE_MAP, WASM_API_FUNCTION_REF_TYPE, WasmApiFunctionRef::kSize,
             wasm_api_function_ref)
@@ -587,6 +589,7 @@ bool Heap::CreateInitialReadOnlyMaps() {
             wasm_type_info)
     IF_WASM(ALLOCATE_MAP, WASM_CONTINUATION_OBJECT_TYPE,
             WasmContinuationObject::kSize, wasm_continuation_object)
+    IF_WASM(ALLOCATE_MAP, WASM_NULL_TYPE, kVariableSizeSentinel, wasm_null);
 
     ALLOCATE_MAP(WEAK_CELL_TYPE, WeakCell::kSize, weak_cell)
   }
@@ -599,10 +602,11 @@ bool Heap::CreateInitialReadOnlyMaps() {
         ArrayList::SizeFor(ArrayList::kFirstIndex), AllocationType::kReadOnly);
     if (!alloc.To(&obj)) return false;
     obj.set_map_after_allocation(roots.array_list_map(), SKIP_WRITE_BARRIER);
-    ArrayList::cast(obj).set_length(ArrayList::kFirstIndex);
-    ArrayList::cast(obj).SetLength(0);
+    // Unchecked to skip failing checks since required roots are uninitialized.
+    ArrayList::unchecked_cast(obj).set_length(ArrayList::kFirstIndex);
+    ArrayList::unchecked_cast(obj).SetLength(0);
   }
-  set_empty_array_list(ArrayList::cast(obj));
+  set_empty_array_list(ArrayList::unchecked_cast(obj));
 
   {
     AllocationResult alloc =
@@ -731,15 +735,20 @@ void Heap::CreateInitialReadOnlyObjects() {
   // For static roots we need the r/o space to have identical layout on all
   // compile targets. Varying objects are padded to their biggest size.
   auto StaticRootsEnsureAllocatedSize = [&](HeapObject obj, int required) {
-#ifdef V8_STATIC_ROOTS_BOOL
-    if (required == obj.Size()) return;
-    CHECK_LT(obj.Size(), required);
-    int filler_size = required - obj.Size();
-    auto filler = factory->NewFillerObject(filler_size,
-                                           AllocationAlignment::kTaggedAligned,
-                                           AllocationType::kReadOnly);
-    CHECK_EQ(filler->address() + filler->Size(), obj.address() + required);
-#endif
+    if (V8_STATIC_ROOTS_BOOL || v8_flags.static_roots_src) {
+      if (required == obj.Size()) return;
+      CHECK_LT(obj.Size(), required);
+      int filler_size = required - obj.Size();
+
+      HeapObject filler =
+          allocator()->AllocateRawWith<HeapAllocator::kRetryOrFail>(
+              filler_size, AllocationType::kReadOnly,
+              AllocationOrigin::kRuntime, AllocationAlignment::kTaggedAligned);
+      CreateFillerObjectAt(filler.address(), filler_size,
+                           ClearFreedMemoryMode::kClearFreedMemory);
+
+      CHECK_EQ(filler.address() + filler.Size(), obj.address() + required);
+    }
   };
 
   // The -0 value must be set before NewNumber works.
@@ -856,19 +865,19 @@ void Heap::CreateInitialReadOnlyObjects() {
 
   {
     HandleScope handle_scope(isolate());
-#define PUBLIC_SYMBOL_INIT(_, name, description)                         \
-  Handle<Symbol> name = factory->NewSymbol(AllocationType::kReadOnly);   \
-  Handle<String> name##d = factory->InternalizeUtf8String(#description); \
-  name->set_description(*name##d);                                       \
+#define PUBLIC_SYMBOL_INIT(_, name, description)                           \
+  Handle<Symbol> name = factory->NewSymbol(AllocationType::kReadOnly);     \
+  Handle<String> name##d = factory->InternalizeUtf8String(#description);   \
+  TaggedField<Object>::store(*name, Symbol::kDescriptionOffset, *name##d); \
   roots_table()[RootIndex::k##name] = name->ptr();
 
     PUBLIC_SYMBOL_LIST_GENERATOR(PUBLIC_SYMBOL_INIT, /* not used */)
 
-#define WELL_KNOWN_SYMBOL_INIT(_, name, description)                     \
-  Handle<Symbol> name = factory->NewSymbol(AllocationType::kReadOnly);   \
-  Handle<String> name##d = factory->InternalizeUtf8String(#description); \
-  name->set_is_well_known_symbol(true);                                  \
-  name->set_description(*name##d);                                       \
+#define WELL_KNOWN_SYMBOL_INIT(_, name, description)                       \
+  Handle<Symbol> name = factory->NewSymbol(AllocationType::kReadOnly);     \
+  Handle<String> name##d = factory->InternalizeUtf8String(#description);   \
+  name->set_is_well_known_symbol(true);                                    \
+  TaggedField<Object>::store(*name, Symbol::kDescriptionOffset, *name##d); \
   roots_table()[RootIndex::k##name] = name->ptr();
 
     WELL_KNOWN_SYMBOL_LIST_GENERATOR(WELL_KNOWN_SYMBOL_INIT, /* not used */)
@@ -974,27 +983,59 @@ void Heap::CreateInitialReadOnlyObjects() {
       ScopeInfo::CreateForNativeContext(isolate());
   set_native_scope_info(*native_scope_info);
 
-  // Canonical off-heap trampoline data
-  auto reloc_info = Builtins::GenerateOffHeapTrampolineRelocInfo(isolate_);
-  set_off_heap_trampoline_relocation_info(*reloc_info);
-  StaticRootsEnsureAllocatedSize(*reloc_info, 4 * kTaggedSize);
+  Handle<ScopeInfo> shadow_realm_scope_info =
+      ScopeInfo::CreateForShadowRealmNativeContext(isolate());
+  set_shadow_realm_scope_info(*shadow_realm_scope_info);
 
-  if (V8_EXTERNAL_CODE_SPACE_BOOL) {
-    // These roots will not be used.
-    HeapObject no_container = *isolate()->factory()->undefined_value();
-    set_trampoline_trivial_code_data_container(no_container);
-    set_trampoline_promise_rejection_code_data_container(no_container);
+  // Initialize the wasm null_value.
 
-  } else {
-    set_trampoline_trivial_code_data_container(
-        *isolate()->factory()->NewCodeDataContainer(0,
-                                                    AllocationType::kReadOnly));
+#ifdef V8_ENABLE_WEBASSEMBLY
+  // Allocate the wasm-null object. It is a regular V8 heap object contained in
+  // a V8 page. It is large enough so that its payload (other than its map word)
+  // can be mprotected on OS page granularity.
+  // We adjust the layout such that we have a filler object in the current OS
+  // page, and the wasm-null map word at the end of the current OS page. The
+  // payload then is contained on a separate OS page which can be protected.
 
-    set_trampoline_promise_rejection_code_data_container(
-        *isolate()->factory()->NewCodeDataContainer(
-            Code::IsPromiseRejectionField::encode(true),
-            AllocationType::kReadOnly));
+  // Ensure all of the following lands on the same V8 page.
+  constexpr int kOffsetAfterMapWord = HeapObject::kMapOffset + kTaggedSize;
+  constexpr size_t kLargestPossibleOSPageSize = 64 * KB;
+  static_assert(kLargestPossibleOSPageSize >= kMinimumOSPageSize);
+  read_only_space_->EnsureSpaceForAllocation(
+      kLargestPossibleOSPageSize + WasmNull::kSize - kOffsetAfterMapWord);
+  Address next_page =
+      RoundUp(read_only_space_->top(), kLargestPossibleOSPageSize);
+  CHECK_EQ(kOffsetAfterMapWord % kObjectAlignment, 0);
+
+  // Add some filler to end up right before an OS page boundary.
+  {
+    int filler_size = static_cast<int>(next_page - read_only_space_->top() -
+                                       kOffsetAfterMapWord);
+    HeapObject filler =
+        allocator()->AllocateRawWith<HeapAllocator::kRetryOrFail>(
+            filler_size, AllocationType::kReadOnly, AllocationOrigin::kRuntime,
+            AllocationAlignment::kTaggedAligned);
+    CreateFillerObjectAt(filler.address(), filler_size,
+                         ClearFreedMemoryMode::kClearFreedMemory);
+    CHECK_EQ(read_only_space_->top() + kOffsetAfterMapWord, next_page);
   }
+
+  // Finally, allocate the wasm-null object.
+  {
+    HeapObject obj;
+    CHECK(AllocateRaw(WasmNull::kSize, AllocationType::kReadOnly).To(&obj));
+    obj.set_map_after_allocation(roots.wasm_null_map(), SKIP_WRITE_BARRIER);
+    MemsetUint32(
+        reinterpret_cast<uint32_t*>(obj.ptr() - kHeapObjectTag + kTaggedSize),
+        0, (WasmNull::kSize - kTaggedSize) / sizeof(uint32_t));
+    set_wasm_null(WasmNull::cast(obj));
+
+    CHECK_EQ(read_only_space_->top() % kLargestPossibleOSPageSize, 0);
+  }
+#endif
+
+  // We prefer to fit all of read-only space in one page.
+  CHECK_EQ(read_only_space_->pages().size(), 1);
 }
 
 void Heap::CreateInitialMutableObjects() {
@@ -1014,7 +1055,8 @@ void Heap::CreateInitialMutableObjects() {
   set_number_string_cache(*factory->NewFixedArray(
       kInitialNumberStringCacheSize * 2, AllocationType::kOld));
 
-  set_basic_block_profiling_data(roots.empty_array_list());
+  // Unchecked to skip failing checks since required roots are uninitialized.
+  set_basic_block_profiling_data(roots.unchecked_empty_array_list());
 
   // Allocate cache for string split and regexp-multiple.
   set_string_split_cache(*factory->NewFixedArray(
@@ -1075,6 +1117,7 @@ void Heap::CreateInitialMutableObjects() {
   set_set_iterator_protector(*factory->NewProtector());
   set_string_iterator_protector(*factory->NewProtector());
   set_string_length_protector(*factory->NewProtector());
+  set_number_string_prototype_no_replace_protector(*factory->NewProtector());
   set_typed_array_species_protector(*factory->NewProtector());
 
   set_serialized_objects(roots.empty_fixed_array());

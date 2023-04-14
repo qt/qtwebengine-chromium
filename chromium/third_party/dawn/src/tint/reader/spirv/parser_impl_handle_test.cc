@@ -2937,7 +2937,7 @@ INSTANTIATE_TEST_SUITE_P(
 
 INSTANTIATE_TEST_SUITE_P(
     // When SPIR-V wants the result type to be unsigned, we have to
-    // insert a type initializer or bitcast for WGSL to do the type
+    // insert a value constructor or bitcast for WGSL to do the type
     // coercion. But the algorithm already does that as a matter
     // of course.
     ImageQuerySizeLod_NonArrayed_UnsignedResult_SignedLevel,
@@ -3002,8 +3002,7 @@ INSTANTIATE_TEST_SUITE_P(ImageQueryLevels_SignedResult,
                               R"(let x_99 : i32 = i32(textureNumLevels(x_20));)"}}));
 
 INSTANTIATE_TEST_SUITE_P(
-    // Spot check that a type conversion is inserted when SPIR-V asks for
-    // an unsigned int result.
+    // Spot check that a value conversion is inserted when SPIR-V asks for an unsigned int result.
     ImageQueryLevels_UnsignedResult,
     SpvParserHandleTest_SampledImageAccessTest,
     ::testing::ValuesIn(std::vector<ImageAccessCase>{
@@ -3828,6 +3827,82 @@ return;
     ASSERT_EQ(expect, got);
 }
 
+TEST_F(SpvParserHandleTest, SamplerLoadedInEnclosingConstruct_DontGenerateVar) {
+    // crbug.com/tint/1839
+    // When a sampler is loaded in an enclosing structued construct, don't
+    // generate a variable for it. The ordinary tracing logic will find the
+    // originating variable anyway.
+    const auto assembly = Preamble() + R"(
+     OpEntryPoint Fragment %100 "main"
+     OpExecutionMode %100 OriginUpperLeft
+
+     OpName %var_im "var_im"
+     OpName %var_s "var_s"
+     OpDecorate %var_im DescriptorSet 0
+     OpDecorate %var_im Binding 0
+     OpDecorate %var_s DescriptorSet 0
+     OpDecorate %var_s Binding 1
+  %float = OpTypeFloat 32
+  %v4float = OpTypeVector %float 4
+  %v2float = OpTypeVector %float 2
+  %v2_0 = OpConstantNull %v2float
+     %im = OpTypeImage %float 2D 0 0 0 1 Unknown
+     %si = OpTypeSampledImage %im
+      %s = OpTypeSampler
+ %ptr_im = OpTypePointer UniformConstant %im
+  %ptr_s = OpTypePointer UniformConstant %s
+ %var_im = OpVariable %ptr_im UniformConstant
+  %var_s = OpVariable %ptr_s UniformConstant
+   %void = OpTypeVoid
+ %voidfn = OpTypeFunction %void
+ %ptr_v4 = OpTypePointer Function %v4float
+   %bool = OpTypeBool
+   %true = OpConstantTrue %bool
+    %int = OpTypeInt 32 1
+  %int_0 = OpConstant %int 0
+
+    %100 = OpFunction %void None %voidfn
+  %entry = OpLabel
+      %1 = OpLoad %im %var_im
+      %2 = OpLoad %s %var_s
+           OpSelectionMerge %90 None
+           OpSwitch %int_0 %20
+
+     %20 = OpLabel
+           OpSelectionMerge %80 None
+           OpBranchConditional %true %30 %80
+
+     %30 = OpLabel
+    %si0 = OpSampledImage %si %1 %2
+     %t0 = OpImageSampleImplicitLod %v4float %si0 %v2_0
+           OpBranch %80
+
+     %80 = OpLabel
+           OpBranch %90
+
+     %90 = OpLabel
+           OpReturn
+           OpFunctionEnd
+  )";
+    auto p = parser(test::Assemble(assembly));
+    EXPECT_TRUE(p->BuildAndParseInternalModule()) << assembly;
+    auto fe = p->function_emitter(100);
+    EXPECT_TRUE(fe.EmitBody()) << p->error();
+    EXPECT_TRUE(p->error().empty()) << p->error();
+    auto ast_body = fe.ast_body();
+    const auto got = test::ToString(p->program(), ast_body);
+    auto* expect = R"(switch(0i) {
+  default: {
+    if (true) {
+      let x_24 : vec4<f32> = textureSample(var_im, var_s, vec2<f32>());
+    }
+  }
+}
+return;
+)";
+    ASSERT_EQ(expect, got);
+}
+
 TEST_F(SpvParserHandleTest, ImageCoordinateCanBeHoistedConstant) {
     // Demonstrates fix for crbug.com/tint/1646
     // The problem is the coordinate for an image operation
@@ -3907,6 +3982,93 @@ x_900 = 0.0f;
 if (true) {
   if (true) {
     let x_18 : vec4<f32> = textureSample(x_20, x_10, x_900);
+  }
+}
+return;
+)";
+    ASSERT_EQ(expect, got);
+}
+
+TEST_F(SpvParserHandleTest, ImageCoordinateCanBeHoistedVector) {
+    // Demonstrates fix for crbug.com/tint/1712
+    // The problem is the coordinate for an image operation
+    // can be a combinatorial value that has been hoisted out
+    // to a 'var' declaration.
+    //
+    // In this test (and the original case form the bug), the
+    // definition for the value is in an outer construct, and
+    // the image operation using it is in a doubly nested
+    // construct.
+    //
+    // The coordinate handling has to unwrap the ref type it
+    // made for the 'var' declaration.
+    const auto assembly = Preamble() + R"(
+
+OpEntryPoint Fragment %100 "main"
+OpExecutionMode %100 OriginUpperLeft
+OpDecorate %10 DescriptorSet 0
+OpDecorate %10 Binding 0
+OpDecorate %20 DescriptorSet 2
+OpDecorate %20 Binding 1
+
+%void = OpTypeVoid
+%voidfn = OpTypeFunction %void
+
+%bool = OpTypeBool
+%true = OpConstantTrue %bool
+%float = OpTypeFloat 32
+
+%v2float = OpTypeVector %float 2
+%v4float = OpTypeVector %float 4
+
+%v2float_null = OpConstantNull %v2float
+
+%sampler = OpTypeSampler
+%ptr_sampler = OpTypePointer UniformConstant %sampler
+%im_ty = OpTypeImage %float 1D 0 0 0 1 Unknown
+%ptr_im_ty = OpTypePointer UniformConstant %im_ty
+%si_ty = OpTypeSampledImage %im_ty
+
+%10 = OpVariable %ptr_sampler UniformConstant
+%20 = OpVariable %ptr_im_ty UniformConstant
+
+%100 = OpFunction %void None %voidfn
+%entry = OpLabel
+%900 = OpCopyObject %v2float %v2float_null        ; definition here
+OpSelectionMerge %99 None
+OpBranchConditional %true %40 %99
+
+  %40 = OpLabel
+  OpSelectionMerge %80 None
+  OpBranchConditional %true %50 %80
+
+    %50 = OpLabel
+    %sam = OpLoad %sampler %10
+    %im = OpLoad %im_ty %20
+    %sampled_image = OpSampledImage %si_ty %im %sam
+    %result = OpImageSampleImplicitLod %v4float %sampled_image %900 ; usage here
+    OpBranch %80
+
+  %80 = OpLabel
+  OpBranch %99
+
+%99 = OpLabel
+OpReturn
+OpFunctionEnd
+
+  )";
+    auto p = parser(test::Assemble(assembly));
+    EXPECT_TRUE(p->BuildAndParseInternalModule()) << assembly;
+    auto fe = p->function_emitter(100);
+    EXPECT_TRUE(fe.EmitBody()) << p->error();
+    EXPECT_TRUE(p->error().empty()) << p->error();
+    auto ast_body = fe.ast_body();
+    const auto got = test::ToString(p->program(), ast_body);
+    auto* expect = R"(var x_900 : vec2<f32>;
+x_900 = vec2<f32>();
+if (true) {
+  if (true) {
+    let x_19 : vec4<f32> = textureSample(x_20, x_10, x_900.x);
   }
 }
 return;

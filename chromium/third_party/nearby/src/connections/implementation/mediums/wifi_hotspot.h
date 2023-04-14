@@ -23,7 +23,6 @@
 #include "internal/platform/mutex.h"
 #include "internal/platform/wifi_hotspot.h"
 
-namespace location {
 namespace nearby {
 namespace connections {
 
@@ -32,7 +31,7 @@ class WifiHotspot {
   // Callback that is invoked when a new connection is accepted.
   struct AcceptedConnectionCallback {
     std::function<void(const std::string& service_id, WifiHotspotSocket socket)>
-        accepted_cb = DefaultCallback<const std::string&, WifiHotspotSocket>();
+        accepted_cb = [](const std::string&, WifiHotspotSocket) {};
   };
 
   WifiHotspot() : is_hotspot_started_(false), is_connected_to_hotspot_(false) {}
@@ -42,7 +41,6 @@ class WifiHotspot {
   WifiHotspot& operator=(const WifiHotspot&) = delete;
   WifiHotspot(WifiHotspot&&) = delete;
   WifiHotspot& operator=(WifiHotspot&&) = delete;
-
 
   // Returns true, if WifiHotspot communications are supported by a platform.
   bool IsAPAvailable() const ABSL_LOCKS_EXCLUDED(mutex_);
@@ -115,6 +113,5 @@ class WifiHotspot {
 
 }  // namespace connections
 }  // namespace nearby
-}  // namespace location
 
 #endif  // CORE_INTERNAL_MEDIUMS_WIFI_HOTSPOT_H_

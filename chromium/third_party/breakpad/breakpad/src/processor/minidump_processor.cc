@@ -44,10 +44,13 @@
 #include "google_breakpad/processor/process_state.h"
 #include "google_breakpad/processor/exploitability.h"
 #include "google_breakpad/processor/stack_frame_symbolizer.h"
-#include "processor/disassembler_objdump.h"
 #include "processor/logging.h"
 #include "processor/stackwalker_x86.h"
 #include "processor/symbolic_constants_win.h"
+
+#ifdef __linux__
+#include "processor/disassembler_objdump.h"
+#endif
 
 namespace google_breakpad {
 
@@ -760,6 +763,8 @@ bool MinidumpProcessor::GetProcessCreateTime(Minidump* dump,
   return true;
 }
 
+#ifdef __linux__
+
 static bool IsCanonicalAddress(uint64_t address) {
   uint64_t sign_bit = (address >> 63) & 1;
   for (int shift = 48; shift < 63; ++shift) {
@@ -832,6 +837,7 @@ static void CalculateFaultAddressFromInstruction(Minidump* dump,
     *address = write_address;
   }
 }
+#endif // __linux__
 
 // static
 string MinidumpProcessor::GetCrashReason(Minidump* dump, uint64_t* address,
@@ -1241,6 +1247,14 @@ string MinidumpProcessor::GetCrashReason(Minidump* dump, uint64_t* address,
           break;
         case MD_EXCEPTION_MAC_RPC_ALERT:
           reason = "EXC_RPC_ALERT / ";
+          reason.append(flags_string);
+          break;
+        case MD_EXCEPTION_MAC_RESOURCE:
+          reason = "EXC_RESOURCE / ";
+          reason.append(flags_string);
+          break;
+        case MD_EXCEPTION_MAC_GUARD:
+          reason = "EXC_GUARD / ";
           reason.append(flags_string);
           break;
         case MD_EXCEPTION_MAC_SIMULATED:
@@ -2062,6 +2076,7 @@ string MinidumpProcessor::GetCrashReason(Minidump* dump, uint64_t* address,
       static_cast<MDCPUArchitecture>(raw_system_info->processor_architecture),
       *address);
 
+#ifdef __linux__
     // For invalid accesses to non-canonical addresses, amd64 cpus don't provide
     // the fault address, so recover it from the disassembly and register state
     // if possible.
@@ -2070,6 +2085,7 @@ string MinidumpProcessor::GetCrashReason(Minidump* dump, uint64_t* address,
         && std::numeric_limits<uint64_t>::max() == *address) {
       CalculateFaultAddressFromInstruction(dump, address);
     }
+#endif // __linux__
   }
 
   return reason;

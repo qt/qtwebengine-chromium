@@ -33,17 +33,34 @@ import {
 import * as i18n from '../../../core/i18n/i18n.js';
 const UIStrings = {
   /**
-  *@description A context menu item in the Data Grid of a data grid
-  */
+   *@description A context menu item in the Data Grid of a data grid
+   */
   sortBy: 'Sort By',
   /**
-  *@description A context menu item in data grids to reset the columns to their default weight
-  */
+   *@description A context menu item in data grids to reset the columns to their default weight
+   */
   resetColumns: 'Reset Columns',
   /**
-  *@description A context menu item in data grids to list header options.
-  */
+   *@description A context menu item in data grids to list header options.
+   */
   headerOptions: 'Header Options',
+  /**
+   *@description Text for screen reader to announce when focusing on a sortable column in data grid.
+   *@example {ascending} PH1
+   */
+  enterToSort: 'Column sort state: {PH1}. Press enter to apply sorting filter',
+  /**
+   *@description The current sort state of a column in data grid
+   */
+  sortAsc: 'ascending',
+  /**
+   *@description The current sort state of a column in data grid
+   */
+  sortDesc: 'descending',
+  /**
+   *@description The current sort state of a column in data grid
+   */
+  sortNone: 'none',
 };
 const str_ = i18n.i18n.registerUIStrings('ui/components/data_grid/DataGrid.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
@@ -59,6 +76,7 @@ export interface DataGridData {
   contextMenus?: DataGridContextMenusConfiguration;
   label?: string;
   paddingRowsCount?: number;
+  showScrollbar?: boolean;
 }
 
 const enum UserScrollState {
@@ -83,6 +101,7 @@ export class DataGrid extends HTMLElement {
   #contextMenus?: DataGridContextMenusConfiguration = undefined;
   #label?: string = undefined;
   #paddingRowsCount = 10;
+  #showScrollbar?: boolean = false;
   #currentResize: {
     rightCellCol: HTMLTableColElement,
     leftCellCol: HTMLTableColElement,
@@ -141,6 +160,7 @@ export class DataGrid extends HTMLElement {
       contextMenus: this.#contextMenus,
       label: this.#label,
       paddingRowsCount: this.#paddingRowsCount,
+      showScrollbar: this.#showScrollbar,
     };
   }
 
@@ -153,6 +173,7 @@ export class DataGrid extends HTMLElement {
     this.#sortState = data.activeSort;
     this.#contextMenus = data.contextMenus;
     this.#label = data.label;
+    this.#showScrollbar = data.showScrollbar;
 
     /**
      * On first render, now we have data, we can figure out which cell is the
@@ -282,6 +303,24 @@ export class DataGrid extends HTMLElement {
      * focus, ensure we actually focus the cell.
      */
     this.#focusTableCellInDOM(tableCell);
+    // If it's a sortable column header, screen reader announce the information for sorting
+    if (newRowIndex === 0 && this.#columns[newColumnIndex].sortable) {
+      const localizedSortState = this.#getLocalizedSortState(this.#columns[newColumnIndex]);
+      UI.ARIAUtils.alert(i18nString(UIStrings.enterToSort, {PH1: localizedSortState || ''}));
+    }
+  }
+
+  #getLocalizedSortState(col: Column): string|undefined {
+    const currentSortLabel = this.#ariaSortForHeader(col);
+    switch (currentSortLabel) {
+      case 'ascending':
+        return UIStrings.sortAsc;
+      case 'descending':
+        return UIStrings.sortDesc;
+      case 'none':
+        return UIStrings.sortNone;
+    }
+    return undefined;
   }
 
   #onTableKeyDown(event: KeyboardEvent): void {
@@ -706,6 +745,10 @@ export class DataGrid extends HTMLElement {
     const renderableRows = nonHiddenRows.filter((_, idx) => idx >= topVisibleRow && idx <= bottomVisibleRow);
     const indexOfFirstVisibleColumn = this.#columns.findIndex(col => col.visible);
     const anyColumnsSortable = this.#columns.some(col => col.sortable === true);
+    const containerClassMap = {
+      'wrapping-container': true,
+      'show-scrollbar': this.#showScrollbar === true,
+    };
 
     await coordinator.write(() => {
       // Disabled until https://crbug.com/1079231 is fixed.
@@ -713,14 +756,14 @@ export class DataGrid extends HTMLElement {
       LitHtml.render(LitHtml.html`
       ${this.#columns.map((col, columnIndex) => {
         /**
-        * We render the resizers outside of the table. One is rendered for each
-        * column, and they are positioned absolutely at the right position. They
-        * have 100% height so they sit over the entire table and can be grabbed
-        * by the user.
-        */
+         * We render the resizers outside of the table. One is rendered for each
+         * column, and they are positioned absolutely at the right position. They
+         * have 100% height so they sit over the entire table and can be grabbed
+         * by the user.
+         */
         return this.#renderResizeForCell(col, [columnIndex, 0]);
       })}
-      <div class="wrapping-container" @scroll=${this.#onScroll} @focusout=${this.#onFocusOut}>
+      <div class=${LitHtml.Directives.classMap(containerClassMap)} @scroll=${this.#onScroll} @focusout=${this.#onFocusOut}>
         <table
           aria-label=${LitHtml.Directives.ifDefined(this.#label)}
           aria-rowcount=${this.#rows.length}
@@ -766,6 +809,7 @@ export class DataGrid extends HTMLElement {
                   }}
                   title=${col.title}
                   aria-sort=${LitHtml.Directives.ifDefined(this.#ariaSortForHeader(col))}
+                  role=${col.sortable ? 'button' : 'columnheader'}
                   aria-colindex=${columnIndex + 1}
                   data-row-index='0'
                   data-col-index=${columnIndex}

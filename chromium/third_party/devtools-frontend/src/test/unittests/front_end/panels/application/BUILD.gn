@@ -14,6 +14,7 @@ ts_library("application") {
     "IndexedDBModel_test.ts",
     "InterestGroupStorageView_test.ts",
     "InterestGroupTreeElement_test.ts",
+    "PreloadingTreeElement_test.ts",
     "ReportingApiReportsView_test.ts",
     "ReportingApiView_test.ts",
     "ServiceWorkerCacheModel_test.ts",

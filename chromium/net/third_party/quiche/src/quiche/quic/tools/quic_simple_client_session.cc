@@ -6,6 +6,8 @@
 
 #include <utility>
 
+#include "quiche/quic/core/quic_path_validator.h"
+
 namespace quic {
 
 QuicSimpleClientSession::QuicSimpleClientSession(
@@ -14,8 +16,20 @@ QuicSimpleClientSession::QuicSimpleClientSession(
     const QuicServerId& server_id, QuicCryptoClientConfig* crypto_config,
     QuicClientPushPromiseIndex* push_promise_index, bool drop_response_body,
     bool enable_web_transport)
-    : QuicSpdyClientSession(config, supported_versions, connection, server_id,
-                            crypto_config, push_promise_index),
+    : QuicSimpleClientSession(config, supported_versions, connection,
+                              /*visitor=*/nullptr, network_helper, server_id,
+                              crypto_config, push_promise_index,
+                              drop_response_body, enable_web_transport) {}
+
+QuicSimpleClientSession::QuicSimpleClientSession(
+    const QuicConfig& config, const ParsedQuicVersionVector& supported_versions,
+    QuicConnection* connection, QuicSession::Visitor* visitor,
+    QuicClientBase::NetworkHelper* network_helper,
+    const QuicServerId& server_id, QuicCryptoClientConfig* crypto_config,
+    QuicClientPushPromiseIndex* push_promise_index, bool drop_response_body,
+    bool enable_web_transport)
+    : QuicSpdyClientSession(config, supported_versions, connection, visitor,
+                            server_id, crypto_config, push_promise_index),
       network_helper_(network_helper),
       drop_response_body_(drop_response_body),
       enable_web_transport_(enable_web_transport) {}

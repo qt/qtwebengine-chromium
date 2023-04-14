@@ -15,6 +15,7 @@
 #include "src/base/platform/wrappers.h"
 #include "src/base/vector.h"
 #include "src/codegen/cpu-features.h"
+#include "src/common/globals.h"
 #include "src/flags/flags.h"
 #include "src/snapshot/embedded/embedded-file-writer.h"
 #include "src/snapshot/snapshot.h"
@@ -231,7 +232,7 @@ int main(int argc, char** argv) {
   std::string usage = "Usage: " + std::string(argv[0]) +
                       " [--startup-src=file]" + " [--startup-blob=file]" +
                       " [--embedded-src=file]" + " [--embedded-variant=label]" +
-                      " [--static-roots=file]" + " [--target-arch=arch]" +
+                      " [--static-roots-src=file]" + " [--target-arch=arch]" +
                       " [--target-os=os] [extras]\n\n";
   int result = i::FlagList::SetFlagsFromCommandLine(
       &argc, argv, true, HelpOptions(HelpOptions::kExit, usage.c_str()));
@@ -291,8 +292,10 @@ int main(int argc, char** argv) {
       // That's fine as far as the embedded file writer is concerned.
       WriteEmbeddedFile(&embedded_writer);
 
-      if (i::v8_flags.static_roots) {
-        i::StaticRootsTableGen::write(i_isolate, i::v8_flags.static_roots);
+      if (i::v8_flags.static_roots_src) {
+        i::StaticRootsTableGen::write(i_isolate, i::v8_flags.static_roots_src);
+      } else if (V8_STATIC_ROOTS_BOOL) {
+        i::StaticRootsTableGen::VerifyRanges(i_isolate);
       }
     }
 

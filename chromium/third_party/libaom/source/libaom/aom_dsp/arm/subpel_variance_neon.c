@@ -174,30 +174,35 @@ static void var_filter_block2d_avg(const uint8_t *src_ptr, uint8_t *dst_ptr,
       }                                                                       \
     } else if (xoffset == 4) {                                                \
       uint8_t tmp0[w * (h + padding)];                                        \
-      var_filter_block2d_avg(src, tmp0, src_stride, 1, w, h + padding);       \
       if (yoffset == 0) {                                                     \
+        var_filter_block2d_avg(src, tmp0, src_stride, 1, w, h);               \
         return aom_variance##w##x##h##_neon(tmp0, w, ref, ref_stride, sse);   \
       } else if (yoffset == 4) {                                              \
         uint8_t tmp1[w * (h + padding)];                                      \
+        var_filter_block2d_avg(src, tmp0, src_stride, 1, w, (h + padding));   \
         var_filter_block2d_avg(tmp0, tmp1, w, w, w, h);                       \
         return aom_variance##w##x##h##_neon(tmp1, w, ref, ref_stride, sse);   \
       } else {                                                                \
         uint8_t tmp1[w * (h + padding)];                                      \
+        var_filter_block2d_avg(src, tmp0, src_stride, 1, w, (h + padding));   \
         var_filter_block2d_bil_w##w(tmp0, tmp1, w, w, h, yoffset);            \
         return aom_variance##w##x##h##_neon(tmp1, w, ref, ref_stride, sse);   \
       }                                                                       \
     } else {                                                                  \
       uint8_t tmp0[w * (h + padding)];                                        \
-      var_filter_block2d_bil_w##w(src, tmp0, src_stride, 1, (h + padding),    \
-                                  xoffset);                                   \
       if (yoffset == 0) {                                                     \
+        var_filter_block2d_bil_w##w(src, tmp0, src_stride, 1, h, xoffset);    \
         return aom_variance##w##x##h##_neon(tmp0, w, ref, ref_stride, sse);   \
       } else if (yoffset == 4) {                                              \
         uint8_t tmp1[w * h];                                                  \
+        var_filter_block2d_bil_w##w(src, tmp0, src_stride, 1, (h + padding),  \
+                                    xoffset);                                 \
         var_filter_block2d_avg(tmp0, tmp1, w, w, w, h);                       \
         return aom_variance##w##x##h##_neon(tmp1, w, ref, ref_stride, sse);   \
       } else {                                                                \
         uint8_t tmp1[w * h];                                                  \
+        var_filter_block2d_bil_w##w(src, tmp0, src_stride, 1, (h + padding),  \
+                                    xoffset);                                 \
         var_filter_block2d_bil_w##w(tmp0, tmp1, w, w, h, yoffset);            \
         return aom_variance##w##x##h##_neon(tmp1, w, ref, ref_stride, sse);   \
       }                                                                       \
@@ -467,17 +472,17 @@ static void avg_pred(const uint8_t *src_ptr, uint8_t *dst_ptr, int src_stride,
     } else if (xoffset == 4) {                                                 \
       uint8_t tmp0[w * (h + padding)];                                         \
       if (yoffset == 0) {                                                      \
-        avg_pred_var_filter_block2d_avg(src, tmp0, source_stride, 1, w,        \
-                                        h + padding, second_pred);             \
+        avg_pred_var_filter_block2d_avg(src, tmp0, source_stride, 1, w, h,     \
+                                        second_pred);                          \
         return aom_variance##w##x##h##_neon(tmp0, w, ref, ref_stride, sse);    \
       } else if (yoffset == 4) {                                               \
         uint8_t tmp1[w * (h + padding)];                                       \
-        var_filter_block2d_avg(src, tmp0, source_stride, 1, w, h + padding);   \
+        var_filter_block2d_avg(src, tmp0, source_stride, 1, w, (h + padding)); \
         avg_pred_var_filter_block2d_avg(tmp0, tmp1, w, w, w, h, second_pred);  \
         return aom_variance##w##x##h##_neon(tmp1, w, ref, ref_stride, sse);    \
       } else {                                                                 \
         uint8_t tmp1[w * (h + padding)];                                       \
-        var_filter_block2d_avg(src, tmp0, source_stride, 1, w, h + padding);   \
+        var_filter_block2d_avg(src, tmp0, source_stride, 1, w, (h + padding)); \
         avg_pred_var_filter_block2d_bil_w##w(tmp0, tmp1, w, w, h, yoffset,     \
                                              second_pred);                     \
         return aom_variance##w##x##h##_neon(tmp1, w, ref, ref_stride, sse);    \
@@ -485,8 +490,8 @@ static void avg_pred(const uint8_t *src_ptr, uint8_t *dst_ptr, int src_stride,
     } else {                                                                   \
       uint8_t tmp0[w * (h + padding)];                                         \
       if (yoffset == 0) {                                                      \
-        avg_pred_var_filter_block2d_bil_w##w(                                  \
-            src, tmp0, source_stride, 1, (h + padding), xoffset, second_pred); \
+        avg_pred_var_filter_block2d_bil_w##w(src, tmp0, source_stride, 1, h,   \
+                                             xoffset, second_pred);            \
         return aom_variance##w##x##h##_neon(tmp0, w, ref, ref_stride, sse);    \
       } else if (yoffset == 4) {                                               \
         uint8_t tmp1[w * h];                                                   \

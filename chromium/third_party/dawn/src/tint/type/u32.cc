@@ -14,28 +14,23 @@
 
 #include "src/tint/type/u32.h"
 
-#include "src/tint/program_builder.h"
+#include "src/tint/type/manager.h"
 
 TINT_INSTANTIATE_TYPEINFO(tint::type::U32);
 
 namespace tint::type {
 
 U32::U32()
-    : Base(type::Flags{
-          Flag::kConstructable,
-          Flag::kCreationFixedFootprint,
-          Flag::kFixedFootprint,
-      }) {}
+    : Base(static_cast<size_t>(TypeInfo::Of<U32>().full_hashcode),
+           type::Flags{
+               Flag::kConstructable,
+               Flag::kCreationFixedFootprint,
+               Flag::kFixedFootprint,
+           }) {}
 
 U32::~U32() = default;
 
-U32::U32(U32&&) = default;
-
-size_t U32::Hash() const {
-    return static_cast<size_t>(TypeInfo::Of<U32>().full_hashcode);
-}
-
-bool U32::Equals(const Type& other) const {
+bool U32::Equals(const UniqueNode& other) const {
     return other.Is<U32>();
 }
 
@@ -49,6 +44,10 @@ uint32_t U32::Size() const {
 
 uint32_t U32::Align() const {
     return 4;
+}
+
+U32* U32::Clone(CloneContext& ctx) const {
+    return ctx.dst.mgr->Get<U32>();
 }
 
 }  // namespace tint::type

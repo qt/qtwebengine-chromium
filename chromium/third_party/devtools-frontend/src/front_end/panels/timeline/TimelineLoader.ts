@@ -14,25 +14,25 @@ import * as TimelineModel from '../../models/timeline_model/timeline_model.js';
 
 const UIStrings = {
   /**
-  *@description Text in Timeline Loader of the Performance panel
-  */
+   *@description Text in Timeline Loader of the Performance panel
+   */
   malformedTimelineDataUnknownJson: 'Malformed timeline data: Unknown JSON format',
   /**
-  *@description Text in Timeline Loader of the Performance panel
-  */
+   *@description Text in Timeline Loader of the Performance panel
+   */
   malformedTimelineInputWrongJson: 'Malformed timeline input, wrong JSON brackets balance',
   /**
-  *@description Text in Timeline Loader of the Performance panel
-  *@example {Unknown JSON format} PH1
-  */
+   *@description Text in Timeline Loader of the Performance panel
+   *@example {Unknown JSON format} PH1
+   */
   malformedTimelineDataS: 'Malformed timeline data: {PH1}',
   /**
-  *@description Text in Timeline Loader of the Performance panel
-  */
+   *@description Text in Timeline Loader of the Performance panel
+   */
   legacyTimelineFormatIsNot: 'Legacy Timeline format is not supported.',
   /**
-  *@description Text in Timeline Loader of the Performance panel
-  */
+   *@description Text in Timeline Loader of the Performance panel
+   */
   malformedCpuProfileFormat: 'Malformed CPU profile format',
 };
 const str_ = i18n.i18n.registerUIStrings('panels/timeline/TimelineLoader.ts', UIStrings);
@@ -114,14 +114,21 @@ export class TimelineLoader implements Common.StringOutputStream.OutputStream {
         Common.Settings.Settings.instance().moduleSetting('network.enable-remote-file-loading').get();
     Host.ResourceLoader.loadAsStream(url, null, stream, finishedCallback, allowRemoteFilePaths);
 
-    function finishedCallback(
+    async function finishedCallback(
         success: boolean, _headers: {[x: string]: string},
-        errorDescription: Host.ResourceLoader.LoadErrorDescription): void {
+        errorDescription: Host.ResourceLoader.LoadErrorDescription): Promise<void> {
       if (!success) {
         return loader.reportErrorAndCancelLoading(errorDescription.message);
       }
       const txt = stream.data();
-      const events = JSON.parse(txt);
+      const trace = JSON.parse(txt);
+      if (Array.isArray(trace.nodes)) {
+        loader.state = State.LoadingCPUProfileFormat;
+        loader.buffer = txt;
+        await loader.close();
+        return;
+      }
+      const events = Array.isArray(trace.traceEvents) ? trace.traceEvents : trace;
       void loader.addEvents(events);
     }
 

@@ -348,6 +348,8 @@ bool NoOpFramerVisitor::OnAckTimestamp(QuicPacketNumber /*packet_number*/,
   return true;
 }
 
+void NoOpFramerVisitor::OnAckEcnCounts(const QuicEcnCounts& /*ecn_counts*/) {}
+
 bool NoOpFramerVisitor::OnAckFrameEnd(QuicPacketNumber /*start*/) {
   return true;
 }
@@ -738,8 +740,8 @@ TestQuicSpdyClientSession::TestQuicSpdyClientSession(
     QuicConnection* connection, const QuicConfig& config,
     const ParsedQuicVersionVector& supported_versions,
     const QuicServerId& server_id, QuicCryptoClientConfig* crypto_config)
-    : QuicSpdyClientSessionBase(connection, &push_promise_index_, config,
-                                supported_versions) {
+    : QuicSpdyClientSessionBase(connection, nullptr, &push_promise_index_,
+                                config, supported_versions) {
   // TODO(b/153726130): Consider adding SetServerApplicationStateForResumption
   // calls in tests and set |has_application_state| to true.
   crypto_stream_ = std::make_unique<QuicCryptoClientStream>(
@@ -939,8 +941,8 @@ QuicEncryptedPacket* ConstructEncryptedPacket(
     // We need a minimum number of bytes of encrypted payload. This will
     // guarantee that we have at least that much. (It ignores the overhead of
     // the stream/crypto framing, so it overpads slightly.)
-    size_t min_plaintext_size =
-        QuicPacketCreator::MinPlaintextPacketSize(version);
+    size_t min_plaintext_size = QuicPacketCreator::MinPlaintextPacketSize(
+        version, packet_number_length);
     if (data.length() < min_plaintext_size) {
       size_t padding_length = min_plaintext_size - data.length();
       frames.push_back(QuicFrame(QuicPaddingFrame(padding_length)));

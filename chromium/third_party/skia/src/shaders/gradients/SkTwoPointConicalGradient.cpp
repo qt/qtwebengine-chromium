@@ -5,7 +5,7 @@
  * found in the LICENSE file.
  */
 
-#include "include/private/SkFloatingPoint.h"
+#include "include/private/base/SkFloatingPoint.h"
 #include "src/core/SkRasterPipeline.h"
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkWriteBuffer.h"
@@ -15,6 +15,7 @@
 #include <utility>
 
 #ifdef SK_GRAPHITE_ENABLED
+#include "src/gpu/graphite/KeyContext.h"
 #include "src/gpu/graphite/KeyHelpers.h"
 #include "src/gpu/graphite/PaintParamsKey.h"
 #endif
@@ -60,7 +61,8 @@ public:
 
     GradientType asGradient(GradientInfo* info, SkMatrix* localMatrix) const override;
 #if SK_SUPPORT_GPU
-    std::unique_ptr<GrFragmentProcessor> asFragmentProcessor(const GrFPArgs&) const override;
+    std::unique_ptr<GrFragmentProcessor> asFragmentProcessor(const GrFPArgs&,
+                                                             const MatrixRec&) const override;
 #endif
 #ifdef SK_GRAPHITE_ENABLED
     void addToKey(const skgpu::graphite::KeyContext&,
@@ -264,7 +266,7 @@ void SkTwoPointConicalGradient::appendGradientStages(SkArenaAlloc* alloc, SkRast
     const auto dRadius = fRadius2 - fRadius1;
 
     if (fType == Type::kRadial) {
-        p->append(SkRasterPipeline::xy_to_radius);
+        p->append(SkRasterPipelineOp::xy_to_radius);
 
         // Tiny twist: radial computes a t for [0, r2], but we want a t for [r1, r2].
         auto scale =  std::max(fRadius1, fRadius2) / dRadius;
@@ -278,9 +280,9 @@ void SkTwoPointConicalGradient::appendGradientStages(SkArenaAlloc* alloc, SkRast
         auto* ctx = alloc->make<SkRasterPipeline_2PtConicalCtx>();
         SkScalar scaledR0 = fRadius1 / this->getCenterX1();
         ctx->fP0 = scaledR0 * scaledR0;
-        p->append(SkRasterPipeline::xy_to_2pt_conical_strip, ctx);
-        p->append(SkRasterPipeline::mask_2pt_conical_nan, ctx);
-        postPipeline->append(SkRasterPipeline::apply_vector_mask, &ctx->fMask);
+        p->append(SkRasterPipelineOp::xy_to_2pt_conical_strip, ctx);
+        p->append(SkRasterPipelineOp::mask_2pt_conical_nan, ctx);
+        postPipeline->append(SkRasterPipelineOp::apply_vector_mask, &ctx->fMask);
         return;
     }
 
@@ -289,29 +291,29 @@ void SkTwoPointConicalGradient::appendGradientStages(SkArenaAlloc* alloc, SkRast
     ctx->fP1 = fFocalData.fFocalX;
 
     if (fFocalData.isFocalOnCircle()) {
-        p->append(SkRasterPipeline::xy_to_2pt_conical_focal_on_circle);
+        p->append(SkRasterPipelineOp::xy_to_2pt_conical_focal_on_circle);
     } else if (fFocalData.isWellBehaved()) {
-        p->append(SkRasterPipeline::xy_to_2pt_conical_well_behaved, ctx);
+        p->append(SkRasterPipelineOp::xy_to_2pt_conical_well_behaved, ctx);
     } else if (fFocalData.isSwapped() || 1 - fFocalData.fFocalX < 0) {
-        p->append(SkRasterPipeline::xy_to_2pt_conical_smaller, ctx);
+        p->append(SkRasterPipelineOp::xy_to_2pt_conical_smaller, ctx);
     } else {
-        p->append(SkRasterPipeline::xy_to_2pt_conical_greater, ctx);
+        p->append(SkRasterPipelineOp::xy_to_2pt_conical_greater, ctx);
     }
 
     if (!fFocalData.isWellBehaved()) {
-        p->append(SkRasterPipeline::mask_2pt_conical_degenerates, ctx);
+        p->append(SkRasterPipelineOp::mask_2pt_conical_degenerates, ctx);
     }
     if (1 - fFocalData.fFocalX < 0) {
-        p->append(SkRasterPipeline::negate_x);
+        p->append(SkRasterPipelineOp::negate_x);
     }
     if (!fFocalData.isNativelyFocal()) {
-        p->append(SkRasterPipeline::alter_2pt_conical_compensate_focal, ctx);
+        p->append(SkRasterPipelineOp::alter_2pt_conical_compensate_focal, ctx);
     }
     if (fFocalData.isSwapped()) {
-        p->append(SkRasterPipeline::alter_2pt_conical_unswap);
+        p->append(SkRasterPipelineOp::alter_2pt_conical_unswap);
     }
     if (!fFocalData.isWellBehaved()) {
-        postPipeline->append(SkRasterPipeline::apply_vector_mask, &ctx->fMask);
+        postPipeline->append(SkRasterPipelineOp::apply_vector_mask, &ctx->fMask);
     }
 }
 
@@ -319,7 +321,7 @@ skvm::F32 SkTwoPointConicalGradient::transformT(skvm::Builder* p, skvm::Uniforms
                                                 skvm::Coord coord, skvm::I32* mask) const {
     auto mag = [](skvm::F32 x, skvm::F32 y) { return sqrt(x*x + y*y); };
 
-    // See https://skia.org/dev/design/conical, and onAppendStages() above.
+    // See https://skia.org/dev/design/conical, and appendStages() above.
     // There's a lot going on here, and I'm not really sure what's independent
     // or disjoint, what can be reordered, simplified, etc.  Tweak carefully.
 
@@ -376,8 +378,8 @@ skvm::F32 SkTwoPointConicalGradient::transformT(skvm::Builder* p, skvm::Uniforms
 #include "src/gpu/ganesh/effects/GrSkSLFP.h"
 #include "src/gpu/ganesh/gradients/GrGradientShader.h"
 
-std::unique_ptr<GrFragmentProcessor> SkTwoPointConicalGradient::asFragmentProcessor(
-        const GrFPArgs& args) const {
+std::unique_ptr<GrFragmentProcessor>
+SkTwoPointConicalGradient::asFragmentProcessor(const GrFPArgs& args, const MatrixRec& mRec) const {
     // The 2 point conical gradient can reject a pixel so it does change opacity even if the input
     // was opaque. Thus, all of these layout FPs disable that optimization.
     std::unique_ptr<GrFragmentProcessor> fp;
@@ -525,7 +527,11 @@ std::unique_ptr<GrFragmentProcessor> SkTwoPointConicalGradient::asFragmentProces
                                 "fx", focalData.fFocalX);
         } break;
     }
-    return GrGradientShader::MakeGradientFP(*this, args, std::move(fp), matrix.getMaybeNull());
+    return GrGradientShader::MakeGradientFP(*this,
+                                            args,
+                                            mRec,
+                                            std::move(fp),
+                                            matrix.getMaybeNull());
 }
 
 #endif
@@ -536,17 +542,22 @@ void SkTwoPointConicalGradient::addToKey(const skgpu::graphite::KeyContext& keyC
                                          skgpu::graphite::PipelineDataGatherer* gatherer) const {
     using namespace skgpu::graphite;
 
+    SkColor4fXformer xformedColors(this, keyContext.dstColorInfo().colorSpace());
+    const SkPMColor4f* colors = xformedColors.fColors.begin();
+
     GradientShaderBlocks::GradientData data(GradientType::kConical,
                                             fCenter1, fCenter2,
                                             fRadius1, fRadius2,
                                             0.0f, 0.0f,
                                             fTileMode,
                                             fColorCount,
-                                            fColors,
-                                            fPositions);
+                                            colors,
+                                            fPositions,
+                                            fInterpolation);
 
-    GradientShaderBlocks::BeginBlock(keyContext, builder, gatherer, data);
-    builder->endBlock();
+    MakeInterpolatedToDst(keyContext, builder, gatherer,
+                          data, fInterpolation,
+                          xformedColors.fIntermediateColorSpace.get());
 }
 #endif
 

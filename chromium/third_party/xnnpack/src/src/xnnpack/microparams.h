@@ -910,38 +910,6 @@ union xnn_qu8_avgpool_minmax_params {
     XNN_ALIGN(8) uint8_t output_max[8];
   } fp32_wasmsimd;
 #endif  // XNN_ARCH_WASMSIMD || XNN_ARCH_WASMRELAXEDSIMD
-
-  // Legacy parameters used by QU8 AVGPOOL microkernels
-  struct {
-    int32_t bias;
-    int32_t multiplier;
-    int64_t rounding;
-    uint32_t right_shift;
-    int32_t output_min_less_zero_point;
-    int32_t output_max_less_zero_point;
-    int32_t output_zero_point;
-  } scalar;
-#if XNN_ARCH_ARM || XNN_ARCH_ARM64
-  struct {
-    int32_t bias;
-    int32_t multiplier;
-    int64_t left_shift;
-    int16_t output_zero_point;
-    uint8_t output_min;
-    uint8_t output_max;
-  } neon;
-#endif  // XNN_ARCH_ARM || XNN_ARCH_ARM64
-#if XNN_ARCH_X86 || XNN_ARCH_X86_64
-  struct {
-    XNN_ALIGN(16) int32_t bias[4];
-    XNN_ALIGN(16) uint32_t multiplier[4];
-    XNN_ALIGN(16) uint64_t rounding[2];
-    XNN_ALIGN(16) uint64_t right_shift[2];
-    XNN_ALIGN(16) int16_t output_zero_point[8];
-    XNN_ALIGN(16) uint8_t output_min[16];
-    XNN_ALIGN(16) uint8_t output_max[16];
-  } sse2;
-#endif  // XNN_ARCH_X86 || XNN_ARCH_X86_64
 };
 
 
@@ -2415,18 +2383,21 @@ union xnn_f16_chw_params {
   struct {
     uint16_t min;
     uint16_t max;
-    XNN_ALIGN(16) uint16_t mask_even[8]; // used by stride 2 kernels
-    XNN_ALIGN(16) uint16_t mask_odd[8];  // used by stride 2 kernels
-    XNN_ALIGN(16) uint16_t mask[8]; // used by stride 1 x8 kernels
-  } neonfp16arith;
+    uint16_t pad[2];  // pad to 8 bytes alignment
+    XNN_ALIGN(8) uint16_t mask[8];
+  } neonfp16arith_stride1;
+  struct {
+    uint16_t min;
+    uint16_t max;
+    uint16_t pad[2];  // pad to 8 bytes alignment
+    XNN_ALIGN(8) uint16_t mask_even[8];
+    XNN_ALIGN(8) uint16_t mask_odd[8];
+  } neonfp16arith_stride2;
 #endif  // XNN_ARCH_ARM || XNN_ARCH_ARM64
 };
 
 union xnn_f32_chw_params {
   struct {
-    XNN_ALIGN(16) int32_t mask_even[4]; // used by stride 2 kernels
-    XNN_ALIGN(16) int32_t mask_odd[4];  // used by stride 2 kernels
-    XNN_ALIGN(16) int32_t mask[4]; // used by stride 1 kernels
     float min;
     float max;
   } scalar;
@@ -2434,20 +2405,41 @@ union xnn_f32_chw_params {
   struct {
     float min;
     float max;
-    XNN_ALIGN(16) uint32_t mask_even[4]; // used by stride 2 kernels
-    XNN_ALIGN(16) uint32_t mask_odd[4];  // used by stride 2 kernels
-    XNN_ALIGN(16) uint32_t mask[4]; // used by stride 1 kernels
-  } neon;
+    XNN_ALIGN(8) uint32_t mask[4];
+  } neon_stride1;
+  struct {
+    float min;
+    float max;
+    XNN_ALIGN(8) uint32_t mask_even[4];
+    XNN_ALIGN(8) uint32_t mask_odd[4];
+  } neon_stride2;
 #endif  // XNN_ARCH_ARM || XNN_ARCH_ARM64
 #if XNN_ARCH_X86 || XNN_ARCH_X86_64
   struct {
     XNN_ALIGN(16) float min[4];
     XNN_ALIGN(16) float max[4];
-    XNN_ALIGN(16) uint32_t mask_even[4]; // used by stride 2 kernels
-    XNN_ALIGN(16) uint32_t mask_odd[4];  // used by stride 2 kernels
-    XNN_ALIGN(16) uint32_t mask[4]; // used by stride 1 kernels
-  } sse;
+    XNN_ALIGN(16) uint32_t mask[4];
+  } sse_stride1;
+  struct {
+    XNN_ALIGN(16) float min[4];
+    XNN_ALIGN(16) float max[4];
+    XNN_ALIGN(16) uint32_t mask_even[4];
+    XNN_ALIGN(16) uint32_t mask_odd[4];
+  } sse_stride2;
 #endif  // XNN_ARCH_X86 || XNN_ARCH_X86_64
+#if XNN_ARCH_WASMSIMD || XNN_ARCH_WASMRELAXEDSIMD
+  struct {
+    XNN_ALIGN(8) float min[2];
+    XNN_ALIGN(8) float max[2];
+    XNN_ALIGN(16) uint32_t mask[4];
+  } wasmsimd_stride1;
+  struct {
+    XNN_ALIGN(8) float min[2];
+    XNN_ALIGN(8) float max[2];
+    XNN_ALIGN(16) uint32_t mask_even[4];
+    XNN_ALIGN(16) uint32_t mask_odd[4];
+  } wasmsimd_stride2;
+#endif  // XNN_ARCH_WASMSIMD || XNN_ARCH_WASMRELAXEDSIMD
 };
 
 
@@ -2502,6 +2494,84 @@ struct jit_gemm_params {
     float min;
     float max;
   } f32_minmax;
+  struct {
+    uint16_t min;
+    uint16_t max;
+  } f16_minmax;
   size_t num_post_operations;
   const struct xnn_post_operation* post_operations;
+};
+
+union xnn_x8_transpose_params {
+  char _; // Dummy member variable to comply with the C standard
+#if XNN_ARCH_X86 || XNN_ARCH_X86_64
+  struct {
+    uint32_t mask_table[15];
+  } avx2;
+#endif  // XNN_ARCH_X86 || XNN_ARCH_X86_64
+};
+
+union xnn_x16_transpose_params {
+  char _; // Dummy member variable to comply with the C standard
+#if XNN_ARCH_X86 || XNN_ARCH_X86_64
+  struct {
+    uint32_t mask_table[15];
+  } avx2;
+#endif  // XNN_ARCH_X86 || XNN_ARCH_X86_64
+};
+
+union xnn_x24_transpose_params {
+  char _; // Dummy member variable to comply with the C standard
+#if XNN_ARCH_ARM || XNN_ARCH_ARM64
+  struct {
+    uint8_t pos0[16]; // used by tbl kernels
+    uint8_t pos1[16]; // used by tbl kernels
+    uint8_t pos2[16]; // used by tbl kernels
+    uint8_t pos3[16]; // used by tbl kernels
+  } neon_tbl128;
+  struct {
+    uint8_t pos0[8]; // used by tbl kernels
+    uint8_t pos1[8]; // used by tbl kernels
+  } neon_tbl64;
+#endif  // XNN_ARCH_ARM || XNN_ARCH_ARM64
+#if XNN_ARCH_X86 || XNN_ARCH_X86_64
+  struct {
+    uint8_t pos0[16];
+    uint8_t pos1[16];
+    uint8_t pos2[16];
+    uint8_t pos3[16];
+    uint8_t pos4[16];
+    uint8_t pos5[16];
+  } ssse3;
+#endif  // XNN_ARCH_X86 || XNN_ARCH_X86_64
+};
+
+union xnn_x32_transpose_params {
+  char _; // Dummy member variable to comply with the C standard
+#if XNN_ARCH_ARM || XNN_ARCH_ARM64
+  struct {
+    uint8_t pos0[16]; // used by tbl kernels
+    uint8_t pos1[16]; // used by tbl kernels
+    uint8_t pos2[16]; // used by tbl kernels
+    uint8_t pos3[16]; // used by tbl kernels
+  } neon_tbl128;
+  struct {
+    uint8_t pos0[8]; // used by tbl kernels
+    uint8_t pos1[8]; // used by tbl kernels
+  } neon_tbl64;
+#endif  // XNN_ARCH_ARM || XNN_ARCH_ARM64
+#if XNN_ARCH_X86 || XNN_ARCH_X86_64
+  struct {
+    uint32_t mask_table[15];
+  } avx;
+#endif  // XNN_ARCH_X86 || XNN_ARCH_X86_64
+};
+
+union xnn_x64_transpose_params {
+  char _; // Dummy member variable to comply with the C standard
+#if XNN_ARCH_X86 || XNN_ARCH_X86_64
+  struct {
+    uint64_t mask_table[7];
+  } avx;
+#endif  // XNN_ARCH_X86 || XNN_ARCH_X86_64
 };

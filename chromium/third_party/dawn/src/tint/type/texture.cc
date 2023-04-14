@@ -18,10 +18,40 @@ TINT_INSTANTIATE_TYPEINFO(tint::type::Texture);
 
 namespace tint::type {
 
-Texture::Texture(ast::TextureDimension dim) : Base(type::Flags{}), dim_(dim) {}
-
-Texture::Texture(Texture&&) = default;
+Texture::Texture(size_t hash, TextureDimension dim) : Base(hash, type::Flags{}), dim_(dim) {}
 
 Texture::~Texture() = default;
+
+bool IsTextureArray(type::TextureDimension dim) {
+    switch (dim) {
+        case type::TextureDimension::k2dArray:
+        case type::TextureDimension::kCubeArray:
+            return true;
+        case type::TextureDimension::k2d:
+        case type::TextureDimension::kNone:
+        case type::TextureDimension::k1d:
+        case type::TextureDimension::k3d:
+        case type::TextureDimension::kCube:
+            return false;
+    }
+    return false;
+}
+
+int NumCoordinateAxes(type::TextureDimension dim) {
+    switch (dim) {
+        case type::TextureDimension::kNone:
+            return 0;
+        case type::TextureDimension::k1d:
+            return 1;
+        case type::TextureDimension::k2d:
+        case type::TextureDimension::k2dArray:
+            return 2;
+        case type::TextureDimension::k3d:
+        case type::TextureDimension::kCube:
+        case type::TextureDimension::kCubeArray:
+            return 3;
+    }
+    return 0;
+}
 
 }  // namespace tint::type

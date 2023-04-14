@@ -15,9 +15,8 @@
 #ifndef PLATFORM_BASE_RUNNABLE_H_
 #define PLATFORM_BASE_RUNNABLE_H_
 
-#include <functional>
+#include "absl/functional/any_invocable.h"
 
-namespace location {
 namespace nearby {
 
 // The Runnable is an object intended to be executed by a thread.
@@ -25,9 +24,8 @@ namespace nearby {
 //
 // https://docs.oracle.com/javase/8/docs/api/java/lang/Runnable.html
 
-using Runnable = std::function<void()>;
+using Runnable = absl::AnyInvocable<void()>;
 
 }  // namespace nearby
-}  // namespace location
 
 #endif  // PLATFORM_BASE_RUNNABLE_H_

@@ -30,7 +30,6 @@
 #include "src/tint/resolver/intrinsic_table.h"
 #include "src/tint/resolver/sem_helper.h"
 #include "src/tint/resolver/validator.h"
-#include "src/tint/scope_stack.h"
 #include "src/tint/sem/binding_point.h"
 #include "src/tint/sem/block_statement.h"
 #include "src/tint/sem/function.h"
@@ -68,7 +67,6 @@ class LoopStatement;
 class Statement;
 class StructMember;
 class SwitchStatement;
-class TypeInitializer;
 class WhileStatement;
 }  // namespace tint::sem
 namespace tint::type {
@@ -123,7 +121,62 @@ class Resolver {
     /// ProgramBuilder.
     void CreateSemanticNodes() const;
 
-    /// Expression traverses the graph of expressions starting at `expr`, building a postordered
+    /// @returns the call of Expression() cast to a sem::ValueExpression. If the sem::Expression is
+    /// not a sem::ValueExpression, then an error diagnostic is raised and nullptr is returned.
+    sem::ValueExpression* ValueExpression(const ast::Expression* expr);
+
+    /// @returns the call of Expression() cast to a sem::TypeExpression. If the sem::Expression is
+    /// not a sem::TypeExpression, then an error diagnostic is raised and nullptr is returned.
+    sem::TypeExpression* TypeExpression(const ast::Expression* expr);
+
+    /// @returns the call of Expression() cast to a sem::FunctionExpression. If the sem::Expression
+    /// is not a sem::FunctionExpression, then an error diagnostic is raised and nullptr is
+    /// returned.
+    sem::FunctionExpression* FunctionExpression(const ast::Expression* expr);
+
+    /// @returns the resolved type from an expression, or nullptr on error
+    type::Type* Type(const ast::Expression* ast);
+
+    /// @returns the call of Expression() cast to a
+    /// sem::BuiltinEnumExpression<builtin::AddressSpace>. If the sem::Expression is not a
+    /// sem::BuiltinEnumExpression<builtin::AddressSpace>, then an error diagnostic is raised and
+    /// nullptr is returned.
+    sem::BuiltinEnumExpression<builtin::AddressSpace>* AddressSpaceExpression(
+        const ast::Expression* expr);
+
+    /// @returns the call of Expression() cast to a
+    /// sem::BuiltinEnumExpression<builtin::BuiltinValue>. If the sem::Expression is not a
+    /// sem::BuiltinEnumExpression<builtin::BuiltinValue>, then an error diagnostic is raised and
+    /// nullptr is returned.
+    sem::BuiltinEnumExpression<builtin::BuiltinValue>* BuiltinValueExpression(
+        const ast::Expression* expr);
+
+    /// @returns the call of Expression() cast to a sem::BuiltinEnumExpression<type::TexelFormat>.
+    /// If the sem::Expression is not a sem::BuiltinEnumExpression<type::TexelFormat>, then an error
+    /// diagnostic is raised and nullptr is returned.
+    sem::BuiltinEnumExpression<builtin::TexelFormat>* TexelFormatExpression(
+        const ast::Expression* expr);
+
+    /// @returns the call of Expression() cast to a sem::BuiltinEnumExpression<builtin::Access>*.
+    /// If the sem::Expression is not a sem::BuiltinEnumExpression<builtin::Access>*, then an error
+    /// diagnostic is raised and nullptr is returned.
+    sem::BuiltinEnumExpression<builtin::Access>* AccessExpression(const ast::Expression* expr);
+
+    /// @returns the call of Expression() cast to a
+    /// sem::BuiltinEnumExpression<builtin::InterpolationSampling>*. If the sem::Expression is not a
+    /// sem::BuiltinEnumExpression<builtin::InterpolationSampling>*, then an error diagnostic is
+    /// raised and nullptr is returned.
+    sem::BuiltinEnumExpression<builtin::InterpolationSampling>* InterpolationSampling(
+        const ast::Expression* expr);
+
+    /// @returns the call of Expression() cast to a
+    /// sem::BuiltinEnumExpression<builtin::InterpolationType>*. If the sem::Expression is not a
+    /// sem::BuiltinEnumExpression<builtin::InterpolationType>*, then an error diagnostic is raised
+    /// and nullptr is returned.
+    sem::BuiltinEnumExpression<builtin::InterpolationType>* InterpolationType(
+        const ast::Expression* expr);
+
+    /// Expression traverses the graph of expressions starting at `expr`, building a post-ordered
     /// list (leaf-first) of all the expression nodes. Each of the expressions are then resolved by
     /// dispatching to the appropriate expression handlers below.
     /// @returns the resolved semantic node for the expression `expr`, or nullptr on failure.
@@ -138,39 +191,38 @@ class Resolver {
     // not attempt to resolve their children. This design avoids recursion, which is a common cause
     // of stack-overflows.
     ////////////////////////////////////////////////////////////////////////////////////////////////
-    sem::Expression* IndexAccessor(const ast::IndexAccessorExpression*);
-    sem::Expression* Binary(const ast::BinaryExpression*);
-    sem::Expression* Bitcast(const ast::BitcastExpression*);
+    sem::ValueExpression* IndexAccessor(const ast::IndexAccessorExpression*);
+    sem::ValueExpression* Binary(const ast::BinaryExpression*);
+    sem::ValueExpression* Bitcast(const ast::BitcastExpression*);
     sem::Call* Call(const ast::CallExpression*);
     sem::Function* Function(const ast::Function*);
     template <size_t N>
     sem::Call* FunctionCall(const ast::CallExpression*,
                             sem::Function* target,
-                            utils::Vector<const sem::Expression*, N>& args,
+                            utils::Vector<const sem::ValueExpression*, N>& args,
                             sem::Behaviors arg_behaviors);
     sem::Expression* Identifier(const ast::IdentifierExpression*);
     template <size_t N>
     sem::Call* BuiltinCall(const ast::CallExpression*,
                            sem::BuiltinType,
-                           utils::Vector<const sem::Expression*, N>& args);
-    sem::Expression* Literal(const ast::LiteralExpression*);
-    sem::Expression* MemberAccessor(const ast::MemberAccessorExpression*);
-    sem::Expression* UnaryOp(const ast::UnaryOpExpression*);
-
-    /// Register a memory load from an expression, to track accesses to root identifiers in order to
-    /// perform alias analysis.
-    void RegisterLoadIfNeeded(const sem::Expression* expr);
+                           utils::Vector<const sem::ValueExpression*, N>& args);
+    sem::ValueExpression* Literal(const ast::LiteralExpression*);
+    sem::ValueExpression* MemberAccessor(const ast::MemberAccessorExpression*);
+    sem::ValueExpression* UnaryOp(const ast::UnaryOpExpression*);
 
     /// Register a memory store to an expression, to track accesses to root identifiers in order to
     /// perform alias analysis.
-    void RegisterStore(const sem::Expression* expr);
+    void RegisterStore(const sem::ValueExpression* expr);
 
     /// Perform pointer alias analysis for `call`.
     /// @returns true is the call arguments are free from aliasing issues, false otherwise.
     bool AliasAnalysis(const sem::Call* call);
 
+    /// If `expr` is of a reference type, then Load will create and return a sem::Load node wrapping
+    /// `expr`. If `expr` is not of a reference type, then Load will just return `expr`.
+    const sem::ValueExpression* Load(const sem::ValueExpression* expr);
+
     /// If `expr` is not of an abstract-numeric type, then Materialize() will just return `expr`.
-    /// If `expr` is of an abstract-numeric type:
     /// * Materialize will create and return a sem::Materialize node wrapping `expr`.
     /// * The AST -> Sem binding will be updated to point to the new sem::Materialize node.
     /// * The sem::Materialize node will have a new concrete type, which will be `target_type` if
@@ -181,15 +233,19 @@ class Resolver {
     ///       if `expr` has a element type of abstract-float.
     /// * The sem::Materialize constant value will be the value of `expr` value-converted to the
     ///   materialized type.
+    /// If `expr` is not of an abstract-numeric type, then Materialize() will just return `expr`.
     /// If `expr` is nullptr, then Materialize() will also return nullptr.
-    const sem::Expression* Materialize(const sem::Expression* expr,
-                                       const type::Type* target_type = nullptr);
+    const sem::ValueExpression* Materialize(const sem::ValueExpression* expr,
+                                            const type::Type* target_type = nullptr);
 
-    /// Materializes all the arguments in `args` to the parameter types of `target`.
+    /// For each argument in `args`:
+    /// * Calls Materialize() passing the argument and the corresponding parameter type.
+    /// * Calls Load() passing the argument, iff the corresponding parameter type is not a
+    ///   reference type.
     /// @returns true on success, false on failure.
     template <size_t N>
-    bool MaybeMaterializeArguments(utils::Vector<const sem::Expression*, N>& args,
-                                   const sem::CallTarget* target);
+    bool MaybeMaterializeAndLoadArguments(utils::Vector<const sem::ValueExpression*, N>& args,
+                                          const sem::CallTarget* target);
 
     /// @returns true if an argument of an abstract numeric type, passed to a parameter of type
     /// `parameter_ty` should be materialized.
@@ -204,7 +260,7 @@ class Resolver {
     /// @returns the vector of constants, `utils::Failure` on failure.
     template <size_t N>
     utils::Result<utils::Vector<const constant::Value*, N>> ConvertArguments(
-        const utils::Vector<const sem::Expression*, N>& args,
+        const utils::Vector<const sem::ValueExpression*, N>& args,
         const sem::CallTarget* target);
 
     /// @param ty the type that may hold abstract numeric types
@@ -227,6 +283,7 @@ class Resolver {
     sem::CaseStatement* CaseStatement(const ast::CaseStatement*, const type::Type*);
     sem::Statement* CompoundAssignmentStatement(const ast::CompoundAssignmentStatement*);
     sem::Statement* ContinueStatement(const ast::ContinueStatement*);
+    sem::Statement* ConstAssert(const ast::ConstAssert*);
     sem::Statement* DiscardStatement(const ast::DiscardStatement*);
     sem::ForLoopStatement* ForLoopStatement(const ast::ForLoopStatement*);
     sem::WhileStatement* WhileStatement(const ast::WhileStatement*);
@@ -237,7 +294,6 @@ class Resolver {
     sem::LoopStatement* LoopStatement(const ast::LoopStatement*);
     sem::Statement* ReturnStatement(const ast::ReturnStatement*);
     sem::Statement* Statement(const ast::Statement*);
-    sem::Statement* StaticAssert(const ast::StaticAssert*);
     sem::SwitchStatement* SwitchStatement(const ast::SwitchStatement* s);
     sem::Statement* VariableDeclStatement(const ast::VariableDeclStatement*);
     bool Statements(utils::VectorRef<const ast::Statement*>);
@@ -245,19 +301,29 @@ class Resolver {
     // CollectTextureSamplerPairs() collects all the texture/sampler pairs from the target function
     // / builtin, and records these on the current function by calling AddTextureSamplerPair().
     void CollectTextureSamplerPairs(sem::Function* func,
-                                    utils::VectorRef<const sem::Expression*> args) const;
+                                    utils::VectorRef<const sem::ValueExpression*> args) const;
     void CollectTextureSamplerPairs(const sem::Builtin* builtin,
-                                    utils::VectorRef<const sem::Expression*> args) const;
+                                    utils::VectorRef<const sem::ValueExpression*> args) const;
 
     /// Resolves the WorkgroupSize for the given function, assigning it to
     /// current_function_
     bool WorkgroupSize(const ast::Function*);
 
-    /// @returns the type::Type for the ast::Type `ty`, building it if it
-    /// hasn't been constructed already. If an error is raised, nullptr is
-    /// returned.
-    /// @param ty the ast::Type
-    type::Type* Type(const ast::Type* ty);
+    /// Resolves the attribute @p attr
+    /// @returns true on success, false on failure
+    bool Attribute(const ast::Attribute* attr);
+
+    /// Resolves the `@builtin` attribute @p attr
+    /// @returns true on success, false on failure
+    bool BuiltinAttribute(const ast::BuiltinAttribute* attr);
+
+    /// Resolves the `@interpolate` attribute @p attr
+    /// @returns true on success, false on failure
+    bool InterpolateAttribute(const ast::InterpolateAttribute* attr);
+
+    /// @param control the diagnostic control
+    /// @returns true on success, false on failure
+    bool DiagnosticControl(const ast::DiagnosticControl& control);
 
     /// @param enable the enable declaration
     /// @returns the resolved extension
@@ -266,13 +332,6 @@ class Resolver {
     /// @param named_type the named type to resolve
     /// @returns the resolved semantic type
     type::Type* TypeDecl(const ast::TypeDecl* named_type);
-
-    /// Builds and returns the semantic information for the AST array `arr`.
-    /// This method does not mark the ast::Array node, nor attach the generated semantic information
-    /// to the AST node.
-    /// @returns the semantic Array information, or nullptr if an error is raised.
-    /// @param arr the Array to get semantic information for
-    type::Array* Array(const ast::Array* arr);
 
     /// Resolves and validates the expression used as the count parameter of an array.
     /// @param count_expr the expression used as the second template parameter to an array<>.
@@ -375,11 +434,13 @@ class Resolver {
     /// given type and address space. Used for generating sensible error
     /// messages.
     /// @returns true on success, false on error
-    bool ApplyAddressSpaceUsageToType(ast::AddressSpace sc, type::Type* ty, const Source& usage);
+    bool ApplyAddressSpaceUsageToType(builtin::AddressSpace sc,
+                                      type::Type* ty,
+                                      const Source& usage);
 
     /// @param address_space the address space
     /// @returns the default access control for the given address space
-    ast::Access DefaultAccessForAddressSpace(ast::AddressSpace address_space);
+    builtin::Access DefaultAccessForAddressSpace(builtin::AddressSpace address_space);
 
     /// Allocate constant IDs for pipeline-overridable constants.
     /// @returns true on success, false on error
@@ -408,6 +469,20 @@ class Resolver {
     /// @returns true on success, false on error
     bool Mark(const ast::Node* node);
 
+    /// Applies the diagnostic severities from the current scope to a semantic node.
+    /// @param node the semantic node to apply the diagnostic severities to
+    template <typename NODE>
+    void ApplyDiagnosticSeverities(NODE* node);
+
+    /// Raises an error diagnostic that the resolved identifier @p resolved was not of the expected
+    /// kind.
+    /// @param source the source of the error diagnostic
+    /// @param resolved the resolved identifier
+    /// @param wanted the expected kind
+    void ErrorMismatchedResolvedIdentifier(const Source& source,
+                                           const ResolvedIdentifier& resolved,
+                                           std::string_view wanted);
+
     /// Adds the given error message to the diagnostics
     void AddError(const std::string& msg, const Source& source) const;
 
@@ -417,22 +492,19 @@ class Resolver {
     /// Adds the given note message to the diagnostics
     void AddNote(const std::string& msg, const Source& source) const;
 
-    /// @returns true if the symbol is the name of a builtin function.
-    bool IsBuiltin(Symbol) const;
+    /// @returns the type::Type for the builtin type @p builtin_ty with the identifier @p ident
+    /// @note: Will raise an ICE if @p symbol is not a builtin type.
+    type::Type* BuiltinType(builtin::Builtin builtin_ty, const ast::Identifier* ident);
 
-    /// @returns the type short-name alias for the symbol @p symbol at @p source
-    /// @note: Will raise an ICE if @p symbol is not a short-name type.
-    type::Type* ShortName(Symbol symbol, const Source& source) const;
-
-    // ArrayInitializerSig represents a unique array initializer signature.
+    // ArrayConstructorSig represents a unique array constructor signature.
     // It is a tuple of the array type, number of arguments provided and earliest evaluation stage.
-    using ArrayInitializerSig =
+    using ArrayConstructorSig =
         utils::UnorderedKeyWrapper<std::tuple<const type::Array*, size_t, sem::EvaluationStage>>;
 
-    // StructInitializerSig represents a unique structure initializer signature.
+    // StructConstructorSig represents a unique structure constructor signature.
     // It is a tuple of the structure type, number of arguments provided and earliest evaluation
     // stage.
-    using StructInitializerSig =
+    using StructConstructorSig =
         utils::UnorderedKeyWrapper<std::tuple<const sem::Struct*, size_t, sem::EvaluationStage>>;
 
     /// ExprEvalStageConstraint describes a constraint on when expressions can be evaluated.
@@ -448,13 +520,24 @@ class Resolver {
     /// of determining if any two arguments alias at any callsite.
     struct AliasAnalysisInfo {
         /// The set of module-scope variables that are written to, and where that write occurs.
-        std::unordered_map<const sem::Variable*, const sem::Expression*> module_scope_writes;
+        std::unordered_map<const sem::Variable*, const sem::ValueExpression*> module_scope_writes;
         /// The set of module-scope variables that are read from, and where that read occurs.
-        std::unordered_map<const sem::Variable*, const sem::Expression*> module_scope_reads;
+        std::unordered_map<const sem::Variable*, const sem::ValueExpression*> module_scope_reads;
         /// The set of function parameters that are written to.
         std::unordered_set<const sem::Variable*> parameter_writes;
         /// The set of function parameters that are read from.
         std::unordered_set<const sem::Variable*> parameter_reads;
+    };
+
+    /// A hint for the usage of an identifier expression.
+    /// Used to provide more informative error diagnostics on resolution failure.
+    struct IdentifierResolveHint {
+        /// The expression this hint applies to
+        const ast::Expression* expression = nullptr;
+        /// The usage of the identifier.
+        const char* usage = "identifier";
+        /// Suggested strings if the identifier failed to resolve
+        utils::Slice<char const* const> suggestions = utils::Empty;
     };
 
     ProgramBuilder* const builder_;
@@ -464,15 +547,15 @@ class Resolver {
     DependencyGraph dependencies_;
     SemHelper sem_;
     Validator validator_;
-    ast::Extensions enabled_extensions_;
+    builtin::Extensions enabled_extensions_;
     utils::Vector<sem::Function*, 8> entry_points_;
     utils::Hashmap<const type::Type*, const Source*, 8> atomic_composite_info_;
     utils::Bitset<0> marked_;
     ExprEvalStageConstraint expr_eval_stage_constraint_;
     std::unordered_map<const sem::Function*, AliasAnalysisInfo> alias_analysis_infos_;
     utils::Hashmap<OverrideId, const sem::Variable*, 8> override_ids_;
-    utils::Hashmap<ArrayInitializerSig, sem::CallTarget*, 8> array_inits_;
-    utils::Hashmap<StructInitializerSig, sem::CallTarget*, 8> struct_inits_;
+    utils::Hashmap<ArrayConstructorSig, sem::CallTarget*, 8> array_ctors_;
+    utils::Hashmap<StructConstructorSig, sem::CallTarget*, 8> struct_ctors_;
     sem::Function* current_function_ = nullptr;
     sem::Statement* current_statement_ = nullptr;
     sem::CompoundStatement* current_compound_statement_ = nullptr;
@@ -482,6 +565,7 @@ class Resolver {
     utils::Hashmap<const ast::Expression*, const ast::BinaryExpression*, 8>
         logical_binary_lhs_to_parent_;
     utils::Hashset<const ast::Expression*, 8> skip_const_eval_;
+    IdentifierResolveHint identifier_resolve_hint_;
 };
 
 }  // namespace tint::resolver

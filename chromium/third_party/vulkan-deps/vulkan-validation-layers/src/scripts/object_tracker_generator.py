@@ -1,9 +1,9 @@
 #!/usr/bin/python3 -i
 #
-# Copyright (c) 2015-2022 The Khronos Group Inc.
-# Copyright (c) 2015-2022 Valve Corporation
-# Copyright (c) 2015-2022 LunarG, Inc.
-# Copyright (c) 2015-2022 Google Inc.
+# Copyright (c) 2015-2023 The Khronos Group Inc.
+# Copyright (c) 2015-2023 Valve Corporation
+# Copyright (c) 2015-2023 LunarG, Inc.
+# Copyright (c) 2015-2023 Google Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,9 +16,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#
-# Author: Mark Lobodzinski <mark@lunarg.com>
-# Author: Dave Houlton <daveh@lunarg.com>
 
 import os,re,sys,string,json
 import xml.etree.ElementTree as etree
@@ -147,7 +144,7 @@ class ObjectTrackerOutputGenerator(OutputGenerator):
             'vkCreateInstance',
             'vkCreateDevice',
             'vkEnumeratePhysicalDevices',
-            #'vkEnumeratePhysicalDeviceGroups',            
+            #'vkEnumeratePhysicalDeviceGroups',
             'vkGetPhysicalDeviceQueueFamilyProperties',
             'vkGetPhysicalDeviceQueueFamilyProperties2',
             'vkGetPhysicalDeviceQueueFamilyProperties2KHR',
@@ -229,6 +226,10 @@ class ObjectTrackerOutputGenerator(OutputGenerator):
             "VkComputePipelineCreateInfo-basePipelineHandle": "\"VUID-VkComputePipelineCreateInfo-flags-00697\"",
             "VkRayTracingPipelineCreateInfoNV-basePipelineHandle": "\"VUID-VkRayTracingPipelineCreateInfoNV-flags-03421\"",
 			"VkRayTracingPipelineCreateInfoKHR-basePipelineHandle": "\"VUID-VkRayTracingPipelineCreateInfoKHR-flags-03421\"",
+            "VkVideoSessionKHR-videoSession-compatalloc": "\"VUID-vkDestroyVideoSessionKHR-videoSession-07193\"",
+            "VkVideoSessionKHR-videoSession-nullalloc": "\"VUID-vkDestroyVideoSessionKHR-videoSession-07194\"",
+            "VkVideoSessionParametersKHR-videoSessionParameters-compatalloc": "\"VUID-vkDestroyVideoSessionParametersKHR-videoSessionParameters-07213\"",
+            "VkVideoSessionParametersKHR-videoSessionParameters-nullalloc": "\"VUID-vkDestroyVideoSessionParametersKHR-videoSessionParameters-07214\"",
             "VkAccelerationStructureKHR-accelerationStructure-compatalloc": "\"VUID-vkDestroyAccelerationStructureKHR-accelerationStructure-02443\"",
             "VkAccelerationStructureKHR-accelerationStructure-nullalloc": "\"VUID-vkDestroyAccelerationStructureKHR-accelerationStructure-02444\"",
             "VkAccelerationStructureNV-accelerationStructure-compatalloc": "\"VUID-vkDestroyAccelerationStructureNV-accelerationStructure-03753\"",
@@ -428,10 +429,10 @@ class ObjectTrackerOutputGenerator(OutputGenerator):
         copyright += '\n'
         copyright += '/***************************************************************************\n'
         copyright += ' *\n'
-        copyright += ' * Copyright (c) 2015-2022 The Khronos Group Inc.\n'
-        copyright += ' * Copyright (c) 2015-2022 Valve Corporation\n'
-        copyright += ' * Copyright (c) 2015-2022 LunarG, Inc.\n'
-        copyright += ' * Copyright (c) 2015-2022 Google Inc.\n'
+        copyright += ' * Copyright (c) 2015-2023 The Khronos Group Inc.\n'
+        copyright += ' * Copyright (c) 2015-2023 Valve Corporation\n'
+        copyright += ' * Copyright (c) 2015-2023 LunarG, Inc.\n'
+        copyright += ' * Copyright (c) 2015-2023 Google Inc.\n'
         copyright += ' *\n'
         copyright += ' * Licensed under the Apache License, Version 2.0 (the "License");\n'
         copyright += ' * you may not use this file except in compliance with the License.\n'
@@ -444,17 +445,13 @@ class ObjectTrackerOutputGenerator(OutputGenerator):
         copyright += ' * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n'
         copyright += ' * See the License for the specific language governing permissions and\n'
         copyright += ' * limitations under the License.\n'
-        copyright += ' *\n'
-        copyright += ' * Author: Mark Lobodzinski <mark@lunarg.com>\n'
-        copyright += ' * Author: Dave Houlton <daveh@lunarg.com>\n'
-        copyright += ' *\n'
         copyright += ' ****************************************************************************/\n'
         self.otwrite('both', copyright)
         self.newline()
         self.otwrite('cpp', '#include "chassis.h"')
         self.otwrite('cpp', '#include "object_lifetime_validation.h"')
         self.newline()
-        self.otwrite('cpp', 'ReadLockGuard ObjectLifetimes::ReadLock() { return ReadLockGuard(validation_object_mutex, std::defer_lock); }')
+        self.otwrite('cpp', 'ReadLockGuard ObjectLifetimes::ReadLock() const { return ReadLockGuard(validation_object_mutex, std::defer_lock); }')
         self.otwrite('cpp', 'WriteLockGuard ObjectLifetimes::WriteLock() { return WriteLockGuard(validation_object_mutex, std::defer_lock); }')
 
 

@@ -25,6 +25,7 @@
 #include "src/tint/sem/module.h"
 #include "src/tint/sem/struct.h"
 #include "src/tint/sem/variable.h"
+#include "src/tint/utils/compiler_macros.h"
 #include "src/tint/utils/hashmap.h"
 #include "src/tint/utils/transform.h"
 
@@ -143,7 +144,7 @@ struct Std140::State {
         // Scan structures for members that need forking
         for (auto* ty : src->Types()) {
             if (auto* str = ty->As<sem::Struct>()) {
-                if (str->UsedAs(ast::AddressSpace::kUniform)) {
+                if (str->UsedAs(builtin::AddressSpace::kUniform)) {
                     for (auto* member : str->Members()) {
                         if (needs_fork(member->Type())) {
                             return true;
@@ -156,7 +157,7 @@ struct Std140::State {
         // Scan uniform variables that have types that need forking
         for (auto* decl : src->AST().GlobalVariables()) {
             auto* global = src->Sem().Get(decl);
-            if (global->AddressSpace() == ast::AddressSpace::kUniform) {
+            if (global->AddressSpace() == builtin::AddressSpace::kUniform) {
                 if (needs_fork(global->Type()->UnwrapRef())) {
                     return true;
                 }
@@ -250,7 +251,7 @@ struct Std140::State {
         /// The chain of access indices, starting with the first access on #var.
         AccessIndices indices;
         /// The runtime-evaluated expressions. This vector is indexed by the DynamicIndex::slot
-        utils::Vector<const sem::Expression*, 8> dynamic_indices;
+        utils::Vector<const sem::ValueExpression*, 8> dynamic_indices;
         /// The type of the std140-decomposed matrix being accessed.
         /// May be nullptr if the chain does not pass through a std140-decomposed matrix.
         const type::Matrix* std140_mat_ty = nullptr;
@@ -279,7 +280,7 @@ struct Std140::State {
         for (auto* global : src->Sem().Module()->DependencyOrderedDeclarations()) {
             // Check to see if this is a structure used by a uniform buffer...
             auto* str = sem.Get<sem::Struct>(global);
-            if (str && str->UsedAs(ast::AddressSpace::kUniform)) {
+            if (str && str->UsedAs(builtin::AddressSpace::kUniform)) {
                 // Should this uniform buffer be forked for std140 usage?
                 bool fork_std140 = false;
                 utils::Vector<const ast::StructMember*, 8> members;
@@ -307,7 +308,7 @@ struct Std140::State {
 
                             continue;  // Next member
                         }
-                    } else if (auto* std140_ty = Std140Type(member->Type())) {
+                    } else if (auto std140_ty = Std140Type(member->Type())) {
                         // Member is of a type that requires forking for std140-layout
                         fork_std140 = true;
                         auto attrs = ctx.Clone(member->Declaration()->attributes);
@@ -334,7 +335,7 @@ struct Std140::State {
                     // Create a new forked structure, and insert it just under the original
                     // structure.
                     auto name = b.Symbols().New(sym.NameFor(str->Name()) + "_std140");
-                    auto* std140 = b.create<ast::Struct>(name, std::move(members),
+                    auto* std140 = b.create<ast::Struct>(b.Ident(name), std::move(members),
                                                          ctx.Clone(str->Declaration()->attributes));
                     ctx.InsertAfter(src->AST().GlobalDeclarations(), global, std140);
                     std140_structs.Add(str, name);
@@ -349,10 +350,10 @@ struct Std140::State {
     void ReplaceUniformVarTypes() {
         for (auto* global : src->AST().GlobalVariables()) {
             if (auto* var = global->As<ast::Var>()) {
-                if (var->declared_address_space == ast::AddressSpace::kUniform) {
-                    auto* v = sem.Get(var);
-                    if (auto* std140_ty = Std140Type(v->Type()->UnwrapRef())) {
-                        ctx.Replace(global->type, std140_ty);
+                auto* v = sem.Get(var);
+                if (v->AddressSpace() == builtin::AddressSpace::kUniform) {
+                    if (auto std140_ty = Std140Type(v->Type()->UnwrapRef())) {
+                        ctx.Replace(global->type.expr, b.Expr(std140_ty));
                         std140_uniforms.Add(v);
                     }
                 }
@@ -383,7 +384,7 @@ struct Std140::State {
             bool unique = true;
             for (auto* member : str->members) {
                 // The member name must be unique over the entire set of `count` suffixed names.
-                if (strings.Contains(sym.NameFor(member->symbol))) {
+                if (strings.Contains(sym.NameFor(member->name->symbol))) {
                     unique = false;
                     break;
                 }
@@ -399,16 +400,16 @@ struct Std140::State {
     ///          If the semantic type is not split for std140-layout, then nullptr is returned.
     /// @note will construct new std140 structures to hold decomposed matrices, populating
     ///       #std140_mats.
-    const ast::Type* Std140Type(const type::Type* ty) {
+    ast::Type Std140Type(const type::Type* ty) {
         return Switch(
             ty,  //
-            [&](const sem::Struct* str) -> const ast::Type* {
+            [&](const sem::Struct* str) {
                 if (auto std140 = std140_structs.Find(str)) {
-                    return b.create<ast::TypeName>(*std140);
+                    return b.ty(*std140);
                 }
-                return nullptr;
+                return ast::Type{};
             },
-            [&](const type::Matrix* mat) -> const ast::Type* {
+            [&](const type::Matrix* mat) {
                 if (MatrixNeedsDecomposing(mat)) {
                     auto std140_mat = std140_mats.GetOrCreate(mat, [&] {
                         auto name = b.Symbols().New("mat" + std::to_string(mat->columns()) + "x" +
@@ -419,21 +420,22 @@ struct Std140::State {
                         b.Structure(name, members);
                         return Std140Matrix{
                             name,
-                            utils::Transform(members, [&](auto* member) { return member->symbol; }),
+                            utils::Transform(members,
+                                             [&](auto* member) { return member->name->symbol; }),
                         };
                     });
-                    return b.ty.type_name(std140_mat.name);
+                    return b.ty(std140_mat.name);
                 }
-                return nullptr;
+                return ast::Type{};
             },
-            [&](const type::Array* arr) -> const ast::Type* {
-                if (auto* std140 = Std140Type(arr->ElemType())) {
+            [&](const type::Array* arr) {
+                if (auto std140 = Std140Type(arr->ElemType())) {
                     utils::Vector<const ast::Attribute*, 1> attrs;
                     if (!arr->IsStrideImplicit()) {
                         attrs.Push(b.create<ast::StrideAttribute>(arr->Stride()));
                     }
                     auto count = arr->ConstantCount();
-                    if (!count) {
+                    if (TINT_UNLIKELY(!count)) {
                         // Non-constant counts should not be possible:
                         // * Override-expression counts can only be applied to workgroup arrays, and
                         //   this method only handles types transitively used as uniform buffers.
@@ -442,10 +444,9 @@ struct Std140::State {
                             << "unexpected non-constant array count";
                         count = 1;
                     }
-                    return b.create<ast::Array>(std140, b.Expr(u32(count.value())),
-                                                std::move(attrs));
+                    return b.ty.array(std140, b.Expr(u32(count.value())), std::move(attrs));
                 }
-                return nullptr;
+                return ast::Type{};
             });
     }
 
@@ -481,7 +482,7 @@ struct Std140::State {
 
             // Build the member
             const auto col_name = name_prefix + std::to_string(i);
-            const auto* col_ty = CreateASTTypeFor(ctx, mat->ColumnType());
+            const auto col_ty = CreateASTTypeFor(ctx, mat->ColumnType());
             const auto* col_member = b.Member(col_name, col_ty, std::move(attributes));
             // Record the member for std140_mat_members
             out.Push(col_member);
@@ -493,7 +494,7 @@ struct Std140::State {
     /// @returns an AccessChain if the expression is an access to a std140-forked uniform buffer,
     ///          otherwise returns a std::nullopt.
     std::optional<AccessChain> AccessChainFor(const ast::Expression* ast_expr) {
-        auto* expr = sem.Get(ast_expr);
+        auto* expr = sem.GetVal(ast_expr);
         if (!expr) {
             return std::nullopt;
         }
@@ -511,14 +512,14 @@ struct Std140::State {
         while (true) {
             enum class Action { kStop, kContinue, kError };
             Action action = Switch(
-                expr,  //
+                expr->Unwrap(),  //
                 [&](const sem::VariableUser* user) {
                     if (user->Variable() == access.var) {
                         // Walked all the way to the root identifier. We're done traversing.
                         access.indices.Push(UniformVariable{});
                         return Action::kStop;
                     }
-                    if (user->Variable()->Type()->Is<type::Pointer>()) {
+                    if (TINT_LIKELY(user->Variable()->Type()->Is<type::Pointer>())) {
                         // Found a pointer. As the root identifier is a uniform buffer variable,
                         // this must be a pointer-let. Continue traversing from the let
                         // initializer.
@@ -527,7 +528,7 @@ struct Std140::State {
                     }
                     TINT_ICE(Transform, b.Diagnostics())
                         << "unexpected variable found walking access chain: "
-                        << sym.NameFor(user->Variable()->Declaration()->symbol);
+                        << sym.NameFor(user->Variable()->Declaration()->name->symbol);
                     return Action::kError;
                 },
                 [&](const sem::StructMemberAccess* a) {
@@ -572,14 +573,14 @@ struct Std140::State {
                     expr = s->Object();
                     return Action::kContinue;
                 },
-                [&](const sem::Expression* e) {
+                [&](const sem::ValueExpression* e) {
                     // Walk past indirection and address-of unary ops.
                     return Switch(e->Declaration(),  //
                                   [&](const ast::UnaryOpExpression* u) {
                                       switch (u->op) {
                                           case ast::UnaryOp::kAddressOf:
                                           case ast::UnaryOp::kIndirection:
-                                              expr = sem.Get(u->expr);
+                                              expr = sem.GetVal(u->expr);
                                               return Action::kContinue;
                                           default:
                                               TINT_ICE(Transform, b.Diagnostics())
@@ -633,7 +634,7 @@ struct Std140::State {
             [&](const sem::Struct* str) { return sym.NameFor(str->Name()); },
             [&](const type::Array* arr) {
                 auto count = arr->ConstantCount();
-                if (!count) {
+                if (TINT_UNLIKELY(!count)) {
                     // Non-constant counts should not be possible:
                     // * Override-expression counts can only be applied to workgroup arrays, and
                     //   this method only handles types transitively used as uniform buffers.
@@ -700,12 +701,12 @@ struct Std140::State {
                     for (auto* member : str->Members()) {
                         if (auto col_members = std140_mat_members.Find(member)) {
                             // std140 decomposed matrix. Reassemble.
-                            auto* mat_ty = CreateASTTypeFor(ctx, member->Type());
+                            auto mat_ty = CreateASTTypeFor(ctx, member->Type());
                             auto mat_args =
                                 utils::Transform(*col_members, [&](const ast::StructMember* m) {
-                                    return b.MemberAccessor(param, m->symbol);
+                                    return b.MemberAccessor(param, m->name->symbol);
                                 });
-                            args.Push(b.Construct(mat_ty, std::move(mat_args)));
+                            args.Push(b.Call(mat_ty, std::move(mat_args)));
                         } else {
                             // Convert the member
                             args.Push(
@@ -713,18 +714,19 @@ struct Std140::State {
                                         b.MemberAccessor(param, sym.NameFor(member->Name()))));
                         }
                     }
-                    stmts.Push(b.Return(b.Construct(CreateASTTypeFor(ctx, ty), std::move(args))));
+                    stmts.Push(b.Return(b.Call(CreateASTTypeFor(ctx, ty), std::move(args))));
                 },  //
                 [&](const type::Matrix* mat) {
                     // Reassemble a std140 matrix from the structure of column vector members.
-                    if (auto std140_mat = std140_mats.Get(mat)) {
+                    auto std140_mat = std140_mats.Get(mat);
+                    if (TINT_LIKELY(std140_mat)) {
                         utils::Vector<const ast::Expression*, 8> args;
                         // std140 decomposed matrix. Reassemble.
-                        auto* mat_ty = CreateASTTypeFor(ctx, mat);
+                        auto mat_ty = CreateASTTypeFor(ctx, mat);
                         auto mat_args = utils::Transform(std140_mat->columns, [&](Symbol name) {
                             return b.MemberAccessor(param, name);
                         });
-                        stmts.Push(b.Return(b.Construct(mat_ty, std::move(mat_args))));
+                        stmts.Push(b.Return(b.Call(mat_ty, std::move(mat_args))));
                     } else {
                         TINT_ICE(Transform, b.Diagnostics())
                             << "failed to find std140 matrix info for: " << src->FriendlyName(ty);
@@ -739,7 +741,7 @@ struct Std140::State {
                     auto* dst_el = b.IndexAccessor(var, i);
                     auto* src_el = Convert(arr->ElemType(), b.IndexAccessor(param, i));
                     auto count = arr->ConstantCount();
-                    if (!count) {
+                    if (TINT_UNLIKELY(!count)) {
                         // Non-constant counts should not be possible:
                         // * Override-expression counts can only be applied to workgroup arrays, and
                         //   this method only handles types transitively used as uniform buffers.
@@ -761,7 +763,7 @@ struct Std140::State {
                 });
 
             // Generate the function
-            auto* ret_ty = CreateASTTypeFor(ctx, ty);
+            auto ret_ty = CreateASTTypeFor(ctx, ty);
             auto fn_sym = b.Symbols().New("conv_" + ConvertSuffix(ty));
             b.Func(fn_sym, utils::Vector{param}, ret_ty, std::move(stmts));
             return fn_sym;
@@ -795,8 +797,8 @@ struct Std140::State {
         });
 
         // Build the arguments
-        auto args = utils::Transform(access.dynamic_indices, [&](const sem::Expression* e) {
-            return b.Construct(b.ty.u32(), ctx.Clone(e->Declaration()));
+        auto args = utils::Transform(access.dynamic_indices, [&](const sem::ValueExpression* e) {
+            return b.Call<u32>(ctx.Clone(e->Declaration()));
         });
 
         // Call the helper
@@ -836,7 +838,7 @@ struct Std140::State {
             auto mat_member_idx = std::get<u32>(chain.indices[std140_mat_idx]);
             auto* mat_member = str->Members()[mat_member_idx];
             auto mat_columns = *std140_mat_members.Get(mat_member);
-            expr = b.MemberAccessor(expr, mat_columns[column_idx]->symbol);
+            expr = b.MemberAccessor(expr, mat_columns[column_idx]->name->symbol);
             ty = mat_member->Type()->As<type::Matrix>()->ColumnType();
         } else {
             // Non-structure-member matrix. The columns are decomposed into a new, bespoke std140
@@ -876,7 +878,9 @@ struct Std140::State {
         });
         // Method for generating dynamic index expressions.
         // These are passed in as arguments to the function.
-        auto dynamic_index = [&](size_t idx) { return b.Expr(dynamic_index_params[idx]->symbol); };
+        auto dynamic_index = [&](size_t idx) {
+            return b.Expr(dynamic_index_params[idx]->name->symbol);
+        };
 
         // Fetch the access chain indices of the matrix access and the parameter index that
         // holds the matrix column index.
@@ -919,7 +923,7 @@ struct Std140::State {
                             std::to_string(column_param_idx);
                 }
                 auto mat_columns = *std140_mat_members.Get(mat_member);
-                expr = b.MemberAccessor(expr, mat_columns[column_idx]->symbol);
+                expr = b.MemberAccessor(expr, mat_columns[column_idx]->name->symbol);
                 ty = mat_member->Type()->As<type::Matrix>()->ColumnType();
             } else {
                 // Non-structure-member matrix. The columns are decomposed into a new, bespoke
@@ -960,7 +964,7 @@ struct Std140::State {
         // Build the default case (required in WGSL).
         // This just returns a zero value of the return type, as the index must be out of
         // bounds.
-        cases.Push(b.DefaultCase(b.Block(b.Return(b.Construct(CreateASTTypeFor(ctx, ret_ty))))));
+        cases.Push(b.DefaultCase(b.Block(b.Return(b.Call(CreateASTTypeFor(ctx, ret_ty))))));
 
         auto* column_selector = dynamic_index(column_param_idx);
         auto* stmt = b.Switch(column_selector, std::move(cases));
@@ -984,7 +988,9 @@ struct Std140::State {
         });
         // Method for generating dynamic index expressions.
         // These are passed in as arguments to the function.
-        auto dynamic_index = [&](size_t idx) { return b.Expr(dynamic_index_params[idx]->symbol); };
+        auto dynamic_index = [&](size_t idx) {
+            return b.Expr(dynamic_index_params[idx]->name->symbol);
+        };
 
         const ast::Expression* expr = nullptr;
         const type::Type* ty = nullptr;
@@ -1013,7 +1019,7 @@ struct Std140::State {
             auto* mat_member = str->Members()[mat_member_idx];
             auto mat_columns = *std140_mat_members.Get(mat_member);
             columns = utils::Transform(mat_columns, [&](auto* column_member) {
-                return b.MemberAccessor(b.Deref(let), column_member->symbol);
+                return b.MemberAccessor(b.Deref(let), column_member->name->symbol);
             });
             ty = mat_member->Type();
             name += "_" + sym.NameFor(mat_member->Name());
@@ -1033,13 +1039,13 @@ struct Std140::State {
         }
 
         // Reconstruct the matrix from the columns
-        expr = b.Construct(CreateASTTypeFor(ctx, chain.std140_mat_ty), std::move(columns));
+        expr = b.Call(CreateASTTypeFor(ctx, chain.std140_mat_ty), std::move(columns));
 
         // Have the function return the constructed matrix
         stmts.Push(b.Return(expr));
 
         // Build the function
-        auto* ret_ty = CreateASTTypeFor(ctx, ty);
+        auto ret_ty = CreateASTTypeFor(ctx, ty);
         auto fn_sym = b.Symbols().New(name);
         b.Func(fn_sym, std::move(dynamic_index_params), ret_ty, std::move(stmts));
         return fn_sym;
@@ -1070,8 +1076,9 @@ struct Std140::State {
         auto& access = chain.indices[index];
 
         if (std::get_if<UniformVariable>(&access)) {
-            const auto* expr = b.Expr(ctx.Clone(chain.var->Declaration()->symbol));
-            const auto name = src->Symbols().NameFor(chain.var->Declaration()->symbol);
+            const auto symbol = chain.var->Declaration()->name->symbol;
+            const auto* expr = b.Expr(ctx.Clone(symbol));
+            const auto name = src->Symbols().NameFor(symbol);
             ty = chain.var->Type()->UnwrapRef();
             return {expr, ty, name};
         }

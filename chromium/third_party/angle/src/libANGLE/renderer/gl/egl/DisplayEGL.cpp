@@ -255,13 +255,24 @@ egl::Error DisplayEGL::initialize(egl::Display *display)
 
     void *eglHandle =
         reinterpret_cast<void *>(mDisplayAttributes.get(EGL_PLATFORM_ANGLE_EGL_HANDLE_ANGLE, 0));
-    ANGLE_TRY(mEGL->initialize(display->getNativeDisplayId(), getEGLPath(), eglHandle));
+    EGLAttrib platformType =
+        mDisplayAttributes.get(EGL_PLATFORM_ANGLE_NATIVE_PLATFORM_TYPE_ANGLE, 0);
+    ANGLE_TRY(
+        mEGL->initialize(platformType, display->getNativeDisplayId(), getEGLPath(), eglHandle));
 
     gl::Version eglVersion(mEGL->majorVersion, mEGL->minorVersion);
     if (eglVersion < gl::Version(1, 4))
     {
         return egl::EglNotInitialized() << "EGL >= 1.4 is required";
     }
+
+    // https://anglebug.com/7664
+    // TODO: turn this into a feature so we can communicate that this is disabled on purpose.
+    mSupportsDmaBufImportModifiers = mEGL->hasExtension("EGL_EXT_image_dma_buf_import_modifiers");
+
+    bool isKevin = mEGL->vendorString.find("ARM") != std::string::npos &&
+                   mEGL->versionString.find("r26p0-01rel0") != std::string::npos;
+    mNoOpDmaBufImportModifiers = isKevin || !mEGL->hasDmaBufImportModifierFunctions();
 
     mHasEXTCreateContextRobustness   = mEGL->hasExtension("EGL_EXT_create_context_robustness");
     mHasNVRobustnessVideoMemoryPurge = mEGL->hasExtension("EGL_NV_robustness_video_memory_purge");
@@ -881,8 +892,7 @@ void DisplayEGL::generateExtensions(egl::DisplayExtensions *outExtensions) const
 
     outExtensions->imageDmaBufImportEXT = mEGL->hasExtension("EGL_EXT_image_dma_buf_import");
 
-    outExtensions->imageDmaBufImportModifiersEXT =
-        mEGL->hasExtension("EGL_EXT_image_dma_buf_import_modifiers");
+    outExtensions->imageDmaBufImportModifiersEXT = mSupportsDmaBufImportModifiers;
 
     outExtensions->robustnessVideoMemoryPurgeNV = mHasNVRobustnessVideoMemoryPurge;
 
@@ -1063,13 +1073,17 @@ egl::Error DisplayEGL::queryDmaBufFormats(EGLint maxFormats, EGLint *formats, EG
 {
     if (!mDrmFormatsInitialized)
     {
-        EGLint numFormatsInit = 0;
-        if (mEGL->queryDmaBufFormatsEXT(0, nullptr, &numFormatsInit) && numFormatsInit > 0)
+        if (!mNoOpDmaBufImportModifiers)
         {
-            mDrmFormats.resize(numFormatsInit);
-            if (!mEGL->queryDmaBufFormatsEXT(numFormatsInit, mDrmFormats.data(), &numFormatsInit))
+            EGLint numFormatsInit = 0;
+            if (mEGL->queryDmaBufFormatsEXT(0, nullptr, &numFormatsInit) && numFormatsInit > 0)
             {
-                mDrmFormats.resize(0);
+                mDrmFormats.resize(numFormatsInit);
+                if (!mEGL->queryDmaBufFormatsEXT(numFormatsInit, mDrmFormats.data(),
+                                                 &numFormatsInit))
+                {
+                    mDrmFormats.resize(0);
+                }
             }
         }
         mDrmFormatsInitialized = true;
@@ -1094,9 +1108,15 @@ egl::Error DisplayEGL::queryDmaBufModifiers(EGLint drmFormat,
                                             EGLint *numModifiers)
 
 {
-    if (!mEGL->queryDmaBufModifiersEXT(drmFormat, maxModifiers, modifiers, externalOnly,
-                                       numModifiers))
-        return egl::Error(mEGL->getError(), "eglQueryDmaBufModifiersEXT failed");
+    *numModifiers = 0;
+    if (!mNoOpDmaBufImportModifiers)
+    {
+        if (!mEGL->queryDmaBufModifiersEXT(drmFormat, maxModifiers, modifiers, externalOnly,
+                                           numModifiers))
+        {
+            return egl::Error(mEGL->getError(), "eglQueryDmaBufModifiersEXT failed");
+        }
+    }
 
     return egl::NoError();
 }

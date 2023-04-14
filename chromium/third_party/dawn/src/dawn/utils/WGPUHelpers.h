@@ -27,7 +27,12 @@ namespace utils {
 
 enum Expectation { Success, Failure };
 
-wgpu::ShaderModule CreateShaderModuleFromASM(const wgpu::Device& device, const char* source);
+#if TINT_BUILD_SPV_READER
+wgpu::ShaderModule CreateShaderModuleFromASM(
+    const wgpu::Device& device,
+    const char* source,
+    wgpu::DawnShaderModuleSPIRVOptionsDescriptor* spirv_options = nullptr);
+#endif
 wgpu::ShaderModule CreateShaderModule(const wgpu::Device& device, const char* source);
 
 wgpu::Buffer CreateBufferFromData(const wgpu::Device& device,

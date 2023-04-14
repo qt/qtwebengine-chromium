@@ -20,10 +20,10 @@
 
 static void f32_vrelu(
   benchmark::State& state,
-  xnn_f32_vrelu_ukernel_function f32_vrelu,
+  xnn_f32_vrelu_ukernel_fn f32_vrelu,
   benchmark::utils::IsaCheckFunction isa_check = nullptr)
 {
-  if (isa_check && !isa_check(state)) {
+  if (isa_check != nullptr && !isa_check(state)) {
     return;
   }
 
@@ -39,7 +39,7 @@ static void f32_vrelu(
   std::generate(x.begin(), x.end(), std::ref(f32rng));
 
   for (auto _ : state) {
-    f32_vrelu(num_elements * sizeof(float), x.data(), y.data(), NULL);
+    f32_vrelu(num_elements * sizeof(float), x.data(), y.data(), nullptr);
   }
 
   const uint64_t cpu_frequency = benchmark::utils::GetCurrentCpuFrequency();

@@ -441,12 +441,12 @@ struct TensorEvaluator<TensorReverseOp<ReverseDimensions, ArgType>, Device>
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE
   const Dimensions& dimensions() const { return this->m_dimensions; }
 
-  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Scalar& coeffRef(Index index) {
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Scalar& coeffRef(Index index) const {
     return this->m_impl.coeffRef(this->reverseIndex(index));
   }
 
   template <int StoreMode> EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE
-  void writePacket(Index index, const PacketReturnType& x) {
+  void writePacket(Index index, const PacketReturnType& x) const {
     eigen_assert(index+PacketSize-1 < dimensions().TotalSize());
 
     // This code is pilfered from TensorMorphing.h

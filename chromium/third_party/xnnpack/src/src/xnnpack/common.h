@@ -21,7 +21,7 @@
   #define XNN_ARCH_X86 0
 #endif
 
-#if defined(__x86_64__) || defined(__x86_64) || defined(_M_X64) || defined(_M_AMD64)
+#if defined(__x86_64__) || defined(__x86_64) || defined(_M_X64) && !defined(_M_ARM64EC)
   #define XNN_ARCH_X86_64 1
 #else
   #define XNN_ARCH_X86_64 0
@@ -33,7 +33,7 @@
   #define XNN_ARCH_ARM 0
 #endif
 
-#if defined(__aarch64__) || defined(_M_ARM64)
+#if defined(__aarch64__) || defined(_M_ARM64) || defined(_M_ARM64EC)
   #define XNN_ARCH_ARM64 1
 #else
   #define XNN_ARCH_ARM64 0
@@ -229,7 +229,10 @@
 
 #define XNN_COUNT_OF(array) (sizeof(array) / sizeof(0[array]))
 
-#if defined(__cplusplus) || XNN_COMPILER_MSVC
+#if defined(__cplusplus) || XNN_COMPILER_MSVC || XNN_COMPILER_CLANG
+  // static as array indices in function parameter declaration is a C99 feature, not supported in C++.
+  // MSVC does not support this feature, even in C mode.
+  // Clang generates suboptimal code, see https://github.com/llvm/llvm-project/issues/59120
   #define XNN_MIN_ELEMENTS(count) count
 #else
   #define XNN_MIN_ELEMENTS(count) static count
@@ -305,4 +308,22 @@
   #else
     #define XNN_PRIVATE
   #endif
+#endif
+
+#if defined(__clang__)
+  #define XNN_PRAGMA_CLANG(pragma) _Pragma(pragma)
+#else
+  #define XNN_PRAGMA_CLANG(pragma)
+#endif
+
+#if XNN_ARCH_WASM
+  #define XNN_ALLOCATION_ALIGNMENT 4
+#elif XNN_ARCH_X86 || XNN_ARCH_X86_64
+  #if XNN_PLATFORM_MOBILE
+    #define XNN_ALLOCATION_ALIGNMENT 32
+  #else
+    #define XNN_ALLOCATION_ALIGNMENT 64
+  #endif
+#else
+  #define XNN_ALLOCATION_ALIGNMENT 16
 #endif

@@ -14,31 +14,31 @@
 
 #include "internal/platform/implementation/windows/ble_v2.h"
 
+#include <array>
 #include <iostream>
 #include <memory>
 #include <string>
 
 #include "absl/synchronization/mutex.h"
 #include "internal/platform/implementation/ble_v2.h"
+#include "internal/platform/implementation/windows/ble_v2_peripheral.h"
 #include "internal/platform/logging.h"
 #include "winrt/Windows.Devices.Bluetooth.Advertisement.h"
 #include "winrt/Windows.Devices.Bluetooth.h"
 #include "winrt/Windows.Foundation.Collections.h"
 
-namespace location {
 namespace nearby {
 namespace windows {
 
 namespace {
 
-using ::location::nearby::api::ble_v2::AdvertiseParameters;
-using ::location::nearby::api::ble_v2::BleAdvertisementData;
-using ::location::nearby::api::ble_v2::BleOperationStatus;
-using ::location::nearby::api::ble_v2::BleServerSocket;
-using ::location::nearby::api::ble_v2::BleSocket;
-using ::location::nearby::api::ble_v2::GattClient;
-using ::location::nearby::api::ble_v2::ServerGattConnectionCallback;
-using ::location::nearby::api::ble_v2::TxPowerLevel;
+using ::nearby::api::ble_v2::AdvertiseParameters;
+using ::nearby::api::ble_v2::BleAdvertisementData;
+using ::nearby::api::ble_v2::BleServerSocket;
+using ::nearby::api::ble_v2::BleSocket;
+using ::nearby::api::ble_v2::GattClient;
+using ::nearby::api::ble_v2::ServerGattConnectionCallback;
+using ::nearby::api::ble_v2::TxPowerLevel;
 using ::winrt::Windows::Devices::Bluetooth::BluetoothError;
 using ::winrt::Windows::Devices::Bluetooth::Advertisement::
     BluetoothLEAdvertisement;
@@ -85,12 +85,8 @@ std::string TxPowerLevelToName(TxPowerLevel tx_power_level) {
 
 }  // namespace
 
-std::string BleV2Peripheral::GetAddress() const { return ""; }
-
 BleV2Medium::BleV2Medium(api::BluetoothAdapter& adapter)
     : adapter_(dynamic_cast<BluetoothAdapter*>(&adapter)) {}
-
-BleV2Medium::~BleV2Medium() {}
 
 // advertisement packet and populate accordingly
 bool BleV2Medium::StartAdvertising(const BleAdvertisementData& advertising_data,
@@ -445,4 +441,3 @@ void BleV2Medium::AdvertisementReceivedHandler(
 
 }  // namespace windows
 }  // namespace nearby
-}  // namespace location

@@ -282,10 +282,10 @@ bool ShouldLogEvent(const TraceConfig& cfg) {
     case TraceConfig::STATSD_LOGGING_DISABLED:
       return false;
     case TraceConfig::STATSD_LOGGING_UNSPECIFIED:
-      // For backward compatibility with older versions of perfetto_cmd.
-      return cfg.enable_extra_guardrails();
+      break;
   }
-  PERFETTO_FATAL("For GCC");
+  // For backward compatibility with older versions of perfetto_cmd.
+  return cfg.enable_extra_guardrails();
 }
 
 // Appends `data` (which has `size` bytes), to `*packet`. Splits the data in
@@ -836,10 +836,10 @@ base::Status TracingServiceImpl::EnableTracing(ConsumerEndpointImpl* consumer,
 
   if (cfg.write_into_file()) {
     if (!fd ^ !cfg.output_path().empty()) {
-      tracing_sessions_.erase(tsid);
       MaybeLogUploadEvent(
           tracing_session->config, uuid,
           PerfettoStatsdAtom::kTracedEnableTracingInvalidFdOutputFile);
+      tracing_sessions_.erase(tsid);
       return PERFETTO_SVC_ERR(
           "When write_into_file==true either a FD needs to be passed or "
           "output_path must be populated (but not both)");
@@ -868,6 +868,7 @@ base::Status TracingServiceImpl::EnableTracing(ConsumerEndpointImpl* consumer,
 
   // Initialize the log buffers.
   bool did_allocate_all_buffers = true;
+  bool invalid_buffer_config = false;
 
   // Allocate the trace buffers. Also create a map to translate a consumer
   // relative index (TraceConfig.DataSourceConfig.target_buffer) into the
@@ -884,14 +885,24 @@ base::Status TracingServiceImpl::EnableTracing(ConsumerEndpointImpl* consumer,
       break;
     }
     tracing_session->buffers_index.push_back(global_id);
-    const size_t buf_size_bytes = buffer_cfg.size_kb() * 1024u;
-    total_buf_size_kb += buffer_cfg.size_kb();
+    // TraceBuffer size is limited to 32-bit.
+    const uint32_t buf_size_kb = buffer_cfg.size_kb();
+    const uint64_t buf_size_bytes = buf_size_kb * static_cast<uint64_t>(1024);
+    const size_t buf_size = static_cast<size_t>(buf_size_bytes);
+    if (buf_size_bytes == 0 ||
+        buf_size_bytes > std::numeric_limits<uint32_t>::max() ||
+        buf_size != buf_size_bytes) {
+      invalid_buffer_config = true;
+      did_allocate_all_buffers = false;
+      break;
+    }
+    total_buf_size_kb += buf_size_kb;
     TraceBuffer::OverwritePolicy policy =
         buffer_cfg.fill_policy() == TraceConfig::BufferConfig::DISCARD
             ? TraceBuffer::kDiscard
             : TraceBuffer::kOverwrite;
-    auto it_and_inserted = buffers_.emplace(
-        global_id, TraceBuffer::Create(buf_size_bytes, policy));
+    auto it_and_inserted =
+        buffers_.emplace(global_id, TraceBuffer::Create(buf_size, policy));
     PERFETTO_DCHECK(it_and_inserted.second);  // buffers_.count(global_id) == 0.
     std::unique_ptr<TraceBuffer>& trace_buffer = it_and_inserted.first->second;
     if (!trace_buffer) {
@@ -900,24 +911,28 @@ base::Status TracingServiceImpl::EnableTracing(ConsumerEndpointImpl* consumer,
     }
   }
 
-  UpdateMemoryGuardrail();
-
   // This can happen if either:
   // - All the kMaxTraceBufferID slots are taken.
-  // - OOM, or, more relistically, we exhausted virtual memory.
+  // - OOM, or, more realistically, we exhausted virtual memory.
+  // - The buffer size in the config is invalid.
   // In any case, free all the previously allocated buffers and abort.
-  // TODO(fmayer): add a test to cover this case, this is quite subtle.
   if (!did_allocate_all_buffers) {
     for (BufferID global_id : tracing_session->buffers_index) {
       buffer_ids_.Free(global_id);
       buffers_.erase(global_id);
     }
-    tracing_sessions_.erase(tsid);
     MaybeLogUploadEvent(tracing_session->config, uuid,
                         PerfettoStatsdAtom::kTracedEnableTracingOom);
+    tracing_sessions_.erase(tsid);
+    if (invalid_buffer_config) {
+      return PERFETTO_SVC_ERR(
+          "Failed to allocate tracing buffers: Invalid buffer sizes");
+    }
     return PERFETTO_SVC_ERR(
         "Failed to allocate tracing buffers: OOM or too many buffers");
   }
+
+  UpdateMemoryGuardrail();
 
   consumer->tracing_session_id_ = tsid;
 
@@ -972,9 +987,12 @@ base::Status TracingServiceImpl::EnableTracing(ConsumerEndpointImpl* consumer,
   tracing_session->state = TracingSession::CONFIGURED;
   PERFETTO_LOG(
       "Configured tracing session %" PRIu64
-      ", #sources:%zu, duration:%d ms, #buffers:%d, total "
+      ", #sources:%zu, duration:%d ms%s, #buffers:%d, total "
       "buffer size:%zu KB, total sessions:%zu, uid:%d session name: \"%s\"",
       tsid, cfg.data_sources().size(), tracing_session->config.duration_ms(),
+      tracing_session->config.prefer_suspend_clock_for_duration()
+          ? " (suspend_clock)"
+          : "",
       cfg.buffers_size(), total_buf_size_kb, tracing_sessions_.size(),
       static_cast<unsigned int>(consumer->uid_),
       cfg.unique_session_name().c_str());
@@ -1174,28 +1192,19 @@ base::Status TracingServiceImpl::StartTracing(TracingSessionID tsid) {
   // Trigger delayed task if the trace is time limited.
   const uint32_t trace_duration_ms = tracing_session->config.duration_ms();
   if (trace_duration_ms > 0) {
-    task_runner_->PostDelayedTask(
-        [weak_this, tsid] {
-          // Skip entirely the flush if the trace session doesn't exist anymore.
-          // This is to prevent misleading error messages to be logged.
-          if (!weak_this)
-            return;
-          auto* tracing_session_ptr = weak_this->GetTracingSession(tsid);
-          if (!tracing_session_ptr)
-            return;
-          // If this trace was using STOP_TRACING triggers and we've seen
-          // one, then the trigger overrides the normal timeout. In this
-          // case we just return and let the other task clean up this trace.
-          if (tracing_session_ptr->config.trigger_config().trigger_mode() ==
-                  TraceConfig::TriggerConfig::STOP_TRACING &&
-              !tracing_session_ptr->received_triggers.empty())
-            return;
-          // In all other cases (START_TRACING or no triggers) we flush
-          // after |trace_duration_ms| unconditionally.
-          weak_this->FlushAndDisableTracing(tsid);
-        },
-        trace_duration_ms);
-  }
+    auto stop_task =
+        std::bind(&TracingServiceImpl::StopOnDurationMsExpiry, weak_this, tsid);
+    if (tracing_session->config.prefer_suspend_clock_for_duration()) {
+      base::PeriodicTask::Args stop_args;
+      stop_args.use_suspend_aware_timer = true;
+      stop_args.period_ms = trace_duration_ms;
+      stop_args.one_shot = true;
+      stop_args.task = std::move(stop_task);
+      tracing_session->timed_stop_task.Start(stop_args);
+    } else {
+      task_runner_->PostDelayedTask(std::move(stop_task), trace_duration_ms);
+    }
+  }  // if (trace_duration_ms > 0).
 
   // Start the periodic drain tasks if we should to save the trace into a file.
   if (tracing_session->config.write_into_file()) {
@@ -1230,6 +1239,29 @@ base::Status TracingServiceImpl::StartTracing(TracingSessionID tsid) {
 
   MaybeNotifyAllDataSourcesStarted(tracing_session);
   return base::OkStatus();
+}
+
+// static
+void TracingServiceImpl::StopOnDurationMsExpiry(
+    base::WeakPtr<TracingServiceImpl> weak_this,
+    TracingSessionID tsid) {
+  // Skip entirely the flush if the trace session doesn't exist anymore.
+  // This is to prevent misleading error messages to be logged.
+  if (!weak_this)
+    return;
+  auto* tracing_session_ptr = weak_this->GetTracingSession(tsid);
+  if (!tracing_session_ptr)
+    return;
+  // If this trace was using STOP_TRACING triggers and we've seen
+  // one, then the trigger overrides the normal timeout. In this
+  // case we just return and let the other task clean up this trace.
+  if (tracing_session_ptr->config.trigger_config().trigger_mode() ==
+          TraceConfig::TriggerConfig::STOP_TRACING &&
+      !tracing_session_ptr->received_triggers.empty())
+    return;
+  // In all other cases (START_TRACING or no triggers) we flush
+  // after |trace_duration_ms| unconditionally.
+  weak_this->FlushAndDisableTracing(tsid);
 }
 
 void TracingServiceImpl::StartDataSourceInstance(
@@ -1601,9 +1633,9 @@ void TracingServiceImpl::ActivateTriggers(
   }  // for (trigger_name : triggers)
 }
 
-// Always invoked kDataSourceStopTimeoutMs after DisableTracing(). In nominal
-// conditions all data sources should have acked the stop and this will early
-// out.
+// Always invoked TraceConfig.data_source_stop_timeout_ms (by default
+// kDataSourceStopTimeoutMs) after DisableTracing(). In nominal conditions all
+// data sources should have acked the stop and this will early out.
 void TracingServiceImpl::OnDisableTracingTimeout(TracingSessionID tsid) {
   PERFETTO_DCHECK_THREAD(thread_checker_);
   TracingSession* tracing_session = GetTracingSession(tsid);
@@ -2704,6 +2736,16 @@ TracingServiceImpl::DataSourceInstance* TracingServiceImpl::SetupDataSource(
 
   DataSourceConfig& ds_config = ds_instance->config;
   ds_config.set_trace_duration_ms(tracing_session->config.duration_ms());
+
+  // Rationale for `if (prefer) set_prefer(true)`, rather than `set(prefer)`:
+  // ComputeStartupConfigHash() in tracing_muxer_impl.cc compares hashes of the
+  // DataSourceConfig and expects to know (and clear) the fields generated by
+  // the tracing service. Unconditionally adding a new field breaks backward
+  // compatibility of startup tracing with older SDKs, because the serialization
+  // also propagates unkonwn fields, breaking the hash matching check.
+  if (tracing_session->config.prefer_suspend_clock_for_duration())
+    ds_config.set_prefer_suspend_clock_for_duration(true);
+
   ds_config.set_stop_timeout_ms(tracing_session->data_source_stop_timeout_ms());
   ds_config.set_enable_extra_guardrails(
       tracing_session->config.enable_extra_guardrails());
@@ -4269,7 +4311,8 @@ TracingServiceImpl::TracingSession::TracingSession(
       consumer_maybe_null(consumer),
       consumer_uid(consumer->uid_),
       config(new_config),
-      snapshot_periodic_task(task_runner) {
+      snapshot_periodic_task(task_runner),
+      timed_stop_task(task_runner) {
   // all_data_sources_flushed is special because we store up to 64 events of
   // this type. Other events will go through the default case in
   // SnapshotLifecycleEvent() where they will be given a max history of 1.

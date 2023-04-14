@@ -353,9 +353,10 @@ export class SessionRouter {
     this.#connectionInternal.sendRawMessage(JSON.stringify(messageObject));
   }
 
-  private sendRawMessageForTesting(method: QualifiedName, params: Object|null, callback: Callback|null): void {
+  private sendRawMessageForTesting(method: QualifiedName, params: Object|null, callback: Callback|null, sessionId = ''):
+      void {
     const domain = method.split('.')[0];
-    this.sendMessage('', domain, method, params, callback || ((): void => {}));
+    this.sendMessage(sessionId, domain, method, params, callback || ((): void => {}));
   }
 
   private onMessage(message: string|Object): void {
@@ -486,18 +487,18 @@ export class SessionRouter {
 }
 
 /**
-  * Make sure that `Domain` in get/set is only ever instantiated with one protocol domain
-  * name, because if `Domain` allows multiple domains, the type is unsound.
-  */
+ * Make sure that `Domain` in get/set is only ever instantiated with one protocol domain
+ * name, because if `Domain` allows multiple domains, the type is unsound.
+ */
 interface AgentsMap extends Map<ProtocolDomainName, ProtocolProxyApi.ProtocolApi[ProtocolDomainName]> {
   get<Domain extends ProtocolDomainName>(key: Domain): ProtocolProxyApi.ProtocolApi[Domain]|undefined;
   set<Domain extends ProtocolDomainName>(key: Domain, value: ProtocolProxyApi.ProtocolApi[Domain]): this;
 }
 
 /**
-  * Make sure that `Domain` in get/set is only ever instantiated with one protocol domain
-  * name, because if `Domain` allows multiple domains, the type is unsound.
-  */
+ * Make sure that `Domain` in get/set is only ever instantiated with one protocol domain
+ * name, because if `Domain` allows multiple domains, the type is unsound.
+ */
 interface DispatcherMap extends Map<ProtocolDomainName, ProtocolProxyApi.ProtocolDispatchers[ProtocolDomainName]> {
   get<Domain extends ProtocolDomainName>(key: Domain): DispatcherManager<Domain>|undefined;
   set<Domain extends ProtocolDomainName>(key: Domain, value: DispatcherManager<Domain>): this;
@@ -705,6 +706,10 @@ export class TargetBase {
     return this.getAgent('Page');
   }
 
+  preloadAgent(): ProtocolProxyApi.PreloadApi {
+    return this.getAgent('Preload');
+  }
+
   profilerAgent(): ProtocolProxyApi.ProfilerApi {
     return this.getAgent('Profiler');
   }
@@ -727,6 +732,10 @@ export class TargetBase {
 
   storageAgent(): ProtocolProxyApi.StorageApi {
     return this.getAgent('Storage');
+  }
+
+  systemInfo(): ProtocolProxyApi.SystemInfoApi {
+    return this.getAgent('SystemInfo');
   }
 
   targetAgent(): ProtocolProxyApi.TargetApi {
@@ -847,6 +856,10 @@ export class TargetBase {
 
   registerPageDispatcher(dispatcher: ProtocolProxyApi.PageDispatcher): void {
     this.registerDispatcher('Page', dispatcher);
+  }
+
+  registerPreloadDispatcher(dispatcher: ProtocolProxyApi.PreloadDispatcher): void {
+    this.registerDispatcher('Preload', dispatcher);
   }
 
   registerProfilerDispatcher(dispatcher: ProtocolProxyApi.ProfilerDispatcher): void {

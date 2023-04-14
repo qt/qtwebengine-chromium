@@ -5,6 +5,7 @@
 import * as LitHtml from '../../../ui/lit-html/lit-html.js';
 import * as ComponentHelpers from '../helpers/helpers.js';
 import type * as TextUtils from '../../../models/text_utils/text_utils.js';
+import * as i18n from '../../../core/i18n/i18n.js';
 
 import {
   SortDirection,
@@ -18,6 +19,27 @@ import {
 import {type ContextMenuColumnSortClickEvent, type ColumnHeaderClickEvent} from './DataGridEvents.js';
 import {DataGrid, type DataGridData, type DataGridContextMenusConfiguration} from './DataGrid.js';
 import dataGridControllerStyles from './dataGridController.css.js';
+import {alert} from '../../legacy/ARIAUtils.js';
+
+const UIStrings = {
+  /**
+   *@description Text announced when the column is sorted in ascending order
+   *@example {title} PH1
+   */
+  sortInAscendingOrder: '{PH1} sorted in ascending order',
+  /**
+   *@description Text announced when the column is sorted in descending order
+   *@example {title} PH1
+   */
+  sortInDescendingOrder: '{PH1} sorted in descending order',
+  /**
+   *@description Text announced when the column sorting canceled
+   *@example {title} PH1
+   */
+  sortingCanceled: '{PH1} sorting canceled',
+};
+const str_ = i18n.i18n.registerUIStrings('ui/components/data_grid/DataGridController.ts', UIStrings);
+const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 
 export interface DataGridControllerData {
   columns: Column[];
@@ -32,6 +54,7 @@ export interface DataGridControllerData {
   contextMenus?: DataGridContextMenusConfiguration;
   label?: string;
   paddingRowsCount?: number;
+  showScrollbar?: boolean;
 }
 
 export class DataGridController extends HTMLElement {
@@ -43,6 +66,7 @@ export class DataGridController extends HTMLElement {
   #rows: Row[] = [];
   #contextMenus?: DataGridContextMenusConfiguration = undefined;
   #label?: string = undefined;
+  #showScrollbar?: boolean = false;
 
   /**
    * Because the controller will sort data in place (e.g. mutate it) when we get
@@ -70,6 +94,7 @@ export class DataGridController extends HTMLElement {
       contextMenus: this.#contextMenus,
       label: this.#label,
       paddingRowsCount: this.#paddingRowsCount,
+      showScrollbar: this.#showScrollbar,
     };
   }
 
@@ -80,6 +105,7 @@ export class DataGridController extends HTMLElement {
     this.#filters = data.filters || [];
     this.#contextMenus = data.contextMenus;
     this.#label = data.label;
+    this.#showScrollbar = data.showScrollbar;
 
     this.#columns = [...this.#originalColumns];
     this.#rows = this.#cloneAndFilterRows(data.rows, this.#filters);
@@ -97,7 +123,7 @@ export class DataGridController extends HTMLElement {
     this.#render();
   }
 
-  #testRowWithFilter(row: Row, filter: TextUtils.TextUtils.ParsedFilter): boolean {
+  #testRowWithFilter(row: Row, filter: TextUtils.TextUtils.ParsedFilter, visibleColumnIds: Set<string>): boolean {
     let rowMatchesFilter = false;
 
     const {key, text, negative, regex} = filter;
@@ -106,7 +132,7 @@ export class DataGridController extends HTMLElement {
     if (key) {
       dataToTest = getStringifiedCellValues([getRowEntryForColumnId(row, key)]);
     } else {
-      dataToTest = getStringifiedCellValues(row.cells);
+      dataToTest = getStringifiedCellValues(row.cells.filter(cell => visibleColumnIds.has(cell.columnId)));
     }
 
     if (regex) {
@@ -129,11 +155,12 @@ export class DataGridController extends HTMLElement {
       return [...rows];
     }
 
+    const visibleColumnIds = new Set(this.#columns.filter(column => column.visible).map(column => column.id));
     return rows.map(row => {
       // We assume that the row should be visible by default.
       let rowShouldBeVisible = true;
       for (const filter of filters) {
-        const rowMatchesFilter = this.#testRowWithFilter(row, filter);
+        const rowMatchesFilter = this.#testRowWithFilter(row, filter, visibleColumnIds);
         // If there are multiple filters, if any return false we hide the row.
         // So if we get a false from testRowWithFilter, we can break early and return false.
         if (!rowMatchesFilter) {
@@ -198,13 +225,19 @@ export class DataGridController extends HTMLElement {
         direction: SortDirection.ASC,
       };
     }
+    const headerName = column.title;
 
     if (this.#sortState) {
       this.#sortRows(this.#sortState);
+      alert(
+          this.#sortState.direction === SortDirection.ASC ?
+              i18nString(UIStrings.sortInAscendingOrder, {PH1: headerName || ''}) :
+              i18nString(UIStrings.sortInDescendingOrder, {PH1: headerName || ''}));
     } else {
       // No sortstate = render the original rows.
       this.#rows = this.#cloneAndFilterRows(this.#originalRows, this.#filters);
       this.#render();
+      alert(i18nString(UIStrings.sortingCanceled, {PH1: headerName || ''}));
     }
   }
 
@@ -229,6 +262,7 @@ export class DataGridController extends HTMLElement {
           contextMenus: this.#contextMenus,
           label: this.#label,
           paddingRowsCount: this.#paddingRowsCount,
+          showScrollbar: this.#showScrollbar,
         } as DataGridData}
         @columnheaderclick=${this.#onColumnHeaderClick}
         @contextmenucolumnsortclick=${this.#onContextMenuColumnSortClick}

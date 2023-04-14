@@ -176,6 +176,7 @@ struct packet_traits<float> : default_packet_traits
     size = 4,
     HasHalfPacket = 1,
 
+    HasCmp       = 1,
     HasAdd       = 1,
     HasSub       = 1,
     HasShift     = 1,
@@ -188,7 +189,7 @@ struct packet_traits<float> : default_packet_traits
     HasMin       = 1,
     HasMax       = 1,
     HasConj      = 1,
-    HasSetLinear = 0,
+    HasSetLinear = 1,
     HasBlend     = 0,
 
     HasDiv   = 1,
@@ -237,7 +238,7 @@ struct packet_traits<int8_t> : default_packet_traits
     HasMin       = 1,
     HasMax       = 1,
     HasConj      = 1,
-    HasSetLinear = 0,
+    HasSetLinear = 1,
     HasBlend     = 0
   };
 };
@@ -267,7 +268,7 @@ struct packet_traits<uint8_t> : default_packet_traits
     HasMin       = 1,
     HasMax       = 1,
     HasConj      = 1,
-    HasSetLinear = 0,
+    HasSetLinear = 1,
     HasBlend     = 0,
 
     HasSqrt = 1
@@ -286,6 +287,7 @@ struct packet_traits<int16_t> : default_packet_traits
     size = 8,
     HasHalfPacket = 1,
 
+    HasCmp       = 1,
     HasAdd       = 1,
     HasSub       = 1,
     HasShift     = 1,
@@ -298,7 +300,7 @@ struct packet_traits<int16_t> : default_packet_traits
     HasMin       = 1,
     HasMax       = 1,
     HasConj      = 1,
-    HasSetLinear = 0,
+    HasSetLinear = 1,
     HasBlend     = 0
   };
 };
@@ -315,19 +317,20 @@ struct packet_traits<uint16_t> : default_packet_traits
     size = 8,
     HasHalfPacket = 1,
 
+    HasCmp       = 1,
     HasAdd       = 1,
     HasSub       = 1,
     HasShift     = 1,
     HasMul       = 1,
     HasNegate    = 0,
-    HasAbs       = 0,
+    HasAbs       = 1,
     HasAbsDiff   = 1,
     HasArg       = 0,
     HasAbs2      = 1,
     HasMin       = 1,
     HasMax       = 1,
     HasConj      = 1,
-    HasSetLinear = 0,
+    HasSetLinear = 1,
     HasBlend     = 0,
     HasSqrt = 1
   };
@@ -345,6 +348,7 @@ struct packet_traits<int32_t> : default_packet_traits
     size = 4,
     HasHalfPacket = 1,
 
+    HasCmp       = 1,
     HasAdd       = 1,
     HasSub       = 1,
     HasShift     = 1,
@@ -357,7 +361,7 @@ struct packet_traits<int32_t> : default_packet_traits
     HasMin       = 1,
     HasMax       = 1,
     HasConj      = 1,
-    HasSetLinear = 0,
+    HasSetLinear = 1,
     HasBlend     = 0
   };
 };
@@ -374,19 +378,20 @@ struct packet_traits<uint32_t> : default_packet_traits
     size = 4,
     HasHalfPacket = 1,
 
+    HasCmp       = 1,
     HasAdd       = 1,
     HasSub       = 1,
     HasShift     = 1,
     HasMul       = 1,
     HasNegate    = 0,
-    HasAbs       = 0,
+    HasAbs       = 1,
     HasArg       = 0,
     HasAbs2      = 1,
     HasAbsDiff   = 1,
     HasMin       = 1,
     HasMax       = 1,
     HasConj      = 1,
-    HasSetLinear = 0,
+    HasSetLinear = 1,
     HasBlend     = 0,
 
     HasSqrt = 1
@@ -418,7 +423,7 @@ struct packet_traits<int64_t> : default_packet_traits
     HasMin       = 1,
     HasMax       = 1,
     HasConj      = 1,
-    HasSetLinear = 0,
+    HasSetLinear = 1,
     HasBlend     = 0
   };
 };
@@ -441,14 +446,14 @@ struct packet_traits<uint64_t> : default_packet_traits
     HasShift     = 1,
     HasMul       = 1,
     HasNegate    = 0,
-    HasAbs       = 0,
+    HasAbs       = 1,
     HasArg       = 0,
     HasAbs2      = 1,
     HasAbsDiff   = 1,
     HasMin       = 1,
     HasMax       = 1,
     HasConj      = 1,
-    HasSetLinear = 0,
+    HasSetLinear = 1,
     HasBlend     = 0
   };
 };
@@ -2372,6 +2377,15 @@ template<> EIGEN_STRONG_INLINE Packet2l pabs(const Packet2l& a) {
 }
 template<> EIGEN_STRONG_INLINE Packet2ul pabs(const Packet2ul& a) { return a; }
 
+template <>
+EIGEN_STRONG_INLINE Packet2f psignbit(const Packet2f& a) {
+  return vreinterpret_f32_s32(vshr_n_s32(vreinterpret_s32_f32(a), 31));
+}
+template <>
+EIGEN_STRONG_INLINE Packet4f psignbit(const Packet4f& a) {
+  return vreinterpretq_f32_s32(vshrq_n_s32(vreinterpretq_s32_f32(a), 31));
+}
+
 template<> EIGEN_STRONG_INLINE Packet2f pfrexp<Packet2f>(const Packet2f& a, Packet2f& exponent)
 { return pfrexp_generic(a,exponent); }
 template<> EIGEN_STRONG_INLINE Packet4f pfrexp<Packet4f>(const Packet4f& a, Packet4f& exponent)
@@ -3397,7 +3411,7 @@ template<> struct packet_traits<bfloat16> : default_packet_traits
     HasMin       = 1,
     HasMax       = 1,
     HasConj      = 1,
-    HasSetLinear = 0,
+    HasSetLinear = 1,
     HasBlend     = 0,
     HasDiv       = 1,
     HasFloor     = 1,
@@ -3682,11 +3696,11 @@ template<> EIGEN_STRONG_INLINE Packet4bf pnegate<Packet4bf>(const Packet4bf& a)
 
 // Clang 3.5 in the iOS toolchain has an ICE triggered by NEON intrisics for double.
 // Confirmed at least with __apple_build_version__ = 6000054.
-#ifdef __apple_build_version__
+#if EIGEN_COMP_CLANGAPPLE
 // Let's hope that by the time __apple_build_version__ hits the 601* range, the bug will be fixed.
 // https://gist.github.com/yamaya/2924292 suggests that the 3 first digits are only updated with
 // major toolchain updates.
-#define EIGEN_APPLE_DOUBLE_NEON_BUG (__apple_build_version__ < 6010000)
+#define EIGEN_APPLE_DOUBLE_NEON_BUG (EIGEN_COMP_CLANGAPPLE < 6010000)
 #else
 #define EIGEN_APPLE_DOUBLE_NEON_BUG 0
 #endif
@@ -3754,7 +3768,7 @@ template<> struct packet_traits<double>  : default_packet_traits
     HasMin       = 1,
     HasMax       = 1,
     HasConj      = 1,
-    HasSetLinear = 0,
+    HasSetLinear = 1,
     HasBlend     = 0,
 
     HasDiv   = 1,
@@ -3904,12 +3918,17 @@ template<> EIGEN_STRONG_INLINE Packet2d preverse(const Packet2d& a)
 
 template<> EIGEN_STRONG_INLINE Packet2d pabs(const Packet2d& a) { return vabsq_f64(a); }
 
+template <>
+EIGEN_STRONG_INLINE Packet2d psignbit(const Packet2d& a) {
+  return vreinterpretq_f64_s64(vshrq_n_s64(vreinterpretq_s64_f64(a), 63));
+}
+
 template<> EIGEN_STRONG_INLINE double predux<Packet2d>(const Packet2d& a)
 { return vaddvq_f64(a); }
 
 // Other reduction functions:
 // mul
-#if EIGEN_COMP_CLANG && defined(__apple_build_version__)
+#if EIGEN_COMP_CLANGAPPLE
 template<> EIGEN_STRONG_INLINE double predux_mul<Packet2d>(const Packet2d& a)
 { return (vget_low_f64(a) * vget_high_f64(a))[0]; }
 #else
@@ -3993,7 +4012,7 @@ struct packet_traits<Eigen::half> : default_packet_traits {
     HasMin = 1,
     HasMax = 1,
     HasConj = 1,
-    HasSetLinear = 0,
+    HasSetLinear = 1,
     HasBlend = 0,
     HasInsert = 1,
     HasReduxp = 1,
@@ -4465,9 +4484,19 @@ EIGEN_STRONG_INLINE Packet8hf pabs<Packet8hf>(const Packet8hf& a) {
   return vabsq_f16(a);
 }
 
+template<>
+EIGEN_STRONG_INLINE Packet8hf psignbit(const Packet8hf& a) {
+  return vreinterpretq_f16_s16(vshrq_n_s16(vreinterpretq_s16_f16(a), 15));
+}
+
 template <>
 EIGEN_STRONG_INLINE Packet4hf pabs<Packet4hf>(const Packet4hf& a) {
   return vabs_f16(a);
+}
+
+template <>
+EIGEN_STRONG_INLINE Packet4hf psignbit(const Packet4hf& a) {
+  return vreinterpret_f16_s16( vshr_n_s16( vreinterpret_s16_f16(a), 15)); 
 }
 
 template <>

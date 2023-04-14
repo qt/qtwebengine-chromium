@@ -8,7 +8,8 @@
 #ifndef skgpu_graphite_geom_IntersectionTree_DEFINED
 #define skgpu_graphite_geom_IntersectionTree_DEFINED
 
-#include "src/core/SkArenaAlloc.h"
+#include "include/private/base/SkAlign.h"
+#include "src/base/SkArenaAlloc.h"
 #include "src/gpu/graphite/geom/Rect.h"
 
 namespace skgpu::graphite {

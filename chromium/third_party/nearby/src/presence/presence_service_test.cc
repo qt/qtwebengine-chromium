@@ -19,7 +19,6 @@
 #include "gtest/gtest.h"
 #include "internal/platform/medium_environment.h"
 #include "presence/presence_client.h"
-#include "presence/status.h"
 
 namespace nearby {
 namespace presence {
@@ -27,8 +26,7 @@ namespace {
 
 class PresenceServiceTest : public testing::Test {
  protected:
-  location::nearby::MediumEnvironment& env_{
-      location::nearby::MediumEnvironment::Instance()};
+  nearby::MediumEnvironment& env_{nearby::MediumEnvironment::Instance()};
 };
 
 TEST_F(PresenceServiceTest, DefaultConstructorWorks) {
@@ -37,17 +35,18 @@ TEST_F(PresenceServiceTest, DefaultConstructorWorks) {
 
 TEST_F(PresenceServiceTest, StartThenStopScan) {
   env_.Start();
-  Status scan_result = {Status::Value::kSuccess};
+  absl::Status scan_result;
   ScanCallback scan_callback = {
-      .start_scan_cb = [&](Status status) { scan_result = status; },
+      .start_scan_cb = [&](absl::Status status) { scan_result = status; },
   };
   PresenceService presence_service;
   PresenceClient client = presence_service.CreatePresenceClient();
 
   absl::StatusOr<ScanSessionId> scan_session = client.StartScan(
-      {}, {
-              .start_scan_cb = [&](Status status) { scan_result = status; },
-          });
+      {},
+      {
+          .start_scan_cb = [&](absl::Status status) { scan_result = status; },
+      });
   absl::StatusOr<ScanSessionId> scan_session_with_default_params =
       client.StartScan(ScanRequest(), ScanCallback());
 

@@ -529,6 +529,8 @@ GL_MultiDrawElementsInstancedBaseVertexBaseInstanceANGLE(GLenum mode,
     }
 }
 
+// GL_ANGLE_clip_cull_distance
+
 // GL_ANGLE_copy_texture_3d
 void GL_APIENTRY GL_CopyTexture3DANGLE(GLuint sourceId,
                                        GLint sourceLevel,
@@ -1682,7 +1684,8 @@ void GL_APIENTRY GL_GetProgramivRobustANGLE(GLuint program,
                          bufSize, length, params);
     }
     else
-    {}
+    {
+    }
 }
 
 void GL_APIENTRY GL_GetRenderbufferParameterivRobustANGLE(GLenum target,
@@ -1747,7 +1750,8 @@ void GL_APIENTRY GL_GetShaderivRobustANGLE(GLuint shader,
                          length, params);
     }
     else
-    {}
+    {
+    }
 }
 
 void GL_APIENTRY GL_GetTexParameterfvRobustANGLE(GLenum target,
@@ -3674,7 +3678,8 @@ void GL_APIENTRY GL_GetQueryObjectivRobustANGLE(GLuint id,
                          bufSize, length, params);
     }
     else
-    {}
+    {
+    }
 }
 
 void GL_APIENTRY GL_GetQueryObjecti64vRobustANGLE(GLuint id,
@@ -3706,7 +3711,8 @@ void GL_APIENTRY GL_GetQueryObjecti64vRobustANGLE(GLuint id,
                          bufSize, length, params);
     }
     else
-    {}
+    {
+    }
 }
 
 void GL_APIENTRY GL_GetQueryObjectui64vRobustANGLE(GLuint id,
@@ -4360,6 +4366,8 @@ void GL_APIENTRY GL_ReleaseTexturesANGLE(GLuint numTextures,
 // IsSync is already defined.
 
 // WaitSync is already defined.
+
+// GL_ARM_shader_framebuffer_fetch
 
 // GL_CHROMIUM_bind_uniform_location
 void GL_APIENTRY GL_BindUniformLocationCHROMIUM(GLuint program, GLint location, const GLchar *name)
@@ -5365,7 +5373,8 @@ void GL_APIENTRY GL_GetQueryObjecti64vEXT(GLuint id, GLenum pname, GLint64 *para
         ANGLE_CAPTURE_GL(GetQueryObjecti64vEXT, isCallValid, context, idPacked, pname, params);
     }
     else
-    {}
+    {
+    }
 }
 
 void GL_APIENTRY GL_GetQueryObjectivEXT(GLuint id, GLenum pname, GLint *params)
@@ -5390,7 +5399,8 @@ void GL_APIENTRY GL_GetQueryObjectivEXT(GLuint id, GLenum pname, GLint *params)
         ANGLE_CAPTURE_GL(GetQueryObjectivEXT, isCallValid, context, idPacked, pname, params);
     }
     else
-    {}
+    {
+    }
 }
 
 void GL_APIENTRY GL_GetQueryObjectui64vEXT(GLuint id, GLenum pname, GLuint64 *params)
@@ -6810,6 +6820,34 @@ void GL_APIENTRY GL_RenderbufferStorageMultisampleEXT(GLenum target,
 // GetQueryivEXT is already defined.
 
 // IsQueryEXT is already defined.
+
+// GL_EXT_polygon_offset_clamp
+void GL_APIENTRY GL_PolygonOffsetClampEXT(GLfloat factor, GLfloat units, GLfloat clamp)
+{
+    Context *context = GetValidGlobalContext();
+    EVENT(context, GLPolygonOffsetClampEXT, "context = %d, factor = %f, units = %f, clamp = %f",
+          CID(context), factor, units, clamp);
+
+    if (context)
+    {
+        SCOPED_SHARE_CONTEXT_LOCK(context);
+        bool isCallValid =
+            (context->skipValidation() ||
+             (ValidatePixelLocalStorageInactive(context,
+                                                angle::EntryPoint::GLPolygonOffsetClampEXT) &&
+              ValidatePolygonOffsetClampEXT(context, angle::EntryPoint::GLPolygonOffsetClampEXT,
+                                            factor, units, clamp)));
+        if (isCallValid)
+        {
+            context->polygonOffsetClamp(factor, units, clamp);
+        }
+        ANGLE_CAPTURE_GL(PolygonOffsetClampEXT, isCallValid, context, factor, units, clamp);
+    }
+    else
+    {
+        GenerateContextLostErrorOnCurrentGlobalContext();
+    }
+}
 
 // GL_EXT_primitive_bounding_box
 void GL_APIENTRY GL_PrimitiveBoundingBoxEXT(GLfloat minX,
@@ -9077,6 +9115,8 @@ void GL_APIENTRY GL_TexBufferRangeEXT(GLenum target,
 // GL_EXT_texture_format_BGRA8888
 
 // GL_EXT_texture_format_sRGB_override
+
+// GL_EXT_texture_mirror_clamp_to_edge
 
 // GL_EXT_texture_norm16
 

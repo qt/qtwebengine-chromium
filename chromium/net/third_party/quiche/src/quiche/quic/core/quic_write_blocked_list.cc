@@ -9,16 +9,10 @@
 
 namespace quic {
 
-QuicWriteBlockedList::QuicWriteBlockedList(QuicTransportVersion version)
-    : priority_write_scheduler_(QuicVersionUsesCryptoFrames(version)
-                                    ? std::numeric_limits<QuicStreamId>::max()
-                                    : 0),
-      last_priority_popped_(0) {
+QuicWriteBlockedList::QuicWriteBlockedList() : last_priority_popped_(0) {
   memset(batch_write_stream_id_, 0, sizeof(batch_write_stream_id_));
   memset(bytes_left_for_batch_write_, 0, sizeof(bytes_left_for_batch_write_));
 }
-
-QuicWriteBlockedList::~QuicWriteBlockedList() {}
 
 bool QuicWriteBlockedList::ShouldYield(QuicStreamId id) const {
   for (const auto& stream : static_stream_collection_) {
@@ -41,11 +35,10 @@ QuicStreamId QuicWriteBlockedList::PopFront() {
     return static_stream_id;
   }
 
-  const auto id_and_precedence =
-      priority_write_scheduler_.PopNextReadyStreamAndPrecedence();
-  const QuicStreamId id = std::get<0>(id_and_precedence);
-  const spdy::SpdyPriority priority =
-      std::get<1>(id_and_precedence).spdy3_priority();
+  const auto id_and_priority =
+      priority_write_scheduler_.PopNextReadyStreamAndPriority();
+  const QuicStreamId id = std::get<0>(id_and_priority);
+  const spdy::SpdyPriority priority = std::get<1>(id_and_priority).urgency;
 
   if (!priority_write_scheduler_.HasReadyStreams()) {
     // If no streams are blocked, don't bother latching.  This stream will be
@@ -62,34 +55,30 @@ QuicStreamId QuicWriteBlockedList::PopFront() {
   return id;
 }
 
-void QuicWriteBlockedList::RegisterStream(
-    QuicStreamId stream_id, bool is_static_stream,
-    const spdy::SpdyStreamPrecedence& precedence) {
+void QuicWriteBlockedList::RegisterStream(QuicStreamId stream_id,
+                                          bool is_static_stream,
+                                          const QuicStreamPriority& priority) {
   QUICHE_DCHECK(!priority_write_scheduler_.StreamRegistered(stream_id))
       << "stream " << stream_id << " already registered";
-  QUICHE_DCHECK(precedence.is_spdy3_priority());
   if (is_static_stream) {
     static_stream_collection_.Register(stream_id);
     return;
   }
 
-  priority_write_scheduler_.RegisterStream(stream_id, precedence);
+  priority_write_scheduler_.RegisterStream(stream_id, priority);
 }
 
-void QuicWriteBlockedList::UnregisterStream(QuicStreamId stream_id,
-                                            bool is_static) {
-  if (is_static) {
-    static_stream_collection_.Unregister(stream_id);
+void QuicWriteBlockedList::UnregisterStream(QuicStreamId stream_id) {
+  if (static_stream_collection_.Unregister(stream_id)) {
     return;
   }
   priority_write_scheduler_.UnregisterStream(stream_id);
 }
 
 void QuicWriteBlockedList::UpdateStreamPriority(
-    QuicStreamId stream_id, const spdy::SpdyStreamPrecedence& new_precedence) {
+    QuicStreamId stream_id, const QuicStreamPriority& new_priority) {
   QUICHE_DCHECK(!static_stream_collection_.IsRegistered(stream_id));
-  QUICHE_DCHECK(new_precedence.is_spdy3_priority());
-  priority_write_scheduler_.UpdateStreamPrecedence(stream_id, new_precedence);
+  priority_write_scheduler_.UpdateStreamPriority(stream_id, new_priority);
 }
 
 void QuicWriteBlockedList::UpdateBytesForStream(QuicStreamId stream_id,
@@ -138,17 +127,17 @@ bool QuicWriteBlockedList::StaticStreamCollection::IsRegistered(
   return false;
 }
 
-void QuicWriteBlockedList::StaticStreamCollection::Unregister(QuicStreamId id) {
+bool QuicWriteBlockedList::StaticStreamCollection::Unregister(QuicStreamId id) {
   for (auto it = streams_.begin(); it != streams_.end(); ++it) {
     if (it->id == id) {
       if (it->is_blocked) {
         --num_blocked_;
       }
       streams_.erase(it);
-      return;
+      return true;
     }
   }
-  QUICHE_DCHECK(false) << "Erasing a non-exist stream with id " << id;
+  return false;
 }
 
 bool QuicWriteBlockedList::StaticStreamCollection::SetBlocked(QuicStreamId id) {

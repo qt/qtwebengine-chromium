@@ -2,8 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import type * as Bindings from '../../models/bindings/bindings.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as CodeMirror from '../../third_party/codemirror.next/codemirror.next.js';
+import * as IconButton from '../../ui/components/icon_button/icon_button.js';
 import * as TextEditor from '../../ui/components/text_editor/text_editor.js';
 import * as UI from '../../ui/legacy/legacy.js';
 
@@ -11,61 +13,64 @@ import breakpointEditDialogStyles from './breakpointEditDialog.css.js';
 
 const UIStrings = {
   /**
-  *@description Screen reader label for a select box that chooses the breakpoint type in the Sources panel when editing a breakpoint
-  */
+   *@description Screen reader label for a select box that chooses the breakpoint type in the Sources panel when editing a breakpoint
+   */
   breakpointType: 'Breakpoint type',
   /**
-  *@description Text in Breakpoint Edit Dialog of the Sources panel
-  */
+   *@description Text in Breakpoint Edit Dialog of the Sources panel
+   */
   breakpoint: 'Breakpoint',
   /**
-  *@description Text in Breakpoint Edit Dialog of the Sources panel
-  */
+   *@description Text in Breakpoint Edit Dialog of the Sources panel
+   */
   conditionalBreakpoint: 'Conditional breakpoint',
   /**
-  *@description Text in Breakpoint Edit Dialog of the Sources panel
-  */
+   *@description Text in Breakpoint Edit Dialog of the Sources panel
+   */
   logpoint: 'Logpoint',
   /**
-  *@description Text in Breakpoint Edit Dialog of the Sources panel
-  */
+   *@description Text in Breakpoint Edit Dialog of the Sources panel
+   */
   expressionToCheckBeforePausingEg: 'Expression to check before pausing, e.g. x > 5',
   /**
-  *@description Type selector element title in Breakpoint Edit Dialog of the Sources panel
-  */
+   *@description Type selector element title in Breakpoint Edit Dialog of the Sources panel
+   */
   pauseOnlyWhenTheConditionIsTrue: 'Pause only when the condition is true',
   /**
-  *@description Text in Breakpoint Edit Dialog of the Sources panel. It is used as
-  *the placeholder for a text input field before the user enters text. Provides the user with
-  *an example on how to use Logpoints. 'Log' is a verb and 'message' is a noun.
-  *See: https://developer.chrome.com/blog/new-in-devtools-73/#logpoints
-  */
+   * @description Link text in the Breakpoint Edit Dialog of the Sources panel
+   */
+  learnMoreOnBreakpointTypes: 'Learn more: Breakpoint Types',
+  /**
+   *@description Text in Breakpoint Edit Dialog of the Sources panel. It is used as
+   *the placeholder for a text input field before the user enters text. Provides the user with
+   *an example on how to use Logpoints. 'Log' is a verb and 'message' is a noun.
+   *See: https://developer.chrome.com/blog/new-in-devtools-73/#logpoints
+   */
   logMessageEgXIsX: 'Log message, e.g. `\'x is\', x`',
   /**
-  *@description Type selector element title in Breakpoint Edit Dialog of the Sources panel
-  */
+   *@description Type selector element title in Breakpoint Edit Dialog of the Sources panel
+   */
   logAMessageToConsoleDoNotBreak: 'Log a message to Console, do not break',
 };
 const str_ = i18n.i18n.registerUIStrings('panels/sources/BreakpointEditDialog.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 
+export interface BreakpointEditDialogResult {
+  committed: boolean;
+  condition: Bindings.BreakpointManager.UserCondition;
+  isLogpoint: boolean;
+}
+
 export class BreakpointEditDialog extends UI.Widget.Widget {
-  private readonly onFinish: (arg0: {
-    committed: boolean,
-    condition: string,
-  }) => Promise<void>;
+  private readonly onFinish: (result: BreakpointEditDialogResult) => void;
   private finished: boolean;
   private editor: TextEditor.TextEditor.TextEditor;
-  private isLogpoint: boolean;
   private readonly typeSelector: UI.Toolbar.ToolbarComboBox;
   private placeholderCompartment: CodeMirror.Compartment;
 
   constructor(
-      editorLineNumber: number,
-      oldCondition: string,
-      preferLogpoint: boolean,
-      onFinish: (arg0: {committed: boolean, condition: string}) => Promise<void>,
-  ) {
+      editorLineNumber: number, oldCondition: string, isLogpoint: boolean,
+      onFinish: (result: BreakpointEditDialogResult) => void) {
     super(true);
 
     const editorConfig = [
@@ -82,14 +87,6 @@ export class BreakpointEditDialog extends UI.Widget.Widget {
     this.finished = false;
     this.element.tabIndex = -1;
 
-    const logpointPrefix = LogpointPrefix;
-    const logpointSuffix = LogpointSuffix;
-    this.isLogpoint = oldCondition.startsWith(logpointPrefix) && oldCondition.endsWith(logpointSuffix);
-    if (this.isLogpoint) {
-      oldCondition = oldCondition.substring(logpointPrefix.length, oldCondition.length - logpointSuffix.length);
-    }
-    this.isLogpoint = this.isLogpoint || preferLogpoint;
-
     this.element.classList.add('sources-edit-breakpoint-dialog');
     const toolbar = new UI.Toolbar.Toolbar('source-frame-breakpoint-toolbar', this.contentElement);
     toolbar.appendText(`Line ${editorLineNumber + 1}:`);
@@ -100,7 +97,7 @@ export class BreakpointEditDialog extends UI.Widget.Widget {
     const conditionalOption =
         this.typeSelector.createOption(i18nString(UIStrings.conditionalBreakpoint), BreakpointType.Conditional);
     const logpointOption = this.typeSelector.createOption(i18nString(UIStrings.logpoint), BreakpointType.Logpoint);
-    this.typeSelector.select(this.isLogpoint ? logpointOption : conditionalOption);
+    this.typeSelector.select(isLogpoint ? logpointOption : conditionalOption);
     toolbar.appendToolbarItem(this.typeSelector);
 
     const content = oldCondition || '';
@@ -152,6 +149,15 @@ export class BreakpointEditDialog extends UI.Widget.Widget {
     }));
     editorWrapper.appendChild(this.editor);
 
+    const link = UI.Fragment.html`<x-link class="link devtools-link" tabindex="0" href='https://goo.gle/devtools-loc'>${
+                     i18nString(UIStrings.learnMoreOnBreakpointTypes)}</x-link>` as UI.XLink.XLink;
+    const linkIcon = new IconButton.Icon.Icon();
+    linkIcon.data = {iconName: 'link_icon', color: 'var(--color-link)', width: '15px', height: '15px'};
+    linkIcon.classList.add('link-icon');
+    link.prepend(linkIcon);
+
+    this.contentElement.appendChild(link);
+
     this.updateTooltip();
 
     this.element.addEventListener('blur', event => {
@@ -165,14 +171,9 @@ export class BreakpointEditDialog extends UI.Widget.Widget {
   focusEditor(): void {
     this.editor.editor.focus();
   }
-  private static conditionForLogpoint(condition: string): string {
-    return `${LogpointPrefix}${condition}${LogpointSuffix}`;
-  }
 
   private onTypeChanged(): void {
-    const type = this.breakpointType;
-    this.isLogpoint = type === BreakpointType.Logpoint;
-    if (type === BreakpointType.Breakpoint) {
+    if (this.breakpointType === BreakpointType.Breakpoint) {
       this.finishEditing(true, '');
       return;
     }
@@ -211,20 +212,19 @@ export class BreakpointEditDialog extends UI.Widget.Widget {
     }
     this.finished = true;
     this.editor.remove();
-    if (this.isLogpoint) {
-      condition = BreakpointEditDialog.conditionForLogpoint(condition);
-    }
-    void this.onFinish({committed, condition});
+    const isLogpoint = this.breakpointType === BreakpointType.Logpoint;
+    this.onFinish({committed, condition: condition as Bindings.BreakpointManager.UserCondition, isLogpoint});
   }
 
   wasShown(): void {
     super.wasShown();
     this.registerCSSFiles([breakpointEditDialogStyles]);
   }
-}
 
-export const LogpointPrefix = '/** DEVTOOLS_LOGPOINT */ console.log(';
-export const LogpointSuffix = ')';
+  get editorForTest(): TextEditor.TextEditor.TextEditor {
+    return this.editor;
+  }
+}
 
 export const BreakpointType = {
   Breakpoint: 'Breakpoint',

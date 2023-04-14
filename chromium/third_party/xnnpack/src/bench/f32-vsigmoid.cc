@@ -22,11 +22,11 @@
 
 static void f32_vsigmoid(
   benchmark::State& state,
-  xnn_f32_vsigmoid_ukernel_function sigmoid,
+  xnn_f32_vsigmoid_ukernel_fn sigmoid,
   xnn_init_f32_sigmoid_params_fn init_params,
   benchmark::utils::IsaCheckFunction isa_check = nullptr)
 {
-  if (isa_check && !isa_check(state)) {
+  if (isa_check != nullptr && !isa_check(state)) {
     return;
   }
 
@@ -62,95 +62,95 @@ static void f32_vsigmoid(
 }
 
 #if XNN_ARCH_ARM64
-  BENCHMARK_CAPTURE(f32_vsigmoid, neonfma_rr1_p5_div_x4,
-                    xnn_f32_vsigmoid_ukernel__neonfma_rr1_p5_div_x4,
+  BENCHMARK_CAPTURE(f32_vsigmoid, aarch64_neonfma_rr1_p5_div_x4,
+                    xnn_f32_vsigmoid_ukernel__aarch64_neonfma_rr1_p5_div_x4,
                     xnn_init_f32_sigmoid_neonfma_rr1_p5_params)
     ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
     ->UseRealTime();
-  BENCHMARK_CAPTURE(f32_vsigmoid, neonfma_rr1_p5_div_x8,
-                    xnn_f32_vsigmoid_ukernel__neonfma_rr1_p5_div_x8,
+  BENCHMARK_CAPTURE(f32_vsigmoid, aarch64_neonfma_rr1_p5_div_x8,
+                    xnn_f32_vsigmoid_ukernel__aarch64_neonfma_rr1_p5_div_x8,
                     xnn_init_f32_sigmoid_neonfma_rr1_p5_params)
     ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
     ->UseRealTime();
-  BENCHMARK_CAPTURE(f32_vsigmoid, neonfma_rr1_p5_div_x12,
-                    xnn_f32_vsigmoid_ukernel__neonfma_rr1_p5_div_x12,
+  BENCHMARK_CAPTURE(f32_vsigmoid, aarch64_neonfma_rr1_p5_div_x12,
+                    xnn_f32_vsigmoid_ukernel__aarch64_neonfma_rr1_p5_div_x12,
                     xnn_init_f32_sigmoid_neonfma_rr1_p5_params)
     ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
     ->UseRealTime();
-  BENCHMARK_CAPTURE(f32_vsigmoid, neonfma_rr1_p5_div_x16,
-                    xnn_f32_vsigmoid_ukernel__neonfma_rr1_p5_div_x16,
+  BENCHMARK_CAPTURE(f32_vsigmoid, aarch64_neonfma_rr1_p5_div_x16,
+                    xnn_f32_vsigmoid_ukernel__aarch64_neonfma_rr1_p5_div_x16,
                     xnn_init_f32_sigmoid_neonfma_rr1_p5_params)
     ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
     ->UseRealTime();
-  BENCHMARK_CAPTURE(f32_vsigmoid, neonfma_rr1_p5_div_x20,
-                    xnn_f32_vsigmoid_ukernel__neonfma_rr1_p5_div_x20,
+  BENCHMARK_CAPTURE(f32_vsigmoid, aarch64_neonfma_rr1_p5_div_x20,
+                    xnn_f32_vsigmoid_ukernel__aarch64_neonfma_rr1_p5_div_x20,
                     xnn_init_f32_sigmoid_neonfma_rr1_p5_params)
     ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
     ->UseRealTime();
-  BENCHMARK_CAPTURE(f32_vsigmoid, neonfma_rr1_p5_div_x24,
-                    xnn_f32_vsigmoid_ukernel__neonfma_rr1_p5_div_x24,
+  BENCHMARK_CAPTURE(f32_vsigmoid, aarch64_neonfma_rr1_p5_div_x24,
+                    xnn_f32_vsigmoid_ukernel__aarch64_neonfma_rr1_p5_div_x24,
                     xnn_init_f32_sigmoid_neonfma_rr1_p5_params)
     ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
     ->UseRealTime();
 
-  BENCHMARK_CAPTURE(f32_vsigmoid, neonfma_rr1_lut64_p2_div_x4,
-                    xnn_f32_vsigmoid_ukernel__neonfma_rr1_lut64_p2_div_x4,
+  BENCHMARK_CAPTURE(f32_vsigmoid, aarch64_neonfma_rr1_lut64_p2_div_x4,
+                    xnn_f32_vsigmoid_ukernel__aarch64_neonfma_rr1_lut64_p2_div_x4,
                     xnn_init_f32_sigmoid_neonfma_rr1_lut64_p2_params)
     ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
     ->UseRealTime();
-  BENCHMARK_CAPTURE(f32_vsigmoid, neonfma_rr1_lut64_p2_div_x8,
-                    xnn_f32_vsigmoid_ukernel__neonfma_rr1_lut64_p2_div_x8,
+  BENCHMARK_CAPTURE(f32_vsigmoid, aarch64_neonfma_rr1_lut64_p2_div_x8,
+                    xnn_f32_vsigmoid_ukernel__aarch64_neonfma_rr1_lut64_p2_div_x8,
                     xnn_init_f32_sigmoid_neonfma_rr1_lut64_p2_params)
     ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
     ->UseRealTime();
-  BENCHMARK_CAPTURE(f32_vsigmoid, neonfma_rr1_lut64_p2_div_x12,
-                    xnn_f32_vsigmoid_ukernel__neonfma_rr1_lut64_p2_div_x12,
+  BENCHMARK_CAPTURE(f32_vsigmoid, aarch64_neonfma_rr1_lut64_p2_div_x12,
+                    xnn_f32_vsigmoid_ukernel__aarch64_neonfma_rr1_lut64_p2_div_x12,
                     xnn_init_f32_sigmoid_neonfma_rr1_lut64_p2_params)
     ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
     ->UseRealTime();
-  BENCHMARK_CAPTURE(f32_vsigmoid, neonfma_rr1_lut64_p2_div_x16,
-                    xnn_f32_vsigmoid_ukernel__neonfma_rr1_lut64_p2_div_x16,
+  BENCHMARK_CAPTURE(f32_vsigmoid, aarch64_neonfma_rr1_lut64_p2_div_x16,
+                    xnn_f32_vsigmoid_ukernel__aarch64_neonfma_rr1_lut64_p2_div_x16,
                     xnn_init_f32_sigmoid_neonfma_rr1_lut64_p2_params)
     ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
     ->UseRealTime();
-  BENCHMARK_CAPTURE(f32_vsigmoid, neonfma_rr1_lut64_p2_div_x20,
-                    xnn_f32_vsigmoid_ukernel__neonfma_rr1_lut64_p2_div_x20,
+  BENCHMARK_CAPTURE(f32_vsigmoid, aarch64_neonfma_rr1_lut64_p2_div_x20,
+                    xnn_f32_vsigmoid_ukernel__aarch64_neonfma_rr1_lut64_p2_div_x20,
                     xnn_init_f32_sigmoid_neonfma_rr1_lut64_p2_params)
     ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
     ->UseRealTime();
-  BENCHMARK_CAPTURE(f32_vsigmoid, neonfma_rr1_lut64_p2_div_x24,
-                    xnn_f32_vsigmoid_ukernel__neonfma_rr1_lut64_p2_div_x24,
+  BENCHMARK_CAPTURE(f32_vsigmoid, aarch64_neonfma_rr1_lut64_p2_div_x24,
+                    xnn_f32_vsigmoid_ukernel__aarch64_neonfma_rr1_lut64_p2_div_x24,
                     xnn_init_f32_sigmoid_neonfma_rr1_lut64_p2_params)
     ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
     ->UseRealTime();
 
-  BENCHMARK_CAPTURE(f32_vsigmoid, neonfma_rr1_lut2048_p1_div_x4,
-                    xnn_f32_vsigmoid_ukernel__neonfma_rr1_lut2048_p1_div_x4,
+  BENCHMARK_CAPTURE(f32_vsigmoid, aarch64_neonfma_rr1_lut2048_p1_div_x4,
+                    xnn_f32_vsigmoid_ukernel__aarch64_neonfma_rr1_lut2048_p1_div_x4,
                     xnn_init_f32_sigmoid_neonfma_rr1_lut2048_p1_params)
     ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
     ->UseRealTime();
-  BENCHMARK_CAPTURE(f32_vsigmoid, neonfma_rr1_lut2048_p1_div_x8,
-                    xnn_f32_vsigmoid_ukernel__neonfma_rr1_lut2048_p1_div_x8,
+  BENCHMARK_CAPTURE(f32_vsigmoid, aarch64_neonfma_rr1_lut2048_p1_div_x8,
+                    xnn_f32_vsigmoid_ukernel__aarch64_neonfma_rr1_lut2048_p1_div_x8,
                     xnn_init_f32_sigmoid_neonfma_rr1_lut2048_p1_params)
     ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
     ->UseRealTime();
-  BENCHMARK_CAPTURE(f32_vsigmoid, neonfma_rr1_lut2048_p1_div_x12,
-                    xnn_f32_vsigmoid_ukernel__neonfma_rr1_lut2048_p1_div_x12,
+  BENCHMARK_CAPTURE(f32_vsigmoid, aarch64_neonfma_rr1_lut2048_p1_div_x12,
+                    xnn_f32_vsigmoid_ukernel__aarch64_neonfma_rr1_lut2048_p1_div_x12,
                     xnn_init_f32_sigmoid_neonfma_rr1_lut2048_p1_params)
     ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
     ->UseRealTime();
-  BENCHMARK_CAPTURE(f32_vsigmoid, neonfma_rr1_lut2048_p1_div_x16,
-                    xnn_f32_vsigmoid_ukernel__neonfma_rr1_lut2048_p1_div_x16,
+  BENCHMARK_CAPTURE(f32_vsigmoid, aarch64_neonfma_rr1_lut2048_p1_div_x16,
+                    xnn_f32_vsigmoid_ukernel__aarch64_neonfma_rr1_lut2048_p1_div_x16,
                     xnn_init_f32_sigmoid_neonfma_rr1_lut2048_p1_params)
     ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
     ->UseRealTime();
-  BENCHMARK_CAPTURE(f32_vsigmoid, neonfma_rr1_lut2048_p1_div_x20,
-                    xnn_f32_vsigmoid_ukernel__neonfma_rr1_lut2048_p1_div_x20,
+  BENCHMARK_CAPTURE(f32_vsigmoid, aarch64_neonfma_rr1_lut2048_p1_div_x20,
+                    xnn_f32_vsigmoid_ukernel__aarch64_neonfma_rr1_lut2048_p1_div_x20,
                     xnn_init_f32_sigmoid_neonfma_rr1_lut2048_p1_params)
     ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
     ->UseRealTime();
-  BENCHMARK_CAPTURE(f32_vsigmoid, neonfma_rr1_lut2048_p1_div_x24,
-                    xnn_f32_vsigmoid_ukernel__neonfma_rr1_lut2048_p1_div_x24,
+  BENCHMARK_CAPTURE(f32_vsigmoid, aarch64_neonfma_rr1_lut2048_p1_div_x24,
+                    xnn_f32_vsigmoid_ukernel__aarch64_neonfma_rr1_lut2048_p1_div_x24,
                     xnn_init_f32_sigmoid_neonfma_rr1_lut2048_p1_params)
     ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
     ->UseRealTime();
@@ -1337,6 +1337,132 @@ static void f32_vsigmoid(
     ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
     ->UseRealTime();
 #endif  // XNN_ARCH_X86 || XNN_ARCH_X86_64
+
+#if XNN_ARCH_WASMRELAXEDSIMD
+  BENCHMARK_CAPTURE(f32_vsigmoid, wasmrelaxedsimd_fma_rr2_lut64_p2_div_x4,
+                    xnn_f32_vsigmoid_ukernel__wasmrelaxedsimd_fma_rr2_lut64_p2_div_x4,
+                    xnn_init_f32_sigmoid_wasmsimd_rr2_lut64_p2_params)
+    ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
+    ->UseRealTime();
+  BENCHMARK_CAPTURE(f32_vsigmoid, wasmrelaxedsimd_fma_rr2_lut64_p2_div_x8,
+                    xnn_f32_vsigmoid_ukernel__wasmrelaxedsimd_fma_rr2_lut64_p2_div_x8,
+                    xnn_init_f32_sigmoid_wasmsimd_rr2_lut64_p2_params)
+    ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
+    ->UseRealTime();
+  BENCHMARK_CAPTURE(f32_vsigmoid, wasmrelaxedsimd_fma_rr2_lut64_p2_div_x12,
+                    xnn_f32_vsigmoid_ukernel__wasmrelaxedsimd_fma_rr2_lut64_p2_div_x12,
+                    xnn_init_f32_sigmoid_wasmsimd_rr2_lut64_p2_params)
+    ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
+    ->UseRealTime();
+  BENCHMARK_CAPTURE(f32_vsigmoid, wasmrelaxedsimd_fma_rr2_lut64_p2_div_x16,
+                    xnn_f32_vsigmoid_ukernel__wasmrelaxedsimd_fma_rr2_lut64_p2_div_x16,
+                    xnn_init_f32_sigmoid_wasmsimd_rr2_lut64_p2_params)
+    ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
+    ->UseRealTime();
+  BENCHMARK_CAPTURE(f32_vsigmoid, wasmrelaxedsimd_fma_rr2_lut64_p2_div_x20,
+                    xnn_f32_vsigmoid_ukernel__wasmrelaxedsimd_fma_rr2_lut64_p2_div_x20,
+                    xnn_init_f32_sigmoid_wasmsimd_rr2_lut64_p2_params)
+    ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
+    ->UseRealTime();
+  BENCHMARK_CAPTURE(f32_vsigmoid, wasmrelaxedsimd_fma_rr2_lut64_p2_div_x24,
+                    xnn_f32_vsigmoid_ukernel__wasmrelaxedsimd_fma_rr2_lut64_p2_div_x24,
+                    xnn_init_f32_sigmoid_wasmsimd_rr2_lut64_p2_params)
+    ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
+    ->UseRealTime();
+
+  BENCHMARK_CAPTURE(f32_vsigmoid, wasmrelaxedsimd_fma_rr2_p5_div_x4,
+                    xnn_f32_vsigmoid_ukernel__wasmrelaxedsimd_fma_rr2_p5_div_x4,
+                    xnn_init_f32_sigmoid_wasmsimd_rr2_p5_params)
+    ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
+    ->UseRealTime();
+  BENCHMARK_CAPTURE(f32_vsigmoid, wasmrelaxedsimd_fma_rr2_p5_div_x8,
+                    xnn_f32_vsigmoid_ukernel__wasmrelaxedsimd_fma_rr2_p5_div_x8,
+                    xnn_init_f32_sigmoid_wasmsimd_rr2_p5_params)
+    ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
+    ->UseRealTime();
+  BENCHMARK_CAPTURE(f32_vsigmoid, wasmrelaxedsimd_fma_rr2_p5_div_x12,
+                    xnn_f32_vsigmoid_ukernel__wasmrelaxedsimd_fma_rr2_p5_div_x12,
+                    xnn_init_f32_sigmoid_wasmsimd_rr2_p5_params)
+    ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
+    ->UseRealTime();
+  BENCHMARK_CAPTURE(f32_vsigmoid, wasmrelaxedsimd_fma_rr2_p5_div_x16,
+                    xnn_f32_vsigmoid_ukernel__wasmrelaxedsimd_fma_rr2_p5_div_x16,
+                    xnn_init_f32_sigmoid_wasmsimd_rr2_p5_params)
+    ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
+    ->UseRealTime();
+  BENCHMARK_CAPTURE(f32_vsigmoid, wasmrelaxedsimd_fma_rr2_p5_div_x20,
+                    xnn_f32_vsigmoid_ukernel__wasmrelaxedsimd_fma_rr2_p5_div_x20,
+                    xnn_init_f32_sigmoid_wasmsimd_rr2_p5_params)
+    ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
+    ->UseRealTime();
+  BENCHMARK_CAPTURE(f32_vsigmoid, wasmrelaxedsimd_fma_rr2_p5_div_x24,
+                    xnn_f32_vsigmoid_ukernel__wasmrelaxedsimd_fma_rr2_p5_div_x24,
+                    xnn_init_f32_sigmoid_wasmsimd_rr2_p5_params)
+    ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
+    ->UseRealTime();
+
+  BENCHMARK_CAPTURE(f32_vsigmoid, wasmrelaxedsimd_rr2_lut64_p2_div_x4,
+                    xnn_f32_vsigmoid_ukernel__wasmrelaxedsimd_rr2_lut64_p2_div_x4,
+                    xnn_init_f32_sigmoid_wasmsimd_rr2_lut64_p2_params)
+    ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
+    ->UseRealTime();
+  BENCHMARK_CAPTURE(f32_vsigmoid, wasmrelaxedsimd_rr2_lut64_p2_div_x8,
+                    xnn_f32_vsigmoid_ukernel__wasmrelaxedsimd_rr2_lut64_p2_div_x8,
+                    xnn_init_f32_sigmoid_wasmsimd_rr2_lut64_p2_params)
+    ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
+    ->UseRealTime();
+  BENCHMARK_CAPTURE(f32_vsigmoid, wasmrelaxedsimd_rr2_lut64_p2_div_x12,
+                    xnn_f32_vsigmoid_ukernel__wasmrelaxedsimd_rr2_lut64_p2_div_x12,
+                    xnn_init_f32_sigmoid_wasmsimd_rr2_lut64_p2_params)
+    ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
+    ->UseRealTime();
+  BENCHMARK_CAPTURE(f32_vsigmoid, wasmrelaxedsimd_rr2_lut64_p2_div_x16,
+                    xnn_f32_vsigmoid_ukernel__wasmrelaxedsimd_rr2_lut64_p2_div_x16,
+                    xnn_init_f32_sigmoid_wasmsimd_rr2_lut64_p2_params)
+    ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
+    ->UseRealTime();
+  BENCHMARK_CAPTURE(f32_vsigmoid, wasmrelaxedsimd_rr2_lut64_p2_div_x20,
+                    xnn_f32_vsigmoid_ukernel__wasmrelaxedsimd_rr2_lut64_p2_div_x20,
+                    xnn_init_f32_sigmoid_wasmsimd_rr2_lut64_p2_params)
+    ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
+    ->UseRealTime();
+  BENCHMARK_CAPTURE(f32_vsigmoid, wasmrelaxedsimd_rr2_lut64_p2_div_x24,
+                    xnn_f32_vsigmoid_ukernel__wasmrelaxedsimd_rr2_lut64_p2_div_x24,
+                    xnn_init_f32_sigmoid_wasmsimd_rr2_lut64_p2_params)
+    ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
+    ->UseRealTime();
+
+  BENCHMARK_CAPTURE(f32_vsigmoid, wasmrelaxedsimd_rr2_p5_div_x4,
+                    xnn_f32_vsigmoid_ukernel__wasmrelaxedsimd_rr2_p5_div_x4,
+                    xnn_init_f32_sigmoid_wasmsimd_rr2_p5_params)
+    ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
+    ->UseRealTime();
+  BENCHMARK_CAPTURE(f32_vsigmoid, wasmrelaxedsimd_rr2_p5_div_x8,
+                    xnn_f32_vsigmoid_ukernel__wasmrelaxedsimd_rr2_p5_div_x8,
+                    xnn_init_f32_sigmoid_wasmsimd_rr2_p5_params)
+    ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
+    ->UseRealTime();
+  BENCHMARK_CAPTURE(f32_vsigmoid, wasmrelaxedsimd_rr2_p5_div_x12,
+                    xnn_f32_vsigmoid_ukernel__wasmrelaxedsimd_rr2_p5_div_x12,
+                    xnn_init_f32_sigmoid_wasmsimd_rr2_p5_params)
+    ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
+    ->UseRealTime();
+  BENCHMARK_CAPTURE(f32_vsigmoid, wasmrelaxedsimd_rr2_p5_div_x16,
+                    xnn_f32_vsigmoid_ukernel__wasmrelaxedsimd_rr2_p5_div_x16,
+                    xnn_init_f32_sigmoid_wasmsimd_rr2_p5_params)
+    ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
+    ->UseRealTime();
+  BENCHMARK_CAPTURE(f32_vsigmoid, wasmrelaxedsimd_rr2_p5_div_x20,
+                    xnn_f32_vsigmoid_ukernel__wasmrelaxedsimd_rr2_p5_div_x20,
+                    xnn_init_f32_sigmoid_wasmsimd_rr2_p5_params)
+    ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
+    ->UseRealTime();
+  BENCHMARK_CAPTURE(f32_vsigmoid, wasmrelaxedsimd_rr2_p5_div_x24,
+                    xnn_f32_vsigmoid_ukernel__wasmrelaxedsimd_rr2_p5_div_x24,
+                    xnn_init_f32_sigmoid_wasmsimd_rr2_p5_params)
+    ->Apply(benchmark::utils::UnaryElementwiseParameters<float, float>)
+    ->UseRealTime();
+#endif  // XNN_ARCH_WASMRELAXEDSIMD
 
 #if XNN_ARCH_WASMSIMD || XNN_ARCH_WASMRELAXEDSIMD
   BENCHMARK_CAPTURE(f32_vsigmoid, wasmsimd_rr2_lut64_p2_div_x4,

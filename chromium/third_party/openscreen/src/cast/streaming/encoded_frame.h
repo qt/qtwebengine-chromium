@@ -10,11 +10,11 @@
 #include <chrono>
 #include <vector>
 
-#include "absl/types/span.h"
 #include "cast/streaming/frame_id.h"
 #include "cast/streaming/rtp_time.h"
 #include "platform/api/time.h"
 #include "platform/base/macros.h"
+#include "platform/base/span.h"
 
 namespace openscreen {
 namespace cast {
@@ -44,7 +44,7 @@ struct EncodedFrame {
                RtpTimeTicks rtp_timestamp,
                Clock::time_point reference_time,
                std::chrono::milliseconds new_playout_delay,
-               absl::Span<uint8_t> data);
+               ByteView data);
   EncodedFrame();
   ~EncodedFrame();
 
@@ -91,11 +91,10 @@ struct EncodedFrame {
   // Playout delay extension. Non-positive values means no change.
   std::chrono::milliseconds new_playout_delay{};
 
-  // Pointer to a buffer containing the encoded signal data for the frame. In
-  // the sender context, this points to the data to be sent, and nothing will be
-  // mutated. In the receiver context, this is set to the region of a
-  // client-provided buffer that was populated.
-  absl::Span<uint8_t> data;
+  // A buffer containing the encoded signal data for the frame. In the sender
+  // context, this points to the data to be sent. In the receiver context, this
+  // is set to the region of a client-provided buffer that was populated.
+  ByteView data;
 
   OSP_DISALLOW_COPY_AND_ASSIGN(EncodedFrame);
 };

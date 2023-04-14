@@ -29,6 +29,16 @@ class QuicPathValidatorPeer;
 
 class QuicConnection;
 
+enum class PathValidationReason {
+  kReasonUnknown,
+  kMultiPort,
+  kReversePathValidation,
+  kServerPreferredAddressMigration,
+  kPortMigration,
+  kConnectionMigration,
+  kMaxValue,
+};
+
 // Interface to provide the information of the path to be validated.
 class QUIC_EXPORT_PRIVATE QuicPathValidationContext {
  public:
@@ -117,7 +127,8 @@ class QUIC_EXPORT_PRIVATE QuicPathValidator {
 
   // Send PATH_CHALLENGE and start the retry timer.
   void StartPathValidation(std::unique_ptr<QuicPathValidationContext> context,
-                           std::unique_ptr<ResultDelegate> result_delegate);
+                           std::unique_ptr<ResultDelegate> result_delegate,
+                           PathValidationReason reason);
 
   // Called when a PATH_RESPONSE frame has been received. Matches the received
   // PATH_RESPONSE payload with the payloads previously sent in PATH_CHALLANGE
@@ -132,11 +143,18 @@ class QUIC_EXPORT_PRIVATE QuicPathValidator {
 
   QuicPathValidationContext* GetContext() const;
 
+  PathValidationReason GetPathValidationReason() const { return reason_; }
+
   // Send another PATH_CHALLENGE on the same path. After retrying
   // |kMaxRetryTimes| times, fail the current path validation.
   void OnRetryTimeout();
 
   bool IsValidatingPeerAddress(const QuicSocketAddress& effective_peer_address);
+
+  // Called to send packet to |peer_address| if the path validation to this
+  // address is pending.
+  void MaybeWritePacketToAddress(const char* buffer, size_t buf_len,
+                                 const QuicSocketAddress& peer_address);
 
  private:
   friend class test::QuicPathValidatorPeer;
@@ -163,6 +181,7 @@ class QUIC_EXPORT_PRIVATE QuicPathValidator {
   std::unique_ptr<ResultDelegate> result_delegate_;
   QuicArenaScopedPtr<QuicAlarm> retry_timer_;
   size_t retry_count_;
+  PathValidationReason reason_ = PathValidationReason::kReasonUnknown;
 };
 
 }  // namespace quic

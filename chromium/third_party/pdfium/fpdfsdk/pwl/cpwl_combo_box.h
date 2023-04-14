@@ -29,7 +29,7 @@ class CPWL_ComboBox final : public CPWL_Wnd {
 
   // CPWL_Wnd:
   void OnDestroy() override;
-  bool OnKeyDown(FWL_VKEYCODE nChar, Mask<FWL_EVENTFLAG> nFlag) override;
+  bool OnKeyDown(FWL_VKEYCODE nKeyCode, Mask<FWL_EVENTFLAG> nFlag) override;
   bool OnChar(uint16_t nChar, Mask<FWL_EVENTFLAG> nFlag) override;
   void NotifyLButtonDown(CPWL_Wnd* child, const CFX_PointF& pos) override;
   void NotifyLButtonUp(CPWL_Wnd* child, const CFX_PointF& pos) override;
@@ -40,6 +40,7 @@ class CPWL_ComboBox final : public CPWL_Wnd {
   void KillFocus() override;
   WideString GetText() override;
   WideString GetSelectedText() override;
+  void ReplaceAndKeepSelection(const WideString& text) override;
   void ReplaceSelection(const WideString& text) override;
   bool SelectAllText() override;
   bool CanUndo() override;

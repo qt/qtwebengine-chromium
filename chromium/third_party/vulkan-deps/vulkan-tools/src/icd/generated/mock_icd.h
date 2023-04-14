@@ -2,7 +2,7 @@
 #define __mock_icd_h_ 1
 
 /*
-** Copyright (c) 2015-2018 The Khronos Group Inc.
+** Copyright (c) 2015-2018, 2023 The Khronos Group Inc.
 **
 ** Licensed under the Apache License, Version 2.0 (the "License");
 ** you may not use this file except in compliance with the License.
@@ -101,8 +101,8 @@ static const std::unordered_map<std::string, uint32_t> device_extension_map = {
     {"VK_AMD_shader_trinary_minmax", 1},
     {"VK_AMD_shader_explicit_vertex_parameter", 1},
     {"VK_EXT_debug_marker", 4},
-    {"VK_KHR_video_queue", 7},
-    {"VK_KHR_video_decode_queue", 6},
+    {"VK_KHR_video_queue", 8},
+    {"VK_KHR_video_decode_queue", 7},
     {"VK_AMD_gcn_shader", 1},
     {"VK_NV_dedicated_allocation", 1},
     {"VK_EXT_transform_feedback", 1},
@@ -114,7 +114,7 @@ static const std::unordered_map<std::string, uint32_t> device_extension_map = {
     {"VK_AMD_shader_ballot", 1},
     {"VK_EXT_video_encode_h264", 9},
     {"VK_EXT_video_encode_h265", 9},
-    {"VK_EXT_video_decode_h264", 7},
+    {"VK_KHR_video_decode_h264", 8},
     {"VK_AMD_texture_gather_bias_lod", 1},
     {"VK_AMD_shader_info", 1},
     {"VK_KHR_dynamic_rendering", 1},
@@ -213,7 +213,7 @@ static const std::unordered_map<std::string, uint32_t> device_extension_map = {
     {"VK_AMD_pipeline_compiler_control", 1},
     {"VK_EXT_calibrated_timestamps", 2},
     {"VK_AMD_shader_core_properties", 2},
-    {"VK_EXT_video_decode_h265", 6},
+    {"VK_KHR_video_decode_h265", 7},
     {"VK_KHR_global_priority", 1},
     {"VK_AMD_memory_overallocation_behavior", 1},
     {"VK_EXT_vertex_attribute_divisor", 3},
@@ -340,6 +340,7 @@ static const std::unordered_map<std::string, uint32_t> device_extension_map = {
     {"VK_EXT_image_2d_view_of_3d", 1},
     {"VK_EXT_opacity_micromap", 2},
     {"VK_EXT_load_store_op_none", 1},
+    {"VK_HUAWEI_cluster_culling_shader", 1},
     {"VK_EXT_border_color_swizzle", 1},
     {"VK_EXT_pageable_device_local_memory", 1},
     {"VK_KHR_maintenance4", 2},
@@ -365,6 +366,7 @@ static const std::unordered_map<std::string, uint32_t> device_extension_map = {
     {"VK_NV_ray_tracing_invocation_reorder", 1},
     {"VK_EXT_mutable_descriptor_type", 1},
     {"VK_ARM_shader_core_builtins", 2},
+    {"VK_EXT_pipeline_library_group_handles", 1},
 };
 
 
@@ -1759,7 +1761,6 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL GetPhysicalDeviceWin32PresentationSupportK
 #endif /* VK_USE_PLATFORM_WIN32_KHR */
 
 
-#ifdef VK_ENABLE_BETA_EXTENSIONS
 
 static VKAPI_ATTR VkResult VKAPI_CALL GetPhysicalDeviceVideoCapabilitiesKHR(
     VkPhysicalDevice                            physicalDevice,
@@ -1822,14 +1823,12 @@ static VKAPI_ATTR void VKAPI_CALL CmdEndVideoCodingKHR(
 static VKAPI_ATTR void VKAPI_CALL CmdControlVideoCodingKHR(
     VkCommandBuffer                             commandBuffer,
     const VkVideoCodingControlInfoKHR*          pCodingControlInfo);
-#endif /* VK_ENABLE_BETA_EXTENSIONS */
 
-#ifdef VK_ENABLE_BETA_EXTENSIONS
 
 static VKAPI_ATTR void VKAPI_CALL CmdDecodeVideoKHR(
     VkCommandBuffer                             commandBuffer,
     const VkVideoDecodeInfoKHR*                 pDecodeInfo);
-#endif /* VK_ENABLE_BETA_EXTENSIONS */
+
 
 
 static VKAPI_ATTR void VKAPI_CALL CmdBeginRenderingKHR(
@@ -2204,6 +2203,7 @@ static VKAPI_ATTR void VKAPI_CALL CmdDrawIndexedIndirectCountKHR(
 
 
 
+
 static VKAPI_ATTR VkResult VKAPI_CALL GetSemaphoreCounterValueKHR(
     VkDevice                                    device,
     VkSemaphore                                 semaphore,
@@ -2559,9 +2559,6 @@ static VKAPI_ATTR void VKAPI_CALL CmdDrawIndexedIndirectCountAMD(
 
 
 
-
-#ifdef VK_ENABLE_BETA_EXTENSIONS
-#endif /* VK_ENABLE_BETA_EXTENSIONS */
 
 #ifdef VK_ENABLE_BETA_EXTENSIONS
 #endif /* VK_ENABLE_BETA_EXTENSIONS */
@@ -3014,9 +3011,6 @@ static VKAPI_ATTR VkResult VKAPI_CALL GetCalibratedTimestampsEXT(
     uint64_t*                                   pTimestamps,
     uint64_t*                                   pMaxDeviation);
 
-
-#ifdef VK_ENABLE_BETA_EXTENSIONS
-#endif /* VK_ENABLE_BETA_EXTENSIONS */
 
 
 
@@ -3728,6 +3722,18 @@ static VKAPI_ATTR void VKAPI_CALL GetMicromapBuildSizesEXT(
 
 
 
+static VKAPI_ATTR void VKAPI_CALL CmdDrawClusterHUAWEI(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    groupCountX,
+    uint32_t                                    groupCountY,
+    uint32_t                                    groupCountZ);
+
+static VKAPI_ATTR void VKAPI_CALL CmdDrawClusterIndirectHUAWEI(
+    VkCommandBuffer                             commandBuffer,
+    VkBuffer                                    buffer,
+    VkDeviceSize                                offset);
+
+
 
 static VKAPI_ATTR void VKAPI_CALL SetDeviceMemoryPriorityEXT(
     VkDevice                                    device,
@@ -3974,6 +3980,7 @@ static VKAPI_ATTR VkResult VKAPI_CALL GetDynamicRenderingTilePropertiesQCOM(
     VkDevice                                    device,
     const VkRenderingInfo*                      pRenderingInfo,
     VkTilePropertiesQCOM*                       pProperties);
+
 
 
 
@@ -4409,45 +4416,19 @@ static const std::unordered_map<std::string, void*> name_to_funcptr_map = {
 #ifdef VK_USE_PLATFORM_WIN32_KHR
     {"vkGetPhysicalDeviceWin32PresentationSupportKHR", (void*)GetPhysicalDeviceWin32PresentationSupportKHR},
 #endif
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     {"vkGetPhysicalDeviceVideoCapabilitiesKHR", (void*)GetPhysicalDeviceVideoCapabilitiesKHR},
-#endif
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     {"vkGetPhysicalDeviceVideoFormatPropertiesKHR", (void*)GetPhysicalDeviceVideoFormatPropertiesKHR},
-#endif
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     {"vkCreateVideoSessionKHR", (void*)CreateVideoSessionKHR},
-#endif
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     {"vkDestroyVideoSessionKHR", (void*)DestroyVideoSessionKHR},
-#endif
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     {"vkGetVideoSessionMemoryRequirementsKHR", (void*)GetVideoSessionMemoryRequirementsKHR},
-#endif
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     {"vkBindVideoSessionMemoryKHR", (void*)BindVideoSessionMemoryKHR},
-#endif
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     {"vkCreateVideoSessionParametersKHR", (void*)CreateVideoSessionParametersKHR},
-#endif
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     {"vkUpdateVideoSessionParametersKHR", (void*)UpdateVideoSessionParametersKHR},
-#endif
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     {"vkDestroyVideoSessionParametersKHR", (void*)DestroyVideoSessionParametersKHR},
-#endif
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     {"vkCmdBeginVideoCodingKHR", (void*)CmdBeginVideoCodingKHR},
-#endif
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     {"vkCmdEndVideoCodingKHR", (void*)CmdEndVideoCodingKHR},
-#endif
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     {"vkCmdControlVideoCodingKHR", (void*)CmdControlVideoCodingKHR},
-#endif
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     {"vkCmdDecodeVideoKHR", (void*)CmdDecodeVideoKHR},
-#endif
     {"vkCmdBeginRenderingKHR", (void*)CmdBeginRenderingKHR},
     {"vkCmdEndRenderingKHR", (void*)CmdEndRenderingKHR},
     {"vkGetPhysicalDeviceFeatures2KHR", (void*)GetPhysicalDeviceFeatures2KHR},
@@ -4816,6 +4797,8 @@ static const std::unordered_map<std::string, void*> name_to_funcptr_map = {
     {"vkCmdWriteMicromapsPropertiesEXT", (void*)CmdWriteMicromapsPropertiesEXT},
     {"vkGetDeviceMicromapCompatibilityEXT", (void*)GetDeviceMicromapCompatibilityEXT},
     {"vkGetMicromapBuildSizesEXT", (void*)GetMicromapBuildSizesEXT},
+    {"vkCmdDrawClusterHUAWEI", (void*)CmdDrawClusterHUAWEI},
+    {"vkCmdDrawClusterIndirectHUAWEI", (void*)CmdDrawClusterIndirectHUAWEI},
     {"vkSetDeviceMemoryPriorityEXT", (void*)SetDeviceMemoryPriorityEXT},
     {"vkGetDescriptorSetLayoutHostMappingInfoVALVE", (void*)GetDescriptorSetLayoutHostMappingInfoVALVE},
     {"vkGetDescriptorSetHostMappingVALVE", (void*)GetDescriptorSetHostMappingVALVE},

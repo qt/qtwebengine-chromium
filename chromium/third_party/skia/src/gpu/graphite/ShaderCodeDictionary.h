@@ -10,13 +10,13 @@
 
 #include "include/core/SkSpan.h"
 #include "include/core/SkTypes.h"
-#include "include/private/SkMacros.h"
 #include "include/private/SkSpinlock.h"
-#include "include/private/SkTHash.h"
-#include "include/private/SkThreadAnnotations.h"
-#include "include/private/SkTo.h"
-#include "src/core/SkArenaAlloc.h"
+#include "include/private/base/SkMacros.h"
+#include "include/private/base/SkThreadAnnotations.h"
+#include "include/private/base/SkTo.h"
+#include "src/base/SkArenaAlloc.h"
 #include "src/core/SkEnumBitMask.h"
+#include "src/core/SkTHash.h"
 #include "src/gpu/graphite/BuiltInCodeSnippetID.h"
 #include "src/gpu/graphite/PaintParamsKey.h"
 #include "src/gpu/graphite/Uniform.h"
@@ -34,9 +34,10 @@ class SkRuntimeEffect;
 
 namespace skgpu::graphite {
 
-enum class Layout;
 class RenderStep;
 class RuntimeEffectDictionary;
+
+struct ResourceBindingRequirements;
 
 // TODO: How to represent the type (e.g., 2D) of texture being sampled?
 class TextureAndSampler {
@@ -156,11 +157,11 @@ public:
     }
     const skgpu::BlendInfo& blendInfo() const { return fBlendInfo; }
 
-    std::string toSkSL(const Layout paintUniformsLayout,
-                       const Layout renderStepUniformsLayout,
+    std::string toSkSL(const ResourceBindingRequirements& bindingReqs,
                        const RenderStep* step,
-                       const bool defineShadingSsboIndexVarying,
-                       const bool defineLocalCoordsVarying) const;
+                       const bool useStorageBuffers,
+                       const bool defineLocalCoordsVarying,
+                       int* numTexturesAndSamplersUsed) const;
 
 private:
     std::vector<PaintParamsKey::BlockReader> fBlockReaders;

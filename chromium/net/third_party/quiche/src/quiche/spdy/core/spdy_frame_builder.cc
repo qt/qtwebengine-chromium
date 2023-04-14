@@ -88,8 +88,8 @@ bool SpdyFrameBuilder::BeginNewFrame(SpdyFrameType type, uint8_t flags,
   uint8_t raw_frame_type = SerializeFrameType(type);
   QUICHE_DCHECK(IsDefinedFrameType(raw_frame_type));
   QUICHE_DCHECK_EQ(0u, stream_id & ~kStreamIdMask);
-  QUICHE_BUG_IF(spdy_bug_73_2, length > kHttp2DefaultFramePayloadLimit)
-      << "Frame length  " << length_ << " is longer than frame size limit.";
+  QUICHE_BUG_IF(spdy_bug_73_2, length > kSpdyMaxFrameSizeLimit)
+      << "Frame length  " << length << " is longer than frame size limit.";
   return BeginNewFrameInternal(raw_frame_type, flags, stream_id, length);
 }
 

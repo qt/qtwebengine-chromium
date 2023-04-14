@@ -11,7 +11,7 @@
 #include "include/core/SkColor.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkRefCnt.h"
-#include "include/private/SkTArray.h"
+#include "include/private/base/SkTArray.h"
 #include "src/core/SkEnumBitMask.h"
 #include "src/gpu/graphite/AttachmentTypes.h"
 #include "src/gpu/graphite/DrawCommands.h"
@@ -20,6 +20,8 @@
 #include "src/gpu/graphite/ResourceTypes.h"
 
 #include <memory>
+
+struct SkImageInfo;
 
 namespace skgpu::graphite {
 
@@ -55,8 +57,8 @@ public:
 
     static std::unique_ptr<DrawPass> Make(Recorder*,
                                           std::unique_ptr<DrawList>,
-                                          sk_sp<TextureProxy>,
-                                          SkISize deviceSize,
+                                          sk_sp<TextureProxy> target,
+                                          const SkImageInfo& targetInfo,
                                           std::pair<LoadOp, StoreOp>,
                                           std::array<float, 4> clearColor);
 

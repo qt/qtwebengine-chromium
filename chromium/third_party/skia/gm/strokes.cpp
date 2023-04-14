@@ -19,9 +19,9 @@
 #include "include/core/SkString.h"
 #include "include/core/SkTypes.h"
 #include "include/effects/SkDashPathEffect.h"
-#include "include/private/SkFloatBits.h"
+#include "include/private/base/SkFloatBits.h"
 #include "include/utils/SkParsePath.h"
-#include "include/utils/SkRandom.h"
+#include "src/base/SkRandom.h"
 #include "tools/ToolUtils.h"
 
 #include <string.h>

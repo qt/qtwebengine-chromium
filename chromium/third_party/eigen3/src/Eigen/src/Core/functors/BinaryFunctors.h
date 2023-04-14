@@ -388,7 +388,11 @@ template <typename Packet>
 struct maybe_raise_div_by_zero<Packet, true> {
   static EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void run(Packet x) {
     if (EIGEN_PREDICT_FALSE(predux_any(pcmp_eq(x, pzero(x))))) {
-      std::raise(SIGFPE);
+      // Use volatile variables to force a division by zero, which will
+      // result in the default platform behaviour (usually SIGFPE).
+      volatile typename unpacket_traits<Packet>::type zero = 0;
+      volatile typename unpacket_traits<Packet>::type val = 1;
+      val = val / zero;
     }
   }
 };
@@ -512,68 +516,25 @@ struct functor_traits<scalar_absolute_difference_op<LhsScalar,RhsScalar> > {
 template <typename LhsScalar, typename RhsScalar>
 struct scalar_atan2_op {
   using Scalar = LhsScalar;
-  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE std::enable_if_t<is_same<LhsScalar,RhsScalar>::value, Scalar>
-  operator()(const Scalar& y, const Scalar& x) const {
-    EIGEN_USING_STD(atan2);
-    return static_cast<Scalar>(atan2(y, x));
+
+  static constexpr bool Enable = is_same<LhsScalar, RhsScalar>::value && !NumTraits<Scalar>::IsInteger && !NumTraits<Scalar>::IsComplex;
+  EIGEN_STATIC_ASSERT(Enable, "LhsScalar and RhsScalar must be the same non-integer, non-complex type")
+
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Scalar operator()(const Scalar& y, const Scalar& x) const {
+    return numext::atan2(y, x);
   }
   template <typename Packet>
-  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE
-      std::enable_if_t<is_same<LhsScalar, RhsScalar>::value, Packet>
-      packetOp(const Packet& y, const Packet& x) const {
-    // See https://en.cppreference.com/w/cpp/numeric/math/atan2
-    // for how corner cases are supposed to be handled according to the
-    // IEEE floating-point standard (IEC 60559).
-    const Packet kSignMask = pset1<Packet>(-Scalar(0));
-    const Packet kPi = pset1<Packet>(Scalar(EIGEN_PI));
-    const Packet kPiO2 = pset1<Packet>(Scalar(EIGEN_PI / 2));
-    const Packet kPiO4 = pset1<Packet>(Scalar(EIGEN_PI / 4));
-    const Packet k3PiO4 = pset1<Packet>(Scalar(3.0 * (EIGEN_PI / 4)));
-
-    // Various predicates about the inputs.
-    Packet x_signbit = pand(x, kSignMask);
-    Packet x_has_signbit = pcmp_lt(por(x_signbit, kPi), pzero(x));
-    Packet x_is_zero = pcmp_eq(x, pzero(x));
-    Packet x_neg = pandnot(x_has_signbit, x_is_zero);
-
-    Packet y_signbit = pand(y, kSignMask);
-    Packet y_is_zero = pcmp_eq(y, pzero(y));
-    Packet x_is_not_nan = pcmp_eq(x, x);
-    Packet y_is_not_nan = pcmp_eq(y, y);
-
-    // Compute the normal case. Notice that we expect that
-    // finite/infinite = +/-0 here.
-    Packet result = patan(pdiv(y, x));
-
-    // Compute shift for when x != 0 and y != 0.
-    Packet shift = pselect(x_neg, por(kPi, y_signbit), pzero(x));
-
-    // Special cases:
-    //   Handle  x = +/-inf && y = +/-inf.
-    Packet is_not_nan = pcmp_eq(result, result);
-    result =
-        pselect(is_not_nan, padd(shift, result),
-                pselect(x_neg, por(k3PiO4, y_signbit), por(kPiO4, y_signbit)));
-    //   Handle x == +/-0.
-    result = pselect(
-        x_is_zero, pselect(y_is_zero, pzero(y), por(y_signbit, kPiO2)), result);
-    //   Handle y == +/-0.
-    result = pselect(
-        y_is_zero,
-        pselect(x_has_signbit, por(y_signbit, kPi), por(y_signbit, pzero(y))),
-        result);
-    // Handle NaN inputs.
-    Packet kQNaN = pset1<Packet>(NumTraits<Scalar>::quiet_NaN());
-    return pselect(pand(x_is_not_nan, y_is_not_nan), result, kQNaN);
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Packet packetOp(const Packet& y, const Packet& x) const {
+    return internal::patan2(y, x);
   }
 };
 
 template<typename LhsScalar,typename RhsScalar>
     struct functor_traits<scalar_atan2_op<LhsScalar, RhsScalar>> {
+  using Scalar = LhsScalar;
   enum {
-    PacketAccess = is_same<LhsScalar,RhsScalar>::value && packet_traits<LhsScalar>::HasATan && packet_traits<LhsScalar>::HasDiv && !NumTraits<LhsScalar>::IsInteger && !NumTraits<LhsScalar>::IsComplex,
-    Cost =
-        scalar_div_cost<LhsScalar, PacketAccess>::value + 5 * NumTraits<LhsScalar>::MulCost + 5 * NumTraits<LhsScalar>::AddCost
+    PacketAccess = is_same<LhsScalar,RhsScalar>::value && packet_traits<Scalar>::HasATan && packet_traits<Scalar>::HasDiv && !NumTraits<Scalar>::IsInteger && !NumTraits<Scalar>::IsComplex,
+    Cost = scalar_div_cost<Scalar, PacketAccess>::value + functor_traits<scalar_atan_op<Scalar>>::Cost
   };
 };
 

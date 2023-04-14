@@ -13,6 +13,7 @@ import {
   VectorType,
   f32,
   u32,
+  i32,
 } from '../../../util/conversion.js';
 import {
   BinaryToInterval,
@@ -25,7 +26,7 @@ import {
   VectorToInterval,
   VectorToVector,
 } from '../../../util/f32_interval.js';
-import { cartesianProduct, quantizeToF32 } from '../../../util/math.js';
+import { cartesianProduct, quantizeToF32, quantizeToU32 } from '../../../util/math.js';
 
 export type Expectation = Value | F32Interval | F32Interval[] | Comparator;
 
@@ -132,6 +133,26 @@ export interface ExpressionBuilder {
   (values: Array<string>): string;
 }
 
+// A Pipeline is a map of WGSL shader source to a built pipeline
+type PipelineCache = Map<String, GPUComputePipeline>;
+
+/**
+ * Searches for an entry with the given key, adding and returning the result of calling
+ * @p create if the entry was not found.
+ * @param map the cache map
+ * @param key the entry's key
+ * @param create the function used to construct a value, if not found in the cache
+ * @returns the value, either fetched from the cache, or newly built.
+ */
+function getOrCreate<K, V>(map: Map<K, V>, key: K, create: () => V) {
+  const existing = map.get(key);
+  if (existing !== undefined) {
+    return existing;
+  }
+  const value = create();
+  map.set(key, value);
+  return value;
+}
 /**
  * Runs the list of expression tests, possibly splitting the tests into multiple
  * dispatches to keep the input data within the buffer binding limits.
@@ -161,14 +182,21 @@ export async function run(
   }
 
   // The size of the input buffer may exceed the maximum buffer binding size,
-  // so chunk the tests up into batches that fit into the limits.
+  // so chunk the tests up into batches that fit into the limits. We also split
+  // the cases into smaller batches to help with shader compilation performance.
   const casesPerBatch = (function () {
     switch (cfg.inputSource) {
       case 'const':
-        return 64; // Arbitrary limit, to ensure shaders aren't too large
+        // Some drivers are slow to optimize shaders with many constant values,
+        // or statements. 32 is an empirically picked number of cases that works
+        // well for most drivers.
+        return 32;
       case 'uniform':
+        // Some drivers are slow to build pipelines with large uniform buffers.
+        // 2k appears to be a sweet-spot when benchmarking.
         return Math.floor(
-          t.device.limits.maxUniformBufferBindingSize / (parameterTypes.length * kValueStride)
+          Math.min(1024 * 2, t.device.limits.maxUniformBufferBindingSize) /
+            (parameterTypes.length * kValueStride)
         );
       case 'storage_r':
       case 'storage_rw':
@@ -177,6 +205,9 @@ export async function run(
         );
     }
   })();
+
+  // A cache to hold built shader pipelines.
+  const pipelineCache = new Map<String, GPUComputePipeline>();
 
   // Submit all the cases in batches, each in a separate error scope.
   const checkResults: Array<Promise<void>> = [];
@@ -191,7 +222,8 @@ export async function run(
       parameterTypes,
       returnType,
       batchCases,
-      cfg.inputSource
+      cfg.inputSource,
+      pipelineCache
     );
 
     checkResults.push(
@@ -219,6 +251,7 @@ export async function run(
  * @param returnType the return type for the expression overload
  * @param cases list of test cases that fit within the binding limits of the device
  * @param inputSource the source of the input values
+ * @param pipelineCache the cache of compute pipelines, shared between batches
  * @returns a function that checks the results are as expected
  */
 function submitBatch(
@@ -227,7 +260,8 @@ function submitBatch(
   parameterTypes: Array<Type>,
   returnType: Type,
   cases: CaseList,
-  inputSource: InputSource
+  inputSource: InputSource,
+  pipelineCache: PipelineCache
 ): () => void {
   // Construct a buffer to hold the results of the expression tests
   const outputBufferSize = cases.length * kValueStride;
@@ -243,7 +277,8 @@ function submitBatch(
     returnType,
     cases,
     inputSource,
-    outputBuffer
+    outputBuffer,
+    pipelineCache
   );
 
   const encoder = t.device.createCommandEncoder();
@@ -311,7 +346,9 @@ function ith<T>(v: T | T[], i: number): T {
 
 /**
  * Constructs and returns a GPUComputePipeline and GPUBindGroup for running a
- * batch of test cases.
+ * batch of test cases. If a pre-created pipeline can be found in
+ * @p pipelineCache, then this may be returned instead of creating a new
+ * pipeline.
  * @param t the GPUTest
  * @param expressionBuilder the expression builder function
  * @param parameterTypes the list of expression parameter types
@@ -319,6 +356,7 @@ function ith<T>(v: T | T[], i: number): T {
  * @param cases list of test cases that fit within the binding limits of the device
  * @param inputSource the source of the input values
  * @param outputBuffer the buffer that will hold the output values of the tests
+ * @param pipelineCache the cache of compute pipelines, shared between batches
  */
 function buildPipeline(
   t: GPUTest,
@@ -327,7 +365,8 @@ function buildPipeline(
   returnType: Type,
   cases: CaseList,
   inputSource: InputSource,
-  outputBuffer: GPUBuffer
+  outputBuffer: GPUBuffer,
+  pipelineCache: PipelineCache
 ): [GPUComputePipeline, GPUBindGroup] {
   // wgsl declaration of output buffer and binding
   const wgslStorageType = storageType(returnType);
@@ -348,6 +387,12 @@ struct Output {
         return `${toStorage(returnType, expressionBuilder(args))}`;
       });
 
+      const wgslBody = globalTestConfig.unrollConstEvalLoops
+        ? wgslValues.map((_, i) => `outputs[${i}].value = values[${i}];`).join('\n  ')
+        : `for (var i = 0u; i < ${cases.length}; i++) {
+    outputs[i].value = values[i];
+  }`;
+
       // the full WGSL shader source
       const source = `
 ${wgslOutputs}
@@ -358,9 +403,7 @@ const values = array<${wgslStorageType}, ${cases.length}>(
 
 @compute @workgroup_size(1)
 fn main() {
-  for (var i = 0u; i < ${cases.length}; i++) {
-    outputs[i].value = values[i];
-  }
+  ${wgslBody}
 }
 `;
 
@@ -451,21 +494,24 @@ fn main() {
         }
       }
 
+      // build the compute pipeline, if the shader hasn't been compiled already.
+      const pipeline = getOrCreate(pipelineCache, source, () => {
+        // build the shader module
+        const module = t.device.createShaderModule({ code: source });
+
+        // build the pipeline
+        return t.device.createComputePipeline({
+          layout: 'auto',
+          compute: { module, entryPoint: 'main' },
+        });
+      });
+
       // build the input buffer
       const inputBuffer = t.makeBufferWithContents(
         inputData,
         GPUBufferUsage.COPY_SRC |
           (inputSource === 'uniform' ? GPUBufferUsage.UNIFORM : GPUBufferUsage.STORAGE)
       );
-
-      // build the shader module
-      const module = t.device.createShaderModule({ code: source });
-
-      // build the pipeline
-      const pipeline = t.device.createComputePipeline({
-        layout: 'auto',
-        compute: { module, entryPoint: 'main' },
-      });
 
       // build the bind group
       const group = t.device.createBindGroup({
@@ -605,9 +651,13 @@ export function generateUnaryToF32IntervalCases(
   filter: IntervalFilter,
   ...ops: PointToInterval[]
 ): Case[] {
-  return params
-    .map(e => makeUnaryToF32IntervalCase(e, filter, ...ops))
-    .filter((c): c is Case => c !== undefined);
+  return params.reduce((cases, e) => {
+    const c = makeUnaryToF32IntervalCase(e, filter, ...ops);
+    if (c !== undefined) {
+      cases.push(c);
+    }
+    return cases;
+  }, new Array<Case>());
 }
 
 /**
@@ -649,9 +699,13 @@ export function generateBinaryToF32IntervalCases(
   filter: IntervalFilter,
   ...ops: BinaryToInterval[]
 ): Case[] {
-  return cartesianProduct(param0s, param1s)
-    .map(e => makeBinaryToF32IntervalCase(e[0], e[1], filter, ...ops))
-    .filter((c): c is Case => c !== undefined);
+  return cartesianProduct(param0s, param1s).reduce((cases, e) => {
+    const c = makeBinaryToF32IntervalCase(e[0], e[1], filter, ...ops);
+    if (c !== undefined) {
+      cases.push(c);
+    }
+    return cases;
+  }, new Array<Case>());
 }
 
 /**
@@ -701,9 +755,13 @@ export function generateTernaryToF32IntervalCases(
   filter: IntervalFilter,
   ...ops: TernaryToInterval[]
 ): Case[] {
-  return cartesianProduct(param0s, param1s, param2s)
-    .map(e => makeTernaryToF32IntervalCase(e[0], e[1], e[2], filter, ...ops))
-    .filter((c): c is Case => c !== undefined);
+  return cartesianProduct(param0s, param1s, param2s).reduce((cases, e) => {
+    const c = makeTernaryToF32IntervalCase(e[0], e[1], e[2], filter, ...ops);
+    if (c !== undefined) {
+      cases.push(c);
+    }
+    return cases;
+  }, new Array<Case>());
 }
 
 /**
@@ -743,9 +801,13 @@ export function generateVectorToF32IntervalCases(
   filter: IntervalFilter,
   ...ops: VectorToInterval[]
 ): Case[] {
-  return params
-    .map(e => makeVectorToF32IntervalCase(e, filter, ...ops))
-    .filter((c): c is Case => c !== undefined);
+  return params.reduce((cases, e) => {
+    const c = makeVectorToF32IntervalCase(e, filter, ...ops);
+    if (c !== undefined) {
+      cases.push(c);
+    }
+    return cases;
+  }, new Array<Case>());
 }
 
 /**
@@ -791,9 +853,13 @@ export function generateVectorPairToF32IntervalCases(
   filter: IntervalFilter,
   ...ops: VectorPairToInterval[]
 ): Case[] {
-  return cartesianProduct(param0s, param1s)
-    .map(e => makeVectorPairToF32IntervalCase(e[0], e[1], filter, ...ops))
-    .filter((c): c is Case => c !== undefined);
+  return cartesianProduct(param0s, param1s).reduce((cases, e) => {
+    const c = makeVectorPairToF32IntervalCase(e[0], e[1], filter, ...ops);
+    if (c !== undefined) {
+      cases.push(c);
+    }
+    return cases;
+  }, new Array<Case>());
 }
 
 /**
@@ -833,9 +899,13 @@ export function generateVectorToVectorCases(
   filter: IntervalFilter,
   ...ops: VectorToVector[]
 ): Case[] {
-  return params
-    .map(e => makeVectorToVectorCase(e, filter, ...ops))
-    .filter((c): c is Case => c !== undefined);
+  return params.reduce((cases, e) => {
+    const c = makeVectorToVectorCase(e, filter, ...ops);
+    if (c !== undefined) {
+      cases.push(c);
+    }
+    return cases;
+  }, new Array<Case>());
 }
 
 /**
@@ -881,9 +951,13 @@ export function generateVectorPairToVectorCases(
   filter: IntervalFilter,
   ...ops: VectorPairToVector[]
 ): Case[] {
-  return cartesianProduct(param0s, param1s)
-    .map(e => makeVectorPairToVectorCase(e[0], e[1], filter, ...ops))
-    .filter((c): c is Case => c !== undefined);
+  return cartesianProduct(param0s, param1s).reduce((cases, e) => {
+    const c = makeVectorPairToVectorCase(e[0], e[1], filter, ...ops);
+    if (c !== undefined) {
+      cases.push(c);
+    }
+    return cases;
+  }, new Array<Case>());
 }
 
 /**
@@ -925,7 +999,139 @@ export function generateU32ToVectorCases(
   filter: IntervalFilter,
   ...ops: PointToVector[]
 ): Case[] {
-  return params
-    .map(e => makeU32ToVectorCase(e, filter, ...ops))
-    .filter((c): c is Case => c !== undefined);
+  return params.reduce((cases, e) => {
+    const c = makeU32ToVectorCase(e, filter, ...ops);
+    if (c !== undefined) {
+      cases.push(c);
+    }
+    return cases;
+  }, new Array<Case>());
+}
+
+/**
+ * A function that performs a binary operation on x and y, and returns the expected
+ * result, or undefined if the operation is invalid for the given inputs.
+ */
+export interface BinaryToI32Op {
+  (x: number, y: number): number | undefined;
+}
+
+/**
+ * @returns an array of Cases for operations over a range of inputs
+ * @param param0s array of inputs to try for the first param
+ * @param param1s array of inputs to try for the second param
+ * @param op callback called on each pair of inputs to produce each case
+ */
+export function generateBinaryToI32Cases(
+  params0s: number[],
+  params1s: number[],
+  op: BinaryToI32Op
+) {
+  return cartesianProduct(params0s, params1s).reduce((cases, e) => {
+    const expected = op(e[0], e[1]);
+    if (expected !== undefined) {
+      cases.push({ input: [i32(e[0]), i32(e[1])], expected: i32(expected) });
+    }
+    return cases;
+  }, new Array<Case>());
+}
+
+export interface BinaryToU32Op {
+  (x: number, y: number): number | undefined;
+}
+
+/**
+ * @returns an array of Cases for operations over a range of inputs
+ * @param param0s array of inputs to try for the first param
+ * @param param1s array of inputs to try for the second param
+ * @param op callback called on each pair of inputs to produce each case
+ */
+export function generateBinaryToU32Cases(
+  params0s: number[],
+  params1s: number[],
+  op: BinaryToU32Op
+) {
+  return cartesianProduct(params0s, params1s).reduce((cases, e) => {
+    const expected = op(e[0], e[1]);
+    if (expected !== undefined) {
+      cases.push({ input: [u32(e[0]), u32(e[1])], expected: u32(expected) });
+    }
+    return cases;
+  }, new Array<Case>());
+}
+
+/**
+ * A function that performs a binary operation on x and y, and returns the expected
+ * result.
+ */
+export interface BinaryOp {
+  (x: number, y: number): number;
+}
+
+/**
+ * @returns a Case for the input params with op applied
+ * @param scalar scalar param
+ * @param vector vector param (2, 3, or 4 elements)
+ * @param op the op to apply to scalar and vector
+ */
+function makeU32VectorBinaryToVectorCase(scalar: number, vector: number[], op: BinaryOp): Case {
+  scalar = quantizeToU32(scalar);
+  vector = vector.map(quantizeToU32);
+  const result = new Vector(vector.map(v => u32(op(scalar, v))));
+  return {
+    input: [u32(scalar), new Vector(vector.map(u32))],
+    expected: result,
+  };
+}
+
+/**
+ * @returns array of Case for the input params with op applied
+ * @param scalars array of scalar params
+ * @param vectors array of vector params (2, 3, or 4 elements)
+ * @param op he op to apply to each pair of scalar and vector
+ */
+export function generateU32VectorBinaryToVectorCases(
+  scalars: number[],
+  vectors: number[][],
+  op: BinaryOp
+): Case[] {
+  return scalars.flatMap(s => {
+    return vectors.map(v => {
+      return makeU32VectorBinaryToVectorCase(s, v, op);
+    });
+  });
+}
+
+/**
+ * @returns a Case for the input params with op applied
+ * @param vector vector param (2, 3, or 4 elements)
+ * @param scalar scalar param
+ * @param op the op to apply to vector and scalar
+ */
+function makeVectorU32BinaryToVectorCase(vector: number[], scalar: number, op: BinaryOp): Case {
+  vector = vector.map(quantizeToU32);
+  scalar = quantizeToU32(scalar);
+  const result = new Vector(vector.map(v => u32(op(v, scalar))));
+  return {
+    input: [new Vector(vector.map(u32)), u32(scalar)],
+    expected: result,
+  };
+}
+
+/**
+ * @returns array of Case for the input params with op applied
+ * @param vectors array of vector params (2, 3, or 4 elements)
+ * @param scalars array of scalar params
+ * @param op he op to apply to each pair of vector and scalar
+ */
+export function generateVectorU32BinaryToVectorCases(
+  vectors: number[][],
+  scalars: number[],
+  op: BinaryOp
+): Case[] {
+  return scalars.flatMap(s => {
+    return vectors.map(v => {
+      return makeVectorU32BinaryToVectorCase(v, s, op);
+    });
+  });
 }

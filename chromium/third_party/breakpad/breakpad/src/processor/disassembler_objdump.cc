@@ -32,8 +32,10 @@
 
 #include "processor/disassembler_objdump.h"
 
-#ifdef __linux__
 #include <unistd.h>
+#include <sys/wait.h>
+
+#include <array>
 #include <fstream>
 #include <iostream>
 #include <iterator>
@@ -41,76 +43,15 @@
 #include <sstream>
 #include <vector>
 
+#include "common/linux/eintr_wrapper.h"
+#include "common/linux/scoped_pipe.h"
+#include "common/linux/scoped_tmpfile.h"
 #include "processor/logging.h"
 
 namespace google_breakpad {
 namespace {
+
 const size_t kMaxX86InstructionLength = 15;
-
-// Small RAII wrapper for temporary files.
-//
-// Example:
-//   ScopedTmpFile tmp("/tmp/tmpfile-XXXX");
-//   if (tmp.Create()) {
-//     std::cerr << tmp.path() << std::endl;
-//   }
-class ScopedTmpFile {
- public:
-  // Initialize the ScopedTmpFile object - this does not create the temporary
-  // file yet.
-  ScopedTmpFile(const char* path_format);
-  ~ScopedTmpFile();
-
-  // Creates the temporary file, returns true on success.
-  bool Create();
-
-  // Writes bytes to the temporary file, returns true on success.
-  bool Write(const uint8_t* bytes, unsigned int bytes_len);
-
-  // Returns the path of the temporary file.
-  string path() const { return path_; }
-
- private:
-  int fd_;
-  string path_;
-};
-
-ScopedTmpFile::ScopedTmpFile(const char* path_format) : path_(path_format) {}
-
-ScopedTmpFile::~ScopedTmpFile() {
-  if (fd_) {
-    close(fd_);
-    unlink(path_.c_str());
-  }
-}
-
-bool ScopedTmpFile::Create() {
-  fd_ = mkstemp(path_.data());
-  if (fd_ < 0) {
-    unlink(path_.c_str());
-    fd_ = 0;
-    path_ = "";
-    return false;
-  }
-
-  return true;
-}
-
-bool ScopedTmpFile::Write(const uint8_t* bytes, unsigned int bytes_len) {
-  if (fd_) {
-    do {
-      ssize_t result = write(fd_, bytes, bytes_len);
-      if (result < 0) {
-        break;
-      }
-
-      bytes += result;
-      bytes_len -= result;
-    } while (bytes_len);
-  }
-
-  return bytes_len == 0;
-}
 
 bool IsInstructionPrefix(const string& token) {
   if (token == "lock" || token == "rep" || token == "repz" ||
@@ -285,47 +226,87 @@ bool DisassemblerObjdump::DisassembleInstruction(uint32_t cpu,
     return false;
   }
 
-  // Create two temporary files, one for the raw instruction bytes to pass to
-  // objdump, and one for the output, and write the bytes to the input file.
-  ScopedTmpFile raw_bytes_file("/tmp/breakpad_mem_region-raw_bytes-XXXXXX");
-  ScopedTmpFile disassembly_file("/tmp/breakpad_mem_region-disassembly-XXXXXX");
-  if (!raw_bytes_file.Create() || !disassembly_file.Create() ||
-      !raw_bytes_file.Write(raw_bytes, raw_bytes_len)) {
-    BPLOG(ERROR) << "Failed creating temporary files.";
+  // Create a temporary file for the raw instruction bytes to pass to
+  // objdump, and write the bytes to the input file.
+  ScopedTmpFile raw_bytes_file;
+  if (!raw_bytes_file.InitData(raw_bytes, raw_bytes_len)) {
+    BPLOG(ERROR) << "Failed creating temporary file.";
     return false;
   }
 
-  char cmd[1024] = {0};
-  snprintf(cmd, 1024,
-           "objdump -D --no-show-raw-insn -b binary -M intel -m %s %s > %s",
-           architecture.c_str(), raw_bytes_file.path().c_str(),
-           disassembly_file.path().c_str());
-  if (system(cmd)) {
-    BPLOG(ERROR) << "Failed to call objdump.";
+  // Create a pipe to use to read the disassembly back from objdump.
+  ScopedPipe disassembly_pipe;
+  if (!disassembly_pipe.Init()) {
+    BPLOG(ERROR) << "Failed creating pipe for output.";
     return false;
   }
 
-  // Pipe each output line into the string until the string contains the first
-  // instruction from objdump.
-  std::ifstream objdump_stream(disassembly_file.path());
+  pid_t child_pid = fork();
+  if (child_pid < 0) {
+    BPLOG(ERROR) << "Fork failed.";
+    return false;
+  }
 
-  // Match the instruction line, from:
-  //    0:        lock cmpxchg DWORD PTR [esi+0x10],eax
-  // extract the string "lock cmpxchg DWORD PTR [esi+0x10],eax"
-  std::regex instruction_regex(
-      "^\\s+[0-9a-f]+:\\s+"  // "   0:"
-      "((?:\\s*\\S*)+)$");   // "lock cmpxchg..."
+  if (child_pid == 0) {
+    // In the child process, set up the input and output file descriptors.
+    if (dup2(raw_bytes_file.GetFd(), STDIN_FILENO) < 0 ||
+        disassembly_pipe.Dup2WriteFd(STDOUT_FILENO) < 0 ||
+        disassembly_pipe.Dup2WriteFd(STDERR_FILENO) < 0) {
+      BPLOG(ERROR) << "Failed dup'ing file descriptors.";
+      exit(-1);
+    }
 
-  std::string line;
-  std::smatch match;
-  do {
-    if (!getline(objdump_stream, line)) {
-      BPLOG(INFO) << "Failed to find instruction in objdump output.";
+    // We need to close the read end of the pipe in the child process so that
+    // when the parent closes it, the pipe is disconnected.
+    disassembly_pipe.CloseReadFd();
+
+    // We use "/proc/self/fd/0" here to allow objdump to parse an unnamed file,
+    // since objdump does not have a mode to read from stdin. This cannot be
+    // used with a pipe, since objdump requires that the input is a standard
+    // file.
+    execlp("objdump", "objdump", "-D", "--no-show-raw-insn", "-b", "binary",
+           "-M", "intel", "-m", architecture.c_str(), "/proc/self/fd/0",
+           nullptr);
+
+    BPLOG(ERROR) << "Failed to exec objdump.";
+    exit(-1);
+  } else {
+    // In the parent process, parse the objdump output.
+
+    // Match the instruction line, from:
+    //    0:        lock cmpxchg DWORD PTR [esi+0x10],eax
+    // extract the string "lock cmpxchg DWORD PTR [esi+0x10],eax"
+    std::regex instruction_regex(
+        "^\\s+[0-9a-f]+:\\s+"  // "   0:"
+        "((?:\\s*\\S*)+)$");   // "lock cmpxchg..."
+
+    std::string line;
+    std::smatch match;
+    while (disassembly_pipe.ReadLine(line)) {
+      if (std::regex_match(line, match, instruction_regex)) {
+        instruction = match[1].str();
+        break;
+      }
+    }
+
+    // Close the read pipe so that objdump will exit (in case we broke out of
+    // the loop above before reading all of the output).
+    disassembly_pipe.CloseReadFd();
+
+    // Now wait for objdump to exit.
+    int status = 0;
+    HANDLE_EINTR(waitpid(child_pid, &status, 0));
+
+    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+      BPLOG(ERROR) << "objdump didn't run successfully.";
       return false;
     }
-  } while (!std::regex_match(line, match, instruction_regex));
 
-  instruction = match[1].str();
+    if (instruction == "") {
+      BPLOG(ERROR) << "Failed to find instruction in objdump output.";
+      return false;
+    }
+  }
 
   return true;
 }
@@ -498,23 +479,5 @@ bool DisassemblerObjdump::CalculateDestAddress(const DumpContext& context,
                                                uint64_t& address) {
   return CalculateAddress(context, dest_, address);
 }
+
 }  // namespace google_breakpad
-
-#else  // __linux__
-namespace google_breakpad {
-DisassemblerObjdump::DisassemblerObjdump(const uint32_t cpu,
-                                         const MemoryRegion* memory_region,
-                                         uint64_t address) {}
-
-bool DisassemblerObjdump::CalculateSrcAddress(const DumpContext& context,
-                                              uint64_t& address) {
-  return false;
-}
-
-bool DisassemblerObjdump::CalculateDestAddress(const DumpContext& context,
-                                               uint64_t& address) {
-  return false;
-}
-}  // namespace google_breakpad
-
-#endif  // __linux__

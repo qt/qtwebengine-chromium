@@ -24,7 +24,8 @@
 #include "include/effects/SkImageFilters.h"
 #include "include/effects/SkRuntimeEffect.h"
 #include "include/private/SkColorData.h"
-#include "include/private/SkTPin.h"
+#include "include/private/base/SkCPUTypes.h"
+#include "include/private/base/SkTPin.h"
 #include "src/core/SkImageFilter_Base.h"
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkRuntimeEffectPriv.h"
@@ -37,6 +38,7 @@
 
 #if SK_SUPPORT_GPU
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
+#include "src/gpu/SkBackingFit.h"
 #include "src/gpu/ganesh/GrColorSpaceXform.h"
 #include "src/gpu/ganesh/GrFragmentProcessor.h"
 #include "src/gpu/ganesh/GrPaint.h"

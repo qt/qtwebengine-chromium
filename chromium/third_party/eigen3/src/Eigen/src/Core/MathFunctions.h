@@ -1531,6 +1531,37 @@ double abs(const std::complex<double>& x) {
 }
 #endif
 
+template <typename Scalar, bool IsInteger = NumTraits<Scalar>::IsInteger, bool IsSigned = NumTraits<Scalar>::IsSigned>
+struct signbit_impl;
+template <typename Scalar>
+struct signbit_impl<Scalar, false, true> {
+  static constexpr size_t Size = sizeof(Scalar);
+  static constexpr size_t Shift = (CHAR_BIT * Size) - 1;
+  using intSize_t = typename get_integer_by_size<Size>::signed_type;
+  EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE static Scalar run(const Scalar& x) {
+    intSize_t a = bit_cast<intSize_t, Scalar>(x);
+    a = a >> Shift;
+    Scalar result = bit_cast<Scalar, intSize_t>(a);
+    return result;
+  }
+};
+template <typename Scalar>
+struct signbit_impl<Scalar, true, true> {
+  static constexpr size_t Size = sizeof(Scalar);
+  static constexpr size_t Shift = (CHAR_BIT * Size) - 1;
+  EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE static constexpr Scalar run(const Scalar& x) { return x >> Shift; }
+};
+template <typename Scalar>
+struct signbit_impl<Scalar, true, false> {
+  EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE static constexpr Scalar run(const Scalar&  ) {
+    return Scalar(0);
+  }
+};
+template <typename Scalar>
+EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE static constexpr Scalar signbit(const Scalar& x) {
+  return signbit_impl<Scalar>::run(x);
+}
+
 template<typename T>
 EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
 T exp(const T &x) {
@@ -1701,6 +1732,12 @@ EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
 T atan(const T &x) {
   EIGEN_USING_STD(atan);
   return static_cast<T>(atan(x));
+}
+
+template <typename T, std::enable_if_t<!NumTraits<T>::IsComplex, int> = 0>
+EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE T atan2(const T& y, const T& x) {
+  EIGEN_USING_STD(atan2);
+  return static_cast<T>(atan2(y, x));
 }
 
 template<typename T>

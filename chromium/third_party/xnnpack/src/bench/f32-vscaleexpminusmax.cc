@@ -20,12 +20,12 @@
 
 static void f32_vscaleexpminusmax(
   benchmark::State& state,
-  xnn_f32_rmax_ukernel_function rmax,
-  xnn_f32_raddexpminusmax_ukernel_function raddexpminusmax,
-  xnn_f32_vscaleexpminusmax_ukernel_function vscaleexpminusmax,
+  xnn_f32_rmax_ukernel_fn rmax,
+  xnn_f32_raddexpminusmax_ukernel_fn raddexpminusmax,
+  xnn_f32_vscaleexpminusmax_ukernel_fn vscaleexpminusmax,
   benchmark::utils::IsaCheckFunction isa_check = nullptr)
 {
-  if (isa_check && !isa_check(state)) {
+  if (isa_check != nullptr && !isa_check(state)) {
     return;
   }
 

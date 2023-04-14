@@ -15,13 +15,13 @@
 #include "internal/platform/implementation/g3/ble_v2.h"
 
 #include <cstdint>
-#include <functional>
 #include <iostream>
 #include <memory>
 #include <optional>
 #include <string>
 #include <utility>
 
+#include "absl/status/status.h"
 #include "absl/strings/escaping.h"
 #include "absl/synchronization/mutex.h"
 #include "internal/platform/cancellation_flag_listener.h"
@@ -29,15 +29,13 @@
 #include "internal/platform/logging.h"
 #include "internal/platform/medium_environment.h"
 
-namespace location {
 namespace nearby {
 namespace g3 {
 
 namespace {
 
-using ::location::nearby::api::ble_v2::BleAdvertisementData;
-using ::location::nearby::api::ble_v2::BleOperationStatus;
-using ::location::nearby::api::ble_v2::TxPowerLevel;
+using ::nearby::api::ble_v2::BleAdvertisementData;
+using ::nearby::api::ble_v2::TxPowerLevel;
 
 std::string TxPowerLevelToName(TxPowerLevel power_mode) {
   switch (power_mode) {
@@ -167,7 +165,7 @@ bool BleV2ServerSocket::Connect(BleV2Socket& socket) {
   return true;
 }
 
-void BleV2ServerSocket::SetCloseNotifier(std::function<void()> notifier) {
+void BleV2ServerSocket::SetCloseNotifier(absl::AnyInvocable<void()> notifier) {
   absl::MutexLock lock(&mutex_);
   close_notifier_ = std::move(notifier);
 }
@@ -263,15 +261,16 @@ std::unique_ptr<BleV2Medium::AdvertisingSession> BleV2Medium::StartAdvertising(
   }
 
   if (callback.start_advertising_result) {
-    callback.start_advertising_result(BleOperationStatus::kSucceeded);
+    callback.start_advertising_result(absl::OkStatus());
   }
   absl::MutexLock lock(&mutex_);
   MediumEnvironment::Instance().UpdateBleV2MediumForAdvertising(
       /*enabled=*/true, *this, adapter_->GetPeripheralV2(), advertising_data);
   return std::make_unique<AdvertisingSession>(
       AdvertisingSession{.stop_advertising = [this] {
-        return StopAdvertising() ? BleOperationStatus::kSucceeded
-                                 : BleOperationStatus::kFailed;
+        return StopAdvertising()
+                   ? absl::OkStatus()
+                   : absl::InternalError("Failed to stop advertising");
       }});
 }
 
@@ -283,7 +282,8 @@ bool BleV2Medium::StartScanning(const Uuid& service_uuid,
   absl::MutexLock lock(&mutex_);
   MediumEnvironment::Instance().UpdateBleV2MediumForScanning(
       /*enabled=*/true, service_uuid, internal_session_id,
-      {.advertisement_found_cb = callback.advertisement_found_cb}, *this);
+      {.advertisement_found_cb = std::move(callback.advertisement_found_cb)},
+      *this);
   scanning_internal_session_ids_.insert({service_uuid, internal_session_id});
   return true;
 }
@@ -310,10 +310,10 @@ std::unique_ptr<BleV2Medium::ScanningSession> BleV2Medium::StartScanning(
     absl::MutexLock lock(&mutex_);
 
     MediumEnvironment::Instance().UpdateBleV2MediumForScanning(
-        /*enabled=*/true, service_uuid, internal_session_id, callback, *this);
+        /*enabled=*/true, service_uuid, internal_session_id,
+        std::move(callback), *this);
     scanning_internal_session_ids_.insert({service_uuid, internal_session_id});
   }
-  callback.start_scanning_result(api::ble_v2::BleOperationStatus::kSucceeded);
   return std::make_unique<ScanningSession>(ScanningSession{
       .stop_scanning =
           [this, service_uuid = service_uuid,
@@ -323,14 +323,15 @@ std::unique_ptr<BleV2Medium::ScanningSession> BleV2Medium::StartScanning(
                     {service_uuid, internal_session_id}) ==
                 scanning_internal_session_ids_.end()) {
               // can't find the provided internal session.
-              return BleOperationStatus::kFailed;
+              return absl::NotFoundError(
+                  "can't find the provided internal session");
             }
             MediumEnvironment::Instance().UpdateBleV2MediumForScanning(
                 /*enabled=*/false, service_uuid, internal_session_id,
                 /*callback=*/{}, *this);
             scanning_internal_session_ids_.erase(
                 {service_uuid, internal_session_id});
-            return BleOperationStatus::kSucceeded;
+            return absl::OkStatus();
           },
   });
 }
@@ -362,7 +363,7 @@ BleV2Medium::GattServer::CreateCharacteristic(
 
 bool BleV2Medium::GattServer::UpdateCharacteristic(
     const api::ble_v2::GattCharacteristic& characteristic,
-    const location::nearby::ByteArray& value) {
+    const nearby::ByteArray& value) {
   NEARBY_LOGS(INFO)
       << "G3 Ble GattServer UpdateCharacteristic, characteristic=("
       << characteristic.service_uuid.Get16BitAsString() << ","
@@ -500,7 +501,7 @@ std::unique_ptr<api::ble_v2::BleSocket> BleV2Medium::Connect(
     absl::MutexLock medium_lock(&remote_medium->mutex_);
     auto item = remote_medium->server_sockets_.find(service_id);
     remote_server_socket =
-        item != server_sockets_.end() ? item->second : nullptr;
+        item != remote_medium->server_sockets_.end() ? item->second : nullptr;
     if (remote_server_socket == nullptr) {
       NEARBY_LOGS(ERROR)
           << "G3 Ble Failed to find Ble Server socket: service_id="
@@ -538,4 +539,3 @@ std::unique_ptr<api::ble_v2::BleSocket> BleV2Medium::Connect(
 
 }  // namespace g3
 }  // namespace nearby
-}  // namespace location

@@ -22,7 +22,7 @@ $XXTL = "UXTL" if DATATYPE == "QU8" else "SXTL"
 $SQXTXN = "SQXTUN" if DATATYPE == "QU8" else "SQXTN"
 $SQXTXN2 = "SQXTUN2" if DATATYPE == "QU8" else "SQXTN2"
 $XINT8_T = "uint8_t" if DATATYPE == "QU8" else "int8_t"
-# void xnn_${DATATYPE.lower()}_gemm_minmax_${REQUANTIZATION.lower()}_ukernel_4x16__aarch64_neon_mlal_lane${"_prfm" if PREFETCH else ""}_cortex_a75(
+# void xnn_${DATATYPE.lower()}_gemm_minmax_${REQUANTIZATION.lower()}_ukernel_4x16__asm_aarch64_neon_mlal_lane${"_prfm" if PREFETCH else ""}_cortex_a75(
 #     size_t mr,                 x0
 #     size_t nc,                 x1
 #     size_t kc,                 x2 / x0
@@ -49,23 +49,23 @@ $if REQUANTIZATION == "RNDNU" and DATATYPE == "QU8":
   #
 # d8-d15, x19-x30 need to be preserved if used. x18 is reserved by the OS.
 
-# Register usage
-# A0  x3 v0
-# A1 x15 v1
-# A2 x13 v2
-# A3  x4 v3
-# B   x5 v4  v5  v6
-# C0  x6 v16 v20 v24 v28
-# C1  x8 v17 v21 v25 v29
-# C2  x9 v18 v22 v26 v30
-# C3  x7 v19 v23 v27 v31
+// Register usage
+// A0  x3 v0
+// A1 x15 v1
+// A2 x13 v2
+// A3  x4 v3
+// B   x5 v4  v5  v6
+// C0  x6 v16 v20 v24 v28
+// C1  x8 v17 v21 v25 v29
+// C2  x9 v18 v22 v26 v30
+// C3  x7 v19 v23 v27 v31
 $if DATATYPE == "QU8":
   # zero_point  v7
   # unused v8 v9 v10 v11 v12 v13 v14 v15
 $else:
   # unused v7 v8 v9 v10 v11 v12 v13 v14 v15
 
-BEGIN_FUNCTION xnn_${DATATYPE.lower()}_gemm_minmax_${REQUANTIZATION.lower()}_ukernel_4x16__aarch64_neon_mlal_lane${"_prfm" if PREFETCH else ""}_cortex_a75
+BEGIN_FUNCTION xnn_${DATATYPE.lower()}_gemm_minmax_${REQUANTIZATION.lower()}_ukernel_4x16__asm_aarch64_neon_mlal_lane${"_prfm" if PREFETCH else ""}_cortex_a75
 
         # Clamp A and C pointers
         CMP     x0, 2                   // if mr < 2
@@ -1023,7 +1023,7 @@ BEGIN_FUNCTION xnn_${DATATYPE.lower()}_gemm_minmax_${REQUANTIZATION.lower()}_uke
 9:
         RET
 
-END_FUNCTION xnn_${DATATYPE.lower()}_gemm_minmax_${REQUANTIZATION.lower()}_ukernel_4x16__aarch64_neon_mlal_lane${"_prfm" if PREFETCH else ""}_cortex_a75
+END_FUNCTION xnn_${DATATYPE.lower()}_gemm_minmax_${REQUANTIZATION.lower()}_ukernel_4x16__asm_aarch64_neon_mlal_lane${"_prfm" if PREFETCH else ""}_cortex_a75
 
 #ifdef __ELF__
 .section ".note.GNU-stack","",%progbits

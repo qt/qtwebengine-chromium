@@ -1071,6 +1071,15 @@ typedef struct AV1EncoderConfig {
   // CONFIG_PARTITION_SEARCH_ORDER.
   const char *partition_info_path;
 
+  // The flag that indicates whether we use an external rate distribution to
+  // guide adaptive quantization. It requires --deltaq-mode=3. The rate
+  // distribution map file name is stored in |rate_distribution_info|.
+  unsigned int enable_rate_guide_deltaq;
+
+  // The input file of rate distribution information used in all intra mode
+  // to determine delta quantization.
+  const char *rate_distribution_info;
+
   // Exit the encoder when it fails to encode to a given level.
   int strict_level_conformance;
 
@@ -1079,6 +1088,9 @@ typedef struct AV1EncoderConfig {
 
   // A flag to control if we enable the superblock qp sweep for a given lambda
   int sb_qp_sweep;
+
+  // Selected global motion search method
+  GlobalMotionMethod global_motion_method;
   /*!\endcond */
 } AV1EncoderConfig;
 
@@ -1950,11 +1962,6 @@ typedef struct {
   YV12_BUFFER_CONFIG *ref_buf[REF_FRAMES];
 
   /*!
-   * Pointer to the source frame buffer.
-   */
-  unsigned char *src_buffer;
-
-  /*!
    * Holds the number of valid reference frames in past and future directions
    * w.r.t. the current frame. num_ref_frames[i] stores the total number of
    * valid reference frames in 'i' direction.
@@ -1976,18 +1983,6 @@ typedef struct {
   int segment_map_w; /*!< segment map width */
   int segment_map_h; /*!< segment map height */
   /**@}*/
-
-  /*!
-   * Holds the total number of corner points detected in the source frame.
-   */
-  int num_src_corners;
-
-  /*!
-   * Holds the x and y co-ordinates of the corner points detected in the source
-   * frame. src_corners[i] holds the x co-ordinate and src_corners[i+1] holds
-   * the y co-ordinate of the ith corner point detected.
-   */
-  int src_corners[2 * MAX_CORNERS];
 } GlobalMotionInfo;
 
 /*!
@@ -3382,6 +3377,23 @@ typedef struct AV1_COMP {
   WeberStats *mb_weber_stats;
 
   /*!
+   * Buffer to store rate cost estimates for each macro block (8x8) in the
+   * preprocessing stage used in allintra mode.
+   */
+  int *prep_rate_estimates;
+
+  /*!
+   * Buffer to store rate cost estimates for each 16x16 block read
+   * from an external file, used in allintra mode.
+   */
+  double *ext_rate_distribution;
+
+  /*!
+   * The scale that equals sum_rate_uniform_quantizer / sum_ext_rate.
+   */
+  double ext_rate_scale;
+
+  /*!
    * Buffer to store MB variance after Wiener filter.
    */
   BLOCK_SIZE weber_bsize;
@@ -3462,6 +3474,12 @@ typedef struct AV1_COMP {
    * Block level thresholds to force zeromv-skip at partition level.
    */
   unsigned int zeromv_skip_thresh_exit_part[BLOCK_SIZES_ALL];
+
+  /*!
+   *  Number of downsampling pyramid levels to allocate for each frame
+   *  This is currently only used for global motion
+   */
+  int image_pyramid_levels;
 } AV1_COMP;
 
 /*!

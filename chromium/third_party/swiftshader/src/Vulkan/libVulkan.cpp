@@ -560,6 +560,10 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(const VkInstanceCreateInfo *pCre
 			//  internal use by the loader, and do not have corresponding
 			//  Vulkan structures in this Specification."
 			break;
+		case VK_STRUCTURE_TYPE_DIRECT_DRIVER_LOADING_LIST_LUNARG:
+			// TODO(b/229112690): This structure is only meant to be used by the Vulkan Loader
+			// and should not be forwarded to the driver.
+			break;
 		default:
 			UNSUPPORTED("pCreateInfo->pNext sType = %s", vk::Stringify(createInfo->sType).c_str());
 			break;

@@ -16,11 +16,11 @@
 #define PLATFORM_IMPL_WINDOWS_EXECUTOR_H_
 
 #include <atomic>
+#include <memory>
 
 #include "internal/platform/implementation/executor.h"
 #include "internal/platform/implementation/windows/thread_pool.h"
 
-namespace location {
 namespace nearby {
 namespace windows {
 
@@ -33,19 +33,18 @@ class Executor : public api::Executor {
 
   // Before returning from destructor, executor must wait for all pending
   // jobs to finish.
-  ~Executor() override {}
+  ~Executor() override = default;
 
   void Execute(Runnable&& runnable) override;
   void Shutdown() override;
 
  private:
   std::unique_ptr<ThreadPool> thread_pool_ = nullptr;
-  std::atomic<bool> shut_down_;
+  std::atomic<bool> shut_down_ = false;
   int32_t max_concurrency_;
 };
 
 }  // namespace windows
 }  // namespace nearby
-}  // namespace location
 
 #endif  // PLATFORM_IMPL_WINDOWS_EXECUTOR_H_

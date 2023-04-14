@@ -18,9 +18,10 @@
 #include "src/tint/ast/call_statement.h"
 #include "src/tint/ast/variable_decl_statement.h"
 #include "src/tint/debug.h"
-#include "src/tint/demangler.h"
-#include "src/tint/sem/expression.h"
+#include "src/tint/sem/type_expression.h"
+#include "src/tint/sem/value_expression.h"
 #include "src/tint/sem/variable.h"
+#include "src/tint/utils/compiler_macros.h"
 
 using namespace tint::number_suffixes;  // NOLINT
 
@@ -89,15 +90,17 @@ void ProgramBuilder::MarkAsMoved() {
 }
 
 void ProgramBuilder::AssertNotMoved() const {
-    if (moved_) {
+    if (TINT_UNLIKELY(moved_)) {
         TINT_ICE(ProgramBuilder, const_cast<ProgramBuilder*>(this)->diagnostics_)
             << "Attempting to use ProgramBuilder after it has been moved";
     }
 }
 
 const type::Type* ProgramBuilder::TypeOf(const ast::Expression* expr) const {
-    auto* sem = Sem().Get(expr);
-    return sem ? sem->Type() : nullptr;
+    return tint::Switch(
+        Sem().Get(expr),  //
+        [](const sem::ValueExpression* e) { return e->Type(); },
+        [](const sem::TypeExpression* e) { return e->Type(); });
 }
 
 const type::Type* ProgramBuilder::TypeOf(const ast::Variable* var) const {
@@ -105,17 +108,13 @@ const type::Type* ProgramBuilder::TypeOf(const ast::Variable* var) const {
     return sem ? sem->Type() : nullptr;
 }
 
-const type::Type* ProgramBuilder::TypeOf(const ast::Type* type) const {
-    return Sem().Get(type);
-}
-
 const type::Type* ProgramBuilder::TypeOf(const ast::TypeDecl* type_decl) const {
     return Sem().Get(type_decl);
 }
 
-std::string ProgramBuilder::FriendlyName(const ast::Type* type) const {
+std::string ProgramBuilder::FriendlyName(ast::Type type) const {
     TINT_ASSERT_PROGRAM_IDS_EQUAL(ProgramBuilder, type, ID());
-    return type ? type->FriendlyName(Symbols()) : "<null>";
+    return type.expr ? Symbols().NameFor(type->identifier->symbol) : "<null>";
 }
 
 std::string ProgramBuilder::FriendlyName(const type::Type* type) const {
@@ -124,10 +123,6 @@ std::string ProgramBuilder::FriendlyName(const type::Type* type) const {
 
 std::string ProgramBuilder::FriendlyName(std::nullptr_t) const {
     return "<null>";
-}
-
-const ast::TypeName* ProgramBuilder::TypesBuilder::Of(const ast::TypeDecl* decl) const {
-    return type_name(decl->name);
 }
 
 ProgramBuilder::TypesBuilder::TypesBuilder(ProgramBuilder* pb) : builder(pb) {}
@@ -151,6 +146,41 @@ const ast::Function* ProgramBuilder::WrapInFunction(utils::VectorRef<const ast::
                     create<ast::StageAttribute>(ast::PipelineStage::kCompute),
                     WorkgroupSize(1_i, 1_i, 1_i),
                 });
+}
+
+const constant::Value* ProgramBuilder::createSplatOrComposite(
+    const type::Type* type,
+    utils::VectorRef<const constant::Value*> elements) {
+    if (elements.IsEmpty()) {
+        return nullptr;
+    }
+
+    bool any_zero = false;
+    bool all_zero = true;
+    bool all_equal = true;
+    auto* first = elements.Front();
+    for (auto* el : elements) {
+        if (!el) {
+            return nullptr;
+        }
+        if (!any_zero && el->AnyZero()) {
+            any_zero = true;
+        }
+        if (all_zero && !el->AllZero()) {
+            all_zero = false;
+        }
+        if (all_equal && el != first) {
+            if (!el->Equal(first)) {
+                all_equal = false;
+            }
+        }
+    }
+    if (all_equal) {
+        return create<constant::Splat>(type, elements[0], elements.Length());
+    }
+
+    return constant_nodes_.Create<constant::Composite>(type, std::move(elements), all_zero,
+                                                       any_zero);
 }
 
 }  // namespace tint

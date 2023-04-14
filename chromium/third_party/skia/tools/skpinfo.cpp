@@ -7,7 +7,7 @@
 
 #include "include/core/SkPicture.h"
 #include "include/core/SkStream.h"
-#include "include/private/SkTo.h"
+#include "include/private/base/SkTo.h"
 #include "src/core/SkFontDescriptor.h"
 #include "src/core/SkPictureData.h"
 #include "src/core/SkPicturePriv.h"
@@ -137,7 +137,6 @@ int main(int argc, char** argv) {
                 SkDebugf("Exiting early due to format limitations\n");
             }
             return kSuccess;       // TODO: need to store size in bytes
-            break;
         case SK_PICT_BUFFER_SIZE_TAG:
             if (FLAGS_tags && !FLAGS_quiet) {
                 SkDebugf("SK_PICT_BUFFER_SIZE_TAG %d\n", chunkSize);

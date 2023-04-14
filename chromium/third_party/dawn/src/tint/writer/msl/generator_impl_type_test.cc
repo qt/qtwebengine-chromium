@@ -22,6 +22,7 @@
 #include "src/tint/type/sampled_texture.h"
 #include "src/tint/type/sampler.h"
 #include "src/tint/type/storage_texture.h"
+#include "src/tint/type/texture_dimension.h"
 #include "src/tint/writer/msl/test_helper.h"
 
 using ::testing::HasSubstr;
@@ -88,60 +89,60 @@ using uint = unsigned int;
 using MslGeneratorImplTest = TestHelper;
 
 TEST_F(MslGeneratorImplTest, EmitType_Array) {
-    auto* arr = ty.array<bool, 4>();
-    GlobalVar("G", arr, ast::AddressSpace::kPrivate);
+    auto arr = ty.array<bool, 4>();
+    ast::Type type = GlobalVar("G", arr, builtin::AddressSpace::kPrivate)->type;
 
     GeneratorImpl& gen = Build();
 
     std::stringstream out;
-    ASSERT_TRUE(gen.EmitType(out, program->TypeOf(arr), "ary")) << gen.error();
+    ASSERT_TRUE(gen.EmitType(out, program->TypeOf(type), "ary")) << gen.error();
     EXPECT_EQ(out.str(), "tint_array<bool, 4>");
 }
 
 TEST_F(MslGeneratorImplTest, EmitType_ArrayOfArray) {
-    auto* a = ty.array<bool, 4>();
-    auto* b = ty.array(a, 5_u);
-    GlobalVar("G", b, ast::AddressSpace::kPrivate);
+    auto a = ty.array<bool, 4>();
+    auto b = ty.array(a, 5_u);
+    ast::Type type = GlobalVar("G", b, builtin::AddressSpace::kPrivate)->type;
 
     GeneratorImpl& gen = Build();
 
     std::stringstream out;
-    ASSERT_TRUE(gen.EmitType(out, program->TypeOf(b), "ary")) << gen.error();
+    ASSERT_TRUE(gen.EmitType(out, program->TypeOf(type), "ary")) << gen.error();
     EXPECT_EQ(out.str(), "tint_array<tint_array<bool, 4>, 5>");
 }
 
 TEST_F(MslGeneratorImplTest, EmitType_ArrayOfArrayOfArray) {
-    auto* a = ty.array<bool, 4>();
-    auto* b = ty.array(a, 5_u);
-    auto* c = ty.array(b, 6_u);
-    GlobalVar("G", c, ast::AddressSpace::kPrivate);
+    auto a = ty.array<bool, 4>();
+    auto b = ty.array(a, 5_u);
+    auto c = ty.array(b, 6_u);
+    ast::Type type = GlobalVar("G", c, builtin::AddressSpace::kPrivate)->type;
 
     GeneratorImpl& gen = Build();
 
     std::stringstream out;
-    ASSERT_TRUE(gen.EmitType(out, program->TypeOf(c), "ary")) << gen.error();
+    ASSERT_TRUE(gen.EmitType(out, program->TypeOf(type), "ary")) << gen.error();
     EXPECT_EQ(out.str(), "tint_array<tint_array<tint_array<bool, 4>, 5>, 6>");
 }
 
 TEST_F(MslGeneratorImplTest, EmitType_Array_WithoutName) {
-    auto* arr = ty.array<bool, 4>();
-    GlobalVar("G", arr, ast::AddressSpace::kPrivate);
+    auto arr = ty.array<bool, 4>();
+    ast::Type type = GlobalVar("G", arr, builtin::AddressSpace::kPrivate)->type;
 
     GeneratorImpl& gen = Build();
 
     std::stringstream out;
-    ASSERT_TRUE(gen.EmitType(out, program->TypeOf(arr), "")) << gen.error();
+    ASSERT_TRUE(gen.EmitType(out, program->TypeOf(type), "")) << gen.error();
     EXPECT_EQ(out.str(), "tint_array<bool, 4>");
 }
 
 TEST_F(MslGeneratorImplTest, EmitType_RuntimeArray) {
-    auto* arr = ty.array<bool, 1>();
-    GlobalVar("G", arr, ast::AddressSpace::kPrivate);
+    auto arr = ty.array<bool, 1>();
+    ast::Type type = GlobalVar("G", arr, builtin::AddressSpace::kPrivate)->type;
 
     GeneratorImpl& gen = Build();
 
     std::stringstream out;
-    ASSERT_TRUE(gen.EmitType(out, program->TypeOf(arr), "ary")) << gen.error();
+    ASSERT_TRUE(gen.EmitType(out, program->TypeOf(type), "ary")) << gen.error();
     EXPECT_EQ(out.str(), "tint_array<bool, 1>");
 }
 
@@ -211,7 +212,8 @@ TEST_F(MslGeneratorImplTest, EmitType_Matrix_F16) {
 
 TEST_F(MslGeneratorImplTest, EmitType_Pointer) {
     auto* f32 = create<type::F32>();
-    auto* p = create<type::Pointer>(f32, ast::AddressSpace::kWorkgroup, ast::Access::kReadWrite);
+    auto* p =
+        create<type::Pointer>(f32, builtin::AddressSpace::kWorkgroup, builtin::Access::kReadWrite);
 
     GeneratorImpl& gen = Build();
 
@@ -282,13 +284,14 @@ TEST_F(MslGeneratorImplTest, EmitType_Struct_Layout_NonComposites) {
                  Member("z", ty.f32()),
              });
 
-    GlobalVar("G", ty.Of(s), ast::AddressSpace::kStorage, ast::Access::kRead, Binding(0_a),
-              Group(0_a));
+    ast::Type type = GlobalVar("G", ty.Of(s), builtin::AddressSpace::kStorage,
+                               builtin::Access::kRead, Binding(0_a), Group(0_a))
+                         ->type;
 
     GeneratorImpl& gen = Build();
 
     TextGenerator::TextBuffer buf;
-    auto* sem_s = program->TypeOf(s)->As<sem::Struct>();
+    auto* sem_s = program->TypeOf(type)->As<sem::Struct>();
     ASSERT_TRUE(gen.EmitStructType(&buf, sem_s)) << gen.error();
 
     // ALL_FIELDS() calls the macro FIELD(ADDR, TYPE, ARRAY_COUNT, NAME)
@@ -390,13 +393,14 @@ TEST_F(MslGeneratorImplTest, EmitType_Struct_Layout_Structures) {
                                  Member("e", ty.f32()),
                              });
 
-    GlobalVar("G", ty.Of(s), ast::AddressSpace::kStorage, ast::Access::kRead, Binding(0_a),
-              Group(0_a));
+    ast::Type type = GlobalVar("G", ty.Of(s), builtin::AddressSpace::kStorage,
+                               builtin::Access::kRead, Binding(0_a), Group(0_a))
+                         ->type;
 
     GeneratorImpl& gen = Build();
 
     TextGenerator::TextBuffer buf;
-    auto* sem_s = program->TypeOf(s)->As<sem::Struct>();
+    auto* sem_s = program->TypeOf(type)->As<sem::Struct>();
     ASSERT_TRUE(gen.EmitStructType(&buf, sem_s)) << gen.error();
 
     // ALL_FIELDS() calls the macro FIELD(ADDR, TYPE, ARRAY_COUNT, NAME)
@@ -464,13 +468,13 @@ TEST_F(MslGeneratorImplTest, EmitType_Struct_Layout_ArrayDefaultStride) {
                                      });
 
     // array_x: size(28), align(4)
-    auto* array_x = ty.array<f32, 7>();
+    auto array_x = ty.array<f32, 7>();
 
     // array_y: size(4096), align(512)
-    auto* array_y = ty.array(ty.Of(inner), 4_u);
+    auto array_y = ty.array(ty.Of(inner), 4_u);
 
     // array_z: size(4), align(4)
-    auto* array_z = ty.array<f32>();
+    auto array_z = ty.array<f32>();
 
     auto* s = Structure("S", utils::Vector{
                                  Member("a", ty.i32()),
@@ -481,13 +485,14 @@ TEST_F(MslGeneratorImplTest, EmitType_Struct_Layout_ArrayDefaultStride) {
                                  Member("f", array_z),
                              });
 
-    GlobalVar("G", ty.Of(s), ast::AddressSpace::kStorage, ast::Access::kRead, Binding(0_a),
-              Group(0_a));
+    ast::Type type = GlobalVar("G", ty.Of(s), builtin::AddressSpace::kStorage,
+                               builtin::Access::kRead, Binding(0_a), Group(0_a))
+                         ->type;
 
     GeneratorImpl& gen = Build();
 
     TextGenerator::TextBuffer buf;
-    auto* sem_s = program->TypeOf(s)->As<sem::Struct>();
+    auto* sem_s = program->TypeOf(type)->As<sem::Struct>();
     ASSERT_TRUE(gen.EmitStructType(&buf, sem_s)) << gen.error();
 
     // ALL_FIELDS() calls the macro FIELD(ADDR, TYPE, ARRAY_COUNT, NAME)
@@ -556,7 +561,7 @@ TEST_F(MslGeneratorImplTest, EmitType_Struct_Layout_ArrayDefaultStride) {
 
 TEST_F(MslGeneratorImplTest, EmitType_Struct_Layout_ArrayVec3DefaultStride) {
     // array: size(64), align(16)
-    auto* array = ty.array(ty.vec3<f32>(), 4_u);
+    auto array = ty.array(ty.vec3<f32>(), 4_u);
 
     auto* s = Structure("S", utils::Vector{
                                  Member("a", ty.i32()),
@@ -564,13 +569,14 @@ TEST_F(MslGeneratorImplTest, EmitType_Struct_Layout_ArrayVec3DefaultStride) {
                                  Member("c", ty.i32()),
                              });
 
-    GlobalVar("G", ty.Of(s), ast::AddressSpace::kStorage, ast::Access::kRead, Binding(0_a),
-              Group(0_a));
+    ast::Type type = GlobalVar("G", ty.Of(s), builtin::AddressSpace::kStorage,
+                               builtin::Access::kRead, Binding(0_a), Group(0_a))
+                         ->type;
 
     GeneratorImpl& gen = Build();
 
     TextGenerator::TextBuffer buf;
-    auto* sem_s = program->TypeOf(s)->As<sem::Struct>();
+    auto* sem_s = program->TypeOf(type)->As<sem::Struct>();
     ASSERT_TRUE(gen.EmitStructType(&buf, sem_s)) << gen.error();
 
     // ALL_FIELDS() calls the macro FIELD(ADDR, TYPE, ARRAY_COUNT, NAME)
@@ -625,13 +631,14 @@ TEST_F(MslGeneratorImplTest, AttemptTintPadSymbolCollision) {
                                  Member("tint_pad_21", ty.f32()),
                              });
 
-    GlobalVar("G", ty.Of(s), ast::AddressSpace::kStorage, ast::Access::kRead, Binding(0_a),
-              Group(0_a));
+    ast::Type type = GlobalVar("G", ty.Of(s), builtin::AddressSpace::kStorage,
+                               builtin::Access::kRead, Binding(0_a), Group(0_a))
+                         ->type;
 
     GeneratorImpl& gen = Build();
 
     TextGenerator::TextBuffer buf;
-    auto* sem_s = program->TypeOf(s)->As<sem::Struct>();
+    auto* sem_s = program->TypeOf(type)->As<sem::Struct>();
     ASSERT_TRUE(gen.EmitStructType(&buf, sem_s)) << gen.error();
     EXPECT_EQ(buf.String(), R"(struct S {
   /* 0x0000 */ int tint_pad_2;
@@ -683,13 +690,14 @@ TEST_F(MslGeneratorImplTest, EmitType_Struct_WithAttribute) {
                                  Member("b", ty.f32()),
                              });
 
-    GlobalVar("G", ty.Of(s), ast::AddressSpace::kStorage, ast::Access::kRead, Binding(0_a),
-              Group(0_a));
+    ast::Type type = GlobalVar("G", ty.Of(s), builtin::AddressSpace::kStorage,
+                               builtin::Access::kRead, Binding(0_a), Group(0_a))
+                         ->type;
 
     GeneratorImpl& gen = Build();
 
     TextGenerator::TextBuffer buf;
-    auto* sem_s = program->TypeOf(s)->As<sem::Struct>();
+    auto* sem_s = program->TypeOf(type)->As<sem::Struct>();
     ASSERT_TRUE(gen.EmitStructType(&buf, sem_s)) << gen.error();
     EXPECT_EQ(buf.String(), R"(struct S {
   /* 0x0000 */ int a;
@@ -730,7 +738,7 @@ TEST_F(MslGeneratorImplTest, EmitType_Void) {
 }
 
 TEST_F(MslGeneratorImplTest, EmitType_Sampler) {
-    auto* sampler = create<type::Sampler>(ast::SamplerKind::kSampler);
+    auto* sampler = create<type::Sampler>(type::SamplerKind::kSampler);
 
     GeneratorImpl& gen = Build();
 
@@ -740,7 +748,7 @@ TEST_F(MslGeneratorImplTest, EmitType_Sampler) {
 }
 
 TEST_F(MslGeneratorImplTest, EmitType_SamplerComparison) {
-    auto* sampler = create<type::Sampler>(ast::SamplerKind::kComparisonSampler);
+    auto* sampler = create<type::Sampler>(type::SamplerKind::kComparisonSampler);
 
     GeneratorImpl& gen = Build();
 
@@ -750,7 +758,7 @@ TEST_F(MslGeneratorImplTest, EmitType_SamplerComparison) {
 }
 
 struct MslDepthTextureData {
-    ast::TextureDimension dim;
+    type::TextureDimension dim;
     std::string result;
 };
 inline std::ostream& operator<<(std::ostream& out, MslDepthTextureData data) {
@@ -773,16 +781,16 @@ INSTANTIATE_TEST_SUITE_P(
     MslGeneratorImplTest,
     MslDepthTexturesTest,
     testing::Values(
-        MslDepthTextureData{ast::TextureDimension::k2d, "depth2d<float, access::sample>"},
-        MslDepthTextureData{ast::TextureDimension::k2dArray,
+        MslDepthTextureData{type::TextureDimension::k2d, "depth2d<float, access::sample>"},
+        MslDepthTextureData{type::TextureDimension::k2dArray,
                             "depth2d_array<float, access::sample>"},
-        MslDepthTextureData{ast::TextureDimension::kCube, "depthcube<float, access::sample>"},
-        MslDepthTextureData{ast::TextureDimension::kCubeArray,
+        MslDepthTextureData{type::TextureDimension::kCube, "depthcube<float, access::sample>"},
+        MslDepthTextureData{type::TextureDimension::kCubeArray,
                             "depthcube_array<float, access::sample>"}));
 
 using MslDepthMultisampledTexturesTest = TestHelper;
 TEST_F(MslDepthMultisampledTexturesTest, Emit) {
-    type::DepthMultisampledTexture s(ast::TextureDimension::k2d);
+    type::DepthMultisampledTexture s(type::TextureDimension::k2d);
 
     GeneratorImpl& gen = Build();
 
@@ -792,7 +800,7 @@ TEST_F(MslDepthMultisampledTexturesTest, Emit) {
 }
 
 struct MslTextureData {
-    ast::TextureDimension dim;
+    type::TextureDimension dim;
     std::string result;
 };
 inline std::ostream& operator<<(std::ostream& out, MslTextureData data) {
@@ -816,17 +824,17 @@ INSTANTIATE_TEST_SUITE_P(
     MslGeneratorImplTest,
     MslSampledtexturesTest,
     testing::Values(
-        MslTextureData{ast::TextureDimension::k1d, "texture1d<float, access::sample>"},
-        MslTextureData{ast::TextureDimension::k2d, "texture2d<float, access::sample>"},
-        MslTextureData{ast::TextureDimension::k2dArray, "texture2d_array<float, access::sample>"},
-        MslTextureData{ast::TextureDimension::k3d, "texture3d<float, access::sample>"},
-        MslTextureData{ast::TextureDimension::kCube, "texturecube<float, access::sample>"},
-        MslTextureData{ast::TextureDimension::kCubeArray,
+        MslTextureData{type::TextureDimension::k1d, "texture1d<float, access::sample>"},
+        MslTextureData{type::TextureDimension::k2d, "texture2d<float, access::sample>"},
+        MslTextureData{type::TextureDimension::k2dArray, "texture2d_array<float, access::sample>"},
+        MslTextureData{type::TextureDimension::k3d, "texture3d<float, access::sample>"},
+        MslTextureData{type::TextureDimension::kCube, "texturecube<float, access::sample>"},
+        MslTextureData{type::TextureDimension::kCubeArray,
                        "texturecube_array<float, access::sample>"}));
 
 TEST_F(MslGeneratorImplTest, Emit_TypeMultisampledTexture) {
     auto* u32 = create<type::U32>();
-    auto* ms = create<type::MultisampledTexture>(ast::TextureDimension::k2d, u32);
+    auto* ms = create<type::MultisampledTexture>(type::TextureDimension::k2d, u32);
 
     GeneratorImpl& gen = Build();
 
@@ -836,7 +844,7 @@ TEST_F(MslGeneratorImplTest, Emit_TypeMultisampledTexture) {
 }
 
 struct MslStorageTextureData {
-    ast::TextureDimension dim;
+    type::TextureDimension dim;
     std::string result;
 };
 inline std::ostream& operator<<(std::ostream& out, MslStorageTextureData data) {
@@ -846,24 +854,25 @@ using MslStorageTexturesTest = TestParamHelper<MslStorageTextureData>;
 TEST_P(MslStorageTexturesTest, Emit) {
     auto params = GetParam();
 
-    auto* s = ty.storage_texture(params.dim, ast::TexelFormat::kR32Float, ast::Access::kWrite);
-    GlobalVar("test_var", s, Binding(0_a), Group(0_a));
+    auto s =
+        ty.storage_texture(params.dim, builtin::TexelFormat::kR32Float, builtin::Access::kWrite);
+    ast::Type type = GlobalVar("test_var", s, Binding(0_a), Group(0_a))->type;
 
     GeneratorImpl& gen = Build();
 
     std::stringstream out;
-    ASSERT_TRUE(gen.EmitType(out, program->TypeOf(s), "")) << gen.error();
+    ASSERT_TRUE(gen.EmitType(out, program->TypeOf(type), "")) << gen.error();
     EXPECT_EQ(out.str(), params.result);
 }
 INSTANTIATE_TEST_SUITE_P(
     MslGeneratorImplTest,
     MslStorageTexturesTest,
     testing::Values(
-        MslStorageTextureData{ast::TextureDimension::k1d, "texture1d<float, access::write>"},
-        MslStorageTextureData{ast::TextureDimension::k2d, "texture2d<float, access::write>"},
-        MslStorageTextureData{ast::TextureDimension::k2dArray,
+        MslStorageTextureData{type::TextureDimension::k1d, "texture1d<float, access::write>"},
+        MslStorageTextureData{type::TextureDimension::k2d, "texture2d<float, access::write>"},
+        MslStorageTextureData{type::TextureDimension::k2dArray,
                               "texture2d_array<float, access::write>"},
-        MslStorageTextureData{ast::TextureDimension::k3d, "texture3d<float, access::write>"}));
+        MslStorageTextureData{type::TextureDimension::k3d, "texture3d<float, access::write>"}));
 
 }  // namespace
 }  // namespace tint::writer::msl

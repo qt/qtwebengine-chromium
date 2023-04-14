@@ -20,24 +20,27 @@
 #include "include/core/SkTypeface.h"
 #include "include/core/SkTypes.h"
 #include "include/private/SkBitmaskEnum.h"
-#include "include/private/SkMalloc.h"
-#include "include/private/SkMutex.h"
-#include "include/private/SkTArray.h"
-#include "include/private/SkTFitsIn.h"
-#include "include/private/SkTo.h"
-#include "include/private/SkTypeTraits.h"
+#include "include/private/base/SkTArray.h"
+#include "include/private/base/SkTypeTraits.h"
+#include "include/private/base/SkMalloc.h"
+#include "include/private/base/SkMutex.h"
+#include "include/private/base/SkTFitsIn.h"
+#include "include/private/base/SkTo.h"
 #include "modules/skshaper/include/SkShaper.h"
 #include "modules/skunicode/include/SkUnicode.h"
+#include "src/base/SkTDPQueue.h"
+#include "src/base/SkUTF.h"
 #include "src/core/SkLRUCache.h"
-#include "src/core/SkTDPQueue.h"
-#include "src/utils/SkUTF.h"
 
 #include <hb.h>
 #include <hb-ot.h>
 #include <cstring>
+#include <locale>
 #include <memory>
 #include <type_traits>
 #include <utility>
+
+using namespace skia_private;
 
 // HB_FEATURE_GLOBAL_START and HB_FEATURE_GLOBAL_END were not added until HarfBuzz 2.0
 // They would have always worked, they just hadn't been named yet.
@@ -98,12 +101,12 @@ unsigned skhb_nominal_glyphs(hb_font_t *hb_font, void *font_data,
 
     // Batch call textToGlyphs since entry cost is not cheap.
     // Copy requred because textToGlyphs is dense and hb is strided.
-    SkAutoSTMalloc<256, SkUnichar> unicode(count);
+    AutoSTMalloc<256, SkUnichar> unicode(count);
     for (unsigned i = 0; i < count; i++) {
         unicode[i] = *unicodes;
         unicodes = SkTAddOffset<const hb_codepoint_t>(unicodes, unicode_stride);
     }
-    SkAutoSTMalloc<256, SkGlyphID> glyph(count);
+    AutoSTMalloc<256, SkGlyphID> glyph(count);
     font.textToGlyphs(unicode.get(), count * sizeof(SkUnichar), SkTextEncoding::kUTF32,
                         glyph.get(), count);
 
@@ -145,12 +148,12 @@ void skhb_glyph_h_advances(hb_font_t* hb_font,
 
     // Batch call getWidths since entry cost is not cheap.
     // Copy requred because getWidths is dense and hb is strided.
-    SkAutoSTMalloc<256, SkGlyphID> glyph(count);
+    AutoSTMalloc<256, SkGlyphID> glyph(count);
     for (unsigned i = 0; i < count; i++) {
         glyph[i] = *glyphs;
         glyphs = SkTAddOffset<const hb_codepoint_t>(glyphs, glyph_stride);
     }
-    SkAutoSTMalloc<256, SkScalar> advance(count);
+    AutoSTMalloc<256, SkScalar> advance(count);
     font.getWidths(glyph.get(), count, advance.get());
 
     if (!font.isSubpixel()) {
@@ -314,7 +317,7 @@ HBFont create_typeface_hb_font(const SkTypeface& typeface) {
     hb_ot_font_set_funcs(otFont.get());
     int axis_count = typeface.getVariationDesignPosition(nullptr, 0);
     if (axis_count > 0) {
-        SkAutoSTMalloc<4, SkFontArguments::VariationPosition::Coordinate> axis_values(axis_count);
+        AutoSTMalloc<4, SkFontArguments::VariationPosition::Coordinate> axis_values(axis_count);
         if (typeface.getVariationDesignPosition(axis_values, axis_count) == axis_count) {
             hb_font_set_variations(otFont.get(),
                                    reinterpret_cast<hb_variation_t*>(axis_values.get()),
@@ -576,11 +579,11 @@ void emit(SkUnicode* unicode, const ShapedLine& line, SkShaper::RunHandler* hand
     handler->beginLine();
 
     int numRuns = line.runs.size();
-    SkAutoSTMalloc<4, SkBidiIterator::Level> runLevels(numRuns);
+    AutoSTMalloc<4, SkBidiIterator::Level> runLevels(numRuns);
     for (int i = 0; i < numRuns; ++i) {
         runLevels[i] = line.runs[i].fLevel;
     }
-    SkAutoSTMalloc<4, int32_t> logicalFromVisual(numRuns);
+    AutoSTMalloc<4, int32_t> logicalFromVisual(numRuns);
     unicode->reorderVisual(runLevels, numRuns, logicalFromVisual);
 
     for (int i = 0; i < numRuns; ++i) {
@@ -777,11 +780,13 @@ static std::unique_ptr<SkShaper> MakeHarfBuzz(sk_sp<SkFontMgr> fontmgr, bool cor
     if (!unicode) {
         return nullptr;
     }
-    auto lineIter = unicode->makeBreakIterator("th", SkUnicode::BreakType::kLines);
+
+    const auto lname = std::locale().name();
+    auto lineIter = unicode->makeBreakIterator(lname.c_str(), SkUnicode::BreakType::kLines);
     if (!lineIter) {
         return nullptr;
     }
-    auto graphIter = unicode->makeBreakIterator("th", SkUnicode::BreakType::kGraphemes);
+    auto graphIter = unicode->makeBreakIterator(lname.c_str(), SkUnicode::BreakType::kGraphemes);
     if (!graphIter) {
         return nullptr;
     }
@@ -1171,11 +1176,11 @@ void ShapeThenWrap::wrap(char const * const utf8, size_t utf8Bytes,
         }
 
         int numRuns = current.fRunIndex - previousBreak.fRunIndex + 1;
-        SkAutoSTMalloc<4, SkBidiIterator::Level> runLevels(numRuns);
+        AutoSTMalloc<4, SkBidiIterator::Level> runLevels(numRuns);
         for (int i = 0; i < numRuns; ++i) {
             runLevels[i] = runs[previousBreak.fRunIndex + i].fLevel;
         }
-        SkAutoSTMalloc<4, int32_t> logicalFromVisual(numRuns);
+        AutoSTMalloc<4, int32_t> logicalFromVisual(numRuns);
         fUnicode->reorderVisual(runLevels, numRuns, logicalFromVisual);
 
         // step through the runs in reverse visual order and the glyphs in reverse logical order
@@ -1424,11 +1429,11 @@ ShapedRun ShaperHarfBuzz::shape(char const * const utf8,
                     std::unique_ptr<ShapedGlyph[]>(new ShapedGlyph[len]), len);
 
     // Undo skhb_position with (1.0/(1<<16)) and scale as needed.
-    SkAutoSTArray<32, SkGlyphID> glyphIDs(len);
+    AutoSTArray<32, SkGlyphID> glyphIDs(len);
     for (unsigned i = 0; i < len; i++) {
         glyphIDs[i] = info[i].codepoint;
     }
-    SkAutoSTArray<32, SkRect> glyphBounds(len);
+    AutoSTArray<32, SkRect> glyphBounds(len);
     SkPaint p;
     run.fFont.getBounds(glyphIDs.get(), len, glyphBounds.get(), &p);
 
@@ -1523,14 +1528,14 @@ std::unique_ptr<SkShaper> SkShaper::MakeShaperDrivenWrapper(sk_sp<SkFontMgr> fon
 std::unique_ptr<SkShaper> SkShaper::MakeShapeThenWrap(sk_sp<SkFontMgr> fontmgr) {
     return MakeHarfBuzz(std::move(fontmgr), false);
 }
-std::unique_ptr<SkShaper> SkShaper::MakeShapeDontWrapOrReorder(sk_sp<SkFontMgr> fontmgr) {
+std::unique_ptr<SkShaper> SkShaper::MakeShapeDontWrapOrReorder(std::unique_ptr<SkUnicode> unicode,
+                                                               sk_sp<SkFontMgr> fontmgr) {
     HBBuffer buffer(hb_buffer_create());
     if (!buffer) {
         SkDEBUGF("Could not create hb_buffer");
         return nullptr;
     }
 
-    auto unicode = SkUnicode::Make();
     if (!unicode) {
         return nullptr;
     }

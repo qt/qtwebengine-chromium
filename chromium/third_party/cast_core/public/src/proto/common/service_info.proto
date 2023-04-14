@@ -19,12 +19,8 @@ package cast.common;
 option optimize_for = LITE_RUNTIME;
 
 // A Cast service info.
+// Next ID: 3
 message ServiceInfo {
-  oneof endpoint_address {
-    // gRPC endpoint (http://, unix:/ etc).
-    string grpc_endpoint = 1;
-    // The name of a mojo channel that can be used to pass a mojo connection to
-    // another process.
-    string mojo_channel_name = 2;
-  }
+  // gRPC endpoint (http://, unix:/ etc).
+  string grpc_endpoint = 1;
 }

@@ -142,6 +142,9 @@ message UpdateParams {
 
   // Checks for an update, but does not apply it.
   bool skip_applying = 4;
+
+  // Forces a fw update with OS update.
+  bool force_fw_update = 5;
 }
 
 message InstallParams {

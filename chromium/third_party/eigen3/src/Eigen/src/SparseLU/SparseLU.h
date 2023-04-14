@@ -37,9 +37,10 @@ public:
     MaxColsAtCompileTime = MatrixType::MaxColsAtCompileTime
   };
 
-  SparseLUTransposeView() : m_sparseLU(NULL) {}
-  SparseLUTransposeView(const SparseLUTransposeView& view) {
+  SparseLUTransposeView() : APIBase(), m_sparseLU(NULL) {}
+  SparseLUTransposeView(const SparseLUTransposeView& view) : APIBase() {
     this->m_sparseLU = view.m_sparseLU;
+    this->m_isInitialized = view.m_isInitialized;
   }
   void setIsInitialized(const bool isInitialized) {this->m_isInitialized = isInitialized;}
   void setSparseLU(SparseLUType* sparseLU) {m_sparseLU = sparseLU;}
@@ -860,7 +861,6 @@ struct SparseLUMatrixUReturnType : internal::no_assignment_operator
   template<typename Dest>   void solveInPlace(MatrixBase<Dest> &X) const
   {
     Index nrhs = X.cols();
-    Index n    = X.rows();
     // Backward solve with U
     for (Index k = m_mapL.nsuper(); k >= 0; k--)
     {
@@ -880,7 +880,7 @@ struct SparseLUMatrixUReturnType : internal::no_assignment_operator
       {
         // FIXME: the following lines should use Block expressions and not Map!
         Map<const Matrix<Scalar,Dynamic,Dynamic, ColMajor>, 0, OuterStride<> > A( &(m_mapL.valuePtr()[luptr]), nsupc, nsupc, OuterStride<>(lda) );
-        Map< Matrix<Scalar,Dynamic,Dest::ColsAtCompileTime, ColMajor>, 0, OuterStride<> > U (&(X.coeffRef(fsupc,0)), nsupc, nrhs, OuterStride<>(n) );
+        typename Dest::RowsBlockXpr U = X.derived().middleRows(fsupc, nsupc);
         U = A.template triangularView<Upper>().solve(U);
       }
 
@@ -903,7 +903,6 @@ struct SparseLUMatrixUReturnType : internal::no_assignment_operator
   {
     using numext::conj;
     Index nrhs = X.cols();
-    Index n    = X.rows();
     // Forward solve with U
     for (Index k = 0; k <=  m_mapL.nsuper(); k++)
     {
@@ -934,7 +933,7 @@ struct SparseLUMatrixUReturnType : internal::no_assignment_operator
       else
       {
         Map<const Matrix<Scalar,Dynamic,Dynamic, ColMajor>, 0, OuterStride<> > A( &(m_mapL.valuePtr()[luptr]), nsupc, nsupc, OuterStride<>(lda) );
-        Map< Matrix<Scalar,Dynamic,Dest::ColsAtCompileTime, ColMajor>, 0, OuterStride<> > U (&(X(fsupc,0)), nsupc, nrhs, OuterStride<>(n) );
+        typename Dest::RowsBlockXpr U = X.derived().middleRows(fsupc, nsupc);
         if(Conjugate)
           U = A.adjoint().template triangularView<Lower>().solve(U);
         else

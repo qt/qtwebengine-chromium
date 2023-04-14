@@ -21,7 +21,6 @@
 #include "internal/platform/runnable.h"
 #include "internal/platform/system_clock.h"
 
-namespace location {
 namespace nearby {
 
 // A runnable with extra logging
@@ -32,9 +31,8 @@ class MonitoredRunnable {
  public:
   explicit MonitoredRunnable(Runnable&& runnable);
   MonitoredRunnable(const std::string& name, Runnable&& runnable);
-  ~MonitoredRunnable();
 
-  void operator()() const;
+  void operator()();
 
  private:
   const std::string name_;
@@ -43,6 +41,5 @@ class MonitoredRunnable {
 };
 
 }  // namespace nearby
-}  // namespace location
 
 #endif  // PLATFORM_PUBLIC_MONITORED_RUNNABLE_H_

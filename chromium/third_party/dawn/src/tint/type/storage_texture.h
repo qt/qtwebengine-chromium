@@ -17,9 +17,10 @@
 
 #include <string>
 
-#include "src/tint/ast/access.h"
-#include "src/tint/ast/storage_texture.h"
+#include "src/tint/builtin/access.h"
+#include "src/tint/builtin/texel_format.h"
 #include "src/tint/type/texture.h"
+#include "src/tint/type/texture_dimension.h"
 
 // Forward declarations
 namespace tint::type {
@@ -36,30 +37,26 @@ class StorageTexture final : public Castable<StorageTexture, Texture> {
     /// @param format the texel format of the texture
     /// @param access the access control type of the texture
     /// @param subtype the storage subtype. Use SubtypeFor() to calculate this.
-    StorageTexture(ast::TextureDimension dim,
-                   ast::TexelFormat format,
-                   ast::Access access,
+    StorageTexture(TextureDimension dim,
+                   builtin::TexelFormat format,
+                   builtin::Access access,
                    Type* subtype);
 
-    /// Move constructor
-    StorageTexture(StorageTexture&&);
+    /// Destructor
     ~StorageTexture() override;
 
-    /// @returns a hash of the type.
-    size_t Hash() const override;
-
-    /// @param other the other type to compare against
-    /// @returns true if the this type is equal to the given type
-    bool Equals(const Type& other) const override;
+    /// @param other the other node to compare against
+    /// @returns true if the this type is equal to @p other
+    bool Equals(const UniqueNode& other) const override;
 
     /// @returns the storage subtype
     Type* type() const { return subtype_; }
 
     /// @returns the texel format
-    ast::TexelFormat texel_format() const { return texel_format_; }
+    builtin::TexelFormat texel_format() const { return texel_format_; }
 
     /// @returns the access control
-    ast::Access access() const { return access_; }
+    builtin::Access access() const { return access_; }
 
     /// @param symbols the program's symbol table
     /// @returns the name for this type that closely resembles how it would be
@@ -69,11 +66,15 @@ class StorageTexture final : public Castable<StorageTexture, Texture> {
     /// @param format the storage texture image format
     /// @param type_mgr the Manager used to build the returned type
     /// @returns the storage texture subtype for the given TexelFormat
-    static Type* SubtypeFor(ast::TexelFormat format, Manager& type_mgr);
+    static Type* SubtypeFor(builtin::TexelFormat format, Manager& type_mgr);
+
+    /// @param ctx the clone context
+    /// @returns a clone of this type
+    StorageTexture* Clone(CloneContext& ctx) const override;
 
   private:
-    ast::TexelFormat const texel_format_;
-    ast::Access const access_;
+    builtin::TexelFormat const texel_format_;
+    builtin::Access const access_;
     Type* const subtype_;
 };
 

@@ -288,7 +288,7 @@ export namespace Accessibility {
      */
     objectId?: Runtime.RemoteObjectId;
     /**
-     * Whether to fetch this nodes ancestors, siblings and children. Defaults to true.
+     * Whether to fetch this node's ancestors, siblings and children. Defaults to true.
      */
     fetchRelatives?: boolean;
   }
@@ -1013,6 +1013,14 @@ export namespace Audits {
   export const enum GenericIssueErrorType {
     CrossOriginPortalPostMessageError = 'CrossOriginPortalPostMessageError',
     FormLabelForNameError = 'FormLabelForNameError',
+    FormDuplicateIdForInputError = 'FormDuplicateIdForInputError',
+    FormInputWithNoLabelError = 'FormInputWithNoLabelError',
+    FormAutocompleteAttributeEmptyError = 'FormAutocompleteAttributeEmptyError',
+    FormEmptyIdAndNameAttributesForInputError = 'FormEmptyIdAndNameAttributesForInputError',
+    FormAriaLabelledByToNonExistingId = 'FormAriaLabelledByToNonExistingId',
+    FormInputAssignedAutocompleteValueToIdOrNameAttributeError = 'FormInputAssignedAutocompleteValueToIdOrNameAttributeError',
+    FormLabelHasNeitherForNorNestedInput = 'FormLabelHasNeitherForNorNestedInput',
+    FormLabelForMatchesNonExistingIdError = 'FormLabelForMatchesNonExistingIdError',
   }
 
   /**
@@ -1027,64 +1035,6 @@ export namespace Audits {
     violatingNodeId?: DOM.BackendNodeId;
   }
 
-  export const enum DeprecationIssueType {
-    AuthorizationCoveredByWildcard = 'AuthorizationCoveredByWildcard',
-    CanRequestURLHTTPContainingNewline = 'CanRequestURLHTTPContainingNewline',
-    ChromeLoadTimesConnectionInfo = 'ChromeLoadTimesConnectionInfo',
-    ChromeLoadTimesFirstPaintAfterLoadTime = 'ChromeLoadTimesFirstPaintAfterLoadTime',
-    ChromeLoadTimesWasAlternateProtocolAvailable = 'ChromeLoadTimesWasAlternateProtocolAvailable',
-    CookieWithTruncatingChar = 'CookieWithTruncatingChar',
-    CrossOriginAccessBasedOnDocumentDomain = 'CrossOriginAccessBasedOnDocumentDomain',
-    CrossOriginWindowAlert = 'CrossOriginWindowAlert',
-    CrossOriginWindowConfirm = 'CrossOriginWindowConfirm',
-    CSSSelectorInternalMediaControlsOverlayCastButton = 'CSSSelectorInternalMediaControlsOverlayCastButton',
-    DeprecationExample = 'DeprecationExample',
-    DocumentDomainSettingWithoutOriginAgentClusterHeader = 'DocumentDomainSettingWithoutOriginAgentClusterHeader',
-    EventPath = 'EventPath',
-    ExpectCTHeader = 'ExpectCTHeader',
-    GeolocationInsecureOrigin = 'GeolocationInsecureOrigin',
-    GeolocationInsecureOriginDeprecatedNotRemoved = 'GeolocationInsecureOriginDeprecatedNotRemoved',
-    GetUserMediaInsecureOrigin = 'GetUserMediaInsecureOrigin',
-    HostCandidateAttributeGetter = 'HostCandidateAttributeGetter',
-    IdentityInCanMakePaymentEvent = 'IdentityInCanMakePaymentEvent',
-    InsecurePrivateNetworkSubresourceRequest = 'InsecurePrivateNetworkSubresourceRequest',
-    LocalCSSFileExtensionRejected = 'LocalCSSFileExtensionRejected',
-    MediaSourceAbortRemove = 'MediaSourceAbortRemove',
-    MediaSourceDurationTruncatingBuffered = 'MediaSourceDurationTruncatingBuffered',
-    NoSysexWebMIDIWithoutPermission = 'NoSysexWebMIDIWithoutPermission',
-    NotificationInsecureOrigin = 'NotificationInsecureOrigin',
-    NotificationPermissionRequestedIframe = 'NotificationPermissionRequestedIframe',
-    ObsoleteWebRtcCipherSuite = 'ObsoleteWebRtcCipherSuite',
-    OpenWebDatabaseInsecureContext = 'OpenWebDatabaseInsecureContext',
-    OverflowVisibleOnReplacedElement = 'OverflowVisibleOnReplacedElement',
-    PaymentInstruments = 'PaymentInstruments',
-    PaymentRequestCSPViolation = 'PaymentRequestCSPViolation',
-    PersistentQuotaType = 'PersistentQuotaType',
-    PictureSourceSrc = 'PictureSourceSrc',
-    PrefixedCancelAnimationFrame = 'PrefixedCancelAnimationFrame',
-    PrefixedRequestAnimationFrame = 'PrefixedRequestAnimationFrame',
-    PrefixedStorageInfo = 'PrefixedStorageInfo',
-    PrefixedVideoDisplayingFullscreen = 'PrefixedVideoDisplayingFullscreen',
-    PrefixedVideoEnterFullscreen = 'PrefixedVideoEnterFullscreen',
-    PrefixedVideoEnterFullScreen = 'PrefixedVideoEnterFullScreen',
-    PrefixedVideoExitFullscreen = 'PrefixedVideoExitFullscreen',
-    PrefixedVideoExitFullScreen = 'PrefixedVideoExitFullScreen',
-    PrefixedVideoSupportsFullscreen = 'PrefixedVideoSupportsFullscreen',
-    RangeExpand = 'RangeExpand',
-    RequestedSubresourceWithEmbeddedCredentials = 'RequestedSubresourceWithEmbeddedCredentials',
-    RTCConstraintEnableDtlsSrtpFalse = 'RTCConstraintEnableDtlsSrtpFalse',
-    RTCConstraintEnableDtlsSrtpTrue = 'RTCConstraintEnableDtlsSrtpTrue',
-    RTCPeerConnectionComplexPlanBSdpUsingDefaultSdpSemantics = 'RTCPeerConnectionComplexPlanBSdpUsingDefaultSdpSemantics',
-    RTCPeerConnectionSdpSemanticsPlanB = 'RTCPeerConnectionSdpSemanticsPlanB',
-    RtcpMuxPolicyNegotiate = 'RtcpMuxPolicyNegotiate',
-    SharedArrayBufferConstructedWithoutIsolation = 'SharedArrayBufferConstructedWithoutIsolation',
-    TextToSpeech_DisallowedByAutoplay = 'TextToSpeech_DisallowedByAutoplay',
-    V8SharedArrayBufferConstructedInExtensionWithoutIsolation = 'V8SharedArrayBufferConstructedInExtensionWithoutIsolation',
-    XHRJSONEncodingDetection = 'XHRJSONEncodingDetection',
-    XMLHttpRequestSynchronousInNonWorkerOutsideBeforeUnload = 'XMLHttpRequestSynchronousInNonWorkerOutsideBeforeUnload',
-    XRSupportsSession = 'XRSupportsSession',
-  }
-
   /**
    * This issue tracks information needed to print a deprecation message.
    * https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/core/frame/third_party/blink/renderer/core/frame/deprecation/README.md
@@ -1092,7 +1042,10 @@ export namespace Audits {
   export interface DeprecationIssueDetails {
     affectedFrame?: AffectedFrame;
     sourceCodeLocation: SourceCodeLocation;
-    type: DeprecationIssueType;
+    /**
+     * One of the deprecation names from third_party/blink/renderer/core/frame/deprecation/deprecation.json5
+     */
+    type: string;
   }
 
   export const enum ClientHintIssueReason {
@@ -1116,6 +1069,7 @@ export namespace Audits {
     WellKnownHttpNotFound = 'WellKnownHttpNotFound',
     WellKnownNoResponse = 'WellKnownNoResponse',
     WellKnownInvalidResponse = 'WellKnownInvalidResponse',
+    WellKnownListEmpty = 'WellKnownListEmpty',
     ConfigNotInWellKnown = 'ConfigNotInWellKnown',
     WellKnownTooBig = 'WellKnownTooBig',
     ConfigHttpNotFound = 'ConfigHttpNotFound',
@@ -1130,6 +1084,7 @@ export namespace Audits {
     AccountsHttpNotFound = 'AccountsHttpNotFound',
     AccountsNoResponse = 'AccountsNoResponse',
     AccountsInvalidResponse = 'AccountsInvalidResponse',
+    AccountsListEmpty = 'AccountsListEmpty',
     IdTokenHttpNotFound = 'IdTokenHttpNotFound',
     IdTokenNoResponse = 'IdTokenNoResponse',
     IdTokenInvalidResponse = 'IdTokenInvalidResponse',
@@ -1430,6 +1385,7 @@ export namespace Browser {
     ProtectedMediaIdentifier = 'protectedMediaIdentifier',
     Sensors = 'sensors',
     StorageAccess = 'storageAccess',
+    TopLevelStorageAccess = 'topLevelStorageAccess',
     VideoCapture = 'videoCapture',
     VideoCapturePanTiltZoom = 'videoCapturePanTiltZoom',
     WakeLockScreen = 'wakeLockScreen',
@@ -1636,7 +1592,7 @@ export namespace Browser {
      */
     query?: string;
     /**
-     * If true, retrieve delta since last call.
+     * If true, retrieve delta since last delta call.
      */
     delta?: boolean;
   }
@@ -1654,7 +1610,7 @@ export namespace Browser {
      */
     name: string;
     /**
-     * If true, retrieve delta since last call.
+     * If true, retrieve delta since last delta call.
      */
     delta?: boolean;
   }
@@ -2681,7 +2637,7 @@ export namespace CSS {
 
   export interface TakeComputedStyleUpdatesResponse extends ProtocolResponseWithError {
     /**
-     * The list of node Ids that have their tracked computed styles updated
+     * The list of node Ids that have their tracked computed styles updated.
      */
     nodeIds: DOM.NodeId[];
   }
@@ -2817,7 +2773,7 @@ export namespace CSS {
 
   /**
    * Fires whenever a web font is updated.  A non-empty font parameter indicates a successfully loaded
-   * web font
+   * web font.
    */
   export interface FontsUpdatedEvent {
     /**
@@ -5292,7 +5248,13 @@ export namespace Emulation {
    * Missing optional values will be filled in by the target with what it would normally use.
    */
   export interface UserAgentMetadata {
+    /**
+     * Brands appearing in Sec-CH-UA.
+     */
     brands?: UserAgentBrandVersion[];
+    /**
+     * Brands appearing in Sec-CH-UA-Full-Version-List.
+     */
     fullVersionList?: UserAgentBrandVersion[];
     fullVersion?: string;
     platform: string;
@@ -5450,8 +5412,9 @@ export namespace Emulation {
 
   export const enum SetEmulatedVisionDeficiencyRequestType {
     None = 'none',
-    Achromatopsia = 'achromatopsia',
     BlurredVision = 'blurredVision',
+    ReducedContrast = 'reducedContrast',
+    Achromatopsia = 'achromatopsia',
     Deuteranopia = 'deuteranopia',
     Protanopia = 'protanopia',
     Tritanopia = 'tritanopia',
@@ -5459,7 +5422,8 @@ export namespace Emulation {
 
   export interface SetEmulatedVisionDeficiencyRequest {
     /**
-     * Vision deficiency to emulate.
+     * Vision deficiency to emulate. Order: best-effort emulations come first, followed by any
+     * physiologically accurate emulations for medically recognized color vision deficiencies.
      */
     type: SetEmulatedVisionDeficiencyRequestType;
   }
@@ -7620,9 +7584,9 @@ export namespace Network {
    * are specified in third_party/blink/renderer/core/fetch/trust_token.idl.
    */
   export interface TrustTokenParams {
-    type: TrustTokenOperationType;
+    operation: TrustTokenOperationType;
     /**
-     * Only set for "token-redemption" type and determine whether
+     * Only set for "token-redemption" operation and determine whether
      * to request a fresh SRR or use a still valid cached SRR.
      */
     refreshPolicy: TrustTokenParamsRefreshPolicy;
@@ -9435,6 +9399,15 @@ export namespace Network {
      * available, such as in the case of HTTP/2 or QUIC.
      */
     headersText?: string;
+    /**
+     * The cookie partition key that will be used to store partitioned cookies set in this response.
+     * Only sent when partitioned cookies are enabled.
+     */
+    cookiePartitionKey?: string;
+    /**
+     * True if partitioned cookies are enabled, but the partition key is not serializeable to string.
+     */
+    cookiePartitionKeyOpaque?: boolean;
   }
 
   export const enum TrustTokenOperationDoneEventStatus {
@@ -9444,6 +9417,7 @@ export namespace Network {
     ResourceExhausted = 'ResourceExhausted',
     AlreadyExists = 'AlreadyExists',
     Unavailable = 'Unavailable',
+    Unauthorized = 'Unauthorized',
     BadResponse = 'BadResponse',
     InternalError = 'InternalError',
     UnknownError = 'UnknownError',
@@ -10439,12 +10413,14 @@ export namespace Page {
     OtpCredentials = 'otp-credentials',
     Payment = 'payment',
     PictureInPicture = 'picture-in-picture',
+    PrivateAggregation = 'private-aggregation',
     PublickeyCredentialsGet = 'publickey-credentials-get',
     RunAdAuction = 'run-ad-auction',
     ScreenWakeLock = 'screen-wake-lock',
     Serial = 'serial',
     SharedAutofill = 'shared-autofill',
     SharedStorage = 'shared-storage',
+    SharedStorageSelectUrl = 'shared-storage-select-url',
     SmartCard = 'smart-card',
     StorageAccess = 'storage-access',
     SyncXhr = 'sync-xhr',
@@ -10453,6 +10429,7 @@ export namespace Page {
     Usb = 'usb',
     VerticalScroll = 'vertical-scroll',
     WebShare = 'web-share',
+    WindowManagement = 'window-management',
     WindowPlacement = 'window-placement',
     XrSpatialTracking = 'xr-spatial-tracking',
   }
@@ -11015,6 +10992,16 @@ export namespace Page {
   }
 
   /**
+   * Enum of possible auto-reponse for permisison / prompt dialogs.
+   */
+  export const enum AutoResponseMode {
+    None = 'none',
+    AutoAccept = 'autoAccept',
+    AutoReject = 'autoReject',
+    AutoOptOut = 'autoOptOut',
+  }
+
+  /**
    * The type of a frameNavigated event.
    */
   export const enum NavigationType {
@@ -11122,6 +11109,7 @@ export namespace Page {
     InjectedJavascript = 'InjectedJavascript',
     InjectedStyleSheet = 'InjectedStyleSheet',
     KeepaliveRequest = 'KeepaliveRequest',
+    IndexedDBEvent = 'IndexedDBEvent',
     Dummy = 'Dummy',
     AuthorizationHeader = 'AuthorizationHeader',
     ContentSecurityHandler = 'ContentSecurityHandler',
@@ -11242,6 +11230,29 @@ export namespace Page {
     ActivationNavigationParameterMismatch = 'ActivationNavigationParameterMismatch',
     ActivatedInBackground = 'ActivatedInBackground',
     EmbedderHostDisallowed = 'EmbedderHostDisallowed',
+    ActivationNavigationDestroyedBeforeSuccess = 'ActivationNavigationDestroyedBeforeSuccess',
+    TabClosedByUserGesture = 'TabClosedByUserGesture',
+    TabClosedWithoutUserGesture = 'TabClosedWithoutUserGesture',
+    PrimaryMainFrameRendererProcessCrashed = 'PrimaryMainFrameRendererProcessCrashed',
+    PrimaryMainFrameRendererProcessKilled = 'PrimaryMainFrameRendererProcessKilled',
+    ActivationFramePolicyNotCompatible = 'ActivationFramePolicyNotCompatible',
+    PreloadingDisabled = 'PreloadingDisabled',
+    BatterySaverEnabled = 'BatterySaverEnabled',
+    ActivatedDuringMainFrameNavigation = 'ActivatedDuringMainFrameNavigation',
+    PreloadingUnsupportedByWebContents = 'PreloadingUnsupportedByWebContents',
+  }
+
+  /**
+   * Preloading status values, see also PreloadingTriggeringOutcome. This
+   * status is shared by prefetchStatusUpdated and prerenderStatusUpdated.
+   */
+  export const enum PreloadingStatus {
+    Pending = 'Pending',
+    Running = 'Running',
+    Ready = 'Ready',
+    Success = 'Success',
+    Failure = 'Failure',
+    NotSupported = 'NotSupported',
   }
 
   export interface AddScriptToEvaluateOnLoadRequest {
@@ -11941,15 +11952,12 @@ export namespace Page {
     data: binary;
   }
 
-  export const enum SetSPCTransactionModeRequestMode {
-    None = 'none',
-    AutoAccept = 'autoAccept',
-    AutoReject = 'autoReject',
-    AutoOptOut = 'autoOptOut',
+  export interface SetSPCTransactionModeRequest {
+    mode: AutoResponseMode;
   }
 
-  export interface SetSPCTransactionModeRequest {
-    mode: SetSPCTransactionModeRequestMode;
+  export interface SetRPHRegistrationModeRequest {
+    mode: AutoResponseMode;
   }
 
   export interface GenerateTestReportRequest {
@@ -12277,6 +12285,32 @@ export namespace Page {
      * that is incompatible with prerender and has caused the cancellation of the attempt
      */
     disallowedApiMethod?: string;
+  }
+
+  /**
+   * TODO(crbug/1384419): Create a dedicated domain for preloading.
+   * Fired when a prefetch attempt is updated.
+   */
+  export interface PrefetchStatusUpdatedEvent {
+    /**
+     * The frame id of the frame initiating prefetch.
+     */
+    initiatingFrameId: FrameId;
+    prefetchUrl: string;
+    status: PreloadingStatus;
+  }
+
+  /**
+   * TODO(crbug/1384419): Create a dedicated domain for preloading.
+   * Fired when a prerender attempt is updated.
+   */
+  export interface PrerenderStatusUpdatedEvent {
+    /**
+     * The frame id of the frame initiating prerender.
+     */
+    initiatingFrameId: FrameId;
+    prerenderingUrl: string;
+    status: PreloadingStatus;
   }
 
   export interface LoadEventFiredEvent {
@@ -13370,6 +13404,10 @@ export namespace Storage {
     ownerOrigin: string;
   }
 
+  export interface ResetSharedStorageBudgetRequest {
+    ownerOrigin: string;
+  }
+
   export interface SetSharedStorageTrackingRequest {
     enable: boolean;
   }
@@ -13893,6 +13931,10 @@ export namespace Target {
      * false by default).
      */
     background?: boolean;
+    /**
+     * Whether to create the target of type "tab".
+     */
+    forTab?: boolean;
   }
 
   export interface CreateTargetResponse extends ProtocolResponseWithError {
@@ -15007,6 +15049,12 @@ export namespace WebAuthn {
      */
     hasMinPinLength?: boolean;
     /**
+     * If set to true, the authenticator will support the prf extension.
+     * https://w3c.github.io/webauthn/#prf-extension
+     * Defaults to false.
+     */
+    hasPrf?: boolean;
+    /**
      * If set to true, tests of user presence will succeed immediately.
      * Otherwise, they will not be resolved. Defaults to true.
      */
@@ -15278,6 +15326,88 @@ export namespace Media {
    */
   export interface PlayersCreatedEvent {
     players: PlayerId[];
+  }
+}
+
+export namespace DeviceAccess {
+
+  /**
+   * Device request id.
+   */
+  export type RequestId = OpaqueIdentifier<string, 'Protocol.DeviceAccess.RequestId'>;
+
+  /**
+   * A device id.
+   */
+  export type DeviceId = OpaqueIdentifier<string, 'Protocol.DeviceAccess.DeviceId'>;
+
+  /**
+   * Device information displayed in a user prompt to select a device.
+   */
+  export interface PromptDevice {
+    id: DeviceId;
+    /**
+     * Display name as it appears in a device request user prompt.
+     */
+    name: string;
+  }
+
+  export interface SelectPromptRequest {
+    id: RequestId;
+    deviceId: DeviceId;
+  }
+
+  export interface CancelPromptRequest {
+    id: RequestId;
+  }
+
+  /**
+   * A device request opened a user prompt to select a device. Respond with the
+   * selectPrompt or cancelPrompt command.
+   */
+  export interface DeviceRequestPromptedEvent {
+    id: RequestId;
+    devices: PromptDevice[];
+  }
+}
+
+export namespace Preload {
+
+  /**
+   * Unique id
+   */
+  export type RuleSetId = OpaqueIdentifier<string, 'Protocol.Preload.RuleSetId'>;
+
+  /**
+   * Corresponds to SpeculationRuleSet
+   */
+  export interface RuleSet {
+    id: RuleSetId;
+    /**
+     * Identifies a document which the rule set is associated with.
+     */
+    loaderId: Network.LoaderId;
+    /**
+     * Source text of JSON representing the rule set. If it comes from
+     * <script> tag, it is the textContent of the node. Note that it is
+     * a JSON for valid case.
+     *
+     * See also:
+     * - https://wicg.github.io/nav-speculation/speculation-rules.html
+     * - https://github.com/WICG/nav-speculation/blob/main/triggers.md
+     */
+    sourceText: string;
+  }
+
+  /**
+   * Upsert. Currently, it is only emitted when a rule set added.
+   */
+  export interface RuleSetUpdatedEvent {
+    ruleSet: RuleSet;
+  }
+
+  export interface RuleSetRemovedEvent {
+    id: RuleSetId;
   }
 }
 
@@ -15912,6 +16042,7 @@ export namespace Debugger {
     CompileError = 'CompileError',
     BlockedByActiveGenerator = 'BlockedByActiveGenerator',
     BlockedByActiveFunction = 'BlockedByActiveFunction',
+    BlockedByTopLevelEsModuleChange = 'BlockedByTopLevelEsModuleChange',
   }
 
   export interface SetScriptSourceRequest {
@@ -17300,6 +17431,15 @@ export namespace Runtime {
      */
     throwOnSideEffect?: boolean;
     /**
+     * An alternative way to specify the execution context to call function on.
+     * Compared to contextId that may be reused across processes, this is guaranteed to be
+     * system-unique, so it can be used to prevent accidental function call
+     * in context different than intended (e.g. as a result of navigation across process
+     * boundaries).
+     * This is mutually exclusive with `executionContextId`.
+     */
+    uniqueContextId?: string;
+    /**
      * Whether the result should contain `webDriverValue`, serialized according to
      * https://w3c.github.io/webdriver-bidi. This is mutually exclusive with `returnByValue`, but
      * resulting `objectId` is still provided.
@@ -17761,6 +17901,10 @@ export namespace Runtime {
      * Id of the destroyed context
      */
     executionContextId: ExecutionContextId;
+    /**
+     * Unique Id of the destroyed context
+     */
+    executionContextUniqueId: string;
   }
 
   /**

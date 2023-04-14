@@ -1,6 +1,6 @@
 /* Copyright (c) 2015-2022 The Khronos Group Inc.
- * Copyright (c) 2015-2022 Valve Corporation
- * Copyright (c) 2015-2022 LunarG, Inc.
+ * Copyright (c) 2015-2023 Valve Corporation
+ * Copyright (c) 2015-2023 LunarG, Inc.
  * Copyright (C) 2015-2022 Google Inc.
  * Modifications Copyright (C) 2020 Advanced Micro Devices, Inc. All rights reserved.
  *
@@ -15,14 +15,6 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *
- * Author: Courtney Goeltzenleuchter <courtneygo@google.com>
- * Author: Tobin Ehlis <tobine@google.com>
- * Author: Chris Forbes <chrisf@ijw.co.nz>
- * Author: Mark Lobodzinski <mark@lunarg.com>
- * Author: Dave Houlton <daveh@lunarg.com>
- * Author: John Zulauf <jzulauf@lunarg.com>
- * Author: Tobias Hector <tobias.hector@amd.com>
  */
 #pragma once
 #include "vk_layer_data.h"
@@ -161,7 +153,7 @@ using QFOTransferBarrierHash = hash_util::HasHashMember<TransferBarrier>;
 
 // Command buffers store the set of barriers recorded
 template <typename TransferBarrier>
-using QFOTransferBarrierSet = layer_data::unordered_set<TransferBarrier, QFOTransferBarrierHash<TransferBarrier>>;
+using QFOTransferBarrierSet = vvl::unordered_set<TransferBarrier, QFOTransferBarrierHash<TransferBarrier>>;
 
 template <typename TransferBarrier>
 struct QFOTransferBarrierSets {
@@ -181,7 +173,7 @@ using GlobalQFOTransferBarrierMap =
 // Submit queue uses the Scoreboard to track all release/acquire operations in a batch.
 template <typename TransferBarrier>
 using QFOTransferCBScoreboard =
-    layer_data::unordered_map<TransferBarrier, const CMD_BUFFER_STATE *, QFOTransferBarrierHash<TransferBarrier>>;
+    vvl::unordered_map<TransferBarrier, const CMD_BUFFER_STATE *, QFOTransferBarrierHash<TransferBarrier>>;
 
 template <typename TransferBarrier>
 struct QFOTransferCBScoreboards {

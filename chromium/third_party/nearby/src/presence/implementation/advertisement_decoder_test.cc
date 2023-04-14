@@ -34,8 +34,9 @@ namespace nearby {
 namespace presence {
 
 namespace {
-using ::location::nearby::ByteArray;         // NOLINT
-using ::nearby::internal::PublicCredential;  // NOLINT
+using ::nearby::ByteArray;  // NOLINT
+using ::nearby::internal::IdentityType;
+using ::nearby::internal::SharedCredential;  // NOLINT
 using ::testing::ElementsAre;
 using ::protobuf_matchers::EqualsProto;
 using ::testing::Matcher;
@@ -48,27 +49,27 @@ constexpr absl::string_view kAccountName = "test account";
 
 ScanRequest GetScanRequest() {
   return {.account_name = std::string(kAccountName),
-          .identity_types = {internal::IDENTITY_TYPE_PRIVATE,
-                             internal::IDENTITY_TYPE_TRUSTED,
-                             internal::IDENTITY_TYPE_PUBLIC,
-                             internal::IDENTITY_TYPE_PROVISIONED}};
+          .identity_types = {IdentityType::IDENTITY_TYPE_PRIVATE,
+                             IdentityType::IDENTITY_TYPE_TRUSTED,
+                             IdentityType::IDENTITY_TYPE_PUBLIC,
+                             IdentityType::IDENTITY_TYPE_PROVISIONED}};
 }
 
 #if USE_RUST_LDT == 1
-ScanRequest GetScanRequest(std::vector<PublicCredential> credentials) {
+ScanRequest GetScanRequest(std::vector<SharedCredential> credentials) {
   LegacyPresenceScanFilter scan_filter = {.remote_public_credentials =
                                               credentials};
   return ScanRequestBuilder()
       .SetAccountName(kAccountName)
-      .AddIdentityType(internal::IDENTITY_TYPE_PRIVATE)
-      .AddIdentityType(internal::IDENTITY_TYPE_TRUSTED)
-      .AddIdentityType(internal::IDENTITY_TYPE_PUBLIC)
-      .AddIdentityType(internal::IDENTITY_TYPE_PROVISIONED)
+      .AddIdentityType(IdentityType::IDENTITY_TYPE_PRIVATE)
+      .AddIdentityType(IdentityType::IDENTITY_TYPE_TRUSTED)
+      .AddIdentityType(IdentityType::IDENTITY_TYPE_PUBLIC)
+      .AddIdentityType(IdentityType::IDENTITY_TYPE_PROVISIONED)
       .AddScanFilter(scan_filter)
       .Build();
 }
 
-PublicCredential GetPublicCredential() {
+SharedCredential GetPublicCredential() {
   // Values copied from LDT tests
   ByteArray seed({204, 219, 36, 137, 233, 252, 172, 66, 179, 147, 72,
                   184, 148, 30, 209, 154, 29,  54,  14, 117, 224, 152,
@@ -76,8 +77,8 @@ PublicCredential GetPublicCredential() {
   ByteArray known_mac({223, 185, 10,  31,  155, 31, 226, 141, 24,  187, 204,
                        165, 34,  64,  181, 204, 44, 203, 95,  141, 82,  137,
                        163, 203, 100, 235, 53,  65, 202, 97,  75,  180});
-  PublicCredential public_credential;
-  public_credential.set_authenticity_key(seed.AsStringView());
+  SharedCredential public_credential;
+  public_credential.set_key_seed(seed.AsStringView());
   public_credential.set_metadata_encryption_key_tag(known_mac.AsStringView());
   return public_credential;
 }
@@ -86,10 +87,10 @@ TEST(AdvertisementDecoder, DecodeBaseNpPrivateAdvertisement) {
   std::string salt = "AB";
   ByteArray metadata_key(
       {205, 104, 63, 225, 161, 209, 248, 70, 84, 61, 10, 19, 212, 174});
-  absl::flat_hash_map<internal::IdentityType,
-                      std::vector<internal::PublicCredential>>
+  absl::flat_hash_map<IdentityType, std::vector<internal::SharedCredential>>
       credentials;
-  credentials[internal::IDENTITY_TYPE_PRIVATE].push_back(GetPublicCredential());
+  credentials[IdentityType::IDENTITY_TYPE_PRIVATE].push_back(
+      GetPublicCredential());
   AdvertisementDecoder decoder(GetScanRequest(), &credentials);
 
   absl::StatusOr<Advertisement> result = decoder.DecodeAdvertisement(
@@ -97,7 +98,7 @@ TEST(AdvertisementDecoder, DecodeBaseNpPrivateAdvertisement) {
 
   ASSERT_OK(result);
   EXPECT_EQ(result->metadata_key, metadata_key.AsStringView());
-  EXPECT_EQ(result->identity_type, internal::IDENTITY_TYPE_PRIVATE);
+  EXPECT_EQ(result->identity_type, IdentityType::IDENTITY_TYPE_PRIVATE);
   EXPECT_THAT(result->data_elements,
               ElementsAre(DataElement(DataElement::kSaltFieldType, salt),
                           DataElement(DataElement::kTxPowerFieldType,
@@ -111,7 +112,7 @@ TEST(AdvertisementDecoder,
   const std::string salt = "AB";
   ByteArray metadata_key(
       {205, 104, 63, 225, 161, 209, 248, 70, 84, 61, 10, 19, 212, 174});
-  std::vector<PublicCredential> credentials = {GetPublicCredential()};
+  std::vector<SharedCredential> credentials = {GetPublicCredential()};
 
   AdvertisementDecoder decoder(GetScanRequest(credentials));
 
@@ -120,7 +121,7 @@ TEST(AdvertisementDecoder,
 
   ASSERT_OK(result);
   EXPECT_EQ(result->metadata_key, metadata_key.AsStringView());
-  EXPECT_EQ(result->identity_type, internal::IDENTITY_TYPE_PRIVATE);
+  EXPECT_EQ(result->identity_type, IdentityType::IDENTITY_TYPE_PRIVATE);
   EXPECT_THAT(result->data_elements,
               ElementsAre(DataElement(DataElement::kSaltFieldType, salt),
                           DataElement(DataElement::kTxPowerFieldType,
@@ -133,10 +134,10 @@ TEST(AdvertisementDecoder, DecodeBaseNpTrustedAdvertisement) {
   std::string salt = "AB";
   ByteArray metadata_key(
       {205, 104, 63, 225, 161, 209, 248, 70, 84, 61, 10, 19, 212, 174});
-  absl::flat_hash_map<internal::IdentityType,
-                      std::vector<internal::PublicCredential>>
+  absl::flat_hash_map<IdentityType, std::vector<internal::SharedCredential>>
       credentials;
-  credentials[internal::IDENTITY_TYPE_TRUSTED].push_back(GetPublicCredential());
+  credentials[IdentityType::IDENTITY_TYPE_TRUSTED].push_back(
+      GetPublicCredential());
   AdvertisementDecoder decoder(GetScanRequest(), &credentials);
 
   absl::StatusOr<Advertisement> result = decoder.DecodeAdvertisement(
@@ -144,7 +145,7 @@ TEST(AdvertisementDecoder, DecodeBaseNpTrustedAdvertisement) {
 
   ASSERT_OK(result);
   EXPECT_EQ(result->metadata_key, metadata_key.AsStringView());
-  EXPECT_EQ(result->identity_type, internal::IDENTITY_TYPE_TRUSTED);
+  EXPECT_EQ(result->identity_type, IdentityType::IDENTITY_TYPE_TRUSTED);
   EXPECT_THAT(
       result->data_elements,
       UnorderedElementsAre(DataElement(DataElement::kSaltFieldType, salt),
@@ -160,10 +161,9 @@ TEST(AdvertisementDecoder, DecodeBaseNpProvisionedAdvertisement) {
   std::string salt = "AB";
   ByteArray metadata_key(
       {205, 104, 63, 225, 161, 209, 248, 70, 84, 61, 10, 19, 212, 174});
-  absl::flat_hash_map<internal::IdentityType,
-                      std::vector<internal::PublicCredential>>
+  absl::flat_hash_map<IdentityType, std::vector<internal::SharedCredential>>
       credentials;
-  credentials[internal::IDENTITY_TYPE_PROVISIONED].push_back(
+  credentials[IdentityType::IDENTITY_TYPE_PROVISIONED].push_back(
       GetPublicCredential());
   AdvertisementDecoder decoder(GetScanRequest(), &credentials);
 
@@ -172,7 +172,7 @@ TEST(AdvertisementDecoder, DecodeBaseNpProvisionedAdvertisement) {
 
   ASSERT_OK(result);
   EXPECT_EQ(result->metadata_key, metadata_key.AsStringView());
-  EXPECT_EQ(result->identity_type, internal::IDENTITY_TYPE_PROVISIONED);
+  EXPECT_EQ(result->identity_type, IdentityType::IDENTITY_TYPE_PROVISIONED);
   EXPECT_THAT(
       result->data_elements,
       UnorderedElementsAre(DataElement(DataElement::kSaltFieldType, salt),
@@ -188,10 +188,10 @@ TEST(AdvertisementDecoder, InvalidEncryptedContent) {
   std::string salt = "AB";
   ByteArray metadata_key(
       {205, 104, 63, 225, 161, 209, 248, 70, 84, 61, 10, 19, 212, 174});
-  absl::flat_hash_map<internal::IdentityType,
-                      std::vector<internal::PublicCredential>>
+  absl::flat_hash_map<IdentityType, std::vector<internal::SharedCredential>>
       credentials;
-  credentials[internal::IDENTITY_TYPE_PRIVATE].push_back(GetPublicCredential());
+  credentials[IdentityType::IDENTITY_TYPE_PRIVATE].push_back(
+      GetPublicCredential());
   AdvertisementDecoder decoder(GetScanRequest(), &credentials);
 
   EXPECT_THAT(decoder.DecodeAdvertisement(absl::HexStringToBytes(
@@ -209,7 +209,7 @@ TEST(AdvertisementDecoder, DecodeBaseNpPublicAdvertisement) {
       absl::HexStringToBytes("002041420337C1C2C31BEE"));
 
   ASSERT_OK(result);
-  EXPECT_EQ(result->identity_type, internal::IDENTITY_TYPE_PUBLIC);
+  EXPECT_EQ(result->identity_type, IdentityType::IDENTITY_TYPE_PUBLIC);
   EXPECT_EQ(result->version, 0);
   EXPECT_THAT(
       result->data_elements,
@@ -246,9 +246,9 @@ TEST(AdvertisementDecoder,
      ScanForEncryptedIdentityIgnoresPublicIdentityAdvertisement) {
   AdvertisementDecoder decoder(
       {.account_name = std::string(kAccountName),
-       .identity_types = {internal::IDENTITY_TYPE_PRIVATE,
-                          internal::IDENTITY_TYPE_TRUSTED,
-                          internal::IDENTITY_TYPE_PROVISIONED}});
+       .identity_types = {IdentityType::IDENTITY_TYPE_PRIVATE,
+                          IdentityType::IDENTITY_TYPE_TRUSTED,
+                          IdentityType::IDENTITY_TYPE_PROVISIONED}});
 
   EXPECT_THAT(decoder.DecodeAdvertisement(
                   absl::HexStringToBytes("00204142034650B04180")),

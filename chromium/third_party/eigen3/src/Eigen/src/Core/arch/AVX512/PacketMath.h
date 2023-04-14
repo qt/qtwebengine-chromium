@@ -31,7 +31,7 @@ namespace internal {
 #endif
 
 // Disable the code for older versions of gcc that don't support many of the required avx512 math instrinsics.
-#if EIGEN_GNUC_AT_LEAST(5, 3) || EIGEN_COMP_CLANG || EIGEN_COMP_MSVC >= 1923 || EIGEN_COMP_ICC >= 1900
+#if EIGEN_GNUC_STRICT_AT_LEAST(5,3,0) || EIGEN_COMP_CLANG || EIGEN_COMP_MSVC >= 1923 || EIGEN_COMP_ICC >= 1900
 #define EIGEN_HAS_AVX512_MATH 1
 #else
 #define EIGEN_HAS_AVX512_MATH 0
@@ -346,11 +346,13 @@ EIGEN_STRONG_INLINE Packet16i psub<Packet16i>(const Packet16i& a,
 
 template <>
 EIGEN_STRONG_INLINE Packet16f pnegate(const Packet16f& a) {
-  return _mm512_sub_ps(_mm512_set1_ps(0.0), a);
+  const __m512i mask = _mm512_set1_epi32(0x80000000);
+  return _mm512_castsi512_ps(_mm512_xor_epi32(_mm512_castps_si512(a), mask));
 }
 template <>
 EIGEN_STRONG_INLINE Packet8d pnegate(const Packet8d& a) {
-  return _mm512_sub_pd(_mm512_set1_pd(0.0), a);
+  const __m512i mask = _mm512_set1_epi64(0x8000000000000000ULL);
+  return _mm512_castsi512_pd(_mm512_xor_epi64(_mm512_castpd_si512(a), mask));
 }
 template <>
 EIGEN_STRONG_INLINE Packet16i pnegate(const Packet16i& a) {
@@ -1126,6 +1128,11 @@ template<> EIGEN_STRONG_INLINE Packet16i pabs(const Packet16i& a)
 {
   return _mm512_abs_epi32(a);
 }
+
+template<> EIGEN_STRONG_INLINE Packet16h  psignbit(const Packet16h&  a) { return _mm256_srai_epi16(a, 15); }
+template<> EIGEN_STRONG_INLINE Packet16bf psignbit(const Packet16bf& a) { return _mm256_srai_epi16(a, 15); }
+template<> EIGEN_STRONG_INLINE Packet16f  psignbit(const Packet16f&  a) { return _mm512_castsi512_ps(_mm512_srai_epi32(_mm512_castps_si512(a), 31)); }
+template<> EIGEN_STRONG_INLINE Packet8d   psignbit(const Packet8d&   a) { return _mm512_castsi512_pd(_mm512_srai_epi64(_mm512_castpd_si512(a), 63)); }
 
 template<>
 EIGEN_STRONG_INLINE Packet16f pfrexp<Packet16f>(const Packet16f& a, Packet16f& exponent){
@@ -2377,7 +2384,7 @@ EIGEN_STRONG_INLINE Packet16f Bf16ToF32(const Packet16bf& a) {
 EIGEN_STRONG_INLINE Packet16bf F32ToBf16(const Packet16f& a) {
   Packet16bf r;
 
-#if defined(EIGEN_VECTORIZE_AVX512BF16) && EIGEN_GNUC_AT_LEAST(10, 1)
+#if defined(EIGEN_VECTORIZE_AVX512BF16) && EIGEN_GNUC_STRICT_AT_LEAST(10,1,0)
   // Since GCC 10.1 supports avx512bf16 and C style explicit cast
   // (C++ static_cast is not supported yet), do conversion via intrinsic
   // and register path for performance.

@@ -1,6 +1,6 @@
-/* Copyright (c) 2019, 2021 The Khronos Group Inc.
- * Copyright (c) 2019, 2021 Valve Corporation
- * Copyright (c) 2019, 2021 LunarG, Inc.
+/* Copyright (c) 2019, 2021, 2023 The Khronos Group Inc.
+ * Copyright (c) 2019, 2021, 2023 Valve Corporation
+ * Copyright (c) 2019, 2021, 2023 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,8 +13,6 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *
- * Author: John Zulauf <jzulauf@lunarg.com>
  */
 #ifndef HASH_VK_TYPES_H_
 #define HASH_VK_TYPES_H_
@@ -23,6 +21,7 @@
 #include "hash_util.h"
 
 #include <vulkan/vulkan.h>
+#include "vk_extension_helper.h"
 #include "vk_safe_struct.h"
 #include <vector>
 
@@ -95,6 +94,18 @@ struct hash<VkImageSubresourceRange> {
         hash_util::HashCombiner hc;
         hc << value.aspectMask << value.baseMipLevel << value.levelCount << value.baseArrayLayer << value.layerCount;
         return hc.Value();
+    }
+};
+}  // namespace std
+
+namespace std {
+template <>
+struct hash<const ExtEnabled DeviceExtensions::*> {
+  public:
+    size_t operator()(const ExtEnabled DeviceExtensions::*const &p) const noexcept {
+        static DeviceExtensions dummy_de;
+        static std::hash<uint8_t> h;
+        return h(dummy_de.*p);
     }
 };
 }  // namespace std

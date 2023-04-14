@@ -8,10 +8,11 @@
 #include "src/gpu/ganesh/mtl/GrMtlGpu.h"
 
 #include "include/core/SkColorSpace.h"
+#include "include/gpu/GpuTypes.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
+#include "src/base/SkMathPriv.h"
 #include "src/core/SkCompressedDataUtils.h"
 #include "src/core/SkConvertPixels.h"
-#include "src/core/SkMathPriv.h"
 #include "src/core/SkMipmap.h"
 #include "src/gpu/ganesh/GrBackendUtils.h"
 #include "src/gpu/ganesh/GrDataUtils.h"
@@ -547,7 +548,7 @@ sk_sp<GrTexture> GrMtlGpu::onCreateTexture(SkISize dimensions,
                                            const GrBackendFormat& format,
                                            GrRenderable renderable,
                                            int renderTargetSampleCnt,
-                                           SkBudgeted budgeted,
+                                           skgpu::Budgeted budgeted,
                                            GrProtected isProtected,
                                            int mipLevelCount,
                                            uint32_t levelClearMask,
@@ -587,7 +588,7 @@ sk_sp<GrTexture> GrMtlGpu::onCreateTexture(SkISize dimensions,
 
 sk_sp<GrTexture> GrMtlGpu::onCreateCompressedTexture(SkISize dimensions,
                                                      const GrBackendFormat& format,
-                                                     SkBudgeted budgeted,
+                                                     skgpu::Budgeted budgeted,
                                                      GrMipmapped mipmapped,
                                                      GrProtected isProtected,
                                                      const void* data, size_t dataSize) {

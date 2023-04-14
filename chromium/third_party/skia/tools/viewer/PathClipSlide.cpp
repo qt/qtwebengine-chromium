@@ -15,8 +15,8 @@
 #include "include/core/SkTime.h"
 #include "include/core/SkTypeface.h"
 #include "include/effects/SkGradientShader.h"
-#include "include/private/SkTo.h"
-#include "src/utils/SkUTF.h"
+#include "include/private/base/SkTo.h"
+#include "src/base/SkUTF.h"
 #include "tools/viewer/ClickHandlerSlide.h"
 
 #include <utility>

@@ -13,6 +13,7 @@ skia_cc_library(
     includes = ["."],
     textual_hdrs = [
         "vulkan/vk_platform.h",
+        "vulkan/vulkan_android.h",
         "vulkan/vulkan_xcb.h",
     ],  #TODO(kjlubick) The other files are necessary on different platforms
     visibility = ["//:__subpackages__"],

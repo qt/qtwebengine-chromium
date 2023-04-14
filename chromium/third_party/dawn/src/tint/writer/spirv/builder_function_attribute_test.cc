@@ -51,15 +51,13 @@ TEST_P(Attribute_StageTest, Emit) {
     auto params = GetParam();
 
     const ast::Variable* var = nullptr;
-    const ast::Type* ret_type = nullptr;
+    ast::Type ret_type;
     utils::Vector<const ast::Attribute*, 2> ret_type_attrs;
     utils::Vector<const ast::Statement*, 2> body;
     if (params.stage == ast::PipelineStage::kVertex) {
         ret_type = ty.vec4<f32>();
-        ret_type_attrs.Push(Builtin(ast::BuiltinValue::kPosition));
-        body.Push(Return(Construct(ty.vec4<f32>())));
-    } else {
-        ret_type = ty.void_();
+        ret_type_attrs.Push(Builtin(builtin::BuiltinValue::kPosition));
+        body.Push(Return(Call(ty.vec4<f32>())));
     }
 
     utils::Vector<const ast::Attribute*, 2> deco_list{Stage(params.stage)};
@@ -132,9 +130,9 @@ TEST_F(BuilderTest, Decoration_ExecutionMode_WorkgroupSize_Literals) {
 }
 
 TEST_F(BuilderTest, Decoration_ExecutionMode_WorkgroupSize_Const) {
-    GlobalConst("width", ty.i32(), Construct(ty.i32(), 2_i));
-    GlobalConst("height", ty.i32(), Construct(ty.i32(), 3_i));
-    GlobalConst("depth", ty.i32(), Construct(ty.i32(), 4_i));
+    GlobalConst("width", ty.i32(), Call<i32>(2_i));
+    GlobalConst("height", ty.i32(), Call<i32>(3_i));
+    GlobalConst("depth", ty.i32(), Call<i32>(4_i));
     auto* func = Func("main", utils::Empty, ty.void_(), utils::Empty,
                       utils::Vector{
                           WorkgroupSize("width", "height", "depth"),
@@ -150,9 +148,9 @@ TEST_F(BuilderTest, Decoration_ExecutionMode_WorkgroupSize_Const) {
 }
 
 TEST_F(BuilderTest, Decoration_ExecutionMode_WorkgroupSize_OverridableConst) {
-    Override("width", ty.i32(), Construct(ty.i32(), 2_i), Id(7_u));
-    Override("height", ty.i32(), Construct(ty.i32(), 3_i), Id(8_u));
-    Override("depth", ty.i32(), Construct(ty.i32(), 4_i), Id(9_u));
+    Override("width", ty.i32(), Call<i32>(2_i), Id(7_u));
+    Override("height", ty.i32(), Call<i32>(3_i), Id(8_u));
+    Override("depth", ty.i32(), Call<i32>(4_i), Id(9_u));
     auto* func = Func("main", utils::Empty, ty.void_(), utils::Empty,
                       utils::Vector{
                           WorkgroupSize("width", "height", "depth"),
@@ -168,8 +166,8 @@ TEST_F(BuilderTest, Decoration_ExecutionMode_WorkgroupSize_OverridableConst) {
 }
 
 TEST_F(BuilderTest, Decoration_ExecutionMode_WorkgroupSize_LiteralAndConst) {
-    Override("height", ty.i32(), Construct(ty.i32(), 2_i), Id(7_u));
-    GlobalConst("depth", ty.i32(), Construct(ty.i32(), 3_i));
+    Override("height", ty.i32(), Call<i32>(2_i), Id(7_u));
+    GlobalConst("depth", ty.i32(), Call<i32>(3_i));
     auto* func = Func("main", utils::Empty, ty.void_(), utils::Empty,
                       utils::Vector{
                           WorkgroupSize(4_i, "height", "depth"),
@@ -228,7 +226,7 @@ TEST_F(BuilderTest, Decoration_ExecutionMode_FragDepth) {
              Stage(ast::PipelineStage::kFragment),
          },
          utils::Vector{
-             Builtin(ast::BuiltinValue::kFragDepth),
+             Builtin(builtin::BuiltinValue::kFragDepth),
          });
 
     spirv::Builder& b = SanitizeAndBuild();

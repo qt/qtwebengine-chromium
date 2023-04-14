@@ -16,7 +16,6 @@
 
 #include <codecvt>
 #include <exception>
-#include <functional>
 #include <locale>
 #include <memory>
 #include <string>
@@ -25,7 +24,6 @@
 #include "internal/platform/implementation/windows/bluetooth_classic_socket.h"
 #include "internal/platform/logging.h"
 
-namespace location {
 namespace nearby {
 namespace windows {
 
@@ -56,7 +54,8 @@ std::unique_ptr<api::BluetoothSocket> BluetoothServerSocket::Accept() {
   return std::make_unique<BluetoothSocket>(bluetooth_socket);
 }
 
-void BluetoothServerSocket::SetCloseNotifier(std::function<void()> notifier) {
+void BluetoothServerSocket::SetCloseNotifier(
+    absl::AnyInvocable<void()> notifier) {
   close_notifier_ = std::move(notifier);
 }
 
@@ -158,4 +157,3 @@ bool BluetoothServerSocket::listen() {
 
 }  // namespace windows
 }  // namespace nearby
-}  // namespace location

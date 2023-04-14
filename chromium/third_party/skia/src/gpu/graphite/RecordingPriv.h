@@ -12,6 +12,7 @@
 
 namespace skgpu::graphite {
 
+class Context;
 class Task;
 class Surface;
 
@@ -24,12 +25,13 @@ public:
     bool hasNonVolatileLazyProxies() const;
     bool instantiateNonVolatileLazyProxies(ResourceProvider*);
 
-#if GR_TEST_UTILS
+#if GRAPHITE_TEST_UTILS
     int numVolatilePromiseImages() const;
     int numNonVolatilePromiseImages() const;
+    bool hasTasks() const;
 #endif
 
-    bool addCommands(ResourceProvider*, CommandBuffer*, Surface* targetSurface);
+    bool addCommands(Context*, CommandBuffer*, Surface* replaySurface, SkIVector replayTranslation);
     void addResourceRef(sk_sp<Resource> resource);
     void addTask(sk_sp<Task> task);
 

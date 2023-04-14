@@ -4,7 +4,7 @@
  *
  *   FreeType PFR bitmap loader (body).
  *
- * Copyright (C) 2002-2022 by
+ * Copyright (C) 2002-2023 by
  * David Turner, Robert Wilhelm, and Werner Lemberg.
  *
  * This file is part of the FreeType project, and may only be used,
@@ -580,7 +580,7 @@
   /*************************************************************************/
   /*************************************************************************/
 
-  FT_LOCAL( FT_Error )
+  FT_LOCAL_DEF( FT_Error )
   pfr_slot_load_bitmap( PFR_Slot  glyph,
                         PFR_Size  size,
                         FT_UInt   glyph_index,

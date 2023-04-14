@@ -38,7 +38,7 @@ TEST_F(VectorTest, Hash) {
     auto* a = create<Vector>(create<I32>(), 2u);
     auto* b = create<Vector>(create<I32>(), 2u);
 
-    EXPECT_EQ(a->Hash(), b->Hash());
+    EXPECT_EQ(a->unique_hash, b->unique_hash);
 }
 
 TEST_F(VectorTest, Equals) {
@@ -57,6 +57,17 @@ TEST_F(VectorTest, FriendlyName) {
     auto* f32 = create<F32>();
     auto* v = create<Vector>(f32, 3u);
     EXPECT_EQ(v->FriendlyName(Symbols()), "vec3<f32>");
+}
+
+TEST_F(VectorTest, Clone) {
+    auto* a = create<Vector>(create<I32>(), 2u);
+
+    type::Manager mgr;
+    type::CloneContext ctx{{nullptr}, {nullptr, &mgr}};
+
+    auto* vec = a->Clone(ctx);
+    EXPECT_TRUE(vec->type()->Is<I32>());
+    EXPECT_EQ(vec->Width(), 2u);
 }
 
 }  // namespace

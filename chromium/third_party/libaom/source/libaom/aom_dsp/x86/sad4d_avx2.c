@@ -16,29 +16,28 @@
 #include "aom_dsp/x86/synonyms_avx2.h"
 
 static AOM_FORCE_INLINE void aggregate_and_store_sum(uint32_t res[4],
-                                                     __m256i sum_ref0,
-                                                     __m256i sum_ref1,
-                                                     __m256i sum_ref2,
-                                                     __m256i sum_ref3) {
-  __m128i sum;
+                                                     const __m256i *sum_ref0,
+                                                     const __m256i *sum_ref1,
+                                                     const __m256i *sum_ref2,
+                                                     const __m256i *sum_ref3) {
   // In sum_ref-i the result is saved in the first 4 bytes and the other 4
   // bytes are zeroed.
   // merge sum_ref0 and sum_ref1 also sum_ref2 and sum_ref3
   // 0, 0, 1, 1
-  sum_ref0 = _mm256_castps_si256(_mm256_shuffle_ps(
-      _mm256_castsi256_ps(sum_ref0), _mm256_castsi256_ps(sum_ref1),
+  __m256i sum_ref01 = _mm256_castps_si256(_mm256_shuffle_ps(
+      _mm256_castsi256_ps(*sum_ref0), _mm256_castsi256_ps(*sum_ref1),
       _MM_SHUFFLE(2, 0, 2, 0)));
   // 2, 2, 3, 3
-  sum_ref2 = _mm256_castps_si256(_mm256_shuffle_ps(
-      _mm256_castsi256_ps(sum_ref2), _mm256_castsi256_ps(sum_ref3),
+  __m256i sum_ref23 = _mm256_castps_si256(_mm256_shuffle_ps(
+      _mm256_castsi256_ps(*sum_ref2), _mm256_castsi256_ps(*sum_ref3),
       _MM_SHUFFLE(2, 0, 2, 0)));
 
   // sum adjacent 32 bit integers
-  sum_ref0 = _mm256_hadd_epi32(sum_ref0, sum_ref2);
+  __m256i sum_ref0123 = _mm256_hadd_epi32(sum_ref01, sum_ref23);
 
   // add the low 128 bit to the high 128 bit
-  sum = _mm_add_epi32(_mm256_castsi256_si128(sum_ref0),
-                      _mm256_extractf128_si256(sum_ref0, 1));
+  __m128i sum = _mm_add_epi32(_mm256_castsi256_si128(sum_ref0123),
+                              _mm256_extractf128_si256(sum_ref0123, 1));
 
   _mm_storeu_si128((__m128i *)(res), sum);
 }
@@ -87,7 +86,7 @@ static AOM_FORCE_INLINE void aom_sadMxNx4d_avx2(
     ref3 += ref_stride;
   }
 
-  aggregate_and_store_sum(res, sum_ref0, sum_ref1, sum_ref2, sum_ref3);
+  aggregate_and_store_sum(res, &sum_ref0, &sum_ref1, &sum_ref2, &sum_ref3);
 }
 
 static AOM_FORCE_INLINE void aom_sadMxNx3d_avx2(
@@ -97,6 +96,7 @@ static AOM_FORCE_INLINE void aom_sadMxNx3d_avx2(
   __m256i sum_ref0, sum_ref1, sum_ref2;
   int i, j;
   const uint8_t *ref0, *ref1, *ref2;
+  const __m256i zero = _mm256_setzero_si256();
 
   ref0 = ref[0];
   ref1 = ref[1];
@@ -127,8 +127,7 @@ static AOM_FORCE_INLINE void aom_sadMxNx3d_avx2(
     ref1 += ref_stride;
     ref2 += ref_stride;
   }
-  aggregate_and_store_sum(res, sum_ref0, sum_ref1, sum_ref2,
-                          _mm256_setzero_si256());
+  aggregate_and_store_sum(res, &sum_ref0, &sum_ref1, &sum_ref2, &zero);
 }
 
 #define SADMXN_AVX2(m, n)                                                      \
@@ -189,6 +188,7 @@ static AOM_FORCE_INLINE void aom_sad16xNx3d_avx2(int N, const uint8_t *src,
   __m256i src_reg, ref0_reg, ref1_reg, ref2_reg;
   __m256i sum_ref0, sum_ref1, sum_ref2;
   const uint8_t *ref0, *ref1, *ref2;
+  const __m256i zero = _mm256_setzero_si256();
   assert(N % 2 == 0);
 
   ref0 = ref[0];
@@ -221,8 +221,7 @@ static AOM_FORCE_INLINE void aom_sad16xNx3d_avx2(int N, const uint8_t *src,
     ref2 += 2 * ref_stride;
   }
 
-  aggregate_and_store_sum(res, sum_ref0, sum_ref1, sum_ref2,
-                          _mm256_setzero_si256());
+  aggregate_and_store_sum(res, &sum_ref0, &sum_ref1, &sum_ref2, &zero);
 }
 
 static AOM_FORCE_INLINE void aom_sad16xNx4d_avx2(int N, const uint8_t *src,
@@ -272,7 +271,7 @@ static AOM_FORCE_INLINE void aom_sad16xNx4d_avx2(int N, const uint8_t *src,
     ref3 += 2 * ref_stride;
   }
 
-  aggregate_and_store_sum(res, sum_ref0, sum_ref1, sum_ref2, sum_ref3);
+  aggregate_and_store_sum(res, &sum_ref0, &sum_ref1, &sum_ref2, &sum_ref3);
 }
 
 #define SAD16XNX3_AVX2(n)                                                   \

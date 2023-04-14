@@ -18,14 +18,19 @@
 
 namespace quic {
 
+namespace {
+
 // Implements the basic feature of a result delegate for path validation for
 // connection migration. If the validation succeeds, migrate to the alternative
 // path. Otherwise, stay on the current path.
 class QuicClientSocketMigrationValidationResultDelegate
     : public QuicPathValidator::ResultDelegate {
  public:
-  QuicClientSocketMigrationValidationResultDelegate(QuicClientBase* client)
+  explicit QuicClientSocketMigrationValidationResultDelegate(
+      QuicClientBase* client)
       : QuicPathValidator::ResultDelegate(), client_(client) {}
+
+  virtual ~QuicClientSocketMigrationValidationResultDelegate() = default;
 
   // QuicPathValidator::ResultDelegate
   // Overridden to start migration and takes the ownership of the writer in the
@@ -50,12 +55,35 @@ class QuicClientSocketMigrationValidationResultDelegate
     QUIC_LOG(WARNING) << "Fail to validate path " << *context
                       << ", stop migrating.";
     client_->session()->connection()->OnPathValidationFailureAtClient(
-        /*is_multi_port=*/false);
+        /*is_multi_port=*/false, *context);
   }
+
+ protected:
+  QuicClientBase* client() { return client_; }
 
  private:
   QuicClientBase* client_;
 };
+
+class ServerPreferredAddressResultDelegateWithWriter
+    : public QuicClientSocketMigrationValidationResultDelegate {
+ public:
+  ServerPreferredAddressResultDelegateWithWriter(QuicClientBase* client)
+      : QuicClientSocketMigrationValidationResultDelegate(client) {}
+
+  // Overridden to transfer the ownership of the new writer.
+  void OnPathValidationSuccess(
+      std::unique_ptr<QuicPathValidationContext> context,
+      QuicTime /*start_time*/) override {
+    client()->session()->connection()->OnServerPreferredAddressValidated(
+        *context, false);
+    auto migration_context = std::unique_ptr<PathMigrationContext>(
+        static_cast<PathMigrationContext*>(context.release()));
+    client()->set_writer(migration_context->ReleaseWriter());
+  }
+};
+
+}  // namespace
 
 QuicClientBase::NetworkHelper::~NetworkHelper() = default;
 
@@ -287,8 +315,8 @@ bool QuicClientBase::ValidateAndMigrateSocket(const QuicIpAddress& new_host) {
       std::make_unique<PathMigrationContext>(
           std::move(writer), network_helper_->GetLatestClientAddress(),
           session_->peer_address()),
-      std::make_unique<QuicClientSocketMigrationValidationResultDelegate>(
-          this));
+      std::make_unique<QuicClientSocketMigrationValidationResultDelegate>(this),
+      PathValidationReason::kConnectionMigration);
   return true;
 }
 
@@ -469,7 +497,7 @@ class ValidationResultDelegate : public QuicPathValidator::ResultDelegate {
     QUIC_LOG(WARNING) << "Fail to validate path " << *context
                       << ", stop migrating.";
     client_->session()->connection()->OnPathValidationFailureAtClient(
-        /*is_multi_port=*/false);
+        /*is_multi_port=*/false, *context);
   }
 
  private:
@@ -491,7 +519,27 @@ void QuicClientBase::ValidateNewNetwork(const QuicIpAddress& host) {
       std::make_unique<PathMigrationContext>(
           std::move(writer), network_helper_->GetLatestClientAddress(),
           session_->peer_address()),
-      std::move(result_delegate));
+      std::move(result_delegate), PathValidationReason::kConnectionMigration);
+}
+
+void QuicClientBase::OnServerPreferredAddressAvailable(
+    const QuicSocketAddress& server_preferred_address) {
+  const auto self_address = session_->self_address();
+  if (network_helper_ == nullptr ||
+      !network_helper_->CreateUDPSocketAndBind(server_preferred_address,
+                                               self_address.host(), 0)) {
+    return;
+  }
+  QuicPacketWriter* writer = network_helper_->CreateQuicPacketWriter();
+  if (writer == nullptr) {
+    return;
+  }
+  session()->ValidatePath(
+      std::make_unique<PathMigrationContext>(
+          std::unique_ptr<QuicPacketWriter>(writer),
+          network_helper_->GetLatestClientAddress(), server_preferred_address),
+      std::make_unique<ServerPreferredAddressResultDelegateWithWriter>(this),
+      PathValidationReason::kServerPreferredAddressMigration);
 }
 
 }  // namespace quic

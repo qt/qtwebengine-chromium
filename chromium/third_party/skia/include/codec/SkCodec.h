@@ -17,18 +17,13 @@
 #include "include/core/SkTypes.h"
 #include "include/core/SkYUVAPixmaps.h"
 #include "include/private/SkEncodedInfo.h"
-#include "include/private/SkNoncopyable.h"
+#include "include/private/base/SkNoncopyable.h"
 #include "modules/skcms/skcms.h"
 
 #include <cstddef>
 #include <memory>
 #include <tuple>
 #include <vector>
-
-// TODO(kjlubick, bungeman) replace these includes with forward declares.
-#include "include/codec/SkCodecAnimation.h" // IWYU pragma: keep
-#include "include/core/SkAlphaType.h" // IWYU pragma: keep
-#include "include/core/SkEncodedImageFormat.h" // IWYU pragma: keep
 
 class SkAndroidCodec;
 class SkData;
@@ -37,6 +32,15 @@ class SkImage;
 class SkPngChunkReader;
 class SkSampler;
 class SkStream;
+struct SkGainmapInfo;
+enum SkAlphaType : int;
+enum class SkEncodedImageFormat;
+
+namespace SkCodecAnimation {
+enum class Blend;
+enum class DisposalMethod;
+}
+
 
 namespace DM {
 class CodecSrc;
@@ -769,6 +773,8 @@ protected:
         return fSrcXformFormat;
     }
 
+    virtual bool onGetGainmapInfo(SkGainmapInfo*, std::unique_ptr<SkStream>*) { return false; }
+
     virtual SkISize onGetScaledDimensions(float /*desiredScale*/) const {
         // By default, scaling is not supported.
         return this->dimensions();
@@ -889,8 +895,8 @@ private:
     const SkEncodedInfo                fEncodedInfo;
     XformFormat                        fSrcXformFormat;
     std::unique_ptr<SkStream>          fStream;
-    bool                               fNeedsRewind;
-    const SkEncodedOrigin              fOrigin;
+    bool fNeedsRewind = false;
+    const SkEncodedOrigin fOrigin;
 
     SkImageInfo                        fDstInfo;
     Options                            fOptions;
@@ -906,13 +912,13 @@ private:
     skcms_AlphaFormat                  fDstXformAlphaFormat;
 
     // Only meaningful during scanline decodes.
-    int                                fCurrScanline;
+    int fCurrScanline = -1;
 
-    bool                               fStartedIncrementalDecode;
+    bool fStartedIncrementalDecode = false;
 
     // Allows SkAndroidCodec to call handleFrameIndex (potentially decoding a prior frame and
     // clearing to transparent) without SkCodec calling it, too.
-    bool                               fAndroidCodecHandlesFrameIndex;
+    bool fAndroidCodecHandlesFrameIndex = false;
 
     bool initializeColorXform(const SkImageInfo& dstInfo, SkEncodedInfo::Alpha, bool srcIsOpaque);
 

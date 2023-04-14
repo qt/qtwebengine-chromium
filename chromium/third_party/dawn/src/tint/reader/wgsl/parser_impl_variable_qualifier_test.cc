@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "src/tint/ast/test_helper.h"
 #include "src/tint/reader/wgsl/parser_impl_test_helper.h"
 
 namespace tint::reader::wgsl {
@@ -19,8 +20,8 @@ namespace {
 
 struct VariableStorageData {
     const char* input;
-    ast::AddressSpace address_space;
-    ast::Access access;
+    builtin::AddressSpace address_space;
+    builtin::Access access;
 };
 inline std::ostream& operator<<(std::ostream& out, VariableStorageData data) {
     out << std::string(data.input);
@@ -31,14 +32,23 @@ class VariableQualifierTest : public ParserImplTestWithParam<VariableStorageData
 
 TEST_P(VariableQualifierTest, ParsesAddressSpace) {
     auto params = GetParam();
-    auto p = parser(std::string("<") + params.input + ">");
+    auto p = parser(std::string("var<") + params.input + "> name");
 
-    auto sc = p->variable_qualifier();
+    auto sc = p->variable_decl();
     EXPECT_FALSE(p->has_error());
     EXPECT_FALSE(sc.errored);
     EXPECT_TRUE(sc.matched);
-    EXPECT_EQ(sc->address_space, params.address_space);
-    EXPECT_EQ(sc->access, params.access);
+    if (params.address_space != builtin::AddressSpace::kUndefined) {
+        ast::CheckIdentifier(p->builder().Symbols(), sc->address_space,
+                             utils::ToString(params.address_space));
+    } else {
+        EXPECT_EQ(sc->address_space, nullptr);
+    }
+    if (params.access != builtin::Access::kUndefined) {
+        ast::CheckIdentifier(p->builder().Symbols(), sc->access, utils::ToString(params.access));
+    } else {
+        EXPECT_EQ(sc->access, nullptr);
+    }
 
     auto& t = p->next();
     EXPECT_TRUE(t.IsEof());
@@ -46,35 +56,30 @@ TEST_P(VariableQualifierTest, ParsesAddressSpace) {
 INSTANTIATE_TEST_SUITE_P(
     ParserImplTest,
     VariableQualifierTest,
-    testing::Values(
-        VariableStorageData{"uniform", ast::AddressSpace::kUniform, ast::Access::kUndefined},
-        VariableStorageData{"workgroup", ast::AddressSpace::kWorkgroup, ast::Access::kUndefined},
-        VariableStorageData{"storage", ast::AddressSpace::kStorage, ast::Access::kUndefined},
-        VariableStorageData{"private", ast::AddressSpace::kPrivate, ast::Access::kUndefined},
-        VariableStorageData{"function", ast::AddressSpace::kFunction, ast::Access::kUndefined},
-        VariableStorageData{"storage, read", ast::AddressSpace::kStorage, ast::Access::kRead},
-        VariableStorageData{"storage, write", ast::AddressSpace::kStorage, ast::Access::kWrite},
-        VariableStorageData{"storage, read_write", ast::AddressSpace::kStorage,
-                            ast::Access::kReadWrite}));
-
-TEST_F(ParserImplTest, VariableQualifier_NoMatch) {
-    auto p = parser("<not-a-storage-class>");
-    auto sc = p->variable_qualifier();
-    EXPECT_TRUE(p->has_error());
-    EXPECT_TRUE(sc.errored);
-    EXPECT_FALSE(sc.matched);
-    EXPECT_EQ(p->error(), R"(1:2: expected address space for variable declaration
-Possible values: 'function', 'private', 'push_constant', 'storage', 'uniform', 'workgroup')");
-}
+    testing::Values(VariableStorageData{"uniform", builtin::AddressSpace::kUniform,
+                                        builtin::Access::kUndefined},
+                    VariableStorageData{"workgroup", builtin::AddressSpace::kWorkgroup,
+                                        builtin::Access::kUndefined},
+                    VariableStorageData{"storage", builtin::AddressSpace::kStorage,
+                                        builtin::Access::kUndefined},
+                    VariableStorageData{"private", builtin::AddressSpace::kPrivate,
+                                        builtin::Access::kUndefined},
+                    VariableStorageData{"function", builtin::AddressSpace::kFunction,
+                                        builtin::Access::kUndefined},
+                    VariableStorageData{"storage, read", builtin::AddressSpace::kStorage,
+                                        builtin::Access::kRead},
+                    VariableStorageData{"storage, write", builtin::AddressSpace::kStorage,
+                                        builtin::Access::kWrite},
+                    VariableStorageData{"storage, read_write", builtin::AddressSpace::kStorage,
+                                        builtin::Access::kReadWrite}));
 
 TEST_F(ParserImplTest, VariableQualifier_Empty) {
-    auto p = parser("<>");
-    auto sc = p->variable_qualifier();
+    auto p = parser("var<> name");
+    auto sc = p->variable_decl();
     EXPECT_TRUE(p->has_error());
     EXPECT_TRUE(sc.errored);
     EXPECT_FALSE(sc.matched);
-    EXPECT_EQ(p->error(), R"(1:2: expected address space for variable declaration
-Possible values: 'function', 'private', 'push_constant', 'storage', 'uniform', 'workgroup')");
+    EXPECT_EQ(p->error(), R"(1:5: expected expression for 'var' address space)");
 }
 
 TEST_F(ParserImplTest, VariableQualifier_MissingLessThan) {
@@ -105,7 +110,7 @@ TEST_F(ParserImplTest, VariableQualifier_MissingGreaterThan) {
     EXPECT_TRUE(p->has_error());
     EXPECT_TRUE(sc.errored);
     EXPECT_FALSE(sc.matched);
-    EXPECT_EQ(p->error(), "1:9: expected '>' for variable declaration");
+    EXPECT_EQ(p->error(), "1:1: missing closing '>' for variable declaration");
 }
 
 }  // namespace

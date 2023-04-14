@@ -15,17 +15,19 @@
 #include <windows.h>
 
 #include <exception>
-#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
 
+// ABSL headers
+#include "absl/strings/match.h"
+
+// Nearby connections headers
 #include "internal/platform/implementation/windows/generated/winrt/Windows.Networking.Sockets.h"
 #include "internal/platform/implementation/windows/utils.h"
 #include "internal/platform/implementation/windows/wifi_hotspot.h"
 #include "internal/platform/logging.h"
 
-namespace location {
 namespace nearby {
 namespace windows {
 namespace {
@@ -79,7 +81,8 @@ std::unique_ptr<api::WifiHotspotSocket> WifiHotspotServerSocket::Accept() {
   return std::make_unique<WifiHotspotSocket>(wifi_hotspot_socket);
 }
 
-void WifiHotspotServerSocket::SetCloseNotifier(std::function<void()> notifier) {
+void WifiHotspotServerSocket::SetCloseNotifier(
+    absl::AnyInvocable<void()> notifier) {
   close_notifier_ = std::move(notifier);
 }
 
@@ -223,30 +226,31 @@ fire_and_forget WifiHotspotServerSocket::Listener_ConnectionReceived(
   return fire_and_forget{};
 }
 
-bool HasEnding(std::string const &full_string, std::string const &ending) {
-  if (full_string.length() >= ending.length()) {
-    return (0 == full_string.compare(full_string.length() - ending.length(),
-                                     ending.length(), ending));
-  } else {
-    return false;
-  }
-}
-
 std::vector<std::string> WifiHotspotServerSocket::GetIpAddresses() const {
-  std::vector<std::string> result{};
-  auto host_names = NetworkInformation::GetHostNames();
-  for (auto host_name : host_names) {
-    if (host_name.IPInformation() != nullptr &&
-        host_name.IPInformation().NetworkAdapter() != nullptr &&
-        host_name.Type() == HostNameType::Ipv4) {
-      std::string ipv4_s = winrt::to_string(host_name.ToString());
+  std::vector<std::string> result;
+  try {
+    auto host_names = NetworkInformation::GetHostNames();
+    for (auto host_name : host_names) {
+      if (host_name.IPInformation() != nullptr &&
+          host_name.IPInformation().NetworkAdapter() != nullptr &&
+          host_name.Type() == HostNameType::Ipv4) {
+        std::string ipv4_s = winrt::to_string(host_name.ToString());
 
-      if (HasEnding(ipv4_s, ".1")) {
-        NEARBY_LOGS(INFO) << "Found Hotspot IP: " << ipv4_s;
-        result.push_back(ipv4_s);
+        if (absl::EndsWith(ipv4_s, ".1")) {
+          NEARBY_LOGS(INFO) << "Found Hotspot IP: " << ipv4_s;
+          result.push_back(ipv4_s);
+        }
       }
     }
+  } catch (std::exception exception) {
+    NEARBY_LOGS(ERROR) << __func__ << ": Exception: " << exception.what();
+  } catch (const winrt::hresult_error &error) {
+    NEARBY_LOGS(ERROR) << __func__ << ": WinRT exception: " << error.code()
+                       << ": " << winrt::to_string(error.message());
+  } catch (...) {
+    NEARBY_LOGS(ERROR) << __func__ << ": Unknown exeption.";
   }
+
   return result;
 }
 
@@ -259,7 +263,7 @@ std::string WifiHotspotServerSocket::GetHotspotIpAddresses() const {
             host_name.IPInformation().NetworkAdapter() != nullptr &&
             host_name.Type() == HostNameType::Ipv4) {
           std::string ipv4_s = winrt::to_string(host_name.ToString());
-          if (HasEnding(ipv4_s, ".1")) {
+          if (absl::EndsWith(ipv4_s, ".1")) {
             // TODO(b/228541380): replace when we find a better way to
             // identifying the hotspot address
             NEARBY_LOGS(INFO) << "Found Hotspot IP: " << ipv4_s;
@@ -284,4 +288,3 @@ std::string WifiHotspotServerSocket::GetHotspotIpAddresses() const {
 
 }  // namespace windows
 }  // namespace nearby
-}  // namespace location

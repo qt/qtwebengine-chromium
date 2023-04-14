@@ -8,7 +8,7 @@
 #include "src/gpu/ganesh/ops/AAHairLinePathRenderer.h"
 
 #include "include/core/SkPoint3.h"
-#include "include/private/SkTemplates.h"
+#include "include/private/base/SkTemplates.h"
 #include "src/core/SkGeometry.h"
 #include "src/core/SkMatrixPriv.h"
 #include "src/core/SkPointPriv.h"
@@ -323,8 +323,8 @@ int gather_lines_and_quads(const SkPath& path,
         addChoppedQuad(srcSpaceQuadPts, devPts, isContourStart);
     };
 
+    SkPoint pathPts[4] = {{0, 0}, {0, 0}, {0, 0}, {0, 0}};
     for (;;) {
-        SkPoint pathPts[4];
         SkPath::Verb verb = iter.next(pathPts);
         switch (verb) {
             case SkPath::kConic_Verb:

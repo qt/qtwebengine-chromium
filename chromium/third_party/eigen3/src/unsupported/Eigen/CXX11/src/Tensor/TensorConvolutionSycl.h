@@ -57,10 +57,10 @@ struct EigenConvolutionKernel<Evaluator, CoeffReturnType, KernelType, Index, Inp
         input_range(input_range_) {}
 
   template <typename BooleanDim2>
-  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE bool boundary_check(const BooleanDim2 boolean_check) {
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE bool boundary_check(const BooleanDim2 boolean_check) const {
     return (boolean_check[0] && boolean_check[1]);
   }
-  void operator()(cl::sycl::nd_item<2> itemID) {
+  void operator()(cl::sycl::nd_item<2> itemID)  const {
     auto buffer_ptr = buffer_acc.get_pointer();
     auto kernel_ptr = kernel_filter.get_pointer();
     // the required row to be calculated for the for each plane in shered memory
@@ -123,11 +123,11 @@ struct EigenConvolutionKernel<Evaluator, CoeffReturnType, KernelType, Index, Inp
         kernel_size(kernel_size_),
         input_range(input_range_) {}
   template <typename BooleanDim3>
-  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE bool boundary_check(const BooleanDim3 boolean_check) {
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE bool boundary_check(const BooleanDim3 boolean_check) const {
     return (boolean_check[0] && boolean_check[1] && boolean_check[2]);
   }
 
-  void operator()(cl::sycl::nd_item<3> itemID) {
+  void operator()(cl::sycl::nd_item<3> itemID) const {
     auto buffer_ptr = buffer_acc.get_pointer();
     auto kernel_ptr = kernel_filter.get_pointer();
     // the required row to be calculated for the for each plane in shered memory
@@ -212,10 +212,10 @@ struct EigenConvolutionKernel<Evaluator, CoeffReturnType, KernelType, Index, Inp
         input_range(input_range_),
         numP(numP_) {}
   template <typename BooleanDim3>
-  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE bool boundary_check(const BooleanDim3 boolean_check) {
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE bool boundary_check(const BooleanDim3 boolean_check) const {
     return (boolean_check[0] && boolean_check[1] && boolean_check[2]);
   }
-  void operator()(cl::sycl::nd_item<3> itemID) {
+  void operator()(cl::sycl::nd_item<3> itemID) const {
     auto buffer_ptr = buffer_acc.get_pointer();
     auto kernel_ptr = kernel_filter.get_pointer();
     const auto num_input = cl::sycl::range<3>{itemID.get_local_range() + kernel_size - 1};

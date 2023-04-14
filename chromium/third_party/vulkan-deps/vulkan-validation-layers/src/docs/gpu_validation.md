@@ -1,5 +1,6 @@
 <!-- markdownlint-disable MD041 -->
-<!-- Copyright 2015-2022 LunarG, Inc. -->
+<!-- Copyright 2015-2023 LunarG, Inc. -->
+<!-- Copyright 2015-2023 Valve Corporation -->
 [![Khronos Vulkan][1]][2]
 
 [1]: https://vulkan.lunarg.com/img/Vulkan_100px_Dec16.png "https://www.khronos.org/vulkan/"
@@ -107,7 +108,8 @@ Note that currently, VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK_EXT validation is n
 ### Buffer device address checking
 The vkGetBufferDeviceAddressEXT routine can be used to get a GPU address that a shader can use to directly address a particular buffer.
 GPU-Assisted Validation code keeps track of all such addresses, along with the size of the associated buffer, and creates an input buffer listing all such address/size pairs
-Shader code is instrumented to validate buffer_reference addresses and report any reads or writes that do no fall within the listed address/size regions._
+Shader code is instrumented to validate buffer_reference addresses and report any reads or writes that do no fall within the listed address/size regions.
+Note: The mapping between a `VkBuffer` and a GPU address is not necessarily one to one. For instance, if multiple `VkBuffer` are bound to the same memory region, they can have the same GPU address.
 
 ## GPU-Assisted Validation Limitations
 
@@ -330,7 +332,7 @@ This doesn't present any particular problem, but it does raise some issues:
 ### Code Structure and Relationship to the Core Validation Layer
 
 The GPU-Assisted Validation code is largely contained in one
-[file](https://github.com/KhronosGroup/Vulkan-ValidationLayers/blob/master/layers/gpu_validation.cpp), with "hooks" in
+[file](https://github.com/KhronosGroup/Vulkan-ValidationLayers/blob/main/layers/gpu_validation.cpp), with "hooks" in
 the other validation code that call functions in this file.
 These hooks in the validation code look something like this:
 
@@ -695,7 +697,7 @@ The validation layer can continue to read valid records until it sees a Record L
 
 The programmatic interface for the above informal description is codified in the
 [SPIRV-Tools](https://github.com/KhronosGroup/SPIRV-Tools) repository in file
-[`instrument.hpp`](https://github.com/KhronosGroup/SPIRV-Tools/blob/master/include/spirv-tools/instrument.hpp).
+[`instrument.hpp`](https://github.com/KhronosGroup/SPIRV-Tools/blob/main/include/spirv-tools/instrument.hpp).
 It consists largely of integer constant definitions for the codes and values mentioned above and
 offsets into the record for locating each item.
 

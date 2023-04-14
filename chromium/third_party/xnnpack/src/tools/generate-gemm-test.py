@@ -36,8 +36,6 @@ def split_ukernel_name(name):
   common_parts = common_name.split("_")
   xw = "gemm_xw_" in common_name
   param_spec = common_parts[-1]
-  if param_spec.startswith('upto'):
-    param_spec = param_spec[len('upto'):]
   if "s" in param_spec:
     param_spec, sr = param_spec.split("s", 1)
     sr = int(sr)
@@ -49,13 +47,13 @@ def split_ukernel_name(name):
   else:
     kr = 1
   mr, nr = map(int, param_spec.split("x"))
-  arch, isa = xnncommon.parse_target_name(target_name)
+  arch, isa, assembly = xnncommon.parse_target_name(target_name)
 
   requantization = common_parts[-3]
   if requantization not in ["fp32", "rndnu"]:
     requantization = None
 
-  return mr, nr, kr, sr, xw, requantization, arch, isa
+  return mr, nr, kr, sr, xw, requantization, arch, isa, assembly
 
 
 GEMM_TEST_CODE = """\
@@ -848,32 +846,54 @@ $if DATATYPE == "qu8":
     }
   }
 
-$if TEST_NAME.startswith('GENERATE') and 'UPTO' in TEST_NAME:
-  TEST(${TEST_NAME}, k_eq_${KBLOCK}_subtile_m_upto_mr) {
+$if TEST_NAME.startswith('GENERATE') and (DATATYPE == 'f32' or DATATYPE == 'f16'):
+  TEST(${TEST_NAME}, subtile_m_upto_mr) {
     $if ISA_CHECK:
       ${ISA_CHECK};
     for (uint32_t max_mr = 1; max_mr <= ${MR}; max_mr++) {
       for (uint32_t m = 1; m <= max_mr; m++) {
-        GemmMicrokernelTester()
-          $if EXTENDED_WEIGHTS:
-            .extended_weights(true)
-          .mr(max_mr)
-          .nr(${NR})
-          .kr(${KR})
-          .sr(${SR})
-          .m(m)
-          .n(${NR})
-          .k(${KBLOCK})
-          .iterations(1)
-          .Test(${", ".join(TEST_ARGS)});
+        for (size_t k = 1; k <= ${KBLOCK * 2}; k += 1) {
+          GemmMicrokernelTester()
+            $if EXTENDED_WEIGHTS:
+              .extended_weights(true)
+            .mr(max_mr)
+            .nr(${NR})
+            .kr(${KR})
+            .sr(${SR})
+            .m(m)
+            .n(${NR})
+            .k(k)
+            .iterations(1)
+            .Test(${", ".join(TEST_ARGS)});
+        }
       }
     }
+  }
+
+$if TEST_NAME.startswith('GENERATE') and DATATYPE == 'f32' and POST_OP:
+  TEST(${TEST_NAME}, hardswish) {
+    $if ISA_CHECK:
+      ${ISA_CHECK};
+    const std::vector<xnn_post_operation> fused_operators = { {xnn_post_operation_type_hardswish} };
+    GemmMicrokernelTester()
+      $if EXTENDED_WEIGHTS:
+        .extended_weights(true)
+      .mr(${MR})
+      .nr(${NR})
+      .kr(${KR})
+      .sr(${SR})
+      .m(${MR})
+      .n(${NR})
+      .k(${KBLOCK})
+      .Test(
+          ${", ".join(TEST_ARGS)},
+          fused_operators);
   }
 """
 
 
 def generate_test_cases(ukernel, mr, nr, kr, sr, xw, k_block, init_fn,
-                        requantization, is_pipelined, isa, jit):
+                        requantization, is_pipelined, isa, jit, post_op):
   """Generates all tests cases for a GEMM micro-kernel.
 
   Args:
@@ -894,6 +914,7 @@ def generate_test_cases(ukernel, mr, nr, kr, sr, xw, k_block, init_fn,
     isa: instruction set required to run the micro-kernel. Generated unit test
       will skip execution if the host processor doesn't support this ISA.
     jit: if we are generating test code for JIT codegen.
+    post_op: if post operation is supported (only for JIT).
 
   Returns:
     Code for the test case.
@@ -937,6 +958,7 @@ def generate_test_cases(ukernel, mr, nr, kr, sr, xw, k_block, init_fn,
           "IS_PIPELINED": is_pipelined,
           "ISA_CHECK": xnncommon.generate_isa_check_macro(isa),
           "next_prime": next_prime,
+          "POST_OP": post_op,
       })
 
 
@@ -984,22 +1006,21 @@ def main(args):
       k_block = int(ukernel_spec["k-block"])
       init_fn = ukernel_spec.get("init")
       pipelined = bool(ukernel_spec.get("pipelined", False))
-      assembly = bool(ukernel_spec.get("assembly", False))
       jit = name.startswith("xnn_generate")
-      mr, nr, kr, sr, xw, requantization, arch, isa = split_ukernel_name(name)
-
-      # specification can override architecture
-      arch = ukernel_spec.get("arch", arch)
+      post_op = ukernel_spec.get("post-op", True)
+      mr, nr, kr, sr, xw, requantization, arch, isa, assembly = \
+        split_ukernel_name(name)
 
       test_case = generate_test_cases(name, mr, nr, kr, sr, xw, k_block,
                                       init_fn, requantization, pipelined, isa,
-                                      jit)
+                                      jit, post_op)
 
       # Hash the name of each microkernel and figure out which output file to
       # write it to.
-      output_index = zlib.crc32(bytes(name, 'utf-8')) % num_output_files
-      outputs[options.output[output_index]] += "\n\n" + xnncommon.postprocess_test_case(
-          test_case, arch, isa, assembly, jit)
+      output_index = zlib.crc32(bytes(name, "utf-8")) % num_output_files
+      outputs[options.
+              output[output_index]] += "\n\n" + xnncommon.postprocess_test_case(
+                  test_case, arch, isa, assembly, jit)
 
     for output_name in options.output:
       txt_changed = True

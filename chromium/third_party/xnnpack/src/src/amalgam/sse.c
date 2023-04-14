@@ -1161,13 +1161,13 @@ void xnn_f32_conv_hwc2chw_ukernel_3x3s2p1c3x4__sse_2x2(
   }
 }
 
-void xnn_f32_dwconv_minmax_ukernel_up8x25__sse(
+void xnn_f32_dwconv_minmax_ukernel_25p8c__sse(
     size_t channels,
     size_t output_width,
     const float** input,
     const float* weights,
     float* output,
-    size_t input_stride,
+    intptr_t input_stride,
     size_t output_increment,
     size_t input_offset,
     const float* zero,
@@ -1834,13 +1834,13 @@ void xnn_f32_dwconv_minmax_ukernel_up8x25__sse(
   } while (--output_width != 0);
 }
 
-void xnn_f32_dwconv_minmax_ukernel_up8x3__sse(
+void xnn_f32_dwconv_minmax_ukernel_3p8c__sse(
     size_t channels,
     size_t output_width,
     const float** input,
     const float* weights,
     float* output,
-    size_t input_stride,
+    intptr_t input_stride,
     size_t output_increment,
     size_t input_offset,
     const float* zero,
@@ -1979,13 +1979,13 @@ void xnn_f32_dwconv_minmax_ukernel_up8x3__sse(
   } while (--output_width != 0);
 }
 
-void xnn_f32_dwconv_minmax_ukernel_up8x4__sse(
+void xnn_f32_dwconv_minmax_ukernel_4p8c__sse(
     size_t channels,
     size_t output_width,
     const float** input,
     const float* weights,
     float* output,
-    size_t input_stride,
+    intptr_t input_stride,
     size_t output_increment,
     size_t input_offset,
     const float* zero,
@@ -2148,13 +2148,13 @@ void xnn_f32_dwconv_minmax_ukernel_up8x4__sse(
   } while (--output_width != 0);
 }
 
-void xnn_f32_dwconv_minmax_ukernel_up8x9__sse(
+void xnn_f32_dwconv_minmax_ukernel_9p8c__sse(
     size_t channels,
     size_t output_width,
     const float** input,
     const float* weights,
     float* output,
-    size_t input_stride,
+    intptr_t input_stride,
     size_t output_increment,
     size_t input_offset,
     const float* zero,
@@ -2452,9 +2452,9 @@ void xnn_f32_dwconv2d_chw_ukernel_3x3p1__sse_2x4_acc2(
   assert(input_width % sizeof(float) == 0);
   assert(padding_top == 1);
 
-  const __m128 vmask = _mm_load_ps((const float*) params->sse.mask);
-  const __m128 vmax = _mm_load_ps(params->sse.max);
-  const __m128 vmin = _mm_load_ps(params->sse.min);
+  const __m128 vmask = _mm_load_ps((const float*) params->sse_stride1.mask);
+  const __m128 vmax = _mm_load_ps(params->sse_stride1.max);
+  const __m128 vmin = _mm_load_ps(params->sse_stride1.min);
 
   const __m128 vbias = _mm_load1_ps(weights);
   const __m128 vk00 = _mm_load1_ps(weights + 1);
@@ -2729,10 +2729,10 @@ void xnn_f32_dwconv2d_chw_ukernel_3x3s2p1__sse_1x4_acc3(
   assert(padding_top >= 0);
   assert(padding_top <= 1);
 
-  const __m128 vmask_even = _mm_load_ps((const float*) params->sse.mask_even);
-  const __m128 vmask_odd  = _mm_load_ps((const float*) params->sse.mask_odd);
-  const __m128 vmax = _mm_load_ps(params->sse.max);
-  const __m128 vmin = _mm_load_ps(params->sse.min);
+  const __m128 vmask_even = _mm_load_ps((const float*) params->sse_stride2.mask_even);
+  const __m128 vmask_odd  = _mm_load_ps((const float*) params->sse_stride2.mask_odd);
+  const __m128 vmax = _mm_load_ps(params->sse_stride2.max);
+  const __m128 vmin = _mm_load_ps(params->sse_stride2.min);
 
   const __m128 vbias = _mm_load1_ps(weights);
   const __m128 vk00 = _mm_load1_ps(weights + 1);
@@ -2911,9 +2911,9 @@ void xnn_f32_dwconv2d_chw_ukernel_5x5p2__sse_4x4(
   assert(input_width % sizeof(float) == 0);
   assert(padding_top == 2);
 
-  const __m128 vmask = _mm_load_ps((const float*) params->sse.mask);
-  const __m128 vmax = _mm_load_ps(params->sse.max);
-  const __m128 vmin = _mm_load_ps(params->sse.min);
+  const __m128 vmask = _mm_load_ps((const float*) params->sse_stride1.mask);
+  const __m128 vmax = _mm_load_ps(params->sse_stride1.max);
+  const __m128 vmin = _mm_load_ps(params->sse_stride1.min);
 
   const __m128 vbias = _mm_load1_ps(weights);
   const __m128 vk00 = _mm_load1_ps(weights + 1);
@@ -3690,10 +3690,10 @@ void xnn_f32_dwconv2d_chw_ukernel_5x5s2p2__sse_2x4(
   assert(padding_top >= 1);
   assert(padding_top <= 2);
 
-  const __m128 vmask_even = _mm_load_ps((const float*) params->sse.mask_even);
-  const __m128 vmask_odd  = _mm_load_ps((const float*) params->sse.mask_odd);
-  const __m128 vmax = _mm_load_ps(params->sse.max);
-  const __m128 vmin = _mm_load_ps(params->sse.min);
+  const __m128 vmask_even = _mm_load_ps((const float*) params->sse_stride2.mask_even);
+  const __m128 vmask_odd  = _mm_load_ps((const float*) params->sse_stride2.mask_odd);
+  const __m128 vmax = _mm_load_ps(params->sse_stride2.max);
+  const __m128 vmin = _mm_load_ps(params->sse_stride2.min);
 
   const __m128 vbias = _mm_load1_ps(weights);
   const __m128 vk00 = _mm_load1_ps(weights + 1);
@@ -6546,11 +6546,11 @@ void xnn_f32_rmax_ukernel__sse(
 void xnn_f32_spmm_minmax_ukernel_32x1__sse(
     size_t mc,
     size_t nc,
-    const float*restrict input,
-    const float*restrict weights,
-    const int32_t*restrict widx_dmap,
-    const uint32_t*restrict nidx_nnzmap,
-    float*restrict output,
+    const float* input,
+    const float* weights,
+    const int32_t* widx_dmap,
+    const uint32_t* nidx_nnzmap,
+    float* output,
     size_t output_stride,
     const union xnn_f32_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
 {
@@ -6562,7 +6562,7 @@ void xnn_f32_spmm_minmax_ukernel_32x1__sse(
   const __m128 vmax = _mm_load_ps(params->sse.max);
   size_t output_decrement = output_stride * nc - 32 * sizeof(float);
   while XNN_LIKELY(mc >= 32 * sizeof(float)) {
-    const float*restrict w = weights;
+    const float* w = weights;
     const int32_t* dmap = widx_dmap;
     const uint32_t* nnzmap = nidx_nnzmap;
     size_t n = nc;
@@ -6632,7 +6632,7 @@ void xnn_f32_spmm_minmax_ukernel_32x1__sse(
   if XNN_UNLIKELY(mc != 0) {
     output_decrement += 16 * sizeof(float);
     if (mc & (16 * sizeof(float))) {
-      const float*restrict w = weights;
+      const float* w = weights;
       const int32_t* dmap = widx_dmap;
       const uint32_t* nnzmap = nidx_nnzmap;
       size_t n = nc;
@@ -6676,7 +6676,7 @@ void xnn_f32_spmm_minmax_ukernel_32x1__sse(
     }
     output_decrement += 8 * sizeof(float);
     if (mc & (8 * sizeof(float))) {
-      const float*restrict w = weights;
+      const float* w = weights;
       const int32_t* dmap = widx_dmap;
       const uint32_t* nnzmap = nidx_nnzmap;
       size_t n = nc;
@@ -6708,7 +6708,7 @@ void xnn_f32_spmm_minmax_ukernel_32x1__sse(
     }
     output_decrement += 4 * sizeof(float);
     if (mc & (4 * sizeof(float))) {
-      const float*restrict w = weights;
+      const float* w = weights;
       const int32_t* dmap = widx_dmap;
       const uint32_t* nnzmap = nidx_nnzmap;
       size_t n = nc;
@@ -6734,7 +6734,7 @@ void xnn_f32_spmm_minmax_ukernel_32x1__sse(
     }
     output_decrement += 2 * sizeof(float);
     if (mc & (2 * sizeof(float))) {
-      const float*restrict w = weights;
+      const float* w = weights;
       const int32_t* dmap = widx_dmap;
       const uint32_t* nnzmap = nidx_nnzmap;
       size_t n = nc;
@@ -6762,7 +6762,7 @@ void xnn_f32_spmm_minmax_ukernel_32x1__sse(
     }
     output_decrement += 1 * sizeof(float);
     if (mc & (1 * sizeof(float))) {
-      const float*restrict w = weights;
+      const float* w = weights;
       const int32_t* dmap = widx_dmap;
       const uint32_t* nnzmap = nidx_nnzmap;
       size_t n = nc;
@@ -8352,7 +8352,8 @@ void xnn_x32_transposec_ukernel__4x4_sse(
     size_t input_stride,
     size_t output_stride,
     size_t block_width,
-    size_t block_height) XNN_OOB_READS
+    size_t block_height,
+    const union xnn_x32_transpose_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(output_stride >= block_height * sizeof(uint32_t));
   assert(input_stride >= block_width * sizeof(uint32_t));

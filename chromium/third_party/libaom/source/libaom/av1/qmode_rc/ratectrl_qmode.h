@@ -25,6 +25,8 @@ namespace aom {
 constexpr int kLayerDepthOffset = 1;
 constexpr int kMinIntervalToAddArf = 3;
 constexpr int kMinArfInterval = (kMinIntervalToAddArf + 1) / 2;
+constexpr double kIntArfAdjFactor = 0.5;
+constexpr int kSecondTplPassQp = 5;
 
 struct TplUnitDepStats {
   double propagation_cost;
@@ -35,9 +37,11 @@ struct TplUnitDepStats {
 };
 
 struct TplFrameDepStats {
-  int unit_size;  // equivalent to min_block_size
-  double rdcost;  // overall rate-distortion cost
+  int unit_size;      // equivalent to min_block_size
+  double rdcost;      // overall rate-distortion cost
+  double alt_rdcost;  // rate-distortion cost in the second tpl pass
   std::vector<std::vector<TplUnitDepStats>> unit_stats;
+  std::vector<std::vector<TplUnitDepStats>> alt_unit_stats;
 };
 
 struct TplGopDepStats {
@@ -56,8 +60,9 @@ GopFrame GopFrameBasic(int global_coding_idx_offset,
                        GopFrameType gop_frame_type);
 
 GopStruct ConstructGop(RefFrameManager *ref_frame_manager, int show_frame_count,
-                       bool has_key_frame, int global_coding_idx_offset,
-                       int global_order_idx_offset);
+                       bool has_key_frame, bool has_arf_frame,
+                       bool use_prev_arf, int global_coding_idx_offset,
+                       int global_order_idx_offset, double base_q_ratio);
 
 // Creates a TplFrameDepStats containing an 2D array of default-initialized
 // TplUnitDepStats, with dimensions of
@@ -66,10 +71,14 @@ GopStruct ConstructGop(RefFrameManager *ref_frame_manager, int show_frame_count,
 // and blocks along the bottom or right edge of the frame may extend beyond the
 // edges of the frame.
 TplFrameDepStats CreateTplFrameDepStats(int frame_height, int frame_width,
-                                        int min_block_size);
+                                        int min_block_size, bool has_alt_stats);
 
 TplUnitDepStats TplBlockStatsToDepStats(const TplBlockStats &block_stats,
-                                        int unit_count);
+                                        int unit_count, bool rate_dist_present);
+
+Status FillTplUnitDepStats(TplFrameDepStats &frame_dep_stats,
+                           const TplFrameStats &frame_stats,
+                           const std::vector<TplBlockStats> &block_stats_list);
 
 StatusOr<TplFrameDepStats> CreateTplFrameDepStatsWithoutPropagation(
     const TplFrameStats &frame_stats);
@@ -80,9 +89,13 @@ double TplFrameDepStatsAccumulateIntraCost(
     const TplFrameDepStats &frame_dep_stats);
 
 double TplFrameDepStatsAccumulateInterCost(
-    const TplFrameDepStats &frame_dep_stats);
+    const std::vector<std::vector<TplUnitDepStats>> &unit_stats);
 
 double TplFrameDepStatsAccumulate(const TplFrameDepStats &frame_dep_stats);
+
+void TplFrameDepStatsBackTrace(int coding_idx,
+                               const RefFrameTable &ref_frame_table,
+                               TplGopDepStats *tpl_gop_dep_stats);
 
 void TplFrameDepStatsPropagate(int coding_idx,
                                const RefFrameTable &ref_frame_table,
@@ -95,7 +108,7 @@ std::unordered_map<int, int> KMeans(std::vector<uint8_t> qindices, int k);
 }
 
 StatusOr<TplGopDepStats> ComputeTplGopDepStats(
-    const TplGopStats &tpl_gop_stats,
+    const GopStruct &gop_struct, const TplGopStats &tpl_gop_stats,
     const std::vector<LookaheadStats> &lookahead_stats,
     const std::vector<RefFrameTable> &ref_frame_table_list);
 
@@ -130,9 +143,12 @@ class AV1RateControlQMode : public AV1RateControlQModeInterface {
   StatusOr<GopEncodeInfo> GetGopEncodeInfoWithNoStats(
       const GopStruct &gop_struct);
   StatusOr<GopEncodeInfo> GetGopEncodeInfoWithFp(
-      const GopStruct &gop_struct, const FirstpassInfo &firstpass_info);
+      const GopStruct &gop_struct, const FirstpassInfo &firstpass_info,
+      const std::vector<LookaheadStats> &lookahead_stats,
+      const RefFrameTable &ref_frame_table_snapshot_init);
   StatusOr<GopEncodeInfo> GetGopEncodeInfoWithTpl(
-      const GopStruct &gop_struct, const TplGopStats &tpl_gop_stats,
+      const GopStruct &gop_struct, const FirstpassInfo &firstpass_info,
+      const TplGopStats &tpl_gop_stats,
       const std::vector<LookaheadStats> &lookahead_stats,
       const RefFrameTable &ref_frame_table_snapshot_init);
 };

@@ -4,7 +4,7 @@
  *
  *   I/O stream support (body).
  *
- * Copyright (C) 2000-2022 by
+ * Copyright (C) 2000-2023 by
  * David Turner, Robert Wilhelm, and Werner Lemberg.
  *
  * This file is part of the FreeType project, and may only be used,
@@ -261,7 +261,7 @@
       }
 
 #ifdef FT_DEBUG_MEMORY
-      /* assume _ft_debug_file and _ft_debug_lineno are already set */
+      /* assume `ft_debug_file_` and `ft_debug_lineno_` are already set */
       stream->base = (unsigned char*)ft_mem_qalloc( memory,
                                                     (FT_Long)count,
                                                     &error );

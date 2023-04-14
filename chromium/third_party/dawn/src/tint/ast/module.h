@@ -17,10 +17,10 @@
 
 #include <string>
 
+#include "src/tint/ast/const_assert.h"
+#include "src/tint/ast/diagnostic_directive.h"
 #include "src/tint/ast/enable.h"
 #include "src/tint/ast/function.h"
-#include "src/tint/ast/static_assert.h"
-#include "src/tint/ast/type.h"
 #include "src/tint/utils/vector.h"
 
 namespace tint::ast {
@@ -46,7 +46,7 @@ class Module final : public Castable<Module, Node> {
     Module(ProgramID pid,
            NodeID nid,
            const Source& src,
-           utils::VectorRef<const ast::Node*> global_decls);
+           utils::VectorRef<const Node*> global_decls);
 
     /// Destructor
     ~Module() override;
@@ -80,7 +80,7 @@ class Module final : public Castable<Module, Node> {
     auto& GlobalVariables() { return global_variables_; }
 
     /// @returns the global variable declarations of kind 'T' for the module
-    template <typename T, typename = traits::EnableIfIsType<T, ast::Variable>>
+    template <typename T, typename = traits::EnableIfIsType<T, Variable>>
     auto Globals() const {
         utils::Vector<const T*, 32> out;
         out.Reserve(global_variables_.Length());
@@ -92,19 +92,26 @@ class Module final : public Castable<Module, Node> {
         return out;
     }
 
+    /// Add a diagnostic directive to the module
+    /// @param diagnostic the diagnostic directive to add
+    void AddDiagnosticDirective(const DiagnosticDirective* diagnostic);
+
     /// Add a enable directive to the module
     /// @param ext the enable directive to add
     void AddEnable(const Enable* ext);
 
+    /// @returns the diagnostic directives for the module
+    const auto& DiagnosticDirectives() const { return diagnostic_directives_; }
+
     /// @returns the extension set for the module
     const auto& Enables() const { return enables_; }
 
-    /// Add a global static assertion to the module
-    /// @param assertion the static assert to add
-    void AddStaticAssert(const StaticAssert* assertion);
+    /// Add a global const assertion to the module
+    /// @param assertion the const assert to add
+    void AddConstAssert(const ConstAssert* assertion);
 
-    /// @returns the list of global static assertions
-    const auto& StaticAsserts() const { return static_asserts_; }
+    /// @returns the list of global const assertions
+    const auto& ConstAsserts() const { return const_asserts_; }
 
     /// Adds a type declaration to the module
     /// @param decl the type declaration to add
@@ -146,8 +153,9 @@ class Module final : public Castable<Module, Node> {
     utils::Vector<const TypeDecl*, 16> type_decls_;
     FunctionList functions_;
     utils::Vector<const Variable*, 32> global_variables_;
+    utils::Vector<const DiagnosticDirective*, 8> diagnostic_directives_;
     utils::Vector<const Enable*, 8> enables_;
-    utils::Vector<const StaticAssert*, 8> static_asserts_;
+    utils::Vector<const ConstAssert*, 8> const_asserts_;
 };
 
 }  // namespace tint::ast

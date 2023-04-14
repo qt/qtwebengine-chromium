@@ -39,9 +39,9 @@ extern runtime WasmArrayCopy(
 extern runtime WasmArrayNewSegment(
     Context, WasmInstanceObject, Smi, Smi, Smi, Map): Object;
 extern runtime WasmStringNewWtf8(
-    Context, WasmInstanceObject, Smi, Smi, Number, Number): String;
+    Context, WasmInstanceObject, Smi, Smi, Number, Number): String|Null;
 extern runtime WasmStringNewWtf8Array(
-    Context, Smi, WasmArray, Smi, Smi): String;
+    Context, Smi, WasmArray, Smi, Smi): String|Null;
 extern runtime WasmStringNewWtf16(
     Context, WasmInstanceObject, Smi, Number, Number): String;
 extern runtime WasmStringNewWtf16Array(Context, WasmArray, Smi, Smi): String;
@@ -59,6 +59,9 @@ extern runtime WasmStringViewWtf8Encode(
     Context, WasmInstanceObject, Smi, ByteArray, Number, Number, Number): JSAny;
 extern runtime WasmStringViewWtf8Slice(
     Context, ByteArray, Number, Number): String;
+extern runtime WasmStringCompare(NoContext, String, String): Smi;
+extern runtime WasmStringFromCodePoint(Context, Number): String;
+extern runtime WasmStringHash(NoContext, String): Smi;
 extern runtime WasmJSToWasmObject(Context, JSAny, Smi): JSAny;
 }
 
@@ -94,10 +97,10 @@ builtin WasmInt32ToHeapNumber(val: int32): HeapNumber {
   return AllocateHeapNumberWithValue(Convert<float64>(val));
 }
 
-builtin WasmFuncRefToJS(val: WasmInternalFunction|Null): JSFunction|Null|
+builtin WasmFuncRefToJS(val: WasmInternalFunction|WasmNull): JSFunction|Null|
     Undefined {
   typeswitch (val) {
-    case (Null): {
+    case (WasmNull): {
       return Null;
     }
     case (func: WasmInternalFunction): {
@@ -505,7 +508,6 @@ builtin WasmI64AtomicWait(
 // Type feedback collection support for `call_ref`.
 
 extern macro GetCodeEntry(Code): RawPtr;
-extern macro GetCodeEntry(CodeDataContainer): RawPtr;
 
 struct TargetAndInstance {
   target: RawPtr;
@@ -698,6 +700,10 @@ builtin ThrowWasmTrapArrayTooLarge(): JSAny {
   tail WasmTrap(SmiConstant(MessageTemplate::kWasmTrapArrayTooLarge));
 }
 
+builtin ThrowWasmTrapStringOffsetOutOfBounds(): JSAny {
+  tail WasmTrap(SmiConstant(MessageTemplate::kWasmTrapStringOffsetOutOfBounds));
+}
+
 macro TryNumberToIntptr(value: JSAny): intptr labels Failure {
   typeswitch (value) {
     case (s: Smi): {
@@ -804,14 +810,15 @@ transitioning javascript builtin ExperimentalWasmConvertStringToArray(
 }
 
 builtin WasmStringNewWtf8(
-    offset: uint32, size: uint32, memory: Smi, utf8Variant: Smi): String {
+    offset: uint32, size: uint32, memory: Smi, utf8Variant: Smi): String|Null {
   const instance = LoadInstanceFromFrame();
   tail runtime::WasmStringNewWtf8(
       LoadContextFromInstance(instance), instance, memory, utf8Variant,
       WasmUint32ToNumber(offset), WasmUint32ToNumber(size));
 }
 builtin WasmStringNewWtf8Array(
-    start: uint32, end: uint32, array: WasmArray, utf8Variant: Smi): String {
+    start: uint32, end: uint32, array: WasmArray, utf8Variant: Smi): String|
+    Null {
   const context = LoadContextFromFrame();
   try {
     if (array.length < end) goto OffsetOutOfRange;
@@ -935,6 +942,13 @@ builtin WasmStringNewWtf16Array(
     tail runtime::WasmStringNewWtf16Array(
         context, array, SmiFromUint32(start), SmiFromUint32(end));
   }
+}
+
+// Contract: input is any string, output is a string that the TF operator
+// "StringPrepareForGetCodeunit" can handle.
+builtin WasmStringAsWtf16(str: String): String {
+  const cons = Cast<ConsString>(str) otherwise return str;
+  return Flatten(cons);
 }
 
 builtin WasmStringConst(index: uint32): String {
@@ -1241,6 +1255,20 @@ builtin WasmStringViewIterSlice(
   return (start == end) ?
       kEmptyString :
       string::SubString(string, Convert<uintptr>(start), Convert<uintptr>(end));
+}
+
+builtin WasmStringCompare(lhs: String, rhs: String): Smi {
+  tail runtime::WasmStringCompare(kNoContext, lhs, rhs);
+}
+
+builtin WasmStringFromCodePoint(codePoint: uint32): String {
+  tail runtime::WasmStringFromCodePoint(
+      LoadContextFromFrame(), WasmUint32ToNumber(codePoint));
+}
+
+builtin WasmStringHash(string: String): int32 {
+  const result = runtime::WasmStringHash(kNoContext, string);
+  return SmiToInt32(result);
 }
 
 builtin WasmExternInternalize(externObject: JSAny): JSAny {

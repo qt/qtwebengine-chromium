@@ -17,8 +17,8 @@
 #include "include/effects/SkDashPathEffect.h"
 #include "include/effects/SkTrimPathEffect.h"
 #include "include/pathops/SkPathOps.h"
-#include "include/private/SkFloatBits.h"
-#include "include/private/SkFloatingPoint.h"
+#include "include/private/base/SkFloatBits.h"
+#include "include/private/base/SkFloatingPoint.h"
 #include "include/utils/SkParsePath.h"
 #include "src/core/SkPaintDefaults.h"
 #include "src/core/SkPathPriv.h"
@@ -34,6 +34,8 @@ static const int QUAD = 2;
 static const int CONIC = 3;
 static const int CUBIC = 4;
 static const int CLOSE = 5;
+
+
 
 // Just for self-documenting purposes where the main thing being returned is an
 // SkPath, but in an error case, something of type null (which is val) could also be

@@ -984,13 +984,13 @@ void xnn_f32_vsigmoid_ukernel__sse41_rr2_lut64_p2_div_x8(
   }
 }
 
-void xnn_qc8_dwconv_minmax_fp32_ukernel_up8x25__sse41_mul16(
+void xnn_qc8_dwconv_minmax_fp32_ukernel_25p8c__sse41_mul16(
     size_t channels,
     size_t output_width,
     const int8_t** input,
     const void* weights,
     int8_t* output,
-    size_t input_stride,
+    intptr_t input_stride,
     size_t output_increment,
     size_t input_offset,
     const int8_t* zero,
@@ -1791,13 +1791,13 @@ void xnn_qc8_dwconv_minmax_fp32_ukernel_up8x25__sse41_mul16(
   } while (--output_width != 0);
 }
 
-void xnn_qc8_dwconv_minmax_fp32_ukernel_up8x3__sse41_mul16(
+void xnn_qc8_dwconv_minmax_fp32_ukernel_3p8c__sse41_mul16(
     size_t channels,
     size_t output_width,
     const int8_t** input,
     const void* weights,
     int8_t* output,
-    size_t input_stride,
+    intptr_t input_stride,
     size_t output_increment,
     size_t input_offset,
     const int8_t* zero,
@@ -1982,13 +1982,13 @@ void xnn_qc8_dwconv_minmax_fp32_ukernel_up8x3__sse41_mul16(
   } while (--output_width != 0);
 }
 
-void xnn_qc8_dwconv_minmax_fp32_ukernel_up8x9__sse41_mul16(
+void xnn_qc8_dwconv_minmax_fp32_ukernel_9p8c__sse41_mul16(
     size_t channels,
     size_t output_width,
     const int8_t** input,
     const void* weights,
     int8_t* output,
-    size_t input_stride,
+    intptr_t input_stride,
     size_t output_increment,
     size_t input_offset,
     const int8_t* zero,
@@ -2913,13 +2913,13 @@ void xnn_qc8_igemm_minmax_fp32_ukernel_3x4c8__sse41_ld64(
   } while (nc != 0);
 }
 
-void xnn_qs8_dwconv_minmax_fp32_ukernel_up8x25__sse41_mul16_add16(
+void xnn_qs8_dwconv_minmax_fp32_ukernel_25p8c__sse41_mul16_add16(
     size_t channels,
     size_t output_width,
     const int8_t** input,
     const void* weights,
     int8_t* output,
-    size_t input_stride,
+    intptr_t input_stride,
     size_t output_increment,
     size_t input_offset,
     const int8_t* zero,
@@ -3669,13 +3669,13 @@ void xnn_qs8_dwconv_minmax_fp32_ukernel_up8x25__sse41_mul16_add16(
   } while (--output_width != 0);
 }
 
-void xnn_qs8_dwconv_minmax_fp32_ukernel_up8x9__sse41_mul16_add16(
+void xnn_qs8_dwconv_minmax_fp32_ukernel_9p8c__sse41_mul16_add16(
     size_t channels,
     size_t output_width,
     const int8_t** input,
     const void* weights,
     int8_t* output,
-    size_t input_stride,
+    intptr_t input_stride,
     size_t output_increment,
     size_t input_offset,
     const int8_t* zero,
@@ -5719,13 +5719,13 @@ void xnn_qs8_vmulc_minmax_fp32_ukernel__sse41_mul16_ld64_x16(
   }
 }
 
-void xnn_qu8_dwconv_minmax_fp32_ukernel_up8x25__sse41_mul16(
+void xnn_qu8_dwconv_minmax_fp32_ukernel_25p8c__sse41_mul16(
     size_t channels,
     size_t output_width,
     const uint8_t** input,
     const void* weights,
     uint8_t* output,
-    size_t input_stride,
+    intptr_t input_stride,
     size_t output_increment,
     size_t input_offset,
     const uint8_t* zero,
@@ -6572,13 +6572,13 @@ void xnn_qu8_dwconv_minmax_fp32_ukernel_up8x25__sse41_mul16(
   } while (--output_width != 0);
 }
 
-void xnn_qu8_dwconv_minmax_fp32_ukernel_up8x9__sse41_mul16(
+void xnn_qu8_dwconv_minmax_fp32_ukernel_9p8c__sse41_mul16(
     size_t channels,
     size_t output_width,
     const uint8_t** input,
     const void* weights,
     uint8_t* output,
-    size_t input_stride,
+    intptr_t input_stride,
     size_t output_increment,
     size_t input_offset,
     const uint8_t* zero,

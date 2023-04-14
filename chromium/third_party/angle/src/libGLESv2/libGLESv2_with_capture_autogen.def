@@ -481,6 +481,8 @@ EXPORTS
     glMultiDrawArraysInstancedBaseInstanceANGLE
     glMultiDrawElementsInstancedBaseVertexBaseInstanceANGLE
 
+    ; GL_ANGLE_clip_cull_distance
+
     ; GL_ANGLE_copy_texture_3d
     glCopySubTexture3DANGLE
     glCopyTexture3DANGLE
@@ -645,6 +647,8 @@ EXPORTS
 
     ; GL_ARB_sync
 
+    ; GL_ARM_shader_framebuffer_fetch
+
     ; GL_CHROMIUM_bind_uniform_location
     glBindUniformLocationCHROMIUM
 
@@ -791,6 +795,9 @@ EXPORTS
 
     ; GL_EXT_occlusion_query_boolean
 
+    ; GL_EXT_polygon_offset_clamp
+    glPolygonOffsetClampEXT
+
     ; GL_EXT_primitive_bounding_box
     glPrimitiveBoundingBoxEXT
 
@@ -915,6 +922,8 @@ EXPORTS
     ; GL_EXT_texture_format_BGRA8888
 
     ; GL_EXT_texture_format_sRGB_override
+
+    ; GL_EXT_texture_mirror_clamp_to_edge
 
     ; GL_EXT_texture_norm16
 
@@ -1298,6 +1307,9 @@ EXPORTS
 
     ; EGL_ANGLE_vulkan_image
     EGL_ExportVkImageANGLE
+
+    ; EGL_ANGLE_wait_until_work_scheduled
+    EGL_WaitUntilWorkScheduledANGLE
 
     ; EGL_CHROMIUM_sync_control
     EGL_GetSyncValuesCHROMIUM

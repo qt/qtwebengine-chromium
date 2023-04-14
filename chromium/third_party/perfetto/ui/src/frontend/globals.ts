@@ -114,11 +114,6 @@ export interface CounterDetails {
 export interface ThreadStateDetails {
   ts?: number;
   dur?: number;
-  state?: string;
-  utid?: number;
-  cpu?: number;
-  sliceId?: number;
-  blockedFunction?: string;
 }
 
 export interface FlamegraphDetails {
@@ -291,6 +286,13 @@ class Globals {
 
   get dispatch(): Dispatch {
     return assertExists(this._dispatch);
+  }
+
+  dispatchMultiple(actions: DeferredAction[]): void {
+    const dispatch = this.dispatch;
+    for (const action of actions) {
+      dispatch(action);
+    }
   }
 
   get frontendLocalState() {

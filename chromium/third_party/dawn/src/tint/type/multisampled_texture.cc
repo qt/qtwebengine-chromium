@@ -14,27 +14,25 @@
 
 #include "src/tint/type/multisampled_texture.h"
 
-#include "src/tint/program_builder.h"
+#include "src/tint/debug.h"
+#include "src/tint/diagnostic/diagnostic.h"
+#include "src/tint/type/manager.h"
+#include "src/tint/type/texture_dimension.h"
 #include "src/tint/utils/hash.h"
 
 TINT_INSTANTIATE_TYPEINFO(tint::type::MultisampledTexture);
 
 namespace tint::type {
 
-MultisampledTexture::MultisampledTexture(ast::TextureDimension dim, const Type* type)
-    : Base(dim), type_(type) {
+MultisampledTexture::MultisampledTexture(TextureDimension dim, const Type* type)
+    : Base(utils::Hash(TypeInfo::Of<MultisampledTexture>().full_hashcode, dim, type), dim),
+      type_(type) {
     TINT_ASSERT(Type, type_);
 }
 
-MultisampledTexture::MultisampledTexture(MultisampledTexture&&) = default;
-
 MultisampledTexture::~MultisampledTexture() = default;
 
-size_t MultisampledTexture::Hash() const {
-    return utils::Hash(TypeInfo::Of<MultisampledTexture>().full_hashcode, dim(), type_);
-}
-
-bool MultisampledTexture::Equals(const Type& other) const {
+bool MultisampledTexture::Equals(const UniqueNode& other) const {
     if (auto* o = other.As<MultisampledTexture>()) {
         return o->dim() == dim() && o->type_ == type_;
     }
@@ -45,6 +43,11 @@ std::string MultisampledTexture::FriendlyName(const SymbolTable& symbols) const 
     std::ostringstream out;
     out << "texture_multisampled_" << dim() << "<" << type_->FriendlyName(symbols) << ">";
     return out.str();
+}
+
+MultisampledTexture* MultisampledTexture::Clone(CloneContext& ctx) const {
+    auto* ty = type_->Clone(ctx);
+    return ctx.dst.mgr->Get<MultisampledTexture>(dim(), ty);
 }
 
 }  // namespace tint::type

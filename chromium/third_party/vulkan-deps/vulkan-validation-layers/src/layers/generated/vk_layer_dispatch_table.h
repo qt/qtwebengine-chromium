@@ -2,9 +2,9 @@
 // See layer_dispatch_table_generator.py for modifications
 
 /*
- * Copyright (c) 2015-2022 The Khronos Group Inc.
- * Copyright (c) 2015-2022 Valve Corporation
- * Copyright (c) 2015-2022 LunarG, Inc.
+ * Copyright (c) 2015-2023 The Khronos Group Inc.
+ * Copyright (c) 2015-2023 Valve Corporation
+ * Copyright (c) 2015-2023 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,9 +17,6 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *
- * Author: Mark Lobodzinski <mark@lunarg.com>
- * Author: Mark Young <marky@lunarg.com>
  */
 
 #pragma once
@@ -123,12 +120,8 @@ typedef struct VkLayerInstanceDispatchTable_ {
 #endif // VK_USE_PLATFORM_WIN32_KHR
 
     // ---- VK_KHR_video_queue extension commands
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     PFN_vkGetPhysicalDeviceVideoCapabilitiesKHR GetPhysicalDeviceVideoCapabilitiesKHR;
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     PFN_vkGetPhysicalDeviceVideoFormatPropertiesKHR GetPhysicalDeviceVideoFormatPropertiesKHR;
-#endif // VK_ENABLE_BETA_EXTENSIONS
 
     // ---- VK_KHR_get_physical_device_properties2 extension commands
     PFN_vkGetPhysicalDeviceFeatures2KHR GetPhysicalDeviceFeatures2KHR;
@@ -491,41 +484,19 @@ typedef struct VkLayerDispatchTable_ {
     PFN_vkCreateSharedSwapchainsKHR CreateSharedSwapchainsKHR;
 
     // ---- VK_KHR_video_queue extension commands
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     PFN_vkCreateVideoSessionKHR CreateVideoSessionKHR;
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     PFN_vkDestroyVideoSessionKHR DestroyVideoSessionKHR;
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     PFN_vkGetVideoSessionMemoryRequirementsKHR GetVideoSessionMemoryRequirementsKHR;
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     PFN_vkBindVideoSessionMemoryKHR BindVideoSessionMemoryKHR;
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     PFN_vkCreateVideoSessionParametersKHR CreateVideoSessionParametersKHR;
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     PFN_vkUpdateVideoSessionParametersKHR UpdateVideoSessionParametersKHR;
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     PFN_vkDestroyVideoSessionParametersKHR DestroyVideoSessionParametersKHR;
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     PFN_vkCmdBeginVideoCodingKHR CmdBeginVideoCodingKHR;
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     PFN_vkCmdEndVideoCodingKHR CmdEndVideoCodingKHR;
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     PFN_vkCmdControlVideoCodingKHR CmdControlVideoCodingKHR;
-#endif // VK_ENABLE_BETA_EXTENSIONS
 
     // ---- VK_KHR_video_decode_queue extension commands
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     PFN_vkCmdDecodeVideoKHR CmdDecodeVideoKHR;
-#endif // VK_ENABLE_BETA_EXTENSIONS
 
     // ---- VK_KHR_dynamic_rendering extension commands
     PFN_vkCmdBeginRenderingKHR CmdBeginRenderingKHR;
@@ -978,6 +949,10 @@ typedef struct VkLayerDispatchTable_ {
     PFN_vkCmdWriteMicromapsPropertiesEXT CmdWriteMicromapsPropertiesEXT;
     PFN_vkGetDeviceMicromapCompatibilityEXT GetDeviceMicromapCompatibilityEXT;
     PFN_vkGetMicromapBuildSizesEXT GetMicromapBuildSizesEXT;
+
+    // ---- VK_HUAWEI_cluster_culling_shader extension commands
+    PFN_vkCmdDrawClusterHUAWEI CmdDrawClusterHUAWEI;
+    PFN_vkCmdDrawClusterIndirectHUAWEI CmdDrawClusterIndirectHUAWEI;
 
     // ---- VK_EXT_pageable_device_local_memory extension commands
     PFN_vkSetDeviceMemoryPriorityEXT SetDeviceMemoryPriorityEXT;

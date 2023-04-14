@@ -76,12 +76,6 @@ EIGEN_ALWAYS_INLINE EIGEN_CONSTEXPR lapack_int lapack_storage_of(const EigenBase
   return Derived::IsRowMajor ? LAPACK_ROW_MAJOR : LAPACK_COL_MAJOR;
 }
 
-/// translate UpLo type to the corresponding letter code
-template<UpLoType mode> char translate_mode;
-template<> constexpr char translate_mode<Lower> = 'L';
-template<> constexpr char translate_mode<Upper> = 'U';
-
-
 // ---------------------------------------------------------------------------------------------------------------------
 //              Automatic generation of low-level wrappers
 // ---------------------------------------------------------------------------------------------------------------------
@@ -150,6 +144,7 @@ EIGEN_ALWAYS_INLINE auto FUNCTION(Args&&... args) { return call_wrapper(LAPACKE_
 EIGEN_MAKE_LAPACKE_WRAPPER(potrf)
 EIGEN_MAKE_LAPACKE_WRAPPER(getrf)
 EIGEN_MAKE_LAPACKE_WRAPPER(geqrf)
+EIGEN_MAKE_LAPACKE_WRAPPER(gesdd)
 
 #undef EIGEN_MAKE_LAPACKE_WRAPPER
 }

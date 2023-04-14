@@ -17,6 +17,8 @@
 #ifndef FLATBUFFERS_VECTOR_DOWNWARD_H_
 #define FLATBUFFERS_VECTOR_DOWNWARD_H_
 
+#include <algorithm>
+
 #include "flatbuffers/base.h"
 #include "flatbuffers/default_allocator.h"
 #include "flatbuffers/detached_buffer.h"
@@ -43,7 +45,7 @@ class vector_downward {
         cur_(nullptr),
         scratch_(nullptr) {}
 
-  vector_downward(vector_downward &&other)
+  vector_downward(vector_downward &&other) noexcept
       // clang-format on
       : allocator_(other.allocator_),
         own_allocator_(other.own_allocator_),
@@ -64,7 +66,7 @@ class vector_downward {
     other.scratch_ = nullptr;
   }
 
-  vector_downward &operator=(vector_downward &&other) {
+  vector_downward &operator=(vector_downward &&other) noexcept {
     // Move construct a temporary and swap idiom
     vector_downward temp(std::move(other));
     swap(temp);

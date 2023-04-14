@@ -3,7 +3,7 @@
 #
 
 
-# Copyright (C) 1996-2022 by
+# Copyright (C) 1996-2023 by
 # David Turner, Robert Wilhelm, and Werner Lemberg.
 #
 # This file is part of the FreeType project, and may only be used, modified,
@@ -317,6 +317,6 @@ do-dist: distclean refdoc
 	rm -f $(TOP_DIR)/docs/mkdocs.yml
 
 	@# Remove more stuff related to git.
-	rm -rf (TOP_DIR)/subprojects/dlg
+	rm -rf $(TOP_DIR)/subprojects/dlg
 
 # EOF

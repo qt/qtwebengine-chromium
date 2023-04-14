@@ -43,6 +43,7 @@ import * as Logs from '../../models/logs/logs.js';
 import * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as Workspace from '../../models/workspace/workspace.js';
 import * as CodeHighlighter from '../../ui/components/code_highlighter/code_highlighter.js';
+import * as IconButton from '../../ui/components/icon_button/icon_button.js';
 import * as IssueCounter from '../../ui/components/issue_counter/issue_counter.js';
 import * as RequestLinkIcon from '../../ui/components/request_link_icon/request_link_icon.js';
 import * as DataGrid from '../../ui/legacy/components/data_grid/data_grid.js';
@@ -60,119 +61,130 @@ import {augmentErrorStackWithScriptIds, parseSourcePositionsFromErrorStack} from
 
 const UIStrings = {
   /**
-  * @description Message element text content in Console View Message of the Console panel. Shown
-  * when the user tried to run console.clear() but the 'Preserve log' option is enabled, which stops
-  * the log from being cleared.
-  */
+   * @description Message element text content in Console View Message of the Console panel. Shown
+   * when the user tried to run console.clear() but the 'Preserve log' option is enabled, which stops
+   * the log from being cleared.
+   */
   consoleclearWasPreventedDueTo: '`console.clear()` was prevented due to \'Preserve log\'',
   /**
-  * @description Text shown in the Console panel after the user has cleared the console, which
-  * removes all messages from the console so that it is empty.
-  */
+   * @description Text shown in the Console panel after the user has cleared the console, which
+   * removes all messages from the console so that it is empty.
+   */
   consoleWasCleared: 'Console was cleared',
   /**
-  *@description Message element title in Console View Message of the Console panel
-  *@example {Ctrl+L} PH1
-  */
+   *@description Message element title in Console View Message of the Console panel
+   *@example {Ctrl+L} PH1
+   */
   clearAllMessagesWithS: 'Clear all messages with {PH1}',
   /**
-  *@description Message prefix in Console View Message of the Console panel
-  */
+   *@description Message prefix in Console View Message of the Console panel
+   */
   assertionFailed: 'Assertion failed: ',
   /**
-  *@description Message text in Console View Message of the Console panel
-  *@example {console.log(1)} PH1
-  */
+   *@description Message text in Console View Message of the Console panel
+   *@example {console.log(1)} PH1
+   */
   violationS: '`[Violation]` {PH1}',
   /**
-  *@description Message text in Console View Message of the Console panel
-  *@example {console.log(1)} PH1
-  */
+   *@description Message text in Console View Message of the Console panel
+   *@example {console.log(1)} PH1
+   */
   interventionS: '`[Intervention]` {PH1}',
   /**
-  *@description Message text in Console View Message of the Console panel
-  *@example {console.log(1)} PH1
-  */
+   *@description Message text in Console View Message of the Console panel
+   *@example {console.log(1)} PH1
+   */
   deprecationS: '`[Deprecation]` {PH1}',
   /**
-  *@description Note title in Console View Message of the Console panel
-  */
+   *@description Note title in Console View Message of the Console panel
+   */
   thisValueWillNotBeCollectedUntil: 'This value will not be collected until console is cleared.',
   /**
-  *@description Note title in Console View Message of the Console panel
-  */
+   *@description Note title in Console View Message of the Console panel
+   */
   thisValueWasEvaluatedUponFirst: 'This value was evaluated upon first expanding. It may have changed since then.',
   /**
-  *@description Note title in Console View Message of the Console panel
-  */
+   *@description Note title in Console View Message of the Console panel
+   */
   functionWasResolvedFromBound: 'Function was resolved from bound function.',
   /**
-  * @description Shown in the Console panel when an exception is thrown when trying to access a
-  * property on an object. Should be translated.
-  */
+   * @description Shown in the Console panel when an exception is thrown when trying to access a
+   * property on an object. Should be translated.
+   */
   exception: '<exception>',
   /**
-  *@description Text to indicate an item is a warning
-  */
+   *@description Text to indicate an item is a warning
+   */
   warning: 'Warning',
   /**
-  *@description Text for errors
-  */
+   *@description Text for errors
+   */
   error: 'Error',
   /**
-  * @description Announced by the screen reader to indicate how many times a particular message in
-  * the console was repeated.
-  */
+   * @description Accessible label for an icon. The icon is used to mark console messages that
+   * originate from a logpoint. Logpoints are special breakpoints that log a user-provided JavaScript
+   * expression to the DevTools console.
+   */
+  logpoint: 'Logpoint',
+  /**
+   * @description Accessible label for an icon. The icon is used to mark console messages that
+   * originate from conditional breakpoints.
+   */
+  cndBreakpoint: 'Conditional Breakpoint',
+  /**
+   * @description Announced by the screen reader to indicate how many times a particular message in
+   * the console was repeated.
+   */
   repeatS: '{n, plural, =1 {Repeated # time} other {Repeated # times}}',
   /**
-  * @description Announced by the screen reader to indicate how many times a particular warning
-  * message in the console was repeated.
-  */
+   * @description Announced by the screen reader to indicate how many times a particular warning
+   * message in the console was repeated.
+   */
   warningS: '{n, plural, =1 {Warning, Repeated # time} other {Warning, Repeated # times}}',
   /**
-  * @description Announced by the screen reader to indicate how many times a particular error
-  * message in the console was repeated.
-  */
+   * @description Announced by the screen reader to indicate how many times a particular error
+   * message in the console was repeated.
+   */
   errorS: '{n, plural, =1 {Error, Repeated # time} other {Error, Repeated # times}}',
   /**
-  *@description Text appended to grouped console messages that are related to URL requests
-  */
+   *@description Text appended to grouped console messages that are related to URL requests
+   */
   url: '<URL>',
   /**
-  *@description Text appended to grouped console messages about tasks that took longer than N ms
-  */
+   *@description Text appended to grouped console messages about tasks that took longer than N ms
+   */
   tookNms: 'took <N>ms',
   /**
-  *@description Text appended to grouped console messages about tasks that are related to some DOM event
-  */
+   *@description Text appended to grouped console messages about tasks that are related to some DOM event
+   */
   someEvent: '<some> event',
   /**
-  *@description Text appended to grouped console messages about tasks that are related to a particular milestone
-  */
+   *@description Text appended to grouped console messages about tasks that are related to a particular milestone
+   */
   Mxx: ' M<XX>',
   /**
-  *@description Text appended to grouped console messages about tasks that are related to autofill completions
-  */
+   *@description Text appended to grouped console messages about tasks that are related to autofill completions
+   */
   attribute: '<attribute>',
   /**
-  *@description Text for the index of something
-  */
+   *@description Text for the index of something
+   */
   index: '(index)',
   /**
-  *@description Text for the value of something
-  */
+   *@description Text for the value of something
+   */
   value: 'Value',
   /**
-  *@description Title of the Console tool
-  */
+   *@description Title of the Console tool
+   */
   console: 'Console',
   /**
-  *@description Message to indicate a console message with a stack table is expanded
-  */
+   *@description Message to indicate a console message with a stack table is expanded
+   */
   stackMessageExpanded: 'Stack table expanded',
   /**
-  *@description Message to indicate a console message with a stack table is collapsed
-  */
+   *@description Message to indicate a console message with a stack table is collapsed
+   */
   stackMessageCollapsed: 'Stack table collapsed',
 };
 const str_ = i18n.i18n.registerUIStrings('panels/console/ConsoleViewMessage.ts', UIStrings);
@@ -216,7 +228,7 @@ export class ConsoleViewMessage implements ConsoleViewportElement {
   protected elementInternal: HTMLElement|null;
   private readonly previewFormatter: ObjectUI.RemoteObjectPreviewFormatter.RemoteObjectPreviewFormatter;
   private searchRegexInternal: RegExp|null;
-  protected messageLevelIcon: UI.Icon.Icon|null;
+  protected messageIcon: IconButton.Icon.Icon|null;
   private traceExpanded: boolean;
   private expandTrace: ((arg0: boolean) => void)|null;
   protected anchorElement: HTMLElement|null;
@@ -235,6 +247,7 @@ export class ConsoleViewMessage implements ConsoleViewportElement {
   protected repeatCountElement: UI.UIUtils.DevToolsSmallBubble|null;
   private requestResolver: Logs.RequestResolver.RequestResolver;
   private issueResolver: IssuesManager.IssueResolver.IssueResolver;
+  #adjacentUserCommandResult: boolean = false;
 
   /** Formatting Error#stack is asynchronous. Allow tests to wait for the result */
   #formatErrorStackPromiseForTest = Promise.resolve();
@@ -255,7 +268,7 @@ export class ConsoleViewMessage implements ConsoleViewportElement {
 
     this.previewFormatter = new ObjectUI.RemoteObjectPreviewFormatter.RemoteObjectPreviewFormatter();
     this.searchRegexInternal = null;
-    this.messageLevelIcon = null;
+    this.messageIcon = null;
     this.traceExpanded = false;
     this.expandTrace = null;
     this.anchorElement = null;
@@ -454,16 +467,30 @@ export class ConsoleViewMessage implements ConsoleViewportElement {
   }
 
   protected buildMessageAnchor(): HTMLElement|null {
-    const linkify = (message: SDK.ConsoleModel.ConsoleMessage): HTMLElement|null => {
-      if (message.scriptId) {
-        return this.linkifyScriptId(
-            message.scriptId, message.url || Platform.DevToolsPath.EmptyUrlString, message.line, message.column);
+    const runtimeModel = this.message.runtimeModel();
+    if (!runtimeModel) {
+      return null;
+    }
+
+    const linkify = ({stackFrameWithBreakpoint, scriptId, stackTrace, url, line, column}:
+                         SDK.ConsoleModel.ConsoleMessage): HTMLElement|null => {
+      if (stackFrameWithBreakpoint) {
+        return this.linkifier.maybeLinkifyConsoleCallFrame(runtimeModel.target(), stackFrameWithBreakpoint, {
+          inlineFrameIndex: 0,
+          revealBreakpoint: true,
+        });
       }
-      if (message.stackTrace && message.stackTrace.callFrames.length) {
-        return this.linkifyStackTraceTopFrame(message.stackTrace);
+      if (scriptId) {
+        return this.linkifier.linkifyScriptLocation(
+            runtimeModel.target(), scriptId, url || Platform.DevToolsPath.EmptyUrlString, line,
+            {columnNumber: column, inlineFrameIndex: 0});
       }
-      if (message.url && message.url !== 'undefined') {
-        return this.linkifyLocation(message.url, message.line, message.column);
+      if (stackTrace && stackTrace.callFrames.length) {
+        return this.linkifier.linkifyStackTraceTopFrame(runtimeModel.target(), stackTrace);
+      }
+      if (url && url !== 'undefined') {
+        return this.linkifier.linkifyScriptLocation(
+            runtimeModel.target(), /* scriptId */ null, url, line, {columnNumber: column, inlineFrameIndex: 0});
       }
       return null;
     };
@@ -542,35 +569,6 @@ export class ConsoleViewMessage implements ConsoleViewportElement {
     // @ts-ignore
     toggleElement._expandStackTraceForTest = this.expandTrace.bind(this, true);
     return toggleElement;
-  }
-
-  private linkifyLocation(url: Platform.DevToolsPath.UrlString, lineNumber: number, columnNumber: number): HTMLElement
-      |null {
-    const runtimeModel = this.message.runtimeModel();
-    if (!runtimeModel) {
-      return null;
-    }
-    return this.linkifier.linkifyScriptLocation(
-        runtimeModel.target(), /* scriptId */ null, url, lineNumber, {columnNumber, inlineFrameIndex: 0});
-  }
-
-  private linkifyStackTraceTopFrame(stackTrace: Protocol.Runtime.StackTrace): HTMLElement|null {
-    const runtimeModel = this.message.runtimeModel();
-    if (!runtimeModel) {
-      return null;
-    }
-    return this.linkifier.linkifyStackTraceTopFrame(runtimeModel.target(), stackTrace);
-  }
-
-  private linkifyScriptId(
-      scriptId: Protocol.Runtime.ScriptId, url: Platform.DevToolsPath.UrlString, lineNumber: number,
-      columnNumber: number): HTMLElement|null {
-    const runtimeModel = this.message.runtimeModel();
-    if (!runtimeModel) {
-      return null;
-    }
-    return this.linkifier.linkifyScriptLocation(
-        runtimeModel.target(), scriptId, url, lineNumber, {columnNumber, inlineFrameIndex: 0});
   }
 
   private format(rawParameters: (string|SDK.RemoteObject.RemoteObject|Protocol.Runtime.RemoteObject|undefined)[]):
@@ -1148,8 +1146,8 @@ export class ConsoleViewMessage implements ConsoleViewportElement {
 
     const contentElement = document.createElement('div');
     contentElement.classList.add('console-message');
-    if (this.messageLevelIcon) {
-      contentElement.appendChild(this.messageLevelIcon);
+    if (this.messageIcon) {
+      contentElement.appendChild(this.messageIcon);
     }
     this.contentElementInternal = contentElement;
 
@@ -1180,6 +1178,7 @@ export class ConsoleViewMessage implements ConsoleViewportElement {
     this.elementInternal.tabIndex = -1;
     this.elementInternal.addEventListener('keydown', (this.onKeyDown.bind(this) as EventListener));
     this.updateMessageElement();
+    this.elementInternal.classList.toggle('console-adjacent-user-command-result', this.#adjacentUserCommandResult);
     return this.elementInternal;
   }
 
@@ -1225,7 +1224,7 @@ export class ConsoleViewMessage implements ConsoleViewportElement {
         this.elementInternal.classList.add('console-error-level');
         break;
     }
-    this.updateMessageLevelIcon();
+    this.updateMessageIcon();
     if (this.shouldRenderAsWarning()) {
       this.elementInternal.classList.add('console-warning-level');
     }
@@ -1245,27 +1244,50 @@ export class ConsoleViewMessage implements ConsoleViewportElement {
          this.message.source === Protocol.Log.LogEntrySource.Recommendation);
   }
 
-  private updateMessageLevelIcon(): void {
-    let iconType = '';
+  private updateMessageIcon(): void {
+    if (this.messageIcon) {
+      // Instead of updating the existing icon, we simply re-render. This happens only for
+      // revoked exceptions so it doesn't need to be terribly efficient.
+      this.messageIcon.remove();
+      this.messageIcon = null;
+    }
+
+    let iconName = '';
     let accessibleName = '';
     if (this.message.level === Protocol.Log.LogEntryLevel.Warning) {
-      iconType = 'smallicon-warning';
+      iconName = 'warning_icon';
       accessibleName = i18nString(UIStrings.warning);
     } else if (this.message.level === Protocol.Log.LogEntryLevel.Error) {
-      iconType = 'smallicon-error';
+      iconName = 'error_icon';
       accessibleName = i18nString(UIStrings.error);
+    } else if (this.message.originatesFromLogpoint) {
+      iconName = 'console-logpoint';
+      accessibleName = i18nString(UIStrings.logpoint);
+    } else if (this.message.originatesFromConditionalBreakpoint) {
+      iconName = 'console-conditional-breakpoint';
+      accessibleName = i18nString(UIStrings.cndBreakpoint);
     }
-    if (!this.messageLevelIcon) {
-      if (!iconType) {
-        return;
-      }
-      this.messageLevelIcon = UI.Icon.Icon.create('', 'message-level-icon');
-      if (this.contentElementInternal) {
-        this.contentElementInternal.insertBefore(this.messageLevelIcon, this.contentElementInternal.firstChild);
-      }
+    if (!iconName) {
+      return;
     }
-    this.messageLevelIcon.setIconType(iconType);
-    UI.ARIAUtils.setAccessibleName(this.messageLevelIcon, accessibleName);
+
+    this.messageIcon = new IconButton.Icon.Icon();
+    this.messageIcon.data = {
+      iconName,
+      color: '',
+      width: '10px',
+      height: '10px',
+    };
+    this.messageIcon.classList.add('message-level-icon');
+    if (this.contentElementInternal) {
+      this.contentElementInternal.insertBefore(this.messageIcon, this.contentElementInternal.firstChild);
+    }
+    UI.ARIAUtils.setAccessibleName(this.messageIcon, accessibleName);
+  }
+
+  setAdjacentUserCommandResult(adjacentUserCommandResult: boolean): void {
+    this.#adjacentUserCommandResult = adjacentUserCommandResult;
+    this.elementInternal?.classList.toggle('console-adjacent-user-command-result', this.#adjacentUserCommandResult);
   }
 
   repeatCount(): number {
@@ -1850,8 +1872,8 @@ export class ConsoleTableMessageView extends ConsoleViewMessage {
 
     const newContentElement = document.createElement('div');
     newContentElement.classList.add('console-message');
-    if (this.messageLevelIcon) {
-      newContentElement.appendChild(this.messageLevelIcon);
+    if (this.messageIcon) {
+      newContentElement.appendChild(this.messageIcon);
     }
     this.setContentElement(newContentElement);
 

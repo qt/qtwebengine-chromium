@@ -38,6 +38,7 @@
 #include "src/maglev/maglev-interpreter-frame-state.h"
 #include "src/maglev/maglev-ir-inl.h"
 #include "src/maglev/maglev-ir.h"
+#include "src/maglev/maglev-phi-representation-selector.h"
 #include "src/maglev/maglev-regalloc-data.h"
 #include "src/maglev/maglev-regalloc.h"
 #include "src/objects/code-inl.h"
@@ -244,19 +245,18 @@ class UseMarkingProcessor {
     BasicBlock* target = node->target();
     uint32_t use = node->id();
 
-    if (target->has_phi()) {
-      // Phis are potential users of nodes outside this loop, but only on
-      // initial loop entry, not on actual looping, so we don't need to record
-      // their other inputs for lifetime extension.
-      for (Phi* phi : *target->phis()) {
-        ValueNode* input = phi->input(i).node();
-        input->mark_use(use, &phi->input(i));
-      }
-    }
-
     DCHECK(!loop_used_nodes_.empty());
     LoopUsedNodes loop_used_nodes = std::move(loop_used_nodes_.back());
     loop_used_nodes_.pop_back();
+
+    LoopUsedNodes* outer_loop_used_nodes = GetCurrentLoopUsedNodes();
+
+    if (target->has_phi()) {
+      for (Phi* phi : *target->phis()) {
+        ValueNode* input = phi->input(i).node();
+        MarkUse(input, use, &phi->input(i), outer_loop_used_nodes);
+      }
+    }
 
     DCHECK_EQ(loop_used_nodes.header, target);
     if (!loop_used_nodes.used_nodes.empty()) {
@@ -264,7 +264,6 @@ class UseMarkingProcessor {
       // that they're lifetime is extended there too.
       // TODO(leszeks): We only need to extend the lifetime in one outermost
       // loop, allow nodes to be "moved" between lifetime extensions.
-      LoopUsedNodes* outer_loop_used_nodes = GetCurrentLoopUsedNodes();
       base::Vector<Input> used_node_inputs =
           compilation_info_->zone()->NewVector<Input>(
               loop_used_nodes.used_nodes.size());
@@ -347,6 +346,7 @@ class UseMarkingProcessor {
 // static
 bool MaglevCompiler::Compile(LocalIsolate* local_isolate,
                              MaglevCompilationInfo* compilation_info) {
+  compiler::CurrentHeapBrokerScope current_broker(compilation_info->broker());
   Graph* graph = Graph::New(compilation_info->zone());
 
   // Build graph.
@@ -380,20 +380,23 @@ bool MaglevCompiler::Compile(LocalIsolate* local_isolate,
       std::cout << "\nAfter graph buiding" << std::endl;
       PrintGraph(std::cout, compilation_info, graph);
     }
+
+    // TODO(dmercadier): re-enable Phi untagging.
+
+    // GraphProcessor<MaglevPhiRepresentationSelector> representation_selector(
+    //     &graph_builder);
+    // representation_selector.ProcessGraph(graph);
+
+    // if (v8_flags.print_maglev_graph) {
+    //   std::cout << "\nAfter Phi untagging" << std::endl;
+    //   PrintGraph(std::cout, compilation_info, graph);
+    // }
   }
 
 #ifdef DEBUG
   {
     GraphProcessor<MaglevGraphVerifier> verifier(compilation_info);
     verifier.ProcessGraph(graph);
-  }
-#endif
-
-#ifdef V8_TARGET_ARCH_ARM64
-  {
-    extern bool MaglevGraphHasUnimplementedNode(Graph*);
-    // TODO(v8:7700): Remove return type once all nodes are implemented.
-    if (MaglevGraphHasUnimplementedNode(graph)) return false;
   }
 #endif
 
@@ -437,8 +440,9 @@ bool MaglevCompiler::Compile(LocalIsolate* local_isolate,
 }
 
 // static
-MaybeHandle<CodeT> MaglevCompiler::GenerateCode(
+MaybeHandle<Code> MaglevCompiler::GenerateCode(
     Isolate* isolate, MaglevCompilationInfo* compilation_info) {
+  compiler::CurrentHeapBrokerScope current_broker(compilation_info->broker());
   MaglevCodeGenerator* const code_generator =
       compilation_info->code_generator();
   DCHECK_NOT_NULL(code_generator);
@@ -463,7 +467,7 @@ MaybeHandle<CodeT> MaglevCompiler::GenerateCode(
     code->Print();
   }
 
-  return ToCodeT(code, isolate);
+  return code;
 }
 
 }  // namespace maglev

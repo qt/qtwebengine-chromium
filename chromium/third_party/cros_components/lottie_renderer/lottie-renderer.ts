@@ -6,7 +6,7 @@
 
 import {html, LitElement, PropertyValues} from 'lit';
 import {customElement, property, query} from 'lit/decorators';
-import * as lottie from 'lottie';
+import * as lottie from 'lottie_full';  // from //third_party/javascript/lottie:lottie_full
 
 /**
  * Lottie renderer with correct hooks to handle dynamic color. This component

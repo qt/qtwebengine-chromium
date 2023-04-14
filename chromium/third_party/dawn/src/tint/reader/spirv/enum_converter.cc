@@ -14,6 +14,8 @@
 
 #include "src/tint/reader/spirv/enum_converter.h"
 
+#include "src/tint/type/texture_dimension.h"
+
 namespace tint::reader::spirv {
 
 EnumConverter::EnumConverter(const FailStream& fs) : fail_stream_(fs) {}
@@ -36,145 +38,145 @@ ast::PipelineStage EnumConverter::ToPipelineStage(spv::ExecutionModel model) {
     return ast::PipelineStage::kNone;
 }
 
-ast::AddressSpace EnumConverter::ToAddressSpace(const spv::StorageClass sc) {
+builtin::AddressSpace EnumConverter::ToAddressSpace(const spv::StorageClass sc) {
     switch (sc) {
         case spv::StorageClass::Input:
-            return ast::AddressSpace::kIn;
+            return builtin::AddressSpace::kIn;
         case spv::StorageClass::Output:
-            return ast::AddressSpace::kOut;
+            return builtin::AddressSpace::kOut;
         case spv::StorageClass::Uniform:
-            return ast::AddressSpace::kUniform;
+            return builtin::AddressSpace::kUniform;
         case spv::StorageClass::Workgroup:
-            return ast::AddressSpace::kWorkgroup;
+            return builtin::AddressSpace::kWorkgroup;
         case spv::StorageClass::UniformConstant:
-            return ast::AddressSpace::kNone;
+            return builtin::AddressSpace::kUndefined;
         case spv::StorageClass::StorageBuffer:
-            return ast::AddressSpace::kStorage;
+            return builtin::AddressSpace::kStorage;
         case spv::StorageClass::Private:
-            return ast::AddressSpace::kPrivate;
+            return builtin::AddressSpace::kPrivate;
         case spv::StorageClass::Function:
-            return ast::AddressSpace::kFunction;
+            return builtin::AddressSpace::kFunction;
         default:
             break;
     }
 
     Fail() << "unknown SPIR-V storage class: " << uint32_t(sc);
-    return ast::AddressSpace::kUndefined;
+    return builtin::AddressSpace::kUndefined;
 }
 
-ast::BuiltinValue EnumConverter::ToBuiltin(spv::BuiltIn b) {
+builtin::BuiltinValue EnumConverter::ToBuiltin(spv::BuiltIn b) {
     switch (b) {
         case spv::BuiltIn::Position:
-            return ast::BuiltinValue::kPosition;
+            return builtin::BuiltinValue::kPosition;
         case spv::BuiltIn::VertexIndex:
-            return ast::BuiltinValue::kVertexIndex;
+            return builtin::BuiltinValue::kVertexIndex;
         case spv::BuiltIn::InstanceIndex:
-            return ast::BuiltinValue::kInstanceIndex;
+            return builtin::BuiltinValue::kInstanceIndex;
         case spv::BuiltIn::FrontFacing:
-            return ast::BuiltinValue::kFrontFacing;
+            return builtin::BuiltinValue::kFrontFacing;
         case spv::BuiltIn::FragCoord:
-            return ast::BuiltinValue::kPosition;
+            return builtin::BuiltinValue::kPosition;
         case spv::BuiltIn::FragDepth:
-            return ast::BuiltinValue::kFragDepth;
+            return builtin::BuiltinValue::kFragDepth;
         case spv::BuiltIn::LocalInvocationId:
-            return ast::BuiltinValue::kLocalInvocationId;
+            return builtin::BuiltinValue::kLocalInvocationId;
         case spv::BuiltIn::LocalInvocationIndex:
-            return ast::BuiltinValue::kLocalInvocationIndex;
+            return builtin::BuiltinValue::kLocalInvocationIndex;
         case spv::BuiltIn::GlobalInvocationId:
-            return ast::BuiltinValue::kGlobalInvocationId;
+            return builtin::BuiltinValue::kGlobalInvocationId;
         case spv::BuiltIn::NumWorkgroups:
-            return ast::BuiltinValue::kNumWorkgroups;
+            return builtin::BuiltinValue::kNumWorkgroups;
         case spv::BuiltIn::WorkgroupId:
-            return ast::BuiltinValue::kWorkgroupId;
+            return builtin::BuiltinValue::kWorkgroupId;
         case spv::BuiltIn::SampleId:
-            return ast::BuiltinValue::kSampleIndex;
+            return builtin::BuiltinValue::kSampleIndex;
         case spv::BuiltIn::SampleMask:
-            return ast::BuiltinValue::kSampleMask;
+            return builtin::BuiltinValue::kSampleMask;
         default:
             break;
     }
 
     Fail() << "unknown SPIR-V builtin: " << uint32_t(b);
-    return ast::BuiltinValue::kUndefined;
+    return builtin::BuiltinValue::kUndefined;
 }
 
-ast::TextureDimension EnumConverter::ToDim(spv::Dim dim, bool arrayed) {
+type::TextureDimension EnumConverter::ToDim(spv::Dim dim, bool arrayed) {
     if (arrayed) {
         switch (dim) {
             case spv::Dim::Dim2D:
-                return ast::TextureDimension::k2dArray;
+                return type::TextureDimension::k2dArray;
             case spv::Dim::Cube:
-                return ast::TextureDimension::kCubeArray;
+                return type::TextureDimension::kCubeArray;
             default:
                 break;
         }
         Fail() << "arrayed dimension must be 2D or Cube. Got " << int(dim);
-        return ast::TextureDimension::kNone;
+        return type::TextureDimension::kNone;
     }
     // Assume non-arrayed
     switch (dim) {
         case spv::Dim::Dim1D:
-            return ast::TextureDimension::k1d;
+            return type::TextureDimension::k1d;
         case spv::Dim::Dim2D:
-            return ast::TextureDimension::k2d;
+            return type::TextureDimension::k2d;
         case spv::Dim::Dim3D:
-            return ast::TextureDimension::k3d;
+            return type::TextureDimension::k3d;
         case spv::Dim::Cube:
-            return ast::TextureDimension::kCube;
+            return type::TextureDimension::kCube;
         default:
             break;
     }
     Fail() << "invalid dimension: " << int(dim);
-    return ast::TextureDimension::kNone;
+    return type::TextureDimension::kNone;
 }
 
-ast::TexelFormat EnumConverter::ToTexelFormat(spv::ImageFormat fmt) {
+builtin::TexelFormat EnumConverter::ToTexelFormat(spv::ImageFormat fmt) {
     switch (fmt) {
         case spv::ImageFormat::Unknown:
-            return ast::TexelFormat::kUndefined;
+            return builtin::TexelFormat::kUndefined;
 
         // 8 bit channels
         case spv::ImageFormat::Rgba8:
-            return ast::TexelFormat::kRgba8Unorm;
+            return builtin::TexelFormat::kRgba8Unorm;
         case spv::ImageFormat::Rgba8Snorm:
-            return ast::TexelFormat::kRgba8Snorm;
+            return builtin::TexelFormat::kRgba8Snorm;
         case spv::ImageFormat::Rgba8ui:
-            return ast::TexelFormat::kRgba8Uint;
+            return builtin::TexelFormat::kRgba8Uint;
         case spv::ImageFormat::Rgba8i:
-            return ast::TexelFormat::kRgba8Sint;
+            return builtin::TexelFormat::kRgba8Sint;
 
         // 16 bit channels
         case spv::ImageFormat::Rgba16ui:
-            return ast::TexelFormat::kRgba16Uint;
+            return builtin::TexelFormat::kRgba16Uint;
         case spv::ImageFormat::Rgba16i:
-            return ast::TexelFormat::kRgba16Sint;
+            return builtin::TexelFormat::kRgba16Sint;
         case spv::ImageFormat::Rgba16f:
-            return ast::TexelFormat::kRgba16Float;
+            return builtin::TexelFormat::kRgba16Float;
 
         // 32 bit channels
         case spv::ImageFormat::R32ui:
-            return ast::TexelFormat::kR32Uint;
+            return builtin::TexelFormat::kR32Uint;
         case spv::ImageFormat::R32i:
-            return ast::TexelFormat::kR32Sint;
+            return builtin::TexelFormat::kR32Sint;
         case spv::ImageFormat::R32f:
-            return ast::TexelFormat::kR32Float;
+            return builtin::TexelFormat::kR32Float;
         case spv::ImageFormat::Rg32ui:
-            return ast::TexelFormat::kRg32Uint;
+            return builtin::TexelFormat::kRg32Uint;
         case spv::ImageFormat::Rg32i:
-            return ast::TexelFormat::kRg32Sint;
+            return builtin::TexelFormat::kRg32Sint;
         case spv::ImageFormat::Rg32f:
-            return ast::TexelFormat::kRg32Float;
+            return builtin::TexelFormat::kRg32Float;
         case spv::ImageFormat::Rgba32ui:
-            return ast::TexelFormat::kRgba32Uint;
+            return builtin::TexelFormat::kRgba32Uint;
         case spv::ImageFormat::Rgba32i:
-            return ast::TexelFormat::kRgba32Sint;
+            return builtin::TexelFormat::kRgba32Sint;
         case spv::ImageFormat::Rgba32f:
-            return ast::TexelFormat::kRgba32Float;
+            return builtin::TexelFormat::kRgba32Float;
         default:
             break;
     }
     Fail() << "invalid image format: " << int(fmt);
-    return ast::TexelFormat::kUndefined;
+    return builtin::TexelFormat::kUndefined;
 }
 
 }  // namespace tint::reader::spirv

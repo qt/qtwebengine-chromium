@@ -10,6 +10,7 @@
 #include "include/gpu/graphite/Recording.h"
 #include "src/gpu/RefCntedCallback.h"
 #include "src/gpu/graphite/CommandBuffer.h"
+#include "src/gpu/graphite/ContextPriv.h"
 #include "src/gpu/graphite/GpuWorkSubmission.h"
 #include "src/gpu/graphite/Log.h"
 #include "src/gpu/graphite/RecordingPriv.h"
@@ -53,8 +54,7 @@ bool QueueManager::setupCommandBuffer(ResourceProvider* resourceProvider) {
     return true;
 }
 
-bool QueueManager::addRecording(const InsertRecordingInfo& info,
-                                ResourceProvider* resourceProvider) {
+bool QueueManager::addRecording(const InsertRecordingInfo& info, Context* context) {
     sk_sp<RefCntedCallback> callback;
     if (info.fFinishedProc) {
         callback = RefCntedCallback::Make(info.fFinishedProc, info.fFinishedContext);
@@ -78,6 +78,7 @@ bool QueueManager::addRecording(const InsertRecordingInfo& info,
         return false;
     }
 
+    auto resourceProvider = context->priv().resourceProvider();
     if (!this->setupCommandBuffer(resourceProvider)) {
         if (callback) {
             callback->setFailureResult();
@@ -107,9 +108,10 @@ bool QueueManager::addRecording(const InsertRecordingInfo& info,
         }
     }
 
-    if (!info.fRecording->priv().addCommands(resourceProvider,
+    if (!info.fRecording->priv().addCommands(context,
                                              fCurrentCommandBuffer.get(),
-                                             static_cast<Surface*>(info.fTargetSurface))) {
+                                             static_cast<Surface*>(info.fTargetSurface),
+                                             info.fTargetTranslation)) {
         if (callback) {
             callback->setFailureResult();
         }
@@ -127,19 +129,19 @@ bool QueueManager::addRecording(const InsertRecordingInfo& info,
 }
 
 bool QueueManager::addTask(Task* task,
-                           ResourceProvider* resourceProvider) {
+                           Context* context) {
     SkASSERT(task);
     if (!task) {
         SKGPU_LOG_E("No valid Task passed into addTask call");
         return false;
     }
 
-    if (!this->setupCommandBuffer(resourceProvider)) {
+    if (!this->setupCommandBuffer(context->priv().resourceProvider())) {
         SKGPU_LOG_E("CommandBuffer creation failed");
         return false;
     }
 
-    if (!task->addCommands(resourceProvider, fCurrentCommandBuffer.get())) {
+    if (!task->addCommands(context, fCurrentCommandBuffer.get(), {})) {
         SKGPU_LOG_E("Adding Task commands to the CommandBuffer has failed");
         return false;
     }

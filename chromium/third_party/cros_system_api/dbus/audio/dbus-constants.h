@@ -36,6 +36,8 @@ const char kGetNumberOfActiveInputStreams[] = "GetNumberOfActiveInputStreams";
 const char kGetNumberOfActiveOutputStreams[] = "GetNumberOfActiveOutputStreams";
 const char kGetNumberOfInputStreamsWithPermission[] =
     "GetNumberOfInputStreamsWithPermission";
+const char kGetNumberOfNonChromeOutputStreams[] =
+    "GetNumberOfNonChromeOutputStreams";
 const char kIsAudioOutputActive[] = "IsAudioOutputActive";
 const char kSetGlobalOutputChannelRemix[] = "SetGlobalOutputChannelRemix";
 const char kGetSystemAecSupported[] = "GetSystemAecSupported";
@@ -53,6 +55,8 @@ const char kGetDeprioritizeBtWbsMic[] = "GetDeprioritizeBtWbsMic";
 const char kSetNoiseCancellationEnabled[] = "SetNoiseCancellationEnabled";
 const char kIsNoiseCancellationSupported[] = "IsNoiseCancellationSupported";
 const char kSetFlossEnabled[] = "SetFlossEnabled";
+const char kSetSpeakOnMuteDetection[] = "SetSpeakOnMuteDetection";
+const char kSpeakOnMuteDetectionEnabled[] = "SpeakOnMuteDetectionEnabled";
 
 // Names of properties returned by GetNodes() and GetNodeInfos()
 const char kIsInputProperty[] = "IsInput";
@@ -97,16 +101,20 @@ const char kOutputNodeVolumeChanged[] = "OutputNodeVolumeChanged";
 const char kNodeLeftRightSwappedChanged[] = "NodeLeftRightSwappedChanged";
 const char kInputGainChanged[] = "InputGainChanged";
 const char kInputMuteChanged[] = "InputMuteChanged";
+const char kInputNodeGainChanged[] = "InputNodeGainChanged";
 const char kNodesChanged[] = "NodesChanged";
 const char kActiveOutputNodeChanged[] = "ActiveOutputNodeChanged";
 const char kActiveInputNodeChanged[] = "ActiveInputNodeChanged";
 const char kNumberOfActiveStreamsChanged[] = "NumberOfActiveStreamsChanged";
 const char kNumberOfInputStreamsWithPermissionChanged[] =
     "NumberOfInputStreamsWithPermissionChanged";
+const char kNumberOfNonChromeOutputStreamsChanged[] =
+    "NumberOfNonChromeOutputStreamsChanged";
 const char kAudioOutputActiveStateChanged[] = "AudioOutputActiveStateChanged";
 const char kHotwordTriggered[] = "HotwordTriggered";
 const char kBluetoothBatteryChanged[] = "BluetoothBatteryChanged";
 const char kSurveyTrigger[] = "SurveyTrigger";
+const char kSpeakOnMuteDetected[] = "SpeakOnMuteDetected";
 }  // namespace cras
 
 #endif  // SYSTEM_API_DBUS_AUDIO_DBUS_CONSTANTS_H_

@@ -502,16 +502,28 @@ message FtraceConfig {
 
   // Optional filter for "ftrace/print" events.
   //
-  // The filter consists of multiple rules. A rule matches if its prefix matches
-  // exactly with the beginning of the "ftrace/print" "buf" field. As soon as a
-  // rule matches (the rules are processed in order), its `allow` field will be
-  // used as the outcome: if `allow` is true, the event will be included in the
-  // trace, otherwise it will be discarded. If an event does not match any rule,
-  // it will be allowed by default (a rule with an empty prefix and allow=false,
-  // disallows everything by default).
+  // The filter consists of multiple rules. As soon as a rule matches (the rules
+  // are processed in order), its `allow` field will be used as the outcome: if
+  // `allow` is true, the event will be included in the trace, otherwise it will
+  // be discarded. If an event does not match any rule, it will be allowed by
+  // default (a rule with an empty prefix and allow=false, disallows everything
+  // by default).
   message PrintFilter {
     message Rule {
-      optional string prefix = 1;
+      // Matches an atrace message of the form:
+      // <type>|pid|<prefix>...
+      message AtraceMessage {
+        optional string type = 1;
+        optional string prefix = 2;
+      }
+      oneof match {
+        // This rule matches if `prefix` matches exactly with the beginning of
+        // the "ftrace/print" "buf" field.
+        string prefix = 1;
+        // This rule matches if the "buf" field contains an atrace-style print
+        // message as specified in `atrace_msg`.
+        AtraceMessage atrace_msg = 3;
+      }
       optional bool allow = 2;
     }
     repeated Rule rules = 1;
@@ -622,6 +634,11 @@ message FtraceConfig {
   // traces, if ftrace has been separately configured (e.g. via kernel
   // commandline).
   optional bool preserve_ftrace_buffer = 23;
+
+  // If true, overrides the default timestamp clock and uses a raw hardware
+  // based monotonic clock for getting timestamps.
+  // * Introduced in: Android U.
+  optional bool use_monotonic_raw_clock = 24;
 }
 
 // End of protos/perfetto/config/ftrace/ftrace_config.proto
@@ -743,6 +760,10 @@ message AndroidPowerConfig {
   // Provides a breakdown of energy estimation for various subsystem (e.g. GPU).
   // Available from Android S.
   optional bool collect_energy_estimation_breakdown = 4;
+
+  // Provides a breakdown of time in state for various subsystems.
+  // Available from Android U.
+  optional bool collect_entity_state_residency = 5;
 }
 
 // End of protos/perfetto/config/power/android_power_config.proto
@@ -2361,7 +2382,7 @@ message TrackEventConfig {
 // Begin of protos/perfetto/config/data_source_config.proto
 
 // The configuration that is passed to each data source when starting tracing.
-// Next id: 121
+// Next id: 123
 message DataSourceConfig {
   enum SessionInitiator {
     SESSION_INITIATOR_UNSPECIFIED = 0;
@@ -2387,6 +2408,10 @@ message DataSourceConfig {
   // Set by the service to indicate the duration of the trace.
   // DO NOT SET in consumer as this will be overridden by the service.
   optional uint32 trace_duration_ms = 3;
+
+  // If true, |trace_duration_ms| should count also time in suspend. This
+  // is propagated from TraceConfig.prefer_suspend_clock_for_duration.
+  optional bool prefer_suspend_clock_for_duration = 122;
 
   // Set by the service to indicate how long it waits after StopDataSource.
   // DO NOT SET in consumer as this will be overridden by the service.
@@ -2505,7 +2530,7 @@ message DataSourceConfig {
 // It contains the general config for the logging buffer(s) and the configs for
 // all the data source being enabled.
 //
-// Next id: 35.
+// Next id: 37.
 message TraceConfig {
   message BufferConfig {
     optional uint32 size_kb = 1;
@@ -2607,6 +2632,15 @@ message TraceConfig {
   // However in case of traces with triggers, see
   // TriggerConfig.trigger_timeout_ms instead.
   optional uint32 duration_ms = 3;
+
+  // If true, tries to use CLOCK_BOOTTIME for duration_ms rather than
+  // CLOCK_MONOTONIC (which doesn't count time in suspend). Supported only on
+  // Linux/Android, no-op on other platforms. This is used when dealing with
+  // long (e.g. 24h) traces, where suspend can inflate them to weeks of
+  // wall-time, making them more likely to hit device reboots (and hence loss).
+  // This option also changes consistently the semantic of
+  // TrigerConfig.stop_delay_ms.
+  optional bool prefer_suspend_clock_for_duration = 36;
 
   // This is set when --dropbox is passed to the Perfetto command line client
   // and enables guardrails that limit resource usage for traces requested
@@ -2774,6 +2808,8 @@ message TraceConfig {
 
       // After a trigger is received either in START_TRACING or STOP_TRACING
       // mode then the trace will end |stop_delay_ms| after triggering.
+      // If |prefer_suspend_clock_for_duration| is set, the duration will be
+      // based on wall-clock, counting also time in suspend.
       optional uint32 stop_delay_ms = 3;
 
       // Limits the number of traces this trigger can start/stop in a rolling

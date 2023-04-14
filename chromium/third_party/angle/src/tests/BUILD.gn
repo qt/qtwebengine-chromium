@@ -266,6 +266,7 @@ if (is_win || is_linux || is_chromeos || is_android || is_fuchsia || is_apple) {
       ":angle_common_test_utils_shared",
       "$angle_root:angle_gl_enum_utils",
       "$angle_root:angle_image_util",
+      "$angle_root:translator",
     ]
 
     if (is_ios) {
@@ -421,6 +422,8 @@ if (is_win || is_linux || is_chromeos || is_android || is_apple) {
     data = [
       "$angle_root/scripts/process_angle_perf_results.py",
       "$angle_root/src/tests/py_utils/android_helper.py",
+      "$angle_root/src/tests/py_utils/angle_metrics.py",
+      "$angle_root/src/tests/py_utils/angle_path_util.py",
       "$angle_root/src/tests/run_perf_tests.py",
     ]
     data_deps = [ "//testing:run_perf_test" ]
@@ -463,6 +466,8 @@ if (build_angle_perftests) {
     data = [
       "$angle_root/scripts/process_angle_perf_results.py",
       "$angle_root/src/tests/py_utils/android_helper.py",
+      "$angle_root/src/tests/py_utils/angle_metrics.py",
+      "$angle_root/src/tests/py_utils/angle_path_util.py",
       "$angle_root/src/tests/run_perf_tests.py",
     ]
 
@@ -524,6 +529,8 @@ if (build_angle_trace_tests) {
 
     data = [
       "$angle_root/scripts/process_angle_perf_results.py",
+      "$angle_root/src/tests/py_utils/angle_metrics.py",
+      "$angle_root/src/tests/py_utils/angle_path_util.py",
       "$angle_root/src/tests/run_perf_tests.py",
     ]
 

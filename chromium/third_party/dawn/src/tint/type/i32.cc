@@ -14,28 +14,23 @@
 
 #include "src/tint/type/i32.h"
 
-#include "src/tint/program_builder.h"
+#include "src/tint/type/manager.h"
 
 TINT_INSTANTIATE_TYPEINFO(tint::type::I32);
 
 namespace tint::type {
 
 I32::I32()
-    : Base(type::Flags{
-          Flag::kConstructable,
-          Flag::kCreationFixedFootprint,
-          Flag::kFixedFootprint,
-      }) {}
-
-I32::I32(I32&&) = default;
+    : Base(static_cast<size_t>(TypeInfo::Of<I32>().full_hashcode),
+           type::Flags{
+               Flag::kConstructable,
+               Flag::kCreationFixedFootprint,
+               Flag::kFixedFootprint,
+           }) {}
 
 I32::~I32() = default;
 
-size_t I32::Hash() const {
-    return static_cast<size_t>(TypeInfo::Of<I32>().full_hashcode);
-}
-
-bool I32::Equals(const Type& other) const {
+bool I32::Equals(const UniqueNode& other) const {
     return other.Is<I32>();
 }
 
@@ -49,6 +44,10 @@ uint32_t I32::Size() const {
 
 uint32_t I32::Align() const {
     return 4;
+}
+
+I32* I32::Clone(CloneContext& ctx) const {
+    return ctx.dst.mgr->Get<I32>();
 }
 
 }  // namespace tint::type

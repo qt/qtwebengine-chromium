@@ -645,12 +645,20 @@
             "issue": "http://anglebug.com/7527"
         },
         {
-            "name": "disable_clip_cull_distance",
+            "name": "emulate_clip_distance_state",
             "category": "Workarounds",
             "description": [
-                "Shader compiler does not handle redeclared built-ins."
+                "Some drivers ignore GL_CLIP_DISTANCEi_EXT state."
+            ]
+        },
+        {
+            "name": "bind_framebuffer_for_timer_queries",
+            "category": "Workarounds",
+            "description": [
+                "Some drivers require a non-zero framebuffer when beginQuery for TimeElapsed or",
+                "Timestampis called."
             ],
-            "issue": "https://anglebug.com/7763"
+            "issue": "https://crbug.com/1356053"
         },
         {
             "name": "supports_fragment_shader_interlock_NV",

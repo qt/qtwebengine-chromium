@@ -17,7 +17,7 @@
 #include "include/core/SkImage.h" // IWYU pragma: keep
 #include "include/core/SkMatrix.h"
 #include "include/core/SkStream.h"
-#include "include/private/SkTemplates.h"
+#include "include/private/base/SkTemplates.h"
 #include "modules/skcms/skcms.h"
 #include "src/codec/SkCodecPriv.h"
 #include "src/codec/SkFrameHolder.h"
@@ -66,12 +66,14 @@
 #include "src/codec/SkWuffsCodec.h"
 #endif
 
+namespace {
+
 struct DecoderProc {
     bool (*IsFormat)(const void*, size_t);
     std::unique_ptr<SkCodec> (*MakeFromStream)(std::unique_ptr<SkStream>, SkCodec::Result*);
 };
 
-static std::vector<DecoderProc>* decoders() {
+std::vector<DecoderProc>* decoders() {
     static auto* decoders = new std::vector<DecoderProc> {
     #ifdef SK_CODEC_DECODES_JPEG
         { SkJpegCodec::IsJpeg, SkJpegCodec::MakeFromStream },
@@ -96,6 +98,8 @@ static std::vector<DecoderProc>* decoders() {
     };
     return decoders;
 }
+
+}  // namespace
 
 void SkCodec::Register(
             bool                     (*peek)(const void*, size_t),
@@ -193,19 +197,16 @@ std::unique_ptr<SkCodec> SkCodec::MakeFromData(sk_sp<SkData> data, SkPngChunkRea
     return MakeFromStream(SkMemoryStream::Make(std::move(data)), nullptr, reader);
 }
 
-SkCodec::SkCodec(SkEncodedInfo&& info, XformFormat srcFormat, std::unique_ptr<SkStream> stream,
+SkCodec::SkCodec(SkEncodedInfo&& info,
+                 XformFormat srcFormat,
+                 std::unique_ptr<SkStream> stream,
                  SkEncodedOrigin origin)
-    : fEncodedInfo(std::move(info))
-    , fSrcXformFormat(srcFormat)
-    , fStream(std::move(stream))
-    , fNeedsRewind(false)
-    , fOrigin(origin)
-    , fDstInfo()
-    , fOptions()
-    , fCurrScanline(-1)
-    , fStartedIncrementalDecode(false)
-    , fAndroidCodecHandlesFrameIndex(false)
-{}
+        : fEncodedInfo(std::move(info))
+        , fSrcXformFormat(srcFormat)
+        , fStream(std::move(stream))
+        , fOrigin(origin)
+        , fDstInfo()
+        , fOptions() {}
 
 SkCodec::~SkCodec() {}
 
@@ -242,6 +243,7 @@ bool SkCodec::conversionSupported(const SkImageInfo& dst, bool srcIsOpaque, bool
         case kBGRA_8888_SkColorType:
         case kRGBA_F16_SkColorType:
             return true;
+        case kBGR_101010x_XR_SkColorType:
         case kRGB_565_SkColorType:
             return srcIsOpaque;
         case kGray_8_SkColorType:
@@ -719,6 +721,9 @@ bool sk_select_xform_format(SkColorType colorType, bool forColorTable,
         case kRGBA_F16_SkColorType:
             *outFormat = skcms_PixelFormat_RGBA_hhhh;
             break;
+        case kBGR_101010x_XR_SkColorType:
+            *outFormat = skcms_PixelFormat_BGR_101010x_XR;
+            break;
         case kGray_8_SkColorType:
             *outFormat = skcms_PixelFormat_G_8;
             break;
@@ -733,7 +738,8 @@ bool SkCodec::initializeColorXform(const SkImageInfo& dstInfo, SkEncodedInfo::Al
     fXformTime = kNo_XformTime;
     bool needsColorXform = false;
     if (this->usesColorXform()) {
-        if (kRGBA_F16_SkColorType == dstInfo.colorType()) {
+        if (kRGBA_F16_SkColorType == dstInfo.colorType() ||
+                kBGR_101010x_XR_SkColorType == dstInfo.colorType()) {
             needsColorXform = true;
             if (dstInfo.colorSpace()) {
                 dstInfo.colorSpace()->toProfile(&fDstProfile);

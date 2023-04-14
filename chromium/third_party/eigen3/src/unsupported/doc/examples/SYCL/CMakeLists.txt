@@ -2,9 +2,8 @@ FILE(GLOB examples_SRCS "*.cpp")
 
 set(EIGEN_SYCL ON)
 list(APPEND CMAKE_EXE_LINKER_FLAGS -pthread)
-if(EIGEN_SYCL_TRISYCL)
-  set(CMAKE_CXX_STANDARD 17)
-else(EIGEN_SYCL_TRISYCL)
+set(CMAKE_CXX_STANDARD 17)
+if(EIGEN_SYCL_ComputeCpp)
   if(MSVC)
     list(APPEND COMPUTECPP_USER_FLAGS -DWIN32)
   else()
@@ -22,7 +21,7 @@ else(EIGEN_SYCL_TRISYCL)
       -no-serial-memop
       -Xclang
       -cl-mad-enable)
-endif(EIGEN_SYCL_TRISYCL)
+endif(EIGEN_SYCL_ComputeCpp)
 
 FOREACH(example_src ${examples_SRCS})
   GET_FILENAME_COMPONENT(example ${example_src} NAME_WE)

@@ -31,8 +31,7 @@ struct SyclDeviceInfo {
                 .template get_info<cl::sycl::info::device::local_mem_type>()),
         max_work_item_sizes(
             queue.get_device()
-                .template get_info<
-                    cl::sycl::info::device::max_work_item_sizes>()),
+                .template get_info<cl::sycl::info::device::max_work_item_sizes<3>>()),
         max_mem_alloc_size(
             queue.get_device()
                 .template get_info<
@@ -356,7 +355,7 @@ class QueueInterface {
       return;
     }
     const ptrdiff_t count = end - begin;
-    auto f = [&](cl::sycl::handler &cgh) {
+    auto f = [&](cl::sycl::handler &cgh)  {
       auto dst_acc = get_typed_range_accessor<write_mode, T>(cgh, begin, count);
       cgh.fill(dst_acc, value);
     };

@@ -6,7 +6,7 @@
 #include <xnnpack/assembly.h>
 
 # LINT.IfChange
-# void xnn_f32_igemm_minmax_ukernel_4x8__aarch64_neonfma${"_prfm" if PREFETCH else ""}_cortex_a75(
+# void xnn_f32_igemm_minmax_ukernel_4x8__asm_aarch64_neonfma${"_prfm" if PREFETCH else ""}_cortex_a75(
 #     size_t mr,                         (x0) - unused.  mr = 1
 #     size_t nc,                         x1
 #     size_t kc,                         x2 / x0
@@ -18,26 +18,27 @@
 #     size_t cn_stride,                  [sp] -> x10
 #     size_t a_offset,                   [sp + 8] -> x11
 #     const float* zero,                 [sp + 16] -> x12
-#     const xnn_f32_minmax_params params [sp + 24] -> (x8)
+#     const xnn_f32_minmax_params params [sp + 24] -> (x7)
 
 # d8-d15, x19-x30 need to be preserved if used. x18 is reserved by the OS.
 
-# A pointer
-# x8  a0
+# Register usage
+# A0 x8 v0 v1
+# B  x5 v20 v21 v22 v23
+# B     v24 v25 v26 v27
+# C0 x6 v16 v17
+# Clamp v30 v31
 
-# C pointer
-# x6  c0
-
-BEGIN_FUNCTION xnn_f32_igemm_minmax_ukernel_1x8__aarch64_neonfma${"_prfm" if PREFETCH else ""}_cortex_a75
+BEGIN_FUNCTION xnn_f32_igemm_minmax_ukernel_1x8__asm_aarch64_neonfma${"_prfm" if PREFETCH else ""}_cortex_a75
 
         # Load cn_stride, a_offset
         LDP     x10, x11, [sp]
 
         # Load zero, params pointer
-        LDP     x12, x8, [sp, 16]
+        LDP     x12, x7, [sp, 16]
 
         # Load min/max values
-        LD2R    {v30.4s, v31.4s}, [x8]
+        LD2R    {v30.4s, v31.4s}, [x7]
 
 0:
         # Load initial bias from w into accumulators
@@ -240,8 +241,8 @@ BEGIN_FUNCTION xnn_f32_igemm_minmax_ukernel_1x8__aarch64_neonfma${"_prfm" if PRE
 13:
         RET
 
-END_FUNCTION xnn_f32_igemm_minmax_ukernel_1x8__aarch64_neonfma${"_prfm" if PREFETCH else ""}_cortex_a75
-# LINT.ThenChange(1x8-aarch64-neonfma-cortex-a75.cc)
+END_FUNCTION xnn_f32_igemm_minmax_ukernel_1x8__asm_aarch64_neonfma${"_prfm" if PREFETCH else ""}_cortex_a75
+# LINT.ThenChange(gen/f32-igemm-1x8-aarch64-neonfma-cortex-a75.cc)
 
 #ifdef __ELF__
 .section ".note.GNU-stack","",%progbits

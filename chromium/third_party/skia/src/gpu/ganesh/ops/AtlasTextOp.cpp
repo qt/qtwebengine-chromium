@@ -10,7 +10,7 @@
 #include "include/core/SkPoint3.h"
 #include "include/core/SkSpan.h"
 #include "include/gpu/GrRecordingContext.h"
-#include "src/core/SkMathPriv.h"
+#include "src/base/SkMathPriv.h"
 #include "src/core/SkMatrixPriv.h"
 #include "src/core/SkMatrixProvider.h"
 #include "src/core/SkStrikeCache.h"
@@ -292,7 +292,9 @@ void AtlasTextOp::onPrepareDraws(GrMeshDrawTarget* target) {
         return true;
     };
 
-    resetVertexBuffer();
+    if (!resetVertexBuffer()) {
+        return;
+    }
 
     for (const Geometry* geo = fHead; geo != nullptr; geo = geo->fNext) {
         const sktext::gpu::AtlasSubRun& subRun = geo->fSubRun;

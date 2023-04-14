@@ -3,7 +3,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 """Utility for checking and processing licensing information in third_party
-directories. Copied from Chrome's tools/licenses.py.
+directories. Copied and forked from Chrome's tools/licenses.py.
 
 Usage: licenses.py <command>
 
@@ -42,16 +42,16 @@ PRUNE_PATHS = set([
 # Directories we don't scan through.
 PRUNE_DIRS = ('.git')
 
-# Directories where we check out directly from upstream, and therefore
-# can't provide a README.chromium.  Please prefer a README.chromium
-# wherever possible.
+# Directories where we check out directly from upstream, and therefore can't
+# provide a README.openscreen.  Please prefer a README.openscreen wherever
+# possible.
 SPECIAL_CASES = {
     os.path.join('third_party', 'googletest'): {
         "Name": "gtest",
         "URL": "http://code.google.com/p/googletest",
         "License": "BSD",
         "License File": "NOT_SHIPPED",
-    }
+    },
 }
 
 # Special value for 'License File' field used to indicate that the license file
@@ -86,8 +86,7 @@ class LicenseError(Exception):
 
 
 def AbsolutePath(path, filename, root):
-    """Convert a path in README.chromium to be absolute based on the source
-    root."""
+    """Convert a README path to be absolute based on the source root."""
     if filename.startswith('/'):
         # Absolute-looking paths are relative to the source root
         # (which is the directory we're run from).
@@ -119,8 +118,12 @@ def ParseDir(path, root, require_license_file=True, optional_keys=None):
         # Try to find README.chromium.
         readme_path = os.path.join(root, path, 'README.chromium')
         if not os.path.exists(readme_path):
-            raise LicenseError("missing README.chromium or licenses.py "
-                               "SPECIAL_CASES entry in %s\n" % path)
+            readme_path = os.path.join(root, path, 'README.openscreen')
+
+        if not os.path.exists(readme_path):
+            raise LicenseError(
+                "missing README.chromium, README.openscreen, or "
+                "licenses.py SPECIAL_CASES entry in %s\n" % path)
 
         for line in open(readme_path):
             line = line.strip()
@@ -136,8 +139,7 @@ def ParseDir(path, root, require_license_file=True, optional_keys=None):
     for key, value in metadata.items():
         if not value:
             errors.append("couldn't find '" + key + "' line "
-                          "in README.chromium or licences.py "
-                          "SPECIAL_CASES")
+                          "in README file or licenses.py SPECIAL_CASES")
 
     # Special-case modules that aren't in the shipping product, so don't need
     # their license in about:credits.
@@ -149,11 +151,12 @@ def ParseDir(path, root, require_license_file=True, optional_keys=None):
                 break
 
         if require_license_file and not license_path:
-            errors.append("License file not found. "
-                          "Either add a file named LICENSE, "
-                          "import upstream's COPYING if available, "
-                          "or add a 'License File:' line to "
-                          "README.chromium with the appropriate path.")
+            errors.append(
+                "License file not found. "
+                "Either add a file named LICENSE, "
+                "import upstream's COPYING if available, "
+                "or add a 'License File:' line to README.chromium or "
+                "README.openscreen with the appropriate path.")
         metadata["License File"] = license_path
 
     if errors:
@@ -237,8 +240,8 @@ def GetThirdPartyDepsFromGNDepsOutput(gn_deps, target_os):
     """Returns third_party/foo directories given the output of "gn desc deps".
 
     Note that it always returns the direct sub-directory of third_party
-    where README.chromium and LICENSE files are, so that it can be passed to
-    ParseDir(). e.g.:
+    where README.chromium/README.openscreen and LICENSE files are, so that it
+    can be passed to ParseDir(). e.g.:
         third_party/cld_3/src/src/BUILD.gn -> third_party/cld_3
 
     It returns relative paths from _REPOSITORY_ROOT, not absolute paths.
@@ -411,8 +414,8 @@ def GenerateCredits(file_template_file,
         # Add in build.ninja so that the target will be considered dirty when
         # gn gen is run. Otherwise, it will fail to notice new files being
         # added. This is still not perfect, as it will fail if no build files
-        # are changed, but a new README.chromium / LICENSE is added. This
-        # shouldn't happen in practice however.
+        # are changed, but a new README.* / LICENSE is added. This shouldn't
+        # happen in practice however.
         license_file_list = (entry['license_file'] for entry in entries)
         license_file_list = (os.path.relpath(p) for p in license_file_list)
         license_file_list = sorted(set(license_file_list))
@@ -498,7 +501,7 @@ def main():
             GenerateLicenseFile(args.output_file, args.gn_out_dir,
                                 args.gn_target, args.target_os)
         except LicenseError as e:
-            print("Failed to parse README.chromium: {}".format(e))
+            print("Failed to parse README file: {}".format(e))
             return 1
     else:
         print(__doc__)

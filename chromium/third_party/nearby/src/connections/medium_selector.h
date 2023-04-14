@@ -16,7 +16,6 @@
 
 #include "proto/connections_enums.pb.h"
 
-namespace location {
 namespace nearby {
 namespace connections {
 
@@ -30,15 +29,16 @@ struct MediumSelector {
   T web_rtc;
   T wifi_lan;
   T wifi_hotspot;
+  T wifi_direct;
 
   constexpr bool Any(T value) const {
     return bluetooth == value || ble == value || web_rtc == value ||
-           wifi_lan == value || wifi_hotspot == value;
+           wifi_lan == value || wifi_hotspot == value || wifi_direct == value;
   }
 
   constexpr bool All(T value) const {
     return bluetooth == value && ble == value && web_rtc == value &&
-           wifi_lan == value && wifi_hotspot == value;
+           wifi_lan == value && wifi_hotspot == value && wifi_direct == value;
   }
 
   constexpr int Count(T value) const {
@@ -47,6 +47,7 @@ struct MediumSelector {
     if (ble == value) count++;
     if (wifi_lan == value) count++;
     if (wifi_hotspot == value) count++;
+    if (wifi_direct == value) count++;
     if (web_rtc == value) count++;
     return count;
   }
@@ -57,6 +58,7 @@ struct MediumSelector {
     web_rtc = value;
     wifi_lan = value;
     wifi_hotspot = value;
+    wifi_direct = value;
     return *this;
   }
 
@@ -64,6 +66,7 @@ struct MediumSelector {
     std::vector<Medium> mediums;
     // Mediums are sorted in order of decreasing preference.
     if (wifi_lan == value) mediums.push_back(Medium::WIFI_LAN);
+    if (wifi_direct == value) mediums.push_back(Medium::WIFI_DIRECT);
     if (wifi_hotspot == value) mediums.push_back(Medium::WIFI_HOTSPOT);
     if (web_rtc == value) mediums.push_back(Medium::WEB_RTC);
     if (bluetooth == value) mediums.push_back(Medium::BLUETOOTH);
@@ -76,6 +79,5 @@ using BooleanMediumSelector = MediumSelector<bool>;
 
 }  // namespace connections
 }  // namespace nearby
-}  // namespace location
 
 #endif  // CORE_MEDIUM_SELECTOR_H_

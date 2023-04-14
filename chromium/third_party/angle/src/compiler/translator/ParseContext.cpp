@@ -1330,6 +1330,7 @@ bool TParseContext::declareVariable(const TSourceLoc &line,
         case EvqClipDistance:
         case EvqCullDistance:
         case EvqLastFragData:
+        case EvqLastFragColor:
             symbolType = SymbolType::BuiltIn;
             break;
         default:
@@ -1396,6 +1397,14 @@ bool TParseContext::declareVariable(const TSourceLoc &line,
             error(line, "redeclaration of gl_LastFragData with size != gl_MaxDrawBuffers",
                   identifier);
             return false;
+        }
+    }
+    else if (identifier.beginsWith("gl_LastFragColorARM"))
+    {
+        // gl_LastFragColorARM may be redeclared with a new precision qualifier
+        if (const TSymbol *builtInSymbol = symbolTable.findBuiltIn(identifier, mShaderVersion))
+        {
+            needsReservedCheck = !checkCanUseOneOfExtensions(line, builtInSymbol->extensions());
         }
     }
     else if (type->isArray() && identifier == "gl_ClipDistance")
@@ -2576,19 +2585,42 @@ TIntermTyped *TParseContext::parseVariableIdentifier(const TSourceLoc &location,
     return node;
 }
 
-void TParseContext::adjustRedeclaredBuiltInType(const ImmutableString &identifier, TType *type)
+void TParseContext::adjustRedeclaredBuiltInType(const TSourceLoc &line,
+                                                const ImmutableString &identifier,
+                                                TType *type)
 {
     if (identifier == "gl_ClipDistance")
     {
+        const TQualifier qualifier = type->getQualifier();
+        if ((mShaderType == GL_VERTEX_SHADER &&
+             !(qualifier == EvqVertexOut || qualifier == EvqVaryingOut)) ||
+            (mShaderType == GL_FRAGMENT_SHADER && qualifier != EvqFragmentIn))
+        {
+            error(line, "invalid or missing storage qualifier", identifier);
+            return;
+        }
+
         type->setQualifier(EvqClipDistance);
     }
     else if (identifier == "gl_CullDistance")
     {
+        const TQualifier qualifier = type->getQualifier();
+        if ((mShaderType == GL_VERTEX_SHADER && qualifier != EvqVertexOut) ||
+            (mShaderType == GL_FRAGMENT_SHADER && qualifier != EvqFragmentIn))
+        {
+            error(line, "invalid or missing storage qualifier", identifier);
+            return;
+        }
+
         type->setQualifier(EvqCullDistance);
     }
     else if (identifier == "gl_LastFragData")
     {
         type->setQualifier(EvqLastFragData);
+    }
+    else if (identifier == "gl_LastFragColorARM")
+    {
+        type->setQualifier(EvqLastFragColor);
     }
     else if (identifier == "gl_Position")
     {
@@ -3288,7 +3320,7 @@ TIntermDeclaration *TParseContext::parseSingleDeclaration(
         }
     }
 
-    adjustRedeclaredBuiltInType(identifier, type);
+    adjustRedeclaredBuiltInType(identifierOrTypeLocation, identifier, type);
 
     TIntermDeclaration *declaration = new TIntermDeclaration();
     declaration->setLine(identifierOrTypeLocation);
@@ -3333,7 +3365,7 @@ TIntermDeclaration *TParseContext::parseSingleArrayDeclaration(
         checkAtomicCounterOffsetAlignment(identifierLocation, *arrayType);
     }
 
-    adjustRedeclaredBuiltInType(identifier, arrayType);
+    adjustRedeclaredBuiltInType(identifierLocation, identifier, arrayType);
 
     TIntermDeclaration *declaration = new TIntermDeclaration();
     declaration->setLine(identifierLocation);
@@ -3509,7 +3541,7 @@ void TParseContext::parseDeclarator(TPublicType &publicType,
         checkAtomicCounterOffsetAlignment(identifierLocation, *type);
     }
 
-    adjustRedeclaredBuiltInType(identifier, type);
+    adjustRedeclaredBuiltInType(identifierLocation, identifier, type);
 
     TVariable *variable = nullptr;
     if (declareVariable(identifierLocation, identifier, type, &variable))
@@ -3554,7 +3586,7 @@ void TParseContext::parseArrayDeclarator(TPublicType &elementType,
             checkAtomicCounterOffsetAlignment(identifierLocation, *arrayType);
         }
 
-        adjustRedeclaredBuiltInType(identifier, arrayType);
+        adjustRedeclaredBuiltInType(identifierLocation, identifier, arrayType);
 
         TVariable *variable = nullptr;
         if (declareVariable(identifierLocation, identifier, arrayType, &variable))
@@ -4233,7 +4265,7 @@ TIntermFunctionPrototype *TParseContext::addFunctionPrototypeDeclaration(
     // function is declared multiple times.
     bool hadPrototypeDeclaration = false;
     const TFunction *function    = symbolTable.markFunctionHasPrototypeDeclaration(
-           parsedFunction.getMangledName(), &hadPrototypeDeclaration);
+        parsedFunction.getMangledName(), &hadPrototypeDeclaration);
 
     if (hadPrototypeDeclaration && mShaderVersion == 100)
     {

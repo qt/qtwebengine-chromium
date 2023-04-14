@@ -4,10 +4,17 @@
 // LICENSE file in the root directory of this source tree.
 //
 // Auto-generated file. Do not edit!
-//   Specification: src/operator-strings.yaml
+//   Specification: src/enums/operator-type.yaml
 //   Generator: tools/generate-enum.py
 
 #pragma once
+
+#include <xnnpack/common.h>
+
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 enum xnn_operator_type {
   xnn_operator_type_invalid = 0,
@@ -42,12 +49,13 @@ enum xnn_operator_type {
   xnn_operator_type_convert_nc_qs8_f32,
   xnn_operator_type_convert_nc_qu8,
   xnn_operator_type_convert_nc_qu8_f32,
+  xnn_operator_type_convolution_nchw_f16,
+  xnn_operator_type_convolution_nchw_f32,
   xnn_operator_type_convolution_nhwc_f16,
   xnn_operator_type_convolution_nhwc_f32,
   xnn_operator_type_convolution_nhwc_qc8,
   xnn_operator_type_convolution_nhwc_qs8,
   xnn_operator_type_convolution_nhwc_qu8,
-  xnn_operator_type_convolution_nchw_f32,
   xnn_operator_type_copy_nc_x8,
   xnn_operator_type_copy_nc_x16,
   xnn_operator_type_copy_nc_x32,
@@ -55,6 +63,7 @@ enum xnn_operator_type {
   xnn_operator_type_deconvolution_nhwc_f32,
   xnn_operator_type_deconvolution_nhwc_qs8,
   xnn_operator_type_deconvolution_nhwc_qu8,
+  xnn_operator_type_depth_to_space_nchw2nhwc_x16,
   xnn_operator_type_depth_to_space_nchw2nhwc_x32,
   xnn_operator_type_depth_to_space_nhwc_x8,
   xnn_operator_type_depth_to_space_nhwc_x16,
@@ -70,11 +79,12 @@ enum xnn_operator_type {
   xnn_operator_type_fully_connected_nc_f32,
   xnn_operator_type_fully_connected_nc_qs8,
   xnn_operator_type_fully_connected_nc_qu8,
+  xnn_operator_type_global_average_pooling_ncw_f16,
+  xnn_operator_type_global_average_pooling_ncw_f32,
   xnn_operator_type_global_average_pooling_nwc_f16,
   xnn_operator_type_global_average_pooling_nwc_f32,
   xnn_operator_type_global_average_pooling_nwc_qs8,
   xnn_operator_type_global_average_pooling_nwc_qu8,
-  xnn_operator_type_global_average_pooling_ncw_f32,
   xnn_operator_type_hardswish_nc_f16,
   xnn_operator_type_hardswish_nc_f32,
   xnn_operator_type_leaky_relu_nc_f16,
@@ -97,11 +107,12 @@ enum xnn_operator_type {
   xnn_operator_type_negate_nc_f32,
   xnn_operator_type_prelu_nc_f16,
   xnn_operator_type_prelu_nc_f32,
+  xnn_operator_type_resize_bilinear_nchw_f16,
+  xnn_operator_type_resize_bilinear_nchw_f32,
   xnn_operator_type_resize_bilinear_nhwc_f16,
   xnn_operator_type_resize_bilinear_nhwc_f32,
   xnn_operator_type_resize_bilinear_nhwc_s8,
   xnn_operator_type_resize_bilinear_nhwc_u8,
-  xnn_operator_type_resize_bilinear_nchw_f32,
   xnn_operator_type_sigmoid_nc_f16,
   xnn_operator_type_sigmoid_nc_f32,
   xnn_operator_type_sigmoid_nc_qs8,
@@ -127,10 +138,16 @@ enum xnn_operator_type {
   xnn_operator_type_subtract_nd_qu8,
   xnn_operator_type_tanh_nc_qs8,
   xnn_operator_type_tanh_nc_qu8,
-  xnn_operator_type_truncation_nc_f16,
-  xnn_operator_type_truncation_nc_f32,
   xnn_operator_type_transpose_nd_x8,
   xnn_operator_type_transpose_nd_x16,
   xnn_operator_type_transpose_nd_x32,
+  xnn_operator_type_truncation_nc_f16,
+  xnn_operator_type_truncation_nc_f32,
   xnn_operator_type_unpooling_nhwc_x32,
 };
+
+XNN_INTERNAL const char* xnn_operator_type_to_string(enum xnn_operator_type operator_type);
+
+#ifdef __cplusplus
+}  // extern "C"
+#endif

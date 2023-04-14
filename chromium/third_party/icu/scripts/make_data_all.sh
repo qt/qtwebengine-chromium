@@ -14,13 +14,15 @@ function config_data {
 
   ICU_DATA_FILTER_FILE="${ICUROOT}/filters/$1.json" \
   "${ICUROOT}/source/runConfigureICU" --enable-debug --disable-release \
-    Linux/gcc --disable-tests  --disable-layoutex || \
+    Linux/gcc --disable-tests  --disable-layoutex --enable-rpath \
+    --prefix="$(pwd)" || \
     { echo "failed to configure data for $1" >&2; exit 1; }
 }
 
 echo "Build the necessary tools"
 "${ICUROOT}/source/runConfigureICU" --enable-debug --disable-release \
-    Linux/gcc  --disable-tests --disable-layoutex
+    Linux/gcc  --disable-tests --disable-layoutex --enable-rpath \
+    --prefix="$(pwd)"
 make -j 120
 
 echo "Build the filtered data for common"

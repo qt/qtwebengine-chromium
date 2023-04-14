@@ -2,10 +2,10 @@
 // This file is ***GENERATED***.  Do Not Edit.
 // See thread_safety_generator.py for modifications.
 
-/* Copyright (c) 2015-2022 The Khronos Group Inc.
- * Copyright (c) 2015-2022 Valve Corporation
- * Copyright (c) 2015-2022 LunarG, Inc.
- * Copyright (c) 2015-2022 Google Inc.
+/* Copyright (c) 2015-2023 The Khronos Group Inc.
+ * Copyright (c) 2015-2023 Valve Corporation
+ * Copyright (c) 2015-2023 LunarG, Inc.
+ * Copyright (c) 2015-2023 Google Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,8 +18,6 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *
- * Author: Mark Lobodzinski <mark@lunarg.com>
  */
 
 #pragma once
@@ -279,12 +277,12 @@ public:
 
     // Override chassis read/write locks for this validation object
     // This override takes a deferred lock. i.e. it is not acquired.
-    ReadLockGuard ReadLock() override;
+    ReadLockGuard ReadLock() const override;
     WriteLockGuard WriteLock() override;
 
     vl_concurrent_unordered_map<VkCommandBuffer, VkCommandPool, 6> command_pool_map;
-    layer_data::unordered_map<VkCommandPool, layer_data::unordered_set<VkCommandBuffer>> pool_command_buffers_map;
-    layer_data::unordered_map<VkDevice, layer_data::unordered_set<VkQueue>> device_queues_map;
+    vvl::unordered_map<VkCommandPool, vvl::unordered_set<VkCommandBuffer>> pool_command_buffers_map;
+    vvl::unordered_map<VkDevice, vvl::unordered_set<VkQueue>> device_queues_map;
 
     // Track per-descriptorsetlayout and per-descriptorset whether read_only is used.
     // This is used to (sloppily) implement the relaxed externsync rules for read_only
@@ -352,12 +350,8 @@ public:
     counter<VkSurfaceKHR> c_VkSurfaceKHR;
     counter<VkSwapchainKHR> c_VkSwapchainKHR;
     counter<VkValidationCacheEXT> c_VkValidationCacheEXT;
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     counter<VkVideoSessionKHR> c_VkVideoSessionKHR;
-#endif
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     counter<VkVideoSessionParametersKHR> c_VkVideoSessionParametersKHR;
-#endif
 
 
 #else   // DISTINCT_NONDISPATCHABLE_HANDLES
@@ -422,12 +416,8 @@ public:
           c_VkSurfaceKHR("VkSurfaceKHR", kVulkanObjectTypeSurfaceKHR, this),
           c_VkSwapchainKHR("VkSwapchainKHR", kVulkanObjectTypeSwapchainKHR, this),
           c_VkValidationCacheEXT("VkValidationCacheEXT", kVulkanObjectTypeValidationCacheEXT, this),
-#ifdef VK_ENABLE_BETA_EXTENSIONS
           c_VkVideoSessionKHR("VkVideoSessionKHR", kVulkanObjectTypeVideoSessionKHR, this),
-#endif
-#ifdef VK_ENABLE_BETA_EXTENSIONS
           c_VkVideoSessionParametersKHR("VkVideoSessionParametersKHR", kVulkanObjectTypeVideoSessionParametersKHR, this),
-#endif
 
 
 
@@ -526,12 +516,8 @@ WRAPPER(VkShaderModule)
 WRAPPER_PARENT_INSTANCE(VkSurfaceKHR)
 WRAPPER_PARENT_INSTANCE(VkSwapchainKHR)
 WRAPPER(VkValidationCacheEXT)
-#ifdef VK_ENABLE_BETA_EXTENSIONS
 WRAPPER(VkVideoSessionKHR)
-#endif
-#ifdef VK_ENABLE_BETA_EXTENSIONS
 WRAPPER(VkVideoSessionParametersKHR)
-#endif
 
 
 #else   // DISTINCT_NONDISPATCHABLE_HANDLES
@@ -3171,8 +3157,6 @@ void PostCallRecordCreateWin32SurfaceKHR(
     VkResult                                    result) override;
 #endif // VK_USE_PLATFORM_WIN32_KHR
 
-#ifdef VK_ENABLE_BETA_EXTENSIONS
-
 void PreCallRecordCreateVideoSessionKHR(
     VkDevice                                    device,
     const VkVideoSessionCreateInfoKHR*          pCreateInfo,
@@ -3279,9 +3263,6 @@ void PreCallRecordCmdControlVideoCodingKHR(
 void PostCallRecordCmdControlVideoCodingKHR(
     VkCommandBuffer                             commandBuffer,
     const VkVideoCodingControlInfoKHR*          pCodingControlInfo) override;
-#endif // VK_ENABLE_BETA_EXTENSIONS
-
-#ifdef VK_ENABLE_BETA_EXTENSIONS
 
 void PreCallRecordCmdDecodeVideoKHR(
     VkCommandBuffer                             commandBuffer,
@@ -3290,7 +3271,6 @@ void PreCallRecordCmdDecodeVideoKHR(
 void PostCallRecordCmdDecodeVideoKHR(
     VkCommandBuffer                             commandBuffer,
     const VkVideoDecodeInfoKHR*                 pDecodeInfo) override;
-#endif // VK_ENABLE_BETA_EXTENSIONS
 
 void PreCallRecordCmdBeginRenderingKHR(
     VkCommandBuffer                             commandBuffer,
@@ -4380,9 +4360,6 @@ void PostCallRecordCmdDrawIndexedIndirectCountAMD(
 #ifdef VK_ENABLE_BETA_EXTENSIONS
 #endif // VK_ENABLE_BETA_EXTENSIONS
 
-#ifdef VK_ENABLE_BETA_EXTENSIONS
-#endif // VK_ENABLE_BETA_EXTENSIONS
-
 void PreCallRecordGetShaderInfoAMD(
     VkDevice                                    device,
     VkPipeline                                  pipeline,
@@ -5095,9 +5072,6 @@ void PostCallRecordGetCalibratedTimestampsEXT(
     uint64_t*                                   pTimestamps,
     uint64_t*                                   pMaxDeviation,
     VkResult                                    result) override;
-
-#ifdef VK_ENABLE_BETA_EXTENSIONS
-#endif // VK_ENABLE_BETA_EXTENSIONS
 
 #ifdef VK_USE_PLATFORM_GGP
 #endif // VK_USE_PLATFORM_GGP
@@ -6259,6 +6233,28 @@ void PostCallRecordGetMicromapBuildSizesEXT(
     VkAccelerationStructureBuildTypeKHR         buildType,
     const VkMicromapBuildInfoEXT*               pBuildInfo,
     VkMicromapBuildSizesInfoEXT*                pSizeInfo) override;
+
+void PreCallRecordCmdDrawClusterHUAWEI(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    groupCountX,
+    uint32_t                                    groupCountY,
+    uint32_t                                    groupCountZ) override;
+
+void PostCallRecordCmdDrawClusterHUAWEI(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    groupCountX,
+    uint32_t                                    groupCountY,
+    uint32_t                                    groupCountZ) override;
+
+void PreCallRecordCmdDrawClusterIndirectHUAWEI(
+    VkCommandBuffer                             commandBuffer,
+    VkBuffer                                    buffer,
+    VkDeviceSize                                offset) override;
+
+void PostCallRecordCmdDrawClusterIndirectHUAWEI(
+    VkCommandBuffer                             commandBuffer,
+    VkBuffer                                    buffer,
+    VkDeviceSize                                offset) override;
 
 void PreCallRecordSetDeviceMemoryPriorityEXT(
     VkDevice                                    device,

@@ -11,8 +11,8 @@
 #include "include/core/SkColor.h"
 #include "include/core/SkSpan.h"
 #include "include/core/SkTypes.h"
-#include "include/private/SkMacros.h"
-#include "include/private/SkTDArray.h"
+#include "include/private/base/SkMacros.h"
+#include "include/private/base/SkTDArray.h"
 #include "src/gpu/Blend.h"
 #include "src/gpu/graphite/BuiltInCodeSnippetID.h"
 
@@ -126,7 +126,7 @@ public:
     bool operator==(const PaintParamsKey& that) const;
     bool operator!=(const PaintParamsKey& that) const { return !(*this == that); }
 
-#if GR_TEST_UTILS
+#if GRAPHITE_TEST_UTILS
     bool isErrorKey() const;
 #endif
 

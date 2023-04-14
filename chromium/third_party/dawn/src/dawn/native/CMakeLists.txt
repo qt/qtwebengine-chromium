@@ -47,6 +47,10 @@ target_sources(dawn_native PRIVATE
     "BindGroupTracker.h"
     "BindingInfo.cpp"
     "BindingInfo.h"
+    "BlitBufferToDepthStencil.cpp"
+    "BlitBufferToDepthStencil.h"
+    "BlitDepthToDepth.cpp"
+    "BlitDepthToDepth.h"
     "Blob.cpp"
     "Blob.h"
     "BlobCache.cpp"
@@ -173,8 +177,6 @@ target_sources(dawn_native PRIVATE
     "Serializable.h"
     "ShaderModule.cpp"
     "ShaderModule.h"
-    "StagingBuffer.cpp"
-    "StagingBuffer.h"
     "StreamImplTint.cpp"
     "Subresource.cpp"
     "Subresource.h"
@@ -324,8 +326,6 @@ if (DAWN_ENABLE_D3D12)
         "d3d12/ShaderModuleD3D12.h"
         "d3d12/ShaderVisibleDescriptorAllocatorD3D12.cpp"
         "d3d12/ShaderVisibleDescriptorAllocatorD3D12.h"
-        "d3d12/StagingBufferD3D12.cpp"
-        "d3d12/StagingBufferD3D12.h"
         "d3d12/StagingDescriptorAllocatorD3D12.cpp"
         "d3d12/StagingDescriptorAllocatorD3D12.h"
         "d3d12/StreamImplD3D12.cpp"
@@ -375,8 +375,6 @@ if (DAWN_ENABLE_METAL)
         "metal/SamplerMTL.mm"
         "metal/ShaderModuleMTL.h"
         "metal/ShaderModuleMTL.mm"
-        "metal/StagingBufferMTL.h"
-        "metal/StagingBufferMTL.mm"
         "metal/SwapChainMTL.h"
         "metal/SwapChainMTL.mm"
         "metal/TextureMTL.h"
@@ -402,6 +400,7 @@ if (DAWN_ENABLE_NULL)
 endif()
 
 if (DAWN_ENABLE_OPENGL OR DAWN_ENABLE_VULKAN)
+    target_compile_definitions(dawn_native PRIVATE "DAWN_ENABLE_SPIRV_VALIDATION")
     target_sources(dawn_native PRIVATE
         "SpirvValidation.cpp"
         "SpirvValidation.h"
@@ -535,8 +534,6 @@ if (DAWN_ENABLE_VULKAN)
         "vulkan/SamplerVk.h"
         "vulkan/ShaderModuleVk.cpp"
         "vulkan/ShaderModuleVk.h"
-        "vulkan/StagingBufferVk.cpp"
-        "vulkan/StagingBufferVk.h"
         "vulkan/StreamImplVk.cpp"
         "vulkan/SwapChainVk.cpp"
         "vulkan/SwapChainVk.h"
@@ -554,7 +551,10 @@ if (DAWN_ENABLE_VULKAN)
         "vulkan/VulkanInfo.h"
         "vulkan/external_memory/MemoryService.cpp"
         "vulkan/external_memory/MemoryService.h"
+        "vulkan/external_semaphore/SemaphoreService.cpp"
         "vulkan/external_semaphore/SemaphoreService.h"
+        "vulkan/external_semaphore/ServiceImplementation.cpp"
+        "vulkan/external_semaphore/ServiceImplementation.h"
     )
 
     target_link_libraries(dawn_native PUBLIC Vulkan-Headers)
@@ -563,12 +563,12 @@ if (DAWN_ENABLE_VULKAN)
     if (UNIX AND NOT APPLE)
         target_sources(dawn_native PRIVATE
             "vulkan/external_memory/MemoryServiceOpaqueFD.cpp"
-            "vulkan/external_semaphore/SemaphoreServiceFD.cpp"
+            "vulkan/external_semaphore/ServiceImplementationFD.cpp"
+            "vulkan/external_semaphore/ServiceImplementationFD.h"
         )
     else()
         target_sources(dawn_native PRIVATE
             "vulkan/external_memory/MemoryServiceNull.cpp"
-            "vulkan/external_semaphore/SemaphoreServiceNull.cpp"
         )
     endif()
 endif()

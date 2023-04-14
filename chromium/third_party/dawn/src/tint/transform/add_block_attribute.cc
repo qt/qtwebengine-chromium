@@ -47,7 +47,7 @@ Transform::ApplyResult AddBlockAttribute::Apply(const Program* src,
     bool made_changes = false;
     for (auto* global : src->AST().GlobalVariables()) {
         auto* var = sem.Get(global);
-        if (!ast::IsHostShareable(var->AddressSpace())) {
+        if (!builtin::IsHostShareable(var->AddressSpace())) {
             // Not declared in a host-sharable address space
             continue;
         }
@@ -70,21 +70,21 @@ Transform::ApplyResult AddBlockAttribute::Apply(const Program* src,
 
             auto* wrapper = wrapper_structs.GetOrCreate(ty, [&] {
                 auto* block = b.ASTNodes().Create<BlockAttribute>(b.ID(), b.AllocateNodeID());
-                auto wrapper_name = src->Symbols().NameFor(global->symbol) + "_block";
+                auto wrapper_name = src->Symbols().NameFor(global->name->symbol) + "_block";
                 auto* ret = b.create<ast::Struct>(
-                    b.Symbols().New(wrapper_name),
+                    b.Ident(b.Symbols().New(wrapper_name)),
                     utils::Vector{b.Member(kMemberName, CreateASTTypeFor(ctx, ty))},
                     utils::Vector{block});
                 ctx.InsertBefore(src->AST().GlobalDeclarations(), global, ret);
                 return ret;
             });
-            ctx.Replace(global->type, b.ty.Of(wrapper));
+            ctx.Replace(global->type.expr, b.Expr(wrapper->name->symbol));
 
             // Insert a member accessor to get the original type from the wrapper at
             // any usage of the original variable.
             for (auto* user : var->Users()) {
                 ctx.Replace(user->Declaration(),
-                            b.MemberAccessor(ctx.Clone(global->symbol), kMemberName));
+                            b.MemberAccessor(ctx.Clone(global->name->symbol), kMemberName));
             }
         } else {
             // Add a block attribute to this struct directly.

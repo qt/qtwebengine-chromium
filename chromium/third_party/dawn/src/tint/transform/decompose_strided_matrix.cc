@@ -19,8 +19,8 @@
 #include <vector>
 
 #include "src/tint/program_builder.h"
-#include "src/tint/sem/expression.h"
 #include "src/tint/sem/member_accessor_expression.h"
+#include "src/tint/sem/value_expression.h"
 #include "src/tint/transform/simplify_pointers.h"
 #include "src/tint/utils/hash.h"
 #include "src/tint/utils/map.h"
@@ -37,10 +37,12 @@ struct MatrixInfo {
     /// The type of the matrix
     const type::Matrix* matrix = nullptr;
 
-    /// @returns a new ast::Array that holds an vector column for each row of the
-    /// matrix.
-    const ast::Array* array(ProgramBuilder* b) const {
-        return b->ty.array(b->ty.vec<f32>(matrix->rows()), u32(matrix->columns()), stride);
+    /// @returns the identifier of an array that holds an vector column for each row of the matrix.
+    ast::Type array(ProgramBuilder* b) const {
+        return b->ty.array(b->ty.vec<f32>(matrix->rows()), u32(matrix->columns()),
+                           utils::Vector{
+                               b->Stride(stride),
+                           });
     }
 
     /// Equality operator
@@ -72,8 +74,8 @@ Transform::ApplyResult DecomposeStridedMatrix::Apply(const Program* src,
     for (auto* node : src->ASTNodes().Objects()) {
         if (auto* str = node->As<ast::Struct>()) {
             auto* str_ty = src->Sem().Get(str);
-            if (!str_ty->UsedAs(ast::AddressSpace::kUniform) &&
-                !str_ty->UsedAs(ast::AddressSpace::kStorage)) {
+            if (!str_ty->UsedAs(builtin::AddressSpace::kUniform) &&
+                !str_ty->UsedAs(builtin::AddressSpace::kStorage)) {
                 continue;
             }
             for (auto* member : str_ty->Members()) {
@@ -150,7 +152,7 @@ Transform::ApplyResult DecomposeStridedMatrix::Apply(const Program* src,
                            },
                            array(),
                            utils::Vector{
-                               b.Return(b.Construct(array(), columns)),
+                               b.Return(b.Call(array(), columns)),
                            });
                     return name;
                 });
@@ -167,7 +169,7 @@ Transform::ApplyResult DecomposeStridedMatrix::Apply(const Program* src,
     //   m = arr_to_mat(ssbo.mat)
     std::unordered_map<MatrixInfo, Symbol, MatrixInfo::Hasher> arr_to_mat;
     ctx.ReplaceAll([&](const ast::MemberAccessorExpression* expr) -> const ast::Expression* {
-        if (auto* access = src->Sem().Get<sem::StructMemberAccess>(expr)) {
+        if (auto* access = src->Sem().Get(expr)->UnwrapLoad()->As<sem::StructMemberAccess>()) {
             if (auto info = decomposed.Find(access->Member()->Declaration())) {
                 auto fn = utils::GetOrCreate(arr_to_mat, *info, [&] {
                     auto name =
@@ -189,7 +191,7 @@ Transform::ApplyResult DecomposeStridedMatrix::Apply(const Program* src,
                            },
                            matrix(),
                            utils::Vector{
-                               b.Return(b.Construct(matrix(), columns)),
+                               b.Return(b.Call(matrix(), columns)),
                            });
                     return name;
                 });

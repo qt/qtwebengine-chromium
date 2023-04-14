@@ -19,6 +19,7 @@
 #include <xnnpack.h>
 #include <xnnpack/allocator.h>
 #include <xnnpack/operator.h>
+#include <xnnpack/operator-utils.h>
 #include <xnnpack/common.h>
 #include <xnnpack/log.h>
 #include <xnnpack/math.h>
@@ -231,7 +232,7 @@ enum xnn_status xnn_create_average_pooling2d_nhwc_qu8(
     0 /* bias */, requantization_scale, output_zero_point, output_min, output_max);
 
   average_pooling_op->type = xnn_operator_type_average_pooling_nhwc_qu8;
-  average_pooling_op->ukernel.type = xnn_ukernel_type_average_pooling;
+  average_pooling_op->ukernel.type = xnn_microkernel_type_average_pooling;
   average_pooling_op->flags = flags;
 
   *average_pooling_op_out = average_pooling_op;
@@ -417,9 +418,9 @@ enum xnn_status xnn_create_average_pooling2d_nhwc_f16(
   const bool tf_same_padding = (flags & XNN_FLAG_TENSORFLOW_SAME_PADDING) != 0;
   if (any_padding || tf_same_padding) {
     xnn_params.f16.pavgpool.init.f16(&average_pooling_op->params.f16_minmax, fp16_output_min, fp16_output_max);
-    average_pooling_op->ukernel.type = xnn_ukernel_type_pixelwise_average_pooling;
+    average_pooling_op->ukernel.type = xnn_microkernel_type_pixelwise_average_pooling;
   } else {
-    average_pooling_op->ukernel.type = xnn_ukernel_type_average_pooling;
+    average_pooling_op->ukernel.type = xnn_microkernel_type_average_pooling;
   }
   average_pooling_op->flags = flags;
 
@@ -593,9 +594,9 @@ enum xnn_status xnn_create_average_pooling2d_nhwc_f32(
   const bool tf_same_padding = (flags & XNN_FLAG_TENSORFLOW_SAME_PADDING) != 0;
   if (any_padding || tf_same_padding) {
     xnn_params.f32.pavgpool.init.f32(&average_pooling_op->params.f32_minmax, output_min, output_max);
-    average_pooling_op->ukernel.type = xnn_ukernel_type_pixelwise_average_pooling;
+    average_pooling_op->ukernel.type = xnn_microkernel_type_pixelwise_average_pooling;
   } else {
-    average_pooling_op->ukernel.type = xnn_ukernel_type_average_pooling;
+    average_pooling_op->ukernel.type = xnn_microkernel_type_average_pooling;
   }
   average_pooling_op->flags = flags;
 
@@ -739,6 +740,8 @@ static enum xnn_status setup_average_pooling2d(
         return xnn_status_out_of_memory;
       }
       average_pooling_op->indirection_buffer = indirection_buffer;
+      xnn_log_debug("allocated %zu bytes for indirection buffer in %s operator",
+        indirection_buffer_size, xnn_operator_type_to_string(average_pooling_op->type));
 
       xnn_indirection_init_dwconv2d(average_pooling_op, step_height, step_width, primary_tile, log2_data_element_size);
 
@@ -765,6 +768,8 @@ static enum xnn_status setup_average_pooling2d(
           return xnn_status_out_of_memory;
         }
         average_pooling_op->pixelwise_buffer = pixelwise_buffer;
+        xnn_log_debug("allocated %zu bytes for pixelwise buffer in %s operator",
+          pixelwise_buffer_size, xnn_operator_type_to_string(average_pooling_op->type));
 
         indirection_init_pavgpool2d(
           input_height, input_width,
@@ -857,7 +862,7 @@ enum xnn_status xnn_setup_average_pooling2d_nhwc_qu8(
     return xnn_status_invalid_parameter;
   }
 
-  assert(average_pooling_op->ukernel.type == xnn_ukernel_type_average_pooling);
+  assert(average_pooling_op->ukernel.type == xnn_microkernel_type_average_pooling);
 
   // Number of rows read in the GAVGPOOL micro-kernel.
   const size_t input_size = input_height * input_width;
@@ -902,12 +907,12 @@ enum xnn_status xnn_setup_average_pooling2d_nhwc_f16(
     return xnn_status_invalid_parameter;
   }
 
-  assert(average_pooling_op->ukernel.type == xnn_ukernel_type_average_pooling ||
-         average_pooling_op->ukernel.type == xnn_ukernel_type_pixelwise_average_pooling);
+  assert(average_pooling_op->ukernel.type == xnn_microkernel_type_average_pooling ||
+         average_pooling_op->ukernel.type == xnn_microkernel_type_pixelwise_average_pooling);
 
   const void* pooling_params = &average_pooling_op->params.f16_scaleminmax;
   size_t pooling_params_size = sizeof(average_pooling_op->params.f16_scaleminmax);
-  const bool is_pixelwise = average_pooling_op->ukernel.type == xnn_ukernel_type_pixelwise_average_pooling;
+  const bool is_pixelwise = average_pooling_op->ukernel.type == xnn_microkernel_type_pixelwise_average_pooling;
   if (is_pixelwise) {
     const size_t input_size = input_height * input_width;
     xnn_params.f16.gavgpool.update.f16(&average_pooling_op->params.f16_scaleminmax, fp16_ieee_from_fp32_value(1.0f / (float) (int32_t) input_size));
@@ -919,8 +924,8 @@ enum xnn_status xnn_setup_average_pooling2d_nhwc_f16(
     average_pooling_op,
     batch_size, input_height, input_width,
     input, output,
-    1 /* log2(sizeof(data element)) = log2(sizeof(half)) */,
-    1 /* log2(sizeof(weight element)) = log2(sizeof(half)) */,
+    1 /* log2(sizeof(data element)) = log2(sizeof(uint16_t)) */,
+    1 /* log2(sizeof(weight element)) = log2(sizeof(uint16_t)) */,
     (xnn_indirection_init_pavgpool2d_fn) xnn_indirection_init_pavgpool2d_f16,
     &xnn_params.f16.avgpool, &xnn_params.f16.pavgpool, &xnn_params.f16.gavgpool,
     pooling_params, pooling_params_size,
@@ -945,12 +950,12 @@ enum xnn_status xnn_setup_average_pooling2d_nhwc_f32(
     return xnn_status_invalid_parameter;
   }
 
-  assert(average_pooling_op->ukernel.type == xnn_ukernel_type_average_pooling ||
-         average_pooling_op->ukernel.type == xnn_ukernel_type_pixelwise_average_pooling);
+  assert(average_pooling_op->ukernel.type == xnn_microkernel_type_average_pooling ||
+         average_pooling_op->ukernel.type == xnn_microkernel_type_pixelwise_average_pooling);
 
   const void* pooling_params = &average_pooling_op->params.f32_scaleminmax;
   size_t pooling_params_size = sizeof(average_pooling_op->params.f32_scaleminmax);
-  const bool is_pixelwise = average_pooling_op->ukernel.type == xnn_ukernel_type_pixelwise_average_pooling;
+  const bool is_pixelwise = average_pooling_op->ukernel.type == xnn_microkernel_type_pixelwise_average_pooling;
   if (is_pixelwise) {
     const size_t input_size = input_height * input_width;
     xnn_params.f32.gavgpool.update.f32(&average_pooling_op->params.f32_scaleminmax, 1.0f / (float) (int32_t) input_size);

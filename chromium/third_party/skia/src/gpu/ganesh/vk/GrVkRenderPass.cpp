@@ -13,7 +13,7 @@
 #include "src/gpu/ganesh/vk/GrVkGpu.h"
 #include "src/gpu/ganesh/vk/GrVkRenderTarget.h"
 #include "src/gpu/ganesh/vk/GrVkUtil.h"
-#include "src/gpu/vk/VulkanUtils.h"
+#include "src/gpu/vk/VulkanUtilsPriv.h"
 
 typedef GrVkRenderPass::AttachmentsDescriptor::AttachmentDesc AttachmentDesc;
 
@@ -404,8 +404,10 @@ bool GrVkRenderPass::isCompatible(GrVkRenderTarget* target,
 
     AttachmentsDescriptor desc;
     AttachmentFlags flags;
-    target->getAttachmentsDescriptor(&desc, &flags, this->hasResolveAttachment(),
-                                     this->hasStencilAttachment());
+    if (!target->getAttachmentsDescriptor(&desc, &flags, this->hasResolveAttachment(),
+                                          this->hasStencilAttachment())) {
+        return false;
+    }
 
     return this->isCompatible(desc, flags, selfDepFlags, loadFromResolve);
 }

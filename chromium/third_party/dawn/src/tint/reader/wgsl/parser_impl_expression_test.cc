@@ -44,8 +44,8 @@ TEST_F(ParserImplTest, Expression_Or_Parses) {
     EXPECT_EQ(ast::BinaryOp::kLogicalOr, rel->op);
 
     ASSERT_TRUE(rel->lhs->Is<ast::IdentifierExpression>());
-    auto* ident = rel->lhs->As<ast::IdentifierExpression>();
-    EXPECT_EQ(ident->symbol, p->builder().Symbols().Get("a"));
+    auto* ident_expr = rel->lhs->As<ast::IdentifierExpression>();
+    EXPECT_EQ(ident_expr->identifier->symbol, p->builder().Symbols().Get("a"));
 
     ASSERT_TRUE(rel->rhs->Is<ast::BoolLiteralExpression>());
     ASSERT_TRUE(rel->rhs->As<ast::BoolLiteralExpression>()->value);
@@ -66,8 +66,8 @@ TEST_F(ParserImplTest, Expression_Or_Parses_Multiple) {
     EXPECT_EQ(ast::BinaryOp::kLogicalOr, rel->op);
 
     ASSERT_TRUE(rel->rhs->Is<ast::IdentifierExpression>());
-    auto* ident = rel->rhs->As<ast::IdentifierExpression>();
-    EXPECT_EQ(ident->symbol, p->builder().Symbols().Get("b"));
+    auto* ident_expr = rel->rhs->As<ast::IdentifierExpression>();
+    EXPECT_EQ(ident_expr->identifier->symbol, p->builder().Symbols().Get("b"));
 
     ASSERT_TRUE(rel->lhs->Is<ast::BinaryExpression>());
     // lhs: a
@@ -76,8 +76,8 @@ TEST_F(ParserImplTest, Expression_Or_Parses_Multiple) {
     EXPECT_EQ(ast::BinaryOp::kLogicalOr, rel->op);
 
     ASSERT_TRUE(rel->lhs->Is<ast::IdentifierExpression>());
-    ident = rel->lhs->As<ast::IdentifierExpression>();
-    EXPECT_EQ(ident->symbol, p->builder().Symbols().Get("a"));
+    ident_expr = rel->lhs->As<ast::IdentifierExpression>();
+    EXPECT_EQ(ident_expr->identifier->symbol, p->builder().Symbols().Get("a"));
 
     ASSERT_TRUE(rel->rhs->Is<ast::BoolLiteralExpression>());
     ASSERT_TRUE(rel->rhs->As<ast::BoolLiteralExpression>()->value);
@@ -111,8 +111,8 @@ TEST_F(ParserImplTest, Expression_And_Parses) {
     EXPECT_EQ(ast::BinaryOp::kLogicalAnd, rel->op);
 
     ASSERT_TRUE(rel->lhs->Is<ast::IdentifierExpression>());
-    auto* ident = rel->lhs->As<ast::IdentifierExpression>();
-    EXPECT_EQ(ident->symbol, p->builder().Symbols().Get("a"));
+    auto* ident_expr = rel->lhs->As<ast::IdentifierExpression>();
+    EXPECT_EQ(ident_expr->identifier->symbol, p->builder().Symbols().Get("a"));
 
     ASSERT_TRUE(rel->rhs->Is<ast::BoolLiteralExpression>());
     ASSERT_TRUE(rel->rhs->As<ast::BoolLiteralExpression>()->value);
@@ -133,16 +133,16 @@ TEST_F(ParserImplTest, Expression_And_Parses_Multple) {
     EXPECT_EQ(ast::BinaryOp::kLogicalAnd, rel->op);
 
     ASSERT_TRUE(rel->rhs->Is<ast::IdentifierExpression>());
-    auto* ident = rel->rhs->As<ast::IdentifierExpression>();
-    EXPECT_EQ(ident->symbol, p->builder().Symbols().Get("b"));
+    auto* ident_expr = rel->rhs->As<ast::IdentifierExpression>();
+    EXPECT_EQ(ident_expr->identifier->symbol, p->builder().Symbols().Get("b"));
 
     ASSERT_TRUE(rel->lhs->Is<ast::BinaryExpression>());
     // lhs: a
     // rhs: true
     rel = rel->lhs->As<ast::BinaryExpression>();
     ASSERT_TRUE(rel->lhs->Is<ast::IdentifierExpression>());
-    ident = rel->lhs->As<ast::IdentifierExpression>();
-    EXPECT_EQ(ident->symbol, p->builder().Symbols().Get("a"));
+    ident_expr = rel->lhs->As<ast::IdentifierExpression>();
+    EXPECT_EQ(ident_expr->identifier->symbol, p->builder().Symbols().Get("a"));
 
     ASSERT_TRUE(rel->rhs->Is<ast::BoolLiteralExpression>());
     ASSERT_TRUE(rel->rhs->As<ast::BoolLiteralExpression>()->value);
@@ -191,12 +191,12 @@ TEST_F(ParserImplTest, Expression_Bitwise) {
     EXPECT_EQ(ast::BinaryOp::kAnd, rel->op);
 
     ASSERT_TRUE(rel->lhs->Is<ast::IdentifierExpression>());
-    auto* ident = rel->lhs->As<ast::IdentifierExpression>();
-    EXPECT_EQ(ident->symbol, p->builder().Symbols().Get("a"));
+    auto* ident_expr = rel->lhs->As<ast::IdentifierExpression>();
+    EXPECT_EQ(ident_expr->identifier->symbol, p->builder().Symbols().Get("a"));
 
     ASSERT_TRUE(rel->rhs->Is<ast::IdentifierExpression>());
-    ident = rel->rhs->As<ast::IdentifierExpression>();
-    EXPECT_EQ(ident->symbol, p->builder().Symbols().Get("b"));
+    ident_expr = rel->rhs->As<ast::IdentifierExpression>();
+    EXPECT_EQ(ident_expr->identifier->symbol, p->builder().Symbols().Get("b"));
 }
 
 TEST_F(ParserImplTest, Expression_Relational) {
@@ -212,12 +212,12 @@ TEST_F(ParserImplTest, Expression_Relational) {
     EXPECT_EQ(ast::BinaryOp::kLessThanEqual, rel->op);
 
     ASSERT_TRUE(rel->lhs->Is<ast::IdentifierExpression>());
-    auto* ident = rel->lhs->As<ast::IdentifierExpression>();
-    EXPECT_EQ(ident->symbol, p->builder().Symbols().Get("a"));
+    auto* ident_expr = rel->lhs->As<ast::IdentifierExpression>();
+    EXPECT_EQ(ident_expr->identifier->symbol, p->builder().Symbols().Get("a"));
 
     ASSERT_TRUE(rel->rhs->Is<ast::IdentifierExpression>());
-    ident = rel->rhs->As<ast::IdentifierExpression>();
-    EXPECT_EQ(ident->symbol, p->builder().Symbols().Get("b"));
+    ident_expr = rel->rhs->As<ast::IdentifierExpression>();
+    EXPECT_EQ(ident_expr->identifier->symbol, p->builder().Symbols().Get("b"));
 }
 
 TEST_F(ParserImplTest, Expression_InvalidUnary) {
@@ -463,6 +463,9 @@ struct Case {
     bool should_parse;
 };
 
+static bool ParsedAsTemplateArgumentList(BinaryOperatorInfo lhs_op, BinaryOperatorInfo rhs_op) {
+    return lhs_op.bit == kOpLt && rhs_op.bit & (kOpGt | kOpGe | kOpShr);
+}
 static std::ostream& operator<<(std::ostream& o, const Case& c) {
     return o << "a " << c.lhs_op.symbol << " b " << c.rhs_op.symbol << " c ";
 }
@@ -471,8 +474,10 @@ static std::vector<Case> Cases() {
     std::vector<Case> out;
     for (auto& lhs_op : kBinaryOperators) {
         for (auto& rhs_op : kBinaryOperators) {
-            bool should_parse = lhs_op.can_follow_without_paren & rhs_op.bit;
-            out.push_back({lhs_op, rhs_op, should_parse});
+            if (!ParsedAsTemplateArgumentList(lhs_op, rhs_op)) {
+                bool should_parse = lhs_op.can_follow_without_paren & rhs_op.bit;
+                out.push_back({lhs_op, rhs_op, should_parse});
+            }
         }
     }
     return out;

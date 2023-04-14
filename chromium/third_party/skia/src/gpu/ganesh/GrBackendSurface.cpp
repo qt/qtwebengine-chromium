@@ -23,7 +23,7 @@
 #include "include/gpu/vk/GrVkTypes.h"
 #include "src/gpu/ganesh/vk/GrVkImageLayout.h"
 #include "src/gpu/ganesh/vk/GrVkUtil.h"
-#include "src/gpu/vk/VulkanUtils.h"
+#include "src/gpu/vk/VulkanUtilsPriv.h"
 #endif
 #ifdef SK_METAL
 #include "include/gpu/mtl/GrMtlTypes.h"
@@ -369,23 +369,19 @@ bool GrBackendFormat::operator==(const GrBackendFormat& that) const {
 #ifdef SK_GL
         case GrBackendApi::kOpenGL:
             return fGLFormat == that.fGLFormat;
-            break;
 #endif
 #ifdef SK_VULKAN
         case GrBackendApi::kVulkan:
             return fVk.fFormat == that.fVk.fFormat &&
                    fVk.fYcbcrConversionInfo == that.fVk.fYcbcrConversionInfo;
-            break;
 #endif
 #ifdef SK_METAL
         case GrBackendApi::kMetal:
             return fMtlFormat == that.fMtlFormat;
-            break;
 #endif
 #ifdef SK_DAWN
         case GrBackendApi::kDawn:
             return fDawnFormat == that.fDawnFormat;
-            break;
 #endif
         case GrBackendApi::kMock:
             return fMock.fColorType == that.fMock.fColorType &&
@@ -408,7 +404,7 @@ bool GrBackendFormat::operator==(const GrBackendFormat& that) const {
 #endif
 #ifdef SK_VULKAN
 #include "src/gpu/ganesh/vk/GrVkUtil.h"
-#include "src/gpu/vk/VulkanUtils.h"
+#include "src/gpu/vk/VulkanUtilsPriv.h"
 #endif
 
 SkString GrBackendFormat::toStr() const {

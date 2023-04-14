@@ -297,11 +297,12 @@ TEST_F(SessionMessengerTest, OfferAndReceiverError) {
 }
 
 TEST_F(SessionMessengerTest, UnknownSenderMessageTypesDontGetSent) {
-  EXPECT_DEATH(sender_messenger_
-                   ->SendOutboundMessage(SenderMessage{
-                       SenderMessage::Type::kUnknown, 123, true /* valid */})
-                   .ok(),
-               ".*Trying to send an unknown message is a developer error.*");
+  EXPECT_DEATH_IF_SUPPORTED(
+      sender_messenger_
+          ->SendOutboundMessage(SenderMessage{SenderMessage::Type::kUnknown,
+                                              123, true /* valid */})
+          .ok(),
+      ".*Trying to send an unknown message is a developer error.*");
 }
 
 TEST_F(SessionMessengerTest, UnknownReceiverMessageTypesDontGetSent) {
@@ -312,7 +313,7 @@ TEST_F(SessionMessengerTest, UnknownReceiverMessageTypesDontGetSent) {
                                 message_store_.GetReplyCallback())
                   .ok());
 
-  EXPECT_DEATH(
+  EXPECT_DEATH_IF_SUPPORTED(
       receiver_messenger_
           ->SendMessage(kSenderId,
                         ReceiverMessage{ReceiverMessage::Type::kUnknown, 3123,

@@ -65,13 +65,15 @@ struct transpose_context {
   const void* x;
   void* y;
   union {
-    xnn_transposec_ukernel_function const_size_ukernel;
-    xnn_transposev_ukernel_function variable_size_ukernel;
+    xnn_transposec_ukernel_fn const_size_ukernel;
+    xnn_transposev_ukernel_fn variable_size_ukernel;
   };
   union {
-    size_t element_size;
-    size_t log2_element_size;
-  };
+    union xnn_x8_transpose_params x8_params;
+    union xnn_x16_transpose_params x16_params;
+    union xnn_x24_transpose_params x24_params;
+    union xnn_x32_transpose_params x32_params;
+  } params;
   size_t input_stride[XNN_MAX_TENSOR_DIMS];
   size_t output_stride[XNN_MAX_TENSOR_DIMS];
 };
@@ -249,7 +251,7 @@ struct spmm_context {
   // Stride, in bytes, between matrices C corresponding to different images in batched 1x1 Convolution
   size_t batched_output_stride;
   // Micro-kernel function pointer.
-  xnn_spmm_ukernel_function ukernel;
+  xnn_spmm_ukernel_fn ukernel;
   // Output activation parameters.
   union {
     union xnn_f32_minmax_params f32;
@@ -470,7 +472,7 @@ struct conv2d_context {
   size_t output_height_stride;
   size_t output_channel_stride;
   union {
-    xnn_conv_hwc2chw_ukernel_function hwc2chw_ukernel;
+    xnn_conv_hwc2chw_ukernel_fn hwc2chw_ukernel;
   };
   union {
     union xnn_f32_minmax_params f32;
@@ -486,8 +488,9 @@ struct conv2d_context {
 #endif
 
 struct dwconv_context {
+  size_t kernel_size;
   const void** indirect_input;
-  size_t indirect_input_width_stride;
+  intptr_t indirect_input_width_stride;
   size_t indirect_input_height_stride;
   size_t input_offset;
   size_t input_batch_stride;
@@ -506,12 +509,17 @@ struct dwconv_context {
     union xnn_f32_minmax_params f32;
   } params;
   union {
-    xnn_dwconv_unipass_ukernel_function unipass_ukernel;
+    xnn_dwconv_unipass_ukernel_fn unipass_ukernel;
+    xnn_dwconv_multipass_ukernel_fn multipass_ukernel;
   };
 };
 
 #ifndef __cplusplus
   XNN_PRIVATE void xnn_compute_dwconv_unipass(
+      const struct dwconv_context context[restrict XNN_MIN_ELEMENTS(1)],
+      size_t batch_index,
+      size_t output_y);
+  XNN_PRIVATE void xnn_compute_dwconv_multipass(
       const struct dwconv_context context[restrict XNN_MIN_ELEMENTS(1)],
       size_t batch_index,
       size_t output_y);
@@ -534,7 +542,7 @@ struct dwconv2d_context {
     union xnn_f32_chw_params f32;
   } params;
   union {
-    xnn_dwconv2d_chw_ukernel_function chw_ukernel;
+    xnn_dwconv2d_chw_ukernel_fn chw_ukernel;
   };
 };
 
@@ -562,7 +570,7 @@ struct max_pooling_context {
     union xnn_u8_minmax_params u8;
     union xnn_f32_minmax_params f32;
   } params;
-  xnn_maxpool_ukernel_function ukernel;
+  xnn_maxpool_ukernel_fn ukernel;
 };
 
 #ifndef __cplusplus
@@ -585,7 +593,7 @@ struct unpooling_context {
   size_t pooling_size;
   size_t channels;
   uint32_t fill_value;
-  xnn_unpool_ukernel_function ukernel;
+  xnn_unpool_ukernel_fn ukernel;
 };
 
 #ifndef __cplusplus
@@ -612,8 +620,8 @@ struct argmax_pooling_context {
   size_t input_increment;
   size_t output_increment;
   union {
-    xnn_argmaxpool_unipass_ukernel_function unipass_ukernel;
-    xnn_argmaxpool_multipass_ukernel_function multipass_ukernel;
+    xnn_argmaxpool_unipass_ukernel_fn unipass_ukernel;
+    xnn_argmaxpool_multipass_ukernel_fn multipass_ukernel;
   };
 };
 
@@ -649,8 +657,8 @@ struct average_pooling_context {
     union xnn_qu8_avgpool_minmax_params qu8;
   } params;
   union {
-    xnn_avgpool_unipass_ukernel_function unipass_ukernel;
-    xnn_avgpool_multipass_ukernel_function multipass_ukernel;
+    xnn_avgpool_unipass_ukernel_fn unipass_ukernel;
+    xnn_avgpool_multipass_ukernel_fn multipass_ukernel;
   };
 };
 
@@ -688,8 +696,8 @@ struct pixelwise_average_pooling_context {
     union xnn_u8_minmax_params u8;
   } params;
   union {
-    xnn_pavgpool_unipass_ukernel_function unipass_ukernel;
-    xnn_pavgpool_multipass_ukernel_function multipass_ukernel;
+    xnn_pavgpool_unipass_ukernel_fn unipass_ukernel;
+    xnn_pavgpool_multipass_ukernel_fn multipass_ukernel;
   };
 };
 
@@ -721,8 +729,8 @@ struct global_average_pooling_nwc_context {
     union xnn_f32_scaleminmax_params f32;
   } params;
   union {
-    xnn_gavgpool_unipass_ukernel_function unipass_ukernel;
-    xnn_gavgpool_multipass_ukernel_function multipass_ukernel;
+    xnn_gavgpool_unipass_ukernel_fn unipass_ukernel;
+    xnn_gavgpool_multipass_ukernel_fn multipass_ukernel;
   };
 };
 
@@ -744,8 +752,9 @@ struct global_average_pooling_ncw_context {
   void* output;
   size_t output_channel_stride;
   size_t output_batch_stride;
-  xnn_gavgpool_cw_ukernel_function ukernel;
+  xnn_gavgpool_cw_ukernel_fn ukernel;
   union {
+    union xnn_f16_gavgpool_params f16;
     union xnn_f32_gavgpool_params f32;
   } params;
 };
@@ -778,7 +787,7 @@ struct resize_bilinear_context {
   // log2(sizeof(weight element)).
   uint32_t log2_wsize;
   // Pointer to BILINEAR micro-kernel function.
-  xnn_ibilinear_ukernel_function ukernel;
+  xnn_ibilinear_ukernel_fn ukernel;
 };
 
 struct resize_bilinear_chw_context {
@@ -803,7 +812,7 @@ struct resize_bilinear_chw_context {
   // Stride, in bytes, between consecutive channels of an output image.
   size_t output_channel_stride;
   // Pointer to BILINEAR micro-kernel function.
-  xnn_ibilinear_chw_ukernel_function ukernel;
+  xnn_ibilinear_chw_ukernel_fn ukernel;
 };
 
 #ifndef __cplusplus
@@ -835,7 +844,7 @@ struct elementwise_binary_context {
     union xnn_f16_minmax_params f16;
     union xnn_f32_minmax_params f32;
   } params;
-  xnn_vbinary_ukernel_function ukernel;
+  xnn_vbinary_ukernel_fn ukernel;
 };
 
 #ifndef __cplusplus
@@ -864,8 +873,8 @@ struct channel_shuffle_context {
   size_t n;
   size_t m;
   union {
-    xnn_zipc_ukernel_function fixed_ukernel;
-    xnn_zipv_ukernel_function variable_ukernel;
+    xnn_zipc_ukernel_fn fixed_ukernel;
+    xnn_zipv_ukernel_fn variable_ukernel;
   };
 };
 
@@ -886,7 +895,7 @@ struct lut_strided_context {
   const void* t;
   void* y;
   size_t y_stride;
-  xnn_x8_lut_ukernel_function ukernel;
+  xnn_x8_lut_ukernel_fn ukernel;
 };
 
 #ifndef __cplusplus
@@ -901,7 +910,7 @@ struct lut_contiguous_context {
   const void* t;
   void* y;
   size_t y_stride;
-  xnn_x8_lut_ukernel_function ukernel;
+  xnn_x8_lut_ukernel_fn ukernel;
 };
 
 #ifndef __cplusplus
@@ -917,7 +926,7 @@ struct univector_strided_context {
   size_t x_stride;
   void* y;
   size_t y_stride;
-  xnn_vunary_ukernel_function ukernel;
+  xnn_vunary_ukernel_fn ukernel;
   union {
     union xnn_f16_abs_params f16_abs;
     union xnn_f16_default_params f16_default;
@@ -963,7 +972,7 @@ struct univector_contiguous_context {
   void* y;
   uint16_t log2_xsize;
   uint16_t log2_ysize;
-  xnn_vunary_ukernel_function ukernel;
+  xnn_vunary_ukernel_fn ukernel;
   union {
     union xnn_f16_abs_params f16_abs;
     union xnn_f16_default_params f16_default;
@@ -1011,7 +1020,7 @@ struct prelu_context {
   const void* w;
   void* y;
   size_t y_stride;
-  xnn_prelu_ukernel_function ukernel;
+  xnn_prelu_ukernel_fn ukernel;
 };
 
 #ifndef __cplusplus
@@ -1028,7 +1037,7 @@ struct vmulcaddc_context {
   const void* w;
   void* y;
   size_t y_stride;
-  xnn_vmulcaddc_ukernel_function ukernel;
+  xnn_vmulcaddc_ukernel_fn ukernel;
   union {
     union xnn_f16_minmax_params f16;
     union xnn_f32_minmax_params f32;
@@ -1052,8 +1061,8 @@ struct pad_context {
   size_t input_size[XNN_MAX_TENSOR_DIMS];
   size_t output_size[1];
   uint32_t padding_value;
-  xnn_pad_ukernel_function pad_ukernel;
-  xnn_fill_ukernel_function fill_ukernel;
+  xnn_pad_ukernel_fn pad_ukernel;
+  xnn_fill_ukernel_fn fill_ukernel;
 };
 
 #ifndef __cplusplus
@@ -1069,7 +1078,7 @@ struct slice_context {
   size_t output_stride[XNN_MAX_TENSOR_DIMS - 1];
   size_t offsets[XNN_MAX_TENSOR_DIMS];
   size_t contiguous_size;
-  xnn_vunary_ukernel_function ukernel;
+  xnn_vunary_ukernel_fn ukernel;
 };
 
 #ifndef __cplusplus
@@ -1097,8 +1106,8 @@ struct u8_softmax_context {
   const uint32_t* t;
   uint8_t* y;
   size_t y_stride;
-  xnn_u8_rmax_ukernel_function rmax_ukernel;
-  xnn_u8_lut32norm_ukernel_function lut_norm_ukernel;
+  xnn_u8_rmax_ukernel_fn rmax_ukernel;
+  xnn_u8_lut32norm_ukernel_fn lut_norm_ukernel;
 };
 
 #ifndef __cplusplus
@@ -1107,7 +1116,7 @@ struct u8_softmax_context {
       size_t batch_index);
 #endif
 
-typedef void (*xnn_compute_reciprocal_function)(const void* input, void* output);
+typedef void (*xnn_compute_reciprocal_fn)(const void* input, void* output);
 
 struct floating_point_softmax_context {
   size_t n;
@@ -1115,10 +1124,10 @@ struct floating_point_softmax_context {
   size_t x_stride;
   void* y;
   size_t y_stride;
-  xnn_rmax_ukernel_function rmax_ukernel;
-  xnn_raddstoreexpminusmax_ukernel_function raddstoreexpminusmax_ukernel;
-  xnn_compute_reciprocal_function compute_reciprocal;
-  xnn_vbinary_ukernel_function vmulc_ukernel;
+  xnn_rmax_ukernel_fn rmax_ukernel;
+  xnn_raddstoreexpminusmax_ukernel_fn raddstoreexpminusmax_ukernel;
+  xnn_compute_reciprocal_fn compute_reciprocal;
+  xnn_vbinary_ukernel_fn vmulc_ukernel;
   union {
     union xnn_f16_minmax_params f16;
     union xnn_f32_minmax_params f32;

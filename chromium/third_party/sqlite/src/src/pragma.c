@@ -1785,12 +1785,21 @@ void sqlite3Pragma(
         ** will also prepopulate the cursor column cache that is used
         ** by the OP_IsType code, so it is a required step.
         */
-        mxCol = pTab->nCol-1;
-        while( mxCol>=0
-            && ((pTab->aCol[mxCol].colFlags & COLFLAG_VIRTUAL)!=0
-                || pTab->iPKey==mxCol) ) mxCol--;
+        assert( !IsVirtual(pTab) );
+        if( HasRowid(pTab) ){
+          mxCol = -1;
+          for(j=0; j<pTab->nCol; j++){
+            if( (pTab->aCol[j].colFlags & COLFLAG_VIRTUAL)==0 ) mxCol++;
+          }
+          if( mxCol==pTab->iPKey ) mxCol--;
+        }else{
+          /* COLFLAG_VIRTUAL columns are not included in the WITHOUT ROWID
+          ** PK index column-count, so there is no need to account for them 
+          ** in this case. */
+          mxCol = sqlite3PrimaryKeyIndex(pTab)->nColumn-1;
+        }
         if( mxCol>=0 ){
-          sqlite3ExprCodeGetColumnOfTable(v, pTab, iDataCur, mxCol, 3);
+          sqlite3VdbeAddOp3(v, OP_Column, iDataCur, mxCol, 3);
           sqlite3VdbeTypeofColumn(v, 3);
         }
 
@@ -1958,7 +1967,8 @@ void sqlite3Pragma(
         if( !isQuick ){ /* Omit the remaining tests for quick_check */
           /* Validate index entries for the current row */
           for(j=0, pIdx=pTab->pIndex; pIdx; pIdx=pIdx->pNext, j++){
-            int jmp2, jmp3, jmp4, jmp5;
+            int jmp2, jmp3, jmp4, jmp5, label6;
+            int kk;
             int ckUniq = sqlite3VdbeMakeLabel(pParse);
             if( pPk==pIdx ) continue;
             r1 = sqlite3GenerateIndexKey(pParse, pIdx, iDataCur, 0, 0, &jmp3,
@@ -1976,13 +1986,49 @@ void sqlite3Pragma(
             sqlite3VdbeAddOp3(v, OP_Concat, 4, 3, 3);
             jmp4 = integrityCheckResultRow(v);
             sqlite3VdbeJumpHere(v, jmp2);
+
+            /* The OP_IdxRowid opcode is an optimized version of OP_Column
+            ** that extracts the rowid off the end of the index record.
+            ** But it only works correctly if index record does not have
+            ** any extra bytes at the end.  Verify that this is the case. */
+            if( HasRowid(pTab) ){
+              int jmp7;
+              sqlite3VdbeAddOp2(v, OP_IdxRowid, iIdxCur+j, 3);
+              jmp7 = sqlite3VdbeAddOp3(v, OP_Eq, 3, 0, r1+pIdx->nColumn-1);
+              VdbeCoverage(v);
+              sqlite3VdbeLoadString(v, 3,
+                 "rowid not at end-of-record for row ");
+              sqlite3VdbeAddOp3(v, OP_Concat, 7, 3, 3);
+              sqlite3VdbeLoadString(v, 4, " of index ");
+              sqlite3VdbeGoto(v, jmp5-1);
+              sqlite3VdbeJumpHere(v, jmp7);
+            }
+
+            /* Any indexed columns with non-BINARY collations must still hold
+            ** the exact same text value as the table. */
+            label6 = 0;
+            for(kk=0; kk<pIdx->nKeyCol; kk++){
+              if( pIdx->azColl[kk]==sqlite3StrBINARY ) continue;
+              if( label6==0 ) label6 = sqlite3VdbeMakeLabel(pParse);
+              sqlite3VdbeAddOp3(v, OP_Column, iIdxCur+j, kk, 3);
+              sqlite3VdbeAddOp3(v, OP_Ne, 3, label6, r1+kk); VdbeCoverage(v);
+            }
+            if( label6 ){
+              int jmp6 = sqlite3VdbeAddOp0(v, OP_Goto);
+              sqlite3VdbeResolveLabel(v, label6);
+              sqlite3VdbeLoadString(v, 3, "row ");
+              sqlite3VdbeAddOp3(v, OP_Concat, 7, 3, 3);
+              sqlite3VdbeLoadString(v, 4, " values differ from index ");
+              sqlite3VdbeGoto(v, jmp5-1);
+              sqlite3VdbeJumpHere(v, jmp6);
+            }
+              
             /* For UNIQUE indexes, verify that only one entry exists with the
             ** current key.  The entry is unique if (1) any column is NULL
             ** or (2) the next entry has a different key */
             if( IsUniqueIndex(pIdx) ){
               int uniqOk = sqlite3VdbeMakeLabel(pParse);
               int jmp6;
-              int kk;
               for(kk=0; kk<pIdx->nKeyCol; kk++){
                 int iCol = pIdx->aiColumn[kk];
                 assert( iCol!=XN_ROWID && iCol<pTab->nCol );

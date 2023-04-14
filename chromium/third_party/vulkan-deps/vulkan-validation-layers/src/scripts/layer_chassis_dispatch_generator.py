@@ -1,9 +1,9 @@
 #!/usr/bin/python3 -i
 #
-# Copyright (c) 2015-2022 The Khronos Group Inc.
-# Copyright (c) 2015-2022 Valve Corporation
-# Copyright (c) 2015-2022 LunarG, Inc.
-# Copyright (c) 2015-2022 Google Inc.
+# Copyright (c) 2015-2023 The Khronos Group Inc.
+# Copyright (c) 2015-2023 Valve Corporation
+# Copyright (c) 2015-2023 LunarG, Inc.
+# Copyright (c) 2015-2023 Google Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,9 +16,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#
-# Author: Tobin Ehlis <tobine@google.com>
-# Author: Mark Lobodzinski <mark@lunarg.com>
 
 import os,re,sys
 import xml.etree.ElementTree as etree
@@ -129,10 +126,10 @@ class LayerChassisDispatchOutputGenerator(OutputGenerator):
 // This file is ***GENERATED***.  Do Not Edit.
 // See layer_chassis_dispatch_generator.py for modifications.
 
-/* Copyright (c) 2015-2022 The Khronos Group Inc.
- * Copyright (c) 2015-2022 Valve Corporation
- * Copyright (c) 2015-2022 LunarG, Inc.
- * Copyright (c) 2015-2022 Google Inc.
+/* Copyright (c) 2015-2023 The Khronos Group Inc.
+ * Copyright (c) 2015-2023 Valve Corporation
+ * Copyright (c) 2015-2023 LunarG, Inc.
+ * Copyright (c) 2015-2023 Google Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -145,8 +142,6 @@ class LayerChassisDispatchOutputGenerator(OutputGenerator):
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *
- * Author: Mark Lobodzinski <mark@lunarg.com>
  */"""
 
     inline_custom_source_preamble = """
@@ -377,7 +372,7 @@ VkResult DispatchCreateRenderPass2(VkDevice device, const VkRenderPassCreateInfo
 void DispatchDestroyRenderPass(VkDevice device, VkRenderPass renderPass, const VkAllocationCallbacks *pAllocator) {
     auto layer_data = GetLayerDataPtr(get_dispatch_key(device), layer_data_map);
     if (!wrap_handles) return layer_data->device_dispatch_table.DestroyRenderPass(device, renderPass, pAllocator);
-    uint64_t renderPass_id = reinterpret_cast<uint64_t &>(renderPass);
+    uint64_t renderPass_id = CastToUint64(renderPass);
 
     auto iter = unique_id_mapping.pop(renderPass_id);
     if (iter != unique_id_mapping.end()) {
@@ -513,6 +508,7 @@ VkResult DispatchQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR *pPresent
                     local_pPresentInfo->pSwapchains[index1] = layer_data->Unwrap(pPresentInfo->pSwapchains[index1]);
                 }
             }
+            WrapPnextChainHandles(layer_data, local_pPresentInfo->pNext);
         }
     }
     VkResult result = layer_data->device_dispatch_table.QueuePresentKHR(queue, local_pPresentInfo->ptr());
@@ -535,12 +531,12 @@ void DispatchDestroyDescriptorPool(VkDevice device, VkDescriptorPool descriptorP
 
     // remove references to implicitly freed descriptor sets
     for(auto descriptor_set : layer_data->pool_descriptor_sets_map[descriptorPool]) {
-        unique_id_mapping.erase(reinterpret_cast<uint64_t &>(descriptor_set));
+        unique_id_mapping.erase(CastToUint64(descriptor_set));
     }
     layer_data->pool_descriptor_sets_map.erase(descriptorPool);
     lock.unlock();
 
-    uint64_t descriptorPool_id = reinterpret_cast<uint64_t &>(descriptorPool);
+    uint64_t descriptorPool_id = CastToUint64(descriptorPool);
 
     auto iter = unique_id_mapping.pop(descriptorPool_id);
     if (iter != unique_id_mapping.end()) {
@@ -564,7 +560,7 @@ VkResult DispatchResetDescriptorPool(VkDevice device, VkDescriptorPool descripto
         WriteLockGuard lock(dispatch_lock);
         // remove references to implicitly freed descriptor sets
         for(auto descriptor_set : layer_data->pool_descriptor_sets_map[descriptorPool]) {
-            unique_id_mapping.erase(reinterpret_cast<uint64_t &>(descriptor_set));
+            unique_id_mapping.erase(CastToUint64(descriptor_set));
         }
         layer_data->pool_descriptor_sets_map[descriptorPool].clear();
     }
@@ -631,7 +627,7 @@ VkResult DispatchFreeDescriptorSets(VkDevice device, VkDescriptorPool descriptor
         for (uint32_t index0 = 0; index0 < descriptorSetCount; index0++) {
             VkDescriptorSet handle = pDescriptorSets[index0];
             pool_descriptor_sets.erase(handle);
-            uint64_t unique_id = reinterpret_cast<uint64_t &>(handle);
+            uint64_t unique_id = CastToUint64(handle);
             unique_id_mapping.erase(unique_id);
         }
     }
@@ -716,7 +712,7 @@ void DispatchDestroyDescriptorUpdateTemplate(VkDevice device, VkDescriptorUpdate
     if (!wrap_handles)
         return layer_data->device_dispatch_table.DestroyDescriptorUpdateTemplate(device, descriptorUpdateTemplate, pAllocator);
     WriteLockGuard lock(dispatch_lock);
-    uint64_t descriptor_update_template_id = reinterpret_cast<uint64_t &>(descriptorUpdateTemplate);
+    uint64_t descriptor_update_template_id = CastToUint64(descriptorUpdateTemplate);
     layer_data->desc_template_createinfo_map.erase(descriptor_update_template_id);
     lock.unlock();
 
@@ -737,7 +733,7 @@ void DispatchDestroyDescriptorUpdateTemplateKHR(VkDevice device, VkDescriptorUpd
     if (!wrap_handles)
         return layer_data->device_dispatch_table.DestroyDescriptorUpdateTemplateKHR(device, descriptorUpdateTemplate, pAllocator);
     WriteLockGuard lock(dispatch_lock);
-    uint64_t descriptor_update_template_id = reinterpret_cast<uint64_t &>(descriptorUpdateTemplate);
+    uint64_t descriptor_update_template_id = CastToUint64(descriptorUpdateTemplate);
     layer_data->desc_template_createinfo_map.erase(descriptor_update_template_id);
     lock.unlock();
 
@@ -873,7 +869,7 @@ void DispatchUpdateDescriptorSetWithTemplate(VkDevice device, VkDescriptorSet de
     if (!wrap_handles)
         return layer_data->device_dispatch_table.UpdateDescriptorSetWithTemplate(device, descriptorSet, descriptorUpdateTemplate,
                                                                                  pData);
-    uint64_t template_handle = reinterpret_cast<uint64_t &>(descriptorUpdateTemplate);
+    uint64_t template_handle = CastToUint64(descriptorUpdateTemplate);
     void *unwrapped_buffer = nullptr;
     {
         ReadLockGuard lock(dispatch_lock);
@@ -891,7 +887,7 @@ void DispatchUpdateDescriptorSetWithTemplateKHR(VkDevice device, VkDescriptorSet
     if (!wrap_handles)
         return layer_data->device_dispatch_table.UpdateDescriptorSetWithTemplateKHR(device, descriptorSet, descriptorUpdateTemplate,
                                                                                     pData);
-    uint64_t template_handle = reinterpret_cast<uint64_t &>(descriptorUpdateTemplate);
+    uint64_t template_handle = CastToUint64(descriptorUpdateTemplate);
     void *unwrapped_buffer = nullptr;
     {
         ReadLockGuard lock(dispatch_lock);
@@ -910,7 +906,7 @@ void DispatchCmdPushDescriptorSetWithTemplateKHR(VkCommandBuffer commandBuffer,
     if (!wrap_handles)
         return layer_data->device_dispatch_table.CmdPushDescriptorSetWithTemplateKHR(commandBuffer, descriptorUpdateTemplate,
                                                                                      layout, set, pData);
-    uint64_t template_handle = reinterpret_cast<uint64_t &>(descriptorUpdateTemplate);
+    uint64_t template_handle = CastToUint64(descriptorUpdateTemplate);
     void *unwrapped_buffer = nullptr;
     {
         ReadLockGuard lock(dispatch_lock);
@@ -1052,7 +1048,7 @@ VkResult DispatchDebugMarkerSetObjectTagEXT(VkDevice device, const VkDebugMarker
     if (!wrap_handles) return layer_data->device_dispatch_table.DebugMarkerSetObjectTagEXT(device, pTagInfo);
     safe_VkDebugMarkerObjectTagInfoEXT local_tag_info(pTagInfo);
     {
-        auto it = unique_id_mapping.find(reinterpret_cast<uint64_t &>(local_tag_info.object));
+        auto it = unique_id_mapping.find(CastToUint64(local_tag_info.object));
         if (it != unique_id_mapping.end()) {
             local_tag_info.object = it->second;
         }
@@ -1067,7 +1063,7 @@ VkResult DispatchDebugMarkerSetObjectNameEXT(VkDevice device, const VkDebugMarke
     if (!wrap_handles) return layer_data->device_dispatch_table.DebugMarkerSetObjectNameEXT(device, pNameInfo);
     safe_VkDebugMarkerObjectNameInfoEXT local_name_info(pNameInfo);
     {
-        auto it = unique_id_mapping.find(reinterpret_cast<uint64_t &>(local_name_info.object));
+        auto it = unique_id_mapping.find(CastToUint64(local_name_info.object));
         if (it != unique_id_mapping.end()) {
             local_name_info.object = it->second;
         }
@@ -1083,7 +1079,7 @@ VkResult DispatchSetDebugUtilsObjectTagEXT(VkDevice device, const VkDebugUtilsOb
     if (!wrap_handles) return layer_data->device_dispatch_table.SetDebugUtilsObjectTagEXT(device, pTagInfo);
     safe_VkDebugUtilsObjectTagInfoEXT local_tag_info(pTagInfo);
     {
-        auto it = unique_id_mapping.find(reinterpret_cast<uint64_t &>(local_tag_info.objectHandle));
+        auto it = unique_id_mapping.find(CastToUint64(local_tag_info.objectHandle));
         if (it != unique_id_mapping.end()) {
             local_tag_info.objectHandle = it->second;
         }
@@ -1098,7 +1094,7 @@ VkResult DispatchSetDebugUtilsObjectNameEXT(VkDevice device, const VkDebugUtilsO
     if (!wrap_handles) return layer_data->device_dispatch_table.SetDebugUtilsObjectNameEXT(device, pNameInfo);
     safe_VkDebugUtilsObjectNameInfoEXT local_name_info(pNameInfo);
     {
-        auto it = unique_id_mapping.find(reinterpret_cast<uint64_t &>(local_name_info.objectHandle));
+        auto it = unique_id_mapping.find(CastToUint64(local_name_info.objectHandle));
         if (it != unique_id_mapping.end()) {
             local_name_info.objectHandle = it->second;
         }
@@ -1203,7 +1199,7 @@ void DispatchGetPrivateData(
     layer_data->device_dispatch_table.GetPrivateData(device, objectType, objectHandle, privateDataSlot, pData);
 }
 
-layer_data::unordered_map<VkCommandBuffer, VkCommandPool> secondary_cb_map{};
+vvl::unordered_map<VkCommandBuffer, VkCommandPool> secondary_cb_map{};
 
 std::shared_mutex dispatch_secondary_cb_map_mutex;
 
@@ -1251,7 +1247,7 @@ void DispatchFreeCommandBuffers(VkDevice device, VkCommandPool commandPool, uint
 void DispatchDestroyCommandPool(VkDevice device, VkCommandPool commandPool, const VkAllocationCallbacks* pAllocator) {
     auto layer_data = GetLayerDataPtr(get_dispatch_key(device), layer_data_map);
     if (!wrap_handles) return layer_data->device_dispatch_table.DestroyCommandPool(device, commandPool, pAllocator);
-    uint64_t commandPool_id = reinterpret_cast<uint64_t &>(commandPool);
+    uint64_t commandPool_id = CastToUint64(commandPool);
     auto iter = unique_id_mapping.pop(commandPool_id);
     if (iter != unique_id_mapping.end()) {
         commandPool = (VkCommandPool)iter->second;
@@ -1756,6 +1752,7 @@ void DispatchGetDescriptorEXT(
             write(self.inline_copyright_message, file=self.outFile)
             self.newline()
             write('#include <mutex>', file=self.outFile)
+            write('#include "cast_utils.h"', file=self.outFile)
             write('#include "chassis.h"', file=self.outFile)
             write('#include "layer_chassis_dispatch.h"', file=self.outFile)
             write('#include "vk_layer_utils.h"', file=self.outFile)
@@ -2044,7 +2041,7 @@ void DispatchGetDescriptorEXT(
                     destroy_ndo_code += '%sfor (uint32_t index0 = 0; index0 < %s; index0++) {\n' % (indent, cmd_info[param].len)
                     indent = self.incIndent(indent)
                     destroy_ndo_code += '%s%s handle = %s[index0];\n' % (indent, cmd_info[param].type, cmd_info[param].name)
-                    destroy_ndo_code += '%suint64_t unique_id = reinterpret_cast<uint64_t &>(handle);\n' % (indent)
+                    destroy_ndo_code += '%suint64_t unique_id = CastToUint64(handle);\n' % (indent)
                     destroy_ndo_code += '%sunique_id_mapping.erase(unique_id);\n' % (indent)
                     indent = self.decIndent(indent);
                     destroy_ndo_code += '%s}\n' % indent
@@ -2052,7 +2049,7 @@ void DispatchGetDescriptorEXT(
                     destroy_ndo_code += '%s}\n' % indent
                 else:
                     # Remove a single handle from the map
-                    destroy_ndo_code += '%suint64_t %s_id = reinterpret_cast<uint64_t &>(%s);\n' % (indent, cmd_info[param].name, cmd_info[param].name)
+                    destroy_ndo_code += '%suint64_t %s_id = CastToUint64(%s);\n' % (indent, cmd_info[param].name, cmd_info[param].name)
                     destroy_ndo_code += '%sauto iter = unique_id_mapping.pop(%s_id);\n' % (indent, cmd_info[param].name)
                     destroy_ndo_code += '%sif (iter != unique_id_mapping.end()) {\n' % (indent)
                     indent = self.incIndent(indent)

@@ -5,7 +5,10 @@
 /**
  * Combine the two given colors according to alpha blending.
  */
-export function blendColors(fgRGBA: number[], bgRGBA: number[]): number[] {
+export type Color4D = [number, number, number, number];
+export type Color3D = [number, number, number];
+export type Color4DOr3D = [number, number, number, number | undefined];
+export function blendColors(fgRGBA: Color4D, bgRGBA: Color4D): Color4D {
   const alpha = fgRGBA[3];
   return [
     ((1 - alpha) * bgRGBA[0]) + (alpha * fgRGBA[0]),
@@ -33,7 +36,11 @@ function rgbToHue([r, g, b]: number[]): number {
   return h;
 }
 
-export function rgbaToHsla([r, g, b, a]: number[]): number[] {
+export function rgbToHsl(rgb: Color3D): Color3D {
+  const [h, s, l] = rgbaToHsla([...rgb, undefined]);
+  return [h, s, l];
+}
+export function rgbaToHsla([r, g, b, a]: Color4DOr3D): Color4DOr3D {
   const max = Math.max(r, g, b);
   const min = Math.min(r, g, b);
   const diff = max - min;
@@ -56,7 +63,11 @@ export function rgbaToHsla([r, g, b, a]: number[]): number[] {
   return [h, s, l, a];
 }
 
-export function rgbaToHwba([r, g, b, a]: number[]): number[] {
+export function rgbToHwb(rgb: Color3D): Color3D {
+  const [h, w, b] = rgbaToHwba([...rgb, undefined]);
+  return [h, w, b];
+}
+export function rgbaToHwba([r, g, b, a]: Color4DOr3D): Color4DOr3D {
   const h = rgbToHue([r, g, b]);
   const max = Math.max(r, g, b);
   const min = Math.min(r, g, b);
@@ -65,9 +76,9 @@ export function rgbaToHwba([r, g, b, a]: number[]): number[] {
 }
 
 /**
-* Calculate the luminance of this color using the WCAG algorithm.
-* See http://www.w3.org/TR/2008/REC-WCAG20-20081211/#relativeluminancedef
-*/
+ * Calculate the luminance of this color using the WCAG algorithm.
+ * See http://www.w3.org/TR/2008/REC-WCAG20-20081211/#relativeluminancedef
+ */
 export function luminance([rSRGB, gSRGB, bSRGB]: number[]): number {
   const r = rSRGB <= 0.03928 ? rSRGB / 12.92 : Math.pow(((rSRGB + 0.055) / 1.055), 2.4);
   const g = gSRGB <= 0.03928 ? gSRGB / 12.92 : Math.pow(((gSRGB + 0.055) / 1.055), 2.4);
@@ -81,7 +92,7 @@ export function luminance([rSRGB, gSRGB, bSRGB]: number[]): number {
  * Returns the ratio to 1, for example for two two colors with a contrast ratio of 21:1, this function will return 21.
  * See http://www.w3.org/TR/2008/REC-WCAG20-20081211/#contrast-ratiodef
  */
-export function contrastRatio(fgRGBA: number[], bgRGBA: number[]): number {
+export function contrastRatio(fgRGBA: Color4D, bgRGBA: Color4D): number {
   const blendedFg = blendColors(fgRGBA, bgRGBA);
   const fgLuminance = luminance(blendedFg);
   const bgLuminance = luminance(bgRGBA);
@@ -92,24 +103,22 @@ export function contrastRatio(fgRGBA: number[], bgRGBA: number[]): number {
 // Constants for basic APCA version.
 // See https://github.com/Myndex/SAPC-APCA
 const mainTRC = 2.4;
-const normBgExp = 0.55;
-const normFgExp = 0.58;
-const revBgExp = 0.62;
-const revFgExp = 0.57;
-const blkThrs = 0.03;
-const blkClmp = 1.45;
-const scaleBoW = 1.25;
-const scaleWoB = 1.25;
+const normBgExp = 0.56;
+const normFgExp = 0.57;
+const revBgExp = 0.65;
+const revFgExp = 0.62;
+const blkThrs = 0.022;
+const blkClmp = 1.414;
+const scaleBoW = 1.14;
+const scaleWoB = 1.14;
+const loConOffset = 0.027;
+const loClip = 0.1;
 const deltaLuminanceMin = 0.0005;
-const loConThresh = 0.078;
-const loConFactor = 12.82051282051282;
-const loConOffset = 0.06;
-const loClip = 0.001;
 
 /**
-* Calculate relative luminance of a color.
-* See https://github.com/Myndex/SAPC-APCA
-*/
+ * Calculate relative luminance of a color.
+ * See https://github.com/Myndex/SAPC-APCA
+ */
 export function luminanceAPCA([rSRGB, gSRGB, bSRGB]: number[]): number {
   const r = Math.pow(rSRGB, mainTRC);
   const g = Math.pow(gSRGB, mainTRC);
@@ -123,7 +132,7 @@ export function luminanceAPCA([rSRGB, gSRGB, bSRGB]: number[]): number {
  * Returns the percentage of the predicted visual contrast.
  * See https://github.com/Myndex/SAPC-APCA
  */
-export function contrastRatioAPCA(fgRGBA: number[], bgRGBA: number[]): number {
+export function contrastRatioAPCA(fgRGBA: Color4D, bgRGBA: Color4D): number {
   const blendedFg = blendColors(fgRGBA, bgRGBA);
   return contrastRatioByLuminanceAPCA(luminanceAPCA(blendedFg), luminanceAPCA(bgRGBA));
 }
@@ -139,17 +148,13 @@ export function contrastRatioByLuminanceAPCA(fgLuminance: number, bgLuminance: n
     return 0;
   }
   let result = 0;
-  if (bgLuminance >= fgLuminance) {  // Black text on white.
+  if (bgLuminance > fgLuminance) {  // Black text on white.
     result = (Math.pow(bgLuminance, normBgExp) - Math.pow(fgLuminance, normFgExp)) * scaleBoW;
-    result = result < loClip ?
-        0 :
-        (result < loConThresh ? result - result * loConFactor * loConOffset : result - loConOffset);
+    result = result < loClip ? 0 : result - loConOffset;
   } else {
     // White text on black.
     result = (Math.pow(bgLuminance, revBgExp) - Math.pow(fgLuminance, revFgExp)) * scaleWoB;
-    result = result > -loClip ?
-        0 :
-        (result > -loConThresh ? result - result * loConFactor * loConOffset : result + loConOffset);
+    result = result > -loClip ? 0 : result + loConOffset;
   }
   return result * 100;
 }

@@ -31,18 +31,24 @@
 #include "absl/container/flat_hash_set.h"
 #include "absl/strings/escaping.h"
 #include "absl/types/span.h"
+#include "connections/advertising_options.h"
 #include "connections/connection_options.h"
 #include "connections/implementation/mediums/utils.h"
 #include "connections/implementation/offline_frames.h"
+#include "connections/implementation/proto/offline_wire_formats.pb.h"
 #include "connections/medium_selector.h"
 #include "internal/platform/base64_utils.h"
 #include "internal/platform/bluetooth_utils.h"
 #include "internal/platform/logging.h"
 
-namespace location {
 namespace nearby {
 namespace connections {
 
+using ::location::nearby::connections::ConnectionRequestFrame;
+using ::location::nearby::connections::ConnectionResponseFrame;
+using ::location::nearby::connections::MediumMetadata;
+using ::location::nearby::connections::OfflineFrame;
+using ::location::nearby::connections::V1Frame;
 using ::securegcm::UKey2Handshake;
 
 constexpr absl::Duration BasePcpHandler::kConnectionRequestReadTimeout;
@@ -86,11 +92,12 @@ Status BasePcpHandler::StartAdvertising(
     const ConnectionRequestInfo& info) {
   Future<Status> response;
 
-  NEARBY_LOGS(INFO) << "StartAdvertising with supported mediums: "
-                    << GetStringValueOfSupportedMediums(advertising_options);
-
   AdvertisingOptions compatible_advertising_options =
       advertising_options.CompatibleOptions();
+  StripOutUnavailableMediums(compatible_advertising_options);
+  NEARBY_LOGS(INFO) << "StartAdvertising with supported mediums: "
+                    << GetStringValueOfSupportedMediums(
+                           compatible_advertising_options);
 
   RunOnPcpHandlerThread(
       "start-advertising",
@@ -165,19 +172,32 @@ void BasePcpHandler::OptionsAllowed(const BooleanMediumSelector& allowed,
                                     std::ostringstream& result) const {
   result << "{ ";
   if (allowed.bluetooth) {
-    result << proto::connections::Medium_Name(Medium::BLUETOOTH) << " ";
+    result << location::nearby::proto::connections::Medium_Name(
+                  Medium::BLUETOOTH)
+           << " ";
   }
   if (allowed.ble) {
-    result << proto::connections::Medium_Name(Medium::BLE) << " ";
+    result << location::nearby::proto::connections::Medium_Name(Medium::BLE)
+           << " ";
   }
   if (allowed.web_rtc) {
-    result << proto::connections::Medium_Name(Medium::WEB_RTC) << " ";
+    result << location::nearby::proto::connections::Medium_Name(Medium::WEB_RTC)
+           << " ";
   }
   if (allowed.wifi_lan) {
-    result << proto::connections::Medium_Name(Medium::WIFI_LAN) << " ";
+    result << location::nearby::proto::connections::Medium_Name(
+                  Medium::WIFI_LAN)
+           << " ";
   }
   if (allowed.wifi_hotspot) {
-    result << proto::connections::Medium_Name(Medium::WIFI_HOTSPOT) << " ";
+    result << location::nearby::proto::connections::Medium_Name(
+                  Medium::WIFI_HOTSPOT)
+           << " ";
+  }
+  if (allowed.wifi_direct) {
+    result << location::nearby::proto::connections::Medium_Name(
+                  Medium::WIFI_DIRECT)
+           << " ";
   }
   result << "}";
 }
@@ -197,15 +217,23 @@ BooleanMediumSelector BasePcpHandler::ComputeIntersectionOfSupportedMediums(
   if (their_mediums.empty()) {
     their_mediums.push_back(GetDefaultUpgradeMedium());
   }
-
-  for (auto medium : their_mediums) {
-    NEARBY_LOGS(VERBOSE) << "Their supported medium name: "
-                         << proto::connections::Medium_Name(medium);
+  // TODO(b/268243340): Add Supported Medium field to ConnectionResponseFrame
+  if (connection_info.is_incoming) {
+    for (auto medium : their_mediums) {
+      NEARBY_LOGS(INFO) << "Their supported medium name: "
+                        << location::nearby::proto::connections::Medium_Name(
+                               medium);
+    }
+  } else {
+    NEARBY_LOGS(INFO)
+        << "Current ConnectionResponseFrame from host has no Supported Mediums "
+           "field, so use calculated default medium instead.";
   }
 
   for (Medium my_medium : GetConnectionMediumsByPriority()) {
-    NEARBY_LOGS(VERBOSE) << "Our supported medium name: "
-                         << proto::connections::Medium_Name(my_medium);
+    NEARBY_LOGS(INFO) << "Our supported medium name: "
+                      << location::nearby::proto::connections::Medium_Name(
+                             my_medium);
     if (std::find(their_mediums.begin(), their_mediums.end(), my_medium) !=
         their_mediums.end()) {
       // We use advertising options as a proxy to whether or not the local
@@ -234,6 +262,7 @@ BooleanMediumSelector BasePcpHandler::ComputeIntersectionOfSupportedMediums(
   mediumSelector.web_rtc = intersection.contains(Medium::WEB_RTC);
   mediumSelector.wifi_lan = intersection.contains(Medium::WIFI_LAN);
   mediumSelector.wifi_hotspot = intersection.contains(Medium::WIFI_HOTSPOT);
+  mediumSelector.wifi_direct = intersection.contains(Medium::WIFI_DIRECT);
   return mediumSelector;
 }
 
@@ -242,14 +271,17 @@ Status BasePcpHandler::StartDiscovery(ClientProxy* client,
                                       const DiscoveryOptions& discovery_options,
                                       const DiscoveryListener& listener) {
   Future<Status> response;
-
+  DiscoveryOptions stripped_discovery_options = discovery_options;
+  StripOutUnavailableMediums(stripped_discovery_options);
   NEARBY_LOGS(INFO) << "StartDiscovery with supported mediums:"
-                    << GetStringValueOfSupportedMediums(discovery_options);
+                    << GetStringValueOfSupportedMediums(
+                           stripped_discovery_options);
   RunOnPcpHandlerThread(
-      "start-discovery", [this, client, service_id, discovery_options,
+      "start-discovery", [this, client, service_id, stripped_discovery_options,
                           &listener, &response]() RUN_ON_PCP_HANDLER_THREAD() {
         // Ask the implementation to attempt to start discovery.
-        auto result = StartDiscoveryImpl(client, service_id, discovery_options);
+        auto result =
+            StartDiscoveryImpl(client, service_id, stripped_discovery_options);
         if (!result.status.Ok()) {
           response.Set(result.status);
           return;
@@ -260,7 +292,7 @@ Status BasePcpHandler::StartDiscovery(ClientProxy* client,
         discovered_endpoints_.clear();
         client->StartedDiscovery(service_id, GetStrategy(), listener,
                                  absl::MakeSpan(result.mediums),
-                                 discovery_options);
+                                 stripped_discovery_options);
         response.Set({Status::kSuccess});
       });
   return WaitForResult(absl::StrCat("StartDiscovery(", service_id, ")"),
@@ -351,7 +383,8 @@ EncryptionRunner::ResultListener BasePcpHandler::GetResultListener() {
                   NEARBY_LOGS(ERROR)
                       << "Encryption failed for endpoint_id=" << endpoint_id
                       << " on medium="
-                      << proto::connections::Medium_Name(channel->GetMedium());
+                      << location::nearby::proto::connections::Medium_Name(
+                             channel->GetMedium());
                   OnEncryptionFailureRunnable(endpoint_id, channel);
                 });
           },
@@ -629,7 +662,7 @@ Status BasePcpHandler::RequestConnection(
 }
 
 bool BasePcpHandler::MediumSupportedByClientOptions(
-    const proto::connections::Medium& medium,
+    const location::nearby::proto::connections::Medium& medium,
     const ConnectionOptions& connection_options) const {
   for (auto supported_medium : connection_options.GetMediums()) {
     if (medium == supported_medium) {
@@ -641,10 +674,11 @@ bool BasePcpHandler::MediumSupportedByClientOptions(
 
 // Get ordered supported connection medium based on local advertising/discovery
 // option.
-std::vector<proto::connections::Medium>
+std::vector<location::nearby::proto::connections::Medium>
 BasePcpHandler::GetSupportedConnectionMediumsByPriority(
     const ConnectionOptions& local_connection_option) {
-  std::vector<proto::connections::Medium> supported_mediums_by_priority;
+  std::vector<location::nearby::proto::connections::Medium>
+      supported_mediums_by_priority;
   for (auto medium_by_priority : GetConnectionMediumsByPriority()) {
     if (MediumSupportedByClientOptions(medium_by_priority,
                                        local_connection_option)) {
@@ -652,6 +686,56 @@ BasePcpHandler::GetSupportedConnectionMediumsByPriority(
     }
   }
   return supported_mediums_by_priority;
+}
+
+void BasePcpHandler::StripOutUnavailableMediums(
+    AdvertisingOptions& advertising_options) {
+  BooleanMediumSelector& allowed = advertising_options.allowed;
+
+  if (allowed.bluetooth) {
+    allowed.bluetooth = mediums_->GetBluetoothClassic().IsAvailable();
+  }
+  if (allowed.ble) {
+    allowed.ble = mediums_->GetBle().IsAvailable();
+  }
+  if (allowed.web_rtc) {
+    allowed.web_rtc = mediums_->GetWebRtc().IsAvailable();
+  }
+  if (allowed.wifi_lan) {
+    allowed.wifi_lan = mediums_->GetWifiLan().IsAvailable();
+  }
+  if (allowed.wifi_hotspot) {
+    allowed.wifi_hotspot = mediums_->GetWifiHotspot().IsAPAvailable();
+  }
+  if (allowed.wifi_direct) {
+    allowed.wifi_direct = mediums_->GetWifiDirect().IsGOAvailable();
+  }
+}
+
+void BasePcpHandler::StripOutUnavailableMediums(
+    DiscoveryOptions& discovery_options) {
+  BooleanMediumSelector& allowed = discovery_options.allowed;
+
+  if (allowed.bluetooth) {
+    allowed.bluetooth = mediums_->GetBluetoothClassic().IsAvailable();
+  }
+  if (allowed.ble) {
+    allowed.ble = mediums_->GetBle().IsAvailable();
+  }
+  if (allowed.web_rtc) {
+    allowed.web_rtc = mediums_->GetWebRtc().IsAvailable();
+  }
+  if (allowed.wifi_lan) {
+    allowed.wifi_lan = mediums_->GetWifiLan().IsAvailable();
+  }
+  if (allowed.wifi_hotspot) {
+    allowed.wifi_hotspot = mediums_->GetWifi().IsAvailable() &&
+                           mediums_->GetWifiHotspot().IsClientAvailable();
+  }
+  if (allowed.wifi_direct) {
+    allowed.wifi_direct = mediums_->GetWifi().IsAvailable() &&
+                          mediums_->GetWifiDirect().IsGCAvailable();
+  }
 }
 
 // Get any single discovered endpoint for a given endpoint_id.
@@ -681,7 +765,7 @@ BasePcpHandler::GetDiscoveredEndpoints(const std::string& endpoint_id) {
 
 std::vector<BasePcpHandler::DiscoveredEndpoint*>
 BasePcpHandler::GetDiscoveredEndpoints(
-    const proto::connections::Medium medium) {
+    const location::nearby::proto::connections::Medium medium) {
   std::vector<BasePcpHandler::DiscoveredEndpoint*> result;
   for (const auto& item : discovered_endpoints_) {
     if (item.second->medium == medium) {
@@ -815,7 +899,8 @@ Status BasePcpHandler::AcceptConnection(
         }
 
         Exception write_exception =
-            channel->Write(parser::ForConnectionResponse(Status::kSuccess));
+            channel->Write(parser::ForConnectionResponse(
+                Status::kSuccess, client->GetLocalOsInfo()));
         if (!write_exception.Ok()) {
           NEARBY_LOGS(INFO)
               << "AcceptConnection: failed to send response: endpoint_id="
@@ -871,8 +956,9 @@ Status BasePcpHandler::RejectConnection(ClientProxy* client,
           return;
         }
 
-        Exception write_exception = channel->Write(
-            parser::ForConnectionResponse(Status::kConnectionRejected));
+        Exception write_exception =
+            channel->Write(parser::ForConnectionResponse(
+                Status::kConnectionRejected, client->GetLocalOsInfo()));
         if (!write_exception.Ok()) {
           NEARBY_LOGS(INFO)
               << "RejectConnection: failed to send response: endpoint_id="
@@ -894,11 +980,10 @@ Status BasePcpHandler::RejectConnection(ClientProxy* client,
                        client->GetClientId(), &response);
 }
 
-void BasePcpHandler::OnIncomingFrame(OfflineFrame& frame,
-                                     const std::string& endpoint_id,
-                                     ClientProxy* client,
-                                     proto::connections::Medium medium,
-                                     PacketMetaData& packet_meta_data) {
+void BasePcpHandler::OnIncomingFrame(
+    OfflineFrame& frame, const std::string& endpoint_id, ClientProxy* client,
+    location::nearby::proto::connections::Medium medium,
+    PacketMetaData& packet_meta_data) {
   CountDownLatch latch(1);
   RunOnPcpHandlerThread(
       "incoming-frame",
@@ -936,6 +1021,10 @@ void BasePcpHandler::OnIncomingFrame(OfflineFrame& frame,
               << "OnConnectionResponse: remote rejected; endpoint_id="
               << endpoint_id << "; status=" << connection_response.status();
           client->RemoteEndpointRejectedConnection(endpoint_id);
+        }
+
+        if (connection_response.has_os_info()) {
+          client->SetRemoteOsInfo(endpoint_id, connection_response.os_info());
         }
 
         EvaluateConnectionResult(client, endpoint_id,
@@ -1052,7 +1141,7 @@ void BasePcpHandler::OnEndpointLost(
 bool BasePcpHandler::IsPreferred(
     const BasePcpHandler::DiscoveredEndpoint& new_endpoint,
     const BasePcpHandler::DiscoveredEndpoint& old_endpoint) {
-  std::vector<proto::connections::Medium> mediums =
+  std::vector<location::nearby::proto::connections::Medium> mediums =
       GetConnectionMediumsByPriority();
   // Make sure the comparator is irreflexive, so we have a strict weak ordering.
   if (new_endpoint.medium != old_endpoint.medium) {
@@ -1085,7 +1174,7 @@ bool BasePcpHandler::IsPreferred(
 Exception BasePcpHandler::OnIncomingConnection(
     ClientProxy* client, const ByteArray& remote_endpoint_info,
     std::unique_ptr<EndpointChannel> channel,
-    proto::connections::Medium medium) {
+    location::nearby::proto::connections::Medium medium) {
   absl::Time start_time = SystemClock::ElapsedRealtime();
 
   //  Fixes an NPE in ClientProxy.OnConnectionAccepted. The crash happened when
@@ -1093,7 +1182,7 @@ Exception BasePcpHandler::OnIncomingConnection(
   //  incoming connection where we attempted to check that state.
   if (!client->IsAdvertising()) {
     NEARBY_LOGS(WARNING) << "Ignoring incoming connection on medium "
-                         << proto::connections::Medium_Name(
+                         << location::nearby::proto::connections::Medium_Name(
                                 channel->GetMedium())
                          << " because client=" << client->GetClientId()
                          << " is no longer advertising.";
@@ -1122,13 +1211,15 @@ Exception BasePcpHandler::OnIncomingConnection(
   const ConnectionRequestFrame& connection_request =
       frame.v1().connection_request();
   NEARBY_LOGS(INFO) << "In onIncomingConnection("
-                    << proto::connections::Medium_Name(channel->GetMedium())
+                    << location::nearby::proto::connections::Medium_Name(
+                           channel->GetMedium())
                     << ") for client=" << client->GetClientId()
                     << ", read ConnectionRequestFrame from endpoint(id="
                     << connection_request.endpoint_id() << ")";
   if (client->IsConnectedToEndpoint(connection_request.endpoint_id())) {
     NEARBY_LOGS(ERROR) << "Incoming connection on medium "
-                       << proto::connections::Medium_Name(channel->GetMedium())
+                       << location::nearby::proto::connections::Medium_Name(
+                              channel->GetMedium())
                        << " was denied because we're "
                           "already connected to endpoint(id="
                        << connection_request.endpoint_id() << ").";
@@ -1239,7 +1330,8 @@ bool BasePcpHandler::BreakTie(ClientProxy* client,
 
     NEARBY_LOGS(INFO)
         << "In onIncomingConnection("
-        << proto::connections::Medium_Name(endpoint_channel->GetMedium())
+        << location::nearby::proto::connections::Medium_Name(
+               endpoint_channel->GetMedium())
         << ") for client=" << client->GetClientId()
         << ", found a collision with endpoint " << endpoint_id
         << ". We've already sent a connection request to them with nonce "
@@ -1253,7 +1345,7 @@ bool BasePcpHandler::BreakTie(ClientProxy* client,
       endpoint_channel->Close();
 
       NEARBY_LOGS(INFO) << "In onIncomingConnection("
-                        << proto::connections::Medium_Name(
+                        << location::nearby::proto::connections::Medium_Name(
                                endpoint_channel->GetMedium())
                         << ") for client=" << client->GetClientId()
                         << ", cleaned up the collision with endpoint "
@@ -1265,7 +1357,8 @@ bool BasePcpHandler::BreakTie(ClientProxy* client,
       ProcessTieBreakLoss(client, endpoint_id, &info);
       NEARBY_LOGS(INFO)
           << "In onIncomingConnection("
-          << proto::connections::Medium_Name(endpoint_channel->GetMedium())
+          << location::nearby::proto::connections::Medium_Name(
+                 endpoint_channel->GetMedium())
           << ") for client=" << client->GetClientId()
           << ", cleaned up the collision with endpoint " << endpoint_id
           << " by closing our channel and notifying our client of the failure.";
@@ -1278,7 +1371,8 @@ bool BasePcpHandler::BreakTie(ClientProxy* client,
 
       NEARBY_LOGS(INFO)
           << "In onIncomingConnection("
-          << proto::connections::Medium_Name(endpoint_channel->GetMedium())
+          << location::nearby::proto::connections::Medium_Name(
+                 endpoint_channel->GetMedium())
           << ") for client=" << client->GetClientId()
           << ", cleaned up the collision with endpoint " << endpoint_id
           << " by closing both channels. Our nonces were identical, so we "
@@ -1314,7 +1408,8 @@ bool BasePcpHandler::AppendRemoteBluetoothMacAddressEndpoint(
   }
   auto endpoint = it.first->second.get();
   for (auto item = it.first; item != it.second; item++) {
-    if (item->second->medium == proto::connections::Medium::BLUETOOTH) {
+    if (item->second->medium ==
+        location::nearby::proto::connections::Medium::BLUETOOTH) {
       NEARBY_LOGS(INFO)
           << "Cannot append remote Bluetooth MAC Address endpoint, because "
              "the endpoint has already been found over Bluetooth ["
@@ -1336,7 +1431,8 @@ bool BasePcpHandler::AppendRemoteBluetoothMacAddressEndpoint(
   auto bluetooth_endpoint =
       std::make_shared<BluetoothEndpoint>(BluetoothEndpoint{
           {endpoint_id, endpoint->endpoint_info, endpoint->service_id,
-           proto::connections::Medium::BLUETOOTH, WebRtcState::kUnconnectable},
+           location::nearby::proto::connections::Medium::BLUETOOTH,
+           WebRtcState::kUnconnectable},
           remote_bluetooth_device,
       });
 
@@ -1365,7 +1461,8 @@ bool BasePcpHandler::AppendWebRTCEndpoint(
 
   auto webrtc_endpoint = std::make_shared<WebRtcEndpoint>(WebRtcEndpoint{
       {endpoint_id, endpoint->endpoint_info, endpoint->service_id,
-       proto::connections::Medium::WEB_RTC, WebRtcState::kConnectable},
+       location::nearby::proto::connections::Medium::WEB_RTC,
+       WebRtcState::kConnectable},
       CreatePeerIdFromAdvertisement(endpoint->service_id, endpoint->endpoint_id,
                                     endpoint->endpoint_info),
   });
@@ -1466,7 +1563,8 @@ void BasePcpHandler::EvaluateConnectionResult(ClientProxy* client,
   client->OnBandwidthChanged(endpoint_id, medium);
 
   NEARBY_LOGS(INFO) << "Connection accepted on Medium:"
-                    << proto::connections::Medium_Name(medium);
+                    << location::nearby::proto::connections::Medium_Name(
+                           medium);
 
   // Kick off the bandwidth upgrade for incoming connections.
   if (connection_info.is_incoming &&
@@ -1513,8 +1611,7 @@ ExceptionOr<OfflineFrame> BasePcpHandler::ReadConnectionRequestFrame(
 std::string BasePcpHandler::GetHashedConnectionToken(
     const ByteArray& token_bytes) {
   auto token = std::string(token_bytes);
-  return location::nearby::Base64Utils::Encode(
-             Utils::Sha256Hash(token, token.size()))
+  return nearby::Base64Utils::Encode(Utils::Sha256Hash(token, token.size()))
       .substr(0, kConnectionTokenLength);
 }
 
@@ -1522,9 +1619,10 @@ void BasePcpHandler::LogConnectionAttemptFailure(
     ClientProxy* client, Medium medium, const std::string& endpoint_id,
     bool is_incoming, absl::Time start_time,
     EndpointChannel* endpoint_channel) {
-  proto::connections::ConnectionAttemptResult result =
-      Cancelled(client, endpoint_id) ? proto::connections::RESULT_CANCELLED
-                                     : proto::connections::RESULT_ERROR;
+  location::nearby::proto::connections::ConnectionAttemptResult result =
+      Cancelled(client, endpoint_id)
+          ? location::nearby::proto::connections::RESULT_CANCELLED
+          : location::nearby::proto::connections::RESULT_ERROR;
   std::unique_ptr<ConnectionAttemptMetadataParams>
       connections_attempt_metadata_params;
   if (endpoint_channel != nullptr) {
@@ -1535,13 +1633,13 @@ void BasePcpHandler::LogConnectionAttemptFailure(
   }
   if (is_incoming) {
     client->GetAnalyticsRecorder().OnIncomingConnectionAttempt(
-        proto::connections::INITIAL, medium, result,
+        location::nearby::proto::connections::INITIAL, medium, result,
         SystemClock::ElapsedRealtime() - start_time,
         /* connection_token= */ "", connections_attempt_metadata_params.get());
   } else {
     client->GetAnalyticsRecorder().OnOutgoingConnectionAttempt(
-        endpoint_id, proto::connections::INITIAL, medium, result,
-        SystemClock::ElapsedRealtime() - start_time,
+        endpoint_id, location::nearby::proto::connections::INITIAL, medium,
+        result, SystemClock::ElapsedRealtime() - start_time,
         /* connection_token= */ "", connections_attempt_metadata_params.get());
   }
 }
@@ -1567,16 +1665,17 @@ void BasePcpHandler::LogConnectionAttemptSuccess(
   }
   if (connection_info.is_incoming) {
     connection_info.client->GetAnalyticsRecorder().OnIncomingConnectionAttempt(
-        proto::connections::INITIAL, connection_info.channel->GetMedium(),
-        proto::connections::RESULT_SUCCESS,
+        location::nearby::proto::connections::INITIAL,
+        connection_info.channel->GetMedium(),
+        location::nearby::proto::connections::RESULT_SUCCESS,
         SystemClock::ElapsedRealtime() - connection_info.start_time,
         connection_info.connection_token,
         connections_attempt_metadata_params.get());
   } else {
     connection_info.client->GetAnalyticsRecorder().OnOutgoingConnectionAttempt(
-        endpoint_id, proto::connections::INITIAL,
+        endpoint_id, location::nearby::proto::connections::INITIAL,
         connection_info.channel->GetMedium(),
-        proto::connections::RESULT_SUCCESS,
+        location::nearby::proto::connections::RESULT_SUCCESS,
         SystemClock::ElapsedRealtime() - connection_info.start_time,
         connection_info.connection_token,
         connections_attempt_metadata_params.get());
@@ -1607,7 +1706,8 @@ BasePcpHandler::PendingConnectionInfo::~PendingConnectionInfo() {
   }
 
   if (channel != nullptr) {
-    channel->Close(proto::connections::DisconnectionReason::SHUTDOWN);
+    channel->Close(
+        location::nearby::proto::connections::DisconnectionReason::SHUTDOWN);
   }
 
   // Destroy crypto context now; for some reason, crypto context destructor
@@ -1627,4 +1727,3 @@ void BasePcpHandler::PendingConnectionInfo::LocalEndpointRejectedConnection(
 
 }  // namespace connections
 }  // namespace nearby
-}  // namespace location

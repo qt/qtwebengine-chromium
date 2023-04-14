@@ -22,7 +22,6 @@
 #include "internal/platform/mutex_lock.h"
 #include "internal/platform/uuid.h"
 
-namespace location {
 namespace nearby {
 namespace connections {
 
@@ -204,7 +203,7 @@ bool BluetoothClassic::StartDiscovery(DiscoveredDeviceCallback callback) {
     return false;
   }
 
-  if (!medium_.StartDiscovery(callback)) {
+  if (!medium_.StartDiscovery(std::move(callback))) {
     NEARBY_LOGS(INFO) << "Failed to start discovery of BT devices.";
     return false;
   }
@@ -432,4 +431,3 @@ std::string BluetoothClassic::GenerateUuidFromString(const std::string& data) {
 
 }  // namespace connections
 }  // namespace nearby
-}  // namespace location

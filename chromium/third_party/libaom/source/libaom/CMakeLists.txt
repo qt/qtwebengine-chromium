@@ -41,6 +41,13 @@ if(NOT EMSCRIPTEN)
   endif()
 endif()
 
+if(MSVC AND MSVC_VERSION LESS 1920)
+  message(
+    WARNING
+      "MSVC versions prior to 2019 (v16) are not supported and may generate"
+      " incorrect code!")
+endif()
+
 # Library version info. Update LT_CURRENT, LT_REVISION and LT_AGE when making a
 # public release by following the guidelines in the libtool document:
 # https://www.gnu.org/software/libtool/manual/libtool.html#Updating-version-info

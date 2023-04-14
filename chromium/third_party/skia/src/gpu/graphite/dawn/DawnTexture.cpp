@@ -14,7 +14,7 @@
 #include "src/gpu/graphite/Log.h"
 #include "src/gpu/graphite/dawn/DawnCaps.h"
 #include "src/gpu/graphite/dawn/DawnSharedContext.h"
-#include "src/gpu/graphite/dawn/DawnUtils.h"
+#include "src/gpu/graphite/dawn/DawnUtilsPriv.h"
 
 namespace skgpu::graphite {
 namespace {
@@ -55,8 +55,12 @@ wgpu::Texture DawnTexture::MakeDawnTexture(const DawnSharedContext* sharedContex
                                            SkISize dimensions,
                                            const TextureInfo& info) {
     const Caps* caps = sharedContext->caps();
-    SkASSERT(dimensions.width() <= caps->maxTextureSize());
-    SkASSERT(dimensions.height() <= caps->maxTextureSize());
+    if (dimensions.width() > caps->maxTextureSize() ||
+        dimensions.height() > caps->maxTextureSize()) {
+        SKGPU_LOG_E("Texture creation failure: dimensions %d x %d too large.",
+                    dimensions.width(), dimensions.height());
+        return {};
+    }
 
     const DawnTextureSpec& dawnSpec = info.dawnTextureSpec();
 
@@ -101,7 +105,7 @@ DawnTexture::DawnTexture(const DawnSharedContext* sharedContext,
                          wgpu::Texture texture,
                          wgpu::TextureView textureView,
                          Ownership ownership,
-                         SkBudgeted budgeted)
+                         skgpu::Budgeted budgeted)
         : Texture(sharedContext, dimensions, info, /*mutableState=*/nullptr, ownership, budgeted)
         , fTexture(std::move(texture))
         , fTextureView(std::move(textureView)) {}
@@ -109,7 +113,7 @@ DawnTexture::DawnTexture(const DawnSharedContext* sharedContext,
 sk_sp<Texture> DawnTexture::Make(const DawnSharedContext* sharedContext,
                                  SkISize dimensions,
                                  const TextureInfo& info,
-                                 SkBudgeted budgeted) {
+                                 skgpu::Budgeted budgeted) {
     auto texture = MakeDawnTexture(sharedContext, dimensions, info);
     if (!texture) {
         return {};
@@ -139,7 +143,7 @@ sk_sp<Texture> DawnTexture::MakeWrapped(const DawnSharedContext* sharedContext,
                                           std::move(texture),
                                           std::move(textureView),
                                           Ownership::kWrapped,
-                                          SkBudgeted::kNo));
+                                          skgpu::Budgeted::kNo));
 }
 
 sk_sp<Texture> DawnTexture::MakeWrapped(const DawnSharedContext* sharedContext,
@@ -156,7 +160,7 @@ sk_sp<Texture> DawnTexture::MakeWrapped(const DawnSharedContext* sharedContext,
                                           nullptr,
                                           std::move(textureView),
                                           Ownership::kWrapped,
-                                          SkBudgeted::kNo));
+                                          skgpu::Budgeted::kNo));
 }
 
 void DawnTexture::freeGpuData() {

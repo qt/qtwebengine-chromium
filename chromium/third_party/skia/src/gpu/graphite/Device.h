@@ -8,9 +8,9 @@
 #ifndef skgpu_graphite_Device_DEFINED
 #define skgpu_graphite_Device_DEFINED
 
+#include "include/gpu/GpuTypes.h"
 #include "src/core/SkDevice.h"
 #include "src/core/SkEnumBitMask.h"
-
 #include "src/gpu/graphite/ClipStack_graphite.h"
 #include "src/gpu/graphite/DrawOrder.h"
 #include "src/gpu/graphite/geom/Rect.h"
@@ -20,7 +20,10 @@
 
 class SkStrokeRec;
 
-namespace sktext::gpu { class AtlasSubRun; }
+namespace sktext::gpu {
+class AtlasSubRun;
+enum class Budgeted : bool;
+}  // namespace sktext::gpu
 
 namespace skgpu::graphite {
 
@@ -43,7 +46,7 @@ public:
 
     static sk_sp<Device> Make(Recorder*,
                               const SkImageInfo&,
-                              SkBudgeted,
+                              skgpu::Budgeted,
                               Mipmapped,
                               const SkSurfaceProps&,
                               bool addInitialClear);
@@ -141,22 +144,20 @@ private:
     void onDrawGlyphRunList(SkCanvas*, const sktext::GlyphRunList&,
                             const SkPaint&, const SkPaint&) override;
 
-    // TODO: This will likely be implemented with the same primitive building block that drawRect
-    // and drawRRect will rely on.
     void drawEdgeAAQuad(const SkRect& rect, const SkPoint clip[4],
                         SkCanvas::QuadAAFlags aaFlags, const SkColor4f& color,
-                        SkBlendMode mode) override {}
+                        SkBlendMode mode) override;
 
     void drawEdgeAAImageSet(const SkCanvas::ImageSetEntry[], int count,
                             const SkPoint dstClips[], const SkMatrix preViewMatrices[],
                             const SkSamplingOptions&, const SkPaint&,
-                            SkCanvas::SrcRectConstraint) override {}
+                            SkCanvas::SrcRectConstraint) override;
 
-    // TODO: These image drawing APIs can likely be implemented with the same primitive building
-    // block that drawEdgeAAImageSet will use.
     void drawImageRect(const SkImage*, const SkRect* src, const SkRect& dst,
                        const SkSamplingOptions&, const SkPaint&,
                        SkCanvas::SrcRectConstraint) override;
+
+    // TODO: Implement these using per-edge AA quads and an inlined image shader program.
     void drawImageLattice(const SkImage*, const SkCanvas::Lattice&,
                           const SkRect& dst, SkFilterMode, const SkPaint&) override {}
     void drawAtlas(const SkRSXform[], const SkRect[], const SkColor[], int count, sk_sp<SkBlender>,

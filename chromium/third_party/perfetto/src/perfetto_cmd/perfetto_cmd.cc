@@ -203,6 +203,9 @@ PerfettoCmd::PerfettoCmd() {
 PerfettoCmd::~PerfettoCmd() {
   PERFETTO_DCHECK(g_perfetto_cmd == this);
   g_perfetto_cmd = nullptr;
+  if (ctrl_c_handler_installed_) {
+    task_runner_.RemoveFileDescriptorWatch(ctrl_c_evt_.fd());
+  }
 }
 
 void PerfettoCmd::PrintUsage(const char* argv0) {
@@ -878,11 +881,14 @@ int PerfettoCmd::ConnectToServiceAndRun() {
     LogTriggerEvents(PerfettoTriggerAtom::kCmdTrigger, triggers_to_activate_);
 
     bool finished_with_success = false;
+    auto weak_this = weak_factory_.GetWeakPtr();
     TriggerProducer producer(
         &task_runner_,
-        [this, &finished_with_success](bool success) {
+        [weak_this, &finished_with_success](bool success) {
+          if (!weak_this)
+            return;
           finished_with_success = success;
-          task_runner_.Quit();
+          weak_this->task_runner_.Quit();
         },
         &triggers_to_activate_);
     task_runner_.Run();
@@ -1034,6 +1040,10 @@ void PerfettoCmd::OnConnect() {
   }
 
   // Failsafe mechanism to avoid waiting indefinitely if the service hangs.
+  // Note: when using prefer_suspend_clock_for_duration the actual duration
+  // might be < expected_duration_ms_ measured in in wall time. But this is fine
+  // because the resulting timeout will be conservative (it will be accurate
+  // if the device never suspends, and will be more lax if it does).
   if (expected_duration_ms_) {
     uint32_t trace_timeout = expected_duration_ms_ + 60000 +
                              trace_config_->flush_timeout_ms() +
@@ -1199,14 +1209,24 @@ bool PerfettoCmd::OpenOutputFile() {
 }
 
 void PerfettoCmd::SetupCtrlCSignalHandler() {
-  base::InstallCtrCHandler([] { g_perfetto_cmd->SignalCtrlC(); });
-  task_runner_.AddFileDescriptorWatch(ctrl_c_evt_.fd(), [this] {
+  ctrl_c_handler_installed_ = true;
+  base::InstallCtrlCHandler([] {
+    if (!g_perfetto_cmd)
+      return;
+    g_perfetto_cmd->SignalCtrlC();
+  });
+  auto weak_this = weak_factory_.GetWeakPtr();
+  task_runner_.AddFileDescriptorWatch(ctrl_c_evt_.fd(), [weak_this] {
+    if (!weak_this)
+      return;
     PERFETTO_LOG("SIGINT/SIGTERM received: disabling tracing.");
-    ctrl_c_evt_.Clear();
-    consumer_endpoint_->Flush(0, [this](bool flush_success) {
+    weak_this->ctrl_c_evt_.Clear();
+    weak_this->consumer_endpoint_->Flush(0, [weak_this](bool flush_success) {
+      if (!weak_this)
+        return;
       if (!flush_success)
         PERFETTO_ELOG("Final flush unsuccessful.");
-      consumer_endpoint_->DisableTracing();
+      weak_this->consumer_endpoint_->DisableTracing();
     });
   });
 }
@@ -1241,10 +1261,13 @@ void PerfettoCmd::OnAttach(bool success, const TraceConfig& trace_config) {
   PERFETTO_DCHECK(trace_config_->write_into_file());
 
   if (stop_trace_once_attached_) {
-    consumer_endpoint_->Flush(0, [this](bool flush_success) {
+    auto weak_this = weak_factory_.GetWeakPtr();
+    consumer_endpoint_->Flush(0, [weak_this](bool flush_success) {
+      if (!weak_this)
+        return;
       if (!flush_success)
         PERFETTO_ELOG("Final flush unsuccessful.");
-      consumer_endpoint_->DisableTracing();
+      weak_this->consumer_endpoint_->DisableTracing();
     });
   }
 }

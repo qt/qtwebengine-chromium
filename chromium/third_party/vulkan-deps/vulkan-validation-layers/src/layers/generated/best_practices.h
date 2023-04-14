@@ -4,9 +4,9 @@
 
 /***************************************************************************
  *
- * Copyright (c) 2015-2022 The Khronos Group Inc.
- * Copyright (c) 2015-2022 Valve Corporation
- * Copyright (c) 2015-2022 LunarG, Inc.
+ * Copyright (c) 2015-2023 The Khronos Group Inc.
+ * Copyright (c) 2015-2023 Valve Corporation
+ * Copyright (c) 2015-2023 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,10 +19,6 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *
- * Author: Mark Lobodzinski <mark@lunarg.com>
- * Author: Nadav Geva <nadav.geva@amd.com>
- *
  ****************************************************************************/
 
 
@@ -746,18 +742,12 @@ void PostCallRecordCreateWin32SurfaceKHR(
 
 #endif // VK_USE_PLATFORM_WIN32_KHR
 
-#ifdef VK_ENABLE_BETA_EXTENSIONS
-
 void PostCallRecordGetPhysicalDeviceVideoCapabilitiesKHR(
     VkPhysicalDevice                            physicalDevice,
     const VkVideoProfileInfoKHR*                pVideoProfile,
     VkVideoCapabilitiesKHR*                     pCapabilities,
     VkResult                                    result) override;
 
-
-#endif // VK_ENABLE_BETA_EXTENSIONS
-
-#ifdef VK_ENABLE_BETA_EXTENSIONS
 
 void PostCallRecordGetPhysicalDeviceVideoFormatPropertiesKHR(
     VkPhysicalDevice                            physicalDevice,
@@ -767,10 +757,6 @@ void PostCallRecordGetPhysicalDeviceVideoFormatPropertiesKHR(
     VkResult                                    result) override;
 
 
-#endif // VK_ENABLE_BETA_EXTENSIONS
-
-#ifdef VK_ENABLE_BETA_EXTENSIONS
-
 void PostCallRecordCreateVideoSessionKHR(
     VkDevice                                    device,
     const VkVideoSessionCreateInfoKHR*          pCreateInfo,
@@ -778,10 +764,6 @@ void PostCallRecordCreateVideoSessionKHR(
     VkVideoSessionKHR*                          pVideoSession,
     VkResult                                    result) override;
 
-
-#endif // VK_ENABLE_BETA_EXTENSIONS
-
-#ifdef VK_ENABLE_BETA_EXTENSIONS
 
 void PostCallRecordGetVideoSessionMemoryRequirementsKHR(
     VkDevice                                    device,
@@ -791,10 +773,6 @@ void PostCallRecordGetVideoSessionMemoryRequirementsKHR(
     VkResult                                    result) override;
 
 
-#endif // VK_ENABLE_BETA_EXTENSIONS
-
-#ifdef VK_ENABLE_BETA_EXTENSIONS
-
 void PostCallRecordBindVideoSessionMemoryKHR(
     VkDevice                                    device,
     VkVideoSessionKHR                           videoSession,
@@ -802,10 +780,6 @@ void PostCallRecordBindVideoSessionMemoryKHR(
     const VkBindVideoSessionMemoryInfoKHR*      pBindSessionMemoryInfos,
     VkResult                                    result) override;
 
-
-#endif // VK_ENABLE_BETA_EXTENSIONS
-
-#ifdef VK_ENABLE_BETA_EXTENSIONS
 
 void PostCallRecordCreateVideoSessionParametersKHR(
     VkDevice                                    device,
@@ -815,18 +789,12 @@ void PostCallRecordCreateVideoSessionParametersKHR(
     VkResult                                    result) override;
 
 
-#endif // VK_ENABLE_BETA_EXTENSIONS
-
-#ifdef VK_ENABLE_BETA_EXTENSIONS
-
 void PostCallRecordUpdateVideoSessionParametersKHR(
     VkDevice                                    device,
     VkVideoSessionParametersKHR                 videoSessionParameters,
     const VkVideoSessionParametersUpdateInfoKHR* pUpdateInfo,
     VkResult                                    result) override;
 
-
-#endif // VK_ENABLE_BETA_EXTENSIONS
 
 void PostCallRecordGetPhysicalDeviceImageFormatProperties2KHR(
     VkPhysicalDevice                            physicalDevice,
@@ -2018,7 +1986,7 @@ void PostCallRecordGetRayTracingCaptureReplayShaderGroupHandlesKHR(
 
 
 
-const layer_data::unordered_map<std::string, DeprecationData>  deprecated_extensions = {
+const vvl::unordered_map<std::string, DeprecationData>  deprecated_extensions = {
     {"VK_AMD_draw_indirect_count", {kExtPromoted, "VK_KHR_draw_indirect_count"}},
     {"VK_AMD_gpu_shader_half_float", {kExtDeprecated, "VK_KHR_shader_float16_int8"}},
     {"VK_AMD_gpu_shader_int16", {kExtDeprecated, "VK_KHR_shader_float16_int8"}},
@@ -2115,7 +2083,7 @@ const layer_data::unordered_map<std::string, DeprecationData>  deprecated_extens
     {"VK_VALVE_mutable_descriptor_type", {kExtPromoted, "VK_EXT_mutable_descriptor_type"}},
 };
 
-const layer_data::unordered_map<std::string, std::string> special_use_extensions = {
+const vvl::unordered_map<std::string, std::string> special_use_extensions = {
     {"VK_AMD_buffer_marker", "devtools"},
     {"VK_AMD_shader_info", "devtools"},
     {"VK_EXT_border_color_swizzle", "glemulation, d3demulation"},

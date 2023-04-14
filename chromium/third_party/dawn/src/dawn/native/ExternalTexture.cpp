@@ -99,26 +99,21 @@ MaybeError ValidateExternalTextureDescriptor(const DeviceBase* device,
         }
     }
 
-    // TODO(crbug.com/1316671): visible size width must have valid value after chromium side changes
-    // landed.
-    if (descriptor->visibleSize.width > 0) {
-        DAWN_INVALID_IF(descriptor->visibleSize.width == 0 || descriptor->visibleSize.height == 0,
-                        "VisibleSize %s have 0 on width or height.", &descriptor->visibleSize);
+    DAWN_INVALID_IF(descriptor->visibleSize.width == 0 || descriptor->visibleSize.height == 0,
+                    "VisibleSize %s have 0 on width or height.", &descriptor->visibleSize);
 
-        const Extent3D textureSize = descriptor->plane0->GetTexture()->GetSize();
-        DAWN_INVALID_IF(
-            descriptor->visibleSize.width > textureSize.width ||
-                descriptor->visibleSize.height > textureSize.height,
-            "VisibleSize %s is exceed the texture size, defined by Plane0 size (%u, %u).",
-            &descriptor->visibleSize, textureSize.width, textureSize.height);
-        DAWN_INVALID_IF(
-            descriptor->visibleOrigin.x > textureSize.width - descriptor->visibleSize.width ||
-                descriptor->visibleOrigin.y > textureSize.height - descriptor->visibleSize.height,
-            "VisibleRect[Origin: %s, Size: %s] is exceed the texture size, defined by "
-            "Plane0 size (%u, %u).",
-            &descriptor->visibleOrigin, &descriptor->visibleSize, textureSize.width,
-            textureSize.height);
-    }
+    const Extent3D textureSize = descriptor->plane0->GetTexture()->GetSize();
+    DAWN_INVALID_IF(descriptor->visibleSize.width > textureSize.width ||
+                        descriptor->visibleSize.height > textureSize.height,
+                    "VisibleSize %s is exceed the texture size, defined by Plane0 size (%u, %u).",
+                    &descriptor->visibleSize, textureSize.width, textureSize.height);
+    DAWN_INVALID_IF(
+        descriptor->visibleOrigin.x > textureSize.width - descriptor->visibleSize.width ||
+            descriptor->visibleOrigin.y > textureSize.height - descriptor->visibleSize.height,
+        "VisibleRect[Origin: %s, Size: %s] is exceed the texture size, defined by "
+        "Plane0 size (%u, %u).",
+        &descriptor->visibleOrigin, &descriptor->visibleSize, textureSize.width,
+        textureSize.height);
 
     return {};
 }
@@ -139,11 +134,6 @@ ExternalTextureBase::ExternalTextureBase(DeviceBase* device,
       mVisibleOrigin(descriptor->visibleOrigin),
       mVisibleSize(descriptor->visibleSize),
       mState(ExternalTextureState::Alive) {
-    GetObjectTrackingList()->Track(this);
-}
-
-ExternalTextureBase::ExternalTextureBase(DeviceBase* device)
-    : ApiObjectBase(device, kLabelNotImplemented), mState(ExternalTextureState::Alive) {
     GetObjectTrackingList()->Track(this);
 }
 
@@ -209,27 +199,117 @@ MaybeError ExternalTextureBase::Initialize(DeviceBase* device,
     const float* dstFn = descriptor->dstTransferFunctionParameters;
     std::copy(dstFn, dstFn + 7, params.gammaEncodingParams.begin());
 
-    float flipY = 1;
+    // Unlike WGSL, which stores matrices in column vectors, the following arithmetic uses row
+    // vectors, so elements are stored in the following order:
+    // ┌         ┐
+    // │ 0, 1, 2 │
+    // │ 3, 4, 5 │
+    // └         ┘
+    // The matrix is transposed at the end.
+    using mat2x3 = std::array<float, 6>;
+
+    // Multiplies the two mat2x3 matrices, by treating the RHS matrix as a mat3x3 where the last row
+    // is [0, 0, 1].
+    auto Mul = [&](const mat2x3& lhs, const mat2x3& rhs) {
+        auto& a = lhs[0];
+        auto& b = lhs[1];
+        auto& c = lhs[2];
+        auto& d = lhs[3];
+        auto& e = lhs[4];
+        auto& f = lhs[5];
+        auto& g = rhs[0];
+        auto& h = rhs[1];
+        auto& i = rhs[2];
+        auto& j = rhs[3];
+        auto& k = rhs[4];
+        auto& l = rhs[5];
+        // ┌         ┐   ┌         ┐
+        // │ a, b, c │   │ g, h, i │
+        // │ d, e, f │ x │ j, k, l │
+        // └         ┘   │ 0, 0, 1 │
+        //               └         ┘
+        return mat2x3{
+            a * g + b * j,      //
+            a * h + b * k,      //
+            a * i + b * l + c,  //
+            d * g + e * j,      //
+            d * h + e * k,      //
+            d * i + e * l + f,  //
+        };
+    };
+
+    auto Scale = [&](const mat2x3& m, float x, float y) {
+        return Mul(mat2x3{x, 0, 0, 0, y, 0}, m);
+    };
+
+    auto Translate = [&](const mat2x3& m, float x, float y) {
+        return Mul(mat2x3{1, 0, x, 0, 1, y}, m);
+    };
+
+    mat2x3 coordTransformMatrix = {
+        1, 0, 0,  //
+        0, 1, 0,  //
+    };
+
+    // Offset the coordinates so the center texel is at the origin, so we can apply rotations and
+    // y-flips. After translation, coordinates range from [-0.5 .. +0.5] in both U and V.
+    coordTransformMatrix = Translate(coordTransformMatrix, -0.5, -0.5);
+
+    // If the texture needs flipping, mirror in Y.
     if (descriptor->flipY) {
-        flipY = -1;
+        coordTransformMatrix = Scale(coordTransformMatrix, 1, -1);
     }
 
-    // We can perform the flip-Y operation by multiplying the y-component portion of the matrix by
-    // -1.
+    // Apply rotations as needed.
     switch (descriptor->rotation) {
         case wgpu::ExternalTextureRotation::Rotate0Degrees:
-            params.coordTransformMatrix = {1.0, 0.0, 0.0, 1.0f * flipY};
             break;
         case wgpu::ExternalTextureRotation::Rotate90Degrees:
-            params.coordTransformMatrix = {0.0, 1.0f * flipY, -1.0, 0.0};
+            coordTransformMatrix = Mul(mat2x3{0, -1, 0,   // x' = -y
+                                              +1, 0, 0},  // y' = x
+                                       coordTransformMatrix);
             break;
         case wgpu::ExternalTextureRotation::Rotate180Degrees:
-            params.coordTransformMatrix = {-1.0, 0.0, 0.0, -1.0f * flipY};
+            coordTransformMatrix = Mul(mat2x3{-1, 0, 0,   // x' = -x
+                                              0, -1, 0},  // y' = -y
+                                       coordTransformMatrix);
             break;
         case wgpu::ExternalTextureRotation::Rotate270Degrees:
-            params.coordTransformMatrix = {0.0, -1.0f * flipY, 1.0, 0.0};
+            coordTransformMatrix = Mul(mat2x3{0, +1, 0,   // x' = y
+                                              -1, 0, 0},  // y' = -x
+                                       coordTransformMatrix);
             break;
     }
+
+    // Offset the coordinates so the bottom-left texel is at origin.
+    // After translation, coordinates range from [0 .. 1] in both U and V.
+    coordTransformMatrix = Translate(coordTransformMatrix, 0.5, 0.5);
+
+    // Calculate scale factors and offsets from the specified visibleSize.
+    ASSERT(descriptor->visibleSize.width > 0);
+    ASSERT(descriptor->visibleSize.height > 0);
+    uint32_t frameWidth = descriptor->plane0->GetTexture()->GetWidth();
+    uint32_t frameHeight = descriptor->plane0->GetTexture()->GetHeight();
+    float xScale =
+        static_cast<float>(descriptor->visibleSize.width) / static_cast<float>(frameWidth);
+    float yScale =
+        static_cast<float>(descriptor->visibleSize.height) / static_cast<float>(frameHeight);
+    float xOffset =
+        static_cast<float>(descriptor->visibleOrigin.x) / static_cast<float>(frameWidth);
+    float yOffset =
+        static_cast<float>(descriptor->visibleOrigin.y) / static_cast<float>(frameHeight);
+
+    // Finally, scale and translate based on the visible rect. This applies cropping.
+    coordTransformMatrix = Scale(coordTransformMatrix, xScale, yScale);
+    coordTransformMatrix = Translate(coordTransformMatrix, xOffset, yOffset);
+
+    // Transpose the mat2x3 into column vectors for use by WGSL.
+    params.coordTransformMatrix[0] = coordTransformMatrix[0];
+    params.coordTransformMatrix[1] = coordTransformMatrix[3];
+    params.coordTransformMatrix[2] = coordTransformMatrix[1];
+    params.coordTransformMatrix[3] = coordTransformMatrix[4];
+    params.coordTransformMatrix[4] = coordTransformMatrix[2];
+    params.coordTransformMatrix[5] = coordTransformMatrix[5];
 
     DAWN_TRY(device->GetQueue()->WriteBuffer(mParamsBuffer.Get(), 0, &params,
                                              sizeof(ExternalTextureParams)));

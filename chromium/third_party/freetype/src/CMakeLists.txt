@@ -1,6 +1,6 @@
 # CMakeLists.txt
 #
-# Copyright (C) 2013-2022 by
+# Copyright (C) 2013-2023 by
 # David Turner, Robert Wilhelm, and Werner Lemberg.
 #
 # Written originally by John Cary <cary@txcorp.com>
@@ -163,8 +163,8 @@ endif ()
 project(freetype C)
 
 set(VERSION_MAJOR "2")
-set(VERSION_MINOR "12")
-set(VERSION_PATCH "1")
+set(VERSION_MINOR "13")
+set(VERSION_PATCH "0")
 
 # Generate LIBRARY_VERSION and LIBRARY_SOVERSION.
 set(LIBTOOL_REGEX "version_info='([0-9]+):([0-9]+):([0-9]+)'")

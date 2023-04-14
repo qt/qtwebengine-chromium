@@ -12,9 +12,8 @@
 
 #include "include/core/SkRect.h"
 #include "include/core/SkString.h"
-#include "include/gpu/GrConfig.h"
-#include "include/private/SkTArray.h"
-#include "include/private/SkTHash.h"
+#include "include/private/base/SkTArray.h"
+#include "src/core/SkTHash.h"
 #include "src/gpu/ganesh/GrRenderTargetProxy.h"
 
 class GrOp;

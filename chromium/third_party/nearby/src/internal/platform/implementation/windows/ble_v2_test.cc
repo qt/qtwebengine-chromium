@@ -21,7 +21,6 @@
 #include "internal/platform/implementation/ble_v2.h"
 #include "internal/platform/implementation/windows/bluetooth_adapter.h"
 
-namespace location {
 namespace nearby {
 namespace windows {
 namespace {
@@ -68,7 +67,7 @@ TEST(BleV2Medium, DISABLED_StartScanning) {
       };
 
   EXPECT_TRUE(blev2_medium.StartScanning(
-      service_uuid, api::ble_v2::TxPowerLevel::kHigh, callback));
+      service_uuid, api::ble_v2::TxPowerLevel::kHigh, std::move(callback)));
 
   EXPECT_TRUE(scan_response_notification.WaitForNotificationWithTimeout(
       absl::Seconds(5)));
@@ -86,7 +85,7 @@ TEST(BleV2Medium, DISABLED_StopScanning) {
          const api::ble_v2::BleAdvertisementData& advertisement_data) {};
 
   EXPECT_TRUE(blev2_medium.StartScanning(
-      service_uuid, api::ble_v2::TxPowerLevel::kHigh, callback));
+      service_uuid, api::ble_v2::TxPowerLevel::kHigh, std::move(callback)));
 
   EXPECT_TRUE(blev2_medium.StopScanning());
 }
@@ -94,4 +93,3 @@ TEST(BleV2Medium, DISABLED_StopScanning) {
 }  // namespace
 }  // namespace windows
 }  // namespace nearby
-}  // namespace location

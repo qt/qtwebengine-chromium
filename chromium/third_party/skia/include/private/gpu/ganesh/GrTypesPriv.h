@@ -9,14 +9,14 @@
 #define GrTypesPriv_DEFINED
 
 #include <chrono>
+#include "include/core/SkColor.h"
 #include "include/core/SkImage.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkPath.h"
 #include "include/core/SkRefCnt.h"
 #include "include/gpu/GrTypes.h"
-#include "include/private/SkImageInfoPriv.h"
-#include "include/private/SkMacros.h"
-#include "include/private/SkTypeTraits.h"
+#include "include/private/base/SkMacros.h"
+#include "include/private/base/SkTypeTraits.h"
 
 class GrBackendFormat;
 class GrCaps;
@@ -644,6 +644,7 @@ static constexpr GrColorType SkColorTypeToGrColorType(SkColorType ct) {
         case kRGB_101010x_SkColorType:        return GrColorType::kUnknown;
         case kBGRA_1010102_SkColorType:       return GrColorType::kBGRA_1010102;
         case kBGR_101010x_SkColorType:        return GrColorType::kUnknown;
+        case kBGR_101010x_XR_SkColorType:     return GrColorType::kUnknown;
         case kRGBA_F32_SkColorType:           return GrColorType::kRGBA_F32;
         case kR8G8_unorm_SkColorType:         return GrColorType::kRG_88;
         case kA16_unorm_SkColorType:          return GrColorType::kAlpha_16;

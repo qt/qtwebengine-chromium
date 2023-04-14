@@ -109,6 +109,7 @@ std::vector<std::string> SplitString(const std::string& text,
                                      const std::string& delimiter);
 std::string StripPrefix(const std::string& str, const std::string& prefix);
 std::string StripSuffix(const std::string& str, const std::string& suffix);
+std::string TrimWhitespace(const std::string& str);
 std::string ToLower(const std::string& str);
 std::string ToUpper(const std::string& str);
 std::string StripChars(const std::string& str,
@@ -210,6 +211,7 @@ class StackString {
   std::string ToStdString() const { return std::string(buf_, len_); }
   const char* c_str() const { return buf_; }
   size_t len() const { return len_; }
+  char* mutable_data() { return buf_; }
 
  private:
   char buf_[N];

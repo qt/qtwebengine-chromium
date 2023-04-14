@@ -4,7 +4,7 @@
  *
  *   Auto-fitter types (specification only).
  *
- * Copyright (C) 2003-2022 by
+ * Copyright (C) 2003-2023 by
  * David Turner, Robert Wilhelm, and Werner Lemberg.
  *
  * This file is part of the FreeType project, and may only be used,
@@ -57,10 +57,10 @@ FT_BEGIN_HEADER
 
 #ifdef FT_DEBUG_AUTOFIT
 
-extern int    _af_debug_disable_horz_hints;
-extern int    _af_debug_disable_vert_hints;
-extern int    _af_debug_disable_blue_hints;
-extern void*  _af_debug_hints;
+extern int    af_debug_disable_horz_hints_;
+extern int    af_debug_disable_vert_hints_;
+extern int    af_debug_disable_blue_hints_;
+extern void*  af_debug_hints_;
 
 #endif /* FT_DEBUG_AUTOFIT */
 

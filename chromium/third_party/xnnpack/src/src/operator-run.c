@@ -17,6 +17,7 @@
 #include <xnnpack/log.h>
 #include <xnnpack/common.h>
 #include <xnnpack/math.h>
+#include <xnnpack/microkernel-type.h>
 #include <xnnpack/params.h>
 #include <xnnpack/compute.h>
 
@@ -28,15 +29,16 @@ void xnn_compute_transposec_2d(
     size_t tile_i,
     size_t tile_j)
 {
-  const size_t log2_element_size = context->log2_element_size;
-
+  const size_t ld_input = context->input_stride[1];
+  const size_t ld_output = context->output_stride[0];
   context->const_size_ukernel(
-      (const void*) ((uintptr_t) context->x + (i << log2_element_size) + j * context->input_stride[1]),
-      (void*) ((uintptr_t) context->y + (j << log2_element_size) + i * context->output_stride[0]),
-      context->input_stride[1],
-      context->output_stride[0],
+      (const void*) ((uintptr_t) context->x + i * context->input_stride[0] + j * context->input_stride[1]),
+      (void*) ((uintptr_t) context->y + j * context->output_stride[1] + i * context->output_stride[0]),
+      ld_input,
+      ld_output,
       tile_i,
-      tile_j);
+      tile_j,
+      &context->params);
 }
 
 void xnn_compute_transposec_3d(
@@ -47,13 +49,12 @@ void xnn_compute_transposec_3d(
     size_t tile_j,
     size_t tile_k)
 {
-  const size_t log2_element_size = context->log2_element_size;
   const size_t ld_input = context->input_stride[2];
   const size_t ld_output = context->output_stride[1];
   const void* x = (const void*) ((uintptr_t) context->x +
-                                 (i * context->input_stride[0] + j * context->input_stride[1]) + k * ld_input);
-  void* y = (void*) ((uintptr_t)context->y + i * context->output_stride[0] + j * context->output_stride[1] +
-                     (k << log2_element_size));
+                                 i * context->input_stride[0] + j * context->input_stride[1] + k * context->input_stride[2]);
+  void* y = (void*) ((uintptr_t) context->y + i * context->output_stride[0] + j * context->output_stride[1] +
+                     k * context->output_stride[2]);
 
   context->const_size_ukernel(
       x,
@@ -61,7 +62,8 @@ void xnn_compute_transposec_3d(
       ld_input,
       ld_output,
       tile_j,
-      tile_k);
+      tile_k,
+      &context->params);
 }
 
 void xnn_compute_transposec_4d(
@@ -73,13 +75,12 @@ void xnn_compute_transposec_4d(
     size_t tile_k,
     size_t tile_l)
 {
-  const size_t log2_element_size = context->log2_element_size;
   const size_t ld_input = context->input_stride[3];
   const size_t ld_output = context->output_stride[2];
   const void* x = (const void*) ((uintptr_t)context->x + i * context->input_stride[0] + j * context->input_stride[1] +
-                                 k * context->input_stride[2] + l * ld_input);
+                                 k * context->input_stride[2] + l * context->input_stride[3]);
   void* y = (void*) ((uintptr_t)context->y + i * context->output_stride[0] + j * context->output_stride[1] +
-                     k * context->output_stride[2] + (l << log2_element_size));
+                     k * context->output_stride[2] + l * context->output_stride[3]);
 
   context->const_size_ukernel(
       x,
@@ -87,7 +88,8 @@ void xnn_compute_transposec_4d(
       ld_input,
       ld_output,
       tile_k,
-      tile_l);
+      tile_l,
+      &context->params);
 }
 
 void xnn_compute_transposec_5d(
@@ -100,13 +102,12 @@ void xnn_compute_transposec_5d(
     size_t tile_l,
     size_t tile_m)
 {
-  const size_t log2_element_size = context->log2_element_size;
   const size_t ld_input = context->input_stride[4];
   const size_t ld_output = context->output_stride[3];
   const void* x = (const void*)((uintptr_t)context->x + i * context->input_stride[0] + j * context->input_stride[1] +
-                                 k * context->input_stride[2] + l * context->input_stride[3] + m * ld_input);
+                                 k * context->input_stride[2] + l * context->input_stride[3] + m * context->input_stride[4]);
   void* y = (void*)((uintptr_t)context->y + i * context->output_stride[0] + j * context->output_stride[1] +
-                     k * context->output_stride[2] + l * context->output_stride[3] + (m << log2_element_size));
+                     k * context->output_stride[2] + l * context->output_stride[3] + m * context->output_stride[4]);
 
   context->const_size_ukernel(
       x,
@@ -114,7 +115,8 @@ void xnn_compute_transposec_5d(
       ld_input,
       ld_output,
       tile_l,
-      tile_m);
+      tile_m,
+      &context->params);
 }
 
 void xnn_compute_transposec_6d(
@@ -128,15 +130,14 @@ void xnn_compute_transposec_6d(
     size_t tile_m,
     size_t tile_n)
 {
-  const size_t log2_element_size = context->log2_element_size;
   const size_t ld_input = context->input_stride[5];
   const size_t ld_output = context->output_stride[4];
   const void* x = (const void*)((uintptr_t)context->x + i * context->input_stride[0] + j * context->input_stride[1] +
                                  k * context->input_stride[2] + l * context->input_stride[3] +
-                                 m * context->input_stride[4] + n * ld_input);
+                                 m * context->input_stride[4] + n * context->input_stride[5]);
   void* y = (void*)((uintptr_t)context->y + i * context->output_stride[0] + j * context->output_stride[1] +
                      k * context->output_stride[2] + l * context->output_stride[3] + m * context->output_stride[4] +
-                     (n << log2_element_size));
+                     n * context->output_stride[5]);
 
   context->const_size_ukernel(
       x,
@@ -144,7 +145,8 @@ void xnn_compute_transposec_6d(
       ld_input,
       ld_output,
       tile_m,
-      tile_n);
+      tile_n,
+      &context->params);
 }
 
 void xnn_compute_transposev_2d(
@@ -154,11 +156,11 @@ void xnn_compute_transposev_2d(
     size_t tile_i,
     size_t tile_j)
 {
-  const size_t element_size = context->element_size;
+  const size_t element_size = context->output_stride[1];
   const size_t ld_input = context->input_stride[1];
   const size_t ld_output = context->output_stride[0];
   const void* x = (const void*) ((uintptr_t) context->x +
-                                 i * context->input_stride[0] + j * ld_input);
+                                 i * context->input_stride[0] + j * context->input_stride[1]);
   void* y = (void*) ((uintptr_t) context->y + context->output_stride[1] * j + i * context->output_stride[0]);
 
   context->variable_size_ukernel(
@@ -181,11 +183,11 @@ void xnn_compute_transposev_3d(
     size_t tile_j,
     size_t tile_k)
 {
-  const size_t element_size = context->element_size;
+  const size_t element_size = context->output_stride[2];
   const size_t ld_input = context->input_stride[2];
   const size_t ld_output = context->output_stride[1];
   const void* x = (const void*)((uintptr_t)context->x + i * context->input_stride[0] + j * context->input_stride[1] +
-                                 k * ld_input);
+                                 k * context->input_stride[2]);
   void* y = (void*)((uintptr_t)context->y + i * context->output_stride[0] + j * context->output_stride[1] +
                      k * context->output_stride[2]);
 
@@ -210,11 +212,11 @@ void xnn_compute_transposev_4d(
     size_t tile_k,
     size_t tile_l)
 {
-  const size_t element_size = context->element_size;
+  const size_t element_size = context->output_stride[3];
   const size_t ld_input = context->input_stride[3];
   const size_t ld_output = context->output_stride[2];
   const void* x = (const void*)((uintptr_t)context->x + i * context->input_stride[0] + j * context->input_stride[1] +
-                                 k * context->input_stride[2] + l * ld_input);
+                                 k * context->input_stride[2] + l * context->input_stride[3]);
   void* y = (void*)((uintptr_t)context->y + context->output_stride[3] * l + i * context->output_stride[0] +
                      j * context->output_stride[1] + k * context->output_stride[2]);
 
@@ -240,11 +242,11 @@ void xnn_compute_transposev_5d(
     size_t tile_l,
     size_t tile_m)
 {
-  const size_t element_size = context->element_size;
+  const size_t element_size = context->output_stride[4];
   const size_t ld_input = context->input_stride[4];
   const size_t ld_output = context->output_stride[3];
   const void* x = (const void*)((uintptr_t)context->x + i * context->input_stride[0] + j * context->input_stride[1] +
-                                 k * context->input_stride[2] + l * context->input_stride[3] + m * ld_input);
+                                 k * context->input_stride[2] + l * context->input_stride[3] + m * context->input_stride[4]);
   void* y = (void*)((uintptr_t)context->y + context->output_stride[4] * m + i * context->output_stride[0] +
                      j * context->output_stride[1] + k * context->output_stride[2] + l * context->output_stride[3]);
 
@@ -271,12 +273,12 @@ void xnn_compute_transposev_6d(
     size_t tile_m,
     size_t tile_n)
 {
-  const size_t element_size = context->element_size;
+  const size_t element_size = context->output_stride[5];
   const size_t ld_input = context->input_stride[5];
   const size_t ld_output = context->output_stride[4];
   const void* x = (const void*)((uintptr_t)context->x + i * context->input_stride[0] + j * context->input_stride[1] +
                                  k * context->input_stride[2] + l * context->input_stride[3] +
-                                 m * context->input_stride[4] + n * ld_input);
+                                 m * context->input_stride[4] + n * context->input_stride[5]);
   void* y = (void*)((uintptr_t)context->y + context->output_stride[5] * n + i * context->output_stride[0] +
                      j * context->output_stride[1] + k * context->output_stride[2] + l * context->output_stride[3] +
                      m * context->output_stride[4]);
@@ -654,6 +656,25 @@ void xnn_compute_dwconv_unipass(
     context->indirect_input_width_stride, context->output_increment,
     input_offset, context->zero,
     &context->params);
+}
+
+void xnn_compute_dwconv_multipass(
+    const struct dwconv_context context[restrict XNN_MIN_ELEMENTS(1)],
+    size_t batch_index,
+    size_t output_y)
+{
+  const void** indirect_input =
+    (const void**) ((uintptr_t) context->indirect_input + output_y * context->indirect_input_height_stride);
+  const size_t input_offset = context->input_offset + batch_index * context->input_batch_stride;
+  void* output = (void*) ((uintptr_t) context->output +
+    batch_index * context->output_batch_stride + output_y * context->output_height_stride);
+
+  void* multipass_buffer = XNN_SIMD_ALLOCA(context->groups * sizeof(int32_t) + XNN_ALLOCATION_ALIGNMENT);
+
+  context->multipass_ukernel(
+    context->groups, context->output_width, indirect_input, context->packed_weights, output,
+    context->indirect_input_width_stride, context->output_increment, input_offset, context->zero, context->kernel_size,
+    multipass_buffer, &context->params);
 }
 
 void xnn_compute_dwconv2d_chw(
@@ -1422,23 +1443,21 @@ enum xnn_status xnn_run_operator_with_index(
   size_t operator_object_index,
   pthreadpool_t threadpool)
 {
-  if ((xnn_params.init_flags & XNN_INIT_FLAG_XNNPACK) == 0) {
-    xnn_log_error("failed to run operator: XNNPACK is not initialized");
-    return xnn_status_uninitialized;
-  }
   switch (op->state) {
     case xnn_run_state_invalid:
       xnn_log_error("failed to run operator: operator was not successfully setup");
       return xnn_status_invalid_state;
     case xnn_run_state_ready:
-      xnn_log_debug("running operator %zu:%zu (%s)", opdata_index,
+      xnn_log_debug("running operator %zu:%zu (%s %s)", opdata_index,
                     operator_object_index,
-                    xnn_operator_type_to_string(op->type));
+                    xnn_operator_type_to_string(op->type),
+                    xnn_microkernel_type_to_string(op->ukernel.type));
       break;
     case xnn_run_state_skip:
-      xnn_log_debug("skip running operator %zu:%zu (%s)", opdata_index,
+      xnn_log_debug("skip running operator %zu:%zu (%s %s)", opdata_index,
                     operator_object_index,
-                    xnn_operator_type_to_string(op->type));
+                    xnn_operator_type_to_string(op->type),
+                    xnn_microkernel_type_to_string(op->ukernel.type));
       return xnn_status_success;
   }
 

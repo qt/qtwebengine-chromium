@@ -307,7 +307,7 @@ message Camera {
     // The following are fields for MIPI.  Every field name must start with
     // prefix "mipi_".
 
-    // Entity name from sysfs path or V4L2.
+    // Entity name from V4L2.
     string mipi_name = 7;
     // Camera module vendor ID and product ID read from camera EEPROM.
     string mipi_module_id = 8;
@@ -541,6 +541,22 @@ message Edid {
   Information information = 3;
 }
 
+message ApI2c {
+  message Fields {
+    uint32 data = 1;
+  }
+  string name = 1;
+  Fields values = 2;
+}
+
+message EcI2c {
+  message Fields {
+    uint32 data = 1;
+  }
+  string name = 1;
+  Fields values = 2;
+}
+
 // A ProbeResult contains all potential probe results. For category not
 // existed or not requested for probing, field is expected to be empty.
 message ProbeResult {
@@ -593,4 +609,15 @@ message GetKnownComponentsRequest {
 message GetKnownComponentsResult {
   ErrorCode error = 1;
   repeated string component_names = 2;
+}
+
+message ProbeSsfcComponentsRequest {}
+
+message ProbeSsfcComponentsResponse {
+  ErrorCode error = 1;
+  string probe_config_checksum = 2;
+
+  // Components
+  repeated ApI2c ap_i2c = 11;
+  repeated EcI2c ec_i2c = 12;
 }

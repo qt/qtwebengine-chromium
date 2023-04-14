@@ -11,7 +11,7 @@
 #include "include/core/SkFont.h"
 #include "include/core/SkMatrix.h"
 #include "include/core/SkTypeface.h"
-#include "include/private/SkTemplates.h"
+#include "include/private/base/SkTemplates.h"
 
 class SkReadBuffer;
 class SkWriteBuffer;
@@ -112,7 +112,7 @@ public:
     const uint16_t* glyphs() const { return fGlyphs; }
 
 private:
-    SkAutoSTArray<32, uint16_t> fStorage;
+    skia_private::AutoSTArray<32, uint16_t> fStorage;
     const uint16_t* fGlyphs;
     int             fCount;
 };

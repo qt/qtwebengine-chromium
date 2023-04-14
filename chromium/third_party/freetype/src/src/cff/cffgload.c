@@ -4,7 +4,7 @@
  *
  *   OpenType Glyph Loader (body).
  *
- * Copyright (C) 1996-2022 by
+ * Copyright (C) 1996-2023 by
  * David Turner, Robert Wilhelm, and Werner Lemberg.
  *
  * This file is part of the FreeType project, and may only be used,
@@ -488,13 +488,14 @@
       decoder.builder.no_recurse =
         FT_BOOL( load_flags & FT_LOAD_NO_RECURSE );
 
-      /* now load the unscaled outline */
-      error = cff_get_glyph_data( face, glyph_index,
-                                  &charstring, &charstring_len );
+      /* this function also checks for a valid subfont index */
+      error = decoder_funcs->prepare( &decoder, size, glyph_index );
       if ( error )
         goto Glyph_Build_Finished;
 
-      error = decoder_funcs->prepare( &decoder, size, glyph_index );
+      /* now load the unscaled outline */
+      error = cff_get_glyph_data( face, glyph_index,
+                                  &charstring, &charstring_len );
       if ( error )
         goto Glyph_Build_Finished;
 

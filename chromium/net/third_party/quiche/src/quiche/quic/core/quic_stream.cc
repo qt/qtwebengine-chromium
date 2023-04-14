@@ -108,9 +108,6 @@ QuicByteCount GetReceivedFlowControlWindow(QuicSession* session,
 
 }  // namespace
 
-// static
-const SpdyPriority QuicStream::kDefaultPriority;
-
 PendingStream::PendingStream(QuicStreamId id, QuicSession* session)
     : id_(id),
       version_(session->version()),
@@ -339,7 +336,6 @@ QuicStream::QuicStream(QuicStreamId id, QuicSession* session,
       id_(id),
       session_(session),
       stream_delegate_(session),
-      priority_(CalculateDefaultPriority(session->transport_version())),
       stream_bytes_read_(stream_bytes_read),
       stream_error_(QuicResetStreamError::NoError()),
       connection_error_(QUIC_NO_ERROR),
@@ -394,7 +390,7 @@ QuicStream::~QuicStream() {
         << ", fin_outstanding: " << fin_outstanding_;
   }
   if (stream_delegate_ != nullptr && type_ != CRYPTO) {
-    stream_delegate_->UnregisterStreamPriority(id(), is_static_);
+    stream_delegate_->UnregisterStreamPriority(id());
   }
 }
 
@@ -1419,18 +1415,6 @@ void QuicStream::UpdateReceiveWindowSize(QuicStreamOffset size) {
     return;
   }
   flow_controller_->UpdateReceiveWindowSize(size);
-}
-
-// static
-QuicStreamPriority QuicStream::CalculateDefaultPriority(
-    QuicTransportVersion version) {
-  if (VersionUsesHttp3(version)) {
-    return QuicStreamPriority{QuicStreamPriority::kDefaultUrgency,
-                              QuicStreamPriority::kDefaultIncremental};
-  } else {
-    return QuicStreamPriority{QuicStream::kDefaultPriority,
-                              QuicStreamPriority::kDefaultIncremental};
-  }
 }
 
 absl::optional<QuicByteCount> QuicStream::GetSendWindow() const {

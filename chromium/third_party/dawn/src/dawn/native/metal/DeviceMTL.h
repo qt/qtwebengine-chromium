@@ -41,7 +41,7 @@ class Device final : public DeviceBase {
     static ResultOrError<Ref<Device>> Create(AdapterBase* adapter,
                                              NSPRef<id<MTLDevice>> mtlDevice,
                                              const DeviceDescriptor* descriptor,
-                                             const TripleStateTogglesSet& userProvidedToggles);
+                                             const TogglesState& deviceToggles);
     ~Device() override;
 
     MaybeError Initialize(const DeviceDescriptor* descriptor);
@@ -63,15 +63,14 @@ class Device final : public DeviceBase {
         std::vector<MTLSharedEventAndSignalValue> waitEvents);
     void WaitForCommandsToBeScheduled();
 
-    ResultOrError<std::unique_ptr<StagingBufferBase>> CreateStagingBuffer(size_t size) override;
-    MaybeError CopyFromStagingToBufferImpl(StagingBufferBase* source,
+    MaybeError CopyFromStagingToBufferImpl(BufferBase* source,
                                            uint64_t sourceOffset,
                                            BufferBase* destination,
                                            uint64_t destinationOffset,
                                            uint64_t size) override;
-    MaybeError CopyFromStagingToTextureImpl(const StagingBufferBase* source,
+    MaybeError CopyFromStagingToTextureImpl(const BufferBase* source,
                                             const TextureDataLayout& dataLayout,
-                                            TextureCopy* dst,
+                                            const TextureCopy& dst,
                                             const Extent3D& copySizePixels) override;
 
     uint32_t GetOptimalBytesPerRowAlignment() const override;
@@ -92,7 +91,7 @@ class Device final : public DeviceBase {
     Device(AdapterBase* adapter,
            NSPRef<id<MTLDevice>> mtlDevice,
            const DeviceDescriptor* descriptor,
-           const TripleStateTogglesSet& userProvidedToggles);
+           const TogglesState& deviceToggles);
 
     ResultOrError<Ref<BindGroupBase>> CreateBindGroupImpl(
         const BindGroupDescriptor* descriptor) override;
@@ -133,7 +132,6 @@ class Device final : public DeviceBase {
                                            WGPUCreateRenderPipelineAsyncCallback callback,
                                            void* userdata) override;
 
-    void InitTogglesFromDriver();
     void DestroyImpl() override;
     MaybeError WaitForIdleForDestruction() override;
     bool HasPendingCommands() const override;
@@ -162,6 +160,7 @@ class Device final : public DeviceBase {
     MTLTimestamp mGpuTimestamp API_AVAILABLE(macos(10.15), ios(14.0)) = 0;
     // The parameters for kalman filter
     std::unique_ptr<KalmanInfo> mKalmanInfo;
+    bool mIsTimestampQueryEnabled = false;
 
     // Support counter sampling between blit commands, dispatches and draw calls
     bool mCounterSamplingAtCommandBoundary;

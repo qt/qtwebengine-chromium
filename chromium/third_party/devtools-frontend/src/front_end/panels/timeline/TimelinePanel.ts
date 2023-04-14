@@ -42,6 +42,7 @@ import * as SDK from '../../core/sdk/sdk.js';
 import * as Bindings from '../../models/bindings/bindings.js';
 import * as Extensions from '../../models/extensions/extensions.js';
 import * as TimelineModel from '../../models/timeline_model/timeline_model.js';
+import * as TraceEngine from '../../models/trace/trace.js';
 import * as PerfUI from '../../ui/legacy/components/perf_ui/perf_ui.js';
 import * as UI from '../../ui/legacy/legacy.js';
 
@@ -76,196 +77,196 @@ import type * as Protocol from '../../generated/protocol.js';
 
 const UIStrings = {
   /**
-  *@description Text that appears when user drag and drop something (for example, a file) in Timeline Panel of the Performance panel
-  */
+   *@description Text that appears when user drag and drop something (for example, a file) in Timeline Panel of the Performance panel
+   */
   dropTimelineFileOrUrlHere: 'Drop timeline file or URL here',
   /**
-  *@description Title of disable capture jsprofile setting in timeline panel of the performance panel
-  */
+   *@description Title of disable capture jsprofile setting in timeline panel of the performance panel
+   */
   disableJavascriptSamples: 'Disable JavaScript samples',
   /**
-  *@description Title of capture layers and pictures setting in timeline panel of the performance panel
-  */
+   *@description Title of capture layers and pictures setting in timeline panel of the performance panel
+   */
   enableAdvancedPaint: 'Enable advanced paint instrumentation (slow)',
   /**
-  *@description Title of show screenshots setting in timeline panel of the performance panel
-  */
+   *@description Title of show screenshots setting in timeline panel of the performance panel
+   */
   screenshots: 'Screenshots',
   /**
-  *@description Title of the 'Coverage' tool in the bottom drawer
-  */
+   *@description Title of the 'Coverage' tool in the bottom drawer
+   */
   coverage: 'Coverage',
   /**
-  *@description Text for the memory of the page
-  */
+   *@description Text for the memory of the page
+   */
   memory: 'Memory',
   /**
-  *@description Text in Timeline for the Web Vitals lane
-  */
+   *@description Text in Timeline for the Web Vitals lane
+   */
   webVitals: 'Web Vitals',
   /**
-  *@description Text to clear content
-  */
+   *@description Text to clear content
+   */
   clear: 'Clear',
   /**
-  *@description Tooltip text that appears when hovering over the largeicon load button
-  */
+   *@description Tooltip text that appears when hovering over the largeicon load button
+   */
   loadProfile: 'Load profile…',
   /**
-  *@description Tooltip text that appears when hovering over the largeicon download button
-  */
+   *@description Tooltip text that appears when hovering over the largeicon download button
+   */
   saveProfile: 'Save profile…',
   /**
-  *@description Text to take screenshots
-  */
+   *@description Text to take screenshots
+   */
   captureScreenshots: 'Capture screenshots',
   /**
-  *@description Text in Timeline Panel of the Performance panel
-  */
+   *@description Text in Timeline Panel of the Performance panel
+   */
   showMemoryTimeline: 'Show memory timeline',
   /**
-  *@description Text in Timeline for the Web Vitals lane checkbox
-  */
+   *@description Text in Timeline for the Web Vitals lane checkbox
+   */
   showWebVitals: 'Show Web Vitals',
   /**
-  *@description Text in Timeline Panel of the Performance panel
-  */
+   *@description Text in Timeline Panel of the Performance panel
+   */
   recordCoverageWithPerformance: 'Record coverage with performance trace',
   /**
-  *@description Tooltip text that appears when hovering over the largeicon settings gear in show settings pane setting in timeline panel of the performance panel
-  */
+   *@description Tooltip text that appears when hovering over the largeicon settings gear in show settings pane setting in timeline panel of the performance panel
+   */
   captureSettings: 'Capture settings',
   /**
-  *@description Text in Timeline Panel of the Performance panel
-  */
+   *@description Text in Timeline Panel of the Performance panel
+   */
   disablesJavascriptSampling: 'Disables JavaScript sampling, reduces overhead when running against mobile devices',
   /**
-  *@description Text in Timeline Panel of the Performance panel
-  */
+   *@description Text in Timeline Panel of the Performance panel
+   */
   capturesAdvancedPaint: 'Captures advanced paint instrumentation, introduces significant performance overhead',
   /**
-  *@description Text in Timeline Panel of the Performance panel
-  */
+   *@description Text in Timeline Panel of the Performance panel
+   */
   network: 'Network:',
   /**
-  *@description Text in Timeline Panel of the Performance panel
-  */
+   *@description Text in Timeline Panel of the Performance panel
+   */
   cpu: 'CPU:',
   /**
-  *@description Title of the 'Network conditions' tool in the bottom drawer
-  */
+   *@description Title of the 'Network conditions' tool in the bottom drawer
+   */
   networkConditions: 'Network conditions',
   /**
-  *@description Text in Timeline Panel of the Performance panel
-  *@example {wrong format} PH1
-  *@example {ERROR_FILE_NOT_FOUND} PH2
-  *@example {2} PH3
-  */
+   *@description Text in Timeline Panel of the Performance panel
+   *@example {wrong format} PH1
+   *@example {ERROR_FILE_NOT_FOUND} PH2
+   *@example {2} PH3
+   */
   failedToSaveTimelineSSS: 'Failed to save timeline: {PH1} ({PH2}, {PH3})',
   /**
-  *@description Text in Timeline Panel of the Performance panel
-  */
+   *@description Text in Timeline Panel of the Performance panel
+   */
   CpuThrottlingIsEnabled: '- CPU throttling is enabled',
   /**
-  *@description Text in Timeline Panel of the Performance panel
-  */
+   *@description Text in Timeline Panel of the Performance panel
+   */
   NetworkThrottlingIsEnabled: '- Network throttling is enabled',
   /**
-  *@description Text in Timeline Panel of the Performance panel
-  */
+   *@description Text in Timeline Panel of the Performance panel
+   */
   HardwareConcurrencyIsEnabled: '- Hardware concurrency override is enabled',
   /**
-  *@description Text in Timeline Panel of the Performance panel
-  */
+   *@description Text in Timeline Panel of the Performance panel
+   */
   SignificantOverheadDueToPaint: '- Significant overhead due to paint instrumentation',
   /**
-  *@description Text in Timeline Panel of the Performance panel
-  */
+   *@description Text in Timeline Panel of the Performance panel
+   */
   JavascriptSamplingIsDisabled: '- JavaScript sampling is disabled',
   /**
-  *@description Text in Timeline Panel of the Performance panel
-  */
+   *@description Text in Timeline Panel of the Performance panel
+   */
   stoppingTimeline: 'Stopping timeline…',
   /**
-  *@description Text in Timeline Panel of the Performance panel
-  */
+   *@description Text in Timeline Panel of the Performance panel
+   */
   received: 'Received',
   /**
-  *@description Text to close something
-  */
+   *@description Text to close something
+   */
   close: 'Close',
   /**
-  *@description Status text to indicate the recording has failed in the Performance panel
-  */
+   *@description Status text to indicate the recording has failed in the Performance panel
+   */
   recordingFailed: 'Recording failed',
   /**
-  * @description Text to indicate the progress of a profile. Informs the user that we are currently
-  * creating a peformance profile.
-  */
+   * @description Text to indicate the progress of a profile. Informs the user that we are currently
+   * creating a peformance profile.
+   */
   profiling: 'Profiling…',
   /**
-  *@description Text in Timeline Panel of the Performance panel
-  */
+   *@description Text in Timeline Panel of the Performance panel
+   */
   bufferUsage: 'Buffer usage',
   /**
-  *@description Text for an option to learn more about something
-  */
+   *@description Text for an option to learn more about something
+   */
   learnmore: 'Learn more',
   /**
-  *@description Text in Timeline Panel of the Performance panel
-  */
+   *@description Text in Timeline Panel of the Performance panel
+   */
   wasd: 'WASD',
   /**
-  *@description Text in Timeline Panel of the Performance panel
-  *@example {record} PH1
-  *@example {Ctrl + R} PH2
-  */
+   *@description Text in Timeline Panel of the Performance panel
+   *@example {record} PH1
+   *@example {Ctrl + R} PH2
+   */
   clickTheRecordButtonSOrHitSTo: 'Click the record button {PH1} or hit {PH2} to start a new recording.',
   /**
-  * @description Text in Timeline Panel of the Performance panel
-  * @example {reload button} PH1
-  * @example {Ctrl + R} PH2
-  */
+   * @description Text in Timeline Panel of the Performance panel
+   * @example {reload button} PH1
+   * @example {Ctrl + R} PH2
+   */
   clickTheReloadButtonSOrHitSTo: 'Click the reload button {PH1} or hit {PH2} to record the page load.',
   /**
-  *@description Text in Timeline Panel of the Performance panel
-  *@example {Ctrl + U} PH1
-  *@example {Learn more} PH2
-  */
+   *@description Text in Timeline Panel of the Performance panel
+   *@example {Ctrl + U} PH1
+   *@example {Learn more} PH2
+   */
   afterRecordingSelectAnAreaOf:
       'After recording, select an area of interest in the overview by dragging. Then, zoom and pan the timeline with the mousewheel or {PH1} keys. {PH2}',
   /**
-  *@description Text in Timeline Panel of the Performance panel
-  */
+   *@description Text in Timeline Panel of the Performance panel
+   */
   loadingProfile: 'Loading profile…',
   /**
-  *@description Text in Timeline Panel of the Performance panel
-  */
+   *@description Text in Timeline Panel of the Performance panel
+   */
   processingProfile: 'Processing profile…',
   /**
-  *@description Text in Timeline Panel of the Performance panel
-  */
+   *@description Text in Timeline Panel of the Performance panel
+   */
   initializingProfiler: 'Initializing profiler…',
   /**
-  *@description Text for the status of something
-  */
+   *@description Text for the status of something
+   */
   status: 'Status',
   /**
-  *@description Text that refers to the time
-  */
+   *@description Text that refers to the time
+   */
   time: 'Time',
   /**
-  *@description Text for the description of something
-  */
+   *@description Text for the description of something
+   */
   description: 'Description',
   /**
-  *@description Text of an item that stops the running task
-  */
+   *@description Text of an item that stops the running task
+   */
   stop: 'Stop',
   /**
-  *@description Time text content in Timeline Panel of the Performance panel
-  *@example {2.12} PH1
-  */
+   *@description Time text content in Timeline Panel of the Performance panel
+   *@example {2.12} PH1
+   */
   ssec: '{PH1} sec',
 };
 const str_ = i18n.i18n.registerUIStrings('panels/timeline/TimelinePanel.ts', UIStrings);
@@ -331,8 +332,10 @@ export class TimelinePanel extends UI.Panel.Panel implements Client, TimelineMod
   private cpuThrottlingSelect?: UI.Toolbar.ToolbarComboBox;
   private fileSelectorElement?: HTMLInputElement;
   private selection?: TimelineSelection|null;
+  #traceEngineModel: TraceEngine.TraceModel.Model;
   constructor() {
     super('timeline');
+    this.#traceEngineModel = new TraceEngine.TraceModel.Model();
     this.element.addEventListener('contextmenu', this.contextMenu.bind(this), false);
     this.dropTarget = new UI.DropTarget.DropTarget(
         this.element, [UI.DropTarget.Type.File, UI.DropTarget.Type.URI],
@@ -725,16 +728,16 @@ export class TimelinePanel extends UI.Panel.Panel implements Client, TimelineMod
   }
 
   async showHistory(): Promise<void> {
-    const model = await this.historyManager.showHistoryDropDown();
-    if (model && model !== this.performanceModel) {
-      this.setModel(model);
+    const recordingData = await this.historyManager.showHistoryDropDown();
+    if (recordingData && recordingData.legacyModel !== this.performanceModel) {
+      this.setModel(recordingData.legacyModel, recordingData.traceParseData);
     }
   }
 
   navigateHistory(direction: number): boolean {
-    const model = this.historyManager.navigate(direction);
-    if (model && model !== this.performanceModel) {
-      this.setModel(model);
+    const recordingData = this.historyManager.navigate(direction);
+    if (recordingData && recordingData.legacyModel !== this.performanceModel) {
+      this.setModel(recordingData.legacyModel, recordingData.traceParseData);
     }
     return true;
   }
@@ -745,7 +748,7 @@ export class TimelinePanel extends UI.Panel.Panel implements Client, TimelineMod
     }
   }
 
-  private async loadFromFile(file: File): Promise<void> {
+  async loadFromFile(file: File): Promise<void> {
     if (this.state !== State.Idle) {
       return;
     }
@@ -1110,7 +1113,8 @@ export class TimelinePanel extends UI.Panel.Panel implements Client, TimelineMod
     model.setFilters([TimelineUIUtils.visibleEventsFilter()]);
   }
 
-  private setModel(model: PerformanceModel|null): void {
+  private setModel(
+      model: PerformanceModel|null, newTraceEngineData: TraceEngine.Handlers.Types.TraceParseData|null = null): void {
     if (this.performanceModel) {
       this.performanceModel.removeEventListener(Events.WindowChanged, this.onModelWindowChanged, this);
     }
@@ -1121,7 +1125,7 @@ export class TimelinePanel extends UI.Panel.Panel implements Client, TimelineMod
     } else {
       this.searchableViewInternal.hideWidget();
     }
-    this.flameChart.setModel(model);
+    this.flameChart.setModel(model, newTraceEngineData);
 
     this.updateOverviewControls();
     this.overviewPane.reset();
@@ -1272,13 +1276,9 @@ export class TimelinePanel extends UI.Panel.Panel implements Client, TimelineMod
   }
 
   async loadingComplete(tracingModel: SDK.TracingModel.TracingModel|null): Promise<void> {
+    this.#traceEngineModel.reset();
     delete this.loader;
     this.setState(State.Idle);
-
-    if (this.statusPane) {
-      this.statusPane.remove();
-    }
-    this.statusPane = null;
 
     if (!tracingModel) {
       this.clear();
@@ -1289,22 +1289,61 @@ export class TimelinePanel extends UI.Panel.Panel implements Client, TimelineMod
       this.performanceModel = new PerformanceModel();
     }
 
-    await this.performanceModel.setTracingModel(tracingModel);
-    this.setModel(this.performanceModel);
+    try {
+      // Run the new engine in parallel with the parsing done in the performanceModel
+      await Promise.all(
+          [this.performanceModel.setTracingModel(tracingModel), this.executeNewTraceEngine(tracingModel)]);
+      const traceParsedData = this.#traceEngineModel.traceParsedData();
+      this.setModel(this.performanceModel, traceParsedData);
 
-    if (!this.performanceModel.hasEventListeners(Events.NamesResolved)) {
-      this.performanceModel.addEventListener(Events.NamesResolved, this.updateModelAndFlameChart, this);
+      if (this.statusPane) {
+        this.statusPane.remove();
+      }
+      this.statusPane = null;
+
+      if (!this.performanceModel.hasEventListeners(Events.NamesResolved)) {
+        this.performanceModel.addEventListener(Events.NamesResolved, this.updateModelAndFlameChart, this);
+      }
+
+      this.historyManager.addRecording(this.performanceModel, traceParsedData);
+
+      if (this.startCoverage.get()) {
+        void UI.ViewManager.ViewManager.instance()
+            .showView('coverage')
+            .then(() => this.getCoverageViewWidget())
+            .then(widget => widget.processBacklog())
+            .then(() => this.updateOverviewControls());
+      }
+    } catch (error) {
+      this.recordingFailed(error.message);
     }
+  }
 
-    this.historyManager.addRecording(this.performanceModel);
-
-    if (this.startCoverage.get()) {
-      void UI.ViewManager.ViewManager.instance()
-          .showView('coverage')
-          .then(() => this.getCoverageViewWidget())
-          .then(widget => widget.processBacklog())
-          .then(() => this.updateOverviewControls());
-    }
+  /**
+   * Call into the new Trace Engine to parse the data. We don't currently do
+   * anything with this data, but we are calling it here to ensure that all the
+   * pieces are connected together and we are able to parse data in the new engine
+   * from OPP.
+   *
+   * The trace engine model runs the parsing in a worker, so this should not
+   * impact the main thread, as we `void` it to ensure we don't want for the
+   * parsing to complete.
+   **/
+  private async executeNewTraceEngine(tracingModel: SDK.TracingModel.TracingModel): Promise<void> {
+    return this.#traceEngineModel.parse(
+        // OPP's data layer uses `EventPayload` as the type to represent raw JSON from the trace.
+        // When we pass this into the new data engine, we need to tell TS to use the new TraceEventData type.
+        tracingModel.allRawEvents() as unknown as TraceEngine.Types.TraceEvents.TraceEventData[],
+        // TODO(crbug.com/1406847): This object represents metadata, which can be stored by the
+        // Performance Panel in a trace file. If the user imports a file that has
+        // it, we can pass it in here. If we don't have it, we should fetch &
+        // store it.
+        {},
+        // TODO(crbug.com/1406847): this value needs to be set to `true` if this
+        // is a fresh recording (e.g. it hasn't been imported from a file), and
+        // `false` otherwise.
+        true,
+    );
   }
 
   loadingCompleteForTest(): void {

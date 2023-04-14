@@ -72,8 +72,6 @@
 #define SET_HOST 0
 #define ADD_HOST 1
 
-static char *str_copy(char *s) { return OPENSSL_strdup(s); }
-
 static void str_free(char *s) { OPENSSL_free(s); }
 
 #define string_stack_free(sk) sk_OPENSSL_STRING_pop_free(sk, str_free)
@@ -279,7 +277,8 @@ int X509_VERIFY_PARAM_inherit(X509_VERIFY_PARAM *dest,
       dest->hosts = NULL;
     }
     if (src->hosts) {
-      dest->hosts = sk_OPENSSL_STRING_deep_copy(src->hosts, str_copy, str_free);
+      dest->hosts =
+          sk_OPENSSL_STRING_deep_copy(src->hosts, OPENSSL_strdup, str_free);
       if (dest->hosts == NULL) {
         return 0;
       }
@@ -379,9 +378,13 @@ void X509_VERIFY_PARAM_set_depth(X509_VERIFY_PARAM *param, int depth) {
   param->depth = depth;
 }
 
-void X509_VERIFY_PARAM_set_time(X509_VERIFY_PARAM *param, time_t t) {
+void X509_VERIFY_PARAM_set_time_posix(X509_VERIFY_PARAM *param, int64_t t) {
   param->check_time = t;
   param->flags |= X509_V_FLAG_USE_CHECK_TIME;
+}
+
+void X509_VERIFY_PARAM_set_time(X509_VERIFY_PARAM *param, time_t t) {
+  X509_VERIFY_PARAM_set_time_posix(param, t);
 }
 
 int X509_VERIFY_PARAM_add0_policy(X509_VERIFY_PARAM *param,
@@ -395,41 +398,29 @@ int X509_VERIFY_PARAM_add0_policy(X509_VERIFY_PARAM *param,
   if (!sk_ASN1_OBJECT_push(param->policies, policy)) {
     return 0;
   }
+  // TODO(davidben): This does not set |X509_V_FLAG_POLICY_CHECK|, while
+  // |X509_VERIFY_PARAM_set1_policies| does. Is this a bug?
   return 1;
 }
 
 int X509_VERIFY_PARAM_set1_policies(X509_VERIFY_PARAM *param,
-                                    STACK_OF(ASN1_OBJECT) *policies) {
-  size_t i;
-  ASN1_OBJECT *oid, *doid;
+                                    const STACK_OF(ASN1_OBJECT) *policies) {
   if (!param) {
     return 0;
   }
-  if (param->policies) {
-    sk_ASN1_OBJECT_pop_free(param->policies, ASN1_OBJECT_free);
-  }
 
+  sk_ASN1_OBJECT_pop_free(param->policies, ASN1_OBJECT_free);
   if (!policies) {
     param->policies = NULL;
     return 1;
   }
 
-  param->policies = sk_ASN1_OBJECT_new_null();
+  param->policies =
+      sk_ASN1_OBJECT_deep_copy(policies, OBJ_dup, ASN1_OBJECT_free);
   if (!param->policies) {
     return 0;
   }
 
-  for (i = 0; i < sk_ASN1_OBJECT_num(policies); i++) {
-    oid = sk_ASN1_OBJECT_value(policies, i);
-    doid = OBJ_dup(oid);
-    if (!doid) {
-      return 0;
-    }
-    if (!sk_ASN1_OBJECT_push(param->policies, doid)) {
-      ASN1_OBJECT_free(doid);
-      return 0;
-    }
-  }
   param->flags |= X509_V_FLAG_POLICY_CHECK;
   return 1;
 }

@@ -15,7 +15,8 @@
 #include "include/core/SkRSXform.h"
 #include "include/core/SkShader.h"
 #include "include/core/SkVertices.h"
-#include "include/private/SkTo.h"
+#include "include/private/base/SkTo.h"
+#include "src/base/SkTLazy.h"
 #include "src/core/SkDraw.h"
 #include "src/core/SkImageFilterCache.h"
 #include "src/core/SkImageFilter_Base.h"
@@ -27,7 +28,6 @@
 #include "src/core/SkRasterClip.h"
 #include "src/core/SkRectPriv.h"
 #include "src/core/SkSpecialImage.h"
-#include "src/core/SkTLazy.h"
 #include "src/core/SkTextBlobPriv.h"
 #include "src/image/SkImage_Base.h"
 #include "src/shaders/SkLocalMatrixShader.h"
@@ -224,7 +224,7 @@ void SkBaseDevice::drawAtlas(const SkRSXform xform[],
         vTex = quad_to_tris(vTex, tmp);
 
         if (colors) {
-            sk_memset32(vCol, colors[i], 6);
+            SkOpts::memset32(vCol, colors[i], 6);
             vCol += 6;
         }
     }
@@ -389,7 +389,7 @@ bool SkBaseDevice::peekPixels(SkPixmap* pmap) {
 
 //////////////////////////////////////////////////////////////////////////////////////////
 
-#include "src/core/SkUtils.h"
+#include "src/base/SkUtils.h"
 
 static sk_sp<SkShader> make_post_inverse_lm(const SkShader* shader, const SkMatrix& lm) {
      SkMatrix inverse_lm;

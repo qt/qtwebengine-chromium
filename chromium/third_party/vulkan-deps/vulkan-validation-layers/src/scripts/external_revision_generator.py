@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 #
-# Copyright (c) 2015-2022 The Khronos Group Inc.
-# Copyright (c) 2015-2022 Valve Corporation
-# Copyright (c) 2015-2022 LunarG, Inc.
-# Copyright (c) 2015-2022 Google Inc.
+# Copyright (c) 2015-2023 The Khronos Group Inc.
+# Copyright (c) 2015-2023 Valve Corporation
+# Copyright (c) 2015-2023 LunarG, Inc.
+# Copyright (c) 2015-2023 Google Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,9 +16,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#
-# Author: Cort Stratton <cort@google.com>
-# Author: Jean-Francois Roy <jfroy@google.com>
 
 import argparse
 import hashlib
@@ -38,10 +35,10 @@ def generate(symbol_name, commit_id, output_header_file):
         copyright += '\n'
         copyright += '/***************************************************************************\n'
         copyright += ' *\n'
-        copyright += ' * Copyright (c) 2015-2022 The Khronos Group Inc.\n'
-        copyright += ' * Copyright (c) 2015-2022 Valve Corporation\n'
-        copyright += ' * Copyright (c) 2015-2022 LunarG, Inc.\n'
-        copyright += ' * Copyright (c) 2015-2022 Google Inc.\n'
+        copyright += ' * Copyright (c) 2015-2023 The Khronos Group Inc.\n'
+        copyright += ' * Copyright (c) 2015-2023 Valve Corporation\n'
+        copyright += ' * Copyright (c) 2015-2023 LunarG, Inc.\n'
+        copyright += ' * Copyright (c) 2015-2023 Google Inc.\n'
         copyright += ' *\n'
         copyright += ' * Licensed under the Apache License, Version 2.0 (the "License");\n'
         copyright += ' * you may not use this file except in compliance with the License.\n'
@@ -54,10 +51,6 @@ def generate(symbol_name, commit_id, output_header_file):
         copyright += ' * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n'
         copyright += ' * See the License for the specific language governing permissions and\n'
         copyright += ' * limitations under the License.\n'
-        copyright += ' *\n'
-        copyright += ' * Author: Chris Forbes <chrisforbes@google.com>\n'
-        copyright += ' * Author: Cort Stratton <cort@google.com>\n'
-        copyright += ' *\n'
         copyright += ' ****************************************************************************/\n'
         header_file.write(copyright)
         # Contents

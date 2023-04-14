@@ -15,7 +15,6 @@
 #ifndef PLATFORM_API_WEBRTC_H_
 #define PLATFORM_API_WEBRTC_H_
 
-#include <functional>
 #include <memory>
 #include <string>
 
@@ -24,14 +23,13 @@
 #include "internal/platform/byte_array.h"
 #include "webrtc/api/peer_connection_interface.h"
 
-namespace location {
 namespace nearby {
 namespace api {
 
 class WebRtcSignalingMessenger {
  public:
-  using OnSignalingMessageCallback = std::function<void(const ByteArray&)>;
-  using OnSignalingCompleteCallback = std::function<void(bool)>;
+  using OnSignalingMessageCallback = absl::AnyInvocable<void(const ByteArray&)>;
+  using OnSignalingCompleteCallback = absl::AnyInvocable<void(bool)>;
 
   virtual ~WebRtcSignalingMessenger() = default;
 
@@ -46,8 +44,8 @@ class WebRtcSignalingMessenger {
 
 class WebRtcMedium {
  public:
-  using PeerConnectionCallback =
-      std::function<void(rtc::scoped_refptr<webrtc::PeerConnectionInterface>)>;
+  using PeerConnectionCallback = absl::AnyInvocable<void(
+      rtc::scoped_refptr<webrtc::PeerConnectionInterface>)>;
 
   virtual ~WebRtcMedium() = default;
 
@@ -63,11 +61,10 @@ class WebRtcMedium {
   // Returns a signaling messenger for sending WebRTC signaling messages.
   virtual std::unique_ptr<WebRtcSignalingMessenger> GetSignalingMessenger(
       absl::string_view self_id,
-      const connections::LocationHint& location_hint) = 0;
+      const location::nearby::connections::LocationHint& location_hint) = 0;
 };
 
 }  // namespace api
 }  // namespace nearby
-}  // namespace location
 
 #endif  // PLATFORM_API_WEBRTC_H_

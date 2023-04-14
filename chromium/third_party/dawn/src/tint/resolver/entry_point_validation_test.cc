@@ -16,6 +16,7 @@
 #include "src/tint/ast/location_attribute.h"
 #include "src/tint/ast/return_statement.h"
 #include "src/tint/ast/stage_attribute.h"
+#include "src/tint/builtin/builtin_value.h"
 #include "src/tint/resolver/resolver.h"
 #include "src/tint/resolver/resolver_test_helper.h"
 
@@ -68,13 +69,13 @@ TEST_F(ResolverEntryPointValidationTest, ReturnTypeAttribute_Builtin) {
     // fn main() -> @builtin(position) vec4<f32> { return vec4<f32>(); }
     Func(Source{{12, 34}}, "main", utils::Empty, ty.vec4<f32>(),
          utils::Vector{
-             Return(Construct(ty.vec4<f32>())),
+             Return(Call(ty.vec4<f32>())),
          },
          utils::Vector{
              Stage(ast::PipelineStage::kVertex),
          },
          utils::Vector{
-             Builtin(ast::BuiltinValue::kPosition),
+             Builtin(builtin::BuiltinValue::kPosition),
          });
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
@@ -87,14 +88,14 @@ TEST_F(ResolverEntryPointValidationTest, ReturnTypeAttribute_Missing) {
     // }
     Func(Source{{12, 34}}, "main", utils::Empty, ty.vec4<f32>(),
          utils::Vector{
-             Return(Construct(ty.vec4<f32>())),
+             Return(Call(ty.vec4<f32>())),
          },
          utils::Vector{
              Stage(ast::PipelineStage::kVertex),
          });
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), "12:34 error: missing entry point IO attribute on return type");
+    EXPECT_EQ(r()->error(), R"(12:34 error: missing entry point IO attribute on return type)");
 }
 
 TEST_F(ResolverEntryPointValidationTest, ReturnTypeAttribute_Multiple) {
@@ -104,19 +105,19 @@ TEST_F(ResolverEntryPointValidationTest, ReturnTypeAttribute_Multiple) {
     // }
     Func(Source{{12, 34}}, "main", utils::Empty, ty.vec4<f32>(),
          utils::Vector{
-             Return(Construct(ty.vec4<f32>())),
+             Return(Call(ty.vec4<f32>())),
          },
          utils::Vector{
              Stage(ast::PipelineStage::kVertex),
          },
          utils::Vector{
              Location(Source{{13, 43}}, 0_a),
-             Builtin(Source{{14, 52}}, ast::BuiltinValue::kPosition),
+             Builtin(Source{{14, 52}}, builtin::BuiltinValue::kPosition),
          });
 
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(), R"(14:52 error: multiple entry point IO attributes
-13:43 note: previously consumed location(0))");
+13:43 note: previously consumed @location)");
 }
 
 TEST_F(ResolverEntryPointValidationTest, ReturnType_Struct_Valid) {
@@ -129,13 +130,14 @@ TEST_F(ResolverEntryPointValidationTest, ReturnType_Struct_Valid) {
     //   return Output();
     // }
     auto* output = Structure(
-        "Output", utils::Vector{
-                      Member("a", ty.f32(), utils::Vector{Location(0_a)}),
-                      Member("b", ty.f32(), utils::Vector{Builtin(ast::BuiltinValue::kFragDepth)}),
-                  });
+        "Output",
+        utils::Vector{
+            Member("a", ty.f32(), utils::Vector{Location(0_a)}),
+            Member("b", ty.f32(), utils::Vector{Builtin(builtin::BuiltinValue::kFragDepth)}),
+        });
     Func(Source{{12, 34}}, "main", utils::Empty, ty.Of(output),
          utils::Vector{
-             Return(Construct(ty.Of(output))),
+             Return(Call(ty.Of(output))),
          },
          utils::Vector{
              Stage(ast::PipelineStage::kFragment),
@@ -157,11 +159,11 @@ TEST_F(ResolverEntryPointValidationTest, ReturnType_Struct_MemberMultipleAttribu
         utils::Vector{
             Member("a", ty.f32(),
                    utils::Vector{Location(Source{{13, 43}}, 0_a),
-                                 Builtin(Source{{14, 52}}, ast::BuiltinValue::kFragDepth)}),
+                                 Builtin(Source{{14, 52}}, builtin::BuiltinValue::kFragDepth)}),
         });
     Func(Source{{12, 34}}, "main", utils::Empty, ty.Of(output),
          utils::Vector{
-             Return(Construct(ty.Of(output))),
+             Return(Call(ty.Of(output))),
          },
          utils::Vector{
              Stage(ast::PipelineStage::kFragment),
@@ -169,7 +171,7 @@ TEST_F(ResolverEntryPointValidationTest, ReturnType_Struct_MemberMultipleAttribu
 
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(), R"(14:52 error: multiple entry point IO attributes
-13:43 note: previously consumed location(0)
+13:43 note: previously consumed @location
 12:34 note: while analyzing entry point 'main')");
 }
 
@@ -189,7 +191,7 @@ TEST_F(ResolverEntryPointValidationTest, ReturnType_Struct_MemberMissingAttribut
                   });
     Func(Source{{12, 34}}, "main", utils::Empty, ty.Of(output),
          utils::Vector{
-             Return(Construct(ty.Of(output))),
+             Return(Call(ty.Of(output))),
          },
          utils::Vector{
              Stage(ast::PipelineStage::kFragment),
@@ -211,22 +213,22 @@ TEST_F(ResolverEntryPointValidationTest, ReturnType_Struct_DuplicateBuiltins) {
     //   return Output();
     // }
     auto* output = Structure(
-        "Output", utils::Vector{
-                      Member("a", ty.f32(), utils::Vector{Builtin(ast::BuiltinValue::kFragDepth)}),
-                      Member("b", ty.f32(), utils::Vector{Builtin(ast::BuiltinValue::kFragDepth)}),
-                  });
+        "Output",
+        utils::Vector{
+            Member("a", ty.f32(), utils::Vector{Builtin(builtin::BuiltinValue::kFragDepth)}),
+            Member("b", ty.f32(), utils::Vector{Builtin(builtin::BuiltinValue::kFragDepth)}),
+        });
     Func(Source{{12, 34}}, "main", utils::Empty, ty.Of(output),
          utils::Vector{
-             Return(Construct(ty.Of(output))),
+             Return(Call(ty.Of(output))),
          },
          utils::Vector{
              Stage(ast::PipelineStage::kFragment),
          });
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(
-        r()->error(),
-        R"(12:34 error: builtin(frag_depth) attribute appears multiple times as pipeline output
+    EXPECT_EQ(r()->error(),
+              R"(12:34 error: @builtin(frag_depth) appears multiple times as pipeline output
 12:34 note: while analyzing entry point 'main')");
 }
 
@@ -263,7 +265,7 @@ TEST_F(ResolverEntryPointValidationTest, ParameterAttribute_Missing) {
          });
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), "13:43 error: missing entry point IO attribute on parameter");
+    EXPECT_EQ(r()->error(), R"(13:43 error: missing entry point IO attribute on parameter)");
 }
 
 TEST_F(ResolverEntryPointValidationTest, ParameterAttribute_Multiple) {
@@ -272,7 +274,7 @@ TEST_F(ResolverEntryPointValidationTest, ParameterAttribute_Multiple) {
     auto* param = Param("param", ty.u32(),
                         utils::Vector{
                             Location(Source{{13, 43}}, 0_a),
-                            Builtin(Source{{14, 52}}, ast::BuiltinValue::kSampleIndex),
+                            Builtin(Source{{14, 52}}, builtin::BuiltinValue::kSampleIndex),
                         });
     Func(Source{{12, 34}}, "main",
          utils::Vector{
@@ -285,7 +287,7 @@ TEST_F(ResolverEntryPointValidationTest, ParameterAttribute_Multiple) {
 
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(), R"(14:52 error: multiple entry point IO attributes
-13:43 note: previously consumed location(0))");
+13:43 note: previously consumed @location)");
 }
 
 TEST_F(ResolverEntryPointValidationTest, Parameter_Struct_Valid) {
@@ -296,10 +298,11 @@ TEST_F(ResolverEntryPointValidationTest, Parameter_Struct_Valid) {
     // @fragment
     // fn main(param : Input) {}
     auto* input = Structure(
-        "Input", utils::Vector{
-                     Member("a", ty.f32(), utils::Vector{Location(0_a)}),
-                     Member("b", ty.u32(), utils::Vector{Builtin(ast::BuiltinValue::kSampleIndex)}),
-                 });
+        "Input",
+        utils::Vector{
+            Member("a", ty.f32(), utils::Vector{Location(0_a)}),
+            Member("b", ty.u32(), utils::Vector{Builtin(builtin::BuiltinValue::kSampleIndex)}),
+        });
     auto* param = Param("param", ty.Of(input));
     Func(Source{{12, 34}}, "main",
          utils::Vector{
@@ -324,7 +327,7 @@ TEST_F(ResolverEntryPointValidationTest, Parameter_Struct_MemberMultipleAttribut
         utils::Vector{
             Member("a", ty.u32(),
                    utils::Vector{Location(Source{{13, 43}}, 0_a),
-                                 Builtin(Source{{14, 52}}, ast::BuiltinValue::kSampleIndex)}),
+                                 Builtin(Source{{14, 52}}, builtin::BuiltinValue::kSampleIndex)}),
         });
     auto* param = Param("param", ty.Of(input));
     Func(Source{{12, 34}}, "main",
@@ -338,7 +341,7 @@ TEST_F(ResolverEntryPointValidationTest, Parameter_Struct_MemberMultipleAttribut
 
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(), R"(14:52 error: multiple entry point IO attributes
-13:43 note: previously consumed location(0)
+13:43 note: previously consumed @location
 12:34 note: while analyzing entry point 'main')");
 }
 
@@ -375,11 +378,11 @@ TEST_F(ResolverEntryPointValidationTest, Parameter_DuplicateBuiltins) {
     //         @builtin(sample_index) param_b : u32) {}
     auto* param_a = Param("param_a", ty.u32(),
                           utils::Vector{
-                              Builtin(ast::BuiltinValue::kSampleIndex),
+                              Builtin(builtin::BuiltinValue::kSampleIndex),
                           });
     auto* param_b = Param("param_b", ty.u32(),
                           utils::Vector{
-                              Builtin(ast::BuiltinValue::kSampleIndex),
+                              Builtin(builtin::BuiltinValue::kSampleIndex),
                           });
     Func(Source{{12, 34}}, "main",
          utils::Vector{
@@ -393,8 +396,7 @@ TEST_F(ResolverEntryPointValidationTest, Parameter_DuplicateBuiltins) {
 
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(),
-              "12:34 error: builtin(sample_index) attribute appears multiple times as "
-              "pipeline input");
+              "12:34 error: @builtin(sample_index) appears multiple times as pipeline input");
 }
 
 TEST_F(ResolverEntryPointValidationTest, Parameter_Struct_DuplicateBuiltins) {
@@ -409,12 +411,12 @@ TEST_F(ResolverEntryPointValidationTest, Parameter_Struct_DuplicateBuiltins) {
     auto* input_a = Structure(
         "InputA",
         utils::Vector{
-            Member("a", ty.u32(), utils::Vector{Builtin(ast::BuiltinValue::kSampleIndex)}),
+            Member("a", ty.u32(), utils::Vector{Builtin(builtin::BuiltinValue::kSampleIndex)}),
         });
     auto* input_b = Structure(
         "InputB",
         utils::Vector{
-            Member("a", ty.u32(), utils::Vector{Builtin(ast::BuiltinValue::kSampleIndex)}),
+            Member("a", ty.u32(), utils::Vector{Builtin(builtin::BuiltinValue::kSampleIndex)}),
         });
     auto* param_a = Param("param_a", ty.Of(input_a));
     auto* param_b = Param("param_b", ty.Of(input_b));
@@ -429,9 +431,8 @@ TEST_F(ResolverEntryPointValidationTest, Parameter_Struct_DuplicateBuiltins) {
          });
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(
-        r()->error(),
-        R"(12:34 error: builtin(sample_index) attribute appears multiple times as pipeline input
+    EXPECT_EQ(r()->error(),
+              R"(12:34 error: @builtin(sample_index) appears multiple times as pipeline input
 12:34 note: while analyzing entry point 'main')");
 }
 
@@ -452,15 +453,15 @@ TEST_F(ResolverEntryPointValidationTest, VertexShaderMustReturnPosition) {
 TEST_F(ResolverEntryPointValidationTest, PushConstantAllowedWithEnable) {
     // enable chromium_experimental_push_constant;
     // var<push_constant> a : u32;
-    Enable(ast::Extension::kChromiumExperimentalPushConstant);
-    GlobalVar("a", ty.u32(), ast::AddressSpace::kPushConstant);
+    Enable(builtin::Extension::kChromiumExperimentalPushConstant);
+    GlobalVar("a", ty.u32(), builtin::AddressSpace::kPushConstant);
 
     EXPECT_TRUE(r()->Resolve());
 }
 
 TEST_F(ResolverEntryPointValidationTest, PushConstantDisallowedWithoutEnable) {
     // var<push_constant> a : u32;
-    GlobalVar(Source{{1, 2}}, "a", ty.u32(), ast::AddressSpace::kPushConstant);
+    GlobalVar(Source{{1, 2}}, "a", ty.u32(), builtin::AddressSpace::kPushConstant);
 
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(),
@@ -470,7 +471,7 @@ TEST_F(ResolverEntryPointValidationTest, PushConstantDisallowedWithoutEnable) {
 
 TEST_F(ResolverEntryPointValidationTest, PushConstantAllowedWithIgnoreAddressSpaceAttribute) {
     // var<push_constant> a : u32; // With ast::DisabledValidation::kIgnoreAddressSpace
-    GlobalVar("a", ty.u32(), ast::AddressSpace::kPushConstant,
+    GlobalVar("a", ty.u32(), builtin::AddressSpace::kPushConstant,
               utils::Vector{Disable(ast::DisabledValidation::kIgnoreAddressSpace)});
 
     EXPECT_TRUE(r()->Resolve());
@@ -482,8 +483,8 @@ TEST_F(ResolverEntryPointValidationTest, PushConstantOneVariableUsedInEntryPoint
     // @compute @workgroup_size(1) fn main() {
     //   _ = a;
     // }
-    Enable(ast::Extension::kChromiumExperimentalPushConstant);
-    GlobalVar("a", ty.u32(), ast::AddressSpace::kPushConstant);
+    Enable(builtin::Extension::kChromiumExperimentalPushConstant);
+    GlobalVar("a", ty.u32(), builtin::AddressSpace::kPushConstant);
 
     Func("main", {}, ty.void_(), utils::Vector{Assign(Phony(), "a")},
          utils::Vector{Stage(ast::PipelineStage::kCompute),
@@ -500,9 +501,9 @@ TEST_F(ResolverEntryPointValidationTest, PushConstantTwoVariablesUsedInEntryPoin
     //   _ = a;
     //   _ = b;
     // }
-    Enable(ast::Extension::kChromiumExperimentalPushConstant);
-    GlobalVar(Source{{1, 2}}, "a", ty.u32(), ast::AddressSpace::kPushConstant);
-    GlobalVar(Source{{3, 4}}, "b", ty.u32(), ast::AddressSpace::kPushConstant);
+    Enable(builtin::Extension::kChromiumExperimentalPushConstant);
+    GlobalVar(Source{{1, 2}}, "a", ty.u32(), builtin::AddressSpace::kPushConstant);
+    GlobalVar(Source{{3, 4}}, "b", ty.u32(), builtin::AddressSpace::kPushConstant);
 
     Func(Source{{5, 6}}, "main", {}, ty.void_(),
          utils::Vector{Assign(Phony(), "a"), Assign(Phony(), "b")},
@@ -531,9 +532,9 @@ TEST_F(ResolverEntryPointValidationTest,
     //   uses_a();
     //   uses_b();
     // }
-    Enable(ast::Extension::kChromiumExperimentalPushConstant);
-    GlobalVar(Source{{1, 2}}, "a", ty.u32(), ast::AddressSpace::kPushConstant);
-    GlobalVar(Source{{3, 4}}, "b", ty.u32(), ast::AddressSpace::kPushConstant);
+    Enable(builtin::Extension::kChromiumExperimentalPushConstant);
+    GlobalVar(Source{{1, 2}}, "a", ty.u32(), builtin::AddressSpace::kPushConstant);
+    GlobalVar(Source{{3, 4}}, "b", ty.u32(), builtin::AddressSpace::kPushConstant);
 
     Func(Source{{5, 6}}, "uses_a", {}, ty.void_(), utils::Vector{Assign(Phony(), "a")});
     Func(Source{{7, 8}}, "uses_b", {}, ty.void_(), utils::Vector{Assign(Phony(), "b")});
@@ -564,9 +565,9 @@ TEST_F(ResolverEntryPointValidationTest, PushConstantTwoVariablesUsedInDifferent
     // @compute @workgroup_size(1) fn uses_b() {
     //   _ = a;
     // }
-    Enable(ast::Extension::kChromiumExperimentalPushConstant);
-    GlobalVar("a", ty.u32(), ast::AddressSpace::kPushConstant);
-    GlobalVar("b", ty.u32(), ast::AddressSpace::kPushConstant);
+    Enable(builtin::Extension::kChromiumExperimentalPushConstant);
+    GlobalVar("a", ty.u32(), builtin::AddressSpace::kPushConstant);
+    GlobalVar("b", ty.u32(), builtin::AddressSpace::kPushConstant);
 
     Func("uses_a", {}, ty.void_(), utils::Vector{Assign(Phony(), "a")},
          utils::Vector{Stage(ast::PipelineStage::kCompute),
@@ -621,7 +622,7 @@ TEST_P(TypeValidationTest, BareInputs) {
     // fn main(@location(0) @interpolate(flat) a : *) {}
     auto params = GetParam();
 
-    Enable(ast::Extension::kF16);
+    Enable(builtin::Extension::kF16);
 
     auto* a = Param("a", params.create_ast_type(*this),
                     utils::Vector{
@@ -652,7 +653,7 @@ TEST_P(TypeValidationTest, StructInputs) {
     // fn main(a : Input) {}
     auto params = GetParam();
 
-    Enable(ast::Extension::kF16);
+    Enable(builtin::Extension::kF16);
 
     auto* input = Structure("Input", utils::Vector{
                                          Member("a", params.create_ast_type(*this),
@@ -682,11 +683,11 @@ TEST_P(TypeValidationTest, BareOutputs) {
     // }
     auto params = GetParam();
 
-    Enable(ast::Extension::kF16);
+    Enable(builtin::Extension::kF16);
 
     Func(Source{{12, 34}}, "main", utils::Empty, params.create_ast_type(*this),
          utils::Vector{
-             Return(Construct(params.create_ast_type(*this))),
+             Return(Call(params.create_ast_type(*this))),
          },
          utils::Vector{
              Stage(ast::PipelineStage::kFragment),
@@ -712,7 +713,7 @@ TEST_P(TypeValidationTest, StructOutputs) {
     // }
     auto params = GetParam();
 
-    Enable(ast::Extension::kF16);
+    Enable(builtin::Extension::kF16);
 
     auto* output = Structure(
         "Output", utils::Vector{
@@ -720,7 +721,7 @@ TEST_P(TypeValidationTest, StructOutputs) {
                   });
     Func(Source{{12, 34}}, "main", utils::Empty, ty.Of(output),
          utils::Vector{
-             Return(Construct(ty.Of(output))),
+             Return(Call(ty.Of(output))),
          },
          utils::Vector{
              Stage(ast::PipelineStage::kFragment),
@@ -782,10 +783,8 @@ TEST_F(LocationAttributeTests, BadType_Input_bool) {
 
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(),
-              "12:34 error: cannot apply 'location' attribute to declaration of "
-              "type 'bool'\n"
-              "34:56 note: 'location' attribute must only be applied to "
-              "declarations of numeric scalar or numeric vector type");
+              R"(12:34 error: cannot apply @location to declaration of type 'bool'
+34:56 note: @location must only be applied to declarations of numeric scalar or numeric vector type)");
 }
 
 TEST_F(LocationAttributeTests, BadType_Output_Array) {
@@ -794,7 +793,7 @@ TEST_F(LocationAttributeTests, BadType_Output_Array) {
 
     Func(Source{{12, 34}}, "frag_main", utils::Empty, ty.array<f32, 2>(),
          utils::Vector{
-             Return(Construct(ty.array<f32, 2>())),
+             Return(Call(ty.array<f32, 2>())),
          },
          utils::Vector{
              Stage(ast::PipelineStage::kFragment),
@@ -805,10 +804,8 @@ TEST_F(LocationAttributeTests, BadType_Output_Array) {
 
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(),
-              "12:34 error: cannot apply 'location' attribute to declaration of "
-              "type 'array<f32, 2>'\n"
-              "34:56 note: 'location' attribute must only be applied to "
-              "declarations of numeric scalar or numeric vector type");
+              R"(12:34 error: cannot apply @location to declaration of type 'array<f32, 2>'
+34:56 note: @location must only be applied to declarations of numeric scalar or numeric vector type)");
 }
 
 TEST_F(LocationAttributeTests, BadType_Input_Struct) {
@@ -835,10 +832,8 @@ TEST_F(LocationAttributeTests, BadType_Input_Struct) {
 
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(),
-              "12:34 error: cannot apply 'location' attribute to declaration of "
-              "type 'Input'\n"
-              "13:43 note: 'location' attribute must only be applied to "
-              "declarations of numeric scalar or numeric vector type");
+              R"(12:34 error: cannot apply @location to declaration of type 'Input'
+13:43 note: @location must only be applied to declarations of numeric scalar or numeric vector type)");
 }
 
 TEST_F(LocationAttributeTests, BadType_Input_Struct_NestedStruct) {
@@ -869,8 +864,8 @@ TEST_F(LocationAttributeTests, BadType_Input_Struct_NestedStruct) {
 
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(),
-              "14:52 error: nested structures cannot be used for entry point IO\n"
-              "12:34 note: while analyzing entry point 'main'");
+              R"(14:52 error: nested structures cannot be used for entry point IO
+12:34 note: while analyzing entry point 'main')");
 }
 
 TEST_F(LocationAttributeTests, BadType_Input_Struct_RuntimeArray) {
@@ -895,10 +890,8 @@ TEST_F(LocationAttributeTests, BadType_Input_Struct_RuntimeArray) {
 
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(),
-              "13:43 error: cannot apply 'location' attribute to declaration of "
-              "type 'array<f32>'\n"
-              "note: 'location' attribute must only be applied to declarations "
-              "of numeric scalar or numeric vector type");
+              R"(13:43 error: cannot apply @location to declaration of type 'array<f32>'
+note: @location must only be applied to declarations of numeric scalar or numeric vector type)");
 }
 
 TEST_F(LocationAttributeTests, BadMemberType_Input) {
@@ -924,10 +917,8 @@ TEST_F(LocationAttributeTests, BadMemberType_Input) {
 
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(),
-              "34:56 error: cannot apply 'location' attribute to declaration of "
-              "type 'array<i32>'\n"
-              "12:34 note: 'location' attribute must only be applied to "
-              "declarations of numeric scalar or numeric vector type");
+              R"(34:56 error: cannot apply @location to declaration of type 'array<i32>'
+12:34 note: @location must only be applied to declarations of numeric scalar or numeric vector type)");
 }
 
 TEST_F(LocationAttributeTests, BadMemberType_Output) {
@@ -942,7 +933,7 @@ TEST_F(LocationAttributeTests, BadMemberType_Output) {
 
     Func("frag_main", utils::Empty, ty.Of(s),
          utils::Vector{
-             Return(Construct(ty.Of(s))),
+             Return(Call(ty.Of(s))),
          },
          utils::Vector{
              Stage(ast::PipelineStage::kFragment),
@@ -951,10 +942,8 @@ TEST_F(LocationAttributeTests, BadMemberType_Output) {
 
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(),
-              "34:56 error: cannot apply 'location' attribute to declaration of "
-              "type 'atomic<i32>'\n"
-              "12:34 note: 'location' attribute must only be applied to "
-              "declarations of numeric scalar or numeric vector type");
+              R"(34:56 error: cannot apply @location to declaration of type 'atomic<i32>'
+12:34 note: @location must only be applied to declarations of numeric scalar or numeric vector type)");
 }
 
 TEST_F(LocationAttributeTests, BadMemberType_Unused) {
@@ -968,10 +957,8 @@ TEST_F(LocationAttributeTests, BadMemberType_Unused) {
 
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(),
-              "34:56 error: cannot apply 'location' attribute to declaration of "
-              "type 'mat3x2<f32>'\n"
-              "12:34 note: 'location' attribute must only be applied to "
-              "declarations of numeric scalar or numeric vector type");
+              R"(34:56 error: cannot apply @location to declaration of type 'mat3x2<f32>'
+12:34 note: @location must only be applied to declarations of numeric scalar or numeric vector type)");
 }
 
 TEST_F(LocationAttributeTests, ReturnType_Struct_Valid) {
@@ -984,13 +971,14 @@ TEST_F(LocationAttributeTests, ReturnType_Struct_Valid) {
     //   return Output();
     // }
     auto* output = Structure(
-        "Output", utils::Vector{
-                      Member("a", ty.f32(), utils::Vector{Location(0_a)}),
-                      Member("b", ty.f32(), utils::Vector{Builtin(ast::BuiltinValue::kFragDepth)}),
-                  });
+        "Output",
+        utils::Vector{
+            Member("a", ty.f32(), utils::Vector{Location(0_a)}),
+            Member("b", ty.f32(), utils::Vector{Builtin(builtin::BuiltinValue::kFragDepth)}),
+        });
     Func(Source{{12, 34}}, "main", utils::Empty, ty.Of(output),
          utils::Vector{
-             Return(Construct(ty.Of(output))),
+             Return(Call(ty.Of(output))),
          },
          utils::Vector{
              Stage(ast::PipelineStage::kFragment),
@@ -1012,7 +1000,7 @@ TEST_F(LocationAttributeTests, ReturnType_Struct) {
                                        });
     Func(Source{{12, 34}}, "main", utils::Empty, ty.Of(output),
          utils::Vector{
-             Return(Construct(ty.Of(output))),
+             Return(Call(ty.Of(output))),
          },
          utils::Vector{
              Stage(ast::PipelineStage::kVertex),
@@ -1022,11 +1010,8 @@ TEST_F(LocationAttributeTests, ReturnType_Struct) {
          });
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(),
-              "12:34 error: cannot apply 'location' attribute to declaration of "
-              "type 'Output'\n"
-              "13:43 note: 'location' attribute must only be applied to "
-              "declarations of numeric scalar or numeric vector type");
+    EXPECT_EQ(r()->error(), R"(12:34 error: cannot apply @location to declaration of type 'Output'
+13:43 note: @location must only be applied to declarations of numeric scalar or numeric vector type)");
 }
 
 TEST_F(LocationAttributeTests, ReturnType_Struct_NestedStruct) {
@@ -1047,7 +1032,7 @@ TEST_F(LocationAttributeTests, ReturnType_Struct_NestedStruct) {
                                        });
     Func(Source{{12, 34}}, "main", utils::Empty, ty.Of(output),
          utils::Vector{
-             Return(Construct(ty.Of(output))),
+             Return(Call(ty.Of(output))),
          },
          utils::Vector{
              Stage(ast::PipelineStage::kFragment),
@@ -1055,8 +1040,8 @@ TEST_F(LocationAttributeTests, ReturnType_Struct_NestedStruct) {
 
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(),
-              "14:52 error: nested structures cannot be used for entry point IO\n"
-              "12:34 note: while analyzing entry point 'main'");
+              R"(14:52 error: nested structures cannot be used for entry point IO
+12:34 note: while analyzing entry point 'main')");
 }
 
 TEST_F(LocationAttributeTests, ReturnType_Struct_RuntimeArray) {
@@ -1073,7 +1058,7 @@ TEST_F(LocationAttributeTests, ReturnType_Struct_RuntimeArray) {
                                        });
     Func(Source{{12, 34}}, "main", utils::Empty, ty.Of(output),
          utils::Vector{
-             Return(Construct(ty.Of(output))),
+             Return(Call(ty.Of(output))),
          },
          utils::Vector{
              Stage(ast::PipelineStage::kFragment),
@@ -1081,10 +1066,8 @@ TEST_F(LocationAttributeTests, ReturnType_Struct_RuntimeArray) {
 
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(),
-              "13:43 error: cannot apply 'location' attribute to declaration of "
-              "type 'array<f32>'\n"
-              "12:34 note: 'location' attribute must only be applied to "
-              "declarations of numeric scalar or numeric vector type");
+              R"(13:43 error: cannot apply @location to declaration of type 'array<f32>'
+12:34 note: @location must only be applied to declarations of numeric scalar or numeric vector type)");
 }
 
 TEST_F(LocationAttributeTests, ComputeShaderLocation_Input) {
@@ -1101,7 +1084,7 @@ TEST_F(LocationAttributeTests, ComputeShaderLocation_Input) {
          });
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), "12:34 error: attribute is not valid for compute shader output");
+    EXPECT_EQ(r()->error(), R"(12:34 error: attribute is not valid for compute shader output)");
 }
 
 TEST_F(LocationAttributeTests, ComputeShaderLocation_Output) {
@@ -1116,7 +1099,7 @@ TEST_F(LocationAttributeTests, ComputeShaderLocation_Output) {
          });
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), "12:34 error: attribute is not valid for compute shader inputs");
+    EXPECT_EQ(r()->error(), R"(12:34 error: attribute is not valid for compute shader inputs)");
 }
 
 TEST_F(LocationAttributeTests, ComputeShaderLocationStructMember_Output) {
@@ -1127,7 +1110,7 @@ TEST_F(LocationAttributeTests, ComputeShaderLocationStructMember_Output) {
     auto* s = Structure("S", utils::Vector{m});
     Func(Source{{56, 78}}, "main", utils::Empty, ty.Of(s),
          utils::Vector{
-             Return(Expr(Construct(ty.Of(s)))),
+             Return(Expr(Call(ty.Of(s)))),
          },
          utils::Vector{
              Stage(ast::PipelineStage::kCompute),
@@ -1182,7 +1165,7 @@ TEST_F(LocationAttributeTests, Duplicate_input) {
          });
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), "12:34 error: location(1) attribute appears multiple times");
+    EXPECT_EQ(r()->error(), R"(12:34 error: @location(1) appears multiple times)");
 }
 
 TEST_F(LocationAttributeTests, Duplicate_struct) {
@@ -1215,8 +1198,8 @@ TEST_F(LocationAttributeTests, Duplicate_struct) {
 
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(),
-              "34:56 error: location(1) attribute appears multiple times\n"
-              "12:34 note: while analyzing entry point 'main'");
+              R"(34:56 error: @location(1) appears multiple times
+12:34 note: while analyzing entry point 'main')");
 }
 
 }  // namespace

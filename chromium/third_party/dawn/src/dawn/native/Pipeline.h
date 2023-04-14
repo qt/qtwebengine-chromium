@@ -40,6 +40,8 @@ MaybeError ValidateProgrammableStage(DeviceBase* device,
                                      const PipelineLayoutBase* layout,
                                      SingleShaderStage stage);
 
+WGPUCreatePipelineAsyncStatus CreatePipelineAsyncStatusFromErrorType(InternalErrorType error);
+
 struct ProgrammableStage {
     Ref<ShaderModuleBase> module;
     std::string entryPoint;
@@ -59,6 +61,7 @@ class PipelineBase : public ApiObjectBase, public CachedObject {
     const RequiredBufferSizes& GetMinBufferSizes() const;
     const ProgrammableStage& GetStage(SingleShaderStage stage) const;
     const PerStage<ProgrammableStage>& GetAllStages() const;
+    bool HasStage(SingleShaderStage stage) const;
     wgpu::ShaderStage GetStageMask() const;
 
     ResultOrError<Ref<BindGroupLayoutBase>> GetBindGroupLayout(uint32_t groupIndex);
@@ -79,9 +82,6 @@ class PipelineBase : public ApiObjectBase, public CachedObject {
                  const char* label,
                  std::vector<StageAndDescriptor> stages);
     PipelineBase(DeviceBase* device, ObjectBase::ErrorTag tag);
-
-    // Constructor used only for mocking and testing.
-    explicit PipelineBase(DeviceBase* device);
 
   private:
     MaybeError ValidateGetBindGroupLayout(BindGroupIndex group);

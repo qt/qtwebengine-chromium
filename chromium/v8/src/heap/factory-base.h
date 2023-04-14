@@ -98,9 +98,8 @@ class FactoryBase : public TorqueGeneratedFactory<Impl> {
   // Create a pre-tenured empty AccessorPair.
   Handle<AccessorPair> NewAccessorPair();
 
-  // Creates a new CodeDataContainer for a Code object.
-  Handle<CodeDataContainer> NewCodeDataContainer(int flags,
-                                                 AllocationType allocation);
+  // Creates a new Code for a InstructionStream object.
+  Handle<Code> NewCode(int flags, AllocationType allocation);
 
   // Allocates a fixed array initialized with undefined values.
   Handle<FixedArray> NewFixedArray(
@@ -339,7 +338,6 @@ class FactoryBase : public TorqueGeneratedFactory<Impl> {
                                               AllocationType allocation);
 
  private:
-  friend class WebSnapshotDeserializer;
   Impl* impl() { return static_cast<Impl*>(this); }
   auto isolate() { return impl()->isolate(); }
   ReadOnlyRoots read_only_roots() { return impl()->read_only_roots(); }

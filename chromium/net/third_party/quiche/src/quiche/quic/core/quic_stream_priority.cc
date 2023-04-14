@@ -12,7 +12,9 @@ namespace quic {
 std::string SerializePriorityFieldValue(QuicStreamPriority priority) {
   quiche::structured_headers::Dictionary dictionary;
 
-  if (priority.urgency != QuicStreamPriority::kDefaultUrgency &&
+  // TODO(b/266722347): Never send `urgency` if value equals default value.
+  if ((priority.urgency != QuicStreamPriority::kDefaultUrgency ||
+       priority.incremental != QuicStreamPriority::kDefaultIncremental) &&
       priority.urgency >= QuicStreamPriority::kMinimumUrgency &&
       priority.urgency <= QuicStreamPriority::kMaximumUrgency) {
     dictionary[QuicStreamPriority::kUrgencyKey] =
@@ -38,12 +40,12 @@ std::string SerializePriorityFieldValue(QuicStreamPriority priority) {
   return *priority_field_value;
 }
 
-ParsePriorityFieldValueResult ParsePriorityFieldValue(
+absl::optional<QuicStreamPriority> ParsePriorityFieldValue(
     absl::string_view priority_field_value) {
   absl::optional<quiche::structured_headers::Dictionary> parsed_dictionary =
       quiche::structured_headers::ParseDictionary(priority_field_value);
   if (!parsed_dictionary.has_value()) {
-    return {false, {}};
+    return absl::nullopt;
   }
 
   uint8_t urgency = QuicStreamPriority::kDefaultUrgency;
@@ -57,6 +59,9 @@ ParsePriorityFieldValueResult ParsePriorityFieldValue(
     const std::vector<quiche::structured_headers::ParameterizedItem>& member =
         value.member;
     if (member.size() != 1) {
+      // If `member_is_inner_list` is false above,
+      // then `member` should have exactly one element.
+      QUICHE_BUG(priority_field_value_parsing_internal_error);
       continue;
     }
 
@@ -74,7 +79,7 @@ ParsePriorityFieldValueResult ParsePriorityFieldValue(
     }
   }
 
-  return {true, {urgency, incremental}};
+  return QuicStreamPriority{urgency, incremental};
 }
 
 }  // namespace quic

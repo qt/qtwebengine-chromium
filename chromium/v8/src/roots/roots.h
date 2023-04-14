@@ -65,19 +65,19 @@ class Symbol;
   V(Map, byte_array_map, ByteArrayMap)                                         \
   V(Map, fixed_array_map, FixedArrayMap)                                       \
   V(Map, fixed_cow_array_map, FixedCOWArrayMap)                                \
+  V(Map, fixed_double_array_map, FixedDoubleArrayMap)                          \
   V(Map, hash_table_map, HashTableMap)                                         \
   V(Map, symbol_map, SymbolMap)                                                \
   V(Map, one_byte_string_map, OneByteStringMap)                                \
   V(Map, one_byte_internalized_string_map, OneByteInternalizedStringMap)       \
   V(Map, scope_info_map, ScopeInfoMap)                                         \
   V(Map, shared_function_info_map, SharedFunctionInfoMap)                      \
-  V(Map, code_map, CodeMap)                                                    \
+  V(Map, instruction_stream_map, InstructionStreamMap)                         \
   V(Map, cell_map, CellMap)                                                    \
   V(Map, global_property_cell_map, GlobalPropertyCellMap)                      \
   V(Map, foreign_map, ForeignMap)                                              \
   V(Map, heap_number_map, HeapNumberMap)                                       \
   V(Map, transition_array_map, TransitionArrayMap)                             \
-  V(Map, thin_one_byte_string_map, ThinOneByteStringMap)                       \
   /* TODO(mythria): Once lazy feedback lands, check if feedback vector map */  \
   /* is still a popular map */                                                 \
   V(Map, feedback_vector_map, FeedbackVectorMap)                               \
@@ -99,9 +99,8 @@ class Symbol;
   V(Map, bigint_map, BigIntMap)                                                \
   V(Map, object_boilerplate_description_map, ObjectBoilerplateDescriptionMap)  \
   V(Map, bytecode_array_map, BytecodeArrayMap)                                 \
-  V(Map, code_data_container_map, CodeDataContainerMap)                        \
+  V(Map, code_map, CodeMap)                                                    \
   V(Map, coverage_info_map, CoverageInfoMap)                                   \
-  V(Map, fixed_double_array_map, FixedDoubleArrayMap)                          \
   V(Map, global_dictionary_map, GlobalDictionaryMap)                           \
   V(Map, many_closures_cell_map, ManyClosuresCellMap)                          \
   V(Map, mega_dom_handler_map, MegaDomHandlerMap)                              \
@@ -139,6 +138,7 @@ class Symbol;
   IF_WASM(V, Map, wasm_resume_data_map, WasmResumeDataMap)                     \
   IF_WASM(V, Map, wasm_type_info_map, WasmTypeInfoMap)                         \
   IF_WASM(V, Map, wasm_continuation_object_map, WasmContinuationObjectMap)     \
+  IF_WASM(V, Map, wasm_null_map, WasmNullMap)                                  \
   V(Map, weak_fixed_array_map, WeakFixedArrayMap)                              \
   V(Map, weak_array_list_map, WeakArrayListMap)                                \
   V(Map, ephemeron_hash_table_map, EphemeronHashTableMap)                      \
@@ -171,8 +171,6 @@ class Symbol;
   V(Map, shared_uncached_external_one_byte_string_map,                         \
     SharedUncachedExternalOneByteStringMap)                                    \
   V(Map, shared_uncached_external_string_map, SharedUncachedExternalStringMap) \
-  V(Map, shared_thin_one_byte_string_map, SharedThinOneByteStringMap)          \
-  V(Map, shared_thin_string_map, SharedThinStringMap)                          \
   /* Oddball maps */                                                           \
   V(Map, undefined_map, UndefinedMap)                                          \
   V(Map, the_hole_map, TheHoleMap)                                             \
@@ -218,20 +216,15 @@ class Symbol;
   V(HeapObject, self_reference_marker, SelfReferenceMarker)                    \
   /* Marker for basic-block usage counters array during code-generation */     \
   V(Oddball, basic_block_counters_marker, BasicBlockCountersMarker)            \
-  /* Canonical off-heap trampoline data */                                     \
-  V(ByteArray, off_heap_trampoline_relocation_info,                            \
-    OffHeapTrampolineRelocationInfo)                                           \
-  V(HeapObject, trampoline_trivial_code_data_container,                        \
-    TrampolineTrivialCodeDataContainer)                                        \
-  V(HeapObject, trampoline_promise_rejection_code_data_container,              \
-    TrampolinePromiseRejectionCodeDataContainer)                               \
   /* Canonical scope infos */                                                  \
   V(ScopeInfo, global_this_binding_scope_info, GlobalThisBindingScopeInfo)     \
   V(ScopeInfo, empty_function_scope_info, EmptyFunctionScopeInfo)              \
   V(ScopeInfo, native_scope_info, NativeScopeInfo)                             \
+  V(ScopeInfo, shadow_realm_scope_info, ShadowRealmScopeInfo)                  \
   V(RegisteredSymbolTable, empty_symbol_table, EmptySymbolTable)               \
   /* Hash seed */                                                              \
-  V(ByteArray, hash_seed, HashSeed)
+  V(ByteArray, hash_seed, HashSeed)                                            \
+  IF_WASM(V, WasmNull, wasm_null, WasmNull)
 
 // Mutable roots that are known to be immortal immovable, for which we can
 // safely skip write barriers.
@@ -262,6 +255,8 @@ class Symbol;
   V(PropertyCell, promise_then_protector, PromiseThenProtector)                \
   V(PropertyCell, set_iterator_protector, SetIteratorProtector)                \
   V(PropertyCell, string_iterator_protector, StringIteratorProtector)          \
+  V(PropertyCell, number_string_prototype_no_replace_protector,                \
+    NumberStringPrototypeNoReplaceProtector)                                   \
   /* Caches */                                                                 \
   V(FixedArray, string_split_cache, StringSplitCache)                          \
   V(FixedArray, regexp_multiple_cache, RegExpMultipleCache)                    \
@@ -610,7 +605,7 @@ class ReadOnlyRoots {
       static_cast<size_t>(RootIndex::kReadOnlyRootsCount);
 
   V8_INLINE explicit ReadOnlyRoots(Heap* heap);
-  V8_INLINE explicit ReadOnlyRoots(Isolate* isolate);
+  V8_INLINE explicit ReadOnlyRoots(const Isolate* isolate);
   V8_INLINE explicit ReadOnlyRoots(LocalIsolate* isolate);
 
   // For `v8_enable_map_packing=true`, this will return a packed (also untagged)
@@ -637,6 +632,10 @@ class ReadOnlyRoots {
 
   // Get the address of a given read-only root index, without type checks.
   V8_INLINE Address at(RootIndex root_index) const;
+
+  // Check if a slot is initialized yet. Should only be neccessary for code
+  // running during snapshot creation.
+  V8_INLINE bool is_initialized(RootIndex root_index) const;
 
   // Iterate over all the read-only roots. This is not necessary for garbage
   // collection and is usually only performed as part of (de)serialization or

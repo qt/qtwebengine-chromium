@@ -1317,21 +1317,6 @@ int main(void){ $func(); }
 EOF
 }
 
-check_complexfunc(){
-    log check_complexfunc "$@"
-    func=$1
-    narg=$2
-    shift 2
-    test $narg = 2 && args="f, g" || args="f * I"
-    disable $func
-    test_ld "cc" "$@" <<EOF && enable $func
-#include <complex.h>
-#include <math.h>
-float foo(complex float f, complex float g) { return $func($args); }
-int main(void){ return (int) foo; }
-EOF
-}
-
 check_mathfunc(){
     log check_mathfunc "$@"
     func=$1
@@ -1748,6 +1733,7 @@ EXAMPLE_LIST="
     transcoding_example
     vaapi_encode_example
     vaapi_transcode_example
+    qsv_transcode_example
 "
 
 EXTERNAL_AUTODETECT_LIBRARY_LIST="
@@ -2224,11 +2210,6 @@ INTRINSICS_LIST="
     intrinsics_neon
 "
 
-COMPLEX_FUNCS="
-    cabs
-    cexp
-"
-
 MATH_FUNCS="
     atanf
     atan2f
@@ -2403,7 +2384,6 @@ HAVE_LIST="
     $(add_suffix _inline   $ARCH_EXT_LIST)
     $ARCH_FEATURES
     $BUILTIN_LIST
-    $COMPLEX_FUNCS
     $HAVE_LIST_CMDLINE
     $HAVE_LIST_PUB
     $HEADERS_LIST
@@ -2470,7 +2450,9 @@ CONFIG_EXTRA="
     h264parse
     h264pred
     h264qpel
+    h264_sei
     hevcparse
+    hevc_sei
     hpeldsp
     huffman
     huffyuvdsp
@@ -2742,7 +2724,9 @@ faandct_select="fdctdsp"
 faanidct_deps="faan"
 faanidct_select="idctdsp"
 h264dsp_select="startcode"
-hevcparse_select="atsc_a53 golomb"
+h264_sei_select="atsc_a53 golomb"
+hevcparse_select="golomb"
+hevc_sei_select="atsc_a53 golomb"
 frame_thread_encoder_deps="encoders threads"
 inflate_wrapper_deps="zlib"
 intrax8_select="blockdsp wmv2dsp"
@@ -2792,8 +2776,8 @@ asv2_encoder_select="aandcttables bswapdsp fdctdsp pixblockdsp"
 atrac1_decoder_select="sinewin"
 av1_decoder_select="av1_frame_split_bsf cbs_av1"
 bink_decoder_select="blockdsp hpeldsp"
-binkaudio_dct_decoder_select="dct wma_freqs"
-binkaudio_rdft_decoder_select="rdft wma_freqs"
+binkaudio_dct_decoder_select="wma_freqs"
+binkaudio_rdft_decoder_select="wma_freqs"
 cavs_decoder_select="blockdsp golomb h264chroma idctdsp qpeldsp videodsp"
 clearvideo_decoder_select="idctdsp"
 cllc_decoder_select="bswapdsp"
@@ -2840,12 +2824,12 @@ h263_encoder_select="h263dsp mpegvideoenc"
 h263i_decoder_select="h263_decoder"
 h263p_decoder_select="h263_decoder"
 h263p_encoder_select="h263_encoder"
-h264_decoder_select="atsc_a53 cabac golomb h264chroma h264dsp h264parse h264pred h264qpel videodsp"
+h264_decoder_select="cabac golomb h264chroma h264dsp h264parse h264pred h264qpel h264_sei videodsp"
 h264_decoder_suggest="error_resilience"
 hap_decoder_select="snappy texturedsp"
 hap_encoder_deps="libsnappy"
 hap_encoder_select="texturedspenc"
-hevc_decoder_select="atsc_a53 bswapdsp cabac dovi_rpu golomb hevcparse videodsp"
+hevc_decoder_select="bswapdsp cabac dovi_rpu golomb hevcparse hevc_sei videodsp"
 huffyuv_decoder_select="bswapdsp huffyuvdsp llviddsp"
 huffyuv_encoder_select="bswapdsp huffman huffyuvencdsp llvidencdsp"
 hymt_decoder_select="huffyuv_decoder"
@@ -2866,6 +2850,7 @@ lscr_decoder_select="inflate_wrapper"
 magicyuv_decoder_select="llviddsp"
 magicyuv_encoder_select="llvidencdsp"
 mdec_decoder_select="blockdsp bswapdsp idctdsp"
+media100_decoder_select="media100_to_mjpegb_bsf mjpegb_decoder"
 metasound_decoder_select="lsp sinewin"
 mimic_decoder_select="blockdsp bswapdsp hpeldsp idctdsp"
 mjpeg_decoder_select="blockdsp hpeldsp exif idctdsp jpegtables"
@@ -3172,6 +3157,8 @@ nvenc_deps_any="libdl LoadLibrary"
 aac_mf_encoder_deps="mediafoundation"
 ac3_mf_encoder_deps="mediafoundation"
 av1_cuvid_decoder_deps="cuvid CUVIDAV1PICPARAMS"
+av1_mediacodec_decoder_deps="mediacodec"
+av1_mediacodec_decoder_extralibs="-landroid"
 av1_nvenc_encoder_deps="nvenc NV_ENC_PIC_PARAMS_AV1"
 av1_nvenc_encoder_select="atsc_a53"
 h263_v4l2m2m_decoder_deps="v4l2_m2m h263_v4l2_m2m"
@@ -3185,6 +3172,7 @@ h264_mediacodec_decoder_extralibs="-landroid"
 h264_mediacodec_decoder_select="h264_mp4toannexb_bsf h264_parser"
 h264_mediacodec_encoder_deps="mediacodec"
 h264_mediacodec_encoder_extralibs="-landroid"
+h264_mediacodec_encoder_select="h264_metadata"
 h264_mf_encoder_deps="mediafoundation"
 h264_mmal_decoder_deps="mmal"
 h264_nvenc_encoder_deps="nvenc"
@@ -3194,7 +3182,7 @@ h264_qsv_decoder_select="h264_mp4toannexb_bsf qsvdec"
 h264_qsv_encoder_select="atsc_a53 qsvenc"
 h264_rkmpp_decoder_deps="rkmpp"
 h264_rkmpp_decoder_select="h264_mp4toannexb_bsf"
-h264_vaapi_encoder_select="cbs_h264 vaapi_encode"
+h264_vaapi_encoder_select="atsc_a53 cbs_h264 vaapi_encode"
 h264_v4l2m2m_decoder_deps="v4l2_m2m h264_v4l2_m2m"
 h264_v4l2m2m_decoder_select="h264_mp4toannexb_bsf"
 h264_v4l2m2m_encoder_deps="v4l2_m2m h264_v4l2_m2m"
@@ -3206,6 +3194,7 @@ hevc_mediacodec_decoder_extralibs="-landroid"
 hevc_mediacodec_decoder_select="hevc_mp4toannexb_bsf hevc_parser"
 hevc_mediacodec_encoder_deps="mediacodec"
 hevc_mediacodec_encoder_extralibs="-landroid"
+hevc_mediacodec_encoder_select="hevc_metadata"
 hevc_mf_encoder_deps="mediafoundation"
 hevc_nvenc_encoder_deps="nvenc"
 hevc_nvenc_encoder_select="atsc_a53"
@@ -3214,7 +3203,7 @@ hevc_qsv_encoder_select="hevcparse qsvenc"
 hevc_rkmpp_decoder_deps="rkmpp"
 hevc_rkmpp_decoder_select="hevc_mp4toannexb_bsf"
 hevc_vaapi_encoder_deps="VAEncPictureParameterBufferHEVC"
-hevc_vaapi_encoder_select="cbs_h265 vaapi_encode"
+hevc_vaapi_encoder_select="atsc_a53 cbs_h265 vaapi_encode"
 hevc_v4l2m2m_decoder_deps="v4l2_m2m hevc_v4l2_m2m"
 hevc_v4l2m2m_decoder_select="hevc_mp4toannexb_bsf"
 hevc_v4l2m2m_encoder_deps="v4l2_m2m hevc_v4l2_m2m"
@@ -3269,12 +3258,13 @@ wmv3_crystalhd_decoder_select="crystalhd"
 av1_qsv_decoder_select="qsvdec"
 av1_qsv_encoder_select="qsvenc"
 av1_qsv_encoder_deps="libvpl"
+av1_amf_encoder_deps="amf"
 
 # parsers
 aac_parser_select="adts_header mpeg4audio"
 av1_parser_select="cbs_av1"
-h264_parser_select="atsc_a53 golomb h264dsp h264parse"
-hevc_parser_select="hevcparse"
+h264_parser_select="golomb h264dsp h264parse h264_sei"
+hevc_parser_select="hevcparse hevc_sei"
 mpegaudio_parser_select="mpegaudioheader"
 mpeg4video_parser_select="h263dsp mpegvideodec qpeldsp"
 vc1_parser_select="vc1dsp"
@@ -3613,8 +3603,8 @@ udp_protocol_select="network"
 udplite_protocol_select="network"
 unix_protocol_deps="sys_un_h"
 unix_protocol_select="network"
-ipfs_protocol_select="https_protocol"
-ipns_protocol_select="https_protocol"
+ipfs_gateway_protocol_select="https_protocol"
+ipns_gateway_protocol_select="https_protocol"
 
 # external library protocols
 libamqp_protocol_deps="librabbitmq"
@@ -3645,8 +3635,6 @@ avgblur_vulkan_filter_deps="vulkan spirv_compiler"
 azmq_filter_deps="libzmq"
 blackframe_filter_deps="gpl"
 blend_vulkan_filter_deps="vulkan spirv_compiler"
-bm3d_filter_deps="avcodec"
-bm3d_filter_select="dct"
 boxblur_filter_deps="gpl"
 boxblur_opencl_filter_deps="opencl gpl"
 bs2b_filter_deps="libbs2b"
@@ -3661,6 +3649,7 @@ coreimagesrc_filter_extralibs="-framework OpenGL"
 cover_rect_filter_deps="avcodec avformat gpl"
 cropdetect_filter_deps="gpl"
 deinterlace_qsv_filter_deps="libmfx"
+deinterlace_qsv_filter_select="qsvvpp"
 deinterlace_vaapi_filter_deps="vaapi"
 delogo_filter_deps="gpl"
 denoise_vaapi_filter_deps="vaapi"
@@ -3735,6 +3724,7 @@ sab_filter_deps="gpl swscale"
 scale2ref_filter_deps="swscale"
 scale_filter_deps="swscale"
 scale_qsv_filter_deps="libmfx"
+scale_qsv_filter_select="qsvvpp"
 scdet_filter_select="scene_sad"
 select_filter_select="scene_sad"
 sharpness_vaapi_filter_deps="vaapi"
@@ -3779,6 +3769,9 @@ xfade_opencl_filter_deps="opencl"
 yadif_cuda_filter_deps="ffnvcodec"
 yadif_cuda_filter_deps_any="cuda_nvcc cuda_llvm"
 yadif_videotoolbox_filter_deps="metal corevideo videotoolbox"
+hstack_vaapi_filter_deps="vaapi_1"
+vstack_vaapi_filter_deps="vaapi_1"
+xstack_vaapi_filter_deps="vaapi_1"
 
 # examples
 avio_list_dir_deps="avformat avutil"
@@ -3804,6 +3797,7 @@ transcode_aac_example_deps="avcodec avformat swresample"
 transcoding_example_deps="avfilter avcodec avformat avutil"
 vaapi_encode_example_deps="avcodec avutil h264_vaapi_encoder"
 vaapi_transcode_example_deps="avcodec avformat avutil h264_vaapi_encoder"
+qsv_transcode_example_deps="avcodec avformat avutil h264_qsv_encoder"
 
 # EXTRALIBS_LIST
 cpu_init_extralibs="pthreads_extralibs"
@@ -4331,6 +4325,11 @@ case "$toolchain" in
         cc_default="${toolchain%-asan}"
         add_cflags  -fsanitize=address
         add_ldflags -fsanitize=address
+    ;;
+    *-lsan)
+        cc_default="${toolchain%-lsan}"
+        add_cflags  -fsanitize=leak
+        add_ldflags -fsanitize=leak
     ;;
     *-msan)
         cc_default="${toolchain%-msan}"
@@ -6553,10 +6552,6 @@ for func in $MATH_FUNCS; do
     eval check_mathfunc $func \${${func}_args:-1} $libm_extralibs
 done
 
-for func in $COMPLEX_FUNCS; do
-    eval check_complexfunc $func \${${func}_args:-1}
-done
-
 # these are off by default, so fail if requested and not available
 enabled avisynth          && { require_headers "avisynth/avisynth_c.h avisynth/avs/version.h" &&
                                { test_cpp_condition avisynth/avs/version.h "AVS_MAJOR_VER >= 3 && AVS_MINOR_VER >= 7 && AVS_BUGFIX_VER >= 1 || AVS_MAJOR_VER >= 3 && AVS_MINOR_VER > 7 || AVS_MAJOR_VER > 3" ||
@@ -7064,7 +7059,7 @@ fi
 
 enabled amf &&
     check_cpp_condition amf "AMF/core/Version.h" \
-        "(AMF_VERSION_MAJOR << 48 | AMF_VERSION_MINOR << 32 | AMF_VERSION_RELEASE << 16 | AMF_VERSION_BUILD_NUM) >= 0x0001000400090000"
+        "(AMF_VERSION_MAJOR << 48 | AMF_VERSION_MINOR << 32 | AMF_VERSION_RELEASE << 16 | AMF_VERSION_BUILD_NUM) >= 0x00010004001c0000"
 
 # Funny iconv installations are not unusual, so check it after all flags have been set
 if enabled libc_iconv; then
@@ -7474,7 +7469,6 @@ enabled zlib && add_cppflags -DZLIB_CONST
 # conditional library dependencies, in any order
 enabled amovie_filter       && prepend avfilter_deps "avformat avcodec"
 enabled aresample_filter    && prepend avfilter_deps "swresample"
-enabled bm3d_filter         && prepend avfilter_deps "avcodec"
 enabled cover_rect_filter   && prepend avfilter_deps "avformat avcodec"
 enabled ebur128_filter && enabled swresample && prepend avfilter_deps "swresample"
 enabled elbg_filter         && prepend avfilter_deps "avcodec"
@@ -7858,7 +7852,7 @@ cat > $TMPH <<EOF
 #define FFMPEG_CONFIG_H
 #define FFMPEG_CONFIGURATION "$(c_escape $FFMPEG_CONFIGURATION)"
 #define FFMPEG_LICENSE "$(c_escape $license)"
-#define CONFIG_THIS_YEAR 2022
+#define CONFIG_THIS_YEAR 2023
 #define FFMPEG_DATADIR "$(eval c_escape $datadir)"
 #define AVCONV_DATADIR "$(eval c_escape $datadir)"
 #define CC_IDENT "$(c_escape ${cc_ident:-Unknown compiler})"

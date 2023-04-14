@@ -14,28 +14,26 @@
 
 #include "src/tint/type/void.h"
 
-#include "src/tint/program_builder.h"
+#include "src/tint/type/manager.h"
 
 TINT_INSTANTIATE_TYPEINFO(tint::type::Void);
 
 namespace tint::type {
 
-Void::Void() : Base(type::Flags{}) {}
-
-Void::Void(Void&&) = default;
+Void::Void() : Base(static_cast<size_t>(TypeInfo::Of<Void>().full_hashcode), type::Flags{}) {}
 
 Void::~Void() = default;
 
-size_t Void::Hash() const {
-    return static_cast<size_t>(TypeInfo::Of<Void>().full_hashcode);
-}
-
-bool Void::Equals(const Type& other) const {
+bool Void::Equals(const UniqueNode& other) const {
     return other.Is<Void>();
 }
 
 std::string Void::FriendlyName(const SymbolTable&) const {
     return "void";
+}
+
+Void* Void::Clone(CloneContext& ctx) const {
+    return ctx.dst.mgr->Get<Void>();
 }
 
 }  // namespace tint::type

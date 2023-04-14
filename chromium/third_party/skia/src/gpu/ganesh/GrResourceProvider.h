@@ -8,32 +8,49 @@
 #ifndef GrResourceProvider_DEFINED
 #define GrResourceProvider_DEFINED
 
-#include "include/gpu/GrContextOptions.h"
-#include "include/private/SkImageInfoPriv.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkSize.h"
+#include "include/core/SkTypes.h"
+#include "include/private/base/SkDebug.h"
+#include "include/private/base/SkTemplates.h"
+#include "include/private/base/SkTo.h"
+#include "include/private/gpu/ganesh/GrTypesPriv.h"
+#include "src/gpu/BufferWriter.h"
+#include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrGpuBuffer.h"
+#include "src/gpu/ganesh/GrGpuResource.h"
 #include "src/gpu/ganesh/GrResourceCache.h"
 
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <string_view>
+#include <type_traits>
+
 class GrAttachment;
+class GrBackendFormat;
 class GrBackendRenderTarget;
 class GrBackendSemaphore;
 class GrBackendTexture;
 class GrGpu;
-class GrMSAAAttachment;
-class GrPath;
 class GrRenderTarget;
 class GrResourceProviderPriv;
 class GrSemaphore;
 class GrTexture;
-struct GrVkDrawableInfo;
+class SkData;
 
-class GrStyle;
-class SkDescriptor;
-class SkPath;
-class SkTypeface;
+enum class GrProtected : bool;
+enum class GrRenderable : bool;
+enum class SkBackingFit;
+struct GrVkDrawableInfo;
+struct SkImageInfo;
 
 namespace skgpu {
+class ScratchKey;
 class SingleOwner;
-struct VertexWriter;
+class UniqueKey;
+enum class Budgeted : bool;
+enum class Mipmapped : bool;
 }
 
 /**
@@ -77,8 +94,8 @@ public:
                                    GrTextureType textureType,
                                    GrRenderable renderable,
                                    int renderTargetSampleCnt,
-                                   GrMipmapped mipmapped,
-                                   SkBudgeted budgeted,
+                                   skgpu::Mipmapped mipmapped,
+                                   skgpu::Budgeted budgeted,
                                    GrProtected isProtected,
                                    std::string_view label);
 
@@ -93,8 +110,8 @@ public:
                                    GrColorType colorType,
                                    GrRenderable renderable,
                                    int renderTargetSampleCnt,
-                                   SkBudgeted budgeted,
-                                   GrMipmapped mipmapped,
+                                   skgpu::Budgeted budgeted,
+                                   skgpu::Mipmapped mipmapped,
                                    GrProtected isProtected,
                                    const GrMipLevel texels[],
                                    std::string_view label);
@@ -110,7 +127,7 @@ public:
                                    GrColorType srcColorType,
                                    GrRenderable,
                                    int renderTargetSampleCnt,
-                                   SkBudgeted,
+                                   skgpu::Budgeted,
                                    SkBackingFit,
                                    GrProtected,
                                    const GrMipLevel& mipLevel,
@@ -126,7 +143,7 @@ public:
                                               GrTextureType textureType,
                                               GrRenderable,
                                               int renderTargetSampleCnt,
-                                              GrMipmapped,
+                                              skgpu::Mipmapped,
                                               GrProtected,
                                               std::string_view label);
 
@@ -136,8 +153,8 @@ public:
      */
     sk_sp<GrTexture> createCompressedTexture(SkISize dimensions,
                                              const GrBackendFormat&,
-                                             SkBudgeted,
-                                             GrMipmapped,
+                                             skgpu::Budgeted,
+                                             skgpu::Mipmapped,
                                              GrProtected,
                                              SkData* data,
                                              std::string_view label);
@@ -365,8 +382,8 @@ private:
                                      GrTextureType,
                                      GrRenderable,
                                      int renderTargetSampleCnt,
-                                     SkBudgeted,
-                                     GrMipmapped,
+                                     skgpu::Budgeted,
+                                     skgpu::Mipmapped,
                                      GrProtected,
                                      std::string_view label);
 
@@ -381,8 +398,8 @@ private:
 
     // Used to perform any conversions necessary to texel data before creating a texture with
     // existing data or uploading to a scratch texture.
-    using TempLevels = SkAutoSTArray<14, GrMipLevel>;
-    using TempLevelDatas = SkAutoSTArray<14, std::unique_ptr<char[]>>;
+    using TempLevels = skia_private::AutoSTArray<14, GrMipLevel>;
+    using TempLevelDatas = skia_private::AutoSTArray<14, std::unique_ptr<char[]>>;
     GrColorType prepareLevels(const GrBackendFormat& format,
                               GrColorType,
                               SkISize baseSize,

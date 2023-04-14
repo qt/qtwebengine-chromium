@@ -54,62 +54,100 @@ import * as LitHtml from '../../ui/lit-html/lit-html.js';
 
 const UIStrings = {
   /**
-  * @description Placeholder text for a text input used to filter which CSS properties show up in
-  * the list of computed properties. In the Computed Style Widget of the Elements panel.
-  */
+   * @description Placeholder text for a text input used to filter which CSS properties show up in
+   * the list of computed properties. In the Computed Style Widget of the Elements panel.
+   */
   filter: 'Filter',
   /**
-  * @description ARIA accessible name for the text input used to filter which CSS properties show up
-  * in the list of computed properties. In the Computed Style Widget of the Elements panel.
-  */
+   * @description ARIA accessible name for the text input used to filter which CSS properties show up
+   * in the list of computed properties. In the Computed Style Widget of the Elements panel.
+   */
   filterComputedStyles: 'Filter Computed Styles',
   /**
-  * @description Text for a checkbox setting that controls whether the user-supplied filter text
-  * excludes all CSS propreties which are filtered out, or just greys them out. In Computed Style
-  * Widget of the Elements panel
-  */
+   * @description Text for a checkbox setting that controls whether the user-supplied filter text
+   * excludes all CSS propreties which are filtered out, or just greys them out. In Computed Style
+   * Widget of the Elements panel
+   */
   showAll: 'Show all',
   /**
-  * @description Text for a checkbox setting that controls whether similar CSS properties should be
-  * grouped together or not. In Computed Style Widget of the Elements panel.
-  */
+   * @description Text for a checkbox setting that controls whether similar CSS properties should be
+   * grouped together or not. In Computed Style Widget of the Elements panel.
+   */
   group: 'Group',
   /** [
-  * @description Text shown to the user when a filter is applied to the computed CSS properties, but
-  * no properties matched the filter and thus no results were returned.
-  */
+   * @description Text shown to the user when a filter is applied to the computed CSS properties, but
+   * no properties matched the filter and thus no results were returned.
+   */
   noMatchingProperty: 'No matching property',
   /**
-  * @description Context menu item in Elements panel to navigate to the source code location of the
-  * CSS selector that was clicked on.
-  */
+   * @description Context menu item in Elements panel to navigate to the source code location of the
+   * CSS selector that was clicked on.
+   */
   navigateToSelectorSource: 'Navigate to selector source',
   /**
-  * @description Context menu item in Elements panel to navigate to the corresponding CSS style rule
-  * for this computed property.
-  */
+   * @description Context menu item in Elements panel to navigate to the corresponding CSS style rule
+   * for this computed property.
+   */
   navigateToStyle: 'Navigate to style',
 };
 const str_ = i18n.i18n.registerUIStrings('panels/elements/ComputedStyleWidget.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 
+/**
+ * Rendering a property's name and value is expensive, and each time we do it
+ * it generates a new HTML element. If we call this directly from our Lit
+ * components, we will generate a brand new DOM element on each single render.
+ * This is very expensive and unneccessary - for the majority of re-renders a
+ * property's name and value does not change. So we cache the rest of rendering
+ * the name and value in a map, where the key used is a combination of the
+ * property's name and value. This ensures that we only re-generate this element
+ * if the node itself changes.
+ * The resulting Element nodes are inserted into the ComputedStyleProperty
+ * component via <slot>s, ensuring that Lit doesn't directly render/re-render
+ * the element.
+ */
+const propertyContentsCache = new Map<string, {name: Element, value: Element}>();
+
+function renderPropertyContents(
+    node: SDK.DOMModel.DOMNode, propertyName: string, propertyValue: string): {name: Element, value: Element} {
+  const cacheKey = propertyName + ':' + propertyValue;
+  const valueFromCache = propertyContentsCache.get(cacheKey);
+  if (valueFromCache) {
+    return valueFromCache;
+  }
+  const renderer = new StylesSidebarPropertyRenderer(null, node, propertyName, propertyValue);
+  renderer.setColorHandler(processColor);
+  const name = renderer.renderName();
+  name.slot = 'name';
+  const value = renderer.renderValue();
+  value.slot = 'value';
+  propertyContentsCache.set(cacheKey, {name, value});
+  return {name, value};
+}
+
+/**
+ * Note: this function is called for each tree node on each render, so we need
+ * to ensure nothing expensive runs here, or if it does it is safely cached.
+ **/
 const createPropertyElement =
     (node: SDK.DOMModel.DOMNode, propertyName: string, propertyValue: string, traceable: boolean, inherited: boolean,
-     onNavigateToSource: ((event?: Event) => void)): ElementsComponents.ComputedStyleProperty.ComputedStyleProperty => {
-      const propertyElement = new ElementsComponents.ComputedStyleProperty.ComputedStyleProperty();
-
-      const renderer = new StylesSidebarPropertyRenderer(null, node, propertyName, propertyValue);
-      renderer.setColorHandler(processColor);
-
-      propertyElement.data = {
-        propertyNameRenderer: renderer.renderName.bind(renderer),
-        propertyValueRenderer: renderer.renderValue.bind(renderer),
-        traceable,
-        inherited,
-        onNavigateToSource,
-      };
-
-      return propertyElement;
+     activeProperty: SDK.CSSProperty.CSSProperty|undefined,
+     onContextMenu: ((event: Event) => void)): LitHtml.TemplateResult => {
+      const {name, value} = renderPropertyContents(node, propertyName, propertyValue);
+      // clang-format off
+      return LitHtml.html`<${ElementsComponents.ComputedStyleProperty.ComputedStyleProperty.litTagName}
+        .traceable=${traceable}
+        .inherited=${inherited}
+        @oncontextmenu=${onContextMenu}
+        @onnavigatetosource=${(event: ElementsComponents.ComputedStyleProperty.NavigateToSourceEvent):void => {
+          if (activeProperty) {
+            navigateToSource(activeProperty, event);
+          }
+        }}>
+          ${name}
+          ${value}
+      </${ElementsComponents.ComputedStyleProperty.ComputedStyleProperty.litTagName}>`;
+      // clang-format on
     };
 
 const createTraceElement =
@@ -147,7 +185,7 @@ const processColor = (text: string): Node => {
   swatch.append(valueElement);
 
   swatch.addEventListener(
-      InlineEditor.ColorSwatch.FormatChangedEvent.eventName, (event: InlineEditor.ColorSwatch.FormatChangedEvent) => {
+      InlineEditor.ColorSwatch.ColorChangedEvent.eventName, (event: InlineEditor.ColorSwatch.ColorChangedEvent) => {
         const {data} = event;
         valueElement.textContent = data.text;
       });
@@ -258,14 +296,6 @@ export class ComputedStyleWidget extends UI.ThrottledWidget.ThrottledWidget {
   onResize(): void {
     const isNarrow = this.contentElement.offsetWidth < 260;
     this.#computedStylesTree.classList.toggle('computed-narrow', isNarrow);
-  }
-
-  private showInheritedComputedStyleChanged(): void {
-    this.update();
-  }
-
-  update(): void {
-    super.update();
   }
 
   wasShown(): void {
@@ -421,7 +451,7 @@ export class ComputedStyleWidget extends UI.ThrottledWidget.ThrottledWidget {
         property,
         rule,
       },
-      id: rule.origin + ': ' + rule.styleSheetId + property.range,
+      id: rule.origin + ': ' + rule.styleSheetId + (property.range || property.name),
     };
   }
 
@@ -434,22 +464,18 @@ export class ComputedStyleWidget extends UI.ThrottledWidget.ThrottledWidget {
        state: {isExpanded: boolean}) => LitHtml.TemplateResult {
     return node => {
       const data = node.treeNodeData;
-      let navigate: (arg0?: Event) => void = () => {};
       if (data.tag === 'property') {
         const trace = propertyTraces.get(data.propertyName);
         const activeProperty = trace?.find(
             property => matchedStyles.propertyState(property) === SDK.CSSMatchedStyles.PropertyState.Active);
-        if (activeProperty) {
-          navigate = navigateToSource.bind(this, activeProperty);
-        }
         const propertyElement = createPropertyElement(
             domNode, data.propertyName, data.propertyValue, propertyTraces.has(data.propertyName), data.inherited,
-            navigate);
-        if (activeProperty) {
-          propertyElement.addEventListener(
-              'contextmenu', this.handleContextMenuEvent.bind(this, matchedStyles, activeProperty));
-        }
-        return LitHtml.html`${propertyElement}`;
+            activeProperty, event => {
+              if (activeProperty) {
+                this.handleContextMenuEvent(matchedStyles, activeProperty, event);
+              }
+            });
+        return propertyElement;
       }
       if (data.tag === 'traceElement') {
         const isPropertyOverloaded =

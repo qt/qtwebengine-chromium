@@ -367,11 +367,13 @@ void SenderSession::OnAnswer(ErrorOr<ReceiverMessage> message) {
 }
 
 void SenderSession::OnCapabilitiesResponse(ErrorOr<ReceiverMessage> message) {
+  // Some receivers may not send a capabilities response at all, or may send an
+  // error response to indicate remoting is not supported.
   if (!message) {
-    config_.client->OnError(this, message.error());
+    config_.client->OnError(this, Error(Error::Code::kRemotingNotSupported,
+                                        message.error().ToString()));
     return;
   }
-
   if (!message.value().valid ||
       message.value().type != ReceiverMessage::Type::kCapabilitiesResponse) {
     HandleErrorMessage(message.value(), InvalidCapabilitiesResponseError());

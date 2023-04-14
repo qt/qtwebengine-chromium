@@ -7,8 +7,8 @@
 #include <map>
 #include <vector>
 
-#include "base/bind.h"
 #include "base/containers/cxx20_erase.h"
+#include "base/functional/bind.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/no_destructor.h"
 #include "base/observer_list.h"
@@ -358,12 +358,18 @@ bool DevToolsAgentHostImpl::Inspect() {
 }
 
 void DevToolsAgentHostImpl::ForceDetachAllSessions() {
-  scoped_refptr<DevToolsAgentHostImpl> protect(this);
+  std::ignore = ForceDetachAllSessionsImpl();
+}
+
+scoped_refptr<DevToolsAgentHost>
+DevToolsAgentHostImpl::ForceDetachAllSessionsImpl() {
+  scoped_refptr<DevToolsAgentHost> retain_this(this);
   while (!sessions_.empty()) {
     DevToolsAgentHostClient* client = (*sessions_.begin())->GetClient();
     DetachClient(client);
     client->AgentHostClosed(this);
   }
+  return retain_this;
 }
 
 void DevToolsAgentHostImpl::ForceDetachRestrictedSessions(

@@ -134,7 +134,8 @@ enum {
   SUBPEL_TREE = 0,
   SUBPEL_TREE_PRUNED = 1,       // Prunes 1/2-pel searches
   SUBPEL_TREE_PRUNED_MORE = 2,  // Prunes 1/2-pel searches more aggressively
-} UENUM1BYTE(SUBPEL_SEARCH_METHODS);
+  SUBPEL_SEARCH_METHODS
+} UENUM1BYTE(SUBPEL_SEARCH_METHOD);
 
 enum {
   // Try the full image with different values.
@@ -442,6 +443,13 @@ typedef struct HIGH_LEVEL_SPEED_FEATURES {
    * 1: estimate bits more accurately based on the frame complexity.
    */
   int accurate_bit_estimate;
+
+  /*!
+   * Decide the approach for weight calculation during temporal filtering.
+   * 0: Calculate weight using exp()
+   * 1: Calculate weight using a lookup table that approximates exp().
+   */
+  int weight_calc_level_in_tf;
 } HIGH_LEVEL_SPEED_FEATURES;
 
 /*!
@@ -504,9 +512,6 @@ typedef struct TPL_SPEED_FEATURES {
 
   // Prune starting mvs in TPL based on sad scores.
   int prune_starting_mv;
-
-  // Not run TPL for filtered Key frame.
-  int disable_filtered_key_tpl;
 
   // Prune reference frames in TPL.
   int prune_ref_frames_in_tpl;
@@ -649,6 +654,18 @@ typedef struct PARTITION_SPEED_FEATURES {
   // 2 : prune all block size based on qindex
   int prune_rectangular_split_based_on_qidx;
 
+  // Prune rectangular partitions based on 4x4 sub-block variance
+  // false : no pruning
+  // true : prune rectangular partitions based on 4x4 sub-block variance
+  // deviation
+  //
+  // For allintra encode, this speed feature reduces instruction count by 6.4%
+  // for speed=6 with coding performance change less than 0.24%. For AVIF image
+  // encode, this speed feature reduces encode time by 8.14% for speed 6 on a
+  // typical image dataset with coding performance change less than 0.16%. This
+  // speed feature is not applicable to speed >= 7.
+  bool prune_rect_part_using_4x4_var_deviation;
+
   // Terminate partition search for child partition,
   // when NONE and SPLIT partition rd_costs are INT64_MAX.
   int early_term_after_none_split;
@@ -746,7 +763,7 @@ typedef struct MV_SPEED_FEATURES {
   // logarithmic search that keeps stepping at 1/2 pixel units until
   // you stop getting a gain, and then goes on to 1/4 and repeats
   // the same process. Along the way it skips many diagonals.
-  SUBPEL_SEARCH_METHODS subpel_search_method;
+  SUBPEL_SEARCH_METHOD subpel_search_method;
 
   // Maximum number of steps in logarithmic subpel search before giving up.
   int subpel_iters_per_step;
@@ -1395,7 +1412,11 @@ typedef struct REAL_TIME_SPEED_FEATURES {
   // Skipping aggressiveness increases from level 1 to 2.
   int skip_intra_pred;
 
-  // Perform coarse ME before calculating variance in variance-based partition
+  // Estimate motion before calculating variance in variance-based partition
+  // 0 - Only use zero MV
+  // 1 - perform coarse ME
+  // 2 - perform coarse ME, and also use neighbours' MVs
+  // 3 - use neighbours' MVs without performing coarse ME
   int estimate_motion_for_var_based_partition;
 
   // For nonrd_use_partition: mode of extra check of leaf partition
@@ -1639,6 +1660,26 @@ typedef struct REAL_TIME_SPEED_FEATURES {
   // speed 9 on a typical image dataset with coding performance change less than
   // 0.08%.
   bool prune_h_pred_using_best_mode_so_far;
+
+  // Enable pruning of intra mode evaluations in nonrd path based on source
+  // variance and best mode so far. The pruning logic is enabled only if the
+  // mode is not a winner mode of both the neighboring blocks (left/top).
+  //
+  // For allintra encode, this speed feature reduces instruction count by 3.96%
+  // for speed 9 with coding performance change less than 0.38%.
+  // For AVIF image encode, this speed feature reduces encode time by 3.46% for
+  // speed 9 on a typical image dataset with coding performance change less than
+  // -0.06%.
+  bool enable_intra_mode_pruning_using_neighbors;
+
+  // Prune intra mode evaluations in nonrd path based on best sad so far.
+  //
+  // For allintra encode, this speed feature reduces instruction count by 3.05%
+  // for speed 9 with coding performance change less than 0.24%.
+  // For AVIF image encode, this speed feature reduces encode time by 1.87% for
+  // speed 9 on a typical image dataset with coding performance change less than
+  // 0.16%.
+  bool prune_intra_mode_using_best_sad_so_far;
 
   // If compound is enabled, and the current block size is \geq BLOCK_16X16,
   // limit the compound modes to GLOBAL_GLOBALMV. This does not apply to the

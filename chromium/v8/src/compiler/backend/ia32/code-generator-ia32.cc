@@ -29,7 +29,7 @@ namespace v8 {
 namespace internal {
 namespace compiler {
 
-#define __ tasm()->
+#define __ masm()->
 
 #define kScratchDoubleReg xmm0
 
@@ -202,11 +202,11 @@ class IA32OperandConverter : public InstructionOperandConverter {
   void MoveInstructionOperandToRegister(Register destination,
                                         InstructionOperand* op) {
     if (op->IsImmediate() || op->IsConstant()) {
-      gen_->tasm()->mov(destination, ToImmediate(op));
+      gen_->masm()->mov(destination, ToImmediate(op));
     } else if (op->IsRegister()) {
-      gen_->tasm()->Move(destination, ToRegister(op));
+      gen_->masm()->Move(destination, ToRegister(op));
     } else {
-      gen_->tasm()->mov(destination, ToOperand(op));
+      gen_->masm()->mov(destination, ToOperand(op));
     }
   }
 };
@@ -475,7 +475,7 @@ class OutOfLineRecordWrite final : public OutOfLineCode {
     XMMRegister src0 = i.InputSimd128Register(0);                    \
     Operand src1 = i.InputOperand(instr->InputCount() == 2 ? 1 : 0); \
     if (CpuFeatures::IsSupported(AVX)) {                             \
-      CpuFeatureScope avx_scope(tasm(), AVX);                        \
+      CpuFeatureScope avx_scope(masm(), AVX);                        \
       __ v##opcode(i.OutputSimd128Register(), src0, src1);           \
     } else {                                                         \
       DCHECK_EQ(i.OutputSimd128Register(), src0);                    \
@@ -485,11 +485,11 @@ class OutOfLineRecordWrite final : public OutOfLineCode {
 
 #define ASSEMBLE_SIMD_IMM_SHUFFLE(opcode, SSELevel, imm)               \
   if (CpuFeatures::IsSupported(AVX)) {                                 \
-    CpuFeatureScope avx_scope(tasm(), AVX);                            \
+    CpuFeatureScope avx_scope(masm(), AVX);                            \
     __ v##opcode(i.OutputSimd128Register(), i.InputSimd128Register(0), \
                  i.InputOperand(1), imm);                              \
   } else {                                                             \
-    CpuFeatureScope sse_scope(tasm(), SSELevel);                       \
+    CpuFeatureScope sse_scope(masm(), SSELevel);                       \
     DCHECK_EQ(i.OutputSimd128Register(), i.InputSimd128Register(0));   \
     __ opcode(i.OutputSimd128Register(), i.InputOperand(1), imm);      \
   }
@@ -532,25 +532,24 @@ class OutOfLineRecordWrite final : public OutOfLineCode {
     int8_t laneidx = i.InputInt8(1);                         \
     if (HasAddressingMode(instr)) {                          \
       if (CpuFeatures::IsSupported(AVX)) {                   \
-        CpuFeatureScope avx_scope(tasm(), AVX);              \
+        CpuFeatureScope avx_scope(masm(), AVX);              \
         __ v##OPCODE(dst, src, i.MemoryOperand(2), laneidx); \
       } else {                                               \
         DCHECK_EQ(dst, src);                                 \
-        CpuFeatureScope sse_scope(tasm(), CPU_FEATURE);      \
+        CpuFeatureScope sse_scope(masm(), CPU_FEATURE);      \
         __ OPCODE(dst, i.MemoryOperand(2), laneidx);         \
       }                                                      \
     } else {                                                 \
       if (CpuFeatures::IsSupported(AVX)) {                   \
-        CpuFeatureScope avx_scope(tasm(), AVX);              \
+        CpuFeatureScope avx_scope(masm(), AVX);              \
         __ v##OPCODE(dst, src, i.InputOperand(2), laneidx);  \
       } else {                                               \
         DCHECK_EQ(dst, src);                                 \
-        CpuFeatureScope sse_scope(tasm(), CPU_FEATURE);      \
+        CpuFeatureScope sse_scope(masm(), CPU_FEATURE);      \
         __ OPCODE(dst, i.InputOperand(2), laneidx);          \
       }                                                      \
     }                                                        \
   } while (false)
-
 
 void CodeGenerator::AssembleDeconstructFrame() {
   __ mov(esp, ebp);
@@ -566,7 +565,7 @@ void CodeGenerator::AssemblePrepareTailCall() {
 
 namespace {
 
-void AdjustStackPointerForTailCall(TurboAssembler* tasm,
+void AdjustStackPointerForTailCall(MacroAssembler* masm,
                                    FrameAccessState* state,
                                    int new_slot_above_sp,
                                    bool allow_shrinkage = true) {
@@ -574,10 +573,10 @@ void AdjustStackPointerForTailCall(TurboAssembler* tasm,
                           StandardFrameConstants::kFixedSlotCountAboveFp;
   int stack_slot_delta = new_slot_above_sp - current_sp_offset;
   if (stack_slot_delta > 0) {
-    tasm->AllocateStackSpace(stack_slot_delta * kSystemPointerSize);
+    masm->AllocateStackSpace(stack_slot_delta * kSystemPointerSize);
     state->IncreaseSPDelta(stack_slot_delta);
   } else if (allow_shrinkage && stack_slot_delta < 0) {
-    tasm->add(esp, Immediate(-stack_slot_delta * kSystemPointerSize));
+    masm->add(esp, Immediate(-stack_slot_delta * kSystemPointerSize));
     state->IncreaseSPDelta(stack_slot_delta);
   }
 }
@@ -617,7 +616,7 @@ void CodeGenerator::AssembleTailCallBeforeGap(Instruction* instr,
       LocationOperand destination_location(
           LocationOperand::cast(move->destination()));
       InstructionOperand source(move->source());
-      AdjustStackPointerForTailCall(tasm(), frame_access_state(),
+      AdjustStackPointerForTailCall(masm(), frame_access_state(),
                                     destination_location.index());
       if (source.IsStackSlot()) {
         LocationOperand source_location(LocationOperand::cast(source));
@@ -635,13 +634,13 @@ void CodeGenerator::AssembleTailCallBeforeGap(Instruction* instr,
       move->Eliminate();
     }
   }
-  AdjustStackPointerForTailCall(tasm(), frame_access_state(),
+  AdjustStackPointerForTailCall(masm(), frame_access_state(),
                                 first_unused_slot_offset, false);
 }
 
 void CodeGenerator::AssembleTailCallAfterGap(Instruction* instr,
                                              int first_unused_slot_offset) {
-  AdjustStackPointerForTailCall(tasm(), frame_access_state(),
+  AdjustStackPointerForTailCall(masm(), frame_access_state(),
                                 first_unused_slot_offset);
 }
 
@@ -658,15 +657,15 @@ void CodeGenerator::AssembleCodeStartRegisterCheck() {
 // jumps to the CompileLazyDeoptimizedCode builtin. In order to do this we need
 // to:
 //    1. read from memory the word that contains that bit, which can be found in
-//       the flags in the referenced {CodeDataContainer} object;
+//       the flags in the referenced {Code} object;
 //    2. test kMarkedForDeoptimizationBit in those flags; and
 //    3. if it is not zero then it jumps to the builtin.
 void CodeGenerator::BailoutIfDeoptimized() {
-  int offset = Code::kCodeDataContainerOffset - Code::kHeaderSize;
+  int offset = InstructionStream::kCodeOffset - InstructionStream::kHeaderSize;
   __ push(eax);  // Push eax so we can use it as a scratch register.
   __ mov(eax, Operand(kJavaScriptCallCodeStartRegister, offset));
-  __ test(FieldOperand(eax, CodeDataContainer::kKindSpecificFlagsOffset),
-          Immediate(1 << Code::kMarkedForDeoptimizationBit));
+  __ test(FieldOperand(eax, Code::kKindSpecificFlagsOffset),
+          Immediate(1 << InstructionStream::kMarkedForDeoptimizationBit));
   __ pop(eax);  // Restore eax.
 
   Label skip;
@@ -693,8 +692,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
         DCHECK_IMPLIES(
             instr->HasCallDescriptorFlag(CallDescriptor::kFixedTargetRegister),
             reg == kJavaScriptCallCodeStartRegister);
-        __ LoadCodeObjectEntry(reg, reg);
-        __ call(reg);
+        __ CallCodeObject(reg);
       }
       RecordCallPosition(instr);
       frame_access_state()->ClearSPDelta();
@@ -747,8 +745,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
         DCHECK_IMPLIES(
             instr->HasCallDescriptorFlag(CallDescriptor::kFixedTargetRegister),
             reg == kJavaScriptCallCodeStartRegister);
-        __ LoadCodeObjectEntry(reg, reg);
-        __ jmp(reg);
+        __ JumpCodeObject(reg);
       }
       frame_access_state()->ClearSPDelta();
       frame_access_state()->SetFrameAccessToDefault();
@@ -829,7 +826,8 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
         __ PushPC();
         int pc = __ pc_offset();
         __ pop(scratch);
-        __ sub(scratch, Immediate(pc + Code::kHeaderSize - kHeapObjectTag));
+        __ sub(scratch,
+               Immediate(pc + InstructionStream::kHeaderSize - kHeapObjectTag));
         __ add(scratch, Immediate::CodeRelativeOffset(&return_location));
         __ mov(MemOperand(ebp, WasmExitFrameConstants::kCallingPCOffset),
                scratch);
@@ -885,7 +883,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       {
         // We don't actually want to generate a pile of code for this, so just
         // claim there is a stack frame, without generating one.
-        FrameScope scope(tasm(), StackFrame::NO_FRAME_TYPE);
+        FrameScope scope(masm(), StackFrame::NO_FRAME_TYPE);
         __ Call(isolate()->builtins()->code_handle(Builtin::kAbortCSADcheck),
                 RelocInfo::CODE_TARGET);
       }
@@ -1263,7 +1261,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       __ Sqrtss(i.OutputDoubleRegister(), i.InputOperand(0));
       break;
     case kIA32Float32Round: {
-      CpuFeatureScope sse_scope(tasm(), SSE4_1);
+      CpuFeatureScope sse_scope(masm(), SSE4_1);
       RoundingMode const mode =
           static_cast<RoundingMode>(MiscField::decode(instr->opcode()));
       __ Roundss(i.OutputDoubleRegister(), i.InputDoubleRegister(0), mode);
@@ -2113,12 +2111,12 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     }
     case kIA32Insertps: {
       if (CpuFeatures::IsSupported(AVX)) {
-        CpuFeatureScope avx_scope(tasm(), AVX);
+        CpuFeatureScope avx_scope(masm(), AVX);
         __ vinsertps(i.OutputSimd128Register(), i.InputSimd128Register(0),
                      i.InputOperand(2), i.InputInt8(1) << 4);
       } else {
         DCHECK_EQ(i.OutputSimd128Register(), i.InputSimd128Register(0));
-        CpuFeatureScope sse_scope(tasm(), SSE4_1);
+        CpuFeatureScope sse_scope(masm(), SSE4_1);
         __ insertps(i.OutputSimd128Register(), i.InputOperand(2),
                     i.InputInt8(1) << 4);
       }
@@ -2316,12 +2314,12 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       XMMRegister src1 = i.InputSimd128Register(0);
       XMMRegister src2 = i.InputSimd128Register(1);
       if (CpuFeatures::IsSupported(AVX)) {
-        CpuFeatureScope avx_scope(tasm(), AVX);
+        CpuFeatureScope avx_scope(masm(), AVX);
         __ vpminsd(kScratchDoubleReg, src1, src2);
         __ vpcmpeqd(dst, kScratchDoubleReg, src2);
       } else {
         DCHECK_EQ(dst, src1);
-        CpuFeatureScope sse_scope(tasm(), SSE4_1);
+        CpuFeatureScope sse_scope(masm(), SSE4_1);
         __ pminsd(dst, src2);
         __ pcmpeqd(dst, src2);
       }
@@ -2329,7 +2327,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     }
     case kSSEI32x4UConvertF32x4: {
       DCHECK_EQ(i.OutputSimd128Register(), i.InputSimd128Register(0));
-      CpuFeatureScope sse_scope(tasm(), SSE4_1);
+      CpuFeatureScope sse_scope(masm(), SSE4_1);
       XMMRegister dst = i.OutputSimd128Register();
       XMMRegister tmp = i.TempSimd128Register(0);
       // NAN->0, negative->0
@@ -2357,7 +2355,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     }
     case kAVXI32x4UConvertF32x4: {
       DCHECK_EQ(i.OutputSimd128Register(), i.InputSimd128Register(0));
-      CpuFeatureScope avx_scope(tasm(), AVX);
+      CpuFeatureScope avx_scope(masm(), AVX);
       XMMRegister dst = i.OutputSimd128Register();
       XMMRegister tmp = i.TempSimd128Register(0);
       // NAN->0, negative->0
@@ -2407,7 +2405,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     }
     case kSSEI32x4GtU: {
       DCHECK_EQ(i.OutputSimd128Register(), i.InputSimd128Register(0));
-      CpuFeatureScope sse_scope(tasm(), SSE4_1);
+      CpuFeatureScope sse_scope(masm(), SSE4_1);
       XMMRegister dst = i.OutputSimd128Register();
       Operand src = i.InputOperand(1);
       __ pmaxud(dst, src);
@@ -2417,7 +2415,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kAVXI32x4GtU: {
-      CpuFeatureScope avx_scope(tasm(), AVX);
+      CpuFeatureScope avx_scope(masm(), AVX);
       XMMRegister dst = i.OutputSimd128Register();
       XMMRegister src1 = i.InputSimd128Register(0);
       Operand src2 = i.InputOperand(1);
@@ -2429,7 +2427,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     }
     case kSSEI32x4GeU: {
       DCHECK_EQ(i.OutputSimd128Register(), i.InputSimd128Register(0));
-      CpuFeatureScope sse_scope(tasm(), SSE4_1);
+      CpuFeatureScope sse_scope(masm(), SSE4_1);
       XMMRegister dst = i.OutputSimd128Register();
       Operand src = i.InputOperand(1);
       __ pminud(dst, src);
@@ -2437,7 +2435,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kAVXI32x4GeU: {
-      CpuFeatureScope avx_scope(tasm(), AVX);
+      CpuFeatureScope avx_scope(masm(), AVX);
       XMMRegister src1 = i.InputSimd128Register(0);
       Operand src2 = i.InputOperand(1);
       __ vpminud(kScratchDoubleReg, src1, src2);
@@ -2553,7 +2551,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kAVXI16x8Ne: {
-      CpuFeatureScope avx_scope(tasm(), AVX);
+      CpuFeatureScope avx_scope(masm(), AVX);
       __ vpcmpeqw(i.OutputSimd128Register(), i.InputSimd128Register(0),
                   i.InputOperand(1));
       __ vpcmpeqw(kScratchDoubleReg, kScratchDoubleReg, kScratchDoubleReg);
@@ -2575,7 +2573,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kAVXI16x8GeS: {
-      CpuFeatureScope avx_scope(tasm(), AVX);
+      CpuFeatureScope avx_scope(masm(), AVX);
       XMMRegister src1 = i.InputSimd128Register(0);
       Operand src2 = i.InputOperand(1);
       __ vpminsw(kScratchDoubleReg, src1, src2);
@@ -2622,7 +2620,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     }
     case kSSEI16x8GtU: {
       DCHECK_EQ(i.OutputSimd128Register(), i.InputSimd128Register(0));
-      CpuFeatureScope sse_scope(tasm(), SSE4_1);
+      CpuFeatureScope sse_scope(masm(), SSE4_1);
       XMMRegister dst = i.OutputSimd128Register();
       Operand src = i.InputOperand(1);
       __ pmaxuw(dst, src);
@@ -2632,7 +2630,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kAVXI16x8GtU: {
-      CpuFeatureScope avx_scope(tasm(), AVX);
+      CpuFeatureScope avx_scope(masm(), AVX);
       XMMRegister dst = i.OutputSimd128Register();
       XMMRegister src1 = i.InputSimd128Register(0);
       Operand src2 = i.InputOperand(1);
@@ -2644,7 +2642,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     }
     case kSSEI16x8GeU: {
       DCHECK_EQ(i.OutputSimd128Register(), i.InputSimd128Register(0));
-      CpuFeatureScope sse_scope(tasm(), SSE4_1);
+      CpuFeatureScope sse_scope(masm(), SSE4_1);
       XMMRegister dst = i.OutputSimd128Register();
       Operand src = i.InputOperand(1);
       __ pminuw(dst, src);
@@ -2652,7 +2650,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kAVXI16x8GeU: {
-      CpuFeatureScope avx_scope(tasm(), AVX);
+      CpuFeatureScope avx_scope(masm(), AVX);
       XMMRegister src1 = i.InputSimd128Register(0);
       Operand src2 = i.InputOperand(1);
       __ vpminuw(kScratchDoubleReg, src1, src2);
@@ -2845,7 +2843,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kAVXI8x16Ne: {
-      CpuFeatureScope avx_scope(tasm(), AVX);
+      CpuFeatureScope avx_scope(masm(), AVX);
       __ vpcmpeqb(i.OutputSimd128Register(), i.InputSimd128Register(0),
                   i.InputOperand(1));
       __ vpcmpeqb(kScratchDoubleReg, kScratchDoubleReg, kScratchDoubleReg);
@@ -2860,7 +2858,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     }
     case kSSEI8x16GeS: {
       DCHECK_EQ(i.OutputSimd128Register(), i.InputSimd128Register(0));
-      CpuFeatureScope sse_scope(tasm(), SSE4_1);
+      CpuFeatureScope sse_scope(masm(), SSE4_1);
       XMMRegister dst = i.OutputSimd128Register();
       Operand src = i.InputOperand(1);
       __ pminsb(dst, src);
@@ -2868,7 +2866,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kAVXI8x16GeS: {
-      CpuFeatureScope avx_scope(tasm(), AVX);
+      CpuFeatureScope avx_scope(masm(), AVX);
       XMMRegister src1 = i.InputSimd128Register(0);
       Operand src2 = i.InputOperand(1);
       __ vpminsb(kScratchDoubleReg, src1, src2);
@@ -2926,7 +2924,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kAVXI8x16GtU: {
-      CpuFeatureScope avx_scope(tasm(), AVX);
+      CpuFeatureScope avx_scope(masm(), AVX);
       XMMRegister dst = i.OutputSimd128Register();
       XMMRegister src1 = i.InputSimd128Register(0);
       Operand src2 = i.InputOperand(1);
@@ -2945,7 +2943,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kAVXI8x16GeU: {
-      CpuFeatureScope avx_scope(tasm(), AVX);
+      CpuFeatureScope avx_scope(masm(), AVX);
       XMMRegister src1 = i.InputSimd128Register(0);
       Operand src2 = i.InputOperand(1);
       __ vpminub(kScratchDoubleReg, src1, src2);
@@ -3184,7 +3182,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       XMMRegister src = i.InputSimd128Register(0);
       uint8_t lane = i.InputUint8(1) & 0xf;
       if (CpuFeatures::IsSupported(AVX)) {
-        CpuFeatureScope avx_scope(tasm(), AVX);
+        CpuFeatureScope avx_scope(masm(), AVX);
         if (lane < 8) {
           __ vpunpcklbw(dst, src, src);
         } else {
@@ -3235,7 +3233,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       ASSEMBLE_SIMD_PUNPCK_SHUFFLE(punpcklbw);
       break;
     case kSSES16x8UnzipHigh: {
-      CpuFeatureScope sse_scope(tasm(), SSE4_1);
+      CpuFeatureScope sse_scope(masm(), SSE4_1);
       XMMRegister dst = i.OutputSimd128Register();
       XMMRegister src2 = dst;
       DCHECK_EQ(dst, i.InputSimd128Register(0));
@@ -3249,7 +3247,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kAVXS16x8UnzipHigh: {
-      CpuFeatureScope avx_scope(tasm(), AVX);
+      CpuFeatureScope avx_scope(masm(), AVX);
       XMMRegister dst = i.OutputSimd128Register();
       XMMRegister src2 = dst;
       if (instr->InputCount() == 2) {
@@ -3261,7 +3259,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kSSES16x8UnzipLow: {
-      CpuFeatureScope sse_scope(tasm(), SSE4_1);
+      CpuFeatureScope sse_scope(masm(), SSE4_1);
       XMMRegister dst = i.OutputSimd128Register();
       XMMRegister src2 = dst;
       DCHECK_EQ(dst, i.InputSimd128Register(0));
@@ -3275,7 +3273,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kAVXS16x8UnzipLow: {
-      CpuFeatureScope avx_scope(tasm(), AVX);
+      CpuFeatureScope avx_scope(masm(), AVX);
       XMMRegister dst = i.OutputSimd128Register();
       XMMRegister src2 = dst;
       __ vpxor(kScratchDoubleReg, kScratchDoubleReg, kScratchDoubleReg);
@@ -3302,7 +3300,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kAVXS8x16UnzipHigh: {
-      CpuFeatureScope avx_scope(tasm(), AVX);
+      CpuFeatureScope avx_scope(masm(), AVX);
       XMMRegister dst = i.OutputSimd128Register();
       XMMRegister src2 = dst;
       if (instr->InputCount() == 2) {
@@ -3329,7 +3327,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kAVXS8x16UnzipLow: {
-      CpuFeatureScope avx_scope(tasm(), AVX);
+      CpuFeatureScope avx_scope(masm(), AVX);
       XMMRegister dst = i.OutputSimd128Register();
       XMMRegister src2 = dst;
       if (instr->InputCount() == 2) {
@@ -3358,7 +3356,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kAVXS8x16TransposeLow: {
-      CpuFeatureScope avx_scope(tasm(), AVX);
+      CpuFeatureScope avx_scope(masm(), AVX);
       XMMRegister dst = i.OutputSimd128Register();
       if (instr->InputCount() == 1) {
         __ vpsllw(kScratchDoubleReg, i.InputSimd128Register(0), 8);
@@ -3388,7 +3386,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kAVXS8x16TransposeHigh: {
-      CpuFeatureScope avx_scope(tasm(), AVX);
+      CpuFeatureScope avx_scope(masm(), AVX);
       XMMRegister dst = i.OutputSimd128Register();
       if (instr->InputCount() == 1) {
         __ vpsrlw(dst, i.InputSimd128Register(0), 8);
@@ -3424,7 +3422,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     case kAVXS8x4Reverse:
     case kAVXS8x8Reverse: {
       DCHECK_EQ(1, instr->InputCount());
-      CpuFeatureScope avx_scope(tasm(), AVX);
+      CpuFeatureScope avx_scope(masm(), AVX);
       XMMRegister dst = i.OutputSimd128Register();
       XMMRegister src = dst;
       if (arch_opcode != kAVXS8x2Reverse) {
@@ -4206,8 +4204,8 @@ void CodeGenerator::AssembleReturn(InstructionOperand* additional_pop_count) {
     __ j(greater, &mismatch_return, Label::kNear);
     __ Ret(parameter_slots * kSystemPointerSize, scratch_reg);
     __ bind(&mismatch_return);
-    __ DropArguments(argc_reg, scratch_reg, TurboAssembler::kCountIsInteger,
-                     TurboAssembler::kCountIncludesReceiver);
+    __ DropArguments(argc_reg, scratch_reg, MacroAssembler::kCountIsInteger,
+                     MacroAssembler::kCountIncludesReceiver);
     // We use a return instead of a jump for better return address prediction.
     __ Ret();
   } else if (additional_pop_count->IsImmediate()) {

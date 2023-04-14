@@ -8,14 +8,16 @@
 
 #include "src/gpu/ganesh/gradients/GrGradientBitmapCache.h"
 
-#include "include/private/SkFloatBits.h"
-#include "include/private/SkHalf.h"
-#include "include/private/SkMalloc.h"
-#include "include/private/SkTemplates.h"
+#include "include/private/base/SkFloatBits.h"
+#include "src/base/SkHalf.h"
+#include "include/private/base/SkTemplates.h"
+#include "include/private/base/SkMalloc.h"
 #include "src/core/SkRasterPipeline.h"
 #include "src/shaders/gradients/SkGradientShaderBase.h"
 
 #include <functional>
+
+using namespace skia_private;
 
 struct GrGradientBitmapCache::Entry {
     Entry*      fPrev;
@@ -131,7 +133,7 @@ void GrGradientBitmapCache::fillGradient(const SkPMColor4f* colors, const SkScal
     SkRasterPipeline p(&alloc);
     SkRasterPipeline_MemoryCtx ctx = { bitmap->getPixels(), 0 };
 
-    p.append(SkRasterPipeline::seed_shader);
+    p.append(SkRasterPipelineOp::seed_shader);
     p.append_matrix(&alloc, SkMatrix::Scale(1.0f / bitmap->width(), 1.0f));
     SkGradientShaderBase::AppendGradientFillStages(&p, &alloc, colors, positions, count);
     p.append_store(bitmap->colorType(), &ctx);
@@ -154,7 +156,7 @@ void GrGradientBitmapCache::getGradient(const SkPMColor4f* colors,
                          1 +                 // alphaType
                          1;                  // colorType
 
-    SkAutoSTMalloc<64, int32_t> storage(keyCount);
+    AutoSTMalloc<64, int32_t> storage(keyCount);
     int32_t* buffer = storage.get();
 
     *buffer++ = count;

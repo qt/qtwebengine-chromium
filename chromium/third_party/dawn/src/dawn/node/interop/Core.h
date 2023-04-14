@@ -41,8 +41,10 @@
 
 // A helper macro for constructing a PromiseInfo with the current file, function and line.
 // See PromiseInfo
-#define PROMISE_INFO \
-    ::wgpu::interop::PromiseInfo { __FILE__, __FUNCTION__, __LINE__ }
+#define PROMISE_INFO                     \
+    ::wgpu::interop::PromiseInfo {       \
+        __FILE__, __FUNCTION__, __LINE__ \
+    }
 
 namespace wgpu::interop {
 
@@ -185,6 +187,7 @@ enum class PromiseState {
     Pending,
     Resolved,
     Rejected,
+    Discarded,
 };
 
 namespace detail {
@@ -205,6 +208,12 @@ class PromiseBase {
     void Reject(std::string err) const { Reject(Napi::Error::New(state_->deferred.Env(), err)); }
 
     PromiseState GetState() const { return state_->state; }
+
+    // Place the promise into the Discarded state.
+    // This state will not throw a fatal error if this promise has not been rejected or resolved by
+    // the time it is finalized. This is useful for Node tear-down where the attempting to create
+    // new objects will result in a fatal error.
+    void Discard() { state_->state = PromiseState::Discarded; }
 
   protected:
     void Resolve(Napi::Value value) const {

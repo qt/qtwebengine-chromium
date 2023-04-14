@@ -75,14 +75,11 @@ class CloudStorageError(Exception):
             '  2. If you have a @google.com account, use that account.\n'
             '  3. For the project-id, just enter 0.' % command)
 
-# TODO(https://crbug.com/1262295): Rename this after Python2 trybots retire.
-# pylint: disable=redefined-builtin
-class PermissionError(CloudStorageError):
+
+class CloudStoragePermissionError(CloudStorageError):
 
   def __init__(self):
-    # TODO(https://crbug.com/1262295): Change to super() after Python2 trybots retire.
-    # pylint: disable=super-with-arguments
-    super(PermissionError, self).__init__(
+    super().__init__(
         'Attempted to access a file from Cloud Storage but you don\'t '
         'have permission. ' + self._GetConfigInstructions())
 
@@ -90,9 +87,7 @@ class PermissionError(CloudStorageError):
 class CredentialsError(CloudStorageError):
 
   def __init__(self):
-    # TODO(https://crbug.com/1262295): Change to super() after Python2 trybots retire.
-    # pylint: disable=super-with-arguments
-    super(CredentialsError, self).__init__(
+    super().__init__(
         'Attempted to access a file from Cloud Storage but you have no '
         'configured credentials. ' + self._GetConfigInstructions())
 
@@ -172,7 +167,7 @@ def GetErrorObjectForCloudStorageStderr(stderr):
   if ('status=403' in stderr or 'status 403' in stderr or
       '403 Forbidden' in stderr or
       re.match('.*403.*does not have .* access to .*', stderr)):
-    return PermissionError()
+    return CloudStoragePermissionError()
   if (stderr.startswith('InvalidUriError') or 'No such object' in stderr or
       'No URLs matched' in stderr or 'One or more URLs matched no' in stderr):
     return NotFoundError(stderr)

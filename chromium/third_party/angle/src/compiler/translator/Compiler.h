@@ -195,6 +195,13 @@ class TCompiler : public TShHandleBase
 
     sh::GLenum getShaderType() const { return mShaderType; }
 
+    // Generate a self-contained binary representation of the shader.
+    bool getShaderBinary(const ShHandle compilerHandle,
+                         const char *const shaderStrings[],
+                         size_t numStrings,
+                         const ShCompileOptions &compileOptions,
+                         ShaderBinaryBlob *const binaryOut);
+
     // Validate the AST and produce errors if it is inconsistent.
     bool validateAST(TIntermNode *root);
     // Some transformations may need to temporarily disable validation until they are complete.  A
@@ -209,18 +216,16 @@ class TCompiler : public TShHandleBase
 
     bool areClipDistanceOrCullDistanceRedeclared() const
     {
-        return mClipDistanceSize != 0 || mCullDistanceSize != 0;
+        return mClipDistanceRedeclared || mCullDistanceRedeclared;
     }
 
-    uint8_t getClipDistanceArraySize() const
-    {
-        return mClipDistanceSize ? mClipDistanceSize : (mClipDistanceMaxIndex + 1);
-    }
+    uint8_t getClipDistanceArraySize() const { return mClipDistanceSize; }
 
-    uint8_t getCullDistanceArraySize() const
-    {
-        return mCullDistanceSize ? mCullDistanceSize : (mCullDistanceMaxIndex + 1);
-    }
+    uint8_t getCullDistanceArraySize() const { return mCullDistanceSize; }
+
+    bool isClipDistanceRedeclared() const { return mClipDistanceRedeclared; }
+
+    bool hasClipDistance() const { return mClipDistanceUsed; }
 
   protected:
     // Add emulated functions to the built-in function emulator.
@@ -311,6 +316,8 @@ class TCompiler : public TShHandleBase
                              const TParseContext &parseContext,
                              const ShCompileOptions &compileOptions);
 
+    bool resizeClipAndCullDistanceBuiltins(TIntermBlock *root);
+
     bool postParseChecks(const TParseContext &parseContext);
 
     sh::GLenum mShaderType;
@@ -357,8 +364,9 @@ class TCompiler : public TShHandleBase
     // Track gl_ClipDistance / gl_CullDistance usage.
     uint8_t mClipDistanceSize;
     uint8_t mCullDistanceSize;
-    int8_t mClipDistanceMaxIndex;
-    int8_t mCullDistanceMaxIndex;
+    bool mClipDistanceRedeclared;
+    bool mCullDistanceRedeclared;
+    bool mClipDistanceUsed;
 
     // geometry shader parameters.
     int mGeometryShaderMaxVertices;

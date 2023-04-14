@@ -96,11 +96,38 @@ class CommandEncoder final : public ApiObjectBase {
     ResultOrError<Ref<CommandBufferBase>> Finish(
         const CommandBufferDescriptor* descriptor = nullptr);
 
+    // `InternalUsageScope` is a scoped class that temporarily changes validation such that the
+    // command encoder includes internal resource usages.
+    friend class InternalUsageScope;
+    class [[nodiscard]] InternalUsageScope : public NonMovable {
+      public:
+        ~InternalUsageScope();
+
+      private:
+        // Disable heap allocation
+        void* operator new(size_t) = delete;
+
+        // Only CommandEncoder can make this class.
+        friend class CommandEncoder;
+        InternalUsageScope(CommandEncoder* encoder);
+
+        CommandEncoder* mEncoder;
+        UsageValidationMode mUsageValidationMode;
+    };
+
+    InternalUsageScope MakeInternalUsageScope();
+
   private:
     CommandEncoder(DeviceBase* device, const CommandEncoderDescriptor* descriptor);
     CommandEncoder(DeviceBase* device, ObjectBase::ErrorTag tag);
 
     void DestroyImpl() override;
+
+    ResultOrError<std::function<void()>> ApplyRenderPassWorkarounds(
+        DeviceBase* device,
+        RenderPassResourceUsageTracker* usageTracker,
+        BeginRenderPassCmd* cmd,
+        std::function<void()> passEndCallback = nullptr);
 
     // Helper to be able to implement both APICopyTextureToTexture and
     // APICopyTextureToTextureInternal. The only difference between both

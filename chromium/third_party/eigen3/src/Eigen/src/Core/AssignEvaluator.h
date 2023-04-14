@@ -937,7 +937,7 @@ void call_assignment_no_alias_no_transpose(Dst& dst, const Src& src)
 }
 
 // forward declaration
-template<typename Dst, typename Src> void check_for_aliasing(const Dst &dst, const Src &src);
+template<typename Dst, typename Src> EIGEN_DEVICE_FUNC void check_for_aliasing(const Dst &dst, const Src &src);
 
 // Generic Dense to Dense assignment
 // Note that the last template argument "Weak" is needed to make it possible to perform

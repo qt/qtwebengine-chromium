@@ -35,7 +35,7 @@
 #include "src/gpu/ganesh/dawn/GrDawnUtil.h"
 #include "src/sksl/SkSLProgramSettings.h"
 
-#include "src/core/SkAutoMalloc.h"
+#include "src/base/SkAutoMalloc.h"
 #include "src/core/SkMipmap.h"
 #include "src/sksl/SkSLCompiler.h"
 
@@ -244,7 +244,7 @@ sk_sp<GrTexture> GrDawnGpu::onCreateTexture(SkISize dimensions,
                                             const GrBackendFormat& backendFormat,
                                             GrRenderable renderable,
                                             int renderTargetSampleCnt,
-                                            SkBudgeted budgeted,
+                                            skgpu::Budgeted budgeted,
                                             GrProtected,
                                             int mipLevelCount,
                                             uint32_t levelClearMask,
@@ -265,9 +265,13 @@ sk_sp<GrTexture> GrDawnGpu::onCreateTexture(SkISize dimensions,
                                budgeted, mipLevelCount, mipmapStatus, label);
 }
 
-sk_sp<GrTexture> GrDawnGpu::onCreateCompressedTexture(SkISize dimensions, const GrBackendFormat&,
-                                                      SkBudgeted, GrMipmapped, GrProtected,
-                                                      const void* data, size_t dataSize) {
+sk_sp<GrTexture> GrDawnGpu::onCreateCompressedTexture(SkISize dimensions,
+                                                      const GrBackendFormat&,
+                                                      skgpu::Budgeted,
+                                                      GrMipmapped,
+                                                      GrProtected,
+                                                      const void* data,
+                                                      size_t dataSize) {
     SkASSERT(!"unimplemented");
     return nullptr;
 }

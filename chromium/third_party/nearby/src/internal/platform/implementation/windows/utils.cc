@@ -14,11 +14,7 @@
 
 #include "internal/platform/implementation/windows/utils.h"
 
-// Windows headers
-#include <inaddr.h>
-#include <stdlib.h>
-#include <strsafe.h>
-#include <winsock.h>
+#include <windows.h>
 
 // Standard C/C++ headers
 #include <codecvt>
@@ -30,6 +26,7 @@
 
 // Third party headers
 #include "absl/strings/ascii.h"
+#include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 
 // Nearby connections headers
@@ -37,22 +34,25 @@
 #include "internal/platform/bluetooth_utils.h"
 #include "internal/platform/byte_array.h"
 #include "internal/platform/implementation/crypto.h"
-#include "internal/platform/implementation/windows/generated/winrt/Windows.Foundation.Collections.h"
-#include "internal/platform/implementation/windows/generated/winrt/Windows.Networking.Connectivity.h"
+#include "internal/platform/logging.h"
+#include "internal/platform/uuid.h"
+#include "winrt/Windows.Foundation.Collections.h"
+#include "winrt/Windows.Networking.Connectivity.h"
+#include "winrt/base.h"
 
-namespace location {
 namespace nearby {
 namespace windows {
 namespace {
 
 using ::winrt::Windows::Networking::HostNameType;
+using ::winrt::Windows::Networking::Connectivity::NetworkAdapter;
 using ::winrt::Windows::Networking::Connectivity::NetworkInformation;
 
 }  // namespace
 
 std::string uint64_to_mac_address_string(uint64_t bluetoothAddress) {
   std::string buffer = absl::StrFormat(
-      "%2llx:%2llx:%2llx:%2llx:%2llx:%2llx", bluetoothAddress >> 40,
+      "%02llx:%02llx:%02llx:%02llx:%02llx:%02llx", bluetoothAddress >> 40,
       (bluetoothAddress >> 32) & 0xff, (bluetoothAddress >> 24) & 0xff,
       (bluetoothAddress >> 16) & 0xff, (bluetoothAddress >> 8) & 0xff,
       bluetoothAddress & 0xff);
@@ -87,6 +87,10 @@ std::string ipaddr_4bytes_to_dotdecimal_string(
 }
 
 std::string ipaddr_dotdecimal_to_4bytes_string(std::string ipv4_s) {
+  if (ipv4_s.empty()) {
+    return {};
+  }
+
   in_addr address;
   address.S_un.S_addr = inet_addr(ipv4_s.c_str());
   char ipv4_b[5];
@@ -111,20 +115,112 @@ std::string wstring_to_string(std::wstring wstr) {
 
 std::vector<std::string> GetIpv4Addresses() {
   std::vector<std::string> result;
-  auto host_names = NetworkInformation::GetHostNames();
-  for (const auto& host_name : host_names) {
-    if (host_name.IPInformation() != nullptr &&
-        host_name.IPInformation().NetworkAdapter() != nullptr &&
-        host_name.Type() == HostNameType::Ipv4) {
-      result.push_back(winrt::to_string(host_name.ToString()));
+  std::vector<std::string> wifi_addresses;
+  std::vector<std::string> ethernet_addresses;
+  std::vector<std::string> other_addresses;
+
+  try {
+    auto host_names = NetworkInformation::GetHostNames();
+    for (const auto& host_name : host_names) {
+      if (host_name.IPInformation() != nullptr &&
+          host_name.IPInformation().NetworkAdapter() != nullptr &&
+          host_name.Type() == HostNameType::Ipv4) {
+        NetworkAdapter adapter = host_name.IPInformation().NetworkAdapter();
+        if (adapter.IanaInterfaceType() == Constants::kInterfaceTypeWifi) {
+          wifi_addresses.push_back(winrt::to_string(host_name.ToString()));
+        } else if (adapter.IanaInterfaceType() ==
+                   Constants::kInterfaceTypeEthernet) {
+          ethernet_addresses.push_back(winrt::to_string(host_name.ToString()));
+        } else {
+          other_addresses.push_back(winrt::to_string(host_name.ToString()));
+        }
+      }
     }
+  } catch (std::exception exception) {
+    NEARBY_LOGS(ERROR) << __func__
+                       << ": Cannot get IPv4 addresses. Exception : "
+                       << exception.what();
+  } catch (const winrt::hresult_error& error) {
+    NEARBY_LOGS(ERROR) << __func__
+                       << ": Cannot get IPv4 addresses. WinRT exception: "
+                       << error.code() << ": "
+                       << winrt::to_string(error.message());
+  } catch (...) {
+    NEARBY_LOGS(ERROR) << __func__ << ": Unknown exeption.";
+  }
+
+  result.insert(result.end(), wifi_addresses.begin(), wifi_addresses.end());
+  result.insert(result.end(), ethernet_addresses.begin(),
+                ethernet_addresses.end());
+  result.insert(result.end(), other_addresses.begin(), other_addresses.end());
+
+  return result;
+}
+
+std::vector<std::string> Get4BytesIpv4Addresses() {
+  std::vector<std::string> result;
+  std::vector<std::string> ipv4_addresses = GetIpv4Addresses();
+  for (const auto& ipv4_address : ipv4_addresses) {
+    // Converts IP address from x.x.x.x to 4 bytes format.
+    in_addr address;
+    address.S_un.S_addr = inet_addr(ipv4_address.c_str());
+    std::string ipv4_4bytes_address;
+    ipv4_4bytes_address.resize(4);
+    ipv4_4bytes_address[0] = address.S_un.S_un_b.s_b1;
+    ipv4_4bytes_address[1] = address.S_un.S_un_b.s_b2;
+    ipv4_4bytes_address[2] = address.S_un.S_un_b.s_b3;
+    ipv4_4bytes_address[3] = address.S_un.S_un_b.s_b4;
+    result.push_back(ipv4_4bytes_address);
   }
 
   return result;
 }
 
+Uuid winrt_guid_to_nearby_uuid(const ::winrt::guid& guid) {
+  int64_t data1 = guid.Data1;
+  int64_t data2 = guid.Data2;
+  int64_t data3 = guid.Data3;
+
+  int64_t msb = ((data1 >> 24) & 0xff) << 56 | ((data1 >> 16) & 0xff) << 48 |
+                ((data1 >> 8) & 0xff) << 40 | ((data1)&0xff) << 32 |
+                ((data2 >> 8) & 0xff) << 24 | ((data2)&0xff) << 16 |
+                ((data3 >> 8) & 0xff) << 8 | (data3 & 0xff);
+
+  int64_t lsb =
+      ((int64_t)guid.Data4[0]) << 56 | ((int64_t)guid.Data4[1]) << 48 |
+      ((int64_t)guid.Data4[2]) << 40 | ((int64_t)guid.Data4[3]) << 32 |
+      ((int64_t)guid.Data4[4]) << 24 | ((int64_t)guid.Data4[5]) << 16 |
+      ((int64_t)guid.Data4[6]) << 8 | (int64_t)guid.Data4[7];
+
+  return Uuid(msb, lsb);
+}
+
+winrt::guid nearby_uuid_to_winrt_guid(Uuid uuid) {
+  winrt::guid guid;
+  uint64_t msb = uuid.GetMostSigBits();
+  guid.Data1 = ((msb >> 56) & 0xff) << 24 | ((msb >> 48) & 0xff) << 16 |
+               ((msb >> 40) & 0xff) << 8 | ((msb >> 32) & 0xff);
+  guid.Data2 = ((msb >> 24) & 0xff) << 8 | ((msb >> 16) & 0xff);
+  guid.Data3 = ((msb >> 8) & 0xff) << 8 | (msb & 0xff);
+  uint64_t lsb = uuid.GetLeastSigBits();
+  guid.Data4[0] = (lsb >> 56) & 0xff;
+  guid.Data4[1] = (lsb >> 48) & 0xff;
+  guid.Data4[2] = (lsb >> 40) & 0xff;
+  guid.Data4[3] = (lsb >> 32) & 0xff;
+  guid.Data4[4] = (lsb >> 24) & 0xff;
+  guid.Data4[5] = (lsb >> 16) & 0xff;
+  guid.Data4[6] = (lsb >> 8) & 0xff;
+  guid.Data4[7] = lsb & 0xff;
+  return guid;
+}
+
+bool is_nearby_uuid_equal_to_winrt_guid(const Uuid& uuid,
+                                     const ::winrt::guid& guid) {
+  return uuid == winrt_guid_to_nearby_uuid(guid);
+}
+
 ByteArray Sha256(absl::string_view input, size_t size) {
-  ByteArray hash = location::nearby::Crypto::Sha256(input);
+  ByteArray hash = nearby::Crypto::Sha256(input);
   return ByteArray{hash.data(), size};
 }
 
@@ -228,4 +324,3 @@ std::vector<std::string> InspectableReader::ReadStringArray(
 
 }  // namespace windows
 }  // namespace nearby
-}  // namespace location

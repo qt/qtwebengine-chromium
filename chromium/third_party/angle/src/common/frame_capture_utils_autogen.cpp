@@ -536,6 +536,9 @@ void WriteParamCaptureReplay(std::ostream &os, const CallCapture &call, const Pa
         case ParamType::TSurfaceID:
             WriteParamValueReplay<ParamType::TSurfaceID>(os, call, param.value.SurfaceIDVal);
             break;
+        case ParamType::TSyncID:
+            WriteParamValueReplay<ParamType::TSyncID>(os, call, param.value.SyncIDVal);
+            break;
         case ParamType::TTextureEnvParameter:
             WriteParamValueReplay<ParamType::TTextureEnvParameter>(
                 os, call, param.value.TextureEnvParameterVal);
@@ -621,9 +624,8 @@ void WriteParamCaptureReplay(std::ostream &os, const CallCapture &call, const Pa
             WriteParamValueReplay<ParamType::Tegl_StreamPointer>(os, call,
                                                                  param.value.egl_StreamPointerVal);
             break;
-        case ParamType::Tegl_SyncPointer:
-            WriteParamValueReplay<ParamType::Tegl_SyncPointer>(os, call,
-                                                               param.value.egl_SyncPointerVal);
+        case ParamType::Tegl_SyncID:
+            WriteParamValueReplay<ParamType::Tegl_SyncID>(os, call, param.value.egl_SyncIDVal);
             break;
         case ParamType::TvoidConstPointer:
             WriteParamValueReplay<ParamType::TvoidConstPointer>(os, call,
@@ -936,6 +938,8 @@ const char *ParamTypeToString(ParamType paramType)
             return "GLenum";
         case ParamType::TSurfaceID:
             return "GLuint";
+        case ParamType::TSyncID:
+            return "GLuint";
         case ParamType::TTextureEnvParameter:
             return "GLenum";
         case ParamType::TTextureEnvTarget:
@@ -980,8 +984,8 @@ const char *ParamTypeToString(ParamType paramType)
             return "GLenum *";
         case ParamType::Tegl_StreamPointer:
             return "GLenum *";
-        case ParamType::Tegl_SyncPointer:
-            return "GLenum *";
+        case ParamType::Tegl_SyncID:
+            return "GLuint";
         case ParamType::TvoidConstPointer:
             return "const void *";
         case ParamType::TvoidConstPointerPointer:
@@ -1066,6 +1070,8 @@ ResourceIDType GetResourceIDTypeFromParamType(ParamType paramType)
             return ResourceIDType::ShaderProgram;
         case ParamType::TSurfaceID:
             return ResourceIDType::Surface;
+        case ParamType::TSyncID:
+            return ResourceIDType::Sync;
         case ParamType::TTextureID:
             return ResourceIDType::Texture;
         case ParamType::TTextureIDConstPointer:
@@ -1084,6 +1090,8 @@ ResourceIDType GetResourceIDTypeFromParamType(ParamType paramType)
             return ResourceIDType::VertexArray;
         case ParamType::TVertexArrayIDPointer:
             return ResourceIDType::VertexArray;
+        case ParamType::Tegl_SyncID:
+            return ResourceIDType::egl_Sync;
         default:
             return ResourceIDType::InvalidEnum;
     }
@@ -1119,12 +1127,16 @@ const char *GetResourceIDTypeName(ResourceIDType resourceIDType)
             return "ShaderProgram";
         case ResourceIDType::Surface:
             return "Surface";
+        case ResourceIDType::Sync:
+            return "Sync";
         case ResourceIDType::Texture:
             return "Texture";
         case ResourceIDType::TransformFeedback:
             return "TransformFeedback";
         case ResourceIDType::VertexArray:
             return "VertexArray";
+        case ResourceIDType::egl_Sync:
+            return "egl_Sync";
         default:
             UNREACHABLE();
             return "GetResourceIDTypeName error";

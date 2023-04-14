@@ -22,13 +22,12 @@
 #include "absl/strings/escaping.h"
 #include "absl/strings/str_format.h"
 #include "absl/synchronization/mutex.h"
-#include "internal/platform/implementation/wifi_lan.h"
 #include "internal/platform/cancellation_flag_listener.h"
+#include "internal/platform/implementation/wifi_lan.h"
 #include "internal/platform/logging.h"
 #include "internal/platform/medium_environment.h"
 #include "internal/platform/nsd_service_info.h"
 
-namespace location {
 namespace nearby {
 namespace g3 {
 
@@ -147,7 +146,8 @@ bool WifiLanServerSocket::Connect(WifiLanSocket& socket) {
   return true;
 }
 
-void WifiLanServerSocket::SetCloseNotifier(std::function<void()> notifier) {
+void WifiLanServerSocket::SetCloseNotifier(
+    absl::AnyInvocable<void()> notifier) {
   absl::MutexLock lock(&mutex_);
   close_notifier_ = std::move(notifier);
 }
@@ -312,7 +312,8 @@ std::unique_ptr<api::WifiLanSocket> WifiLanMedium::ConnectToService(
   {
     absl::MutexLock medium_lock(&remote_medium->mutex_);
     auto item = remote_medium->server_sockets_.find(socket_name);
-    server_socket = item != server_sockets_.end() ? item->second : nullptr;
+    server_socket =
+        item != remote_medium->server_sockets_.end() ? item->second : nullptr;
     if (server_socket == nullptr) {
       NEARBY_LOGS(ERROR)
           << "G3 WifiLan Failed to find WifiLan Server socket: socket_name="
@@ -368,4 +369,3 @@ std::unique_ptr<api::WifiLanServerSocket> WifiLanMedium::ListenForService(
 
 }  // namespace g3
 }  // namespace nearby
-}  // namespace location

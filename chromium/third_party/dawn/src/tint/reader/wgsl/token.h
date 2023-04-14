@@ -32,7 +32,7 @@ class Token {
         kError = -2,
         /// Uninitialized token
         kUninitialized = 0,
-        /// Placeholder token which maybe fillled in later
+        /// Placeholder token which maybe filled in later
         kPlaceholder = 1,
         /// End of input string reached
         kEOF,
@@ -80,12 +80,16 @@ class Token {
         kEqual,
         /// A '=='
         kEqualEqual,
+        /// A '>' (post template-args classification)
+        kTemplateArgsRight,
         /// A '>'
         kGreaterThan,
         /// A '>='
         kGreaterThanEqual,
         /// A '>>'
         kShiftRight,
+        /// A '<' (post template-args classification)
+        kTemplateArgsLeft,
         /// A '<'
         kLessThan,
         /// A '<='
@@ -145,24 +149,24 @@ class Token {
         /// A '<<='
         kShiftLeftEqual,
 
-        /// A 'array'
-        kArray,
-        /// A 'atomic'
-        kAtomic,
+        /// A 'alias'
+        kAlias,
         /// A 'bitcast'
         kBitcast,
-        /// A 'bool'
-        kBool,
         /// A 'break'
         kBreak,
         /// A 'case'
         kCase,
         /// A 'const'
         kConst,
+        /// A 'const_assert'
+        kConstAssert,
         /// A 'continue'
         kContinue,
         /// A 'continuing'
         kContinuing,
+        /// A 'diagnostic'
+        kDiagnostic,
         /// A 'discard'
         kDiscard,
         /// A 'default'
@@ -171,10 +175,6 @@ class Token {
         kElse,
         /// A 'enable'
         kEnable,
-        /// A 'f16'
-        kF16,
-        /// A 'f32'
-        kF32,
         /// A 'fallthrough'
         kFallthrough,
         /// A 'false'
@@ -183,96 +183,26 @@ class Token {
         kFn,
         // A 'for'
         kFor,
-        /// A 'i32'
-        kI32,
         /// A 'if'
         kIf,
         /// A 'let'
         kLet,
         /// A 'loop'
         kLoop,
-        /// A 'mat2x2'
-        kMat2x2,
-        /// A 'mat2x3'
-        kMat2x3,
-        /// A 'mat2x4'
-        kMat2x4,
-        /// A 'mat3x2'
-        kMat3x2,
-        /// A 'mat3x3'
-        kMat3x3,
-        /// A 'mat3x4'
-        kMat3x4,
-        /// A 'mat4x2'
-        kMat4x2,
-        /// A 'mat4x3'
-        kMat4x3,
-        /// A 'mat4x4'
-        kMat4x4,
         /// A 'override'
         kOverride,
-        /// A 'ptr'
-        kPtr,
         /// A 'return'
         kReturn,
-        /// A 'sampler'
-        kSampler,
-        /// A 'sampler_comparison'
-        kComparisonSampler,
-        /// A 'static_assert'
-        kStaticAssert,
+        /// A 'requires'
+        kRequires,
         /// A 'struct'
         kStruct,
         /// A 'switch'
         kSwitch,
-        /// A 'texture_depth_2d'
-        kTextureDepth2d,
-        /// A 'texture_depth_2d_array'
-        kTextureDepth2dArray,
-        /// A 'texture_depth_cube'
-        kTextureDepthCube,
-        /// A 'texture_depth_cube_array'
-        kTextureDepthCubeArray,
-        /// A 'texture_depth_multisampled_2d'
-        kTextureDepthMultisampled2d,
-        /// A 'texture_external'
-        kTextureExternal,
-        /// A 'texture_multisampled_2d'
-        kTextureMultisampled2d,
-        /// A 'texture_1d'
-        kTextureSampled1d,
-        /// A 'texture_2d'
-        kTextureSampled2d,
-        /// A 'texture_2d_array'
-        kTextureSampled2dArray,
-        /// A 'texture_3d'
-        kTextureSampled3d,
-        /// A 'texture_cube'
-        kTextureSampledCube,
-        /// A 'texture_cube_array'
-        kTextureSampledCubeArray,
-        /// A 'texture_storage_1d'
-        kTextureStorage1d,
-        /// A 'texture_storage_2d'
-        kTextureStorage2d,
-        /// A 'texture_storage_2d_array'
-        kTextureStorage2dArray,
-        /// A 'texture_storage_3d'
-        kTextureStorage3d,
         /// A 'true'
         kTrue,
-        /// A 'type'
-        kType,
-        /// A 'u32'
-        kU32,
         /// A 'var'
         kVar,
-        /// A 'vec2'
-        kVec2,
-        /// A 'vec3'
-        kVec3,
-        /// A 'vec4'
-        kVec4,
         /// A 'while'
         kWhile,
     };
@@ -349,38 +279,21 @@ class Token {
                type_ == Type::kFloatLiteral || type_ == Type::kFloatLiteral_F ||
                type_ == Type::kFloatLiteral_H;
     }
-    /// @returns true if token is a 'matNxM'
-    bool IsMatrix() const {
-        return type_ == Type::kMat2x2 || type_ == Type::kMat2x3 || type_ == Type::kMat2x4 ||
-               type_ == Type::kMat3x2 || type_ == Type::kMat3x3 || type_ == Type::kMat3x4 ||
-               type_ == Type::kMat4x2 || type_ == Type::kMat4x3 || type_ == Type::kMat4x4;
-    }
-    /// @returns true if token is a 'mat3xM'
-    bool IsMat3xN() const {
-        return type_ == Type::kMat3x2 || type_ == Type::kMat3x3 || type_ == Type::kMat3x4;
-    }
-    /// @returns true if token is a 'mat4xM'
-    bool IsMat4xN() const {
-        return type_ == Type::kMat4x2 || type_ == Type::kMat4x3 || type_ == Type::kMat4x4;
-    }
-    /// @returns true if token is a 'matNx3'
-    bool IsMatNx3() const {
-        return type_ == Type::kMat2x3 || type_ == Type::kMat3x3 || type_ == Type::kMat4x3;
-    }
-    /// @returns true if token is a 'matNx4'
-    bool IsMatNx4() const {
-        return type_ == Type::kMat2x4 || type_ == Type::kMat3x4 || type_ == Type::kMat4x4;
-    }
 
-    /// @returns true if token is a 'vecN'
-    bool IsVector() const {
-        return type_ == Type::kVec2 || type_ == Type::kVec3 || type_ == Type::kVec4;
-    }
-
-    /// @returns true if the token can be split during parse into component tokens
-    bool IsSplittable() const {
-        return Is(Type::kShiftRight) || Is(Type::kGreaterThanEqual) || Is(Type::kAndAnd) ||
-               Is(Type::kMinusMinus);
+    /// @returns the number of placeholder tokens required to follow the token, in order to provide
+    /// space for token splitting.
+    size_t NumPlaceholders() const {
+        switch (type_) {
+            case Type::kShiftRightEqual:
+                return 2;
+            case Type::kShiftRight:
+            case Type::kGreaterThanEqual:
+            case Type::kAndAnd:
+            case Type::kMinusMinus:
+                return 1;
+            default:
+                return 0;
+        }
     }
 
     /// @returns true if the token is a binary operator
@@ -440,12 +353,10 @@ class Token {
     std::variant<int64_t, double, std::string, std::string_view> value_;
 };
 
-#ifndef NDEBUG
 inline std::ostream& operator<<(std::ostream& out, Token::Type type) {
     out << Token::TypeToName(type);
     return out;
 }
-#endif  // NDEBUG
 
 }  // namespace tint::reader::wgsl
 

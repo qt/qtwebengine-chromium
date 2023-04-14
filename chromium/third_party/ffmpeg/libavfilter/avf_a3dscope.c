@@ -209,7 +209,7 @@ static void view_matrix(const float eye[3],
 static void draw_dot(AVFrame *out, unsigned x, unsigned y, float z,
                      int r, int g, int b)
 {
-    const int linesize = out->linesize[0];
+    const ptrdiff_t linesize = out->linesize[0];
     uint8_t *dst;
 
     dst = out->data[0] + y * linesize + x * 4;
@@ -243,6 +243,7 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
     for (int y = 0; y < outlink->h; y++)
         memset(out->data[0] + y * out->linesize[0], 0, outlink->w * 4);
     out->pts = av_rescale_q(in->pts, inlink->time_base, outlink->time_base);
+    out->duration = 1;
 
     projection_matrix(s->fov, half_width / half_height, 0.1f, 1000000.f, s->projection_matrix);
     view_matrix(s->eye, s->zoom, s->roll, s->pitch, s->yaw, s->view_matrix);

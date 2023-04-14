@@ -190,16 +190,6 @@ DECLARE_INIT_QU8_AVGPOOL_PARAMS_FUNCTION(xnn_init_qu8_avgpool_minmax_fp32_scalar
 #endif  // XNN_ARCH_WASMSIMD || XNN_ARCH_WASMRELAXEDSIMD
 
 
-// TODO: refactor to new FP32/RNDNU-requantization functions
-DECLARE_INIT_QU8_AVGPOOL_PARAMS_FUNCTION(xnn_init_qu8_avgpool_minmax_scalar_params)
-#if XNN_ARCH_ARM || XNN_ARCH_ARM64
-  DECLARE_INIT_QU8_AVGPOOL_PARAMS_FUNCTION(xnn_init_qu8_avgpool_minmax_neon_params)
-#endif  // XNN_ARCH_ARM || XNN_ARCH_ARM64
-#if XNN_ARCH_X86 || XNN_ARCH_X86_64
-  DECLARE_INIT_QU8_AVGPOOL_PARAMS_FUNCTION(xnn_init_qu8_avgpool_minmax_sse2_params)
-#endif  // XNN_ARCH_X86 || XNN_ARCH_X86_64
-
-
 #define DECLARE_UPDATE_QU8_AVGPOOL_PARAMS_FUNCTION(fn_name)          \
   XNN_INTERNAL void fn_name(                                         \
     union xnn_qu8_avgpool_minmax_params params[XNN_MIN_ELEMENTS(1)], \
@@ -221,15 +211,6 @@ DECLARE_UPDATE_QU8_AVGPOOL_PARAMS_FUNCTION(xnn_update_qu8_avgpool_minmax_fp32_sc
 #if XNN_ARCH_WASMSIMD || XNN_ARCH_WASMRELAXEDSIMD
   DECLARE_UPDATE_QU8_AVGPOOL_PARAMS_FUNCTION(xnn_update_qu8_avgpool_minmax_fp32_wasmsimd_params)
 #endif  // XNN_ARCH_WASMSIMD || XNN_ARCH_WASMRELAXEDSIMD
-
-// TODO: refactor to new FP32/RNDNU-requantization functions
-DECLARE_UPDATE_QU8_AVGPOOL_PARAMS_FUNCTION(xnn_update_qu8_avgpool_minmax_scalar_params)
-#if XNN_ARCH_ARM || XNN_ARCH_ARM64
-  DECLARE_UPDATE_QU8_AVGPOOL_PARAMS_FUNCTION(xnn_update_qu8_avgpool_minmax_neon_params)
-#endif  // XNN_ARCH_ARM || XNN_ARCH_ARM64
-#if XNN_ARCH_X86 || XNN_ARCH_X86_64
-  DECLARE_UPDATE_QU8_AVGPOOL_PARAMS_FUNCTION(xnn_update_qu8_avgpool_minmax_sse2_params)
-#endif  // XNN_ARCH_X86 || XNN_ARCH_X86_64
 
 
 #define DECLARE_INIT_F16_SCALEMINMAX_PARAMS_FUNCTION(fn_name)     \
@@ -298,6 +279,13 @@ XNN_INTERNAL size_t xnn_init_f32_gavgpool_params(
   float output_max,
   uint32_t width);
 
+#if XNN_ARCH_ARM || XNN_ARCH_ARM64
+XNN_INTERNAL void xnn_update_f16_gavgpool_neonfp16arith_params(
+  union xnn_f16_gavgpool_params* params,
+  uint16_t multiplier,
+  uint32_t width);
+#endif  // XNN_ARCH_ARM || XNN_ARCH_ARM64
+
 XNN_INTERNAL void xnn_update_f32_gavgpool_params(
   union xnn_f32_gavgpool_params* params,
   float multiplier,
@@ -349,9 +337,7 @@ DECLARE_INIT_BF16_MINMAX_PARAMS_FUNCTION(xnn_init_bf16_minmax_scalar_params)
     float output_min,                                        \
     float output_max);
 
-// TODO: refactor to use ISA-specific initialization function
-DECLARE_INIT_F32_MINMAX_PARAMS_FUNCTION(xnn_init_f32_minmax_params)
-
+DECLARE_INIT_F32_MINMAX_PARAMS_FUNCTION(xnn_init_f32_minmax_scalar_params)
 #if XNN_ARCH_X86 || XNN_ARCH_X86_64
   DECLARE_INIT_F32_MINMAX_PARAMS_FUNCTION(xnn_init_f32_minmax_sse_params)
   DECLARE_INIT_F32_MINMAX_PARAMS_FUNCTION(xnn_init_f32_minmax_avx_params)
@@ -359,7 +345,6 @@ DECLARE_INIT_F32_MINMAX_PARAMS_FUNCTION(xnn_init_f32_minmax_params)
 #if XNN_ARCH_WASMSIMD || XNN_ARCH_WASMRELAXEDSIMD
   DECLARE_INIT_F32_MINMAX_PARAMS_FUNCTION(xnn_init_f32_minmax_wasmsimd_params)
 #endif  // XNN_ARCH_WASMSIMD || XNN_ARCH_WASMRELAXEDSIMD
-DECLARE_INIT_F32_MINMAX_PARAMS_FUNCTION(xnn_init_f32_minmax_scalar_params)
 
 
 #define DECLARE_INIT_F16_HSWISH_PARAMS_FUNCTION(fn_name) \
@@ -663,27 +648,69 @@ DECLARE_INIT_QU8_LRELU_PARAMS_FUNCTION(xnn_init_qu8_lrelu_scalar_select_params)
 #endif  // XNN_ARCH_X86 || XNN_ARCH_X86_64
 
 
-XNN_INTERNAL size_t xnn_init_f16_chw_params(
-  union xnn_f16_chw_params params[XNN_MIN_ELEMENTS(1)],
-  uint32_t width,
-  uint16_t output_min,
-  uint16_t output_max);
+#define DECLARE_INIT_F16_CHW_PARAMS_FUNCTION(fn_name)     \
+  XNN_INTERNAL size_t fn_name(                            \
+    union xnn_f16_chw_params params[XNN_MIN_ELEMENTS(1)], \
+    uint32_t width,                                       \
+    uint16_t output_min,                                  \
+    uint16_t output_max);
 
-XNN_INTERNAL size_t xnn_init_f32_chw_params(
-  union xnn_f32_chw_params params[XNN_MIN_ELEMENTS(1)],
-  uint32_t width,
-  float output_min,
-  float output_max);
+#if XNN_ARCH_ARM || XNN_ARCH_ARM64
+  DECLARE_INIT_F16_CHW_PARAMS_FUNCTION(xnn_init_f16_chw_neonfp16arith_stride1_params)
+  DECLARE_INIT_F16_CHW_PARAMS_FUNCTION(xnn_init_f16_chw_neonfp16arith_stride2_params)
+#endif  // XNN_ARCH_ARM || XNN_ARCH_ARM64
 
-XNN_INTERNAL void xnn_update_f32_chw_params(
-  union xnn_f32_chw_params* params,
-  uint32_t width);
 
-XNN_INTERNAL size_t xnn_init_scalar_f32_chw_params(
-  union xnn_f32_chw_params params[XNN_MIN_ELEMENTS(1)],
-  uint32_t width,
-  float output_min,
-  float output_max);
+#define DECLARE_INIT_F32_CHW_PARAMS_FUNCTION(fn_name)     \
+  XNN_INTERNAL size_t fn_name(                            \
+    union xnn_f32_chw_params params[XNN_MIN_ELEMENTS(1)], \
+    uint32_t width,                                       \
+    float output_min,                                     \
+    float output_max);
+
+DECLARE_INIT_F32_CHW_PARAMS_FUNCTION(xnn_init_f32_chw_scalar_params)
+#if XNN_ARCH_ARM || XNN_ARCH_ARM64
+  DECLARE_INIT_F32_CHW_PARAMS_FUNCTION(xnn_init_f32_chw_neon_stride1_params)
+  DECLARE_INIT_F32_CHW_PARAMS_FUNCTION(xnn_init_f32_chw_neon_stride2_params)
+#endif  // XNN_ARCH_ARM || XNN_ARCH_ARM64
+#if XNN_ARCH_X86 || XNN_ARCH_X86_64
+  DECLARE_INIT_F32_CHW_PARAMS_FUNCTION(xnn_init_f32_chw_sse_stride1_params)
+  DECLARE_INIT_F32_CHW_PARAMS_FUNCTION(xnn_init_f32_chw_sse_stride2_params)
+#endif  // XNN_ARCH_X86 || XNN_ARCH_X86_64
+#if XNN_ARCH_WASMSIMD || XNN_ARCH_WASMRELAXEDSIMD
+  DECLARE_INIT_F32_CHW_PARAMS_FUNCTION(xnn_init_f32_chw_wasmsimd_stride1_params)
+  DECLARE_INIT_F32_CHW_PARAMS_FUNCTION(xnn_init_f32_chw_wasmsimd_stride2_params)
+#endif  // XNN_ARCH_WASMSIMD || XNN_ARCH_WASMRELAXEDSIMD
+
+
+#define DECLARE_UPDATE_F16_CHW_PARAMS_FUNCTION(fn_name)   \
+  XNN_INTERNAL void fn_name(                              \
+    union xnn_f16_chw_params params[XNN_MIN_ELEMENTS(1)], \
+    uint32_t width);
+
+#if XNN_ARCH_ARM || XNN_ARCH_ARM64
+  DECLARE_UPDATE_F16_CHW_PARAMS_FUNCTION(xnn_update_f16_chw_neonfp16arith_stride1_params)
+  DECLARE_UPDATE_F16_CHW_PARAMS_FUNCTION(xnn_update_f16_chw_neonfp16arith_stride2_params)
+#endif  // XNN_ARCH_ARM || XNN_ARCH_ARM64
+
+
+#define DECLARE_UPDATE_F32_CHW_PARAMS_FUNCTION(fn_name)   \
+  XNN_INTERNAL void fn_name(                              \
+    union xnn_f32_chw_params params[XNN_MIN_ELEMENTS(1)], \
+    uint32_t width);
+
+#if XNN_ARCH_ARM || XNN_ARCH_ARM64
+  DECLARE_UPDATE_F32_CHW_PARAMS_FUNCTION(xnn_update_f32_chw_neon_stride1_params)
+  DECLARE_UPDATE_F32_CHW_PARAMS_FUNCTION(xnn_update_f32_chw_neon_stride2_params)
+#endif  // XNN_ARCH_ARM || XNN_ARCH_ARM64
+#if XNN_ARCH_X86 || XNN_ARCH_X86_64
+  DECLARE_UPDATE_F32_CHW_PARAMS_FUNCTION(xnn_update_f32_chw_sse_stride1_params)
+  DECLARE_UPDATE_F32_CHW_PARAMS_FUNCTION(xnn_update_f32_chw_sse_stride2_params)
+#endif  // XNN_ARCH_X86 || XNN_ARCH_X86_64
+#if XNN_ARCH_WASMSIMD || XNN_ARCH_WASMRELAXEDSIMD
+  DECLARE_UPDATE_F32_CHW_PARAMS_FUNCTION(xnn_update_f32_chw_wasmsimd_stride1_params)
+  DECLARE_UPDATE_F32_CHW_PARAMS_FUNCTION(xnn_update_f32_chw_wasmsimd_stride2_params)
+#endif  // XNN_ARCH_WASMSIMD || XNN_ARCH_WASMRELAXEDSIMD
 
 
 #define DECLARE_INIT_S8_MINMAX_PARAMS_FUNCTION(fn_name)     \
@@ -996,6 +1023,24 @@ DECLARE_INIT_QU8_F32_CVT_PARAMS_FUNCTION(xnn_init_qu8_f32_cvt_scalar_params)
 #if XNN_ARCH_ARM || XNN_ARCH_ARM64
   DECLARE_INIT_QU8_F32_CVT_PARAMS_FUNCTION(xnn_init_qu8_f32_cvt_neon_params)
 #endif  // XNN_ARCH_ARM || XNN_ARCH_ARM64
+
+#if XNN_ARCH_ARM || XNN_ARCH_ARM64
+  size_t xnn_init_x24_transpose_neon_tbl64_params(union xnn_x24_transpose_params params[XNN_MIN_ELEMENTS(1)]);
+#endif  // XNN_ARCH_ARM || XNN_ARCH_ARM64
+
+#if XNN_ARCH_ARM64
+  size_t xnn_init_x24_transpose_neon_tbl128_params(union xnn_x24_transpose_params params[XNN_MIN_ELEMENTS(1)]);
+  size_t xnn_init_x32_transpose_neon_tbl128_params(union xnn_x32_transpose_params params[XNN_MIN_ELEMENTS(1)]);
+#endif  // XNN_ARCH_ARM64
+
+#if XNN_ARCH_X86 || XNN_ARCH_X86_64
+  size_t xnn_init_x24_transpose_ssse3_params(union xnn_x24_transpose_params params[XNN_MIN_ELEMENTS(1)]);
+  size_t xnn_init_x8_transpose_avx2_params(union xnn_x8_transpose_params params[XNN_MIN_ELEMENTS(1)]);
+  size_t xnn_init_x16_transpose_avx2_params(union xnn_x16_transpose_params params[XNN_MIN_ELEMENTS(1)]);
+  size_t xnn_init_x32_transpose_avx_params(union xnn_x32_transpose_params params[XNN_MIN_ELEMENTS(1)]);
+  size_t xnn_init_x64_transpose_avx_params(union xnn_x64_transpose_params params[XNN_MIN_ELEMENTS(1)]);
+#endif  // XNN_ARCH_X86 || XNN_ARCH_X86_64
+
 #if XNN_ARCH_X86 || XNN_ARCH_X86_64
   DECLARE_INIT_QU8_F32_CVT_PARAMS_FUNCTION(xnn_init_qu8_f32_cvt_sse2_params)
   DECLARE_INIT_QU8_F32_CVT_PARAMS_FUNCTION(xnn_init_qu8_f32_cvt_sse4_params)

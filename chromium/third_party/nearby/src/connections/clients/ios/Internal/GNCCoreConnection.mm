@@ -16,26 +16,26 @@
 
 #include <utility>
 
-#import "connections/clients/ios/Public/NearbyConnections/GNCConnection.h"
-#import "connections/clients/ios/Public/NearbyConnections/GNCPayload.h"
 #include "connections/core.h"
 #include "connections/payload.h"
 #include "internal/platform/exception.h"
 #include "internal/platform/file.h"
 #include "internal/platform/implementation/input_file.h"
-#import "internal/platform/implementation/ios/utils.h"
 #include "internal/platform/input_stream.h"
 #include "internal/platform/payload_id.h"
 
-using ::location::nearby::ByteArrayFromNSData;
-using ::location::nearby::CppStringFromObjCString;
-using ::location::nearby::InputFile;
-using ::location::nearby::InputStream;
-using ::location::nearby::connections::Payload;
-using ::location::nearby::PayloadId;
-using ResultListener = ::location::nearby::connections::ResultCallback;
+#import "connections/clients/ios/Public/NearbyConnections/GNCConnection.h"
+#import "connections/clients/ios/Public/NearbyConnections/GNCPayload.h"
+#import "internal/platform/implementation/apple/utils.h"
 
-namespace location {
+using ::nearby::ByteArrayFromNSData;
+using ::nearby::CppStringFromObjCString;
+using ::nearby::InputFile;
+using ::nearby::InputStream;
+using ::nearby::PayloadId;
+using ::nearby::connections::Payload;
+using ResultListener = ::nearby::connections::ResultCallback;
+
 namespace nearby {
 namespace connections {
 
@@ -82,7 +82,6 @@ class GNCInputStreamFromNSStream : public InputStream {
 
 }  // namespace connections
 }  // namespace nearby
-}  // namespace location
 
 @implementation GNCPayloadInfo
 
@@ -141,8 +140,8 @@ class GNCInputStreamFromNSStream : public InputStream {
 
   PayloadId payloadId = payload.identifier;
   Payload corePayload(payloadId, [payload]() -> InputStream & {
-    location::nearby::connections::GNCInputStreamFromNSStream *stream =
-        new location::nearby::connections::GNCInputStreamFromNSStream(payload.stream);
+    nearby::connections::GNCInputStreamFromNSStream *stream =
+        new nearby::connections::GNCInputStreamFromNSStream(payload.stream);
     return *stream;
   });
   return [self sendPayload:std::move(corePayload) size:-1 progress:progress completion:completion];

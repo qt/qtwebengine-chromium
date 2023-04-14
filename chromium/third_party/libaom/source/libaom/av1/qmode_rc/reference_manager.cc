@@ -209,20 +209,30 @@ std::vector<ReferenceFrame> RefFrameManager::GetRefFrameListByPriority() const {
 
 void RefFrameManager::UpdateOrder(int global_order_idx) {
   cur_global_order_idx_ = global_order_idx;
-  if (forward_stack_.empty()) {
-    return;
-  }
-  int ref_idx = forward_stack_.back();
-  const GopFrame &gf_frame = ref_frame_table_[ref_idx];
 
-  // If the current processing frame is an overlay / show existing frame.
-  if (gf_frame.global_order_idx == global_order_idx) {
-    forward_stack_.pop_back();
-    if (gf_frame.is_golden_frame) {
-      // high quality frame
-      backward_queue_.push_back(ref_idx);
-    } else {
+  if (!forward_stack_.empty()) {
+    int ref_idx = forward_stack_.back();
+    const GopFrame &gf_frame = ref_frame_table_[ref_idx];
+    // If the current processing frame is an overlay / show existing frame, move
+    // the corresponding arf or intermediate arf frame from forward_stack_ to
+    // last_queue_. In this way this arf will be the last frame for the next
+    // frame.
+    if (gf_frame.global_order_idx == global_order_idx) {
+      forward_stack_.pop_back();
       last_queue_.push_back(ref_idx);
+      return;
+    }
+  }
+
+  if (!last_queue_.empty()) {
+    int this_ref_idx = last_queue_.back();
+    GopFrame &this_gf_frame = ref_frame_table_[this_ref_idx];
+    // If the last (stack top) of last_queue_ is an arf frame or first layer
+    // intermediate arf, then move it to the backward_queue_ so it will
+    // become the golden frame of future leaf frames.
+    if (this_gf_frame.is_golden_frame) {
+      last_queue_.pop_back();
+      backward_queue_.push_back(this_ref_idx);
     }
   }
 }

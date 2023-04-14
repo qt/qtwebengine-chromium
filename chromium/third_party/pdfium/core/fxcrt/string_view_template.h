@@ -58,7 +58,7 @@ class StringViewTemplate {
 
   explicit constexpr StringViewTemplate(
       const pdfium::span<const CharType>& other) noexcept
-      : m_Span(other.size()
+      : m_Span(!other.empty()
                    ? reinterpret_cast<const UnsignedType*>(other.data())
                    : nullptr,
                other.size()) {}
@@ -67,7 +67,7 @@ class StringViewTemplate {
                 !std::is_same<UnsignedType, CharType>::value>::type>
   constexpr StringViewTemplate(
       const pdfium::span<const UnsignedType>& other) noexcept
-      : m_Span(other.size() ? other.data() : nullptr, other.size()) {}
+      : m_Span(!other.empty() ? other.data() : nullptr, other.size()) {}
 
   // Deliberately implicit to avoid calling on every char literal.
   // |ch| must be an lvalue that outlives the StringViewTemplate.
@@ -181,7 +181,7 @@ class StringViewTemplate {
     return !m_Span.empty() ? m_Span[m_Span.size() - 1] : 0;
   }
 
-  const CharType CharAt(const size_t index) const {
+  CharType CharAt(const size_t index) const {
     return static_cast<CharType>(m_Span[index]);
   }
 

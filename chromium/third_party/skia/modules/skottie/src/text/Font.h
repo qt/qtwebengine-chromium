@@ -9,10 +9,10 @@
 #define SkottieFont_DEFINED
 
 #include "include/core/SkTypeface.h"
-#include "include/private/SkNoncopyable.h"
-#include "include/private/SkTHash.h"
+#include "include/private/base/SkNoncopyable.h"
 #include "include/utils/SkCustomTypeface.h"
 #include "modules/sksg/include/SkSGRenderNode.h"
+#include "src/core/SkTHash.h"
 
 #include <memory>
 #include <vector>

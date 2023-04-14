@@ -10,6 +10,8 @@
 
 #include <cstdint>
 
+#include "common/BinaryStream.h"
+#include "common/angle_version_info.h"
 #include "common/mathutil.h"
 #include "common/string_utils.h"
 #include "common/utilities.h"
@@ -637,7 +639,7 @@ bool ValidCap(const Context *context, GLenum cap, bool queryOnly)
         case GL_TEXTURE_RECTANGLE_ANGLE:
             return context->isWebGL();
 
-        // GL_APPLE_clip_distance/GL_EXT_clip_cull_distance
+        // GL_APPLE_clip_distance / GL_EXT_clip_cull_distance / GL_ANGLE_clip_cull_distance
         case GL_CLIP_DISTANCE0_EXT:
         case GL_CLIP_DISTANCE1_EXT:
         case GL_CLIP_DISTANCE2_EXT:
@@ -647,7 +649,7 @@ bool ValidCap(const Context *context, GLenum cap, bool queryOnly)
         case GL_CLIP_DISTANCE6_EXT:
         case GL_CLIP_DISTANCE7_EXT:
             if (context->getExtensions().clipDistanceAPPLE ||
-                context->getExtensions().clipCullDistanceEXT)
+                context->getExtensions().clipCullDistanceAny())
             {
                 return true;
             }
@@ -661,6 +663,12 @@ bool ValidCap(const Context *context, GLenum cap, bool queryOnly)
         case GL_COLOR_LOGIC_OP:
             return context->getClientVersion() < Version(2, 0) ||
                    context->getExtensions().logicOpANGLE;
+
+        case GL_FETCH_PER_SAMPLE_ARM:
+            return context->getExtensions().shaderFramebufferFetchARM;
+
+        case GL_FRAGMENT_SHADER_FRAMEBUFFER_FETCH_MRT_ARM:
+            return queryOnly && context->getExtensions().shaderFramebufferFetchARM;
 
         default:
             break;
@@ -2378,7 +2386,7 @@ static bool ValidateObjectPtrName(const Context *context,
                                   angle::EntryPoint entryPoint,
                                   const void *ptr)
 {
-    if (context->getSync(reinterpret_cast<GLsync>(const_cast<void *>(ptr))) == nullptr)
+    if (!context->getSync({unsafe_pointer_to_int_cast<uint32_t>(ptr)}))
     {
         context->validationError(entryPoint, GL_INVALID_VALUE, kInvalidSyncPointer);
         return false;
@@ -4901,6 +4909,53 @@ bool ValidateShaderBinary(const Context *context,
         shaderBinaryFormats.end())
     {
         context->validationError(entryPoint, GL_INVALID_ENUM, kInvalidShaderBinaryFormat);
+        return false;
+    }
+
+    ASSERT(binaryformat == GL_SHADER_BINARY_ANGLE);
+
+    if (n <= 0)
+    {
+        context->validationError(entryPoint, GL_INVALID_VALUE, kInvalidShaderCount);
+        return false;
+    }
+
+    if (length < 0)
+    {
+        context->validationError(entryPoint, GL_INVALID_VALUE, kNegativeLength);
+        return false;
+    }
+
+    // GL_SHADER_BINARY_ANGLE shader binaries contain a single shader.
+    if (n > 1)
+    {
+        context->validationError(entryPoint, GL_INVALID_OPERATION, kInvalidShaderCount);
+        return false;
+    }
+
+    Shader *shaderObject = GetValidShader(context, entryPoint, shaders[0]);
+    if (!shaderObject)
+    {
+        return false;
+    }
+
+    // Check ANGLE version used to generate binary matches the current version.
+    BinaryInputStream stream(binary, length);
+    std::vector<uint8_t> versionString(angle::GetANGLEShaderProgramVersionHashSize(), 0);
+    stream.readBytes(versionString.data(), versionString.size());
+    if (memcmp(versionString.data(), angle::GetANGLEShaderProgramVersion(), versionString.size()) !=
+        0)
+    {
+        context->validationError(entryPoint, GL_INVALID_VALUE, kInvalidShaderBinary);
+        return false;
+    }
+
+    // Check that the shader type of the binary matches the type of target shader.
+    gl::ShaderType shaderType;
+    stream.readEnum(&shaderType);
+    if (shaderObject->getType() != shaderType)
+    {
+        context->validationError(entryPoint, GL_INVALID_OPERATION, kMismatchedShaderBinaryType);
         return false;
     }
 

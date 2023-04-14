@@ -1,6 +1,6 @@
 /* Copyright (c) 2021-2022 The Khronos Group Inc.
- * Copyright (c) 2021-2022 Valve Corporation
- * Copyright (c) 2021-2022 LunarG, Inc.
+ * Copyright (c) 2021-2023 Valve Corporation
+ * Copyright (c) 2021-2023 LunarG, Inc.
  * Copyright (C) 2021-2022 Google Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,8 +14,6 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *
- * Author: Jeremy Gebben <jeremyg@lunarg.com>
  */
 #include "core_error_location.h"
 #include <map>
@@ -42,6 +40,7 @@ const std::string& String(Func func) {
         FUNC_ENTRY(vkCreateRenderPass2),
         FUNC_ENTRY(vkQueueBindSparse),
         FUNC_ENTRY(vkSignalSemaphore),
+        FUNC_ENTRY(vkQueuePresentKHR),
     };
     const auto entry = table.find(func);
     assert(entry != table.end());
@@ -66,6 +65,7 @@ const std::string& String(Struct structure) {
         STRUCT_ENTRY(VkSubpassDependency2),
         STRUCT_ENTRY(VkBindSparseInfo),
         STRUCT_ENTRY(VkSemaphoreSignalInfo),
+        STRUCT_ENTRY(VkPresentInfoKHR),
     };
     const auto entry = table.find(structure);
     assert(entry != table.end());

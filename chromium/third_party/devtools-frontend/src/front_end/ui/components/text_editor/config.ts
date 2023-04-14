@@ -15,8 +15,8 @@ const LINES_TO_SCAN_FOR_INDENTATION_GUESSING = 1000;
 
 const UIStrings = {
   /**
-  *@description Label text for the editor
-  */
+   *@description Label text for the editor
+   */
   codeEditor: 'Code editor',
 };
 const str_ = i18n.i18n.registerUIStrings('ui/components/text_editor/config.ts', UIStrings);
@@ -107,6 +107,20 @@ function acceptCompletionIfAtEndOfLine(view: CM.EditorView): boolean {
   return false;
 }
 
+// This is a wrapper around CodeMirror's own moveCompletionSelection command, which
+// selects the first selection if the state of the selection is conservative, and
+// otherwise behaves as normal.
+function moveCompletionSelectionIfNotConversative(
+    forward: boolean, by: 'option'|'page' = 'option'): ((view: CM.EditorView) => boolean) {
+  return view => {
+    if (view.state.field(conservativeCompletion, false)) {
+      // There's no CodeMirror API to select the first item, so we just go down and up here.
+      return CM.moveCompletionSelection(true, 'option')(view) && CM.moveCompletionSelection(false, 'option')(view);
+    }
+    return CM.moveCompletionSelection(forward, by)(view);
+  };
+}
+
 export const autocompletion = new DynamicSetting<boolean>(
     'textEditorAutocompletion',
     (activateOnTyping: boolean): CM.Extension =>
@@ -124,9 +138,9 @@ export const autocompletion = new DynamicSetting<boolean>(
            {key: 'ArrowRight', run: acceptCompletionIfAtEndOfLine},
            {key: 'Ctrl-Space', run: CM.startCompletion},
            {key: 'Escape', run: CM.closeCompletion},
-           {key: 'ArrowDown', run: CM.moveCompletionSelection(true)},
+           {key: 'ArrowDown', run: moveCompletionSelectionIfNotConversative(true)},
            {key: 'ArrowUp', run: CM.moveCompletionSelection(false)},
-           {mac: 'Ctrl-n', run: CM.moveCompletionSelection(true)},
+           {mac: 'Ctrl-n', run: moveCompletionSelectionIfNotConversative(true)},
            {mac: 'Ctrl-p', run: CM.moveCompletionSelection(false)},
            {key: 'PageDown', run: CM.moveCompletionSelection(true, 'page')},
            {key: 'PageUp', run: CM.moveCompletionSelection(false, 'page')},
@@ -373,7 +387,7 @@ export const showCompletionHint = CM.ViewPlugin.fromClass(class {
 
   update(update: CM.ViewUpdate): void {
     const top = this.currentHint = this.topCompletion(update.state);
-    if (!top) {
+    if (!top || update.state.field(conservativeCompletion, false)) {
       this.decorations = CM.Decoration.none;
     } else {
       this.decorations = CM.Decoration.set(

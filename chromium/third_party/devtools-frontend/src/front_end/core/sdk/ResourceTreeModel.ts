@@ -462,13 +462,6 @@ export class ResourceTreeModel extends SDKModel<EventTypes> {
     return response.installabilityErrors || [];
   }
 
-  async getManifestIcons(): Promise<{
-    primaryIcon: string | null,
-  }> {
-    const response = await this.agent.invoke_getManifestIcons();
-    return {primaryIcon: response.primaryIcon || null};
-  }
-
   async getAppId(): Promise<Protocol.Page.GetAppIdResponse> {
     return this.agent.invoke_getAppId();
   }
@@ -655,6 +648,7 @@ export enum Events {
   BackForwardCacheDetailsUpdated = 'BackForwardCacheDetailsUpdated',
   PrerenderingStatusUpdated = 'PrerenderingStatusUpdated',
   PrerenderAttemptCompleted = 'PrerenderAttemptCompleted',
+  JavaScriptDialogOpening = 'JavaScriptDialogOpening',
 }
 
 export type EventTypes = {
@@ -677,6 +671,7 @@ export type EventTypes = {
   [Events.BackForwardCacheDetailsUpdated]: ResourceTreeFrame,
   [Events.PrerenderingStatusUpdated]: ResourceTreeFrame,
   [Events.PrerenderAttemptCompleted]: Protocol.Page.PrerenderAttemptCompletedEvent,
+  [Events.JavaScriptDialogOpening]: Protocol.Page.JavascriptDialogOpeningEvent,
 };
 
 export class ResourceTreeFrame {
@@ -1154,8 +1149,9 @@ export class PageDispatcher implements ProtocolProxyApi.PageDispatcher {
     this.#resourceTreeModel.dispatchEventToListeners(Events.FrameResized);
   }
 
-  javascriptDialogOpening({hasBrowserHandler}: Protocol.Page.JavascriptDialogOpeningEvent): void {
-    if (!hasBrowserHandler) {
+  javascriptDialogOpening(event: Protocol.Page.JavascriptDialogOpeningEvent): void {
+    this.#resourceTreeModel.dispatchEventToListeners(Events.JavaScriptDialogOpening, event);
+    if (!event.hasBrowserHandler) {
       void this.#resourceTreeModel.agent.invoke_handleJavaScriptDialog({accept: false});
     }
   }
@@ -1196,6 +1192,12 @@ export class PageDispatcher implements ProtocolProxyApi.PageDispatcher {
 
   prerenderAttemptCompleted(params: Protocol.Page.PrerenderAttemptCompletedEvent): void {
     this.#resourceTreeModel.onPrerenderAttemptCompleted(params);
+  }
+
+  prefetchStatusUpdated({}: Protocol.Page.PrefetchStatusUpdatedEvent): void {
+  }
+
+  prerenderStatusUpdated({}: Protocol.Page.PrerenderStatusUpdatedEvent): void {
   }
 }
 

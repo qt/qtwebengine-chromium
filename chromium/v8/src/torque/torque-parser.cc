@@ -48,6 +48,11 @@ class BuildFlags : public ContextualClass<BuildFlags> {
     build_flags_["V8_SFI_HAS_UNIQUE_ID"] = V8_SFI_HAS_UNIQUE_ID;
     build_flags_["V8_EXTERNAL_CODE_SPACE"] = V8_EXTERNAL_CODE_SPACE_BOOL;
     build_flags_["TAGGED_SIZE_8_BYTES"] = TAGGED_SIZE_8_BYTES;
+#ifdef V8_INTL_SUPPORT
+    build_flags_["V8_INTL_SUPPORT"] = true;
+#else
+    build_flags_["V8_INTL_SUPPORT"] = false;
+#endif
     build_flags_["V8_ENABLE_SWISS_NAME_DICTIONARY"] =
         V8_ENABLE_SWISS_NAME_DICTIONARY_BOOL;
 #ifdef V8_ENABLE_JAVASCRIPT_PROMISE_HOOKS
@@ -420,12 +425,13 @@ base::Optional<ParseResult> MakeMethodCall(ParseResultIterator* child_results) {
 base::Optional<ParseResult> MakeNewExpression(
     ParseResultIterator* child_results) {
   bool pretenured = child_results->NextAs<bool>();
+  bool clear_padding = child_results->NextAs<bool>();
 
   auto type = child_results->NextAs<TypeExpression*>();
   auto initializers = child_results->NextAs<std::vector<NameAndExpression>>();
 
-  Expression* result =
-      MakeNode<NewExpression>(type, std::move(initializers), pretenured);
+  Expression* result = MakeNode<NewExpression>(type, std::move(initializers),
+                                               pretenured, clear_padding);
   return ParseResult{result};
 }
 
@@ -2565,6 +2571,7 @@ struct TorqueGrammar : Grammar {
   Symbol newExpression = {
       Rule({Token("new"),
             CheckIf(Sequence({Token("("), Token("Pretenured"), Token(")")})),
+            CheckIf(Sequence({Token("("), Token("ClearPadding"), Token(")")})),
             &simpleType, &initializerList},
            MakeNewExpression)};
 

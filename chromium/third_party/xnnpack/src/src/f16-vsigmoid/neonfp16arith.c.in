@@ -16,14 +16,15 @@ $ABC = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 #include <xnnpack/vunary.h>
 
 
-void xnn_f16_vsigmoid_ukernel__neonfp16arith_rr2_p2_${DIV_ALGO.lower()}_x${BATCH_TILE}(
+$ISA = "aarch64_neonfp16arith" if DIV_ALGO == "DIV" else "neonfp16arith"
+void xnn_f16_vsigmoid_ukernel__${ISA}_rr2_p2_${DIV_ALGO.lower()}_x${BATCH_TILE}(
     size_t batch,
     const void* input,
     void* output,
     const union xnn_f16_sigmoid_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(batch != 0);
-  assert(batch % sizeof(__fp16) == 0);
+  assert(batch % sizeof(uint16_t) == 0);
   assert(input != NULL);
   assert(output != NULL);
 
@@ -33,15 +34,15 @@ void xnn_f16_vsigmoid_ukernel__neonfp16arith_rr2_p2_${DIV_ALGO.lower()}_x${BATCH
   const float16x8_t vln2_lo = vreinterpretq_f16_u16(vld1q_dup_u16(&params->fp16arith_rr2_p2.ln2_lo));
   const float16x8_t vc2 = vreinterpretq_f16_u16(vld1q_dup_u16(&params->fp16arith_rr2_p2.c2));
   const float16x8_t vc1 = vreinterpretq_f16_u16(vld1q_dup_u16(&params->fp16arith_rr2_p2.c1));
-  const float16x8_t vone = vmovq_n_f16(1.0f);
+  const float16x8_t vone = vreinterpretq_f16_u16(vmovq_n_u16(UINT16_C(0x3C00)));  // 1.0h
   const float16x8_t vdenorm_cutoff = vreinterpretq_f16_u16(vld1q_dup_u16(&params->fp16arith_rr2_p2.denorm_cutoff));
 
-  const __fp16* i = (const __fp16*) input;
-  __fp16* o = (__fp16*) output;
+  const uint16_t* i = (const uint16_t*) input;
+  uint16_t* o = (uint16_t*) output;
   $if BATCH_TILE > 8:
-    for (; batch >= ${BATCH_TILE} * sizeof(__fp16); batch -= ${BATCH_TILE} * sizeof(__fp16)) {
+    for (; batch >= ${BATCH_TILE} * sizeof(uint16_t); batch -= ${BATCH_TILE} * sizeof(uint16_t)) {
       $for N in range(SIMD_TILE):
-        const float16x8_t vx${ABC[N]} = vld1q_f16(i); i += 8;
+        const float16x8_t vx${ABC[N]} = vreinterpretq_f16_u16(vld1q_u16(i)); i += 8;
 
       $for N in range(SIMD_TILE):
         const float16x8_t vz${ABC[N]} = vabsq_f16(vx${ABC[N]});
@@ -100,16 +101,16 @@ void xnn_f16_vsigmoid_ukernel__neonfp16arith_rr2_p2_${DIV_ALGO.lower()}_x${BATCH
         vf${ABC[N]} = vreinterpretq_f16_u16(vbicq_u16(vreinterpretq_u16_f16(vf${ABC[N]}), vcagtq_f16(vx${ABC[N]}, vdenorm_cutoff)));
 
       $for N in range(SIMD_TILE):
-        const uint16x8_t vm${ABC[N]} = vcltq_f16(vx${ABC[N]}, vmovq_n_f16(0.0f));
+        const uint16x8_t vm${ABC[N]} = vcltq_f16(vx${ABC[N]}, vreinterpretq_f16_u16(vmovq_n_u16(0)));
 
       $for N in range(SIMD_TILE):
         vf${ABC[N]} = vbslq_f16(vm${ABC[N]}, vf${ABC[N]}, vsubq_f16(vone, vf${ABC[N]}));
 
       $for N in range(SIMD_TILE):
-        vst1q_f16(o, vf${ABC[N]}); o += 8;
+        vst1q_u16(o, vreinterpretq_u16_f16(vf${ABC[N]})); o += 8;
     }
-  for (; batch >= 8 * sizeof(__fp16); batch -= 8 * sizeof(__fp16)) {
-    const float16x8_t vx = vld1q_f16(i); i += 8;
+  for (; batch >= 8 * sizeof(uint16_t); batch -= 8 * sizeof(uint16_t)) {
+    const float16x8_t vx = vreinterpretq_f16_u16(vld1q_u16(i)); i += 8;
 
     const float16x8_t vz = vabsq_f16(vx);
 
@@ -138,13 +139,13 @@ void xnn_f16_vsigmoid_ukernel__neonfp16arith_rr2_p2_${DIV_ALGO.lower()}_x${BATCH
 
       float16x8_t vf = vmulq_f16(ve, vr);
     vf = vreinterpretq_f16_u16(vbicq_u16(vreinterpretq_u16_f16(vf), vcagtq_f16(vx, vdenorm_cutoff)));
-    const uint16x8_t vm = vcltq_f16(vx, vmovq_n_f16(0.0f));
+    const uint16x8_t vm = vcltq_f16(vx, vreinterpretq_f16_u16(vmovq_n_u16(0)));
     vf = vbslq_f16(vm, vf, vsubq_f16(vone, vf));
 
-    vst1q_f16(o, vf); o += 8;
+    vst1q_u16(o, vreinterpretq_u16_f16(vf)); o += 8;
   }
   if XNN_UNLIKELY(batch != 0) {
-    const float16x8_t vx = vld1q_f16(i);
+    const float16x8_t vx = vreinterpretq_f16_u16(vld1q_u16(i));
 
     const float16x8_t vz = vabsq_f16(vx);
 
@@ -173,19 +174,19 @@ void xnn_f16_vsigmoid_ukernel__neonfp16arith_rr2_p2_${DIV_ALGO.lower()}_x${BATCH
 
       float16x8_t vf = vmulq_f16(ve, vr);
     vf = vreinterpretq_f16_u16(vbicq_u16(vreinterpretq_u16_f16(vf), vcagtq_f16(vx, vdenorm_cutoff)));
-    const uint16x8_t vm = vcltq_f16(vx, vmovq_n_f16(0.0f));
+    const uint16x8_t vm = vcltq_f16(vx, vreinterpretq_f16_u16(vmovq_n_u16(0)));
     vf = vbslq_f16(vm, vf, vsubq_f16(vone, vf));
 
     float16x4_t vf_lo = vget_low_f16(vf);
-    if (batch & (4 * sizeof(__fp16))) {
-      vst1_f16(o, vf_lo); o += 4;
+    if (batch & (4 * sizeof(uint16_t))) {
+      vst1_u16(o, vreinterpret_u16_f16(vf_lo)); o += 4;
       vf_lo = vget_high_f16(vf);
     }
-    if (batch & (2 * sizeof(__fp16))) {
-      vst1_f16(o, vf_lo); o += 2;
+    if (batch & (2 * sizeof(uint16_t))) {
+      vst1_lane_u32((void*) o, vreinterpret_u32_f16(vf_lo), 0); o += 2;
       vf_lo = vext_f16(vf_lo, vf_lo, 2);
     }
-    if (batch & (1 * sizeof(__fp16))) {
+    if (batch & (1 * sizeof(uint16_t))) {
       vst1_lane_f16(o, vf_lo, 0);
     }
   }

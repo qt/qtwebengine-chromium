@@ -221,9 +221,8 @@ void av1_single_motion_search(const AV1_COMP *const cpi, MACROBLOCK *x,
   // MotionVectorSearchParams::search_site_cfg. When this happens, we need to
   // readjust the stride.
   const SEARCH_METHODS search_method = cpi->sf.mv_sf.search_method;
-  const int ref_stride = xd->plane[0].pre[0].stride;
-  const search_site_config *src_search_site_cfg = av1_get_search_site_config(
-      x->search_site_cfg_buf, mv_search_params, search_method, ref_stride);
+  const search_site_config *src_search_site_cfg =
+      av1_get_search_site_config(cpi, x, search_method);
 
   // Further reduce the search range.
   if (search_range < INT_MAX) {
@@ -597,10 +596,8 @@ int av1_joint_motion_search(const AV1_COMP *cpi, MACROBLOCK *x,
     // Make motion search params
     FULLPEL_MOTION_SEARCH_PARAMS full_ms_params;
     const SEARCH_METHODS search_method = cpi->sf.mv_sf.search_method;
-    const int ref_stride = xd->plane[0].pre[0].stride;
-    const search_site_config *src_search_sites = av1_get_search_site_config(
-        x->search_site_cfg_buf, &cpi->mv_search_params, search_method,
-        ref_stride);
+    const search_site_config *src_search_sites =
+        av1_get_search_site_config(cpi, x, search_method);
     av1_make_default_fullpel_ms_params(&full_ms_params, cpi, x, bsize,
                                        &ref_mv[id].as_mv, src_search_sites,
                                        /*fine_search_interval=*/0);
@@ -738,7 +735,11 @@ int av1_compound_single_motion_search(const AV1_COMP *cpi, MACROBLOCK *x,
     }
     const int mi_row = xd->mi_row;
     const int mi_col = xd->mi_col;
-    av1_setup_pre_planes(xd, ref_idx, scaled_ref_frame, mi_row, mi_col, NULL,
+    // The index below needs to be 0 instead of ref_idx since we assume the
+    // 0th slot to be used for subsequent searches. Note that the ref_idx
+    // reference buffer has been copied to the 0th slot in the code above.
+    // Now we need to swap the reference frame for the 0th slot.
+    av1_setup_pre_planes(xd, 0, scaled_ref_frame, mi_row, mi_col, NULL,
                          num_planes);
   }
 
@@ -748,10 +749,8 @@ int av1_compound_single_motion_search(const AV1_COMP *cpi, MACROBLOCK *x,
   // Make motion search params
   FULLPEL_MOTION_SEARCH_PARAMS full_ms_params;
   const SEARCH_METHODS search_method = cpi->sf.mv_sf.search_method;
-  const int ref_stride = xd->plane[0].pre[0].stride;
   const search_site_config *src_search_sites =
-      av1_get_search_site_config(x->search_site_cfg_buf, &cpi->mv_search_params,
-                                 search_method, ref_stride);
+      av1_get_search_site_config(cpi, x, search_method);
   av1_make_default_fullpel_ms_params(&full_ms_params, cpi, x, bsize,
                                      &ref_mv.as_mv, src_search_sites,
                                      /*fine_search_interval=*/0);
@@ -767,9 +766,9 @@ int av1_compound_single_motion_search(const AV1_COMP *cpi, MACROBLOCK *x,
                                   &best_mv.as_fullmv, NULL);
 
   if (scaled_ref_frame) {
-    // Swap back the original buffers for subpel motion search.
+    // Swap back the original buffers for subpel motion search for the 0th slot.
     for (int i = 0; i < num_planes; i++) {
-      xd->plane[i].pre[ref_idx] = backup_yv12[i];
+      xd->plane[i].pre[0] = backup_yv12[i];
     }
   }
 
@@ -970,10 +969,8 @@ int_mv av1_simple_motion_search(AV1_COMP *const cpi, MACROBLOCK *x, int mi_row,
   const int fine_search_interval = use_fine_search_interval(cpi);
   FULLPEL_MOTION_SEARCH_PARAMS full_ms_params;
   const SEARCH_METHODS search_method = cpi->sf.mv_sf.search_method;
-  const int ref_stride = xd->plane[0].pre[0].stride;
   const search_site_config *src_search_sites =
-      av1_get_search_site_config(x->search_site_cfg_buf, &cpi->mv_search_params,
-                                 search_method, ref_stride);
+      av1_get_search_site_config(cpi, x, search_method);
   av1_make_default_fullpel_ms_params(&full_ms_params, cpi, x, bsize, &ref_mv,
                                      src_search_sites, fine_search_interval);
 

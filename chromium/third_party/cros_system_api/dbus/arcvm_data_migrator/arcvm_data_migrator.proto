@@ -8,6 +8,12 @@ option optimize_for = LITE_RUNTIME;
 // This file defines messages used by arc::data_migrator.
 package arc.data_migrator;
 
+// The message that is sent from Chrome with HasDataToMigrate call.
+message HasDataToMigrateRequest {
+  // Username of the login user.
+  string username = 1;
+}
+
 // The type of the migration destination.
 enum DataMigrationDestinationType {
   // A disk image created by concierge (/home/root/<hash>/crosvm/YXJjdm0=.img).

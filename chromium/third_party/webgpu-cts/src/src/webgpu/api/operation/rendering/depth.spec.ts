@@ -148,15 +148,9 @@ class DepthTest extends GPUTest {
 
 export const g = makeTestGroup(DepthTest);
 
-g.test('depth_bias')
-  .desc(
-    `Tests render results with different depth bias values: positive, negative, infinity, slope, clamp, etc.`
-  )
-  .unimplemented();
-
 g.test('depth_disabled')
   .desc('Tests render results with depth test disabled.')
-  .fn(async t => {
+  .fn(t => {
     const depthSpencilFormat: GPUTextureFormat = 'depth24plus-stencil8';
     const state = { format: depthSpencilFormat };
 
@@ -195,7 +189,7 @@ g.test('depth_write_disabled')
         { depthWriteEnabled: true, lastDepth: 1.0, _expectedColor: kRedStencilColor },
       ])
   )
-  .fn(async t => {
+  .fn(t => {
     const { depthWriteEnabled, lastDepth, _expectedColor } = t.params;
 
     const depthSpencilFormat: GPUTextureFormat = 'depth24plus-stencil8';
@@ -264,7 +258,7 @@ g.test('depth_test_fail')
         { secondDepth: 2.0, lastDepth: 0.9, _expectedColor: kGreenStencilColor }, // fail -> pass.
       ] as const)
   )
-  .fn(async t => {
+  .fn(t => {
     const { secondDepth, lastDepth, _expectedColor } = t.params;
 
     const depthSpencilFormat: GPUTextureFormat = 'depth24plus-stencil8';
@@ -350,7 +344,7 @@ g.test('depth_compare_func')
   .beforeAllSubcases(t => {
     t.selectDeviceForTextureFormatOrSkipTestCase(t.params.format);
   })
-  .fn(async t => {
+  .fn(t => {
     const { depthCompare, depthClearValue, _expected, format } = t.params;
 
     const colorAttachmentFormat = 'rgba8unorm';
@@ -444,7 +438,7 @@ g.test('reverse_depth')
 (see https://developer.nvidia.com/content/depth-precision-visualized).`
   )
   .params(u => u.combine('reversed', [false, true]))
-  .fn(async t => {
+  .fn(t => {
     const colorAttachmentFormat = 'rgba8unorm';
     const colorAttachment = t.device.createTexture({
       format: colorAttachmentFormat,

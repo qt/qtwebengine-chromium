@@ -76,7 +76,7 @@ class MaterializeTest : public resolver::ResolverTestWithParam<CASE> {
   protected:
     using ProgramBuilder::FriendlyName;
 
-    void CheckTypesAndValues(const sem::Expression* expr,
+    void CheckTypesAndValues(const sem::ValueExpression* expr,
                              const tint::type::Type* expected_sem_ty,
                              const std::variant<AInt, AFloat>& expected_value) {
         std::visit([&](auto v) { CheckTypesAndValuesImpl(expr, expected_sem_ty, v); },
@@ -85,7 +85,7 @@ class MaterializeTest : public resolver::ResolverTestWithParam<CASE> {
 
   private:
     template <typename T>
-    void CheckTypesAndValuesImpl(const sem::Expression* expr,
+    void CheckTypesAndValuesImpl(const sem::ValueExpression* expr,
                                  const tint::type::Type* expected_sem_ty,
                                  T expected_value) {
         EXPECT_TYPE(expr->Type(), expected_sem_ty);
@@ -312,7 +312,7 @@ using MaterializeAbstractNumericToConcreteType =
     MaterializeTest<std::tuple<Expectation, Method, Data>>;
 
 TEST_P(MaterializeAbstractNumericToConcreteType, Test) {
-    Enable(ast::Extension::kF16);
+    Enable(builtin::Extension::kF16);
 
     const auto& param = GetParam();
     const auto& expectation = std::get<0>(param);
@@ -340,17 +340,17 @@ TEST_P(MaterializeAbstractNumericToConcreteType, Test) {
             WrapInFunction(CallStmt(Call("F", abstract_expr)));
             break;
         case Method::kBuiltinArg:
-            WrapInFunction(CallStmt(Call("min", target_expr(), abstract_expr)));
+            WrapInFunction(Assign(Phony(), Call("min", target_expr(), abstract_expr)));
             break;
         case Method::kReturn:
             Func("F", utils::Empty, target_ty(), utils::Vector{Return(abstract_expr)});
             break;
         case Method::kArray:
-            WrapInFunction(Construct(ty.array(target_ty(), 1_i), abstract_expr));
+            WrapInFunction(Call(ty.array(target_ty(), 1_i), abstract_expr));
             break;
         case Method::kStruct:
             Structure("S", utils::Vector{Member("v", target_ty())});
-            WrapInFunction(Construct(ty.type_name("S"), abstract_expr));
+            WrapInFunction(Call("S", abstract_expr));
             break;
         case Method::kBinaryOp: {
             // Add 0 to ensure no overflow with max float values
@@ -404,7 +404,7 @@ TEST_P(MaterializeAbstractNumericToConcreteType, Test) {
         }
         case Expectation::kNoMaterialize: {
             ASSERT_TRUE(r()->Resolve()) << r()->error();
-            auto* sem = Sem().Get(abstract_expr);
+            auto* sem = Sem().GetVal(abstract_expr);
             ASSERT_NE(sem, nullptr);
             EXPECT_FALSE(sem->Is<sem::Materialize>());
             CheckTypesAndValues(sem, data.target_sem_ty(*this), data.materialized_value);
@@ -789,11 +789,11 @@ enum class Method {
     // let a = abstract_expr;
     kLet,
 
-    // bitcast<f32>(abstract_expr)
-    kBitcastF32Arg,
+    // bitcast<i32>(abstract_expr)
+    kBitcastI32Arg,
 
-    // bitcast<vec3<f32>>(abstract_expr)
-    kBitcastVec3F32Arg,
+    // bitcast<vec3<i32>>(abstract_expr)
+    kBitcastVec3I32Arg,
 
     // array<i32, abstract_expr>()
     kArrayLength,
@@ -825,10 +825,10 @@ static std::ostream& operator<<(std::ostream& o, Method m) {
             return o << "var";
         case Method::kLet:
             return o << "let";
-        case Method::kBitcastF32Arg:
-            return o << "bitcast-f32-arg";
-        case Method::kBitcastVec3F32Arg:
-            return o << "bitcast-vec3-f32-arg";
+        case Method::kBitcastI32Arg:
+            return o << "bitcast-i32-arg";
+        case Method::kBitcastVec3I32Arg:
+            return o << "bitcast-vec3-i32-arg";
         case Method::kArrayLength:
             return o << "array-length";
         case Method::kSwitch:
@@ -903,16 +903,16 @@ TEST_P(MaterializeAbstractNumericToDefaultType, Test) {
             WrapInFunction(Decl(Let("a", abstract_expr())));
             break;
         }
-        case Method::kBitcastF32Arg: {
-            WrapInFunction(Bitcast<f32>(abstract_expr()));
+        case Method::kBitcastI32Arg: {
+            WrapInFunction(Bitcast<i32>(abstract_expr()));
             break;
         }
-        case Method::kBitcastVec3F32Arg: {
-            WrapInFunction(Bitcast(ty.vec3<f32>(), abstract_expr()));
+        case Method::kBitcastVec3I32Arg: {
+            WrapInFunction(Bitcast(ty.vec3<i32>(), abstract_expr()));
             break;
         }
         case Method::kArrayLength: {
-            WrapInFunction(Construct(ty.array(ty.i32(), abstract_expr())));
+            WrapInFunction(Call(ty.array(ty.i32(), abstract_expr())));
             break;
         }
         case Method::kSwitch: {
@@ -929,7 +929,7 @@ TEST_P(MaterializeAbstractNumericToDefaultType, Test) {
             break;
         }
         case Method::kIndex: {
-            GlobalVar("arr", ty.array<i32, 4>(), ast::AddressSpace::kPrivate);
+            GlobalVar("arr", ty.array<i32, 4>(), builtin::AddressSpace::kPrivate);
             WrapInFunction(IndexAccessor("arr", abstract_expr()));
             break;
         }
@@ -977,7 +977,7 @@ TEST_P(MaterializeAbstractNumericToDefaultType, Test) {
 constexpr Method kScalarMethods[] = {
     Method::kLet,
     Method::kVar,
-    Method::kBitcastF32Arg,
+    Method::kBitcastI32Arg,
     Method::kTintMaterializeBuiltin,
 };
 
@@ -985,7 +985,7 @@ constexpr Method kScalarMethods[] = {
 constexpr Method kVectorMethods[] = {
     Method::kLet,
     Method::kVar,
-    Method::kBitcastVec3F32Arg,
+    Method::kBitcastVec3I32Arg,
     Method::kRuntimeIndex,
     Method::kTintMaterializeBuiltin,
 };
@@ -1218,7 +1218,7 @@ using MaterializeAbstractNumericToUnrelatedType = resolver::ResolverTest;
 
 TEST_F(MaterializeAbstractNumericToUnrelatedType, AIntToStructVarInit) {
     Structure("S", utils::Vector{Member("a", ty.i32())});
-    WrapInFunction(Decl(Var("v", ty.type_name("S"), Expr(Source{{12, 34}}, 1_a))));
+    WrapInFunction(Decl(Var("v", ty("S"), Expr(Source{{12, 34}}, 1_a))));
     EXPECT_FALSE(r()->Resolve());
     EXPECT_THAT(
         r()->error(),
@@ -1227,7 +1227,7 @@ TEST_F(MaterializeAbstractNumericToUnrelatedType, AIntToStructVarInit) {
 
 TEST_F(MaterializeAbstractNumericToUnrelatedType, AIntToStructLetInit) {
     Structure("S", utils::Vector{Member("a", ty.i32())});
-    WrapInFunction(Decl(Let("v", ty.type_name("S"), Expr(Source{{12, 34}}, 1_a))));
+    WrapInFunction(Decl(Let("v", ty("S"), Expr(Source{{12, 34}}, 1_a))));
     EXPECT_FALSE(r()->Resolve());
     EXPECT_THAT(
         r()->error(),
@@ -1262,7 +1262,7 @@ TEST_F(MaterializeAbstractStructure, Modf_Scalar_DefaultType) {
 
 TEST_F(MaterializeAbstractStructure, Modf_Vector_DefaultType) {
     // var v = modf(vec2(1));
-    auto* call = Call("modf", Construct(ty.vec2(nullptr), 1_a));
+    auto* call = Call("modf", Call(ty.vec2<Infer>(), 1_a));
     WrapInFunction(Decl(Var("v", call)));
     ASSERT_TRUE(r()->Resolve()) << r()->error();
     auto* sem = Sem().Get(call);
@@ -1282,7 +1282,7 @@ TEST_F(MaterializeAbstractStructure, Modf_Vector_DefaultType) {
 TEST_F(MaterializeAbstractStructure, Modf_Scalar_ExplicitType) {
     // var v = modf(1_h); // v is __modf_result_f16
     // v = modf(1);       // __modf_result_f16 <- __modf_result_abstract
-    Enable(ast::Extension::kF16);
+    Enable(builtin::Extension::kF16);
     auto* call = Call("modf", 1_a);
     WrapInFunction(Decl(Var("v", Call("modf", 1_h))),  //
                    Assign("v", call));
@@ -1301,10 +1301,9 @@ TEST_F(MaterializeAbstractStructure, Modf_Scalar_ExplicitType) {
 TEST_F(MaterializeAbstractStructure, Modf_Vector_ExplicitType) {
     // var v = modf(vec2(1_h)); // v is __modf_result_vec2_f16
     // v = modf(vec2(1));       // __modf_result_vec2_f16 <- __modf_result_vec2_abstract
-    Enable(ast::Extension::kF16);
-    auto* call = Call("modf", Construct(ty.vec2(nullptr), 1_a));
-    WrapInFunction(Decl(Var("v", Call("modf", Construct(ty.vec2(nullptr), 1_h)))),
-                   Assign("v", call));
+    Enable(builtin::Extension::kF16);
+    auto* call = Call("modf", Call(ty.vec2<Infer>(), 1_a));
+    WrapInFunction(Decl(Var("v", Call("modf", Call(ty.vec2<Infer>(), 1_h)))), Assign("v", call));
     ASSERT_TRUE(r()->Resolve()) << r()->error();
     auto* sem = Sem().Get(call);
     ASSERT_TRUE(sem->Is<sem::Materialize>());
@@ -1340,7 +1339,7 @@ TEST_F(MaterializeAbstractStructure, Frexp_Scalar_DefaultType) {
 
 TEST_F(MaterializeAbstractStructure, Frexp_Vector_DefaultType) {
     // var v = frexp(vec2(1));
-    auto* call = Call("frexp", Construct(ty.vec2(nullptr), 1_a));
+    auto* call = Call("frexp", Call(ty.vec2<Infer>(), 1_a));
     WrapInFunction(Decl(Var("v", call)));
     ASSERT_TRUE(r()->Resolve()) << r()->error();
     auto* sem = Sem().Get(call);
@@ -1364,7 +1363,7 @@ TEST_F(MaterializeAbstractStructure, Frexp_Vector_DefaultType) {
 TEST_F(MaterializeAbstractStructure, Frexp_Scalar_ExplicitType) {
     // var v = frexp(1_h); // v is __frexp_result_f16
     // v = frexp(1);       // __frexp_result_f16 <- __frexp_result_abstract
-    Enable(ast::Extension::kF16);
+    Enable(builtin::Extension::kF16);
     auto* call = Call("frexp", 1_a);
     WrapInFunction(Decl(Var("v", Call("frexp", 1_h))),  //
                    Assign("v", call));
@@ -1385,10 +1384,9 @@ TEST_F(MaterializeAbstractStructure, Frexp_Scalar_ExplicitType) {
 TEST_F(MaterializeAbstractStructure, Frexp_Vector_ExplicitType) {
     // var v = frexp(vec2(1_h)); // v is __frexp_result_vec2_f16
     // v = frexp(vec2(1));       // __frexp_result_vec2_f16 <- __frexp_result_vec2_abstract
-    Enable(ast::Extension::kF16);
-    auto* call = Call("frexp", Construct(ty.vec2(nullptr), 1_a));
-    WrapInFunction(Decl(Var("v", Call("frexp", Construct(ty.vec2(nullptr), 1_h)))),
-                   Assign("v", call));
+    Enable(builtin::Extension::kF16);
+    auto* call = Call("frexp", Call(ty.vec2<Infer>(), 1_a));
+    WrapInFunction(Decl(Var("v", Call("frexp", Call(ty.vec2<Infer>(), 1_h)))), Assign("v", call));
     ASSERT_TRUE(r()->Resolve()) << r()->error();
     auto* sem = Sem().Get(call);
     ASSERT_TRUE(sem->Is<sem::Materialize>());

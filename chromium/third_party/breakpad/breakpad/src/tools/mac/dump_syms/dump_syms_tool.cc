@@ -36,6 +36,8 @@
 
 #include <algorithm>
 #include <iostream>
+#include <memory>
+#include <utility>
 #include <vector>
 
 #include "common/mac/dump_syms.h"
@@ -108,7 +110,8 @@ static void CopyCFIDataBetweenModules(Module* to_module,
     // If the entry does not overlap, then it is safe to copy to |to_module|.
     if (to_it == to_data.end() || (from_entry->address < (*to_it)->address &&
             from_entry_end < (*to_it)->address)) {
-      to_module->AddStackFrameEntry(new Module::StackFrameEntry(*from_entry));
+      to_module->AddStackFrameEntry(
+          std::make_unique<Module::StackFrameEntry>(*from_entry));
     }
   }
 }

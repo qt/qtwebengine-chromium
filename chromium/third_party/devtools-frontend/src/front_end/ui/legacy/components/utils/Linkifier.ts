@@ -41,32 +41,32 @@ import * as UI from '../../legacy.js';
 
 const UIStrings = {
   /**
-  *@description Text in Linkifier
-  */
+   *@description Text in Linkifier
+   */
   unknown: '(unknown)',
   /**
-  *@description Text short for automatic
-  */
+   *@description Text short for automatic
+   */
   auto: 'auto',
   /**
-  *@description Text in Linkifier
-  *@example {Sources panel} PH1
-  */
+   *@description Text in Linkifier
+   *@example {Sources panel} PH1
+   */
   revealInS: 'Reveal in {PH1}',
   /**
-  *@description Text for revealing an item in its destination
-  */
+   *@description Text for revealing an item in its destination
+   */
   reveal: 'Reveal',
   /**
-  *@description A context menu item in the Linkifier
-  *@example {Extension} PH1
-  */
+   *@description A context menu item in the Linkifier
+   *@example {Extension} PH1
+   */
   openUsingS: 'Open using {PH1}',
   /**
-  * @description The name of a setting which controls how links are handled in the UI. 'Handling'
-  * refers to the ability of extensions to DevTools to be able to intercept link clicks so that they
-  * can react to them.
-  */
+   * @description The name of a setting which controls how links are handled in the UI. 'Handling'
+   * refers to the ability of extensions to DevTools to be able to intercept link clicks so that they
+   * can react to them.
+   */
   linkHandling: 'Link handling:',
 };
 const str_ = i18n.i18n.registerUIStrings('ui/legacy/components/utils/Linkifier.ts', UIStrings);
@@ -89,7 +89,7 @@ export class Linkifier implements SDK.TargetManager.Observer {
   private readonly maxLength: number;
   private readonly anchorsByTarget: Map<SDK.Target.Target, Element[]>;
   private readonly locationPoolByTarget: Map<SDK.Target.Target, Bindings.LiveLocation.LiveLocationPool>;
-  private onLiveLocationUpdate: (() => void)|undefined;
+  private onLiveLocationUpdate: (() => void);
   private useLinkDecorator: boolean;
 
   constructor(
@@ -158,6 +158,33 @@ export class Linkifier implements SDK.TargetManager.Observer {
     const sourceCodeAnchors = anchorsByUISourceCode.get(uiSourceCode);
     if (sourceCodeAnchors) {
       sourceCodeAnchors.delete(anchor);
+    }
+  }
+
+  /**
+   * When we link to a breakpoint condition, we need to stash the BreakpointLocation as the revealable
+   * in the LinkInfo.
+   */
+  private static bindBreakpoint(anchor: Element, uiLocation: Workspace.UISourceCode.UILocation): void {
+    const info = Linkifier.linkInfo(anchor);
+    if (!info) {
+      return;
+    }
+
+    const breakpoint = Bindings.BreakpointManager.BreakpointManager.instance().findBreakpoint(uiLocation);
+    if (breakpoint) {
+      info.revealable = breakpoint;
+    }
+  }
+
+  /**
+   * When we link to a breakpoint condition, we store the BreakpointLocation in the revealable.
+   * Clear it when the LiveLocation updates.
+   */
+  private static unbindBreakpoint(anchor: Element): void {
+    const info = Linkifier.linkInfo(anchor);
+    if (info && info.revealable) {
+      info.revealable = null;
     }
   }
 
@@ -232,12 +259,8 @@ export class Linkifier implements SDK.TargetManager.Observer {
     const createLinkOptions: _CreateLinkOptions = {
       tabStop: options?.tabStop,
     };
-    // Not initialising the anchor element with 'zero width space' (\u200b) causes a crash
-    // in the layout engine.
-    // TODO(szuend): Remove comment and workaround once the crash is fixed.
     const {link, linkInfo} = Linkifier.createLink(
-        fallbackAnchor && fallbackAnchor.textContent ? fallbackAnchor.textContent : '\u200b', className,
-        createLinkOptions);
+        fallbackAnchor && fallbackAnchor.textContent ? fallbackAnchor.textContent : '', className, createLinkOptions);
     linkInfo.enableDecorator = this.useLinkDecorator;
     linkInfo.fallback = fallbackAnchor;
 
@@ -246,7 +269,10 @@ export class Linkifier implements SDK.TargetManager.Observer {
       return fallbackAnchor;
     }
 
-    const linkDisplayOptions = {showColumnNumber: linkifyURLOptions.showColumnNumber};
+    const linkDisplayOptions: LinkDisplayOptions = {
+      showColumnNumber: linkifyURLOptions.showColumnNumber,
+      revealBreakpoint: options?.revealBreakpoint,
+    };
 
     const currentOnLiveLocationUpdate = this.onLiveLocationUpdate;
     void Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance()
@@ -254,8 +280,6 @@ export class Linkifier implements SDK.TargetManager.Observer {
         .then(liveLocation => {
           if (liveLocation) {
             linkInfo.liveLocation = liveLocation;
-            // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration
-            // @ts-expect-error
             currentOnLiveLocationUpdate();
           }
         });
@@ -297,24 +321,20 @@ export class Linkifier implements SDK.TargetManager.Observer {
       target: SDK.Target.Target|null, callFrame: Protocol.Runtime.CallFrame, options?: LinkifyOptions): HTMLElement
       |null {
     const linkifyOptions: LinkifyOptions = {
+      ...options,
       columnNumber: callFrame.columnNumber,
-      showColumnNumber: Boolean(options?.showColumnNumber),
       inlineFrameIndex: options?.inlineFrameIndex ?? 0,
-      tabStop: options?.tabStop,
-      className: options?.className,
     };
     return this.maybeLinkifyScriptLocation(
         target, callFrame.scriptId, callFrame.url as Platform.DevToolsPath.UrlString, callFrame.lineNumber,
         linkifyOptions);
   }
 
-  linkifyStackTraceTopFrame(
-      target: SDK.Target.Target|null, stackTrace: Protocol.Runtime.StackTrace, className?: string): HTMLElement {
+  linkifyStackTraceTopFrame(target: SDK.Target.Target|null, stackTrace: Protocol.Runtime.StackTrace): HTMLElement {
     console.assert(stackTrace.callFrames.length > 0);
 
     const {url, lineNumber, columnNumber} = stackTrace.callFrames[0];
     const fallbackAnchor = Linkifier.linkifyURL(url as Platform.DevToolsPath.UrlString, {
-      className,
       lineNumber,
       columnNumber,
       showColumnNumber: false,
@@ -341,10 +361,7 @@ export class Linkifier implements SDK.TargetManager.Observer {
     // All targets that can report stack traces also have a debugger model.
     const debuggerModel = target.model(SDK.DebuggerModel.DebuggerModel) as SDK.DebuggerModel.DebuggerModel;
 
-    // Not initialising the anchor element with 'zero width space' (\u200b) causes a crash
-    // in the layout engine.
-    // TODO(szuend): Remove comment and workaround once the crash is fixed.
-    const {link, linkInfo} = Linkifier.createLink('\u200b', className ?? '');
+    const {link, linkInfo} = Linkifier.createLink('', '');
     linkInfo.enableDecorator = this.useLinkDecorator;
     linkInfo.fallback = fallbackAnchor;
 
@@ -357,8 +374,6 @@ export class Linkifier implements SDK.TargetManager.Observer {
             this.updateAnchor.bind(this, link, linkDisplayOptions), pool)
         .then(liveLocation => {
           linkInfo.liveLocation = liveLocation;
-          // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration
-          // @ts-expect-error
           currentOnLiveLocationUpdate();
         });
 
@@ -371,10 +386,7 @@ export class Linkifier implements SDK.TargetManager.Observer {
     const createLinkOptions: _CreateLinkOptions = {
       tabStop: true,
     };
-    // Not initialising the anchor element with 'zero width space' (\u200b) causes a crash
-    // in the layout engine.
-    // TODO(szuend): Remove comment and workaround once the crash is fixed.
-    const {link, linkInfo} = Linkifier.createLink('\u200b', classes || '', createLinkOptions);
+    const {link, linkInfo} = Linkifier.createLink('', classes || '', createLinkOptions);
     linkInfo.enableDecorator = this.useLinkDecorator;
 
     const pool = this.locationPoolByTarget.get(rawLocation.cssModel().target());
@@ -389,8 +401,6 @@ export class Linkifier implements SDK.TargetManager.Observer {
         .createLiveLocation(rawLocation, this.updateAnchor.bind(this, link, linkDisplayOptions), pool)
         .then(liveLocation => {
           linkInfo.liveLocation = liveLocation;
-          // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration
-          // @ts-expect-error
           currentOnLiveLocationUpdate();
         });
 
@@ -420,6 +430,9 @@ export class Linkifier implements SDK.TargetManager.Observer {
       anchor: HTMLElement, options: LinkDisplayOptions,
       liveLocation: Bindings.LiveLocation.LiveLocation): Promise<void> {
     Linkifier.unbindUILocation(anchor);
+    if (options.revealBreakpoint) {
+      Linkifier.unbindBreakpoint(anchor);
+    }
     const uiLocation = await liveLocation.uiLocation();
     if (!uiLocation) {
       if (liveLocation instanceof Bindings.CSSWorkspaceBinding.LiveLocation) {
@@ -441,6 +454,9 @@ export class Linkifier implements SDK.TargetManager.Observer {
     }
 
     Linkifier.bindUILocation(anchor, uiLocation);
+    if (options.revealBreakpoint) {
+      Linkifier.bindBreakpoint(anchor, uiLocation);
+    }
     const text = uiLocation.linkText(true /* skipTrim */, options.showColumnNumber);
     Linkifier.setTrimmedText(anchor, text, this.maxLength);
 
@@ -925,12 +941,14 @@ export class ContentProviderContextMenuProvider implements UI.ContextMenu.Provid
       return;
     }
 
-    contextMenu.revealSection().appendItem(
-        UI.UIUtils.openLinkExternallyLabel(),
-        () => Host.InspectorFrontendHost.InspectorFrontendHostInstance.openInNewTab(
-            contentUrl.endsWith(':formatted') ?
-                Common.ParsedURL.ParsedURL.slice(contentUrl, 0, contentUrl.lastIndexOf(':')) :
-                contentUrl));
+    if (!contentUrl.startsWith('file://')) {
+      contextMenu.revealSection().appendItem(
+          UI.UIUtils.openLinkExternallyLabel(),
+          () => Host.InspectorFrontendHost.InspectorFrontendHostInstance.openInNewTab(
+              contentUrl.endsWith(':formatted') ?
+                  Common.ParsedURL.ParsedURL.slice(contentUrl, 0, contentUrl.lastIndexOf(':')) :
+                  contentUrl));
+    }
     for (const title of linkHandlers.keys()) {
       const handler = linkHandlers.get(title);
       if (!handler) {
@@ -987,6 +1005,11 @@ export interface LinkifyOptions {
   showColumnNumber?: boolean;
   inlineFrameIndex: number;
   tabStop?: boolean;
+
+  /**
+   * {@link LinkDisplayOptions.revealBreakpoint}
+   */
+  revealBreakpoint?: boolean;
 }
 
 // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration
@@ -1002,6 +1025,14 @@ export interface _CreateLinkOptions {
 
 interface LinkDisplayOptions {
   showColumnNumber: boolean;
+
+  /**
+   * If true, we'll check if there is a breakpoint at the UILocation we get
+   * from the LiveLocation. If we find a breakpoint, we'll reveal the corresponding
+   * {@link Bindings.BreakpointManager.BreakpointLocation}. Which opens the
+   * breakpoint edit dialog.
+   */
+  revealBreakpoint?: boolean;
 }
 
 export type LinkHandler = (arg0: TextUtils.ContentProvider.ContentProvider, arg1: number) => void;

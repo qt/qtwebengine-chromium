@@ -7,11 +7,13 @@ exports_files_legacy()
 SHADER_FILES = [
     "SkBitmapProcShader.cpp",
     "SkBitmapProcShader.h",
+    "SkCoordClampShader.cpp",
     "SkColorFilterShader.cpp",
     "SkColorFilterShader.h",
     "SkColorShader.cpp",
     "SkComposeShader.cpp",
     "SkEmptyShader.cpp",
+    "SkGainmapShader.cpp",
     "SkImageShader.cpp",
     "SkImageShader.h",
     "SkLocalMatrixShader.cpp",

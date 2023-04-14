@@ -230,10 +230,10 @@ macro(ei_add_failtest testname)
 
   # Add the tests to ctest.
   add_test(NAME ${test_target_ok}
-          COMMAND ${CMAKE_COMMAND} --build . --target ${test_target_ok} --config $<CONFIGURATION>
+          COMMAND ${CMAKE_COMMAND} --build . --target ${test_target_ok} --config $<CONFIG>
           WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
   add_test(NAME ${test_target_ko}
-          COMMAND ${CMAKE_COMMAND} --build . --target ${test_target_ko} --config $<CONFIGURATION>
+          COMMAND ${CMAKE_COMMAND} --build . --target ${test_target_ko} --config $<CONFIG>
           WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 
   # Expect the second test to fail

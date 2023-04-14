@@ -9,8 +9,8 @@
 #define GrRenderTask_DEFINED
 
 #include "include/core/SkRefCnt.h"
-#include "include/private/SkTArray.h"
-#include "src/core/SkTInternalLList.h"
+#include "include/private/base/SkTArray.h"
+#include "src/base/SkTInternalLList.h"
 #include "src/gpu/ganesh/GrSurfaceProxyView.h"
 #include "src/gpu/ganesh/GrTextureProxy.h"
 #include "src/gpu/ganesh/GrTextureResolveManager.h"

@@ -4,7 +4,7 @@
  *
  *   Auto-fitter hinting routines (specification).
  *
- * Copyright (C) 2003-2022 by
+ * Copyright (C) 2003-2023 by
  * David Turner, Robert Wilhelm, and Werner Lemberg.
  *
  * This file is part of the FreeType project, and may only be used,
@@ -375,14 +375,14 @@ FT_BEGIN_HEADER
 #ifdef FT_DEBUG_AUTOFIT
 
 #define AF_HINTS_DO_HORIZONTAL( h )                                     \
-          ( !_af_debug_disable_horz_hints                            && \
+          ( !af_debug_disable_horz_hints_                            && \
             !AF_HINTS_TEST_SCALER( h, AF_SCALER_FLAG_NO_HORIZONTAL ) )
 
 #define AF_HINTS_DO_VERTICAL( h )                                     \
-          ( !_af_debug_disable_vert_hints                          && \
+          ( !af_debug_disable_vert_hints_                          && \
             !AF_HINTS_TEST_SCALER( h, AF_SCALER_FLAG_NO_VERTICAL ) )
 
-#define AF_HINTS_DO_BLUES( h )  ( !_af_debug_disable_blue_hints )
+#define AF_HINTS_DO_BLUES( h )  ( !af_debug_disable_blue_hints_ )
 
 #else /* !FT_DEBUG_AUTOFIT */
 

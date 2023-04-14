@@ -43,6 +43,7 @@ import * as DOMModel from './DOMModel.js';
 import * as EmulationModel from './EmulationModel.js';
 import * as EventBreakpointsModel from './EventBreakpointsModel.js';
 import * as FilmStripModel from './FilmStripModel.js';
+import * as FrameAssociated from './FrameAssociated.js';
 import * as FrameManager from './FrameManager.js';
 import * as HeapProfilerModel from './HeapProfilerModel.js';
 import * as IOModel from './IOModel.js';
@@ -59,6 +60,7 @@ import * as PageLoad from './PageLoad.js';
 import * as PageResourceLoader from './PageResourceLoader.js';
 import * as PaintProfiler from './PaintProfiler.js';
 import * as PerformanceMetricsModel from './PerformanceMetricsModel.js';
+import * as PreloadingModel from './PreloadingModel.js';
 import * as PrerenderingModel from './PrerenderingModel.js';
 import * as ProfileTreeModel from './ProfileTreeModel.js';
 import * as RemoteObject from './RemoteObject.js';
@@ -77,6 +79,7 @@ import * as SourceMapManager from './SourceMapManager.js';
 import * as StorageKeyManager from './StorageKeyManager.js';
 import * as Target from './Target.js';
 import * as TargetManager from './TargetManager.js';
+import * as TraceSDKServices from './TraceSDKServices.js';
 import * as TracingManager from './TracingManager.js';
 import * as TracingModel from './TracingModel.js';
 import * as WebAuthnModel from './WebAuthnModel.js';
@@ -115,6 +118,7 @@ export {
   EmulationModel,
   EventBreakpointsModel,
   FilmStripModel,
+  FrameAssociated,
   FrameManager,
   HeapProfilerModel,
   IOModel,
@@ -131,6 +135,7 @@ export {
   PageResourceLoader,
   PaintProfiler,
   PerformanceMetricsModel,
+  PreloadingModel,
   PrerenderingModel,
   ProfileTreeModel,
   RemoteObject,
@@ -149,6 +154,7 @@ export {
   StorageKeyManager,
   Target,
   TargetManager,
+  TraceSDKServices,
   TracingManager,
   TracingModel,
   WebAuthnModel,

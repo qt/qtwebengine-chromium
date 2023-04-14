@@ -290,6 +290,16 @@ export class UserMetrics {
         EnumeratedHistogram.RecordingExported, value, RecordingExported.MaxValue);
   }
 
+  recordingCodeToggled(value: RecordingCodeToggled): void {
+    InspectorFrontendHostInstance.recordEnumeratedHistogram(
+        EnumeratedHistogram.RecordingCodeToggled, value, RecordingCodeToggled.MaxValue);
+  }
+
+  recordingCopiedToClipboard(value: RecordingCopiedToClipboard): void {
+    InspectorFrontendHostInstance.recordEnumeratedHistogram(
+        EnumeratedHistogram.RecordingCopiedToClipboard, value, RecordingCopiedToClipboard.MaxValue);
+  }
+
   styleTextCopied(value: StyleTextCopied): void {
     InspectorFrontendHostInstance.recordEnumeratedHistogram(
         EnumeratedHistogram.StyleTextCopied, value, StyleTextCopied.MaxValue);
@@ -310,6 +320,21 @@ export class UserMetrics {
   lighthouseModeRun(type: LighthouseModeRun): void {
     InspectorFrontendHostInstance.recordEnumeratedHistogram(
         EnumeratedHistogram.LighthouseModeRun, type, LighthouseModeRun.MaxValue);
+  }
+
+  colorConvertedFrom(type: ColorConvertedFrom): void {
+    InspectorFrontendHostInstance.recordEnumeratedHistogram(
+        EnumeratedHistogram.ColorConvertedFrom, type, ColorConvertedFrom.MaxValue);
+  }
+
+  colorPickerOpenedFrom(type: ColorPickerOpenedFrom): void {
+    InspectorFrontendHostInstance.recordEnumeratedHistogram(
+        EnumeratedHistogram.ColorPickerOpenedFrom, type, ColorPickerOpenedFrom.MaxValue);
+  }
+
+  cssPropertyDocumentation(type: CSSPropertyDocumentation): void {
+    InspectorFrontendHostInstance.recordEnumeratedHistogram(
+        EnumeratedHistogram.CSSPropertyDocumentation, type, CSSPropertyDocumentation.MaxValue);
   }
 }
 
@@ -640,7 +665,11 @@ export enum KeyboardShortcutAction {
   'layers.right' = 105,
   'help.report-translation-issue' = 106,
   'rendering.toggle-prefers-color-scheme' = 107,
-  MaxValue = 108,
+  'chrome_recorder.start-recording' = 108,
+  'chrome_recorder.replay-recording' = 109,
+  'chrome_recorder.toggle-code-view' = 110,
+  'chrome_recorder.copy-recording-or-step' = 111,
+  MaxValue = 112,
 }
 /* eslint-enable @typescript-eslint/naming-convention */
 
@@ -667,10 +696,6 @@ export enum DevtoolsExperiments {
   'applyCustomStylesheet' = 0,
   'captureNodeCreationStacks' = 1,
   'sourcesPrettyPrint' = 2,
-  'backgroundServices' = 3,
-  'backgroundServicesNotifications' = 4,
-  'backgroundServicesPaymentHandler' = 5,
-  'backgroundServicesPushMessaging' = 6,
   'inputEventsOnTimelineOverview' = 10,
   'liveHeapProfile' = 11,
   'protocolMonitor' = 13,
@@ -712,8 +737,9 @@ export enum DevtoolsExperiments {
   'timelineAsConsoleProfileResultPanel' = 67,
   'preloadingStatusPanel' = 68,
   'disableColorFormatSetting' = 69,
+  'timelineDoNotSkipSystemNodesOfCpuProfile' = 70,
   // Increment this when new experiments are added.
-  'MaxValue' = 70,
+  'MaxValue' = 71,
 }
 /* eslint-enable @typescript-eslint/naming-convention */
 
@@ -730,6 +756,25 @@ export const enum BreakpointEditDialogRevealedFrom {
   LineGutterContextMenu = 3,
   KeyboardShortcut = 4,
   MaxValue = 5,
+}
+
+export const enum ColorConvertedFrom {
+  ColorSwatch = 0,
+  ColorPicker = 1,
+  MaxValue = 2,
+}
+
+export const enum ColorPickerOpenedFrom {
+  SourcesPanel = 0,
+  StylesPane = 1,
+  MaxValue = 2,
+}
+
+export const enum CSSPropertyDocumentation {
+  Shown = 0,
+  ToggledOn = 1,
+  ToggledOff = 2,
+  MaxValue = 3,
 }
 
 // TODO(crbug.com/1167717): Make this a const enum again
@@ -1016,7 +1061,8 @@ export enum RecordingReplaySpeed {
 export enum RecordingReplayStarted {
   ReplayOnly = 1,
   ReplayWithPerformanceTracing = 2,
-  MaxValue = 3,
+  ReplayViaExtension = 3,
+  MaxValue = 4,
 }
 
 // TODO(crbug.com/1167717): Make this a const enum again
@@ -1044,6 +1090,28 @@ export enum RecordingExported {
   ToExtension = 4,
   ToLighthouse = 5,
   MaxValue = 6,
+}
+
+// TODO(crbug.com/1167717): Make this a const enum again
+// eslint-disable-next-line rulesdir/const_enum
+export enum RecordingCodeToggled {
+  CodeShown = 1,
+  CodeHidden = 2,
+  MaxValue = 3,
+}
+
+// TODO(crbug.com/1167717): Make this a const enum again
+// eslint-disable-next-line rulesdir/const_enum
+export enum RecordingCopiedToClipboard {
+  CopiedRecordingWithPuppeteer = 1,
+  CopiedRecordingWithJSON = 2,
+  CopiedRecordingWithReplay = 3,
+  CopiedRecordingWithExtension = 4,
+  CopiedStepWithPuppeteer = 5,
+  CopiedStepWithJSON = 6,
+  CopiedStepWithReplay = 7,
+  CopiedStepWithExtension = 8,
+  MaxValue = 9,
 }
 
 /* eslint-disable @typescript-eslint/naming-convention */

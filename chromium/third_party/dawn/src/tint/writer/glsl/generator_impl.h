@@ -32,6 +32,7 @@
 #include "src/tint/ast/return_statement.h"
 #include "src/tint/ast/switch_statement.h"
 #include "src/tint/ast/unary_op_expression.h"
+#include "src/tint/builtin/builtin_value.h"
 #include "src/tint/program_builder.h"
 #include "src/tint/scope_stack.h"
 #include "src/tint/transform/decompose_memory_access.h"
@@ -42,10 +43,10 @@
 
 // Forward declarations
 namespace tint::sem {
-class Call;
 class Builtin;
-class TypeInitializer;
-class TypeConversion;
+class Call;
+class ValueConstructor;
+class ValueConversion;
 }  // namespace tint::sem
 
 namespace tint::writer::glsl {
@@ -150,30 +151,31 @@ class GeneratorImpl : public TextGenerator {
     /// Handles generating a function call expression
     /// @param out the output of the expression stream
     /// @param call the call expression
+    /// @param fn the function being called
     /// @returns true if the expression is emitted
-    bool EmitFunctionCall(std::ostream& out, const sem::Call* call);
+    bool EmitFunctionCall(std::ostream& out, const sem::Call* call, const sem::Function* fn);
     /// Handles generating a builtin call expression
     /// @param out the output of the expression stream
     /// @param call the call expression
     /// @param builtin the builtin being called
     /// @returns true if the expression is emitted
     bool EmitBuiltinCall(std::ostream& out, const sem::Call* call, const sem::Builtin* builtin);
-    /// Handles generating a type conversion expression
+    /// Handles generating a value conversion expression
     /// @param out the output of the expression stream
     /// @param call the call expression
-    /// @param conv the type conversion
+    /// @param conv the value conversion
     /// @returns true if the expression is emitted
-    bool EmitTypeConversion(std::ostream& out,
-                            const sem::Call* call,
-                            const sem::TypeConversion* conv);
-    /// Handles generating a type initializer expression
-    /// @param out the output of the expression stream
-    /// @param call the call expression
-    /// @param ctor the type initializer
-    /// @returns true if the expression is emitted
-    bool EmitTypeInitializer(std::ostream& out,
+    bool EmitValueConversion(std::ostream& out,
                              const sem::Call* call,
-                             const sem::TypeInitializer* ctor);
+                             const sem::ValueConversion* conv);
+    /// Handles generating a value constructor expression
+    /// @param out the output of the expression stream
+    /// @param call the call expression
+    /// @param ctor the value constructor
+    /// @returns true if the expression is emitted
+    bool EmitValueConstructor(std::ostream& out,
+                              const sem::Call* call,
+                              const sem::ValueConstructor* ctor);
     /// Handles generating a barrier builtin call
     /// @param out the output of the expression stream
     /// @param builtin the semantic information for the barrier builtin
@@ -413,8 +415,8 @@ class GeneratorImpl : public TextGenerator {
     /// @returns true if the type is emitted
     bool EmitType(std::ostream& out,
                   const type::Type* type,
-                  ast::AddressSpace address_space,
-                  ast::Access access,
+                  builtin::AddressSpace address_space,
+                  builtin::Access access,
                   const std::string& name,
                   bool* name_printed = nullptr);
     /// Handles generating type and name
@@ -426,8 +428,8 @@ class GeneratorImpl : public TextGenerator {
     /// @returns true if the type is emitted
     bool EmitTypeAndName(std::ostream& out,
                          const type::Type* type,
-                         ast::AddressSpace address_space,
-                         ast::Access access,
+                         builtin::AddressSpace address_space,
+                         builtin::Access access,
                          const std::string& name);
     /// Handles generating a structure declaration. If the structure has already been emitted, then
     /// this function will simply return `true` without emitting anything.
@@ -470,11 +472,11 @@ class GeneratorImpl : public TextGenerator {
     /// @param builtin the builtin to convert
     /// @param stage pipeline stage in which this builtin is used
     /// @returns the string name of the builtin or blank on error
-    const char* builtin_to_string(ast::BuiltinValue builtin, ast::PipelineStage stage);
+    const char* builtin_to_string(builtin::BuiltinValue builtin, ast::PipelineStage stage);
     /// Converts a builtin to a type::Type appropriate for GLSL.
     /// @param builtin the builtin to convert
     /// @returns the appropriate semantic type or null on error.
-    type::Type* builtin_type(ast::BuiltinValue builtin);
+    type::Type* builtin_type(builtin::BuiltinValue builtin);
 
   private:
     enum class VarType { kIn, kOut };

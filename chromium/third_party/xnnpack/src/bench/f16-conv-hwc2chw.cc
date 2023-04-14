@@ -25,7 +25,7 @@
 
 
 static void f16_conv_hwc2chw(benchmark::State& state,
-  xnn_f16_conv_hwc2chw_ukernel_function conv,
+  xnn_f16_conv_hwc2chw_ukernel_fn conv,
   uint32_t output_channels_tile,
   xnn_init_f16_minmax_params_fn init_params,
   benchmark::utils::IsaCheckFunction isa_check = nullptr)
@@ -67,11 +67,11 @@ static void f16_conv_hwc2chw(benchmark::State& state,
       sizeof(uint16_t) * (weights_elements + output_elements));
 
   std::vector<uint16_t, AlignedAllocator<uint16_t, 64>> packed_weights(weights_elements * num_buffers);
-  std::fill(packed_weights.begin(), packed_weights.end(), 0.0f);
+  std::fill(packed_weights.begin(), packed_weights.end(), UINT16_C(0));
   xnn_pack_f16_dconv_oki_w(
     output_channels, input_channels, output_channels_tile,
     kernel_size /* kernel height */, kernel_size /* kernel width */,
-    kernel.data(), bias.data(), packed_weights.data(), NULL);
+    kernel.data(), bias.data(), packed_weights.data(), nullptr);
   for (size_t n = 1; n < num_buffers; n++) {
     std::copy(packed_weights.cbegin(),
       packed_weights.cbegin() + weights_elements,
@@ -116,14 +116,14 @@ static void f16_conv_hwc2chw(benchmark::State& state,
     benchmark::Counter::kIsRate);
 }
 
-#if XNN_ENABLE_ARM_FP16 && (XNN_ARCH_ARM || XNN_ARCH_ARM64)
+#if XNN_ENABLE_ARM_FP16_VECTOR && (XNN_ARCH_ARM || XNN_ARCH_ARM64)
   static void f16_conv_hwc2chw_3x3s2p1c3x4__neonfp16arith_2x2(benchmark::State& state, const char* net) {
     f16_conv_hwc2chw(state, xnn_f16_conv_hwc2chw_ukernel_3x3s2p1c3x4__neonfp16arith_2x2, 4,
       xnn_init_f16_minmax_fp16arith_params, benchmark::utils::CheckNEONFP16ARITH);
   }
 
   BENCHMARK_DCONV(f16_conv_hwc2chw_3x3s2p1c3x4__neonfp16arith_2x2);
-#endif  // XNN_ENABLE_ARM_FP16 && (XNN_ARCH_ARM || XNN_ARCH_ARM64)
+#endif  // XNN_ENABLE_ARM_FP16_VECTOR && (XNN_ARCH_ARM || XNN_ARCH_ARM64)
 
 #ifndef XNNPACK_BENCHMARK_NO_MAIN
 BENCHMARK_MAIN();

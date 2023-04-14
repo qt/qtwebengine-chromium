@@ -192,6 +192,8 @@ template<typename Scalar> struct scalar_sin_op;
 template<typename Scalar> struct scalar_acos_op;
 template<typename Scalar> struct scalar_asin_op;
 template<typename Scalar> struct scalar_tan_op;
+template<typename Scalar> struct scalar_atan_op;
+template <typename LhsScalar, typename RhsScalar = LhsScalar> struct scalar_atan2_op;
 template<typename Scalar> struct scalar_inverse_op;
 template<typename Scalar> struct scalar_square_op;
 template<typename Scalar> struct scalar_cube_op;
@@ -252,15 +254,22 @@ template<typename ExpressionType, int Direction> class VectorwiseOp;
 template<typename MatrixType,int RowFactor,int ColFactor> class Replicate;
 template<typename MatrixType, int Direction = BothDirections> class Reverse;
 
+#if defined(EIGEN_USE_LAPACKE) && defined(lapack_int)
+// Lapacke interface requires StorageIndex to be lapack_int
+typedef lapack_int DefaultPermutationIndex;
+#else
+typedef int DefaultPermutationIndex;
+#endif
+
 template<typename MatrixType> class FullPivLU;
 template<typename MatrixType> class PartialPivLU;
 namespace internal {
 template<typename MatrixType> struct inverse_impl;
 }
 template<typename MatrixType> class HouseholderQR;
-template<typename MatrixType> class ColPivHouseholderQR;
-template<typename MatrixType> class FullPivHouseholderQR;
-template<typename MatrixType> class CompleteOrthogonalDecomposition;
+template<typename MatrixType, typename PermutationIndex = DefaultPermutationIndex> class ColPivHouseholderQR;
+template<typename MatrixType, typename PermutationIndex = DefaultPermutationIndex> class FullPivHouseholderQR;
+template<typename MatrixType, typename PermutationIndex = DefaultPermutationIndex> class CompleteOrthogonalDecomposition;
 template<typename MatrixType> class SVDBase;
 template<typename MatrixType, int Options = 0> class JacobiSVD;
 template<typename MatrixType, int Options = 0> class BDCSVD;
@@ -270,8 +279,10 @@ template<typename VectorsType, typename CoeffsType, int Side=OnTheLeft> class Ho
 template<typename Scalar>     class JacobiRotation;
 
 // Geometry module:
+namespace internal {
+template<typename Derived, typename OtherDerived, int Size = MatrixBase<Derived>::SizeAtCompileTime> struct cross_impl;
+}
 template<typename Derived, int Dim_> class RotationBase;
-template<typename Lhs, typename Rhs> class Cross;
 template<typename Derived> class QuaternionBase;
 template<typename Scalar> class Rotation2D;
 template<typename Scalar> class AngleAxis;

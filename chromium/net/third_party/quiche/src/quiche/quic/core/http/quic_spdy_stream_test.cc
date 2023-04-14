@@ -15,7 +15,6 @@
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
 #include "quiche/quic/core/crypto/null_encrypter.h"
-#include "quiche/quic/core/http/capsule.h"
 #include "quiche/quic/core/http/http_encoder.h"
 #include "quiche/quic/core/http/quic_spdy_session.h"
 #include "quiche/quic/core/http/spdy_utils.h"
@@ -37,10 +36,13 @@
 #include "quiche/quic/test_tools/quic_spdy_stream_peer.h"
 #include "quiche/quic/test_tools/quic_stream_peer.h"
 #include "quiche/quic/test_tools/quic_test_utils.h"
+#include "quiche/common/capsule.h"
 #include "quiche/common/quiche_ip_address.h"
 #include "quiche/common/quiche_mem_slice_storage.h"
 #include "quiche/common/simple_buffer_allocator.h"
 
+using quiche::Capsule;
+using quiche::IpAddressRange;
 using spdy::Http2HeaderBlock;
 using spdy::kV3HighestPriority;
 using spdy::kV3LowestPriority;
@@ -1491,11 +1493,7 @@ TEST_P(QuicSpdyStreamTest, WritingTrailersSendsAFin) {
     // In this case, TestStream::WriteHeadersImpl() does not prevent writes.
     // Four writes on the request stream: HEADERS frame header and payload both
     // for headers and trailers.
-    if (GetQuicReloadableFlag(quic_one_write_for_headers)) {
-      EXPECT_CALL(*session_, WritevData(stream_->id(), _, _, _, _, _)).Times(2);
-    } else {
-      EXPECT_CALL(*session_, WritevData(stream_->id(), _, _, _, _, _)).Times(4);
-    }
+    EXPECT_CALL(*session_, WritevData(stream_->id(), _, _, _, _, _)).Times(2);
   }
 
   // Write the initial headers, without a FIN.
@@ -1521,11 +1519,7 @@ TEST_P(QuicSpdyStreamTest, DoNotSendPriorityUpdateWithDefaultUrgency) {
 
   // Four writes on the request stream: HEADERS frame header and payload both
   // for headers and trailers.
-  if (GetQuicReloadableFlag(quic_one_write_for_headers)) {
-    EXPECT_CALL(*session_, WritevData(stream_->id(), _, _, _, _, _)).Times(2);
-  } else {
-    EXPECT_CALL(*session_, WritevData(stream_->id(), _, _, _, _, _)).Times(4);
-  }
+  EXPECT_CALL(*session_, WritevData(stream_->id(), _, _, _, _, _)).Times(2);
 
   // No PRIORITY_UPDATE frames on the control stream,
   // because the stream has default priority.
@@ -1557,15 +1551,11 @@ TEST_P(QuicSpdyStreamTest, ChangePriority) {
   StrictMock<MockHttp3DebugVisitor> debug_visitor;
   session_->set_debug_visitor(&debug_visitor);
 
-  if (GetQuicReloadableFlag(quic_one_write_for_headers)) {
-    EXPECT_CALL(*session_, WritevData(stream_->id(), _, _, _, _, _)).Times(1);
-  } else {
-    // Two writes on the request stream: HEADERS frame header and payload.
-    EXPECT_CALL(*session_, WritevData(stream_->id(), _, _, _, _, _)).Times(2);
-  }
+  EXPECT_CALL(*session_, WritevData(stream_->id(), _, _, _, _, _)).Times(1);
   EXPECT_CALL(*stream_, WriteHeadersMock(false));
   EXPECT_CALL(debug_visitor, OnHeadersFrameSent(stream_->id(), _));
   stream_->WriteHeaders(Http2HeaderBlock(), /*fin=*/false, nullptr);
+  testing::Mock::VerifyAndClearExpectations(&debug_visitor);
 
   // PRIORITY_UPDATE frame on the control stream.
   auto send_control_stream =
@@ -1573,14 +1563,22 @@ TEST_P(QuicSpdyStreamTest, ChangePriority) {
   EXPECT_CALL(*session_, WritevData(send_control_stream->id(), _, _, _, _, _));
   PriorityUpdateFrame priority_update1{stream_->id(), "u=0"};
   EXPECT_CALL(debug_visitor, OnPriorityUpdateFrameSent(priority_update1));
-  stream_->SetPriority(QuicStreamPriority{
-      kV3HighestPriority, QuicStreamPriority::kDefaultIncremental});
+  const QuicStreamPriority priority1{kV3HighestPriority,
+                                     QuicStreamPriority::kDefaultIncremental};
+  stream_->SetPriority(priority1);
+  testing::Mock::VerifyAndClearExpectations(&debug_visitor);
 
   // Send another PRIORITY_UPDATE frame with incremental flag set to true.
   EXPECT_CALL(*session_, WritevData(send_control_stream->id(), _, _, _, _, _));
   PriorityUpdateFrame priority_update2{stream_->id(), "u=2, i"};
   EXPECT_CALL(debug_visitor, OnPriorityUpdateFrameSent(priority_update2));
-  stream_->SetPriority(QuicStreamPriority{2, true});
+  const QuicStreamPriority priority2{2, true};
+  stream_->SetPriority(priority2);
+  testing::Mock::VerifyAndClearExpectations(&debug_visitor);
+
+  // Calling SetPriority() with the same priority does not trigger sending
+  // another PRIORITY_UPDATE frame.
+  stream_->SetPriority(priority2);
 }
 
 TEST_P(QuicSpdyStreamTest, ChangePriorityBeforeWritingHeaders) {
@@ -1602,11 +1600,7 @@ TEST_P(QuicSpdyStreamTest, ChangePriorityBeforeWritingHeaders) {
 
   // Two writes on the request stream: HEADERS frame header and payload.
   // PRIORITY_UPDATE frame is not sent this time, because one is already sent.
-  if (GetQuicReloadableFlag(quic_one_write_for_headers)) {
-    EXPECT_CALL(*session_, WritevData(stream_->id(), _, _, _, _, _)).Times(1);
-  } else {
-    EXPECT_CALL(*session_, WritevData(stream_->id(), _, _, _, _, _)).Times(2);
-  }
+  EXPECT_CALL(*session_, WritevData(stream_->id(), _, _, _, _, _)).Times(1);
   EXPECT_CALL(*stream_, WriteHeadersMock(true));
   stream_->WriteHeaders(Http2HeaderBlock(), /*fin=*/true, nullptr);
 }
@@ -1619,11 +1613,7 @@ TEST_P(QuicSpdyStreamTest, WritingTrailersFinalOffset) {
   if (UsesHttp3()) {
     // In this case, TestStream::WriteHeadersImpl() does not prevent writes.
     // HEADERS frame header and payload on the request stream.
-    if (GetQuicReloadableFlag(quic_one_write_for_headers)) {
-      EXPECT_CALL(*session_, WritevData(stream_->id(), _, _, _, _, _)).Times(1);
-    } else {
-      EXPECT_CALL(*session_, WritevData(stream_->id(), _, _, _, _, _)).Times(2);
-    }
+    EXPECT_CALL(*session_, WritevData(stream_->id(), _, _, _, _, _)).Times(1);
   }
 
   // Write the initial headers.
@@ -3028,34 +3018,19 @@ TEST_P(QuicSpdyStreamTest, WriteHeadersReturnValue) {
       .Times(AnyNumber());
 
   size_t bytes_written = 0;
-  if (GetQuicReloadableFlag(quic_one_write_for_headers)) {
-    EXPECT_CALL(*session_,
-                WritevData(stream_->id(), _, /* offset = */ 0, _, _, _))
-        .WillOnce(
-            DoAll(SaveArg<1>(&bytes_written),
-                  Invoke(session_.get(), &MockQuicSpdySession::ConsumeData)));
-  } else {
-    // HEADERS frame header.
-    EXPECT_CALL(*session_,
-                WritevData(stream_->id(), _, /* offset = */ 0, _, _, _));
-    // HEADERS frame payload.
-    EXPECT_CALL(*session_, WritevData(stream_->id(), _, _, _, _, _))
-        .WillOnce(
-            DoAll(SaveArg<1>(&bytes_written),
-                  Invoke(session_.get(), &MockQuicSpdySession::ConsumeData)));
-  }
+  EXPECT_CALL(*session_,
+              WritevData(stream_->id(), _, /* offset = */ 0, _, _, _))
+      .WillOnce(
+          DoAll(SaveArg<1>(&bytes_written),
+                Invoke(session_.get(), &MockQuicSpdySession::ConsumeData)));
 
   Http2HeaderBlock request_headers;
   request_headers["foo"] = "bar";
   size_t write_headers_return_value =
       stream_->WriteHeaders(std::move(request_headers), /*fin=*/true, nullptr);
   EXPECT_TRUE(stream_->fin_sent());
-  if (GetQuicReloadableFlag(quic_one_write_for_headers)) {
-    // bytes_written includes HEADERS frame header.
-    EXPECT_GT(bytes_written, write_headers_return_value);
-  } else {
-    EXPECT_EQ(bytes_written, write_headers_return_value);
-  }
+  // bytes_written includes HEADERS frame header.
+  EXPECT_GT(bytes_written, write_headers_return_value);
 }
 
 // Regression test for https://crbug.com/1177662.
@@ -3222,7 +3197,7 @@ TEST_P(QuicSpdyStreamTest, Capsules) {
               ElementsAre(SavingHttp3DatagramVisitor::SavedHttp3Datagram{
                   stream_->id(), http_datagram_payload}));
   // Address assign capsule.
-  PrefixWithId ip_prefix_with_id;
+  quiche::PrefixWithId ip_prefix_with_id;
   ip_prefix_with_id.request_id = 1;
   quiche::QuicheIpAddress ip_address;
   ip_address.FromString("::");

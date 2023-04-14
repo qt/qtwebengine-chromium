@@ -37,7 +37,7 @@
 
 #include "../InternalHeaderCheck.h"
 
-#if !EIGEN_COMP_LLVM
+#if EIGEN_COMP_GNUC_STRICT
 // These routines requires bit manipulation of the sign, which is not compatible
 // with fastmath.
 #pragma GCC push_options
@@ -358,7 +358,7 @@ struct compute_inverse_size4<Architecture::Target, double, MatrixType, ResultTyp
 } // namespace internal
 } // namespace Eigen
 
-#if !EIGEN_COMP_LLVM
+#if EIGEN_COMP_GNUC_STRICT
 #pragma GCC pop_options
 #endif
 

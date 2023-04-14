@@ -20,6 +20,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "src/tint/ast/diagnostic_control.h"
 #include "src/tint/ast/node.h"
 #include "src/tint/debug.h"
 #include "src/tint/sem/node.h"
@@ -29,6 +30,7 @@
 // Forward declarations
 namespace tint::sem {
 class Module;
+class ValueExpression;
 }  // namespace tint::sem
 namespace tint::type {
 class Node;
@@ -78,10 +80,21 @@ class Info {
               typename AST = CastableBase,
               typename RESULT = GetResultType<SEM, AST>>
     const RESULT* Get(const AST* ast_node) const {
+        static_assert(std::is_same_v<SEM, InferFromAST> ||
+                          !traits::IsTypeOrDerived<SemanticNodeTypeFor<AST>, SEM>,
+                      "explicit template argument is unnecessary");
         if (ast_node && ast_node->node_id.value < nodes_.size()) {
             return As<RESULT>(nodes_[ast_node->node_id.value]);
         }
         return nullptr;
+    }
+
+    /// Convenience function that's an alias for Get<ValueExpression>()
+    /// @param ast_node the AST node
+    /// @returns a pointer to the semantic node if found, otherwise nullptr
+    template <typename AST>
+    const sem::ValueExpression* GetVal(const AST* ast_node) const {
+        return Get<ValueExpression>(ast_node);
     }
 
     /// Add registers the semantic node `sem_node` for the AST node `ast_node`.
@@ -143,6 +156,13 @@ class Info {
         }
         return &referenced_overrides_.at(from);
     }
+
+    /// Determines the severity of a filterable diagnostic rule for the AST node `ast_node`.
+    /// @param ast_node the AST node
+    /// @param rule the diagnostic rule
+    /// @returns the severity of the rule for that AST node
+    builtin::DiagnosticSeverity DiagnosticSeverity(const ast::Node* ast_node,
+                                                   builtin::DiagnosticRule rule) const;
 
   private:
     // AST node index to semantic node

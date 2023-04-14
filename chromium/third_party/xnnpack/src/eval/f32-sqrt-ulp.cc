@@ -49,14 +49,14 @@ static void ComputeError(
 }
 
 static void SqrtError(benchmark::State& state,
-  xnn_f32_unary_math_function sqrt,
+  xnn_f32_unary_math_fn sqrt,
   benchmark::utils::IsaCheckFunction isa_check = nullptr)
 {
   if (!cpuinfo_initialize()) {
     state.SkipWithError("failed cpuinfo init");
     return;
   }
-  if (isa_check && !isa_check(state)) {
+  if (isa_check != nullptr && !isa_check(state)) {
     return;
   }
 

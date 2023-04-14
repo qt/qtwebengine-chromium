@@ -13,6 +13,7 @@
 
 namespace skgpu::graphite {
 class CommandBuffer;
+class Context;
 class ResourceProvider;
 
 class TaskGraph {
@@ -25,9 +26,13 @@ public:
 
     // Returns true on success; false on failure
     bool prepareResources(ResourceProvider*, const RuntimeEffectDictionary*);
-    bool addCommands(ResourceProvider*, CommandBuffer*);
+    bool addCommands(Context*, CommandBuffer*, Task::ReplayTargetData);
 
     void reset();
+
+#ifdef GRAPHITE_TEST_UTILS
+    bool hasTasks() const { return !fTasks.empty(); }
+#endif
 
 protected:
 private:

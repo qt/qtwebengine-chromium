@@ -15,13 +15,12 @@
 #ifndef PLATFORM_API_BLE_H_
 #define PLATFORM_API_BLE_H_
 
-#include "internal/platform/implementation/bluetooth_classic.h"
 #include "internal/platform/byte_array.h"
 #include "internal/platform/cancellation_flag.h"
+#include "internal/platform/implementation/bluetooth_classic.h"
 #include "internal/platform/input_stream.h"
 #include "internal/platform/output_stream.h"
 
-namespace location {
 namespace nearby {
 namespace api {
 
@@ -78,12 +77,13 @@ class BleMedium {
 
   // Callback that is invoked when a discovered peripheral is found or lost.
   struct DiscoveredPeripheralCallback {
-    std::function<void(BlePeripheral& peripheral, const std::string& service_id,
-                       bool fast_advertisement)>
+    absl::AnyInvocable<void(BlePeripheral& peripheral,
+                            const std::string& service_id,
+                            bool fast_advertisement)>
         peripheral_discovered_cb =
             DefaultCallback<BlePeripheral&, const std::string&, bool>();
-    std::function<void(BlePeripheral& peripheral,
-                       const std::string& service_id)>
+    absl::AnyInvocable<void(BlePeripheral& peripheral,
+                            const std::string& service_id)>
         peripheral_lost_cb =
             DefaultCallback<BlePeripheral&, const std::string&>();
   };
@@ -100,7 +100,7 @@ class BleMedium {
 
   // Callback that is invoked when a new connection is accepted.
   struct AcceptedConnectionCallback {
-    std::function<void(BleSocket& socket, const std::string& service_id)>
+    absl::AnyInvocable<void(BleSocket& socket, const std::string& service_id)>
         accepted_cb = DefaultCallback<BleSocket&, const std::string&>();
   };
 
@@ -120,6 +120,5 @@ class BleMedium {
 
 }  // namespace api
 }  // namespace nearby
-}  // namespace location
 
 #endif  // PLATFORM_API_BLE_H_

@@ -715,7 +715,6 @@ bool CFX_RenderDevice::DrawPathWithBlend(
 
       DCHECK_EQ(point_type, CFX_Path::Point::Type::kLine);
       sub_path.push_back(points[i]);
-      continue;
     }
     // Process the last sub paths.
     DrawZeroAreaPath(sub_path, pObject2Device, adjust,
@@ -1149,9 +1148,9 @@ bool CFX_RenderDevice::DrawNormalText(pdfium::span<const TextCharPos> pCharPos,
         continue;
 
       const RetainPtr<CFX_DIBitmap>& pGlyph = glyph.m_pGlyph->GetBitmap();
-      bitmap->TransferBitmap(point.value().x, point.value().y,
-                             pGlyph->GetWidth(), pGlyph->GetHeight(), pGlyph, 0,
-                             0);
+      bitmap->CompositeOneBPPMask(point.value().x, point.value().y,
+                                  pGlyph->GetWidth(), pGlyph->GetHeight(),
+                                  pGlyph, 0, 0);
     }
     return SetBitMask(bitmap, bmp_rect.left, bmp_rect.top, fill_color);
   }
@@ -1217,7 +1216,7 @@ bool CFX_RenderDevice::DrawNormalText(pdfium::span<const TextCharPos> pCharPos,
   if (CFX_DefaultRenderDevice::SkiaIsDefaultRenderer()) {
     // DrawNormalTextHelper() can result in unpremultiplied bitmaps for
     // rendering glyphs. Make sure `bitmap` is premultiplied before proceeding
-    // or CFX_DIBBase::DebugVerifyBufferIsPreMultiplied() check will fail.
+    // or CFX_DIBBase::DebugVerifyBitmapIsPreMultiplied() check will fail.
     bitmap->PreMultiply();
   }
 #endif

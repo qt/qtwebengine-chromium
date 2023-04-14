@@ -9,19 +9,10 @@
 #include <android/bitmap.h>
 #include <android/log.h>
 
-#include "tools/sk_app/Application.h"
-#include "tools/sk_app/DisplayParams.h"
-#include "tools/sk_app/android/WindowContextFactory_android.h"
+#include "tools/window/SkDisplayParams.h"
+#include "tools/window/android/SkWindowContextFactory_android.h"
 
-namespace sk_app {
-// Required to appease the dynamic linker.
-// TODO: split WindowContext from sk_app.
-Application* Application::Create(int argc, char** argv, void* platformData) {
-    return nullptr;
-}
-}
-
-WindowSurface::WindowSurface(ANativeWindow* win, std::unique_ptr<sk_app::WindowContext> wctx)
+WindowSurface::WindowSurface(ANativeWindow* win, std::unique_ptr<SkWindowContext> wctx)
     : fWindow(win)
     , fWindowContext(std::move(wctx))
 {
@@ -175,15 +166,16 @@ static jlong Surface_CreateVK(JNIEnv* env, jobject, jobject jsurface) {
     }
 
     // TODO: match window params?
-    sk_app::DisplayParams params;
-    auto winctx = sk_app::window_context_factory::MakeVulkanForAndroid(win, params);
+    SkDisplayParams params;
+    auto winctx = window_context_factory::MakeVulkanForAndroid(win, params);
     if (!winctx) {
         return 0;
     }
 
     return reinterpret_cast<jlong>(sk_make_sp<WindowSurface>(win, std::move(winctx)).release());
-#endif // SK_VULKAN
+#else
     return 0;
+#endif // SK_VULKAN
 }
 
 static jlong Surface_CreateGL(JNIEnv* env, jobject, jobject jsurface) {
@@ -194,15 +186,16 @@ static jlong Surface_CreateGL(JNIEnv* env, jobject, jobject jsurface) {
     }
 
     // TODO: match window params?
-    sk_app::DisplayParams params;
-    auto winctx = sk_app::window_context_factory::MakeGLForAndroid(win, params);
+    SkDisplayParams params;
+    auto winctx = window_context_factory::MakeGLForAndroid(win, params);
     if (!winctx) {
         return 0;
     }
 
     return reinterpret_cast<jlong>(sk_make_sp<WindowSurface>(win, std::move(winctx)).release());
-#endif // SK_GL
+#else // SK_GL
     return 0;
+#endif
 }
 
 static void Surface_Release(JNIEnv* env, jobject, jlong native_surface) {

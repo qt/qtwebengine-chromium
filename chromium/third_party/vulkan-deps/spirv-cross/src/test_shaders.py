@@ -344,6 +344,8 @@ def cross_compile_msl(shader, spirv, opt, iterations, paths):
         msl_args.append('--msl-force-sample-rate-shading')
     if '.discard-checks.' in shader:
         msl_args.append('--msl-check-discarded-frag-stores')
+    if '.lod-as-grad.' in shader:
+        msl_args.append('--msl-sample-dref-lod-array-as-grad')
     if '.decoration-binding.' in shader:
         msl_args.append('--msl-decoration-binding')
     if '.mask-location-0.' in shader:
@@ -573,7 +575,12 @@ def cross_compile(shader, vulkan, spirv, invalid_spirv, eliminate, is_legacy, fo
     if spirv:
         subprocess.check_call(spirv_cmd)
     else:
-        subprocess.check_call([paths.glslang, '--amb', '--target-env', glslang_env, '-V', '-o', spirv_path, shader])
+        glslang_cmd = [paths.glslang, '--amb', '--target-env', glslang_env, '-V', '-o', spirv_path, shader]
+        if '.g.' in shader:
+            glslang_cmd.append('-g')
+        if '.gV.' in shader:
+            glslang_cmd.append('-gV')
+        subprocess.check_call(glslang_cmd)
 
     if opt and (not invalid_spirv):
         subprocess.check_call([paths.spirv_opt, '--skip-validation', '-O', '-o', spirv_path, spirv_path])

@@ -165,7 +165,7 @@ MaybeError Buffer::MapAsyncImpl(wgpu::MapMode mode, size_t offset, size_t size) 
     return {};
 }
 
-void* Buffer::GetMappedPointerImpl() {
+void* Buffer::GetMappedPointer() {
     return [*mMtlBuffer contents];
 }
 
@@ -176,6 +176,10 @@ void Buffer::UnmapImpl() {
 void Buffer::DestroyImpl() {
     BufferBase::DestroyImpl();
     mMtlBuffer = nullptr;
+}
+
+void Buffer::TrackUsage() {
+    MarkUsedInPendingCommands();
 }
 
 bool Buffer::EnsureDataInitialized(CommandRecordingContext* commandContext) {
@@ -234,6 +238,7 @@ void Buffer::ClearBuffer(CommandRecordingContext* commandContext,
     ASSERT(commandContext != nullptr);
     size = size > 0 ? size : GetAllocatedSize();
     ASSERT(size > 0);
+    TrackUsage();
     [commandContext->EnsureBlit() fillBuffer:mMtlBuffer.Get()
                                        range:NSMakeRange(offset, size)
                                        value:clearValue];

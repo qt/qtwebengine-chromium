@@ -95,7 +95,7 @@ TEST_F(ParserImplTest, Statement_If_Invalid) {
     EXPECT_TRUE(e.errored);
     EXPECT_FALSE(e.matched);
     EXPECT_EQ(e.value, nullptr);
-    EXPECT_EQ(p->error(), "1:10: expected '}'");
+    EXPECT_EQ(p->error(), "1:10: expected '}' for if statement");
 }
 
 TEST_F(ParserImplTest, Statement_Variable) {
@@ -269,22 +269,43 @@ TEST_F(ParserImplTest, Statement_Body_Invalid) {
     EXPECT_TRUE(e.errored);
     EXPECT_FALSE(e.matched);
     EXPECT_EQ(e.value, nullptr);
-    EXPECT_EQ(p->error(), "1:3: expected '}'");
+    EXPECT_EQ(p->error(), "1:3: expected '}' for block statement");
 }
 
-TEST_F(ParserImplTest, Statement_StaticAssert_WithParen) {
-    auto p = parser("static_assert(true);");
+TEST_F(ParserImplTest, Statement_ConstAssert_WithParen) {
+    auto p = parser("const_assert(true);");
     auto e = p->statement();
     ASSERT_FALSE(p->has_error()) << p->error();
     EXPECT_TRUE(e.matched);
     EXPECT_FALSE(e.errored);
 
-    auto* sa = As<ast::StaticAssert>(e.value);
+    auto* sa = As<ast::ConstAssert>(e.value);
     ASSERT_NE(sa, nullptr);
     EXPECT_EQ(sa->source.range.begin.line, 1u);
     EXPECT_EQ(sa->source.range.begin.column, 1u);
     EXPECT_EQ(sa->source.range.end.line, 1u);
-    EXPECT_EQ(sa->source.range.end.column, 20u);
+    EXPECT_EQ(sa->source.range.end.column, 19u);
+
+    EXPECT_TRUE(sa->condition->Is<ast::BoolLiteralExpression>());
+    EXPECT_EQ(sa->condition->source.range.begin.line, 1u);
+    EXPECT_EQ(sa->condition->source.range.begin.column, 14u);
+    EXPECT_EQ(sa->condition->source.range.end.line, 1u);
+    EXPECT_EQ(sa->condition->source.range.end.column, 18u);
+}
+
+TEST_F(ParserImplTest, Statement_ConstAssert_WithoutParen) {
+    auto p = parser("const_assert  true;");
+    auto e = p->statement();
+    ASSERT_FALSE(p->has_error()) << p->error();
+    EXPECT_TRUE(e.matched);
+    EXPECT_FALSE(e.errored);
+
+    auto* sa = As<ast::ConstAssert>(e.value);
+    ASSERT_NE(sa, nullptr);
+    EXPECT_EQ(sa->source.range.begin.line, 1u);
+    EXPECT_EQ(sa->source.range.begin.column, 1u);
+    EXPECT_EQ(sa->source.range.end.line, 1u);
+    EXPECT_EQ(sa->source.range.end.column, 19u);
 
     EXPECT_TRUE(sa->condition->Is<ast::BoolLiteralExpression>());
     EXPECT_EQ(sa->condition->source.range.begin.line, 1u);
@@ -293,25 +314,14 @@ TEST_F(ParserImplTest, Statement_StaticAssert_WithParen) {
     EXPECT_EQ(sa->condition->source.range.end.column, 19u);
 }
 
-TEST_F(ParserImplTest, Statement_StaticAssert_WithoutParen) {
-    auto p = parser("static_assert  true;");
+TEST_F(ParserImplTest, Statement_UnexpectedAttributes) {
+    auto p = parser("@diagnostic(off, derivative_uniformity) return;");
     auto e = p->statement();
-    ASSERT_FALSE(p->has_error()) << p->error();
-    EXPECT_TRUE(e.matched);
+    EXPECT_TRUE(p->has_error());
     EXPECT_FALSE(e.errored);
-
-    auto* sa = As<ast::StaticAssert>(e.value);
-    ASSERT_NE(sa, nullptr);
-    EXPECT_EQ(sa->source.range.begin.line, 1u);
-    EXPECT_EQ(sa->source.range.begin.column, 1u);
-    EXPECT_EQ(sa->source.range.end.line, 1u);
-    EXPECT_EQ(sa->source.range.end.column, 20u);
-
-    EXPECT_TRUE(sa->condition->Is<ast::BoolLiteralExpression>());
-    EXPECT_EQ(sa->condition->source.range.begin.line, 1u);
-    EXPECT_EQ(sa->condition->source.range.begin.column, 16u);
-    EXPECT_EQ(sa->condition->source.range.end.line, 1u);
-    EXPECT_EQ(sa->condition->source.range.end.column, 20u);
+    EXPECT_TRUE(e.matched);
+    EXPECT_NE(e.value, nullptr);
+    EXPECT_EQ(p->error(), "1:2: unexpected attributes");
 }
 
 }  // namespace

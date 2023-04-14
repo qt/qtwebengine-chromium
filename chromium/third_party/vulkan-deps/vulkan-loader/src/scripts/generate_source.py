@@ -26,6 +26,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import datetime
+import re
 
 # files to exclude from --verify check
 verify_exclude = ['.clang-format']
@@ -33,6 +35,7 @@ verify_exclude = ['.clang-format']
 def main(argv):
     parser = argparse.ArgumentParser(description='Generate source code for this repository')
     parser.add_argument('registry', metavar='REGISTRY_PATH', help='path to the Vulkan-Headers registry directory')
+    parser.add_argument('--generated-version', help='sets the header version used to generate the repo')
     group = parser.add_mutually_exclusive_group()
     group.add_argument('-i', '--incremental', action='store_true', help='only update repo files that change')
     group.add_argument('-v', '--verify', action='store_true', help='verify repo files match generator output')
@@ -45,8 +48,7 @@ def main(argv):
                                             'vk_layer_dispatch_table.h',
                                             'vk_loader_extensions.h',
                                             'vk_loader_extensions.c',
-                                            'vk_object_types.h',
-                                            'loader_generated_header_version.cmake']]
+                                            'vk_object_types.h']]
 
     repo_dir = common_codegen.repo_relative('loader/generated')
 
@@ -106,6 +108,26 @@ def main(argv):
                not filecmp.cmp(temp_filename, repo_filename, shallow=False):
                 print('update', repo_filename)
                 shutil.copyfile(temp_filename, repo_filename)
+
+    # write out the header version used to generate the code to a checked in CMake FIle
+    if args.generated_version:
+        # Update the CMake project version
+        with open(common_codegen.repo_relative('CMakeLists.txt'), "r+") as f:
+            data = f.read()
+            f.seek(0)
+            f.write(re.sub("project.*VERSION.*", f"project(VULKAN_LOADER VERSION {args.generated_version})", data))
+            f.truncate()
+
+        with open(common_codegen.repo_relative('loader/loader.rc.in'), "r") as rc_file:
+            rc_file_contents = rc_file.read()
+        rc_ver = ', '.join(args.generated_version.split('.'))
+        rc_file_contents = rc_file_contents.replace('${LOADER_VER_FILE_VERSION}', f'{rc_ver}')
+        rc_file_contents = rc_file_contents.replace('${LOADER_VER_FILE_DESCRIPTION_STR}', f'"{args.generated_version}.Dev Build"')
+        rc_file_contents = rc_file_contents.replace('${LOADER_VER_FILE_VERSION_STR}', f'"Vulkan Loader - Dev Build"')
+        rc_file_contents = rc_file_contents.replace('${LOADER_CUR_COPYRIGHT_YEAR}', f'{datetime.date.today().year}')
+        with open(common_codegen.repo_relative('loader/loader.rc'), "w") as rc_file_out:
+            rc_file_out.write(rc_file_contents)
+            rc_file_out.close()
 
     return 0
 

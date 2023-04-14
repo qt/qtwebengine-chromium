@@ -258,6 +258,8 @@ template<typename Derived> class DenseBase
     EIGEN_DEPRECATED typedef CwiseNullaryOp<internal::linspaced_op<Scalar>,PlainObject> SequentialLinSpacedReturnType;
     /** \internal Represents a vector with linearly spaced coefficients that allows random access. */
     typedef CwiseNullaryOp<internal::linspaced_op<Scalar>,PlainObject> RandomAccessLinSpacedReturnType;
+    /** \internal Represents a vector with equally spaced coefficients that allows random access. */
+    typedef CwiseNullaryOp<internal::equalspaced_op<Scalar>, PlainObject> RandomAccessEqualSpacedReturnType;
     /** \internal the return type of MatrixBase::eigenvalues() */
     typedef Matrix<typename NumTraits<typename internal::traits<Derived>::Scalar>::Real, internal::traits<Derived>::ColsAtCompileTime, 1> EigenvaluesReturnType;
 
@@ -336,6 +338,11 @@ template<typename Derived> class DenseBase
     EIGEN_DEVICE_FUNC static const RandomAccessLinSpacedReturnType
     LinSpaced(const Scalar& low, const Scalar& high);
 
+    EIGEN_DEVICE_FUNC static const RandomAccessEqualSpacedReturnType
+    EqualSpaced(Index size, const Scalar& low, const Scalar& step);
+    EIGEN_DEVICE_FUNC static const RandomAccessEqualSpacedReturnType
+    EqualSpaced(const Scalar& low, const Scalar& step);
+
     template<typename CustomNullaryOp> EIGEN_DEVICE_FUNC
     static const CwiseNullaryOp<CustomNullaryOp, PlainObject>
     NullaryExpr(Index rows, Index cols, const CustomNullaryOp& func);
@@ -357,6 +364,8 @@ template<typename Derived> class DenseBase
     EIGEN_DEVICE_FUNC Derived& setConstant(const Scalar& value);
     EIGEN_DEVICE_FUNC Derived& setLinSpaced(Index size, const Scalar& low, const Scalar& high);
     EIGEN_DEVICE_FUNC Derived& setLinSpaced(const Scalar& low, const Scalar& high);
+    EIGEN_DEVICE_FUNC Derived& setEqualSpaced(Index size, const Scalar& low, const Scalar& step);
+    EIGEN_DEVICE_FUNC Derived& setEqualSpaced(const Scalar& low, const Scalar& step);
     EIGEN_DEVICE_FUNC Derived& setZero();
     EIGEN_DEVICE_FUNC Derived& setOnes();
     EIGEN_DEVICE_FUNC Derived& setRandom();
@@ -661,8 +670,7 @@ template<typename Derived> class DenseBase
   protected:
     EIGEN_DEFAULT_COPY_CONSTRUCTOR(DenseBase)
     /** Default constructor. Do nothing. */
-    EIGEN_DEVICE_FUNC DenseBase()
-    {
+    EIGEN_DEVICE_FUNC constexpr DenseBase() {
       /* Just checks for self-consistency of the flags.
        * Only do it when debugging Eigen, as this borders on paranoia and could slow compilation down
        */

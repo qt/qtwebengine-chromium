@@ -31,17 +31,16 @@
 #include "connections/listeners.h"
 #include "connections/params.h"
 #include "internal/platform/byte_array.h"
-#include "internal/platform/count_down_latch.h"
 #include "internal/platform/exception.h"
 #include "internal/platform/medium_environment.h"
 #include "internal/platform/pipe.h"
 #include "proto/connections_enums.pb.h"
 
-namespace location {
 namespace nearby {
 namespace connections {
 namespace {
 
+using ::location::nearby::connections::OsInfo;
 using ::location::nearby::proto::connections::Medium;
 using ::testing::_;
 using ::testing::AtLeast;
@@ -102,7 +101,8 @@ class MockEndpointChannel : public BaseEndpointChannel {
   MOCK_METHOD(ExceptionOr<ByteArray>, Read, (), (override));
   MOCK_METHOD(Exception, Write, (const ByteArray& data), (override));
   MOCK_METHOD(void, CloseImpl, (), (override));
-  MOCK_METHOD(proto::connections::Medium, GetMedium, (), (const override));
+  MOCK_METHOD(location::nearby::proto::connections::Medium, GetMedium, (),
+              (const override));
   MOCK_METHOD(std::string, GetType, (), (const override));
   MOCK_METHOD(std::string, GetName, (), (const override));
   MOCK_METHOD(bool, IsPaused, (), (const override));
@@ -157,14 +157,16 @@ class MockPcpHandler : public BasePcpHandler {
               (override));
   MOCK_METHOD(ConnectImplResult, ConnectImpl,
               (ClientProxy * client, DiscoveredEndpoint* endpoint), (override));
-  MOCK_METHOD(proto::connections::Medium, GetDefaultUpgradeMedium, (),
-              (override));
+  MOCK_METHOD(location::nearby::proto::connections::Medium,
+              GetDefaultUpgradeMedium, (), (override));
 
-  std::vector<proto::connections::Medium> GetConnectionMediumsByPriority()
-      override {
-    return std::vector<proto::connections::Medium>{
-        proto::connections::WIFI_LAN, proto::connections::WEB_RTC,
-        proto::connections::BLUETOOTH, proto::connections::BLE};
+  std::vector<location::nearby::proto::connections::Medium>
+  GetConnectionMediumsByPriority() override {
+    return std::vector<location::nearby::proto::connections::Medium>{
+        location::nearby::proto::connections::WIFI_LAN,
+        location::nearby::proto::connections::WEB_RTC,
+        location::nearby::proto::connections::BLUETOOTH,
+        location::nearby::proto::connections::BLE};
   }
 
   // Mock adapters for protected non-virtual methods of a base class.
@@ -182,14 +184,14 @@ class MockPcpHandler : public BasePcpHandler {
     return BasePcpHandler::GetDiscoveredEndpoints(endpoint_id);
   }
 
-  std::vector<proto::connections::Medium> GetDiscoveryMediums(
+  std::vector<location::nearby::proto::connections::Medium> GetDiscoveryMediums(
       ClientProxy* client) {
     auto allowed = client->GetDiscoveryOptions().CompatibleOptions().allowed;
     return GetMediumsFromSelector(allowed);
   }
 
-  std::vector<proto::connections::Medium> GetMediumsFromSelector(
-      BooleanMediumSelector allowed) {
+  std::vector<location::nearby::proto::connections::Medium>
+  GetMediumsFromSelector(BooleanMediumSelector allowed) {
     return allowed.GetMediums(true);
   }
 };
@@ -302,8 +304,9 @@ class BasePcpHandlerTest
 
   std::pair<std::unique_ptr<MockEndpointChannel>,
             std::unique_ptr<MockEndpointChannel>>
-  SetupConnection(Pipe& pipe_a, Pipe& pipe_b,
-                  proto::connections::Medium medium) {  // NOLINT
+  SetupConnection(
+      Pipe& pipe_a, Pipe& pipe_b,
+      location::nearby::proto::connections::Medium medium) {  // NOLINT
     auto channel_a = std::make_unique<MockEndpointChannel>(&pipe_b, &pipe_a);
     auto channel_b = std::make_unique<MockEndpointChannel>(&pipe_a, &pipe_b);
     // On initiator (A) side, we drop the first write, since this is a
@@ -338,13 +341,14 @@ class BasePcpHandlerTest
     return std::make_pair(std::move(channel_a), std::move(channel_b));
   }
 
-  void RequestConnection(const std::string& endpoint_id,
-                         std::unique_ptr<MockEndpointChannel> channel_a,
-                         MockEndpointChannel* channel_b, ClientProxy* client,
-                         MockPcpHandler* pcp_handler,
-                         proto::connections::Medium connect_medium,
-                         std::atomic_int* flag = nullptr,
-                         Status expected_result = {Status::kSuccess}) {
+  void RequestConnection(
+      const std::string& endpoint_id,
+      std::unique_ptr<MockEndpointChannel> channel_a,
+      MockEndpointChannel* channel_b, ClientProxy* client,
+      MockPcpHandler* pcp_handler,
+      location::nearby::proto::connections::Medium connect_medium,
+      std::atomic_int* flag = nullptr,
+      Status expected_result = {Status::kSuccess}) {
     ConnectionRequestInfo info{
         .endpoint_info = ByteArray{"ABCD"},
         .listener = connection_listener_,
@@ -645,8 +649,9 @@ TEST_P(BasePcpHandlerTest, OnIncomingFrameChangesState) {
   EXPECT_EQ(pcp_handler.AcceptConnection(&client, endpoint_id, {}),
             Status{Status::kSuccess});
   NEARBY_LOG(INFO, "Simulating remote accept: id=%s", endpoint_id.c_str());
-  auto frame =
-      parser::FromBytes(parser::ForConnectionResponse(Status::kSuccess));
+  OsInfo os_info;
+  auto frame = parser::FromBytes(
+      parser::ForConnectionResponse(Status::kSuccess, os_info));
   EXPECT_CALL(mock_connection_listener_.bandwidth_changed_cb, Call).Times(1);
   pcp_handler.OnIncomingFrame(frame.result(), endpoint_id, &client,
                               connect_medium, packet_meta_data);
@@ -811,4 +816,3 @@ TEST_F(BasePcpHandlerTest, InjectEndpoint) {
 }  // namespace
 }  // namespace connections
 }  // namespace nearby
-}  // namespace location

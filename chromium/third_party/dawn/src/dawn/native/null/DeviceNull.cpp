@@ -57,10 +57,9 @@ MaybeError Adapter::InitializeImpl() {
     return {};
 }
 
-MaybeError Adapter::InitializeSupportedFeaturesImpl() {
+void Adapter::InitializeSupportedFeaturesImpl() {
     // Enable all features by default for the convenience of tests.
     mSupportedFeatures.featuresBitSet.set();
-    return {};
 }
 
 MaybeError Adapter::InitializeSupportedLimitsImpl(CombinedLimits* limits) {
@@ -68,15 +67,16 @@ MaybeError Adapter::InitializeSupportedLimitsImpl(CombinedLimits* limits) {
     return {};
 }
 
-ResultOrError<Ref<DeviceBase>> Adapter::CreateDeviceImpl(
-    const DeviceDescriptor* descriptor,
-    const TripleStateTogglesSet& userProvidedToggles) {
-    return Device::Create(this, descriptor, userProvidedToggles);
+void Adapter::SetupBackendDeviceToggles(TogglesState* deviceToggles) const {}
+
+ResultOrError<Ref<DeviceBase>> Adapter::CreateDeviceImpl(const DeviceDescriptor* descriptor,
+                                                         const TogglesState& deviceToggles) {
+    return Device::Create(this, descriptor, deviceToggles);
 }
 
-MaybeError Adapter::ValidateFeatureSupportedWithTogglesImpl(
+MaybeError Adapter::ValidateFeatureSupportedWithDeviceTogglesImpl(
     wgpu::FeatureName feature,
-    const TripleStateTogglesSet& userProvidedToggles) {
+    const TogglesState& deviceToggles) {
     return {};
 }
 
@@ -104,7 +104,7 @@ struct CopyFromStagingToBufferOperation : PendingOperation {
         destination->CopyFromStaging(staging, sourceOffset, destinationOffset, size);
     }
 
-    StagingBufferBase* staging;
+    BufferBase* staging;
     Ref<Buffer> destination;
     uint64_t sourceOffset;
     uint64_t destinationOffset;
@@ -116,8 +116,8 @@ struct CopyFromStagingToBufferOperation : PendingOperation {
 // static
 ResultOrError<Ref<Device>> Device::Create(Adapter* adapter,
                                           const DeviceDescriptor* descriptor,
-                                          const TripleStateTogglesSet& userProvidedToggles) {
-    Ref<Device> device = AcquireRef(new Device(adapter, descriptor, userProvidedToggles));
+                                          const TogglesState& deviceToggles) {
+    Ref<Device> device = AcquireRef(new Device(adapter, descriptor, deviceToggles));
     DAWN_TRY(device->Initialize(descriptor));
     return device;
 }
@@ -193,12 +193,6 @@ ResultOrError<Ref<TextureViewBase>> Device::CreateTextureViewImpl(
     return AcquireRef(new TextureView(texture, descriptor));
 }
 
-ResultOrError<std::unique_ptr<StagingBufferBase>> Device::CreateStagingBuffer(size_t size) {
-    std::unique_ptr<StagingBufferBase> stagingBuffer = std::make_unique<StagingBuffer>(size, this);
-    DAWN_TRY(stagingBuffer->Initialize());
-    return std::move(stagingBuffer);
-}
-
 void Device::DestroyImpl() {
     ASSERT(GetState() == State::Disconnected);
 
@@ -217,7 +211,7 @@ bool Device::HasPendingCommands() const {
     return false;
 }
 
-MaybeError Device::CopyFromStagingToBufferImpl(StagingBufferBase* source,
+MaybeError Device::CopyFromStagingToBufferImpl(BufferBase* source,
                                                uint64_t sourceOffset,
                                                BufferBase* destination,
                                                uint64_t destinationOffset,
@@ -238,9 +232,9 @@ MaybeError Device::CopyFromStagingToBufferImpl(StagingBufferBase* source,
     return {};
 }
 
-MaybeError Device::CopyFromStagingToTextureImpl(const StagingBufferBase* source,
+MaybeError Device::CopyFromStagingToTextureImpl(const BufferBase* source,
                                                 const TextureDataLayout& src,
-                                                TextureCopy* dst,
+                                                const TextureCopy& dst,
                                                 const Extent3D& copySizePixels) {
     return {};
 }
@@ -325,7 +319,7 @@ MaybeError Buffer::MapAtCreationImpl() {
     return {};
 }
 
-void Buffer::CopyFromStaging(StagingBufferBase* staging,
+void Buffer::CopyFromStaging(BufferBase* staging,
                              uint64_t sourceOffset,
                              uint64_t destinationOffset,
                              uint64_t size) {
@@ -343,7 +337,7 @@ MaybeError Buffer::MapAsyncImpl(wgpu::MapMode mode, size_t offset, size_t size) 
     return {};
 }
 
-void* Buffer::GetMappedPointerImpl() {
+void* Buffer::GetMappedPointer() {
     return mBackingData.get();
 }
 
@@ -524,24 +518,6 @@ DawnSwapChainError NativeSwapChainImpl::Present() {
 
 wgpu::TextureFormat NativeSwapChainImpl::GetPreferredFormat() const {
     return wgpu::TextureFormat::RGBA8Unorm;
-}
-
-// StagingBuffer
-
-StagingBuffer::StagingBuffer(size_t size, Device* device)
-    : StagingBufferBase(size), mDevice(device) {}
-
-StagingBuffer::~StagingBuffer() {
-    if (mBuffer) {
-        mDevice->DecrementMemoryUsage(GetSize());
-    }
-}
-
-MaybeError StagingBuffer::Initialize() {
-    DAWN_TRY(mDevice->IncrementMemoryUsage(GetSize()));
-    mBuffer = std::make_unique<uint8_t[]>(GetSize());
-    mMappedPointer = mBuffer.get();
-    return {};
 }
 
 uint32_t Device::GetOptimalBytesPerRowAlignment() const {

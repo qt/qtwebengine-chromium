@@ -94,11 +94,10 @@ void av1_init_obmc_buffer(OBMCBuffer *obmc_buffer) {
 
 void av1_make_default_fullpel_ms_params(
     FULLPEL_MOTION_SEARCH_PARAMS *ms_params, const struct AV1_COMP *cpi,
-    const MACROBLOCK *x, BLOCK_SIZE bsize, const MV *ref_mv,
+    MACROBLOCK *x, BLOCK_SIZE bsize, const MV *ref_mv,
     const search_site_config search_sites[NUM_DISTINCT_SEARCH_METHODS],
     int fine_search_interval) {
   const MV_SPEED_FEATURES *mv_sf = &cpi->sf.mv_sf;
-  const int sf_blk_search_method = mv_sf->use_bsize_dependent_search_method;
 
   // High level params
   ms_params->bsize = bsize;
@@ -107,14 +106,25 @@ void av1_make_default_fullpel_ms_params(
   init_ms_buffers(&ms_params->ms_buffers, x);
 
   SEARCH_METHODS search_method = mv_sf->search_method;
+  const int sf_blk_search_method = mv_sf->use_bsize_dependent_search_method;
   const int min_dim = AOMMIN(block_size_wide[bsize], block_size_high[bsize]);
-  if (sf_blk_search_method >= 2) {
-    const int qband = x->qindex >> (QINDEX_BITS - 2);
-    if (min_dim >= 16 && x->content_state_sb.source_sad_nonrd <= kMedSad &&
-        qband < 3)
-      search_method = get_faster_search_method(search_method);
-  } else if (sf_blk_search_method >= 1 && min_dim >= 32) {
+  const int qband = x->qindex >> (QINDEX_BITS - 2);
+  const bool use_faster_search_method =
+      (sf_blk_search_method == 1 && min_dim >= 32) ||
+      (sf_blk_search_method >= 2 && min_dim >= 16 &&
+       x->content_state_sb.source_sad_nonrd <= kMedSad && qband < 3);
+
+  if (use_faster_search_method) {
     search_method = get_faster_search_method(search_method);
+
+    // We might need to update the search site config since search_method
+    // is changed here.
+    const int ref_stride = ms_params->ms_buffers.ref->stride;
+    if (ref_stride != search_sites[search_method].stride) {
+      av1_refresh_search_site_config(x->search_site_cfg_buf, search_method,
+                                     ref_stride);
+      search_sites = x->search_site_cfg_buf;
+    }
   }
 
   av1_set_mv_search_method(ms_params, search_sites, search_method);
@@ -1300,84 +1310,77 @@ static int diamond_search_sad(FULLPEL_MV start_mv,
                               const FULLPEL_MOTION_SEARCH_PARAMS *ms_params,
                               const int search_step, int *num00,
                               FULLPEL_MV *best_mv, FULLPEL_MV *second_best_mv) {
+#define UPDATE_SEARCH_STEP                                      \
+  do {                                                          \
+    if (best_site != 0) {                                       \
+      tmp_second_best_mv = *best_mv;                            \
+      best_mv->row += site[best_site].mv.row;                   \
+      best_mv->col += site[best_site].mv.col;                   \
+      best_address += site[best_site].offset;                   \
+      is_off_center = 1;                                        \
+    }                                                           \
+                                                                \
+    if (is_off_center == 0) num_center_steps++;                 \
+                                                                \
+    if (best_site == 0 && step > 2) {                           \
+      int next_step_size = cfg->radius[step - 1];               \
+      while (next_step_size == cfg->radius[step] && step > 2) { \
+        num_center_steps++;                                     \
+        --step;                                                 \
+        next_step_size = cfg->radius[step - 1];                 \
+      }                                                         \
+    }                                                           \
+  } while (0)
+
   const struct buf_2d *const src = ms_params->ms_buffers.src;
   const struct buf_2d *const ref = ms_params->ms_buffers.ref;
 
+  const uint8_t *src_buf = src->buf;
+  const int src_stride = src->stride;
   const int ref_stride = ref->stride;
-  const uint8_t *best_address;
 
-  const uint8_t *mask = ms_params->ms_buffers.mask;
-  const uint8_t *second_pred = ms_params->ms_buffers.second_pred;
   const MV_COST_PARAMS *mv_cost_params = &ms_params->mv_cost_params;
 
   const search_site_config *cfg = ms_params->search_sites;
 
-  unsigned int bestsad = INT_MAX;
-  int best_site = 0;
   int is_off_center = 0;
+  // Number of times that we have stayed in the middle. This is used to skip
+  // search steps in the future if diamond_search_sad is called again.
+  int num_center_steps = 0;
 
   clamp_fullmv(&start_mv, &ms_params->mv_limits);
 
   // search_step determines the length of the initial step and hence the number
   // of iterations.
   const int tot_steps = cfg->num_search_steps - search_step;
+  FULLPEL_MV tmp_second_best_mv;
+  if (second_best_mv) {
+    tmp_second_best_mv = *second_best_mv;
+  }
 
-  *num00 = 0;
   *best_mv = start_mv;
 
   // Check the starting position
-  best_address = get_buf_from_fullmv(ref, &start_mv);
-  bestsad = get_mvpred_compound_sad(ms_params, src, best_address, ref_stride);
-  bestsad += mvsad_err_cost_(best_mv, &ms_params->mv_cost_params);
+  const uint8_t *best_address = get_buf_from_fullmv(ref, &start_mv);
+  unsigned int bestsad = mvsad_err_cost_(best_mv, &ms_params->mv_cost_params);
 
-  int next_step_size = tot_steps > 2 ? cfg->radius[tot_steps - 2] : 1;
-  for (int step = tot_steps - 1; step >= 0; --step) {
-    const search_site *site = cfg->site[step];
-    best_site = 0;
-    if (step > 0) next_step_size = cfg->radius[step - 1];
+  // TODO(chiyotsai@google.com): Implement 4 points search for msdf&sdaf
+  if (ms_params->ms_buffers.second_pred) {
+    bestsad +=
+        get_mvpred_compound_sad(ms_params, src, best_address, ref_stride);
 
-    int all_in = 1, j;
-    // Trap illegal vectors
-    all_in &= best_mv->row + site[1].mv.row >= ms_params->mv_limits.row_min;
-    all_in &= best_mv->row + site[2].mv.row <= ms_params->mv_limits.row_max;
-    all_in &= best_mv->col + site[3].mv.col >= ms_params->mv_limits.col_min;
-    all_in &= best_mv->col + site[4].mv.col <= ms_params->mv_limits.col_max;
+    for (int step = tot_steps - 1; step >= 0; --step) {
+      const search_site *site = cfg->site[step];
+      const int num_searches = cfg->searches_per_step[step];
+      int best_site = 0;
 
-    // TODO(anyone): Implement 4 points search for msdf&sdaf
-    if (all_in && !mask && !second_pred) {
-      const uint8_t *src_buf = src->buf;
-      const int src_stride = src->stride;
-      for (int idx = 1; idx <= cfg->searches_per_step[step]; idx += 4) {
-        unsigned char const *block_offset[4];
-        unsigned int sads[4];
-
-        for (j = 0; j < 4; j++)
-          block_offset[j] = site[idx + j].offset + best_address;
-
-        ms_params->sdx4df(src_buf, src_stride, block_offset, ref_stride, sads);
-        for (j = 0; j < 4; j++) {
-          if (sads[j] < bestsad) {
-            const FULLPEL_MV this_mv = { best_mv->row + site[idx + j].mv.row,
-                                         best_mv->col + site[idx + j].mv.col };
-            unsigned int thissad =
-                sads[j] + mvsad_err_cost_(&this_mv, mv_cost_params);
-            if (thissad < bestsad) {
-              bestsad = thissad;
-              best_site = idx + j;
-            }
-          }
-        }
-      }
-    } else {
-      for (int idx = 1; idx <= cfg->searches_per_step[step]; idx++) {
+      for (int idx = 1; idx <= num_searches; idx++) {
         const FULLPEL_MV this_mv = { best_mv->row + site[idx].mv.row,
                                      best_mv->col + site[idx].mv.col };
 
         if (av1_is_fullmv_in_range(&ms_params->mv_limits, this_mv)) {
           const uint8_t *const check_here = site[idx].offset + best_address;
-          unsigned int thissad;
-
-          thissad =
+          unsigned int thissad =
               get_mvpred_compound_sad(ms_params, src, check_here, ref_stride);
 
           if (thissad < bestsad) {
@@ -1389,47 +1392,91 @@ static int diamond_search_sad(FULLPEL_MV start_mv,
           }
         }
       }
+      UPDATE_SEARCH_STEP;
     }
+  } else {
+    bestsad += get_mvpred_sad(ms_params, src, best_address, ref_stride);
 
-    if (best_site != 0) {
-      if (second_best_mv) {
-        *second_best_mv = *best_mv;
+    for (int step = tot_steps - 1; step >= 0; --step) {
+      const search_site *site = cfg->site[step];
+      const int num_searches = cfg->searches_per_step[step];
+      int best_site = 0;
+
+      int all_in = 1;
+      // Trap illegal vectors
+      all_in &= best_mv->row + site[1].mv.row >= ms_params->mv_limits.row_min;
+      all_in &= best_mv->row + site[2].mv.row <= ms_params->mv_limits.row_max;
+      all_in &= best_mv->col + site[3].mv.col >= ms_params->mv_limits.col_min;
+      all_in &= best_mv->col + site[4].mv.col <= ms_params->mv_limits.col_max;
+
+      if (all_in) {
+        for (int idx = 1; idx <= num_searches; idx += 4) {
+          unsigned char const *block_offset[4];
+          unsigned int sads[4];
+
+          for (int j = 0; j < 4; j++)
+            block_offset[j] = site[idx + j].offset + best_address;
+
+          ms_params->sdx4df(src_buf, src_stride, block_offset, ref_stride,
+                            sads);
+          for (int j = 0; j < 4; j++) {
+            if (sads[j] < bestsad) {
+              const FULLPEL_MV this_mv = { best_mv->row + site[idx + j].mv.row,
+                                           best_mv->col +
+                                               site[idx + j].mv.col };
+              unsigned int thissad =
+                  sads[j] + mvsad_err_cost_(&this_mv, mv_cost_params);
+              if (thissad < bestsad) {
+                bestsad = thissad;
+                best_site = idx + j;
+              }
+            }
+          }
+        }
+      } else {
+        for (int idx = 1; idx <= num_searches; idx++) {
+          const FULLPEL_MV this_mv = { best_mv->row + site[idx].mv.row,
+                                       best_mv->col + site[idx].mv.col };
+
+          if (av1_is_fullmv_in_range(&ms_params->mv_limits, this_mv)) {
+            const uint8_t *const check_here = site[idx].offset + best_address;
+            unsigned int thissad =
+                get_mvpred_sad(ms_params, src, check_here, ref_stride);
+
+            if (thissad < bestsad) {
+              thissad += mvsad_err_cost_(&this_mv, mv_cost_params);
+              if (thissad < bestsad) {
+                bestsad = thissad;
+                best_site = idx;
+              }
+            }
+          }
+        }
       }
-      best_mv->row += site[best_site].mv.row;
-      best_mv->col += site[best_site].mv.col;
-      best_address += site[best_site].offset;
-      is_off_center = 1;
-    }
-
-    if (is_off_center == 0) (*num00)++;
-
-    if (best_site == 0) {
-      while (next_step_size == cfg->radius[step] && step > 2) {
-        ++(*num00);
-        --step;
-        next_step_size = cfg->radius[step - 1];
-      }
+      UPDATE_SEARCH_STEP;
     }
   }
 
+  *num00 = num_center_steps;
+  if (second_best_mv) {
+    *second_best_mv = tmp_second_best_mv;
+  }
+
   return bestsad;
+
+#undef UPDATE_SEARCH_STEP
 }
 
-/* do_refine: If last step (1-away) of n-step search doesn't pick the center
-              point as the best match, we will do a final 1-away diamond
-              refining search  */
 static int full_pixel_diamond(const FULLPEL_MV start_mv,
                               const FULLPEL_MOTION_SEARCH_PARAMS *ms_params,
                               const int step_param, int *cost_list,
                               FULLPEL_MV *best_mv, FULLPEL_MV *second_best_mv) {
   const search_site_config *cfg = ms_params->search_sites;
   int thissme, n, num00 = 0;
-  int bestsme = diamond_search_sad(start_mv, ms_params, step_param, &n, best_mv,
-                                   second_best_mv);
+  diamond_search_sad(start_mv, ms_params, step_param, &n, best_mv,
+                     second_best_mv);
 
-  if (bestsme < INT_MAX) {
-    bestsme = get_mvpred_compound_var_cost(ms_params, best_mv);
-  }
+  int bestsme = get_mvpred_compound_var_cost(ms_params, best_mv);
 
   // If there won't be more n-step search, check to see if refining search is
   // needed.
@@ -1437,23 +1484,23 @@ static int full_pixel_diamond(const FULLPEL_MV start_mv,
   while (n < further_steps) {
     ++n;
 
+    // TODO(chiyotsai@google.com): There is another bug here where the second
+    // best mv gets incorrectly overwritten. Fix it later.
+    FULLPEL_MV tmp_best_mv;
+    diamond_search_sad(start_mv, ms_params, step_param + n, &num00,
+                       &tmp_best_mv, second_best_mv);
+
+    thissme = get_mvpred_compound_var_cost(ms_params, &tmp_best_mv);
+
+    if (thissme < bestsme) {
+      bestsme = thissme;
+      *best_mv = tmp_best_mv;
+    }
+
     if (num00) {
-      num00--;
-    } else {
-      // TODO(chiyotsai@google.com): There is another bug here where the second
-      // best mv gets incorrectly overwritten. Fix it later.
-      FULLPEL_MV tmp_best_mv;
-      thissme = diamond_search_sad(start_mv, ms_params, step_param + n, &num00,
-                                   &tmp_best_mv, second_best_mv);
-
-      if (thissme < INT_MAX) {
-        thissme = get_mvpred_compound_var_cost(ms_params, &tmp_best_mv);
-      }
-
-      if (thissme < bestsme) {
-        bestsme = thissme;
-        *best_mv = tmp_best_mv;
-      }
+      // Advance the loop by num00 steps
+      n += num00;
+      num00 = 0;
     }
   }
 
@@ -1558,6 +1605,12 @@ static int full_pixel_exhaustive(const FULLPEL_MV start_mv,
   int interval = mesh_patterns[0].interval;
   int range = mesh_patterns[0].range;
   int baseline_interval_divisor;
+
+  // TODO(chiyotsai@google.com): Currently exhaustive search calls single ref
+  // version of sad and variance function. We still need to check the
+  // performance when compound ref exhaustive search is enabled.
+  assert(!ms_params->ms_buffers.second_pred &&
+         "Mesh search does not support compound mode!");
 
   *best_mv = start_mv;
 
@@ -1756,7 +1809,8 @@ int av1_full_pixel_search(const FULLPEL_MV start_mv,
 
   // Should we allow a follow on exhaustive search?
   if (!run_mesh_search &&
-      ((search_method == NSTEP) || (search_method == NSTEP_8PT))) {
+      ((search_method == NSTEP) || (search_method == NSTEP_8PT)) &&
+      !ms_params->ms_buffers.second_pred) {
     int exhaustive_thr = ms_params->force_mesh_thresh;
     exhaustive_thr >>=
         10 - (mi_size_wide_log2[bsize] + mi_size_high_log2[bsize]);
@@ -2002,16 +2056,15 @@ unsigned int av1_int_pro_motion_estimation(const AV1_COMP *cpi, MACROBLOCK *x,
   }
 
   if (xd->bd != 8) {
-    unsigned int sad;
     best_int_mv->as_fullmv = kZeroFullMv;
-    sad = cpi->ppi->fn_ptr[bsize].sdf(x->plane[0].src.buf, src_stride,
-                                      xd->plane[0].pre[0].buf, ref_stride);
+    best_sad = cpi->ppi->fn_ptr[bsize].sdf(x->plane[0].src.buf, src_stride,
+                                           xd->plane[0].pre[0].buf, ref_stride);
 
     if (scaled_ref_frame) {
       int i;
       for (i = 0; i < MAX_MB_PLANE; i++) xd->plane[i].pre[0] = backup_yv12[i];
     }
-    return sad;
+    return best_sad;
   }
 
   // Set up prediction 1-D reference set
@@ -2038,6 +2091,19 @@ unsigned int av1_int_pro_motion_estimation(const AV1_COMP *cpi, MACROBLOCK *x,
   ref_buf = get_buf_from_fullmv(&xd->plane[0].pre[0], &this_mv);
   best_sad =
       cpi->ppi->fn_ptr[bsize].sdf(src_buf, src_stride, ref_buf, ref_stride);
+
+  // Evaluate zero MV if found MV is non-zero.
+  if (best_int_mv->as_int != 0) {
+    tmp_sad = cpi->ppi->fn_ptr[bsize].sdf(x->plane[0].src.buf, src_stride,
+                                          xd->plane[0].pre[0].buf, ref_stride);
+
+    if (tmp_sad < best_sad) {
+      best_int_mv->as_fullmv = kZeroFullMv;
+      this_mv = best_int_mv->as_fullmv;
+      ref_buf = xd->plane[0].pre[0].buf;
+      best_sad = tmp_sad;
+    }
+  }
 
   {
     const uint8_t *const pos[4] = {
