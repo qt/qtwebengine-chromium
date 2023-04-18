@@ -7,7 +7,6 @@
 
 #include <map>
 #include <memory>
-#include <set>
 #include <string>
 
 #include "base/files/file_path.h"
@@ -91,7 +90,6 @@ class DevToolsHttpHandler {
                const std::string& data,
                const std::string& mime_type);
   void Send404(int connection_id);
-  void Send403(int connection_id);
   void Send500(int connection_id,
                const std::string& message);
   void AcceptWebSocket(int connection_id,
@@ -108,7 +106,6 @@ class DevToolsHttpHandler {
   base::Value SerializeDescriptor(scoped_refptr<DevToolsAgentHost> agent_host,
                                   const std::string& host);
 
-  std::set<std::string> remote_allow_origins_;
   // The thread used by the devtools handler to run server socket.
   std::unique_ptr<base::Thread> thread_;
   std::string browser_guid_;
