@@ -951,6 +951,12 @@ void GpuInit::InitializeInProcess(base::CommandLine* command_line,
 #endif  // BUILDFLAG(IS_MAC)
 
   if (!gl_disabled) {
+    if (!CollectGpuExtraInfo(&gpu_extra_info_, gpu_preferences)) {
+      VLOG(1) << "gpu::CollectGpuExtraInfo failed";
+    }
+  }
+
+  if (!gl_disabled) {
     if (!gpu_feature_info_.disabled_extensions.empty()) {
       gl::init::SetDisabledExtensionsPlatform(
           gpu_feature_info_.disabled_extensions);
