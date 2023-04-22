@@ -28,6 +28,7 @@
 #include <cassert>
 #include <cinttypes>
 #include <cstddef>
+#include <cstdio>
 #include <cstdint>
 #include <cstring>
 #include <new>

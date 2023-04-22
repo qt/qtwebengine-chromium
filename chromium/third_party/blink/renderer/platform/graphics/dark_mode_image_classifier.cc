@@ -4,6 +4,7 @@
 
 #include "third_party/blink/renderer/platform/graphics/dark_mode_image_classifier.h"
 
+#include <cstdint>
 #include <set>
 
 #include "base/memory/singleton.h"

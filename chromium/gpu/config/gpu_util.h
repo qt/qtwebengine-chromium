@@ -5,6 +5,8 @@
 #ifndef GPU_CONFIG_GPU_UTIL_H_
 #define GPU_CONFIG_GPU_UTIL_H_
 
+#include <cstdint>
+
 #include "build/build_config.h"
 #include "gpu/config/gpu_feature_info.h"
 #include "gpu/gpu_export.h"

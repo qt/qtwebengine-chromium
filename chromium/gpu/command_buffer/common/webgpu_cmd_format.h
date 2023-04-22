@@ -5,6 +5,7 @@
 #ifndef GPU_COMMAND_BUFFER_COMMON_WEBGPU_CMD_FORMAT_H_
 #define GPU_COMMAND_BUFFER_COMMON_WEBGPU_CMD_FORMAT_H_
 
+#include <cstdint>
 #include <string.h>
 
 #include "gpu/command_buffer/common/gl2_types.h"
