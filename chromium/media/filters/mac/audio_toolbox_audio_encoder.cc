@@ -311,12 +311,12 @@ void AudioToolboxAudioEncoder::DoEncode(AudioBus* input_bus) {
     output_buffer_list.mBuffers[0].mDataByteSize = max_packet_size_;
 
     // Encodes |num_packets| into |packet_buffer| by calling the
-    // ProvideInputCallback to fill an AudioBufferList that points into
+    // ProvideInputCallback2 to fill an AudioBufferList that points into
     // |input_bus|. See media::AudioConverter for a similar mechanism.
     UInt32 num_packets = 1;
     AudioStreamPacketDescription packet_description = {};
     auto result = AudioConverterFillComplexBuffer(
-        encoder_, ProvideInputCallback, &input_data, &num_packets,
+        encoder_, ProvideInputCallback2, &input_data, &num_packets,
         &output_buffer_list, &packet_description);
 
     // We expect "1 in, 1 out" when feeding packets into the encoder, except
