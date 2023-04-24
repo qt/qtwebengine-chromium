@@ -2742,8 +2742,10 @@ Handle<String> Intl::NumberFieldToType(Isolate* isolate,
     case UNUM_MEASURE_UNIT_FIELD:
       return isolate->factory()->unit_string();
 
+#if U_ICU_VERSION_MAJOR_NUM >= 71 && !defined(U_HIDE_DRAFT_API)
     case UNUM_APPROXIMATELY_SIGN_FIELD:
       return isolate->factory()->approximatelySign_string();
+#endif
 
     default:
       UNREACHABLE();

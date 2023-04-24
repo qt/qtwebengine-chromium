@@ -910,9 +910,16 @@ icu::number::UnlocalizedNumberFormatter SetDigitOptionsToFormatterV3(
       break;
   }
   if (rounding_increment != 1) {
+#if U_ICU_VERSION_MAJOR_NUM >= 71
     precision = ::icu::number::Precision::incrementExact(
                     rounding_increment, -digit_options.maximum_fraction_digits)
                     .withMinFraction(digit_options.minimum_fraction_digits);
+#else
+    double icu_increment = rounding_increment *
+                           std::pow(10, -digit_options.maximum_fraction_digits);
+    precision = ::icu::number::Precision::increment(icu_increment)
+                    .withMinFraction(digit_options.minimum_fraction_digits);
+#endif
   }
   if (trailing_zeros == JSNumberFormat::ShowTrailingZeros::kHide) {
     precision = precision.trailingZeroDisplay(UNUM_TRAILING_ZERO_HIDE_IF_WHOLE);
