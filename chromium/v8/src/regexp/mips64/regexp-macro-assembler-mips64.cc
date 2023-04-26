@@ -898,19 +898,18 @@ Handle<HeapObject> RegExpMacroAssemblerMIPS::GetCode(Handle<String> source) {
         __ Daddu(a2, a2, num_saved_registers_ * kIntSize);
         __ Sd(a2, MemOperand(frame_pointer(), kRegisterOutput));
 
-        // Prepare a0 to initialize registers with its value in the next run.
-        __ Ld(a0, MemOperand(frame_pointer(), kStringStartMinusOne));
-
         // Restore the original regexp stack pointer value (effectively, pop the
         // stored base pointer).
         PopRegExpBasePointer(backtrack_stackpointer(), a2);
+
+        Label reload_string_start_minus_one;
 
         if (global_with_zero_length_check()) {
           // Special case for zero-length matches.
           // t3: capture start index
           // Not a zero-length match, restart.
-          __ Branch(
-              &load_char_start_regexp, ne, current_input_offset(), Operand(t3));
+          __ Branch(&reload_string_start_minus_one, ne, current_input_offset(),
+                    Operand(t3));
           // Offset from the end is zero if we already reached the end.
           __ Branch(&exit_label_, eq, current_input_offset(),
                     Operand(zero_reg));
@@ -921,6 +920,11 @@ Handle<HeapObject> RegExpMacroAssemblerMIPS::GetCode(Handle<String> source) {
                    Operand((mode_ == UC16) ? 2 : 1));
           if (global_unicode()) CheckNotInSurrogatePair(0, &advance);
         }
+
+        __ bind(&reload_string_start_minus_one);
+        // Prepare a0 to initialize registers with its value in the next run.
+        // Must be immediately before the jump to avoid clobbering.
+        __ Ld(a0, MemOperand(frame_pointer(), kStringStartMinusOne));
 
         __ Branch(&load_char_start_regexp);
       } else {
