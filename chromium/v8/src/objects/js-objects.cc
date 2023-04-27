@@ -1519,7 +1519,8 @@ Maybe<bool> JSReceiver::ValidateAndApplyPropertyDescriptor(
                 ? desc->set()
                 : Handle<Object>::cast(isolate->factory()->null_value()));
         MaybeHandle<Object> result =
-            JSObject::DefineAccessor(it, getter, setter, desc->ToAttributes());
+            JSObject::DefineOwnAccessorIgnoreAttributes(it, getter, setter,
+                                                        desc->ToAttributes());
         if (result.is_null()) return Nothing<bool>();
       }
     }
@@ -1701,7 +1702,8 @@ Maybe<bool> JSReceiver::ValidateAndApplyPropertyDescriptor(
                     ? current->set()
                     : Handle<Object>::cast(isolate->factory()->null_value()));
       MaybeHandle<Object> result =
-          JSObject::DefineAccessor(it, getter, setter, attrs);
+          JSObject::DefineOwnAccessorIgnoreAttributes(it, getter, setter,
+                                                      desc->ToAttributes());
       if (result.is_null()) return Nothing<bool>();
     }
   }
@@ -4635,7 +4637,7 @@ bool JSObject::HasEnumerableElements() {
   UNREACHABLE();
 }
 
-MaybeHandle<Object> JSObject::DefineAccessor(Handle<JSObject> object,
+MaybeHandle<Object> JSObject::DefineOwnAccessorIgnoreAttributes(Handle<JSObject> object,
                                              Handle<Name> name,
                                              Handle<Object> getter,
                                              Handle<Object> setter,
@@ -4644,10 +4646,10 @@ MaybeHandle<Object> JSObject::DefineAccessor(Handle<JSObject> object,
 
   PropertyKey key(isolate, name);
   LookupIterator it(isolate, object, key, LookupIterator::OWN_SKIP_INTERCEPTOR);
-  return DefineAccessor(&it, getter, setter, attributes);
+  return DefineOwnAccessorIgnoreAttributes(&it, getter, setter, attributes);
 }
 
-MaybeHandle<Object> JSObject::DefineAccessor(LookupIterator* it,
+MaybeHandle<Object> JSObject::DefineOwnAccessorIgnoreAttributes(LookupIterator* it,
                                              Handle<Object> getter,
                                              Handle<Object> setter,
                                              PropertyAttributes attributes) {
