@@ -135,7 +135,7 @@ void NtpBackgroundHandler::HandleSetBackground(const base::Value::List& args) {
       service->SetCustomBackgroundInfo(
           NtpBackgrounds[background_index], "Universe Cosmic Vacum",
           "Philipp Rietz — Walli",
-          GURL("https://walli.shanga.co/image/view/?id=370"), "");
+          GURL(), "");
       break;
     case static_cast<int>(NtpBackgrounds::kCityscape):
       service->SetCustomBackgroundInfo(
@@ -158,7 +158,7 @@ void NtpBackgroundHandler::HandleSetBackground(const base::Value::List& args) {
       service->SetCustomBackgroundInfo(
           NtpBackgrounds[background_index], "Tessellation 15",
           "Justin Prno — Walli",
-          GURL("https://walli.shanga.co/image/view/?id=1375"), "");
+          GURL(), "");
       break;
     case static_cast<int>(NtpBackgrounds::kLandscape):
       service->SetCustomBackgroundInfo(
