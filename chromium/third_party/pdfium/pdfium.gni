@@ -75,7 +75,7 @@ declare_args() {
   pdfium_use_system_libpng = false
 
   # Don't build against bundled libtiff.
-  use_system_libtiff = false
+  pdfium_use_system_libtiff = false
 
   # Don't build against bundled zlib.
   pdfium_use_system_zlib = false
