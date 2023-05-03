@@ -456,7 +456,7 @@ group("png") {
 }
 
 if (pdf_enable_xfa_tiff) {
-  if (use_system_libtiff) {
+  if (pdfium_use_system_libtiff) {
     config("system_tiff_config") {
       libs = [ "tiff" ]
     }
@@ -519,7 +519,7 @@ if (pdf_enable_xfa_tiff) {
   }
 
   group("tiff") {
-    if (use_system_libtiff) {
+    if (pdfium_use_system_libtiff) {
       public_configs = [ ":system_tiff_config" ]
     } else {
       public_deps = [ ":fx_tiff" ]

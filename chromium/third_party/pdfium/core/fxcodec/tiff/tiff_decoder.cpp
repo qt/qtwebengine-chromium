@@ -23,7 +23,11 @@
 #include "third_party/base/numerics/safe_conversions.h"
 
 extern "C" {
-#include "third_party/libtiff/tiffiop.h"
+#ifdef USE_SYSTEM_LIBTIFF
+#include <tiffio.h>
+#else
+#include "third_party/libtiff/tiffio.h"
+#endif
 }  // extern C
 
 namespace {
@@ -106,8 +110,10 @@ int _TIFFmemcmp(const void* ptr1, const void* ptr2, tmsize_t size) {
   return memcmp(ptr1, ptr2, static_cast<size_t>(size));
 }
 
+extern "C" {
 TIFFErrorHandler _TIFFwarningHandler = nullptr;
 TIFFErrorHandler _TIFFerrorHandler = nullptr;
+}
 
 namespace {
 
@@ -190,7 +196,7 @@ TIFF* tiff_open(void* context, const char* mode) {
                              tiff_write, tiff_seek, tiff_close, tiff_get_size,
                              tiff_map, tiff_unmap);
   if (tif) {
-    tif->tif_fd = (int)(intptr_t)context;
+    TIFFSetFileno(tif, (int)(intptr_t)context);
   }
   return tif;
 }
