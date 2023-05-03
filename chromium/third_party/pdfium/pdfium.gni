@@ -69,6 +69,9 @@ declare_args() {
   # Don't build against bundled libpng.
   pdfium_use_system_libpng = false
 
+  # Don't build against bundled libtiff
+  pdfium_use_system_libtiff = false
+
   # Enable SSE2 for MSVC builds. Ignored if it's not a MSVC build.
   msvc_use_sse2 = true
 
