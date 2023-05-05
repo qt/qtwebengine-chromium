@@ -59,11 +59,12 @@ base::TimeDelta GetGpuWatchdogTimeout(bool software_rendering) {
     } else if (num_of_processors <= 4) {
       timeout += base::Seconds(5);
     }
+  }
 #endif
 
-    if (software_rendering) {
-      timeout *= kSoftwareRenderingFactor;
-    }
+  if (software_rendering) {
+    timeout *= kSoftwareRenderingFactor;
+  }
   return timeout;
 }
 
