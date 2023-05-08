@@ -777,6 +777,7 @@ void av1_init_tile_thread_data(AV1_PRIMARY *ppi, int is_first_pass) {
 
   int num_workers = p_mt_info->num_workers;
   int num_enc_workers = av1_get_num_mod_workers_for_alloc(p_mt_info, MOD_ENC);
+  assert(num_enc_workers <= num_workers);
   for (int i = num_workers - 1; i >= 0; i--) {
     EncWorkerData *const thread_data = &p_mt_info->tile_thr_data[i];
 
@@ -886,6 +887,10 @@ void av1_init_tile_thread_data(AV1_PRIMARY *ppi, int is_first_pass) {
       }
     }
   }
+
+  // Record the number of workers in encode stage multi-threading for which
+  // allocation is done.
+  p_mt_info->prev_num_enc_workers = num_enc_workers;
 }
 
 void av1_create_workers(AV1_PRIMARY *ppi, int num_workers) {

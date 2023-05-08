@@ -25,6 +25,7 @@
 #include "av1/av1_iface_common.h"
 #include "av1/encoder/bitstream.h"
 #include "av1/encoder/encoder.h"
+#include "av1/encoder/encoder_alloc.h"
 #include "av1/encoder/encoder_utils.h"
 #include "av1/encoder/ethread.h"
 #include "av1/encoder/external_partition.h"
@@ -3095,6 +3096,19 @@ static aom_codec_err_t encoder_encode(aom_codec_alg_priv_t *ctx,
       }
 #endif  // CONFIG_MULTITHREAD
     }
+
+    // Re-allocate thread data if workers for encoder multi-threading stage
+    // exceeds prev_num_enc_workers.
+    const int num_enc_workers =
+        av1_get_num_mod_workers_for_alloc(&ppi->p_mt_info, MOD_ENC);
+    if (ppi->p_mt_info.prev_num_enc_workers < num_enc_workers &&
+        num_enc_workers <= ppi->p_mt_info.num_workers) {
+      free_thread_data(ppi);
+      for (int j = 0; j < ppi->num_fp_contexts; j++)
+        aom_free(ppi->parallel_cpi[j]->td.tctx);
+      av1_init_tile_thread_data(ppi, cpi->oxcf.pass == AOM_RC_FIRST_PASS);
+    }
+
     for (int i = 0; i < ppi->num_fp_contexts; i++) {
       av1_init_frame_mt(ppi, ppi->parallel_cpi[i]);
     }
