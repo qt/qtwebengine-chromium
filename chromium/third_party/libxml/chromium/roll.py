@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-# Copyright 2017 The Chromium Authors. All rights reserved.
+# Copyright 2017 The Chromium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -66,9 +66,7 @@ import tempfile
 #    e. Complete the review as usual
 
 PATCHES = [
-    'chromium-issue-628581.patch',
     'libxml2-2.9.4-security-xpath-nodetab-uaf.patch',
-    'chromium-issue-708434.patch',
     'undo-sax-deprecation.patch',
 ]
 
@@ -90,6 +88,7 @@ SHARED_XML_CONFIGURE_OPTIONS = [
     ('--with-python', 'python=yes'),
     ('--with-reader', 'reader=yes'),
     ('--with-sax1', 'sax1=yes'),
+    ('--with-threads', 'threads=yes'),
     ('--with-tree', 'tree=yes'),
     ('--with-writer', 'writer=yes'),
     ('--with-xpath', 'xpath=yes'),
@@ -109,7 +108,6 @@ SHARED_XML_CONFIGURE_OPTIONS = [
     ('--without-regexps', 'regexps=no'),
     ('--without-schemas', 'schemas=no'),
     ('--without-schematron', 'schematron=no'),
-    ('--without-threads', 'threads=no'),
     ('--without-valid', 'valid=no'),
     ('--without-xinclude', 'xinclude=no'),
     ('--without-xptr', 'xptr=no'),
@@ -216,6 +214,11 @@ FILES_TO_REMOVE = [
     'src/xpointer.c',
     'src/xstc',
     'src/xzlib.c',
+    'linux/.deps',
+    'linux/doc',
+    'linux/example',
+    'linux/fuzz',
+    'linux/python',
 ]
 
 

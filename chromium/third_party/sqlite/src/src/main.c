@@ -824,18 +824,19 @@ static int setupLookaside(sqlite3 *db, void *pBuf, int sz, int cnt){
     db->lookaside.bMalloced = pBuf==0 ?1:0;
     db->lookaside.nSlot = nBig+nSm;
   }else{
-    db->lookaside.pStart = db;
+    db->lookaside.pStart = 0;
 #ifndef SQLITE_OMIT_TWOSIZE_LOOKASIDE
     db->lookaside.pSmallInit = 0;
     db->lookaside.pSmallFree = 0;
-    db->lookaside.pMiddle = db;
+    db->lookaside.pMiddle = 0;
 #endif /* SQLITE_OMIT_TWOSIZE_LOOKASIDE */
-    db->lookaside.pEnd = db;
+    db->lookaside.pEnd = 0;
     db->lookaside.bDisable = 1;
     db->lookaside.sz = 0;
     db->lookaside.bMalloced = 0;
     db->lookaside.nSlot = 0;
   }
+  db->lookaside.pTrueEnd = db->lookaside.pEnd;
   assert( sqlite3LookasideUsed(db,0)==0 );
 #endif /* SQLITE_OMIT_LOOKASIDE */
   return SQLITE_OK;
@@ -914,6 +915,7 @@ int sqlite3_db_cacheflush(sqlite3 *db){
 int sqlite3_db_config(sqlite3 *db, int op, ...){
   va_list ap;
   int rc;
+  sqlite3_mutex_enter(db->mutex);
   va_start(ap, op);
   switch( op ){
     case SQLITE_DBCONFIG_MAINDBNAME: {
@@ -979,6 +981,7 @@ int sqlite3_db_config(sqlite3 *db, int op, ...){
     }
   }
   va_end(ap);
+  sqlite3_mutex_leave(db->mutex);
   return rc;
 }
 
@@ -1563,6 +1566,7 @@ const char *sqlite3ErrName(int rc){
       case SQLITE_NOTICE_RECOVER_WAL: zName = "SQLITE_NOTICE_RECOVER_WAL";break;
       case SQLITE_NOTICE_RECOVER_ROLLBACK:
                                 zName = "SQLITE_NOTICE_RECOVER_ROLLBACK"; break;
+      case SQLITE_NOTICE_RBU:         zName = "SQLITE_NOTICE_RBU"; break;
       case SQLITE_WARNING:            zName = "SQLITE_WARNING";           break;
       case SQLITE_WARNING_AUTOINDEX:  zName = "SQLITE_WARNING_AUTOINDEX"; break;
       case SQLITE_DONE:               zName = "SQLITE_DONE";              break;
@@ -1792,7 +1796,9 @@ int sqlite3_busy_timeout(sqlite3 *db, int ms){
 */
 void sqlite3_interrupt(sqlite3 *db){
 #ifdef SQLITE_ENABLE_API_ARMOR
-  if( !sqlite3SafetyCheckOk(db) && (db==0 || db->eOpenState!=SQLITE_STATE_ZOMBIE) ){
+  if( !sqlite3SafetyCheckOk(db)
+   && (db==0 || db->eOpenState!=SQLITE_STATE_ZOMBIE)
+  ){
     (void)SQLITE_MISUSE_BKPT;
     return;
   }
@@ -1800,6 +1806,21 @@ void sqlite3_interrupt(sqlite3 *db){
   AtomicStore(&db->u1.isInterrupted, 1);
 }
 
+/*
+** Return true or false depending on whether or not an interrupt is
+** pending on connection db.
+*/
+int sqlite3_is_interrupted(sqlite3 *db){
+#ifdef SQLITE_ENABLE_API_ARMOR
+  if( !sqlite3SafetyCheckOk(db)
+   && (db==0 || db->eOpenState!=SQLITE_STATE_ZOMBIE)
+  ){
+    (void)SQLITE_MISUSE_BKPT;
+    return 0;
+  }
+#endif
+  return AtomicLoad(&db->u1.isInterrupted)!=0;
+}
 
 /*
 ** This function is exactly the same as sqlite3_create_function(), except
@@ -1844,7 +1865,7 @@ int sqlite3CreateFunc(
   /* The SQLITE_INNOCUOUS flag is the same bit as SQLITE_FUNC_UNSAFE.  But
   ** the meaning is inverted.  So flip the bit. */
   assert( SQLITE_FUNC_UNSAFE==SQLITE_INNOCUOUS );
-  extraFlags ^= SQLITE_FUNC_UNSAFE;
+  extraFlags ^= SQLITE_FUNC_UNSAFE;  /* tag-20230109-1 */
 
   
 #ifndef SQLITE_OMIT_UTF16
@@ -1862,11 +1883,11 @@ int sqlite3CreateFunc(
     case SQLITE_ANY: {
       int rc;
       rc = sqlite3CreateFunc(db, zFunctionName, nArg,
-           (SQLITE_UTF8|extraFlags)^SQLITE_FUNC_UNSAFE,
+           (SQLITE_UTF8|extraFlags)^SQLITE_FUNC_UNSAFE, /* tag-20230109-1 */
            pUserData, xSFunc, xStep, xFinal, xValue, xInverse, pDestructor);
       if( rc==SQLITE_OK ){
         rc = sqlite3CreateFunc(db, zFunctionName, nArg,
-             (SQLITE_UTF16LE|extraFlags)^SQLITE_FUNC_UNSAFE,
+             (SQLITE_UTF16LE|extraFlags)^SQLITE_FUNC_UNSAFE, /* tag-20230109-1*/
              pUserData, xSFunc, xStep, xFinal, xValue, xInverse, pDestructor);
       }
       if( rc!=SQLITE_OK ){
@@ -2115,7 +2136,7 @@ int sqlite3_overload_function(
   rc = sqlite3FindFunction(db, zName, nArg, SQLITE_UTF8, 0)!=0;
   sqlite3_mutex_leave(db->mutex);
   if( rc ) return SQLITE_OK;
-  zCopy = sqlite3_mprintf(zName);
+  zCopy = sqlite3_mprintf("%s", zName);
   if( zCopy==0 ) return SQLITE_NOMEM;
   return sqlite3_create_function_v2(db, zName, nArg, SQLITE_UTF8,
                            zCopy, sqlite3InvalidFunction, 0, 0, sqlite3_free);
@@ -3349,6 +3370,19 @@ static int openDatabase(
     goto opendb_out;
   }
 
+#if SQLITE_OS_UNIX && defined(SQLITE_OS_KV_OPTIONAL)
+  /* Process magic filenames ":localStorage:" and ":sessionStorage:" */
+  if( zFilename && zFilename[0]==':' ){
+    if( strcmp(zFilename, ":localStorage:")==0 ){
+      zFilename = "file:local?vfs=kvvfs";
+      flags |= SQLITE_OPEN_URI;
+    }else if( strcmp(zFilename, ":sessionStorage:")==0 ){
+      zFilename = "file:session?vfs=kvvfs";
+      flags |= SQLITE_OPEN_URI;
+    }
+  }
+#endif /* SQLITE_OS_UNIX && defined(SQLITE_OS_KV_OPTIONAL) */
+
   /* Parse the filename/URI argument
   **
   ** Only allow sensible combinations of bits in the flags argument.  
@@ -3379,6 +3413,12 @@ static int openDatabase(
     sqlite3_free(zErrMsg);
     goto opendb_out;
   }
+  assert( db->pVfs!=0 );
+#if SQLITE_OS_KV || defined(SQLITE_OS_KV_OPTIONAL)
+  if( sqlite3_stricmp(db->pVfs->zName, "kvvfs")==0 ){
+    db->temp_store = 2;
+  }
+#endif
 
   /* Open the backend database driver */
   rc = sqlite3BtreeOpen(db->pVfs, zOpen, db, &db->aDb[0].pBt, 0,
@@ -3927,6 +3967,9 @@ int sqlite3_file_control(sqlite3 *db, const char *zDbName, int op, void *pArg){
       if( iNew>=0 && iNew<=255 ){
         sqlite3BtreeSetPageSize(pBtree, 0, iNew, 0);
       }
+      rc = SQLITE_OK;
+    }else if( op==SQLITE_FCNTL_RESET_CACHE ){
+      sqlite3BtreeClearCache(pBtree);
       rc = SQLITE_OK;
     }else{
       int nSave = db->busyHandler.nBusy;
@@ -4488,7 +4531,7 @@ static char *appendText(char *p, const char *z){
 ** Memory layout must be compatible with that generated by the pager
 ** and expected by sqlite3_uri_parameter() and databaseName().
 */
-char *sqlite3_create_filename(
+const char *sqlite3_create_filename(
   const char *zDatabase,
   const char *zJournal,
   const char *zWal,
@@ -4524,10 +4567,10 @@ char *sqlite3_create_filename(
 ** error to call this routine with any parameter other than a pointer
 ** previously obtained from sqlite3_create_filename() or a NULL pointer.
 */
-void sqlite3_free_filename(char *p){
+void sqlite3_free_filename(const char *p){
   if( p==0 ) return;
-  p = (char*)databaseName(p);
-  sqlite3_free(p - 4);
+  p = databaseName(p);
+  sqlite3_free((char*)p - 4);
 }
 
 
@@ -4778,8 +4821,8 @@ int sqlite3_snapshot_open(
 */
 int sqlite3_snapshot_recover(sqlite3 *db, const char *zDb){
   int rc = SQLITE_ERROR;
-  int iDb;
 #ifndef SQLITE_OMIT_WAL
+  int iDb;
 
 #ifdef SQLITE_ENABLE_API_ARMOR
   if( !sqlite3SafetyCheckOk(db) ){

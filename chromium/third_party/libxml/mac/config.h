@@ -66,8 +66,8 @@
 /* Define to 1 if you have the <poll.h> header file. */
 #define HAVE_POLL_H 1
 
-/* Define if <pthread.h> is there */
-/* #undef HAVE_PTHREAD_H */
+/* Define to 1 if you have the <pthread.h> header file. */
+#define HAVE_PTHREAD_H /**/
 
 /* Define to 1 if you have the `putenv' function. */
 #define HAVE_PUTENV 1
