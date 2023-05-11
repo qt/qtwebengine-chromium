@@ -126,6 +126,9 @@ int GetAvailablePointerTypes() {
 int GetAvailableHoverTypes() {
   return HOVER_TYPE_NONE;
 }
+gfx::Image& ResourceBundle::GetNativeImageNamed(int resource_id) {
+  return GetImageNamed(resource_id);
+}
 
 namespace gfx {
 class ClientNativePixmapFactory;
