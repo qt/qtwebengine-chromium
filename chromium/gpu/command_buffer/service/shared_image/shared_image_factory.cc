@@ -295,8 +295,10 @@ bool SharedImageFactory::CreateSharedImage(const Mailbox& mailbox,
   DCHECK(format.is_single_plane());
   auto* factory = GetFactoryByUsage(usage, format, size,
                                     /*pixel_data=*/{}, gfx::EMPTY_BUFFER);
-  if (!factory)
+  if (!factory) {
+    LogGetFactoryFailed(usage, format, gfx::EMPTY_BUFFER);
     return false;
+  }
 
   auto backing = factory->CreateSharedImage(
       mailbox, format, surface_handle, size, color_space, surface_origin,
@@ -323,8 +325,11 @@ bool SharedImageFactory::CreateSharedImage(const Mailbox& mailbox,
   } else {
     factory = GetFactoryByUsage(usage, format, size, data, gfx::EMPTY_BUFFER);
   }
-  if (!factory)
+
+  if (!factory) {
+    LogGetFactoryFailed(usage, format, gfx::EMPTY_BUFFER);
     return false;
+  }
 
   auto backing =
       factory->CreateSharedImage(mailbox, format, size, color_space,
@@ -368,8 +373,10 @@ bool SharedImageFactory::CreateSharedImage(const Mailbox& mailbox,
                                 /*pixel_data=*/{}, gfx::EMPTY_BUFFER);
   }
 
-  if (!factory)
+  if (!factory) {
+    LogGetFactoryFailed(usage, si_format, gmb_type);
     return false;
+  }
 
   std::unique_ptr<SharedImageBacking> backing;
   if (use_compound) {
@@ -571,12 +578,18 @@ SharedImageBackingFactory* SharedImageFactory::GetFactoryByUsage(
     }
   }
 
+  return nullptr;
+}
+
+void SharedImageFactory::LogGetFactoryFailed(
+    uint32_t usage,
+    viz::SharedImageFormat format,
+    gfx::GpuMemoryBufferType gmb_type) {
   LOG(ERROR) << "Could not find SharedImageBackingFactory with params: usage: "
              << CreateLabelForSharedImageUsage(usage)
              << ", format: " << format.ToString()
-             << ", share_between_threads: " << share_between_threads
+             << ", share_between_threads: " << IsSharedBetweenThreads(usage)
              << ", gmb_type: " << GmbTypeToString(gmb_type);
-  return nullptr;
 }
 
 bool SharedImageFactory::RegisterBacking(
