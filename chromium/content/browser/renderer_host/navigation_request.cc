@@ -3048,7 +3048,14 @@ void NavigationRequest::CommitErrorPage(
   }
 
   sandbox_flags_to_commit_ = ComputeSandboxFlagsToCommit();
+  base::WeakPtr<NavigationRequest> weak_self(weak_factory_.GetWeakPtr());
   ReadyToCommitNavigation(true);
+  // The caller above might result in the deletion of `this`. Return immediately
+  // if so.
+  if (!weak_self) {
+    return;
+  }
+
   render_frame_host_->FailedNavigation(this, *common_params_, *commit_params_,
                                        has_stale_copy_in_cache_, net_error_,
                                        error_page_content);
