@@ -110,8 +110,10 @@ int _TIFFmemcmp(const void* ptr1, const void* ptr2, tmsize_t size) {
   return memcmp(ptr1, ptr2, static_cast<size_t>(size));
 }
 
+extern "C" {
 TIFFErrorHandler _TIFFwarningHandler = nullptr;
 TIFFErrorHandler _TIFFerrorHandler = nullptr;
+}
 
 namespace {
 
