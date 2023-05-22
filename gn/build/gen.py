@@ -288,7 +288,7 @@ def WriteGenericNinja(path, static_libraries, executables,
 
   template_filename = os.path.join(SCRIPT_DIR, {
       'msvc': 'build_win.ninja.template',
-      'mingw': 'build_linux.ninja.template',
+      'mingw': 'build_mingw.ninja.template',
       'msys': 'build_linux.ninja.template',
       'darwin': 'build_mac.ninja.template',
       'linux': 'build_linux.ninja.template',
