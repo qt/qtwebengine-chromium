@@ -65,6 +65,12 @@ absl_source_set("symbolize") {
   # TODO(mbonadei): The bazel file has:
   #   -DEFAULTLIB:dbghelp.lib
   # evaluate if this needs to be added here as well.
+
+  if (is_mingw) {
+    libs = [
+      "dbghelp"
+    ]
+  }
 }
 
 absl_source_set("examine_stack") {
