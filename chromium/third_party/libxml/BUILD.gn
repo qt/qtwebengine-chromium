@@ -274,7 +274,7 @@ static_library("bundled_libxml") {
     ]
   }
 
-  if (is_win) {
+  if (is_win && !is_mingw) {
     sources += [
       "src/include/win32config.h",
       "src/include/wsockcompat.h",
