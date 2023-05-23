@@ -50,12 +50,12 @@
 #   http://dev.chromium.org/developers/testing/no-compile-tests
 #
 import("//build/config/clang/clang.gni")
-if (is_win) {
+if (is_win && !is_mingw) {
   import("//build/toolchain/win/win_toolchain_data.gni")
 }
 
 declare_args() {
-  enable_nocompile_tests = is_clang && !is_nacl
+  enable_nocompile_tests = is_clang && !is_nacl && !is_mingw
 }
 
 if (enable_nocompile_tests) {

@@ -96,7 +96,7 @@ config("icu_code") {
     "U_CHARSET_IS_UTF8=1",
   ]
 
-  if (is_win) {
+  if (is_win && !is_mingw) {
     # Disable some compiler warnings.
     cflags += [
       "/wd4005",  # Macro redefinition.
@@ -142,6 +142,11 @@ config("icu_code") {
     cflags += [
       # ICU uses its own deprecated functions.
       "-Wno-deprecated-declarations",
+    ]
+  }
+  if (is_mingw && !is_clang) {
+    cflags += [
+        "-fext-numeric-literals",
     ]
   }
   if (icu_is_in_fuchsia) {

@@ -103,7 +103,7 @@ config("dependants_extra_warnings") {
     ]
 
     # clang-cl doesn't know -pedantic, pass it explicitly to the clang driver
-    if (is_win) {
+    if (is_win && !is_mingw) {
       cflags += [ "/clang:-pedantic" ]
     } else {
       cflags += [ "-pedantic" ]
@@ -250,7 +250,7 @@ component("raw_ptr") {
   configs += [ ":dependants_extra_warnings" ]
 }
 
-if (is_clang_or_gcc) {
+if (is_clang_or_gcc || is_msvc || is_mingw) {
   config("partition_alloc_implementation") {
     # See also: `partition_alloc_base/component_export.h`
     defines = [ "IS_PARTITION_ALLOC_IMPL" ]
@@ -484,7 +484,7 @@ if (is_clang_or_gcc) {
       # The Android NDK supports PR_MTE_* macros as of NDK r23.
       defines += [ "HAS_PR_MTE_MACROS" ]
     }
-    if (current_cpu == "x64" && (!is_win || is_clang)) {
+    if (current_cpu == "x64" && (is_mingw || is_gcc || is_clang)) {
       assert(stack_scan_supported)
       sources += [ "stack/asm/x64/push_registers_asm.cc" ]
     } else if (current_cpu == "x86") {

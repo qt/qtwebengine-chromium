@@ -32,9 +32,24 @@
 
 #include "partition_alloc/partition_alloc_base/time/time.h"
 
+#ifdef __MINGW64__
+//QTBUG-113821
+#include <windows.h>
+namespace ABI {
+    namespace Windows {
+        namespace Foundation {
+            struct DateTime {
+                INT64 UniversalTime;
+            };
+        }
+    }
+}
+#else
 #include <windows.foundation.h>
+#endif
 // clang-format off
 #include <windows.h> // Must be included before <mmsystem.h>
+
 #include <mmsystem.h>
 // clang-format on
 

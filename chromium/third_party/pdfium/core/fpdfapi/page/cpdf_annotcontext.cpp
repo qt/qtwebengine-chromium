@@ -14,6 +14,10 @@
 #include "core/fpdfapi/parser/cpdf_stream.h"
 #include "core/fxcrt/check.h"
 
+#ifdef SetForm
+#undef SetForm
+#endif
+
 CPDF_AnnotContext::CPDF_AnnotContext(RetainPtr<CPDF_Dictionary> pAnnotDict,
                                      IPDF_Page* pPage)
     : m_pAnnotDict(std::move(pAnnotDict)), m_pPage(pPage) {
