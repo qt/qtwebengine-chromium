@@ -178,7 +178,7 @@ LookupIterator::Key LookupIterator::GetKey() const {
 }
 
 Handle<Name> LookupIterator::name() const {
-  DCHECK(!IsElement(*holder_));
+  DCHECK_IMPLIES(!holder_.is_null(), !IsElement(*holder_));
   return name_;
 }
 
@@ -249,6 +249,7 @@ void LookupIterator::UpdateProtector() {
 }
 
 InternalIndex LookupIterator::descriptor_number() const {
+  DCHECK(!holder_.is_null());
   DCHECK(!IsElement(*holder_));
   DCHECK(has_property_);
   DCHECK(holder_->HasFastProperties(isolate_));
@@ -256,6 +257,7 @@ InternalIndex LookupIterator::descriptor_number() const {
 }
 
 InternalIndex LookupIterator::dictionary_entry() const {
+  DCHECK(!holder_.is_null());
   DCHECK(!IsElement(*holder_));
   DCHECK(has_property_);
   DCHECK(!holder_->HasFastProperties(isolate_));
@@ -270,13 +272,14 @@ LookupIterator::Configuration LookupIterator::ComputeConfiguration(
 }
 
 // static
-Handle<JSReceiver> LookupIterator::GetRoot(Isolate* isolate,
-                                           Handle<Object> lookup_start_object,
-                                           size_t index) {
+MaybeHandle<JSReceiver> LookupIterator::GetRoot(
+    Isolate* isolate, Handle<Object> lookup_start_object, size_t index,
+    Configuration configuration) {
   if (lookup_start_object->IsJSReceiver(isolate)) {
     return Handle<JSReceiver>::cast(lookup_start_object);
   }
-  return GetRootForNonJSReceiver(isolate, lookup_start_object, index);
+  return GetRootForNonJSReceiver(isolate, lookup_start_object, index,
+                                 configuration);
 }
 
 template <class T>
