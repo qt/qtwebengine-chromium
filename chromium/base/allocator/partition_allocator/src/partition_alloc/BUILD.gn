@@ -96,7 +96,7 @@ config("dependants_extra_warnings") {
     ]
 
     # clang-cl doesn't know -pedantic, pass it explicitly to the clang driver
-    if (is_win) {
+    if (is_win && !is_mingw) {
       cflags += [ "/clang:-pedantic" ]
     } else {
       cflags += [ "-pedantic" ]
@@ -121,7 +121,7 @@ source_set("buildflag_macro") {
 stack_scan_supported = (current_cpu == "x64" || current_cpu == "x86" ||
                         current_cpu == "arm" || current_cpu == "arm64" ||
                         current_cpu == "riscv64" || current_cpu == "loong64") &&
-                       (is_clang || !is_win)
+                       (is_clang || is_gcc || is_mingw)
 
 # When developers are repeatedly growing a buffer with `realloc`, they are
 # expected to request a new size that is larger than the current size by
@@ -286,7 +286,7 @@ component("raw_ptr") {
   configs += [ ":dependants_extra_warnings" ]
 }
 
-if (is_clang_or_gcc) {
+if (is_clang_or_gcc || is_msvc || is_mingw) {
   config("partition_alloc_implementation") {
     # See also: `partition_alloc_base/component_export.h`
     defines = [ "IS_PARTITION_ALLOC_IMPL" ]
@@ -751,9 +751,11 @@ if (is_clang_or_gcc) {
         "partition_alloc_base/threading/platform_thread_win.cc",
         "partition_alloc_base/time/time_win.cc",
       ]
-      libs += [
-        "winmm.lib",  # For timeGetTime.
-      ]
+      if(!is_mingw) {
+        libs += [
+          "winmm.lib",  # For timeGetTime.
+        ]
+      }
     }
 
     if (is_posix) {

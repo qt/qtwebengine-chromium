@@ -418,6 +418,12 @@ if (is_apple) {
   default_compiler_configs += [ "//build/config/compiler:enable_arc" ]
 }
 
+if (is_mingw) {
+  default_compiler_configs -= [
+    "//build/config/win:default_crt",
+  ]
+}
+
 if (is_posix) {
   if (current_os != "aix") {
     default_compiler_configs +=
@@ -604,7 +610,7 @@ foreach(_target_type,
       }
 
       if (!defined(use_libcxx_modules)) {
-        use_libcxx_modules = is_clang
+        use_libcxx_modules = is_clang && !is_mingw
       }
 
       if (filter_include(
@@ -734,7 +740,7 @@ foreach(_target_type,
       }
 
       if (!defined(use_libcxx_modules)) {
-        use_libcxx_modules = is_clang
+        use_libcxx_modules = is_clang && !is_mingw
       }
 
       if (filter_include(
