@@ -58,7 +58,7 @@ if (angle_has_build) {
     import("//build/config/android/config.gni")
   }
 
-  if (is_win) {
+  if (is_win && !is_mingw) {
     import("//build/config/win/visual_studio_version.gni")
   }
 

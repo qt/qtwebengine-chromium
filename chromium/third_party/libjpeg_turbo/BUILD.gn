@@ -231,7 +231,7 @@ static_library("simd") {
     configs += [ "//build/config/compiler:optimize_speed" ]
   }
 
-  if (is_win) {
+  if (is_win && !is_mingw) {
     cflags = [ "/wd4245" ]
   }
 }
