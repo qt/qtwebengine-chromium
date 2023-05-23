@@ -185,7 +185,7 @@ config("compiler") {
     configs += [ ":pdb_larger_than_4gb" ]
   }
 
-  if (!is_debug && !is_component_build) {
+  if (!is_debug && !is_component_build && !is_mingw) {
     # Enable standard linker optimizations like GC (/OPT:REF) and ICF in static
     # release builds.
     # Release builds always want these optimizations, so enable them explicitly.
@@ -214,13 +214,15 @@ config("compiler") {
   # set for executable and shared library targets so arflags must be set
   # elsewhere. Since this is relatively contained, we just apply them in this
   # more general config and they will only have an effect on static libraries.
-  arflags = [
-    # "No public symbols found; archive member will be inaccessible." This
-    # means that one or more object files in the library can never be
-    # pulled in to targets that link to this library. It's just a warning that
-    # the source file is a no-op.
-    "/ignore:4221",
-  ]
+  if(!is_mingw) {
+    arflags = [
+      # "No public symbols found; archive member will be inaccessible." This
+      # means that one or more object files in the library can never be
+      # pulled in to targets that link to this library. It's just a warning that
+      # the source file is a no-op.
+      "/ignore:4221",
+    ]
+  }
 }
 
 # This is included by reference in the //build/config/compiler:runtime_library
@@ -373,7 +375,7 @@ config("cfi_linker") {
   # ASan and CFG leads to slow process startup. Chromium's test runner uses
   # lots of child processes, so this means things are really slow. Disable CFG
   # for now. https://crbug.com/846966
-  if (!use_incremental_linking && !is_debug && !is_asan) {
+  if (!use_incremental_linking && !is_debug && !is_asan && !is_mingw) {
     # Turn on CFG bitmap generation and CFG load config.
     ldflags = [ "/guard:cf" ]
   }
@@ -544,20 +546,29 @@ config("static_crt") {
 if (current_cpu == "x64") {
   # The number after the comma is the minimum required OS version.
   # 5.02 = Windows Server 2003.
-  subsystem_version_suffix = ",5.02"
+  subsystem_version_suffix = "5.02"
 } else if (current_cpu == "arm64") {
   # Windows ARM64 requires Windows 10.
-  subsystem_version_suffix = ",10.0"
+  subsystem_version_suffix = "10.0"
 } else {
   # 5.01 = Windows XP.
-  subsystem_version_suffix = ",5.01"
+  subsystem_version_suffix = "5.01"
 }
 
 config("console") {
-  ldflags = [ "/SUBSYSTEM:CONSOLE$subsystem_version_suffix" ]
+  if (is_mingw) {
+    ldflags = [ "-Wl,--subsystem,console:$subsystem_version_suffix"]
+  } else {
+    ldflags = [ "/SUBSYSTEM:CONSOLE,$subsystem_version_suffix" ]
+  }
 }
+
 config("windowed") {
-  ldflags = [ "/SUBSYSTEM:WINDOWS$subsystem_version_suffix" ]
+  if (is_mingw) {
+    ldflags = [ "-Wl,--subsystem,windows:$subsystem_version_suffix"]
+  } else {
+    ldflags = [ "/SUBSYSTEM:WINDOWS,$subsystem_version_suffix" ]
+  }
 }
 
 # Incremental linking ----------------------------------------------------------
@@ -567,19 +578,21 @@ config("default_incremental_linking") {
   # Enable incremental linking for debug builds and all component builds - any
   # builds where performance is not job one.
   # TODO(thakis): Always turn this on with lld, no reason not to.
-  if (use_incremental_linking) {
-    ldflags = [ "/INCREMENTAL" ]
-    if (use_lld) {
-      # lld doesn't use ilk files and doesn't really have an incremental link
-      # mode; the only effect of the flag is that the .lib file timestamp isn't
-      # updated if the .lib doesn't change.
-      # TODO(thakis): Why pass /OPT:NOREF for lld, but not otherwise?
-      # TODO(thakis): /INCREMENTAL is on by default in link.exe, but not in
-      # lld.
-      ldflags += [ "/OPT:NOREF" ]
+  if (!is_mingw) {
+    if (use_incremental_linking) {
+      ldflags = [ "/INCREMENTAL" ]
+      if (use_lld) {
+        # lld doesn't use ilk files and doesn't really have an incremental link
+        # mode; the only effect of the flag is that the .lib file timestamp isn't
+        # updated if the .lib doesn't change.
+        # TODO(thakis): Why pass /OPT:NOREF for lld, but not otherwise?
+        # TODO(thakis): /INCREMENTAL is on by default in link.exe, but not in
+        # lld.
+        ldflags += [ "/OPT:NOREF" ]
+      }
+    } else {
+      ldflags = [ "/INCREMENTAL:NO" ]
     }
-  } else {
-    ldflags = [ "/INCREMENTAL:NO" ]
   }
 }
 
