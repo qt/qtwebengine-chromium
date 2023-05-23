@@ -50,7 +50,7 @@ config("zlib_internal_config") {
     defines += [ "ZLIB_DEBUG" ]
   }
 
-  if (is_win && !is_clang) {
+  if (is_win && !is_clang && !is_mingw) {
     # V8 supports building with msvc, these silence some warnings that
     # causes compilation to fail (https://crbug.com/1255096).
     cflags = [
@@ -89,7 +89,7 @@ if ((current_cpu == "arm" || current_cpu == "arm64") &&
 }
 
 use_x86_x64_optimizations =
-    (current_cpu == "x86" || current_cpu == "x64") && !is_ios
+    (current_cpu == "x86" || current_cpu == "x64") && !is_ios && !is_mingw
 
 config("zlib_adler32_simd_config") {
   if (use_x86_x64_optimizations) {

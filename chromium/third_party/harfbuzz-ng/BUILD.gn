@@ -30,7 +30,7 @@ if (use_system_harfbuzz) {
   }
 
   config("harfbuzz_warnings") {
-    if (is_win) {
+    if (is_win && !is_mingw) {
       # Result of 32-bit shift implicitly converted to 64 bits.
       cflags = [ "/wd4334" ]
     }
