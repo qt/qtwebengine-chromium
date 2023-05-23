@@ -349,7 +349,7 @@ config("compiler") {
   # System-specific flags. If your compiler flags apply to one of the
   # categories here, add it to the associated file to keep this shared config
   # smaller.
-  if (is_win) {
+  if (is_win && !is_mingw) {
     configs += [ "//build/config/win:compiler" ]
   } else if (is_android) {
     configs += [ "//build/config/android:compiler" ]
@@ -408,7 +408,7 @@ config("compiler") {
   # This avoids risking miscompilations and security bugs on overflow.
   # When UBSan is enabled, we want to continue flagging overflows as a bug.
   if (!is_ubsan && (!is_win || is_clang)) {
-    if (is_win) {
+    if (is_win && !is_mingw) {
       cflags += [ "/clang:-fno-strict-overflow" ]
     } else {
       cflags += [ "-fno-strict-overflow" ]
@@ -418,7 +418,7 @@ config("compiler") {
   # Don't emit the GCC version ident directives, they just end up in the
   # .comment section or debug info taking up binary size, and makes comparing
   # .o files built with different compiler versions harder.
-  if (!is_win || is_clang) {
+  if (!is_win || is_clang || is_mingw) {
     cflags += [ "-fno-ident" ]
   }
 
@@ -430,15 +430,15 @@ config("compiler") {
   # optimizations. This flag must be consistently set for both module
   # precompilation and normal source compilation, which means it's enabled for
   # some targets even in debug builds.
-  if (is_win && is_clang) {
+  if (is_win && is_clang && !is_mingw) {
     cflags += [ "/clang:-fno-math-errno" ]
-  } else if (!is_win) {
+  } else if (!is_win || is_mingw) {
     cflags += [ "-fno-math-errno" ]
   }
 
   # In general, Windows is totally different, but all the other builds share
   # some common compiler and linker configuration.
-  if (!is_win) {
+  if (!is_win || is_mingw) {
     # Common POSIX compiler flags setup.
     # --------------------------------
     cflags += [ "-fno-strict-aliasing" ]  # See http://crbug.com/32204
@@ -519,7 +519,7 @@ config("compiler") {
     }
 
     # GCC
-    if (!is_win && !is_clang) {
+    if (!is_win && !is_clang || is_mingw) {
       cflags += [
         "-Wno-address",
         "-Wno-parentheses",
@@ -718,7 +718,7 @@ config("compiler") {
     cflags += [ "-fmerge-all-constants" ]
 
     if (!use_sized_deallocation) {
-      if (is_win) {
+      if (is_win && !is_mingw) {
         cflags += [ "/Zc:sizedDealloc-" ]
       } else {
         cflags += [ "-fno-sized-deallocation" ]
@@ -831,7 +831,7 @@ config("compiler") {
       # support "c++20"/"gnu++20".
       cflags_cc += [ "-std=${standard_prefix}++20" ]
     }
-  } else if (is_win) {
+  } else if (is_win && !is_mingw) {
     cflags_c += [ "/std:c11" ]
     if (use_cxx23) {
       cflags_cc += [ "/std:c++23preview" ]
@@ -952,7 +952,7 @@ config("compiler") {
     # [2]: https://ci.chromium.org/ui/p/chromium/builders/try/android-binary-size/1848442
     import_instr_limit = 30
 
-    if (is_win) {
+    if (is_win && !is_mingw) {
       ldflags += [
         "/opt:lldltojobs=all",
         "-mllvm:-import-instr-limit=$import_instr_limit",
@@ -1026,7 +1026,7 @@ config("compiler") {
         rustflags += [ "-Cembed-bitcode=no" ]
       }
 
-      if (!is_win) {
+      if (!is_win || is_mingw) {
         ldflags += [ "-fwhole-program-vtables" ]
       }
     }
@@ -1299,7 +1299,7 @@ config("thinlto_optimize_default") {
   if (!is_debug && use_thin_lto && is_a_target_toolchain) {
     lto_opt_level = 0
 
-    if (is_win) {
+    if (is_win && !is_mingw) {
       ldflags = [ "/opt:lldlto=" + lto_opt_level ]
     } else {
       ldflags = [ "-Wl,--lto-O" + lto_opt_level ]
@@ -1333,7 +1333,7 @@ config("thinlto_optimize_max") {
       lto_opt_level = 0
     }
 
-    if (is_win) {
+    if (is_win && !is_mingw) {
       ldflags = [ "/opt:lldlto=" + lto_opt_level ]
     } else {
       ldflags = [ "-Wl,--lto-O" + lto_opt_level ]
@@ -1733,7 +1733,7 @@ config("compiler_deterministic") {
   # Eliminate build metadata (__DATE__, __TIME__ and __TIMESTAMP__) for
   # deterministic build.  See https://crbug.com/314403
   if (!is_official_build) {
-    if (is_win && !is_clang) {
+    if (is_win && !is_clang && !is_mingw) {
       cflags += [
         "/wd4117",  # Trying to define or undefine a predefined macro.
         "/D__DATE__=",
@@ -2169,7 +2169,7 @@ config("default_warnings") {
   ldflags = []
   configs = []
 
-  if (is_win) {
+  if (is_win && !is_mingw) {
     if (fatal_linker_warnings) {
       arflags = [ "/WX" ]
       ldflags = [ "/WX" ]
@@ -2582,7 +2582,7 @@ config("prevent_unsafe_narrowing") {
 # part of Chromium.
 
 config("chromium_code") {
-  if (is_win) {
+  if (is_win && !is_mingw) {
     if (is_clang) {
       cflags = [ "/W4" ]  # Warning level 4.
 
@@ -2606,7 +2606,7 @@ config("chromium_code") {
     if (!is_debug && !using_sanitizer && current_cpu != "s390x" &&
         current_cpu != "ppc64" && current_cpu != "mips" &&
         current_cpu != "mips64" && current_cpu != "riscv64" &&
-        current_cpu != "loong64") {
+        current_cpu != "loong64" && !is_mingw) {
       # Non-chromium code is not guaranteed to compile cleanly with
       # _FORTIFY_SOURCE. Also, fortified build may fail when optimizations are
       # disabled, so only do that for Release build.
@@ -2690,7 +2690,7 @@ config("no_chromium_code") {
   cflags_cc = []
   defines = []
 
-  if (is_win) {
+  if (is_win && !is_mingw) {
     if (is_clang) {
       cflags += [ "/W3" ]  # Warning level 3.
     }
@@ -2745,7 +2745,7 @@ config("noshadowing") {
 # Allows turning Run-Time Type Identification on or off.
 
 config("rtti") {
-  if (is_win) {
+  if (is_win && !is_mingw) {
     cflags_cc = [ "/GR" ]
   } else {
     cflags_cc = [ "-frtti" ]
@@ -2755,7 +2755,7 @@ config("rtti") {
 config("no_rtti") {
   # Some sanitizer configs may require RTTI to be left enabled globally
   if (!use_rtti) {
-    if (is_win) {
+    if (is_win && !is_mingw) {
       cflags_cc = [ "/GR-" ]
     } else {
       cflags_cc = [ "-fno-rtti" ]
@@ -2818,7 +2818,7 @@ config("thin_archive") {
 # Note: exceptions are disallowed in Google code.
 
 config("exceptions") {
-  if (is_win) {
+  if (is_win && !is_mingw) {
     # Enables exceptions in the STL.
     if (!use_custom_libcxx) {
       defines = [ "_HAS_EXCEPTIONS=1" ]
@@ -2831,7 +2831,7 @@ config("exceptions") {
 }
 
 config("no_exceptions") {
-  if (is_win) {
+  if (is_win && !is_mingw) {
     # Disables exceptions in the STL.
     # libc++ uses the __has_feature macro to control whether to use exceptions,
     # so defining this macro is unnecessary. Defining _HAS_EXCEPTIONS to 0 also
@@ -2916,7 +2916,7 @@ config("no_incompatible_pointer_warnings") {
 
 # Shared settings for both "optimize" and "optimize_max" configs.
 # IMPORTANT: On Windows "/O1" and "/O2" must go before the common flags.
-if (is_win) {
+if (is_win && !is_mingw) {
   common_optimize_on_cflags = [
     "/Oy-",  # Disable omitting frame pointers, must be after /O2.
     "/Zc:inline",  # Remove unreferenced COMDAT (faster links).
@@ -3045,7 +3045,7 @@ config("default_stack_frames") {
 # [1]: https://pinpoint-dot-chromeperf.appspot.com/job/132bc772be0000
 # [2]: https://crrev.com/c/5447532
 config("optimize") {
-  if (is_win) {
+  if (is_win && !is_mingw) {
     # clang-cl's /O2 corresponds to clang's -O3, and really want -O2 for
     # consistency with the other platforms.
 
@@ -3140,7 +3140,7 @@ config("optimize_size_only") {
 # elsewhere.
 config("optimize_max") {
   ldflags = common_optimize_on_ldflags
-  if (is_win) {
+  if (is_win && !is_mingw) {
     # Favor speed over size, /O2 must be before the common flags.
     # /O2 implies /Ot, /Oi, and /GF.
     cflags = [ "/O2" ] + common_optimize_on_cflags
@@ -3161,7 +3161,7 @@ config("optimize_max") {
 # so that we don't need this disclaimer.
 config("optimize_speed") {
   ldflags = common_optimize_on_ldflags
-  if (is_win) {
+  if (is_win && !is_mingw) {
     # Favor speed over size, /O2 must be before the common flags.
     # /O2 implies /Ot, /Oi, and /GF.
     cflags = [ "/O2" ] + common_optimize_on_cflags
@@ -3324,7 +3324,7 @@ config("split_dwarf") {
 config("symbols") {
   rustflags = []
   configs = []
-  if (is_win) {
+  if (is_win && !is_mingw) {
     if (is_clang) {
       cflags = [
         # Debug information in the .obj files.
@@ -3484,7 +3484,7 @@ config("symbols") {
 config("minimal_symbols") {
   configs = []
   rustflags = []
-  if (is_win) {
+  if (is_win && !is_mingw) {
     # Functions, files, and line tables only.
     cflags = []
 
@@ -3562,7 +3562,7 @@ config("minimal_symbols") {
 # told to not generate debug information and the linker then just puts function
 # names in the final debug information.
 config("no_symbols") {
-  if (is_win) {
+  if (is_win && !is_mingw) {
     ldflags = [ "/DEBUG" ]
 
     # All configs using /DEBUG should include this:
@@ -3689,7 +3689,7 @@ buildflag_header("compiler_buildflags") {
 }
 
 config("cet_shadow_stack") {
-  if (enable_cet_shadow_stack && is_win) {
+  if (enable_cet_shadow_stack && is_win && !is_mingw) {
     assert(target_cpu == "x64")
     ldflags = [ "/CETCOMPAT" ]
   }

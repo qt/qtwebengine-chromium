@@ -275,7 +275,7 @@ static_library("bundled_libxml") {
     ]
   }
 
-  if (is_win) {
+  if (is_win && !is_mingw) {
     sources += [
       "win32/config.h",
       "win32/include/libxml/xmlversion.h",
