@@ -274,7 +274,7 @@ static_library("bundled_libxml") {
     ]
   }
 
-  if (is_win) {
+  if (is_win && !is_mingw) {
     sources += [
       # TODO(crbug.com/364568421): Consider removing win32config.h after
       # migrating to cmake:

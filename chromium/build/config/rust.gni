@@ -242,7 +242,7 @@ if (is_linux || is_chromeos) {
     rust_abi_target = "x86_64-unknown-fuchsia"
     cargo_target_abi = ""
   } else {
-    assert(false, "Architecture not supported")
+    assert(!enable_rust, "Architecture not supported")
   }
 } else if (is_ios) {
   if (current_cpu == "arm64") {
@@ -270,7 +270,7 @@ if (is_linux || is_chromeos) {
   } else if (current_cpu == "x86") {
     rust_abi_target = "i386-apple-ios"
   } else {
-    assert(false, "Architecture not supported")
+    assert(!enable_rust, "Architecture not supported")
   }
 } else if (is_mac) {
   if (current_cpu == "arm64") {
@@ -280,7 +280,7 @@ if (is_linux || is_chromeos) {
     rust_abi_target = "x86_64-apple-darwin"
     cargo_target_abi = ""
   } else {
-    assert(false, "Architecture not supported")
+    assert(!enable_rust, "Architecture not supported")
   }
 } else if (is_win) {
   if (current_cpu == "arm64") {
@@ -293,7 +293,7 @@ if (is_linux || is_chromeos) {
     rust_abi_target = "i686-pc-windows-msvc"
     cargo_target_abi = ""
   } else {
-    assert(false, "Architecture not supported")
+    assert(!enable_rust, "Architecture not supported")
   }
 }
 

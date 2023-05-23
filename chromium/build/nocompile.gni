@@ -50,7 +50,7 @@
 #   http://dev.chromium.org/developers/testing/no-compile-tests
 #
 import("//build/config/clang/clang.gni")
-if (is_win && !is_qtwebengine) {
+if (is_win) {
   import("//build/toolchain/win/win_toolchain_data.gni")
 }
 
