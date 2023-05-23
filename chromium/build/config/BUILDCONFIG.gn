@@ -142,6 +142,11 @@ declare_args() {
               current_cpu != "mips" && current_cpu != "mips64" &&
               current_cpu != "riscv64")
 
+  # Helpers set from qt
+  is_mingw = false
+  is_msvc = false
+  is_gcc = false
+
   # Allows the path to a custom target toolchain to be injected as a single
   # argument, and set as the default toolchain.
   custom_toolchain = ""
@@ -377,6 +382,12 @@ if (is_win) {
 
 if (is_apple) {
   default_compiler_configs += [ "//build/config/compiler:enable_arc" ]
+}
+
+if (is_mingw) {
+  default_compiler_configs -= [
+    "//build/config/win:default_crt",
+  ]
 }
 
 if (is_posix) {
