@@ -14,8 +14,8 @@
 
 // _WIN64 Defined as 1 when the compilation target is 64-bit ARM or x64.
 // Otherwise, undefined.
-#ifdef _WIN64
-#if defined(__clang__)
+#if defined(_WIN64)
+#if defined(__clang__) || defined(__MINGW64__)
 // We maintain 16-byte alignment at calls. There is an 8-byte return address
 // on the stack and we push 72 bytes which maintains 16-byte stack alignment
 // at the call.

@@ -28,7 +28,7 @@ if (target_os == "mac") {
   build_gn_logs += [ "" ]
 }
 
-if (target_os == "win") {
+if (target_os == "win" && !is_mingw) {
   import("//build/config/win/visual_studio_version.gni")
   build_gn_logs +=
       [ "### visual_studio_version.gni ###" ] + visual_studio_version_logs
