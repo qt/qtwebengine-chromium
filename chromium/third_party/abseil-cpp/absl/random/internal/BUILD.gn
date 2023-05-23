@@ -34,9 +34,11 @@ absl_source_set("fast_uniform_bits") {
 absl_source_set("seed_material") {
   public = [ "seed_material.h" ]
   sources = [ "seed_material.cc" ]
-  if (is_win) {
+  if (is_win && !is_mingw) {
     # TODO(mbonadei): In the bazel file this is -DEFAULTLIB:bcrypt.lib.
     libs = [ "bcrypt.lib" ]
+  } else if (is_mingw) {
+    libs = [ "bcrypt" ]
   }
   deps = [
     ":fast_uniform_bits",

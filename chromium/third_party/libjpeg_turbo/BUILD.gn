@@ -185,7 +185,7 @@ static_library("simd") {
     sources = [ "jsimd_none.c" ]
   }
 
-  if (is_win) {
+  if (is_win && !is_mingw) {
     cflags = [ "/wd4245" ]
   }
 }

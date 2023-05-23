@@ -157,7 +157,7 @@ config("release") {
 
 # This config defines the default libraries applied to all targets.
 config("default_libs") {
-  if (is_win) {
+  if (is_win && !is_mingw) {
     # TODO(brettw) this list of defaults should probably be smaller, and
     # instead the targets that use the less common ones (e.g. wininet or
     # winspool) should include those explicitly.
@@ -296,7 +296,7 @@ if (is_win) {
 config("executable_config") {
   configs = []
 
-  if (is_win) {
+  if (is_win && !is_mingw) {
     configs += _windows_linker_configs
   } else if (is_mac) {
     configs += [ "//build/config/mac:mac_dynamic_flags" ]

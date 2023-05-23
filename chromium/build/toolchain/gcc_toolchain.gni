@@ -314,7 +314,11 @@ template("gcc_toolchain") {
     if (defined(invoker.executable_extension)) {
       default_executable_extension = invoker.executable_extension
     } else {
-      default_executable_extension = ""
+      if (is_mingw) {
+        default_executable_extension = ".exe"
+      } else {
+        default_executable_extension = ""
+      }
     }
 
     # Bring these into our scope for string interpolation with default values.
@@ -499,7 +503,11 @@ template("gcc_toolchain") {
 
       default_output_dir = "{{root_out_dir}}${default_shlib_subdir}"
 
-      output_prefix = "lib"
+      if (is_mingw) {
+        output_prefix = ""
+      } else {
+        output_prefix = "lib"
+      }
 
       # Since the above commands only updates the .TOC file when it changes, ask
       # Ninja to check if the timestamp actually changed to know if downstream

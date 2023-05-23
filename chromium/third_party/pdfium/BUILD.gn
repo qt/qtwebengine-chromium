@@ -46,7 +46,7 @@ config("pdfium_common_config") {
     defines += [ "_SKIA_SUPPORT_PATHS_" ]
   }
 
-  if (is_win) {
+  if (is_win && !is_mingw) {
     # Assume UTF-8 by default to avoid code page dependencies.
     cflags += [ "/utf-8" ]
 
@@ -288,7 +288,7 @@ config("pdfium_core_config") {
     "//build/config/compiler:noshadowing",
   ]
   defines = []
-  if (is_win) {
+  if (is_win && !is_mingw) {
     cflags += [
       "/wd4324",
       "/wd4577",
@@ -380,11 +380,18 @@ component("pdfium") {
     ]
   }
 
-  if (is_win) {
+  if (is_win && !is_mingw) {
     libs += [
       "advapi32.lib",
       "gdi32.lib",
       "user32.lib",
+    ]
+  }
+  if (is_mingw) {
+    libs += [
+      "advapi32",
+      "gdi32",
+      "user32",
     ]
   }
 

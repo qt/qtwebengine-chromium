@@ -82,7 +82,7 @@ config("nasm_config") {
       # NASM sometimes set variables but doesn't use them.
       "-Wno-unused-but-set-variable",
     ]
-  } else if (is_win) {
+  } else if (is_win && !is_mingw) {
     # Please note that's a slightly different set of warnings.
     cflags = [
       # NASM sometimes redefines macros from its config.h.

@@ -32,7 +32,7 @@ if (visual_studio_path == "" && ninja_use_custom_environment_files) {
   visual_studio_version = toolchain_data.vs_version
   wdk_path = toolchain_data.wdk_dir
   visual_studio_runtime_dirs = toolchain_data.runtime_dirs
-} else {
+} else if (!is_mingw) {
   assert(visual_studio_version != "",
          "You must set the visual_studio_version if you set the path")
   if (ninja_use_custom_environment_files) {
