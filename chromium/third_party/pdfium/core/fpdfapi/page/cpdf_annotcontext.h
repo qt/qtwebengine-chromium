@@ -17,6 +17,10 @@ class CPDF_Form;
 class CPDF_Stream;
 class IPDF_Page;
 
+#ifdef SetForm
+#undef SetForm
+#endif
+
 class CPDF_AnnotContext {
  public:
   CPDF_AnnotContext(RetainPtr<CPDF_Dictionary> pAnnotDict, IPDF_Page* pPage);
