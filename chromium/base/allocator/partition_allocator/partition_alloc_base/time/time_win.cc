@@ -32,7 +32,21 @@
 
 #include "base/allocator/partition_allocator/partition_alloc_base/time/time.h"
 
+#ifdef __MINGW64__
+//QTBUG-113821
+#include <windows.h>
+namespace ABI {
+    namespace Windows {
+        namespace Foundation {
+            struct DateTime {
+                INT64 UniversalTime;
+            };
+        }
+    }
+}
+#else
 #include <windows.foundation.h>
+#endif
 #include <windows.h>
 
 #include <mmsystem.h>
