@@ -342,7 +342,7 @@ static enum xnn_status setup_global_average_pooling_nwc(
     const void* input,
     void* output,
     size_t log2_element_size,
-    const struct gavgpool_parameters gavgpool[restrict XNN_MIN_ELEMENTS(1)],
+    const struct gavgpool_parameters gavgpool[XNN_MIN_ELEMENTS(1)],
     uint32_t datatype_init_flags,
     enum xnn_operator_type expected_operator_type,
     const void* params,

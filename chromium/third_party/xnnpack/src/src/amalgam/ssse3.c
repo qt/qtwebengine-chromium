@@ -24,7 +24,7 @@ void xnn_f32_dwconv2d_chw_ukernel_3x3p1__ssse3_2x4_acc2(
     const float* zero,
     float* output,
     uint32_t padding_top,
-    const union xnn_f32_chw_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_f32_chw_params params[XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(input_height != 0);
   assert(input_width != 0);
@@ -236,7 +236,7 @@ void xnn_qs8_vcvt_ukernel__ssse3_x32(
     size_t batch,
     const int8_t* input,
     int8_t* output,
-    const union xnn_qs8_cvt_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_qs8_cvt_params params[XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(batch != 0);
   assert(batch % sizeof(int8_t) == 0);
@@ -350,7 +350,7 @@ void xnn_qs8_vlrelu_ukernel__ssse3_x32(
     size_t batch,
     const int8_t* input,
     int8_t* output,
-    const union xnn_qs8_lrelu_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_qs8_lrelu_params params[XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(batch != 0);
   assert(batch % sizeof(int8_t) == 0);
@@ -489,7 +489,7 @@ void xnn_qu8_vcvt_ukernel__ssse3_x32(
     size_t batch,
     const uint8_t* input,
     uint8_t* output,
-    const union xnn_qu8_cvt_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_qu8_cvt_params params[XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(batch != 0);
   assert(batch % sizeof(uint8_t) == 0);
@@ -600,7 +600,7 @@ void xnn_qu8_vlrelu_ukernel__ssse3_x32(
     size_t batch,
     const uint8_t* input,
     uint8_t* output,
-    const union xnn_qu8_lrelu_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_qu8_lrelu_params params[XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(batch != 0);
   assert(batch % sizeof(uint8_t) == 0);
@@ -739,7 +739,7 @@ void xnn_x24_transposec_ukernel__4x4_ssse3(
     size_t output_stride,
     size_t block_width,
     size_t block_height,
-    const union xnn_x24_transpose_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_x24_transpose_params params[XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(output_stride >= block_height * 3);
   assert(input_stride >= block_width * 3);

@@ -180,7 +180,7 @@ static enum xnn_status setup_resize_bilinear2d_nhwc(
     uint32_t log2_element_size,
     uint32_t log2_weight_element_size,
     xnn_indirection_init_resize_bilinear2d_hwc_fn indirection_init,
-    const struct ibilinear_parameters ibilinear[restrict XNN_MIN_ELEMENTS(1)],
+    const struct ibilinear_parameters ibilinear[XNN_MIN_ELEMENTS(1)],
     size_t num_threads)
 {
   if (resize_op->type != expected_operator_type) {

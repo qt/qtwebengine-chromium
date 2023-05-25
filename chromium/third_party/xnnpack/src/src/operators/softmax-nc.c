@@ -302,7 +302,7 @@ static enum xnn_status setup_softmax_nc_floating_point(
     void* output,
     uint32_t log2_element_size,
     xnn_rmax_ukernel_fn rmax,
-    const struct raddstoreexpminusmax_parameters raddstoreexpminusmax[restrict XNN_MIN_ELEMENTS(1)],
+    const struct raddstoreexpminusmax_parameters raddstoreexpminusmax[XNN_MIN_ELEMENTS(1)],
     const struct xnn_binary_elementwise_config* vmul,
     xnn_compute_reciprocal_fn compute_reciprocal,
     const void* expminus_params,

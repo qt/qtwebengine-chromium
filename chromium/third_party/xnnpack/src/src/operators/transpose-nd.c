@@ -23,8 +23,8 @@
 /// Changing the loop order can have dramatic performance implications.
 static void reorder_array(
     size_t num_dims,
-    const size_t loop_order[restrict XNN_MIN_ELEMENTS(1) ],
-    size_t array[restrict XNN_MIN_ELEMENTS(1)])
+    const size_t loop_order[XNN_MIN_ELEMENTS(1) ],
+    size_t array[XNN_MIN_ELEMENTS(1)])
 {
   size_t tmp[XNN_MAX_TENSOR_DIMS];
   memcpy(tmp, array, sizeof(size_t) * num_dims);

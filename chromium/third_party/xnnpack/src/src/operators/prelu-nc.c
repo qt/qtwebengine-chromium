@@ -173,7 +173,7 @@ static enum xnn_status setup_prelu_nc(
     float* output,
     uint32_t datatype_init_flags,
     uint32_t log2_element_size,
-    const struct prelu_parameters prelu[restrict XNN_MIN_ELEMENTS(1)],
+    const struct prelu_parameters prelu[XNN_MIN_ELEMENTS(1)],
     size_t num_threads)
 {
   if (prelu_op->type != expected_operator_type) {
