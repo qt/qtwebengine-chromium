@@ -536,6 +536,7 @@ void MediaNotificationViewModernImpl::UpdateWithMediaSessionInfo(
 void MediaNotificationViewModernImpl::UpdateWithMediaMetadata(
     const media_session::MediaMetadata& metadata) {
   title_label_->SetText(metadata.title);
+  subtitle_label_SetElideBehavior(gfx::ELIDE_HEAD);
   subtitle_label_->SetText(metadata.source_title);
 
   accessible_name_ = GetAccessibleNameFromMetadata(metadata);
