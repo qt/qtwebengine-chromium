@@ -173,7 +173,7 @@ HibernationHandler::GetMainThreadTaskRunner() const {
 
 void HibernationHandler::Encode(
     std::unique_ptr<HibernationHandler::BackgroundTaskParams> params) {
-  TRACE_EVENT0("blink", __PRETTY_FUNCTION__);
+  TRACE_EVENT0("blink", PRETTY_FUNCTION);
   DCHECK(
       base::FeatureList::IsEnabled(features::kCanvasCompressHibernatedImage));
   sk_sp<SkData> encoded =
@@ -187,7 +187,7 @@ void HibernationHandler::Encode(
 }
 
 sk_sp<SkImage> HibernationHandler::GetImage() {
-  TRACE_EVENT0("blink", __PRETTY_FUNCTION__);
+  TRACE_EVENT0("blink", PRETTY_FUNCTION);
   DCheckInvariant();
   if (image_) {
     return image_;
@@ -314,7 +314,7 @@ static void LoseContextInBackgroundWrapper(
 }
 
 void Canvas2DLayerBridge::Hibernate() {
-  TRACE_EVENT0("blink", __PRETTY_FUNCTION__);
+  TRACE_EVENT0("blink", PRETTY_FUNCTION);
   DCHECK(!IsHibernating());
   DCHECK(hibernation_scheduled_);
 

@@ -18,6 +18,7 @@
 #include "gpu/command_buffer/service/shared_image/shared_image_manager.h"
 #include "gpu/gpu_gles2_export.h"
 #include "third_party/skia/include/core/SkImage.h"
+#include "third_party/skia/include/core/SkPromiseImageTexture.h"
 #include "third_party/skia/include/core/SkSurface.h"
 #include "ui/gfx/color_space.h"
 #include "ui/gfx/geometry/rect.h"
@@ -45,7 +46,6 @@ extern "C" typedef struct AHardwareBuffer AHardwareBuffer;
 
 typedef unsigned int GLenum;
 class GrBackendSurfaceMutableState;
-class SkPromiseImageTexture;
 
 namespace cc {
 class PaintOpBuffer;

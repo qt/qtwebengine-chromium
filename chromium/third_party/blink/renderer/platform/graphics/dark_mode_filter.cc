@@ -92,8 +92,7 @@ class DarkModeInvertedColorCache {
       return it->second;
 
     SkColor4f inverted_color = filter->InvertColor(color);
-    SkColor copy = inverted_color;
-    cache_.Put(key, std::move(copy));
+    cache_.Put(key, inverted_color);
     return inverted_color;
   }
 

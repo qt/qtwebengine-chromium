@@ -75,6 +75,7 @@ int GetProtectionFromMemoryPermission(PageAllocator::Permission permission) {
 #endif
   // Other platforms do not use PKU.
   UNREACHABLE();
+  return -1;
 }
 
 }  // namespace

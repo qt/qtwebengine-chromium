@@ -21,6 +21,8 @@ declare_args() {
   # installation location.
   windows_sdk_path = "C:\Program Files (x86)\Windows Kits\10"
 
+  windows_sdk_version = ""
+
   ninja_use_custom_environment_files = true
 }
 

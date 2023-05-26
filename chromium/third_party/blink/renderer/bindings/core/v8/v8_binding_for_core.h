@@ -382,7 +382,7 @@ VectorOf<typename NativeValueTraits<IDLType>::ImplType> ToImplArguments(
     ExceptionState& exception_state,
     ExecutionContext* execution_context) {
   using TraitsType = NativeValueTraits<IDLType>;
-  using VectorType = VectorOf<typename TraitsType::ImplType>;
+  using VectorType = VectorOf<typename NativeValueTraits<IDLType>::ImplType>;
 
   int length = info.Length();
   VectorType result;
