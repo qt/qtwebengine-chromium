@@ -2774,6 +2774,21 @@ jumbo_source_set("browser") {
       "uiautomationcore.lib",
       "wtsapi32.lib",
     ]
+    if (is_qtwebengine) {
+      sources -= [
+        "accessibility/browser_accessibility_com_win.cc",
+        "accessibility/browser_accessibility_com_win.h",
+        "accessibility/browser_accessibility_manager_win.cc",
+        "accessibility/browser_accessibility_manager_win.h",
+        "accessibility/browser_accessibility_state_impl_win.cc",
+        "accessibility/browser_accessibility_win.cc",
+        "accessibility/browser_accessibility_win.h",
+      ]
+      deps -= [
+        "//components/services/screen_ai/public/cpp:utilities",
+        "//third_party/iaccessible2",
+      ]
+    }
   }
 
   if (is_android || is_linux || is_chromeos) {
@@ -3396,9 +3411,36 @@ jumbo_source_set("browser") {
     }
     if (is_mac) {
       sources -= [
+        "../app_shim_remote_cocoa/ns_view_bridge_factory_impl.mm",
+        "../app_shim_remote_cocoa/popup_window_mac.h",
+        "../app_shim_remote_cocoa/popup_window_mac.mm",
+        "../app_shim_remote_cocoa/render_widget_host_ns_view_bridge.h",
+        "../app_shim_remote_cocoa/render_widget_host_ns_view_bridge.mm",
+        "../app_shim_remote_cocoa/render_widget_host_ns_view_host_helper.h",
+        "../app_shim_remote_cocoa/render_widget_host_view_cocoa.h",
+        "../app_shim_remote_cocoa/render_widget_host_view_cocoa.mm",
+        "../app_shim_remote_cocoa/sharing_service_picker.h",
+        "../app_shim_remote_cocoa/sharing_service_picker.mm",
+        "../app_shim_remote_cocoa/web_contents_ns_view_bridge.h",
+        "../app_shim_remote_cocoa/web_contents_ns_view_bridge.mm",
+        "../app_shim_remote_cocoa/web_contents_occlusion_checker_mac.h",
+        "../app_shim_remote_cocoa/web_contents_occlusion_checker_mac.mm",
+        "../app_shim_remote_cocoa/web_contents_view_cocoa.h",
+        "../app_shim_remote_cocoa/web_contents_view_cocoa.mm",
+        "../app_shim_remote_cocoa/web_drag_source_mac.h",
+        "../app_shim_remote_cocoa/web_drag_source_mac.mm",
+        "accessibility/browser_accessibility_cocoa.h",
+        "accessibility/browser_accessibility_cocoa.mm",
+        "accessibility/browser_accessibility_mac.h",
+        "accessibility/browser_accessibility_mac.mm",
+        "accessibility/browser_accessibility_manager_mac.h",
+        "accessibility/browser_accessibility_manager_mac.mm",
+        "accessibility/browser_accessibility_state_impl_mac.mm",
         "renderer_host/input/synthetic_gesture_target_mac.h",
         "renderer_host/input/synthetic_gesture_target_mac.mm",
         "renderer_host/native_web_keyboard_event_mac.mm",
+        "renderer_host/popup_menu_helper_mac.h",
+        "renderer_host/popup_menu_helper_mac.mm",
         "renderer_host/render_widget_host_view_mac.mm",
         "renderer_host/render_widget_host_view_mac.h",
         "web_contents/web_contents_view_mac.mm",

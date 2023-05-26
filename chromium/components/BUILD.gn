@@ -703,6 +703,12 @@ test("components_unittests") {
   if (is_ios && !is_qtwebengine) {
     assert_no_deps += ios_assert_no_deps
   }
+
+  if (is_qtwebengine) {
+    deps -= [
+      "//components/named_mojo_ipc_server:unit_tests",
+    ]
+  }
 }
 
 repack("components_tests_pak") {
