@@ -108,6 +108,7 @@ class WebContentsViewMac : public WebContentsView,
   void TakeFocus(bool reverse) override;
   void ShowContextMenu(RenderFrameHost& render_frame_host,
                        const ContextMenuParams& params) override;
+#if BUILDFLAG(USE_EXTERNAL_POPUP_MENU)
   void ShowPopupMenu(
       RenderFrameHost* render_frame_host,
       mojo::PendingRemote<blink::mojom::PopupMenuClient> popup_client,
@@ -118,6 +119,7 @@ class WebContentsViewMac : public WebContentsView,
       std::vector<blink::mojom::MenuItemPtr> menu_items,
       bool right_aligned,
       bool allow_multiple_selection) override;
+#endif
 
   // PopupMenuHelper::Delegate:
   void OnMenuClosed() override;
