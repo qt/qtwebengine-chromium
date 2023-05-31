@@ -490,20 +490,27 @@ bool CPWL_ComboBox::OnKeyDown(uint16_t nChar, uint32_t nFlag) {
   if (!m_pEdit)
     return false;
 
+  ObservedPtr<CPWL_Wnd> thisObserved(this);
   m_nSelectItem = -1;
 
   switch (nChar) {
     case FWL_VKEY_Up:
       if (m_pList->GetCurSel() > 0) {
         if (m_pFillerNotify) {
-          if (m_pFillerNotify->OnPopupPreOpen(GetAttachedData(), nFlag))
+          if (m_pFillerNotify->OnPopupPreOpen(GetAttachedData(), nFlag) ||
+            !thisObserved) {
             return false;
-          if (m_pFillerNotify->OnPopupPostOpen(GetAttachedData(), nFlag))
+          }
+          if (m_pFillerNotify->OnPopupPostOpen(GetAttachedData(), nFlag) ||
+            !thisObserved) {
             return false;
+          }
         }
         if (m_pList->IsMovementKey(nChar)) {
-          if (m_pList->OnMovementKeyDown(nChar, nFlag))
+          if (m_pList->OnMovementKeyDown(nChar, nFlag) ||
+            !thisObserved) {
             return false;
+          }
           SetSelectText();
         }
       }
@@ -511,14 +518,20 @@ bool CPWL_ComboBox::OnKeyDown(uint16_t nChar, uint32_t nFlag) {
     case FWL_VKEY_Down:
       if (m_pList->GetCurSel() < m_pList->GetCount() - 1) {
         if (m_pFillerNotify) {
-          if (m_pFillerNotify->OnPopupPreOpen(GetAttachedData(), nFlag))
+          if (m_pFillerNotify->OnPopupPreOpen(GetAttachedData(), nFlag) ||
+            !thisObserved) {
             return false;
-          if (m_pFillerNotify->OnPopupPostOpen(GetAttachedData(), nFlag))
+          }
+          if (m_pFillerNotify->OnPopupPostOpen(GetAttachedData(), nFlag) ||
+            !thisObserved) {
             return false;
+          }
         }
         if (m_pList->IsMovementKey(nChar)) {
-          if (m_pList->OnMovementKeyDown(nChar, nFlag))
+          if (m_pList->OnMovementKeyDown(nChar, nFlag) ||
+            !thisObserved) {
             return false;
+          }
           SetSelectText();
         }
       }
@@ -568,11 +581,16 @@ bool CPWL_ComboBox::OnChar(uint16_t nChar, uint32_t nFlag) {
   if (HasFlag(PCBS_ALLOWCUSTOMTEXT))
     return m_pEdit->OnChar(nChar, nFlag);
 
+  ObservedPtr<CPWL_Wnd> thisObserved(this);
   if (m_pFillerNotify) {
-    if (m_pFillerNotify->OnPopupPreOpen(GetAttachedData(), nFlag))
+    if (m_pFillerNotify->OnPopupPreOpen(GetAttachedData(), nFlag) ||
+            !thisObserved) {
       return false;
-    if (m_pFillerNotify->OnPopupPostOpen(GetAttachedData(), nFlag))
+    }
+    if (m_pFillerNotify->OnPopupPostOpen(GetAttachedData(), nFlag) ||
+            !thisObserved) {
       return false;
+    }
   }
   if (!m_pList->IsChar(nChar, nFlag))
     return false;
