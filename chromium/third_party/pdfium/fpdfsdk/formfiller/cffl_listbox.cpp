@@ -120,11 +120,17 @@ void CFFL_ListBox::SaveData(CPDFSDK_PageView* pPageView) {
       if (pListBox->IsItemSelected(i)) {
         m_pWidget->SetOptionSelection(i, true,
                                       NotificationOption::kDoNotNotify);
+        if (!observed_box) {
+          return;
+        }
       }
     }
   } else {
     m_pWidget->SetOptionSelection(pListBox->GetCurSel(), true,
                                   NotificationOption::kDoNotNotify);
+    if (!observed_box) {
+      return;
+    }
   }
   ObservedPtr<CPDFSDK_Widget> observed_widget(m_pWidget.Get());
   ObservedPtr<CFFL_ListBox> observed_this(this);
