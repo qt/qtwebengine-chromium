@@ -17,7 +17,7 @@ declare_args() {
   # Whether or not MBI mode (Multiple Blink Isolates) should be enabled,
   # depending on the build argument.
   mbi_mode = is_linux || is_chromeos || is_mac || is_win || is_android
-}
 
-enable_screen_capture =
-    is_linux || is_chromeos || is_mac || is_win || is_android || is_fuchsia
+  enable_screen_capture =
+      is_linux || is_chromeos || is_mac || is_win || is_android || is_fuchsia
+}
