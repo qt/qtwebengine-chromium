@@ -634,27 +634,6 @@ jumbo_static_library("test_support") {
     ]
   }
 
-  if (enable_webrtc) {
-    sources += [
-      "../renderer/media/stream/mock_mojo_media_stream_dispatcher_host.cc",
-      "../renderer/media/stream/mock_mojo_media_stream_dispatcher_host.h",
-      "../renderer/media/webrtc/mock_data_channel_impl.cc",
-      "../renderer/media/webrtc/mock_data_channel_impl.h",
-      "../renderer/media/webrtc/mock_peer_connection_dependency_factory.cc",
-      "../renderer/media/webrtc/mock_peer_connection_dependency_factory.h",
-      "../renderer/media/webrtc/mock_peer_connection_impl.cc",
-      "../renderer/media/webrtc/mock_peer_connection_impl.h",
-      "../renderer/media/webrtc/mock_web_rtc_peer_connection_handler_client.cc",
-      "../renderer/media/webrtc/mock_web_rtc_peer_connection_handler_client.h",
-      "../renderer/media/webrtc/test/webrtc_stats_report_obtainer.cc",
-      "../renderer/media/webrtc/test/webrtc_stats_report_obtainer.h",
-    ]
-
-    deps += [
-      "//third_party/webrtc_overrides:webrtc_component",
-    ]
-  }
-
   if (use_glib) {
     configs += [ "//build/config/linux:glib" ]
   }
@@ -2952,8 +2931,6 @@ test("content_unittests") {
   }
 
   if (enable_ppapi) {
-    # Put WebRTC-related plugins sources in the "enable_webrtc &&
-    # enable_plugins" section below.
     sources += [
       "../browser/ppapi_plugin_sandboxed_process_launcher_delegate_unittest.cc",
       "../browser/renderer_host/pepper/browser_ppapi_host_test.cc",
@@ -2982,91 +2959,6 @@ test("content_unittests") {
       "../browser/media/key_system_support_impl_unittest.cc",
       "../browser/media/media_license_manager_unittest.cc",
       "../browser/media/media_license_storage_host_unittest.cc",
-    ]
-  }
-
-  if (enable_webrtc) {
-    # Put WebRTC-related plugins sources in the "enable_webrtc &&
-    # enable_plugins" section below.
-    sources += [
-      "../renderer/media/stream/media_stream_audio_processor_unittest.cc",
-      "../renderer/media/stream/media_stream_audio_unittest.cc",
-      "../renderer/media/stream/media_stream_constraints_util_audio_unittest.cc",
-      "../renderer/media/stream/media_stream_constraints_util_sets_unittest.cc",
-      "../renderer/media/stream/media_stream_constraints_util_unittest.cc",
-      "../renderer/media/stream/media_stream_constraints_util_video_content_unittest.cc",
-      "../renderer/media/stream/media_stream_constraints_util_video_device_unittest.cc",
-      "../renderer/media/stream/media_stream_device_observer_unittest.cc",
-      "../renderer/media/stream/media_stream_video_renderer_sink_unittest.cc",
-      "../renderer/media/stream/media_stream_video_source_unittest.cc",
-      "../renderer/media/stream/media_stream_video_track_unittest.cc",
-      "../renderer/media/stream/mock_constraint_factory.cc",
-      "../renderer/media/stream/mock_constraint_factory.h",
-      "../renderer/media/stream/mock_media_stream_registry.cc",
-      "../renderer/media/stream/mock_media_stream_registry.h",
-      "../renderer/media/stream/mock_media_stream_video_sink.cc",
-      "../renderer/media/stream/mock_media_stream_video_sink.h",
-      "../renderer/media/stream/mock_media_stream_video_source.cc",
-      "../renderer/media/stream/mock_media_stream_video_source.h",
-      "../renderer/media/stream/processed_local_audio_source_unittest.cc",
-      "../renderer/media/stream/user_media_client_impl_unittest.cc",
-      "../renderer/media/stream/webmediaplayer_ms_unittest.cc",
-      "../renderer/media/webrtc/fake_rtc_rtp_transceiver.cc",
-      "../renderer/media/webrtc/fake_rtc_rtp_transceiver.h",
-      "../renderer/media/webrtc/media_stream_remote_video_source_unittest.cc",
-      "../renderer/media/webrtc/media_stream_track_metrics_unittest.cc",
-      "../renderer/media/webrtc/media_stream_video_webrtc_sink_unittest.cc",
-      "../renderer/media/webrtc/peer_connection_dependency_factory_unittest.cc",
-      "../renderer/media/webrtc/peer_connection_tracker_unittest.cc",
-      "../renderer/media/webrtc/rtc_peer_connection_handler_unittest.cc",
-      "../renderer/media/webrtc/rtc_rtp_receiver_unittest.cc",
-      "../renderer/media/webrtc/rtc_rtp_sender_unittest.cc",
-      "../renderer/media/webrtc/rtc_rtp_transceiver_unittest.cc",
-      "../renderer/media/webrtc/rtc_stats_unittest.cc",
-      "../renderer/media/webrtc/rtc_video_decoder_adapter_unittest.cc",
-      "../renderer/media/webrtc/rtc_video_decoder_unittest.cc",
-      "../renderer/media/webrtc/rtc_video_encoder_unittest.cc",
-      "../renderer/media/webrtc/stun_field_trial_unittest.cc",
-      "../renderer/media/webrtc/task_queue_factory_unittest.cc",
-      "../renderer/media/webrtc/transceiver_state_surfacer_unittest.cc",
-      "../renderer/media/webrtc/transmission_encoding_info_handler_unittest.cc",
-      "../renderer/media/webrtc/two_keys_adapter_map_unittest.cc",
-      "../renderer/media/webrtc/webrtc_audio_renderer_unittest.cc",
-      "../renderer/media/webrtc/webrtc_media_stream_track_adapter_map_unittest.cc",
-      "../renderer/media/webrtc/webrtc_media_stream_track_adapter_unittest.cc",
-      "../renderer/media/webrtc/webrtc_set_description_observer_unittest.cc",
-      "../renderer/media/webrtc/webrtc_video_track_source_unittest.cc",
-      "../renderer/media/webrtc_local_audio_source_provider_unittest.cc",
-      "../renderer/media_capture_from_element/canvas_capture_handler_unittest.cc",
-      "../renderer/media_capture_from_element/html_audio_element_capturer_source_unittest.cc",
-      "../renderer/media_capture_from_element/html_video_element_capturer_source_unittest.cc",
-      "../renderer/media_recorder/audio_track_recorder_unittest.cc",
-      "../renderer/media_recorder/media_recorder_handler_unittest.cc",
-      "../renderer/media_recorder/video_track_recorder_unittest.cc",
-      "../renderer/p2p/filtering_network_manager_unittest.cc",
-      "../renderer/p2p/ipc_network_manager_unittest.cc",
-    ]
-    deps += [
-      "//services/device/public/mojom",
-      "//third_party/libyuv",
-      "//third_party/opus",
-      "//third_party/webrtc_overrides:webrtc_component",
-      "//ui/shell_dialogs:shell_dialogs",
-    ]
-
-    if (is_chromecast) {
-      sources -= [
-        "../renderer/media_recorder/audio_track_recorder_unittest.cc",
-        "../renderer/media_recorder/media_recorder_handler_unittest.cc",
-        "../renderer/media_recorder/video_track_recorder_unittest.cc",
-      ]
-    }
-  }
-
-  if (enable_webrtc && enable_ppapi) {
-    sources += [
-      "../renderer/media/pepper/pepper_to_video_track_adapter_unittest.cc",
-      "../renderer/media/pepper/video_track_to_pepper_adapter_unittest.cc",
     ]
   }
 
