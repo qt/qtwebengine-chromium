@@ -10,13 +10,13 @@
 #include "build/config/chromebox_for_meetings/buildflags.h"
 #include "components/lens/buildflags.h"
 #include "components/nacl/common/buildflags.h"
-#include "components/password_manager/content/common/web_ui_constants.h"
 #include "extensions/buildflags/buildflags.h"
 #include "third_party/blink/public/common/chrome_debug_urls.h"
 
 #if !defined(TOOLKIT_QT)
 #include "components/history_clusters/history_clusters_internals/webui/url_constants.h"
 #include "components/optimization_guide/optimization_guide_internals/webui/url_constants.h"
+#include "components/password_manager/content/common/web_ui_constants.h"
 #include "components/safe_browsing/core/common/web_ui_constants.h"
 #endif // !defined(TOOLKIT_QT)
 
@@ -713,7 +713,9 @@ const char* const kChromeHostURLs[] = {
     optimization_guide_internals::kChromeUIOptimizationGuideInternalsHost,
 #endif // !defined(TOOLKIT_QT)
     kChromeUIPasswordManagerInternalsHost,
+#if !defined(TOOLKIT_QT)
     password_manager::kChromeUIPasswordManagerHost,
+#endif // !defined(TOOLKIT_QT)
     kChromeUIPolicyHost,
     kChromeUIPredictorsHost,
     kChromeUIPrefsInternalsHost,
