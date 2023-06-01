@@ -752,6 +752,7 @@ bool WebRequestAPI::MaybeProxyURLLoaderFactory(
       }
     }
 
+#if !defined(TOOLKIT_QT)
     // Create a proxy URLLoader even when there is no CRX
     // installed with webRequest permissions. This allows the extension
     // requests to be intercepted for CRX telemetry service if enabled.
@@ -766,6 +767,7 @@ bool WebRequestAPI::MaybeProxyURLLoaderFactory(
             safe_browsing::kExtensionTelemetryReportContactedHosts)) {
       skip_proxy = false;
     }
+#endif  // !defined(TOOLKIT_QT)
     if (skip_proxy)
       return false;
   }
@@ -899,6 +901,7 @@ bool WebRequestAPI::MayHaveProxies() const {
 }
 
 bool WebRequestAPI::MayHaveWebsocketProxiesForExtensionTelemetry() const {
+#if !defined(TOOLKIT_QT)
   return ExtensionsBrowserClient::Get()->IsExtensionTelemetryServiceEnabled(
              browser_context_) &&
          base::FeatureList::IsEnabled(
@@ -906,6 +909,9 @@ bool WebRequestAPI::MayHaveWebsocketProxiesForExtensionTelemetry() const {
          base::FeatureList::IsEnabled(
              safe_browsing::
                  kExtensionTelemetryReportHostsContactedViaWebSocket);
+#else
+  return false;
+#endif  // !defined(TOOLKIT_QT)
 }
 
 bool WebRequestAPI::HasExtraHeadersListenerForTesting() {

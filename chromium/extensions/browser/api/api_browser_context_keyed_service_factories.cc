@@ -44,8 +44,10 @@
 #include "extensions/browser/api/sockets_udp/udp_socket_event_dispatcher.h"
 #include "extensions/browser/api/storage/session_storage_manager.h"
 #include "extensions/browser/api/storage/storage_frontend.h"
+#if !defined(TOOLKIT_QT)
 #include "extensions/browser/api/system_info/system_info_api.h"
 #include "extensions/browser/api/usb/usb_device_manager.h"
+#endif
 #include "extensions/browser/api/usb/usb_device_resource.h"
 #include "extensions/browser/api/web_request/web_request_api.h"
 #include "extensions/browser/api/web_request/web_request_proxying_url_loader_factory.h"
@@ -65,10 +67,12 @@ namespace extensions {
 
 void EnsureApiBrowserContextKeyedServiceFactoriesBuilt() {
   AlarmManager::GetFactoryInstance();
+#if !defined(TOOLKIT_QT)
   ApiResourceManager<BluetoothApiAdvertisement>::GetFactoryInstance();
   ApiResourceManager<BluetoothApiSocket>::GetFactoryInstance();
   ApiResourceManager<BluetoothLowEnergyConnection>::GetFactoryInstance();
   ApiResourceManager<BluetoothLowEnergyNotifySession>::GetFactoryInstance();
+#endif
   ApiResourceManager<ResumableTCPServerSocket>::GetFactoryInstance();
   ApiResourceManager<ResumableTCPSocket>::GetFactoryInstance();
   ApiResourceManager<ResumableUDPSocket>::GetFactoryInstance();
@@ -77,6 +81,7 @@ void EnsureApiBrowserContextKeyedServiceFactoriesBuilt() {
   ApiResourceManager<UsbDeviceResource>::GetFactoryInstance();
 #if !defined(TOOLKIT_QT)
   api::BluetoothSocketEventDispatcher::GetFactoryInstance();
+#endif
   api::SerialPortManager::GetFactoryInstance();
   api::TCPServerSocketEventDispatcher::GetFactoryInstance();
   api::TCPSocketEventDispatcher::GetFactoryInstance();
@@ -84,6 +89,7 @@ void EnsureApiBrowserContextKeyedServiceFactoriesBuilt() {
 #if BUILDFLAG(IS_CHROMEOS)
   AppFirewallHoleManager::EnsureFactoryBuilt();
 #endif
+#if !defined(TOOLKIT_QT)
   AudioAPI::GetFactoryInstance();
   BluetoothAPI::GetFactoryInstance();
   BluetoothPrivateAPI::GetFactoryInstance();

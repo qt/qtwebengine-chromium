@@ -37,7 +37,9 @@ void EnsureCoreBrowserContextKeyedServiceFactoriesBuilt() {
   ProcessManagerFactory::GetInstance();
   RendererStartupHelperFactory::GetInstance();
   ServiceWorkerTaskQueueFactory::GetInstance();
+#if !defined(TOOLKIT_QT)
   UpdateServiceFactory::GetInstance();
+#endif
 }
 
 }  // namespace extensions

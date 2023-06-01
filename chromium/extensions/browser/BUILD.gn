@@ -721,6 +721,7 @@ jumbo_source_set("browser_sources") {
       "//components/crx_file",
       "//components/crx_file:crx_creator",
       "//components/pref_registry",
+      "//components/safe_browsing/core/common",
       "//components/sessions",
       "//components/sync",
       "//components/update_client",
