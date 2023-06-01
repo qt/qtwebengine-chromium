@@ -268,9 +268,11 @@ if (rtc_include_tests) {
 }
 
 # TODO(bugs.webrtc.org/14187): remove when all users are gone
-if ((is_linux || is_chromeos) && rtc_use_pipewire) {
-  config("pipewire_config") {
-    configs = [ "../portal:pipewire_config" ]
+if (is_linux || is_chromeos) {
+  if (rtc_use_pipewire) {
+    config("pipewire_config") {
+      configs = [ "../portal:pipewire_config" ]
+    }
   }
   if (rtc_use_x11) {
     config("rtc_x11_config") {
