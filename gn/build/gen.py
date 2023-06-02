@@ -424,6 +424,9 @@ def WriteGNNinja(path, platform, host, options, args_list):
 
   libs = []
 
+  if options.no_last_commit_position:
+      cflags.append('-DNO_LAST_COMMIT_POSITION')
+
   if not platform.is_msvc():
     if options.debug:
       cflags.extend(['-O0', '-g'])
