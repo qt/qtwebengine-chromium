@@ -50,7 +50,7 @@ class ResolvedTargetData;
 
 class RspTargetWriter {
  public:
-  enum Type { NONE, OBJECTS, ARCHIVES, DEFINES, LFLAGS, LIBS };
+  enum Type { NONE, OBJECTS, ARCHIVES, DEFINES, LFLAGS, LIBS, LDIR};
   RspTargetWriter(const NinjaCBinaryTargetWriter* writer,
                   const Target* target,
                   Type type,

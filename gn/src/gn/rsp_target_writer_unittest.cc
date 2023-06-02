@@ -146,9 +146,18 @@ TEST_F(RspTargetWriterTest, WriteRspInfo) {
                                     RspTargetWriter::LFLAGS, lflags_out);
   rsp_lflags_writer.Run();
 
-  const char lflags_expected[] = " -fooBAR /INCREMENTAL:NO -L\"../../foo/bar\"";
+  const char lflags_expected[] = " -fooBAR /INCREMENTAL:NO";
 
   EXPECT_EQ(lflags_expected, lflags_out.str());
+
+  std::ostringstream ldir_out;
+  RspTargetWriter rsp_ldir_writer(&writer, &shared_lib_target,
+                                    RspTargetWriter::LDIR, ldir_out);
+  rsp_ldir_writer.Run();
+
+  const char ldir_expected[] = " -L\"../../foo/bar\"";
+
+  EXPECT_EQ(ldir_expected, ldir_out.str());
 
   std::ostringstream archives_out;
   RspTargetWriter rsp_archive_writer(&writer, &shared_lib_target,

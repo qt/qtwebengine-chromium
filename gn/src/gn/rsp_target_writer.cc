@@ -160,6 +160,9 @@ void RspTargetWriter::Run() {
       RecursiveTargetConfigStringsToStream(kRecursiveWriterKeepDuplicates,
                                            target_, &ConfigValues::ldflags,
                                            opts, out_);
+      out_.flush();
+    } break;
+    case LDIR: {
       // library dirs
       const auto& all_lib_dirs = resolved().GetLinkedLibraryDirs(target_);
       if (!all_lib_dirs.empty()) {
@@ -242,7 +245,8 @@ RspTargetWriter::Type RspTargetWriter::strToType(const std::string& str) {
       {"archives", RspTargetWriter::ARCHIVES},
       {"defines", RspTargetWriter::DEFINES},
       {"lflags", RspTargetWriter::LFLAGS},
-      {"libs", RspTargetWriter::LIBS}};
+      {"libs", RspTargetWriter::LIBS},
+      {"ldir", RspTargetWriter::LDIR}};
   auto it = types.find(str);
   if (it != types.end()) {
     return it->second;
