@@ -20,8 +20,12 @@ using FormatTest = TestWithScheduler;
     std::string input;                                                      \
     std::string out;                                                        \
     std::string expected;                                                   \
-    base::FilePath src_dir =                                                \
-        GetExePath().DirName().Append(FILE_PATH_LITERAL(".."));             \
+    const char* test_data_ptr = getenv("GN_TESTDATA_ROOT");                 \
+    base::FilePath src_dir;                                                 \
+    if (!test_data_ptr)                                                     \
+      src_dir = GetExePath().DirName().Append(FILE_PATH_LITERAL(".."));     \
+    else                                                                    \
+      src_dir = base::FilePath(test_data_ptr);                              \
     base::SetCurrentDirectory(src_dir);                                     \
     ASSERT_TRUE(base::ReadFileToString(                                     \
         base::FilePath(FILE_PATH_LITERAL("src/gn/format_test_data/")        \
