@@ -291,7 +291,6 @@ bool IsDefaultANGLEVulkan() {
 #if defined(MEMORY_SANITIZER)
   return false;
 #else
-#if BUILDFLAG(ENABLE_VULKAN)
 #if BUILDFLAG(IS_ANDROID)
   // No support for devices before Q -- exit before checking feature flags
   // so that devices are not counted in finch trials.
@@ -299,7 +298,7 @@ bool IsDefaultANGLEVulkan() {
       base::android::SDK_VERSION_Q)
     return false;
 #endif  // BUILDFLAG(IS_ANDROID)
-#if BUILDFLAG(IS_LINUX)
+#if BUILDFLAG(IS_LINUX) && BUILDFLAG(ENABLE_VULKAN)
   angle::SystemInfo system_info;
   if (!angle::GetSystemInfoVulkan(&system_info))
     return false;
@@ -325,12 +324,9 @@ bool IsDefaultANGLEVulkan() {
     return false;
   }
 
-#endif  // BUILDFLAG(IS_LINUX)
+#endif  // BUILDFLAG(IS_LINUX) && BUILDFLAG(ENABLE_VULKAN)
   return base::FeatureList::IsEnabled(kDefaultANGLEVulkan);
 #endif  // defined(MEMORY_SANITIZER)
-#else
-  return false;
-#endif  // BUILDFLAG(ENABLE_VULKAN)
 }
 
 // Use waitable swap chain on Windows to reduce display latency.
