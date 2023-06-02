@@ -321,10 +321,14 @@ void AutofillManager::OnFormSubmitted(const FormData& form,
     return;
   }
 
+#if !defined(TOOLKIT_QT)
   NotifyObservers(&Observer::OnBeforeFormSubmitted, form.global_id());
   NotifyObservers(&Observer::OnFormSubmitted);
   OnFormSubmittedImpl(form, known_success, source);
   NotifyObservers(&Observer::OnAfterFormSubmitted, form.global_id());
+#else
+  OnFormSubmittedImpl(form, known_success, source);
+#endif  // !defined(TOOLKIT_QT)
 }
 
 void AutofillManager::OnFormsSeen(
@@ -560,7 +564,7 @@ void AutofillManager::OnAskForValuesToFill(
           .Then(NotifyObserversCallback(&Observer::OnAfterAskForValuesToFill,
                                         form.global_id(), field.global_id())));
 #else
-  OnAskForValuesToFillImpl(form, field, bounding_box, query_id,
+  OnAskForValuesToFillImpl(form, field, bounding_box,
                            autoselect_first_suggestion,
                            form_element_was_clicked);
 #endif  // !defined(TOOLKIT_QT)

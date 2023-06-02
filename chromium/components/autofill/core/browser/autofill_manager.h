@@ -236,6 +236,7 @@ class AutofillManager {
                                bool known_success,
                                mojom::SubmissionSource source);
 
+#if !defined(TOOLKIT_QT)
   void FillCreditCardForm(const FormData& form,
                           const FormFieldData& field,
                           const CreditCard& credit_card,
@@ -244,6 +245,7 @@ class AutofillManager {
   void FillProfileForm(const AutofillProfile& profile,
                        const FormData& form,
                        const FormFieldData& field);
+#endif
 
   // Invoked when |form| has been filled with the value given by
   // FillOrPreviewForm.
@@ -378,11 +380,6 @@ class AutofillManager {
       const std::vector<FormSignature>& queried_form_signatures) {
     OnLoadedServerPredictions(response, queried_form_signatures);
   }
-#else
-  virtual void Reset() {}
-  AutofillDriver* driver() { return driver_; }
-  const AutofillDriver* driver() const { return driver_; }
-#endif  // !defined(TOOLKIT_QT)
 
   std::map<FormGlobalId, std::unique_ptr<FormStructure>>*
   mutable_form_structures_for_test() {
@@ -392,6 +389,11 @@ class AutofillManager {
   FormStructure* ParseFormForTest(const FormData& form) {
     return ParseForm(form, nullptr);
   }
+#else
+  virtual void Reset() {}
+  AutofillDriver* driver() { return driver_; }
+  const AutofillDriver* driver() const { return driver_; }
+#endif  // !defined(TOOLKIT_QT)
 
  protected:
   AutofillManager(AutofillDriver* driver, AutofillClient* client);

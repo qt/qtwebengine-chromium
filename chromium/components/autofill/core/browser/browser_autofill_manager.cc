@@ -528,9 +528,9 @@ BrowserAutofillManager::BrowserAutofillManager(AutofillDriver* driver,
                                                const std::string& app_locale)
     : AutofillManager(driver, client),
       external_delegate_(
-          std::make_unique<AutofillExternalDelegate>(this, driver)),
-      app_locale_(app_locale),
-      personal_data_(client->GetPersonalDataManager()) {}
+          std::make_unique<AutofillExternalDelegate>(this, driver)) {
+}
+
 #else
 BrowserAutofillManager::BrowserAutofillManager(AutofillDriver* driver,
                                                AutofillClient* client,
@@ -2072,7 +2072,6 @@ void BrowserAutofillManager::UploadVotesAndLogQuality(
       /*login_form_signature=*/std::string(), observed_submission,
       client()->GetPrefs(), GetWeakPtr());
 }
-#endif  // !defined(TOOLKIT_QT)
 
 const gfx::Image& BrowserAutofillManager::GetCardImage(
     const CreditCard& credit_card) const {
@@ -2083,6 +2082,7 @@ const gfx::Image& BrowserAutofillManager::GetCardImage(
              : ui::ResourceBundle::GetSharedInstance().GetImageNamed(
                    CreditCard::IconResourceId(credit_card.network()));
 }
+#endif  // !defined(TOOLKIT_QT)
 
 void BrowserAutofillManager::Reset() {
 #if !defined(TOOLKIT_QT)
@@ -2140,6 +2140,7 @@ void BrowserAutofillManager::Reset() {
 #endif  // !defined(TOOLKIT_QT)
 }
 
+#if !defined(TOOLKIT_QT)
 void BrowserAutofillManager::OnContextMenuShownInField(
     const FormGlobalId& form_global_id,
     const FieldGlobalId& field_global_id) {
@@ -2155,7 +2156,6 @@ void BrowserAutofillManager::OnContextMenuShownInField(
     (*field)->set_was_context_menu_shown(true);
 }
 
-#if !defined(TOOLKIT_QT)
 bool BrowserAutofillManager::RefreshDataModels() {
   if (!IsAutofillEnabled())
     return false;

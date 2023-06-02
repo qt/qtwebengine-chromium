@@ -803,7 +803,6 @@ class AutofillClient {
   // details page for the offers in a promo code suggestions popup. Every offer
   // in a promo code suggestions popup links to the same offer details page.
   virtual void OpenPromoCodeOfferDetailsURL(const GURL& url) = 0;
-#endif  // !defined(TOOLKIT_QT)
 
   // Updates and returns the current form interactions flow id. This is used as
   // an approximation for keeping track of the number of user interactions with
@@ -812,6 +811,7 @@ class AutofillClient {
   // calls in the next 20 minutes. Afterwards a new GUID is set and the pattern
   // repeated.
   virtual FormInteractionsFlowId GetCurrentFormInteractionsFlowId() = 0;
+#endif  // !defined(TOOLKIT_QT)
 };
 
 }  // namespace autofill

@@ -42,8 +42,8 @@
 #include "components/autofill/core/browser/personal_data_manager.h"
 #include "components/autofill/core/browser/single_field_form_fill_router.h"
 #include "components/autofill/core/browser/sync_utils.h"
-#endif  // !defined(TOOLKIT_QT)
 #include "components/autofill/core/browser/touch_to_fill_delegate_impl.h"
+#endif  // !defined(TOOLKIT_QT)
 #include "components/autofill/core/browser/ui/popup_types.h"
 #include "components/autofill/core/common/dense_set.h"
 #include "components/autofill/core/common/form_data.h"
@@ -274,10 +274,11 @@ class BrowserAutofillManager : public AutofillManager,
 #endif
 
   void Reset() override;
+
+#if !defined(TOOLKIT_QT)
   void OnContextMenuShownInField(const FormGlobalId& form_global_id,
                                  const FieldGlobalId& field_global_id) override;
 
-#if !defined(TOOLKIT_QT)
   // SingleFieldFormFiller::SuggestionsHandler:
   void OnSuggestionsReturned(
       FieldGlobalId field_id,
@@ -329,7 +330,6 @@ class BrowserAutofillManager : public AutofillManager,
                                           int frontend_id,
                                           const FormData& form,
                                           const FormFieldData& field);
-#endif  // !defined(TOOLKIT_QT)
 
   // Set Fast Checkout run ID on the corresponding form event logger.
   virtual void SetFastCheckoutRunId(FieldTypeGroup field_type_group,
@@ -418,6 +418,7 @@ class BrowserAutofillManager : public AutofillManager,
   }
 
   FormData* pending_form_data_for_test() { return pending_form_data_.get(); }
+#endif  // !defined(TOOLKIT_QT)
 
  protected:
 #if !defined(TOOLKIT_QT)
@@ -524,6 +525,7 @@ class BrowserAutofillManager : public AutofillManager,
   // Gets the card referred to by the guid |unique_id|. Returns |nullptr| if
   // card does not exist.
   CreditCard* GetCreditCard(int unique_id);
+#endif
 
   // Gets the profile referred to by the guid |unique_id|. Returns |nullptr| if
   // profile does not exist.
@@ -638,6 +640,7 @@ class BrowserAutofillManager : public AutofillManager,
       size_t current_index,
       const ServerFieldTypeSet& upload_types);
 
+#if !defined(TOOLKIT_QT)
   // Calls FieldFiller::FillFormField().
   //
   // If the field was newly filled, sets `autofill_field->is_autofilled` and

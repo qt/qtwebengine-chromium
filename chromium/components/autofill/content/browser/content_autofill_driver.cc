@@ -546,7 +546,9 @@ void ContentAutofillDriver::JavaScriptChangedAutofilledValue(
 void ContentAutofillDriver::OnContextMenuShownInFieldCallback(
     const FormGlobalId& form_global_id,
     const FieldGlobalId& field_global_id) {
+#if !defined(TOOLKIT_QT)
   autofill_manager_->OnContextMenuShownInField(form_global_id, field_global_id);
+#endif
 }
 
 void ContentAutofillDriver::OnContextMenuShownInField(
