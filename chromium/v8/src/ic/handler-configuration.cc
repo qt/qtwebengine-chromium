@@ -503,6 +503,9 @@ void StoreHandler::PrintHandler(Object handler, std::ostream& os) {
     os << "StoreHandler(Smi)(";
     PrintSmiStoreHandler(raw_handler, os);
     os << ")" << std::endl;
+  } else if (handler.IsMap()) {
+    os << "StoreHandler(field transition to " << Brief(handler) << ")"
+       << std::endl;
   } else {
     os << "StoreHandler(";
     StoreHandler store_handler = StoreHandler::cast(handler);

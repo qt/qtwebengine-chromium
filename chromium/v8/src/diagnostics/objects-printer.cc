@@ -980,14 +980,32 @@ void FeedbackNexus::Print(std::ostream& os) {  // NOLINT
     case FeedbackSlotKind::kStoreGlobalSloppy:
     case FeedbackSlotKind::kStoreGlobalStrict:
     case FeedbackSlotKind::kStoreInArrayLiteral:
-    case FeedbackSlotKind::kStoreKeyedSloppy:
-    case FeedbackSlotKind::kStoreKeyedStrict:
-    case FeedbackSlotKind::kStoreNamedSloppy:
-    case FeedbackSlotKind::kStoreNamedStrict:
     case FeedbackSlotKind::kStoreOwnNamed: {
       os << InlineCacheState2String(ic_state());
       break;
     }
+    case FeedbackSlotKind::kStoreKeyedSloppy:
+    case FeedbackSlotKind::kStoreKeyedStrict:
+    case FeedbackSlotKind::kStoreNamedSloppy:
+    case FeedbackSlotKind::kStoreNamedStrict: {
+      os << InlineCacheState2String(ic_state());
+      if (ic_state() == InlineCacheState::MONOMORPHIC) {
+        HeapObject feedback = GetFeedback().GetHeapObject();
+        HeapObject feedback_extra = GetFeedbackExtra().GetHeapObject();
+        if (feedback.IsName()) {
+          os << " with name " << Brief(feedback);
+          WeakFixedArray array = WeakFixedArray::cast(feedback_extra);
+          os << "\n   " << Brief(array.Get(0)) << ": ";
+          Object handler = array.Get(1).GetHeapObjectOrSmi();
+          StoreHandler::PrintHandler(handler, os);
+        } else {
+          os << "\n   " << Brief(feedback) << ": ";
+          StoreHandler::PrintHandler(feedback_extra, os);
+        }
+      }
+      break;
+    }
+
     case FeedbackSlotKind::kBinaryOp: {
       os << "BinaryOp:" << GetBinaryOperationFeedback();
       break;
