@@ -211,6 +211,7 @@ BASE_FEATURE(kDeleteForeignVisitsOnStartup,
              "DeleteForeignVisitsOnStartup",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
+#if !defined(TOOLKIT_QT)
 int GetForeignVisitsToDeletePerBatch() {
   return syncer::kSyncHistoryForeignVisitsToDeletePerBatch.Get();
 }
@@ -243,6 +244,7 @@ class DeleteForeignVisitsDBTask : public HistoryDBTask {
 
   void DoneRunOnMainThread() override {}
 };
+#endif  // !defined(TOOLKIT_QT)
 
 }  // namespace
 
@@ -1377,10 +1379,12 @@ bool HistoryBackend::IsExpiredVisitTime(const base::Time& time) const {
   return time < expirer_.GetCurrentExpirationTime();
 }
 
+#if !defined(TOOLKIT_QT)
 // static
 int HistoryBackend::GetForeignVisitsToDeletePerBatchForTest() {
   return GetForeignVisitsToDeletePerBatch();
 }
+#endif // !defined(TOOLKIT_QT)
 
 void HistoryBackend::SetPageTitle(const GURL& url,
                                   const std::u16string& title) {
@@ -1814,13 +1818,13 @@ HistoryBackend::GetHistorySyncControllerDelegate() {
   DCHECK(history_sync_bridge_);
   return history_sync_bridge_->change_processor()->GetControllerDelegate();
 }
-#endif // !defined(TOOLKIT_QT)
 
 void HistoryBackend::SetSyncTransportState(
     syncer::SyncService::TransportState state) {
   DCHECK(history_sync_bridge_);
   history_sync_bridge_->SetSyncTransportState(state);
 }
+#endif // !defined(TOOLKIT_QT)
 
 // Statistics ------------------------------------------------------------------
 
@@ -3513,8 +3517,10 @@ bool HistoryBackend::ProcessSetFaviconsResult(
 }
 
 void HistoryBackend::StartDeletingForeignVisits() {
+#if !defined(TOOLKIT_QT)
   ProcessDBTask(std::make_unique<DeleteForeignVisitsDBTask>(), task_runner_,
                 /*is_canceled=*/base::BindRepeating([]() { return false; }));
+#endif
 }
 
 }  // namespace history

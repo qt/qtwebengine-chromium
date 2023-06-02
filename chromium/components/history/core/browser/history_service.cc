@@ -1327,7 +1327,6 @@ HistoryService::GetHistorySyncControllerDelegate() {
       base::BindRepeating(&HistoryBackend::GetHistorySyncControllerDelegate,
                           base::Unretained(history_backend_.get())));
 }
-#endif // !defined(TOOLKIT_QT)
 
 void HistoryService::SetSyncTransportState(
     syncer::SyncService::TransportState state) {
@@ -1337,6 +1336,7 @@ void HistoryService::SetSyncTransportState(
                base::BindOnce(&HistoryBackend::SetSyncTransportState,
                               history_backend_, state));
 }
+#endif // !defined(TOOLKIT_QT)
 
 void HistoryService::ProcessLocalDeleteDirective(
     const sync_pb::HistoryDeleteDirectiveSpecifics& delete_directive) {
