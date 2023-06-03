@@ -80,9 +80,12 @@ void NinjaActionTargetWriter::Run() {
     if (target_->action_values().has_depfile()) {
       WriteDepfile(SourceFile());
     }
-    if (target_->action_values().pool().ptr) {
+
+    WriteNinjaVariablesForAction();
+
+    if (target_->pool().ptr) {
       out_ << "  pool = ";
-      out_ << target_->action_values().pool().ptr->GetNinjaName(
+      out_ << target_->pool().ptr->GetNinjaName(
           settings_->default_toolchain_label());
       out_ << std::endl;
     }
@@ -149,7 +152,8 @@ std::string NinjaActionTargetWriter::WriteRuleDefinition() {
   out_ << std::endl;
   out_ << "  description = ACTION " << target_label << std::endl;
   out_ << "  restat = 1" << std::endl;
-  const Tool* tool = target_->toolchain()->GetTool(GeneralTool::kGeneralToolAction);
+  const Tool* tool =
+      target_->toolchain()->GetTool(GeneralTool::kGeneralToolAction);
   if (tool && tool->pool().ptr) {
     out_ << "  pool = ";
     out_ << tool->pool().ptr->GetNinjaName(
@@ -204,13 +208,14 @@ void NinjaActionTargetWriter::WriteSourceRules(
         target_, settings_, sources[i],
         target_->action_values().rsp_file_contents().required_types(),
         args_escape_options, out_);
+    WriteNinjaVariablesForAction();
 
     if (target_->action_values().has_depfile()) {
       WriteDepfile(sources[i]);
     }
-    if (target_->action_values().pool().ptr) {
+    if (target_->pool().ptr) {
       out_ << "  pool = ";
-      out_ << target_->action_values().pool().ptr->GetNinjaName(
+      out_ << target_->pool().ptr->GetNinjaName(
           settings_->default_toolchain_label());
       out_ << std::endl;
     }
@@ -247,4 +252,11 @@ void NinjaActionTargetWriter::WriteDepfile(const SourceFile& source) {
       Version{1, 9, 0}) {
     out_ << "  deps = gcc" << std::endl;
   }
+}
+
+void NinjaActionTargetWriter::WriteNinjaVariablesForAction() {
+  SubstitutionBits subst;
+  target_->action_values().args().FillRequiredTypes(&subst);
+  WriteRustCompilerVars(subst, /*indent=*/true, /*always_write=*/false);
+  WriteCCompilerVars(subst, /*indent=*/true, /*respect_source_types=*/false);
 }

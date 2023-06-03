@@ -26,11 +26,13 @@ using RustProjectWriterHelper = TestWithScheduler;
 TEST_F(RustProjectWriterHelper, WriteCrates) {
   TestWithScope setup;
 
+  std::optional<std::string> sysroot;
+
   CrateList crates;
-  Crate dep =
-      Crate(SourceFile("/root/tortoise/lib.rs"), 0, "//tortoise:bar", "2015");
-  Crate target =
-      Crate(SourceFile("/root/hare/lib.rs"), 1, "//hare:bar", "2015");
+  Crate dep = Crate(SourceFile("/root/tortoise/lib.rs"), std::nullopt, 0,
+                    "//tortoise:bar", "2015");
+  Crate target = Crate(SourceFile("/root/hare/lib.rs"),
+                       OutputFile("gendir/hare/"), 1, "//hare:bar", "2015");
   target.AddDependency(0, "tortoise");
   target.AddConfigItem("unix");
   target.AddConfigItem("feature=\"test\"");
@@ -39,22 +41,24 @@ TEST_F(RustProjectWriterHelper, WriteCrates) {
   crates.push_back(target);
 
   std::ostringstream stream;
-  WriteCrates(setup.build_settings(), crates, stream);
+  WriteCrates(setup.build_settings(), crates, sysroot, stream);
   std::string out = stream.str();
 #if defined(OS_WIN)
   base::ReplaceSubstringsAfterOffset(&out, 0, "\r\n", "\n");
 #endif
   const char expected_json[] =
       "{\n"
-      "  \"roots\": [\n"
-      "    \"/root/hare/\",\n"
-      "    \"/root/tortoise/\"\n"
-      "  ],\n"
       "  \"crates\": [\n"
       "    {\n"
       "      \"crate_id\": 0,\n"
       "      \"root_module\": \"/root/tortoise/lib.rs\",\n"
       "      \"label\": \"//tortoise:bar\",\n"
+      "      \"source\": {\n"
+      "          \"include_dirs\": [\n"
+      "               \"/root/tortoise/\"\n"
+      "          ],\n"
+      "          \"exclude_dirs\": []\n"
+      "      },\n"
       "      \"deps\": [\n"
       "      ],\n"
       "      \"edition\": \"2015\",\n"
@@ -65,6 +69,13 @@ TEST_F(RustProjectWriterHelper, WriteCrates) {
       "      \"crate_id\": 1,\n"
       "      \"root_module\": \"/root/hare/lib.rs\",\n"
       "      \"label\": \"//hare:bar\",\n"
+      "      \"source\": {\n"
+      "          \"include_dirs\": [\n"
+      "               \"/root/hare/\",\n"
+      "               \"out/Debug/gendir/hare/\"\n"
+      "          ],\n"
+      "          \"exclude_dirs\": []\n"
+      "      },\n"
       "      \"deps\": [\n"
       "        {\n"
       "          \"crate\": 0,\n"
@@ -87,13 +98,11 @@ TEST_F(RustProjectWriterHelper, SysrootDepsAreCorrect) {
   TestWithScope setup;
   setup.build_settings()->SetRootPath(UTF8ToFilePath("/root"));
 
-  SysrootIndexMap sysroot_lookup;
+  std::optional<std::string> sysroot = "sysroot";
   CrateList crates;
 
-  AddSysroot(setup.build_settings(), "sysroot", sysroot_lookup, crates);
-
   std::ostringstream stream;
-  WriteCrates(setup.build_settings(), crates, stream);
+  WriteCrates(setup.build_settings(), crates, sysroot, stream);
   std::string out = stream.str();
 #if defined(OS_WIN)
   base::ReplaceSubstringsAfterOffset(&out, 0, "\r\n", "\n");
@@ -101,125 +110,8 @@ TEST_F(RustProjectWriterHelper, SysrootDepsAreCorrect) {
 
   const char expected_json[] =
       "{\n"
-      "  \"roots\": [\n"
-      "    \"/root/out/Debug/sysroot/lib/rustlib/src/rust/library/alloc/src/\",\n"
-      "    \"/root/out/Debug/sysroot/lib/rustlib/src/rust/library/core/src/\",\n"
-      "    \"/root/out/Debug/sysroot/lib/rustlib/src/rust/library/panic_abort/src/\",\n"
-      "    \"/root/out/Debug/sysroot/lib/rustlib/src/rust/library/panic_unwind/src/\",\n"
-      "    \"/root/out/Debug/sysroot/lib/rustlib/src/rust/library/proc_macro/src/\",\n"
-      "    \"/root/out/Debug/sysroot/lib/rustlib/src/rust/library/std/src/\",\n"
-      "    \"/root/out/Debug/sysroot/lib/rustlib/src/rust/library/test/src/\",\n"
-      "    \"/root/out/Debug/sysroot/lib/rustlib/src/rust/library/unwind/src/\"\n"
-      "  ],\n"
+      "  \"sysroot\": \"/root/out/Debug/sysroot\",\n"
       "  \"crates\": [\n"
-      "    {\n"
-      "      \"crate_id\": 0,\n"
-      "      \"root_module\": \"/root/out/Debug/sysroot/lib/rustlib/src/rust/library/core/src/lib.rs\",\n"
-      "      \"label\": \"core\",\n"
-      "      \"deps\": [\n"
-      "      ],\n"
-      "      \"edition\": \"2018\",\n"
-      "      \"cfg\": [\n"
-      "        \"debug_assertions\"\n"
-      "      ]\n"
-      "    },\n"
-      "    {\n"
-      "      \"crate_id\": 1,\n"
-      "      \"root_module\": \"/root/out/Debug/sysroot/lib/rustlib/src/rust/library/alloc/src/lib.rs\",\n"
-      "      \"label\": \"alloc\",\n"
-      "      \"deps\": [\n"
-      "        {\n"
-      "          \"crate\": 0,\n"
-      "          \"name\": \"core\"\n"
-      "        }\n"
-      "      ],\n"
-      "      \"edition\": \"2018\",\n"
-      "      \"cfg\": [\n"
-      "        \"debug_assertions\"\n"
-      "      ]\n"
-      "    },\n"
-      "    {\n"
-      "      \"crate_id\": 2,\n"
-      "      \"root_module\": \"/root/out/Debug/sysroot/lib/rustlib/src/rust/library/panic_abort/src/lib.rs\",\n"
-      "      \"label\": \"panic_abort\",\n"
-      "      \"deps\": [\n"
-      "      ],\n"
-      "      \"edition\": \"2018\",\n"
-      "      \"cfg\": [\n"
-      "        \"debug_assertions\"\n"
-      "      ]\n"
-      "    },\n"
-      "    {\n"
-      "      \"crate_id\": 3,\n"
-      "      \"root_module\": \"/root/out/Debug/sysroot/lib/rustlib/src/rust/library/unwind/src/lib.rs\",\n"
-      "      \"label\": \"unwind\",\n"
-      "      \"deps\": [\n"
-      "      ],\n"
-      "      \"edition\": \"2018\",\n"
-      "      \"cfg\": [\n"
-      "        \"debug_assertions\"\n"
-      "      ]\n"
-      "    },\n"
-      "    {\n"
-      "      \"crate_id\": 4,\n"
-      "      \"root_module\": \"/root/out/Debug/sysroot/lib/rustlib/src/rust/library/std/src/lib.rs\",\n"
-      "      \"label\": \"std\",\n"
-      "      \"deps\": [\n"
-      "        {\n"
-      "          \"crate\": 1,\n"
-      "          \"name\": \"alloc\"\n"
-      "        },\n"
-      "        {\n"
-      "          \"crate\": 0,\n"
-      "          \"name\": \"core\"\n"
-      "        },\n"
-      "        {\n"
-      "          \"crate\": 2,\n"
-      "          \"name\": \"panic_abort\"\n"
-      "        },\n"
-      "        {\n"
-      "          \"crate\": 3,\n"
-      "          \"name\": \"unwind\"\n"
-      "        }\n"
-      "      ],\n"
-      "      \"edition\": \"2018\",\n"
-      "      \"cfg\": [\n"
-      "        \"debug_assertions\"\n"
-      "      ]\n"
-      "    },\n"
-      "    {\n"
-      "      \"crate_id\": 5,\n"
-      "      \"root_module\": \"/root/out/Debug/sysroot/lib/rustlib/src/rust/library/panic_unwind/src/lib.rs\",\n"
-      "      \"label\": \"panic_unwind\",\n"
-      "      \"deps\": [\n"
-      "      ],\n"
-      "      \"edition\": \"2018\",\n"
-      "      \"cfg\": [\n"
-      "        \"debug_assertions\"\n"
-      "      ]\n"
-      "    },\n"
-      "    {\n"
-      "      \"crate_id\": 6,\n"
-      "      \"root_module\": \"/root/out/Debug/sysroot/lib/rustlib/src/rust/library/proc_macro/src/lib.rs\",\n"
-      "      \"label\": \"proc_macro\",\n"
-      "      \"deps\": [\n"
-      "      ],\n"
-      "      \"edition\": \"2018\",\n"
-      "      \"cfg\": [\n"
-      "        \"debug_assertions\"\n"
-      "      ]\n"
-      "    },\n"
-      "    {\n"
-      "      \"crate_id\": 7,\n"
-      "      \"root_module\": \"/root/out/Debug/sysroot/lib/rustlib/src/rust/library/test/src/lib.rs\",\n"
-      "      \"label\": \"test\",\n"
-      "      \"deps\": [\n"
-      "      ],\n"
-      "      \"edition\": \"2018\",\n"
-      "      \"cfg\": [\n"
-      "        \"debug_assertions\"\n"
-      "      ]\n"
-      "    }\n"
       "  ]\n"
       "}\n";
 

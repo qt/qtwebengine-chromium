@@ -14,6 +14,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "base/containers/flat_map.h"
 #include "build_settings.h"
 #include "gn/source_file.h"
 #include "gn/target.h"
@@ -34,15 +35,25 @@ using DependencyList = std::vector<Dependency>;
 class Crate {
  public:
   Crate(SourceFile root,
+        std::optional<OutputFile> gen_dir,
         CrateIndex index,
         std::string label,
         std::string edition)
-      : root_(root), index_(index), label_(label), edition_(edition) {}
+      : root_(root),
+        gen_dir_(gen_dir),
+        index_(index),
+        label_(label),
+        edition_(edition) {}
 
   ~Crate() = default;
 
   // Add a config item to the crate.
   void AddConfigItem(std::string cfg_item) { configs_.push_back(cfg_item); }
+
+  // Add a key-value environment variable pair used when building this crate.
+  void AddRustenv(std::string key, std::string value) {
+    rustenv_.emplace(key, value);
+  }
 
   // Add another crate as a dependency of this one.
   void AddDependency(CrateIndex index, std::string name) {
@@ -55,11 +66,19 @@ class Crate {
   // Set the compiler target ("e.g. x86_64-linux-kernel")
   void SetCompilerTarget(std::string target) { compiler_target_ = target; }
 
+  // Set that this is a proc macro with the path to the output .so/dylib/dll
+  void SetIsProcMacro(OutputFile proc_macro_dynamic_library) {
+    proc_macro_dynamic_library_ = proc_macro_dynamic_library;
+  }
+
   // Returns the root file for the crate.
   SourceFile& root() { return root_; }
 
+  // Returns the root file for the crate.
+  std::optional<OutputFile>& gen_dir() { return gen_dir_; }
+
   // Returns the crate index.
-  CrateIndex index() { return index_; };
+  CrateIndex index() { return index_; }
 
   // Returns the displayable crate label.
   const std::string& label() { return label_; }
@@ -81,8 +100,18 @@ class Crate {
     return compiler_target_;
   }
 
+  // Returns whether this crate builds a proc macro .so
+  const std::optional<OutputFile>& proc_macro_path() {
+    return proc_macro_dynamic_library_;
+  }
+
+  // Returns environment variables applied to this, which may be necessary
+  // for correct functioning of environment variables
+  const base::flat_map<std::string, std::string>& rustenv() { return rustenv_; }
+
  private:
   SourceFile root_;
+  std::optional<OutputFile> gen_dir_;
   CrateIndex index_;
   std::string label_;
   std::string edition_;
@@ -90,29 +119,17 @@ class Crate {
   DependencyList deps_;
   std::optional<std::string> compiler_target_;
   std::vector<std::string> compiler_args_;
+  std::optional<OutputFile> proc_macro_dynamic_library_;
+  base::flat_map<std::string, std::string> rustenv_;
 };
 
 using CrateList = std::vector<Crate>;
-
-// Mapping of a sysroot crate (path) to it's index in the crates list.
-using SysrootCrateIndexMap = std::unordered_map<std::string_view, CrateIndex>;
-
-// Mapping of a sysroot (path) to the mapping of each of the sysroot crates to
-// their index in the crates list.
-using SysrootIndexMap =
-    std::unordered_map<std::string_view, SysrootCrateIndexMap>;
-
-// Add all of the crates for a sysroot (path) to the rust_project ostream.
-// Add the given sysroot to the project, if it hasn't already been added.
-void AddSysroot(const BuildSettings* build_settings,
-                std::string_view sysroot,
-                SysrootIndexMap& sysroot_lookup,
-                CrateList& crate_list);
 
 // Write the entire rust-project.json file contents into the given stream, based
 // on the the given crates list.
 void WriteCrates(const BuildSettings* build_settings,
                  CrateList& crate_list,
+                 std::optional<std::string>& sysroot,
                  std::ostream& rust_project);
 
 // Assemble the compiler arguments for the given GN Target.

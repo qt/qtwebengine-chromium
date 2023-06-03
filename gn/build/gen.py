@@ -17,9 +17,9 @@ import sys
 # GN's CI builders.
 
 try:  # py3
-    from shlex import quote as shell_quote
+  from shlex import quote as shell_quote
 except ImportError:  # py2
-    from pipes import quote as shell_quote
+  from pipes import quote as shell_quote
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(SCRIPT_DIR)
@@ -183,6 +183,9 @@ def main(argv):
                           'library, or \'-l<name>\' on POSIX systems. Can be ' +
                           'used multiple times. Useful to link custom malloc ' +
                           'or cpu profiling libraries.'))
+  args_list.add('--allow-warnings', action='store_true', default=False,
+                    help=('Allow compiler warnings, don\'t treat them as '
+                          'errors.'))
   if sys.platform == 'zos':
     args_list.add('--zoslib-dir',
                       action='store',
@@ -215,8 +218,8 @@ def main(argv):
 def GenerateLastCommitPosition(host, header):
   ROOT_TAG = 'initial-commit'
   describe_output = subprocess.check_output(
-      ['git', 'describe', 'HEAD', '--match', ROOT_TAG], shell=host.is_windows(),
-      cwd=REPO_ROOT)
+      ['git', 'describe', 'HEAD', '--abbrev=12', '--match', ROOT_TAG],
+      shell=host.is_windows(), cwd=REPO_ROOT)
   mo = re.match(ROOT_TAG + '-(\d+)-g([0-9a-f]+)', describe_output.decode())
   if not mo:
     raise ValueError(
@@ -296,7 +299,7 @@ def WriteGenericNinja(path, static_libraries, executables,
     object_ext = '.o'
 
   def escape_path_ninja(path):
-      return path.replace('$ ', '$$ ').replace(' ', '$ ').replace(':', '$:')
+    return path.replace('$ ', '$$ ').replace(' ', '$ ').replace(':', '$:')
 
   def src_to_obj(path):
     return escape_path_ninja('%s' % os.path.splitext(path)[0] + object_ext)
@@ -427,6 +430,9 @@ def WriteGNNinja(path, platform, host, options, args_list):
         cflags.extend(['-flto', '-fwhole-program-vtables'])
         ldflags.extend(['-flto', '-fwhole-program-vtables'])
 
+    if not options.allow_warnings:
+      cflags.append('-Werror')
+
     cflags.extend([
         '-D_FILE_OFFSET_BITS=64',
         '-D__STDC_CONSTANT_MACROS', '-D__STDC_FORMAT_MACROS',
@@ -438,8 +444,16 @@ def WriteGNNinja(path, platform, host, options, args_list):
         '-Wall',
         '-Wextra',
         '-Wno-unused-parameter',
+
+        '-Wextra-semi',
+        '-Wundef',
+
         '-std=c++17'
     ])
+
+    # flags not supported by gcc/g++.
+    if cxx == 'clang++':
+      cflags.extend(['-Wrange-loop-analysis', '-Wextra-semi-stmt'])
 
     if platform.is_linux() or platform.is_mingw() or platform.is_msys():
       ldflags.append('-Wl,--as-needed')
@@ -504,6 +518,9 @@ def WriteGNNinja(path, platform, host, options, args_list):
         libflags.extend(['/LTCG'])
         ldflags.extend(['/LTCG'])
 
+    if not options.allow_warnings:
+      cflags.append('/WX')
+
     cflags.extend([
         '/DNOMINMAX',
         '/DUNICODE',
@@ -515,7 +532,6 @@ def WriteGNNinja(path, platform, host, options, args_list):
         '/D_WIN32_WINNT=0x0A00',
         '/FS',
         '/W4',
-        '/WX',
         '/Zi',
         '/wd4099',
         '/wd4100',
@@ -559,7 +575,6 @@ def WriteGNNinja(path, platform, host, options, args_list):
         'src/base/strings/stringprintf.cc',
         'src/base/strings/utf_string_conversion_utils.cc',
         'src/base/strings/utf_string_conversions.cc',
-        'src/base/third_party/icu/icu_utf.cc',
         'src/base/timer/elapsed_timer.cc',
         'src/base/value_iterators.cc',
         'src/base/values.cc',
@@ -576,6 +591,7 @@ def WriteGNNinja(path, platform, host, options, args_list):
         'src/gn/bundle_data.cc',
         'src/gn/bundle_data_target_generator.cc',
         'src/gn/bundle_file_rule.cc',
+        'src/gn/builtin_tool.cc',
         'src/gn/c_include_iterator.cc',
         'src/gn/c_substitution_type.cc',
         'src/gn/c_tool.cc',
@@ -715,6 +731,7 @@ def WriteGNNinja(path, platform, host, options, args_list):
         'src/gn/xcode_object.cc',
         'src/gn/xcode_writer.cc',
         'src/gn/xml_element_writer.cc',
+        'src/util/atomic_write.cc',
         'src/util/exe_path.cc',
         'src/util/msg_loop.cc',
         'src/util/semaphore.cc',
@@ -790,6 +807,7 @@ def WriteGNNinja(path, platform, host, options, args_list):
         'src/gn/path_output_unittest.cc',
         'src/gn/pattern_unittest.cc',
         'src/gn/pointer_set_unittest.cc',
+        'src/gn/resolved_target_deps_unittest.cc',
         'src/gn/runtime_deps_unittest.cc',
         'src/gn/scope_per_file_provider_unittest.cc',
         'src/gn/scope_unittest.cc',
@@ -801,6 +819,7 @@ def WriteGNNinja(path, platform, host, options, args_list):
         'src/gn/string_utils_unittest.cc',
         'src/gn/substitution_pattern_unittest.cc',
         'src/gn/substitution_writer_unittest.cc',
+        'src/gn/target_public_pair_unittest.cc',
         'src/gn/target_unittest.cc',
         'src/gn/template_unittest.cc',
         'src/gn/test_with_scheduler.cc',
@@ -815,6 +834,7 @@ def WriteGNNinja(path, platform, host, options, args_list):
         'src/gn/visual_studio_writer_unittest.cc',
         'src/gn/xcode_object_unittest.cc',
         'src/gn/xml_element_writer_unittest.cc',
+        'src/util/atomic_write_unittest.cc',
         'src/util/test/gn_test.cc',
       ], 'libs': []},
   }

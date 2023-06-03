@@ -63,7 +63,8 @@ class NinjaBinaryTargetWriter : public NinjaTargetWriter {
                               const std::vector<OutputFile>& extra_deps,
                               const std::vector<OutputFile>& order_only_deps,
                               const char* tool_name,
-                              const std::vector<OutputFile>& outputs);
+                              const std::vector<OutputFile>& outputs,
+                              bool can_write_source_info = true);
 
   void WriteLinkerFlags(std::ostream& out,
                         const Tool* tool,
@@ -75,6 +76,7 @@ class NinjaBinaryTargetWriter : public NinjaTargetWriter {
   void WriteSwiftModules(std::ostream& out,
                          const Tool* tool,
                          const std::vector<OutputFile>& swiftmodules);
+  void WritePool(std::ostream& out);
 
   void AddSourceSetFiles(const Target* source_set,
                          UniqueVector<OutputFile>* obj_files) const;

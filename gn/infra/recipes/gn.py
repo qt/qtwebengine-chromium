@@ -7,6 +7,7 @@ from recipe_engine.recipe_api import Property
 
 DEPS = [
     'recipe_engine/buildbucket',
+    'recipe_engine/cas',
     'recipe_engine/cipd',
     'recipe_engine/context',
     'recipe_engine/file',
@@ -14,7 +15,6 @@ DEPS = [
     'recipe_engine/path',
     'recipe_engine/platform',
     'recipe_engine/properties',
-    'recipe_engine/python',
     'recipe_engine/raw_io',
     'recipe_engine/step',
     'target',
@@ -28,7 +28,8 @@ PROPERTIES = {
 
 # On select platforms, link the GN executable against rpmalloc for a small 10% speed boost.
 RPMALLOC_GIT_URL = 'https://fuchsia.googlesource.com/third_party/github.com/mjansson/rpmalloc'
-RPMALLOC_REVISION = 'f4b7c52c858675f732a76bd1c73447e0fcf84b1e'
+RPMALLOC_BRANCH = '+upstream/develop'
+RPMALLOC_REVISION = '668a7f81b588a985c6528b70674dbcc005d9cb75'
 
 # Used to convert os and arch strings to rpmalloc format
 RPMALLOC_MAP = {
@@ -42,10 +43,10 @@ def _get_libcxx_include_path(api):
   lines = api.step(
       'xcrun toolchain', [
           'xcrun', '--toolchain', 'clang', 'clang++', '-xc++', '-fsyntax-only',
-          '-Wp,-v', '-'
+          '-Wp,-v', '/dev/null'
       ],
-      stderr=api.raw_io.output(name='toolchain', add_output_log=True),
-      step_test_data=lambda: api.raw_io.test_api.stream_output(
+      stderr=api.raw_io.output_text(name='toolchain', add_output_log=True),
+      step_test_data=lambda: api.raw_io.test_api.stream_output_text(
           str(api.macos_sdk.sdk_dir.join('include', 'c++', 'v1')),
           stream='stderr')).stderr.splitlines()
   # Iterate over all include paths and look for the SDK libc++ one.
@@ -72,8 +73,8 @@ def _get_compilation_environment(api, target, cipd_dir):
     triple = '--target=%s' % target.triple
     sysroot = '--sysroot=%s' % api.step(
         'xcrun sdk-path', ['xcrun', '--show-sdk-path'],
-        stdout=api.raw_io.output(name='sdk-path', add_output_log=True),
-        step_test_data=lambda: api.raw_io.test_api.stream_output(
+        stdout=api.raw_io.output_text(name='sdk-path', add_output_log=True),
+        step_test_data=lambda: api.raw_io.test_api.stream_output_text(
             '/some/xcode/path')).stdout.strip()
     stdlib = cipd_dir.join('lib', 'libc++.a')
     cxx_include = _get_libcxx_include_path(api)
@@ -117,7 +118,7 @@ def RunSteps(api, repository):
       api.step('checkout', ['git', 'checkout', 'FETCH_HEAD'])
       revision = api.step(
           'rev-parse', ['git', 'rev-parse', 'HEAD'],
-          stdout=api.raw_io.output()).stdout.strip()
+          stdout=api.raw_io.output_text()).stdout.strip()
       for change in build_input.gerrit_changes:
         api.step('fetch %s/%s' % (change.change, change.patchset), [
             'git', 'fetch', repository,
@@ -195,8 +196,22 @@ def RunSteps(api, repository):
         with api.context(cwd=rpmalloc_src_dir, infra_steps=True):
           api.step(
               'fetch',
-              ['git', 'fetch', '--tags', RPMALLOC_GIT_URL, RPMALLOC_REVISION])
-          api.step('checkout', ['git', 'checkout', 'FETCH_HEAD'])
+              ['git', 'fetch', '--tags', RPMALLOC_GIT_URL, RPMALLOC_BRANCH])
+          api.step('checkout', ['git', 'checkout', RPMALLOC_REVISION])
+
+        # Patch configure.py since to add -Wno-unsafe-buffer-usage since Clang-16 will
+        # now complain about this when building rpmalloc (latest version only
+        # supports clang-15).
+        build_ninja_clang_path = api.path.join(rpmalloc_src_dir, 'build/ninja/clang.py')
+        build_ninja_clang_py = api.file.read_text('read %s' % build_ninja_clang_path,
+                                                 build_ninja_clang_path,
+                                                 "CXXFLAGS = ['-Wall', '-Weverything', '-Wfoo']")
+        build_ninja_clang_py = build_ninja_clang_py.replace(
+            "'-Wno-disabled-macro-expansion'",
+            "'-Wno-disabled-macro-expansion', '-Wno-unsafe-buffer-usage'")
+        api.file.write_text('write %s' % build_ninja_clang_path,
+                            build_ninja_clang_path,
+                            build_ninja_clang_py)
 
         for platform in all_config_platforms:
           # Convert target architecture and os to rpmalloc format.
@@ -209,10 +224,10 @@ def RunSteps(api, repository):
                                              cipd_dir)
           with api.step.nest('build rpmalloc-' + platform), api.context(
               env=env, cwd=rpmalloc_src_dir):
-            api.python(
+            api.step(
                 'configure',
-                rpmalloc_src_dir.join('configure.py'),
-                args=['-c', 'release', '-a', rpmalloc_arch, '--lto'])
+                ['python3', '-u', rpmalloc_src_dir.join('configure.py')] +
+                ['-c', 'release', '-a', rpmalloc_arch, '--lto'])
 
             # NOTE: Only build the static library.
             rpmalloc_static_lib = api.path.join('lib', rpmalloc_os, 'release',
@@ -235,7 +250,8 @@ def RunSteps(api, repository):
                   '--link-lib=%s' % rpmalloc_static_libs[target.platform]
               ]
 
-            api.python('generate', src_dir.join('build', 'gen.py'), args=args)
+            api.step('generate',
+                     ['python3', '-u', src_dir.join('build', 'gen.py')] + args)
 
             # Windows requires the environment modifications when building too.
             api.step('build',
@@ -245,15 +261,19 @@ def RunSteps(api, repository):
             if target.is_host:
               api.step('test', [src_dir.join('out', 'gn_unittests')])
 
-            if build_input.gerrit_changes:
-              continue
-
             if config['name'] != 'release':
               continue
 
             with api.step.nest('upload'):
-              cipd_pkg_name = 'gn/gn/%s' % target.platform
               gn = 'gn' + ('.exe' if target.is_win else '')
+
+              if build_input.gerrit_changes:
+                # Upload to CAS from CQ.
+                api.cas.archive('upload binary to CAS', src_dir.join('out'),
+                                src_dir.join('out', gn))
+                continue
+
+              cipd_pkg_name = 'gn/gn/%s' % target.platform
 
               pkg_def = api.cipd.PackageDefinition(
                   package_name=cipd_pkg_name,
@@ -306,7 +326,7 @@ def GenTests(api):
       git_repo='gn.googlesource.com/gn',
       revision='a' * 40,
   ) + api.step_data(
-      'git.rev-parse', api.raw_io.stream_output('a' * 40)
+      'git.rev-parse', api.raw_io.stream_output_text('a' * 40)
   ) + api.step_data(
       'release.linux-amd64.upload.cipd search gn/gn/linux-amd64 git_revision:' +
       'a' * 40,
@@ -318,7 +338,7 @@ def GenTests(api):
       git_repo='gn.googlesource.com/gn',
       revision='a' * 40,
   ) + api.step_data(
-      'git.rev-parse', api.raw_io.stream_output('a' * 40)
+      'git.rev-parse', api.raw_io.stream_output_text('a' * 40)
   ) + api.step_data(
       'release.linux-amd64.upload.cipd search gn/gn/linux-amd64 git_revision:' +
       'a' * 40, api.cipd.example_search('gn/gn/linux-amd64', [])))
