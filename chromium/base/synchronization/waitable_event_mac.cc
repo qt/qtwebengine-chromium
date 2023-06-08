@@ -9,6 +9,7 @@
 
 #include <limits>
 #include <memory>
+#include <vector>
 
 #include "base/files/scoped_file.h"
 #include "base/mac/mach_logging.h"

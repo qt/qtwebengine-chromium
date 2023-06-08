@@ -668,7 +668,7 @@ config("compiler") {
     } else {
       # The gcc bots are currently using GCC 9, which is not new enough to
       # support "c++20"/"gnu++20".
-      cflags_cc += [ "-std=${standard_prefix}++2a" ]
+      cflags_cc += [ "-std=${standard_prefix}++20" ]
     }
   } else if (is_win && !is_mingw) {
     cflags_c += [ "/std:c11" ]
@@ -1364,7 +1364,7 @@ config("compiler_codegen") {
     configs += [ "//build/config/nacl:compiler_codegen" ]
   }
 
-  if (current_cpu == "arm64" && !is_win) {
+  if (current_cpu == "arm64" && !is_win && is_clang) {
     # Disable outlining everywhere on arm64 except Win. For more information see
     # crbug.com/931297 for Android and crbug.com/1410297 for iOS.
     # TODO(crbug.com/1411363): Enable this on Windows if possible.
