@@ -97,6 +97,7 @@ class PA_COMPONENT_EXPORT(PARTITION_ALLOC)
     }
   };
 #if PA_BUILDFLAG(HAS_64_BIT_POINTERS)
+#if PA_BUILDFLAG(ENABLE_PKEYS)
   // If thread isolation support is enabled, we need to write-protect the tables
   // of the thread isolated pool. For this, we need to pad the tables so that
   // the thread isolated ones start on a page boundary.
@@ -109,7 +110,7 @@ class PA_COMPONENT_EXPORT(PARTITION_ALLOC)
 #if defined(__clang__)
 #pragma clang diagnostic pop
 #endif
-
+#endif  // BUILDFLAG(ENABLE_PKEYS)
   struct _ReservationOffsetTable tables[kNumPools];
   static PA_CONSTINIT ReservationOffsetTable singleton_;
 #else
