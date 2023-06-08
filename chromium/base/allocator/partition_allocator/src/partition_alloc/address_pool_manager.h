@@ -198,6 +198,7 @@ class PA_COMPONENT_EXPORT(PARTITION_ALLOC)
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wzero-length-array"
 #endif
+#if PA_BUILDFLAG(ENABLE_PKEYS)
   char pad_[PA_THREAD_ISOLATED_ARRAY_PAD_SZ_WITH_OFFSET(
       Pool,
       kNumPools,
@@ -205,6 +206,7 @@ class PA_COMPONENT_EXPORT(PARTITION_ALLOC)
 #if defined(__clang__)
 #pragma clang diagnostic pop
 #endif
+#endif  // PA_BUILDFLAG(ENABLE_PKEYS)
   std::array<Pool, kNumPools> pools_;
 
 #endif  // PA_BUILDFLAG(HAS_64_BIT_POINTERS)
