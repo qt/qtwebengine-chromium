@@ -95,6 +95,7 @@ class PA_COMPONENT_EXPORT(PARTITION_ALLOC) ReservationOffsetTable {
     }
   };
 #if BUILDFLAG(HAS_64_BIT_POINTERS)
+#if BUILDFLAG(ENABLE_PKEYS)
   // If pkey support is enabled, we need to pkey-tag the tables of the pkey
   // pool. For this, we need to pad the tables so that the pkey ones start on a
   // page boundary.
@@ -106,6 +107,9 @@ class PA_COMPONENT_EXPORT(PARTITION_ALLOC) ReservationOffsetTable {
   static PA_CONSTINIT _PaddedReservationOffsetTables
       padded_reservation_offset_tables_ PA_PKEY_ALIGN;
 #else
+  static struct _ReservationOffsetTable reservation_offset_tables_[kNumPools];
+#endif  // BUILDFLAG(ENABLE_PKEYS)
+#else
     // A single table for the entire 32-bit address space.
   static PA_CONSTINIT struct _ReservationOffsetTable reservation_offset_table_;
 #endif  // BUILDFLAG(HAS_64_BIT_POINTERS)
@@ -114,9 +118,13 @@ class PA_COMPONENT_EXPORT(PARTITION_ALLOC) ReservationOffsetTable {
 #if BUILDFLAG(HAS_64_BIT_POINTERS)
 PA_ALWAYS_INLINE uint16_t* GetReservationOffsetTable(pool_handle handle) {
   PA_DCHECK(kNullPoolHandle < handle && handle <= kNumPools);
+#if BUILDFLAG(ENABLE_PKEYS)
   return ReservationOffsetTable::padded_reservation_offset_tables_
       .tables[handle - 1]
       .offsets;
+#else
+  return ReservationOffsetTable::reservation_offset_tables_[handle - 1].offsets;
+#endif
 }
 
 PA_ALWAYS_INLINE const uint16_t* GetReservationOffsetTableEnd(

@@ -152,13 +152,18 @@ class PA_COMPONENT_EXPORT(PARTITION_ALLOC) AddressPoolManager {
 
   PA_ALWAYS_INLINE Pool* GetPool(pool_handle handle) {
     PA_DCHECK(kNullPoolHandle < handle && handle <= kNumPools);
+#if BUILDFLAG(ENABLE_PKEYS)
     return &aligned_pools_.pools_[handle - 1];
+#else
+    return &pools_[handle - 1];
+#endif
   }
 
   // Gets the stats for the pool identified by `handle`, if
   // initialized.
   void GetPoolStats(pool_handle handle, PoolStats* stats);
 
+#if BUILDFLAG(ENABLE_PKEYS)
   // If pkey support is enabled, we need to pkey-tag the pkey pool (which needs
   // to be last). For this, we need to add padding in front of the pools so that
   // pkey one starts on a page boundary.
@@ -167,6 +172,9 @@ class PA_COMPONENT_EXPORT(PARTITION_ALLOC) AddressPoolManager {
     Pool pools_[kNumPools];
     char pad_after_[PA_PKEY_FILL_PAGE_SZ(sizeof(Pool))] = {};
   } aligned_pools_ PA_PKEY_ALIGN;
+#else
+  Pool pools_[kNumPools];
+#endif  // BUILDFLAG(ENABLE_PKEYS)
 
 #endif  // BUILDFLAG(HAS_64_BIT_POINTERS)
 
