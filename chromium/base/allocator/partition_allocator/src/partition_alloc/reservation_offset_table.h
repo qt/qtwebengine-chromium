@@ -107,6 +107,7 @@ class PA_COMPONENT_EXPORT(PARTITION_ALLOC) ReservationOffsetTable {
         length <= std::numeric_limits<uint16_t>::max(),
         "Length of the reservation offset table must be less than MAX_UINT16");
     uint16_t offsets[length] = {};
+#if PA_BUILDFLAG(ENABLE_PKEYS)
 #if defined(__clang__)
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wzero-length-array"
@@ -114,6 +115,7 @@ class PA_COMPONENT_EXPORT(PARTITION_ALLOC) ReservationOffsetTable {
     char pad_[padding_size] = {};
 #if defined(__clang__)
 #pragma clang diagnostic pop
+#endif
 #endif
 
     constexpr _ReservationOffsetTable() {
