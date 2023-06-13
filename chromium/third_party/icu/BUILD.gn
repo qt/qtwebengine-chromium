@@ -137,6 +137,11 @@ config("icu_code") {
       "-Wno-deprecated-declarations",
     ]
   }
+  if (is_mingw) {
+    cflags += [
+        "-fext-numeric-literals",
+    ]
+  }
   if (icu_is_in_fuchsia) {
     cflags += [
       # Disable spurious thread safety errors in umutex.cpp
