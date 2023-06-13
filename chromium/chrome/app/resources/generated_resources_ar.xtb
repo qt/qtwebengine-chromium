@@ -1200,7 +1200,7 @@
 <translation id="2048554637254265991">حدث خطأ في تشغيل مدير الحاويات. يُرجى إعادة المحاولة.</translation>
 <translation id="2048653237708779538">الإجراء غير متاح</translation>
 <translation id="204914487372604757">إنشاء اختصار</translation>
-<translation id="2050339315714019657">عمودي</translation>
+<translation id="2050339315714019657">وضع "بورتريه"</translation>
 <translation id="2051555741181591333">إيقاف نقطة الاتصال تلقائيًا</translation>
 <translation id="2052572566310583903">التطبيق مثبَّت على أجهزتك الأخرى.</translation>
 <translation id="2053105195397337973">نستكشف طرقًا للحد من تتبّع البيانات ونشاط التصفّح، مع السماح للمواقع الإلكترونية بحظر الرسائل الإعلانية غير المرغوب فيها ومنع الاحتيال.</translation>
@@ -3255,7 +3255,7 @@
 <translation id="3855676282923585394">إشارات وإعدادات الاستيراد...</translation>
 <translation id="3856096718352044181">يُرجى إثبات صلاحية مقدّم الخدمة أو المحاولة مجددًا.</translation>
 <translation id="3856800405688283469">اختيار منطقة زمنية</translation>
-<translation id="3857807444929313943">رفع الإصبع، ثم اللمس مرة أخرى</translation>
+<translation id="3857807444929313943">ارفع الإصبع، ثم المس أداة الاستشعار مرة أخرى</translation>
 <translation id="3858860766373142691">الاسم</translation>
 <translation id="385939467708172187">استخدام كلمة مرور قوية</translation>
 <translation id="3861638017150647085">اسم المستخدم "<ph name="USERNAME" />" غير متوفر.</translation>
@@ -5940,7 +5940,7 @@
 <translation id="6345878117466430440">وضع علامة "مقروءة"</translation>
 <translation id="6347010704471250799">عرض إشعار</translation>
 <translation id="634887995541211148">‏يتيح لك هذا الخيار إمكانية تشغيل حاوية Bruschetta على جهازك.</translation>
-<translation id="6349101878882523185">تثبيت <ph name="APP_NAME" /></translation>
+<translation id="6349101878882523185">تثبيت "<ph name="APP_NAME" />"</translation>
 <translation id="6354918092619878358">‏منحنى SECG ناقص المقطع secp256r1‏ (aka ANSI X9.62 prime256v1‏، NIST P-256)</translation>
 <translation id="635609604405270300">يُرجى إبقاء الجهاز مشغَّلاً</translation>
 <translation id="63566973648609420">‏لا يمكن لأحد قراءة بياناتك المشفرة سوى من لديه عبارة المرور التي تستخدمها. ولا يتم إرسال عبارة المرور إلى شركة Google أو تخزينها لديها. إذا نسيت عبارة المرور أو رغبت في تغيير هذا الإعداد، فسيلزمك <ph name="BEGIN_LINK" />إعادة ضبط المزامنة<ph name="END_LINK" />.</translation>
@@ -7093,7 +7093,7 @@
 <translation id="7403642243184989645">جارٍ تنزيل موارد</translation>
 <translation id="7404065585741198296">‏توصيل هاتفك باستخدام كابل USB</translation>
 <translation id="7405938989981604410">{NUM_HOURS,plural, =1{تم تفعيل ميزة "التحقّق من الأمان" قبل ساعة واحدة.}zero{تم تفعيل ميزة "التحقّق من الأمان" قبل {NUM_HOURS} ساعة.}two{تم تفعيل ميزة "التحقّق من الأمان" قبل ساعتَين ({NUM_HOURS}).}few{تم تفعيل ميزة "التحقّق من الأمان" قبل {NUM_HOURS} ساعات.}many{تم تفعيل ميزة "التحقّق من الأمان" قبل {NUM_HOURS} ساعة.}other{تم تفعيل ميزة "التحقّق من الأمان" قبل {NUM_HOURS} ساعة.}}</translation>
-<translation id="740624631517654988">تم منع النوافذ المنبثقة.</translation>
+<translation id="740624631517654988">تم حظر نافذة منبثقة.</translation>
 <translation id="7406912950279255498">وضع "قلب الألوان"</translation>
 <translation id="7407430846095439694">الاستيراد والربط</translation>
 <translation id="7407504355934009739">يحظر معظم المستخدمين الإشعارات من هذا الموقع الإلكتروني.</translation>
@@ -7268,7 +7268,7 @@
 <translation id="7557411183415085169">‏أوشكت مساحة التخزين في Linux على النفاد</translation>
 <translation id="7559719679815339381">‏يُرجى الانتظار ...بينما يتم تحديث تطبيق Kiosk. لا تقم بإزالة جهاز USB.</translation>
 <translation id="7560756177962144929">مزامنة <ph name="DEVICE_TYPE" /></translation>
-<translation id="7561196759112975576">دومًا</translation>
+<translation id="7561196759112975576">دائمًا</translation>
 <translation id="7561982940498449837">إغلاق القائمة</translation>
 <translation id="756445078718366910">فتح نافذة المتصفح</translation>
 <translation id="7564847347806291057">إنهاء العملية</translation>
@@ -9092,7 +9092,7 @@
 <translation id="9180281769944411366">‏قد تستغرق هذه العملية بضع دقائق. جارٍ بدء تشغيل حاوية نظام التشغيل Linux.</translation>
 <translation id="9180380851667544951">يمكن للموقع الإلكتروني مشاركة شاشتك.</translation>
 <translation id="9182556968660520230">عدم السماح للمواقع الإلكترونية بتشغيل المحتوى المحمي</translation>
-<translation id="9183331776983279456">‏يحذف Chrome تلقائيًا المواقع الإلكترونية التي مر عليها أكثر من 4 أسابيع. وقد يظهر في القائمة مرة أخرى أي موقع إلكتروني تكرِّر زيارته، أو يمكنك منع موقع إلكتروني من اقتراح إعلانات لك.</translation>
+<translation id="9183331776983279456">‏يحذف Chrome تلقائيًا المواقع الإلكترونية التي مر عليها أكثر من 4 أسابيع. وقد يظهر في القائمة مجددًا أي موقع إلكتروني تكرِّر زيارته. يمكنك أيضًا منع موقع إلكتروني معيّن من اقتراح إعلانات لك.</translation>
 <translation id="918352324374649435">{COUNT,plural, =1{تطبيق واحد}zero{# تطبيق}two{تطبيقان}few{# تطبيقات}many{# تطبيقًا}other{# تطبيق}}</translation>
 <translation id="9186963452600581158">‏تسجيل الدخول باستخدام حساب طفل على Google</translation>
 <translation id="9187967020623675250">مفاتيح التحكّم غير متطابقة. يمكنك الضغط على أي مفتاح لاختيار <ph name="RESPONSE" />.</translation>
