@@ -414,7 +414,7 @@ jumbo_component("gl") {
     deps += [ "//third_party/angle:angle_gpu_info_util" ]
   }
 
-  if (is_qtwebengine) {
+  if (is_qtwebengine && !is_android && !is_ios) {
     if (use_egl) {
       data_deps -= [
         "//third_party/angle:libEGL",
