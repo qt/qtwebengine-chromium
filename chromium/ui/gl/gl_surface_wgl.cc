@@ -65,12 +65,6 @@ bool GLSurfaceWGL::InitializeOneOff() {
    if (!wgl_display->Init(init::usingSoftwareDynamicGL()))
      return false;
 
- // DCHECK(g_wgl_display == NULL);
-  // std::unique_ptr<DisplayWGL> wgl_display(new DisplayWGL);
-  // if (!wgl_display->Init(init::usingSoftwareDynamicGL()))
-  //   return false;
-  //
-  // g_wgl_display = wgl_display.release();
   initialized_ = true;
   return true;
 }
@@ -84,9 +78,7 @@ bool GLSurfaceWGL::InitializeExtensionSettingsOneOff() {
 }
 
 void GLSurfaceWGL::InitializeOneOffForTesting() {
-  // if (g_wgl_display == NULL) {
-  //   g_wgl_display = new DisplayWGL;
-  // }
+  NOTREACHED();
 }
 
 HDC GLSurfaceWGL::GetDisplayDC() {
