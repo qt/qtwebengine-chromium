@@ -4,6 +4,12 @@
 /* eslint-disable indent */
 (function(window) {
 
+/**
+ * @typedef {{runtimeAllowedHosts: !Array<string>, runtimeBlockedHosts: !Array<string>}} ExtensionHostsPolicy
+ */
+/**
+ * @typedef {{startPage: string, name: string, exposeExperimentalAPIs: boolean, hostsPolicy?: ExtensionHostsPolicy}} ExtensionDescriptor
+ */
   // DevToolsAPI ----------------------------------------------------------------
 
   const DevToolsAPIImpl = class {
@@ -24,7 +30,7 @@
       this._pendingExtensionDescriptors = [];
 
       /**
-       * @type {?function(!ExtensionDescriptor)}
+       * @type {?function(!ExtensionDescriptor): void}
        */
       this._addExtensionCallback = null;
 
