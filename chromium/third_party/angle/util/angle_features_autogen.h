@@ -107,6 +107,7 @@ enum class Feature
     EnablePrecisionQualifiers,
     EnablePreRotateSurfaces,
     EnableProgramBinaryForCapture,
+    EnsureNonEmptyBufferIsBoundForDraw,
     ExpandIntegerPowExpressions,
     ExplicitlyEnablePerSampleShading,
     ExposeNonConformantExtensionsAndVersions,

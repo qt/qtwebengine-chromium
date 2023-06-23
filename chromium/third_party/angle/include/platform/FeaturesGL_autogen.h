@@ -491,6 +491,14 @@ struct FeaturesGL : FeatureSetBase
         "supportsShaderFramebufferFetchNonCoherentEXT", FeatureCategory::OpenGLFeatures,
         "Backend GL context supports EXT_shader_framebuffer_fetch_non_coherent extension", &members,
         "http://anglebug.com/7279"};
+
+    FeatureInfo ensureNonEmptyBufferIsBoundForDraw = {
+        "ensureNonEmptyBufferIsBoundForDraw",
+        FeatureCategory::OpenGLFeatures,
+        "Apple OpenGL drivers crash when drawing with a zero-sized buffer bound using a non-zero divisor.",
+        &members, "http://crbug.com/1456243"
+    };
+
 };
 
 inline FeaturesGL::FeaturesGL()  = default;
