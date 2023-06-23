@@ -123,7 +123,7 @@ LookupIterator::Key::Key(Isolate* isolate, Handle<Name> name, size_t index)
   DCHECK_IMPLIES(index_ == LookupIterator::kInvalidIndex, !name_.is_null());
 #if V8_TARGET_ARCH_32_BIT
   DCHECK_IMPLIES(index_ != LookupIterator::kInvalidIndex,
-                 index_ <= JSObject::kMaxElementIndex);
+                 index_ <= JSArray::kMaxArrayIndex);
 #endif
 #if DEBUG
   if (index_ != LookupIterator::kInvalidIndex && !name_.is_null()) {
