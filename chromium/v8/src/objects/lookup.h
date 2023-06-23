@@ -222,11 +222,6 @@ class V8_EXPORT_PRIVATE LookupIterator final {
                         Handle<Object> lookup_start_object,
                         Configuration configuration);
 
-  // For |ForTransitionHandler|.
-  LookupIterator(Isolate* isolate, Handle<Object> receiver, Handle<Name> name,
-                 Handle<Map> transition_map, PropertyDetails details,
-                 bool has_property);
-
   static void InternalUpdateProtector(Isolate* isolate, Handle<Object> receiver,
                                       Handle<Name> name);
 
