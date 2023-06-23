@@ -116,6 +116,7 @@ enum class Feature
     EnableProgramBinaryForCapture,
     EnableShaderSubstitution,
     EnableTimestampQueries,
+    EnsureNonEmptyBufferIsBoundForDraw,
     ExpandIntegerPowExpressions,
     ExplicitlyEnablePerSampleShading,
     ExposeNonConformantExtensionsAndVersions,
