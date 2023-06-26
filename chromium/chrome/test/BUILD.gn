@@ -2537,7 +2537,7 @@ if (!is_android) {
       sources += [ "../browser/ui/views/sharing/click_to_call_browsertest.cc" ]
     }
 
-    if (enable_pdf) {
+    if (enable_pdf && enable_extensions) {
       sources += [
         "../browser/pdf/pdf_extension_accessibility_test.cc",
         "../browser/pdf/pdf_extension_js_test.cc",

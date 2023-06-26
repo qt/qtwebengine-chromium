@@ -5834,7 +5834,7 @@ static_library("ui") {
     deps += [ "//components/nacl/browser" ]
   }
 
-  if (enable_pdf) {
+  if (enable_pdf && !is_qtwebengine) {
     sources += [
       "pdf/chrome_pdf_web_contents_helper_client.cc",
       "pdf/chrome_pdf_web_contents_helper_client.h",

@@ -7127,19 +7127,17 @@ static_library("browser") {
     }
   }
 
-  if (enable_pdf) {
+  if (enable_pdf && enable_extensions) {
     deps += [
       "//chrome/browser/pdf",
       "//chrome/browser/pdf:pdf_pref_names",
       "//components/pdf/browser",
       "//components/pdf/browser:interceptors",
       "//components/pdf/common",
+      "//extensions/common/api",
       "//pdf:buildflags",
       "//pdf:features",
     ]
-    if (enable_extensions) {
-      deps += [ "//extensions/common/api" ]
-    }
   }
 
   if (enable_plugins) {
