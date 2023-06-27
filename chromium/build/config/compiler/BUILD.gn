@@ -658,7 +658,7 @@ config("compiler") {
     cflags_c += [ "-std=c11" ]
     if (is_mac) {
       # TODO(crbug.com/1284275): Switch to C++20 on all platforms.
-      cflags_cc += [ "-std=c++20" ]
+      cflags_cc += [ "-std=c++2a" ]
     } else {
       cflags_cc += [ "-std=c++17" ]
     }
