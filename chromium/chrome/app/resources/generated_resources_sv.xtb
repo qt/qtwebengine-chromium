@@ -1208,7 +1208,7 @@ Du kan hantera inställningarna för det här kontot genom att installera Family
 <translation id="2048554637254265991">Ett fel uppstod när hanteraren av behållare skulle startas. Försök igen.</translation>
 <translation id="2048653237708779538">Åtgärden är inte tillgänglig</translation>
 <translation id="204914487372604757">Skapa genväg</translation>
-<translation id="2050339315714019657">Stående</translation>
+<translation id="2050339315714019657">Porträtt</translation>
 <translation id="2051555741181591333">Inaktivera surfzon automatiskt</translation>
 <translation id="2052572566310583903">Installerade på dina andra enheter</translation>
 <translation id="2053105195397337973">Vi utforskar nya sätt att begränsa spårning samtidigt som webbplatser kan motverka spam och bedrägeri.</translation>
@@ -1319,7 +1319,7 @@ Du kan hantera inställningarna för det här kontot genom att installera Family
 <translation id="2136476978468204130">Den angivna lösenfrasen är felaktig</translation>
 <translation id="2137128126782078222">Tillåt inte aviseringar från <ph name="WEBSITE" /></translation>
 <translation id="2139919072249842737">Konfigureringsknapp</translation>
-<translation id="2140788884185208305">Batterinivå</translation>
+<translation id="2140788884185208305">Batterihälsa</translation>
 <translation id="2140902257485550046">Välj att blockera alla tillägg på webbplatsen</translation>
 <translation id="2142328300403846845">Öppna länk som</translation>
 <translation id="2142582065325732898">Aktivera <ph name="LINK1_BEGIN" />Chrome Sync<ph name="LINK1_END" /> för att se de senaste flikarna i Chrome. <ph name="LINK2_BEGIN" />Läs mer<ph name="LINK2_END" /></translation>
@@ -3263,7 +3263,7 @@ Du kan hantera inställningarna för det här kontot genom att installera Family
 <translation id="3855676282923585394">Importera bokmärken och inställningar...</translation>
 <translation id="3856096718352044181">Verifiera att detta är en giltig leverantör eller försök igen senare</translation>
 <translation id="3856800405688283469">Välj tidszon</translation>
-<translation id="3857807444929313943">Lyft och tryck sedan igen</translation>
+<translation id="3857807444929313943">Lyft och nudda sedan igen</translation>
 <translation id="3858860766373142691">Namn</translation>
 <translation id="385939467708172187">Använd ett starkt lösenord</translation>
 <translation id="3861638017150647085">Användarnamnet <ph name="USERNAME" /> är inte tillgängligt</translation>
@@ -3510,7 +3510,7 @@ Du kan hantera inställningarna för det här kontot genom att installera Family
 <translation id="4077919383365622693">All data och alla cookies som sparats av <ph name="SITE" /> raderas.</translation>
 <translation id="4078738236287221428">Alltid</translation>
 <translation id="4079140982534148664">Använd förbättrad stavningskontroll</translation>
-<translation id="4084682180776658562">Infoga bokmärke</translation>
+<translation id="4084682180776658562">Lägg till bokmärke</translation>
 <translation id="4084835346725913160">Stäng <ph name="TAB_NAME" /></translation>
 <translation id="4085298594534903246">JavaScript är blockerat på den här sidan.</translation>
 <translation id="4087089424473531098">Skapade tillägget:

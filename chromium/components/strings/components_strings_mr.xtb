@@ -352,10 +352,10 @@
 <translation id="1745880797583122200">तुमचा ब्राउझर व्यवस्थापित केला आहे</translation>
 <translation id="1746113442205726301">इमेज Y शिफ्ट</translation>
 <translation id="1746531169546376413">० अंश</translation>
-<translation id="17513872634828108">खुले टॅब</translation>
+<translation id="17513872634828108">उघडे टॅब</translation>
 <translation id="1752021286346845558">मेलबॉक्स ८</translation>
 <translation id="1753068535428855445">डेटिंग आणि वैयक्तिक गोष्टी</translation>
-<translation id="1753706481035618306">पृष्ठ क्रमांक</translation>
+<translation id="1753706481035618306">पेज क्रमांक</translation>
 <translation id="1755621011177747277">दत्तक प्रक्रिया</translation>
 <translation id="1756026472674246267">नवीन टॅब मध्ये लिंक उघडा</translation>
 <translation id="175656076281618225">जादू</translation>
@@ -399,7 +399,7 @@
 <translation id="1874224422119691492">पासवर्ड भरण्यासाठी तुम्ही स्क्रीन लॉक वापरायचे की नाही हे तुम्ही <ph name="SETTINGS" /> मध्ये बदलू शकता</translation>
 <translation id="1875025161375567525">फोटो ट्रे</translation>
 <translation id="1875512691959384712">Google Forms</translation>
-<translation id="187918866476621466">सुरू पृष्ठ उघडा</translation>
+<translation id="187918866476621466">स्टार्टअप पेज उघडा</translation>
 <translation id="1883255238294161206">सूची कोलॅप्स</translation>
 <translation id="1884843295353628214">जॅझ</translation>
 <translation id="1890171020361705182">Dino गेम. पिक्सलेट झालेला डायनासोर हा काट्यांपासून आणि टेरोडॅक्टिलपासून स्वतःचे रक्षण करत एका ओसाड जागेतून धावत आहे. तुम्ही ऑडिओ संकेत ऐकता तेव्हा, अडथळे आल्यावर उडी मारण्यासाठी टॅप करा.</translation>
@@ -896,7 +896,7 @@
 <translation id="3223287115535306850">ॲप लाँचिंग थ्रॉबर</translation>
 <translation id="3223425961342298674">स्थानाला अनुमती नाही</translation>
 <translation id="3225919329040284222">सर्व्हरने असे सर्टिफिकेट सादर केले आहे जे अंगभूत अपेक्षांशी जुळत नाही. या अपेक्षा तुम्हाला संरक्षित करण्यासाठी विशिष्ट, उच्च सुरक्षिततेच्या वेबसाइटसाठी समाविष्ट केल्या आहेत.</translation>
-<translation id="3226128629678568754">पृष्ठ लोड करण्यास आवश्यक असलेला डेटा पुन्हा सबमिट करण्यासाठी रीलोड बटण प्रेस करा.</translation>
+<translation id="3226128629678568754">पेज लोड करण्यास आवश्यक असलेला डेटा पुन्हा सबमिट करण्यासाठी रीलोड बटण प्रेस करा.</translation>
 <translation id="3226387218769101247">थंबनेल</translation>
 <translation id="3227137524299004712">मायक्रोफोन</translation>
 <translation id="3229041911291329567">तुमच्या डिव्हाइस आणि ब्राउझरविषयी आवृत्ती माहिती</translation>
@@ -1559,7 +1559,7 @@
 <translation id="4825496307559726072"><ph name="CREATE_GOOGLE_SHEET_FOCUSED_FRIENDLY_MATCH_TEXT" />, नवीन Google शीट झटपट तयार करण्यासाठी टॅब आणि त्यानंतर एंटर प्रेस करा</translation>
 <translation id="4825507807291741242">प्रभावी</translation>
 <translation id="483241715238664915">चेतावण्या सुरू करा</translation>
-<translation id="4834250788637067901">Google Pay वापरून पेमेंट पद्धती, ऑफर आणि पत्ते</translation>
+<translation id="4834250788637067901">Google Pay वापरून पेमेंट पद्धती, ऑफर आणि अ‍ॅड्रेस</translation>
 <translation id="4838327282952368871">स्वप्नवत</translation>
 <translation id="4839087176073128681">पुढील वेळी आणखी जलद पैसे द्या आणि Google च्या उद्योगातील आघाडीच्या सुरक्षेसह तुमचे कार्ड सुरक्षित करा.</translation>
 <translation id="4840250757394056958">तुमचा Chrome इतिहास पहा</translation>
@@ -1581,7 +1581,7 @@
 <translation id="4877083676943085827">{COUNT,plural, =0{काहीही नाही}=1{<ph name="EXAMPLE_DOMAIN_1" />}=2{<ph name="EXAMPLE_DOMAIN_1" />, <ph name="EXAMPLE_DOMAIN_2" />}other{<ph name="EXAMPLE_DOMAIN_1" />, <ph name="EXAMPLE_DOMAIN_2" />, <ph name="AND_MORE" />}}</translation>
 <translation id="4877422487531841831"><ph name="TEXT" /> शोधा</translation>
 <translation id="4879491255372875719">आपोआप (डीफॉल्ट)</translation>
-<translation id="4880827082731008257">इतिहास शोध</translation>
+<translation id="4880827082731008257">शोध इतिहास</translation>
 <translation id="4881695831933465202">उघडा</translation>
 <translation id="4881808915112408168">२४ x ३१.५ इं</translation>
 <translation id="4882314601499260499">कोणतीही वापरकर्ता धोरणे लागू केलेली नाहीत. वापरकर्ता धोरणे जोडण्यासाठी, तुमच्या संस्थेने <ph name="LINK_BEGIN" />तुमच्या डोमेनची पडताळणी करणे<ph name="LINK_END" /> आवश्यक आहे.</translation>
@@ -1634,7 +1634,7 @@
 <translation id="5015510746216210676">मशीन नाव:</translation>
 <translation id="5017554619425969104">तुम्ही कॉपी केलेला मजकूर</translation>
 <translation id="5017828934289857214">मला नंतर आठवण करून द्या</translation>
-<translation id="5018422839182700155">हे पृष्‍ठ उघडू शकत नाही</translation>
+<translation id="5018422839182700155">हे पेज उघडू शकत नाही</translation>
 <translation id="5018802455907704660">१६ x २० इं</translation>
 <translation id="5019198164206649151">समर्थन संचयन खराब स्थितीत</translation>
 <translation id="5020776957610079374">जागतिक संगीत</translation>
@@ -1810,7 +1810,7 @@
 <translation id="5430298929874300616">बुकमार्क काढून टाका</translation>
 <translation id="5443468954631487277">उलट्या क्रमाने फेस अप</translation>
 <translation id="5447765697759493033">या साइटचे भाषांतर होणार नाही</translation>
-<translation id="5452270690849572955">हे <ph name="HOST_NAME" /> पृष्ठ शोधले जाऊ शकत नाही</translation>
+<translation id="5452270690849572955">हे <ph name="HOST_NAME" /> पेज सापडत नाही</translation>
 <translation id="5455374756549232013">खराब धोरण टाइमस्टँप</translation>
 <translation id="5457113250005438886">चुकीचा</translation>
 <translation id="5458150163479425638">{CONTACT,plural, =0{<ph name="CONTACT_PREVIEW" />}=1{<ph name="CONTACT_PREVIEW" /> आणि <ph name="NUMBER_OF_ADDITIONAL_CONTACTS" /> आणखी}other{<ph name="CONTACT_PREVIEW" /> आणि <ph name="NUMBER_OF_ADDITIONAL_CONTACTS" /> आणखी}}</translation>
@@ -1902,10 +1902,10 @@
 <translation id="5659593005791499971">ई-मेल</translation>
 <translation id="5663955426505430495">या डिव्हाइसच्या अ‍ॅडमिनिस्ट्रेटरने अतिरिक्त फंक्शनसाठी एक्स्टेंशन इंस्टॉल केले आहे. एक्स्टेंशनकडे तुमच्या काही डेटाचा अ‍ॅक्सेस आहे.</translation>
 <translation id="5666606186680807225">समुद्रकिनारे आणि बेटे</translation>
-<translation id="5675650730144413517">हे पृष्ठ कार्य करीत नाही</translation>
+<translation id="5675650730144413517">हे पेज काम करत नाही</translation>
 <translation id="568292603005599551">इमेज X स्थिती</translation>
 <translation id="5684277895745049190">सूची</translation>
-<translation id="5684874026226664614">अरेरे. हे पृष्‍ठ भाषांतरित केले जाऊ शकले नाही.</translation>
+<translation id="5684874026226664614">अरेरे. हे पेज भाषांतरित करता आले नाही.</translation>
 <translation id="5685654322157854305">पाठवण्याचा पत्ता जोडा</translation>
 <translation id="5689199277474810259">JSON वर एक्सपोर्ट करा</translation>
 <translation id="5689516760719285838">स्थान</translation>
@@ -2119,7 +2119,7 @@
 <translation id="6241121617266208201">सूचना लपवा</translation>
 <translation id="624499991300733384">प्रिंट कंपोझिटर सेवा</translation>
 <translation id="6252613631861574218"><ph name="MANAGE_CHROME_DOWNLOADS_FOCUSED_FRIENDLY_MATCH_TEXT" />, तुम्ही Chrome मध्ये डाउनलोड केलेल्या फाइल व्यवस्थापित करण्यासाठी, टॅब प्रेस करून एंटर प्रेस करा</translation>
-<translation id="6254436959401408446">हे पृष्‍ठ उघडण्‍यासाठी पुरेशी मेमरी नाही</translation>
+<translation id="6254436959401408446">हे पेज उघडण्‍यासाठी पुरेशी मेमरी नाही</translation>
 <translation id="6259156558325130047">&amp;पुनर्क्रमित करा पुन्हा करा</translation>
 <translation id="6263376278284652872"><ph name="DOMAIN" /> बुकमार्क</translation>
 <translation id="6264376385120300461">तरीही डाउनलोड करा</translation>
@@ -2483,7 +2483,7 @@
 <translation id="7180611975245234373">रिफ्रेश करा</translation>
 <translation id="7181261019481237103">गुप्त विंडो उघडा</translation>
 <translation id="7182878459783632708">कोणतीही धोरणे सेट नाहीत</translation>
-<translation id="7186367841673660872">हे पृष्ठ<ph name="ORIGINAL_LANGUAGE" />मधून<ph name="LANGUAGE_LANGUAGE" />मध्ये अनुवादित केले गेले आहे</translation>
+<translation id="7186367841673660872">हे पेज<ph name="ORIGINAL_LANGUAGE" />मधून<ph name="LANGUAGE_LANGUAGE" />मध्ये अनुवादित केले गेले आहे</translation>
 <translation id="7186840261985974511">एन्व्हलप #१२</translation>
 <translation id="718872491229180389">चीअरलीडिंग</translation>
 <translation id="7192188280913829296">ॲट्रिब्यूट "vendor_id" देखील नमूद करणे आवश्यक आहे.</translation>
@@ -2830,7 +2830,7 @@
 <translation id="7981129096182302364">नृत्य आणि इलेक्ट्रॉनिक संगीत</translation>
 <translation id="798134797138789862">आभासी वास्तविकता डिव्हाइस आणि डेटा वापरण्याची विनंती करू शकते</translation>
 <translation id="7983008347525536475">SUVs</translation>
-<translation id="7984945080620862648">Chrome प्रक्रिया करू शकत नसलेले न समजणारे क्रेडेन्शियल वेबसाइटने पाठविल्यामुळे तुम्ही आत्ता <ph name="SITE" /> ला भेट देऊ शकत नाही. नेटवर्क एरर आणि आक्रमणकर्ते सामान्यतः तात्पुरते असतात, यामुळे हे पृष्ठ कदाचित नंतर कार्य करेल.</translation>
+<translation id="7984945080620862648">Chrome प्रक्रिया करू शकत नसलेली स्क्रॅंबल केलेली क्रेडेंशियल वेबसाइटने पाठवल्यामुळे तुम्ही आत्ता <ph name="SITE" /> ला भेट देऊ शकत नाही. नेटवर्क एरर आणि आक्रमणकर्ते सामान्यतः तात्पुरते असतात, यामुळे हे पेज नंतर व्यवस्थित काम करेल.</translation>
 <translation id="7986319120639858961"><ph name="CARD_TITLE" /> <ph name="TIME" /> <ph name="BOOKMARKED" /> <ph name="TITLE" /> <ph name="DOMAIN" /></translation>
 <translation id="799149739215780103">बाइंड</translation>
 <translation id="7992044431894087211"><ph name="APPLICATION_TITLE" /> सोबत स्क्रीन शेअर करणे पुन्हा सुरू केले</translation>
@@ -2852,7 +2852,7 @@
 <translation id="8027077570865220386">ट्रे १५</translation>
 <translation id="8028698320761417183"><ph name="CREATE_GOOGLE_FORM_FOCUSED_FRIENDLY_MATCH_TEXT" />, Google Forms मध्ये नवीन फॉर्म झटपट तयार करण्यासाठी टॅब आणि त्यानंतर एंटर प्रेस करा</translation>
 <translation id="8028960012888758725">जॉबनंतर ट्रिम करा</translation>
-<translation id="8034522405403831421">हे पृष्‍ठ <ph name="SOURCE_LANGUAGE" /> मध्ये आहे. त्यास <ph name="TARGET_LANGUAGE" /> मध्ये भाषांतरीत करायचे?</translation>
+<translation id="8034522405403831421">हे पेज <ph name="SOURCE_LANGUAGE" /> मध्ये आहे. त्याला <ph name="TARGET_LANGUAGE" /> मध्ये भाषांतरित करायचे?</translation>
 <translation id="8035152190676905274">पेन</translation>
 <translation id="8037117624646282037">डिव्हाइस अलीकडे कोणी वापरले</translation>
 <translation id="8037357227543935929">विचारा (डीफॉल्ट)</translation>
@@ -3030,7 +3030,7 @@
 <translation id="8466379296835108687">{COUNT,plural, =1{1 क्रेडिट कार्ड}other{# क्रेडिट कार्ड}}</translation>
 <translation id="8468358362970107653">एन्व्हलप सी३</translation>
 <translation id="8473626140772740486">३०० x ४५० मिमी</translation>
-<translation id="8473863474539038330">पत्ते आणि बरेच काही</translation>
+<translation id="8473863474539038330">अ‍ॅड्रेस आणि बरेच काही</translation>
 <translation id="8474910779563686872">डेव्हलपर तपशील दाखवा</translation>
 <translation id="8479754468255770962">स्टेपल बॉटम लेफ्ट</translation>
 <translation id="8483229036294884935">तुमच्या <ph name="ACCOUNT" /> Google खाते वरून हा पत्ता हटवला जाईल</translation>
@@ -3232,7 +3232,7 @@
 <translation id="9018120810758822233"><ph name="CREDIT_CARD" /> साठी तुमचा सुरक्षा कोड एंटर करा</translation>
 <translation id="901834265349196618">ईमेल</translation>
 <translation id="9020200922353704812">कार्ड बिलिंग पत्ता आवश्यक आहे</translation>
-<translation id="9020542370529661692">हे पृष्ठ <ph name="TARGET_LANGUAGE" /> मध्ये भाषांतरित केले गेले आहे.</translation>
+<translation id="9020542370529661692">हे पेज <ph name="TARGET_LANGUAGE" /> मध्ये भाषांतरित केले गेले आहे.</translation>
 <translation id="9020742383383852663">A8</translation>
 <translation id="9021429684248523859"><ph name="SHARE_THIS_PAGE_FOCUSED_FRIENDLY_MATCH_TEXT" />, लिंक शेअर करून, QR कोड तयार करून, कास्ट करून आणि आणखी बऱ्याच पर्यायांद्वारे हा टॅब शेअर करण्यासाठी टॅब आणि त्यानंतर एंटर प्रेस करा</translation>
 <translation id="9025348182339809926">(चुकीचे)</translation>

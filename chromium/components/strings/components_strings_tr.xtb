@@ -734,7 +734,7 @@ Aksi halde bu işlem gizlilik ayarlarınız tarafından engellenecek. Buna izin 
 <translation id="2740531572673183784">Tamam</translation>
 <translation id="2742511345840685325">Masa tenisi</translation>
 <translation id="2742870351467570537">Seçilen öğeleri sil</translation>
-<translation id="2759825833388495838"><ph name="APP_NAME" /> adresinde şifrenizi doldurma</translation>
+<translation id="2759825833388495838"><ph name="APP_NAME" /> uygulamasında şifrenizi doldurmak</translation>
 <translation id="2764001903315068341">Çizgi romanlar</translation>
 <translation id="2765217105034171413">Küçük</translation>
 <translation id="277133753123645258">Gönderim yöntemi</translation>
@@ -768,7 +768,7 @@ Aksi halde bu işlem gizlilik ayarlarınız tarafından engellenecek. Buna izin 
 <translation id="2876949457278336305"><ph name="MANAGE_SECURITY_SETTINGS_FOCUSED_FRIENDLY_MATCH_TEXT" />, Chrome ayarlarında Güvenli Tarama ve diğer özellikleri yönetmek için Sekme'ye, ardından Enter'a basın</translation>
 <translation id="2878197950673342043">Poster katlama</translation>
 <translation id="2878424575911748999">A1</translation>
-<translation id="2879694782644540289">şifreleri doldurmak için ekran kilidinizi kullanma</translation>
+<translation id="2879694782644540289">şifreleri doldurmak için ekran kilidinizi kullanmak</translation>
 <translation id="2881276955470682203">Kart kaydedilsin mi?</translation>
 <translation id="2882949212241984732">İki kırımlı katlama</translation>
 <translation id="2893773853358652045">Dördüncü Rulo</translation>
@@ -1693,7 +1693,7 @@ Aksi halde bu işlem gizlilik ayarlarınız tarafından engellenecek. Buna izin 
 <translation id="5129534298163637277">Onay iletişim kutusu</translation>
 <translation id="5135404736266831032">Adresleri yönet...</translation>
 <translation id="5136841603454277753">Doğru kodu girin</translation>
-<translation id="5138014172396933048">Sanal kart şu anda kullanılamıyor. Lütfen bankanızla iletişim kurun</translation>
+<translation id="5138014172396933048">Sanal kart şu anda kullanılamıyor. Lütfen bankanızla iletişim kurun.</translation>
 <translation id="5138227688689900538">Daha az göster</translation>
 <translation id="5145883236150621069">Politika yanıtında hata kodu var</translation>
 <translation id="5146995429444047494"><ph name="ORIGIN" /> için bildirimler engellendi</translation>
@@ -2286,7 +2286,7 @@ Aksi halde bu işlem gizlilik ayarlarınız tarafından engellenecek. Buna izin 
 <translation id="6687335167692595844">Yazı tipi boyutu istendi</translation>
 <translation id="6687696737818665306">Oyunculuk ve tiyatro</translation>
 <translation id="6688743156324860098">Güncelle…</translation>
-<translation id="6688775486821967877">Sanal kart şu anda kullanılamıyor. Lütfen daha sonra tekrar deneyin</translation>
+<translation id="6688775486821967877">Sanal kart şu anda kullanılamıyor. Lütfen daha sonra tekrar deneyin.</translation>
 <translation id="6689249931105087298">Siyah nokta sıkıştırma ile göreli</translation>
 <translation id="6689271823431384964">Chrome, oturumunuz açık olduğu için kartlarınızı Google Hesabınıza kaydetmeyi öneriyor. Bu davranışı ayarlardan değiştirebilirsiniz. Kart sahibinin adı hesabınızdan gelir.</translation>
 <translation id="6694681292321232194"><ph name="FIND_MY_PHONE_FOCUSED_FRIENDLY_MATCH_TEXT" />, Google Hesabı'nda cihazınızı bulmak için Sekme'ye, ardından Enter'a basın</translation>
@@ -2967,7 +2967,7 @@ Ek ayrıntılar:
 <translation id="829335040383910391">ses</translation>
 <translation id="8294431847097064396">Kaynak</translation>
 <translation id="8296205692406981542">Bölgesel parklar ve bahçeler</translation>
-<translation id="8297545700510100061">Çerezler ve diğer site verileri sizi hatırlamamız için kullanılır, örneğin oturumunuzu açmak veya reklamları kişiselleştirmek için. Çerezlerin tüm siteler için nasıl yönetileceğini <ph name="SETTINGS" /> sayfasından öğrenebilirsiniz.</translation>
+<translation id="8297545700510100061">Çerezler ve diğer site verileri sizi hatırlamak için kullanılır, örneğin oturumunuzu açmak veya reklamları kişiselleştirmek için. Çerezlerin tüm siteler için nasıl yönetileceğini <ph name="SETTINGS" /> sayfasından öğrenebilirsiniz.</translation>
 <translation id="8298115750975731693">Kullandığınız kablosuz bağlantı ağı (<ph name="WIFI_NAME" />) <ph name="BEGIN_BOLD" /><ph name="LOGIN_URL" /><ph name="END_BOLD" /> adresini ziyaret etmenizi gerektiriyor olabilir.</translation>
 <translation id="8299269255470343364">Japonca</translation>
 <translation id="8303854710873047864">"<ph name="SECTION" />" bölümü gösterildi</translation>
@@ -2990,7 +2990,7 @@ Ek ayrıntılar:
 <translation id="836616551641291797">Tarayıcınızın nasıl yönetildiği hakkında daha fazla bilgi</translation>
 <translation id="8368001212524806591">Fiyatı takip et</translation>
 <translation id="8368027906805972958">Bilinmeyen veya desteklenmeyen cihaz (<ph name="DEVICE_ID" />)</translation>
-<translation id="8368476060205742148">Google Play hizmetleri</translation>
+<translation id="8368476060205742148">Google Play Hizmetleri</translation>
 <translation id="8369073279043109617">Yeni kod al</translation>
 <translation id="8371889962595521444">Özel kök sertifikalar</translation>
 <translation id="8374636051559112948">Değişkenlik gösterir</translation>
@@ -3001,7 +3001,7 @@ Ek ayrıntılar:
 <translation id="8398335999901363925">Dokunarak doldurulabilen ödeme yöntemleri tam ekranda açıldı.</translation>
 <translation id="8398790343843005537">Telefonunuzu bulun</translation>
 <translation id="8405579342203358118">Chrome ayarlarında hangi bilgileri senkronize ettiğinizi yönetin</translation>
-<translation id="8406071103346257942">şifreleri doldurmak için ekran kilidinizi kullanmayı bırakma</translation>
+<translation id="8406071103346257942">şifreleri doldurmak için ekran kilidinizi kullanmayı bırakmak</translation>
 <translation id="8409413588194360210">ödeme işleyiciler</translation>
 <translation id="8412145213513410671">Kilitlenme Sayısı (<ph name="CRASH_COUNT" />)</translation>
 <translation id="8412392972487953978">Aynı parolayı iki kez girmelisiniz.</translation>
@@ -3113,7 +3113,7 @@ Ek ayrıntılar:
 <translation id="8718314106902482036">Ödeme işlemi tamamlanmadı</translation>
 <translation id="8719263113926255150"><ph name="ENTITY" />, <ph name="DESCRIPTION" />, arama önerisi</translation>
 <translation id="8719528812645237045">Üstte çoklu delik</translation>
-<translation id="8723535127346307411">Doğrulama Kodunu Girin</translation>
+<translation id="8723535127346307411">Doğrulama kodunu girin</translation>
 <translation id="8724824364712796726">Zarf B6</translation>
 <translation id="8725066075913043281">Yeniden dene</translation>
 <translation id="8726549941689275341">Sayfa boyutu:</translation>

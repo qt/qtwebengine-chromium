@@ -734,7 +734,7 @@ Par défaut, ce type d'accès est bloqué par vos paramètres de confidentialit�
 <translation id="2740531572673183784">OK</translation>
 <translation id="2742511345840685325">Tennis de table</translation>
 <translation id="2742870351467570537">Supprimer les éléments sélectionnés</translation>
-<translation id="2759825833388495838">saisir votre mot de passe sur <ph name="APP_NAME" /></translation>
+<translation id="2759825833388495838">de renseigner votre mot de passe sur <ph name="APP_NAME" /></translation>
 <translation id="2764001903315068341">Bandes dessinées</translation>
 <translation id="2765217105034171413">Léger</translation>
 <translation id="277133753123645258">Mode d'expédition</translation>
@@ -768,7 +768,7 @@ Par défaut, ce type d'accès est bloqué par vos paramètres de confidentialit�
 <translation id="2876949457278336305"><ph name="MANAGE_SECURITY_SETTINGS_FOCUSED_FRIENDLY_MATCH_TEXT" />, puis Tabulation, puis Entrée pour gérer la navigation sécurisée, etc., dans les paramètres Chrome</translation>
 <translation id="2878197950673342043">Pli au format affiche</translation>
 <translation id="2878424575911748999">A1</translation>
-<translation id="2879694782644540289">utiliser le verrouillage de l'écran lors de la saisie des mots de passe</translation>
+<translation id="2879694782644540289">d'utiliser le verrouillage de l'écran pour renseigner les mots de passe</translation>
 <translation id="2881276955470682203">Enregistrer la carte ?</translation>
 <translation id="2882949212241984732">Pli en deux volets</translation>
 <translation id="2893773853358652045">4e rouleau</translation>
@@ -1078,7 +1078,7 @@ Par défaut, ce type d'accès est bloqué par vos paramètres de confidentialit�
 <translation id="3646643500201740985">Mesurer les performances d'une annonce</translation>
 <translation id="3647286794400715637">Chaque chaîne d'URL doit contenir entre une et deux URL.</translation>
 <translation id="3650584904733503804">Validation réussie.</translation>
-<translation id="3650594806107685466">Pour protéger votre carte, saisissez le code CVC au <ph name="SIDE_OF_CARD" /></translation>
+<translation id="3650594806107685466">Pour protéger votre carte, saisissez le code CVC indiqué à l'<ph name="SIDE_OF_CARD" /></translation>
 <translation id="3653033846669030038">Parcs à thème</translation>
 <translation id="3655241534245626312">Accéder aux paramètres de l'autorisation</translation>
 <translation id="3655670868607891010">Si ce message s'affiche régulièrement, essayez ces <ph name="HELP_LINK" />.</translation>
@@ -1537,7 +1537,7 @@ Par défaut, ce type d'accès est bloqué par vos paramètres de confidentialit�
 <translation id="4764776831041365478">Il se peut que la page Web à l'adresse <ph name="URL" /> soit temporairement inaccessible ou qu'elle ait été déplacée de façon permanente à une autre adresse Web.</translation>
 <translation id="4766713847338118463">Double agrafe en bas</translation>
 <translation id="4771973620359291008">Une erreur inconnue s'est produite.</translation>
-<translation id="477945296921629067">{NUM_POPUPS,plural, =1{ fenêtre pop-up bloquée}one{# fenêtre pop-up bloquée}other{# fenêtres pop-up bloquées}}</translation>
+<translation id="477945296921629067">{NUM_POPUPS,plural, =1{Fenêtre pop-up bloquée}one{# fenêtre pop-up bloquée}other{# fenêtres pop-up bloquées}}</translation>
 <translation id="4780366598804516005">Boîte aux lettres 1</translation>
 <translation id="4785376858512657294">Gérer le compte Google</translation>
 <translation id="4785689107224900852">Passer à cet onglet</translation>
@@ -3002,7 +3002,7 @@ Informations supplémentaires :
 <translation id="8398335999901363925">Liste des modes de paiement à saisir de façon tactile, ouverte à pleine hauteur.</translation>
 <translation id="8398790343843005537">Rechercher votre téléphone</translation>
 <translation id="8405579342203358118">Gérez les infos que vous synchronisez dans les paramètres Chrome</translation>
-<translation id="8406071103346257942">cesser d'utiliser le verrouillage de l'écran pour saisir les mots de passe</translation>
+<translation id="8406071103346257942">de cesser d'utiliser le verrouillage de l'écran pour renseigner les mots de passe</translation>
 <translation id="8409413588194360210">gestionnaires de paiement</translation>
 <translation id="8412145213513410671">Erreurs (<ph name="CRASH_COUNT" />)</translation>
 <translation id="8412392972487953978">Vous devez saisir deux fois la même phrase secrète.</translation>

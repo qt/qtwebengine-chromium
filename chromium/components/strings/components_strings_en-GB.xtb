@@ -262,7 +262,7 @@ This will otherwise be blocked by your privacy settings. This will allow the con
 <translation id="1553358976309200471">Update Chrome</translation>
 <translation id="1555130319947370107">Blue</translation>
 <translation id="1559447966090556585">Get notifications?</translation>
-<translation id="1559486004335285648">Auto-fill payment info</translation>
+<translation id="1559486004335285648">Autofill payment info</translation>
 <translation id="1559528461873125649">No such file or directory</translation>
 <translation id="1559572115229829303">&lt;p&gt;A private connection to <ph name="BEGIN_BOLD" /><ph name="DOMAIN" /><ph name="END_BOLD" /> can't be established because your device's date and time (<ph name="DATE_AND_TIME" />) are incorrect.&lt;/p&gt;
 
@@ -540,7 +540,7 @@ This will otherwise be blocked by your privacy settings. This will allow the con
 <translation id="2239100178324503013">Send now</translation>
 <translation id="2241693394036365668">File is downloaded</translation>
 <translation id="2246264294482514010">10 in x 12 in</translation>
-<translation id="2246480341630108201">Your parent hasn't said it's OK yet</translation>
+<translation id="2246480341630108201">Your parent hasn't said that it's OK yet</translation>
 <translation id="2247789808226901522">Card expired</translation>
 <translation id="2248949050832152960">Use WebAuthn</translation>
 <translation id="2250931979407627383">Edge stitch left</translation>
@@ -2570,7 +2570,7 @@ Additional details:
 <translation id="7390545607259442187">Confirm Card</translation>
 <translation id="7392089738299859607">Update Address</translation>
 <translation id="739728382607845710">Payment handler icon</translation>
-<translation id="7399802613464275309">Safety check</translation>
+<translation id="7399802613464275309">Safety Check</translation>
 <translation id="7400418766976504921">URL</translation>
 <translation id="7403392780200267761">Share this tab by sharing the link, creating a QR code, casting and more</translation>
 <translation id="7403591733719184120">Your <ph name="DEVICE_NAME" /> is managed</translation>

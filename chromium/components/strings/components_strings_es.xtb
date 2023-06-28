@@ -276,7 +276,7 @@ De lo contrario, lo impedirá tu configuración de privacidad. Permitirá que el
 <translation id="1572765991610098222"><ph name="WIDTH" /> x <ph name="HEIGHT" /> in</translation>
 <translation id="1581080074034554886">CVC</translation>
 <translation id="1583429793053364125">Se ha producido un error al mostrar esta página web.</translation>
-<translation id="1584492003828271317">Mientras navegas, la personalización de los anuncios que ves depende de esta opción, de los anuncios sugeridos por sitios, de la configuración de las cookies y de si el sitio que estás viendo personaliza los anuncios.</translation>
+<translation id="1584492003828271317">Mientras navegas, verás anuncios personalizados o no en función de esta opción, de los anuncios sugeridos por sitios, de la configuración de las cookies y de si el sitio que estás viendo personaliza los anuncios.</translation>
 <translation id="1586541204584340881">Qué extensiones tienes instaladas</translation>
 <translation id="1588438908519853928">Modo normal</translation>
 <translation id="1592005682883173041">Acceso a datos locales</translation>
@@ -1966,7 +1966,7 @@ De lo contrario, lo impedirá tu configuración de privacidad. Permitirá que el
 <translation id="5838278095973806738">No deberías introducir información confidencial en este sitio web (por ejemplo, contraseñas o tarjetas de crédito) porque los atacantes podrían robarla.</translation>
 <translation id="5851548754964597211">Lista de pestañas</translation>
 <translation id="5852909432155870672">RA4</translation>
-<translation id="5860033963881614850">Desactivado</translation>
+<translation id="5860033963881614850">Desactivada</translation>
 <translation id="5862579898803147654">Apilador 8</translation>
 <translation id="5863847714970149516">Es posible que la página a la que vas a acceder intente aplicar algún cargo</translation>
 <translation id="5866257070973731571">Añade un número de teléfono</translation>
@@ -2367,7 +2367,7 @@ De lo contrario, lo impedirá tu configuración de privacidad. Permitirá que el
 <translation id="6898699227549475383">Organización (O)</translation>
 <translation id="6899000063526916106">Introduce el código de <ph name="NUMBER_OF_DIGITS" /> dígitos</translation>
 <translation id="6907293445143367439">Permitir a <ph name="SITE_NAME" />:</translation>
-<translation id="6907458757809079309">Fitness</translation>
+<translation id="6907458757809079309">Actividad física</translation>
 <translation id="6910240653697687763"><ph name="URL" /> quiere obtener un control absoluto de tus dispositivos MIDI</translation>
 <translation id="691024665142758461">Descargar varios archivos</translation>
 <translation id="6915804003454593391">Usuario:</translation>
@@ -2758,7 +2758,7 @@ Más información:
 <translation id="7764225426217299476">Añadir dirección</translation>
 <translation id="7766518757692125295">Skirt</translation>
 <translation id="7773005668374414287">Mismo orden boca arriba</translation>
-<translation id="7785790577395078482">este tablet</translation>
+<translation id="7785790577395078482">esta tablet</translation>
 <translation id="7786368602962652765">Un campo obligatorio está vacío. Rellénalo antes de guardar.</translation>
 <translation id="7790488044432570133">Los sitios que visites pueden solicitar a Chrome información que les ayude a medir el rendimiento de sus anuncios. Chrome permite que los sitios recojan algunos tipos de datos limitados, como la hora del día en la que se te mostró un anuncio.</translation>
 <translation id="7791011319128895129">Sin publicar</translation>

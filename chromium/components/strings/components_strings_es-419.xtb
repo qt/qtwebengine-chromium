@@ -415,7 +415,7 @@ De lo contrario, la configuración de privacidad bloqueará esta acción. Esto p
 <translation id="1919526244108283799">400 × 600 mm</translation>
 <translation id="192020519938775529">{COUNT,plural, =0{Ninguno}=1{1 sitio}other{# sitios}}</translation>
 <translation id="1924727005275031552">Nuevas</translation>
-<translation id="1927439593081478069">Botón Ejecutar la verificación de seguridad de Chrome: presiona Intro para realizar una verificación de seguridad en la configuración de Chrome</translation>
+<translation id="1927439593081478069">Botón Ejecutar la Verificación de seguridad de Chrome: presiona Intro para realizar una Verificación de seguridad en la configuración de Chrome</translation>
 <translation id="1935995810530254458">Copiar de todos modos</translation>
 <translation id="1939175642807587452">Puede solicitar permiso para enviar notificaciones</translation>
 <translation id="1943994668912612445">Diseño</translation>
@@ -723,7 +723,7 @@ De lo contrario, la configuración de privacidad bloqueará esta acción. Esto p
 <translation id="271663710482723385">Presiona |<ph name="ACCELERATOR1" />| + |<ph name="ACCELERATOR2" />| para salir de la pantalla completa</translation>
 <translation id="2718207025093645426">El usuario o dispositivo administrado no tiene ninguna política cargada.</translation>
 <translation id="2721148159707890343">Solicitud correcta</translation>
-<translation id="2723669454293168317">Ejecutar una verificación de seguridad en la configuración de Chrome</translation>
+<translation id="2723669454293168317">Ejecutar una Verificación de seguridad en la configuración de Chrome</translation>
 <translation id="2726001110728089263">Bandeja lateral</translation>
 <translation id="2728127805433021124">El certificado del servidor está firmado con un algoritmo de firma no seguro.</translation>
 <translation id="2730326759066348565"><ph name="BEGIN_LINK" />Ejecución del Diagnóstico de conectividad<ph name="END_LINK" /></translation>
@@ -768,7 +768,7 @@ De lo contrario, la configuración de privacidad bloqueará esta acción. Esto p
 <translation id="2876949457278336305"><ph name="MANAGE_SECURITY_SETTINGS_FOCUSED_FRIENDLY_MATCH_TEXT" />, presiona Tab y, luego, Intro para administrar tu Navegación segura y más en la configuración de Chrome</translation>
 <translation id="2878197950673342043">Plegado de póster</translation>
 <translation id="2878424575911748999">A1</translation>
-<translation id="2879694782644540289">usar el bloqueo de pantalla para completar contraseñas.</translation>
+<translation id="2879694782644540289">usar el bloqueo de pantalla para completar contraseñas</translation>
 <translation id="2881276955470682203">¿Quieres guardar la tarjeta?</translation>
 <translation id="2882949212241984732">Plegado en ventana doble</translation>
 <translation id="2893773853358652045">Cuarto rollo</translation>
@@ -964,7 +964,7 @@ De lo contrario, la configuración de privacidad bloqueará esta acción. Esto p
 <translation id="3369459162151165748">Piezas y accesorios para vehículos</translation>
 <translation id="3371064404604898522">Establecer Chrome como navegador predeterminado</translation>
 <translation id="337363190475750230">Desaprovisionado</translation>
-<translation id="3375754925484257129">Ejecutar la verificación de seguridad de Chrome</translation>
+<translation id="3375754925484257129">Ejecutar la Verificación de seguridad de Chrome</translation>
 <translation id="3377144306166885718">El servidor usaba una versión obsoleta de TLS.</translation>
 <translation id="3377188786107721145">Error al analizar la política</translation>
 <translation id="3377736046129930310">Usa el bloqueo de pantalla para confirmar las tarjetas más rápido</translation>
@@ -1061,7 +1061,7 @@ De lo contrario, la configuración de privacidad bloqueará esta acción. Esto p
 <translation id="3611317423880285981">Productos del hogar</translation>
 <translation id="3614103345592970299">Tamaño 2</translation>
 <translation id="361438452008624280">Entrada de lista "<ph name="LANGUAGE_ID" />": El idioma es desconocido o no es compatible.</translation>
-<translation id="3614934205542186002"><ph name="RUN_CHROME_SAFETY_CHECK_FOCUSED_FRIENDLY_MATCH_TEXT" />, presiona Tab y, luego, Intro para realizar una verificación de seguridad en la configuración de Chrome</translation>
+<translation id="3614934205542186002"><ph name="RUN_CHROME_SAFETY_CHECK_FOCUSED_FRIENDLY_MATCH_TEXT" />, presiona Tab y, luego, Intro para realizar una Verificación de seguridad en la configuración de Chrome</translation>
 <translation id="3615877443314183785">Ingresa una fecha de vencimiento válida</translation>
 <translation id="36224234498066874">Borrar datos de navegación...</translation>
 <translation id="362276910939193118">Mostrar historial completo</translation>
@@ -2362,7 +2362,7 @@ De lo contrario, la configuración de privacidad bloqueará esta acción. Esto p
 <translation id="6890531741535756070">Elegiste realizar la verificación con <ph name="DEVICE_LABEL" /> en sitios web que usan <ph name="PROVIDER_ORIGIN" />. Es posible que este proveedor haya almacenado información sobre tu forma de pago, la que puedes <ph name="BEGIN_LINK" />solicitar que se borre<ph name="END_LINK" />.</translation>
 <translation id="6890956352250146925">Opciones para cookies y datos de sitios</translation>
 <translation id="6891596781022320156">No se admite el nivel de políticas.</translation>
-<translation id="6895330447102777224">Tu tarjeta se confirmó</translation>
+<translation id="6895330447102777224">Se confirmó tu tarjeta</translation>
 <translation id="6896758677409633944">Copiar</translation>
 <translation id="6897140037006041989">Usuario-agente</translation>
 <translation id="6898699227549475383">Organización (O)</translation>
@@ -2522,7 +2522,7 @@ Detalles adicionales:
 <translation id="7277998515889183784">Maquillaje y cosméticos</translation>
 <translation id="7285654172857511148"><ph name="CHANGE_GOOGLE_PASSWORD_FOCUSED_FRIENDLY_MATCH_TEXT" />, presiona Tab y, luego, Intro para cambiar la contraseña de tu Cuenta de Google</translation>
 <translation id="7292031607255951991">Nombre del destinatario</translation>
-<translation id="7298195798382681320">Recomendada</translation>
+<translation id="7298195798382681320">Recomendado</translation>
 <translation id="7299471494012161875">Periféricos de pantallas conectados</translation>
 <translation id="7300012071106347854">Azul cobalto</translation>
 <translation id="7304030187361489308">Alto</translation>

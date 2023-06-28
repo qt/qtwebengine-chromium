@@ -1207,7 +1207,7 @@ Voit ylläpitää tilin asetuksia asentamalla laitteellesi Family Link ‑sovell
 <translation id="2048554637254265991">Virhe säilönhallinnan käynnistyksessä. Yritä uudelleen.</translation>
 <translation id="2048653237708779538">Toiminto ei ole käytettävissä</translation>
 <translation id="204914487372604757">Luo pikakuvake</translation>
-<translation id="2050339315714019657">Pystysuunta</translation>
+<translation id="2050339315714019657">Muotokuva</translation>
 <translation id="2051555741181591333">Poista hotspot käytöstä automaattisesti</translation>
 <translation id="2052572566310583903">Asennettu muille laitteillesi</translation>
 <translation id="2053105195397337973">Kokeilemme uusia tapoja rajoittaa seurantaa tarjoten samalla sivustoille mahdollisuuksia estää mainosspämmäystä ja petoksia.</translation>
@@ -2946,7 +2946,7 @@ Voit ylläpitää tilin asetuksia asentamalla laitteellesi Family Link ‑sovell
 <translation id="3593152357631900254">Ota Fuzzy-Pinyin-tila käyttöön</translation>
 <translation id="3593965109698325041">Varmenteen nimirajoitukset</translation>
 <translation id="3596012367874587041">Sovellusasetukset</translation>
-<translation id="3596414637720633074">Kolmannen osapuolen evästeiden estäminen incognito-tilassa</translation>
+<translation id="3596414637720633074">Estä kolmannen osapuolen evästeet incognito-tilassa</translation>
 <translation id="3598010454707842106">Valitse Yksilöi Chromea</translation>
 <translation id="3599221874935822507">Korotettu</translation>
 <translation id="3600051066689725006">Verkkopyynnön tiedot</translation>
@@ -3750,7 +3750,7 @@ Voit ylläpitää tilin asetuksia asentamalla laitteellesi Family Link ‑sovell
 <translation id="4314497418046265427">Yhdistä puhelimesi ja <ph name="DEVICE_TYPE" />, niin saat enemmän aikaan</translation>
 <translation id="4314815835985389558">Synkronointiasetusten muokkaus</translation>
 <translation id="4316850752623536204">Kehittäjän verkkosivusto</translation>
-<translation id="4317733381297736564">Sovelluksen sisäiset ostokset</translation>
+<translation id="4317733381297736564">Sovelluksensisäiset ostokset</translation>
 <translation id="4317820549299924617">Vahvistus ei onnistunut</translation>
 <translation id="4320177379694898372">Ei internetyhteyttä</translation>
 <translation id="432160826079505197">Näytä <ph name="FILE_NAME" /> Finderissä</translation>

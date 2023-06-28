@@ -181,7 +181,7 @@
 <translation id="1155545602507378023">否，仅限此设备</translation>
 <translation id="1155816283571436363">正在连接到您的手机</translation>
 <translation id="1158080958325422608">转换为大写</translation>
-<translation id="1158238185437008462">查看回忆集锦</translation>
+<translation id="1158238185437008462">查看回忆</translation>
 <translation id="1160842321113409343">为保护您的隐私，一旦网站的保留时长超过 4 周，系统便会自动从列表中删除相应网站。您再次访问的网站可能会重新出现在列表中。如果您不希望系统（再）根据某个网站来推测您的兴趣，也可自行移除相应网站。</translation>
 <translation id="1161575384898972166">请登录“<ph name="TOKEN_NAME" />”，导出客户端证书。</translation>
 <translation id="116173250649946226">您的管理员已设置默认主题，您无法更改。</translation>
@@ -376,7 +376,7 @@
 <translation id="1338631221631423366">正在配对…</translation>
 <translation id="1338802252451106843"><ph name="ORIGIN" /> 想打开此应用。</translation>
 <translation id="1338950911836659113">正在删除…</translation>
-<translation id="1339009753652684748">只需说“Ok Google”即可使用您的 Google 助理。为了省电，请选择“开启（推荐）”。选择这一选项后，只有当您的设备已接通电源或正在充电时，Google 助理才会做出响应。</translation>
+<translation id="1339009753652684748">只需说“Hey Google”即可使用您的 Google 助理。为了省电，请选择“开启（推荐）”。选择这一选项后，只有当您的设备已接通电源或正在充电时，Google 助理才会做出响应。</translation>
 <translation id="13392265090583506">无障碍设置</translation>
 <translation id="1340527397989195812">使用“文件”应用备份设备上的媒体。</translation>
 <translation id="1341701348342335220">太棒了，全部完成！</translation>
@@ -1189,7 +1189,7 @@
 <translation id="2048554637254265991">启动容器管理器时出错。请重试。</translation>
 <translation id="2048653237708779538">无法执行操作</translation>
 <translation id="204914487372604757">创建快捷方式</translation>
-<translation id="2050339315714019657">纵向</translation>
+<translation id="2050339315714019657">人像</translation>
 <translation id="2051555741181591333">自动停用热点</translation>
 <translation id="2052572566310583903">已安装在您的其他设备上</translation>
 <translation id="2053105195397337973">我们正在探索如何既能让网站阻止垃圾广告和欺诈行为，又能限制跟踪。</translation>
@@ -1506,7 +1506,7 @@
       <ph name="BEGIN_BOLD" />注意<ph name="END_BOLD" />：在此过程中，系统将会重新启动。</translation>
 <translation id="23030561267973084">“<ph name="EXTENSION_NAME" />”请求获得更多权限。</translation>
 <translation id="2307462900900812319">配置网络</translation>
-<translation id="2307553512430195144">如果您同意，Google 助理将会在待机模式下等待检测“Ok Google”，并可以通过 Voice Match 识别出是<ph name="SUPERVISED_USER_NAME" />在说话。
+<translation id="2307553512430195144">如果您同意，Google 助理将会在待机模式下等待检测“Hey Google”，并可以通过 Voice Match 识别出是<ph name="SUPERVISED_USER_NAME" />在说话。
     <ph name="BR" />
     借助 Voice Match，Google 助理可在您的 <ph name="DEVICE_TYPE" /> 上识别出<ph name="SUPERVISED_USER_NAME" />的语音，从而将其与他人区分开。
     <ph name="BR" />
@@ -2541,7 +2541,7 @@
 <translation id="3244294424315804309">继续保持静音</translation>
 <translation id="324849028894344899"><ph name="WINDOW_TITLE" /> - 网络错误</translation>
 <translation id="3248902735035392926">安全至上。请花点时间<ph name="BEGIN_LINK" />立即检查一下您的扩展程序<ph name="END_LINK" />吧</translation>
-<translation id="3251714896659475029">允许<ph name="SUPERVISED_USER_NAME" />使用“Ok Google”指令启动 Google 助理</translation>
+<translation id="3251714896659475029">允许<ph name="SUPERVISED_USER_NAME" />使用“Hey Google”指令启动 Google 助理</translation>
 <translation id="3251759466064201842">&lt;未包含在证书中&gt;</translation>
 <translation id="325238099842880997">设置数字设备基本使用规则，以方便孩子在家中玩乐、探索和完成学校作业</translation>
 <translation id="3253448572569133955">未知帐号</translation>
@@ -3533,7 +3533,7 @@
 <translation id="4116704186509653070">重新打开</translation>
 <translation id="4117714603282104018">触控板触感反馈</translation>
 <translation id="4118579674665737931">请重新启动此设备，然后重试。</translation>
-<translation id="412022815379960229">登录后即可开始浏览您在 Google 相册中的回忆集锦。</translation>
+<translation id="412022815379960229">登录后即可开始浏览您在 Google 相册中的回忆。</translation>
 <translation id="4120388883569225797">无法重置此安全密钥</translation>
 <translation id="4120817667028078560">路径过长</translation>
 <translation id="4124823734405044952">您的安全密钥已重置完毕</translation>
@@ -3757,7 +3757,7 @@
 <translation id="4348766275249686434">收集各项错误</translation>
 <translation id="4349828822184870497">有用</translation>
 <translation id="4350230709416545141">始终禁止 <ph name="HOST" /> 使用您的位置信息</translation>
-<translation id="4350782034419308508">Ok Google</translation>
+<translation id="4350782034419308508">Hey Google</translation>
 <translation id="4351770750390404505"><ph name="BEGIN_PARAGRAPH1" />为了提供最佳体验，<ph name="DEVICE_OS" /> 会收集与设备有关的硬件数据并将其分享给 Google，以确定应提供哪些更新。您也可允许 Google 将这些数据用于其他用途，例如提供支持以及改进 <ph name="DEVICE_OS" /> 体验和服务。<ph name="END_PARAGRAPH1" /><ph name="BEGIN_PARAGRAPH2" />您可在此设备上登录，然后访问 chrome://system 中的 CHROMEOSFLEX_HARDWARE_INFO 部分，以查看向 Google 发送的用于更新过滤机制的数据，以及您选择与 Google 分享数据的所有其他情形。<ph name="END_PARAGRAPH2" /><ph name="BEGIN_PARAGRAPH3" />如需详细了解 <ph name="DEVICE_OS" /> 可能会与 Google 分享的数据及其使用方式，请访问 g.co/flex/HWDataCollection。<ph name="END_PARAGRAPH3" /></translation>
 <translation id="4354073718307267720">在网站想为您的周边环境创建 3D 地图或跟踪摄像头位置时询问您</translation>
 <translation id="4354344420232759511">您访问的网站将显示在此处</translation>
@@ -3888,7 +3888,7 @@
 <translation id="4461483878391246134">添加一律不提供翻译的语言</translation>
 <translation id="4462159676511157176">自定义域名服务器</translation>
 <translation id="4465236939126352372">为“<ph name="APP_NAME" />”设置了 <ph name="TIME" />的使用时限</translation>
-<translation id="4466839823729730432">在此处查看您的回忆集锦</translation>
+<translation id="4466839823729730432">在此处查看您的回忆</translation>
 <translation id="4469324811108161144">备注最多可以包含 <ph name="CHARACTER_LIMIT" /> 个字符。</translation>
 <translation id="4469762931504673593"><ph name="ORIGIN" /> 可修改“<ph name="FOLDERNAME" />”内的文件</translation>
 <translation id="4470957202018033307">外部存储偏好设置</translation>
@@ -4203,7 +4203,7 @@
 <translation id="4743260470722568160"><ph name="BEGIN_LINK" />了解如何更新应用<ph name="END_LINK" /></translation>
 <translation id="4744268813103118742">前往网站</translation>
 <translation id="4744981231093950366">{NUM_TABS,plural, =1{将这个网站取消静音}other{将这些网站取消静音}}</translation>
-<translation id="474609389162964566">说“Ok Google”即可启动 Google 助理</translation>
+<translation id="474609389162964566">说“Hey Google”即可启动 Google 助理</translation>
 <translation id="4746351372139058112">信息</translation>
 <translation id="4748783296226936791">网站通常会连接到 HID 设备以实现某些需要使用非标准键盘、游戏控制器和其他设备的功能</translation>
 <translation id="4749960740855309258">打开新标签页</translation>
@@ -4570,7 +4570,7 @@
 <translation id="5094721898978802975">与协作的本机应用通信</translation>
 <translation id="5097002363526479830">无法连接到网络“<ph name="NAME" />”：<ph name="DETAILS" /></translation>
 <translation id="5097306410549350357">详细了解如何使用位置信息</translation>
-<translation id="5097349930204431044">您访问的网站能推测您的喜好，然后在您继续浏览时向您展示建议的广告</translation>
+<translation id="5097349930204431044">您访问的网站能判断您的喜好，然后在您继续浏览时向您展示建议的广告</translation>
 <translation id="5097649414558628673">工具：<ph name="PRINT_NAME" /></translation>
 <translation id="5097874180538493929">光标停止移动时自动点击</translation>
 <translation id="5101839224773798795">光标停止时自动点击</translation>
@@ -4924,7 +4924,7 @@
 <translation id="5435779377906857208">始终允许 <ph name="HOST" /> 使用您的位置信息</translation>
 <translation id="5436492226391861498">正在等待代理隧道的响应...</translation>
 <translation id="5436510242972373446">用 <ph name="SITE_NAME" /> 搜索：</translation>
-<translation id="5436575196282187764">Google 相册中的回忆集锦</translation>
+<translation id="5436575196282187764">Google 相册中的回忆</translation>
 <translation id="5439680044267106777">跳过此步骤并设置新的个人资料</translation>
 <translation id="544083962418256601">创建快捷方式...</translation>
 <translation id="5441133529460183413">从 Chrome 浏览器安装的 Web 应用</translation>
@@ -5149,7 +5149,7 @@
 <translation id="5632566673632479864">您的帐号 <ph name="EMAIL" /> 已无法再用作主帐号。该帐号由 <ph name="DOMAIN" /> 管理，因此您的书签、历史记录、密码及其他设置将从此设备中清除。</translation>
 <translation id="5633149627228920745">详细了解系统要求</translation>
 <translation id="563371367637259496">移动网络</translation>
-<translation id="5634446357546764049">查看近期旅行等活动的回忆集锦</translation>
+<translation id="5634446357546764049">查看近期旅行等活动的回忆</translation>
 <translation id="5635312199252507107">在特定网站上允许</translation>
 <translation id="563535393368633106">使用前先询问（推荐）</translation>
 <translation id="5636012309446422">从 <ph name="PRIMARY_EMAIL" /> 中移除“<ph name="DEVICE" />”？</translation>
@@ -5264,7 +5264,7 @@
 <translation id="5747809636523347288">粘贴并转到 <ph name="URL" /></translation>
 <translation id="5748137879145720682">在拔下计算机电源线时开启</translation>
 <translation id="5751345516399502412">检查网络共享就绪与否</translation>
-<translation id="5755022574660047665">Google 相册中的回忆集锦</translation>
+<translation id="5755022574660047665">Google 相册中的回忆</translation>
 <translation id="5756163054456765343">帮助中心(&amp;E)</translation>
 <translation id="5757375109985023827">选择一个标签页即可预览</translation>
 <translation id="5758631781033351321">您的阅读清单会显示在此处</translation>
@@ -5611,7 +5611,7 @@
 <translation id="6059925163896151826">USB 设备</translation>
 <translation id="6061408389284235459">通知已发送至<ph name="DEVICE_NAME" /></translation>
 <translation id="6063284707309177505">创建二维码</translation>
-<translation id="6063847492705284550"><ph name="BEGIN_BOLD" />注意<ph name="END_BOLD" />：如果有人在语音上与<ph name="SUPERVISED_USER_NAME" />相似或拥有后者的语音录音，此人可能也能获取后者的个人信息相关结果。为了省电，您可以在<ph name="SUPERVISED_USER_NAME" />的 Google 助理设置中选择让“Ok Google”指令仅在此设备已接通电源时可用。</translation>
+<translation id="6063847492705284550"><ph name="BEGIN_BOLD" />注意<ph name="END_BOLD" />：如果有人在语音上与<ph name="SUPERVISED_USER_NAME" />相似或拥有后者的语音录音，此人可能也能获取后者的个人信息相关结果。为了省电，您可以在<ph name="SUPERVISED_USER_NAME" />的 Google 助理设置中选择让“Hey Google”指令仅在此设备已接通电源时可用。</translation>
 <translation id="6064217302520318294">屏幕锁定</translation>
 <translation id="6065145031947216733">单独存储您的浏览数据？</translation>
 <translation id="6065289257230303064">证书主题背景目录属性</translation>
@@ -5762,7 +5762,7 @@
 <translation id="6200151268994853226">管理扩展程序</translation>
 <translation id="6201608810045805374">移除此帐号？</translation>
 <translation id="6202304368170870640">您可以使用 PIN 码登录或解锁您的设备。</translation>
-<translation id="6205314730813004066">广告隐私设置</translation>
+<translation id="6205314730813004066">广告隐私权设置</translation>
 <translation id="6206199626856438589">您将从显示的网站（包括已打开的标签页中的网站）退出帐号</translation>
 <translation id="6206311232642889873">复制图片(&amp;Y)</translation>
 <translation id="6206521455877863927">包括同一个网域中的各个网站，例如 google.com 和 mail.google.com。您正在查看的网站可将数据保存在您的设备上。</translation>
@@ -5880,7 +5880,7 @@
 <translation id="6308493641021088955">登录服务提供方：<ph name="EXTENSION_NAME" /></translation>
 <translation id="6308937455967653460">链接另存为(&amp;K)...</translation>
 <translation id="6309443618838462258">您的管理员不允许使用此输入法</translation>
-<translation id="630948338437014525">回忆集锦</translation>
+<translation id="630948338437014525">回忆</translation>
 <translation id="6309510305002439352">麦克风已关闭</translation>
 <translation id="6310141306111263820">无法安装 eSIM 卡配置文件。如需帮助，请与您的运营商联系。</translation>
 <translation id="6311165245110979290">有可用的虚拟卡</translation>
@@ -6174,7 +6174,7 @@
 <translation id="6584878029876017575">Microsoft 生存时间签名</translation>
 <translation id="6585584201072946561">自定义网络浏览器的文字大小和字体</translation>
 <translation id="6586099239452884121">访客浏览</translation>
-<translation id="6586213706115310390">只需说“Ok Google”即可使用您的 Google 助理。</translation>
+<translation id="6586213706115310390">只需说“Hey Google”即可使用您的 Google 助理。</translation>
 <translation id="6586451623538375658">切换鼠标主按钮</translation>
 <translation id="6587958707401001932">选择您的默认设置</translation>
 <translation id="6588043302623806746">使用安全 DNS</translation>
@@ -6420,7 +6420,7 @@
 <translation id="6808166974213191158">ChromeOS Flex 系统映像写入工具</translation>
 <translation id="6808193438228982088">狐狸</translation>
 <translation id="6809470175540814047">在无痕式窗口中打开</translation>
-<translation id="6809656734323672573">如果您同意，Google 助理将会在待机模式下等待检测“Ok Google”指令，并可以通过 Voice Match 识别出是您在说话。
+<translation id="6809656734323672573">如果您同意，Google 助理将会在待机模式下等待检测“Hey Google”指令，并可以通过 Voice Match 识别出是您在说话。
     <ph name="BR" />
     借助 Voice Match 功能，Google 助理能够识别出您的语音，从而将您与他人区分开。Google 助理会录制您的语音剪辑以创建专属语音模型，这个语音模型只会存储在您的设备上。系统可能会暂时将您的语音模型发送给 Google，以便更准确地识别您的语音。
     <ph name="BR" />
@@ -6640,7 +6640,7 @@
 <translation id="6988094684494323731">正在启动 Linux 容器</translation>
 <translation id="6988403677482707277">此标签页已移至标签栏的开头</translation>
 <translation id="6989123022222588975">您尚未移除任何兴趣</translation>
-<translation id="6990209147952697693">传统版 Chrome</translation>
+<translation id="6990209147952697693">经典 Chrome 外观</translation>
 <translation id="6991665348624301627">选择目标打印机</translation>
 <translation id="6992554835374084304">开启增强的“拼写检查”功能</translation>
 <translation id="6993000214273684335">此标签页已从未命名的组中移除 - 该组包含<ph name="GROUP_CONTENTS" /></translation>
@@ -6791,7 +6791,7 @@
 <translation id="7123302939607518173">如果您认为与某项兴趣或某个网站相关的广告对您有用，可以添加该兴趣或网站。</translation>
 <translation id="7124013154139278147">为“上一项”操作分配开关</translation>
 <translation id="7124712201233930202">不符合贵组织的政策</translation>
-<translation id="7125029162161377569">Privacy Sandbox 试用计划推出后，网站既能减少使用您的信息，又能提供同样出色的浏览体验。这意味着您的隐私会受到更好的保护，而且跨网站跟踪也会减少。一旦新的功能可供试用，我们即会添加相应功能。</translation>
+<translation id="7125029162161377569">Privacy Sandbox 试用版推出后，网站既能减少使用您的信息，又能提供同样出色的浏览体验。这意味着您的隐私会受到更好的保护，而且跨网站跟踪也会减少。一旦新的功能可供试用，我们即会添加相应功能。</translation>
 <translation id="7125148293026877011">删除 Crostini</translation>
 <translation id="7127980134843952133">下载记录</translation>
 <translation id="7128151990937044829">当通知处于屏蔽状态时在地址栏中显示“已屏蔽”图标</translation>
@@ -6957,7 +6957,7 @@
 <translation id="7299337219131431707">启用访客浏览</translation>
 <translation id="7299515639584427954">为默认应用更改受支持的链接？</translation>
 <translation id="7299588179200441056"><ph name="URL" /> - <ph name="FOLDER" /></translation>
-<translation id="7301470816294041580">您可以这样问：“Ok Google，这是什么歌？”或“Ok Google，我的屏幕上显示的是什么？”</translation>
+<translation id="7301470816294041580">您可以这样问：“Hey Google，这是什么歌？”或“Hey Google，我的屏幕上显示的是什么？”</translation>
 <translation id="730289542559375723">{NUM_APPLICATIONS,plural, =1{这款应用可能会致使 Chrome 无法正常运行。}other{这些应用可能会致使 Chrome 无法正常运行。}}</translation>
 <translation id="7303281435234579599">糟糕！设置演示模式时出了点问题。</translation>
 <translation id="7303900363563182677">此网站已被阻止查看复制到剪贴板的文字和图片</translation>
@@ -7008,7 +7008,7 @@
 <translation id="7354120289251608189">您现在可以随时为浏览器换上全新外观了。</translation>
 <translation id="7356908624372060336">网络日志</translation>
 <translation id="735745346212279324">VPN 连接已断开</translation>
-<translation id="7358324924540718595">今天已隐藏回忆集锦</translation>
+<translation id="7358324924540718595">今天已隐藏回忆</translation>
 <translation id="7358338787722390626">关闭侧边栏中的搜索工具栏。</translation>
 <translation id="735994578317267253">在任意 Chrome 操作系统设备上使用您的应用、设置等等</translation>
 <translation id="7360233684753165754">通过“<ph name="PRINTER_NAME" />”打印 <ph name="PAGE_NUMBER" /> 个页面</translation>
@@ -7098,7 +7098,7 @@
 <translation id="7423807071740419372"><ph name="APP_NAME" /> 需要获得相应权限才能运行</translation>
 <translation id="7424153922653300265">节能模式已开启</translation>
 <translation id="7424818322350938336">已添加网络</translation>
-<translation id="7427315069950454694">今天的回忆集锦</translation>
+<translation id="7427315069950454694">今天的回忆</translation>
 <translation id="7427348830195639090">后台网页：<ph name="BACKGROUND_PAGE_URL" /></translation>
 <translation id="7427798576651127129">通过<ph name="DEVICE_NAME" />拨打电话</translation>
 <translation id="7431719494109538750">找不到任何 HID 设备</translation>
@@ -7295,7 +7295,7 @@
 <translation id="7614260613810441905">在网站想要修改您设备上的文件或文件夹时先询问您（推荐）</translation>
 <translation id="761530003705945209">备份到 Google 云端硬盘。您随时可以轻松地恢复数据或更换设备。您的备份内容包含应用数据。您的备份内容将上传到 Google 并使用您的 Google 帐号密码进行加密。</translation>
 <translation id="7615365294369022248">添加帐号时出错</translation>
-<translation id="7615807797520072741">重置为传统版 Chrome</translation>
+<translation id="7615807797520072741">重置为经典 Chrome 外观</translation>
 <translation id="7616214729753637086">正在注册设备…</translation>
 <translation id="7617263010641145920">开启 Play 商店</translation>
 <translation id="7617648809369507487">使用干扰性更低的提示方式</translation>
@@ -7399,7 +7399,7 @@
 <translation id="7690853182226561458">添加文件夹(&amp;F)...</translation>
 <translation id="7691073721729883399">无法为该自助服务终端应用装载 cryptohome。</translation>
 <translation id="7691077781194517083">无法重置此安全密钥。错误代码为 <ph name="ERROR_CODE" />。</translation>
-<translation id="7691163173018300413">“Ok Google”</translation>
+<translation id="7691163173018300413">“Hey Google”</translation>
 <translation id="7691698019618282776">Crostini 升级</translation>
 <translation id="7694246789328885917">荧光笔工具</translation>
 <translation id="7696063401938172191">在您的“<ph name="PHONE_NAME" />”上：</translation>
@@ -7574,7 +7574,7 @@
 <translation id="7850717413915978159"><ph name="BEGIN_PARAGRAPH1" />允许 Chrome 操作系统设备自动发送报告，可以帮助我们确定 Chrome 操作系统中需要优先解决的问题和优先改进的方面。这些报告可能包含的内容有：Chrome 操作系统的崩溃时间、使用的功能、通常占用的内存量、Android 应用诊断数据和使用情况数据，等等。部分汇总数据还会对 Google 应用和合作伙伴（例如 Android 开发者）有所帮助。<ph name="END_PARAGRAPH1" />
     <ph name="BEGIN_PARAGRAPH2" />您随时可在 Chrome 操作系统设备的设置中开始或停止发送这些报告。如果您是网域管理员，则可在管理控制台中更改这一设置。<ph name="END_PARAGRAPH2" />
     <ph name="BEGIN_PARAGRAPH3" />如果您已为自己的 Google 帐号开启“网络与应用活动记录”设置，您的 Android 数据可能会被保存到您的 Google 帐号中。您可在 account.google.com 上查看和删除您的数据以及更改您的帐号设置。<ph name="END_PARAGRAPH3" /></translation>
-<translation id="7851021205959621355"><ph name="BEGIN_BOLD" />注意<ph name="END_BOLD" />：如果有人在语音上与您相似或拥有您的语音录音，此人可能也能获取您的个人信息相关结果或使用您的 Google 助理。为了省电，您可以在 Google 助理设置中选择让“Ok Google”指令仅在此设备已接通电源时可用。</translation>
+<translation id="7851021205959621355"><ph name="BEGIN_BOLD" />注意<ph name="END_BOLD" />：如果有人在语音上与您相似或拥有您的语音录音，此人可能也能获取您的个人信息相关结果或使用您的 Google 助理。为了省电，您可以在 Google 助理设置中选择让“Hey Google”指令仅在此设备已接通电源时可用。</translation>
 <translation id="7851457902707056880">仅所有者帐号才能登录。请重新启动并使用所有者帐号登录。设备将在30秒后自动重新启动。</translation>
 <translation id="7851716364080026749">始终禁止使用摄像头和麦克风</translation>
 <translation id="7851720427268294554">IPP 解析器</translation>
@@ -8209,7 +8209,7 @@
 <translation id="8412136526970428322">授予了“<ph name="PERMISSION" />”权限和另外 <ph name="COUNT" /> 项权限</translation>
 <translation id="8413385045638830869">先询问（推荐）</translation>
 <translation id="8413956290606243087">您想为 Chrome 操作系统启用 ChromeVox（内置屏幕阅读器）吗？</translation>
-<translation id="8414249071344507766">回忆集锦已设为隐藏两天</translation>
+<translation id="8414249071344507766">回忆已设为隐藏两天</translation>
 <translation id="8414396119627470038">通过 <ph name="IDENTITY_PROVIDER_ETLD_PLUS_ONE" /> 登录 <ph name="SITE_ETLD_PLUS_ONE" /></translation>
 <translation id="8414685983518053656">备注</translation>
 <translation id="8416730306157376817"><ph name="BATTERY_PERCENTAGE" />%（保护套）</translation>
@@ -8311,7 +8311,7 @@
 <translation id="8512396579636492893">{COUNT,plural, =0{未发现任何安全系数低的密码}=1{发现了 {COUNT} 个安全系数低的密码}other{发现了 {COUNT} 个安全系数低的密码}}</translation>
 <translation id="8512476990829870887">结束进程</translation>
 <translation id="851263357009351303">始终允许 <ph name="HOST" /> 显示图片</translation>
-<translation id="8513108775083588393">自动旋转屏幕</translation>
+<translation id="8513108775083588393">自动屏幕旋转</translation>
 <translation id="8514746246728959655">尝试改用一个不同的安全密钥</translation>
 <translation id="8514955299594277296">不允许网站将数据保存在设备上（不推荐）</translation>
 <translation id="8519895319663397036">无法导入密码。文件大小应小于 150 KB。</translation>
@@ -8604,7 +8604,7 @@
 <ph name="DOMAIN" /> 要求您使智能卡保持插入状态。}}</translation>
 <translation id="8776294611668764629">贵组织屏蔽了此文件，因为它过大，无法接受安全检查。您只能打开不超过 50 MB 的文件。</translation>
 <translation id="8777628254805677039">根密码</translation>
-<translation id="8778393144535275552">清除显示的数据</translation>
+<translation id="8778393144535275552">清除所显示网站的数据</translation>
 <translation id="8779944680596936487">网站只能使用 Cookie 查看您在相应网站上的浏览活动</translation>
 <translation id="8780123805589053431">从 Google 获取图片说明</translation>
 <translation id="8780443667474968681">已关闭语音搜索功能。</translation>
@@ -9060,7 +9060,7 @@
 <translation id="9180281769944411366">此过程可能需要几分钟的时间。正在启动 Linux 容器。</translation>
 <translation id="9180380851667544951">该网站可能会共享您的屏幕</translation>
 <translation id="9182556968660520230">不允许网站播放受保护内容</translation>
-<translation id="9183331776983279456">Chrome 会自动删除保留时长超过 4 周的网站。再次访问的网站可能会重新出现在列表中。您也可屏蔽某个网站，拒绝其展示建议的广告。</translation>
+<translation id="9183331776983279456">Chrome 会自动删除保留时长超过 4 周的网站。您再次访问的网站可能会重新出现在列表中。您也可以禁止某个网站向您展示建议的广告。</translation>
 <translation id="918352324374649435">{COUNT,plural, =1{应用}other{# 个应用}}</translation>
 <translation id="9186963452600581158">使用孩子的 Google 帐号登录</translation>
 <translation id="9187967020623675250">按的键不匹配。按任意键即可<ph name="RESPONSE" />。</translation>
@@ -9112,7 +9112,7 @@
 <translation id="936646668635477464">摄像头和麦克风</translation>
 <translation id="936801553271523408">系统诊断数据</translation>
 <translation id="93766956588638423">修复扩展程序</translation>
-<translation id="938568644810664664">不妨试着这样问：“Ok Google，这是什么歌？”或“Ok Google，我的屏幕上显示的是什么？”</translation>
+<translation id="938568644810664664">不妨试着这样问：“Hey Google，这是什么歌？”或“Hey Google，我的屏幕上显示的是什么？”</translation>
 <translation id="938623846785894166">不常用的文件</translation>
 <translation id="939401694733344652">目前这些帐号并未用于 Android 应用。如果您选择了一个帐号用于该 Android 应用，那么此帐号也可用于其他 Android 应用。您可在<ph name="LINK_BEGIN" />设置 &gt; 帐号<ph name="LINK_END" />部分中更改 Android 应用的权限。</translation>
 <translation id="939598580284253335">请输入密码</translation>
@@ -9172,7 +9172,7 @@
 <translation id="995755448277384931">添加 IBAN</translation>
 <translation id="995782501881226248">YouTube</translation>
 <translation id="996250603853062861">正在建立安全连接...</translation>
-<translation id="996803490569799917">查看与亲朋好友相聚时刻的回忆集锦</translation>
+<translation id="996803490569799917">查看与亲朋好友相聚时刻的回忆</translation>
 <translation id="997143476478634194">网站会在您访问时自动采用此设置。网站通常会传送通知，以便您知悉重大新闻或聊天消息。</translation>
 <translation id="99731366405731005">您需要开启 <ph name="LINK1_BEGIN" />Chrome 同步<ph name="LINK1_END" />才能使用 Wi-Fi 同步功能。<ph name="LINK2_BEGIN" />了解详情<ph name="LINK2_END" /></translation>
 <translation id="998747458861718449">检查(&amp;N)</translation>

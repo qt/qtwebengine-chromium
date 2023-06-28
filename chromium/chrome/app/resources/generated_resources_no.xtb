@@ -366,7 +366,7 @@ Du kan når som helst sjekke passordene dine i <ph name="GOOGLE_PASSWORD_MANAGER
 <translation id="1324106254079708331">Verner de personlige Google-kontoene til personer som er utsatt for målrettede angrep</translation>
 <translation id="1327272175893960498">Kerberos-saker</translation>
 <translation id="1327495825214193325">For å slå på ADB-feilsøking må denne <ph name="DEVICE_TYPE" />-enheten startes på nytt. Den må tilbakestilles til fabrikkstandard hvis du vil slå ADB-feilsøking av igjen.</translation>
-<translation id="1327527584824210101">Bruk tilgangsnøkkelen din</translation>
+<translation id="1327527584824210101">Bruk passnøkkelen din</translation>
 <translation id="1327794256477341646">Funksjoner som krever posisjonen din, kommer ikke til å virke</translation>
 <translation id="1329466763986822896">Styrk personvernet for denne wifi-sonen</translation>
 <translation id="1331977651797684645">Dette var meg.</translation>
@@ -3645,7 +3645,7 @@ Du kan administrere innstillingene for denne kontoen ved å installere Family Li
 <translation id="4217571870635786043">Diktering</translation>
 <translation id="4218081191298393750">Klikk på høyttalerikonet for å kutte lyden for denne fanen</translation>
 <translation id="4220648711404560261">Det oppsto en feil under aktiveringen.</translation>
-<translation id="4223845867739585293">Opprett en tilgangsnøkkel</translation>
+<translation id="4223845867739585293">Lag en passnøkkel</translation>
 <translation id="4225397296022057997">På alle nettsteder</translation>
 <translation id="4228209296591583948">{NUM_EXTENSIONS,plural, =1{Denne utvidelsen er ikke tillatt}other{Noen utvidelser er ikke tillatt}}</translation>
 <translation id="4231095370974836764">Installer apper og spill fra Google Play på <ph name="DEVICE_TYPE" />. <ph name="LINK_BEGIN" />Finn ut mer<ph name="LINK_END" /></translation>
@@ -5555,7 +5555,7 @@ Bruk Ctrl + Alt + lysstyrke ned for å zoome ut.</translation>
 <translation id="5984222099446776634">Nylig besøkte</translation>
 <translation id="5985458664595100876">Ugyldig nettadresseformat. Støttede formater er \\tjener\delt og smb://tjener/delt.</translation>
 <translation id="598810097218913399">Fjern tilordningen</translation>
-<translation id="5990266201903445068">Bare Wifi</translation>
+<translation id="5990266201903445068">Bare wifi</translation>
 <translation id="5990386583461751448">Oversatt</translation>
 <translation id="599131315899248751">{NUM_APPLICATIONS,plural, =1{For å sikre at du fortsatt kan surfe på nettet, be administratoren din om å fjerne dette programmet.}other{For å sikre at du fortsatt kan surfe på nettet, be administratoren din om å fjerne disse programmene.}}</translation>
 <translation id="5993508466487156420">{NUM_SITES,plural, =1{Gjennomgangen er fullført for 1 nettsted}other{Gjennomgangen er fullført for {NUM_SITES} nettsteder}}</translation>
@@ -6798,7 +6798,7 @@ Du har # passord til som er utsatt for sikkerhetsbrudd. Google Passordlagring an
 <translation id="7113102733263608554"><ph name="ITEM_COUNT_ONE" /> vare</translation>
 <translation id="7113502843173351041">se e-postadressen din</translation>
 <translation id="7113974454301513811">Legg til den aktive fanen på listen din</translation>
-<translation id="7114054701490058191">Passordene samsvarer ikke</translation>
+<translation id="7114054701490058191">Passordene er ikke like</translation>
 <translation id="7114648273807173152">For å bruke Smart Lock til å logge på Google-kontoen din, gå til Innstillinger &gt; Tilkoblede enheter &gt; Telefonen din &gt; Smart Lock.</translation>
 <translation id="7115361495406486998">Ingen kontakter kan nås</translation>
 <translation id="7117228822971127758">Prøv på nytt senere</translation>
@@ -8812,7 +8812,7 @@ Jeg tror ikke det er nødvendig å blokkere dette nettstedet.</translation>
 <translation id="8951256747718668828">Kunne ikke fullføre gjenopprettingen på grunn av en feil</translation>
 <translation id="8951465597020890363">Vil du avslutte gjestemodus likevel?</translation>
 <translation id="8952831374766033534">Konfigurasjonsalternativet støttes ikke: <ph name="ERROR_LINE" /></translation>
-<translation id="8953476467359856141">Når enheten lades</translation>
+<translation id="8953476467359856141">Når enheten lader</translation>
 <translation id="895347679606913382">Starter...</translation>
 <translation id="8957757410289731985">Tilpass profil</translation>
 <translation id="895944840846194039">JavaScript-minne</translation>
@@ -9080,7 +9080,7 @@ Jeg tror ikke det er nødvendig å blokkere dette nettstedet.</translation>
 <translation id="9180281769944411366">Denne prosessen kan ta noen minutter. Starter Linux-beholderen.</translation>
 <translation id="9180380851667544951">Nettstedet kan dele skjermen din</translation>
 <translation id="9182556968660520230">Ikke la nettsteder spille av beskyttet innhold</translation>
-<translation id="9183331776983279456">Chrome sletter automatisk nettsteder som er eldre enn fire uker. Et nettsted som du besøker på nytt, kan havne på listen igjen. Du kan også blokkere et nettsted fra å foreslå annonser for deg.</translation>
+<translation id="9183331776983279456">Chrome sletter automatisk nettsteder som er eldre enn 4 uker. Hvis du besøker et nettsted på nytt, kan det havne på listen igjen. Du kan også blokkere et nettsted fra å foreslå annonser for deg.</translation>
 <translation id="918352324374649435">{COUNT,plural, =1{App}other{# apper}}</translation>
 <translation id="9186963452600581158">Logg på med Google-kontoen til et barn</translation>
 <translation id="9187967020623675250">Tastene stemmer ikke overens. Trykk på en tast for å <ph name="RESPONSE" />.</translation>
