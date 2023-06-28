@@ -1770,7 +1770,7 @@ Voice Match-ekin, Google-ren Laguntzailea zerbitzuak <ph name="SUPERVISED_USER_N
 <translation id="2526619973349913024">Bilatu eguneratzeak</translation>
 <translation id="2527167509808613699">Edozein motatako konexioa</translation>
 <translation id="2529887123641260401">Ezarpenak aldatzeko edo konfigurazio-gida berriro irekitzeko, joan Erabilerraztasun-osagarriaren ezarpenak atalera.</translation>
-<translation id="2530166226437958497">Irtenbideak</translation>
+<translation id="2530166226437958497">Konponbideak</translation>
 <translation id="2531530485656743109"><ph name="BEGIN_PARAGRAPH1" />Arazoren bat izan da eta ezin izan da instalatu <ph name="DEVICE_OS" />.<ph name="END_PARAGRAPH1" />
     <ph name="BEGIN_PARAGRAPH2" />Laguntza gehiago behar baduzu, joan g.co/flex/InstallErrors helbidera.<ph name="END_PARAGRAPH2" /></translation>
 <translation id="2532144599248877204">Bateria gutxi gorabehera % 80an mantentzen du haren iraupena luzatzeko. Bateria guztiz kargatuko da korrontetik deskonektatu aurretik.</translation>
@@ -2668,7 +2668,7 @@ Txartel adimenduna sartuta edukitzea eskatzen du <ph name="DOMAIN" /> domeinuak.
 <translation id="3354972872297836698">Ezin izan da parekatu <ph name="DEVICE_NAME" /> gailuarekin; berriro saiatzeko, hautatu gailua</translation>
 <translation id="335581015389089642">Hizketa</translation>
 <translation id="3355936511340229503">Konexio-errorea</translation>
-<translation id="3356036636691722598">Gozatu jokoez Chromebook-ean</translation>
+<translation id="3356036636691722598">Gozatu bideojokoez Chromebook-ean</translation>
 <translation id="3356469410714175391">(Txartel birtuala gaituta dago)</translation>
 <translation id="3356580349448036450">Osatuta</translation>
 <translation id="3359256513598016054">Ziurtagiri-gidalerroaren murriztapenak</translation>
@@ -2747,7 +2747,7 @@ Txartel adimenduna sartuta edukitzea eskatzen du <ph name="DOMAIN" /> domeinuak.
 <translation id="3429271624041785769">Sareko edukiaren hizkuntzak</translation>
 <translation id="3429275422858276529">Egin orri honen laster-marka, geroago bizkor aurkitzeko</translation>
 <translation id="3432762828853624962">Shared Workers</translation>
-<translation id="3433507769937235446">Irtetean pantaila blokeatzeko eginbidea</translation>
+<translation id="3433507769937235446">Blokeatu irtetean</translation>
 <translation id="3433621910545056227">Sistemak ezin izan du ezarri gailuaren instalazio-atributuen blokeoa.</translation>
 <translation id="3434107140712555581">% <ph name="BATTERY_PERCENTAGE" /></translation>
 <translation id="3434272557872943250">Haurraren kontuko Sareko eta aplikazioetako jarduera gehigarriak ezarpena aktibatuta badago, baliteke datu horiek haren Google-ko kontuan gordetzea. Lortu ezarpen horiei buruzko informazio gehiago eta ikasi haiek doitzen families.google.com helbidean.</translation>
@@ -3248,7 +3248,7 @@ Txartel adimenduna sartuta edukitzea eskatzen du <ph name="DOMAIN" /> domeinuak.
 <translation id="3855676282923585394">Inportatu laster-markak eta ezarpenak…</translation>
 <translation id="3856096718352044181">Egiaztatu hornitzaile horrek balio duela edo saiatu berriro geroago</translation>
 <translation id="3856800405688283469">Hautatu ordu-zona</translation>
-<translation id="3857807444929313943">Jaso hatza eta ukitu berriro</translation>
+<translation id="3857807444929313943">Jaso hatza eta sakatu berriro</translation>
 <translation id="3858860766373142691">Izena</translation>
 <translation id="385939467708172187">Erabili pasahitz konplexu bat</translation>
 <translation id="3861638017150647085">"<ph name="USERNAME" />" erabiltzaile-izena ez dago erabilgarri</translation>
@@ -3985,7 +3985,7 @@ Txartel adimenduna sartuta edukitzea eskatzen du <ph name="DOMAIN" /> domeinuak.
 <translation id="4538417792467843292">Ezabatu hitza</translation>
 <translation id="4538792345715658285">Enpresaren gidalerroen arabera instalatuta.</translation>
 <translation id="4541123282641193691">Ezin izan da egiaztatu kontua. Saiatu berriro edo berrabiarazi Chromebook-a.</translation>
-<translation id="4541662893742891060">Ezin da konektatu profil honetara. Laguntza teknikoa eskuratzeko, jarri harremanetan operadorearekin.</translation>
+<translation id="4541662893742891060">Ezin da konektatu profil honetara. Laguntza teknikoa eskuratzeko, jarri operadorearekin harremanetan.</translation>
 <translation id="4541706525461326392">Profila kentzen. Agian minutu batzuk beharko dira.</translation>
 <translation id="4542332958571335077">{NUM_PASSWORDS,plural, =1{Gailuko pasahitz bat Google-ren Pasahitz-kudeatzailea zerbitzura inportatu da}other{Gailuko {NUM_PASSWORDS} pasahitz Google-ren Pasahitz-kudeatzailea zerbitzura inportatu dira}}</translation>
 <translation id="4542520061254486227">Irakurri <ph name="WEBSITE_1" /> eta <ph name="WEBSITE_2" /> webguneetan dituzun datuak</translation>
@@ -5667,7 +5667,7 @@ Erabilerraztasun-etengailu bat baino gehiago eslei diezazkiokezu ekintza horri.<
 <translation id="6095984072944024315">−</translation>
 <translation id="6096047740730590436">Ireki maximizatuta</translation>
 <translation id="6096326118418049043">X.500 izena</translation>
-<translation id="609662062217584106">UPIko IDa</translation>
+<translation id="609662062217584106">UPIko identifikatzailea</translation>
 <translation id="6097480669505687979">Tokirik egiten ez baduzu, baliteke erabiltzaileak eta datuak automatikoki kentzea.</translation>
 <translation id="6097600385983390082">Itxi da ahozko bilaketa</translation>
 <translation id="6098793583803863900">Fitxategi ezezagun bat aztertzen ari gara, eduki arriskutsurik duen ikusteko.</translation>
@@ -5893,7 +5893,7 @@ Txartel adimenduna sartuta edukitzea eskatzen du <ph name="DOMAIN" /> domeinuak.
 <translation id="6309443618838462258">Administratzaileak ez du onartzen idazketa-metodo hau</translation>
 <translation id="630948338437014525">oroitzapenak</translation>
 <translation id="6309510305002439352">Mikrofonoa erabiltzeko baimena desaktibatuta dago</translation>
-<translation id="6310141306111263820">Ezin izan da instalatu eSIMaren profila. Laguntza eskuratzeko, jarri harremanetan operadorearekin.</translation>
+<translation id="6310141306111263820">Ezin izan da instalatu eSIMaren profila. Laguntza eskuratzeko, jarri operadorearekin harremanetan.</translation>
 <translation id="6311165245110979290">Txartel birtuala erabilgarri</translation>
 <translation id="6311220991371174222">Ezin da Chrome abiarazi arazoren bat izan delako profila irekitzean. Berrabiarazi Chrome.</translation>
 <translation id="6312567056350025599">{NUM_DAYS,plural, =1{Atzo egin zen segurtasun-egiaztapena}other{Duela {NUM_DAYS} egun egin zen segurtasun-egiaztapena}}</translation>
@@ -7712,7 +7712,7 @@ Esleipen bat kentzeko, berriz, sakatu esleipen bat daukan erabilerraztasun-eteng
 <translation id="7955105108888461311">Eska iezadazu zuzenean</translation>
 <translation id="7955177647836564772">Smart Lock aktibatuta badago eta telefonoa, berriz, desblokeatuta, ez duzu pasahitzik edo PINik idatzi behar</translation>
 <translation id="7956373551960864128">Gordetako inprimagailuak</translation>
-<translation id="7957074856830851026">Ikusi gailuaren informazioa, hala nola serie-zenbakia edo baliabidearen IDa</translation>
+<translation id="7957074856830851026">Ikusi gailuaren informazioa, hala nola serie-zenbakia edo baliabidearen identifikatzailea</translation>
 <translation id="7959074893852789871">Fitxategiak ziurtagiri bat baino gehiago ditu eta horietako batzuk inportatu dira:</translation>
 <translation id="7959665254555683862">Ezkutuko moduko beste fitxa bat</translation>
 <translation id="7961015016161918242">Inoiz ez</translation>
@@ -7737,7 +7737,7 @@ Esleipen bat kentzeko, berriz, sakatu esleipen bat daukan erabilerraztasun-eteng
 <translation id="7975504106303186033">Chrome Education-eko gailu hau G Suite for Education-eko kontu batekin erregistratu behar duzu. Beste kontu bat erregistratzeko, joan g.co/workspace/edusignup helbidera.</translation>
 <translation id="7978412674231730200">Gako pribatua</translation>
 <translation id="7978450511781612192">Zure Google-ko kontuetako saioa amaituko da. Aurrerantzean, ez dira sinkronizatuko laster-markak, historia, pasahitzak eta beste.</translation>
-<translation id="7980084013673500153">Erreproduzigai IDa: <ph name="ASSET_ID" /></translation>
+<translation id="7980084013673500153">Erreproduzigaiaren identifikatzailea: <ph name="ASSET_ID" /></translation>
 <translation id="7981313251711023384">Aurrekargatu orriak azkarrago arakatzeko eta bilatzeko</translation>
 <translation id="7981662863948574132">Erakutsi gailuaren EID zenbakiaren eta QR kodearen leiho gainerakorra</translation>
 <translation id="7981670705071137488">Aurrerantzean, softwarea atzeko planoan eguneratuko da. Ezarpenak atalean berrikus ditzakezu softwarea eguneratzeko aukeraren inguruko hobespenak.</translation>

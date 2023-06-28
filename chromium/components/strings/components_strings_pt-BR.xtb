@@ -1078,7 +1078,7 @@ Se não fizer isso, a permissão será bloqueada pelas configurações de privac
 <translation id="3646643500201740985">Medir a performance de um anúncio</translation>
 <translation id="3647286794400715637">Cada entrada de string de URL precisa conter entre um e dois URLs.</translation>
 <translation id="3650584904733503804">Validação bem-sucedida</translation>
-<translation id="3650594806107685466">Para manter seu cartão seguro, insira o CVC que fica na <ph name="SIDE_OF_CARD" /></translation>
+<translation id="3650594806107685466">Por questões de segurança, insira o CVC que fica na <ph name="SIDE_OF_CARD" /></translation>
 <translation id="3653033846669030038">Parques temáticos</translation>
 <translation id="3655241534245626312">Acessar configurações de permissão</translation>
 <translation id="3655670868607891010">Caso veja esta página com frequência, tente <ph name="HELP_LINK" />.</translation>
@@ -1198,7 +1198,7 @@ Se não fizer isso, a permissão será bloqueada pelas configurações de privac
 <translation id="3962859241508114581">Faixa anterior</translation>
 <translation id="3963721102035795474">Modo leitor</translation>
 <translation id="3964661563329879394">{COUNT,plural, =0{Nenhum}=1{1 site }one{# site }other{# sites }}</translation>
-<translation id="3969052498612555048">Não encontrou o código? <ph name="BEGIN_LINK" />Gerar novo código<ph name="END_LINK" /></translation>
+<translation id="3969052498612555048">Não encontrou o código? <ph name="BEGIN_LINK" />Gerar outro<ph name="END_LINK" /></translation>
 <translation id="397105322502079400">Calculando...</translation>
 <translation id="3973234410852337861"><ph name="HOST_NAME" /> está bloqueado</translation>
 <translation id="3984581365661308170">Envelope 11</translation>
@@ -1259,7 +1259,7 @@ Se não fizer isso, a permissão será bloqueada pelas configurações de privac
 <translation id="4117700440116928470">O escopo da política não é suportado.</translation>
 <translation id="4121428309786185360">Expira em</translation>
 <translation id="4123572138124678573">Perfuração tripla na parte inferior</translation>
-<translation id="4127575959421463246">Procurando as sinalizações do Chrome OS? Visitar</translation>
+<translation id="4127575959421463246">Procurando as sinalizações do ChromeOS? Visitar</translation>
 <translation id="4129401438321186435">{COUNT,plural, =1{mais 1}one{mais #}other{mais #}}</translation>
 <translation id="4130226655945681476">Verificar os cabos de rede, modem e roteador</translation>
 <translation id="4132448310531350254">Gerenciadores duplicados da extensão de arquivo "<ph name="FILE_EXTENSION" />" referenciada pelos apps "<ph name="POLICY_IDS_LIST" />".</translation>
@@ -1482,7 +1482,7 @@ Se não fizer isso, a permissão será bloqueada pelas configurações de privac
 <translation id="4652440160515225514">Sua organização bloqueou este site porque ele viola uma política.</translation>
 <translation id="4653167719759882810">Fusões e aquisições</translation>
 <translation id="4658638640878098064">Grampo na parte superior direita</translation>
-<translation id="4660119392514473465">Agora você pode navegar com privacidade, e as outras pessoas que usarem este dispositivo não verão suas atividades. No entanto, os downloads, favoritos e itens da Lista de leitura ainda serão salvos.</translation>
+<translation id="4660119392514473465">Agora você pode navegar com privacidade, e as outras pessoas que usarem este dispositivo não terão acesso às suas atividades. No entanto, os downloads, favoritos e itens da Lista de leitura ainda serão salvos.</translation>
 <translation id="4660567771874403130">Energia e serviços públicos</translation>
 <translation id="4663373278480897665">Câmera permitida</translation>
 <translation id="4666114623408286498">Indústria farmacêutica e biotecnologia</translation>
@@ -1966,7 +1966,7 @@ Se não fizer isso, a permissão será bloqueada pelas configurações de privac
 <translation id="5838278095973806738">É recomendado não fornecer informações confidenciais a esse site (por exemplo, senhas ou cartões de crédito), porque elas podem ser roubadas por invasores.</translation>
 <translation id="5851548754964597211">Lista de guias</translation>
 <translation id="5852909432155870672">RA4</translation>
-<translation id="5860033963881614850">Desativado</translation>
+<translation id="5860033963881614850">Desativada</translation>
 <translation id="5862579898803147654">Empilhador 8</translation>
 <translation id="5863847714970149516">A página que você está prestes a acessar pode tentar cobrar pagamentos</translation>
 <translation id="5866257070973731571">Adicione um Número de Telefone</translation>
@@ -2286,7 +2286,7 @@ Se não fizer isso, a permissão será bloqueada pelas configurações de privac
 <translation id="6687335167692595844">Tamanho da fonte solicitado</translation>
 <translation id="6687696737818665306">Atuação e teatro</translation>
 <translation id="6688743156324860098">Atualizar…</translation>
-<translation id="6688775486821967877">O cartão virtual não está disponível no momento. Tente novamente mais tarde</translation>
+<translation id="6688775486821967877">O cartão virtual não está disponível no momento. Tente de novo mais tarde.</translation>
 <translation id="6689249931105087298">Relativa com compressão de pontos pretos</translation>
 <translation id="6689271823431384964">A opção de salvar seus cartões na Conta do Google está disponível no Chrome porque você fez login. É possível alterar esse comportamento nas configurações. O nome do titular do cartão vem da sua conta.</translation>
 <translation id="6694681292321232194"><ph name="FIND_MY_PHONE_FOCUSED_FRIENDLY_MATCH_TEXT" />. Pressione Tab e depois Enter" para encontrar seu dispositivo com a Conta do Google</translation>
@@ -3001,7 +3001,7 @@ Mais detalhes:
 <translation id="8398335999901363925">Formas de pagamento disponíveis para preenchimento com um toque abertas na altura máxima.</translation>
 <translation id="8398790343843005537">Encontrar seu smartphone</translation>
 <translation id="8405579342203358118">Gerencie quais informações são sincronizadas nas configurações do Chrome</translation>
-<translation id="8406071103346257942">Parar de usar o bloqueio de tela para preencher senhas</translation>
+<translation id="8406071103346257942">parar de usar o bloqueio de tela para preencher senhas</translation>
 <translation id="8409413588194360210">gerenciadores de pagamento</translation>
 <translation id="8412145213513410671">Falhas (<ph name="CRASH_COUNT" />)</translation>
 <translation id="8412392972487953978">Você deve inserir a mesma senha duas vezes.</translation>

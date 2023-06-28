@@ -2126,7 +2126,7 @@
 <translation id="2836269494620652131">ขัดข้อง</translation>
 <translation id="283669119850230892">หากต้องการใช้เครือข่าย <ph name="NETWORK_ID" /> ก่อนอื่น ให้เชื่อมต่ออินเทอร์เน็ตตามด้านล่างนี้</translation>
 <translation id="2838379631617906747">การติดตั้ง</translation>
-<translation id="2839032553903800133">บล็อกการแจ้งเตือนอยู่</translation>
+<translation id="2839032553903800133">การแจ้งเตือนถูกบล็อก</translation>
 <translation id="2841013758207633010">เวลา</translation>
 <translation id="2841837950101800123">ผู้ให้บริการ</translation>
 <translation id="2842013086666334835">ลงชื่อเข้าใช้ "<ph name="NETWORK_ID" />"</translation>
@@ -2878,7 +2878,7 @@
 <translation id="3541823293333232175">กำหนดแล้ว</translation>
 <translation id="3543393733900874979">การอัปเดตล้มเหลว (ข้อผิดพลาด: <ph name="ERROR_NUMBER" />)</translation>
 <translation id="3543597750097719865">ลายเซ็น X9.62 ECDSA ที่มี SHA-512</translation>
-<translation id="3544058026430919413">บริษัทสามารถกำหนดกลุ่มเว็บไซต์ที่ใช้คุกกี้เพื่อแชร์กิจกรรมในกลุ่มได้ ตัวเลือกนี้จะปิดไว้ในโหมดไม่ระบุตัวตน</translation>
+<translation id="3544058026430919413">บริษัทสามารถกำหนดกลุ่มเว็บไซต์ที่ใช้คุกกี้เพื่อแชร์กิจกรรมของคุณในกลุ่มได้ ตัวเลือกนี้จะปิดไว้ในโหมดไม่ระบุตัวตน</translation>
 <translation id="3544879808695557954">ชื่อผู้ใช้ (ไม่บังคับ)</translation>
 <translation id="354602065659584722">นำซอฟต์แวร์อันตรายออกแล้ว</translation>
 <translation id="3547954654003013442">การตั้งค่าพร็อกซี</translation>
@@ -7791,7 +7791,7 @@
 <translation id="8028993641010258682">ขนาด</translation>
 <translation id="8029492516535178472"><ph name="WINDOW_TITLE" /> - ขอสิทธิ์ กด ⌘ + Option + ลูกศรขึ้นเพื่อตอบกลับ</translation>
 <translation id="8030169304546394654">ยกเลิกการเชื่อมต่อแล้ว</translation>
-<translation id="8030852056903932865">อนุญาต</translation>
+<translation id="8030852056903932865">อนุมัติ</translation>
 <translation id="8032244173881942855">ไม่สามารถแคสต์แท็บ</translation>
 <translation id="8032569120109842252">กำลังติดตาม</translation>
 <translation id="8033023935541439900">เมนูเครื่องหมายการเน้นเสียงเปิดอยู่ กดซ้ายหรือขวาเพื่อเลือกเครื่องหมายที่ต้องการและกด Enter เพื่อแทรก</translation>

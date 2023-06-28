@@ -1196,7 +1196,7 @@ Puoi gestire le impostazioni dell'account installando l'app Family Link su quest
 <translation id="2048554637254265991">Errore durante l'avvio del gestore di container. Riprova.</translation>
 <translation id="2048653237708779538">Azione non disponibile</translation>
 <translation id="204914487372604757">Crea scorciatoia</translation>
-<translation id="2050339315714019657">Verticale</translation>
+<translation id="2050339315714019657">Ritratto</translation>
 <translation id="2051555741181591333">Disabilita automaticamente l'hotspot</translation>
 <translation id="2052572566310583903">Installata su altri dispositivi</translation>
 <translation id="2053105195397337973">Stiamo esaminando dei metodi per limitare il monitoraggio e consentire ai siti di contrastare spam negli annunci e attività fraudolente.</translation>
@@ -1486,7 +1486,7 @@ Puoi gestire le impostazioni dell'account installando l'app Family Link su quest
 <translation id="2296218178174497398">Rilevamento dispositivi</translation>
 <translation id="2297705863329999812">Cerca stampanti</translation>
 <translation id="2297822946037605517">Condividi questa pagina</translation>
-<translation id="2299734369537008228">Dispositivo di scorrimento: da <ph name="MIN_LABEL" /> a <ph name="MAX_LABEL" /></translation>
+<translation id="2299734369537008228">Cursore: da <ph name="MIN_LABEL" /> a <ph name="MAX_LABEL" /></translation>
 <translation id="2299941608784654630">Includi tutti i file di log raccolti da debugd sotto forma di archivio separato.</translation>
 <translation id="2300214399009193026">PCIe</translation>
 <translation id="2300332192655962933">Il file non era disponibile sul sito</translation>
@@ -2479,7 +2479,7 @@ Puoi gestire le impostazioni dell'account installando l'app Family Link su quest
 <translation id="3160928651883997588">Preferenze VPN</translation>
 <translation id="3161522574479303604">Tutte le lingue</translation>
 <translation id="3162853326462195145">Account della scuola</translation>
-<translation id="3162899666601560689">I siti possono utilizzare i cookie per migliorare la tua esperienza di navigazione, ad esempio per mantenere l'accesso o memorizzare gli articoli aggiunti al carrello</translation>
+<translation id="3162899666601560689">I siti possono utilizzare i cookie per migliorare la tua esperienza di navigazione, ad esempio per mantenere l'accesso o memorizzare gli articoli aggiunti al carrello.</translation>
 <translation id="3163201441334626963">Prodotto sconosciuto <ph name="PRODUCT_ID" /> del fornitore <ph name="VENDOR_ID" /></translation>
 <translation id="3163511056918491211">Ripristina i dati o cambia dispositivo facilmente in qualsiasi momento. Le copie di backup vengono caricate su Google e criptate usando la password del tuo Account Google.</translation>
 <translation id="3164329792803560526">Condivisione di questa scheda con <ph name="APP_NAME" /></translation>
@@ -2878,7 +2878,7 @@ Puoi gestire le impostazioni dell'account installando l'app Family Link su quest
 <translation id="3541823293333232175">Assegnato</translation>
 <translation id="3543393733900874979">Aggiornamento non riuscito (errore: <ph name="ERROR_NUMBER" />)</translation>
 <translation id="3543597750097719865">Firma X9.62 ECDSA con SHA-512</translation>
-<translation id="3544058026430919413">Una società può definire un gruppo di siti che possono utilizzare i cookie per condividere la tua attività nel gruppo. Questa opzione è disattivata in incognito.</translation>
+<translation id="3544058026430919413">Una società può definire un gruppo di siti che possono utilizzare i cookie per condividere la tua attività nel gruppo. Questa opzione è disattivata nella modalità di navigazione in incognito.</translation>
 <translation id="3544879808695557954">Nome utente (facoltativo)</translation>
 <translation id="354602065659584722">Software dannoso rimosso</translation>
 <translation id="3547954654003013442">Impostazioni proxy</translation>
@@ -3612,7 +3612,7 @@ Puoi gestire le impostazioni dell'account installando l'app Family Link su quest
 <translation id="4195378859392041564">Fai clic su un tasto qualsiasi con il mouse, quindi premi un tasto della tastiera per personalizzarlo</translation>
 <translation id="4195421689821407315">Download non sicuro</translation>
 <translation id="4195643157523330669">Apri in un'altra scheda</translation>
-<translation id="4195814663415092787">Continuare dal punto in cui avevi interrotto</translation>
+<translation id="4195814663415092787">Continua dal punto in cui avevi interrotto</translation>
 <translation id="4198268995694216131">Altri siti</translation>
 <translation id="4200689466366162458">Parole del dizionario personale</translation>
 <translation id="4200983522494130825">Nuova &amp;scheda</translation>

@@ -140,7 +140,7 @@
 <translation id="421369550622382712">Chromium ಗಾಗಿ ಅದ್ಭುತ ಅಪ್ಲಿಕೇಶನ್‌‌ಗಳು, ಗೇಮ್‌ಗಳು, ಎಕ್ಸ್‌ಟೆನ್ಷನ್‌‌ಗಳು ಹಾಗೂ ಥೀಮ್‌ಗಳನ್ನು ಅನ್ವೇಷಿಸಿ.</translation>
 <translation id="4216212958613226427">Chromium UI ತೋರಿಸಲು ಈ ಭಾಷೆಯನ್ನು ಬಳಸಲಾಗುತ್ತದೆ</translation>
 <translation id="4222932583846282852">ರದ್ದುಗೊಳಿಸಲಾಗುತ್ತಿದೆ...</translation>
-<translation id="4230135487732243613">ಈ ಖಾತೆಗೆ ನಿಮ್ಮ Chromium ಡೇಟಾವನ್ನು ಲಿಂಕ್ ಮಾಡುವುದೇ?</translation>
+<translation id="4230135487732243613">ಈ ಖಾತೆಗೆ ನಿಮ್ಮ Chromium ಡೇಟಾವನ್ನು ಲಿಂಕ್ ಮಾಡಬೇಕೆ?</translation>
 <translation id="4271805377592243930">Chromium ಜೊತೆಗೆ ಸಹಾಯ ಪಡೆಯಿರಿ</translation>
 <translation id="4285930937574705105">ಅನಿರ್ದಿಷ್ಟ ದೋಷದಿಂದಾಗಿ ಸ್ಥಾಪನೆಯು ವಿಫಲಗೊಂಡಿದೆ. Chromium ಪ್ರಸ್ತುತ ಚಾಲನೆಯಲ್ಲಿದ್ದರೆ, ದಯವಿಟ್ಟು ಅದನ್ನು ಮುಚ್ಚಿರಿ ಮತ್ತು ಪುನಃ ಪ್ರಯತ್ನಿಸಿ.</translation>
 <translation id="4304713468139749426">ಪಾಸ್‌ವರ್ಡ್ ನಿರ್ವಾಹಕ</translation>
@@ -227,7 +227,7 @@
 <translation id="6245734527075554892">Chromium ನಲ್ಲಿ ಸಂಗ್ರಹಣೆ ಮಾಡಲಾಗಿರುವ ಅಸುರಕ್ಷಿತ ಸೈಟ್‌ಗಳ ಪಟ್ಟಿಯನ್ನು ಬಳಸಿ, URL ಗಳನ್ನು ಪರಿಶೀಲಿಸುತ್ತದೆ</translation>
 <translation id="6248213926982192922">Chromium ಅನ್ನು ಡಿಫಾಲ್ಟ್ ಬ್ರೌಸರ್ ಮಾಡಿ</translation>
 <translation id="6266342355635466082">ಅಪ್‌ಡೇಟ್‌ಗಳಿವೆಯೇ ಎಂದು ಪರಿಶೀಲಿಸಲು Chromium ಗೆ ಸಾಧ್ಯವಾಗುತ್ತಿಲ್ಲ. ನಿಮ್ಮ ಇಂಟರ್ನೆಟ್ ಸಂಪರ್ಕವನ್ನು ಪರಿಶೀಲಿಸಿ ನೋಡಿ.</translation>
-<translation id="6268381023930128611">Chromium ನಿಂದ ಸೈನ್‌ ಔಟ್‌ ಮಾಡುವುದೇ?</translation>
+<translation id="6268381023930128611">Chromium ನಿಂದ ಸೈನ್‌ ಔಟ್‌ ಮಾಡಬೇಕೆ?</translation>
 <translation id="6273793429163604305">ತಯಾರಾಗಿರಿ...</translation>
 <translation id="6281746429495226318">ನಿಮ್ಮ Chromium ಪ್ರೊಫೈಲ್ ಅನ್ನು ಕಸ್ಟಮೈಸ್ ಮಾಡಿ</translation>
 <translation id="6290827346642914212">ನಿಮ್ಮ Chromium ಪ್ರೊಫೈಲ್ ಅನ್ನು ಹೆಸರಿಸಿ</translation>
@@ -290,7 +290,7 @@
 <translation id="7337881442233988129">Chromium</translation>
 <translation id="7339898014177206373">ಹೊಸ ವಿಂಡೊ</translation>
 <translation id="734373864078049451">ನಿಮ್ಮ ವೆಬ್, ಬುಕ್‌ಮಾರ್ಕ್‌ಗಳು ಮತ್ತು ಇತರ Chromium ಸಂಗತಿಗಳು ಇಲ್ಲಿ ಲೈವ್ ಆಗುತ್ತವೆ.</translation>
-<translation id="7349591376906416160"><ph name="TARGET_URL_HOSTNAME" /> ಗೆ ಪ್ರವೇಶ ಪಡೆಯುವುದಕ್ಕಾಗಿ <ph name="ALTERNATIVE_BROWSER_NAME" /> ಅನ್ನು ತೆರೆಯಲು, ನಿಮ್ಮ ಸಿಸ್ಟಂ ನಿರ್ವಾಹಕರು Chromium ಅನ್ನು ಕಾನ್ಫಿಗರ್ ಮಾಡಿದ್ದಾರೆ.</translation>
+<translation id="7349591376906416160"><ph name="TARGET_URL_HOSTNAME" /> ಗೆ ಆ್ಯಕ್ಸೆಸ್ ಪಡೆಯುವುದಕ್ಕಾಗಿ <ph name="ALTERNATIVE_BROWSER_NAME" /> ಅನ್ನು ತೆರೆಯಲು, ನಿಮ್ಮ ಸಿಸ್ಟಂ ನಿರ್ವಾಹಕರು Chromium ಅನ್ನು ಕಾನ್ಫಿಗರ್ ಮಾಡಿದ್ದಾರೆ.</translation>
 <translation id="7398989605938454041">Chromium ಪ್ರೊಫೈಲ್‌ಗಳನ್ನು ಬಳಸಿಕೊಂಡು Chromium ಗೆ ಸಂಬಂಧಿಸಿದ ನಿಮ್ಮ ಎಲ್ಲಾ ಸಂಗತಿಗಳನ್ನು ನೀವು ಪ್ರತ್ಯೇಕವಾಗಿಸಬಹುದು. ಇದು ಕೆಲಸ ಮತ್ತು ಮೋಜಿನ ನಡುವೆ ವಿಭಜನೆಯನ್ನು ಸುಲಭಗೊಳಿಸುತ್ತದೆ.</translation>
 <translation id="7449453770951226939"><ph name="PAGE_TITLE" /> - Chromium Dev</translation>
 <translation id="7451052299415159299">ಈ ಸೈಟ್‌ಗಾಗಿ ನಿಮ್ಮ ಕ್ಯಾಮರಾವನ್ನು ಪ್ರವೇಶಿಸಲು Chromium ಗೆ ಅನುಮತಿಯ ಅಗತ್ಯವಿದೆ</translation>

@@ -1209,7 +1209,7 @@
 <translation id="2048554637254265991">컨테이너 관리자 시작 중에 오류가 발생했습니다. 다시 시도해 주세요.</translation>
 <translation id="2048653237708779538">실행할 수 없는 작업</translation>
 <translation id="204914487372604757">바로가기 만들기</translation>
-<translation id="2050339315714019657">세로 방향</translation>
+<translation id="2050339315714019657">인물 사진</translation>
 <translation id="2051555741181591333">핫스팟 자동 사용 중지</translation>
 <translation id="2052572566310583903">다른 기기에서 설치됨</translation>
 <translation id="2053105195397337973">Google은 추적을 제한하고 사이트에서 광고 스팸과 사기를 방지하도록 돕는 방안을 모색하고 있습니다.</translation>
@@ -1892,7 +1892,7 @@
 <translation id="2628770867680720336">ADB 디버깅을 사용 설정하려면 이 Chromebook을 초기화해야 합니다. <ph name="BEGIN_LINK_LEARN_MORE" />자세히 알아보기<ph name="END_LINK_LEARN_MORE" /></translation>
 <translation id="2629227353894235473">Android 앱 개발</translation>
 <translation id="2629437048544561682">캔버스 지우기</translation>
-<translation id="2631498379019108537">실행기에 입력 옵션 표시</translation>
+<translation id="2631498379019108537">앱 표시줄에 입력 옵션 표시</translation>
 <translation id="2633212996805280240">'<ph name="EXTENSION_NAME" />'을(를) 삭제하시겠습니까?</translation>
 <translation id="263325223718984101"><ph name="PRODUCT_NAME" />에서 설치를 완료하지 못했지만 디스크 이미지에서 계속 실행됩니다.</translation>
 <translation id="2633764681656412085">FIDO</translation>
@@ -1981,7 +1981,7 @@
 <translation id="2709516037105925701">자동 완성</translation>
 <translation id="2710101514844343743">사용 및 진단 데이터</translation>
 <translation id="271033894570825754">New</translation>
-<translation id="2711073837061989559">무료 체험</translation>
+<translation id="2711073837061989559">체험판</translation>
 <translation id="2712207122921938368">다른 기기에 패스키 생성</translation>
 <translation id="2713106313042589954">카메라 끄기</translation>
 <translation id="2713444072780614174">흰색</translation>
@@ -2361,7 +2361,7 @@
 <translation id="3027296729579831126">Nearby Share 사용 설정</translation>
 <translation id="3027644380269727216">사이트 내 활동을 기반으로 추천됩니다. 설정이 사용 설정되어 있습니다.</translation>
 <translation id="3029276696788198026">미리 로드 안함</translation>
-<translation id="3029466929721441205">실행기에 스타일러스 도구 표시</translation>
+<translation id="3029466929721441205">앱 표시줄에 스타일러스 도구 표시</translation>
 <translation id="3029808567601324798">잠금 시간</translation>
 <translation id="3030311804857586740">{NUM_DAYS,plural, =1{<ph name="MANAGER" />에서 오늘 업데이트를 다운로드할 것을 요청합니다. 인터넷에 연결되면 업데이트가 자동으로 다운로드됩니다.}other{<ph name="MANAGER" />에서 기한 전에 업데이트를 다운로드할 것을 요청합니다. 인터넷에 연결되면 업데이트가 자동으로 다운로드됩니다.}}</translation>
 <translation id="3030967311408872958">화면 밝기 자동 설정</translation>
@@ -2616,7 +2616,7 @@
 <translation id="3289856944988573801">업데이트를 확인하려면 이더넷 또는 Wi-Fi를 사용하세요.</translation>
 <translation id="3289886661311231677">사이트와 공유하고 싶지 않은 주제를 차단할 수 있습니다. 또한 Chrome에서는 4주 이상된 주제를 자동으로 삭제합니다.</translation>
 <translation id="3290249595466894471">또한 페이지, 다운로드 항목, 확장 프로그램 활동, 시스템 정보의 표본을 일부 전송하여 새로운 위협을 발견하는 데 도움을 줍니다.</translation>
-<translation id="3293181007446299124">방문 기록은 기기에서 비공개로 유지되며 신고는 사용자의 신원을 보호하기 위해 보고서 전송이 지연됩니다.</translation>
+<translation id="3293181007446299124">방문 기록은 기기에서 비공개로 유지되며 사용자의 신원을 보호하기 위해 보고서 전송이 지연됩니다.</translation>
 <translation id="3293644607209440645">이 페이지 전송</translation>
 <translation id="32939749466444286">Linux 컨테이너가 시작되지 않았습니다. 다시 시도해 주세요.</translation>
 <translation id="3294437725009624529">게스트</translation>
@@ -2895,7 +2895,7 @@
 <translation id="3541823293333232175">할당됨</translation>
 <translation id="3543393733900874979">업데이트 실패(오류: <ph name="ERROR_NUMBER" />)</translation>
 <translation id="3543597750097719865">SHA-512를 포함한 X9.62 ECDSA 서명</translation>
-<translation id="3544058026430919413">회사는 쿠키를 사용하여 내 그룹 활동을 공유하는 사이트 그룹을 정의할 수 있습니다. 시크릿 모드에서는 이 기능이 사용 중지되어 있습니다.</translation>
+<translation id="3544058026430919413">쿠키를 사용하여 내 그룹 활동을 공유할 수 있는 사이트 그룹을 회사가 정의할 수 있습니다. 시크릿 모드에서는 이 기능이 사용 중지되어 있습니다.</translation>
 <translation id="3544879808695557954">사용자 이름(선택사항)</translation>
 <translation id="354602065659584722">유해한 소프트웨어가 삭제됨</translation>
 <translation id="3547954654003013442">프록시 설정</translation>
@@ -2949,7 +2949,7 @@
 <translation id="3593152357631900254">퍼지 병음 모드 사용</translation>
 <translation id="3593965109698325041">인증서 이름 제약조건</translation>
 <translation id="3596012367874587041">앱 설정</translation>
-<translation id="3596414637720633074">시크릿 모드에서 타사 쿠키 차단</translation>
+<translation id="3596414637720633074">시크릿 모드에서 서드 파티 쿠키 차단</translation>
 <translation id="3598010454707842106">'Chrome 맞춤설정'을 클릭합니다.</translation>
 <translation id="3599221874935822507">양각</translation>
 <translation id="3600051066689725006">웹 요청 정보</translation>
@@ -2991,7 +2991,7 @@
 <translation id="3629631988386925734">비밀번호를 입력하여 Smart Lock을 사용 설정하세요. 다음번에는 휴대전화를 통해 <ph name="DEVICE_TYPE" />이(가) 잠금 해제됩니다. 설정에서 Smart Lock을 사용 중지할 수 있습니다.</translation>
 <translation id="3629664892718440872">이 선택사항 저장</translation>
 <translation id="3630132874740063857">휴대전화</translation>
-<translation id="3630995161997703415">이 사이트를 언제든지 사용할 수 있도록 실행기에 추가합니다</translation>
+<translation id="3630995161997703415">이 사이트를 언제든지 사용할 수 있도록 앱 표시줄에 추가합니다</translation>
 <translation id="3634652306074934350">권한 요청 만료됨</translation>
 <translation id="3635199270495525546">신뢰할 수 있는 플랫폼 모듈(TPM) 감지됨</translation>
 <translation id="3635353578505343390">Google에 의견 보내기</translation>
@@ -3857,7 +3857,7 @@
 <translation id="4411719918614785832">이 패스키는 이 컴퓨터의 Windows Hello에 저장됩니다. Google 계정에는 저장되지 않습니다.</translation>
 <translation id="4412632005703201014">Chrome 앱이 프로그레시브 웹 앱으로 이전 중입니다. 조직에서 이 Chrome 앱을 브라우저에 설치했습니다. 앱 목록에서 프로그레시브 웹 앱을 열려면 먼저 관리자에게 문의하여 Chrome 앱을 제거해 달라고 요청하세요. 그동안 <ph name="EXTENSION_LAUNCH_URL" /> 페이지를 방문하여 웹에서 <ph name="EXTENSION_NAME" /> 페이지를 열 수 있습니다.</translation>
 <translation id="4412698727486357573">고객센터</translation>
-<translation id="4412992751769744546">타사 쿠키 허용</translation>
+<translation id="4412992751769744546">서드 파티 쿠키 허용</translation>
 <translation id="44141919652824029">'<ph name="APP_NAME" />'이(가) 연결된 USB 기기의 목록을 읽도록 허용하시겠습니까?</translation>
 <translation id="4414232939543644979">새 시크릿 창(&amp;I)</translation>
 <translation id="4414648713167199100">Chromebook의 모바일 데이터를 사용하며 이동통신사에서 추가 요금을 부과할 수 있습니다. 배터리 사용량이 증가할 수 있습니다. <ph name="BEGIN_LINK_LEARN_MORE" />자세히 알아보기<ph name="END_LINK_LEARN_MORE" /></translation>
@@ -5417,7 +5417,7 @@ https://support.google.com/chromebook/?p=tpm</translation>
 <translation id="5860254591544742609">제목 표시줄 표시</translation>
 <translation id="5860491529813859533">사용</translation>
 <translation id="5860494867054883682">기기를 <ph name="CHANNEL_NAME" /> 채널로 업데이트 중(<ph name="PROGRESS_PERCENT" />)</translation>
-<translation id="5862109781435984885">실행기에 스타일러스 도구 표시</translation>
+<translation id="5862109781435984885">앱 표시줄에 스타일러스 도구 표시</translation>
 <translation id="5862319196656206789">연결된 기기 설정</translation>
 <translation id="5862731021271217234">다른 기기에서 탭을 가져오려면 동기화를 사용 설정하세요.</translation>
 <translation id="5863445608433396414">디버깅 기능 사용</translation>
@@ -5784,7 +5784,7 @@ https://support.google.com/chromebook/?p=tpm</translation>
 <translation id="6195005504600220730">브라우저, OS, 기기에 관한 정보를 확인합니다.</translation>
 <translation id="6195155925303302899">가운데 정렬</translation>
 <translation id="6195693561221576702">이 기기는 오프라인 데모 모드에서 설정할 수 없습니다.</translation>
-<translation id="6196640612572343990">타사 쿠키 차단</translation>
+<translation id="6196640612572343990">서드 파티 쿠키 차단</translation>
 <translation id="6196854373336333322">'<ph name="EXTENSION_NAME" />' 확장 프로그램이 프록시 설정을 제어할 수 있게 되었으며, 따라서 사용자가 온라인에서 수행하는 모든 작업을 변경, 중단하거나 엿볼 수 있게 되었습니다. 이와 같이 변경된 이유를 잘 모른다면 이 설정을 사용하지 않는 것이 좋습니다.</translation>
 <translation id="6197128521826316819">이 페이지의 QR 코드 생성</translation>
 <translation id="6198252989419008588">PIN 변경</translation>
@@ -6821,7 +6821,7 @@ https://support.google.com/chromebook/?p=tpm</translation>
 <translation id="7123302939607518173">특정 항목과 관련된 광고가 유용하다고 생각한다면 관심분야나 사이트를 추가하세요.</translation>
 <translation id="7124013154139278147">'이전'에 스위치 할당</translation>
 <translation id="7124712201233930202">조직의 정책을 준수하지 않습니다.</translation>
-<translation id="7125029162161377569">개인 정보 보호 샌드박스 무료 체험 기간에는 사이트에서 내 정보를 더 적게 사용하면서도 동일한 인터넷 사용 환경을 제공할 수 있습니다. 즉, 개인 정보 보호는 강화되고 크로스 사이트 추적은 줄어듭니다. 테스트 준비가 완료되는 대로 새로운 무료 체험 프로그램이 추가될 예정입니다.</translation>
+<translation id="7125029162161377569">개인 정보 보호 샌드박스 체험판을 사용하면 사이트에서 내 정보를 더 적게 사용하면서도 동일한 인터넷 사용 환경을 제공할 수 있습니다. 즉, 개인 정보 보호는 강화되고 크로스 사이트 추적은 줄어듭니다. 테스트 준비가 완료되는 대로 새로운 체험 프로그램이 추가될 예정입니다.</translation>
 <translation id="7125148293026877011">Crostini 삭제</translation>
 <translation id="7127980134843952133">다운로드 기록</translation>
 <translation id="7128151990937044829">알림이 차단되면 주소 표시줄에 표시 아이콘 나타내기</translation>
@@ -7259,7 +7259,7 @@ https://support.google.com/chromebook/?p=tpm</translation>
 <translation id="7549434883223124329">기기 언어를 전환하시겠습니까?</translation>
 <translation id="7550830279652415241">bookmarks_<ph name="DATESTAMP" />.html</translation>
 <translation id="7551059576287086432"><ph name="FILE_NAME" />을(를) 다운로드하지 못함</translation>
-<translation id="7551643184018910560">실행기에 고정</translation>
+<translation id="7551643184018910560">앱 표시줄에 고정</translation>
 <translation id="7552846755917812628">다음 도움말을 확인해 보세요.</translation>
 <translation id="7553012839257224005">Linux 컨테이너 확인 중</translation>
 <translation id="7553242001898162573">비밀번호를 입력해 주세요.</translation>
@@ -8154,7 +8154,7 @@ https://support.google.com/chromebook/?p=sm</translation>
 <translation id="8331822764922665615">그룹 이름을 지정하고 색상을 선택한 후 Esc 키를 누르세요.</translation>
 <translation id="833256022891467078">Crostini 공유 폴더</translation>
 <translation id="833262891116910667">강조표시</translation>
-<translation id="8335587457941836791">실행기에서 고정 해제</translation>
+<translation id="8335587457941836791">앱 표시줄에서 고정 해제</translation>
 <translation id="8336407002559723354"><ph name="MONTH_AND_YEAR" />에 업데이트 종료</translation>
 <translation id="8336463659890584292">사이트에서 페이지에 있는 링크를 비공개로 미리 로드해 달라고 요청하면 Chrome은 Google 서버를 사용합니다. 이렇게 하면 미리 로드된 사이트에서 사용자의 신원을 숨길 수 있지만 Google은 어떤 사이트가 미리 로드되는지 학습합니다.</translation>
 <translation id="8336739000755212683">기기 계정 이미지 변경</translation>
@@ -8196,7 +8196,7 @@ https://support.google.com/chromebook/?p=sm</translation>
 <translation id="8373652277231415614">Crostini 공유 디렉터리</translation>
 <translation id="8374243500935816406">사이트에서 모든 디스플레이의 창을 관리하도록 허용 안함</translation>
 <translation id="8376137163494131156">Google Cast에 대한 의견을 들려주세요</translation>
-<translation id="8376384591331888629">이 사이트의 타사 쿠키 포함</translation>
+<translation id="8376384591331888629">이 사이트의 서드 파티 쿠키 포함</translation>
 <translation id="8376451933628734023">웹 앱이 다른 앱인 것처럼 사용자를 속이려 한다면 앱을 제거하시기 바랍니다.</translation>
 <translation id="8377625247046155446">이 패스키는 이 기기에만 저장되며 시크릿 창을 모두 닫은 후에도 이 기기에 남아 있습니다.</translation>
 <translation id="8378714024927312812">조직에서 관리</translation>
@@ -8241,7 +8241,7 @@ https://support.google.com/chromebook/?p=sm</translation>
 <translation id="8413385045638830869">우선 확인(권장)</translation>
 <translation id="8413956290606243087">ChromeOS 내장 스크린 리더인 ChromeVox를 활성화하시겠습니까?</translation>
 <translation id="8414249071344507766">이틀 동안 추억 숨김</translation>
-<translation id="8414396119627470038"><ph name="IDENTITY_PROVIDER_ETLD_PLUS_ONE" />을(를) 통해 <ph name="SITE_ETLD_PLUS_ONE" />에 로그인하세요</translation>
+<translation id="8414396119627470038"><ph name="IDENTITY_PROVIDER_ETLD_PLUS_ONE" />의 계정으로 <ph name="SITE_ETLD_PLUS_ONE" />에 로그인하세요</translation>
 <translation id="8414685983518053656">참고</translation>
 <translation id="8416730306157376817"><ph name="BATTERY_PERCENTAGE" />%(케이스)</translation>
 <translation id="8417548266957501132">부모 비밀번호</translation>
@@ -8635,7 +8635,7 @@ https://support.google.com/chromebook/?p=sm</translation>
 <ph name="DOMAIN" />에서 스마트 카드를 삽입해 둔 상태로 둘 것을 요청합니다.}}</translation>
 <translation id="8776294611668764629">파일이 너무 커서 보안 확인이 불가능하기 때문에 조직에서 파일을 차단했습니다. 최대 50MB 크기의 파일을 열 수 있습니다.</translation>
 <translation id="8777628254805677039">루트 비밀번호</translation>
-<translation id="8778393144535275552">표시된 데이터 지우기</translation>
+<translation id="8778393144535275552">표시된 데이터 삭제</translation>
 <translation id="8779944680596936487">사이트는 사용자의 사이트 내 탐색 활동을 보기 위해서만 쿠키를 사용할 수 있습니다.</translation>
 <translation id="8780123805589053431">Google에서 이미지 설명 가져오기</translation>
 <translation id="8780443667474968681">음성 검색이 사용 중지되었습니다.</translation>

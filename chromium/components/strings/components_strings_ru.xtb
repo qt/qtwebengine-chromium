@@ -540,7 +540,7 @@
 <translation id="2239100178324503013">Отправить</translation>
 <translation id="2241693394036365668">Скачан файл</translation>
 <translation id="2246264294482514010">10 x 12 дюймов</translation>
-<translation id="2246480341630108201">Твой родитель пока не одобрил этот сайт</translation>
+<translation id="2246480341630108201">Твой родитель пока не одобрил этот сайт.</translation>
 <translation id="2247789808226901522">Срок действия карты истек</translation>
 <translation id="2248949050832152960">Использовать WebAuthn</translation>
 <translation id="2250931979407627383">Скобы по левому краю</translation>
@@ -2159,7 +2159,7 @@
 <translation id="6340739886198108203">Администратор не рекомендует делать снимки и видеозаписи экрана, когда на нем показаны конфиденциальные данные:</translation>
 <translation id="6341434961864773665">{0,plural, =1{Администратор не рекомендует загружать этот файл на <ph name="DESTINATION_NAME" />.}one{Администратор не рекомендует загружать эти файлы на <ph name="DESTINATION_NAME" />.}few{Администратор не рекомендует загружать эти файлы на <ph name="DESTINATION_NAME" />.}many{Администратор не рекомендует загружать эти файлы на <ph name="DESTINATION_NAME" />.}other{Администратор не рекомендует загружать эти файлы на <ph name="DESTINATION_NAME" />.}}</translation>
 <translation id="6348220984832452017">Текущие изменения</translation>
-<translation id="6349101878882523185">Установить приложение "<ph name="APP_NAME" />"</translation>
+<translation id="6349101878882523185">Установите приложение "<ph name="APP_NAME" />"</translation>
 <translation id="6353505687280762741">{COUNT,plural, =0{Нет}=1{1 пароль (для <ph name="DOMAIN_LIST" />, синхронизировано)}=2{2 пароля (для <ph name="DOMAIN_LIST" />, синхронизировано)}one{# пароль (для <ph name="DOMAIN_LIST" />, синхронизировано)}few{# пароля (для <ph name="DOMAIN_LIST" />, синхронизировано)}many{# паролей (для <ph name="DOMAIN_LIST" />, синхронизировано)}other{# пароля (для <ph name="DOMAIN_LIST" />, синхронизировано)}}</translation>
 <translation id="6355392890578844978">Компания или организация не управляет этим браузером. Действиями на этом устройстве можно управлять вне браузера Chromium. <ph name="BEGIN_LINK" />Подробнее…<ph name="END_LINK" /></translation>
 <translation id="6358450015545214790">Что это значит?</translation>
@@ -2216,7 +2216,7 @@
 <translation id="6468485451923838994">Шрифты</translation>
 <translation id="647261751007945333">Правила устройства</translation>
 <translation id="6475672344094591109">Сайты, которые вы посещаете, могут запрашивать у Chrome информацию для оценки эффективности рекламы. Chrome защищает вашу конфиденциальность, ограничивая данные, которыми сайты могут обмениваться друг с другом.</translation>
-<translation id="6476284679642588870">Управление способами оплаты</translation>
+<translation id="6476284679642588870">Настроить способы оплаты</translation>
 <translation id="6486200200930923183">Документальные фильмы</translation>
 <translation id="6489534406876378309">Начать загрузку сведений об ошибках</translation>
 <translation id="6493924760403974580">Приложение доступно только в этом размере</translation>

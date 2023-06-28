@@ -1196,7 +1196,7 @@ Pots gestionar la configuració d'aquest compte instal·lant l'aplicació Family
 <translation id="2048554637254265991">S'ha produït un error en iniciar el gestor de contenidors. Torna-ho a provar.</translation>
 <translation id="2048653237708779538">Acció no disponible</translation>
 <translation id="204914487372604757">Crea la drecera</translation>
-<translation id="2050339315714019657">Vertical</translation>
+<translation id="2050339315714019657">Retrat</translation>
 <translation id="2051555741181591333">Desactiva automàticament el punt d'accés Wi‐Fi</translation>
 <translation id="2052572566310583903">Instal·lada als altres dispositius teus</translation>
 <translation id="2053105195397337973">Estem explorant maneres de restringir el seguiment i de, alhora, permetre que els llocs web aturin el frau i el contingut brossa publicitari.</translation>
@@ -1776,7 +1776,7 @@ Pots gestionar la configuració d'aquest compte instal·lant l'aplicació Family
 <translation id="2532144599248877204">Mantén la bateria al voltant del 80% per augmentar-ne la durada. La bateria es carregarà completament abans del moment en què l'acostumes a desconnectar de l'alimentació.</translation>
 <translation id="2532198298278778531">Gestiona el DNS segur a la configuració de ChromeOS Flex</translation>
 <translation id="2532589005999780174">Mode d'alt contrast</translation>
-<translation id="2533649878691950253">S'ha impedit que aquest lloc web sabés la teva ubicació exacta perquè normalment no ho permets</translation>
+<translation id="2533649878691950253">S'ha impedit que aquest lloc web sabés la teva ubicació precisa perquè normalment no ho permets</translation>
 <translation id="253434972992662860">P&amp;ausa</translation>
 <translation id="253557089021624350">Nombre de processos actius</translation>
 <translation id="2535799430745250929">No hi ha cap xarxa mòbil</translation>
@@ -4137,7 +4137,7 @@ Pots gestionar la configuració d'aquest compte instal·lant l'aplicació Family
 <translation id="4667027203988048332">Quines dades s'utilitzen:</translation>
 <translation id="4668279686271488041">Les dades de mesurament d'anuncis se suprimeixen regularment del dispositiu</translation>
 <translation id="4672759829555593783">Obre <ph name="FILE_NAME" /> ara</translation>
-<translation id="46733273239502219">També s'esborraran les dades sense connexió de les aplicacions instal·lades</translation>
+<translation id="46733273239502219">També s'esborraran les dades fora de línia de les aplicacions instal·lades</translation>
 <translation id="4673442866648850031">Obre les eines del llapis òptic en extreure'l</translation>
 <translation id="4675065861091108046">Havies triat l'opció de permetre totes les extensions a <ph name="ORIGIN" /></translation>
 <translation id="4675828034887792601">Crea dreceres per cercar llocs web i gestionar el teu motor de cerca</translation>
@@ -7307,7 +7307,7 @@ Tens # contrasenyes més en perill. El gestor de contrasenyes de Google recomana
 <translation id="7614260613810441905">Pregunta'm quan un lloc web vulgui editar els fitxers o les carpetes del dispositiu (opció recomanada)</translation>
 <translation id="761530003705945209">Crea còpies de seguretat a Google Drive. Canvia de dispositiu o restaura'n les dades fàcilment en qualsevol moment. La còpia de seguretat inclou dades d'aplicacions. Les còpies de seguretat es pengen a Google i s'encripten amb la contrasenya del teu Compte de Google.</translation>
 <translation id="7615365294369022248">S'ha produït un error en afegir un compte</translation>
-<translation id="7615807797520072741">Restablir la versió clàssica de Chrome</translation>
+<translation id="7615807797520072741">Restableix la versió clàssica de Chrome</translation>
 <translation id="7616214729753637086">S'està registrant el dispositiu...</translation>
 <translation id="7617263010641145920">Activa Play Store</translation>
 <translation id="7617648809369507487">Utilitza missatges més discrets</translation>
@@ -9084,7 +9084,7 @@ Obtén informació sobre les dades que Google recull i sobre el motiu pel qual h
 <translation id="9199503643457729322">Fes-hi clic per sortir de la Guia de privadesa.</translation>
 <translation id="9200339982498053969"><ph name="ORIGIN" /> podrà editar els fitxers de la carpeta <ph name="FOLDERNAME" /></translation>
 <translation id="920045321358709304">Cerca <ph name="SEARCH_ENGINE" /></translation>
-<translation id="9201023452444595544">S'esborraran totes les dades sense connexió</translation>
+<translation id="9201023452444595544">S'esborraran totes les dades fora de línia</translation>
 <translation id="9201117361710210082">S'ha vist anteriorment</translation>
 <translation id="9201220332032049474">Opcions de bloqueig de pantalla</translation>
 <translation id="9201842707396338580">S'ha produït un error. Contacta amb el propietari o l'administrador del dispositiu. Codi d'error: <ph name="ERROR_CODE" />.</translation>
@@ -9109,7 +9109,7 @@ Obtén informació sobre les dades que Google recull i sobre el motiu pel qual h
 <translation id="9222839025964079645">Algunes contrasenyes no s'han importat (<ph name="COUNT" />)</translation>
 <translation id="923467487918828349">Mostra-ho tot</translation>
 <translation id="924818813611903184">Gestiona els idiomes a la configuració de Chrome OS</translation>
-<translation id="929117907539171075">També s'esborraran les dades sense connexió de l'aplicació instal·lada</translation>
+<translation id="929117907539171075">També s'esborraran les dades fora de línia de l'aplicació instal·lada</translation>
 <translation id="930268624053534560">Marques de temps detallades</translation>
 <translation id="930893132043726269">Actualment hi ha itinerància</translation>
 <translation id="93140074055951850">Les aplicacions d'Android s'han aturat</translation>
