@@ -73,7 +73,12 @@ bool AudioPreSpawnTarget(sandbox::TargetConfig* config) {
     return false;
   }
 
+#ifdef TOOLKIT_QT
+  // Disable alternate window station due to QTBUG-83300
+  config->SetDesktop(sandbox::Desktop::kAlternateDesktop);
+#else
   config->SetDesktop(sandbox::Desktop::kAlternateWinstation);
+#endif
 
   return true;
 }
@@ -143,7 +148,12 @@ bool IconReaderPreSpawnTarget(sandbox::TargetConfig* config) {
   if (result != sandbox::SBOX_ALL_OK)
     return false;
   config->SetLockdownDefaultDacl();
+#ifdef TOOLKIT_QT
+  // Disable alternate window station due to QTBUG-83300
+  config->SetDesktop(sandbox::Desktop::kAlternateDesktop);
+#else
   config->SetDesktop(sandbox::Desktop::kAlternateWinstation);
+#endif
 
   sandbox::MitigationFlags flags = config->GetDelayedProcessMitigations();
   flags |= sandbox::MITIGATION_DYNAMIC_CODE_DISABLE;
