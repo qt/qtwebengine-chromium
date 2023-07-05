@@ -1378,6 +1378,11 @@
       "os": {
         "type": "win"
       },
+      "exceptions": [
+        {
+          "gl_renderer": "ANGLE.*"
+        }
+      ],
       "vendor_id": "0x8086",
       "features": [
         "accelerated_2d_canvas"
