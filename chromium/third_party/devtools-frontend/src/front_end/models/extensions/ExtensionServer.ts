@@ -118,6 +118,7 @@ export class ExtensionServer extends Common.ObjectWrapper.ObjectWrapper<EventTyp
   private inspectedTabId?: string;
   private readonly extensionAPITestHook?: (server: unknown, api: unknown) => unknown;
   private themeChangeHandlers: Map<string, MessagePort> = new Map();
+  readonly #pendingExtensions: Host.InspectorFrontendHostAPI.ExtensionDescriptor[] = [];
 
   private constructor() {
     super();
@@ -381,6 +382,8 @@ export class ExtensionServer extends Common.ObjectWrapper.ObjectWrapper<EventTyp
     this.requests = new Map();
     const url = event.data.inspectedURL();
     this.postNotification(PrivateAPI.Events.InspectedURLChanged, url);
+    this.#pendingExtensions.forEach(e => this.addExtension(e));
+    this.#pendingExtensions.splice(0);
   }
 
   startTraceRecording(providerId: string, sessionId: string, session: TracingSession): void {
@@ -1036,8 +1039,12 @@ export class ExtensionServer extends Common.ObjectWrapper.ObjectWrapper<EventTyp
     const startPage = extensionInfo.startPage;
 
     const inspectedURL = SDK.TargetManager.TargetManager.instance().mainFrameTarget()?.inspectedURL() ?? '';
-    if (inspectedURL !== '' && !this.canInspectURL(inspectedURL)) {
-      this.disableExtensions();
+    if (inspectedURL === '') {
+      this.#pendingExtensions.push(extensionInfo);
+      return;
+    }
+    if (!this.canInspectURL(inspectedURL)) {
+       this.disableExtensions();
     }
     if (!this.extensionsEnabled) {
       return;
