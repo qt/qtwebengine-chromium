@@ -2768,7 +2768,7 @@ config("symbols") {
 # This config guarantees to hold symbol for stack trace which are shown to user
 # when crash happens in unittests running on buildbot.
 config("minimal_symbols") {
-  if (is_win) {
+  if (is_win && !is_mingw) {
     # Functions, files, and line tables only.
     cflags = []
 
