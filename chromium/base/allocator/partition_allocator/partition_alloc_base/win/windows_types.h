@@ -10,7 +10,7 @@
 
 // Needed for function prototypes.
 #include <specstrings.h>
-
+#include <stdint.h>
 #ifdef __cplusplus
 extern "C" {
 #endif
