@@ -137,7 +137,7 @@ config("icu_code") {
       "-Wno-deprecated-declarations",
     ]
   }
-  if (is_mingw) {
+  if (is_mingw && !is_clang) {
     cflags += [
         "-fext-numeric-literals",
     ]
