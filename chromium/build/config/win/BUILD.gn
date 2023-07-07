@@ -350,7 +350,7 @@ config("default_cfg_compiler") {
   # with CFG enabled, such as system libraries.
   # The CFG guards are only emitted if |win_enable_cfg_guards| is enabled.
   if (win_enable_cfg_guards) {
-    if (is_clang) {
+    if (is_clang && !is_mingw) {
       cflags = [ "/guard:cf" ]
     }
     rustflags = [ "-Ccontrol-flow-guard" ]

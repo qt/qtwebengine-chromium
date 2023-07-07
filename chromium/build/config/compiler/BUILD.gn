@@ -3047,7 +3047,7 @@ config("symbols") {
 # when crash happens in unittests running on buildbot.
 config("minimal_symbols") {
   rustflags = []
-  if (is_win) {
+  if (is_win && !is_mingw) {
     # Functions, files, and line tables only.
     cflags = []
 
