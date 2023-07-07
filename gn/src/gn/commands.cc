@@ -4,12 +4,15 @@
 
 #include "gn/commands.h"
 
+#include <fstream>
 #include <optional>
 
 #include "base/command_line.h"
 #include "base/environment.h"
+#include "base/files/file_util.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "gn/builder.h"
 #include "gn/config_values_extractors.h"
@@ -17,9 +20,12 @@
 #include "gn/item.h"
 #include "gn/label.h"
 #include "gn/label_pattern.h"
+#include "gn/ninja_build_writer.h"
 #include "gn/setup.h"
 #include "gn/standard_out.h"
+#include "gn/switches.h"
 #include "gn/target.h"
+#include "util/atomic_write.h"
 #include "util/build_config.h"
 
 namespace commands {
@@ -127,45 +133,12 @@ bool ResolveStringFromCommandLineInput(
   return true;
 }
 
-enum TargetPrintingMode {
-  TARGET_PRINT_BUILDFILE,
-  TARGET_PRINT_LABEL,
-  TARGET_PRINT_OUTPUT,
-};
-
 // Retrieves the target printing mode based on the command line flags for the
 // current process. Returns true on success. On error, prints a message to the
 // console and returns false.
-bool GetTargetPrintingMode(TargetPrintingMode* mode) {
-  std::string switch_key = "as";
-  const base::CommandLine* cmdline = base::CommandLine::ForCurrentProcess();
-
-  if (!cmdline->HasSwitch(switch_key)) {
-    // Default to labels.
-    *mode = TARGET_PRINT_LABEL;
-    return true;
-  }
-
-  std::string value = cmdline->GetSwitchValueASCII(switch_key);
-  if (value == "buildfile") {
-    *mode = TARGET_PRINT_BUILDFILE;
-    return true;
-  }
-  if (value == "label") {
-    *mode = TARGET_PRINT_LABEL;
-    return true;
-  }
-  if (value == "output") {
-    *mode = TARGET_PRINT_OUTPUT;
-    return true;
-  }
-
-  Err(Location(), "Invalid value for \"--as\".",
-      "I was expecting \"buildfile\", \"label\", or \"output\" but you\n"
-      "said \"" +
-          value + "\".")
-      .PrintToStdout();
-  return false;
+bool GetTargetPrintingMode(CommandSwitches::TargetPrintMode* mode) {
+  *mode = CommandSwitches::Get().target_print_mode();
+  return true;
 }
 
 // Returns the target type filter based on the command line flags for the
@@ -176,72 +149,20 @@ bool GetTargetPrintingMode(TargetPrintingMode* mode) {
 // will never be returned. Code applying the filters should apply Target::ACTION
 // to both ACTION and ACTION_FOREACH.
 bool GetTargetTypeFilter(Target::OutputType* type) {
-  std::string switch_key = "type";
-  const base::CommandLine* cmdline = base::CommandLine::ForCurrentProcess();
-
-  if (!cmdline->HasSwitch(switch_key)) {
-    // Default to unknown -> no filtering.
-    *type = Target::UNKNOWN;
-    return true;
-  }
-
-  std::string value = cmdline->GetSwitchValueASCII(switch_key);
-  if (value == "group") {
-    *type = Target::GROUP;
-    return true;
-  }
-  if (value == "executable") {
-    *type = Target::EXECUTABLE;
-    return true;
-  }
-  if (value == "shared_library") {
-    *type = Target::SHARED_LIBRARY;
-    return true;
-  }
-  if (value == "loadable_module") {
-    *type = Target::LOADABLE_MODULE;
-    return true;
-  }
-  if (value == "static_library") {
-    *type = Target::STATIC_LIBRARY;
-    return true;
-  }
-  if (value == "source_set") {
-    *type = Target::SOURCE_SET;
-    return true;
-  }
-  if (value == "copy") {
-    *type = Target::COPY_FILES;
-    return true;
-  }
-  if (value == "action") {
-    *type = Target::ACTION;
-    return true;
-  }
-
-  Err(Location(), "Invalid value for \"--type\".").PrintToStdout();
-  return false;
+  *type = CommandSwitches::Get().target_type();
+  return true;
 }
 
 // Applies any testonly filtering specified on the command line to the given
 // target set. On failure, prints an error and returns false.
 bool ApplyTestonlyFilter(std::vector<const Target*>* targets) {
-  const base::CommandLine* cmdline = base::CommandLine::ForCurrentProcess();
-  std::string testonly_key = "testonly";
+  CommandSwitches::TestonlyMode testonly_mode =
+      CommandSwitches::Get().testonly_mode();
 
-  if (targets->empty() || !cmdline->HasSwitch(testonly_key))
+  if (targets->empty() || testonly_mode == CommandSwitches::TESTONLY_NONE)
     return true;
 
-  std::string testonly_value = cmdline->GetSwitchValueASCII(testonly_key);
-  bool testonly = false;
-  if (testonly_value == "true") {
-    testonly = true;
-  } else if (testonly_value != "false") {
-    Err(Location(), "Bad value for --testonly.",
-        "I was expecting --testonly=true or --testonly=false.")
-        .PrintToStdout();
-    return false;
-  }
+  bool testonly = (testonly_mode == CommandSwitches::TESTONLY_TRUE);
 
   // Filter into a copy of the vector, then replace the output.
   std::vector<const Target*> result;
@@ -409,6 +330,14 @@ std::optional<HowTargetContainsFile> TargetContainsFile(
   return std::nullopt;
 }
 
+std::string ToUTF8(base::FilePath::StringType in) {
+#if defined(OS_WIN)
+  return base::UTF16ToUTF8(in);
+#else
+  return in;
+#endif
+}
+
 }  // namespace
 
 CommandInfo::CommandInfo()
@@ -438,11 +367,170 @@ const CommandInfoMap& GetCommands() {
     INSERT_COMMAND(Outputs)
     INSERT_COMMAND(Path)
     INSERT_COMMAND(Refs)
-    INSERT_COMMAND(CleanStale);
+    INSERT_COMMAND(CleanStale)
 
 #undef INSERT_COMMAND
   }
   return info_map;
+}
+
+// static
+CommandSwitches CommandSwitches::s_global_switches_ = {};
+
+// static
+bool CommandSwitches::Init(const base::CommandLine& cmdline) {
+  CHECK(!s_global_switches_.is_initialized())
+      << "Only call this once from main()";
+  return s_global_switches_.InitFrom(cmdline);
+}
+
+// static
+const CommandSwitches& CommandSwitches::Get() {
+  CHECK(s_global_switches_.is_initialized())
+      << "Missing previous succesful call to CommandSwitches::Init()";
+  return s_global_switches_;
+}
+
+// static
+CommandSwitches CommandSwitches::Set(CommandSwitches new_switches) {
+  CHECK(s_global_switches_.is_initialized())
+      << "Missing previous succesful call to CommandSwitches::Init()";
+  CommandSwitches result = std::move(s_global_switches_);
+  s_global_switches_ = std::move(new_switches);
+  return result;
+}
+
+bool CommandSwitches::InitFrom(const base::CommandLine& cmdline) {
+  CommandSwitches result;
+  result.initialized_ = true;
+  result.has_quiet_ = cmdline.HasSwitch("a");
+  result.has_force_ = cmdline.HasSwitch("force");
+  result.has_all_ = cmdline.HasSwitch("all");
+  result.has_blame_ = cmdline.HasSwitch("blame");
+  result.has_tree_ = cmdline.HasSwitch("tree");
+  result.has_format_json_ = cmdline.GetSwitchValueString("format") == "json";
+  result.has_default_toolchain_ =
+      cmdline.HasSwitch(switches::kDefaultToolchain);
+
+  result.has_check_generated_ = cmdline.HasSwitch("check-generated");
+  result.has_check_system_ = cmdline.HasSwitch("check-system");
+  result.has_public_ = cmdline.HasSwitch("public");
+  result.has_with_data_ = cmdline.HasSwitch("with-data");
+
+  std::string_view target_print_switch = "as";
+  if (cmdline.HasSwitch(target_print_switch)) {
+    std::string value = cmdline.GetSwitchValueString(target_print_switch);
+    if (value == "buildfile") {
+      result.target_print_mode_ = TARGET_PRINT_BUILDFILE;
+    } else if (value == "label") {
+      result.target_print_mode_ = TARGET_PRINT_LABEL;
+    } else if (value == "output") {
+      result.target_print_mode_ = TARGET_PRINT_OUTPUT;
+    } else {
+      Err(Location(), "Invalid value for \"--as\".",
+          "I was expecting \"buildfile\", \"label\", or \"output\" but you\n"
+          "said \"" +
+              value + "\".")
+          .PrintToStdout();
+      return false;
+    }
+  }
+
+  std::string_view target_type_switch = "type";
+  if (cmdline.HasSwitch(target_type_switch)) {
+    std::string value = cmdline.GetSwitchValueString(target_type_switch);
+    static const struct {
+      const char* name;
+      Target::OutputType type;
+    } kTypes[] = {
+        {"group", Target::GROUP},
+        {"executable", Target::EXECUTABLE},
+        {"shared_library", Target::SHARED_LIBRARY},
+        {"loadable_module", Target::LOADABLE_MODULE},
+        {"static_library", Target::STATIC_LIBRARY},
+        {"source_set", Target::SOURCE_SET},
+        {"copy", Target::COPY_FILES},
+        {"action", Target::ACTION},
+    };
+    bool found = false;
+    for (const auto& type : kTypes) {
+      if (value == type.name) {
+        result.target_type_ = type.type;
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      Err(Location(), "Invalid value for \"--type\".").PrintToStdout();
+      return false;
+    }
+  }
+  std::string_view testonly_switch = "testonly";
+  if (cmdline.HasSwitch(testonly_switch)) {
+    std::string value = cmdline.GetSwitchValueString(testonly_switch);
+    if (value == "true") {
+      result.testonly_mode_ = TESTONLY_TRUE;
+    } else if (value == "false") {
+      result.testonly_mode_ = TESTONLY_FALSE;
+    } else {
+      Err(Location(), "Bad value for --testonly.",
+          "I was expecting --testonly=true or --testonly=false.")
+          .PrintToStdout();
+      return false;
+    }
+  }
+
+  result.meta_rebase_dir_ = cmdline.GetSwitchValueString("rebase");
+  result.meta_data_keys_ = cmdline.GetSwitchValueString("data");
+  result.meta_walk_keys_ = cmdline.GetSwitchValueString("walk");
+  *this = result;
+  return true;
+}
+
+bool PrepareForRegeneration(const BuildSettings* settings) {
+  // Write a .d file for the build which references a nonexistent file.
+  // This will make Ninja always mark the build as dirty.
+  base::FilePath build_ninja_d_file(settings->GetFullPath(
+      SourceFile(settings->build_dir().value() + "build.ninja.d")));
+  std::string dummy_depfile("build.ninja.stamp: nonexistent_file.gn\n");
+  if (util::WriteFileAtomically(build_ninja_d_file, dummy_depfile.data(),
+                                static_cast<int>(dummy_depfile.size())) == -1) {
+    Err(Location(), std::string("Failed to write build.ninja.d."))
+        .PrintToStdout();
+    return false;
+  }
+
+  // Write a stripped down build.ninja file with just the commands needed
+  // for ninja to call GN and regenerate ninja files.
+  base::FilePath build_ninja_path(settings->GetFullPath(
+      SourceFile(settings->build_dir().value() + "build.ninja")));
+  std::ifstream build_ninja_file(ToUTF8(build_ninja_path.value()));
+  if (!build_ninja_file) {
+    // Couldn't open the build.ninja file.
+    Err(Location(), "Couldn't open build.ninja in this directory.",
+        "Try running \"gn gen\" on it and then re-running \"gn clean\".")
+        .PrintToStdout();
+    return false;
+  }
+  std::string build_commands =
+      NinjaBuildWriter::ExtractRegenerationCommands(build_ninja_file);
+  if (build_commands.empty()) {
+    Err(Location(), "Unexpected build.ninja contents in this directory.",
+        "Try running \"gn gen\" on it and then re-running \"gn clean\".")
+        .PrintToStdout();
+    return false;
+  }
+  // Close build.ninja or else WriteFileAtomically will fail on Windows.
+  build_ninja_file.close();
+  if (util::WriteFileAtomically(build_ninja_path, build_commands.data(),
+                                static_cast<int>(build_commands.size())) ==
+      -1) {
+    Err(Location(), std::string("Failed to write build.ninja."))
+        .PrintToStdout();
+    return false;
+  }
+
+  return true;
 }
 
 const Target* ResolveTargetFromCommandLineString(
@@ -583,17 +671,18 @@ void FilterAndPrintTargets(std::vector<const Target*>* targets,
   if (!ApplyTypeFilter(targets))
     return;
 
-  TargetPrintingMode printing_mode = TARGET_PRINT_LABEL;
+  CommandSwitches::TargetPrintMode printing_mode =
+      CommandSwitches::TARGET_PRINT_LABEL;
   if (targets->empty() || !GetTargetPrintingMode(&printing_mode))
     return;
   switch (printing_mode) {
-    case TARGET_PRINT_BUILDFILE:
+    case CommandSwitches::TARGET_PRINT_BUILDFILE:
       PrintTargetsAsBuildfiles(*targets, out);
       break;
-    case TARGET_PRINT_LABEL:
+    case CommandSwitches::TARGET_PRINT_LABEL:
       PrintTargetsAsLabels(*targets, out);
       break;
-    case TARGET_PRINT_OUTPUT:
+    case CommandSwitches::TARGET_PRINT_OUTPUT:
       PrintTargetsAsOutputs(*targets, out);
       break;
   }

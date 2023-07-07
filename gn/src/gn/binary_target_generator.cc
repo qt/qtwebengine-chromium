@@ -64,6 +64,9 @@ void BinaryTargetGenerator::DoRun() {
   if (!FillCompleteStaticLib())
     return;
 
+  if (!FillPool())
+    return;
+
   if (!ValidateSources())
     return;
 
@@ -217,8 +220,12 @@ bool BinaryTargetGenerator::FillAllowCircularIncludesFrom() {
       }
     }
     if (!found_dep) {
+      bool with_toolchain = scope_->settings()->ShouldShowToolchain({
+        &target_->label(),
+        &cur
+      });
       *err_ = Err(*value, "Label not in deps.",
-                  "The label \"" + cur.GetUserVisibleName(false) +
+                  "The label \"" + cur.GetUserVisibleName(with_toolchain) +
                       "\"\nwas not in the deps of this target. "
                       "allow_circular_includes_from only allows\ntargets "
                       "present in the "
@@ -230,6 +237,25 @@ bool BinaryTargetGenerator::FillAllowCircularIncludesFrom() {
   // Add to the set.
   for (const auto& cur : circular)
     target_->allow_circular_includes_from().insert(cur);
+  return true;
+}
+
+bool BinaryTargetGenerator::FillPool() {
+  const Value* value = scope_->GetValue(variables::kPool, true);
+  if (!value)
+    return true;
+
+  Label label =
+      Label::Resolve(scope_->GetSourceDir(),
+                     scope_->settings()->build_settings()->root_path_utf8(),
+                     ToolchainLabelForScope(scope_), *value, err_);
+  if (err_->has_error())
+    return false;
+
+  LabelPtrPair<Pool> pair(label);
+  pair.origin = target_->defined_from();
+
+  target_->set_pool(std::move(pair));
   return true;
 }
 

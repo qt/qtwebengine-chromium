@@ -313,7 +313,6 @@ class SimpleJSONWriter {
 
         if (line_end == std::string_view::npos) {
           out_ << json;
-          ;
           comma_ = {};
           return;
         }
@@ -455,6 +454,9 @@ StringOutputBuffer JSONProjectWriter::GenerateJSON(
       base::Value toolchain{base::Value::Type::DICTIONARY};
       const auto& tools = tool_chain_kv.second->tools();
       for (const auto& tool_kv : tools) {
+        // Do not list builtin tools
+        if (tool_kv.second->AsBuiltin())
+          continue;
         base::Value tool_info{base::Value::Type::DICTIONARY};
         auto setIfNotEmptry = [&](const auto& key, const auto& value) {
           if (value.size())

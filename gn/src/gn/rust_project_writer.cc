@@ -10,6 +10,7 @@
 #include <tuple>
 
 #include "base/json/string_escape.h"
+#include "base/strings/string_split.h"
 #include "gn/builder.h"
 #include "gn/deps_iterator.h"
 #include "gn/ninja_target_command_util.h"
@@ -28,9 +29,7 @@
 // Current structure of rust-project.json output file
 //
 // {
-//    "roots": [
-//      "some/source/root"  // each crate's source root
-//    ],
+//    "sysroot": "path/to/rust/sysroot",
 //    "crates": [
 //        {
 //            "deps": [
@@ -39,7 +38,14 @@
 //                    "name": "alloc" // extern name of dependency
 //                },
 //            ],
-//            "edition": "2018", // edition of crate
+//            "source": [
+//                "include_dirs": [
+//                     "some/source/root",
+//                     "some/gen/dir",
+//                ],
+//                "exclude_dirs": []
+//            },
+//            "edition": "2021", // edition of crate
 //            "cfg": [
 //              "unix", // "atomic" value config options
 //              "rust_panic=\"abort\""", // key="value" config options
@@ -156,99 +162,9 @@ std::vector<std::string> FindAllArgValuesAfterPrefix(
   return values;
 }
 
-// TODO(bwb) Parse sysroot structure from toml files. This is fragile and
-// might break if upstream changes the dependency structure.
-const std::string_view sysroot_crates[] = {"std",
-                                           "core",
-                                           "alloc",
-                                           "panic_unwind",
-                                           "proc_macro",
-                                           "test",
-                                           "panic_abort",
-                                           "unwind"};
-
-// Multiple sysroot crates have dependenices on each other.  This provides a
-// mechanism for specifying that in an extendible manner.
-const std::unordered_map<std::string_view, std::vector<std::string_view>>
-    sysroot_deps_map = {{"alloc", {"core"}},
-                        {"std", {"alloc", "core", "panic_abort", "unwind"}}};
-
-// Add each of the crates a sysroot has, including their dependencies.
-void AddSysrootCrate(const BuildSettings* build_settings,
-                     std::string_view crate,
-                     std::string_view current_sysroot,
-                     SysrootCrateIndexMap& sysroot_crate_lookup,
-                     CrateList& crate_list) {
-  if (sysroot_crate_lookup.find(crate) != sysroot_crate_lookup.end()) {
-    // If this sysroot crate is already in the lookup, we don't add it again.
-    return;
-  }
-
-  // Add any crates that this sysroot crate depends on.
-  auto deps_lookup = sysroot_deps_map.find(crate);
-  if (deps_lookup != sysroot_deps_map.end()) {
-    auto deps = (*deps_lookup).second;
-    for (auto dep : deps) {
-      AddSysrootCrate(build_settings, dep, current_sysroot,
-                      sysroot_crate_lookup, crate_list);
-    }
-  }
-
-  size_t crate_index = crate_list.size();
-  sysroot_crate_lookup.insert(std::make_pair(crate, crate_index));
-
-  base::FilePath rebased_out_dir =
-      build_settings->GetFullPath(build_settings->build_dir());
-  auto crate_path =
-      FilePathToUTF8(rebased_out_dir) + std::string(current_sysroot) +
-      "/lib/rustlib/src/rust/library/" + std::string(crate) + "/src/lib.rs";
-
-  Crate sysroot_crate =
-      Crate(SourceFile(crate_path), crate_index, std::string(crate), "2018");
-
-  sysroot_crate.AddConfigItem("debug_assertions");
-
-  if (deps_lookup != sysroot_deps_map.end()) {
-    auto deps = (*deps_lookup).second;
-    for (auto dep : deps) {
-      auto idx = sysroot_crate_lookup[dep];
-      sysroot_crate.AddDependency(idx, std::string(dep));
-    }
-  }
-
-  crate_list.push_back(sysroot_crate);
-}
-
-// Add the given sysroot to the project, if it hasn't already been added.
-void AddSysroot(const BuildSettings* build_settings,
-                std::string_view sysroot,
-                SysrootIndexMap& sysroot_lookup,
-                CrateList& crate_list) {
-  // If this sysroot is already in the lookup, we don't add it again.
-  if (sysroot_lookup.find(sysroot) != sysroot_lookup.end()) {
-    return;
-  }
-
-  // Otherwise, add all of its crates
-  for (auto crate : sysroot_crates) {
-    AddSysrootCrate(build_settings, crate, sysroot, sysroot_lookup[sysroot],
-                    crate_list);
-  }
-}
-
-void AddSysrootDependencyToCrate(Crate* crate,
-                                 const SysrootCrateIndexMap& sysroot,
-                                 std::string_view crate_name) {
-  if (const auto crate_idx = sysroot.find(crate_name);
-      crate_idx != sysroot.end()) {
-    crate->AddDependency(crate_idx->second, std::string(crate_name));
-  }
-}
-
 void AddTarget(const BuildSettings* build_settings,
                const Target* target,
                TargetIndexMap& lookup,
-               SysrootIndexMap& sysroot_lookup,
                CrateList& crate_list) {
   if (lookup.find(target) != lookup.end()) {
     // If target is already in the lookup, we don't add it again.
@@ -257,21 +173,11 @@ void AddTarget(const BuildSettings* build_settings,
 
   auto compiler_args = ExtractCompilerArgs(target);
   auto compiler_target = FindArgValue("--target", compiler_args);
-
-  // Check what sysroot this target needs.  Add it to the crate list if it
-  // hasn't already been added.
-  auto rust_tool =
-      target->toolchain()->GetToolForTargetFinalOutputAsRust(target);
-  auto current_sysroot = rust_tool->GetSysroot();
-  if (current_sysroot != "" && sysroot_lookup.count(current_sysroot) == 0) {
-    AddSysroot(build_settings, current_sysroot, sysroot_lookup, crate_list);
-  }
-
   auto crate_deps = GetRustDeps(target);
 
   // Add all dependencies of this crate, before this crate.
   for (const auto& dep : crate_deps) {
-    AddTarget(build_settings, dep, lookup, sysroot_lookup, crate_list);
+    AddTarget(build_settings, dep, lookup, crate_list);
   }
 
   // The index of a crate is its position (0-based) in the list of crates.
@@ -289,8 +195,10 @@ void AddTarget(const BuildSettings* build_settings,
     edition = FindArgValue("--edition", compiler_args);
   }
 
-  Crate crate =
-      Crate(crate_root, crate_id, crate_label, edition.value_or("2015"));
+  auto gen_dir = GetBuildDirForTargetAsOutputFile(target, BuildDirType::GEN);
+
+  Crate crate = Crate(crate_root, gen_dir, crate_id, crate_label,
+                      edition.value_or("2015"));
 
   crate.SetCompilerArgs(compiler_args);
   if (compiler_target.has_value())
@@ -306,17 +214,25 @@ void AddTarget(const BuildSettings* build_settings,
     crate.AddConfigItem(cfg);
   }
 
-  // Add the sysroot dependencies, if there is one.
-  if (current_sysroot != "") {
-    const auto& sysroot = sysroot_lookup[current_sysroot];
-    AddSysrootDependencyToCrate(&crate, sysroot, "core");
-    AddSysrootDependencyToCrate(&crate, sysroot, "alloc");
-    AddSysrootDependencyToCrate(&crate, sysroot, "std");
+  // If it's a proc macro, record its output location so IDEs can invoke it.
+  auto rust_tool =
+      target->toolchain()->GetToolForTargetFinalOutputAsRust(target);
+  if (std::string_view(rust_tool->name()) ==
+      std::string_view(RustTool::kRsToolMacro)) {
+    auto outputs = target->computed_outputs();
+    if (outputs.size() > 0) {
+      crate.SetIsProcMacro(outputs[0]);
+    }
+  }
 
-    // Proc macros have the proc_macro crate as a direct dependency
-    if (std::string_view(rust_tool->name()) ==
-        std::string_view(RustTool::kRsToolMacro)) {
-      AddSysrootDependencyToCrate(&crate, sysroot, "proc_macro");
+  // Note any environment variables. These may be used by proc macros
+  // invoked by the current crate (so we want to record these for all crates,
+  // not just proc macro crates)
+  for (const auto& env_var : target->config_values().rustenv()) {
+    std::vector<std::string> parts = base::SplitString(
+        env_var, "=", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
+    if (parts.size() >= 2) {
+      crate.AddRustenv(parts[0], parts[1]);
     }
   }
 
@@ -331,25 +247,21 @@ void AddTarget(const BuildSettings* build_settings,
 
 void WriteCrates(const BuildSettings* build_settings,
                  CrateList& crate_list,
+                 std::optional<std::string>& sysroot,
                  std::ostream& rust_project) {
-  // produce a de-duplicated set of source roots:
-  std::set<std::string> roots;
-  for (auto& crate : crate_list) {
-    roots.insert(
-        FilePathToUTF8(build_settings->GetFullPath(crate.root().GetDir())));
-  }
-
   rust_project << "{" NEWLINE;
-  rust_project << "  \"roots\": [";
-  bool first_root = true;
-  for (auto& root : roots) {
-    if (!first_root)
-      rust_project << ",";
-    first_root = false;
 
-    rust_project << NEWLINE "    \"" << root << "\"";
+  // If a sysroot was found, then that can be used to tell rust-analyzer where
+  // to find the sysroot (and associated tools like the
+  // 'rust-analyzer-proc-macro-srv` proc-macro server that matches the abi used
+  // by 'rustc'
+  if (sysroot.has_value()) {
+    base::FilePath rebased_out_dir =
+        build_settings->GetFullPath(build_settings->build_dir());
+    auto sysroot_path = FilePathToUTF8(rebased_out_dir) + sysroot.value();
+    rust_project << "  \"sysroot\": \"" << sysroot_path << "\"," NEWLINE;
   }
-  rust_project << NEWLINE "  ]," NEWLINE;
+
   rust_project << "  \"crates\": [";
   bool first_crate = true;
   for (auto& crate : crate_list) {
@@ -363,7 +275,25 @@ void WriteCrates(const BuildSettings* build_settings,
     rust_project << NEWLINE << "    {" NEWLINE
                  << "      \"crate_id\": " << crate.index() << "," NEWLINE
                  << "      \"root_module\": \"" << crate_module << "\"," NEWLINE
-                 << "      \"label\": \"" << crate.label() << "\"," NEWLINE;
+                 << "      \"label\": \"" << crate.label() << "\"," NEWLINE
+                 << "      \"source\": {" NEWLINE
+                 << "          \"include_dirs\": [" NEWLINE
+                 << "               \""
+                 << FilePathToUTF8(
+                        build_settings->GetFullPath(crate.root().GetDir()))
+                 << "\"";
+    auto gen_dir = crate.gen_dir();
+    if (gen_dir.has_value()) {
+      auto gen_dir_path = FilePathToUTF8(
+          build_settings->GetFullPath(gen_dir->AsSourceDir(build_settings)));
+      rust_project << "," NEWLINE << "               \"" << gen_dir_path
+                   << "\"" NEWLINE;
+    } else {
+      rust_project << NEWLINE;
+    }
+    rust_project << "          ]," NEWLINE
+                 << "          \"exclude_dirs\": []" NEWLINE
+                 << "      }," NEWLINE;
 
     auto compiler_target = crate.CompilerTarget();
     if (compiler_target.has_value()) {
@@ -404,6 +334,15 @@ void WriteCrates(const BuildSettings* build_settings,
 
     rust_project << "      \"edition\": \"" << crate.edition() << "\"," NEWLINE;
 
+    auto proc_macro_target = crate.proc_macro_path();
+    if (proc_macro_target.has_value()) {
+      rust_project << "      \"is_proc_macro\": true," NEWLINE;
+      auto so_location = FilePathToUTF8(build_settings->GetFullPath(
+          proc_macro_target->AsSourceFile(build_settings)));
+      rust_project << "      \"proc_macro_dylib_path\": \"" << so_location
+                   << "\"," NEWLINE;
+    }
+
     rust_project << "      \"cfg\": [";
     bool first_cfg = true;
     for (const auto& cfg : crate.configs()) {
@@ -418,8 +357,29 @@ void WriteCrates(const BuildSettings* build_settings,
       rust_project << "        \"" << escaped_config << "\"";
     }
     rust_project << NEWLINE;
-    rust_project << "      ]" NEWLINE;  // end cfgs
+    rust_project << "      ]";  // end cfgs
 
+    if (!crate.rustenv().empty()) {
+      rust_project << "," NEWLINE;
+      rust_project << "      \"env\": {";
+      bool first_env = true;
+      for (const auto& env : crate.rustenv()) {
+        if (!first_env)
+          rust_project << ",";
+        first_env = false;
+        std::string escaped_key, escaped_val;
+        base::EscapeJSONString(env.first, false, &escaped_key);
+        base::EscapeJSONString(env.second, false, &escaped_val);
+        rust_project << NEWLINE;
+        rust_project << "        \"" << escaped_key << "\": \"" << escaped_val
+                     << "\"";
+      }
+
+      rust_project << NEWLINE;
+      rust_project << "      }" NEWLINE;  // end env vars
+    } else {
+      rust_project << NEWLINE;
+    }
     rust_project << "    }";  // end crate
   }
   rust_project << NEWLINE "  ]" NEWLINE;  // end crate list
@@ -430,16 +390,25 @@ void RustProjectWriter::RenderJSON(const BuildSettings* build_settings,
                                    std::vector<const Target*>& all_targets,
                                    std::ostream& rust_project) {
   TargetIndexMap lookup;
-  SysrootIndexMap sysroot_lookup;
   CrateList crate_list;
+  std::optional<std::string> rust_sysroot;
 
   // All the crates defined in the project.
   for (const auto* target : all_targets) {
     if (!target->IsBinary() || !target->source_types_used().RustSourceUsed())
       continue;
 
-    AddTarget(build_settings, target, lookup, sysroot_lookup, crate_list);
+    AddTarget(build_settings, target, lookup, crate_list);
+
+    // If a sysroot hasn't been found, see if we can find one using this target.
+    if (!rust_sysroot.has_value()) {
+      auto rust_tool =
+          target->toolchain()->GetToolForTargetFinalOutputAsRust(target);
+      auto sysroot = rust_tool->GetSysroot();
+      if (sysroot != "")
+        rust_sysroot = sysroot;
+    }
   }
 
-  WriteCrates(build_settings, crate_list, rust_project);
+  WriteCrates(build_settings, crate_list, rust_sysroot, rust_project);
 }

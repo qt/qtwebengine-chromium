@@ -561,6 +561,14 @@ const char kArgs_Help[] =
   to the script. Typically you would use source expansion (see "gn help
   source_expansion") to insert the source file names.
 
+  Args can also expand the substitution patterns corresponding to config
+  variables in the same way that compiler tools (see "gn help tool") do. These
+  allow actions that run compiler or compiler-like tools to access the results
+  of propagating configs through the build graph. For example:
+
+  args = [ "{{defines}}", "{{include_dirs}}", "{{rustenv}}", "--input-file",
+           "{{source}}" ]
+
   See also "gn help action" and "gn help action_foreach".
 )";
 
@@ -1104,10 +1112,10 @@ Example
 
     # Locate the depfile in the output directory named like the
     # inputs but with a ".d" appended.
-    depfile = "$relative_target_output_dir/{{source_name}}.d"
+    depfile = "$target_gen_dir/{{source_name_part}}.d"
 
     # Say our script uses "-o <d file>" to indicate the depfile.
-    args = [ "{{source}}", "-o", depfile ]
+    args = [ "{{source}}", "-o", rebase_path(depfile, root_build_dir)]
   }
 )";
 
@@ -1634,14 +1642,19 @@ const char kOutputs_Help[] =
 
 const char kPool[] = "pool";
 const char kPool_HelpShort[] =
-    "pool: [string] Label of the pool used by the action.";
+    "pool: [string] Label of the pool used by binary targets and actions.";
 const char kPool_Help[] =
-    R"(pool: Label of the pool used by the action.
+    R"(pool: Label of the pool used by binary targets actions.
 
-  A fully-qualified label representing the pool that will be used for the
-  action. Pools are defined using the pool() {...} declaration.
+  A fully-qualified label representing the pool that will be used for binary
+  targets and actions. Pools are defined using the pool() {...} declaration.
 
 Example
+
+  executable("binary") {
+    pool = "//build:custom_pool"
+    ...
+  }
 
   action("action") {
     pool = "//build:custom_pool"

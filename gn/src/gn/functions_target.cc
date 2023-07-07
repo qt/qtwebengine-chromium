@@ -15,15 +15,22 @@
 
 #define DEPENDENT_CONFIG_VARS \
   "  Dependent configs: all_dependent_configs, public_configs\n"
-#define DEPS_VARS "  Deps: data_deps, deps, public_deps\n"
+#define DEPS_VARS \
+  "  Deps: assert_no_deps, data_deps, deps, public_deps, runtime_deps,\n" \
+  "        write_runtime_deps\n"
 #define GENERAL_TARGET_VARS                                                \
   "  General: check_includes, configs, data, friend, inputs, metadata,\n"  \
-  "           output_name, output_extension, public, sources, testonly,\n" \
+  "           output_extension, output_name, public, sources, testonly,\n" \
   "           visibility\n"
 #define RUST_VARS \
   "  Rust variables: aliased_deps, crate_root, crate_name\n"
 #define RUST_SHARED_VARS                                                 \
   "  Rust variables: aliased_deps, crate_root, crate_name, crate_type\n"
+#define ACTION_VARS \
+  "  Action variables: args, bridge_header, configs, data, depfile,\n" \
+  "                    framework_dirs, inputs, module_deps, module_name,\n" \
+  "                    outputs*, pool, response_file_contents, script*,\n" \
+  "                    sources\n"
 
 namespace functions {
 
@@ -138,6 +145,12 @@ Inputs
   It is recommended you put inputs to your script in the "sources" variable,
   and stuff like other Python files required to run your script in the "inputs"
   variable.
+
+  Actions can take the configs and public_configs lists, as well as any of the
+  configs variables (defines, include_dirs, etc.) set directly on the target.
+  These behave exactly as they would on a binary target and can be accessed
+  using substitution patterns in the script args (see "gn help args") to
+  implement custom compiler-like tools.
 )"
 
     ACTION_DEPS
@@ -160,9 +173,10 @@ File name handling
     R"(
 Variables
 
-  args, data, data_deps, depfile, deps, inputs, metadata, outputs*, pool,
-  response_file_contents, script*, sources
-  * = required
+)" CONFIG_VALUES_VARS_HELP DEPENDENT_CONFIG_VARS DEPS_VARS GENERAL_TARGET_VARS
+ACTION_VARS
+
+R"(  * = required
 
 Example
 
@@ -230,9 +244,10 @@ File name handling
     R"(
 Variables
 
-  args, data, data_deps, depfile, deps, inputs, metadata, outputs*, pool,
-  response_file_contents, script*, sources*
-  * = required
+)" CONFIG_VALUES_VARS_HELP DEPENDENT_CONFIG_VARS DEPS_VARS GENERAL_TARGET_VARS
+ACTION_VARS
+
+R"(  * = required
 
 Example
 
@@ -294,7 +309,9 @@ const char kBundleData_Help[] =
 
 Variables
 
-  sources*, outputs*, deps, data_deps, metadata, public_deps, visibility
+)" DEPENDENT_CONFIG_VARS DEPS_VARS GENERAL_TARGET_VARS
+
+R"(  Bundle-specific: sources*, outputs*
   * = required
 
 Examples
@@ -380,11 +397,13 @@ Code signing
 
 Variables
 
-  bundle_root_dir, bundle_contents_dir, bundle_resources_dir,
-  bundle_executable_dir, bundle_deps_filter, deps, data_deps, public_deps,
-  visibility, product_type, code_signing_args, code_signing_script,
-  code_signing_sources, code_signing_outputs, xcode_extra_attributes,
-  xcode_test_application_name, partial_info_plist, metadata
+)" DEPENDENT_CONFIG_VARS DEPS_VARS GENERAL_TARGET_VARS
+
+R"(  Bundle vars: bundle_root_dir, bundle_contents_dir, bundle_resources_dir,
+               bundle_executable_dir, bundle_deps_filter, product_type,
+               code_signing_args, code_signing_script, code_signing_sources,
+               code_signing_outputs, xcode_extra_attributes,
+               xcode_test_application_name, partial_info_plist
 
 Example
 
@@ -516,6 +535,17 @@ File name handling
   (see "gn help source_expansion"). The placeholders will look like
   "{{source_name_part}}", for example.
 
+  If you want to copy the output of a previous build step, the target that
+  generates the file to copy must be reachable from the deps or public_deps of
+  the copy target.
+
+Variables
+
+)" DEPENDENT_CONFIG_VARS DEPS_VARS GENERAL_TARGET_VARS
+
+R"(  Copy variables: sources*, outputs*
+  * = required
+
 Examples
 
   # Write a rule that copies a checked-in DLL to the output directory.
@@ -531,6 +561,24 @@ Examples
     # Use source expansion to generate output files with the corresponding file
     # names in the gen dir. This will just copy each file.
     outputs = [ "$target_gen_dir/{{source_file_part}}" ]
+  }
+
+  # Copy the output of a generated executable.
+  copy("package_melon") {
+    # This example uses get_label_info() to compute the output directory of the
+    # dependency. This allows the copy rule to work regardless of the toolchain.
+    #
+    # In some cases (particularly actions defined previously in the same file)
+    # you can use get_target_outputs() to get the input file which can eliminate
+    # the assumptions about the output file name of the dependency.
+
+    input_dir = get_label_info("//src/tools/melon", "root_out_dir");
+    sources = [ "$input_dir/melon" ]
+
+    outputs = [ "$target_gen_dir/{{source_file_part}}" ]
+
+    # Depend on the target to build the file before copying.
+    deps = [ "//src/tools/melon" ]
   }
 )";
 
@@ -584,7 +632,7 @@ const char kGroup_Help[] =
 
 Variables
 
-)" DEPS_VARS DEPENDENT_CONFIG_VARS
+)" DEPS_VARS DEPENDENT_CONFIG_VARS GENERAL_TARGET_VARS
 
     R"(
 Example
@@ -811,9 +859,9 @@ Value RunStaticLibrary(Scope* scope,
 
 const char kTarget[] = "target";
 const char kTarget_HelpShort[] =
-    "target: Declare an target with the given programmatic type.";
+    "target: Declare a target with the given programmatic type.";
 const char kTarget_Help[] =
-    R"(target: Declare an target with the given programmatic type.
+    R"(target: Declare a target with the given programmatic type.
 
   target(target_type_string, target_name_string) { ... }
 
@@ -829,6 +877,14 @@ const char kTarget_Help[] =
     target("source_set", "doom_melon") {
   Is equivalent to:
     source_set("doom_melon") {
+
+Common target variables
+
+)" DEPS_VARS DEPENDENT_CONFIG_VARS GENERAL_TARGET_VARS
+
+R"(
+  Targets will also have variables specific to that type, see "gn help <type>"
+  for more.
 
 Example
 
@@ -896,6 +952,12 @@ const char kGeneratedFile_Help[] =
 
   Collected metadata, if specified, will be returned in postorder of
   dependencies. See the example for details.
+
+Variables
+
+)" DEPENDENT_CONFIG_VARS DEPS_VARS GENERAL_TARGET_VARS
+
+R"(  Generated file: contents, data_keys, rebase, walk_keys, output_conversion
 
 Example (metadata collection)
 
@@ -992,16 +1054,7 @@ Example (metadata collection)
       "../base/bar.cpp",  // from //base:b via //base:a
       "../base/foo.cpp",  // from //base:a
     ]
-
-
-Variables
-
-  contents
-  data_keys
-  rebase
-  walk_keys
-  output_conversion
-)" DEPS_VARS DEPENDENT_CONFIG_VARS;
+)";
 
 Value RunGeneratedFile(Scope* scope,
                        const FunctionCallNode* function,

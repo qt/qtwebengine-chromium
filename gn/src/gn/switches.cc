@@ -119,8 +119,8 @@ const char kScriptExecutable_Help[] =
   action targets and exec_script calls. By default GN searches the
   PATH for Python to execute these scripts.
 
-  If set to the empty string, the path specified in action targets
-  and exec_script calls will be executed directly.
+  If set to the empty string, the path of scripts specified in action
+  targets and exec_script calls will be executed directly.
 )";
 
 const char kQuiet[] = "q";
@@ -153,8 +153,7 @@ Examples
 )";
 
 const char kRootTarget[] = "root-target";
-const char kRootTarget_HelpShort[] =
-    "--root-target: Override the root target.";
+const char kRootTarget_HelpShort[] = "--root-target: Override the root target.";
 const char kRootTarget_Help[] =
     R"(--root-target: Override the root target.
 
@@ -284,6 +283,9 @@ const char kVersion_Help[] = "";
 const char kDefaultToolchain[] = "default-toolchain";
 
 const char kRegeneration[] = "regeneration";
+
+const char kAddExportCompileCommands[] = "add-export-compile-commands";
+
 // -----------------------------------------------------------------------------
 
 SwitchInfo::SwitchInfo() : short_help(""), long_help("") {}
