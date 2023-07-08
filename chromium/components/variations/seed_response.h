@@ -5,6 +5,7 @@
 #ifndef COMPONENTS_VARIATIONS_SEED_RESPONSE_H_
 #define COMPONENTS_VARIATIONS_SEED_RESPONSE_H_
 
+#include <stdint.h>
 #include <string>
 
 namespace variations {

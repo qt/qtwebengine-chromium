@@ -11,6 +11,7 @@
 #ifndef RTC_BASE_SYSTEM_FILE_WRAPPER_H_
 #define RTC_BASE_SYSTEM_FILE_WRAPPER_H_
 
+#include <stdint.h>
 #include <stddef.h>
 #include <stdio.h>
 

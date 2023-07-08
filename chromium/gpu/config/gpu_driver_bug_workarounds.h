@@ -5,6 +5,7 @@
 #ifndef GPU_CONFIG_GPU_DRIVER_BUG_WORKAROUNDS_H_
 #define GPU_CONFIG_GPU_DRIVER_BUG_WORKAROUNDS_H_
 
+#include <stdint.h>
 #include <vector>
 
 #include "base/macros.h"
