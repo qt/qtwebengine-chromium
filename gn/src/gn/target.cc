@@ -44,12 +44,16 @@ void MergeAllDependentConfigsFrom(const Target* from_target,
 }
 
 Err MakeTestOnlyError(const Item* from, const Item* to) {
+  bool with_toolchain = from->settings()->ShouldShowToolchain({
+    &from->label(),
+    &to->label(),
+  });
   return Err(
       from->defined_from(), "Test-only dependency not allowed.",
-      from->label().GetUserVisibleName(false) +
+      from->label().GetUserVisibleName(with_toolchain) +
           "\n"
           "which is NOT marked testonly can't depend on\n" +
-          to->label().GetUserVisibleName(false) +
+          to->label().GetUserVisibleName(with_toolchain) +
           "\n"
           "which is marked testonly. Only targets with \"testonly = true\"\n"
           "can depend on other test-only targets.\n"
@@ -760,48 +764,45 @@ void Target::PullDependentTargetLibsFrom(const Target* dep, bool is_public) {
   if (dep->output_type() == STATIC_LIBRARY ||
       dep->output_type() == SHARED_LIBRARY ||
       dep->output_type() == RUST_LIBRARY ||
-      dep->output_type() == RUST_PROC_MACRO ||
       dep->output_type() == SOURCE_SET ||
       (dep->output_type() == CREATE_BUNDLE &&
        dep->bundle_data().is_framework())) {
     inherited_libraries_.Append(dep, is_public);
   }
 
+  // Collect Rust libraries that are accessible from the current target, or
+  // transitively part of the current target.
   if (dep->output_type() == STATIC_LIBRARY ||
       dep->output_type() == SHARED_LIBRARY ||
-      dep->output_type() == RUST_LIBRARY) {
-    rust_transitive_libs_.Append(dep, is_public);
+      dep->output_type() == SOURCE_SET || dep->output_type() == RUST_LIBRARY ||
+      dep->output_type() == GROUP) {
+    // Here we have: `this` --[depends-on]--> `dep`
+    //
+    // The `this` target has direct access to `dep` since its a direct
+    // dependency, regardless of the edge being a public_dep or not, so we pass
+    // true for public-ness. Whereas, anything depending on `this` can only gain
+    // direct access to `dep` if the edge between `this` and `dep` is public, so
+    // we pass `is_public`.
+    //
+    // TODO(danakj): We should only need to track Rust rlibs or dylibs here, as
+    // it's used for passing to rustc with --extern. We currently track
+    // everything then drop non-Rust libs in ninja_rust_binary_target_writer.cc.
+    rust_transitive_inherited_libs_.Append(dep, true);
+    rust_transitive_inheritable_libs_.Append(dep, is_public);
 
-    // Propagate public dependent libraries.
-    for (const auto& transitive :
-         dep->rust_transitive_libs_.GetOrderedAndPublicFlag()) {
-      if (transitive.second) {
-        rust_transitive_libs_.Append(transitive.first, is_public);
-      }
-    }
+    rust_transitive_inherited_libs_.AppendInherited(
+        dep->rust_transitive_inheritable_libs(), true);
+    rust_transitive_inheritable_libs_.AppendInherited(
+        dep->rust_transitive_inheritable_libs(), is_public);
+  } else if (dep->output_type() == RUST_PROC_MACRO) {
+    // Proc-macros are inherited as a transitive dependency, but the things they
+    // depend on can't be used elsewhere, as the proc macro is not linked into
+    // the target (as it's only used during compilation).
+    rust_transitive_inherited_libs_.Append(dep, true);
+    rust_transitive_inheritable_libs_.Append(dep, is_public);
   }
 
-  // Rust libraries (those meant for consumption by another Rust target) are
-  // handled the same way, whether static or dynamic.
-  if (dep->output_type() == RUST_LIBRARY ||
-      RustValues::InferredCrateType(dep) == RustValues::CRATE_DYLIB) {
-    rust_transitive_libs_.AppendInherited(dep->rust_transitive_libs_,
-                                          is_public);
-
-    // If there is a transitive dependency that is not a rust library, place it
-    // in the normal location
-    for (const auto& inherited :
-         rust_transitive_libs_.GetOrderedAndPublicFlag()) {
-      if (!RustValues::IsRustLibrary(inherited.first)) {
-        inherited_libraries_.Append(inherited.first, inherited.second);
-      }
-    }
-  } else if (dep->output_type() == RUST_PROC_MACRO) {
-    // We will need to specify the path to find a procedural macro,
-    // but have no need to specify the paths to find its dependencies
-    // as the procedural macro is now a complete .so.
-    rust_transitive_libs_.Append(dep, is_public);
-  } else if (dep->output_type() == SHARED_LIBRARY) {
+  if (dep->output_type() == SHARED_LIBRARY) {
     // Shared library dependendencies are inherited across public shared
     // library boundaries.
     //
@@ -824,24 +825,37 @@ void Target::PullDependentTargetLibsFrom(const Target* dep, bool is_public) {
     // resolved by the compiler.
     inherited_libraries_.AppendPublicSharedLibraries(dep->inherited_libraries(),
                                                      is_public);
-  } else if (!dep->IsFinal()) {
-    // The current target isn't linked, so propagate linked deps and
-    // libraries up the dependency tree.
-    inherited_libraries_.AppendInherited(dep->inherited_libraries(), is_public);
-    rust_transitive_libs_.AppendInherited(dep->rust_transitive_libs_,
-                                          is_public);
-  } else if (dep->complete_static_lib()) {
-    // Inherit only final targets through _complete_ static libraries.
-    //
-    // Inherited final libraries aren't linked into complete static libraries.
-    // They are forwarded here so that targets that depend on complete
-    // static libraries can link them in. Conversely, since complete static
-    // libraries link in non-final targets they shouldn't be inherited.
-    for (const auto& inherited :
-         dep->inherited_libraries().GetOrderedAndPublicFlag()) {
-      if (inherited.first->IsFinal()) {
-        inherited_libraries_.Append(inherited.first,
-                                    is_public && inherited.second);
+  } else {
+    InheritedLibraries transitive;
+
+    if (!dep->IsFinal()) {
+      // The current target isn't linked, so propagate linked deps and
+      // libraries up the dependency tree.
+      for (const auto& [inherited, inherited_is_public] :
+           dep->inherited_libraries().GetOrderedAndPublicFlag()) {
+        transitive.Append(inherited, is_public && inherited_is_public);
+      }
+    } else if (dep->complete_static_lib()) {
+      // Inherit only final targets through _complete_ static libraries.
+      //
+      // Inherited final libraries aren't linked into complete static libraries.
+      // They are forwarded here so that targets that depend on complete
+      // static libraries can link them in. Conversely, since complete static
+      // libraries link in non-final targets they shouldn't be inherited.
+      for (const auto& [inherited, inherited_is_public] :
+           dep->inherited_libraries().GetOrderedAndPublicFlag()) {
+        if (inherited->IsFinal()) {
+          transitive.Append(inherited, is_public && inherited_is_public);
+        }
+      }
+    }
+
+    for (const auto& [target, pub] : transitive.GetOrderedAndPublicFlag()) {
+      // Proc macros are not linked into targets that depend on them, so do not
+      // get inherited; they are consumed by the Rust compiler and only need to
+      // be specified in --extern.
+      if (target->output_type() != RUST_PROC_MACRO) {
+        inherited_libraries_.Append(target, pub);
       }
     }
   }
@@ -879,7 +893,7 @@ void Target::PullRecursiveHardDeps() {
     // by the current target).
     if (pair.ptr->IsBinary() && !pair.ptr->all_headers_public() &&
         pair.ptr->public_headers().empty() &&
-        !pair.ptr->swift_values().builds_module()) {
+        !pair.ptr->builds_swift_module()) {
       continue;
     }
 
@@ -1078,19 +1092,24 @@ bool Target::ResolvePrecompiledHeaders(Err* err) {
       // Already have a precompiled header values, the settings must match.
       if (config_values_->precompiled_header() != cur.precompiled_header() ||
           config_values_->precompiled_source() != cur.precompiled_source()) {
+        bool with_toolchain = settings()->ShouldShowToolchain({
+          &label(),
+          pch_header_settings_from,
+          &config->label(),
+        });
         *err = Err(
             defined_from(), "Precompiled header setting conflict.",
-            "The target " + label().GetUserVisibleName(false) +
+            "The target " + label().GetUserVisibleName(with_toolchain) +
                 "\n"
                 "has conflicting precompiled header settings.\n"
                 "\n"
                 "From " +
-                pch_header_settings_from->GetUserVisibleName(false) +
+                pch_header_settings_from->GetUserVisibleName(with_toolchain) +
                 "\n  header: " + config_values_->precompiled_header() +
                 "\n  source: " + config_values_->precompiled_source().value() +
                 "\n\n"
                 "From " +
-                config->label().GetUserVisibleName(false) +
+                config->label().GetUserVisibleName(with_toolchain) +
                 "\n  header: " + cur.precompiled_header() +
                 "\n  source: " + cur.precompiled_source().value());
         return false;
@@ -1127,7 +1146,7 @@ bool Target::CheckSourceSetLanguages(Err* err) const {
   if (output_type() == Target::SOURCE_SET &&
       source_types_used().RustSourceUsed()) {
     *err = Err(defined_from(), "source_set contained Rust code.",
-               label().GetUserVisibleName(false) +
+               label().GetUserVisibleName(!settings()->is_default()) +
                    " has Rust code. Only C/C++ source_sets are supported.");
     return false;
   }
@@ -1173,7 +1192,7 @@ bool Target::CheckAssertNoDeps(Err* err) const {
                                   &failure_path_str, &failure_pattern)) {
     *err = Err(
         defined_from(), "assert_no_deps failed.",
-        label().GetUserVisibleName(false) +
+        label().GetUserVisibleName(!settings()->is_default()) +
             " has an assert_no_deps entry:\n  " + failure_pattern->Describe() +
             "\nwhich fails for the dependency path:\n" + failure_path_str);
     return false;

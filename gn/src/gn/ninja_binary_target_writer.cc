@@ -16,6 +16,7 @@
 #include "gn/ninja_target_command_util.h"
 #include "gn/ninja_utils.h"
 #include "gn/rsp_target_writer.h"
+#include "gn/pool.h"
 #include "gn/settings.h"
 #include "gn/string_output_buffer.h"
 #include "gn/string_utils.h"
@@ -175,7 +176,7 @@ void NinjaBinaryTargetWriter::ClassifyDependency(
   // don't link at all.
   bool can_link_libs = target_->IsFinal();
 
-  if (can_link_libs && dep->swift_values().builds_module())
+  if (can_link_libs && dep->builds_swift_module())
     classified_deps->swiftmodule_deps.push_back(dep);
 
   if (target_->source_types_used().RustSourceUsed() &&
@@ -294,7 +295,8 @@ void NinjaBinaryTargetWriter::WriteCompilerBuildLine(
     const std::vector<OutputFile>& extra_deps,
     const std::vector<OutputFile>& order_only_deps,
     const char* tool_name,
-    const std::vector<OutputFile>& outputs) {
+    const std::vector<OutputFile>& outputs,
+    bool can_write_source_info) {
   out_ << "build";
   path_output_.WriteFiles(out_, outputs);
 
@@ -311,6 +313,16 @@ void NinjaBinaryTargetWriter::WriteCompilerBuildLine(
     path_output_.WriteFiles(out_, order_only_deps);
   }
   out_ << std::endl;
+
+  if (!sources.empty() && can_write_source_info) {
+    out_ << "  "
+         << "source_file_part = " << sources[0].GetName();
+    out_ << std::endl;
+    out_ << "  "
+         << "source_name_part = "
+         << FindFilenameNoExtension(&sources[0].value());
+    out_ << std::endl;
+  }
 }
 
 void NinjaBinaryTargetWriter::WriteCustomLinkerFlags(
@@ -426,5 +438,14 @@ void NinjaBinaryTargetWriter::WriteSwiftModules(
   for (const OutputFile& swiftmodule : swiftmodules) {
     out << " " << tool->swiftmodule_switch();
     swiftmodule_path_output.WriteFile(out, swiftmodule);
+  }
+}
+
+void NinjaBinaryTargetWriter::WritePool(std::ostream& out) {
+  if (target_->pool().ptr) {
+    out << "  pool = ";
+    out << target_->pool().ptr->GetNinjaName(
+        settings_->default_toolchain_label());
+    out << std::endl;
   }
 }

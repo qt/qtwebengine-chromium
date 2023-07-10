@@ -21,6 +21,7 @@
 #include "gn/general_tool.h"
 #include "gn/ninja_target_command_util.h"
 #include "gn/ninja_utils.h"
+#include "gn/pool.h"
 #include "gn/scheduler.h"
 #include "gn/settings.h"
 #include "gn/string_utils.h"
@@ -224,42 +225,8 @@ void NinjaCBinaryTargetWriter::WriteCompilerVars(
     const std::vector<ModuleDep>& module_dep_info) {
   const SubstitutionBits& subst = target_->toolchain()->substitution_bits();
 
-  // Defines.
-  if (subst.used.count(&CSubstitutionDefines)) {
-    out_ << CSubstitutionDefines.ninja_name << " =";
-    RecursiveTargetConfigToStream<std::string>(kRecursiveWriterSkipDuplicates,
-                                               target_, &ConfigValues::defines,
-                                               DefineWriter(), out_);
-    out_ << std::endl;
-  }
-
-  // Framework search path.
-  if (subst.used.count(&CSubstitutionFrameworkDirs)) {
-    const Tool* tool = target_->toolchain()->GetTool(CTool::kCToolLink);
-
-    out_ << CSubstitutionFrameworkDirs.ninja_name << " =";
-    PathOutput framework_dirs_output(
-        path_output_.current_dir(),
-        settings_->build_settings()->root_path_utf8(), ESCAPE_NINJA_COMMAND);
-    RecursiveTargetConfigToStream<SourceDir>(
-        kRecursiveWriterSkipDuplicates, target_, &ConfigValues::framework_dirs,
-        FrameworkDirsWriter(framework_dirs_output,
-                            tool->framework_dir_switch()),
-        out_);
-    out_ << std::endl;
-  }
-
-  // Include directories.
-  if (subst.used.count(&CSubstitutionIncludeDirs)) {
-    out_ << CSubstitutionIncludeDirs.ninja_name << " =";
-    PathOutput include_path_output(
-        path_output_.current_dir(),
-        settings_->build_settings()->root_path_utf8(), ESCAPE_NINJA_COMMAND);
-    RecursiveTargetConfigToStream<SourceDir>(
-        kRecursiveWriterSkipDuplicates, target_, &ConfigValues::include_dirs,
-        IncludeWriter(include_path_output), out_);
-    out_ << std::endl;
-  }
+  WriteCCompilerVars(subst, /*indent=*/false,
+                     /*respect_source_types_used=*/true);
 
   if (!module_dep_info.empty()) {
     // TODO(scottmg): Currently clang modules only working for C++.
@@ -270,89 +237,6 @@ void NinjaCBinaryTargetWriter::WriteCompilerVars(
       WriteModuleDepsSubstitution(&CSubstitutionModuleDepsNoSelf,
                                   module_dep_info, false);
     }
-  }
-
-  bool has_precompiled_headers =
-      target_->config_values().has_precompiled_headers();
-
-  EscapeOptions opts = GetFlagOptions();
-  if (target_->source_types_used().Get(SourceFile::SOURCE_S) ||
-      target_->source_types_used().Get(SourceFile::SOURCE_ASM)) {
-    WriteOneFlag(kRecursiveWriterKeepDuplicates, target_,
-                 &CSubstitutionAsmFlags, false, Tool::kToolNone,
-                 &ConfigValues::asmflags, opts, path_output_, out_);
-  }
-  if (target_->source_types_used().Get(SourceFile::SOURCE_C) ||
-      target_->source_types_used().Get(SourceFile::SOURCE_CPP) ||
-      target_->source_types_used().Get(SourceFile::SOURCE_M) ||
-      target_->source_types_used().Get(SourceFile::SOURCE_MM) ||
-      target_->source_types_used().Get(SourceFile::SOURCE_MODULEMAP)) {
-    WriteOneFlag(kRecursiveWriterKeepDuplicates, target_, &CSubstitutionCFlags,
-                 false, Tool::kToolNone, &ConfigValues::cflags, opts,
-                 path_output_, out_);
-  }
-  if (target_->source_types_used().Get(SourceFile::SOURCE_C)) {
-    WriteOneFlag(kRecursiveWriterKeepDuplicates, target_, &CSubstitutionCFlagsC,
-                 has_precompiled_headers, CTool::kCToolCc,
-                 &ConfigValues::cflags_c, opts, path_output_, out_);
-  }
-  if (target_->source_types_used().Get(SourceFile::SOURCE_CPP) ||
-      target_->source_types_used().Get(SourceFile::SOURCE_MODULEMAP)) {
-    WriteOneFlag(kRecursiveWriterKeepDuplicates, target_,
-                 &CSubstitutionCFlagsCc, has_precompiled_headers,
-                 CTool::kCToolCxx, &ConfigValues::cflags_cc, opts, path_output_,
-                 out_);
-  }
-  if (target_->source_types_used().Get(SourceFile::SOURCE_M)) {
-    WriteOneFlag(kRecursiveWriterKeepDuplicates, target_,
-                 &CSubstitutionCFlagsObjC, has_precompiled_headers,
-                 CTool::kCToolObjC, &ConfigValues::cflags_objc, opts,
-                 path_output_, out_);
-  }
-  if (target_->source_types_used().Get(SourceFile::SOURCE_MM)) {
-    WriteOneFlag(kRecursiveWriterKeepDuplicates, target_,
-                 &CSubstitutionCFlagsObjCc, has_precompiled_headers,
-                 CTool::kCToolObjCxx, &ConfigValues::cflags_objcc, opts,
-                 path_output_, out_);
-  }
-  if (target_->source_types_used().SwiftSourceUsed()) {
-    if (subst.used.count(&CSubstitutionSwiftModuleName)) {
-      out_ << CSubstitutionSwiftModuleName.ninja_name << " = ";
-      EscapeStringToStream(out_, target_->swift_values().module_name(), opts);
-      out_ << std::endl;
-    }
-
-    if (subst.used.count(&CSubstitutionSwiftBridgeHeader)) {
-      out_ << CSubstitutionSwiftBridgeHeader.ninja_name << " = ";
-      if (!target_->swift_values().bridge_header().is_null()) {
-        path_output_.WriteFile(out_, target_->swift_values().bridge_header());
-      } else {
-        out_ << R"("")";
-      }
-      out_ << std::endl;
-    }
-
-    if (subst.used.count(&CSubstitutionSwiftModuleDirs)) {
-      // Uniquify the list of swiftmodule dirs (in case multiple swiftmodules
-      // are generated in the same directory).
-      UniqueVector<SourceDir> swiftmodule_dirs;
-      for (const Target* dep : target_->swift_values().modules())
-        swiftmodule_dirs.push_back(dep->swift_values().module_output_dir());
-
-      out_ << CSubstitutionSwiftModuleDirs.ninja_name << " =";
-      PathOutput swiftmodule_path_output(
-          path_output_.current_dir(),
-          settings_->build_settings()->root_path_utf8(), ESCAPE_NINJA_COMMAND);
-      IncludeWriter swiftmodule_path_writer(swiftmodule_path_output);
-      for (const SourceDir& swiftmodule_dir : swiftmodule_dirs) {
-        swiftmodule_path_writer(swiftmodule_dir, out_);
-      }
-      out_ << std::endl;
-    }
-
-    WriteOneFlag(kRecursiveWriterKeepDuplicates, target_,
-                 &CSubstitutionSwiftFlags, false, CTool::kCToolSwift,
-                 &ConfigValues::swiftflags, opts, path_output_, out_);
   }
 
   WriteSharedVars(subst);
@@ -601,6 +485,7 @@ void NinjaCBinaryTargetWriter::WriteSources(
 
       WriteCompilerBuildLine({source}, deps, order_only_deps, tool_name,
                              tool_outputs);
+      WritePool(out_);
     }
 
     // It's theoretically possible for a compiler to produce more than one
@@ -681,14 +566,14 @@ void NinjaCBinaryTargetWriter::WriteSwiftSources(
 
     WriteCompilerBuildLine(target_->sources(), input_deps,
                            swift_order_only_deps.vector(), tool->name(),
-                           {swiftmodule_output_file});
+                           {swiftmodule_output_file}, false);
 
     if (!additional_outputs.empty()) {
       out_ << std::endl;
       WriteCompilerBuildLine(
           {swiftmodule_output_file.AsSourceFile(settings_->build_settings())},
           input_deps, swift_order_only_deps.vector(),
-          GeneralTool::kGeneralToolStamp, additional_outputs);
+          GeneralTool::kGeneralToolStamp, additional_outputs, false);
     }
   }
 
@@ -782,11 +667,12 @@ void NinjaCBinaryTargetWriter::WriteLinkerStuff(
   std::copy(input_deps.begin(), input_deps.end(),
             std::back_inserter(implicit_deps));
 
-  // Any C++ target which depends on a Rust .rlib has to depend on its
-  // entire tree of transitive rlibs.
+  // Any C++ target which depends on a Rust .rlib has to depend on its entire
+  // tree of transitive rlibs found inside the linking target (which excludes
+  // rlibs only depended on inside a shared library dependency).
   std::vector<OutputFile> transitive_rustlibs;
   if (target_->IsFinal()) {
-    for (const auto* dep : target_->rust_transitive_libs().GetOrdered()) {
+    for (const auto* dep : target_->inherited_libraries().GetOrdered()) {
       if (dep->output_type() == Target::RUST_LIBRARY) {
         transitive_rustlibs.push_back(dep->dependency_output_file());
         implicit_deps.push_back(dep->dependency_output_file());
@@ -801,7 +687,7 @@ void NinjaCBinaryTargetWriter::WriteLinkerStuff(
       swiftmodules.push_back(dep->swift_values().module_output_file());
       implicit_deps.push_back(dep->swift_values().module_output_file());
     }
-    if (target_->swift_values().builds_module()) {
+    if (target_->builds_swift_module()) {
       swiftmodules.push_back(target_->swift_values().module_output_file());
       implicit_deps.push_back(target_->swift_values().module_output_file());
     }
@@ -859,6 +745,7 @@ void NinjaCBinaryTargetWriter::WriteLinkerStuff(
   WriteOutputSubstitutions();
   WriteLibsList("solibs", solibs);
   WriteLibsList("rlibs", transitive_rustlibs);
+  WritePool(out_);
 }
 
 void NinjaCBinaryTargetWriter::WriteOutputSubstitutions() {
