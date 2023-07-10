@@ -328,10 +328,10 @@ bool TargetGenerator::FillRspTypes() {
   rsp_types.reserve(value_list.size());
 
   for (size_t i = 0; i < value_list.size(); i++) {
-    const Value& value = value_list[i];
-    if (!value.VerifyTypeIs(Value::STRING, err_))
+    const Value& v = value_list[i];
+    if (!v.VerifyTypeIs(Value::STRING, err_))
       return false;
-    const std::string str = value.string_value();
+    const std::string str = v.string_value();
     rsp_types.push_back(str);
   }
   return true;
