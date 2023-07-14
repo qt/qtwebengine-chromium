@@ -87,7 +87,10 @@ void PacketRouter::AddSendRtpModuleToMap(RtpRtcpInterface* rtp_module,
 
 void PacketRouter::RemoveSendRtpModuleFromMap(uint32_t ssrc) {
   auto it = send_modules_map_.find(ssrc);
-  RTC_DCHECK(it != send_modules_map_.end());
+  if (it == send_modules_map_.end()) {
+    RTC_LOG(LS_ERROR) << "No send module found for ssrc " << ssrc;
+    return;
+  }
   send_modules_list_.remove(it->second);
   send_modules_map_.erase(it);
 }
