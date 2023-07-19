@@ -191,7 +191,7 @@ bool ExternalVkImageBackingFactory::IsSupported(
 
   // TODO: remove it when below formats are converted to multi plane shared
   // image formats.
-#if BUILDFLAG(IS_LINUX)
+#if BUILDFLAG(IS_LINUX) && !defined(TOOLKIT_QT)
   switch (format.resource_format()) {
     case viz::YUV_420_BIPLANAR:
     case viz::YUVA_420_TRIPLANAR:
