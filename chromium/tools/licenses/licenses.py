@@ -819,6 +819,7 @@ def GetThirdPartyDepsFromGNDepsOutput(
 def FindThirdPartyDeps(gn_binary : str,
                        gn_out_dir: str,
                        gn_target: str,
+                       gn_generate: bool,
                        target_os: str,
                        extra_third_party_dirs: Optional[List[str]] = None,
                        extra_allowed_dirs: Optional[List[str]] = None):
@@ -928,7 +929,7 @@ def GenerateCredits(file_template_file,
     }
 
   if gn_target:
-    third_party_dirs = FindThirdPartyDeps(gn_binary, gn_out_dir, gn_target, target_os,
+    third_party_dirs = FindThirdPartyDeps(gn_binary, gn_out_dir, gn_target, gn_generate, target_os,
                                           extra_third_party_dirs)
 
     # Sanity-check to raise a build error if invalid gn_... settings are
@@ -1053,6 +1054,7 @@ def GenerateLicenseFile(args: argparse.Namespace):
 
   if args.gn_target is not None:
     third_party_dirs = FindThirdPartyDeps(args.gn_out_dir, args.gn_target,
+                                          args.gn_generate,
                                           args.target_os,
                                           extra_third_party_dirs,
                                           args.extra_allowed_dirs)
