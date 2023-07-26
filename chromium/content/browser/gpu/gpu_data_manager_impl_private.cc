@@ -492,7 +492,9 @@ GpuDataManagerImplPrivate::GpuDataManagerImplPrivate(GpuDataManagerImpl* owner)
   }
 
 #if BUILDFLAG(IS_MAC)
-  CGDisplayRegisterReconfigurationCallback(DisplayReconfigCallback, owner_);
+  if (!command_line->HasSwitch(switches::kDisableGpu)) {
+    CGDisplayRegisterReconfigurationCallback(DisplayReconfigCallback, owner_);
+  }
 #endif  // BUILDFLAG(IS_MAC)
 
   // For testing only.
