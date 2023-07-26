@@ -545,7 +545,10 @@ void GpuServiceImpl::UpdateGPUInfo() {
 
 void GpuServiceImpl::UpdateGPUInfoGL() {
   DCHECK(main_runner_->BelongsToCurrentThread());
-  gpu::CollectGraphicsInfoGL(&gpu_info_, GetContextState()->display());
+  scoped_refptr<gpu::SharedContextState> context_state = GetContextState();
+  if (!context_state.get())
+    return;
+  gpu::CollectGraphicsInfoGL(&gpu_info_, context_state->display());
   gpu_host_->DidUpdateGPUInfo(gpu_info_);
 }
 
