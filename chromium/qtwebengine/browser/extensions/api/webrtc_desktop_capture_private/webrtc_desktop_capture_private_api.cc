@@ -73,6 +73,8 @@ WebrtcDesktopCapturePrivateChooseDesktopMediaFunction::
 
 WebrtcDesktopCapturePrivateChooseDesktopMediaFunction::
     ~WebrtcDesktopCapturePrivateChooseDesktopMediaFunction() {
+      DesktopCaptureRequestsRegistry::GetInstance()->RemoveRequest(
+      source_process_id(), request_id_);
 }
 
 ExtensionFunction::ResponseAction
@@ -123,7 +125,7 @@ WebrtcDesktopCapturePrivateChooseDesktopMediaFunction::Run() {
   extensions::ExtensionHost *host = extensions::ProcessManager::Get(browser_context())->GetBackgroundHostForExtension(extension_id());
   host->RequestMediaAccessPermission(web_contents, request,
                                      base::BindOnce(&WebrtcDesktopCapturePrivateChooseDesktopMediaFunction::ProcessAccessRequestResponse,
-                                                    weak_factory_.GetWeakPtr(), main_frame, origin));
+                                                    this, main_frame, origin));
 
   return RespondLater();
 }
@@ -136,7 +138,10 @@ void WebrtcDesktopCapturePrivateChooseDesktopMediaFunction::ProcessAccessRequest
       std::unique_ptr<content::MediaStreamUI> stream_ui)
 {
   if (stream_request_result != blink::mojom::MediaStreamRequestResult::OK) {
-    Respond(ArgumentList(Create(std::string(), Options())));
+    // The request is canceled either by the desktopMediaRequest or the permission request.
+    // Respond with no arguments to mimic DesktopCaptureCancelChooseDesktopMediaFunctionBase::Run()
+    // form desktop_capture_base.cc.
+    Respond(NoArguments());
     return;
   }
 
@@ -146,7 +151,8 @@ void WebrtcDesktopCapturePrivateChooseDesktopMediaFunction::ProcessAccessRequest
   auto it = devicesSet.stream_devices.begin();
   for (; it != devicesSet.stream_devices.end(); ++it) {
     content::DesktopMediaID id = content::DesktopMediaID::Parse((*it)->video_device->id);
-    if (id.type == content::DesktopMediaID::TYPE_SCREEN) {
+    if (id.type == content::DesktopMediaID::TYPE_SCREEN ||
+        id.type == content::DesktopMediaID::TYPE_WINDOW) {
         source = id;
         break;
     }

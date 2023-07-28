@@ -79,7 +79,6 @@ class WebrtcDesktopCapturePrivateChooseDesktopMediaFunction : public ExtensionFu
   ResponseAction Run() override;
 
   int request_id_;
-  base::WeakPtrFactory<WebrtcDesktopCapturePrivateChooseDesktopMediaFunction> weak_factory_{this};
 };
 
 class DesktopCaptureRequestsRegistry {
