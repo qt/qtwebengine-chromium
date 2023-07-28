@@ -20,7 +20,8 @@
       "hkamnlhnogggfddmjomgbdokdkgfelgg"
     ],
     "matches": [
-      "https://*.meet.google.com/*"
+      "https://*.meet.google.com/*",
+      "*://localhost/*"
     ]
   },
   "background": {
