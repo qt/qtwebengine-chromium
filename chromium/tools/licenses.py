@@ -641,6 +641,7 @@ def FindThirdPartyDeps(gn_binary, gn_out_dir, gn_target, gn_generate, target_os)
          tmp_dir = gn_out_dir
       gn_deps = subprocess.check_output([
           gn_binary, "desc",
+          "--script-executable=%s" % sys.executable,
           "--root=%s" % _REPOSITORY_ROOT, tmp_dir, gn_target, "deps",
           "--as=buildfile", "--all"
       ])
