@@ -61,4 +61,6 @@ void PrefetchNetworkContextClient::OnCanSendSCTAuditingReport(
 void PrefetchNetworkContextClient::OnNewSCTAuditingReportSent() {}
 #endif
 
+void PrefetchNetworkContextClient::OnNetworkContextCreated() {}
+
 }  // namespace content

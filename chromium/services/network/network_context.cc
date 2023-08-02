@@ -628,6 +628,14 @@ NetworkContext::NetworkContext(
         base::MakeRefCounted<MojoBackendFileOperationsFactory>(
             std::move(params_->http_cache_file_operations_factory));
   }
+
+#if defined(TOOLKIT_QT)
+  base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+      FROM_HERE, base::BindOnce([](NetworkContext *context) {
+        if (context->client())
+            context->client()->OnNetworkContextCreated();
+      }, this));
+#endif
 }
 
 NetworkContext::NetworkContext(
@@ -667,6 +675,14 @@ NetworkContext::NetworkContext(
   acam_preflight_spec_conformant_ = base::FeatureList::IsEnabled(
       network::features::
           kAccessControlAllowMethodsInCORSPreflightSpecConformant);
+
+#if defined(TOOLKIT_QT)
+  base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+      FROM_HERE, base::BindOnce([](NetworkContext *context) {
+        if (context->client())
+            context->client()->OnNetworkContextCreated();
+      }, this));
+#endif
 }
 
 NetworkContext::~NetworkContext() {
