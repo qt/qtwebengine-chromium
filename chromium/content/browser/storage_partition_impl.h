@@ -252,6 +252,8 @@ class CONTENT_EXPORT StoragePartitionImpl
   void ClearBluetoothAllowedDevicesMapForTesting() override;
   void AddObserver(DataRemovalObserver* observer) override;
   void RemoveObserver(DataRemovalObserver* observer) override;
+  void SetNetworkContextCreatedObserver(NetworkContextCreatedObserver *observer) override;
+  NetworkContextCreatedObserver *GetNetworkContextCreatedObserver() override;
   void FlushNetworkInterfaceForTesting() override;
   void FlushCertVerifierInterfaceForTesting() override;
   void WaitForDeletionTasksForTesting() override;
@@ -331,6 +333,7 @@ class CONTENT_EXPORT StoragePartitionImpl
       OnCanSendSCTAuditingReportCallback callback) override;
   void OnNewSCTAuditingReportSent() override;
 #endif
+  void OnNetworkContextCreated() override;
 
   // network::mojom::URLLoaderNetworkServiceObserver interface.
   void OnSSLCertificateError(const GURL& url,
@@ -452,6 +455,9 @@ class CONTENT_EXPORT StoragePartitionImpl
 
   std::vector<std::string> GetCorsExemptHeaderList();
 
+#if defined(TOOLKIT_QT)
+  void ResetNetworkContext() { InitNetworkContext(); }
+#endif
   void OpenLocalStorageForProcess(
       int process_id,
       const blink::StorageKey& storage_key,
@@ -811,6 +817,8 @@ class CONTENT_EXPORT StoragePartitionImpl
 #if DCHECK_IS_ON()
   bool on_browser_context_will_be_destroyed_called_ = false;
 #endif
+
+  NetworkContextCreatedObserver *network_context_created_observer_ = nullptr;
 
   base::WeakPtrFactory<StoragePartitionImpl> weak_factory_{this};
 };

@@ -3168,6 +3168,14 @@ void StoragePartitionImpl::RemoveObserver(DataRemovalObserver* observer) {
   data_removal_observers_.RemoveObserver(observer);
 }
 
+void StoragePartitionImpl::SetNetworkContextCreatedObserver(NetworkContextCreatedObserver *observer) {
+  network_context_created_observer_ = observer;
+}
+
+StoragePartition::NetworkContextCreatedObserver *StoragePartitionImpl::GetNetworkContextCreatedObserver() {
+  return network_context_created_observer_;
+}
+
 void StoragePartitionImpl::FlushNetworkInterfaceForTesting() {
   DCHECK(initialized_);
   DCHECK(network_context_);
@@ -3422,12 +3430,14 @@ void StoragePartitionImpl::InitNetworkContext() {
         cookie_deprecation_label_manager_->GetValue().value_or("");
   }
 
-  network_context_.reset();
+  if (network_context_.is_bound()) {
+    network_context_.set_disconnect_handler(base::OnceClosure());
+    network_context_.reset();
+    network_context_client_receiver_.reset();
+  }
   CreateNetworkContextInNetworkService(
       network_context_.BindNewPipeAndPassReceiver(), std::move(context_params));
-  DCHECK(network_context_);
 
-  network_context_client_receiver_.reset();
   network_context_->SetClient(
       network_context_client_receiver_.BindNewPipeAndPassRemote());
   network_context_.set_disconnect_handler(base::BindOnce(
@@ -3441,6 +3451,13 @@ void StoragePartitionImpl::InitNetworkContext() {
     cookie_manager.Bind(std::move(cookie_manager_remote));
     cookie_manager->GetAllCookies(base::NullCallback());
   }
+}
+
+void StoragePartitionImpl::OnNetworkContextCreated() {
+#if defined(TOOLKIT_QT)
+  if (network_context_created_observer_)
+    network_context_created_observer_->OnNetworkContextCreated(this);
+#endif
 }
 
 network::mojom::URLLoaderFactoryParamsPtr
