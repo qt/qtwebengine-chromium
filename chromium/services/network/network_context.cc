@@ -958,6 +958,15 @@ void NetworkContext::SetClient(
     mojo::PendingRemote<mojom::NetworkContextClient> client) {
   client_.reset();
   client_.Bind(std::move(client));
+
+#if BUILDFLAG(IS_QTWEBENGINE)
+base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+    FROM_HERE, base::BindOnce([](NetworkContext *context) {
+      if (context->client()) {
+          context->client()->OnNetworkContextCreated();
+      }
+    }, this));
+#endif
 }
 
 void NetworkContext::CreateURLLoaderFactory(
