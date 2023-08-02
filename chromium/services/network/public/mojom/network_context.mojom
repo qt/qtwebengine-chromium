@@ -825,6 +825,9 @@ interface NetworkContextClient {
   // clients.
   [EnableIf=is_ct_supported]
   OnNewSCTAuditingReportSent();
+
+  // Called when NetworkContext is created in the network service.
+  OnNetworkContextCreated();
 };
 
 // Represents a distinct context for making network requests, with its own

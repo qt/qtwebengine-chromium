@@ -267,6 +267,11 @@ class CONTENT_EXPORT StoragePartition {
         const base::Time end) = 0;
   };
 
+  class NetworkContextCreatedObserver {
+   public:
+    virtual void OnNetworkContextCreated(StoragePartition *storage) = 0;
+  };
+
   // Similar to ClearDataForOrigin().
   // Deletes all data out for the StoragePartition if |storage_key|'s origin is
   // opaque. |callback| is called when data deletion is done or at least the
@@ -331,6 +336,9 @@ class CONTENT_EXPORT StoragePartition {
   virtual void AddObserver(DataRemovalObserver* observer) = 0;
 
   virtual void RemoveObserver(DataRemovalObserver* observer) = 0;
+
+  virtual void SetNetworkContextCreatedObserver(NetworkContextCreatedObserver *observer) = 0;
+  virtual NetworkContextCreatedObserver *GetNetworkContextCreatedObserver() = 0;
 
   // Clear the bluetooth allowed devices map. For test use only.
   virtual void ClearBluetoothAllowedDevicesMapForTesting() = 0;
