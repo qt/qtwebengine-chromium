@@ -46,6 +46,7 @@ class PrefetchNetworkContextClient
       OnCanSendSCTAuditingReportCallback callback) override;
   void OnNewSCTAuditingReportSent() override;
 #endif
+  void OnNetworkContextCreated() override;
 };
 
 }  // namespace content
