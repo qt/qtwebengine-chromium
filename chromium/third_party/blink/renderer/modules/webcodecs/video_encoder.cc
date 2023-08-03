@@ -789,8 +789,8 @@ void VideoEncoder::ContinueConfigureWithGpuFactories(
 
       self->ReportError(error_message.c_str(), std::move(status));
     } else {
-      UMA_HISTOGRAM_ENUMERATION("Blink.WebCodecs.VideoEncoder.Codec", codec,
-                                media::VideoCodec::kMaxValue);
+//      UMA_HISTOGRAM_ENUMERATION("Blink.WebCodecs.VideoEncoder.Codec", codec,
+//                                media::VideoCodec::kMaxValue);
     }
     req->EndTracing();
 

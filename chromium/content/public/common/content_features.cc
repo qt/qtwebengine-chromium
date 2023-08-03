@@ -1123,7 +1123,7 @@ const base::FeatureParam<bool> kSkipEmptyFetchHandler{
 
 // This feature param controls if the service worker is started for an
 // empty service worker fetch handler while `kSkipEmptyFetchHandler` is on.
-constexpr base::FeatureParam<bool> kStartServiceWorkerForEmptyFetchHandler{
+const base::FeatureParam<bool> kStartServiceWorkerForEmptyFetchHandler{
     &kServiceWorkerSkipIgnorableFetchHandler,
     "StartServiceWorkerForEmptyFetchHandler",
     false,
@@ -1133,7 +1133,7 @@ constexpr base::FeatureParam<bool> kStartServiceWorkerForEmptyFetchHandler{
 // empty service worker fetch handler while `kSkipEmptyFetchHandler` is on.
 // Unlike the feature param `kStartServiceWorkerForEmptyFetchHandler`,
 // this starts service worker in `TaskRunner::PostDelayTask`.
-constexpr base::FeatureParam<bool> kAsyncStartServiceWorkerForEmptyFetchHandler{
+const base::FeatureParam<bool> kAsyncStartServiceWorkerForEmptyFetchHandler{
     &kServiceWorkerSkipIgnorableFetchHandler,
     "AsyncStartServiceWorkerForEmptyFetchHandler",
     false,
@@ -1143,7 +1143,7 @@ constexpr base::FeatureParam<bool> kAsyncStartServiceWorkerForEmptyFetchHandler{
 // if `kAsyncStartServiceWorkerForEmptyFetchHandler` is used.
 // Negative values and the value larger than a threshold is ignored, and
 // treated as 0.
-constexpr base::FeatureParam<int>
+const base::FeatureParam<int>
     kAsyncStartServiceWorkerForEmptyFetchHandlerDurationInMs{
         &kServiceWorkerSkipIgnorableFetchHandler,
         "AsyncStartServiceWorkerForEmptyFetchHandlerDurationInMs",
