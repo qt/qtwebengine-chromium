@@ -1199,23 +1199,23 @@ InputHandlerProxy::HandleGestureScrollUpdate(
   cc::InputHandlerScrollResult scroll_result =
       input_handler_->ScrollUpdate(cc::ScrollState(scroll_state_data), delay);
 
-  TRACE_EVENT(
-      "input,input.scrolling",
-      "InputHandlerProxy::HandleGestureScrollUpdate_Result",
-      [&](perfetto::EventContext& ctx) {
-        auto* event = ctx.event<perfetto::protos::pbzero::ChromeTrackEvent>();
-        auto* scroll_data = event->set_scroll_deltas();
-        scroll_data->set_trace_id(trace_id);
-        scroll_data->set_provided_to_compositor_delta_x(provided_delta_x);
-        scroll_data->set_provided_to_compositor_delta_y(provided_delta_y);
-        scroll_data->set_visual_offset_x(
-            scroll_result.current_visual_offset.x());
-        scroll_data->set_visual_offset_y(
-            scroll_result.current_visual_offset.y());
-        scroll_data->set_did_overscroll_root(scroll_result.did_overscroll_root);
-        scroll_data->set_unused_delta_x(scroll_result.unused_scroll_delta.x());
-        scroll_data->set_unused_delta_y(scroll_result.unused_scroll_delta.y());
-      });
+  // TRACE_EVENT(
+  //     "input,input.scrolling",
+  //     "InputHandlerProxy::HandleGestureScrollUpdate_Result",
+  //     [&](perfetto::EventContext& ctx) {
+  //       auto* event = ctx.event<perfetto::protos::pbzero::ChromeTrackEvent>();
+  //       auto* scroll_data = event->set_scroll_deltas();
+  //       scroll_data->set_trace_id(trace_id);
+  //       scroll_data->set_provided_to_compositor_delta_x(provided_delta_x);
+  //       scroll_data->set_provided_to_compositor_delta_y(provided_delta_y);
+  //       scroll_data->set_visual_offset_x(
+  //           scroll_result.current_visual_offset.x());
+  //       scroll_data->set_visual_offset_y(
+  //           scroll_result.current_visual_offset.y());
+  //       scroll_data->set_did_overscroll_root(scroll_result.did_overscroll_root);
+  //       scroll_data->set_unused_delta_x(scroll_result.unused_scroll_delta.x());
+  //       scroll_data->set_unused_delta_y(scroll_result.unused_scroll_delta.y());
+  //     });
 
   HandleOverscroll(gesture_event.PositionInWidget(), scroll_result);
 
