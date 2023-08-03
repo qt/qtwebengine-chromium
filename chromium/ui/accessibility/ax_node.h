@@ -70,16 +70,60 @@ class AX_EXPORT AXNode final {
     using pointer = NodeType*;
     using reference = NodeType&;
 
-    ChildIteratorBase(const NodeType* parent, NodeType* child);
-    ChildIteratorBase(const ChildIteratorBase& it);
+    ChildIteratorBase(const NodeType* parent, NodeType* child)
+        : parent_(parent), child_(child) {}
+    ChildIteratorBase(const ChildIteratorBase& it)
+        : parent_(it.parent_), child_(it.child_) {}
     ~ChildIteratorBase() = default;
-    bool operator==(const ChildIteratorBase& rhs) const;
-    bool operator!=(const ChildIteratorBase& rhs) const;
-    ChildIteratorBase& operator++();
-    ChildIteratorBase& operator--();
-    NodeType* get() const;
-    NodeType& operator*() const;
-    NodeType* operator->() const;
+    bool operator==(const ChildIteratorBase& rhs) const
+    {
+        return parent_ == rhs.parent_ && child_ == rhs.child_;
+    }
+    bool operator!=(const ChildIteratorBase& rhs) const
+    {
+        return parent_ != rhs.parent_ || child_ != rhs.child_;
+    }
+    ChildIteratorBase& operator++() {
+        // |child_ = nullptr| denotes the iterator's past-the-end condition. When we
+        // increment the iterator past the end, we remain at the past-the-end iterator
+        // condition.
+        if (child_ && parent_) {
+          if (child_ == (parent_.get()->*LastChild)())
+            child_ = nullptr;
+        else
+            child_ = (child_.get()->*NextSibling)();
+        }
+
+        return *this;
+    }
+    ChildIteratorBase& operator--() {
+        if (parent_) {
+          // If the iterator is past the end, |child_=nullptr|, decrement the iterator
+          // gives us the last iterator element.
+          if (!child_)
+            child_ = (parent_.get()->*LastChild)();
+          // Decrement the iterator gives us the previous element, except when the
+          // iterator is at the beginning; in which case, decrementing the iterator
+          // remains at the beginning.
+          else if (child_ != (parent_.get()->*FirstChild)())
+            child_ = (child_.get()->*PreviousSibling)();
+        }
+
+        return *this;
+    }
+    NodeType* get() const {
+        DCHECK(child_);
+        return child_;
+    }
+    NodeType& operator*() const {
+        DCHECK(child_);
+        return *child_;
+    }
+
+    NodeType* operator->() const {
+        DCHECK(child_);
+        return child_;
+    }
 
    protected:
     raw_ptr<const NodeType> parent_;
