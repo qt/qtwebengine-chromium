@@ -809,8 +809,10 @@ void VideoEncoder::ContinueConfigureWithGpuFactories(
           error_message.c_str(), std::move(status),
           /*is_error_message_from_software_codec=*/!is_platform_encoder);
     } else {
+#if 0 // msvc failure
       base::UmaHistogramEnumeration("Blink.WebCodecs.VideoEncoder.Codec",
                                     codec);
+#endif
     }
     req->EndTracing();
 
