@@ -643,8 +643,10 @@ absl::optional<ui::Cursor> EventHandler::SelectCursor(
                 kTraverseDocumentBoundaries | kApplyRemoteMainFrameTransform) -
             PhysicalOffset(hot_spot);
         PhysicalRect cursor_rect(cursor_offset, LayoutSize(size));
-        if (!PhysicalRect(page->GetVisualViewport().VisibleContentRect())
-                 .Contains(cursor_rect)) {
+        PhysicalRect frame_rect(page->GetVisualViewport().VisibleContentRect());
+        frame_->ContentLayoutObject()->MapToVisualRectInAncestorSpace(
+            nullptr, frame_rect);
+        if (!frame_rect.Contains(cursor_rect)) {
           continue;
         }
       }
