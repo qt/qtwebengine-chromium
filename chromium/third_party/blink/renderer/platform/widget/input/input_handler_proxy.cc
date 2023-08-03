@@ -1075,21 +1075,21 @@ InputHandlerProxy::HandleGestureScrollUpdate(
   cc::InputHandlerScrollResult scroll_result =
       input_handler_->ScrollUpdate(&scroll_state, delay);
 
-  TRACE_EVENT(
-      "input,input.scrolling",
-      "InputHandlerProxy::HandleGestureScrollUpdate_Result",
-      [trace_id, provided_delta_x, provided_delta_y,
-       visual_offset_x = scroll_result.current_visual_offset.x(),
-       visual_offset_y = scroll_result.current_visual_offset.y()](
-          perfetto::EventContext& ctx) {
-        auto* event = ctx.event<perfetto::protos::pbzero::ChromeTrackEvent>();
-        auto* scroll_data = event->set_scroll_deltas();
-        scroll_data->set_trace_id(trace_id);
-        scroll_data->set_provided_to_compositor_delta_x(provided_delta_x);
-        scroll_data->set_provided_to_compositor_delta_y(provided_delta_y);
-        scroll_data->set_visual_offset_x(visual_offset_x);
-        scroll_data->set_visual_offset_y(visual_offset_y);
-      });
+  // TRACE_EVENT(
+  //     "input,input.scrolling",
+  //     "InputHandlerProxy::HandleGestureScrollUpdate_Result",
+  //     [trace_id, provided_delta_x, provided_delta_y,
+  //      visual_offset_x = scroll_result.current_visual_offset.x(),
+  //      visual_offset_y = scroll_result.current_visual_offset.y()](
+  //         perfetto::EventContext& ctx) {
+  //       auto* event = ctx.event<perfetto::protos::pbzero::ChromeTrackEvent>();
+  //       auto* scroll_data = event->set_scroll_deltas();
+  //       scroll_data->set_trace_id(trace_id);
+  //       scroll_data->set_provided_to_compositor_delta_x(provided_delta_x);
+  //       scroll_data->set_provided_to_compositor_delta_y(provided_delta_y);
+  //       scroll_data->set_visual_offset_x(visual_offset_x);
+  //       scroll_data->set_visual_offset_y(visual_offset_y);
+  //     });
 
   HandleOverscroll(gesture_event.PositionInWidget(), scroll_result);
 

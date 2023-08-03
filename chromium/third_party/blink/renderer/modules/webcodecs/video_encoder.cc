@@ -766,8 +766,10 @@ void VideoEncoder::ContinueConfigureWithGpuFactories(
 
       self->ReportError(error_message.c_str(), std::move(status));
     } else {
+#if 0 // msvc failure
       base::UmaHistogramEnumeration("Blink.WebCodecs.VideoEncoder.Codec",
                                     codec);
+#endif
     }
     req->EndTracing();
 
