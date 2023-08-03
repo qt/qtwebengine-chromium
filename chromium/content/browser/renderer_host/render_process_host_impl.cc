@@ -4263,8 +4263,8 @@ void RenderProcessHostImpl::Cleanup() {
     return;
   }
 
-  TRACE_EVENT("shutdown", "RenderProcessHostImpl::Cleanup : Starting cleanup.",
-              ChromeTrackEvent::kRenderProcessHost, *this);
+//  TRACE_EVENT("shutdown", "RenderProcessHostImpl::Cleanup : Starting cleanup.",
+//              ChromeTrackEvent::kRenderProcessHost, *this);
   TRACE_EVENT_BEGIN("shutdown", "Cleanup in progress",
                     perfetto::Track::FromPointer(this),
                     ChromeTrackEvent::kRenderProcessHost, *this);
