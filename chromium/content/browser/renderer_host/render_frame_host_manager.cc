@@ -4121,11 +4121,11 @@ void RenderFrameHostManager::CommitPending(
       }
     }
 
-    TRACE_EVENT("navigation",
-                "RenderFrameHostManager::CommitPending_"
-                "DeleteProxiesFromOldBrowsingContextState",
-                ChromeTrackEvent::kBrowsingContextState,
-                old_browsing_context_state);
+//    TRACE_EVENT("navigation",
+//                "RenderFrameHostManager::CommitPending_"
+//                "DeleteProxiesFromOldBrowsingContextState",
+//                ChromeTrackEvent::kBrowsingContextState,
+//                old_browsing_context_state);
     for (auto* proxy : removed_proxies) {
       // After deleting the proxy we will not have either a proxy or
       // main frame associated with the RenderViewHost. Do not allow

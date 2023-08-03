@@ -716,8 +716,8 @@ void VideoEncoder::ContinueConfigureWithGpuFactories(
       self->HandleError(self->logger_->MakeException(
           "Encoder initialization error.", std::move(status)));
     } else {
-      UMA_HISTOGRAM_ENUMERATION("Blink.WebCodecs.VideoEncoder.Codec", codec,
-                                media::VideoCodec::kMaxValue);
+//      UMA_HISTOGRAM_ENUMERATION("Blink.WebCodecs.VideoEncoder.Codec", codec,
+//                                media::VideoCodec::kMaxValue);
     }
     req->EndTracing();
 
