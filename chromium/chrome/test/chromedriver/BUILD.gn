@@ -5,7 +5,7 @@
 import("//build/buildflag_header.gni")
 import("//build/config/python.gni")
 import("//build/config/ui.gni")
-if (is_linux) {
+if (is_linux && !is_qtwebengine) {
   import("//build/linux/strip_binary.gni")
 }
 import("//build/util/lastchange.gni")
@@ -291,6 +291,10 @@ source_set("automation_client_lib") {
     "//ui/gfx/geometry",
     "//url",
   ]
+
+  if (is_qtwebengine) {
+    deps -= [ "//net/traffic_annotation:test_support" ]
+  }
 }
 
 source_set("lib") {
@@ -382,6 +386,10 @@ source_set("lib") {
     "//ui/gfx/geometry",
   ]
 
+  if (is_qtwebengine) {
+    deps -= [ "//net/traffic_annotation:test_support" ]
+  }
+
   if (use_ozone) {
     sources += [ "keycode_text_conversion_ozone.cc" ]
     deps += [ "//ui/events/ozone/layout" ]
@@ -405,7 +413,7 @@ source_set("lib") {
   }
 }
 
-if (is_linux) {
+if (is_linux && !is_qtwebengine) {
   # Linux
   executable("chromedriver_server.unstripped") {
     testonly = true
@@ -449,6 +457,22 @@ if (is_linux) {
 
     if (is_mac && is_component_ffmpeg) {
       ldflags = [ "-Wl,-rpath,@executable_path/." ]
+    }
+
+    if (is_qtwebengine) {
+      output_name = "webenginedriver"
+      deps -= [ "//net/traffic_annotation:test_support" ]
+
+      if (is_linux) {
+        sources += [
+          "//content/public/common/content_switches.cc",
+          "//tools/v8_context_snapshot/qt_overrides.cc",
+        ]
+      }
+
+      if (is_mac) {
+        sources += [ "//tools/v8_context_snapshot/qt_overrides.cc" ]
+      }
     }
   }
 }
