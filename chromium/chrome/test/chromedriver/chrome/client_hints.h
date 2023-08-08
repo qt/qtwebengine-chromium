@@ -10,6 +10,10 @@
 #include <vector>
 
 struct BrandVersion {
+  BrandVersion(const std::string& brand, const std::string& version)
+      : brand(brand),
+        version(version) {}
+
   // Browser brand.
   // Examples: Chrome, Chromium.
   // Can be any value.

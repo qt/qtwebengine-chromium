@@ -49,6 +49,7 @@ def main(argv):
   parser.add_argument('--out_folder', required=True)
   parser.add_argument('--in_files', nargs='*', required=True)
   parser.add_argument('--out_manifest', required=True)
+  parser.add_argument('--ascii_only', action='store_true')
 
   args = parser.parse_args(argv)
   out_path = os.path.normpath(
@@ -60,10 +61,13 @@ def main(argv):
     input_filepath = os.path.join(in_path, input_file)
     output_filepath = os.path.join(out_path, input_file)
     conslidateChomiumCopyright(input_filepath, output_filepath)
-    node.RunNode([
+    node_args = [
         node_modules.PathToTerser(), output_filepath, '--comments',
         '/Copyright|license|LICENSE/', '--output', output_filepath, '--module'
-    ])
+    ]
+    if args.ascii_only:
+      node_args += ['-f', 'ascii_only']
+    node.RunNode(node_args)
 
   manifest_data = {}
   manifest_data['base_dir'] = args.out_folder
