@@ -22,6 +22,7 @@ def main(argv):
   parser.add_argument('--out_folder', required=True)
   parser.add_argument('--in_files', nargs='*', required=True)
   parser.add_argument('--out_manifest', required=True)
+  parser.add_argument('--ascii_only', action='store_true')
 
   args = parser.parse_args(argv)
   out_path = os.path.normpath(
@@ -32,10 +33,13 @@ def main(argv):
   # Spawn a NodeJS script to use the programmatic Terser API, since the CLI API
   # does not allow compressing multiple files at once. This is done to avoid
   # launching NodeJS once for every input file.
-  node.RunNode([
-      os.path.join(_HERE_PATH, 'minify_js.js'), '--in_folder', in_path,
-      '--out_folder', out_path
-  ] + args.in_files)
+  node_args = [
+      os.path.join(_HERE_PATH, 'minify_js.js'),  '--in_folder', in_path,
+    '--out_folder', out_path
+  ] + args.in_files
+  if args.ascii_only:
+    node_args += ['--ascii_only']
+  node.RunNode(node_args)
 
   manifest_data = {}
   manifest_data['base_dir'] = args.out_folder

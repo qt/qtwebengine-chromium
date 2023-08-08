@@ -60,6 +60,7 @@ async function main() {
   const options = {
     in_folder: {type: 'string'},
     out_folder: {type: 'string'},
+    ascii_only: {type: 'boolean'},
   };
   const parsed = parseArgs({options, allowPositionals: true});
   const args = parsed.values;
@@ -72,6 +73,7 @@ async function main() {
     mangle: false,
     module: true,
     format: {
+      ascii_only: !!args.ascii_only,
       comments: '/Copyright|license|LICENSE/',
     },
   };
