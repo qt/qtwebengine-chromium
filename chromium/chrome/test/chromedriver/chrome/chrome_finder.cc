@@ -198,6 +198,9 @@ bool FindBrowser(
     const std::string& browser_name,
     const base::RepeatingCallback<bool(const base::FilePath&)>& exists_func,
     base::FilePath& browser_exe) {
+#if BUILDFLAG(IS_QTWEBENGINE)
+  NOTREACHED() << "Chrome is not supported.";
+#endif
   std::vector<base::FilePath> browser_exes;
   if (browser_name == kHeadlessShellCapabilityName) {
     browser_exes = GetHeadlessShellProgramNames();

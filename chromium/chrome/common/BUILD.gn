@@ -653,6 +653,12 @@ static_library("constants") {
     "//third_party/widevine/cdm:buildflags",
   ]
 
+  if (!enable_nacl) {
+    deps -= [
+      "//components/nacl/common:switches",
+    ]
+  }
+
   if (is_android) {
     sources += [ "chrome_paths_android.cc" ]
 
@@ -686,7 +692,7 @@ static_library("constants") {
   if (is_mac) {
     sources += [ "chrome_paths_mac.mm" ]
   }
-  if (is_win) {
+  if (is_win && !is_qtwebengine) {
     sources += [ "chrome_paths_win.cc" ]
     deps += [ "//chrome/install_static:install_static_util" ]
   }
