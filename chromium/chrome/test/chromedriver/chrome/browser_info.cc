@@ -15,6 +15,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/values.h"
+#include "build/build_config.h"
 #include "chrome/test/chromedriver/constants/version.h"
 
 BrowserInfo::BrowserInfo() = default;
@@ -68,6 +69,35 @@ Status BrowserInfo::ParseBrowserInfo(const std::string& data,
   if (status.IsError())
     return status;
 
+#if BUILDFLAG(IS_QTWEBENGINE)
+  // Parse Chrome version to use it as browser version.
+  static const std::string kChromePrefix = "Chrome/";
+  std::string chrome_version = "";
+
+  const std::string* ua_string = dict->FindString("User-Agent");
+  if (ua_string) {
+    std::vector<std::string> ua_parts = base::SplitString(
+        *ua_string, " ", base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
+    for (size_t i = 0; i < ua_parts.size(); ++i) {
+      if (base::StartsWith(ua_parts[i], kChromePrefix,
+                           base::CompareCase::SENSITIVE)) {
+        chrome_version = ua_parts[i].substr(kChromePrefix.length());
+        break;
+      }
+    }
+  }
+
+  // Just ignore browser version if the browser has custom user-agent string
+  // without Chrome version.
+  if (!chrome_version.empty()) {
+    browser_info->browser_version = chrome_version;
+    status = ParseBrowserVersionString(
+        chrome_version, &browser_info->major_version, &browser_info->build_no);
+    if (status.IsError())
+      return status;
+  }
+#endif  // BUILDFLAG(IS_QTWEBENGINE)
+
   // "webSocketDebuggerUrl" is only returned on Chrome 62.0.3178 and above,
   // thus it's not an error if it's missing.
   const std::string* web_socket_url_in =
@@ -93,6 +123,18 @@ Status BrowserInfo::ParseBrowserString(bool has_android_package,
     return Status(kOk);
   }
 
+#if BUILDFLAG(IS_QTWEBENGINE)
+  std::vector<std::string> browser_parts = base::SplitString(
+      browser_string, "/", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
+
+  if (browser_parts.size() != 2) {
+    return Status(kUnknownError,
+                  "unrecognized browser string: " + browser_string);
+  }
+
+  browser_info->browser_name = browser_parts[0];
+  return Status(kOk);
+#else
   static const std::string kVersionPrefix =
       std::string(kUserAgentProductName) + "/";
   static const std::string kHeadlessVersionPrefix =
@@ -147,6 +189,7 @@ Status BrowserInfo::ParseBrowserString(bool has_android_package,
   return Status(kUnknownError,
                 base::StringPrintf("unrecognized %s version: %s",
                                    kBrowserShortName, browser_string.c_str()));
+#endif  // BUILDFLAG(IS_QTWEBENGINE)
 }
 
 Status BrowserInfo::ParseBrowserVersionString(

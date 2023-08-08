@@ -146,6 +146,10 @@ void GetApplicationDirs(std::vector<base::FilePath>* locations);
  *   - chromium
  */
 bool FindChrome(base::FilePath* browser_exe) {
+#if BUILDFLAG(IS_QTWEBENGINE)
+  NOTREACHED() << "Chrome is not supported.";
+#endif
+
   base::FilePath browser_exes_array[] = {
 #if BUILDFLAG(IS_WIN)
     base::FilePath(chrome::kBrowserProcessExecutablePath),

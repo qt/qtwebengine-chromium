@@ -274,6 +274,10 @@ source_set("automation_client_lib") {
     "//ui/gfx/geometry",
     "//url",
   ]
+
+  if (is_qtwebengine) {
+    deps -= [ "//net/traffic_annotation:test_support" ]
+  }
 }
 
 source_set("lib") {
@@ -364,6 +368,10 @@ source_set("lib") {
     "//ui/gfx/geometry",
   ]
 
+  if (is_qtwebengine) {
+    deps -= [ "//net/traffic_annotation:test_support" ]
+  }
+
   if (use_ozone) {
     sources += [ "keycode_text_conversion_ozone.cc" ]
     deps += [
@@ -404,6 +412,16 @@ if (is_linux) {
       "//net/traffic_annotation:test_support",
       "//services/network/public/mojom",
     ]
+
+    if (is_qtwebengine) {
+      sources += [
+        "//content/public/common/content_switches.cc",
+        "//tools/v8_context_snapshot/qt_overrides.cc",
+      ]
+      output_name = "webenginedriver.unstripped"
+      include_dirs = [ "//third_party/skia" ]
+      deps -= [ "//net/traffic_annotation:test_support" ]
+    }
   }
 
   strip_binary("chromedriver_server") {
@@ -412,6 +430,12 @@ if (is_linux) {
     symbol_output = "$root_out_dir/chromedriver.debug"
     stripped_binary_output = "$root_out_dir/chromedriver"
     deps = [ ":chromedriver_server.unstripped" ]
+
+    if (is_qtwebengine) {
+      binary_input = "$root_out_dir/webenginedriver.unstripped"
+      symbol_output = "$root_out_dir/webenginedriver.debug"
+      stripped_binary_output = "$root_out_dir/webenginedriver"
+    }
   }
 } else {
   # Non-Linux
@@ -433,6 +457,14 @@ if (is_linux) {
 
     if (is_mac && is_component_ffmpeg) {
       ldflags = [ "-Wl,-rpath,@executable_path/." ]
+    }
+
+    if (is_qtwebengine) {
+      output_name = "webenginedriver"
+      deps -= [ "//net/traffic_annotation:test_support" ]
+      if (is_mac) {
+        sources += [ "//tools/v8_context_snapshot/qt_overrides.cc" ]
+      }
     }
   }
 }

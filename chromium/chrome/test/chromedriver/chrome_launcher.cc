@@ -126,9 +126,15 @@ Status PrepareDesktopCommandLine(const Capabilities& capabilities,
                                  base::FilePath& user_data_dir) {
   base::FilePath program = capabilities.binary;
   if (program.empty()) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
     if (!FindChrome(&program))
       return Status(kUnknownError, base::StringPrintf("cannot find %s binary",
                                                       kBrowserShortName));
+#else
+    return Status(kUnknownError, "Browser path is not set. "
+                                 "Set your browser path explicitly with "
+                                 "selenium.webdriver.chrome.options.Options.binary_location");
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
   } else if (!base::PathExists(program)) {
     return Status(
         kUnknownError,
@@ -163,6 +169,9 @@ Status PrepareDesktopCommandLine(const Capabilities& capabilities,
     switches.RemoveSwitch(excluded_switch);
   }
   switches.SetFromSwitches(capabilities.switches);
+#if !BUILDFLAG(IS_QTWEBENGINE)
+  // WebEngineDriver relies on QTWEBENGINE_REMOTE_DEBUGGING environment variable.
+
   // There are two special cases concerning the choice of the transport layer
   // between ChromeDriver and Chrome:
   // * Neither 'remote-debugging-port' nor 'remote-debugging-pipe'is provided.
@@ -184,6 +193,7 @@ Status PrepareDesktopCommandLine(const Capabilities& capabilities,
       !switches.HasSwitch("remote-debugging-pipe")) {
     switches.SetSwitch("remote-debugging-port", "0");
   }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
   if (capabilities.exclude_switches.count("user-data-dir") > 0) {
     LOG(WARNING) << "excluding user-data-dir switch is not supported";
   }
@@ -234,6 +244,9 @@ Status PrepareDesktopCommandLine(const Capabilities& capabilities,
     if (status.IsError())
       return status;
   }
+#if BUILDFLAG(IS_QTWEBENGINE)
+  command.AppendSwitch("--webEngineArgs");
+#endif
   switches.AppendToCommandLine(&command);
   prepared_command = command;
   return Status(kOk);
@@ -569,7 +582,11 @@ Status LaunchDesktopChrome(network::mojom::URLLoaderFactory* factory,
   std::unique_ptr<DevToolsClient> devtools_websocket_client;
   std::unique_ptr<SyncWebSocket> socket;
   BrowserInfo browser_info;
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (command.HasSwitch("remote-debugging-port")) {
+#else
+  if (!command.HasSwitch("remote-debugging-pipe")) {
+#endif
     // Though the invariant ready_to_connect == status.IsOk() always holds
     // this variable is used for better readability.
     bool ready_to_connect = false;
@@ -586,8 +603,18 @@ Status LaunchDesktopChrome(network::mojom::URLLoaderFactory* factory,
            !timeout.IsExpired()) {
       status = Status(kOk);
       if (!devtools_port) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
         status =
             internal::ParseDevToolsActivePortFile(user_data_dir, devtools_port);
+#else
+      if (const char* port_string = std::getenv("QTWEBENGINE_REMOTE_DEBUGGING")) {
+        devtools_port = std::strtol(port_string, nullptr, 10);
+        status = Status(kOk);
+      } else {
+        status = Status(kUnknownError, "Port number is not set. "
+                                       "Set QTWEBENGINE_REMOTE_DEBUGGING environment variable.");
+      }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
       }
       if (status.IsOk()) {
         // std::ostringstream is used in case to convert Windows wide string to
@@ -1214,6 +1241,10 @@ Status PrepareUserDataDir(const base::FilePath& user_data_dir,
 
 Status ParseDevToolsActivePortFile(const base::FilePath& user_data_dir,
                                    int& port) {
+#if BUILDFLAG(IS_QTWEBENGINE)
+  NOTREACHED() << "DevToolsActivePort file is not supported by QtWebEngine.";
+#endif
+
   base::FilePath port_filepath = user_data_dir.Append(kDevToolsActivePort);
   if (!base::PathExists(port_filepath)) {
     return Status(kSessionNotCreated, "DevToolsActivePort file doesn't exist");
