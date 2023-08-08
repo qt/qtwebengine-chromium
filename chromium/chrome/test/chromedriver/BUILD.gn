@@ -5,7 +5,7 @@
 import("//build/buildflag_header.gni")
 import("//build/config/python.gni")
 import("//build/config/ui.gni")
-if (is_linux) {
+if (is_linux && !is_qtwebengine) {
   import("//build/linux/strip_binary.gni")
 }
 import("//build/util/lastchange.gni")
@@ -79,6 +79,13 @@ minify_js("minify_bidimapper") {
   in_folder = "$input_dir"
   in_files = [ "mapper.js" ]
   out_folder = "$target_gen_dir/bidimapper/minified"
+
+  if (is_win) {
+    # This is workaround for Windows build. Terser converts \x1a to ^Z and
+    # it causes "unexpected end-of-file" error. The "ascii_only" terser
+    # option prevents the conversion.
+    ascii_only = true
+  }
 }
 
 action("embed_bidimapper_in_cpp") {
@@ -298,6 +305,14 @@ source_set("automation_client_lib") {
   # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
   # enable the diagnostic by removing this line.
   configs += [ "//build/config/compiler:no_exit_time_destructors" ]
+
+  if (is_qtwebengine) {
+    deps -= [ "//net/traffic_annotation:test_support" ]
+
+    if (is_gcc) {
+      cflags = [ "-Wno-trigraphs" ]
+    }
+  }
 }
 
 source_set("lib") {
@@ -389,6 +404,10 @@ source_set("lib") {
     "//ui/gfx/geometry",
   ]
 
+  if (is_qtwebengine) {
+    deps -= [ "//net/traffic_annotation:test_support" ]
+  }
+
   if (use_ozone) {
     sources += [ "keycode_text_conversion_ozone.cc" ]
     deps += [ "//ui/events/ozone/layout" ]
@@ -416,7 +435,7 @@ source_set("lib") {
   configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }
 
-if (is_linux) {
+if (is_linux && !is_qtwebengine) {
   # Linux
   executable("chromedriver_server.unstripped") {
     testonly = true
@@ -464,6 +483,26 @@ if (is_linux) {
     if (is_win) {
       deps += [ ":chromedriver_server_version" ]
     }
+
+    if (is_qtwebengine) {
+      output_name = "webenginedriver"
+      deps -= [ "//net/traffic_annotation:test_support" ]
+
+      if (is_linux || is_mac) {
+        deps += [ "//ui/gl:buildflags" ]
+      }
+
+      if (is_linux) {
+        sources += [
+          "//content/public/common/content_switches.cc",
+          "//tools/v8_context_snapshot/qt_overrides.cc",
+        ]
+      }
+
+      if (is_mac) {
+        sources += [ "//tools/v8_context_snapshot/qt_overrides.cc" ]
+      }
+    }
   }
 }
 
@@ -509,7 +548,7 @@ python_library("chromedriver_py_tests") {
     data_deps += [ "//chrome:chrome_framework" ]
   }
 
-  if (is_win) {
+  if (is_win && !is_qtwebengine) {
     # On Windows, the following target produces the final chrome.exe
     data_deps += [ "//chrome:reorder_imports" ]
   }
