@@ -92,15 +92,15 @@ public:
 
     ParagraphImpl(const SkString& text,
                   ParagraphStyle style,
-                  SkTArray<Block, true> blocks,
-                  SkTArray<Placeholder, true> placeholders,
+                  skia_private::TArray<Block, true> blocks,
+                  skia_private::TArray<Placeholder, true> placeholders,
                   sk_sp<FontCollection> fonts,
                   std::shared_ptr<SkUnicode> unicode);
 
     ParagraphImpl(const std::u16string& utf16text,
                   ParagraphStyle style,
-                  SkTArray<Block, true> blocks,
-                  SkTArray<Placeholder, true> placeholders,
+                  skia_private::TArray<Block, true> blocks,
+                  skia_private::TArray<Placeholder, true> placeholders,
                   sk_sp<FontCollection> fonts,
                   std::shared_ptr<SkUnicode> unicode);
 
@@ -140,11 +140,12 @@ public:
     sk_sp<FontCollection> fontCollection() const { return fFontCollection; }
     void formatLines(SkScalar maxWidth);
     void ensureUTF16Mapping();
-    TextIndex findNextGraphemeBoundary(TextIndex utf8);
-    TextIndex findPreviousGraphemeBoundary(TextIndex utf8);
-    TextIndex findNextGlyphClusterBoundary(TextIndex utf8);
-    TextIndex findPreviousGlyphClusterBoundary(TextIndex utf8);
-    size_t getUTF16Index(TextIndex index) {
+    skia_private::TArray<TextIndex> countSurroundingGraphemes(TextRange textRange) const;
+    TextIndex findNextGraphemeBoundary(TextIndex utf8) const;
+    TextIndex findPreviousGraphemeBoundary(TextIndex utf8) const;
+    TextIndex findNextGlyphClusterBoundary(TextIndex utf8) const;
+    TextIndex findPreviousGlyphClusterBoundary(TextIndex utf8) const;
+    size_t getUTF16Index(TextIndex index) const {
         return fUTF16IndexForUTF8Index[index];
     }
 
@@ -175,7 +176,7 @@ public:
     Run& runByCluster(ClusterIndex clusterIndex);
     SkSpan<Block> blocks(BlockRange blockRange);
     Block& block(BlockIndex blockIndex);
-    SkTArray<ResolvedFontDescriptor> resolvedFonts() const { return fFontSwitches; }
+    skia_private::TArray<ResolvedFontDescriptor> resolvedFonts() const { return fFontSwitches; }
 
     void markDirty() override {
         if (fState > kIndexed) {
@@ -206,6 +207,16 @@ public:
 
     void visit(const Visitor&) override;
 
+    int getLineNumberAt(TextIndex codeUnitIndex) const override;
+    bool getLineMetricsAt(int lineNumber, LineMetrics* lineMetrics) const override;
+    TextRange getActualTextRange(int lineNumber, bool includeSpaces) const override;
+    bool getGlyphClusterAt(TextIndex codeUnitIndex, GlyphClusterInfo* glyphInfo) override;
+    bool getClosestGlyphClusterAt(SkScalar dx,
+                                  SkScalar dy,
+                                  GlyphClusterInfo* glyphInfo) override;
+    SkFont getFontAt(TextIndex codeUnitIndex) const override;
+    std::vector<FontInfo> getFonts() const override;
+
     InternalLineMetrics getEmptyMetrics() const { return fEmptyMetrics; }
     InternalLineMetrics getStrutMetrics() const { return fStrutMetrics; }
 
@@ -235,35 +246,35 @@ private:
     void computeEmptyMetrics();
 
     // Input
-    SkTArray<StyleBlock<SkScalar>> fLetterSpaceStyles;
-    SkTArray<StyleBlock<SkScalar>> fWordSpaceStyles;
-    SkTArray<StyleBlock<SkPaint>> fBackgroundStyles;
-    SkTArray<StyleBlock<SkPaint>> fForegroundStyles;
-    SkTArray<StyleBlock<std::vector<TextShadow>>> fShadowStyles;
-    SkTArray<StyleBlock<Decoration>> fDecorationStyles;
-    SkTArray<Block, true> fTextStyles; // TODO: take out only the font stuff
-    SkTArray<Placeholder, true> fPlaceholders;
+    skia_private::TArray<StyleBlock<SkScalar>> fLetterSpaceStyles;
+    skia_private::TArray<StyleBlock<SkScalar>> fWordSpaceStyles;
+    skia_private::TArray<StyleBlock<SkPaint>> fBackgroundStyles;
+    skia_private::TArray<StyleBlock<SkPaint>> fForegroundStyles;
+    skia_private::TArray<StyleBlock<std::vector<TextShadow>>> fShadowStyles;
+    skia_private::TArray<StyleBlock<Decoration>> fDecorationStyles;
+    skia_private::TArray<Block, true> fTextStyles; // TODO: take out only the font stuff
+    skia_private::TArray<Placeholder, true> fPlaceholders;
     SkString fText;
 
     // Internal structures
     InternalState fState;
-    SkTArray<Run, false> fRuns;         // kShaped
-    SkTArray<Cluster, true> fClusters;  // kClusterized (cached: text, word spacing, letter spacing, resolved fonts)
-    SkTArray<SkUnicode::CodeUnitFlags, true> fCodeUnitProperties;
-    SkTArray<size_t, true> fClustersIndexFromCodeUnit;
+    skia_private::TArray<Run, false> fRuns;         // kShaped
+    skia_private::TArray<Cluster, true> fClusters;  // kClusterized (cached: text, word spacing, letter spacing, resolved fonts)
+    skia_private::TArray<SkUnicode::CodeUnitFlags, true> fCodeUnitProperties;
+    skia_private::TArray<size_t, true> fClustersIndexFromCodeUnit;
     std::vector<size_t> fWords;
     std::vector<SkUnicode::BidiRegion> fBidiRegions;
     // These two arrays are used in measuring methods (getRectsForRange, getGlyphPositionAtCoordinate)
     // They are filled lazily whenever they need and cached
-    SkTArray<TextIndex, true> fUTF8IndexForUTF16Index;
-    SkTArray<size_t, true> fUTF16IndexForUTF8Index;
+    skia_private::TArray<TextIndex, true> fUTF8IndexForUTF16Index;
+    skia_private::TArray<size_t, true> fUTF16IndexForUTF8Index;
     SkOnce fillUTF16MappingOnce;
     size_t fUnresolvedGlyphs;
 
-    SkTArray<TextLine, false> fLines;   // kFormatted   (cached: width, max lines, ellipsis, text align)
+    skia_private::TArray<TextLine, false> fLines;   // kFormatted   (cached: width, max lines, ellipsis, text align)
     sk_sp<SkPicture> fPicture;          // kRecorded    (cached: text styles)
 
-    SkTArray<ResolvedFontDescriptor> fFontSwitches;
+    skia_private::TArray<ResolvedFontDescriptor> fFontSwitches;
 
     InternalLineMetrics fEmptyMetrics;
     InternalLineMetrics fStrutMetrics;

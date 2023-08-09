@@ -541,6 +541,24 @@ class TensorReductionOp : public TensorBase<TensorReductionOp<Op, Dims, XprType,
 template<typename ArgType, typename Device>
 struct TensorReductionEvaluatorBase;
 
+namespace internal {
+namespace reduction {
+
+template <typename CoeffReturnType, typename Device>
+EIGEN_ALWAYS_INLINE typename StorageMemory<CoeffReturnType, Device>::Type get_null_value(
+    typename std::enable_if<Eigen::internal::is_same<Device, Eigen::SyclDevice>::value, const Device>::type& dev) {
+    return (dev.template get_null_accessor<CoeffReturnType>());
+}
+
+template <typename CoeffReturnType, typename Device>
+EIGEN_ALWAYS_INLINE typename StorageMemory<CoeffReturnType, Device>::Type get_null_value(
+    typename std::enable_if<!Eigen::internal::is_same<Device, Eigen::SyclDevice>::value, const Device>::type&) {
+    return NULL;
+}
+
+}// end namespace reduction
+} // end namespace internal
+
 // Eval as rvalue
 template<typename Op, typename Dims, typename ArgType, template <class> class MakePointer_, typename Device>
 struct TensorReductionEvaluatorBase<const TensorReductionOp<Op, Dims, ArgType, MakePointer_>, Device>
@@ -603,8 +621,10 @@ static constexpr bool RunningOnGPU = false;
   static constexpr bool RunningFullReduction = (NumOutputDims==0);
 
   EIGEN_STRONG_INLINE TensorReductionEvaluatorBase(const XprType& op, const Device& device)
-      : m_impl(op.expression(), device), m_reducer(op.reducer()), m_result(NULL), m_device(device)
-  {
+      : m_impl(op.expression(), device),
+        m_reducer(op.reducer()),
+        m_result(internal::reduction::get_null_value<CoeffReturnType, Device>(device)),
+        m_device(device) {
     EIGEN_STATIC_ASSERT((NumInputDims >= NumReducedDims), YOU_MADE_A_PROGRAMMING_MISTAKE);
     EIGEN_STATIC_ASSERT((!ReducingInnerMostDims | !PreservingInnerMostDims | (NumReducedDims == NumInputDims)),
                         YOU_MADE_A_PROGRAMMING_MISTAKE);
@@ -895,7 +915,7 @@ static constexpr bool RunningOnGPU = false;
   // binding placeholder accessors to a command group handler for SYCL
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void bind(cl::sycl::handler &cgh) const {
     m_impl.bind(cgh);
-    if(m_result) m_result.bind(cgh);
+    m_result.bind(cgh);
   }
 #endif
 

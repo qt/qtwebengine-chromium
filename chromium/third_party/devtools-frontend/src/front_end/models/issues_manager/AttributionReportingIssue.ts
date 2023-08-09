@@ -10,18 +10,19 @@ import {type MarkdownIssueDescription} from './MarkdownIssueDescription.js';
 
 export const enum IssueCode {
   PermissionPolicyDisabled = 'AttributionReportingIssue::PermissionPolicyDisabled',
-  PermissionPolicyNotDelegated = 'AttributionReportingIssue::PermissionPolicyNotDelegated',
   UntrustworthyReportingOrigin = 'AttributionReportingIssue::UntrustworthyReportingOrigin',
   InsecureContext = 'AttributionReportingIssue::InsecureContext',
   InvalidRegisterSourceHeader = 'AttributionReportingIssue::InvalidRegisterSourceHeader',
   InvalidRegisterTriggerHeader = 'AttributionReportingIssue::InvalidRegisterTriggerHeader',
   InvalidEligibleHeader = 'AttributionReportingIssue::InvalidEligibleHeader',
-  TooManyConcurrentRequests = 'AttributionReportingIssue::TooManyConcurrentRequests',
   SourceAndTriggerHeaders = 'AttributionReportingIssue::SourceAndTriggerHeaders',
   SourceIgnored = 'AttributionReportingIssue::SourceIgnored',
   TriggerIgnored = 'AttributionReportingIssue::TriggerIgnored',
-  // TODO(apaseltiner): Remove this once old issue types are removed from
-  // protocol.
+  OsSourceIgnored = 'AttributionReportingIssue::OsSourceIgnored',
+  OsTriggerIgnored = 'AttributionReportingIssue::OsTriggerIgnored',
+  InvalidRegisterOsSourceHeader = 'AttributionReportingIssue::InvalidRegisterOsSourceHeader',
+  InvalidRegisterOsTriggerHeader = 'AttributionReportingIssue::InvalidRegisterOsTriggerHeader',
+  WebAndOsHeaders = 'AttributionReportingIssue::WebAndOsHeaders',
   Unknown = 'AttributionReportingIssue::Unknown',
 }
 
@@ -29,8 +30,6 @@ function getIssueCode(details: Protocol.Audits.AttributionReportingIssueDetails)
   switch (details.violationType) {
     case Protocol.Audits.AttributionReportingIssueType.PermissionPolicyDisabled:
       return IssueCode.PermissionPolicyDisabled;
-    case Protocol.Audits.AttributionReportingIssueType.PermissionPolicyNotDelegated:
-      return IssueCode.PermissionPolicyNotDelegated;
     case Protocol.Audits.AttributionReportingIssueType.UntrustworthyReportingOrigin:
       return IssueCode.UntrustworthyReportingOrigin;
     case Protocol.Audits.AttributionReportingIssueType.InsecureContext:
@@ -41,14 +40,22 @@ function getIssueCode(details: Protocol.Audits.AttributionReportingIssueDetails)
       return IssueCode.InvalidRegisterTriggerHeader;
     case Protocol.Audits.AttributionReportingIssueType.InvalidEligibleHeader:
       return IssueCode.InvalidEligibleHeader;
-    case Protocol.Audits.AttributionReportingIssueType.TooManyConcurrentRequests:
-      return IssueCode.TooManyConcurrentRequests;
     case Protocol.Audits.AttributionReportingIssueType.SourceAndTriggerHeaders:
       return IssueCode.SourceAndTriggerHeaders;
     case Protocol.Audits.AttributionReportingIssueType.SourceIgnored:
       return IssueCode.SourceIgnored;
     case Protocol.Audits.AttributionReportingIssueType.TriggerIgnored:
       return IssueCode.TriggerIgnored;
+    case Protocol.Audits.AttributionReportingIssueType.OsSourceIgnored:
+      return IssueCode.OsSourceIgnored;
+    case Protocol.Audits.AttributionReportingIssueType.OsTriggerIgnored:
+      return IssueCode.OsTriggerIgnored;
+    case Protocol.Audits.AttributionReportingIssueType.InvalidRegisterOsSourceHeader:
+      return IssueCode.InvalidRegisterOsSourceHeader;
+    case Protocol.Audits.AttributionReportingIssueType.InvalidRegisterOsTriggerHeader:
+      return IssueCode.InvalidRegisterOsTriggerHeader;
+    case Protocol.Audits.AttributionReportingIssueType.WebAndOsHeaders:
+      return IssueCode.WebAndOsHeaders;
     default:
       return IssueCode.Unknown;
   }
@@ -93,11 +100,6 @@ export class AttributionReportingIssue extends Issue<IssueCode> {
           file: 'arPermissionPolicyDisabled.md',
           links: [],
         };
-      case IssueCode.PermissionPolicyNotDelegated:
-        return {
-          file: 'arPermissionPolicyNotDelegated.md',
-          links: [],
-        };
       case IssueCode.UntrustworthyReportingOrigin:
         return {
           file: 'arUntrustworthyReportingOrigin.md',
@@ -118,6 +120,16 @@ export class AttributionReportingIssue extends Issue<IssueCode> {
           file: 'arInvalidRegisterTriggerHeader.md',
           links: [this.getHeaderValidatorLink('trigger')],
         };
+      case IssueCode.InvalidRegisterOsSourceHeader:
+        return {
+          file: 'arInvalidRegisterOsSourceHeader.md',
+          links: [this.getHeaderValidatorLink('os-source')],
+        };
+      case IssueCode.InvalidRegisterOsTriggerHeader:
+        return {
+          file: 'arInvalidRegisterOsTriggerHeader.md',
+          links: [this.getHeaderValidatorLink('os-trigger')],
+        };
       case IssueCode.InvalidEligibleHeader:
         return {
           file: 'arInvalidEligibleHeader.md',
@@ -126,14 +138,14 @@ export class AttributionReportingIssue extends Issue<IssueCode> {
             structuredHeaderLink,
           ],
         };
-      case IssueCode.TooManyConcurrentRequests:
-        return {
-          file: 'arTooManyConcurrentRequests.md',
-          links: [],
-        };
       case IssueCode.SourceAndTriggerHeaders:
         return {
           file: 'arSourceAndTriggerHeaders.md',
+          links: [],
+        };
+      case IssueCode.WebAndOsHeaders:
+        return {
+          file: 'arWebAndOsHeaders.md',
           links: [],
         };
       case IssueCode.SourceIgnored:
@@ -144,6 +156,16 @@ export class AttributionReportingIssue extends Issue<IssueCode> {
       case IssueCode.TriggerIgnored:
         return {
           file: 'arTriggerIgnored.md',
+          links: [structuredHeaderLink],
+        };
+      case IssueCode.OsSourceIgnored:
+        return {
+          file: 'arOsSourceIgnored.md',
+          links: [structuredHeaderLink],
+        };
+      case IssueCode.OsTriggerIgnored:
+        return {
+          file: 'arOsTriggerIgnored.md',
           links: [structuredHeaderLink],
         };
       case IssueCode.Unknown:
@@ -157,18 +179,20 @@ export class AttributionReportingIssue extends Issue<IssueCode> {
 
   getKind(): IssueKind {
     switch (this.code()) {
-      case IssueCode.PermissionPolicyNotDelegated:
-        return IssueKind.BreakingChange;
       case IssueCode.PermissionPolicyDisabled:
       case IssueCode.UntrustworthyReportingOrigin:
       case IssueCode.InsecureContext:
       case IssueCode.InvalidRegisterSourceHeader:
       case IssueCode.InvalidRegisterTriggerHeader:
+      case IssueCode.InvalidRegisterOsSourceHeader:
+      case IssueCode.InvalidRegisterOsTriggerHeader:
       case IssueCode.InvalidEligibleHeader:
-      case IssueCode.TooManyConcurrentRequests:
       case IssueCode.SourceAndTriggerHeaders:
+      case IssueCode.WebAndOsHeaders:
       case IssueCode.SourceIgnored:
       case IssueCode.TriggerIgnored:
+      case IssueCode.OsSourceIgnored:
+      case IssueCode.OsTriggerIgnored:
       case IssueCode.Unknown:
         return IssueKind.PageError;
     }

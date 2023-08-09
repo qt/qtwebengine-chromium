@@ -15,8 +15,9 @@
 #ifndef SRC_TINT_UTILS_IO_TMPFILE_H_
 #define SRC_TINT_UTILS_IO_TMPFILE_H_
 
-#include <sstream>
 #include <string>
+
+#include "src/tint/utils/string_stream.h"
 
 namespace tint::utils {
 
@@ -55,7 +56,7 @@ class TmpFile {
     /// @return a reference to this TmpFile
     template <typename T>
     inline TmpFile& operator<<(T&& data) {
-        std::stringstream ss;
+        utils::StringStream ss;
         ss << data;
         std::string str = ss.str();
         Append(str.data(), str.size());

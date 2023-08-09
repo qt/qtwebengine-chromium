@@ -46,9 +46,9 @@ mkdir -p $BUILD_DIR
 # we get a fresh build.
 rm -f $BUILD_DIR/*.a
 
-GN_GPU="skia_enable_gpu=true skia_gl_standard = \"webgl\""
+GN_GPU="skia_enable_ganesh=true skia_gl_standard = \"webgl\""
 GN_GPU_FLAGS="\"-DSK_DISABLE_LEGACY_SHADERCONTEXT\","
-WASM_GPU="-lGL -DSK_SUPPORT_GPU=1 -DSK_GL -DCK_ENABLE_WEBGL \
+WASM_GPU="-lGL -DSK_GANESH -DSK_GL -DCK_ENABLE_WEBGL \
           -DSK_DISABLE_LEGACY_SHADERCONTEXT --pre-js $BASE_DIR/cpu.js --pre-js $BASE_DIR/webgl.js\
           -sUSE_WEBGL2=1"
 
@@ -141,11 +141,8 @@ SKIA_DEFINES="
 -DSK_FORCE_8_BYTE_ALIGNMENT \
 -DSK_HAS_WUFFS_LIBRARY \
 -DSK_HAS_HEIF_LIBRARY \
--DSK_ENCODE_WEBP \
 -DSK_CODEC_DECODES_WEBP \
--DSK_ENCODE_PNG \
 -DSK_CODEC_DECODES_PNG \
--DSK_ENCODE_JPEG \
 -DSK_CODEC_DECODES_JPEG \
 -DSK_SHAPER_HARFBUZZ_AVAILABLE \
 -DSK_UNICODE_AVAILABLE \
@@ -165,6 +162,7 @@ fi
 # These gms do not compile or link with the WASM code. Thus, we omit them.
 GLOBIGNORE="gm/compressed_textures.cpp:"\
 "gm/fiddle.cpp:"\
+"gm/fontations.cpp:"\
 "gm/video_decoder.cpp:"
 
 # These tests do not compile with the WASM code (require other deps).

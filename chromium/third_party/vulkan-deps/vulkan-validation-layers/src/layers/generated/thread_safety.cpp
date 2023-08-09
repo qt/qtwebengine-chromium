@@ -5760,6 +5760,34 @@ void ThreadSafety::PostCallRecordGetPipelineExecutableInternalRepresentationsKHR
     FinishReadObjectParentInstance(device, "vkGetPipelineExecutableInternalRepresentationsKHR");
 }
 
+void ThreadSafety::PreCallRecordMapMemory2KHR(
+    VkDevice                                    device,
+    const VkMemoryMapInfoKHR*                   pMemoryMapInfo,
+    void**                                      ppData) {
+    StartReadObjectParentInstance(device, "vkMapMemory2KHR");
+}
+
+void ThreadSafety::PostCallRecordMapMemory2KHR(
+    VkDevice                                    device,
+    const VkMemoryMapInfoKHR*                   pMemoryMapInfo,
+    void**                                      ppData,
+    VkResult                                    result) {
+    FinishReadObjectParentInstance(device, "vkMapMemory2KHR");
+}
+
+void ThreadSafety::PreCallRecordUnmapMemory2KHR(
+    VkDevice                                    device,
+    const VkMemoryUnmapInfoKHR*                 pMemoryUnmapInfo) {
+    StartReadObjectParentInstance(device, "vkUnmapMemory2KHR");
+}
+
+void ThreadSafety::PostCallRecordUnmapMemory2KHR(
+    VkDevice                                    device,
+    const VkMemoryUnmapInfoKHR*                 pMemoryUnmapInfo,
+    VkResult                                    result) {
+    FinishReadObjectParentInstance(device, "vkUnmapMemory2KHR");
+}
+
 #ifdef VK_ENABLE_BETA_EXTENSIONS
 
 void ThreadSafety::PreCallRecordCmdEncodeVideoKHR(
@@ -6774,6 +6802,34 @@ void ThreadSafety::PostCallRecordCmdSetDiscardRectangleEXT(
     // Host access to commandBuffer must be externally synchronized
 }
 
+void ThreadSafety::PreCallRecordCmdSetDiscardRectangleEnableEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkBool32                                    discardRectangleEnable) {
+    StartWriteObject(commandBuffer, "vkCmdSetDiscardRectangleEnableEXT");
+    // Host access to commandBuffer must be externally synchronized
+}
+
+void ThreadSafety::PostCallRecordCmdSetDiscardRectangleEnableEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkBool32                                    discardRectangleEnable) {
+    FinishWriteObject(commandBuffer, "vkCmdSetDiscardRectangleEnableEXT");
+    // Host access to commandBuffer must be externally synchronized
+}
+
+void ThreadSafety::PreCallRecordCmdSetDiscardRectangleModeEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkDiscardRectangleModeEXT                   discardRectangleMode) {
+    StartWriteObject(commandBuffer, "vkCmdSetDiscardRectangleModeEXT");
+    // Host access to commandBuffer must be externally synchronized
+}
+
+void ThreadSafety::PostCallRecordCmdSetDiscardRectangleModeEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkDiscardRectangleModeEXT                   discardRectangleMode) {
+    FinishWriteObject(commandBuffer, "vkCmdSetDiscardRectangleModeEXT");
+    // Host access to commandBuffer must be externally synchronized
+}
+
 void ThreadSafety::PreCallRecordSetHdrMetadataEXT(
     VkDevice                                    device,
     uint32_t                                    swapchainCount,
@@ -7627,6 +7683,24 @@ void ThreadSafety::PostCallRecordCmdDrawMeshTasksIndirectCountNV(
     FinishWriteObject(commandBuffer, "vkCmdDrawMeshTasksIndirectCountNV");
     FinishReadObject(buffer, "vkCmdDrawMeshTasksIndirectCountNV");
     FinishReadObject(countBuffer, "vkCmdDrawMeshTasksIndirectCountNV");
+    // Host access to commandBuffer must be externally synchronized
+}
+
+void ThreadSafety::PreCallRecordCmdSetExclusiveScissorEnableNV(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    firstExclusiveScissor,
+    uint32_t                                    exclusiveScissorCount,
+    const VkBool32*                             pExclusiveScissorEnables) {
+    StartWriteObject(commandBuffer, "vkCmdSetExclusiveScissorEnableNV");
+    // Host access to commandBuffer must be externally synchronized
+}
+
+void ThreadSafety::PostCallRecordCmdSetExclusiveScissorEnableNV(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    firstExclusiveScissor,
+    uint32_t                                    exclusiveScissorCount,
+    const VkBool32*                             pExclusiveScissorEnables) {
+    FinishWriteObject(commandBuffer, "vkCmdSetExclusiveScissorEnableNV");
     // Host access to commandBuffer must be externally synchronized
 }
 
@@ -9360,6 +9434,9 @@ void ThreadSafety::PostCallRecordGetMicromapBuildSizesEXT(
     FinishReadObjectParentInstance(device, "vkGetMicromapBuildSizesEXT");
 }
 
+#ifdef VK_ENABLE_BETA_EXTENSIONS
+#endif // VK_ENABLE_BETA_EXTENSIONS
+
 void ThreadSafety::PreCallRecordCmdDrawClusterHUAWEI(
     VkCommandBuffer                             commandBuffer,
     uint32_t                                    groupCountX,
@@ -10081,6 +10158,97 @@ void ThreadSafety::PostCallRecordCmdOpticalFlowExecuteNV(
     const VkOpticalFlowExecuteInfoNV*           pExecuteInfo) {
     FinishReadObject(commandBuffer, "vkCmdOpticalFlowExecuteNV");
     FinishReadObject(session, "vkCmdOpticalFlowExecuteNV");
+}
+
+void ThreadSafety::PreCallRecordCreateShadersEXT(
+    VkDevice                                    device,
+    uint32_t                                    createInfoCount,
+    const VkShaderCreateInfoEXT*                pCreateInfos,
+    const VkAllocationCallbacks*                pAllocator,
+    VkShaderEXT*                                pShaders) {
+    StartReadObjectParentInstance(device, "vkCreateShadersEXT");
+}
+
+void ThreadSafety::PostCallRecordCreateShadersEXT(
+    VkDevice                                    device,
+    uint32_t                                    createInfoCount,
+    const VkShaderCreateInfoEXT*                pCreateInfos,
+    const VkAllocationCallbacks*                pAllocator,
+    VkShaderEXT*                                pShaders,
+    VkResult                                    result) {
+    FinishReadObjectParentInstance(device, "vkCreateShadersEXT");
+    if (pShaders) {
+        for (uint32_t index = 0; index < createInfoCount; index++) {
+            if (!pShaders[index]) continue;
+            CreateObject(pShaders[index]);
+        }
+    }
+}
+
+void ThreadSafety::PreCallRecordDestroyShaderEXT(
+    VkDevice                                    device,
+    VkShaderEXT                                 shader,
+    const VkAllocationCallbacks*                pAllocator) {
+    StartReadObjectParentInstance(device, "vkDestroyShaderEXT");
+    StartWriteObject(shader, "vkDestroyShaderEXT");
+    // Host access to shader must be externally synchronized
+}
+
+void ThreadSafety::PostCallRecordDestroyShaderEXT(
+    VkDevice                                    device,
+    VkShaderEXT                                 shader,
+    const VkAllocationCallbacks*                pAllocator) {
+    FinishReadObjectParentInstance(device, "vkDestroyShaderEXT");
+    FinishWriteObject(shader, "vkDestroyShaderEXT");
+    DestroyObject(shader);
+    // Host access to shader must be externally synchronized
+}
+
+void ThreadSafety::PreCallRecordGetShaderBinaryDataEXT(
+    VkDevice                                    device,
+    VkShaderEXT                                 shader,
+    size_t*                                     pDataSize,
+    void*                                       pData) {
+    StartReadObjectParentInstance(device, "vkGetShaderBinaryDataEXT");
+    StartReadObject(shader, "vkGetShaderBinaryDataEXT");
+}
+
+void ThreadSafety::PostCallRecordGetShaderBinaryDataEXT(
+    VkDevice                                    device,
+    VkShaderEXT                                 shader,
+    size_t*                                     pDataSize,
+    void*                                       pData,
+    VkResult                                    result) {
+    FinishReadObjectParentInstance(device, "vkGetShaderBinaryDataEXT");
+    FinishReadObject(shader, "vkGetShaderBinaryDataEXT");
+}
+
+void ThreadSafety::PreCallRecordCmdBindShadersEXT(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    stageCount,
+    const VkShaderStageFlagBits*                pStages,
+    const VkShaderEXT*                          pShaders) {
+    StartWriteObject(commandBuffer, "vkCmdBindShadersEXT");
+    if (pShaders) {
+        for (uint32_t index = 0; index < stageCount; index++) {
+            StartReadObject(pShaders[index], "vkCmdBindShadersEXT");
+        }
+    }
+    // Host access to commandBuffer must be externally synchronized
+}
+
+void ThreadSafety::PostCallRecordCmdBindShadersEXT(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    stageCount,
+    const VkShaderStageFlagBits*                pStages,
+    const VkShaderEXT*                          pShaders) {
+    FinishWriteObject(commandBuffer, "vkCmdBindShadersEXT");
+    if (pShaders) {
+        for (uint32_t index = 0; index < stageCount; index++) {
+            FinishReadObject(pShaders[index], "vkCmdBindShadersEXT");
+        }
+    }
+    // Host access to commandBuffer must be externally synchronized
 }
 
 void ThreadSafety::PreCallRecordGetFramebufferTilePropertiesQCOM(

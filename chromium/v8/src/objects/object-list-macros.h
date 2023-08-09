@@ -154,6 +154,9 @@ class ZoneForwardList;
   V(JSIteratorHelper)                           \
   V(JSIteratorFilterHelper)                     \
   V(JSIteratorMapHelper)                        \
+  V(JSIteratorTakeHelper)                       \
+  V(JSIteratorDropHelper)                       \
+  V(JSIteratorFlatMapHelper)                    \
   V(JSMap)                                      \
   V(JSMapIterator)                              \
   V(JSMessageObject)                            \
@@ -187,6 +190,7 @@ class ZoneForwardList;
   V(JSTemporalTimeZone)                         \
   V(JSTemporalZonedDateTime)                    \
   V(JSTypedArray)                               \
+  V(JSValidIteratorWrapper)                     \
   V(JSWeakCollection)                           \
   V(JSWeakRef)                                  \
   V(JSWeakMap)                                  \

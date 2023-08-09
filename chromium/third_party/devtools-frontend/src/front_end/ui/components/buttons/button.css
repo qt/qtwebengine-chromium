@@ -97,8 +97,8 @@ button.round.tiny {
 }
 
 button.primary {
-  border: 1px solid var(--color-primary);
-  background: var(--color-primary);
+  border: 1px solid var(--color-primary-old);
+  background: var(--color-primary-old);
   color: var(--color-background);
 }
 
@@ -124,7 +124,7 @@ button.primary:disabled:hover {
 button.secondary {
   border: 1px solid var(--color-details-hairline);
   background: var(--color-background);
-  color: var(--color-primary);
+  color: var(--color-primary-old);
 }
 
 button.secondary:hover {
@@ -202,7 +202,11 @@ button.round devtools-icon {
   width: 24px;
   height: 24px;
 
-  --icon-color: var(--color-text-secondary);
+  --icon-color: var(--icon-default);
+}
+
+button.primary-toolbar devtools-icon {
+  --icon-color: var(--icon-primary);
 }
 
 button.primary devtools-icon {
@@ -210,7 +214,7 @@ button.primary devtools-icon {
 }
 
 button.secondary devtools-icon {
-  --icon-color: var(--color-primary);
+  --icon-color: var(--icon-primary);
 }
 
 button.small devtools-icon {
@@ -242,28 +246,36 @@ button.round.explicit-size devtools-icon {
 
 button.toolbar.active devtools-icon,
 button.toolbar:active devtools-icon {
-  --icon-color: var(--color-primary);
+  --icon-color: var(--icon-toggled);
+}
+
+button.primary-toolbar:active devtools-icon {
+  --icon-color: var(--icon-primary);
 }
 
 button.toolbar:hover devtools-icon {
-  --icon-color: var(--color-text-primary);
+  --icon-color: var(--icon-default-hover);
+}
+
+button.primary-toolbar:hover devtools-icon {
+  --icon-color: var(--icon-primary);
 }
 
 button.toolbar:disabled devtools-icon,
 button.round:disabled devtools-icon {
-  --icon-color: var(--color-text-disabled);
+  --icon-color: var(--icon-disabled);
 }
 
 button.primary:disabled devtools-icon {
-  --icon-color: var(--color-text-disabled);
+  --icon-color: var(--icon-disabled);
 }
 
 button.secondary:disabled devtools-icon {
-  --icon-color: var(--color-text-disabled);
+  --icon-color: var(--icon-disabled);
 }
 
 .spinner-component.secondary {
-  border: 2px solid var(--color-primary);
+  border: 2px solid var(--color-primary-old);
   border-right-color: transparent;
 }
 

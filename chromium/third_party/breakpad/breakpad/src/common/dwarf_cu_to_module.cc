@@ -35,6 +35,10 @@
 #define __STDC_FORMAT_MACROS
 #endif  /* __STDC_FORMAT_MACROS */
 
+#ifdef HAVE_CONFIG_H
+#include <config.h>  // Must come first
+#endif
+
 #include "common/dwarf_cu_to_module.h"
 
 #include <assert.h>
@@ -326,7 +330,10 @@ class DwarfCUToModule::GenericDIEHandler: public DIEHandler {
   // Use this from EndAttributes member functions, not ProcessAttribute*
   // functions; only the former can be sure that all the DIE's attributes
   // have been seen.
-  StringView ComputeQualifiedName();
+  //
+  // On return, if has_qualified_name is non-NULL, *has_qualified_name is set to
+  // true if the DIE includes a fully-qualified name, false otherwise.
+  StringView ComputeQualifiedName(bool* has_qualified_name);
 
   CUContext* cu_context_;
   DIEContext* parent_context_;
@@ -462,7 +469,8 @@ void DwarfCUToModule::GenericDIEHandler::ProcessAttributeString(
   }
 }
 
-StringView DwarfCUToModule::GenericDIEHandler::ComputeQualifiedName() {
+StringView DwarfCUToModule::GenericDIEHandler::ComputeQualifiedName(
+    bool* has_qualified_name) {
   // Use the demangled name, if one is available. Demangled names are
   // preferable to those inferred from the DWARF structure because they
   // include argument types.
@@ -478,6 +486,15 @@ StringView DwarfCUToModule::GenericDIEHandler::ComputeQualifiedName() {
   StringView* unqualified_name = nullptr;
   StringView* enclosing_name = nullptr;
   if (!qualified_name) {
+    if (has_qualified_name) {
+      // dSYMs built with -gmlt do not include the DW_AT_linkage_name
+      // with the unmangled symbol, but rather include it in the
+      // LC_SYMTAB STABS, which end up in the externs of the module.
+      //
+      // Remember this so the Module can copy over the extern name later.
+      *has_qualified_name = false;
+    }
+
     // Find the unqualified name. If the DIE has its own DW_AT_name
     // attribute, then use that; otherwise, check the specification.
     if (!name_attribute_.empty()) {
@@ -495,6 +512,10 @@ StringView DwarfCUToModule::GenericDIEHandler::ComputeQualifiedName() {
       enclosing_name = &specification_->enclosing_name;
     } else if (parent_context_) {
       enclosing_name = &parent_context_->name;
+    }
+  } else {
+    if (has_qualified_name) {
+      *has_qualified_name = true;
     }
   }
 
@@ -718,7 +739,8 @@ class DwarfCUToModule::FuncHandler: public GenericDIEHandler {
         ranges_form_(DW_FORM_sec_offset),
         ranges_data_(0),
         inline_(false),
-        handle_inline_(handle_inline) {}
+        handle_inline_(handle_inline),
+        has_qualified_name_(false) {}
 
   void ProcessAttributeUnsigned(enum DwarfAttribute attr,
                                 enum DwarfForm form,
@@ -741,6 +763,7 @@ class DwarfCUToModule::FuncHandler: public GenericDIEHandler {
   bool inline_;
   vector<unique_ptr<Module::Inline>> child_inlines_;
   bool handle_inline_;
+  bool has_qualified_name_;
   DIEContext child_context_; // A context for our children.
 };
 
@@ -804,7 +827,7 @@ DIEHandler* DwarfCUToModule::FuncHandler::FindChildHandler(
 
 bool DwarfCUToModule::FuncHandler::EndAttributes() {
   // Compute our name, and record a specification, if appropriate.
-  name_ = ComputeQualifiedName();
+  name_ = ComputeQualifiedName(&has_qualified_name_);
   if (name_.empty() && abstract_origin_) {
     name_ = abstract_origin_->name;
   }
@@ -877,6 +900,9 @@ void DwarfCUToModule::FuncHandler::Finish() {
     scoped_ptr<Module::Function> func(new Module::Function(name, low_pc_));
     func->ranges = ranges;
     func->parameter_size = 0;
+    // If the name was unqualified, prefer the Extern name if there's a mismatch
+    // (the Extern name will be fully-qualified in that case).
+    func->prefer_extern_name = !has_qualified_name_;
     if (func->address) {
       // If the function address is zero this is a sign that this function
       // description is just empty debug data and should just be discarded.
@@ -911,7 +937,7 @@ void DwarfCUToModule::FuncHandler::Finish() {
 }
 
 bool DwarfCUToModule::NamedScopeHandler::EndAttributes() {
-  child_context_.name = ComputeQualifiedName();
+  child_context_.name = ComputeQualifiedName(NULL);
   if (child_context_.name.empty() && no_specification) {
     cu_context_->reporter->UnknownSpecification(offset_, specification_offset_);
   }

@@ -16,6 +16,7 @@ namespace SkSL {
 
 class Context;
 class Expression;
+class IndexExpression;
 struct Modifiers;
 struct Module;
 struct Program;
@@ -36,6 +37,14 @@ const Modifiers* AddConstToVarModifiers(const Context& context,
                                         const Variable& var,
                                         const Expression* initialValue,
                                         const ProgramUsage* usage);
+
+/**
+ * Rewrites indexed swizzles of the form `myVec.zyx[i]` by replacing the swizzle with a lookup into
+ * a constant vector. e.g., the above expression would be rewritten as `myVec[vec3(2, 1, 0)[i]]`.
+ * This roughly matches glslang's handling of the code.
+ */
+std::unique_ptr<Expression> RewriteIndexedSwizzle(const Context& context,
+                                                  const IndexExpression& swizzle);
 
 /**
  * Copies built-in functions from modules into the program. Relies on ProgramUsage to determine

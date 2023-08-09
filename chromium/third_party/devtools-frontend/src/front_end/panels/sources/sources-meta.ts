@@ -348,6 +348,19 @@ const UIStrings = {
    */
   disallowScrollingPastEndOfFile: 'Disallow scrolling past end of file',
   /**
+   *@description Title of a setting under the Sources category in Settings
+   */
+  wasmAutoStepping: 'When debugging wasm with debug information, do not pause on wasm bytecode if possible',
+  /**
+   *@description Title of a setting under the Sources category in Settings
+   */
+  enableWasmAutoStepping: 'Enable wasm auto-stepping',
+  /**
+   *@description Title of a setting under the Sources category in Settings
+   */
+  disableWasmAutoStepping: 'Disable wasm auto-stepping',
+
+  /**
    *@description Text for command prefix of go to a given line or symbol
    */
   goTo: 'Go to',
@@ -520,10 +533,7 @@ UI.ViewManager.registerViewExtension({
   persistence: UI.ViewManager.ViewPersistence.PERMANENT,
   async loadView() {
     const Sources = await loadSourcesModule();
-    if (Root.Runtime.experiments.isEnabled(Root.Runtime.ExperimentName.BREAKPOINT_VIEW)) {
-      return Sources.BreakpointsSidebarPane.BreakpointsSidebarPane.instance();
-    }
-    return Sources.JavaScriptBreakpointsSidebarPane.JavaScriptBreakpointsSidebarPane.instance();
+    return Sources.BreakpointsSidebarPane.BreakpointsSidebarPane.instance();
   },
 });
 
@@ -705,7 +715,7 @@ UI.ActionRegistration.registerActionExtension({
     return Sources.SourcesPanel.ActionDelegate.instance();
   },
   title: i18nLazyString(UIStrings.runSnippet),
-  iconClass: UI.ActionRegistration.IconClass.LARGEICON_PLAY,
+  iconClass: UI.ActionRegistration.IconClass.PLAY,
   contextTypes() {
     return maybeRetrieveContextTypes(Sources => [Sources.SourcesView.SourcesView]);
   },
@@ -724,7 +734,8 @@ UI.ActionRegistration.registerActionExtension({
 UI.ActionRegistration.registerActionExtension({
   category: UI.ActionRegistration.ActionCategory.DEBUGGER,
   actionId: 'debugger.toggle-breakpoints-active',
-  iconClass: UI.ActionRegistration.IconClass.LARGE_ICON_DEACTIVATE_BREAKPOINTS,
+  iconClass: UI.ActionRegistration.IconClass.BREAKPOINT_CROSSED,
+  toggledIconClass: UI.ActionRegistration.IconClass.BREAKPOINT_CROSSED_FILLED,
   toggleable: true,
   async loadActionDelegate() {
     const Sources = await loadSourcesModule();
@@ -1193,7 +1204,7 @@ if (!Host.InspectorFrontendHost.InspectorFrontendHostInstance.isHostedMode()) {
       const Sources = await loadSourcesModule();
       return Sources.SourcesNavigator.ActionDelegate.instance();
     },
-    iconClass: UI.ActionRegistration.IconClass.LARGE_ICON_ADD,
+    iconClass: UI.ActionRegistration.IconClass.PLUS,
     title: i18nLazyString(UIStrings.addFolderToWorkspace),
     condition: Root.Runtime.ConditionName.NOT_SOURCES_HIDE_ADD_FOLDER,
   });
@@ -1658,9 +1669,28 @@ Common.Settings.registerSettingExtension({
   ],
 });
 
+Common.Settings.registerSettingExtension({
+  category: Common.Settings.SettingCategory.SOURCES,
+  storageType: Common.Settings.SettingStorageType.Local,
+  title: i18nLazyString(UIStrings.wasmAutoStepping),
+  settingName: 'wasmAutoStepping',
+  settingType: Common.Settings.SettingType.BOOLEAN,
+  defaultValue: true,
+  options: [
+    {
+      value: true,
+      title: i18nLazyString(UIStrings.enableWasmAutoStepping),
+    },
+    {
+      value: false,
+      title: i18nLazyString(UIStrings.disableWasmAutoStepping),
+    },
+  ],
+});
+
 UI.ViewManager.registerLocationResolver({
   name: UI.ViewManager.ViewLocationValues.NAVIGATOR_VIEW,
-  category: UI.ViewManager.ViewLocationCategoryValues.SOURCES,
+  category: UI.ViewManager.ViewLocationCategory.SOURCES,
   async loadResolver() {
     const Sources = await loadSourcesModule();
     return Sources.SourcesPanel.SourcesPanel.instance();
@@ -1669,7 +1699,7 @@ UI.ViewManager.registerLocationResolver({
 
 UI.ViewManager.registerLocationResolver({
   name: UI.ViewManager.ViewLocationValues.SOURCES_SIDEBAR_TOP,
-  category: UI.ViewManager.ViewLocationCategoryValues.SOURCES,
+  category: UI.ViewManager.ViewLocationCategory.SOURCES,
   async loadResolver() {
     const Sources = await loadSourcesModule();
     return Sources.SourcesPanel.SourcesPanel.instance();
@@ -1678,7 +1708,7 @@ UI.ViewManager.registerLocationResolver({
 
 UI.ViewManager.registerLocationResolver({
   name: UI.ViewManager.ViewLocationValues.SOURCES_SIDEBAR_BOTTOM,
-  category: UI.ViewManager.ViewLocationCategoryValues.SOURCES,
+  category: UI.ViewManager.ViewLocationCategory.SOURCES,
   async loadResolver() {
     const Sources = await loadSourcesModule();
     return Sources.SourcesPanel.SourcesPanel.instance();
@@ -1687,7 +1717,7 @@ UI.ViewManager.registerLocationResolver({
 
 UI.ViewManager.registerLocationResolver({
   name: UI.ViewManager.ViewLocationValues.SOURCES_SIDEBAR_TABS,
-  category: UI.ViewManager.ViewLocationCategoryValues.SOURCES,
+  category: UI.ViewManager.ViewLocationCategory.SOURCES,
   async loadResolver() {
     const Sources = await loadSourcesModule();
     return Sources.SourcesPanel.SourcesPanel.instance();
@@ -1829,11 +1859,7 @@ UI.Context.registerListener({
   },
   async loadListener() {
     const Sources = await loadSourcesModule();
-    if (Root.Runtime.experiments.isEnabled(Root.Runtime.ExperimentName.BREAKPOINT_VIEW)) {
-      return Sources.BreakpointsSidebarPane.BreakpointsSidebarController.instance();
-    }
-    return Sources.JavaScriptBreakpointsSidebarPane.JavaScriptBreakpointsSidebarPane.instance();
-
+    return Sources.BreakpointsSidebarPane.BreakpointsSidebarController.instance();
   },
 });
 
@@ -1871,7 +1897,8 @@ UI.ContextMenu.registerItem({
 
 QuickOpen.FilteredListWidget.registerProvider({
   prefix: '@',
-  iconName: 'ic_command_go_to_symbol',
+  iconName: 'symbol',
+  iconWidth: '16px',
   async provider() {
     const Sources = await loadSourcesModule();
     return new Sources.OutlineQuickOpen.OutlineQuickOpen();
@@ -1882,7 +1909,8 @@ QuickOpen.FilteredListWidget.registerProvider({
 
 QuickOpen.FilteredListWidget.registerProvider({
   prefix: ':',
-  iconName: 'ic_command_go_to_line',
+  iconName: 'colon',
+  iconWidth: '20px',
   async provider() {
     const Sources = await loadSourcesModule();
     return new Sources.GoToLineQuickOpen.GoToLineQuickOpen();
@@ -1893,7 +1921,8 @@ QuickOpen.FilteredListWidget.registerProvider({
 
 QuickOpen.FilteredListWidget.registerProvider({
   prefix: '',
-  iconName: 'ic_command_open_file',
+  iconName: 'document',
+  iconWidth: '16px',
   async provider() {
     const Sources = await loadSourcesModule();
     return new Sources.OpenFileQuickOpen.OpenFileQuickOpen();

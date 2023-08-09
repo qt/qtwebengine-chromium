@@ -41,17 +41,16 @@ class CFX_DIBitmap final : public CFX_DIBBase {
   bool ConvertFormat(FXDIB_Format format);
   void Clear(uint32_t color);
 
-#ifdef _SKIA_SUPPORT_
-  uint32_t GetPixel(int x, int y) const;
-#endif
 #if defined(_SKIA_SUPPORT_)
+  uint32_t GetPixel(int x, int y) const;
   void SetPixel(int x, int y, uint32_t color);
-#endif
+#endif  // defined(_SKIA_SUPPORT_)
 
   bool SetRedFromBitmap(const RetainPtr<CFX_DIBBase>& pSrcBitmap);
   bool SetAlphaFromBitmap(const RetainPtr<CFX_DIBBase>& pSrcBitmap);
   bool SetUniformOpaqueAlpha();
 
+  // TODO(crbug.com/pdfium/2007): Migrate callers to `CFX_RenderDevice`.
   bool MultiplyAlpha(int alpha);
   bool MultiplyAlpha(const RetainPtr<CFX_DIBBase>& pSrcBitmap);
 
@@ -114,15 +113,26 @@ class CFX_DIBitmap final : public CFX_DIBBase {
                                                             FXDIB_Format format,
                                                             uint32_t pitch);
 
-#ifdef _SKIA_SUPPORT_
+#if defined(_SKIA_SUPPORT_)
+  // Converts to pre-multiplied alpha if necessary.
   void PreMultiply();
+
+  // Converts to un-pre-multiplied alpha if necessary.
   void UnPreMultiply();
+
+  // Forces pre-multiplied alpha without conversion.
+  // TODO(crbug.com/pdfium/2011): Remove the need for this.
+  void ForcePreMultiply();
+
+  // Forces un-pre-multiplied alpha without conversion.
+  // TODO(crbug.com/pdfium/2011): Remove the need for this.
+  void ForceUnPreMultiply();
 #endif
 
  private:
   enum class Channel : uint8_t { kRed, kAlpha };
 
-#ifdef _SKIA_SUPPORT_
+#if defined(_SKIA_SUPPORT_)
   enum class Format { kCleared, kPreMultiplied, kUnPreMultiplied };
 #endif
 
@@ -157,7 +167,7 @@ class CFX_DIBitmap final : public CFX_DIBBase {
                                   int src_top);
 
   MaybeOwned<uint8_t, FxFreeDeleter> m_pBuffer;
-#ifdef _SKIA_SUPPORT_
+#if defined(_SKIA_SUPPORT_)
   Format m_nFormat = Format::kCleared;
 #endif
 };

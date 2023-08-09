@@ -161,6 +161,7 @@ class ThreadOutputGenerator(OutputGenerator):
 #include <string>
 #include <thread>
 #include <vector>
+#include "utils/vk_layer_utils.h"
 
 VK_DEFINE_NON_DISPATCHABLE_HANDLE(DISTINCT_NONDISPATCHABLE_PHONY_HANDLE)
 // The following line must match the vulkan_core.h condition guarding VK_DEFINE_NON_DISPATCHABLE_HANDLE
@@ -184,25 +185,20 @@ static_assert(std::is_same<uint64_t, DISTINCT_NONDISPATCHABLE_PHONY_HANDLE>::val
 [[maybe_unused]] static const char *kVUID_Threading_SingleThreadReuse = "UNASSIGNED-Threading-SingleThreadReuse";
 // clang-format on
 
-class ObjectUseData
+class alignas(get_hardware_destructive_interference_size()) ObjectUseData
 {
 public:
     class WriteReadCount
     {
     public:
-        WriteReadCount(int64_t v) : count(v) {}
+        explicit WriteReadCount(int64_t v) : count(v) {}
 
-        int32_t GetReadCount() const { return (int32_t)(count & 0xFFFFFFFF); }
-        int32_t GetWriteCount() const { return (int32_t)(count >> 32); }
+        int32_t GetReadCount() const { return static_cast<int32_t>(count & 0xFFFFFFFF); }
+        int32_t GetWriteCount() const { return static_cast<int32_t>(count >> 32); }
 
     private:
-        int64_t count;
+        int64_t count{};
     };
-
-    ObjectUseData() : thread(), writer_reader_count(0) {
-        // silence -Wunused-private-field warning
-        padding[0] = 0;
-    }
 
     WriteReadCount AddWriter() {
         int64_t prev = writer_reader_count.fetch_add(1ULL << 32);
@@ -231,17 +227,12 @@ public:
         }
     }
 
-    std::atomic<std::thread::id> thread;
+    std::atomic<std::thread::id> thread{};
 
 private:
-    // need to update write and read counts atomically. Writer in high
-    // 32 bits, reader in low 32 bits.
-    std::atomic<int64_t> writer_reader_count;
-
-    // Put each lock on its own cache line to avoid false cache line sharing.
-    char padding[(-int(sizeof(std::atomic<std::thread::id>) + sizeof(std::atomic<int64_t>))) & 63];
+    // Need to update write and read counts atomically. Writer in high 32 bits, reader in low 32 bits.
+    std::atomic<int64_t> writer_reader_count{};
 };
-
 
 template <typename T>
 class counter {
@@ -1579,8 +1570,13 @@ void ThreadSafety::PostCallRecordCreateRayTracingPipelinesKHR(
                     if paramtype in self.handle_types:
                         indent = ''
                         create_pipelines_call = True
-                        # The CreateXxxPipelines APIs can return a list of partly created pipelines upon failure
+                        create_shaders_call = True
+                        # The CreateXxxPipelines/CreateShaders APIs can return a list of partly created pipelines/shaders upon failure
                         if not ('Create' in name and 'Pipelines' in name):
+                            create_pipelines_call = False
+                        if not ('Create' in name and 'Shaders' in name):
+                            create_shaders_call = False
+                        if not (create_pipelines_call or create_shaders_call):
                             paramdecl += 'if (result == VK_SUCCESS) {\n'
                             create_pipelines_call = False
                             indent = '    '
@@ -1596,12 +1592,14 @@ void ThreadSafety::PostCallRecordCreateRayTracingPipelinesKHR(
                             paramdecl += indent + '    for (uint32_t index = 0; index < ' + dereference + param_len + '; index++) {\n'
                             if create_pipelines_call:
                                 paramdecl += indent + '        if (!pPipelines[index]) continue;\n'
+                            if create_shaders_call:
+                                paramdecl += indent + '        if (!pShaders[index]) continue;\n'
                             paramdecl += indent + '        CreateObject' + self.paramSuffix(param.find('type')) + '(' + paramname.text + '[index]);\n'
                             paramdecl += indent + '    }\n'
                             paramdecl += indent + '}\n'
                         else:
                             paramdecl += '    CreateObject' + self.paramSuffix(param.find('type')) + '(*' + paramname.text + ');\n'
-                        if not create_pipelines_call:
+                        if not create_pipelines_call and not create_shaders_call:
                             paramdecl += '}\n'
                 else:
                     paramtype = param.find('type')
@@ -1610,7 +1608,7 @@ void ThreadSafety::PostCallRecordCreateRayTracingPipelinesKHR(
                     else:
                         paramtype = 'None'
                     if paramtype in self.handle_types and paramtype != 'VkPhysicalDevice':
-                        if self.paramIsArray(param) and ('pPipelines' != paramname.text):
+                        if self.paramIsArray(param) and ('pPipelines' != paramname.text) and ('pShaders' != paramname.text or not 'Create' in name):
                             # Add pointer dereference for array counts that are pointer values
                             dereference = ''
                             for candidate in params:

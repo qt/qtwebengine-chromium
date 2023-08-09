@@ -312,8 +312,8 @@ $(BUILD_PFX)libvpx_g.a: $(LIBVPX_OBJS)
 # To determine SO_VERSION_{MAJOR,MINOR,PATCH}, calculate c,a,r with current
 # SO_VERSION_* then follow the rules in the link to detemine the new version
 # (c1, a1, r1) and set MAJOR to [c1-a1], MINOR to a1 and PATCH to r1
-SO_VERSION_MAJOR := 7
-SO_VERSION_MINOR := 1
+SO_VERSION_MAJOR := 8
+SO_VERSION_MINOR := 0
 SO_VERSION_PATCH := 0
 ifeq ($(filter darwin%,$(TGT_OS)),$(TGT_OS))
 LIBVPX_SO               := libvpx.$(SO_VERSION_MAJOR).dylib
@@ -631,8 +631,8 @@ test_rc_interface.$(VCPROJ_SFX): $(RC_INTERFACE_TEST_SRCS) vpx.$(VCPROJ_SFX) \
             -I. -I"$(SRC_PATH_BARE)/third_party/googletest/src/include" \
             -L. -l$(CODEC_LIB) -l$(RC_RTC_LIB) -l$(GTEST_LIB) $^
 endif  # RC_INTERFACE_TEST
-endif  # CONFIG_VP9_ENCODER
-endif
+endif  # CONFIG_ENCODERS
+endif  # CONFIG_MSVS
 else
 
 include $(SRC_PATH_BARE)/third_party/googletest/gtest.mk
@@ -699,7 +699,7 @@ $(eval $(call linkerxx_template,$(SIMPLE_ENCODE_TEST_BIN), \
               -L. -lsimple_encode -lvpx -lgtest $(extralibs) -lm))
 endif  # SIMPLE_ENCODE_TEST
 
-endif  # CONFIG_UNIT_TESTS
+endif  # CONFIG_EXTERNAL_BUILD
 
 # Install test sources only if codec source is included
 INSTALL-SRCS-$(CONFIG_CODEC_SRCS) += $(patsubst $(SRC_PATH_BARE)/%,%,\
@@ -724,7 +724,7 @@ NUM_SHARDS := 10
 SHARDS := 0 1 2 3 4 5 6 7 8 9
 $(foreach s,$(SHARDS),$(eval $(call test_shard_template,$(s),$(NUM_SHARDS))))
 
-endif
+endif  # CONFIG_UNIT_TESTS
 
 ##
 ## documentation directives

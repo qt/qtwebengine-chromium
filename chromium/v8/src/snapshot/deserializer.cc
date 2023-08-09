@@ -6,9 +6,11 @@
 
 #include "src/base/logging.h"
 #include "src/codegen/assembler-inl.h"
+#include "src/codegen/reloc-info-inl.h"
 #include "src/common/assert-scope.h"
 #include "src/common/globals.h"
 #include "src/execution/isolate.h"
+#include "src/handles/global-handles-inl.h"
 #include "src/heap/heap-inl.h"
 #include "src/heap/heap-write-barrier-inl.h"
 #include "src/heap/heap-write-barrier.h"
@@ -195,6 +197,7 @@ Deserializer<IsolateT>::Deserializer(IsolateT* isolate,
     : isolate_(isolate),
       source_(payload),
       magic_number_(magic_number),
+      new_descriptor_arrays_(isolate->heap()),
       deserializing_user_code_(deserializing_user_code),
       should_rehash_((v8_flags.rehash_snapshot && can_rehash) ||
                      deserializing_user_code) {
@@ -272,14 +275,7 @@ void Deserializer<IsolateT>::LogNewMapEvents() {
 
 template <typename IsolateT>
 void Deserializer<IsolateT>::WeakenDescriptorArrays() {
-  DisallowGarbageCollection no_gc;
-  Map descriptor_array_map = ReadOnlyRoots(isolate()).descriptor_array_map();
-  for (Handle<DescriptorArray> descriptor_array : new_descriptor_arrays_) {
-    DescriptorArray raw = *descriptor_array;
-    DCHECK(raw.IsStrongDescriptorArray());
-    raw.set_map_safe_transition(descriptor_array_map);
-    WriteBarrier::Marking(raw, raw.number_of_descriptors());
-  }
+  isolate()->heap()->WeakenDescriptorArrays(std::move(new_descriptor_arrays_));
 }
 
 template <typename IsolateT>
@@ -361,9 +357,9 @@ void Deserializer<Isolate>::PostProcessNewJSReceiver(Map map,
                                                      SnapshotSpace space) {
   DCHECK_EQ(map.instance_type(), instance_type);
 
-  DCHECK(!InstanceTypeChecker::IsJSRabGsabDataView(instance_type));
-  if (InstanceTypeChecker::IsJSDataView(instance_type)) {
-    auto data_view = JSDataView::cast(*obj);
+  if (InstanceTypeChecker::IsJSDataView(instance_type) ||
+      InstanceTypeChecker::IsJSRabGsabDataView(instance_type)) {
+    auto data_view = JSDataViewOrRabGsabDataView::cast(*obj);
     auto buffer = JSArrayBuffer::cast(data_view.buffer());
     if (buffer.was_detached()) {
       // Directly set the data pointer to point to the EmptyBackingStoreBuffer.
@@ -441,10 +437,10 @@ void Deserializer<IsolateT>::PostProcessNewObject(Handle<Map> map,
       // Rehash strings before read-only space is sealed. Strings outside
       // read-only space are rehashed lazily. (e.g. when rehashing dictionaries)
       if (space == SnapshotSpace::kReadOnlyHeap) {
-        to_rehash_.push_back(obj);
+        PushObjectToRehash(obj);
       }
     } else if (raw_obj.NeedsRehashing(instance_type)) {
-      to_rehash_.push_back(obj);
+      PushObjectToRehash(obj);
     }
 
     if (deserializing_user_code()) {
@@ -484,7 +480,7 @@ void Deserializer<IsolateT>::PostProcessNewObject(Handle<Map> map,
       } else {
         // We dont defer ByteArray because JSTypedArray needs the base_pointer
         // ByteArray immediately if it's on heap.
-        DCHECK(CanBeDeferred(*obj) ||
+        DCHECK(CanBeDeferred(*obj, SlotType::kAnySlot) ||
                InstanceTypeChecker::IsByteArray(instance_type));
       }
     }
@@ -499,13 +495,14 @@ void Deserializer<IsolateT>::PostProcessNewObject(Handle<Map> map,
     }
   } else if (InstanceTypeChecker::IsCode(instance_type)) {
     Code code = Code::cast(raw_obj);
-    code.init_code_entry_point(main_thread_isolate(), kNullAddress);
+    code.init_instruction_start(main_thread_isolate(), kNullAddress);
     if (!code.has_instruction_stream()) {
-      code.SetEntryPointForOffHeapBuiltin(main_thread_isolate(),
-                                          code.OffHeapInstructionStart());
+      code.SetInstructionStartForOffHeapBuiltin(
+          main_thread_isolate(), EmbeddedData::FromBlob(main_thread_isolate())
+                                     .InstructionStartOf(code.builtin_id()));
     } else {
-      code.UpdateCodeEntryPoint(main_thread_isolate(),
-                                code.instruction_stream());
+      code.UpdateInstructionStart(main_thread_isolate(),
+                                  code.instruction_stream());
     }
   } else if (InstanceTypeChecker::IsMap(instance_type)) {
     if (v8_flags.log_maps) {
@@ -532,7 +529,7 @@ void Deserializer<IsolateT>::PostProcessNewObject(Handle<Map> map,
   } else if (InstanceTypeChecker::IsDescriptorArray(instance_type)) {
     DCHECK(InstanceTypeChecker::IsStrongDescriptorArray(instance_type));
     Handle<DescriptorArray> descriptors = Handle<DescriptorArray>::cast(obj);
-    new_descriptor_arrays_.push_back(descriptors);
+    new_descriptor_arrays_.Push(*descriptors);
   } else if (InstanceTypeChecker::IsNativeContext(instance_type)) {
     NativeContext::cast(raw_obj).init_microtask_queue(main_thread_isolate(),
                                                       nullptr);
@@ -754,14 +751,14 @@ void DeserializerRelocInfoVisitor::VisitCodeTarget(InstructionStream host,
                                                    RelocInfo* rinfo) {
   HeapObject object = *objects_->at(current_object_++);
   rinfo->set_target_address(
-      InstructionStream::cast(object).instruction_start());
+      host, InstructionStream::cast(object).instruction_start());
 }
 
 void DeserializerRelocInfoVisitor::VisitEmbeddedPointer(InstructionStream host,
                                                         RelocInfo* rinfo) {
   HeapObject object = *objects_->at(current_object_++);
   // Embedded object reference must be a strong one.
-  rinfo->set_target_object(isolate()->heap(), object);
+  rinfo->set_target_object(host, object);
 }
 
 void DeserializerRelocInfoVisitor::VisitExternalReference(
@@ -773,8 +770,8 @@ void DeserializerRelocInfoVisitor::VisitExternalReference(
 
   if (rinfo->IsCodedSpecially()) {
     Address location_of_branch_data = rinfo->pc();
-    Assembler::deserialization_set_special_target_at(location_of_branch_data,
-                                                     host, address);
+    Assembler::deserialization_set_special_target_at(
+        location_of_branch_data, host.code(kAcquireLoad), address);
   } else {
     WriteUnalignedValue(rinfo->target_address_address(), address);
   }
@@ -789,8 +786,8 @@ void DeserializerRelocInfoVisitor::VisitInternalReference(
   int target_offset = source().GetInt();
   static_assert(InstructionStream::kOnHeapBodyIsContiguous);
   DCHECK_LT(static_cast<unsigned>(target_offset),
-            static_cast<unsigned>(host.instruction_size()));
-  Address target = host.entry() + target_offset;
+            static_cast<unsigned>(host.code(kAcquireLoad).instruction_size()));
+  Address target = host.instruction_start() + target_offset;
   Assembler::deserialization_set_target_internal_reference_at(
       rinfo->pc(), target, rinfo->rmode());
 }
@@ -807,14 +804,14 @@ void DeserializerRelocInfoVisitor::VisitOffHeapTarget(InstructionStream host,
 
   CHECK_NOT_NULL(isolate()->embedded_blob_code());
   EmbeddedData d = EmbeddedData::FromBlob(isolate());
-  Address address = d.InstructionStartOfBuiltin(builtin);
+  Address address = d.InstructionStartOf(builtin);
   CHECK_NE(kNullAddress, address);
 
   // TODO(ishell): implement RelocInfo::set_target_off_heap_target()
   if (RelocInfo::OffHeapTargetIsCodedSpecially()) {
     Address location_of_branch_data = rinfo->pc();
-    Assembler::deserialization_set_special_target_at(location_of_branch_data,
-                                                     host, address);
+    Assembler::deserialization_set_special_target_at(
+        location_of_branch_data, host.code(kAcquireLoad), address);
   } else {
     WriteUnalignedValue(rinfo->target_address_address(), address);
   }
@@ -1180,7 +1177,8 @@ int Deserializer<IsolateT>::ReadVariableRawData(byte data,
   return size_in_tagged;
 }
 
-// Deserialize raw code directly into the body of the code object.
+// Custom deserialization for a Code object and its associated InstructionStream
+// object.
 template <typename IsolateT>
 template <typename SlotAccessor>
 int Deserializer<IsolateT>::ReadCodeBody(byte data,
@@ -1196,15 +1194,16 @@ int Deserializer<IsolateT>::ReadCodeBody(byte data,
 
   {
     DisallowGarbageCollection no_gc;
-    InstructionStream code = InstructionStream::cast(*slot_accessor.object());
+    InstructionStream istream =
+        InstructionStream::cast(*slot_accessor.object());
 
-    // First deserialize the code itself.
-    source_.CopyRaw(
-        reinterpret_cast<void*>(code.address() + InstructionStream::kDataStart),
-        size_in_bytes);
+    // First deserialize the untagged region of the InstructionStream object.
+    source_.CopyRaw(reinterpret_cast<void*>(istream.address() +
+                                            InstructionStream::kDataStart),
+                    size_in_bytes);
   }
 
-  // Then deserialize the code header
+  // Then deserialize the InstructionStream header
   ReadData(slot_accessor.object(), HeapObject::kHeaderSize / kTaggedSize,
            InstructionStream::kDataStart / kTaggedSize);
 
@@ -1225,15 +1224,14 @@ int Deserializer<IsolateT>::ReadCodeBody(byte data,
   {
     DisallowGarbageCollection no_gc;
 
-    InstructionStream code = InstructionStream::cast(*slot_accessor.object());
-    if (V8_EXTERNAL_CODE_SPACE_BOOL) {
-      code.set_main_cage_base(isolate()->cage_base(), kRelaxedStore);
-    }
+    InstructionStream istream =
+        InstructionStream::cast(*slot_accessor.object());
+    Code code = istream.code(kAcquireLoad);
     DeserializerRelocInfoVisitor visitor(this, &preserialized_objects);
-    for (RelocIterator it(code,
+    for (RelocIterator it(code, istream, istream.relocation_info(),
                           InstructionStream::BodyDescriptor::kRelocModeMask);
          !it.done(); it.next()) {
-      it.rinfo()->Visit(&visitor);
+      it.rinfo()->Visit(istream, &visitor);
     }
   }
 

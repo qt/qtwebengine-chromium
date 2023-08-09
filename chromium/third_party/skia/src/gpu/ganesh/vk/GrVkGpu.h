@@ -20,17 +20,17 @@
 
 class GrDirectContext;
 class GrPipeline;
-
 class GrVkBuffer;
 class GrVkCommandPool;
 class GrVkFramebuffer;
+class GrVkOpsRenderPass;
 class GrVkPipeline;
 class GrVkPipelineState;
 class GrVkPrimaryCommandBuffer;
-class GrVkOpsRenderPass;
 class GrVkRenderPass;
 class GrVkSecondaryCommandBuffer;
 class GrVkTexture;
+enum class SkTextureCompressionType;
 
 namespace skgpu { struct VulkanInterface; }
 
@@ -73,7 +73,7 @@ public:
     const VkPhysicalDeviceMemoryProperties& physicalDeviceMemoryProperties() const {
         return fPhysDevMemProps;
     }
-    bool protectedContext() const { return fProtectedContext == GrProtected::kYes; }
+    bool protectedContext() const { return fProtectedContext == skgpu::Protected::kYes; }
 
     GrVkResourceProvider& resourceProvider() { return fResourceProvider; }
 
@@ -330,7 +330,7 @@ private:
                                         const SkIRect&,
                                         const GrOpsRenderPass::LoadAndStoreInfo&,
                                         const GrOpsRenderPass::StencilLoadAndStoreInfo&,
-                                        const SkTArray<GrSurfaceProxy*, true>& sampledProxies,
+                                        const skia_private::TArray<GrSurfaceProxy*, true>& sampledProxies,
                                         GrXferBarrierFlags renderPassXferBarriers) override;
 
     void prepareSurfacesForBackendAccessAndStateUpdates(
@@ -379,7 +379,7 @@ private:
                               GrColorType colorType,
                               const GrMipLevel texels[],
                               int mipLevelCount);
-    bool uploadTexDataCompressed(GrVkImage* tex, SkImage::CompressionType compression,
+    bool uploadTexDataCompressed(GrVkImage* tex, SkTextureCompressionType compression,
                                  VkFormat vkFormat, SkISize dimensions, GrMipmapped mipmapped,
                                  const void* data, size_t dataSize);
     void resolveImage(GrSurface* dst, GrVkRenderTarget* src, const SkIRect& srcRect,
@@ -414,10 +414,10 @@ private:
     // just a raw pointer; object's lifespan is managed by fCmdPool
     GrVkPrimaryCommandBuffer*                             fMainCmdBuffer;
 
-    SkSTArray<1, GrVkSemaphore::Resource*>                fSemaphoresToWaitOn;
-    SkSTArray<1, GrVkSemaphore::Resource*>                fSemaphoresToSignal;
+    skia_private::STArray<1, GrVkSemaphore::Resource*>    fSemaphoresToWaitOn;
+    skia_private::STArray<1, GrVkSemaphore::Resource*>    fSemaphoresToSignal;
 
-    SkTArray<std::unique_ptr<SkDrawable::GpuDrawHandler>> fDrawables;
+    skia_private::TArray<std::unique_ptr<SkDrawable::GpuDrawHandler>> fDrawables;
 
     VkPhysicalDeviceProperties                            fPhysDevProps;
     VkPhysicalDeviceMemoryProperties                      fPhysDevMemProps;
@@ -426,7 +426,7 @@ private:
     // vulkan context.
     bool                                                  fDisconnected;
 
-    GrProtected                                           fProtectedContext;
+    skgpu::Protected                                      fProtectedContext;
 
     std::unique_ptr<GrVkOpsRenderPass>                    fCachedOpsRenderPass;
 

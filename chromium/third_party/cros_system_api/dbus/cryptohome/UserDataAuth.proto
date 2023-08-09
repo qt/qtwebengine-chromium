@@ -17,14 +17,13 @@ option go_package = "chromiumos/system_api/user_data_auth_proto";
 
 import "auth_factor.proto";
 import "fido.proto";
-import "key.proto";
 
 ///////////////////////////////////////////////////////////////////////////////
 // Messages that's used by the actual request/reply goes below
 ///////////////////////////////////////////////////////////////////////////////
 
-// We still need the AccountIdentifier, KeyDelegate and AuthorizationRequest
-// messages from the old interface.
+// We still need the AccountIdentifier and KeyDelegate messages from the old
+// interface.
 import "rpc.proto";
 
 // Error codes do not need to be sequential per-call.
@@ -101,26 +100,6 @@ enum CryptohomeErrorCode {
   // can handle them properly.
 }
 
-// This is used by MountRequest to store details about the mount to create
-message CreateRequest {
-  // In the future, this will contain account-wide data like
-  // the deletion priority or the IdP's origin.
-
-  // keys contain the key data to add to the key for the mount that we
-  // are creating. Currently, only one key is supported.
-  // TODO(b/133212955): Change the name of this to "key".
-  repeated cryptohome.Key keys = 1;
-
-  // Explicitly use the |key| from the AuthorizationRequest.
-  // Setting this value means that the |keys| above would be populated with
-  // the |key| specified in MountRequest, so that we can spare the trouble
-  // of specifying |keys| above.
-  bool copy_authorization_key = 2;
-
-  // If set to true, always use eCryptfs as the encryption method.
-  bool force_ecryptfs = 3;
-}
-
 ///////////////////////////////////////////////////////////////////////////////
 // Error handling related
 ///////////////////////////////////////////////////////////////////////////////
@@ -167,6 +146,12 @@ enum PrimaryAction {
   // Note that it is a special case, see CryptohomeErrorInfo's
   // probable_action field for more info.
   PRIMARY_INCORRECT_AUTH = 8;
+
+  // PRIMARY_LE_LOCKED_OUT indicates that authentication is attempted towards a
+  // locked out LE credential. Therefore, the caller should try another
+  // authentication methods that reset the LE credential, or wait until the LE
+  // credential is available.
+  PRIMARY_LE_LOCKED_OUT = 9;
 }
 
 // PossibleAction is used to indicate that cryptohomed believies some actions
@@ -184,9 +169,7 @@ enum PossibleAction {
   // POSSIBLY_AUTH suggests the caller to try another authentication method.
   POSSIBLY_AUTH = 3;
 
-  // POSSIBLY_INCORRECT_AUTH suggests that incorrect auth material (password)
-  // have been supplied. The caller should notify the user as such.
-  POSSIBLY_INCORRECT_AUTH = 4;
+  reserved 4;  // POSSIBLY_INCORRECT_AUTH
 
   // POSSIBLY_DELETE_VAULT suggests the caller to delete the user's vault
   // because it's unrecoverable.
@@ -250,15 +233,7 @@ message CryptohomeErrorInfo {
   // occurred, but believes that some of the actions (as listed in this field)
   // are more likely to resolve the error than other actions.
   // The entries in this repeated field are not ordered.
-  // This field can be ignored if primary_action is not PRIMARY_NONE or
-  // PRIMARY_INCORRECT_AUTH.
-  // Note that primary_action = PRIMARY_INCORRECT_AUTH is a special case,
-  // because the Chromium side will handle it different depending the number
-  // of times it happened. Therefore, for the case when primary_action =
-  // PRIMARY_INCORRECT_AUTH, the probable_action field will be populated with
-  // any PossibleAction entry that might be relevant (if any).
-  // In the future we intend to weed out any false positives in reporting
-  // PRIMARY_INCORRECT_AUTH, and thus probable_action will eventually be empty.
+  // This field can be ignored if primary_action is not PRIMARY_NONE.
   repeated PossibleAction possible_actions = 4;
 }
 
@@ -303,56 +278,6 @@ message UnmountReply {
   // which field to use and the process on the migration, see comment in
   // CryptohomeErrorInfo.
   CryptohomeErrorInfo error_info = 2;
-}
-
-// Input parameters to Mount()
-message MountRequest {
-  // The account of the user whose home directory is requested for mounting.
-  cryptohome.AccountIdentifier account = 1;
-  // Authorization data from the user.
-  cryptohome.AuthorizationRequest authorization = 2;
-
-  // If set, then perform an ephemeral mount only.
-  bool require_ephemeral = 3;
-  // If defined, the account will be created if it does not exist.
-  // Additionally, a failed AuthorizationRequest will be expected as
-  // there will be no existing keys.
-  CreateRequest create = 4;
-  // If set to true, and cryptohomed supports the new "dircrypto" encryption,
-  // forces to use the new encryption. That is, makes it an error to mount
-  // an existing home directory encrypted in the old way (ecryptfs).
-  bool force_dircrypto_if_available = 5;
-  // If set to true, mounts the existing ecryptfs vault to a temporary location
-  // while setting up a new dircrypto directory.
-  bool to_migrate_from_ecryptfs = 6;
-  // If set, then performs a public mount, which is used for a Kiosk session.
-  // Credentials are not needed in the request; they are synthesized by
-  // cryptohomed from id.
-  bool public_mount = 7;
-  // If set to true, the mount will be for a guest session.
-  bool guest_mount = 8;
-  // Auth Session id will let mount derive credentials from AuthSessions.
-  bytes auth_session_id = 9;
-}
-
-// Output parameters for Mount()
-message MountReply {
-  // Indicate an error when |error| is not empty.
-  // TODO(b/229807416): Remove once CryptohomeError refactor is complete.
-  CryptohomeErrorCode error = 1;
-  // |recreated| is set when the cryptohome had to be wiped
-  // because the key or data was an unrecoverable.  It does not imply
-  // failure to Mount nor is it 'true' when a CreateRequest creates
-  // a cryptohome for the first time.
-  bool recreated = 2;
-  // Returns the filesystem-sanitized username.
-  string sanitized_username = 3;
-
-  // Indicate an error if this field exists.
-  // This field is replacing the |error| field above, for more information on
-  // which field to use and the process on the migration, see comment in
-  // CryptohomeErrorInfo.
-  CryptohomeErrorInfo error_info = 4;
 }
 
 // Input parameters to Remove()
@@ -416,45 +341,25 @@ message CheckKeyReply {
   CryptohomeErrorCode error = 1;
 }
 
-// StartFingerprintAuthSession sets BiometricsDaemon and the Fingerprint MCU to
-// match mode. EndFingerprintAuthSession sets them back to non-match mode.
-// A typical call sequence involves one or more other calls that actually wait
-// for fingerprint scan result, between StartFingerprintAuthSession and
-// EndFingerprintAuthSession.
-//
-// Example 1: successful fingerprint match at first attempt.
-// --> StartFingerprintAuthSession
-// --> CheckKey(KEY_TYPE_FINGERPRINT), fingerprint scan success
-// --> EndFingerprintAuthSession
-//
-// Example 2: successful fingerprint match at third attempt.
-// --> StartFingerprintAuthSession
-// --> CheckKey(KEY_TYPE_FINGERPRINT), fingerprint scan no match
-// --> CheckKey(KEY_TYPE_FINGERPRINT), fingerprint scan no match
-// --> CheckKey(KEY_TYPE_FINGERPRINT), fingerprint scan success
-// --> EndFingerprintAuthSession
-//
-// Example 3: client chooses to cancel before success.
-// --> StartFingerprintAuthSession
-// --> CheckKey(KEY_TYPE_FINGERPRINT), fingerprint scan no match
-// --> CheckKey(KEY_TYPE_FINGERPRINT), fingerprint scan no match
-// --> EndFingerprintAuthSession
-
+// Deprecated.
 // Input parameters to StartFingerprintAuthSession()
 message StartFingerprintAuthSessionRequest {
   // This represents the "single user" that we are will be fingerprint for.
   cryptohome.AccountIdentifier account_id = 1;
 }
 
+// Deprecated.
 // Output parameters for StartFingerprintAuthSession()
 message StartFingerprintAuthSessionReply {
   // Indicates an error if |error| is not empty.
   CryptohomeErrorCode error = 1;
 }
 
+// Deprecated.
 // Input parameters to EndFingerprintAuthSession()
 message EndFingerprintAuthSessionRequest {}
 
+// Deprecated.
 // Output parameters for EndFingerprintAuthSession()
 message EndFingerprintAuthSessionReply {
   // Indicates an error if |error| is not empty.
@@ -644,10 +549,6 @@ message StartAuthSessionRequest {
   // TODO(b/240596931): Stop assuming that leaving this unset is the same as
   // `AUTH_INTENT_DECRYPT`, and forbid `AUTH_INTENT_UNSPECIFIED`.
   AuthIntent intent = 3;
-  // Currently nothing is required to be passed in for KeyData map request,
-  // but in the future we can expect this to be expanded to filter queries with
-  // |key.data().type()| to return all keys of a certain class, testing
-  // |key.secret()|, or |key.data().provider_data()| entries.
 }
 
 // AuthFactorWithStatus returns read-only AuthFactor with relevant status
@@ -1221,16 +1122,6 @@ message GetLoginStatusReply {
   bool is_locked_to_single_user = 3;
 }
 
-// Input parameters to GetStatusString()
-message GetStatusStringRequest {}
-
-// Output parameters for GetStatusString()
-message GetStatusStringReply {
-  // Contains a JSON string that includes some tpm status, mount status and
-  // install attributes status information.
-  string status = 1;
-}
-
 // Input parameters to LockToSingleUserMountUntilReboot()
 // Lock the device to single user use.
 message LockToSingleUserMountUntilRebootRequest {
@@ -1259,14 +1150,6 @@ message GetRsuDeviceIdReply {
 
 // Output parameters for GetRsuDeviceId()
 message GetRsuDeviceIdRequest {}
-
-// Input parameters to CheckHealth()
-message CheckHealthRequest {}
-
-// Output parameters for CheckHealth()
-message CheckHealthReply {
-  bool requires_powerwash = 2;
-}
 
 // Input parameters to ResetApplicationContainer()
 message ResetApplicationContainerRequest {
@@ -1587,9 +1470,28 @@ message TerminateAuthFactorReply {
 // Fingerprint scan results.
 enum FingerprintScanResult {
   FINGERPRINT_SCAN_RESULT_SUCCESS = 0;
+
+  // Scan results for authentication.
   FINGERPRINT_SCAN_RESULT_RETRY = 1;
   FINGERPRINT_SCAN_RESULT_LOCKOUT = 2;
+
+  // Internal error.
   FINGERPRINT_SCAN_RESULT_FATAL_ERROR = 3;
+
+  // Scan results for enrollment.
+  // Sensor needs more data.
+  FINGERPRINT_SCAN_RESULT_PARTIAL = 4;
+  // Image doesn't contain enough details.
+  FINGERPRINT_SCAN_RESULT_INSUFFICIENT = 5;
+  // Sensor needs to be cleaned.
+  FINGERPRINT_SCAN_RESULT_SENSOR_DIRTY = 6;
+  // Not enough data collected (swipe type sensor).
+  FINGERPRINT_SCAN_RESULT_TOO_SLOW = 7;
+  // User removed finger too fast.
+  FINGERPRINT_SCAN_RESULT_TOO_FAST = 8;
+  // User didn't move finger during enrollment.
+  FINGERPRINT_SCAN_RESULT_IMMOBILE = 9;
+  FINGERPRINT_SCAN_RESULT_ENROLL_OTHER = 10;
 }
 
 // The message included in signal AuthScanResultSignal.
@@ -1621,4 +1523,31 @@ message AuthScanDone {
   // The result of the latest scan. Note that this doesn't represent the match
   // result, but just whether the scan is successful.
   AuthScanResult scan_result = 1;
+}
+
+// The message included in PrepareAuthFactorProgress when the purpose is add.
+message PrepareAuthFactorForAddProgress {
+  AuthFactorType auth_factor_type = 1;
+  oneof progress {
+    // The progress of biometrics auth factors, e.g., FingerprintAuthFactor.
+    AuthEnrollmentProgress biometrics_progress = 2;
+  }
+}
+
+// The message included in PrepareAuthFactorProgress when the purpose is auth.
+message PrepareAuthFactorForAuthProgress {
+  AuthFactorType auth_factor_type = 1;
+  oneof progress {
+    // The progress of biometrics auth factors, e.g., FingerprintAuthFactor.
+    AuthScanDone biometrics_progress = 2;
+  }
+}
+
+// The message included in signal PrepareAuthFactorProgressSignal.
+message PrepareAuthFactorProgress {
+  AuthFactorPreparePurpose purpose = 1;
+  oneof progress {
+    PrepareAuthFactorForAddProgress add_progress = 2;
+    PrepareAuthFactorForAuthProgress auth_progress = 3;
+  }
 }

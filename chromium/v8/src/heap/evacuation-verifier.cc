@@ -25,8 +25,7 @@ void EvacuationVerifier::VisitPointers(HeapObject host, MaybeObjectSlot start,
   VerifyPointers(start, end);
 }
 
-void EvacuationVerifier::VisitCodePointer(HeapObject host,
-                                          CodeObjectSlot slot) {
+void EvacuationVerifier::VisitCodePointer(Code host, CodeObjectSlot slot) {
   VerifyCodePointer(slot);
 }
 

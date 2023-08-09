@@ -10,6 +10,7 @@ import * as ComponentHelpers from '../../../ui/components/helpers/helpers.js';
 import * as UI from '../../../ui/legacy/legacy.js';
 import * as LitHtml from '../../../ui/lit-html/lit-html.js';
 import type * as Protocol from '../../../generated/protocol.js';
+import * as Host from '../../../core/host/host.js';
 
 import HeadersViewStyles from './HeadersView.css.js';
 
@@ -41,12 +42,16 @@ const UIStrings = {
    *@description Button text for a button which adds an additional header override rule.
    */
   addOverrideRule: 'Add override rule',
+  /**
+   *@description Text which is a hyperlink to more documentation
+   */
+  learnMore: 'Learn more',
 };
 const str_ = i18n.i18n.registerUIStrings('panels/sources/components/HeadersView.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 
-const plusIconUrl = new URL('../../../Images/plus_icon.svg', import.meta.url).toString();
-const trashIconUrl = new URL('../../../Images/trash_bin_material_icon.svg', import.meta.url).toString();
+const plusIconUrl = new URL('../../../Images/plus.svg', import.meta.url).toString();
+const trashIconUrl = new URL('../../../Images/bin.svg', import.meta.url).toString();
 
 export class HeadersView extends UI.View.SimpleView {
   readonly #headersViewComponent = new HeadersViewComponent();
@@ -87,10 +92,6 @@ export class HeadersView extends UI.View.SimpleView {
       uiSourceCode: this.#uiSourceCode,
       parsingError,
     };
-  }
-
-  commitEditing(): void {
-    this.#uiSourceCode.commitWorkingCopy();
   }
 
   #onWorkingCopyChanged(): void {
@@ -218,6 +219,8 @@ export class HeadersViewComponent extends HTMLElement {
     // clear selection
     const selection = window.getSelection();
     selection?.removeAllRanges();
+
+    this.#uiSourceCode?.commitWorkingCopy();
   }
 
   #onContextMenu(event: Event): void {
@@ -294,6 +297,7 @@ export class HeadersViewComponent extends HTMLElement {
 
   #onHeadersChanged(): void {
     this.#uiSourceCode?.setWorkingCopy(JSON.stringify(this.#headerOverrides, null, 2));
+    Host.userMetrics.actionTaken(Host.UserMetrics.Action.HeaderOverrideHeadersFileEdited);
   }
 
   #onPaste(event: Event): void {
@@ -355,6 +359,9 @@ export class HeadersViewComponent extends HTMLElement {
       <${Buttons.Button.Button.litTagName} .variant=${Buttons.Button.Variant.SECONDARY} class="add-block">
         ${i18nString(UIStrings.addOverrideRule)}
       </${Buttons.Button.Button.litTagName}>
+      <div class="learn-more-row">
+        <x-link href="https://goo.gle/devtools-override" class="link">${i18nString(UIStrings.learnMore)}</x-link>
+      </div>
     `, this.#shadow, {host: this});
     // clang-format on
 
@@ -406,8 +413,8 @@ export class HeadersViewComponent extends HTMLElement {
           title=${i18nString(UIStrings.addHeader)}
           .size=${Buttons.Button.Size.SMALL}
           .iconUrl=${plusIconUrl}
-          .iconWidth=${'16px'}
-          .iconHeight=${'16px'}
+          .iconWidth=${'20px'}
+          .iconHeight=${'20px'}
           .variant=${Buttons.Button.Variant.ROUND}
           class="add-header inline-button"
         ></${Buttons.Button.Button.litTagName}>

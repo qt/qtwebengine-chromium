@@ -46,7 +46,7 @@ import * as TextEditor from '../../ui/components/text_editor/text_editor.js';
 import * as Components from '../../ui/legacy/components/utils/utils.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import * as Emulation from '../emulation/emulation.js';
-
+import type * as IssuesManager from '../../models/issues_manager/issues_manager.js';
 import * as ElementsComponents from './components/components.js';
 import {canGetJSPath, cssPath, jsPath, xPath} from './DOMPath.js';
 import {ElementsPanel} from './ElementsPanel.js';
@@ -227,7 +227,7 @@ function isOpeningTag(context: TagTypeContext): context is OpeningTagContext {
 
 export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
   nodeInternal: SDK.DOMModel.DOMNode;
-  treeOutline: ElementsTreeOutline|null;
+  override treeOutline: ElementsTreeOutline|null;
   private gutterContainer: HTMLElement;
   private readonly decorationsElement: HTMLElement;
   private searchQuery: string|null;
@@ -243,6 +243,7 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
   selectionElement?: HTMLDivElement;
   private hintElement?: HTMLElement;
   private contentElement: HTMLElement;
+  #elementIssues: Map<string, IssuesManager.GenericIssue.GenericIssue> = new Map();
 
   readonly tagTypeContext: TagTypeContext;
 
@@ -254,7 +255,13 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
     this.contentElement = this.listItemElement.createChild('div');
     this.gutterContainer = this.contentElement.createChild('div', 'gutter-container');
     this.gutterContainer.addEventListener('click', this.showContextMenu.bind(this));
-    const gutterMenuIcon = UI.Icon.Icon.create('largeicon-menu', 'gutter-menu-icon');
+    const gutterMenuIcon = new IconButton.Icon.Icon();
+    gutterMenuIcon.data = {
+      color: 'var(--icon-default)',
+      iconName: 'dots-horizontal',
+      height: '16px',
+      width: '16px',
+    };
     this.gutterContainer.append(gutterMenuIcon);
     this.decorationsElement = this.gutterContainer.createChild('div', 'hidden');
 
@@ -420,6 +427,39 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
     }
   }
 
+  addIssue(newIssue: IssuesManager.GenericIssue.GenericIssue): void {
+    if (this.#elementIssues.has(newIssue.primaryKey())) {
+      return;
+    }
+
+    this.#elementIssues.set(newIssue.primaryKey(), newIssue);
+    this.#applyIssueStyleAndTooltip(newIssue);
+  }
+
+  #applyIssueStyleAndTooltip(issue: IssuesManager.GenericIssue.GenericIssue): void {
+    const issueDetails = issue.details();
+
+    if (issueDetails.violatingNodeAttribute) {
+      this.#highlightViolatingAttr(issueDetails.violatingNodeAttribute);
+    } else {
+      this.#highlightTagAsViolating();
+    }
+  }
+
+  #highlightTagAsViolating(): void {
+    this.listItemElement.getElementsByClassName('webkit-html-tag-name')[0].classList.add('violating-element');
+  }
+
+  #highlightViolatingAttr(name: string): void {
+    const tag = this.listItemElement.getElementsByClassName('webkit-html-tag')[0];
+    const attributes = tag.getElementsByClassName('webkit-html-attribute');
+    for (const attribute of attributes) {
+      if (attribute.getElementsByClassName('webkit-html-attribute-name')[0].textContent === name) {
+        attribute.getElementsByClassName('webkit-html-attribute-name')[0].classList.add('violating-element');
+      }
+    }
+  }
+
   expandedChildrenLimit(): number {
     return this.expandedChildrenLimitInternal;
   }
@@ -470,13 +510,13 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
     }
   }
 
-  onbind(): void {
+  override onbind(): void {
     if (this.treeOutline && !this.isClosingTag()) {
       this.treeOutline.treeElementByNode.set(this.nodeInternal, this);
     }
   }
 
-  onunbind(): void {
+  override onunbind(): void {
     if (this.editing) {
       this.editing.cancel();
     }
@@ -485,7 +525,7 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
     }
   }
 
-  onattach(): void {
+  override onattach(): void {
     if (this.hoveredInternal) {
       this.createSelection();
       this.listItemElement.classList.add('hovered');
@@ -495,18 +535,18 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
     this.listItemElement.draggable = true;
   }
 
-  async onpopulate(): Promise<void> {
+  override async onpopulate(): Promise<void> {
     if (this.treeOutline) {
       return this.treeOutline.populateTreeElement(this);
     }
   }
 
-  async expandRecursively(): Promise<void> {
+  override async expandRecursively(): Promise<void> {
     await this.nodeInternal.getSubtree(-1, true);
     await super.expandRecursively(Number.MAX_VALUE);
   }
 
-  onexpand(): void {
+  override onexpand(): void {
     if (this.isClosingTag()) {
       return;
     }
@@ -514,7 +554,7 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
     this.updateTitle();
   }
 
-  oncollapse(): void {
+  override oncollapse(): void {
     if (this.isClosingTag()) {
       return;
     }
@@ -522,14 +562,14 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
     this.updateTitle();
   }
 
-  select(omitFocus?: boolean, selectedByUser?: boolean): boolean {
+  override select(omitFocus?: boolean, selectedByUser?: boolean): boolean {
     if (this.editing) {
       return false;
     }
     return super.select(omitFocus, selectedByUser);
   }
 
-  onselect(selectedByUser?: boolean): boolean {
+  override onselect(selectedByUser?: boolean): boolean {
     if (!this.treeOutline) {
       return false;
     }
@@ -545,7 +585,7 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
     return true;
   }
 
-  ondelete(): boolean {
+  override ondelete(): boolean {
     if (!this.treeOutline) {
       return false;
     }
@@ -554,7 +594,7 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
     return true;
   }
 
-  onenter(): boolean {
+  override onenter(): boolean {
     // On Enter or Return start editing the first attribute
     // or create a new attribute on the selected element.
     if (this.editing) {
@@ -567,7 +607,7 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
     return true;
   }
 
-  selectOnMouseDown(event: MouseEvent): void {
+  override selectOnMouseDown(event: MouseEvent): void {
     super.selectOnMouseDown(event);
 
     if (this.editing) {
@@ -580,7 +620,7 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
     }
   }
 
-  ondblclick(event: Event): boolean {
+  override ondblclick(event: Event): boolean {
     if (this.editing || this.isClosingTag()) {
       return false;
     }
@@ -1337,6 +1377,11 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
         this.createSelection();
         this.createHint();
       }
+
+      // If there is an issue with this node, make sure to update it.
+      for (const issue of this.#elementIssues.values()) {
+        this.#applyIssueStyleAndTooltip(issue);
+      }
     }
 
     this.highlightSearchResultsInternal();
@@ -1979,8 +2024,7 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
 
   adornSlot({name}: {name: string}, context: OpeningTagContext): Adorners.Adorner.Adorner {
     const linkIcon = new IconButton.Icon.Icon();
-    linkIcon
-        .data = {iconName: 'ic_show_node_16x16', color: 'var(--color-text-disabled)', width: '12px', height: '12px'};
+    linkIcon.data = {iconName: 'select-element', color: 'var(--icon-default)', width: '14px', height: '14px'};
     const slotText = document.createElement('span');
     slotText.textContent = name;
     const adornerContent = document.createElement('span');

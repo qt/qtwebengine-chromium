@@ -176,10 +176,9 @@ class OutOfLineRecordWrite final : public OutOfLineCode {
       __ DecompressTagged(value_, value_);
     }
 #endif
-    __ CheckPageFlag(
-        value_, scratch0_,
-        MemoryChunk::kPointersToHereAreInterestingOrInSharedHeapMask, eq,
-        exit());
+    __ CheckPageFlag(value_, scratch0_,
+                     MemoryChunk::kPointersToHereAreInterestingMask, eq,
+                     exit());
     __ AddWord(scratch1_, object_, index_);
     SaveFPRegsMode const save_fp_mode = frame()->DidAllocateDoubleRegisters()
                                             ? SaveFPRegsMode::kSave
@@ -630,10 +629,9 @@ void CodeGenerator::BailoutIfDeoptimized() {
   int offset = InstructionStream::kCodeOffset - InstructionStream::kHeaderSize;
   __ LoadTaggedField(kScratchReg,
                      MemOperand(kJavaScriptCallCodeStartRegister, offset));
-  __ Lw(kScratchReg,
-        FieldMemOperand(kScratchReg, Code::kKindSpecificFlagsOffset));
+  __ Lw(kScratchReg, FieldMemOperand(kScratchReg, Code::kFlagsOffset));
   __ And(kScratchReg, kScratchReg,
-         Operand(1 << InstructionStream::kMarkedForDeoptimizationBit));
+         Operand(1 << Code::kMarkedForDeoptimizationBit));
   __ Jump(BUILTIN_CODE(isolate(), CompileLazyDeoptimizedCode),
           RelocInfo::CODE_TARGET, ne, kScratchReg, Operand(zero_reg));
 }
@@ -874,8 +872,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
                            i.InputDoubleRegister(0), DetermineStubCallMode());
       break;
     case kArchStoreWithWriteBarrier: {
-      RecordWriteMode mode =
-          static_cast<RecordWriteMode>(MiscField::decode(instr->opcode()));
+      RecordWriteMode mode = RecordWriteModeField::decode(instr->opcode());
       Register object = i.InputRegister(0);
       Register index = i.InputRegister(1);
       Register value = i.InputRegister(2);
@@ -1719,7 +1716,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       __ Lb(i.OutputRegister(), i.MemoryOperand());
       break;
     case kRiscvSb:
-      __ Sb(i.InputOrZeroRegister(2), i.MemoryOperand());
+      __ Sb(i.InputOrZeroRegister(0), i.MemoryOperand(1));
       break;
     case kRiscvLhu:
       __ Lhu(i.OutputRegister(), i.MemoryOperand());
@@ -1734,7 +1731,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       __ Ulh(i.OutputRegister(), i.MemoryOperand());
       break;
     case kRiscvSh:
-      __ Sh(i.InputOrZeroRegister(2), i.MemoryOperand());
+      __ Sh(i.InputOrZeroRegister(0), i.MemoryOperand(1));
       break;
     case kRiscvUsh:
       __ Ush(i.InputOrZeroRegister(2), i.MemoryOperand());
@@ -1759,14 +1756,14 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       __ Uld(i.OutputRegister(), i.MemoryOperand());
       break;
     case kRiscvSd:
-      __ Sd(i.InputOrZeroRegister(2), i.MemoryOperand());
+      __ Sd(i.InputOrZeroRegister(0), i.MemoryOperand(1));
       break;
     case kRiscvUsd:
       __ Usd(i.InputOrZeroRegister(2), i.MemoryOperand());
       break;
 #endif
     case kRiscvSw:
-      __ Sw(i.InputOrZeroRegister(2), i.MemoryOperand());
+      __ Sw(i.InputOrZeroRegister(0), i.MemoryOperand(1));
       break;
     case kRiscvUsw:
       __ Usw(i.InputOrZeroRegister(2), i.MemoryOperand());
@@ -1780,9 +1777,8 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kRiscvStoreFloat: {
-      size_t index = 0;
-      MemOperand operand = i.MemoryOperand(&index);
-      FPURegister ft = i.InputOrZeroSingleRegister(index);
+      MemOperand operand = i.MemoryOperand(1);
+      FPURegister ft = i.InputOrZeroSingleRegister(0);
       if (ft == kSingleRegZero && !__ IsSingleZeroRegSet()) {
         __ LoadFPRImmediate(kSingleRegZero, 0.0f);
       }
@@ -1806,11 +1802,11 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       __ ULoadDouble(i.OutputDoubleRegister(), i.MemoryOperand(), kScratchReg);
       break;
     case kRiscvStoreDouble: {
-      FPURegister ft = i.InputOrZeroDoubleRegister(2);
+      FPURegister ft = i.InputOrZeroDoubleRegister(0);
       if (ft == kDoubleRegZero && !__ IsDoubleZeroRegSet()) {
         __ LoadFPRImmediate(kDoubleRegZero, 0.0);
       }
-      __ StoreDouble(ft, i.MemoryOperand());
+      __ StoreDouble(ft, i.MemoryOperand(1));
       break;
     }
     case kRiscvUStoreDouble: {
@@ -2181,9 +2177,8 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
 #if V8_TARGET_ARCH_RISCV64
     case kRiscvStoreCompressTagged: {
-      size_t index = 0;
-      MemOperand operand = i.MemoryOperand(&index);
-      __ StoreTaggedField(i.InputOrZeroRegister(index), operand);
+      MemOperand operand = i.MemoryOperand(1);
+      __ StoreTaggedField(i.InputOrZeroRegister(0), operand);
       break;
     }
     case kRiscvLoadDecompressTaggedSigned: {
@@ -2203,12 +2198,12 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
 #endif
     case kRiscvRvvSt: {
       (__ VU).set(kScratchReg, VSew::E8, Vlmul::m1);
-      Register dst = i.MemoryOperand().offset() == 0 ? i.MemoryOperand().rm()
-                                                     : kScratchReg;
-      if (i.MemoryOperand().offset() != 0) {
-        __ AddWord(dst, i.MemoryOperand().rm(), i.MemoryOperand().offset());
+      auto memOperand = i.MemoryOperand(1);
+      Register dst = memOperand.offset() == 0 ? memOperand.rm() : kScratchReg;
+      if (memOperand.offset() != 0) {
+        __ AddWord(dst, memOperand.rm(), memOperand.offset());
       }
-      __ vs(i.InputSimd128Register(2), dst, 0, VSew::E8);
+      __ vs(i.InputSimd128Register(0), dst, 0, VSew::E8);
       break;
     }
     case kRiscvRvvLd: {
@@ -2368,6 +2363,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       } else {
         __ VU.set(kScratchReg, E64, m1);
         __ li(kScratchReg, i.InputInt64(1));
+        __ vmv_vi(kSimd128ScratchReg3, -1);
         __ vmv_sx(kSimd128ScratchReg3, kScratchReg);
         index = kSimd128ScratchReg3;
       }
@@ -2906,6 +2902,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       Simd128Register src = i.InputSimd128Register(0);
       __ VU.set(kScratchReg, E8, m1);
       __ vmv_vx(kSimd128RegZero, zero_reg);
+      __ vmv_vx(kSimd128ScratchReg, zero_reg);
       __ vmslt_vv(kSimd128ScratchReg, src, kSimd128RegZero);
       __ VU.set(kScratchReg, E32, m1);
       __ vmv_xs(dst, kSimd128ScratchReg);
@@ -2916,6 +2913,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       Simd128Register src = i.InputSimd128Register(0);
       __ VU.set(kScratchReg, E16, m1);
       __ vmv_vx(kSimd128RegZero, zero_reg);
+      __ vmv_vx(kSimd128ScratchReg, zero_reg);
       __ vmslt_vv(kSimd128ScratchReg, src, kSimd128RegZero);
       __ VU.set(kScratchReg, E32, m1);
       __ vmv_xs(dst, kSimd128ScratchReg);
@@ -2926,6 +2924,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       Simd128Register src = i.InputSimd128Register(0);
       __ VU.set(kScratchReg, E32, m1);
       __ vmv_vx(kSimd128RegZero, zero_reg);
+      __ vmv_vx(kSimd128ScratchReg, zero_reg);
       __ vmslt_vv(kSimd128ScratchReg, src, kSimd128RegZero);
       __ vmv_xs(dst, kSimd128ScratchReg);
       break;
@@ -2935,6 +2934,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       Simd128Register src = i.InputSimd128Register(0);
       __ VU.set(kScratchReg, E64, m1);
       __ vmv_vx(kSimd128RegZero, zero_reg);
+      __ vmv_vx(kSimd128ScratchReg, zero_reg);
       __ vmslt_vv(kSimd128ScratchReg, src, kSimd128RegZero);
       __ VU.set(kScratchReg, E32, m1);
       __ vmv_xs(dst, kSimd128ScratchReg);
@@ -3071,14 +3071,11 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       __ vfsqrt_v(i.OutputSimd128Register(), i.InputSimd128Register(0));
       break;
     }
-#if V8_TARGET_ARCH_RISCV64
     case kRiscvF64x2Splat: {
       (__ VU).set(kScratchReg, E64, m1);
-      __ fmv_x_d(kScratchReg, i.InputDoubleRegister(0));
-      __ vmv_vx(i.OutputSimd128Register(), kScratchReg);
+      __ vfmv_vf(i.OutputSimd128Register(), i.InputDoubleRegister(0));
       break;
     }
-#endif
     case kRiscvF64x2Abs: {
       __ VU.set(kScratchReg, VSew::E64, Vlmul::m1);
       __ vfabs_vv(i.OutputSimd128Register(), i.InputSimd128Register(0));
@@ -3125,17 +3122,14 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       __ vmerge_vi(i.OutputSimd128Register(), -1, i.OutputSimd128Register());
       break;
     }
-#if V8_TARGET_ARCH_RISCV64
     case kRiscvF64x2ReplaceLane: {
       __ VU.set(kScratchReg, E64, m1);
       __ li(kScratchReg, 0x1 << i.InputInt8(1));
       __ vmv_sx(v0, kScratchReg);
-      __ fmv_x_d(kScratchReg, i.InputSingleRegister(2));
-      __ vmerge_vx(i.OutputSimd128Register(), kScratchReg,
-                   i.InputSimd128Register(0));
+      __ vfmerge_vf(i.OutputSimd128Register(), i.InputSingleRegister(2),
+                    i.InputSimd128Register(0));
       break;
     }
-#endif
     case kRiscvF64x2Lt: {
       __ VU.set(kScratchReg, E64, m1);
       __ vmflt_vv(v0, i.InputSimd128Register(0), i.InputSimd128Register(1));

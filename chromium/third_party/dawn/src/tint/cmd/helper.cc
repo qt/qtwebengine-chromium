@@ -14,8 +14,13 @@
 
 #include "src/tint/cmd/helper.h"
 
+#include <iostream>
 #include <utility>
 #include <vector>
+
+#if TINT_BUILD_SPV_READER
+#include "spirv-tools/libspirv.hpp"
+#endif
 
 namespace tint::cmd {
 namespace {
@@ -38,54 +43,6 @@ InputFormat InputFormatFromFilename(const std::string& filename) {
         input_format = InputFormat::kSpirvAsm;
     }
     return input_format;
-}
-
-/// Copies the content from the file named `input_file` to `buffer`,
-/// assuming each element in the file is of type `T`.  If any error occurs,
-/// writes error messages to the standard error stream and returns false.
-/// Assumes the size of a `T` object is divisible by its required alignment.
-/// @returns true if we successfully read the file.
-template <typename T>
-bool ReadFile(const std::string& input_file, std::vector<T>* buffer) {
-    if (!buffer) {
-        std::cerr << "The buffer pointer was null" << std::endl;
-        return false;
-    }
-
-    FILE* file = nullptr;
-#if defined(_MSC_VER)
-    fopen_s(&file, input_file.c_str(), "rb");
-#else
-    file = fopen(input_file.c_str(), "rb");
-#endif
-    if (!file) {
-        std::cerr << "Failed to open " << input_file << std::endl;
-        return false;
-    }
-
-    fseek(file, 0, SEEK_END);
-    const auto file_size = static_cast<size_t>(ftell(file));
-    if (0 != (file_size % sizeof(T))) {
-        std::cerr << "File " << input_file
-                  << " does not contain an integral number of objects: " << file_size
-                  << " bytes in the file, require " << sizeof(T) << " bytes per object"
-                  << std::endl;
-        fclose(file);
-        return false;
-    }
-    fseek(file, 0, SEEK_SET);
-
-    buffer->clear();
-    buffer->resize(file_size / sizeof(T));
-
-    size_t bytes_read = fread(buffer->data(), 1, file_size, file);
-    fclose(file);
-    if (bytes_read != file_size) {
-        std::cerr << "Failed to read " << input_file << std::endl;
-        return false;
-    }
-
-    return true;
 }
 
 void PrintBindings(tint::inspector::Inspector& inspector, const std::string& ep_name) {
@@ -500,6 +457,8 @@ std::string OverrideTypeToString(tint::inspector::Override::Type type) {
             return "bool";
         case tint::inspector::Override::Type::kFloat32:
             return "f32";
+        case tint::inspector::Override::Type::kFloat16:
+            return "f16";
         case tint::inspector::Override::Type::kUint32:
             return "u32";
         case tint::inspector::Override::Type::kInt32:

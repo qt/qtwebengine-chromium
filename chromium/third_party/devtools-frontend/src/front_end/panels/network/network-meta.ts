@@ -187,9 +187,9 @@ UI.ViewManager.registerViewExtension({
 UI.ActionRegistration.registerActionExtension({
   actionId: 'network.toggle-recording',
   category: UI.ActionRegistration.ActionCategory.NETWORK,
-  iconClass: UI.ActionRegistration.IconClass.LARGEICON_START_RECORDING,
+  iconClass: UI.ActionRegistration.IconClass.START_RECORDING,
   toggleable: true,
-  toggledIconClass: UI.ActionRegistration.IconClass.LARGEICON_STOP_RECORDING,
+  toggledIconClass: UI.ActionRegistration.IconClass.STOP_RECORDING,
   toggleWithRedColor: true,
   contextTypes() {
     return maybeRetrieveContextTypes(Network => [Network.NetworkPanel.NetworkPanel]);
@@ -318,7 +318,7 @@ Common.Settings.registerSettingExtension({
 
 UI.ViewManager.registerLocationResolver({
   name: UI.ViewManager.ViewLocationValues.NETWORK_SIDEBAR,
-  category: UI.ViewManager.ViewLocationCategoryValues.NETWORK,
+  category: UI.ViewManager.ViewLocationCategory.NETWORK,
   async loadResolver() {
     const Network = await loadNetworkModule();
     return Network.NetworkPanel.NetworkPanel.instance();

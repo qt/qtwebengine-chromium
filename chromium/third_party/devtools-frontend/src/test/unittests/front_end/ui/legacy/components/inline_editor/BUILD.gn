@@ -9,7 +9,9 @@ ts_library("inline_editor") {
   sources = [
     "BezierUI_test.ts",
     "CSSAngle_test.ts",
+    "CSSAnimationModel_test.ts",
     "CSSLength_test.ts",
+    "CSSLinearEasingModel_test.ts",
     "ColorMixModel_test.ts",
     "ColorMixSwatch_test.ts",
     "ColorSwatch_test.ts",

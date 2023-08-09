@@ -19,6 +19,7 @@
 
 #include "src/tint/program_builder.h"
 #include "src/tint/sem/struct.h"
+#include "src/tint/switch.h"
 #include "src/tint/type/reference.h"
 #include "src/tint/utils/map.h"
 #include "src/tint/utils/vector.h"
@@ -66,8 +67,8 @@ struct PreservePadding::State {
                 },
                 [&](const ast::Enable* enable) {
                     // Check if the full pointer parameters extension is already enabled.
-                    if (enable->extension ==
-                        builtin::Extension::kChromiumExperimentalFullPtrParameters) {
+                    if (enable->HasExtension(
+                            builtin::Extension::kChromiumExperimentalFullPtrParameters)) {
                         ext_enabled = true;
                     }
                 });
@@ -147,12 +148,24 @@ struct PreservePadding::State {
                     return body;
                 });
             },
+            [&](const type::Matrix* mat) {
+                // Call a helper function that assigns each column separately.
+                return call_helper([&]() {
+                    utils::Vector<const ast::Statement*, 4> body;
+                    for (uint32_t i = 0; i < mat->columns(); i++) {
+                        body.Push(MakeAssignment(mat->ColumnType(),
+                                                 b.IndexAccessor(b.Deref(kDestParamName), u32(i)),
+                                                 b.IndexAccessor(kValueParamName, u32(i))));
+                    }
+                    return body;
+                });
+            },
             [&](const sem::Struct* str) {
                 // Call a helper function that assigns each member separately.
                 return call_helper([&]() {
                     utils::Vector<const ast::Statement*, 8> body;
                     for (auto member : str->Members()) {
-                        auto name = sym.NameFor(member->Declaration()->name->symbol);
+                        auto name = member->Declaration()->name->symbol.Name();
                         body.Push(MakeAssignment(member->Type(),
                                                  b.MemberAccessor(b.Deref(kDestParamName), name),
                                                  b.MemberAccessor(kValueParamName, name)));
@@ -178,6 +191,13 @@ struct PreservePadding::State {
                     return true;
                 }
                 return HasPadding(elem_ty);
+            },
+            [&](const type::Matrix* mat) {
+                auto* col_ty = mat->ColumnType();
+                if (mat->ColumnStride() > col_ty->Size()) {
+                    return true;
+                }
+                return HasPadding(col_ty);
             },
             [&](const sem::Struct* str) {
                 uint32_t current_offset = 0;

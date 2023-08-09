@@ -22,7 +22,9 @@ namespace tint::transform {
 /// This transform turns all explicit alignment and sizing into padding
 /// members of structs. This is required for GLSL ES, since it not support
 /// the offset= decoration.
-class PadStructs final : public Castable<PadStructs, Transform> {
+///
+/// @note This transform requires the CanonicalizeEntryPointIO transform to have been run first.
+class PadStructs final : public utils::Castable<PadStructs, Transform> {
   public:
     /// Constructor
     PadStructs();

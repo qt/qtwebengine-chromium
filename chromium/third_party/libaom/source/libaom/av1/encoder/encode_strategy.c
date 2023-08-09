@@ -717,7 +717,7 @@ void setup_mi(AV1_COMP *const cpi, YV12_BUFFER_CONFIG *src) {
 // to av1_encode() except that tpl is not performed.
 static int denoise_and_encode(AV1_COMP *const cpi, uint8_t *const dest,
                               EncodeFrameInput *const frame_input,
-                              EncodeFrameParams *const frame_params,
+                              const EncodeFrameParams *const frame_params,
                               EncodeFrameResults *const frame_results) {
 #if CONFIG_COLLECT_COMPONENT_TIMING
   if (cpi->oxcf.pass == 2) start_timing(cpi, denoise_and_encode_time);
@@ -994,18 +994,30 @@ void av1_get_ref_frames(RefFrameMapPair ref_frame_map_pairs[REF_FRAMES],
 #if !CONFIG_REALTIME_ONLY
   if (cpi->use_ducky_encode &&
       cpi->ducky_encode_info.frame_info.gop_mode == DUCKY_ENCODE_GOP_MODE_RCL) {
-    int valid_rf_idx = 0;
     for (int rf = LAST_FRAME; rf < REF_FRAMES; ++rf) {
       if (cpi->ppi->gf_group.ref_frame_list[gf_index][rf] != INVALID_IDX) {
         remapped_ref_idx[rf - LAST_FRAME] =
             cpi->ppi->gf_group.ref_frame_list[gf_index][rf];
+      }
+    }
+
+    int valid_rf_idx = 0;
+    static const int ref_frame_type_order[REF_FRAMES - LAST_FRAME] = {
+      GOLDEN_FRAME,  ALTREF_FRAME, LAST_FRAME, BWDREF_FRAME,
+      ALTREF2_FRAME, LAST2_FRAME,  LAST3_FRAME
+    };
+    for (int i = 0; i < REF_FRAMES - LAST_FRAME; i++) {
+      int rf = ref_frame_type_order[i];
+      if (remapped_ref_idx[rf - LAST_FRAME] != INVALID_IDX) {
         valid_rf_idx = remapped_ref_idx[rf - LAST_FRAME];
+        break;
       }
     }
 
     for (int i = 0; i < REF_FRAMES; ++i) {
-      if (remapped_ref_idx[i] == INVALID_IDX)
+      if (remapped_ref_idx[i] == INVALID_IDX) {
         remapped_ref_idx[i] = valid_rf_idx;
+      }
     }
 
     return;
@@ -1348,6 +1360,35 @@ int av1_encode_strategy(AV1_COMP *const cpi, size_t *const size,
           gf_group->update_type[cpi->gf_frame_index] == INTNL_OVERLAY_UPDATE;
     }
     frame_params.show_existing_frame &= allow_show_existing(cpi, *frame_flags);
+
+    // Special handling to reset 'show_existing_frame' in case of dropped
+    // frames.
+    if (oxcf->rc_cfg.drop_frames_water_mark &&
+        (gf_group->update_type[cpi->gf_frame_index] == OVERLAY_UPDATE ||
+         gf_group->update_type[cpi->gf_frame_index] == INTNL_OVERLAY_UPDATE)) {
+      // During the encode of an OVERLAY_UPDATE/INTNL_OVERLAY_UPDATE frame, loop
+      // over the gf group to check if the corresponding
+      // ARF_UPDATE/INTNL_ARF_UPDATE frame was dropped.
+      int cur_disp_idx = gf_group->display_idx[cpi->gf_frame_index];
+      for (int idx = 0; idx < cpi->gf_frame_index; idx++) {
+        if (cur_disp_idx == gf_group->display_idx[idx]) {
+          assert(IMPLIES(
+              gf_group->update_type[cpi->gf_frame_index] == OVERLAY_UPDATE,
+              gf_group->update_type[idx] == ARF_UPDATE));
+          assert(IMPLIES(gf_group->update_type[cpi->gf_frame_index] ==
+                             INTNL_OVERLAY_UPDATE,
+                         gf_group->update_type[idx] == INTNL_ARF_UPDATE));
+          // Reset show_existing_frame and set cpi->is_dropped_frame to true if
+          // the frame was dropped during its first encode.
+          if (gf_group->is_frame_dropped[idx]) {
+            frame_params.show_existing_frame = 0;
+            assert(!cpi->is_dropped_frame);
+            cpi->is_dropped_frame = true;
+          }
+          break;
+        }
+      }
+    }
 
     // Reset show_existing_alt_ref decision to 0 after it is used.
     if (gf_group->update_type[cpi->gf_frame_index] == OVERLAY_UPDATE) {

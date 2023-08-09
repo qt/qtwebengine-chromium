@@ -10,16 +10,22 @@
 
 #include "include/core/SkTypes.h"
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
 #include "include/core/SkRefCnt.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/gpu/SkBackingFit.h"
 
 class GrRecordingContext;
-namespace skgpu { namespace v1 { class SurfaceDrawContext; }}
+namespace skgpu {
+namespace ganesh {
+class SurfaceDrawContext;
+}
+}  // namespace skgpu
 class GrSurfaceProxyView;
 class GrTexture;
 
+class SkBitmap;
+enum class SkTileMode;
 struct SkRect;
 
 namespace SkGpuBlurUtils {
@@ -27,7 +33,6 @@ namespace SkGpuBlurUtils {
 /** Maximum sigma before the implementation downscales the input image. */
 static constexpr float kMaxSigma = 4.f;
 
-#if SK_GPU_V1
 /**
  * Applies a 2D Gaussian blur to a given texture. The blurred result is returned
  * as a surfaceDrawContext in case the caller wishes to draw into the result.
@@ -49,7 +54,7 @@ static constexpr float kMaxSigma = 4.f;
  * @param fit             backing fit for the returned render target context
  * @return                The surfaceDrawContext containing the blurred result.
  */
-std::unique_ptr<skgpu::v1::SurfaceDrawContext> GaussianBlur(
+std::unique_ptr<skgpu::ganesh::SurfaceDrawContext> GaussianBlur(
         GrRecordingContext*,
         GrSurfaceProxyView srcView,
         GrColorType srcColorType,
@@ -61,7 +66,6 @@ std::unique_ptr<skgpu::v1::SurfaceDrawContext> GaussianBlur(
         float sigmaY,
         SkTileMode mode,
         SkBackingFit fit = SkBackingFit::kApprox);
-#endif // SK_GPU_V1
 
 static const int kBlurRRectMaxDivisions = 6;
 
@@ -104,6 +108,6 @@ inline int LinearKernelWidth(int radius) { return radius + 1; }
 
 }  // namespace SkGpuBlurUtils
 
-#endif // SK_SUPPORT_GPU
+#endif // defined(SK_GANESH)
 
 #endif

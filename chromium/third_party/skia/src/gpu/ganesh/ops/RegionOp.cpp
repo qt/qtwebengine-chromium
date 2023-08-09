@@ -18,7 +18,9 @@
 #include "src/gpu/ganesh/ops/GrMeshDrawOp.h"
 #include "src/gpu/ganesh/ops/GrSimpleMeshDrawOpHelperWithStencil.h"
 
-namespace skgpu::v1::RegionOp {
+using namespace skia_private;
+
+namespace skgpu::ganesh::RegionOp {
 
 namespace {
 
@@ -188,7 +190,7 @@ private:
 
     Helper fHelper;
     SkMatrix fViewMatrix;
-    SkSTArray<1, RegionInfo, true> fRegions;
+    STArray<1, RegionInfo, true> fRegions;
     bool fWideColor;
 
     GrSimpleMesh*  fMesh = nullptr;
@@ -212,7 +214,7 @@ GrOp::Owner Make(GrRecordingContext* context,
                               stencilSettings);
 }
 
-} // namespace skgpu::v1::RegionOp
+}  // namespace skgpu::ganesh::RegionOp
 
 #if GR_TEST_UTILS
 
@@ -243,8 +245,12 @@ GR_DRAW_OP_TEST_DEFINE(RegionOp) {
     if (numSamples > 1 && random->nextBool()) {
         aaType = GrAAType::kMSAA;
     }
-    return skgpu::v1::RegionOp::RegionOpImpl::Make(context, std::move(paint), viewMatrix, region,
-                                                   aaType, GrGetRandomStencil(random, context));
+    return skgpu::ganesh::RegionOp::RegionOpImpl::Make(context,
+                                                       std::move(paint),
+                                                       viewMatrix,
+                                                       region,
+                                                       aaType,
+                                                       GrGetRandomStencil(random, context));
 }
 
 #endif // GR_TEST_UTILS

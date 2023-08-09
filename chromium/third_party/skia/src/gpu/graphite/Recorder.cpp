@@ -16,6 +16,7 @@
 
 #include "src/core/SkConvertPixels.h"
 #include "src/gpu/AtlasTypes.h"
+#include "src/gpu/RefCntedCallback.h"
 #include "src/gpu/graphite/BufferManager.h"
 #include "src/gpu/graphite/Caps.h"
 #include "src/gpu/graphite/CommandBuffer.h"
@@ -26,6 +27,7 @@
 #include "src/gpu/graphite/Log.h"
 #include "src/gpu/graphite/PipelineData.h"
 #include "src/gpu/graphite/PipelineDataCache.h"
+#include "src/gpu/graphite/ProxyCache.h"
 #include "src/gpu/graphite/RecorderPriv.h"
 #include "src/gpu/graphite/ResourceProvider.h"
 #include "src/gpu/graphite/RuntimeEffectDictionary.h"
@@ -99,7 +101,7 @@ Recorder::Recorder(sk_sp<SharedContext> sharedContext,
         fClientImageProvider = DefaultImageProvider::Make();
     }
 
-    fResourceProvider = fSharedContext->makeResourceProvider(this->singleOwner());
+    fResourceProvider = fSharedContext->makeResourceProvider(this->singleOwner(), fRecorderID);
     fDrawBufferManager.reset( new DrawBufferManager(fResourceProvider.get(),
                                                     fSharedContext->caps()));
     fUploadBufferManager.reset(new UploadBufferManager(fResourceProvider.get(),
@@ -109,6 +111,10 @@ Recorder::Recorder(sk_sp<SharedContext> sharedContext,
 
 Recorder::~Recorder() {
     ASSERT_SINGLE_OWNER
+    // Any finished procs that haven't been passed to a Recording fail
+    for (int i = 0; i < fFinishedProcs.size(); ++i) {
+        fFinishedProcs[i]->setFailureResult();
+    }
     for (auto& device : fTrackedDevices) {
         device->abandonRecorder();
     }
@@ -170,7 +176,8 @@ std::unique_ptr<Recording> Recorder::snap() {
     std::unique_ptr<Recording> recording(new Recording(std::move(fGraph),
                                                        std::move(nonVolatileLazyProxies),
                                                        std::move(volatileLazyProxies),
-                                                       std::move(targetProxyData)));
+                                                       std::move(targetProxyData),
+                                                       std::move(fFinishedProcs)));
 
     fDrawBufferManager->transferToRecording(recording.get());
     fUploadBufferManager->transferToRecording(recording.get());
@@ -300,12 +307,15 @@ bool Recorder::updateBackendTexture(const BackendTexture& backendTex,
                                                  colorInfo, colorInfo,
                                                  mipLevels,
                                                  SkIRect::MakeSize(backendTex.dimensions()),
-                                                 nullptr);
+                                                 std::make_unique<ImageUploadContext>());
     if (!upload.isValid()) {
         SKGPU_LOG_E("Recorder::updateBackendTexture: Could not create UploadInstance");
         return false;
     }
     sk_sp<Task> uploadTask = UploadTask::Make(std::move(upload));
+
+    // Need to flush any pending work in case it depends on this texture
+    this->priv().flushTrackedDevices();
 
     this->priv().add(std::move(uploadTask));
 
@@ -321,6 +331,14 @@ void Recorder::deleteBackendTexture(BackendTexture& texture) {
     fResourceProvider->deleteBackendTexture(texture);
 }
 
+void Recorder::addFinishInfo(const InsertFinishInfo& info) {
+    if (info.fFinishedProc) {
+        sk_sp<RefCntedCallback> callback =
+                RefCntedCallback::Make(info.fFinishedProc, info.fFinishedContext);
+        fFinishedProcs.push_back(std::move(callback));
+    }
+}
+
 void RecorderPriv::add(sk_sp<Task> task) {
     ASSERT_SINGLE_OWNER_PRIV
     fRecorder->fGraph->add(std::move(task));
@@ -331,6 +349,12 @@ void RecorderPriv::flushTrackedDevices() {
     for (Device* device : fRecorder->fTrackedDevices) {
         device->flushPendingWorkToRecorder();
     }
+}
+
+sk_sp<TextureProxy> RecorderPriv::CreateCachedProxy(Recorder* recorder,
+                                                    const SkBitmap& bitmap,
+                                                    Mipmapped mipmapped) {
+    return recorder->priv().proxyCache()->findOrCreateCachedProxy(recorder, bitmap, mipmapped);
 }
 
 #if GRAPHITE_TEST_UTILS

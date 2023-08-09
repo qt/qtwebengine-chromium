@@ -12,12 +12,13 @@ import re
 import subprocess
 from typing import TYPE_CHECKING, Iterable, List, Optional, Tuple
 
-from crossbench import helper
-from crossbench.browsers.base import Browser
+from crossbench import cli_helper, helper
+from crossbench.browsers.browser import Browser
 from crossbench.browsers.chromium import Chromium
 from crossbench.flags import JSFlags
-from crossbench.probes.base import Probe, ProbeConfigParser
+from crossbench.probes.probe import Probe, ProbeConfigParser
 from crossbench.probes.results import ProbeResult
+from crossbench.probes import helper as probe_helper
 
 if TYPE_CHECKING:
   from crossbench.env import HostEnvironment
@@ -58,13 +59,13 @@ class V8LogProbe(Probe):
         help="Manually pass --log-.* flags to V8")
     parser.add_argument(
         "d8_binary",
-        type=parser.existing_file_type,
+        type=cli_helper.parse_file_path,
         help="Path to a D8 binary for extended log processing."
         "If not specified the $D8_PATH env variable is used and/or "
         "default build locations are tried.")
     parser.add_argument(
         "v8_checkout",
-        type=parser.existing_file_type,
+        type=cli_helper.parse_dir_path,
         help="Path to a V8 checkout for extended log processing."
         "If not specified it is auto inferred from either the provided"
         "d8_binary or standard installation locations.")
@@ -75,7 +76,7 @@ class V8LogProbe(Probe):
                prof: bool = False,
                js_flags: Optional[Iterable[str]] = None,
                d8_binary: Optional[pathlib.Path] = None,
-               v8_checkout: Optional[pathlib.Path] = None):
+               v8_checkout: Optional[pathlib.Path] = None) -> None:
     super().__init__()
     self._js_flags = JSFlags()
     self._d8_binary = d8_binary
@@ -99,18 +100,10 @@ class V8LogProbe(Probe):
   def js_flags(self) -> JSFlags:
     return self._js_flags.copy()
 
-  @property
-  def v8_checkout(self) -> Optional[pathlib.Path]:
-    return self._v8_checkout
-
-  @property
-  def d8_binary(self) -> Optional[pathlib.Path]:
-    return self._d8_binary
-
   def is_compatible(self, browser: Browser) -> bool:
     return isinstance(browser, Chromium)
 
-  def attach(self, browser: Browser) -> None:
+  def attach(self, browser: Chromium) -> None:
     super().attach(browser)
     assert isinstance(browser, Chromium)
     browser.flags.set("--no-sandbox")
@@ -124,7 +117,8 @@ class V8LogProbe(Probe):
 
   def process_log_files(self,
                         log_files: List[pathlib.Path]) -> List[pathlib.Path]:
-    finder = V8ToolsFinder(self)
+    finder = V8ToolsFinder(self.browser_platform, self._d8_binary,
+                           self._v8_checkout)
     if not finder.d8_binary or not finder.tick_processor or not log_files:
       logging.info("Did not find $D8_PATH for profview processing.")
       return []
@@ -149,7 +143,7 @@ class V8LogProbe(Probe):
     @property
     def results_file(self) -> pathlib.Path:
       # Put v8.log files into separate dirs in case we have multiple isolates
-      log_dir = super().results_file
+      log_dir: pathlib.Path = super().results_file
       log_dir.mkdir(exist_ok=True)
       return log_dir / self.probe.results_file_name
 
@@ -177,7 +171,7 @@ class V8LogProbe(Probe):
     if not runs:
       return
     logging.info("-" * 80)
-    logging.info("v8.log results:")
+    logging.critical("v8.log results:")
     logging.info("  *.v8.log:        https://v8.dev/tools/head/system-analyzer")
     logging.info("  *.profview.json: https://v8.dev/tools/head/profview")
     logging.info("- " * 40)
@@ -191,7 +185,7 @@ class V8LogProbe(Probe):
         continue
       largest_log_file = log_files[0]
       logging.info("Run %d: %s", i + 1, run.name)
-      logging.info("    %s : %s", largest_log_file.relative_to(cwd),
+      logging.critical("    %s : %s", largest_log_file.relative_to(cwd),
                    helper.get_file_size(largest_log_file))
       if len(log_files) > 1:
         logging.info("    %s/.*v8.log: %d files",
@@ -200,7 +194,7 @@ class V8LogProbe(Probe):
       if not profview_files:
         continue
       largest_profview_file = profview_files[0]
-      logging.info("    %s : %s", largest_profview_file.relative_to(cwd),
+      logging.critical("    %s : %s", largest_profview_file.relative_to(cwd),
                    helper.get_file_size(largest_profview_file))
       if len(profview_files) > 1:
         logging.info("    %s/*.profview.json: %d more files",
@@ -226,36 +220,19 @@ def _process_profview_json(d8_binary: pathlib.Path,
   return result_json
 
 
-class V8ToolsFinder:
+class V8ToolsFinder(probe_helper.V8CheckoutFinder):
   """Helper class to find d8 binaries and the tick-processor.
   If no explicit d8 and checkout path are given, $D8_PATH and common v8 and
   chromium installation directories are checked."""
 
-  def __init__(self, log_probe: V8LogProbe):
-    self._log_probe = log_probe
-    self.d8_binary: Optional[pathlib.Path] = log_probe.d8_binary
-    self.v8_checkout: Optional[pathlib.Path] = log_probe.v8_checkout
+  def __init__(self, platform: helper.Platform,
+               d8_binary: Optional[pathlib.Path],
+               v8_checkout: Optional[pathlib.Path]) -> None:
+    super().__init__(platform)
+    self.d8_binary: Optional[pathlib.Path] = d8_binary
+    if v8_checkout:
+      self.v8_checkout = v8_checkout
     self.tick_processor: Optional[pathlib.Path] = None
-    self.platform = log_probe.browser_platform
-    # A generous list of potential locations of a V8 or chromium checkout
-    self._checkout_dirs = [
-        # V8 Checkouts
-        pathlib.Path.home() / "Documents/v8/v8",
-        pathlib.Path.home() / "v8/v8",
-        pathlib.Path("C:") / "src/v8/v8",
-        # Raw V8 checkouts
-        pathlib.Path.home() / "Documents/v8",
-        pathlib.Path.home() / "v8",
-        pathlib.Path("C:") / "src/v8/",
-        # V8 in chromium checkouts
-        pathlib.Path.home() / "Documents/chromium/src/v8",
-        pathlib.Path.home() / "chromium/src/v8",
-        pathlib.Path("C:") / "src/chromium/src/v8",
-        # Chromium checkouts
-        pathlib.Path.home() / "Documents/chromium/src",
-        pathlib.Path.home() / "chromium/src",
-        pathlib.Path("C:") / "src/chromium/src",
-    ]
     self.d8_binary = self._find_d8()
     if self.d8_binary:
       self.tick_processor = self._find_v8_tick_processor()
@@ -265,17 +242,16 @@ class V8ToolsFinder:
   def _find_d8(self) -> Optional[pathlib.Path]:
     if self.d8_binary and self.d8_binary.is_file():
       return self.d8_binary
-    assert not self.platform.is_remote, (
-        "Cannot infer D8 location on remote platform.")
-    if "D8_PATH" in os.environ:
-      candidate = pathlib.Path(os.environ["D8_PATH"]) / "d8"
+    environ = self.platform.environ
+    if "D8_PATH" in environ:
+      candidate = pathlib.Path(environ["D8_PATH"]) / "d8"
       if candidate.is_file():
         return candidate
-      candidate = pathlib.Path(os.environ["D8_PATH"])
+      candidate = pathlib.Path(environ["D8_PATH"])
       if candidate.is_file():
         return candidate
     # Try potential build location
-    for candidate_dir in self._checkout_dirs:
+    for candidate_dir in self.checkout_candidates:
       for build_type in ("release", "optdebug", "Default", "Release"):
         candidates = list(candidate_dir.glob(f"out/*{build_type}/d8"))
         if candidates and candidates[0].is_file():
@@ -304,8 +280,8 @@ class V8ToolsFinder:
     candidate = self.d8_binary.parents[2] / tick_processor
     if candidate.is_file():
       return candidate
-    for candidate_dir in self._checkout_dirs:
-      candidate = candidate_dir / tick_processor
+    if self.v8_checkout:
+      candidate = self.v8_checkout / tick_processor
       if candidate.is_file():
         return candidate
     return None

@@ -150,7 +150,7 @@ export class BackForwardCacheViewWrapper extends UI.ThrottledWidget.ThrottledWid
     super(true, 1000);
     this.#bfcacheView = bfcacheView;
     this.#getMainResourceTreeModel()?.addEventListener(
-        SDK.ResourceTreeModel.Events.MainFrameNavigated, this.update, this);
+        SDK.ResourceTreeModel.Events.PrimaryPageChanged, this.update, this);
     this.#getMainResourceTreeModel()?.addEventListener(
         SDK.ResourceTreeModel.Events.BackForwardCacheDetailsUpdated, this.update, this);
     this.contentElement.classList.add('overflow-auto');
@@ -158,12 +158,12 @@ export class BackForwardCacheViewWrapper extends UI.ThrottledWidget.ThrottledWid
     this.update();
   }
 
-  async doUpdate(): Promise<void> {
+  override async doUpdate(): Promise<void> {
     this.#bfcacheView.data = {frame: this.#getMainFrame()};
   }
 
   #getMainResourceTreeModel(): SDK.ResourceTreeModel.ResourceTreeModel|null {
-    const mainTarget = SDK.TargetManager.TargetManager.instance().mainFrameTarget();
+    const mainTarget = SDK.TargetManager.TargetManager.instance().primaryPageTarget();
     return mainTarget?.model(SDK.ResourceTreeModel.ResourceTreeModel) || null;
   }
 
@@ -226,7 +226,7 @@ export class BackForwardCacheView extends HTMLElement {
   }
 
   async #waitAndGoBackInHistory(delay: number): Promise<void> {
-    const mainTarget = SDK.TargetManager.TargetManager.instance().mainFrameTarget();
+    const mainTarget = SDK.TargetManager.TargetManager.instance().primaryPageTarget();
     const resourceTreeModel = mainTarget?.model(SDK.ResourceTreeModel.ResourceTreeModel);
     const historyResults = await resourceTreeModel?.navigationHistory();
     if (!resourceTreeModel || !historyResults) {
@@ -249,7 +249,7 @@ export class BackForwardCacheView extends HTMLElement {
   async #navigateAwayAndBack(): Promise<void> {
     // Checking BFCache Compatibility
 
-    const mainTarget = SDK.TargetManager.TargetManager.instance().mainFrameTarget();
+    const mainTarget = SDK.TargetManager.TargetManager.instance().primaryPageTarget();
     const resourceTreeModel = mainTarget?.model(SDK.ResourceTreeModel.ResourceTreeModel);
     const historyResults = await resourceTreeModel?.navigationHistory();
     if (!resourceTreeModel || !historyResults) {
@@ -337,11 +337,11 @@ export class BackForwardCacheView extends HTMLElement {
       return LitHtml.html`
         <div class="text-ellipsis">
           ${node.treeNodeData.iconName ? LitHtml.html`
-            <${IconButton.Icon.Icon.litTagName} class="inline-icon" .data=${{
+            <${IconButton.Icon.Icon.litTagName} class="inline-icon" style="margin-bottom: -3px;" .data=${{
               iconName: node.treeNodeData.iconName,
-              color: 'var(--color-text-secondary)',
-              width: '16px',
-              height: '16px',
+              color: 'var(--icon-default)',
+              width: '20px',
+              height: '20px',
             } as IconButton.Icon.IconData}>
             </${IconButton.Icon.Icon.litTagName}>
           ` : LitHtml.nothing}
@@ -352,8 +352,8 @@ export class BackForwardCacheView extends HTMLElement {
     }
 
     const frameTreeData = this.#buildFrameTreeDataRecursive(explanationTree, {blankCount: 1});
-    // Override the icon for the top frame.
-    frameTreeData.node.treeNodeData.iconName = 'frame-icon';
+    // Override the icon for the outermost frame.
+    frameTreeData.node.treeNodeData.iconName = 'frame';
     let title = '';
     // The translation pipeline does not support nested plurals. We avoid this
     // here by pulling out the logic for one of the plurals into code instead.
@@ -432,7 +432,7 @@ export class BackForwardCacheView extends HTMLElement {
         ...node,
         children: () => Promise.resolve(children),
       };
-      node.treeNodeData.iconName = 'frame-embedded-icon';
+      node.treeNodeData.iconName = 'iframe';
     } else if (!explanationTree.url.length) {
       // If the current node increased the blank count, but it has no children and
       // is therefore not shown, decrement the blank count again.
@@ -449,10 +449,10 @@ export class BackForwardCacheView extends HTMLElement {
           <${ReportView.ReportView.ReportSection.litTagName}>
             <div class="status">
               <${IconButton.Icon.Icon.litTagName} class="inline-icon" .data=${{
-                iconName: 'ic_checkmark_16x16',
-                color: 'green',
-                width: '16px',
-                height: '16px',
+                iconName: 'check-circle',
+                color: 'var(--icon-checkmark-green)',
+                width: '20px',
+                height: '20px',
                 } as IconButton.Icon.IconData}>
               </${IconButton.Icon.Icon.litTagName}>
             </div>
@@ -466,10 +466,10 @@ export class BackForwardCacheView extends HTMLElement {
           <${ReportView.ReportView.ReportSection.litTagName}>
             <div class="status">
               <${IconButton.Icon.Icon.litTagName} class="inline-icon" .data=${{
-                  iconName: 'circled_backslash_icon',
-                  color: 'var(--color-text-secondary)',
-                  width: '16px',
-                  height: '16px',
+                  iconName: 'clear',
+                  color: 'var(--icon-default)',
+                  width: '20px',
+                  height: '20px',
                   } as IconButton.Icon.IconData}>
               </${IconButton.Icon.Icon.litTagName}>
             </div>
@@ -550,8 +550,8 @@ export class BackForwardCacheView extends HTMLElement {
           ${category}
           <div class="help-outline-icon">
             <${IconButton.Icon.Icon.litTagName} class="inline-icon" .data=${{
-              iconName: 'help_outline',
-              color: 'var(--color-text-secondary)',
+              iconName: 'help',
+              color: 'var(--icon-default)',
               width: '16px',
               height: '16px',
               } as IconButton.Icon.IconData} title=${explainerText}>
@@ -612,8 +612,8 @@ export class BackForwardCacheView extends HTMLElement {
           LitHtml.html`
             <div class="circled-exclamation-icon">
               <${IconButton.Icon.Icon.litTagName} class="inline-icon" .data=${{
-                iconName: 'circled_exclamation_icon',
-                color: 'orange',
+                iconName: 'warning',
+                color: 'var(--icon-warning)',
                 width: '16px',
                 height: '16px',
               } as IconButton.Icon.IconData}>

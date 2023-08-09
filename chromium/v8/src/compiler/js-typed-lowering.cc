@@ -1101,7 +1101,8 @@ Reduction JSTypedLowering::ReduceJSToBigIntConvertNumber(Node* node) {
     node->TrimInputCount(1);
     Type node_type = NodeProperties::GetType(node);
     NodeProperties::SetType(
-        node, Type::Intersect(node_type, Type::BigInt(), graph()->zone()));
+        node,
+        Type::Intersect(node_type, Type::SignedBigInt64(), graph()->zone()));
     NodeProperties::ChangeOp(node,
                              simplified()->Integral32OrMinusZeroToBigInt());
     return Changed(node);
@@ -2030,7 +2031,7 @@ Reduction JSTypedLowering::ReduceJSForInPrepare(Node* node) {
       // Check that the {enumerator} is a Map.
       effect = graph()->NewNode(
           simplified()->CheckMaps(CheckMapsFlag::kNone,
-                                  ZoneHandleSet<Map>(factory()->meta_map())),
+                                  ZoneRefSet<Map>(broker()->meta_map())),
           enumerator, effect, control);
 
       // Load the enum cache from the {enumerator} map.
@@ -2057,7 +2058,7 @@ Reduction JSTypedLowering::ReduceJSForInPrepare(Node* node) {
     case ForInMode::kGeneric: {
       // Check if the {enumerator} is a Map or a FixedArray.
       Node* check = effect = graph()->NewNode(
-          simplified()->CompareMaps(ZoneHandleSet<Map>(factory()->meta_map())),
+          simplified()->CompareMaps(ZoneRefSet<Map>(broker()->meta_map())),
           enumerator, effect, control);
       Node* branch =
           graph()->NewNode(common()->Branch(BranchHint::kTrue), check, control);

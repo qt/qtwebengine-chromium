@@ -11,12 +11,13 @@
 #include "src/gpu/ganesh/GrContextThreadSafeProxyPriv.h"
 
 #include "include/core/SkSurfaceCharacterization.h"
+#include "include/core/SkTextureCompressionType.h"
 #include "src/gpu/ganesh/GrBaseContextPriv.h"
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrThreadSafeCache.h"
 #include "src/gpu/ganesh/GrThreadSafePipelineBuilder.h"
 #include "src/gpu/ganesh/effects/GrSkSLFP.h"
-#include "src/image/SkSurface_Gpu.h"
+#include "src/gpu/ganesh/surface/SkSurface_Ganesh.h"
 
 #ifdef SK_VULKAN
 #include "src/gpu/ganesh/vk/GrVkCaps.h"
@@ -154,7 +155,7 @@ GrBackendFormat GrContextThreadSafeProxy::defaultBackendFormat(SkColorType skCol
     return format;
 }
 
-GrBackendFormat GrContextThreadSafeProxy::compressedBackendFormat(SkImage::CompressionType c) const {
+GrBackendFormat GrContextThreadSafeProxy::compressedBackendFormat(SkTextureCompressionType c) const {
     SkASSERT(fCaps);
 
     GrBackendFormat format = fCaps->getBackendFormatFromCompressionType(c);

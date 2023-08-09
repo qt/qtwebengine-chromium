@@ -58,6 +58,9 @@ namespace compiler {
   V(X64Word64AtomicExchangeUint64)                         \
   V(X64Word64AtomicCompareExchangeUint64)                  \
   V(X64Movdqu256)                                          \
+  V(X64MovqDecompressTaggedSigned)                         \
+  V(X64MovqDecompressTagged)                               \
+  V(X64MovqCompressTagged)                                 \
   V(X64S256Load32Splat)                                    \
   V(X64S256Load64Splat)
 
@@ -172,9 +175,6 @@ namespace compiler {
   V(X64Float64Neg)                                   \
   V(X64Float32Abs)                                   \
   V(X64Float32Neg)                                   \
-  V(X64MovqDecompressTaggedSigned)                   \
-  V(X64MovqDecompressTagged)                         \
-  V(X64MovqCompressTagged)                           \
   V(X64MovqEncodeSandboxedPointer)                   \
   V(X64MovqDecodeSandboxedPointer)                   \
   V(X64BitcastFI)                                    \
@@ -273,13 +273,13 @@ namespace compiler {
   V(X64I16x8SConvertI8x16Low)                        \
   V(X64I16x8SConvertI8x16High)                       \
   V(X64I16x8SConvertI32x4)                           \
-  V(X64I16x8AddSatS)                                 \
-  V(X64I16x8SubSatS)                                 \
+  V(X64IAddSatS)                                     \
+  V(X64ISubSatS)                                     \
   V(X64I16x8UConvertI8x16Low)                        \
   V(X64I16x8UConvertI8x16High)                       \
   V(X64I16x8UConvertI32x4)                           \
-  V(X64I16x8AddSatU)                                 \
-  V(X64I16x8SubSatU)                                 \
+  V(X64IAddSatU)                                     \
+  V(X64ISubSatU)                                     \
   V(X64I16x8RoundingAverageU)                        \
   V(X64I16x8ExtMulLowI8x16S)                         \
   V(X64I16x8ExtMulHighI8x16S)                        \
@@ -291,11 +291,7 @@ namespace compiler {
   V(X64I16x8RelaxedQ15MulRS)                         \
   V(X64I16x8DotI8x16I7x16S)                          \
   V(X64I8x16SConvertI16x8)                           \
-  V(X64I8x16AddSatS)                                 \
-  V(X64I8x16SubSatS)                                 \
   V(X64I8x16UConvertI16x8)                           \
-  V(X64I8x16AddSatU)                                 \
-  V(X64I8x16SubSatU)                                 \
   V(X64I8x16RoundingAverageU)                        \
   V(X64S128Const)                                    \
   V(X64S128Zero)                                     \
@@ -341,10 +337,7 @@ namespace compiler {
   V(X64Blendvpd)                                     \
   V(X64Blendvps)                                     \
   V(X64Pblendvb)                                     \
-  V(X64TraceInstruction)                             \
-  V(X64F32x8Add)                                     \
-  V(X64F32x8Sub)
-
+  V(X64TraceInstruction)
 // Addressing modes represent the "shape" of inputs to an instruction.
 // Many instructions support multiple addressing modes. Addressing modes
 // are encoded into the InstructionCode of the instruction and tell the

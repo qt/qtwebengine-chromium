@@ -10,7 +10,7 @@ from crossbench.probes.json import JsonResultProbe
 
 if TYPE_CHECKING:
   from crossbench.probes.results import ProbeResult
-  from crossbench.browsers.base import Browser
+  from crossbench.browsers.browser import Browser
   from crossbench.runner import (Actions, BrowsersRunGroup, StoriesRunGroup)
 
 

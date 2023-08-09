@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
  - Particles have been removed.
 
+### Added
+ - Skottie TransformValue accessors for dynamic layer transforms.
+ - Added `CanvasKit.FontCollection`, which wraps SkParagraph's FontCollection.
+   A FontCollection instance contains a cache of fonts used by SkParagraph and
+   a cache of paragraph layouts.
+ - Added `CanvasKit.ParagraphBuilder.MakeFromFontCollection` to make a
+   `ParagraphBuilder` that uses a given `FontCollection`.
+ - `Paint.setDither` is exposed.
+
+### Changed
+ - `Image.encodeToData` now makes use of the GPU context more consistently.
+
 ## [0.38.0] - 2023-01-12
 
 ### Changed

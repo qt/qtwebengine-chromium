@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import * as Common from '../../core/common/common.js';
+import * as Host from '../../core/host/host.js';
 import * as Platform from '../../core/platform/platform.js';
 import {assertNotNullOrUndefined} from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
@@ -45,8 +46,9 @@ export class BreakpointsSidebarPane extends UI.ThrottledWidget.ThrottledWidget {
         });
     this.#breakpointsView.addEventListener(
         SourcesComponents.BreakpointsView.BreakpointEditedEvent.eventName, (event: Event) => {
-          const {data: {breakpointItem}} = event as SourcesComponents.BreakpointsView.BreakpointEditedEvent;
-          void this.#controller.breakpointEdited(breakpointItem);
+          const {data: {breakpointItem, editButtonClicked}} =
+              event as SourcesComponents.BreakpointsView.BreakpointEditedEvent;
+          void this.#controller.breakpointEdited(breakpointItem, editButtonClicked);
           event.consume();
         });
     this.#breakpointsView.addEventListener(
@@ -79,7 +81,7 @@ export class BreakpointsSidebarPane extends UI.ThrottledWidget.ThrottledWidget {
     this.update();
   }
 
-  doUpdate(): Promise<void> {
+  override doUpdate(): Promise<void> {
     return this.#controller.update();
   }
 
@@ -99,6 +101,9 @@ export class BreakpointsSidebarController implements UI.ContextFlavorListener.Co
   readonly #collapsedFilesSettings: Common.Settings.Setting<Platform.DevToolsPath.UrlString[]>;
   readonly #collapsedFiles: Set<Platform.DevToolsPath.UrlString>;
 
+  // This is used to keep track of outstanding edits to breakpoints that were initiated
+  // by the breakpoint edit button (for UMA).
+  #outstandingBreakpointEdited: Bindings.BreakpointManager.Breakpoint|undefined;
   #updateScheduled = false;
   #updateRunning = false;
 
@@ -148,6 +153,15 @@ export class BreakpointsSidebarController implements UI.ContextFlavorListener.Co
     void this.update();
   }
 
+  breakpointEditFinished(breakpoint: Bindings.BreakpointManager.Breakpoint|null, edited: boolean): void {
+    if (this.#outstandingBreakpointEdited && this.#outstandingBreakpointEdited === breakpoint) {
+      if (edited) {
+        Host.userMetrics.actionTaken(Host.UserMetrics.Action.BreakpointConditionEditedFromSidebar);
+      }
+      this.#outstandingBreakpointEdited = undefined;
+    }
+  }
+
   breakpointStateChanged(breakpointItem: SourcesComponents.BreakpointsView.BreakpointItem, checked: boolean): void {
     const locations = this.#getLocationsForBreakpointItem(breakpointItem);
     locations.forEach((value: Bindings.BreakpointManager.BreakpointLocation) => {
@@ -156,7 +170,8 @@ export class BreakpointsSidebarController implements UI.ContextFlavorListener.Co
     });
   }
 
-  async breakpointEdited(breakpointItem: SourcesComponents.BreakpointsView.BreakpointItem): Promise<void> {
+  async breakpointEdited(breakpointItem: SourcesComponents.BreakpointsView.BreakpointItem, editButtonClicked: boolean):
+      Promise<void> {
     const locations = this.#getLocationsForBreakpointItem(breakpointItem);
     let location: Bindings.BreakpointManager.BreakpointLocation|undefined;
     for (const locationCandidate of locations) {
@@ -165,6 +180,9 @@ export class BreakpointsSidebarController implements UI.ContextFlavorListener.Co
       }
     }
     if (location) {
+      if (editButtonClicked) {
+        this.#outstandingBreakpointEdited = location.breakpoint;
+      }
       await Common.Revealer.reveal(location);
     }
   }
@@ -261,7 +279,9 @@ export class BreakpointsSidebarController implements UI.ContextFlavorListener.Co
       const locationText = uiLocation.lineAndColumnText(showColumn) as string;
 
       const text = content[idx];
-      const codeSnippet = text.lineAt(uiLocation.lineNumber);
+      const codeSnippet = text instanceof TextUtils.Text.Text ?
+          text.lineAt(uiLocation.lineNumber) :
+          text.lines[text.bytecodeOffsetToLineNumber(uiLocation.columnNumber ?? 0)] ?? '';
 
       if (isHit && this.#collapsedFiles.has(sourceURL)) {
         this.#collapsedFiles.delete(sourceURL);
@@ -340,19 +360,19 @@ export class BreakpointsSidebarController implements UI.ContextFlavorListener.Co
   }
 
   #getBreakpointTypeAndDetails(locations: Bindings.BreakpointManager.BreakpointLocation[]):
-      {type: SourcesComponents.BreakpointsView.BreakpointType, hoverText?: string} {
+      {type: SDK.DebuggerModel.BreakpointType, hoverText?: string} {
     const breakpointWithCondition = locations.find(location => Boolean(location.breakpoint.condition()));
     const breakpoint = breakpointWithCondition?.breakpoint;
     if (!breakpoint || !breakpoint.condition()) {
-      return {type: SourcesComponents.BreakpointsView.BreakpointType.REGULAR_BREAKPOINT};
+      return {type: SDK.DebuggerModel.BreakpointType.REGULAR_BREAKPOINT};
     }
 
     const condition = breakpoint.condition();
     if (breakpoint.isLogpoint()) {
-      return {type: SourcesComponents.BreakpointsView.BreakpointType.LOGPOINT, hoverText: condition};
+      return {type: SDK.DebuggerModel.BreakpointType.LOGPOINT, hoverText: condition};
     }
 
-    return {type: SourcesComponents.BreakpointsView.BreakpointType.CONDITIONAL_BREAKPOINT, hoverText: condition};
+    return {type: SDK.DebuggerModel.BreakpointType.CONDITIONAL_BREAKPOINT, hoverText: condition};
   }
 
   #getLocationsForBreakpointItem(breakpointItem: SourcesComponents.BreakpointsView.BreakpointItem):
@@ -434,7 +454,8 @@ export class BreakpointsSidebarController implements UI.ContextFlavorListener.Co
     return status;
   }
 
-  #getContent(locations: Bindings.BreakpointManager.BreakpointLocation[][]): Promise<TextUtils.Text.Text[]> {
+  #getContent(locations: Bindings.BreakpointManager.BreakpointLocation[][]):
+      Promise<Array<TextUtils.Text.Text|Common.WasmDisassembly.WasmDisassembly>> {
     // Use a cache to share the Text objects between all breakpoints. This way
     // we share the cached line ending information that Text calculates. This
     // was very slow to calculate with a lot of breakpoints in the same very
@@ -442,19 +463,11 @@ export class BreakpointsSidebarController implements UI.ContextFlavorListener.Co
     const contentToTextMap = new Map<string, TextUtils.Text.Text>();
 
     return Promise.all(locations.map(async ([{uiLocation: {uiSourceCode}}]) => {
-      if (uiSourceCode.mimeType() === 'application/wasm') {
-        // We could mirror the logic from `SourceFrame._ensureContentLoaded()` here
-        // (and if so, ideally share that code somewhere), but that's quite heavy
-        // logic just to display a single Wasm instruction. Also not really clear
-        // how much value this would add. So let's keep it simple for now and don't
-        // display anything additional for Wasm breakpoints, and if there's demand
-        // to display some text preview, we could look into selectively disassemb-
-        // ling the part of the text that we need here.
-        // Relevant crbug: https://crbug.com/1090256
-        return new TextUtils.Text.Text('');
+      const deferredContent = await uiSourceCode.requestContent({cachedWasmOnly: true});
+      if ('wasmDisassemblyInfo' in deferredContent && deferredContent.wasmDisassemblyInfo) {
+        return deferredContent.wasmDisassemblyInfo;
       }
-      const {content} = await uiSourceCode.requestContent();
-      const contentText = content || '';
+      const contentText = deferredContent.content || '';
       if (contentToTextMap.has(contentText)) {
         return contentToTextMap.get(contentText) as TextUtils.Text.Text;
       }

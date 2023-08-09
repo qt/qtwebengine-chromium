@@ -87,15 +87,18 @@ Context GetNativeContextFromWasmInstanceOnStackTop(Isolate* isolate) {
 
 class V8_NODISCARD ClearThreadInWasmScope {
  public:
-  explicit ClearThreadInWasmScope(Isolate* isolate) : isolate_(isolate) {
-    DCHECK_IMPLIES(trap_handler::IsTrapHandlerEnabled(),
-                   trap_handler::IsThreadInWasm());
-    trap_handler::ClearThreadInWasm();
+  explicit ClearThreadInWasmScope(Isolate* isolate)
+      : isolate_(isolate), is_thread_in_wasm_(trap_handler::IsThreadInWasm()) {
+    // In some cases we call this from Wasm code inlined into JavaScript
+    // so the flag might not be set.
+    if (is_thread_in_wasm_) {
+      trap_handler::ClearThreadInWasm();
+    }
   }
   ~ClearThreadInWasmScope() {
     DCHECK_IMPLIES(trap_handler::IsTrapHandlerEnabled(),
                    !trap_handler::IsThreadInWasm());
-    if (!isolate_->has_pending_exception()) {
+    if (!isolate_->has_pending_exception() && is_thread_in_wasm_) {
       trap_handler::SetThreadInWasm();
     }
     // Otherwise we only want to set the flag if the exception is caught in
@@ -104,6 +107,7 @@ class V8_NODISCARD ClearThreadInWasmScope {
 
  private:
   Isolate* isolate_;
+  const bool is_thread_in_wasm_;
 };
 
 Object ThrowWasmError(Isolate* isolate, MessageTemplate message,
@@ -203,6 +207,15 @@ RUNTIME_FUNCTION(Runtime_ThrowBadSuspenderError) {
   return ThrowWasmError(isolate, MessageTemplate::kWasmTrapBadSuspender);
 }
 
+RUNTIME_FUNCTION(Runtime_WasmThrowTypeError) {
+  ClearThreadInWasmScope clear_wasm_flag(isolate);
+  HandleScope scope(isolate);
+  DCHECK_EQ(2, args.length());
+  MessageTemplate message_id = MessageTemplateFromInt(args.smi_value_at(0));
+  Handle<Object> arg(args[1], isolate);
+  THROW_NEW_ERROR_RETURN_FAILURE(isolate, NewTypeError(message_id, arg));
+}
+
 RUNTIME_FUNCTION(Runtime_WasmThrow) {
   ClearThreadInWasmScope clear_wasm_flag(isolate);
   HandleScope scope(isolate);
@@ -296,8 +309,8 @@ void ReplaceWrapper(Isolate* isolate, Handle<WasmInstanceObject> instance,
       WasmInstanceObject::GetWasmInternalFunction(isolate, instance,
                                                   function_index)
           .ToHandleChecked();
-  Handle<WasmExternalFunction> exported_function =
-      handle(WasmExternalFunction::cast(internal->external()), isolate);
+  Handle<JSFunction> exported_function =
+      WasmInternalFunction::GetOrCreateExternal(internal);
   exported_function->set_code(*wrapper_code);
   WasmExportedFunctionData function_data =
       exported_function->shared().wasm_exported_function_data();
@@ -362,6 +375,18 @@ RUNTIME_FUNCTION(Runtime_WasmTriggerTierUp) {
   ClearThreadInWasmScope clear_wasm_flag(isolate);
   SealHandleScope shs(isolate);
 
+  {
+    DisallowGarbageCollection no_gc;
+    DCHECK_EQ(1, args.length());
+    WasmInstanceObject instance = WasmInstanceObject::cast(args[0]);
+
+    FrameFinder<WasmFrame> frame_finder(isolate);
+    int func_index = frame_finder.frame()->function_index();
+    DCHECK_EQ(instance, frame_finder.frame()->wasm_instance());
+
+    wasm::TriggerTierUp(instance, func_index);
+  }
+
   // We're reusing this interrupt mechanism to interrupt long-running loops.
   StackLimitCheck check(isolate);
   // We don't need to handle stack overflows here, because the function that
@@ -371,19 +396,11 @@ RUNTIME_FUNCTION(Runtime_WasmTriggerTierUp) {
   // itself might have pushed us above the limit where a stack check would
   // fail.
   if (check.InterruptRequested()) {
+    // Note: This might trigger a GC, which invalidates the {args} object (see
+    // https://crbug.com/v8/13036#2).
     Object result = isolate->stack_guard()->HandleInterrupts();
     if (result.IsException()) return result;
   }
-
-  DisallowGarbageCollection no_gc;
-  DCHECK_EQ(1, args.length());
-  WasmInstanceObject instance = WasmInstanceObject::cast(args[0]);
-
-  FrameFinder<WasmFrame> frame_finder(isolate);
-  int func_index = frame_finder.frame()->function_index();
-  DCHECK_EQ(instance, frame_finder.frame()->wasm_instance());
-
-  wasm::TriggerTierUp(instance, func_index);
 
   return ReadOnlyRoots(isolate).undefined_value();
 }
@@ -479,6 +496,15 @@ RUNTIME_FUNCTION(Runtime_WasmRefFunc) {
                                                               function_index);
 }
 
+RUNTIME_FUNCTION(Runtime_WasmInternalFunctionCreateExternal) {
+  ClearThreadInWasmScope flag_scope(isolate);
+  HandleScope scope(isolate);
+  DCHECK_EQ(1, args.length());
+  Handle<WasmInternalFunction> internal(WasmInternalFunction::cast(args[0]),
+                                        isolate);
+  return *WasmInternalFunction::GetOrCreateExternal(internal);
+}
+
 RUNTIME_FUNCTION(Runtime_WasmFunctionTableGet) {
   ClearThreadInWasmScope flag_scope(isolate);
   HandleScope scope(isolate);
@@ -496,7 +522,7 @@ RUNTIME_FUNCTION(Runtime_WasmFunctionTableGet) {
           : IsSubtypeOf(table->type(), wasm::kWasmFuncRef,
                         WasmInstanceObject::cast(table->instance()).module()));
 
-  if (!WasmTableObject::IsInBounds(isolate, table, entry_index)) {
+  if (!table->is_in_bounds(entry_index)) {
     return ThrowWasmError(isolate, MessageTemplate::kWasmTrapTableOutOfBounds);
   }
 
@@ -521,7 +547,7 @@ RUNTIME_FUNCTION(Runtime_WasmFunctionTableSet) {
           : IsSubtypeOf(table->type(), wasm::kWasmFuncRef,
                         WasmInstanceObject::cast(table->instance()).module()));
 
-  if (!WasmTableObject::IsInBounds(isolate, table, entry_index)) {
+  if (!table->is_in_bounds(entry_index)) {
     return ThrowWasmError(isolate, MessageTemplate::kWasmTrapTableOutOfBounds);
   }
   WasmTableObject::Set(isolate, table, entry_index, element);
@@ -782,9 +808,9 @@ RUNTIME_FUNCTION(Runtime_WasmArrayNewSegment) {
   }
 
   if (type->element_type().is_numeric()) {
+    // No chance of overflow due to the check above.
     uint32_t length_in_bytes = length * element_size;
 
-    DCHECK_EQ(length_in_bytes / element_size, length);
     if (!base::IsInBounds<uint32_t>(
             offset, length_in_bytes,
             instance->data_segment_sizes().get(segment_index))) {
@@ -822,6 +848,89 @@ RUNTIME_FUNCTION(Runtime_WasmArrayNewSegment) {
   }
 }
 
+RUNTIME_FUNCTION(Runtime_WasmArrayInitSegment) {
+  ClearThreadInWasmScope flag_scope(isolate);
+  HandleScope scope(isolate);
+  DCHECK_EQ(6, args.length());
+  Handle<WasmInstanceObject> instance(WasmInstanceObject::cast(args[0]),
+                                      isolate);
+  uint32_t segment_index = args.positive_smi_value_at(1);
+  Handle<WasmArray> array(WasmArray::cast(args[2]), isolate);
+  uint32_t array_index = args.positive_smi_value_at(3);
+  uint32_t segment_offset = args.positive_smi_value_at(4);
+  uint32_t length = args.positive_smi_value_at(5);
+
+  wasm::ArrayType* type = reinterpret_cast<wasm::ArrayType*>(
+      array->map().wasm_type_info().native_type());
+
+  uint32_t element_size = type->element_type().value_kind_size();
+
+  if (type->element_type().is_numeric()) {
+    if (!base::IsInBounds<uint32_t>(array_index, length, array->length())) {
+      return ThrowWasmError(isolate,
+                            MessageTemplate::kWasmTrapArrayOutOfBounds);
+    }
+
+    // No chance of overflow, due to the check above and the limit in array
+    // length.
+    uint32_t length_in_bytes = length * element_size;
+
+    if (!base::IsInBounds<uint32_t>(
+            segment_offset, length_in_bytes,
+            instance->data_segment_sizes().get(segment_index))) {
+      return ThrowWasmError(isolate,
+                            MessageTemplate::kWasmTrapDataSegmentOutOfBounds);
+    }
+
+    Address source =
+        instance->data_segment_starts().get(segment_index) + segment_offset;
+    Address dest = array->ElementAddress(array_index);
+    MemCopy(reinterpret_cast<void*>(dest), reinterpret_cast<void*>(source),
+            length_in_bytes);
+    return *isolate->factory()->undefined_value();
+  } else {
+    Handle<Object> elem_segment_raw =
+        handle(instance->element_segments().get(segment_index), isolate);
+    const wasm::WasmElemSegment* module_elem_segment =
+        &instance->module()->elem_segments[segment_index];
+    // If the segment is initialized in the instance, we have to get its length
+    // from there, as it might have been dropped. If the segment is
+    // uninitialized, we need to fetch its length from the module.
+    int segment_length =
+        elem_segment_raw->IsFixedArray()
+            ? Handle<FixedArray>::cast(elem_segment_raw)->length()
+            : module_elem_segment->element_count;
+    if (!base::IsInBounds<size_t>(segment_offset, length, segment_length)) {
+      return ThrowWasmError(
+          isolate, MessageTemplate::kWasmTrapElementSegmentOutOfBounds);
+    }
+    if (!base::IsInBounds(array_index, length, array->length())) {
+      return ThrowWasmError(isolate,
+                            MessageTemplate::kWasmTrapArrayOutOfBounds);
+    }
+
+    // If the element segment has not been initialized yet, lazily initialize it
+    // now.
+    AccountingAllocator allocator;
+    Zone zone(&allocator, ZONE_NAME);
+    base::Optional<MessageTemplate> opt_error =
+        wasm::InitializeElementSegment(&zone, isolate, instance, segment_index);
+    if (opt_error.has_value()) {
+      return ThrowWasmError(isolate, opt_error.value());
+    }
+
+    auto elements = handle(
+        FixedArray::cast(instance->element_segments().get(segment_index)),
+        isolate);
+    if (length > 0) {
+      isolate->heap()->CopyRange(*array, array->ElementSlot(array_index),
+                                 elements->RawFieldOfElementAt(segment_offset),
+                                 length, UPDATE_WRITE_BARRIER);
+    }
+    return *isolate->factory()->undefined_value();
+  }
+}
+
 namespace {
 // Synchronize the stack limit with the active continuation for stack-switching.
 // This can be done before or after changing the stack pointer itself, as long
@@ -834,7 +943,8 @@ void SyncStackLimit(Isolate* isolate) {
   DisallowGarbageCollection no_gc;
   auto continuation = WasmContinuationObject::cast(
       isolate->root(RootIndex::kActiveContinuation));
-  auto stack = Managed<wasm::StackMemory>::cast(continuation.stack()).get();
+  wasm::StackMemory* stack =
+      Managed<wasm::StackMemory>::cast(continuation.stack()).raw();
   if (v8_flags.trace_wasm_stack_switching) {
     PrintF("Switch to stack #%d\n", stack->id());
   }
@@ -1367,17 +1477,6 @@ RUNTIME_FUNCTION(Runtime_WasmStringViewWtf8Slice) {
               ->NewStringFromUtf8(array, start, end,
                                   unibrow::Utf8Variant::kWtf8)
               .ToHandleChecked();
-}
-
-RUNTIME_FUNCTION(Runtime_WasmStringCompare) {
-  ClearThreadInWasmScope flag_scope(isolate);
-  DCHECK_EQ(2, args.length());
-  HandleScope scope(isolate);
-  Handle<String> lhs(String::cast(args[0]), isolate);
-  Handle<String> rhs(String::cast(args[1]), isolate);
-  ComparisonResult result = String::Compare(isolate, lhs, rhs);
-  DCHECK_NE(result, ComparisonResult::kUndefined);
-  return Smi::FromInt(static_cast<int>(result));
 }
 
 RUNTIME_FUNCTION(Runtime_WasmStringFromCodePoint) {

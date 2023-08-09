@@ -35,6 +35,7 @@ import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
+import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
 import * as Bindings from '../../models/bindings/bindings.js';
@@ -259,12 +260,20 @@ const UIStrings = {
    *@example {5} PH1
    */
   filteredMessagesInConsole: '{PH1} messages in console',
+  /**
+   *@description An error message showed when console paste is blocked.
+   */
+  consolePasteBlocked:
+      'Pasting code is blocked on this page. Pasting code into devtools can allow attackers to take over your account.',
+
 };
 const str_ = i18n.i18n.registerUIStrings('panels/console/ConsoleView.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 let consoleViewInstance: ConsoleView;
 
-export class ConsoleView extends UI.Widget.VBox implements UI.SearchableView.Searchable, ConsoleViewportProvider {
+export class ConsoleView extends UI.Widget.VBox implements
+    UI.SearchableView.Searchable, ConsoleViewportProvider,
+    SDK.TargetManager.SDKModelObserver<SDK.ConsoleModel.ConsoleModel> {
   private readonly searchableViewInternal: UI.SearchableView.SearchableView;
   private readonly sidebar: ConsoleSidebar;
   private isSidebarOpen: boolean;
@@ -320,7 +329,7 @@ export class ConsoleView extends UI.Widget.VBox implements UI.SearchableView.Sea
   private requestResolver = new Logs.RequestResolver.RequestResolver();
   private issueResolver = new IssuesManager.IssueResolver.IssueResolver();
 
-  constructor() {
+  constructor(viewportThrottlerTimeout: number) {
     super();
     this.setMinimumSize(0, 35);
 
@@ -387,7 +396,7 @@ export class ConsoleView extends UI.Widget.VBox implements UI.SearchableView.Sea
     this.showSettingsPaneSetting =
         Common.Settings.Settings.instance().createSetting('consoleShowSettingsToolbar', false);
     this.showSettingsPaneButton = new UI.Toolbar.ToolbarSettingToggle(
-        this.showSettingsPaneSetting, 'largeicon-settings-gear', i18nString(UIStrings.consoleSettings));
+        this.showSettingsPaneSetting, 'gear', i18nString(UIStrings.consoleSettings), 'gear-filled');
     this.progressToolbarItem = new UI.Toolbar.ToolbarItem(document.createElement('div'));
     this.groupSimilarSetting = Common.Settings.Settings.instance().moduleSetting('consoleGroupSimilar');
     this.groupSimilarSetting.addChangeListener(() => this.updateMessageList());
@@ -490,13 +499,14 @@ export class ConsoleView extends UI.Widget.VBox implements UI.SearchableView.Sea
     this.messagesElement.id = 'console-messages';
     this.messagesElement.classList.add('monospace');
     this.messagesElement.addEventListener('click', this.messagesClicked.bind(this), false);
-    this.messagesElement.addEventListener('paste', this.messagesPasted.bind(this), true);
-    this.messagesElement.addEventListener('clipboard-paste', this.messagesPasted.bind(this), true);
+    ['paste', 'clipboard-paste', 'drop'].forEach(type => {
+      this.messagesElement.addEventListener(type, this.messagesPasted.bind(this), true);
+    });
 
     this.messagesCountElement = this.consoleToolbarContainer.createChild('div', 'message-count');
     UI.ARIAUtils.markAsPoliteLiveRegion(this.messagesCountElement, false);
 
-    this.viewportThrottler = new Common.Throttler.Throttler(50);
+    this.viewportThrottler = new Common.Throttler.Throttler(viewportThrottlerTimeout);
     this.pendingBatchResize = false;
     this.onMessageResizedBound = (e: Common.EventTarget.EventTargetEvent<UI.TreeOutline.TreeElement>): void => {
       void this.onMessageResized(e);
@@ -559,15 +569,19 @@ export class ConsoleView extends UI.Widget.VBox implements UI.SearchableView.Sea
     this.messagesElement.addEventListener('touchend', this.updateStickToBottomOnPointerUp.bind(this), false);
     this.messagesElement.addEventListener('touchcancel', this.updateStickToBottomOnPointerUp.bind(this), false);
 
-    SDK.ConsoleModel.ConsoleModel.instance().addEventListener(
-        SDK.ConsoleModel.Events.ConsoleCleared, this.consoleCleared, this);
-    SDK.ConsoleModel.ConsoleModel.instance().addEventListener(
-        SDK.ConsoleModel.Events.MessageAdded, this.onConsoleMessageAdded, this);
-    SDK.ConsoleModel.ConsoleModel.instance().addEventListener(
-        SDK.ConsoleModel.Events.MessageUpdated, this.onConsoleMessageUpdated, this);
-    SDK.ConsoleModel.ConsoleModel.instance().addEventListener(
-        SDK.ConsoleModel.Events.CommandEvaluated, this.commandEvaluated, this);
-    SDK.ConsoleModel.ConsoleModel.instance().messages().forEach(this.addConsoleMessage, this);
+    SDK.TargetManager.TargetManager.instance().addModelListener(
+        SDK.ConsoleModel.ConsoleModel, SDK.ConsoleModel.Events.ConsoleCleared, this.consoleCleared, this,
+        {scoped: true});
+    SDK.TargetManager.TargetManager.instance().addModelListener(
+        SDK.ConsoleModel.ConsoleModel, SDK.ConsoleModel.Events.MessageAdded, this.onConsoleMessageAdded, this,
+        {scoped: true});
+    SDK.TargetManager.TargetManager.instance().addModelListener(
+        SDK.ConsoleModel.ConsoleModel, SDK.ConsoleModel.Events.MessageUpdated, this.onConsoleMessageUpdated, this,
+        {scoped: true});
+    SDK.TargetManager.TargetManager.instance().addModelListener(
+        SDK.ConsoleModel.ConsoleModel, SDK.ConsoleModel.Events.CommandEvaluated, this.commandEvaluated, this,
+        {scoped: true});
+    SDK.TargetManager.TargetManager.instance().observeModels(SDK.ConsoleModel.ConsoleModel, this, {scoped: true});
 
     const issuesManager = IssuesManager.IssuesManager.IssuesManager.instance();
     this.issueToolbarThrottle = new Common.Throttler.Throttler(100);
@@ -590,15 +604,26 @@ export class ConsoleView extends UI.Widget.VBox implements UI.SearchableView.Sea
     return checkbox;
   }
 
-  static instance(opts?: {forceNew: boolean}): ConsoleView {
+  static instance(opts?: {forceNew: boolean, viewportThrottlerTimeout?: number}): ConsoleView {
     if (!consoleViewInstance || opts?.forceNew) {
-      consoleViewInstance = new ConsoleView();
+      consoleViewInstance = new ConsoleView(opts?.viewportThrottlerTimeout ?? 50);
     }
     return consoleViewInstance;
   }
 
   static clearConsole(): void {
-    SDK.ConsoleModel.ConsoleModel.instance().requestClearMessages();
+    SDK.ConsoleModel.ConsoleModel.requestClearMessages();
+  }
+
+  modelAdded(model: SDK.ConsoleModel.ConsoleModel): void {
+    model.messages().forEach(this.addConsoleMessage, this);
+  }
+
+  modelRemoved(model: SDK.ConsoleModel.ConsoleModel): void {
+    if (!Common.Settings.Settings.instance().moduleSetting('preserveConsoleLog').get() &&
+        model.target().outermostTarget() === model.target()) {
+      this.consoleCleared();
+    }
   }
 
   private onFilterChanged(): void {
@@ -684,18 +709,18 @@ export class ConsoleView extends UI.Widget.VBox implements UI.SearchableView.Sea
     this.prompt.clearAutocomplete();
   }
 
-  willHide(): void {
+  override willHide(): void {
     this.hidePromptSuggestBox();
   }
 
-  wasShown(): void {
+  override wasShown(): void {
     super.wasShown();
     this.updateIssuesToolbarItem();
     this.viewport.refresh();
     this.registerCSSFiles([consoleViewStyles, objectValueStyles, CodeHighlighter.Style.default]);
   }
 
-  focus(): void {
+  override focus(): void {
     if (this.viewport.hasVirtualSelection()) {
       (this.viewport.contentElement() as HTMLElement).focus();
     } else {
@@ -713,7 +738,7 @@ export class ConsoleView extends UI.Widget.VBox implements UI.SearchableView.Sea
     }
   }
 
-  restoreScrollPositions(): void {
+  override restoreScrollPositions(): void {
     if (this.viewport.stickToBottom()) {
       this.immediatelyScrollToBottom();
     } else {
@@ -721,7 +746,7 @@ export class ConsoleView extends UI.Widget.VBox implements UI.SearchableView.Sea
     }
   }
 
-  onResize(): void {
+  override onResize(): void {
     this.scheduleViewportRefresh();
     this.hidePromptSuggestBox();
     if (this.viewport.stickToBottom()) {
@@ -1091,7 +1116,7 @@ export class ConsoleView extends UI.Widget.VBox implements UI.SearchableView.Sea
   }
 
   private async saveConsole(): Promise<void> {
-    const url = (SDK.TargetManager.TargetManager.instance().mainFrameTarget() as SDK.Target.Target).inspectedURL();
+    const url = (SDK.TargetManager.TargetManager.instance().scopeTarget() as SDK.Target.Target).inspectedURL();
     const parsedURL = Common.ParsedURL.ParsedURL.fromString(url);
     const filename =
         Platform.StringUtilities.sprintf('%s-%d.log', parsedURL ? parsedURL.host : 'console', Date.now()) as
@@ -1286,7 +1311,12 @@ export class ConsoleView extends UI.Widget.VBox implements UI.SearchableView.Sea
     this.focusPrompt();
   }
 
-  private messagesPasted(_event: Event): void {
+  private messagesPasted(event: Event): void {
+    const url = SDK.TargetManager.TargetManager.instance().inspectedURL();
+    if (Root.Runtime.Runtime.queryParam('consolePaste') === 'blockwebui' && url.startsWith('chrome://')) {
+      event.preventDefault();
+      Common.Console.Console.instance().error(i18nString(UIStrings.consolePasteBlocked));
+    }
     if (UI.UIUtils.isEditing()) {
       return;
     }
@@ -1336,7 +1366,7 @@ export class ConsoleView extends UI.Widget.VBox implements UI.SearchableView.Sea
           result.runtimeModel(), exceptionDetails, SDK.ConsoleModel.FrontendMessageType.Result, undefined, undefined);
     }
     message.setOriginatingMessage(originatingConsoleMessage);
-    SDK.ConsoleModel.ConsoleModel.instance().addMessage(message);
+    result.runtimeModel().target().model(SDK.ConsoleModel.ConsoleModel)?.addMessage(message);
   }
 
   private commandEvaluated(event: Common.EventTarget.EventTargetEvent<SDK.ConsoleModel.CommandEvaluatedEvent>): void {
@@ -1345,7 +1375,7 @@ export class ConsoleView extends UI.Widget.VBox implements UI.SearchableView.Sea
     this.printResult(data.result, data.commandMessage, data.exceptionDetails);
   }
 
-  elementsToRestoreScrollPositionsFor(): Element[] {
+  override elementsToRestoreScrollPositionsFor(): Element[] {
     return [this.messagesElement];
   }
 

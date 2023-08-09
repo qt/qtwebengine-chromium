@@ -111,7 +111,7 @@ size_t SkottieTextEditor::closestGlyph(const SkPoint& pt) const {
     return min_index;
 }
 
-void SkottieTextEditor::drawCursor(SkCanvas* canvas, const GlyphInfo glyphs[], size_t size) const {
+void SkottieTextEditor::drawCursor(SkCanvas* canvas, const TextInfo& tinfo) const {
     constexpr double kCursorHz = 2;
     const auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                             std::chrono::steady_clock::now() - fTimeBase).count();
@@ -129,27 +129,26 @@ void SkottieTextEditor::drawCursor(SkCanvas* canvas, const GlyphInfo glyphs[], s
         }
 
         const auto prev_index = prev_utf8(txt_prop.fText, fCursorIndex);
-        for (size_t i = 0; i < size; ++i) {
-            if (glyphs[i].fCluster >= prev_index) {
+        for (size_t i = 0; i < tinfo.fGlyphs.size(); ++i) {
+            if (tinfo.fGlyphs[i].fCluster >= prev_index) {
                 return i;
             }
         }
 
-        return size - 1;
+        return tinfo.fGlyphs.size() - 1;
     }();
-
-    const auto& glyph_bounds = glyphs[glyph_index].fBounds;
 
     // Cursor index mapping:
     //   0 -> before the first char
     //   1 -> after the first char
     //   2 -> after the second char
     //   ...
-    // The cursor is bottom-aligned, and centered to the right/left edge of the glyph bounding box.
-    const auto cscale = txt_prop.fTextSize,
-                cxpos = (fCursorIndex ? glyph_bounds.fRight : glyph_bounds.fLeft)
+    // The cursor is bottom-aligned to the baseline (y = 0), and horizontally centered to the right
+    // of the glyph advance.
+    const auto cscale = txt_prop.fTextSize * tinfo.fScale,
+                cxpos = (fCursorIndex ? tinfo.fGlyphs[glyph_index].fAdvance : 0)
                          - fCursorBounds.width() * cscale * 0.5f,
-                cypos = glyph_bounds.fBottom - fCursorBounds.height() * cscale;
+                cypos = - fCursorBounds.height() * cscale;
     const auto cpath  = fCursorPath.makeTransform(SkMatrix::Translate(cxpos, cypos) *
                                                   SkMatrix::Scale(cscale, cscale));
 
@@ -159,7 +158,7 @@ void SkottieTextEditor::drawCursor(SkCanvas* canvas, const GlyphInfo glyphs[], s
     p.setStrokeCap(SkPaint::kRound_Cap);
 
     SkAutoCanvasRestore acr(canvas, true);
-    canvas->concat(glyphs[glyph_index].fMatrix);
+    canvas->concat(tinfo.fGlyphs[glyph_index].fMatrix);
 
     p.setColor(SK_ColorWHITE);
     p.setStrokeWidth(3);
@@ -215,13 +214,13 @@ bool SkottieTextEditor::deleteSelection() {
     return true;
 }
 
-void SkottieTextEditor::onDecorate(SkCanvas* canvas, const GlyphInfo glyphs[], size_t size) {
+void SkottieTextEditor::onDecorate(SkCanvas* canvas, const TextInfo& tinfo) {
     const auto [sel_start, sel_end] = this->currentSelection();
 
     fGlyphData.clear();
 
-    for (size_t i = 0; i < size; ++i) {
-        const auto& ginfo = glyphs[i];
+    for (size_t i = 0; i < tinfo.fGlyphs.size(); ++i) {
+        const auto& ginfo = tinfo.fGlyphs[i];
 
         SkAutoCanvasRestore acr(canvas, true);
         canvas->concat(ginfo.fMatrix);
@@ -242,7 +241,7 @@ void SkottieTextEditor::onDecorate(SkCanvas* canvas, const GlyphInfo glyphs[], s
 
     // Only draw the cursor when there's no active selection.
     if (sel_start == sel_end) {
-        this->drawCursor(canvas, glyphs, size);
+        this->drawCursor(canvas, tinfo);
     }
 }
 

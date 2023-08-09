@@ -20,9 +20,12 @@
 #include "dawn/common/GPUInfo.h"
 #include "dawn/common/Log.h"
 #include "dawn/common/SystemUtils.h"
+#include "dawn/native/CallbackTaskManager.h"
 #include "dawn/native/ChainUtils_autogen.h"
+#include "dawn/native/Device.h"
 #include "dawn/native/ErrorData.h"
 #include "dawn/native/Surface.h"
+#include "dawn/native/Toggles.h"
 #include "dawn/native/ValidationUtils_autogen.h"
 #include "dawn/platform/DawnPlatform.h"
 
@@ -41,6 +44,11 @@ namespace dawn::native {
 
 // Forward definitions of each backend's "Connect" function that creates new BackendConnection.
 // Conditionally compiled declarations are used to avoid using static constructors instead.
+#if defined(DAWN_ENABLE_BACKEND_D3D11)
+namespace d3d11 {
+BackendConnection* Connect(InstanceBase* instance);
+}
+#endif  // defined(DAWN_ENABLE_BACKEND_D3D11)
 #if defined(DAWN_ENABLE_BACKEND_D3D12)
 namespace d3d12 {
 BackendConnection* Connect(InstanceBase* instance);
@@ -74,6 +82,9 @@ BackendsBitset GetEnabledBackends() {
 #if defined(DAWN_ENABLE_BACKEND_NULL)
     enabledBackends.set(wgpu::BackendType::Null);
 #endif  // defined(DAWN_ENABLE_BACKEND_NULL)
+#if defined(DAWN_ENABLE_BACKEND_D3D11)
+    enabledBackends.set(wgpu::BackendType::D3D11);
+#endif  // defined(DAWN_ENABLE_BACKEND_D3D11)
 #if defined(DAWN_ENABLE_BACKEND_D3D12)
     enabledBackends.set(wgpu::BackendType::D3D12);
 #endif  // defined(DAWN_ENABLE_BACKEND_D3D12)
@@ -110,18 +121,30 @@ InstanceBase* APICreateInstance(const InstanceDescriptor* descriptor) {
 
 // static
 Ref<InstanceBase> InstanceBase::Create(const InstanceDescriptor* descriptor) {
-    Ref<InstanceBase> instance = AcquireRef(new InstanceBase);
     static constexpr InstanceDescriptor kDefaultDesc = {};
     if (descriptor == nullptr) {
         descriptor = &kDefaultDesc;
     }
+
+    const DawnTogglesDescriptor* instanceTogglesDesc = nullptr;
+    FindInChain(descriptor->nextInChain, &instanceTogglesDesc);
+
+    // Set up the instance toggle state from toggles descriptor
+    TogglesState instanceToggles =
+        TogglesState::CreateFromTogglesDescriptor(instanceTogglesDesc, ToggleStage::Instance);
+    // By default enable the DisallowUnsafeAPIs instance toggle, it will be inherited to adapters
+    // and devices created by this instance if not overriden.
+    // TODO(dawn:1685): Rename DisallowUnsafeAPIs to AllowUnsafeAPIs, and change relating logic.
+    instanceToggles.Default(Toggle::DisallowUnsafeAPIs, true);
+
+    Ref<InstanceBase> instance = AcquireRef(new InstanceBase(instanceToggles));
     if (instance->ConsumedError(instance->Initialize(descriptor))) {
         return nullptr;
     }
     return instance;
 }
 
-InstanceBase::InstanceBase() = default;
+InstanceBase::InstanceBase(const TogglesState& instanceToggles) : mToggles(instanceToggles) {}
 
 InstanceBase::~InstanceBase() = default;
 
@@ -138,7 +161,9 @@ void InstanceBase::WillDropLastExternalRef() {
 
 // TODO(crbug.com/dawn/832): make the platform an initialization parameter of the instance.
 MaybeError InstanceBase::Initialize(const InstanceDescriptor* descriptor) {
-    DAWN_TRY(ValidateSingleSType(descriptor->nextInChain, wgpu::SType::DawnInstanceDescriptor));
+    DAWN_TRY(ValidateSTypes(descriptor->nextInChain, {{wgpu::SType::DawnInstanceDescriptor},
+                                                      {wgpu::SType::DawnTogglesDescriptor}}));
+
     const DawnInstanceDescriptor* dawnDesc = nullptr;
     FindInChain(descriptor->nextInChain, &dawnDesc);
     if (dawnDesc != nullptr) {
@@ -155,6 +180,8 @@ MaybeError InstanceBase::Initialize(const InstanceDescriptor* descriptor) {
         mRuntimeSearchPaths.push_back(std::move(*p));
     }
     mRuntimeSearchPaths.push_back("");
+
+    mCallbackTaskManager = AcquireRef(new CallbackTaskManager());
 
     // Initialize the platform to the default for now.
     mDefaultPlatform = std::make_unique<dawn::platform::Platform>();
@@ -280,7 +307,14 @@ void InstanceBase::DiscoverDefaultAdapters() {
 
     // Query and merge all default adapters for all backends
     for (std::unique_ptr<BackendConnection>& backend : mBackends) {
-        std::vector<Ref<AdapterBase>> backendAdapters = backend->DiscoverDefaultAdapters();
+        // Set up toggles state for default adapters, currently adapter don't have a toggles
+        // descriptor so just inherit from instance toggles.
+        // TODO(dawn:1495): Handle the adapter toggles descriptor after implemented.
+        TogglesState adapterToggles = TogglesState(ToggleStage::Adapter);
+        adapterToggles.InheritFrom(mToggles);
+
+        std::vector<Ref<AdapterBase>> backendAdapters =
+            backend->DiscoverDefaultAdapters(adapterToggles);
 
         for (Ref<AdapterBase>& adapter : backendAdapters) {
             ASSERT(adapter->GetBackendType() == backend->GetType());
@@ -304,6 +338,10 @@ bool InstanceBase::DiscoverAdapters(const AdapterDiscoveryOptionsBase* options) 
     }
 
     return true;
+}
+
+const TogglesState& InstanceBase::GetTogglesState() const {
+    return mToggles;
 }
 
 const ToggleInfo* InstanceBase::GetToggleInfo(const char* toggleName) {
@@ -341,6 +379,12 @@ void InstanceBase::EnsureBackendConnection(wgpu::BackendType backendType) {
             Register(null::Connect(this), wgpu::BackendType::Null);
             break;
 #endif  // defined(DAWN_ENABLE_BACKEND_NULL)
+
+#if defined(DAWN_ENABLE_BACKEND_D3D11)
+        case wgpu::BackendType::D3D11:
+            Register(d3d11::Connect(this), wgpu::BackendType::D3D11);
+            break;
+#endif  // defined(DAWN_ENABLE_BACKEND_D3D11)
 
 #if defined(DAWN_ENABLE_BACKEND_D3D12)
         case wgpu::BackendType::D3D12:
@@ -397,8 +441,14 @@ MaybeError InstanceBase::DiscoverAdaptersInternal(const AdapterDiscoveryOptionsB
         }
         foundBackend = true;
 
+        // Set up toggles state for default adapters, currently adapter don't have a toggles
+        // descriptor so just inherit from instance toggles.
+        // TODO(dawn:1495): Handle the adapter toggles descriptor after implemented.
+        TogglesState adapterToggles = TogglesState(ToggleStage::Adapter);
+        adapterToggles.InheritFrom(mToggles);
+
         std::vector<Ref<AdapterBase>> newAdapters;
-        DAWN_TRY_ASSIGN(newAdapters, backend->DiscoverAdapters(options));
+        DAWN_TRY_ASSIGN(newAdapters, backend->DiscoverAdapters(options, adapterToggles));
 
         for (Ref<AdapterBase>& adapter : newAdapters) {
             ASSERT(adapter->GetBackendType() == backend->GetType());
@@ -472,19 +522,45 @@ BlobCache* InstanceBase::GetBlobCache(bool enabled) {
 }
 
 uint64_t InstanceBase::GetDeviceCountForTesting() const {
-    return mDeviceCountForTesting.load();
+    std::lock_guard<std::mutex> lg(mDevicesListMutex);
+    return mDevicesList.size();
 }
 
-void InstanceBase::IncrementDeviceCountForTesting() {
-    mDeviceCountForTesting++;
+void InstanceBase::AddDevice(DeviceBase* device) {
+    std::lock_guard<std::mutex> lg(mDevicesListMutex);
+    mDevicesList.insert(device);
 }
 
-void InstanceBase::DecrementDeviceCountForTesting() {
-    mDeviceCountForTesting--;
+void InstanceBase::RemoveDevice(DeviceBase* device) {
+    std::lock_guard<std::mutex> lg(mDevicesListMutex);
+    mDevicesList.erase(device);
+}
+
+bool InstanceBase::APIProcessEvents() {
+    std::vector<Ref<DeviceBase>> devices;
+    {
+        std::lock_guard<std::mutex> lg(mDevicesListMutex);
+        for (auto device : mDevicesList) {
+            devices.push_back(device);
+        }
+    }
+
+    bool hasMoreEvents = false;
+    for (auto device : devices) {
+        hasMoreEvents = device->APITick() || hasMoreEvents;
+    }
+
+    mCallbackTaskManager->Flush();
+
+    return hasMoreEvents || !mCallbackTaskManager->IsEmpty();
 }
 
 const std::vector<std::string>& InstanceBase::GetRuntimeSearchPaths() const {
     return mRuntimeSearchPaths;
+}
+
+const Ref<CallbackTaskManager>& InstanceBase::GetCallbackTaskManager() const {
+    return mCallbackTaskManager;
 }
 
 void InstanceBase::ConsumeError(std::unique_ptr<ErrorData> error) {

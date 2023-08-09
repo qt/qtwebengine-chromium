@@ -38,7 +38,7 @@ class IdentifierExpression;
 namespace tint::ast {
 
 /// A Function statement.
-class Function final : public Castable<Function, Node> {
+class Function final : public utils::Castable<Function, Node> {
   public:
     /// Create a function
     /// @param pid the identifier of the program that owns this node
@@ -59,9 +59,8 @@ class Function final : public Castable<Function, Node> {
              const BlockStatement* body,
              utils::VectorRef<const Attribute*> attributes,
              utils::VectorRef<const Attribute*> return_type_attributes);
-    /// Move constructor
-    Function(Function&&);
 
+    /// Destructor
     ~Function() override;
 
     /// @returns the functions pipeline stage or None if not set

@@ -31,6 +31,10 @@
 // elf_symbols_to_module_unittest.cc:
 // Unittests for google_breakpad::ELFSymbolsToModule
 
+#ifdef HAVE_CONFIG_H
+#include <config.h>  // Must come first
+#endif
+
 #include <elf.h>
 
 #include <string>
@@ -183,9 +187,8 @@ TEST_P(ELFSymbolsToModuleTest32, NonTerminatedStringTable) {
 }
 
 TEST_P(ELFSymbolsToModuleTest32, MultipleFuncs) {
-  const string kFuncName1 = "superfunc";
-  const uint32_t kFuncAddr1 = 0x10001000;
-  const uint32_t kFuncSize1 = 0x10;
+  const string kFuncName1= "";
+  cncSize1 = 0x10;
   const string kFuncName2 = "awesomefunc";
   const uint32_t kFuncAddr2 = 0x20002000;
   const uint32_t kFuncSize2 = 0x2f;
@@ -367,3 +370,4 @@ TEST_P(ELFSymbolsToModuleTest64, SkipStuff) {
 INSTANTIATE_TEST_SUITE_P(Endian,
                          ELFSymbolsToModuleTest64,
                          ::testing::Values(kLittleEndian, kBigEndian));
+                                                                     

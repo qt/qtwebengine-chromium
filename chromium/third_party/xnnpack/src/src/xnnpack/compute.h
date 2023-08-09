@@ -57,6 +57,9 @@ struct compute_parameters {
     pthreadpool_task_4d_tile_2d_with_id_t task_4d_tile_2d_with_id;
 #endif  // XNN_MAX_UARCH_TYPES > 1
   };
+  // Offset of the invocation context w.r.t. xnn_operator.context
+  // Typically 0, but can be non-zero when an operator does multiple invocations.
+  size_t context_offset;
   size_t range[6];
   size_t tile[2];
 };
@@ -167,6 +170,27 @@ XNN_PRIVATE void xnn_compute_transposev_6d(
     size_t n,
     size_t tile_m,
     size_t tile_n);
+
+struct packw_gemm_goi_context {
+  size_t k;
+  size_t nr;
+  size_t kr;
+  size_t sr;
+  const void* kernel;
+  size_t k_stride;
+  const void* bias;
+  size_t b_stride;
+  void* packed_weights;
+  size_t w_stride;
+  xnn_packw_gemm_goi_ukernel_fn packw_gemm_goi;
+};
+
+#ifndef __cplusplus
+  XNN_PRIVATE void xnn_compute_packw_gemm_goi(
+      const struct packw_gemm_goi_context context[restrict XNN_MIN_ELEMENTS(1)],
+      size_t n_block_start,
+      size_t n_block_size);
+#endif
 
 struct gemm_context {
   size_t k_scaled;
@@ -512,6 +536,7 @@ struct dwconv_context {
     xnn_dwconv_unipass_ukernel_fn unipass_ukernel;
     xnn_dwconv_multipass_ukernel_fn multipass_ukernel;
   };
+  size_t buffer_size;
 };
 
 #ifndef __cplusplus
@@ -623,6 +648,8 @@ struct argmax_pooling_context {
     xnn_argmaxpool_unipass_ukernel_fn unipass_ukernel;
     xnn_argmaxpool_multipass_ukernel_fn multipass_ukernel;
   };
+  size_t accumulation_buffer_size;
+  size_t index_buffer_size;
 };
 
 #ifndef __cplusplus
@@ -660,6 +687,7 @@ struct average_pooling_context {
     xnn_avgpool_unipass_ukernel_fn unipass_ukernel;
     xnn_avgpool_multipass_ukernel_fn multipass_ukernel;
   };
+  size_t buffer_size;
 };
 
 #ifndef __cplusplus
@@ -699,6 +727,7 @@ struct pixelwise_average_pooling_context {
     xnn_pavgpool_unipass_ukernel_fn unipass_ukernel;
     xnn_pavgpool_multipass_ukernel_fn multipass_ukernel;
   };
+  size_t buffer_size;
 };
 
 #ifndef __cplusplus
@@ -732,6 +761,7 @@ struct global_average_pooling_nwc_context {
     xnn_gavgpool_unipass_ukernel_fn unipass_ukernel;
     xnn_gavgpool_multipass_ukernel_fn multipass_ukernel;
   };
+  size_t buffer_size;
 };
 
 #ifndef __cplusplus
@@ -936,6 +966,7 @@ struct univector_strided_context {
     union xnn_f16_minmax_params f16_minmax;
     union xnn_f16_neg_params f16_neg;
     union xnn_f16_sigmoid_params f16_sigmoid;
+    union xnn_f16_tanh_params f16_tanh;
     union xnn_f32_abs_params f32_abs;
     union xnn_f32_default_params f32_default;
     union xnn_f32_elu_params f32_elu;
@@ -949,7 +980,9 @@ struct univector_strided_context {
     union xnn_f32_rnd_params f32_rnd;
     union xnn_f32_sigmoid_params f32_sigmoid;
     union xnn_f32_sqrt_params f32_sqrt;
+    union xnn_f32_tanh_params f32_tanh;
     union xnn_qs8_cvt_params qs8_cvt;
+    union xnn_qs16_qs8_cvt_params qs16_qs8_cvt;
     union xnn_qs8_f32_cvt_params qs8_f32_cvt;
     union xnn_qs8_lrelu_params qs8_lrelu;
     union xnn_qu8_cvt_params qu8_cvt;
@@ -996,6 +1029,7 @@ struct univector_contiguous_context {
     union xnn_f32_sigmoid_params f32_sigmoid;
     union xnn_f32_sqrt_params f32_sqrt;
     union xnn_qs8_cvt_params qs8_cvt;
+    union xnn_qs16_qs8_cvt_params qs16_qs8_cvt;
     union xnn_qs8_f32_cvt_params qs8_f32_cvt;
     union xnn_qs8_lrelu_params qs8_lrelu;
     union xnn_qu8_cvt_params qu8_cvt;

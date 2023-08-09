@@ -28,6 +28,8 @@ build --host_platform=//bazel/platform:host_with_hermetic_toolchain
 build --extra_toolchains=//toolchain:clang_linux_x64_toolchain
 build --extra_toolchains=//toolchain:clang_mac_x64_toolchain
 build --extra_toolchains=//toolchain:clang_mac_arm64_toolchain
+build --extra_toolchains=//toolchain:linux_amd64_ndk_arm64_toolchain
+build --extra_toolchains=//toolchain:linux_amd64_ndk_arm32_toolchain
 
 # Hide DEBUG messages from Bazel.
 # Many of these are things related to the git checkouts that are not relevent to devs.
@@ -75,6 +77,7 @@ build --flag_alias=enable_vma=//src/gpu:use_vulkan_memory_allocator
 build --flag_alias=with_default_global_memory_pool=//src/lazy:use_default_global_memory_pool
 build --flag_alias=with_no_global_memory_pool=no//src/lazy:use_default_global_memory_pool
 build --flag_alias=with_harfbuzz=//bazel/common_config_settings:use_harfbuzz
+build --flag_alias=with_fontations=//bazel/common_config_settings:use_fontations
 build --flag_alias=with_no_harfbuzz=no//bazel/common_config_settings:use_harfbuzz
 build --flag_alias=with_icu=//bazel/common_config_settings:use_icu
 build --flag_alias=with_no_icu=no//bazel/common_config_settings:use_icu

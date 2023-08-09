@@ -29,7 +29,7 @@ namespace tint::ast {
 ///   // Turn off diagnostics for derivative uniformity violations.
 ///   diagnostic(off, derivative_uniformity);
 /// ```
-class DiagnosticDirective final : public Castable<DiagnosticDirective, Node> {
+class DiagnosticDirective final : public utils::Castable<DiagnosticDirective, Node> {
   public:
     /// Create a extension
     /// @param pid the identifier of the program that owns this node
@@ -37,9 +37,6 @@ class DiagnosticDirective final : public Castable<DiagnosticDirective, Node> {
     /// @param src the source of this node
     /// @param dc the diagnostic control
     DiagnosticDirective(ProgramID pid, NodeID nid, const Source& src, DiagnosticControl&& dc);
-
-    /// Move constructor
-    DiagnosticDirective(DiagnosticDirective&&);
 
     /// Destructor
     ~DiagnosticDirective() override;

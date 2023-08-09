@@ -801,10 +801,9 @@ int MT2TToP010(const uint8_t* src_y,
   }
 
   {
-    int u_width = (width + 1) / 2;
-    int uv_width = 2 * u_width;
+    int uv_width = (width + 1) & ~1;
+    int uv_height = (height + 1) / 2;
     int y = 0;
-    int uv_height = uv_height = (height + 1) / 2;
     const int tile_width = 16;
     const int y_tile_height = 32;
     const int uv_tile_height = 16;
@@ -919,7 +918,7 @@ int I422ToNV21(const uint8_t* src_y,
 #if defined(HAS_MERGEUVROW_AVX2)
   if (TestCpuFlag(kCpuHasAVX2)) {
     MergeUVRow = MergeUVRow_Any_AVX2;
-    if (IS_ALIGNED(halfwidth, 32)) {
+    if (IS_ALIGNED(halfwidth, 16)) {
       MergeUVRow = MergeUVRow_AVX2;
     }
   }

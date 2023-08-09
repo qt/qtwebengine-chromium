@@ -9,6 +9,7 @@
 
 #include "src/gpu/graphite/Log.h"
 #include "src/gpu/graphite/TextureProxy.h"
+#include "src/gpu/graphite/compute/DispatchGroup.h"
 #include "src/gpu/graphite/mtl/MtlBlitCommandEncoder.h"
 #include "src/gpu/graphite/mtl/MtlBuffer.h"
 #include "src/gpu/graphite/mtl/MtlCaps.h"
@@ -20,7 +21,7 @@
 #include "src/gpu/graphite/mtl/MtlSampler.h"
 #include "src/gpu/graphite/mtl/MtlSharedContext.h"
 #include "src/gpu/graphite/mtl/MtlTexture.h"
-#include "src/gpu/graphite/mtl/MtlUtilsPriv.h"
+#include "src/gpu/mtl/MtlUtilsPriv.h"
 
 namespace skgpu::graphite {
 
@@ -107,31 +108,41 @@ bool MtlCommandBuffer::onAddRenderPass(const RenderPassDesc& renderPassDesc,
                                        const Texture* resolveTexture,
                                        const Texture* depthStencilTexture,
                                        SkRect viewport,
-                                       const std::vector<std::unique_ptr<DrawPass>>& drawPasses) {
+                                       const DrawPassList& drawPasses) {
     if (!this->beginRenderPass(renderPassDesc, colorTexture, resolveTexture, depthStencilTexture)) {
         return false;
     }
 
     this->setViewport(viewport.x(), viewport.y(), viewport.width(), viewport.height(), 0, 1);
 
-    for (size_t i = 0; i < drawPasses.size(); ++i) {
-        this->addDrawPass(drawPasses[i].get());
+    for (const auto& drawPass : drawPasses) {
+        this->addDrawPass(drawPass.get());
     }
 
     this->endRenderPass();
     return true;
 }
 
-bool MtlCommandBuffer::onAddComputePass(const ComputePassDesc& computePassDesc,
-                                        const ComputePipeline* pipeline,
-                                        const std::vector<ResourceBinding>& bindings) {
+bool MtlCommandBuffer::onAddComputePass(const DispatchGroupList& groups) {
     this->beginComputePass();
-    this->bindComputePipeline(pipeline);
-    for (const ResourceBinding& binding : bindings) {
-        this->bindBuffer(binding.fBuffer.fBuffer, binding.fBuffer.fOffset, binding.fIndex);
+    for (const auto& group : groups) {
+        group->addResourceRefs(this);
+        for (const auto& dispatch : group->dispatches()) {
+            this->bindComputePipeline(group->getPipeline(dispatch.fPipelineIndex));
+            for (const ResourceBinding& binding : dispatch.fBindings) {
+                if (const BindBufferInfo* buffer =
+                            std::get_if<BindBufferInfo>(&binding.fResource)) {
+                    this->bindBuffer(buffer->fBuffer, buffer->fOffset, binding.fIndex);
+                } else {
+                    const TextureIndex* texIdx = std::get_if<TextureIndex>(&binding.fResource);
+                    SkASSERT(texIdx);
+                    this->bindTexture(group->getTexture(*texIdx), binding.fIndex);
+                }
+            }
+            this->dispatchThreadgroups(dispatch.fParams.fGlobalDispatchSize,
+                                       dispatch.fParams.fLocalDispatchSize);
+        }
     }
-    this->dispatchThreadgroups(computePassDesc.fGlobalDispatchSize,
-                               computePassDesc.fLocalDispatchSize);
     this->endComputePass();
     return true;
 }
@@ -492,6 +503,7 @@ void MtlCommandBuffer::bindTextureAndSampler(const Texture* texture,
                                              const Sampler* sampler,
                                              unsigned int bindIndex) {
     SkASSERT(texture && sampler);
+    SkASSERT(fActiveRenderCommandEncoder);
 
     id<MTLTexture> mtlTexture = ((const MtlTexture*)texture)->mtlTexture();
     id<MTLSamplerState> mtlSamplerState = ((const MtlSampler*)sampler)->mtlSamplerState();
@@ -666,8 +678,16 @@ void MtlCommandBuffer::bindComputePipeline(const ComputePipeline* computePipelin
 void MtlCommandBuffer::bindBuffer(const Buffer* buffer, unsigned int offset, unsigned int index) {
     SkASSERT(fActiveComputeCommandEncoder);
 
-    id<MTLBuffer> mtlBuffer = buffer ? static_cast<const MtlBuffer*>(buffer)->mtlBuffer() : nullptr;
+    id<MTLBuffer> mtlBuffer = buffer ? static_cast<const MtlBuffer*>(buffer)->mtlBuffer() : nil;
     fActiveComputeCommandEncoder->setBuffer(mtlBuffer, offset, index);
+}
+
+void MtlCommandBuffer::bindTexture(const Texture* texture, unsigned int index) {
+    SkASSERT(fActiveComputeCommandEncoder);
+
+    id<MTLTexture> mtlTexture =
+            texture ? static_cast<const MtlTexture*>(texture)->mtlTexture() : nil;
+    fActiveComputeCommandEncoder->setTexture(mtlTexture, index);
 }
 
 void MtlCommandBuffer::dispatchThreadgroups(const WorkgroupSize& globalSize,

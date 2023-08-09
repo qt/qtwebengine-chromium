@@ -15,6 +15,7 @@
 #include "platform/base/macros.h"
 #include "util/crypto/sha2.h"
 #include "util/osp_logging.h"
+#include "util/span_util.h"
 
 namespace openscreen {
 namespace cast {
@@ -25,11 +26,6 @@ enum CrlVersion {
   //            Signature Algorithm = RSA-PKCS1 V1.5 with SHA-256
   kCrlVersion0 = 0,
 };
-
-ConstDataSpan ConstDataSpanFromString(const std::string& s) {
-  return ConstDataSpan{reinterpret_cast<const uint8_t*>(s.data()),
-                       static_cast<uint32_t>(s.size())};
-}
 
 // Verifies the CRL is signed by a trusted CRL authority at the time the CRL
 // was issued. Verifies the signature of |tbs_crl| is valid based on the
@@ -50,9 +46,9 @@ bool VerifyCRL(const Crl& crl,
   auto& result_path = maybe_result_path.value();
   ParsedCertificate* target_cert = result_path[0].get();
 
-  if (!target_cert->VerifySignedData(
-          DigestAlgorithm::kSha256, ConstDataSpanFromString(crl.tbs_crl()),
-          ConstDataSpanFromString(crl.signature()))) {
+  if (!target_cert->VerifySignedData(DigestAlgorithm::kSha256,
+                                     ByteViewFromString(crl.tbs_crl()),
+                                     ByteViewFromString(crl.signature()))) {
     return false;
   }
 

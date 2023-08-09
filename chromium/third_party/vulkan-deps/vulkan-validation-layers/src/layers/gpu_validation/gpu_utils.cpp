@@ -16,28 +16,14 @@
  */
 
 #include "gpu_validation/gpu_utils.h"
-#include "state_tracker/descriptor_sets.h"
 #include "sync/sync_utils.h"
 #include "spirv-tools/libspirv.h"
 #include "spirv-tools/optimizer.hpp"
 #include "spirv-tools/instrument.hpp"
+#include "vma/vma.h"
 #include <spirv/unified1/spirv.hpp>
 #include <algorithm>
 #include <regex>
-
-#ifdef _MSC_VER
-#pragma warning(push)
-#pragma warning(disable : 4189)
-#endif
-
-#define VMA_IMPLEMENTATION
-// This define indicates that we will supply Vulkan function pointers at initialization
-#define VMA_STATIC_VULKAN_FUNCTIONS 0
-#include "vk_mem_alloc.h"
-
-#ifdef _MSC_VER
-#pragma warning(pop)
-#endif
 
 // Implementation for Descriptor Set Manager class
 UtilDescriptorSetManager::UtilDescriptorSetManager(VkDevice device, uint32_t num_bindings_in_set)
@@ -833,8 +819,8 @@ void GpuAssistedBase::PreCallRecordPipelineCreations(uint32_t count, const Creat
         }
 
         if (replace_shaders) {
-            for (uint32_t i = 0; i < static_cast<uint32_t>(pipe->stage_state.size()); ++i) {
-                const auto &stage = pipe->stage_state[i];
+            for (uint32_t i = 0; i < static_cast<uint32_t>(pipe->stage_states.size()); ++i) {
+                const auto &stage = pipe->stage_states[i];
                 const auto &module_state = stage.module_state;
 
                 VkShaderModule shader_module;
@@ -854,23 +840,24 @@ void GpuAssistedBase::PreCallRecordPipelineCreations(uint32_t count, const Creat
             // !replace_shaders implies that the instrumented shaders should be used. However, if this is a non-executable pipeline
             // library created with pre-raster or fragment shader state, it contains shaders that have not yet been instrumented
             if (!pipe->HasFullState() && (pipe->pre_raster_state || pipe->fragment_shader_state)) {
-                for (const auto &stage : pipe->stage_state) {
-                    auto module_state = std::const_pointer_cast<SHADER_MODULE_STATE>(stage.module_state);
+                for (const auto &stage_state : pipe->stage_states) {
+                    auto module_state = std::const_pointer_cast<SHADER_MODULE_STATE>(stage_state.module_state);
                     if (!module_state->Handle()) {
                         // If the shader module's handle is non-null, then it was defined with CreateShaderModule and covered by the
                         // case above. Otherwise, it is being defined during CGPL time
                         if (cgpl_state.shader_states.size() <= pipeline) {
                             cgpl_state.shader_states.resize(pipeline + 1);
                         }
-                        auto &csm_state = cgpl_state.shader_states[pipeline][stage.stage_flag];
+                        const VkShaderStageFlagBits stage = stage_state.create_info->stage;
+                        auto &csm_state = cgpl_state.shader_states[pipeline][stage];
                         const auto pass =
                             InstrumentShader(module_state->words_, csm_state.instrumented_pgm, &csm_state.unique_shader_id);
                         if (pass) {
                             module_state->gpu_validation_shader_id = csm_state.unique_shader_id;
 
                             // Now we need to find the corresponding VkShaderModuleCreateInfo and update its shader code
-                            auto &stage_ci = GetShaderStageCI<SafeCreateInfo, safe_VkPipelineShaderStageCreateInfo>(
-                                new_pipeline_ci, stage.stage_flag);
+                            auto &stage_ci =
+                                GetShaderStageCI<SafeCreateInfo, safe_VkPipelineShaderStageCreateInfo>(new_pipeline_ci, stage);
                             // We're modifying the copied, safe create info, which is ok to be non-const
                             auto sm_ci =
                                 const_cast<safe_VkShaderModuleCreateInfo *>(reinterpret_cast<const safe_VkShaderModuleCreateInfo *>(
@@ -906,17 +893,16 @@ void GpuAssistedBase::PostCallRecordPipelineCreations(const uint32_t count, cons
         auto pipeline_state = Get<PIPELINE_STATE>(pPipelines[pipeline]);
         if (!pipeline_state) continue;
 
-        if (!pipeline_state->stage_state.empty() &&
-            !(pipeline_state->GetPipelineCreateFlags() & VK_PIPELINE_CREATE_LIBRARY_BIT_KHR)) {
+        if (!pipeline_state->stage_states.empty() && !(pipeline_state->create_flags & VK_PIPELINE_CREATE_LIBRARY_BIT_KHR)) {
             const auto pipeline_layout = pipeline_state->PipelineLayoutState();
-            for (auto &stage : pipeline_state->stage_state) {
-                auto &module_state = stage.module_state;
+            for (auto &stage_state : pipeline_state->stage_states) {
+                auto &module_state = stage_state.module_state;
                 const auto shader_module = module_state->Handle();
 
                 if (pipeline_state->active_slots.find(desc_set_bind_index) != pipeline_state->active_slots.end() ||
                     (pipeline_layout->set_layouts.size() >= adjusted_max_desc_sets)) {
                     auto *modified_ci = reinterpret_cast<const CreateInfo *>(modified_create_infos[pipeline].ptr());
-                    auto uninstrumented_module = GetShaderModule(*modified_ci, stage.stage_flag);
+                    auto uninstrumented_module = GetShaderModule(*modified_ci, stage_state.create_info->stage);
                     assert(uninstrumented_module != shader_module.Cast<VkShaderModule>());
                     DispatchDestroyShaderModule(device, uninstrumented_module, pAllocator);
                 }
@@ -1097,35 +1083,6 @@ void ReadOpSource(const SHADER_MODULE_STATE &module_state, const uint32_t report
 //   when finding a #line line number larger than the reported error line number.
 //
 
-// GCC 4.8 has a problem with std::regex that is fixed in GCC 4.9.  Provide fallback code for 4.8
-#define GCC_VERSION (__GNUC__ * 10000 + __GNUC_MINOR__ * 100 + __GNUC_PATCHLEVEL__)
-
-#if defined(__GNUC__) && GCC_VERSION < 40900
-bool GetLineAndFilename(const std::string &string, uint32_t *linenumber, std::string &filename) {
-    // # line <linenumber> "<filename>" or
-    // #line <linenumber> "<filename>"
-    std::vector<std::string> tokens;
-    std::stringstream stream(string);
-    std::string temp;
-    uint32_t line_index = 0;
-
-    while (stream >> temp) tokens.push_back(temp);
-    auto size = tokens.size();
-    if (size > 1) {
-        if (tokens[0] == "#" && tokens[1] == "line") {
-            line_index = 2;
-        } else if (tokens[0] == "#line") {
-            line_index = 1;
-        }
-    }
-    if (0 == line_index) return false;
-    *linenumber = static_cast<uint32_t>(std::stoul(tokens[line_index]));
-    uint32_t filename_index = line_index + 1;
-    // Remove enclosing double quotes around filename
-    if (size > filename_index) filename = tokens[filename_index].substr(1, tokens[filename_index].size() - 2);
-    return true;
-}
-#else
 bool GetLineAndFilename(const std::string &string, uint32_t *linenumber, std::string &filename) {
     static const std::regex line_regex(  // matches #line directives
         "^"                              // beginning of line
@@ -1152,7 +1109,6 @@ bool GetLineAndFilename(const std::string &string, uint32_t *linenumber, std::st
     *linenumber = (uint32_t)std::stoul(captures[1]);
     return true;
 }
-#endif  // GCC_VERSION
 
 // Extract the filename, line number, and column number from the correct OpLine and build a message string from it.
 // Scan the source (from OpSource) to find the line of source at the reported line number and place it in another message string.

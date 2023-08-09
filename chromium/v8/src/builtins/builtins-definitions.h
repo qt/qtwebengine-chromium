@@ -161,10 +161,11 @@ namespace internal {
   /* String helpers */                                                         \
   TFC(StringFromCodePointAt, StringAtAsString)                                 \
   TFC(StringEqual, StringEqual)                                                \
-  TFC(StringGreaterThan, Compare)                                              \
-  TFC(StringGreaterThanOrEqual, Compare)                                       \
-  TFC(StringLessThan, Compare)                                                 \
-  TFC(StringLessThanOrEqual, Compare)                                          \
+  TFC(StringGreaterThan, CompareNoContext)                                     \
+  TFC(StringGreaterThanOrEqual, CompareNoContext)                              \
+  TFC(StringLessThan, CompareNoContext)                                        \
+  TFC(StringLessThanOrEqual, CompareNoContext)                                 \
+  TFC(StringCompare, CompareNoContext)                                         \
   TFC(StringSubstring, StringSubstring)                                        \
                                                                                \
   /* OrderedHashTable helpers */                                               \
@@ -270,6 +271,8 @@ namespace internal {
                                                                                \
   /* Type conversions continuations */                                         \
   TFC(ToBooleanLazyDeoptContinuation, SingleParameterOnStack)                  \
+  TFC(MathCeilContinuation, SingleParameterOnStack)                            \
+  TFC(MathFloorContinuation, SingleParameterOnStack)                           \
   TFC(MathRoundContinuation, SingleParameterOnStack)                           \
                                                                                \
   /* Handlers */                                                               \
@@ -638,9 +641,11 @@ namespace internal {
   TFH(LoadSuperICBaseline, LoadWithReceiverBaseline)                           \
   TFH(KeyedLoadIC, KeyedLoadWithVector)                                        \
   TFH(KeyedLoadIC_Megamorphic, KeyedLoadWithVector)                            \
+  TFH(KeyedLoadIC_MegamorphicStringKey, KeyedLoadWithVector)                   \
   TFH(KeyedLoadICTrampoline, KeyedLoad)                                        \
   TFH(KeyedLoadICBaseline, KeyedLoadBaseline)                                  \
   TFH(KeyedLoadICTrampoline_Megamorphic, KeyedLoad)                            \
+  TFH(KeyedLoadICTrampoline_MegamorphicStringKey, KeyedLoad)                   \
   TFH(StoreGlobalIC, StoreGlobalWithVector)                                    \
   TFH(StoreGlobalICTrampoline, StoreGlobal)                                    \
   TFH(StoreGlobalICBaseline, StoreGlobalBaseline)                              \
@@ -720,8 +725,8 @@ namespace internal {
   CPP(NumberPrototypeToFixed)                                                  \
   CPP(NumberPrototypeToLocaleString)                                           \
   CPP(NumberPrototypeToPrecision)                                              \
-  TFC(SameValue, Compare)                                                      \
-  TFC(SameValueNumbersOnly, Compare)                                           \
+  TFC(SameValue, CompareNoContext)                                             \
+  TFC(SameValueNumbersOnly, CompareNoContext)                                  \
                                                                                \
   /* Binary ops with feedback collection */                                    \
   TFC(Add_Baseline, BinaryOp_Baseline)                                         \
@@ -1011,13 +1016,18 @@ namespace internal {
   TFS(WeakCollectionSet, kCollection, kKey, kValue)                            \
                                                                                \
   /* JS Structs and friends */                                                 \
+  CPP(SharedSpaceJSObjectHasInstance)                                          \
   CPP(SharedStructTypeConstructor)                                             \
+  CPP(SharedStructTypeIsSharedStruct)                                          \
   CPP(SharedStructConstructor)                                                 \
   CPP(SharedArrayConstructor)                                                  \
+  CPP(SharedArrayIsSharedArray)                                                \
   CPP(AtomicsMutexConstructor)                                                 \
+  CPP(AtomicsMutexIsMutex)                                                     \
   CPP(AtomicsMutexLock)                                                        \
   CPP(AtomicsMutexTryLock)                                                     \
   CPP(AtomicsConditionConstructor)                                             \
+  CPP(AtomicsConditionIsCondition)                                             \
   CPP(AtomicsConditionWait)                                                    \
   CPP(AtomicsConditionNotify)                                                  \
                                                                                \
@@ -1790,6 +1800,20 @@ namespace internal {
   CPP(LocalePrototypeCollation)                                        \
   /* ecma402 #sec-Intl.Locale.prototype.collations */                  \
   CPP(LocalePrototypeCollations)                                       \
+  /* ecma402 #sec-Intl.Locale.prototype.getCalendars */                \
+  CPP(LocalePrototypeGetCalendars)                                     \
+  /* ecma402 #sec-Intl.Locale.prototype.getCollations */               \
+  CPP(LocalePrototypeGetCollations)                                    \
+  /* ecma402 #sec-Intl.Locale.prototype.getHourCycles */               \
+  CPP(LocalePrototypeGetHourCycles)                                    \
+  /* ecma402 #sec-Intl.Locale.prototype.getNumberingSystems */         \
+  CPP(LocalePrototypeGetNumberingSystems)                              \
+  /* ecma402 #sec-Intl.Locale.prototype.getTimeZones */                \
+  CPP(LocalePrototypeGetTimeZones)                                     \
+  /* ecma402 #sec-Intl.Locale.prototype.getTextInfo */                 \
+  CPP(LocalePrototypeGetTextInfo)                                      \
+  /* ecma402 #sec-Intl.Locale.prototype.getWeekInfo */                 \
+  CPP(LocalePrototypeGetWeekInfo)                                      \
   /* ecma402 #sec-Intl.Locale.prototype.hourCycle */                   \
   CPP(LocalePrototypeHourCycle)                                        \
   /* ecma402 #sec-Intl.Locale.prototype.hourCycles */                  \

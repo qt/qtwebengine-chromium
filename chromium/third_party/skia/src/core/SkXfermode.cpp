@@ -5,63 +5,15 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkString.h"
-#include "include/private/SkColorData.h"
-#include "include/private/base/SkOnce.h"
-#include "src/base/SkMathPriv.h"
-#include "src/core/SkBlendModePriv.h"
-#include "src/core/SkOpts.h"
-#include "src/core/SkRasterPipeline.h"
-#include "src/core/SkReadBuffer.h"
-#include "src/core/SkWriteBuffer.h"
-#include "src/core/SkXfermodePriv.h"
+#include "include/core/SkBlendMode.h"
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
 #include "src/gpu/ganesh/GrFragmentProcessor.h"
 #include "src/gpu/ganesh/effects/GrCustomXfermode.h"
 #include "src/gpu/ganesh/effects/GrPorterDuffXferProcessor.h"
 #endif
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
-
-class SkProcCoeffXfermode : public SkXfermode {
-public:
-    SkProcCoeffXfermode(SkBlendMode mode) : fMode(mode) {}
-
-    void xfer32(SkPMColor dst[], const SkPMColor src[], int count,
-                const SkAlpha aa[]) const override {
-        SkASSERT(dst && src && count >= 0);
-
-        SkRasterPipeline_<256> p;
-
-        SkRasterPipeline_MemoryCtx dst_ctx = { (void*)dst, 0 },
-                                   src_ctx = { (void*)src, 0 },
-                                    aa_ctx = { (void*)aa,  0 };
-
-        p.append_load    (kN32_SkColorType, &src_ctx);
-        p.append_load_dst(kN32_SkColorType, &dst_ctx);
-
-        if (SkBlendMode_ShouldPreScaleCoverage(fMode, /*rgb_coverage=*/false)) {
-            if (aa) {
-                p.append(SkRasterPipelineOp::scale_u8, &aa_ctx);
-            }
-            SkBlendMode_AppendStages(fMode, &p);
-        } else {
-            SkBlendMode_AppendStages(fMode, &p);
-            if (aa) {
-                p.append(SkRasterPipelineOp::lerp_u8, &aa_ctx);
-            }
-        }
-
-        p.append_store(kN32_SkColorType, &dst_ctx);
-        p.run(0, 0, count,1);
-    }
-
-private:
-    const SkBlendMode fMode;
-
-    using INHERITED = SkXfermode;
-};
 
 const char* SkBlendMode_Name(SkBlendMode bm) {
     switch (bm) {
@@ -99,66 +51,9 @@ const char* SkBlendMode_Name(SkBlendMode bm) {
     }
     SkUNREACHABLE;
 }
-
-sk_sp<SkXfermode> SkXfermode::Make(SkBlendMode mode) {
-    if ((unsigned)mode > (unsigned)SkBlendMode::kLastMode) {
-        // report error
-        return nullptr;
-    }
-
-    // Skia's "default" mode is srcover. nullptr in SkPaint is interpreted as srcover
-    // so we can just return nullptr from the factory.
-    if (SkBlendMode::kSrcOver == mode) {
-        return nullptr;
-    }
-
-    static SkOnce        once[kSkBlendModeCount];
-    static SkXfermode* cached[kSkBlendModeCount];
-
-    once[(int)mode]([mode] {
-        if (auto xfermode = SkOpts::create_xfermode(mode)) {
-            cached[(int)mode] = xfermode;
-        } else {
-            cached[(int)mode] = new SkProcCoeffXfermode(mode);
-        }
-    });
-    return sk_ref_sp(cached[(int)mode]);
-}
-
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-bool SkXfermode::IsOpaque(SkBlendMode mode, SrcColorOpacity opacityType) {
-    SkBlendModeCoeff src, dst;
-    if (!SkBlendMode_AsCoeff(mode, &src, &dst)) {
-        return false;
-    }
-
-    switch (src) {
-        case SkBlendModeCoeff::kDA:
-        case SkBlendModeCoeff::kDC:
-        case SkBlendModeCoeff::kIDA:
-        case SkBlendModeCoeff::kIDC:
-            return false;
-        default:
-            break;
-    }
-
-    switch (dst) {
-        case SkBlendModeCoeff::kZero:
-            return true;
-        case SkBlendModeCoeff::kISA:
-            return kOpaque_SrcColorOpacity == opacityType;
-        case SkBlendModeCoeff::kSA:
-            return kTransparentBlack_SrcColorOpacity == opacityType ||
-            kTransparentAlpha_SrcColorOpacity == opacityType;
-        case SkBlendModeCoeff::kSC:
-            return kTransparentBlack_SrcColorOpacity == opacityType;
-        default:
-            return false;
-    }
-}
-
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
 const GrXPFactory* SkBlendMode_AsXPFactory(SkBlendMode mode) {
     if (SkBlendMode_AsCoeff(mode, nullptr, nullptr)) {
         const GrXPFactory* result = GrPorterDuffXPFactory::Get(mode);

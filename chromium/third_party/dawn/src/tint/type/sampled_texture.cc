@@ -19,13 +19,15 @@
 #include "src/tint/type/manager.h"
 #include "src/tint/type/texture_dimension.h"
 #include "src/tint/utils/hash.h"
+#include "src/tint/utils/string_stream.h"
 
 TINT_INSTANTIATE_TYPEINFO(tint::type::SampledTexture);
 
 namespace tint::type {
 
 SampledTexture::SampledTexture(TextureDimension dim, const Type* type)
-    : Base(utils::Hash(TypeInfo::Of<SampledTexture>().full_hashcode, dim, type), dim), type_(type) {
+    : Base(utils::Hash(utils::TypeInfo::Of<SampledTexture>().full_hashcode, dim, type), dim),
+      type_(type) {
     TINT_ASSERT(Type, type_);
 }
 
@@ -38,9 +40,9 @@ bool SampledTexture::Equals(const UniqueNode& other) const {
     return false;
 }
 
-std::string SampledTexture::FriendlyName(const SymbolTable& symbols) const {
-    std::ostringstream out;
-    out << "texture_" << dim() << "<" << type_->FriendlyName(symbols) << ">";
+std::string SampledTexture::FriendlyName() const {
+    utils::StringStream out;
+    out << "texture_" << dim() << "<" << type_->FriendlyName() << ">";
     return out.str();
 }
 

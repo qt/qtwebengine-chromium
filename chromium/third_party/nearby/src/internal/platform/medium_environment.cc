@@ -18,13 +18,17 @@
 #include <atomic>
 #include <cinttypes>
 #include <cstdint>
+#include <memory>
 #include <new>
 #include <string>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 #include "absl/container/flat_hash_set.h"
 #include "absl/status/status.h"
+#include "absl/strings/escaping.h"
+#include "absl/types/optional.h"
 #include "internal/platform/count_down_latch.h"
 #include "internal/platform/feature_flags.h"
 #include "internal/platform/implementation/ble_v2.h"
@@ -45,6 +49,10 @@ void MediumEnvironment::Start(EnvironmentConfig config) {
   if (!enabled_.exchange(true)) {
     NEARBY_LOGS(INFO) << "MediumEnvironment::Start()";
     config_ = std::move(config);
+    if (config_.use_simulated_clock) {
+      MutexLock lock(&mutex_);
+      simulated_clock_ = std::make_unique<FakeClock>();
+    }
     Reset();
   }
 }
@@ -53,6 +61,11 @@ void MediumEnvironment::Stop() {
   if (enabled_.exchange(false)) {
     NEARBY_LOGS(INFO) << "MediumEnvironment::Stop()";
     Sync(false);
+    if (config_.use_simulated_clock) {
+      MutexLock lock(&mutex_);
+      simulated_clock_.reset();
+    }
+    config_ = {};
   }
 }
 
@@ -199,9 +212,13 @@ api::BluetoothDevice* MediumEnvironment::FindBluetoothDevice(
   api::BluetoothDevice* device = nullptr;
   CountDownLatch latch(1);
   RunOnMediumEnvironmentThread([this, &device, &latch, &mac_address]() {
+    NEARBY_LOGS(INFO) << " Looking for: "
+                      << absl::BytesToHexString(mac_address);
     for (auto& item : bluetooth_mediums_) {
       auto* adapter = item.second.adapter;
       if (!adapter) continue;
+      NEARBY_LOGS(INFO) << " Adapter: "
+                        << absl::BytesToHexString(adapter->GetMacAddress());
       if (adapter->GetMacAddress() == mac_address) {
         device = bluetooth_adapters_[adapter];
         break;
@@ -656,9 +673,11 @@ void MediumEnvironment::ClearBleV2MediumGattCharacteristics() {
 bool MediumEnvironment::DiscoverBleV2MediumGattCharacteristics(
     const Uuid& service_uuid, const std::vector<Uuid>& characteristic_uuids) {
   if (!enabled_) return false;
+  int found_characteristic = 0;
   CountDownLatch latch(1);
   RunOnMediumEnvironmentThread(
-      [this, &latch, &service_uuid, &characteristic_uuids]() {
+      [this, &found_characteristic, &latch, &service_uuid,
+       &characteristic_uuids]() {
         for (const auto& item : gatt_advertisement_bytes_) {
           if (item.first.service_uuid == service_uuid) {
             Uuid char_uuid_key = item.first.uuid;
@@ -669,13 +688,14 @@ bool MediumEnvironment::DiscoverBleV2MediumGattCharacteristics(
                                    });
             if (it != characteristic_uuids.rend()) {
               discovered_gatt_advertisement_bytes_[item.first] = item.second;
+              found_characteristic++;
             }
           }
         }
         latch.CountDown();
       });
   latch.Await();
-  return true;
+  return found_characteristic == characteristic_uuids.size();
 }
 
 ByteArray MediumEnvironment::ReadBleV2MediumGattCharacteristics(
@@ -695,10 +715,92 @@ ByteArray MediumEnvironment::ReadBleV2MediumGattCharacteristics(
   return gatt_advertisement_byte;
 }
 
+bool MediumEnvironment::WriteBleV2MediumGattCharacteristic(
+    const api::ble_v2::GattCharacteristic& characteristic,
+    absl::string_view value) {
+  if (!enabled_) return false;
+  bool success = false;
+  CountDownLatch latch(1);
+  ByteArray gatt_request_byte((std::string(value)));
+  RunOnMediumEnvironmentThread(
+      [this, &latch, &success, &characteristic, &gatt_request_byte]() {
+        auto it = discovered_gatt_advertisement_bytes_.find(characteristic);
+        if (it != discovered_gatt_advertisement_bytes_.end()) {
+          it->second = gatt_request_byte;
+          success = true;
+        }
+        latch.CountDown();
+      });
+  latch.Await();
+  return success;
+}
+
+bool MediumEnvironment::SetBleV2MediumGattCharacteristicSubscription(
+    const api::ble_v2::GattCharacteristic& characteristic, bool enable,
+    absl::AnyInvocable<void(absl::string_view value)>
+        on_characteristic_changed_cb) {
+  if (!enabled_) return false;
+  bool success = false;
+  CountDownLatch latch(1);
+  RunOnMediumEnvironmentThread([this, &latch, &success, &characteristic,
+                                &enable, &on_characteristic_changed_cb]() {
+    auto it = discovered_gatt_advertisement_bytes_.find(characteristic);
+    if (it != discovered_gatt_advertisement_bytes_.end()) {
+      if (!enable) {
+        subscribed_characteristic_.erase(characteristic);
+      } else {
+        subscribed_characteristic_.insert(
+            {characteristic, std::move(on_characteristic_changed_cb)});
+      }
+      success = true;
+    }
+    latch.CountDown();
+  });
+  latch.Await();
+  return success;
+}
+
+absl::Status MediumEnvironment::NotifyBleV2MediumGattCharacteristicChanged(
+    const api::ble_v2::GattCharacteristic& characteristic, bool confirm,
+    const ByteArray& new_value) {
+  if (!enabled_) return absl::UnknownError("MediumEnvironment not enabled.");
+  absl::Status status = absl::NotFoundError(
+      "Characteristic not subscribed to receive notification.");
+  CountDownLatch latch(1);
+  RunOnMediumEnvironmentThread(
+      [this, &latch, &status, &new_value, &confirm, &characteristic]() {
+        auto it = subscribed_characteristic_.find(characteristic);
+        if (it != subscribed_characteristic_.end()) {
+          if (!confirm) {
+            // Send a notification
+            it->second(new_value.string_data());
+          } else {
+            // Request confirmation from the client (indication)
+            // no-op for now as the method is not hooked up at platform layer.
+          }
+          status = absl::OkStatus();
+        }
+        latch.CountDown();
+      });
+  latch.Await();
+  return status;
+}
+
 void MediumEnvironment::ClearBleV2MediumGattCharacteristicsForDiscovery() {
   if (!enabled_) return;
   RunOnMediumEnvironmentThread(
       [this]() { discovered_gatt_advertisement_bytes_.clear(); });
+}
+
+void MediumEnvironment::EraseBleV2MediumGattCharacteristicsForDiscovery(
+    const api::ble_v2::GattCharacteristic& characteristic) {
+  if (!enabled_) return;
+  CountDownLatch latch(1);
+  RunOnMediumEnvironmentThread([this, &latch, &characteristic]() {
+    discovered_gatt_advertisement_bytes_.erase(characteristic);
+    latch.CountDown();
+  });
+  latch.Await();
 }
 
 void MediumEnvironment::UnregisterBleV2Medium(api::ble_v2::BleMedium& medium) {
@@ -1104,6 +1206,14 @@ void MediumEnvironment::UnregisterWifiHotspotMedium(
 
 void MediumEnvironment::SetFeatureFlags(const FeatureFlags::Flags& flags) {
   const_cast<FeatureFlags&>(FeatureFlags::GetInstance()).SetFlags(flags);
+}
+
+absl::optional<FakeClock*> MediumEnvironment::GetSimulatedClock() {
+  MutexLock lock(&mutex_);
+  if (simulated_clock_) {
+    return absl::optional<FakeClock*>(simulated_clock_.get());
+  }
+  return absl::nullopt;
 }
 
 }  // namespace nearby

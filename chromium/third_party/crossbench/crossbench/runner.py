@@ -14,8 +14,8 @@ import json
 import logging
 import pathlib
 import sys
-from typing import (TYPE_CHECKING, Any, Dict, Iterable, List, Optional,
-                    Sequence, Union)
+from typing import (TYPE_CHECKING, Any, Dict, Iterable, Iterator, List,
+                    Optional, Sequence, Tuple, Union)
 
 from crossbench import exception, helper
 from crossbench.env import (HostEnvironment, HostEnvironmentConfig,
@@ -24,11 +24,11 @@ from crossbench.flags import Flags, JSFlags
 from crossbench.probes.results import ProbeResult, ProbeResultDict
 from crossbench.probes.runner import (RunDurationsProbe, RunResultsSummaryProbe,
                                       RunRunnerLogProbe)
-from crossbench.probes.base import Probe
+from crossbench.probes.probe import Probe
 
 if TYPE_CHECKING:
-  from crossbench.benchmarks.base import Benchmark
-  from crossbench.browsers.base import Browser
+  from crossbench.benchmarks.benchmark import Benchmark
+  from crossbench.browsers.browser import Browser
   from crossbench.stories import Story
 
 
@@ -231,8 +231,12 @@ class Runner:
 
   @property
   def browser_group(self) -> BrowsersRunGroup:
-    assert self._browser_group
+    assert self._browser_group, f"No BrowsersRunGroup in {self}"
     return self._browser_group
+
+  @property
+  def has_browser_group(self) -> bool:
+    return self._browser_group is not None
 
   def sh(self, *args, shell: bool = False, stdout=None):
     return self._platform.sh(*args, shell=shell, stdout=stdout)
@@ -536,7 +540,7 @@ class StoriesRunGroup(RunGroup):
 class BrowsersRunGroup(RunGroup):
   _story_groups: Iterable[StoriesRunGroup]
 
-  def __init__(self, story_groups, throw):
+  def __init__(self, story_groups, throw: bool) -> None:
     super().__init__(throw)
     self._story_groups = story_groups
     self._set_path(story_groups[0].path.parent)
@@ -702,7 +706,10 @@ class Run:
     return self._exceptions.is_success
 
   @contextlib.contextmanager
-  def measure(self, label: str):
+  def measure(
+      self, label: str
+  ) -> Iterator[Tuple[exception.ExceptionAnnotationScope,
+                      helper.DurationMeasureContext]]:
     # Return a combined context manager that adds an named exception info
     # and measures the time during the with-scope.
     with self._exceptions.info(label) as stack, self._durations.measure(
@@ -817,7 +824,7 @@ class Run:
       self._check_browser_foreground()
 
   def _check_browser_foreground(self) -> None:
-    if not self.browser.pid:
+    if not self.browser.pid or self.browser.viewport.is_headless:
       return
     info = self.platform.foreground_process()
     if not info:
@@ -837,14 +844,17 @@ class Run:
                 is_shutdown: bool = False) -> None:
     self._advance_state(self.STATE_RUN, self.STATE_DONE)
     with self.measure("browser-tear_down"):
-      if is_shutdown:
-        try:
+      if self._browser.is_running is False:
+        logging.warning("Browser is no longer running (crashed or closed).")
+      else:
+        if is_shutdown:
+          try:
+            self._browser.quit(self._runner)  # pytype: disable=wrong-arg-types
+          except Exception as e:  # pylint: disable=broad-except
+            logging.warning("Error quitting browser: %s", e)
+            return
+        with self._exceptions.capture("Quit browser"):
           self._browser.quit(self._runner)  # pytype: disable=wrong-arg-types
-        except Exception as e:  # pylint: disable=broad-except
-          logging.warning("Error quitting browser: %s", e)
-          return
-      with self._exceptions.capture("Quit browser"):
-        self._browser.quit(self._runner)  # pytype: disable=wrong-arg-types
     with self.measure("probes-tear_down"):
       logging.debug("TEARDOWN")
       self._tear_down_probe_scopes(probe_scopes)
@@ -860,7 +870,7 @@ class Run:
                           probe, self)
         self._probe_results[probe] = probe_results
 
-  def log_results(self):
+  def log_results(self) -> None:
     for probe in self.probes:
       probe.log_run_result(self)
 
@@ -894,11 +904,11 @@ class Actions(helper.TimeScope):
   def platform(self) -> helper.Platform:
     return self._run.platform
 
-  def __enter__(self):
+  def __enter__(self) -> Actions:
     self._exception_annotation.__enter__()
     super().__enter__()
     self._is_active = True
-    logging.debug("ACTION START %s", self._message)
+    logging.debug("Action begin: %s", self._message)
     if self._verbose:
       logging.info(self._message)
     else:
@@ -906,10 +916,10 @@ class Actions(helper.TimeScope):
       sys.stdout.write(f"   {self._message}\r")
     return self
 
-  def __exit__(self, exc_type, exc_value, exc_traceback):
+  def __exit__(self, exc_type, exc_value, exc_traceback) -> None:
     self._is_active = False
     self._exception_annotation.__exit__(exc_type, exc_value, exc_traceback)
-    logging.debug("ACTION END %s", self._message)
+    logging.debug("Action end: %s", self._message)
     super().__exit__(exc_type, exc_value, exc_traceback)
 
   def _assert_is_active(self) -> None:

@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 #
-# Copyright 2013-2022 The Khronos Group Inc.
+# Copyright 2013-2023 The Khronos Group Inc.
 #
 # SPDX-License-Identifier: Apache-2.0
 
@@ -9,6 +9,7 @@ import os
 import pdb
 import re
 import sys
+import copy
 import time
 import xml.etree.ElementTree as etree
 
@@ -24,6 +25,7 @@ from generator import write
 from spirvcapgenerator import SpirvCapabilityOutputGenerator
 from hostsyncgenerator import HostSynchronizationOutputGenerator
 from formatsgenerator import FormatsOutputGenerator
+from jsgenerator import JSOutputGenerator
 from pygenerator import PyOutputGenerator
 from rubygenerator import RubyOutputGenerator
 from reflib import logDiag, logWarn, logErr, setLogFile
@@ -119,7 +121,7 @@ def makeGenOpts(args):
     # The SPDX formatting below works around constraints of the 'reuse' tool
     prefixStrings = [
         '/*',
-        '** Copyright 2015-2022 The Khronos Group Inc.',
+        '** Copyright 2015-2023 The Khronos Group Inc.',
         '**',
         '** SPDX-License-Identifier' + ': Apache-2.0',
         '*/',
@@ -141,7 +143,13 @@ def makeGenOpts(args):
     # An API style conventions object
     conventions = APIConventions()
 
-    defaultAPIName = conventions.xml_api_name
+    if args.apiname is not None:
+        defaultAPIName = args.apiname
+    else:
+        defaultAPIName = conventions.xml_api_name
+
+    # APIs to merge
+    mergeApiNames = args.mergeApiNames
 
     # API include files for spec and ref pages
     # Overwrites include subdirectories in spec source tree
@@ -173,8 +181,26 @@ def makeGenOpts(args):
             expandEnumerants  = False)
         ]
 
-    # Python and Ruby representations of API information, used by scripts
-    # that do not need to load the full XML.
+    # JavaScript, Python, and Ruby representations of API information, used
+    # by scripts that do not need to load the full XML.
+    genOpts['apimap.cjs'] = [
+          JSOutputGenerator,
+          DocGeneratorOptions(
+            conventions       = conventions,
+            filename          = 'apimap.cjs',
+            directory         = directory,
+            genpath           = None,
+            apiname           = defaultAPIName,
+            profile           = None,
+            versions          = featuresPat,
+            emitversions      = featuresPat,
+            defaultExtensions = None,
+            addExtensions     = addExtensionsPat,
+            removeExtensions  = removeExtensionsPat,
+            emitExtensions    = emitExtensionsPat,
+            reparentEnums     = False)
+        ]
+
     genOpts['apimap.py'] = [
           PyOutputGenerator,
           DocGeneratorOptions(
@@ -360,10 +386,12 @@ def makeGenOpts(args):
         'VK_KHR_video_encode_queue',
         'VK_EXT_video_encode_h264',
         'VK_EXT_video_encode_h265',
+        'VK_NV_displacement_micromap',
     ]
 
     betaSuppressExtensions = [
-        'VK_KHR_video_queue'
+        'VK_KHR_video_queue',
+        'VK_EXT_opacity_micromap',
     ]
 
     platforms = [
@@ -417,6 +445,7 @@ def makeGenOpts(args):
             directory         = directory,
             genpath           = None,
             apiname           = defaultAPIName,
+            mergeApiNames     = mergeApiNames,
             profile           = None,
             versions          = featuresPat,
             emitversions      = None,
@@ -458,6 +487,7 @@ def makeGenOpts(args):
             directory         = directory,
             genpath           = None,
             apiname           = defaultAPIName,
+            mergeApiNames     = mergeApiNames,
             profile           = None,
             versions          = featuresPat,
             emitversions      = featuresPat,
@@ -574,10 +604,11 @@ def makeGenOpts(args):
             directory         = directory,
             genpath           = None,
             apiname           = defaultAPIName,
+            mergeApiNames     = mergeApiNames,
             profile           = None,
             versions          = None,
             emitversions      = None,
-            defaultExtensions = None,
+            defaultExtensions = defaultAPIName,
             addExtensions     = addExtensionRE,
             removeExtensions  = None,
             emitExtensions    = emitExtensionRE,
@@ -699,6 +730,12 @@ def genTarget(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
+    parser.add_argument('-apiname', action='store',
+                        default=None,
+                        help='Specify API to generate (defaults to repository-specific conventions object value)')
+    parser.add_argument('-mergeApiNames', action='store',
+                        default=None,
+                        help='Specify a comma separated list of APIs to merge into the target API')
     parser.add_argument('-defaultExtensions', action='store',
                         default=APIConventions().xml_api_name,
                         help='Specify a single class of extensions to add to targets')

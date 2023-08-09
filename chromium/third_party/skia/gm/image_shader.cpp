@@ -6,12 +6,12 @@
  */
 
 #include "gm/gm.h"
+#include "include/codec/SkEncodedImageFormat.h"
 #include "include/core/SkBitmap.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColor.h"
 #include "include/core/SkColorSpace.h"
 #include "include/core/SkData.h"
-#include "include/core/SkEncodedImageFormat.h"
 #include "include/core/SkImage.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkMatrix.h"
@@ -26,6 +26,8 @@
 #include "include/core/SkSurface.h"
 #include "include/core/SkTileMode.h"
 #include "include/core/SkTypes.h"
+#include "include/encode/SkPngEncoder.h"
+#include "include/gpu/GpuTypes.h"
 
 #include <utility>
 
@@ -70,9 +72,12 @@ static sk_sp<SkImage> make_texture(GrRecordingContext* ctx,
 static sk_sp<SkImage> make_pict_gen(GrRecordingContext*,
                                     SkPicture* pic,
                                     const SkImageInfo& info) {
-    return SkImage::MakeFromPicture(sk_ref_sp(pic), info.dimensions(), nullptr, nullptr,
-                                    SkImage::BitDepth::kU8,
-                                    SkColorSpace::MakeSRGB());
+    return SkImages::DeferredFromPicture(sk_ref_sp(pic),
+                                         info.dimensions(),
+                                         nullptr,
+                                         nullptr,
+                                         SkImages::BitDepth::kU8,
+                                         SkColorSpace::MakeSRGB());
 }
 
 static sk_sp<SkImage> make_encode_gen(GrRecordingContext* ctx,
@@ -82,11 +87,11 @@ static sk_sp<SkImage> make_encode_gen(GrRecordingContext* ctx,
     if (!src) {
         return nullptr;
     }
-    sk_sp<SkData> encoded = src->encodeToData(SkEncodedImageFormat::kPNG, 100);
+    sk_sp<SkData> encoded = SkPngEncoder::Encode(nullptr, src.get(), {});
     if (!encoded) {
         return nullptr;
     }
-    return SkImage::MakeFromEncoded(std::move(encoded));
+    return SkImages::DeferredFromEncodedData(std::move(encoded));
 }
 
 const ImageMakerProc gProcs[] = {

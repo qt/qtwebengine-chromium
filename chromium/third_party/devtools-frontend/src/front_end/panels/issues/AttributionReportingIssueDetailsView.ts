@@ -23,10 +23,6 @@ const UIStrings = {
    */
   invalidHeaderValue: 'Invalid Header Value',
   /**
-   * @description Noun, label for the column showing the maximum concurrent registrations header value in the issue details table.
-   */
-  maximumConcurrentRegistrations: 'Maximum Concurrent Registrations',
-  /**
    * @description Noun, label for the column showing the associated network request in the issue details table.
    */
   request: 'Request',
@@ -61,7 +57,11 @@ export class AttributionReportingIssueDetailsView extends AffectedResourcesView 
     switch (issueCode) {
       case IssuesManager.AttributionReportingIssue.IssueCode.InvalidRegisterSourceHeader:
       case IssuesManager.AttributionReportingIssue.IssueCode.InvalidRegisterTriggerHeader:
+      case IssuesManager.AttributionReportingIssue.IssueCode.InvalidRegisterOsSourceHeader:
+      case IssuesManager.AttributionReportingIssue.IssueCode.InvalidRegisterOsTriggerHeader:
       case IssuesManager.AttributionReportingIssue.IssueCode.InvalidEligibleHeader:
+      case IssuesManager.AttributionReportingIssue.IssueCode.OsSourceIgnored:
+      case IssuesManager.AttributionReportingIssue.IssueCode.OsTriggerIgnored:
       case IssuesManager.AttributionReportingIssue.IssueCode.SourceIgnored:
       case IssuesManager.AttributionReportingIssue.IssueCode.TriggerIgnored:
         this.appendColumnTitle(header, i18nString(UIStrings.request));
@@ -74,15 +74,11 @@ export class AttributionReportingIssueDetailsView extends AffectedResourcesView 
         this.appendColumnTitle(header, i18nString(UIStrings.untrustworthyOrigin));
         break;
       case IssuesManager.AttributionReportingIssue.IssueCode.PermissionPolicyDisabled:
-      case IssuesManager.AttributionReportingIssue.IssueCode.PermissionPolicyNotDelegated:
         this.appendColumnTitle(header, i18nString(UIStrings.element));
         this.appendColumnTitle(header, i18nString(UIStrings.request));
         break;
-      case IssuesManager.AttributionReportingIssue.IssueCode.TooManyConcurrentRequests:
-        this.appendColumnTitle(header, i18nString(UIStrings.element));
-        this.appendColumnTitle(header, i18nString(UIStrings.maximumConcurrentRegistrations));
-        break;
       case IssuesManager.AttributionReportingIssue.IssueCode.SourceAndTriggerHeaders:
+      case IssuesManager.AttributionReportingIssue.IssueCode.WebAndOsHeaders:
         this.appendColumnTitle(header, i18nString(UIStrings.request));
         break;
     }
@@ -120,13 +116,8 @@ export class AttributionReportingIssueDetailsView extends AffectedResourcesView 
         this.appendIssueDetailCell(element, details.invalidParameter || '');
         break;
       case IssuesManager.AttributionReportingIssue.IssueCode.PermissionPolicyDisabled:
-      case IssuesManager.AttributionReportingIssue.IssueCode.PermissionPolicyNotDelegated:
         await this.#appendElementOrEmptyCell(element, issue);
         this.#appendRequestOrEmptyCell(element, details.request);
-        break;
-      case IssuesManager.AttributionReportingIssue.IssueCode.TooManyConcurrentRequests:
-        await this.#appendElementOrEmptyCell(element, issue);
-        this.appendIssueDetailCell(element, details.invalidParameter || '');
         break;
       case IssuesManager.AttributionReportingIssue.IssueCode.SourceAndTriggerHeaders:
         this.#appendRequestOrEmptyCell(element, details.request);

@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 import * as Common from '../../core/common/common.js';
-import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
 
@@ -17,7 +16,8 @@ import * as Protocol from '../../generated/protocol.js';
 
 import {type PerformanceModel} from './PerformanceModel.js';
 import {FlameChartStyle, Selection} from './TimelineFlameChartView.js';
-import {TimelineSelection} from './TimelinePanel.js';
+
+import {TimelineSelection} from './TimelineSelection.js';
 import {TimelineUIUtils} from './TimelineUIUtils.js';
 
 const UIStrings = {
@@ -57,7 +57,7 @@ export class TimelineFlameChartNetworkDataProvider implements PerfUI.FlameChart.
   private lastSelection?: Selection;
   private priorityToValue?: Map<string, number>;
   constructor() {
-    this.font = '11px ' + Host.Platform.fontFamily();
+    this.font = `${PerfUI.Font.DEFAULT_FONT_SIZE} ${PerfUI.Font.getFontFamilyForCanvas()}`;
     this.setModel(null);
     this.style = {
       padding: 4,
@@ -101,12 +101,12 @@ export class TimelineFlameChartNetworkDataProvider implements PerfUI.FlameChart.
     return this.maxLevel;
   }
 
-  timelineData(): PerfUI.FlameChart.TimelineData {
+  timelineData(): PerfUI.FlameChart.FlameChartTimelineData {
     if (this.timelineDataInternal) {
       return this.timelineDataInternal;
     }
     this.requests = [];
-    this.timelineDataInternal = new PerfUI.FlameChart.TimelineData([], [], [], []);
+    this.timelineDataInternal = PerfUI.FlameChart.FlameChartTimelineData.createEmpty();
     if (this.model) {
       this.appendTimelineData();
     }
@@ -141,17 +141,16 @@ export class TimelineFlameChartNetworkDataProvider implements PerfUI.FlameChart.
       return -1;
     }
 
-    if (this.lastSelection && this.lastSelection.timelineSelection.object() === selection.object()) {
+    if (this.lastSelection && this.lastSelection.timelineSelection.object === selection.object) {
       return this.lastSelection.entryIndex;
     }
 
-    if (selection.type() !== TimelineSelection.Type.NetworkRequest) {
+    if (!TimelineSelection.isNetworkRequestSelection(selection.object)) {
       return -1;
     }
-    const request = (selection.object() as TimelineModel.TimelineModel.NetworkRequest);
-    const index = this.requests.indexOf(request);
+    const index = this.requests.indexOf(selection.object);
     if (index !== -1) {
-      this.lastSelection = new Selection(TimelineSelection.fromNetworkRequest(request), index);
+      this.lastSelection = new Selection(TimelineSelection.fromNetworkRequest(selection.object), index);
     }
     return index;
   }
@@ -183,9 +182,6 @@ export class TimelineFlameChartNetworkDataProvider implements PerfUI.FlameChart.
     if (!request.timing) {
       return false;
     }
-    // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const timing = (request.timing as any);
 
     const beginTime = request.beginTime();
     const timeToPixel = (time: number): number => Math.floor(unclippedBarX + (time - beginTime) * timeToPixelRatio);
@@ -207,36 +203,7 @@ export class TimelineFlameChartNetworkDataProvider implements PerfUI.FlameChart.
     context.fillRect(barX, barY - 0.5, sendStart - barX, barHeight);
     context.fillRect(finish, barY - 0.5, barX + barWidth - finish, barHeight);
 
-    // If the request is from cache, pushStart refers to the original request, and hence cannot be used.
-    if (!request.cached() && timing.pushStart) {
-      const pushStart = timeToPixel(timing.pushStart * 1000);
-      const pushEnd = timing.pushEnd ? timeToPixel(timing.pushEnd * 1000) : start;
-      const dentSize = Platform.NumberUtilities.clamp(pushEnd - pushStart - 2, 0, 4);
-      const padding = 1;
-      context.save();
-      context.beginPath();
-      context.moveTo(pushStart + dentSize, barY + barHeight / 2);
-      context.lineTo(pushStart, barY + padding);
-      context.lineTo(pushEnd - dentSize, barY + padding);
-      context.lineTo(pushEnd, barY + barHeight / 2);
-      context.lineTo(pushEnd - dentSize, barY + barHeight - padding);
-      context.lineTo(pushStart, barY + barHeight - padding);
-      context.closePath();
-      if (timing.pushEnd) {
-        context.fillStyle = this.entryColor(index);
-      } else {
-        // Use a gradient to indicate that `pushEnd` is not known here to work
-        // around BUG(chromium:998411).
-        const gradient = context.createLinearGradient(pushStart, 0, pushEnd, 0);
-        gradient.addColorStop(0, this.entryColor(index));
-        gradient.addColorStop(1, 'white');
-        context.fillStyle = gradient;
-      }
-      context.globalAlpha = 0.3;
-      context.fill();
-      context.restore();
-    }
-
+    // Draws left and right whiskers
     function drawTick(begin: number, end: number, y: number): void {
       const /** @const */ tickHeightPx = 6;
       context.moveTo(begin, y - tickHeightPx / 2);
@@ -263,6 +230,7 @@ export class TimelineFlameChartNetworkDataProvider implements PerfUI.FlameChart.
       }
     }
 
+    // Draw request URL as text
     const textStart = Math.max(sendStart, 0);
     const textWidth = finish - textStart;
     const /** @const */ minTextWidthPx = 20;
@@ -368,9 +336,12 @@ export class TimelineFlameChartNetworkDataProvider implements PerfUI.FlameChart.
         this.timelineDataInternal.entryLevels[i] = maxLevel;
       }
     }
-    this.timelineDataInternal = new PerfUI.FlameChart.TimelineData(
-        this.timelineDataInternal.entryLevels, this.timelineDataInternal.entryTotalTimes,
-        this.timelineDataInternal.entryStartTimes, [this.group]);
+    this.timelineDataInternal = PerfUI.FlameChart.FlameChartTimelineData.create({
+      entryLevels: this.timelineDataInternal.entryLevels,
+      entryTotalTimes: this.timelineDataInternal.entryTotalTimes,
+      entryStartTimes: this.timelineDataInternal.entryStartTimes,
+      groups: [this.group],
+    });
     this.maxLevel = maxLevel;
   }
 

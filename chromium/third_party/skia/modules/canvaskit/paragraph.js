@@ -278,6 +278,8 @@
       CanvasKit._free(textStyle['_shadowBlurRadiiPtr']);
       CanvasKit._free(textStyle['_fontFeatureNamesPtr']);
       CanvasKit._free(textStyle['_fontFeatureValuesPtr']);
+      CanvasKit._free(textStyle['_fontVariationAxesPtr']);
+      CanvasKit._free(textStyle['_fontVariationValuesPtr']);
     }
 
     CanvasKit.ParagraphBuilder.Make = function(paragraphStyle, fontManager) {
@@ -292,6 +294,15 @@
         copyArrays(paragraphStyle['textStyle']);
 
         var result =  CanvasKit.ParagraphBuilder._MakeFromFontProvider(paragraphStyle, fontProvider);
+        freeArrays(paragraphStyle['textStyle']);
+        return result;
+    };
+
+    CanvasKit.ParagraphBuilder.MakeFromFontCollection = function(paragraphStyle, fontCollection) {
+        copyArrays(paragraphStyle['textStyle']);
+
+        var result = CanvasKit.ParagraphBuilder._MakeFromFontCollection(
+	    paragraphStyle, fontCollection);
         freeArrays(paragraphStyle['textStyle']);
         return result;
     };

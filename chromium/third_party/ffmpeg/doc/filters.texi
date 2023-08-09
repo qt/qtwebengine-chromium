@@ -171,6 +171,17 @@ within the quoted text; otherwise the argument string is considered
 terminated when the next special character (belonging to the set
 @samp{[]=;,}) is encountered.
 
+A special syntax implemented in the @command{ffmpeg} CLI tool allows loading
+option values from files. This is done be prepending a slash '/' to the option
+name, then the supplied value is interpreted as a path from which the actual
+value is loaded. E.g.
+@example
+ffmpeg -i <INPUT> -vf drawtext=/text=/tmp/some_text <OUTPUT>
+@end example
+will load the text to be drawn from @file{/tmp/some_text}. API users wishing to
+implement a similar feature should use the @code{avfilter_graph_segment_*()}
+functions together with custom IO code.
+
 The name and arguments of the filter are optionally preceded and
 followed by a list of link labels.
 A link label allows one to name a link and associate it to a filter output
@@ -202,6 +213,23 @@ specified, "out" is assumed.
 In a complete filterchain all the unlabelled filter input and output
 pads must be connected. A filtergraph is considered valid if all the
 filter input and output pads of all the filterchains are connected.
+
+Leading and trailing whitespaces (space, tabs, or line feeds) separating tokens
+in the filtergraph specification are ignored. This means that the filtergraph
+can be expressed using empty lines and spaces to improve redability.
+
+For example, the filtergraph:
+@example
+testsrc,split[L1],hflip[L2];[L1][L2] hstack
+@end example
+
+can be represented as:
+@example
+testsrc,
+split [L1], hflip [L2];
+
+[L1][L2] hstack
+@end example
 
 Libavfilter will automatically insert @ref{scale} filters where format
 conversion is required. It is possible to specify swscale flags
@@ -271,6 +299,18 @@ previous string will finally result in:
 -vf "drawtext=text=this is a \\\\\\'string\\\\\\'\\\\: may contain one\\, or more\\, special characters"
 @end example
 
+In order to avoid cumbersome escaping when using a commandline tool accepting a
+filter specification as input, it is advisable to avoid direct inclusion of the
+filter or options specification in the shell.
+
+For example, in case of the @ref{drawtext,,drawtext filter}, you might prefer to
+use the @option{textfile} option in place of @option{text} to specify the text
+to render.
+
+When using the @command{ffmpeg} tool, you might consider to use the
+@ref{filter_script option,,-filter_script option,ffmpeg} or
+@ref{filter_complex_script option,,-filter_complex_script option,ffmpeg}.
+
 @chapter Timeline editing
 
 Some filters support a generic @option{enable} option. For the filters
@@ -288,7 +328,8 @@ timestamp expressed in seconds, NAN if the input timestamp is unknown
 sequential number of the input frame, starting from 0
 
 @item pos
-the position in the file of the input frame, NAN if unknown
+the position in the file of the input frame, NAN if unknown; deprecated, do
+not use
 
 @item w
 @item h
@@ -2994,10 +3035,6 @@ depends on the filter input pad, and is usually 1/@var{sample_rate}.
 @item pts_time
 The presentation timestamp of the input frame in seconds.
 
-@item pos
-position of the frame in the input stream, -1 if this information in
-unavailable and/or meaningless (for example in case of synthetic audio)
-
 @item fmt
 The sample format.
 
@@ -3183,62 +3220,61 @@ where @code{X} is channel number starting from 1 or string @code{Overall}. Defau
 disabled.
 
 Available keys for each channel are:
-DC_offset
-Min_level
-Max_level
-Min_difference
-Max_difference
-Mean_difference
-RMS_difference
-Peak_level
-RMS_peak
-RMS_trough
-Crest_factor
-Flat_factor
-Peak_count
-Noise_floor
-Noise_floor_count
-Entropy
-Bit_depth
-Dynamic_range
-Zero_crossings
-Zero_crossings_rate
-Number_of_NaNs
-Number_of_Infs
-Number_of_denormals
+@var{Bit_depth}
+@var{Crest_factor}
+@var{DC_offset}
+@var{Dynamic_range}
+@var{Entropy}
+@var{Flat_factor}
+@var{Max_difference}
+@var{Max_level}
+@var{Mean_difference}
+@var{Min_difference}
+@var{Min_level}
+@var{Noise_floor}
+@var{Noise_floor_count}
+@var{Number_of_Infs}
+@var{Number_of_NaNs}
+@var{Number_of_denormals}
+@var{Peak_count}
+@var{Peak_level}
+@var{RMS_difference}
+@var{RMS_peak}
+@var{RMS_trough}
+@var{Zero_crossings}
+@var{Zero_crossings_rate}
 
-and for Overall:
-DC_offset
-Min_level
-Max_level
-Min_difference
-Max_difference
-Mean_difference
-RMS_difference
-Peak_level
-RMS_level
-RMS_peak
-RMS_trough
-Flat_factor
-Peak_count
-Noise_floor
-Noise_floor_count
-Entropy
-Bit_depth
-Number_of_samples
-Number_of_NaNs
-Number_of_Infs
-Number_of_denormals
+and for @code{Overall}:
+@var{Bit_depth}
+@var{DC_offset}
+@var{Entropy}
+@var{Flat_factor}
+@var{Max_difference}
+@var{Max_level}
+@var{Mean_difference}
+@var{Min_difference}
+@var{Min_level}
+@var{Noise_floor}
+@var{Noise_floor_count}
+@var{Number_of_Infs}
+@var{Number_of_NaNs}
+@var{Number_of_denormals}
+@var{Number_of_samples}
+@var{Peak_count}
+@var{Peak_level}
+@var{RMS_difference}
+@var{RMS_level}
+@var{RMS_peak}
+@var{RMS_trough}
 
-For example full key look like this @code{lavfi.astats.1.DC_offset} or
-this @code{lavfi.astats.Overall.Peak_count}.
+For example, a full key looks like @code{lavfi.astats.1.DC_offset} or
+@code{lavfi.astats.Overall.Peak_count}.
 
-For description what each key means read below.
+Read below for the description of the keys.
 
 @item reset
 Set the number of frames over which cumulative stats are calculated before
-being reset
-Default is disabled.
+being reset. Default is disabled.
 
 @item measure_perchannel
 Select the parameters which are measured per channel. The metadata keys can
@@ -3252,71 +3288,91 @@ be used as flags, default is @option{all} which measures everything.
 
 @end table
 
-A description of each shown parameter follows:
+A description of the measure keys follow:
 
 @table @option
-@item DC offset
-Mean amplitude displacement from zero.
+@item none
+no measures
 
-@item Min level
-Minimal sample level.
+@item all
+all measures
 
-@item Max level
-Maximal sample level.
+@item Bit_depth
+overall bit depth of audio, i.e. number of bits used for each sample
 
-@item Min difference
-Minimal difference between two consecutive samples.
+@item Crest_factor
+standard ratio of peak to RMS level (note: not in dB)
 
-@item Max difference
-Maximal difference between two consecutive samples.
+@item DC_offset
+mean amplitude displacement from zero
 
-@item Mean difference
-Mean difference between two consecutive samples.
-The average of each difference between two consecutive samples.
-
-@item RMS difference
-Root Mean Square difference between two consecutive samples.
-
-@item Peak level dB
-@item RMS level dB
-Standard peak and RMS level measured in dBFS.
-
-@item RMS peak dB
-@item RMS trough dB
-Peak and trough values for RMS level measured over a short window.
-
-@item Crest factor
-Standard ratio of peak to RMS level (note: not in dB).
-
-@item Flat factor
-Flatness (i.e. consecutive samples with the same value) of the signal at its peak levels
-(i.e. either @var{Min level} or @var{Max level}).
-
-@item Peak count
-Number of occasions (not the number of samples) that the signal attained either
-@var{Min level} or @var{Max level}.
-
-@item Noise floor dB
-Minimum local peak measured in dBFS over a short window.
-
-@item Noise floor count
-Number of occasions (not the number of samples) that the signal attained
-@var{Noise floor}.
+@item Dynamic_range
+measured dynamic range of audio in dB
 
 @item Entropy
-Entropy measured across whole audio. Entropy of value near 1.0 is typically measured for white noise.
+entropy measured across whole audio, entropy of value near 1.0 is typically measured for white noise
 
-@item Bit depth
-Overall bit depth of audio. Number of bits used for each sample.
+@item Flat_factor
+flatness (i.e. consecutive samples with the same value) of the signal at its peak levels
+(i.e. either @var{Min_level} or @var{Max_level})
 
-@item Dynamic range
-Measured dynamic range of audio in dB.
+@item Max_difference
+maximal difference between two consecutive samples
+
+@item Max_level
+maximal sample level
+
+@item Mean_difference
+mean difference between two consecutive samples, i.e. the average of each difference between two consecutive samples
+
+@item Min_difference
+minimal difference between two consecutive samples
+
+@item Min_level
+minimal sample level
+
+@item Noise_floor
+minimum local peak measured in dBFS over a short window
+
+@item Noise_floor_count
+number of occasions (not the number of samples) that the signal attained
+@var{Noise floor}
+
+@item Number_of_Infs
+number of samples with an infinite value
+
+@item Number_of_NaNs
+number of samples with a NaN (not a number) value
+
+@item Number_of_denormals
+number of samples with a subnormal value
+
+@item Number_of_samples
+number of samples
+
+@item Peak_count
+number of occasions (not the number of samples) that the signal attained either
+@var{Min_level} or @var{Max_level}
+
+@item Peak_level
+standard peak level measured in dBFS
+
+@item RMS_difference
+Root Mean Square difference between two consecutive samples
+
+@item RMS_level
+standard RMS level measured in dBFS
+
+@item RMS_peak
+@item RMS_trough
+peak and trough values for RMS level measured over a short window,
+measured in dBFS.
 
 @item Zero crossings
-Number of points where the waveform crosses the zero level axis.
+number of points where the waveform crosses the zero level axis
 
 @item Zero crossings rate
-Rate of Zero crossings and number of audio samples.
+rate of Zero crossings and number of audio samples
 @end table
 
 @section asubboost
@@ -7276,7 +7332,7 @@ number of samples consumed by the filter
 @item nb_samples
 number of samples in the current frame
 @item pos
-original frame position in the file
+original frame position in the file; deprecated, do not use
 @item pts
 frame PTS
 @item sample_rate
@@ -10398,7 +10454,8 @@ pixel format "yuv422p" @var{hsub} is 2 and @var{vsub} is 1.
 The number of the input frame, starting from 0.
 
 @item pos
-the position in the file of the input frame, NAN if unknown
+the position in the file of the input frame, NAN if unknown; deprecated,
+do not use
 
 @item t
 The timestamp expressed in seconds. It's NAN if the input timestamp is unknown.
@@ -12075,13 +12132,12 @@ The default value of @var{bordercolor} is "black".
 
 @item expansion
 Select how the @var{text} is expanded. Can be either @code{none},
-@code{strftime} (deprecated) or
-@code{normal} (default). See the @ref{drawtext_expansion, Text expansion} section
-below for details.
+@code{strftime} (deprecated) or @code{normal} (default). See the
+@ref{drawtext_expansion, Text expansion} section below for details.
 
 @item basetime
 Set a start time for the count. Value is in microseconds. Only applied
-in the deprecated strftime expansion mode. To emulate in normal expansion
+in the deprecated @code{strftime} expansion mode. To emulate in normal expansion
 mode use the @code{pts} function, supplying the start time (in seconds)
 as the second argument.
 
@@ -12312,10 +12368,12 @@ The current packet's size (in bytes).
 @anchor{drawtext_expansion}
 @subsection Text expansion
 
-If @option{expansion} is set to @code{strftime},
-the filter recognizes strftime() sequences in the provided text and
-expands them accordingly. Check the documentation of strftime(). This
-feature is deprecated.
+If @option{expansion} is set to @code{strftime}, the filter recognizes
+sequences accepted by the @code{strftime} C function in the provided
+text and expands them accordingly. Check the documentation of
+@code{strftime}. This feature is deprecated in favor of @code{normal}
+expansion with the @code{gmtime} or @code{localtime} expansion
+functions.
 
 If @option{expansion} is set to @code{none}, the text is printed verbatim.
 
@@ -12330,11 +12388,11 @@ braces is a function name, possibly followed by arguments separated by ':'.
 If the arguments contain special characters or delimiters (':' or '@}'),
 they should be escaped.
 
-Note that they probably must also be escaped as the value for the
-@option{text} option in the filter argument string and as the filter
-argument in the filtergraph description, and possibly also for the shell,
-that makes up to four levels of escaping; using a text file avoids these
-problems.
+Note that they probably must also be escaped as the value for the @option{text}
+option in the filter argument string and as the filter argument in the
+filtergraph description, and possibly also for the shell, that makes up to four
+levels of escaping; using a text file with the @option{textfile} option avoids
+these problems.
 
 The following functions are available:
 
@@ -12362,13 +12420,13 @@ It can be used to add padding with zeros from the left.
 
 @item gmtime
 The time at which the filter is running, expressed in UTC.
-It can accept an argument: a strftime() format string.
+It can accept an argument: a @code{strftime} C function format string.
 The format string is extended to support the variable @var{%[1-6]N}
 which prints fractions of the second with optionally specified number of digits.
 
 @item localtime
 The time at which the filter is running, expressed in the local time zone.
-It can accept an argument: a strftime() format string.
+It can accept an argument: a @code{strftime} C function format string.
 The format string is extended to support the variable @var{%[1-6]N}
 which prints fractions of the second with optionally specified number of digits.
 
@@ -12410,8 +12468,8 @@ If the format is set to @code{hms}, a third argument @code{24HH} may be
 supplied to present the hour part of the formatted timestamp in 24h format
 (00-23).
 
-If the format is set to @code{localtime} or @code{gmtime},
-a third argument may be supplied: a strftime() format string.
+If the format is set to @code{localtime} or @code{gmtime}, a third
+argument may be supplied: a @code{strftime} C function format string.
 By default, @var{YYYY-MM-DD HH:MM:SS} format will be used.
 @end table
 
@@ -12515,7 +12573,8 @@ drawtext="text='Test Text': fontsize=h/30: x=(w-text_w)/2: y=(h-text_h*2)"
 @end example
 
 @item
-Print the date of a real-time encoding (see strftime(3)):
+Print the date of a real-time encoding (see documentation for the
+@code{strftime} C function):
 @example
 drawtext='fontfile=FreeSans.ttf:text=%@{localtime\:%a %b %d %Y@}'
 @end example
@@ -12742,7 +12801,7 @@ frame count of the input frame starting from 0
 
 @item pos
 byte position of the corresponding packet in the input file, NAN if
-unspecified
+unspecified; deprecated, do not use
 
 @item r
 frame rate of the input video, NAN if the input frame rate is unknown
@@ -16044,6 +16103,18 @@ Automatic selection based on internal heuristics. This is the default.
 Performs no tone-mapping, just clips out-of-range colors. Retains perfect color
 accuracy for in-range colors but completely destroys out-of-range information.
 Does not perform any black point adaptation. Not configurable.
+@item st2094-40
+EETF from SMPTE ST 2094-40 Annex B, which applies the Bezier curves from HDR10+
+dynamic metadata based on Bezier curves to perform tone-mapping. The OOTF used
+is adjusted based on the ratio between the targeted and actual display peak
+luminances.
+@item st2094-10
+EETF from SMPTE ST 2094-10 Annex B.2, which takes into account the input signal
+average luminance in addition to the maximum/minimum. The configurable contrast
+parameter influences the slope of the linear output segment, defaulting to
+@code{1.0} for no increase/decrease in contrast. Note that this does not
+currently include the subjective gain/offset/gamma controls defined in Annex
+B.3.
 @item bt.2390
 EETF from the ITU-R Report BT.2390, a hermite spline roll-off with linear
 segment. The knee point offset is configurable. Note that this parameter
@@ -16199,9 +16270,6 @@ Disable linear light scaling.
 
 @item disable_builtin
 Disable built-in GPU sampling (forces LUT).
-
-@item force_icc_lut
-Force the use of a full ICC 3DLUT for gamut mapping.
 
 @item disable_fbos
 Forcibly disable FBOs, resulting in loss of almost all functionality, but
@@ -16948,8 +17016,6 @@ Apply motion-compensation deinterlacing.
 
 It needs one field per frame as input and must thus be used together
 with yadif=1/3 or equivalent.
-
-This filter is only available in ffmpeg version 4.4 or earlier.
 
 This filter accepts the following options:
 @table @option
@@ -18109,7 +18175,8 @@ format. For example for the pixel format "yuv422p" @var{hsub} is 2 and
 the number of input frame, starting from 0
 
 @item pos
-the position in the file of the input frame, NAN if unknown
+the position in the file of the input frame, NAN if unknown; deprecated,
+do not use
 
 @item t
 The timestamp, expressed in seconds. It's NAN if the input timestamp is unknown.
@@ -18118,7 +18185,7 @@ The timestamp, expressed in seconds. It's NAN if the input timestamp is unknown.
 
 This filter also supports the @ref{framesync} options.
 
-Note that the @var{n}, @var{pos}, @var{t} variables are available only
+Note that the @var{n}, @var{t} variables are available only
 when evaluation is done @emph{per frame}, and will evaluate to NAN
 when @option{eval} is set to @samp{init}.
 
@@ -18273,6 +18340,7 @@ The ordinal index of the main input frame, starting from 0.
 
 @item pos
 The byte offset position in the file of the main input frame, NAN if unknown.
+Deprecated, do not use.
 
 @item t
 The timestamp of the main input frame, expressed in seconds, NAN if unknown.
@@ -18584,6 +18652,8 @@ Frankie Sierra dithering v3 (error diffusion)
 Burkes dithering (error diffusion)
 @item atkinson
 Atkinson dithering by Bill Atkinson at Apple Computer (error diffusion)
+@item none
+Disable dithering.
 @end table
 
 Default is @var{sierra2_4a}.
@@ -20157,6 +20227,7 @@ seconds. Only available with @code{eval=frame}.
 The position (byte offset) of the frame in the input stream, or NaN if
 this information is unavailable and/or meaningless (for example in case of synthetic video).
 Only available with @code{eval=frame}.
+Deprecated, do not use.
 @end table
 
 @subsection Examples
@@ -20489,6 +20560,7 @@ seconds. Only available with @code{eval=frame}.
 The position (byte offset) of the frame in the input stream, or NaN if
 this information is unavailable and/or meaningless (for example in case of synthetic video).
 Only available with @code{eval=frame}.
+Deprecated, do not use.
 @end table
 
 @section scale2ref
@@ -20818,12 +20890,9 @@ It accepts the following parameters:
 @item r, ratio, dar (@code{setdar} only), sar (@code{setsar} only)
 Set the aspect ratio used by the filter.
 
-The parameter can be a floating point number string, an expression, or
-a string of the form @var{num}:@var{den}, where @var{num} and
-@var{den} are the numerator and denominator of the aspect ratio. If
-the parameter is not specified, it is assumed the value "0".
-In case the form "@var{num}:@var{den}" is used, the @code{:} character
-should be escaped.
+The parameter can be a floating point number string, or an expression. If the
+parameter is not specified, the value "0" is assumed, meaning that the same
+input value is used.
 
 @item max
 Set the maximum integer value to use for expressing numerator and
@@ -20832,19 +20901,14 @@ Default value is @code{100}.
 
 @end table
 
-The parameter @var{sar} is an expression containing
-the following constants:
+The parameter @var{sar} is an expression containing the following constants:
 
 @table @option
-@item E, PI, PHI
-These are approximated values for the mathematical constants e
-(Euler's number), pi (Greek pi), and phi (the golden ratio).
-
 @item w, h
 The input width and height.
 
 @item a
-These are the same as @var{w} / @var{h}.
+Same as @var{w} / @var{h}.
 
 @item sar
 The input sample aspect ratio.
@@ -21111,10 +21175,6 @@ time base units. The time base unit depends on the filter input pad.
 @item pts_time
 The Presentation TimeStamp of the input frame, expressed as a number of
 seconds.
-
-@item pos
-The position of the frame in the input stream, or -1 if this information is
-unavailable and/or meaningless (for example in case of synthetic video).
 
 @item fmt
 The pixel format name.
@@ -21551,9 +21611,11 @@ ffmpeg -i input1.mkv -i input2.mkv -filter_complex "[0:v][1:v] signature=nb_inpu
 @anchor{siti}
 @section siti
 
-Calculate Spatial Info (SI) and Temporal Info (TI) scores for a video, as defined
-in ITU-T P.910: Subjective video quality assessment methods for multimedia
-applications. Available PDF at @url{https://www.itu.int/rec/T-REC-P.910-199909-S/en }.
+Calculate Spatial Information (SI) and Temporal Information (TI) scores for a video,
+as defined in ITU-T Rec. P.910 (11/21): Subjective video quality assessment methods
+for multimedia applications. Available PDF at @url{https://www.itu.int/rec/T-REC-P.910-202111-S/en}.
+Note that this is a legacy implementation that corresponds to a superseded recommendation.
+Refer to ITU-T Rec. P.910 (07/22) for the latest version: @url{https://www.itu.int/rec/T-REC-P.910-202207-I/en}
 
 It accepts the following option:
 
@@ -22194,7 +22256,8 @@ The number of the input frame, starting from 0.
 The timestamp expressed in seconds. It's NAN if the input timestamp is unknown.
 
 @item pos
-the position in the file of the input frame, NAN if unknown
+the position in the file of the input frame, NAN if unknown; deprecated,
+do not use
 @end table
 
 @subsection Commands
@@ -23323,6 +23386,9 @@ that value the speed drops by a factor of approximately 2.  Default value is
 @item qp
 Force a constant quantization parameter. If not set, the filter will use the QP
 from the video stream (if available).
+
+@item codec
+Use specified codec instead of snow.
 @end table
 
 @section v360
@@ -26772,6 +26838,94 @@ See @ref{xstack}.
 
 @c man end VAAPI VIDEO FILTERS
 
+@chapter QSV Video Filters
+@c man begin QSV VIDEO FILTERS
+
+Below is a description of the currently available QSV video filters.
+
+To enable compilation of these filters you need to configure FFmpeg with
+@code{--enable-libmfx} or @code{--enable-libvpl}.
+
+To use QSV filters, you need to setup the QSV device correctly. For more information, please read @url{https://trac.ffmpeg.org/wiki/Hardware/QuickSync}
+
+@section hstack_qsv
+Stack input videos horizontally.
+
+This is the QSV variant of the @ref{hstack} filter, each input stream may
+have different height, this filter will scale down/up each input stream while
+keeping the orignal aspect.
+
+It accepts the following options:
+
+@table @option
+@item inputs
+See @ref{hstack}.
+
+@item shortest
+See @ref{hstack}.
+
+@item height
+Set height of output. If set to 0, this filter will set height of output to
+height of the first input stream. Default value is 0.
+@end table
+
+@section vstack_qsv
+Stack input videos vertically.
+
+This is the QSV variant of the @ref{vstack} filter, each input stream may
+have different width, this filter will scale down/up each input stream while
+keeping the orignal aspect.
+
+It accepts the following options:
+
+@table @option
+@item inputs
+See @ref{vstack}.
+
+@item shortest
+See @ref{vstack}.
+
+@item width
+Set width of output. If set to 0, this filter will set width of output to
+width of the first input stream. Default value is 0.
+@end table
+
+@section xstack_qsv
+Stack video inputs into custom layout.
+
+This is the QSV variant of the @ref{xstack} filter.
+
+It accepts the following options:
+
+@table @option
+@item inputs
+See @ref{xstack}.
+
+@item shortest
+See @ref{xstack}.
+
+@item layout
+See @ref{xstack}.
+Moreover, this permits the user to supply output size for each input stream.
+@example
+xstack_qsv=inputs=4:layout=0_0_1920x1080|0_h0_1920x1080|w0_0_1920x1080|w0_h0_1920x1080
+@end example
+
+@item grid
+See @ref{xstack}.
+
+@item grid_tile_size
+Set output size for each input stream when @option{grid} is set. If this option
+is not set, this filter will set output size by default to the size of the
+first input stream. For the syntax of this option, check the
+@ref{video size syntax,,"Video size" section in the ffmpeg-utils manual,ffmpeg-utils}.
+
+@item fill
+See @ref{xstack}.
+@end table
+
+@c man end QSV VIDEO FILTERS
+
 @chapter Video Sources
 @c man begin VIDEO SOURCES
 
@@ -26812,11 +26966,6 @@ Specify the frame rate expected for the video stream.
 
 @item pixel_aspect, sar
 The sample (pixel) aspect ratio of the input video.
-
-@item sws_param
-This option is deprecated and ignored. Prepend @code{sws_flags=@var{flags};}
-to the filtergraph description to specify swscale flags for automatically
-inserted scalers. See @ref{Filtergraph syntax}.
 
 @item hw_frames_ctx
 When using a hardware pixel format, this should be a reference to an
@@ -28783,7 +28932,7 @@ This is 1 if the filtered frame is a key-frame, 0 otherwise.
 
 @item pos
 the position in the file of the filtered frame, -1 if the information
-is not available (e.g. for synthetic video)
+is not available (e.g. for synthetic video); deprecated, do not use
 
 @item scene @emph{(video only)}
 value between 0 and 1 to indicate a new scene; a low value reflects a low
@@ -28973,7 +29122,7 @@ constants:
 @table @option
 @item POS
 Original position in the file of the frame, or undefined if undefined
-for the current frame.
+for the current frame. Deprecated, do not use.
 
 @item PTS
 The presentation timestamp in input.
@@ -29121,7 +29270,7 @@ the time in seconds of the current frame
 
 @item POS
 original position in the file of the frame, or undefined if undefined
-for the current frame
+for the current frame; deprecated, do not use
 
 @item PREV_INPTS
 The previous input PTS.

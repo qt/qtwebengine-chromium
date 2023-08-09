@@ -6,7 +6,7 @@
             "sub_dir": "glslang",
             "build_dir": "glslang/build",
             "install_dir": "glslang/build/install",
-            "commit": "ca8d07d0bc1c6390b83915700439fa7719de6a2a",
+            "commit": "14e5a04e70057972eef8a40df422e30a3b70e4b5",
             "optional": [
                 "tests"
             ]
@@ -17,7 +17,7 @@
             "sub_dir": "Vulkan-Headers",
             "build_dir": "Vulkan-Headers/build",
             "install_dir": "Vulkan-Headers/build/install",
-            "commit": "e8b8e06d092ab406b097907ecaae1a8aae9c7d53"
+            "commit": "v1.3.248"
         },
         {
             "name": "SPIRV-Headers",
@@ -25,7 +25,10 @@
             "sub_dir": "SPIRV-Headers",
             "build_dir": "SPIRV-Headers/build",
             "install_dir": "SPIRV-Headers/build/install",
-            "commit": "d13b52222c39a7e9a401b44646f0ca3a640fbd47"
+            "commit": "1feaf4414eb2b353764d01d88f8aa4bcc67b60db",
+            "cmake_options": [
+                "-D SPIRV_HEADERS_SKIP_EXAMPLES=ON"
+            ]
         },
         {
             "name": "SPIRV-Tools",
@@ -34,9 +37,10 @@
             "build_dir": "SPIRV-Tools/build",
             "install_dir": "SPIRV-Tools/build/install",
             "cmake_options": [
-                "-DSPIRV-Headers_SOURCE_DIR={repo_dir}/../SPIRV-Headers"
+                "-DSPIRV-Headers_SOURCE_DIR={repo_dir}/../SPIRV-Headers",
+                "-DSPIRV_WERROR=OFF"
             ],
-            "commit": "63de608daeb7e91fbea6d7477a50debe7cac57ce"
+            "commit": "44d72a9b36702f093dd20815561a56778b2d181e"
         },
         {
             "name": "robin-hood-hashing",
@@ -60,7 +64,7 @@
                 "-Dgtest_force_shared_crt=ON",
                 "-DBUILD_SHARED_LIBS=OFF"
             ],
-            "commit": "v1.12.0",
+            "commit": "v1.13.0",
             "optional": [
                 "tests"
             ]
@@ -78,7 +82,9 @@
                 "-DMI_BUILD_TESTS=OFF"
             ],
             "commit": "v2.0.7",
-            "build_platforms" : [ "windows" ]
+            "build_platforms": [
+                "windows"
+            ]
         }
     ],
     "install_names": {

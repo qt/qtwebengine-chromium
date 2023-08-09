@@ -25,8 +25,6 @@ public:
 
     ~GLWindowContext_mac() override;
 
-    void onSwapBuffers() override;
-
     sk_sp<const GrGLInterface> onInitializeContext() override;
     void onDestroyContext() override;
 
@@ -34,18 +32,17 @@ public:
 
 private:
     void teardownContext();
+    void onSwapBuffers() override;
 
     NSView*              fMainView;
     NSOpenGLContext*     fGLContext;
     NSOpenGLPixelFormat* fPixelFormat;
-
-    using INHERITED = GLWindowContext;
 };
 
 GLWindowContext_mac::GLWindowContext_mac(const MacWindowInfo& info, const DisplayParams& params)
-    : INHERITED(params)
-    , fMainView(info.fMainView)
-    , fGLContext(nil) {
+        : GLWindowContext(params)
+        , fMainView(info.fMainView)
+        , fGLContext(nil) {
 
     // any config code here (particularly for msaa)?
 
@@ -157,7 +154,7 @@ void GLWindowContext_mac::resize(int w, int h) {
     [fGLContext update];
 
     // The super class always recreates the context.
-    INHERITED::resize(0, 0);
+    GLWindowContext::resize(0, 0);
 }
 
 

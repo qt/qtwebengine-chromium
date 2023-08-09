@@ -18,8 +18,8 @@
  */
 #pragma once
 #include "state_tracker/base_node.h"
-#include "range_vector.h"
-#include "vk_safe_struct.h"
+#include "containers/range_vector.h"
+#include "generated/vk_safe_struct.h"
 
 struct MemRange {
     VkDeviceSize offset = 0;
@@ -99,10 +99,6 @@ class BindableNoMemoryTracker : public BindableMemoryTracker {
   public:
     BindableNoMemoryTracker(const VkMemoryRequirements *) {}
 
-    bool IsSparse() const { return false; }
-    bool IsResident() const { return false; }
-    unsigned TrackingsCount() const { return 0; }
-
     //----------------------------------------------------------------------------------------------------
     // Kept for backwards compatibility
     const MEM_BINDING *Binding() const { return nullptr; }
@@ -121,10 +117,6 @@ class BindableNoMemoryTracker : public BindableMemoryTracker {
 class BindableLinearMemoryTracker : public BindableMemoryTracker {
   public:
     BindableLinearMemoryTracker(const VkMemoryRequirements *) {}
-
-    bool IsSparse() const { return false; }
-    bool IsResident() const { return false; }
-    unsigned TrackingsCount() const { return 1; }
 
     //----------------------------------------------------------------------------------------------------
     // Kept for backwards compatibility
@@ -152,10 +144,6 @@ template <bool IS_RESIDENT>
 class BindableSparseMemoryTracker : public BindableMemoryTracker {
   public:
     BindableSparseMemoryTracker(const VkMemoryRequirements *requirements) : resource_size_(requirements->size) {}
-
-    bool IsSparse() const { return true; }
-    bool IsResident() const { return IS_RESIDENT; }
-    unsigned TrackingsCount() const { return 1; }
 
     //----------------------------------------------------------------------------------------------------
     // Kept for backwards compatibility
@@ -261,10 +249,6 @@ class BindableMultiplanarMemoryTracker : public BindableMemoryTracker {
         }
     }
 
-    bool IsSparse() const { return false; }
-    bool IsResident() const { return false; }
-    unsigned TrackingsCount() const { return TRACKING_COUNT; }
-
     //----------------------------------------------------------------------------------------------------
     // Kept for backwards compatibility
     const MEM_BINDING *Binding() const { return nullptr; }
@@ -367,6 +351,12 @@ class BINDABLE : public BASE_NODE {
 
         return !HasFullRangeBound();
     }
+
+    bool IsMemoryBound() const {
+        const auto mem_state = MemState();
+        return mem_state && !mem_state->Destroyed();
+    }
+
     void NotifyInvalidate(const NodeList &invalid_nodes, bool unlink) override {
         need_to_recache_invalid_memory_ = true;
         BASE_NODE::NotifyInvalidate(invalid_nodes, unlink);

@@ -484,10 +484,10 @@ void UdpSocketPosix::ReceiveMessage() {
   }
 
   task_runner_->PostTask([weak_this = weak_factory_.GetWeakPtr(),
-                          read_result = std::move(read_result)]() mutable {
+                          result = std::move(read_result)]() mutable {
     if (auto* self = weak_this.get()) {
       if (auto* client = self->client_) {
-        client->OnRead(self, std::move(read_result));
+        client->OnRead(self, std::move(result));
       }
     }
   });

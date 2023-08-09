@@ -20,7 +20,7 @@ namespace gdb_server {
 
 WasmModuleDebug::WasmModuleDebug(v8::Isolate* isolate,
                                  Local<debug::WasmScript> wasm_script) {
-  DCHECK_EQ(Script::TYPE_WASM, Utils::OpenHandle(*wasm_script)->type());
+  DCHECK_EQ(Script::Type::kWasm, Utils::OpenHandle(*wasm_script)->type());
 
   isolate_ = isolate;
   wasm_script_ = Global<debug::WasmScript>(isolate, wasm_script);
@@ -116,7 +116,7 @@ std::vector<wasm_addr_t> WasmModuleDebug::GetCallStack(
             FrameSummary::WasmFrameSummary const& wasm = summary.AsWasm();
             offset = GetWasmFunctionOffset(wasm.wasm_instance()->module(),
                                            wasm.function_index()) +
-                     wasm.byte_offset();
+                     wasm.code_offset();
             script = wasm.script();
 
             bool zeroth_frame = call_stack.empty();

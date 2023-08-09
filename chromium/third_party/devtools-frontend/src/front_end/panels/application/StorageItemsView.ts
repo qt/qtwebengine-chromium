@@ -43,7 +43,7 @@ export class StorageItemsView extends UI.Widget.VBox {
     super(false);
     this.filterRegex = null;
 
-    this.refreshButton = this.addButton(i18nString(UIStrings.refresh), 'largeicon-refresh', () => {
+    this.refreshButton = this.addButton(i18nString(UIStrings.refresh), 'refresh', () => {
       this.refreshItems();
       UI.ARIAUtils.alert(i18nString(UIStrings.refreshedStatus));
     });
@@ -54,9 +54,8 @@ export class StorageItemsView extends UI.Widget.VBox {
     this.filterItem.addEventListener(UI.Toolbar.ToolbarInput.Event.TextChanged, this.filterChanged, this);
 
     const toolbarSeparator = new UI.Toolbar.ToolbarSeparator();
-    this.deleteAllButton = this.addButton(i18nString(UIStrings.clearAll), 'largeicon-clear', this.deleteAllItems);
-    this.deleteSelectedButton =
-        this.addButton(i18nString(UIStrings.deleteSelected), 'largeicon-delete', this.deleteSelectedItem);
+    this.deleteAllButton = this.addButton(i18nString(UIStrings.clearAll), 'clear', this.deleteAllItems);
+    this.deleteSelectedButton = this.addButton(i18nString(UIStrings.deleteSelected), 'cross', this.deleteSelectedItem);
     this.deleteAllButton.element.id = 'storage-items-delete-all';
 
     const toolbarItems =
@@ -102,7 +101,7 @@ export class StorageItemsView extends UI.Widget.VBox {
     return Boolean(this.filterRegex);
   }
 
-  wasShown(): void {
+  override wasShown(): void {
     this.refreshItems();
   }
 

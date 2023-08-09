@@ -11,16 +11,16 @@ import pathlib
 import signal
 import subprocess
 import time
-from typing import TYPE_CHECKING, Iterable, List, Optional
+from typing import TYPE_CHECKING, Iterable, List, Optional, cast
 
 from crossbench import helper
-from crossbench.probes.base import Probe, ProbeConfigParser
+from crossbench.probes.probe import Probe, ProbeConfigParser
 from crossbench.probes.results import ProbeResult
 from crossbench.probes.v8.log import V8LogProbe
 from crossbench.browsers.chromium import Chromium
 
 if TYPE_CHECKING:
-  from crossbench.browsers.base import Browser
+  from crossbench.browsers.browser import Browser
   from crossbench.env import HostEnvironment
   from crossbench.runner import Run, Runner, BrowsersRunGroup
 
@@ -41,7 +41,6 @@ class ProfilingProbe(Probe):
 
   JS_FLAGS_PERF = (
       "--perf-prof",
-      "--no-write-protect-code-memory",
   )
   _INTERPRETED_FRAMES_FLAG = "--interpreted-frames-native-stack"
   IS_GENERAL_PURPOSE = True
@@ -60,6 +59,14 @@ class ProfilingProbe(Probe):
         default=False,
         help=("Chrome-only: also profile the browser process, "
               "(as opposed to only renderer processes)"))
+    parser.add_argument(
+        "spare_renderer_process",
+        type=bool,
+        default=False,
+        help=("Chrome-only: Enable/Disable spare renderer processes via "
+              "--enable-/--disable-features=SpareRendererForSitePerProcess. "
+              "Spare renderers are disabled by default when profiling "
+              "for fewer uninteresting processes."))
     parser.add_argument(
         "v8_interpreted_frames",
         type=bool,
@@ -80,12 +87,14 @@ class ProfilingProbe(Probe):
                js: bool = True,
                v8_interpreted_frames: bool = True,
                pprof: bool = True,
-               browser_process: bool = False):
+               browser_process: bool = False,
+               spare_renderer_process: bool = False):
     super().__init__()
-    self._sample_js = js
-    self._sample_browser_process = browser_process
-    self._run_pprof = pprof
-    self._expose_v8_interpreted_frames = v8_interpreted_frames
+    self._sample_js: bool = js
+    self._sample_browser_process: bool = browser_process
+    self._spare_renderer_process: bool = spare_renderer_process
+    self._run_pprof: bool = pprof
+    self._expose_v8_interpreted_frames: bool = v8_interpreted_frames
     if v8_interpreted_frames:
       assert js, "Cannot expose V8 interpreted frames without js profiling."
 
@@ -113,17 +122,26 @@ class ProfilingProbe(Probe):
     if self.browser_platform.is_linux:
       assert isinstance(browser, Chromium), (
           f"Expected Chromium-based browser, found {type(browser)}.")
-      self._attach_linux(browser)
+    if isinstance(browser, Chromium):
+      chromium = cast(Chromium, browser)
+      if not self._spare_renderer_process:
+        chromium.features.disable("SpareRendererForSitePerProcess")
+      self._attach_linux(chromium)
 
   def pre_check(self, env: HostEnvironment) -> None:
     super().pre_check(env)
+    if self.run_pprof:
+      self._run_pprof = self.browser_platform.which("gcert") is not None
+      if not self.run_pprof:
+        logging.warning(
+            "Disabled automatic pprof uploading for non-googler machine.")
     if self.browser_platform.is_linux:
       env.check_installed(binaries=["pprof"])
       assert self.browser_platform.which("perf"), "Please install linux-perf"
     elif self.browser_platform.is_macos:
       assert self.browser_platform.which("xctrace"), (
           "Please install Xcode to use xctrace")
-    if self._run_pprof:
+    if self.run_pprof:
       try:
         self.browser_platform.sh(self.browser_platform.which("gcertstatus"))
         return
@@ -154,12 +172,12 @@ class ProfilingProbe(Probe):
   def log_browsers_result(self, group: BrowsersRunGroup) -> None:
     self._log_results(group.runs)
 
-  def _log_results(self, runs: Iterable[Run]):
+  def _log_results(self, runs: Iterable[Run]) -> None:
     filtered_runs = list(run for run in runs if self in run.results)
     if not filtered_runs:
       return
     logging.info("-" * 80)
-    logging.info("Profiling results:")
+    logging.critical("Profiling results:")
     logging.info("  *.perf.data: 'perf report -i $FILE'")
     logging.info("- " * 40)
     for i, run in enumerate(filtered_runs):
@@ -176,10 +194,10 @@ class ProfilingProbe(Probe):
     logging.info("Run %d: %s", i + 1, run.name)
     if urls:
       largest_perf_file = perf_files[0]
-      logging.info("    %s", urls[0])
+      logging.critical("    %s", urls[0])
     if perf_files:
       largest_perf_file = perf_files[0]
-      logging.info("    %s : %s", largest_perf_file.relative_to(cwd),
+      logging.critical("    %s : %s", largest_perf_file.relative_to(cwd),
                    helper.get_file_size(largest_perf_file))
       if len(perf_files) > 1:
         logging.info("    %s/*.perf.data*: %d more files",
@@ -195,8 +213,8 @@ class ProfilingProbe(Probe):
   class MacOSProfilingScope(Probe.Scope):
     _process: subprocess.Popen
 
-    def __init__(self, *args, **kwargs):
-      super().__init__(*args, **kwargs)
+    def __init__(self, probe: ProfilingProbe, run: Run) -> None:
+      super().__init__(probe, run)
       self._default_results_file = self.results_file.parent / "profile.trace"
 
     def start(self, run: Run) -> None:
@@ -224,7 +242,7 @@ class ProfilingProbe(Probe):
         "jit-*.dump",
     )
 
-    def __init__(self, probe: ProfilingProbe, run: Run):
+    def __init__(self, probe: ProfilingProbe, run: Run) -> None:
       super().__init__(probe, run)
       self._perf_process = None
 
@@ -259,19 +277,26 @@ class ProfilingProbe(Probe):
                      "You might get partial profiles")
       time.sleep(2)
 
-      perf_files = helper.sort_by_file_size(
+      perf_files: List[pathlib.Path] = helper.sort_by_file_size(
           run.out_dir.glob(self.PERF_DATA_PATTERN))
+      raw_perf_files = perf_files
+      urls: List[str] = []
       try:
-        if not self.probe.run_pprof or not self.browser_platform.which("gcert"):
-          return ProbeResult(file=perf_files)
-        pprof_inputs = perf_files
         if self.probe.sample_js:
-          pprof_inputs = self._inject_v8_symbols(run, perf_files)
-        urls = self._export_to_pprof(run, pprof_inputs)
+          perf_files = self._inject_v8_symbols(run, perf_files)
+        if self.probe.run_pprof:
+          urls = self._export_to_pprof(run, perf_files)
       finally:
         self._clean_up_temp_files(run)
-      logging.debug("Profiling results: %s", urls)
-      return ProbeResult(url=urls, file=perf_files)
+      if self.probe.run_pprof:
+        logging.debug("Profiling results: %s", urls)
+        return ProbeResult(url=urls, file=raw_perf_files)
+      if self.browser_platform.which("pprof"):
+        logging.info("Run pprof over all (or single) perf data files "
+                     "for interactive analysis:")
+        logging.info("   pprof --http=localhost:1984 %s",
+                     " ".join(map(str, perf_files)))
+      return ProbeResult(file=perf_files)
 
     def _inject_v8_symbols(self, run: Run, perf_files: List[pathlib.Path]
                           ) -> List[pathlib.Path]:
@@ -296,6 +321,7 @@ class ProfilingProbe(Probe):
 
     def _export_to_pprof(self, run: Run,
                          perf_files: List[pathlib.Path]) -> List[str]:
+      assert self.probe.run_pprof
       run_details_json = json.dumps(run.get_browser_details_json())
       with run.actions(
           f"Probe {self.probe.name}: "
@@ -305,8 +331,9 @@ class ProfilingProbe(Probe):
             "gcertstatus >&/dev/null || "
             "(echo 'Authenticating with gcert:'; gcert)",
             shell=True)
-        items = zip(perf_files, [run_details_json] * len(perf_files))
-        urls = []
+        size = len(perf_files)
+        items = zip(perf_files, [run_details_json] * size)
+        urls: List[str] = []
         if self.browser_platform.is_remote:
           # Use loop, as we cannot easily serialize the remote platform.
           for perf_data_file, run_details in items:
@@ -330,6 +357,8 @@ class ProfilingProbe(Probe):
         return urls
 
     def _clean_up_temp_files(self, run: Run) -> None:
+      if not self.probe.run_pprof:
+        return
       for pattern in self.TEMP_FILE_PATTERNS:
         for file in run.out_dir.glob(pattern):
           file.unlink()
@@ -358,10 +387,10 @@ def linux_perf_probe_inject_v8_symbols(
   return output_file
 
 
-def linux_perf_probe_pprof(perf_data_file: pathlib.Path,
-                           run_details: str,
-                           platform: Optional[helper.Platform] = None
-                          ) -> Optional[str]:
+def linux_perf_probe_pprof(
+    perf_data_file: pathlib.Path,
+    run_details: str,
+    platform: Optional[helper.Platform] = None) -> Optional[str]:
   size = helper.get_file_size(perf_data_file)
   platform = platform or helper.platform
   url = ""

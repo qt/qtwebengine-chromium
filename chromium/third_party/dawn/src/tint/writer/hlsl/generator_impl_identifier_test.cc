@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "src/tint/utils/string_stream.h"
 #include "src/tint/writer/hlsl/test_helper.h"
 
 namespace tint::writer::hlsl {
@@ -27,8 +28,8 @@ TEST_F(HlslGeneratorImplTest_Identifier, EmitIdentifierExpression) {
 
     GeneratorImpl& gen = Build();
 
-    std::stringstream out;
-    ASSERT_TRUE(gen.EmitExpression(out, i)) << gen.error();
+    utils::StringStream out;
+    ASSERT_TRUE(gen.EmitExpression(out, i)) << gen.Diagnostics();
     EXPECT_EQ(out.str(), "foo");
 }
 

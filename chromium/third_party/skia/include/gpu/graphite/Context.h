@@ -16,6 +16,7 @@
 #include "include/gpu/graphite/Recorder.h"
 #include "include/private/base/SingleOwner.h"
 
+#include <functional>
 #include <memory>
 
 class SkRuntimeEffect;
@@ -129,6 +130,8 @@ private:
         // If null then the transfer could not be performed. Otherwise this buffer will contain
         // the pixel data when the transfer is complete.
         sk_sp<Buffer> fTransferBuffer;
+        // RowBytes for transfer buffer data
+        size_t fRowBytes;
         // If this is null then the transfer buffer will contain the data in the requested
         // color type. Otherwise, when the transfer is done this must be called to convert
         // from the transfer buffer's color type to the requested color type.

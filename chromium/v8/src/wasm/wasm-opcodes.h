@@ -24,8 +24,9 @@ namespace wasm {
 class WasmFeatures;
 struct WasmModule;
 
-std::ostream& operator<<(std::ostream& os, const FunctionSig& function);
-bool V8_EXPORT_PRIVATE IsJSCompatibleSignature(const FunctionSig* sig);
+V8_EXPORT_PRIVATE std::ostream& operator<<(std::ostream& os,
+                                           const FunctionSig& function);
+V8_EXPORT_PRIVATE bool IsJSCompatibleSignature(const FunctionSig* sig);
 
 // Format of all opcode macros: kExprName, binary, signature, wat name
 
@@ -692,14 +693,16 @@ bool V8_EXPORT_PRIVATE IsJSCompatibleSignature(const FunctionSig* sig);
   V(ArrayGetS, 0xfb14, _, "array.get_s")                                       \
   V(ArrayGetU, 0xfb15, _, "array.get_u")                                       \
   V(ArraySet, 0xfb16, _, "array.set")                                          \
-  V(ArrayCopy, 0xfb18, _,                                                      \
-    "array.copy") /* not standardized - V8 experimental */                     \
+  V(ArrayCopy, 0xfb18, _, "array.copy")                                        \
   V(ArrayLen, 0xfb19, _, "array.len")                                          \
   V(ArrayNewFixed, 0xfb1a, _, "array.new_fixed")                               \
   V(ArrayNew, 0xfb1b, _, "array.new")                                          \
   V(ArrayNewDefault, 0xfb1c, _, "array.new_default")                           \
   V(ArrayNewData, 0xfb1d, _, "array.new_data")                                 \
   V(ArrayNewElem, 0xfb1f, _, "array.new_elem")                                 \
+  V(ArrayFill, 0xfb0f, _, "array.fill")                                        \
+  V(ArrayInitData, 0xfb54, _, "array.init_data")                               \
+  V(ArrayInitElem, 0xfb55, _, "array.init_elem")                               \
   V(I31New, 0xfb20, _, "i31.new")                                              \
   V(I31GetS, 0xfb21, _, "i31.get_s")                                           \
   V(I31GetU, 0xfb22, _, "i31.get_u")                                           \
@@ -715,6 +718,7 @@ bool V8_EXPORT_PRIVATE IsJSCompatibleSignature(const FunctionSig* sig);
   V(BrOnCastFail, 0xfb43, _, "br_on_cast_fail")                                \
   V(BrOnCastFailNull, 0xfb4b, _, "br_on_cast_fail null")                       \
   V(BrOnCastFailDeprecated, 0xfb47, _, "br_on_cast_fail")                      \
+  V(BrOnCastGeneric, 0xfb4f, _, "br_on_cast")                                  \
   V(RefCastNop, 0xfb4c, _, "ref.cast_nop")                                     \
   V(RefIsStruct, 0xfb51, _, "ref.is_struct")                                   \
   V(RefIsI31, 0xfb52, _, "ref.is_i31")                                         \

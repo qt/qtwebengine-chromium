@@ -23,7 +23,7 @@
 namespace tint::ast {
 
 /// A case selector
-class CaseSelector final : public Castable<CaseSelector, Node> {
+class CaseSelector final : public utils::Castable<CaseSelector, Node> {
   public:
     /// Constructor
     /// @param pid the identifier of the program that owns this node
@@ -31,8 +31,8 @@ class CaseSelector final : public Castable<CaseSelector, Node> {
     /// @param src the source of this node
     /// @param expr the selector expression, |nullptr| for a `default` selector
     CaseSelector(ProgramID pid, NodeID nid, const Source& src, const Expression* expr = nullptr);
-    /// Move constructor
-    CaseSelector(CaseSelector&&);
+
+    /// Destructor
     ~CaseSelector() override;
 
     /// @returns true if this is a default statement

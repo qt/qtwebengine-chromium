@@ -176,7 +176,7 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
      {"disallow_unsafe_apis",
       "Produces validation errors on API entry points or parameter combinations that aren't "
       "considered secure yet.",
-      "http://crbug.com/1138528", ToggleStage::Device}},
+      "http://crbug.com/1138528", ToggleStage::Instance}},
     {Toggle::FlushBeforeClientWaitSync,
      {"flush_before_client_wait_sync",
       "Call glFlush before glClientWaitSync to work around bugs in the latter",
@@ -226,7 +226,8 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
     {Toggle::UsePlaceholderFragmentInVertexOnlyPipeline,
      {"use_placeholder_fragment_in_vertex_only_pipeline",
       "Use a placeholder empty fragment shader in vertex only render pipeline. This toggle must be "
-      "enabled for OpenGL ES backend, and serves as a workaround by default enabled on some Metal "
+      "enabled for OpenGL ES backend, the Vulkan Backend, and serves as a workaround by default "
+      "enabled on some Metal "
       "devices with Intel GPU to ensure the depth result is correct.",
       "https://crbug.com/dawn/136", ToggleStage::Device}},
     {Toggle::FxcOptimizations,
@@ -328,11 +329,11 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
       "default on Qualcomm GPUs, which have been observed experiencing a driver crash in this "
       "situation.",
       "https://crbug.com/dawn/1564", ToggleStage::Device}},
-    {Toggle::D3D12Allocate2DTextureWithCopyDstOrRenderAttachmentAsCommittedResource,
-     {"d3d12_allocate_2d_texture_with_copy_dst_or_render_attachment_as_committed_resource",
-      "Allocate each 2D texture with CopyDst or RenderAttachment usage as committed resources "
-      "instead of placed resources. This toggle is enabled by default on D3D12 backends using "
-      "Intel Gen9.5 and Gen11 GPUs due to a driver issue on Intel D3D12 driver.",
+    {Toggle::DisableSubAllocationFor2DTextureWithCopyDstOrRenderAttachment,
+     {"disable_sub_allocation_for_2d_texture_with_copy_dst_or_render_attachment",
+      "Disable resource sub-allocation for the 2D texture with CopyDst or RenderAttachment usage. "
+      "This toggle is enabled by default on D3D12 backends using Intel Gen9.5 and Gen11 GPUs and "
+      "on Vulkan backends using Intel Gen12 GPUs due to Intel Mesa Vulkan and D3D12 driver issues.",
       "https://crbug.com/1237175", ToggleStage::Device}},
     {Toggle::MetalUseCombinedDepthStencilFormatForStencil8,
      {"metal_use_combined_depth_stencil_format_for_stencil8",
@@ -357,6 +358,12 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
       "subresource are completely initialized, and StoreOp::Discard is always translated as a "
       "Store.",
       "https://crbug.com/dawn/838", ToggleStage::Device}},
+    {Toggle::MetalFillEmptyOcclusionQueriesWithZero,
+     {"metal_fill_empty_occlusion_queries_with_zero",
+      "Apple GPUs leave stale results in the visibility result buffer instead of writing zero if "
+      "an occlusion query is empty. Workaround this by explicitly filling it with zero if there "
+      "are no draw calls.",
+      "https://crbug.com/dawn/1707", ToggleStage::Device}},
     {Toggle::UseBlitForBufferToDepthTextureCopy,
      {"use_blit_for_buffer_to_depth_texture_copy",
       "Use a blit instead of a copy command to copy buffer data to the depth aspect of a "
@@ -374,13 +381,28 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
       "Use a blit to copy from a depth texture to the nonzero subresource of a depth texture. "
       "Works around an issue where nonzero layers are not written.",
       "https://crbug.com/dawn/1083", ToggleStage::Device}},
-    {Toggle::DisallowDeprecatedAPIs,
-     {"disallow_deprecated_apis",
-      "Disallow all deprecated paths by changing the deprecation warnings to validation error for "
-      "these paths."
-      "This toggle is off by default. It is expected to turn on or get removed when WebGPU V1 "
-      "ships and stays stable.",
+    {Toggle::D3D12ReplaceAddWithMinusWhenDstFactorIsZeroAndSrcFactorIsDstAlpha,
+     {"d3d12_replace_add_with_minus_when_dst_factor_is_zero_and_src_factor_is_dst_alpha",
+      "Replace the blending operation 'Add' with 'Minus' when dstBlendFactor is 'Zero' and "
+      "srcBlendFactor is 'DstAlpha'. Works around an Intel D3D12 driver issue about alpha "
+      "blending.",
+      "https://crbug.com/dawn/1579", ToggleStage::Device}},
+    {Toggle::AllowDeprecatedAPIs,
+     {"allow_deprecated_apis",
+      "Allows deprecated paths by changing the validation errors to deprecation warnings. This "
+      "toggle is off by default and is expected to get removed when WebGPU V1 ships and stays "
+      "stable.",
       "https://crbug.com/dawn/1563", ToggleStage::Device}},
+    {Toggle::D3D12PolyfillReflectVec2F32,
+     {"d3d12_polyfill_reflect_vec2_f32",
+      "Polyfill the reflect builtin for vec2<f32> for D3D12. This toggle is enabled by default on "
+      "D3D12 backends using FXC on Intel GPUs due to a driver issue on Intel D3D12 driver.",
+      "https://crbug.com/tint/1798", ToggleStage::Device}},
+    {Toggle::VulkanClearGen12TextureWithCCSAmbiguateOnCreation,
+     {"vulkan_clear_gen12_texture_with_ccs_ambiguate_on_creation",
+      "Clears some R8-like textures to full 0 bits as soon as they are created. This Toggle is "
+      "enabled on Intel Gen12 GPUs due to a mesa driver issue.",
+      "https://crbug.com/chromium/1361662", ToggleStage::Device}},
     {Toggle::NoWorkaroundSampleMaskBecomesZeroForAllButLastColorTarget,
      {"no_workaround_sample_mask_becomes_zero_for_all_but_last_color_target",
       "MacOS 12.0+ Intel has a bug where the sample mask is only applied for the last color "
@@ -392,10 +414,10 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
       "MacOS Intel < Gen9 has a bug where indirect base vertex is not applied for "
       "drawIndexedIndirect. Draws are done as if it is always zero.",
       "https://crbug.com/dawn/966", ToggleStage::Device}},
-    {Toggle::NoWorkaroundDstAlphaBlendDoesNotWork,
-     {"no_workaround_dst_alpha_blend_does_not_work",
-      "Using D3D12_BLEND_DEST_ALPHA as blend factor doesn't work correctly on the D3D12 backend "
-      "using Intel Gen9 or Gen9.5 GPUs.",
+    {Toggle::NoWorkaroundDstAlphaAsSrcBlendFactorForBothColorAndAlphaDoesNotWork,
+     {"no_workaround_dst_alpha_as_src_blend_factor_for_both_color_and_alpha_does_not_work",
+      "Using D3D12_BLEND_DEST_ALPHA as source blend factor for both color and alpha blending "
+      "doesn't work correctly on the D3D12 backend using Intel Gen9 or Gen9.5 GPUs.",
       "https://crbug.com/dawn/1579", ToggleStage::Device}},
     // Comment to separate the }} so it is clearer what to copy-paste to add a toggle.
 }};
@@ -436,7 +458,9 @@ TogglesState TogglesState::CreateFromTogglesDescriptor(const DawnTogglesDescript
         Toggle toggle = togglesInfo.ToggleNameToEnum(togglesDesc->enabledToggles[i]);
         if (toggle != Toggle::InvalidEnum) {
             const ToggleInfo* toggleInfo = togglesInfo.GetToggleInfo(toggle);
-            if (toggleInfo->stage == requiredStage) {
+            // Accept the required toggles of current and earlier stage to allow override
+            // inheritance.
+            if (toggleInfo->stage <= requiredStage) {
                 togglesState.mTogglesSet.Set(toggle, true);
                 togglesState.mEnabledToggles.Set(toggle, true);
             }
@@ -446,7 +470,9 @@ TogglesState TogglesState::CreateFromTogglesDescriptor(const DawnTogglesDescript
         Toggle toggle = togglesInfo.ToggleNameToEnum(togglesDesc->disabledToggles[i]);
         if (toggle != Toggle::InvalidEnum) {
             const ToggleInfo* toggleInfo = togglesInfo.GetToggleInfo(toggle);
-            if (toggleInfo->stage == requiredStage) {
+            // Accept the required toggles of current and earlier stage to allow override
+            // inheritance.
+            if (toggleInfo->stage <= requiredStage) {
                 togglesState.mTogglesSet.Set(toggle, true);
                 togglesState.mEnabledToggles.Set(toggle, false);
             }
@@ -454,6 +480,30 @@ TogglesState TogglesState::CreateFromTogglesDescriptor(const DawnTogglesDescript
     }
 
     return togglesState;
+}
+
+TogglesState& TogglesState::InheritFrom(const TogglesState& inheritedToggles) {
+    ASSERT(inheritedToggles.GetStage() < mStage);
+
+    // Do inheritance. All toggles that are force-set in the inherited toggles states would
+    // be force-set in the result toggles state, and all toggles that are set in the inherited
+    // toggles states and not required in current toggles state would be set in the result toggles
+    // state.
+    for (uint32_t i : inheritedToggles.mTogglesSet.Iterate()) {
+        const Toggle& toggle = static_cast<Toggle>(i);
+        ASSERT(TogglesInfo::GetToggleInfo(toggle)->stage < mStage);
+        bool isEnabled = inheritedToggles.mEnabledToggles.Has(toggle);
+        bool isForced = inheritedToggles.mForcedToggles.Has(toggle);
+        // Only inherit a toggle if it is not set by user requirement or is forced in earlier stage.
+        // In this way we allow user requirement override the inheritance if not forced.
+        if (!mTogglesSet.Has(toggle) || isForced) {
+            mTogglesSet.Set(toggle, true);
+            mEnabledToggles.Set(toggle, isEnabled);
+            mForcedToggles.Set(toggle, isForced);
+        }
+    }
+
+    return *this;
 }
 
 // Set a toggle to given state, if the toggle has not been already set. Do nothing otherwise.
@@ -479,6 +529,15 @@ void TogglesState::ForceSet(Toggle toggle, bool enabled) {
     mTogglesSet.Set(toggle, true);
     mEnabledToggles.Set(toggle, enabled);
     mForcedToggles.Set(toggle, true);
+}
+
+TogglesState& TogglesState::SetForTesting(Toggle toggle, bool enabled, bool forced) {
+    ASSERT(toggle != Toggle::InvalidEnum);
+    mTogglesSet.Set(toggle, true);
+    mEnabledToggles.Set(toggle, enabled);
+    mForcedToggles.Set(toggle, forced);
+
+    return *this;
 }
 
 bool TogglesState::IsSet(Toggle toggle) const {

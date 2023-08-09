@@ -268,11 +268,15 @@ export class NetworkManager extends SDKModel<EventTypes> {
     return this.dispatcher.requestForId(id);
   }
 
+  requestForLoaderId(loaderId: Protocol.Network.LoaderId): NetworkRequest|null {
+    return this.dispatcher.requestForLoaderId(loaderId);
+  }
+
   private cacheDisabledSettingChanged({data: enabled}: Common.EventTarget.EventTargetEvent<boolean>): void {
     void this.#networkAgent.invoke_setCacheDisabled({cacheDisabled: enabled});
   }
 
-  dispose(): void {
+  override dispose(): void {
     Common.Settings.Settings.instance()
         .moduleSetting('cacheDisabled')
         .removeChangeListener(this.cacheDisabledSettingChanged, this);
@@ -419,12 +423,14 @@ export class NetworkDispatcher implements ProtocolProxyApi.NetworkDispatcher {
   readonly #manager: NetworkManager;
   #requestsById: Map<string, NetworkRequest>;
   #requestsByURL: Map<Platform.DevToolsPath.UrlString, NetworkRequest>;
+  #requestsByLoaderId: Map<Protocol.Network.LoaderId, NetworkRequest>;
   #requestIdToExtraInfoBuilder: Map<string, ExtraInfoBuilder>;
   readonly #requestIdToTrustTokenEvent: Map<string, Protocol.Network.TrustTokenOperationDoneEvent>;
   constructor(manager: NetworkManager) {
     this.#manager = manager;
     this.#requestsById = new Map();
     this.#requestsByURL = new Map();
+    this.#requestsByLoaderId = new Map();
     this.#requestIdToExtraInfoBuilder = new Map();
     /**
      * In case of an early abort or a cache hit, the Trust Token done event is
@@ -440,8 +446,8 @@ export class NetworkDispatcher implements ProtocolProxyApi.NetworkDispatcher {
         MultitargetNetworkManager.Events.RequestIntercepted, this.#markAsIntercepted.bind(this));
   }
 
-  #markAsIntercepted(event: Common.EventTarget.EventTargetEvent<Platform.DevToolsPath.UrlString>): void {
-    const request = this.requestForURL(event.data);
+  #markAsIntercepted(event: Common.EventTarget.EventTargetEvent<string>): void {
+    const request = this.requestForId(event.data);
     if (request) {
       request.setWasIntercepted(true);
     }
@@ -551,6 +557,10 @@ export class NetworkDispatcher implements ProtocolProxyApi.NetworkDispatcher {
     return this.#requestsByURL.get(url) || null;
   }
 
+  requestForLoaderId(loaderId: Protocol.Network.LoaderId): NetworkRequest|null {
+    return this.#requestsByLoaderId.get(loaderId) || null;
+  }
+
   resourceChangedPriority({requestId, newPriority}: Protocol.Network.ResourceChangedPriorityEvent): void {
     const networkRequest = this.#requestsById.get(requestId);
     if (networkRequest) {
@@ -589,9 +599,19 @@ export class NetworkDispatcher implements ProtocolProxyApi.NetworkDispatcher {
         Events.ResponseReceived, {request: networkRequest, response: info.outerResponse});
   }
 
-  requestWillBeSent(
-      {requestId, loaderId, documentURL, request, timestamp, wallTime, initiator, redirectResponse, type, frameId}:
-          Protocol.Network.RequestWillBeSentEvent): void {
+  requestWillBeSent({
+    requestId,
+    loaderId,
+    documentURL,
+    request,
+    timestamp,
+    wallTime,
+    initiator,
+    redirectResponse,
+    type,
+    frameId,
+    hasUserGesture,
+  }: Protocol.Network.RequestWillBeSentEvent): void {
     let networkRequest = this.#requestsById.get(requestId);
     if (networkRequest) {
       // FIXME: move this check to the backend.
@@ -618,7 +638,7 @@ export class NetworkDispatcher implements ProtocolProxyApi.NetworkDispatcher {
     } else {
       networkRequest = NetworkRequest.create(
           requestId, request.url as Platform.DevToolsPath.UrlString, documentURL as Platform.DevToolsPath.UrlString,
-          frameId ?? null, loaderId, initiator);
+          frameId ?? null, loaderId, initiator, hasUserGesture);
       requestToManagerMap.set(networkRequest, this.#manager);
     }
     networkRequest.hasNetworkData = true;
@@ -921,7 +941,8 @@ export class NetworkDispatcher implements ProtocolProxyApi.NetworkDispatcher {
     this.finishNetworkRequest(originalNetworkRequest, time, -1);
     const newNetworkRequest = NetworkRequest.create(
         requestId, redirectURL, originalNetworkRequest.documentURL, originalNetworkRequest.frameId,
-        originalNetworkRequest.loaderId, originalNetworkRequest.initiator());
+        originalNetworkRequest.loaderId, originalNetworkRequest.initiator(),
+        originalNetworkRequest.hasUserGesture() ?? undefined);
     requestToManagerMap.set(newNetworkRequest, this.#manager);
     newNetworkRequest.setRedirectSource(originalNetworkRequest);
     originalNetworkRequest.setRedirectDestination(newNetworkRequest);
@@ -936,10 +957,17 @@ export class NetworkDispatcher implements ProtocolProxyApi.NetworkDispatcher {
     const oldDispatcher = (NetworkManager.forRequest(request) as NetworkManager).dispatcher;
     oldDispatcher.#requestsById.delete(requestId);
     oldDispatcher.#requestsByURL.delete(request.url());
+    const loaderId = request.loaderId;
+    if (loaderId) {
+      oldDispatcher.#requestsByLoaderId.delete(loaderId);
+    }
     const builder = oldDispatcher.#requestIdToExtraInfoBuilder.get(requestId);
     oldDispatcher.#requestIdToExtraInfoBuilder.delete(requestId);
     this.#requestsById.set(requestId, request);
     this.#requestsByURL.set(request.url(), request);
+    if (loaderId) {
+      this.#requestsByLoaderId.set(loaderId, request);
+    }
     if (builder) {
       this.#requestIdToExtraInfoBuilder.set(requestId, builder);
     }
@@ -950,6 +978,10 @@ export class NetworkDispatcher implements ProtocolProxyApi.NetworkDispatcher {
   private startNetworkRequest(networkRequest: NetworkRequest, originalRequest: Protocol.Network.Request|null): void {
     this.#requestsById.set(networkRequest.requestId(), networkRequest);
     this.#requestsByURL.set(networkRequest.url(), networkRequest);
+    const loaderId = networkRequest.loaderId;
+    if (loaderId) {
+      this.#requestsByLoaderId.set(loaderId, networkRequest);
+    }
     // The following relies on the fact that loaderIds and requestIds are
     // globally unique and that the main request has them equal.
     if (networkRequest.loaderId === networkRequest.requestId()) {
@@ -1016,6 +1048,11 @@ export class NetworkDispatcher implements ProtocolProxyApi.NetworkDispatcher {
     for (const [requestURL, request] of this.#requestsByURL) {
       if (request.finished) {
         this.#requestsByURL.delete(requestURL);
+      }
+    }
+    for (const [requestLoaderId, request] of this.#requestsByLoaderId) {
+      if (request.finished) {
+        this.#requestsByLoaderId.delete(requestLoaderId);
       }
     }
     for (const [requestId, builder] of this.#requestIdToExtraInfoBuilder) {
@@ -1476,10 +1513,9 @@ export class MultitargetNetworkManager extends Common.ObjectWrapper.ObjectWrappe
   async requestIntercepted(interceptedRequest: InterceptedRequest): Promise<void> {
     for (const requestInterceptor of this.#urlsForRequestInterceptor.keysArray()) {
       await requestInterceptor(interceptedRequest);
-      if (interceptedRequest.hasResponded()) {
+      if (interceptedRequest.hasResponded() && interceptedRequest.networkRequest) {
         this.dispatchEventToListeners(
-            MultitargetNetworkManager.Events.RequestIntercepted,
-            interceptedRequest.request.url as Platform.DevToolsPath.UrlString);
+            MultitargetNetworkManager.Events.RequestIntercepted, interceptedRequest.networkRequest.requestId());
         return;
       }
     }
@@ -1501,7 +1537,7 @@ export class MultitargetNetworkManager extends Common.ObjectWrapper.ObjectWrappe
   }
 
   async getCertificate(origin: string): Promise<string[]> {
-    const target = TargetManager.instance().mainFrameTarget();
+    const target = TargetManager.instance().primaryPageTarget();
     if (!target) {
       return [];
     }
@@ -1559,7 +1595,7 @@ export namespace MultitargetNetworkManager {
     [Events.UserAgentChanged]: void,
     [Events.InterceptorsChanged]: void,
     [Events.AcceptedEncodingsChanged]: void,
-    [Events.RequestIntercepted]: Platform.DevToolsPath.UrlString,
+    [Events.RequestIntercepted]: string,
     [Events.RequestFulfilled]: Platform.DevToolsPath.UrlString,
   };
 }
@@ -1600,29 +1636,59 @@ export class InterceptedRequest {
   static mergeSetCookieHeaders(
       originalSetCookieHeaders: Protocol.Fetch.HeaderEntry[],
       setCookieHeadersFromOverrides: Protocol.Fetch.HeaderEntry[]): Protocol.Fetch.HeaderEntry[] {
-    const malformedHeaders = new Set<string>();
-    const validHeaders = new Map<string, string>();
-    for (const header of originalSetCookieHeaders.concat(setCookieHeadersFromOverrides)) {
-      // The regex matches cookie headers of the form '<header-name>=<header-value>'.
-      // <header-name> is a token as defined in https://www.rfc-editor.org/rfc/rfc9110.html#name-tokens.
-      // The shape of <header-value> is not being validated at all here.
-      const match = header.value.match(/([a-zA-Z0-9!#$%&'*+.^_`|~-]+)=(.*)/);
-      if (match) {
-        // This step merges headers for cookies with the same name, e.g. if there
-        // are both 'set-cookie: foo=original' and 'set-cookie: foo=override',
-        // only the later one will be stored.
-        validHeaders.set(match[1], match[2]);
+    // Generates a map containing the `set-cookie` headers. Valid `set-cookie`
+    // headers are stored by the cookie name. Malformed `set-cookie` headers are
+    // stored by the whole header value. Duplicates are allowed.
+    const generateHeaderMap = (headers: Protocol.Fetch.HeaderEntry[]): Map<string, string[]> => {
+      const result = new Map<string, string[]>();
+      for (const header of headers) {
+        // The regex matches cookie headers of the form '<header-name>=<header-value>'.
+        // <header-name> is a token as defined in https://www.rfc-editor.org/rfc/rfc9110.html#name-tokens.
+        // The shape of <header-value> is not being validated at all here.
+        const match = header.value.match(/^([a-zA-Z0-9!#$%&'*+.^_`|~-]+=)(.*)$/);
+        if (match) {
+          if (result.has(match[1])) {
+            result.get(match[1])?.push(header.value);
+          } else {
+            result.set(match[1], [header.value]);
+          }
+        } else {
+          if (result.has(header.value)) {
+            result.get(header.value)?.push(header.value);
+          } else {
+            result.set(header.value, [header.value]);
+          }
+        }
+      }
+      return result;
+    };
+
+    const originalHeadersMap = generateHeaderMap(originalSetCookieHeaders);
+    const overridesHeaderMap = generateHeaderMap(setCookieHeadersFromOverrides);
+
+    // Iterate over original headers. If the same key is found among the
+    // overrides, use those instead.
+    const mergedHeaders: Protocol.Fetch.HeaderEntry[] = [];
+    for (const [key, headerValues] of originalHeadersMap) {
+      if (overridesHeaderMap.has(key)) {
+        for (const headerValue of overridesHeaderMap.get(key) || []) {
+          mergedHeaders.push({name: 'set-cookie', value: headerValue});
+        }
       } else {
-        malformedHeaders.add(header.value);
+        for (const headerValue of headerValues) {
+          mergedHeaders.push({name: 'set-cookie', value: headerValue});
+        }
       }
     }
 
-    const mergedHeaders: Protocol.Fetch.HeaderEntry[] = [];
-    for (const [cookieName, cookieValue] of validHeaders) {
-      mergedHeaders.push({name: 'set-cookie', value: `${cookieName}=${cookieValue}`});
-    }
-    for (const headerValue of malformedHeaders) {
-      mergedHeaders.push({name: 'set-cookie', value: headerValue});
+    // Finally add all overrides which have not been added yet.
+    for (const [key, headerValues] of overridesHeaderMap) {
+      if (originalHeadersMap.has(key)) {
+        continue;
+      }
+      for (const headerValue of headerValues) {
+        mergedHeaders.push({name: 'set-cookie', value: headerValue});
+      }
     }
     return mergedHeaders;
   }

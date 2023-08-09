@@ -138,14 +138,6 @@ class ReceiverSession final : public Environment::SocketSubscriber {
     virtual ~Client();
   };
 
-  // TODO(crbug.com/1220176): Remove type aliases once downstream has been
-  // updated with new type names.
-  using Display = openscreen::cast::Display;
-  using AudioLimits = openscreen::cast::AudioLimits;
-  using VideoLimits = openscreen::cast::VideoLimits;
-  using RemotingPreferences = openscreen::cast::RemotingConstraints;
-  using Preferences = openscreen::cast::ReceiverConstraints;
-
   ReceiverSession(Client* const client,
                   Environment* environment,
                   MessagePort* message_port,

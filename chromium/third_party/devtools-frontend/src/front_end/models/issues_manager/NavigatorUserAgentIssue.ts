@@ -52,7 +52,7 @@ export class NavigatorUserAgentIssue extends Issue<IssueCode> {
     };
   }
 
-  sources(): Iterable<Protocol.Audits.SourceCodeLocation> {
+  override sources(): Iterable<Protocol.Audits.SourceCodeLocation> {
     if (this.#issueDetails.location) {
       return [this.#issueDetails.location];
     }
@@ -67,9 +67,9 @@ export class NavigatorUserAgentIssue extends Issue<IssueCode> {
     return IssueKind.Improvement;
   }
 
-  isCausedByThirdParty(): boolean {
-    const topFrame = SDK.FrameManager.FrameManager.instance().getTopFrame();
-    return isCausedByThirdParty(topFrame, this.#issueDetails.url);
+  override isCausedByThirdParty(): boolean {
+    const outermostFrame = SDK.FrameManager.FrameManager.instance().getOutermostFrame();
+    return isCausedByThirdParty(outermostFrame, this.#issueDetails.url);
   }
 
   static fromInspectorIssue(issuesModel: SDK.IssuesModel.IssuesModel, inspectorIssue: Protocol.Audits.InspectorIssue):

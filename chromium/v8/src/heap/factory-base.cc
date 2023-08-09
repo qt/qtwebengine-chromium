@@ -58,7 +58,7 @@ template <typename Impl>
 Handle<Struct> FactoryBase<Impl>::NewStruct(InstanceType type,
                                             AllocationType allocation) {
   ReadOnlyRoots roots = read_only_roots();
-  Map map = Map::GetInstanceTypeMap(roots, type);
+  Map map = Map::GetMapFor(roots, type);
   int size = map.instance_size();
   return handle(NewStructInternal(roots, map, size, allocation), isolate());
 }
@@ -74,19 +74,51 @@ Handle<AccessorPair> FactoryBase<Impl>::NewAccessorPair() {
 }
 
 template <typename Impl>
-Handle<Code> FactoryBase<Impl>::NewCode(int flags, AllocationType allocation) {
+Handle<Code> FactoryBase<Impl>::NewCode(const NewCodeOptions& options) {
+  Isolate* isolate_for_sandbox = impl()->isolate_for_sandbox();
   Map map = read_only_roots().code_map();
   int size = map.instance_size();
-  DCHECK_NE(allocation, AllocationType::kYoung);
-  Code data_container =
-      Code::cast(AllocateRawWithImmortalMap(size, allocation, map));
+  DCHECK_NE(options.allocation, AllocationType::kYoung);
+  Code code =
+      Code::cast(AllocateRawWithImmortalMap(size, options.allocation, map));
   DisallowGarbageCollection no_gc;
-  data_container.set_kind_specific_flags(flags, kRelaxedStore);
-  Isolate* isolate_for_sandbox = impl()->isolate_for_sandbox();
-  data_container.set_raw_instruction_stream(Smi::zero(), SKIP_WRITE_BARRIER);
-  data_container.init_code_entry_point(isolate_for_sandbox, kNullAddress);
-  data_container.clear_padding();
-  return handle(data_container, isolate());
+  code.initialize_flags(options.kind, options.is_turbofanned,
+                        options.stack_slots);
+  code.set_builtin_id(options.builtin);
+  code.set_instruction_size(options.instruction_size);
+  code.set_metadata_size(options.metadata_size);
+  code.set_inlined_bytecode_size(options.inlined_bytecode_size);
+  code.set_osr_offset(options.osr_offset);
+  code.set_handler_table_offset(options.handler_table_offset);
+  code.set_constant_pool_offset(options.constant_pool_offset);
+  code.set_code_comments_offset(options.code_comments_offset);
+  code.set_unwinding_info_offset(options.unwinding_info_offset);
+
+  if (options.kind == CodeKind::BASELINE) {
+    code.set_bytecode_or_interpreter_data(
+        *options.bytecode_or_deoptimization_data);
+    code.set_bytecode_offset_table(
+        *options.bytecode_offsets_or_source_position_table);
+  } else {
+    code.set_deoptimization_data(
+        FixedArray::cast(*options.bytecode_or_deoptimization_data));
+    code.set_source_position_table(
+        *options.bytecode_offsets_or_source_position_table);
+  }
+
+  Handle<InstructionStream> istream;
+  if (options.instruction_stream.ToHandle(&istream)) {
+    DCHECK_EQ(options.instruction_start, kNullAddress);
+    code.SetInstructionStreamAndInstructionStart(isolate_for_sandbox, *istream);
+  } else {
+    DCHECK_NE(options.instruction_start, kNullAddress);
+    code.set_raw_instruction_stream(Smi::zero(), SKIP_WRITE_BARRIER);
+    code.SetInstructionStartForOffHeapBuiltin(isolate_for_sandbox,
+                                              options.instruction_start);
+  }
+
+  code.clear_padding();
+  return handle(code, isolate());
 }
 
 template <typename Impl>
@@ -94,7 +126,8 @@ Handle<FixedArray> FactoryBase<Impl>::NewFixedArray(int length,
                                                     AllocationType allocation) {
   if (length == 0) return impl()->empty_fixed_array();
   if (length < 0 || length > FixedArray::kMaxLength) {
-    FATAL("Fatal JavaScript invalid size error %d", length);
+    FATAL("Fatal JavaScript invalid size error %d (see crbug.com/1201626)",
+          length);
     UNREACHABLE();
   }
   return NewFixedArrayWithFiller(
@@ -160,7 +193,8 @@ Handle<FixedArrayBase> FactoryBase<Impl>::NewFixedDoubleArray(
     int length, AllocationType allocation) {
   if (length == 0) return impl()->empty_fixed_array();
   if (length < 0 || length > FixedDoubleArray::kMaxLength) {
-    FATAL("Fatal JavaScript invalid size error %d", length);
+    FATAL("Fatal JavaScript invalid size error %d (see crbug.com/1201626)",
+          length);
     UNREACHABLE();
   }
   int size = FixedDoubleArray::SizeFor(length);
@@ -278,8 +312,8 @@ Handle<Script> FactoryBase<Impl>::NewScriptWithId(
     raw.set_line_offset(0);
     raw.set_column_offset(0);
     raw.set_context_data(roots.undefined_value(), SKIP_WRITE_BARRIER);
-    raw.set_type(Script::TYPE_NORMAL);
-    raw.set_line_ends(roots.undefined_value(), SKIP_WRITE_BARRIER);
+    raw.set_type(Script::Type::kNormal);
+    raw.set_line_ends(Smi::zero());
     raw.set_eval_from_shared_or_wrapped_arguments(roots.undefined_value(),
                                                   SKIP_WRITE_BARRIER);
     raw.set_eval_from_position(0);
@@ -294,12 +328,7 @@ Handle<Script> FactoryBase<Impl>::NewScriptWithId(
     raw.set_script_or_modules(roots.empty_array_list());
 #endif
   }
-
-  if (script_id != Script::kTemporaryScriptId) {
-    impl()->AddToScriptList(script);
-  }
-
-  LOG(isolate(), ScriptEvent(script_event_type, script_id));
+  impl()->ProcessNewScript(script, script_event_type);
   return script;
 }
 
@@ -323,7 +352,7 @@ Handle<SharedFunctionInfo> FactoryBase<Impl>::NewSharedFunctionInfoForLiteral(
     FunctionLiteral* literal, Handle<Script> script, bool is_toplevel) {
   FunctionKind kind = literal->kind();
   Handle<SharedFunctionInfo> shared = NewSharedFunctionInfo(
-      literal->GetName(isolate()), MaybeHandle<InstructionStream>(),
+      literal->GetName(isolate()), MaybeHandle<HeapObject>(),
       Builtin::kCompileLazy, kind);
   SharedFunctionInfo::InitFromFunctionLiteral(isolate(), shared, literal,
                                               is_toplevel);
@@ -341,8 +370,8 @@ Handle<SharedFunctionInfo> FactoryBase<Impl>::CloneSharedFunctionInfo(
       SharedFunctionInfo::cast(NewWithImmortalMap(map, AllocationType::kOld));
   DisallowGarbageCollection no_gc;
 
-  shared.CopyFrom(*other);
   shared.clear_padding();
+  shared.CopyFrom(*other);
 
   return handle(shared, isolate());
 }
@@ -427,8 +456,7 @@ Handle<SharedFunctionInfo> FactoryBase<Impl>::NewSharedFunctionInfo(
     // If we pass function_data then we shouldn't pass a builtin index, and
     // the function_data should not be code with a builtin.
     DCHECK(!Builtins::IsBuiltinId(builtin));
-    DCHECK_IMPLIES(function_data->IsInstructionStream(),
-                   !InstructionStream::cast(*function_data).is_builtin());
+    DCHECK(!function_data->IsInstructionStream());
     raw.set_function_data(*function_data, kReleaseStore);
   } else if (Builtins::IsBuiltinId(builtin)) {
     raw.set_builtin_id(builtin);
@@ -1019,9 +1047,22 @@ Handle<DescriptorArray> FactoryBase<Impl>::NewDescriptorArray(
   HeapObject obj = AllocateRawWithImmortalMap(
       size, allocation, read_only_roots().descriptor_array_map());
   DescriptorArray array = DescriptorArray::cast(obj);
+
+  auto raw_gc_state = DescriptorArrayMarkingState::kInitialGCState;
+  if (allocation != AllocationType::kYoung &&
+      allocation != AllocationType::kReadOnly) {
+    auto* heap = allocation == AllocationType::kSharedOld
+                     ? isolate()->AsIsolate()->shared_space_isolate()->heap()
+                     : isolate()->heap()->AsHeap();
+    if (heap->incremental_marking()->IsMajorMarking()) {
+      // Black allocation: We must create a full marked state.
+      raw_gc_state = DescriptorArrayMarkingState::GetFullyMarkedState(
+          heap->mark_compact_collector()->epoch(), number_of_descriptors);
+    }
+  }
   array.Initialize(read_only_roots().empty_enum_cache(),
                    read_only_roots().undefined_value(), number_of_descriptors,
-                   slack);
+                   slack, raw_gc_state);
   return handle(array, isolate());
 }
 
@@ -1149,8 +1190,9 @@ FactoryBase<Impl>::NewSwissNameDictionaryWithCapacity(
   DCHECK(SwissNameDictionary::IsValidCapacity(capacity));
 
   if (capacity == 0) {
-    DCHECK_NE(read_only_roots().at(RootIndex::kEmptySwissPropertyDictionary),
-              kNullAddress);
+    DCHECK_NE(
+        read_only_roots().address_at(RootIndex::kEmptySwissPropertyDictionary),
+        kNullAddress);
 
     return read_only_roots().empty_swiss_property_dictionary_handle();
   }

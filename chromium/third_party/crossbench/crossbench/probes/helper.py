@@ -11,6 +11,9 @@ import math
 import pathlib
 from typing import (Any, Callable, Dict, Iterable, List, Optional, Sequence,
                     Set, Tuple, Union)
+from crossbench.helper import Platform
+
+from crossbench.probes.probe import Probe
 
 _KeyFnType = Callable[[Tuple[str, ...]], Optional[str]]
 
@@ -55,7 +58,7 @@ class Flatten:
     for merged_data in args:
       self._flatten(toplevel_path, merged_data, ignore_toplevel)
 
-  def _is_leaf_item(self, item) -> bool:
+  def _is_leaf_item(self, item: Any) -> bool:
     if isinstance(item, (str, float, int, list)):
       return True
     if "values" in item and isinstance(item["values"], list):
@@ -95,10 +98,10 @@ class Values:
   """
 
   @classmethod
-  def from_json(cls, json_data):
+  def from_json(cls, json_data: Dict[str, Any]):
     return cls(json_data["values"])
 
-  def __init__(self, values=None):
+  def __init__(self, values: Optional[List] = None):
     self.values = values or []
     self._is_numeric: bool = all(map(is_number, self.values))
 
@@ -146,7 +149,7 @@ class Values:
     self._is_numeric = self._is_numeric and is_number(value)
 
   def to_json(self) -> Dict[str, Any]:
-    json_data = {"values": self.values}
+    json_data: Dict[str, Any] = {"values": self.values}
     if not self.values:
       return json_data
     if self.is_numeric:
@@ -270,7 +273,9 @@ class ValuesMerger:
     else:
       self._merge(data)
 
-  def _merge(self, data, parent_path: Tuple[str, ...] = ()) -> None:
+  def _merge(
+      self, data: Union[Dict,
+                        List[Dict]], parent_path: Tuple[str, ...] = ()) -> None:
     assert isinstance(data, dict)
     for property_name, value in data.items():
       path = parent_path + (property_name,)
@@ -361,7 +366,7 @@ class ValuesMerger:
     return csv_data
 
 
-def _ljust(sequence: List, n: int, fillvalue: Any = ""):
+def _ljust(sequence: List, n: int, fillvalue: Any = "") -> List:
   return sequence + ([fillvalue] * (n - len(sequence)))
 
 
@@ -421,3 +426,42 @@ def merge_csv(csv_list: Sequence[pathlib.Path],
   if table_headers:
     return [table_headers] + table
   return table
+
+
+class V8CheckoutFinder:
+
+  def __init__(self, platform: Platform) -> None:
+    self.platform = platform
+    # A generous list of potential locations of a V8 or chromium checkout
+    self.checkout_candidates = [
+        # V8 Checkouts
+        pathlib.Path.home() / "Documents/v8/v8",
+        pathlib.Path.home() / "v8/v8",
+        pathlib.Path("C:") / "src/v8/v8",
+        # Raw V8 checkouts
+        pathlib.Path.home() / "Documents/v8",
+        pathlib.Path.home() / "v8",
+        pathlib.Path("C:") / "src/v8/",
+        # V8 in chromium checkouts
+        pathlib.Path.home() / "Documents/chromium/src/v8",
+        pathlib.Path.home() / "chromium/src/v8",
+        pathlib.Path("C:") / "src/chromium/src/v8",
+        # Chromium checkouts
+        pathlib.Path.home() / "Documents/chromium/src",
+        pathlib.Path.home() / "chromium/src",
+        pathlib.Path("C:") / "src/chromium/src",
+    ]
+    self.v8_checkout: Optional[pathlib.Path] = self._find_v8_checkout()
+
+  def _find_v8_checkout(self) -> Optional[pathlib.Path]:
+    # Try potential build location
+    for candidate_dir in self.checkout_candidates:
+      if candidate_dir.is_dir():
+        return candidate_dir
+    maybe_d8_path = self.platform.environ.get("D8_PATH")
+    if not maybe_d8_path:
+      return None
+    for candidate_dir in pathlib.Path(maybe_d8_path).parents:
+      if (candidate_dir / "include" / "v8.h").is_file():
+        return candidate_dir
+    return None

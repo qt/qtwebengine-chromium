@@ -9,23 +9,23 @@
 
 #include "include/core/SkTypes.h"
 #include "include/private/SkSLDefines.h"
-#include "include/private/SkSLSymbol.h"
-#include "include/sksl/DSLCore.h"
-#include "include/sksl/DSLExpression.h"
-#include "include/sksl/DSLStatement.h"
-#include "include/sksl/DSLType.h"
-#include "include/sksl/SkSLErrorReporter.h"
 #include "src/base/SkSafeMath.h"
 #include "src/sksl/SkSLAnalysis.h"
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLContext.h"
+#include "src/sksl/SkSLErrorReporter.h"
 #include "src/sksl/SkSLProgramSettings.h"
 #include "src/sksl/SkSLThreadContext.h"
+#include "src/sksl/dsl/DSLCore.h"
+#include "src/sksl/dsl/DSLExpression.h"
+#include "src/sksl/dsl/DSLStatement.h"
+#include "src/sksl/dsl/DSLType.h"
 #include "src/sksl/ir/SkSLBlock.h"
 #include "src/sksl/ir/SkSLExpression.h"
 #include "src/sksl/ir/SkSLField.h"
 #include "src/sksl/ir/SkSLFieldAccess.h"
 #include "src/sksl/ir/SkSLReturnStatement.h"
+#include "src/sksl/ir/SkSLSymbol.h"
 #include "src/sksl/ir/SkSLSymbolTable.h"
 #include "src/sksl/ir/SkSLType.h"
 #include "src/sksl/ir/SkSLVarDeclarations.h"
@@ -99,6 +99,10 @@ std::unique_ptr<FunctionDefinition> FunctionDefinition::Convert(const Context& c
         }
 
         void addLocalVariable(const Variable* var, Position pos) {
+            if (var->type().isOrContainsUnsizedArray()) {
+                fContext.fErrors->error(pos, "unsized arrays are not permitted here");
+                return;
+            }
             // We count the number of slots used, but don't consider the precision of the base type.
             // In practice, this reflects what GPUs actually do pretty well. (i.e., RelaxedPrecision
             // math doesn't mean your variable takes less space.) We also don't attempt to reclaim
@@ -129,16 +133,10 @@ std::unique_ptr<FunctionDefinition> FunctionDefinition::Convert(const Context& c
 
         bool visitStatement(Statement& stmt) override {
             switch (stmt.kind()) {
-                case Statement::Kind::kVarDeclaration: {
-                    const Variable* var = stmt.as<VarDeclaration>().var();
-                    if (var->type().isOrContainsUnsizedArray()) {
-                        fContext.fErrors->error(stmt.fPosition,
-                                                "unsized arrays are not permitted here");
-                    } else {
-                        this->addLocalVariable(var, stmt.fPosition);
-                    }
+                case Statement::Kind::kVarDeclaration:
+                    this->addLocalVariable(stmt.as<VarDeclaration>().var(), stmt.fPosition);
                     break;
-                }
+
                 case Statement::Kind::kReturn: {
                     // Early returns from a vertex main() function will bypass sk_Position
                     // normalization, so SkASSERT that we aren't doing that. If this becomes an

@@ -9,8 +9,6 @@
 #include "quiche/quic/core/crypto/crypto_framer.h"
 #include "quiche/quic/core/crypto/crypto_handshake.h"
 #include "quiche/quic/core/crypto/crypto_handshake_message.h"
-#include "quiche/quic/core/crypto/crypto_protocol.h"
-#include "quiche/quic/core/crypto/crypto_utils.h"
 #include "quiche/quic/core/crypto/quic_decrypter.h"
 #include "quiche/quic/core/crypto/quic_encrypter.h"
 #include "quiche/quic/core/frames/quic_ack_frequency_frame.h"
@@ -59,8 +57,8 @@ class ChloFramerVisitor : public QuicFramerVisitorInterface,
   bool OnAckRange(QuicPacketNumber start, QuicPacketNumber end) override;
   bool OnAckTimestamp(QuicPacketNumber packet_number,
                       QuicTime timestamp) override;
-  void OnAckEcnCounts(const QuicEcnCounts& ecn_counts) override;
-  bool OnAckFrameEnd(QuicPacketNumber start) override;
+  bool OnAckFrameEnd(QuicPacketNumber start,
+                     const absl::optional<QuicEcnCounts>& ecn_counts) override;
   bool OnStopWaitingFrame(const QuicStopWaitingFrame& frame) override;
   bool OnPingFrame(const QuicPingFrame& frame) override;
   bool OnRstStreamFrame(const QuicRstStreamFrame& frame) override;
@@ -220,9 +218,9 @@ bool ChloFramerVisitor::OnAckTimestamp(QuicPacketNumber /*packet_number*/,
   return true;
 }
 
-void ChloFramerVisitor::OnAckEcnCounts(const QuicEcnCounts& /*ecn_counts*/) {}
-
-bool ChloFramerVisitor::OnAckFrameEnd(QuicPacketNumber /*start*/) {
+bool ChloFramerVisitor::OnAckFrameEnd(
+    QuicPacketNumber /*start*/,
+    const absl::optional<QuicEcnCounts>& /*ecn_counts*/) {
   return true;
 }
 

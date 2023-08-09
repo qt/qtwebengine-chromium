@@ -23,8 +23,7 @@
 #ifndef SRC_TINT_BUILTIN_EXTENSION_H_
 #define SRC_TINT_BUILTIN_EXTENSION_H_
 
-#include <ostream>
-
+#include "src/tint/utils/string_stream.h"
 #include "src/tint/utils/unique_vector.h"
 
 namespace tint::builtin {
@@ -37,13 +36,14 @@ enum class Extension {
     kChromiumExperimentalDp4A,
     kChromiumExperimentalFullPtrParameters,
     kChromiumExperimentalPushConstant,
+    kChromiumInternalRelaxedUniformLayout,
     kF16,
 };
 
-/// @param out the std::ostream to write to
+/// @param out the stream to write to
 /// @param value the Extension
 /// @returns `out` so calls can be chained
-std::ostream& operator<<(std::ostream& out, Extension value);
+utils::StringStream& operator<<(utils::StringStream& out, Extension value);
 
 /// ParseExtension parses a Extension from a string.
 /// @param str the string to parse
@@ -51,11 +51,9 @@ std::ostream& operator<<(std::ostream& out, Extension value);
 Extension ParseExtension(std::string_view str);
 
 constexpr const char* kExtensionStrings[] = {
-    "chromium_disable_uniformity_analysis",
-    "chromium_experimental_dp4a",
-    "chromium_experimental_full_ptr_parameters",
-    "chromium_experimental_push_constant",
-    "f16",
+    "chromium_disable_uniformity_analysis",      "chromium_experimental_dp4a",
+    "chromium_experimental_full_ptr_parameters", "chromium_experimental_push_constant",
+    "chromium_internal_relaxed_uniform_layout",  "f16",
 };
 
 // A unique vector of extensions

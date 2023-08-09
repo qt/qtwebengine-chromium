@@ -14,13 +14,13 @@
 #include "include/private/SkPathRef.h"
 #include "include/private/base/SkFloatBits.h"
 #include "include/private/base/SkFloatingPoint.h"
+#include "include/private/base/SkMalloc.h"
 #include "include/private/base/SkPathEnums.h"
 #include "include/private/base/SkTArray.h"
 #include "include/private/base/SkTDArray.h"
-#include "src/base/SkVx.h"
-#include "include/private/base/SkMalloc.h"
 #include "include/private/base/SkTo.h"
 #include "src/base/SkTLazy.h"
+#include "src/base/SkVx.h"
 #include "src/core/SkCubicClipper.h"
 #include "src/core/SkEdgeClipper.h"
 #include "src/core/SkGeometry.h"
@@ -3478,12 +3478,7 @@ SkPath SkPath::Make(const SkPoint pts[], int pointCount,
         return SkPath();
     }
 
-    return SkPath(sk_sp<SkPathRef>(new SkPathRef(
-                                       SkPathRef::PointsArray(pts, info.points),
-                                       SkPathRef::VerbsArray(vbs, verbCount),
-                                       SkPathRef::ConicWeightsArray(ws, info.weights),
-                                                 info.segmentMask)),
-                  ft, isVolatile, SkPathConvexity::kUnknown, SkPathFirstDirection::kUnknown);
+    return MakeInternal(info, pts, vbs, verbCount, ws, ft, isVolatile);
 }
 
 SkPath SkPath::Rect(const SkRect& r, SkPathDirection dir, unsigned startIndex) {
@@ -3520,6 +3515,21 @@ SkPath SkPath::Polygon(const SkPoint pts[], int count, bool isClosed,
                           .setFillType(ft)
                           .setIsVolatile(isVolatile)
                           .detach();
+}
+
+SkPath SkPath::MakeInternal(const SkPathVerbAnalysis& analysis,
+                            const SkPoint points[],
+                            const uint8_t verbs[],
+                            int verbCount,
+                            const SkScalar conics[],
+                            SkPathFillType fillType,
+                            bool isVolatile) {
+  return SkPath(sk_sp<SkPathRef>(new SkPathRef(
+                                     SkPathRef::PointsArray(points, analysis.points),
+                                     SkPathRef::VerbsArray(verbs, verbCount),
+                                     SkPathRef::ConicWeightsArray(conics, analysis.weights),
+                                     analysis.segmentMask)),
+                fillType, isVolatile, SkPathConvexity::kUnknown, SkPathFirstDirection::kUnknown);
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////

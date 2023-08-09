@@ -194,10 +194,12 @@ export class NetworkPanel extends UI.Panel.Panel implements UI.ContextMenu.Provi
   private preserveLogSetting: Common.Settings.Setting<boolean>;
   recordLogSetting: Common.Settings.Setting<boolean>;
   private readonly throttlingSelect: UI.Toolbar.ToolbarComboBox;
+  private readonly displayScreenshotDelay: number;
 
-  constructor() {
+  constructor(displayScreenshotDelay: number) {
     super('network');
 
+    this.displayScreenshotDelay = displayScreenshotDelay;
     this.networkLogShowOverviewSetting =
         Common.Settings.Settings.instance().createSetting('networkLogShowOverview', true);
     this.networkLogLargeRowsSetting = Common.Settings.Settings.instance().createSetting('networkLogLargeRows', false);
@@ -268,7 +270,7 @@ export class NetworkPanel extends UI.Panel.Panel implements UI.ContextMenu.Provi
       splitWidget.hideSidebar();
       event.consume();
     });
-    const closeSidebar = new UI.Toolbar.ToolbarButton(i18nString(UIStrings.close), 'largeicon-delete');
+    const closeSidebar = new UI.Toolbar.ToolbarButton(i18nString(UIStrings.close), 'cross');
     closeSidebar.addEventListener(UI.Toolbar.ToolbarButton.Events.Click, () => splitWidget.hideSidebar());
     tabbedPane.rightToolbar().appendToolbarItem(closeSidebar);
     splitWidget.setSidebarWidget(tabbedPane);
@@ -317,10 +319,10 @@ export class NetworkPanel extends UI.Panel.Panel implements UI.ContextMenu.Provi
     this.updateUI();
 
     SDK.TargetManager.TargetManager.instance().addModelListener(
-        SDK.ResourceTreeModel.ResourceTreeModel, SDK.ResourceTreeModel.Events.WillReloadPage, this.willReloadPage,
-        this);
+        SDK.ResourceTreeModel.ResourceTreeModel, SDK.ResourceTreeModel.Events.WillReloadPage, this.willReloadPage, this,
+        {scoped: true});
     SDK.TargetManager.TargetManager.instance().addModelListener(
-        SDK.ResourceTreeModel.ResourceTreeModel, SDK.ResourceTreeModel.Events.Load, this.load, this);
+        SDK.ResourceTreeModel.ResourceTreeModel, SDK.ResourceTreeModel.Events.Load, this.load, this, {scoped: true});
     this.networkLogView.addEventListener(Events.RequestSelected, this.onRequestSelected, this);
     this.networkLogView.addEventListener(Events.RequestActivated, this.onRequestActivated, this);
     Logs.NetworkLog.NetworkLog.instance().addEventListener(
@@ -330,12 +332,12 @@ export class NetworkPanel extends UI.Panel.Panel implements UI.ContextMenu.Provi
     Logs.NetworkLog.NetworkLog.instance().addEventListener(Logs.NetworkLog.Events.Reset, this.onNetworkLogReset, this);
   }
 
-  static instance(opts: {
-    forceNew: boolean|null,
-  } = {forceNew: null}): NetworkPanel {
-    const {forceNew} = opts;
-    if (!networkPanelInstance || forceNew) {
-      networkPanelInstance = new NetworkPanel();
+  static instance(opts?: {
+    forceNew: boolean,
+    displayScreenshotDelay?: number,
+  }): NetworkPanel {
+    if (!networkPanelInstance || opts?.forceNew) {
+      networkPanelInstance = new NetworkPanel(opts?.displayScreenshotDelay ?? 1000);
     }
 
     return networkPanelInstance;
@@ -384,7 +386,7 @@ export class NetworkPanel extends UI.Panel.Panel implements UI.ContextMenu.Provi
   }
 
   private setupToolbarButtons(splitWidget: UI.SplitWidget.SplitWidget): void {
-    const searchToggle = new UI.Toolbar.ToolbarToggle(i18nString(UIStrings.search), 'largeicon-search');
+    const searchToggle = new UI.Toolbar.ToolbarToggle(i18nString(UIStrings.search), 'search');
     function updateSidebarToggle(): void {
       const isSidebarShowing = splitWidget.showMode() !== UI.SplitWidget.ShowMode.OnlyMain;
       searchToggle.setToggled(isSidebarShowing);
@@ -393,7 +395,7 @@ export class NetworkPanel extends UI.Panel.Panel implements UI.ContextMenu.Provi
       }
     }
     this.panelToolbar.appendToolbarItem(UI.Toolbar.Toolbar.createActionButton(this.toggleRecordAction));
-    const clearButton = new UI.Toolbar.ToolbarButton(i18nString(UIStrings.clear), 'largeicon-clear');
+    const clearButton = new UI.Toolbar.ToolbarButton(i18nString(UIStrings.clear), 'clear');
     clearButton.addEventListener(
         UI.Toolbar.ToolbarButton.Events.Click, () => Logs.NetworkLog.NetworkLog.instance().reset(true), this);
     this.panelToolbar.appendToolbarItem(clearButton);
@@ -421,10 +423,10 @@ export class NetworkPanel extends UI.Panel.Panel implements UI.ContextMenu.Provi
 
     const networkConditionsIcon = new IconButton.Icon.Icon();
     networkConditionsIcon.data = {
-      iconName: 'network_conditions_icon',
-      color: 'rgb(110 110 110)',
-      width: '18px',
-      height: '18px',
+      iconName: 'network-settings',
+      color: 'var(--icon-default)',
+      width: '20px',
+      height: '20px',
     };
     const networkConditionsButton =
         new UI.Toolbar.ToolbarButton(i18nString(UIStrings.moreNetworkConditions), networkConditionsIcon);
@@ -436,7 +438,7 @@ export class NetworkPanel extends UI.Panel.Panel implements UI.ContextMenu.Provi
     this.rightToolbar.appendToolbarItem(new UI.Toolbar.ToolbarItem(this.progressBarContainer));
     this.rightToolbar.appendSeparator();
     this.rightToolbar.appendToolbarItem(new UI.Toolbar.ToolbarSettingToggle(
-        this.showSettingsPaneSetting, 'largeicon-settings-gear', i18nString(UIStrings.networkSettings)));
+        this.showSettingsPaneSetting, 'gear', i18nString(UIStrings.networkSettings), 'gear-filled'));
 
     const settingsToolbarLeft = new UI.Toolbar.Toolbar('', this.settingsPane.element);
     settingsToolbarLeft.makeVertical();
@@ -457,11 +459,11 @@ export class NetworkPanel extends UI.Panel.Panel implements UI.ContextMenu.Provi
         i18nString(UIStrings.captureScreenshots)));
 
     this.panelToolbar.appendSeparator();
-    const importHarButton = new UI.Toolbar.ToolbarButton(i18nString(UIStrings.importHarFile), 'largeicon-load');
+    const importHarButton = new UI.Toolbar.ToolbarButton(i18nString(UIStrings.importHarFile), 'import');
     importHarButton.addEventListener(
         UI.Toolbar.ToolbarButton.Events.Click, () => this.fileSelectorElement.click(), this);
     this.panelToolbar.appendToolbarItem(importHarButton);
-    const exportHarButton = new UI.Toolbar.ToolbarButton(i18nString(UIStrings.exportHar), 'largeicon-download');
+    const exportHarButton = new UI.Toolbar.ToolbarButton(i18nString(UIStrings.exportHar), 'download');
     exportHarButton.addEventListener(UI.Toolbar.ToolbarButton.Events.Click, _event => {
       void this.networkLogView.exportAll();
     }, this);
@@ -535,7 +537,7 @@ export class NetworkPanel extends UI.Panel.Panel implements UI.ContextMenu.Provi
 
   private load(): void {
     if (this.filmStripRecorder && this.filmStripRecorder.isRecording()) {
-      this.pendingStopTimer = window.setTimeout(this.stopFilmStripRecording.bind(this), displayScreenshotDelay);
+      this.pendingStopTimer = window.setTimeout(this.stopFilmStripRecording.bind(this), this.displayScreenshotDelay);
     }
   }
 
@@ -596,11 +598,11 @@ export class NetworkPanel extends UI.Panel.Panel implements UI.ContextMenu.Provi
     }
   }
 
-  elementsToRestoreScrollPositionsFor(): Element[] {
+  override elementsToRestoreScrollPositionsFor(): Element[] {
     return this.networkLogView.elementsToRestoreScrollPositionsFor();
   }
 
-  wasShown(): void {
+  override wasShown(): void {
     UI.Context.Context.instance().setFlavor(NetworkPanel, this);
     this.registerCSSFiles([networkPanelStyles]);
 
@@ -608,7 +610,7 @@ export class NetworkPanel extends UI.Panel.Panel implements UI.ContextMenu.Provi
     Host.userMetrics.panelLoaded('network', 'DevTools.Launch.Network');
   }
 
-  willHide(): void {
+  override willHide(): void {
     UI.Context.Context.instance().setFlavor(NetworkPanel, null);
   }
 
@@ -792,8 +794,6 @@ export class NetworkPanel extends UI.Panel.Panel implements UI.ContextMenu.Provi
   }
 }
 
-export const displayScreenshotDelay = 1000;
-
 let contextMenuProviderInstance: ContextMenuProvider;
 
 export class ContextMenuProvider implements UI.ContextMenu.Provider {
@@ -927,15 +927,13 @@ export class FilmStripRecorder implements SDK.TracingManager.TracingManagerClien
   startRecording(): void {
     this.filmStripView.reset();
     this.filmStripView.setStatusText(i18nString(UIStrings.recordingFrames));
-    const tracingManagers = SDK.TargetManager.TargetManager.instance().models(SDK.TracingManager.TracingManager);
-    if (this.tracingManager || !tracingManagers.length) {
+    const tracingManager =
+        SDK.TargetManager.TargetManager.instance().scopeTarget()?.model(SDK.TracingManager.TracingManager);
+    if (this.tracingManager || !tracingManager) {
       return;
     }
 
-    this.tracingManager = tracingManagers[0];
-    if (!this.tracingManager) {
-      return;
-    }
+    this.tracingManager = tracingManager;
     this.resourceTreeModel = this.tracingManager.target().model(SDK.ResourceTreeModel.ResourceTreeModel);
     if (this.tracingModel) {
       this.tracingModel.dispose();
@@ -1066,7 +1064,7 @@ export class SearchNetworkView extends Search.SearchView.SearchView {
     return searchView;
   }
 
-  createScope(): Search.SearchConfig.SearchScope {
+  override createScope(): Search.SearchConfig.SearchScope {
     return new NetworkSearchScope();
   }
 }

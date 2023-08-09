@@ -109,6 +109,13 @@ luci.console_view(
     repo = REPO_URL,
 )
 
+_reclient = struct(
+    instance = struct(
+        DEFAULT_TRUSTED = "rbe-chromium-trusted",
+        DEFAULT_UNTRUSTED = "rbe-chromium-untrusted",
+    ),
+)
+
 def get_properties(
         is_release = False,
         is_gcc = False,
@@ -119,9 +126,11 @@ def get_properties(
         target_cpu = "x64",
         cast_standalone = False,
         chromium = False,
-        use_goma = True,
+        use_remoteexec = True,
+        reclient_instance = None,
         use_ats = True,
-        is_presubmit = False):
+        is_presubmit = False,
+        is_ci = None):
     """Property generator method, used to configure the build system.
 
     Args:
@@ -137,9 +146,12 @@ def get_properties(
       cast_standalone: if True, this build should include the cast standalone
         sender and receiver libraries.
       chromium: if True, the build is for use in an embedder, such as Chrome.
-      use_goma: if True, the build will run using Goma.
+      use_remoteexec: if True, the build will run using remote build execution.
+      reclient_instance: a string indicating the GCP project hosting the RBE
+        instance for re-client to use.
       use_ats: if True, we should build using ATS.
       is_presubmit: if True, this is a presubmit run.
+      is_ci: If set, it adds is_ci flag to the properties.
 
     Returns:
         A collection of GN properties for the build system.
@@ -173,7 +185,7 @@ def get_properties(
         properties["cast_allow_developer_certificate"] = True
     if chromium:
         properties["builder_group"] = "client.openscreen.chromium"
-    if use_goma:
+    if use_remoteexec:
         properties["$build/goma"] = {
             "server_host": "goma.chromium.org",
             "rpc_extra_params": "?prod",
@@ -181,11 +193,20 @@ def get_properties(
         }
         if use_ats:
             properties["$build/goma"]["enable_ats"] = True
+        if reclient_instance:
+            properties["$build/reclient"] = {
+                "instance": reclient_instance,
+                "metrics_project": "chromium-reclient-metrics",
+                "scandeps_server": True,
+            }
     else:
         properties["use_goma"] = False
     if is_presubmit:
         properties["repo_name"] = "openscreen"
         properties["runhooks"] = "true"
+
+    if is_ci:
+        properties["is_ci"] = is_ci
     return properties
 
 def builder(builder_type, name, properties, os, cpu):
@@ -301,7 +322,7 @@ def try_and_ci_builders(name, properties, os = "Ubuntu-18.04", cpu = "x86-64"):
 # BUILDER CONFIGURATIONS
 try_builder(
     "openscreen_presubmit",
-    get_properties(is_presubmit = True, is_release = True, use_goma = False),
+    get_properties(is_presubmit = True, is_release = True, use_remoteexec = False),
 )
 try_and_ci_builders(
     "linux_arm64_cast_debug",
@@ -311,7 +332,7 @@ try_and_ci_builders("linux64_coverage_debug", get_properties(use_coverage = True
 try_and_ci_builders("linux64_debug", get_properties(is_asan = True))
 try_and_ci_builders(
     "linux64_gcc_debug",
-    get_properties(is_gcc = True, use_goma = False),
+    get_properties(is_gcc = True, use_remoteexec = False),
 )
 try_and_ci_builders(
     "linux64_tsan",
@@ -322,9 +343,38 @@ try_and_ci_builders(
     get_properties(target_cpu = "arm64", sysroot_platform = "bullseye"),
 )
 try_and_ci_builders("mac_debug", get_properties(use_ats = False), os = MAC_VERSION)
-try_and_ci_builders("chromium_linux64_debug", get_properties(chromium = True))
-try_and_ci_builders(
+
+try_builder(
+    "chromium_linux64_debug",
+    get_properties(chromium = True, reclient_instance = _reclient.instance.DEFAULT_UNTRUSTED),
+)
+
+ci_builder(
+    "chromium_linux64_debug",
+    get_properties(
+        chromium = True,
+        is_ci = True,
+        reclient_instance = _reclient.instance.DEFAULT_TRUSTED,
+    ),
+)
+
+try_builder(
     "chromium_mac_debug",
-    get_properties(chromium = True, use_ats = False),
+    get_properties(
+        chromium = True,
+        use_ats = False,
+        reclient_instance = _reclient.instance.DEFAULT_UNTRUSTED,
+    ),
+    os = MAC_VERSION,
+)
+
+ci_builder(
+    "chromium_mac_debug",
+    get_properties(
+        chromium = True,
+        use_ats = False,
+        is_ci = True,
+        reclient_instance = _reclient.instance.DEFAULT_TRUSTED,
+    ),
     os = MAC_VERSION,
 )

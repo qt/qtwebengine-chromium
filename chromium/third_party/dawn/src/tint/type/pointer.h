@@ -24,7 +24,7 @@
 namespace tint::type {
 
 /// A pointer type.
-class Pointer final : public Castable<Pointer, Type> {
+class Pointer final : public utils::Castable<Pointer, Type> {
   public:
     /// Constructor
     /// @param subtype the pointee type
@@ -48,10 +48,9 @@ class Pointer final : public Castable<Pointer, Type> {
     /// @returns the access control of the reference
     builtin::Access Access() const { return access_; }
 
-    /// @param symbols the program's symbol table
     /// @returns the name for this type that closely resembles how it would be
     /// declared in WGSL.
-    std::string FriendlyName(const SymbolTable& symbols) const override;
+    std::string FriendlyName() const override;
 
     /// @param ctx the clone context
     /// @returns a clone of this type

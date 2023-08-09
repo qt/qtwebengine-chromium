@@ -218,6 +218,22 @@ export class UserMetrics {
         EnumeratedHistogram.DeveloperResourceScheme, developerResourceScheme, DeveloperResourceScheme.MaxValue);
   }
 
+  inlineScriptParsed(inlineScriptType: VMInlineScriptType): void {
+    if (inlineScriptType >= VMInlineScriptType.MaxValue) {
+      return;
+    }
+    InspectorFrontendHostInstance.recordEnumeratedHistogram(
+        EnumeratedHistogram.InlineScriptParsed, inlineScriptType, VMInlineScriptType.MaxValue);
+  }
+
+  vmInlineScriptContentShown(inlineScriptType: VMInlineScriptType): void {
+    if (inlineScriptType >= VMInlineScriptType.MaxValue) {
+      return;
+    }
+    InspectorFrontendHostInstance.recordEnumeratedHistogram(
+        EnumeratedHistogram.VMInlineScriptTypeShown, inlineScriptType, VMInlineScriptType.MaxValue);
+  }
+
   linearMemoryInspectorRevealedFrom(linearMemoryInspectorRevealedFrom: LinearMemoryInspectorRevealedFrom): void {
     if (linearMemoryInspectorRevealedFrom >= LinearMemoryInspectorRevealedFrom.MaxValue) {
       return;
@@ -258,6 +274,11 @@ export class UserMetrics {
       InspectorFrontendHostInstance.recordEnumeratedHistogram(
           EnumeratedHistogram.SyncSetting, settingValue, SyncSetting.MaxValue);
     });
+  }
+
+  recordingAssertion(value: RecordingAssertion): void {
+    InspectorFrontendHostInstance.recordEnumeratedHistogram(
+        EnumeratedHistogram.RecordingAssertion, value, RecordingAssertion.MaxValue);
   }
 
   recordingToggled(value: RecordingToggled): void {
@@ -414,7 +435,21 @@ export enum Action {
   CaptureTestProtocolClicked = 57,
   BreakpointRemovedFromRemoveButton = 58,
   BreakpointGroupExpandedStateChanged = 59,
-  MaxValue = 60,
+  HeaderOverrideFileCreated = 60,
+  HeaderOverrideEnableEditingClicked = 61,
+  HeaderOverrideHeaderAdded = 62,
+  HeaderOverrideHeaderEdited = 63,
+  HeaderOverrideHeaderRemoved = 64,
+  HeaderOverrideHeadersFileEdited = 65,
+  PersistenceNetworkOverridesEnabled = 66,
+  PersistenceNetworkOverridesDisabled = 67,
+  BreakpointRemovedFromContextMenu = 68,
+  BreakpointsInFileRemovedFromRemoveButton = 69,
+  BreakpointsInFileRemovedFromContextMenu = 70,
+  BreakpointsInFileCheckboxToggled = 71,
+  BreakpointsInFileEnabledDisabledFromContextMenu = 72,
+  BreakpointConditionEditedFromSidebar = 73,
+  MaxValue = 74,
 }
 
 /* eslint-disable @typescript-eslint/naming-convention */
@@ -696,11 +731,9 @@ export enum DevtoolsExperiments {
   'applyCustomStylesheet' = 0,
   'captureNodeCreationStacks' = 1,
   'sourcesPrettyPrint' = 2,
-  'inputEventsOnTimelineOverview' = 10,
   'liveHeapProfile' = 11,
   'protocolMonitor' = 13,
   'developerResourcesView' = 15,
-  'recordCoverageWithPerformanceTracing' = 16,
   'samplingHeapProfilerTimeline' = 17,
   'showOptionToExposeInternalsInHeapSnapshot' = 18,
   'sourceOrderViewer' = 20,
@@ -709,7 +742,6 @@ export enum DevtoolsExperiments {
   'timelineInvalidationTracking' = 26,
   'timelineShowAllEvents' = 27,
   'timelineV8RuntimeCallStats' = 28,
-  'timelineReplayEvent' = 30,
   'wasmDWARFDebugging' = 31,
   'dualScreenSupport' = 32,
   'keyboardShortcutEditor' = 35,
@@ -720,7 +752,6 @@ export enum DevtoolsExperiments {
   'ignoreListJSFramesOnTimeline' = 43,
   'contrastIssues' = 44,
   'experimentalCookieFeatures' = 45,
-  'groupAndHideIssuesByKind' = 51,
   'cssTypeComponentLength' = 52,
   'preciseChanges' = 53,
   'bfcacheDisplayTree' = 54,
@@ -729,17 +760,18 @@ export enum DevtoolsExperiments {
   'evaluateExpressionsWithSourceMaps' = 58,
   'eyedropperColorPicker' = 60,
   'instrumentationBreakpoints' = 61,
-  'cssAuthoringHints' = 62,
   'authoredDeployedGrouping' = 63,
   'importantDOMProperties' = 64,
   'justMyCode' = 65,
-  'breakpointView' = 66,
   'timelineAsConsoleProfileResultPanel' = 67,
   'preloadingStatusPanel' = 68,
   'disableColorFormatSetting' = 69,
-  'timelineDoNotSkipSystemNodesOfCpuProfile' = 70,
+  'outermostTargetSelector' = 71,
+  'jsProfilerTemporarilyEnable' = 72,
+  'highlightErrorsElementsPanel' = 73,
+
   // Increment this when new experiments are added.
-  'MaxValue' = 71,
+  'MaxValue' = 74,
 }
 /* eslint-enable @typescript-eslint/naming-convention */
 
@@ -755,7 +787,8 @@ export const enum BreakpointEditDialogRevealedFrom {
   BreakpointMarkerContextMenu = 2,
   LineGutterContextMenu = 3,
   KeyboardShortcut = 4,
-  MaxValue = 5,
+  Linkifier = 5,
+  MaxValue = 6,
 }
 
 export const enum ColorConvertedFrom {
@@ -786,7 +819,8 @@ export enum IssueExpanded {
   HeavyAd = 3,
   ContentSecurityPolicy = 4,
   Other = 5,
-  MaxValue = 6,
+  Generic = 6,
+  MaxValue = 7,
 }
 
 // TODO(crbug.com/1167717): Make this a const enum again
@@ -877,7 +911,19 @@ export enum IssueCreated {
   'ClientHintIssue::MetaTagAllowListInvalidOrigin' = 61,
   'ClientHintIssue::MetaTagModifiedHTML' = 62,
   'CorsIssue::PreflightAllowPrivateNetworkError' = 63,
-  MaxValue = 64,
+  'GenericIssue::CrossOriginPortalPostMessageError' = 64,
+  'GenericIssue::FormLabelForNameError' = 65,
+  'GenericIssue::FormDuplicateIdForInputError' = 66,
+  'GenericIssue::FormInputWithNoLabelError' = 67,
+  'GenericIssue::FormAutocompleteAttributeEmptyError' = 68,
+  'GenericIssue::FormEmptyIdAndNameAttributesForInputError' = 69,
+  'GenericIssue::FormAriaLabelledByToNonExistingId' = 70,
+  'GenericIssue::FormInputAssignedAutocompleteValueToIdOrNameAttributeError' = 71,
+  'GenericIssue::FormLabelHasNeitherForNorNestedInput' = 72,
+  'GenericIssue::FormLabelForMatchesNonExistingIdError' = 73,
+  'GenericIssue::FormHasPasswordFieldWithoutUsernameFieldError' = 74,
+  'GenericIssue::FormInputHasWrongButWellIntendedAutocompleteValueError' = 75,
+  MaxValue = 76,
 }
 
 // TODO(crbug.com/1167717): Make this a const enum again
@@ -926,6 +972,12 @@ export enum LinearMemoryInspectorTarget {
   TypedArray = 3,
   WebAssemblyMemory = 4,
   MaxValue = 5,
+}
+
+export const enum VMInlineScriptType {
+  MODULE_SCRIPT = 0,
+  CLASSIC_SCRIPT = 1,
+  MaxValue = 2,
 }
 
 /* eslint-disable @typescript-eslint/naming-convention */
@@ -1034,6 +1086,15 @@ export enum RecordingToggled {
   RecordingStarted = 1,
   RecordingFinished = 2,
   MaxValue = 3,
+}
+
+// TODO(crbug.com/1167717): Make this a const enum again
+// eslint-disable-next-line rulesdir/const_enum
+export enum RecordingAssertion {
+  AssertionAdded = 1,
+  PropertyAssertionEdited = 2,
+  AttributeAssertionEdited = 3,
+  MaxValue = 4,
 }
 
 // TODO(crbug.com/1167717): Make this a const enum again
@@ -1167,7 +1228,8 @@ export enum CSSHintType {
   ZIndex = 10,
   Sizing = 11,
   FlexOrGridItem = 12,
-  MaxValue = 13,
+  FontVariationSettings = 13,
+  MaxValue = 14,
 }
 
 // TODO(crbug.com/1167717): Make this a const enum again

@@ -374,17 +374,6 @@ VARIANCE_WXH_NEON(128, 128, 14)
 
 #undef VARIANCE_WXH_NEON
 
-void aom_get8x8var_neon(const uint8_t *src, int src_stride, const uint8_t *ref,
-                        int ref_stride, unsigned int *sse, int *sum) {
-  variance_8xh_neon(src, src_stride, ref, ref_stride, 8, sse, sum);
-}
-
-void aom_get16x16var_neon(const uint8_t *src, int src_stride,
-                          const uint8_t *ref, int ref_stride, unsigned int *sse,
-                          int *sum) {
-  variance_16xh_neon(src, src_stride, ref, ref_stride, 16, sse, sum);
-}
-
 // TODO(yunqingwang): Perform variance of two/four 8x8 blocks similar to that of
 // AVX2. Also, implement the NEON for variance computation present in this
 // function.
@@ -474,18 +463,6 @@ static INLINE unsigned int mse16xh_neon(const uint8_t *src, int src_stride,
 
   *sse = horizontal_add_u32x4(vaddq_u32(sse_u32[0], sse_u32[1]));
   return horizontal_add_u32x4(vaddq_u32(sse_u32[0], sse_u32[1]));
-}
-
-unsigned int aom_get4x4sse_cs_neon(const uint8_t *src, int src_stride,
-                                   const uint8_t *ref, int ref_stride) {
-  uint8x16_t s = load_unaligned_u8q(src, src_stride);
-  uint8x16_t r = load_unaligned_u8q(ref, ref_stride);
-
-  uint8x16_t abs_diff = vabdq_u8(s, r);
-
-  uint32x4_t sse = vdotq_u32(vdupq_n_u32(0), abs_diff, abs_diff);
-
-  return horizontal_add_u32x4(sse);
 }
 
 #else  // !defined(__ARM_FEATURE_DOTPROD)
@@ -585,40 +562,6 @@ static INLINE unsigned int mse16xh_neon(const uint8_t *src, int src_stride,
 
   *sse = horizontal_add_u32x4(vreinterpretq_u32_s32(sse_s32[0]));
   return horizontal_add_u32x4(vreinterpretq_u32_s32(sse_s32[0]));
-}
-
-unsigned int aom_get4x4sse_cs_neon(const uint8_t *src, int src_stride,
-                                   const uint8_t *ref, int ref_stride) {
-  uint8x8_t s[4], r[4];
-  int16x4_t diff[4];
-  int32x4_t sse;
-
-  s[0] = vld1_u8(src);
-  src += src_stride;
-  r[0] = vld1_u8(ref);
-  ref += ref_stride;
-  s[1] = vld1_u8(src);
-  src += src_stride;
-  r[1] = vld1_u8(ref);
-  ref += ref_stride;
-  s[2] = vld1_u8(src);
-  src += src_stride;
-  r[2] = vld1_u8(ref);
-  ref += ref_stride;
-  s[3] = vld1_u8(src);
-  r[3] = vld1_u8(ref);
-
-  diff[0] = vget_low_s16(vreinterpretq_s16_u16(vsubl_u8(s[0], r[0])));
-  diff[1] = vget_low_s16(vreinterpretq_s16_u16(vsubl_u8(s[1], r[1])));
-  diff[2] = vget_low_s16(vreinterpretq_s16_u16(vsubl_u8(s[2], r[2])));
-  diff[3] = vget_low_s16(vreinterpretq_s16_u16(vsubl_u8(s[3], r[3])));
-
-  sse = vmull_s16(diff[0], diff[0]);
-  sse = vmlal_s16(sse, diff[1], diff[1]);
-  sse = vmlal_s16(sse, diff[2], diff[2]);
-  sse = vmlal_s16(sse, diff[3], diff[3]);
-
-  return horizontal_add_u32x4(vreinterpretq_u32_s32(sse));
 }
 
 #endif  // defined(__ARM_FEATURE_DOTPROD)

@@ -616,6 +616,10 @@ typedef struct VkLayerDispatchTable_ {
     PFN_vkGetPipelineExecutableStatisticsKHR GetPipelineExecutableStatisticsKHR;
     PFN_vkGetPipelineExecutableInternalRepresentationsKHR GetPipelineExecutableInternalRepresentationsKHR;
 
+    // ---- VK_KHR_map_memory2 extension commands
+    PFN_vkMapMemory2KHR MapMemory2KHR;
+    PFN_vkUnmapMemory2KHR UnmapMemory2KHR;
+
     // ---- VK_KHR_video_encode_queue extension commands
 #ifdef VK_ENABLE_BETA_EXTENSIONS
     PFN_vkCmdEncodeVideoKHR CmdEncodeVideoKHR;
@@ -704,6 +708,8 @@ typedef struct VkLayerDispatchTable_ {
 
     // ---- VK_EXT_discard_rectangles extension commands
     PFN_vkCmdSetDiscardRectangleEXT CmdSetDiscardRectangleEXT;
+    PFN_vkCmdSetDiscardRectangleEnableEXT CmdSetDiscardRectangleEnableEXT;
+    PFN_vkCmdSetDiscardRectangleModeEXT CmdSetDiscardRectangleModeEXT;
 
     // ---- VK_EXT_hdr_metadata extension commands
     PFN_vkSetHdrMetadataEXT SetHdrMetadataEXT;
@@ -773,6 +779,7 @@ typedef struct VkLayerDispatchTable_ {
     PFN_vkCmdDrawMeshTasksIndirectCountNV CmdDrawMeshTasksIndirectCountNV;
 
     // ---- VK_NV_scissor_exclusive extension commands
+    PFN_vkCmdSetExclusiveScissorEnableNV CmdSetExclusiveScissorEnableNV;
     PFN_vkCmdSetExclusiveScissorNV CmdSetExclusiveScissorNV;
 
     // ---- VK_NV_device_diagnostic_checkpoints extension commands
@@ -1011,6 +1018,12 @@ typedef struct VkLayerDispatchTable_ {
     PFN_vkDestroyOpticalFlowSessionNV DestroyOpticalFlowSessionNV;
     PFN_vkBindOpticalFlowSessionImageNV BindOpticalFlowSessionImageNV;
     PFN_vkCmdOpticalFlowExecuteNV CmdOpticalFlowExecuteNV;
+
+    // ---- VK_EXT_shader_object extension commands
+    PFN_vkCreateShadersEXT CreateShadersEXT;
+    PFN_vkDestroyShaderEXT DestroyShaderEXT;
+    PFN_vkGetShaderBinaryDataEXT GetShaderBinaryDataEXT;
+    PFN_vkCmdBindShadersEXT CmdBindShadersEXT;
 
     // ---- VK_QCOM_tile_properties extension commands
     PFN_vkGetFramebufferTilePropertiesQCOM GetFramebufferTilePropertiesQCOM;

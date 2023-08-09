@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import abc
+import collections.abc
 import ctypes
 import datetime as dt
 import json
@@ -33,7 +34,6 @@ import psutil
 if not hasattr(shlex, "join"):
   raise Exception("Please update to python v3.8 that has shlex.join")
 
-
 class TTYColor:
   CYAN = "\033[1;36;6m"
   PURPLE = "\033[1;35;5m"
@@ -58,10 +58,10 @@ class ColoredLogFormatter(logging.Formatter):
       logging.INFO: TTYColor.GREEN + FORMAT + TTYColor.RESET,
       logging.WARNING: TTYColor.YELLOW + FORMAT + TTYColor.RESET,
       logging.ERROR: TTYColor.RED + FORMAT + TTYColor.RESET,
-      logging.CRITICAL: TTYColor.BOLD + TTYColor.RED + FORMAT + TTYColor.RESET,
+      logging.CRITICAL: TTYColor.BOLD + FORMAT + TTYColor.RESET,
   }
 
-  def format(self, record):
+  def format(self, record: logging.LogRecord) -> str:
     log_fmt = self.FORMATS.get(record.levelno)
     formatter = logging.Formatter(log_fmt)
     return formatter.format(record)
@@ -146,6 +146,31 @@ def get_file_size(file: pathlib.Path, digits: int = 2) -> str:
   return f"{size:.{digits}f} {SIZE_UNITS[unit_index]}"
 
 
+class Environ(collections.abc.MutableMapping, metaclass=abc.ABCMeta):
+  pass
+
+
+class LocalEnviron(Environ):
+
+  def __init__(self) -> None:
+    self._environ = os.environ
+
+  def __getitem__(self, key: str) -> str:
+    return self._environ.__getitem__(key)
+
+  def __setitem__(self, key: str, item: str) -> None:
+    self._environ.__setitem__(key, item)
+
+  def __delitem__(self, key: str) -> None:
+    self._environ.__delitem__(key)
+
+  def __iter__(self) -> Iterator[str]:
+    return self._environ.__iter__()
+
+  def __len__(self) -> int:
+    return self._environ.__len__()
+
+
 class Platform(abc.ABC):
 
   @property
@@ -190,13 +215,18 @@ class Platform(abc.ABC):
     return False
 
   @property
+  def environ(self) -> Environ:
+    assert not self.is_remote, "Not implemented yet on remote"
+    return LocalEnviron()
+
+  @property
   def is_battery_powered(self) -> bool:
     if not psutil.sensors_battery:
       return False
     status = psutil.sensors_battery()
     if not status:
       return False
-    return status.power_plugged
+    return not status.power_plugged
 
   def search_app(self, app_path: pathlib.Path) -> Optional[pathlib.Path]:
     return self.search_binary(app_path)
@@ -221,12 +251,16 @@ class Platform(abc.ABC):
     logging.debug("WAIT %ss", seconds)
     time.sleep(seconds)
 
-  def which(self, binary):
+  def which(self, binary_name: str) -> Optional[pathlib.Path]:
     # TODO(cbruni): support remote platforms
-    return shutil.which(binary)
+    result = shutil.which(binary_name)
+    if not result:
+      return None
+    return pathlib.Path(result)
 
   def processes(self,
                 attrs: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+    # TODO(cbruni): support remote platforms
     assert not self.is_remote, "Only local platform supported"
     return [
         p.info  # pytype: disable=attribute-error
@@ -234,6 +268,7 @@ class Platform(abc.ABC):
     ]
 
   def process_running(self, process_name_list: List[str]) -> Optional[str]:
+    # TODO(cbruni): support remote platforms
     for proc in psutil.process_iter():
       try:
         if proc.name().lower() in process_name_list:
@@ -244,13 +279,29 @@ class Platform(abc.ABC):
 
   def process_children(self, parent_pid: int,
                        recursive: bool = False) -> List[Dict[str, Any]]:
-    return [
-        p.as_dict()
-        for p in psutil.Process(parent_pid).children(recursive=recursive)
-    ]
+    # TODO(cbruni): support remote platforms
+    try:
+      process = psutil.Process(parent_pid)
+    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+      return []
+    return [p.as_dict() for p in process.children(recursive=recursive)]
+
+  def process_info(self, pid: int) -> Optional[Dict[str, Any]]:
+    # TODO(cbruni): support remote platforms
+    try:
+      return psutil.Process(pid).as_dict()
+    except psutil.NoSuchProcess:
+      return None
 
   def foreground_process(self) -> Optional[Dict[str, Any]]:
     return None
+
+  def terminate(self, proc_pid: int) -> None:
+    # TODO(cbruni): support remote platforms
+    process = psutil.Process(proc_pid)
+    for proc in process.children(recursive=True):
+      proc.terminate()
+    process.terminate()
 
   def sh_stdout(self,
                 *args,
@@ -305,14 +356,8 @@ class Platform(abc.ABC):
       raise SubprocessError(process)
     return process
 
-  def exec_apple_script(self, script: str, quiet: bool = False):
+  def exec_apple_script(self, script: str):
     raise NotImplementedError("AppleScript is only available on MacOS")
-
-  def terminate(self, proc_pid: int) -> None:
-    process = psutil.Process(proc_pid)
-    for proc in process.children(recursive=True):
-      proc.terminate()
-    process.terminate()
 
   def log(self, *messages: Any, level: int = 2) -> None:
     message_str = " ".join(map(str, messages))
@@ -422,7 +467,7 @@ class Platform(abc.ABC):
 class SubprocessError(subprocess.CalledProcessError):
   """ Custom version that also prints stderr for debugging"""
 
-  def __init__(self, process):
+  def __init__(self, process) -> None:
     super().__init__(process.returncode, shlex.join(map(str, process.args)),
                      process.stdout, process.stderr)
 
@@ -568,10 +613,12 @@ class MacOSPlatform(PosixPlatform):
         logging.debug("Could not use --version: %s", e)
     raise ValueError(f"Could not extract app version: {app_path}")
 
-  def exec_apple_script(self, script: str, quiet: bool = False):
-    if not quiet:
-      logging.debug("AppleScript: %s", script)
-    return self.sh("/usr/bin/osascript", "-e", script)
+  def exec_apple_script(self, script: str, *args: str) -> str:
+    if args:
+      script = f"""on run argv
+        {script.strip()}
+      end run"""
+    return self.sh_stdout("/usr/bin/osascript", "-e", script, *args)
 
   def foreground_process(self) -> Optional[Dict[str, Any]]:
     foreground_process_info = self.sh_stdout("lsappinfo", "front").strip()
@@ -647,7 +694,7 @@ class MacOSPlatform(PosixPlatform):
     self.sh("sudo", falconctl, "unload")
     return True
 
-  def _get_display_service(self):
+  def _get_display_service(self) -> Tuple:
     core_graphics = ctypes.CDLL(
         "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")
     main_display = core_graphics.CGMainDisplayID()
@@ -788,9 +835,10 @@ def search_app_or_executable(name: str,
 
 def urlopen(url: str):
   try:
+    logging.debug("Opening url: %s", url)
     return urllib.request.urlopen(url)
   except urllib.error.HTTPError as e:
-    log(f"Could not load url={url}")
+    logging.info("Could not load url=%s", url)
     raise e
 
 
@@ -799,15 +847,16 @@ def urlopen(url: str):
 
 class ChangeCWD:
 
-  def __init__(self, destination: pathlib.Path):
+  def __init__(self, destination: pathlib.Path) -> None:
     self.new_dir = destination
     self.prev_dir: Optional[str] = None
 
-  def __enter__(self):
+  def __enter__(self) -> None:
     self.prev_dir = os.getcwd()
     os.chdir(self.new_dir)
 
-  def __exit__(self, exc_type, exc_value, exc_traceback):
+  def __exit__(self, exc_type, exc_value, exc_traceback) -> None:
+    assert self.prev_dir, "ChangeCWD was not entered correctly."
     os.chdir(self.prev_dir)
 
 
@@ -816,15 +865,15 @@ class SystemSleepPreventer:
   Prevent the system from going to sleep while running the benchmark.
   """
 
-  def __init__(self):
+  def __init__(self) -> None:
     self._process = None
 
-  def __enter__(self):
+  def __enter__(self) -> None:
     if platform.is_macos:
       self._process = platform.popen("caffeinate", "-imdsu")
     # TODO: Add linux support
 
-  def __exit__(self, exc_type, exc_value, exc_traceback):
+  def __exit__(self, exc_type, exc_value, exc_traceback) -> None:
     if self._process is not None:
       self._process.kill()
 
@@ -834,7 +883,7 @@ class TimeScope:
   Measures and logs the time spend during the lifetime of the TimeScope.
   """
 
-  def __init__(self, message: str, level: int = 3):
+  def __init__(self, message: str, level: int = 3) -> None:
     self._message = message
     self._level = level
     self._start: Optional[dt.datetime] = None
@@ -843,10 +892,11 @@ class TimeScope:
   def message(self) -> str:
     return self._message
 
-  def __enter__(self):
+  def __enter__(self) -> TimeScope:
     self._start = dt.datetime.now()
+    return self
 
-  def __exit__(self, exc_type, exc_value, exc_traceback):
+  def __exit__(self, exc_type, exc_value, exc_traceback) -> None:
     assert self._start
     diff = dt.datetime.now() - self._start
     log(f"{self._message} duration={diff}", level=self._level)
@@ -863,7 +913,8 @@ class WaitRange:
       timeout: Union[float, dt.timedelta] = 10,
       factor: float = 1.01,
       max: Optional[Union[float, dt.timedelta]] = None,  # pylint: disable=redefined-builtin
-      max_iterations: Optional[int] = None):
+      max_iterations: Optional[int] = None
+  ) -> None:
     if isinstance(min, dt.timedelta):
       self.min = min
     else:
@@ -910,27 +961,29 @@ def wait_with_backoff(wait_range: WaitRange) -> Iterator[Tuple[float, float]]:
     platform.sleep(sleep_for.total_seconds())
 
 
+class DurationMeasureContext:
+
+  def __init__(self, durations: Durations, name: str) -> None:
+    self._start_time = None
+    self._durations = durations
+    self._name = name
+
+  def __enter__(self) -> DurationMeasureContext:
+    self._start_time = dt.datetime.now()
+    return self
+
+  def __exit__(self, exc_type, exc_value, traceback) -> None:
+    assert self._start_time
+    delta = dt.datetime.now() - self._start_time
+    self._durations[self._name] = delta
+
+
 class Durations:
   """
   Helper object to track durations.
   """
 
-  class _DurationMeasureContext:
-
-    def __init__(self, durations: Durations, name: str):
-      self._start_time = None
-      self._durations = durations
-      self._name = name
-
-    def __enter__(self):
-      self._start_time = dt.datetime.now()
-
-    def __exit__(self, exc_type, exc_value, traceback):
-      assert self._start_time
-      delta = dt.datetime.now() - self._start_time
-      self._durations[self._name] = delta
-
-  def __init__(self):
+  def __init__(self) -> None:
     self._durations: Dict[str, dt.timedelta] = {}
 
   def __getitem__(self, name: str) -> dt.timedelta:
@@ -943,10 +996,10 @@ class Durations:
   def __len__(self) -> int:
     return len(self._durations)
 
-  def measure(self, name: str) -> _DurationMeasureContext:
+  def measure(self, name: str) -> DurationMeasureContext:
     assert name not in self._durations, (
         f"Cannot measure '{name}' duration twice!")
-    return self._DurationMeasureContext(self, name)
+    return DurationMeasureContext(self, name)
 
   def to_json(self) -> Dict[str, float]:
     return {
@@ -964,18 +1017,18 @@ def wrap_lines(body: str, width: int = 80, indent: str = "") -> Iterable[str]:
 class Spinner:
   CURSORS = "◐◓◑◒"
 
-  def __init__(self, sleep: float = 0.5):
+  def __init__(self, sleep: float = 0.5) -> None:
     self._is_running = False
     self._sleep_time = sleep
 
-  def __enter__(self):
+  def __enter__(self) -> None:
     # Only enable the spinner if the output is an interactive terminal.
     is_atty = hasattr(sys.stdout, "isatty") and sys.stdout.isatty()
     if is_atty:
       self._is_running = True
       threading.Thread(target=self._spin).start()
 
-  def __exit__(self, exc_type, exc_value, traceback):
+  def __exit__(self, exc_type, exc_value, traceback) -> None:
     if self._is_running:
       self._is_running = False
       self._sleep()

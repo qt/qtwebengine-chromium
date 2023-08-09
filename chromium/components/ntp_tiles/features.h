@@ -9,24 +9,16 @@
 
 namespace ntp_tiles {
 
-// Experiment groups for the new tab page retention experiments.
-enum class NewTabPageRetentionExperimentBehavior {
-  // Default popular sites.
+// Experiment groups for the new tab page field trial experiments.
+enum class NewTabPageFieldTrialExperimentBehavior {
+  // Default.
   kDefault = 0,
-  // Sites with popular, native iOS apps are included in the default popular
-  // sites suggestions.
-  kPopularSitesIncludePopularApps = 1,
-  // Sites with popular, native iOS apps are excluded from the default popular
-  // sites suggestions.
-  kPopularSitesExcludePopularApps = 2,
-  // Control population for popular apps experiment.
-  kPopularSitesControl = 3,
   // Hides all NTP tiles for new users.
-  kTileAblationHideAll = 4,
+  kTileAblationHideAll = 1,
   // Hides most visited tiles for new users.
-  kTileAblationHideMVTOnly = 5,
+  kTileAblationHideMVTOnly = 2,
   // Control group for tile ablation.
-  kTileAblationControl = 6,
+  kTileAblationControl = 3,
 };
 
 // Name of the field trial to configure PopularSites.
@@ -44,20 +36,20 @@ BASE_DECLARE_FEATURE(kNtpMostLikelyFaviconsFromServerFeature);
 // If this feature is enabled, we enable popular sites in the suggestions UI.
 BASE_DECLARE_FEATURE(kUsePopularSitesSuggestions);
 
-// Feature flag to enable new tab page retention experiment on IOS.
-// Use `GetDefaultNTPRetentionExperimentType()` instead of this
+// Feature flag to enable new tab page field trial experiment on IOS.
+// Use `GetNewTabPageFieldTrialExperimentType()` instead of this
 // constant directly.
-BASE_DECLARE_FEATURE(kNewTabPageRetention);
+BASE_DECLARE_FEATURE(kNewTabPageFieldTrial);
 
-// Feature name for the NTP retention field trial.
-extern const char kNewTabPageRetentionName[];
+// Feature name for the NTP field trial.
+extern const char kNewTabPageFieldTrialName[];
 
-// Feature parameters for the new tab page retention experiment.
-extern const char kNewTabPageRetentionParam[];
+// Feature parameters for the new tab page experiment.
+extern const char kNewTabPageFieldTrialParam[];
 
-// Returns the currently enabled NTP retention experiment type. If none are
+// Returns the currently enabled NTP field trial experiment type. If none are
 // enabled, returns the default value.
-NewTabPageRetentionExperimentBehavior GetNewTabPageRetentionExperimentType();
+NewTabPageFieldTrialExperimentBehavior GetNewTabPageFieldTrialExperimentType();
 
 }  // namespace ntp_tiles
 

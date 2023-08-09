@@ -57,6 +57,7 @@ const char kIsNoiseCancellationSupported[] = "IsNoiseCancellationSupported";
 const char kSetFlossEnabled[] = "SetFlossEnabled";
 const char kSetSpeakOnMuteDetection[] = "SetSpeakOnMuteDetection";
 const char kSpeakOnMuteDetectionEnabled[] = "SpeakOnMuteDetectionEnabled";
+const char kSetForceRespectUiGains[] = "SetForceRespectUiGains";
 
 // Names of properties returned by GetNodes() and GetNodeInfos()
 const char kIsInputProperty[] = "IsInput";

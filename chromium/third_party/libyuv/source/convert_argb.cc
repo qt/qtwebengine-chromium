@@ -3049,6 +3049,11 @@ int RGB24ToARGB(const uint8_t* src_rgb24,
     }
   }
 #endif
+#if defined(HAS_RGB24TOARGBROW_RVV)
+  if (TestCpuFlag(kCpuHasRVV)) {
+    RGB24ToARGBRow = RGB24ToARGBRow_RVV;
+  }
+#endif
 
   for (y = 0; y < height; ++y) {
     RGB24ToARGBRow(src_rgb24, dst_argb, width);
@@ -3124,6 +3129,11 @@ int RAWToARGB(const uint8_t* src_raw,
     }
   }
 #endif
+#if defined(HAS_RAWTOARGBROW_RVV)
+  if (TestCpuFlag(kCpuHasRVV)) {
+    RAWToARGBRow = RAWToARGBRow_RVV;
+  }
+#endif
 
   for (y = 0; y < height; ++y) {
     RAWToARGBRow(src_raw, dst_argb, width);
@@ -3173,6 +3183,11 @@ int RAWToRGBA(const uint8_t* src_raw,
     if (IS_ALIGNED(width, 8)) {
       RAWToRGBARow = RAWToRGBARow_NEON;
     }
+  }
+#endif
+#if defined(HAS_RAWTORGBAROW_RVV)
+  if (TestCpuFlag(kCpuHasRVV)) {
+    RAWToRGBARow = RAWToRGBARow_RVV;
   }
 #endif
 

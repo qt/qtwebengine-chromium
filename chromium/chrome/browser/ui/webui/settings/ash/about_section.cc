@@ -332,6 +332,8 @@ void AboutSection::AddLoadTimeData(content::WebUIDataSource* html_source) {
     {"aboutChannelDev", IDS_SETTINGS_ABOUT_PAGE_CURRENT_CHANNEL_DEV},
     {"aboutChannelLabel", IDS_SETTINGS_ABOUT_PAGE_CHANNEL},
     {"aboutChannelStable", IDS_SETTINGS_ABOUT_PAGE_CURRENT_CHANNEL_STABLE},
+    {"aboutChannelLongTermSupportCandidate",
+     IDS_SETTINGS_ABOUT_PAGE_CURRENT_CHANNEL_LTC},
     {"aboutChannelLongTermSupport",
      IDS_SETTINGS_ABOUT_PAGE_CURRENT_CHANNEL_LTS},
     {"aboutCheckForUpdates", IDS_SETTINGS_ABOUT_PAGE_CHECK_FOR_UPDATES},
@@ -409,10 +411,13 @@ void AboutSection::AddLoadTimeData(content::WebUIDataSource* html_source) {
           l10n_util::GetStringUTF16(IDS_ABOUT_VERSION_COPYRIGHT),
           base::Time::Now()));
 
-  std::u16string license = l10n_util::GetStringFUTF16(
-      IDS_VERSION_UI_LICENSE, base::ASCIIToUTF16(chrome::kChromiumProjectURL),
-      base::ASCIIToUTF16(chrome::kChromeUICreditsURL));
-  html_source->AddString("aboutProductLicense", license);
+  html_source->AddString("aboutProductLicenseChromium",
+                         l10n_util::GetStringFUTF16(
+                             IDS_VERSION_UI_LICENSE_CHROMIUM,
+                             base::ASCIIToUTF16(chrome::kChromiumProjectURL)));
+  html_source->AddString(
+      "aboutProductLicenseOther",
+      l10n_util::GetStringUTF16(IDS_VERSION_UI_LICENSE_OTHER));
 
   std::u16string os_license = l10n_util::GetStringFUTF16(
       IDS_ABOUT_CROS_VERSION_LICENSE,
@@ -439,6 +444,24 @@ void AboutSection::AddLoadTimeData(content::WebUIDataSource* html_source) {
                              IDS_SETTINGS_ABOUT_PAGE_LAST_UPDATE_MESSAGE,
                              ui::GetChromeOSDeviceName(),
                              base::ASCIIToUTF16(chrome::kEolNotificationURL)));
+
+  html_source->AddString("eolIncentiveOfferTitle",
+                         l10n_util::GetStringUTF16(
+                             IDS_SETTINGS_END_OF_LIFE_INCENTIVE_OFFER_TITLE));
+  html_source->AddString("eolIncentiveOfferMessage",
+                         l10n_util::GetStringUTF16(
+                             IDS_SETTINGS_END_OF_LIFE_INCENTIVE_OFFER_MESSAGE));
+  html_source->AddString("eolIncentiveButtonOfferText",
+                         l10n_util::GetStringUTF16(
+                             IDS_SETTINGS_END_OF_LIFE_INCENTIVE_OFFER_BUTTON));
+  html_source->AddString(
+      "eolIncentiveNoOfferTitle",
+      l10n_util::GetStringUTF16(
+          IDS_SETTINGS_END_OF_LIFE_INCENTIVE_NO_OFFER_TITLE));
+  html_source->AddString(
+      "eolIncentiveNoOfferMessage",
+      l10n_util::GetStringUTF16(
+          IDS_SETTINGS_END_OF_LIFE_INCENTIVE_NO_OFFER_MESSAGE));
 
   std::string safetyInfoLink = GetSafetyInfoLink();
   html_source->AddBoolean("shouldShowSafetyInfo", !safetyInfoLink.empty());

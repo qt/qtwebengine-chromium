@@ -30,6 +30,7 @@
 #include "src/tint/program_builder.h"
 #include "src/tint/sem/member_accessor_expression.h"
 #include "src/tint/sem/value_constructor.h"
+#include "src/tint/switch.h"
 #include "src/tint/type/abstract_float.h"
 #include "src/tint/type/abstract_int.h"
 #include "src/tint/type/array.h"
@@ -44,6 +45,7 @@
 #include "src/tint/utils/bitcast.h"
 #include "src/tint/utils/compiler_macros.h"
 #include "src/tint/utils/map.h"
+#include "src/tint/utils/string_stream.h"
 #include "src/tint/utils/transform.h"
 
 using namespace tint::number_suffixes;  // NOLINT
@@ -184,8 +186,7 @@ auto ZeroTypeDispatch(const type::Type* type, F&& f) {
 
 template <typename NumberT>
 std::string OverflowErrorMessage(NumberT lhs, const char* op, NumberT rhs) {
-    std::stringstream ss;
-    ss << std::setprecision(20);
+    utils::StringStream ss;
     ss << "'" << lhs.value << " " << op << " " << rhs.value << "' cannot be represented as '"
        << FriendlyName<NumberT>() << "'";
     return ss.str();
@@ -193,8 +194,7 @@ std::string OverflowErrorMessage(NumberT lhs, const char* op, NumberT rhs) {
 
 template <typename VALUE_TY>
 std::string OverflowErrorMessage(VALUE_TY value, std::string_view target_ty) {
-    std::stringstream ss;
-    ss << std::setprecision(20);
+    utils::StringStream ss;
     ss << "value " << value << " cannot be represented as "
        << "'" << target_ty << "'";
     return ss.str();
@@ -202,8 +202,7 @@ std::string OverflowErrorMessage(VALUE_TY value, std::string_view target_ty) {
 
 template <typename NumberT>
 std::string OverflowExpErrorMessage(std::string_view base, NumberT exp) {
-    std::stringstream ss;
-    ss << std::setprecision(20);
+    utils::StringStream ss;
     ss << base << "^" << exp << " cannot be represented as "
        << "'" << FriendlyName<NumberT>() << "'";
     return ss.str();
@@ -327,35 +326,20 @@ ConstEval::Result ConvertInternal(const constant::Value* c,
                                   const Source& source,
                                   bool use_runtime_semantics);
 
-ConstEval::Result SplatConvert(const constant::Splat* splat,
-                               ProgramBuilder& builder,
-                               const type::Type* target_ty,
-                               const Source& source,
-                               bool use_runtime_semantics) {
-    // Convert the single splatted element type.
-    auto conv_el = ConvertInternal(splat->el, builder, type::Type::ElementOf(target_ty), source,
-                                   use_runtime_semantics);
-    if (!conv_el) {
-        return utils::Failure;
-    }
-    if (!conv_el.Get()) {
-        return nullptr;
-    }
-    return builder.create<constant::Splat>(target_ty, conv_el.Get(), splat->count);
-}
-
-ConstEval::Result CompositeConvert(const constant::Composite* composite,
+ConstEval::Result CompositeConvert(const constant::Value* value,
                                    ProgramBuilder& builder,
                                    const type::Type* target_ty,
                                    const Source& source,
                                    bool use_runtime_semantics) {
+    const size_t el_count = value->NumElements();
+
     // Convert each of the composite element types.
     utils::Vector<const constant::Value*, 4> conv_els;
-    conv_els.Reserve(composite->elements.Length());
+    conv_els.Reserve(el_count);
 
     std::function<const type::Type*(size_t idx)> target_el_ty;
     if (auto* str = target_ty->As<type::Struct>()) {
-        if (TINT_UNLIKELY(str->Members().Length() != composite->elements.Length())) {
+        if (TINT_UNLIKELY(str->Members().Length() != el_count)) {
             TINT_ICE(Resolver, builder.Diagnostics())
                 << "const-eval conversion of structure has mismatched element counts";
             return utils::Failure;
@@ -366,7 +350,8 @@ ConstEval::Result CompositeConvert(const constant::Composite* composite,
         target_el_ty = [el_ty](size_t) { return el_ty; };
     }
 
-    for (auto* el : composite->elements) {
+    for (size_t i = 0; i < el_count; i++) {
+        auto* el = value->Index(i);
         auto conv_el = ConvertInternal(el, builder, target_el_ty(conv_els.Length()), source,
                                        use_runtime_semantics);
         if (!conv_el) {
@@ -378,6 +363,40 @@ ConstEval::Result CompositeConvert(const constant::Composite* composite,
         conv_els.Push(conv_el.Get());
     }
     return builder.create<constant::Composite>(target_ty, std::move(conv_els));
+}
+
+ConstEval::Result SplatConvert(const constant::Splat* splat,
+                               ProgramBuilder& builder,
+                               const type::Type* target_ty,
+                               const Source& source,
+                               bool use_runtime_semantics) {
+    const type::Type* target_el_ty = nullptr;
+    if (auto* str = target_ty->As<type::Struct>()) {
+        // Structure conversion.
+        auto members = str->Members();
+        target_el_ty = members[0]->Type();
+
+        // Structures can only be converted during materialization. The user cannot declare the
+        // target structure type, so each member type must be the same default materialization type.
+        for (size_t i = 1; i < members.Length(); i++) {
+            if (members[i]->Type() != target_el_ty) {
+                TINT_ICE(Resolver, builder.Diagnostics())
+                    << "inconsistent target struct member types for SplatConvert";
+                return utils::Failure;
+            }
+        }
+    } else {
+        target_el_ty = type::Type::ElementOf(target_ty);
+    }
+    // Convert the single splatted element type.
+    auto conv_el = ConvertInternal(splat->el, builder, target_el_ty, source, use_runtime_semantics);
+    if (!conv_el) {
+        return utils::Failure;
+    }
+    if (!conv_el.Get()) {
+        return nullptr;
+    }
+    return builder.create<constant::Splat>(target_ty, conv_el.Get(), splat->count);
 }
 
 ConstEval::Result ConvertInternal(const constant::Value* c,
@@ -428,7 +447,8 @@ ConstEval::Result TransformElements(ProgramBuilder& builder,
     auto* ty = First(cs...)->Type();
     auto* el_ty = type::Type::ElementOf(ty, &n);
     if (el_ty == ty) {
-        constexpr bool kHasIndexParam = traits::IsType<size_t, traits::LastParameterType<F>>;
+        constexpr bool kHasIndexParam =
+            utils::traits::IsType<size_t, utils::traits::LastParameterType<F>>;
         if constexpr (kHasIndexParam) {
             return f(cs..., index);
         } else {
@@ -714,7 +734,7 @@ utils::Result<NumberT> ConstEval::Mod(const Source& source, NumberT a, NumberT b
         } else {
             AddError(OverflowErrorMessage(a, "%", b), source);
             if (use_runtime_semantics_) {
-                return a;
+                return NumberT{0};
             } else {
                 return utils::Failure;
             }
@@ -727,7 +747,7 @@ utils::Result<NumberT> ConstEval::Mod(const Source& source, NumberT a, NumberT b
             // lhs % 0 is an error
             AddError(OverflowErrorMessage(a, "%", b), source);
             if (use_runtime_semantics_) {
-                return a;
+                return NumberT{0};
             } else {
                 return utils::Failure;
             }
@@ -738,7 +758,7 @@ utils::Result<NumberT> ConstEval::Mod(const Source& source, NumberT a, NumberT b
             if (rhs == -1 && lhs == std::numeric_limits<T>::min()) {
                 AddError(OverflowErrorMessage(a, "%", b), source);
                 if (use_runtime_semantics_) {
-                    return a;
+                    return NumberT{0};
                 } else {
                     return utils::Failure;
                 }
@@ -1229,23 +1249,18 @@ ConstEval::Result ConstEval::Literal(const type::Type* ty, const ast::LiteralExp
 }
 
 ConstEval::Result ConstEval::ArrayOrStructCtor(const type::Type* ty,
-                                               utils::VectorRef<const sem::ValueExpression*> args) {
+                                               utils::VectorRef<const constant::Value*> args) {
     if (args.IsEmpty()) {
         return ZeroValue(ty);
     }
 
     if (args.Length() == 1 && args[0]->Type() == ty) {
         // Identity constructor.
-        return args[0]->ConstantValue();
+        return args[0];
     }
 
     // Multiple arguments. Must be a value constructor.
-    utils::Vector<const constant::Value*, 4> els;
-    els.Reserve(args.Length());
-    for (auto* arg : args) {
-        els.Push(arg->ConstantValue());
-    }
-    return builder.create<constant::Composite>(ty, std::move(els));
+    return builder.create<constant::Composite>(ty, std::move(args));
 }
 
 ConstEval::Result ConstEval::Conv(const type::Type* ty,

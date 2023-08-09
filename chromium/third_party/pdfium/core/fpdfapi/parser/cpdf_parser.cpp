@@ -51,6 +51,9 @@ constexpr FX_FILESIZE kPDFHeaderSize = 9;
 // dictionary.
 constexpr size_t kMinFieldCount = 3;
 
+// V4 trailers are inline.
+constexpr uint32_t kNoV4TrailerObjectNumber = 0;
+
 struct CrossRefV5IndexEntry {
   uint32_t start_obj_num;
   uint32_t obj_count;
@@ -70,11 +73,32 @@ CPDF_Parser::ObjectType GetObjectTypeFromCrossRefStreamType(
   }
 }
 
+// Use the Get*XRefStreamEntry() functions below, instead of calling this
+// directly.
 uint32_t GetVarInt(pdfium::span<const uint8_t> input) {
   uint32_t result = 0;
   for (uint8_t c : input)
     result = result * 256 + c;
   return result;
+}
+
+// The following 3 functions retrieve variable length entries from
+// cross-reference streams, as described in ISO 32000-1:2008 table 18. There are
+// only 3 fields for any given entry.
+uint32_t GetFirstXRefStreamEntry(pdfium::span<const uint8_t> entry_span,
+                                 pdfium::span<const uint32_t> field_widths) {
+  return GetVarInt(entry_span.first(field_widths[0]));
+}
+
+uint32_t GetSecondXRefStreamEntry(pdfium::span<const uint8_t> entry_span,
+                                  pdfium::span<const uint32_t> field_widths) {
+  return GetVarInt(entry_span.subspan(field_widths[0], field_widths[1]));
+}
+
+uint32_t GetThirdXRefStreamEntry(pdfium::span<const uint8_t> entry_span,
+                                 pdfium::span<const uint32_t> field_widths) {
+  return GetVarInt(
+      entry_span.subspan(field_widths[0] + field_widths[1], field_widths[2]));
 }
 
 std::vector<CrossRefV5IndexEntry> GetCrossRefV5Indices(const CPDF_Array* array,
@@ -357,7 +381,7 @@ bool CPDF_Parser::LoadAllCrossRefV4(FX_FILESIZE xref_offset) {
   if (!trailer)
     return false;
 
-  m_CrossRefTable->SetTrailer(std::move(trailer));
+  m_CrossRefTable->SetTrailer(std::move(trailer), kNoV4TrailerObjectNumber);
   const int32_t xrefsize = GetTrailer()->GetDirectIntegerFor("Size");
   if (xrefsize > 0 && xrefsize <= kMaxXRefSize)
     ShrinkObjectMap(xrefsize);
@@ -391,7 +415,8 @@ bool CPDF_Parser::LoadAllCrossRefV4(FX_FILESIZE xref_offset) {
 
     // SLOW ...
     m_CrossRefTable = CPDF_CrossRefTable::MergeUp(
-        std::make_unique<CPDF_CrossRefTable>(std::move(pDict)),
+        std::make_unique<CPDF_CrossRefTable>(std::move(pDict),
+                                             kNoV4TrailerObjectNumber),
         std::move(m_CrossRefTable));
   }
 
@@ -430,7 +455,8 @@ bool CPDF_Parser::LoadLinearizedAllCrossRefV4(FX_FILESIZE main_xref_offset) {
 
   // Merge the trailers.
   m_CrossRefTable = CPDF_CrossRefTable::MergeUp(
-      std::make_unique<CPDF_CrossRefTable>(std::move(main_trailer)),
+      std::make_unique<CPDF_CrossRefTable>(std::move(main_trailer),
+                                           kNoV4TrailerObjectNumber),
       std::move(m_CrossRefTable));
 
   // Now GetTrailer() returns the merged trailer, where /Prev is from the
@@ -457,7 +483,8 @@ bool CPDF_Parser::LoadLinearizedAllCrossRefV4(FX_FILESIZE main_xref_offset) {
 
     // SLOW ...
     m_CrossRefTable = CPDF_CrossRefTable::MergeUp(
-        std::make_unique<CPDF_CrossRefTable>(std::move(pDict)),
+        std::make_unique<CPDF_CrossRefTable>(std::move(pDict),
+                                             kNoV4TrailerObjectNumber),
         std::move(m_CrossRefTable));
   }
 
@@ -672,11 +699,17 @@ bool CPDF_Parser::RebuildCrossRef() {
     } else if (word == "trailer") {
       RetainPtr<CPDF_Object> pTrailer = m_pSyntax->GetObjectBody(nullptr);
       if (pTrailer) {
+        CPDF_Stream* stream_trailer = pTrailer->AsMutableStream();
+        // Grab the object number from `pTrailer` before potentially calling
+        // std::move(pTrailer) below.
+        const uint32_t trailer_object_number = pTrailer->GetObjNum();
+        RetainPtr<CPDF_Dictionary> trailer_dict =
+            stream_trailer ? stream_trailer->GetMutableDict()
+                           : ToDictionary(std::move(pTrailer));
         cross_ref_table = CPDF_CrossRefTable::MergeUp(
             std::move(cross_ref_table),
-            std::make_unique<CPDF_CrossRefTable>(ToDictionary(
-                pTrailer->IsStream() ? pTrailer->AsStream()->GetDict()->Clone()
-                                     : std::move(pTrailer))));
+            std::make_unique<CPDF_CrossRefTable>(std::move(trailer_dict),
+                                                 trailer_object_number));
       }
     } else if (word == "obj" && numbers.size() == 2u) {
       const FX_FILESIZE obj_pos = numbers[0].second;
@@ -692,7 +725,8 @@ bool CPDF_Parser::RebuildCrossRef() {
         cross_ref_table = CPDF_CrossRefTable::MergeUp(
             std::move(cross_ref_table),
             std::make_unique<CPDF_CrossRefTable>(
-                ToDictionary(pStream->GetDict()->Clone())));
+                ToDictionary(pStream->GetDict()->Clone()),
+                pStream->GetObjNum()));
       }
 
       if (obj_num < kMaxObjectNumber) {
@@ -742,12 +776,13 @@ bool CPDF_Parser::LoadCrossRefV5(FX_FILESIZE* pos, bool bMainXRef) {
 
   RetainPtr<CPDF_Dictionary> pNewTrailer = ToDictionary(pDict->Clone());
   if (bMainXRef) {
-    m_CrossRefTable =
-        std::make_unique<CPDF_CrossRefTable>(std::move(pNewTrailer));
+    m_CrossRefTable = std::make_unique<CPDF_CrossRefTable>(
+        std::move(pNewTrailer), pStream->GetObjNum());
     m_CrossRefTable->ShrinkObjectMap(size);
   } else {
     m_CrossRefTable = CPDF_CrossRefTable::MergeUp(
-        std::make_unique<CPDF_CrossRefTable>(std::move(pNewTrailer)),
+        std::make_unique<CPDF_CrossRefTable>(std::move(pNewTrailer),
+                                             pStream->GetObjNum()),
         std::move(m_CrossRefTable));
   }
 
@@ -809,7 +844,7 @@ void CPDF_Parser::ProcessCrossRefV5Entry(
   ObjectType type = ObjectType::kNotCompressed;
   if (field_widths[0]) {
     const uint32_t cross_ref_stream_obj_type =
-        GetVarInt(entry_span.first(field_widths[0]));
+        GetFirstXRefStreamEntry(entry_span, field_widths);
     type = GetObjectTypeFromCrossRefStreamType(cross_ref_stream_obj_type);
     if (type == ObjectType::kNull)
       return;
@@ -817,8 +852,7 @@ void CPDF_Parser::ProcessCrossRefV5Entry(
 
   const ObjectType existing_type = GetObjectType(obj_num);
   if (existing_type == ObjectType::kNull) {
-    uint32_t offset =
-        GetVarInt(entry_span.subspan(field_widths[0], field_widths[1]));
+    const uint32_t offset = GetSecondXRefStreamEntry(entry_span, field_widths);
     if (pdfium::base::IsValueInRangeForNumericType<FX_FILESIZE>(offset))
       m_CrossRefTable->AddNormal(obj_num, 0, offset);
     return;
@@ -832,22 +866,22 @@ void CPDF_Parser::ProcessCrossRefV5Entry(
     return;
   }
 
-  const uint32_t entry_value =
-      GetVarInt(entry_span.subspan(field_widths[0], field_widths[1]));
   if (type == ObjectType::kNotCompressed) {
-    const uint32_t offset = entry_value;
+    const uint32_t offset = GetSecondXRefStreamEntry(entry_span, field_widths);
     if (pdfium::base::IsValueInRangeForNumericType<FX_FILESIZE>(offset))
       m_CrossRefTable->AddNormal(obj_num, 0, offset);
     return;
   }
 
   DCHECK_EQ(type, ObjectType::kCompressed);
-  const uint32_t archive_obj_num = entry_value;
-  if (!IsValidObjectNumber(archive_obj_num))
+  const uint32_t archive_obj_num =
+      GetSecondXRefStreamEntry(entry_span, field_widths);
+  if (!IsValidObjectNumber(archive_obj_num)) {
     return;
+  }
 
-  const uint32_t archive_obj_index = GetVarInt(
-      entry_span.subspan(field_widths[0] + field_widths[1], field_widths[2]));
+  const uint32_t archive_obj_index =
+      GetThirdXRefStreamEntry(entry_span, field_widths);
   m_CrossRefTable->AddCompressed(obj_num, archive_obj_num, archive_obj_index);
 }
 
@@ -890,6 +924,10 @@ const CPDF_Dictionary* CPDF_Parser::GetTrailer() const {
 
 CPDF_Dictionary* CPDF_Parser::GetMutableTrailerForTesting() {
   return m_CrossRefTable->GetMutableTrailerForTesting();
+}
+
+uint32_t CPDF_Parser::GetTrailerObjectNumber() const {
+  return m_CrossRefTable->trailer_object_number();
 }
 
 RetainPtr<CPDF_Dictionary> CPDF_Parser::GetCombinedTrailer() const {
@@ -1056,7 +1094,7 @@ CPDF_Parser::Error CPDF_Parser::StartLinearizedParse(
     if (!trailer)
       return SUCCESS;
 
-    m_CrossRefTable->SetTrailer(std::move(trailer));
+    m_CrossRefTable->SetTrailer(std::move(trailer), kNoV4TrailerObjectNumber);
     const int32_t xrefsize = GetTrailer()->GetDirectIntegerFor("Size");
     if (xrefsize > 0) {
       // Check if `xrefsize` is correct. If it is incorrect, give up and rebuild

@@ -123,7 +123,7 @@ void ConnectionNamespaceHandler::OnMessage(VirtualConnectionRouter* router,
     return;
   }
 
-  ErrorOr<Json::Value> result = json::Parse(message.payload_utf8());
+  ErrorOr<Json::Value> result = json::Parse(GetPayload(message));
   if (result.is_error()) {
     return;
   }

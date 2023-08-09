@@ -8,10 +8,13 @@
 #ifndef GrGpuResource_DEFINED
 #define GrGpuResource_DEFINED
 
+#include "include/gpu/GpuTypes.h"
 #include "include/private/base/SkNoncopyable.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
+#include "src/gpu/GpuTypesPriv.h"
 #include "src/gpu/ResourceKey.h"
 
+class GrDirectContext;
 class GrGpu;
 class GrResourceCache;
 class SkTraceMemoryDump;
@@ -306,7 +309,7 @@ private:
     // This value reflects how recently this resource was accessed in the cache. This is maintained
     // by the cache.
     uint32_t fTimestamp;
-    GrStdSteadyClock::time_point fTimeWhenBecamePurgeable;
+    skgpu::StdSteadyClock::time_point fTimeWhenBecamePurgeable;
 
     static const size_t kInvalidGpuMemorySize = ~static_cast<size_t>(0);
     skgpu::ScratchKey fScratchKey;

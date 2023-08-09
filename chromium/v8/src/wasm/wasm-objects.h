@@ -30,7 +30,6 @@
 namespace v8 {
 namespace internal {
 namespace wasm {
-class InterpretedFrame;
 class NativeModule;
 class WasmCode;
 struct WasmFunction;
@@ -188,8 +187,7 @@ class WasmTableObject
       Isolate* isolate, Handle<WasmTableObject> table,
       Handle<WasmInstanceObject> instance, int table_index);
 
-  static bool IsInBounds(Isolate* isolate, Handle<WasmTableObject> table,
-                         uint32_t entry_index);
+  bool is_in_bounds(uint32_t entry_index);
 
   // Thin wrapper around {JsToWasmObject}.
   static MaybeHandle<Object> JSToWasmElement(Isolate* isolate,
@@ -343,13 +341,14 @@ class V8_EXPORT_PRIVATE WasmInstanceObject : public JSObject {
   DECL_ACCESSORS(imported_mutable_globals, ByteArray)
   DECL_ACCESSORS(imported_function_targets, FixedAddressArray)
   DECL_OPTIONAL_ACCESSORS(indirect_function_table_refs, FixedArray)
+  DECL_ACCESSORS(indirect_function_table_sig_ids, FixedUInt32Array)
+  DECL_ACCESSORS(indirect_function_table_targets, FixedAddressArray)
   DECL_OPTIONAL_ACCESSORS(tags_table, FixedArray)
   DECL_ACCESSORS(wasm_internal_functions, FixedArray)
   DECL_ACCESSORS(managed_object_maps, FixedArray)
   DECL_ACCESSORS(feedback_vectors, FixedArray)
   DECL_SANDBOXED_POINTER_ACCESSORS(memory_start, byte*)
   DECL_PRIMITIVE_ACCESSORS(memory_size, size_t)
-  DECL_PRIMITIVE_ACCESSORS(isolate_root, Address)
   DECL_PRIMITIVE_ACCESSORS(stack_limit_address, Address)
   DECL_PRIMITIVE_ACCESSORS(real_stack_limit_address, Address)
   DECL_PRIMITIVE_ACCESSORS(new_allocation_limit_address, Address*)
@@ -359,8 +358,6 @@ class V8_EXPORT_PRIVATE WasmInstanceObject : public JSObject {
   DECL_PRIMITIVE_ACCESSORS(isorecursive_canonical_types, const uint32_t*)
   DECL_SANDBOXED_POINTER_ACCESSORS(globals_start, byte*)
   DECL_PRIMITIVE_ACCESSORS(indirect_function_table_size, uint32_t)
-  DECL_PRIMITIVE_ACCESSORS(indirect_function_table_sig_ids, uint32_t*)
-  DECL_PRIMITIVE_ACCESSORS(indirect_function_table_targets, Address*)
   DECL_PRIMITIVE_ACCESSORS(jump_table_start, Address)
   DECL_PRIMITIVE_ACCESSORS(hook_on_function_call_address, Address)
   DECL_PRIMITIVE_ACCESSORS(tiering_budget_array, uint32_t*)
@@ -383,6 +380,8 @@ class V8_EXPORT_PRIVATE WasmInstanceObject : public JSObject {
   /* Less than system pointer sized fields come first. */                 \
   V(kImportedFunctionRefsOffset, kTaggedSize)                             \
   V(kIndirectFunctionTableRefsOffset, kTaggedSize)                        \
+  V(kIndirectFunctionTableSigIdsOffset, kTaggedSize)                      \
+  V(kIndirectFunctionTableTargetsOffset, kTaggedSize)                     \
   V(kImportedMutableGlobalsOffset, kTaggedSize)                           \
   V(kImportedFunctionTargetsOffset, kTaggedSize)                          \
   V(kIndirectFunctionTableSizeOffset, kUInt32Size)                        \
@@ -392,10 +391,7 @@ class V8_EXPORT_PRIVATE WasmInstanceObject : public JSObject {
   V(kMemorySizeOffset, kSizetSize)                                        \
   V(kStackLimitAddressOffset, kSystemPointerSize)                         \
   V(kIsorecursiveCanonicalTypesOffset, kSystemPointerSize)                \
-  V(kIndirectFunctionTableTargetsOffset, kSystemPointerSize)              \
-  V(kIndirectFunctionTableSigIdsOffset, kSystemPointerSize)               \
   V(kGlobalsStartOffset, kSystemPointerSize)                              \
-  V(kIsolateRootOffset, kSystemPointerSize)                               \
   V(kJumpTableStartOffset, kSystemPointerSize)                            \
   /* End of often-accessed fields. */                                     \
   /* Continue with system pointer size fields to maintain alignment. */   \
@@ -446,6 +442,8 @@ class V8_EXPORT_PRIVATE WasmInstanceObject : public JSObject {
   static constexpr uint16_t kTaggedFieldOffsets[] = {
       kImportedFunctionRefsOffset,
       kIndirectFunctionTableRefsOffset,
+      kIndirectFunctionTableTargetsOffset,
+      kIndirectFunctionTableSigIdsOffset,
       kModuleObjectOffset,
       kExportsObjectOffset,
       kNativeContextOffset,
@@ -613,8 +611,9 @@ class WasmExportedFunction : public JSFunction {
   V8_EXPORT_PRIVATE static bool IsWasmExportedFunction(Object object);
 
   V8_EXPORT_PRIVATE static Handle<WasmExportedFunction> New(
-      Isolate* isolate, Handle<WasmInstanceObject> instance, int func_index,
-      int arity, Handle<Code> export_wrapper);
+      Isolate* isolate, Handle<WasmInstanceObject> instance,
+      Handle<WasmInternalFunction> internal, int func_index, int arity,
+      Handle<Code> export_wrapper);
 
   Address GetWasmCallTarget();
 
@@ -688,9 +687,11 @@ class WasmIndirectFunctionTable
     : public TorqueGeneratedWasmIndirectFunctionTable<WasmIndirectFunctionTable,
                                                       Struct> {
  public:
-  DECL_PRIMITIVE_ACCESSORS(sig_ids, uint32_t*)
-  DECL_PRIMITIVE_ACCESSORS(targets, Address*)
-  DECL_OPTIONAL_ACCESSORS(managed_native_allocations, Foreign)
+  // TODO(saelo): holding raw addresses isn't sandbox-compatible, so we should
+  // probably turn these into indices into some pointer table instead (or make
+  // this entire class a pointer table).
+  DECL_ACCESSORS(sig_ids, FixedUInt32Array)
+  DECL_ACCESSORS(targets, FixedAddressArray)
 
   V8_EXPORT_PRIVATE static Handle<WasmIndirectFunctionTable> New(
       Isolate* isolate, uint32_t size);
@@ -702,8 +703,9 @@ class WasmIndirectFunctionTable
 
   DECL_PRINTER(WasmIndirectFunctionTable)
 
-  static_assert(kStartOfStrongFieldsOffset == kManagedNativeAllocationsOffset);
-  using BodyDescriptor = FlexibleBodyDescriptor<kStartOfStrongFieldsOffset>;
+  using BodyDescriptor =
+      FixedBodyDescriptor<kStartOfStrongFieldsOffset, kEndOfStrongFieldsOffset,
+                          kHeaderSize>;
 
   TQ_OBJECT_CONSTRUCTORS(WasmIndirectFunctionTable)
 };
@@ -762,6 +764,9 @@ class WasmInternalFunction
   static MaybeHandle<WasmInternalFunction> FromExternal(Handle<Object> external,
                                                         Isolate* isolate);
 
+  V8_EXPORT_PRIVATE static Handle<JSFunction> GetOrCreateExternal(
+      Handle<WasmInternalFunction> internal);
+
   DECL_EXTERNAL_POINTER_ACCESSORS(call_target, Address)
 
   // Dispatched behavior.
@@ -770,6 +775,10 @@ class WasmInternalFunction
   class BodyDescriptor;
 
   TQ_OBJECT_CONSTRUCTORS(WasmInternalFunction)
+ private:
+  // Make this private so it is not use by accident. Use {GetOrCreateExternal}
+  // instead.
+  HeapObject external();
 };
 
 // Information for a WasmJSFunction which is referenced as the function data of
@@ -1057,23 +1066,31 @@ class WasmSuspenderObject
  public:
   enum State : int { kInactive = 0, kActive, kSuspended };
   static Handle<WasmSuspenderObject> New(Isolate* isolate);
-  // TODO(thibaudm): returnPromiseOnSuspend & suspendOnReturnedPromise.
   DECL_PRINTER(WasmSuspenderObject)
+  using BodyDescriptor =
+      FixedBodyDescriptor<kStartOfStrongFieldsOffset, kEndOfStrongFieldsOffset,
+                          kHeaderSize>;
   TQ_OBJECT_CONSTRUCTORS(WasmSuspenderObject)
 };
 
 class WasmNull : public TorqueGeneratedWasmNull<WasmNull, HeapObject> {
  public:
+#if V8_STATIC_ROOTS_BOOL || V8_STATIC_ROOTS_GENERATION_BOOL
   // TODO(manoskouk): Make it smaller if able and needed.
   static constexpr int kSize = 64 * KB + kTaggedSize;
   // Payload should be a multiple of page size.
   static_assert((kSize - kTaggedSize) % kMinimumOSPageSize == 0);
   // Any wasm struct offset should fit in the object.
-  static_assert(kSize >= WasmStruct::kHeaderSize +
-                             wasm::kV8MaxWasmStructFields * kSimd128Size);
+  static_assert(kSize >=
+                WasmStruct::kHeaderSize +
+                    (wasm::kMaxStructFieldIndexForImplicitNullCheck + 1) *
+                        kSimd128Size);
 
   Address payload() { return ptr() + kHeaderSize - kHeapObjectTag; }
-
+  static constexpr size_t kPayloadSize = kSize - kTaggedSize;
+#else
+  static constexpr int kSize = kTaggedSize;
+#endif
   class BodyDescriptor;
 
   TQ_OBJECT_CONSTRUCTORS(WasmNull)

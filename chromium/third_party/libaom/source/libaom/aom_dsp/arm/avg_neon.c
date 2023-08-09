@@ -216,3 +216,57 @@ unsigned int aom_highbd_avg_4x4_neon(const uint8_t *s, int p) {
 #endif
 }
 #endif  // CONFIG_AV1_HIGHBITDEPTH
+
+void aom_minmax_8x8_neon(const uint8_t *a, int a_stride, const uint8_t *b,
+                         int b_stride, int *min, int *max) {
+  // Load and concatenate.
+  const uint8x16_t a01 = load_u8_8x2(a + 0 * a_stride, a_stride);
+  const uint8x16_t a23 = load_u8_8x2(a + 2 * a_stride, a_stride);
+  const uint8x16_t a45 = load_u8_8x2(a + 4 * a_stride, a_stride);
+  const uint8x16_t a67 = load_u8_8x2(a + 6 * a_stride, a_stride);
+
+  const uint8x16_t b01 = load_u8_8x2(b + 0 * b_stride, b_stride);
+  const uint8x16_t b23 = load_u8_8x2(b + 2 * b_stride, b_stride);
+  const uint8x16_t b45 = load_u8_8x2(b + 4 * b_stride, b_stride);
+  const uint8x16_t b67 = load_u8_8x2(b + 6 * b_stride, b_stride);
+
+  // Absolute difference.
+  const uint8x16_t ab01_diff = vabdq_u8(a01, b01);
+  const uint8x16_t ab23_diff = vabdq_u8(a23, b23);
+  const uint8x16_t ab45_diff = vabdq_u8(a45, b45);
+  const uint8x16_t ab67_diff = vabdq_u8(a67, b67);
+
+  // Max values between the Q vectors.
+  const uint8x16_t ab0123_max = vmaxq_u8(ab01_diff, ab23_diff);
+  const uint8x16_t ab4567_max = vmaxq_u8(ab45_diff, ab67_diff);
+  const uint8x16_t ab0123_min = vminq_u8(ab01_diff, ab23_diff);
+  const uint8x16_t ab4567_min = vminq_u8(ab45_diff, ab67_diff);
+
+  const uint8x16_t ab07_max = vmaxq_u8(ab0123_max, ab4567_max);
+  const uint8x16_t ab07_min = vminq_u8(ab0123_min, ab4567_min);
+
+#if defined(__aarch64__)
+  *min = *max = 0;  // Clear high bits
+  *((uint8_t *)max) = vmaxvq_u8(ab07_max);
+  *((uint8_t *)min) = vminvq_u8(ab07_min);
+#else
+  // Split into 64-bit vectors and execute pairwise min/max.
+  uint8x8_t ab_max = vmax_u8(vget_high_u8(ab07_max), vget_low_u8(ab07_max));
+  uint8x8_t ab_min = vmin_u8(vget_high_u8(ab07_min), vget_low_u8(ab07_min));
+
+  // Enough runs of vpmax/min propagate the max/min values to every position.
+  ab_max = vpmax_u8(ab_max, ab_max);
+  ab_min = vpmin_u8(ab_min, ab_min);
+
+  ab_max = vpmax_u8(ab_max, ab_max);
+  ab_min = vpmin_u8(ab_min, ab_min);
+
+  ab_max = vpmax_u8(ab_max, ab_max);
+  ab_min = vpmin_u8(ab_min, ab_min);
+
+  *min = *max = 0;  // Clear high bits
+  // Store directly to avoid costly neon->gpr transfer.
+  vst1_lane_u8((uint8_t *)max, ab_max, 0);
+  vst1_lane_u8((uint8_t *)min, ab_min, 0);
+#endif
+}

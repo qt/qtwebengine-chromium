@@ -15,11 +15,11 @@
 #ifndef SRC_TINT_READER_SPIRV_FAIL_STREAM_H_
 #define SRC_TINT_READER_SPIRV_FAIL_STREAM_H_
 
-#include <ostream>
+#include "src/tint/utils/string_stream.h"
 
 namespace tint::reader::spirv {
 
-/// A FailStream object accumulates values onto a given std::ostream,
+/// A FailStream object accumulates values onto a given stream,
 /// and can be used to record failure by writing the false value
 /// to given a pointer-to-bool.
 class FailStream {
@@ -29,7 +29,7 @@ class FailStream {
     /// to be a valid pointer to bool.
     /// @param out output stream where a message should be written to explain
     /// the failure
-    FailStream(bool* status_ptr, std::ostream* out) : status_ptr_(status_ptr), out_(out) {}
+    FailStream(bool* status_ptr, utils::StringStream* out) : status_ptr_(status_ptr), out_(out) {}
     /// Copy constructor
     /// @param other the fail stream to clone
     FailStream(const FailStream& other) = default;
@@ -61,7 +61,7 @@ class FailStream {
 
   private:
     bool* status_ptr_;
-    std::ostream* out_;
+    utils::StringStream* out_;
 };
 
 }  // namespace tint::reader::spirv

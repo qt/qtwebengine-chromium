@@ -12,7 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "src/tint/utils/string_stream.h"
 #include "src/tint/writer/wgsl/test_helper.h"
+
+#include "gmock/gmock.h"
 
 using namespace tint::number_suffixes;  // NOLINT
 
@@ -27,8 +30,9 @@ TEST_F(WgslGeneratorImplTest, EmitExpression_Cast_Scalar_F32_From_I32) {
 
     GeneratorImpl& gen = Build();
 
-    std::stringstream out;
-    ASSERT_TRUE(gen.EmitExpression(out, cast)) << gen.error();
+    utils::StringStream out;
+    gen.EmitExpression(out, cast);
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_EQ(out.str(), "f32(1i)");
 }
 
@@ -40,8 +44,9 @@ TEST_F(WgslGeneratorImplTest, EmitExpression_Cast_Scalar_F16_From_I32) {
 
     GeneratorImpl& gen = Build();
 
-    std::stringstream out;
-    ASSERT_TRUE(gen.EmitExpression(out, cast)) << gen.error();
+    utils::StringStream out;
+    gen.EmitExpression(out, cast);
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_EQ(out.str(), "f16(1i)");
 }
 
@@ -51,8 +56,9 @@ TEST_F(WgslGeneratorImplTest, EmitExpression_Cast_Vector_F32_From_I32) {
 
     GeneratorImpl& gen = Build();
 
-    std::stringstream out;
-    ASSERT_TRUE(gen.EmitExpression(out, cast)) << gen.error();
+    utils::StringStream out;
+    gen.EmitExpression(out, cast);
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_EQ(out.str(), "vec3<f32>(vec3<i32>(1i, 2i, 3i))");
 }
 
@@ -64,8 +70,9 @@ TEST_F(WgslGeneratorImplTest, EmitExpression_Cast_Vector_F16_From_I32) {
 
     GeneratorImpl& gen = Build();
 
-    std::stringstream out;
-    ASSERT_TRUE(gen.EmitExpression(out, cast)) << gen.error();
+    utils::StringStream out;
+    gen.EmitExpression(out, cast);
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_EQ(out.str(), "vec3<f16>(vec3<i32>(1i, 2i, 3i))");
 }
 

@@ -14,6 +14,8 @@
 
 #include "src/tint/writer/glsl/test_helper.h"
 
+#include "gmock/gmock.h"
+
 using namespace tint::number_suffixes;  // NOLINT
 
 namespace tint::writer::glsl {
@@ -31,14 +33,13 @@ TEST_F(GlslGeneratorImplTest_Switch, Emit_Switch) {
     auto* case_stmt = create<ast::CaseStatement>(utils::Vector{CaseSelector(5_i)}, case_body);
 
     auto* cond = Expr("cond");
-    auto* s = create<ast::SwitchStatement>(cond, utils::Vector{case_stmt, def});
+    auto* s = Switch(cond, utils::Vector{case_stmt, def});
     WrapInFunction(s);
 
     GeneratorImpl& gen = Build();
-
     gen.increment_indent();
-
-    ASSERT_TRUE(gen.EmitStatement(s)) << gen.error();
+    gen.EmitStatement(s);
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_EQ(gen.result(), R"(  switch(cond) {
     case 5: {
       break;
@@ -58,14 +59,13 @@ TEST_F(GlslGeneratorImplTest_Switch, Emit_Switch_MixedDefault) {
                                            def_body);
 
     auto* cond = Expr("cond");
-    auto* s = create<ast::SwitchStatement>(cond, utils::Vector{def});
+    auto* s = Switch(cond, utils::Vector{def});
     WrapInFunction(s);
 
     GeneratorImpl& gen = Build();
-
     gen.increment_indent();
-
-    ASSERT_TRUE(gen.EmitStatement(s)) << gen.error();
+    gen.EmitStatement(s);
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_EQ(gen.result(), R"(  switch(cond) {
     case 5:
     default: {

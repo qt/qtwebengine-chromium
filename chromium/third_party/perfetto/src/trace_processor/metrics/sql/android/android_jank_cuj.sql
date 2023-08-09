@@ -75,7 +75,7 @@ SELECT RUN_METRIC('android/jank/query_functions.sql');
 -- The same numbers are also reported by FrameTracker to statsd.
 SELECT RUN_METRIC('android/jank/internal/counters.sql');
 
--- Creates derived events to visualize a few of the the created tables.
+-- Creates derived events to visualize a few of the created tables.
 -- Used only for debugging so by default not used and not displayed in the UI.
 -- See https://perfetto.dev/docs/contributing/common-tasks#adding-new-derived-events
 -- for instructions on how to add these events to the UI.
@@ -92,6 +92,7 @@ SELECT
           'id', cuj_id,
           'name', cuj_name,
           'process', process_metadata,
+          'layer_name', layer_name,
           'ts', COALESCE(boundary.ts, cuj.ts),
           'dur', COALESCE(boundary.dur, cuj.dur),
           'counter_metrics', (
@@ -168,4 +169,5 @@ SELECT
         ))
       FROM android_jank_cuj cuj
       LEFT JOIN android_jank_cuj_boundary boundary USING (cuj_id)
+      LEFT JOIN android_jank_cuj_layer_name cuj_layer USING (cuj_id)
       ORDER BY cuj.cuj_id ASC));

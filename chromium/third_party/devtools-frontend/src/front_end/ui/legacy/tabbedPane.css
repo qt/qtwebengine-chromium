@@ -132,6 +132,14 @@
   padding-right: 5px;
 }
 
+.tabbed-pane-header-tab devtools-icon.dot::before {
+  outline-color: var(--icon-gap-toolbar);
+}
+
+.tabbed-pane-header-tab:hover devtools-icon.dot::before {
+  outline-color: var(--icon-gap-toolbar-hover);
+}
+
 .tabbed-pane-header-tab:hover,
 .tabbed-pane-shadow .tabbed-pane-header-tab:focus-visible {
   color: var(--color-text-primary);
@@ -201,13 +209,13 @@
 }
 
 .tabbed-pane-header-tabs-drop-down-container > .chevron-icon {
-  background-color: var(--color-text-secondary);
+  background-color: var(--icon-default);
   display: block;
 }
 
 .tabbed-pane-header-tabs-drop-down-container > .chevron-icon:hover,
 .tabbed-pane-header-tabs-drop-down-container > .chevron-icon:focus-visible {
-  background-color: var(--color-text-primary);
+  background-color: var(--icon-default-hover);
   display: block;
 }
 
@@ -326,10 +334,10 @@
 }
 
 .preview-icon {
-  --override-tabbed-pane-preview-icon-color: rgb(110 110 110);
+  --override-tabbed-pane-preview-icon-color: var(--icon-default);
 
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -337,16 +345,11 @@
   flex-shrink: 0;
 }
 
-.-theme-with-dark-background .preview-icon,
-:host-context(.-theme-with-dark-background) .preview-icon {
-  --override-tabbed-pane-preview-icon-color: rgb(145 145 145);
-}
-
 .close-button {
-  --tabbed-pane-close-icon-color: var(--color-text-primary);
+  --tabbed-pane-close-icon-color: var(--icon-default);
 
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   display: flex;
   align-items: center;
   justify-content: center;

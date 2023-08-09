@@ -402,20 +402,6 @@ export namespace ProtocolMapping {
      * when bfcache navigation fails.
      */
     'Page.backForwardCacheNotUsed': [Protocol.Page.BackForwardCacheNotUsedEvent];
-    /**
-     * Fired when a prerender attempt is completed.
-     */
-    'Page.prerenderAttemptCompleted': [Protocol.Page.PrerenderAttemptCompletedEvent];
-    /**
-     * TODO(crbug/1384419): Create a dedicated domain for preloading.
-     * Fired when a prefetch attempt is updated.
-     */
-    'Page.prefetchStatusUpdated': [Protocol.Page.PrefetchStatusUpdatedEvent];
-    /**
-     * TODO(crbug/1384419): Create a dedicated domain for preloading.
-     * Fired when a prerender attempt is updated.
-     */
-    'Page.prerenderStatusUpdated': [Protocol.Page.PrerenderStatusUpdatedEvent];
     'Page.loadEventFired': [Protocol.Page.LoadEventFiredEvent];
     /**
      * Fired when same-document navigation happens, e.g. due to history API usage or anchor navigation.
@@ -490,6 +476,8 @@ export namespace ProtocolMapping {
      * The following parameters are included in all events.
      */
     'Storage.sharedStorageAccessed': [Protocol.Storage.SharedStorageAccessedEvent];
+    'Storage.storageBucketCreatedOrUpdated': [Protocol.Storage.StorageBucketCreatedOrUpdatedEvent];
+    'Storage.storageBucketDeleted': [Protocol.Storage.StorageBucketDeletedEvent];
     /**
      * Issued when attached to target because of auto-attach or `attachToTarget` command.
      */
@@ -644,6 +632,23 @@ export namespace ProtocolMapping {
      */
     'Preload.ruleSetUpdated': [Protocol.Preload.RuleSetUpdatedEvent];
     'Preload.ruleSetRemoved': [Protocol.Preload.RuleSetRemovedEvent];
+    /**
+     * Fired when a prerender attempt is completed.
+     */
+    'Preload.prerenderAttemptCompleted': [Protocol.Preload.PrerenderAttemptCompletedEvent];
+    /**
+     * Fired when a prefetch attempt is updated.
+     */
+    'Preload.prefetchStatusUpdated': [Protocol.Preload.PrefetchStatusUpdatedEvent];
+    /**
+     * Fired when a prerender attempt is updated.
+     */
+    'Preload.prerenderStatusUpdated': [Protocol.Preload.PrerenderStatusUpdatedEvent];
+    /**
+     * Send a list of sources for all preloading attempts in a document.
+     */
+    'Preload.preloadingAttemptSourcesUpdated': [Protocol.Preload.PreloadingAttemptSourcesUpdatedEvent];
+    'FedCm.dialogShown': [Protocol.FedCm.DialogShownEvent];
     /**
      * Fired when breakpoint is resolved to an actual script and location.
      */
@@ -3640,6 +3645,20 @@ export namespace ProtocolMapping {
       returnType: void;
     };
     /**
+     * Set tracking for a storage key's buckets.
+     */
+    'Storage.setStorageBucketTracking': {
+      paramsType: [Protocol.Storage.SetStorageBucketTrackingRequest];
+      returnType: void;
+    };
+    /**
+     * Deletes the Storage Bucket with the given storage key and bucket name.
+     */
+    'Storage.deleteStorageBucket': {
+      paramsType: [Protocol.Storage.DeleteStorageBucketRequest];
+      returnType: void;
+    };
+    /**
      * Returns information about the system.
      */
     'SystemInfo.getInfo': {
@@ -4085,6 +4104,30 @@ export namespace ProtocolMapping {
       returnType: void;
     };
     'Preload.disable': {
+      paramsType: [];
+      returnType: void;
+    };
+    'FedCm.enable': {
+      paramsType: [Protocol.FedCm.EnableRequest?];
+      returnType: void;
+    };
+    'FedCm.disable': {
+      paramsType: [];
+      returnType: void;
+    };
+    'FedCm.selectAccount': {
+      paramsType: [Protocol.FedCm.SelectAccountRequest];
+      returnType: void;
+    };
+    'FedCm.dismissDialog': {
+      paramsType: [Protocol.FedCm.DismissDialogRequest];
+      returnType: void;
+    };
+    /**
+     * Resets the cooldown time, if any, to allow the next FedCM call to show
+     * a dialog even if one was recently dismissed by the user.
+     */
+    'FedCm.resetCooldown': {
       paramsType: [];
       returnType: void;
     };

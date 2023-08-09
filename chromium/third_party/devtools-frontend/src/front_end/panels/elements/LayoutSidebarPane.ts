@@ -94,9 +94,9 @@ export class LayoutSidebarPane extends UI.ThrottledWidget.ThrottledWidget {
   private readonly boundOnSettingChanged: (event: any) => void;
   private domModels: SDK.DOMModel.DOMModel[];
 
-  constructor() {
-    super(true /* isWebComponent */);
-    this.layoutPane = new ElementsComponents.LayoutPane.LayoutPane();
+  constructor(layoutPane: ElementsComponents.LayoutPane.LayoutPane, throttleTimeout?: number) {
+    super(true /* isWebComponent */, throttleTimeout);
+    this.layoutPane = layoutPane;
     this.contentElement.appendChild(this.layoutPane);
     this.settings = ['showGridLineLabels', 'showGridTrackSizes', 'showGridAreas', 'extendGridLines'];
     this.uaShadowDOMSetting = Common.Settings.Settings.instance().moduleSetting('showUAShadowDOM');
@@ -104,12 +104,14 @@ export class LayoutSidebarPane extends UI.ThrottledWidget.ThrottledWidget {
     this.domModels = [];
   }
 
-  static instance(opts: {
-    forceNew: boolean|null,
-  }|undefined = {forceNew: null}): LayoutSidebarPane {
-    const {forceNew} = opts;
-    if (!layoutSidebarPaneInstance || forceNew) {
-      layoutSidebarPaneInstance = new LayoutSidebarPane();
+  static instance(opts?: {
+    forceNew: boolean,
+    layoutPaneComponent: ElementsComponents.LayoutPane.LayoutPane,
+    throttleTimeout: number,
+  }): LayoutSidebarPane {
+    if (!layoutSidebarPaneInstance || opts?.forceNew) {
+      layoutSidebarPaneInstance = new LayoutSidebarPane(
+          opts?.layoutPaneComponent || new ElementsComponents.LayoutPane.LayoutPane(), opts?.throttleTimeout);
     }
 
     return layoutSidebarPaneInstance;
@@ -206,7 +208,7 @@ export class LayoutSidebarPane extends UI.ThrottledWidget.ThrottledWidget {
     return settings;
   }
 
-  async doUpdate(): Promise<void> {
+  override async doUpdate(): Promise<void> {
     this.layoutPane.data = {
       gridElements: gridNodesToElements(await this.fetchGridNodes()),
       flexContainerElements: flexContainerNodesToElements(await this.fetchFlexContainerNodes()),
@@ -220,7 +222,7 @@ export class LayoutSidebarPane extends UI.ThrottledWidget.ThrottledWidget {
     Common.Settings.Settings.instance().moduleSetting(event.data.setting).set(event.data.value);
   }
 
-  wasShown(): void {
+  override wasShown(): void {
     for (const setting of this.settings) {
       Common.Settings.Settings.instance().moduleSetting(setting).addChangeListener(this.update, this);
     }
@@ -229,13 +231,13 @@ export class LayoutSidebarPane extends UI.ThrottledWidget.ThrottledWidget {
       this.modelRemoved(domModel);
     }
     this.domModels = [];
-    SDK.TargetManager.TargetManager.instance().observeModels(SDK.DOMModel.DOMModel, this);
+    SDK.TargetManager.TargetManager.instance().observeModels(SDK.DOMModel.DOMModel, this, {scoped: true});
     UI.Context.Context.instance().addFlavorChangeListener(SDK.DOMModel.DOMNode, this.update, this);
     this.uaShadowDOMSetting.addChangeListener(this.update, this);
     this.update();
   }
 
-  willHide(): void {
+  override willHide(): void {
     for (const setting of this.settings) {
       Common.Settings.Settings.instance().moduleSetting(setting).removeChangeListener(this.update, this);
     }

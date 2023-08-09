@@ -28,7 +28,9 @@
 
 #include "../../InternalHeaderCheck.h"
 
+#if !EIGEN_ALTIVEC_DISABLE_MMA
 #include "MatrixProductMMAbfloat16.h"
+#endif
 
 namespace Eigen {
 

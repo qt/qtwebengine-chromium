@@ -362,10 +362,10 @@ void QuicSentPacketManager::MaybeInvokeCongestionEvent(
       stats_->overshooting_detected_with_network_parameters_adjusted;
   if (using_pacing_) {
     pacing_sender_.OnCongestionEvent(rtt_updated, prior_in_flight, event_time,
-                                     packets_acked_, packets_lost_);
+                                     packets_acked_, packets_lost_, 0, 0);
   } else {
     send_algorithm_->OnCongestionEvent(rtt_updated, prior_in_flight, event_time,
-                                       packets_acked_, packets_lost_);
+                                       packets_acked_, packets_lost_, 0, 0);
   }
   if (debug_delegate_ != nullptr && !overshooting_detected &&
       stats_->overshooting_detected_with_network_parameters_adjusted) {
@@ -625,7 +625,8 @@ QuicAckFrequencyFrame QuicSentPacketManager::GetUpdatedAckFrequencyFrame()
 bool QuicSentPacketManager::OnPacketSent(
     SerializedPacket* mutable_packet, QuicTime sent_time,
     TransmissionType transmission_type,
-    HasRetransmittableData has_retransmittable_data, bool measure_rtt) {
+    HasRetransmittableData has_retransmittable_data, bool measure_rtt,
+    QuicEcnCodepoint ecn_codepoint) {
   const SerializedPacket& packet = *mutable_packet;
   QuicPacketNumber packet_number = packet.packet_number;
   QUICHE_DCHECK_LE(FirstSendingPacketNumber(), packet_number);
@@ -672,7 +673,7 @@ bool QuicSentPacketManager::OnPacketSent(
     }
   }
   unacked_packets_.AddSentPacket(mutable_packet, transmission_type, sent_time,
-                                 in_flight, measure_rtt);
+                                 in_flight, measure_rtt, ecn_codepoint);
   // Reset the retransmission timer anytime a pending packet is sent.
   return in_flight;
 }
@@ -1227,7 +1228,8 @@ void QuicSentPacketManager::OnAckTimestamp(QuicPacketNumber packet_number,
 
 AckResult QuicSentPacketManager::OnAckFrameEnd(
     QuicTime ack_receive_time, QuicPacketNumber ack_packet_number,
-    EncryptionLevel ack_decrypted_level) {
+    EncryptionLevel ack_decrypted_level,
+    const absl::optional<QuicEcnCounts>& ecn_counts) {
   QuicByteCount prior_bytes_in_flight = unacked_packets_.bytes_in_flight();
   // Reverse packets_acked_ so that it is in ascending order.
   std::reverse(packets_acked_.begin(), packets_acked_.end());
@@ -1295,10 +1297,15 @@ AckResult QuicSentPacketManager::OnAckFrameEnd(
                       last_ack_frame_.ack_delay_time,
                       acked_packet.receive_timestamp);
   }
+  PacketNumberSpace packet_number_space =
+      QuicUtils::GetPacketNumberSpace(ack_decrypted_level);
   const bool acked_new_packet = !packets_acked_.empty();
   PostProcessNewlyAckedPackets(ack_packet_number, ack_decrypted_level,
                                last_ack_frame_, ack_receive_time, rtt_updated_,
                                prior_bytes_in_flight);
+  if (ecn_counts.has_value()) {
+    peer_ack_ecn_counts_[packet_number_space] = ecn_counts.value();
+  }
 
   return acked_new_packet ? PACKETS_NEWLY_ACKED : NO_PACKETS_NEWLY_ACKED;
 }

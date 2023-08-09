@@ -652,7 +652,10 @@ struct AppInstance {
         AppCompileInstanceExtensionsToEnable();
 
         std::vector<const char *> inst_exts;
-        for (const auto &ext : inst_extensions) inst_exts.push_back(ext.c_str());
+        for (const auto &ext : inst_extensions) {
+            if (ext == "VK_LUNARG_direct_driver_loading") continue;  // skip this extension since it triggers warnings in the loader
+            inst_exts.push_back(ext.c_str());
+        }
 
         const VkInstanceCreateInfo inst_info = {
             VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
@@ -692,7 +695,7 @@ struct AppInstance {
     AppInstance(const AppInstance &) = delete;
     const AppInstance &operator=(const AppInstance &) = delete;
 
-    bool CheckExtensionEnabled(std::string extension_to_check) {
+    bool CheckExtensionEnabled(std::string extension_to_check) const {
         return std::any_of(inst_extensions.begin(), inst_extensions.end(),
                            [extension_to_check](std::string str) { return str == extension_to_check; });
     }
@@ -739,9 +742,18 @@ struct AppInstance {
 
 #if defined(VK_USE_PLATFORM_XCB_KHR) || defined(VK_USE_PLATFORM_XLIB_KHR) || defined(VK_USE_PLATFORM_WIN32_KHR) ||      \
     defined(VK_USE_PLATFORM_MACOS_MVK) || defined(VK_USE_PLATFORM_METAL_EXT) || defined(VK_USE_PLATFORM_WAYLAND_KHR) || \
-    defined(VK_USE_PLATFORM_DIRECTFB_EXT) || defined(VK_USE_PLATFORM_ANDROID_KHR) || defined(VK_USE_PLATFORM_GGP)
+    defined(VK_USE_PLATFORM_DIRECTFB_EXT) || defined(VK_USE_PLATFORM_GGP)
 #define VULKANINFO_WSI_ENABLED
 #endif
+
+//-----------------------------------------------------------
+#if defined(VULKANINFO_WSI_ENABLED)
+static void AppDestroySurface(AppInstance &inst, VkSurfaceKHR surface) {  // same for all platforms
+    inst.dll.fp_vkDestroySurfaceKHR(inst.instance, surface, nullptr);
+}
+#endif  // defined(VULKANINFO_WSI_ENABLED)
+//-----------------------------------------------------------
+
 //---------------------------Win32---------------------------
 #ifdef VK_USE_PLATFORM_WIN32_KHR
 
@@ -813,13 +825,7 @@ static void AppDestroyWin32Window(AppInstance &inst) { user32_handles->pfnDestro
 #endif  // VK_USE_PLATFORM_WIN32_KHR
 //-----------------------------------------------------------
 
-#if defined(VULKANINFO_WSI_ENABLED)
-static void AppDestroySurface(AppInstance &inst, VkSurfaceKHR surface) {  // same for all platforms
-    inst.dll.fp_vkDestroySurfaceKHR(inst.instance, surface, nullptr);
-}
-#endif  // defined(VULKANINFO_WSI_ENABLED)
 //----------------------------XCB----------------------------
-
 #ifdef VK_USE_PLATFORM_XCB_KHR
 static void AppCreateXcbWindow(AppInstance &inst) {
     //--Init Connection--
@@ -1075,10 +1081,12 @@ static VkSurfaceKHR AppCreateAndroidSurface(AppInstance &inst) {
     createInfo.flags = 0;
     createInfo.window = (struct ANativeWindow *)(inst.window);
 
-    err = inst.dll.fp_vkCreateAndroidSurfaceKHR(inst.inst, &createInfo, NULL, &inst.surface);
-    THROW_VK_ERR("vkCreateAndroidSurfaceKHR", err);
+    VkSurfaceKHR surface;
+    VkResult err = inst.dll.fp_vkCreateAndroidSurfaceKHR(inst.instance, &createInfo, NULL, &surface);
+    if (err) THROW_VK_ERR("vkCreateAndroidSurfaceKHR", err);
+    return surface;
 }
-static VkSurfaceKHR AppDestroyAndroidSurface(AppInstance &inst) {}
+static void AppDestroyAndroidWindow(AppInstance &inst) {}
 #endif
 //-----------------------------------------------------------
 //---------------------------GGP-----------------------------
@@ -1210,8 +1218,8 @@ void SetupWindowExtensions(AppInstance &inst) {
 //--ANDROID--
 #ifdef VK_USE_PLATFORM_ANDROID_KHR
     SurfaceExtension surface_ext_android;
-    if (inst.CheckExtensionEnabled(VK_ANDROID_SURFACE_EXTENSION_NAME)) {
-        surface_ext_android.name = VK_ANDROID_SURFACE_EXTENSION_NAME;
+    if (inst.CheckExtensionEnabled(VK_KHR_ANDROID_SURFACE_EXTENSION_NAME)) {
+        surface_ext_android.name = VK_KHR_ANDROID_SURFACE_EXTENSION_NAME;
         surface_ext_android.create_window = AppCreateAndroidWindow;
         surface_ext_android.create_surface = AppCreateAndroidSurface;
         surface_ext_android.destroy_window = AppDestroyAndroidWindow;
@@ -1566,7 +1574,7 @@ struct AppGpu {
             }
             inst.ext_funcs.vkGetPhysicalDeviceQueueFamilyProperties2KHR(phys_device, &queue_prop2_count, queue_props2.data());
 
-            if ((CheckPhysicalDeviceExtensionIncluded(VK_KHR_DRIVER_PROPERTIES_EXTENSION_NAME) || api_version.minor >= 2)) {
+            if (CheckPhysicalDeviceExtensionIncluded(VK_KHR_DRIVER_PROPERTIES_EXTENSION_NAME) || api_version.minor >= 2) {
                 void *place = props2.pNext;
                 while (place) {
                     VkBaseOutStructure *structure = static_cast<VkBaseOutStructure *>(place);
@@ -1750,13 +1758,14 @@ struct AppGpu {
     AppGpu(const AppGpu &) = delete;
     const AppGpu &operator=(const AppGpu &) = delete;
 
-    bool CheckPhysicalDeviceExtensionIncluded(std::string extension_to_check) {
-        return std::any_of(device_extensions.begin(), device_extensions.end(),
-                           [extension_to_check](VkExtensionProperties &prop) { return prop.extensionName == extension_to_check; });
+    bool CheckPhysicalDeviceExtensionIncluded(std::string extension_to_check) const {
+        return std::any_of(
+            device_extensions.begin(), device_extensions.end(),
+            [extension_to_check](const VkExtensionProperties &prop) { return prop.extensionName == extension_to_check; });
     }
 
     // Helper function to determine whether a format range is currently supported.
-    bool FormatRangeSupported(FormatRange &format_range) {
+    bool FormatRangeSupported(FormatRange &format_range) const {
         // True if standard and supported by both this instance and this GPU
         if (format_range.minimum_instance_version > 0 && inst.instance_version >= format_range.minimum_instance_version &&
             props.apiVersion >= format_range.minimum_instance_version) {
@@ -1808,23 +1817,60 @@ std::vector<VkPhysicalDeviceToolPropertiesEXT> GetToolingInfo(AppGpu &gpu) {
 }
 
 // --------- Format Properties ----------//
+// can't use autogen because that is put in a header that we can't include because that header depends on stuff defined here
+bool operator==(const VkFormatProperties &a, const VkFormatProperties b) {
+    return a.linearTilingFeatures == b.linearTilingFeatures && a.optimalTilingFeatures == b.optimalTilingFeatures &&
+           a.bufferFeatures == b.bufferFeatures;
+}
+bool operator==(const VkFormatProperties3 &a, const VkFormatProperties3 b) {
+    return a.linearTilingFeatures == b.linearTilingFeatures && a.optimalTilingFeatures == b.optimalTilingFeatures &&
+           a.bufferFeatures == b.bufferFeatures;
+}
 
 struct PropFlags {
-    uint32_t linear;
-    uint32_t optimal;
-    uint32_t buffer;
+    VkFormatProperties props;
+    VkFormatProperties3 props3;
 
-    bool operator==(const PropFlags &other) const {
-        return (linear == other.linear && optimal == other.optimal && buffer == other.buffer);
-    }
+    bool operator==(const PropFlags &other) const { return props == other.props && props3 == other.props3; }
 };
+
+PropFlags get_format_properties(const AppGpu &gpu, VkFormat fmt) {
+    VkFormatProperties props;
+    gpu.inst.dll.fp_vkGetPhysicalDeviceFormatProperties(gpu.phys_device, fmt, &props);
+
+    VkFormatProperties3 props3{};
+    props3.sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_3;
+
+    if (gpu.inst.CheckExtensionEnabled(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME) &&
+        gpu.CheckPhysicalDeviceExtensionIncluded(VK_KHR_FORMAT_FEATURE_FLAGS_2_EXTENSION_NAME)) {
+        VkFormatProperties2 props2{};
+        props2.sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2;
+        props2.formatProperties = props;
+        props2.pNext = static_cast<void *>(&props3);
+        gpu.inst.ext_funcs.vkGetPhysicalDeviceFormatProperties2KHR(gpu.phys_device, fmt, &props2);
+    }
+    return {props, props3};
+}
 
 namespace std {
 template <>
+struct hash<VkFormatProperties> {
+    std::size_t operator()(const VkFormatProperties &k) const {
+        return ((std::hash<uint32_t>()(k.linearTilingFeatures) ^ (std::hash<uint32_t>()(k.optimalTilingFeatures) << 1)) >> 1) ^
+               (std::hash<uint32_t>()(k.bufferFeatures) << 1);
+    }
+};
+template <>
+struct hash<VkFormatProperties3> {
+    std::size_t operator()(const VkFormatProperties3 &k) const {
+        return ((std::hash<uint64_t>()(k.linearTilingFeatures) ^ (std::hash<uint64_t>()(k.optimalTilingFeatures) << 1)) >> 1) ^
+               (std::hash<uint64_t>()(k.bufferFeatures) << 1);
+    }
+};
+template <>
 struct hash<PropFlags> {
     std::size_t operator()(const PropFlags &k) const {
-        return ((std::hash<uint32_t>()(k.linear) ^ (std::hash<uint32_t>()(k.optimal) << 1)) >> 1) ^
-               (std::hash<uint32_t>()(k.buffer) << 1);
+        return (std::hash<VkFormatProperties>()(k.props) ^ std::hash<VkFormatProperties3>()(k.props3)) >> 1;
     }
 };
 }  // namespace std
@@ -1834,11 +1880,7 @@ std::unordered_map<PropFlags, std::vector<VkFormat>> FormatPropMap(AppGpu &gpu) 
     std::unordered_map<PropFlags, std::vector<VkFormat>> map;
     for (auto fmtRange : gpu.supported_format_ranges) {
         for (int32_t fmt = fmtRange.first_format; fmt <= fmtRange.last_format; ++fmt) {
-            VkFormatProperties props;
-            gpu.inst.dll.fp_vkGetPhysicalDeviceFormatProperties(gpu.phys_device, static_cast<VkFormat>(fmt), &props);
-
-            PropFlags pf = {props.linearTilingFeatures, props.optimalTilingFeatures, props.bufferFeatures};
-
+            PropFlags pf = get_format_properties(gpu, static_cast<VkFormat>(fmt));
             map[pf].push_back(static_cast<VkFormat>(fmt));
         }
     }

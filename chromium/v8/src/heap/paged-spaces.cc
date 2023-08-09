@@ -84,7 +84,7 @@ PagedSpaceObjectIterator::PagedSpaceObjectIterator(Heap* heap,
 #endif  // V8_COMPRESS_POINTERS
 {
   heap->MakeHeapIterable();
-  DCHECK_IMPLIES(space->IsInlineAllocationEnabled(),
+  DCHECK_IMPLIES(!heap->IsInlineAllocationEnabled(),
                  !page->Contains(space->top()));
   DCHECK(page->Contains(start_address));
   DCHECK(page->SweepingDone());
@@ -352,9 +352,10 @@ void PagedSpaceBase::ShrinkImmortalImmovablePages() {
   }
 }
 
-Page* PagedSpaceBase::TryExpandImpl() {
-  Page* page = heap()->memory_allocator()->AllocatePage(
-      MemoryAllocator::AllocationMode::kRegular, this, executable());
+Page* PagedSpaceBase::TryExpandImpl(
+    MemoryAllocator::AllocationMode allocation_mode) {
+  Page* page = heap()->memory_allocator()->AllocatePage(allocation_mode, this,
+                                                        executable());
   if (page == nullptr) return nullptr;
   ConcurrentAllocationMutex guard(this);
   AddPage(page);
@@ -396,10 +397,8 @@ void PagedSpaceBase::SetLinearAllocationArea(Address top, Address limit,
   SetTopAndLimit(top, limit, end);
   if (top != kNullAddress && top != limit) {
     Page* page = Page::FromAllocationAreaAddress(top);
-    if (identity() == NEW_SPACE) {
-      page->MarkWasUsedForAllocation();
-    } else if (heap()->incremental_marking()->black_allocation()) {
-      DCHECK_NE(NEW_SPACE, identity());
+    if ((identity() != NEW_SPACE) &&
+        heap()->incremental_marking()->black_allocation()) {
       page->CreateBlackArea(top, limit);
     }
   }
@@ -419,10 +418,16 @@ void PagedSpaceBase::DecreaseLimit(Address new_limit) {
 
     ConcurrentAllocationMutex guard(this);
     Address old_max_limit = original_limit_relaxed();
-    DCHECK_IMPLIES(!SupportsExtendingLAB(), old_max_limit == old_limit);
-    SetTopAndLimit(top(), new_limit, new_limit);
-    Free(new_limit, old_max_limit - new_limit,
-         SpaceAccountingMode::kSpaceAccounted);
+    if (!SupportsExtendingLAB()) {
+      DCHECK_EQ(old_max_limit, old_limit);
+      SetTopAndLimit(top(), new_limit, new_limit);
+      Free(new_limit, old_max_limit - new_limit,
+           SpaceAccountingMode::kSpaceAccounted);
+    } else {
+      SetLimit(new_limit);
+      heap()->CreateFillerObjectAt(new_limit,
+                                   static_cast<int>(old_max_limit - new_limit));
+    }
     if (heap()->incremental_marking()->black_allocation() &&
         identity() != NEW_SPACE) {
       Page::FromAllocationAreaAddress(new_limit)->DestroyBlackArea(new_limit,
@@ -494,6 +499,13 @@ void PagedSpaceBase::FreeLinearAllocationArea() {
 
   AdvanceAllocationObservers();
 
+  base::Optional<CodePageMemoryModificationScope> optional_scope;
+
+  if (identity() == CODE_SPACE) {
+    MemoryChunk* chunk = MemoryChunk::FromAddress(allocation_info_.top());
+    optional_scope.emplace(chunk);
+  }
+
   if (identity() != NEW_SPACE && current_top != current_limit &&
       heap()->incremental_marking()->black_allocation()) {
     Page::FromAddress(current_top)
@@ -511,14 +523,19 @@ void PagedSpaceBase::FreeLinearAllocationArea() {
         GetUnprotectMemoryOrigin(is_compaction_space()));
   }
 
-  DCHECK_IMPLIES(
-      current_limit - current_top >= 2 * kTaggedSize,
-      heap()->marking_state()->IsWhite(HeapObject::FromAddress(current_top)));
+  DCHECK_IMPLIES(current_limit - current_top >= 2 * kTaggedSize,
+                 heap()->marking_state()->IsUnmarked(
+                     HeapObject::FromAddress(current_top)));
   Free(current_top, current_max_limit - current_top,
        SpaceAccountingMode::kSpaceAccounted);
 }
 
 void PagedSpaceBase::ReleasePage(Page* page) {
+  ReleasePageImpl(page, MemoryAllocator::FreeMode::kConcurrently);
+}
+
+void PagedSpaceBase::ReleasePageImpl(Page* page,
+                                     MemoryAllocator::FreeMode free_mode) {
   DCHECK(page->SweepingDone());
   DCHECK_EQ(0, heap()->non_atomic_marking_state()->live_bytes(page));
   DCHECK_EQ(page->owner(), this);
@@ -540,8 +557,7 @@ void PagedSpaceBase::ReleasePage(Page* page) {
   AccountUncommitted(page->size());
   DecrementCommittedPhysicalMemory(page->CommittedPhysicalMemory());
   accounting_stats_.DecreaseCapacity(page->area_size());
-  heap()->memory_allocator()->Free(MemoryAllocator::FreeMode::kConcurrently,
-                                   page);
+  heap()->memory_allocator()->Free(free_mode, page);
 }
 
 void PagedSpaceBase::SetReadable() {
@@ -695,7 +711,7 @@ void PagedSpaceBase::Verify(Isolate* isolate,
   PtrComprCageBase cage_base(isolate);
   for (const Page* page : *this) {
     CHECK_EQ(page->owner(), this);
-    CHECK_IMPLIES(identity() != NEW_SPACE, !page->WasUsedForAllocation());
+    CHECK_IMPLIES(identity() != NEW_SPACE, page->AllocatedLabSize() == 0);
     visitor->VerifyPage(page);
 
     for (int i = 0; i < kNumTypes; i++) {
@@ -770,7 +786,7 @@ void PagedSpaceBase::VerifyLiveBytes() const {
     int black_size = 0;
     for (HeapObject object = it.Next(); !object.is_null(); object = it.Next()) {
       // All the interior pointers should be contained in the heap.
-      if (marking_state->IsBlack(object)) {
+      if (marking_state->IsMarked(object)) {
         black_size += object.Size(cage_base);
       }
     }
@@ -842,9 +858,10 @@ bool PagedSpaceBase::RefillLabMain(int size_in_bytes, AllocationOrigin origin) {
   return RawRefillLabMain(size_in_bytes, origin);
 }
 
-Page* CompactionSpace::TryExpandImpl() {
+Page* CompactionSpace::TryExpandImpl(
+    MemoryAllocator::AllocationMode allocation_mode) {
   DCHECK_NE(NEW_SPACE, identity());
-  Page* page = PagedSpaceBase::TryExpandImpl();
+  Page* page = PagedSpaceBase::TryExpandImpl(allocation_mode);
   new_pages_.push_back(page);
   return page;
 }
@@ -856,7 +873,7 @@ bool CompactionSpace::RefillLabMain(int size_in_bytes,
 
 bool PagedSpaceBase::TryExpand(int size_in_bytes, AllocationOrigin origin) {
   DCHECK_NE(NEW_SPACE, identity());
-  Page* page = TryExpandImpl();
+  Page* page = TryExpandImpl(MemoryAllocator::AllocationMode::kRegular);
   if (!page) return false;
   if (!is_compaction_space() && identity() != NEW_SPACE) {
     heap()->NotifyOldGenerationExpansion(identity(), page);

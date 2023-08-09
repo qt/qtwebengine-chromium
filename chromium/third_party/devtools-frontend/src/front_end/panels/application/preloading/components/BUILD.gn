@@ -19,7 +19,9 @@ devtools_module("components") {
   sources = [
     "PreloadingDetailsReportView.ts",
     "PreloadingGrid.ts",
+    "RuleSetDetailsReportView.ts",
     "RuleSetGrid.ts",
+    "UsedPreloadingView.ts",
   ]
 
   deps = [

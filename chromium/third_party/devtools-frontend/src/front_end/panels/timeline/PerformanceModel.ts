@@ -4,9 +4,8 @@
 
 import * as Common from '../../core/common/common.js';
 import * as SDK from '../../core/sdk/sdk.js';
-import type * as Bindings from '../../models/bindings/bindings.js';
-import * as TimelineModel from '../../models/timeline_model/timeline_model.js';
 import * as SourceMapScopes from '../../models/source_map_scopes/source_map_scopes.js';
+import * as TimelineModel from '../../models/timeline_model/timeline_model.js';
 
 import {TimelineUIUtils} from './TimelineUIUtils.js';
 
@@ -21,11 +20,6 @@ export class PerformanceModel extends Common.ObjectWrapper.ObjectWrapper<EventTy
   private filmStripModelInternal: SDK.FilmStripModel.FilmStripModel|null;
   private windowInternal: Window;
   private willResolveNames = false;
-  private readonly extensionTracingModels: {
-    title: string,
-    model: SDK.TracingModel.TracingModel,
-    timeOffset: number,
-  }[];
   private recordStartTimeInternal?: number;
 
   constructor() {
@@ -41,7 +35,6 @@ export class PerformanceModel extends Common.ObjectWrapper.ObjectWrapper<EventTy
 
     this.windowInternal = {left: 0, right: Infinity};
 
-    this.extensionTracingModels = [];
     this.recordStartTimeInternal = undefined;
   }
 
@@ -73,9 +66,9 @@ export class PerformanceModel extends Common.ObjectWrapper.ObjectWrapper<EventTy
     return this.filtersInternal.every(f => f.accept(event));
   }
 
-  async setTracingModel(model: SDK.TracingModel.TracingModel): Promise<void> {
+  async setTracingModel(model: SDK.TracingModel.TracingModel, isFreshRecording = false): Promise<void> {
     this.tracingModelInternal = model;
-    this.timelineModelInternal.setEvents(model);
+    this.timelineModelInternal.setEvents(model, isFreshRecording);
     await this.addSourceMapListeners();
 
     const mainTracks = this.timelineModelInternal.tracks().filter(
@@ -89,11 +82,6 @@ export class PerformanceModel extends Common.ObjectWrapper.ObjectWrapper<EventTy
     this.frameModelInternal.addTraceEvents(
         this.mainTargetInternal, this.timelineModelInternal.inspectedTargetEvents(), threadData);
 
-    for (const entry of this.extensionTracingModels) {
-      entry.model.adjustTime(
-          this.tracingModelInternal.minimumRecordTime() + (entry.timeOffset / 1000) -
-          (this.recordStartTimeInternal as number));
-    }
     this.autoWindowTimes();
   }
 
@@ -164,16 +152,6 @@ export class PerformanceModel extends Common.ObjectWrapper.ObjectWrapper<EventTy
     this.dispatchEventToListeners(Events.NamesResolved);
   }
 
-  addExtensionEvents(title: string, model: SDK.TracingModel.TracingModel, timeOffset: number): void {
-    this.extensionTracingModels.push({model: model, title: title, timeOffset: timeOffset});
-    if (!this.tracingModelInternal) {
-      return;
-    }
-    model.adjustTime(
-        this.tracingModelInternal.minimumRecordTime() + (timeOffset / 1000) - (this.recordStartTimeInternal as number));
-    this.dispatchEventToListeners(Events.ExtensionDataAdded);
-  }
-
   tracingModel(): SDK.TracingModel.TracingModel {
     if (!this.tracingModelInternal) {
       throw 'call setTracingModel before accessing PerformanceModel';
@@ -204,19 +182,9 @@ export class PerformanceModel extends Common.ObjectWrapper.ObjectWrapper<EventTy
     return this.frameModelInternal;
   }
 
-  extensionInfo(): {
-    title: string,
-    model: SDK.TracingModel.TracingModel,
-  }[] {
-    return this.extensionTracingModels;
-  }
-
   dispose(): void {
     if (this.tracingModelInternal) {
       this.tracingModelInternal.dispose();
-    }
-    for (const extensionEntry of this.extensionTracingModels) {
-      extensionEntry.model.dispose();
     }
   }
 
@@ -226,14 +194,6 @@ export class PerformanceModel extends Common.ObjectWrapper.ObjectWrapper<EventTy
     const filmStripModel = (this.filmStripModelInternal as SDK.FilmStripModel.FilmStripModel);
     const filmStripFrame = filmStripModel.frameByTimestamp(screenshotTime);
     return filmStripFrame && filmStripFrame.timestamp - frame.endTime < 10 ? filmStripFrame : null;
-  }
-
-  save(stream: Common.StringOutputStream.OutputStream): Promise<DOMError|null> {
-    if (!this.tracingModelInternal) {
-      throw 'call setTracingModel before accessing PerformanceModel';
-    }
-    const backingStorage = (this.tracingModelInternal.backingStorage() as Bindings.TempFile.TempFileBackingStorage);
-    return backingStorage.writeToStream(stream);
   }
 
   setWindow(window: Window, animate?: boolean): void {
@@ -298,7 +258,6 @@ export class PerformanceModel extends Common.ObjectWrapper.ObjectWrapper<EventTy
 // TODO(crbug.com/1167717): Make this a const enum again
 // eslint-disable-next-line rulesdir/const_enum
 export enum Events {
-  ExtensionDataAdded = 'ExtensionDataAdded',
   WindowChanged = 'WindowChanged',
   NamesResolved = 'NamesResolved',
 }
@@ -308,7 +267,6 @@ export interface WindowChangedEvent {
 }
 
 export type EventTypes = {
-  [Events.ExtensionDataAdded]: void,
   [Events.WindowChanged]: WindowChangedEvent,
   [Events.NamesResolved]: void,
 };

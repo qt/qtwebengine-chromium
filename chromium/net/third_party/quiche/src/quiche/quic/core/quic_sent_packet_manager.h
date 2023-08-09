@@ -202,7 +202,7 @@ class QUIC_EXPORT_PRIVATE QuicSentPacketManager {
   bool OnPacketSent(SerializedPacket* mutable_packet, QuicTime sent_time,
                     TransmissionType transmission_type,
                     HasRetransmittableData has_retransmittable_data,
-                    bool measure_rtt);
+                    bool measure_rtt, QuicEcnCodepoint ecn_codepoint);
 
   bool CanSendAckFrequency() const;
 
@@ -329,7 +329,8 @@ class QUIC_EXPORT_PRIVATE QuicSentPacketManager {
   // Called when an ack frame is parsed completely.
   AckResult OnAckFrameEnd(QuicTime ack_receive_time,
                           QuicPacketNumber ack_packet_number,
-                          EncryptionLevel ack_decrypted_level);
+                          EncryptionLevel ack_decrypted_level,
+                          const absl::optional<QuicEcnCounts>& ecn_counts);
 
   void EnableMultiplePacketNumberSpacesSupport();
 
@@ -669,6 +670,9 @@ class QUIC_EXPORT_PRIVATE QuicSentPacketManager {
 
   // Whether to ignore the ack_delay in received ACKs.
   bool ignore_ack_delay_;
+
+  // Most recent ECN codepoint counts received in an ACK frame sent by the peer.
+  QuicEcnCounts peer_ack_ecn_counts_[NUM_PACKET_NUMBER_SPACES];
 };
 
 }  // namespace quic

@@ -8,6 +8,7 @@
 #include "src/heap/heap-write-barrier-inl.h"
 #include "src/objects/api-callbacks-inl.h"
 #include "src/objects/cell-inl.h"
+#include "src/objects/dependent-code.h"
 #include "src/objects/descriptor-array-inl.h"
 #include "src/objects/field-type.h"
 #include "src/objects/instance-type-inl.h"
@@ -55,7 +56,7 @@ RELEASE_ACQUIRE_WEAK_ACCESSORS(Map, raw_transitions,
 ACCESSORS_CHECKED2(Map, prototype, HeapObject, kPrototypeOffset, true,
                    value.IsNull() || value.IsJSProxy() ||
                        value.IsWasmObject() ||
-                       (value.IsJSObject() && (value.InSharedWritableHeap() ||
+                       (value.IsJSObject() && (value.InWritableSharedSpace() ||
                                                value.map().is_prototype_map())))
 
 DEF_GETTER(Map, prototype_info, Object) {
@@ -613,6 +614,10 @@ bool Map::has_fast_elements() const {
   return IsFastElementsKind(elements_kind());
 }
 
+bool Map::has_fast_packed_elements() const {
+  return IsFastPackedElementsKind(elements_kind());
+}
+
 bool Map::has_sloppy_arguments_elements() const {
   return IsSloppyArgumentsElementsKind(elements_kind());
 }
@@ -782,11 +787,21 @@ bool Map::ConcurrentIsMap(PtrComprCageBase cage_base,
 }
 
 DEF_GETTER(Map, GetBackPointer, HeapObject) {
-  Object object = constructor_or_back_pointer(cage_base, kRelaxedLoad);
-  if (ConcurrentIsMap(cage_base, object)) {
-    return Map::cast(object);
+  Map back_pointer;
+  if (TryGetBackPointer(cage_base, &back_pointer)) {
+    return back_pointer;
   }
   return GetReadOnlyRoots(cage_base).undefined_value();
+}
+
+bool Map::TryGetBackPointer(PtrComprCageBase cage_base,
+                            Map* back_pointer) const {
+  Object object = constructor_or_back_pointer(cage_base, kRelaxedLoad);
+  if (ConcurrentIsMap(cage_base, object)) {
+    *back_pointer = Map::cast(object);
+    return true;
+  }
+  return false;
 }
 
 void Map::SetBackPointer(HeapObject value, WriteBarrierMode mode) {
@@ -795,6 +810,12 @@ void Map::SetBackPointer(HeapObject value, WriteBarrierMode mode) {
   CHECK(GetBackPointer().IsUndefined());
   CHECK_EQ(Map::cast(value).GetConstructor(), constructor_or_back_pointer());
   set_constructor_or_back_pointer(value, mode);
+}
+
+// static
+Map Map::GetMapFor(ReadOnlyRoots roots, InstanceType type) {
+  RootIndex map_idx = TryGetMapRootIdxFor(type).value();
+  return Map::unchecked_cast(roots.object_at(map_idx));
 }
 
 // static

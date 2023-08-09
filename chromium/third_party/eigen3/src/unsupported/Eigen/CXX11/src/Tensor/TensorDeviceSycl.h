@@ -794,6 +794,17 @@ class QueueInterface {
 #endif
   }
 
+  template <typename T>
+  EIGEN_STRONG_INLINE TensorSycl::internal::RangeAccess<cl::sycl::access::mode::read_write, T> get_null_accessor()
+      const {
+    eigen_assert(null_buff_simulator.get_size() % sizeof(T) == 0 && "The null buffer size must be a multiple of sizeof(T)");
+    const ptrdiff_t typed_size = null_buff_simulator.get_size() / sizeof(T);
+    eigen_assert(typed_size > 0);
+    auto typed_null_buff =
+        null_buff_simulator.template reinterpret<T>(cl::sycl::range<1>(typed_size));
+    return TensorSycl::internal::RangeAccess<cl::sycl::access::mode::read_write, T>(typed_null_buff);
+  }
+
  protected:
   EIGEN_STRONG_INLINE void set_latest_event(cl::sycl::event e) const {
 #ifdef EIGEN_SYCL_STORE_LATEST_EVENT
@@ -852,6 +863,7 @@ class QueueInterface {
   /// SyclDevice. If a non-read-only pointer is needed to be accessed on the
   /// host we should manually deallocate it.
   mutable TensorSycl::internal::PointerMapper pMapper;
+  cl::sycl::buffer<uint8_t, 1> null_buff_simulator = cl::sycl::buffer<uint8_t, 1>(cl::sycl::range<1>(128));
 #ifndef EIGEN_SYCL_NO_REUSE_BUFFERS
   mutable std::unordered_set<void *> scratch_buffers;
 #endif
@@ -884,7 +896,12 @@ struct SyclDeviceBase {
 struct SyclDevice : public SyclDeviceBase {
   explicit SyclDevice(const QueueInterface *queue_stream)
       : SyclDeviceBase(queue_stream) {}
-
+ 
+  template <typename scalar_t>
+  EIGEN_STRONG_INLINE TensorSycl::internal::RangeAccess<cl::sycl::access::mode::read_write, scalar_t>
+  get_null_accessor() const {
+    return queue_stream()->template get_null_accessor<scalar_t>();
+  }
   // this is the accessor used to construct the evaluator
   template <cl::sycl::access::mode AcMd, typename T>
   EIGEN_STRONG_INLINE TensorSycl::internal::RangeAccess<AcMd, T>

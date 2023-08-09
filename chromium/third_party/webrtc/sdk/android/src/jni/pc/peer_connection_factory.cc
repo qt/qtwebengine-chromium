@@ -350,8 +350,7 @@ JNI_PeerConnectionFactory_CreatePeerConnectionFactory(
       TakeOwnershipOfUniquePtr<NetEqFactory>(native_neteq_factory));
 }
 
-static void JNI_PeerConnectionFactory_FreeFactory(JNIEnv*,
-                                                  jlong j_p) {
+static void JNI_PeerConnectionFactory_FreeFactory(JNIEnv*, jlong j_p) {
   delete reinterpret_cast<OwnedFactoryAndThreads*>(j_p);
   field_trial::InitFieldTrialsFromString(nullptr);
   GetStaticObjects().field_trials_init_string = nullptr;
@@ -487,8 +486,9 @@ static jlong JNI_PeerConnectionFactory_CreateVideoTrack(
   rtc::scoped_refptr<VideoTrackInterface> track =
       PeerConnectionFactoryFromJava(native_factory)
           ->CreateVideoTrack(
-              JavaToStdString(jni, id),
-              reinterpret_cast<VideoTrackSourceInterface*>(native_source));
+              rtc::scoped_refptr<VideoTrackSourceInterface>(
+                  reinterpret_cast<VideoTrackSourceInterface*>(native_source)),
+              JavaToStdString(jni, id));
   return jlongFromPointer(track.release());
 }
 

@@ -25,7 +25,7 @@
 #include "src/shaders/SkImageShader.h"
 #include "src/shaders/SkLocalMatrixShader.h"
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
 #include "include/gpu/GrDirectContext.h"
 #include "include/gpu/GrRecordingContext.h"
 #include "src/gpu/ganesh/GrCaps.h"
@@ -35,11 +35,12 @@
 #include "src/gpu/ganesh/GrRecordingContextPriv.h"
 #include "src/gpu/ganesh/SkGr.h"
 #include "src/gpu/ganesh/effects/GrTextureEffect.h"
+#include "src/gpu/ganesh/image/GrImageUtils.h"
 #include "src/image/SkImage_Base.h"
 #include "src/shaders/SkLocalMatrixShader.h"
 #endif
 
-#ifdef SK_GRAPHITE_ENABLED
+#if defined(SK_GRAPHITE)
 #include "src/gpu/graphite/Caps.h"
 #include "src/gpu/graphite/KeyContext.h"
 #include "src/gpu/graphite/KeyHelpers.h"
@@ -321,6 +322,7 @@ bool SkPictureShader::appendStages(const SkStageRec& rec, const MatrixRec& mRec)
     return as_SB(bitmapShader)->appendStages(rec, mRec);
 }
 
+#if defined(SK_ENABLE_SKVM)
 skvm::Color SkPictureShader::program(skvm::Builder* p,
                                      skvm::Coord device,
                                      skvm::Coord local,
@@ -341,6 +343,7 @@ skvm::Color SkPictureShader::program(skvm::Builder* p,
 
     return as_SB(bitmapShader)->program(p, device, local, paint, mRec, dst, uniforms, alloc);
 }
+#endif
 
 /////////////////////////////////////////////////////////////////////////////////////////
 
@@ -362,7 +365,7 @@ const {
 
 /////////////////////////////////////////////////////////////////////////////////////////
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
 
 #include "src/gpu/ganesh/GrProxyProvider.h"
 
@@ -425,7 +428,8 @@ std::unique_ptr<GrFragmentProcessor> SkPictureShader::asFragmentProcessor(
         if (!image) {
             return nullptr;
         }
-        auto [v, ct] = as_IB(image)->asView(ctx, GrMipmapped::kNo);
+
+        auto [v, ct] = skgpu::ganesh::AsView(ctx, image, GrMipmapped::kNo);
         view = std::move(v);
         provider->assignUniqueKeyToProxy(key, view.asTextureProxy());
     }
@@ -445,7 +449,7 @@ std::unique_ptr<GrFragmentProcessor> SkPictureShader::asFragmentProcessor(
 }
 #endif
 
-#ifdef SK_GRAPHITE_ENABLED
+#if defined(SK_GRAPHITE)
 void SkPictureShader::addToKey(const skgpu::graphite::KeyContext& keyContext,
                                skgpu::graphite::PaintParamsKeyBuilder* builder,
                                skgpu::graphite::PipelineDataGatherer* gatherer) const {
@@ -498,4 +502,4 @@ void SkPictureShader::addToKey(const skgpu::graphite::KeyContext& keyContext,
 
     as_SB(shader)->addToKey(keyContext, builder, gatherer);
 }
-#endif // SK_GRAPHITE_ENABLED
+#endif // SK_GRAPHITE

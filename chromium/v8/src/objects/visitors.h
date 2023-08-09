@@ -9,6 +9,7 @@
 #include "src/objects/code.h"
 #include "src/objects/compressed-slots.h"
 #include "src/objects/foreign.h"
+#include "src/objects/instruction-stream.h"
 #include "src/objects/slots.h"
 
 namespace v8 {
@@ -136,7 +137,7 @@ class ObjectVisitor {
   // slot. The values may be modified on return. Not used when
   // V8_EXTERNAL_CODE_SPACE is not enabled (the InstructionStream pointer slots
   // are visited as a part of on-heap slot visitation - via VisitPointers()).
-  virtual void VisitCodePointer(HeapObject host, CodeObjectSlot slot) = 0;
+  virtual void VisitCodePointer(Code host, CodeObjectSlot slot) = 0;
 
   // Custom weak pointers must be ignored by the GC but not other
   // visitors. They're used for e.g., lists that are recreated after GC. The
@@ -164,36 +165,21 @@ class ObjectVisitor {
     VisitPointer(host, value);
   }
 
-  // To allow lazy clearing of inline caches the visitor has
-  // a rich interface for iterating over InstructionStream objects ...
+  // Visits the relocation info using the given iterator.
+  void VisitRelocInfo(InstructionStream host, RelocIterator* it);
 
-  // Visits a code target in the instruction stream.
-  virtual void VisitCodeTarget(InstructionStream host, RelocInfo* rinfo) = 0;
-
-  // Visit pointer embedded into a code object.
-  virtual void VisitEmbeddedPointer(InstructionStream host,
-                                    RelocInfo* rinfo) = 0;
-
-  // Visits an external reference embedded into a code object.
+  virtual void VisitCodeTarget(InstructionStream host, RelocInfo* rinfo) {}
+  virtual void VisitEmbeddedPointer(InstructionStream host, RelocInfo* rinfo) {}
   virtual void VisitExternalReference(InstructionStream host,
                                       RelocInfo* rinfo) {}
-
-  // Visits an external pointer.
-  virtual void VisitExternalPointer(HeapObject host, ExternalPointerSlot slot,
-                                    ExternalPointerTag tag) {}
-
-  // Visits an (encoded) internal reference.
   virtual void VisitInternalReference(InstructionStream host,
                                       RelocInfo* rinfo) {}
-
-  // Visits an off-heap target or near builtin entry in the instruction stream.
   // TODO(ishell): rename to VisitBuiltinEntry.
   virtual void VisitOffHeapTarget(InstructionStream host, RelocInfo* rinfo) {}
 
-  // Visits the relocation info using the given iterator.
-  void VisitRelocInfo(RelocIterator* it);
+  virtual void VisitExternalPointer(HeapObject host, ExternalPointerSlot slot,
+                                    ExternalPointerTag tag) {}
 
-  // Visits the object's map pointer, decoding as necessary
   virtual void VisitMapPointer(HeapObject host) { UNREACHABLE(); }
 };
 

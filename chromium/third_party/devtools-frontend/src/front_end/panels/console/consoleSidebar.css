@@ -27,14 +27,6 @@ li {
   height: 24px;
 }
 
-li .largeicon-navigator-file {
-  margin: 0;
-}
-
-li .largeicon-navigator-folder {
-  margin: -3px -3px 0 -5px;
-}
-
 .tree-element-title {
   flex-shrink: 100;
   flex-grow: 1;
@@ -45,6 +37,18 @@ li .largeicon-navigator-folder {
 .tree-outline li:hover:not(.selected) .selection {
   display: block;
   background-color: var(--item-hover-color);
+}
+
+[is="ui-icon"].cross-circle {
+  background-color: var(--icon-error);
+}
+
+[is="ui-icon"].warning {
+  background-color: var(--icon-warning);
+}
+
+[is="ui-icon"].info {
+  background-color: var(--icon-info);
 }
 
 @media (forced-colors: active) {

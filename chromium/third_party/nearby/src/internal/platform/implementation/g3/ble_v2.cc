@@ -20,6 +20,7 @@
 #include <optional>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "absl/status/status.h"
 #include "absl/strings/escaping.h"
@@ -354,8 +355,8 @@ bool BleV2Medium::IsExtendedAdvertisementsAvailable() {
 std::optional<api::ble_v2::GattCharacteristic>
 BleV2Medium::GattServer::CreateCharacteristic(
     const Uuid& service_uuid, const Uuid& characteristic_uuid,
-    const std::vector<api::ble_v2::GattCharacteristic::Permission>& permissions,
-    const std::vector<api::ble_v2::GattCharacteristic::Property>& properties) {
+    api::ble_v2::GattCharacteristic::Permission permission,
+    api::ble_v2::GattCharacteristic::Property property) {
   api::ble_v2::GattCharacteristic characteristic = {
       .uuid = characteristic_uuid, .service_uuid = service_uuid};
   return characteristic;
@@ -372,6 +373,21 @@ bool BleV2Medium::GattServer::UpdateCharacteristic(
   MediumEnvironment::Instance().InsertBleV2MediumGattCharacteristics(
       characteristic, value);
   return true;
+}
+
+absl::Status BleV2Medium::GattServer::NotifyCharacteristicChanged(
+    const api::ble_v2::GattCharacteristic& characteristic, bool confirm,
+    const ByteArray& new_value) {
+  // check if client has requested notifications.
+  // no-op for now because client cannot request notifications.
+  NEARBY_LOGS(INFO)
+      << "G3 Ble GattServer NotifyCharacteristicChanged, characteristic=("
+      << characteristic.service_uuid.Get16BitAsString() << ","
+      << std::string(characteristic.uuid)
+      << "), new_value = " << absl::BytesToHexString(new_value.data());
+  return MediumEnvironment::Instance()
+      .NotifyBleV2MediumGattCharacteristicChanged(characteristic, confirm,
+                                                  new_value);
 }
 
 void BleV2Medium::GattServer::Stop() {
@@ -428,7 +444,7 @@ BleV2Medium::GattClient::GetCharacteristic(const Uuid& service_uuid,
   return characteristic;
 }
 
-std::optional<ByteArray> BleV2Medium::GattClient::ReadCharacteristic(
+std::optional<std::string> BleV2Medium::GattClient::ReadCharacteristic(
     const api::ble_v2::GattCharacteristic& characteristic) {
   absl::MutexLock lock(&mutex_);
   if (!is_connection_alive_) {
@@ -442,14 +458,39 @@ std::optional<ByteArray> BleV2Medium::GattClient::ReadCharacteristic(
                     << characteristic.service_uuid.Get16BitAsString() << ","
                     << std::string(characteristic.uuid)
                     << "), value = " << absl::BytesToHexString(value.data());
-  return std::move(value);
+  return value.string_data();
 }
 
 bool BleV2Medium::GattClient::WriteCharacteristic(
     const api::ble_v2::GattCharacteristic& characteristic,
-    const ByteArray& value) {
-  // No op.
-  return false;
+    absl::string_view value, api::ble_v2::GattClient::WriteType write_type) {
+  absl::MutexLock lock(&mutex_);
+  if (!is_connection_alive_) {
+    return false;
+  }
+  NEARBY_LOGS(INFO) << "G3 Ble WriteCharacteristic, characteristic=("
+                    << characteristic.service_uuid.Get16BitAsString() << ","
+                    << std::string(characteristic.uuid)
+                    << "), value = " << absl::BytesToHexString(value);
+  return MediumEnvironment::Instance().WriteBleV2MediumGattCharacteristic(
+      characteristic, value);
+}
+
+bool BleV2Medium::GattClient::SetCharacteristicSubscription(
+    const api::ble_v2::GattCharacteristic& characteristic, bool enable,
+    absl::AnyInvocable<void(absl::string_view value)>
+        on_characteristic_changed_cb) {
+  absl::MutexLock lock(&mutex_);
+  if (!is_connection_alive_) {
+    return false;
+  }
+  NEARBY_LOGS(INFO) << "G3 Ble SetCharacteristicSubscription, characteristic=("
+                    << characteristic.service_uuid.Get16BitAsString() << ","
+                    << std::string(characteristic.uuid)
+                    << "), enable = " << enable;
+  return MediumEnvironment::Instance()
+      .SetBleV2MediumGattCharacteristicSubscription(
+          characteristic, enable, std::move(on_characteristic_changed_cb));
 }
 
 void BleV2Medium::GattClient::Disconnect() {

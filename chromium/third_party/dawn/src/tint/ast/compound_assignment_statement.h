@@ -22,7 +22,8 @@
 namespace tint::ast {
 
 /// A compound assignment statement
-class CompoundAssignmentStatement final : public Castable<CompoundAssignmentStatement, Statement> {
+class CompoundAssignmentStatement final
+    : public utils::Castable<CompoundAssignmentStatement, Statement> {
   public:
     /// Constructor
     /// @param pid the identifier of the program that owns this node
@@ -37,8 +38,8 @@ class CompoundAssignmentStatement final : public Castable<CompoundAssignmentStat
                                 const Expression* lhs,
                                 const Expression* rhs,
                                 BinaryOp op);
-    /// Move constructor
-    CompoundAssignmentStatement(CompoundAssignmentStatement&&);
+
+    /// Destructor
     ~CompoundAssignmentStatement() override;
 
     /// Clones this node and all transitive child nodes using the `CloneContext`

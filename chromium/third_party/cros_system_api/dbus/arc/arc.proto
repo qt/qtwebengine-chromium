@@ -96,7 +96,11 @@ message StartArcMiniInstanceRequest {
   // Option to enable privacy hub for chrome in android settings.
   optional bool enable_privacy_hub_for_chrome = 17 [default = false];
 
-  // Next ID to use: 18
+  // Flag to switch from ARC Keymaster to ARC KeyMint. Intended for T+ only.
+  // TODO(b/268706760): Remove this flag when ARC KeyMint upgrade is done.
+  optional bool arc_switch_to_keymint = 18 [default = false];
+
+  // Next ID to use: 19
 }
 
 // ARC upgrade options sent from Chrome to session manager. This message is used

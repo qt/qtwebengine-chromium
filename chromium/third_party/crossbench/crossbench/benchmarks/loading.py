@@ -4,23 +4,26 @@
 from __future__ import annotations
 
 import abc
+import argparse
+import datetime as dt
 import logging
+import math
 import re
 import time
 from enum import Enum
-from typing import (TYPE_CHECKING, Any, Dict, List, Optional, Sequence, TextIO,
-                    Tuple, Type, Union)
+from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 import hjson
 
-from crossbench.benchmarks.base import StoryFilter, SubStoryBenchmark
-from crossbench.cli_helper import existing_file_type
+from crossbench.benchmarks.benchmark import StoryFilter, SubStoryBenchmark
+from crossbench.cli_helper import parse_file_path
 from crossbench.exception import ExceptionAnnotator
 from crossbench.stories import Story
 
 if TYPE_CHECKING:
-  import argparse
+  from typing import (Any, Dict, Iterator, List, Optional, Sequence, TextIO,
+                      Tuple, Type, Union)
 
   from crossbench.runner import Run
 
@@ -43,6 +46,88 @@ class ActionType(str, Enum):
   SCROLL = "scroll"
 
 
+class PlaybackController:
+
+  @classmethod
+  def parse(cls, value: str) -> PlaybackController:
+    if not value or value == "once":
+      return cls.once()
+    if value in ("inf", "infinity", "forever"):
+      return cls.forever()
+    if value[-1].isnumeric():
+      raise argparse.ArgumentTypeError(
+          f"Missing unit suffix: '{value}'\n"
+          "Use 'x' for repetitions or time unit 's', 'm', 'h'")
+    if value[-1] == "x":
+      try:
+        loops = int(value[:-1])
+      except ValueError as e:
+        raise argparse.ArgumentTypeError(
+            f"Repeat-count must be a valid int, {e}")
+      if loops <= 0:
+        raise argparse.ArgumentTypeError(
+            f"Repeat-count must be positive: {value}")
+      try:
+        return cls.repeat(loops)
+      except ValueError:
+        pass
+    duration: Optional[float] = _Duration.parse(value)
+    if not duration:
+      raise argparse.ArgumentTypeError(f"Invalid cycle argument: {value}")
+    return cls.timeout(duration)
+
+  @classmethod
+  def once(cls) -> RepeatPlaybackController:
+    return RepeatPlaybackController(1)
+
+  @classmethod
+  def repeat(cls, count: int) -> RepeatPlaybackController:
+    return RepeatPlaybackController(count)
+
+  @classmethod
+  def forever(cls) -> PlaybackController:
+    return PlaybackController()
+
+  @classmethod
+  def timeout(cls, duration: float) -> TimeoutPlaybackController:
+    return TimeoutPlaybackController(duration)
+
+  def __iter__(self) -> Iterator[None]:
+    while True:
+      yield None
+
+
+class TimeoutPlaybackController(PlaybackController):
+
+  def __init__(self, duration: float) -> None:
+    # TODO: support --time-unit
+    self._duration = duration
+
+  @property
+  def duration(self) -> float:
+    return self._duration
+
+  def __iter__(self) -> Iterator[None]:
+    end = dt.datetime.now() + dt.timedelta(seconds=self._duration)
+    while dt.datetime.now() <= end:
+      yield None
+
+
+class RepeatPlaybackController(PlaybackController):
+
+  def __init__(self, count: int) -> None:
+    assert count > 0, f"Invalid page playback count: {count}"
+    self._count = count
+
+  def __iter__(self) -> Iterator[None]:
+    for _ in range(self._count):
+      yield None
+
+  @property
+  def count(self) -> int:
+    return self._count
+
+
 class Page(Story, metaclass=abc.ABCMeta):
 
   url: Optional[str]
@@ -51,12 +136,30 @@ class Page(Story, metaclass=abc.ABCMeta):
   def all_story_names(cls) -> Tuple[str, ...]:
     return tuple(page.name for page in PAGE_LIST)
 
-class LivePage(Page):
-
-  def __init__(self, name: str, url: str, duration: float = 15):
+  def __init__(self,
+               name: str,
+               duration: float,
+               playback: Optional[PlaybackController] = None):
+    self._playback = playback or PlaybackController.once()
     super().__init__(name, duration)
+
+  def set_parent(self, parent: Page):
+    # TODO: support nested playback controllers.
+    self._playback = PlaybackController.once()
+    del parent
+
+
+class LivePage(Page):
+  url: str
+
+  def __init__(self,
+               name: str,
+               url: str,
+               duration: float = 15,
+               playback: Optional[PlaybackController] = None) -> None:
+    super().__init__(name, duration, playback)
     assert url, "Invalid page url"
-    self.url = url
+    self.url: str = url
 
   def details_json(self) -> Dict[str, Any]:
     result = super().details_json()
@@ -64,8 +167,9 @@ class LivePage(Page):
     return result
 
   def run(self, run: Run) -> None:
-    run.browser.show_url(run.runner, self.url)
-    run.runner.wait(self.duration + 1)
+    for _ in self._playback:
+      run.browser.show_url(run.runner, self.url)
+      run.runner.wait(self.duration + 1)
 
   def __str__(self) -> str:
     return f"Page(name={self.name}, url={self.url})"
@@ -73,12 +177,17 @@ class LivePage(Page):
 
 class CombinedPage(Page):
 
-  def __init__(self, pages: Sequence[Page], name: str = "combined"):
+  def __init__(self,
+               pages: Sequence[Page],
+               name: str = "combined",
+               playback: Optional[PlaybackController] = None):
     assert len(pages), "No sub-pages provided for CombinedPage"
     assert len(pages) > 1, "Combined Page needs more than one page"
     self._pages = pages
+    for page in self._pages:
+      page.set_parent(self)
     duration = sum(page.duration for page in pages)
-    super().__init__(name, duration)
+    super().__init__(name, duration, playback)
     self.url = None
 
   def details_json(self) -> Dict[str, Any]:
@@ -87,8 +196,9 @@ class CombinedPage(Page):
     return result
 
   def run(self, run: Run) -> None:
-    for page in self._pages:
-      page.run(run)
+    for _ in self._playback:
+      for page in self._pages:
+        page.run(run)
 
   def __str__(self) -> str:
     combined_name = ",".join(page.name for page in self._pages)
@@ -97,21 +207,25 @@ class CombinedPage(Page):
 
 class InteractivePage(Page):
 
-  def __init__(self, actions: List[Action], name: str):
+  def __init__(self,
+               actions: List[Action],
+               name: str,
+               playback: Optional[PlaybackController] = None):
     self._name = name
     assert isinstance(actions, list)
     self._actions = actions
     assert self._actions, "Must have at least 1 valid action"
     duration = self._get_duration()
-    super().__init__(name, duration)
+    super().__init__(name, duration, playback)
 
   @property
   def actions(self) -> List[Action]:
     return self._actions
 
   def run(self, run: Run) -> None:
-    for action in self._actions:
-      action.run(run, self)
+    for _ in self._playback:
+      for action in self._actions:
+        action.run(run, self)
 
   def details_json(self) -> Dict[str, Any]:
     result = super().details_json()
@@ -168,13 +282,16 @@ class LoadingPageFilter(StoryFilter):
   def kwargs_from_cli(cls, args: argparse.Namespace) -> Dict[str, Any]:
     kwargs = super().kwargs_from_cli(args)
     kwargs["separate"] = args.separate
+    kwargs["playback"] = args.playback
     return kwargs
 
   def __init__(self,
                story_cls: Type[Page],
                patterns: Sequence[str],
-               separate: bool = True):
+               separate: bool = True,
+               playback: Optional[PlaybackController] = None):
     self.separate = separate
+    self._playback = playback or PlaybackController.once()
     super().__init__(story_cls, patterns)
 
   def process_all(self, patterns: Sequence[str]) -> None:
@@ -201,7 +318,13 @@ class LoadingPageFilter(StoryFilter):
     self.stories = []
     for value in name_or_url_list:
       if value in PAGES:
-        page = PAGES[value]
+        template = PAGES[value]
+        # Create copy so we can modify the playback value.
+        page = LivePage(
+            template.name,
+            template.url,
+            template.duration,
+            playback=self._playback)
       elif "://" in value or value.startswith("www."):
         name = value
         if value.startswith("www."):
@@ -210,7 +333,9 @@ class LoadingPageFilter(StoryFilter):
           url = value
         if use_hostname:
           name = urlparse(url).hostname
-        page = LivePage(name, url)
+        if not name:
+          raise argparse.ArgumentTypeError(f"Invalid url: {url}")
+        page = LivePage(name, url, playback=self._playback)
       else:
         # Use the last created page and set the duration on it
         assert page is not None, (
@@ -228,7 +353,8 @@ class LoadingPageFilter(StoryFilter):
     logging.info("SELECTED STORIES: %s", str(list(map(str, self.stories))))
     if not self.separate and len(self.stories) > 1:
       combined_name = "_".join(page.name for page in self.stories)
-      self.stories = (CombinedPage(self.stories, combined_name),)
+      self.stories = (CombinedPage(self.stories, combined_name,
+                                   self._playback),)
     return self.stories
 
 
@@ -258,11 +384,13 @@ class PageLoadBenchmark(SubStoryBenchmark):
       if args.separate:
         return args.page_config.stories
       return (CombinedPage(args.page_config.stories,
-                           "Page Scenarios - Combined"),)
+                           "Page Scenarios - Combined", args.playback),)
     return super().stories_from_cli_args(args)
 
   @classmethod
-  def add_cli_parser(cls, subparsers, aliases: Sequence[str] = ()):
+  def add_cli_parser(
+      cls, subparsers: argparse.ArgumentParser, aliases: Sequence[str] = ()
+  ) -> argparse.ArgumentParser:
     parser = super().add_cli_parser(subparsers, aliases)
     group = parser.add_mutually_exclusive_group()
     group.add_argument(
@@ -272,10 +400,28 @@ class PageLoadBenchmark(SubStoryBenchmark):
         help="List of urls and durations to load: url,seconds,...")
     group.add_argument(
         "--page-config",
-        type=existing_file_type,
+        type=parse_file_path,
         help="Stories we want to perform in the benchmark run following a"
         "specified scenario. For a reference on how to build scenarios and"
         "possible actions check  pages.config.example.hjson")
+
+    playback_group = parser.add_mutually_exclusive_group()
+    playback_group.add_argument(
+        "--playback",
+        "--cycle",
+        default=PlaybackController.once(),
+        type=PlaybackController.parse,
+        help="Set limit on looping through/repeating the selected stories. "
+        "Default is once."
+        "Valid values are: 'once', 'forever', number, time. "
+        "Cycle 10 times: '--playback=10x'. "
+        "Repeat for 1.5 hours: '--playback=1.5h'.")
+    playback_group.add_argument(
+        "--forever",
+        dest="playback",
+        const=PlaybackController(),
+        action="store_const",
+        help="Equivalent to --playback=infinity")
     return parser
 
   def __init__(self, stories: Sequence[Page], duration: Optional[float] = None):
@@ -288,7 +434,6 @@ class PageLoadBenchmark(SubStoryBenchmark):
 
 
 class PageConfig:
-  _DURATION_RE = re.compile(r"(?P<value>(\d+(\.\d+)?)) ?(?P<unit>[^0-9\.]+)?")
 
   @classmethod
   def from_cli_args(cls, args: argparse.Namespace) -> PageConfig:
@@ -339,10 +484,12 @@ class PageConfig:
 
     As an example look at: page.config.example.hjson
     """
+    playback: PlaybackController = PlaybackController.parse(
+        pages.get("playback", "1x"))
     for scenario_name, actions in pages.items():
       with self._exceptions.info(f"Parsing scenario ...['{scenario_name}']"):
         actions = self._parse_actions(actions, scenario_name)
-        self.stories.append(InteractivePage(actions, scenario_name))
+        self.stories.append(InteractivePage(actions, scenario_name, playback))
 
   def _parse_actions(self, actions: List[Dict[str, Any]],
                      scenario_name: str) -> List[Action]:
@@ -362,7 +509,7 @@ class PageConfig:
         if not action_type:
           raise ValueError("Empty 'action' property")
         if action_duration := step.get("duration", 0.0):
-          action_duration = self._parse_duration(action_duration)
+          action_duration = _Duration.parse(action_duration)
         value = step.get("url") or step.get("value")
         actions_list.append(
             self._create_action(action_type, value, action_duration))
@@ -372,44 +519,15 @@ class PageConfig:
                           "does not contain any valid actions")
     return actions_list
 
-  def _parse_duration(self,
-                      time_str: Union[float, int, str]) -> Optional[float]:
-    """
-    This function will parse the measurement and the value from string value.
-    Keep in mind the return is in seconds.
-
-    For example:
-    5s => 5
-    5m => 5*60 = 300
-
-    """
-    if isinstance(time_str, (int, float)):
-      return float(time_str)
-
-    if not time_str:
-      return None
-
-    match = self._DURATION_RE.fullmatch(time_str)
-    if match is None:
-      return None
-
-    value = match.group('value')
-    if not value:
-      raise Exception("Error: Duration value not found."
-                      "Make sure to include a valid duration value")
-    time_unit = match.group('unit')
-    if not time_unit:
-      # If no time unit provided we assume it is in seconds.
-      return float(value)
-    return float(value) * _TimeSuffix.get_multiplier(time_unit)
-
   def _create_action(self, action_type, value, duration) -> Action:
     if action_type not in _ACTION_FACTORY:
       raise ValueError(f"Unknown action name: '{action_type}'")
     return _ACTION_FACTORY[action_type](action_type, value, duration)
 
 
-class _TimeSuffix:
+class _Duration:
+  _DURATION_RE = re.compile(r"(?P<value>(\d+(\.\d+)?)) ?(?P<unit>[^0-9\.]+)?")
+
   _MILLISECONDS_MULTIPLIER = 0.001
   _SECONDS_MULTIPLIER = 1
   _MINUTES_MULTIPLIER = 60
@@ -428,6 +546,48 @@ class _TimeSuffix:
     raise ValueError(f"Error: {suffix} is not support for duration. "
                      "Make sure to use a supported time unit/suffix")
 
+  @classmethod
+  def parse(cls, time_value: Union[float, int, str]) -> Optional[float]:
+    """
+    This function will parse the measurement and the value from string value.
+    Keep in mind the return is in seconds.
+
+    For example:
+    5s => 5
+    5m => 5*60 = 300
+
+    """
+    if isinstance(time_value, (int, float)):
+      if time_value < 0:
+        raise argparse.ArgumentTypeError(
+            f"Duration must be positive, but got: {time_value}")
+      return float(time_value)
+
+    if not time_value:
+      return None
+
+    match = cls._DURATION_RE.fullmatch(time_value)
+    if match is None:
+      return None
+
+    value = match.group('value')
+    if not value:
+      raise argparse.ArgumentTypeError(
+          "Error: Duration value not found."
+          "Make sure to include a valid duration value")
+    time_unit = match.group('unit')
+    try:
+      time_value = float(value)
+    except ValueError as e:
+      raise argparse.ArgumentTypeError(f"Duration must be a valid number, {e}")
+    if time_value < 0 or math.isnan(time_value) or math.isinf(time_value):
+      raise argparse.ArgumentTypeError(
+          f"Duration must be positive, but got: {time_value}")
+    if not time_unit:
+      # If no time unit provided we assume it is in seconds.
+      return time_value
+    return time_value * cls.get_multiplier(time_unit)
+
 
 class Action(abc.ABC):
   timeout: float
@@ -443,6 +603,8 @@ class Action(abc.ABC):
     self.value = value
     assert isinstance(duration, float)
     self.duration = duration
+    assert duration >= 0 and not math.isinf(duration), (
+        f"Invalid duration: {duration}")
 
   @abc.abstractmethod
   def run(self, run: Run, story: Story) -> None:

@@ -24,6 +24,7 @@
 
 #include <pthread.h>  // NOLINT: use pthread to avoid extra dependencies.
 #include <sys/auxv.h>
+#include <sys/prctl.h>
 #include <sys/resource.h>
 #include <sys/stat.h>
 #include <sys/time.h>
@@ -49,7 +50,11 @@
 
 namespace centipede {
 
-GlobalRunnerState state;
+// Use of the fixed init priority allows to call CentipedeRunnerMain
+// from constructor functions (CentipedeRunnerMain needs to run after
+// state constructor).
+// Note: it must run after ForkServerCallMeVeryEarly, see comment there.
+GlobalRunnerState state __attribute__((init_priority(200)));
 // We use __thread instead of thread_local so that the compiler warns if
 // the initializer for `tls` is not a constant expression.
 // `tls` thus must not have a CTOR.
@@ -251,16 +256,16 @@ static void WriteFeaturesToFile(FILE *file,
 }
 
 // Clears all coverage data.
+// All bitsets, counter arrays and such need to be clear before every execution.
+// However, clearing them is expensive because they are sparse.
+// Instead, we rely on ForEachNonZeroByte() and
+// ConcurrentBitSet::ForEachNonZeroBit to clear the bits/bytes after they
+// finish iterating.
+// We still need to clear all the thread-local data updated during execution.
 __attribute__((noinline))  // so that we see it in profile.
 static void
 PrepareCoverage() {
-  if (state.run_time_flags.use_counter_features) state.counter_array.Clear();
-  if (state.run_time_flags.use_dataflow_features)
-    state.data_flow_feature_set.clear();
-  if (state.run_time_flags.use_cmp_features) state.cmp_feature_set.clear();
-  if (state.run_time_flags.use_pc_features) state.pc_feature_set.clear();
   if (state.run_time_flags.path_level) {
-    state.path_feature_set.clear();
     state.ForEachTls([](centipede::ThreadLocalRunnerState &tls) {
       tls.path_ring_buffer.clear();
     });
@@ -282,15 +287,18 @@ PostProcessCoverage(int target_return_value) {
   if (target_return_value == -1) return;
 
   // Convert counters to features.
-  if (state.run_time_flags.use_counter_features) {
-    centipede::ForEachNonZeroByte(
-        state.counter_array.data(), state.counter_array.size(),
-        [](size_t idx, uint8_t value) {
+  centipede::ForEachNonZeroByte(
+      state.pc_counters, state.pc_counters_size, [](size_t idx, uint8_t value) {
+        if (state.run_time_flags.use_pc_features) {
+          g_features.push_back(
+              centipede::feature_domains::kPCs.ConvertToMe(idx));
+        }
+        if (state.run_time_flags.use_counter_features) {
           g_features.push_back(
               centipede::feature_domains::k8bitCounters.ConvertToMe(
                   centipede::Convert8bitCounterToNumber(idx, value)));
-        });
-  }
+        }
+      });
 
   // Convert data flow bit set to features.
   if (state.run_time_flags.use_dataflow_features) {
@@ -312,16 +320,6 @@ PostProcessCoverage(int target_return_value) {
     state.path_feature_set.ForEachNonZeroBit([](size_t idx) {
       g_features.push_back(
           centipede::feature_domains::kBoundedPath.ConvertToMe(idx));
-    });
-  }
-
-  // Convert pc bit set to features, only if not use_counter_features.
-  if (state.run_time_flags.use_pc_features &&
-      !state.run_time_flags.use_counter_features) {
-    state.pc_feature_set.ForEachNonZeroBit([](size_t idx) {
-      g_features.push_back(
-          centipede::feature_domains::k8bitCounters.ConvertToMe(
-              centipede::Convert8bitCounterToNumber(idx, 1)));
     });
   }
 }
@@ -627,8 +625,7 @@ static size_t GetVmSizeInBytes() {
 // Sets RLIMIT_CORE, RLIMIT_AS
 static void SetLimits() {
   // no core files anywhere.
-  struct rlimit rlimit_core = {0, 0};
-  setrlimit(RLIMIT_CORE, &rlimit_core);
+  prctl(PR_SET_DUMPABLE, 0);
 
   // ASAN/TSAN/MSAN can not be used with RLIMIT_AS.
   // We get the current VmSize, if it is greater than 1Tb, we assume we
@@ -730,8 +727,6 @@ GlobalRunnerState::~GlobalRunnerState() {
   }
 }
 
-}  // namespace centipede
-
 // If HasFlag(:dump_pc_table:), dump the pc table to state.arg1.
 //   Used to import the pc table into the caller process.
 //
@@ -749,9 +744,6 @@ extern "C" int CentipedeRunnerMain(
     FuzzerInitializeCallback initialize_cb,
     FuzzerCustomMutatorCallback custom_mutator_cb,
     FuzzerCustomCrossOverCallback custom_crossover_cb) {
-  using centipede::state;
-  using centipede::tls;
-
   state.centipede_runner_main_executed = true;
 
   fprintf(stderr, "Centipede fuzz target runner; argv[0]: %s flags: %s\n",
@@ -766,19 +758,19 @@ extern "C" int CentipedeRunnerMain(
   // Inputs / outputs from shmem.
   if (state.HasFlag(":shmem:")) {
     if (!state.arg1 || !state.arg2) return EXIT_FAILURE;
-    centipede::SharedMemoryBlobSequence inputs_blobseq(state.arg1);
-    centipede::SharedMemoryBlobSequence outputs_blobseq(state.arg2);
+    SharedMemoryBlobSequence inputs_blobseq(state.arg1);
+    SharedMemoryBlobSequence outputs_blobseq(state.arg2);
     // Read the first blob. It indicates what further actions to take.
     auto request_type_blob = inputs_blobseq.Read();
-    if (centipede::execution_request::IsMutationRequest(request_type_blob)) {
+    if (execution_request::IsMutationRequest(request_type_blob)) {
       // Mutation request.
       inputs_blobseq.Reset();
-      state.byte_array_mutator = new centipede::ByteArrayMutator(
-          state.knobs, centipede::GetRandomSeed());
+      state.byte_array_mutator =
+          new ByteArrayMutator(state.knobs, GetRandomSeed());
       return MutateInputsFromShmem(inputs_blobseq, outputs_blobseq,
                                    custom_mutator_cb, custom_crossover_cb);
     }
-    if (centipede::execution_request::IsExecutionRequest(request_type_blob)) {
+    if (execution_request::IsExecutionRequest(request_type_blob)) {
       // Execution request.
       inputs_blobseq.Reset();
       return ExecuteInputsFromShmem(inputs_blobseq, outputs_blobseq,
@@ -789,10 +781,12 @@ extern "C" int CentipedeRunnerMain(
 
   // By default, run every input file one-by-one.
   for (int i = 1; i < argc; i++) {
-    centipede::ReadOneInputExecuteItAndDumpCoverage(argv[i], test_one_input_cb);
+    ReadOneInputExecuteItAndDumpCoverage(argv[i], test_one_input_cb);
   }
   return EXIT_SUCCESS;
 }
+
+}  // namespace centipede
 
 extern "C" int LLVMFuzzerRunDriver(
     int *argc, char ***argv, FuzzerTestOneInputCallback test_one_input_cb) {
@@ -800,3 +794,6 @@ extern "C" int LLVMFuzzerRunDriver(
                              LLVMFuzzerInitialize, LLVMFuzzerCustomMutator,
                              LLVMFuzzerCustomCrossOver);
 }
+
+extern "C" __attribute__((used)) void CentipedeIsPresent() {}
+extern "C" __attribute__((used)) void __libfuzzer_is_present() {}

@@ -155,9 +155,9 @@ private:
 
     GrD3DGpu* fGpu;
 
-    SkSTArray<4, std::unique_ptr<GrD3DDirectCommandList>> fAvailableDirectCommandLists;
-    SkSTArray<4, sk_sp<GrD3DRootSignature>> fRootSignatures;
-    SkSTArray<2, sk_sp<GrD3DCommandSignature>> fCommandSignatures;
+    skia_private::STArray<4, std::unique_ptr<GrD3DDirectCommandList>> fAvailableDirectCommandLists;
+    skia_private::STArray<4, sk_sp<GrD3DRootSignature>> fRootSignatures;
+    skia_private::STArray<2, sk_sp<GrD3DCommandSignature>> fCommandSignatures;
 
     GrD3DCpuDescriptorManager fCpuDescriptorManager;
     GrD3DDescriptorTableManager fDescriptorTableManager;
@@ -165,7 +165,7 @@ private:
     std::unique_ptr<PipelineStateCache> fPipelineStateCache;
     sk_sp<GrD3DPipeline> fMipmapPipeline;
 
-    SkTHashMap<uint32_t, D3D12_CPU_DESCRIPTOR_HANDLE> fSamplers;
+    skia_private::THashMap<uint32_t, D3D12_CPU_DESCRIPTOR_HANDLE> fSamplers;
 
     DescriptorTableCache fShaderResourceDescriptorTableCache;
     DescriptorTableCache fSamplerDescriptorTableCache;

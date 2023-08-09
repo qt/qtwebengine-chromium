@@ -16,7 +16,7 @@
 #include "src/core/SkVM.h"
 #include "src/shaders/SkShaderBase.h"
 
-#ifdef SK_GRAPHITE_ENABLED
+#if defined(SK_GRAPHITE)
 #include "src/gpu/graphite/KeyHelpers.h"
 #endif
 
@@ -56,8 +56,8 @@ public:
         bool unflatten(SkReadBuffer&, SkMatrix* legacyLocalMatrix);
 
     private:
-        SkSTArray<16, SkColor4f, true> fColorStorage;
-        SkSTArray<16, SkScalar , true> fPositionStorage;
+        skia_private::STArray<16, SkColor4f, true> fColorStorage;
+        skia_private::STArray<16, SkScalar , true> fPositionStorage;
     };
 
     SkGradientShaderBase(const Descriptor& desc, const SkMatrix& ptsToUnit);
@@ -100,6 +100,7 @@ protected:
 
     bool appendStages(const SkStageRec&, const MatrixRec&) const override;
 
+#if defined(SK_ENABLE_SKVM)
     skvm::Color program(skvm::Builder*,
                         skvm::Coord device,
                         skvm::Coord local,
@@ -108,24 +109,32 @@ protected:
                         const SkColorInfo& dstCS,
                         skvm::Uniforms* uniforms,
                         SkArenaAlloc* alloc) const override;
+#endif
 
     virtual void appendGradientStages(SkArenaAlloc* alloc, SkRasterPipeline* tPipeline,
                                       SkRasterPipeline* postPipeline) const = 0;
-
+#if defined(SK_ENABLE_SKVM)
     // Produce t from (x,y), modifying mask if it should be anything other than ~0.
     virtual skvm::F32 transformT(skvm::Builder*, skvm::Uniforms*,
                                  skvm::Coord coord, skvm::I32* mask) const = 0;
+#endif
 
     const SkMatrix fPtsToUnit;
     SkTileMode     fTileMode;
 
-#ifdef SK_GRAPHITE_ENABLED
-    static void MakeInterpolatedToDst(const skgpu::graphite::KeyContext&,
-                                      skgpu::graphite::PaintParamsKeyBuilder*,
-                                      skgpu::graphite::PipelineDataGatherer*,
-                                      const skgpu::graphite::GradientShaderBlocks::GradientData&,
-                                      const SkGradientShaderBase::Interpolation&,
-                                      SkColorSpace* intermediateCS);
+#if defined(SK_GRAPHITE)
+    // When the number of stops exceeds Graphite's uniform-based limit the colors and offsets
+    // are stored in this bitmap. It is stored in the shader so it can be cached with a stable
+    // id and easily regenerated if purged.
+    mutable SkBitmap fColorsAndOffsetsBitmap;
+
+    void addToKeyCommon(const skgpu::graphite::KeyContext&,
+                        skgpu::graphite::PaintParamsKeyBuilder*,
+                        skgpu::graphite::PipelineDataGatherer*,
+                        GradientType,
+                        SkPoint point0, SkPoint point1,
+                        float radius0, float radius1,
+                        float bias, float scale) const;
 #endif
 
 public:
@@ -174,14 +183,14 @@ private:
 struct SkColor4fXformer {
     SkColor4fXformer(const SkGradientShaderBase* shader, SkColorSpace* dst);
 
-    SkSTArray<4, SkPMColor4f, true> fColors;
-    sk_sp<SkColorSpace>             fIntermediateColorSpace;
+    skia_private::STArray<4, SkPMColor4f, true> fColors;
+    sk_sp<SkColorSpace> fIntermediateColorSpace;
 };
 
 struct SkColorConverter {
     SkColorConverter(const SkColor* colors, int count);
 
-    SkSTArray<2, SkColor4f, true> fColors4f;
+    skia_private::STArray<2, SkColor4f, true> fColors4f;
 };
 
 void SkRegisterLinearGradientShaderFlattenable();

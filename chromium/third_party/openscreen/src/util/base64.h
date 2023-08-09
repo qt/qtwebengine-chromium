@@ -5,6 +5,8 @@
 #ifndef UTIL_BASE64_H_
 #define UTIL_BASE64_H_
 
+#include <stdint.h>
+
 #include <string>
 #include <vector>
 

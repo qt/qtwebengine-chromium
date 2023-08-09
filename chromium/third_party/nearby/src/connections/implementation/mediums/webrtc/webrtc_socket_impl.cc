@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#ifndef NO_WEBRTC
+
 #include "connections/implementation/mediums/webrtc/webrtc_socket_impl.h"
 
 #include "internal/platform/logging.h"
@@ -65,7 +67,12 @@ WebRtcSocket::WebRtcSocket(
 WebRtcSocket::~WebRtcSocket() {
   NEARBY_LOGS(INFO) << "WebRtcSocket::~WebRtcSocket(" << name_
                     << ") this: " << this;
-  Close();
+
+  if (!IsClosed()) {
+    data_channel_->UnregisterObserver();
+    Close();
+  }
+
   NEARBY_LOGS(INFO) << "WebRtcSocket::~WebRtcSocket(" << name_
                     << ") this: " << this << " done";
 }
@@ -106,7 +113,6 @@ void WebRtcSocket::OnStateChange() {
       NEARBY_LOG(
           ERROR,
           "WebRtcSocket::OnStateChange() unregistering data channel observer.");
-      data_channel_->UnregisterObserver();
       // This will trigger a destruction of the owning connection flow
       // We implicitly depend on the |socket_listener_| to offload from
       // the signaling thread so it does not get blocked.
@@ -186,3 +192,5 @@ void WebRtcSocket::OffloadFromSignalingThread(Runnable runnable) {
 }  // namespace mediums
 }  // namespace connections
 }  // namespace nearby
+
+#endif

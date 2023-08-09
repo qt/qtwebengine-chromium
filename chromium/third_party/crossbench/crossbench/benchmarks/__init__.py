@@ -4,5 +4,12 @@
 
 from __future__ import annotations
 
-from crossbench.benchmarks.base import (Benchmark, PressBenchmark, StoryFilter,
-                                        SubStoryBenchmark)
+from crossbench.benchmarks.benchmark import (Benchmark, PressBenchmark,
+                                             StoryFilter, SubStoryBenchmark)
+
+__all__ = [
+    "Benchmark",
+    "PressBenchmark",
+    "StoryFilter",
+    "SubStoryBenchmark",
+]

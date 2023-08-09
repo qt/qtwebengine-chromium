@@ -807,36 +807,6 @@ TEST_P(QuicSpdySessionTestServer,
                   msg);
 }
 
-TEST_P(QuicSpdySessionTestServer, OnCanWrite) {
-  CompleteHandshake();
-  session_.set_writev_consumes_all_data(true);
-  TestStream* stream2 = session_.CreateOutgoingBidirectionalStream();
-  TestStream* stream4 = session_.CreateOutgoingBidirectionalStream();
-  TestStream* stream6 = session_.CreateOutgoingBidirectionalStream();
-
-  session_.MarkConnectionLevelWriteBlocked(stream2->id());
-  session_.MarkConnectionLevelWriteBlocked(stream6->id());
-  session_.MarkConnectionLevelWriteBlocked(stream4->id());
-
-  InSequence s;
-
-  // Reregister, to test the loop limit.
-  EXPECT_CALL(*stream2, OnCanWrite()).WillOnce(Invoke([this, stream2]() {
-    session_.SendStreamData(stream2);
-    session_.MarkConnectionLevelWriteBlocked(stream2->id());
-  }));
-  // 2 will get called a second time as it didn't finish its block
-  EXPECT_CALL(*stream2, OnCanWrite()).WillOnce(Invoke([this, stream2]() {
-    session_.SendStreamData(stream2);
-  }));
-  EXPECT_CALL(*stream6, OnCanWrite()).WillOnce(Invoke([this, stream6]() {
-    session_.SendStreamData(stream6);
-  }));
-  // 4 will not get called, as we exceeded the loop limit.
-  session_.OnCanWrite();
-  EXPECT_TRUE(session_.WillingAndAbleToWrite());
-}
-
 TEST_P(QuicSpdySessionTestServer, TooLargeStreamBlocked) {
   // STREAMS_BLOCKED frame is IETF QUIC only.
   if (!VersionUsesHttp3(transport_version())) {
@@ -857,73 +827,6 @@ TEST_P(QuicSpdySessionTestServer, TooLargeStreamBlocked) {
       .WillOnce(Return(WriteResult(WRITE_STATUS_OK, 0)));
   EXPECT_CALL(debug_visitor, OnGoAwayFrameSent(_));
   session_.OnStreamsBlockedFrame(frame);
-}
-
-TEST_P(QuicSpdySessionTestServer, TestBatchedWrites) {
-  session_.set_writev_consumes_all_data(true);
-  TestStream* stream2 = session_.CreateOutgoingBidirectionalStream();
-  TestStream* stream4 = session_.CreateOutgoingBidirectionalStream();
-  TestStream* stream6 = session_.CreateOutgoingBidirectionalStream();
-
-  session_.set_writev_consumes_all_data(true);
-  session_.MarkConnectionLevelWriteBlocked(stream2->id());
-  session_.MarkConnectionLevelWriteBlocked(stream4->id());
-
-  // With two sessions blocked, we should get two write calls.  They should both
-  // go to the first stream as it will only write 6k and mark itself blocked
-  // again.
-  InSequence s;
-  EXPECT_CALL(*stream2, OnCanWrite()).WillOnce(Invoke([this, stream2]() {
-    session_.SendLargeFakeData(stream2, 6000);
-    session_.MarkConnectionLevelWriteBlocked(stream2->id());
-  }));
-  EXPECT_CALL(*stream2, OnCanWrite()).WillOnce(Invoke([this, stream2]() {
-    session_.SendLargeFakeData(stream2, 6000);
-    session_.MarkConnectionLevelWriteBlocked(stream2->id());
-  }));
-  session_.OnCanWrite();
-
-  // We should get one more call for stream2, at which point it has used its
-  // write quota and we move over to stream 4.
-  EXPECT_CALL(*stream2, OnCanWrite()).WillOnce(Invoke([this, stream2]() {
-    session_.SendLargeFakeData(stream2, 6000);
-    session_.MarkConnectionLevelWriteBlocked(stream2->id());
-  }));
-  EXPECT_CALL(*stream4, OnCanWrite()).WillOnce(Invoke([this, stream4]() {
-    session_.SendLargeFakeData(stream4, 6000);
-    session_.MarkConnectionLevelWriteBlocked(stream4->id());
-  }));
-  session_.OnCanWrite();
-
-  // Now let stream 4 do the 2nd of its 3 writes, but add a block for a high
-  // priority stream 6.  4 should be preempted.  6 will write but *not* block so
-  // will cede back to 4.
-  stream6->SetPriority(QuicStreamPriority{
-      kV3HighestPriority, QuicStreamPriority::kDefaultIncremental});
-  EXPECT_CALL(*stream4, OnCanWrite())
-      .WillOnce(Invoke([this, stream4, stream6]() {
-        session_.SendLargeFakeData(stream4, 6000);
-        session_.MarkConnectionLevelWriteBlocked(stream4->id());
-        session_.MarkConnectionLevelWriteBlocked(stream6->id());
-      }));
-  EXPECT_CALL(*stream6, OnCanWrite())
-      .WillOnce(Invoke([this, stream4, stream6]() {
-        session_.SendStreamData(stream6);
-        session_.SendLargeFakeData(stream4, 6000);
-      }));
-  session_.OnCanWrite();
-
-  // Stream4 alread did 6k worth of writes, so after doing another 12k it should
-  // cede and 2 should resume.
-  EXPECT_CALL(*stream4, OnCanWrite()).WillOnce(Invoke([this, stream4]() {
-    session_.SendLargeFakeData(stream4, 12000);
-    session_.MarkConnectionLevelWriteBlocked(stream4->id());
-  }));
-  EXPECT_CALL(*stream2, OnCanWrite()).WillOnce(Invoke([this, stream2]() {
-    session_.SendLargeFakeData(stream2, 6000);
-    session_.MarkConnectionLevelWriteBlocked(stream2->id());
-  }));
-  session_.OnCanWrite();
 }
 
 TEST_P(QuicSpdySessionTestServer, OnCanWriteBundlesStreams) {
@@ -2177,8 +2080,8 @@ TEST_P(QuicSpdySessionTestServer, OnPriorityFrame) {
   session_.OnPriorityFrame(stream_id,
                            spdy::SpdyStreamPrecedence(kV3HighestPriority));
 
-  EXPECT_EQ((QuicStreamPriority{kV3HighestPriority,
-                                QuicStreamPriority::kDefaultIncremental}),
+  EXPECT_EQ((QuicStreamPriority(HttpStreamPriority{
+                kV3HighestPriority, HttpStreamPriority::kDefaultIncremental})),
             stream->priority());
 }
 
@@ -2223,12 +2126,14 @@ TEST_P(QuicSpdySessionTestServer, OnPriorityUpdateFrame) {
 
   // PRIORITY_UPDATE frame arrives after stream creation.
   TestStream* stream1 = session_.CreateIncomingStream(stream_id1);
-  EXPECT_EQ((QuicStreamPriority{QuicStreamPriority::kDefaultUrgency,
-                                QuicStreamPriority::kDefaultIncremental}),
+  EXPECT_EQ(QuicStreamPriority(
+                HttpStreamPriority{HttpStreamPriority::kDefaultUrgency,
+                                   HttpStreamPriority::kDefaultIncremental}),
             stream1->priority());
   EXPECT_CALL(debug_visitor, OnPriorityUpdateFrameReceived(priority_update1));
   session_.OnStreamFrame(data3);
-  EXPECT_EQ((QuicStreamPriority{2u, QuicStreamPriority::kDefaultIncremental}),
+  EXPECT_EQ(QuicStreamPriority(HttpStreamPriority{
+                2u, HttpStreamPriority::kDefaultIncremental}),
             stream1->priority());
 
   // PRIORITY_UPDATE frame for second request stream.
@@ -2246,7 +2151,8 @@ TEST_P(QuicSpdySessionTestServer, OnPriorityUpdateFrame) {
   session_.OnStreamFrame(stream_frame3);
   // Priority is applied upon stream construction.
   TestStream* stream2 = session_.CreateIncomingStream(stream_id2);
-  EXPECT_EQ((QuicStreamPriority{5u, true}), stream2->priority());
+  EXPECT_EQ(QuicStreamPriority(HttpStreamPriority{5u, true}),
+            stream2->priority());
 }
 
 TEST_P(QuicSpdySessionTestServer, OnInvalidPriorityUpdateFrame) {

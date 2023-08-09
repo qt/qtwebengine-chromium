@@ -229,6 +229,9 @@ const char kPasswordManagerLearnMoreURL[] =
     "https://support.google.com/chrome/?p=settings_password";
 #endif
 
+const char kPasswordManagerImportLearnMoreURL[] =
+    "https://support.google.com/chrome/?p=import-passwords-desktop";
+
 const char kPaymentMethodsURL[] =
     "https://pay.google.com/payments/"
     "home?utm_source=chrome&utm_medium=settings&utm_campaign=chrome-payment#"
@@ -393,6 +396,12 @@ const char kArcPrivacyPolicyPathFormat[] = "arc_tos/%s/privacy_policy.pdf";
 
 const char kEolNotificationURL[] = "https://www.google.com/chromebook/older/";
 
+const char kEolIncentiveNotificationOfferURL[] =
+    "https://www.google.com/chromebook/renew-chromebook-offer";
+
+const char kEolIncentiveNotificationNoOfferURL[] =
+    "https://www.google.com/chromebook/renew-chromebook";
+
 const char kAutoUpdatePolicyURL[] =
     "https://support.google.com/chrome/a?p=auto-update-policy";
 
@@ -470,6 +479,9 @@ const char kWifiSyncLearnMoreURL[] =
 const char kWifiHiddenNetworkURL[] =
     "https://support.google.com/chromebook?p=hidden_networks";
 
+const char kWifiPasspointURL[] =
+    "https://support.google.com/chromebook?p=wifi_passpoint";
+
 const char kNearbyShareLearnMoreURL[] =
     "https://support.google.com/chromebook?p=nearby_share";
 
@@ -478,6 +490,9 @@ extern const char kNearbyShareManageContactsURL[] =
 
 extern const char kFingerprintLearnMoreURL[] =
     "https://support.google.com/chromebook?p=chromebook_fingerprint";
+
+extern const char kRecoveryLearnMoreURL[] =
+    "https://support.google.com/chrome?p=local_data_recovery";
 
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
 

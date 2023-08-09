@@ -348,9 +348,9 @@ bool NoOpFramerVisitor::OnAckTimestamp(QuicPacketNumber /*packet_number*/,
   return true;
 }
 
-void NoOpFramerVisitor::OnAckEcnCounts(const QuicEcnCounts& /*ecn_counts*/) {}
-
-bool NoOpFramerVisitor::OnAckFrameEnd(QuicPacketNumber /*start*/) {
+bool NoOpFramerVisitor::OnAckFrameEnd(
+    QuicPacketNumber /*start*/,
+    const absl::optional<QuicEcnCounts>& /*ecn_counts*/) {
   return true;
 }
 
@@ -578,7 +578,7 @@ void PacketSavingConnection::SendOrQueuePacket(SerializedPacket packet) {
   OnPacketSent(packet.encryption_level, packet.transmission_type);
   QuicConnectionPeer::GetSentPacketManager(this)->OnPacketSent(
       &packet, clock_.ApproximateNow(), NOT_RETRANSMISSION,
-      HAS_RETRANSMITTABLE_DATA, true);
+      HAS_RETRANSMITTABLE_DATA, true, ECN_NOT_ECT);
 }
 
 MockQuicSession::MockQuicSession(QuicConnection* connection)
@@ -739,9 +739,11 @@ const QuicCryptoServerStreamBase* TestQuicSpdyServerSession::GetCryptoStream()
 TestQuicSpdyClientSession::TestQuicSpdyClientSession(
     QuicConnection* connection, const QuicConfig& config,
     const ParsedQuicVersionVector& supported_versions,
-    const QuicServerId& server_id, QuicCryptoClientConfig* crypto_config)
+    const QuicServerId& server_id, QuicCryptoClientConfig* crypto_config,
+    absl::optional<QuicSSLConfig> ssl_config)
     : QuicSpdyClientSessionBase(connection, nullptr, &push_promise_index_,
-                                config, supported_versions) {
+                                config, supported_versions),
+      ssl_config_(std::move(ssl_config)) {
   // TODO(b/153726130): Consider adding SetServerApplicationStateForResumption
   // calls in tests and set |has_application_state| to true.
   crypto_stream_ = std::make_unique<QuicCryptoClientStream>(
@@ -1302,7 +1304,7 @@ TestPacketWriter::~TestPacketWriter() {
 WriteResult TestPacketWriter::WritePacket(const char* buffer, size_t buf_len,
                                           const QuicIpAddress& self_address,
                                           const QuicSocketAddress& peer_address,
-                                          PerPacketOptions* /*options*/) {
+                                          PerPacketOptions* options) {
   last_write_source_address_ = self_address;
   last_write_peer_address_ = peer_address;
   // If the buffer is allocated from the pool, return it back to the pool.
@@ -1375,6 +1377,7 @@ WriteResult TestPacketWriter::WritePacket(const char* buffer, size_t buf_len,
     bytes_buffered_ += last_packet_size_;
     return WriteResult(WRITE_STATUS_OK, 0);
   }
+  last_ecn_sent_ = (options == nullptr) ? ECN_NOT_ECT : options->ecn_codepoint;
   return WriteResult(WRITE_STATUS_OK, last_packet_size_);
 }
 

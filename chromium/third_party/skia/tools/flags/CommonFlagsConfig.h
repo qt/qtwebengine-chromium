@@ -28,7 +28,7 @@ class SkCommandLineConfig {
 public:
     SkCommandLineConfig(const SkString&           tag,
                         const SkString&           backend,
-                        const SkTArray<SkString>& viaParts);
+                        const skia_private::TArray<SkString>& viaParts);
     virtual ~SkCommandLineConfig();
     virtual const SkCommandLineConfigGpu* asConfigGpu() const { return nullptr; }
     virtual const SkCommandLineConfigGraphite* asConfigGraphite() const { return nullptr; }
@@ -36,13 +36,13 @@ public:
     const SkString&                       getTag() const { return fTag; }
     const SkString&                       getBackend() const { return fBackend; }
     sk_sp<SkColorSpace>                   refColorSpace() const { return fColorSpace; }
-    const SkTArray<SkString>&             getViaParts() const { return fViaParts; }
+    const skia_private::TArray<SkString>& getViaParts() const { return fViaParts; }
 
 private:
-    SkString            fTag;
-    SkString            fBackend;
-    sk_sp<SkColorSpace> fColorSpace;
-    SkTArray<SkString>  fViaParts;
+    SkString                       fTag;
+    SkString                       fBackend;
+    sk_sp<SkColorSpace>            fColorSpace;
+    skia_private::TArray<SkString> fViaParts;
 };
 
 // SkCommandLineConfigGpu is a SkCommandLineConfig that extracts information out of the backend
@@ -57,7 +57,7 @@ public:
     typedef sk_gpu_test::GrContextFactory::ContextOverrides ContextOverrides;
 
     SkCommandLineConfigGpu(const SkString&           tag,
-                           const SkTArray<SkString>& viaParts,
+                           const skia_private::TArray<SkString>& viaParts,
                            ContextType               contextType,
                            bool                      fakeGLESVer2,
                            uint32_t                  surfaceFlags,
@@ -110,7 +110,7 @@ private:
     SurfType            fSurfType;
 };
 
-#ifdef SK_GRAPHITE_ENABLED
+#if defined(SK_GRAPHITE)
 
 #include "tools/graphite/ContextFactory.h"
 
@@ -119,7 +119,7 @@ public:
     using ContextType = sk_gpu_test::GrContextFactory::ContextType;
 
     SkCommandLineConfigGraphite(const SkString&           tag,
-                                const SkTArray<SkString>& viaParts,
+                                const skia_private::TArray<SkString>& viaParts,
                                 ContextType               contextType,
                                 SkColorType               colorType,
                                 SkAlphaType               alphaType)
@@ -140,14 +140,14 @@ private:
     SkAlphaType         fAlphaType;
 };
 
-#endif // SK_GRAPHITE_ENABLED
+#endif // SK_GRAPHITE
 
 // SkCommandLineConfigSvg is a SkCommandLineConfig that extracts information out of the backend
 // part of the tag. It is constructed tags that have:
 // * backends of form "svg[option=value,option2=value,...]"
 class SkCommandLineConfigSvg : public SkCommandLineConfig {
 public:
-    SkCommandLineConfigSvg(const SkString& tag, const SkTArray<SkString>& viaParts, int pageIndex);
+    SkCommandLineConfigSvg(const SkString& tag, const skia_private::TArray<SkString>& viaParts, int pageIndex);
     const SkCommandLineConfigSvg* asConfigSvg() const override { return this; }
 
     int getPageIndex() const { return fPageIndex; }
@@ -156,7 +156,7 @@ private:
     int fPageIndex;
 };
 
-typedef SkTArray<std::unique_ptr<SkCommandLineConfig>, true> SkCommandLineConfigArray;
+typedef skia_private::TArray<std::unique_ptr<SkCommandLineConfig>, true> SkCommandLineConfigArray;
 void ParseConfigs(const CommandLineFlags::StringArray& configList,
                   SkCommandLineConfigArray*            outResult);
 

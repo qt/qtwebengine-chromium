@@ -21,6 +21,7 @@
 #include "src/tint/type/manager.h"
 #include "src/tint/type/texture_dimension.h"
 #include "src/tint/utils/hash.h"
+#include "src/tint/utils/string_stream.h"
 
 TINT_INSTANTIATE_TYPEINFO(tint::type::Array);
 
@@ -59,7 +60,7 @@ Array::Array(const Type* element,
              uint32_t size,
              uint32_t stride,
              uint32_t implicit_stride)
-    : Base(utils::Hash(TypeInfo::Of<Array>().full_hashcode, count, align, size, stride),
+    : Base(utils::Hash(utils::TypeInfo::Of<Array>().full_hashcode, count, align, size, stride),
            FlagsFrom(element, count)),
       element_(element),
       count_(count),
@@ -80,14 +81,14 @@ bool Array::Equals(const UniqueNode& other) const {
     return false;
 }
 
-std::string Array::FriendlyName(const SymbolTable& symbols) const {
-    std::ostringstream out;
+std::string Array::FriendlyName() const {
+    utils::StringStream out;
     if (!IsStrideImplicit()) {
         out << "@stride(" << stride_ << ") ";
     }
-    out << "array<" << element_->FriendlyName(symbols);
+    out << "array<" << element_->FriendlyName();
 
-    auto count_str = count_->FriendlyName(symbols);
+    auto count_str = count_->FriendlyName();
     if (!count_str.empty()) {
         out << ", " << count_str;
     }

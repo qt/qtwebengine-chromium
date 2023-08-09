@@ -16,6 +16,7 @@
 #include "include/effects/SkGradientShader.h"
 #include "include/gpu/GrDirectContext.h"
 #include "include/gpu/GrRecordingContext.h"
+#include "include/gpu/ganesh/SkImageGanesh.h"
 #include "src/base/SkScopeExit.h"
 #include "src/core/SkAutoPixmapStorage.h"
 #include "tools/Resources.h"
@@ -63,7 +64,7 @@ static sk_sp<SkImage> do_read_and_scale(Src* src,
     }
     SkPixmap pixmap(ii, asyncContext->fResult->data(0), asyncContext->fResult->rowBytes(0));
     auto releasePixels = [](const void*, void* c) { delete static_cast<AsyncContext*>(c); };
-    return SkImage::MakeFromRaster(pixmap, releasePixels, asyncContext);
+    return SkImages::RasterFromPixmap(pixmap, releasePixels, asyncContext);
 }
 
 template <typename Src>
@@ -213,7 +214,7 @@ static skiagm::DrawResult do_rescale_image_grid(SkCanvas* canvas,
         return do_rescale_grid(canvas, surface.get(), dContext, srcRect, newSize,
                                doYUV420, errorMsg);
     } else if (dContext) {
-        image = image->makeTextureImage(dContext);
+        image = SkImages::TextureFromImage(dContext, image);
         if (!image) {
             *errorMsg = "Could not create image.";
             // When testing abandoned GrContext we expect surface creation to fail.
@@ -400,8 +401,8 @@ DEF_SIMPLE_GM_CAN_FAIL(async_rescale_and_read_alpha_type, canvas, errorMsg, 512,
     auto upmImg = upmSurf->makeImageSnapshot();
 
     if (dContext) {
-        pmImg  =  pmImg->makeTextureImage(dContext);
-        upmImg = upmImg->makeTextureImage(dContext);
+        pmImg = SkImages::TextureFromImage(dContext, pmImg);
+        upmImg = SkImages::TextureFromImage(dContext, upmImg);
         if (!pmImg || !upmImg) {
             *errorMsg = "could not make texture images";
             return skiagm::DrawResult::kFail;
@@ -438,7 +439,7 @@ DEF_SIMPLE_GM_CAN_FAIL(async_rescale_and_read_alpha_type, canvas, errorMsg, 512,
                 auto releasePixels = [](const void*, void* c) {
                     delete static_cast<AsyncContext*>(c);
                 };
-                auto result = SkImage::MakeFromRaster(pixmap, releasePixels, asyncContext);
+                auto result = SkImages::RasterFromPixmap(pixmap, releasePixels, asyncContext);
 
                 canvas->drawImage(result, 0, 0);
             } else {

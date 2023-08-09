@@ -26,7 +26,6 @@ import tempfile
 import difflib
 import json
 
-import common_codegen
 
 # files to exclude from --verify check
 verify_exclude = ['.clang-format']
@@ -40,6 +39,10 @@ def main(argv):
     group.add_argument('-i', '--incremental', action='store_true', help='only update repo files that change')
     group.add_argument('-v', '--verify', action='store_true', help='verify repo files match generator output')
     args = parser.parse_args(argv)
+
+    # We need modules from the registry directory, add it here so no one has to set it in PYTHONPATH
+    sys.path.insert(0, args.registry)
+    import common_codegen
 
     gen_cmds = [*[[common_codegen.repo_relative('scripts/lvl_genvk.py'),
                    '-registry', os.path.abspath(os.path.join(args.registry,  'vk.xml')),
@@ -92,7 +95,7 @@ def main(argv):
     # Update the api_version in the respective json files
     if args.generated_version:
         json_files = []
-        json_files.append(common_codegen.repo_relative('layers/json/VkLayer_khronos_validation.json.in'))
+        json_files.append(common_codegen.repo_relative('layers/VkLayer_khronos_validation.json.in'))
         json_files.append(common_codegen.repo_relative('tests/layers/VkLayer_device_profile_api.json.in'))
         for json_file in json_files:
             with open(json_file) as f:
@@ -106,7 +109,7 @@ def main(argv):
     # get directory where generators will run
     if args.verify or args.incremental:
         # generate in temp directory so we can compare or copy later
-        temp_obj = tempfile.TemporaryDirectory(prefix='VulkanVL_generated_source_')
+        temp_obj = tempfile.TemporaryDirectory(prefix='vvl_codegen_')
         temp_dir = temp_obj.name
         gen_dir = temp_dir
     else:

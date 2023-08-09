@@ -13,6 +13,7 @@
 #include "src/core/SkVM_fwd.h"
 
 #include <memory>
+#include <tuple>
 
 class GrColorInfo;
 class GrFragmentProcessor;
@@ -37,15 +38,17 @@ public:
     SK_WARN_UNUSED_RESULT
     virtual bool appendStages(const SkStageRec& rec, bool shaderIsOpaque) const = 0;
 
+#if defined(SK_ENABLE_SKVM)
     SK_WARN_UNUSED_RESULT
     skvm::Color program(skvm::Builder*, skvm::Color,
                         const SkColorInfo& dst, skvm::Uniforms*, SkArenaAlloc*) const;
+#endif
 
     /** Returns the flags for this filter. Override in subclasses to return custom flags.
     */
     virtual bool onIsAlphaUnchanged() const { return false; }
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
     /**
      *  A subclass may implement this factory function to work with the GPU backend. It returns
      *  a GrFragmentProcessor that implements the color filter in GPU shader code.
@@ -84,7 +87,7 @@ public:
 
     virtual SkPMColor4f onFilterColor4f(const SkPMColor4f& color, SkColorSpace* dstCS) const;
 
-#ifdef SK_GRAPHITE_ENABLED
+#if defined(SK_GRAPHITE)
     /**
         Add implementation details, for the specified backend, of this SkColorFilter to the
         provided key.
@@ -105,8 +108,10 @@ protected:
     virtual bool onAsAColorMode(SkColor* color, SkBlendMode* bmode) const;
 
 private:
+#if defined(SK_ENABLE_SKVM)
     virtual skvm::Color onProgram(skvm::Builder*, skvm::Color,
                                   const SkColorInfo& dst, skvm::Uniforms*, SkArenaAlloc*) const = 0;
+#endif
 
     friend class SkColorFilter;
 

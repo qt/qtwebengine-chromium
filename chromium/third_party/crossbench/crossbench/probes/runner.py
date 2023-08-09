@@ -8,7 +8,7 @@ import json
 import logging
 from typing import TYPE_CHECKING, Any, Dict
 
-from crossbench.probes import base
+from crossbench.probes import probe
 from crossbench.probes.json import JsonResultProbe
 from crossbench.probes.results import ProbeResult
 
@@ -17,7 +17,7 @@ if TYPE_CHECKING:
                                  StoriesRunGroup)
 
 
-class RunRunnerLogProbe(base.Probe):
+class RunRunnerLogProbe(probe.Probe):
   """
   Runner-internal meta-probe: Collects the python logging data from the runner
   itself.
@@ -26,9 +26,9 @@ class RunRunnerLogProbe(base.Probe):
   IS_GENERAL_PURPOSE = False
   FLATTEN = False
 
-  class Scope(base.Probe.Scope):
+  class Scope(probe.Probe.Scope):
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, **kwargs) -> None:
       super().__init__(*args, **kwargs)
       self._log_handler = None
 

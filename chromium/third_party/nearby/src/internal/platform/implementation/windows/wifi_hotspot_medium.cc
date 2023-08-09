@@ -14,6 +14,7 @@
 
 #include <exception>
 #include <memory>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -108,6 +109,9 @@ std::unique_ptr<api::WifiHotspotSocket> WifiHotspotMedium::ConnectToService(
   for (int i = 0; i < kWifiHotspotMaxConnectionRetries; i++) {
     try {
       StreamSocket socket{};
+      // Listener to connect cancellation.
+      std::unique_ptr<CancellationFlagListener>
+          connection_cancellation_listener = nullptr;
 
       // setup cancel listener
       if (cancellation_flag != nullptr) {
@@ -117,7 +121,7 @@ std::unique_ptr<api::WifiHotspotSocket> WifiHotspotMedium::ConnectToService(
           return nullptr;
         }
 
-        connection_cancellation_listener_ =
+        connection_cancellation_listener =
             std::make_unique<nearby::CancellationFlagListener>(
                 cancellation_flag, [socket]() {
                   NEARBY_LOGS(WARNING)
@@ -136,9 +140,6 @@ std::unique_ptr<api::WifiHotspotSocket> WifiHotspotMedium::ConnectToService(
       }
 
       socket.ConnectAsync(host_name, service_name).get();
-      if (connection_cancellation_listener_ != nullptr) {
-        connection_cancellation_listener_ = nullptr;
-      }
 
       if (connection_timeout_ != nullptr) {
         connection_timeout_->Cancel();
@@ -163,10 +164,6 @@ std::unique_ptr<api::WifiHotspotSocket> WifiHotspotMedium::ConnectToService(
       NEARBY_LOGS(ERROR) << "failed to connect remote service " << ipv4_address
                          << ":" << port << " for the " << i + 1
                          << " time due to unknown reason.";
-    }
-
-    if (connection_cancellation_listener_ != nullptr) {
-      connection_cancellation_listener_ = nullptr;
     }
 
     if (connection_timeout_ != nullptr) {
@@ -197,8 +194,7 @@ WifiHotspotMedium::ListenForService(int port) {
 
   server_socket->SetCloseNotifier([this]() {
     absl::MutexLock lock(&mutex_);
-    NEARBY_LOGS(INFO) << "server socket was closed on port "
-                      << server_socket_ptr_->GetPort();
+    NEARBY_LOGS(INFO) << "Server socket was closed.";
     medium_status_ &= (~kMediumStatusAccepting);
     server_socket_ptr_ = nullptr;
   });

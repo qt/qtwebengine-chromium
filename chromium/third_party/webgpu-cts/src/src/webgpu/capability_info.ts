@@ -69,15 +69,19 @@ export const kAllBufferUsageBits = kBufferUsages.reduce(
 
 /** Per-GPUErrorFilter info. */
 export const kErrorScopeFilterInfo: {
-  readonly [k in GPUErrorFilter]: {};
+  readonly [k in GPUErrorFilter]: {
+    generatable: boolean;
+  };
 } = /* prettier-ignore */ {
-  'out-of-memory': {},
-  'validation':    {},
-  'internal':      {},
+  'internal':      { generatable: false },
+  'out-of-memory': { generatable: true },
+  'validation':    { generatable: true },
 };
 /** List of all GPUErrorFilter values. */
 export const kErrorScopeFilters = keysOf(kErrorScopeFilterInfo);
-export const kGeneratableErrorScopeFilters = kErrorScopeFilters.filter(e => e !== 'internal');
+export const kGeneratableErrorScopeFilters = kErrorScopeFilters.filter(
+  e => kErrorScopeFilterInfo[e].generatable
+);
 
 // Textures
 
@@ -922,7 +926,7 @@ export function textureBindingEntries(includeUndefined: boolean): readonly BGLEn
   return [
     ...(includeUndefined ? [{ texture: { multisampled: undefined } }] : []),
     { texture: { multisampled: false } },
-    { texture: { multisampled: true } },
+    { texture: { multisampled: true, sampleType: 'unfilterable-float' } },
   ] as const;
 }
 /**
@@ -973,6 +977,15 @@ export const kShaderStages: readonly GPUShaderStageFlags[] = [
 ];
 /** List of all possible combinations of GPUShaderStage values. */
 export const kShaderStageCombinations: readonly GPUShaderStageFlags[] = [0, 1, 2, 3, 4, 5, 6, 7];
+export const kShaderStageCombinationsWithStage: readonly GPUShaderStageFlags[] = [
+  1,
+  2,
+  3,
+  4,
+  5,
+  6,
+  7,
+];
 
 /**
  * List of all possible texture sampleCount values.
@@ -1032,6 +1045,7 @@ export const kLimitInfo = /* prettier-ignore */ makeTable(
   'maxTextureArrayLayers':                     [           ,       256,                          ],
 
   'maxBindGroups':                             [           ,         4,                          ],
+  'maxBindingsPerBindGroup':                   [           ,       640,                          ],
   'maxDynamicUniformBuffersPerPipelineLayout': [           ,         8,                          ],
   'maxDynamicStorageBuffersPerPipelineLayout': [           ,         4,                          ],
   'maxSampledTexturesPerShaderStage':          [           ,        16,                          ],
@@ -1050,6 +1064,7 @@ export const kLimitInfo = /* prettier-ignore */ makeTable(
   'maxVertexAttributes':                       [           ,        16,                          ],
   'maxVertexBufferArrayStride':                [           ,      2048,                          ],
   'maxInterStageShaderComponents':             [           ,        60,                          ],
+  'maxInterStageShaderVariables':              [           ,        16,                          ],
 
   'maxColorAttachments':                       [           ,         8,                          ],
   'maxColorAttachmentBytesPerSample':          [           ,        32,                          ],
@@ -1085,6 +1100,7 @@ export const kDrawIndexedIndirectParametersSize = 5;
 export const kFeatureNameInfo: {
   readonly [k in GPUFeatureName]: {};
 } = /* prettier-ignore */ {
+  'bgra8unorm-storage': {},
   'depth-clip-control': {},
   'depth32float-stencil8': {},
   'texture-compression-bc': {},
@@ -1094,6 +1110,7 @@ export const kFeatureNameInfo: {
   'indirect-first-instance': {},
   'shader-f16': {},
   'rg11b10ufloat-renderable': {},
+  'float32-filterable': {},
 };
 /** List of all GPUFeatureName values. */
 export const kFeatureNames = keysOf(kFeatureNameInfo);

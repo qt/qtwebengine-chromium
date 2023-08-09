@@ -23,7 +23,7 @@
 namespace tint::ast {
 
 /// A type alias type. Holds a name and pointer to another type.
-class Alias final : public Castable<Alias, TypeDecl> {
+class Alias final : public utils::Castable<Alias, TypeDecl> {
   public:
     /// Constructor
     /// @param pid the identifier of the program that owns this node
@@ -32,8 +32,7 @@ class Alias final : public Castable<Alias, TypeDecl> {
     /// @param name the symbol for the alias
     /// @param subtype the alias'd type
     Alias(ProgramID pid, NodeID nid, const Source& src, const Identifier* name, Type subtype);
-    /// Move constructor
-    Alias(Alias&&);
+
     /// Destructor
     ~Alias() override;
 

@@ -9,10 +9,10 @@
 #define SKSL_FUNCTIONDECLARATION
 
 #include "include/core/SkTypes.h"
-#include "include/private/SkSLIRNode.h"
-#include "include/private/SkSLSymbol.h"
 #include "include/private/base/SkTArray.h"
 #include "src/sksl/SkSLIntrinsicList.h"
+#include "src/sksl/ir/SkSLIRNode.h"
+#include "src/sksl/ir/SkSLSymbol.h"
 
 #include <memory>
 #include <string>
@@ -130,7 +130,7 @@ public:
      * that each argument can actually be coerced to the final parameter type, respecting the
      * narrowing-conversions flag. This is handled in callCost(), or in convertCall() (via coerce).
      */
-    using ParamTypes = SkSTArray<8, const Type*>;
+    using ParamTypes = skia_private::STArray<8, const Type*>;
     bool determineFinalTypes(const ExpressionArray& arguments,
                              ParamTypes* outParameterTypes,
                              const Type** outReturnType) const;

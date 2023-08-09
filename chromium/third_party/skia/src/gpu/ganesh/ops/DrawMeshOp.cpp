@@ -27,6 +27,8 @@
 #include "src/sksl/ir/SkSLProgram.h"
 #include "src/sksl/ir/SkSLVarDeclarations.h"
 
+using namespace skia_private;
+
 namespace {
 
 GrPrimitiveType primitive_type(SkMesh::Mode mode) {
@@ -287,7 +289,7 @@ private:
                 size_t        specIndex;
                 GrGLSLVarying varying;
             };
-            SkSTArray<SkMeshSpecification::kMaxVaryings, RealVarying> realVaryings;
+            STArray<SkMeshSpecification::kMaxVaryings, RealVarying> realVaryings;
             if (needUserFS) {
                 for (size_t i = 0; i < specVaryings.size(); ++i) {
                     const auto& v = specVaryings[i];
@@ -600,7 +602,7 @@ private:
     sk_sp<SkMeshSpecification> fSpecification;
     bool                       fIgnoreSpecColor = false;
     GrPrimitiveType            fPrimitiveType;
-    SkSTArray<1, Mesh>         fMeshes;
+    STArray<1, Mesh>         fMeshes;
     sk_sp<GrColorSpaceXform>   fColorSpaceXform;
     SkPMColor4f                fColor; // Used if no color from spec or analysis overrides.
     SkMatrix                   fViewMatrix;
@@ -1049,7 +1051,7 @@ GrOp::CombineResult MeshOp::onCombineIfPossible(GrOp* t, SkArenaAlloc*, const Gr
 
 }  // anonymous namespace
 
-namespace skgpu::v1::DrawMeshOp {
+namespace skgpu::ganesh::DrawMeshOp {
 
 GrOp::Owner Make(GrRecordingContext* context,
                  GrPaint&& paint,
@@ -1081,4 +1083,4 @@ GrOp::Owner Make(GrRecordingContext* context,
                                                            matrixProvider);
 }
 
-}  // namespace skgpu::v1::DrawMeshOp
+}  // namespace skgpu::ganesh::DrawMeshOp

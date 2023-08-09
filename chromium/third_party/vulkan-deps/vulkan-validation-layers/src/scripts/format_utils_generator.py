@@ -99,7 +99,7 @@ class FormatUtilsOutputGenerator(OutputGenerator):
         self.planarFormats = dict()
 
         # Lots of switch statements share same ending
-        self.commonBoolSwitch  = '''        found = true;
+        self.commonBoolSwitch  = '''            found = true;
             break;
         default:
             break;
@@ -143,8 +143,7 @@ class FormatUtilsOutputGenerator(OutputGenerator):
         write(copyright, file=self.outFile)
         if self.sourceFile:
             write('#include "vk_format_utils.h"', file=self.outFile)
-            write('#include "vk_layer_utils.h"', file=self.outFile)
-            write('#include <map>', file=self.outFile)
+            write('#include "utils/vk_layer_utils.h"', file=self.outFile)
             write('#include <vector>', file=self.outFile)
         elif self.headerFile:
             write('#pragma once', file=self.outFile)
@@ -336,7 +335,7 @@ struct PER_PLANE_COMPATIBILITY {
     VkFormat compatible_format;
 
     // Need default otherwise if app tries to grab a plane that doesn't exist it will crash
-    // if returned the value of 0 in IMAGE_STATE::GetSubresourceExtent()
+    // if returned the value of 0 in IMAGE_STATE::GetEffectiveSubresourceExtent()
     // This is ok, because there are VUs later that will catch the bad app behaviour
     PER_PLANE_COMPATIBILITY() : width_divisor(1), height_divisor(1), compatible_format(VK_FORMAT_UNDEFINED) {}
     PER_PLANE_COMPATIBILITY(uint32_t width_divisor, uint32_t height_divisor, VkFormat compatible_format) :
@@ -629,16 +628,9 @@ bool FormatIsYChromaSubsampled(VkFormat format);
     def multiplaneFunctions(self):
         output = ''
         if self.headerFile:
-            output += '''// Multiplane
-bool FormatIsSinglePlane_422(VkFormat format);
-uint32_t FormatPlaneCount(VkFormat format);
-static inline bool FormatIsMultiplane(VkFormat format) { return ((FormatPlaneCount(format)) > 1u); }
-VkFormat FindMultiplaneCompatibleFormat(VkFormat mp_fmt, VkImageAspectFlags plane_aspect);
-VkExtent2D FindMultiplaneExtentDivisors(VkFormat mp_fmt, VkImageAspectFlags plane_aspect);
-'''
-        elif self.sourceFile:
-            output += '\n// Single-plane "_422" formats are treated as 2x1 compressed (for copies)\n'
-            output += '\nbool FormatIsSinglePlane_422(VkFormat format) {\n'
+            output += '// Multiplane\n'
+            output += '// Single-plane "_422" formats are treated as 2x1 compressed (for copies)\n'
+            output += '\nconstexpr bool FormatIsSinglePlane_422(VkFormat format) {\n'
             output += '    bool found = false;\n'
             output += '    switch (format) {\n'
             for f in sorted(self.ycbcrFormats.keys()):
@@ -647,7 +639,7 @@ VkExtent2D FindMultiplaneExtentDivisors(VkFormat mp_fmt, VkImageAspectFlags plan
             output += self.commonBoolSwitch
 
             output += '\n// Returns number of planes in format (which is 1 by default)\n'
-            output += 'uint32_t FormatPlaneCount(VkFormat format) {\n'
+            output += 'constexpr uint32_t FormatPlaneCount(VkFormat format) {\n'
             output += '    switch (format) {\n'
             for i in range(2, self.maxPlaneCount + 1):
                 for f in sorted(self.planarFormats.keys()):
@@ -658,7 +650,13 @@ VkExtent2D FindMultiplaneExtentDivisors(VkFormat mp_fmt, VkImageAspectFlags plan
             output += '            return 1;\n'
             output += '     }\n'
             output += '}\n'
+            output += '''
+constexpr bool FormatIsMultiplane(VkFormat format) { return ((FormatPlaneCount(format)) > 1u); }
+VkFormat FindMultiplaneCompatibleFormat(VkFormat mp_fmt, VkImageAspectFlags plane_aspect);
+VkExtent2D FindMultiplaneExtentDivisors(VkFormat mp_fmt, VkImageAspectFlags plane_aspect);
+'''
 
+        elif self.sourceFile:
             output += '''
 // Will return VK_FORMAT_UNDEFINED if given a plane aspect that doesn't exist for the format
 VkFormat FindMultiplaneCompatibleFormat(VkFormat mp_fmt, VkImageAspectFlags plane_aspect) {

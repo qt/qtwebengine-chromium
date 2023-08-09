@@ -17,6 +17,7 @@ endif()
 
 include(sources.cmake)
 include(cmake/go.cmake)
+include(cmake/paths.cmake)
 include(cmake/perlasm.cmake)
 
 enable_language(C)
@@ -475,13 +476,16 @@ if(USE_CUSTOM_LIBCXX)
     CXX_STANDARD_REQUIRED TRUE
   )
   # libc++abi depends on libc++ internal headers.
-  set_property(TARGET libcxx libcxxabi APPEND PROPERTY INCLUDE_DIRECTORIES "${CMAKE_SOURCE_DIR}/util/bot/libcxx/src")
+  set_property(TARGET libcxx libcxxabi APPEND PROPERTY INCLUDE_DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/util/bot/libcxx/src")
   target_link_libraries(libcxx libcxxabi)
 endif()
 
 # Add minimal googletest targets. The provided one has many side-effects, and
 # googletest has a very straightforward build.
 add_library(boringssl_gtest third_party/googletest/src/gtest-all.cc)
+if(USE_CUSTOM_LIBCXX)
+  target_link_libraries(boringssl_gtest libcxx)
+endif()
 target_include_directories(
     boringssl_gtest
     PUBLIC third_party/googletest/include
@@ -548,16 +552,16 @@ endif()
 if(FIPS)
   add_custom_target(
     acvp_tests
-    COMMAND ${GO_EXECUTABLE} build -o ${CMAKE_BINARY_DIR}/acvptool
+    COMMAND ${GO_EXECUTABLE} build -o ${CMAKE_CURRENT_BINARY_DIR}/acvptool
             boringssl.googlesource.com/boringssl/util/fipstools/acvp/acvptool
-    COMMAND ${GO_EXECUTABLE} build -o ${CMAKE_BINARY_DIR}/testmodulewrapper
+    COMMAND ${GO_EXECUTABLE} build -o ${CMAKE_CURRENT_BINARY_DIR}/testmodulewrapper
             boringssl.googlesource.com/boringssl/util/fipstools/acvp/acvptool/testmodulewrapper
     COMMAND cd util/fipstools/acvp/acvptool/test &&
             ${GO_EXECUTABLE} run check_expected.go
-            -tool ${CMAKE_BINARY_DIR}/acvptool
-            -module-wrappers modulewrapper:$<TARGET_FILE:modulewrapper>,testmodulewrapper:${CMAKE_BINARY_DIR}/testmodulewrapper
+            -tool ${CMAKE_CURRENT_BINARY_DIR}/acvptool
+            -module-wrappers modulewrapper:$<TARGET_FILE:modulewrapper>,testmodulewrapper:${CMAKE_CURRENT_BINARY_DIR}/testmodulewrapper
             -tests tests.json
-    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     DEPENDS modulewrapper
     USES_TERMINAL)
 
@@ -569,14 +573,22 @@ else()
   add_custom_target(fips_specific_tests_if_any)
 endif()
 
+# Read util/go_tests.txt into a CMake variable.
+file(READ util/go_tests.txt GO_TESTS)
+string(REPLACE "\n" ";" GO_TESTS "${GO_TESTS}")
+list(REMOVE_ITEM GO_TESTS "")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+             util/go_tests.txt)
+
 add_custom_target(
     run_tests
+    COMMAND ${GO_EXECUTABLE} test ${GO_TESTS}
     COMMAND ${GO_EXECUTABLE} run util/all_tests.go -build-dir
-            ${CMAKE_BINARY_DIR}
+            ${CMAKE_CURRENT_BINARY_DIR}
     COMMAND cd ssl/test/runner &&
             ${GO_EXECUTABLE} test -shim-path $<TARGET_FILE:bssl_shim>
               ${HANDSHAKER_ARGS} ${RUNNER_ARGS}
-    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     DEPENDS all_tests bssl_shim handshaker fips_specific_tests_if_any
     USES_TERMINAL)
 

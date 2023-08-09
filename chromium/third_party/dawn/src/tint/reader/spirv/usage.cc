@@ -14,7 +14,7 @@
 
 #include "src/tint/reader/spirv/usage.h"
 
-#include <sstream>
+#include "src/tint/utils/string_stream.h"
 
 namespace tint::reader::spirv {
 
@@ -22,7 +22,7 @@ Usage::Usage() {}
 Usage::Usage(const Usage& other) = default;
 Usage::~Usage() = default;
 
-std::ostream& Usage::operator<<(std::ostream& out) const {
+utils::StringStream& Usage::operator<<(utils::StringStream& out) const {
     out << "Usage(";
     if (IsSampler()) {
         out << "Sampler(";
@@ -179,7 +179,7 @@ void Usage::AddDepthTexture() {
 }
 
 std::string Usage::to_str() const {
-    std::ostringstream ss;
+    utils::StringStream ss;
     ss << *this;
     return ss.str();
 }

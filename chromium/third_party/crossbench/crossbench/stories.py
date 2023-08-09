@@ -107,7 +107,7 @@ class PressBenchmarkStory(Story, metaclass=ABCMeta):
                substories: Sequence[str] = (),
                duration: Optional[float] = None,
                url: Optional[str] = None,
-               **kwargs):
+               **kwargs) -> None:
     cls = self.__class__
     assert self.SUBSTORIES, f"{cls}.SUBSTORIES is not set."
     assert self.NAME is not None, f"{cls}.NAME is not set."

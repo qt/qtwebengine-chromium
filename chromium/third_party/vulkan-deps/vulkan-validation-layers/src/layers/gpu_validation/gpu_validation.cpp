@@ -17,21 +17,17 @@
 
 #include <climits>
 #include <cmath>
-#include "cast_utils.h"
+#include "utils/cast_utils.h"
 #include "gpu_validation/gpu_validation.h"
 #include "spirv-tools/optimizer.hpp"
 #include "spirv-tools/instrument.hpp"
-#include "layer_chassis_dispatch.h"
+#include "generated/layer_chassis_dispatch.h"
 #include "gpu_vuids.h"
-#include "state_tracker/buffer_state.h"
-#include "state_tracker/cmd_buffer_state.h"
-#include "state_tracker/render_pass_state.h"
-#include "vk_layer_config.h"
 // Generated shaders
 #include "gpu_shaders/gpu_shaders_constants.h"
-#include "gpu_pre_draw_vert.h"
-#include "gpu_pre_dispatch_comp.h"
-#include "gpu_as_inspection_comp.h"
+#include "generated/gpu_pre_draw_vert.h"
+#include "generated/gpu_pre_dispatch_comp.h"
+#include "generated/gpu_as_inspection_comp.h"
 
 // Keep in sync with the GLSL shader below.
 struct GpuAccelerationStructureBuildValidationBuffer {
@@ -94,7 +90,7 @@ void GpuAssisted::CreateDevice(const VkDeviceCreateInfo *pCreateInfo) {
     // GpuAssistedBase::CreateDevice will set up bindings
     VkDescriptorSetLayoutBinding binding = {0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1,
                                             VK_SHADER_STAGE_ALL_GRAPHICS | VK_SHADER_STAGE_COMPUTE_BIT |
-                                                VK_SHADER_STAGE_MESH_BIT_NV | VK_SHADER_STAGE_TASK_BIT_NV |
+                                                VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_TASK_BIT_EXT |
                                                 kShaderStageAllRayTracing,
                                             NULL};
     bindings_.push_back(binding);
@@ -136,6 +132,11 @@ void GpuAssisted::CreateDevice(const VkDeviceCreateInfo *pCreateInfo) {
     buffer_device_address = ((IsExtEnabled(device_extensions.vk_ext_buffer_device_address) ||
                               IsExtEnabled(device_extensions.vk_khr_buffer_device_address)) &&
                              shaderInt64 && enabled_features.core12.bufferDeviceAddress);
+
+    if (IsExtEnabled(device_extensions.vk_ext_shader_object)) {
+        LogWarning(device, "UNASSIGNED-GPU-Assisted Validation Warning",
+                   "VK_EXT_shader_Object is enabled, but GPU-AV does not currently support validation of shader objects");
+    }
 
     output_buffer_size = sizeof(uint32_t) * (spvtools::kInstMaxOutCnt + spvtools::kDebugOutputDataOffset);
 
@@ -1298,6 +1299,10 @@ void GpuAssisted::UpdateInstrumentationBuffer(gpuav_state::CommandBuffer *cb_nod
                 for (const auto &update : buffer_info.update_at_submit) {
                     SetBindingState(data, update.first, update.second);
                 }
+                // Flush the descriptor state buffer before unmapping so that the new state is visible to the GPU
+                result = vmaFlushAllocation(vmaAllocator, buffer_info.allocation, 0, VK_WHOLE_SIZE);
+                // No good way to handle this error, we should still try to unmap.
+                assert(result == VK_SUCCESS);
                 vmaUnmapMemory(vmaAllocator, buffer_info.allocation);
             }
         }
@@ -1378,7 +1383,9 @@ void GpuAssisted::PostCallRecordCmdBindDescriptorSets(VkCommandBuffer commandBuf
             buffer_info.size = words_needed * 4;
             buffer_info.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
             VmaAllocationCreateInfo alloc_info = {};
-            alloc_info.requiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+            // The descriptor state buffer can be very large (4mb+ in some games). Allocating it as HOST_CACHED
+            // and manually flushing it at the end of the state updates is faster than using HOST_COHERENT.
+            alloc_info.requiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
             alloc_info.pool = VK_NULL_HANDLE;
             GpuAssistedDeviceMemoryBlock di_input_block = {};
             VkResult result = vmaCreateBuffer(vmaAllocator, &buffer_info, &alloc_info, &di_input_block.buffer,
@@ -1496,6 +1503,10 @@ void GpuAssisted::PostCallRecordCmdBindDescriptorSets(VkCommandBuffer commandBuf
                     }
                 }
             }
+            // Flush the descriptor state buffer before unmapping so that the new state is visible to the GPU
+            result = vmaFlushAllocation(vmaAllocator, di_input_block.allocation, 0, VK_WHOLE_SIZE);
+            // No good way to handle this error, we should still try to unmap.
+            assert(result == VK_SUCCESS);
             vmaUnmapMemory(vmaAllocator, di_input_block.allocation);
             cb_node->di_input_buffer_list.emplace_back(di_input_block);
         }
@@ -1994,6 +2005,12 @@ void GpuAssisted::AllocateValidationResources(const VkCommandBuffer cmd_buffer, 
     const auto *pipeline_state = last_bound.pipeline_state;
     bool uses_robustness = false;
 
+    if (!pipeline_state) {
+        ReportSetupProblem(device, "Pipeline state not found, aborting GPU-AV");
+        aborted = true;
+        return;
+    }
+
     std::vector<VkDescriptorSet> desc_sets;
     VkDescriptorPool desc_pool = VK_NULL_HANDLE;
     result = desc_set_manager->GetDescriptorSets(1, &desc_pool, debug_desc_layout, &desc_sets);
@@ -2031,7 +2048,6 @@ void GpuAssisted::AllocateValidationResources(const VkCommandBuffer cmd_buffer, 
                 (enabled_features.core.robustBufferAccess || enabled_features.robustness2_features.robustBufferAccess2 ||
                  pipeline_state->uses_pipeline_robustness);
             data_ptr[spvtools::kDebugOutputFlagsOffset] = spvtools::kInstBufferOOBEnable;
-            ;
         }
         vmaUnmapMemory(vmaAllocator, output_block.allocation);
     }
@@ -2195,6 +2211,9 @@ void GpuAssisted::AllocateValidationResources(const VkCommandBuffer cmd_buffer, 
             uint32_t words_needed = (num_buffers + 3) + (num_buffers + 2);
             buffer_info.size = words_needed * 8;  // 64 bit words
             alloc_info.pool = VK_NULL_HANDLE;
+            // This buffer could be very large if an application uses many buffers. Allocating it as HOST_CACHED
+            // and manually flushing it at the end of the state updates is faster than using HOST_COHERENT.
+            alloc_info.requiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
             result = vmaCreateBuffer(vmaAllocator, &buffer_info, &alloc_info, &bda_input_block.buffer, &bda_input_block.allocation,
                                      nullptr);
             if (result != VK_SUCCESS) {
@@ -2217,6 +2236,10 @@ void GpuAssisted::AllocateValidationResources(const VkCommandBuffer cmd_buffer, 
             }
             bda_data[address_index] = std::numeric_limits<uintptr_t>::max();
             bda_data[size_index] = 0;
+            // Flush the BDA buffer before unmapping so that the new state is visible to the GPU
+            result = vmaFlushAllocation(vmaAllocator, bda_input_block.allocation, 0, VK_WHOLE_SIZE);
+            // No good way to handle this error, we should still try to unmap.
+            assert(result == VK_SUCCESS);
             vmaUnmapMemory(vmaAllocator, bda_input_block.allocation);
 
             bda_input_desc_buffer_info.range = (words_needed * 8);
@@ -2244,39 +2267,32 @@ void GpuAssisted::AllocateValidationResources(const VkCommandBuffer cmd_buffer, 
     desc_writes[0].dstSet = desc_sets[0];
     DispatchUpdateDescriptorSets(device, desc_count, desc_writes, 0, NULL);
 
-    if (pipeline_state) {
-        const auto pipeline_layout = pipeline_state->PipelineLayoutState();
-        // If GPL is used, it's possible the pipeline layout used at pipeline creation time is null. If CmdBindDescriptorSets has
-        // not been called yet (i.e., state.pipeline_null), then fall back to the layout associated with pre-raster state.
-        // PipelineLayoutState should be used for the purposes of determining the number of sets in the layout, but this layout
-        // may be a "pseudo layout" used to represent the union of pre-raster and fragment shader layouts, and therefore have a
-        // null handle.
-        VkPipelineLayout pipeline_layout_handle = VK_NULL_HANDLE;
-        if (last_bound.pipeline_layout) {
-            pipeline_layout_handle = last_bound.pipeline_layout;
-        } else if (!pipeline_state->PreRasterPipelineLayoutState()->Destroyed()) {
-            pipeline_layout_handle = pipeline_state->PreRasterPipelineLayoutState()->layout();
-        }
-        if ((pipeline_layout->set_layouts.size() <= desc_set_bind_index) && pipeline_layout_handle != VK_NULL_HANDLE) {
-            DispatchCmdBindDescriptorSets(cmd_buffer, bind_point, pipeline_layout_handle, desc_set_bind_index, 1, desc_sets.data(),
-                                          0, nullptr);
-        }
-        if (pipeline_layout_handle == VK_NULL_HANDLE) {
-            ReportSetupProblem(device, "Unable to find pipeline layout to bind debug descriptor set. Aborting GPU-AV");
-            aborted = true;
-        } else {
-            // Record buffer and memory info in CB state tracking
-            cb_node->per_draw_buffer_list.emplace_back(output_block, bda_input_block, pre_draw_resources, pre_dispatch_resources,
-                                                       desc_sets[0], desc_pool, bind_point, uses_robustness, cmd_type);
-        }
-    } else {
-        ReportSetupProblem(device, "Unable to find pipeline state");
-        aborted = true;
+
+    const auto pipeline_layout = pipeline_state->PipelineLayoutState();
+    // If GPL is used, it's possible the pipeline layout used at pipeline creation time is null. If CmdBindDescriptorSets has
+    // not been called yet (i.e., state.pipeline_null), then fall back to the layout associated with pre-raster state.
+    // PipelineLayoutState should be used for the purposes of determining the number of sets in the layout, but this layout
+    // may be a "pseudo layout" used to represent the union of pre-raster and fragment shader layouts, and therefore have a
+    // null handle.
+    VkPipelineLayout pipeline_layout_handle = VK_NULL_HANDLE;
+    if (last_bound.pipeline_layout) {
+        pipeline_layout_handle = last_bound.pipeline_layout;
+    } else if (!pipeline_state->PreRasterPipelineLayoutState()->Destroyed()) {
+        pipeline_layout_handle = pipeline_state->PreRasterPipelineLayoutState()->layout();
     }
-    if (aborted) {
+    if ((pipeline_layout->set_layouts.size() <= desc_set_bind_index) && pipeline_layout_handle != VK_NULL_HANDLE) {
+        DispatchCmdBindDescriptorSets(cmd_buffer, bind_point, pipeline_layout_handle, desc_set_bind_index, 1, desc_sets.data(), 0,
+                                      nullptr);
+    }
+    if (pipeline_layout_handle == VK_NULL_HANDLE) {
+        ReportSetupProblem(device, "Unable to find pipeline layout to bind debug descriptor set. Aborting GPU-AV");
+        aborted = true;
         vmaDestroyBuffer(vmaAllocator, bda_input_block.buffer, bda_input_block.allocation);
         vmaDestroyBuffer(vmaAllocator, output_block.buffer, output_block.allocation);
-        return;
+    } else {
+        // Record buffer and memory info in CB state tracking
+        cb_node->per_draw_buffer_list.emplace_back(output_block, bda_input_block, pre_draw_resources, pre_dispatch_resources,
+                                                   desc_sets[0], desc_pool, bind_point, uses_robustness, cmd_type);
     }
 }
 

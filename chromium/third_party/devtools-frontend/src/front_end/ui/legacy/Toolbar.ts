@@ -33,6 +33,7 @@ import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as Root from '../../core/root/root.js';
+import * as IconButton from '../components/icon_button/icon_button.js';
 
 import * as Utils from './utils/utils.js';
 
@@ -45,9 +46,9 @@ import {Icon} from './Icon.js';
 import {bindCheckbox} from './SettingsUI.js';
 import {type Suggestion} from './SuggestBox.js';
 import {Events as TextPromptEvents, TextPrompt} from './TextPrompt.js';
+import toolbarStyles from './toolbar.css.legacy.js';
 import {Tooltip} from './Tooltip.js';
 import {CheckboxLabel, LongClickController} from './UIUtils.js';
-import toolbarStyles from './toolbar.css.legacy.js';
 
 const UIStrings = {
   /**
@@ -122,7 +123,7 @@ export class Toolbar {
       if (buttons && buttons.length) {
         if (!longClickController) {
           longClickController = new LongClickController(button.element, showOptions);
-          longClickGlyph = Icon.create('largeicon-longclick-triangle', 'long-click-glyph');
+          longClickGlyph = Icon.create('triangle-bottom-right', 'long-click-glyph');
           button.element.appendChild(longClickGlyph);
           longClickButtons = buttons;
         }
@@ -633,7 +634,7 @@ export class ToolbarButton extends ToolbarItem<ToolbarButton.EventTypes> {
     if (shrinkable) {
       this.element.classList.add('toolbar-has-dropdown-shrinkable');
     }
-    const dropdownArrowIcon = Icon.create('smallicon-triangle-down', 'toolbar-dropdown-arrow');
+    const dropdownArrowIcon = Icon.create('triangle-down', 'toolbar-dropdown-arrow');
     this.element.appendChild(dropdownArrowIcon);
   }
 
@@ -704,7 +705,10 @@ export class ToolbarInput extends ToolbarItem<ToolbarInput.EventTypes> {
 
     const clearButton = this.element.createChild('div', 'toolbar-input-clear-button');
     clearButton.title = UIStrings.clearInput;
-    clearButton.appendChild(Icon.create('mediumicon-gray-cross-active', 'search-cancel-button'));
+    const clearIcon = new IconButton.Icon.Icon();
+    clearIcon.data = {color: 'var(--icon-default)', width: '16px', height: '16px', iconName: 'cross-circle-filled'};
+    clearIcon.classList.add('search-cancel-button');
+    clearButton.appendChild(clearIcon);
     clearButton.addEventListener('click', () => {
       this.setValue('', true);
       this.prompt.focus();
@@ -713,7 +717,7 @@ export class ToolbarInput extends ToolbarItem<ToolbarInput.EventTypes> {
     this.updateEmptyStyles();
   }
 
-  applyEnabledState(enabled: boolean): void {
+  override applyEnabledState(enabled: boolean): void {
     this.prompt.setEnabled(enabled);
   }
 
@@ -814,13 +818,13 @@ export class ToolbarMenuButton extends ToolbarButton {
   private triggerTimeout?: number;
   private lastTriggerTime?: number;
   constructor(contextMenuHandler: (arg0: ContextMenu) => void, useSoftMenu?: boolean) {
-    super('', 'largeicon-menu');
+    super('', 'dots-vertical');
     this.contextMenuHandler = contextMenuHandler;
     this.useSoftMenu = Boolean(useSoftMenu);
     ARIAUtils.markAsMenuButton(this.element);
   }
 
-  mouseDown(event: MouseEvent): void {
+  override mouseDown(event: MouseEvent): void {
     if (event.buttons !== 1) {
       super.mouseDown(event);
       return;
@@ -849,7 +853,7 @@ export class ToolbarMenuButton extends ToolbarButton {
     this.lastTriggerTime = Date.now();
   }
 
-  clicked(event: Event): void {
+  override clicked(event: Event): void {
     if (this.triggerTimeout) {
       clearTimeout(this.triggerTimeout);
     }
@@ -862,8 +866,8 @@ export class ToolbarSettingToggle extends ToolbarToggle {
   private readonly setting: Common.Settings.Setting<boolean>;
   private willAnnounceState: boolean;
 
-  constructor(setting: Common.Settings.Setting<boolean>, glyph: string, title: string) {
-    super(title, glyph);
+  constructor(setting: Common.Settings.Setting<boolean>, glyph: string, title: string, toggledGlyph?: string) {
+    super(title, glyph, toggledGlyph);
     this.defaultTitle = title;
     this.setting = setting;
     this.settingChanged();
@@ -884,7 +888,7 @@ export class ToolbarSettingToggle extends ToolbarToggle {
     this.setTitle(this.defaultTitle);
   }
 
-  clicked(event: Event): void {
+  override clicked(event: Event): void {
     this.willAnnounceState = true;
     this.setting.set(!this.toggled());
     super.clicked(event);
@@ -915,7 +919,7 @@ export class ToolbarComboBox extends ToolbarItem<void> {
     element.classList.add('toolbar-select-container');
     super(element);
     this.selectElementInternal = (this.element.createChild('select', 'toolbar-item') as HTMLSelectElement);
-    const dropdownArrowIcon = Icon.create('smallicon-triangle-down', 'toolbar-dropdown-arrow');
+    const dropdownArrowIcon = Icon.create('triangle-down', 'toolbar-dropdown-arrow');
     this.element.appendChild(dropdownArrowIcon);
     if (changeHandler) {
       this.selectElementInternal.addEventListener('change', changeHandler, false);
@@ -952,7 +956,7 @@ export class ToolbarComboBox extends ToolbarItem<void> {
     return option;
   }
 
-  applyEnabledState(enabled: boolean): void {
+  override applyEnabledState(enabled: boolean): void {
     super.applyEnabledState(enabled);
     this.selectElementInternal.disabled = !enabled;
   }
@@ -1078,7 +1082,7 @@ export class ToolbarCheckbox extends ToolbarItem<void> {
     this.inputElement.checked = value;
   }
 
-  applyEnabledState(enabled: boolean): void {
+  override applyEnabledState(enabled: boolean): void {
     super.applyEnabledState(enabled);
     this.inputElement.disabled = !enabled;
   }
@@ -1103,7 +1107,7 @@ export function registerToolbarItem(registration: ToolbarItemRegistration): void
 
 function getRegisteredToolbarItems(): ToolbarItemRegistration[] {
   return registeredToolbarItems.filter(
-      item => Root.Runtime.Runtime.isDescriptorEnabled({experiment: undefined, condition: item.condition}));
+      item => Root.Runtime.Runtime.isDescriptorEnabled({experiment: item.experiment, condition: item.condition}));
 }
 
 export interface ToolbarItemRegistration {
@@ -1114,6 +1118,7 @@ export interface ToolbarItemRegistration {
   actionId?: string;
   condition?: string;
   loadItem?: (() => Promise<Provider>);
+  experiment?: string;
 }
 
 // TODO(crbug.com/1167717): Make this a const enum again

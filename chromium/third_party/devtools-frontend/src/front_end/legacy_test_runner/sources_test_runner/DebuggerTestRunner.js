@@ -462,7 +462,8 @@ SourcesTestRunner.objectForPopover = function(sourceFrame, lineNumber, columnNum
 SourcesTestRunner.setBreakpoint = async function(sourceFrame, lineNumber, condition, enabled) {
   const debuggerPlugin = SourcesTestRunner.debuggerPlugin(sourceFrame);
   if (!debuggerPlugin.muted) {
-    await debuggerPlugin.setBreakpoint(lineNumber, 0, condition, enabled);
+    const bp = await debuggerPlugin.setBreakpoint(lineNumber, 0, condition, enabled);
+    await bp.refreshInDebugger();  // Make sure the breakpoint is really set
   }
 };
 
@@ -488,48 +489,6 @@ SourcesTestRunner.toggleBreakpoint = async function(sourceFrame, lineNumber, dis
   if (!debuggerPlugin.muted) {
     await debuggerPlugin.toggleBreakpoint(lineNumber, disableOnly);
   }
-};
-
-SourcesTestRunner.waitBreakpointSidebarPane = function(waitUntilResolved) {
-  if (Root.Runtime.experiments.isEnabled('breakpointView')) {
-    throw new Error('The breakpoint sidebar pane content is only available for the old breakpoint sidebar.');
-  }
-  return new Promise(
-             resolve =>
-                 TestRunner.addSniffer(Sources.JavaScriptBreakpointsSidebarPane.prototype, 'didUpdateForTest', resolve))
-      .then(checkIfReady);
-
-  function checkIfReady() {
-    if (!waitUntilResolved) {
-      return;
-    }
-
-    for (const {breakpoint} of self.Bindings.breakpointManager.allBreakpointLocations()) {
-      if (!breakpoint.bound() && breakpoint.enabled()) {
-        return SourcesTestRunner.waitBreakpointSidebarPane();
-      }
-    }
-  }
-};
-
-SourcesTestRunner.breakpointsSidebarPaneContent = function() {
-  if (Root.Runtime.experiments.isEnabled('breakpointView')) {
-    throw new Error('The breakpoint sidebar pane content is only available for the old breakpoint sidebar.');
-  }
-  const pane = Sources.JavaScriptBreakpointsSidebarPane.instance();
-  const empty = pane.emptyElement;
-
-  if (!empty.classList.contains('hidden')) {
-    return TestRunner.textContentWithLineBreaks(empty);
-  }
-
-  const entries = Array.from(pane.contentElement.querySelectorAll('.breakpoint-entry'));
-  return entries.map(TestRunner.textContentWithLineBreaks).join('\n');
-};
-
-SourcesTestRunner.dumpBreakpointSidebarPane = function(title) {
-  TestRunner.addResult('Breakpoint sidebar pane ' + (title || ''));
-  TestRunner.addResult(SourcesTestRunner.breakpointsSidebarPaneContent());
 };
 
 SourcesTestRunner.dumpScopeVariablesSidebarPane = function() {
@@ -635,7 +594,7 @@ SourcesTestRunner.queryScripts = function(filter) {
 
 SourcesTestRunner.createScriptMock = function(
     url, startLine, startColumn, isContentScript, source, target, preRegisterCallback) {
-  target = target || self.SDK.targetManager.mainFrameTarget();
+  target = target || self.SDK.targetManager.primaryPageTarget();
   const debuggerModel = target.model(SDK.DebuggerModel);
   const scriptId = String(++SourcesTestRunner.lastScriptId);
   const sourceLineEndings = TestRunner.findLineEndingIndexes(source);
@@ -683,10 +642,6 @@ SourcesTestRunner.checkUILocation = function(uiSourceCode, lineNumber, columnNum
   TestRunner.assertEquals(
       columnNumber, location.columnNumber,
       'Incorrect columnNumber, expected \'' + columnNumber + '\', but got \'' + location.columnNumber + '\'');
-};
-
-SourcesTestRunner.scriptFormatter = function() {
-  return Promise.resolve(Sources.ScriptFormatterEditorAction.instance());
 };
 
 SourcesTestRunner.waitForExecutionContextInTarget = function(target, callback) {

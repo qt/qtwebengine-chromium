@@ -9,11 +9,11 @@ from typing import TYPE_CHECKING
 
 from crossbench import helper
 from crossbench.browsers.chromium import Chromium
-from crossbench.probes.base import Probe
+from crossbench.probes.probe import Probe
 from crossbench.probes.results import ProbeResult
 
 if TYPE_CHECKING:
-  from crossbench.browsers.base import Browser
+  from crossbench.browsers.browser import Browser
   from crossbench.runner import Run
 
 
@@ -28,7 +28,7 @@ class V8TurbolizerProbe(Probe):
   def is_compatible(self, browser: Browser) -> bool:
     return isinstance(browser, Chromium)
 
-  def attach(self, browser: Browser) -> None:
+  def attach(self, browser: Chromium) -> None:
     super().attach(browser)
     assert isinstance(browser, Chromium)
     browser.flags.set("--no-sandbox")

@@ -18,11 +18,16 @@
 #include "src/core/SkVM.h"
 #include "src/core/SkWriteBuffer.h"
 
-#ifdef SK_GRAPHITE_ENABLED
+using namespace skia_private;
+
+#if defined(SK_GRAPHITE)
+#include "src/base/SkHalf.h"
 #include "src/core/SkColorSpacePriv.h"
 #include "src/gpu/graphite/KeyContext.h"
 #include "src/gpu/graphite/KeyHelpers.h"
+#include "src/gpu/graphite/Log.h"
 #include "src/gpu/graphite/PaintParamsKey.h"
+#include "src/gpu/graphite/RecorderPriv.h"
 #endif
 
 #include <cmath>
@@ -103,7 +108,7 @@ void SkGradientShaderBase::flatten(SkWriteBuffer& buffer) const {
 }
 
 template <int N, typename T, bool MEM_MOVE>
-static bool validate_array(SkReadBuffer& buffer, size_t count, SkSTArray<N, T, MEM_MOVE>* array) {
+static bool validate_array(SkReadBuffer& buffer, size_t count, STArray<N, T, MEM_MOVE>* array) {
     if (!buffer.validateCanReadN<T>(count)) {
         return false;
     }
@@ -483,6 +488,7 @@ bool SkGradientShaderBase::appendStages(const SkStageRec& rec, const MatrixRec& 
     return true;
 }
 
+#if defined(SK_ENABLE_SKVM)
 // Color conversion functions used in gradient interpolation, based on
 // https://www.w3.org/TR/css-color-4/#color-conversion-code
 static skvm::Color css_lab_to_xyz(skvm::Color lab) {
@@ -802,6 +808,7 @@ skvm::Color SkGradientShaderBase::program(skvm::Builder* p,
         pun_to_F32(mask & pun_to_I32(color.a)),
     };
 }
+#endif  // defined(SK_ENABLE_SKVM)
 
 bool SkGradientShaderBase::isOpaque() const {
     return fColorsAreOpaque && (this->getTileMode() != SkTileMode::kDecal);
@@ -1270,16 +1277,18 @@ SkGradientShaderBase::ColorStopOptimizer::ColorStopOptimizer(const SkColor4f* co
     }
 }
 
-#ifdef SK_GRAPHITE_ENABLED
+#if defined(SK_GRAPHITE)
+
+namespace {
+
 // Please see GrGradientShader.cpp::make_interpolated_to_dst for substantial comments
 // as to why this code is structured this way.
-void SkGradientShaderBase::MakeInterpolatedToDst(
-        const skgpu::graphite::KeyContext& keyContext,
-        skgpu::graphite::PaintParamsKeyBuilder* builder,
-        skgpu::graphite::PipelineDataGatherer* gatherer,
-        const skgpu::graphite::GradientShaderBlocks::GradientData& gradData,
-        const SkGradientShaderBase::Interpolation& interp,
-        SkColorSpace* intermediateCS) {
+void make_interpolated_to_dst(const skgpu::graphite::KeyContext& keyContext,
+                              skgpu::graphite::PaintParamsKeyBuilder* builder,
+                              skgpu::graphite::PipelineDataGatherer* gatherer,
+                              const skgpu::graphite::GradientShaderBlocks::GradientData& gradData,
+                              const SkGradientShaderBase::Interpolation& interp,
+                              SkColorSpace* intermediateCS) {
     using ColorSpace = SkGradientShader::Interpolation::ColorSpace;
     using namespace skgpu::graphite;
 
@@ -1322,4 +1331,106 @@ void SkGradientShaderBase::MakeInterpolatedToDst(
 
     builder->endBlock();
 }
+
+SkBitmap create_color_and_offset_bitmap(int numStops,
+                                        const SkPMColor4f* colors,
+                                        const float* offsets) {
+    SkBitmap colorsAndOffsetsBitmap;
+
+    colorsAndOffsetsBitmap.allocPixels(SkImageInfo::Make(numStops, 2,
+                                                         kRGBA_F16_SkColorType,
+                                                         kPremul_SkAlphaType));
+
+    for (int i = 0; i < numStops; i++) {
+        // TODO: there should be a way to directly set a premul pixel in a bitmap with
+        // a premul color.
+        SkColor4f unpremulColor = colors[i].unpremul();
+        colorsAndOffsetsBitmap.erase(unpremulColor,
+                                     SkIRect::MakeXYWH(i, 0, 1, 1));
+
+        float offset = offsets ? offsets[i] : SkIntToFloat(i) / (numStops-1);
+        SkASSERT(offset >= 0.0f && offset <= 1.0f);
+
+        int exponent;
+        float mantissa = frexp(offset, &exponent);
+
+        SkHalf halfE = SkFloatToHalf(exponent);
+        if ((int) SkHalfToFloat(halfE) != exponent) {
+            SKGPU_LOG_W("Encoding gradient to f16 failed");
+            return {};
+        }
+
+#if defined(SK_DEBUG)
+        SkHalf halfM = SkFloatToHalf(mantissa);
+
+        float restored = ldexp(SkHalfToFloat(halfM), (int) SkHalfToFloat(halfE));
+        float error = abs(restored - offset);
+        SkASSERT(error < 0.001f);
 #endif
+
+        // TODO: we're only using 2 of the f16s here. The encoding could be altered to better
+        // preserve precision. This encoding yields < 0.001f error for 2^20 evenly spaced stops.
+        colorsAndOffsetsBitmap.erase(SkColor4f{mantissa, (float) exponent, 0, 1},
+                                     SkIRect::MakeXYWH(i, 1, 1, 1));
+    }
+
+    return colorsAndOffsetsBitmap;
+}
+
+} // anonymous namespace
+
+void SkGradientShaderBase::addToKeyCommon(const skgpu::graphite::KeyContext& keyContext,
+                                          skgpu::graphite::PaintParamsKeyBuilder* builder,
+                                          skgpu::graphite::PipelineDataGatherer* gatherer,
+                                          GradientType type,
+                                          SkPoint point0, SkPoint point1,
+                                          float radius0, float radius1,
+                                          float bias, float scale) const {
+    using namespace skgpu::graphite;
+
+    SkColor4fXformer xformedColors(this, keyContext.dstColorInfo().colorSpace());
+    const SkPMColor4f* colors = xformedColors.fColors.begin();
+
+    sk_sp<TextureProxy> proxy;
+
+    if (fColorCount > GradientShaderBlocks::GradientData::kNumInternalStorageStops) {
+        if (fColorsAndOffsetsBitmap.empty()) {
+            fColorsAndOffsetsBitmap = create_color_and_offset_bitmap(fColorCount,
+                                                                     colors,
+                                                                     fPositions);
+            if (fColorsAndOffsetsBitmap.empty()) {
+                SKGPU_LOG_W("Couldn't create GradientShader's color and offset bitmap");
+
+                SolidColorShaderBlock::BeginBlock(keyContext, builder, gatherer, {1, 0, 0, 1});
+                builder->endBlock();
+                return;
+            }
+        }
+
+        proxy = RecorderPriv::CreateCachedProxy(keyContext.recorder(), fColorsAndOffsetsBitmap);
+        if (!proxy) {
+            SKGPU_LOG_W("Couldn't create GradientShader's color and offset bitmap proxy");
+
+            SolidColorShaderBlock::BeginBlock(keyContext, builder, gatherer, {1, 0, 0, 1});
+            builder->endBlock();
+            return;
+        }
+    }
+
+    GradientShaderBlocks::GradientData data(type,
+                                            point0, point1,
+                                            radius0, radius1,
+                                            bias, scale,
+                                            fTileMode,
+                                            fColorCount,
+                                            colors,
+                                            fPositions,
+                                            std::move(proxy),
+                                            fInterpolation);
+
+    make_interpolated_to_dst(keyContext, builder, gatherer,
+                             data, fInterpolation,
+                             xformedColors.fIntermediateColorSpace.get());
+}
+
+#endif // defined(SK_GRAPHITE)

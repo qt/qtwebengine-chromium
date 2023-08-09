@@ -27,7 +27,9 @@
 #include "src/gpu/ganesh/ops/GrMeshDrawOp.h"
 #include "src/gpu/ganesh/ops/GrSimpleMeshDrawOpHelper.h"
 
-namespace skgpu::v1::FillRRectOp {
+using namespace skia_private;
+
+namespace skgpu::ganesh::FillRRectOp {
 
 namespace {
 
@@ -65,7 +67,7 @@ public:
 
     FixedFunctionFlags fixedFunctionFlags() const override { return fHelper.fixedFunctionFlags(); }
 
-    ClipResult clipToShape(skgpu::v1::SurfaceDrawContext*,
+    ClipResult clipToShape(skgpu::ganesh::SurfaceDrawContext*,
                            SkClipOp,
                            const SkMatrix& clipMatrix,
                            const GrShape&,
@@ -226,7 +228,7 @@ FillRRectOpImpl::FillRRectOpImpl(GrProcessorSet* processorSet,
                     GrOp::IsHairline::kNo);
 }
 
-GrDrawOp::ClipResult FillRRectOpImpl::clipToShape(skgpu::v1::SurfaceDrawContext* sdc,
+GrDrawOp::ClipResult FillRRectOpImpl::clipToShape(skgpu::ganesh::SurfaceDrawContext* sdc,
                                                   SkClipOp clipOp,
                                                   const SkMatrix& clipMatrix,
                                                   const GrShape& shape,
@@ -407,7 +409,7 @@ private:
     const ProcessorFlags fFlags;
 
     constexpr static int kMaxInstanceAttribs = 6;
-    SkSTArray<kMaxInstanceAttribs, Attribute> fInstanceAttribs;
+    STArray<kMaxInstanceAttribs, Attribute> fInstanceAttribs;
     const Attribute* fColorAttrib;
 };
 
@@ -920,7 +922,7 @@ GrOp::Owner Make(GrRecordingContext* ctx,
     return FillRRectOpImpl::Make(ctx, arena, std::move(paint), viewMatrix, rrect, localMatrix, aa);
 }
 
-} // namespace skgpu::v1::FillRRectOp
+}  // namespace skgpu::ganesh::FillRRectOp
 
 #if GR_TEST_UTILS
 
@@ -939,13 +941,8 @@ GR_DRAW_OP_TEST_DEFINE(FillRRectOp) {
     // TODO: test out other rrect configurations
     rrect.setNinePatch(rect, w / 3.0f, h / 4.0f, w / 5.0f, h / 6.0);
 
-    return skgpu::v1::FillRRectOp::Make(context,
-                                        &arena,
-                                        std::move(paint),
-                                        viewMatrix,
-                                        rrect,
-                                        rrect.rect(),
-                                        aa);
+    return skgpu::ganesh::FillRRectOp::Make(
+            context, &arena, std::move(paint), viewMatrix, rrect, rrect.rect(), aa);
 }
 
 #endif

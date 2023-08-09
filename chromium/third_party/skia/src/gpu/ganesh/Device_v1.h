@@ -20,10 +20,10 @@ class SkLatticeIter;
 class SkRegion;
 class SkSpecialImage;
 class SkSurface;
-class SkSurface_Gpu;
+class SkSurface_Ganesh;
 class SkVertices;
 
-namespace skgpu::v1 {
+namespace skgpu::ganesh {
 
 class SurfaceContext;
 class SurfaceFillContext;
@@ -249,27 +249,6 @@ private:
     bool forceConservativeRasterClip() const override { return true; }
 
     const GrClip* clip() const { return &fClip; }
-#if defined(SK_EXPERIMENTAL_SIMULATE_DRAWGLYPHRUNLIST_WITH_SLUG)
-    void testingOnly_drawGlyphRunListWithSlug(SkCanvas* canvas,
-                                              const sktext::GlyphRunList& glyphRunList,
-                                              const SkPaint& initialPaint,
-                                              const SkPaint& drawingPaint);
-#endif
-
-#if defined(SK_EXPERIMENTAL_SIMULATE_DRAWGLYPHRUNLIST_WITH_SLUG_SERIALIZE)
-    void testingOnly_drawGlyphRunListWithSerializedSlug(SkCanvas* canvas,
-                                                        const sktext::GlyphRunList& glyphRunList,
-                                                        const SkPaint& initialPaint,
-                                                        const SkPaint& drawingPaint);
-#endif
-
-#if defined(SK_EXPERIMENTAL_SIMULATE_DRAWGLYPHRUNLIST_WITH_SLUG_STRIKE_SERIALIZE)
-    void testingOnly_drawGlyphRunListWithSerializedSlugAndStrike(
-            SkCanvas* canvas,
-            const sktext::GlyphRunList& glyphRunList,
-            const SkPaint& initialPaint,
-            const SkPaint& drawingPaint);
-#endif
 
     // If not null, dstClip must be contained inside dst and will also respect the edge AA flags.
     // If 'preViewMatrix' is not null, final CTM will be this->ctm() * preViewMatrix.
@@ -287,11 +266,11 @@ private:
                          SkFilterMode,
                          const SkPaint&);
 
-    friend class ::SkSurface_Gpu;      // for access to surfaceProps
+    friend class ::SkSurface_Ganesh;  // for access to surfaceProps
 };
 
 GR_MAKE_BITFIELD_CLASS_OPS(Device::DeviceFlags)
 
-} // namespace skgpu::v1
+}  // namespace skgpu::ganesh
 
 #endif // skgpu_v1_Device_DEFINED

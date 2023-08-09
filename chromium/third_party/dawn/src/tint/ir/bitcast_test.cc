@@ -12,10 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <sstream>
-
 #include "src/tint/ir/instruction.h"
 #include "src/tint/ir/test_helper.h"
+#include "src/tint/utils/string_stream.h"
 
 namespace tint::ir {
 namespace {
@@ -40,8 +39,8 @@ TEST_F(IR_InstructionTest, Bitcast) {
     ASSERT_TRUE(val->Is<constant::Scalar<i32>>());
     EXPECT_EQ(4_i, val->As<constant::Scalar<i32>>()->ValueAs<i32>());
 
-    std::stringstream str;
-    instr->ToString(str, b.builder.ir.symbols);
+    utils::StringStream str;
+    instr->ToString(str);
     EXPECT_EQ(str.str(), "%42 (i32) = bitcast(4)");
 }
 

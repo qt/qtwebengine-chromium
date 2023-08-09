@@ -29,15 +29,36 @@ export type TraceEventHandlerName = keyof typeof ModelHandlers;
 // TraceWindow. The HandlerData, therefore, would determine that the
 // TraceProcessor would contain a key called 'TraceBounds' whose value is
 // a TraceWindow.
-export type HandlerData<T extends {[key: string]: TraceEventHandler}> = {
+export type EnabledHandlerDataWithMeta<T extends {[key: string]: TraceEventHandler}> = {
+  // We allow the user to configure which handlers are created by passing them
+  // in when constructing a model instance. However, we then ensure that the
+  // Meta handler is added to that, as the Model relies on some of the data
+  // from the Meta handler when creating the file. Therefore, this type
+  // explicitly defines that the Meta data is present, before then extending it
+  // with the index type to represent all the other handlers.
+  // eslint-disable-next-line @typescript-eslint/naming-convention
+  Meta: Readonly<ReturnType<typeof ModelHandlers['Meta']['data']>>,
+}&{
   // For every key in the object, look up the TraceEventHandler's data function
   // and use its return type as the value for the object.
   [K in keyof T]: Readonly<ReturnType<T[K]['data']>>;
 };
 
+export type HandlersWithMeta<T extends {[key: string]: TraceEventHandler}> = {
+  // eslint-disable-next-line @typescript-eslint/naming-convention
+  Meta: typeof ModelHandlers.Meta,
+}&{
+  [K in keyof T]: T[K];
+};
+
 import type * as ModelHandlers from './ModelHandlers.js';
 
-export type TraceParseData = Readonly<HandlerData<typeof ModelHandlers>>;
+// Represents the final parsed data from all of the handlers. Note that because
+// we are currently in the middle of the migration of data engines, not all the
+// handlers are enabled. Therefore for now you should use the type defined in
+// models/trace/ModelImpl.ts, `PartialTraceParseDataDuringMigration`, which
+// represents the final parsed data for only the enabled handlers.
+export type TraceParseData = Readonly<EnabledHandlerDataWithMeta<typeof ModelHandlers>>;
 
 export type Handlers = typeof ModelHandlers;
 

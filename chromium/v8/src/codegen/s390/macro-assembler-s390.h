@@ -138,13 +138,7 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
   MemOperand EntryFromBuiltinAsOperand(Builtin builtin);
 
   // Load the code entry point from the Code object.
-  void LoadCodeEntry(Register destination, Register code_object);
-  // Load code entry point from the Code object and compute
-  // InstructionStream object pointer out of it. Must not be used for
-  // Codes corresponding to builtins, because their entry points
-  // values point to the embedded instruction stream in .text section.
-  void LoadCodeInstructionStreamNonBuiltin(Register destination,
-                                           Register code_object);
+  void LoadCodeInstructionStart(Register destination, Register code_object);
   void CallCodeObject(Register code_object);
   void JumpCodeObject(Register code_object,
                       JumpMode jump_mode = JumpMode::kJump);
@@ -1220,7 +1214,7 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
                                Simd128Register scratch);
   void I8x16Swizzle(Simd128Register dst, Simd128Register src1,
                     Simd128Register src2, Register scratch1, Register scratch2,
-                    Simd128Register scratch3, Simd128Register scratch4);
+                    Simd128Register scratch3);
   void S128Const(Simd128Register dst, uint64_t high, uint64_t low,
                  Register scratch1, Register scratch2);
   void I8x16Shuffle(Simd128Register dst, Simd128Register src1,
@@ -1229,6 +1223,11 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
                     Simd128Register scratch3);
   void I32x4DotI16x8S(Simd128Register dst, Simd128Register src1,
                       Simd128Register src2, Simd128Register scratch);
+  void I16x8DotI8x16S(Simd128Register dst, Simd128Register src1,
+                      Simd128Register src2, Simd128Register scratch);
+  void I32x4DotI8x16AddS(Simd128Register dst, Simd128Register src1,
+                         Simd128Register src2, Simd128Register src3,
+                         Simd128Register scratch1, Simd128Register scratch2);
   void I16x8Q15MulRSatS(Simd128Register dst, Simd128Register src1,
                         Simd128Register src2, Simd128Register scratch1,
                         Simd128Register scratch2, Simd128Register scratch3);
@@ -1582,9 +1581,6 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
   void JumpToExternalReference(const ExternalReference& builtin,
                                bool builtin_exit_frame = false);
 
-  // Generates a trampoline to jump to the off-heap instruction stream.
-  void JumpToOffHeapInstructionStream(Address entry);
-
   // Compare the object in a register to a value and jump if they are equal.
   void JumpIfRoot(Register with, RootIndex index, Label* if_equal) {
     CompareRoot(with, index);
@@ -1734,6 +1730,9 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
   // via --debug-code.
   void AssertUndefinedOrAllocationSite(Register object,
                                        Register scratch) NOOP_UNLESS_DEBUG_CODE;
+
+  void AssertJSAny(Register object, Register map_tmp, Register tmp,
+                   AbortReason abort_reason) NOOP_UNLESS_DEBUG_CODE;
 
   template <typename Field>
   void DecodeField(Register dst, Register src) {

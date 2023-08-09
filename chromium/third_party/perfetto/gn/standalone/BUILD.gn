@@ -82,6 +82,7 @@ config("extra_warnings") {
       "-Wno-poison-system-directories",
       "-Wno-reserved-id-macro",
       "-Wno-reserved-identifier",
+      "-Wno-shadow-uncaptured-local",
       "-Wno-unknown-sanitizers",
       "-Wno-unknown-warning-option",
       "-Wno-unsafe-buffer-usage",
@@ -93,6 +94,12 @@ config("extra_warnings") {
     # Use after free detection in GCC is still not good enough: it still fails
     # on very obvious false-positives in trace processor.
     cflags_cc += [ "-Wno-use-after-free" ]
+
+    # GCC 7's handling of uninitialized std::optional is flaky at best and
+    # causes many false positives.
+    # TODO(lalitm): remove this when we upgrade to a GCC version which is good
+    # enough to handle this.
+    cflags_cc += [ "-Wno-maybe-uninitialized" ]
   }
 }
 

@@ -441,6 +441,7 @@ class EndToEndTest : public QuicTestWithParam<TestParams> {
     StartServer();
 
     if (use_preferred_address_) {
+      SetQuicReloadableFlag(quic_use_received_client_addresses_cache, true);
       // At this point, the server has an ephemeral port to listen on. Restart
       // the server with the preferred address.
       StopServer();
@@ -5509,6 +5510,50 @@ TEST_P(EndToEndTest, ClientMultiPortConnection) {
   stream->Reset(QuicRstStreamErrorCode::QUIC_STREAM_NO_ERROR);
 }
 
+TEST_P(EndToEndTest, ClientMultiPortMigrationOnPathDegrading) {
+  client_config_.SetClientConnectionOptions(QuicTagVector{kMPQC});
+  ASSERT_TRUE(Initialize());
+  if (!GetClientConnection()->connection_migration_use_new_cid()) {
+    return;
+  }
+  client_.reset(EndToEndTest::CreateQuicClient(nullptr));
+  QuicConnection* client_connection = GetClientConnection();
+  QuicSpdyClientStream* stream = client_->GetOrCreateStream();
+  ASSERT_TRUE(stream);
+  // Increase the probing frequency to speed up this test.
+  client_connection->SetMultiPortProbingInterval(
+      QuicTime::Delta::FromMilliseconds(100));
+  SendSynchronousFooRequestAndCheckResponse();
+  EXPECT_TRUE(client_->WaitUntil(1000, [&]() {
+    return 1u == client_connection->GetStats().num_path_response_received;
+  }));
+  // Verify that the alternative path keeps sending probes periodically.
+  EXPECT_TRUE(client_->WaitUntil(1000, [&]() {
+    return 2u == client_connection->GetStats().num_path_response_received;
+  }));
+  server_thread_->Pause();
+  QuicConnection* server_connection = GetServerConnection();
+  // Verify that no migration has happened.
+  if (server_connection != nullptr) {
+    EXPECT_EQ(0u, server_connection->GetStats()
+                      .num_peer_migration_to_proactively_validated_address);
+  }
+  server_thread_->Resume();
+
+  auto original_self_addr = client_connection->self_address();
+  // Trigger client side path degrading
+  client_connection->OnPathDegradingDetected();
+  EXPECT_NE(original_self_addr, client_connection->self_address());
+
+  // Send another request to trigger connection id retirement.
+  SendSynchronousFooRequestAndCheckResponse();
+  EXPECT_EQ(1u, client_connection->GetStats().num_retire_connection_id_sent);
+  auto new_alt_path = QuicConnectionPeer::GetAlternativePath(client_connection);
+  EXPECT_NE(client_connection->self_address(), new_alt_path->self_address);
+
+  stream->Reset(QuicRstStreamErrorCode::QUIC_STREAM_NO_ERROR);
+}
+
 TEST_P(EndToEndTest, SimpleServerPreferredAddressTest) {
   use_preferred_address_ = true;
   ASSERT_TRUE(Initialize());
@@ -6603,6 +6648,8 @@ TEST_P(EndToEndTest, WebTransportSessionUnidirectionalStream) {
   WebTransportStream* outgoing_stream =
       session->OpenOutgoingUnidirectionalStream();
   ASSERT_TRUE(outgoing_stream != nullptr);
+  EXPECT_EQ(outgoing_stream,
+            session->GetStreamById(outgoing_stream->GetStreamId()));
 
   auto stream_visitor =
       std::make_unique<NiceMock<MockWebTransportStreamVisitor>>();
@@ -6622,6 +6669,8 @@ TEST_P(EndToEndTest, WebTransportSessionUnidirectionalStream) {
   WebTransportStream* received_stream =
       session->AcceptIncomingUnidirectionalStream();
   ASSERT_TRUE(received_stream != nullptr);
+  EXPECT_EQ(received_stream,
+            session->GetStreamById(received_stream->GetStreamId()));
   std::string received_data;
   WebTransportStream::ReadResult result = received_stream->Read(&received_data);
   EXPECT_EQ(received_data, "test");
@@ -6681,6 +6730,7 @@ TEST_P(EndToEndTest, WebTransportSessionBidirectionalStream) {
 
   WebTransportStream* stream = session->OpenOutgoingBidirectionalStream();
   ASSERT_TRUE(stream != nullptr);
+  EXPECT_EQ(stream, session->GetStreamById(stream->GetStreamId()));
 
   auto stream_visitor_owned =
       std::make_unique<NiceMock<MockWebTransportStreamVisitor>>();
@@ -6941,6 +6991,49 @@ TEST_P(EndToEndTest, WebTransportSessionStreamTermination) {
   }));
 }
 
+// This test currently does not pass; we need support for
+// https://datatracker.ietf.org/doc/draft-seemann-quic-reliable-stream-reset/ in
+// order to make this work.
+TEST_P(EndToEndTest, DISABLED_WebTransportSessionResetReliability) {
+  enable_web_transport_ = true;
+  ASSERT_TRUE(Initialize());
+
+  if (!version_.UsesHttp3()) {
+    return;
+  }
+
+  SetPacketLossPercentage(30);
+
+  WebTransportHttp3* session =
+      CreateWebTransportSession("/resets", /*wait_for_server_response=*/true);
+  ASSERT_TRUE(session != nullptr);
+
+  NiceMock<MockWebTransportSessionVisitor>& visitor =
+      SetupWebTransportVisitor(session);
+  EXPECT_CALL(visitor, OnIncomingUnidirectionalStreamAvailable())
+      .WillRepeatedly([this, session]() {
+        ReadAllIncomingWebTransportUnidirectionalStreams(session);
+      });
+
+  std::vector<std::string> expected_log;
+  constexpr int kStreamsToCreate = 10;
+  for (int i = 0; i < kStreamsToCreate; i++) {
+    WebTransportStream* stream = session->OpenOutgoingBidirectionalStream();
+    QuicStreamId id = stream->GetStreamId();
+    ASSERT_TRUE(stream != nullptr);
+    stream->ResetWithUserCode(42);
+
+    expected_log.push_back(
+        absl::StrCat("Received reset for stream ", id, " with error code 42"));
+  }
+  client_->WaitUntil(2000, [this, &expected_log]() {
+    return received_webtransport_unidirectional_streams_.size() >=
+           expected_log.size();
+  });
+  EXPECT_THAT(received_webtransport_unidirectional_streams_,
+              UnorderedElementsAreArray(expected_log));
+}
+
 TEST_P(EndToEndTest, WebTransportSession404) {
   enable_web_transport_ = true;
   ASSERT_TRUE(Initialize());
@@ -7132,12 +7225,14 @@ TEST_P(EndToEndTest, OriginalConnectionIdClearedFromMap) {
   server_thread_->Resume();
 }
 
-TEST_P(EndToEndTest, EcnMarksReportedCorrectly) {
+TEST_P(EndToEndTest, ServerReportsEcn) {
   // Client connects using not-ECT.
   ASSERT_TRUE(Initialize());
   QuicConnection* client_connection = GetClientConnection();
-  QuicEcnCounts* ecn =
-      QuicConnectionPeer::GetEcnCounts(client_connection, APPLICATION_DATA);
+  QuicConnectionPeer::DisableEcnCodepointValidation(client_connection);
+  QuicEcnCounts* ecn = QuicSentPacketManagerPeer::GetPeerEcnCounts(
+      QuicConnectionPeer::GetSentPacketManager(client_connection),
+      APPLICATION_DATA);
   EXPECT_EQ(ecn->ect0, 0);
   EXPECT_EQ(ecn->ect1, 0);
   EXPECT_EQ(ecn->ce, 0);
@@ -7175,6 +7270,37 @@ TEST_P(EndToEndTest, EcnMarksReportedCorrectly) {
     ect0 = ecn->ect0;
     EXPECT_EQ(ecn->ect1, 0);
   }
+  client_->Disconnect();
+}
+
+TEST_P(EndToEndTest, ClientReportsEcn) {
+  ASSERT_TRUE(Initialize());
+  // Wait for handshake to complete, so that we can manipulate the server
+  // connection without race conditions.
+  server_thread_->WaitForCryptoHandshakeConfirmed();
+  QuicConnection* server_connection = GetServerConnection();
+  QuicConnectionPeer::DisableEcnCodepointValidation(server_connection);
+  QuicEcnCounts* ecn = QuicSentPacketManagerPeer::GetPeerEcnCounts(
+      QuicConnectionPeer::GetSentPacketManager(server_connection),
+      APPLICATION_DATA);
+  TestPerPacketOptions options;
+  options.ecn_codepoint = ECN_ECT1;
+  server_connection->set_per_packet_options(&options);
+  client_->SendSynchronousRequest("/foo");
+  // A second request provides a packet for the client ACKs to go with.
+  client_->SendSynchronousRequest("/foo");
+  server_thread_->Pause();
+  EXPECT_EQ(ecn->ect0, 0);
+  EXPECT_EQ(ecn->ce, 0);
+  if (!GetQuicRestartFlag(quic_receive_ecn) ||
+      !GetQuicRestartFlag(quic_quiche_ecn_sockets) ||
+      !VersionHasIetfQuicFrames(version_.transport_version)) {
+    EXPECT_EQ(ecn->ect1, 0);
+  } else {
+    EXPECT_GT(ecn->ect1, 0);
+  }
+  server_connection->set_per_packet_options(nullptr);
+  server_thread_->Resume();
   client_->Disconnect();
 }
 

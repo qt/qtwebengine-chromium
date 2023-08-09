@@ -105,7 +105,7 @@ TEST_F(ParserImplTest, Attribute_Id_MissingValue) {
     EXPECT_TRUE(attr.errored);
     EXPECT_EQ(attr.value, nullptr);
     EXPECT_TRUE(p->has_error());
-    EXPECT_EQ(p->error(), "1:4: expected id expression");
+    EXPECT_EQ(p->error(), "1:1: id expects 1 argument");
 }
 
 TEST_F(ParserImplTest, Attribute_Id_MissingInvalid) {
@@ -115,7 +115,7 @@ TEST_F(ParserImplTest, Attribute_Id_MissingInvalid) {
     EXPECT_TRUE(attr.errored);
     EXPECT_EQ(attr.value, nullptr);
     EXPECT_TRUE(p->has_error());
-    EXPECT_EQ(p->error(), "1:4: expected id expression");
+    EXPECT_EQ(p->error(), "1:4: expected expression for id");
 }
 
 TEST_F(ParserImplTest, Attribute_Location) {
@@ -204,7 +204,7 @@ TEST_F(ParserImplTest, Attribute_Location_MissingValue) {
     EXPECT_TRUE(attr.errored);
     EXPECT_EQ(attr.value, nullptr);
     EXPECT_TRUE(p->has_error());
-    EXPECT_EQ(p->error(), "1:10: expected location expression");
+    EXPECT_EQ(p->error(), "1:1: location expects 1 argument");
 }
 
 TEST_F(ParserImplTest, Attribute_Location_MissingInvalid) {
@@ -214,7 +214,7 @@ TEST_F(ParserImplTest, Attribute_Location_MissingInvalid) {
     EXPECT_TRUE(attr.errored);
     EXPECT_EQ(attr.value, nullptr);
     EXPECT_TRUE(p->has_error());
-    EXPECT_EQ(p->error(), "1:10: expected location expression");
+    EXPECT_EQ(p->error(), "1:10: expected expression for location");
 }
 
 class BuiltinTest : public ParserImplTestWithParam<builtin::BuiltinValue> {};
@@ -233,7 +233,7 @@ TEST_P(BuiltinTest, Attribute_Builtin) {
     ASSERT_TRUE(var_attr->Is<ast::BuiltinAttribute>());
 
     auto* builtin = var_attr->As<ast::BuiltinAttribute>();
-    ast::CheckIdentifier(p->builder().Symbols(), builtin->builtin, str);
+    ast::CheckIdentifier(builtin->builtin, str);
 }
 TEST_P(BuiltinTest, Attribute_Builtin_TrailingComma) {
     auto str = utils::ToString(GetParam());
@@ -249,7 +249,7 @@ TEST_P(BuiltinTest, Attribute_Builtin_TrailingComma) {
     ASSERT_TRUE(var_attr->Is<ast::BuiltinAttribute>());
 
     auto* builtin = var_attr->As<ast::BuiltinAttribute>();
-    ast::CheckIdentifier(p->builder().Symbols(), builtin->builtin, str);
+    ast::CheckIdentifier(builtin->builtin, str);
 }
 INSTANTIATE_TEST_SUITE_P(ParserImplTest,
                          BuiltinTest,
@@ -293,7 +293,7 @@ TEST_F(ParserImplTest, Attribute_Builtin_MissingValue) {
     EXPECT_TRUE(attr.errored);
     EXPECT_EQ(attr.value, nullptr);
     EXPECT_TRUE(p->has_error());
-    EXPECT_EQ(p->error(), R"(1:9: expected expression for builtin name)");
+    EXPECT_EQ(p->error(), "1:1: builtin expects 1 argument");
 }
 
 TEST_F(ParserImplTest, Attribute_Interpolate_Flat) {
@@ -308,7 +308,7 @@ TEST_F(ParserImplTest, Attribute_Interpolate_Flat) {
     ASSERT_TRUE(var_attr->Is<ast::InterpolateAttribute>());
 
     auto* interp = var_attr->As<ast::InterpolateAttribute>();
-    ast::CheckIdentifier(p->builder().Symbols(), interp->type, "flat");
+    ast::CheckIdentifier(interp->type, "flat");
     EXPECT_EQ(interp->sampling, nullptr);
 }
 
@@ -324,7 +324,7 @@ TEST_F(ParserImplTest, Attribute_Interpolate_Single_TrailingComma) {
     ASSERT_TRUE(var_attr->Is<ast::InterpolateAttribute>());
 
     auto* interp = var_attr->As<ast::InterpolateAttribute>();
-    ast::CheckIdentifier(p->builder().Symbols(), interp->type, "flat");
+    ast::CheckIdentifier(interp->type, "flat");
     EXPECT_EQ(interp->sampling, nullptr);
 }
 
@@ -335,7 +335,7 @@ TEST_F(ParserImplTest, Attribute_Interpolate_Single_DoubleTrailingComma) {
     EXPECT_TRUE(attr.errored);
     EXPECT_EQ(attr.value, nullptr);
     EXPECT_TRUE(p->has_error());
-    EXPECT_EQ(p->error(), R"(1:18: expected expression for interpolation sampling)");
+    EXPECT_EQ(p->error(), "1:18: expected expression for interpolate");
 }
 
 TEST_F(ParserImplTest, Attribute_Interpolate_Perspective_Center) {
@@ -350,8 +350,8 @@ TEST_F(ParserImplTest, Attribute_Interpolate_Perspective_Center) {
     ASSERT_TRUE(var_attr->Is<ast::InterpolateAttribute>());
 
     auto* interp = var_attr->As<ast::InterpolateAttribute>();
-    ast::CheckIdentifier(p->builder().Symbols(), interp->type, "perspective");
-    ast::CheckIdentifier(p->builder().Symbols(), interp->sampling, "center");
+    ast::CheckIdentifier(interp->type, "perspective");
+    ast::CheckIdentifier(interp->sampling, "center");
 }
 
 TEST_F(ParserImplTest, Attribute_Interpolate_Double_TrailingComma) {
@@ -366,8 +366,8 @@ TEST_F(ParserImplTest, Attribute_Interpolate_Double_TrailingComma) {
     ASSERT_TRUE(var_attr->Is<ast::InterpolateAttribute>());
 
     auto* interp = var_attr->As<ast::InterpolateAttribute>();
-    ast::CheckIdentifier(p->builder().Symbols(), interp->type, "perspective");
-    ast::CheckIdentifier(p->builder().Symbols(), interp->sampling, "center");
+    ast::CheckIdentifier(interp->type, "perspective");
+    ast::CheckIdentifier(interp->sampling, "center");
 }
 
 TEST_F(ParserImplTest, Attribute_Interpolate_Perspective_Centroid) {
@@ -382,8 +382,8 @@ TEST_F(ParserImplTest, Attribute_Interpolate_Perspective_Centroid) {
     ASSERT_TRUE(var_attr->Is<ast::InterpolateAttribute>());
 
     auto* interp = var_attr->As<ast::InterpolateAttribute>();
-    ast::CheckIdentifier(p->builder().Symbols(), interp->type, "perspective");
-    ast::CheckIdentifier(p->builder().Symbols(), interp->sampling, "centroid");
+    ast::CheckIdentifier(interp->type, "perspective");
+    ast::CheckIdentifier(interp->sampling, "centroid");
 }
 
 TEST_F(ParserImplTest, Attribute_Interpolate_Linear_Sample) {
@@ -398,8 +398,8 @@ TEST_F(ParserImplTest, Attribute_Interpolate_Linear_Sample) {
     ASSERT_TRUE(var_attr->Is<ast::InterpolateAttribute>());
 
     auto* interp = var_attr->As<ast::InterpolateAttribute>();
-    ast::CheckIdentifier(p->builder().Symbols(), interp->type, "linear");
-    ast::CheckIdentifier(p->builder().Symbols(), interp->sampling, "sample");
+    ast::CheckIdentifier(interp->type, "linear");
+    ast::CheckIdentifier(interp->sampling, "sample");
 }
 
 TEST_F(ParserImplTest, Attribute_Interpolate_MissingLeftParen) {
@@ -429,7 +429,7 @@ TEST_F(ParserImplTest, Attribute_Interpolate_MissingFirstValue) {
     EXPECT_TRUE(attr.errored);
     EXPECT_EQ(attr.value, nullptr);
     EXPECT_TRUE(p->has_error());
-    EXPECT_EQ(p->error(), R"(1:13: expected expression for interpolation type)");
+    EXPECT_EQ(p->error(), "1:1: interpolate expects at least 1 argument");
 }
 
 TEST_F(ParserImplTest, Attribute_Binding) {
@@ -520,7 +520,7 @@ TEST_F(ParserImplTest, Attribute_Binding_MissingValue) {
     EXPECT_TRUE(attr.errored);
     EXPECT_EQ(attr.value, nullptr);
     EXPECT_TRUE(p->has_error());
-    EXPECT_EQ(p->error(), "1:9: expected binding expression");
+    EXPECT_EQ(p->error(), "1:1: binding expects 1 argument");
 }
 
 TEST_F(ParserImplTest, Attribute_Binding_MissingInvalid) {
@@ -530,7 +530,7 @@ TEST_F(ParserImplTest, Attribute_Binding_MissingInvalid) {
     EXPECT_TRUE(attr.errored);
     EXPECT_EQ(attr.value, nullptr);
     EXPECT_TRUE(p->has_error());
-    EXPECT_EQ(p->error(), "1:9: expected binding expression");
+    EXPECT_EQ(p->error(), "1:9: expected expression for binding");
 }
 
 TEST_F(ParserImplTest, Attribute_group) {
@@ -621,7 +621,7 @@ TEST_F(ParserImplTest, Attribute_Group_MissingValue) {
     EXPECT_TRUE(attr.errored);
     EXPECT_EQ(attr.value, nullptr);
     EXPECT_TRUE(p->has_error());
-    EXPECT_EQ(p->error(), "1:7: expected group expression");
+    EXPECT_EQ(p->error(), "1:1: group expects 1 argument");
 }
 
 TEST_F(ParserImplTest, Attribute_Group_MissingInvalid) {
@@ -631,7 +631,7 @@ TEST_F(ParserImplTest, Attribute_Group_MissingInvalid) {
     EXPECT_TRUE(attr.errored);
     EXPECT_EQ(attr.value, nullptr);
     EXPECT_TRUE(p->has_error());
-    EXPECT_EQ(p->error(), "1:7: expected group expression");
+    EXPECT_EQ(p->error(), "1:7: expected expression for group");
 }
 
 }  // namespace

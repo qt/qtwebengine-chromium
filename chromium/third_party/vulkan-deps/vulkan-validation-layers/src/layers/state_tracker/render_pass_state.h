@@ -18,7 +18,7 @@
  */
 #pragma once
 #include "state_tracker/base_node.h"
-#include "vk_safe_struct.h"
+#include "generated/vk_safe_struct.h"
 
 class IMAGE_VIEW_STATE;
 
@@ -48,13 +48,7 @@ struct DAGNode {
 
 struct SubpassDependencyGraphNode {
     uint32_t pass;
-    struct Dependency {
-        const VkSubpassDependency2 *dependency;
-        const SubpassDependencyGraphNode *node;
-        Dependency() = default;
-        Dependency(const VkSubpassDependency2 *dependency_, const SubpassDependencyGraphNode *node_)
-            : dependency(dependency_), node(node_) {}
-    };
+
     std::map<const SubpassDependencyGraphNode *, std::vector<const VkSubpassDependency2 *>> prev;
     std::map<const SubpassDependencyGraphNode *, std::vector<const VkSubpassDependency2 *>> next;
     std::vector<uint32_t> async;  // asynchronous subpasses with a lower subpass index
@@ -106,8 +100,8 @@ class RENDER_PASS_STATE : public BASE_NODE {
     RENDER_PASS_STATE(VkRenderPass rp, VkRenderPassCreateInfo2 const *pCreateInfo);
     RENDER_PASS_STATE(VkRenderPass rp, VkRenderPassCreateInfo const *pCreateInfo);
 
-    RENDER_PASS_STATE(VkPipelineRenderingCreateInfo const *pPipelineRenderingCreateInfo);
-    RENDER_PASS_STATE(VkRenderingInfo const *pRenderingInfo);
+    RENDER_PASS_STATE(VkPipelineRenderingCreateInfo const *pPipelineRenderingCreateInfo, bool rasterization_enabled);
+    RENDER_PASS_STATE(VkRenderingInfo const *pRenderingInfo, bool rasterization_enabled);
     RENDER_PASS_STATE(VkCommandBufferInheritanceRenderingInfo const *pInheritanceRenderingInfo);
 
     VkRenderPass renderPass() const { return handle_.Cast<VkRenderPass>(); }

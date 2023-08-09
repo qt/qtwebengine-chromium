@@ -20,8 +20,8 @@
 #include "state_tracker/image_state.h"
 #include "state_tracker/pipeline_state.h"
 #include "state_tracker/descriptor_sets.h"
-#include "state_tracker/state_tracker.h"
 #include <limits>
+#include <string_view>
 
 static VkImageSubresourceRange MakeImageFullRange(const VkImageCreateInfo &create_info) {
     const auto format = create_info.format;
@@ -43,29 +43,11 @@ static VkImageSubresourceRange MakeImageFullRange(const VkImageCreateInfo &creat
     return NormalizeSubresourceRange(create_info, init_range);
 }
 
-static uint32_t ResolveRemainingLevels(const VkImageSubresourceRange *range, uint32_t mip_levels) {
-    // Return correct number of mip levels taking into account VK_REMAINING_MIP_LEVELS
-    uint32_t mip_level_count = range->levelCount;
-    if (range->levelCount == VK_REMAINING_MIP_LEVELS) {
-        mip_level_count = mip_levels - range->baseMipLevel;
-    }
-    return mip_level_count;
-}
-
-static uint32_t ResolveRemainingLayers(const VkImageSubresourceRange *range, uint32_t layers) {
-    // Return correct number of layers taking into account VK_REMAINING_ARRAY_LAYERS
-    uint32_t array_layer_count = range->layerCount;
-    if (range->layerCount == VK_REMAINING_ARRAY_LAYERS) {
-        array_layer_count = layers - range->baseArrayLayer;
-    }
-    return array_layer_count;
-}
-
 VkImageSubresourceRange NormalizeSubresourceRange(const VkImageCreateInfo &image_create_info,
                                                   const VkImageSubresourceRange &range) {
     VkImageSubresourceRange norm = range;
-    norm.levelCount = ResolveRemainingLevels(&range, image_create_info.mipLevels);
-    norm.layerCount = ResolveRemainingLayers(&range, image_create_info.arrayLayers);
+    norm.levelCount = ResolveRemainingLevels(image_create_info, range);
+    norm.layerCount = ResolveRemainingLayers(image_create_info, range);
 
     // For multiplanar formats, IMAGE_ASPECT_COLOR is equivalent to adding the aspect of the individual planes
     if (FormatIsMultiplane(image_create_info.format)) {
@@ -167,10 +149,9 @@ static IMAGE_STATE::MemoryReqs GetMemoryRequirements(const ValidationStateTracke
     return result;
 }
 
-static IMAGE_STATE::SparseReqs GetSparseRequirements(const ValidationStateTracker *dev_data, VkImage img,
-                                                     const VkImageCreateInfo *create_info) {
+static IMAGE_STATE::SparseReqs GetSparseRequirements(const ValidationStateTracker *dev_data, VkImage img, bool sparse_residency) {
     IMAGE_STATE::SparseReqs result;
-    if (create_info->flags & VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT) {
+    if (sparse_residency) {
         uint32_t count = 0;
         DispatchGetImageSparseMemoryRequirements(dev_data->device, img, &count, nullptr);
         result.resize(count);
@@ -221,7 +202,8 @@ IMAGE_STATE::IMAGE_STATE(const ValidationStateTracker *dev_data, VkImage img, co
       disjoint((pCreateInfo->flags & VK_IMAGE_CREATE_DISJOINT_BIT) != 0),
       requirements(GetMemoryRequirements(dev_data, img, pCreateInfo, disjoint, IsExternalAHB())),
       memory_requirements_checked{{false, false, false}},
-      sparse_requirements(GetSparseRequirements(dev_data, img, pCreateInfo)),
+      sparse_residency((pCreateInfo->flags & VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT) != 0),
+      sparse_requirements(GetSparseRequirements(dev_data, img, sparse_residency)),
       sparse_metadata_required(SparseMetaDataRequired(sparse_requirements)),
       get_sparse_reqs_called(false),
       sparse_metadata_bound(false),
@@ -253,6 +235,7 @@ IMAGE_STATE::IMAGE_STATE(const ValidationStateTracker *dev_data, VkImage img, co
       disjoint((pCreateInfo->flags & VK_IMAGE_CREATE_DISJOINT_BIT) != 0),
       requirements{},
       memory_requirements_checked{false, false, false},
+      sparse_residency(false),
       sparse_requirements{},
       sparse_metadata_required(false),
       get_sparse_reqs_called(false),
@@ -411,45 +394,6 @@ VkDeviceSize IMAGE_STATE::GetFakeBaseAddress() const {
     return bind_swapchain->images[swapchain_image_index].fake_base_address;
 }
 
-VkExtent3D IMAGE_STATE::GetSubresourceExtent(VkImageAspectFlags aspect_mask, uint32_t mip_level) const {
-    // Return zero extent if mip level doesn't exist
-    if (mip_level >= createInfo.mipLevels) {
-        return VkExtent3D{0, 0, 0};
-    }
-
-    // Don't allow mip adjustment to create 0 dim, but pass along a 0 if that's what subresource specified
-    VkExtent3D extent = createInfo.extent;
-
-    // If multi-plane, adjust per-plane extent
-    if (FormatIsMultiplane(createInfo.format)) {
-        VkExtent2D divisors = FindMultiplaneExtentDivisors(createInfo.format, aspect_mask);
-        extent.width /= divisors.width;
-        extent.height /= divisors.height;
-    }
-
-    if (createInfo.flags & VK_IMAGE_CREATE_CORNER_SAMPLED_BIT_NV) {
-        extent.width = (0 == extent.width ? 0 : std::max(2U, 1 + ((extent.width - 1) >> mip_level)));
-        extent.height = (0 == extent.height ? 0 : std::max(2U, 1 + ((extent.height - 1) >> mip_level)));
-        extent.depth = (0 == extent.depth ? 0 : std::max(2U, 1 + ((extent.depth - 1) >> mip_level)));
-    } else {
-        extent.width = (0 == extent.width ? 0 : std::max(1U, extent.width >> mip_level));
-        extent.height = (0 == extent.height ? 0 : std::max(1U, extent.height >> mip_level));
-        extent.depth = (0 == extent.depth ? 0 : std::max(1U, extent.depth >> mip_level));
-    }
-
-    // Image arrays have an effective z extent that isn't diminished by mip level
-    if (VK_IMAGE_TYPE_3D != createInfo.imageType) {
-        extent.depth = createInfo.arrayLayers;
-    }
-
-    return extent;
-}
-
-// Returns the effective extent of an image subresource, adjusted for mip level and array depth.
-VkExtent3D IMAGE_STATE::GetSubresourceExtent(const VkImageSubresourceLayers &subresource) const {
-    return GetSubresourceExtent(subresource.aspectMask, subresource.mipLevel);
-}
-
 static VkSamplerYcbcrConversion GetSamplerConversion(const VkImageViewCreateInfo *ci) {
     auto *conversion_info = LvlFindInChain<VkSamplerYcbcrConversionInfo>(ci->pNext);
     return conversion_info ? conversion_info->conversion : VK_NULL_HANDLE;
@@ -491,8 +435,7 @@ IMAGE_VIEW_STATE::IMAGE_VIEW_STATE(const std::shared_ptr<IMAGE_STATE> &im, VkIma
       // When the image has a external format the views format must be VK_FORMAT_UNDEFINED and it is required to use a sampler
       // Ycbcr conversion. Thus we can't extract any meaningful information from the format parameter. As a Sampler Ycbcr
       // conversion must be used the shader type is always float.
-      descriptor_format_bits(im->HasAHBFormat() ? static_cast<unsigned>(DESCRIPTOR_REQ_COMPONENT_TYPE_FLOAT)
-                                                : DescriptorRequirementsBitsFromFormat(ci->format)),
+      descriptor_format_bits(im->HasAHBFormat() ? static_cast<unsigned>(NumericTypeFloat) : GetFormatType(ci->format)),
       samplerConversion(GetSamplerConversion(ci)),
       filter_cubic_props(cubic_props),
       min_lod(GetImageViewMinLod(ci)),
@@ -744,62 +687,159 @@ void SURFACE_STATE::SetPresentModes(VkPhysicalDevice phys_dev, vvl::span<const V
 }
 
 // Helper for data obtained from vkGetPhysicalDeviceSurfacePresentModesKHR
-std::vector<VkPresentModeKHR> SURFACE_STATE::GetPresentModes(VkPhysicalDevice phys_dev) const {
+std::vector<VkPresentModeKHR> SURFACE_STATE::GetPresentModes(VkPhysicalDevice phys_dev,
+                                                             const ValidationObject *validation_obj) const {
     auto guard = Lock();
     assert(phys_dev);
     std::vector<VkPresentModeKHR> result;
-    if (present_modes_data_.find(phys_dev) != present_modes_data_.end()) {
-        for (auto mode = present_modes_data_[phys_dev].begin(); mode != present_modes_data_[phys_dev].end(); mode++) {
+    if (auto search = present_modes_data_.find(phys_dev); search != present_modes_data_.end()) {
+        for (auto mode = search->second.begin(); mode != search->second.end(); mode++) {
             result.push_back(mode->first);
         }
         return result;
     }
+
+    const auto log_internal_error = [validation_obj](VkResult err, auto &&...objects) {
+        if (validation_obj) {
+            LogObjectList obj_list(std::forward<decltype(objects)>(objects)...);
+            validation_obj->LogInternalError(VVL_PRETTY_FUNCTION, obj_list, "vkGetPhysicalDeviceSurfacePresentModesKHR", err);
+        }
+    };
+
     uint32_t count = 0;
-    DispatchGetPhysicalDeviceSurfacePresentModesKHR(phys_dev, surface(), &count, nullptr);
+    if (const VkResult err = DispatchGetPhysicalDeviceSurfacePresentModesKHR(phys_dev, surface(), &count, nullptr);
+        !IsValueIn(err, {VK_SUCCESS, VK_INCOMPLETE})) {
+        log_internal_error(err, phys_dev, surface());
+        return result;
+    }
     result.resize(count);
-    DispatchGetPhysicalDeviceSurfacePresentModesKHR(phys_dev, surface(), &count, result.data());
+    if (const VkResult err = DispatchGetPhysicalDeviceSurfacePresentModesKHR(phys_dev, surface(), &count, result.data());
+        err != VK_SUCCESS) {
+        log_internal_error(err, phys_dev, surface());
+        return result;
+    }
     return result;
 }
 
-void SURFACE_STATE::SetFormats(VkPhysicalDevice phys_dev, std::vector<VkSurfaceFormatKHR> &&fmts) {
+void SURFACE_STATE::SetFormats(VkPhysicalDevice phys_dev, std::vector<safe_VkSurfaceFormat2KHR> &&fmts) {
     auto guard = Lock();
     assert(phys_dev);
     formats_[phys_dev] = std::move(fmts);
 }
 
-std::vector<VkSurfaceFormatKHR> SURFACE_STATE::GetFormats(VkPhysicalDevice phys_dev) const {
+vvl::span<const safe_VkSurfaceFormat2KHR> SURFACE_STATE::GetFormats(bool get_surface_capabilities2, VkPhysicalDevice phys_dev,
+                                                                    const void *surface_info2_pnext,
+                                                                    const ValidationObject *validation_obj) const {
     auto guard = Lock();
     assert(phys_dev);
-    auto iter = formats_.find(phys_dev);
-    if (iter != formats_.end()) {
-        return iter->second;
+
+    if (const auto search = formats_.find(phys_dev); search != formats_.end()) {
+        vvl::span<const safe_VkSurfaceFormat2KHR>(search->second);
     }
-    std::vector<VkSurfaceFormatKHR> result;
-    uint32_t count = 0;
-    DispatchGetPhysicalDeviceSurfaceFormatsKHR(phys_dev, surface(), &count, nullptr);
-    result.resize(count);
-    DispatchGetPhysicalDeviceSurfaceFormatsKHR(phys_dev, surface(), &count, result.data());
-    formats_[phys_dev] = result;
-    return result;
+
+    std::vector<safe_VkSurfaceFormat2KHR> result;
+    if (get_surface_capabilities2) {
+        const auto log_internal_error = [validation_obj](VkResult err, auto &&...objects) {
+            if (validation_obj) {
+                LogObjectList obj_list(std::forward<decltype(objects)>(objects)...);
+                validation_obj->LogInternalError(VVL_PRETTY_FUNCTION, obj_list, "vkGetPhysicalDeviceSurfaceFormats2KHR", err);
+            }
+        };
+
+        uint32_t count = 0;
+        const auto surface_info2 = GetSurfaceInfo2(surface_info2_pnext);
+        if (const VkResult err = DispatchGetPhysicalDeviceSurfaceFormats2KHR(phys_dev, &surface_info2, &count, nullptr);
+            !IsValueIn(err, {VK_SUCCESS, VK_INCOMPLETE})) {
+            log_internal_error(err, phys_dev, surface_info2.surface);
+            return result;
+        }
+        std::vector<VkSurfaceFormat2KHR> formats2(count);
+
+        if (const VkResult err = DispatchGetPhysicalDeviceSurfaceFormats2KHR(phys_dev, &surface_info2, &count, formats2.data());
+            err != VK_SUCCESS) {
+            log_internal_error(err, phys_dev, surface_info2.surface);
+            result.clear();
+        } else {
+            result.resize(count);
+            for (uint32_t surface_format_index = 0; surface_format_index < count; ++surface_format_index) {
+                result.emplace_back(safe_VkSurfaceFormat2KHR(&formats2[surface_format_index]));
+            }
+        }
+
+    } else {
+        const auto log_internal_error = [validation_obj](VkResult err, auto &&...objects) {
+            if (validation_obj) {
+                LogObjectList obj_list(std::forward<decltype(objects)>(objects)...);
+                validation_obj->LogInternalError(VVL_PRETTY_FUNCTION, obj_list, "vkGetPhysicalDeviceSurfaceFormatsKHR", err);
+            }
+        };
+
+        std::vector<VkSurfaceFormatKHR> formats;
+        uint32_t count = 0;
+        if (const VkResult err = DispatchGetPhysicalDeviceSurfaceFormatsKHR(phys_dev, surface(), &count, nullptr);
+            !IsValueIn(err, {VK_SUCCESS, VK_INCOMPLETE})) {
+            log_internal_error(err, phys_dev, surface());
+            return result;
+        }
+        formats.resize(count);
+
+        if (const VkResult err = DispatchGetPhysicalDeviceSurfaceFormatsKHR(phys_dev, surface(), &count, formats.data());
+            err != VK_SUCCESS) {
+            log_internal_error(err, phys_dev, surface());
+            result.clear();
+        } else {
+            result.reserve(count);
+            auto format2 = LvlInitStruct<VkSurfaceFormat2KHR>();
+            for (const auto &format : formats) {
+                format2.surfaceFormat = format;
+                result.emplace_back(safe_VkSurfaceFormat2KHR(&format2));
+            }
+        }
+    }
+    formats_[phys_dev] = std::move(result);
+    return vvl::span<const safe_VkSurfaceFormat2KHR>(formats_[phys_dev]);
 }
 
-void SURFACE_STATE::SetCapabilities(VkPhysicalDevice phys_dev, const VkSurfaceCapabilitiesKHR &caps) {
+void SURFACE_STATE::SetCapabilities(VkPhysicalDevice phys_dev, const safe_VkSurfaceCapabilities2KHR &caps) {
     auto guard = Lock();
     assert(phys_dev);
     capabilities_[phys_dev] = caps;
 }
 
-VkSurfaceCapabilitiesKHR SURFACE_STATE::GetCapabilities(VkPhysicalDevice phys_dev) const {
+safe_VkSurfaceCapabilities2KHR SURFACE_STATE::GetCapabilities(bool get_surface_capabilities2, VkPhysicalDevice phys_dev,
+                                                              const void *surface_info2_pnext,
+                                                              const ValidationObject *validation_obj) const {
     auto guard = Lock();
     assert(phys_dev);
-    auto iter = capabilities_.find(phys_dev);
-    if (iter != capabilities_.end()) {
-        return iter->second;
+
+    if (auto search = capabilities_.find(phys_dev); search != capabilities_.end()) {
+        return search->second;
     }
-    VkSurfaceCapabilitiesKHR result{};
-    DispatchGetPhysicalDeviceSurfaceCapabilitiesKHR(phys_dev, surface(), &result);
-    capabilities_[phys_dev] = result;
-    return result;
+
+    const auto log_internal_error = [validation_obj](VkResult err, auto &&...objects) {
+        if (validation_obj) {
+            LogObjectList obj_list(std::forward<decltype(objects)>(objects)...);
+            validation_obj->LogInternalError(VVL_PRETTY_FUNCTION, obj_list, "vkGetPhysicalDeviceSurfaceCapabilities2KHR", err);
+        }
+    };
+
+    auto surface_caps2 = LvlInitStruct<VkSurfaceCapabilities2KHR>();
+    if (get_surface_capabilities2) {
+        const auto surface_info2 = GetSurfaceInfo2(surface_info2_pnext);
+        if (const VkResult err = DispatchGetPhysicalDeviceSurfaceCapabilities2KHR(phys_dev, &surface_info2, &surface_caps2);
+            err != VK_SUCCESS) {
+            log_internal_error(err, phys_dev, surface_info2.surface);
+        }
+    } else {
+        VkSurfaceCapabilitiesKHR caps{};
+        if (const VkResult err = DispatchGetPhysicalDeviceSurfaceCapabilitiesKHR(phys_dev, surface(), &caps); err != VK_SUCCESS) {
+            log_internal_error(err, phys_dev, surface());
+        }
+        surface_caps2.surfaceCapabilities = caps;
+    }
+    safe_VkSurfaceCapabilities2KHR safe_surface_caps2(&surface_caps2);
+    capabilities_[phys_dev] = safe_surface_caps2;
+    return safe_surface_caps2;
 }
 
 void SURFACE_STATE::SetCompatibleModes(VkPhysicalDevice phys_dev, const VkPresentModeKHR present_mode,

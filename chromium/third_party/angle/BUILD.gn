@@ -39,8 +39,10 @@ declare_args() {
 
   # Don't build extra (test, samples etc) for Windows UWP. We don't have
   # infrastructure (e.g. windowing helper functions) in place to run them.
+  # Also don't build them with MSVC, because tests and unused dependencies
+  # often have problems building with it, e.g. for C++20.
   angle_build_all = !build_with_chromium && !angle_is_winuwp &&
-                    angle_has_build && angle_build_tests
+                    !angle_is_msvc && angle_has_build && angle_build_tests
 
   # Enable generating current commit information using git
   angle_enable_commit_id = true
@@ -72,6 +74,8 @@ declare_args() {
     # Use Android TLS slot to store current context.
     angle_use_android_tls_slot = !build_with_chromium
   }
+
+  angle_enable_global_mutex_recursion = is_android && angle_enable_vulkan
 }
 
 if (angle_build_all) {
@@ -159,6 +163,10 @@ config("internal_config") {
     }
   }
 
+  if (angle_enable_global_mutex_recursion) {
+    defines += [ "ANGLE_ENABLE_GLOBAL_MUTEX_RECURSION=1" ]
+  }
+
   # Enables debug/trace-related functionality, including logging every GLES/EGL API command to the
   # "angle_debug.txt" file on desktop.  Enables debug markers for AGI, but must also set
   # angle_enable_annotator_run_time_checks to improve performance.
@@ -229,6 +237,10 @@ config("internal_config") {
 
   if (angle_build_mesa) {
     defines += [ "ANGLE_HAS_MESA" ]
+  }
+
+  if (angle_standalone || build_with_chromium) {
+    defines += [ "ANGLE_OUTSIDE_WEBKIT" ]
   }
 }
 
@@ -672,11 +684,10 @@ template("translator_lib") {
       _needs_glsl_and_vulkan_base = true
       sources += angle_translator_glsl_sources
       defines += [ "ANGLE_ENABLE_GLSL" ]
-    }
 
-    if (angle_enable_apple_translator_workarounds) {
-      sources += angle_translator_apple_sources
-      defines += [ "ANGLE_ENABLE_APPLE_WORKAROUNDS" ]
+      if (is_apple) {
+        sources += angle_translator_glsl_apple_sources
+      }
     }
 
     if (angle_enable_hlsl || use_fuzzing_engine) {

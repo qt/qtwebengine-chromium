@@ -506,6 +506,13 @@ if (icu_use_data_file) {
     } else {
       sources = [ data_assembly ]
       deps = [ ":make_data_assembly" ]
+      asmflags = []
+      if (current_cpu == "arm64") {
+        import("//build/config/arm.gni")
+        if (arm_control_flow_integrity == "standard") {
+          asmflags += [ "-mmark-bti-property" ]
+        }
+      }
     }
   }
 }

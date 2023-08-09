@@ -19,6 +19,7 @@
 #include "src/tint/sem/function_expression.h"
 #include "src/tint/sem/type_expression.h"
 #include "src/tint/sem/value_expression.h"
+#include "src/tint/switch.h"
 
 namespace tint::resolver {
 
@@ -31,7 +32,7 @@ std::string SemHelper::TypeNameOf(const type::Type* ty) const {
 }
 
 std::string SemHelper::RawTypeNameOf(const type::Type* ty) const {
-    return ty->FriendlyName(builder_->Symbols());
+    return ty->FriendlyName();
 }
 
 type::Type* SemHelper::TypeOf(const ast::Expression* expr) const {
@@ -39,126 +40,115 @@ type::Type* SemHelper::TypeOf(const ast::Expression* expr) const {
     return sem ? const_cast<type::Type*>(sem->Type()) : nullptr;
 }
 
-void SemHelper::ErrorUnexpectedExprKind(const sem::Expression* expr,
-                                        std::string_view wanted) const {
-    Switch(
+std::string SemHelper::Describe(const sem::Expression* expr) const {
+    return Switch(
         expr,  //
         [&](const sem::VariableUser* var_expr) {
             auto* variable = var_expr->Variable()->Declaration();
-            auto name = builder_->Symbols().NameFor(variable->name->symbol);
-            std::string kind = Switch(
+            auto name = variable->name->symbol.Name();
+            auto* kind = Switch(
                 variable,                                            //
                 [&](const ast::Var*) { return "var"; },              //
+                [&](const ast::Let*) { return "let"; },              //
                 [&](const ast::Const*) { return "const"; },          //
                 [&](const ast::Parameter*) { return "parameter"; },  //
                 [&](const ast::Override*) { return "override"; },    //
                 [&](Default) { return "variable"; });
-            AddError("cannot use " + kind + " '" + name + "' as " + std::string(wanted),
-                     var_expr->Declaration()->source);
-            NoteDeclarationSource(variable);
+            return std::string(kind) + " '" + name + "'";
         },
         [&](const sem::ValueExpression* val_expr) {
-            auto type = val_expr->Type()->FriendlyName(builder_->Symbols());
-            AddError("cannot use expression of type '" + type + "' as " + std::string(wanted),
-                     val_expr->Declaration()->source);
+            auto type = val_expr->Type()->FriendlyName();
+            return "value expression of type '" + type + "'";
         },
         [&](const sem::TypeExpression* ty_expr) {
-            auto name = ty_expr->Type()->FriendlyName(builder_->Symbols());
-            AddError("cannot use type '" + name + "' as " + std::string(wanted),
-                     ty_expr->Declaration()->source);
+            auto name = ty_expr->Type()->FriendlyName();
+            return "type '" + name + "'";
         },
         [&](const sem::FunctionExpression* fn_expr) {
             auto* fn = fn_expr->Function()->Declaration();
-            auto name = builder_->Symbols().NameFor(fn->name->symbol);
-            AddError("cannot use function '" + name + "' as " + std::string(wanted),
-                     fn_expr->Declaration()->source);
-            NoteDeclarationSource(fn);
+            auto name = fn->name->symbol.Name();
+            return "function '" + name + "'";
         },
         [&](const sem::BuiltinEnumExpression<builtin::Access>* access) {
-            AddError("cannot use access '" + utils::ToString(access->Value()) + "' as " +
-                         std::string(wanted),
-                     access->Declaration()->source);
+            return "access '" + utils::ToString(access->Value()) + "'";
         },
         [&](const sem::BuiltinEnumExpression<builtin::AddressSpace>* addr) {
-            AddError("cannot use address space '" + utils::ToString(addr->Value()) + "' as " +
-                         std::string(wanted),
-                     addr->Declaration()->source);
+            return "address space '" + utils::ToString(addr->Value()) + "'";
         },
         [&](const sem::BuiltinEnumExpression<builtin::BuiltinValue>* builtin) {
-            AddError("cannot use builtin value '" + utils::ToString(builtin->Value()) + "' as " +
-                         std::string(wanted),
-                     builtin->Declaration()->source);
+            return "builtin value '" + utils::ToString(builtin->Value()) + "'";
         },
         [&](const sem::BuiltinEnumExpression<builtin::InterpolationSampling>* fmt) {
-            AddError("cannot use interpolation sampling '" + utils::ToString(fmt->Value()) +
-                         "' as " + std::string(wanted),
-                     fmt->Declaration()->source);
+            return "interpolation sampling '" + utils::ToString(fmt->Value()) + "'";
         },
         [&](const sem::BuiltinEnumExpression<builtin::InterpolationType>* fmt) {
-            AddError("cannot use interpolation type '" + utils::ToString(fmt->Value()) + "' as " +
-                         std::string(wanted),
-                     fmt->Declaration()->source);
+            return "interpolation type '" + utils::ToString(fmt->Value()) + "'";
         },
         [&](const sem::BuiltinEnumExpression<builtin::TexelFormat>* fmt) {
-            AddError("cannot use texel format '" + utils::ToString(fmt->Value()) + "' as " +
-                         std::string(wanted),
-                     fmt->Declaration()->source);
+            return "texel format '" + utils::ToString(fmt->Value()) + "'";
         },
-        [&](Default) {
+        [&](Default) -> std::string {
             TINT_ICE(Resolver, builder_->Diagnostics())
                 << "unhandled sem::Expression type: " << (expr ? expr->TypeInfo().name : "<null>");
+            return "<unknown>";
         });
+}
+
+void SemHelper::ErrorUnexpectedExprKind(const sem::Expression* expr,
+                                        std::string_view wanted) const {
+    AddError("cannot use " + Describe(expr) + " as " + std::string(wanted),
+             expr->Declaration()->source);
+    NoteDeclarationSource(expr->Declaration());
 }
 
 void SemHelper::ErrorExpectedValueExpr(const sem::Expression* expr) const {
     ErrorUnexpectedExprKind(expr, "value");
     if (auto* ty_expr = expr->As<sem::TypeExpression>()) {
         if (auto* ident = ty_expr->Declaration()->As<ast::IdentifierExpression>()) {
-            AddNote("are you missing '()' for value constructor?",
-                    Source{{ident->source.range.end}});
-        }
-        if (auto* str = ty_expr->Type()->As<type::Struct>()) {
-            AddNote("struct '" + str->FriendlyName(builder_->Symbols()) + "' declared here",
-                    str->Source());
+            AddNote("are you missing '()' for value constructor?", ident->source.End());
         }
     }
 }
 
 void SemHelper::NoteDeclarationSource(const ast::Node* node) const {
+    if (!node) {
+        return;
+    }
+
+    Switch(
+        Get(node),  //
+        [&](const sem::VariableUser* var_expr) { node = var_expr->Variable()->Declaration(); },
+        [&](const sem::TypeExpression* ty_expr) {
+            Switch(ty_expr->Type(),  //
+                   [&](const sem::Struct* s) { node = s->Declaration(); });
+        },
+        [&](const sem::FunctionExpression* fn_expr) { node = fn_expr->Function()->Declaration(); });
+
     Switch(
         node,
         [&](const ast::Struct* n) {
-            AddNote("struct '" + builder_->Symbols().NameFor(n->name->symbol) + "' declared here",
-                    n->source);
+            AddNote("struct '" + n->name->symbol.Name() + "' declared here", n->source);
         },
         [&](const ast::Alias* n) {
-            AddNote("alias '" + builder_->Symbols().NameFor(n->name->symbol) + "' declared here",
-                    n->source);
+            AddNote("alias '" + n->name->symbol.Name() + "' declared here", n->source);
         },
         [&](const ast::Var* n) {
-            AddNote("var '" + builder_->Symbols().NameFor(n->name->symbol) + "' declared here",
-                    n->source);
+            AddNote("var '" + n->name->symbol.Name() + "' declared here", n->source);
         },
         [&](const ast::Let* n) {
-            AddNote("let '" + builder_->Symbols().NameFor(n->name->symbol) + "' declared here",
-                    n->source);
+            AddNote("let '" + n->name->symbol.Name() + "' declared here", n->source);
         },
         [&](const ast::Override* n) {
-            AddNote("override '" + builder_->Symbols().NameFor(n->name->symbol) + "' declared here",
-                    n->source);
+            AddNote("override '" + n->name->symbol.Name() + "' declared here", n->source);
         },
         [&](const ast::Const* n) {
-            AddNote("const '" + builder_->Symbols().NameFor(n->name->symbol) + "' declared here",
-                    n->source);
+            AddNote("const '" + n->name->symbol.Name() + "' declared here", n->source);
         },
         [&](const ast::Parameter* n) {
-            AddNote(
-                "parameter '" + builder_->Symbols().NameFor(n->name->symbol) + "' declared here",
-                n->source);
+            AddNote("parameter '" + n->name->symbol.Name() + "' declared here", n->source);
         },
         [&](const ast::Function* n) {
-            AddNote("function '" + builder_->Symbols().NameFor(n->name->symbol) + "' declared here",
-                    n->source);
+            AddNote("function '" + n->name->symbol.Name() + "' declared here", n->source);
         });
 }
 

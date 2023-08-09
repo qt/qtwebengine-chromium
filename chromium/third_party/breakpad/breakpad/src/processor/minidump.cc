@@ -32,6 +32,10 @@
 //
 // Author: Mark Mentovai
 
+#ifdef HAVE_CONFIG_H
+#include <config.h>  // Must come first
+#endif
+
 #include "google_breakpad/processor/minidump.h"
 
 #include <assert.h>
@@ -71,6 +75,11 @@ using std::numeric_limits;
 using std::vector;
 
 namespace {
+
+// Limit arrived at by adding up possible states in Intel Ch. 13.5 X-SAVE
+// MANAGED STATE
+// (~ 3680 bytes) plus some extra for the future.
+const uint32_t kMaxXSaveAreaSize = 16384;
 
 // Returns true iff |context_size| matches exactly one of the sizes of the
 // various MDRawContext* types.
@@ -503,6 +512,10 @@ bool MinidumpContext::Read(uint32_t expected_size) {
     // sizeof(MDRawContextAMD64). For now we skip this extended data.
     if (expected_size > sizeof(MDRawContextAMD64)) {
       size_t bytes_left = expected_size - sizeof(MDRawContextAMD64);
+      if (bytes_left > kMaxXSaveAreaSize) {
+        BPLOG(ERROR) << "MinidumpContext oversized xstate area";
+        return false;
+      }
       std::vector<uint8_t> xstate(bytes_left);
       if (!minidump_->ReadBytes(xstate.data(),
                                 bytes_left)) {

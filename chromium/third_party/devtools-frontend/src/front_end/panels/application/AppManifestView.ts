@@ -200,11 +200,6 @@ const UIStrings = {
       'Declaring an icon with \'`purpose: "any maskable"`\' is discouraged. It is likely to look incorrect on some platforms due to too much or too little padding.',
   /**
    *@description Manifest installability error in the Application panel
-   */
-  noMatchingServiceWorkerDetected:
-      'No matching `service worker` detected. You may need to reload the page, or check that the scope of the `service worker` for the current page encloses the scope and start URL from the manifest.',
-  /**
-   *@description Manifest installability error in the Application panel
    *@example {100} PH1
    */
   noSuppliedIconIsAtLeastSpxSquare:
@@ -494,7 +489,7 @@ export class AppManifestView extends UI.Widget.VBox implements SDK.TargetManager
   }
 
   targetAdded(target: SDK.Target.Target): void {
-    if (target !== SDK.TargetManager.TargetManager.instance().mainFrameTarget()) {
+    if (target !== SDK.TargetManager.TargetManager.instance().primaryPageTarget()) {
       return;
     }
     this.target = target;
@@ -568,8 +563,12 @@ export class AppManifestView extends UI.Widget.VBox implements SDK.TargetManager
     this.errorsSection.clearContent();
     this.errorsSection.element.classList.toggle('hidden', !errors.length);
     for (const error of errors) {
-      this.errorsSection.appendRow().appendChild(
-          UI.UIUtils.createIconLabel(error.message, error.critical ? 'smallicon-error' : 'smallicon-warning'));
+      const icon = UI.UIUtils.createIconLabel({
+        title: error.message,
+        iconName: error.critical ? 'cross-circle-filled' : 'warning-filled',
+        color: error.critical ? 'var(--icon-error)' : 'var(--icon-warning)',
+      });
+      this.errorsSection.appendRow().appendChild(icon);
     }
 
     if (!data) {
@@ -599,7 +598,7 @@ export class AppManifestView extends UI.Widget.VBox implements SDK.TargetManager
       appIdField.textContent = appId;
 
       const helpIcon = new IconButton.Icon.Icon();
-      helpIcon.data = {iconName: 'help_outline', color: 'var(--color-text-secondary)', width: '16px', height: '16px'};
+      helpIcon.data = {iconName: 'help', color: 'var(--icon-default)', width: '16px', height: '16px'};
       helpIcon.classList.add('inline-icon');
       helpIcon.title = i18nString(UIStrings.appIdExplainer);
       helpIcon.tabIndex = 0;
@@ -625,11 +624,11 @@ export class AppManifestView extends UI.Widget.VBox implements SDK.TargetManager
         copyButton.title = i18nString(UIStrings.copyToClipboard);
         copyButton.data = {
           groups: [{
-            iconName: 'copy_icon',
-            iconHeight: '12px',
-            iconWidth: '12px',
+            iconName: 'copy',
+            iconHeight: '14px',
+            iconWidth: '14px',
             text: '',
-            iconColor: 'var(--color-text-primary)',
+            iconColor: 'var(--icon-default-hover)',
           }],
           clickHandler: (): void => {
             UI.ARIAUtils.alert(i18nString(UIStrings.copiedToClipboard, {PH1: recommendedId}));
@@ -801,15 +800,19 @@ export class AppManifestView extends UI.Widget.VBox implements SDK.TargetManager
     this.installabilitySection.element.classList.toggle('hidden', !installabilityErrors.length);
     const errorMessages = this.getInstallabilityErrorMessages(installabilityErrors);
     for (const error of errorMessages) {
-      this.installabilitySection.appendRow().appendChild(UI.UIUtils.createIconLabel(error, 'smallicon-warning'));
+      const icon = UI.UIUtils.createIconLabel({title: error, iconName: 'warning-filled', color: 'var(--icon-warning)'});
+      this.installabilitySection.appendRow().appendChild(icon);
     }
 
     this.errorsSection.element.classList.toggle('hidden', !errors.length && !imageErrors.length && !warnings.length);
     for (const warning of warnings) {
-      this.errorsSection.appendRow().appendChild(UI.UIUtils.createIconLabel(warning, 'smallicon-warning'));
+      const icon =
+          UI.UIUtils.createIconLabel({title: warning, iconName: 'warning-filled', color: 'var(--icon-warning)'});
+      this.errorsSection.appendRow().appendChild(icon);
     }
     for (const error of imageErrors) {
-      this.errorsSection.appendRow().appendChild(UI.UIUtils.createIconLabel(error, 'smallicon-warning'));
+      const icon = UI.UIUtils.createIconLabel({title: error, iconName: 'warning-filled', color: 'var(--icon-warning)'});
+      this.errorsSection.appendRow().appendChild(icon);
     }
 
     function stringProperty(name: string): string {
@@ -855,9 +858,6 @@ export class AppManifestView extends UI.Widget.VBox implements SDK.TargetManager
           }
           errorMessage =
               i18nString(UIStrings.manifestDoesNotContainASuitable, {PH1: installabilityError.errorArguments[0].value});
-          break;
-        case 'no-matching-service-worker':
-          errorMessage = i18nString(UIStrings.noMatchingServiceWorkerDetected);
           break;
         case 'no-acceptable-icon':
           if (installabilityError.errorArguments.length !== 1 ||
@@ -1079,7 +1079,7 @@ export class AppManifestView extends UI.Widget.VBox implements SDK.TargetManager
     field.appendChild(wrapper);
     return {imageResourceErrors, squareSizedIconAvailable};
   }
-  wasShown(): void {
+  override wasShown(): void {
     super.wasShown();
     this.reportView.registerCSSFiles([appManifestViewStyles]);
     this.registerCSSFiles([appManifestViewStyles]);

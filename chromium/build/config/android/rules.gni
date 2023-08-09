@@ -16,10 +16,6 @@ import("//build/config/zip.gni")
 import("//build/toolchain/toolchain.gni")
 assert(is_android || is_robolectric)
 
-declare_args() {
-  enable_jni_tracing = false
-}
-
 # Use a dedicated include dir so that files can #include headers from other
 # toolchains without affecting non-JNI #includes.
 if (target_os == "android") {
@@ -250,9 +246,6 @@ if (enable_java_templates) {
 
       if (enable_profiling) {
         args += [ "--enable_profiling" ]
-      }
-      if (enable_jni_tracing) {
-        args += [ "--enable_tracing" ]
       }
       if (current_toolchain != default_toolchain && target_os == "android") {
         # Rather than regenerating .h files in secondary toolchains, re-use the
@@ -485,6 +478,10 @@ if (enable_java_templates && is_android) {
 
       if (defined(invoker.namespace)) {
         args += [ "--namespace=${invoker.namespace}" ]
+      }
+
+      if (defined(invoker.module_name)) {
+        args += [ "--module-name=${invoker.module_name}" ]
       }
     }
   }
@@ -1324,6 +1321,7 @@ if (enable_java_templates && is_android) {
     forward_variables_from(invoker, TESTONLY_AND_VISIBILITY)
     _build_config_vars = [
       "input_jars_paths",
+      "preferred_dep",
       "mergeable_android_manifests",
       "proguard_configs",
       "requires_android",
@@ -1653,7 +1651,7 @@ if (enable_java_templates && is_android) {
         "//third_party/robolectric:robolectric_runtime_jars",
       ]
       if (defined(invoker.shared_libraries)) {
-        deps += invoker.shared_libraries
+        data_deps = invoker.shared_libraries
       }
 
       # Add non-libary deps, since the __host target does not depend on them.
@@ -1872,6 +1870,7 @@ if (enable_java_templates && is_android) {
           args += [ "--input-zips=@FileArg($_rebased_build_config:deps_info:device_classpath)" ]
         }
       }
+
       _excludes = []
       if (defined(invoker.jar_excluded_patterns)) {
         _excludes += invoker.jar_excluded_patterns
@@ -1880,6 +1879,9 @@ if (enable_java_templates && is_android) {
         # Turbine adds files like: META-INF/TRANSITIVE/.../Foo.class
         # These confuse proguard: https://crbug.com/1081443
         _excludes += [ "META-INF/*" ]
+      } else {
+        # Manifest files will never be correct when merging jars.
+        _excludes += [ "META-INF/*.MF" ]
       }
       if (_excludes != []) {
         args += [ "--input-zips-excluded-globs=$_excludes" ]
@@ -2745,7 +2747,6 @@ if (enable_java_templates && is_android) {
             "expected_android_manifest_version_code_offset",
             "manifest_package",
             "max_sdk_version",
-            "no_xml_namespaces",
             "package_id",
             "png_to_webp",
             "r_java_root_package_name",
@@ -3065,6 +3066,7 @@ if (enable_java_templates && is_android) {
                                "javac_args",
                                "mergeable_android_manifests",
                                "native_lib_placeholders",
+                               "parent_module_target",
                                "processor_args_javac",
                                "secondary_abi_loadable_modules",
                                "secondary_native_lib_placeholders",
@@ -3190,7 +3192,6 @@ if (enable_java_templates && is_android) {
             # Pure dex-merge.
             enable_desugar = false
           } else {
-            unprocessed_jar_path_filearg = "@FileArg(${_rebased_build_config}:deps_info:unprocessed_jar_path)"
             input_classes_filearg =
                 "@FileArg($_rebased_build_config:deps_info:device_classpath)"
           }
@@ -3212,6 +3213,34 @@ if (enable_java_templates && is_android) {
       }
 
       _final_dex_target_dep = ":$_final_dex_target_name"
+
+      _use_baseline_profile =
+          _proguard_enabled && defined(invoker.baseline_profile_path) &&
+          enable_baseline_profiles
+      if (_use_baseline_profile) {
+        _binary_profile_target = "${_template_name}__binary_baseline_profile"
+        _binary_baseline_profile_path =
+            "$target_out_dir/$_template_name.baseline.prof"
+        _binary_baseline_profile_metadata_path =
+            _binary_baseline_profile_path + "m"
+        create_binary_profile(_binary_profile_target) {
+          forward_variables_from(invoker, TESTONLY_AND_VISIBILITY)
+          binary_baseline_profile_path = _binary_baseline_profile_path
+          binary_baseline_profile_metadata_path =
+              _binary_baseline_profile_metadata_path
+          proguard_mapping_path = _proguard_mapping_path
+          build_config = _build_config
+          input_profile_path = invoker.baseline_profile_path
+          deps = [
+            ":$_build_config_target",
+            _final_dex_target_dep,
+          ]
+        }
+      }
+    }
+
+    if (!defined(_use_baseline_profile) || !_use_baseline_profile) {
+      not_needed(invoker, [ "baseline_profile_path" ])
     }
 
     _all_native_libs_deps = _native_libs_deps + _secondary_abi_native_libs_deps
@@ -3323,6 +3352,16 @@ if (enable_java_templates && is_android) {
           if (defined(_final_dex_path)) {
             dex_path = _final_dex_path
             deps += [ _final_dex_target_dep ]
+            if (_use_baseline_profile) {
+              # extra_assets is a list of ["{src_path}:{dst_path}"]
+              extra_assets = [
+                rebase_path(_binary_baseline_profile_path, root_build_dir) +
+                    ":dexopt/baseline.prof",
+                rebase_path(_binary_baseline_profile_metadata_path,
+                            root_build_dir) + ":dexopt/baseline.profm",
+              ]
+              deps += [ ":$_binary_profile_target" ]
+            }
           }
 
           output_apk_path = _final_apk_path
@@ -3546,6 +3585,7 @@ if (enable_java_templates && is_android) {
             "apk_under_test",
             "app_as_shared_lib",
             "assert_no_deps",
+            "baseline_profile_path",
             "build_config_include_product_version_resource",
             "bundles_supported",
             "chromium_code",
@@ -3591,7 +3631,6 @@ if (enable_java_templates && is_android) {
             "min_sdk_version",
             "native_lib_placeholders",
             "never_incremental",
-            "no_xml_namespaces",
             "omit_dex",
             "png_to_webp",
             "post_process_package_resources_script",
@@ -3730,8 +3769,8 @@ if (enable_java_templates && is_android) {
             "mergeable_android_manifests",
             "module_name",
             "native_lib_placeholders",
-            "no_xml_namespaces",
             "package_id",
+            "parent_module_target",
             "png_to_webp",
             "processor_args_javac",
             "proguard_configs",
@@ -3766,6 +3805,10 @@ if (enable_java_templates && is_android) {
           ])
       is_bundle_module = true
       generate_buildconfig_java = _is_base_module
+      if (defined(uses_split)) {
+        assert(defined(parent_module_target),
+               "Must set parent_module_target when uses_split is set")
+      }
     }
   }
 
@@ -4623,6 +4666,7 @@ if (enable_java_templates && is_android) {
       _assets_target_name = "${target_name}__assets"
       android_assets(_assets_target_name) {
         forward_variables_from(invoker, TESTONLY_AND_VISIBILITY)
+        deps = [ ":$_unpack_target_name" ]
         renaming_sources = []
         renaming_destinations = []
         foreach(_asset_file, _scanned_files.assets) {
@@ -4635,6 +4679,8 @@ if (enable_java_templates && is_android) {
         }
       }
     }
+
+    _target_label = get_label_info(":$target_name", "label_no_toolchain")
 
     # Create android_java_prebuilt target for classes.jar.
     if (_scanned_files.has_classes_jar) {
@@ -4664,7 +4710,7 @@ if (enable_java_templates && is_android) {
           jar_path = "$_output_path/${_tuple[1]}"
           _base_output_name = get_path_info(jar_path, "name")
           output_name = "${invoker.target_name}-$_base_output_name"
-          public_target_label = invoker.target_name
+          public_target_label = _target_label
         }
       }
 
@@ -4675,6 +4721,7 @@ if (enable_java_templates && is_android) {
                                [
                                  "deps",
                                  "input_jars_paths",
+                                 "mergeable_android_manifests",
                                  "proguard_configs",
                                ])
         if (!defined(deps)) {
@@ -4700,7 +4747,7 @@ if (enable_java_templates && is_android) {
             proguard_configs += [ "$_output_path/proguard.txt" ]
           }
         }
-        public_target_label = invoker.target_name
+        public_target_label = _target_label
       }
     }
 
@@ -4829,18 +4876,10 @@ if (enable_java_templates && is_android) {
     _proguard_enabled =
         defined(invoker.proguard_enabled) && invoker.proguard_enabled
 
-    if (defined(invoker.version_code)) {
-      _version_code = invoker.version_code
-    } else {
-      _version_code = android_default_version_code
+    _min_sdk_version = default_min_sdk_version
+    if (defined(invoker.min_sdk_version)) {
+      _min_sdk_version = invoker.min_sdk_version
     }
-
-    if (android_override_version_code != "") {
-      _version_code = android_override_version_code
-    }
-
-    # Prevent "unused variable".
-    not_needed([ "_version_code" ])
 
     _bundle_base_path = "$root_build_dir/apks"
     if (defined(invoker.bundle_base_path)) {
@@ -4875,12 +4914,6 @@ if (enable_java_templates && is_android) {
         }
       },
     ]
-
-    _enable_multidex =
-        !defined(invoker.enable_multidex) || invoker.enable_multidex
-
-    # Prevent "unused variable".
-    not_needed([ "_enable_multidex" ])
 
     if (_proguard_enabled) {
       _dex_target = "${_target_name}__dex"
@@ -5061,14 +5094,13 @@ if (enable_java_templates && is_android) {
                                  "custom_assertion_handler",
                                  "expected_proguard_config",
                                  "expected_proguard_config_base",
-                                 "min_sdk_version",
                                  "proguard_enable_obfuscation",
                                ])
         if (defined(expected_proguard_config)) {
           top_target_name = _target_name
         }
+        min_sdk_version = _min_sdk_version
         add_view_trace_events = _add_view_trace_events
-        enable_multidex = _enable_multidex
         proguard_enabled = true
         proguard_mapping_path = _proguard_mapping_path
         build_config = _build_config
@@ -5089,18 +5121,14 @@ if (enable_java_templates && is_android) {
       _module_target = _module.module_target
       _module_build_config = _module.build_config
       _module_build_config_target = _module.build_config_target
+      _module_target_name = get_label_info(_module_target, "name")
 
       if (!_proguard_enabled) {
-        _module_target_name = get_label_info(_module_target, "name")
         _dex_target = "${_module_target_name}__final_dex"
         _dex_path = "$target_out_dir/$_module_target_name/$_module_target_name.mergeddex.jar"
         dex(_dex_target) {
-          forward_variables_from(invoker,
-                                 [
-                                   "custom_assertion_handler",
-                                   "min_sdk_version",
-                                 ])
-          enable_multidex = _enable_multidex
+          forward_variables_from(invoker, [ "custom_assertion_handler" ])
+          min_sdk_version = _min_sdk_version
           output = _dex_path
           build_config = _build_config
 
@@ -5116,6 +5144,32 @@ if (enable_java_templates && is_android) {
       }
       _dex_target_for_module = ":$_dex_target"
 
+      _use_baseline_profile =
+          _proguard_enabled && defined(invoker.baseline_profile_path) &&
+          enable_baseline_profiles
+      if (_use_baseline_profile) {
+        _binary_profile_target =
+            "${_module_target_name}__binary_baseline_profile"
+        _binary_baseline_profile_path = "$target_out_dir/$_module_target_name/$_module_target_name.baseline.prof"
+        _binary_baseline_profile_metadata_path =
+            _binary_baseline_profile_path + "m"
+        create_binary_profile(_binary_profile_target) {
+          forward_variables_from(invoker, TESTONLY_AND_VISIBILITY)
+          binary_baseline_profile_path = _binary_baseline_profile_path
+          binary_baseline_profile_metadata_path =
+              _binary_baseline_profile_metadata_path
+          proguard_mapping_path = _proguard_mapping_path
+          build_config = _module_build_config
+          input_profile_path = invoker.baseline_profile_path
+          deps = [
+            _dex_target_for_module,
+            _module_build_config_target,
+          ]
+        }
+      } else {
+        not_needed(invoker, [ "baseline_profile_path" ])
+      }
+
       # Generate one module .zip file per bundle module.
       #
       # Important: the bundle tool uses the module's zip filename as
@@ -5127,10 +5181,10 @@ if (enable_java_templates && is_android) {
         forward_variables_from(invoker,
                                [
                                  "is_multi_abi",
-                                 "min_sdk_version",
                                  "uncompress_dex",
                                ])
         module_name = _module.name
+        min_sdk_version = _min_sdk_version
         build_config = _module_build_config
         module_zip_path = _module_zip_path
         native_libraries_config = _native_libraries_config
@@ -5166,6 +5220,17 @@ if (enable_java_templates && is_android) {
           secondary_abi_native_libraries_config =
               _secondary_abi_native_libraries_config
           deps += [ ":$_secondary_abi_native_libraries_config_target" ]
+        }
+
+        if (_use_baseline_profile) {
+          # extra_assets is a list of ["{src_path}:{dst_path}"]
+          extra_assets = [
+            rebase_path(_binary_baseline_profile_path, root_build_dir) +
+                ":dexopt/baseline.prof",
+            rebase_path(_binary_baseline_profile_metadata_path,
+                        root_build_dir) + ":dexopt/baseline.profm",
+          ]
+          deps += [ ":$_binary_profile_target" ]
         }
       }
 
@@ -5254,10 +5319,6 @@ if (enable_java_templates && is_android) {
       if (defined(invoker.compress_shared_libraries) &&
           invoker.compress_shared_libraries) {
         args += [ "--compress-shared-libraries" ]
-      }
-      _min_sdk_version = default_min_sdk_version
-      if (defined(invoker.min_sdk_version)) {
-        _min_sdk_version = invoker.min_sdk_version
       }
 
       # Android P+ support loading from stored dex.
@@ -5434,7 +5495,6 @@ if (enable_java_templates && is_android) {
                                  "lint_baseline_file",
                                  "lint_jar_path",
                                  "lint_suppressions_file",
-                                 "min_sdk_version",
                                ])
         build_config = _build_config
         build_config_dep = ":$_build_config_target"
@@ -5444,6 +5504,8 @@ if (enable_java_templates && is_android) {
         }
         if (defined(invoker.lint_min_sdk_version)) {
           min_sdk_version = invoker.lint_min_sdk_version
+        } else {
+          min_sdk_version = _min_sdk_version
         }
       }
     } else {

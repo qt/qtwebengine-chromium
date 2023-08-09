@@ -218,6 +218,13 @@ std::string MakeUniqueSessionId(const char* prefix);
 
 // Returns true if the type field in |object| is set to the given |type|.
 bool HasType(const Json::Value& object, CastMessageType type);
+
+// Serializes a given cast message to a string.
+std::string ToString(const ::cast::channel::CastMessage& message);
+
+// Helper to get the actual message payload out of a cast message.
+const std::string& GetPayload(const ::cast::channel::CastMessage& message);
+
 }  // namespace cast
 }  // namespace openscreen
 

@@ -57,7 +57,7 @@ namespace sktext {
 class GlyphRunList;
 }
 
-namespace skgpu::v1 {
+namespace skgpu::ganesh {
 
 /**
  * A helper object to orchestrate commands (draws, etc...) for GrSurfaces that are GrRenderTargets.
@@ -80,8 +80,8 @@ public:
                                                     const SkSurfaceProps&,
                                                     std::string_view label,
                                                     int sampleCnt = 1,
-                                                    GrMipmapped = GrMipmapped::kNo,
-                                                    GrProtected = GrProtected::kNo,
+                                                    skgpu::Mipmapped = skgpu::Mipmapped::kNo,
+                                                    skgpu::Protected = skgpu::Protected::kNo,
                                                     GrSurfaceOrigin = kBottomLeft_GrSurfaceOrigin,
                                                     skgpu::Budgeted = skgpu::Budgeted::kYes);
 
@@ -95,8 +95,8 @@ public:
                                                     SkISize dimensions,
                                                     const GrBackendFormat&,
                                                     int sampleCnt,
-                                                    GrMipmapped,
-                                                    GrProtected,
+                                                    skgpu::Mipmapped,
+                                                    skgpu::Protected,
                                                     skgpu::Swizzle readSwizzle,
                                                     skgpu::Swizzle writeSwizzle,
                                                     GrSurfaceOrigin,
@@ -116,8 +116,8 @@ public:
             SkISize dimensions,
             const SkSurfaceProps&,
             int sampleCnt = 1,
-            GrMipmapped = GrMipmapped::kNo,
-            GrProtected = GrProtected::kNo,
+            skgpu::Mipmapped = skgpu::Mipmapped::kNo,
+            skgpu::Protected = skgpu::Protected::kNo,
             GrSurfaceOrigin = kBottomLeft_GrSurfaceOrigin,
             skgpu::Budgeted = skgpu::Budgeted::kYes);
 
@@ -696,6 +696,6 @@ private:
 #endif
 };
 
-} // namespace skgpu::v1
+}  // namespace skgpu::ganesh
 
 #endif // SurfaceDrawContext_v1_DEFINED

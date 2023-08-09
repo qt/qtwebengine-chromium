@@ -7,6 +7,8 @@
 
 #include <stdint.h>
 
+#include <chrono>
+
 #include "cast/common/public/certificate_types.h"
 
 namespace openscreen {

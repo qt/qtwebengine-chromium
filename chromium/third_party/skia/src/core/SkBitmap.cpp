@@ -405,7 +405,7 @@ void* SkBitmap::getAddr(int x, int y) const {
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-void SkBitmap::erase(SkColor4f c, SkColorSpace* colorSpace, const SkIRect& area) const {
+void SkBitmap::erase(SkColor4f c, const SkIRect& area) const {
     SkDEBUGCODE(this->validate();)
 
     if (kUnknown_SkColorType == this->colorType()) {
@@ -418,25 +418,21 @@ void SkBitmap::erase(SkColor4f c, SkColorSpace* colorSpace, const SkIRect& area)
         return;
     }
 
-    if (result.erase(c, colorSpace, &area)) {
+    if (result.erase(c, &area)) {
         this->notifyPixelsChanged();
     }
 }
 
 void SkBitmap::erase(SkColor c, const SkIRect& area) const {
-    this->erase(SkColor4f::FromColor(c), nullptr, area);
+    this->erase(SkColor4f::FromColor(c), area);
 }
 
-void SkBitmap::erase(SkColor4f c, const SkIRect& area) const {
-    this->erase(c, nullptr, area);
-}
-
-void SkBitmap::eraseColor(SkColor4f c, SkColorSpace* colorSpace) const {
-    this->erase(c, colorSpace, SkIRect::MakeWH(this->width(), this->height()));
+void SkBitmap::eraseColor(SkColor4f c) const {
+    this->erase(c, SkIRect::MakeWH(this->width(), this->height()));
 }
 
 void SkBitmap::eraseColor(SkColor c) const {
-    this->erase(SkColor4f::FromColor(c), nullptr, SkIRect::MakeWH(this->width(), this->height()));
+    this->erase(SkColor4f::FromColor(c), SkIRect::MakeWH(this->width(), this->height()));
 }
 
 //////////////////////////////////////////////////////////////////////////////////////
@@ -634,9 +630,7 @@ bool SkBitmap::peekPixels(SkPixmap* pmap) const {
     return false;
 }
 
-sk_sp<SkImage> SkBitmap::asImage() const {
-    return SkImage::MakeFromBitmap(*this);
-}
+sk_sp<SkImage> SkBitmap::asImage() const { return SkImages::RasterFromBitmap(*this); }
 
 sk_sp<SkShader> SkBitmap::makeShader(const SkSamplingOptions& sampling,
                                      const SkMatrix& lm) const {

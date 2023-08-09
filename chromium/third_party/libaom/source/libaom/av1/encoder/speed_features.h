@@ -541,6 +541,9 @@ typedef struct GLOBAL_MOTION_SPEED_FEATURES {
   // Disable global motion estimation based on stats of previous frames in the
   // GF group
   int disable_gm_search_based_on_stats;
+
+  // Number of refinement steps to apply after initial model generation
+  int num_refinement_steps;
 } GLOBAL_MOTION_SPEED_FEATURES;
 
 typedef struct PARTITION_SPEED_FEATURES {
@@ -819,6 +822,13 @@ typedef struct MV_SPEED_FEATURES {
 
   // Skips full pixel search based on start mv of prior ref_mv_idx.
   int skip_fullpel_search_using_startmv;
+
+  // Method to use for refining WARPED_CAUSAL motion vectors
+  // TODO(rachelbarker): Can this be unified with OBMC in some way?
+  WARP_SEARCH_METHOD warp_search_method;
+
+  // Maximum number of iterations in WARPED_CAUSAL refinement search
+  int warp_search_iters;
 } MV_SPEED_FEATURES;
 
 typedef struct INTER_MODE_SPEED_FEATURES {
@@ -1016,7 +1026,20 @@ typedef struct INTER_MODE_SPEED_FEATURES {
   // Enable/disable masked compound.
   int disable_masked_comp;
 
-  // Enable/disable the fast compound mode search.
+  // Enable/disable MV refinement for compound modes corresponds to compound
+  // types COMPOUND_AVERAGE, COMPOUND_DISTWTD (currently, this compound type
+  // is disabled for speeds >= 2 using the sf 'use_dist_wtd_comp_flag') and
+  // COMPOUND_DIFFWTD based on the availability. Levels 0 to 3 indicate
+  // increasing order of aggressiveness to disable MV refinement.
+  // 0: MV Refinement is enabled and for NEW_NEWMV mode used two iterations of
+  // refinement in av1_joint_motion_search().
+  // 1: MV Refinement is disabled for COMPOUND_DIFFWTD and enabled for
+  // COMPOUND_AVERAGE & COMPOUND_DISTWTD.
+  // 2: MV Refinement is enabled for COMPOUND_AVERAGE & COMPOUND_DISTWTD for
+  // NEW_NEWMV mode with one iteration of refinement in
+  // av1_joint_motion_search() and MV Refinement is disabled for other compound
+  // type modes.
+  // 3: MV Refinement is disabled.
   int enable_fast_compound_mode_search;
 
   // Reuse masked compound type search results
@@ -1253,6 +1276,21 @@ typedef struct TX_SPEED_FEATURES {
   // encode time by 4.65%, 9.16% and 10.45% for speed 6, 7 and 8 on a typical
   // image dataset with coding performance change less than 0.19%.
   bool prune_intra_tx_depths_using_nn;
+
+  // Enable/disable early breakout during transform search of intra modes, by
+  // using the minimum rd cost possible. By using this approach, the rd
+  // evaluation of applicable transform blocks (in the current block) can be
+  // avoided as
+  // 1) best_rd evolves during the search in choose_tx_size_type_from_rd()
+  // 2) appropriate ref_best_rd is passed in intra_block_yrd()
+  //
+  // For allintra encode, this speed feature reduces instruction count
+  // by 1.11%, 1.08%, 1.02% and 0.93% for speed 3, 6, 7 and 8 with coding
+  // performance change less than 0.02%. For AVIF image encode, this speed
+  // feature reduces encode time by 0.93%, 1.46%, 1.07%, 0.84%, 0.99% and 0.73%
+  // for speed 3, 4, 5, 6, 7 and 8 on a typical image dataset with coding
+  // performance change less than 0.004%.
+  bool use_rd_based_breakout_for_intra_tx_search;
 } TX_SPEED_FEATURES;
 
 typedef struct RD_CALC_SPEED_FEATURES {
@@ -1507,8 +1545,8 @@ typedef struct REAL_TIME_SPEED_FEATURES {
 
   // Bit mask to enable or disable intra modes for each prediction block size
   // separately, for nonrd_pickmode.  Currently, the sf is not respected when
-  // 'force_intra_check' is true in 'estimate_intra_mode()' function. Also, H
-  // and V pred modes allowed through this sf can be further pruned when
+  // 'force_intra_check' is true in 'av1_estimate_intra_mode()' function. Also,
+  // H and V pred modes allowed through this sf can be further pruned when
   //'prune_hv_pred_modes_using_src_sad' sf is true.
   int intra_y_mode_bsize_mask_nrd[BLOCK_SIZES];
 
@@ -1523,9 +1561,13 @@ typedef struct REAL_TIME_SPEED_FEATURES {
   // Skips mode checks more aggressively in nonRD mode
   int nonrd_aggressive_skip;
 
-  // Skip cdef on 64x64 blocks when NEWMV or INTRA is not picked or color
-  // sensitivity is off. When color sensitivity is on for a superblock, all
-  // 64x64 blocks within will not skip.
+  // Skip cdef on 64x64 blocks/
+  // 0: disabled
+  // 1: skip when NEWMV or INTRA is not picked or color sensitivity is off.
+  // When color sensitivity is on for a superblock, all 64x64 blocks within
+  // will not skip.
+  // 2: more aggressive mode where skip is done for all frames where
+  // rc->high_source_sad = 0 (non slide-changes), and color sensitivity off.
   int skip_cdef_sb;
 
   // Forces larger partition blocks in variance based partitioning for intra
@@ -1586,6 +1628,7 @@ typedef struct REAL_TIME_SPEED_FEATURES {
 
   // Temporal filtering
   // The value can be 1 or 2, which indicates the threshold to use.
+  // Must be off for lossless mode.
   int use_rtc_tf;
 
   // Prune the use of the identity transform in nonrd_pickmode,
@@ -1594,8 +1637,15 @@ typedef struct REAL_TIME_SPEED_FEATURES {
   // already set.
   int prune_idtx_nonrd;
 
+  // Prune the use of paletter mode in nonrd pickmode.
+  int prune_palette_nonrd;
+
   // Skip loopfilter, for static content after slide change
   // or key frame, once quality has ramped up.
+  // 0: disabled
+  // 1: skip only after quality is ramped up.
+  // 2: aggrssive mode, where skip is done for all frames that
+  // where rc->high_source_sad = 0 (no slide-changes).
   int skip_lf_screen;
 
   // For nonrd: early exit out of variance partition that sets the

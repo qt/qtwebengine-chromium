@@ -1,13 +1,12 @@
 load(
-    "//bazel:macros.bzl",
+    "//bazel:skia_rules.bzl",
     "exports_files_legacy",
     "select_multi",
-    "selects",
     "skia_cc_deps",
     "skia_filegroup",
     "split_srcs_and_hdrs",
-    "string_flag_with_values",
 )
+load("//bazel:flags.bzl", "selects", "string_flag_with_values")
 
 licenses(["notice"])
 
@@ -26,7 +25,7 @@ CORE_FILES = [
     "SkMasks.cpp",
     "SkMasks.h",
     "SkPixmapUtils.cpp",
-    "SkPixmapUtils.h",
+    "SkPixmapUtilsPriv.h",
     "SkSampler.cpp",
     "SkSampler.h",
     "SkSwizzler.cpp",
@@ -100,6 +99,14 @@ DECODE_JPEG_FILES = [
 split_srcs_and_hdrs(
     name = "decode_jpeg",
     files = DECODE_JPEG_FILES,
+)
+
+filegroup(
+    name = "jpeg_xmp",
+    srcs = [
+        "SkJpegXmp.cpp",
+        "SkJpegXmp.h",
+    ],
 )
 
 DECODE_PNG_FILES = [

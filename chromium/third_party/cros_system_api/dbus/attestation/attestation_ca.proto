@@ -243,7 +243,8 @@ message AttestationCertificateRequest {
   // The device TPM version.
   optional TpmVersion tpm_version = 14;
   // NVRAM quoted by AIK. Keys are values of the NVRAMQuoteType. This is only
-  // used for enrollment certificates.
+  // used for `ENTERPRISE_ENROLLMENT_CERTIFICATE` and
+  // `ENTERPRISE_VTPM_EK_CERTIFICATE` profiles.
   map<int32, Quote> nvram_quotes = 15;
   // Certificate profile specific metadata.
   oneof metadata {
@@ -252,7 +253,8 @@ message AttestationCertificateRequest {
   }
   // ADID read from the VPD. Used as the host identifier incorporated in the
   // certificates.
-  // Used for `ENTERPRISE_VTPM_EK_CERTIFICATE` profile only.
+  // Used for `ENTERPRISE_ENROLLMENT_CERTIFICATE` and
+  // `ENTERPRISE_VTPM_EK_CERTIFICATE` profiles only.
   optional bytes attested_device_id = 17;
 }
 

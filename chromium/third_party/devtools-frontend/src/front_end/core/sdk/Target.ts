@@ -124,7 +124,7 @@ export class Target extends ProtocolClient.InspectorBackend.TargetBase {
     return this.#typeInternal;
   }
 
-  markAsNodeJSForTest(): void {
+  override markAsNodeJSForTest(): void {
     super.markAsNodeJSForTest();
     this.#typeInternal = Type.Node;
   }
@@ -148,7 +148,20 @@ export class Target extends ProtocolClient.InspectorBackend.TargetBase {
     return this.#parentTargetInternal;
   }
 
-  dispose(reason: string): void {
+  outermostTarget(): Target|null {
+    let lastTarget: Target|null = null;
+    let currentTarget: Target|null = this;
+    do {
+      if (currentTarget.type() !== Type.Tab && currentTarget.type() !== Type.Browser) {
+        lastTarget = currentTarget;
+      }
+      currentTarget = currentTarget.parentTarget();
+    } while (currentTarget);
+
+    return lastTarget;
+  }
+
+  override dispose(reason: string): void {
     super.dispose(reason);
     this.#targetManagerInternal.removeTarget(this);
     for (const model of this.#modelByConstructor.values()) {
@@ -166,7 +179,7 @@ export class Target extends ProtocolClient.InspectorBackend.TargetBase {
         const model = new modelClass(this);
         this.#modelByConstructor.set(modelClass, model);
         if (!this.#creatingModels) {
-          this.#targetManagerInternal.modelAdded(this, modelClass, model);
+          this.#targetManagerInternal.modelAdded(this, modelClass, model, this.#targetManagerInternal.isInScope(this));
         }
       }
     }

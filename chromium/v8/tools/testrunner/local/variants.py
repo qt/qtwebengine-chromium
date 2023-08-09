@@ -16,8 +16,11 @@ ALL_VARIANT_FLAGS = {
     "jitless": [["--jitless"]],
     "sparkplug": [["--sparkplug"]],
     "maglev": [["--maglev"]],
-    "maglev_inlining": [["--maglev", "--maglev-inlining"]],
-    "stress_maglev": [["--maglev", "--stress-maglev"]],
+    "maglev_future": [["--maglev", "--maglev-future"]],
+    "stress_maglev": [[
+        "--maglev", "--stress-maglev",
+        "--optimize-on-next-call-optimizes-to-maglev"
+    ]],
     "turboshaft": [["--turboshaft"]],
     "concurrent_sparkplug": [["--concurrent-sparkplug", "--sparkplug"]],
     "always_sparkplug": [["--always-sparkplug", "--sparkplug"]],
@@ -75,7 +78,7 @@ INCOMPATIBLE_FLAGS_PER_VARIANT = {
         kIncompatibleFlagsForNoTurbofan + [
             "--track-field-types", "--sparkplug", "--concurrent-sparkplug",
             "--always-sparkplug", "--regexp-tier-up",
-            "--no-regexp-interpret-all"
+            "--no-regexp-interpret-all", "--interpreted-frames-native-stack"
         ],
     "nooptimization": [
         "--turbofan", "--always-turbofan", "--stress-concurrent-inlining"
@@ -95,13 +98,15 @@ INCOMPATIBLE_FLAGS_PER_VARIANT = {
     # stress_snapshot.
     "stress_snapshot": ["--expose-fast-api"],
     "stress": [
-        "--liftoff-only", "--wasm-speculative-inlining",
+        # 'stress' disables Liftoff, which conflicts with flags that require
+        # Liftoff support.
+        "--liftoff-only",
         "--wasm-dynamic-tiering"
     ],
     "sparkplug": ["--jitless", "--no-sparkplug"],
     "concurrent_sparkplug": ["--jitless"],
     "maglev": ["--jitless", "--no-maglev"],
-    "maglev_inlining": ["--jitless", "--no-maglev", "--no-maglev-inlining"],
+    "maglev_future": ["--jitless", "--no-maglev", "--no-maglev-future"],
     "stress_maglev": ["--jitless"],
     "always_sparkplug": ["--jitless", "--no-sparkplug"],
     "code_serializer": [
@@ -149,7 +154,6 @@ INCOMPATIBLE_FLAGS_PER_BUILD_VARIABLE = {
         "--trace_wasm_compiler",
         "--trace_wasm_decoder",
         "--trace_wasm_instances",
-        "--trace_wasm_interpreter",
         "--trace_wasm_lazy_compilation",
         "--trace_wasm_native_heap",
         "--trace_wasm_serialization",
@@ -168,7 +172,9 @@ INCOMPATIBLE_FLAGS_PER_BUILD_VARIABLE = {
     "!has_maglev": ["--maglev"],
     "!has_turbofan":
         kIncompatibleFlagsForNoTurbofan,
-    "lite_mode": ["--no-lazy-feedback-allocation", "--max-semi-space-size=*"] +
+    "jitless_build_mode":
+        INCOMPATIBLE_FLAGS_PER_VARIANT["jitless"],
+    "lite_mode": ["--max-semi-space-size=*"] +
                  INCOMPATIBLE_FLAGS_PER_VARIANT["jitless"],
     "predictable": [
         "--parallel-compile-tasks-for-eager-toplevel",

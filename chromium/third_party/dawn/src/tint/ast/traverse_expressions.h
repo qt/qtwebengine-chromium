@@ -25,6 +25,7 @@
 #include "src/tint/ast/member_accessor_expression.h"
 #include "src/tint/ast/phony_expression.h"
 #include "src/tint/ast/unary_op_expression.h"
+#include "src/tint/switch.h"
 #include "src/tint/utils/compiler_macros.h"
 #include "src/tint/utils/reverse.h"
 #include "src/tint/utils/vector.h"
@@ -61,8 +62,9 @@ enum class TraverseOrder {
 /// @return true on success, false on error
 template <TraverseOrder ORDER = TraverseOrder::LeftToRight, typename CALLBACK>
 bool TraverseExpressions(const Expression* root, diag::List& diags, CALLBACK&& callback) {
-    using EXPR_TYPE = std::remove_pointer_t<traits::ParameterType<CALLBACK, 0>>;
-    constexpr static bool kHasDepthArg = traits::SignatureOfT<CALLBACK>::parameter_count == 2;
+    using EXPR_TYPE = std::remove_pointer_t<utils::traits::ParameterType<CALLBACK, 0>>;
+    constexpr static bool kHasDepthArg =
+        utils::traits::SignatureOfT<CALLBACK>::parameter_count == 2;
 
     struct Pending {
         const Expression* expr;

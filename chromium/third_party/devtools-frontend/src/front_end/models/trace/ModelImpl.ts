@@ -2,65 +2,71 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import * as Common from '../../core/common/common.js';
 import * as Platform from '../../core/platform/platform.js';
 
-import type * as Handlers from './handlers/handlers.js';
+import * as Handlers from './handlers/handlers.js';
 import * as Helpers from './helpers/helpers.js';
 
 import type * as Types from './types/types.js';
-import type * as Worker from './worker/worker.js';
+import {TraceProcessor, TraceParseProgressEvent} from './Processor.js';
 
 // Note: this model is implemented in a way that can support multiple trace
 // processors. Currently there is only one implemented, but you will see
 // references to "processors" plural because it can easily be extended in the future.
 
-export class Model extends EventTarget {
-  readonly #traces: ParsedTraceFile[] = [];
+export interface ParseConfig {
+  metadata?: TraceFileMetaData;
+  isFreshRecording?: boolean;
+}
+
+// As we migrate the data engine we are incrementally enabling the new handlers
+// one by one, so we do not waste effort parsing data that we do not use. This
+// object should be updated when we add a new handler to enable it.
+export const ENABLED_TRACE_HANDLERS = {
+  UserTimings: Handlers.ModelHandlers.UserTimings,
+  PageLoadMetrics: Handlers.ModelHandlers.PageLoadMetrics,
+  UserInteractions: Handlers.ModelHandlers.UserInteractions,
+  LayoutShifts: Handlers.ModelHandlers.LayoutShifts,
+  Screenshots: Handlers.ModelHandlers.Screenshots,
+  GPU: Handlers.ModelHandlers.GPU,
+};
+export type PartialTraceParseDataDuringMigration =
+    Readonly<Handlers.Types.EnabledHandlerDataWithMeta<typeof ENABLED_TRACE_HANDLERS>>;
+
+/**
+ * The new trace engine model we are migrating to. The Model is responsible for
+ * parsing arrays of raw trace events and storing the resulting data. It can
+ * store multiple traces at once, and can return the data for any of them.
+ * Currently as we migrate from the old engine to this, we are turning on the
+ * model handlers incrementally as we need the data, to save performance costs
+ * of running handlers that we do not use. Therefore, when the model is
+ * constructed we pass through a set of handlers that should be used. Once we
+ * have migrated all tracks in the Performance Panel to this model, we can
+ * remove this ability to run a subset of handlers, as we will need all handlers
+ * to be used at that point. For tests, if you want to construct a model with
+ * all handlers, you can use the static `Model.createWithAllHandlers` method.
+ **/
+export class Model<EnabledModelHandlers extends {[key: string]: Handlers.Types.TraceEventHandler}> extends EventTarget {
+  readonly #traces: ParsedTraceFile<EnabledModelHandlers>[] = [];
   readonly #nextNumberByDomain = new Map<string, number>();
 
   readonly #recordingsAvailable: string[] = [];
   #lastRecordingIndex = 0;
-  #traceWorker: Common.Worker.WorkerWrapper;
+  #processor: TraceProcessor<Handlers.Types.HandlersWithMeta<EnabledModelHandlers>>;
 
-  constructor() {
+  static createWithAllHandlers(): Model<typeof Handlers.ModelHandlers> {
+    return new Model(Handlers.ModelHandlers);
+  }
+
+  static createWithRequiredHandlersForMigration():
+      Model<{[K in keyof typeof ENABLED_TRACE_HANDLERS]: typeof ENABLED_TRACE_HANDLERS[K];}> {
+    return new Model(ENABLED_TRACE_HANDLERS);
+  }
+
+  constructor(handlers: EnabledModelHandlers) {
     super();
-    this.#traceWorker = this.#createTraceWorker();
+    this.#processor = new TraceProcessor(handlers);
   }
-
-  #createTraceWorker(): Common.Worker.WorkerWrapper {
-    return Common.Worker.WorkerWrapper.fromURL(new URL('./worker/worker_entrypoint.js', import.meta.url));
-  }
-
-  #sendMessageToTraceWorker(message: Worker.Types.MessageToWorker): void {
-    this.#traceWorker.postMessage(message);
-  }
-
-  #sendParseMessageToWorker(events: readonly Types.TraceEvents.TraceEventData[], freshRecording: boolean): void {
-    this.#sendMessageToTraceWorker({
-      action: 'PARSE',
-      events,
-      freshRecording,
-    });
-  }
-
-  #parsingComplete(file: ParsedTraceFile, data: Handlers.Types.HandlerData<typeof Handlers.ModelHandlers>): void {
-    file.traceParsedData = data;
-    this.#lastRecordingIndex++;
-    let recordingName = `Trace ${this.#lastRecordingIndex}`;
-    let origin: string|null = null;
-    if (file.traceParsedData) {
-      origin = Helpers.Trace.extractOriginFromTrace(file.traceParsedData.Meta.mainFrameURL);
-      if (origin) {
-        const nextSequenceForDomain = Platform.MapUtilities.getWithDefault(this.#nextNumberByDomain, origin, () => 1);
-        recordingName = `${origin} (${nextSequenceForDomain})`;
-        this.#nextNumberByDomain.set(origin, nextSequenceForDomain + 1);
-      }
-    }
-    this.#recordingsAvailable.push(recordingName);
-    this.dispatchEvent(new ModelUpdateEvent({type: ModelUpdateType.TRACE, data: 'done'}));
-  }
-
   /**
    * Parses an array of trace events into a structured object containing all the
    * information parsed by the trace handlers.
@@ -88,61 +94,67 @@ export class Model extends EventTarget {
    * });
    * void this.traceModel.parse(events);
    **/
-  async parse(
-      traceEvents: readonly Types.TraceEvents.TraceEventData[], metadata: TraceFileMetaData = {},
-      freshRecording = false): Promise<void> {
+  async parse(traceEvents: readonly Types.TraceEvents.TraceEventData[], config?: ParseConfig): Promise<void> {
+    const metadata = config?.metadata || {};
+    const isFreshRecording = config?.isFreshRecording || false;
     // During parsing, periodically update any listeners on each processors'
     // progress (if they have any updates).
+    const onTraceUpdate = (event: Event): void => {
+      const {data} = event as TraceParseProgressEvent;
+      this.dispatchEvent(new ModelUpdateEvent({type: ModelUpdateType.PROGRESS_UPDATE, data: data}));
+    };
+
+    this.#processor.addEventListener(TraceParseProgressEvent.eventName, onTraceUpdate);
 
     // Create a parsed trace file.  It will be populated with data from the processor.
-    const file: ParsedTraceFile = {
+    const file: ParsedTraceFile<EnabledModelHandlers> = {
       traceEvents,
       metadata,
       traceParsedData: null,
     };
 
-    await new Promise<void>(resolve => {
-      void this.#sendParseMessageToWorker(traceEvents, freshRecording);
-      this.#traceWorker.onmessage = (event: MessageEvent): void => {
-        const eventFromWorker = event.data as Worker.Types.MessageFromWorker;
-        switch (eventFromWorker.message) {
-          case 'PARSE_COMPLETE': {
-            this.#parsingComplete(file, event.data.data);
-            // Store the file in our list of traces. We can only do this once we
-            // know that there have been no errors during the parsing stage.
-            this.#traces.push(file);
-            // All processors have finished parsing, no more updates are expected.
-            // Finally, update any listeners that all processors are 'done'.
-            this.dispatchEvent(new ModelUpdateEvent({type: ModelUpdateType.GLOBAL, data: 'done'}));
-            resolve();
-            break;
-          }
-          case 'PARSE_ERROR': {
-            // If the worker throws an error, we just throw it too and let the caller deal with it.
-            throw eventFromWorker.error;
-          }
-          case 'PARSE_UPDATE': {
-            const {data} = event as TraceParseEvent;
-            this.dispatchEvent(new ModelUpdateEvent({type: ModelUpdateType.TRACE, data: data}));
-            break;
-          }
-          case 'CONSOLE_DEBUG': {
-            // eslint-disable-next-line no-console
-            console[eventFromWorker.method]('[from TraceWorker]', ...eventFromWorker.args);
-            break;
-          }
-          default:
-            Platform.assertNever(eventFromWorker, `Unexpected event from the trace worker ${eventFromWorker}`);
-        }
-      };
-    });
+    try {
+      // Wait for all outstanding promises before finishing the async execution,
+      // but perform all tasks in parallel.
+      await this.#processor.parse(traceEvents, isFreshRecording);
+      this.#storeParsedFileData(file, this.#processor.data);
+      // We only push the file onto this.#traces here once we know it's valid
+      // and there's been no errors in the parsing.
+      this.#traces.push(file);
+    } catch (e) {
+      throw e;
+    } finally {
+      // All processors have finished parsing, no more updates are expected.
+      this.#processor.removeEventListener(TraceParseProgressEvent.eventName, onTraceUpdate);
+      // Finally, update any listeners that all processors are 'done'.
+      this.dispatchEvent(new ModelUpdateEvent({type: ModelUpdateType.COMPLETE, data: 'done'}));
+    }
+  }
+
+  #storeParsedFileData(
+      file: ParsedTraceFile<EnabledModelHandlers>,
+      data: Handlers.Types.EnabledHandlerDataWithMeta<EnabledModelHandlers>|null): void {
+    file.traceParsedData = data;
+    this.#lastRecordingIndex++;
+    let recordingName = `Trace ${this.#lastRecordingIndex}`;
+    let origin: string|null = null;
+    if (file.traceParsedData) {
+      origin = Helpers.Trace.extractOriginFromTrace(file.traceParsedData.Meta.mainFrameURL);
+      if (origin) {
+        const nextSequenceForDomain = Platform.MapUtilities.getWithDefault(this.#nextNumberByDomain, origin, () => 1);
+        recordingName = `${origin} (${nextSequenceForDomain})`;
+        this.#nextNumberByDomain.set(origin, nextSequenceForDomain + 1);
+      }
+    }
+    this.#recordingsAvailable.push(recordingName);
   }
 
   /**
    * Returns the parsed trace data indexed by the order in which it was stored.
    * If no index is given, the last stored parsed data is returned.
    */
-  traceParsedData(index: number = this.#traces.length - 1): Handlers.Types.TraceParseData|null {
+  traceParsedData(index: number = this.#traces.length - 1):
+      Handlers.Types.EnabledHandlerDataWithMeta<EnabledModelHandlers>|null {
     if (!this.#traces[index]) {
       return null;
     }
@@ -180,9 +192,7 @@ export class Model extends EventTarget {
   }
 
   reset(): void {
-    this.#sendMessageToTraceWorker({
-      action: 'RESET',
-    });
+    this.#processor.reset();
   }
 }
 
@@ -191,36 +201,25 @@ export class Model extends EventTarget {
  * of these so that the user can swap between them. The key is that it is
  * essentially the TraceFile plus whatever the model has parsed from it.
  */
-export type ParsedTraceFile = TraceFile&{
-  traceParsedData: Handlers.Types.TraceParseData | null,
+export type ParsedTraceFile<Handlers extends {[key: string]: Handlers.Types.TraceEventHandler}> = TraceFile&{
+  traceParsedData: Handlers.Types.EnabledHandlerDataWithMeta<Handlers>| null,
 };
 
 export const enum ModelUpdateType {
-  GLOBAL = 0,
-  TRACE = 1,
-  LIGHTHOUSE = 2,
+  COMPLETE = 'COMPLETE',
+  PROGRESS_UPDATE = 'PROGRESS_UPDATE',
 }
 
-export type ModelUpdateEventData = ModelUpdateEventGlobalData|ModelUpdateEventTraceData|ModelUpdateEventLighthouseData;
+export type ModelUpdateEventData = ModelUpdateEventComplete|ModelUpdateEventProgress;
 
-export type ModelUpdateEventGlobalData = {
-  type: ModelUpdateType.GLOBAL,
-  data: GlobalParseEventData,
+export type ModelUpdateEventComplete = {
+  type: ModelUpdateType.COMPLETE,
+  data: 'done',
 };
-
-export type ModelUpdateEventTraceData = {
-  type: ModelUpdateType.TRACE,
-  data: TraceParseEventData,
+export type ModelUpdateEventProgress = {
+  type: ModelUpdateType.PROGRESS_UPDATE,
+  data: TraceParseEventProgressData,
 };
-
-export type ModelUpdateEventLighthouseData = {
-  type: ModelUpdateType.LIGHTHOUSE,
-  data: LighthouseParseEventData,
-};
-
-export type GlobalParseEventData = 'done';
-export type TraceParseEventData = TraceParseEventProgressData|'done';
-export type LighthouseParseEventData = 'done';
 
 export type TraceParseEventProgressData = {
   index: number,
@@ -234,19 +233,18 @@ export class ModelUpdateEvent extends Event {
   }
 }
 
-export function isModelUpdateEventDataGlobal(object: ModelUpdateEventData): object is ModelUpdateEventGlobalData {
-  return object.type === ModelUpdateType.GLOBAL;
-}
-
-export function isModelUpdateEventDataTrace(object: ModelUpdateEventData): object is ModelUpdateEventTraceData {
-  return object.type === ModelUpdateType.TRACE;
-}
-
-export class TraceParseEvent extends Event {
-  static readonly eventName = 'traceparse';
-  constructor(public data: TraceParseEventData, init: EventInit = {bubbles: true}) {
-    super(TraceParseEvent.eventName, init);
+declare global {
+  interface HTMLElementEventMap {
+    [ModelUpdateEvent.eventName]: ModelUpdateEvent;
   }
+}
+
+export function isModelUpdateDataComplete(eventData: ModelUpdateEventData): eventData is ModelUpdateEventComplete {
+  return eventData.type === ModelUpdateType.COMPLETE;
+}
+
+export function isModelUpdateDataProgress(eventData: ModelUpdateEventData): eventData is ModelUpdateEventProgress {
+  return eventData.type === ModelUpdateType.PROGRESS_UPDATE;
 }
 
 export type TraceFile = {
@@ -261,14 +259,10 @@ export type TraceFile = {
  */
 export interface TraceFileMetaData {
   source?: 'DevTools';
+  startTime?: string;
   networkThrottling?: string;
   cpuThrottling?: number;
+  hardwareConcurrency?: number;
 }
 
 export type TraceFileContents = TraceFile|Types.TraceEvents.TraceEventData[];
-
-declare global {
-  interface HTMLElementEventMap {
-    [TraceParseEvent.eventName]: TraceParseEvent;
-  }
-}

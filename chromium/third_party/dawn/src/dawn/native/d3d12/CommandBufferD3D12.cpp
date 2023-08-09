@@ -28,7 +28,7 @@
 #include "dawn/native/d3d12/ComputePipelineD3D12.h"
 #include "dawn/native/d3d12/DeviceD3D12.h"
 #include "dawn/native/d3d12/PipelineLayoutD3D12.h"
-#include "dawn/native/d3d12/PlatformFunctions.h"
+#include "dawn/native/d3d12/PlatformFunctionsD3D12.h"
 #include "dawn/native/d3d12/QuerySetD3D12.h"
 #include "dawn/native/d3d12/RenderPassBuilderD3D12.h"
 #include "dawn/native/d3d12/RenderPipelineD3D12.h"
@@ -322,11 +322,12 @@ void RecordNumWorkgroupsForDispatch(ID3D12GraphicsCommandList* commandList,
                                               0);
 }
 
-// Records the necessary barriers for a synchronization scope using the resource usage
-// data pre-computed in the frontend. Also performs lazy initialization if required.
-// Returns whether any UAV are used in the synchronization scope.
-bool TransitionAndClearForSyncScope(CommandRecordingContext* commandContext,
-                                    const SyncScopeResourceUsage& usages) {
+// Records the necessary barriers for a synchronization scope using the resource usage data
+// pre-computed in the frontend. Also performs lazy initialization if required. Returns whether any
+// UAV are used in the synchronization scope if `passHasUAV` is passed and no errors are hit.
+MaybeError TransitionAndClearForSyncScope(CommandRecordingContext* commandContext,
+                                          const SyncScopeResourceUsage& usages,
+                                          bool* passHasUAV = nullptr) {
     std::vector<D3D12_RESOURCE_BARRIER> barriers;
 
     ID3D12GraphicsCommandList* commandList = commandContext->GetCommandList();
@@ -336,9 +337,8 @@ bool TransitionAndClearForSyncScope(CommandRecordingContext* commandContext,
     for (size_t i = 0; i < usages.buffers.size(); ++i) {
         Buffer* buffer = ToBackend(usages.buffers[i]);
 
-        // TODO(crbug.com/dawn/852): clear storage buffers with
-        // ClearUnorderedAccessView*().
-        buffer->GetDevice()->ConsumedError(buffer->EnsureDataInitialized(commandContext));
+        // TODO(crbug.com/dawn/852): clear storage buffers with ClearUnorderedAccessView*().
+        DAWN_TRY(buffer->EnsureDataInitialized(commandContext));
 
         D3D12_RESOURCE_BARRIER barrier;
         if (buffer->TrackUsageAndGetResourceBarrier(commandContext, &barrier,
@@ -356,13 +356,14 @@ bool TransitionAndClearForSyncScope(CommandRecordingContext* commandContext,
         // Clear subresources that are not render attachments. Render attachments will be
         // cleared in RecordBeginRenderPass by setting the loadop to clear when the texture
         // subresource has not been initialized before the render pass.
-        usages.textureUsages[i].Iterate(
-            [&](const SubresourceRange& range, wgpu::TextureUsage usage) {
+        DAWN_TRY(usages.textureUsages[i].Iterate(
+            [&](const SubresourceRange& range, wgpu::TextureUsage usage) -> MaybeError {
                 if (usage & ~wgpu::TextureUsage::RenderAttachment) {
-                    texture->EnsureSubresourceContentInitialized(commandContext, range);
+                    DAWN_TRY(texture->EnsureSubresourceContentInitialized(commandContext, range));
                 }
                 textureUsages |= usage;
-            });
+                return {};
+            }));
 
         ToBackend(usages.textures[i])
             ->TrackUsageAndGetResourceBarrierForPass(commandContext, &barriers,
@@ -373,23 +374,28 @@ bool TransitionAndClearForSyncScope(CommandRecordingContext* commandContext,
         commandList->ResourceBarrier(barriers.size(), barriers.data());
     }
 
-    return (bufferUsages & wgpu::BufferUsage::Storage ||
-            textureUsages & wgpu::TextureUsage::StorageBinding);
+    if (passHasUAV) {
+        *passHasUAV = bufferUsages & wgpu::BufferUsage::Storage ||
+                      textureUsages & wgpu::TextureUsage::StorageBinding;
+    }
+    return {};
 }
 
 }  // anonymous namespace
+
+class DescriptorHeapState;
 
 class BindGroupStateTracker : public BindGroupTrackerBase<false, uint64_t> {
     using Base = BindGroupTrackerBase;
 
   public:
-    explicit BindGroupStateTracker(Device* device)
+    BindGroupStateTracker(Device* device, DescriptorHeapState* heapState, bool inCompute)
         : BindGroupTrackerBase(),
           mDevice(device),
+          mHeapState(heapState),
+          mInCompute(inCompute),
           mViewAllocator(device->GetViewShaderVisibleDescriptorAllocator()),
           mSamplerAllocator(device->GetSamplerShaderVisibleDescriptorAllocator()) {}
-
-    void SetInComputePass(bool inCompute_) { mInCompute = inCompute_; }
 
     MaybeError Apply(CommandRecordingContext* commandContext) {
         BeforeApply();
@@ -442,7 +448,7 @@ class BindGroupStateTracker : public BindGroupTrackerBase<false, uint64_t> {
         for (BindGroupIndex index : IterateBitSet(mDirtyBindGroupsObjectChangedOrIsDynamic)) {
             BindGroup* group = ToBackend(mBindGroups[index]);
             ApplyBindGroup(commandList, ToBackend(mPipelineLayout), index, group,
-                           mDynamicOffsetCounts[index], mDynamicOffsets[index].data());
+                           mDynamicOffsets[index]);
         }
 
         AfterApply();
@@ -450,20 +456,9 @@ class BindGroupStateTracker : public BindGroupTrackerBase<false, uint64_t> {
         return {};
     }
 
-    void SetID3D12DescriptorHeaps(ID3D12GraphicsCommandList* commandList) {
-        ASSERT(commandList != nullptr);
-        std::array<ID3D12DescriptorHeap*, 2> descriptorHeaps = {
-            mViewAllocator->GetShaderVisibleHeap(), mSamplerAllocator->GetShaderVisibleHeap()};
-        ASSERT(descriptorHeaps[0] != nullptr);
-        ASSERT(descriptorHeaps[1] != nullptr);
-        commandList->SetDescriptorHeaps(descriptorHeaps.size(), descriptorHeaps.data());
+    void ResetRootSamplerTables() { mBoundRootSamplerTables = {}; }
 
-        // Descriptor table state is undefined at the beginning of a command list and after
-        // descriptor heaps are changed on a command list. Invalidate the root sampler tables to
-        // reset the root descriptor table for samplers, otherwise the shader cannot access the
-        // descriptor heaps.
-        mBoundRootSamplerTables = {};
-    }
+    void SetID3D12DescriptorHeaps(ID3D12GraphicsCommandList* commandList);
 
   private:
     void UpdateRootSignatureIfNecessary(ID3D12GraphicsCommandList* commandList) {
@@ -476,7 +471,7 @@ class BindGroupStateTracker : public BindGroupTrackerBase<false, uint64_t> {
                     ToBackend(mPipelineLayout)->GetRootSignature());
             }
             // Invalidate the root sampler tables previously set in the root signature.
-            mBoundRootSamplerTables = {};
+            ResetRootSamplerTables();
         }
     }
 
@@ -484,10 +479,7 @@ class BindGroupStateTracker : public BindGroupTrackerBase<false, uint64_t> {
                         const PipelineLayout* pipelineLayout,
                         BindGroupIndex index,
                         BindGroup* group,
-                        uint32_t dynamicOffsetCountIn,
-                        const uint64_t* dynamicOffsetsIn) {
-        ityp::span<BindingIndex, const uint64_t> dynamicOffsets(dynamicOffsetsIn,
-                                                                BindingIndex(dynamicOffsetCountIn));
+                        const ityp::vector<BindingIndex, uint64_t>& dynamicOffsets) {
         ASSERT(dynamicOffsets.size() == group->GetLayout()->GetDynamicBufferCount());
 
         // Usually, the application won't set the same offsets many times,
@@ -606,6 +598,7 @@ class BindGroupStateTracker : public BindGroupTrackerBase<false, uint64_t> {
     }
 
     Device* mDevice;
+    DescriptorHeapState* mHeapState;
 
     bool mInCompute = false;
 
@@ -615,6 +608,43 @@ class BindGroupStateTracker : public BindGroupTrackerBase<false, uint64_t> {
     ShaderVisibleDescriptorAllocator* mViewAllocator;
     ShaderVisibleDescriptorAllocator* mSamplerAllocator;
 };
+
+class DescriptorHeapState {
+  public:
+    explicit DescriptorHeapState(Device* device)
+        : mDevice(device),
+          mComputeBindingTracker(device, this, true),
+          mGraphicsBindingTracker(device, this, false) {}
+
+    void SetID3D12DescriptorHeaps(ID3D12GraphicsCommandList* commandList) {
+        ASSERT(commandList != nullptr);
+        std::array<ID3D12DescriptorHeap*, 2> descriptorHeaps = {
+            mDevice->GetViewShaderVisibleDescriptorAllocator()->GetShaderVisibleHeap(),
+            mDevice->GetSamplerShaderVisibleDescriptorAllocator()->GetShaderVisibleHeap()};
+        ASSERT(descriptorHeaps[0] != nullptr);
+        ASSERT(descriptorHeaps[1] != nullptr);
+        commandList->SetDescriptorHeaps(descriptorHeaps.size(), descriptorHeaps.data());
+
+        // Descriptor table state is undefined at the beginning of a command list and after
+        // descriptor heaps are changed on a command list. Invalidate the root sampler tables to
+        // reset the root descriptor table for samplers, otherwise the shader cannot access the
+        // descriptor heaps.
+        mComputeBindingTracker.ResetRootSamplerTables();
+        mGraphicsBindingTracker.ResetRootSamplerTables();
+    }
+
+    BindGroupStateTracker* GetComputeBindingTracker() { return &mComputeBindingTracker; }
+    BindGroupStateTracker* GetGraphicsBindingTracker() { return &mGraphicsBindingTracker; }
+
+  private:
+    Device* mDevice;
+    BindGroupStateTracker mComputeBindingTracker;
+    BindGroupStateTracker mGraphicsBindingTracker;
+};
+
+void BindGroupStateTracker::SetID3D12DescriptorHeaps(ID3D12GraphicsCommandList* commandList) {
+    mHeapState->SetID3D12DescriptorHeaps(commandList);
+}
 
 namespace {
 class VertexBufferTracker {
@@ -725,13 +755,12 @@ CommandBuffer::CommandBuffer(CommandEncoder* encoder, const CommandBufferDescrip
 
 MaybeError CommandBuffer::RecordCommands(CommandRecordingContext* commandContext) {
     Device* device = ToBackend(GetDevice());
-    BindGroupStateTracker bindingTracker(device);
 
-    ID3D12GraphicsCommandList* commandList = commandContext->GetCommandList();
-
+    DescriptorHeapState descriptorHeapState(device);
     // Make sure we use the correct descriptors for this command list. Could be done once per
     // actual command list but here is ok because there should be few command buffers.
-    bindingTracker.SetID3D12DescriptorHeaps(commandList);
+    ID3D12GraphicsCommandList* commandList = commandContext->GetCommandList();
+    descriptorHeapState.SetID3D12DescriptorHeaps(commandList);
 
     size_t nextComputePassNumber = 0;
     size_t nextRenderPassNumber = 0;
@@ -742,11 +771,9 @@ MaybeError CommandBuffer::RecordCommands(CommandRecordingContext* commandContext
             case Command::BeginComputePass: {
                 BeginComputePassCmd* cmd = mCommands.NextCommand<BeginComputePassCmd>();
 
-                bindingTracker.SetInComputePass(true);
-
-                DAWN_TRY(
-                    RecordComputePass(commandContext, &bindingTracker, cmd,
-                                      GetResourceUsages().computePasses[nextComputePassNumber]));
+                DAWN_TRY(RecordComputePass(
+                    commandContext, descriptorHeapState.GetComputeBindingTracker(), cmd,
+                    GetResourceUsages().computePasses[nextComputePassNumber]));
 
                 nextComputePassNumber++;
                 break;
@@ -756,13 +783,15 @@ MaybeError CommandBuffer::RecordCommands(CommandRecordingContext* commandContext
                 BeginRenderPassCmd* beginRenderPassCmd =
                     mCommands.NextCommand<BeginRenderPassCmd>();
 
-                const bool passHasUAV = TransitionAndClearForSyncScope(
-                    commandContext, GetResourceUsages().renderPasses[nextRenderPassNumber]);
-                bindingTracker.SetInComputePass(false);
+                bool passHasUAV;
+                DAWN_TRY(TransitionAndClearForSyncScope(
+                    commandContext, GetResourceUsages().renderPasses[nextRenderPassNumber],
+                    &passHasUAV));
 
                 LazyClearRenderPassAttachments(beginRenderPassCmd);
-                DAWN_TRY(RecordRenderPass(commandContext, &bindingTracker, beginRenderPassCmd,
-                                          passHasUAV));
+                DAWN_TRY(RecordRenderPass(commandContext,
+                                          descriptorHeapState.GetGraphicsBindingTracker(),
+                                          beginRenderPassCmd, passHasUAV));
 
                 nextRenderPassNumber++;
                 break;
@@ -811,7 +840,8 @@ MaybeError CommandBuffer::RecordCommands(CommandRecordingContext* commandContext
                                                   copy->destination.mipLevel)) {
                     texture->SetIsSubresourceContentInitialized(true, subresources);
                 } else {
-                    texture->EnsureSubresourceContentInitialized(commandContext, subresources);
+                    DAWN_TRY(
+                        texture->EnsureSubresourceContentInitialized(commandContext, subresources));
                 }
 
                 buffer->TrackUsageAndTransitionNow(commandContext, wgpu::BufferUsage::CopySrc);
@@ -845,7 +875,8 @@ MaybeError CommandBuffer::RecordCommands(CommandRecordingContext* commandContext
                 SubresourceRange subresources =
                     GetSubresourcesAffectedByCopy(copy->source, copy->copySize);
 
-                texture->EnsureSubresourceContentInitialized(commandContext, subresources);
+                DAWN_TRY(
+                    texture->EnsureSubresourceContentInitialized(commandContext, subresources));
 
                 texture->TrackUsageAndTransitionNow(commandContext, wgpu::TextureUsage::CopySrc,
                                                     subresources);
@@ -878,12 +909,13 @@ MaybeError CommandBuffer::RecordCommands(CommandRecordingContext* commandContext
                 SubresourceRange dstRange =
                     GetSubresourcesAffectedByCopy(copy->destination, copy->copySize);
 
-                source->EnsureSubresourceContentInitialized(commandContext, srcRange);
+                DAWN_TRY(source->EnsureSubresourceContentInitialized(commandContext, srcRange));
                 if (IsCompleteSubresourceCopiedTo(destination, copy->copySize,
                                                   copy->destination.mipLevel)) {
                     destination->SetIsSubresourceContentInitialized(true, dstRange);
                 } else {
-                    destination->EnsureSubresourceContentInitialized(commandContext, dstRange);
+                    DAWN_TRY(
+                        destination->EnsureSubresourceContentInitialized(commandContext, dstRange));
                 }
 
                 if (copy->source.texture.Get() == copy->destination.texture.Get() &&
@@ -1148,8 +1180,8 @@ MaybeError CommandBuffer::RecordComputePass(CommandRecordingContext* commandCont
                     break;
                 }
 
-                TransitionAndClearForSyncScope(commandContext,
-                                               resourceUsages.dispatchUsages[currentDispatch]);
+                DAWN_TRY(TransitionAndClearForSyncScope(
+                    commandContext, resourceUsages.dispatchUsages[currentDispatch]));
                 DAWN_TRY(bindingTracker->Apply(commandContext));
 
                 RecordNumWorkgroupsForDispatch(commandList, lastPipeline, dispatch);
@@ -1161,8 +1193,8 @@ MaybeError CommandBuffer::RecordComputePass(CommandRecordingContext* commandCont
             case Command::DispatchIndirect: {
                 DispatchIndirectCmd* dispatch = mCommands.NextCommand<DispatchIndirectCmd>();
 
-                TransitionAndClearForSyncScope(commandContext,
-                                               resourceUsages.dispatchUsages[currentDispatch]);
+                DAWN_TRY(TransitionAndClearForSyncScope(
+                    commandContext, resourceUsages.dispatchUsages[currentDispatch]));
                 DAWN_TRY(bindingTracker->Apply(commandContext));
 
                 ComPtr<ID3D12CommandSignature> signature =

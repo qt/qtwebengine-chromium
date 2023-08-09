@@ -118,6 +118,9 @@ message TraceConfig {
     // TODO(lalitm): deprecate this in T and make this the default if nothing
     // crashes in S.
     optional bool prefer_suspend_clock_for_snapshot = 7;
+
+    // Disables the reporting of per-trace-writer histograms in TraceStats.
+    optional bool disable_chunk_usage_histograms = 8;
   }
   optional BuiltinDataSource builtin_data_sources = 20;
 
@@ -290,6 +293,10 @@ message TraceConfig {
       // |stop_delay_ms| and any data in the buffer will be returned to the
       // consumer.
       STOP_TRACING = 2;
+
+      // NOTE: do not add new enum values here because of a subtle backward
+      // compat bug which might cause indefinite tracing on older versions of
+      // the service. See b/274931668 .
     }
     optional TriggerMode trigger_mode = 1;
 

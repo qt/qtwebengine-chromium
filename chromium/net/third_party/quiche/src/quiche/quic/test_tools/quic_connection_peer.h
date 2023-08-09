@@ -240,10 +240,10 @@ class QuicConnectionPeer {
   static QuicSocketAddress GetSentServerPreferredAddress(
       QuicConnection* connection);
 
-  static QuicEcnCounts* GetEcnCounts(QuicConnection* connection,
-                                     PacketNumberSpace packet_number_space);
-
   static bool TestLastReceivedPacketInfoDefaults();
+
+  // Overrides restrictions on sending ECN for test purposes.
+  static void DisableEcnCodepointValidation(QuicConnection* connection);
 };
 
 }  // namespace test

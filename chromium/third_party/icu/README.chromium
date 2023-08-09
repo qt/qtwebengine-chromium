@@ -256,4 +256,3 @@ D. Local Modifications
 
 11. Patch ICU en-CA date pattern back to y-MM-dd format
     patches/revert-en-ca-date.patch
-  - upstream bug https://unicode-org.atlassian.net/browse/CLDR-16399

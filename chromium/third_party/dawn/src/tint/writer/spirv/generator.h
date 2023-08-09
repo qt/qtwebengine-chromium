@@ -20,6 +20,8 @@
 #include <vector>
 
 #include "src/tint/reflection.h"
+#include "src/tint/writer/binding_remapper_options.h"
+#include "src/tint/writer/external_texture_options.h"
 #include "src/tint/writer/writer.h"
 
 // Forward declarations
@@ -35,6 +37,9 @@ namespace tint::writer::spirv {
 
 /// Configuration options used for generating SPIR-V.
 struct Options {
+    /// Set to `true` to disable software robustness that prevents out-of-bounds accesses.
+    bool disable_robustness = false;
+
     /// Set to `true` to generate a PointSize builtin and have it set to 1.0
     /// from all vertex shaders in the module.
     bool emit_vertex_point_size = true;
@@ -42,17 +47,24 @@ struct Options {
     /// Set to `true` to disable workgroup memory zero initialization
     bool disable_workgroup_init = false;
 
-    /// Set to 'true' to generates binding mappings for external textures
-    bool generate_external_texture_bindings = false;
+    /// Set to `true` to clamp frag depth
+    bool clamp_frag_depth = false;
+
+    /// Options used in the binding mappings for external textures
+    ExternalTextureOptions external_texture_options = {};
+
+    /// Options used in the bindings remapper
+    BindingRemapperOptions binding_remapper_options = {};
 
     /// Set to `true` to initialize workgroup memory with OpConstantNull when
     /// VK_KHR_zero_initialize_workgroup_memory is enabled.
     bool use_zero_initialize_workgroup_memory_extension = false;
 
     /// Reflect the fields of this class so that it can be used by tint::ForeachField()
-    TINT_REFLECT(emit_vertex_point_size,
+    TINT_REFLECT(disable_robustness,
+                 emit_vertex_point_size,
                  disable_workgroup_init,
-                 generate_external_texture_bindings,
+                 external_texture_options,
                  use_zero_initialize_workgroup_memory_extension);
 };
 

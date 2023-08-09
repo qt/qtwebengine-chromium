@@ -27,16 +27,15 @@ class CloneContext;
 
 namespace tint::transform {
 
-/// DecomposeMemoryAccess is a transform used to replace storage and uniform
-/// buffer accesses with a combination of load, store or atomic functions on
-/// primitive types.
-class DecomposeMemoryAccess final : public Castable<DecomposeMemoryAccess, Transform> {
+/// DecomposeMemoryAccess is a transform used to replace storage and uniform buffer accesses with a
+/// combination of load, store or atomic functions on primitive types.
+class DecomposeMemoryAccess final : public utils::Castable<DecomposeMemoryAccess, Transform> {
   public:
-    /// Intrinsic is an InternalAttribute that's used to decorate a stub function
-    /// so that the HLSL transforms this into calls to
+    /// Intrinsic is an InternalAttribute that's used to decorate a stub function so that the HLSL
+    /// transforms this into calls to
     /// `[RW]ByteAddressBuffer.Load[N]()` or `[RW]ByteAddressBuffer.Store[N]()`,
     /// with a possible cast.
-    class Intrinsic final : public Castable<Intrinsic, ast::InternalAttribute> {
+    class Intrinsic final : public utils::Castable<Intrinsic, ast::InternalAttribute> {
       public:
         /// Intrinsic op
         enum class Op {
@@ -79,9 +78,15 @@ class DecomposeMemoryAccess final : public Castable<DecomposeMemoryAccess, Trans
         /// @param pid the identifier of the program that owns this node
         /// @param nid the unique node identifier
         /// @param o the op of the intrinsic
-        /// @param sc the address space of the buffer
-        /// @param ty the data type of the intrinsic
-        Intrinsic(ProgramID pid, ast::NodeID nid, Op o, builtin::AddressSpace sc, DataType ty);
+        /// @param type the data type of the intrinsic
+        /// @param address_space the address space of the buffer
+        /// @param buffer the storage or uniform buffer identifier
+        Intrinsic(ProgramID pid,
+                  ast::NodeID nid,
+                  Op o,
+                  DataType type,
+                  builtin::AddressSpace address_space,
+                  const ast::IdentifierExpression* buffer);
         /// Destructor
         ~Intrinsic() override;
 
@@ -97,14 +102,17 @@ class DecomposeMemoryAccess final : public Castable<DecomposeMemoryAccess, Trans
         /// @return true if op is atomic
         bool IsAtomic() const;
 
+        /// @return the buffer that this intrinsic operates on
+        const ast::IdentifierExpression* Buffer() const;
+
         /// The op of the intrinsic
         const Op op;
 
-        /// The address space of the buffer this intrinsic operates on
-        builtin::AddressSpace const address_space;
-
         /// The type of the intrinsic
         const DataType type;
+
+        /// The address space of the buffer this intrinsic operates on
+        const builtin::AddressSpace address_space;
     };
 
     /// Constructor

@@ -12,6 +12,7 @@
 
 #include "cast/common/public/parsed_certificate.h"
 #include "platform/base/error.h"
+#include "platform/base/span.h"
 
 namespace openscreen {
 namespace cast {
@@ -38,10 +39,10 @@ class BoringSSLParsedCertificate final : public ParsedCertificate {
   ErrorOr<uint64_t> GetSerialNumber() const override;
 
   bool VerifySignedData(DigestAlgorithm algorithm,
-                        const ConstDataSpan& data,
-                        const ConstDataSpan& signature) const override;
+                        const ByteView& data,
+                        const ByteView& signature) const override;
 
-  bool HasPolicyOid(const ConstDataSpan& oid) const override;
+  bool HasPolicyOid(const ByteView& oid) const override;
 
   void SetNotBeforeTimeForTesting(time_t not_before) override;
   void SetNotAfterTimeForTesting(time_t not_after) override;

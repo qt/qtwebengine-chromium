@@ -1,4 +1,5 @@
-load("//bazel:macros.bzl", "bool_flag", "exports_files_legacy", "selects", "skia_cc_deps", "skia_filegroup", "split_srcs_and_hdrs")
+load("//bazel:skia_rules.bzl", "exports_files_legacy", "skia_cc_deps", "skia_filegroup", "split_srcs_and_hdrs")
+load("//bazel:flags.bzl", "bool_flag", "selects")
 
 licenses(["notice"])
 
@@ -56,6 +57,7 @@ CORE_SRCS = [
     "SkSLContext.cpp",
     "SkSLContext.h",
     "SkSLErrorReporter.cpp",
+    "SkSLErrorReporter.h",
     "SkSLFileOutputStream.h",
     "SkSLGLSL.h",
     "SkSLInliner.cpp",
@@ -72,6 +74,7 @@ CORE_SRCS = [
     "SkSLModuleLoader.cpp",
     "SkSLModuleLoader.h",
     "SkSLOperator.cpp",
+    "SkSLOperator.h",
     "SkSLOutputStream.cpp",
     "SkSLOutputStream.h",
     "SkSLParser.cpp",
@@ -79,9 +82,12 @@ CORE_SRCS = [
     "SkSLPool.cpp",
     "SkSLPool.h",
     "SkSLPosition.cpp",
+    "SkSLPosition.h",
+    "SkSLProgramKind.h",
     "SkSLProgramSettings.h",
     "SkSLSampleUsage.cpp",
     "SkSLString.cpp",
+    "SkSLString.h",
     "SkSLStringStream.h",
     "SkSLThreadContext.cpp",
     "SkSLThreadContext.h",
@@ -176,9 +182,9 @@ skia_cc_deps(
         "//src/sksl/codegen:deps",
     ] + select({
         "//src/sksl:enable_skslc_true": [
-            "@spirv_tools",
-            "@dawn//:tint",
             "//tools:get_executable_path",
+            "@dawn//:tint",
+            "@spirv_tools",
         ],
         "//conditions:default": [],
     }),

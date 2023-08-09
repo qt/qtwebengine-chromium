@@ -27,10 +27,11 @@
 
 namespace dawn::native {
 
-AdapterBase::AdapterBase(InstanceBase* instance, wgpu::BackendType backend)
-    : mInstance(instance), mBackend(backend) {
-    mSupportedFeatures.EnableFeature(Feature::DawnNative);
-    mSupportedFeatures.EnableFeature(Feature::DawnInternalUsages);
+AdapterBase::AdapterBase(InstanceBase* instance,
+                         wgpu::BackendType backend,
+                         const TogglesState& adapterToggles)
+    : mInstance(instance), mBackend(backend), mTogglesState(adapterToggles) {
+    ASSERT(adapterToggles.GetStage() == ToggleStage::Adapter);
 }
 
 AdapterBase::~AdapterBase() = default;
@@ -39,6 +40,9 @@ MaybeError AdapterBase::Initialize() {
     DAWN_TRY_CONTEXT(InitializeImpl(), "initializing adapter (backend=%s)", mBackend);
     InitializeVendorArchitectureImpl();
 
+    EnableFeature(Feature::DawnNative);
+    EnableFeature(Feature::DawnInternalUsages);
+    EnableFeature(Feature::ImplicitDeviceSynchronization);
     InitializeSupportedFeaturesImpl();
 
     DAWN_TRY_CONTEXT(
@@ -70,14 +74,21 @@ MaybeError AdapterBase::Initialize() {
         std::min(mLimits.v1.maxStorageTexturesPerShaderStage, kMaxStorageTexturesPerShaderStage);
     mLimits.v1.maxUniformBuffersPerShaderStage =
         std::min(mLimits.v1.maxUniformBuffersPerShaderStage, kMaxUniformBuffersPerShaderStage);
-    mLimits.v1.maxDynamicUniformBuffersPerPipelineLayout =
-        std::min(mLimits.v1.maxDynamicUniformBuffersPerPipelineLayout,
-                 kMaxDynamicUniformBuffersPerPipelineLayout);
-    mLimits.v1.maxDynamicStorageBuffersPerPipelineLayout =
-        std::min(mLimits.v1.maxDynamicStorageBuffersPerPipelineLayout,
-                 kMaxDynamicStorageBuffersPerPipelineLayout);
+
+    // Additional enforcement for dependent limits.
+    mLimits.v1.maxStorageBufferBindingSize =
+        std::min(mLimits.v1.maxStorageBufferBindingSize, mLimits.v1.maxBufferSize);
+    mLimits.v1.maxUniformBufferBindingSize =
+        std::min(mLimits.v1.maxUniformBufferBindingSize, mLimits.v1.maxBufferSize);
 
     return {};
+}
+
+InstanceBase* AdapterBase::APIGetInstance() const {
+    auto instance = GetInstance();
+    ASSERT(instance != nullptr);
+    instance->APIReference();
+    return instance;
 }
 
 bool AdapterBase::APIGetLimits(SupportedLimits* limits) const {
@@ -206,9 +217,16 @@ bool AdapterBase::GetLimits(SupportedLimits* limits) const {
     return true;
 }
 
-MaybeError AdapterBase::ValidateFeatureSupportedWithDeviceToggles(
-    wgpu::FeatureName feature,
-    const TogglesState& deviceTogglesState) {
+const TogglesState& AdapterBase::GetTogglesState() const {
+    return mTogglesState;
+}
+
+void AdapterBase::EnableFeature(Feature feature) {
+    mSupportedFeatures.EnableFeature(feature);
+}
+
+MaybeError AdapterBase::ValidateFeatureSupportedWithToggles(wgpu::FeatureName feature,
+                                                            const TogglesState& toggles) const {
     DAWN_TRY(ValidateFeatureName(feature));
     DAWN_INVALID_IF(!mSupportedFeatures.IsEnabled(feature),
                     "Requested feature %s is not supported.", feature);
@@ -217,20 +235,28 @@ MaybeError AdapterBase::ValidateFeatureSupportedWithDeviceToggles(
     // Experimental features are guarded by toggle DisallowUnsafeAPIs.
     if (featureInfo->featureState == FeatureInfo::FeatureState::Experimental) {
         // DisallowUnsafeAPIs toggle is by default enabled if not explicitly disabled.
-        DAWN_INVALID_IF(deviceTogglesState.IsEnabled(Toggle::DisallowUnsafeAPIs),
+        DAWN_INVALID_IF(toggles.IsEnabled(Toggle::DisallowUnsafeAPIs),
                         "Feature %s is guarded by toggle disallow_unsafe_apis.", featureInfo->name);
     }
 
     // Do backend-specific validation.
-    return ValidateFeatureSupportedWithDeviceTogglesImpl(feature, deviceTogglesState);
+    return ValidateFeatureSupportedWithTogglesImpl(feature, toggles);
+}
+
+void AdapterBase::SetSupportedFeaturesForTesting(
+    const std::vector<wgpu::FeatureName>& requiredFeatures) {
+    mSupportedFeatures = {};
+    for (wgpu::FeatureName f : requiredFeatures) {
+        mSupportedFeatures.EnableFeature(f);
+    }
 }
 
 ResultOrError<Ref<DeviceBase>> AdapterBase::CreateDeviceInternal(
     const DeviceDescriptor* descriptor) {
     ASSERT(descriptor != nullptr);
 
-    // Create device toggles state from required toggles descriptor.
-    // TODO(dawn:1495): After implementing adapter toggles, also inherite adapter toggles state.
+    // Create device toggles state from required toggles descriptor and inherited adapter toggles
+    // state.
     const DawnTogglesDescriptor* deviceTogglesDesc = nullptr;
     FindInChain(descriptor->nextInChain, &deviceTogglesDesc);
 
@@ -261,24 +287,24 @@ ResultOrError<Ref<DeviceBase>> AdapterBase::CreateDeviceInternal(
         deviceTogglesDesc = &convertedDeviceTogglesDesc;
     }
 
-    // Create device toggles state from user-given toggles descriptor, and set up forced and default
-    // toggles.
-    // TODO(dawn:1495): After implementing adapter toggles, device toggles state should also inherit
-    // from adapter toggles state.
+    // Create device toggles state.
     TogglesState deviceToggles =
         TogglesState::CreateFromTogglesDescriptor(deviceTogglesDesc, ToggleStage::Device);
+    deviceToggles.InheritFrom(mTogglesState);
     // Default toggles for all backend
     deviceToggles.Default(Toggle::LazyClearResourceOnFirstUse, true);
-    deviceToggles.Default(Toggle::DisallowUnsafeAPIs, true);
+
     // Backend-specific forced and default device toggles
     SetupBackendDeviceToggles(&deviceToggles);
 
     // Validate all required features are supported by the adapter and suitable under given toggles.
-    // TODO(dawn:1495): After implementing adapter toggles, validate supported features using
-    // adapter toggles instead of device toggles.
+    // Note that certain toggles in device toggles state may be overriden by user and different from
+    // the adapter toggles state.
+    // TODO(dawn:1495): After implementing adapter toggles, decide whether we should validate
+    // supported features using adapter toggles or device toggles.
     for (uint32_t i = 0; i < descriptor->requiredFeaturesCount; ++i) {
         wgpu::FeatureName feature = descriptor->requiredFeatures[i];
-        DAWN_TRY(ValidateFeatureSupportedWithDeviceToggles(feature, deviceToggles));
+        DAWN_TRY(ValidateFeatureSupportedWithToggles(feature, deviceToggles));
     }
 
     if (descriptor->requiredLimits != nullptr) {

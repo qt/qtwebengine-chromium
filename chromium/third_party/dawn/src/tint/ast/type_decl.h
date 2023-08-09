@@ -25,7 +25,7 @@ class Identifier;
 namespace tint::ast {
 
 /// The base class for type declarations.
-class TypeDecl : public Castable<TypeDecl, Node> {
+class TypeDecl : public utils::Castable<TypeDecl, Node> {
   public:
     /// Create a new struct statement
     /// @param pid the identifier of the program that owns this node
@@ -33,9 +33,8 @@ class TypeDecl : public Castable<TypeDecl, Node> {
     /// @param src the source of this node for the import statement
     /// @param name The name of the type
     TypeDecl(ProgramID pid, NodeID nid, const Source& src, const Identifier* name);
-    /// Move constructor
-    TypeDecl(TypeDecl&&);
 
+    /// Destructor
     ~TypeDecl() override;
 
     /// The name of the type declaration

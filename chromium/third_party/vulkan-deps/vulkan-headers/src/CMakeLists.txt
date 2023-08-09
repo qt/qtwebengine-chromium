@@ -14,7 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ~~~
-cmake_minimum_required(VERSION 3.14...3.25)
+cmake_minimum_required(VERSION 3.15...3.25)
 
 function(vlk_get_header_version)
     set(vulkan_core_header_file "${CMAKE_CURRENT_SOURCE_DIR}/include/vulkan/vulkan_core.h")
@@ -41,15 +41,11 @@ function(vlk_get_header_version)
 endfunction()
 vlk_get_header_version()
 
-project(Vulkan-Headers LANGUAGES C VERSION ${VK_VERSION_STRING})
-
-if (CMAKE_VERSION VERSION_GREATER_EQUAL "3.15")
-    message(DEBUG "${PROJECT_NAME} = ${PROJECT_VERSION}")
-endif()
+project(VULKAN_HEADERS LANGUAGES C VERSION ${VK_VERSION_STRING})
 
 add_library(Vulkan-Headers INTERFACE)
-target_include_directories(Vulkan-Headers INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>)
 add_library(Vulkan::Headers ALIAS Vulkan-Headers)
+target_include_directories(Vulkan-Headers INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>)
 
 if (CMAKE_VERSION VERSION_LESS "3.21")
     # https://cmake.org/cmake/help/latest/variable/PROJECT_IS_TOP_LEVEL.html

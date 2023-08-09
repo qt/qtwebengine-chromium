@@ -104,7 +104,6 @@ class BestPracticesOutputGenerator(OutputGenerator):
         # Commands that have a manually written post-call-record step which needs to be called from the autogen'd fcn
         self.manual_postcallrecord_list = [
             'vkAllocateDescriptorSets',
-            'vkAllocateMemory',
             'vkQueuePresentKHR',
             'vkQueueBindSparse',
             'vkCreateGraphicsPipelines',
@@ -275,6 +274,7 @@ class BestPracticesOutputGenerator(OutputGenerator):
             # Treat empty string as 'None' for consistency with 'error_codes'
             if success_codes == '':
                 success_codes = None
+            # This function only returns VK_SUCCESS
             if error_codes is None and success_codes is None:
                 return
             if self.featureExtraProtect is not None:
@@ -295,17 +295,18 @@ class BestPracticesOutputGenerator(OutputGenerator):
             intercept += '    ValidationStateTracker::PostCallRecord'+cmdname[2:] + '(' + params_text
             if cmdname in self.manual_postcallrecord_list:
                 intercept += '    ManualPostCallRecord'+cmdname[2:] + '(' + params_text
-            intercept += '    if (result != VK_SUCCESS) {\n'
-            error_input   = '{}'
-            success_input = '{}'
-            if error_codes is not None:
-                intercept += '        constexpr std::array error_codes = {%s};\n' % error_codes
-                error_input = 'error_codes'
+            
             if success_codes is not None:
-                intercept += '        constexpr std::array success_codes = {%s};\n' % success_codes
-                success_input = 'success_codes'
-            intercept += '        ValidateReturnCodes("%s", result, %s, %s);\n' % (cmdname, error_input, success_input)
-            intercept += '    }\n'
+                intercept +=  '    if (result > VK_SUCCESS) {\n'
+                intercept += f'        LogPositiveSuccessCode("{cmdname}", result); // {success_codes}\n'
+                intercept +=  '        return;\n'
+                intercept +=  '    }\n'
+
+            if error_codes is not None:
+                intercept +=  '    if (result < VK_SUCCESS) {\n'
+                intercept += f'        LogErrorCode("{cmdname}", result); // {error_codes}\n'
+                intercept +=  '    }\n'
+
             intercept += '}\n'
             self.otwrite('cpp', intercept)
             if self.featureExtraProtect is not None:

@@ -19,23 +19,22 @@ public:
     RasterWindowContext_xlib(Display*, XWindow, int width, int height, const DisplayParams&);
 
     sk_sp<SkSurface> getBackbufferSurface() override;
-    void swapBuffers() override;
     bool isValid() override { return SkToBool(fWindow); }
     void resize(int  w, int h) override;
     void setDisplayParams(const DisplayParams& params) override;
 
 protected:
+    void onSwapBuffers() override;
+
     sk_sp<SkSurface> fBackbufferSurface;
     Display* fDisplay;
     XWindow  fWindow;
     GC       fGC;
-
-    using INHERITED = RasterWindowContext;
 };
 
 RasterWindowContext_xlib::RasterWindowContext_xlib(Display* display, XWindow window, int width,
                                                    int height, const DisplayParams& params)
-        : INHERITED(params)
+        : RasterWindowContext(params)
         , fDisplay(display)
         , fWindow(window) {
     fGC = XCreateGC(fDisplay, fWindow, 0, nullptr);
@@ -60,7 +59,7 @@ void RasterWindowContext_xlib::resize(int  w, int h) {
 
 sk_sp<SkSurface> RasterWindowContext_xlib::getBackbufferSurface() { return fBackbufferSurface; }
 
-void RasterWindowContext_xlib::swapBuffers() {
+void RasterWindowContext_xlib::onSwapBuffers() {
     SkPixmap pm;
     if (!fBackbufferSurface->peekPixels(&pm)) {
         return;

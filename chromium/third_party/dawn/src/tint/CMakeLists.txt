@@ -66,10 +66,10 @@ add_library(tint_diagnostic_utils
   diagnostic/formatter.h
   diagnostic/printer.cc
   diagnostic/printer.h
-  text/unicode.cc
-  text/unicode.h
   utils/debugger.cc
   utils/debugger.h
+  utils/unicode.cc
+  utils/unicode.h
 )
 tint_default_compile_options(tint_diagnostic_utils)
 
@@ -126,6 +126,8 @@ list(APPEND TINT_LIB_SRCS
   ast/diagnostic_control.h
   ast/diagnostic_directive.cc
   ast/diagnostic_directive.h
+  ast/diagnostic_rule_name.cc
+  ast/diagnostic_rule_name.h
   ast/disable_validation_attribute.cc
   ast/disable_validation_attribute.h
   ast/discard_statement.cc
@@ -134,6 +136,8 @@ list(APPEND TINT_LIB_SRCS
   ast/enable.h
   ast/expression.cc
   ast/expression.h
+  ast/extension.cc
+  ast/extension.h
   ast/float_literal_expression.cc
   ast/float_literal_expression.h
   ast/for_loop_statement.cc
@@ -228,8 +232,6 @@ list(APPEND TINT_LIB_SRCS
   ast/while_statement.h
   ast/workgroup_attribute.cc
   ast/workgroup_attribute.h
-  castable.cc
-  castable.h
   clone_context.cc
   clone_context.h
   constant/clone_context.h
@@ -243,8 +245,6 @@ list(APPEND TINT_LIB_SRCS
   constant/node.h
   constant/value.cc
   constant/value.h
-  demangler.cc
-  demangler.h
   inspector/entry_point.cc
   inspector/entry_point.h
   inspector/inspector.cc
@@ -280,6 +280,7 @@ list(APPEND TINT_LIB_SRCS
   resolver/validator.cc
   resolver/validator.h
   scope_stack.h
+  switch.h
   sem/array_count.cc
   sem/array_count.h
   sem/behavior.cc
@@ -300,6 +301,7 @@ list(APPEND TINT_LIB_SRCS
   sem/evaluation_stage.h
   sem/expression.cc
   sem/expression.h
+  sem/external_texture.h
   sem/for_loop_statement.cc
   sem/for_loop_statement.h
   sem/function_expression.cc
@@ -346,7 +348,6 @@ list(APPEND TINT_LIB_SRCS
   symbol.cc
   symbol.h
   tint.cc
-  traits.h
   transform/add_empty_entry_point.cc
   transform/add_empty_entry_point.h
   transform/add_block_attribute.cc
@@ -515,6 +516,9 @@ list(APPEND TINT_LIB_SRCS
   utils/bitcast.h
   utils/bitset.h
   utils/block_allocator.h
+  utils/bump_allocator.h
+  utils/castable.cc
+  utils/castable.h
   utils/compiler_macros.h
   utils/concat.h
   utils/crc32.h
@@ -530,6 +534,9 @@ list(APPEND TINT_LIB_SRCS
   utils/slice.h
   utils/string.cc
   utils/string.h
+  utils/string_stream.cc
+  utils/string_stream.h
+  utils/traits.h
   utils/unique_allocator.h
   utils/unique_vector.h
   utils/vector.h
@@ -537,14 +544,17 @@ list(APPEND TINT_LIB_SRCS
   writer/append_vector.h
   writer/array_length_from_uniform_options.cc
   writer/array_length_from_uniform_options.h
+  writer/binding_point.h
+  writer/binding_remapper_options.cc
+  writer/binding_remapper_options.h
   writer/check_supported_extensions.cc
   writer/check_supported_extensions.h
+  writer/external_texture_options.cc
+  writer/external_texture_options.h
   writer/flatten_bindings.cc
   writer/flatten_bindings.h
   writer/float_to_string.cc
   writer/float_to_string.h
-  writer/generate_external_texture_bindings.cc
-  writer/generate_external_texture_bindings.h
   writer/text_generator.cc
   writer/text_generator.h
   writer/text.cc
@@ -555,17 +565,18 @@ list(APPEND TINT_LIB_SRCS
 
 tint_generated(builtin/access BENCH TEST)
 tint_generated(builtin/address_space BENCH TEST)
+tint_generated(builtin/attribute BENCH TEST)
 tint_generated(builtin/builtin BENCH TEST)
 tint_generated(builtin/builtin_value BENCH TEST)
 tint_generated(builtin/diagnostic_rule BENCH TEST)
 tint_generated(builtin/diagnostic_severity BENCH TEST)
 tint_generated(builtin/extension BENCH TEST)
+tint_generated(builtin/function)
 tint_generated(builtin/interpolation_sampling BENCH TEST)
 tint_generated(builtin/interpolation_type BENCH TEST)
 tint_generated(builtin/texel_format BENCH TEST)
 
 tint_generated(resolver/ctor_conv_intrinsic)
-tint_generated(sem/builtin_type)
 tint_generated(sem/parameter_usage)
 
 if(UNIX)
@@ -674,6 +685,15 @@ if(${TINT_BUILD_HLSL_WRITER})
   )
 endif()
 
+if(${TINT_BUILD_SYNTAX_TREE_WRITER})
+    list(APPEND TINT_LIB_SRCS
+      writer/syntax_tree/generator.cc
+      writer/syntax_tree/generator.h
+      writer/syntax_tree/generator_impl.cc
+      writer/syntax_tree/generator_impl.h
+    )
+endif()
+
 if(${TINT_BUILD_IR})
   list(APPEND TINT_LIB_SRCS
     ir/binary.cc
@@ -686,8 +706,16 @@ if(${TINT_BUILD_IR})
     ir/builder.h
     ir/builder_impl.cc
     ir/builder_impl.h
+    ir/builtin.cc
+    ir/builtin.h
+    ir/call.cc
+    ir/call.h
     ir/constant.cc
     ir/constant.h
+    ir/construct.cc
+    ir/construct.h
+    ir/convert.cc
+    ir/convert.h
     ir/debug.cc
     ir/debug.h
     ir/disassembler.cc
@@ -710,6 +738,8 @@ if(${TINT_BUILD_IR})
     ir/temp.h
     ir/terminator.cc
     ir/terminator.h
+    ir/user_call.cc
+    ir/user_call.h
     ir/value.cc
     ir/value.h
   )
@@ -757,17 +787,14 @@ target_link_libraries(tint_val tint_utils_io)
 ## Tint library
 add_library(libtint ${TINT_LIB_SRCS})
 tint_default_compile_options(libtint)
-target_link_libraries(libtint tint_diagnostic_utils)
-if (${TINT_SYMBOL_STORE_DEBUG_NAME})
-    target_compile_definitions(libtint PUBLIC "TINT_SYMBOL_STORE_DEBUG_NAME=1")
-endif()
+target_link_libraries(libtint tint_diagnostic_utils absl_strings)
 set_target_properties(libtint PROPERTIES OUTPUT_NAME "tint")
 
 if (${TINT_BUILD_FUZZERS})
   # Tint library with fuzzer instrumentation
   add_library(libtint-fuzz ${TINT_LIB_SRCS})
   tint_default_compile_options(libtint-fuzz)
-  target_link_libraries(libtint-fuzz tint_diagnostic_utils)
+  target_link_libraries(libtint-fuzz tint_diagnostic_utils absl_strings)
   if (${COMPILER_IS_LIKE_GNU})
     target_compile_options(libtint-fuzz PRIVATE -fvisibility=hidden)
   endif()
@@ -820,6 +847,7 @@ if(TINT_BUILD_TESTS)
     ast/diagnostic_attribute_test.cc
     ast/diagnostic_control_test.cc
     ast/diagnostic_directive_test.cc
+    ast/diagnostic_rule_name_test.cc
     ast/discard_statement_test.cc
     ast/enable_test.cc
     ast/float_literal_expression_test.cc
@@ -857,13 +885,11 @@ if(TINT_BUILD_TESTS)
     ast/variable_test.cc
     ast/while_statement_test.cc
     ast/workgroup_attribute_test.cc
-    castable_test.cc
     clone_context_test.cc
     constant/composite_test.cc
     constant/scalar_test.cc
     constant/splat_test.cc
     debug_test.cc
-    demangler_test.cc
     diagnostic/diagnostic_test.cc
     diagnostic/formatter_test.cc
     diagnostic/printer_test.cc
@@ -878,6 +904,7 @@ if(TINT_BUILD_TESTS)
     resolver/atomics_validation_test.cc
     resolver/attribute_validation_test.cc
     resolver/bitcast_validation_test.cc
+    resolver/builtin_enum_test.cc
     resolver/builtin_test.cc
     resolver/builtin_validation_test.cc
     resolver/builtins_validation_test.cc
@@ -939,11 +966,10 @@ if(TINT_BUILD_TESTS)
     sem/struct_test.cc
     sem/value_expression_test.cc
     source_test.cc
+    switch_test.cc
     symbol_table_test.cc
     symbol_test.cc
     test_main.cc
-    text/unicode_test.cc
-    traits_test.cc
     transform/transform_test.cc
     type/array_test.cc
     type/atomic_test.cc
@@ -970,6 +996,8 @@ if(TINT_BUILD_TESTS)
     utils/bitcast_test.cc
     utils/bitset_test.cc
     utils/block_allocator_test.cc
+    utils/bump_allocator_test.cc
+    utils/castable_test.cc
     utils/crc32_test.cc
     utils/defer_test.cc
     utils/enum_set_test.cc
@@ -984,8 +1012,11 @@ if(TINT_BUILD_TESTS)
     utils/reverse_test.cc
     utils/scoped_assignment_test.cc
     utils/slice_test.cc
+    utils/string_stream_test.cc
     utils/string_test.cc
+    utils/traits_test.cc
     utils/transform_test.cc
+    utils/unicode_test.cc
     utils/unique_allocator_test.cc
     utils/unique_vector_test.cc
     utils/vector_test.cc
@@ -993,8 +1024,15 @@ if(TINT_BUILD_TESTS)
     writer/check_supported_extensions_test.cc
     writer/flatten_bindings_test.cc
     writer/float_to_string_test.cc
-    writer/generate_external_texture_bindings_test.cc
     writer/text_generator_test.cc
+  )
+
+  # Noet, the source files are included here otherwise the cmd sources would not be included in the
+  # test binary.
+  list(APPEND TINT_TEST_SRCS
+    cmd/generate_external_texture_bindings.cc
+    cmd/generate_external_texture_bindings.h
+    cmd/generate_external_texture_bindings_test.cc
   )
 
   # Uniformity analysis tests depend on WGSL reader
@@ -1066,7 +1104,6 @@ if(TINT_BUILD_TESTS)
       reader/wgsl/parser_impl_break_stmt_test.cc
       reader/wgsl/parser_impl_bug_cases_test.cc
       reader/wgsl/parser_impl_call_stmt_test.cc
-      reader/wgsl/parser_impl_case_body_test.cc
       reader/wgsl/parser_impl_compound_stmt_test.cc
       reader/wgsl/parser_impl_const_literal_test.cc
       reader/wgsl/parser_impl_continue_stmt_test.cc
@@ -1075,7 +1112,6 @@ if(TINT_BUILD_TESTS)
       reader/wgsl/parser_impl_diagnostic_attribute_test.cc
       reader/wgsl/parser_impl_diagnostic_control_test.cc
       reader/wgsl/parser_impl_diagnostic_directive_test.cc
-      reader/wgsl/parser_impl_element_count_expression_test.cc
       reader/wgsl/parser_impl_enable_directive_test.cc
       reader/wgsl/parser_impl_error_msg_test.cc
       reader/wgsl/parser_impl_error_resync_test.cc
@@ -1434,7 +1470,7 @@ if(TINT_BUILD_BENCHMARKS)
   endif()
 
   list(APPEND TINT_BENCHMARK_SRCS
-    "castable_bench.cc"
+    "switch_bench.cc"
     "bench/benchmark.cc"
     "reader/wgsl/parser_bench.cc"
   )
@@ -1461,4 +1497,27 @@ if(TINT_BUILD_BENCHMARKS)
   tint_core_compile_options(tint-benchmark)
 
   target_link_libraries(tint-benchmark PRIVATE benchmark::benchmark libtint)
+
+  if (TINT_EXTERNAL_BENCHMARK_CORPUS_DIR)
+    # Glob all the files at TINT_EXTERNAL_BENCHMARK_CORPUS_DIR, and create a header
+    # that lists these with the TINT_BENCHMARK_EXTERNAL_WGSL_PROGRAMS() macro
+    set(TINT_BENCHMARK_GEN_DIR "${DAWN_BUILD_GEN_DIR}/src/tint/benchmark/")
+    set(TINT_BENCHMARK_EXTERNAL_WGSL_PROGRAM_HEADER "${TINT_BENCHMARK_GEN_DIR}/external_wgsl_programs.h")
+    message("Globbing ${TINT_EXTERNAL_BENCHMARK_CORPUS_DIR}...")
+    file(GLOB_RECURSE
+      TINT_EXTERNAL_BENCHMARK_FILES
+      RELATIVE "${TINT_EXTERNAL_BENCHMARK_CORPUS_DIR}"
+      "${TINT_EXTERNAL_BENCHMARK_CORPUS_DIR}/**.wgsl")
+    list(TRANSFORM TINT_EXTERNAL_BENCHMARK_FILES REPLACE
+      "(.+)"
+      "    BENCHMARK_CAPTURE\(FUNC, \"\\1\", \"${TINT_EXTERNAL_BENCHMARK_CORPUS_DIR}/\\1\")")
+    list(JOIN TINT_EXTERNAL_BENCHMARK_FILES "; \\\n" TINT_EXTERNAL_BENCHMARK_FILES)
+    file(CONFIGURE
+      OUTPUT "${TINT_BENCHMARK_EXTERNAL_WGSL_PROGRAM_HEADER}"
+      CONTENT "#define TINT_BENCHMARK_EXTERNAL_WGSL_PROGRAMS(FUNC) \\
+${TINT_EXTERNAL_BENCHMARK_FILES};")
+    # Define TINT_BENCHMARK_EXTERNAL_WGSL_PROGRAM_HEADER to the generated header path
+    target_compile_definitions(tint-benchmark PRIVATE
+      "TINT_BENCHMARK_EXTERNAL_WGSL_PROGRAM_HEADER=\"${TINT_BENCHMARK_EXTERNAL_WGSL_PROGRAM_HEADER}\"")
+  endif()
 endif(TINT_BUILD_BENCHMARKS)

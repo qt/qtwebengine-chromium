@@ -401,7 +401,7 @@ bool Window_unix::attach(BackendType attachType) {
                     window_context_factory::MakeDawnVulkanForXlib(winInfo, fRequestedDisplayParams);
             break;
 #endif
-#if defined(SK_DAWN) && defined(SK_GRAPHITE_ENABLED)
+#if defined(SK_DAWN) && defined(SK_GRAPHITE)
         case kGraphiteDawn_BackendType:
             fWindowContext =
                     window_context_factory::MakeGraphiteDawnVulkanForXlib(winInfo,
@@ -459,7 +459,7 @@ void Window_unix::setRequestedDisplayParams(const DisplayParams& params, bool al
     }
 #endif
 
-    INHERITED::setRequestedDisplayParams(params, allowReattach);
+    Window::setRequestedDisplayParams(params, allowReattach);
 }
 
 const char* Window_unix::getClipboardText() {

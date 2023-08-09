@@ -7,43 +7,58 @@
 
 #include "tools/viewer/Viewer.h"
 
+#include "gm/gm.h"
+#include "include/core/SkAlphaType.h"
+#include "include/core/SkBlendMode.h"
 #include "include/core/SkCanvas.h"
+#include "include/core/SkColor.h"
+#include "include/core/SkColorPriv.h"
+#include "include/core/SkColorType.h"
 #include "include/core/SkData.h"
+#include "include/core/SkFontTypes.h"
 #include "include/core/SkGraphics.h"
+#include "include/core/SkImage.h"
+#include "include/core/SkImageInfo.h"
+#include "include/core/SkPicture.h"
 #include "include/core/SkPictureRecorder.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkSamplingOptions.h"
 #include "include/core/SkStream.h"
 #include "include/core/SkSurface.h"
+#include "include/core/SkSurfaceProps.h"
+#include "include/core/SkTextBlob.h"
 #include "include/gpu/GrDirectContext.h"
+#include "include/private/base/SkDebug.h"
 #include "include/private/base/SkTPin.h"
 #include "include/private/base/SkTo.h"
+#include "include/utils/SkBase64.h"
 #include "include/utils/SkPaintFilterCanvas.h"
+#include "src/base/SkTLazy.h"
 #include "src/base/SkTSort.h"
+#include "src/base/SkUTF.h"
 #include "src/core/SkAutoPixmapStorage.h"
-#include "src/core/SkColorSpacePriv.h"
-#include "src/core/SkImagePriv.h"
+#include "src/core/SkLRUCache.h"
 #include "src/core/SkMD5.h"
 #include "src/core/SkOSFile.h"
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkScan.h"
 #include "src/core/SkStringUtils.h"
-#include "src/core/SkSurfacePriv.h"
 #include "src/core/SkTaskGroup.h"
 #include "src/core/SkTextBlobPriv.h"
-#include "src/core/SkVMBlitter.h"
-#include "src/gpu/ganesh/GrDirectContextPriv.h"
-#include "src/gpu/ganesh/GrGpu.h"
-#include "src/gpu/ganesh/GrPersistentCacheUtils.h"
-#include "src/image/SkImage_Base.h"
 #include "src/sksl/SkSLCompiler.h"
+#include "src/sksl/SkSLString.h"
 #include "src/text/GlyphRun.h"
 #include "src/utils/SkJSONWriter.h"
 #include "src/utils/SkOSPath.h"
 #include "src/utils/SkShaderUtils.h"
 #include "tools/Resources.h"
 #include "tools/RuntimeBlendUtils.h"
-#include "tools/ToolUtils.h"
+#include "tools/SkMetaData.h"
 #include "tools/flags/CommandLineFlags.h"
 #include "tools/flags/CommonFlags.h"
+#include "tools/skui/InputState.h"
+#include "tools/skui/Key.h"
+#include "tools/skui/ModifierKey.h"
 #include "tools/trace/EventTracingPriv.h"
 #include "tools/viewer/BisectSlide.h"
 #include "tools/viewer/GMSlide.h"
@@ -52,16 +67,36 @@
 #include "tools/viewer/SKPSlide.h"
 #include "tools/viewer/SkSLDebuggerSlide.h"
 #include "tools/viewer/SkSLSlide.h"
+#include "tools/viewer/Slide.h"
 #include "tools/viewer/SlideDir.h"
-#include "tools/viewer/SvgSlide.h"
 
-#if SK_GPU_V1
+#include <algorithm>
+#include <cfloat>
+#include <chrono>
+#include <cmath>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <initializer_list>
+#include <map>
+#include <memory>
+#include <optional>
+#include <ratio>
+#include <regex>
+#include <tuple>
+#include <utility>
+#include <vector>
+
+#if defined(SK_GANESH)
+#include "src/gpu/ganesh/GrCaps.h"
+#include "src/gpu/ganesh/GrDirectContextPriv.h"
+#include "src/gpu/ganesh/GrGpu.h"
+#include "src/gpu/ganesh/GrPersistentCacheUtils.h"
+#include "src/gpu/ganesh/GrShaderCaps.h"
 #include "src/gpu/ganesh/ops/AtlasPathRenderer.h"
 #include "src/gpu/ganesh/ops/TessellationPathRenderer.h"
 #endif
-
-#include <cstdlib>
-#include <map>
 
 #include "imgui.h"
 #include "misc/cpp/imgui_stdlib.h"  // For ImGui support of std::string
@@ -76,7 +111,10 @@
 
 #if defined(SK_ENABLE_SVG)
 #include "modules/svg/include/SkSVGOpenTypeSVGDecoder.h"
+#include "tools/viewer/SvgSlide.h"
 #endif
+
+using namespace skia_private;
 
 class CapturingShaderErrorHandler : public GrContextOptions::ShaderErrorHandler {
 public:
@@ -90,8 +128,8 @@ public:
         fErrors.clear();
     }
 
-    SkTArray<SkString> fShaders;
-    SkTArray<SkString> fErrors;
+    TArray<SkString> fShaders;
+    TArray<SkString> fErrors;
 };
 
 static CapturingShaderErrorHandler gShaderErrorHandler;
@@ -183,9 +221,6 @@ static DEFINE_int_2(threads, j, -1,
 static DEFINE_bool(redraw, false, "Toggle continuous redraw.");
 
 static DEFINE_bool(offscreen, false, "Force rendering to an offscreen surface.");
-static DEFINE_bool(skvm, false, "Force skvm blitters for raster.");
-static DEFINE_bool(jit, true, "JIT SkVM?");
-static DEFINE_bool(dylib, false, "JIT via dylib (much slower compile but easier to debug/profile)");
 static DEFINE_bool(stats, false, "Display stats overlay on startup.");
 static DEFINE_bool(binaryarchive, false, "Enable MTLBinaryArchive use (if available).");
 
@@ -201,7 +236,7 @@ const char* get_backend_string(sk_app::Window::BackendType type) {
 #endif
 #ifdef SK_DAWN
         case sk_app::Window::kDawn_BackendType: return "Dawn";
-#ifdef SK_GRAPHITE_ENABLED
+#if defined(SK_GRAPHITE)
         case sk_app::Window::kGraphiteDawn_BackendType: return "Dawn (Graphite)";
 #endif
 #endif
@@ -210,7 +245,7 @@ const char* get_backend_string(sk_app::Window::BackendType type) {
 #endif
 #ifdef SK_METAL
         case sk_app::Window::kMetal_BackendType: return "Metal";
-#ifdef SK_GRAPHITE_ENABLED
+#if defined(SK_GRAPHITE)
         case sk_app::Window::kGraphiteMetal_BackendType: return "Metal (Graphite)";
 #endif
 #endif
@@ -228,7 +263,7 @@ static sk_app::Window::BackendType get_backend_type(const char* str) {
     if (0 == strcmp(str, "dawn")) {
         return sk_app::Window::kDawn_BackendType;
     } else
-#ifdef SK_GRAPHITE_ENABLED
+#if defined(SK_GRAPHITE)
     if (0 == strcmp(str, "grdawn")) {
         return sk_app::Window::kGraphiteDawn_BackendType;
     } else
@@ -248,7 +283,7 @@ static sk_app::Window::BackendType get_backend_type(const char* str) {
     if (0 == strcmp(str, "mtl")) {
         return sk_app::Window::kMetal_BackendType;
     } else
-#ifdef SK_GRAPHITE_ENABLED
+#if defined(SK_GRAPHITE)
     if (0 == strcmp(str, "grmtl")) {
         return sk_app::Window::kGraphiteMetal_BackendType;
     } else
@@ -332,10 +367,6 @@ static const char kSoftkeyHint[] = "Please select a softkey";
 static const char kON[] = "ON";
 static const char kRefreshStateName[] = "Refresh";
 
-extern bool gUseSkVMBlitter;
-extern bool gSkVMAllowJIT;
-extern bool gSkVMJITViaDylib;
-
 Viewer::Viewer(int argc, char** argv, void* platformData)
     : fCurrentSlide(-1)
     , fRefresh(false)
@@ -387,10 +418,6 @@ Viewer::Viewer(int argc, char** argv, void* platformData)
 #ifdef SK_BUILD_FOR_ANDROID
     SetResourcePath("/data/local/tmp/resources");
 #endif
-
-    gUseSkVMBlitter = FLAGS_skvm;
-    gSkVMAllowJIT = FLAGS_jit;
-    gSkVMJITViaDylib = FLAGS_dylib;
 
     CommonFlags::SetDefaultFontMgr();
 
@@ -730,16 +757,6 @@ Viewer::Viewer(int argc, char** argv, void* platformData)
         this->updateTitle();
         fWindow->inval();
     });
-    fCommands.addCommand('!', "SkVM", "Toggle SkVM blitter", [this]() {
-        gUseSkVMBlitter = !gUseSkVMBlitter;
-        this->updateTitle();
-        fWindow->inval();
-    });
-    fCommands.addCommand('@', "SkVM", "Toggle SkVM JIT", [this]() {
-        gSkVMAllowJIT = !gSkVMAllowJIT;
-        this->updateTitle();
-        fWindow->inval();
-    });
 
     // set up slides
     this->initSlides();
@@ -761,6 +778,52 @@ Viewer::Viewer(int argc, char** argv, void* platformData)
 
     fWindow->attach(backend_type_for_window(fBackendType));
     this->setCurrentSlide(this->startupSlide());
+}
+
+static sk_sp<SkData> data_from_file(FILE* fp) {
+    SkDynamicMemoryWStream stream;
+    char buf[4096];
+    while (size_t bytesRead = fread(buf, 1, 4096, fp)) {
+        stream.write(buf, bytesRead);
+    }
+    return stream.detachAsData();
+}
+
+static sk_sp<SkData> base64_string_to_data(const std::string& s) {
+    size_t dataLen;
+    if (SkBase64::Decode(s.c_str(), s.size(), nullptr, &dataLen) != SkBase64::kNoError) {
+        return nullptr;
+    }
+
+    sk_sp<SkData> decodedData = SkData::MakeUninitialized(dataLen);
+    void* rawData = decodedData->writable_data();
+    if (SkBase64::Decode(s.c_str(), s.size(), rawData, &dataLen) != SkBase64::kNoError) {
+        return nullptr;
+    }
+
+    return decodedData;
+}
+
+static std::vector<sk_sp<SkImage>> find_data_uri_images(sk_sp<SkData> data) {
+    std::string str(reinterpret_cast<const char*>(data->data()), data->size());
+    std::regex re("data:image/png;base64,([a-zA-Z0-9+/=]+)");
+    std::sregex_iterator images_begin(str.begin(), str.end(), re);
+    std::sregex_iterator images_end;
+    std::vector<sk_sp<SkImage>> images;
+
+    for (auto iter = images_begin; iter != images_end; ++iter) {
+        const std::smatch& match = *iter;
+        auto raw = base64_string_to_data(match[1].str());
+        if (!raw) {
+            continue;
+        }
+        auto image = SkImages::DeferredFromEncodedData(std::move(raw));
+        if (image) {
+            images.push_back(std::move(image));
+        }
+    }
+
+    return images;
 }
 
 void Viewer::initSlides() {
@@ -802,7 +865,7 @@ void Viewer::initSlides() {
 #endif
     };
 
-    SkTArray<sk_sp<Slide>> dirSlides;
+    TArray<sk_sp<Slide>> dirSlides;
 
     const auto addSlide = [&](const SkString& name, const SkString& path, const SlideMaker& fact) {
         if (CommandLineFlags::ShouldSkip(FLAGS_match, name.c_str())) {
@@ -818,6 +881,23 @@ void Viewer::initSlides() {
     if (!FLAGS_file.isEmpty()) {
         // single file mode
         const SkString file(FLAGS_file[0]);
+
+        // `--file stdin` parses stdin, looking for data URIs that encode images
+        if (file.equals("stdin")) {
+            sk_sp<SkData> data = data_from_file(stdin);
+            std::vector<sk_sp<SkImage>> images = find_data_uri_images(std::move(data));
+            // TODO: If there is an even number of images, create diff images from consecutive pairs
+            // (Maybe do this optionally? Or add a dedicated diff-slide that can show diff stats?)
+            for (auto image : images) {
+                char imageID = 'A' + fSlides.size();
+                fSlides.push_back(sk_make_sp<ImageSlide>(SkStringPrintf("Image %c", imageID),
+                                                         std::move(image)));
+            }
+            if (!fSlides.empty()) {
+                fShowZoomWindow = true;
+                return;
+            }
+        }
 
         if (sk_exists(file.c_str(), kRead_SkFILE_Flag)) {
             for (const auto& sinfo : gExternalSlidesInfo) {
@@ -883,6 +963,7 @@ void Viewer::initSlides() {
         }
     }
 
+#ifdef SKSL_ENABLE_TRACING
     // Runtime shader debugger
     {
         auto slide = sk_make_sp<SkSLDebuggerSlide>();
@@ -890,6 +971,7 @@ void Viewer::initSlides() {
             fSlides.push_back(std::move(slide));
         }
     }
+#endif
 
     for (const auto& info : gExternalSlidesInfo) {
         for (const auto& flag : info.fFlags) {
@@ -899,7 +981,7 @@ void Viewer::initSlides() {
             } else {
                 // directory
                 SkString name;
-                SkTArray<SkString> sortedFilenames;
+                TArray<SkString> sortedFilenames;
                 SkOSFile::Iter it(flag.c_str(), info.fExtension);
                 while (it.next(&name)) {
                     sortedFilenames.push_back(name);
@@ -980,12 +1062,6 @@ void Viewer::updateTitle() {
     }
     if (fDrawViaSerialize) {
         title.append(" <serialize>");
-    }
-    if (gUseSkVMBlitter) {
-        title.append(" <SkVMBlitter>");
-    }
-    if (!gSkVMAllowJIT) {
-        title.append(" <SkVM interpreter>");
     }
 
     SkPaintTitleUpdater paintTitle(&title);
@@ -1892,29 +1968,6 @@ static std::string build_glsl_highlight_shader(const GrShaderCaps& shaderCaps) {
     return highlight;
 }
 
-static skvm::Program build_skvm_highlight_program(SkColorType ct, int nargs) {
-    // Code here is heavily tied to (and inspired by) SkVMBlitter::BuildProgram
-    skvm::Builder b;
-
-    // All VM blitters start with two arguments (uniforms, dst surface)
-    SkASSERT(nargs >= 2);
-    (void)b.uniform();
-    skvm::Ptr dst_ptr = b.varying(SkColorTypeBytesPerPixel(ct));
-
-    // Depending on coverage and shader, there can be additional arguments.
-    // Make sure that we append the right number, so that we don't assert when
-    // the CPU backend tries to run this program.
-    for (int i = 2; i < nargs; ++i) {
-        (void)b.uniform();
-    }
-
-    skvm::Color magenta = {b.splat(1.0f), b.splat(0.0f), b.splat(1.0f), b.splat(0.5f)};
-    skvm::PixelFormat dstFormat = skvm::SkColorType_to_PixelFormat(ct);
-    store(dstFormat, dst_ptr, magenta);
-
-    return b.done();
-}
-
 void Viewer::drawImGui() {
     // Support drawing the ImGui demo window. Superfluous, but gives a good idea of what's possible
     if (fShowImGuiTestWindow) {
@@ -1952,7 +2005,7 @@ void Viewer::drawImGui() {
 #if defined(SK_METAL)
                 ImGui::SameLine();
                 ImGui::RadioButton("Metal", &newBackend, sk_app::Window::kMetal_BackendType);
-#if defined(SK_GRAPHITE_ENABLED)
+#if defined(SK_GRAPHITE)
                 ImGui::SameLine();
                 ImGui::RadioButton("Metal (Graphite)", &newBackend,
                                    sk_app::Window::kGraphiteMetal_BackendType);
@@ -2055,13 +2108,13 @@ void Viewer::drawImGui() {
                         ImGui::RadioButton("Software", true);
                     } else {
                         prButton(GpuPathRenderers::kDefault);
-#if SK_GPU_V1
+#if defined(SK_GANESH)
                         if (fWindow->sampleCount() > 1 || FLAGS_dmsaa) {
                             const auto* caps = ctx->priv().caps();
-                            if (skgpu::v1::AtlasPathRenderer::IsSupported(ctx)) {
+                            if (skgpu::ganesh::AtlasPathRenderer::IsSupported(ctx)) {
                                 prButton(GpuPathRenderers::kAtlas);
                             }
-                            if (skgpu::v1::TessellationPathRenderer::IsSupported(*caps)) {
+                            if (skgpu::ganesh::TessellationPathRenderer::IsSupported(*caps)) {
                                 prButton(GpuPathRenderers::kTessellation);
                             }
                         }
@@ -2689,76 +2742,6 @@ void Viewer::drawImGui() {
                     }
                 }
             }
-
-            if (ImGui::CollapsingHeader("SkVM")) {
-                auto* cache = SkVMBlitter::TryAcquireProgramCache();
-                SkASSERT(cache);
-
-                if (ImGui::Button("Clear")) {
-                    cache->reset();
-                    fDisassemblyCache.reset();
-                }
-
-                // First, go through the cache and restore the original program if we were hovering
-                if (!fHoveredProgram.empty()) {
-                    auto restoreHoveredProgram = [this](const SkVMBlitter::Key* key,
-                                                        skvm::Program* program) {
-                        if (*key == fHoveredKey) {
-                            *program = std::move(fHoveredProgram);
-                            fHoveredProgram = {};
-                        }
-                    };
-                    cache->foreach(restoreHoveredProgram);
-                }
-
-                // Now iterate again, and dump any expanded program. If any program is hovered,
-                // patch it, and remember the original (so it can be restored next frame).
-                auto showVMEntry = [this](const SkVMBlitter::Key* key, skvm::Program* program) {
-                    SkString keyString = SkVMBlitter::DebugName(*key);
-                    bool inTreeNode = ImGui::TreeNode(keyString.c_str());
-                    bool hovered = ImGui::IsItemHovered();
-
-                    if (inTreeNode) {
-                        auto stringBox = [](const char* label, std::string* str) {
-                            int lines = std::count(str->begin(), str->end(), '\n') + 2;
-                            ImVec2 boxSize(-1.0f, ImGui::GetTextLineHeight() * std::min(lines, 30));
-                            ImGui::InputTextMultiline(label, str, boxSize);
-                        };
-
-                        SkDynamicMemoryWStream stream;
-                        program->dump(&stream);
-                        auto dumpData = stream.detachAsData();
-                        std::string dumpString((const char*)dumpData->data(), dumpData->size());
-                        stringBox("##VM", &dumpString);
-
-#if defined(SKVM_JIT)
-                        std::string* asmString = fDisassemblyCache.find(*key);
-                        if (!asmString) {
-                            program->disassemble(&stream);
-                            auto asmData = stream.detachAsData();
-                            asmString = fDisassemblyCache.set(
-                                    *key,
-                                    std::string((const char*)asmData->data(), asmData->size()));
-                        }
-                        stringBox("##ASM", asmString);
-#endif
-
-                        ImGui::TreePop();
-                    }
-                    if (hovered) {
-                        // Generate a new blitter that just draws magenta
-                        skvm::Program highlightProgram = build_skvm_highlight_program(
-                                static_cast<SkColorType>(key->colorType), program->nargs());
-
-                        fHoveredKey = *key;
-                        fHoveredProgram = std::move(*program);
-                        *program = std::move(highlightProgram);
-                    }
-                };
-                cache->foreach(showVMEntry);
-
-                SkVMBlitter::ReleaseProgramCache();
-            }
         }
         if (displayParamsChanged || uiParamsChanged) {
             fDeferredActions.push_back([=]() {
@@ -2921,7 +2904,7 @@ void Viewer::dumpShadersToResources() {
 }
 
 void Viewer::onIdle() {
-    SkTArray<std::function<void()>> actionsToRun;
+    TArray<std::function<void()>> actionsToRun;
     actionsToRun.swap(fDeferredActions);
 
     for (const auto& fn : actionsToRun) {
@@ -3015,13 +2998,13 @@ void Viewer::updateUIState() {
                 writer.appendNString("Software");
             } else {
                 writer.appendString(gPathRendererNames[GpuPathRenderers::kDefault]);
-#if SK_GPU_V1
+#if defined(SK_GANESH)
                 if (fWindow->sampleCount() > 1 || FLAGS_dmsaa) {
                     const auto* caps = ctx->priv().caps();
-                    if (skgpu::v1::AtlasPathRenderer::IsSupported(ctx)) {
+                    if (skgpu::ganesh::AtlasPathRenderer::IsSupported(ctx)) {
                         writer.appendString(gPathRendererNames[GpuPathRenderers::kAtlas]);
                     }
-                    if (skgpu::v1::TessellationPathRenderer::IsSupported(*caps)) {
+                    if (skgpu::ganesh::TessellationPathRenderer::IsSupported(*caps)) {
                         writer.appendString(gPathRendererNames[GpuPathRenderers::kTessellation]);
                     }
                 }

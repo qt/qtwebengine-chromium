@@ -12,6 +12,7 @@
 #include "src/core/SkBlenderBase.h"
 #include "src/core/SkColorFilterBase.h"
 #include "src/core/SkColorSpacePriv.h"
+#include "src/gpu/DitherUtils.h"
 #include "src/gpu/graphite/KeyContext.h"
 #include "src/gpu/graphite/KeyHelpers.h"
 #include "src/gpu/graphite/PaintParamsKey.h"
@@ -21,18 +22,44 @@
 
 namespace skgpu::graphite {
 
+namespace {
+
+// This should be kept in sync w/ SkPaintPriv::ShouldDither
+bool should_dither(const PaintParams& p, SkColorType dstCT) {
+    // The paint dither flag can veto.
+    if (!p.dither()) {
+        return false;
+    }
+
+    if (dstCT == kUnknown_SkColorType) {
+        return false;
+    }
+
+    // We always dither 565 or 4444 when requested.
+    if (dstCT == kRGB_565_SkColorType || dstCT == kARGB_4444_SkColorType) {
+        return true;
+    }
+
+    // Otherwise, dither is only needed for non-const paints.
+    return p.shader() && !as_SB(p.shader())->isConstant();
+}
+
+} // anonymous namespace
+
 PaintParams::PaintParams(const SkColor4f& color,
                          sk_sp<SkBlender> finalBlender,
                          sk_sp<SkShader> shader,
                          sk_sp<SkColorFilter> colorFilter,
                          sk_sp<SkBlender> primitiveBlender,
-                         bool skipColorXform)
+                         bool skipColorXform,
+                         bool dither)
         : fColor(color)
         , fFinalBlender(std::move(finalBlender))
         , fShader(std::move(shader))
         , fColorFilter(std::move(colorFilter))
         , fPrimitiveBlender(std::move(primitiveBlender))
-        , fSkipColorXform(skipColorXform) {}
+        , fSkipColorXform(skipColorXform)
+        , fDither(dither) {}
 
 PaintParams::PaintParams(const SkPaint& paint,
                          sk_sp<SkBlender> primitiveBlender,
@@ -42,7 +69,8 @@ PaintParams::PaintParams(const SkPaint& paint,
         , fShader(paint.refShader())
         , fColorFilter(paint.refColorFilter())
         , fPrimitiveBlender(std::move(primitiveBlender))
-        , fSkipColorXform(skipColorXform) {}
+        , fSkipColorXform(skipColorXform)
+        , fDither(paint.isDither()) {}
 
 PaintParams::PaintParams(const PaintParams& other) = default;
 PaintParams::~PaintParams() = default;
@@ -75,11 +103,8 @@ void PaintParams::toKey(const KeyContext& keyContext,
                         PaintParamsKeyBuilder* builder,
                         PipelineDataGatherer* gatherer) const {
 
-    SkColor4f dstPaintColor = Color4fPrepForDst(fColor, keyContext.dstColorInfo());
-
     // TODO: figure out how we can omit this block when the Paint's color isn't used.
-    SolidColorShaderBlock::BeginBlock(keyContext, builder, gatherer,
-                                      dstPaintColor.makeOpaque().premul());
+    SolidColorShaderBlock::BeginBlock(keyContext, builder, gatherer, keyContext.paintColor());
     builder->endBlock();
 
     if (fShader) {
@@ -87,31 +112,39 @@ void PaintParams::toKey(const KeyContext& keyContext,
     }
 
     if (fPrimitiveBlender) {
-        as_BB(fPrimitiveBlender)->addToKey(keyContext, builder, gatherer,
-                                           /* primitiveColorBlender= */ true);
+        AddPrimitiveBlendBlock(keyContext, builder, gatherer, fPrimitiveBlender.get());
     }
 
     // Apply the paint's alpha value.
-    auto alphaColorFilter = SkColorFilters::Blend({0, 0, 0, fColor.fA},
-                                                  /* colorSpace= */ nullptr,
-                                                  SkBlendMode::kDstIn);
-    if (alphaColorFilter) {
-        as_CFB(alphaColorFilter)->addToKey(keyContext, builder, gatherer);
+    if (fColor.fA != 1.0f) {
+        AddColorBlendBlock(
+                keyContext, builder, gatherer, SkBlendMode::kDstIn, {0, 0, 0, fColor.fA});
     }
 
     if (fColorFilter) {
         as_CFB(fColorFilter)->addToKey(keyContext, builder, gatherer);
     }
 
-    if (fFinalBlender) {
-        as_BB(fFinalBlender)->addToKey(keyContext, builder, gatherer,
-                                       /* primitiveColorBlender= */ false);
-    } else {
-        BlendModeBlock::BeginBlock(keyContext, builder, gatherer, SkBlendMode::kSrcOver);
+#ifndef SK_IGNORE_GPU_DITHER
+    SkColorType ct = keyContext.dstColorInfo().colorType();
+    if (should_dither(*this, ct)) {
+        DitherShaderBlock::DitherData data(skgpu::DitherRangeForConfig(ct));
+
+        DitherShaderBlock::BeginBlock(keyContext, builder, gatherer, &data);
         builder->endBlock();
     }
+#endif
 
-    SkASSERT(builder->sizeInBytes() > 0);
+    std::optional<SkBlendMode> finalBlendMode = this->asFinalBlendMode();
+    if (finalBlendMode && *finalBlendMode <= SkBlendMode::kLastCoeffMode) {
+        BuiltInCodeSnippetID fixedFuncBlendModeID = static_cast<BuiltInCodeSnippetID>(
+                kFixedFunctionBlendModeIDOffset + (int) *finalBlendMode);
+        builder->beginBlock(fixedFuncBlendModeID);
+        builder->endBlock();
+
+    } else {
+        AddDstBlendBlock(keyContext, builder, gatherer, fFinalBlender.get());
+    }
 }
 
 } // namespace skgpu::graphite

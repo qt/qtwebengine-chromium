@@ -167,6 +167,8 @@ void CFX_DIBitmap::Clear(uint32_t color) {
     case FXDIB_Format::kArgb: {
       if (CFX_DefaultRenderDevice::SkiaIsDefaultRenderer() &&
           FXDIB_Format::kRgb32 == GetFormat()) {
+        // TODO(crbug.com/pdfium/2016): This is not reliable because alpha may
+        // be modified outside of this operation.
         color |= 0xFF000000;
       }
       for (int i = 0; i < m_Width; i++)
@@ -484,7 +486,7 @@ bool CFX_DIBitmap::MultiplyAlpha(int alpha) {
   return true;
 }
 
-#ifdef _SKIA_SUPPORT_
+#if defined(_SKIA_SUPPORT_)
 uint32_t CFX_DIBitmap::GetPixel(int x, int y) const {
   if (!m_pBuffer)
     return 0;
@@ -524,9 +526,7 @@ uint32_t CFX_DIBitmap::GetPixel(int x, int y) const {
   }
   return 0;
 }
-#endif  // _SKIA_SUPPORT_
 
-#if defined(_SKIA_SUPPORT_)
 void CFX_DIBitmap::SetPixel(int x, int y, uint32_t color) {
   if (!m_pBuffer)
     return;
@@ -672,16 +672,12 @@ absl::optional<CFX_DIBitmap::PitchAndSize> CFX_DIBitmap::CalculatePitchAndSize(
 
   uint32_t actual_pitch = pitch;
   if (actual_pitch == 0) {
-    FX_SAFE_UINT32 safe_pitch = width;
-    safe_pitch *= bpp;
-    safe_pitch += 31;
-    // Note: This is not the same as /8 due to truncation.
-    safe_pitch /= 32;
-    safe_pitch *= 4;
-    if (!safe_pitch.IsValid())
+    absl::optional<uint32_t> pitch32 = fxge::CalculatePitch32(bpp, width);
+    if (!pitch32.has_value()) {
       return absl::nullopt;
+    }
 
-    actual_pitch = safe_pitch.ValueOrDie();
+    actual_pitch = pitch32.value();
   }
 
   FX_SAFE_UINT32 safe_size = actual_pitch;

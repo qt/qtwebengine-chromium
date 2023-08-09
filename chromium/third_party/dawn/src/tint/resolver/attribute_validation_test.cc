@@ -18,6 +18,7 @@
 #include "src/tint/resolver/resolver_test_helper.h"
 #include "src/tint/transform/add_block_attribute.h"
 #include "src/tint/type/texture_dimension.h"
+#include "src/tint/utils/string_stream.h"
 
 #include "gmock/gmock.h"
 
@@ -100,7 +101,7 @@ static utils::Vector<const ast::Attribute*, 2> createAttributes(const Source& so
             return {builder.Builtin(source, builtin::BuiltinValue::kPosition)};
         case AttributeKind::kDiagnostic:
             return {builder.DiagnosticAttribute(source, builtin::DiagnosticSeverity::kInfo,
-                                                "chromium_unreachable_code")};
+                                                "chromium", "unreachable_code")};
         case AttributeKind::kGroup:
             return {builder.Group(source, 1_a)};
         case AttributeKind::kId:
@@ -1044,6 +1045,204 @@ TEST_F(OverrideAttributeTest, DuplicateAttribute) {
 12:34 note: first attribute declared here)");
 }
 
+using SwitchStatementAttributeTest = TestWithParams;
+TEST_P(SwitchStatementAttributeTest, IsValid) {
+    auto& params = GetParam();
+
+    WrapInFunction(Switch(Expr(0_a), utils::Vector{DefaultCase()},
+                          createAttributes(Source{{12, 34}}, *this, params.kind)));
+
+    if (params.should_pass) {
+        EXPECT_TRUE(r()->Resolve()) << r()->error();
+    } else {
+        EXPECT_FALSE(r()->Resolve());
+        EXPECT_EQ(r()->error(), "12:34 error: attribute is not valid for switch statements");
+    }
+}
+INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
+                         SwitchStatementAttributeTest,
+                         testing::Values(TestParams{AttributeKind::kAlign, false},
+                                         TestParams{AttributeKind::kBinding, false},
+                                         TestParams{AttributeKind::kBuiltin, false},
+                                         TestParams{AttributeKind::kDiagnostic, true},
+                                         TestParams{AttributeKind::kGroup, false},
+                                         TestParams{AttributeKind::kId, false},
+                                         TestParams{AttributeKind::kInterpolate, false},
+                                         TestParams{AttributeKind::kInvariant, false},
+                                         TestParams{AttributeKind::kLocation, false},
+                                         TestParams{AttributeKind::kMustUse, false},
+                                         TestParams{AttributeKind::kOffset, false},
+                                         TestParams{AttributeKind::kSize, false},
+                                         TestParams{AttributeKind::kStage, false},
+                                         TestParams{AttributeKind::kStride, false},
+                                         TestParams{AttributeKind::kWorkgroup, false},
+                                         TestParams{AttributeKind::kBindingAndGroup, false}));
+
+using SwitchBodyAttributeTest = TestWithParams;
+TEST_P(SwitchBodyAttributeTest, IsValid) {
+    auto& params = GetParam();
+
+    WrapInFunction(Switch(Expr(0_a), utils::Vector{DefaultCase()}, utils::Empty,
+                          createAttributes(Source{{12, 34}}, *this, params.kind)));
+
+    if (params.should_pass) {
+        EXPECT_TRUE(r()->Resolve()) << r()->error();
+    } else {
+        EXPECT_FALSE(r()->Resolve());
+        EXPECT_EQ(r()->error(), "12:34 error: attribute is not valid for switch body");
+    }
+}
+INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
+                         SwitchBodyAttributeTest,
+                         testing::Values(TestParams{AttributeKind::kAlign, false},
+                                         TestParams{AttributeKind::kBinding, false},
+                                         TestParams{AttributeKind::kBuiltin, false},
+                                         TestParams{AttributeKind::kDiagnostic, true},
+                                         TestParams{AttributeKind::kGroup, false},
+                                         TestParams{AttributeKind::kId, false},
+                                         TestParams{AttributeKind::kInterpolate, false},
+                                         TestParams{AttributeKind::kInvariant, false},
+                                         TestParams{AttributeKind::kLocation, false},
+                                         TestParams{AttributeKind::kMustUse, false},
+                                         TestParams{AttributeKind::kOffset, false},
+                                         TestParams{AttributeKind::kSize, false},
+                                         TestParams{AttributeKind::kStage, false},
+                                         TestParams{AttributeKind::kStride, false},
+                                         TestParams{AttributeKind::kWorkgroup, false},
+                                         TestParams{AttributeKind::kBindingAndGroup, false}));
+
+using IfStatementAttributeTest = TestWithParams;
+TEST_P(IfStatementAttributeTest, IsValid) {
+    auto& params = GetParam();
+
+    WrapInFunction(If(Expr(true), Block(), ElseStmt(),
+                      createAttributes(Source{{12, 34}}, *this, params.kind)));
+
+    if (params.should_pass) {
+        EXPECT_TRUE(r()->Resolve()) << r()->error();
+    } else {
+        EXPECT_FALSE(r()->Resolve());
+        EXPECT_EQ(r()->error(), "12:34 error: attribute is not valid for if statements");
+    }
+}
+INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
+                         IfStatementAttributeTest,
+                         testing::Values(TestParams{AttributeKind::kAlign, false},
+                                         TestParams{AttributeKind::kBinding, false},
+                                         TestParams{AttributeKind::kBuiltin, false},
+                                         TestParams{AttributeKind::kDiagnostic, true},
+                                         TestParams{AttributeKind::kGroup, false},
+                                         TestParams{AttributeKind::kId, false},
+                                         TestParams{AttributeKind::kInterpolate, false},
+                                         TestParams{AttributeKind::kInvariant, false},
+                                         TestParams{AttributeKind::kLocation, false},
+                                         TestParams{AttributeKind::kMustUse, false},
+                                         TestParams{AttributeKind::kOffset, false},
+                                         TestParams{AttributeKind::kSize, false},
+                                         TestParams{AttributeKind::kStage, false},
+                                         TestParams{AttributeKind::kStride, false},
+                                         TestParams{AttributeKind::kWorkgroup, false},
+                                         TestParams{AttributeKind::kBindingAndGroup, false}));
+
+using ForStatementAttributeTest = TestWithParams;
+TEST_P(ForStatementAttributeTest, IsValid) {
+    auto& params = GetParam();
+
+    WrapInFunction(For(nullptr, Expr(false), nullptr, Block(),
+                       createAttributes(Source{{12, 34}}, *this, params.kind)));
+
+    if (params.should_pass) {
+        EXPECT_TRUE(r()->Resolve()) << r()->error();
+    } else {
+        EXPECT_FALSE(r()->Resolve());
+        EXPECT_EQ(r()->error(), "12:34 error: attribute is not valid for for statements");
+    }
+}
+INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
+                         ForStatementAttributeTest,
+                         testing::Values(TestParams{AttributeKind::kAlign, false},
+                                         TestParams{AttributeKind::kBinding, false},
+                                         TestParams{AttributeKind::kBuiltin, false},
+                                         TestParams{AttributeKind::kDiagnostic, true},
+                                         TestParams{AttributeKind::kGroup, false},
+                                         TestParams{AttributeKind::kId, false},
+                                         TestParams{AttributeKind::kInterpolate, false},
+                                         TestParams{AttributeKind::kInvariant, false},
+                                         TestParams{AttributeKind::kLocation, false},
+                                         TestParams{AttributeKind::kMustUse, false},
+                                         TestParams{AttributeKind::kOffset, false},
+                                         TestParams{AttributeKind::kSize, false},
+                                         TestParams{AttributeKind::kStage, false},
+                                         TestParams{AttributeKind::kStride, false},
+                                         TestParams{AttributeKind::kWorkgroup, false},
+                                         TestParams{AttributeKind::kBindingAndGroup, false}));
+
+using LoopStatementAttributeTest = TestWithParams;
+TEST_P(LoopStatementAttributeTest, IsValid) {
+    auto& params = GetParam();
+
+    WrapInFunction(
+        Loop(Block(Return()), Block(), createAttributes(Source{{12, 34}}, *this, params.kind)));
+
+    if (params.should_pass) {
+        EXPECT_TRUE(r()->Resolve()) << r()->error();
+    } else {
+        EXPECT_FALSE(r()->Resolve());
+        EXPECT_EQ(r()->error(), "12:34 error: attribute is not valid for loop statements");
+    }
+}
+INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
+                         LoopStatementAttributeTest,
+                         testing::Values(TestParams{AttributeKind::kAlign, false},
+                                         TestParams{AttributeKind::kBinding, false},
+                                         TestParams{AttributeKind::kBuiltin, false},
+                                         TestParams{AttributeKind::kDiagnostic, true},
+                                         TestParams{AttributeKind::kGroup, false},
+                                         TestParams{AttributeKind::kId, false},
+                                         TestParams{AttributeKind::kInterpolate, false},
+                                         TestParams{AttributeKind::kInvariant, false},
+                                         TestParams{AttributeKind::kLocation, false},
+                                         TestParams{AttributeKind::kMustUse, false},
+                                         TestParams{AttributeKind::kOffset, false},
+                                         TestParams{AttributeKind::kSize, false},
+                                         TestParams{AttributeKind::kStage, false},
+                                         TestParams{AttributeKind::kStride, false},
+                                         TestParams{AttributeKind::kWorkgroup, false},
+                                         TestParams{AttributeKind::kBindingAndGroup, false}));
+
+using WhileStatementAttributeTest = TestWithParams;
+TEST_P(WhileStatementAttributeTest, IsValid) {
+    auto& params = GetParam();
+
+    WrapInFunction(
+        While(Expr(false), Block(), createAttributes(Source{{12, 34}}, *this, params.kind)));
+
+    if (params.should_pass) {
+        EXPECT_TRUE(r()->Resolve()) << r()->error();
+    } else {
+        EXPECT_FALSE(r()->Resolve());
+        EXPECT_EQ(r()->error(), "12:34 error: attribute is not valid for while statements");
+    }
+}
+INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
+                         WhileStatementAttributeTest,
+                         testing::Values(TestParams{AttributeKind::kAlign, false},
+                                         TestParams{AttributeKind::kBinding, false},
+                                         TestParams{AttributeKind::kBuiltin, false},
+                                         TestParams{AttributeKind::kDiagnostic, true},
+                                         TestParams{AttributeKind::kGroup, false},
+                                         TestParams{AttributeKind::kId, false},
+                                         TestParams{AttributeKind::kInterpolate, false},
+                                         TestParams{AttributeKind::kInvariant, false},
+                                         TestParams{AttributeKind::kLocation, false},
+                                         TestParams{AttributeKind::kMustUse, false},
+                                         TestParams{AttributeKind::kOffset, false},
+                                         TestParams{AttributeKind::kSize, false},
+                                         TestParams{AttributeKind::kStage, false},
+                                         TestParams{AttributeKind::kStride, false},
+                                         TestParams{AttributeKind::kWorkgroup, false},
+                                         TestParams{AttributeKind::kBindingAndGroup, false}));
+
 namespace BlockStatementTests {
 class BlockStatementTest : public TestWithParams {
   protected:
@@ -1089,6 +1288,13 @@ TEST_P(BlockStatementTest, ForStatementBody) {
          utils::Vector{
              For(nullptr, Expr(true), nullptr,
                  Block(utils::Vector{Break()}, createAttributes({}, *this, GetParam().kind))),
+         });
+    Check();
+}
+TEST_P(BlockStatementTest, LoopStatementBody) {
+    Func("foo", utils::Empty, ty.void_(),
+         utils::Vector{
+             Loop(Block(utils::Vector{Break()}, createAttributes({}, *this, GetParam().kind))),
          });
     Check();
 }
@@ -1164,7 +1370,7 @@ TEST_P(ArrayStrideTest, All) {
     auto& params = GetParam();
     ast::Type el_ty = params.create_el_type(*this);
 
-    std::stringstream ss;
+    utils::StringStream ss;
     ss << "el_ty: " << FriendlyName(el_ty) << ", stride: " << params.stride
        << ", should_pass: " << params.should_pass;
     SCOPED_TRACE(ss.str());
@@ -1976,4 +2182,40 @@ TEST_F(MustUseAttributeTest, UsedOnFnWithNoReturnValue) {
 }  // namespace
 }  // namespace MustUseTests
 
+namespace InternalAttributeDeps {
+namespace {
+
+class TestAttribute : public utils::Castable<TestAttribute, ast::InternalAttribute> {
+  public:
+    TestAttribute(ProgramID pid, ast::NodeID nid, const ast::IdentifierExpression* dep)
+        : Base(pid, nid, utils::Vector{dep}) {}
+    std::string InternalName() const override { return "test_attribute"; }
+    const Cloneable* Clone(CloneContext*) const override { return nullptr; }
+};
+
+using InternalAttributeDepsTest = ResolverTest;
+TEST_F(InternalAttributeDepsTest, Dependency) {
+    auto* ident = Expr("v");
+    auto* attr = ASTNodes().Create<TestAttribute>(ID(), AllocateNodeID(), ident);
+    auto* f = Func("f", utils::Empty, ty.void_(), utils::Empty, utils::Vector{attr});
+    auto* v = GlobalVar("v", ty.i32(), builtin::AddressSpace::kPrivate);
+
+    EXPECT_TRUE(r()->Resolve()) << r()->error();
+
+    auto* user = As<sem::VariableUser>(Sem().Get(ident));
+    ASSERT_NE(user, nullptr);
+
+    auto* var = Sem().Get(v);
+    EXPECT_EQ(user->Variable(), var);
+
+    auto* fn = Sem().Get(f);
+    EXPECT_THAT(fn->DirectlyReferencedGlobals(), testing::ElementsAre(var));
+    EXPECT_THAT(fn->TransitivelyReferencedGlobals(), testing::ElementsAre(var));
+}
+
+}  // namespace
+}  // namespace InternalAttributeDeps
+
 }  // namespace tint::resolver
+
+TINT_INSTANTIATE_TYPEINFO(tint::resolver::InternalAttributeDeps::TestAttribute);

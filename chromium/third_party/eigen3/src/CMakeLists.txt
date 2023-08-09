@@ -26,9 +26,11 @@ if(CMAKE_VERSION VERSION_LESS 3.21.0)
   endif()
 endif()
 
-set(CMAKE_CXX_STANDARD 14 CACHE STRING "Default C++ standard")
-set(CMAKE_CXX_STANDARD_REQUIRED ON CACHE BOOL "Require C++ standard")
-set(CMAKE_CXX_EXTENSIONS OFF CACHE BOOL "Allow C++ extensions")
+if(PROJECT_IS_TOP_LEVEL)
+  set(CMAKE_CXX_STANDARD 14 CACHE STRING "Default C++ standard")
+  set(CMAKE_CXX_STANDARD_REQUIRED ON CACHE BOOL "Require C++ standard")
+  set(CMAKE_CXX_EXTENSIONS OFF CACHE BOOL "Allow C++ extensions")
+endif()
 
 # guard against in-source builds
 
@@ -97,6 +99,20 @@ macro(ei_add_cxx_compiler_flag FLAG)
   endif()
 endmacro()
 
+function(ei_maybe_separate_arguments variable mode args)
+  # Use separate_arguments if the input is a single string containing a space.
+  # Otherwise, if it is already a list or doesn't have a space, just propagate
+  # the original value.  This is to better support multi-argument lists.
+  list(LENGTH args list_length)
+  if (${list_length} EQUAL 1)
+    string(FIND "${args}" " " has_space)
+    if (${has_space} GREATER -1)
+      separate_arguments(args ${mode} "${args}")
+    endif()
+  endif()
+  set(${variable} ${args} PARENT_SCOPE)
+endfunction(ei_maybe_separate_arguments)
+
 # Determine if we should build shared libraries on this platform.
 get_cmake_property(EIGEN_BUILD_SHARED_LIBS TARGET_SUPPORTS_SHARED_LIBS)
 
@@ -109,8 +125,11 @@ find_package(StandardMathLibrary)
 
 set(EIGEN_TEST_CUSTOM_LINKER_FLAGS  "" CACHE STRING "Additional linker flags when linking unit tests.")
 set(EIGEN_TEST_CUSTOM_CXX_FLAGS     "" CACHE STRING "Additional compiler flags when compiling unit tests.")
-# convert space separated argument into CMake lists for downstream consumption
-separate_arguments(EIGEN_TEST_CUSTOM_CXX_FLAGS NATIVE_COMMAND ${EIGEN_TEST_CUSTOM_CXX_FLAGS})
+
+# Convert space-separated arguments into CMake lists for downstream consumption.
+ei_maybe_separate_arguments(EIGEN_TEST_CUSTOM_LINKER_FLAGS NATIVE_COMMAND "${EIGEN_TEST_CUSTOM_LINKER_FLAGS}")
+ei_maybe_separate_arguments(EIGEN_TEST_CUSTOM_CXX_FLAGS NATIVE_COMMAND "${EIGEN_TEST_CUSTOM_CXX_FLAGS}")
+
 
 set(EIGEN_STANDARD_LIBRARIES_TO_LINK_TO "")
 

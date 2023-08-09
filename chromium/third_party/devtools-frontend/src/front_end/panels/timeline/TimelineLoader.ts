@@ -37,6 +37,14 @@ const UIStrings = {
 };
 const str_ = i18n.i18n.registerUIStrings('panels/timeline/TimelineLoader.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
+
+/**
+ * This class handles loading traces from file and URL, and from the Lighthouse panel
+ * It also handles loading cpuprofiles from file, url and console.profileEnd()
+ *
+ * Meanwhile, the normal trace recording flow bypasses TimelineLoader entirely,
+ * as it's handled from TracingManager => TimelineController.
+ */
 export class TimelineLoader implements Common.StringOutputStream.OutputStream {
   private client: Client|null;
   private readonly backingStorage: Bindings.TempFile.TempFileBackingStorage;
@@ -49,6 +57,7 @@ export class TimelineLoader implements Common.StringOutputStream.OutputStream {
   private loadedBytes: number;
   private totalSize!: number;
   private readonly jsonTokenizer: TextUtils.TextUtils.BalancedJSONTokenizer;
+  private filter: TimelineModel.TimelineModelFilter.TimelineModelFilter|null;
   constructor(client: Client, shouldSaveTraceEventsToFile: boolean, title?: string) {
     this.client = client;
 
@@ -62,6 +71,7 @@ export class TimelineLoader implements Common.StringOutputStream.OutputStream {
     this.firstChunk = true;
     this.loadedBytes = 0;
     this.jsonTokenizer = new TextUtils.TextUtils.BalancedJSONTokenizer(this.writeBalancedJSON.bind(this), true);
+    this.filter = null;
   }
 
   static async loadFromFile(file: File, client: Client): Promise<TimelineLoader> {
@@ -86,15 +96,25 @@ export class TimelineLoader implements Common.StringOutputStream.OutputStream {
     return loader;
   }
 
+  static getCpuProfileFilter(): TimelineModel.TimelineModelFilter.TimelineVisibleEventsFilter {
+    const visibleTypes = [];
+    visibleTypes.push(TimelineModel.TimelineModel.RecordType.JSFrame);
+    visibleTypes.push(TimelineModel.TimelineModel.RecordType.JSIdleFrame);
+    visibleTypes.push(TimelineModel.TimelineModel.RecordType.JSSystemFrame);
+    return new TimelineModel.TimelineModelFilter.TimelineVisibleEventsFilter(visibleTypes);
+  }
+
   static loadFromCpuProfile(profile: Protocol.Profiler.Profile|null, client: Client, title?: string): TimelineLoader {
     const loader = new TimelineLoader(client, /* shouldSaveTraceEventsToFile= */ false, title);
 
     try {
-      const events = TimelineModel.TimelineJSProfile.TimelineJSProfileProcessor.buildTraceProfileFromCpuProfile(
+      const events = TimelineModel.TimelineJSProfile.TimelineJSProfileProcessor.createFakeTraceFromCpuProfile(
           profile, /* tid */ 1, /* injectPageEvent */ true);
 
       loader.backingStorage.appendString(JSON.stringify(profile));
       loader.backingStorage.finishWriting();
+
+      loader.filter = TimelineLoader.getCpuProfileFilter();
 
       window.setTimeout(async () => {
         void loader.addEvents(events);
@@ -137,7 +157,7 @@ export class TimelineLoader implements Common.StringOutputStream.OutputStream {
 
   async addEvents(events: SDK.TracingManager.EventPayload[]): Promise<void> {
     this.client?.loadingStarted();
-    const eventsPerChunk = 5000;
+    const eventsPerChunk = 15_000;
     for (let i = 0; i < events.length; i += eventsPerChunk) {
       const chunk = events.slice(i, i + eventsPerChunk);
       (this.tracingModel as SDK.TracingModel.TracingModel).addEvents(chunk);
@@ -151,7 +171,7 @@ export class TimelineLoader implements Common.StringOutputStream.OutputStream {
     this.tracingModel = null;
     this.backingStorage.reset();
     if (this.client) {
-      this.client.loadingComplete(null);
+      this.client.loadingComplete(null, null);
       this.client = null;
     }
     if (this.canceledCallback) {
@@ -283,19 +303,20 @@ export class TimelineLoader implements Common.StringOutputStream.OutputStream {
       this.buffer = '';
     }
     (this.tracingModel as SDK.TracingModel.TracingModel).tracingComplete();
-    await (this.client as Client).loadingComplete(this.tracingModel);
+    await (this.client as Client).loadingComplete(this.tracingModel, this.filter);
   }
 
   private parseCPUProfileFormat(text: string): void {
     let traceEvents;
     try {
       const profile = JSON.parse(text);
-      traceEvents = TimelineModel.TimelineJSProfile.TimelineJSProfileProcessor.buildTraceProfileFromCpuProfile(
+      traceEvents = TimelineModel.TimelineJSProfile.TimelineJSProfileProcessor.createFakeTraceFromCpuProfile(
           profile, /* tid */ 1, /* injectPageEvent */ true);
     } catch (e) {
       this.reportErrorAndCancelLoading(i18nString(UIStrings.malformedCpuProfileFormat));
       return;
     }
+    this.filter = TimelineLoader.getCpuProfileFilter();
     (this.tracingModel as SDK.TracingModel.TracingModel).addEvents(traceEvents);
   }
 }
@@ -309,7 +330,9 @@ export interface Client {
 
   processingStarted(): void;
 
-  loadingComplete(tracingModel: SDK.TracingModel.TracingModel|null): void;
+  loadingComplete(
+      tracingModel: SDK.TracingModel.TracingModel|null,
+      exclusiveFilter: TimelineModel.TimelineModelFilter.TimelineModelFilter|null): void;
 }
 
 // TODO(crbug.com/1167717): Make this a const enum again

@@ -581,14 +581,12 @@ bool LiftoffAssembler::NeedsAlignment(ValueKind kind) {
   return kind == kS128 || is_reference(kind);
 }
 
-void LiftoffAssembler::LoadConstant(LiftoffRegister reg, WasmValue value,
-                                    RelocInfo::Mode rmode) {
+void LiftoffAssembler::LoadConstant(LiftoffRegister reg, WasmValue value) {
   switch (value.type().kind()) {
     case kI32:
-      MacroAssembler::Move(reg.gp(), Operand(value.to_i32(), rmode));
+      MacroAssembler::Move(reg.gp(), Operand(value.to_i32()));
       break;
     case kI64: {
-      DCHECK(RelocInfo::IsNoInfo(rmode));
       int32_t low_word = value.to_i64();
       int32_t high_word = value.to_i64() >> 32;
       MacroAssembler::Move(reg.low_gp(), Operand(low_word));
@@ -781,16 +779,12 @@ void LiftoffAssembler::StoreTaggedPointer(Register dst_addr,
   if (skip_write_barrier || v8_flags.disable_write_barriers) return;
 
   // The write barrier.
-  Label write_barrier;
   Label exit;
-  CheckPageFlag(dst_addr, MemoryChunk::kPointersFromHereAreInterestingMask, ne,
-                &write_barrier);
-  b(&exit);
-  bind(&write_barrier);
+  CheckPageFlag(dst_addr, MemoryChunk::kPointersFromHereAreInterestingMask,
+                kZero, &exit);
   JumpIfSmi(src.gp(), &exit);
-  CheckPageFlag(src.gp(),
-                MemoryChunk::kPointersToHereAreInterestingOrInSharedHeapMask,
-                eq, &exit);
+  CheckPageFlag(src.gp(), MemoryChunk::kPointersToHereAreInterestingMask, eq,
+                &exit);
   CallRecordWriteStubSaveRegisters(
       dst_addr,
       actual_offset_reg == no_reg ? Operand(offset_imm)
@@ -2481,7 +2475,8 @@ void LiftoffAssembler::LoadTransform(LiftoffRegister dst, Register src_addr,
 void LiftoffAssembler::LoadLane(LiftoffRegister dst, LiftoffRegister src,
                                 Register addr, Register offset_reg,
                                 uintptr_t offset_imm, LoadType type,
-                                uint8_t laneidx, uint32_t* protected_load_pc) {
+                                uint8_t laneidx, uint32_t* protected_load_pc,
+                                bool /* i64_offset */) {
   UseScratchRegisterScope temps(this);
   Register actual_src_addr = liftoff::CalculateActualAddress(
       this, &temps, addr, offset_reg, offset_imm);
@@ -2498,7 +2493,8 @@ void LiftoffAssembler::LoadLane(LiftoffRegister dst, LiftoffRegister src,
 void LiftoffAssembler::StoreLane(Register dst, Register offset,
                                  uintptr_t offset_imm, LiftoffRegister src,
                                  StoreType type, uint8_t laneidx,
-                                 uint32_t* protected_store_pc) {
+                                 uint32_t* protected_store_pc,
+                                 bool /* i64_offset */) {
   UseScratchRegisterScope temps(this);
   Register actual_dst_addr =
       liftoff::CalculateActualAddress(this, &temps, dst, offset, offset_imm);
@@ -3576,14 +3572,40 @@ void LiftoffAssembler::emit_i16x8_relaxed_q15mulr_s(LiftoffRegister dst,
 void LiftoffAssembler::emit_i16x8_dot_i8x16_i7x16_s(LiftoffRegister dst,
                                                     LiftoffRegister lhs,
                                                     LiftoffRegister rhs) {
-  bailout(kSimd, "emit_i16x8_dot_i8x16_i7x16_s");
+  QwNeonRegister dest = liftoff::GetSimd128Register(dst);
+  QwNeonRegister left = liftoff::GetSimd128Register(lhs);
+  QwNeonRegister right = liftoff::GetSimd128Register(rhs);
+
+  UseScratchRegisterScope temps(this);
+  Simd128Register scratch = temps.AcquireQ();
+
+  vmull(NeonS8, scratch, left.low(), right.low());
+  vpadd(Neon16, dest.low(), scratch.low(), scratch.high());
+
+  vmull(NeonS8, scratch, left.high(), right.high());
+  vpadd(Neon16, dest.high(), scratch.low(), scratch.high());
 }
 
 void LiftoffAssembler::emit_i32x4_dot_i8x16_i7x16_add_s(LiftoffRegister dst,
                                                         LiftoffRegister lhs,
                                                         LiftoffRegister rhs,
                                                         LiftoffRegister acc) {
-  bailout(kSimd, "emit_i32x4_dot_i8x16_i7x16_add_s");
+  QwNeonRegister dest = liftoff::GetSimd128Register(dst);
+  QwNeonRegister left = liftoff::GetSimd128Register(lhs);
+  QwNeonRegister right = liftoff::GetSimd128Register(rhs);
+  QwNeonRegister accu = liftoff::GetSimd128Register(acc);
+
+  UseScratchRegisterScope temps(this);
+  Simd128Register scratch = temps.AcquireQ();
+
+  vmull(NeonS8, scratch, left.low(), right.low());
+  vpadd(Neon16, dest.low(), scratch.low(), scratch.high());
+
+  vmull(NeonS8, scratch, left.high(), right.high());
+  vpadd(Neon16, dest.high(), scratch.low(), scratch.high());
+
+  vpaddl(NeonS16, dest, dest);
+  vadd(Neon32, dest, dest, accu);
 }
 
 void LiftoffAssembler::emit_i8x16_shuffle(LiftoffRegister dst,
@@ -4207,40 +4229,52 @@ void LiftoffAssembler::emit_f32x4_qfma(LiftoffRegister dst,
                                        LiftoffRegister src1,
                                        LiftoffRegister src2,
                                        LiftoffRegister src3) {
-  vmul(liftoff::GetSimd128Register(dst), liftoff::GetSimd128Register(src1),
+  UseScratchRegisterScope temps(this);
+  Simd128Register scratch =
+      dst == src3 ? temps.AcquireQ() : liftoff::GetSimd128Register(dst);
+  vmul(scratch, liftoff::GetSimd128Register(src1),
        liftoff::GetSimd128Register(src2));
   vadd(liftoff::GetSimd128Register(dst), liftoff::GetSimd128Register(src3),
-       liftoff::GetSimd128Register(dst));
+       scratch);
 }
 
 void LiftoffAssembler::emit_f32x4_qfms(LiftoffRegister dst,
                                        LiftoffRegister src1,
                                        LiftoffRegister src2,
                                        LiftoffRegister src3) {
-  vmul(liftoff::GetSimd128Register(dst), liftoff::GetSimd128Register(src1),
+  UseScratchRegisterScope temps(this);
+  Simd128Register scratch =
+      dst == src3 ? temps.AcquireQ() : liftoff::GetSimd128Register(dst);
+  vmul(scratch, liftoff::GetSimd128Register(src1),
        liftoff::GetSimd128Register(src2));
   vsub(liftoff::GetSimd128Register(dst), liftoff::GetSimd128Register(src3),
-       liftoff::GetSimd128Register(dst));
+       scratch);
 }
 
 void LiftoffAssembler::emit_f64x2_qfma(LiftoffRegister dst,
                                        LiftoffRegister src1,
                                        LiftoffRegister src2,
                                        LiftoffRegister src3) {
-  vmul(dst.low_fp(), src1.low_fp(), src2.low_fp());
-  vmul(dst.high_fp(), src1.high_fp(), src2.high_fp());
-  vadd(dst.low_fp(), src3.low_fp(), dst.low_fp());
-  vadd(dst.high_fp(), src3.high_fp(), dst.high_fp());
+  UseScratchRegisterScope temps(this);
+  Simd128Register scratch =
+      dst == src3 ? temps.AcquireQ() : liftoff::GetSimd128Register(dst);
+  vmul(scratch.low(), src1.low_fp(), src2.low_fp());
+  vmul(scratch.high(), src1.high_fp(), src2.high_fp());
+  vadd(dst.low_fp(), src3.low_fp(), scratch.low());
+  vadd(dst.high_fp(), src3.high_fp(), scratch.high());
 }
 
 void LiftoffAssembler::emit_f64x2_qfms(LiftoffRegister dst,
                                        LiftoffRegister src1,
                                        LiftoffRegister src2,
                                        LiftoffRegister src3) {
-  vmul(dst.low_fp(), src1.low_fp(), src2.low_fp());
-  vmul(dst.high_fp(), src1.high_fp(), src2.high_fp());
-  vsub(dst.low_fp(), src3.low_fp(), dst.low_fp());
-  vsub(dst.high_fp(), src3.high_fp(), dst.high_fp());
+  UseScratchRegisterScope temps(this);
+  Simd128Register scratch =
+      dst == src3 ? temps.AcquireQ() : liftoff::GetSimd128Register(dst);
+  vmul(scratch.low(), src1.low_fp(), src2.low_fp());
+  vmul(scratch.high(), src1.high_fp(), src2.high_fp());
+  vsub(dst.low_fp(), src3.low_fp(), scratch.low());
+  vsub(dst.high_fp(), src3.high_fp(), scratch.high());
 }
 
 void LiftoffAssembler::StackCheck(Label* ool_code, Register limit_address) {

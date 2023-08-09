@@ -12,11 +12,11 @@ constexpr char kSwapManagementServicePath[] = "/org/chromium/SwapManagement";
 constexpr char kSwapManagementServiceName[] = "org.chromium.SwapManagement";
 
 // Methods.
-constexpr char kSwapEnable[] = "SwapEnable";
-constexpr char kSwapDisable[] = "SwapDisable";
-constexpr char kSwapStartStop[] = "SwapStartStop";
+constexpr char kSwapStart[] = "SwapStart";
+constexpr char kSwapStop[] = "SwapStop";
+constexpr char kSwapRestart[] = "SwapRestart";
 constexpr char kSwapStatus[] = "SwapStatus";
-constexpr char kSwapSetParameter[] = "SwapSetParameter";
+constexpr char SwapSetSize[] = "SwapSetSize";
 constexpr char kSwapZramEnableWriteback[] = "SwapZramEnableWriteback";
 constexpr char kSwapZramSetWritebackLimit[] = "SwapZramSetWritebackLimit";
 constexpr char kSwapZramMarkIdle[] = "SwapZramMarkIdle";

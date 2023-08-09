@@ -416,6 +416,7 @@ const EnumeratedHistogram = {
   ManifestSectionSelected: 'DevTools.ManifestSectionSelected',
   PanelClosed: 'DevTools.PanelClosed',
   PanelShown: 'DevTools.PanelShown',
+  RecordingAssertion: 'DevTools.RecordingAssertion',
   RecordingCodeToggled: 'DevTools.RecordingCodeToggled',
   RecordingCopiedToClipboard: 'DevTools.RecordingCopiedToClipboard',
   RecordingEdited: 'DevTools.RecordingEdited',
@@ -429,6 +430,9 @@ const EnumeratedHistogram = {
   NetworkPanelResponsePreviewOpened: 'DevTools.NetworkPanelResponsePreviewOpened',
   StyleTextCopied: 'DevTools.StyleTextCopied',
   SyncSetting: 'DevTools.SyncSetting',
+  ColorConvertedFrom: 'DevTools.ColorConvertedFrom',
+  ColorPickerOpenedFrom: 'DevTools.ColorPickerOpenedFrom',
+  CSSPropertyDocumentation: 'DevTools.CSSPropertyDocumentation',
 };
 
 /**

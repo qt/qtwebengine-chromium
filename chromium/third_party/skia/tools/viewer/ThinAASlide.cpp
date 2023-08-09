@@ -11,7 +11,10 @@
 #include "include/core/SkImage.h"
 #include "include/core/SkPath.h"
 #include "include/core/SkSurface.h"
+#include "include/private/base/SkTArray.h"
 #include "tools/viewer/Slide.h"
+
+using namespace skia_private;
 
 namespace skiagm {
 
@@ -62,8 +65,6 @@ public:
 
 private:
     RectRenderer() {}
-
-    using INHERITED = ShapeRenderer;
 };
 
 class PathRenderer : public ShapeRenderer {
@@ -147,8 +148,6 @@ private:
     PathRenderer(SkScalar depth, bool hairline)
             : fDepth(depth)
             , fHairline(hairline) {}
-
-    using INHERITED = ShapeRenderer;
 };
 
 class OffscreenShapeRenderer : public ShapeRenderer {
@@ -241,8 +240,6 @@ private:
             , fLastRendered(nullptr)
             , fRenderer(std::move(renderer))
             , fSupersampleFactor(supersample) { }
-
-    using INHERITED = ShapeRenderer;
 };
 
 class ThinAASlide : public Slide {
@@ -411,13 +408,13 @@ public:
 private:
     // Base renderers that get wrapped on the offscreen renderers so that they can be transformed
     // for visualization, or supersampled.
-    SkTArray<sk_sp<ShapeRenderer>> fShapes;
+    TArray<sk_sp<ShapeRenderer>> fShapes;
 
-    SkTArray<sk_sp<OffscreenShapeRenderer>> fNative;
-    SkTArray<sk_sp<OffscreenShapeRenderer>> fRaster;
-    SkTArray<sk_sp<OffscreenShapeRenderer>> fHairline;
-    SkTArray<sk_sp<OffscreenShapeRenderer>> fSS4;
-    SkTArray<sk_sp<OffscreenShapeRenderer>> fSS16;
+    TArray<sk_sp<OffscreenShapeRenderer>> fNative;
+    TArray<sk_sp<OffscreenShapeRenderer>> fRaster;
+    TArray<sk_sp<OffscreenShapeRenderer>> fHairline;
+    TArray<sk_sp<OffscreenShapeRenderer>> fSS4;
+    TArray<sk_sp<OffscreenShapeRenderer>> fSS16;
 
     SkScalar fStrokeWidth;
 
@@ -456,7 +453,7 @@ private:
     }
 
     void drawShapes(SkCanvas* canvas, const char* name, int gridX,
-                    SkTArray<sk_sp<OffscreenShapeRenderer>> shapes) {
+                    TArray<sk_sp<OffscreenShapeRenderer>> shapes) {
         SkAutoCanvasRestore autoRestore(canvas, /* save */ true);
 
         for (int i = 0; i < shapes.size(); ++i) {

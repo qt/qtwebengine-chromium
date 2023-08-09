@@ -29,7 +29,6 @@
  */
 
 import * as Common from '../../core/common/common.js';
-import * as Host from '../../core/host/host.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as PerfUI from '../../ui/legacy/components/perf_ui/perf_ui.js';
 import type * as SDK from '../../core/sdk/sdk.js';
@@ -42,9 +41,9 @@ export class ProfileFlameChartDataProvider implements PerfUI.FlameChart.FlameCha
   readonly colorGeneratorInternal: Common.Color.Generator;
   maxStackDepthInternal: number;
   // eslint-disable-next-line @typescript-eslint/naming-convention
-  timelineData_: PerfUI.FlameChart.TimelineData|null;
+  timelineData_: PerfUI.FlameChart.FlameChartTimelineData|null;
   entryNodes: SDK.ProfileTreeModel.ProfileNode[];
-  font?: string;
+  #font: string;
   boldFont?: string;
 
   constructor() {
@@ -52,6 +51,7 @@ export class ProfileFlameChartDataProvider implements PerfUI.FlameChart.FlameCha
     this.maxStackDepthInternal = 0;
     this.timelineData_ = null;
     this.entryNodes = [];
+    this.#font = `${PerfUI.Font.DEFAULT_FONT_SIZE} ${PerfUI.Font.getFontFamilyForCanvas()}`;
   }
 
   static colorGenerator(): Common.Color.Generator {
@@ -82,11 +82,11 @@ export class ProfileFlameChartDataProvider implements PerfUI.FlameChart.FlameCha
     return this.maxStackDepthInternal;
   }
 
-  timelineData(): PerfUI.FlameChart.TimelineData|null {
+  timelineData(): PerfUI.FlameChart.FlameChartTimelineData|null {
     return this.timelineData_ || this.calculateTimelineData();
   }
 
-  calculateTimelineData(): PerfUI.FlameChart.TimelineData {
+  calculateTimelineData(): PerfUI.FlameChart.FlameChartTimelineData {
     throw 'Not implemented.';
   }
 
@@ -104,11 +104,8 @@ export class ProfileFlameChartDataProvider implements PerfUI.FlameChart.FlameCha
   }
 
   entryFont(entryIndex: number): string|null {
-    if (!this.font) {
-      this.font = '11px ' + Host.Platform.fontFamily();
-      this.boldFont = 'bold ' + this.font;
-    }
-    return this.entryHasDeoptReason(entryIndex) ? this.boldFont as string : this.font;
+    const boldFont = 'bold ' + this.#font;
+    return this.entryHasDeoptReason(entryIndex) ? boldFont : this.#font;
   }
 
   entryHasDeoptReason(_entryIndex: number): boolean {
@@ -179,7 +176,7 @@ export class CPUProfileFlameChart extends
     this.searchResults = [];
   }
 
-  focus(): void {
+  override focus(): void {
     this.mainPane.focus();
   }
 
@@ -362,11 +359,11 @@ export class OverviewPane extends Common.ObjectWrapper.eventMixin<OverviewPaneEv
     this.dispatchEventToListeners(OverviewPaneEvents.WindowChanged, windowPosition);
   }
 
-  timelineData(): PerfUI.FlameChart.TimelineData|null {
+  timelineData(): PerfUI.FlameChart.FlameChartTimelineData|null {
     return this.dataProvider.timelineData();
   }
 
-  onResize(): void {
+  override onResize(): void {
     this.scheduleUpdate();
   }
 
@@ -422,7 +419,7 @@ export class OverviewPane extends Common.ObjectWrapper.eventMixin<OverviewPaneEv
 
   calculateDrawData(width: number): Uint8Array {
     const dataProvider = this.dataProvider;
-    const timelineData = (this.timelineData() as PerfUI.FlameChart.TimelineData);
+    const timelineData = (this.timelineData() as PerfUI.FlameChart.FlameChartTimelineData);
     const entryStartTimes = timelineData.entryStartTimes;
     const entryTotalTimes = timelineData.entryTotalTimes;
     const entryLevels = timelineData.entryLevels;

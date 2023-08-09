@@ -830,6 +830,12 @@ struct QUIC_NO_EXPORT QuicSSLConfig {
   absl::optional<QuicSignatureAlgorithmVector> signing_algorithm_prefs;
   // Client certificate mode for mTLS support. Only used at server side.
   ClientCertMode client_cert_mode = ClientCertMode::kNone;
+  // As a client, the ECHConfigList to use with ECH. If empty, ECH is not
+  // offered.
+  std::string ech_config_list;
+  // As a client, whether ECH GREASE is enabled. If `ech_config_list` is
+  // not empty, this value does nothing.
+  bool ech_grease_enabled = false;
 };
 
 // QuicDelayedSSLConfig contains a subset of SSL config that can be applied
@@ -879,6 +885,8 @@ enum QuicEcnCodepoint {
   ECN_CE = 3,
 };
 
+QUICHE_EXPORT std::string EcnCodepointToString(QuicEcnCodepoint ecn);
+
 // This struct reports the Explicit Congestion Notification (ECN) contents of
 // the ACK_ECN frame. They are the cumulative number of QUIC packets received
 // for that codepoint in a given Packet Number Space.
@@ -893,10 +901,27 @@ struct QUIC_EXPORT_PRIVATE QuicEcnCounts {
                            std::to_string(ce));
   }
 
+  bool operator==(const QuicEcnCounts& other) const {
+    return (this->ect0 == other.ect0 && this->ect1 == other.ect1 &&
+            this->ce == other.ce);
+  }
+
   QuicPacketCount ect0 = 0;
   QuicPacketCount ect1 = 0;
   QuicPacketCount ce = 0;
 };
+
+// Type of the priorities used by a QUIC session.
+enum class QuicPriorityType : uint8_t {
+  // HTTP priorities as defined by RFC 9218
+  kHttp,
+  // WebTransport priorities as defined by <https://w3c.github.io/webtransport/>
+  kWebTransport,
+};
+
+QUICHE_EXPORT std::string QuicPriorityTypeToString(QuicPriorityType type);
+QUIC_EXPORT_PRIVATE std::ostream& operator<<(std::ostream& os,
+                                             QuicPriorityType type);
 
 }  // namespace quic
 

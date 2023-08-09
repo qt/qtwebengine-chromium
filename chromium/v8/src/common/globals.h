@@ -122,10 +122,10 @@ namespace internal {
 #define V8_CAN_CREATE_SHARED_HEAP_BOOL false
 #endif
 
-#if defined(V8_STATIC_ROOTS)
-#define V8_STATIC_ROOTS_BOOL true
+#ifdef V8_STATIC_ROOTS_GENERATION
+#define V8_STATIC_ROOTS_GENERATION_BOOL true
 #else
-#define V8_STATIC_ROOTS_BOOL false
+#define V8_STATIC_ROOTS_GENERATION_BOOL false
 #endif
 
 #ifdef V8_ENABLE_SANDBOX
@@ -296,6 +296,12 @@ const size_t kShortBuiltinCallsOldSpaceSizeThreshold = size_t{2} * GB;
 #define V8_SFI_HAS_UNIQUE_ID true
 #else
 #define V8_SFI_HAS_UNIQUE_ID false
+#endif
+
+#if V8_SFI_HAS_UNIQUE_ID && TAGGED_SIZE_8_BYTES
+#define V8_SFI_NEEDS_PADDING true
+#else
+#define V8_SFI_NEEDS_PADDING false
 #endif
 
 #if defined(V8_OS_WIN) && defined(V8_TARGET_ARCH_X64)
@@ -1576,9 +1582,18 @@ inline bool IsDeclaredVariableMode(VariableMode mode) {
   return mode <= VariableMode::kVar;
 }
 
-inline bool IsPrivateMethodOrAccessorVariableMode(VariableMode mode) {
-  return mode >= VariableMode::kPrivateMethod &&
+inline bool IsPrivateAccessorVariableMode(VariableMode mode) {
+  return mode >= VariableMode::kPrivateSetterOnly &&
          mode <= VariableMode::kPrivateGetterAndSetter;
+}
+
+inline bool IsPrivateMethodVariableMode(VariableMode mode) {
+  return mode == VariableMode::kPrivateMethod;
+}
+
+inline bool IsPrivateMethodOrAccessorVariableMode(VariableMode mode) {
+  return IsPrivateMethodVariableMode(mode) ||
+         IsPrivateAccessorVariableMode(mode);
 }
 
 inline bool IsSerializableVariableMode(VariableMode mode) {
@@ -1838,6 +1853,17 @@ inline std::ostream& operator<<(std::ostream& os, CollectionKind kind) {
   }
   UNREACHABLE();
 }
+
+enum class IsolateExecutionModeFlag : uint8_t {
+  // Default execution mode.
+  kNoFlags = 0,
+  // Set if the Isolate is being profiled. Causes collection of extra compile
+  // info.
+  kIsProfiling = 1 << 0,
+  // Set if side effect checking is enabled for the Isolate.
+  // See Debug::StartSideEffectCheckMode().
+  kCheckSideEffects = 1 << 1,
+};
 
 // Flags for the runtime function kDefineKeyedOwnPropertyInLiteral.
 // - Whether the function name should be set or not.
@@ -2138,6 +2164,7 @@ class PtrComprCageBase {
 #else
 class PtrComprCageBase {
  public:
+  explicit constexpr PtrComprCageBase(Address address) {}
   PtrComprCageBase() = default;
   // NOLINTNEXTLINE
   PtrComprCageBase(const Isolate* isolate) {}

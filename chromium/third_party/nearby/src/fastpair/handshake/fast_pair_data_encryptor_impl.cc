@@ -1,4 +1,4 @@
-// Copyright 2022 Google LLC
+// Copyright 2023 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -74,7 +74,7 @@ void FastPairDataEncryptorImpl::Factory::CreateAsync(
     return;
   }
 
-  if (device.protocol == Protocol::kFastPairInitialPairing) {
+  if (device.GetProtocol() == Protocol::kFastPairInitialPairing) {
     CreateAsyncWithKeyExchange(device, std::move(on_get_instance_callback));
   }
 }
@@ -87,15 +87,15 @@ void FastPairDataEncryptorImpl::Factory::CreateAsyncWithKeyExchange(
   // to generate the new secret key pair.
   NEARBY_LOGS(INFO) << __func__ << ": Attempting to get device metadata.";
   FastPairRepository::Get()->GetDeviceMetadata(
-      device.model_id,
-      [&device, &on_get_instance_callback](DeviceMetadata& metadata) {
+      device.GetModelId(),
+      [on_get_instance_callback = std::move(on_get_instance_callback)](
+          DeviceMetadata& metadata) mutable {
         FastPairDataEncryptorImpl::Factory::DeviceMetadataRetrieved(
-            device, std::move(on_get_instance_callback), metadata);
+            std::move(on_get_instance_callback), metadata);
       });
 }
 
 void FastPairDataEncryptorImpl::Factory::DeviceMetadataRetrieved(
-    const FastPairDevice& device,
     absl::AnyInvocable<void(std::unique_ptr<FastPairDataEncryptor>)>
         on_get_instance_callback,
     DeviceMetadata& device_metadata) {
@@ -126,12 +126,12 @@ FastPairDataEncryptorImpl::FastPairDataEncryptorImpl(
 FastPairDataEncryptorImpl::~FastPairDataEncryptorImpl() = default;
 
 std::array<uint8_t, kAesBlockByteSize> FastPairDataEncryptorImpl::EncryptBytes(
-    const std::array<uint8_t, kAesBlockByteSize>& bytes_to_encrypt) {
+    const std::array<uint8_t, kAesBlockByteSize>& bytes_to_encrypt) const {
   return FastPairEncryption::EncryptBytes(shared_secret_key_, bytes_to_encrypt);
 }
 
-std::optional<std::array<uint8_t, kPublicKeyByteSize>>&
-FastPairDataEncryptorImpl::GetPublicKey() {
+std::optional<std::array<uint8_t, kPublicKeyByteSize>>
+FastPairDataEncryptorImpl::GetPublicKey() const {
   return public_key_;
 }
 

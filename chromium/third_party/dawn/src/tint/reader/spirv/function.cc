@@ -32,7 +32,8 @@
 #include "src/tint/ast/unary_op_expression.h"
 #include "src/tint/ast/variable_decl_statement.h"
 #include "src/tint/builtin/builtin_value.h"
-#include "src/tint/sem/builtin_type.h"
+#include "src/tint/builtin/function.h"
+#include "src/tint/switch.h"
 #include "src/tint/transform/spirv_atomic.h"
 #include "src/tint/type/depth_texture.h"
 #include "src/tint/type/sampled_texture.h"
@@ -452,42 +453,42 @@ std::string GetGlslStd450FuncName(uint32_t ext_opcode) {
 }
 
 // Returns the WGSL standard library function builtin for the
-// given instruction, or sem::BuiltinType::kNone
-sem::BuiltinType GetBuiltin(spv::Op opcode) {
+// given instruction, or builtin::Function::kNone
+builtin::Function GetBuiltin(spv::Op opcode) {
     switch (opcode) {
         case spv::Op::OpBitCount:
-            return sem::BuiltinType::kCountOneBits;
+            return builtin::Function::kCountOneBits;
         case spv::Op::OpBitFieldInsert:
-            return sem::BuiltinType::kInsertBits;
+            return builtin::Function::kInsertBits;
         case spv::Op::OpBitFieldSExtract:
         case spv::Op::OpBitFieldUExtract:
-            return sem::BuiltinType::kExtractBits;
+            return builtin::Function::kExtractBits;
         case spv::Op::OpBitReverse:
-            return sem::BuiltinType::kReverseBits;
+            return builtin::Function::kReverseBits;
         case spv::Op::OpDot:
-            return sem::BuiltinType::kDot;
+            return builtin::Function::kDot;
         case spv::Op::OpDPdx:
-            return sem::BuiltinType::kDpdx;
+            return builtin::Function::kDpdx;
         case spv::Op::OpDPdy:
-            return sem::BuiltinType::kDpdy;
+            return builtin::Function::kDpdy;
         case spv::Op::OpFwidth:
-            return sem::BuiltinType::kFwidth;
+            return builtin::Function::kFwidth;
         case spv::Op::OpDPdxFine:
-            return sem::BuiltinType::kDpdxFine;
+            return builtin::Function::kDpdxFine;
         case spv::Op::OpDPdyFine:
-            return sem::BuiltinType::kDpdyFine;
+            return builtin::Function::kDpdyFine;
         case spv::Op::OpFwidthFine:
-            return sem::BuiltinType::kFwidthFine;
+            return builtin::Function::kFwidthFine;
         case spv::Op::OpDPdxCoarse:
-            return sem::BuiltinType::kDpdxCoarse;
+            return builtin::Function::kDpdxCoarse;
         case spv::Op::OpDPdyCoarse:
-            return sem::BuiltinType::kDpdyCoarse;
+            return builtin::Function::kDpdyCoarse;
         case spv::Op::OpFwidthCoarse:
-            return sem::BuiltinType::kFwidthCoarse;
+            return builtin::Function::kFwidthCoarse;
         default:
             break;
     }
-    return sem::BuiltinType::kNone;
+    return builtin::Function::kNone;
 }
 
 // @param opcode a SPIR-V opcode
@@ -692,7 +693,8 @@ class StructuredTraverser {
 
 /// A StatementBuilder for ast::SwitchStatement
 /// @see StatementBuilder
-struct SwitchStatementBuilder final : public Castable<SwitchStatementBuilder, StatementBuilder> {
+struct SwitchStatementBuilder final
+    : public utils::Castable<SwitchStatementBuilder, StatementBuilder> {
     /// Constructor
     /// @param cond the switch statement condition
     explicit SwitchStatementBuilder(const ast::Expression* cond) : condition(cond) {}
@@ -705,8 +707,7 @@ struct SwitchStatementBuilder final : public Castable<SwitchStatementBuilder, St
         auto reversed_cases = cases;
         std::reverse(reversed_cases.begin(), reversed_cases.end());
 
-        return builder->create<ast::SwitchStatement>(Source{}, condition,
-                                                     std::move(reversed_cases));
+        return builder->Switch(Source{}, condition, std::move(reversed_cases));
     }
 
     /// Switch statement condition
@@ -717,7 +718,7 @@ struct SwitchStatementBuilder final : public Castable<SwitchStatementBuilder, St
 
 /// A StatementBuilder for ast::IfStatement
 /// @see StatementBuilder
-struct IfStatementBuilder final : public Castable<IfStatementBuilder, StatementBuilder> {
+struct IfStatementBuilder final : public utils::Castable<IfStatementBuilder, StatementBuilder> {
     /// Constructor
     /// @param c the if-statement condition
     explicit IfStatementBuilder(const ast::Expression* c) : cond(c) {}
@@ -725,7 +726,7 @@ struct IfStatementBuilder final : public Castable<IfStatementBuilder, StatementB
     /// @param builder the program builder
     /// @returns the built ast::IfStatement
     const ast::IfStatement* Build(ProgramBuilder* builder) const override {
-        return builder->create<ast::IfStatement>(Source{}, cond, body, else_stmt);
+        return builder->create<ast::IfStatement>(Source{}, cond, body, else_stmt, utils::Empty);
     }
 
     /// If-statement condition
@@ -738,11 +739,11 @@ struct IfStatementBuilder final : public Castable<IfStatementBuilder, StatementB
 
 /// A StatementBuilder for ast::LoopStatement
 /// @see StatementBuilder
-struct LoopStatementBuilder final : public Castable<LoopStatementBuilder, StatementBuilder> {
+struct LoopStatementBuilder final : public utils::Castable<LoopStatementBuilder, StatementBuilder> {
     /// @param builder the program builder
     /// @returns the built ast::LoopStatement
     ast::LoopStatement* Build(ProgramBuilder* builder) const override {
-        return builder->create<ast::LoopStatement>(Source{}, body, continuing);
+        return builder->create<ast::LoopStatement>(Source{}, body, continuing, utils::Empty);
     }
 
     /// Loop-statement block body
@@ -3324,7 +3325,8 @@ const ast::Statement* FunctionEmitter::MakeSimpleIf(const ast::Expression* condi
         else_block = create<ast::BlockStatement>(StatementList{else_stmt}, utils::Empty);
     }
 
-    auto* if_stmt = create<ast::IfStatement>(Source{}, condition, if_block, else_block);
+    auto* if_stmt =
+        create<ast::IfStatement>(Source{}, condition, if_block, else_block, utils::Empty);
 
     return if_stmt;
 }
@@ -3816,8 +3818,15 @@ TypedExpression FunctionEmitter::MaybeEmitCombinatorialValue(
     }
 
     const auto builtin = GetBuiltin(op);
-    if (builtin != sem::BuiltinType::kNone) {
-        return MakeBuiltinCall(inst);
+    if (builtin != builtin::Function::kNone) {
+        switch (builtin) {
+            case builtin::Function::kExtractBits:
+                return MakeExtractBitsCall(inst);
+            case builtin::Function::kInsertBits:
+                return MakeInsertBitsCall(inst);
+            default:
+                return MakeBuiltinCall(inst);
+        }
     }
 
     if (op == spv::Op::OpFMod) {
@@ -5250,7 +5259,7 @@ bool FunctionEmitter::EmitControlBarrier(const spvtools::opt::Instruction& inst)
 
 TypedExpression FunctionEmitter::MakeBuiltinCall(const spvtools::opt::Instruction& inst) {
     const auto builtin = GetBuiltin(opcode(inst));
-    auto* name = sem::str(builtin);
+    auto* name = builtin::str(builtin);
     auto* ident = create<ast::Identifier>(Source{}, builder_.Symbols().Register(name));
 
     ExpressionList params;
@@ -5270,6 +5279,42 @@ TypedExpression FunctionEmitter::MakeBuiltinCall(const spvtools::opt::Instructio
     }
     TypedExpression call{result_type, call_expr};
     return parser_impl_.RectifyForcedResultType(call, inst, first_operand_type);
+}
+
+TypedExpression FunctionEmitter::MakeExtractBitsCall(const spvtools::opt::Instruction& inst) {
+    const auto builtin = GetBuiltin(opcode(inst));
+    auto* name = builtin::str(builtin);
+    auto* ident = create<ast::Identifier>(Source{}, builder_.Symbols().Register(name));
+    auto e = MakeOperand(inst, 0);
+    auto offset = ToU32(MakeOperand(inst, 1));
+    auto count = ToU32(MakeOperand(inst, 2));
+    auto* call_expr = builder_.Call(ident, ExpressionList{e.expr, offset.expr, count.expr});
+    auto* result_type = parser_impl_.ConvertType(inst.type_id());
+    if (!result_type) {
+        Fail() << "internal error: no mapped type result of call: " << inst.PrettyPrint();
+        return {};
+    }
+    TypedExpression call{result_type, call_expr};
+    return parser_impl_.RectifyForcedResultType(call, inst, e.type);
+}
+
+TypedExpression FunctionEmitter::MakeInsertBitsCall(const spvtools::opt::Instruction& inst) {
+    const auto builtin = GetBuiltin(opcode(inst));
+    auto* name = builtin::str(builtin);
+    auto* ident = create<ast::Identifier>(Source{}, builder_.Symbols().Register(name));
+    auto e = MakeOperand(inst, 0);
+    auto newbits = MakeOperand(inst, 1);
+    auto offset = ToU32(MakeOperand(inst, 2));
+    auto count = ToU32(MakeOperand(inst, 3));
+    auto* call_expr =
+        builder_.Call(ident, ExpressionList{e.expr, newbits.expr, offset.expr, count.expr});
+    auto* result_type = parser_impl_.ConvertType(inst.type_id());
+    if (!result_type) {
+        Fail() << "internal error: no mapped type result of call: " << inst.PrettyPrint();
+        return {};
+    }
+    TypedExpression call{result_type, call_expr};
+    return parser_impl_.RectifyForcedResultType(call, inst, e.type);
 }
 
 TypedExpression FunctionEmitter::MakeSimpleSelect(const spvtools::opt::Instruction& inst) {
@@ -5741,7 +5786,7 @@ bool FunctionEmitter::EmitImageQuery(const spvtools::opt::Instruction& inst) {
 }
 
 bool FunctionEmitter::EmitAtomicOp(const spvtools::opt::Instruction& inst) {
-    auto emit_atomic = [&](sem::BuiltinType builtin, std::initializer_list<TypedExpression> args) {
+    auto emit_atomic = [&](builtin::Function builtin, std::initializer_list<TypedExpression> args) {
         // Split args into params and expressions
         ParameterList params;
         params.Reserve(args.size());
@@ -5763,7 +5808,7 @@ bool FunctionEmitter::EmitAtomicOp(const spvtools::opt::Instruction& inst) {
 
         // Emit stub, will be removed by transform::SpirvAtomic
         auto* stub = builder_.Func(
-            Source{}, builder_.Symbols().New(std::string("stub_") + sem::str(builtin)),
+            Source{}, builder_.Symbols().New(std::string("stub_") + builtin::str(builtin)),
             std::move(params), ret_type,
             /* body */ nullptr,
             utils::Vector{
@@ -5800,39 +5845,39 @@ bool FunctionEmitter::EmitAtomicOp(const spvtools::opt::Instruction& inst) {
 
     switch (opcode(inst)) {
         case spv::Op::OpAtomicLoad:
-            return emit_atomic(sem::BuiltinType::kAtomicLoad, {oper(/*ptr*/ 0)});
+            return emit_atomic(builtin::Function::kAtomicLoad, {oper(/*ptr*/ 0)});
         case spv::Op::OpAtomicStore:
-            return emit_atomic(sem::BuiltinType::kAtomicStore,
+            return emit_atomic(builtin::Function::kAtomicStore,
                                {oper(/*ptr*/ 0), oper(/*value*/ 3)});
         case spv::Op::OpAtomicExchange:
-            return emit_atomic(sem::BuiltinType::kAtomicExchange,
+            return emit_atomic(builtin::Function::kAtomicExchange,
                                {oper(/*ptr*/ 0), oper(/*value*/ 3)});
         case spv::Op::OpAtomicCompareExchange:
         case spv::Op::OpAtomicCompareExchangeWeak:
-            return emit_atomic(sem::BuiltinType::kAtomicCompareExchangeWeak,
+            return emit_atomic(builtin::Function::kAtomicCompareExchangeWeak,
                                {oper(/*ptr*/ 0), /*value*/ oper(5), /*comparator*/ oper(4)});
         case spv::Op::OpAtomicIIncrement:
-            return emit_atomic(sem::BuiltinType::kAtomicAdd, {oper(/*ptr*/ 0), lit(1)});
+            return emit_atomic(builtin::Function::kAtomicAdd, {oper(/*ptr*/ 0), lit(1)});
         case spv::Op::OpAtomicIDecrement:
-            return emit_atomic(sem::BuiltinType::kAtomicSub, {oper(/*ptr*/ 0), lit(1)});
+            return emit_atomic(builtin::Function::kAtomicSub, {oper(/*ptr*/ 0), lit(1)});
         case spv::Op::OpAtomicIAdd:
-            return emit_atomic(sem::BuiltinType::kAtomicAdd, {oper(/*ptr*/ 0), oper(/*value*/ 3)});
+            return emit_atomic(builtin::Function::kAtomicAdd, {oper(/*ptr*/ 0), oper(/*value*/ 3)});
         case spv::Op::OpAtomicISub:
-            return emit_atomic(sem::BuiltinType::kAtomicSub, {oper(/*ptr*/ 0), oper(/*value*/ 3)});
+            return emit_atomic(builtin::Function::kAtomicSub, {oper(/*ptr*/ 0), oper(/*value*/ 3)});
         case spv::Op::OpAtomicSMin:
-            return emit_atomic(sem::BuiltinType::kAtomicMin, {oper(/*ptr*/ 0), oper(/*value*/ 3)});
+            return emit_atomic(builtin::Function::kAtomicMin, {oper(/*ptr*/ 0), oper(/*value*/ 3)});
         case spv::Op::OpAtomicUMin:
-            return emit_atomic(sem::BuiltinType::kAtomicMin, {oper(/*ptr*/ 0), oper(/*value*/ 3)});
+            return emit_atomic(builtin::Function::kAtomicMin, {oper(/*ptr*/ 0), oper(/*value*/ 3)});
         case spv::Op::OpAtomicSMax:
-            return emit_atomic(sem::BuiltinType::kAtomicMax, {oper(/*ptr*/ 0), oper(/*value*/ 3)});
+            return emit_atomic(builtin::Function::kAtomicMax, {oper(/*ptr*/ 0), oper(/*value*/ 3)});
         case spv::Op::OpAtomicUMax:
-            return emit_atomic(sem::BuiltinType::kAtomicMax, {oper(/*ptr*/ 0), oper(/*value*/ 3)});
+            return emit_atomic(builtin::Function::kAtomicMax, {oper(/*ptr*/ 0), oper(/*value*/ 3)});
         case spv::Op::OpAtomicAnd:
-            return emit_atomic(sem::BuiltinType::kAtomicAnd, {oper(/*ptr*/ 0), oper(/*value*/ 3)});
+            return emit_atomic(builtin::Function::kAtomicAnd, {oper(/*ptr*/ 0), oper(/*value*/ 3)});
         case spv::Op::OpAtomicOr:
-            return emit_atomic(sem::BuiltinType::kAtomicOr, {oper(/*ptr*/ 0), oper(/*value*/ 3)});
+            return emit_atomic(builtin::Function::kAtomicOr, {oper(/*ptr*/ 0), oper(/*value*/ 3)});
         case spv::Op::OpAtomicXor:
-            return emit_atomic(sem::BuiltinType::kAtomicXor, {oper(/*ptr*/ 0), oper(/*value*/ 3)});
+            return emit_atomic(builtin::Function::kAtomicXor, {oper(/*ptr*/ 0), oper(/*value*/ 3)});
         case spv::Op::OpAtomicFlagTestAndSet:
         case spv::Op::OpAtomicFlagClear:
         case spv::Op::OpAtomicFMinEXT:
@@ -6049,6 +6094,13 @@ TypedExpression FunctionEmitter::ToI32(TypedExpression value) {
         return value;
     }
     return {ty_.I32(), builder_.Call(builder_.ty.i32(), utils::Vector{value.expr})};
+}
+
+TypedExpression FunctionEmitter::ToU32(TypedExpression value) {
+    if (!value || value.type->Is<U32>()) {
+        return value;
+    }
+    return {ty_.U32(), builder_.Call(builder_.ty.u32(), utils::Vector{value.expr})};
 }
 
 TypedExpression FunctionEmitter::ToSignedIfUnsigned(TypedExpression value) {

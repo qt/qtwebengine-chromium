@@ -23,7 +23,7 @@
 namespace tint::ast {
 
 /// AST base class node
-class Node : public Castable<Node, Cloneable> {
+class Node : public utils::Castable<Node, Cloneable> {
   public:
     ~Node() override;
 
@@ -42,11 +42,10 @@ class Node : public Castable<Node, Cloneable> {
     /// @param nid the unique node identifier
     /// @param src the input source for the node
     Node(ProgramID pid, NodeID nid, const Source& src);
-    /// Move constructor
-    Node(Node&&);
 
   private:
     Node(const Node&) = delete;
+    Node(Node&&) = delete;
 };
 
 }  // namespace tint::ast

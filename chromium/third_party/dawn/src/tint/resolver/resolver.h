@@ -88,6 +88,9 @@ class Resolver {
     /// @returns error messages from the resolver
     std::string error() const { return diagnostics_.str(); }
 
+    /// @returns the list of diagnostics raised by the generator.
+    const diag::List& Diagnostics() const { return diagnostics_; }
+
     /// @returns true if the resolver was successful
     bool Resolve();
 
@@ -204,7 +207,7 @@ class Resolver {
     sem::Expression* Identifier(const ast::IdentifierExpression*);
     template <size_t N>
     sem::Call* BuiltinCall(const ast::CallExpression*,
-                           sem::BuiltinType,
+                           builtin::Function,
                            utils::Vector<const sem::ValueExpression*, N>& args);
     sem::ValueExpression* Literal(const ast::LiteralExpression*);
     sem::ValueExpression* MemberAccessor(const ast::MemberAccessorExpression*);
@@ -321,6 +324,10 @@ class Resolver {
     /// @returns true on success, false on failure
     bool InterpolateAttribute(const ast::InterpolateAttribute* attr);
 
+    /// Resolves the internal attribute @p attr
+    /// @returns true on success, false on failure
+    bool InternalAttribute(const ast::InternalAttribute* attr);
+
     /// @param control the diagnostic control
     /// @returns true on success, false on failure
     bool DiagnosticControl(const ast::DiagnosticControl& control);
@@ -349,6 +356,7 @@ class Resolver {
 
     /// Builds and returns the semantic information for an array.
     /// @returns the semantic Array information, or nullptr if an error is raised.
+    /// @param array_source the source of the array
     /// @param el_source the source of the array element, or the array if the array does not have a
     ///        locally-declared element AST node.
     /// @param count_source the source of the array count, or the array if the array does not have a
@@ -356,7 +364,8 @@ class Resolver {
     /// @param el_ty the Array element type
     /// @param el_count the number of elements in the array.
     /// @param explicit_stride the explicit byte stride of the array. Zero means implicit stride.
-    type::Array* Array(const Source& el_source,
+    type::Array* Array(const Source& array_source,
+                       const Source& el_source,
                        const Source& count_source,
                        const type::Type* el_ty,
                        const type::ArrayCount* el_count,
@@ -474,6 +483,11 @@ class Resolver {
     template <typename NODE>
     void ApplyDiagnosticSeverities(NODE* node);
 
+    /// Checks @p ident is not an ast::TemplatedIdentifier.
+    /// If @p ident is a ast::TemplatedIdentifier, then an error diagnostic is raised.
+    /// @returns true if @p ident is not a ast::TemplatedIdentifier.
+    bool CheckNotTemplated(const char* use, const ast::Identifier* ident);
+
     /// Raises an error diagnostic that the resolved identifier @p resolved was not of the expected
     /// kind.
     /// @param source the source of the error diagnostic
@@ -495,6 +509,10 @@ class Resolver {
     /// @returns the type::Type for the builtin type @p builtin_ty with the identifier @p ident
     /// @note: Will raise an ICE if @p symbol is not a builtin type.
     type::Type* BuiltinType(builtin::Builtin builtin_ty, const ast::Identifier* ident);
+
+    /// @returns the nesting depth of @ty as defined in
+    /// https://gpuweb.github.io/gpuweb/wgsl/#composite-types
+    size_t NestDepth(const type::Type* ty) const;
 
     // ArrayConstructorSig represents a unique array constructor signature.
     // It is a tuple of the array type, number of arguments provided and earliest evaluation stage.
@@ -566,6 +584,7 @@ class Resolver {
         logical_binary_lhs_to_parent_;
     utils::Hashset<const ast::Expression*, 8> skip_const_eval_;
     IdentifierResolveHint identifier_resolve_hint_;
+    utils::Hashmap<const type::Type*, size_t, 8> nest_depth_;
 };
 
 }  // namespace tint::resolver

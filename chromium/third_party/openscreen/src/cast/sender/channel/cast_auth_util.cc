@@ -19,6 +19,7 @@
 #include "platform/api/time.h"
 #include "platform/base/error.h"
 #include "util/osp_logging.h"
+#include "util/span_util.h"
 
 namespace openscreen {
 namespace cast {
@@ -396,11 +397,8 @@ ErrorOr<CastDeviceCertPolicy> VerifyCredentialsImpl(
     return digest_result;
   }
 
-  ConstDataSpan signature = {
-      reinterpret_cast<const uint8_t*>(response.signature().data()),
-      static_cast<uint32_t>(response.signature().size())};
-  ConstDataSpan siginput = {signature_input.data(),
-                            static_cast<uint32_t>(signature_input.size())};
+  ByteView signature = ByteViewFromString(response.signature());
+  ByteView siginput(signature_input);
   if (!target_cert->VerifySignedData(digest_algorithm, siginput, signature)) {
     return Error(Error::Code::kCastV2SignedBlobsMismatch,
                  "Failed verifying signature over data.");

@@ -19,6 +19,7 @@
 #include "src/tint/type/manager.h"
 #include "src/tint/type/texture_dimension.h"
 #include "src/tint/utils/hash.h"
+#include "src/tint/utils/string_stream.h"
 
 TINT_INSTANTIATE_TYPEINFO(tint::type::DepthTexture);
 
@@ -33,7 +34,7 @@ bool IsValidDepthDimension(TextureDimension dim) {
 }  // namespace
 
 DepthTexture::DepthTexture(TextureDimension dim)
-    : Base(utils::Hash(TypeInfo::Of<DepthTexture>().full_hashcode, dim), dim) {
+    : Base(utils::Hash(utils::TypeInfo::Of<DepthTexture>().full_hashcode, dim), dim) {
     TINT_ASSERT(Type, IsValidDepthDimension(dim));
 }
 
@@ -46,8 +47,8 @@ bool DepthTexture::Equals(const UniqueNode& other) const {
     return false;
 }
 
-std::string DepthTexture::FriendlyName(const SymbolTable&) const {
-    std::ostringstream out;
+std::string DepthTexture::FriendlyName() const {
+    utils::StringStream out;
     out << "texture_depth_" << dim();
     return out.str();
 }

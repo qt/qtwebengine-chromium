@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import * as m from 'mithril';
+import m from 'mithril';
 
 import {BottomTab, bottomTabRegistry, NewBottomTabArgs} from './bottom_tab';
 import {globals} from './globals';
@@ -67,6 +67,10 @@ export class ThreadStateTab extends BottomTab<ThreadStateTabConfig> {
         'div.details-panel',
         m('header.overview', m('span', 'Thread State')),
         this.renderTabContents());
+  }
+
+  isLoading() {
+    return this.state === undefined;
   }
 
   renderTabCanvas(): void {}

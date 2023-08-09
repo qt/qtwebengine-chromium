@@ -15,23 +15,24 @@
 #include "dawn/native/d3d12/AdapterD3D12.h"
 
 #include <string>
+#include <utility>
 
 #include "dawn/common/Constants.h"
 #include "dawn/common/Platform.h"
 #include "dawn/common/WindowsUtils.h"
 #include "dawn/native/Instance.h"
+#include "dawn/native/d3d/D3DError.h"
 #include "dawn/native/d3d12/BackendD3D12.h"
-#include "dawn/native/d3d12/D3D12Error.h"
 #include "dawn/native/d3d12/DeviceD3D12.h"
-#include "dawn/native/d3d12/PlatformFunctions.h"
+#include "dawn/native/d3d12/PlatformFunctionsD3D12.h"
 #include "dawn/native/d3d12/UtilsD3D12.h"
 
 namespace dawn::native::d3d12 {
 
-Adapter::Adapter(Backend* backend, ComPtr<IDXGIAdapter3> hardwareAdapter)
-    : AdapterBase(backend->GetInstance(), wgpu::BackendType::D3D12),
-      mHardwareAdapter(hardwareAdapter),
-      mBackend(backend) {}
+Adapter::Adapter(Backend* backend,
+                 ComPtr<IDXGIAdapter3> hardwareAdapter,
+                 const TogglesState& adapterToggles)
+    : Base(backend, std::move(hardwareAdapter), wgpu::BackendType::D3D12, adapterToggles) {}
 
 Adapter::~Adapter() {
     CleanUpDebugLayerFilters();
@@ -46,12 +47,8 @@ const D3D12DeviceInfo& Adapter::GetDeviceInfo() const {
     return mDeviceInfo;
 }
 
-IDXGIAdapter3* Adapter::GetHardwareAdapter() const {
-    return mHardwareAdapter.Get();
-}
-
 Backend* Adapter::GetBackend() const {
-    return mBackend;
+    return static_cast<Backend*>(Base::GetBackend());
 }
 
 ComPtr<ID3D12Device> Adapter::GetDevice() const {
@@ -59,6 +56,7 @@ ComPtr<ID3D12Device> Adapter::GetDevice() const {
 }
 
 MaybeError Adapter::InitializeImpl() {
+    DAWN_TRY(Base::InitializeImpl());
     // D3D12 cannot check for feature support without a device.
     // Create the device to populate the adapter properties then reuse it when needed for actual
     // rendering.
@@ -70,33 +68,12 @@ MaybeError Adapter::InitializeImpl() {
 
     DAWN_TRY(InitializeDebugLayerFilters());
 
-    DXGI_ADAPTER_DESC1 adapterDesc;
-    mHardwareAdapter->GetDesc1(&adapterDesc);
-
-    mDeviceId = adapterDesc.DeviceId;
-    mVendorId = adapterDesc.VendorId;
-    mName = WCharToUTF8(adapterDesc.Description);
-
     DAWN_TRY_ASSIGN(mDeviceInfo, GatherDeviceInfo(*this));
 
-    if (adapterDesc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) {
-        mAdapterType = wgpu::AdapterType::CPU;
-    } else {
-        mAdapterType =
-            (mDeviceInfo.isUMA) ? wgpu::AdapterType::IntegratedGPU : wgpu::AdapterType::DiscreteGPU;
-    }
-
-    // Convert the adapter's D3D12 driver version to a readable string like "24.21.13.9793".
-    LARGE_INTEGER umdVersion;
-    if (mHardwareAdapter->CheckInterfaceSupport(__uuidof(IDXGIDevice), &umdVersion) !=
-        DXGI_ERROR_UNSUPPORTED) {
-        uint64_t encodedVersion = umdVersion.QuadPart;
-        uint16_t mask = 0xFFFF;
-        mDriverVersion = {static_cast<uint16_t>((encodedVersion >> 48) & mask),
-                          static_cast<uint16_t>((encodedVersion >> 32) & mask),
-                          static_cast<uint16_t>((encodedVersion >> 16) & mask),
-                          static_cast<uint16_t>(encodedVersion & mask)};
-        mDriverDescription = std::string("D3D12 driver version ") + mDriverVersion.ToString();
+    // Base::InitializeImpl() cannot distinguish between discrete and integrated GPUs, so we need to
+    // overwrite it here.
+    if (mAdapterType == wgpu::AdapterType::DiscreteGPU && mDeviceInfo.isUMA) {
+        mAdapterType = wgpu::AdapterType::IntegratedGPU;
     }
 
     if (GetInstance()->IsAdapterBlocklistEnabled()) {
@@ -138,26 +115,27 @@ bool Adapter::AreTimestampQueriesSupported() const {
 }
 
 void Adapter::InitializeSupportedFeaturesImpl() {
-    mSupportedFeatures.EnableFeature(Feature::TextureCompressionBC);
-    mSupportedFeatures.EnableFeature(Feature::MultiPlanarFormats);
-    mSupportedFeatures.EnableFeature(Feature::Depth32FloatStencil8);
-    mSupportedFeatures.EnableFeature(Feature::IndirectFirstInstance);
-    mSupportedFeatures.EnableFeature(Feature::RG11B10UfloatRenderable);
-    mSupportedFeatures.EnableFeature(Feature::DepthClipControl);
+    EnableFeature(Feature::TextureCompressionBC);
+    EnableFeature(Feature::MultiPlanarFormats);
+    EnableFeature(Feature::Depth32FloatStencil8);
+    EnableFeature(Feature::IndirectFirstInstance);
+    EnableFeature(Feature::RG11B10UfloatRenderable);
+    EnableFeature(Feature::DepthClipControl);
+    EnableFeature(Feature::SurfaceCapabilities);
 
     if (AreTimestampQueriesSupported()) {
-        mSupportedFeatures.EnableFeature(Feature::TimestampQuery);
-        mSupportedFeatures.EnableFeature(Feature::TimestampQueryInsidePasses);
+        EnableFeature(Feature::TimestampQuery);
+        EnableFeature(Feature::TimestampQueryInsidePasses);
     }
-    mSupportedFeatures.EnableFeature(Feature::PipelineStatisticsQuery);
+    EnableFeature(Feature::PipelineStatisticsQuery);
 
     // Both Dp4a and ShaderF16 features require DXC version being 1.4 or higher
     if (GetBackend()->IsDXCAvailableAndVersionAtLeast(1, 4, 1, 4)) {
         if (mDeviceInfo.supportsDP4a) {
-            mSupportedFeatures.EnableFeature(Feature::ChromiumExperimentalDp4a);
+            EnableFeature(Feature::ChromiumExperimentalDp4a);
         }
         if (mDeviceInfo.supportsShaderF16) {
-            mSupportedFeatures.EnableFeature(Feature::ShaderF16);
+            EnableFeature(Feature::ShaderF16);
         }
     }
 
@@ -167,7 +145,7 @@ void Adapter::InitializeSupportedFeaturesImpl() {
         D3D12_FEATURE_FORMAT_SUPPORT, &bgra8unormFormatInfo, sizeof(bgra8unormFormatInfo));
     if (SUCCEEDED(hr) &&
         (bgra8unormFormatInfo.Support1 & D3D12_FORMAT_SUPPORT1_TYPED_UNORDERED_ACCESS_VIEW)) {
-        mSupportedFeatures.EnableFeature(Feature::BGRA8UnormStorage);
+        EnableFeature(Feature::BGRA8UnormStorage);
     }
 }
 
@@ -260,6 +238,9 @@ MaybeError Adapter::InitializeSupportedLimitsImpl(CombinedLimits* limits) {
     limits->v1.maxSamplersPerShaderStage = maxSamplersPerStage;
 
     limits->v1.maxColorAttachments = D3D12_SIMULTANEOUS_RENDER_TARGET_COUNT;
+    limits->v1.maxFragmentCombinedOutputResources = limits->v1.maxColorAttachments +
+                                                    limits->v1.maxStorageBuffersPerShaderStage +
+                                                    limits->v1.maxStorageTexturesPerShaderStage;
 
     // https://docs.microsoft.com/en-us/windows/win32/direct3d12/root-signature-limits
     // In DWORDS. Descriptor tables cost 1, Root constants cost 1, Root descriptors cost 2.
@@ -269,36 +250,45 @@ MaybeError Adapter::InitializeSupportedLimitsImpl(CombinedLimits* limits) {
     //    CBVs/UAVs/SRVs for bind group are a root descriptor table
     //  - (maxBindGroups)
     //    Samplers for each bind group are a root descriptor table
-    //  - (2 * maxDynamicBuffers)
-    //    Each dynamic buffer is a root descriptor
+    //  - dynamic uniform buffers - root descriptor
+    //  - dynamic storage buffers - root descriptor plus a root constant for the size
     //  RESERVED:
     //  - 3 = max of:
     //    - 2 root constants for the baseVertex/baseInstance constants.
     //    - 3 root constants for num workgroups X, Y, Z
-    //  - 4 root constants (kMaxDynamicStorageBuffersPerPipelineLayout) for dynamic storage
-    //  buffer lengths.
-    static constexpr uint32_t kReservedSlots = 7;
+    static constexpr uint32_t kReservedSlots = 3;
+
+    // Costs:
+    //  - bind group: 2 = 1 cbv/uav/srv table + 1 sampler table
+    //  - dynamic uniform buffer: 2 slots for a root descriptor
+    //  - dynamic storage buffer: 3 slots for a root descriptor + root constant
 
     // Available slots after base limits considered.
     uint32_t availableRootSignatureSlots =
-        kMaxRootSignatureSize - kReservedSlots -
-        2 * (limits->v1.maxBindGroups + limits->v1.maxDynamicUniformBuffersPerPipelineLayout +
-             limits->v1.maxDynamicStorageBuffersPerPipelineLayout);
+        kMaxRootSignatureSize - kReservedSlots - 2 * limits->v1.maxBindGroups -
+        2 * limits->v1.maxDynamicUniformBuffersPerPipelineLayout -
+        3 * limits->v1.maxDynamicStorageBuffersPerPipelineLayout;
 
-    // Because we need either:
-    //  - 1 cbv/uav/srv table + 1 sampler table
-    //  - 2 slots for a root descriptor
-    uint32_t availableDynamicBufferOrBindGroup = availableRootSignatureSlots / 2;
+    while (availableRootSignatureSlots >= 2) {
+        // Start by incrementing maxDynamicStorageBuffersPerPipelineLayout since the
+        // default is just 4 and developers likely want more. This scheme currently
+        // gets us to 8.
+        if (availableRootSignatureSlots >= 3) {
+            limits->v1.maxDynamicStorageBuffersPerPipelineLayout += 1;
+            availableRootSignatureSlots -= 3;
+        }
+        if (availableRootSignatureSlots >= 2) {
+            limits->v1.maxBindGroups += 1;
+            availableRootSignatureSlots -= 2;
+        }
+        if (availableRootSignatureSlots >= 2) {
+            limits->v1.maxDynamicUniformBuffersPerPipelineLayout += 1;
+            availableRootSignatureSlots -= 2;
+        }
+    }
 
-    // We can either have a bind group, a dyn uniform buffer or a dyn storage buffer.
-    // Distribute evenly.
-    limits->v1.maxBindGroups += availableDynamicBufferOrBindGroup / 3;
-    limits->v1.maxDynamicUniformBuffersPerPipelineLayout += availableDynamicBufferOrBindGroup / 3;
-    limits->v1.maxDynamicStorageBuffersPerPipelineLayout +=
-        (availableDynamicBufferOrBindGroup - 2 * (availableDynamicBufferOrBindGroup / 3));
-
-    ASSERT(2 * (limits->v1.maxBindGroups + limits->v1.maxDynamicUniformBuffersPerPipelineLayout +
-                limits->v1.maxDynamicStorageBuffersPerPipelineLayout) <=
+    ASSERT(2 * limits->v1.maxBindGroups + 2 * limits->v1.maxDynamicUniformBuffersPerPipelineLayout +
+               3 * limits->v1.maxDynamicStorageBuffersPerPipelineLayout <=
            kMaxRootSignatureSize - kReservedSlots);
 
     // https://docs.microsoft.com/en-us/windows/win32/direct3dhlsl/sm5-attributes-numthreads
@@ -307,7 +297,7 @@ MaybeError Adapter::InitializeSupportedLimitsImpl(CombinedLimits* limits) {
     limits->v1.maxComputeWorkgroupSizeZ = D3D12_CS_THREAD_GROUP_MAX_Z;
     limits->v1.maxComputeInvocationsPerWorkgroup = D3D12_CS_THREAD_GROUP_MAX_THREADS_PER_GROUP;
 
-    // https://docs.maxComputeWorkgroupSizeXmicrosoft.com/en-us/windows/win32/api/d3d12/ns-d3d12-d3d12_dispatch_arguments
+    // https://docs.microsoft.com/en-us/windows/win32/api/d3d12/ns-d3d12-d3d12_dispatch_arguments
     limits->v1.maxComputeWorkgroupsPerDimension = D3D12_CS_DISPATCH_MAX_THREAD_GROUPS_PER_DIMENSION;
 
     // https://docs.microsoft.com/en-us/windows/win32/direct3d11/overviews-direct3d-11-devices-downlevel-compute-shaders
@@ -333,16 +323,13 @@ MaybeError Adapter::InitializeSupportedLimitsImpl(CombinedLimits* limits) {
     return {};
 }
 
-MaybeError Adapter::ValidateFeatureSupportedWithDeviceTogglesImpl(
-    wgpu::FeatureName feature,
-    const TogglesState& deviceTogglesState) {
+MaybeError Adapter::ValidateFeatureSupportedWithTogglesImpl(wgpu::FeatureName feature,
+                                                            const TogglesState& toggles) const {
     // shader-f16 feature and chromium-experimental-dp4a feature require DXC 1.4 or higher for
-    // D3D12.
+    // D3D12. Note that DXC version is checked in InitializeSupportedFeaturesImpl.
     if (feature == wgpu::FeatureName::ShaderF16 ||
         feature == wgpu::FeatureName::ChromiumExperimentalDp4a) {
-        DAWN_INVALID_IF(!(deviceTogglesState.IsEnabled(Toggle::UseDXC) &&
-                          mBackend->IsDXCAvailableAndVersionAtLeast(1, 4, 1, 4)),
-                        "Feature %s requires DXC for D3D12.",
+        DAWN_INVALID_IF(!toggles.IsEnabled(Toggle::UseDXC), "Feature %s requires DXC for D3D12.",
                         GetInstance()->GetFeatureInfo(feature)->name);
     }
     return {};
@@ -536,12 +523,23 @@ void Adapter::SetupBackendDeviceToggles(TogglesState* deviceToggles) const {
         }
     }
 
+    // This workaround is needed on Intel Gen12LP GPUs with driver >= 30.0.101.4091.
+    // See http://crbug.com/dawn/1083 for more information.
+    if (gpu_info::IsIntelGen12LP(vendorId, deviceId)) {
+        const gpu_info::DriverVersion kDriverVersion = {30, 0, 101, 4091};
+        if (gpu_info::CompareWindowsDriverVersion(vendorId, GetDriverVersion(), kDriverVersion) !=
+            -1) {
+            deviceToggles->Default(Toggle::UseBlitForDepthTextureToTextureCopyToNonzeroSubresource,
+                                   true);
+        }
+    }
+
     // Currently these workarounds are only needed on Intel Gen9.5 and Gen11 GPUs.
     // See http://crbug.com/1237175 and http://crbug.com/dawn/1628 for more information.
     if ((gpu_info::IsIntelGen9(vendorId, deviceId) && !gpu_info::IsSkylake(deviceId)) ||
         gpu_info::IsIntelGen11(vendorId, deviceId)) {
         deviceToggles->Default(
-            Toggle::D3D12Allocate2DTextureWithCopyDstOrRenderAttachmentAsCommittedResource, true);
+            Toggle::DisableSubAllocationFor2DTextureWithCopyDstOrRenderAttachment, true);
         // Now we don't need to force clearing depth stencil textures with CopyDst as all the depth
         // stencil textures (can only be 2D textures) will be created with CreateCommittedResource()
         // instead of CreatePlacedResource().
@@ -551,7 +549,14 @@ void Adapter::SetupBackendDeviceToggles(TogglesState* deviceToggles) const {
     // Currently this toggle is only needed on Intel Gen9 and Gen9.5 GPUs.
     // See http://crbug.com/dawn/1579 for more information.
     if (gpu_info::IsIntelGen9(vendorId, deviceId)) {
-        deviceToggles->ForceSet(Toggle::NoWorkaroundDstAlphaBlendDoesNotWork, true);
+        // We can add workaround when the blending operation is "Add", DstFactor is "Zero" and
+        // SrcFactor is "DstAlpha".
+        deviceToggles->ForceSet(
+            Toggle::D3D12ReplaceAddWithMinusWhenDstFactorIsZeroAndSrcFactorIsDstAlpha, true);
+
+        // Unfortunately we cannot add workaround for other cases.
+        deviceToggles->ForceSet(
+            Toggle::NoWorkaroundDstAlphaAsSrcBlendFactorForBothColorAndAlphaDoesNotWork, true);
     }
 
 #if D3D12_SDK_VERSION >= 602
@@ -568,6 +573,12 @@ void Adapter::SetupBackendDeviceToggles(TogglesState* deviceToggles) const {
         deviceToggles->ForceSet(
             Toggle::D3D12UseTempBufferInTextureToTextureCopyBetweenDifferentDimensions, true);
     }
+
+    // Polyfill reflect builtin for vec2<f32> on Intel device in usng FXC.
+    // See https://crbug.com/tint/1798 for more information.
+    if (gpu_info::IsIntel(vendorId) && !deviceToggles->IsEnabled(Toggle::UseDXC)) {
+        deviceToggles->Default(Toggle::D3D12PolyfillReflectVec2F32, true);
+    }
 }
 
 ResultOrError<Ref<DeviceBase>> Adapter::CreateDeviceImpl(const DeviceDescriptor* descriptor,
@@ -580,7 +591,8 @@ ResultOrError<Ref<DeviceBase>> Adapter::CreateDeviceImpl(const DeviceDescriptor*
 // and the subequent call to CreateDevice will return a handle the existing device instead of
 // creating a new one.
 MaybeError Adapter::ResetInternalDeviceForTestingImpl() {
-    ASSERT(mD3d12Device.Reset() == 0);
+    [[maybe_unused]] auto refCount = mD3d12Device.Reset();
+    ASSERT(refCount == 0);
     DAWN_TRY(Initialize());
 
     return {};

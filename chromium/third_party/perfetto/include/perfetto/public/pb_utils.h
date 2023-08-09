@@ -24,7 +24,9 @@
 // Type of fields that can be found in a protobuf serialized message.
 enum PerfettoPbWireType {
   PERFETTO_PB_WIRE_TYPE_VARINT = 0,
+  PERFETTO_PB_WIRE_TYPE_FIXED64 = 1,
   PERFETTO_PB_WIRE_TYPE_DELIMITED = 2,
+  PERFETTO_PB_WIRE_TYPE_FIXED32 = 5,
 };
 
 // Creates a field tag, which encodes the field type and the field id.
@@ -56,6 +58,32 @@ static inline uint8_t* PerfettoPbWriteVarInt(uint64_t value, uint8_t* dst) {
   *dst++ = byte;
 
   return dst;
+}
+
+// Parses a VarInt from the encoded buffer [start, end). |end| is STL-style and
+// points one byte past the end of buffer.
+// The parsed int value is stored in the output arg |value|. Returns a pointer
+// to the next unconsumed byte (so start < retval <= end) or |start| if the
+// VarInt could not be fully parsed because there was not enough space in the
+// buffer.
+static inline const uint8_t* PerfettoPbParseVarInt(const uint8_t* start,
+                                                   const uint8_t* end,
+                                                   uint64_t* out_value) {
+  const uint8_t* pos = start;
+  uint64_t value = 0;
+  for (uint32_t shift = 0; pos < end && shift < 64u; shift += 7) {
+    // Cache *pos into |cur_byte| to prevent that the compiler dereferences the
+    // pointer twice (here and in the if() below) due to char* aliasing rules.
+    uint8_t cur_byte = *pos++;
+    value |= PERFETTO_STATIC_CAST(uint64_t, cur_byte & 0x7f) << shift;
+    if ((cur_byte & 0x80) == 0) {
+      // In valid cases we get here.
+      *out_value = value;
+      return pos;
+    }
+  }
+  *out_value = 0;
+  return start;
 }
 
 #endif  // INCLUDE_PERFETTO_PUBLIC_PB_UTILS_H_

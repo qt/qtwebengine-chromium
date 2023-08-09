@@ -32,11 +32,13 @@
 #include "src/gpu/ganesh/ops/GrMeshDrawOp.h"
 #include "src/gpu/ganesh/ops/GrSimpleMeshDrawOpHelperWithStencil.h"
 
-#define PREALLOC_PTARRAY(N) SkSTArray<(N),SkPoint, true>
+using namespace skia_private;
 
-using PtArray = SkTArray<SkPoint, true>;
-using IntArray = SkTArray<int, true>;
-using FloatArray = SkTArray<float, true>;
+#define PREALLOC_PTARRAY(N) STArray<(N),SkPoint, true>
+
+using PtArray = TArray<SkPoint, true>;
+using IntArray = TArray<int, true>;
+using FloatArray = TArray<float, true>;
 
 namespace {
 
@@ -948,7 +950,7 @@ private:
         SkScalar fCapLength;
     };
 
-    SkSTArray<1, PathData, true> fPaths;
+    STArray<1, PathData, true> fPaths;
     Helper fHelper;
     SkPMColor4f fColor;
     uint8_t fCoverage;
@@ -1306,7 +1308,7 @@ GR_DRAW_OP_TEST_DEFINE(AAHairlineOp) {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-namespace skgpu::v1 {
+namespace skgpu::ganesh {
 
 PathRenderer::CanDrawPath AAHairLinePathRenderer::onCanDrawPath(const CanDrawPathArgs& args) const {
     if (GrAAType::kCoverage != args.fAAType) {
@@ -1346,4 +1348,4 @@ bool AAHairLinePathRenderer::onDrawPath(const DrawPathArgs& args) {
     return true;
 }
 
-} // namespace skgpu::v1
+}  // namespace skgpu::ganesh

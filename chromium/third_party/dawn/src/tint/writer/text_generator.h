@@ -15,7 +15,6 @@
 #ifndef SRC_TINT_WRITER_TEXT_GENERATOR_H_
 #define SRC_TINT_WRITER_TEXT_GENERATOR_H_
 
-#include <sstream>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -23,6 +22,7 @@
 
 #include "src/tint/diagnostic/diagnostic.h"
 #include "src/tint/program_builder.h"
+#include "src/tint/utils/string_stream.h"
 
 namespace tint::writer {
 
@@ -102,9 +102,6 @@ class TextGenerator {
     /// @returns the list of diagnostics raised by the generator.
     const diag::List& Diagnostics() const { return diagnostics_; }
 
-    /// @returns the error
-    std::string error() const { return diagnostics_.str(); }
-
     /// @return a new, unique identifier with the given prefix.
     /// @param prefix optional prefix to apply to the generated identifier. If
     /// empty "tint_symbol" will be used.
@@ -139,13 +136,13 @@ class TextGenerator {
         /// Destructor
         ~LineWriter();
 
-        /// @returns the ostringstream
-        operator std::ostream&() { return os; }
+        /// @returns the utils::StringStream
+        operator utils::StringStream&() { return os; }
 
         /// @param rhs the value to write to the line
-        /// @returns the ostream so calls can be chained
+        /// @returns the utils::StringStream so calls can be chained
         template <typename T>
-        std::ostream& operator<<(T&& rhs) {
+        utils::StringStream& operator<<(T&& rhs) {
             return os << std::forward<T>(rhs);
         }
 
@@ -153,15 +150,15 @@ class TextGenerator {
         LineWriter(const LineWriter&) = delete;
         LineWriter& operator=(const LineWriter&) = delete;
 
-        std::ostringstream os;
+        utils::StringStream os;
         TextBuffer* buffer;
     };
 
     /// Helper for writing a '(' on construction and a ')' destruction.
     struct ScopedParen {
         /// Constructor
-        /// @param stream the std::ostream that will be written to
-        explicit ScopedParen(std::ostream& stream);
+        /// @param stream the utils::StringStream that will be written to
+        explicit ScopedParen(utils::StringStream& stream);
         /// Destructor
         ~ScopedParen();
 
@@ -169,7 +166,7 @@ class TextGenerator {
         ScopedParen(ScopedParen&& rhs) = delete;
         ScopedParen(const ScopedParen&) = delete;
         ScopedParen& operator=(const ScopedParen&) = delete;
-        std::ostream& s;
+        utils::StringStream& s;
     };
 
     /// Helper for incrementing indentation on construction and decrementing

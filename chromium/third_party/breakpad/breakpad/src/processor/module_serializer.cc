@@ -32,6 +32,10 @@
 //
 // Author: Siyang Xie (lambxsy@google.com)
 
+#ifdef HAVE_CONFIG_H
+#include <config.h>  // Must come first
+#endif
+
 #include "processor/module_serializer.h"
 
 #include <map>

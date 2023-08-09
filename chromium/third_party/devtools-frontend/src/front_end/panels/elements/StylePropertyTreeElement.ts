@@ -10,6 +10,7 @@ import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Bindings from '../../models/bindings/bindings.js';
 import * as TextUtils from '../../models/text_utils/text_utils.js';
+import * as IconButton from '../../ui/components/icon_button/icon_button.js';
 import * as ColorPicker from '../../ui/legacy/components/color_picker/color_picker.js';
 import * as InlineEditor from '../../ui/legacy/components/inline_editor/inline_editor.js';
 import * as UI from '../../ui/legacy/legacy.js';
@@ -23,6 +24,7 @@ import {
 import * as ElementsComponents from './components/components.js';
 import {ElementsPanel} from './ElementsPanel.js';
 import {StyleEditorWidget} from './StyleEditorWidget.js';
+
 import {type StylePropertiesSection} from './StylePropertiesSection.js';
 import {CSSPropertyPrompt, StylesSidebarPane, StylesSidebarPropertyRenderer} from './StylesSidebarPane.js';
 import {getCssDeclarationAsJavascriptProperty} from './StylePropertyUtils.js';
@@ -43,16 +45,6 @@ const UIStrings = {
    *@example {Shift + Click to change color format.} PH1
    */
   openColorPickerS: 'Open color picker. {PH1}',
-  /**
-   *@description The warning text shown in Elements panel when font-variation-settings don't match allowed values
-   *@example {wdth} PH1
-   *@example {100} PH2
-   *@example {10} PH3
-   *@example {20} PH4
-   *@example {Arial} PH5
-   */
-  valueForSettingSSIsOutsideThe:
-      'Value for setting “{PH1}” {PH2} is outside the supported range [{PH3}, {PH4}] for font-family “{PH5}”.',
   /**
    *@description Context menu item for style property in edit mode
    */
@@ -286,13 +278,79 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
     return swatch;
   }
 
-  private processAnimationName(text: string): Node {
-    const swatch = new InlineEditor.LinkSwatch.AnimationNameSwatch();
-    UI.UIUtils.createTextChild(swatch, text);
-    const isDefined = Boolean(this.matchedStylesInternal.keyframes().find(kf => kf.name().text === text));
-    swatch.data = {text, isDefined, onLinkActivate: this.handleAnimationNameDefinitionActivate.bind(this)};
+  private processAnimationName(animationNamePropertyText: string): Node {
+    const animationNames = animationNamePropertyText.split(',').map(name => name.trim());
+    const contentChild = document.createElement('span');
+    for (let i = 0; i < animationNames.length; i++) {
+      const animationName = animationNames[i];
+      const swatch = new InlineEditor.LinkSwatch.LinkSwatch();
+      UI.UIUtils.createTextChild(swatch, animationName);
+      const isDefined = Boolean(this.matchedStylesInternal.keyframes().find(kf => kf.name().text === animationName));
+      swatch.data = {
+        text: animationName,
+        isDefined,
+        onLinkActivate: () => this.parentPaneInternal.jumpToSectionBlock(`@keyframes ${animationName}`),
+      };
+      contentChild.appendChild(swatch);
 
-    return swatch;
+      if (i !== animationNames.length - 1) {
+        contentChild.appendChild(document.createTextNode(', '));
+      }
+    }
+
+    return contentChild;
+  }
+
+  private processAnimation(animationPropertyValue: string): Node {
+    const animationNameProperty =
+        this.property.getLonghandProperties().find(longhand => longhand.name === 'animation-name');
+    if (!animationNameProperty) {
+      return document.createTextNode(animationPropertyValue);
+    }
+
+    const animationNames = animationNameProperty.value.split(',').map(name => name.trim());
+    const cssAnimationModel =
+        InlineEditor.CSSAnimationModel.CSSAnimationModel.parse(animationPropertyValue, animationNames);
+    const contentChild = document.createElement('span');
+    for (let i = 0; i < cssAnimationModel.parts.length; i++) {
+      const part = cssAnimationModel.parts[i];
+      switch (part.type) {
+        case InlineEditor.CSSAnimationModel.PartType.Text:
+          contentChild.appendChild(document.createTextNode(part.value));
+          break;
+        case InlineEditor.CSSAnimationModel.PartType.EasingFunction:
+          contentChild.appendChild(this.processBezier(part.value));
+          break;
+        case InlineEditor.CSSAnimationModel.PartType.AnimationName:
+          contentChild.appendChild(this.processAnimationName(part.value));
+          break;
+        case InlineEditor.CSSAnimationModel.PartType.Variable:
+          contentChild.appendChild(this.processVar(part.value));
+          break;
+      }
+
+      if (cssAnimationModel.parts[i + 1]?.value !== ',' && i !== cssAnimationModel.parts.length - 1) {
+        contentChild.appendChild(document.createTextNode(' '));
+      }
+    }
+
+    return contentChild;
+  }
+
+  private processPositionFallback(propertyText: string): Node {
+    const contentChild = document.createElement('span');
+    const swatch = new InlineEditor.LinkSwatch.LinkSwatch();
+    UI.UIUtils.createTextChild(swatch, propertyText);
+    const isDefined =
+        Boolean(this.matchedStylesInternal.positionFallbackRules().find(pf => pf.name().text === propertyText));
+    swatch.data = {
+      text: propertyText,
+      isDefined,
+      onLinkActivate: () => this.parentPaneInternal.jumpToSectionBlock(`@position-fallback ${propertyText}`),
+    };
+    contentChild.appendChild(swatch);
+
+    return contentChild;
   }
 
   private processColor(text: string, valueChild?: Node|null): Node {
@@ -435,10 +493,6 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
     return this.processColor(computedValue, varSwatch);
   }
 
-  private handleAnimationNameDefinitionActivate(animationName: string): void {
-    this.parentPaneInternal.jumpToSectionBlock(`@keyframes ${animationName}`);
-  }
-
   private handleVarDefinitionActivate(variableName: string): void {
     Host.userMetrics.actionTaken(Host.UserMetrics.Action.CustomPropertyLinkClicked);
     this.parentPaneInternal.jumpToProperty(variableName);
@@ -464,13 +518,13 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
   }
 
   private processBezier(text: string): Node {
-    if (!this.editable() || !UI.Geometry.CubicBezier.parse(text)) {
+    if (!this.editable() || !InlineEditor.AnimationTimingModel.AnimationTimingModel.parse(text)) {
       return document.createTextNode(text);
     }
     const swatchPopoverHelper = this.parentPaneInternal.swatchPopoverHelper();
     const swatch = InlineEditor.Swatches.BezierSwatch.create();
     swatch.setBezierText(text);
-    new BezierPopoverIcon(this, swatchPopoverHelper, swatch);
+    new BezierPopoverIcon({treeElement: this, swatchPopoverHelper, swatch});
     return swatch;
   }
 
@@ -709,7 +763,7 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
     return this.#propertyTextFromSource !== property.propertyText || this.parentPane().isPropertyChanged(property);
   }
 
-  async onpopulate(): Promise<void> {
+  override async onpopulate(): Promise<void> {
     // Only populate once and if this property is a shorthand.
     if (this.childCount() || !this.isShorthand) {
       return;
@@ -743,7 +797,7 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
     }
   }
 
-  onattach(): void {
+  override onattach(): void {
     this.updateTitle();
 
     this.listItemElement.addEventListener('mousedown', event => {
@@ -767,11 +821,11 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
     this.listItemElement.addEventListener('contextmenu', this.handleCopyContextMenuEvent.bind(this));
   }
 
-  onexpand(): void {
+  override onexpand(): void {
     this.updateExpandElement();
   }
 
-  oncollapse(): void {
+  override oncollapse(): void {
     this.updateExpandElement();
   }
 
@@ -780,9 +834,9 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
       return;
     }
     if (this.expanded) {
-      this.expandElement.setIconType('smallicon-triangle-down');
+      this.expandElement.setIconType('triangle-down');
     } else {
-      this.expandElement.setIconType('smallicon-triangle-right');
+      this.expandElement.setIconType('triangle-right');
     }
   }
 
@@ -803,7 +857,7 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
   private innerUpdateTitle(): void {
     this.updateState();
     if (this.isExpandable()) {
-      this.expandElement = UI.Icon.Icon.create('smallicon-triangle-right', 'expand-icon');
+      this.expandElement = UI.Icon.Icon.create('triangle-right', 'expand-icon');
     } else {
       this.expandElement = null;
     }
@@ -813,6 +867,7 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
     if (this.property.parsedOk) {
       propertyRenderer.setVarHandler(this.processVar.bind(this));
       propertyRenderer.setAnimationNameHandler(this.processAnimationName.bind(this));
+      propertyRenderer.setAnimationHandler(this.processAnimation.bind(this));
       propertyRenderer.setColorHandler(this.processColor.bind(this));
       propertyRenderer.setColorMixHandler(this.processColorMix.bind(this));
       propertyRenderer.setBezierHandler(this.processBezier.bind(this));
@@ -821,6 +876,7 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
       propertyRenderer.setGridHandler(this.processGrid.bind(this));
       propertyRenderer.setAngleHandler(this.processAngle.bind(this));
       propertyRenderer.setLengthHandler(this.processLength.bind(this));
+      propertyRenderer.setPositionFallbackHandler(this.processPositionFallback.bind(this));
     }
 
     this.listItemElement.removeChildren();
@@ -878,7 +934,6 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
     }
 
     if (this.property.parsedOk) {
-      void this.updateFontVariationSettingsWarning();
       this.updateAuthoringHint();
     } else {
       // Avoid having longhands under an invalid shorthand.
@@ -887,6 +942,13 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
       // Add a separate exclamation mark IMG element with a tooltip.
       this.listItemElement.insertBefore(
           StylesSidebarPane.createExclamationMark(this.property, null), this.listItemElement.firstChild);
+
+      // When the property is valid but the property value is invalid,
+      // add line-through only to the property value.
+      const invalidPropertyValue = SDK.CSSMetadata.cssMetadata().isCSSPropertyName(this.property.name);
+      if (invalidPropertyValue) {
+        this.listItemElement.classList.add('invalid-property-value');
+      }
     }
 
     if (!this.property.activeInStyle()) {
@@ -909,7 +971,7 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
             enabledCheckboxElement, `${this.nameElement.textContent} ${this.valueElement.textContent}`);
       }
 
-      const copyIcon = UI.Icon.Icon.create('largeicon-copy', 'copy');
+      const copyIcon = UI.Icon.Icon.create('copy', 'copy');
       UI.Tooltip.Tooltip.install(copyIcon, i18nString(UIStrings.copyDeclaration));
       copyIcon.addEventListener('click', () => {
         const propertyText = `${this.property.name}: ${this.property.value};`;
@@ -923,10 +985,6 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
 
   updateAuthoringHint(): void {
     this.listItemElement.classList.remove('inactive-property');
-    if (!Root.Runtime.experiments.isEnabled(Root.Runtime.ExperimentName.CSS_AUTHORING_HINTS)) {
-      return;
-    }
-
     const existingElement = this.listItemElement.querySelector('.hint');
     if (existingElement) {
       activeHints.delete(existingElement);
@@ -943,68 +1001,28 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
       return;
     }
 
+    const cssModel = this.parentPaneInternal.cssModel();
+    const fontFaces = cssModel?.fontFaces() || [];
+
     const localName = this.node()?.localName();
     for (const validator of cssRuleValidatorsMap.get(propertyName) || []) {
       const hint = validator.getHint(
           propertyName, this.computedStyles || undefined, this.parentsComputedStyles || undefined,
-          localName?.toLowerCase());
+          localName?.toLowerCase(), fontFaces);
       if (hint) {
         Host.userMetrics.cssHintShown(validator.getMetricType());
-        const hintIcon = UI.Icon.Icon.create('mediumicon-info', 'hint');
+        const wrapper = document.createElement('span');
+        wrapper.classList.add('hint-wrapper');
+        const hintIcon = new IconButton.Icon.Icon();
+        hintIcon.data = {iconName: 'info', color: 'var(--icon-default)', width: '14px', height: '14px'};
+        hintIcon.classList.add('hint');
+        wrapper.append(hintIcon);
         activeHints.set(hintIcon, hint);
-        this.listItemElement.append(hintIcon);
+        this.listItemElement.append(wrapper);
         this.listItemElement.classList.add('inactive-property');
         break;
       }
     }
-  }
-
-  private async updateFontVariationSettingsWarning(): Promise<void> {
-    if (this.property.name !== 'font-variation-settings') {
-      return;
-    }
-    const value = this.property.value;
-    const cssModel = this.parentPaneInternal.cssModel();
-    if (!cssModel) {
-      return;
-    }
-    const computedStyleModel = this.parentPaneInternal.computedStyleModel();
-    const styles = await computedStyleModel.fetchComputedStyle();
-    if (!styles) {
-      return;
-    }
-    const fontFamily = styles.computedStyle.get('font-family');
-    if (!fontFamily) {
-      return;
-    }
-    const fontFamilies = new Set<string>(SDK.CSSPropertyParser.parseFontFamily(fontFamily));
-    const matchingFontFaces = cssModel.fontFaces().filter(f => fontFamilies.has(f.getFontFamily()));
-    const variationSettings = SDK.CSSPropertyParser.parseFontVariationSettings(value);
-    const warnings = [];
-    for (const elementSetting of variationSettings) {
-      for (const font of matchingFontFaces) {
-        const fontSetting = font.getVariationAxisByTag(elementSetting.tag);
-        if (!fontSetting) {
-          continue;
-        }
-        if (elementSetting.value < fontSetting.minValue || elementSetting.value > fontSetting.maxValue) {
-          warnings.push(i18nString(UIStrings.valueForSettingSSIsOutsideThe, {
-            PH1: elementSetting.tag,
-            PH2: elementSetting.value,
-            PH3: fontSetting.minValue,
-            PH4: fontSetting.maxValue,
-            PH5: font.getFontFamily(),
-          }));
-        }
-      }
-    }
-
-    if (!warnings.length) {
-      return;
-    }
-    this.listItemElement.classList.add('has-warning');
-    this.listItemElement.insertBefore(
-        StylesSidebarPane.createExclamationMark(this.property, warnings.join(' ')), this.listItemElement.firstChild);
   }
 
   private mouseUp(event: MouseEvent): void {
@@ -1780,11 +1798,11 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
     this.styleTextAppliedForTest();
   }
 
-  ondblclick(): boolean {
+  override ondblclick(): boolean {
     return true;  // handled
   }
 
-  isEventWithinDisclosureTriangle(event: Event): boolean {
+  override isEventWithinDisclosureTriangle(event: Event): boolean {
     return event.target === this.expandElement;
   }
 }

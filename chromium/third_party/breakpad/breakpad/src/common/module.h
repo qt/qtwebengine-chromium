@@ -131,6 +131,10 @@ class Module {
 
     // If this symbol has been folded with other symbols in the linked binary.
     bool is_multiple = false;
+
+    // If the function's name should be filled out from a matching Extern,
+    // should they not match.
+    bool prefer_extern_name = false;
   };
 
   struct InlineOrigin {
@@ -317,7 +321,8 @@ class Module {
          const string& architecture,
          const string& id,
          const string& code_id = "",
-         bool enable_multiple_field = false);
+         bool enable_multiple_field = false,
+         bool prefer_extern_name = false);
   ~Module();
 
   // Set the module's load address to LOAD_ADDRESS; addresses given
@@ -502,6 +507,15 @@ class Module {
   // at
   // https://chromium.googlesource.com/breakpad/breakpad/+/master/docs/symbol_files.md#records-3
   bool enable_multiple_field_;
+
+  // If a Function and an Extern share the same address but have a different
+  // name, prefer the name of the Extern.
+  //
+  // Use this when dumping Mach-O .dSYMs built with -gmlt (Minimum Line Tables),
+  // as the Function's fully-qualified name will only be present in the STABS
+  // (which are placed in the Extern), not in the DWARF symbols (which are
+  // placed in the Function).
+  bool prefer_extern_name_;
 };
 
 }  // namespace google_breakpad

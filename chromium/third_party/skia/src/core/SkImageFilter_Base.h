@@ -186,7 +186,7 @@ protected:
     private:
         CropRect fCropRect;
         // most filters accept at most 2 input-filters
-        SkSTArray<2, sk_sp<SkImageFilter>, true> fInputs;
+        skia_private::STArray<2, sk_sp<SkImageFilter>, true> fInputs;
     };
 
     // Whether or not to recurse to child input filters for certain operations that walk the DAG.
@@ -303,7 +303,7 @@ protected:
     // other filters to need to call it.
     Context mapContext(const Context& ctx) const;
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
     static sk_sp<SkSpecialImage> DrawWithFP(GrRecordingContext* context,
                                             std::unique_ptr<GrFragmentProcessor> fp,
                                             const SkIRect& bounds,

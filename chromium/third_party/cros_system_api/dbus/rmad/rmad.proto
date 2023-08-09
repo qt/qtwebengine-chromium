@@ -174,8 +174,11 @@ enum RmadComponent {
   RMAD_COMPONENT_LID_ACCELEROMETER = 17;
   RMAD_COMPONENT_BASE_GYROSCOPE = 18;
   RMAD_COMPONENT_LID_GYROSCOPE = 19;
+  RMAD_COMPONENT_AP_I2C = 20;
+  RMAD_COMPONENT_EC_I2C = 21;
+  RMAD_COMPONENT_TCPC = 22;
   // Reserved for additional runtime_probe supported components.
-  reserved 20 to 32;
+  reserved 23 to 32;
   // Irrelevant components.
   // TODO(chenghan): Do we really need these?
   RMAD_COMPONENT_KEYBOARD = 33;

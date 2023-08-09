@@ -966,16 +966,19 @@ export namespace Audits {
 
   export const enum AttributionReportingIssueType {
     PermissionPolicyDisabled = 'PermissionPolicyDisabled',
-    PermissionPolicyNotDelegated = 'PermissionPolicyNotDelegated',
     UntrustworthyReportingOrigin = 'UntrustworthyReportingOrigin',
     InsecureContext = 'InsecureContext',
     InvalidHeader = 'InvalidHeader',
     InvalidRegisterTriggerHeader = 'InvalidRegisterTriggerHeader',
     InvalidEligibleHeader = 'InvalidEligibleHeader',
-    TooManyConcurrentRequests = 'TooManyConcurrentRequests',
     SourceAndTriggerHeaders = 'SourceAndTriggerHeaders',
     SourceIgnored = 'SourceIgnored',
     TriggerIgnored = 'TriggerIgnored',
+    OsSourceIgnored = 'OsSourceIgnored',
+    OsTriggerIgnored = 'OsTriggerIgnored',
+    InvalidRegisterOsSourceHeader = 'InvalidRegisterOsSourceHeader',
+    InvalidRegisterOsTriggerHeader = 'InvalidRegisterOsTriggerHeader',
+    WebAndOsHeaders = 'WebAndOsHeaders',
   }
 
   /**
@@ -1021,6 +1024,7 @@ export namespace Audits {
     FormInputAssignedAutocompleteValueToIdOrNameAttributeError = 'FormInputAssignedAutocompleteValueToIdOrNameAttributeError',
     FormLabelHasNeitherForNorNestedInput = 'FormLabelHasNeitherForNorNestedInput',
     FormLabelForMatchesNonExistingIdError = 'FormLabelForMatchesNonExistingIdError',
+    FormInputHasWrongButWellIntendedAutocompleteValueError = 'FormInputHasWrongButWellIntendedAutocompleteValueError',
   }
 
   /**
@@ -1033,6 +1037,7 @@ export namespace Audits {
     errorType: GenericIssueErrorType;
     frameId?: Page.FrameId;
     violatingNodeId?: DOM.BackendNodeId;
+    violatingNodeAttribute?: string;
   }
 
   /**
@@ -1046,6 +1051,17 @@ export namespace Audits {
      * One of the deprecation names from third_party/blink/renderer/core/frame/deprecation/deprecation.json5
      */
     type: string;
+  }
+
+  /**
+   * This issue warns about sites in the redirect chain of a finished navigation
+   * that may be flagged as trackers and have their state cleared if they don't
+   * receive a user interaction. Note that in this context 'site' means eTLD+1.
+   * For example, if the URL `https://example.test:80/bounce` was in the
+   * redirect chain, the site reported would be `example.test`.
+   */
+  export interface BounceTrackingIssueDetails {
+    trackingSites: string[];
   }
 
   export const enum ClientHintIssueReason {
@@ -1125,6 +1141,7 @@ export namespace Audits {
     DeprecationIssue = 'DeprecationIssue',
     ClientHintIssue = 'ClientHintIssue',
     FederatedAuthRequestIssue = 'FederatedAuthRequestIssue',
+    BounceTrackingIssue = 'BounceTrackingIssue',
   }
 
   /**
@@ -1149,6 +1166,7 @@ export namespace Audits {
     deprecationIssueDetails?: DeprecationIssueDetails;
     clientHintIssueDetails?: ClientHintIssueDetails;
     federatedAuthRequestIssueDetails?: FederatedAuthRequestIssueDetails;
+    bounceTrackingIssueDetails?: BounceTrackingIssueDetails;
   }
 
   /**
@@ -1918,6 +1936,10 @@ export namespace CSS {
      * Column offset of the end of the stylesheet within the resource (zero based).
      */
     endColumn: number;
+    /**
+     * If the style sheet was loaded from a network resource, this indicates when the resource failed to load
+     */
+    loadingFailed?: boolean;
   }
 
   /**
@@ -1933,6 +1955,10 @@ export namespace CSS {
      * Rule selector data.
      */
     selectorList: SelectorList;
+    /**
+     * Array of selectors from ancestor style rules, sorted by distance from the current rule.
+     */
+    nestingSelectors?: string[];
     /**
      * Parent stylesheet's origin.
      */
@@ -2393,6 +2419,36 @@ export namespace CSS {
   }
 
   /**
+   * CSS try rule representation.
+   */
+  export interface CSSTryRule {
+    /**
+     * The css style sheet identifier (absent for user agent stylesheet and user-specified
+     * stylesheet rules) this rule came from.
+     */
+    styleSheetId?: StyleSheetId;
+    /**
+     * Parent stylesheet's origin.
+     */
+    origin: StyleSheetOrigin;
+    /**
+     * Associated style declaration.
+     */
+    style: CSSStyle;
+  }
+
+  /**
+   * CSS position-fallback rule representation.
+   */
+  export interface CSSPositionFallbackRule {
+    name: Value;
+    /**
+     * List of keyframes.
+     */
+    tryRules: CSSTryRule[];
+  }
+
+  /**
    * CSS keyframes rule representation.
    */
   export interface CSSKeyframesRule {
@@ -2591,6 +2647,10 @@ export namespace CSS {
      * A list of CSS keyframed animations matching this node.
      */
     cssKeyframesRules?: CSSKeyframesRule[];
+    /**
+     * A list of CSS position fallbacks matching this node.
+     */
+    cssPositionFallbackRules?: CSSPositionFallbackRule[];
     /**
      * Id of the first parent element that does not have display: contents.
      */
@@ -11180,81 +11240,6 @@ export namespace Page {
     children: BackForwardCacheNotRestoredExplanationTree[];
   }
 
-  /**
-   * List of FinalStatus reasons for Prerender2.
-   */
-  export const enum PrerenderFinalStatus {
-    Activated = 'Activated',
-    Destroyed = 'Destroyed',
-    LowEndDevice = 'LowEndDevice',
-    InvalidSchemeRedirect = 'InvalidSchemeRedirect',
-    InvalidSchemeNavigation = 'InvalidSchemeNavigation',
-    InProgressNavigation = 'InProgressNavigation',
-    NavigationRequestBlockedByCsp = 'NavigationRequestBlockedByCsp',
-    MainFrameNavigation = 'MainFrameNavigation',
-    MojoBinderPolicy = 'MojoBinderPolicy',
-    RendererProcessCrashed = 'RendererProcessCrashed',
-    RendererProcessKilled = 'RendererProcessKilled',
-    Download = 'Download',
-    TriggerDestroyed = 'TriggerDestroyed',
-    NavigationNotCommitted = 'NavigationNotCommitted',
-    NavigationBadHttpStatus = 'NavigationBadHttpStatus',
-    ClientCertRequested = 'ClientCertRequested',
-    NavigationRequestNetworkError = 'NavigationRequestNetworkError',
-    MaxNumOfRunningPrerendersExceeded = 'MaxNumOfRunningPrerendersExceeded',
-    CancelAllHostsForTesting = 'CancelAllHostsForTesting',
-    DidFailLoad = 'DidFailLoad',
-    Stop = 'Stop',
-    SslCertificateError = 'SslCertificateError',
-    LoginAuthRequested = 'LoginAuthRequested',
-    UaChangeRequiresReload = 'UaChangeRequiresReload',
-    BlockedByClient = 'BlockedByClient',
-    AudioOutputDeviceRequested = 'AudioOutputDeviceRequested',
-    MixedContent = 'MixedContent',
-    TriggerBackgrounded = 'TriggerBackgrounded',
-    EmbedderTriggeredAndCrossOriginRedirected = 'EmbedderTriggeredAndCrossOriginRedirected',
-    MemoryLimitExceeded = 'MemoryLimitExceeded',
-    FailToGetMemoryUsage = 'FailToGetMemoryUsage',
-    DataSaverEnabled = 'DataSaverEnabled',
-    HasEffectiveUrl = 'HasEffectiveUrl',
-    ActivatedBeforeStarted = 'ActivatedBeforeStarted',
-    InactivePageRestriction = 'InactivePageRestriction',
-    StartFailed = 'StartFailed',
-    TimeoutBackgrounded = 'TimeoutBackgrounded',
-    CrossSiteRedirect = 'CrossSiteRedirect',
-    CrossSiteNavigation = 'CrossSiteNavigation',
-    SameSiteCrossOriginRedirect = 'SameSiteCrossOriginRedirect',
-    SameSiteCrossOriginNavigation = 'SameSiteCrossOriginNavigation',
-    SameSiteCrossOriginRedirectNotOptIn = 'SameSiteCrossOriginRedirectNotOptIn',
-    SameSiteCrossOriginNavigationNotOptIn = 'SameSiteCrossOriginNavigationNotOptIn',
-    ActivationNavigationParameterMismatch = 'ActivationNavigationParameterMismatch',
-    ActivatedInBackground = 'ActivatedInBackground',
-    EmbedderHostDisallowed = 'EmbedderHostDisallowed',
-    ActivationNavigationDestroyedBeforeSuccess = 'ActivationNavigationDestroyedBeforeSuccess',
-    TabClosedByUserGesture = 'TabClosedByUserGesture',
-    TabClosedWithoutUserGesture = 'TabClosedWithoutUserGesture',
-    PrimaryMainFrameRendererProcessCrashed = 'PrimaryMainFrameRendererProcessCrashed',
-    PrimaryMainFrameRendererProcessKilled = 'PrimaryMainFrameRendererProcessKilled',
-    ActivationFramePolicyNotCompatible = 'ActivationFramePolicyNotCompatible',
-    PreloadingDisabled = 'PreloadingDisabled',
-    BatterySaverEnabled = 'BatterySaverEnabled',
-    ActivatedDuringMainFrameNavigation = 'ActivatedDuringMainFrameNavigation',
-    PreloadingUnsupportedByWebContents = 'PreloadingUnsupportedByWebContents',
-  }
-
-  /**
-   * Preloading status values, see also PreloadingTriggeringOutcome. This
-   * status is shared by prefetchStatusUpdated and prerenderStatusUpdated.
-   */
-  export const enum PreloadingStatus {
-    Pending = 'Pending',
-    Running = 'Running',
-    Ready = 'Ready',
-    Success = 'Success',
-    Failure = 'Failure',
-    NotSupported = 'NotSupported',
-  }
-
   export interface AddScriptToEvaluateOnLoadRequest {
     scriptSource: string;
   }
@@ -12270,49 +12255,6 @@ export namespace Page {
     notRestoredExplanationsTree?: BackForwardCacheNotRestoredExplanationTree;
   }
 
-  /**
-   * Fired when a prerender attempt is completed.
-   */
-  export interface PrerenderAttemptCompletedEvent {
-    /**
-     * The frame id of the frame initiating prerendering.
-     */
-    initiatingFrameId: FrameId;
-    prerenderingUrl: string;
-    finalStatus: PrerenderFinalStatus;
-    /**
-     * This is used to give users more information about the name of the API call
-     * that is incompatible with prerender and has caused the cancellation of the attempt
-     */
-    disallowedApiMethod?: string;
-  }
-
-  /**
-   * TODO(crbug/1384419): Create a dedicated domain for preloading.
-   * Fired when a prefetch attempt is updated.
-   */
-  export interface PrefetchStatusUpdatedEvent {
-    /**
-     * The frame id of the frame initiating prefetch.
-     */
-    initiatingFrameId: FrameId;
-    prefetchUrl: string;
-    status: PreloadingStatus;
-  }
-
-  /**
-   * TODO(crbug/1384419): Create a dedicated domain for preloading.
-   * Fired when a prerender attempt is updated.
-   */
-  export interface PrerenderStatusUpdatedEvent {
-    /**
-     * The frame id of the frame initiating prerender.
-     */
-    initiatingFrameId: FrameId;
-    prerenderingUrl: string;
-    status: PreloadingStatus;
-  }
-
   export interface LoadEventFiredEvent {
     timestamp: Network.MonotonicTime;
   }
@@ -12999,6 +12941,7 @@ export namespace Storage {
     Cache_storage = 'cache_storage',
     Interest_groups = 'interest_groups',
     Shared_storage = 'shared_storage',
+    Storage_buckets = 'storage_buckets',
     All = 'all',
     Other = 'other',
   }
@@ -13177,6 +13120,25 @@ export namespace Storage {
      * SharedStorageAccessType.workletSet.
      */
     ignoreIfPresent?: boolean;
+  }
+
+  export const enum StorageBucketsDurability {
+    Relaxed = 'relaxed',
+    Strict = 'strict',
+  }
+
+  export interface StorageBucketInfo {
+    storageKey: SerializedStorageKey;
+    id: string;
+    name: string;
+    isDefault: boolean;
+    expiration: Network.TimeSinceEpoch;
+    /**
+     * Storage quota (bytes).
+     */
+    quota: number;
+    persistent: boolean;
+    durability: StorageBucketsDurability;
   }
 
   export interface GetStorageKeyForFrameRequest {
@@ -13412,6 +13374,16 @@ export namespace Storage {
     enable: boolean;
   }
 
+  export interface SetStorageBucketTrackingRequest {
+    storageKey: string;
+    enable: boolean;
+  }
+
+  export interface DeleteStorageBucketRequest {
+    storageKey: string;
+    bucketName: string;
+  }
+
   /**
    * A cache's contents have been modified.
    */
@@ -13516,6 +13488,14 @@ export namespace Storage {
      * presence/absence depends on `type`.
      */
     params: SharedStorageAccessParams;
+  }
+
+  export interface StorageBucketCreatedOrUpdatedEvent {
+    bucket: StorageBucketInfo;
+  }
+
+  export interface StorageBucketDeletedEvent {
+    bucketId: string;
   }
 }
 
@@ -15397,6 +15377,144 @@ export namespace Preload {
      * - https://github.com/WICG/nav-speculation/blob/main/triggers.md
      */
     sourceText: string;
+    /**
+     * Error information
+     * `errorMessage` is null iff `errorType` is null.
+     */
+    errorType?: RuleSetErrorType;
+    /**
+     * TODO(https://crbug.com/1425354): Replace this property with structured error.
+     */
+    errorMessage?: string;
+  }
+
+  export const enum RuleSetErrorType {
+    SourceIsNotJsonObject = 'SourceIsNotJsonObject',
+    InvalidRulesSkipped = 'InvalidRulesSkipped',
+  }
+
+  /**
+   * The type of preloading attempted. It corresponds to
+   * mojom::SpeculationAction (although PrefetchWithSubresources is omitted as it
+   * isn't being used by clients).
+   */
+  export const enum SpeculationAction {
+    Prefetch = 'Prefetch',
+    Prerender = 'Prerender',
+  }
+
+  /**
+   * Corresponds to mojom::SpeculationTargetHint.
+   * See https://github.com/WICG/nav-speculation/blob/main/triggers.md#window-name-targeting-hints
+   */
+  export const enum SpeculationTargetHint {
+    Blank = 'Blank',
+    Self = 'Self',
+  }
+
+  /**
+   * A key that identifies a preloading attempt.
+   *
+   * The url used is the url specified by the trigger (i.e. the initial URL), and
+   * not the final url that is navigated to. For example, prerendering allows
+   * same-origin main frame navigations during the attempt, but the attempt is
+   * still keyed with the initial URL.
+   */
+  export interface PreloadingAttemptKey {
+    loaderId: Network.LoaderId;
+    action: SpeculationAction;
+    url: string;
+    targetHint?: SpeculationTargetHint;
+  }
+
+  /**
+   * Lists sources for a preloading attempt, specifically the ids of rule sets
+   * that had a speculation rule that triggered the attempt, and the
+   * BackendNodeIds of <a href> or <area href> elements that triggered the
+   * attempt (in the case of attempts triggered by a document rule). It is
+   * possible for mulitple rule sets and links to trigger a single attempt.
+   */
+  export interface PreloadingAttemptSource {
+    key: PreloadingAttemptKey;
+    ruleSetIds: RuleSetId[];
+    nodeIds: DOM.BackendNodeId[];
+  }
+
+  /**
+   * List of FinalStatus reasons for Prerender2.
+   */
+  export const enum PrerenderFinalStatus {
+    Activated = 'Activated',
+    Destroyed = 'Destroyed',
+    LowEndDevice = 'LowEndDevice',
+    InvalidSchemeRedirect = 'InvalidSchemeRedirect',
+    InvalidSchemeNavigation = 'InvalidSchemeNavigation',
+    InProgressNavigation = 'InProgressNavigation',
+    NavigationRequestBlockedByCsp = 'NavigationRequestBlockedByCsp',
+    MainFrameNavigation = 'MainFrameNavigation',
+    MojoBinderPolicy = 'MojoBinderPolicy',
+    RendererProcessCrashed = 'RendererProcessCrashed',
+    RendererProcessKilled = 'RendererProcessKilled',
+    Download = 'Download',
+    TriggerDestroyed = 'TriggerDestroyed',
+    NavigationNotCommitted = 'NavigationNotCommitted',
+    NavigationBadHttpStatus = 'NavigationBadHttpStatus',
+    ClientCertRequested = 'ClientCertRequested',
+    NavigationRequestNetworkError = 'NavigationRequestNetworkError',
+    MaxNumOfRunningPrerendersExceeded = 'MaxNumOfRunningPrerendersExceeded',
+    CancelAllHostsForTesting = 'CancelAllHostsForTesting',
+    DidFailLoad = 'DidFailLoad',
+    Stop = 'Stop',
+    SslCertificateError = 'SslCertificateError',
+    LoginAuthRequested = 'LoginAuthRequested',
+    UaChangeRequiresReload = 'UaChangeRequiresReload',
+    BlockedByClient = 'BlockedByClient',
+    AudioOutputDeviceRequested = 'AudioOutputDeviceRequested',
+    MixedContent = 'MixedContent',
+    TriggerBackgrounded = 'TriggerBackgrounded',
+    EmbedderTriggeredAndCrossOriginRedirected = 'EmbedderTriggeredAndCrossOriginRedirected',
+    MemoryLimitExceeded = 'MemoryLimitExceeded',
+    FailToGetMemoryUsage = 'FailToGetMemoryUsage',
+    DataSaverEnabled = 'DataSaverEnabled',
+    HasEffectiveUrl = 'HasEffectiveUrl',
+    ActivatedBeforeStarted = 'ActivatedBeforeStarted',
+    InactivePageRestriction = 'InactivePageRestriction',
+    StartFailed = 'StartFailed',
+    TimeoutBackgrounded = 'TimeoutBackgrounded',
+    CrossSiteRedirectInInitialNavigation = 'CrossSiteRedirectInInitialNavigation',
+    CrossSiteNavigationInInitialNavigation = 'CrossSiteNavigationInInitialNavigation',
+    SameSiteCrossOriginRedirectNotOptInInInitialNavigation = 'SameSiteCrossOriginRedirectNotOptInInInitialNavigation',
+    SameSiteCrossOriginNavigationNotOptInInInitialNavigation = 'SameSiteCrossOriginNavigationNotOptInInInitialNavigation',
+    ActivationNavigationParameterMismatch = 'ActivationNavigationParameterMismatch',
+    ActivatedInBackground = 'ActivatedInBackground',
+    EmbedderHostDisallowed = 'EmbedderHostDisallowed',
+    ActivationNavigationDestroyedBeforeSuccess = 'ActivationNavigationDestroyedBeforeSuccess',
+    TabClosedByUserGesture = 'TabClosedByUserGesture',
+    TabClosedWithoutUserGesture = 'TabClosedWithoutUserGesture',
+    PrimaryMainFrameRendererProcessCrashed = 'PrimaryMainFrameRendererProcessCrashed',
+    PrimaryMainFrameRendererProcessKilled = 'PrimaryMainFrameRendererProcessKilled',
+    ActivationFramePolicyNotCompatible = 'ActivationFramePolicyNotCompatible',
+    PreloadingDisabled = 'PreloadingDisabled',
+    BatterySaverEnabled = 'BatterySaverEnabled',
+    ActivatedDuringMainFrameNavigation = 'ActivatedDuringMainFrameNavigation',
+    PreloadingUnsupportedByWebContents = 'PreloadingUnsupportedByWebContents',
+    CrossSiteRedirectInMainFrameNavigation = 'CrossSiteRedirectInMainFrameNavigation',
+    CrossSiteNavigationInMainFrameNavigation = 'CrossSiteNavigationInMainFrameNavigation',
+    SameSiteCrossOriginRedirectNotOptInInMainFrameNavigation = 'SameSiteCrossOriginRedirectNotOptInInMainFrameNavigation',
+    SameSiteCrossOriginNavigationNotOptInInMainFrameNavigation = 'SameSiteCrossOriginNavigationNotOptInInMainFrameNavigation',
+  }
+
+  /**
+   * Preloading status values, see also PreloadingTriggeringOutcome. This
+   * status is shared by prefetchStatusUpdated and prerenderStatusUpdated.
+   */
+  export const enum PreloadingStatus {
+    Pending = 'Pending',
+    Running = 'Running',
+    Ready = 'Ready',
+    Success = 'Success',
+    Failure = 'Failure',
+    NotSupported = 'NotSupported',
   }
 
   /**
@@ -15408,6 +15526,122 @@ export namespace Preload {
 
   export interface RuleSetRemovedEvent {
     id: RuleSetId;
+  }
+
+  /**
+   * Fired when a prerender attempt is completed.
+   */
+  export interface PrerenderAttemptCompletedEvent {
+    key: PreloadingAttemptKey;
+    /**
+     * The frame id of the frame initiating prerendering.
+     */
+    initiatingFrameId: Page.FrameId;
+    prerenderingUrl: string;
+    finalStatus: PrerenderFinalStatus;
+    /**
+     * This is used to give users more information about the name of the API call
+     * that is incompatible with prerender and has caused the cancellation of the attempt
+     */
+    disallowedApiMethod?: string;
+  }
+
+  /**
+   * Fired when a prefetch attempt is updated.
+   */
+  export interface PrefetchStatusUpdatedEvent {
+    key: PreloadingAttemptKey;
+    /**
+     * The frame id of the frame initiating prefetch.
+     */
+    initiatingFrameId: Page.FrameId;
+    prefetchUrl: string;
+    status: PreloadingStatus;
+  }
+
+  /**
+   * Fired when a prerender attempt is updated.
+   */
+  export interface PrerenderStatusUpdatedEvent {
+    key: PreloadingAttemptKey;
+    /**
+     * The frame id of the frame initiating prerender.
+     */
+    initiatingFrameId: Page.FrameId;
+    prerenderingUrl: string;
+    status: PreloadingStatus;
+  }
+
+  /**
+   * Send a list of sources for all preloading attempts in a document.
+   */
+  export interface PreloadingAttemptSourcesUpdatedEvent {
+    loaderId: Network.LoaderId;
+    preloadingAttemptSources: PreloadingAttemptSource[];
+  }
+}
+
+/**
+ * This domain allows interacting with the FedCM dialog.
+ */
+export namespace FedCm {
+
+  /**
+   * Whether this is a sign-up or sign-in action for this account, i.e.
+   * whether this account has ever been used to sign in to this RP before.
+   */
+  export const enum LoginState {
+    SignIn = 'SignIn',
+    SignUp = 'SignUp',
+  }
+
+  /**
+   * Corresponds to IdentityRequestAccount
+   */
+  export interface Account {
+    accountId: string;
+    email: string;
+    name: string;
+    givenName: string;
+    pictureUrl: string;
+    idpConfigUrl: string;
+    idpSigninUrl: string;
+    loginState: LoginState;
+    /**
+     * These two are only set if the loginState is signUp
+     */
+    termsOfServiceUrl?: string;
+    privacyPolicyUrl?: string;
+  }
+
+  export interface EnableRequest {
+    /**
+     * Allows callers to disable the promise rejection delay that would
+     * normally happen, if this is unimportant to what's being tested.
+     * (step 4 of https://fedidcg.github.io/FedCM/#browser-api-rp-sign-in)
+     */
+    disableRejectionDelay?: boolean;
+  }
+
+  export interface SelectAccountRequest {
+    dialogId: string;
+    accountIndex: integer;
+  }
+
+  export interface DismissDialogRequest {
+    dialogId: string;
+    triggerCooldown?: boolean;
+  }
+
+  export interface DialogShownEvent {
+    dialogId: string;
+    accounts: Account[];
+    /**
+     * These exist primarily so that the caller can verify the
+     * RP context was used appropriately.
+     */
+    title: string;
+    subtitle?: string;
   }
 }
 
@@ -16168,6 +16402,7 @@ export namespace Debugger {
     Other = 'other',
     PromiseRejection = 'promiseRejection',
     XHR = 'XHR',
+    Step = 'step',
   }
 
   /**

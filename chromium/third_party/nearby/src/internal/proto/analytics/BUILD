@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@rules_cc//cc:defs.bzl", "cc_proto_library")
+
 licenses(["notice"])
 
 package(default_visibility = ["//visibility:public"])
@@ -25,6 +27,23 @@ proto_library(
         "//proto:connections_enums_proto",
         "//proto/errorcode:error_code_enums_proto",
     ],
+)
+
+proto_library(
+    name = "fast_pair_log_proto",
+    srcs = ["fast_pair_log.proto"],
+    compatible_with = ["//buildenv/target:non_prod"],
+    deps = ["//proto:fast_pair_enums_proto"],
+)
+
+cc_proto_library(
+    name = "fast_pair_log_cc_proto",
+    deps = [":fast_pair_log_proto"],
+)
+
+java_proto_library(
+    name = "fast_pair_log_java_proto",
+    deps = [":fast_pair_log_proto"],
 )
 
 cc_proto_library(

@@ -182,7 +182,7 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession
   // Called when an HTTP/3 PRIORITY_UPDATE frame has been received for a request
   // stream.  Returns false and closes connection if |stream_id| is invalid.
   bool OnPriorityUpdateForRequestStream(QuicStreamId stream_id,
-                                        QuicStreamPriority priority);
+                                        HttpStreamPriority priority);
 
   // Called when an HTTP/3 ACCEPT_CH frame has been received.
   // This method will only be called for client sessions.
@@ -216,7 +216,7 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession
 
   // Writes an HTTP/3 PRIORITY_UPDATE frame to the peer.
   void WriteHttp3PriorityUpdate(QuicStreamId stream_id,
-                                QuicStreamPriority priority);
+                                HttpStreamPriority priority);
 
   // Process received HTTP/3 GOAWAY frame.  When sent from server to client,
   // |id| is a stream ID.  When sent from client to server, |id| is a push ID.
@@ -408,10 +408,15 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession
   WebTransportHttp3* GetWebTransportSession(WebTransportSessionId id);
 
   // If true, no data on bidirectional streams will be processed by the server
-  // until the SETTINGS are received.  Only works for HTTP/3.
+  // until the SETTINGS are received.  Only works for HTTP/3. This is currently
+  // required either (1) for WebTransport because WebTransport needs settings to
+  // correctly parse requests or (2) when multiple versions of HTTP Datagrams
+  // are supported to ensure we know which one is used. The HTTP Datagram check
+  // will be removed once we drop support for draft04.
   bool ShouldBufferRequestsUntilSettings() {
     return version().UsesHttp3() && perspective() == Perspective::IS_SERVER &&
-           LocalHttpDatagramSupport() != HttpDatagramSupport::kNone;
+           (ShouldNegotiateWebTransport() ||
+            LocalHttpDatagramSupport() == HttpDatagramSupport::kRfcAndDraft04);
   }
 
   // Returns if the incoming bidirectional streams should process data.  This is
@@ -624,7 +629,7 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession
 
   // Priority values received in PRIORITY_UPDATE frames for streams that are not
   // open yet.
-  absl::flat_hash_map<QuicStreamId, QuicStreamPriority>
+  absl::flat_hash_map<QuicStreamId, HttpStreamPriority>
       buffered_stream_priorities_;
 
   // An integer used for live check. The indicator is assigned a value in

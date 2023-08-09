@@ -29,6 +29,8 @@
 enum {
     TONE_MAP_AUTO,
     TONE_MAP_CLIP,
+    TONE_MAP_ST2094_40,
+    TONE_MAP_ST2094_10,
     TONE_MAP_BT2390,
     TONE_MAP_BT2446A,
     TONE_MAP_SPLINE,
@@ -41,16 +43,20 @@ enum {
 };
 
 static const struct pl_tone_map_function * const tonemapping_funcs[TONE_MAP_COUNT] = {
-    [TONE_MAP_AUTO]     = &pl_tone_map_auto,
-    [TONE_MAP_CLIP]     = &pl_tone_map_clip,
-    [TONE_MAP_BT2390]   = &pl_tone_map_bt2390,
-    [TONE_MAP_BT2446A]  = &pl_tone_map_bt2446a,
-    [TONE_MAP_SPLINE]   = &pl_tone_map_spline,
-    [TONE_MAP_REINHARD] = &pl_tone_map_reinhard,
-    [TONE_MAP_MOBIUS]   = &pl_tone_map_mobius,
-    [TONE_MAP_HABLE]    = &pl_tone_map_hable,
-    [TONE_MAP_GAMMA]    = &pl_tone_map_gamma,
-    [TONE_MAP_LINEAR]   = &pl_tone_map_linear,
+    [TONE_MAP_AUTO]      = &pl_tone_map_auto,
+    [TONE_MAP_CLIP]      = &pl_tone_map_clip,
+#if PL_API_VER >= 246
+    [TONE_MAP_ST2094_40] = &pl_tone_map_st2094_40,
+    [TONE_MAP_ST2094_10] = &pl_tone_map_st2094_10,
+#endif
+    [TONE_MAP_BT2390]    = &pl_tone_map_bt2390,
+    [TONE_MAP_BT2446A]   = &pl_tone_map_bt2446a,
+    [TONE_MAP_SPLINE]    = &pl_tone_map_spline,
+    [TONE_MAP_REINHARD]  = &pl_tone_map_reinhard,
+    [TONE_MAP_MOBIUS]    = &pl_tone_map_mobius,
+    [TONE_MAP_HABLE]     = &pl_tone_map_hable,
+    [TONE_MAP_GAMMA]     = &pl_tone_map_gamma,
+    [TONE_MAP_LINEAR]    = &pl_tone_map_linear,
 };
 
 typedef struct LibplaceboContext {
@@ -91,7 +97,6 @@ typedef struct LibplaceboContext {
     float polar_cutoff;
     int disable_linear;
     int disable_builtin;
-    int force_icc_lut;
     int force_dither;
     int disable_fbos;
 
@@ -126,11 +131,15 @@ typedef struct LibplaceboContext {
     int inverse_tonemapping;
     float crosstalk;
     int tonemapping_lut_size;
+
+#if FF_API_LIBPLACEBO_OPTS
     /* for backwards compatibility */
     float desat_str;
     float desat_exp;
     int gamut_warning;
     int gamut_clipping;
+    int force_icc_lut;
+#endif
 
      /* pl_dither_params */
     int dithering;
@@ -374,6 +383,7 @@ static int process_frames(AVFilterContext *avctx, AVFrame *out, AVFrame *in)
         pl_rect2df_aspect_set(&target.crop, aspect, s->pad_crop_ratio);
     }
 
+#if FF_API_LIBPLACEBO_OPTS
     /* backwards compatibility with older API */
     if (!tonemapping_mode && (s->desat_str >= 0.0f || s->desat_exp >= 0.0f)) {
         float str = s->desat_str < 0.0f ? 0.9f : s->desat_str;
@@ -391,6 +401,7 @@ static int process_frames(AVFilterContext *avctx, AVFrame *out, AVFrame *in)
         gamut_mode = PL_GAMUT_WARN;
     if (s->gamut_clipping)
         gamut_mode = PL_GAMUT_DESATURATE;
+#endif
 
     /* Update render params */
     params = (struct pl_render_params) {
@@ -452,7 +463,6 @@ static int process_frames(AVFilterContext *avctx, AVFrame *out, AVFrame *in)
         .polar_cutoff = s->polar_cutoff,
         .disable_linear_scaling = s->disable_linear,
         .disable_builtin_scalers = s->disable_builtin,
-        .force_icc_lut = s->force_icc_lut,
         .force_dither = s->force_dither,
         .disable_fbos = s->disable_fbos,
     };
@@ -547,10 +557,10 @@ fail:
 
 static int libplacebo_query_format(AVFilterContext *ctx)
 {
-    int err = 0;
+    int err;
     LibplaceboContext *s = ctx->priv;
     const AVPixFmtDescriptor *desc = NULL;
-    AVFilterFormats *formats = NULL;
+    AVFilterFormats *infmts = NULL, *outfmts = NULL;
 
     RET(init_vulkan(ctx));
 
@@ -564,29 +574,47 @@ static int libplacebo_query_format(AVFilterContext *ctx)
             continue;
 #endif
 
-        if (pl_test_pixfmt(s->gpu, pixfmt)) {
-            if ((err = ff_add_format(&formats, pixfmt)) < 0)
-                return err;
+        if (!pl_test_pixfmt(s->gpu, pixfmt))
+            continue;
+
+        RET(ff_add_format(&infmts, pixfmt));
+
+        /* Filter for supported output pixel formats */
+        if (desc->flags & AV_PIX_FMT_FLAG_BE)
+            continue; /* BE formats are not supported by pl_download_avframe */
+
+        /* Mask based on user specified format */
+        if (s->out_format != AV_PIX_FMT_NONE) {
+            if (pixfmt == AV_PIX_FMT_VULKAN && av_vkfmt_from_pixfmt(s->out_format)) {
+                /* OK */
+            } else if (pixfmt == s->out_format) {
+                /* OK */
+            } else {
+                continue; /* Not OK */
+            }
         }
+
+        RET(ff_add_format(&outfmts, pixfmt));
     }
 
-    RET(ff_formats_ref(formats, &ctx->inputs[0]->outcfg.formats));
-
-    if (s->out_format != AV_PIX_FMT_NONE) {
-        /* Support only requested format, and hwaccel (vulkan) */
-        const enum AVPixelFormat out_fmts[] = {
-            s->out_format, AV_PIX_FMT_VULKAN, AV_PIX_FMT_NONE,
-        };
-        RET(ff_formats_ref(ff_make_format_list(out_fmts),
-                           &ctx->outputs[0]->incfg.formats));
-    } else {
-        /* Support all formats */
-        RET(ff_formats_ref(formats, &ctx->outputs[0]->incfg.formats));
+    if (!infmts || !outfmts) {
+        if (s->out_format) {
+            av_log(s, AV_LOG_ERROR, "Invalid output format '%s'!\n",
+                   av_get_pix_fmt_name(s->out_format));
+        }
+        err = AVERROR(EINVAL);
+        goto fail;
     }
 
+    RET(ff_formats_ref(infmts, &ctx->inputs[0]->outcfg.formats));
+    RET(ff_formats_ref(outfmts, &ctx->outputs[0]->incfg.formats));
     return 0;
 
 fail:
+    if (infmts && !infmts->refcount)
+        ff_formats_unref(&infmts);
+    if (outfmts && !outfmts->refcount)
+        ff_formats_unref(&outfmts);
     return err;
 }
 
@@ -772,6 +800,10 @@ static const AVOption libplacebo_options[] = {
     { "tonemapping", "Tone-mapping algorithm", OFFSET(tonemapping), AV_OPT_TYPE_INT, {.i64 = TONE_MAP_AUTO}, 0, TONE_MAP_COUNT - 1, DYNAMIC, "tonemap" },
         { "auto", "Automatic selection", 0, AV_OPT_TYPE_CONST, {.i64 = TONE_MAP_AUTO}, 0, 0, STATIC, "tonemap" },
         { "clip", "No tone mapping (clip", 0, AV_OPT_TYPE_CONST, {.i64 = TONE_MAP_CLIP}, 0, 0, STATIC, "tonemap" },
+#if PL_API_VER >= 246
+        { "st2094-40", "SMPTE ST 2094-40", 0, AV_OPT_TYPE_CONST, {.i64 = TONE_MAP_ST2094_40}, 0, 0, STATIC, "tonemap" },
+        { "st2094-10", "SMPTE ST 2094-10", 0, AV_OPT_TYPE_CONST, {.i64 = TONE_MAP_ST2094_10}, 0, 0, STATIC, "tonemap" },
+#endif
         { "bt.2390", "ITU-R BT.2390 EETF", 0, AV_OPT_TYPE_CONST, {.i64 = TONE_MAP_BT2390}, 0, 0, STATIC, "tonemap" },
         { "bt.2446a", "ITU-R BT.2446 Method A", 0, AV_OPT_TYPE_CONST, {.i64 = TONE_MAP_BT2446A}, 0, 0, STATIC, "tonemap" },
         { "spline", "Single-pivot polynomial spline", 0, AV_OPT_TYPE_CONST, {.i64 = TONE_MAP_SPLINE}, 0, 0, STATIC, "tonemap" },
@@ -790,11 +822,14 @@ static const AVOption libplacebo_options[] = {
     { "inverse_tonemapping", "Inverse tone mapping (range expansion)", OFFSET(inverse_tonemapping), AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, DYNAMIC },
     { "tonemapping_crosstalk", "Crosstalk factor for tone-mapping", OFFSET(crosstalk), AV_OPT_TYPE_FLOAT, {.dbl = 0.04}, 0.0, 0.30, DYNAMIC },
     { "tonemapping_lut_size", "Tone-mapping LUT size", OFFSET(tonemapping_lut_size), AV_OPT_TYPE_INT, {.i64 = 256}, 2, 1024, DYNAMIC },
+
+#if FF_API_LIBPLACEBO_OPTS
     /* deprecated options for backwards compatibility, defaulting to -1 to not override the new defaults */
     { "desaturation_strength", "Desaturation strength", OFFSET(desat_str), AV_OPT_TYPE_FLOAT, {.dbl = -1.0}, -1.0, 1.0, DYNAMIC | AV_OPT_FLAG_DEPRECATED },
     { "desaturation_exponent", "Desaturation exponent", OFFSET(desat_exp), AV_OPT_TYPE_FLOAT, {.dbl = -1.0}, -1.0, 10.0, DYNAMIC | AV_OPT_FLAG_DEPRECATED },
     { "gamut_warning", "Highlight out-of-gamut colors", OFFSET(gamut_warning), AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, DYNAMIC | AV_OPT_FLAG_DEPRECATED },
     { "gamut_clipping", "Enable colorimetric gamut clipping", OFFSET(gamut_clipping), AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, DYNAMIC | AV_OPT_FLAG_DEPRECATED },
+#endif
 
     { "dithering", "Dither method to use", OFFSET(dithering), AV_OPT_TYPE_INT, {.i64 = PL_DITHER_BLUE_NOISE}, -1, PL_DITHER_METHOD_COUNT - 1, DYNAMIC, "dither" },
         { "none", "Disable dithering", 0, AV_OPT_TYPE_CONST, {.i64 = -1}, 0, 0, STATIC, "dither" },
@@ -819,7 +854,9 @@ static const AVOption libplacebo_options[] = {
     { "polar_cutoff", "Polar LUT cutoff", OFFSET(polar_cutoff), AV_OPT_TYPE_FLOAT, {.dbl = 0}, 0.0, 1.0, DYNAMIC },
     { "disable_linear", "Disable linear scaling", OFFSET(disable_linear), AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, DYNAMIC },
     { "disable_builtin", "Disable built-in scalers", OFFSET(disable_builtin), AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, DYNAMIC },
-    { "force_icc_lut", "Force the use of a full ICC 3DLUT for color mapping", OFFSET(force_icc_lut), AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, DYNAMIC },
+#if FF_API_LIBPLACEBO_OPTS
+    { "force_icc_lut", "Deprecated, does nothing", OFFSET(force_icc_lut), AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, DYNAMIC | AV_OPT_FLAG_DEPRECATED },
+#endif
     { "force_dither", "Force dithering", OFFSET(force_dither), AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, DYNAMIC },
     { "disable_fbos", "Force-disable FBOs", OFFSET(disable_fbos), AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, DYNAMIC },
     { NULL },
@@ -856,4 +893,5 @@ const AVFilter ff_vf_libplacebo = {
     FILTER_QUERY_FUNC(libplacebo_query_format),
     .priv_class     = &libplacebo_class,
     .flags_internal = FF_FILTER_FLAG_HWFRAME_AWARE,
+    .flags          = AVFILTER_FLAG_HWDEVICE,
 };

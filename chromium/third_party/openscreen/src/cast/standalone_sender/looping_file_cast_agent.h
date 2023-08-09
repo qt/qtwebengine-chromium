@@ -125,6 +125,10 @@ class LoopingFileCastAgent final
   // Receiver's Mirroring App has been established (if |success| is true).
   void OnRemoteMessagingOpened(bool success);
 
+  // Called by the |connection_handler_| after message routing to the Cast
+  // Receiver platform has been established (if |success| is true).
+  void OnReceiverMessagingOpened(bool success);
+
   // Once we have a connection to the receiver we need to create and start
   // a sender session. This method results in the OFFER/ANSWER exchange
   // being completed and a session should be started.
@@ -170,6 +174,7 @@ class LoopingFileCastAgent final
   // This is set once LoopingFileCastAgent has requested to start messaging to
   // the mirroring app on a Cast Receiver.
   absl::optional<VirtualConnection> remote_connection_;
+  absl::optional<VirtualConnection> platform_remote_connection_;
 
   CastMode cast_mode_ = CastMode::kMirroring;
 
@@ -185,6 +190,10 @@ class LoopingFileCastAgent final
   // Set when remoting is successfully negotiated. However, remoting streams
   // won't start until |is_ready_for_remoting_| is true.
   std::unique_ptr<SenderSession::ConfiguredSenders> current_negotiation_;
+
+  // Set to true once we have gotten news that the mirroring application has
+  // been launched at least once.
+  bool has_launched_ = false;
 
   // Set to true when the remoting receiver is ready.  However, remoting streams
   // won't start until remoting is successfully negotiated.

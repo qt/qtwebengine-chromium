@@ -25,6 +25,7 @@
 #include "src/tint/sem/module.h"
 #include "src/tint/sem/struct.h"
 #include "src/tint/sem/variable.h"
+#include "src/tint/switch.h"
 #include "src/tint/utils/compiler_macros.h"
 #include "src/tint/utils/hashmap.h"
 #include "src/tint/utils/transform.h"
@@ -312,8 +313,7 @@ struct Std140::State {
                         // Member is of a type that requires forking for std140-layout
                         fork_std140 = true;
                         auto attrs = ctx.Clone(member->Declaration()->attributes);
-                        members.Push(
-                            b.Member(sym.NameFor(member->Name()), std140_ty, std::move(attrs)));
+                        members.Push(b.Member(member->Name().Name(), std140_ty, std::move(attrs)));
                         continue;  // Next member
                     }
 
@@ -334,7 +334,7 @@ struct Std140::State {
                     }
                     // Create a new forked structure, and insert it just under the original
                     // structure.
-                    auto name = b.Symbols().New(sym.NameFor(str->Name()) + "_std140");
+                    auto name = b.Symbols().New(str->Name().Name() + "_std140");
                     auto* std140 = b.create<ast::Struct>(b.Ident(name), std::move(members),
                                                          ctx.Clone(str->Declaration()->attributes));
                     ctx.InsertAfter(src->AST().GlobalDeclarations(), global, std140);
@@ -370,7 +370,7 @@ struct Std140::State {
     std::string PrefixForUniqueNames(const ast::Struct* str,
                                      Symbol unsuffixed,
                                      uint32_t count) const {
-        auto prefix = sym.NameFor(unsuffixed);
+        auto prefix = unsuffixed.Name();
         // Keep on inserting '_' between the unsuffixed name and the suffix numbers until the name
         // is unique.
         while (true) {
@@ -384,7 +384,7 @@ struct Std140::State {
             bool unique = true;
             for (auto* member : str->members) {
                 // The member name must be unique over the entire set of `count` suffixed names.
-                if (strings.Contains(sym.NameFor(member->name->symbol))) {
+                if (strings.Contains(member->name->symbol.Name())) {
                     unique = false;
                     break;
                 }
@@ -528,7 +528,7 @@ struct Std140::State {
                     }
                     TINT_ICE(Transform, b.Diagnostics())
                         << "unexpected variable found walking access chain: "
-                        << sym.NameFor(user->Variable()->Declaration()->name->symbol);
+                        << user->Variable()->Declaration()->name->symbol.Name();
                     return Action::kError;
                 },
                 [&](const sem::StructMemberAccess* a) {
@@ -631,7 +631,7 @@ struct Std140::State {
     const std::string ConvertSuffix(const type::Type* ty) {
         return Switch(
             ty,  //
-            [&](const sem::Struct* str) { return sym.NameFor(str->Name()); },
+            [&](const sem::Struct* str) { return str->Name().Name(); },
             [&](const type::Array* arr) {
                 auto count = arr->ConstantCount();
                 if (TINT_UNLIKELY(!count)) {
@@ -709,9 +709,8 @@ struct Std140::State {
                             args.Push(b.Call(mat_ty, std::move(mat_args)));
                         } else {
                             // Convert the member
-                            args.Push(
-                                Convert(member->Type(),
-                                        b.MemberAccessor(param, sym.NameFor(member->Name()))));
+                            args.Push(Convert(member->Type(),
+                                              b.MemberAccessor(param, member->Name().Name())));
                         }
                     }
                     stmts.Push(b.Return(b.Call(CreateASTTypeFor(ctx, ty), std::move(args))));
@@ -919,8 +918,8 @@ struct Std140::State {
                 auto mat_member_idx = std::get<u32>(chain.indices[std140_mat_idx]);
                 auto* mat_member = str->Members()[mat_member_idx];
                 if (column_idx == 0) {
-                    name += "_" + sym.NameFor(mat_member->Name()) + "_p" +
-                            std::to_string(column_param_idx);
+                    name +=
+                        "_" + mat_member->Name().Name() + "_p" + std::to_string(column_param_idx);
                 }
                 auto mat_columns = *std140_mat_members.Get(mat_member);
                 expr = b.MemberAccessor(expr, mat_columns[column_idx]->name->symbol);
@@ -1022,7 +1021,7 @@ struct Std140::State {
                 return b.MemberAccessor(b.Deref(let), column_member->name->symbol);
             });
             ty = mat_member->Type();
-            name += "_" + sym.NameFor(mat_member->Name());
+            name += "_" + mat_member->Name().Name();
         } else {
             // Non-structure-member matrix. The columns are decomposed into a new, bespoke
             // std140 structure.
@@ -1078,7 +1077,7 @@ struct Std140::State {
         if (std::get_if<UniformVariable>(&access)) {
             const auto symbol = chain.var->Declaration()->name->symbol;
             const auto* expr = b.Expr(ctx.Clone(symbol));
-            const auto name = src->Symbols().NameFor(symbol);
+            const auto name = symbol.Name();
             ty = chain.var->Type()->UnwrapRef();
             return {expr, ty, name};
         }
@@ -1136,7 +1135,7 @@ struct Std140::State {
             ty,  //
             [&](const sem::Struct* str) -> ExprTypeName {
                 auto* member = str->Members()[idx];
-                auto member_name = sym.NameFor(member->Name());
+                auto member_name = member->Name().Name();
                 auto* expr = b.MemberAccessor(lhs, member_name);
                 ty = member->Type();
                 return {expr, ty, member_name};

@@ -21,15 +21,15 @@
 #include "state_tracker/base_node.h"
 #include "state_tracker/query_state.h"
 #include "state_tracker/video_session_state.h"
-#include "command_validation.h"
-#include "hash_vk_types.h"
-#include "subresource_adapter.h"
+#include "generated/command_validation.h"
+#include "utils/hash_vk_types.h"
+#include "containers/subresource_adapter.h"
 #include "state_tracker/image_layout_map.h"
 #include "state_tracker/pipeline_state.h"
 #include "state_tracker/device_state.h"
 #include "state_tracker/descriptor_sets.h"
-#include "qfo_transfer.h"
-#include "vk_layer_data.h"
+#include "containers/qfo_transfer.h"
+#include "containers/custom_containers.h"
 
 struct SUBPASS_INFO;
 class FRAMEBUFFER_STATE;
@@ -122,6 +122,11 @@ struct BufferBinding {
     VkDeviceSize stride;
 
     BufferBinding() : buffer_state(), size(0), offset(0), stride(0) {}
+    BufferBinding(const std::shared_ptr<BUFFER_STATE> &buffer_state_, VkDeviceSize size_, VkDeviceSize offset_,
+                  VkDeviceSize stride_)
+        : buffer_state(buffer_state_), size(size_), offset(offset_), stride(stride_) {}
+    BufferBinding(const std::shared_ptr<BUFFER_STATE> &buffer_state_, VkDeviceSize offset_)
+        : BufferBinding(buffer_state_, BUFFER_STATE::ComputeSize(buffer_state_, offset_, VK_WHOLE_SIZE), offset_, 0U) {}
     virtual ~BufferBinding() {}
 
     virtual void reset() { *this = BufferBinding(); }
@@ -132,6 +137,8 @@ struct IndexBufferBinding : BufferBinding {
     VkIndexType index_type;
 
     IndexBufferBinding() : BufferBinding(), index_type(static_cast<VkIndexType>(0)) {}
+    IndexBufferBinding(const std::shared_ptr<BUFFER_STATE> &buffer_state_, VkDeviceSize offset_, VkIndexType index_type_)
+        : BufferBinding(buffer_state_, offset_), index_type(index_type_) {}
     virtual ~IndexBufferBinding() {}
 
     virtual void reset() override { *this = IndexBufferBinding(); }
@@ -169,7 +176,6 @@ class CMD_BUFFER_STATE : public REFCOUNTED_NODE {
     CB_STATE state;               // Track cmd buffer update state
     uint64_t command_count;       // Number of commands recorded. Currently only used with VK_KHR_performance_query
     uint64_t submitCount;         // Number of times CB has been submitted
-    bool pipeline_bound = false;  // True if CmdBindPipeline has been called on this command buffer, false otherwise
     typedef uint64_t ImageLayoutUpdateCount;
     ImageLayoutUpdateCount image_layout_change_count;  // The sequence number for changes to image layout (for cached validation)
 
@@ -252,8 +258,8 @@ class CMD_BUFFER_STATE : public REFCOUNTED_NODE {
 
     // For each draw command D recorded to this command buffer, let
     //  * g_D be the graphics pipeline used
-    //  * v_G be the viewportCount of g_D (0 if g_D disables rasterization or enables VK_DYNAMIC_STATE_VIEWPORT_WITH_COUNT_EXT)
-    //  * s_G be the scissorCount  of g_D (0 if g_D disables rasterization or enables VK_DYNAMIC_STATE_SCISSOR_WITH_COUNT_EXT)
+    //  * v_G be the viewportCount of g_D (0 if g_D disables rasterization or enables VK_DYNAMIC_STATE_VIEWPORT_WITH_COUNT)
+    //  * s_G be the scissorCount  of g_D (0 if g_D disables rasterization or enables VK_DYNAMIC_STATE_SCISSOR_WITH_COUNT)
     // Then this value is max(0, max(v_G for all D in cb), max(s_G for all D in cb))
     uint32_t usedViewportScissorCount;
     uint32_t pipelineStaticViewportCount;  // v_G for currently-bound graphics pipeline.
@@ -294,7 +300,12 @@ class CMD_BUFFER_STATE : public REFCOUNTED_NODE {
 
     VkSubpassContents activeSubpassContents;
     uint32_t active_render_pass_device_mask;
-    uint32_t activeSubpass;
+    uint32_t GetActiveSubpass() const { return active_subpass_; }
+    void SetActiveSubpass(uint32_t subpass);
+    std::optional<VkSampleCountFlagBits> GetActiveSubpassRasterizationSampleCount() const { return active_subpass_sample_count_; }
+    void SetActiveSubpassRasterizationSampleCount(VkSampleCountFlagBits rasterization_sample_count) {
+        active_subpass_sample_count_ = rasterization_sample_count;
+    }
     std::shared_ptr<FRAMEBUFFER_STATE> activeFramebuffer;
     // Unified data structs to track objects bound to this command buffer as well as object
     //  dependencies that have been broken : either destroyed objects, or updated descriptor sets
@@ -348,7 +359,6 @@ class CMD_BUFFER_STATE : public REFCOUNTED_NODE {
 
     std::map<VkShaderStageFlagBits, std::vector<uint8_t>>
         push_constant_data_update;  // vector's value is enum PushConstantByteState.
-    VkPipelineLayout push_constant_pipeline_layout_set;
 
     // Used for Best Practices tracking
     uint32_t small_indexed_draw_call_count;
@@ -417,14 +427,6 @@ class CMD_BUFFER_STATE : public REFCOUNTED_NODE {
     }
 
     const QFOTransferBarrierSets<QFOBufferTransferBarrier> &GetQFOBarrierSets(const QFOBufferTransferBarrier &type_tag) const {
-        return qfo_transfer_buffer_barriers;
-    }
-
-    QFOTransferBarrierSets<QFOImageTransferBarrier> &GetQFOBarrierSets(const QFOImageTransferBarrier &type_tag) {
-        return qfo_transfer_image_barriers;
-    }
-
-    QFOTransferBarrierSets<QFOBufferTransferBarrier> &GetQFOBarrierSets(const QFOBufferTransferBarrier &type_tag) {
         return qfo_transfer_buffer_barriers;
     }
 
@@ -583,11 +585,23 @@ class CMD_BUFFER_STATE : public REFCOUNTED_NODE {
     bool RasterizationDisabled() const;
     inline void BindPipeline(LvlBindPoint bind_point, PIPELINE_STATE *pipe_state) {
         lastBound[bind_point].pipeline_state = pipe_state;
-        pipeline_bound = true;
     }
+
+    bool IsPrimary() const { return createInfo.level == VK_COMMAND_BUFFER_LEVEL_PRIMARY; }
+    void BeginLabel() { ++label_stack_depth_; }
+    void EndLabel() { --label_stack_depth_; }
+    int LabelStackDepth() const { return label_stack_depth_; }
 
   private:
     void ResetCBState();
+
+    // Keep track of how many CmdBeginDebugUtilsLabelEXT calls have been made without a matching CmdEndDebugUtilsLabelEXT
+    int label_stack_depth_ = 0;
+
+    uint32_t active_subpass_;
+    // Stores rasterization samples count obtained from the first pipeline with a pMultisampleState in the active subpass,
+    // or std::nullopt
+    std::optional<VkSampleCountFlagBits> active_subpass_sample_count_;
 
   protected:
     void NotifyInvalidate(const BASE_NODE::NodeList &invalid_nodes, bool unlink) override;

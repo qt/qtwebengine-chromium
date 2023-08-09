@@ -27,11 +27,11 @@ TextGenerator::TextGenerator(const Program* program)
 TextGenerator::~TextGenerator() = default;
 
 std::string TextGenerator::UniqueIdentifier(const std::string& prefix) {
-    return builder_.Symbols().NameFor(builder_.Symbols().New(prefix));
+    return builder_.Symbols().New(prefix).Name();
 }
 
 std::string TextGenerator::StructName(const sem::Struct* s) {
-    auto name = builder_.Symbols().NameFor(s->Name());
+    auto name = s->Name().Name();
     if (name.size() > 1 && name[0] == '_' && name[1] == '_') {
         name = utils::GetOrCreate(builtin_struct_names_, s,
                                   [&] { return UniqueIdentifier(name.substr(2)); });
@@ -114,7 +114,7 @@ void TextGenerator::TextBuffer::Insert(const TextBuffer& tb, size_t before, uint
 }
 
 std::string TextGenerator::TextBuffer::String(uint32_t indent /* = 0 */) const {
-    std::stringstream ss;
+    utils::StringStream ss;
     for (auto& line : lines) {
         if (!line.content.empty()) {
             for (uint32_t i = 0; i < indent + line.indent; i++) {
@@ -127,9 +127,10 @@ std::string TextGenerator::TextBuffer::String(uint32_t indent /* = 0 */) const {
     return ss.str();
 }
 
-TextGenerator::ScopedParen::ScopedParen(std::ostream& stream) : s(stream) {
+TextGenerator::ScopedParen::ScopedParen(utils::StringStream& stream) : s(stream) {
     s << "(";
 }
+
 TextGenerator::ScopedParen::~ScopedParen() {
     s << ")";
 }

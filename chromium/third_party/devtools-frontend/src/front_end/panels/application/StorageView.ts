@@ -7,6 +7,7 @@ import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
+import * as IconButton from '../../ui/components/icon_button/icon_button.js';
 import * as PerfUI from '../../ui/legacy/components/perf_ui/perf_ui.js';
 import * as UI from '../../ui/legacy/legacy.js';
 
@@ -269,7 +270,7 @@ export class StorageView extends UI.ThrottledWidget.ThrottledWidget {
   }
 
   targetAdded(target: SDK.Target.Target): void {
-    if (target !== SDK.TargetManager.TargetManager.instance().mainFrameTarget()) {
+    if (target !== SDK.TargetManager.TargetManager.instance().primaryPageTarget()) {
       return;
     }
     this.target = target;
@@ -467,7 +468,7 @@ export class StorageView extends UI.ThrottledWidget.ThrottledWidget {
     }
 
     if (set.has(Protocol.Storage.StorageType.Cache_storage) || hasAll) {
-      const target = SDK.TargetManager.TargetManager.instance().mainFrameTarget();
+      const target = SDK.TargetManager.TargetManager.instance().primaryPageTarget();
       const model = target && target.model(SDK.ServiceWorkerCacheModel.ServiceWorkerCacheModel);
       if (model) {
         model.clearForStorageKey(storageKey);
@@ -475,7 +476,7 @@ export class StorageView extends UI.ThrottledWidget.ThrottledWidget {
     }
   }
 
-  async doUpdate(): Promise<void> {
+  override async doUpdate(): Promise<void> {
     if (!this.securityOrigin || !this.target) {
       this.quotaRow.textContent = '';
       this.populatePieChart(0, []);
@@ -505,8 +506,10 @@ export class StorageView extends UI.ThrottledWidget.ThrottledWidget {
             {PH1: response.usage.toLocaleString(), PH2: response.quota.toLocaleString()}));
 
     if (!response.overrideActive && response.quota < 125829120) {  // 120 MB
+      const icon = new IconButton.Icon.Icon();
+      icon.data = {iconName: 'info', color: 'var(--icon-info)', width: '14px', height: '14px'};
       UI.Tooltip.Tooltip.install(this.quotaRow, i18nString(UIStrings.storageQuotaIsLimitedIn));
-      this.quotaRow.appendChild(UI.Icon.Icon.create('smallicon-info'));
+      this.quotaRow.appendChild(icon);
     }
 
     if (this.quotaUsage === null || this.quotaUsage !== response.usage) {
@@ -556,7 +559,7 @@ export class StorageView extends UI.ThrottledWidget.ThrottledWidget {
         return i18nString(UIStrings.other);
     }
   }
-  wasShown(): void {
+  override wasShown(): void {
     super.wasShown();
     this.reportView.registerCSSFiles([storageViewStyles]);
     this.registerCSSFiles([storageViewStyles]);
@@ -596,7 +599,7 @@ export class ActionDelegate implements UI.ActionRegistration.ActionDelegate {
   }
 
   private handleClear(includeThirdPartyCookies: boolean): boolean {
-    const target = SDK.TargetManager.TargetManager.instance().mainFrameTarget();
+    const target = SDK.TargetManager.TargetManager.instance().primaryPageTarget();
     if (!target) {
       return false;
     }

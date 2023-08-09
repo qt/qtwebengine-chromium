@@ -29,13 +29,15 @@
 #include "include/private/base/SkTArray.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
 #include "src/gpu/ganesh/GrPixmap.h"
+#include "src/gpu/ganesh/image/SkImage_Ganesh.h"
 #include "src/image/SkImage_Base.h"
-#include "src/image/SkImage_Gpu.h"
 #include "tools/ToolUtils.h"
 #include "tools/gpu/ProxyUtils.h"
 
 #include <string.h>
 #include <utility>
+
+using namespace skia_private;
 
 static const int kNumMatrices = 6;
 static const int kImageSize = 128;
@@ -109,7 +111,7 @@ static sk_sp<SkImage> make_text_image(const char* text, SkColor color) {
 // Create an image with each corner marked w/ "LL", "LR", etc., with the origin either bottom-left
 // or top-left.
 static sk_sp<SkImage> make_reference_image(SkCanvas* mainCanvas,
-                                           const SkTArray<sk_sp<SkImage>>& labels,
+                                           const TArray<sk_sp<SkImage>>& labels,
                                            bool bottomLeftOrigin) {
     SkASSERT(kNumLabels == labels.size());
 
@@ -141,13 +143,11 @@ static sk_sp<SkImage> make_reference_image(SkCanvas* mainCanvas,
             return nullptr;
         }
 
-        return sk_make_sp<SkImage_Gpu>(sk_ref_sp(dContext),
-                                       kNeedNewImageUniqueID,
-                                       std::move(view),
-                                       ii.colorInfo());
+        return sk_make_sp<SkImage_Ganesh>(
+                sk_ref_sp(dContext), kNeedNewImageUniqueID, std::move(view), ii.colorInfo());
     }
 
-    return SkImage::MakeFromBitmap(bm);
+    return SkImages::RasterFromBitmap(bm);
 }
 
 // Here we're converting from a matrix that is intended for UVs to a matrix that is intended
@@ -308,7 +308,7 @@ private:
     }
 
 private:
-    SkTArray<sk_sp<SkImage>> fLabels;
+    TArray<sk_sp<SkImage>> fLabels;
     sk_sp<SkImage> fReferenceImages[2];
 
     using INHERITED = GM;

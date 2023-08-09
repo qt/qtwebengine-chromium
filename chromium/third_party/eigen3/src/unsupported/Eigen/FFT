@@ -79,6 +79,8 @@
 
 #include "../../Eigen/src/Core/util/DisableStupidWarnings.h"
 
+// IWYU pragma: begin_exports
+
 #ifdef EIGEN_FFTW_DEFAULT
 // FFTW: faster, GPL -- incompatible with Eigen in LGPL form, bigger code size
 #  include <fftw3.h>
@@ -109,6 +111,8 @@
        struct default_fft_impl : public internal::kissfft_impl<T> {};
   }
 #endif
+
+// IWYU pragma: end_exports
 
 namespace Eigen {
 

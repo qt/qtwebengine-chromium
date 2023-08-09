@@ -18,7 +18,9 @@
 #import <CoreBluetooth/CoreBluetooth.h>
 #import <Foundation/Foundation.h>
 
+#include <memory>
 #include <string>
+#include <vector>
 
 #include "absl/types/optional.h"
 #include "internal/platform/cancellation_flag.h"
@@ -152,11 +154,13 @@ class BleMedium : public api::ble_v2::BleMedium {
 
     absl::optional<api::ble_v2::GattCharacteristic> CreateCharacteristic(
         const Uuid &service_uuid, const Uuid &characteristic_uuid,
-        const std::vector<api::ble_v2::GattCharacteristic::Permission> &permissions,
-        const std::vector<api::ble_v2::GattCharacteristic::Property> &properties) override;
+        api::ble_v2::GattCharacteristic::Permission permission,
+        api::ble_v2::GattCharacteristic::Property property) override;
 
     bool UpdateCharacteristic(const api::ble_v2::GattCharacteristic &characteristic,
                               const nearby::ByteArray &value) override;
+    absl::Status NotifyCharacteristicChanged(const api::ble_v2::GattCharacteristic &characteristic,
+                                             bool confirm, const ByteArray &new_value) override;
     void Stop() override;
 
    private:
@@ -178,18 +182,24 @@ class BleMedium : public api::ble_v2::BleMedium {
         const Uuid &service_uuid, const Uuid &characteristic_uuid) override;
 
     // NOLINTNEXTLINE
-    absl::optional<ByteArray> ReadCharacteristic(
+    absl::optional<std::string> ReadCharacteristic(
         const api::ble_v2::GattCharacteristic &characteristic) override;
 
     bool WriteCharacteristic(const api::ble_v2::GattCharacteristic &characteristic,
-                             const ByteArray &value) override;
+                             absl::string_view value,
+                             api::ble_v2::GattClient::WriteType write_type) override;
+
+    bool SetCharacteristicSubscription(
+        const api::ble_v2::GattCharacteristic &characteristic, bool enable,
+        absl::AnyInvocable<void(absl::string_view value)> on_characteristic_changed_cb) override;
 
     void Disconnect() override;
 
    private:
     GNCMBleCentral *central_;
     std::string peripheral_id_;
-    absl::flat_hash_map<api::ble_v2::GattCharacteristic, ByteArray> gatt_characteristic_values_;
+    absl::flat_hash_map<api::ble_v2::GattCharacteristic, const std::string>
+        gatt_characteristic_values_;
   };
 
   absl::Mutex mutex_;

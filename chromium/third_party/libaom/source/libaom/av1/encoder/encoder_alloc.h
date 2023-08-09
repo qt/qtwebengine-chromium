@@ -213,6 +213,11 @@ static AOM_INLINE void dealloc_compressor_data(AV1_COMP *cpi) {
   aom_free_frame_buffer(&cpi->butteraugli_info.resized_source);
 #endif
 
+#if CONFIG_SALIENCY_MAP
+  aom_free(cpi->saliency_map);
+  aom_free(cpi->sm_scaling_factor);
+#endif
+
   release_obmc_buffers(&cpi->td.mb.obmc_buffer);
 
   if (cpi->td.mb.mv_costs) {

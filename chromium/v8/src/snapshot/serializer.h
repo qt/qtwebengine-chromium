@@ -10,6 +10,9 @@
 #include "src/execution/isolate.h"
 #include "src/handles/global-handles.h"
 #include "src/logging/log.h"
+#include "src/objects/abstract-code.h"
+#include "src/objects/bytecode-array.h"
+#include "src/objects/instruction-stream.h"
 #include "src/objects/objects.h"
 #include "src/snapshot/serializer-deserializer.h"
 #include "src/snapshot/snapshot-source-sink.h"
@@ -210,8 +213,11 @@ class Serializer : public SerializerDeserializer {
       serializer_->recursion_depth_++;
     }
     ~RecursionScope() { serializer_->recursion_depth_--; }
-    bool ExceedsMaximum() {
-      return serializer_->recursion_depth_ >= kMaxRecursionDepth;
+    bool ExceedsMaximum() const {
+      return serializer_->recursion_depth_ > kMaxRecursionDepth;
+    }
+    int ExceedsMaximumBy() const {
+      return serializer_->recursion_depth_ - kMaxRecursionDepth;
     }
 
    private:
@@ -224,8 +230,9 @@ class Serializer : public SerializerDeserializer {
   V8_INLINE bool IsNotMappedSymbol(HeapObject obj) const;
 
   void SerializeDeferredObjects();
-  void SerializeObject(Handle<HeapObject> o);
-  virtual void SerializeObjectImpl(Handle<HeapObject> o) = 0;
+  void SerializeObject(Handle<HeapObject> o, SlotType slot_type);
+  virtual void SerializeObjectImpl(Handle<HeapObject> o,
+                                   SlotType slot_type) = 0;
 
   virtual bool MustBeDeferred(HeapObject object);
 
@@ -279,7 +286,7 @@ class Serializer : public SerializerDeserializer {
   // of the serializer.  Initialize it on demand.
   void InitializeCodeAddressMap();
 
-  InstructionStream CopyCode(InstructionStream code);
+  InstructionStream CopyCode(InstructionStream istream);
 
   void QueueDeferredObject(HeapObject obj) {
     DCHECK_NULL(reference_map_.LookupReference(obj));
@@ -323,6 +330,14 @@ class Serializer : public SerializerDeserializer {
   }
 
   bool deferred_objects_empty() { return deferred_objects_.size() == 0; }
+
+ protected:
+  bool serializer_tracks_serialization_statistics() const {
+    return serializer_tracks_serialization_statistics_;
+  }
+  void set_serializer_tracks_serialization_statistics(bool v) {
+    serializer_tracks_serialization_statistics_ = v;
+  }
 
  private:
   // A circular queue of hot objects. This is added to in the same order as in
@@ -411,12 +426,17 @@ class Serializer : public SerializerDeserializer {
   int recursion_depth_ = 0;
   const Snapshot::SerializerFlags flags_;
 
+  bool serializer_tracks_serialization_statistics_ = true;
   size_t allocation_size_[kNumberOfSnapshotSpaces] = {0};
 #ifdef OBJECT_PRINT
+// Verbose serialization_statistics output is only enabled conditionally.
+#define VERBOSE_SERIALIZATION_STATISTICS
+#endif
+#ifdef VERBOSE_SERIALIZATION_STATISTICS
   static constexpr int kInstanceTypes = LAST_TYPE + 1;
   std::unique_ptr<int[]> instance_type_count_[kNumberOfSnapshotSpaces];
   std::unique_ptr<size_t[]> instance_type_size_[kNumberOfSnapshotSpaces];
-#endif  // OBJECT_PRINT
+#endif  // VERBOSE_SERIALIZATION_STATISTICS
 
 #ifdef DEBUG
   GlobalHandleVector<HeapObject> back_refs_;
@@ -442,14 +462,14 @@ class Serializer::ObjectSerializer : public ObjectVisitor {
     serializer_->PopStack();
 #endif  // DEBUG
   }
-  void Serialize();
+  void Serialize(SlotType slot_type);
   void SerializeObject();
   void SerializeDeferred();
   void VisitPointers(HeapObject host, ObjectSlot start,
                      ObjectSlot end) override;
   void VisitPointers(HeapObject host, MaybeObjectSlot start,
                      MaybeObjectSlot end) override;
-  void VisitCodePointer(HeapObject host, CodeObjectSlot slot) override;
+  void VisitCodePointer(Code host, CodeObjectSlot slot) override;
   void VisitEmbeddedPointer(InstructionStream host, RelocInfo* target) override;
   void VisitExternalReference(InstructionStream host,
                               RelocInfo* rinfo) override;
@@ -474,7 +494,7 @@ class Serializer::ObjectSerializer : public ObjectVisitor {
   void OutputExternalReference(Address target, int target_size, bool sandboxify,
                                ExternalPointerTag tag);
   void OutputRawData(Address up_to);
-  void SerializeCode(Map map, int size);
+  void SerializeInstructionStream(Map map, int size);
   uint32_t SerializeBackingStore(void* backing_store, int32_t byte_length,
                                  Maybe<int32_t> max_byte_length);
   void SerializeJSTypedArray();

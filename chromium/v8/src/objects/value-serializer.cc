@@ -268,7 +268,12 @@ ValueSerializer::ValueSerializer(Isolate* isolate,
       zone_(isolate->allocator(), ZONE_NAME),
       id_map_(isolate->heap(), ZoneAllocationPolicy(&zone_)),
       array_buffer_transfer_map_(isolate->heap(),
-                                 ZoneAllocationPolicy(&zone_)) {}
+                                 ZoneAllocationPolicy(&zone_)) {
+  if (delegate_) {
+    v8::Isolate* v8_isolate = reinterpret_cast<v8::Isolate*>(isolate_);
+    has_custom_host_objects_ = delegate_->HasCustomHostObject(v8_isolate);
+  }
+}
 
 ValueSerializer::~ValueSerializer() {
   if (buffer_) {
@@ -582,7 +587,11 @@ Maybe<bool> ValueSerializer::WriteJSReceiver(Handle<JSReceiver> receiver) {
     case JS_TYPED_ARRAY_PROTOTYPE_TYPE:
     case JS_API_OBJECT_TYPE: {
       Handle<JSObject> js_object = Handle<JSObject>::cast(receiver);
-      if (JSObject::GetEmbedderFieldCount(js_object->map(isolate_))) {
+      Maybe<bool> is_host_object = IsHostObject(js_object);
+      if (is_host_object.IsNothing()) {
+        return is_host_object;
+      }
+      if (is_host_object.FromJust()) {
         return WriteHostObject(js_object);
       } else {
         return WriteJSObject(js_object);
@@ -1188,6 +1197,23 @@ Maybe<uint32_t> ValueSerializer::WriteJSObjectPropertiesSlow(
     properties_written++;
   }
   return Just(properties_written);
+}
+
+Maybe<bool> ValueSerializer::IsHostObject(Handle<JSObject> js_object) {
+  if (!has_custom_host_objects_) {
+    return Just<bool>(
+        JSObject::GetEmbedderFieldCount(js_object->map(isolate_)));
+  }
+  DCHECK_NOT_NULL(delegate_);
+
+  v8::Isolate* v8_isolate = reinterpret_cast<v8::Isolate*>(isolate_);
+  Maybe<bool> result =
+      delegate_->IsHostObject(v8_isolate, Utils::ToLocal(js_object));
+  RETURN_VALUE_IF_SCHEDULED_EXCEPTION(isolate_, Nothing<bool>());
+  DCHECK(!result.IsNothing());
+
+  if (V8_UNLIKELY(out_of_memory_)) return ThrowIfOutOfMemory();
+  return result;
 }
 
 Maybe<bool> ValueSerializer::ThrowIfOutOfMemory() {
@@ -2305,15 +2331,14 @@ MaybeHandle<WasmMemoryObject> ValueDeserializer::ReadWasmMemory() {
     return MaybeHandle<WasmMemoryObject>();
   }
 
-  SerializationTag tag;
-  if (!ReadTag().To(&tag) || tag != SerializationTag::kSharedArrayBuffer) {
+  Handle<Object> buffer_object;
+  if (!ReadObject().ToHandle(&buffer_object) ||
+      !buffer_object->IsJSArrayBuffer()) {
     return MaybeHandle<WasmMemoryObject>();
   }
 
-  constexpr bool is_shared = true;
-  constexpr bool is_resizable = false;
-  Handle<JSArrayBuffer> buffer;
-  if (!ReadJSArrayBuffer(is_shared, is_resizable).ToHandle(&buffer)) {
+  Handle<JSArrayBuffer> buffer = Handle<JSArrayBuffer>::cast(buffer_object);
+  if (!buffer->is_shared()) {
     return MaybeHandle<WasmMemoryObject>();
   }
 

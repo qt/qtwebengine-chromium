@@ -940,6 +940,88 @@ static int mov_read_chan(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     return 0;
 }
 
+static int mov_read_chnl(MOVContext *c, AVIOContext *pb, MOVAtom atom)
+{
+    int64_t end = av_sat_add64(avio_tell(pb), atom.size);
+    int stream_structure;
+    int version, flags;
+    int ret = 0;
+    AVStream *st;
+
+    if (c->fc->nb_streams < 1)
+        return 0;
+    st = c->fc->streams[c->fc->nb_streams-1];
+
+    version = avio_r8(pb);
+    flags   = avio_rb24(pb);
+    if (version != 0 || flags != 0) {
+        av_log(c->fc, AV_LOG_ERROR,
+               "Unsupported 'chnl' box with version %d, flags: %#x",
+               version, flags);
+        return AVERROR_INVALIDDATA;
+    }
+
+    stream_structure = avio_r8(pb);
+
+    // stream carries channels
+    if (stream_structure & 1) {
+        int layout = avio_r8(pb);
+
+        av_log(c->fc, AV_LOG_TRACE, "'chnl' layout %d\n", layout);
+        if (!layout) {
+            uint8_t *positions = av_malloc(st->codecpar->ch_layout.nb_channels);
+
+            if (!positions)
+                return AVERROR(ENOMEM);
+            for (int i = 0; i < st->codecpar->ch_layout.nb_channels; i++) {
+                int speaker_pos = avio_r8(pb);
+
+                av_log(c->fc, AV_LOG_TRACE, "speaker_position %d\n", speaker_pos);
+                if (speaker_pos == 126) { // explicit position
+                    avpriv_request_sample(c->fc, "explicit position");
+                    av_freep(&positions);
+                    return AVERROR_PATCHWELCOME;
+                } else {
+                    positions[i] = speaker_pos;
+                }
+            }
+
+            ret = ff_mov_get_layout_from_channel_positions(positions,
+                    st->codecpar->ch_layout.nb_channels,
+                    &st->codecpar->ch_layout);
+            av_freep(&positions);
+            if (ret) {
+                av_log(c->fc, AV_LOG_ERROR,
+                        "get channel layout from speaker positions failed, %s\n",
+                        av_err2str(ret));
+                return ret;
+            }
+        } else {
+            uint64_t omitted_channel_map = avio_rb64(pb);
+
+            if (omitted_channel_map) {
+                avpriv_request_sample(c->fc, "omitted_channel_map 0x%" PRIx64 " != 0",
+                                      omitted_channel_map);
+                return AVERROR_PATCHWELCOME;
+            }
+            ff_mov_get_channel_layout_from_config(layout, &st->codecpar->ch_layout);
+        }
+    }
+
+    // stream carries objects
+    if (stream_structure & 2) {
+        int obj_count = avio_r8(pb);
+        av_log(c->fc, AV_LOG_TRACE, "'chnl' with object_count %d\n", obj_count);
+    }
+
+    if (avio_tell(pb) != end) {
+        av_log(c->fc, AV_LOG_WARNING, "skip %" PRId64 " bytes of unknown data inside chnl\n",
+                end - avio_tell(pb));
+        avio_seek(pb, end, SEEK_SET);
+    }
+    return ret;
+}
+
 static int mov_read_wfex(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 {
     AVStream *st;
@@ -1590,16 +1672,74 @@ static int mov_read_enda(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 static int mov_read_pcmc(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 {
     int format_flags;
+    int version, flags;
+    int pcm_sample_size;
+    AVFormatContext *fc = c->fc;
+    AVStream *st;
+    MOVStreamContext *sc;
 
     if (atom.size < 6) {
         av_log(c->fc, AV_LOG_ERROR, "Empty pcmC box\n");
         return AVERROR_INVALIDDATA;
     }
 
-    avio_r8(pb);    // version
-    avio_rb24(pb);  // flags
+    version = avio_r8(pb);
+    flags   = avio_rb24(pb);
+
+    if (version != 0 || flags != 0) {
+        av_log(c->fc, AV_LOG_ERROR,
+               "Unsupported 'pcmC' box with version %d, flags: %x",
+               version, flags);
+        return AVERROR_INVALIDDATA;
+    }
+
     format_flags = avio_r8(pb);
-    if (format_flags == 1) // indicates little-endian format. If not present, big-endian format is used
+    pcm_sample_size = avio_r8(pb);
+
+    if (fc->nb_streams < 1)
+        return AVERROR_INVALIDDATA;
+
+    st = fc->streams[fc->nb_streams - 1];
+    sc = st->priv_data;
+
+    if (sc->format == MOV_MP4_FPCM_TAG) {
+        switch (pcm_sample_size) {
+        case 32:
+            st->codecpar->codec_id = AV_CODEC_ID_PCM_F32BE;
+            break;
+        case 64:
+            st->codecpar->codec_id = AV_CODEC_ID_PCM_F64BE;
+            break;
+        default:
+            av_log(fc, AV_LOG_ERROR, "invalid pcm_sample_size %d for %s\n",
+                                     pcm_sample_size,
+                                     av_fourcc2str(sc->format));
+            return AVERROR_INVALIDDATA;
+        }
+    } else if (sc->format == MOV_MP4_IPCM_TAG) {
+        switch (pcm_sample_size) {
+        case 16:
+            st->codecpar->codec_id = AV_CODEC_ID_PCM_S16BE;
+            break;
+        case 24:
+            st->codecpar->codec_id = AV_CODEC_ID_PCM_S24BE;
+            break;
+        case 32:
+            st->codecpar->codec_id = AV_CODEC_ID_PCM_S32BE;
+            break;
+        default:
+            av_log(fc, AV_LOG_ERROR, "invalid pcm_sample_size %d for %s\n",
+                                     pcm_sample_size,
+                                     av_fourcc2str(sc->format));
+            return AVERROR_INVALIDDATA;
+        }
+    } else {
+        av_log(fc, AV_LOG_ERROR, "'pcmC' with invalid sample entry '%s'\n",
+                av_fourcc2str(sc->format));
+        return AVERROR_INVALIDDATA;
+    }
+
+    if (format_flags & 1) // indicates little-endian format. If not present, big-endian format is used
         set_last_stream_little_endian(c->fc);
 
     return 0;
@@ -4209,6 +4349,13 @@ static void mov_build_index(MOVContext *mov, AVStream *st)
                 if (keyframe)
                     distance = 0;
                 sample_size = sc->stsz_sample_size > 0 ? sc->stsz_sample_size : sc->sample_sizes[current_sample];
+                if (current_offset > INT64_MAX - sample_size) {
+                    av_log(mov->fc, AV_LOG_ERROR, "Current offset %"PRId64" or sample size %u is too large\n",
+                           current_offset,
+                           sample_size);
+                    return;
+                }
+
                 if (sc->pseudo_stream_id == -1 ||
                    sc->stsc_data[stsc_index].id - 1 == sc->pseudo_stream_id) {
                     AVIndexEntry *e;
@@ -7769,7 +7916,8 @@ static const MOVParseTableEntry mov_default_parse_table[] = {
 { MKTAG('w','i','d','e'), mov_read_wide }, /* place holder */
 { MKTAG('w','f','e','x'), mov_read_wfex },
 { MKTAG('c','m','o','v'), mov_read_cmov },
-{ MKTAG('c','h','a','n'), mov_read_chan }, /* channel layout */
+{ MKTAG('c','h','a','n'), mov_read_chan }, /* channel layout from quicktime */
+{ MKTAG('c','h','n','l'), mov_read_chnl }, /* channel layout from ISO-14496-12 */
 { MKTAG('d','v','c','1'), mov_read_dvc1 },
 { MKTAG('s','g','p','d'), mov_read_sgpd },
 { MKTAG('s','b','g','p'), mov_read_sbgp },

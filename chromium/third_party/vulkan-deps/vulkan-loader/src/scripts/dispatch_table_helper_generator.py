@@ -132,7 +132,7 @@ class DispatchTableHelperOutputGenerator(OutputGenerator):
         preamble += '#include <vulkan/vulkan.h>\n'
         preamble += '#include <vulkan/vk_layer.h>\n'
         preamble += '#include <string.h>\n'
-        preamble += '#include "vk_layer_dispatch_table.h"\n'
+        preamble += '#include "loader/generated/vk_layer_dispatch_table.h"\n'
 
         write(copyright, file=self.outFile)
         write(preamble, file=self.outFile)
@@ -200,7 +200,7 @@ class DispatchTableHelperOutputGenerator(OutputGenerator):
                 func_body = ' { ' + return_statement + ' }'
                 decl = decl.replace (';', func_body)
                 if self.featureExtraProtect is not None:
-                    self.dev_ext_stub_list.append('#ifdef %s' % self.featureExtraProtect)
+                    self.dev_ext_stub_list.append('#if defined(%s)' % self.featureExtraProtect)
                 self.dev_ext_stub_list.append(decl)
                 if self.featureExtraProtect is not None:
                     self.dev_ext_stub_list.append('#endif // %s' % self.featureExtraProtect)
@@ -240,7 +240,7 @@ class DispatchTableHelperOutputGenerator(OutputGenerator):
             base_name = item[0][2:]
 
             if item[1] is not None:
-                table += '#ifdef %s\n' % item[1]
+                table += '#if defined(%s)\n' % item[1]
 
             # If we're looking for the proc we are passing in, just point the table to it.  This fixes the issue where
             # a layer overrides the function name for the loader.

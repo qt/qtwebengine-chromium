@@ -7,15 +7,8 @@
 
 #include <stdint.h>
 
-#include <chrono>
-
 namespace openscreen {
 namespace cast {
-
-struct ConstDataSpan {
-  const uint8_t* data;
-  uint32_t length;
-};
 
 // This must be a UTC time.
 struct DateTime {

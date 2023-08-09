@@ -26,7 +26,6 @@ const char kClearPropertyFunction[] = "ClearProperty";
 // Manager function names.
 const char kConfigureServiceFunction[] = "ConfigureService";
 const char kConfigureServiceForProfileFunction[] = "ConfigureServiceForProfile";
-const char kConnectToBestServicesFunction[] = "ConnectToBestServices";
 const char kScanAndConnectToBestServicesFunction[] =
     "ScanAndConnectToBestServices";
 const char kCreateConnectivityReportFunction[] = "CreateConnectivityReport";
@@ -96,6 +95,7 @@ const char kDhcpPropertyHostnameProperty[] = "DHCPProperty.Hostname";
 const char kDisableWiFiVHTProperty[] = "DisableWiFiVHT";
 const char kDNSProxyDOHProvidersProperty[] = "DNSProxyDOHProviders";
 const char kEnabledTechnologiesProperty[] = "EnabledTechnologies";
+const char kEnableRFC8925Property[] = "EnableRFC8925";
 const char kLOHSConfigProperty[] = "LOHSConfig";
 const char kPortalFallbackHttpUrlsProperty[] = "PortalFallbackHttpUrls";
 const char kPortalFallbackHttpsUrlsProperty[] = "PortalFallbackHttpsUrls";
@@ -180,7 +180,10 @@ const char kCellularLastGoodApnProperty[] = "Cellular.LastGoodAPN";
 const char kCellularLastAttachApnProperty[] = "Cellular.LastAttachAPN";
 const char kCellularPPPPasswordProperty[] = "Cellular.PPP.Password";
 const char kCellularPPPUsernameProperty[] = "Cellular.PPP.Username";
+// TODO(b/271332404): Remove kCellularUserApnListProperty when is no longer used
+// in Chrome.
 const char kCellularUserApnListProperty[] = "Cellular.UserAPNList";
+const char kCellularCustomApnListProperty[] = "Cellular.CustomAPNList";
 const char kNetworkTechnologyProperty[] = "Cellular.NetworkTechnology";
 const char kOutOfCreditsProperty[] = "Cellular.OutOfCredits";
 const char kPaymentPortalProperty[] = "Cellular.Olp";
@@ -416,6 +419,8 @@ const char kSIMPresentProperty[] = "Cellular.SIMPresent";
 const char kSIMSlotInfoProperty[] = "Cellular.SIMSlotInfo";
 const char kSupportNetworkScanProperty[] = "Cellular.SupportNetworkScan";
 const char kUseAttachAPNProperty[] = "Cellular.UseAttachAPN";
+const char kPrimaryMultiplexedInterfaceProperty[] =
+    "Cellular.PrimaryMultiplexedInterface";
 
 const char kDBusObjectProperty[] = "DBus.Object";
 const char kDBusServiceProperty[] = "DBus.Service";
@@ -532,6 +537,8 @@ const char kApnNameProperty[] = "name";
 const char kApnLocalizedNameProperty[] = "localized_name";
 const char kApnLanguageProperty[] = "language";
 const char kApnAuthenticationProperty[] = "authentication";
+const char kApnIsRequiredByCarrierSpecProperty[] =
+    "is_required_by_carrier_spec";
 // TODO(b/251551314): Remove kApnAttachProperty after 2025Q2
 const char kApnAttachProperty[] = "attach";
 const char kApnIpTypeProperty[] = "ip_type";
@@ -556,6 +563,10 @@ const char kApnTypeDun[] = "DUN";
 // APN source property values.
 const char kApnSourceAdmin[] = "admin";
 const char kApnSourceUi[] = "ui";
+
+// APN IsRequiredByCarrierSpec values.
+const char kApnIsRequiredByCarrierSpecTrue[] = "1";
+const char kApnIsRequiredByCarrierSpecFalse[] = "0";
 
 // Payment Portal property names.
 const char kPaymentPortalURL[] = "url";
@@ -966,14 +977,21 @@ const char kTetheringIdleReasonUserExit[] = "user_exit";
 const char kTetheringStateActive[] = "active";
 const char kTetheringStateIdle[] = "idle";
 const char kTetheringStateStarting[] = "starting";
+const char kTetheringStateStopping[] = "stopping";
 
 // SetTetheringEnabled result values
+const char kTetheringEnableResultDownstreamWiFiFailure[] =
+    "downstream_wifi_failure";
 const char kTetheringEnableResultFailure[] = "failure";
 const char kTetheringEnableResultInvalidProperties[] = "invalid_properties";
+const char kTetheringEnableResultNetworkSetupFailure[] =
+    "network_setup_failure";
 const char kTetheringEnableResultNotAllowed[] = "not_allowed";
 const char kTetheringEnableResultSuccess[] = "success";
+const char kTetheringEnableResultUpstreamFailure[] = "upstream_failure";
 const char kTetheringEnableResultUpstreamNotAvailable[] =
     "upstream_not_available";
+const char kTetheringEnableResultWrongState[] = "wrong_state";
 
 // kCheckTetheringReadinessFunction return status
 const char kTetheringReadinessNotAllowed[] = "not_allowed";

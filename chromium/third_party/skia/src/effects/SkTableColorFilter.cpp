@@ -28,18 +28,20 @@
 #include <tuple>
 #include <utility>
 
-#ifdef SK_GRAPHITE_ENABLED
+#if defined(SK_GRAPHITE)
 #include "src/gpu/graphite/Image_Graphite.h"
 #include "src/gpu/graphite/KeyContext.h"
 #include "src/gpu/graphite/KeyHelpers.h"
+#include "src/gpu/graphite/Log.h"
 #include "src/gpu/graphite/PaintParamsKey.h"
+#include "src/gpu/graphite/RecorderPriv.h"
 
 namespace skgpu::graphite {
 class PipelineDataGatherer;
 }
 #endif
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
 #include "include/gpu/GpuTypes.h"
 #include "include/gpu/GrTypes.h"
 #include "src/gpu/ganesh/GrColorInfo.h"
@@ -66,7 +68,7 @@ namespace skgpu { class KeyBuilder; }
 class SkSurfaceProps;
 #endif
 
-#if defined(SK_ENABLE_SKSL)
+#if defined(SK_ENABLE_SKSL) && defined(SK_ENABLE_SKVM)
 #include "src/core/SkVM.h"
 #endif
 
@@ -88,13 +90,13 @@ public:
         fBitmap.setImmutable();
     }
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
     GrFPResult asFragmentProcessor(std::unique_ptr<GrFragmentProcessor> inputFP,
                                    GrRecordingContext*, const GrColorInfo&,
                                    const SkSurfaceProps&) const override;
 #endif
 
-#ifdef SK_GRAPHITE_ENABLED
+#if defined(SK_GRAPHITE)
     void addToKey(const skgpu::graphite::KeyContext&,
                   skgpu::graphite::PaintParamsKeyBuilder*,
                   skgpu::graphite::PipelineDataGatherer*) const override;
@@ -120,6 +122,7 @@ public:
         return true;
     }
 
+#if defined(SK_ENABLE_SKVM)
     skvm::Color onProgram(skvm::Builder* p, skvm::Color c,
                           const SkColorInfo& dst,
                           skvm::Uniforms* uniforms, SkArenaAlloc*) const override {
@@ -137,6 +140,7 @@ public:
         c.b = apply_table_to_component(c.b, fBitmap.getAddr8(0,3));
         return premul(c);
     }
+#endif
 
     void flatten(SkWriteBuffer& buffer) const override {
         buffer.writeByteArray(fBitmap.getAddr8(0,0), 4*256);
@@ -157,7 +161,7 @@ sk_sp<SkFlattenable> SkTable_ColorFilter::CreateProc(SkReadBuffer& buffer) {
     return nullptr;
 }
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
 
 class ColorTableEffect : public GrFragmentProcessor {
 public:
@@ -290,28 +294,26 @@ GrFPResult SkTable_ColorFilter::asFragmentProcessor(std::unique_ptr<GrFragmentPr
     return cte ? GrFPSuccess(std::move(cte)) : GrFPFailure(nullptr);
 }
 
-#endif // SK_SUPPORT_GPU
+#endif // defined(SK_GANESH)
 
-#ifdef SK_GRAPHITE_ENABLED
+#if defined(SK_GRAPHITE)
 
 void SkTable_ColorFilter::addToKey(const skgpu::graphite::KeyContext& keyContext,
                                    skgpu::graphite::PaintParamsKeyBuilder* builder,
                                    skgpu::graphite::PipelineDataGatherer* gatherer) const {
     using namespace skgpu::graphite;
 
-    TableColorFilterBlock::TableColorFilterData data;
+    sk_sp<TextureProxy> proxy = RecorderPriv::CreateCachedProxy(keyContext.recorder(), fBitmap);
+    if (!proxy) {
+        SKGPU_LOG_W("Couldn't create TableColorFilter's table");
 
-    // TODO(b/239604347): remove this hack. This is just here until we determine what Graphite's
-    // Recorder-level caching story is going to be.
-    sk_sp<SkImage> image = SkImage::MakeFromBitmap(fBitmap);
-    image = image->makeTextureImage(keyContext.recorder(), { skgpu::Mipmapped::kNo });
-
-    if (as_IB(image)->isGraphiteBacked()) {
-        skgpu::graphite::Image* grImage = static_cast<skgpu::graphite::Image*>(image.get());
-
-        auto [view, _] = grImage->asView(keyContext.recorder(), skgpu::Mipmapped::kNo);
-        data.fTextureProxy = view.refProxy();
+        // Return the input color as-is.
+        PriorOutputBlock::BeginBlock(keyContext, builder, gatherer);
+        builder->endBlock();
+        return;
     }
+
+    TableColorFilterBlock::TableColorFilterData data(std::move(proxy));
 
     TableColorFilterBlock::BeginBlock(keyContext, builder, gatherer, data);
     builder->endBlock();

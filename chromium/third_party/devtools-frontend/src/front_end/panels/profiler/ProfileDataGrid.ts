@@ -29,6 +29,7 @@
 
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
+import * as IconButton from '../../ui/components/icon_button/icon_button.js';
 import * as DataGrid from '../../ui/legacy/components/data_grid/data_grid.js';
 
 import type * as SDK from '../../core/sdk/sdk.js';
@@ -182,7 +183,7 @@ export class ProfileDataGridNode extends DataGrid.DataGrid.DataGridNode<unknown>
     }
   }
 
-  createCell(columnId: string): HTMLElement {
+  override createCell(columnId: string): HTMLElement {
     switch (columnId) {
       case 'self': {
         const cell = this.createValueCell(this.self, this.selfPercent, columnId);
@@ -201,7 +202,9 @@ export class ProfileDataGridNode extends DataGrid.DataGrid.DataGridNode<unknown>
         cell.classList.toggle('highlight', this.searchMatchedFunctionColumn);
         if (this.deoptReason) {
           cell.classList.add('not-optimized');
-          const warningIcon = UI.Icon.Icon.create('smallicon-warning', 'profile-warn-marker');
+          const warningIcon = new IconButton.Icon.Icon();
+          warningIcon.data = {iconName: 'warning-filled', color: 'var(--icon-warning)', width: '14px', height: '14px'};
+          warningIcon.classList.add('profile-warn-marker');
           UI.Tooltip.Tooltip.install(warningIcon, i18nString(UIStrings.notOptimizedS, {PH1: this.deoptReason}));
           cell.appendChild(warningIcon);
         }
@@ -245,18 +248,18 @@ export class ProfileDataGridNode extends DataGrid.DataGrid.DataGridNode<unknown>
     return ProfileDataGridNode.sort([[this]], sortComparator, force);
   }
 
-  insertChild(child: DataGrid.DataGrid.DataGridNode<unknown>, index: number): void {
+  override insertChild(child: DataGrid.DataGrid.DataGridNode<unknown>, index: number): void {
     const profileDataGridNode = (child as ProfileDataGridNode);
     super.insertChild(profileDataGridNode, index);
     this.childrenByCallUID.set(profileDataGridNode.callUID, (profileDataGridNode as ProfileDataGridNode));
   }
 
-  removeChild(profileDataGridNode: DataGrid.DataGrid.DataGridNode<unknown>): void {
+  override removeChild(profileDataGridNode: DataGrid.DataGrid.DataGridNode<unknown>): void {
     super.removeChild(profileDataGridNode);
     this.childrenByCallUID.delete((profileDataGridNode as ProfileDataGridNode).callUID);
   }
 
-  removeChildren(): void {
+  override removeChildren(): void {
     super.removeChildren();
 
     this.childrenByCallUID.clear();
@@ -277,7 +280,7 @@ export class ProfileDataGridNode extends DataGrid.DataGrid.DataGridNode<unknown>
     return this.total / this.tree.total * 100.0;
   }
 
-  populate(): void {
+  override populate(): void {
     ProfileDataGridNode.populate(this);
   }
 

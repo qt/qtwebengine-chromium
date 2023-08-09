@@ -21,7 +21,7 @@
 namespace tint::ast {
 
 /// A call expression
-class CallStatement final : public Castable<CallStatement, Statement> {
+class CallStatement final : public utils::Castable<CallStatement, Statement> {
   public:
     /// Constructor
     /// @param pid the identifier of the program that owns this node
@@ -29,8 +29,8 @@ class CallStatement final : public Castable<CallStatement, Statement> {
     /// @param src the source of this node for the statement
     /// @param call the function
     CallStatement(ProgramID pid, NodeID nid, const Source& src, const CallExpression* call);
-    /// Move constructor
-    CallStatement(CallStatement&&);
+
+    /// Destructor
     ~CallStatement() override;
 
     /// Clones this node and all transitive child nodes using the `CloneContext`

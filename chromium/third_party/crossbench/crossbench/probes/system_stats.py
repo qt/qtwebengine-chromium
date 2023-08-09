@@ -10,16 +10,16 @@ import time
 from typing import TYPE_CHECKING
 
 from crossbench import helper
-from crossbench.probes import base
+from crossbench.probes import probe
 from crossbench.probes.results import ProbeResult
 
 if TYPE_CHECKING:
-  from crossbench.browsers.base import Browser
+  from crossbench.browsers.browser import Browser
   from crossbench.env import HostEnvironment
   from crossbench.runner import Run
 
 
-class SystemStatsProbe(base.Probe):
+class SystemStatsProbe(probe.Probe):
   """
   General-purpose probe to periodically collect system-wide CPU and memory
   stats on unix systems.
@@ -29,7 +29,7 @@ class SystemStatsProbe(base.Probe):
 
   _interval: float
 
-  def __init__(self, *args, interval: float = 1, **kwargs):
+  def __init__(self, *args, interval: float = 1, **kwargs) -> None:
     super().__init__(*args, **kwargs)
     self._interval = interval
 
@@ -58,7 +58,7 @@ class SystemStatsProbe(base.Probe):
         f.write(data)
       time.sleep(interval)
 
-  class Scope(base.Probe.Scope):
+  class Scope(probe.Probe.Scope):
     _event: threading.Event
     _poller: threading.Thread
 

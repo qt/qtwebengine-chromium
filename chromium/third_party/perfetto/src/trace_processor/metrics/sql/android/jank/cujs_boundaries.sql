@@ -13,19 +13,21 @@
 -- See the License for the specific language governing permissions and
 -- limitations under the License.
 
--- Stores the min and max vsync IDs for each of the CUJs.
--- We calculate that by extracting the vsync ID from the
+-- Stores the min and max vsync IDs for each of the CUJs which are extracted
+-- from the CUJ markers. For backward compatibility (In case the markers don't
+-- exist), We calculate that by extracting the vsync ID from the
 -- `Choreographer#doFrame` slices that are within the CUJ markers.
 DROP TABLE IF EXISTS android_jank_cuj_vsync_boundary;
 CREATE TABLE android_jank_cuj_vsync_boundary AS
 SELECT
   cuj.cuj_id,
   cuj.upid, -- also store upid to simplify further queries
-  MIN(vsync) AS vsync_min,
-  MAX(vsync) AS vsync_max
+  cuj.layer_id,  -- also store layer_id to simplify further queries
+  IFNULL(cuj.begin_vsync, MIN(vsync)) AS vsync_min,
+  IFNULL(cuj.end_vsync, MAX(vsync)) AS vsync_max
 FROM android_jank_cuj cuj
 JOIN android_jank_cuj_do_frame_slice USING (cuj_id)
-GROUP BY cuj.cuj_id, cuj.upid;
+GROUP BY cuj.cuj_id, cuj.upid, cuj.layer_id;
 
 -- Similarly, extract the min/max vsync for the SF from
 -- commit/compose/onMessageInvalidate slices on its main thread.

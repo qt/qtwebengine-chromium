@@ -15,7 +15,6 @@
 # limitations under the License.
 # ~~~
 cmake_minimum_required(VERSION 3.17.2)
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 project(VVL LANGUAGES CXX)
 
@@ -76,16 +75,9 @@ if (BUILD_WERROR)
 endif()
 
 option(VVL_ENABLE_ASAN "Use address sanitization")
-option(VVL_ENABLE_TSAN "Use thread sanitizer")
 if (VVL_ENABLE_ASAN)
-    add_compile_options(-fsanitize=address)
-    add_compile_options(-fno-omit-frame-pointer) # Get nicer stack traces in error messages
+    add_compile_options(-fsanitize=address -fno-omit-frame-pointer)
     add_link_options(-fsanitize=address)
-elseif (VVL_ENABLE_TSAN)
-    # Thread sanitizer cannot be used in combination with address sanitizer
-    add_compile_options(-fsanitize=thread)
-    add_compile_options(-fno-omit-frame-pointer) # Get nicer stack traces in error messages
-    add_link_options(-fsanitize=thread)
 endif()
 
 option(VVL_CLANG_TIDY "Use clang-tidy")
@@ -111,17 +103,14 @@ if(${CMAKE_CXX_COMPILER_ID} MATCHES "(GNU|Clang)")
         )
     endif()
 elseif(MSVC)
-    # TODO: Update to /W4
-    add_compile_options("/W3")
-    # Warn about nested declarations
-    add_compile_options("/w34456")
-    # Warn about potentially uninitialized variables
-    add_compile_options("/w34701")
-    add_compile_options("/w34703")
-    # Warn about different indirection types.
-    add_compile_options("/w34057")
-    # Warn about signed/unsigned mismatch.
-    add_compile_options("/w34245")
+    add_compile_options("/W3") # TODO: Update to /W4   
+    add_compile_options("/w34456") # Warn about nested declarations
+    add_compile_options("/w34701") # Warn about potentially uninitialized variables
+    add_compile_options("/w34703") # Warn about potentially uninitialized variables    
+    add_compile_options("/w34057") # Warn about different indirection types.
+    add_compile_options("/w34245") # Warn about signed/unsigned mismatch.
+    add_compile_options("/we4189") # Warn about unused variables
+    add_compile_options("/we5038") # Warn about MIL ordering in constructors
 
     # PDBs aren't generated on Release builds by default.
     add_compile_options("$<$<CONFIG:Release>:/Zi>")
@@ -138,11 +127,6 @@ elseif(MSVC)
     add_compile_definitions(_CRT_SECURE_NO_WARNINGS NOMINMAX WIN32_LEAN_AND_MEAN)
 
     add_compile_options($<$<BOOL:${MSVC_IDE}>:/MP>) # Speed up Visual Studio builds
-endif()
-
-if(MINGW)
-    add_compile_definitions(_WIN32_WINNT=0x0600) # Must be declared before including Windows.h
-    add_compile_options("-Wa,-mbig-obj")
 endif()
 
 option(BUILD_LAYERS "Build VkLayer_khronos_validation" ON)

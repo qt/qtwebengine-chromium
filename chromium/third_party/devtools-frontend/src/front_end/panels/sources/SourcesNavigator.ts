@@ -115,7 +115,7 @@ export class NetworkNavigatorView extends NavigatorView {
     Host.userMetrics.panelLoaded('sources', 'DevTools.Launch.Sources');
   }
 
-  wasShown(): void {
+  override wasShown(): void {
     this.registerCSSFiles([sourcesNavigatorStyles]);
     super.wasShown();
   }
@@ -131,12 +131,12 @@ export class NetworkNavigatorView extends NavigatorView {
     return networkNavigatorViewInstance;
   }
 
-  acceptProject(project: Workspace.Workspace.Project): boolean {
+  override acceptProject(project: Workspace.Workspace.Project): boolean {
     return project.type() === Workspace.Workspace.projectTypes.Network;
   }
 
   private inspectedURLChanged(event: Common.EventTarget.EventTargetEvent<SDK.Target.Target>): void {
-    const mainTarget = SDK.TargetManager.TargetManager.instance().mainFrameTarget();
+    const mainTarget = SDK.TargetManager.TargetManager.instance().scopeTarget();
     if (event.data !== mainTarget) {
       return;
     }
@@ -151,8 +151,8 @@ export class NetworkNavigatorView extends NavigatorView {
     }
   }
 
-  uiSourceCodeAdded(uiSourceCode: Workspace.UISourceCode.UISourceCode): void {
-    const mainTarget = SDK.TargetManager.TargetManager.instance().mainFrameTarget();
+  override uiSourceCodeAdded(uiSourceCode: Workspace.UISourceCode.UISourceCode): void {
+    const mainTarget = SDK.TargetManager.TargetManager.instance().scopeTarget();
     const inspectedURL = mainTarget && mainTarget.inspectedURL();
     if (!inspectedURL) {
       return;
@@ -192,13 +192,13 @@ export class FilesNavigatorView extends NavigatorView {
     return filesNavigatorViewInstance;
   }
 
-  acceptProject(project: Workspace.Workspace.Project): boolean {
+  override acceptProject(project: Workspace.Workspace.Project): boolean {
     return project.type() === Workspace.Workspace.projectTypes.FileSystem &&
         Persistence.FileSystemWorkspaceBinding.FileSystemWorkspaceBinding.fileSystemType(project) !== 'overrides' &&
         !Snippets.ScriptSnippetFileSystem.isSnippetsProject(project);
   }
 
-  handleContextMenu(event: Event): void {
+  override handleContextMenu(event: Event): void {
     const contextMenu = new UI.ContextMenu.ContextMenu(event);
     contextMenu.defaultSection().appendAction('sources.add-folder-to-workspace', undefined, true);
     void contextMenu.show();
@@ -269,7 +269,7 @@ export class OverridesNavigatorView extends NavigatorView {
       this.toolbar.appendToolbarItem(enableCheckbox);
 
       this.toolbar.appendToolbarItem(new UI.Toolbar.ToolbarSeparator(true));
-      const clearButton = new UI.Toolbar.ToolbarButton(i18nString(UIStrings.clearConfiguration), 'largeicon-clear');
+      const clearButton = new UI.Toolbar.ToolbarButton(i18nString(UIStrings.clearConfiguration), 'clear');
       clearButton.addEventListener(UI.Toolbar.ToolbarButton.Events.Click, () => {
         project.remove();
       });
@@ -277,7 +277,7 @@ export class OverridesNavigatorView extends NavigatorView {
       return;
     }
     const title = i18nString(UIStrings.selectFolderForOverrides);
-    const setupButton = new UI.Toolbar.ToolbarButton(title, 'largeicon-add', title);
+    const setupButton = new UI.Toolbar.ToolbarButton(title, 'plus', title);
     setupButton.addEventListener(UI.Toolbar.ToolbarButton.Events.Click, _event => {
       void this.setupNewWorkspace();
     }, this);
@@ -293,7 +293,7 @@ export class OverridesNavigatorView extends NavigatorView {
     Common.Settings.Settings.instance().moduleSetting('persistenceNetworkOverridesEnabled').set(true);
   }
 
-  acceptProject(project: Workspace.Workspace.Project): boolean {
+  override acceptProject(project: Workspace.Workspace.Project): boolean {
     return project === Persistence.NetworkPersistenceManager.NetworkPersistenceManager.instance().project();
   }
 }
@@ -322,7 +322,7 @@ export class ContentScriptsNavigatorView extends NavigatorView {
     return contentScriptsNavigatorViewInstance;
   }
 
-  acceptProject(project: Workspace.Workspace.Project): boolean {
+  override acceptProject(project: Workspace.Workspace.Project): boolean {
     return project.type() === Workspace.Workspace.projectTypes.ContentScripts;
   }
 }
@@ -342,8 +342,8 @@ export class SnippetsNavigatorView extends NavigatorView {
   `);
 
     const toolbar = new UI.Toolbar.Toolbar('navigator-toolbar');
-    const newButton = new UI.Toolbar.ToolbarButton(
-        i18nString(UIStrings.newSnippet), 'largeicon-add', i18nString(UIStrings.newSnippet));
+    const newButton =
+        new UI.Toolbar.ToolbarButton(i18nString(UIStrings.newSnippet), 'plus', i18nString(UIStrings.newSnippet));
     newButton.addEventListener(UI.Toolbar.ToolbarButton.Events.Click, _event => {
       void this.create(
           Snippets.ScriptSnippetFileSystem.findSnippetsProject(), '' as Platform.DevToolsPath.EncodedPathString);
@@ -359,11 +359,11 @@ export class SnippetsNavigatorView extends NavigatorView {
     return snippetsNavigatorViewInstance;
   }
 
-  acceptProject(project: Workspace.Workspace.Project): boolean {
+  override acceptProject(project: Workspace.Workspace.Project): boolean {
     return Snippets.ScriptSnippetFileSystem.isSnippetsProject(project);
   }
 
-  handleContextMenu(event: Event): void {
+  override handleContextMenu(event: Event): void {
     const contextMenu = new UI.ContextMenu.ContextMenu(event);
     contextMenu.headerSection().appendItem(
         i18nString(UIStrings.createNewSnippet),
@@ -372,7 +372,7 @@ export class SnippetsNavigatorView extends NavigatorView {
     void contextMenu.show();
   }
 
-  handleFileContextMenu(event: Event, node: NavigatorUISourceCodeTreeNode): void {
+  override handleFileContextMenu(event: Event, node: NavigatorUISourceCodeTreeNode): void {
     const uiSourceCode = node.uiSourceCode();
     const contextMenu = new UI.ContextMenu.ContextMenu(event);
     contextMenu.headerSection().appendItem(

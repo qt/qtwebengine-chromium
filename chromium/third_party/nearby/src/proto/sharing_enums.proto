@@ -16,6 +16,9 @@ syntax = "proto2";
 
 package location.nearby.proto.sharing;
 
+// import "logs/proto/logs_annotations/logs_annotations.proto";
+
+// option (logs_proto.file_not_used_for_logging_except_enums) = true;
 option optimize_for = LITE_RUNTIME;
 option java_package = "com.google.location.nearby.proto";
 option java_outer_classname = "SharingEnums";
@@ -27,7 +30,7 @@ option objc_class_prefix = "GNSHP";
 // in NearbyClearcutLogger (for android, or clearcut_event_logger as the
 // equivalence for Windows) for all events (may exclude settings), and
 // session_id for a pair of events (start and end of a session).
-// Next id: 56
+// Next id: 58
 enum EventType {
   UNKNOWN_EVENT_TYPE = 0;
 
@@ -207,6 +210,12 @@ enum EventType {
   // Preference usage event (e.g. load/save preferences, etc).
   // Used only for Windows App now.
   PREFERENCES_USAGE = 55;
+
+  // Default opt in
+  DEFAULT_OPT_IN = 56;
+
+  // The result of the setup wizard flow
+  SETUP_WIZARD = 57;
 
   // LINT.ThenChange(//depot/google3/location/nearby/proto/nearby_event_codes.proto:SharingEventCode)
 }
@@ -435,6 +444,8 @@ enum ActivityName {
   SET_DATA_USAGE_DIALOG = 8;
   QUICK_SETTINGS_ACTIVITY = 9;
   REMOTE_COPY_SHARE_SHEET_ACTIVITY = 10;
+  SETUP_WIZARD_ACTIVITY = 11;
+  SETTINGS_REVIEW_ACTIVITY = 12;
 }
 
 // The type of consent page user launches.
@@ -502,6 +513,7 @@ enum PermissionRequestType {
   PERMISSION_WIFI = 2;
   PERMISSION_BLUETOOTH = 3;
   PERMISSION_LOCATION = 4;
+  PERMISSION_WIFI_HOTSPOT = 5;
 }
 
 enum SharingUseCase {
@@ -512,6 +524,7 @@ enum SharingUseCase {
   USE_CASE_WIFI_CREDENTIAL = 3;
   USE_CASE_APP_SHARE = 4;
   USE_CASE_QUICK_SETTING_FILE_SHARE = 5;
+  USE_CASE_SETUP_WIZARD = 6;
 }
 
 // Used only for Windows App now.

@@ -13,6 +13,7 @@
 #include "include/core/SkTypeface.h"
 #include "include/core/SkTypes.h"
 #include "include/private/base/SkMutex.h"
+#include "include/private/base/SkTArray.h"
 #include "src/core/SkGlyph.h"
 #include "src/core/SkScalerContext.h"
 #include "src/core/SkSharedMutex.h"
@@ -93,7 +94,7 @@ public:
             SkFixed fDefault;
             SkFixed fMaximum;
         };
-        using AxisDefinitions = SkSTArray<4, AxisDefinition, true>;
+        using AxisDefinitions = skia_private::STArray<4, AxisDefinition, true>;
         bool recognizedFont(SkStreamAsset* stream, int* numFonts) const;
         bool scanFont(SkStreamAsset* stream, int ttcIndex,
                       SkString* name, SkFontStyle* style, bool* isFixedPitch,

@@ -16,8 +16,10 @@
 #include "include/core/SkRect.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkScalar.h"
+#include "include/core/SkShader.h"
 #include "include/core/SkSize.h"
 #include "include/core/SkString.h"
+#include "include/core/SkTileMode.h"
 #include "src/core/SkMipmap.h"
 #include "src/core/SkMipmapBuilder.h"
 #include "tools/Resources.h"
@@ -43,7 +45,7 @@ class ShowMipLevels3 : public skiagm::GM {
             auto surf = SkSurface::MakeRasterDirect(builder.level(i));
             surf->getCanvas()->drawColor(colors[i % std::size(colors)]);
         }
-        fImg = builder.attachTo(fImg.get());
+        fImg = builder.attachTo(fImg);
     }
 
     DrawResult onDraw(SkCanvas* canvas, SkString*) override {

@@ -19,12 +19,15 @@
 #include "src/deoptimizer/deoptimizer.h"
 #include "src/execution/arguments-inl.h"
 #include "src/execution/frames-inl.h"
+#include "src/execution/frames.h"
 #include "src/execution/isolate-inl.h"
 #include "src/execution/protectors-inl.h"
 #include "src/execution/tiering-manager.h"
+#include "src/flags/flags.h"
 #include "src/heap/heap-write-barrier-inl.h"
 #include "src/heap/pretenuring-handler-inl.h"
 #include "src/ic/stub-cache.h"
+#include "src/objects/bytecode-array.h"
 #include "src/objects/js-collection-inl.h"
 #ifdef V8_ENABLE_MAGLEV
 #include "src/maglev/maglev-concurrent-dispatcher.h"
@@ -390,7 +393,7 @@ RUNTIME_FUNCTION(Runtime_CompileBaseline) {
     return CrashUnlessFuzzing(isolate);
   }
 
-  return *function;
+  return ReadOnlyRoots(isolate).undefined_value();
 }
 
 // TODO(v8:7700): Remove this function once we no longer need it to measure
@@ -490,7 +493,10 @@ RUNTIME_FUNCTION(Runtime_OptimizeMaglevOnNextCall) {
 // TODO(jgruber): Rename to OptimizeTurbofanOnNextCall.
 RUNTIME_FUNCTION(Runtime_OptimizeFunctionOnNextCall) {
   HandleScope scope(isolate);
-  return OptimizeFunctionOnNextCall(args, isolate, CodeKind::TURBOFAN);
+  return OptimizeFunctionOnNextCall(
+      args, isolate,
+      v8_flags.optimize_on_next_call_optimizes_to_maglev ? CodeKind::MAGLEV
+                                                         : CodeKind::TURBOFAN);
 }
 
 RUNTIME_FUNCTION(Runtime_EnsureFeedbackVectorForFunction) {
@@ -530,7 +536,7 @@ RUNTIME_FUNCTION(Runtime_PrepareFunctionForOptimization) {
 
   // Hold onto the bytecode array between marking and optimization to ensure
   // it's not flushed.
-  if (v8_flags.testing_d8_test_runner) {
+  if (v8_flags.testing_d8_test_runner || v8_flags.allow_natives_syntax) {
     ManualOptimizationTable::MarkFunctionForManualOptimization(
         isolate, function, &is_compiled_scope);
   }
@@ -601,7 +607,16 @@ RUNTIME_FUNCTION(Runtime_OptimizeOsr) {
   // Find the JavaScript function on the top of the stack.
   JavaScriptStackFrameIterator it(isolate);
   while (!it.done() && stack_depth--) it.Advance();
-  if (!it.done()) function = handle(it.frame()->function(), isolate);
+  if (!it.done()) {
+    if (it.frame()->is_turbofan()) {
+      // This can happen if %OptimizeOsr is in inlined function.
+      return ReadOnlyRoots(isolate).undefined_value();
+    } else if (it.frame()->is_maglev()) {
+      function = MaglevFrame::cast(it.frame())->GetInnermostFunction();
+    } else {
+      function = handle(it.frame()->function(), isolate);
+    }
+  }
   if (function.is_null()) return CrashUnlessFuzzing(isolate);
 
   if (V8_UNLIKELY(!v8_flags.turbofan) || V8_UNLIKELY(!v8_flags.use_osr)) {
@@ -662,7 +677,7 @@ RUNTIME_FUNCTION(Runtime_OptimizeOsr) {
     } else {
       MaglevFrame* frame = MaglevFrame::cast(it.frame());
       Handle<BytecodeArray> bytecode_array(
-          frame->function().shared().GetBytecodeArray(isolate), isolate);
+          function->shared().GetBytecodeArray(isolate), isolate);
       const int current_offset = frame->GetBytecodeOffsetForOSR().ToInt();
       osr_offset =
           OffsetOfNextJumpLoop(isolate, bytecode_array, current_offset);
@@ -738,7 +753,7 @@ RUNTIME_FUNCTION(Runtime_NeverOptimizeFunction) {
     isolate->lazy_compile_dispatcher()->FinishNow(sfi);
   }
 
-  sfi->DisableOptimization(BailoutReason::kNeverOptimize);
+  sfi->DisableOptimization(isolate, BailoutReason::kNeverOptimize);
   return ReadOnlyRoots(isolate).undefined_value();
 }
 
@@ -760,6 +775,10 @@ RUNTIME_FUNCTION(Runtime_GetOptimizationStatus) {
   }
   if (v8_flags.deopt_every_n_times) {
     status |= static_cast<int>(OptimizationStatus::kMaybeDeopted);
+  }
+  if (v8_flags.optimize_on_next_call_optimizes_to_maglev) {
+    status |= static_cast<int>(
+        OptimizationStatus::kOptimizeOnNextCallOptimizesToMaglev);
   }
 
   Handle<Object> function_object = args.at(0);
@@ -885,8 +904,9 @@ RUNTIME_FUNCTION(Runtime_ForceFlush) {
   return ReadOnlyRoots(isolate).undefined_value();
 }
 
-static void ReturnNull(const v8::FunctionCallbackInfo<v8::Value>& args) {
-  args.GetReturnValue().SetNull();
+static void ReturnNull(const v8::FunctionCallbackInfo<v8::Value>& info) {
+  DCHECK(ValidateCallbackInfo(info));
+  info.GetReturnValue().SetNull();
 }
 
 RUNTIME_FUNCTION(Runtime_GetUndetectable) {
@@ -901,12 +921,13 @@ RUNTIME_FUNCTION(Runtime_GetUndetectable) {
   return *Utils::OpenHandle(*obj);
 }
 
-static void call_as_function(const v8::FunctionCallbackInfo<v8::Value>& args) {
+static void call_as_function(const v8::FunctionCallbackInfo<v8::Value>& info) {
+  DCHECK(ValidateCallbackInfo(info));
   double v1 =
-      args[0]->NumberValue(args.GetIsolate()->GetCurrentContext()).ToChecked();
+      info[0]->NumberValue(info.GetIsolate()->GetCurrentContext()).ToChecked();
   double v2 =
-      args[1]->NumberValue(args.GetIsolate()->GetCurrentContext()).ToChecked();
-  args.GetReturnValue().Set(v8::Number::New(args.GetIsolate(), v1 - v2));
+      info[1]->NumberValue(info.GetIsolate()->GetCurrentContext()).ToChecked();
+  info.GetReturnValue().Set(v8::Number::New(info.GetIsolate(), v1 - v2));
 }
 
 // Returns a callable object. The object returns the difference of its two
@@ -989,7 +1010,7 @@ void FillUpOneNewSpacePage(Isolate* isolate, Heap* heap) {
   // We cannot rely on `space->limit()` to point to the end of the current page
   // in the case where inline allocations are disabled, it actually points to
   // the current allocation pointer.
-  DCHECK_IMPLIES(!space->IsInlineAllocationEnabled(),
+  DCHECK_IMPLIES(!heap->IsInlineAllocationEnabled(),
                  space->limit() == space->top());
   int space_remaining = GetSpaceRemainingOnCurrentPage(space);
   while (space_remaining > 0) {
@@ -1667,9 +1688,9 @@ RUNTIME_FUNCTION(Runtime_EnableCodeLoggingForTesting) {
     void CodeMovingGCEvent() final {}
     void CodeDisableOptEvent(Handle<AbstractCode> code,
                              Handle<SharedFunctionInfo> shared) final {}
-    void CodeDeoptEvent(Handle<InstructionStream> code, DeoptimizeKind kind,
-                        Address pc, int fp_to_sp_delta) final {}
-    void CodeDependencyChangeEvent(Handle<InstructionStream> code,
+    void CodeDeoptEvent(Handle<Code> code, DeoptimizeKind kind, Address pc,
+                        int fp_to_sp_delta) final {}
+    void CodeDependencyChangeEvent(Handle<Code> code,
                                    Handle<SharedFunctionInfo> shared,
                                    const char* reason) final {}
     void WeakCodeClearEvent() final {}

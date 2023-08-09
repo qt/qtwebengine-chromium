@@ -54,7 +54,10 @@ export class WarningErrorCounter implements UI.Toolbar.Provider {
     countersWrapper.appendChild(this.consoleCounter);
     this.consoleCounter.data = {
       clickHandler: Common.Console.Console.instance().show.bind(Common.Console.Console.instance()),
-      groups: [{iconName: 'error_icon'}, {iconName: 'warning_icon'}],
+      groups: [
+        {iconName: 'cross-circle-filled', iconColor: 'var(--icon-error)', iconHeight: '14px', iconWidth: '14px'},
+        {iconName: 'warning-filled', iconColor: 'var(--icon-warning)', iconHeight: '14px', iconWidth: '14px'},
+      ],
     };
 
     const issuesManager = IssuesManager.IssuesManager.IssuesManager.instance();
@@ -71,11 +74,12 @@ export class WarningErrorCounter implements UI.Toolbar.Provider {
 
     this.throttler = new Common.Throttler.Throttler(100);
 
-    SDK.ConsoleModel.ConsoleModel.instance().addEventListener(
-        SDK.ConsoleModel.Events.ConsoleCleared, this.update, this);
-    SDK.ConsoleModel.ConsoleModel.instance().addEventListener(SDK.ConsoleModel.Events.MessageAdded, this.update, this);
-    SDK.ConsoleModel.ConsoleModel.instance().addEventListener(
-        SDK.ConsoleModel.Events.MessageUpdated, this.update, this);
+    SDK.TargetManager.TargetManager.instance().addModelListener(
+        SDK.ConsoleModel.ConsoleModel, SDK.ConsoleModel.Events.ConsoleCleared, this.update, this);
+    SDK.TargetManager.TargetManager.instance().addModelListener(
+        SDK.ConsoleModel.ConsoleModel, SDK.ConsoleModel.Events.MessageAdded, this.update, this);
+    SDK.TargetManager.TargetManager.instance().addModelListener(
+        SDK.ConsoleModel.ConsoleModel, SDK.ConsoleModel.Events.MessageUpdated, this.update, this);
 
     issuesManager.addEventListener(IssuesManager.IssuesManager.Events.IssuesCountUpdated, this.update, this);
 
@@ -115,8 +119,8 @@ export class WarningErrorCounter implements UI.Toolbar.Provider {
   }
 
   private async updateThrottled(): Promise<void> {
-    const errors = SDK.ConsoleModel.ConsoleModel.instance().errors();
-    const warnings = SDK.ConsoleModel.ConsoleModel.instance().warnings();
+    const errors = SDK.ConsoleModel.ConsoleModel.allErrors();
+    const warnings = SDK.ConsoleModel.ConsoleModel.allWarnings();
     const issuesManager = IssuesManager.IssuesManager.IssuesManager.instance();
     const issues = issuesManager.numberOfIssues();
 

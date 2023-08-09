@@ -14,10 +14,10 @@
 
 #include "src/tint/utils/enum_set.h"
 
-#include <sstream>
 #include <vector>
 
 #include "gmock/gmock.h"
+#include "src/tint/utils/string_stream.h"
 
 namespace tint::utils {
 namespace {
@@ -26,7 +26,7 @@ using ::testing::ElementsAre;
 
 enum class E { A = 0, B = 3, C = 7 };
 
-std::ostream& operator<<(std::ostream& out, E e) {
+utils::StringStream& operator<<(utils::StringStream& out, E e) {
     switch (e) {
         case E::A:
             return out << "A";
@@ -232,7 +232,7 @@ TEST(EnumSetTest, Loop) {
 }
 
 TEST(EnumSetTest, Ostream) {
-    std::stringstream ss;
+    utils::StringStream ss;
     ss << EnumSet<E>(E::A, E::C);
     EXPECT_EQ(ss.str(), "{A, C}");
 }

@@ -5,10 +5,12 @@
 #include "device/vr/openxr/openxr_device.h"
 
 #include <string>
+#include <vector>
 
 #include "base/containers/contains.h"
 #include "base/functional/callback_helpers.h"
 #include "base/no_destructor.h"
+#include "base/ranges/algorithm.h"
 #include "build/build_config.h"
 #include "device/vr/openxr/openxr_api_wrapper.h"
 #include "device/vr/openxr/openxr_render_loop.h"
@@ -27,9 +29,40 @@ const std::vector<mojom::XRSessionFeature>& GetSupportedFeatures() {
                           mojom::XRSessionFeature::REF_SPACE_LOCAL_FLOOR,
                           mojom::XRSessionFeature::REF_SPACE_BOUNDED_FLOOR,
                           mojom::XRSessionFeature::REF_SPACE_UNBOUNDED,
-                          mojom::XRSessionFeature::ANCHORS}};
+                          mojom::XRSessionFeature::ANCHORS,
+                          mojom::XRSessionFeature::SECONDARY_VIEWS}};
 
   return *kSupportedFeatures;
+}
+
+bool AreAllRequiredFeaturesSupported(
+    const std::vector<mojom::XRSessionFeature>& required_features,
+    const OpenXrExtensionHelper& extension_helper) {
+  auto* extension_enum = extension_helper.ExtensionEnumeration();
+  return base::ranges::all_of(
+      required_features,
+      [extension_enum](const mojom::XRSessionFeature& feature) {
+        switch (feature) {
+          case device::mojom::XRSessionFeature::ANCHORS:
+            return extension_enum->ExtensionSupported(
+                XR_MSFT_SPATIAL_ANCHOR_EXTENSION_NAME);
+          case device::mojom::XRSessionFeature::HAND_INPUT:
+            return extension_enum->ExtensionSupported(
+                kMSFTHandInteractionExtensionName);
+          case device::mojom::XRSessionFeature::HIT_TEST:
+            return extension_enum->ExtensionSupported(
+                XR_MSFT_SCENE_UNDERSTANDING_EXTENSION_NAME);
+          case device::mojom::XRSessionFeature::SECONDARY_VIEWS:
+            return extension_enum->ExtensionSupported(
+                XR_MSFT_SECONDARY_VIEW_CONFIGURATION_EXTENSION_NAME);
+          default:
+            // All features that don't require an extension are assumed to be
+            // supported. We rely on the Browser process pre-filtering and not
+            // passing us any features that we haven't already indicated that
+            // we could support.
+            return true;
+        }
+      });
 }
 
 }  // namespace
@@ -67,11 +100,6 @@ OpenXrDevice::OpenXrDevice(
     device_features.emplace_back(mojom::XRSessionFeature::HIT_TEST);
   }
 
-  if (extension_helper_.ExtensionEnumeration()->ExtensionSupported(
-          XR_MSFT_SECONDARY_VIEW_CONFIGURATION_EXTENSION_NAME)) {
-    device_features.emplace_back(mojom::XRSessionFeature::SECONDARY_VIEWS);
-  }
-
   SetSupportedFeatures(device_features);
 }
 
@@ -106,30 +134,17 @@ void OpenXrDevice::EnsureRenderLoop() {
 void OpenXrDevice::RequestSession(
     mojom::XRRuntimeSessionOptionsPtr options,
     mojom::XRRuntime::RequestSessionCallback callback) {
-  DCHECK(!request_session_callback_);
+  // TODO(https://crbug.com/1450707): Strengthen the guarantees from the browser
+  // process that we will not get a session request while one is pending.
+  if (request_session_callback_ || HasExclusiveSession()) {
+    LOG(ERROR) << __func__
+               << " New session request while processing previous request.";
+    std::move(callback).Run(nullptr);
+    return;
+  }
 
-  // Check feature support and reject session request if we cannot fulfil it
-  // TODO(https://crbug.com/995377): Currently OpenXR features are declared
-  // statically, but we may only know a runtime's true support for a feature
-  // dynamically
-  const bool anchors_required = base::Contains(
-      options->required_features, device::mojom::XRSessionFeature::ANCHORS);
-  const bool anchors_supported =
-      extension_helper_.ExtensionEnumeration()->ExtensionSupported(
-          XR_MSFT_SPATIAL_ANCHOR_EXTENSION_NAME);
-  const bool hand_input_required = base::Contains(
-      options->required_features, device::mojom::XRSessionFeature::HAND_INPUT);
-  const bool hand_input_supported =
-      extension_helper_.ExtensionEnumeration()->ExtensionSupported(
-          kMSFTHandInteractionExtensionName);
-  const bool hittest_required = base::Contains(
-      options->required_features, device::mojom::XRSessionFeature::HIT_TEST);
-  const bool hittest_supported =
-      extension_helper_.ExtensionEnumeration()->ExtensionSupported(
-          XR_MSFT_SCENE_UNDERSTANDING_EXTENSION_NAME);
-  if ((anchors_required && !anchors_supported) ||
-      (hand_input_required && !hand_input_supported) ||
-      (hittest_required && !hittest_supported)) {
+  if (!AreAllRequiredFeaturesSupported(options->required_features,
+                                       extension_helper_)) {
     // Reject session request
     std::move(callback).Run(nullptr);
     return;

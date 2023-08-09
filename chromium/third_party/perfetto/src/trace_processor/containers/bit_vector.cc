@@ -79,13 +79,17 @@ BitVector::BitVector(uint32_t count, bool value) {
   Resize(count, value);
 }
 
-BitVector::BitVector(std::vector<Block> blocks,
+BitVector::BitVector(std::vector<uint64_t> words,
                      std::vector<uint32_t> counts,
                      uint32_t size)
-    : size_(size), counts_(std::move(counts)), blocks_(std::move(blocks)) {}
+    : size_(size), counts_(std::move(counts)), words_(std::move(words)) {
+  uint32_t words_size = static_cast<uint32_t>(words_.size());
+  if (words_size % Block::kWords != 0)
+    words_.resize(words_.size() + 8 - (words_.size() % 8u));
+}
 
 BitVector BitVector::Copy() const {
-  return BitVector(blocks_, counts_, size_);
+  return BitVector(words_, counts_, size_);
 }
 
 BitVector::AllBitsIterator BitVector::IterateAllBits() const {
@@ -97,18 +101,16 @@ BitVector::SetBitsIterator BitVector::IterateSetBits() const {
 }
 
 void BitVector::UpdateSetBits(const BitVector& update) {
-  static_assert(sizeof(Block) == Block::kWords * sizeof(uint64_t),
-                "Block must just consist of words.");
   PERFETTO_DCHECK(update.size() <= CountSetBits());
 
   // Get the start and end ptrs for the current bitvector.
   // Safe because of the static_assert above.
-  auto* ptr = reinterpret_cast<uint64_t*>(blocks_.data());
+  auto* ptr = reinterpret_cast<uint64_t*>(words_.data());
   const uint64_t* ptr_end = ptr + WordCeil(size());
 
   // Get the start and end ptrs for the current bitvector.
   // Safe because of the static_assert above.
-  auto* update_ptr = reinterpret_cast<const uint64_t*>(update.blocks_.data());
+  auto* update_ptr = reinterpret_cast<const uint64_t*>(update.words_.data());
   const uint64_t* update_ptr_end = update_ptr + WordCeil(update.size());
 
   // |update_unused_bits| contains |unused_bits_count| bits at the bottom
@@ -118,7 +120,7 @@ void BitVector::UpdateSetBits(const BitVector& update) {
   uint64_t update_unused_bits = 0;
   uint8_t unused_bits_count = 0;
 
-  // The basic premise of this loop is, for each word in |this| we find the
+  // The basic premise of this loop is, for each word in |this| we find
   // enough bits from |update| to cover every set bit in the word. We then use
   // the PDEP x64 instruction (or equivalent instructions/software emulation) to
   // update the word and store it back in |this|.
@@ -180,12 +182,61 @@ void BitVector::UpdateSetBits(const BitVector& update) {
   PERFETTO_DCHECK(update_ptr == update_ptr_end);
 
   for (uint32_t i = 0; i < counts_.size() - 1; ++i) {
-    counts_[i + 1] = counts_[i] + blocks_[i].CountSetBits();
+    counts_[i + 1] = counts_[i] + ConstBlockFromIndex(i).CountSetBits();
   }
 
   // After the loop, we should have precisely the same number of bits
   // set as |update|.
   PERFETTO_DCHECK(update.CountSetBits() == CountSetBits());
+}
+
+BitVector BitVector::IntersectRange(uint32_t range_start,
+                                    uint32_t range_end) const {
+  uint32_t total_set_bits = CountSetBits();
+  if (total_set_bits == 0 || range_start >= range_end)
+    return BitVector();
+
+  uint32_t first_set_bit = IndexOfNthSet(0);
+  if (total_set_bits == 1) {
+    BitVector bv(first_set_bit, false);
+    bv.AppendTrue();
+    return bv;
+  }
+
+  // We should skip all bits until the index of first set bit bigger than
+  // |range_start|.
+  uint32_t start = std::max(range_start, first_set_bit);
+  uint32_t end = std::min(range_end, IndexOfNthSet(total_set_bits - 1));
+
+  if (start >= end)
+    return BitVector();
+
+  Builder builder(end);
+
+  // All bits before start should be empty.
+  builder.Skip(start);
+
+  uint32_t front_bits = builder.BitsUntilWordBoundaryOrFull();
+  uint32_t cur_index = start;
+  for (uint32_t i = 0; i < front_bits; ++i, ++cur_index) {
+    builder.Append(IsSet(cur_index));
+  }
+
+  PERFETTO_DCHECK(cur_index == end || cur_index % BitWord::kBits == 0);
+  uint32_t cur_words = cur_index / BitWord::kBits;
+  uint32_t full_words = builder.BitsInCompleteWordsUntilFull() / BitWord::kBits;
+  uint32_t total_full_words = cur_words + full_words;
+  for (; cur_words < total_full_words; ++cur_words) {
+    builder.AppendWord(words_[cur_words]);
+  }
+
+  uint32_t last_bits = builder.BitsUntilFull();
+  cur_index += full_words * BitWord::kBits;
+  for (uint32_t i = 0; i < last_bits; ++i, ++cur_index) {
+    builder.Append(IsSet(cur_index));
+  }
+
+  return std::move(builder).Build();
 }
 
 }  // namespace trace_processor

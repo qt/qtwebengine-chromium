@@ -14,31 +14,25 @@
 
 1. CMake >= 3.17.2
 2. C++ >= c++17 compiler. See platform-specific sections below for supported compiler versions.
-3. Python >= 3.7 (3.6 may work, 3.5 and earlier is not supported)
+3. Python >= 3.8
 
 NOTE: Python is needed for working on generated code, and helping grab dependencies.
 While it's not technically required, it's practically required for most users.
 
 ## Building Overview
 
-The following will be enough for most people, for platform-specific instructions, see below.
+The following will be enough for most people, for more detailed instructions, see below.
 
 ```bash
 git clone https://github.com/KhronosGroup/Vulkan-ValidationLayers.git
 cd Vulkan-ValidationLayers
 
-mkdir build
-cd build
+cmake -S . -B build -D UPDATE_DEPS=ON -D BUILD_WERROR=ON -D BUILD_TESTS=ON -D CMAKE_BUILD_TYPE=Debug
+cmake --build build --config Debug
 
-# Linux
-python3 ../scripts/update_deps.py --dir ../external --arch x64 --config debug
-cmake -G Ninja -C ../external/helper.cmake -DCMAKE_BUILD_TYPE=Debug ..
-
-# Windows
-python ..\scripts\update_deps.py --dir ..\external --arch x64 --config debug
-cmake -A x64 -C ..\external\helper.cmake -DCMAKE_BUILD_TYPE=Debug ..
-
-cmake --build . --config Debug
+# CMake 3.21+
+cmake -S . -B build --preset dev
+cmake --build build --config Debug
 ```
 
 ## Generated source code
@@ -240,18 +234,15 @@ cmake --build . --config Release
 
 ### Linux Build Requirements
 
-This repository has been built and tested on the two most recent Ubuntu LTS
-versions. Currently, the oldest supported version is Ubuntu 18.04, meaning
-that the minimum officially supported C++17 compiler version is GCC 7.3.0,
-although earlier versions may work. It should be straightforward to adapt this
-repository to other Linux distributions.
+This repository is regularly built and tested on the two most recent Ubuntu LTS versions.
 
 [CMake 3.17.2](https://cmake.org/files/v3.17/cmake-3.17.2-Linux-x86_64.tar.gz) is recommended.
 
 ```bash
-sudo apt-get install git build-essential libx11-xcb-dev \
-        libxkbcommon-dev libwayland-dev libxrandr-dev \
-        libegl1-mesa-dev python3-distutils
+sudo apt-get install git build-essential python3
+
+# Linux WSI system libraries
+sudo apt-get install libwayland-dev xorg-dev
 ```
 
 ### WSI Support Build Options
@@ -347,15 +338,14 @@ export PATH=$ANDROID_NDK_HOME:$PATH
 export PATH=$ANDROID_SDK_HOME/build-tools/X.Y.Z:$PATH
 ```
 
-Note: If `jarsigner` is missing from your platform, you can find it in the
-Android Studio install or in your Java installation. If you do not have Java,
-you can get it with something like the following:
+Note: If `apksigner` gives a `java: not found` error you do not have Java in your path.
+A common way to install on the system:
 
-  sudo apt-get install openjdk-8-jdk
+```bash
+  sudo apt install default-jre
+```
 
 #### Additional OSX System Requirements
-
-Tested on OSX version 10.15
 
 Setup Homebrew and components
 
@@ -382,6 +372,8 @@ tools.
 
     cd build-android
     ./build_all.sh
+
+> **NOTE:** To allow manual installation of Android layer libraries on development devices, `build_all.sh` will use the static version of the c++ library (libc++_static.so). For testing purposes and general usage including installation via APK the c++ shared library should be used (libc++_shared.so). See comments in [build_all.sh](build-android/build_all.sh) for details.
 
 > **NOTE:** By default, the `build_all.sh` script will build for all Android ABI variations. To **speed up the build time** if you know your target(s), set `APP_ABI` in both [build-android/jni/Application.mk](build-android/jni/Application.mk) and [build-android/jni/shaderc/Application.mk](build-android/jni/shaderc/Application.mk) to the desired [Android ABI](https://developer.android.com/ndk/guides/application_mk#app_abi)
 
@@ -413,10 +405,6 @@ Follow the setup steps for Windows above, then from the Developer Command Prompt
 ## Building on MacOS
 
 ### MacOS Build Requirements
-
-Tested on OSX version 10.15
-
-NOTE: To force the OSX version set the environment variable [MACOSX_DEPLOYMENT_TARGET](https://cmake.org/cmake/help/latest/envvar/MACOSX_DEPLOYMENT_TARGET.html) when building VVL and it's dependencies.
 
 [CMake 3.17.2](https://cmake.org/files/v3.17/cmake-3.17.2-Darwin-x86_64.tar.gz) is recommended.
 

@@ -38,7 +38,6 @@
     #define SK_OPTS_NS portable
 #endif
 
-#include "src/core/SkCubicSolver.h"
 #include "src/opts/SkBitmapProcState_opts.h"
 #include "src/opts/SkBlitMask_opts.h"
 #include "src/opts/SkBlitRow_opts.h"
@@ -47,7 +46,6 @@
 #include "src/opts/SkSwizzler_opts.h"
 #include "src/opts/SkUtils_opts.h"
 #include "src/opts/SkVM_opts.h"
-#include "src/opts/SkXfermode_opts.h"
 
 namespace SkOpts {
     // Define default function pointer values here...
@@ -55,8 +53,6 @@ namespace SkOpts {
     // CPU-specialized, e.g. a typical x86-64 machine might start with SSE2 defaults.
     // They'll still get a chance to be replaced with even better ones, e.g. using SSE4.1.
 #define DEFINE_DEFAULT(name) decltype(name) name = SK_OPTS_NS::name
-    DEFINE_DEFAULT(create_xfermode);
-
     DEFINE_DEFAULT(blit_mask_d32_a8);
 
     DEFINE_DEFAULT(blit_row_color32);
@@ -81,14 +77,14 @@ namespace SkOpts {
     DEFINE_DEFAULT(rect_memset32);
     DEFINE_DEFAULT(rect_memset64);
 
-    DEFINE_DEFAULT(cubic_solver);
-
     DEFINE_DEFAULT(hash_fn);
 
     DEFINE_DEFAULT(S32_alpha_D32_filter_DX);
     DEFINE_DEFAULT(S32_alpha_D32_filter_DXDY);
 
+#if defined(SK_ENABLE_SKVM)
     DEFINE_DEFAULT(interpret_skvm);
+#endif
 #undef DEFINE_DEFAULT
 
     size_t raster_pipeline_lowp_stride  = SK_OPTS_NS::raster_pipeline_lowp_stride();

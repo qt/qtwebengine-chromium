@@ -108,6 +108,8 @@ StateManagerGL::StateManagerGL(const FunctionsGL *functions,
       mViewport(0, 0, 0, 0),
       mNear(0.0f),
       mFar(1.0f),
+      mClipOrigin(gl::ClipOrigin::LowerLeft),
+      mClipDepthMode(gl::ClipDepthMode::NegativeOneToOne),
       mBlendColor(0, 0, 0, 0),
       mBlendStateExt(rendererCaps.maxDrawBuffers),
       mIndependentBlendStates(extensions.drawBuffersIndexedAny()),
@@ -141,6 +143,7 @@ StateManagerGL::StateManagerGL(const FunctionsGL *functions,
       mPolygonOffsetFactor(0.0f),
       mPolygonOffsetUnits(0.0f),
       mPolygonOffsetClamp(0.0f),
+      mDepthClampEnabled(false),
       mRasterizerDiscardEnabled(false),
       mLineWidth(1.0f),
       mPrimitiveRestartEnabled(false),
@@ -208,6 +211,14 @@ StateManagerGL::StateManagerGL(const FunctionsGL *functions,
         mFunctions->genVertexArrays(1, &mDefaultVAO);
         mFunctions->bindVertexArray(mDefaultVAO);
         mVAO = mDefaultVAO;
+    }
+
+    // By default, desktop GL clamps values read from normalized
+    // color buffers to [0, 1], which does not match expected ES
+    // behavior for signed normalized color buffers.
+    if (mFunctions->clampColor)
+    {
+        mFunctions->clampColor(GL_CLAMP_READ_COLOR, GL_FALSE);
     }
 }
 
@@ -415,7 +426,6 @@ void StateManagerGL::forceUseProgram(GLuint program)
 
 void StateManagerGL::bindVertexArray(GLuint vao, VertexArrayStateGL *vaoState)
 {
-    ASSERT(vaoState);
     if (mVAO != vao)
     {
         ASSERT(!mFeatures.syncVertexArraysToDefault.enabled);
@@ -1167,6 +1177,23 @@ void StateManagerGL::setDepthRange(float near, float far)
     mLocalDirtyBits.set(gl::State::DIRTY_BIT_DEPTH_RANGE);
 }
 
+void StateManagerGL::setClipControl(gl::ClipOrigin origin, gl::ClipDepthMode depth)
+{
+    if (mClipOrigin == origin && mClipDepthMode == depth)
+    {
+        return;
+    }
+
+    mClipOrigin    = origin;
+    mClipDepthMode = depth;
+
+    ASSERT(mFunctions->clipControl);
+    mFunctions->clipControl(ToGLenum(mClipOrigin), ToGLenum(mClipDepthMode));
+
+    mLocalDirtyBits.set(gl::State::DIRTY_BIT_EXTENDED);
+    mLocalExtendedDirtyBits.set(gl::State::EXTENDED_DIRTY_BIT_CLIP_CONTROL);
+}
+
 void StateManagerGL::setBlendEnabled(bool enabled)
 {
     const gl::DrawBufferMask mask =
@@ -1697,6 +1724,25 @@ void StateManagerGL::setPolygonOffset(float factor, float units, float clamp)
     }
 }
 
+void StateManagerGL::setDepthClampEnabled(bool enabled)
+{
+    if (mDepthClampEnabled != enabled)
+    {
+        mDepthClampEnabled = enabled;
+        if (mDepthClampEnabled)
+        {
+            mFunctions->enable(GL_DEPTH_CLAMP_EXT);
+        }
+        else
+        {
+            mFunctions->disable(GL_DEPTH_CLAMP_EXT);
+        }
+
+        mLocalDirtyBits.set(gl::State::DIRTY_BIT_EXTENDED);
+        mLocalExtendedDirtyBits.set(gl::State::EXTENDED_DIRTY_BIT_DEPTH_CLAMP_ENABLED);
+    }
+}
+
 void StateManagerGL::setRasterizerDiscardEnabled(bool enabled)
 {
     if (mRasterizerDiscardEnabled != enabled)
@@ -1827,7 +1873,9 @@ void StateManagerGL::setClearStencil(GLint clearStencil)
 
 angle::Result StateManagerGL::syncState(const gl::Context *context,
                                         const gl::State::DirtyBits &glDirtyBits,
-                                        const gl::State::DirtyBits &bitMask)
+                                        const gl::State::DirtyBits &bitMask,
+                                        const gl::State::ExtendedDirtyBits &extendedDirtyBits,
+                                        const gl::State::ExtendedDirtyBits &extendedBitMask)
 {
     const gl::State &state = context->getState();
 
@@ -2215,14 +2263,15 @@ angle::Result StateManagerGL::syncState(const gl::Context *context,
                 break;
             case gl::State::DIRTY_BIT_EXTENDED:
             {
-                const gl::State::ExtendedDirtyBits extendedDirtyBits =
-                    state.getAndResetExtendedDirtyBits();
                 const gl::State::ExtendedDirtyBits glAndLocalExtendedDirtyBits =
                     extendedDirtyBits | mLocalExtendedDirtyBits;
                 for (size_t extendedDirtyBit : glAndLocalExtendedDirtyBits)
                 {
                     switch (extendedDirtyBit)
                     {
+                        case gl::State::EXTENDED_DIRTY_BIT_CLIP_CONTROL:
+                            setClipControl(state.getClipOrigin(), state.getClipDepthMode());
+                            break;
                         case gl::State::EXTENDED_DIRTY_BIT_CLIP_DISTANCES:
                             setClipDistancesEnable(state.getEnabledClipDistances());
                             if (mFeatures.emulateClipDistanceState.enabled)
@@ -2231,6 +2280,9 @@ angle::Result StateManagerGL::syncState(const gl::Context *context,
                                                                 state.getProgram(),
                                                                 state.getEnabledClipDistances());
                             }
+                            break;
+                        case gl::State::EXTENDED_DIRTY_BIT_DEPTH_CLAMP_ENABLED:
+                            setDepthClampEnabled(state.isDepthClampEnabled());
                             break;
                         case gl::State::EXTENDED_DIRTY_BIT_LOGIC_OP_ENABLED:
                             setLogicOpEnabled(state.isLogicOpEnabled());
@@ -2242,7 +2294,6 @@ angle::Result StateManagerGL::syncState(const gl::Context *context,
                         case gl::State::EXTENDED_DIRTY_BIT_SHADER_DERIVATIVE_HINT:
                             // These hints aren't forwarded to GL yet.
                             break;
-                        case gl::State::EXTENDED_DIRTY_BIT_CLIP_CONTROL:
                         case gl::State::EXTENDED_DIRTY_BIT_SHADING_RATE:
                             // Unimplemented extensions.
                             break;
@@ -2684,6 +2735,7 @@ template <>
 void StateManagerGL::get(GLenum name, GLboolean *value)
 {
     mFunctions->getBooleanv(name, value);
+    ASSERT(mFunctions->getError() == GL_NO_ERROR);
 }
 
 template <>
@@ -2709,6 +2761,7 @@ template <>
 void StateManagerGL::get(GLenum name, GLint *value)
 {
     mFunctions->getIntegerv(name, value);
+    ASSERT(mFunctions->getError() == GL_NO_ERROR);
 }
 
 template <>
@@ -2731,6 +2784,7 @@ template <>
 void StateManagerGL::get(GLenum name, GLfloat *value)
 {
     mFunctions->getFloatv(name, value);
+    ASSERT(mFunctions->getError() == GL_NO_ERROR);
 }
 
 template <>
@@ -2751,6 +2805,20 @@ void StateManagerGL::syncFromNativeContext(const gl::Extensions &extensions,
     {
         mViewport = state->viewport;
         mLocalDirtyBits.set(gl::State::DIRTY_BIT_VIEWPORT);
+    }
+
+    if (extensions.clipControlEXT)
+    {
+        get(GL_CLIP_ORIGIN, &state->clipOrigin);
+        get(GL_CLIP_DEPTH_MODE, &state->clipDepthMode);
+        if (mClipOrigin != gl::FromGLenum<gl::ClipOrigin>(state->clipOrigin) ||
+            mClipDepthMode != gl::FromGLenum<gl::ClipDepthMode>(state->clipDepthMode))
+        {
+            mClipOrigin    = gl::FromGLenum<gl::ClipOrigin>(state->clipOrigin);
+            mClipDepthMode = gl::FromGLenum<gl::ClipDepthMode>(state->clipDepthMode);
+            mLocalDirtyBits.set(gl::State::DIRTY_BIT_EXTENDED);
+            mLocalExtendedDirtyBits.set(gl::State::EXTENDED_DIRTY_BIT_CLIP_CONTROL);
+        }
     }
 
     get(GL_SCISSOR_TEST, &state->scissorTest);
@@ -2874,6 +2942,17 @@ void StateManagerGL::syncFromNativeContext(const gl::Extensions &extensions,
         }
     }
 
+    if (extensions.depthClampEXT)
+    {
+        get(GL_DEPTH_CLAMP_EXT, &state->enableDepthClamp);
+        if (mDepthClampEnabled != state->enableDepthClamp)
+        {
+            mDepthClampEnabled = state->enableDepthClamp;
+            mLocalDirtyBits.set(gl::State::DIRTY_BIT_EXTENDED);
+            mLocalExtendedDirtyBits.set(gl::State::EXTENDED_DIRTY_BIT_DEPTH_CLAMP_ENABLED);
+        }
+    }
+
     get(GL_SAMPLE_COVERAGE_VALUE, &state->sampleCoverageValue);
     get(GL_SAMPLE_COVERAGE_INVERT, &state->sampleCoverageInvert);
     if (mSampleCoverageValue != state->sampleCoverageValue ||
@@ -2939,6 +3018,11 @@ void StateManagerGL::restoreNativeContext(const gl::Extensions &extensions,
     ASSERT(mFunctions->getError() == GL_NO_ERROR);
 
     setViewport(state->viewport);
+    if (extensions.clipControlEXT)
+    {
+        setClipControl(gl::FromGLenum<gl::ClipOrigin>(state->clipOrigin),
+                       gl::FromGLenum<gl::ClipDepthMode>(state->clipDepthMode));
+    }
 
     setScissorTestEnabled(state->scissorTest);
     setScissor(state->scissorBox);
@@ -2966,6 +3050,11 @@ void StateManagerGL::restoreNativeContext(const gl::Extensions &extensions,
 
     setPolygonOffset(state->polygonOffsetFactor, state->polygonOffsetUnits,
                      state->polygonOffsetClamp);
+
+    if (extensions.depthClampEXT)
+    {
+        setDepthClampEnabled(state->enableDepthClamp);
+    }
 
     setSampleCoverage(state->sampleCoverageValue, state->sampleCoverageInvert);
 

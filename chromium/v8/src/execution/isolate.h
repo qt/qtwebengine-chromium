@@ -509,8 +509,6 @@ using DebugObjectCache = std::vector<Handle<HeapObject>>;
   V(WasmAsyncResolvePromiseCallback, wasm_async_resolve_promise_callback,     \
     DefaultWasmAsyncResolvePromiseCallback)                                   \
   V(WasmLoadSourceMapCallback, wasm_load_source_map_callback, nullptr)        \
-  V(WasmSimdEnabledCallback, wasm_simd_enabled_callback, nullptr)             \
-  V(WasmExceptionsEnabledCallback, wasm_exceptions_enabled_callback, nullptr) \
   V(WasmGCEnabledCallback, wasm_gc_enabled_callback, nullptr)                 \
   /* State for Relocatable. */                                                \
   V(Relocatable*, relocatable_top, nullptr)                                   \
@@ -530,8 +528,6 @@ using DebugObjectCache = std::vector<Handle<HeapObject>>;
   V(size_t, num_cpu_profilers, 0)                                             \
   /* true if a trace is being formatted through Error.prepareStackTrace. */   \
   V(bool, formatting_stack_trace, false)                                      \
-  /* Perform side effect checks on function call and API callbacks. */        \
-  V(DebugInfo::ExecutionMode, debug_execution_mode, DebugInfo::kBreakpoints)  \
   V(bool, disable_bytecode_flushing, false)                                   \
   V(int, last_console_context_id, 0)                                          \
   V(v8_inspector::V8Inspector*, inspector, nullptr)                           \
@@ -835,9 +831,10 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
     return &thread_local_top()->c_entry_fp_;
   }
   static uint32_t c_entry_fp_offset() {
-    return static_cast<uint32_t>(
-        OFFSET_OF(Isolate, thread_local_top()->c_entry_fp_) -
-        isolate_root_bias());
+    return static_cast<uint32_t>(OFFSET_OF(Isolate, isolate_data_) +
+                                 OFFSET_OF(IsolateData, thread_local_top_) +
+                                 OFFSET_OF(ThreadLocalTop, c_entry_fp_) -
+                                 isolate_root_bias());
   }
   inline Address* handler_address() { return &thread_local_top()->handler_; }
   inline Address* c_function_address() {
@@ -1137,7 +1134,7 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   }
   TieringManager* tiering_manager() { return tiering_manager_; }
   CompilationCache* compilation_cache() { return compilation_cache_; }
-  V8FileLogger* v8_file_logger() {
+  V8FileLogger* v8_file_logger() const {
     // Call InitializeLoggingAndCounters() if logging is needed before
     // the isolate is fully initialized.
     DCHECK_NOT_NULL(v8_file_logger_);
@@ -1159,8 +1156,7 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   // compression cage, and the kPtrComprCageBaseRegister is set to this
   // value. When pointer compression is off, this is always kNullAddress.
   Address cage_base() const {
-    DCHECK_IMPLIES(!COMPRESS_POINTERS_IN_ISOLATE_CAGE_BOOL &&
-                       !COMPRESS_POINTERS_IN_SHARED_CAGE_BOOL,
+    DCHECK_IMPLIES(!COMPRESS_POINTERS_BOOL,
                    isolate_data()->cage_base() == kNullAddress);
     return isolate_data()->cage_base();
   }
@@ -1263,7 +1259,9 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
     // flag in ThreadLocalTop in thread_in_wasm_flag_address_. This function
     // here returns the offset of that member from {isolate_root()}.
     return static_cast<uint32_t>(
-        OFFSET_OF(Isolate, thread_local_top()->thread_in_wasm_flag_address_) -
+        OFFSET_OF(Isolate, isolate_data_) +
+        OFFSET_OF(IsolateData, thread_local_top_) +
+        OFFSET_OF(ThreadLocalTop, thread_in_wasm_flag_address_) -
         isolate_root_bias());
   }
 
@@ -1277,7 +1275,9 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
     return descriptor_lookup_cache_;
   }
 
-  V8_INLINE HandleScopeData* handle_scope_data() { return &handle_scope_data_; }
+  V8_INLINE HandleScopeData* handle_scope_data() {
+    return &isolate_data_.handle_scope_data_;
+  }
 
   HandleScopeImplementer* handle_scope_implementer() const {
     DCHECK(handle_scope_implementer_);
@@ -1331,15 +1331,34 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   Debug* debug() const { return debug_; }
 
   bool is_profiling() const {
-    return isolate_data_.is_profiling_.load(std::memory_order_relaxed);
+    return isolate_data_.execution_mode_ &
+           IsolateExecutionModeFlag::kIsProfiling;
   }
 
   void SetIsProfiling(bool enabled) {
     if (enabled) {
       CollectSourcePositionsForAllBytecodeArrays();
     }
-    isolate_data_.is_profiling_.store(enabled, std::memory_order_relaxed);
+    isolate_data_.execution_mode_.set(IsolateExecutionModeFlag::kIsProfiling,
+                                      enabled);
     UpdateLogObjectRelocation();
+  }
+
+  // Perform side effect checks on function calls and API callbacks.
+  // See Debug::StartSideEffectCheckMode().
+  bool should_check_side_effects() const {
+    return isolate_data_.execution_mode_ &
+           IsolateExecutionModeFlag::kCheckSideEffects;
+  }
+
+  DebugInfo::ExecutionMode debug_execution_mode() const {
+    return should_check_side_effects() ? DebugInfo::kSideEffects
+                                       : DebugInfo::kBreakpoints;
+  }
+  void set_debug_execution_mode(DebugInfo::ExecutionMode debug_execution_mode) {
+    bool check_side_effects = debug_execution_mode == DebugInfo::kSideEffects;
+    isolate_data_.execution_mode_.set(
+        IsolateExecutionModeFlag::kCheckSideEffects, check_side_effects);
   }
 
   Logger* logger() const { return logger_; }
@@ -1347,6 +1366,19 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
 
 #ifdef DEBUG
   static size_t non_disposed_isolates() { return non_disposed_isolates_; }
+
+  // Turbofan's string builder optimization can introduce SlicedString that are
+  // less than SlicedString::kMinLength characters. Their live range and scope
+  // are pretty limitted, but they can be visible to the GC, which shouldn't
+  // treat them as invalid. When such short SlicedString are introduced,
+  // Turbofan will set has_turbofan_string_builders_ to true, which
+  // SlicedString::SlicedStringVerify will check when verifying SlicedString to
+  // decide if a too-short SlicedString is an issue or not.
+  // See the compiler's StringBuilderOptimizer class for more details.
+  bool has_turbofan_string_builders() { return has_turbofan_string_builders_; }
+  void set_has_turbofan_string_builders() {
+    has_turbofan_string_builders_ = true;
+  }
 #endif
 
   v8::internal::Factory* factory() {
@@ -1386,7 +1418,9 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
 
   bool initialized_from_snapshot() { return initialized_from_snapshot_; }
 
-  bool NeedsSourcePositionsForProfiling() const;
+  bool NeedsSourcePositions() const;
+
+  bool IsLoggingCodeCreation() const;
 
   bool NeedsDetailedOptimizedCodeLineInfo() const;
 
@@ -1550,10 +1584,6 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
 
   bool jitless() const { return jitless_; }
 
-  DebugInfo::ExecutionMode* debug_execution_mode_address() {
-    return &debug_execution_mode_;
-  }
-
   base::RandomNumberGenerator* random_number_generator();
 
   base::RandomNumberGenerator* fuzzer_rng();
@@ -1699,7 +1729,7 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   // this object cache is per-Isolate like the startup object cache.
   std::vector<Object>* shared_heap_object_cache() {
     if (has_shared_space()) {
-      return &shared_heap_isolate()->shared_heap_object_cache_;
+      return &shared_space_isolate()->shared_heap_object_cache_;
     }
     return &shared_heap_object_cache_;
   }
@@ -1974,6 +2004,7 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   // Returns true when this isolate contains the shared spaces.
   bool is_shared_space_isolate() const { return is_shared_space_isolate_; }
 
+  // Returns the isolate that owns the shared spaces.
   Isolate* shared_space_isolate() const {
     DCHECK(has_shared_space());
     Isolate* isolate = shared_space_isolate_.value();
@@ -1983,14 +2014,6 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
 
   // Returns true when this isolate supports allocation in shared spaces.
   bool has_shared_space() const { return shared_space_isolate_.value(); }
-
-  // Returns the isolate that owns the shared spaces.
-  Isolate* shared_heap_isolate() const {
-    DCHECK(has_shared_space());
-    Isolate* isolate = shared_space_isolate();
-    DCHECK_NOT_NULL(isolate);
-    return isolate;
-  }
 
   GlobalSafepoint* global_safepoint() const { return global_safepoint_.get(); }
 
@@ -2134,12 +2157,6 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   // Returns the Exception sentinel.
   Object ThrowInternal(Object exception, MessageLocation* location);
 
-  // These methods add/remove the isolate to/from the list of clients in the
-  // shared space isolate. Isolates in the client list need to participate in a
-  // global safepoint.
-  void AttachToSharedSpaceIsolate(Isolate* shared_space_isolate);
-  void DetachFromSharedSpaceIsolate();
-
   // This class contains a collection of data accessible from both C++ runtime
   // and compiled code (including assembly stubs, builtins, interpreter bytecode
   // handlers and optimized code).
@@ -2183,7 +2200,6 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   StackTrace::StackTraceOptions stack_trace_for_uncaught_exceptions_options_ =
       StackTrace::kOverview;
   DescriptorLookupCache* descriptor_lookup_cache_ = nullptr;
-  HandleScopeData handle_scope_data_;
   HandleScopeImplementer* handle_scope_implementer_ = nullptr;
   UnicodeCache* unicode_cache_ = nullptr;
   AccountingAllocator* allocator_ = nullptr;
@@ -2295,6 +2311,8 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   static std::atomic<size_t> non_disposed_isolates_;
 
   JSObject::SpillInformation js_spill_information_;
+
+  std::atomic<bool> has_turbofan_string_builders_ = false;
 #endif
 
   Debug* debug_ = nullptr;
@@ -2391,6 +2409,7 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
 
   void InitializeDefaultEmbeddedBlob();
   void CreateAndSetEmbeddedBlob();
+  void InitializeIsShortBuiltinCallsEnabled();
   void MaybeRemapEmbeddedBuiltinsIntoCodeRange();
   void TearDownEmbeddedBlob();
   void SetEmbeddedBlob(const uint8_t* code, uint32_t code_size,

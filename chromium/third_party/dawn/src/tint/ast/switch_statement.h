@@ -21,7 +21,7 @@
 namespace tint::ast {
 
 /// A switch statement
-class SwitchStatement final : public Castable<SwitchStatement, Statement> {
+class SwitchStatement final : public utils::Castable<SwitchStatement, Statement> {
   public:
     /// Constructor
     /// @param pid the identifier of the program that owns this node
@@ -29,13 +29,17 @@ class SwitchStatement final : public Castable<SwitchStatement, Statement> {
     /// @param src the source of this node
     /// @param condition the switch condition
     /// @param body the switch body
+    /// @param stmt_attributes the switch statement attributes
+    /// @param body_attributes the switch body attributes
     SwitchStatement(ProgramID pid,
                     NodeID nid,
                     const Source& src,
                     const Expression* condition,
-                    utils::VectorRef<const CaseStatement*> body);
-    /// Move constructor
-    SwitchStatement(SwitchStatement&&);
+                    utils::VectorRef<const CaseStatement*> body,
+                    utils::VectorRef<const Attribute*> stmt_attributes,
+                    utils::VectorRef<const Attribute*> body_attributes);
+
+    /// Destructor
     ~SwitchStatement() override;
 
     /// Clones this node and all transitive child nodes using the `CloneContext`
@@ -50,6 +54,12 @@ class SwitchStatement final : public Castable<SwitchStatement, Statement> {
     /// The Switch body
     const utils::Vector<const CaseStatement*, 4> body;
     SwitchStatement(const SwitchStatement&) = delete;
+
+    /// The attribute list for the statement
+    const utils::Vector<const Attribute*, 1> attributes;
+
+    /// The attribute list for the body
+    const utils::Vector<const Attribute*, 1> body_attributes;
 };
 
 }  // namespace tint::ast

@@ -181,6 +181,13 @@ void EmitLoad(InstructionSelector* selector, Node* node, InstructionCode opcode,
     }
   }
 
+  if (base != nullptr && base->opcode() == IrOpcode::kLoadRootRegister) {
+    selector->Emit(opcode | AddressingModeField::encode(kMode_Root),
+                   g.DefineAsRegister(output == nullptr ? node : output),
+                   g.UseImmediate(index));
+    return;
+  }
+
   if (g.CanBeImmediate(index, opcode)) {
     selector->Emit(opcode | AddressingModeField::encode(kMode_MRI),
                    g.DefineAsRegister(output == nullptr ? node : output),
@@ -338,7 +345,7 @@ void InstructionSelector::VisitStore(Node* node) {
     InstructionOperand temps[] = {g.TempRegister(), g.TempRegister()};
     size_t const temp_count = arraysize(temps);
     InstructionCode code = kArchStoreWithWriteBarrier;
-    code |= MiscField::encode(static_cast<int>(record_write_mode));
+    code |= RecordWriteModeField::encode(record_write_mode);
     Emit(code, 0, nullptr, input_count, inputs, temp_count, temps);
   } else {
     ArchOpcode opcode;
@@ -387,17 +394,23 @@ void InstructionSelector::VisitStore(Node* node) {
         UNREACHABLE();
     }
 
+    if (base != nullptr && base->opcode() == IrOpcode::kLoadRootRegister) {
+      Emit(opcode | AddressingModeField::encode(kMode_Root), g.NoOutput(),
+           g.UseRegisterOrImmediateZero(value), g.UseImmediate(index));
+      return;
+    }
+
     if (g.CanBeImmediate(index, opcode)) {
       Emit(opcode | AddressingModeField::encode(kMode_MRI), g.NoOutput(),
-           g.UseRegister(base), g.UseImmediate(index),
-           g.UseRegisterOrImmediateZero(value));
+           g.UseRegisterOrImmediateZero(value), g.UseRegister(base),
+           g.UseImmediate(index));
     } else {
       InstructionOperand addr_reg = g.TempRegister();
       Emit(kRiscvAdd64 | AddressingModeField::encode(kMode_None), addr_reg,
            g.UseRegister(index), g.UseRegister(base));
       // Emit desired store opcode, using temp addr_reg.
       Emit(opcode | AddressingModeField::encode(kMode_MRI), g.NoOutput(),
-           addr_reg, g.TempImmediate(0), g.UseRegisterOrImmediateZero(value));
+           g.UseRegisterOrImmediateZero(value), addr_reg, g.TempImmediate(0));
     }
   }
 }
@@ -1093,6 +1106,12 @@ void InstructionSelector::VisitChangeInt32ToInt64(Node* node) {
         opcode = load_rep.IsUnsigned() ? kRiscvLhu : kRiscvLh;
         break;
       case MachineRepresentation::kWord32:
+      case MachineRepresentation::kWord64:
+        // Since BitcastElider may remove nodes of
+        // IrOpcode::kTruncateInt64ToInt32 and directly use the inputs, values
+        // with kWord64 can also reach this line.
+        // For RV64, the lw loads a 32 bit value from memory and sign-extend it
+        // to 64 bits before storing it in rd register
         opcode = kRiscvLw;
         break;
       default:

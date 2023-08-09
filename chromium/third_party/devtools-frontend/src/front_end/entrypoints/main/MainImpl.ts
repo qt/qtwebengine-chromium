@@ -209,7 +209,9 @@ export class MainImpl {
     try {
       await i18n.i18n.fetchAndRegisterLocaleData(devToolsLocale.locale);
     } catch (error) {
-      console.warn(`Unable to fetch & register locale data for '${devToolsLocale.locale}', falling back to 'en-US'. Cause: `, error);
+      console.warn(
+          `Unable to fetch & register locale data for '${devToolsLocale.locale}', falling back to 'en-US'. Cause: `,
+          error);
       // Loading the actual locale data failed, tell DevTools to use 'en-US'.
       devToolsLocale.forceFallbackLocale();
     }
@@ -274,10 +276,9 @@ export class MainImpl {
   #initializeExperiments(): void {
     Root.Runtime.experiments.register('applyCustomStylesheet', 'Allow extensions to load custom stylesheets');
     Root.Runtime.experiments.register('captureNodeCreationStacks', 'Capture node creation stacks');
-    Root.Runtime.experiments.register('sourcesPrettyPrint', 'Automatically pretty print in the Sources Panel');
+    Root.Runtime.experiments.register('sourcesPrettyPrint', 'Automatically pretty print minified sources');
     Root.Runtime.experiments.register(
         'ignoreListJSFramesOnTimeline', 'Ignore List for JavaScript frames on Timeline', true);
-    Root.Runtime.experiments.register('inputEventsOnTimelineOverview', 'Input events on Timeline overview', true);
     Root.Runtime.experiments.register('liveHeapProfile', 'Live heap profile', true);
     Root.Runtime.experiments.register(
         'protocolMonitor', 'Protocol Monitor', undefined,
@@ -286,8 +287,6 @@ export class MainImpl {
     Root.Runtime.experiments.register(
         'cspViolationsView', 'Show CSP Violations view', undefined,
         'https://developer.chrome.com/blog/new-in-devtools-89/#csp');
-    Root.Runtime.experiments.register(
-        'recordCoverageWithPerformanceTracing', 'Record coverage while performance tracing');
     Root.Runtime.experiments.register('samplingHeapProfilerTimeline', 'Sampling heap profiler timeline', true);
     Root.Runtime.experiments.register(
         'showOptionToExposeInternalsInHeapSnapshot', 'Show option to expose internals in heap snapshots');
@@ -309,12 +308,15 @@ export class MainImpl {
     Root.Runtime.experiments.register('timelineShowAllEvents', 'Timeline: show all events', true);
     Root.Runtime.experiments.register(
         'timelineV8RuntimeCallStats', 'Timeline: V8 Runtime Call Stats on Timeline', true);
-    Root.Runtime.experiments.register('timelineReplayEvent', 'Timeline: Replay input events', true);
     Root.Runtime.experiments.register(
         'timelineAsConsoleProfileResultPanel', 'View console.profile() results in the Performance panel for Node.js',
         true);
+
+    // JS Profiler
     Root.Runtime.experiments.register(
-        'timelineDoNotSkipSystemNodesOfCpuProfile', 'View system nodes of CPUProfile in the Performance panel', true);
+        'jsProfilerTemporarilyEnable', 'Enable JavaScript Profiler temporarily', /* unstable= */ false,
+        'https://developer.chrome.com/blog/js-profiler-deprecation/',
+        'https://bugs.chromium.org/p/chromium/issues/detail?id=1354548');
 
     // Debugging
     Root.Runtime.experiments.register(
@@ -324,9 +326,6 @@ export class MainImpl {
         'evaluateExpressionsWithSourceMaps', 'Console: Resolve variable names in expressions using source maps',
         undefined);
     Root.Runtime.experiments.register('instrumentationBreakpoints', 'Enable instrumentation breakpoints', true);
-    Root.Runtime.experiments.register(
-        Root.Runtime.ExperimentName.BREAKPOINT_VIEW, 'Enable re-designed Breakpoint Sidebar Pane in the Sources Panel',
-        true);
 
     // Dual-screen
     Root.Runtime.experiments.register(
@@ -359,9 +358,6 @@ export class MainImpl {
     // New cookie features.
     Root.Runtime.experiments.register('experimentalCookieFeatures', 'Enable experimental cookie features');
 
-    // Hide Issues Feature.
-    Root.Runtime.experiments.register('groupAndHideIssuesByKind', 'Allow grouping and hiding of issues by IssueKind');
-
     // CSS <length> authoring tool.
     Root.Runtime.experiments.register(
         'cssTypeComponentLength', 'Enable CSS <length> authoring tool in the Styles pane', undefined,
@@ -375,14 +371,15 @@ export class MainImpl {
     Root.Runtime.experiments.register(
         Root.Runtime.ExperimentName.STYLES_PANE_CSS_CHANGES, 'Sync CSS changes in the Styles pane');
 
+    // Highlights a violating node or attribute by rendering a squiggly line under it and adding a tooltip linking to the issues panel.
+    // Right now violating nodes are exclusively form fields that contain an HTML issue, for example, and <input /> whose id is duplicate inside the form.
+    Root.Runtime.experiments.register(
+        Root.Runtime.ExperimentName.HIGHLIGHT_ERRORS_ELEMENTS_PANEL,
+        'Highlights a violating node or attribute in the Elements panel DOM tree');
+
     // Local overrides for response headers
     Root.Runtime.experiments.register(
         Root.Runtime.ExperimentName.HEADER_OVERRIDES, 'Local overrides for response headers');
-
-    // Enable CSS Authoring hints for inactive rules, deprecated properties, etc.
-    Root.Runtime.experiments.register(
-        Root.Runtime.ExperimentName.CSS_AUTHORING_HINTS,
-        'Enable CSS Authoring hints for inactive rules, deprecated properties, etc.');
 
     // Enable color picking outside the browser window (using Eyedropper API)
     Root.Runtime.experiments.register(
@@ -411,18 +408,21 @@ export class MainImpl {
         // Adding the reload hint here because users getting here are likely coming from inside the settings UI, but the regular reminder bar is only shown after the UI is closed which they're not going to see.
         'Disable the deprecated `Color format` setting (requires reloading DevTools)', false);
 
+    Root.Runtime.experiments.register(
+        Root.Runtime.ExperimentName.OUTERMOST_TARGET_SELECTOR,
+        'Enable background page selector (e.g. for prerendering debugging)', false);
+
     Root.Runtime.experiments.enableExperimentsByDefault([
       'sourceOrderViewer',
       'cssTypeComponentLength',
       Root.Runtime.ExperimentName.PRECISE_CHANGES,
       ...('EyeDropper' in window ? [Root.Runtime.ExperimentName.EYEDROPPER_COLOR_PICKER] : []),
       'keyboardShortcutEditor',
-      'groupAndHideIssuesByKind',
-      Root.Runtime.ExperimentName.CSS_AUTHORING_HINTS,
       'sourcesPrettyPrint',
       Root.Runtime.ExperimentName.DISABLE_COLOR_FORMAT_SETTING,
-      Root.Runtime.ExperimentName.BREAKPOINT_VIEW,
       Root.Runtime.ExperimentName.TIMELINE_AS_CONSOLE_PROFILE_RESULT_PANEL,
+      Root.Runtime.ExperimentName.WASM_DWARF_DEBUGGING,
+      Root.Runtime.ExperimentName.HEADER_OVERRIDES,
     ]);
 
     Root.Runtime.experiments.setNonConfigurableExperiments([
@@ -512,8 +512,6 @@ export class MainImpl {
     IssuesManager.ContrastCheckTrigger.ContrastCheckTrigger.instance();
 
     // @ts-ignore layout test global
-    self.SDK.consoleModel = SDK.ConsoleModel.ConsoleModel.instance();
-    // @ts-ignore layout test global
     self.UI.dockController = UI.DockController.DockController.instance({forceNew: true, canDock});
     // @ts-ignore layout test global
     self.SDK.multitargetNetworkManager = SDK.NetworkManager.MultitargetNetworkManager.instance({forceNew: true});
@@ -547,6 +545,12 @@ export class MainImpl {
       forceNew: true,
       resourceMapping,
       targetManager: SDK.TargetManager.TargetManager.instance(),
+    });
+    SDK.TargetManager.TargetManager.instance().setScopeTarget(
+        SDK.TargetManager.TargetManager.instance().primaryPageTarget());
+    UI.Context.Context.instance().addFlavorChangeListener(SDK.Target.Target, ({data}) => {
+      const outermostTarget = data?.outermostTarget();
+      SDK.TargetManager.TargetManager.instance().setScopeTarget(outermostTarget);
     });
     // @ts-ignore layout test global
     self.Bindings.breakpointManager = Bindings.BreakpointManager.BreakpointManager.instance({
@@ -889,10 +893,10 @@ export class MainMenuItem implements UI.Toolbar.Provider {
       dockItemElement.appendChild(titleElement);
       const dockItemToolbar = new UI.Toolbar.Toolbar('', dockItemElement);
       dockItemToolbar.makeBlueOnHover();
-      const undock = new UI.Toolbar.ToolbarToggle(i18nString(UIStrings.undockIntoSeparateWindow), 'largeicon-undock');
-      const bottom = new UI.Toolbar.ToolbarToggle(i18nString(UIStrings.dockToBottom), 'largeicon-dock-to-bottom');
-      const right = new UI.Toolbar.ToolbarToggle(i18nString(UIStrings.dockToRight), 'largeicon-dock-to-right');
-      const left = new UI.Toolbar.ToolbarToggle(i18nString(UIStrings.dockToLeft), 'largeicon-dock-to-left');
+      const undock = new UI.Toolbar.ToolbarToggle(i18nString(UIStrings.undockIntoSeparateWindow), 'dock-window');
+      const bottom = new UI.Toolbar.ToolbarToggle(i18nString(UIStrings.dockToBottom), 'dock-bottom');
+      const right = new UI.Toolbar.ToolbarToggle(i18nString(UIStrings.dockToRight), 'dock-right');
+      const left = new UI.Toolbar.ToolbarToggle(i18nString(UIStrings.dockToLeft), 'dock-left');
       undock.addEventListener(UI.Toolbar.ToolbarButton.Events.MouseDown, event => event.data.consume());
       bottom.addEventListener(UI.Toolbar.ToolbarButton.Events.MouseDown, event => event.data.consume());
       right.addEventListener(UI.Toolbar.ToolbarButton.Events.MouseDown, event => event.data.consume());
@@ -949,7 +953,7 @@ export class MainMenuItem implements UI.Toolbar.Provider {
     }
 
     if (UI.DockController.DockController.instance().dockSide() === UI.DockController.DockState.UNDOCKED) {
-      const mainTarget = SDK.TargetManager.TargetManager.instance().mainFrameTarget();
+      const mainTarget = SDK.TargetManager.TargetManager.instance().primaryPageTarget();
       if (mainTarget && mainTarget.type() === SDK.Target.Type.Frame) {
         contextMenu.defaultSection().appendAction('inspector_main.focus-debuggee', i18nString(UIStrings.focusDebuggee));
       }
@@ -991,7 +995,7 @@ export class MainMenuItem implements UI.Toolbar.Provider {
 
       if (viewExtension.isPreviewFeature()) {
         const previewIcon = new IconButton.Icon.Icon();
-        previewIcon.data = {iconName: 'ic_preview_feature', color: 'var(--icon-color)', width: '14px', height: '14px'};
+        previewIcon.data = {iconName: 'experiment', color: 'var(--icon-default)', width: '16px', height: '16px'};
         moreTools.defaultSection().appendItem(title, () => {
           void UI.ViewManager.ViewManager.instance().showView(id, true, false);
         }, /* disabled=*/ false, previewIcon);

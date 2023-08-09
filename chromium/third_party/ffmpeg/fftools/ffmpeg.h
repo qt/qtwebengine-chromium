@@ -258,10 +258,14 @@ typedef struct OptionsContext {
     int        nb_enc_stats_pre;
     SpecifierOpt *enc_stats_post;
     int        nb_enc_stats_post;
+    SpecifierOpt *mux_stats;
+    int        nb_mux_stats;
     SpecifierOpt *enc_stats_pre_fmt;
     int        nb_enc_stats_pre_fmt;
     SpecifierOpt *enc_stats_post_fmt;
     int        nb_enc_stats_post_fmt;
+    SpecifierOpt *mux_stats_fmt;
+    int        nb_mux_stats_fmt;
 } OptionsContext;
 
 typedef struct InputFilter {
@@ -329,6 +333,8 @@ typedef struct FilterGraph {
 } FilterGraph;
 
 typedef struct InputStream {
+    const AVClass *class;
+
     int file_index;
     AVStream *st;
     int discard;             /* true if stream data should be discarded */
@@ -373,21 +379,16 @@ typedef struct InputStream {
 
     int64_t filter_in_rescale_delta_last;
 
-    int64_t min_pts; /* pts with the smallest value in a current stream */
-    int64_t max_pts; /* pts with the higher value in a current stream */
-
     // when forcing constant input framerate through -r,
     // this contains the pts that will be given to the next decoded frame
     int64_t cfr_next_pts;
 
     int64_t nb_samples; /* number of samples in the last decoded audio frame before looping */
 
-    double ts_scale;
     int saw_first_ts;
     AVDictionary *decoder_opts;
     AVRational framerate;               /* framerate forced with -r */
     int top_field_first;
-    int guess_layout_max;
 
     int autorotate;
 
@@ -444,6 +445,8 @@ typedef struct LastFrameDuration {
 } LastFrameDuration;
 
 typedef struct InputFile {
+    const AVClass *class;
+
     int index;
 
     AVFormatContext *ctx;
@@ -789,13 +792,22 @@ int ifilter_parameters_from_frame(InputFilter *ifilter, const AVFrame *frame);
 
 int ffmpeg_parse_options(int argc, char **argv);
 
+void enc_stats_write(OutputStream *ost, EncStats *es,
+                     const AVFrame *frame, const AVPacket *pkt,
+                     uint64_t frame_num);
+
 HWDevice *hw_device_get_by_name(const char *name);
 int hw_device_init_from_string(const char *arg, HWDevice **dev);
 void hw_device_free_all(void);
 
 int hw_device_setup_for_decode(InputStream *ist);
 int hw_device_setup_for_encode(OutputStream *ost);
-int hw_device_setup_for_filter(FilterGraph *fg);
+/**
+ * Get a hardware device to be used with this filtergraph.
+ * The returned reference is owned by the callee, the caller
+ * must ref it explicitly for long-term use.
+ */
+AVBufferRef *hw_device_for_filter(void);
 
 int hwaccel_decode_init(AVCodecContext *avctx);
 

@@ -7,11 +7,17 @@
 
 #include "include/v8-initialization.h"
 #include "src/base/bounds.h"
+#include "src/codegen/handler-table.h"
 #include "src/codegen/safepoint-table.h"
 #include "src/common/globals.h"
 #include "src/handles/handles.h"
 #include "src/objects/code.h"
+#include "src/objects/deoptimization-data.h"
 #include "src/objects/objects.h"
+
+#if V8_ENABLE_WEBASSEMBLY
+#include "src/wasm/wasm-code-manager.h"
+#endif  // V8_ENABLE_WEBASSEMBLY
 
 //
 // Frame inheritance hierarchy (please keep in sync with frame-constants.h):
@@ -424,13 +430,14 @@ class V8_EXPORT_PRIVATE FrameSummary {
   class WasmFrameSummary : public FrameSummaryBase {
    public:
     WasmFrameSummary(Isolate*, Handle<WasmInstanceObject>, wasm::WasmCode*,
-                     int code_offset, bool at_to_number_conversion);
+                     int byte_offset, int function_index,
+                     bool at_to_number_conversion);
 
     Handle<Object> receiver() const;
     uint32_t function_index() const;
     wasm::WasmCode* code() const { return code_; }
-    int code_offset() const { return code_offset_; }
-    V8_EXPORT_PRIVATE int byte_offset() const;
+    // Returns the wire bytes offset relative to the function entry.
+    int code_offset() const { return byte_offset_; }
     bool is_constructor() const { return false; }
     bool is_subject_to_debugging() const { return true; }
     int SourcePosition() const;
@@ -444,8 +451,9 @@ class V8_EXPORT_PRIVATE FrameSummary {
    private:
     Handle<WasmInstanceObject> wasm_instance_;
     bool at_to_number_conversion_;
-    wasm::WasmCode* const code_;
-    int code_offset_;
+    wasm::WasmCode* code_;
+    int byte_offset_;
+    int function_index_;
   };
 #endif  // V8_ENABLE_WEBASSEMBLY
 
@@ -950,6 +958,7 @@ class MaglevFrame : public OptimizedFrame {
 
   int FindReturnPCForTrampoline(Code code, int trampoline_pc) const override;
 
+  Handle<JSFunction> GetInnermostFunction() const;
   BytecodeOffset GetBytecodeOffsetForOSR() const;
 
   static intptr_t StackGuardFrameSize(int register_input_count);
@@ -1025,8 +1034,8 @@ class WasmFrame : public TypedFrame {
   int position() const override;
   Object context() const override;
   bool at_to_number_conversion() const;
-  // Byte offset in the function.
-  int byte_offset() const;
+  // Generated code byte offset in the function.
+  int generated_code_offset() const;
   bool is_inspectable() const;
 
   void Summarize(std::vector<FrameSummary>* frames) const override;

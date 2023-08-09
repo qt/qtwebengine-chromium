@@ -58,7 +58,7 @@ sk_sp<SkShader> create_image_shader(SkCanvas* destCanvas, SkTileMode tmX, SkTile
         bitmap.setImmutable();
     }
 
-    sk_sp<SkImage> img = SkImage::MakeFromBitmap(bitmap);
+    sk_sp<SkImage> img = SkImages::RasterFromBitmap(bitmap);
     img = ToolUtils::MakeTextureImage(destCanvas, std::move(img));
     if (img) {
         return img->makeShader(tmX, tmY, SkSamplingOptions());
@@ -327,7 +327,7 @@ protected:
         canvas->restore();
 
         // Bottom-left corner
-#ifdef SK_GRAPHITE_ENABLED
+#if defined(SK_GRAPHITE)
         // TODO: failing serialize test on Linux, not sure what's going on
         canvas->writePixels(fBitmap, 0, 2*kTileHeight);
 #endif

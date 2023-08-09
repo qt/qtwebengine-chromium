@@ -1097,6 +1097,13 @@ void PostCallRecordGetPipelineExecutableInternalRepresentationsKHR(
     VkResult                                    result) override;
 
 
+void PostCallRecordMapMemory2KHR(
+    VkDevice                                    device,
+    const VkMemoryMapInfoKHR*                   pMemoryMapInfo,
+    void**                                      ppData,
+    VkResult                                    result) override;
+
+
 void PostCallRecordQueueSubmit2KHR(
     VkQueue                                     queue,
     uint32_t                                    submitCount,
@@ -1903,6 +1910,23 @@ void PostCallRecordBindOpticalFlowSessionImageNV(
     VkResult                                    result) override;
 
 
+void PostCallRecordCreateShadersEXT(
+    VkDevice                                    device,
+    uint32_t                                    createInfoCount,
+    const VkShaderCreateInfoEXT*                pCreateInfos,
+    const VkAllocationCallbacks*                pAllocator,
+    VkShaderEXT*                                pShaders,
+    VkResult                                    result) override;
+
+
+void PostCallRecordGetShaderBinaryDataEXT(
+    VkDevice                                    device,
+    VkShaderEXT                                 shader,
+    size_t*                                     pDataSize,
+    void*                                       pData,
+    VkResult                                    result) override;
+
+
 void PostCallRecordGetFramebufferTilePropertiesQCOM(
     VkDevice                                    device,
     VkFramebuffer                               framebuffer,
@@ -2096,6 +2120,7 @@ const vvl::unordered_map<std::string, std::string> special_use_extensions = {
     {"VK_EXT_device_address_binding_report", "debugging, devtools"},
     {"VK_EXT_device_memory_report", "devtools"},
     {"VK_EXT_image_2d_view_of_3d", "glemulation"},
+    {"VK_EXT_image_sliced_view_of_3d", "d3demulation"},
     {"VK_EXT_legacy_dithering", "glemulation"},
     {"VK_EXT_line_rasterization", "cadsupport"},
     {"VK_EXT_mutable_descriptor_type", "d3demulation"},

@@ -32,7 +32,7 @@ namespace {
 TEST(FeatureSet, ComputeWeight) {
   FeatureSet feature_set(10);
 
-  auto W = [&](const FeatureVec &features) -> uint32_t {
+  auto W = [&](const FeatureVec &features) -> uint64_t {
     return feature_set.ComputeWeight(features);
   };
 
@@ -65,7 +65,7 @@ TEST(FeatureSet, ComputeWeightWithDifferentDomains) {
        /* two features from domain #2 */ f2, f2 + 1,
        /* three features from domain #3 */ f3, f3 + 1, f3 + 2});
 
-  auto weight = [&](const FeatureVec &features) -> uint32_t {
+  auto weight = [&](const FeatureVec &features) -> uint64_t {
     return feature_set.ComputeWeight(features);
   };
 
@@ -268,11 +268,11 @@ TEST(Corpus, PruneRegressionTest1) {
 }
 
 TEST(WeightedDistribution, WeightedDistribution) {
-  std::vector<uint32_t> freq;
+  std::vector<uint64_t> freq;
   WeightedDistribution wd;
   const int kNumIter = 10000;
 
-  auto set_weights = [&](const std::vector<uint32_t> &weights) {
+  auto set_weights = [&](const std::vector<uint64_t> &weights) {
     wd.clear();
     for (auto weight : weights) {
       wd.AddWeight(weight);
@@ -425,8 +425,7 @@ TEST(CoverageFrontier, Compute) {
 
   FeatureVec pcs(pc_table.size());
   for (size_t i = 0; i < pc_table.size(); i++) {
-    pcs[i] = feature_domains::k8bitCounters.ConvertToMe(
-        Convert8bitCounterToNumber(i, /*counter_value*/ 1));
+    pcs[i] = feature_domains::kPCs.ConvertToMe(i);
   }
 
   FeatureSet fs(100);

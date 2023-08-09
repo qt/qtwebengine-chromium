@@ -27,7 +27,7 @@ export enum Events {
   IndexingWorked = 'indexingWorked',
   IndexingDone = 'indexingDone',
   KeyEventUnhandled = 'keyEventUnhandled',
-  ReattachMainTarget = 'reattachMainTarget',
+  ReattachRootTarget = 'reattachMainTarget',
   ReloadInspectedPage = 'reloadInspectedPage',
   RevealSourceLine = 'revealSourceLine',
   SavedURL = 'savedURL',
@@ -60,7 +60,7 @@ export const EventDescriptors = [
   [Events.IndexingWorked, 'indexingWorked', ['requestId', 'fileSystemPath', 'worked']],
   [Events.IndexingDone, 'indexingDone', ['requestId', 'fileSystemPath']],
   [Events.KeyEventUnhandled, 'keyEventUnhandled', ['event']],
-  [Events.ReattachMainTarget, 'reattachMainTarget', []],
+  [Events.ReattachRootTarget, 'reattachMainTarget', []],
   [Events.ReloadInspectedPage, 'reloadInspectedPage', ['hard']],
   [Events.RevealSourceLine, 'revealSourceLine', ['url', 'lineNumber', 'columnNumber']],
   [Events.SavedURL, 'savedURL', ['url', 'fileSystemPath']],
@@ -162,7 +162,7 @@ export type EventTypes = {
   [Events.IndexingWorked]: IndexingWorkedEvent,
   [Events.IndexingDone]: IndexingEvent,
   [Events.KeyEventUnhandled]: KeyEventUnhandledEvent,
-  [Events.ReattachMainTarget]: void,
+  [Events.ReattachRootTarget]: void,
   [Events.ReloadInspectedPage]: boolean,
   [Events.RevealSourceLine]: RevealSourceLineEvent,
   [Events.SavedURL]: SavedURLEvent,
@@ -300,7 +300,7 @@ export interface InspectorFrontendHostAPI {
 }
 
 export interface ContextMenuDescriptor {
-  type: string;
+  type: 'checkbox'|'item'|'separator'|'subMenu';
   id?: number;
   label?: string;
   enabled?: boolean;
@@ -370,6 +370,7 @@ export enum EnumeratedHistogram {
   LinearMemoryInspectorTarget = 'DevTools.LinearMemoryInspector.Target',
   Language = 'DevTools.Language',
   SyncSetting = 'DevTools.SyncSetting',
+  RecordingAssertion = 'DevTools.RecordingAssertion',
   RecordingCodeToggled = 'DevTools.RecordingCodeToggled',
   RecordingCopiedToClipboard = 'DevTools.RecordingCopiedToClipboard',
   RecordingEdited = 'DevTools.RecordingEdited',
@@ -387,4 +388,6 @@ export enum EnumeratedHistogram {
   ColorConvertedFrom = 'DevTools.ColorConvertedFrom',
   ColorPickerOpenedFrom = 'DevTools.ColorPickerOpenedFrom',
   CSSPropertyDocumentation = 'DevTools.CSSPropertyDocumentation',
+  InlineScriptParsed = 'DevTools.InlineScriptParsed',
+  VMInlineScriptTypeShown = 'DevTools.VMInlineScriptShown',
 }

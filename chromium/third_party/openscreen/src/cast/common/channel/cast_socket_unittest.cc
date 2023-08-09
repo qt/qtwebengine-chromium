@@ -128,8 +128,10 @@ TEST_F(CastSocketTest, ReadMultipleMessagesPerBlock) {
   message2.set_source_id("alt-source");
   message2.set_destination_id("alt-destination");
   message2.set_namespace_("alt-namespace");
+
+  // Some devices will populate the binary field with string data.
   message2.set_payload_type(CastMessage::STRING);
-  message2.set_payload_utf8("alternate payload");
+  message2.set_payload_binary("alternate payload");
   ErrorOr<std::vector<uint8_t>> serialized_or_error =
       message_serialization::Serialize(message2);
   ASSERT_TRUE(serialized_or_error);

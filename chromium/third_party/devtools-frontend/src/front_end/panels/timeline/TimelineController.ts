@@ -8,11 +8,10 @@ import * as Platform from '../../core/platform/platform.js';
 import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Bindings from '../../models/bindings/bindings.js';
-import * as Extensions from '../../models/extensions/extensions.js';
 import * as TimelineModel from '../../models/timeline_model/timeline_model.js';
+import * as TraceEngine from '../../models/trace/trace.js';
 import type * as Protocol from '../../generated/protocol.js';
 
-import {ExtensionTracingSession} from './ExtensionTracingSession.js';
 import {PerformanceModel} from './PerformanceModel.js';
 
 const UIStrings = {
@@ -40,8 +39,6 @@ export class TimelineController implements SDK.TargetManager.SDKModelObserver<SD
   private performanceModel: PerformanceModel;
   private readonly client: Client;
   private readonly tracingModel: SDK.TracingModel.TracingModel;
-  private extensionSessions: ExtensionTracingSession[];
-  private extensionTraceProviders?: Extensions.ExtensionTraceProvider.ExtensionTraceProvider[];
   // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private tracingCompleteCallback?: ((value: any) => void)|null;
@@ -60,7 +57,6 @@ export class TimelineController implements SDK.TargetManager.SDKModelObserver<SD
     const backingStorage = new Bindings.TempFile.TempFileBackingStorage();
     this.tracingModel = new SDK.TracingModel.TracingModel(backingStorage);
 
-    this.extensionSessions = [];
     SDK.TargetManager.TargetManager.instance().observeModels(SDK.CPUProfilerModel.CPUProfilerModel, this);
   }
 
@@ -72,11 +68,7 @@ export class TimelineController implements SDK.TargetManager.SDKModelObserver<SD
     return this.target;
   }
 
-  async startRecording(
-      options: RecordingOptions, providers: Extensions.ExtensionTraceProvider.ExtensionTraceProvider[]):
-      Promise<Protocol.ProtocolResponseWithError> {
-    this.extensionTraceProviders = Extensions.ExtensionServer.ExtensionServer.instance().traceProviders().slice();
-
+  async startRecording(options: RecordingOptions): Promise<Protocol.ProtocolResponseWithError> {
     function disabledByDefault(category: string): string {
       return 'disabled-by-default-' + category;
     }
@@ -99,7 +91,6 @@ export class TimelineController implements SDK.TargetManager.SDKModelObserver<SD
       disabledByDefault('devtools.timeline.stack'),
       disabledByDefault('v8.compile'),
       disabledByDefault('v8.cpu_profiler.hires'),
-      TimelineModel.TimelineModel.TimelineModelImpl.Category.LatencyInfo,
       TimelineModel.TimelineModel.TimelineModelImpl.Category.Loading,
       disabledByDefault('lighthouse'),
       'v8.execute',
@@ -124,8 +115,6 @@ export class TimelineController implements SDK.TargetManager.SDKModelObserver<SD
       categoriesArray.push(disabledByDefault('devtools.screenshot'));
     }
 
-    this.extensionSessions = providers.map(provider => new ExtensionTracingSession(provider, this.performanceModel));
-    this.extensionSessions.forEach(session => session.start());
     this.performanceModel.setRecordStartTime(Date.now());
     const response = await this.startRecordingWithCategories(categoriesArray.join(','), options.enableJSSampling);
     if (response.getError()) {
@@ -159,11 +148,6 @@ export class TimelineController implements SDK.TargetManager.SDKModelObserver<SD
     }
     tracingStoppedPromises.push(this.stopProfilingOnAllModels());
 
-    const extensionCompletionPromises = this.extensionSessions.map(session => session.stop());
-    if (extensionCompletionPromises.length) {
-      tracingStoppedPromises.push(
-          Promise.race([Promise.all(extensionCompletionPromises), new Promise(r => window.setTimeout(r, 5000))]));
-    }
     await Promise.all(tracingStoppedPromises);
   }
 
@@ -245,7 +229,7 @@ export class TimelineController implements SDK.TargetManager.SDKModelObserver<SD
     this.injectCpuProfileEvents();
     await SDK.TargetManager.TargetManager.instance().resumeAllTargets();
     this.tracingModel.tracingComplete();
-    await this.client.loadingComplete(this.tracingModel);
+    await this.client.loadingComplete(this.tracingModel, null);
     this.client.loadingCompleteForTest();
   }
 
@@ -258,7 +242,7 @@ export class TimelineController implements SDK.TargetManager.SDKModelObserver<SD
     // any side effects.
     const cpuProfileEvent = ({
       cat: SDK.TracingModel.DevToolsMetadataEventCategory,
-      ph: SDK.TracingModel.Phase.Instant,
+      ph: TraceEngine.Types.TraceEvents.Phase.INSTANT,
       ts: this.tracingModel.maximumRecordTime() * 1000,
       pid: pid,
       tid: tid,
@@ -307,7 +291,7 @@ export class TimelineController implements SDK.TargetManager.SDKModelObserver<SD
     const mainRendererProcessId = mainFrame.processId;
     const mainProcess = this.tracingModel.getProcessById(mainRendererProcessId);
     if (mainProcess) {
-      const target = SDK.TargetManager.TargetManager.instance().mainFrameTarget();
+      const target = SDK.TargetManager.TargetManager.instance().primaryPageTarget();
       if (target) {
         targetIdToPid.set(target.id(), mainProcess.id());
       }
@@ -355,7 +339,7 @@ export class TimelineController implements SDK.TargetManager.SDKModelObserver<SD
           const target = SDK.TargetManager.TargetManager.instance().targetById(pair[0]);
           const name = target && target.name();
           this.tracingModel.addEvents(
-              TimelineModel.TimelineJSProfile.TimelineJSProfileProcessor.buildTraceProfileFromCpuProfile(
+              TimelineModel.TimelineJSProfile.TimelineJSProfileProcessor.createFakeTraceFromCpuProfile(
                   pair[1], ++tid, /* injectPageEvent */ tid === 1, name));
         }
       }
@@ -385,12 +369,13 @@ export interface Client {
   loadingStarted(): void;
   processingStarted(): void;
   loadingProgress(progress?: number): void;
-  loadingComplete(tracingModel: SDK.TracingModel.TracingModel|null): void;
+  loadingComplete(
+      tracingModel: SDK.TracingModel.TracingModel|null,
+      exclusiveFilter: TimelineModel.TimelineModelFilter.TimelineModelFilter|null): void;
   loadingCompleteForTest(): void;
 }
 export interface RecordingOptions {
   enableJSSampling?: boolean;
   capturePictures?: boolean;
   captureFilmStrip?: boolean;
-  startCoverage?: boolean;
 }

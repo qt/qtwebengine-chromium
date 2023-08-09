@@ -1307,21 +1307,6 @@ static const char *file_type_to_string(enum VideoFileType t) {
   }
 }
 
-static const char *image_format_to_string(aom_img_fmt_t f) {
-  switch (f) {
-    case AOM_IMG_FMT_I420: return "I420";
-    case AOM_IMG_FMT_I422: return "I422";
-    case AOM_IMG_FMT_I444: return "I444";
-    case AOM_IMG_FMT_YV12: return "YV12";
-    case AOM_IMG_FMT_NV12: return "NV12";
-    case AOM_IMG_FMT_YV1216: return "YV1216";
-    case AOM_IMG_FMT_I42016: return "I42016";
-    case AOM_IMG_FMT_I42216: return "I42216";
-    case AOM_IMG_FMT_I44416: return "I44416";
-    default: return "Other";
-  }
-}
-
 static void show_stream_config(struct stream_state *stream,
                                struct AvxEncoderConfig *global,
                                struct AvxInputContext *input) {

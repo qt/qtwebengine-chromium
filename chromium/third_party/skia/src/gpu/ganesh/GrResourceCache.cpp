@@ -26,6 +26,8 @@
 #include "src/gpu/ganesh/GrTracing.h"
 #include "src/gpu/ganesh/SkGr.h"
 
+using namespace skia_private;
+
 DECLARE_SKMESSAGEBUS_MESSAGE(skgpu::UniqueKeyInvalidatedMessage, uint32_t, true)
 
 DECLARE_SKMESSAGEBUS_MESSAGE(GrResourceCache::UnrefResourceMessage,
@@ -438,7 +440,7 @@ void GrResourceCache::didChangeBudgetStatus(GrGpuResource* resource) {
 }
 
 void GrResourceCache::purgeAsNeeded() {
-    SkTArray<skgpu::UniqueKeyInvalidatedMessage> invalidKeyMsgs;
+    TArray<skgpu::UniqueKeyInvalidatedMessage> invalidKeyMsgs;
     fInvalidUniqueKeyInbox.poll(&invalidKeyMsgs);
     if (!invalidKeyMsgs.empty()) {
         SkASSERT(fProxyProvider);
@@ -481,7 +483,7 @@ void GrResourceCache::purgeAsNeeded() {
     this->validate();
 }
 
-void GrResourceCache::purgeUnlockedResources(const GrStdSteadyClock::time_point* purgeTime,
+void GrResourceCache::purgeUnlockedResources(const skgpu::StdSteadyClock::time_point* purgeTime,
                                              bool scratchResourcesOnly) {
 
     if (!scratchResourcesOnly) {
@@ -496,7 +498,7 @@ void GrResourceCache::purgeUnlockedResources(const GrStdSteadyClock::time_point*
         while (fPurgeableQueue.count()) {
             GrGpuResource* resource = fPurgeableQueue.peek();
 
-            const GrStdSteadyClock::time_point resourceTime =
+            const skgpu::StdSteadyClock::time_point resourceTime =
                     resource->cacheAccess().timeWhenResourceBecamePurgeable();
             if (purgeTime && resourceTime >= *purgeTime) {
                 // Resources were given both LRU timestamps and tagged with a frame number when
@@ -526,7 +528,7 @@ void GrResourceCache::purgeUnlockedResources(const GrStdSteadyClock::time_point*
         for (int i = 0; i < fPurgeableQueue.count(); i++) {
             GrGpuResource* resource = fPurgeableQueue.at(i);
 
-            const GrStdSteadyClock::time_point resourceTime =
+            const skgpu::StdSteadyClock::time_point resourceTime =
                     resource->cacheAccess().timeWhenResourceBecamePurgeable();
             if (purgeTime && resourceTime >= *purgeTime) {
                 // scratch or not, all later iterations will be too recently used to purge.
@@ -634,7 +636,7 @@ bool GrResourceCache::requestsFlush() const {
 }
 
 void GrResourceCache::processFreedGpuResources() {
-    SkTArray<UnrefResourceMessage> msgs;
+    TArray<UnrefResourceMessage> msgs;
     fUnrefResourceInbox.poll(&msgs);
     // We don't need to do anything other than let the messages delete themselves and call unref.
 }
@@ -764,8 +766,8 @@ void GrResourceCache::dumpStats(SkString* out) const {
                  SkToInt(stats.fUnbudgetedSize), SkToInt(fHighWaterBytes));
 }
 
-void GrResourceCache::dumpStatsKeyValuePairs(SkTArray<SkString>* keys,
-                                             SkTArray<double>* values) const {
+void GrResourceCache::dumpStatsKeyValuePairs(TArray<SkString>* keys,
+                                             TArray<double>* values) const {
     this->validate();
 
     Stats stats;

@@ -21,6 +21,7 @@
 
 class GrGLContextInfo;
 class GrGLRenderTarget;
+enum class SkTextureCompressionType;
 
 /**
  * Stores some capabilities of a GL context. Most are determined by the GL
@@ -194,7 +195,7 @@ public:
     * to be supported by the driver but are legal GLenum names given the GL
     * version and extensions supported.
     */
-    const SkTArray<GrGLFormat, true>& stencilFormats() const {
+    const skia_private::TArray<GrGLFormat, true>& stencilFormats() const {
         return fStencilFormats;
     }
 
@@ -485,7 +486,7 @@ public:
 
     bool clientCanDisableMultisample() const { return fClientCanDisableMultisample; }
 
-    GrBackendFormat getBackendFormatFromCompressionType(SkImage::CompressionType) const override;
+    GrBackendFormat getBackendFormatFromCompressionType(SkTextureCompressionType) const override;
 
     skgpu::Swizzle getWriteSwizzle(const GrBackendFormat&, GrColorType) const override;
 
@@ -559,8 +560,8 @@ private:
 
     GrGLStandard fStandard = kNone_GrGLStandard;
 
-    SkTArray<GrGLFormat, true> fStencilFormats;
-    SkTArray<GrGLenum, true> fProgramBinaryFormats;
+    skia_private::TArray<GrGLFormat, true> fStencilFormats;
+    skia_private::TArray<GrGLenum, true> fProgramBinaryFormats;
 
     int fMaxFragmentUniformVectors = 0;
     float fMaxTextureMaxAnisotropy = 1.f;

@@ -2107,7 +2107,7 @@ OpEntryPoint Fragment %24 "a_func"
 OpExecutionMode %24 OriginUpperLeft
 OpName %5 "v"
 OpName %8 "tint_quantizeToF16"
-OpName %9 "v_1"
+OpName %9 "v"
 OpName %24 "a_func"
 %2 = OpTypeFloat 32
 %1 = OpTypeVector %2 3
@@ -4154,10 +4154,7 @@ OpReturn
 namespace DP4A_builtin_tests {
 
 TEST_F(BuiltinBuilderTest, Call_Dot4I8Packed) {
-    auto* ext =
-        create<ast::Enable>(Source{Source::Range{Source::Location{10, 2}, Source::Location{10, 5}}},
-                            builtin::Extension::kChromiumExperimentalDp4A);
-    AST().AddEnable(ext);
+    Enable(builtin::Extension::kChromiumExperimentalDp4A);
 
     auto* val1 = Var("val1", ty.u32());
     auto* val2 = Var("val2", ty.u32());
@@ -4194,10 +4191,7 @@ OpFunctionEnd
 }
 
 TEST_F(BuiltinBuilderTest, Call_Dot4U8Packed) {
-    auto* ext =
-        create<ast::Enable>(Source{Source::Range{Source::Location{10, 2}, Source::Location{10, 5}}},
-                            builtin::Extension::kChromiumExperimentalDp4A);
-    AST().AddEnable(ext);
+    Enable(builtin::Extension::kChromiumExperimentalDp4A);
 
     auto* val1 = Var("val1", ty.u32());
     auto* val2 = Var("val2", ty.u32());

@@ -9,6 +9,7 @@
 
 #include "include/gpu/graphite/ImageProvider.h"
 #include "include/gpu/graphite/Recorder.h"
+#include "src/core/SkSamplingPriv.h"
 #include "src/image/SkImage_Base.h"
 
 namespace {
@@ -25,7 +26,7 @@ bool valid_client_provided_image(const SkImage* clientProvided,
 
     uint32_t origChannels = SkColorTypeChannelFlags(original->colorType());
     uint32_t clientChannels = SkColorTypeChannelFlags(clientProvided->colorType());
-    if (origChannels != clientChannels) {
+    if ((origChannels & clientChannels) != origChannels) {
         return false;
     }
 
@@ -65,6 +66,10 @@ std::pair<sk_sp<SkImage>, SkSamplingOptions> GetGraphiteBacked(Recorder* recorde
             // The client did not fulfill the ImageProvider contract so drop the image.
             result = nullptr;
         }
+    }
+
+    if (sampling.isAniso() && result) {
+        sampling = SkSamplingPriv::AnisoFallback(result->hasMipmaps());
     }
 
     return { result, sampling };

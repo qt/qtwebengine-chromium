@@ -81,7 +81,7 @@ std::string to_hex_str(Printer &p, const T i) {
 
 # used in the .cpp code
 structures_to_gen = ['VkExtent3D', 'VkExtent2D', 'VkPhysicalDeviceLimits', 'VkPhysicalDeviceFeatures', 'VkPhysicalDeviceSparseProperties',
-                     'VkSurfaceCapabilitiesKHR', 'VkSurfaceFormatKHR', 'VkLayerProperties', 'VkPhysicalDeviceToolProperties']
+                     'VkSurfaceCapabilitiesKHR', 'VkSurfaceFormatKHR', 'VkLayerProperties', 'VkPhysicalDeviceToolProperties', 'VkFormatProperties']
 enums_to_gen = ['VkResult', 'VkFormat', 'VkPresentModeKHR',
                 'VkPhysicalDeviceType', 'VkImageTiling']
 flags_to_gen = ['VkSurfaceTransformFlagsKHR', 'VkCompositeAlphaFlagsKHR', 'VkSurfaceCounterFlagsEXT', 'VkQueueFlags',
@@ -475,8 +475,12 @@ def PrintFlags(bitmask, name):
 def PrintFlagBits(bitmask):
     return f"""void Dump{bitmask.name}(Printer &p, std::string name, {bitmask.name} value) {{
     auto strings = {bitmask.name}GetStrings(value);
-    if (strings.size() > 0)
-        p.PrintKeyString(name, strings.at(0));
+    if (strings.size() > 0) {{
+        if (p.Type() == OutputType::json)
+            p.PrintKeyString(name, std::string("VK_") + strings.at(0));
+        else
+            p.PrintKeyString(name, strings.at(0));
+    }}
 }}
 """
 
@@ -500,7 +504,7 @@ def PrintBitMaskToString(bitmask, name, gen):
     for v in bitmask.options:
         out += f"    if ({v.name} & value) {{\n"
         out += f'        if (is_first) {{ is_first = false; }} else {{ out += " | "; }}\n'
-        out += f'        out += "{str(v.name).strip("VK_").strip("_BIT")}";\n'
+        out += f'        out += "{str(v.name)[3:]}";\n'
         out += f"    }}\n"
     out += f"    return out;\n"
     out += f"}}\n"
@@ -583,6 +587,8 @@ def PrintStructure(struct, types_to_gen, structure_names, aliases):
             out += f'    p.PrintKeyValue("{v.name}", obj.{v.name});\n'
         elif v.name not in names_to_ignore:
             # if it is an enum/flag/bitmask
+            if v.typeID in ['VkFormatFeatureFlags', 'VkFormatFeatureFlags2']:
+                out += '    p.SetOpenDetails();\n' # special case so that feature flags are open in html output
             out += f'    Dump{v.typeID}(p, "{v.name}", obj.{v.name});\n'
 
     if struct.name in ["VkPhysicalDeviceLimits", "VkPhysicalDeviceSparseProperties"]:

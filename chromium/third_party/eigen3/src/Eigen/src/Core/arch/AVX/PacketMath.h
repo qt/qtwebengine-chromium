@@ -66,7 +66,6 @@ template<> struct packet_traits<float>  : default_packet_traits
     Vectorizable = 1,
     AlignedOnScalar = 1,
     size = 8,
-    HasHalfPacket = 1,
 
     HasCmp  = 1,
     HasDiv = 1,
@@ -76,6 +75,7 @@ template<> struct packet_traits<float>  : default_packet_traits
     HasACos = 1,
     HasASin = 1,
     HasATan = 1,
+    HasATanh = 1,
     HasLog = 1,
     HasLog1p = 1,
     HasExpm1 = 1,
@@ -101,7 +101,6 @@ template<> struct packet_traits<double> : default_packet_traits
     Vectorizable = 1,
     AlignedOnScalar = 1,
     size=4,
-    HasHalfPacket = 1,
 
     HasCmp  = 1,
     HasDiv  = 1,
@@ -127,7 +126,6 @@ struct packet_traits<Eigen::half> : default_packet_traits {
     Vectorizable = 1,
     AlignedOnScalar = 1,
     size = 8,
-    HasHalfPacket = 0,
 
     HasCmp    = 1,
     HasAdd    = 1,
@@ -171,7 +169,6 @@ struct packet_traits<bfloat16> : default_packet_traits {
     Vectorizable = 1,
     AlignedOnScalar = 1,
     size = 8,
-    HasHalfPacket = 0,
 
     HasCmp = 1,
     HasAdd = 1,
@@ -633,6 +630,7 @@ template<> EIGEN_STRONG_INLINE Packet8f pcmp_le(const Packet8f& a, const Packet8
 template<> EIGEN_STRONG_INLINE Packet8f pcmp_lt(const Packet8f& a, const Packet8f& b) { return _mm256_cmp_ps(a,b,_CMP_LT_OQ); }
 template<> EIGEN_STRONG_INLINE Packet8f pcmp_lt_or_nan(const Packet8f& a, const Packet8f& b) { return _mm256_cmp_ps(a, b, _CMP_NGE_UQ); }
 template<> EIGEN_STRONG_INLINE Packet8f pcmp_eq(const Packet8f& a, const Packet8f& b) { return _mm256_cmp_ps(a,b,_CMP_EQ_OQ); }
+template<> EIGEN_STRONG_INLINE Packet8f pisnan(const Packet8f& a) { return _mm256_cmp_ps(a,a,_CMP_UNORD_Q); }
 
 template<> EIGEN_STRONG_INLINE Packet4d pcmp_le(const Packet4d& a, const Packet4d& b) { return _mm256_cmp_pd(a,b,_CMP_LE_OQ); }
 template<> EIGEN_STRONG_INLINE Packet4d pcmp_lt(const Packet4d& a, const Packet4d& b) { return _mm256_cmp_pd(a,b,_CMP_LT_OQ); }
@@ -871,6 +869,9 @@ template<> EIGEN_STRONG_INLINE Packet4d pround<Packet4d>(const Packet4d& a)
 
 template<> EIGEN_STRONG_INLINE Packet8f pselect<Packet8f>(const Packet8f& mask, const Packet8f& a, const Packet8f& b)
 { return _mm256_blendv_ps(b,a,mask); }
+template<> EIGEN_STRONG_INLINE Packet8i pselect<Packet8i>(const Packet8i& mask, const Packet8i& a, const Packet8i& b)
+{ return _mm256_castps_si256(_mm256_blendv_ps(_mm256_castsi256_ps(b), _mm256_castsi256_ps(a), _mm256_castsi256_ps(mask))); }
+
 template<> EIGEN_STRONG_INLINE Packet4d pselect<Packet4d>(const Packet4d& mask, const Packet4d& a, const Packet4d& b)
 { return _mm256_blendv_pd(b,a,mask); }
 
@@ -983,13 +984,20 @@ template<> EIGEN_STRONG_INLINE void pstoreu<int>(int*       to, const Packet8i& 
 template<> EIGEN_STRONG_INLINE void pstoreu<float>(float*   to, const Packet8f& from, uint8_t umask) {
 #ifdef EIGEN_VECTORIZE_AVX512
   __mmask16 mask = static_cast<__mmask16>(umask & 0x00FF);
-  EIGEN_DEBUG_UNALIGNED_STORE return _mm512_mask_storeu_ps(to, mask, _mm512_castps256_ps512(from));
+  EIGEN_DEBUG_UNALIGNED_STORE _mm512_mask_storeu_ps(to, mask, _mm512_castps256_ps512(from));
 #else
   Packet8i mask = _mm256_set1_epi8(static_cast<char>(umask));
-  const Packet8i bit_mask = _mm256_set_epi32(0xffffff7f, 0xffffffbf, 0xffffffdf, 0xffffffef, 0xfffffff7, 0xfffffffb, 0xfffffffd, 0xfffffffe);
+  const Packet8i bit_mask = _mm256_set_epi32(0x7f7f7f7f, 0xbfbfbfbf, 0xdfdfdfdf, 0xefefefef, 0xf7f7f7f7, 0xfbfbfbfb, 0xfdfdfdfd, 0xfefefefe);
   mask = por<Packet8i>(mask, bit_mask);
   mask = pcmp_eq<Packet8i>(mask, _mm256_set1_epi32(0xffffffff));
-  EIGEN_DEBUG_UNALIGNED_STORE return _mm256_maskstore_ps(to, mask, from);
+#if EIGEN_COMP_MSVC
+  // MSVC sometimes seems to use a bogus mask with maskstore.
+  const __m256i ifrom = _mm256_castps_si256(from);
+  EIGEN_DEBUG_UNALIGNED_STORE _mm_maskmoveu_si128(_mm256_extractf128_si256(ifrom, 0), _mm256_extractf128_si256(mask, 0), reinterpret_cast<char*>(to));
+  EIGEN_DEBUG_UNALIGNED_STORE _mm_maskmoveu_si128(_mm256_extractf128_si256(ifrom, 1), _mm256_extractf128_si256(mask, 1), reinterpret_cast<char*>(to + 4));
+#else
+  EIGEN_DEBUG_UNALIGNED_STORE _mm256_maskstore_ps(to, mask, from);
+#endif
 #endif
 }
 

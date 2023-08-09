@@ -65,8 +65,8 @@ class VariableReducer : public Next {
                                    base::nullopt, Asm().phase_zone()),
         predecessors_(Asm().phase_zone()) {}
 
-  void Bind(Block* new_block, const Block* origin = nullptr) {
-    Next::Bind(new_block, origin);
+  void Bind(Block* new_block) {
+    Next::Bind(new_block);
 
     SealAndSave();
 
@@ -81,8 +81,8 @@ class VariableReducer : public Next {
     }
     std::reverse(predecessors_.begin(), predecessors_.end());
 
-    auto merge_variables = [&](Variable var,
-                               base::Vector<OpIndex> predecessors) -> OpIndex {
+    auto merge_variables =
+        [&](Variable var, base::Vector<const OpIndex> predecessors) -> OpIndex {
       ConstantOp* first_constant = nullptr;
       if (predecessors[0].valid()) {
         first_constant = Asm()
@@ -179,7 +179,7 @@ class VariableReducer : public Next {
     current_block_ = nullptr;
   }
 
-  OpIndex MergeOpIndices(base::Vector<OpIndex> inputs,
+  OpIndex MergeOpIndices(base::Vector<const OpIndex> inputs,
                          base::Optional<RegisterRepresentation> maybe_rep) {
     if (maybe_rep.has_value()) {
       // Every Operation that has a RegisterRepresentation can be merged with a
@@ -228,7 +228,7 @@ class VariableReducer : public Next {
     }
   }
 
-  OpIndex MergeFrameState(base::Vector<OpIndex> frame_states_indices) {
+  OpIndex MergeFrameState(base::Vector<const OpIndex> frame_states_indices) {
     base::SmallVector<const FrameStateOp*, 32> frame_states;
     for (OpIndex idx : frame_states_indices) {
       frame_states.push_back(

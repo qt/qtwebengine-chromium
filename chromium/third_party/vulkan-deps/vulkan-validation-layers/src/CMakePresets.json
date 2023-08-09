@@ -10,10 +10,12 @@
       "name": "dev",
       "displayName": "Generic Developer Preset",
       "description": "Sets common developer flags",
+      "binaryDir": "${sourceDir}/build",
       "cacheVariables": {
         "BUILD_TESTS": "ON",
         "BUILD_WERROR": "ON",
         "UPDATE_DEPS": "ON",
+        "VVL_CODEGEN": "ON",
         "CMAKE_BUILD_TYPE": "Debug"
       }
     }

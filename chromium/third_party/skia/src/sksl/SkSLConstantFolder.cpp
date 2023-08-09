@@ -8,13 +8,12 @@
 #include "src/sksl/SkSLConstantFolder.h"
 
 #include "include/core/SkTypes.h"
-#include "include/private/SkSLModifiers.h"
 #include "include/private/base/SkFloatingPoint.h"
 #include "include/private/base/SkTArray.h"
-#include "include/sksl/SkSLErrorReporter.h"
-#include "include/sksl/SkSLPosition.h"
 #include "src/sksl/SkSLAnalysis.h"
 #include "src/sksl/SkSLContext.h"
+#include "src/sksl/SkSLErrorReporter.h"
+#include "src/sksl/SkSLPosition.h"
 #include "src/sksl/SkSLProgramSettings.h"
 #include "src/sksl/ir/SkSLBinaryExpression.h"
 #include "src/sksl/ir/SkSLConstructorCompound.h"
@@ -22,6 +21,7 @@
 #include "src/sksl/ir/SkSLConstructorSplat.h"
 #include "src/sksl/ir/SkSLExpression.h"
 #include "src/sksl/ir/SkSLLiteral.h"
+#include "src/sksl/ir/SkSLModifiers.h"
 #include "src/sksl/ir/SkSLPrefixExpression.h"
 #include "src/sksl/ir/SkSLType.h"
 #include "src/sksl/ir/SkSLVariable.h"
@@ -33,6 +33,8 @@
 #include <optional>
 #include <string>
 #include <utility>
+
+using namespace skia_private;
 
 namespace SkSL {
 
@@ -395,7 +397,7 @@ static std::unique_ptr<Expression> make_reciprocal_expression(const Context& con
     }
     // Verify that each slot contains a finite, non-zero literal, take its reciprocal.
     int nslots = right.type().slotCount();
-    SkSTArray<4, double> values;
+    STArray<4, double> values;
     for (int index = 0; index < nslots; ++index) {
         std::optional<double> value = right.getConstantValue(index);
         if (!value) {

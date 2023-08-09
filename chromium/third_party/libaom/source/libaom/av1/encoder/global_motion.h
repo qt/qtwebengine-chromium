@@ -22,7 +22,7 @@ extern "C" {
 #endif
 
 #define RANSAC_NUM_MOTIONS 1
-#define GM_REFINEMENT_COUNT 5
+#define GM_MAX_REFINEMENT_STEPS 5
 #define MAX_DIRECTIONS 2
 
 // The structure holds a valid reference frame type and its temporal distance

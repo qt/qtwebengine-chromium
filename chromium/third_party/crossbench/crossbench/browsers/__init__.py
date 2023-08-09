@@ -4,5 +4,5 @@
 
 from __future__ import annotations
 
-from crossbench.browsers.base import (BROWSERS_CACHE, Browser,
-                                      convert_flags_to_label)
+from crossbench.browsers.browser import (BROWSERS_CACHE, Browser,
+                                         convert_flags_to_label)

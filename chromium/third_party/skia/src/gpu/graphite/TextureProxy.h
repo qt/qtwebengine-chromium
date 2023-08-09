@@ -20,7 +20,6 @@ enum SkColorType : int;
 namespace skgpu::graphite {
 
 class Caps;
-enum class Renderable : bool;
 class ResourceProvider;
 class Texture;
 
@@ -63,6 +62,7 @@ public:
     void deinstantiate();
     sk_sp<Texture> refTexture() const;
     const Texture* texture() const;
+    Texture* texture() { return fTexture.get(); }
 
     static sk_sp<TextureProxy> Make(const Caps*,
                                     SkISize dimensions,
@@ -83,6 +83,11 @@ public:
                                              skgpu::Budgeted,
                                              Volatile,
                                              LazyInstantiateCallback&&);
+
+    static sk_sp<TextureProxy> MakeStorage(const Caps*,
+                                           SkISize dimensions,
+                                           SkColorType,
+                                           skgpu::Budgeted);
 
 private:
     TextureProxy(SkISize dimensions,

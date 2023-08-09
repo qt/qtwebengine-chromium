@@ -50,7 +50,6 @@ void PrintPaddedId(std::ostream& os, MaglevGraphLabeller* graph_labeller,
     os << node->id() << "/";
   }
   os << graph_labeller->NodeId(node) << ": ";
-  if (node->is_dead()) os << "☠ ";
 }
 
 void PrintPadding(std::ostream& os, int size) {
@@ -404,6 +403,28 @@ void PrintSingleDeoptFrame(
       os << "}";
       break;
     }
+    case DeoptFrame::FrameType::kInlinedArgumentsFrame: {
+      os << "@" << frame.as_inlined_arguments().bytecode_position();
+      if (!v8_flags.print_maglev_deopt_verbose) return;
+      os << " : {";
+      auto arguments = frame.as_inlined_arguments().arguments();
+      DCHECK_GT(arguments.size(), 0);
+      os << "<this>:" << PrintNodeLabel(graph_labeller, arguments[0]) << ":"
+         << current_input_location->operand();
+      current_input_location++;
+      if (arguments.size() > 1) {
+        os << ", ";
+      }
+      for (size_t i = 1; i < arguments.size(); i++) {
+        os << "a" << (i - 1) << ":"
+           << PrintNodeLabel(graph_labeller, arguments[i]) << ":"
+           << current_input_location->operand();
+        current_input_location++;
+        os << ", ";
+      }
+      os << "}";
+      break;
+    }
     case DeoptFrame::FrameType::kBuiltinContinuationFrame: {
       os << "@" << Builtins::name(frame.as_builtin_continuation().builtin_id());
       if (!v8_flags.print_maglev_deopt_verbose) return;
@@ -579,7 +600,8 @@ void MaybePrintLazyDeoptOrExceptionHandler(std::ostream& os,
 
 }  // namespace
 
-void MaglevPrintingVisitor::Process(Phi* phi, const ProcessingState& state) {
+ProcessResult MaglevPrintingVisitor::Process(Phi* phi,
+                                             const ProcessingState& state) {
   PrintVerticalArrows(os_, targets_);
   PrintPaddedId(os_, graph_labeller_, max_node_id_, phi);
   os_ << "φ";
@@ -595,6 +617,9 @@ void MaglevPrintingVisitor::Process(Phi* phi, const ProcessingState& state) {
       break;
     case ValueRepresentation::kFloat64:
       os_ << "ᶠ";
+      break;
+    case ValueRepresentation::kHoleyFloat64:
+      os_ << "ʰᶠ";
       break;
     case ValueRepresentation::kWord64:
       UNREACHABLE();
@@ -612,17 +637,34 @@ void MaglevPrintingVisitor::Process(Phi* phi, const ProcessingState& state) {
     }
     os_ << ")";
   }
-  os_ << " → " << phi->result().operand() << "\n";
+  if (phi->is_tagged() && !phi->result().operand().IsUnallocated()) {
+    if (phi->decompresses_tagged_result()) {
+      os_ << " (decompressed)";
+    } else {
+      os_ << " (compressed)";
+    }
+  }
+  os_ << " → " << phi->result().operand();
+  if (phi->has_valid_live_range()) {
+    os_ << ", live range: [" << phi->live_range().start << "-"
+        << phi->live_range().end << "]";
+  }
+  os_ << "\n";
 
   MaglevPrintingVisitorOstream::cast(os_for_additional_info_)
       ->set_padding(MaxIdWidth(graph_labeller_, max_node_id_, 2));
+  return ProcessResult::kContinue;
 }
 
-void MaglevPrintingVisitor::Process(Node* node, const ProcessingState& state) {
+ProcessResult MaglevPrintingVisitor::Process(Node* node,
+                                             const ProcessingState& state) {
   MaybePrintEagerDeopt(os_, targets_, node, graph_labeller_, max_node_id_);
 
   PrintVerticalArrows(os_, targets_);
   PrintPaddedId(os_, graph_labeller_, max_node_id_, node);
+  if (node->properties().is_call()) {
+    os_ << "🐢 ";
+  }
   os_ << PrintNode(graph_labeller_, node) << "\n";
 
   MaglevPrintingVisitorOstream::cast(os_for_additional_info_)
@@ -630,10 +672,11 @@ void MaglevPrintingVisitor::Process(Node* node, const ProcessingState& state) {
 
   MaybePrintLazyDeoptOrExceptionHandler(os_, targets_, node, graph_labeller_,
                                         max_node_id_);
+  return ProcessResult::kContinue;
 }
 
-void MaglevPrintingVisitor::Process(ControlNode* control_node,
-                                    const ProcessingState& state) {
+ProcessResult MaglevPrintingVisitor::Process(ControlNode* control_node,
+                                             const ProcessingState& state) {
   MaybePrintEagerDeopt(os_, targets_, control_node, graph_labeller_,
                        max_node_id_);
 
@@ -730,6 +773,9 @@ void MaglevPrintingVisitor::Process(ControlNode* control_node,
           case ValueRepresentation::kFloat64:
             os_ << "ᶠ";
             break;
+          case ValueRepresentation::kHoleyFloat64:
+            os_ << "ʰᶠ";
+            break;
           case ValueRepresentation::kWord64:
             UNREACHABLE();
         }
@@ -774,11 +820,13 @@ void MaglevPrintingVisitor::Process(ControlNode* control_node,
   // so that it overlaps the fallthrough arrow.
   MaglevPrintingVisitorOstream::cast(os_for_additional_info_)
       ->set_padding(MaxIdWidth(graph_labeller_, max_node_id_, 2));
+
+  return ProcessResult::kContinue;
 }
 
 void PrintGraph(std::ostream& os, MaglevCompilationInfo* compilation_info,
                 Graph* const graph) {
-  GraphProcessor<MaglevPrintingVisitor, /*visit_dead_nodes*/ true> printer(
+  GraphProcessor<MaglevPrintingVisitor, /*visit_identity_nodes*/ true> printer(
       compilation_info->graph_labeller(), os);
   printer.ProcessGraph(graph);
 }

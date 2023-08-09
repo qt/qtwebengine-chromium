@@ -23,7 +23,7 @@
 namespace tint::ast {
 
 /// A break-if statement
-class BreakIfStatement final : public Castable<BreakIfStatement, Statement> {
+class BreakIfStatement final : public utils::Castable<BreakIfStatement, Statement> {
   public:
     /// Constructor
     /// @param pid the identifier of the program that owns this node
@@ -32,8 +32,7 @@ class BreakIfStatement final : public Castable<BreakIfStatement, Statement> {
     /// @param condition the if condition
     BreakIfStatement(ProgramID pid, NodeID nid, const Source& src, const Expression* condition);
 
-    /// Move constructor
-    BreakIfStatement(BreakIfStatement&&);
+    /// Destructor
     ~BreakIfStatement() override;
 
     /// Clones this node and all transitive child nodes using the `CloneContext` `ctx`.

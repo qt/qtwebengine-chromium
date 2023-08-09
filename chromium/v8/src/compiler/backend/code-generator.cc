@@ -145,7 +145,11 @@ uint32_t CodeGenerator::GetStackCheckOffset() {
     return 0;
   }
 
+  size_t incoming_parameter_count =
+      linkage_->GetIncomingDescriptor()->ParameterSlotCount();
+  DCHECK(is_int32(incoming_parameter_count));
   int32_t optimized_frame_height =
+      static_cast<int32_t>(incoming_parameter_count) * kSystemPointerSize +
       frame()->GetTotalFrameSlotCount() * kSystemPointerSize;
   DCHECK(is_int32(max_unoptimized_frame_height_));
   int32_t signed_max_unoptimized_frame_height =
@@ -158,6 +162,11 @@ uint32_t CodeGenerator::GetStackCheckOffset() {
       signed_max_unoptimized_frame_height - optimized_frame_height, 0));
   uint32_t max_pushed_argument_bytes =
       static_cast<uint32_t>(max_pushed_argument_count_ * kSystemPointerSize);
+  if (v8_flags.deopt_to_baseline) {
+    // If we deopt to baseline, we need to be sure that we have enough space
+    // to recreate the unoptimize frame plus arguments to the largest call.
+    return frame_height_delta + max_pushed_argument_bytes;
+  }
   return std::max(frame_height_delta, max_pushed_argument_bytes);
 }
 
@@ -261,13 +270,12 @@ void CodeGenerator::AssembleCode() {
   offsets_info_.blocks_start = masm()->pc_offset();
   for (const InstructionBlock* block : instructions()->ao_blocks()) {
     // Align loop headers on vendor recommended boundaries.
-    if (!masm()->jump_optimization_info()) {
-      if (block->ShouldAlignLoopHeader()) {
-        masm()->LoopHeaderAlign();
-      } else if (block->ShouldAlignCodeTarget()) {
-        masm()->CodeTargetAlign();
-      }
+    if (block->ShouldAlignLoopHeader()) {
+      masm()->LoopHeaderAlign();
+    } else if (block->ShouldAlignCodeTarget()) {
+      masm()->CodeTargetAlign();
     }
+
     if (info->trace_turbo_json()) {
       block_starts_[block->rpo_number().ToInt()] = masm()->pc_offset();
     }
@@ -514,9 +522,9 @@ MaybeHandle<Code> CodeGenerator::FinalizeCode() {
     return {};
   }
 
-  LOG_CODE_EVENT(isolate(), CodeLinePosInfoRecordEvent(code->InstructionStart(),
-                                                       *source_positions,
-                                                       JitCodeEvent::JIT_CODE));
+  LOG_CODE_EVENT(isolate(), CodeLinePosInfoRecordEvent(
+                                code->instruction_start(), *source_positions,
+                                JitCodeEvent::JIT_CODE));
 
   return code;
 }
@@ -704,8 +712,11 @@ RpoNumber CodeGenerator::ComputeBranchInfo(BranchInfo* branch,
     return true_rpo;
   }
   FlagsCondition condition = FlagsConditionField::decode(instr->opcode());
-  if (IsNextInAssemblyOrder(true_rpo)) {
+  if (IsNextInAssemblyOrder(true_rpo) || instructions()
+                                             ->InstructionBlockAt(false_rpo)
+                                             ->IsLoopHeaderInAssemblyOrder()) {
     // true block is next, can fall through if condition negated.
+    // false block is loop header, can save one jump if condition negated.
     std::swap(true_rpo, false_rpo);
     condition = NegateFlagsCondition(condition);
   }
@@ -842,7 +853,7 @@ void CodeGenerator::AssembleSourcePosition(SourcePosition source_position) {
       AllowGarbageCollection allocation;
       AllowHandleAllocation handles;
       AllowHandleDereference deref;
-      buffer << source_position.InliningStack(info);
+      buffer << source_position.InliningStack(masm()->isolate(), info);
     }
     buffer << " --";
     masm()->RecordComment(buffer.str().c_str());

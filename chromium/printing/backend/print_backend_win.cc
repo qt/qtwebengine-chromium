@@ -112,6 +112,30 @@ gfx::Size GetDefaultDpi(HDC hdc) {
   return gfx::Size(dpi_x, dpi_y);
 }
 
+gfx::Rect LoadPaperPrintableAreaUm(const wchar_t* printer, DEVMODE* devmode) {
+  base::win::ScopedCreateDC hdc(
+      CreateDC(L"WINSPOOL", printer, nullptr, devmode));
+
+  gfx::Size default_dpi = GetDefaultDpi(hdc.get());
+
+  gfx::Rect printable_area_device_units =
+      GetPrintableAreaDeviceUnits(hdc.get());
+
+  // Device units can be non-square, so scale for non-square DPIs and convert to
+  // microns.
+  gfx::Rect printable_area_um =
+      gfx::Rect(ConvertUnit(printable_area_device_units.x(),
+                            default_dpi.width(), kMicronsPerInch),
+                ConvertUnit(printable_area_device_units.y(),
+                            default_dpi.height(), kMicronsPerInch),
+                ConvertUnit(printable_area_device_units.width(),
+                            default_dpi.width(), kMicronsPerInch),
+                ConvertUnit(printable_area_device_units.height(),
+                            default_dpi.height(), kMicronsPerInch));
+
+  return printable_area_um;
+}
+
 void LoadPaper(const wchar_t* printer,
                const wchar_t* port,
                DEVMODE* devmode,
@@ -159,8 +183,29 @@ void LoadPaper(const wchar_t* printer,
       tmp_name = tmp_name.c_str();
       paper.display_name = base::WideToUTF8(tmp_name);
     }
-    if (!ids.empty())
+    if (!ids.empty()) {
       paper.vendor_id = base::NumberToString(ids[i]);
+
+      // `LoadPaperPrintableAreaUm()` has to create a new device context, which
+      // is very expensive for some printer drivers.  Since this is in an
+      // inner loop for paper sizes, this can have a significant impact on
+      // Print Preview behavior, locking it up with no response for an order
+      // of tens of seconds.  This size of impact of this is driver dependent,
+      // and in many cases is not of notice for most users.
+      //
+      // Due to the high cost of some printer drivers, only retrieve the
+      // printable area for the default paper size.  Callers can make use of
+      // `GetPaperPrintableArea()` to get the printable area for other paper
+      // sizes as needed.
+      //
+      // TODO(crbug.com/1424368):  Remove this limitation compared to other
+      // platforms if an alternate way of getting the printable area for all
+      // paper sizes can be done without a huge performance penalty.  For
+      // now this workaround is only made for in-browser queries.
+      if (devmode && (devmode->dmPaperSize == ids[i])) {
+        paper.printable_area_um = LoadPaperPrintableAreaUm(printer, devmode);
+      }
+    }
 
     // Default to the paper size if printable area is missing.
     // We've seen some drivers have a printable area that goes out of bounds of
@@ -254,6 +299,10 @@ class PrintBackendWin : public PrintBackend {
   mojom::ResultCode GetPrinterCapsAndDefaults(
       const std::string& printer_name,
       PrinterCapsAndDefaults* printer_info) override;
+  absl::optional<gfx::Rect> GetPaperPrintableArea(
+      const std::string& printer_name,
+      const std::string& paper_vendor_id,
+      const gfx::Size& paper_size_um) override;
   std::string GetPrinterDriverInfo(const std::string& printer_name) override;
   bool IsValidPrinter(const std::string& printer_name) override;
 
@@ -492,6 +541,39 @@ mojom::ResultCode PrintBackendWin::GetPrinterCapsAndDefaults(
     XPSModule::CloseProvider(provider);
   }
   return mojom::ResultCode::kSuccess;
+}
+
+absl::optional<gfx::Rect> PrintBackendWin::GetPaperPrintableArea(
+    const std::string& printer_name,
+    const std::string& paper_vendor_id,
+    const gfx::Size& paper_size_um) {
+  ScopedPrinterHandle printer_handle = GetPrinterHandle(printer_name);
+  if (!printer_handle.IsValid()) {
+    return absl::nullopt;
+  }
+
+  std::unique_ptr<DEVMODE, base::FreeDeleter> devmode =
+      CreateDevMode(printer_handle.Get(), nullptr);
+  if (!devmode) {
+    return absl::nullopt;
+  }
+
+  unsigned id = 0;
+  // If the paper size is a custom user size, setting by ID may not work.
+  if (base::StringToUint(paper_vendor_id, &id) && id && id < DMPAPER_USER) {
+    devmode->dmFields |= DM_PAPERSIZE;
+    devmode->dmPaperSize = static_cast<short>(id);
+  } else if (!paper_size_um.IsEmpty()) {
+    static constexpr int kTenthsOfMillimetersPerInch = 254;
+    devmode->dmFields |= DM_PAPERWIDTH | DM_PAPERLENGTH;
+    devmode->dmPaperWidth = ConvertUnit(paper_size_um.width(), kMicronsPerInch,
+                                        kTenthsOfMillimetersPerInch);
+    devmode->dmPaperLength = ConvertUnit(
+        paper_size_um.height(), kMicronsPerInch, kTenthsOfMillimetersPerInch);
+  }
+
+  return LoadPaperPrintableAreaUm(base::UTF8ToWide(printer_name).c_str(),
+                                  devmode.get());
 }
 
 // Gets the information about driver for a specific printer.

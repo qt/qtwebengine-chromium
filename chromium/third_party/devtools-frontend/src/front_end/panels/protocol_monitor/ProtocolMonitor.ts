@@ -147,8 +147,7 @@ export class ProtocolMonitorImpl extends UI.Widget.VBox {
     const topToolbar = new UI.Toolbar.Toolbar('protocol-monitor-toolbar', this.contentElement);
 
     this.contentElement.classList.add('protocol-monitor');
-    const recordButton = new UI.Toolbar.ToolbarToggle(
-        i18nString(UIStrings.record), 'largeicon-start-recording', 'largeicon-stop-recording');
+    const recordButton = new UI.Toolbar.ToolbarToggle(i18nString(UIStrings.record), 'record-start', 'record-stop');
     recordButton.addEventListener(UI.Toolbar.ToolbarButton.Events.Click, () => {
       recordButton.setToggled(!recordButton.toggled());
       this.setRecording(recordButton.toggled());
@@ -157,7 +156,7 @@ export class ProtocolMonitorImpl extends UI.Widget.VBox {
     topToolbar.appendToolbarItem(recordButton);
     recordButton.setToggled(true);
 
-    const clearButton = new UI.Toolbar.ToolbarButton(i18nString(UIStrings.clearAll), 'largeicon-clear');
+    const clearButton = new UI.Toolbar.ToolbarButton(i18nString(UIStrings.clearAll), 'clear');
     clearButton.addEventListener(UI.Toolbar.ToolbarButton.Events.Click, () => {
       this.messages = [];
       this.dataGridIntegrator.update({...this.dataGridIntegrator.data(), rows: []});
@@ -165,7 +164,7 @@ export class ProtocolMonitorImpl extends UI.Widget.VBox {
     });
     topToolbar.appendToolbarItem(clearButton);
 
-    const saveButton = new UI.Toolbar.ToolbarButton(i18nString(UIStrings.save), 'largeicon-download');
+    const saveButton = new UI.Toolbar.ToolbarButton(i18nString(UIStrings.save), 'download');
     saveButton.addEventListener(UI.Toolbar.ToolbarButton.Events.Click, () => {
       void this.saveAsFile();
     });
@@ -374,7 +373,7 @@ export class ProtocolMonitorImpl extends UI.Widget.VBox {
     return protocolMonitorImplInstance;
   }
 
-  wasShown(): void {
+  override wasShown(): void {
     if (this.started) {
       return;
     }
@@ -407,7 +406,7 @@ export class ProtocolMonitorImpl extends UI.Widget.VBox {
       return '';
     }
     return target.decorateLabel(
-        `${target.name()} ${target === SDK.TargetManager.TargetManager.instance().mainTarget() ? '' : target.id()}`);
+        `${target.name()} ${target === SDK.TargetManager.TargetManager.instance().rootTarget() ? '' : target.id()}`);
   }
 
   // eslint-disable
@@ -462,7 +461,7 @@ export class ProtocolMonitorImpl extends UI.Widget.VBox {
 
     const sdkTarget = target as SDK.Target.Target | null;
     const responseIcon = new IconButton.Icon.Icon();
-    responseIcon.data = {iconName: 'ic_response', color: 'var(--color-text-disabled)', width: '16px', height: '16px'};
+    responseIcon.data = {iconName: 'arrow-down', color: 'var(--icon-request)', width: '20px', height: '20px'};
     const newRow: DataGrid.DataGridUtils.Row = {
       cells: [
         {columnId: 'method', value: message.method, title: message.method},
@@ -501,7 +500,7 @@ export class ProtocolMonitorImpl extends UI.Widget.VBox {
     const sdkTarget = target as SDK.Target.Target | null;
     const requestResponseIcon = new IconButton.Icon.Icon();
     requestResponseIcon
-        .data = {iconName: 'ic_request_response', color: 'var(--color-primary)', width: '16px', height: '16px'};
+        .data = {iconName: 'arrow-up-down', color: 'var(--icon-request-response)', width: '20px', height: '20px'};
     const newRow: DataGrid.DataGridUtils.Row = {
       styles: {
         '--override-data-grid-row-background-color': 'var(--override-data-grid-sent-message-row-background-color)',

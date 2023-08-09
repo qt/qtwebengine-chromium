@@ -19,6 +19,10 @@ export const enum Phase {
   ASYNC_NESTABLE_START = 'b',
   ASYNC_NESTABLE_INSTANT = 'n',
   ASYNC_NESTABLE_END = 'e',
+  ASYNC_STEP_INTO = 'T',
+  ASYNC_BEGIN = 'S',
+  ASYNC_END = 'F',
+  ASYNC_STEP_PAST = 'p',
 
   // Flow
   FLOW_START = 's',
@@ -47,6 +51,20 @@ export const enum Phase {
   CLOCK_SYNC = 'c',
 }
 
+export function isNestableAsyncPhase(phase: Phase): boolean {
+  return phase === Phase.ASYNC_NESTABLE_START || phase === Phase.ASYNC_NESTABLE_END ||
+      phase === Phase.ASYNC_NESTABLE_INSTANT;
+}
+
+export function isAsyncPhase(phase: Phase): boolean {
+  return isNestableAsyncPhase(phase) || phase === Phase.ASYNC_BEGIN || phase === Phase.ASYNC_STEP_INTO ||
+      phase === Phase.ASYNC_END || phase === Phase.ASYNC_STEP_PAST;
+}
+
+export function isFlowPhase(phase: Phase): boolean {
+  return phase === Phase.FLOW_START || phase === Phase.FLOW_STEP || phase === Phase.FLOW_END;
+}
+
 export const enum TraceEventScope {
   THREAD = 't',
   PROCESS = 'p',
@@ -72,6 +90,8 @@ export interface TraceEventArgs {
 
 export interface TraceEventArgsData {
   stackTrace?: TraceEventCallFrame[];
+  navigationId?: string;
+  frame?: string;
 }
 
 export interface TraceEventCallFrame {
@@ -111,7 +131,8 @@ export interface TraceEventProfileChunk extends TraceEventSample {
   name: 'ProfileChunk';
   id: ProfileID;
   args: TraceEventArgs&{
-    data: TraceEventArgsData & {
+    // `data` is only missing in "fake" traces
+    data?: TraceEventArgsData & {
       cpuProfile?: TraceEventPartialProfile,
       timeDeltas?: MicroSeconds[],
     },
@@ -147,6 +168,7 @@ export interface TraceEventDispatch extends TraceEventComplete {
 
 export interface TraceEventEventTiming extends TraceEventData {
   ph: Phase.ASYNC_NESTABLE_START|Phase.ASYNC_NESTABLE_END;
+  id: string;
   args: TraceEventArgs&{
     frame: string,
     data?: TraceEventArgsData&{
@@ -158,6 +180,13 @@ export interface TraceEventEventTiming extends TraceEventData {
       interactionId?: number, type: string,
     },
   };
+}
+
+export interface TraceEventEventTimingBegin extends TraceEventEventTiming {
+  ph: Phase.ASYNC_NESTABLE_START;
+}
+export interface TraceEventEventTimingEnd extends TraceEventEventTiming {
+  ph: Phase.ASYNC_NESTABLE_END;
 }
 
 export interface TraceEventGPUTask extends TraceEventComplete {
@@ -323,8 +352,18 @@ export interface TraceEventFirstContentfulPaint extends TraceEventMark {
   };
 }
 
+export interface TraceEventFirstPaint extends TraceEventMark {
+  name: 'firstPaint';
+  args: TraceEventArgs&{
+    frame: string,
+    data?: TraceEventArgsData&{
+      navigationId: string,
+    },
+  };
+}
+
 export type PageLoadEvent = TraceEventFirstContentfulPaint|TraceEventMarkDOMContent|TraceEventInteractiveTime|
-    TraceEventLargestContentfulPaintCandidate|TraceEventLayoutShift;
+    TraceEventLargestContentfulPaintCandidate|TraceEventLayoutShift|TraceEventFirstPaint|TraceEventMarkLoad;
 
 export interface TraceEventLargestContentfulPaintCandidate extends TraceEventMark {
   name: 'largestContentfulPaint::Candidate';
@@ -332,6 +371,8 @@ export interface TraceEventLargestContentfulPaintCandidate extends TraceEventMar
     frame: string,
     data?: TraceEventArgsData&{
       candidateIndex: number,
+      isOutermostMainFrame: boolean,
+      isMainFrame: boolean,
       navigationId: string,
       nodeId: Protocol.DOM.BackendNodeId,
       type?: string,
@@ -387,8 +428,8 @@ export interface TraceEventTracingStartedInBrowser extends TraceEventInstant {
   args: TraceEventArgs&{
     data?: TraceEventArgsData & {
       frameTreeNodeId: number,
-      frames: TraceFrame[],
-      persistentIds: boolean,
+      // Frames can only missing in "fake" traces
+      frames?: TraceFrame[], persistentIds: boolean,
     },
   };
 }
@@ -436,6 +477,22 @@ export interface TraceEventMarkDOMContent extends TraceEventInstant {
   };
 }
 
+export interface TraceEventMarkLoad extends TraceEventInstant {
+  name: 'MarkLoad';
+  args: TraceEventArgs&{
+    data?: TraceEventArgsData & {
+      frame: string,
+      isMainFrame: boolean,
+      page: string,
+    },
+  };
+}
+
+export interface TraceEventAsync extends TraceEventData {
+  ph: Phase.ASYNC_NESTABLE_START|Phase.ASYNC_NESTABLE_INSTANT|Phase.ASYNC_NESTABLE_END|Phase.ASYNC_STEP_INTO|
+      Phase.ASYNC_BEGIN|Phase.ASYNC_END|Phase.ASYNC_STEP_PAST;
+}
+
 export type TraceRect = [number, number, number, number];
 export type TraceImpactedNode = {
   // These keys come from the trace data, so we have to use underscores.
@@ -446,27 +503,55 @@ export type TraceImpactedNode = {
   /* eslint-enable @typescript-eslint/naming-convention */
 };
 
+type LayoutShiftData = TraceEventArgsData&{
+  // These keys come from the trace data, so we have to use underscores.
+  /* eslint-disable @typescript-eslint/naming-convention */
+  cumulative_score: number,
+  frame_max_distance: number,
+  had_recent_input: boolean,
+  impacted_nodes: TraceImpactedNode[] | undefined,
+  is_main_frame: boolean,
+  overall_max_distance: number,
+  region_rects: TraceRect[],
+  score: number,
+  weighted_score_delta: number,
+  /* eslint-enable @typescript-eslint/naming-convention */
+};
 // These keys come from the trace data, so we have to use underscores.
 export interface TraceEventLayoutShift extends TraceEventInstant {
   name: 'LayoutShift';
   normalized?: boolean;
   args: TraceEventArgs&{
     frame: string,
-    data?: TraceEventArgsData&{
-      // These keys come from the trace data, so we have to use underscores.
-      /* eslint-disable @typescript-eslint/naming-convention */
-      cumulative_score: number,
-      frame_max_distance: number,
-      had_recent_input: boolean,
-      impacted_nodes: TraceImpactedNode[]|undefined,
-      is_main_frame: boolean,
-      overall_max_distance: number,
-      region_rects: TraceRect[],
-      score: number,
-      weighted_score_delta: number,
-      /* eslint-enable @typescript-eslint/naming-convention */
+    data?: LayoutShiftData,
+  };
+}
+
+interface LayoutShiftSessionWindowData {
+  // The sum of the weighted score of all the shifts
+  // that belong to a session window.
+  cumulativeWindowScore: number;
+  // A consecutive generated in the frontend to
+  // to identify a session window.
+  id: number;
+}
+export interface LayoutShiftParsedData {
+  screenshotSource?: string;
+  timeFromNavigation?: MicroSeconds;
+  // The sum of the weighted scores of the shifts that
+  // belong to a session window up until this shift
+  // (inclusive).
+  cumulativeWeightedScoreInWindow: number;
+  sessionWindowData: LayoutShiftSessionWindowData;
+}
+export interface SyntheticLayoutShift extends TraceEventLayoutShift {
+  args: TraceEventArgs&{
+    frame: string,
+    data?: LayoutShiftData&{
+      rawEvent: TraceEventLayoutShift,
     },
   };
+  parsedData: LayoutShiftParsedData;
 }
 
 export type Priorty = 'Low'|'High'|'VeryHigh'|'Highest';
@@ -550,16 +635,6 @@ export interface TraceEventResourceReceiveResponse extends TraceEventInstant {
     },
   };
 }
-export interface TraceEventMarkDOMContent extends TraceEventInstant {
-  name: 'MarkDOMContent';
-  args: TraceEventArgs&{
-    data?: TraceEventArgsData & {
-      frame: string,
-      isMainFrame: boolean,
-      page: string,
-    },
-  };
-}
 
 export const enum LayoutInvalidationReason {
   SIZE_CHANGED = 'Size changed',
@@ -606,32 +681,126 @@ export interface TraceEventPrePaint extends TraceEventComplete {
   name: 'PrePaint';
 }
 
-export type TraceEventAsyncUserTiming = TraceEventUserTimingBegin|TraceEventUserTimingEnd;
-
-export interface TraceEventUserTimingBegin extends TraceEventData {
-  cat: 'blink.user_timing';
+export type TraceEventNestableAsync = TraceEventNestableAsyncBegin|TraceEventNestableAsyncEnd;
+export interface TraceEventNestableAsyncBegin extends TraceEventData {
   ph: Phase.ASYNC_NESTABLE_START;
-  id: string;
+  // The id2 field gives flexibility to explicitly specify if an event
+  // id is global among processes or process local. However not all
+  // events use it, so both kind of ids need to be marked as optional.
+  id2?: {local?: string, global?: string};
+  id?: string;
 }
 
-export interface TraceEventUserTimingEnd extends TraceEventData {
-  cat: 'blink.user_timing';
+export interface TraceEventNestableAsyncEnd extends TraceEventData {
   ph: Phase.ASYNC_NESTABLE_END;
+  id2?: {local?: string, global?: string};
+  id?: string;
+}
+
+export type TraceEventAsyncPerformanceMeasure = TraceEventPerformanceMeasureBegin|TraceEventPerformanceMeasureEnd;
+
+export interface TraceEventPerformanceMeasureBegin extends TraceEventNestableAsyncBegin {
+  cat: 'blink.user_timing';
   id: string;
 }
 
-// A UserTiming block is made up of two distinct events: the begin, and the
-// end. We need both of them to be able to display the right information, so
-// the UserTimingHandler creates these synthetic events.
-export interface TraceEventSyntheticUserTiming extends TraceEventData {
+export interface TraceEventPerformanceMeasureEnd extends TraceEventNestableAsyncEnd {
+  cat: 'blink.user_timing';
+  id: string;
+}
+
+export interface TraceEventConsoleTimeBegin extends TraceEventNestableAsyncBegin {
+  cat: 'blink.console';
+  id2: {
+    local: string,
+  };
+}
+
+export interface TraceEventConsoleTimeEnd extends TraceEventNestableAsyncEnd {
+  cat: 'blink.console';
+  id2: {
+    local: string,
+  };
+}
+
+export interface TraceEventTimeStamp extends TraceEventData {
+  cat: 'devtools.timeline';
+  name: 'TimeStamp';
+  ph: Phase.INSTANT;
+  id: string;
+  args: TraceEventArgs&{
+    data: TraceEventArgsData & {
+      frame: string,
+      message: string,
+    },
+  };
+}
+
+export interface TraceEventPerformanceMark extends TraceEventData {
+  cat: 'blink.user_timing';
+  ph: Phase.MARK;
+  id: string;
+}
+
+// Nestable async events with a duration are made up of two distinct
+// events: the begin, and the end. We need both of them to be able to
+// display the right information, so we create these synthetic events.
+export interface TraceEventSyntheticNestableAsyncEvent extends TraceEventData {
+  id?: string;
+  id2?: {local?: string, global?: string};
+  dur: MicroSeconds;
+  args: TraceEventArgs&{
+    data: TraceEventArgsData & {
+      beginEvent: TraceEventNestableAsyncBegin,
+      endEvent: TraceEventNestableAsyncEnd,
+    },
+  };
+}
+
+export interface TraceEventSyntheticUserTiming extends TraceEventSyntheticNestableAsyncEvent {
   id: string;
   dur: MicroSeconds;
   args: TraceEventArgs&{
     data: TraceEventArgsData & {
-      beginEvent: TraceEventUserTimingBegin,
-      endEvent: TraceEventUserTimingEnd,
+      beginEvent: TraceEventPerformanceMeasureBegin,
+      endEvent: TraceEventPerformanceMeasureEnd,
     },
   };
+}
+
+export interface TraceEventSyntheticConsoleTiming extends TraceEventSyntheticNestableAsyncEvent {
+  id2: {local: string};
+  dur: MicroSeconds;
+  args: TraceEventArgs&{
+    data: TraceEventArgsData & {
+      beginEvent: TraceEventConsoleTimeBegin,
+      endEvent: TraceEventConsoleTimeEnd,
+    },
+  };
+}
+
+export interface SyntheticInteractionEvent extends TraceEventSyntheticNestableAsyncEvent {
+  // InteractionID and type are available within the beginEvent's data, but we
+  // put them on the top level for ease of access.
+  interactionId: number;
+  type: string;
+  // This is equivalent to startEvent.ts;
+  ts: MicroSeconds;
+  // This duration can be calculated via endEvent.ts - startEvent.ts, but we do
+  // that and put it here to make it easier. This also makes these events
+  // consistent with real events that have a dur field.
+  dur: MicroSeconds;
+  args: TraceEventArgs&{
+    data: TraceEventArgsData & {
+      beginEvent: TraceEventEventTimingBegin,
+      endEvent: TraceEventEventTimingEnd,
+    },
+  };
+}
+
+export function isSyntheticInteractionEvent(event: TraceEventData): event is SyntheticInteractionEvent {
+  return Boolean(
+      'interactionId' in event && event.args?.data && 'beginEvent' in event.args.data && 'endEvent' in event.args.data);
 }
 
 class ProfileIdTag {
@@ -764,6 +933,14 @@ export function isTraceEventLargestTextPaintCandidate(traceEventData: TraceEvent
   return traceEventData.name === 'LargestTextPaint::Candidate';
 }
 
+export function isTraceEventMarkLoad(traceEventData: TraceEventData): traceEventData is TraceEventMarkLoad {
+  return traceEventData.name === 'MarkLoad';
+}
+
+export function isTraceEventFirstPaint(traceEventData: TraceEventData): traceEventData is TraceEventFirstPaint {
+  return traceEventData.name === 'firstPaint';
+}
+
 export function isTraceEventMarkDOMContent(traceEventData: TraceEventData): traceEventData is TraceEventMarkDOMContent {
   return traceEventData.name === 'MarkDOMContent';
 }
@@ -775,6 +952,14 @@ export function isTraceEventInteractiveTime(traceEventData: TraceEventData):
 
 export function isTraceEventEventTiming(traceEventData: TraceEventData): traceEventData is TraceEventEventTiming {
   return traceEventData.name === 'EventTiming';
+}
+
+export function isTraceEventEventTimingEnd(traceEventData: TraceEventData): traceEventData is TraceEventEventTimingEnd {
+  return isTraceEventEventTiming(traceEventData) && traceEventData.ph === Phase.ASYNC_NESTABLE_END;
+}
+export function isTraceEventEventTimingStart(traceEventData: TraceEventData):
+    traceEventData is TraceEventEventTimingBegin {
+  return isTraceEventEventTiming(traceEventData) && traceEventData.ph === Phase.ASYNC_NESTABLE_START;
 }
 
 export function isTraceEventGPUTask(traceEventData: TraceEventData): traceEventData is TraceEventGPUTask {
@@ -853,9 +1038,58 @@ export function isSyntheticUserTimingTraceEvent(traceEventData: TraceEventData):
   return 'beginEvent' in data && 'endEvent' in data;
 }
 
-export function isTraceEventUserTimingsBeginOrEnd(traceEventData: TraceEventData):
-    traceEventData is TraceEventUserTimingBegin|TraceEventUserTimingEnd {
-  const validPhases = new Set([Phase.ASYNC_NESTABLE_START, Phase.ASYNC_NESTABLE_END]);
+export function isSyntheticConsoleTimingTraceEvent(traceEventData: TraceEventData):
+    traceEventData is TraceEventSyntheticConsoleTiming {
+  if (traceEventData.cat !== 'blink.console') {
+    return false;
+  }
+  const data = traceEventData.args?.data;
+  if (!data) {
+    return false;
+  }
+  return 'beginEvent' in data && 'endEvent' in data;
+}
 
-  return validPhases.has(traceEventData.ph) && traceEventData.cat === 'blink.user_timing';
+export function isTraceEventPerformanceMeasure(traceEventData: TraceEventData):
+    traceEventData is TraceEventPerformanceMeasureBegin|TraceEventPerformanceMeasureEnd {
+  return isTraceEventAsyncPhase(traceEventData) && traceEventData.cat === 'blink.user_timing';
+}
+
+export function isTraceEventPerformanceMark(traceEventData: TraceEventData):
+    traceEventData is TraceEventPerformanceMark {
+  return traceEventData.ph === Phase.MARK && traceEventData.cat === 'blink.user_timing';
+}
+
+export function isTraceEventConsoleTime(traceEventData: TraceEventData): traceEventData is TraceEventConsoleTimeBegin|
+    TraceEventConsoleTimeEnd {
+  return isTraceEventAsyncPhase(traceEventData) && traceEventData.cat === 'blink.console';
+}
+
+export function isTraceEventTimeStamp(traceEventData: TraceEventData): traceEventData is TraceEventTimeStamp {
+  return traceEventData.ph === Phase.INSTANT && traceEventData.name === 'TimeStamp';
+}
+
+export interface TraceEventAsync extends TraceEventData {
+  ph: Phase.ASYNC_NESTABLE_START|Phase.ASYNC_NESTABLE_INSTANT|Phase.ASYNC_NESTABLE_END|Phase.ASYNC_STEP_INTO|
+      Phase.ASYNC_BEGIN|Phase.ASYNC_END|Phase.ASYNC_STEP_PAST;
+}
+
+export function isTraceEventAsyncPhase(traceEventData: TraceEventData): boolean {
+  const asyncPhases = new Set([
+    Phase.ASYNC_NESTABLE_START,
+    Phase.ASYNC_NESTABLE_INSTANT,
+    Phase.ASYNC_NESTABLE_END,
+    Phase.ASYNC_STEP_INTO,
+    Phase.ASYNC_BEGIN,
+    Phase.ASYNC_END,
+    Phase.ASYNC_STEP_PAST,
+  ]);
+  return asyncPhases.has(traceEventData.ph);
+}
+
+export function isSyntheticLayoutShift(traceEventData: TraceEventData): traceEventData is SyntheticLayoutShift {
+  if (!isTraceEventLayoutShift(traceEventData) || !traceEventData.args.data) {
+    return false;
+  }
+  return 'rawEvent' in traceEventData.args.data;
 }

@@ -7,7 +7,9 @@
 #include <utility>
 
 #include "event_win.h"
+
 #include "agent_utils_win.h"
+#include "scoped_print_handle_win.h"
 
 namespace content_analysis {
 namespace sdk {

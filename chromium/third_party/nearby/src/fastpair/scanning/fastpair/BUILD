@@ -45,6 +45,7 @@ cc_library(
         "@com_google_absl//absl/functional:any_invocable",
         "@com_google_absl//absl/functional:bind_front",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/synchronization",
     ],
 )
 
@@ -99,6 +100,7 @@ cc_test(
     shard_count = 16,
     deps = [
         ":scanning",
+        ":test_support",
         "//fastpair/dataparser",
         "//fastpair/server_access:test_support",
         "//fastpair/testing",

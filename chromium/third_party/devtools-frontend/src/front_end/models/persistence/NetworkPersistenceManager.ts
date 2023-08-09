@@ -125,6 +125,7 @@ export class NetworkPersistenceManager extends Common.ObjectWrapper.ObjectWrappe
     }
     this.enabled = this.enabledSetting.get();
     if (this.enabled) {
+      Host.userMetrics.actionTaken(Host.UserMetrics.Action.PersistenceNetworkOverridesEnabled);
       this.eventDescriptors = [
         Workspace.Workspace.WorkspaceImpl.instance().addEventListener(
             Workspace.Workspace.Events.UISourceCodeRenamed,
@@ -147,6 +148,7 @@ export class NetworkPersistenceManager extends Common.ObjectWrapper.ObjectWrappe
       ];
       await this.updateActiveProject();
     } else {
+      Host.userMetrics.actionTaken(Host.UserMetrics.Action.PersistenceNetworkOverridesDisabled);
       Common.EventTarget.removeEventListeners(this.eventDescriptors);
       await this.updateActiveProject();
     }
@@ -172,7 +174,7 @@ export class NetworkPersistenceManager extends Common.ObjectWrapper.ObjectWrappe
   private async updateActiveProject(): Promise<void> {
     const wasActive = this.activeInternal;
     this.activeInternal = Boolean(
-        this.enabledSetting.get() && SDK.TargetManager.TargetManager.instance().mainTarget() && this.projectInternal);
+        this.enabledSetting.get() && SDK.TargetManager.TargetManager.instance().rootTarget() && this.projectInternal);
     if (this.activeInternal === wasActive) {
       return;
     }
@@ -293,6 +295,7 @@ export class NetworkPersistenceManager extends Common.ObjectWrapper.ObjectWrappe
       const encodedFilePath = this.encodedPathFromUrl(url, /* ignoreNoActive */ true);
       const encodedPath = Common.ParsedURL.ParsedURL.substring(encodedFilePath, 0, encodedFilePath.lastIndexOf('/'));
       uiSourceCode = await this.projectInternal.createFile(encodedPath, HEADERS_FILENAME, '');
+      Host.userMetrics.actionTaken(Host.UserMetrics.Action.HeaderOverrideFileCreated);
     }
     return uiSourceCode;
   }
@@ -310,12 +313,7 @@ export class NetworkPersistenceManager extends Common.ObjectWrapper.ObjectWrappe
     const binding = this.bindings.get(uiSourceCode);
     if (binding) {
       const mutex = this.#getOrCreateMutex(binding.network);
-      const release = await mutex.acquire();
-      try {
-        await this.#innerUnbind(binding);
-      } finally {
-        release();
-      }
+      await mutex.run(this.#innerUnbind.bind(this, binding));
     }
   }
 
@@ -336,8 +334,7 @@ export class NetworkPersistenceManager extends Common.ObjectWrapper.ObjectWrappe
       networkUISourceCode: Workspace.UISourceCode.UISourceCode,
       fileSystemUISourceCode: Workspace.UISourceCode.UISourceCode): Promise<void> {
     const mutex = this.#getOrCreateMutex(networkUISourceCode);
-    const release = await mutex.acquire();
-    try {
+    await mutex.run(async () => {
       const existingBinding = this.bindings.get(networkUISourceCode);
       if (existingBinding) {
         const {network, fileSystem} = existingBinding;
@@ -349,9 +346,7 @@ export class NetworkPersistenceManager extends Common.ObjectWrapper.ObjectWrappe
       }
 
       await this.#innerAddBinding(networkUISourceCode, fileSystemUISourceCode);
-    } finally {
-      release();
-    }
+    });
   }
 
   #getOrCreateMutex(networkUISourceCode: Workspace.UISourceCode.UISourceCode): Common.Mutex.Mutex {
@@ -771,6 +766,9 @@ export class NetworkPersistenceManager extends Common.ObjectWrapper.ObjectWrappe
   }
 
   private async onProjectRemoved(project: Workspace.Workspace.Project): Promise<void> {
+    for (const uiSourceCode of project.uiSourceCodes()) {
+      await this.networkUISourceCodeRemoved(uiSourceCode);
+    }
     if (project === this.projectInternal) {
       await this.setProject(null);
     }

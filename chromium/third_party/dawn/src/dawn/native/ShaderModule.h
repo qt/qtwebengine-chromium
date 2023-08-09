@@ -221,7 +221,7 @@ struct EntryPointMetadata {
 
         // Match tint::inspector::Override::Type
         // Bool is defined as a macro on linux X11 and cannot compile
-        enum class Type { Boolean, Float32, Uint32, Int32 } type;
+        enum class Type { Boolean, Float32, Uint32, Int32, Float16 } type;
 
         // If the constant doesn't not have an initializer in the shader
         // Then it is required for the pipeline stage to have a constant record to initialize a
@@ -258,7 +258,7 @@ class ShaderModuleBase : public ApiObjectBase, public CachedObject {
     ShaderModuleBase(DeviceBase* device, const ShaderModuleDescriptor* descriptor);
     ~ShaderModuleBase() override;
 
-    static Ref<ShaderModuleBase> MakeError(DeviceBase* device);
+    static Ref<ShaderModuleBase> MakeError(DeviceBase* device, const char* label);
 
     ObjectType GetType() const override;
 
@@ -292,7 +292,7 @@ class ShaderModuleBase : public ApiObjectBase, public CachedObject {
                               OwnedCompilationMessages* compilationMessages);
 
   private:
-    ShaderModuleBase(DeviceBase* device, ObjectBase::ErrorTag tag);
+    ShaderModuleBase(DeviceBase* device, ObjectBase::ErrorTag tag, const char* label);
 
     // The original data in the descriptor for caching.
     enum class Type { Undefined, Spirv, Wgsl };

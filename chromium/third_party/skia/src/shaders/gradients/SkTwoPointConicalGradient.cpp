@@ -14,7 +14,7 @@
 
 #include <utility>
 
-#ifdef SK_GRAPHITE_ENABLED
+#if defined(SK_GRAPHITE)
 #include "src/gpu/graphite/KeyContext.h"
 #include "src/gpu/graphite/KeyHelpers.h"
 #include "src/gpu/graphite/PaintParamsKey.h"
@@ -60,11 +60,11 @@ public:
                                   const Descriptor&, const SkMatrix* localMatrix);
 
     GradientType asGradient(GradientInfo* info, SkMatrix* localMatrix) const override;
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
     std::unique_ptr<GrFragmentProcessor> asFragmentProcessor(const GrFPArgs&,
                                                              const MatrixRec&) const override;
 #endif
-#ifdef SK_GRAPHITE_ENABLED
+#if defined(SK_GRAPHITE)
     void addToKey(const skgpu::graphite::KeyContext&,
                   skgpu::graphite::PaintParamsKeyBuilder*,
                   skgpu::graphite::PipelineDataGatherer*) const override;
@@ -90,9 +90,10 @@ protected:
 
     void appendGradientStages(SkArenaAlloc* alloc, SkRasterPipeline* tPipeline,
                               SkRasterPipeline* postPipeline) const override;
-
+#if defined(SK_ENABLE_SKVM)
     skvm::F32 transformT(skvm::Builder*, skvm::Uniforms*,
                          skvm::Coord coord, skvm::I32* mask) const final;
+#endif
 
 private:
     friend void ::SkRegisterTwoPointConicalGradientShaderFlattenable();
@@ -317,6 +318,7 @@ void SkTwoPointConicalGradient::appendGradientStages(SkArenaAlloc* alloc, SkRast
     }
 }
 
+#if defined(SK_ENABLE_SKVM)
 skvm::F32 SkTwoPointConicalGradient::transformT(skvm::Builder* p, skvm::Uniforms* uniforms,
                                                 skvm::Coord coord, skvm::I32* mask) const {
     auto mag = [](skvm::F32 x, skvm::F32 y) { return sqrt(x*x + y*y); };
@@ -369,10 +371,11 @@ skvm::F32 SkTwoPointConicalGradient::transformT(skvm::Builder* p, skvm::Uniforms
     if ( fFocalData.isSwapped())       { t = 1.0f - t; }
     return t;
 }
+#endif
 
 /////////////////////////////////////////////////////////////////////
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
 
 #include "src/core/SkRuntimeEffectPriv.h"
 #include "src/gpu/ganesh/effects/GrSkSLFP.h"
@@ -536,28 +539,15 @@ SkTwoPointConicalGradient::asFragmentProcessor(const GrFPArgs& args, const Matri
 
 #endif
 
-#ifdef SK_GRAPHITE_ENABLED
+#if defined(SK_GRAPHITE)
 void SkTwoPointConicalGradient::addToKey(const skgpu::graphite::KeyContext& keyContext,
                                          skgpu::graphite::PaintParamsKeyBuilder* builder,
                                          skgpu::graphite::PipelineDataGatherer* gatherer) const {
-    using namespace skgpu::graphite;
-
-    SkColor4fXformer xformedColors(this, keyContext.dstColorInfo().colorSpace());
-    const SkPMColor4f* colors = xformedColors.fColors.begin();
-
-    GradientShaderBlocks::GradientData data(GradientType::kConical,
-                                            fCenter1, fCenter2,
-                                            fRadius1, fRadius2,
-                                            0.0f, 0.0f,
-                                            fTileMode,
-                                            fColorCount,
-                                            colors,
-                                            fPositions,
-                                            fInterpolation);
-
-    MakeInterpolatedToDst(keyContext, builder, gatherer,
-                          data, fInterpolation,
-                          xformedColors.fIntermediateColorSpace.get());
+    this->addToKeyCommon(keyContext, builder, gatherer,
+                         GradientType::kConical,
+                         fCenter1, fCenter2,
+                         fRadius1, fRadius2,
+                         0.0f, 0.0f);
 }
 #endif
 

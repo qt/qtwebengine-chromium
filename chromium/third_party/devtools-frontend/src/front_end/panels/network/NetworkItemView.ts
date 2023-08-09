@@ -33,6 +33,7 @@ import * as i18n from '../../core/i18n/i18n.js';
 import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as NetworkForward from '../../panels/network/forward/forward.js';
+import * as IconButton from '../../ui/components/icon_button/icon_button.js';
 import * as UI from '../../ui/legacy/legacy.js';
 
 import * as NetworkComponents from './components/components.js';
@@ -110,13 +111,13 @@ const UIStrings = {
    */
   requestAndResponseTimeline: 'Request and response timeline',
   /**
-   *@description Label of a tab in the network panel
+   *@description Label of a tab in the network panel. Previously known as 'Trust Tokens'.
    */
-  trustTokens: 'Trust Tokens',
+  trustTokens: 'Private State Tokens',
   /**
-   *@description Title of the Trust token tab in the Network panel
+   *@description Title of the Private State Token tab in the Network panel. Previously known as 'Trust Token tab'.
    */
-  trustTokenOperationDetails: 'Trust Token operation details',
+  trustTokenOperationDetails: 'Private State Token operation details',
   /**
    *@description Text for web cookies
    */
@@ -145,19 +146,18 @@ export class NetworkItemView extends UI.TabbedPane.TabbedPane {
     this.requestInternal = request;
     this.element.classList.add('network-item-view');
 
-    this.resourceViewTabSetting = Common.Settings.Settings.instance().createSetting(
-        'resourceViewTab', NetworkForward.UIRequestLocation.UIRequestTabs.Headers);
+    const headersTab = Root.Runtime.experiments.isEnabled(Root.Runtime.ExperimentName.HEADER_OVERRIDES) ?
+        NetworkForward.UIRequestLocation.UIRequestTabs.HeadersComponent :
+        NetworkForward.UIRequestLocation.UIRequestTabs.Headers;
+    this.resourceViewTabSetting = Common.Settings.Settings.instance().createSetting('resourceViewTab', headersTab);
 
     this.headersView = new RequestHeadersView(request);
     this.headersViewComponent = new NetworkComponents.RequestHeadersView.RequestHeadersView(request);
     if (Root.Runtime.experiments.isEnabled(Root.Runtime.ExperimentName.HEADER_OVERRIDES)) {
       this.appendTab(
-          NetworkForward.UIRequestLocation.UIRequestTabs.HeadersComponent, i18nString(UIStrings.headers),
-          this.headersViewComponent, i18nString(UIStrings.headers));
+          headersTab, i18nString(UIStrings.headers), this.headersViewComponent, i18nString(UIStrings.headers));
     } else {
-      this.appendTab(
-          NetworkForward.UIRequestLocation.UIRequestTabs.Headers, i18nString(UIStrings.headers), this.headersView,
-          i18nString(UIStrings.headers));
+      this.appendTab(headersTab, i18nString(UIStrings.headers), this.headersView, i18nString(UIStrings.headers));
     }
 
     this.payloadView = null;
@@ -182,7 +182,8 @@ export class NetworkItemView extends UI.TabbedPane.TabbedPane {
           i18nString(UIStrings.responsePreview));
       const signedExchangeInfo = request.signedExchangeInfo();
       if (signedExchangeInfo && signedExchangeInfo.errors && signedExchangeInfo.errors.length) {
-        const icon = UI.Icon.Icon.create('smallicon-error');
+        const icon = new IconButton.Icon.Icon();
+        icon.data = {iconName: 'cross-circle-filled', color: 'var(--icon-error)', width: '14px', height: '14px'};
         UI.Tooltip.Tooltip.install(icon, i18nString(UIStrings.signedexchangeError));
         this.setTabIcon(NetworkForward.UIRequestLocation.UIRequestTabs.Preview, icon);
       }
@@ -213,7 +214,7 @@ export class NetworkItemView extends UI.TabbedPane.TabbedPane {
     this.setAutoSelectFirstItemOnShow(false);
   }
 
-  wasShown(): void {
+  override wasShown(): void {
     super.wasShown();
     this.requestInternal.addEventListener(
         SDK.NetworkRequest.Events.RequestHeadersChanged, this.requestHeadersChanged, this);
@@ -234,7 +235,7 @@ export class NetworkItemView extends UI.TabbedPane.TabbedPane {
     }
   }
 
-  willHide(): void {
+  override willHide(): void {
     this.requestInternal.removeEventListener(
         SDK.NetworkRequest.Events.RequestHeadersChanged, this.requestHeadersChanged, this);
     this.requestInternal.removeEventListener(
@@ -276,8 +277,9 @@ export class NetworkItemView extends UI.TabbedPane.TabbedPane {
     const trustTokenResult = this.requestInternal.trustTokenOperationDoneEvent();
     if (trustTokenResult &&
         !NetworkComponents.RequestTrustTokensView.statusConsideredSuccess(trustTokenResult.status)) {
-      this.setTabIcon(
-          NetworkForward.UIRequestLocation.UIRequestTabs.TrustTokens, UI.Icon.Icon.create('smallicon-error'));
+      const icon = new IconButton.Icon.Icon();
+      icon.data = {iconName: 'cross-circle-filled', color: 'var(--icon-error)', width: '14px', height: '14px'};
+      this.setTabIcon(NetworkForward.UIRequestLocation.UIRequestTabs.TrustTokens, icon);
     }
   }
 

@@ -19,8 +19,10 @@
 
 #include "src/tint/transform/add_block_attribute.h"
 #include "src/tint/transform/add_empty_entry_point.h"
+#include "src/tint/transform/binding_remapper.h"
 #include "src/tint/transform/builtin_polyfill.h"
 #include "src/tint/transform/canonicalize_entry_point_io.h"
+#include "src/tint/transform/clamp_frag_depth.h"
 #include "src/tint/transform/demote_to_helper.h"
 #include "src/tint/transform/direct_variable_access.h"
 #include "src/tint/transform/disable_uniformity_analysis.h"
@@ -28,10 +30,12 @@
 #include "src/tint/transform/for_loop_to_loop.h"
 #include "src/tint/transform/manager.h"
 #include "src/tint/transform/merge_return.h"
+#include "src/tint/transform/multiplanar_external_texture.h"
 #include "src/tint/transform/preserve_padding.h"
 #include "src/tint/transform/promote_side_effects_to_decl.h"
 #include "src/tint/transform/remove_phonies.h"
 #include "src/tint/transform/remove_unreachable_statements.h"
+#include "src/tint/transform/robustness.h"
 #include "src/tint/transform/simplify_pointers.h"
 #include "src/tint/transform/std140.h"
 #include "src/tint/transform/unshadow.h"
@@ -40,7 +44,6 @@
 #include "src/tint/transform/vectorize_scalar_matrix_initializers.h"
 #include "src/tint/transform/while_to_loop.h"
 #include "src/tint/transform/zero_init_workgroup_memory.h"
-#include "src/tint/writer/generate_external_texture_bindings.h"
 
 namespace tint::writer::spirv {
 
@@ -48,18 +51,62 @@ SanitizedResult Sanitize(const Program* in, const Options& options) {
     transform::Manager manager;
     transform::DataMap data;
 
+    if (options.clamp_frag_depth) {
+        manager.Add<tint::transform::ClampFragDepth>();
+    }
+
     manager.Add<transform::DisableUniformityAnalysis>();
 
     // ExpandCompoundAssignment must come before BuiltinPolyfill
     manager.Add<transform::ExpandCompoundAssignment>();
 
+    // Must come before DirectVariableAccess
+    manager.Add<transform::PreservePadding>();
+
+    // Must come before DirectVariableAccess
+    manager.Add<transform::Unshadow>();
+
+    manager.Add<transform::RemoveUnreachableStatements>();
+    manager.Add<transform::PromoteSideEffectsToDecl>();
+
+    // Required for arrayLength()
+    manager.Add<transform::SimplifyPointers>();
+
+    manager.Add<transform::RemovePhonies>();
+    manager.Add<transform::VectorizeScalarMatrixInitializers>();
+    manager.Add<transform::VectorizeMatrixConversions>();
+    manager.Add<transform::WhileToLoop>();  // ZeroInitWorkgroupMemory
+    manager.Add<transform::MergeReturn>();
+
+    if (!options.disable_robustness) {
+        // Robustness must come after PromoteSideEffectsToDecl
+        // Robustness must come before BuiltinPolyfill and CanonicalizeEntryPointIO
+        manager.Add<transform::Robustness>();
+    }
+
+    // BindingRemapper must come before MultiplanarExternalTexture. Note, this is flipped to the
+    // other generators which run Multiplanar first and then binding remapper.
+    manager.Add<transform::BindingRemapper>();
+    data.Add<transform::BindingRemapper::Remappings>(
+        options.binding_remapper_options.binding_points,
+        options.binding_remapper_options.access_controls,
+        options.binding_remapper_options.allow_collisions);
+
+    // Note: it is more efficient for MultiplanarExternalTexture to come after Robustness
+    data.Add<transform::MultiplanarExternalTexture::NewBindingPoints>(
+        options.external_texture_options.bindings_map);
+    manager.Add<transform::MultiplanarExternalTexture>();
+
     {  // Builtin polyfills
+        // BuiltinPolyfill must come before DirectVariableAccess, due to the use of pointer
+        // parameter for workgroupUniformLoad()
         transform::BuiltinPolyfill::Builtins polyfills;
         polyfills.acosh = transform::BuiltinPolyfill::Level::kRangeCheck;
         polyfills.atanh = transform::BuiltinPolyfill::Level::kRangeCheck;
         polyfills.bgra8unorm = true;
         polyfills.bitshift_modulo = true;
         polyfills.clamp_int = true;
+        polyfills.conv_f32_to_iu32 = true;
         polyfills.count_leading_zeros = true;
         polyfills.count_trailing_zeros = true;
         polyfills.extract_bits = transform::BuiltinPolyfill::Level::kClampParameters;
@@ -75,18 +122,11 @@ SanitizedResult Sanitize(const Program* in, const Options& options) {
         manager.Add<transform::BuiltinPolyfill>();
     }
 
-    if (options.generate_external_texture_bindings) {
-        auto new_bindings_map = GenerateExternalTextureBindings(in);
-        data.Add<transform::MultiplanarExternalTexture::NewBindingPoints>(new_bindings_map);
-    }
-    manager.Add<transform::MultiplanarExternalTexture>();
-
-    manager.Add<transform::PreservePadding>();  // Must come before DirectVariableAccess
-
-    manager.Add<transform::Unshadow>();  // Must come before DirectVariableAccess
     bool disable_workgroup_init_in_sanitizer =
         options.disable_workgroup_init || options.use_zero_initialize_workgroup_memory_extension;
     if (!disable_workgroup_init_in_sanitizer) {
+        // ZeroInitWorkgroupMemory must come before CanonicalizeEntryPointIO as
+        // ZeroInitWorkgroupMemory may inject new builtin parameters.
         manager.Add<transform::ZeroInitWorkgroupMemory>();
     }
 
@@ -98,16 +138,11 @@ SanitizedResult Sanitize(const Program* in, const Options& options) {
         manager.Add<transform::DirectVariableAccess>();
     }
 
-    manager.Add<transform::RemoveUnreachableStatements>();
-    manager.Add<transform::PromoteSideEffectsToDecl>();
-    manager.Add<transform::SimplifyPointers>();  // Required for arrayLength()
-    manager.Add<transform::RemovePhonies>();
-    manager.Add<transform::VectorizeScalarMatrixInitializers>();
-    manager.Add<transform::VectorizeMatrixConversions>();
-    manager.Add<transform::WhileToLoop>();  // ZeroInitWorkgroupMemory
-    manager.Add<transform::MergeReturn>();
+    // CanonicalizeEntryPointIO must come after Robustness
     manager.Add<transform::CanonicalizeEntryPointIO>();
     manager.Add<transform::AddEmptyEntryPoint>();
+
+    // AddBlockAttribute must come after MultiplanarExternalTexture
     manager.Add<transform::AddBlockAttribute>();
 
     // DemoteToHelper must come after CanonicalizeEntryPointIO, PromoteSideEffectsToDecl, and

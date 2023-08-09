@@ -70,6 +70,8 @@ GURL GetSimplifiedURL(const GURL& url) {
 namespace prefs {
 const char kSafeBrowsingCsdPingTimestamps[] =
     "safebrowsing.csd_ping_timestamps";
+const char kSafeBrowsingCsdPhishingProtectionAllowedByPolicy[] =
+    "safebrowsing.csd_phishing_protection_allowed_by_policy";
 const char kSafeBrowsingEnabled[] = "safebrowsing.enabled";
 const char kSafeBrowsingEnhanced[] = "safebrowsing.enhanced";
 const char kSafeBrowsingEnterpriseRealTimeUrlCheckMode[] =
@@ -106,6 +108,10 @@ const char kAdvancedProtectionAllowed[] =
 const char kSafeBrowsingMetricsLastLogTime[] =
     "safebrowsing.metrics_last_log_time";
 const char kSafeBrowsingEventTimestamps[] = "safebrowsing.event_timestamps";
+const char kSafeBrowsingHashRealTimeOhttpExpirationTime[] =
+    "safebrowsing.hash_real_time_ohttp_expiration_time";
+const char kSafeBrowsingHashRealTimeOhttpKey[] =
+    "safebrowsing.hash_real_time_ohttp_key";
 const char kAccountTailoredSecurityUpdateTimestamp[] =
     "safebrowsing.aesb_update_time_windows_epoch_micros";
 const char kAccountTailoredSecurityShownNotification[] =
@@ -118,6 +124,10 @@ const char kExtensionTelemetryConfig[] =
     "safebrowsing.extension_telemetry_configuration";
 const char kExtensionTelemetryFileData[] =
     "safebrowsing.extension_telemetry_file_data";
+const char kRealTimeDownloadProtectionRequestAllowedByPolicy[] =
+    "safebrowsing.real_time_download_protection_request_allowed_by_policy";
+const char kSafeBrowsingExtensionProtectionAllowedByPolicy[] =
+    "safebrowsing.extension_protection_allowed_by_policy";
 }  // namespace prefs
 
 namespace safe_browsing {
@@ -187,6 +197,21 @@ bool IsSafeBrowsingPolicyManaged(const PrefService& prefs) {
          prefs.IsManagedPreference(prefs::kSafeBrowsingEnhanced);
 }
 
+bool IsRealTimeDownloadProtectionRequestAllowed(const PrefService& prefs) {
+  return prefs.GetBoolean(
+      prefs::kRealTimeDownloadProtectionRequestAllowedByPolicy);
+}
+
+bool IsCsdPhishingProtectionAllowed(const PrefService& prefs) {
+  return prefs.GetBoolean(
+      prefs::kSafeBrowsingCsdPhishingProtectionAllowedByPolicy);
+}
+
+bool IsSafeBrowsingExtensionProtectionAllowed(const PrefService& prefs) {
+  return prefs.GetBoolean(
+      prefs::kSafeBrowsingExtensionProtectionAllowedByPolicy);
+}
+
 void RecordExtendedReportingMetrics(const PrefService& prefs) {
   // This metric tracks the extended browsing opt-in based on whichever setting
   // the user is currently seeing. It tells us whether extended reporting is
@@ -197,6 +222,8 @@ void RecordExtendedReportingMetrics(const PrefService& prefs) {
 
 void RegisterProfilePrefs(PrefRegistrySimple* registry) {
   registry->RegisterListPref(prefs::kSafeBrowsingCsdPingTimestamps);
+  registry->RegisterBooleanPref(
+      prefs::kSafeBrowsingCsdPhishingProtectionAllowedByPolicy, true);
   registry->RegisterBooleanPref(prefs::kSafeBrowsingScoutReportingEnabled,
                                 false);
   registry->RegisterBooleanPref(
@@ -230,6 +257,9 @@ void RegisterProfilePrefs(PrefRegistrySimple* registry) {
   registry->RegisterInt64Pref(prefs::kSafeBrowsingMetricsLastLogTime, 0);
   registry->RegisterDictionaryPref(prefs::kSafeBrowsingEventTimestamps);
   registry->RegisterTimePref(
+      prefs::kSafeBrowsingHashRealTimeOhttpExpirationTime, base::Time());
+  registry->RegisterStringPref(prefs::kSafeBrowsingHashRealTimeOhttpKey, "");
+  registry->RegisterTimePref(
       prefs::kAccountTailoredSecurityUpdateTimestamp, base::Time(),
       user_prefs::PrefRegistrySyncable::SYNCABLE_PRIORITY_PREF);
   registry->RegisterBooleanPref(
@@ -242,6 +272,10 @@ void RegisterProfilePrefs(PrefRegistrySimple* registry) {
                                    base::Value::Dict());
   registry->RegisterDictionaryPref(prefs::kExtensionTelemetryFileData,
                                    base::Value::Dict());
+  registry->RegisterBooleanPref(
+      prefs::kRealTimeDownloadProtectionRequestAllowedByPolicy, true);
+  registry->RegisterBooleanPref(
+      prefs::kSafeBrowsingExtensionProtectionAllowedByPolicy, true);
 }
 
 const base::Value::Dict& GetExtensionTelemetryConfig(const PrefService& prefs) {
@@ -348,6 +382,19 @@ base::Value::List GetSafeBrowsingPoliciesList(PrefService* prefs) {
   }
   preferences_list.Append(login_urls);
   preferences_list.Append(prefs::kPasswordProtectionLoginURLs);
+
+  preferences_list.Append(prefs->GetBoolean(
+      prefs::kRealTimeDownloadProtectionRequestAllowedByPolicy));
+  preferences_list.Append(
+      prefs::kRealTimeDownloadProtectionRequestAllowedByPolicy);
+  preferences_list.Append(prefs->GetBoolean(
+      prefs::kSafeBrowsingCsdPhishingProtectionAllowedByPolicy));
+  preferences_list.Append(
+      prefs::kSafeBrowsingCsdPhishingProtectionAllowedByPolicy);
+  preferences_list.Append(prefs->GetBoolean(
+      prefs::kSafeBrowsingExtensionProtectionAllowedByPolicy));
+  preferences_list.Append(
+      prefs::kSafeBrowsingExtensionProtectionAllowedByPolicy);
   return preferences_list;
 }
 

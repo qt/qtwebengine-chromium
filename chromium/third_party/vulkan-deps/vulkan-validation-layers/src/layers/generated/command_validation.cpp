@@ -19,7 +19,7 @@
  * limitations under the License.
  ****************************************************************************/
 
-#include "vk_layer_logging.h"
+#include "error_message/logging.h"
 #include "core_checks/core_validation.h"
 
 static const std::array<const char *, CMD_RANGE_SIZE> kGeneratedMustBeRecordingList = {{
@@ -42,6 +42,7 @@ static const std::array<const char *, CMD_RANGE_SIZE> kGeneratedMustBeRecordingL
     "VUID-vkCmdBindInvocationMaskHUAWEI-commandBuffer-recording",
     "VUID-vkCmdBindPipeline-commandBuffer-recording",
     "VUID-vkCmdBindPipelineShaderGroupNV-commandBuffer-recording",
+    "VUID-vkCmdBindShadersEXT-commandBuffer-recording",
     "VUID-vkCmdBindShadingRateImageNV-commandBuffer-recording",
     "VUID-vkCmdBindTransformFeedbackBuffersEXT-commandBuffer-recording",
     "VUID-vkCmdBindVertexBuffers-commandBuffer-recording",
@@ -184,9 +185,12 @@ static const std::array<const char *, CMD_RANGE_SIZE> kGeneratedMustBeRecordingL
     "VUID-vkCmdSetDeviceMask-commandBuffer-recording",
     "VUID-vkCmdSetDeviceMask-commandBuffer-recording",
     "VUID-vkCmdSetDiscardRectangleEXT-commandBuffer-recording",
+    "VUID-vkCmdSetDiscardRectangleEnableEXT-commandBuffer-recording",
+    "VUID-vkCmdSetDiscardRectangleModeEXT-commandBuffer-recording",
     "VUID-vkCmdSetEvent-commandBuffer-recording",
     "VUID-vkCmdSetEvent2-commandBuffer-recording",
     "VUID-vkCmdSetEvent2-commandBuffer-recording",
+    "VUID-vkCmdSetExclusiveScissorEnableNV-commandBuffer-recording",
     "VUID-vkCmdSetExclusiveScissorNV-commandBuffer-recording",
     "VUID-vkCmdSetExtraPrimitiveOverestimationSizeEXT-commandBuffer-recording",
     "VUID-vkCmdSetFragmentShadingRateEnumNV-commandBuffer-recording",
@@ -281,6 +285,7 @@ static const std::array<CommandSupportedQueueType, CMD_RANGE_SIZE> kGeneratedQue
     {VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdBindInvocationMaskHUAWEI-commandBuffer-cmdpool"},
     {VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdBindPipeline-commandBuffer-cmdpool"},
     {VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdBindPipelineShaderGroupNV-commandBuffer-cmdpool"},
+    {VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdBindShadersEXT-commandBuffer-cmdpool"},
     {VK_QUEUE_GRAPHICS_BIT, "VUID-vkCmdBindShadingRateImageNV-commandBuffer-cmdpool"},
     {VK_QUEUE_GRAPHICS_BIT, "VUID-vkCmdBindTransformFeedbackBuffersEXT-commandBuffer-cmdpool"},
     {VK_QUEUE_GRAPHICS_BIT, "VUID-vkCmdBindVertexBuffers-commandBuffer-cmdpool"},
@@ -423,9 +428,12 @@ static const std::array<CommandSupportedQueueType, CMD_RANGE_SIZE> kGeneratedQue
     {VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT, "VUID-vkCmdSetDeviceMask-commandBuffer-cmdpool"},
     {VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT, "VUID-vkCmdSetDeviceMask-commandBuffer-cmdpool"},
     {VK_QUEUE_GRAPHICS_BIT, "VUID-vkCmdSetDiscardRectangleEXT-commandBuffer-cmdpool"},
+    {VK_QUEUE_GRAPHICS_BIT, "VUID-vkCmdSetDiscardRectangleEnableEXT-commandBuffer-cmdpool"},
+    {VK_QUEUE_GRAPHICS_BIT, "VUID-vkCmdSetDiscardRectangleModeEXT-commandBuffer-cmdpool"},
     {VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_VIDEO_DECODE_BIT_KHR | VK_QUEUE_VIDEO_ENCODE_BIT_KHR, "VUID-vkCmdSetEvent-commandBuffer-cmdpool"},
     {VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_VIDEO_DECODE_BIT_KHR | VK_QUEUE_VIDEO_ENCODE_BIT_KHR, "VUID-vkCmdSetEvent2-commandBuffer-cmdpool"},
     {VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_VIDEO_DECODE_BIT_KHR | VK_QUEUE_VIDEO_ENCODE_BIT_KHR, "VUID-vkCmdSetEvent2-commandBuffer-cmdpool"},
+    {VK_QUEUE_GRAPHICS_BIT, "VUID-vkCmdSetExclusiveScissorEnableNV-commandBuffer-cmdpool"},
     {VK_QUEUE_GRAPHICS_BIT, "VUID-vkCmdSetExclusiveScissorNV-commandBuffer-cmdpool"},
     {VK_QUEUE_GRAPHICS_BIT, "VUID-vkCmdSetExtraPrimitiveOverestimationSizeEXT-commandBuffer-cmdpool"},
     {VK_QUEUE_GRAPHICS_BIT, "VUID-vkCmdSetFragmentShadingRateEnumNV-commandBuffer-cmdpool"},
@@ -523,6 +531,7 @@ static const std::array<CommandSupportedRenderPass, CMD_RANGE_SIZE> kGeneratedRe
     {CMD_RENDER_PASS_BOTH, kVUIDUndefined},
     {CMD_RENDER_PASS_BOTH, kVUIDUndefined},
     {CMD_RENDER_PASS_OUTSIDE, "VUID-vkCmdBindInvocationMaskHUAWEI-renderpass"},
+    {CMD_RENDER_PASS_BOTH, kVUIDUndefined},
     {CMD_RENDER_PASS_BOTH, kVUIDUndefined},
     {CMD_RENDER_PASS_BOTH, kVUIDUndefined},
     {CMD_RENDER_PASS_BOTH, kVUIDUndefined},
@@ -667,9 +676,12 @@ static const std::array<CommandSupportedRenderPass, CMD_RANGE_SIZE> kGeneratedRe
     {CMD_RENDER_PASS_BOTH, kVUIDUndefined},
     {CMD_RENDER_PASS_BOTH, kVUIDUndefined},
     {CMD_RENDER_PASS_BOTH, kVUIDUndefined},
+    {CMD_RENDER_PASS_BOTH, kVUIDUndefined},
+    {CMD_RENDER_PASS_BOTH, kVUIDUndefined},
     {CMD_RENDER_PASS_OUTSIDE, "VUID-vkCmdSetEvent-renderpass"},
     {CMD_RENDER_PASS_OUTSIDE, "VUID-vkCmdSetEvent2-renderpass"},
     {CMD_RENDER_PASS_OUTSIDE, "VUID-vkCmdSetEvent2-renderpass"},
+    {CMD_RENDER_PASS_BOTH, kVUIDUndefined},
     {CMD_RENDER_PASS_BOTH, kVUIDUndefined},
     {CMD_RENDER_PASS_BOTH, kVUIDUndefined},
     {CMD_RENDER_PASS_BOTH, kVUIDUndefined},
@@ -769,6 +781,7 @@ static const std::array<CommandSupportedVideoCoding, CMD_RANGE_SIZE> kGeneratedV
     {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdBindInvocationMaskHUAWEI-videocoding"},
     {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdBindPipeline-videocoding"},
     {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdBindPipelineShaderGroupNV-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdBindShadersEXT-videocoding"},
     {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdBindShadingRateImageNV-videocoding"},
     {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdBindTransformFeedbackBuffersEXT-videocoding"},
     {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdBindVertexBuffers-videocoding"},
@@ -911,9 +924,12 @@ static const std::array<CommandSupportedVideoCoding, CMD_RANGE_SIZE> kGeneratedV
     {CMD_VIDEO_CODING_BOTH, kVUIDUndefined},
     {CMD_VIDEO_CODING_BOTH, kVUIDUndefined},
     {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetDiscardRectangleEXT-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetDiscardRectangleEnableEXT-videocoding"},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetDiscardRectangleModeEXT-videocoding"},
     {CMD_VIDEO_CODING_BOTH, kVUIDUndefined},
     {CMD_VIDEO_CODING_BOTH, kVUIDUndefined},
     {CMD_VIDEO_CODING_BOTH, kVUIDUndefined},
+    {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetExclusiveScissorEnableNV-videocoding"},
     {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetExclusiveScissorNV-videocoding"},
     {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetExtraPrimitiveOverestimationSizeEXT-videocoding"},
     {CMD_VIDEO_CODING_OUTSIDE, "VUID-vkCmdSetFragmentShadingRateEnumNV-videocoding"},
@@ -1019,6 +1035,7 @@ static const std::array<const char *, CMD_RANGE_SIZE> kGeneratedBufferLevelList 
     nullptr,
     nullptr,
     nullptr,
+    nullptr,
     "VUID-vkCmdControlVideoCodingKHR-bufferlevel",
     nullptr,
     nullptr,
@@ -1093,6 +1110,9 @@ static const std::array<const char *, CMD_RANGE_SIZE> kGeneratedBufferLevelList 
     "VUID-vkCmdNextSubpass-bufferlevel",
     "VUID-vkCmdNextSubpass2-bufferlevel",
     "VUID-vkCmdNextSubpass2-bufferlevel",
+    nullptr,
+    nullptr,
+    nullptr,
     nullptr,
     nullptr,
     nullptr,
@@ -1326,6 +1346,10 @@ static VkDynamicState ConvertToDynamicState(CBDynamicStatus flag) {
             return VK_DYNAMIC_STATE_VIEWPORT_W_SCALING_NV;
         case CB_DYNAMIC_DISCARD_RECTANGLE_EXT_SET:
             return VK_DYNAMIC_STATE_DISCARD_RECTANGLE_EXT;
+        case CB_DYNAMIC_DISCARD_RECTANGLE_ENABLE_EXT_SET:
+            return VK_DYNAMIC_STATE_DISCARD_RECTANGLE_ENABLE_EXT;
+        case CB_DYNAMIC_DISCARD_RECTANGLE_MODE_EXT_SET:
+            return VK_DYNAMIC_STATE_DISCARD_RECTANGLE_MODE_EXT;
         case CB_DYNAMIC_SAMPLE_LOCATIONS_EXT_SET:
             return VK_DYNAMIC_STATE_SAMPLE_LOCATIONS_EXT;
         case CB_DYNAMIC_RAY_TRACING_PIPELINE_STACK_SIZE_KHR_SET:
@@ -1334,6 +1358,8 @@ static VkDynamicState ConvertToDynamicState(CBDynamicStatus flag) {
             return VK_DYNAMIC_STATE_VIEWPORT_SHADING_RATE_PALETTE_NV;
         case CB_DYNAMIC_VIEWPORT_COARSE_SAMPLE_ORDER_NV_SET:
             return VK_DYNAMIC_STATE_VIEWPORT_COARSE_SAMPLE_ORDER_NV;
+        case CB_DYNAMIC_EXCLUSIVE_SCISSOR_ENABLE_NV_SET:
+            return VK_DYNAMIC_STATE_EXCLUSIVE_SCISSOR_ENABLE_NV;
         case CB_DYNAMIC_EXCLUSIVE_SCISSOR_NV_SET:
             return VK_DYNAMIC_STATE_EXCLUSIVE_SCISSOR_NV;
         case CB_DYNAMIC_FRAGMENT_SHADING_RATE_KHR_SET:
@@ -1469,6 +1495,10 @@ static CBDynamicStatus ConvertToCBDynamicStatus(VkDynamicState state) {
             return CB_DYNAMIC_VIEWPORT_W_SCALING_NV_SET;
         case VK_DYNAMIC_STATE_DISCARD_RECTANGLE_EXT:
             return CB_DYNAMIC_DISCARD_RECTANGLE_EXT_SET;
+        case VK_DYNAMIC_STATE_DISCARD_RECTANGLE_ENABLE_EXT:
+            return CB_DYNAMIC_DISCARD_RECTANGLE_ENABLE_EXT_SET;
+        case VK_DYNAMIC_STATE_DISCARD_RECTANGLE_MODE_EXT:
+            return CB_DYNAMIC_DISCARD_RECTANGLE_MODE_EXT_SET;
         case VK_DYNAMIC_STATE_SAMPLE_LOCATIONS_EXT:
             return CB_DYNAMIC_SAMPLE_LOCATIONS_EXT_SET;
         case VK_DYNAMIC_STATE_RAY_TRACING_PIPELINE_STACK_SIZE_KHR:
@@ -1477,6 +1507,8 @@ static CBDynamicStatus ConvertToCBDynamicStatus(VkDynamicState state) {
             return CB_DYNAMIC_VIEWPORT_SHADING_RATE_PALETTE_NV_SET;
         case VK_DYNAMIC_STATE_VIEWPORT_COARSE_SAMPLE_ORDER_NV:
             return CB_DYNAMIC_VIEWPORT_COARSE_SAMPLE_ORDER_NV_SET;
+        case VK_DYNAMIC_STATE_EXCLUSIVE_SCISSOR_ENABLE_NV:
+            return CB_DYNAMIC_EXCLUSIVE_SCISSOR_ENABLE_NV_SET;
         case VK_DYNAMIC_STATE_EXCLUSIVE_SCISSOR_NV:
             return CB_DYNAMIC_EXCLUSIVE_SCISSOR_NV_SET;
         case VK_DYNAMIC_STATE_FRAGMENT_SHADING_RATE_KHR:

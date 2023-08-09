@@ -6,6 +6,7 @@ import * as Host from '../../../core/host/host.js';
 import * as i18n from '../../../core/i18n/i18n.js';
 import * as Platform from '../../../core/platform/platform.js';
 import {assertNotNullOrUndefined} from '../../../core/platform/platform.js';
+import * as SDK from '../../../core/sdk/sdk.js';
 import * as ComponentHelpers from '../../../ui/components/helpers/helpers.js';
 import * as IconButton from '../../../ui/components/icon_button/icon_button.js';
 import * as Input from '../../../ui/components/input/input.js';
@@ -119,7 +120,7 @@ export interface BreakpointItem {
   codeSnippet: string;
   isHit: boolean;
   status: BreakpointStatus;
-  type: BreakpointType;
+  type: SDK.DebuggerModel.BreakpointType;
   hoverText?: string;
 }
 
@@ -127,12 +128,6 @@ export const enum BreakpointStatus {
   ENABLED = 'ENABLED',
   DISABLED = 'DISABLED',
   INDETERMINATE = 'INDETERMINATE',
-}
-
-export const enum BreakpointType {
-  LOGPOINT = 'LOGPOINT',
-  CONDITIONAL_BREAKPOINT = 'CONDITIONAL_BREAKPOINT',
-  REGULAR_BREAKPOINT = 'REGULAR_BREAKPOINT',
 }
 
 export class CheckboxToggledEvent extends Event {
@@ -187,11 +182,11 @@ export class BreakpointSelectedEvent extends Event {
 
 export class BreakpointEditedEvent extends Event {
   static readonly eventName = 'breakpointedited';
-  data: {breakpointItem: BreakpointItem};
+  data: {breakpointItem: BreakpointItem, editButtonClicked: boolean};
 
-  constructor(breakpointItem: BreakpointItem) {
+  constructor(breakpointItem: BreakpointItem, editButtonClicked: boolean) {
     super(BreakpointEditedEvent.eventName);
-    this.data = {breakpointItem};
+    this.data = {breakpointItem, editButtonClicked};
   }
 }
 
@@ -384,29 +379,32 @@ export class BreakpointsView extends HTMLElement {
     const clickHandler = (event: Event): void => {
       Host.userMetrics.breakpointEditDialogRevealedFrom(
           Host.UserMetrics.BreakpointEditDialogRevealedFrom.BreakpointSidebarEditButton);
-      this.dispatchEvent(new BreakpointEditedEvent(breakpointItem));
+      this.dispatchEvent(new BreakpointEditedEvent(breakpointItem, true /* editButtonClicked */));
       event.consume();
     };
-    const title = breakpointItem.type === BreakpointType.LOGPOINT ? i18nString(UIStrings.editLogpoint) :
-                                                                    i18nString(UIStrings.editCondition);
+    const title = breakpointItem.type === SDK.DebuggerModel.BreakpointType.LOGPOINT ?
+        i18nString(UIStrings.editLogpoint) :
+        i18nString(UIStrings.editCondition);
     // clang-format off
     return LitHtml.html`
     <button data-edit-breakpoint @click=${clickHandler} title=${title}>
     <${IconButton.Icon.Icon.litTagName} .data=${{
-        iconName: 'edit-icon',
-        width: '14px',
-        color: 'var(--color-text-secondary)',
+        iconName: 'edit',
+        width: '16px',
+        height: '16px',
+        color: 'var(--icon-default)',
       } as IconButton.Icon.IconData}
-      }>
+      >
       </${IconButton.Icon.Icon.litTagName}>
     </button>
       `;
     // clang-format on
   }
 
-  #renderRemoveBreakpointButton(breakpointItems: BreakpointItem[], tooltipText: string): LitHtml.TemplateResult {
+  #renderRemoveBreakpointButton(
+      breakpointItems: BreakpointItem[], tooltipText: string, action: Host.UserMetrics.Action): LitHtml.TemplateResult {
     const clickHandler = (event: Event): void => {
-      Host.userMetrics.actionTaken(Host.UserMetrics.Action.BreakpointRemovedFromRemoveButton);
+      Host.userMetrics.actionTaken(action);
       this.dispatchEvent(new BreakpointsRemovedEvent(breakpointItems));
       event.consume();
     };
@@ -414,9 +412,10 @@ export class BreakpointsView extends HTMLElement {
     return LitHtml.html`
     <button data-remove-breakpoint @click=${clickHandler} title=${tooltipText} aria-label=${tooltipText}>
     <${IconButton.Icon.Icon.litTagName} .data=${{
-        iconName: 'close-icon',
-        width: '10px',
-        color: 'var(--color-text-secondary)',
+        iconName: 'cross',
+        width: '20px',
+        height: '20px',
+        color: 'var(--icon-default)',
       } as IconButton.Icon.IconData}
       }>
       </${IconButton.Icon.Icon.litTagName}>
@@ -430,24 +429,7 @@ export class BreakpointsView extends HTMLElement {
     const menu = new UI.ContextMenu.ContextMenu(event);
 
     menu.defaultSection().appendItem(i18nString(UIStrings.removeAllBreakpointsInFile), () => {
-      this.dispatchEvent(new BreakpointsRemovedEvent(breakpointItems));
-    });
-    const notDisabledItems =
-        breakpointItems.filter(breakpointItem => breakpointItem.status !== BreakpointStatus.DISABLED);
-    menu.defaultSection().appendItem(i18nString(UIStrings.disableAllBreakpointsInFile), () => {
-      for (const breakpointItem of notDisabledItems) {
-        this.dispatchEvent(new CheckboxToggledEvent(breakpointItem, false));
-      }
-    }, notDisabledItems.length === 0);
-    const notEnabledItems =
-        breakpointItems.filter(breakpointItem => breakpointItem.status !== BreakpointStatus.ENABLED);
-    menu.defaultSection().appendItem(i18nString(UIStrings.enableAllBreakpointsInFile), () => {
-      for (const breakpointItem of notEnabledItems) {
-        this.dispatchEvent(new CheckboxToggledEvent(breakpointItem, true));
-      }
-    }, notEnabledItems.length === 0);
-    menu.defaultSection().appendItem(i18nString(UIStrings.removeAllBreakpoints), () => {
-      const breakpointItems = this.#breakpointGroups.map(({breakpointItems}) => breakpointItems).flat();
+      Host.userMetrics.actionTaken(Host.UserMetrics.Action.BreakpointsInFileRemovedFromContextMenu);
       this.dispatchEvent(new BreakpointsRemovedEvent(breakpointItems));
     });
     const otherGroups = this.#breakpointGroups.filter(group => group !== breakpointGroup);
@@ -455,6 +437,27 @@ export class BreakpointsView extends HTMLElement {
       const breakpointItems = otherGroups.map(({breakpointItems}) => breakpointItems).flat();
       this.dispatchEvent(new BreakpointsRemovedEvent(breakpointItems));
     }, otherGroups.length === 0);
+    menu.defaultSection().appendItem(i18nString(UIStrings.removeAllBreakpoints), () => {
+      const breakpointItems = this.#breakpointGroups.map(({breakpointItems}) => breakpointItems).flat();
+      this.dispatchEvent(new BreakpointsRemovedEvent(breakpointItems));
+    });
+
+    const notEnabledItems =
+        breakpointItems.filter(breakpointItem => breakpointItem.status !== BreakpointStatus.ENABLED);
+    menu.debugSection().appendItem(i18nString(UIStrings.enableAllBreakpointsInFile), () => {
+      Host.userMetrics.actionTaken(Host.UserMetrics.Action.BreakpointsInFileEnabledDisabledFromContextMenu);
+      for (const breakpointItem of notEnabledItems) {
+        this.dispatchEvent(new CheckboxToggledEvent(breakpointItem, true));
+      }
+    }, notEnabledItems.length === 0);
+    const notDisabledItems =
+        breakpointItems.filter(breakpointItem => breakpointItem.status !== BreakpointStatus.DISABLED);
+    menu.debugSection().appendItem(i18nString(UIStrings.disableAllBreakpointsInFile), () => {
+      Host.userMetrics.actionTaken(Host.UserMetrics.Action.BreakpointsInFileEnabledDisabledFromContextMenu);
+      for (const breakpointItem of notDisabledItems) {
+        this.dispatchEvent(new CheckboxToggledEvent(breakpointItem, false));
+      }
+    }, notDisabledItems.length === 0);
 
     void menu.show();
   }
@@ -497,7 +500,7 @@ export class BreakpointsView extends HTMLElement {
                    @click=${clickHandler}>
             <span class='group-header' aria-hidden=true><span class='group-icon-or-disable'>${this.#renderFileIcon()}${this.#renderGroupCheckbox(group)}</span><span class='group-header-title' title='${group.url}'>${group.name}<span class='group-header-differentiator'>${this.#urlToDifferentiatingPath.get(group.url)}</span></span></span>
             <span class='group-hover-actions'>
-              ${this.#renderRemoveBreakpointButton(group.breakpointItems, i18nString(UIStrings.removeAllBreakpointsInFile))}
+              ${this.#renderRemoveBreakpointButton(group.breakpointItems, i18nString(UIStrings.removeAllBreakpointsInFile), Host.UserMetrics.Action.BreakpointsInFileRemovedFromRemoveButton)}
             </span>
           </summary>
         ${LitHtml.Directives.repeat(
@@ -511,10 +514,10 @@ export class BreakpointsView extends HTMLElement {
 
   #renderGroupCheckbox(group: BreakpointGroup): LitHtml.TemplateResult {
     const groupCheckboxToggled = (e: Event): void => {
+      Host.userMetrics.actionTaken(Host.UserMetrics.Action.BreakpointsInFileCheckboxToggled);
       const element = e.target as HTMLInputElement;
       const updatedStatus = element.checked ? BreakpointStatus.ENABLED : BreakpointStatus.DISABLED;
       const itemsToUpdate = group.breakpointItems.filter(item => item.status !== updatedStatus);
-
       itemsToUpdate.forEach(item => {
         this.dispatchEvent(new CheckboxToggledEvent(item, element.checked));
       });
@@ -534,30 +537,25 @@ export class BreakpointsView extends HTMLElement {
   #renderFileIcon(): LitHtml.TemplateResult {
     return LitHtml.html`
       <${IconButton.Icon.Icon.litTagName} class='file-icon' .data=${
-        {iconName: 'ic_file_script', color: 'var(--color-ic-file-script)', width: '16px', height: '16px'} as
+        {iconName: 'file-script', color: 'var(--icon-file-script)', width: '20px', height: '20px'} as
         IconButton.Icon.IconWithName}></${IconButton.Icon.Icon.litTagName}>
     `;
   }
 
   #onBreakpointEntryContextMenu(event: Event, breakpointItem: BreakpointItem, editable: boolean): void {
     const menu = new UI.ContextMenu.ContextMenu(event);
-    const editBreakpointText = breakpointItem.type === BreakpointType.LOGPOINT ? i18nString(UIStrings.editLogpoint) :
-                                                                                 i18nString(UIStrings.editCondition);
-
-    menu.defaultSection().appendItem(i18nString(UIStrings.removeBreakpoint), () => {
-      this.dispatchEvent(new BreakpointsRemovedEvent([breakpointItem]));
-    });
-    menu.defaultSection().appendItem(editBreakpointText, () => {
+    const editBreakpointText = breakpointItem.type === SDK.DebuggerModel.BreakpointType.LOGPOINT ?
+        i18nString(UIStrings.editLogpoint) :
+        i18nString(UIStrings.editCondition);
+    menu.revealSection().appendItem(editBreakpointText, () => {
       Host.userMetrics.breakpointEditDialogRevealedFrom(
           Host.UserMetrics.BreakpointEditDialogRevealedFrom.BreakpointSidebarContextMenu);
-      this.dispatchEvent(new BreakpointEditedEvent(breakpointItem));
+      this.dispatchEvent(new BreakpointEditedEvent(breakpointItem, false /* editButtonClicked */));
     }, !editable);
-    menu.defaultSection().appendItem(i18nString(UIStrings.revealLocation), () => {
-      this.dispatchEvent(new BreakpointSelectedEvent(breakpointItem));
-    });
-    menu.defaultSection().appendItem(i18nString(UIStrings.removeAllBreakpoints), () => {
-      const breakpointItems = this.#breakpointGroups.map(({breakpointItems}) => breakpointItems).flat();
-      this.dispatchEvent(new BreakpointsRemovedEvent(breakpointItems));
+
+    menu.defaultSection().appendItem(i18nString(UIStrings.removeBreakpoint), () => {
+      Host.userMetrics.actionTaken(Host.UserMetrics.Action.BreakpointRemovedFromContextMenu);
+      this.dispatchEvent(new BreakpointsRemovedEvent([breakpointItem]));
     });
     const otherItems = this.#breakpointGroups.map(({breakpointItems}) => breakpointItems)
                            .flat()
@@ -565,6 +563,14 @@ export class BreakpointsView extends HTMLElement {
     menu.defaultSection().appendItem(i18nString(UIStrings.removeOtherBreakpoints), () => {
       this.dispatchEvent(new BreakpointsRemovedEvent(otherItems));
     }, otherItems.length === 0);
+    menu.defaultSection().appendItem(i18nString(UIStrings.removeAllBreakpoints), () => {
+      const breakpointItems = this.#breakpointGroups.map(({breakpointItems}) => breakpointItems).flat();
+      this.dispatchEvent(new BreakpointsRemovedEvent(breakpointItems));
+    });
+
+    menu.editSection().appendItem(i18nString(UIStrings.revealLocation), () => {
+      this.dispatchEvent(new BreakpointSelectedEvent(breakpointItem));
+    });
 
     void menu.show();
   }
@@ -588,8 +594,8 @@ export class BreakpointsView extends HTMLElement {
     const classMap = {
       'breakpoint-item': true,
       'hit': breakpointItem.isHit,
-      'conditional-breakpoint': breakpointItem.type === BreakpointType.CONDITIONAL_BREAKPOINT,
-      'logpoint': breakpointItem.type === BreakpointType.LOGPOINT,
+      'conditional-breakpoint': breakpointItem.type === SDK.DebuggerModel.BreakpointType.CONDITIONAL_BREAKPOINT,
+      'logpoint': breakpointItem.type === SDK.DebuggerModel.BreakpointType.LOGPOINT,
     };
     const breakpointItemDescription = this.#getBreakpointItemDescription(breakpointItem);
     const codeSnippet = Platform.StringUtilities.trimEndWithMaxLength(breakpointItem.codeSnippet, MAX_SNIPPET_LENGTH);
@@ -619,7 +625,7 @@ export class BreakpointsView extends HTMLElement {
       <span class='code-snippet' @click=${codeSnippetClickHandler} title=${codeSnippetTooltip}>${codeSnippet}</span>
       <span class='breakpoint-item-location-or-actions'>
         ${editable ? this.#renderEditBreakpointButton(breakpointItem) : LitHtml.nothing}
-        ${this.#renderRemoveBreakpointButton([breakpointItem], i18nString(UIStrings.removeBreakpoint))}
+        ${this.#renderRemoveBreakpointButton([breakpointItem], i18nString(UIStrings.removeBreakpoint), Host.UserMetrics.Action.BreakpointRemovedFromRemoveButton)}
         <span class='location'>${breakpointItem.location}</span>
       </span>
     </div>
@@ -627,14 +633,14 @@ export class BreakpointsView extends HTMLElement {
     // clang-format on
   }
 
-  #getCodeSnippetTooltip(type: BreakpointType, hoverText?: string): string|undefined {
+  #getCodeSnippetTooltip(type: SDK.DebuggerModel.BreakpointType, hoverText?: string): string|undefined {
     switch (type) {
-      case BreakpointType.REGULAR_BREAKPOINT:
+      case SDK.DebuggerModel.BreakpointType.REGULAR_BREAKPOINT:
         return undefined;
-      case BreakpointType.CONDITIONAL_BREAKPOINT:
+      case SDK.DebuggerModel.BreakpointType.CONDITIONAL_BREAKPOINT:
         assertNotNullOrUndefined(hoverText);
         return i18nString(UIStrings.conditionCode, {PH1: hoverText});
-      case BreakpointType.LOGPOINT:
+      case SDK.DebuggerModel.BreakpointType.LOGPOINT:
         assertNotNullOrUndefined(hoverText);
         return i18nString(UIStrings.logpointCode, {PH1: hoverText});
     }

@@ -17,7 +17,6 @@
 #include "src/core/SkOpts.h"
 #include "src/core/SkStreamPriv.h"
 #include "src/core/SkVM.h"
-#include "src/utils/SkVMVisualizer.h"
 #include <algorithm>
 #include <atomic>
 #include <queue>
@@ -26,8 +25,11 @@
 #include <unistd.h>
 #endif
 
+using namespace skia_private;
+
 bool gSkVMAllowJIT{false};
-bool gSkVMJITViaDylib{false};
+
+#if defined(SK_ENABLE_SKVM)
 
 #if defined(SKVM_JIT)
     #if defined(SK_BUILD_FOR_WIN)
@@ -127,8 +129,7 @@ namespace skvm {
         int regs = 0;
         int loop = 0;
         std::vector<int> strides;
-        std::vector<TraceHook*> traceHooks;
-        std::unique_ptr<viz::Visualizer> visualizer;
+        std::vector<SkSL::TraceHook*> traceHooks;
 
         std::atomic<void*> jit_entry{nullptr};   // TODO: minimal std::memory_orders
         size_t jit_size = 0;
@@ -326,13 +327,6 @@ namespace skvm {
         }
     }
 
-    void Program::visualize(SkWStream* output) const {
-        if (fImpl->visualizer) {
-            fImpl->visualizer->dump(output);
-        }
-    }
-
-    viz::Visualizer* Program::visualizer() { return fImpl->visualizer.get(); }
     void Program::dump(SkWStream* o) const {
         SkDebugfStream debug;
         if (!o) { o = &debug; }
@@ -442,8 +436,7 @@ namespace skvm {
             write(o, "\n");
         }
     }
-    std::vector<Instruction> eliminate_dead_code(std::vector<Instruction> program,
-                                                 viz::Visualizer* visualizer) {
+    std::vector<Instruction> eliminate_dead_code(std::vector<Instruction> program) {
         // Determine which Instructions are live by working back from side effects.
         std::vector<bool> live(program.size(), false);
         for (Val id = program.size(); id--;) {
@@ -473,11 +466,6 @@ namespace skvm {
             }
         }
 
-        if (visualizer) {
-            visualizer->addInstructions(program);
-            visualizer->markAsDeadCode(live, new_id);
-        }
-
         // Eliminate any non-live ops.
         auto it = std::remove_if(program.begin(), program.end(), [&](const Instruction& inst) {
             Val id = (Val)(&inst - program.data());
@@ -488,8 +476,7 @@ namespace skvm {
         return program;
     }
 
-    std::vector<OptimizedInstruction> finalize(const std::vector<Instruction> program,
-                                               viz::Visualizer* visualizer) {
+    std::vector<OptimizedInstruction> finalize(const std::vector<Instruction> program) {
         std::vector<OptimizedInstruction> optimized(program.size());
         for (Val id = 0; id < (Val)program.size(); id++) {
             Instruction inst = program[id];
@@ -533,36 +520,24 @@ namespace skvm {
             }
         }
 
-        if (visualizer) {
-            visualizer->finalize(program, optimized);
-        }
-
         return optimized;
     }
 
-    std::vector<OptimizedInstruction> Builder::optimize(viz::Visualizer* visualizer) const {
+    std::vector<OptimizedInstruction> Builder::optimize() const {
         std::vector<Instruction> program = this->program();
-        program = eliminate_dead_code(std::move(program), visualizer);
-        return    finalize           (std::move(program), visualizer);
+        program = eliminate_dead_code(std::move(program));
+        return    finalize           (std::move(program));
     }
 
-    Program Builder::done(const char* debug_name,
-                          bool allow_jit) const {
-        return this->done(debug_name, allow_jit, /*visualizer=*/nullptr);
-    }
-
-    Program Builder::done(const char* debug_name,
-                          bool allow_jit,
-                          std::unique_ptr<viz::Visualizer> visualizer) const {
+    Program Builder::done(const char* debug_name, bool allow_jit) const {
         char buf[64] = "skvm-jit-";
         if (!debug_name) {
             *SkStrAppendU32(buf+9, this->hash()) = '\0';
             debug_name = buf;
         }
 
-        auto optimized = this->optimize(visualizer ? visualizer.get() : nullptr);
+        auto optimized = this->optimize();
         return {optimized,
-                std::move(visualizer),
                 fStrides,
                 fTraceHooks, debug_name, allow_jit};
     }
@@ -631,7 +606,7 @@ namespace skvm {
     #endif
     }
 
-    int Builder::attachTraceHook(TraceHook* hook) {
+    int Builder::attachTraceHook(SkSL::TraceHook* hook) {
         int traceHookID = (int)fTraceHooks.size();
         fTraceHooks.push_back(hook);
         return traceHookID;
@@ -909,16 +884,16 @@ namespace skvm {
         return x;
     }
 
-     // http://mathforum.org/library/drmath/view/54137.html
-     // referencing Handbook of Mathematical Functions,
-     //             by Milton Abramowitz and Irene Stegun
-     F32 Builder::approx_asin(F32 x) {
+    // http://mathforum.org/library/drmath/view/54137.html
+    // referencing Handbook of Mathematical Functions,
+    //             by Milton Abramowitz and Irene Stegun
+    F32 Builder::approx_asin(F32 x) {
          I32 neg = (x < 0.0f);
          x = select(neg, -x, x);
          x = SK_ScalarPI/2 - sqrt(1-x) * poly(x, -0.0187293f, 0.0742610f, -0.2121144f, 1.5707288f);
          x = select(neg, -x, x);
          return x;
-     }
+    }
 
     /*  Use 4th order polynomial approximation from https://arachnoid.com/polysolve/
      *      with 129 values of x,atan(x) for x:[0...1]
@@ -2692,11 +2667,9 @@ namespace skvm {
     }
 
     Program::Program(const std::vector<OptimizedInstruction>& instructions,
-                     std::unique_ptr<viz::Visualizer> visualizer,
                      const std::vector<int>& strides,
-                     const std::vector<TraceHook*>& traceHooks,
+                     const std::vector<SkSL::TraceHook*>& traceHooks,
                      const char* debug_name, bool allow_jit) : Program() {
-        fImpl->visualizer = std::move(visualizer);
         fImpl->strides = strides;
         fImpl->traceHooks = traceHooks;
         if (gSkVMAllowJIT && allow_jit) {
@@ -2831,9 +2804,9 @@ namespace skvm {
         using A = Assembler;
         using SkVMJitTypes::Reg;
 
-        SkTHashMap<int, A::Label> constants;    // Constants (mostly splats) share the same pool.
-        A::Label                  iota;         // Varies per lane, for Op::index.
-        A::Label                  load64_index; // Used to load low or high half of 64-bit lanes.
+        THashMap<int, A::Label> constants;    // Constants (mostly splats) share the same pool.
+        A::Label                iota;         // Varies per lane, for Op::index.
+        A::Label                load64_index; // Used to load low or high half of 64-bit lanes.
 
         // The `regs` array tracks everything we know about each register's state:
         //   - NA:   empty
@@ -3883,10 +3856,6 @@ namespace skvm {
 
         enter();
         for (Val id = 0; id < (Val)instructions.size(); id++) {
-            if (fImpl->visualizer && is_trace(instructions[id].op)) {
-                // Make sure trace commands stay on JIT for visualizer
-                continue;
-            }
             if (instructions[id].can_hoist && !emit(id, /*scalar=*/false)) {
                 return false;
             }
@@ -3915,10 +3884,6 @@ namespace skvm {
             a->cmp(N, K);
             jump_if_less(&tail);
             for (Val id = 0; id < (Val)instructions.size(); id++) {
-                if (fImpl->visualizer != nullptr && is_trace(instructions[id].op)) {
-                    // Make sure trace commands stay on JIT for visualizer
-                    continue;
-                }
                 if (!instructions[id].can_hoist && !emit(id, /*scalar=*/false)) {
                     return false;
                 }
@@ -3938,10 +3903,6 @@ namespace skvm {
             a->cmp(N, 1);
             jump_if_less(&done);
             for (Val id = 0; id < (Val)instructions.size(); id++) {
-                if (fImpl->visualizer && is_trace(instructions[id].op)) {
-                    // Make sure trace commands stay on JIT for visualizer
-                    continue;
-                }
                 if (!instructions[id].can_hoist && !emit(id, /*scalar=*/true)) {
                     return false;
                 }
@@ -4025,38 +3986,6 @@ namespace skvm {
 
         // Remap as executable, and flush caches on platforms that need that.
         remap_as_executable(jit_entry, fImpl->jit_size);
-
-    #if !defined(SK_BUILD_FOR_WIN)
-        // For profiling and debugging, it's helpful to have this code loaded
-        // dynamically rather than just jumping info fImpl->jit_entry.
-        if (gSkVMJITViaDylib) {
-            // Dump the raw program binary.
-            SkString path = SkStringPrintf("/tmp/%s.XXXXXX", debug_name);
-            int fd = mkstemp(path.data());
-            ::write(fd, jit_entry, a.size());
-            close(fd);
-
-            this->dropJIT();  // (unmap and null out fImpl->jit_entry.)
-
-            // Convert it in-place to a dynamic library with a single symbol "skvm_jit":
-            SkString cmd = SkStringPrintf(
-                    "echo '.global _skvm_jit\n_skvm_jit: .incbin \"%s\"'"
-                    " | clang -x assembler -shared - -o %s",
-                    path.c_str(), path.c_str());
-        #if defined(__aarch64__)
-            cmd.append(" -arch arm64");
-        #endif
-            system(cmd.c_str());
-
-            // Load that dynamic library and look up skvm_jit().
-            fImpl->dylib = dlopen(path.c_str(), RTLD_NOW|RTLD_LOCAL);
-            void* sym = nullptr;
-            for (const char* name : {"skvm_jit", "_skvm_jit"} ) {
-                if (!sym) { sym = dlsym(fImpl->dylib, name); }
-            }
-            fImpl->jit_entry.store(sym);
-        }
-    #endif
     }
 
     void Program::disassemble(SkWStream* o) const {
@@ -4115,3 +4044,5 @@ namespace skvm {
 #endif
 
 }  // namespace skvm
+
+#endif  // defined(SK_ENABLE_SKVM)

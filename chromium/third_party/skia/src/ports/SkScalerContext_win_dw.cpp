@@ -18,13 +18,14 @@
 #include "include/core/SkDrawable.h"
 #include "include/core/SkFontMetrics.h"
 #include "include/core/SkGraphics.h"
+#include "include/core/SkImage.h"
 #include "include/core/SkOpenTypeSVGDecoder.h"
 #include "include/core/SkPath.h"
 #include "include/core/SkPictureRecorder.h"
 #include "include/private/base/SkMutex.h"
 #include "include/private/base/SkTo.h"
+#include "src/base/SkEndian.h"
 #include "src/core/SkDraw.h"
-#include "src/core/SkEndian.h"
 #include "src/core/SkGlyph.h"
 #include "src/core/SkMaskGamma.h"
 #include "src/core/SkMatrixProvider.h"
@@ -1301,7 +1302,7 @@ bool SkScalerContext_DW::drawPngGlyphImage(const SkGlyph& glyph, SkCanvas& canva
                                               glyphData.imageDataSize,
                                               &ReleaseProc,
                                               context);
-    sk_sp<SkImage> image = SkImage::MakeFromEncoded(std::move(data));
+    sk_sp<SkImage> image = SkImages::DeferredFromEncodedData(std::move(data));
     if (!image) {
         return false;
     }

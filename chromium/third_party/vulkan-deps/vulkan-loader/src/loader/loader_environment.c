@@ -35,8 +35,7 @@
 #include <ctype.h>
 
 // Environment variables
-#if defined(__linux__) || defined(__APPLE__) || defined(__Fuchsia__) || defined(__QNXNTO__) || defined(__FreeBSD__) || \
-    defined(__OpenBSD__)
+#if COMMON_UNIX_PLATFORMS
 
 bool is_high_integrity() { return geteuid() != getuid() || getegid() != getgid(); }
 
@@ -161,6 +160,9 @@ char *loader_secure_getenv(const char *name, const struct loader_instance *inst)
 void loader_free_getenv(char *val, const struct loader_instance *inst) { loader_instance_heap_free(inst, (void *)val); }
 
 #else
+
+#warning \
+    "This platform does not support environment variables! If this is not intended, please implement the stubs functions loader_getenv and loader_free_getenv"
 
 char *loader_getenv(const char *name, const struct loader_instance *inst) {
     // stub func
@@ -417,62 +419,61 @@ bool check_name_matches_filter_environment_var(const struct loader_instance *ins
 
 // Get the layer name(s) from the env_name environment variable. If layer is found in
 // search_list then add it to layer_list.  But only add it to layer_list if type_flags matches.
-VkResult loader_add_environment_layers(struct loader_instance *inst, const enum layer_type_flags type_flags, const char *env_name,
+VkResult loader_add_environment_layers(struct loader_instance *inst, const enum layer_type_flags type_flags,
                                        const struct loader_envvar_filter *enable_filter,
                                        const struct loader_envvar_disable_layers_filter *disable_filter,
                                        struct loader_layer_list *target_list, struct loader_layer_list *expanded_target_list,
                                        const struct loader_layer_list *source_list) {
     VkResult res = VK_SUCCESS;
-    char *next, *name;
-    char *layer_env = loader_getenv(env_name, inst);
-    char **vk_inst_layers = NULL;
-    uint32_t vk_inst_layer_count = 0;
-    uint32_t separator_count = 0;
+    char *layer_env = loader_getenv(ENABLED_LAYERS_ENV, inst);
 
     // If the layer environment variable is present (i.e. VK_INSTANCE_LAYERS), we will always add it to the layer list.
     if (layer_env != NULL) {
-        name = loader_stack_alloc(strlen(layer_env) + 1);
+        char *name = loader_stack_alloc(strlen(layer_env) + 1);
         if (name != NULL) {
-            separator_count = 1;
-            for (uint32_t c = 0; c < strlen(layer_env); ++c) {
-                if (layer_env[c] == PATH_SEPARATOR) {
-                    separator_count++;
-                }
-            }
-
-            vk_inst_layers =
-                loader_instance_heap_calloc(inst, (separator_count * sizeof(char *)), VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
-            if (vk_inst_layers == NULL) {
-                res = VK_ERROR_OUT_OF_HOST_MEMORY;
-                goto out;
-            }
-            for (uint32_t cur_layer = 0; cur_layer < separator_count; ++cur_layer) {
-                vk_inst_layers[cur_layer] =
-                    loader_instance_heap_calloc(inst, VK_MAX_EXTENSION_NAME_SIZE, VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
-                if (vk_inst_layers[cur_layer] == NULL) {
-                    res = VK_ERROR_OUT_OF_HOST_MEMORY;
-                    goto out;
-                }
-            }
-
             strcpy(name, layer_env);
 
             loader_log(inst, VULKAN_LOADER_WARN_BIT | VULKAN_LOADER_LAYER_BIT, 0, "env var \'%s\' defined and adding layers \"%s\"",
-                       env_name, name);
+                       ENABLED_LAYERS_ENV, name);
 
             // First look for the old-fashion layers forced on with VK_INSTANCE_LAYERS
             while (name && *name) {
-                next = loader_get_next_path(name);
+                char *next = loader_get_next_path(name);
 
                 if (strlen(name) > 0) {
-                    strncpy(vk_inst_layers[vk_inst_layer_count++], name, VK_MAX_EXTENSION_NAME_SIZE);
+                    bool found = false;
+                    for (uint32_t i = 0; i < source_list->count; i++) {
+                        struct loader_layer_properties *source_prop = &source_list->list[i];
+
+                        if (0 == strcmp(name, source_prop->info.layerName)) {
+                            found = true;
+                            // Only add it if it doesn't already appear in the layer list
+                            if (!loader_find_layer_name_in_list(source_prop->info.layerName, target_list)) {
+                                if (0 == (source_prop->type_flags & VK_LAYER_TYPE_FLAG_META_LAYER)) {
+                                    res = loader_add_layer_properties_to_list(inst, target_list, 1, source_prop);
+                                    if (res == VK_ERROR_OUT_OF_HOST_MEMORY) goto out;
+                                    res = loader_add_layer_properties_to_list(inst, expanded_target_list, 1, source_prop);
+                                    if (res == VK_ERROR_OUT_OF_HOST_MEMORY) goto out;
+                                } else {
+                                    res = loader_add_meta_layer(inst, enable_filter, disable_filter, source_prop, target_list,
+                                                                expanded_target_list, source_list, NULL);
+                                    if (res == VK_ERROR_OUT_OF_HOST_MEMORY) goto out;
+                                }
+                                break;
+                            }
+                        }
+                    }
+                    if (!found) {
+                        loader_log(inst, VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_LAYER_BIT, 0,
+                                   "Layer \"%s\" was not found but was requested by env var VK_INSTANCE_LAYERS!", name);
+                    }
                 }
                 name = next;
             }
         }
     }
 
-    // Loop through all the layers and check the enable/disable filters as well as the VK_INSTANCE_LAYERS value.
+    // Loop through all the layers and check the enable/disable filters
     for (uint32_t i = 0; i < source_list->count; i++) {
         struct loader_layer_properties *source_prop = &source_list->list[i];
 
@@ -497,7 +498,9 @@ VkResult loader_add_environment_layers(struct loader_instance *inst, const enum 
 
         // If we are supposed to filter through all layers, we need to compare the layer name against the filter.
         // This can override the disable above, so we want to do it second.
-        if (check_name_matches_filter_environment_var(inst, source_prop->info.layerName, enable_filter)) {
+        // Also make sure the layer isn't already in the output_list, skip adding it if it is.
+        if (check_name_matches_filter_environment_var(inst, source_prop->info.layerName, enable_filter) &&
+            !loader_find_layer_name_in_list(source_prop->info.layerName, target_list)) {
             adding = true;
             // Only way is_substring is true is if there are enable variables.  If that's the case, and we're past the
             // above, we should indicate that it was forced on in this way.
@@ -505,15 +508,6 @@ VkResult loader_add_environment_layers(struct loader_instance *inst, const enum 
                        "Layer \"%s\" forced enabled due to env var \'%s\'", source_prop->info.layerName, VK_LAYERS_ENABLE_ENV_VAR);
         } else {
             adding = false;
-            // If it's not in the enable filter, check the environment variable if it exists
-            if (vk_inst_layer_count > 0) {
-                for (uint32_t cur_layer = 0; cur_layer < vk_inst_layer_count; ++cur_layer) {
-                    if (!strcmp(vk_inst_layers[cur_layer], source_prop->info.layerName)) {
-                        adding = true;
-                        break;
-                    }
-                }
-            }
         }
 
         if (!adding) {
@@ -534,13 +528,6 @@ VkResult loader_add_environment_layers(struct loader_instance *inst, const enum 
     }
 
 out:
-
-    if (NULL != vk_inst_layers) {
-        for (uint32_t cur_layer = 0; cur_layer < separator_count; ++cur_layer) {
-            loader_instance_heap_free(inst, vk_inst_layers[cur_layer]);
-        }
-        loader_instance_heap_free(inst, vk_inst_layers);
-    }
 
     if (layer_env != NULL) {
         loader_free_getenv(layer_env, inst);

@@ -14,19 +14,21 @@ from typing import TYPE_CHECKING, Dict, List, Tuple
 
 import crossbench
 from crossbench import helper
-from crossbench.probes import base
+from crossbench.browsers.viewport import Viewport
 from crossbench.probes.results import ProbeResult
+from .probe import Probe
 
 #TODO: fix imports
 cb = crossbench
 
 if TYPE_CHECKING:
+  from crossbench.browsers.browser import Viewport
   from crossbench.env import HostEnvironment
   from crossbench.runner import BrowsersRunGroup, RepetitionsRunGroup, Run
   from crossbench.stories import Story
 
 
-class VideoProbe(base.Probe):
+class VideoProbe(Probe):
   """
   General-purpose Probe that collects screen-recordings.
 
@@ -38,7 +40,7 @@ class VideoProbe(base.Probe):
   IMAGE_FORMAT = "png"
   TIMESTRIP_FILE_SUFFIX = f".timestrip.{IMAGE_FORMAT}"
 
-  def __init__(self, *args, **kwargs):
+  def __init__(self, *args, **kwargs) -> None:
     super().__init__(*args, **kwargs)
     self._duration = None
 
@@ -61,8 +63,30 @@ class VideoProbe(base.Probe):
         message="Missing 'montage' binary, please install imagemagick.")
     # Check that montage can be executed
     env.check_sh_success("montage", "--version")
+    self._pre_check_viewport_size(env)
 
-  class Scope(base.Probe.Scope):
+  def _pre_check_viewport_size(self, env: HostEnvironment) -> None:
+    first_viewport: Viewport = env.runner.browsers[0].viewport
+    for browser in env.runner.browsers:
+      viewport: Viewport = browser.viewport
+      if viewport.is_headless:
+        env.handle_warning(
+            f"Cannot record video for headless browser: {browser}")
+      # TODO: support fullscreen / maximised
+      if not viewport.has_size:
+        env.handle_warning(
+            "Can only record video for browsers with explicit viewport sizes, "
+            f"but got {viewport} for {browser}.")
+      if viewport.x < 10 or viewport.y < 50:
+        env.handle_warning(
+            f"Viewport for '{browser}' might include toolbar: {viewport}")
+      if viewport != first_viewport:
+        env.handle_warning(
+            "Video recording requires same viewport size for all browsers.\n"
+            f"Viewport size for {browser} is {viewport}, "
+            f"which differs from first viewport {first_viewport}. ")
+
+  class Scope(Probe.Scope):
     IMAGE_FORMAT = "png"
     FFMPEG_TIMELINE_TEXT = (
         "drawtext="
@@ -72,15 +96,14 @@ class VideoProbe(base.Probe):
         "y=h-line_h-5:x=5:"
         "box=1:boxborderw=15:boxcolor=white")
 
-    def __init__(self, *args, **kwargs):
-      super().__init__(*args, **kwargs)
+    def __init__(self, probe: Probe, run: Run) -> None:
+      super().__init__(probe, run)
       self._record_process = None
       self._recorder_log_file = None
 
     def start(self, run: Run) -> None:
       browser = run.browser
-      cmd = self._record_cmd(browser.x, browser.y, browser.width,
-                             browser.height)
+      cmd = self._record_cmd(browser.viewport)
       self._recorder_log_file = self.results_file.with_suffix(
           ".recorder.log").open(
               "w", encoding="utf-8")
@@ -93,19 +116,23 @@ class VideoProbe(base.Probe):
       # TODO: Add common start-story-delay on runner for these cases.
       self.runner_platform.sleep(1)
 
-    def _record_cmd(self, x: int, y: int, width: int,
-                    height: int) -> Tuple[str, ...]:
+    def _record_cmd(self, viewport: Viewport) -> Tuple[str, ...]:
       if self.browser_platform.is_linux:
         env_display = os.environ.get("DISPLAY", ":0.0")
-        return ("ffmpeg", "-hide_banner", "-video_size", f"{width}x{height}",
-                "-f", "x11grab", "-framerate", "60", "-i",
-                f"{env_display}+{x},{y}", self.results_file)
+        return ("ffmpeg", "-hide_banner", "-video_size",
+                f"{viewport.width}x{viewport.height}", "-f", "x11grab",
+                "-framerate", "60", "-i",
+                f"{env_display}+{viewport.x},{viewport.y}",
+                str(self.results_file))
       if self.browser_platform.is_macos:
-        return ("/usr/sbin/screencapture", "-v", f"-R{x},{y},{width},{height}",
-                self.results_file)
+        return (
+            "/usr/sbin/screencapture", "-v",
+            f"-R{viewport.x},{viewport.y},{viewport.width},{viewport.height}",
+            str(self.results_file))
       raise Exception("Invalid platform")
 
     def stop(self, run: Run) -> None:
+      assert self._record_process, "screencapture stopped early."
       if self.browser_platform.is_macos:
         assert not self._record_process.poll(), (
             "screencapture stopped early. "
@@ -117,6 +144,7 @@ class VideoProbe(base.Probe):
         self._record_process.terminate()
 
     def tear_down(self, run: Run) -> ProbeResult:
+      assert self._record_process, "Screen recorder stopped early."
       self._recorder_log_file.close()
       if self._record_process.poll() is not None:
         self._record_process.wait(timeout=5)

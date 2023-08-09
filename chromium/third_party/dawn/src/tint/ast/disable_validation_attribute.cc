@@ -23,7 +23,7 @@ namespace tint::ast {
 DisableValidationAttribute::DisableValidationAttribute(ProgramID pid,
                                                        NodeID nid,
                                                        DisabledValidation val)
-    : Base(pid, nid), validation(val) {}
+    : Base(pid, nid, utils::Empty), validation(val) {}
 
 DisableValidationAttribute::~DisableValidationAttribute() = default;
 
@@ -45,6 +45,8 @@ std::string DisableValidationAttribute::InternalName() const {
             return "disable_validation__ignore_invalid_pointer_argument";
         case DisabledValidation::kIgnorePointerAliasing:
             return "disable_validation__ignore_pointer_aliasing";
+        case DisabledValidation::kIgnoreStructMemberLimit:
+            return "disable_validation__ignore_struct_member";
     }
     return "<invalid>";
 }

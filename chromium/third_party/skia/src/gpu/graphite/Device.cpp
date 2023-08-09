@@ -151,10 +151,12 @@ bool create_img_shader_paint(sk_sp<SkImage> image,
 }
 
 bool is_simple_shape(const Shape& shape, SkStrokeRec::Style type) {
-    // We send regular filled and hairline [round] rectangles and quadrilaterals, and stroked
+    // We send regular filled and hairline [round] rectangles, stroked/hairline lines, and stroked
     // [r]rects with circular corners to a single Renderer that does not trigger MSAA.
+    // Per-edge AA quadrilaterals also use the same Renderer but those are not "Shapes".
     return !shape.inverted() && type != SkStrokeRec::kStrokeAndFill_Style &&
-            (shape.isRect() /* || shape.isQuadrilateral()*/ ||
+            (shape.isRect() ||
+             (shape.isLine() && type != SkStrokeRec::kFill_Style) ||
              (shape.isRRect() && (type != SkStrokeRec::kStroke_Style ||
                                   SkRRectPriv::AllCornersCircular(shape.rrect()))));
 }
@@ -361,7 +363,8 @@ TextureProxyView TextureProxyView::Copy(Recorder* recorder,
                                         const TextureProxyView& srcView,
                                         SkIRect srcRect,
                                         Mipmapped mipmapped) {
-    SkASSERT(SkIRect::MakeSize(srcView.proxy()->dimensions()).contains(srcRect));
+    SkASSERT(srcView.proxy()->isFullyLazy() ||
+             SkIRect::MakeSize(srcView.proxy()->dimensions()).contains(srcRect));
 
     sk_sp<TextureProxy> dest = TextureProxy::Make(recorder->priv().caps(),
                                                   srcRect.size(),
@@ -659,32 +662,27 @@ void Device::drawPath(const SkPath& path, const SkPaint& paint, bool pathIsMutab
 
 void Device::drawPoints(SkCanvas::PointMode mode, size_t count,
                         const SkPoint* points, const SkPaint& paint) {
-    // TODO: I'm [ml] not sure either CPU or GPU backend really has a fast path for this that
-    // isn't captured by drawOval and drawLine, so could easily be moved into SkCanvas.
+    SkStrokeRec stroke(paint, SkPaint::kStroke_Style);
+    size_t next = 0;
     if (mode == SkCanvas::kPoints_PointMode) {
-        float radius = 0.5f * paint.getStrokeWidth();
-        for (size_t i = 0; i < count; ++i) {
-            SkRect pointRect = SkRect::MakeLTRB(points[i].fX - radius, points[i].fY - radius,
-                                                points[i].fX + radius, points[i].fY + radius);
-            // drawOval/drawRect with a forced fill style
-            if (paint.getStrokeCap() == SkPaint::kRound_Cap) {
-                this->drawGeometry(this->localToDeviceTransform(),
-                                   Geometry(Shape(SkRRect::MakeOval(pointRect))),
-                                   paint, kFillStyle);
-            } else {
-                this->drawGeometry(this->localToDeviceTransform(), Geometry(Shape(pointRect)),
-                                   paint, kFillStyle);
-            }
+        // Treat kPoints mode as stroking zero-length path segments, which produce caps so that
+        // both hairlines and round vs. square geometry are handled entirely on the GPU.
+        // TODO: SkCanvas should probably do the butt to square cap correction.
+        if (paint.getStrokeCap() == SkPaint::kButt_Cap) {
+            stroke.setStrokeParams(SkPaint::kSquare_Cap,
+                                   paint.getStrokeJoin(),
+                                   paint.getStrokeMiter());
         }
     } else {
-        // Force the style to be a stroke, using the radius and cap from the paint
-        SkStrokeRec stroke(paint, SkPaint::kStroke_Style);
-        size_t inc = (mode == SkCanvas::kLines_PointMode) ? 2 : 1;
-        for (size_t i = 0; i < count-1; i += inc) {
-            this->drawGeometry(this->localToDeviceTransform(),
-                               Geometry(Shape(points[i], points[i + 1])),
-                               paint, stroke);
-        }
+        next = 1;
+        count--;
+    }
+
+    size_t inc = mode == SkCanvas::kLines_PointMode ? 2 : 1;
+    for (size_t i = 0; i < count; i += inc) {
+        this->drawGeometry(this->localToDeviceTransform(),
+                           Geometry(Shape(points[i], points[i + next])),
+                           paint, stroke);
     }
 }
 
@@ -703,59 +701,83 @@ void Device::drawEdgeAAQuad(const SkRect& rect,
                        DrawFlags::kIgnoreMaskFilter | DrawFlags::kIgnorePathEffect);
 }
 
-void Device::drawEdgeAAImageSet(const SkCanvas::ImageSetEntry[], int count,
+void Device::drawEdgeAAImageSet(const SkCanvas::ImageSetEntry set[], int count,
                                 const SkPoint dstClips[], const SkMatrix preViewMatrices[],
-                                const SkSamplingOptions&, const SkPaint&,
-                                SkCanvas::SrcRectConstraint) {
-    // TODO: Implement this by merging the logic of drawImageRect and drawEdgeAAQuad.
+                                const SkSamplingOptions& sampling, const SkPaint& paint,
+                                SkCanvas::SrcRectConstraint constraint) {
+    SkASSERT(count > 0);
+
+    SkPaint paintWithShader(paint);
+    int dstClipIndex = 0;
+    for (int i = 0; i < count; ++i) {
+        // If the entry is clipped by 'dstClips', that must be provided
+        SkASSERT(!set[i].fHasClip || dstClips);
+        // Similarly, if it has an extra transform, those must be provided
+        SkASSERT(set[i].fMatrixIndex < 0 || preViewMatrices);
+
+        SkRect imgBounds = SkRect::Make(set[i].fImage->bounds());
+        SkRect src = set[i].fSrcRect;
+        SkRect dst = set[i].fDstRect;
+
+        // TODO: All of this logic should be handled in SkCanvas, since it's the same for every
+        // backend.
+        SkASSERT(src.isFinite() && dst.isFinite() && dst.isSorted());
+        SkMatrix localMatrix = SkMatrix::RectToRect(src, dst);
+        if (!imgBounds.contains(src)) {
+            if (!src.intersect(imgBounds)) {
+                continue; // Nothing to draw for this entry
+            }
+            // Update dst to match smaller src
+            dst = localMatrix.mapRect(src);
+        }
+
+        auto [ imageToDraw, newSampling ] =
+                skgpu::graphite::GetGraphiteBacked(this->recorder(), set[i].fImage.get(), sampling);
+        if (!imageToDraw) {
+            SKGPU_LOG_W("Device::drawImageRect: Creation of Graphite-backed image failed");
+            return;
+        }
+
+        // TODO: Produce an image shading paint key and data directly without having to reconstruct
+        // the equivalent SkPaint for each entry. Reuse the key and data between entries if possible
+        paintWithShader.setShader(paint.refShader());
+        if (!create_img_shader_paint(std::move(imageToDraw), src, newSampling,
+                                     &localMatrix, &paintWithShader)) {
+            return;
+        }
+        paintWithShader.setAlphaf(paint.getAlphaf() * set[i].fAlpha);
+
+        auto flags =
+                SkEnumBitMask<EdgeAAQuad::Flags>(static_cast<EdgeAAQuad::Flags>(set[i].fAAFlags));
+        EdgeAAQuad quad = set[i].fHasClip ? EdgeAAQuad(dstClips + dstClipIndex, flags)
+                                          : EdgeAAQuad(dst, flags);
+
+        // TODO: Calling drawGeometry() for each entry re-evaluates the clip stack every time, which
+        // is consistent with Ganesh's behavior. It also matches the behavior if edge-AA images were
+        // submitted one at a time by SkiaRenderer (a nice client simplification). However, we
+        // should explore the performance trade off with doing one bulk evaluation for the whole set
+        if (set[i].fMatrixIndex < 0) {
+            this->drawGeometry(this->localToDeviceTransform(), Geometry(quad),
+                               paintWithShader, kFillStyle, DrawFlags::kIgnorePathEffect);
+        } else {
+            SkM44 xtraTransform(preViewMatrices[set[i].fMatrixIndex]);
+            this->drawGeometry(this->localToDeviceTransform().concat(xtraTransform), Geometry(quad),
+                               paintWithShader, kFillStyle, DrawFlags::kIgnorePathEffect);
+        }
+
+        dstClipIndex += 4 * set[i].fHasClip;
+    }
 }
 
 void Device::drawImageRect(const SkImage* image, const SkRect* src, const SkRect& dst,
                            const SkSamplingOptions& sampling, const SkPaint& paint,
                            SkCanvas::SrcRectConstraint constraint) {
-    SkASSERT(dst.isFinite());
-    SkASSERT(dst.isSorted());
-
-    // TODO: All of this logic should be handled in SkCanvas, since it's the same for every backend
-    SkRect tmpSrc, tmpDst = dst;
-    SkRect imgBounds = SkRect::Make(image->bounds());
-
-    if (src) {
-        tmpSrc = *src;
-    } else {
-        tmpSrc = SkRect::Make(image->bounds());
-    }
-    SkMatrix matrix = SkMatrix::RectToRect(tmpSrc, dst);
-
-    // clip the tmpSrc to the bounds of the image, and recompute the dest rect if
-    // needed (i.e., if the src was clipped). No check needed if src==null.
-    if (src) {
-        if (!imgBounds.contains(tmpSrc)) {
-            if (!tmpSrc.intersect(imgBounds)) {
-                return; // nothing to draw
-            }
-            // recompute dst, based on the smaller tmpSrc
-            matrix.mapRect(&tmpDst, tmpSrc);
-            if (!tmpDst.isFinite()) {
-                return;
-            }
-        }
-    }
-
-    auto [ imageToDraw, newSampling ] = skgpu::graphite::GetGraphiteBacked(this->recorder(),
-                                                                           image, sampling);
-    if (!imageToDraw) {
-        SKGPU_LOG_W("Device::drawImageRect: Creation of Graphite-backed image failed");
-        return;
-    }
-
-    SkPaint paintWithShader(paint);
-    if (!create_img_shader_paint(std::move(imageToDraw), tmpSrc, newSampling,
-                                 &matrix, &paintWithShader)) {
-        return;
-    }
-
-    this->drawRect(tmpDst, paintWithShader);
+    SkCanvas::ImageSetEntry single{sk_ref_sp(image),
+                                   src ? *src : SkRect::Make(image->bounds()),
+                                   dst,
+                                   /*alpha=*/1.f,
+                                   SkCanvas::kAll_QuadAAFlags};
+    this->drawEdgeAAImageSet(&single, 1, nullptr, nullptr, sampling, paint, constraint);
 }
 
 void Device::onDrawGlyphRunList(SkCanvas* canvas,
@@ -1192,11 +1214,15 @@ sk_sp<SkSpecialImage> Device::snapSpecial(const SkIRect& subset, bool forceCopy)
     this->flushPendingWorkToRecorder();
 
     SkIRect finalSubset = subset;
-    TextureProxyView view = fDC->readSurfaceView(fRecorder->priv().caps());
-    if (forceCopy || !view) {
-        // TODO: fill this in. 'forceCopy' is only true for backdrop saveLayers. A non-readable
-        // surface view could happen any time though.
-        return nullptr;
+    TextureProxyView view = this->readSurfaceView();
+    if (forceCopy || !view || view.proxy()->isFullyLazy()) {
+        // TODO: this doesn't address the non-readable surface view case, in which view is empty and
+        // createCopy will return an empty view as well.
+        view = this->createCopy(&subset, Mipmapped::kNo);
+        if (!view) {
+            return nullptr;
+        }
+        finalSubset = SkIRect::MakeWH(view.width(), view.height());
     }
 
     return SkSpecialImage::MakeGraphite(fRecorder,

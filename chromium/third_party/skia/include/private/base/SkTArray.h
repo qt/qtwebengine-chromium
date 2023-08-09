@@ -27,37 +27,35 @@
 #include <new>
 #include <utility>
 
-/** SkTArray<T> implements a typical, mostly std::vector-like array.
+namespace skia_private {
+/** TArray<T> implements a typical, mostly std::vector-like array.
     Each T will be default-initialized on allocation, and ~T will be called on destruction.
 
     MEM_MOVE controls the behavior when a T needs to be moved (e.g. when the array is resized)
       - true: T will be bit-copied via memcpy.
       - false: T will be moved via move-constructors.
-
-    Modern implementations of std::vector<T> will generally provide similar performance
-    characteristics when used with appropriate care. Consider using std::vector<T> in new code.
 */
-template <typename T, bool MEM_MOVE = sk_is_trivially_relocatable_v<T>> class SkTArray {
+template <typename T, bool MEM_MOVE = sk_is_trivially_relocatable_v<T>> class TArray {
 public:
     using value_type = T;
 
     /**
      * Creates an empty array with no initial storage
      */
-    SkTArray() : fOwnMemory(true), fCapacity{0} {}
+    TArray() : fOwnMemory(true), fCapacity{0} {}
 
     /**
      * Creates an empty array that will preallocate space for reserveCount
      * elements.
      */
-    explicit SkTArray(int reserveCount) : SkTArray() { this->reserve_back(reserveCount); }
+    explicit TArray(int reserveCount) : TArray() { this->reserve_back(reserveCount); }
 
     /**
      * Copies one array to another. The new array will be heap allocated.
      */
-    SkTArray(const SkTArray& that) : SkTArray(that.fData, that.fSize) {}
+    TArray(const TArray& that) : TArray(that.fData, that.fSize) {}
 
-    SkTArray(SkTArray&& that) {
+    TArray(TArray&& that) {
         if (that.fOwnMemory) {
             this->setData(that);
             that.setData({});
@@ -69,21 +67,21 @@ public:
     }
 
     /**
-     * Creates a SkTArray by copying contents of a standard C array. The new
+     * Creates a TArray by copying contents of a standard C array. The new
      * array will be heap allocated. Be careful not to use this constructor
      * when you really want the (void*, int) version.
      */
-    SkTArray(const T* array, int count) {
+    TArray(const T* array, int count) {
         this->initData(count);
         this->copy(array);
     }
 
     /**
-     * Creates a SkTArray by copying contents of an initializer list.
+     * Creates a TArray by copying contents of an initializer list.
      */
-    SkTArray(std::initializer_list<T> data) : SkTArray(data.begin(), data.size()) {}
+    TArray(std::initializer_list<T> data) : TArray(data.begin(), data.size()) {}
 
-    SkTArray& operator=(const SkTArray& that) {
+    TArray& operator=(const TArray& that) {
         if (this == &that) {
             return *this;
         }
@@ -93,7 +91,7 @@ public:
         this->copy(that.fData);
         return *this;
     }
-    SkTArray& operator=(SkTArray&& that) {
+    TArray& operator=(TArray&& that) {
         if (this != &that) {
             this->clear();
             if (that.fOwnMemory) {
@@ -119,7 +117,7 @@ public:
         return *this;
     }
 
-    ~SkTArray() {
+    ~TArray() {
         this->destroyAll();
         if (fOwnMemory) {
             sk_free(fData);
@@ -313,7 +311,7 @@ public:
 
     /** Swaps the contents of this array with that array. Does a pointer swap if possible,
         otherwise copies the T values. */
-    void swap(SkTArray& that) {
+    void swap(TArray& that) {
         using std::swap;
         if (this == &that) {
             return;
@@ -328,7 +326,7 @@ public:
             that.fCapacity = allocCount;
         } else {
             // This could be more optimal...
-            SkTArray copy(std::move(that));
+            TArray copy(std::move(that));
             that = std::move(*this);
             *this = std::move(copy);
         }
@@ -431,7 +429,7 @@ public:
         return fData[fSize - i - 1];
     }
 
-    bool operator==(const SkTArray<T, MEM_MOVE>& right) const {
+    bool operator==(const TArray<T, MEM_MOVE>& right) const {
         int leftCount = this->size();
         if (leftCount != right.size()) {
             return false;
@@ -444,7 +442,7 @@ public:
         return true;
     }
 
-    bool operator!=(const SkTArray<T, MEM_MOVE>& right) const {
+    bool operator!=(const TArray<T, MEM_MOVE>& right) const {
         return !(*this == right);
     }
 
@@ -456,7 +454,7 @@ protected:
     // Creates an empty array that will use the passed storage block until it is insufficiently
     // large to hold the entire array.
     template <int InitialCapacity>
-    SkTArray(SkAlignedSTStorage<InitialCapacity, T>* storage, int size = 0) {
+    TArray(SkAlignedSTStorage<InitialCapacity, T>* storage, int size = 0) {
         static_assert(InitialCapacity >= 0);
         SkASSERT(size >= 0);
         SkASSERT(storage->get() != nullptr);
@@ -475,8 +473,8 @@ protected:
     // Copy a C array, using pre-allocated storage if preAllocCount >= count. Otherwise, storage
     // will only be used when array shrinks to fit.
     template <int InitialCapacity>
-    SkTArray(const T* array, int size, SkAlignedSTStorage<InitialCapacity, T>* storage)
-        : SkTArray{storage, size}
+    TArray(const T* array, int size, SkAlignedSTStorage<InitialCapacity, T>* storage)
+        : TArray{storage, size}
     {
         this->copy(array);
     }
@@ -513,10 +511,10 @@ private:
     // CFI flags this code as dangerous because we are casting `buffer` to a T* while the buffer's
     // contents might still be uninitialized memory. When T has a vtable, this is especially risky
     // because we could hypothetically access a virtual method on fItemArray and jump to an
-    // unpredictable location in memory. Of course, SkTArray won't actually use fItemArray in this
+    // unpredictable location in memory. Of course, TArray won't actually use fItemArray in this
     // way, and we don't want to construct a T before the user requests one. There's no real risk
     // here, so disable CFI when doing these casts.
-    SK_NO_SANITIZE("cfi")
+    SK_CLANG_NO_SANITIZE("cfi")
     static T* TCast(void* buffer) {
         return (T*)buffer;
     }
@@ -630,59 +628,67 @@ private:
     uint32_t fCapacity : 31;
 };
 
-template <typename T, bool M> static inline void swap(SkTArray<T, M>& a, SkTArray<T, M>& b) {
+template <typename T, bool M> static inline void swap(TArray<T, M>& a, TArray<T, M>& b) {
     a.swap(b);
 }
 
-/**
- * Subclass of SkTArray that contains a preallocated memory block for the array.
- */
+// Subclass of TArray that contains a pre-allocated memory block for the array.
 template <int N, typename T, bool MEM_MOVE = sk_is_trivially_relocatable_v<T>>
-class SkSTArray : private SkAlignedSTStorage<N,T>, public SkTArray<T, MEM_MOVE> {
-private:
+class STArray : private SkAlignedSTStorage<N,T>, public TArray<T, MEM_MOVE> {
     static_assert(N > 0);
-    using STORAGE   = SkAlignedSTStorage<N,T>;
-    using INHERITED = SkTArray<T, MEM_MOVE>;
+    using Storage = SkAlignedSTStorage<N,T>;
 
 public:
-    SkSTArray()
-        : STORAGE{}, INHERITED(static_cast<STORAGE*>(this)) {}
+    STArray()
+        : Storage{}
+        , TArray<T, MEM_MOVE>(this) {}  // Must use () to avoid confusion with initializer_list
+                                        // when T=bool because * are convertable to bool.
 
-    SkSTArray(const T* array, int count)
-        : STORAGE{}, INHERITED(array, count, static_cast<STORAGE*>(this)) {}
+    STArray(const T* array, int count)
+        : Storage{}
+        , TArray<T, MEM_MOVE>{array, count, this} {}
 
-    SkSTArray(std::initializer_list<T> data) : SkSTArray(data.begin(), SkToInt(data.size())) {}
+    STArray(std::initializer_list<T> data)
+        : STArray{data.begin(), SkToInt(data.size())} {}
 
-    explicit SkSTArray(int reserveCount) : SkSTArray() {
-        this->reserve_back(reserveCount);
-    }
+    explicit STArray(int reserveCount)
+        : STArray() { this->reserve_back(reserveCount); }
 
-    SkSTArray         (const SkSTArray&  that) : SkSTArray() { *this = that; }
-    explicit SkSTArray(const INHERITED&  that) : SkSTArray() { *this = that; }
-    SkSTArray         (      SkSTArray&& that) : SkSTArray() { *this = std::move(that); }
-    explicit SkSTArray(      INHERITED&& that) : SkSTArray() { *this = std::move(that); }
+    STArray(const STArray& that)
+        : STArray() { *this = that; }
 
-    SkSTArray& operator=(const SkSTArray& that) {
-        INHERITED::operator=(that);
-        return *this;
-    }
-    SkSTArray& operator=(const INHERITED& that) {
-        INHERITED::operator=(that);
-        return *this;
-    }
+    explicit STArray(const TArray<T, MEM_MOVE>& that)
+        : STArray() { *this = that; }
 
-    SkSTArray& operator=(SkSTArray&& that) {
-        INHERITED::operator=(std::move(that));
-        return *this;
-    }
-    SkSTArray& operator=(INHERITED&& that) {
-        INHERITED::operator=(std::move(that));
+    STArray(STArray&& that)
+        : STArray() { *this = std::move(that); }
+
+    explicit STArray(TArray<T, MEM_MOVE>&& that)
+        : STArray() { *this = std::move(that); }
+
+    STArray& operator=(const STArray& that) {
+        TArray<T, MEM_MOVE>::operator=(that);
         return *this;
     }
 
-    // Force the use of SkTArray for data() and size().
-    using INHERITED::data;
-    using INHERITED::size;
+    STArray& operator=(const TArray<T, MEM_MOVE>& that) {
+        TArray<T, MEM_MOVE>::operator=(that);
+        return *this;
+    }
+
+    STArray& operator=(STArray&& that) {
+        TArray<T, MEM_MOVE>::operator=(std::move(that));
+        return *this;
+    }
+
+    STArray& operator=(TArray<T, MEM_MOVE>&& that) {
+        TArray<T, MEM_MOVE>::operator=(std::move(that));
+        return *this;
+    }
+
+    // Force the use of TArray for data() and size().
+    using TArray<T, MEM_MOVE>::data;
+    using TArray<T, MEM_MOVE>::size;
 };
-
-#endif
+}  // namespace skia_private
+#endif  // SkTArray_DEFINED

@@ -18,7 +18,7 @@ namespace cast {
 
 namespace {
 
-EnumNameTable<SenderMessage::Type, 4> kMessageTypeNames{
+EnumNameTable<SenderMessage::Type, 3> kMessageTypeNames{
     {{kMessageTypeOffer, SenderMessage::Type::kOffer},
      {"GET_CAPABILITIES", SenderMessage::Type::kGetCapabilities},
      {"RPC", SenderMessage::Type::kRpc}}};

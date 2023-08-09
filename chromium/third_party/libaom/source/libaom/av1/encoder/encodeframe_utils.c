@@ -63,6 +63,25 @@ void av1_set_ssim_rdmult(const AV1_COMP *const cpi, int *errorperbit,
   av1_set_error_per_bit(errorperbit, *rdmult);
 }
 
+#if CONFIG_SALIENCY_MAP
+void av1_set_saliency_map_vmaf_rdmult(const AV1_COMP *const cpi,
+                                      int *errorperbit, const BLOCK_SIZE bsize,
+                                      const int mi_row, const int mi_col,
+                                      int *const rdmult) {
+  const AV1_COMMON *const cm = &cpi->common;
+  const int num_mi_w = mi_size_wide[bsize];
+  const int num_mi_h = mi_size_high[bsize];
+  const int num_cols = (cm->mi_params.mi_cols + num_mi_w - 1) / num_mi_w;
+
+  *rdmult =
+      (int)(*rdmult * cpi->sm_scaling_factor[(mi_row / num_mi_h) * num_cols +
+                                             (mi_col / num_mi_w)]);
+
+  *rdmult = AOMMAX(*rdmult, 0);
+  av1_set_error_per_bit(errorperbit, *rdmult);
+}
+#endif
+
 // TODO(angiebird): Move these function to tpl_model.c
 #if !CONFIG_REALTIME_ONLY
 // Return the end column for the current superblock, in unit of TPL blocks.

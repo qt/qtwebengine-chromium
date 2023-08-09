@@ -938,10 +938,11 @@ static AOM_INLINE void search_sgrproj(const RestorationTileLimits *limits,
   if (cost_sgr < cost_none) rsc->sgrproj = rusi->sgrproj;
 }
 
-void acc_stat_one_line(const uint8_t *dgd, const uint8_t *src, int dgd_stride,
-                       int h_start, int h_end, uint8_t avg,
-                       const int wiener_halfwin, const int wiener_win2,
-                       int32_t *M_int32, int32_t *H_int32, int count) {
+static void acc_stat_one_line(const uint8_t *dgd, const uint8_t *src,
+                              int dgd_stride, int h_start, int h_end,
+                              uint8_t avg, const int wiener_halfwin,
+                              const int wiener_win2, int32_t *M_int32,
+                              int32_t *H_int32, int count) {
   int j, k, l;
   int16_t Y[WIENER_WIN2];
 
@@ -1096,15 +1097,41 @@ static int linsolve_wiener(int n, int64_t *A, int stride, int64_t *b,
         b[i - 1] = c;
       }
     }
+
+    // b/278065963: The multiplies
+    //   c / 256 * A[k * stride + j] / cd * 256
+    // and
+    //   c / 256 * b[k] / cd * 256
+    // within Gaussian elimination can cause a signed integer overflow. Rework
+    // the multiplies so that larger scaling is used without significantly
+    // impacting the overall precision.
+    //
+    // Precision guidance:
+    //   scale_threshold: Pick as high as possible.
+    // For max_abs_akj >= scale_threshold scenario:
+    //   scaler_A: Pick as low as possible. Needed for A[(i + 1) * stride + j].
+    //   scaler_c: Pick as low as possible while maintaining scaler_c >=
+    //     (1 << 7). Needed for A[(i + 1) * stride + j] and b[i + 1].
+    int64_t max_abs_akj = 0;
+    for (int j = 0; j < n; j++) {
+      const int64_t abs_akj = llabs(A[k * stride + j]);
+      if (abs_akj > max_abs_akj) max_abs_akj = abs_akj;
+    }
+    const int scale_threshold = 1 << 22;
+    const int scaler_A = max_abs_akj < scale_threshold ? 1 : (1 << 4);
+    const int scaler_c = max_abs_akj < scale_threshold ? 1 : (1 << 7);
+    const int scaler = scaler_c * scaler_A;
+
     // Forward elimination (convert A to row-echelon form)
     for (int i = k; i < n - 1; i++) {
       if (A[k * stride + k] == 0) return 0;
-      const int64_t c = A[(i + 1) * stride + k];
+      const int64_t c = A[(i + 1) * stride + k] / scaler_c;
       const int64_t cd = A[k * stride + k];
       for (int j = 0; j < n; j++) {
-        A[(i + 1) * stride + j] -= c / 256 * A[k * stride + j] / cd * 256;
+        A[(i + 1) * stride + j] -=
+            A[k * stride + j] / scaler_A * c / cd * scaler;
       }
-      b[i + 1] -= c / 256 * b[k] / cd * 256;
+      b[i + 1] -= c * b[k] / cd * scaler_c;
     }
   }
   // Back-substitution
@@ -1137,16 +1164,28 @@ static AOM_INLINE void update_a_sep_sym(int wiener_win, int64_t **Mc,
       A[jj] += Mc[i][j] * b[i] / WIENER_TAP_SCALE_FACTOR;
     }
   }
+
+  // b/274668506: This is the dual branch for the issue in b/272139363. The fix
+  // is similar. See comments in update_b_sep_sym() below.
+  int32_t max_b_l = 0;
+  for (int l = 0; l < wiener_win; ++l) {
+    const int32_t abs_b_l = abs(b[l]);
+    if (abs_b_l > max_b_l) max_b_l = abs_b_l;
+  }
+  const int scale_threshold = 128 * WIENER_TAP_SCALE_FACTOR;
+  const int scaler = max_b_l < scale_threshold ? 1 : 4;
+
   for (i = 0; i < wiener_win; i++) {
     for (j = 0; j < wiener_win; j++) {
       int k, l;
       for (k = 0; k < wiener_win; ++k) {
+        const int kk = wrap_index(k, wiener_win);
         for (l = 0; l < wiener_win; ++l) {
-          const int kk = wrap_index(k, wiener_win);
           const int ll = wrap_index(l, wiener_win);
           B[ll * wiener_halfwin1 + kk] +=
               Hc[j * wiener_win + i][k * wiener_win2 + l] * b[i] /
-              WIENER_TAP_SCALE_FACTOR * b[j] / WIENER_TAP_SCALE_FACTOR;
+              (scaler * WIENER_TAP_SCALE_FACTOR) * b[j] /
+              (WIENER_TAP_SCALE_FACTOR / scaler);
         }
       }
     }
@@ -1197,16 +1236,43 @@ static AOM_INLINE void update_b_sep_sym(int wiener_win, int64_t **Mc,
     }
   }
 
+  // b/272139363: The computation,
+  //   Hc[i * wiener_win + j][k * wiener_win2 + l] * a[k] /
+  //          WIENER_TAP_SCALE_FACTOR * a[l] / WIENER_TAP_SCALE_FACTOR;
+  // may generate a signed-integer-overflow. Conditionally scale the terms to
+  // avoid a potential overflow.
+  //
+  // Hc contains accumulated correlation statistics and it is desired to leave
+  // as much room as possible for Hc. It was experimentally observed that the
+  // primary issue manifests itself with the second, a[l], multiply. For
+  // max_a_l < WIENER_TAP_SCALE_FACTOR the first multiply with a[k] should not
+  // increase dynamic range and the second multiply should hence be safe.
+  // Thereafter a safe scale_threshold depends on the actual operational range
+  // of Hc. The largest scale_threshold is expected to depend on bit-depth
+  // (av1_compute_stats_highbd_c() scales highbd to 8-bit) and maximum
+  // restoration-unit size (256), leading up to 32-bit positive numbers in Hc.
+  // Noting that the caller, wiener_decompose_sep_sym(), initializes a[...]
+  // to a range smaller than 16 bits, the scale_threshold is set as below for
+  // convenience.
+  int32_t max_a_l = 0;
+  for (int l = 0; l < wiener_win; ++l) {
+    const int32_t abs_a_l = abs(a[l]);
+    if (abs_a_l > max_a_l) max_a_l = abs_a_l;
+  }
+  const int scale_threshold = 128 * WIENER_TAP_SCALE_FACTOR;
+  const int scaler = max_a_l < scale_threshold ? 1 : 4;
+
   for (i = 0; i < wiener_win; i++) {
+    const int ii = wrap_index(i, wiener_win);
     for (j = 0; j < wiener_win; j++) {
-      const int ii = wrap_index(i, wiener_win);
       const int jj = wrap_index(j, wiener_win);
       int k, l;
       for (k = 0; k < wiener_win; ++k) {
         for (l = 0; l < wiener_win; ++l) {
           B[jj * wiener_halfwin1 + ii] +=
               Hc[i * wiener_win + j][k * wiener_win2 + l] * a[k] /
-              WIENER_TAP_SCALE_FACTOR * a[l] / WIENER_TAP_SCALE_FACTOR;
+              (scaler * WIENER_TAP_SCALE_FACTOR) * a[l] /
+              (WIENER_TAP_SCALE_FACTOR / scaler);
         }
       }
     }

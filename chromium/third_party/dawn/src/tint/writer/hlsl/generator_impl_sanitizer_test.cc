@@ -39,7 +39,7 @@ TEST_F(HlslSanitizerTest, Call_ArrayLength) {
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
 
     auto got = gen.result();
     auto* expect = R"(ByteAddressBuffer b : register(t1, space2);
@@ -73,7 +73,7 @@ TEST_F(HlslSanitizerTest, Call_ArrayLength_OtherMembersInStruct) {
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
 
     auto got = gen.result();
     auto* expect = R"(ByteAddressBuffer b : register(t1, space2);
@@ -110,7 +110,7 @@ TEST_F(HlslSanitizerTest, Call_ArrayLength_ViaLets) {
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
 
     auto got = gen.result();
     auto* expect = R"(ByteAddressBuffer b : register(t1, space2);
@@ -149,7 +149,7 @@ TEST_F(HlslSanitizerTest, Call_ArrayLength_ArrayLengthFromUniform) {
     options.array_length_from_uniform.bindpoint_to_size_index.emplace(sem::BindingPoint{2, 2}, 7u);
     GeneratorImpl& gen = SanitizeAndBuild(options);
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
 
     auto got = gen.result();
     auto* expect = R"(cbuffer cbuffer_tint_symbol_1 : register(b4, space3) {
@@ -159,10 +159,10 @@ ByteAddressBuffer b : register(t1, space2);
 ByteAddressBuffer c : register(t2, space2);
 
 void a_func() {
-  uint tint_symbol_4 = 0u;
-  b.GetDimensions(tint_symbol_4);
-  const uint tint_symbol_5 = ((tint_symbol_4 - 0u) / 4u);
-  uint len = (tint_symbol_5 + ((tint_symbol_1[1].w - 0u) / 4u));
+  uint tint_symbol_3 = 0u;
+  b.GetDimensions(tint_symbol_3);
+  const uint tint_symbol_4 = ((tint_symbol_3 - 0u) / 4u);
+  uint len = (tint_symbol_4 + ((tint_symbol_1[1].w - 0u) / 4u));
   return;
 }
 )";
@@ -183,7 +183,7 @@ TEST_F(HlslSanitizerTest, PromoteArrayInitializerToConstVar) {
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
 
     auto got = gen.result();
     auto* expect = R"(void main() {
@@ -218,7 +218,7 @@ TEST_F(HlslSanitizerTest, PromoteStructInitializerToConstVar) {
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
 
     auto got = gen.result();
     auto* expect = R"(struct S {
@@ -237,7 +237,7 @@ void main() {
     EXPECT_EQ(expect, got);
 }
 
-TEST_F(HlslSanitizerTest, InlinePtrLetsBasic) {
+TEST_F(HlslSanitizerTest, SimplifyPointersBasic) {
     // var v : i32;
     // let p : ptr<function, i32> = &v;
     // let x : i32 = *p;
@@ -257,7 +257,7 @@ TEST_F(HlslSanitizerTest, InlinePtrLetsBasic) {
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
 
     auto got = gen.result();
     auto* expect = R"(void main() {
@@ -269,7 +269,7 @@ TEST_F(HlslSanitizerTest, InlinePtrLetsBasic) {
     EXPECT_EQ(expect, got);
 }
 
-TEST_F(HlslSanitizerTest, InlinePtrLetsComplexChain) {
+TEST_F(HlslSanitizerTest, SimplifyPointersComplexChain) {
     // var a : array<mat4x4<f32>, 4u>;
     // let ap : ptr<function, array<mat4x4<f32>, 4u>> = &a;
     // let mp : ptr<function, mat4x4<f32>> = &(*ap)[3i];
@@ -299,7 +299,7 @@ TEST_F(HlslSanitizerTest, InlinePtrLetsComplexChain) {
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
 
     auto got = gen.result();
     auto* expect = R"(void main() {

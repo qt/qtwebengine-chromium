@@ -11,17 +11,17 @@
 #include "include/core/SkTypes.h"
 #include "include/private/SkSLDefines.h"
 #include "include/private/base/SkTArray.h"
-#include "include/sksl/DSLCore.h"
-#include "include/sksl/DSLExpression.h"
-#include "include/sksl/DSLLayout.h"
-#include "include/sksl/DSLModifiers.h"
-#include "include/sksl/DSLStatement.h"
-#include "include/sksl/DSLType.h"
-#include "include/sksl/SkSLErrorReporter.h"
-#include "include/sksl/SkSLOperator.h"
-#include "include/sksl/SkSLPosition.h"
+#include "src/sksl/SkSLErrorReporter.h"
 #include "src/sksl/SkSLLexer.h"
+#include "src/sksl/SkSLOperator.h"
+#include "src/sksl/SkSLPosition.h"
 #include "src/sksl/SkSLProgramSettings.h"
+#include "src/sksl/dsl/DSLCore.h"
+#include "src/sksl/dsl/DSLExpression.h"
+#include "src/sksl/dsl/DSLLayout.h"
+#include "src/sksl/dsl/DSLModifiers.h"
+#include "src/sksl/dsl/DSLStatement.h"
+#include "src/sksl/dsl/DSLType.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -169,8 +169,8 @@ private:
 
     dsl::DSLType structDeclaration();
 
-    SkTArray<dsl::DSLGlobalVar> structVarDeclaration(Position start,
-                                                     const dsl::DSLModifiers& modifiers);
+    skia_private::TArray<dsl::DSLGlobalVar> structVarDeclaration(
+            Position start, const dsl::DSLModifiers& modifiers);
 
     bool allowUnsizedArrays() {
         return ProgramConfig::IsCompute(fKind) || ProgramConfig::IsFragment(fKind) ||
@@ -334,7 +334,7 @@ private:
                 Position fPos;
             };
 
-            SkTArray<Error> fErrors;
+            skia_private::TArray<Error> fErrors;
         };
 
         void restoreErrorReporter() {

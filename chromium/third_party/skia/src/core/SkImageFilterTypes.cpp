@@ -9,6 +9,7 @@
 
 #include "src/core/SkImageFilter_Base.h"
 #include "src/core/SkMatrixPriv.h"
+#include "src/core/SkRectPriv.h"
 
 // This exists to cover up issues where infinite precision would produce integers but float
 // math produces values just larger/smaller than an int and roundOut/In on bounds would produce
@@ -241,16 +242,18 @@ FilterResult FilterResult::applyCrop(const Context& ctx,
         return {};
     }
 
-    if (crop.contains(fLayerBounds)) {
-        // The original crop does not affect the image (although the context's desired output might)
-        // We can tighten fLayerBounds to the desired output without resolving the image, regardless
-        // of the transform type.
-        // TODO(michaelludwig): If the crop would use mirror or repeat, the above isn't true.
-        FilterResult restrictedOutput = *this;
-        SkAssertResult(restrictedOutput.fLayerBounds.intersect(ctx.desiredOutput()));
-        return restrictedOutput;
-    } else {
+    if (is_nearly_integer_translation(fTransform)) {
+        // We can lift the crop to earlier in the order of operations and apply it to the image
+        // subset directly, which is handled inside this resolve() call.
         return this->resolve(tightBounds);
+    } else {
+        // Otherwise cropping is the final operation to the FilterResult's image and can always be
+        // applied by adjusting the layer bounds.
+        FilterResult restrictedOutput = *this;
+        if (!restrictedOutput.fLayerBounds.intersect(tightBounds)) {
+            return {};
+        }
+        return restrictedOutput;
     }
 }
 
@@ -269,6 +272,13 @@ static bool compatible_sampling(const SkSamplingOptions& currentSampling,
         // Assume we can get away with one sampling at the highest anisotropy level
         *nextSampling =  SkSamplingOptions::Aniso(std::max(currentSampling.maxAniso,
                                                            nextSampling->maxAniso));
+        return true;
+    } else if (currentSampling.isAniso() && nextSampling->filter == SkFilterMode::kLinear) {
+        // Assume we can get away with the current anisotropic filter since the next is linear
+        *nextSampling = currentSampling;
+        return true;
+    } else if (nextSampling->isAniso() && currentSampling.filter == SkFilterMode::kLinear) {
+        // Mirror of the above, assume we can just get away with next's anisotropic filter
         return true;
     } else if (currentSampling.useCubic && (nextSampling->filter == SkFilterMode::kLinear ||
                                             (nextSampling->useCubic &&
@@ -319,9 +329,24 @@ FilterResult FilterResult::applyTransform(const Context& ctx,
     SkASSERT(!currentXformIsInteger || fSamplingOptions == kDefaultSampling);
     SkSamplingOptions nextSampling = nextXformIsInteger ? kDefaultSampling : sampling;
 
+    // Determine if the image is being visibly cropped by the layer bounds, in which case we can't
+    // merge this transform with any previous transform (unless the new transform is an integer
+    // translation).
+    bool isCropped = false;
+    if (!nextXformIsInteger) {
+        LayerSpace<SkIRect> imageBounds = fTransform.mapRect(
+                    LayerSpace<SkIRect>{SkIRect::MakeWH(fImage->width(), fImage->height())});
+        if (!fLayerBounds.contains(imageBounds)) {
+            // Layer bounds restricts the mapped image, but it may not be visible.
+            isCropped = !SkRectPriv::QuadContainsRect(SkMatrix(transform),
+                                                      SkIRect(fLayerBounds),
+                                                      SkIRect(ctx.desiredOutput()));
+        }
+    }
+
     FilterResult transformed;
-    if (compatible_sampling(fSamplingOptions, currentXformIsInteger,
-                            &nextSampling, nextXformIsInteger)) {
+    if (!isCropped && compatible_sampling(fSamplingOptions, currentXformIsInteger,
+                                          &nextSampling, nextXformIsInteger)) {
         // We can concat transforms and 'nextSampling' will be either fSamplingOptions,
         // sampling, or a merged combination depending on the two transforms in play.
         transformed = *this;
@@ -329,37 +354,26 @@ FilterResult FilterResult::applyTransform(const Context& ctx,
         // We'll have to resolve this FilterResult first before 'transform' and 'sampling' can be
         // correctly evaluated. 'nextSampling' will always be 'sampling'.
         transformed = this->resolve(fLayerBounds);
+        if (!transformed.fImage) {
+            // Resolve failed to create an image, so don't bother update metadata
+            return {};
+        }
     }
 
-    transformed.concatTransform(transform, nextSampling, ctx.desiredOutput());
-    if (transformed.layerBounds().isEmpty()) {
-        return {};
-    } else {
-        return transformed;
-    }
-}
-
-void FilterResult::concatTransform(const LayerSpace<SkMatrix>& transform,
-                                   const SkSamplingOptions& newSampling,
-                                   const LayerSpace<SkIRect>& desiredOutput) {
-    if (!fImage) {
-        // Under normal circumstances, concatTransform() will only be called when we have an image,
-        // but if resolve() fails to make a special surface, we may end up here at which point
-        // doing nothing further is appropriate.
-        return;
-    }
-    fSamplingOptions = newSampling;
-    fTransform.postConcat(transform);
+    transformed.fSamplingOptions = nextSampling;
+    transformed.fTransform.postConcat(transform);
     // Rebuild the layer bounds and then restrict to the current desired output. The original value
     // of fLayerBounds includes the image mapped by the original fTransform as well as any
     // accumulated soft crops from desired outputs of prior stages. To prevent discarding that info,
     // we map fLayerBounds by the additional transform, instead of re-mapping the image bounds.
-    fLayerBounds = transform.mapRect(fLayerBounds);
-    if (!fLayerBounds.intersect(desiredOutput)) {
+    transformed.fLayerBounds = transform.mapRect(transformed.fLayerBounds);
+    if (!transformed.fLayerBounds.intersect(ctx.desiredOutput())) {
         // The transformed output doesn't touch the desired, so it would just be transparent black.
         // TODO: This intersection only applies when the tile mode is kDecal.
-        fLayerBounds = LayerSpace<SkIRect>::Empty();
+        return {};
     }
+
+    return transformed;
 }
 
 std::pair<sk_sp<SkSpecialImage>, LayerSpace<SkIPoint>> FilterResult::resolve(

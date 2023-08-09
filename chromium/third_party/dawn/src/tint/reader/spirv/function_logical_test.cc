@@ -16,6 +16,7 @@
 #include "src/tint/reader/spirv/function.h"
 #include "src/tint/reader/spirv/parser_impl_test_helper.h"
 #include "src/tint/reader/spirv/spirv_tools_helpers_test.h"
+#include "src/tint/utils/string_stream.h"
 
 namespace tint::reader::spirv {
 namespace {
@@ -188,7 +189,7 @@ TEST_P(SpvBinaryLogicalTest, EmitExpression) {
     ASSERT_TRUE(p->BuildAndParseInternalModuleExceptFunctions()) << p->error() << "\n" << assembly;
     auto fe = p->function_emitter(100);
     EXPECT_TRUE(fe.EmitBody()) << p->error();
-    std::ostringstream ss;
+    utils::StringStream ss;
     ss << "let x_1 : " << GetParam().ast_type << " = (" << GetParam().ast_lhs << " "
        << GetParam().ast_op << " " << GetParam().ast_rhs << ");";
     auto ast_body = fe.ast_body();
@@ -531,9 +532,10 @@ TEST_F(SpvFUnordTest, FUnordEqual_Vector) {
     auto fe = p->function_emitter(100);
     EXPECT_TRUE(fe.EmitBody()) << p->error();
     auto ast_body = fe.ast_body();
-    EXPECT_THAT(test::ToString(p->program(), ast_body),
-                HasSubstr("let x_1 : vec2<bool> = "
-                          "!((vec2<f32>(50.0f, 60.0f) != vec2<f32>(60.0f, 50.0f)));"));
+    EXPECT_THAT(
+        test::ToString(p->program(), ast_body),
+        HasSubstr(
+            "let x_1 : vec2<bool> = !((vec2<f32>(50.0f, 60.0f) != vec2<f32>(60.0f, 50.0f)));"));
 }
 
 TEST_F(SpvFUnordTest, FUnordNotEqual_Scalar) {
@@ -566,9 +568,10 @@ TEST_F(SpvFUnordTest, FUnordNotEqual_Vector) {
     auto fe = p->function_emitter(100);
     EXPECT_TRUE(fe.EmitBody()) << p->error();
     auto ast_body = fe.ast_body();
-    EXPECT_THAT(test::ToString(p->program(), ast_body),
-                HasSubstr("let x_1 : vec2<bool> = "
-                          "!((vec2<f32>(50.0f, 60.0f) == vec2<f32>(60.0f, 50.0f)));"));
+    EXPECT_THAT(
+        test::ToString(p->program(), ast_body),
+        HasSubstr(
+            "let x_1 : vec2<bool> = !((vec2<f32>(50.0f, 60.0f) == vec2<f32>(60.0f, 50.0f)));"));
 }
 
 TEST_F(SpvFUnordTest, FUnordLessThan_Scalar) {
@@ -601,9 +604,10 @@ TEST_F(SpvFUnordTest, FUnordLessThan_Vector) {
     auto fe = p->function_emitter(100);
     EXPECT_TRUE(fe.EmitBody()) << p->error();
     auto ast_body = fe.ast_body();
-    EXPECT_THAT(test::ToString(p->program(), ast_body),
-                HasSubstr("let x_1 : vec2<bool> = "
-                          "!((vec2<f32>(50.0f, 60.0f) >= vec2<f32>(60.0f, 50.0f)));"));
+    EXPECT_THAT(
+        test::ToString(p->program(), ast_body),
+        HasSubstr(
+            "let x_1 : vec2<bool> = !((vec2<f32>(50.0f, 60.0f) >= vec2<f32>(60.0f, 50.0f)));"));
 }
 
 TEST_F(SpvFUnordTest, FUnordLessThanEqual_Scalar) {
@@ -636,9 +640,10 @@ TEST_F(SpvFUnordTest, FUnordLessThanEqual_Vector) {
     auto fe = p->function_emitter(100);
     EXPECT_TRUE(fe.EmitBody()) << p->error();
     auto ast_body = fe.ast_body();
-    EXPECT_THAT(test::ToString(p->program(), ast_body),
-                HasSubstr("let x_1 : vec2<bool> = "
-                          "!((vec2<f32>(50.0f, 60.0f) > vec2<f32>(60.0f, 50.0f)));"));
+    EXPECT_THAT(
+        test::ToString(p->program(), ast_body),
+        HasSubstr(
+            "let x_1 : vec2<bool> = !((vec2<f32>(50.0f, 60.0f) > vec2<f32>(60.0f, 50.0f)));"));
 }
 
 TEST_F(SpvFUnordTest, FUnordGreaterThan_Scalar) {
@@ -671,9 +676,10 @@ TEST_F(SpvFUnordTest, FUnordGreaterThan_Vector) {
     auto fe = p->function_emitter(100);
     EXPECT_TRUE(fe.EmitBody()) << p->error();
     auto ast_body = fe.ast_body();
-    EXPECT_THAT(test::ToString(p->program(), ast_body),
-                HasSubstr("let x_1 : vec2<bool> = "
-                          "!((vec2<f32>(50.0f, 60.0f) <= vec2<f32>(60.0f, 50.0f)));"));
+    EXPECT_THAT(
+        test::ToString(p->program(), ast_body),
+        HasSubstr(
+            "let x_1 : vec2<bool> = !((vec2<f32>(50.0f, 60.0f) <= vec2<f32>(60.0f, 50.0f)));"));
 }
 
 TEST_F(SpvFUnordTest, FUnordGreaterThanEqual_Scalar) {
@@ -706,10 +712,10 @@ TEST_F(SpvFUnordTest, FUnordGreaterThanEqual_Vector) {
     auto fe = p->function_emitter(100);
     EXPECT_TRUE(fe.EmitBody()) << p->error();
     auto ast_body = fe.ast_body();
-    EXPECT_THAT(test::ToString(p->program(), ast_body),
-                HasSubstr("let x_1 : vec2<bool> = !(("
-                          "vec2<f32>(50.0f, 60.0f) < vec2<f32>(60.0f, 50.0f)"
-                          "));"));
+    EXPECT_THAT(
+        test::ToString(p->program(), ast_body),
+        HasSubstr(
+            "let x_1 : vec2<bool> = !((vec2<f32>(50.0f, 60.0f) < vec2<f32>(60.0f, 50.0f)));"));
 }
 
 using SpvLogicalTest = SpvParserTestBase<::testing::Test>;

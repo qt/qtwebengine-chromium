@@ -41,6 +41,7 @@ lucicfg.config(
         "sheriff-rotations/*.txt",
         "project.pyl",
         "testing/gn_isolate_map.pyl",
+        "testing/mixins.pyl",
     ],
     fail_on_warnings = True,
     lint_checks = [
@@ -199,6 +200,7 @@ luci.builder.defaults.test_presentation.set(resultdb.test_presentation(grouping_
 exec("//swarming.star")
 
 exec("//recipes.star")
+exec("//targets/mixins.star")
 exec("//targets/targets.star")
 
 exec("//notifiers.star")
@@ -219,6 +221,9 @@ branches.exec("//generators/cq-builders-md.star")
 
 exec("//generators/sort-consoles.star")
 
+# Execute validators after eveything except the outage file so that we're
+# validating the final non-outages configuration
+exec("//validators/builder-group-triggers.star")
 exec("//validators/builders-in-consoles.star")
 
 # Execute this file last so that any configuration changes needed for handling

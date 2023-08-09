@@ -5,20 +5,18 @@
 #ifndef V8_HEAP_MEMORY_CHUNK_LAYOUT_H_
 #define V8_HEAP_MEMORY_CHUNK_LAYOUT_H_
 
+#include "src/base/platform/mutex.h"
 #include "src/common/globals.h"
 #include "src/heap/base/active-system-pages.h"
 #include "src/heap/list.h"
+#include "src/heap/marking.h"
 #include "src/heap/progress-bar.h"
 #include "src/heap/slot-set.h"
-
-#ifdef V8_ENABLE_INNER_POINTER_RESOLUTION_OSB
-#include "src/heap/object-start-bitmap.h"
-#endif  // V8_ENABLE_INNER_POINTER_RESOLUTION_OSB
 
 namespace v8 {
 namespace internal {
 
-class Bitmap;
+class MarkingBitmap;
 class CodeObjectRegistry;
 class FreeListCategory;
 class Heap;
@@ -56,13 +54,14 @@ class V8_EXPORT_PRIVATE MemoryChunkLayout {
     FIELD(VirtualMemory, Reservation),
     // MemoryChunk fields:
     FIELD(SlotSet* [kNumSets], SlotSet),
-    FIELD(ProgressBar, ProgressBar),
-    FIELD(std::atomic<intptr_t>, LiveByteCount),
     FIELD(TypedSlotsSet* [kNumSets], TypedSlotSet),
     FIELD(void* [kNumSets], InvalidatedSlots),
+    FIELD(ProgressBar, ProgressBar),
+    FIELD(std::atomic<intptr_t>, LiveByteCount),
     FIELD(base::Mutex*, Mutex),
-    FIELD(std::atomic<intptr_t>, ConcurrentSweeping),
+    FIELD(base::SharedMutex*, SharedMutex),
     FIELD(base::Mutex*, PageProtectionChangeMutex),
+    FIELD(std::atomic<intptr_t>, ConcurrentSweeping),
     FIELD(uintptr_t, WriteUnprotectCounter),
     FIELD(std::atomic<size_t>[kNumTypes], ExternalBackingStoreBytes),
     FIELD(heap::ListNode<MemoryChunk>, ListNode),
@@ -70,24 +69,26 @@ class V8_EXPORT_PRIVATE MemoryChunkLayout {
     FIELD(CodeObjectRegistry*, CodeObjectRegistry),
     FIELD(PossiblyEmptyBuckets, PossiblyEmptyBuckets),
     FIELD(ActiveSystemPages*, ActiveSystemPages),
-#ifdef V8_ENABLE_INNER_POINTER_RESOLUTION_OSB
-    FIELD(ObjectStartBitmap, ObjectStartBitmap),
-#endif  // V8_ENABLE_INNER_POINTER_RESOLUTION_OSB
-    FIELD(size_t, WasUsedForAllocation),
-    kMarkingBitmapOffset,
+    FIELD(size_t, AllocatedLabSize),
+    FIELD(MarkingBitmap, MarkingBitmap),
+    kEndOfMarkingBitmap,
     kMemoryChunkHeaderSize =
-        kMarkingBitmapOffset +
-        ((kMarkingBitmapOffset % kMemoryChunkAlignment) == 0
+        kEndOfMarkingBitmap +
+        ((kEndOfMarkingBitmap % kMemoryChunkAlignment) == 0
              ? 0
              : kMemoryChunkAlignment -
-                   (kMarkingBitmapOffset % kMemoryChunkAlignment)),
+                   (kEndOfMarkingBitmap % kMemoryChunkAlignment)),
     kMemoryChunkHeaderStart = kSlotSetOffset,
     kBasicMemoryChunkHeaderSize = kMemoryChunkHeaderStart,
     kBasicMemoryChunkHeaderStart = 0,
   };
 #undef FIELD
+
   static size_t CodePageGuardStartOffset();
   static size_t CodePageGuardSize();
+  // Code pages have padding on the first page for code alignment, so the
+  // ObjectStartOffset will not be page aligned.
+  static intptr_t ObjectPageOffsetInCodePage();
   static intptr_t ObjectStartOffsetInCodePage();
   static intptr_t ObjectEndOffsetInCodePage();
   static size_t AllocatableMemoryInCodePage();

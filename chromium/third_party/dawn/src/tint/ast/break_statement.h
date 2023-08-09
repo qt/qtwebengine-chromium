@@ -20,15 +20,15 @@
 namespace tint::ast {
 
 /// An break statement
-class BreakStatement final : public Castable<BreakStatement, Statement> {
+class BreakStatement final : public utils::Castable<BreakStatement, Statement> {
   public:
     /// Constructor
     /// @param pid the identifier of the program that owns this node
     /// @param nid the unique node identifier
     /// @param src the source of this node
     BreakStatement(ProgramID pid, NodeID nid, const Source& src);
-    /// Move constructor
-    BreakStatement(BreakStatement&&);
+
+    /// Destructor
     ~BreakStatement() override;
 
     /// Clones this node and all transitive child nodes using the `CloneContext`

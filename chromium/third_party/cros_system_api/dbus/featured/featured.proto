@@ -32,10 +32,11 @@ message FeatureOverride {
 }
 
 // Information about the last known "safe" seed.
+// Keep in sync with featured::SeedsEqual when adding new fields.
 message SeedDetails {
-  // Last known "safe" seed represented as the base64-encoded gzip-compressed
-  // serialized form of the variations seed protobuf.
-  string compressed_data = 1;
+  // Last known "safe" seed represented as the serialized form of the
+  // variations.VariationsSeed protobuf.
+  bytes compressed_data = 1;
   // The active client locale that was successfully used in association with the
   // last known "safe" seed.
   string locale = 4;
@@ -48,8 +49,8 @@ message SeedDetails {
   // A country code string representing the country used for evaluating session
   // consistency studies.
   string session_consistency_country = 7;
-  // Digital signature of the last known "safe" seed's binary data. Empty if
-  // there is no known "safe" seed.
+  // Base64-encoded digital signature of the last known "safe" seed's binary
+  // data. Empty if there is no known "safe" seed.
   string signature = 8;
   // The serialized base::Time used for safe seed expiry checks. This is usually
   // the time at which the last known "safe" seed was received; however, it
@@ -79,4 +80,14 @@ message Store {
   SeedDetails last_good_seed = 2;
   // chrome://flags overrides.
   repeated FeatureOverride overrides = 3;
+}
+
+// ComputedState is evaluate_seed's output, including both the evaluated state
+// of each feature in the seed as well as the seed that was used to generate
+// that state.
+message ComputedState {
+  // Computed state for each experiment in a seed.
+  repeated FeatureOverride overrides = 1;
+  // Which seed was used to generate the overrides?
+  SeedDetails used_seed = 2;
 }

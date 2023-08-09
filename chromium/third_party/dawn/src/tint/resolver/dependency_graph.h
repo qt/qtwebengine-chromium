@@ -22,12 +22,11 @@
 #include "src/tint/builtin/access.h"
 #include "src/tint/builtin/builtin.h"
 #include "src/tint/builtin/builtin_value.h"
+#include "src/tint/builtin/function.h"
 #include "src/tint/builtin/interpolation_sampling.h"
 #include "src/tint/builtin/interpolation_type.h"
 #include "src/tint/builtin/texel_format.h"
 #include "src/tint/diagnostic/diagnostic.h"
-#include "src/tint/sem/builtin_type.h"
-#include "src/tint/symbol_table.h"
 #include "src/tint/utils/hashmap.h"
 
 namespace tint::resolver {
@@ -44,7 +43,7 @@ struct UnresolvedIdentifier {
 /// - const ast::TypeDecl*  (as const ast::Node*)
 /// - const ast::Variable*  (as const ast::Node*)
 /// - const ast::Function*  (as const ast::Node*)
-/// - sem::BuiltinType
+/// - builtin::Function
 /// - builtin::Access
 /// - builtin::AddressSpace
 /// - builtin::Builtin
@@ -75,13 +74,13 @@ class ResolvedIdentifier {
         return nullptr;
     }
 
-    /// @return the builtin function if the ResolvedIdentifier holds sem::BuiltinType, otherwise
-    /// sem::BuiltinType::kNone
-    sem::BuiltinType BuiltinFunction() const {
-        if (auto n = std::get_if<sem::BuiltinType>(&value_)) {
+    /// @return the builtin function if the ResolvedIdentifier holds builtin::Function, otherwise
+    /// builtin::Function::kNone
+    builtin::Function BuiltinFunction() const {
+        if (auto n = std::get_if<builtin::Function>(&value_)) {
             return *n;
         }
-        return sem::BuiltinType::kNone;
+        return builtin::Function::kNone;
     }
 
     /// @return the access if the ResolvedIdentifier holds builtin::Access, otherwise
@@ -164,15 +163,14 @@ class ResolvedIdentifier {
         return !(*this == other);
     }
 
-    /// @param symbols the program's symbol table
     /// @param diagnostics diagnostics used to report ICEs
     /// @return a description of the resolved symbol
-    std::string String(const SymbolTable& symbols, diag::List& diagnostics) const;
+    std::string String(diag::List& diagnostics) const;
 
   private:
     std::variant<UnresolvedIdentifier,
                  const ast::Node*,
-                 sem::BuiltinType,
+                 builtin::Function,
                  builtin::Access,
                  builtin::AddressSpace,
                  builtin::Builtin,
@@ -196,14 +194,10 @@ struct DependencyGraph {
     /// Build() performs symbol resolution and dependency analysis on `module`,
     /// populating `output` with the resulting dependency graph.
     /// @param module the AST module to analyse
-    /// @param symbols the symbol table
     /// @param diagnostics the diagnostic list to populate with errors / warnings
     /// @param output the resulting DependencyGraph
     /// @returns true on success, false on error
-    static bool Build(const ast::Module& module,
-                      const SymbolTable& symbols,
-                      diag::List& diagnostics,
-                      DependencyGraph& output);
+    static bool Build(const ast::Module& module, diag::List& diagnostics, DependencyGraph& output);
 
     /// All globals in dependency-sorted order.
     utils::Vector<const ast::Node*, 32> ordered_globals;

@@ -155,7 +155,7 @@ export class CoverageView extends UI.Widget.VBox {
     this.toggleRecordButton = UI.Toolbar.Toolbar.createActionButton(this.toggleRecordAction);
     toolbar.appendToolbarItem(this.toggleRecordButton);
 
-    const mainTarget = SDK.TargetManager.TargetManager.instance().mainFrameTarget();
+    const mainTarget = SDK.TargetManager.TargetManager.instance().primaryPageTarget();
     const mainTargetSupportsRecordOnReload = mainTarget && mainTarget.model(SDK.ResourceTreeModel.ResourceTreeModel);
     this.inlineReloadButton = null;
     if (mainTargetSupportsRecordOnReload) {
@@ -166,12 +166,12 @@ export class CoverageView extends UI.Widget.VBox {
       this.toggleRecordButton.setEnabled(false);
       this.toggleRecordButton.setVisible(false);
     }
-    this.clearButton = new UI.Toolbar.ToolbarButton(i18nString(UIStrings.clearAll), 'largeicon-clear');
+    this.clearButton = new UI.Toolbar.ToolbarButton(i18nString(UIStrings.clearAll), 'clear');
     this.clearButton.addEventListener(UI.Toolbar.ToolbarButton.Events.Click, this.clear.bind(this));
     toolbar.appendToolbarItem(this.clearButton);
 
     toolbar.appendSeparator();
-    this.saveButton = new UI.Toolbar.ToolbarButton(i18nString(UIStrings.export), 'largeicon-download');
+    this.saveButton = new UI.Toolbar.ToolbarButton(i18nString(UIStrings.export), 'download');
     this.saveButton.addEventListener(UI.Toolbar.ToolbarButton.Events.Click, _event => {
       void this.exportReport();
     });
@@ -324,7 +324,7 @@ export class CoverageView extends UI.Widget.VBox {
     }
 
     this.reset();
-    const mainTarget = SDK.TargetManager.TargetManager.instance().mainFrameTarget();
+    const mainTarget = SDK.TargetManager.TargetManager.instance().primaryPageTarget();
     if (!mainTarget) {
       return;
     }
@@ -352,7 +352,7 @@ export class CoverageView extends UI.Widget.VBox {
         mainTarget.model(SDK.ResourceTreeModel.ResourceTreeModel) as SDK.ResourceTreeModel.ResourceTreeModel | null;
     if (this.resourceTreeModel) {
       this.resourceTreeModel.addEventListener(
-          SDK.ResourceTreeModel.Events.MainFrameNavigated, this.onMainFrameNavigated, this);
+          SDK.ResourceTreeModel.Events.PrimaryPageChanged, this.onPrimaryPageChanged, this);
     }
     this.decorationManager = new CoverageDecorationManager(this.model as CoverageModel);
     this.toggleRecordAction.setToggled(true);
@@ -392,7 +392,7 @@ export class CoverageView extends UI.Widget.VBox {
   async stopRecording(): Promise<void> {
     if (this.resourceTreeModel) {
       this.resourceTreeModel.removeEventListener(
-          SDK.ResourceTreeModel.Events.MainFrameNavigated, this.onMainFrameNavigated, this);
+          SDK.ResourceTreeModel.Events.PrimaryPageChanged, this.onPrimaryPageChanged, this);
       this.resourceTreeModel = null;
     }
     if (this.hasFocus()) {
@@ -418,7 +418,7 @@ export class CoverageView extends UI.Widget.VBox {
     this.model && this.model.processJSBacklog();
   }
 
-  private onMainFrameNavigated(): void {
+  private onPrimaryPageChanged(): void {
     this.model && this.model.reset();
     this.decorationManager && this.decorationManager.reset();
     this.listView.reset();
@@ -519,7 +519,7 @@ export class CoverageView extends UI.Widget.VBox {
   }
 
   static readonly EXTENSION_BINDINGS_URL_PREFIX = 'extensions::';
-  wasShown(): void {
+  override wasShown(): void {
     super.wasShown();
     this.registerCSSFiles([coverageViewStyles]);
   }

@@ -14,6 +14,8 @@
 
 #include "src/tint/reader/wgsl/parser_impl_test_helper.h"
 
+#include "src/tint/utils/string_stream.h"
+
 namespace tint::reader::wgsl {
 namespace {
 
@@ -56,6 +58,14 @@ TEST_F(ParserImplErrorTest, AliasDeclInvalidAttribute) {
            R"(test.wgsl:1:2 error: unexpected attributes
 @invariant alias e=u32;
  ^^^^^^^^^
+)");
+}
+
+TEST_F(ParserImplErrorTest, ConstAttributeInvalid) {
+    EXPECT("@const fn main() { }",
+           R"(test.wgsl:1:2 error: const attribute may not appear in shaders
+@const fn main() { }
+ ^^^^^
 )");
 }
 
@@ -353,15 +363,15 @@ fn f() { const_assert true }
 
 TEST_F(ParserImplErrorTest, FunctionDeclWorkgroupSizeXInvalid) {
     EXPECT("@workgroup_size() fn f() {}",
-           R"(test.wgsl:1:17 error: expected workgroup_size x parameter
+           R"(test.wgsl:1:2 error: workgroup_size expects at least 1 argument
 @workgroup_size() fn f() {}
-                ^
+ ^^^^^^^^^^^^^^
 )");
 }
 
 TEST_F(ParserImplErrorTest, FunctionDeclWorkgroupSizeYInvalid) {
     EXPECT("@workgroup_size(1, fn) fn f() {}",
-           R"(test.wgsl:1:20 error: expected workgroup_size y parameter
+           R"(test.wgsl:1:20 error: expected expression for workgroup_size
 @workgroup_size(1, fn) fn f() {}
                    ^^
 )");
@@ -369,7 +379,7 @@ TEST_F(ParserImplErrorTest, FunctionDeclWorkgroupSizeYInvalid) {
 
 TEST_F(ParserImplErrorTest, FunctionDeclWorkgroupSizeZInvalid) {
     EXPECT("@workgroup_size(1, 2, fn) fn f() {}",
-           R"(test.wgsl:1:23 error: expected workgroup_size z parameter
+           R"(test.wgsl:1:23 error: expected expression for workgroup_size
 @workgroup_size(1, 2, fn) fn f() {}
                       ^^
 )");
@@ -505,8 +515,8 @@ const i : vec2<i32> = vec2<i32>(!);
 TEST_F(ParserImplErrorTest, GlobalDeclConstExprMaxDepth) {
     uint32_t kMaxDepth = 128;
 
-    std::stringstream src;
-    std::stringstream mkr;
+    utils::StringStream src;
+    utils::StringStream mkr;
     src << "const i : i32 = ";
     mkr << "                ";
     for (size_t i = 0; i < kMaxDepth + 8; i++) {
@@ -522,7 +532,7 @@ TEST_F(ParserImplErrorTest, GlobalDeclConstExprMaxDepth) {
         src << ")";
     }
     src << ";";
-    std::stringstream err;
+    utils::StringStream err;
     err << "test.wgsl:1:529 error: maximum parser recursive depth reached\n"
         << src.str() << "\n"
         << mkr.str() << "\n";
@@ -672,7 +682,7 @@ struct S { 1 : i32, };
 
 TEST_F(ParserImplErrorTest, GlobalDeclStructMemberAlignInvaldValue) {
     EXPECT("struct S { @align(fn) i : i32, };",
-           R"(test.wgsl:1:19 error: expected align expression
+           R"(test.wgsl:1:19 error: expected expression for align
 struct S { @align(fn) i : i32, };
                   ^^
 )");
@@ -680,7 +690,7 @@ struct S { @align(fn) i : i32, };
 
 TEST_F(ParserImplErrorTest, GlobalDeclStructMemberSizeInvaldValue) {
     EXPECT("struct S { @size(if) i : i32, };",
-           R"(test.wgsl:1:18 error: expected size expression
+           R"(test.wgsl:1:18 error: expected expression for size
 struct S { @size(if) i : i32, };
                  ^^
 )");
@@ -761,7 +771,7 @@ TEST_F(ParserImplErrorTest, GlobalDeclVarAttrLocationMissingRParen) {
 
 TEST_F(ParserImplErrorTest, GlobalDeclVarAttrLocationInvalidValue) {
     EXPECT("@location(if) var i : i32;",
-           R"(test.wgsl:1:11 error: expected location expression
+           R"(test.wgsl:1:11 error: expected expression for location
 @location(if) var i : i32;
           ^^
 )");
@@ -785,7 +795,7 @@ TEST_F(ParserImplErrorTest, GlobalDeclVarAttrIdMissingRParen) {
 
 TEST_F(ParserImplErrorTest, GlobalDeclVarAttrIdInvalidValue) {
     EXPECT("@id(if) var i : i32;",
-           R"(test.wgsl:1:5 error: expected id expression
+           R"(test.wgsl:1:5 error: expected expression for id
 @id(if) var i : i32;
     ^^
 )");
@@ -825,7 +835,7 @@ TEST_F(ParserImplErrorTest, GlobalDeclVarAttrBindingMissingRParen) {
 
 TEST_F(ParserImplErrorTest, GlobalDeclVarAttrBindingInvalidValue) {
     EXPECT("@binding(if) var i : i32;",
-           R"(test.wgsl:1:10 error: expected binding expression
+           R"(test.wgsl:1:10 error: expected expression for binding
 @binding(if) var i : i32;
          ^^
 )");
@@ -849,7 +859,7 @@ TEST_F(ParserImplErrorTest, GlobalDeclVarAttrGroupMissingRParen) {
 
 TEST_F(ParserImplErrorTest, GlobalDeclVarAttrBindingGroupValue) {
     EXPECT("@group(if) var i : i32;",
-           R"(test.wgsl:1:8 error: expected group expression
+           R"(test.wgsl:1:8 error: expected expression for group
 @group(if) var i : i32;
        ^^
 )");

@@ -11,6 +11,7 @@
 
 #include "src/codegen/assembler-arch.h"
 #include "src/codegen/assembler.h"
+#include "src/codegen/bailout-reason.h"
 #include "src/common/globals.h"
 #include "src/execution/isolate-data.h"
 #include "src/objects/tagged-index.h"
@@ -109,14 +110,16 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
   void InitializeRootRegister() {
     ExternalReference isolate_root = ExternalReference::isolate_root(isolate());
     li(kRootRegister, Operand(isolate_root));
-#ifdef V8_COMPRESS_POINTERS_IN_SHARED_CAGE
+#ifdef V8_COMPRESS_POINTERS
     LoadRootRelative(kPtrComprCageBaseRegister,
                      IsolateData::cage_base_offset());
 #endif
   }
 
   // Jump unconditionally to given label.
-  void jmp(Label* L) { Branch(L); }
+  void jmp(Label* L, Label::Distance distance = Label::kFar) {
+    Branch(L, distance);
+  }
 
   // -------------------------------------------------------------------------
   // Debugging.
@@ -130,6 +133,9 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
   // Calls Abort(msg) if the condition cc is not satisfied.
   // Use --debug_code to enable.
   void Assert(Condition cc, AbortReason reason, Register rs, Operand rt);
+
+  void AssertJSAny(Register object, Register map_tmp, Register tmp,
+                   AbortReason abort_reason);
 
   // Like Assert(), but always enabled.
   void Check(Condition cc, AbortReason reason, Register rs, Operand rt);
@@ -157,9 +163,12 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
   void Branch(int32_t target);
   void BranchLong(Label* L);
   void Branch(Label* target, Condition cond, Register r1, const Operand& r2,
-              Label::Distance near_jump = Label::kFar);
+              Label::Distance distance = Label::kFar);
+  void Branch(Label* target, Label::Distance distance) {
+    Branch(target, cc_always, zero_reg, Operand(zero_reg), distance);
+  }
   void Branch(int32_t target, Condition cond, Register r1, const Operand& r2,
-              Label::Distance near_jump = Label::kFar);
+              Label::Distance distance = Label::kFar);
 #undef DECLARE_BRANCH_PROTOTYPES
 #undef COND_TYPED_ARGS
 #undef COND_ARGS
@@ -213,6 +222,14 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
   void LoadFromConstantsTable(Register destination, int constant_index) final;
   void LoadRootRegisterOffset(Register destination, intptr_t offset) final;
   void LoadRootRelative(Register destination, int32_t offset) final;
+  // Operand pointing to an external reference.
+  // May emit code to set up the scratch register. The operand is
+  // only guaranteed to be correct as long as the scratch register
+  // isn't changed.
+  // If the operand is used more than once, use a scratch register
+  // that is guaranteed not to be clobbered.
+  MemOperand ExternalReferenceAsOperand(ExternalReference reference,
+                                        Register scratch);
 
   inline void GenPCRelativeJump(Register rd, int32_t imm32) {
     BlockTrampolinePoolScope block_trampoline_pool(this);
@@ -285,13 +302,7 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
       RelocInfo::Mode rmode = RelocInfo::INTERNAL_REFERENCE_ENCODED);
 
   // Load the code entry point from the Code object.
-  void LoadCodeEntry(Register destination, Register code_object);
-  // Load code entry point from the Code object and compute
-  // InstructionStream object pointer out of it. Must not be used for Code
-  // corresponding to builtins, because their entry points values point to
-  // the embedded instruction stream in .text section.
-  void LoadCodeInstructionStreamNonBuiltin(Register destination,
-                                           Register code_object);
+  void LoadCodeInstructionStart(Register destination, Register code_object);
   void CallCodeObject(Register code_object);
   void JumpCodeObject(Register code_object,
                       JumpMode jump_mode = JumpMode::kJump);
@@ -1056,7 +1067,8 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
   void SmiTag(Register reg) { SmiTag(reg, reg); }
 
   // Jump the register contains a smi.
-  void JumpIfSmi(Register value, Label* smi_label);
+  void JumpIfSmi(Register value, Label* smi_label,
+                 Label::Distance distance = Label::kFar);
 
   void JumpIfEqual(Register a, int32_t b, Label* dest) {
     Branch(dest, eq, a, Operand(b));
@@ -1199,19 +1211,21 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
   }
 
   // Compare the object in a register to a value and jump if they are equal.
-  void JumpIfRoot(Register with, RootIndex index, Label* if_equal) {
+  void JumpIfRoot(Register with, RootIndex index, Label* if_equal,
+                  Label::Distance distance = Label::kFar) {
     UseScratchRegisterScope temps(this);
     Register scratch = temps.Acquire();
     LoadRoot(scratch, index);
-    Branch(if_equal, eq, with, Operand(scratch));
+    Branch(if_equal, eq, with, Operand(scratch), distance);
   }
 
   // Compare the object in a register to a value and jump if they are not equal.
-  void JumpIfNotRoot(Register with, RootIndex index, Label* if_not_equal) {
+  void JumpIfNotRoot(Register with, RootIndex index, Label* if_not_equal,
+                     Label::Distance distance = Label::kFar) {
     UseScratchRegisterScope temps(this);
     Register scratch = temps.Acquire();
     LoadRoot(scratch, index);
-    Branch(if_not_equal, ne, with, Operand(scratch));
+    Branch(if_not_equal, ne, with, Operand(scratch), distance);
   }
 
   // Checks if value is in range [lower_limit, higher_limit] using a single
@@ -1350,10 +1364,6 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
   // Jump to the builtin routine.
   void JumpToExternalReference(const ExternalReference& builtin,
                                bool builtin_exit_frame = false);
-
-  // Generates a trampoline to jump to the off-heap instruction stream.
-  void JumpToOffHeapInstructionStream(Address entry);
-
   // ---------------------------------------------------------------------------
   // In-place weak references.
   void LoadWeakValue(Register out, Register in, Label* target_if_cleared);
@@ -1421,8 +1431,8 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
   Operand ClearedValue() const;
 
   // Jump if the register contains a non-smi.
-  void JumpIfNotSmi(Register value, Label* not_smi_label);
-
+  void JumpIfNotSmi(Register value, Label* not_smi_label,
+                    Label::Distance dist = Label::kFar);
   // Abort execution if argument is not a Constructor, enabled via --debug-code.
   void AssertConstructor(Register object);
 
@@ -1506,7 +1516,8 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
 #endif
   template <typename F>
   void RoundHelper(VRegister dst, VRegister src, Register scratch,
-                   VRegister v_scratch, FPURoundingMode frm);
+                   VRegister v_scratch, FPURoundingMode frm,
+                   bool keep_nan_same = true);
 
   template <typename TruncFunc>
   void RoundFloatingPointToInteger(Register rd, FPURegister fs, Register result,

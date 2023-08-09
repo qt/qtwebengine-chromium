@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <string>
 
+#include "src/tint/builtin/builtin.h"
 #include "src/tint/program_builder.h"
 #include "src/tint/sem/block_statement.h"
 #include "src/tint/sem/for_loop_statement.h"
@@ -98,7 +99,12 @@ ast::Type Transform::CreateASTTypeFor(CloneContext& ctx, const type::Type* ty) {
     }
     if (auto* v = ty->As<type::Vector>()) {
         auto el = CreateASTTypeFor(ctx, v->type());
-        return ctx.dst->ty.vec(el, v->Width());
+        if (v->Packed()) {
+            TINT_ASSERT(Transform, v->Width() == 3u);
+            return ctx.dst->ty(builtin::Builtin::kPackedVec3, el);
+        } else {
+            return ctx.dst->ty.vec(el, v->Width());
+        }
     }
     if (auto* a = ty->As<type::Array>()) {
         auto el = CreateASTTypeFor(ctx, a->ElemType());
@@ -166,6 +172,15 @@ ast::Type Transform::CreateASTTypeFor(CloneContext& ctx, const type::Type* ty) {
     }
     if (auto* s = ty->As<type::Sampler>()) {
         return ctx.dst->ty.sampler(s->kind());
+    }
+    if (auto* p = ty->As<type::Pointer>()) {
+        // Note: type::Pointer always has an inferred access, but WGSL only allows an explicit
+        // access in the 'storage' address space.
+        auto address_space = p->AddressSpace();
+        auto access = address_space == builtin::AddressSpace::kStorage
+                          ? p->Access()
+                          : builtin::Access::kUndefined;
+        return ctx.dst->ty.pointer(CreateASTTypeFor(ctx, p->StoreType()), address_space, access);
     }
     TINT_UNREACHABLE(Transform, ctx.dst->Diagnostics())
         << "Unhandled type: " << ty->TypeInfo().name;

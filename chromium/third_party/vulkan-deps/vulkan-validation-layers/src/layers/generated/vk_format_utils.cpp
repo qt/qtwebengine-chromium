@@ -22,8 +22,7 @@
  ****************************************************************************/
 
 #include "vk_format_utils.h"
-#include "vk_layer_utils.h"
-#include <map>
+#include "utils/vk_layer_utils.h"
 #include <vector>
 
 
@@ -819,7 +818,7 @@ struct PER_PLANE_COMPATIBILITY {
     VkFormat compatible_format;
 
     // Need default otherwise if app tries to grab a plane that doesn't exist it will crash
-    // if returned the value of 0 in IMAGE_STATE::GetSubresourceExtent()
+    // if returned the value of 0 in IMAGE_STATE::GetEffectiveSubresourceExtent()
     // This is ok, because there are VUs later that will catch the bad app behaviour
     PER_PLANE_COMPATIBILITY() : width_divisor(1), height_divisor(1), compatible_format(VK_FORMAT_UNDEFINED) {}
     PER_PLANE_COMPATIBILITY(uint32_t width_divisor, uint32_t height_divisor, VkFormat compatible_format) :
@@ -1043,7 +1042,7 @@ bool FormatIsUNORM(VkFormat format) {
         case VK_FORMAT_G16_B16R16_2PLANE_444_UNORM:
         case VK_FORMAT_A4R4G4B4_UNORM_PACK16:
         case VK_FORMAT_A4B4G4R4_UNORM_PACK16:
-        found = true;
+            found = true;
             break;
         default:
             break;
@@ -1070,7 +1069,7 @@ bool FormatIsSNORM(VkFormat format) {
         case VK_FORMAT_R16G16B16A16_SNORM:
         case VK_FORMAT_EAC_R11_SNORM_BLOCK:
         case VK_FORMAT_EAC_R11G11_SNORM_BLOCK:
-        found = true;
+            found = true;
             break;
         default:
             break;
@@ -1095,7 +1094,7 @@ bool FormatIsUSCALED(VkFormat format) {
         case VK_FORMAT_R16G16_USCALED:
         case VK_FORMAT_R16G16B16_USCALED:
         case VK_FORMAT_R16G16B16A16_USCALED:
-        found = true;
+            found = true;
             break;
         default:
             break;
@@ -1120,7 +1119,7 @@ bool FormatIsSSCALED(VkFormat format) {
         case VK_FORMAT_R16G16_SSCALED:
         case VK_FORMAT_R16G16B16_SSCALED:
         case VK_FORMAT_R16G16B16A16_SSCALED:
-        found = true;
+            found = true;
             break;
         default:
             break;
@@ -1154,7 +1153,7 @@ bool FormatIsUINT(VkFormat format) {
         case VK_FORMAT_R64G64B64_UINT:
         case VK_FORMAT_R64G64B64A64_UINT:
         case VK_FORMAT_S8_UINT:
-        found = true;
+            found = true;
             break;
         default:
             break;
@@ -1188,7 +1187,7 @@ bool FormatIsSINT(VkFormat format) {
         case VK_FORMAT_R64G64B64_SINT:
         case VK_FORMAT_R64G64B64A64_SINT:
         case VK_FORMAT_R16G16_S10_5_NV:
-        found = true;
+            found = true;
             break;
         default:
             break;
@@ -1235,7 +1234,7 @@ bool FormatIsSRGB(VkFormat format) {
         case VK_FORMAT_PVRTC1_4BPP_SRGB_BLOCK_IMG:
         case VK_FORMAT_PVRTC2_2BPP_SRGB_BLOCK_IMG:
         case VK_FORMAT_PVRTC2_4BPP_SRGB_BLOCK_IMG:
-        found = true;
+            found = true;
             break;
         default:
             break;
@@ -1275,7 +1274,7 @@ bool FormatIsSFLOAT(VkFormat format) {
         case VK_FORMAT_ASTC_10x10_SFLOAT_BLOCK:
         case VK_FORMAT_ASTC_12x10_SFLOAT_BLOCK:
         case VK_FORMAT_ASTC_12x12_SFLOAT_BLOCK:
-        found = true;
+            found = true;
             break;
         default:
             break;
@@ -1290,7 +1289,7 @@ bool FormatIsUFLOAT(VkFormat format) {
         case VK_FORMAT_B10G11R11_UFLOAT_PACK32:
         case VK_FORMAT_E5B9G9R9_UFLOAT_PACK32:
         case VK_FORMAT_BC6H_UFLOAT_BLOCK:
-        found = true;
+            found = true;
             break;
         default:
             break;
@@ -1317,7 +1316,7 @@ bool FormatIsCompressed_ASTC_HDR(VkFormat format) {
         case VK_FORMAT_ASTC_8x5_SFLOAT_BLOCK:
         case VK_FORMAT_ASTC_8x6_SFLOAT_BLOCK:
         case VK_FORMAT_ASTC_8x8_SFLOAT_BLOCK:
-        found = true;
+            found = true;
             break;
         default:
             break;
@@ -1357,7 +1356,7 @@ bool FormatIsCompressed_ASTC_LDR(VkFormat format) {
         case VK_FORMAT_ASTC_8x6_UNORM_BLOCK:
         case VK_FORMAT_ASTC_8x8_SRGB_BLOCK:
         case VK_FORMAT_ASTC_8x8_UNORM_BLOCK:
-        found = true;
+            found = true;
             break;
         default:
             break;
@@ -1385,7 +1384,7 @@ bool FormatIsCompressed_BC(VkFormat format) {
         case VK_FORMAT_BC6H_UFLOAT_BLOCK:
         case VK_FORMAT_BC7_SRGB_BLOCK:
         case VK_FORMAT_BC7_UNORM_BLOCK:
-        found = true;
+            found = true;
             break;
         default:
             break;
@@ -1401,7 +1400,7 @@ bool FormatIsCompressed_EAC(VkFormat format) {
         case VK_FORMAT_EAC_R11G11_UNORM_BLOCK:
         case VK_FORMAT_EAC_R11_SNORM_BLOCK:
         case VK_FORMAT_EAC_R11_UNORM_BLOCK:
-        found = true;
+            found = true;
             break;
         default:
             break;
@@ -1419,7 +1418,7 @@ bool FormatIsCompressed_ETC2(VkFormat format) {
         case VK_FORMAT_ETC2_R8G8B8A8_UNORM_BLOCK:
         case VK_FORMAT_ETC2_R8G8B8_SRGB_BLOCK:
         case VK_FORMAT_ETC2_R8G8B8_UNORM_BLOCK:
-        found = true;
+            found = true;
             break;
         default:
             break;
@@ -1439,7 +1438,7 @@ bool FormatIsCompressed_PVRTC(VkFormat format) {
         case VK_FORMAT_PVRTC2_2BPP_UNORM_BLOCK_IMG:
         case VK_FORMAT_PVRTC2_4BPP_SRGB_BLOCK_IMG:
         case VK_FORMAT_PVRTC2_4BPP_UNORM_BLOCK_IMG:
-        found = true;
+            found = true;
             break;
         default:
             break;
@@ -1470,7 +1469,7 @@ bool FormatIsDepthOrStencil(VkFormat format) {
         case VK_FORMAT_D32_SFLOAT_S8_UINT:
         case VK_FORMAT_S8_UINT:
         case VK_FORMAT_X8_D24_UNORM_PACK32:
-        found = true;
+            found = true;
             break;
         default:
             break;
@@ -1485,7 +1484,7 @@ bool FormatIsDepthAndStencil(VkFormat format) {
         case VK_FORMAT_D16_UNORM_S8_UINT:
         case VK_FORMAT_D24_UNORM_S8_UINT:
         case VK_FORMAT_D32_SFLOAT_S8_UINT:
-        found = true;
+            found = true;
             break;
         default:
             break;
@@ -1500,7 +1499,7 @@ bool FormatIsDepthOnly(VkFormat format) {
         case VK_FORMAT_D16_UNORM:
         case VK_FORMAT_D32_SFLOAT:
         case VK_FORMAT_X8_D24_UNORM_PACK32:
-        found = true;
+            found = true;
             break;
         default:
             break;
@@ -1513,7 +1512,7 @@ bool FormatIsStencilOnly(VkFormat format) {
     bool found = false;
     switch (format) {
         case VK_FORMAT_S8_UINT:
-        found = true;
+            found = true;
             break;
         default:
             break;
@@ -1641,7 +1640,7 @@ bool FormatIsPacked(VkFormat format) {
         case VK_FORMAT_G12X4_B12X4R12X4_2PLANE_444_UNORM_3PACK16:
         case VK_FORMAT_A4R4G4B4_UNORM_PACK16:
         case VK_FORMAT_A4B4G4R4_UNORM_PACK16:
-        found = true;
+            found = true;
             break;
         default:
             break;
@@ -1690,7 +1689,7 @@ bool FormatRequiresYcbcrConversion(VkFormat format) {
         case VK_FORMAT_G8_B8_R8_3PLANE_444_UNORM:
         case VK_FORMAT_R10X6G10X6B10X6A10X6_UNORM_4PACK16:
         case VK_FORMAT_R12X4G12X4B12X4A12X4_UNORM_4PACK16:
-        found = true;
+            found = true;
             break;
         default:
             break;
@@ -1725,7 +1724,7 @@ bool FormatIsXChromaSubsampled(VkFormat format) {
         case VK_FORMAT_G8_B8R8_2PLANE_422_UNORM:
         case VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM:
         case VK_FORMAT_G8_B8_R8_3PLANE_422_UNORM:
-        found = true;
+            found = true;
             break;
         default:
             break;
@@ -1744,7 +1743,7 @@ bool FormatIsYChromaSubsampled(VkFormat format) {
         case VK_FORMAT_G16_B16_R16_3PLANE_420_UNORM:
         case VK_FORMAT_G8_B8R8_2PLANE_420_UNORM:
         case VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM:
-        found = true;
+            found = true;
             break;
         default:
             break;
@@ -1752,61 +1751,6 @@ bool FormatIsYChromaSubsampled(VkFormat format) {
     return found;
 }
 
-
-// Single-plane "_422" formats are treated as 2x1 compressed (for copies)
-
-bool FormatIsSinglePlane_422(VkFormat format) {
-    bool found = false;
-    switch (format) {
-        case VK_FORMAT_B10X6G10X6R10X6G10X6_422_UNORM_4PACK16:
-        case VK_FORMAT_B12X4G12X4R12X4G12X4_422_UNORM_4PACK16:
-        case VK_FORMAT_B16G16R16G16_422_UNORM:
-        case VK_FORMAT_B8G8R8G8_422_UNORM:
-        case VK_FORMAT_G10X6B10X6G10X6R10X6_422_UNORM_4PACK16:
-        case VK_FORMAT_G12X4B12X4G12X4R12X4_422_UNORM_4PACK16:
-        case VK_FORMAT_G16B16G16R16_422_UNORM:
-        case VK_FORMAT_G8B8G8R8_422_UNORM:
-        found = true;
-            break;
-        default:
-            break;
-    }
-    return found;
-}
-
-// Returns number of planes in format (which is 1 by default)
-uint32_t FormatPlaneCount(VkFormat format) {
-    switch (format) {
-        case VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16:
-        case VK_FORMAT_G10X6_B10X6R10X6_2PLANE_422_UNORM_3PACK16:
-        case VK_FORMAT_G10X6_B10X6R10X6_2PLANE_444_UNORM_3PACK16:
-        case VK_FORMAT_G12X4_B12X4R12X4_2PLANE_420_UNORM_3PACK16:
-        case VK_FORMAT_G12X4_B12X4R12X4_2PLANE_422_UNORM_3PACK16:
-        case VK_FORMAT_G12X4_B12X4R12X4_2PLANE_444_UNORM_3PACK16:
-        case VK_FORMAT_G16_B16R16_2PLANE_420_UNORM:
-        case VK_FORMAT_G16_B16R16_2PLANE_422_UNORM:
-        case VK_FORMAT_G16_B16R16_2PLANE_444_UNORM:
-        case VK_FORMAT_G8_B8R8_2PLANE_420_UNORM:
-        case VK_FORMAT_G8_B8R8_2PLANE_422_UNORM:
-        case VK_FORMAT_G8_B8R8_2PLANE_444_UNORM:
-            return 2;
-        case VK_FORMAT_G10X6_B10X6_R10X6_3PLANE_420_UNORM_3PACK16:
-        case VK_FORMAT_G10X6_B10X6_R10X6_3PLANE_422_UNORM_3PACK16:
-        case VK_FORMAT_G10X6_B10X6_R10X6_3PLANE_444_UNORM_3PACK16:
-        case VK_FORMAT_G12X4_B12X4_R12X4_3PLANE_420_UNORM_3PACK16:
-        case VK_FORMAT_G12X4_B12X4_R12X4_3PLANE_422_UNORM_3PACK16:
-        case VK_FORMAT_G12X4_B12X4_R12X4_3PLANE_444_UNORM_3PACK16:
-        case VK_FORMAT_G16_B16_R16_3PLANE_420_UNORM:
-        case VK_FORMAT_G16_B16_R16_3PLANE_422_UNORM:
-        case VK_FORMAT_G16_B16_R16_3PLANE_444_UNORM:
-        case VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM:
-        case VK_FORMAT_G8_B8_R8_3PLANE_422_UNORM:
-        case VK_FORMAT_G8_B8_R8_3PLANE_444_UNORM:
-            return 3;
-        default:
-            return 1;
-     }
-}
 
 // Will return VK_FORMAT_UNDEFINED if given a plane aspect that doesn't exist for the format
 VkFormat FindMultiplaneCompatibleFormat(VkFormat mp_fmt, VkImageAspectFlags plane_aspect) {

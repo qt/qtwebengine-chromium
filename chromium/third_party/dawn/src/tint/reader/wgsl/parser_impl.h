@@ -211,17 +211,14 @@ class ParserImpl {
         /// Constructor
         /// @param type_in parsed type
         /// @param name_in parsed identifier
-        /// @param source_in source to the identifier
-        TypedIdentifier(ast::Type type_in, std::string name_in, Source source_in);
+        TypedIdentifier(ast::Type type_in, const ast::Identifier* name_in);
         /// Destructor
         ~TypedIdentifier();
 
         /// Parsed type. type.expr be nullptr for inferred types.
         ast::Type type;
         /// Parsed identifier.
-        std::string name;
-        /// Source to the identifier.
-        Source source;
+        const ast::Identifier* name = nullptr;
     };
 
     /// FunctionHeader contains the parsed information for a function header.
@@ -238,7 +235,7 @@ class ParserImpl {
         /// @param ret_ty function return type
         /// @param ret_attrs return type attributes
         FunctionHeader(Source src,
-                       std::string n,
+                       const ast::Identifier* n,
                        utils::VectorRef<const ast::Parameter*> p,
                        ast::Type ret_ty,
                        utils::VectorRef<const ast::Attribute*> ret_attrs);
@@ -252,7 +249,7 @@ class ParserImpl {
         /// Parsed header source
         Source source;
         /// Function name
-        std::string name;
+        const ast::Identifier* name;
         /// Function parameters
         utils::Vector<const ast::Parameter*, 8> params;
         /// Function return type
@@ -266,7 +263,7 @@ class ParserImpl {
         /// Variable declaration source
         Source source;
         /// Variable name
-        std::string name;
+        const ast::Identifier* name = nullptr;
         /// Variable address space
         const ast::Expression* address_space = nullptr;
         /// Variable access control
@@ -348,7 +345,7 @@ class ParserImpl {
     /// @param msg the error message
     /// @return `Failure::Errored::kError` so that you can combine an add_error()
     /// call and return on the same line.
-    Failure::Errored add_error(const Token& t, const std::string& msg);
+    Failure::Errored add_error(const Token& t, std::string_view msg);
     /// Appends an error raised when parsing `use` at `t` with the message
     /// `msg`
     /// @param source the source to associate the error with
@@ -363,12 +360,16 @@ class ParserImpl {
     /// @param msg the error message
     /// @return `Failure::Errored::kError` so that you can combine an add_error()
     /// call and return on the same line.
-    Failure::Errored add_error(const Source& source, const std::string& msg);
+    Failure::Errored add_error(const Source& source, std::string_view msg);
+    /// Appends a note at `source` with the message `msg`
+    /// @param source the source to associate the error with
+    /// @param msg the note message
+    void add_note(const Source& source, std::string_view msg);
     /// Appends a deprecated-language-feature warning at `source` with the message
     /// `msg`
     /// @param source the source to associate the error with
     /// @param msg the warning message
-    void deprecated(const Source& source, const std::string& msg);
+    void deprecated(const Source& source, std::string_view msg);
     /// Parses the `translation_unit` grammar element
     void translation_unit();
     /// Parses the `global_directive` grammar element, erroring on parse failure.
@@ -488,12 +489,14 @@ class ParserImpl {
     /// Parses a `variable_statement` grammar element
     /// @returns the parsed variable or nullptr
     Maybe<const ast::VariableDeclStatement*> variable_statement();
-    /// Parses a `if_statement` grammar element
+    /// Parses a `if_statement` grammar element, with the attribute list provided as `attrs`.
+    /// @param attrs the list of attributes for the statement
     /// @returns the parsed statement or nullptr
-    Maybe<const ast::IfStatement*> if_statement();
+    Maybe<const ast::IfStatement*> if_statement(AttributeList& attrs);
     /// Parses a `switch_statement` grammar element
+    /// @param attrs the list of attributes for the statement
     /// @returns the parsed statement or nullptr
-    Maybe<const ast::SwitchStatement*> switch_statement();
+    Maybe<const ast::SwitchStatement*> switch_statement(AttributeList& attrs);
     /// Parses a `switch_body` grammar element
     /// @returns the parsed statement or nullptr
     Maybe<const ast::CaseStatement*> switch_body();
@@ -503,24 +506,24 @@ class ParserImpl {
     /// Parses a `case_selector` grammar element
     /// @returns the selector
     Maybe<const ast::CaseSelector*> case_selector();
-    /// Parses a `case_body` grammar element
-    /// @returns the parsed statements
-    Maybe<const ast::BlockStatement*> case_body();
     /// Parses a `func_call_statement` grammar element
     /// @returns the parsed function call or nullptr
     Maybe<const ast::CallStatement*> func_call_statement();
-    /// Parses a `loop_statement` grammar element
+    /// Parses a `loop_statement` grammar element, with the attribute list provided as `attrs`.
+    /// @param attrs the list of attributes for the statement
     /// @returns the parsed loop or nullptr
-    Maybe<const ast::LoopStatement*> loop_statement();
+    Maybe<const ast::LoopStatement*> loop_statement(AttributeList& attrs);
     /// Parses a `for_header` grammar element, erroring on parse failure.
     /// @returns the parsed for header or nullptr
     Expect<std::unique_ptr<ForHeader>> expect_for_header();
-    /// Parses a `for_statement` grammar element
+    /// Parses a `for_statement` grammar element, with the attribute list provided as `attrs`.
+    /// @param attrs the list of attributes for the statement
     /// @returns the parsed for loop or nullptr
-    Maybe<const ast::ForLoopStatement*> for_statement();
-    /// Parses a `while_statement` grammar element
+    Maybe<const ast::ForLoopStatement*> for_statement(AttributeList& attrs);
+    /// Parses a `while_statement` grammar element, with the attribute list provided as `attrs`.
+    /// @param attrs the list of attributes for the statement
     /// @returns the parsed while loop or nullptr
-    Maybe<const ast::WhileStatement*> while_statement();
+    Maybe<const ast::WhileStatement*> while_statement(AttributeList& attrs);
     /// Parses a `break_if_statement` grammar element
     /// @returns the parsed statement or nullptr
     Maybe<const ast::Statement*> break_if_statement();
@@ -587,9 +590,6 @@ class ParserImpl {
     /// @returns the parsed expression or `lhs` if no match
     Expect<const ast::Expression*> expect_math_expression_post_unary_expression(
         const ast::Expression* lhs);
-    /// Parses an `element_count_expression` grammar element
-    /// @returns the parsed expression or nullptr
-    Maybe<const ast::Expression*> element_count_expression();
     /// Parses a `unary_expression shift.post.unary_expression`
     /// @returns the parsed expression or nullptr
     Maybe<const ast::Expression*> shift_expression();
@@ -636,14 +636,17 @@ class ParserImpl {
     /// Parses a single attribute, reporting an error if the next token does not
     /// represent a attribute.
     /// @see #attribute for the full list of attributes this method parses.
-    /// @return the parsed attribute, or nullptr on error.
+    /// @return the parsed attribute.
     Expect<const ast::Attribute*> expect_attribute();
     /// Parses a severity_control_name grammar element.
-    /// @return the parsed severity control name, or nullptr on error.
+    /// @return the parsed severity control name.
     Expect<builtin::DiagnosticSeverity> expect_severity_control_name();
     /// Parses a diagnostic_control grammar element.
-    /// @return the parsed diagnostic control, or nullptr on error.
+    /// @return the parsed diagnostic control.
     Expect<ast::DiagnosticControl> expect_diagnostic_control();
+    /// Parses a diagnostic_rule_name grammar element.
+    /// @return the parsed diagnostic rule name.
+    Expect<const ast::DiagnosticRuleName*> expect_diagnostic_rule_name();
 
     /// Splits a peekable token into to parts filling in the peekable fields.
     /// @param lhs the token to set in the current position
@@ -694,8 +697,11 @@ class ParserImpl {
     /// Errors if the next token is not an identifier.
     /// Consumes the next token on match.
     /// @param use a description of what was being parsed if an error was raised
+    /// @param kind a string describing the kind of identifier.
+    ///             Examples: "identifier", "diagnostic name"
     /// @returns the parsed identifier.
-    Expect<std::string> expect_ident(std::string_view use);
+    Expect<const ast::Identifier*> expect_ident(std::string_view use,
+                                                std::string_view kind = "identifier");
     /// Parses a lexical block starting with the token `start` and ending with
     /// the token `end`. `body` is called to parse the lexical block body
     /// between the `start` and `end` tokens. If the `start` or `end` tokens
@@ -804,14 +810,13 @@ class ParserImpl {
         return synchronized_ && builder_.Diagnostics().error_count() < max_errors_;
     }
 
-    /// without_error() calls the function `func` muting any grammatical errors
-    /// found while executing the function. This can be used as a best-effort to
-    /// produce a meaningful error message when the parser is out of sync.
+    /// without_diag() calls the function `func` muting any diagnostics found while executing the
+    /// function. This can be used to silence spew when attempting to resynchronize the parser.
     /// @param func a function or lambda with the signature: `Expect<Result>()` or
     /// `Maybe<Result>()`.
     /// @return the value returned by `func`
     template <typename F, typename T = ReturnType<F>>
-    T without_error(F&& func);
+    T without_diag(F&& func);
 
     /// Reports an error if the attribute list `list` is not empty.
     /// Used to ensure that all attributes are consumed.
@@ -855,7 +860,7 @@ class ParserImpl {
     bool synchronized_ = true;
     uint32_t parse_depth_ = 0;
     std::vector<Token::Type> sync_tokens_;
-    int silence_errors_ = 0;
+    int silence_diags_ = 0;
     ProgramBuilder builder_;
     size_t max_errors_ = 25;
 };

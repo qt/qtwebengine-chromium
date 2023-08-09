@@ -7,6 +7,8 @@ import type * as Protocol from '../../generated/protocol.js';
 
 import {DOMModel, type DOMNode} from './DOMModel.js';
 import {TargetManager} from './TargetManager.js';
+import {CPUThrottlingManager} from './CPUThrottlingManager.js';
+import {MultitargetNetworkManager} from './NetworkManager.js';
 
 const domLookUpSingleNodeCache =
     new Map<TraceEngine.Handlers.Types.TraceParseData, Map<Protocol.DOM.BackendNodeId, DOMNode|null>>();
@@ -34,7 +36,7 @@ export async function domNodeForBackendNodeID(
     return fromCache;
   }
 
-  const target = TargetManager.instance().mainFrameTarget();
+  const target = TargetManager.instance().primaryPageTarget();
   const domModel = target?.model(DOMModel);
   if (!domModel) {
     return null;
@@ -61,7 +63,7 @@ export async function domNodesForMultipleBackendNodeIds(
   if (fromCache) {
     return fromCache;
   }
-  const target = TargetManager.instance().mainFrameTarget();
+  const target = TargetManager.instance().primaryPageTarget();
   const domModel = target?.model(DOMModel);
   if (!domModel) {
     return new Map();
@@ -157,7 +159,7 @@ export async function normalizedImpactedNodesForLayoutShift(
   }
 
   let viewportScale: number|null = null;
-  const target = TargetManager.instance().mainFrameTarget();
+  const target = TargetManager.instance().primaryPageTarget();
   // Get the CSS-to-physical pixel ratio of the device the inspected
   // target is running at.
   const evaluateResult = await target?.runtimeAgent().invoke_evaluate({expression: 'window.devicePixelRatio'});
@@ -189,4 +191,49 @@ export async function normalizedImpactedNodesForLayoutShift(
   normalizedLayoutShiftNodesCache.set(modelData, cacheForModel);
 
   return normalizedNodes;
+}
+
+export async function getMetadataForFreshRecording(recordStartTime?: number):
+    Promise<TraceEngine.TraceModel.TraceFileMetaData|undefined> {
+  try {
+    const cpuThrottlingManager = CPUThrottlingManager.instance();
+
+    // If the CPU Throttling manager has yet to have its primary page target
+    // set, it will block on the call to get the current hardware concurrency
+    // until it does. At this point where the user has recorded a trace, that
+    // target should have been set. So if it doesn't have it set, we instead
+    // just bail and don't store the hardware concurrency (this is only
+    // metadata, not mission critical information).
+    // We also race this call against a 1s timeout, because sometimes this call
+    // can hang (unsure exactly why) and we do not want to block parsing for
+    // too long as a result.
+    function getConcurrencyOrTimeout(): Promise<number|undefined> {
+      return Promise.race([
+        CPUThrottlingManager.instance().getHardwareConcurrency(),
+        new Promise<undefined>(resolve => {
+          setTimeout(() => resolve(undefined), 1_000);
+        }),
+      ]);
+    }
+
+    const hardwareConcurrency =
+        cpuThrottlingManager.hasPrimaryPageTargetSet() ? await getConcurrencyOrTimeout() : undefined;
+    const cpuThrottling = CPUThrottlingManager.instance().cpuThrottlingRate();
+    const networkConditions = MultitargetNetworkManager.instance().networkConditions();
+    const networkTitle =
+        typeof networkConditions.title === 'function' ? networkConditions.title() : networkConditions.title;
+
+    return {
+      source: 'DevTools',
+      startTime: recordStartTime ? new Date(recordStartTime).toJSON() : undefined,  // ISO-8601 timestamp
+      cpuThrottling,
+      networkThrottling: networkTitle,
+      hardwareConcurrency,
+    };
+  } catch {
+    // If anything went wrong, it does not really matter. The impact is that we
+    // will not save the metadata when we save the trace to disk, but that is
+    // not really important, so just return undefined and move on
+    return undefined;
+  }
 }

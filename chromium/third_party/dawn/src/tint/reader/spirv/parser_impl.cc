@@ -26,6 +26,7 @@
 #include "src/tint/ast/interpolate_attribute.h"
 #include "src/tint/ast/unary_op_expression.h"
 #include "src/tint/reader/spirv/function.h"
+#include "src/tint/switch.h"
 #include "src/tint/type/depth_texture.h"
 #include "src/tint/type/multisampled_texture.h"
 #include "src/tint/type/sampled_texture.h"
@@ -1437,6 +1438,12 @@ bool ParserImpl::EmitModuleScopeVariables() {
         if ((type_id == builtin_position_.pointer_type_id) &&
             ((spirv_storage_class == spv::StorageClass::Input) ||
              (spirv_storage_class == spv::StorageClass::Output))) {
+            // TODO(crbug.com/tint/103): Support modules that contain multiple Position built-ins.
+            if (builtin_position_.per_vertex_var_id != 0) {
+                return Fail()
+                       << "unsupported: multiple Position built-in variables in the same module";
+            }
+
             // Skip emitting gl_PerVertex.
             builtin_position_.per_vertex_var_id = var.result_id();
             builtin_position_.per_vertex_var_init_id =

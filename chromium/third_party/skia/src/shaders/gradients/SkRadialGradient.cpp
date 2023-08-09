@@ -10,7 +10,7 @@
 #include "src/core/SkWriteBuffer.h"
 #include "src/shaders/SkLocalMatrixShader.h"
 
-#ifdef SK_GRAPHITE_ENABLED
+#if defined(SK_GRAPHITE)
 #include "src/gpu/graphite/KeyContext.h"
 #include "src/gpu/graphite/KeyHelpers.h"
 #include "src/gpu/graphite/PaintParamsKey.h"
@@ -37,11 +37,11 @@ public:
     SkRadialGradient(const SkPoint& center, SkScalar radius, const Descriptor&);
 
     GradientType asGradient(GradientInfo* info, SkMatrix* matrix) const override;
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
     std::unique_ptr<GrFragmentProcessor> asFragmentProcessor(const GrFPArgs&,
                                                              const MatrixRec&) const override;
 #endif
-#ifdef SK_GRAPHITE_ENABLED
+#if defined(SK_GRAPHITE)
     void addToKey(const skgpu::graphite::KeyContext&,
                   skgpu::graphite::PaintParamsKeyBuilder*,
                   skgpu::graphite::PipelineDataGatherer*) const override;
@@ -52,9 +52,10 @@ protected:
 
     void appendGradientStages(SkArenaAlloc* alloc, SkRasterPipeline* tPipeline,
                               SkRasterPipeline* postPipeline) const override;
-
+#if defined(SK_ENABLE_SKVM)
     skvm::F32 transformT(skvm::Builder*, skvm::Uniforms*,
                          skvm::Coord coord, skvm::I32* mask) const final;
+#endif
 
 private:
     friend void ::SkRegisterRadialGradientShaderFlattenable();
@@ -113,14 +114,16 @@ void SkRadialGradient::appendGradientStages(SkArenaAlloc*, SkRasterPipeline* p,
     p->append(SkRasterPipelineOp::xy_to_radius);
 }
 
+#if defined(SK_ENABLE_SKVM)
 skvm::F32 SkRadialGradient::transformT(skvm::Builder* p, skvm::Uniforms*,
                                        skvm::Coord coord, skvm::I32* mask) const {
     return sqrt(coord.x*coord.x + coord.y*coord.y);
 }
+#endif
 
 /////////////////////////////////////////////////////////////////////
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
 
 #include "src/core/SkRuntimeEffectPriv.h"
 #include "src/gpu/ganesh/effects/GrSkSLFP.h"
@@ -141,29 +144,15 @@ SkRadialGradient::asFragmentProcessor(const GrFPArgs& args, const MatrixRec& mRe
 
 #endif
 
-#ifdef SK_GRAPHITE_ENABLED
+#if defined(SK_GRAPHITE)
 void SkRadialGradient::addToKey(const skgpu::graphite::KeyContext& keyContext,
                                 skgpu::graphite::PaintParamsKeyBuilder* builder,
                                 skgpu::graphite::PipelineDataGatherer* gatherer) const {
-    using namespace skgpu::graphite;
-
-    SkColor4fXformer xformedColors(this, keyContext.dstColorInfo().colorSpace());
-    const SkPMColor4f* colors = xformedColors.fColors.begin();
-
-    GradientShaderBlocks::GradientData data(GradientType::kRadial,
-                                            fCenter, { 0.0f, 0.0f },
-                                            fRadius, 0.0f,
-                                            0.0f, 0.0f,
-                                            fTileMode,
-                                            fColorCount,
-                                            colors,
-                                            fPositions,
-                                            fInterpolation);
-
-    MakeInterpolatedToDst(keyContext, builder, gatherer,
-                          data,
-                          fInterpolation,
-                          xformedColors.fIntermediateColorSpace.get());
+    this->addToKeyCommon(keyContext, builder, gatherer,
+                         GradientType::kRadial,
+                         fCenter, { 0.0f, 0.0f },
+                         fRadius, 0.0f,
+                         0.0f, 0.0f);
 }
 #endif
 

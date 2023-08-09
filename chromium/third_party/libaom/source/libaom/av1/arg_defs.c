@@ -47,6 +47,7 @@ static const struct arg_enum_list tuning_enum[] = {
   { "vmaf", AOM_TUNE_VMAF_MAX_GAIN },
   { "vmaf_neg", AOM_TUNE_VMAF_NEG_MAX_GAIN },
   { "butteraugli", AOM_TUNE_BUTTERAUGLI },
+  { "vmaf_saliency_map", AOM_TUNE_VMAF_SALIENCY_MAP },
   { NULL, 0 }
 };
 
@@ -503,10 +504,10 @@ const av1_codec_arg_definitions_t g_av1_codec_arg_defs = {
                                  "Partition information read and write path"),
   .enable_rate_guide_deltaq =
       ARG_DEF(NULL, "enable-rate-guide-deltaq", 1,
-              "Enable rate guide deltaq (1), by default off (0)."
-              "It requires --deltaq-mode=3."
-              "If turned on, it requires to read an input file "
-              "by --rate-distribution-info"),
+              "Enable rate guide deltaq (1), by default off (0). "
+              "It requires --deltaq-mode=3. "
+              "If turned on, it requires an input file specified "
+              "by --rate-distribution-info."),
   .rate_distribution_info =
       ARG_DEF(NULL, "rate-distribution-info", 1,
               "Rate distribution information input."
@@ -701,7 +702,7 @@ const av1_codec_arg_definitions_t g_av1_codec_arg_defs = {
               "given lambda to minimize the rdcost."),
   .global_motion_method = ARG_DEF_ENUM(NULL, "global-motion-method", 1,
                                        "Global motion search method "
-                                       "(default: feature-match)",
+                                       "(default: disflow):",
                                        global_motion_method_enum),
 #endif  // CONFIG_AV1_ENCODER
 };

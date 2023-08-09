@@ -7,11 +7,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from crossbench.browsers.chromium import Chromium
-from crossbench.probes.base import Probe
+from crossbench.probes.probe import Probe
 
 if TYPE_CHECKING:
   from crossbench.probes.results import ProbeResult
-  from crossbench.browsers.base import Browser
+  from crossbench.browsers.browser import Browser
   from crossbench.runner import RepetitionsRunGroup, Run, StoriesRunGroup
 
 
@@ -25,15 +25,15 @@ class V8BuiltinsPGOProbe(Probe):
   def is_compatible(self, browser: Browser) -> bool:
     return isinstance(browser, Chromium)
 
-  def attach(self, browser: Browser) -> None:
+  def attach(self, browser: Chromium) -> None:
     # Use inline isinstance assert to hint that we have a Chrome browser.
-    assert isinstance(browser, Chromium)
+    assert isinstance(browser, Chromium), "Expected Chromium-based browser."
     super().attach(browser)
     browser.js_flags.set("--allow-natives-syntax")
 
   class Scope(Probe.Scope):
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, **kwargs) -> None:
       super().__init__(*args, *kwargs)
       self._pgo_counters = None
 

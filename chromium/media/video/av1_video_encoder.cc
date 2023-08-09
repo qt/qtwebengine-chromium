@@ -4,13 +4,12 @@
 
 #include "media/video/av1_video_encoder.h"
 
+#include <algorithm>
 #include <cmath>
 
-#include "base/cxx17_backports.h"
 #include "base/logging.h"
 #include "base/numerics/checked_math.h"
 #include "base/strings/stringprintf.h"
-#include "base/system/sys_info.h"
 #include "base/time/time.h"
 #include "base/trace_event/trace_event.h"
 #include "media/base/svc_scalability_mode.h"
@@ -33,26 +32,6 @@ void FreeCodecCtx(aom_codec_ctx_t* codec_ctx) {
     DCHECK_EQ(error, AOM_CODEC_OK);
   }
   delete codec_ctx;
-}
-
-int GetNumberOfThreads(int width) {
-  // Default to 1 thread for less than VGA.
-  int desired_threads = 1;
-
-  if (width >= 3840)
-    desired_threads = 16;
-  else if (width >= 2560)
-    desired_threads = 8;
-  else if (width >= 1280)
-    desired_threads = 4;
-  else if (width >= 640)
-    desired_threads = 2;
-
-  // Clamp to the number of available logical processors/cores.
-  desired_threads =
-      std::min(desired_threads, base::SysInfo::NumberOfProcessors());
-
-  return desired_threads;
 }
 
 EncoderStatus SetUpAomConfig(const VideoEncoder::Options& opts,
@@ -86,7 +65,7 @@ EncoderStatus SetUpAomConfig(const VideoEncoder::Options& opts,
   config.g_timebase.den = base::Time::kMicrosecondsPerSecond;
 
   // Set the number of threads based on the image width and num of cores.
-  config.g_threads = GetNumberOfThreads(opts.frame_size.width());
+  config.g_threads = GetNumberOfThreadsForSoftwareEncoding(opts.frame_size);
 
   // Insert keyframes at will with a given max interval
   if (opts.keyframe_interval.has_value()) {
@@ -105,6 +84,15 @@ EncoderStatus SetUpAomConfig(const VideoEncoder::Options& opts,
       case Bitrate::Mode::kConstant:
         config.rc_end_usage = AOM_CBR;
         break;
+      case Bitrate::Mode::kExternal:
+        // libaom doesn't have a special rate control mode for per-frame
+        // quantizer. Instead we just set CBR and set
+        // AV1E_SET_QUANTIZER_ONE_PASS before each frame.
+        config.rc_end_usage = AOM_CBR;
+        // Let the whole AV1 quantizer range to be used.
+        config.rc_max_quantizer = 63;
+        config.rc_min_quantizer = 1;
+        break;
     }
   } else {
     config.rc_end_usage = AOM_VBR;
@@ -119,6 +107,7 @@ EncoderStatus SetUpAomConfig(const VideoEncoder::Options& opts,
   svc_params = {};
   svc_params.framerate_factor[0] = 1;
   svc_params.number_spatial_layers = 1;
+  svc_params.number_temporal_layers = 1;
   if (opts.scalability_mode.has_value()) {
     switch (opts.scalability_mode.value()) {
       case SVCScalabilityMode::kL1T1:
@@ -293,7 +282,7 @@ void Av1VideoEncoder::Initialize(VideoCodecProfile profile,
 }
 
 void Av1VideoEncoder::Encode(scoped_refptr<VideoFrame> frame,
-                             bool key_frame,
+                             const EncodeOptions& encode_options,
                              EncoderStatusCB done_cb) {
   done_cb = BindCallbackToCurrentLoopIfNeeded(std::move(done_cb));
   if (!codec_) {
@@ -393,6 +382,7 @@ void Av1VideoEncoder::Encode(scoped_refptr<VideoFrame> frame,
       NOTREACHED();
   }
 
+  bool key_frame = encode_options.key_frame;
   auto duration_us = GetFrameDuration(*frame).InMicroseconds();
   last_frame_timestamp_ = frame->timestamp();
   if (last_frame_color_space_ != frame->ColorSpace()) {
@@ -405,6 +395,15 @@ void Av1VideoEncoder::Encode(scoped_refptr<VideoFrame> frame,
   if (!temporal_id_status.has_value()) {
     std::move(done_cb).Run(std::move(temporal_id_status).error());
     return;
+  }
+
+  if (encode_options.quantizer.has_value()) {
+    DCHECK_EQ(options_.bitrate->mode(), Bitrate::Mode::kExternal);
+    // Convert double quantizer to an integer within codec's supported range.
+    int qp = static_cast<int>(std::lround(encode_options.quantizer.value()));
+    qp = std::clamp(qp, static_cast<int>(config_.rc_min_quantizer),
+                    static_cast<int>(config_.rc_max_quantizer));
+    aom_codec_control(codec_.get(), AV1E_SET_QUANTIZER_ONE_PASS, qp);
   }
 
   TRACE_EVENT1("media", "aom_codec_encode", "timestamp", frame->timestamp());
@@ -495,7 +494,7 @@ base::TimeDelta Av1VideoEncoder::GetFrameDuration(const VideoFrame& frame) {
   constexpr auto min_duration = base::Seconds(1.0 / 60.0);
   constexpr auto max_duration = base::Seconds(1.0 / 24.0);
   auto duration = frame.timestamp() - last_frame_timestamp_;
-  return base::clamp(duration, min_duration, max_duration);
+  return std::clamp(duration, min_duration, max_duration);
 }
 
 void Av1VideoEncoder::DrainOutputs(int temporal_id,

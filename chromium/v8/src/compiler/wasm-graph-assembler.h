@@ -200,6 +200,9 @@ class WasmGraphAssembler : public GraphAssembler {
     return LoadFixedArrayElement(array, index, MachineType::AnyTagged());
   }
 
+  Node* LoadByteArrayElement(Node* byte_array, Node* index_intptr,
+                             MachineType type);
+
   Node* StoreFixedArrayElement(Node* array, int index, Node* value,
                                ObjectAccess access);
 
@@ -259,10 +262,10 @@ class WasmGraphAssembler : public GraphAssembler {
   Node* WasmExternExternalize(Node* object);
 
   Node* StructGet(Node* object, const wasm::StructType* type, int field_index,
-                  bool is_signed, bool null_check);
+                  bool is_signed, CheckForNull null_check);
 
   void StructSet(Node* object, Node* value, const wasm::StructType* type,
-                 int field_index, bool null_check);
+                 int field_index, CheckForNull null_check);
 
   Node* ArrayGet(Node* array, Node* index, const wasm::ArrayType* type,
                  bool is_signed);
@@ -270,9 +273,11 @@ class WasmGraphAssembler : public GraphAssembler {
   void ArraySet(Node* array, Node* index, Node* value,
                 const wasm::ArrayType* type);
 
-  Node* ArrayLength(Node* array, bool null_check);
+  Node* ArrayLength(Node* array, CheckForNull null_check);
 
   void ArrayInitializeLength(Node* array, Node* length);
+
+  Node* LoadStringLength(Node* string);
 
   Node* StringAsWtf16(Node* string);
 
@@ -290,6 +295,10 @@ class WasmGraphAssembler : public GraphAssembler {
   void TrapUnless(Node* condition, TrapId reason) {
     AddNode(graph()->NewNode(mcgraph()->common()->TrapUnless(reason), condition,
                              effect(), control()));
+  }
+
+  Node* LoadRootRegister() {
+    return AddNode(graph()->NewNode(mcgraph()->machine()->LoadRootRegister()));
   }
 
   SimplifiedOperatorBuilder* simplified() override { return &simplified_; }

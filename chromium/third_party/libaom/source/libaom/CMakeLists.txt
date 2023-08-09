@@ -58,9 +58,9 @@ endif()
 # passed to libtool.
 #
 # We set SO_FILE_VERSION = [c-a].a.r
-set(LT_CURRENT 8)
+set(LT_CURRENT 9)
 set(LT_REVISION 0)
-set(LT_AGE 5)
+set(LT_AGE 6)
 math(EXPR SO_VERSION "${LT_CURRENT} - ${LT_AGE}")
 set(SO_FILE_VERSION "${SO_VERSION}.${LT_AGE}.${LT_REVISION}")
 unset(LT_CURRENT)
@@ -217,13 +217,9 @@ list(APPEND AOM_WEBM_ENCODER_SOURCES "${AOM_ROOT}/common/webmenc.cc"
 include_directories(${AOM_ROOT} ${AOM_CONFIG_DIR} ${AOM_ROOT}/apps
                     ${AOM_ROOT}/common ${AOM_ROOT}/examples ${AOM_ROOT}/stats)
 
-if(CONFIG_RUNTIME_CPU_DETECT AND ANDROID_NDK)
-  include_directories(${ANDROID_NDK}/sources/android/cpufeatures)
-endif()
-
 # Targets
 add_library(aom_version ${AOM_VERSION_SOURCES})
-add_dummy_source_file_to_target(aom_version c)
+add_no_op_source_file_to_target(aom_version c)
 add_custom_command(OUTPUT "${AOM_CONFIG_DIR}/config/aom_version.h"
                    COMMAND ${CMAKE_COMMAND} ARGS
                            -DAOM_CONFIG_DIR=${AOM_CONFIG_DIR}
@@ -311,7 +307,7 @@ if(NOT MSVC AND NOT APPLE)
   endif()
 endif()
 
-if(CONFIG_AV1_RC_RTC AND CONFIG_AV1_ENCODER AND NOT BUILD_SHARED_LIBS)
+if(CONFIG_AV1_ENCODER AND NOT CONFIG_REALTIME_ONLY AND NOT BUILD_SHARED_LIBS)
   list(APPEND AOM_AV1_RC_SOURCES "${AOM_ROOT}/av1/ratectrl_rtc.h"
               "${AOM_ROOT}/av1/ratectrl_rtc.cc")
   add_library(aom_av1_rc ${AOM_AV1_RC_SOURCES})
@@ -319,33 +315,13 @@ if(CONFIG_AV1_RC_RTC AND CONFIG_AV1_ENCODER AND NOT BUILD_SHARED_LIBS)
   if(NOT MSVC AND NOT APPLE)
     target_link_libraries(aom_av1_rc ${AOM_LIB_LINK_TYPE} m)
   endif()
-endif()
-
-if(CONFIG_AV1_ENCODER AND NOT CONFIG_REALTIME_ONLY AND NOT BUILD_SHARED_LIBS)
-  list(APPEND AOM_AV1_RC_QMODE_SOURCES
-              "${AOM_ROOT}/av1/qmode_rc/ratectrl_qmode_interface.h"
-              "${AOM_ROOT}/av1/qmode_rc/ratectrl_qmode_interface.cc"
-              "${AOM_ROOT}/av1/qmode_rc/reference_manager.h"
-              "${AOM_ROOT}/av1/qmode_rc/reference_manager.cc"
-              "${AOM_ROOT}/av1/qmode_rc/ratectrl_qmode.h"
-              "${AOM_ROOT}/av1/qmode_rc/ratectrl_qmode.cc"
-              "${AOM_ROOT}/av1/qmode_rc/ducky_encode.h"
-              "${AOM_ROOT}/av1/qmode_rc/ducky_encode.cc")
-  add_library(av1_rc_qmode ${AOM_AV1_RC_QMODE_SOURCES})
-  target_link_libraries(av1_rc_qmode ${AOM_LIB_LINK_TYPE} aom)
-  if(NOT MSVC AND NOT APPLE)
-    target_link_libraries(av1_rc_qmode ${AOM_LIB_LINK_TYPE} m)
-  endif()
-  set_target_properties(av1_rc_qmode PROPERTIES LINKER_LANGUAGE CXX)
+  set_target_properties(aom_av1_rc PROPERTIES LINKER_LANGUAGE CXX)
 endif()
 
 # List of object and static library targets.
 set(AOM_LIB_TARGETS ${AOM_LIB_TARGETS} aom_rtcd aom_mem aom_scale aom)
-if(CONFIG_AV1_RC_RTC AND CONFIG_AV1_ENCODER AND NOT BUILD_SHARED_LIBS)
-  set(AOM_LIB_TARGETS ${AOM_LIB_TARGETS} aom_av1_rc)
-endif()
 if(CONFIG_AV1_ENCODER AND NOT CONFIG_REALTIME_ONLY AND NOT BUILD_SHARED_LIBS)
-  set(AOM_LIB_TARGETS ${AOM_LIB_TARGETS} av1_rc_qmode)
+  set(AOM_LIB_TARGETS ${AOM_LIB_TARGETS} aom_av1_rc)
 endif()
 if(BUILD_SHARED_LIBS)
   set(AOM_LIB_TARGETS ${AOM_LIB_TARGETS} aom_static)
@@ -369,13 +345,16 @@ foreach(aom_lib ${AOM_LIB_TARGETS})
   endif()
 endforeach()
 
-# Generate C/C++ stub files containing the function usage_exit(). Users of the
+# Generate C/C++ files containing the function usage_exit(). Users of the
 # aom_common_app_util library must define this function. This is a convenience
 # to allow omission of the function from applications that might want to use
 # other pieces of the util support without defining usage_exit().
-file(WRITE "${AOM_GEN_SRC_DIR}/usage_exit.c" "void usage_exit(void) {}")
+file(WRITE "${AOM_GEN_SRC_DIR}/usage_exit.c"
+     "#include <stdlib.h>\n\n#include \"common/tools_common.h\"\n\n"
+     "void usage_exit(void) { exit(EXIT_FAILURE); }\n")
 file(WRITE "${AOM_GEN_SRC_DIR}/usage_exit.cc"
-     "extern \"C\" void usage_exit(void) {}")
+     "#include <stdlib.h>\n\n#include \"common/tools_common.h\"\n\n"
+     "extern \"C\" void usage_exit(void) { exit(EXIT_FAILURE); }\n")
 
 #
 # Application and application support targets.
@@ -802,7 +781,7 @@ if(XCODE)
     # here, it really is the Xcode generator's fault, or just a deficiency in
     # Xcode itself.
     foreach(aom_app ${AOM_APP_TARGETS})
-      add_dummy_source_file_to_target("${aom_app}" "cc")
+      add_no_op_source_file_to_target("${aom_app}" "cc")
     endforeach()
   endif()
 endif()

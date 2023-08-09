@@ -22,12 +22,13 @@
 namespace tint::type {
 
 /// A vector type.
-class Vector final : public Castable<Vector, Type> {
+class Vector : public utils::Castable<Vector, Type> {
   public:
     /// Constructor
     /// @param subtype the vector element type
     /// @param size the number of elements in the vector
-    Vector(Type const* subtype, uint32_t size);
+    /// @param packed the optional 'packed' modifier
+    Vector(Type const* subtype, uint32_t size, bool packed = false);
 
     /// Destructor
     ~Vector() override;
@@ -39,10 +40,9 @@ class Vector final : public Castable<Vector, Type> {
     /// @returns the type of the vector elements
     const Type* type() const { return subtype_; }
 
-    /// @param symbols the program's symbol table
     /// @returns the name for this type that closely resembles how it would be
     /// declared in WGSL.
-    std::string FriendlyName(const SymbolTable& symbols) const override;
+    std::string FriendlyName() const override;
 
     /// @returns the number of elements in the vector
     uint32_t Width() const { return width_; }
@@ -50,9 +50,11 @@ class Vector final : public Castable<Vector, Type> {
     /// @returns the size in bytes of the type. This may include tail padding.
     uint32_t Size() const override;
 
-    /// @returns the alignment in bytes of the type. This may include tail
-    /// padding.
+    /// @returns the alignment in bytes of the type. This may include tail padding.
     uint32_t Align() const override;
+
+    /// @returns `true` if this vector is packed, false otherwise
+    bool Packed() const { return packed_; }
 
     /// @param width the width of the vector
     /// @returns the size in bytes of a vector of the given width.
@@ -69,6 +71,7 @@ class Vector final : public Castable<Vector, Type> {
   private:
     Type const* const subtype_;
     const uint32_t width_;
+    const bool packed_;
 };
 
 }  // namespace tint::type

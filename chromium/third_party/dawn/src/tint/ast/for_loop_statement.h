@@ -22,7 +22,7 @@ namespace tint::ast {
 class Expression;
 
 /// A for loop statement
-class ForLoopStatement final : public Castable<ForLoopStatement, Statement> {
+class ForLoopStatement final : public utils::Castable<ForLoopStatement, Statement> {
   public:
     /// Constructor
     /// @param pid the identifier of the program that owns this node
@@ -32,15 +32,17 @@ class ForLoopStatement final : public Castable<ForLoopStatement, Statement> {
     /// @param condition the optional loop condition expression
     /// @param continuing the optional continuing statement
     /// @param body the loop body
+    /// @param attributes the while statement attributes
     ForLoopStatement(ProgramID pid,
                      NodeID nid,
                      const Source& source,
                      const Statement* initializer,
                      const Expression* condition,
                      const Statement* continuing,
-                     const BlockStatement* body);
-    /// Move constructor
-    ForLoopStatement(ForLoopStatement&&);
+                     const BlockStatement* body,
+                     utils::VectorRef<const ast::Attribute*> attributes);
+
+    /// Destructor
     ~ForLoopStatement() override;
 
     /// Clones this node and all transitive child nodes using the `CloneContext`
@@ -60,6 +62,9 @@ class ForLoopStatement final : public Castable<ForLoopStatement, Statement> {
 
     /// The loop body block
     const BlockStatement* const body;
+
+    /// The attribute list
+    const utils::Vector<const Attribute*, 1> attributes;
 };
 
 }  // namespace tint::ast

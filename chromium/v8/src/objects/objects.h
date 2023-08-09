@@ -308,7 +308,7 @@ class Object : public TaggedImpl<HeapObjectReferenceType::STRONG, Address> {
   // writable shared heap.
   V8_INLINE bool InSharedHeap() const;
 
-  V8_INLINE bool InSharedWritableHeap() const;
+  V8_INLINE bool InWritableSharedSpace() const;
 
 #define IS_TYPE_FUNCTION_DECL(Type) \
   V8_INLINE bool Is##Type() const;  \
@@ -902,6 +902,8 @@ class MapWord {
   // collection.  Only valid during a scavenge collection (specifically,
   // when all map words are heap object pointers, i.e. not during a full GC).
   inline bool IsForwardingAddress() const;
+
+  V8_EXPORT_PRIVATE static bool IsMapOrForwarded(Map map);
 
   // Create a map word from a forwarding address.
   static inline MapWord FromForwardingAddress(HeapObject map_word_host,

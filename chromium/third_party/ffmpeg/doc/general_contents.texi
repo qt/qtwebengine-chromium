@@ -579,6 +579,7 @@ library:
 @item Ogg                       @tab X @tab X
 @item Playstation Portable PMP  @tab   @tab X
 @item Portable Voice Format     @tab   @tab X
+@item RK Audio (RKA)            @tab   @tab X
 @item TechnoTrend PVA           @tab   @tab X
     @tab Used by TechnoTrend DVB PCI boards.
 @item QCP                       @tab   @tab X
@@ -665,6 +666,7 @@ library:
 @item Sample Dump eXchange      @tab   @tab X
 @item SAP                       @tab X @tab X
 @item SBG                       @tab   @tab X
+@item SDNS                      @tab   @tab X
 @item SDP                       @tab   @tab X
 @item SER                       @tab   @tab X
 @item Digital Pictures SGA      @tab   @tab X
@@ -707,6 +709,7 @@ library:
     @tab Audio format used in Sony PS games.
 @item Marble WADY               @tab   @tab X
 @item WAV                       @tab X @tab X
+@item Waveform Archiver         @tab   @tab X
 @item WavPack                   @tab X @tab X
 @item WebM                      @tab X @tab X
 @item Windows Televison (WTV)   @tab X @tab X
@@ -1332,6 +1335,7 @@ following image formats are supported:
     @tab Real low bitrate AC-3 codec
 @item RealAudio Lossless     @tab     @tab  X
 @item RealAudio SIPR / ACELP.NET @tab     @tab  X
+@item RK Audio (RKA)         @tab     @tab  X
 @item SBC (low-complexity subband codec) @tab  X  @tab  X
     @tab Used in Bluetooth A2DP
 @item Shorten                @tab     @tab  X
@@ -1356,6 +1360,7 @@ following image formats are supported:
 @item Vorbis                 @tab  E  @tab  X
     @tab A native but very primitive encoder exists.
 @item Voxware MetaSound      @tab     @tab  X
+@item Waveform Archiver      @tab     @tab  X
 @item WavPack                @tab  X  @tab  X
 @item Westwood Audio (SND1)  @tab     @tab  X
 @item Windows Media Audio 1  @tab  X  @tab  X

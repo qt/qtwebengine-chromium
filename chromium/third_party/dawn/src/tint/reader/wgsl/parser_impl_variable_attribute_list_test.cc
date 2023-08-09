@@ -39,8 +39,7 @@ TEST_F(ParserImplTest, AttributeList_Parses) {
     EXPECT_EQ(exp->value, 4u);
 
     ASSERT_TRUE(attr_1->Is<ast::BuiltinAttribute>());
-    ast::CheckIdentifier(p->builder().Symbols(), attr_1->As<ast::BuiltinAttribute>()->builtin,
-                         "position");
+    ast::CheckIdentifier(attr_1->As<ast::BuiltinAttribute>()->builtin, "position");
 }
 
 TEST_F(ParserImplTest, AttributeList_Invalid) {
@@ -50,7 +49,9 @@ TEST_F(ParserImplTest, AttributeList_Invalid) {
     EXPECT_TRUE(attrs.errored);
     EXPECT_FALSE(attrs.matched);
     EXPECT_TRUE(attrs.value.IsEmpty());
-    EXPECT_EQ(p->error(), R"(1:2: expected attribute)");
+    EXPECT_EQ(p->error(), R"(1:2: expected attribute
+Did you mean 'invariant'?
+Possible values: 'align', 'binding', 'builtin', 'compute', 'diagnostic', 'fragment', 'group', 'id', 'interpolate', 'invariant', 'location', 'must_use', 'size', 'vertex', 'workgroup_size')");
 }
 
 }  // namespace

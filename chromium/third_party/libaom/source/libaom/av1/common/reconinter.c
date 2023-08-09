@@ -30,11 +30,11 @@
 
 // This function will determine whether or not to create a warped
 // prediction.
-int av1_allow_warp(const MB_MODE_INFO *const mbmi,
-                   const WarpTypesAllowed *const warp_types,
-                   const WarpedMotionParams *const gm_params,
-                   int build_for_obmc, const struct scale_factors *const sf,
-                   WarpedMotionParams *final_warp_params) {
+static int allow_warp(const MB_MODE_INFO *const mbmi,
+                      const WarpTypesAllowed *const warp_types,
+                      const WarpedMotionParams *const gm_params,
+                      int build_for_obmc, const struct scale_factors *const sf,
+                      WarpedMotionParams *final_warp_params) {
   // Note: As per the spec, we must test the fixed point scales here, which are
   // at a higher precision (1 << 14) than the xs and ys in subpel_params (that
   // have 1 << 10 precision).
@@ -65,9 +65,9 @@ void av1_init_warp_params(InterPredParams *inter_pred_params,
 
   if (xd->cur_frame_force_integer_mv) return;
 
-  if (av1_allow_warp(mi, warp_types, &xd->global_motion[mi->ref_frame[ref]], 0,
-                     inter_pred_params->scale_factors,
-                     &inter_pred_params->warp_params)) {
+  if (allow_warp(mi, warp_types, &xd->global_motion[mi->ref_frame[ref]], 0,
+                 inter_pred_params->scale_factors,
+                 &inter_pred_params->warp_params)) {
     inter_pred_params->mode = WARP_PRED;
   }
 }

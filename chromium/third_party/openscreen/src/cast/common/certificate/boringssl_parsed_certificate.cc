@@ -11,7 +11,6 @@
 #include <utility>
 #include <vector>
 
-#include "absl/strings/string_view.h"
 #include "cast/common/certificate/boringssl_util.h"
 #include "util/crypto/certificate_utils.h"
 #include "util/osp_logging.h"
@@ -110,8 +109,8 @@ ErrorOr<uint64_t> BoringSSLParsedCertificate::GetSerialNumber() const {
 
 bool BoringSSLParsedCertificate::VerifySignedData(
     DigestAlgorithm algorithm,
-    const ConstDataSpan& data,
-    const ConstDataSpan& signature) const {
+    const ByteView& data,
+    const ByteView& signature) const {
   const EVP_MD* digest = MapDigestAlgorithm(algorithm);
   if (!digest) {
     return false;
@@ -122,7 +121,7 @@ bool BoringSSLParsedCertificate::VerifySignedData(
                                             signature);
 }
 
-bool BoringSSLParsedCertificate::HasPolicyOid(const ConstDataSpan& oid) const {
+bool BoringSSLParsedCertificate::HasPolicyOid(const ByteView& oid) const {
   // Gets an index into the extension list that points to the
   // certificatePolicies extension, if it exists, -1 otherwise.
   bool has_oid = false;
@@ -148,8 +147,9 @@ bool BoringSSLParsedCertificate::HasPolicyOid(const ConstDataSpan& oid) const {
       uint32_t policy_count = sk_POLICYINFO_num(policies);
       for (uint32_t i = 0; i < policy_count; ++i) {
         POLICYINFO* info = sk_POLICYINFO_value(policies, i);
-        if (OBJ_length(info->policyid) == oid.length &&
-            memcmp(OBJ_get0_data(info->policyid), oid.data, oid.length) == 0) {
+        if (OBJ_length(info->policyid) == oid.size() &&
+            memcmp(OBJ_get0_data(info->policyid), oid.data(), oid.size()) ==
+                0) {
           has_oid = true;
           break;
         }

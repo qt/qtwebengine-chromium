@@ -1225,7 +1225,7 @@ struct block_evaluator<ArgType, BlockRows, BlockCols, InnerPanel, /* HasDirectAc
   explicit block_evaluator(const XprType& block)
     : mapbase_evaluator<XprType, typename XprType::PlainObject>(block)
   {
-    eigen_internal_assert((internal::is_constant_evaluated() || (internal::UIntPtr(block.data()) % plain_enum_max(1,evaluator<XprType>::Alignment)) == 0) \
+    eigen_internal_assert((internal::is_constant_evaluated() || (std::uintptr_t(block.data()) % plain_enum_max(1,evaluator<XprType>::Alignment)) == 0) \
       && "data is not aligned");
   }
 };

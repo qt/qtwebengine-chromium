@@ -26,7 +26,7 @@
 namespace tint::ast {
 
 /// A struct statement.
-class Struct final : public Castable<Struct, TypeDecl> {
+class Struct final : public utils::Castable<Struct, TypeDecl> {
   public:
     /// Create a new struct statement
     /// @param pid the identifier of the program that owns this node
@@ -41,9 +41,8 @@ class Struct final : public Castable<Struct, TypeDecl> {
            const Identifier* name,
            utils::VectorRef<const StructMember*> members,
            utils::VectorRef<const Attribute*> attributes);
-    /// Move constructor
-    Struct(Struct&&);
 
+    /// Destructor
     ~Struct() override;
 
     /// Clones this node and all transitive child nodes using the `CloneContext`

@@ -13,6 +13,7 @@ import {ParallelConnection} from './Connections.js';
 import {Capability, Type, type Target} from './Target.js';
 import {SDKModel} from './SDKModel.js';
 import {Events as TargetManagerEvents, TargetManager} from './TargetManager.js';
+import {PrimaryPageChangeType, ResourceTreeModel} from './ResourceTreeModel.js';
 
 export class ChildTargetManager extends SDKModel<EventTypes> implements ProtocolProxyApi.TargetDispatcher {
   readonly #targetManager: TargetManager;
@@ -58,15 +59,15 @@ export class ChildTargetManager extends SDKModel<EventTypes> implements Protocol
     return Array.from(this.#childTargetsBySessionId.values());
   }
 
-  async suspendModel(): Promise<void> {
+  override async suspendModel(): Promise<void> {
     await this.#targetAgent.invoke_setAutoAttach({autoAttach: true, waitForDebuggerOnStart: false, flatten: true});
   }
 
-  async resumeModel(): Promise<void> {
+  override async resumeModel(): Promise<void> {
     await this.#targetAgent.invoke_setAutoAttach({autoAttach: true, waitForDebuggerOnStart: true, flatten: true});
   }
 
-  dispose(): void {
+  override dispose(): void {
     for (const sessionId of this.#childTargetsBySessionId.keys()) {
       this.detachedFromTarget({sessionId, targetId: undefined});
     }
@@ -82,7 +83,15 @@ export class ChildTargetManager extends SDKModel<EventTypes> implements Protocol
     this.#targetInfosInternal.set(targetInfo.targetId, targetInfo);
     const target = this.#childTargetsById.get(targetInfo.targetId);
     if (target) {
-      target.updateTargetInfo(targetInfo);
+      if (target.targetInfo()?.subtype === 'prerender' && !targetInfo.subtype) {
+        const resourceTreeModel = target.model(ResourceTreeModel);
+        target.updateTargetInfo(targetInfo);
+        if (resourceTreeModel && resourceTreeModel.mainFrame) {
+          resourceTreeModel.primaryPageChanged(resourceTreeModel.mainFrame, PrimaryPageChangeType.Activation);
+        }
+      } else {
+        target.updateTargetInfo(targetInfo);
+      }
     }
     this.fireAvailableTargetsChanged();
     this.dispatchEventToListeners(Events.TargetInfoChanged, targetInfo);
@@ -153,7 +162,12 @@ export class ChildTargetManager extends SDKModel<EventTypes> implements Protocol
     if (ChildTargetManager.attachCallback) {
       await ChildTargetManager.attachCallback({target, waitingForDebugger});
     }
-    void target.runtimeAgent().invoke_runIfWaitingForDebugger();
+
+    // [crbug/1423096] Invoking this on a worker session that is not waiting for the debugger can force the worker
+    // to resume even if there is another session waiting for the debugger.
+    if (waitingForDebugger) {
+      void target.runtimeAgent().invoke_runIfWaitingForDebugger();
+    }
   }
 
   detachedFromTarget({sessionId}: Protocol.Target.DetachedFromTargetEvent): void {

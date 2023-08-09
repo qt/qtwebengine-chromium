@@ -29,7 +29,8 @@ class Adapter : public AdapterBase {
   public:
     Adapter(InstanceBase* instance,
             VulkanInstance* vulkanInstance,
-            VkPhysicalDevice physicalDevice);
+            VkPhysicalDevice physicalDevice,
+            const TogglesState& adapterToggles);
     ~Adapter() override;
 
     // AdapterBase Implementation
@@ -42,15 +43,15 @@ class Adapter : public AdapterBase {
     bool IsDepthStencilFormatSupported(VkFormat format) const;
 
     bool IsAndroidQualcomm() const;
+    bool IsIntelMesa() const;
 
   private:
     MaybeError InitializeImpl() override;
     void InitializeSupportedFeaturesImpl() override;
     MaybeError InitializeSupportedLimitsImpl(CombinedLimits* limits) override;
 
-    MaybeError ValidateFeatureSupportedWithDeviceTogglesImpl(
-        wgpu::FeatureName feature,
-        const TogglesState& deviceToggles) override;
+    MaybeError ValidateFeatureSupportedWithTogglesImpl(wgpu::FeatureName feature,
+                                                       const TogglesState& toggles) const override;
 
     void SetupBackendDeviceToggles(TogglesState* deviceToggles) const override;
     ResultOrError<Ref<DeviceBase>> CreateDeviceImpl(const DeviceDescriptor* descriptor,

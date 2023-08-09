@@ -83,7 +83,7 @@ bool InspectorBuilder::ContainsName(utils::VectorRef<StageVariable> vec, const s
 }
 
 std::string InspectorBuilder::StructMemberName(size_t idx, ast::Type type) {
-    return std::to_string(idx) + Symbols().NameFor(type->identifier->symbol);
+    return std::to_string(idx) + type->identifier->symbol.Name();
 }
 
 const ast::Struct* InspectorBuilder::MakeStructType(const std::string& name,
@@ -273,7 +273,11 @@ ast::Type InspectorBuilder::GetCoordsType(type::TextureDimension dim, ast::Type 
         case type::TextureDimension::kCubeArray:
             return ty.vec3(scalar);
         default:
-            [=]() { FAIL() << "Unsupported texture dimension: " << dim; }();
+            [=]() {
+                utils::StringStream str;
+                str << dim;
+                FAIL() << "Unsupported texture dimension: " << str.str();
+            }();
     }
     return ast::Type{};
 }

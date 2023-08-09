@@ -13,6 +13,7 @@
 #include <memory>
 #include <string>
 
+#include "v8-source-location.h"  // NOLINT(build/include_directory)
 #include "v8config.h"  // NOLINT(build/include_directory)
 
 namespace v8 {
@@ -261,10 +262,46 @@ class JobTask {
    * Controls the maximum number of threads calling Run() concurrently, given
    * the number of threads currently assigned to this job and executing Run().
    * Run() is only invoked if the number of threads previously running Run() was
-   * less than the value returned. Since GetMaxConcurrency() is a leaf function,
-   * it must not call back any JobHandle methods.
+   * less than the value returned. In general, this should return the latest
+   * number of incomplete work items (smallest unit of work) left to process,
+   * including items that are currently in progress. |worker_count| is the
+   * number of threads currently assigned to this job which some callers may
+   * need to determine their return value. Since GetMaxConcurrency() is a leaf
+   * function, it must not call back any JobHandle methods.
    */
   virtual size_t GetMaxConcurrency(size_t worker_count) const = 0;
+};
+
+/**
+ * A "blocking call" refers to any call that causes the calling thread to wait
+ * off-CPU. It includes but is not limited to calls that wait on synchronous
+ * file I/O operations: read or write a file from disk, interact with a pipe or
+ * a socket, rename or delete a file, enumerate files in a directory, etc.
+ * Acquiring a low contention lock is not considered a blocking call.
+ */
+
+/**
+ * BlockingType indicates the likelihood that a blocking call will actually
+ * block.
+ */
+enum class BlockingType {
+  // The call might block (e.g. file I/O that might hit in memory cache).
+  kMayBlock,
+  // The call will definitely block (e.g. cache already checked and now pinging
+  // server synchronously).
+  kWillBlock
+};
+
+/**
+ * This class is instantiated with CreateBlockingScope() in every scope where a
+ * blocking call is made and serves as a precise annotation of the scope that
+ * may/will block. May be implemented by an embedder to adjust the thread count.
+ * CPU usage should be minimal within that scope. ScopedBlockingCalls can be
+ * nested.
+ */
+class ScopedBlockingCall {
+ public:
+  virtual ~ScopedBlockingCall() = default;
 };
 
 /**
@@ -955,11 +992,12 @@ class Platform {
   virtual void OnCriticalMemoryPressure() {}
 
   /**
-   * Gets the number of worker threads used by
-   * Call(BlockingTask)OnWorkerThread(). This can be used to estimate the number
-   * of tasks a work package should be split into. A return value of 0 means
-   * that there are no worker threads available. Note that a value of 0 won't
-   * prohibit V8 from posting tasks using |CallOnWorkerThread|.
+   * Gets the max number of worker threads that may be used to execute
+   * concurrent work scheduled for any single TaskPriority by
+   * Call(BlockingTask)OnWorkerThread() or PostJob(). This can be used to
+   * estimate the number of tasks a work package should be split into. A return
+   * value of 0 means that there are no worker threads available. Note that a
+   * value of 0 won't prohibit V8 from posting tasks using |CallOnWorkerThread|.
    */
   virtual int NumberOfWorkerThreads() = 0;
 
@@ -973,12 +1011,23 @@ class Platform {
 
   /**
    * Schedules a task to be invoked on a worker thread.
+   * Embedders should override PostTaskOnWorkerThreadImpl() instead of
+   * CallOnWorkerThread().
+   * TODO(chromium:1424158): Make non-virtual once embedders are migrated to
+   * PostTaskOnWorkerThreadImpl().
    */
-  virtual void CallOnWorkerThread(std::unique_ptr<Task> task) = 0;
+  virtual void CallOnWorkerThread(std::unique_ptr<Task> task) {
+    PostTaskOnWorkerThreadImpl(TaskPriority::kUserVisible, std::move(task),
+                               SourceLocation::Current());
+  }
 
   /**
    * Schedules a task that blocks the main thread to be invoked with
    * high-priority on a worker thread.
+   * Embedders should override PostTaskOnWorkerThreadImpl() instead of
+   * CallBlockingTaskOnWorkerThread().
+   * TODO(chromium:1424158): Make non-virtual once embedders are migrated to
+   * PostTaskOnWorkerThreadImpl().
    */
   virtual void CallBlockingTaskOnWorkerThread(std::unique_ptr<Task> task) {
     // Embedders may optionally override this to process these tasks in a high
@@ -988,6 +1037,10 @@ class Platform {
 
   /**
    * Schedules a task to be invoked with low-priority on a worker thread.
+   * Embedders should override PostTaskOnWorkerThreadImpl() instead of
+   * CallLowPriorityTaskOnWorkerThread().
+   * TODO(chromium:1424158): Make non-virtual once embedders are migrated to
+   * PostTaskOnWorkerThreadImpl().
    */
   virtual void CallLowPriorityTaskOnWorkerThread(std::unique_ptr<Task> task) {
     // Embedders may optionally override this to process these tasks in a low
@@ -998,9 +1051,17 @@ class Platform {
   /**
    * Schedules a task to be invoked on a worker thread after |delay_in_seconds|
    * expires.
+   * Embedders should override PostDelayedTaskOnWorkerThreadImpl() instead of
+   * CallDelayedOnWorkerThread().
+   * TODO(chromium:1424158): Make non-virtual once embedders are migrated to
+   * PostDelayedTaskOnWorkerThreadImpl().
    */
   virtual void CallDelayedOnWorkerThread(std::unique_ptr<Task> task,
-                                         double delay_in_seconds) = 0;
+                                         double delay_in_seconds) {
+    PostDelayedTaskOnWorkerThreadImpl(TaskPriority::kUserVisible,
+                                      std::move(task), delay_in_seconds,
+                                      SourceLocation::Current());
+  }
 
   /**
    * Returns true if idle tasks are enabled for the given |isolate|.
@@ -1050,6 +1111,9 @@ class Platform {
    * thread (A=>B/B=>A deadlock) and [2] JobTask::Run or
    * JobTask::GetMaxConcurrency may be invoked synchronously from JobHandle
    * (B=>JobHandle::foo=>B deadlock).
+   * Embedders should override CreateJobImpl() instead of PostJob().
+   * TODO(chromium:1424158): Make non-virtual once embedders are migrated to
+   * CreateJobImpl().
    */
   virtual std::unique_ptr<JobHandle> PostJob(
       TaskPriority priority, std::unique_ptr<JobTask> job_task) {
@@ -1070,9 +1134,24 @@ class Platform {
    *    return v8::platform::NewDefaultJobHandle(
    *        this, priority, std::move(job_task), NumberOfWorkerThreads());
    * }
+   *
+   * Embedders should override CreateJobImpl() instead of CreateJob().
+   * TODO(chromium:1424158): Make non-virtual once embedders are migrated to
+   * CreateJobImpl().
    */
   virtual std::unique_ptr<JobHandle> CreateJob(
-      TaskPriority priority, std::unique_ptr<JobTask> job_task) = 0;
+      TaskPriority priority, std::unique_ptr<JobTask> job_task) {
+    return CreateJobImpl(priority, std::move(job_task),
+                         SourceLocation::Current());
+  }
+
+  /**
+   * Instantiates a ScopedBlockingCall to annotate a scope that may/will block.
+   */
+  virtual std::unique_ptr<ScopedBlockingCall> CreateBlockingScope(
+      BlockingType blocking_type) {
+    return nullptr;
+  }
 
   /**
    * Monotonically increasing time in seconds from an arbitrary fixed point in
@@ -1142,6 +1221,33 @@ class Platform {
    * nothing special needed.
    */
   V8_EXPORT static double SystemClockTimeMillis();
+
+  /**
+   * Creates and returns a JobHandle associated with a Job.
+   * TODO(chromium:1424158): Make pure virtual once embedders implement it.
+   */
+  virtual std::unique_ptr<JobHandle> CreateJobImpl(
+      TaskPriority priority, std::unique_ptr<JobTask> job_task,
+      const SourceLocation& location) {
+    return nullptr;
+  }
+
+  /**
+   * Schedules a task with |priority| to be invoked on a worker thread.
+   * TODO(chromium:1424158): Make pure virtual once embedders implement it.
+   */
+  virtual void PostTaskOnWorkerThreadImpl(TaskPriority priority,
+                                          std::unique_ptr<Task> task,
+                                          const SourceLocation& location) {}
+
+  /**
+   * Schedules a task with |priority| to be invoked on a worker thread after
+   * |delay_in_seconds| expires.
+   * TODO(chromium:1424158): Make pure virtual once embedders implement it.
+   */
+  virtual void PostDelayedTaskOnWorkerThreadImpl(
+      TaskPriority priority, std::unique_ptr<Task> task,
+      double delay_in_seconds, const SourceLocation& location) {}
 };
 
 }  // namespace v8

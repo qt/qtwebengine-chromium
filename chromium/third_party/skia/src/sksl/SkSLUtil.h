@@ -143,6 +143,9 @@ struct ShaderCaps {
     bool fRewriteMatrixComparisons = false;
     // Strips const from function parameters in the GLSL code generator. (skia:13858)
     bool fRemoveConstFromFunctionParameters = false;
+    // On some Android devices colors aren't accurate enough for the double lookup in the
+    // Perlin noise shader. This workaround aggressively snaps colors to multiples of 1/255.
+    bool fPerlinNoiseRoundingFix = false;
 
     const char* fVersionDeclString = "";
 
@@ -176,7 +179,7 @@ protected:
     static std::unique_ptr<ShaderCaps> MakeShaderCaps();
 };
 
-#if !defined(SKSL_STANDALONE) && (SK_SUPPORT_GPU || defined(SK_GRAPHITE_ENABLED))
+#if !defined(SKSL_STANDALONE) && (defined(SK_GANESH) || defined(SK_GRAPHITE))
 bool type_to_sksltype(const Context& context, const Type& type, SkSLType* outType);
 #endif
 

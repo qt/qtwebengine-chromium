@@ -20,18 +20,13 @@
 namespace v8 {
 namespace internal {
 
-SafepointTable::SafepointTable(Isolate* isolate, Address pc,
-                               InstructionStream code)
-    : SafepointTable(code.instruction_start(), code.safepoint_table_address()) {
-}
-
 SafepointTable::SafepointTable(Isolate* isolate, Address pc, Code code)
     : SafepointTable(code.InstructionStart(isolate, pc),
-                     code.SafepointTableAddress()) {}
+                     code.safepoint_table_address()) {}
 
 SafepointTable::SafepointTable(Isolate* isolate, Address pc, GcSafeCode code)
     : SafepointTable(code.InstructionStart(isolate, pc),
-                     code.SafepointTableAddress()) {}
+                     code.safepoint_table_address()) {}
 
 #if V8_ENABLE_WEBASSEMBLY
 SafepointTable::SafepointTable(const wasm::WasmCode* code)

@@ -19,10 +19,10 @@
 #pragma once
 
 #include "vulkan/vulkan.h"
-#include "vk_object_types.h"
-#include "vk_layer_data.h"
-#include "vk_layer_logging.h"
-#include "vk_layer_utils.h"
+#include "generated/vk_object_types.h"
+#include "containers/custom_containers.h"
+#include "error_message/logging.h"
+#include "utils/vk_layer_utils.h"
 
 #include <atomic>
 
@@ -75,6 +75,9 @@ class BASE_NODE : public std::enable_shared_from_this<BASE_NODE> {
     static bool Invalid(const std::shared_ptr<const BASE_NODE> &node) { return !node || node->Destroyed(); }
 
     const VulkanTypedHandle &Handle() const { return handle_; }
+    static VulkanTypedHandle Handle(const BASE_NODE *node) { return (node) ? node->Handle() : VulkanTypedHandle(); }
+    static VulkanTypedHandle Handle(const std::shared_ptr<const BASE_NODE> &node) { return Handle(node.get()); }
+
     VulkanObjectType Type() const { return handle_.type; }
 
     virtual bool InUse() const;
@@ -133,8 +136,6 @@ class REFCOUNTED_NODE : public BASE_NODE {
     void BeginUse() { in_use_.fetch_add(1); }
 
     void EndUse() { in_use_.fetch_sub(1); }
-
-    void ResetUse() { in_use_.store(0); }
 
     bool InUse() const override { return (in_use_.load() > 0) || BASE_NODE::InUse(); }
 };

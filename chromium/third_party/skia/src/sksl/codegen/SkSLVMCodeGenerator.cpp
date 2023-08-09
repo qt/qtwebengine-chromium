@@ -14,21 +14,16 @@
 #include "include/core/SkSpan.h"
 #include "include/core/SkTypes.h"
 #include "include/private/SkSLDefines.h"
-#include "include/private/SkSLIRNode.h"
-#include "include/private/SkSLLayout.h"
-#include "include/private/SkSLModifiers.h"
-#include "include/private/SkSLProgramElement.h"
-#include "include/private/SkSLStatement.h"
 #include "include/private/base/SkFloatingPoint.h"
 #include "include/private/base/SkTArray.h"
 #include "include/private/base/SkTPin.h"
-#include "include/sksl/SkSLOperator.h"
-#include "include/sksl/SkSLPosition.h"
 #include "src/base/SkStringView.h"
 #include "src/core/SkTHash.h"
 #include "src/sksl/SkSLBuiltinTypes.h"
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLIntrinsicList.h"
+#include "src/sksl/SkSLOperator.h"
+#include "src/sksl/SkSLPosition.h"
 #include "src/sksl/SkSLProgramSettings.h"
 #include "src/sksl/ir/SkSLBinaryExpression.h"
 #include "src/sksl/ir/SkSLBlock.h"
@@ -45,13 +40,18 @@
 #include "src/sksl/ir/SkSLFunctionCall.h"
 #include "src/sksl/ir/SkSLFunctionDeclaration.h"
 #include "src/sksl/ir/SkSLFunctionDefinition.h"
+#include "src/sksl/ir/SkSLIRNode.h"
 #include "src/sksl/ir/SkSLIfStatement.h"
 #include "src/sksl/ir/SkSLIndexExpression.h"
+#include "src/sksl/ir/SkSLLayout.h"
 #include "src/sksl/ir/SkSLLiteral.h"
+#include "src/sksl/ir/SkSLModifiers.h"
 #include "src/sksl/ir/SkSLPostfixExpression.h"
 #include "src/sksl/ir/SkSLPrefixExpression.h"
 #include "src/sksl/ir/SkSLProgram.h"
+#include "src/sksl/ir/SkSLProgramElement.h"
 #include "src/sksl/ir/SkSLReturnStatement.h"
+#include "src/sksl/ir/SkSLStatement.h"
 #include "src/sksl/ir/SkSLSwitchCase.h"
 #include "src/sksl/ir/SkSLSwitchStatement.h"
 #include "src/sksl/ir/SkSLSwizzle.h"
@@ -60,11 +60,10 @@
 #include "src/sksl/ir/SkSLVarDeclarations.h"
 #include "src/sksl/ir/SkSLVariable.h"
 #include "src/sksl/ir/SkSLVariableReference.h"
-#include "src/sksl/tracing/SkSLDebugInfo.h"
-#include "src/sksl/tracing/SkVMDebugTrace.h"
+#include "src/sksl/tracing/SkSLDebugTracePriv.h"
+#include "src/sksl/tracing/SkSLTraceHook.h"
 
 #include <algorithm>
-#include <cstdint>
 #include <functional>
 #include <iterator>
 #include <memory>
@@ -73,6 +72,10 @@
 #include <utility>
 #include <vector>
 
+#if defined(SK_ENABLE_SKVM)
+
+using namespace skia_private;
+
 namespace {
     // sksl allows the optimizations of fast_mul(), so we want to use that most of the time.
     // This little sneaky snippet of code lets us use ** as a fast multiply infix operator.
@@ -80,40 +83,7 @@ namespace {
     static FastF32 operator*(skvm::F32 y) { return {y}; }
     static skvm::F32 operator*(skvm::F32 x, FastF32 y) { return fast_mul(x, y.val); }
     static skvm::F32 operator*(float     x, FastF32 y) { return fast_mul(x, y.val); }
-
-    class SkSLTracer : public skvm::TraceHook {
-    public:
-        static std::unique_ptr<SkSLTracer> Make(SkSL::SkVMDebugTrace* trace) {
-            auto hook = std::make_unique<SkSLTracer>();
-            hook->fTrace = trace;
-            return hook;
-        }
-
-        void line(int lineNum) override {
-            fTrace->fTraceInfo.push_back({SkSL::SkVMTraceInfo::Op::kLine,
-                                          /*data=*/{lineNum, 0}});
-        }
-        void var(int slot, int32_t val) override {
-            fTrace->fTraceInfo.push_back({SkSL::SkVMTraceInfo::Op::kVar,
-                                          /*data=*/{slot, val}});
-        }
-        void enter(int fnIdx) override {
-            fTrace->fTraceInfo.push_back({SkSL::SkVMTraceInfo::Op::kEnter,
-                                          /*data=*/{fnIdx, 0}});
-        }
-        void exit(int fnIdx) override {
-            fTrace->fTraceInfo.push_back({SkSL::SkVMTraceInfo::Op::kExit,
-                                          /*data=*/{fnIdx, 0}});
-        }
-        void scope(int delta) override {
-            fTrace->fTraceInfo.push_back({SkSL::SkVMTraceInfo::Op::kScope,
-                                          /*data=*/{delta, 0}});
-        }
-
-    private:
-        SkSL::SkVMDebugTrace* fTrace;
-    };
-}  // namespace
+}
 
 namespace SkSL {
 
@@ -161,7 +131,7 @@ struct Value {
     SkSpan<skvm::Val> asSpan() { return SkSpan(fVals); }
 
 private:
-    SkSTArray<4, skvm::Val, true> fVals;
+    STArray<4, skvm::Val, true> fVals;
 };
 
 }  // namespace
@@ -170,7 +140,7 @@ class SkVMGenerator {
 public:
     SkVMGenerator(const Program& program,
                   skvm::Builder* builder,
-                  SkVMDebugTrace* debugTrace,
+                  DebugTracePriv* debugTrace,
                   SkVMCallbacks* callbacks);
 
     void writeProgram(SkSpan<skvm::Val> uniforms,
@@ -203,12 +173,12 @@ private:
     Value getSlotValue(size_t slot, size_t nslots);
 
     /**
-     * Returns the slot index of this function inside the FunctionDebugInfo array in SkVMDebugTrace.
+     * Returns the slot index of this function inside the FunctionDebugInfo array in DebugTracePriv.
      * The FunctionDebugInfo slot will be created if it doesn't already exist.
      */
     int getDebugFunctionInfo(const FunctionDeclaration& decl);
 
-    /** Used by `createSlot` to add this variable to SlotDebugInfo inside SkVMDebugTrace. */
+    /** Used by `createSlot` to add this variable to SlotDebugInfo inside the DebugTrace. */
     void addDebugSlotInfo(const std::string& varName, const Type& type, int line,
                           int fnReturnValue);
 
@@ -244,12 +214,12 @@ private:
     int getLine(Position pos);
 
     /**
-     * Emits an trace_line opcode. writeStatement does this, and statements that alter control flow
+     * Emits a trace_line opcode. writeStatement does this, and statements that alter control flow
      * may need to explicitly add additional traces.
      */
     void emitTraceLine(int line);
 
-    /** Emits an trace_scope opcode, which alters the SkSL variable-scope depth. */
+    /** Emits a trace_scope opcode, which alters the SkSL variable-scope depth. */
     void emitTraceScope(skvm::I32 executionMask, int delta);
 
     /** Initializes uniforms and global variables at the start of main(). */
@@ -341,7 +311,7 @@ private:
     //
     const Program& fProgram;
     skvm::Builder* fBuilder;
-    SkVMDebugTrace* fDebugTrace;
+    DebugTracePriv* fDebugTrace;
     int fTraceHookID = -1;
     SkVMCallbacks* fCallbacks;
     // contains the position of each newline in the source, plus a zero at the beginning and the
@@ -355,7 +325,7 @@ private:
     std::vector<Slot> fSlots;
 
     // [Variable/Function, first slot in fSlots]
-    SkTHashMap<const IRNode*, size_t> fSlotMap;
+    THashMap<const IRNode*, size_t> fSlotMap;
 
     // Debug trace mask (set to true when fTraceCoord matches device coordinates)
     skvm::I32 fTraceMask;
@@ -412,7 +382,7 @@ static inline bool is_uniform(const SkSL::Variable& var) {
 
 SkVMGenerator::SkVMGenerator(const Program& program,
                              skvm::Builder* builder,
-                             SkVMDebugTrace* debugTrace,
+                             DebugTracePriv* debugTrace,
                              SkVMCallbacks* callbacks)
         : fProgram(program)
         , fBuilder(builder)
@@ -454,7 +424,7 @@ void SkVMGenerator::setupGlobals(SkSpan<skvm::Val> uniforms, skvm::Coord device)
         fDebugTrace->setSource(*fProgram.fSource);
 
         // Create a trace hook and attach it to the builder.
-        fDebugTrace->fTraceHook = SkSLTracer::Make(fDebugTrace);
+        fDebugTrace->fTraceHook = SkSL::Tracer::Make(&fDebugTrace->fTraceInfo);
         fTraceHookID = fBuilder->attachTraceHook(fDebugTrace->fTraceHook.get());
 
         // The SkVM blitter generates centered pixel coordinates. (0.5, 1.5, 2.5, 3.5, etc.)
@@ -626,7 +596,7 @@ size_t SkVMGenerator::writeFunction(const IRNode& caller,
 
 void SkVMGenerator::writeToSlot(int slot, skvm::Val value) {
     if (fDebugTrace && (!fSlots[slot].writtenTo || fSlots[slot].val != value)) {
-        if (fProgram.fConfig->fSettings.fAllowTraceVarInSkVMDebugTrace) {
+        if (fProgram.fConfig->fSettings.fAllowTraceVarInDebugTrace) {
             fBuilder->trace_var(fTraceHookID, this->mask(), fTraceMask, slot, i32(value));
         }
         fSlots[slot].writtenTo = true;
@@ -1791,7 +1761,7 @@ Value SkVMGenerator::writeStore(const Expression& lhs, const Value& rhs) {
     // IndexExpressions. The underlying VariableReference has a range of slots for its storage,
     // and each expression wrapped around that selects a sub-set of those slots (Field/Index),
     // or rearranges them (Swizzle).
-    SkSTArray<4, size_t, true> slots;
+    STArray<4, size_t, true> slots;
     slots.resize(rhs.slots());
 
     // Start with the identity slot map - this basically says that the values from rhs belong in
@@ -2074,7 +2044,7 @@ void SkVMGenerator::writeStatement(const Statement& s) {
 skvm::Color ProgramToSkVM(const Program& program,
                           const FunctionDefinition& function,
                           skvm::Builder* builder,
-                          SkVMDebugTrace* debugTrace,
+                          DebugTracePriv* debugTrace,
                           SkSpan<skvm::Val> uniforms,
                           skvm::Coord device,
                           skvm::Coord local,
@@ -2117,7 +2087,7 @@ skvm::Color ProgramToSkVM(const Program& program,
     }
     SkASSERT(argSlots <= std::size(args));
 
-    // Make sure that the SkVMDebugTrace starts from a clean slate.
+    // Make sure that the DebugTrace starts from a clean slate.
     if (debugTrace) {
         debugTrace->fSlotInfo.clear();
         debugTrace->fFuncInfo.clear();
@@ -2136,7 +2106,7 @@ skvm::Color ProgramToSkVM(const Program& program,
 bool ProgramToSkVM(const Program& program,
                    const FunctionDefinition& function,
                    skvm::Builder* b,
-                   SkVMDebugTrace* debugTrace,
+                   DebugTracePriv* debugTrace,
                    SkSpan<skvm::Val> uniforms,
                    SkVMSignature* outSignature) {
     SkVMSignature ignored,
@@ -2240,7 +2210,7 @@ bool ProgramToSkVM(const Program& program,
  */
 bool testingOnly_ProgramToSkVMShader(const Program& program,
                                      skvm::Builder* builder,
-                                     SkVMDebugTrace* debugTrace) {
+                                     DebugTracePriv* debugTrace) {
     const SkSL::FunctionDeclaration* main = program.getFunction("main");
     if (!main) {
         return false;
@@ -2266,6 +2236,9 @@ bool testingOnly_ProgramToSkVMShader(const Program& program,
 
     // Assume identity CTM
     skvm::Coord device = {pun_to_F32(builder->index()), new_uni()};
+    // Position device coords at pixel centers, so debug traces will trigger
+    device.x += 0.5f;
+    device.y += 0.5f;
     skvm::Coord local  = device;
 
     class Callbacks : public SkVMCallbacks {
@@ -2330,3 +2303,5 @@ bool testingOnly_ProgramToSkVMShader(const Program& program,
 }
 
 }  // namespace SkSL
+
+#endif  // defined(SK_ENABLE_SKVM)

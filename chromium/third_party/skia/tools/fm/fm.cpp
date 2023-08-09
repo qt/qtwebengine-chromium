@@ -49,6 +49,8 @@
     #include "modules/skresources/include/SkResources.h"
 #endif
 
+using namespace skia_private;
+
 using sk_gpu_test::GrContextFactory;
 
 static DEFINE_bool(listGMs  , false, "Print GM names and exit.");
@@ -62,10 +64,6 @@ static DEFINE_string(at    , "premul", "The alpha type for any raster backend.")
 static DEFINE_string(gamut ,   "srgb", "The color gamut for any raster backend.");
 static DEFINE_string(tf    ,   "srgb", "The transfer function for any raster backend.");
 static DEFINE_bool  (legacy,    false, "Use a null SkColorSpace instead of --gamut and --tf?");
-
-static DEFINE_bool  (skvm ,    false, "Use SkVMBlitter when supported?");
-static DEFINE_bool  (jit  ,     true, "JIT SkVM?");
-static DEFINE_bool  (dylib,    false, "JIT SkVM via dylib?");
 
 static DEFINE_bool  (reducedshaders,    false, "Use reduced shader set for any GPU backend.");
 static DEFINE_int   (samples       ,         0, "Samples per pixel in GPU backends.");
@@ -372,10 +370,6 @@ TestHarness CurrentTestHarness() {
     return TestHarness::kFM;
 }
 
-extern bool gUseSkVMBlitter;
-extern bool gSkVMAllowJIT;
-extern bool gSkVMJITViaDylib;
-
 int main(int argc, char** argv) {
     CommandLineFlags::Parse(argc, argv);
     SetupCrashHandler();
@@ -387,10 +381,6 @@ int main(int argc, char** argv) {
 #if defined(SK_ENABLE_SVG)
     SkGraphics::SetOpenTypeSVGDecoderFactory(SkSVGOpenTypeSVGDecoder::Make);
 #endif
-
-    gUseSkVMBlitter  = FLAGS_skvm;
-    gSkVMAllowJIT    = FLAGS_jit;
-    gSkVMJITViaDylib = FLAGS_dylib;
 
     initializeEventTracingForTools();
     CommonFlags::SetDefaultFontMgr();
@@ -406,7 +396,7 @@ int main(int argc, char** argv) {
         baseOptions.fShaderCacheStrategy = GrContextOptions::ShaderCacheStrategy::kBackendSource;
     }
 
-    SkTHashMap<SkString, skiagm::GMFactory> gm_factories;
+    THashMap<SkString, skiagm::GMFactory> gm_factories;
     for (skiagm::GMFactory factory : skiagm::GMRegistry::Range()) {
         std::unique_ptr<skiagm::GM> gm{factory()};
         if (FLAGS_listGMs) {
@@ -416,7 +406,7 @@ int main(int argc, char** argv) {
         }
     }
 
-    SkTHashMap<SkString, const skiatest::Test*> tests;
+    THashMap<SkString, const skiatest::Test*> tests;
     for (const skiatest::Test& test : skiatest::TestRegistry::Range()) {
         if (test.fTestType != skiatest::TestType::kCPU) {
             continue;  // TODO
@@ -438,7 +428,7 @@ int main(int argc, char** argv) {
 
     const int replicas = std::max(1, FLAGS_race);
 
-    SkTArray<Source> sources;
+    TArray<Source> sources;
     for (const SkString& name : FLAGS_sources)
     for (int replica = 0; replica < replicas; replica++) {
         Source* source = &sources.push_back();

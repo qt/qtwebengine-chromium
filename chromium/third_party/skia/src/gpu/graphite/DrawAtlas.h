@@ -154,8 +154,6 @@ public:
 
     void compact(AtlasToken startTokenForNextFlush);
 
-    void evictAllPlots();
-
     uint32_t maxPages() const {
         return fMaxPages;
     }
@@ -277,10 +275,10 @@ private:
     };
 
     // mapping from page+plot pair to PlotAgeData
-    using PlotAgeHashMap = SkTHashMap<uint32_t, PlotAgeData>;
+    using PlotAgeHashMap = skia_private::THashMap<uint32_t, PlotAgeData>;
 
     // mapping from atlasID to PlotAgeHashMap for that atlas
-    SkTHashMap<uint32_t, PlotAgeHashMap> fAtlasData;
+    skia_private::THashMap<uint32_t, PlotAgeHashMap> fAtlasData;
 };
 
 }  // namespace skgpu::graphite

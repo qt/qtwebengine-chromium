@@ -10,6 +10,7 @@
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkSurfaceProps.h"
 #include "src/core/SkColorSpacePriv.h"
+#include "src/core/SkStringUtils.h"
 #include "src/core/SkSurfacePriv.h"
 #include "src/core/SkTHash.h"
 
@@ -17,6 +18,7 @@
 #include <string_view>
 #include <unordered_map>
 
+using namespace skia_private;
 using sk_gpu_test::GrContextFactory;
 
 #if defined(SK_BUILD_FOR_ANDROID) || defined(SK_BUILD_FOR_IOS)
@@ -133,7 +135,7 @@ static const struct {
     { "d3dmsaa8",              "gpu", "api=direct3d,samples=8" },
 #endif
 
-#ifdef SK_GRAPHITE_ENABLED
+#if defined(SK_GRAPHITE)
 #ifdef SK_DIRECT3D
     { "grd3d",                 "graphite", "api=direct3d" },
 #endif
@@ -239,7 +241,7 @@ DEFINE_extended_string(config, defaultConfigs, config_help_fn(), config_extended
 
 SkCommandLineConfig::SkCommandLineConfig(const SkString& tag,
                                          const SkString& backend,
-                                         const SkTArray<SkString>& viaParts)
+                                         const TArray<SkString>& viaParts)
         : fTag(tag), fBackend(backend) {
     static const auto* kColorSpaces = new std::unordered_map<std::string_view, SkColorSpace*>{
         {"narrow", // 'narrow' has a gamut narrower than sRGB, and different transfer function.
@@ -426,10 +428,10 @@ static bool parse_option_gpu_surf_type(const SkString&                   value,
 class ExtendedOptions {
 public:
     ExtendedOptions(const SkString& optionsString, bool* outParseSucceeded) {
-        SkTArray<SkString> optionParts;
+        TArray<SkString> optionParts;
         SkStrSplit(optionsString.c_str(), ",", kStrict_SkStrSplitMode, &optionParts);
         for (int i = 0; i < optionParts.size(); ++i) {
-            SkTArray<SkString> keyValueParts;
+            TArray<SkString> keyValueParts;
             SkStrSplit(optionParts[i].c_str(), "=", kStrict_SkStrSplitMode, &keyValueParts);
             if (keyValueParts.size() != 2) {
                 *outParseSucceeded = false;
@@ -470,7 +472,7 @@ public:
         return parse_option_gpu_api(*optionValue, outContextType, outFakeGLESVersion2);
     }
 
-#ifdef SK_GRAPHITE_ENABLED
+#if defined(SK_GRAPHITE)
     bool get_option_graphite_api(const char*                               optionKey,
                                  SkCommandLineConfigGraphite::ContextType* outContextType) const {
         SkString* optionValue = fOptionsMap.find(SkString(optionKey));
@@ -533,11 +535,11 @@ public:
     }
 
 private:
-    SkTHashMap<SkString, SkString> fOptionsMap;
+    THashMap<SkString, SkString> fOptionsMap;
 };
 
 SkCommandLineConfigGpu::SkCommandLineConfigGpu(const SkString&           tag,
-                                               const SkTArray<SkString>& viaParts,
+                                               const TArray<SkString>& viaParts,
                                                ContextType               contextType,
                                                bool                      fakeGLESVersion2,
                                                uint32_t                  surfaceFlags,
@@ -582,7 +584,7 @@ SkCommandLineConfigGpu::SkCommandLineConfigGpu(const SkString&           tag,
 }
 
 SkCommandLineConfigGpu* parse_command_line_config_gpu(const SkString&           tag,
-                                                      const SkTArray<SkString>& vias,
+                                                      const TArray<SkString>& vias,
                                                       const SkString&           options) {
     // Defaults for GPU backend.
     SkCommandLineConfigGpu::ContextType contextType         = GrContextFactory::kGL_ContextType;
@@ -659,10 +661,10 @@ SkCommandLineConfigGpu* parse_command_line_config_gpu(const SkString&           
                                       surfType);
 }
 
-#ifdef SK_GRAPHITE_ENABLED
+#if defined(SK_GRAPHITE)
 
 SkCommandLineConfigGraphite* parse_command_line_config_graphite(const SkString&           tag,
-                                                                const SkTArray<SkString>& vias,
+                                                                const TArray<SkString>& vias,
                                                                 const SkString&           options) {
     using ContextType = sk_gpu_test::GrContextFactory::ContextType;
 
@@ -692,12 +694,12 @@ SkCommandLineConfigGraphite* parse_command_line_config_graphite(const SkString& 
 #endif
 
 SkCommandLineConfigSvg::SkCommandLineConfigSvg(const SkString&           tag,
-                                               const SkTArray<SkString>& viaParts,
+                                               const TArray<SkString>& viaParts,
                                                int                       pageIndex)
         : SkCommandLineConfig(tag, SkString("svg"), viaParts), fPageIndex(pageIndex) {}
 
 SkCommandLineConfigSvg* parse_command_line_config_svg(const SkString&           tag,
-                                                      const SkTArray<SkString>& vias,
+                                                      const TArray<SkString>& vias,
                                                       const SkString&           options) {
     // Defaults for SVG backend.
     int pageIndex = 0;
@@ -724,13 +726,13 @@ void ParseConfigs(const CommandLineFlags::StringArray& configs,
         SkString           extendedBackend;
         SkString           extendedOptions;
         SkString           simpleBackend;
-        SkTArray<SkString> vias;
+        TArray<SkString> vias;
 
         SkString           tag(configs[i]);
-        SkTArray<SkString> parts;
+        TArray<SkString> parts;
         SkStrSplit(tag.c_str(), "[", kStrict_SkStrSplitMode, &parts);
         if (parts.size() == 2) {
-            SkTArray<SkString> parts2;
+            TArray<SkString> parts2;
             SkStrSplit(parts[1].c_str(), "]", kStrict_SkStrSplitMode, &parts2);
             if (parts2.size() == 2 && parts2[1].isEmpty()) {
                 SkStrSplit(parts[0].c_str(), "-", kStrict_SkStrSplitMode, &vias);
@@ -764,7 +766,7 @@ void ParseConfigs(const CommandLineFlags::StringArray& configs,
         if (extendedBackend.equals("gpu")) {
             parsedConfig = parse_command_line_config_gpu(tag, vias, extendedOptions);
         }
-#ifdef SK_GRAPHITE_ENABLED
+#if defined(SK_GRAPHITE)
         if (extendedBackend.equals("graphite")) {
             parsedConfig = parse_command_line_config_graphite(tag, vias, extendedOptions);
         }

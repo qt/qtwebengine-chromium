@@ -23,7 +23,9 @@ namespace dawn::native::opengl {
 
 class Adapter : public AdapterBase {
   public:
-    Adapter(InstanceBase* instance, wgpu::BackendType backendType);
+    Adapter(InstanceBase* instance,
+            wgpu::BackendType backendType,
+            const TogglesState& adapterToggle);
 
     MaybeError InitializeGLFunctions(void* (*getProc)(const char*));
 
@@ -37,9 +39,8 @@ class Adapter : public AdapterBase {
     void InitializeSupportedFeaturesImpl() override;
     MaybeError InitializeSupportedLimitsImpl(CombinedLimits* limits) override;
 
-    MaybeError ValidateFeatureSupportedWithDeviceTogglesImpl(
-        wgpu::FeatureName feature,
-        const TogglesState& deviceTogglesState) override;
+    MaybeError ValidateFeatureSupportedWithTogglesImpl(wgpu::FeatureName feature,
+                                                       const TogglesState& toggles) const override;
 
     void SetupBackendDeviceToggles(TogglesState* deviceToggles) const override;
     ResultOrError<Ref<DeviceBase>> CreateDeviceImpl(const DeviceDescriptor* descriptor,

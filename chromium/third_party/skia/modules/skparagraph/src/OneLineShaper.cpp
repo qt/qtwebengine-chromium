@@ -3,8 +3,12 @@
 #include "modules/skparagraph/src/Iterators.h"
 #include "modules/skparagraph/src/OneLineShaper.h"
 #include "src/base/SkUTF.h"
+
 #include <algorithm>
+#include <cstdint>
 #include <unordered_set>
+
+using namespace skia_private;
 
 static inline SkUnichar nextUtf8Unit(const char** ptr, const char* end) {
     SkUnichar val = SkUTF::NextUTF8(ptr, end);
@@ -359,7 +363,7 @@ void OneLineShaper::iterateThroughFontStyles(TextRange textRange,
                                              SkSpan<Block> styleSpan,
                                              const ShapeSingleFontVisitor& visitor) {
     Block combinedBlock;
-    SkTArray<SkShaper::Feature> features;
+    TArray<SkShaper::Feature> features;
 
     auto addFeatures = [&features](const Block& block) {
         for (auto& ff : block.fStyle.getFontFeatures()) {
@@ -433,8 +437,8 @@ void OneLineShaper::matchResolvedFonts(const TextStyle& textStyle,
             const char* ch = unresolvedText.begin();
             // We have the global cache for all already found typefaces for SkUnichar
             // but we still need to keep track of all SkUnichars used in this unresolved block
-            SkTHashSet<SkUnichar> alreadyTriedCodepoints;
-            SkTHashSet<SkTypefaceID> alreadyTriedTypefaces;
+            THashSet<SkUnichar> alreadyTriedCodepoints;
+            THashSet<SkTypefaceID> alreadyTriedTypefaces;
             while (true) {
 
                 if (ch == unresolvedText.end()) {
@@ -602,7 +606,7 @@ bool OneLineShaper::shape() {
 
         iterateThroughFontStyles(textRange, styleSpan,
                 [this, &shaper, defaultBidiLevel, limitlessWidth, &advanceX]
-                (Block block, SkTArray<SkShaper::Feature> features) {
+                (Block block, TArray<SkShaper::Feature> features) {
             auto blockSpan = SkSpan<Block>(&block, 1);
 
             // Start from the beginning (hoping that it's a simple case one block - one run)
@@ -655,7 +659,7 @@ bool OneLineShaper::shape() {
                     fCurrentText = unresolvedRange;
 
                     // Map the block's features to subranges within the unresolved range.
-                    SkTArray<SkShaper::Feature> adjustedFeatures(features.size());
+                    TArray<SkShaper::Feature> adjustedFeatures(features.size());
                     for (const SkShaper::Feature& feature : features) {
                         SkRange<size_t> featureRange(feature.start, feature.end);
                         if (unresolvedRange.intersects(featureRange)) {
@@ -754,11 +758,10 @@ bool OneLineShaper::FontKey::operator==(const OneLineShaper::FontKey& other) con
     return fUnicode == other.fUnicode && fFontStyle == other.fFontStyle && fLocale == other.fLocale;
 }
 
-size_t OneLineShaper::FontKey::Hasher::operator()(const OneLineShaper::FontKey& key) const {
-
+uint32_t OneLineShaper::FontKey::Hasher::operator()(const OneLineShaper::FontKey& key) const {
     return SkGoodHash()(key.fUnicode) ^
            SkGoodHash()(key.fFontStyle) ^
-           SkGoodHash()(key.fLocale.c_str());
+           SkGoodHash()(key.fLocale);
 }
 
 }  // namespace textlayout

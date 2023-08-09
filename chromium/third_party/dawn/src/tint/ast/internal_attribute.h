@@ -18,18 +18,27 @@
 #include <string>
 
 #include "src/tint/ast/attribute.h"
+#include "src/tint/utils/vector.h"
+
+// Forward declarations
+namespace tint::ast {
+class IdentifierExpression;
+}  // namespace tint::ast
 
 namespace tint::ast {
 
 /// An attribute used to indicate that a function is tint-internal.
 /// These attributes are not produced by generators, but instead are usually
 /// created by transforms for consumption by a particular backend.
-class InternalAttribute : public Castable<InternalAttribute, Attribute> {
+class InternalAttribute : public utils::Castable<InternalAttribute, Attribute> {
   public:
     /// Constructor
     /// @param program_id the identifier of the program that owns this node
     /// @param nid the unique node identifier
-    explicit InternalAttribute(ProgramID program_id, NodeID nid);
+    /// @param deps a list of identifiers that this attribute is dependent on
+    InternalAttribute(ProgramID program_id,
+                      NodeID nid,
+                      utils::VectorRef<const IdentifierExpression*> deps);
 
     /// Destructor
     ~InternalAttribute() override;
@@ -40,6 +49,9 @@ class InternalAttribute : public Castable<InternalAttribute, Attribute> {
 
     /// @returns the WGSL name for the attribute
     std::string Name() const override;
+
+    /// A list of identifiers that this attribute is dependent on
+    const utils::Vector<const IdentifierExpression*, 1> dependencies;
 };
 
 }  // namespace tint::ast

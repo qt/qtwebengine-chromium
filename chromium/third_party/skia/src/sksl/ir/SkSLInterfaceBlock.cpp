@@ -6,21 +6,20 @@
  */
 
 #include "include/core/SkSpan.h"
-#include "include/private/SkSLModifiers.h"
-#include "include/private/SkSLString.h"
-#include "include/sksl/SkSLErrorReporter.h"
 #include "src/sksl/SkSLBuiltinTypes.h"
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLContext.h"
+#include "src/sksl/SkSLErrorReporter.h"
 #include "src/sksl/SkSLProgramSettings.h"
+#include "src/sksl/SkSLString.h"
 #include "src/sksl/SkSLThreadContext.h"
 #include "src/sksl/ir/SkSLField.h"
 #include "src/sksl/ir/SkSLInterfaceBlock.h"
+#include "src/sksl/ir/SkSLModifiers.h"
 #include "src/sksl/ir/SkSLSymbolTable.h"
 
 #include <cstddef>
 #include <cstdint>
-#include <vector>
 
 namespace SkSL {
 
@@ -54,7 +53,10 @@ std::unique_ptr<InterfaceBlock> InterfaceBlock::Convert(const Context& context,
         context.fErrors->error(pos, "interface blocks are not allowed in this kind of program");
         return nullptr;
     }
-
+    if (!variable->type().componentType().isInterfaceBlock()) {
+        context.fErrors->error(pos, "interface block type is not valid");
+        return nullptr;
+    }
     // Find sk_RTAdjust and error out if it's not of type `float4`.
     SkSpan<const Type::Field> fields = variable->type().componentType().fields();
     std::optional<int> rtAdjustIndex = find_rt_adjust_index(fields);

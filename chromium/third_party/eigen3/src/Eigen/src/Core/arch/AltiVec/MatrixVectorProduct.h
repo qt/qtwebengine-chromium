@@ -2061,6 +2061,39 @@ EIGEN_POWER_GEMV_REAL_SPECIALIZE_COL(double)
 EIGEN_POWER_GEMV_REAL_SPECIALIZE_ROW(float)
 EIGEN_POWER_GEMV_REAL_SPECIALIZE_ROW(double)
 
+#ifdef USE_GEMV_MMA
+#define EIGEN_POWER_GEMV_REAL_SPECIALIZE_COL_BFLOAT16() \
+template<typename Index, typename LhsMapper, bool ConjugateLhs, typename RhsMapper, bool ConjugateRhs, int Version> \
+struct general_matrix_vector_product<Index, bfloat16, LhsMapper, ColMajor, ConjugateLhs, bfloat16, RhsMapper, ConjugateRhs, Version> \
+{ \
+    EIGEN_DEVICE_FUNC EIGEN_DONT_INLINE static void run( \
+        Index rows, Index cols, \
+        const LhsMapper& lhs, \
+        const RhsMapper& rhs, \
+        bfloat16* res, Index resIncr, \
+        bfloat16 alpha) { \
+        gemvMMA_bfloat16_col<LhsMapper, RhsMapper>(rows, cols, lhs, rhs, res, resIncr, alpha); \
+    } \
+};
+
+#define EIGEN_POWER_GEMV_REAL_SPECIALIZE_ROW_BFLOAT16() \
+template<typename Index, typename LhsMapper, bool ConjugateLhs, typename RhsMapper, bool ConjugateRhs, int Version> \
+struct general_matrix_vector_product<Index, bfloat16, LhsMapper, RowMajor, ConjugateLhs, bfloat16, RhsMapper, ConjugateRhs, Version> \
+{ \
+    EIGEN_DEVICE_FUNC EIGEN_DONT_INLINE static void run( \
+        Index rows, Index cols, \
+        const LhsMapper& lhs, \
+        const RhsMapper& rhs, \
+        bfloat16* res, Index resIncr, \
+        bfloat16 alpha) { \
+        gemvMMA_bfloat16_row<LhsMapper, RhsMapper>(rows, cols, lhs, rhs, res, resIncr, alpha); \
+    } \
+};
+
+EIGEN_POWER_GEMV_REAL_SPECIALIZE_COL_BFLOAT16()
+EIGEN_POWER_GEMV_REAL_SPECIALIZE_ROW_BFLOAT16()
+#endif
+
 template<typename ResScalar, typename PResPacket, typename ResPacket, typename LhsPacket, typename RhsPacket>
 EIGEN_ALWAYS_INLINE ScalarBlock<ResScalar, 2> predux_complex(PResPacket& a0, PResPacket& b0, ResPacket& a1, ResPacket& b1)
 {

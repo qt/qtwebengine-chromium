@@ -36,7 +36,7 @@
 #include <memory>
 #include <utility>
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/gpu/SkBackingFit.h"
 #include "src/gpu/ganesh/GrColorSpaceXform.h"
@@ -44,19 +44,16 @@
 #include "src/gpu/ganesh/GrPaint.h"
 #include "src/gpu/ganesh/GrSurfaceProxy.h"
 #include "src/gpu/ganesh/GrSurfaceProxyView.h"
+#include "src/gpu/ganesh/SurfaceDrawContext.h"
 #include "src/gpu/ganesh/effects/GrSkSLFP.h"
 #include "src/gpu/ganesh/effects/GrTextureEffect.h"
-
-#if SK_GPU_V1
-#include "src/gpu/ganesh/SurfaceDrawContext.h"
-#endif // SK_GPU_V1
 
 class GrRecordingContext;
 class SkSurfaceProps;
 enum GrSurfaceOrigin : int;
-enum class GrProtected : bool;
+namespace skgpu { enum class Protected : bool; }
 
-#endif // SK_SUPPORT_GPU
+#endif // defined(SK_GANESH)
 
 namespace {
 
@@ -75,7 +72,7 @@ protected:
 
     sk_sp<SkSpecialImage> onFilterImage(const Context&, SkIPoint* offset) const override;
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
     GrSurfaceProxyView createMaskTexture(GrRecordingContext*,
                                          const SkMatrix&,
                                          const SkIRect& bounds,
@@ -130,16 +127,18 @@ void SkAlphaThresholdImageFilter::flatten(SkWriteBuffer& buffer) const {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
 GrSurfaceProxyView SkAlphaThresholdImageFilter::createMaskTexture(
         GrRecordingContext* rContext,
         const SkMatrix& inMatrix,
         const SkIRect& bounds,
         const SkSurfaceProps& surfaceProps) const {
-#if SK_GPU_V1
-    auto sdc = skgpu::v1::SurfaceDrawContext::MakeWithFallback(
-            rContext, GrColorType::kAlpha_8, nullptr, SkBackingFit::kApprox, bounds.size(),
-            surfaceProps);
+    auto sdc = skgpu::ganesh::SurfaceDrawContext::MakeWithFallback(rContext,
+                                                                   GrColorType::kAlpha_8,
+                                                                   nullptr,
+                                                                   SkBackingFit::kApprox,
+                                                                   bounds.size(),
+                                                                   surfaceProps);
     if (!sdc) {
         return {};
     }
@@ -159,9 +158,6 @@ GrSurfaceProxyView SkAlphaThresholdImageFilter::createMaskTexture(
     }
 
     return sdc->readSurfaceView();
-#else
-    return {};
-#endif
 }
 
 static std::unique_ptr<GrFragmentProcessor> make_alpha_threshold_fp(
@@ -201,7 +197,7 @@ static std::unique_ptr<GrFragmentProcessor> make_alpha_threshold_fp(
                           "innerThreshold", innerThreshold,
                           "outerThreshold", outerThreshold);
 }
-#endif
+#endif  // defined(SK_GANESH)
 
 sk_sp<SkSpecialImage> SkAlphaThresholdImageFilter::onFilterImage(const Context& ctx,
                                                                  SkIPoint* offset) const {
@@ -219,13 +215,13 @@ sk_sp<SkSpecialImage> SkAlphaThresholdImageFilter::onFilterImage(const Context& 
         return nullptr;
     }
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
     if (ctx.gpuBacked()) {
         auto context = ctx.getContext();
 
         GrSurfaceProxyView inputView = (input->view(context));
         SkASSERT(inputView.asTextureProxy());
-        const GrProtected isProtected = inputView.proxy()->isProtected();
+        const skgpu::Protected isProtected = inputView.proxy()->isProtected();
         const GrSurfaceOrigin origin = inputView.origin();
 
         offset->fX = bounds.left();

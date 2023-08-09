@@ -44,8 +44,7 @@ def main(argv):
     gen_cmds = [[common_codegen.repo_relative('scripts/loader_genvk.py'),
                  '-registry', os.path.abspath(os.path.join(args.registry,  'vk.xml')),
                  '-quiet',
-                 filename] for filename in ['vk_dispatch_table_helper.h',
-                                            'vk_layer_dispatch_table.h',
+                 filename] for filename in ['vk_layer_dispatch_table.h',
                                             'vk_loader_extensions.h',
                                             'vk_loader_extensions.c',
                                             'vk_object_types.h']]
@@ -120,7 +119,7 @@ def main(argv):
 
         with open(common_codegen.repo_relative('loader/loader.rc.in'), "r") as rc_file:
             rc_file_contents = rc_file.read()
-        rc_ver = ', '.join(args.generated_version.split('.'))
+        rc_ver = ', '.join(args.generated_version.split('.') + ['0'])
         rc_file_contents = rc_file_contents.replace('${LOADER_VER_FILE_VERSION}', f'{rc_ver}')
         rc_file_contents = rc_file_contents.replace('${LOADER_VER_FILE_DESCRIPTION_STR}', f'"{args.generated_version}.Dev Build"')
         rc_file_contents = rc_file_contents.replace('${LOADER_VER_FILE_VERSION_STR}', f'"Vulkan Loader - Dev Build"')

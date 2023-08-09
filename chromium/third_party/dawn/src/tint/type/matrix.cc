@@ -19,13 +19,14 @@
 #include "src/tint/type/manager.h"
 #include "src/tint/type/vector.h"
 #include "src/tint/utils/hash.h"
+#include "src/tint/utils/string_stream.h"
 
 TINT_INSTANTIATE_TYPEINFO(tint::type::Matrix);
 
 namespace tint::type {
 
 Matrix::Matrix(const Vector* column_type, uint32_t columns)
-    : Base(utils::Hash(TypeInfo::Of<Vector>().full_hashcode, columns, column_type),
+    : Base(utils::Hash(utils::TypeInfo::Of<Vector>().full_hashcode, columns, column_type),
            type::Flags{
                Flag::kConstructable,
                Flag::kCreationFixedFootprint,
@@ -50,9 +51,9 @@ bool Matrix::Equals(const UniqueNode& other) const {
     return false;
 }
 
-std::string Matrix::FriendlyName(const SymbolTable& symbols) const {
-    std::ostringstream out;
-    out << "mat" << columns_ << "x" << rows_ << "<" << subtype_->FriendlyName(symbols) << ">";
+std::string Matrix::FriendlyName() const {
+    utils::StringStream out;
+    out << "mat" << columns_ << "x" << rows_ << "<" << subtype_->FriendlyName() << ">";
     return out.str();
 }
 

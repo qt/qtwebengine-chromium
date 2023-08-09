@@ -53,12 +53,7 @@
 
 .toolbar-item,
 .toolbar-item .devtools-link {
-  color: var(--color-text-secondary);
-}
-
-.toolbar-item:last-child {
-  flex-shrink: 1;
-  justify-content: left;
+  color: var(--icon-default-hover);
 }
 
 .toolbar-shadow.vertical .toolbar-item {
@@ -67,10 +62,16 @@
   white-space: normal;
 }
 
+.toolbar:not(.floating) .toolbar-item:last-child:not(:first-child) {
+  flex-shrink: 1;
+  justify-content: left;
+}
+
 .toolbar-dropdown-arrow {
   background-color: var(--color-text-secondary);
   pointer-events: none;
   flex: none;
+  margin-left: -4px;
 }
 
 .toolbar-button.dark-text .toolbar-dropdown-arrow {
@@ -116,10 +117,6 @@ select.toolbar-item:disabled + .toolbar-dropdown-arrow {
   flex: auto;
   overflow: hidden;
   text-align: right;
-}
-
-.toolbar-has-glyph .toolbar-text {
-  margin-left: -4px;
 }
 
 .toolbar-render-as-links * {
@@ -207,11 +204,11 @@ it. */
 }
 
 .toolbar-button.toolbar-state-on .toolbar-glyph {
-  background-color: var(--color-primary);
+  background-color: var(--icon-toggled);
 }
 
 .toolbar-button.toolbar-state-on .toolbar-icon {
-  --icon-color: var(--color-primary);
+  --icon-color: var(--color-primary-old);
 }
 
 .toolbar-state-on.toolbar-toggle-with-dot .toolbar-icon::after,
@@ -219,7 +216,7 @@ it. */
   content: "";
   position: absolute;
   bottom: 2px;
-  background-color: var(--color-primary);
+  background-color: var(--color-primary-old);
   width: 4.5px;
   height: 4.5px;
   border: 2px solid var(--override-toolbar-background-color, --color-background);
@@ -232,7 +229,7 @@ it. */
 
 .toolbar-button.toolbar-state-on.toolbar-toggle-with-red-color .toolbar-glyph,
 .toolbar-button.toolbar-state-off.toolbar-default-with-red-color .toolbar-glyph {
-  background-color: var(--color-accent-red) !important; /* stylelint-disable-line declaration-no-important */
+  background-color: var(--icon-error) !important; /* stylelint-disable-line declaration-no-important */
 }
 
 .toolbar-button.toolbar-state-on.toolbar-toggle-with-red-color .toolbar-icon,
@@ -247,11 +244,11 @@ it. */
 }
 
 .toolbar-blue-on-hover .toolbar-button:not(.toolbar-state-on):enabled:hover:not(:active) {
-  background-color: var(--color-primary);
+  background-color: var(--color-primary-old);
 }
 
 .toolbar-blue-on-hover .toolbar-button:not(.toolbar-state-on):enabled:active:hover {
-  background-color: var(--color-primary);
+  background-color: var(--color-primary-old);
 }
 
 .toolbar-toggled-gray:not(.toolbar-render-as-links) .toolbar-button:not(.toolbar-has-glyph):not(.toolbar-has-dropdown):not(.largeicon-menu):hover {
@@ -263,7 +260,7 @@ it. */
 }
 
 .toolbar-button.toolbar-state-on .toolbar-text {
-  color: var(--color-primary);
+  color: var(--color-primary-old);
 }
 
 :not(.toolbar-render-as-links) .toolbar-button:enabled:hover:not(:active) .toolbar-glyph {
@@ -291,11 +288,11 @@ it. */
 }
 
 .toolbar-button.toolbar-state-on:enabled:hover:not(:active) .toolbar-glyph {
-  background-color: var(--color-primary);
+  background-color: var(--color-primary-old);
 }
 
 .toolbar-button.toolbar-state-on:enabled:hover:not(:active) .toolbar-icon {
-  --icon-color: var(--color-primary);
+  --icon-color: var(--color-primary-old);
 }
 
 .toolbar-button.toolbar-state-on:enabled:hover:not(:active) .toolbar-text {
@@ -418,13 +415,18 @@ select.toolbar-item:focus-visible > * {
 
 .long-click-glyph {
   position: absolute;
-  background-color: var(--color-text-primary);
-  top: 0;
-  left: 0;
+  background-color: var(--icon-default);
+  top: 2px;
+  left: 3px;
 }
 
 .toolbar-button.emulate-active {
   background-color: var(--color-background-elevation-2);
+}
+
+.toolbar-button [is="ui-icon"].chevron-down,
+.toolbar-button [is="ui-icon"].chevron-up {
+  transform: scale(0.8);
 }
 
 .toolbar-shadow.floating {
@@ -462,7 +464,7 @@ input[is="history-input"]:not(:placeholder-shown) {
   right: 2px;
   bottom: 2px;
   border-radius: 2px;
-  background: var(--color-primary);
+  background: var(--color-primary-old);
   z-index: -1;
 }
 

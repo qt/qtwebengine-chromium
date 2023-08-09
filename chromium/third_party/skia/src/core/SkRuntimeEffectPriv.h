@@ -27,10 +27,34 @@ struct SkColorSpaceXformSteps;
 
 class SkRuntimeEffectPriv {
 public:
+    struct UniformsCallbackContext {
+        const SkColorSpace* fDstColorSpace;
+    };
+
+    // Private (experimental) API for creating runtime shaders with late-bound uniforms.
+    // The callback must produce a uniform data blob of the correct size for the effect.
+    // It is invoked at "draw" time (essentially, when a draw call is made against the canvas
+    // using the resulting shader). There are no strong guarantees about timing.
+    // Serializing the resulting shader will immediately invoke the callback (and record the
+    // resulting uniforms).
+    using UniformsCallback = std::function<sk_sp<const SkData>(const UniformsCallbackContext&)>;
+    static sk_sp<SkShader> MakeDeferredShader(const SkRuntimeEffect* effect,
+                                              UniformsCallback uniformsCallback,
+                                              SkSpan<SkRuntimeEffect::ChildPtr> children,
+                                              const SkMatrix* localMatrix = nullptr);
+
     // Helper function when creating an effect for a GrSkSLFP that verifies an effect will
-    // implement the constant output for constant input optimization flag.
+    // implement the GrFragmentProcessor "constant output for constant input" optimization flag.
     static bool SupportsConstantOutputForConstantInput(const SkRuntimeEffect* effect) {
+        // This optimization is only implemented for color filters without any children.
+        if (!effect->allowColorFilter() || !effect->children().empty()) {
+            return false;
+        }
+#if defined(SK_ENABLE_SKVM)
         return effect->getFilterColorProgram();
+#else
+        return true;
+#endif
     }
 
     static uint32_t Hash(const SkRuntimeEffect& effect) {
@@ -107,53 +131,6 @@ inline SkRuntimeEffect* SkMakeRuntimeEffect(
     }
     return result.effect.release();
 }
-
-/**
- * Runtime effects are often long lived & cached. Individual color filters or FPs created from them
- * and are often short-lived. However, color filters and FPs may need to operate on a single color
- * (on the CPU). This may be done at the paint level (eg, filter the paint color), or as part of
- * FP tree analysis.
- *
- * SkFilterColorProgram is an skvm program representing a (color filter) SkRuntimeEffect. It can
- * process a single color, without knowing the details of a particular instance (uniform values or
- * children).
- */
-class SkFilterColorProgram {
-public:
-    static std::unique_ptr<SkFilterColorProgram> Make(const SkRuntimeEffect* effect);
-
-    SkPMColor4f eval(const SkPMColor4f& inColor,
-                     const void* uniformData,
-                     std::function<SkPMColor4f(int, SkPMColor4f)> evalChild) const;
-
-    bool isAlphaUnchanged() const { return fAlphaUnchanged; }
-
-private:
-    struct SampleCall {
-        enum class Kind {
-            kInputColor,  // eg child.eval(inputColor)
-            kImmediate,   // eg child.eval(half4(1))
-            kPrevious,    // eg child1.eval(child2.eval(...))
-            kUniform,     // eg uniform half4 color; ... child.eval(color)
-        };
-
-        int  fChild;
-        Kind fKind;
-        union {
-            SkPMColor4f fImm;       // for kImmediate
-            int         fPrevious;  // for kPrevious
-            int         fOffset;    // for kUniform
-        };
-    };
-
-    SkFilterColorProgram(skvm::Program program,
-                         std::vector<SampleCall> sampleCalls,
-                         bool alphaUnchanged);
-
-    skvm::Program           fProgram;
-    std::vector<SampleCall> fSampleCalls;
-    bool                    fAlphaUnchanged;
-};
 
 #endif  // SK_ENABLE_SKSL
 

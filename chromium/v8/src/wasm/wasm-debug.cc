@@ -243,8 +243,8 @@ class DebugInfoImpl {
     if (!result.succeeded()) FATAL("Liftoff compilation failed");
     DCHECK_EQ(generate_debug_sidetable, debug_sidetable != nullptr);
 
-    WasmCode* new_code = native_module_->PublishCode(
-        native_module_->AddCompiledCode(std::move(result)));
+    WasmCode* new_code =
+        native_module_->PublishCode(native_module_->AddCompiledCode(result));
 
     DCHECK(new_code->is_inspectable());
     if (generate_debug_sidetable) {
@@ -648,8 +648,8 @@ class DebugInfoImpl {
     DCHECK_EQ(frame->function_index(), new_code->index());
     DCHECK_EQ(frame->native_module(), new_code->native_module());
     DCHECK(frame->wasm_code()->is_liftoff());
-    Address new_pc =
-        FindNewPC(frame, new_code, frame->byte_offset(), return_location);
+    Address new_pc = FindNewPC(frame, new_code, frame->generated_code_offset(),
+                               return_location);
 #ifdef DEBUG
     int old_position = frame->position();
 #endif

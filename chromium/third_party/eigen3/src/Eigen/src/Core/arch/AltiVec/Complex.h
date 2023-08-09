@@ -91,7 +91,6 @@ template<> struct packet_traits<std::complex<float> >  : default_packet_traits
     Vectorizable = 1,
     AlignedOnScalar = 1,
     size = 2,
-    HasHalfPacket = 0,
 
     HasAdd    = 1,
     HasSub    = 1,
@@ -177,7 +176,7 @@ template<> EIGEN_ALWAYS_INLINE Packet2cf pload_ignore<Packet2cf>(const std::comp
 
 template<typename Scalar, typename Packet> EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE Packet pgather_complex_size2(const Scalar* from, Index stride, const Index n = 2)
 {
-  eigen_assert(n <= unpacket_traits<Packet>::size && "number of elements will gather past end of packet");
+  eigen_internal_assert(n <= unpacket_traits<Packet>::size && "number of elements will gather past end of packet");
   EIGEN_ALIGN16 Scalar af[2];
   for (Index i = 0; i < n; i++) {
     af[i] = from[i*stride];
@@ -194,7 +193,7 @@ template<> EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE Packet2cf pgather_partial<std::
 }
 template<typename Scalar, typename Packet> EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE void pscatter_complex_size2(Scalar* to, const Packet& from, Index stride, const Index n = 2)
 {
-  eigen_assert(n <= unpacket_traits<Packet>::size && "number of elements will scatter past end of packet");
+  eigen_internal_assert(n <= unpacket_traits<Packet>::size && "number of elements will scatter past end of packet");
   EIGEN_ALIGN16 Scalar af[2];
   pstore<Scalar>((Scalar *) af, from);
   for (Index i = 0; i < n; i++) {
@@ -360,7 +359,6 @@ template<> struct packet_traits<std::complex<double> >  : default_packet_traits
     Vectorizable = 1,
     AlignedOnScalar = 0,
     size = 1,
-    HasHalfPacket = 0,
 
     HasAdd    = 1,
     HasSub    = 1,

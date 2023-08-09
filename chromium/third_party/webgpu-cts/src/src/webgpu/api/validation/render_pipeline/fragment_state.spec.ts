@@ -142,7 +142,7 @@ g.test('limits,maxColorAttachmentBytesPerSample,unaligned')
             'rgba32float',
             'r8unorm',
           ] as GPUTextureFormat[],
-          _success: true,
+          _success: false,
         },
         {
           formats: [
@@ -152,7 +152,7 @@ g.test('limits,maxColorAttachmentBytesPerSample,unaligned')
             'r8unorm',
             'r8unorm',
           ] as GPUTextureFormat[],
-          _success: false,
+          _success: true,
         },
       ])
       .beginSubcases()
@@ -302,7 +302,7 @@ g.test('pipeline_output_targets')
     const descriptor = t.getDescriptor({
       targets: format ? [{ format, writeMask }] : [],
       // To have a dummy depthStencil attachment to avoid having no attachment at all which is invalid
-      depthStencil: { format: 'depth24plus' },
+      depthStencil: { format: 'depth24plus', depthWriteEnabled: false, depthCompare: 'always' },
       fragmentShaderCode: getFragmentShaderCodeWithOutput(
         shaderOutput
           ? [{ values, plainType: shaderOutput.scalar, componentCount: shaderOutput.count }]

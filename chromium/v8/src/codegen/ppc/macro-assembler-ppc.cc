@@ -15,6 +15,7 @@
 #include "src/codegen/interface-descriptors-inl.h"
 #include "src/codegen/macro-assembler.h"
 #include "src/codegen/register-configuration.h"
+#include "src/codegen/register.h"
 #include "src/debug/debug.h"
 #include "src/deoptimizer/deoptimizer.h"
 #include "src/execution/frames-inl.h"
@@ -365,9 +366,8 @@ void MacroAssembler::Drop(Register count, Register scratch) {
 void MacroAssembler::TestCodeIsMarkedForDeoptimization(Register code,
                                                        Register scratch1,
                                                        Register scratch2) {
-  LoadS32(scratch1, FieldMemOperand(code, Code::kKindSpecificFlagsOffset),
-          scratch2);
-  TestBit(scratch1, InstructionStream::kMarkedForDeoptimizationBit, scratch2);
+  LoadU32(scratch1, FieldMemOperand(code, Code::kFlagsOffset), scratch2);
+  TestBit(scratch1, Code::kMarkedForDeoptimizationBit, scratch2);
 }
 
 Operand MacroAssembler::ClearedValue() const {
@@ -852,8 +852,7 @@ void MacroAssembler::RecordWrite(Register object, Register slot_address,
 
   CheckPageFlag(value,
                 value,  // Used as scratch.
-                MemoryChunk::kPointersToHereAreInterestingOrInSharedHeapMask,
-                eq, &done);
+                MemoryChunk::kPointersToHereAreInterestingMask, eq, &done);
   CheckPageFlag(object,
                 value,  // Used as scratch.
                 MemoryChunk::kPointersFromHereAreInterestingMask, eq, &done);
@@ -1174,19 +1173,21 @@ void MacroAssembler::ShiftRightAlgPair(Register dst_low, Register dst_high,
 #endif
 
 void MacroAssembler::LoadConstantPoolPointerRegisterFromCodeTargetAddress(
-    Register code_target_address) {
+    Register code_target_address, Register scratch1, Register scratch2) {
   // Builtins do not use the constant pool (see is_constant_pool_available).
   static_assert(InstructionStream::kOnHeapBodyIsContiguous);
 
-  lwz(r0, MemOperand(code_target_address,
-                     InstructionStream::kInstructionSizeOffset -
-                         InstructionStream::kHeaderSize));
-  lwz(kConstantPoolRegister,
-      MemOperand(code_target_address,
-                 InstructionStream::kConstantPoolOffsetOffset -
-                     InstructionStream::kHeaderSize));
-  add(kConstantPoolRegister, kConstantPoolRegister, code_target_address);
-  add(kConstantPoolRegister, kConstantPoolRegister, r0);
+  LoadU64(scratch2,
+          FieldMemOperand(code_target_address, Code::kInstructionStartOffset),
+          scratch1);
+  LoadU32(scratch1,
+          FieldMemOperand(code_target_address, Code::kInstructionSizeOffset),
+          scratch1);
+  add(scratch2, scratch1, scratch2);
+  LoadU32(kConstantPoolRegister,
+          FieldMemOperand(code_target_address, Code::kConstantPoolOffsetOffset),
+          scratch1);
+  add(kConstantPoolRegister, scratch2, kConstantPoolRegister);
 }
 
 void MacroAssembler::LoadPC(Register dst) {
@@ -2024,7 +2025,7 @@ void TailCallOptimizedCodeSlot(MacroAssembler* masm,
   __ ReplaceClosureCodeWithOptimizedCode(optimized_code_entry, closure, scratch,
                                          r8);
   static_assert(kJavaScriptCallCodeStartRegister == r5, "ABI mismatch");
-  __ LoadCodeEntry(r5, optimized_code_entry);
+  __ LoadCodeInstructionStart(r5, optimized_code_entry);
   __ Jump(r5);
 
   // Optimized code slot contains deoptimized code or code is cleared and
@@ -2177,11 +2178,6 @@ void MacroAssembler::JumpToExternalReference(const ExternalReference& builtin,
   Handle<Code> code =
       CodeFactory::CEntry(isolate(), 1, ArgvMode::kStack, builtin_exit_frame);
   Jump(code, RelocInfo::CODE_TARGET);
-}
-
-void MacroAssembler::JumpToOffHeapInstructionStream(Address entry) {
-  mov(kOffHeapTrampolineRegister, Operand(entry, RelocInfo::OFF_HEAP_TARGET));
-  Jump(kOffHeapTrampolineRegister);
 }
 
 void MacroAssembler::LoadWeakValue(Register out, Register in,
@@ -2396,6 +2392,47 @@ void MacroAssembler::AssertUndefinedOrAllocationSite(Register object,
     bind(&done_checking);
   }
 }
+
+void MacroAssembler::AssertJSAny(Register object, Register map_tmp,
+                                 Register tmp, AbortReason abort_reason) {
+  if (!v8_flags.debug_code) return;
+
+  ASM_CODE_COMMENT(this);
+  DCHECK(!AreAliased(object, map_tmp, tmp));
+  Label ok;
+
+  JumpIfSmi(object, &ok);
+
+  LoadMap(map_tmp, object);
+  CompareInstanceType(map_tmp, tmp, LAST_NAME_TYPE);
+  ble(&ok);
+
+  CompareInstanceType(map_tmp, tmp, FIRST_JS_RECEIVER_TYPE);
+  bge(&ok);
+
+  CompareRoot(map_tmp, RootIndex::kHeapNumberMap);
+  beq(&ok);
+
+  CompareRoot(map_tmp, RootIndex::kBigIntMap);
+  beq(&ok);
+
+  CompareRoot(object, RootIndex::kUndefinedValue);
+  beq(&ok);
+
+  CompareRoot(object, RootIndex::kTrueValue);
+  beq(&ok);
+
+  CompareRoot(object, RootIndex::kFalseValue);
+  beq(&ok);
+
+  CompareRoot(object, RootIndex::kNullValue);
+  beq(&ok);
+
+  Abort(abort_reason);
+
+  bind(&ok);
+}
+
 #endif  // V8_ENABLE_DEBUG_CODE
 
 static const int kRegisterPassedArguments = 8;
@@ -4516,17 +4553,30 @@ void MacroAssembler::I8x16BitMask(Register dst, Simd128Register src,
 }
 
 void MacroAssembler::I32x4DotI16x8S(Simd128Register dst, Simd128Register src1,
+                                    Simd128Register src2) {
+  vxor(kSimd128RegZero, kSimd128RegZero, kSimd128RegZero);
+  vmsumshm(dst, src1, src2, kSimd128RegZero);
+}
+
+void MacroAssembler::I32x4DotI8x16AddS(Simd128Register dst,
+                                       Simd128Register src1,
+                                       Simd128Register src2,
+                                       Simd128Register src3) {
+  vmsummbm(dst, src1, src2, src3);
+}
+
+void MacroAssembler::I16x8DotI8x16S(Simd128Register dst, Simd128Register src1,
                                     Simd128Register src2,
                                     Simd128Register scratch) {
-  vxor(scratch, scratch, scratch);
-  vmsumshm(dst, src1, src2, scratch);
+  vmulesb(scratch, src1, src2);
+  vmulosb(dst, src1, src2);
+  vadduhm(dst, scratch, dst);
 }
 
 void MacroAssembler::I16x8Q15MulRSatS(Simd128Register dst, Simd128Register src1,
-                                      Simd128Register src2,
-                                      Simd128Register scratch) {
-  vxor(scratch, scratch, scratch);
-  vmhraddshs(dst, src1, src2, scratch);
+                                      Simd128Register src2) {
+  vxor(kSimd128RegZero, kSimd128RegZero, kSimd128RegZero);
+  vmhraddshs(dst, src1, src2, kSimd128RegZero);
 }
 
 void MacroAssembler::I8x16Swizzle(Simd128Register dst, Simd128Register src1,
@@ -4698,6 +4748,119 @@ void MacroAssembler::StoreLane8LE(Simd128Register src, const MemOperand& mem,
                                   Simd128Register scratch2) {
   vextractub(scratch2, src, Operand(15 - lane));
   StoreSimd128Uint8(scratch2, mem, scratch1);
+}
+
+void MacroAssembler::LoadAndSplat64x2LE(Simd128Register dst,
+                                        const MemOperand& mem,
+                                        Register scratch) {
+  constexpr int lane_width_in_bytes = 8;
+  LoadSimd128Uint64(dst, mem, scratch);
+  MAYBE_REVERSE_BYTES(dst, xxbrd)
+  vinsertd(dst, dst, Operand(1 * lane_width_in_bytes));
+}
+
+void MacroAssembler::LoadAndSplat32x4LE(Simd128Register dst,
+                                        const MemOperand& mem,
+                                        Register scratch) {
+  LoadSimd128Uint32(dst, mem, scratch);
+  MAYBE_REVERSE_BYTES(dst, xxbrw)
+  vspltw(dst, dst, Operand(1));
+}
+
+void MacroAssembler::LoadAndSplat16x8LE(Simd128Register dst,
+                                        const MemOperand& mem,
+                                        Register scratch) {
+  LoadSimd128Uint16(dst, mem, scratch);
+  MAYBE_REVERSE_BYTES(dst, xxbrh)
+  vsplth(dst, dst, Operand(3));
+}
+
+void MacroAssembler::LoadAndSplat8x16LE(Simd128Register dst,
+                                        const MemOperand& mem,
+                                        Register scratch) {
+  LoadSimd128Uint8(dst, mem, scratch);
+  vspltb(dst, dst, Operand(7));
+}
+
+void MacroAssembler::LoadAndExtend32x2SLE(Simd128Register dst,
+                                          const MemOperand& mem,
+                                          Register scratch) {
+  LoadSimd128Uint64(dst, mem, scratch);
+  MAYBE_REVERSE_BYTES(dst, xxbrd)
+  vupkhsw(dst, dst);
+}
+
+void MacroAssembler::LoadAndExtend32x2ULE(Simd128Register dst,
+                                          const MemOperand& mem,
+                                          Register scratch1,
+                                          Simd128Register scratch2) {
+  constexpr int lane_width_in_bytes = 8;
+  LoadAndExtend32x2SLE(dst, mem, scratch1);
+  // Zero extend.
+  mov(scratch1, Operand(0xFFFFFFFF));
+  mtvsrd(scratch2, scratch1);
+  vinsertd(scratch2, scratch2, Operand(1 * lane_width_in_bytes));
+  vand(dst, scratch2, dst);
+}
+
+void MacroAssembler::LoadAndExtend16x4SLE(Simd128Register dst,
+                                          const MemOperand& mem,
+                                          Register scratch) {
+  LoadSimd128Uint64(dst, mem, scratch);
+  MAYBE_REVERSE_BYTES(dst, xxbrd)
+  vupkhsh(dst, dst);
+}
+
+void MacroAssembler::LoadAndExtend16x4ULE(Simd128Register dst,
+                                          const MemOperand& mem,
+                                          Register scratch1,
+                                          Simd128Register scratch2) {
+  LoadAndExtend16x4SLE(dst, mem, scratch1);
+  // Zero extend.
+  mov(scratch1, Operand(0xFFFF));
+  mtvsrd(scratch2, scratch1);
+  vspltw(scratch2, scratch2, Operand(1));
+  vand(dst, scratch2, dst);
+}
+
+void MacroAssembler::LoadAndExtend8x8SLE(Simd128Register dst,
+                                         const MemOperand& mem,
+                                         Register scratch) {
+  LoadSimd128Uint64(dst, mem, scratch);
+  MAYBE_REVERSE_BYTES(dst, xxbrd)
+  vupkhsb(dst, dst);
+}
+
+void MacroAssembler::LoadAndExtend8x8ULE(Simd128Register dst,
+                                         const MemOperand& mem,
+                                         Register scratch1,
+                                         Simd128Register scratch2) {
+  LoadAndExtend8x8SLE(dst, mem, scratch1);
+  // Zero extend.
+  li(scratch1, Operand(0xFF));
+  mtvsrd(scratch2, scratch1);
+  vsplth(scratch2, scratch2, Operand(3));
+  vand(dst, scratch2, dst);
+}
+
+void MacroAssembler::LoadV64ZeroLE(Simd128Register dst, const MemOperand& mem,
+                                   Register scratch1,
+                                   Simd128Register scratch2) {
+  constexpr int lane_width_in_bytes = 8;
+  LoadSimd128Uint64(scratch2, mem, scratch1);
+  MAYBE_REVERSE_BYTES(scratch2, xxbrd)
+  vxor(dst, dst, dst);
+  vinsertd(dst, scratch2, Operand(1 * lane_width_in_bytes));
+}
+
+void MacroAssembler::LoadV32ZeroLE(Simd128Register dst, const MemOperand& mem,
+                                   Register scratch1,
+                                   Simd128Register scratch2) {
+  constexpr int lane_width_in_bytes = 4;
+  LoadSimd128Uint32(scratch2, mem, scratch1);
+  MAYBE_REVERSE_BYTES(scratch2, xxbrw)
+  vxor(dst, dst, dst);
+  vinsertw(dst, scratch2, Operand(3 * lane_width_in_bytes));
 }
 #undef MAYBE_REVERSE_BYTES
 
@@ -4961,32 +5124,23 @@ MemOperand MacroAssembler::EntryFromBuiltinAsOperand(Builtin builtin) {
                     IsolateData::BuiltinEntrySlotOffset(builtin));
 }
 
-void MacroAssembler::LoadCodeEntry(Register destination, Register code_object) {
+void MacroAssembler::LoadCodeInstructionStart(Register destination,
+                                              Register code_object) {
   ASM_CODE_COMMENT(this);
   LoadU64(destination,
-          FieldMemOperand(code_object, Code::kCodeEntryPointOffset), r0);
-}
-
-void MacroAssembler::LoadCodeInstructionStreamNonBuiltin(Register destination,
-                                                         Register code_object) {
-  ASM_CODE_COMMENT(this);
-  // Compute the InstructionStream object pointer from the code entry point.
-  LoadU64(destination,
-          FieldMemOperand(code_object, Code::kCodeEntryPointOffset), r0);
-  SubS64(destination, destination,
-         Operand(InstructionStream::kHeaderSize - kHeapObjectTag));
+          FieldMemOperand(code_object, Code::kInstructionStartOffset), r0);
 }
 
 void MacroAssembler::CallCodeObject(Register code_object) {
   ASM_CODE_COMMENT(this);
-  LoadCodeEntry(code_object, code_object);
+  LoadCodeInstructionStart(code_object, code_object);
   Call(code_object);
 }
 
 void MacroAssembler::JumpCodeObject(Register code_object, JumpMode jump_mode) {
   ASM_CODE_COMMENT(this);
   DCHECK_EQ(JumpMode::kJump, jump_mode);
-  LoadCodeEntry(code_object, code_object);
+  LoadCodeInstructionStart(code_object, code_object);
   Jump(code_object);
 }
 

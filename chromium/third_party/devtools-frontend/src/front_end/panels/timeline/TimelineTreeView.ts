@@ -8,13 +8,15 @@ import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import type * as Protocol from '../../generated/protocol.js';
 import * as TimelineModel from '../../models/timeline_model/timeline_model.js';
+import type * as TraceEngine from '../../models/trace/trace.js';
 import * as DataGrid from '../../ui/legacy/components/data_grid/data_grid.js';
 import * as Components from '../../ui/legacy/components/utils/utils.js';
 import * as UI from '../../ui/legacy/legacy.js';
 
 import {type PerformanceModel} from './PerformanceModel.js';
 import {TimelineRegExp} from './TimelineFilters.js';
-import {type TimelineSelection} from './TimelinePanel.js';
+
+import {type TimelineSelection} from './TimelineSelection.js';
 import {TimelineUIUtils} from './TimelineUIUtils.js';
 
 const UIStrings = {
@@ -155,7 +157,6 @@ const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 export class TimelineTreeView extends UI.Widget.VBox implements UI.SearchableView.Searchable {
   modelInternal: PerformanceModel|null;
   private track: TimelineModel.TimelineModel.Track|null;
-  private readonly tree: TimelineModel.TimelineProfileTree.Node|null;
   private searchResults: TimelineModel.TimelineProfileTree.Node[];
   linkifier!: Components.Linkifier.Linkifier;
   dataGrid!: DataGrid.SortableDataGrid.SortableDataGrid<GridNode>;
@@ -171,17 +172,16 @@ export class TimelineTreeView extends UI.Widget.VBox implements UI.SearchableVie
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private currentThreadSetting?: Common.Settings.Setting<any>;
   private lastSelectedNodeInternal?: TimelineModel.TimelineProfileTree.Node|null;
-  private textFilterUI?: UI.Toolbar.ToolbarInput;
   private root?: TimelineModel.TimelineProfileTree.Node;
-  // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private currentResult?: any;
+  private currentResult?: number;
+  textFilterUI?: UI.Toolbar.ToolbarInput;
+
+  #traceParseData: TraceEngine.TraceModel.PartialTraceParseDataDuringMigration|null = null;
 
   constructor() {
     super();
     this.modelInternal = null;
     this.track = null;
-    this.tree = null;
     this.element.classList.add('timeline-tree-view');
 
     this.searchResults = [];
@@ -199,8 +199,13 @@ export class TimelineTreeView extends UI.Widget.VBox implements UI.SearchableVie
     this.searchableView = searchableView;
   }
 
-  setModel(model: PerformanceModel|null, track: TimelineModel.TimelineModel.Track|null): void {
+  setModel(
+      model: PerformanceModel|null,
+      track: TimelineModel.TimelineModel.Track|null,
+      traceParseData: TraceEngine.TraceModel.PartialTraceParseDataDuringMigration|null = null,
+      ): void {
     this.modelInternal = model;
+    this.#traceParseData = traceParseData;
     this.track = track;
     this.refreshTree();
   }
@@ -211,6 +216,10 @@ export class TimelineTreeView extends UI.Widget.VBox implements UI.SearchableVie
 
   model(): PerformanceModel|null {
     return this.modelInternal;
+  }
+
+  traceParseData(): TraceEngine.TraceModel.PartialTraceParseDataDuringMigration|null {
+    return this.#traceParseData;
   }
 
   init(): void {
@@ -262,7 +271,7 @@ export class TimelineTreeView extends UI.Widget.VBox implements UI.SearchableVie
   }
 
   updateContents(selection: TimelineSelection): void {
-    this.setRange(selection.startTime(), selection.endTime());
+    this.setRange(selection.startTime, selection.endTime);
   }
 
   setRange(startTime: number, endTime: number): void {
@@ -301,7 +310,7 @@ export class TimelineTreeView extends UI.Widget.VBox implements UI.SearchableVie
   }
 
   modelEvents(): SDK.TracingModel.Event[] {
-    return this.track ? this.track.syncEvents() : [];
+    return this.track ? this.track.eventsForTreeView() : [];
   }
 
   onHover(_node: TimelineModel.TimelineProfileTree.Node|null): void {
@@ -309,21 +318,6 @@ export class TimelineTreeView extends UI.Widget.VBox implements UI.SearchableVie
 
   appendContextMenuItems(_contextMenu: UI.ContextMenu.ContextMenu, _node: TimelineModel.TimelineProfileTree.Node):
       void {
-  }
-
-  linkifyLocation(event: SDK.TracingModel.Event): Element|null {
-    if (!this.modelInternal) {
-      return null;
-    }
-    const target = this.modelInternal.timelineModel().targetByEvent(event);
-    if (!target) {
-      return null;
-    }
-    const frame = TimelineModel.TimelineProfileTree.eventStackFrame(event);
-    if (!frame) {
-      return null;
-    }
-    return this.linkifier.maybeLinkifyConsoleCallFrame(target, frame, {showColumnNumber: true, inlineFrameIndex: 0});
   }
 
   selectProfileNode(treeNode: TimelineModel.TimelineProfileTree.Node, suppressSelectedEvent: boolean): void {
@@ -431,8 +425,6 @@ export class TimelineTreeView extends UI.Widget.VBox implements UI.SearchableVie
       const nodeB = (b as TreeGridNode);
       // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       return (nodeA.profileNode as any)[field] - (nodeB.profileNode as any)[field];
     }
 
@@ -538,7 +530,7 @@ export class TimelineTreeView extends UI.Widget.VBox implements UI.SearchableVie
   }
 
   jumpToNextSearchResult(): void {
-    if (!this.searchResults.length) {
+    if (!this.searchResults.length || this.currentResult === undefined) {
       return;
     }
     this.selectProfileNode(this.searchResults[this.currentResult], false);
@@ -546,7 +538,7 @@ export class TimelineTreeView extends UI.Widget.VBox implements UI.SearchableVie
   }
 
   jumpToPreviousSearchResult(): void {
-    if (!this.searchResults.length) {
+    if (!this.searchResults.length || this.currentResult === undefined) {
       return;
     }
     this.selectProfileNode(this.searchResults[this.currentResult], false);
@@ -584,7 +576,7 @@ export class GridNode extends DataGrid.SortableDataGrid.SortableDataGridNode<Gri
     this.linkElement = null;
   }
 
-  createCell(columnId: string): HTMLElement {
+  override createCell(columnId: string): HTMLElement {
     if (columnId === 'activity') {
       return this.createNameCell(columnId);
     }
@@ -615,7 +607,10 @@ export class GridNode extends DataGrid.SortableDataGrid.SortableDataGridNode<Gri
       }
 
       name.textContent = TimelineUIUtils.eventTitle(event);
-      this.linkElement = this.treeView.linkifyLocation(event);
+      const target = this.treeView.modelInternal?.timelineModel().targetByEvent(event) || null;
+      const linkifier = this.treeView.linkifier;
+      const isFreshRecording = Boolean(this.treeView.modelInternal?.timelineModel().isFreshRecording());
+      this.linkElement = TimelineUIUtils.linkifyTopCallFrame(event, target, linkifier, isFreshRecording);
       if (this.linkElement) {
         container.createChild('div', 'activity-link').appendChild(this.linkElement);
       }
@@ -686,7 +681,7 @@ export class TreeGridNode extends GridNode {
     profileNodeToTreeGridNode.set(profileNode, this);
   }
 
-  populate(): void {
+  override populate(): void {
     if (this.populated) {
       return;
     }
@@ -699,10 +694,6 @@ export class TreeGridNode extends GridNode {
       this.insertChildOrdered(gridNode);
     }
   }
-
-  // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration
-  // eslint-disable-next-line @typescript-eslint/naming-convention
-  private static readonly gridNodeSymbol = Symbol('treeGridNode');
 }
 
 const profileNodeToTreeGridNode = new WeakMap<TimelineModel.TimelineProfileTree.Node, TreeGridNode>();
@@ -712,13 +703,7 @@ export class AggregatedTimelineTreeView extends TimelineTreeView {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   protected readonly groupBySetting: Common.Settings.Setting<any>;
   private readonly stackView: TimelineStackView;
-  private readonly productByURLCache: Map<string, string>;
-  private readonly colorByURLCache: Map<string, string>;
-  // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private executionContextNamesByOrigin: Map<any, any>;
+  private executionContextNamesByOrigin = new Map<Platform.DevToolsPath.UrlString, string>();
 
   constructor() {
     super();
@@ -728,16 +713,17 @@ export class AggregatedTimelineTreeView extends TimelineTreeView {
     this.init();
     this.stackView = new TimelineStackView(this);
     this.stackView.addEventListener(TimelineStackView.Events.SelectionChanged, this.onStackViewSelectionChanged, this);
-    this.productByURLCache = new Map();
-    this.colorByURLCache = new Map();
-    this.executionContextNamesByOrigin = new Map();
   }
 
-  setModel(model: PerformanceModel|null, track: TimelineModel.TimelineModel.Track|null): void {
-    super.setModel(model, track);
+  override setModel(
+      model: PerformanceModel|null,
+      track: TimelineModel.TimelineModel.Track|null,
+      traceParseData: TraceEngine.TraceModel.PartialTraceParseDataDuringMigration|null = null,
+      ): void {
+    super.setModel(model, track, traceParseData);
   }
 
-  updateContents(selection: TimelineSelection): void {
+  override updateContents(selection: TimelineSelection): void {
     this.updateExtensionResolver();
     super.updateContents(selection);
     const rootNode = this.dataGrid.rootNode();
@@ -761,7 +747,7 @@ export class AggregatedTimelineTreeView extends TimelineTreeView {
     } else if (AggregatedTimelineTreeView.isV8NativeURL(name as Platform.DevToolsPath.UrlString)) {
       name = i18nString(UIStrings.vRuntime);
     } else if (name.startsWith('chrome-extension')) {
-      name = this.executionContextNamesByOrigin.get(name) || name;
+      name = this.executionContextNamesByOrigin.get(name as Platform.DevToolsPath.UrlString) || name;
     }
     return name;
   }
@@ -824,7 +810,7 @@ export class AggregatedTimelineTreeView extends TimelineTreeView {
     return {name: id || unattributed, color: color, icon: undefined};
   }
 
-  populateToolbar(toolbar: UI.Toolbar.Toolbar): void {
+  override populateToolbar(toolbar: UI.Toolbar.Toolbar): void {
     super.populateToolbar(toolbar);
     const groupBy = AggregatedTimelineTreeView.GroupBy;
     const options = [
@@ -862,7 +848,7 @@ export class AggregatedTimelineTreeView extends TimelineTreeView {
     return result;
   }
 
-  exposePercentages(): boolean {
+  override exposePercentages(): boolean {
     return true;
   }
 
@@ -873,7 +859,7 @@ export class AggregatedTimelineTreeView extends TimelineTreeView {
     }
   }
 
-  showDetailsForNode(node: TimelineModel.TimelineProfileTree.Node): boolean {
+  override showDetailsForNode(node: TimelineModel.TimelineProfileTree.Node): boolean {
     const stack = this.buildHeaviestStack(node);
     this.stackView.setStack(stack, node);
     this.stackView.show(this.detailsView.element);
@@ -897,7 +883,7 @@ export class AggregatedTimelineTreeView extends TimelineTreeView {
         return (event: SDK.TracingModel.Event): string => TimelineModel.TimelineProfileTree.eventURL(event) || '';
       case GroupBy.Frame:
         return (event: SDK.TracingModel.Event): string =>
-                   TimelineModel.TimelineModel.TimelineData.forEvent(event).frameId || '';
+                   TimelineModel.TimelineModel.EventOnTimelineData.forEvent(event).frameId || '';
       default:
         console.assert(false, `Unexpected aggregation setting: ${groupBy}`);
         return null;
@@ -932,7 +918,8 @@ export class AggregatedTimelineTreeView extends TimelineTreeView {
     return domainMatch && domainMatch[0] || '';
   }
 
-  appendContextMenuItems(contextMenu: UI.ContextMenu.ContextMenu, node: TimelineModel.TimelineProfileTree.Node): void {
+  override appendContextMenuItems(
+      contextMenu: UI.ContextMenu.ContextMenu, node: TimelineModel.TimelineProfileTree.Node): void {
     if (this.groupBySetting.get() !== AggregatedTimelineTreeView.GroupBy.Frame) {
       return;
     }
@@ -957,10 +944,8 @@ export class AggregatedTimelineTreeView extends TimelineTreeView {
     return url.startsWith(AggregatedTimelineTreeView.v8NativePrefix);
   }
 
-  // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration
   // eslint-disable-next-line @typescript-eslint/naming-convention
   private static readonly extensionInternalPrefix = 'extensions::';
-  // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration
   // eslint-disable-next-line @typescript-eslint/naming-convention
   private static readonly v8NativePrefix = 'native ';
 }
@@ -984,11 +969,11 @@ export class CallTreeTimelineTreeView extends AggregatedTimelineTreeView {
     this.dataGrid.markColumnAsSortedBy('total', DataGrid.DataGrid.Order.Descending);
   }
 
-  getToolbarInputAccessiblePlaceHolder(): string {
+  override getToolbarInputAccessiblePlaceHolder(): string {
     return i18nString(UIStrings.filterCallTree);
   }
 
-  buildTree(): TimelineModel.TimelineProfileTree.Node {
+  override buildTree(): TimelineModel.TimelineProfileTree.Node {
     const grouping = this.groupBySetting.get();
     return this.buildTopDownTree(false, this.groupingFunction(grouping));
   }
@@ -1000,11 +985,11 @@ export class BottomUpTimelineTreeView extends AggregatedTimelineTreeView {
     this.dataGrid.markColumnAsSortedBy('self', DataGrid.DataGrid.Order.Descending);
   }
 
-  getToolbarInputAccessiblePlaceHolder(): string {
+  override getToolbarInputAccessiblePlaceHolder(): string {
     return i18nString(UIStrings.filterBottomup);
   }
 
-  buildTree(): TimelineModel.TimelineProfileTree.Node {
+  override buildTree(): TimelineModel.TimelineProfileTree.Node {
     return new TimelineModel.TimelineProfileTree.BottomUpRootNode(
         this.modelEvents(), this.textFilter(), this.filtersWithoutTextFilter(), this.startTime, this.endTime,
         this.groupingFunction(this.groupBySetting.get()));

@@ -176,7 +176,7 @@ message StartVmRequest {
   // The owner of the vm.
   string owner_id = 7;
 
-  // Enable GPU in the started Vm.
+  // Enable Virtio GPU in the started Vm. It uses integrated GPU on the host.
   bool enable_gpu = 8;
 
   // Provide a software-based virtual Trusted Platform Module to the VM. The TPM
@@ -262,6 +262,16 @@ message StartVmRequest {
   // Optional suggested username of the owner of the VM. Only used by
   // VM types that support dynamic usernames.
   string vm_username = 26;
+
+  // Enable discrete GPU passthrough in the VM.
+  // Note:
+  // - VFIO device (--enable-dgpu) is fully independent of virtio-gpu
+  // (--enable-gpu) device.
+  // - When --enable-dgpu is used with --enable-gpu, it helps with
+  // graphics acceleration via render offload.
+  // - When --enable-dgpu is used without --enable-gpu, it helps with
+  // compute acceleration (example: OpenCL).
+  bool enable_dgpu_passthrough = 27;
 }
 
 // Information that must be included with every StartPluginVm request.
@@ -400,7 +410,7 @@ message StartArcVmRequest {
   bool enable_tts_caching = 23 [deprecated = true];
 
   // Whether gmscore lmk protection is enabled.
-  bool enable_gmscore_lmk_protection = 24;
+  bool enable_gmscore_lmk_protection = 24 [deprecated = true];
 
   // Whether broadcast anr prenotify is enabled.
   bool enable_broadcast_anr_prenotify = 25;
@@ -806,6 +816,22 @@ enum DiskImageStatus {
   DISK_STATUS_NOT_ENOUGH_SPACE = 8;
 }
 
+enum DiskImageAllocationType {
+  // Determine the allocation type based on the specified disk size. If the disk
+  // size is unspecified or 0, the disk image will be sparse. Otherwise the disk
+  // image will be preallocated.
+  // This default value exists to preserve the old behaviors for existing
+  // callers. New callers should specify either DISK_ALLOCATION_TYPE_SPARSE or
+  // DISK_ALLOCATION_TYPE_PREALLOCATE.
+  DISK_ALLOCATION_TYPE_AUTO = 0;
+
+  // Sparse disk image.
+  DISK_ALLOCATION_TYPE_SPARSE = 1;
+
+  // Non-sparse disk image with preallocated space.
+  DISK_ALLOCATION_TYPE_PREALLOCATE = 2;
+}
+
 // Request to concierge to create a disk image.
 message CreateDiskImageRequest {
   // The cryptohome id for the user's encrypted storage.
@@ -815,9 +841,14 @@ message CreateDiskImageRequest {
   string vm_name = 2;
 
   // The logical size of the new disk image, in bytes.
-  // If non-zero, the disk will be preallocated and fixed to the given size.
-  // If unspecified or 0, a size will be chosen automatically and the image will
-  // be sparse.
+  // If a non-zero value is combined with DISK_ALLOCATION_TYPE_AUTO or
+  // DISK_ALLOCATION_TYPE_PREALLOCATE |allocation_type|, the disk image will be
+  // preallocated and fixed to the given size.
+  // A non-zero value with DISK_ALLOCATION_TYPE_SPARSE |allocation_type| results
+  // in a sparse disk image of the specified size.
+  // If unspecified or 0, a sparse disk image of an automatically chosen size
+  // will be created, in which case |allocation_type| must not be
+  // DISK_ALLOCATION_TYPE_PREALLOCATE.
   uint64 disk_size = 3;
 
   // The type of disk image to be created.
@@ -837,9 +868,10 @@ message CreateDiskImageRequest {
   // filesystem will be created.
   FilesystemType filesystem_type = 8;
 
-  // Sets up the disk image to support storage ballooning. This setting is
-  // used exclusively with sparse images. If this is true and disk_size is
-  // non-zero, the request will fail.
+  // Sets up the disk image to support storage ballooning. This setting is used
+  // exclusively with sparse images, i.e., if set to true, |allocation_type|
+  // must be DISK_ALLOCATION_TYPE_SPARSE (or DISK_ALLOCATION_TYPE_AUTO combined
+  // with |disk_size| = 0).
   bool storage_ballooning = 9;
 
   // Options passed to `mkfs` when creating a filesystem on the image. If
@@ -849,6 +881,12 @@ message CreateDiskImageRequest {
   // Options passed to `tune2fs` when creating a filesystem on the image. If
   // unspecified or |filesystem_type| is not EXT4, `tune2fs` will not run.
   repeated string tune2fs_opts = 11;
+
+  // Specifies whether the disk image should be sparse or not. If unspecified or
+  // DISK_ALLOCATION_TYPE_AUTO, the disk image will be sparse if and only if
+  // |disk_size| is unspecified or 0. DISK_ALLOCATION_TYPE_PREALLOCATE must be
+  // combined with a non-zero |disk_size|.
+  DiskImageAllocationType allocation_type = 12;
 }
 
 // Response to a CreateDiskImageRequest.
@@ -1430,4 +1468,27 @@ message VmSwappingSignal {
 
   // The owner of the VM.
   string owner_id = 2;
+}
+
+// Installs Pflash associated with VM |vm_name| owned by |owner_id|. Requires
+// the sender to also send an fd to a Pflash file.
+//
+// Fails if installing the pflash didn't succeed or a pflash file was already
+// installed before.
+message InstallPflashRequest {
+  // The name of the VM.
+  string vm_name = 1;
+
+  // The owner of the VM.
+  string owner_id = 2;
+}
+
+// The response of the |InstallPflashRequest|.
+message InstallPflashResponse {
+  // Whether the request succeeded or not.
+  bool success = 1;
+
+  // The reason for failure for not being able to install the Pflash. Only
+  // valid when |success| is false.
+  string failure_reason = 2;
 }

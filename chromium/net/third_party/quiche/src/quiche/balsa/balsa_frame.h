@@ -38,9 +38,6 @@ class QUICHE_EXPORT BalsaFrame : public FramerInterface {
 
   enum class InvalidCharsLevel { kOff, kWarning, kError };
 
-  // TODO(fenix): get rid of the 'kValidTerm*' stuff by using the 'since last
-  // index' strategy.  Note that this implies getting rid of the HeaderFramed()
-
   static constexpr int32_t kValidTerm1 = '\n' << 16 | '\r' << 8 | '\n';
   static constexpr int32_t kValidTerm1Mask = 0xFF << 16 | 0xFF << 8 | 0xFF;
   static constexpr int32_t kValidTerm2 = '\n' << 8 | '\n';
@@ -68,7 +65,8 @@ class QUICHE_EXPORT BalsaFrame : public FramerInterface {
         start_of_trailer_line_(0),
         trailer_length_(0),
         trailer_(nullptr),
-        invalid_chars_level_(InvalidCharsLevel::kOff) {}
+        invalid_chars_level_(InvalidCharsLevel::kOff),
+        use_interim_headers_callback_(false) {}
 
   ~BalsaFrame() override {}
 
@@ -93,6 +91,7 @@ class QUICHE_EXPORT BalsaFrame : public FramerInterface {
   }
 
   // If set to non-null, allow 100 Continue headers before the main headers.
+  // This method is a no-op if set_use_interim_headers_callback(true) is called.
   void set_continue_headers(BalsaHeaders* continue_headers) {
     if (continue_headers_ != continue_headers) {
       continue_headers_ = continue_headers;
@@ -198,6 +197,13 @@ class QUICHE_EXPORT BalsaFrame : public FramerInterface {
     parse_state_ = BalsaFrameEnums::READING_UNTIL_CLOSE;
   }
 
+  // If enabled, calls BalsaVisitorInterface::OnInterimHeaders() when parsing
+  // interim headers. For 100 Continue, this callback will be invoked instead of
+  // ContinueHeaderDone(), even when set_continue_headers() is called.
+  void set_use_interim_headers_callback(bool set) {
+    use_interim_headers_callback_ = set;
+  }
+
  protected:
   inline BalsaHeadersEnums::ContentLengthStatus ProcessContentLengthLine(
       size_t line_idx, size_t* length);
@@ -228,8 +234,6 @@ class QUICHE_EXPORT BalsaFrame : public FramerInterface {
     return current_char == '\n';
   }
 
-  // TODO(fenix): get rid of the following function and its uses (and
-  // replace with something more efficient).
   // Return header framing pattern. Non-zero return value indicates found,
   // which has two possible outcomes: kValidTerm1, which means \n\r\n
   // or kValidTerm2, which means \n\n. Zero return value means not found.
@@ -303,9 +307,14 @@ class QUICHE_EXPORT BalsaFrame : public FramerInterface {
   size_t trailer_length_;
   BalsaHeaders* trailer_;  // Does not own and is not reset to nullptr
                            // in Reset().
-  InvalidCharsLevel invalid_chars_level_;  // This is not reset in Reset()
+  InvalidCharsLevel invalid_chars_level_;  // This is not reset in Reset().
 
   quiche::HttpValidationPolicy http_validation_policy_;
+
+  // This is not reset in Reset().
+  // TODO(b/68801833): Default-enable and then deprecate this field, along with
+  // set_continue_headers().
+  bool use_interim_headers_callback_;
 };
 
 }  // namespace quiche

@@ -5,15 +5,15 @@
  * found in the LICENSE file.
  */
 
-#include "include/sksl/DSLExpression.h"
+#include "src/sksl/dsl/DSLExpression.h"
 
 #include "include/core/SkTypes.h"
 #include "include/private/SkSLDefines.h"
-#include "include/sksl/DSLCore.h"
-#include "include/sksl/DSLType.h"
-#include "include/sksl/DSLVar.h"
-#include "include/sksl/SkSLOperator.h"
+#include "src/sksl/SkSLOperator.h"
 #include "src/sksl/SkSLThreadContext.h"
+#include "src/sksl/dsl/DSLCore.h"
+#include "src/sksl/dsl/DSLType.h"
+#include "src/sksl/dsl/DSLVar.h"
 #include "src/sksl/dsl/priv/DSLWriter.h"
 #include "src/sksl/ir/SkSLBinaryExpression.h"
 #include "src/sksl/ir/SkSLExpression.h"
@@ -27,6 +27,8 @@
 #include "src/sksl/ir/SkSLVariableReference.h"
 
 #include <utility>
+
+using namespace skia_private;
 
 namespace SkSL {
 
@@ -180,7 +182,7 @@ DSLExpression DSLExpression::index(DSLExpression index, Position pos) {
     return DSLExpression(std::move(result), pos);
 }
 
-DSLExpression DSLExpression::operator()(SkTArray<DSLExpression> args, Position pos) {
+DSLExpression DSLExpression::operator()(TArray<DSLExpression> args, Position pos) {
     ExpressionArray converted;
     converted.reserve_back(args.size());
     for (DSLExpression& arg : args) {

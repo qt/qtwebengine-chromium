@@ -33,6 +33,7 @@ cc_library(
         "log_message.h",
         "mutex.h",
         "output_file.h",
+        "preferences_repository.h",
         "scheduled_executor.h",
         "settable_future.h",
         "submittable_executor.h",
@@ -41,6 +42,7 @@ cc_library(
     ],
     copts = ["-Ithird_party/nearby/internal/platform/implementation/windows/generated"],
     defines = ["_SILENCE_CLANG_COROUTINE_MESSAGE"],
+    visibility = ["//location/nearby/cpp/sharing/implementation/internal/impl/windows:__pkg__"],
     deps = [
         "//base",
         "//base:stringprintf",
@@ -48,7 +50,10 @@ cc_library(
         "//internal/platform:base",
         "//internal/platform:logging",
         "//internal/platform/implementation:types",
+        "//internal/platform/implementation/windows:comm",
         "//internal/platform/implementation/windows/generated:types",
+        "@com_google_absl//absl/base:core_headers",
+        "@com_google_absl//absl/synchronization",
     ],
 )
 
@@ -57,11 +62,14 @@ cc_library(
     hdrs = [
         "ble.h",
         "ble_gatt_client.h",
+        "ble_gatt_server.h",
         "ble_medium.h",
         "ble_peripheral.h",
         "ble_socket.h",
         "ble_v2.h",
         "ble_v2_peripheral.h",
+        "ble_v2_server_socket.h",
+        "ble_v2_socket.h",
         "bluetooth_adapter.h",
         "bluetooth_classic.h",
         "bluetooth_classic_device.h",
@@ -106,16 +114,6 @@ cc_library(
 )
 
 cc_library(
-    name = "mediums_api",
-    hdrs = ["mediums_api.h"],
-    visibility = ["//visibility:public"],
-    deps = [
-        "//internal/platform/implementation/windows/mediums_manager:types",
-        "@com_google_absl//absl/strings",
-    ],
-)
-
-cc_library(
     name = "crypto",
     srcs = [
         "crypto.cc",
@@ -133,10 +131,13 @@ cc_library(
     name = "windows",
     srcs = [
         "ble_gatt_client.cc",
+        "ble_gatt_server.cc",
         "ble_medium.cc",
         "ble_socket.cc",
         "ble_v2.cc",
         "ble_v2_peripheral.cc",
+        "ble_v2_server_socket.cc",
+        "ble_v2_socket.cc",
         "bluetooth_adapter.cc",
         "bluetooth_classic_device.cc",
         "bluetooth_classic_medium.cc",
@@ -148,6 +149,7 @@ cc_library(
         "file_path.cc",
         "http_loader.cc",
         "platform.cc",
+        "preferences_repository.cc",
         "scheduled_executor.cc",
         "submittable_executor.cc",
         "system_clock.cc",
@@ -166,7 +168,7 @@ cc_library(
     ],
     # This is the temporary solution to solve compilation error of Win32 WFDxxx() related API.
     # WFD API is only support after _WIN32_WINNT_WIN8, but the current lexan _WIN32_WINNT is set to _WIN32_WINNT_WIN7
-    copts = ["-Ithird_party/nearby/internal/platform/implementation/windows/generated -Ithird_party/nearby/internal/platform/implementation/windows/json -D_WIN32_WINNT=_WIN32_WINNT_WIN10 -DWINVER=_WIN32_WINNT_WIN10"],
+    copts = ["-Ithird_party/nearby/internal/platform/implementation/windows/generated -D_WIN32_WINNT=_WIN32_WINNT_WIN10 -DWINVER=_WIN32_WINNT_WIN10"],
     defines = ["_SILENCE_CLANG_COROUTINE_MESSAGE"],
     visibility = [
         "//connections:__subpackages__",
@@ -178,18 +180,20 @@ cc_library(
         ":comm",
         ":crypto",  # build_cleaner: keep
         ":types",
+        "//internal/flags:nearby_flags",
         "//internal/platform:base",
         "//internal/platform:cancellation_flag",
         "//internal/platform:comm",
         "//internal/platform:logging",
         "//internal/platform:types",
+        "//internal/platform:uuid",
+        "//internal/platform/flags:platform_flags",
         "//internal/platform/implementation:comm",
         "//internal/platform/implementation:platform",
         "//internal/platform/implementation:types",
         "//internal/platform/implementation/shared:count_down_latch",
         "//internal/platform/implementation/shared:file",
         "//internal/platform/implementation/windows/generated:types",
-        "//internal/platform/implementation/windows/json:types",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/memory",
         "@com_google_absl//absl/status",
@@ -198,6 +202,7 @@ cc_library(
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/time",
+        "@nlohmann_json//:json",
     ],
 )
 
@@ -215,6 +220,7 @@ cc_library(
     ],
     deps = [
         "//internal/platform:base",
+        "@nlohmann_json//:json",
     ],
 )
 
@@ -224,6 +230,7 @@ cc_test(
     srcs = [
         "atomic_boolean_test.cc",
         "atomic_reference_test.cc",
+        "ble_gatt_server_test.cc",
         "ble_medium_test.cc",
         "ble_v2_peripheral_test.cc",
         "ble_v2_test.cc",
@@ -234,6 +241,7 @@ cc_test(
         "executor_test.cc",
         "file_path_test.cc",
         "http_loader_test.cc",
+        "preferences_repository_test.cc",
         "scheduled_executor_test.cc",
         "submittable_executor_test.cc",
         "thread_pool_test.cc",
@@ -241,6 +249,7 @@ cc_test(
         "utils_test.cc",
     ],
     copts = ["-Ithird_party/nearby/internal/platform/implementation/windows/generated -DCORE_ADAPTER_DLL"],
+    tags = ["notap"],
     deps = [
         ":comm",
         ":crypto",

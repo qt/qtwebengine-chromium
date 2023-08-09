@@ -110,6 +110,9 @@ class MipsOperandConverter final : public InstructionOperandConverter {
     switch (AddressingModeField::decode(instr_->opcode())) {
       case kMode_None:
         break;
+      case kMode_Root:
+        *first_index += 1;
+        return MemOperand(kRootRegister, InputInt32(index));
       case kMode_MRI:
         *first_index += 2;
         return MemOperand(InputRegister(index + 0), InputInt32(index + 1));
@@ -143,12 +146,11 @@ namespace {
 class OutOfLineRecordWrite final : public OutOfLineCode {
  public:
   OutOfLineRecordWrite(CodeGenerator* gen, Register object, Register index,
-                       Register value, Register scratch0, Register scratch1,
+                       Register scratch0, Register scratch1,
                        RecordWriteMode mode, StubCallMode stub_mode)
       : OutOfLineCode(gen),
         object_(object),
         index_(index),
-        value_(value),
         scratch0_(scratch0),
         scratch1_(scratch1),
         mode_(mode),
@@ -158,14 +160,12 @@ class OutOfLineRecordWrite final : public OutOfLineCode {
         must_save_lr_(!gen->frame_access_state()->has_frame()),
         zone_(gen->zone()) {
     DCHECK(!AreAliased(object, index, scratch0, scratch1));
-    DCHECK(!AreAliased(value, index, scratch0, scratch1));
   }
 
   void Generate() final {
-    __ CheckPageFlag(
-        value_, scratch0_,
-        MemoryChunk::kPointersToHereAreInterestingOrInSharedHeapMask, eq,
-        exit());
+    __ CheckPageFlag(object_, scratch0_,
+                     MemoryChunk::kPointersFromHereAreInterestingMask, eq,
+                     exit());
     __ Daddu(scratch1_, object_, index_);
     SaveFPRegsMode const save_fp_mode = frame()->DidAllocateDoubleRegisters()
                                             ? SaveFPRegsMode::kSave
@@ -195,7 +195,6 @@ class OutOfLineRecordWrite final : public OutOfLineCode {
  private:
   Register const object_;
   Register const index_;
-  Register const value_;
   Register const scratch0_;
   Register const scratch1_;
   RecordWriteMode const mode_;
@@ -551,10 +550,9 @@ void CodeGenerator::AssembleCodeStartRegisterCheck() {
 void CodeGenerator::BailoutIfDeoptimized() {
   int offset = InstructionStream::kCodeOffset - InstructionStream::kHeaderSize;
   __ Ld(kScratchReg, MemOperand(kJavaScriptCallCodeStartRegister, offset));
-  __ Lw(kScratchReg,
-        FieldMemOperand(kScratchReg, Code::kKindSpecificFlagsOffset));
+  __ Lwu(kScratchReg, FieldMemOperand(kScratchReg, Code::kFlagsOffset));
   __ And(kScratchReg, kScratchReg,
-         Operand(1 << InstructionStream::kMarkedForDeoptimizationBit));
+         Operand(1 << Code::kMarkedForDeoptimizationBit));
   __ Jump(BUILTIN_CODE(isolate(), CompileLazyDeoptimizedCode),
           RelocInfo::CODE_TARGET, ne, kScratchReg, Operand(zero_reg));
 }
@@ -820,14 +818,13 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     case kArchStoreWithWriteBarrier:  // Fall through.
     case kArchAtomicStoreWithWriteBarrier: {
-      RecordWriteMode mode =
-          static_cast<RecordWriteMode>(MiscField::decode(instr->opcode()));
+      RecordWriteMode mode = RecordWriteModeField::decode(instr->opcode());
       Register object = i.InputRegister(0);
       Register index = i.InputRegister(1);
       Register value = i.InputRegister(2);
       Register scratch0 = i.TempRegister(0);
       Register scratch1 = i.TempRegister(1);
-      auto ool = zone()->New<OutOfLineRecordWrite>(this, object, index, value,
+      auto ool = zone()->New<OutOfLineRecordWrite>(this, object, index,
                                                    scratch0, scratch1, mode,
                                                    DetermineStubCallMode());
       __ Daddu(kScratchReg, object, index);
@@ -842,8 +839,8 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       if (mode > RecordWriteMode::kValueIsPointer) {
         __ JumpIfSmi(value, ool->exit());
       }
-      __ CheckPageFlag(object, scratch0,
-                       MemoryChunk::kPointersFromHereAreInterestingMask, ne,
+      __ CheckPageFlag(value, scratch0,
+                       MemoryChunk::kPointersToHereAreInterestingMask, ne,
                        ool->entry());
       __ bind(ool->exit());
       break;
@@ -1626,9 +1623,12 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     case kMips64Lb:
       __ Lb(i.OutputRegister(), i.MemoryOperand());
       break;
-    case kMips64Sb:
-      __ Sb(i.InputOrZeroRegister(2), i.MemoryOperand());
+    case kMips64Sb: {
+      size_t index = 0;
+      MemOperand mem = i.MemoryOperand(&index);
+      __ Sb(i.InputOrZeroRegister(index), mem);
       break;
+    }
     case kMips64Lhu:
       __ Lhu(i.OutputRegister(), i.MemoryOperand());
       break;
@@ -1641,12 +1641,18 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     case kMips64Ulh:
       __ Ulh(i.OutputRegister(), i.MemoryOperand());
       break;
-    case kMips64Sh:
-      __ Sh(i.InputOrZeroRegister(2), i.MemoryOperand());
+    case kMips64Sh: {
+      size_t index = 0;
+      MemOperand mem = i.MemoryOperand(&index);
+      __ Sh(i.InputOrZeroRegister(index), mem);
       break;
-    case kMips64Ush:
-      __ Ush(i.InputOrZeroRegister(2), i.MemoryOperand(), kScratchReg);
+    }
+    case kMips64Ush: {
+      size_t index = 0;
+      MemOperand mem = i.MemoryOperand(&index);
+      __ Ush(i.InputOrZeroRegister(index), mem, kScratchReg);
       break;
+    }
     case kMips64Lw:
       __ Lw(i.OutputRegister(), i.MemoryOperand());
       break;
@@ -1665,18 +1671,30 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     case kMips64Uld:
       __ Uld(i.OutputRegister(), i.MemoryOperand());
       break;
-    case kMips64Sw:
-      __ Sw(i.InputOrZeroRegister(2), i.MemoryOperand());
+    case kMips64Sw: {
+      size_t index = 0;
+      MemOperand mem = i.MemoryOperand(&index);
+      __ Sw(i.InputOrZeroRegister(index), mem);
       break;
-    case kMips64Usw:
-      __ Usw(i.InputOrZeroRegister(2), i.MemoryOperand());
+    }
+    case kMips64Usw: {
+      size_t index = 0;
+      MemOperand mem = i.MemoryOperand(&index);
+      __ Usw(i.InputOrZeroRegister(index), mem);
       break;
-    case kMips64Sd:
-      __ Sd(i.InputOrZeroRegister(2), i.MemoryOperand());
+    }
+    case kMips64Sd: {
+      size_t index = 0;
+      MemOperand mem = i.MemoryOperand(&index);
+      __ Sd(i.InputOrZeroRegister(index), mem);
       break;
-    case kMips64Usd:
-      __ Usd(i.InputOrZeroRegister(2), i.MemoryOperand());
+    }
+    case kMips64Usd: {
+      size_t index = 0;
+      MemOperand mem = i.MemoryOperand(&index);
+      __ Usd(i.InputOrZeroRegister(index), mem);
       break;
+    }
     case kMips64Lwc1: {
       __ Lwc1(i.OutputSingleRegister(), i.MemoryOperand());
       break;
@@ -1712,19 +1730,23 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       __ Uldc1(i.OutputDoubleRegister(), i.MemoryOperand(), kScratchReg);
       break;
     case kMips64Sdc1: {
-      FPURegister ft = i.InputOrZeroDoubleRegister(2);
+      size_t index = 0;
+      MemOperand operand = i.MemoryOperand(&index);
+      FPURegister ft = i.InputOrZeroDoubleRegister(index);
       if (ft == kDoubleRegZero && !__ IsDoubleZeroRegSet()) {
         __ Move(kDoubleRegZero, 0.0);
       }
-      __ Sdc1(ft, i.MemoryOperand());
+      __ Sdc1(ft, operand);
       break;
     }
     case kMips64Usdc1: {
-      FPURegister ft = i.InputOrZeroDoubleRegister(2);
+      size_t index = 0;
+      MemOperand operand = i.MemoryOperand(&index);
+      FPURegister ft = i.InputOrZeroDoubleRegister(index);
       if (ft == kDoubleRegZero && !__ IsDoubleZeroRegSet()) {
         __ Move(kDoubleRegZero, 0.0);
       }
-      __ Usdc1(ft, i.MemoryOperand(), kScratchReg);
+      __ Usdc1(ft, operand, kScratchReg);
       break;
     }
     case kMips64Sync: {

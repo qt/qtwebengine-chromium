@@ -19,6 +19,7 @@
 #include "src/tint/constant/composite.h"
 #include "src/tint/constant/scalar.h"
 #include "src/tint/constant/splat.h"
+#include "src/tint/switch.h"
 
 TINT_INSTANTIATE_TYPEINFO(tint::ir::Constant);
 
@@ -28,7 +29,7 @@ Constant::Constant(const constant::Value* val) : value(val) {}
 
 Constant::~Constant() = default;
 
-std::ostream& Constant::ToString(std::ostream& out, const SymbolTable& st) const {
+utils::StringStream& Constant::ToString(utils::StringStream& out) const {
     std::function<void(const constant::Value*)> emit = [&](const constant::Value* c) {
         Switch(
             c,
@@ -42,12 +43,12 @@ std::ostream& Constant::ToString(std::ostream& out, const SymbolTable& st) const
                 out << (scalar->ValueAs<bool>() ? "true" : "false");
             },
             [&](const constant::Splat* splat) {
-                out << splat->Type()->FriendlyName(st) << "(";
+                out << splat->Type()->FriendlyName() << "(";
                 emit(splat->Index(0));
                 out << ")";
             },
             [&](const constant::Composite* composite) {
-                out << composite->Type()->FriendlyName(st) << "(";
+                out << composite->Type()->FriendlyName() << "(";
                 for (const auto* elem : composite->elements) {
                     if (elem != composite->elements[0]) {
                         out << ", ";

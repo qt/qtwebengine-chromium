@@ -26,12 +26,14 @@ import common_ci
 #
 # Module Entrypoint
 def Build(args):
+    config = args.configuration
+
     try:
-        common_ci.BuildVVL(args, True)
-        common_ci.BuildLoader(args)
-        common_ci.BuildProfileLayer(args)
-        common_ci.BuildMockICD(args)
-        common_ci.CheckVVLCodegenConsistency(args)
+        common_ci.BuildVVL(config = config, cmake_args = args.cmake, build_tests = "ON")
+        common_ci.BuildLoader()
+        common_ci.BuildProfileLayer()
+        common_ci.BuildMockICD()
+        common_ci.CheckVVL(config = config)
 
     except subprocess.CalledProcessError as proc_error:
         print('Command "%s" failed with return code %s' % (' '.join(proc_error.cmd), proc_error.returncode))
@@ -42,9 +44,9 @@ def Build(args):
 
     sys.exit(0)
 
-def Test(args):
+def Test():
     try:
-        common_ci.RunVVLTests(args)
+        common_ci.RunVVLTests()
 
     except subprocess.CalledProcessError as proc_error:
         print('Command "%s" failed with return code %s' % (' '.join(proc_error.cmd), proc_error.returncode))
@@ -62,4 +64,4 @@ if __name__ == '__main__':
     if (args.build):
         Build(args)
     if (args.test):
-        Test(args)
+        Test()

@@ -17,13 +17,15 @@
 #ifndef INCLUDE_PERFETTO_PUBLIC_DATA_SOURCE_H_
 #define INCLUDE_PERFETTO_PUBLIC_DATA_SOURCE_H_
 
-#include <malloc.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "perfetto/public/abi/atomic.h"
 #include "perfetto/public/abi/data_source_abi.h"
 #include "perfetto/public/compiler.h"
+#include "perfetto/public/pb_msg.h"
 #include "perfetto/public/pb_utils.h"
+#include "perfetto/public/protos/trace/trace_packet.pzc.h"
 
 // A data source type.
 struct PerfettoDs {
@@ -197,6 +199,31 @@ static inline void* PerfettoDsGetIncrementalState(
     struct PerfettoDsTracerIterator* iterator) {
   return PerfettoDsImplGetIncrementalState(ds->impl, iterator->impl.tracer,
                                            iterator->impl.inst_id);
+}
+
+// Used to write a TracePacket on a data source instance. Stores the writer and
+// the TracePacket message.
+struct PerfettoDsRootTracePacket {
+  struct PerfettoPbMsgWriter writer;
+  struct perfetto_protos_TracePacket msg;
+};
+
+// Initializes `root` to write a new packet to the data source instance pointed
+// by `iterator`.
+static inline void PerfettoDsTracerPacketBegin(
+    struct PerfettoDsTracerIterator* iterator,
+    struct PerfettoDsRootTracePacket* root) {
+  root->writer.writer = PerfettoDsTracerImplPacketBegin(iterator->impl.tracer);
+  PerfettoPbMsgInit(&root->msg.msg, &root->writer);
+}
+
+// Finishes writing the packet pointed by `root` on the data source instance
+// pointer by `iterator`.
+static inline void PerfettoDsTracerPacketEnd(
+    struct PerfettoDsTracerIterator* iterator,
+    struct PerfettoDsRootTracePacket* root) {
+  PerfettoPbMsgFinalize(&root->msg.msg);
+  PerfettoDsTracerImplPacketEnd(iterator->impl.tracer, &root->writer.writer);
 }
 
 static inline void PerfettoDsTracerFlush(

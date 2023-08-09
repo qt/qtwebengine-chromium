@@ -35,7 +35,7 @@ export class ServiceWorkerCacheTreeElement extends ExpandableApplicationPanelTre
 
   constructor(resourcesPanel: ResourcesPanel) {
     super(resourcesPanel, i18nString(UIStrings.cacheStorage), 'CacheStorage');
-    const icon = UI.Icon.Icon.create('mediumicon-database', 'resource-tree-item');
+    const icon = UI.Icon.Icon.create('database', 'resource-tree-item');
     this.setLink(
         'https://developer.chrome.com/docs/devtools/storage/cache/?utm_source=devtools' as
         Platform.DevToolsPath.UrlString);
@@ -55,7 +55,7 @@ export class ServiceWorkerCacheTreeElement extends ExpandableApplicationPanelTre
     });
   }
 
-  onattach(): void {
+  override onattach(): void {
     super.onattach();
     this.listItemElement.addEventListener('contextmenu', this.handleContextMenuEvent.bind(this), true);
   }
@@ -144,16 +144,16 @@ export class SWCacheTreeElement extends ApplicationPanelTreeElement {
     this.model = model;
     this.cache = cache;
     this.view = null;
-    const icon = UI.Icon.Icon.create('mediumicon-table', 'resource-tree-item');
+    const icon = UI.Icon.Icon.create('table', 'resource-tree-item');
     this.setLeadingIcons([icon]);
   }
 
-  get itemURL(): Platform.DevToolsPath.UrlString {
+  override get itemURL(): Platform.DevToolsPath.UrlString {
     // I don't think this will work at all.
     return 'cache://' + this.cache.cacheId as Platform.DevToolsPath.UrlString;
   }
 
-  onattach(): void {
+  override onattach(): void {
     super.onattach();
     this.listItemElement.addEventListener('contextmenu', this.handleContextMenuEvent.bind(this), true);
   }
@@ -175,7 +175,7 @@ export class SWCacheTreeElement extends ApplicationPanelTreeElement {
     }
   }
 
-  onselect(selectedByUser: boolean|undefined): boolean {
+  override onselect(selectedByUser: boolean|undefined): boolean {
     super.onselect(selectedByUser);
     if (!this.view) {
       this.view = new ServiceWorkerCacheView(this.model, this.cache);

@@ -171,12 +171,19 @@ public:
         const PropertyObserver::NodeType fNodeType;
     };
 
-    bool dispatchColorProperty(const sk_sp<sksg::Color>&) const;
-    bool dispatchOpacityProperty(const sk_sp<sksg::OpacityEffect>&) const;
-    bool dispatchTextProperty(const sk_sp<TextAdapter>&) const;
+    bool dispatchColorProperty(const sk_sp<sksg::Color>&,
+                               const skjson::ObjectValue* jcolor = nullptr) const;
+    bool dispatchOpacityProperty(const sk_sp<sksg::OpacityEffect>&,
+                                 const skjson::ObjectValue* jopacity) const;
+    bool dispatchTextProperty(const sk_sp<TextAdapter>&,
+                              const skjson::ObjectValue* jtext) const;
     bool dispatchTransformProperty(const sk_sp<TransformAdapter2D>&) const;
 
     sk_sp<ExpressionManager> expression_manager() const;
+
+    const skjson::ObjectValue* getSlotsRoot() const {
+        return fSlotsRoot;
+    }
 
 private:
     friend class CompositionBuilder;
@@ -248,7 +255,7 @@ private:
                                fFrameRate;
     const uint32_t             fFlags;
     mutable AnimatorScope*     fCurrentAnimatorScope;
-    mutable const char*        fPropertyObserverContext;
+    mutable const char*        fPropertyObserverContext = nullptr;
     mutable bool               fHasNontrivialBlending : 1;
 
     struct LayerInfo {
@@ -285,10 +292,12 @@ private:
         const AssetInfo* fInfo = nullptr;
     };
 
-    SkTHashMap<SkString, AssetInfo>                fAssets;
-    SkTHashMap<SkString, FontInfo>                 fFonts;
-    sk_sp<CustomFont::GlyphCompMapper>             fCustomGlyphMapper;
-    mutable SkTHashMap<SkString, FootageAssetInfo> fImageAssetCache;
+    skia_private::THashMap<SkString, AssetInfo>                fAssets;
+    skia_private::THashMap<SkString, FontInfo>                 fFonts;
+    sk_sp<CustomFont::GlyphCompMapper>                         fCustomGlyphMapper;
+    mutable skia_private::THashMap<SkString, FootageAssetInfo> fImageAssetCache;
+
+    const skjson::ObjectValue* fSlotsRoot;
 
     using INHERITED = SkNoncopyable;
 };

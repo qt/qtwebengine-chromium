@@ -28,6 +28,7 @@
 #include "src/tint/reader/spirv/attributes.h"
 #include "src/tint/reader/spirv/construct.h"
 #include "src/tint/reader/spirv/parser_impl.h"
+#include "src/tint/utils/string_stream.h"
 
 namespace tint::reader::spirv {
 
@@ -178,11 +179,11 @@ struct BlockInfo {
     utils::Vector<uint32_t, 4> phis_needing_state_vars;
 };
 
-/// Writes the BlockInfo to the ostream
-/// @param o the ostream
+/// Writes the BlockInfo to the stream
+/// @param o the stream
 /// @param bi the BlockInfo
-/// @returns the ostream so calls can be chained
-inline std::ostream& operator<<(std::ostream& o, const BlockInfo& bi) {
+/// @returns the stream so calls can be chained
+inline utils::StringStream& operator<<(utils::StringStream& o, const BlockInfo& bi) {
     o << "BlockInfo{"
       << " id: " << bi.id << " pos: " << bi.pos << " merge_for_header: " << bi.merge_for_header
       << " continue_for_header: " << bi.continue_for_header
@@ -353,11 +354,11 @@ struct DefInfo {
     SkipReason skip = SkipReason::kDontSkip;
 };
 
-/// Writes the DefInfo to the ostream
-/// @param o the ostream
+/// Writes the DefInfo to the stream
+/// @param o the stream
 /// @param di the DefInfo
-/// @returns the ostream so calls can be chained
-inline std::ostream& operator<<(std::ostream& o, const DefInfo& di) {
+/// @returns the stream so calls can be chained
+inline utils::StringStream& operator<<(utils::StringStream& o, const DefInfo& di) {
     o << "DefInfo{"
       << " inst.result_id: " << di.inst.result_id();
     if (di.local.has_value()) {
@@ -406,7 +407,7 @@ inline std::ostream& operator<<(std::ostream& o, const DefInfo& di) {
 /// become immutable. The builders may hold mutable state while the
 /// StatementBlock is being constructed, which becomes an immutable node on
 /// StatementBlock::Finalize().
-class StatementBuilder : public Castable<StatementBuilder, ast::Statement> {
+class StatementBuilder : public utils::Castable<StatementBuilder, ast::Statement> {
   public:
     /// Constructor
     StatementBuilder() : Base(ProgramID(), ast::NodeID(), Source{}) {}
@@ -944,6 +945,12 @@ class FunctionEmitter {
     /// @returns the value as an i32 value.
     TypedExpression ToI32(TypedExpression value);
 
+    /// Returns the given value as an u32. If it's already an u32 then simply returns @p value.
+    /// Otherwise, wrap the value in a TypeInitializer expression.
+    /// @param value the value to pass through or convert
+    /// @returns the value as an u32 value.
+    TypedExpression ToU32(TypedExpression value);
+
     /// Returns the given value as a signed integer type of the same shape if the value is unsigned
     /// scalar or vector, by wrapping the value with a TypeInitializer expression.  Returns the
     /// value itself if the value was already signed.
@@ -1033,6 +1040,18 @@ class FunctionEmitter {
     /// @param inst the SPIR-V instruction
     /// @returns an expression
     TypedExpression MakeBuiltinCall(const spvtools::opt::Instruction& inst);
+
+    /// Returns an expression for a SPIR-V instruction that maps to the extractBits WGSL
+    /// builtin function call, with special handling to cast offset and count to u32, if needed.
+    /// @param inst the SPIR-V instruction
+    /// @returns an expression
+    TypedExpression MakeExtractBitsCall(const spvtools::opt::Instruction& inst);
+
+    /// Returns an expression for a SPIR-V instruction that maps to the insertBits WGSL
+    /// builtin function call, with special handling to cast offset and count to u32, if needed.
+    /// @param inst the SPIR-V instruction
+    /// @returns an expression
+    TypedExpression MakeInsertBitsCall(const spvtools::opt::Instruction& inst);
 
     /// Returns an expression for a SPIR-V OpArrayLength instruction.
     /// @param inst the SPIR-V instruction

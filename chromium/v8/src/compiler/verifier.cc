@@ -1263,9 +1263,6 @@ void Verifier::Visitor::Check(Node* node, const AllNodes& all) {
       CheckTypeIs(node, Type::Boolean());
       break;
     case IrOpcode::kNumberIsFinite:
-      CheckValueInputIs(node, 0, Type::Number());
-      CheckTypeIs(node, Type::Boolean());
-      break;
     case IrOpcode::kNumberIsMinusZero:
     case IrOpcode::kNumberIsNaN:
       CheckValueInputIs(node, 0, Type::Number());
@@ -1682,14 +1679,6 @@ void Verifier::Visitor::Check(Node* node, const AllNodes& all) {
     case IrOpcode::kTypeGuard:
       CheckTypeIs(node, TypeGuardTypeOf(node->op()));
       break;
-    case IrOpcode::kFoldConstant:
-      if (typing == TYPED) {
-        Type type = NodeProperties::GetType(node);
-        CHECK(type.IsSingleton());
-        CHECK(type.Equals(NodeProperties::GetType(node->InputAt(0))));
-        CHECK(type.Equals(NodeProperties::GetType(node->InputAt(1))));
-      }
-      break;
     case IrOpcode::kDateNow:
       CHECK_EQ(0, value_count);
       CheckTypeIs(node, Type::Number());
@@ -1926,6 +1915,7 @@ void Verifier::Visitor::Check(Node* node, const AllNodes& all) {
     case IrOpcode::kLoadStackCheckOffset:
     case IrOpcode::kLoadFramePointer:
     case IrOpcode::kLoadParentFramePointer:
+    case IrOpcode::kLoadRootRegister:
     case IrOpcode::kUnalignedLoad:
     case IrOpcode::kUnalignedStore:
     case IrOpcode::kMemoryBarrier:

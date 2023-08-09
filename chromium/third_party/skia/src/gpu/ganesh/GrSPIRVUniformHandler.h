@@ -8,6 +8,7 @@
 #ifndef GrSPIRVUniformHandler_DEFINED
 #define GrSPIRVUniformHandler_DEFINED
 
+#include "include/private/base/SkTArray.h"
 #include "src/base/SkTBlockList.h"
 #include "src/gpu/ganesh/glsl/GrGLSLUniformHandler.h"
 
@@ -65,8 +66,8 @@ private:
     UniformInfoArray    fUniforms;
     UniformInfoArray    fSamplers;
     UniformInfoArray    fTextures;
-    SkTArray<skgpu::Swizzle> fSamplerSwizzles;
-    SkTArray<SkString>  fSamplerReferences;
+    skia_private::TArray<skgpu::Swizzle> fSamplerSwizzles;
+    skia_private::TArray<SkString>  fSamplerReferences;
 
     uint32_t fCurrentUBOOffset = 0;
     uint32_t fRTFlipOffset = 0;

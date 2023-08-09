@@ -55,13 +55,13 @@ tint::writer::glsl::Version::Standard ToTintGLStandard(opengl::OpenGLVersion::St
     UNREACHABLE();
 }
 
-using BindingMap = std::unordered_map<tint::sem::BindingPoint, tint::sem::BindingPoint>;
+using BindingMap = std::unordered_map<tint::writer::BindingPoint, tint::writer::BindingPoint>;
 
 #define GLSL_COMPILATION_REQUEST_MEMBERS(X)                                                 \
     X(const tint::Program*, inputProgram)                                                   \
     X(std::string, entryPointName)                                                          \
     X(SingleShaderStage, stage)                                                             \
-    X(tint::transform::MultiplanarExternalTexture::BindingsMap, externalTextureBindings)    \
+    X(tint::writer::ExternalTextureOptions, externalTextureOptions)                         \
     X(BindingMap, glBindings)                                                               \
     X(std::optional<tint::transform::SubstituteOverride::Config>, substituteOverrideConfig) \
     X(LimitsForCompilationRequest, limits)                                                  \
@@ -148,14 +148,14 @@ ResultOrError<GLuint> ShaderModule::CompileShader(const OpenGLFunctions& gl,
 
     const OpenGLVersion& version = ToBackend(GetDevice())->GetGL().GetVersion();
 
-    using tint::transform::BindingPoint;
+    using tint::writer::BindingPoint;
     // Since (non-Vulkan) GLSL does not support descriptor sets, generate a
     // mapping from the original group/binding pair to a binding-only
     // value. This mapping will be used by Tint to remap all global
     // variables to the 1D space.
     const BindingInfoArray& moduleBindingInfo =
         GetEntryPoint(programmableStage.entryPoint).bindings;
-    std::unordered_map<tint::sem::BindingPoint, tint::sem::BindingPoint> glBindings;
+    std::unordered_map<tint::writer::BindingPoint, tint::writer::BindingPoint> glBindings;
     for (BindGroupIndex group : IterateBitSet(layout->GetBindGroupLayoutsMask())) {
         const BindGroupLayoutBase* bgl = layout->GetBindGroupLayout(group);
         const auto& groupBindingInfo = moduleBindingInfo[group];
@@ -182,7 +182,7 @@ ResultOrError<GLuint> ShaderModule::CompileShader(const OpenGLFunctions& gl,
     req.inputProgram = GetTintProgram();
     req.stage = stage;
     req.entryPointName = programmableStage.entryPoint;
-    req.externalTextureBindings = BuildExternalTextureTransformBindings(layout);
+    req.externalTextureOptions = BuildExternalTextureTransformBindings(layout);
     req.glBindings = std::move(glBindings);
     req.substituteOverrideConfig = std::move(substituteOverrideConfig);
     req.limits = LimitsForCompilationRequest::Create(limits.v1);
@@ -196,12 +196,6 @@ ResultOrError<GLuint> ShaderModule::CompileShader(const OpenGLFunctions& gl,
         [](GLSLCompilationRequest r) -> ResultOrError<GLSLCompilation> {
             tint::transform::Manager transformManager;
             tint::transform::DataMap transformInputs;
-
-            if (!r.externalTextureBindings.empty()) {
-                transformManager.Add<tint::transform::MultiplanarExternalTexture>();
-                transformInputs.Add<tint::transform::MultiplanarExternalTexture::NewBindingPoints>(
-                    std::move(r.externalTextureBindings));
-            }
 
             if (r.substituteOverrideConfig) {
                 transformManager.Add<tint::transform::SingleEntryPoint>();
@@ -227,6 +221,11 @@ ResultOrError<GLuint> ShaderModule::CompileShader(const OpenGLFunctions& gl,
             tint::writer::glsl::Options tintOptions;
             tintOptions.version = tint::writer::glsl::Version(ToTintGLStandard(r.glVersionStandard),
                                                               r.glVersionMajor, r.glVersionMinor);
+
+            // TODO(crbug.com/dawn/1686): Robustness causes shader compilation failures.
+            tintOptions.disable_robustness = true;
+
+            tintOptions.external_texture_options = r.externalTextureOptions;
 
             // When textures are accessed without a sampler (e.g., textureLoad()),
             // GetSamplerTextureUses() will return this sentinel value.

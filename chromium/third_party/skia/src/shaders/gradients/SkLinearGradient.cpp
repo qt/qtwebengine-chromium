@@ -11,7 +11,7 @@
 #include "src/core/SkWriteBuffer.h"
 #include "src/shaders/SkLocalMatrixShader.h"
 
-#ifdef SK_GRAPHITE_ENABLED
+#if defined(SK_GRAPHITE)
 #include "src/gpu/graphite/KeyContext.h"
 #include "src/gpu/graphite/KeyHelpers.h"
 #include "src/gpu/graphite/PaintParamsKey.h"
@@ -68,11 +68,13 @@ void SkLinearGradient::appendGradientStages(SkArenaAlloc*, SkRasterPipeline*,
     // No extra stage needed for linear gradients.
 }
 
+#if defined(SK_ENABLE_SKVM)
 skvm::F32 SkLinearGradient::transformT(skvm::Builder* p, skvm::Uniforms*,
                                        skvm::Coord coord, skvm::I32* mask) const {
     // We've baked getting t in x into the matrix, so this is pretty trivial.
     return coord.x;
 }
+#endif
 
 SkShaderBase::GradientType SkLinearGradient::asGradient(GradientInfo* info,
                                                         SkMatrix* localMatrix) const {
@@ -89,7 +91,7 @@ SkShaderBase::GradientType SkLinearGradient::asGradient(GradientInfo* info,
 
 /////////////////////////////////////////////////////////////////////
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
 
 #include "src/gpu/ganesh/gradients/GrGradientShader.h"
 
@@ -100,28 +102,15 @@ std::unique_ptr<GrFragmentProcessor> SkLinearGradient::asFragmentProcessor(
 
 #endif
 
-#ifdef SK_GRAPHITE_ENABLED
+#if defined(SK_GRAPHITE)
 void SkLinearGradient::addToKey(const skgpu::graphite::KeyContext& keyContext,
                                 skgpu::graphite::PaintParamsKeyBuilder* builder,
                                 skgpu::graphite::PipelineDataGatherer* gatherer) const {
-    using namespace skgpu::graphite;
-
-    SkColor4fXformer xformedColors(this, keyContext.dstColorInfo().colorSpace());
-    const SkPMColor4f* colors = xformedColors.fColors.begin();
-
-    GradientShaderBlocks::GradientData data(GradientType::kLinear,
-                                            fStart, fEnd,
-                                            0.0f, 0.0f,
-                                            0.0f, 0.0f,
-                                            fTileMode,
-                                            fColorCount,
-                                            colors,
-                                            fPositions,
-                                            fInterpolation);
-
-    MakeInterpolatedToDst(keyContext, builder, gatherer,
-                          data, fInterpolation,
-                          xformedColors.fIntermediateColorSpace.get());
+    this->addToKeyCommon(keyContext, builder, gatherer,
+                         GradientType::kLinear,
+                         fStart, fEnd,
+                         0.0f, 0.0f,
+                         0.0f, 0.0f);
 }
 #endif
 

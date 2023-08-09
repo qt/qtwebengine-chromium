@@ -157,6 +157,9 @@ set_aom_config_var(CONFIG_THREE_PASS 0
                    "AV1 experiment: Enable three-pass encoding.")
 set_aom_config_var(CONFIG_OUTPUT_FRAME_SIZE 0
                    "AV1 experiment: Output frame size information.")
+set_aom_config_var(
+  CONFIG_SALIENCY_MAP 0
+  "AV1 experiment: Enable saliency map based encoding tuning for VMAF.")
 
 #
 # Variables in this section control optional features of the build system.

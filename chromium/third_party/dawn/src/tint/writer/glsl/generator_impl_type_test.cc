@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "gmock/gmock.h"
 #include "src/tint/ast/call_statement.h"
 #include "src/tint/ast/stage_attribute.h"
 #include "src/tint/type/depth_texture.h"
@@ -21,7 +20,10 @@
 #include "src/tint/type/sampler.h"
 #include "src/tint/type/storage_texture.h"
 #include "src/tint/type/texture_dimension.h"
+#include "src/tint/utils/string_stream.h"
 #include "src/tint/writer/glsl/test_helper.h"
+
+#include "gmock/gmock.h"
 
 using ::testing::HasSubstr;
 
@@ -38,10 +40,10 @@ TEST_F(GlslGeneratorImplTest_Type, EmitType_Array) {
 
     GeneratorImpl& gen = Build();
 
-    std::stringstream out;
-    ASSERT_TRUE(gen.EmitType(out, program->TypeOf(ty), builtin::AddressSpace::kUndefined,
-                             builtin::Access::kReadWrite, "ary"))
-        << gen.error();
+    utils::StringStream out;
+    gen.EmitType(out, program->TypeOf(ty), builtin::AddressSpace::kUndefined,
+                 builtin::Access::kReadWrite, "ary");
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_EQ(out.str(), "bool ary[4]");
 }
 
@@ -51,10 +53,10 @@ TEST_F(GlslGeneratorImplTest_Type, EmitType_ArrayOfArray) {
 
     GeneratorImpl& gen = Build();
 
-    std::stringstream out;
-    ASSERT_TRUE(gen.EmitType(out, program->TypeOf(ty), builtin::AddressSpace::kUndefined,
-                             builtin::Access::kReadWrite, "ary"))
-        << gen.error();
+    utils::StringStream out;
+    gen.EmitType(out, program->TypeOf(ty), builtin::AddressSpace::kUndefined,
+                 builtin::Access::kReadWrite, "ary");
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_EQ(out.str(), "bool ary[5][4]");
 }
 
@@ -64,10 +66,10 @@ TEST_F(GlslGeneratorImplTest_Type, EmitType_ArrayOfArrayOfArray) {
 
     GeneratorImpl& gen = Build();
 
-    std::stringstream out;
-    ASSERT_TRUE(gen.EmitType(out, program->TypeOf(ty), builtin::AddressSpace::kUndefined,
-                             builtin::Access::kReadWrite, "ary"))
-        << gen.error();
+    utils::StringStream out;
+    gen.EmitType(out, program->TypeOf(ty), builtin::AddressSpace::kUndefined,
+                 builtin::Access::kReadWrite, "ary");
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_EQ(out.str(), "bool ary[6][5][4]");
 }
 
@@ -77,10 +79,10 @@ TEST_F(GlslGeneratorImplTest_Type, EmitType_Array_WithoutName) {
 
     GeneratorImpl& gen = Build();
 
-    std::stringstream out;
-    ASSERT_TRUE(gen.EmitType(out, program->TypeOf(ty), builtin::AddressSpace::kUndefined,
-                             builtin::Access::kReadWrite, ""))
-        << gen.error();
+    utils::StringStream out;
+    gen.EmitType(out, program->TypeOf(ty), builtin::AddressSpace::kUndefined,
+                 builtin::Access::kReadWrite, "");
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_EQ(out.str(), "bool[4]");
 }
 
@@ -89,10 +91,9 @@ TEST_F(GlslGeneratorImplTest_Type, EmitType_Bool) {
 
     GeneratorImpl& gen = Build();
 
-    std::stringstream out;
-    ASSERT_TRUE(gen.EmitType(out, bool_, builtin::AddressSpace::kUndefined,
-                             builtin::Access::kReadWrite, ""))
-        << gen.error();
+    utils::StringStream out;
+    gen.EmitType(out, bool_, builtin::AddressSpace::kUndefined, builtin::Access::kReadWrite, "");
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_EQ(out.str(), "bool");
 }
 
@@ -101,10 +102,9 @@ TEST_F(GlslGeneratorImplTest_Type, EmitType_F32) {
 
     GeneratorImpl& gen = Build();
 
-    std::stringstream out;
-    ASSERT_TRUE(
-        gen.EmitType(out, f32, builtin::AddressSpace::kUndefined, builtin::Access::kReadWrite, ""))
-        << gen.error();
+    utils::StringStream out;
+    gen.EmitType(out, f32, builtin::AddressSpace::kUndefined, builtin::Access::kReadWrite, "");
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_EQ(out.str(), "float");
 }
 
@@ -115,10 +115,9 @@ TEST_F(GlslGeneratorImplTest_Type, EmitType_F16) {
 
     GeneratorImpl& gen = Build();
 
-    std::stringstream out;
-    ASSERT_TRUE(
-        gen.EmitType(out, f16, builtin::AddressSpace::kUndefined, builtin::Access::kReadWrite, ""))
-        << gen.error();
+    utils::StringStream out;
+    gen.EmitType(out, f16, builtin::AddressSpace::kUndefined, builtin::Access::kReadWrite, "");
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_EQ(out.str(), "float16_t");
 }
 
@@ -127,10 +126,9 @@ TEST_F(GlslGeneratorImplTest_Type, EmitType_I32) {
 
     GeneratorImpl& gen = Build();
 
-    std::stringstream out;
-    ASSERT_TRUE(
-        gen.EmitType(out, i32, builtin::AddressSpace::kUndefined, builtin::Access::kReadWrite, ""))
-        << gen.error();
+    utils::StringStream out;
+    gen.EmitType(out, i32, builtin::AddressSpace::kUndefined, builtin::Access::kReadWrite, "");
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_EQ(out.str(), "int");
 }
 
@@ -141,10 +139,9 @@ TEST_F(GlslGeneratorImplTest_Type, EmitType_Matrix_F32) {
 
     GeneratorImpl& gen = Build();
 
-    std::stringstream out;
-    ASSERT_TRUE(gen.EmitType(out, mat2x3, builtin::AddressSpace::kUndefined,
-                             builtin::Access::kReadWrite, ""))
-        << gen.error();
+    utils::StringStream out;
+    gen.EmitType(out, mat2x3, builtin::AddressSpace::kUndefined, builtin::Access::kReadWrite, "");
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_EQ(out.str(), "mat2x3");
 }
 
@@ -157,10 +154,9 @@ TEST_F(GlslGeneratorImplTest_Type, EmitType_Matrix_F16) {
 
     GeneratorImpl& gen = Build();
 
-    std::stringstream out;
-    ASSERT_TRUE(gen.EmitType(out, mat2x3, builtin::AddressSpace::kUndefined,
-                             builtin::Access::kReadWrite, ""))
-        << gen.error();
+    utils::StringStream out;
+    gen.EmitType(out, mat2x3, builtin::AddressSpace::kUndefined, builtin::Access::kReadWrite, "");
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_EQ(out.str(), "f16mat2x3");
 }
 
@@ -175,7 +171,8 @@ TEST_F(GlslGeneratorImplTest_Type, EmitType_StructDecl) {
 
     TextGenerator::TextBuffer buf;
     auto* sem_s = program->TypeOf(s)->As<sem::Struct>();
-    ASSERT_TRUE(gen.EmitStructType(&buf, sem_s)) << gen.error();
+    gen.EmitStructType(&buf, sem_s);
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_EQ(buf.String(), R"(struct S {
   int a;
   float b;
@@ -194,10 +191,9 @@ TEST_F(GlslGeneratorImplTest_Type, EmitType_Struct) {
     GeneratorImpl& gen = Build();
 
     auto* sem_s = program->TypeOf(s)->As<sem::Struct>();
-    std::stringstream out;
-    ASSERT_TRUE(gen.EmitType(out, sem_s, builtin::AddressSpace::kUndefined,
-                             builtin::Access::kReadWrite, ""))
-        << gen.error();
+    utils::StringStream out;
+    gen.EmitType(out, sem_s, builtin::AddressSpace::kUndefined, builtin::Access::kReadWrite, "");
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_EQ(out.str(), "S");
 }
 
@@ -209,8 +205,8 @@ TEST_F(GlslGeneratorImplTest_Type, EmitType_Struct_NameCollision) {
     GlobalVar("g", ty.Of(s), builtin::AddressSpace::kPrivate);
 
     GeneratorImpl& gen = SanitizeAndBuild();
-
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    gen.Generate();
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_THAT(gen.result(), HasSubstr(R"(struct S {
   int tint_symbol;
   float tint_symbol_1;
@@ -229,7 +225,8 @@ TEST_F(GlslGeneratorImplTest_Type, EmitType_Struct_WithOffsetAttributes) {
 
     TextGenerator::TextBuffer buf;
     auto* sem_s = program->TypeOf(s)->As<sem::Struct>();
-    ASSERT_TRUE(gen.EmitStructType(&buf, sem_s)) << gen.error();
+    gen.EmitStructType(&buf, sem_s);
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_EQ(buf.String(), R"(struct S {
   int a;
   float b;
@@ -243,10 +240,9 @@ TEST_F(GlslGeneratorImplTest_Type, EmitType_U32) {
 
     GeneratorImpl& gen = Build();
 
-    std::stringstream out;
-    ASSERT_TRUE(
-        gen.EmitType(out, u32, builtin::AddressSpace::kUndefined, builtin::Access::kReadWrite, ""))
-        << gen.error();
+    utils::StringStream out;
+    gen.EmitType(out, u32, builtin::AddressSpace::kUndefined, builtin::Access::kReadWrite, "");
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_EQ(out.str(), "uint");
 }
 
@@ -256,10 +252,9 @@ TEST_F(GlslGeneratorImplTest_Type, EmitType_Vector_F32) {
 
     GeneratorImpl& gen = Build();
 
-    std::stringstream out;
-    ASSERT_TRUE(
-        gen.EmitType(out, vec3, builtin::AddressSpace::kUndefined, builtin::Access::kReadWrite, ""))
-        << gen.error();
+    utils::StringStream out;
+    gen.EmitType(out, vec3, builtin::AddressSpace::kUndefined, builtin::Access::kReadWrite, "");
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_EQ(out.str(), "vec3");
 }
 
@@ -271,10 +266,9 @@ TEST_F(GlslGeneratorImplTest_Type, EmitType_Vector_F16) {
 
     GeneratorImpl& gen = Build();
 
-    std::stringstream out;
-    ASSERT_TRUE(
-        gen.EmitType(out, vec3, builtin::AddressSpace::kUndefined, builtin::Access::kReadWrite, ""))
-        << gen.error();
+    utils::StringStream out;
+    gen.EmitType(out, vec3, builtin::AddressSpace::kUndefined, builtin::Access::kReadWrite, "");
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_EQ(out.str(), "f16vec3");
 }
 
@@ -283,10 +277,9 @@ TEST_F(GlslGeneratorImplTest_Type, EmitType_Void) {
 
     GeneratorImpl& gen = Build();
 
-    std::stringstream out;
-    ASSERT_TRUE(gen.EmitType(out, void_, builtin::AddressSpace::kUndefined,
-                             builtin::Access::kReadWrite, ""))
-        << gen.error();
+    utils::StringStream out;
+    gen.EmitType(out, void_, builtin::AddressSpace::kUndefined, builtin::Access::kReadWrite, "");
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_EQ(out.str(), "void");
 }
 
@@ -295,10 +288,9 @@ TEST_F(GlslGeneratorImplTest_Type, EmitSampler) {
 
     GeneratorImpl& gen = Build();
 
-    std::stringstream out;
-    ASSERT_FALSE(gen.EmitType(out, sampler, builtin::AddressSpace::kUndefined,
-                              builtin::Access::kReadWrite, ""))
-        << gen.error();
+    utils::StringStream out;
+    gen.EmitType(out, sampler, builtin::AddressSpace::kUndefined, builtin::Access::kReadWrite, "");
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
 }
 
 TEST_F(GlslGeneratorImplTest_Type, EmitSamplerComparison) {
@@ -306,10 +298,9 @@ TEST_F(GlslGeneratorImplTest_Type, EmitSamplerComparison) {
 
     GeneratorImpl& gen = Build();
 
-    std::stringstream out;
-    ASSERT_FALSE(gen.EmitType(out, sampler, builtin::AddressSpace::kUndefined,
-                              builtin::Access::kReadWrite, ""))
-        << gen.error();
+    utils::StringStream out;
+    gen.EmitType(out, sampler, builtin::AddressSpace::kUndefined, builtin::Access::kReadWrite, "");
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
 }
 
 struct GlslDepthTextureData {
@@ -317,7 +308,9 @@ struct GlslDepthTextureData {
     std::string result;
 };
 inline std::ostream& operator<<(std::ostream& out, GlslDepthTextureData data) {
-    out << data.dim;
+    utils::StringStream s;
+    s << data.dim;
+    out << s.str();
     return out;
 }
 using GlslDepthTexturesTest = TestParamHelper<GlslDepthTextureData>;
@@ -338,7 +331,8 @@ TEST_P(GlslDepthTexturesTest, Emit) {
 
     GeneratorImpl& gen = Build();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    gen.Generate();
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_THAT(gen.result(), HasSubstr(params.result));
 }
 INSTANTIATE_TEST_SUITE_P(
@@ -365,8 +359,8 @@ TEST_F(GlslDepthMultisampledTexturesTest, Emit) {
          });
 
     GeneratorImpl& gen = Build();
-
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    gen.Generate();
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_THAT(gen.result(), HasSubstr("sampler2DMS tex;"));
 }
 
@@ -377,7 +371,9 @@ struct GlslSampledTextureData {
     std::string result;
 };
 inline std::ostream& operator<<(std::ostream& out, GlslSampledTextureData data) {
-    out << data.dim;
+    utils::StringStream str;
+    str << data.dim;
+    out << str.str();
     return out;
 }
 using GlslSampledTexturesTest = TestParamHelper<GlslSampledTextureData>;
@@ -409,8 +405,8 @@ TEST_P(GlslSampledTexturesTest, Emit) {
          });
 
     GeneratorImpl& gen = Build();
-
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    gen.Generate();
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_THAT(gen.result(), HasSubstr(params.result));
 }
 INSTANTIATE_TEST_SUITE_P(GlslGeneratorImplTest_Type,
@@ -513,10 +509,9 @@ TEST_F(GlslGeneratorImplTest_Type, EmitMultisampledTexture) {
 
     GeneratorImpl& gen = Build();
 
-    std::stringstream out;
-    ASSERT_TRUE(
-        gen.EmitType(out, s, builtin::AddressSpace::kUndefined, builtin::Access::kReadWrite, ""))
-        << gen.error();
+    utils::StringStream out;
+    gen.EmitType(out, s, builtin::AddressSpace::kUndefined, builtin::Access::kReadWrite, "");
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_EQ(out.str(), "highp sampler2DMS");
 }
 
@@ -526,7 +521,9 @@ struct GlslStorageTextureData {
     std::string result;
 };
 inline std::ostream& operator<<(std::ostream& out, GlslStorageTextureData data) {
-    return out << data.dim;
+    utils::StringStream str;
+    str << data.dim;
+    return out << str.str();
 }
 using GlslStorageTexturesTest = TestParamHelper<GlslStorageTextureData>;
 TEST_P(GlslStorageTexturesTest, Emit) {
@@ -545,8 +542,8 @@ TEST_P(GlslStorageTexturesTest, Emit) {
          });
 
     GeneratorImpl& gen = Build();
-
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    gen.Generate();
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_THAT(gen.result(), HasSubstr(params.result));
 }
 INSTANTIATE_TEST_SUITE_P(

@@ -138,6 +138,7 @@ static void imageproc(SkCanvas* canvas, sk_sp<SkImage> image, const SkBitmap&, c
 static void imagesubsetproc(SkCanvas* canvas, sk_sp<SkImage> image, const SkBitmap& bm,
                             const SkIRect& srcR, const SkRect& dstR,
                             const SkSamplingOptions& sampling, const SkPaint* paint) {
+    SkASSERT_RELEASE(image);
     if (!image->bounds().contains(srcR)) {
         imageproc(canvas, std::move(image), bm, srcR, dstR, sampling, paint);
         return;
@@ -147,7 +148,7 @@ static void imagesubsetproc(SkCanvas* canvas, sk_sp<SkImage> image, const SkBitm
     if (sk_sp<SkImage> subset = image->makeSubset(srcR, direct)) {
         canvas->drawImageRect(subset, dstR, sampling, paint);
     }
-#ifdef SK_GRAPHITE_ENABLED
+#if defined(SK_GRAPHITE)
     if (sk_sp<SkImage> subset = image->makeSubset(srcR, canvas->recorder())) {
         canvas->drawImageRect(subset, dstR, sampling, paint);
     }

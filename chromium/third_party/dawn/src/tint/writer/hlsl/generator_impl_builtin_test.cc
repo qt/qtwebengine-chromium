@@ -16,6 +16,7 @@
 #include "src/tint/ast/call_statement.h"
 #include "src/tint/ast/stage_attribute.h"
 #include "src/tint/sem/call.h"
+#include "src/tint/utils/string_stream.h"
 #include "src/tint/writer/hlsl/test_helper.h"
 
 using ::testing::HasSubstr;
@@ -25,7 +26,6 @@ using namespace tint::number_suffixes;  // NOLINT
 namespace tint::writer::hlsl {
 namespace {
 
-using BuiltinType = sem::BuiltinType;
 using HlslGeneratorImplTest_Builtin = TestHelper;
 
 enum class CallParamType {
@@ -36,7 +36,7 @@ enum class CallParamType {
 };
 
 struct BuiltinData {
-    BuiltinType builtin;
+    builtin::Function builtin;
     CallParamType type;
     const char* hlsl_name;
 };
@@ -60,85 +60,84 @@ inline std::ostream& operator<<(std::ostream& out, BuiltinData data) {
     return out;
 }
 
-const ast::CallExpression* GenerateCall(BuiltinType builtin,
+const ast::CallExpression* GenerateCall(builtin::Function builtin,
                                         CallParamType type,
                                         ProgramBuilder* builder) {
     std::string name;
-    std::ostringstream str(name);
-    str << builtin;
+    utils::StringStream str;
+    str << name << builtin;
     switch (builtin) {
-        case BuiltinType::kAcos:
-        case BuiltinType::kAsin:
-        case BuiltinType::kAtan:
-        case BuiltinType::kCeil:
-        case BuiltinType::kCos:
-        case BuiltinType::kCosh:
-        case BuiltinType::kDpdx:
-        case BuiltinType::kDpdxCoarse:
-        case BuiltinType::kDpdxFine:
-        case BuiltinType::kDpdy:
-        case BuiltinType::kDpdyCoarse:
-        case BuiltinType::kDpdyFine:
-        case BuiltinType::kExp:
-        case BuiltinType::kExp2:
-        case BuiltinType::kFloor:
-        case BuiltinType::kFract:
-        case BuiltinType::kFwidth:
-        case BuiltinType::kFwidthCoarse:
-        case BuiltinType::kFwidthFine:
-        case BuiltinType::kInverseSqrt:
-        case BuiltinType::kLength:
-        case BuiltinType::kLog:
-        case BuiltinType::kLog2:
-        case BuiltinType::kNormalize:
-        case BuiltinType::kRound:
-        case BuiltinType::kSin:
-        case BuiltinType::kSinh:
-        case BuiltinType::kSqrt:
-        case BuiltinType::kTan:
-        case BuiltinType::kTanh:
-        case BuiltinType::kTrunc:
+        case builtin::Function::kAcos:
+        case builtin::Function::kAsin:
+        case builtin::Function::kAtan:
+        case builtin::Function::kCeil:
+        case builtin::Function::kCos:
+        case builtin::Function::kCosh:
+        case builtin::Function::kDpdx:
+        case builtin::Function::kDpdxCoarse:
+        case builtin::Function::kDpdxFine:
+        case builtin::Function::kDpdy:
+        case builtin::Function::kDpdyCoarse:
+        case builtin::Function::kDpdyFine:
+        case builtin::Function::kExp:
+        case builtin::Function::kExp2:
+        case builtin::Function::kFloor:
+        case builtin::Function::kFract:
+        case builtin::Function::kFwidth:
+        case builtin::Function::kFwidthCoarse:
+        case builtin::Function::kFwidthFine:
+        case builtin::Function::kInverseSqrt:
+        case builtin::Function::kLength:
+        case builtin::Function::kLog:
+        case builtin::Function::kLog2:
+        case builtin::Function::kNormalize:
+        case builtin::Function::kRound:
+        case builtin::Function::kSin:
+        case builtin::Function::kSinh:
+        case builtin::Function::kSqrt:
+        case builtin::Function::kTan:
+        case builtin::Function::kTanh:
             if (type == CallParamType::kF16) {
                 return builder->Call(str.str(), "h2");
             } else {
                 return builder->Call(str.str(), "f2");
             }
-        case BuiltinType::kLdexp:
+        case builtin::Function::kLdexp:
             if (type == CallParamType::kF16) {
                 return builder->Call(str.str(), "h2", "i2");
             } else {
                 return builder->Call(str.str(), "f2", "i2");
             }
-        case BuiltinType::kAtan2:
-        case BuiltinType::kDot:
-        case BuiltinType::kDistance:
-        case BuiltinType::kPow:
-        case BuiltinType::kReflect:
-        case BuiltinType::kStep:
+        case builtin::Function::kAtan2:
+        case builtin::Function::kDot:
+        case builtin::Function::kDistance:
+        case builtin::Function::kPow:
+        case builtin::Function::kReflect:
+        case builtin::Function::kStep:
             if (type == CallParamType::kF16) {
                 return builder->Call(str.str(), "h2", "h2");
             } else {
                 return builder->Call(str.str(), "f2", "f2");
             }
-        case BuiltinType::kCross:
+        case builtin::Function::kCross:
             if (type == CallParamType::kF16) {
                 return builder->Call(str.str(), "h3", "h3");
             } else {
                 return builder->Call(str.str(), "f3", "f3");
             }
-        case BuiltinType::kFma:
-        case BuiltinType::kMix:
-        case BuiltinType::kFaceForward:
-        case BuiltinType::kSmoothstep:
+        case builtin::Function::kFma:
+        case builtin::Function::kMix:
+        case builtin::Function::kFaceForward:
+        case builtin::Function::kSmoothstep:
             if (type == CallParamType::kF16) {
                 return builder->Call(str.str(), "h2", "h2", "h2");
             } else {
                 return builder->Call(str.str(), "f2", "f2", "f2");
             }
-        case BuiltinType::kAll:
-        case BuiltinType::kAny:
+        case builtin::Function::kAll:
+        case builtin::Function::kAny:
             return builder->Call(str.str(), "b2");
-        case BuiltinType::kAbs:
+        case builtin::Function::kAbs:
             if (type == CallParamType::kF32) {
                 return builder->Call(str.str(), "f2");
             } else if (type == CallParamType::kF16) {
@@ -146,11 +145,11 @@ const ast::CallExpression* GenerateCall(BuiltinType builtin,
             } else {
                 return builder->Call(str.str(), "u2");
             }
-        case BuiltinType::kCountOneBits:
-        case BuiltinType::kReverseBits:
+        case builtin::Function::kCountOneBits:
+        case builtin::Function::kReverseBits:
             return builder->Call(str.str(), "u2");
-        case BuiltinType::kMax:
-        case BuiltinType::kMin:
+        case builtin::Function::kMax:
+        case builtin::Function::kMin:
             if (type == CallParamType::kF32) {
                 return builder->Call(str.str(), "f2", "f2");
             } else if (type == CallParamType::kF16) {
@@ -158,7 +157,7 @@ const ast::CallExpression* GenerateCall(BuiltinType builtin,
             } else {
                 return builder->Call(str.str(), "u2", "u2");
             }
-        case BuiltinType::kClamp:
+        case builtin::Function::kClamp:
             if (type == CallParamType::kF32) {
                 return builder->Call(str.str(), "f2", "f2", "f2");
             } else if (type == CallParamType::kF16) {
@@ -166,19 +165,19 @@ const ast::CallExpression* GenerateCall(BuiltinType builtin,
             } else {
                 return builder->Call(str.str(), "u2", "u2", "u2");
             }
-        case BuiltinType::kSelect:
+        case builtin::Function::kSelect:
             if (type == CallParamType::kF16) {
                 return builder->Call(str.str(), "h2", "h2", "b2");
             } else {
                 return builder->Call(str.str(), "f2", "f2", "b2");
             }
-        case BuiltinType::kDeterminant:
+        case builtin::Function::kDeterminant:
             if (type == CallParamType::kF16) {
                 return builder->Call(str.str(), "hm2x2");
             } else {
                 return builder->Call(str.str(), "m2x2");
             }
-        case BuiltinType::kTranspose:
+        case builtin::Function::kTranspose:
             if (type == CallParamType::kF16) {
                 return builder->Call(str.str(), "hm3x2");
             } else {
@@ -234,107 +233,110 @@ INSTANTIATE_TEST_SUITE_P(
     HlslGeneratorImplTest_Builtin,
     HlslBuiltinTest,
     testing::Values(/* Logical built-in */
-                    BuiltinData{BuiltinType::kAll, CallParamType::kBool, "all"},
-                    BuiltinData{BuiltinType::kAny, CallParamType::kBool, "any"},
+                    BuiltinData{builtin::Function::kAll, CallParamType::kBool, "all"},
+                    BuiltinData{builtin::Function::kAny, CallParamType::kBool, "any"},
                     /* Float built-in */
-                    BuiltinData{BuiltinType::kAbs, CallParamType::kF32, "abs"},
-                    BuiltinData{BuiltinType::kAbs, CallParamType::kF16, "abs"},
-                    BuiltinData{BuiltinType::kAcos, CallParamType::kF32, "acos"},
-                    BuiltinData{BuiltinType::kAcos, CallParamType::kF16, "acos"},
-                    BuiltinData{BuiltinType::kAsin, CallParamType::kF32, "asin"},
-                    BuiltinData{BuiltinType::kAsin, CallParamType::kF16, "asin"},
-                    BuiltinData{BuiltinType::kAtan, CallParamType::kF32, "atan"},
-                    BuiltinData{BuiltinType::kAtan, CallParamType::kF16, "atan"},
-                    BuiltinData{BuiltinType::kAtan2, CallParamType::kF32, "atan2"},
-                    BuiltinData{BuiltinType::kAtan2, CallParamType::kF16, "atan2"},
-                    BuiltinData{BuiltinType::kCeil, CallParamType::kF32, "ceil"},
-                    BuiltinData{BuiltinType::kCeil, CallParamType::kF16, "ceil"},
-                    BuiltinData{BuiltinType::kClamp, CallParamType::kF32, "clamp"},
-                    BuiltinData{BuiltinType::kClamp, CallParamType::kF16, "clamp"},
-                    BuiltinData{BuiltinType::kCos, CallParamType::kF32, "cos"},
-                    BuiltinData{BuiltinType::kCos, CallParamType::kF16, "cos"},
-                    BuiltinData{BuiltinType::kCosh, CallParamType::kF32, "cosh"},
-                    BuiltinData{BuiltinType::kCosh, CallParamType::kF16, "cosh"},
-                    BuiltinData{BuiltinType::kCross, CallParamType::kF32, "cross"},
-                    BuiltinData{BuiltinType::kCross, CallParamType::kF16, "cross"},
-                    BuiltinData{BuiltinType::kDistance, CallParamType::kF32, "distance"},
-                    BuiltinData{BuiltinType::kDistance, CallParamType::kF16, "distance"},
-                    BuiltinData{BuiltinType::kExp, CallParamType::kF32, "exp"},
-                    BuiltinData{BuiltinType::kExp, CallParamType::kF16, "exp"},
-                    BuiltinData{BuiltinType::kExp2, CallParamType::kF32, "exp2"},
-                    BuiltinData{BuiltinType::kExp2, CallParamType::kF16, "exp2"},
-                    BuiltinData{BuiltinType::kFaceForward, CallParamType::kF32, "faceforward"},
-                    BuiltinData{BuiltinType::kFaceForward, CallParamType::kF16, "faceforward"},
-                    BuiltinData{BuiltinType::kFloor, CallParamType::kF32, "floor"},
-                    BuiltinData{BuiltinType::kFloor, CallParamType::kF16, "floor"},
-                    BuiltinData{BuiltinType::kFma, CallParamType::kF32, "mad"},
-                    BuiltinData{BuiltinType::kFma, CallParamType::kF16, "mad"},
-                    BuiltinData{BuiltinType::kFract, CallParamType::kF32, "frac"},
-                    BuiltinData{BuiltinType::kFract, CallParamType::kF16, "frac"},
-                    BuiltinData{BuiltinType::kInverseSqrt, CallParamType::kF32, "rsqrt"},
-                    BuiltinData{BuiltinType::kInverseSqrt, CallParamType::kF16, "rsqrt"},
-                    BuiltinData{BuiltinType::kLdexp, CallParamType::kF32, "ldexp"},
-                    BuiltinData{BuiltinType::kLdexp, CallParamType::kF16, "ldexp"},
-                    BuiltinData{BuiltinType::kLength, CallParamType::kF32, "length"},
-                    BuiltinData{BuiltinType::kLength, CallParamType::kF16, "length"},
-                    BuiltinData{BuiltinType::kLog, CallParamType::kF32, "log"},
-                    BuiltinData{BuiltinType::kLog, CallParamType::kF16, "log"},
-                    BuiltinData{BuiltinType::kLog2, CallParamType::kF32, "log2"},
-                    BuiltinData{BuiltinType::kLog2, CallParamType::kF16, "log2"},
-                    BuiltinData{BuiltinType::kMax, CallParamType::kF32, "max"},
-                    BuiltinData{BuiltinType::kMax, CallParamType::kF16, "max"},
-                    BuiltinData{BuiltinType::kMin, CallParamType::kF32, "min"},
-                    BuiltinData{BuiltinType::kMin, CallParamType::kF16, "min"},
-                    BuiltinData{BuiltinType::kMix, CallParamType::kF32, "lerp"},
-                    BuiltinData{BuiltinType::kMix, CallParamType::kF16, "lerp"},
-                    BuiltinData{BuiltinType::kNormalize, CallParamType::kF32, "normalize"},
-                    BuiltinData{BuiltinType::kNormalize, CallParamType::kF16, "normalize"},
-                    BuiltinData{BuiltinType::kPow, CallParamType::kF32, "pow"},
-                    BuiltinData{BuiltinType::kPow, CallParamType::kF16, "pow"},
-                    BuiltinData{BuiltinType::kReflect, CallParamType::kF32, "reflect"},
-                    BuiltinData{BuiltinType::kReflect, CallParamType::kF16, "reflect"},
-                    BuiltinData{BuiltinType::kSin, CallParamType::kF32, "sin"},
-                    BuiltinData{BuiltinType::kSin, CallParamType::kF16, "sin"},
-                    BuiltinData{BuiltinType::kSinh, CallParamType::kF32, "sinh"},
-                    BuiltinData{BuiltinType::kSinh, CallParamType::kF16, "sinh"},
-                    BuiltinData{BuiltinType::kSmoothstep, CallParamType::kF32, "smoothstep"},
-                    BuiltinData{BuiltinType::kSmoothstep, CallParamType::kF16, "smoothstep"},
-                    BuiltinData{BuiltinType::kSqrt, CallParamType::kF32, "sqrt"},
-                    BuiltinData{BuiltinType::kSqrt, CallParamType::kF16, "sqrt"},
-                    BuiltinData{BuiltinType::kStep, CallParamType::kF32, "step"},
-                    BuiltinData{BuiltinType::kStep, CallParamType::kF16, "step"},
-                    BuiltinData{BuiltinType::kTan, CallParamType::kF32, "tan"},
-                    BuiltinData{BuiltinType::kTan, CallParamType::kF16, "tan"},
-                    BuiltinData{BuiltinType::kTanh, CallParamType::kF32, "tanh"},
-                    BuiltinData{BuiltinType::kTanh, CallParamType::kF16, "tanh"},
-                    BuiltinData{BuiltinType::kTrunc, CallParamType::kF32, "trunc"},
-                    BuiltinData{BuiltinType::kTrunc, CallParamType::kF16, "trunc"},
+                    BuiltinData{builtin::Function::kAbs, CallParamType::kF32, "abs"},
+                    BuiltinData{builtin::Function::kAbs, CallParamType::kF16, "abs"},
+                    BuiltinData{builtin::Function::kAcos, CallParamType::kF32, "acos"},
+                    BuiltinData{builtin::Function::kAcos, CallParamType::kF16, "acos"},
+                    BuiltinData{builtin::Function::kAsin, CallParamType::kF32, "asin"},
+                    BuiltinData{builtin::Function::kAsin, CallParamType::kF16, "asin"},
+                    BuiltinData{builtin::Function::kAtan, CallParamType::kF32, "atan"},
+                    BuiltinData{builtin::Function::kAtan, CallParamType::kF16, "atan"},
+                    BuiltinData{builtin::Function::kAtan2, CallParamType::kF32, "atan2"},
+                    BuiltinData{builtin::Function::kAtan2, CallParamType::kF16, "atan2"},
+                    BuiltinData{builtin::Function::kCeil, CallParamType::kF32, "ceil"},
+                    BuiltinData{builtin::Function::kCeil, CallParamType::kF16, "ceil"},
+                    BuiltinData{builtin::Function::kClamp, CallParamType::kF32, "clamp"},
+                    BuiltinData{builtin::Function::kClamp, CallParamType::kF16, "clamp"},
+                    BuiltinData{builtin::Function::kCos, CallParamType::kF32, "cos"},
+                    BuiltinData{builtin::Function::kCos, CallParamType::kF16, "cos"},
+                    BuiltinData{builtin::Function::kCosh, CallParamType::kF32, "cosh"},
+                    BuiltinData{builtin::Function::kCosh, CallParamType::kF16, "cosh"},
+                    BuiltinData{builtin::Function::kCross, CallParamType::kF32, "cross"},
+                    BuiltinData{builtin::Function::kCross, CallParamType::kF16, "cross"},
+                    BuiltinData{builtin::Function::kDistance, CallParamType::kF32, "distance"},
+                    BuiltinData{builtin::Function::kDistance, CallParamType::kF16, "distance"},
+                    BuiltinData{builtin::Function::kExp, CallParamType::kF32, "exp"},
+                    BuiltinData{builtin::Function::kExp, CallParamType::kF16, "exp"},
+                    BuiltinData{builtin::Function::kExp2, CallParamType::kF32, "exp2"},
+                    BuiltinData{builtin::Function::kExp2, CallParamType::kF16, "exp2"},
+                    BuiltinData{builtin::Function::kFaceForward, CallParamType::kF32,
+                                "faceforward"},
+                    BuiltinData{builtin::Function::kFaceForward, CallParamType::kF16,
+                                "faceforward"},
+                    BuiltinData{builtin::Function::kFloor, CallParamType::kF32, "floor"},
+                    BuiltinData{builtin::Function::kFloor, CallParamType::kF16, "floor"},
+                    BuiltinData{builtin::Function::kFma, CallParamType::kF32, "mad"},
+                    BuiltinData{builtin::Function::kFma, CallParamType::kF16, "mad"},
+                    BuiltinData{builtin::Function::kFract, CallParamType::kF32, "frac"},
+                    BuiltinData{builtin::Function::kFract, CallParamType::kF16, "frac"},
+                    BuiltinData{builtin::Function::kInverseSqrt, CallParamType::kF32, "rsqrt"},
+                    BuiltinData{builtin::Function::kInverseSqrt, CallParamType::kF16, "rsqrt"},
+                    BuiltinData{builtin::Function::kLdexp, CallParamType::kF32, "ldexp"},
+                    BuiltinData{builtin::Function::kLdexp, CallParamType::kF16, "ldexp"},
+                    BuiltinData{builtin::Function::kLength, CallParamType::kF32, "length"},
+                    BuiltinData{builtin::Function::kLength, CallParamType::kF16, "length"},
+                    BuiltinData{builtin::Function::kLog, CallParamType::kF32, "log"},
+                    BuiltinData{builtin::Function::kLog, CallParamType::kF16, "log"},
+                    BuiltinData{builtin::Function::kLog2, CallParamType::kF32, "log2"},
+                    BuiltinData{builtin::Function::kLog2, CallParamType::kF16, "log2"},
+                    BuiltinData{builtin::Function::kMax, CallParamType::kF32, "max"},
+                    BuiltinData{builtin::Function::kMax, CallParamType::kF16, "max"},
+                    BuiltinData{builtin::Function::kMin, CallParamType::kF32, "min"},
+                    BuiltinData{builtin::Function::kMin, CallParamType::kF16, "min"},
+                    BuiltinData{builtin::Function::kMix, CallParamType::kF32, "lerp"},
+                    BuiltinData{builtin::Function::kMix, CallParamType::kF16, "lerp"},
+                    BuiltinData{builtin::Function::kNormalize, CallParamType::kF32, "normalize"},
+                    BuiltinData{builtin::Function::kNormalize, CallParamType::kF16, "normalize"},
+                    BuiltinData{builtin::Function::kPow, CallParamType::kF32, "pow"},
+                    BuiltinData{builtin::Function::kPow, CallParamType::kF16, "pow"},
+                    BuiltinData{builtin::Function::kReflect, CallParamType::kF32, "reflect"},
+                    BuiltinData{builtin::Function::kReflect, CallParamType::kF16, "reflect"},
+                    BuiltinData{builtin::Function::kSin, CallParamType::kF32, "sin"},
+                    BuiltinData{builtin::Function::kSin, CallParamType::kF16, "sin"},
+                    BuiltinData{builtin::Function::kSinh, CallParamType::kF32, "sinh"},
+                    BuiltinData{builtin::Function::kSinh, CallParamType::kF16, "sinh"},
+                    BuiltinData{builtin::Function::kSmoothstep, CallParamType::kF32, "smoothstep"},
+                    BuiltinData{builtin::Function::kSmoothstep, CallParamType::kF16, "smoothstep"},
+                    BuiltinData{builtin::Function::kSqrt, CallParamType::kF32, "sqrt"},
+                    BuiltinData{builtin::Function::kSqrt, CallParamType::kF16, "sqrt"},
+                    BuiltinData{builtin::Function::kStep, CallParamType::kF32, "step"},
+                    BuiltinData{builtin::Function::kStep, CallParamType::kF16, "step"},
+                    BuiltinData{builtin::Function::kTan, CallParamType::kF32, "tan"},
+                    BuiltinData{builtin::Function::kTan, CallParamType::kF16, "tan"},
+                    BuiltinData{builtin::Function::kTanh, CallParamType::kF32, "tanh"},
+                    BuiltinData{builtin::Function::kTanh, CallParamType::kF16, "tanh"},
                     /* Integer built-in */
-                    BuiltinData{BuiltinType::kAbs, CallParamType::kU32, "abs"},
-                    BuiltinData{BuiltinType::kClamp, CallParamType::kU32, "clamp"},
-                    BuiltinData{BuiltinType::kCountOneBits, CallParamType::kU32, "countbits"},
-                    BuiltinData{BuiltinType::kMax, CallParamType::kU32, "max"},
-                    BuiltinData{BuiltinType::kMin, CallParamType::kU32, "min"},
-                    BuiltinData{BuiltinType::kReverseBits, CallParamType::kU32, "reversebits"},
-                    BuiltinData{BuiltinType::kRound, CallParamType::kU32, "round"},
+                    BuiltinData{builtin::Function::kAbs, CallParamType::kU32, "abs"},
+                    BuiltinData{builtin::Function::kClamp, CallParamType::kU32, "clamp"},
+                    BuiltinData{builtin::Function::kCountOneBits, CallParamType::kU32, "countbits"},
+                    BuiltinData{builtin::Function::kMax, CallParamType::kU32, "max"},
+                    BuiltinData{builtin::Function::kMin, CallParamType::kU32, "min"},
+                    BuiltinData{builtin::Function::kReverseBits, CallParamType::kU32,
+                                "reversebits"},
+                    BuiltinData{builtin::Function::kRound, CallParamType::kU32, "round"},
                     /* Matrix built-in */
-                    BuiltinData{BuiltinType::kDeterminant, CallParamType::kF32, "determinant"},
-                    BuiltinData{BuiltinType::kDeterminant, CallParamType::kF16, "determinant"},
-                    BuiltinData{BuiltinType::kTranspose, CallParamType::kF32, "transpose"},
-                    BuiltinData{BuiltinType::kTranspose, CallParamType::kF16, "transpose"},
+                    BuiltinData{builtin::Function::kDeterminant, CallParamType::kF32,
+                                "determinant"},
+                    BuiltinData{builtin::Function::kDeterminant, CallParamType::kF16,
+                                "determinant"},
+                    BuiltinData{builtin::Function::kTranspose, CallParamType::kF32, "transpose"},
+                    BuiltinData{builtin::Function::kTranspose, CallParamType::kF16, "transpose"},
                     /* Vector built-in */
-                    BuiltinData{BuiltinType::kDot, CallParamType::kF32, "dot"},
-                    BuiltinData{BuiltinType::kDot, CallParamType::kF16, "dot"},
+                    BuiltinData{builtin::Function::kDot, CallParamType::kF32, "dot"},
+                    BuiltinData{builtin::Function::kDot, CallParamType::kF16, "dot"},
                     /* Derivate built-in */
-                    BuiltinData{BuiltinType::kDpdx, CallParamType::kF32, "ddx"},
-                    BuiltinData{BuiltinType::kDpdxCoarse, CallParamType::kF32, "ddx_coarse"},
-                    BuiltinData{BuiltinType::kDpdxFine, CallParamType::kF32, "ddx_fine"},
-                    BuiltinData{BuiltinType::kDpdy, CallParamType::kF32, "ddy"},
-                    BuiltinData{BuiltinType::kDpdyCoarse, CallParamType::kF32, "ddy_coarse"},
-                    BuiltinData{BuiltinType::kDpdyFine, CallParamType::kF32, "ddy_fine"},
-                    BuiltinData{BuiltinType::kFwidth, CallParamType::kF32, "fwidth"},
-                    BuiltinData{BuiltinType::kFwidthCoarse, CallParamType::kF32, "fwidth"},
-                    BuiltinData{BuiltinType::kFwidthFine, CallParamType::kF32, "fwidth"}));
+                    BuiltinData{builtin::Function::kDpdx, CallParamType::kF32, "ddx"},
+                    BuiltinData{builtin::Function::kDpdxCoarse, CallParamType::kF32, "ddx_coarse"},
+                    BuiltinData{builtin::Function::kDpdxFine, CallParamType::kF32, "ddx_fine"},
+                    BuiltinData{builtin::Function::kDpdy, CallParamType::kF32, "ddy"},
+                    BuiltinData{builtin::Function::kDpdyCoarse, CallParamType::kF32, "ddy_coarse"},
+                    BuiltinData{builtin::Function::kDpdyFine, CallParamType::kF32, "ddy_fine"},
+                    BuiltinData{builtin::Function::kFwidth, CallParamType::kF32, "fwidth"},
+                    BuiltinData{builtin::Function::kFwidthCoarse, CallParamType::kF32, "fwidth"},
+                    BuiltinData{builtin::Function::kFwidthFine, CallParamType::kF32, "fwidth"}));
 
 TEST_F(HlslGeneratorImplTest_Builtin, Builtin_Call) {
     auto* call = Call("dot", "param1", "param2");
@@ -347,8 +349,8 @@ TEST_F(HlslGeneratorImplTest_Builtin, Builtin_Call) {
     GeneratorImpl& gen = Build();
 
     gen.increment_indent();
-    std::stringstream out;
-    ASSERT_TRUE(gen.EmitExpression(out, call)) << gen.error();
+    utils::StringStream out;
+    ASSERT_TRUE(gen.EmitExpression(out, call)) << gen.Diagnostics();
     EXPECT_EQ(out.str(), "dot(param1, param2)");
 }
 
@@ -360,8 +362,8 @@ TEST_F(HlslGeneratorImplTest_Builtin, Select_Scalar) {
     GeneratorImpl& gen = Build();
 
     gen.increment_indent();
-    std::stringstream out;
-    ASSERT_TRUE(gen.EmitExpression(out, call)) << gen.error();
+    utils::StringStream out;
+    ASSERT_TRUE(gen.EmitExpression(out, call)) << gen.Diagnostics();
     EXPECT_EQ(out.str(), "(true ? b : a)");
 }
 
@@ -373,8 +375,8 @@ TEST_F(HlslGeneratorImplTest_Builtin, Select_Vector) {
     GeneratorImpl& gen = Build();
 
     gen.increment_indent();
-    std::stringstream out;
-    ASSERT_TRUE(gen.EmitExpression(out, call)) << gen.error();
+    utils::StringStream out;
+    ASSERT_TRUE(gen.EmitExpression(out, call)) << gen.Diagnostics();
     EXPECT_EQ(out.str(), "(bool2(true, false) ? b : a)");
 }
 
@@ -384,7 +386,7 @@ TEST_F(HlslGeneratorImplTest_Builtin, Runtime_Modf_Scalar_f32) {
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(struct modf_result_f32 {
   float fract;
   float whole;
@@ -412,7 +414,7 @@ TEST_F(HlslGeneratorImplTest_Builtin, Runtime_Modf_Scalar_f16) {
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(struct modf_result_f16 {
   float16_t fract;
   float16_t whole;
@@ -438,7 +440,7 @@ TEST_F(HlslGeneratorImplTest_Builtin, Runtime_Modf_Vector_f32) {
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(struct modf_result_vec3_f32 {
   float3 fract;
   float3 whole;
@@ -466,7 +468,7 @@ TEST_F(HlslGeneratorImplTest_Builtin, Runtime_Modf_Vector_f16) {
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(struct modf_result_vec3_f16 {
   vector<float16_t, 3> fract;
   vector<float16_t, 3> whole;
@@ -491,7 +493,7 @@ TEST_F(HlslGeneratorImplTest_Builtin, Const_Modf_Scalar_f32) {
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(struct modf_result_f32 {
   float fract;
   float whole;
@@ -511,7 +513,7 @@ TEST_F(HlslGeneratorImplTest_Builtin, Const_Modf_Scalar_f16) {
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(struct modf_result_f16 {
   float16_t fract;
   float16_t whole;
@@ -529,7 +531,7 @@ TEST_F(HlslGeneratorImplTest_Builtin, Const_Modf_Vector_f32) {
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(struct modf_result_vec3_f32 {
   float3 fract;
   float3 whole;
@@ -549,7 +551,7 @@ TEST_F(HlslGeneratorImplTest_Builtin, Const_Modf_Vector_f16) {
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(struct modf_result_vec3_f16 {
   vector<float16_t, 3> fract;
   vector<float16_t, 3> whole;
@@ -573,7 +575,7 @@ TEST_F(HlslGeneratorImplTest_Builtin, NonInitializer_Modf_Vector_f32) {
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(struct modf_result_vec3_f32 {
   float3 fract;
   float3 whole;
@@ -594,14 +596,14 @@ TEST_F(HlslGeneratorImplTest_Builtin, Runtime_Frexp_Scalar_f32) {
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(struct frexp_result_f32 {
   float fract;
   int exp;
 };
 frexp_result_f32 tint_frexp(float param_0) {
   float exp;
-  float fract = frexp(param_0, exp);
+  float fract = sign(param_0) * frexp(param_0, exp);
   frexp_result_f32 result = {fract, int(exp)};
   return result;
 }
@@ -623,14 +625,14 @@ TEST_F(HlslGeneratorImplTest_Builtin, Runtime_Frexp_Scalar_f16) {
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(struct frexp_result_f16 {
   float16_t fract;
   int exp;
 };
 frexp_result_f16 tint_frexp(float16_t param_0) {
   float16_t exp;
-  float16_t fract = frexp(param_0, exp);
+  float16_t fract = sign(param_0) * frexp(param_0, exp);
   frexp_result_f16 result = {fract, int(exp)};
   return result;
 }
@@ -650,14 +652,14 @@ TEST_F(HlslGeneratorImplTest_Builtin, Runtime_Frexp_Vector_f32) {
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(struct frexp_result_vec3_f32 {
   float3 fract;
   int3 exp;
 };
 frexp_result_vec3_f32 tint_frexp(float3 param_0) {
   float3 exp;
-  float3 fract = frexp(param_0, exp);
+  float3 fract = sign(param_0) * frexp(param_0, exp);
   frexp_result_vec3_f32 result = {fract, int3(exp)};
   return result;
 }
@@ -679,14 +681,14 @@ TEST_F(HlslGeneratorImplTest_Builtin, Runtime_Frexp_Vector_f16) {
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(struct frexp_result_vec3_f16 {
   vector<float16_t, 3> fract;
   int3 exp;
 };
 frexp_result_vec3_f16 tint_frexp(vector<float16_t, 3> param_0) {
   vector<float16_t, 3> exp;
-  vector<float16_t, 3> fract = frexp(param_0, exp);
+  vector<float16_t, 3> fract = sign(param_0) * frexp(param_0, exp);
   frexp_result_vec3_f16 result = {fract, int3(exp)};
   return result;
 }
@@ -705,7 +707,7 @@ TEST_F(HlslGeneratorImplTest_Builtin, Const_Frexp_Scalar_f32) {
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(struct frexp_result_f32 {
   float fract;
   int exp;
@@ -725,7 +727,7 @@ TEST_F(HlslGeneratorImplTest_Builtin, Const_Frexp_Scalar_f16) {
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(struct frexp_result_f16 {
   float16_t fract;
   int exp;
@@ -743,7 +745,7 @@ TEST_F(HlslGeneratorImplTest_Builtin, Const_Frexp_Vector_f32) {
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(struct frexp_result_vec3_f32 {
   float3 fract;
   int3 exp;
@@ -763,7 +765,7 @@ TEST_F(HlslGeneratorImplTest_Builtin, Const_Frexp_Vector_f16) {
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(struct frexp_result_vec3_f16 {
   vector<float16_t, 3> fract;
   int3 exp;
@@ -787,7 +789,7 @@ TEST_F(HlslGeneratorImplTest_Builtin, NonInitializer_Frexp_Vector_f32) {
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(struct frexp_result_vec3_f32 {
   float3 fract;
   int3 exp;
@@ -809,9 +811,9 @@ TEST_F(HlslGeneratorImplTest_Builtin, Degrees_Scalar_f32) {
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(float tint_degrees(float param_0) {
-  return param_0 * 57.295779513082322865;
+  return param_0 * 57.29577951308232286465;
 }
 
 [numthreads(1, 1, 1)]
@@ -830,9 +832,9 @@ TEST_F(HlslGeneratorImplTest_Builtin, Degrees_Vector_f32) {
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(float3 tint_degrees(float3 param_0) {
-  return param_0 * 57.295779513082322865;
+  return param_0 * 57.29577951308232286465;
 }
 
 [numthreads(1, 1, 1)]
@@ -853,9 +855,9 @@ TEST_F(HlslGeneratorImplTest_Builtin, Degrees_Scalar_f16) {
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(float16_t tint_degrees(float16_t param_0) {
-  return param_0 * 57.295779513082322865;
+  return param_0 * 57.29577951308232286465;
 }
 
 [numthreads(1, 1, 1)]
@@ -876,9 +878,9 @@ TEST_F(HlslGeneratorImplTest_Builtin, Degrees_Vector_f16) {
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(vector<float16_t, 3> tint_degrees(vector<float16_t, 3> param_0) {
-  return param_0 * 57.295779513082322865;
+  return param_0 * 57.29577951308232286465;
 }
 
 [numthreads(1, 1, 1)]
@@ -897,9 +899,9 @@ TEST_F(HlslGeneratorImplTest_Builtin, Radians_Scalar_f32) {
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(float tint_radians(float param_0) {
-  return param_0 * 0.017453292519943295474;
+  return param_0 * 0.01745329251994329547;
 }
 
 [numthreads(1, 1, 1)]
@@ -918,9 +920,9 @@ TEST_F(HlslGeneratorImplTest_Builtin, Radians_Vector_f32) {
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(float3 tint_radians(float3 param_0) {
-  return param_0 * 0.017453292519943295474;
+  return param_0 * 0.01745329251994329547;
 }
 
 [numthreads(1, 1, 1)]
@@ -941,9 +943,9 @@ TEST_F(HlslGeneratorImplTest_Builtin, Radians_Scalar_f16) {
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(float16_t tint_radians(float16_t param_0) {
-  return param_0 * 0.017453292519943295474;
+  return param_0 * 0.01745329251994329547;
 }
 
 [numthreads(1, 1, 1)]
@@ -964,9 +966,9 @@ TEST_F(HlslGeneratorImplTest_Builtin, Radians_Vector_f16) {
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(vector<float16_t, 3> tint_radians(vector<float16_t, 3> param_0) {
-  return param_0 * 0.017453292519943295474;
+  return param_0 * 0.01745329251994329547;
 }
 
 [numthreads(1, 1, 1)]
@@ -985,7 +987,7 @@ TEST_F(HlslGeneratorImplTest_Builtin, Sign_Scalar_i32) {
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"([numthreads(1, 1, 1)]
 void test_function() {
   int val = 0;
@@ -1002,7 +1004,7 @@ TEST_F(HlslGeneratorImplTest_Builtin, Sign_Vector_i32) {
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"([numthreads(1, 1, 1)]
 void test_function() {
   int3 val = int3(0, 0, 0);
@@ -1019,7 +1021,7 @@ TEST_F(HlslGeneratorImplTest_Builtin, Sign_Scalar_f32) {
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"([numthreads(1, 1, 1)]
 void test_function() {
   float val = 0.0f;
@@ -1036,7 +1038,7 @@ TEST_F(HlslGeneratorImplTest_Builtin, Sign_Vector_f32) {
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"([numthreads(1, 1, 1)]
 void test_function() {
   float3 val = float3(0.0f, 0.0f, 0.0f);
@@ -1055,7 +1057,7 @@ TEST_F(HlslGeneratorImplTest_Builtin, Sign_Scalar_f16) {
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"([numthreads(1, 1, 1)]
 void test_function() {
   float16_t val = float16_t(0.0h);
@@ -1074,11 +1076,99 @@ TEST_F(HlslGeneratorImplTest_Builtin, Sign_Vector_f16) {
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"([numthreads(1, 1, 1)]
 void test_function() {
   vector<float16_t, 3> val = vector<float16_t, 3>(float16_t(0.0h), float16_t(0.0h), float16_t(0.0h));
   const vector<float16_t, 3> tint_symbol = vector<float16_t, 3>(sign(val));
+  return;
+}
+)");
+}
+
+TEST_F(HlslGeneratorImplTest_Builtin, Trunc_Scalar_f32) {
+    auto* val = Var("val", ty.f32());
+    auto* call = Call("trunc", val);
+    WrapInFunction(val, call);
+
+    GeneratorImpl& gen = SanitizeAndBuild();
+
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
+    EXPECT_EQ(gen.result(), R"(float tint_trunc(float param_0) {
+  return param_0 < 0 ? ceil(param_0) : floor(param_0);
+}
+
+[numthreads(1, 1, 1)]
+void test_function() {
+  float val = 0.0f;
+  const float tint_symbol = tint_trunc(val);
+  return;
+}
+)");
+}
+
+TEST_F(HlslGeneratorImplTest_Builtin, Trunc_Vector_f32) {
+    auto* val = Var("val", ty.vec3<f32>());
+    auto* call = Call("trunc", val);
+    WrapInFunction(val, call);
+
+    GeneratorImpl& gen = SanitizeAndBuild();
+
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
+    EXPECT_EQ(gen.result(), R"(float3 tint_trunc(float3 param_0) {
+  return param_0 < 0 ? ceil(param_0) : floor(param_0);
+}
+
+[numthreads(1, 1, 1)]
+void test_function() {
+  float3 val = float3(0.0f, 0.0f, 0.0f);
+  const float3 tint_symbol = tint_trunc(val);
+  return;
+}
+)");
+}
+
+TEST_F(HlslGeneratorImplTest_Builtin, Trunc_Scalar_f16) {
+    Enable(builtin::Extension::kF16);
+
+    auto* val = Var("val", ty.f16());
+    auto* call = Call("trunc", val);
+    WrapInFunction(val, call);
+
+    GeneratorImpl& gen = SanitizeAndBuild();
+
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
+    EXPECT_EQ(gen.result(), R"(float16_t tint_trunc(float16_t param_0) {
+  return param_0 < 0 ? ceil(param_0) : floor(param_0);
+}
+
+[numthreads(1, 1, 1)]
+void test_function() {
+  float16_t val = float16_t(0.0h);
+  const float16_t tint_symbol = tint_trunc(val);
+  return;
+}
+)");
+}
+
+TEST_F(HlslGeneratorImplTest_Builtin, Trunc_Vector_f16) {
+    Enable(builtin::Extension::kF16);
+
+    auto* val = Var("val", ty.vec3<f16>());
+    auto* call = Call("trunc", val);
+    WrapInFunction(val, call);
+
+    GeneratorImpl& gen = SanitizeAndBuild();
+
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
+    EXPECT_EQ(gen.result(), R"(vector<float16_t, 3> tint_trunc(vector<float16_t, 3> param_0) {
+  return param_0 < 0 ? ceil(param_0) : floor(param_0);
+}
+
+[numthreads(1, 1, 1)]
+void test_function() {
+  vector<float16_t, 3> val = vector<float16_t, 3>(float16_t(0.0h), float16_t(0.0h), float16_t(0.0h));
+  const vector<float16_t, 3> tint_symbol = tint_trunc(val);
   return;
 }
 )");
@@ -1090,7 +1180,7 @@ TEST_F(HlslGeneratorImplTest_Builtin, Pack4x8Snorm) {
     WrapInFunction(Decl(Var("r", call)));
     GeneratorImpl& gen = Build();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(uint tint_pack4x8snorm(float4 param_0) {
   int4 i = int4(round(clamp(param_0, -1.0, 1.0) * 127.0)) & 0xff;
   return asuint(i.x | i.y << 8 | i.z << 16 | i.w << 24);
@@ -1112,7 +1202,7 @@ TEST_F(HlslGeneratorImplTest_Builtin, Pack4x8Unorm) {
     WrapInFunction(Decl(Var("r", call)));
     GeneratorImpl& gen = Build();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(uint tint_pack4x8unorm(float4 param_0) {
   uint4 i = uint4(round(clamp(param_0, 0.0, 1.0) * 255.0));
   return (i.x | i.y << 8 | i.z << 16 | i.w << 24);
@@ -1134,7 +1224,7 @@ TEST_F(HlslGeneratorImplTest_Builtin, Pack2x16Snorm) {
     WrapInFunction(Decl(Var("r", call)));
     GeneratorImpl& gen = Build();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(uint tint_pack2x16snorm(float2 param_0) {
   int2 i = int2(round(clamp(param_0, -1.0, 1.0) * 32767.0)) & 0xffff;
   return asuint(i.x | i.y << 16);
@@ -1156,7 +1246,7 @@ TEST_F(HlslGeneratorImplTest_Builtin, Pack2x16Unorm) {
     WrapInFunction(Decl(Var("r", call)));
     GeneratorImpl& gen = Build();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(uint tint_pack2x16unorm(float2 param_0) {
   uint2 i = uint2(round(clamp(param_0, 0.0, 1.0) * 65535.0));
   return (i.x | i.y << 16);
@@ -1178,7 +1268,7 @@ TEST_F(HlslGeneratorImplTest_Builtin, Pack2x16Float) {
     WrapInFunction(Decl(Var("r", call)));
     GeneratorImpl& gen = Build();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(uint tint_pack2x16float(float2 param_0) {
   uint2 i = f32tof16(param_0);
   return i.x | (i.y << 16);
@@ -1200,7 +1290,7 @@ TEST_F(HlslGeneratorImplTest_Builtin, Unpack4x8Snorm) {
     WrapInFunction(Decl(Var("r", call)));
     GeneratorImpl& gen = Build();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(float4 tint_unpack4x8snorm(uint param_0) {
   int j = int(param_0);
   int4 i = int4(j << 24, j << 16, j << 8, j) >> 24;
@@ -1223,7 +1313,7 @@ TEST_F(HlslGeneratorImplTest_Builtin, Unpack4x8Unorm) {
     WrapInFunction(Decl(Var("r", call)));
     GeneratorImpl& gen = Build();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(float4 tint_unpack4x8unorm(uint param_0) {
   uint j = param_0;
   uint4 i = uint4(j & 0xff, (j >> 8) & 0xff, (j >> 16) & 0xff, j >> 24);
@@ -1246,7 +1336,7 @@ TEST_F(HlslGeneratorImplTest_Builtin, Unpack2x16Snorm) {
     WrapInFunction(Decl(Var("r", call)));
     GeneratorImpl& gen = Build();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(float2 tint_unpack2x16snorm(uint param_0) {
   int j = int(param_0);
   int2 i = int2(j << 16, j) >> 16;
@@ -1269,7 +1359,7 @@ TEST_F(HlslGeneratorImplTest_Builtin, Unpack2x16Unorm) {
     WrapInFunction(Decl(Var("r", call)));
     GeneratorImpl& gen = Build();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(float2 tint_unpack2x16unorm(uint param_0) {
   uint j = param_0;
   uint2 i = uint2(j & 0xffff, j >> 16);
@@ -1292,7 +1382,7 @@ TEST_F(HlslGeneratorImplTest_Builtin, Unpack2x16Float) {
     WrapInFunction(Decl(Var("r", call)));
     GeneratorImpl& gen = Build();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(float2 tint_unpack2x16float(uint param_0) {
   uint i = param_0;
   return f16tof32(uint2(i & 0xffff, i >> 16));
@@ -1320,7 +1410,7 @@ TEST_F(HlslGeneratorImplTest_Builtin, StorageBarrier) {
 
     GeneratorImpl& gen = Build();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"([numthreads(1, 1, 1)]
 void main() {
   DeviceMemoryBarrierWithGroupSync();
@@ -1341,7 +1431,7 @@ TEST_F(HlslGeneratorImplTest_Builtin, WorkgroupBarrier) {
 
     GeneratorImpl& gen = Build();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"([numthreads(1, 1, 1)]
 void main() {
   GroupMemoryBarrierWithGroupSync();
@@ -1360,7 +1450,7 @@ TEST_F(HlslGeneratorImplTest_Builtin, Dot4I8Packed) {
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(int tint_dot4I8Packed(uint param_0, uint param_1) {
   int accumulator = 0;
   return dot4add_i8packed(param_0, param_1, accumulator);
@@ -1386,7 +1476,7 @@ TEST_F(HlslGeneratorImplTest_Builtin, Dot4U8Packed) {
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(uint tint_dot4U8Packed(uint param_0, uint param_1) {
   uint accumulator = 0u;
   return dot4add_u8packed(param_0, param_1, accumulator);
@@ -1409,7 +1499,7 @@ TEST_F(HlslGeneratorImplTest_Builtin, CountOneBits) {
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"([numthreads(1, 1, 1)]
 void test_function() {
   int val1 = 0;
@@ -1426,7 +1516,7 @@ TEST_F(HlslGeneratorImplTest_Builtin, ReverseBits) {
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"([numthreads(1, 1, 1)]
 void test_function() {
   int val1 = 0;

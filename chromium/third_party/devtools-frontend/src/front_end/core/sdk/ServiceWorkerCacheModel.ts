@@ -119,7 +119,7 @@ export class ServiceWorkerCacheModel extends SDKModel<EventTypes> implements Pro
     return caches;
   }
 
-  dispose(): void {
+  override dispose(): void {
     for (const cache of this.#cachesInternal.values()) {
       this.cacheRemoved(cache);
     }
@@ -243,6 +243,12 @@ export class ServiceWorkerCacheModel extends SDKModel<EventTypes> implements Pro
   }
 
   sharedStorageAccessed(_event: Protocol.Storage.SharedStorageAccessedEvent): void {
+  }
+
+  storageBucketCreatedOrUpdated(_event: Protocol.Storage.StorageBucketCreatedOrUpdatedEvent): void {
+  }
+
+  storageBucketDeleted(_event: Protocol.Storage.StorageBucketDeletedEvent): void {
   }
 
   setThrottlerSchedulesAsSoonAsPossibleForTest(): void {

@@ -28,6 +28,7 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include "utils/vk_layer_utils.h"
 
 VK_DEFINE_NON_DISPATCHABLE_HANDLE(DISTINCT_NONDISPATCHABLE_PHONY_HANDLE)
 // The following line must match the vulkan_core.h condition guarding VK_DEFINE_NON_DISPATCHABLE_HANDLE
@@ -50,25 +51,20 @@ static_assert(std::is_same<uint64_t, DISTINCT_NONDISPATCHABLE_PHONY_HANDLE>::val
 [[maybe_unused]] static const char *kVUID_Threading_SingleThreadReuse = "UNASSIGNED-Threading-SingleThreadReuse";
 // clang-format on
 
-class ObjectUseData
+class alignas(get_hardware_destructive_interference_size()) ObjectUseData
 {
 public:
     class WriteReadCount
     {
     public:
-        WriteReadCount(int64_t v) : count(v) {}
+        explicit WriteReadCount(int64_t v) : count(v) {}
 
-        int32_t GetReadCount() const { return (int32_t)(count & 0xFFFFFFFF); }
-        int32_t GetWriteCount() const { return (int32_t)(count >> 32); }
+        int32_t GetReadCount() const { return static_cast<int32_t>(count & 0xFFFFFFFF); }
+        int32_t GetWriteCount() const { return static_cast<int32_t>(count >> 32); }
 
     private:
-        int64_t count;
+        int64_t count{};
     };
-
-    ObjectUseData() : thread(), writer_reader_count(0) {
-        // silence -Wunused-private-field warning
-        padding[0] = 0;
-    }
 
     WriteReadCount AddWriter() {
         int64_t prev = writer_reader_count.fetch_add(1ULL << 32);
@@ -97,17 +93,12 @@ public:
         }
     }
 
-    std::atomic<std::thread::id> thread;
+    std::atomic<std::thread::id> thread{};
 
 private:
-    // need to update write and read counts atomically. Writer in high
-    // 32 bits, reader in low 32 bits.
-    std::atomic<int64_t> writer_reader_count;
-
-    // Put each lock on its own cache line to avoid false cache line sharing.
-    char padding[(-int(sizeof(std::atomic<std::thread::id>) + sizeof(std::atomic<int64_t>))) & 63];
+    // Need to update write and read counts atomically. Writer in high 32 bits, reader in low 32 bits.
+    std::atomic<int64_t> writer_reader_count{};
 };
-
 
 template <typename T>
 class counter {
@@ -346,6 +337,7 @@ public:
     counter<VkSampler> c_VkSampler;
     counter<VkSamplerYcbcrConversion> c_VkSamplerYcbcrConversion;
     counter<VkSemaphore> c_VkSemaphore;
+    counter<VkShaderEXT> c_VkShaderEXT;
     counter<VkShaderModule> c_VkShaderModule;
     counter<VkSurfaceKHR> c_VkSurfaceKHR;
     counter<VkSwapchainKHR> c_VkSwapchainKHR;
@@ -412,6 +404,7 @@ public:
           c_VkSampler("VkSampler", kVulkanObjectTypeSampler, this),
           c_VkSamplerYcbcrConversion("VkSamplerYcbcrConversion", kVulkanObjectTypeSamplerYcbcrConversion, this),
           c_VkSemaphore("VkSemaphore", kVulkanObjectTypeSemaphore, this),
+          c_VkShaderEXT("VkShaderEXT", kVulkanObjectTypeShaderEXT, this),
           c_VkShaderModule("VkShaderModule", kVulkanObjectTypeShaderModule, this),
           c_VkSurfaceKHR("VkSurfaceKHR", kVulkanObjectTypeSurfaceKHR, this),
           c_VkSwapchainKHR("VkSwapchainKHR", kVulkanObjectTypeSwapchainKHR, this),
@@ -512,6 +505,7 @@ WRAPPER(VkRenderPass)
 WRAPPER(VkSampler)
 WRAPPER(VkSamplerYcbcrConversion)
 WRAPPER(VkSemaphore)
+WRAPPER(VkShaderEXT)
 WRAPPER(VkShaderModule)
 WRAPPER_PARENT_INSTANCE(VkSurfaceKHR)
 WRAPPER_PARENT_INSTANCE(VkSwapchainKHR)
@@ -3921,6 +3915,26 @@ void PostCallRecordGetPipelineExecutableInternalRepresentationsKHR(
     VkPipelineExecutableInternalRepresentationKHR* pInternalRepresentations,
     VkResult                                    result) override;
 
+void PreCallRecordMapMemory2KHR(
+    VkDevice                                    device,
+    const VkMemoryMapInfoKHR*                   pMemoryMapInfo,
+    void**                                      ppData) override;
+
+void PostCallRecordMapMemory2KHR(
+    VkDevice                                    device,
+    const VkMemoryMapInfoKHR*                   pMemoryMapInfo,
+    void**                                      ppData,
+    VkResult                                    result) override;
+
+void PreCallRecordUnmapMemory2KHR(
+    VkDevice                                    device,
+    const VkMemoryUnmapInfoKHR*                 pMemoryUnmapInfo) override;
+
+void PostCallRecordUnmapMemory2KHR(
+    VkDevice                                    device,
+    const VkMemoryUnmapInfoKHR*                 pMemoryUnmapInfo,
+    VkResult                                    result) override;
+
 #ifdef VK_ENABLE_BETA_EXTENSIONS
 
 void PreCallRecordCmdEncodeVideoKHR(
@@ -4576,6 +4590,22 @@ void PostCallRecordCmdSetDiscardRectangleEXT(
     uint32_t                                    discardRectangleCount,
     const VkRect2D*                             pDiscardRectangles) override;
 
+void PreCallRecordCmdSetDiscardRectangleEnableEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkBool32                                    discardRectangleEnable) override;
+
+void PostCallRecordCmdSetDiscardRectangleEnableEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkBool32                                    discardRectangleEnable) override;
+
+void PreCallRecordCmdSetDiscardRectangleModeEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkDiscardRectangleModeEXT                   discardRectangleMode) override;
+
+void PostCallRecordCmdSetDiscardRectangleModeEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkDiscardRectangleModeEXT                   discardRectangleMode) override;
+
 void PreCallRecordSetHdrMetadataEXT(
     VkDevice                                    device,
     uint32_t                                    swapchainCount,
@@ -5117,6 +5147,18 @@ void PostCallRecordCmdDrawMeshTasksIndirectCountNV(
     VkDeviceSize                                countBufferOffset,
     uint32_t                                    maxDrawCount,
     uint32_t                                    stride) override;
+
+void PreCallRecordCmdSetExclusiveScissorEnableNV(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    firstExclusiveScissor,
+    uint32_t                                    exclusiveScissorCount,
+    const VkBool32*                             pExclusiveScissorEnables) override;
+
+void PostCallRecordCmdSetExclusiveScissorEnableNV(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    firstExclusiveScissor,
+    uint32_t                                    exclusiveScissorCount,
+    const VkBool32*                             pExclusiveScissorEnables) override;
 
 void PreCallRecordCmdSetExclusiveScissorNV(
     VkCommandBuffer                             commandBuffer,
@@ -6234,6 +6276,9 @@ void PostCallRecordGetMicromapBuildSizesEXT(
     const VkMicromapBuildInfoEXT*               pBuildInfo,
     VkMicromapBuildSizesInfoEXT*                pSizeInfo) override;
 
+#ifdef VK_ENABLE_BETA_EXTENSIONS
+#endif // VK_ENABLE_BETA_EXTENSIONS
+
 void PreCallRecordCmdDrawClusterHUAWEI(
     VkCommandBuffer                             commandBuffer,
     uint32_t                                    groupCountX,
@@ -6677,6 +6722,56 @@ void PostCallRecordCmdOpticalFlowExecuteNV(
     VkCommandBuffer                             commandBuffer,
     VkOpticalFlowSessionNV                      session,
     const VkOpticalFlowExecuteInfoNV*           pExecuteInfo) override;
+
+void PreCallRecordCreateShadersEXT(
+    VkDevice                                    device,
+    uint32_t                                    createInfoCount,
+    const VkShaderCreateInfoEXT*                pCreateInfos,
+    const VkAllocationCallbacks*                pAllocator,
+    VkShaderEXT*                                pShaders) override;
+
+void PostCallRecordCreateShadersEXT(
+    VkDevice                                    device,
+    uint32_t                                    createInfoCount,
+    const VkShaderCreateInfoEXT*                pCreateInfos,
+    const VkAllocationCallbacks*                pAllocator,
+    VkShaderEXT*                                pShaders,
+    VkResult                                    result) override;
+
+void PreCallRecordDestroyShaderEXT(
+    VkDevice                                    device,
+    VkShaderEXT                                 shader,
+    const VkAllocationCallbacks*                pAllocator) override;
+
+void PostCallRecordDestroyShaderEXT(
+    VkDevice                                    device,
+    VkShaderEXT                                 shader,
+    const VkAllocationCallbacks*                pAllocator) override;
+
+void PreCallRecordGetShaderBinaryDataEXT(
+    VkDevice                                    device,
+    VkShaderEXT                                 shader,
+    size_t*                                     pDataSize,
+    void*                                       pData) override;
+
+void PostCallRecordGetShaderBinaryDataEXT(
+    VkDevice                                    device,
+    VkShaderEXT                                 shader,
+    size_t*                                     pDataSize,
+    void*                                       pData,
+    VkResult                                    result) override;
+
+void PreCallRecordCmdBindShadersEXT(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    stageCount,
+    const VkShaderStageFlagBits*                pStages,
+    const VkShaderEXT*                          pShaders) override;
+
+void PostCallRecordCmdBindShadersEXT(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    stageCount,
+    const VkShaderStageFlagBits*                pStages,
+    const VkShaderEXT*                          pShaders) override;
 
 void PreCallRecordGetFramebufferTilePropertiesQCOM(
     VkDevice                                    device,

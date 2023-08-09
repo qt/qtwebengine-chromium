@@ -7,11 +7,14 @@
 
 #include <time.h>
 
+#include <chrono>
 #include <fstream>
 #include <iostream>
+#include <thread>
 #include <utility>
 
 #include "content_analysis/sdk/analysis_agent.h"
+#include "demo/request_queue.h"
 
 // An AgentEventHandler that dumps requests information to stdout and blocks
 // any requests that have the keyword "block" in their data
@@ -19,7 +22,9 @@ class Handler : public content_analysis::sdk::AgentEventHandler {
  public:
   using Event = content_analysis::sdk::ContentAnalysisEvent;
 
-  Handler() = default;
+  Handler(unsigned long delay, const std::string& print_data_file_path) :
+      delay_(delay), print_data_file_path_(print_data_file_path) {
+  }
 
  protected:
   // Analyzes one request from Google Chrome and responds back to the browser
@@ -33,7 +38,7 @@ class Handler : public content_analysis::sdk::AgentEventHandler {
 
     std::cout << std::endl << "----------" << std::endl << std::endl;
 
-    DumpRequest(event->GetRequest());
+    DumpEvent(event.get());
 
     bool block = false;
     bool success = true;
@@ -49,6 +54,11 @@ class Handler : public content_analysis::sdk::AgentEventHandler {
       if (success) {
         block = ShouldBlockRequest(content);
       }
+    } else if (event->GetRequest().has_print_data()) {
+      // In the case of print request, normally the PDF bytes would be parsed
+      // for sensitive data violations. To keep this class simple, only the
+      // URL is checked for the word "block".
+      block = ShouldBlockRequest(event->GetRequest().request_data().url());
     }
 
     if (!success) {
@@ -73,6 +83,12 @@ class Handler : public content_analysis::sdk::AgentEventHandler {
 
     std::cout << std::endl;
 
+    // If a delay is specified, wait that much.
+    if (delay_ > 0) {
+      std::cout << "[Demo] delaying request processing for " << delay_ << "s" << std::endl;
+      std::this_thread::sleep_for(std::chrono::seconds(delay_));
+    }
+
     // Send the response back to Google Chrome.
     auto rc = event->Send();
     if (rc != content_analysis::sdk::ResultCode::OK) {
@@ -87,7 +103,8 @@ class Handler : public content_analysis::sdk::AgentEventHandler {
   void OnBrowserConnected(
       const content_analysis::sdk::BrowserInfo& info) override {
     std::cout << std::endl << "==========" << std::endl;
-    std::cout << "Browser connected pid=" << info.pid << std::endl;
+    std::cout << "Browser connected pid=" << info.pid
+              << " path=" << info.binary_path << std::endl;
   }
 
   void OnBrowserDisconnected(
@@ -148,8 +165,9 @@ class Handler : public content_analysis::sdk::AgentEventHandler {
               << std::endl;
   }
 
-  void DumpRequest(
-      const content_analysis::sdk::ContentAnalysisRequest& request) {
+  void DumpEvent(Event* event) {
+    const content_analysis::sdk::ContentAnalysisRequest& request =
+        event->GetRequest();
     std::string connector = "<Unknown>";
     if (request.has_analysis_connector()) {
       switch (request.analysis_connector())
@@ -177,6 +195,10 @@ class Handler : public content_analysis::sdk::AgentEventHandler {
     std::string url =
         request.has_request_data() && request.request_data().has_url()
         ? request.request_data().url() : "<No URL>";
+    
+    std::string tab_title =
+        request.has_request_data() && request.request_data().has_tab_title()
+        ? request.request_data().tab_title() : "<No tab title>";
 
     std::string filename =
         request.has_request_data() && request.request_data().has_filename()
@@ -210,11 +232,25 @@ class Handler : public content_analysis::sdk::AgentEventHandler {
     std::cout << "  Expires at: " << ctime(&t);  // Returned string includes \n.
     std::cout << "  Connector: " << connector << std::endl;
     std::cout << "  URL: " << url << std::endl;
+    std::cout << "  Tab title: " << tab_title << std::endl;
     std::cout << "  Filename: " << filename << std::endl;
     std::cout << "  Digest: " << digest << std::endl;
     std::cout << "  Filepath: " << file_path << std::endl;
     std::cout << "  Machine user: " << machine_user << std::endl;
     std::cout << "  Email: " << email << std::endl;
+    if (request.has_print_data() && !print_data_file_path_.empty()) {
+      std::cout << "  Print data saved to: " << print_data_file_path_
+                << std::endl;
+      using content_analysis::sdk::ContentAnalysisEvent;
+      auto print_data =
+          content_analysis::sdk::CreateScopedPrintHandle(event->GetRequest(),
+                   event->GetBrowserInfo().pid);
+      std::ofstream file(print_data_file_path_,
+                         std::ios::out | std::ios::trunc | std::ios::binary);
+      file.write(print_data->data(), print_data->size());
+      file.flush();
+      file.close();
+    }
   }
 
   bool ReadContentFromFile(const std::string& file_path,
@@ -245,6 +281,58 @@ class Handler : public content_analysis::sdk::AgentEventHandler {
     // content is allowed.
     return content.find("block") != std::string::npos;
   }
+
+  unsigned long delay_;
+  std::string print_data_file_path_;
+};
+
+// An AgentEventHandler that dumps requests information to stdout and blocks
+// any requests that have the keyword "block" in their data
+class QueuingHandler : public Handler {
+ public:
+  QueuingHandler(unsigned long delay, const std::string& print_data_file_path)
+      : Handler(delay, print_data_file_path)  {
+    StartBackgroundThread();
+  }
+
+  ~QueuingHandler() override {
+    // Abort background process and wait for it to finish.
+    request_queue_.abort();
+    WaitForBackgroundThread();
+  }
+
+ private:
+  void OnAnalysisRequested(std::unique_ptr<Event> event) override {
+    request_queue_.push(std::move(event));
+  }
+
+  static void* ProcessRequests(void* qh) {
+    QueuingHandler* handler = reinterpret_cast<QueuingHandler*>(qh);
+
+    while (true) {
+      auto event = handler->request_queue_.pop();
+      if (!event)
+        break;
+
+      handler->AnalyzeContent(std::move(event));
+    }
+
+    return 0;
+  }
+
+  // A list of outstanding content analysis requests.
+  RequestQueue request_queue_;
+
+  void StartBackgroundThread() {
+    thread_ = std::make_unique<std::thread>(ProcessRequests, this);
+  }
+
+  void WaitForBackgroundThread() {
+    thread_->join();
+  }
+
+  // Thread id of backgrond thread.
+  std::unique_ptr<std::thread> thread_;
 };
 
 #endif  // CONTENT_ANALYSIS_DEMO_HANDLER_H_

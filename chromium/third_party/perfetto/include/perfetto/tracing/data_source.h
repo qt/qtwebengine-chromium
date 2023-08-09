@@ -70,6 +70,10 @@ template <typename, const internal::TrackEventCategoryRegistry*>
 class TrackEventDataSource;
 }  // namespace internal
 
+namespace test {
+class DataSourceInternalForTest;
+}  // namespace test
+
 // Base class with the virtual methods to get start/stop notifications.
 // Embedders are supposed to derive the templated version below, not this one.
 class PERFETTO_EXPORT_COMPONENT DataSourceBase {
@@ -136,6 +140,24 @@ class PERFETTO_EXPORT_COMPONENT DataSourceBase {
     uint32_t internal_instance_index = 0;
   };
   virtual void WillClearIncrementalState(const ClearIncrementalStateArgs&);
+
+  class FlushArgs {
+   public:
+    virtual ~FlushArgs();
+
+    // HandleFlushAsynchronously() can be called to postpone acknowledging the
+    // flush request. This function returns a closure that must be invoked after
+    // the flush request has been processed. The returned closure can be called
+    // from any thread.
+    virtual std::function<void()> HandleFlushAsynchronously() const = 0;
+
+    // The index of this data source instance (0..kMaxDataSourceInstances - 1).
+    uint32_t internal_instance_index = 0;
+  };
+  // Called when the tracing service requests a Flush. Users can override this
+  // to tell other threads to flush their TraceContext for this data source
+  // (the library cannot execute code on all the threads on its own).
+  virtual void OnFlush(const FlushArgs&);
 };
 
 struct DefaultDataSourceTraits {
@@ -157,10 +179,13 @@ struct DefaultDataSourceTraits {
       internal::DataSourceStaticState* static_state,
       internal::TracingTLS* root_tls) {
     auto* ds_tls = &root_tls->data_sources_tls[static_state->index];
-    // The per-type TLS is either zero-initialized or must have been initialized
-    // for this specific data source type.
-    assert(!ds_tls->static_state ||
-           ds_tls->static_state->index == static_state->index);
+    // ds_tls->static_state can be:
+    // * nullptr
+    // * equal to static_state
+    // * equal to the static state of a different data source, in tests (when
+    //   ResetForTesting() has been used)
+    // In any case, there's no need to do anything, the caller will reinitialize
+    // static_state.
     return ds_tls;
   }
 };
@@ -414,6 +439,7 @@ class DataSource : public DataSourceBase {
   }
 
  private:
+  friend ::perfetto::test::DataSourceInternalForTest;
   // Traits for customizing the behavior of a specific trace point.
   struct DefaultTracePointTraits {
     // By default, every call to DataSource::Trace() will record trace events

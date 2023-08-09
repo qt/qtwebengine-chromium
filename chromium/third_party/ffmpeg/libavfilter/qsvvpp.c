@@ -247,6 +247,10 @@ static int pix_fmt_to_mfx_fourcc(int format)
         return MFX_FOURCC_RGB4;
     case AV_PIX_FMT_P010:
         return MFX_FOURCC_P010;
+#if CONFIG_VAAPI
+    case AV_PIX_FMT_UYVY422:
+        return MFX_FOURCC_UYVY;
+#endif
     }
 
     return MFX_FOURCC_NV12;
@@ -275,6 +279,11 @@ static int map_frame_to_surface(AVFrame *frame, mfxFrameSurface1 *surface)
         surface->Data.G = frame->data[0] + 1;
         surface->Data.R = frame->data[0] + 2;
         surface->Data.A = frame->data[0] + 3;
+        break;
+    case AV_PIX_FMT_UYVY422:
+        surface->Data.Y = frame->data[0] + 1;
+        surface->Data.U = frame->data[0];
+        surface->Data.V = frame->data[0] + 2;
         break;
     default:
         return MFX_ERR_UNSUPPORTED;
@@ -432,7 +441,10 @@ static QSVFrame *submit_frame(QSVVPPContext *s, AVFilterLink *inlink, AVFrame *p
                 return NULL;
             }
 
-            av_frame_copy_props(qsv_frame->frame, picref);
+            if (av_frame_copy_props(qsv_frame->frame, picref) < 0) {
+                av_frame_free(&qsv_frame->frame);
+                return NULL;
+            }
         } else
             qsv_frame->frame = av_frame_clone(picref);
 

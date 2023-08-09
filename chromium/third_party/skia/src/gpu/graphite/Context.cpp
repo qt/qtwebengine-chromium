@@ -13,6 +13,8 @@
 #include "include/gpu/graphite/Recorder.h"
 #include "include/gpu/graphite/Recording.h"
 #include "include/gpu/graphite/TextureInfo.h"
+#include "src/base/SkRectMemcpy.h"
+#include "src/core/SkConvertPixels.h"
 #include "src/gpu/RefCntedCallback.h"
 #include "src/gpu/graphite/BufferManager.h"
 #include "src/gpu/graphite/Caps.h"
@@ -66,7 +68,7 @@ Context::Context(sk_sp<SharedContext> sharedContext,
         , fContextID(ContextID::Next()) {
     // We have to create this outside the initializer list because we need to pass in the Context's
     // SingleOwner object and it is declared last
-    fResourceProvider = fSharedContext->makeResourceProvider(&fSingleOwner);
+    fResourceProvider = fSharedContext->makeResourceProvider(&fSingleOwner, SK_InvalidGenID);
     fMappedBufferManager = std::make_unique<ClientMappedBufferManager>(this->contextID());
     fPlotUploadTracker = std::make_unique<PlotUploadTracker>();
 }
@@ -136,6 +138,11 @@ void Context::asyncReadPixels(const SkImage* image,
                               SkImage::ReadPixelsCallback callback,
                               SkImage::ReadPixelsContext callbackContext) {
     if (!as_IB(image)->isGraphiteBacked()) {
+        callback(callbackContext, nullptr);
+        return;
+    }
+    // TODO(b/238756380): YUVA read not supported right now
+    if (as_IB(image)->isYUVA()) {
         callback(callbackContext, nullptr);
         return;
     }
@@ -212,16 +219,12 @@ void Context::asyncReadPixels(const TextureProxy* proxy,
         SkImage::ReadPixelsCallback* fClientCallback;
         SkImage::ReadPixelsContext fClientContext;
         SkISize fSize;
-        size_t fRowBytes;
         ClientMappedBufferManager* fMappedBufferManager;
         PixelTransferResult fTransferResult;
     };
-    size_t rowBytes = fSharedContext->caps()->getAlignedTextureDataRowBytes(
-            srcRect.width() * SkColorTypeBytesPerPixel(dstColorInfo.colorType()));
     auto* finishContext = new FinishContext{callback,
                                             callbackContext,
                                             srcRect.size(),
-                                            rowBytes,
                                             fMappedBufferManager.get(),
                                             std::move(transferResult)};
     GpuFinishedProc finishCallback = [](GpuFinishedContext c, CallbackResult status) {
@@ -230,7 +233,7 @@ void Context::asyncReadPixels(const TextureProxy* proxy,
             ClientMappedBufferManager* manager = context->fMappedBufferManager;
             auto result = std::make_unique<AsyncReadResult>(manager->ownerID());
             if (!result->addTransferResult(context->fTransferResult, context->fSize,
-                                        context->fRowBytes, manager)) {
+                                           context->fTransferResult.fRowBytes, manager)) {
                 result.reset();
             }
             (*context->fClientCallback)(context->fClientContext, std::move(result));
@@ -303,13 +306,17 @@ Context::PixelTransferResult Context::transferPixels(const TextureProxy* proxy,
     PixelTransferResult result;
     result.fTransferBuffer = std::move(buffer);
     if (srcImageInfo.colorInfo() != dstColorInfo) {
-        result.fPixelConverter = [dims = srcRect.size(), dstColorInfo, srcImageInfo, rowBytes](
+        SkISize dims = srcRect.size();
+        SkImageInfo srcInfo = SkImageInfo::Make(dims, srcImageInfo.colorInfo());
+        SkImageInfo dstInfo = SkImageInfo::Make(dims, dstColorInfo);
+        result.fRowBytes = dstInfo.minRowBytes();
+        result.fPixelConverter = [dstInfo, srcInfo, rowBytes](
                 void* dst, const void* src) {
-            SkImageInfo srcInfo = SkImageInfo::Make(dims, srcImageInfo.colorInfo());
-            SkImageInfo dstInfo = SkImageInfo::Make(dims, dstColorInfo);
             SkAssertResult(SkConvertPixels(dstInfo, dst, dstInfo.minRowBytes(),
                                            srcInfo, src, rowBytes));
         };
+    } else {
+        result.fRowBytes = rowBytes;
     }
 
     return result;

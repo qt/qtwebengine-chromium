@@ -83,31 +83,6 @@ ABSL_DECLARE_FLAG(std::vector<std::string>, flagfile);
 
 namespace centipede::config {
 
-namespace {
-
-// TODO(b/250998535): Move to RemoteFileRead(std::string).
-void RemoteFileGetContents(const std::filesystem::path& path,
-                           std::string& contents) {
-  auto* file = RemoteFileOpen(path.c_str(), "r");
-  CHECK(file != nullptr) << VV(path);
-  ByteArray contents_ba;
-  RemoteFileRead(file, contents_ba);
-  contents.assign(contents_ba.cbegin(), contents_ba.cend());
-  RemoteFileClose(file);
-}
-
-// TODO(b/250998535): Move to RemoteFileWrite(std::string).
-void RemoteFileSetContents(const std::filesystem::path& path,
-                           const std::string& contents) {
-  auto* file = RemoteFileOpen(path.c_str(), "w");
-  CHECK(file != nullptr) << VV(path);
-  ByteArray contents_ba{contents.cbegin(), contents.cend()};
-  RemoteFileAppend(file, contents_ba);
-  RemoteFileClose(file);
-}
-
-}  // namespace
-
 std::vector<char*> CastArgv(const std::vector<std::string>& argv) {
   std::vector<char*> ret_argv;
   ret_argv.reserve(argv.size());
@@ -172,8 +147,9 @@ AugmentedArgvWithCleanup LocalizeConfigFilesInArgv(
   // Always need these (--config=<path> can be passed with a local <path>).
   AugmentedArgvWithCleanup::Replacements replacements = {
       // "-". not "--" to support the shortened "-flag" form as well.
-      {absl::StrCat("-", FLAGS_config.Name()),
-       absl::StrCat("-", FLAGS_flagfile.Name())},
+      // TODO(ussuri): Fix for  usage without =, i.e. `--config <file>`.
+      {absl::StrCat("-", FLAGS_config.Name(), "="),
+       absl::StrCat("-", FLAGS_flagfile.Name(), "=")},
   };
   AugmentedArgvWithCleanup::BackingResourcesCleanup cleanup;
 
@@ -192,7 +168,7 @@ AugmentedArgvWithCleanup LocalizeConfigFilesInArgv(
     RemoteFileSetContents(local_path, contents);
 
     // Augment the argv to point at the local copy and ensure it is cleaned up.
-    replacements.emplace_back(path, local_path);
+    replacements.emplace_back(path.c_str(), local_path.c_str());
     cleanup = [local_path]() { std::filesystem::remove(local_path); };
   }
 

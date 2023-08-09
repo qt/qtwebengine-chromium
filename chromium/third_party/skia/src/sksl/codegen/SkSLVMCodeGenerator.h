@@ -14,11 +14,13 @@
 
 template <typename T> class SkSpan;
 
+#if defined(SK_ENABLE_SKVM)
+
 namespace SkSL {
 
 class FunctionDefinition;
 struct Program;
-class SkVMDebugTrace;
+class DebugTracePriv;
 
 class SkVMCallbacks {
 public:
@@ -36,7 +38,7 @@ public:
 skvm::Color ProgramToSkVM(const Program& program,
                           const FunctionDefinition& function,
                           skvm::Builder* builder,
-                          SkVMDebugTrace* debugTrace,
+                          DebugTracePriv* debugTrace,
                           SkSpan<skvm::Val> uniforms,
                           skvm::Coord device,
                           skvm::Coord local,
@@ -66,14 +68,15 @@ struct SkVMSignature {
 bool ProgramToSkVM(const Program& program,
                    const FunctionDefinition& function,
                    skvm::Builder* b,
-                   SkVMDebugTrace* debugTrace,
+                   DebugTracePriv* debugTrace,
                    SkSpan<skvm::Val> uniforms,
                    SkVMSignature* outSignature = nullptr);
 
 bool testingOnly_ProgramToSkVMShader(const Program& program,
                                      skvm::Builder* builder,
-                                     SkVMDebugTrace* debugTrace);
+                                     DebugTracePriv* debugTrace);
 
 }  // namespace SkSL
 
-#endif
+#endif  // defined(SK_ENABLE_SKVM)
+#endif  // SKSL_VMGENERATOR

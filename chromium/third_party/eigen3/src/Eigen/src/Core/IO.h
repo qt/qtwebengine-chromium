@@ -253,6 +253,11 @@ std::ostream & operator <<
   return internal::print_matrix(s, m.eval(), EIGEN_DEFAULT_IO_FORMAT);
 }
 
+template <typename Derived>
+std::ostream& operator<<(std::ostream& s, const DiagonalBase<Derived>& m) {
+  return internal::print_matrix(s, m.derived(), EIGEN_DEFAULT_IO_FORMAT);
+}
+
 } // end namespace Eigen
 
 #endif // EIGEN_IO_H

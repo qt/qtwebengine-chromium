@@ -36,6 +36,7 @@ class SkRuntimeImageFilter;
 
 namespace SkSL {
 class DebugTrace;
+class DebugTracePriv;
 class ErrorReporter;
 class FunctionDefinition;
 struct Program;
@@ -282,6 +283,7 @@ private:
         kSamplesOutsideMain_Flag = 0x10,
         kUsesColorTransform_Flag = 0x20,
         kAlwaysOpaque_Flag       = 0x40,
+        kAlphaUnchanged_Flag     = 0x80,
     };
 
     SkRuntimeEffect(std::unique_ptr<SkSL::Program> baseProgram,
@@ -307,11 +309,12 @@ private:
     bool samplesOutsideMain() const { return (fFlags & kSamplesOutsideMain_Flag); }
     bool usesColorTransform() const { return (fFlags & kUsesColorTransform_Flag); }
     bool alwaysOpaque()       const { return (fFlags & kAlwaysOpaque_Flag);       }
+    bool isAlphaUnchanged()   const { return (fFlags & kAlphaUnchanged_Flag);     }
 
     const SkFilterColorProgram* getFilterColorProgram() const;
-    const SkSL::RP::Program* getRPProgram() const;
+    const SkSL::RP::Program* getRPProgram(SkSL::DebugTracePriv* debugTrace) const;
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
     friend class GrSkSLFP;             // fBaseProgram, fSampleUsages
     friend class GrGLSLSkSLFP;         //
 #endif
@@ -424,6 +427,11 @@ public:
     BuilderUniform uniform(std::string_view name) { return { this, fEffect->findUniform(name) }; }
     BuilderChild child(std::string_view name) { return { this, fEffect->findChild(name) }; }
 
+    // Get access to the collated uniforms and children (in the order expected by APIs like
+    // makeShader on the effect):
+    sk_sp<const SkData> uniforms() { return fUniforms; }
+    SkSpan<SkRuntimeEffect::ChildPtr> children() { return fChildren; }
+
 protected:
     SkRuntimeEffectBuilder() = delete;
     explicit SkRuntimeEffectBuilder(sk_sp<SkRuntimeEffect> effect)
@@ -440,10 +448,6 @@ protected:
 
     SkRuntimeEffectBuilder& operator=(SkRuntimeEffectBuilder&&) = delete;
     SkRuntimeEffectBuilder& operator=(const SkRuntimeEffectBuilder&) = delete;
-
-    sk_sp<const SkData> uniforms() { return fUniforms; }
-    SkRuntimeEffect::ChildPtr* children() { return fChildren.data(); }
-    size_t numChildren() { return fChildren.size(); }
 
 private:
     void* writableUniformData() {

@@ -791,6 +791,12 @@ typedef enum InterceptId{
     InterceptIdPreCallValidateGetPipelineExecutableInternalRepresentationsKHR,
     InterceptIdPreCallRecordGetPipelineExecutableInternalRepresentationsKHR,
     InterceptIdPostCallRecordGetPipelineExecutableInternalRepresentationsKHR,
+    InterceptIdPreCallValidateMapMemory2KHR,
+    InterceptIdPreCallRecordMapMemory2KHR,
+    InterceptIdPostCallRecordMapMemory2KHR,
+    InterceptIdPreCallValidateUnmapMemory2KHR,
+    InterceptIdPreCallRecordUnmapMemory2KHR,
+    InterceptIdPostCallRecordUnmapMemory2KHR,
     InterceptIdPreCallValidateCmdEncodeVideoKHR,
     InterceptIdPreCallRecordCmdEncodeVideoKHR,
     InterceptIdPostCallRecordCmdEncodeVideoKHR,
@@ -944,6 +950,12 @@ typedef enum InterceptId{
     InterceptIdPreCallValidateCmdSetDiscardRectangleEXT,
     InterceptIdPreCallRecordCmdSetDiscardRectangleEXT,
     InterceptIdPostCallRecordCmdSetDiscardRectangleEXT,
+    InterceptIdPreCallValidateCmdSetDiscardRectangleEnableEXT,
+    InterceptIdPreCallRecordCmdSetDiscardRectangleEnableEXT,
+    InterceptIdPostCallRecordCmdSetDiscardRectangleEnableEXT,
+    InterceptIdPreCallValidateCmdSetDiscardRectangleModeEXT,
+    InterceptIdPreCallRecordCmdSetDiscardRectangleModeEXT,
+    InterceptIdPostCallRecordCmdSetDiscardRectangleModeEXT,
     InterceptIdPreCallValidateSetHdrMetadataEXT,
     InterceptIdPreCallRecordSetHdrMetadataEXT,
     InterceptIdPostCallRecordSetHdrMetadataEXT,
@@ -1046,6 +1058,9 @@ typedef enum InterceptId{
     InterceptIdPreCallValidateCmdDrawMeshTasksIndirectCountNV,
     InterceptIdPreCallRecordCmdDrawMeshTasksIndirectCountNV,
     InterceptIdPostCallRecordCmdDrawMeshTasksIndirectCountNV,
+    InterceptIdPreCallValidateCmdSetExclusiveScissorEnableNV,
+    InterceptIdPreCallRecordCmdSetExclusiveScissorEnableNV,
+    InterceptIdPostCallRecordCmdSetExclusiveScissorEnableNV,
     InterceptIdPreCallValidateCmdSetExclusiveScissorNV,
     InterceptIdPreCallRecordCmdSetExclusiveScissorNV,
     InterceptIdPostCallRecordCmdSetExclusiveScissorNV,
@@ -1466,6 +1481,18 @@ typedef enum InterceptId{
     InterceptIdPreCallValidateCmdOpticalFlowExecuteNV,
     InterceptIdPreCallRecordCmdOpticalFlowExecuteNV,
     InterceptIdPostCallRecordCmdOpticalFlowExecuteNV,
+    InterceptIdPreCallValidateCreateShadersEXT,
+    InterceptIdPreCallRecordCreateShadersEXT,
+    InterceptIdPostCallRecordCreateShadersEXT,
+    InterceptIdPreCallValidateDestroyShaderEXT,
+    InterceptIdPreCallRecordDestroyShaderEXT,
+    InterceptIdPostCallRecordDestroyShaderEXT,
+    InterceptIdPreCallValidateGetShaderBinaryDataEXT,
+    InterceptIdPreCallRecordGetShaderBinaryDataEXT,
+    InterceptIdPostCallRecordGetShaderBinaryDataEXT,
+    InterceptIdPreCallValidateCmdBindShadersEXT,
+    InterceptIdPreCallRecordCmdBindShadersEXT,
+    InterceptIdPostCallRecordCmdBindShadersEXT,
     InterceptIdPreCallValidateGetFramebufferTilePropertiesQCOM,
     InterceptIdPreCallRecordGetFramebufferTilePropertiesQCOM,
     InterceptIdPostCallRecordGetFramebufferTilePropertiesQCOM,
@@ -2402,6 +2429,12 @@ void ValidationObject::InitObjectDispatchVectors() {
     BUILD_DISPATCH_VECTOR(PreCallValidateGetPipelineExecutableInternalRepresentationsKHR);
     BUILD_DISPATCH_VECTOR(PreCallRecordGetPipelineExecutableInternalRepresentationsKHR);
     BUILD_DISPATCH_VECTOR(PostCallRecordGetPipelineExecutableInternalRepresentationsKHR);
+    BUILD_DISPATCH_VECTOR(PreCallValidateMapMemory2KHR);
+    BUILD_DISPATCH_VECTOR(PreCallRecordMapMemory2KHR);
+    BUILD_DISPATCH_VECTOR(PostCallRecordMapMemory2KHR);
+    BUILD_DISPATCH_VECTOR(PreCallValidateUnmapMemory2KHR);
+    BUILD_DISPATCH_VECTOR(PreCallRecordUnmapMemory2KHR);
+    BUILD_DISPATCH_VECTOR(PostCallRecordUnmapMemory2KHR);
 #ifdef VK_ENABLE_BETA_EXTENSIONS
     BUILD_DISPATCH_VECTOR(PreCallValidateCmdEncodeVideoKHR);
     BUILD_DISPATCH_VECTOR(PreCallRecordCmdEncodeVideoKHR);
@@ -2567,6 +2600,12 @@ void ValidationObject::InitObjectDispatchVectors() {
     BUILD_DISPATCH_VECTOR(PreCallValidateCmdSetDiscardRectangleEXT);
     BUILD_DISPATCH_VECTOR(PreCallRecordCmdSetDiscardRectangleEXT);
     BUILD_DISPATCH_VECTOR(PostCallRecordCmdSetDiscardRectangleEXT);
+    BUILD_DISPATCH_VECTOR(PreCallValidateCmdSetDiscardRectangleEnableEXT);
+    BUILD_DISPATCH_VECTOR(PreCallRecordCmdSetDiscardRectangleEnableEXT);
+    BUILD_DISPATCH_VECTOR(PostCallRecordCmdSetDiscardRectangleEnableEXT);
+    BUILD_DISPATCH_VECTOR(PreCallValidateCmdSetDiscardRectangleModeEXT);
+    BUILD_DISPATCH_VECTOR(PreCallRecordCmdSetDiscardRectangleModeEXT);
+    BUILD_DISPATCH_VECTOR(PostCallRecordCmdSetDiscardRectangleModeEXT);
     BUILD_DISPATCH_VECTOR(PreCallValidateSetHdrMetadataEXT);
     BUILD_DISPATCH_VECTOR(PreCallRecordSetHdrMetadataEXT);
     BUILD_DISPATCH_VECTOR(PostCallRecordSetHdrMetadataEXT);
@@ -2677,6 +2716,9 @@ void ValidationObject::InitObjectDispatchVectors() {
     BUILD_DISPATCH_VECTOR(PreCallValidateCmdDrawMeshTasksIndirectCountNV);
     BUILD_DISPATCH_VECTOR(PreCallRecordCmdDrawMeshTasksIndirectCountNV);
     BUILD_DISPATCH_VECTOR(PostCallRecordCmdDrawMeshTasksIndirectCountNV);
+    BUILD_DISPATCH_VECTOR(PreCallValidateCmdSetExclusiveScissorEnableNV);
+    BUILD_DISPATCH_VECTOR(PreCallRecordCmdSetExclusiveScissorEnableNV);
+    BUILD_DISPATCH_VECTOR(PostCallRecordCmdSetExclusiveScissorEnableNV);
     BUILD_DISPATCH_VECTOR(PreCallValidateCmdSetExclusiveScissorNV);
     BUILD_DISPATCH_VECTOR(PreCallRecordCmdSetExclusiveScissorNV);
     BUILD_DISPATCH_VECTOR(PostCallRecordCmdSetExclusiveScissorNV);
@@ -3141,6 +3183,18 @@ void ValidationObject::InitObjectDispatchVectors() {
     BUILD_DISPATCH_VECTOR(PreCallValidateCmdOpticalFlowExecuteNV);
     BUILD_DISPATCH_VECTOR(PreCallRecordCmdOpticalFlowExecuteNV);
     BUILD_DISPATCH_VECTOR(PostCallRecordCmdOpticalFlowExecuteNV);
+    BUILD_DISPATCH_VECTOR(PreCallValidateCreateShadersEXT);
+    BUILD_DISPATCH_VECTOR(PreCallRecordCreateShadersEXT);
+    BUILD_DISPATCH_VECTOR(PostCallRecordCreateShadersEXT);
+    BUILD_DISPATCH_VECTOR(PreCallValidateDestroyShaderEXT);
+    BUILD_DISPATCH_VECTOR(PreCallRecordDestroyShaderEXT);
+    BUILD_DISPATCH_VECTOR(PostCallRecordDestroyShaderEXT);
+    BUILD_DISPATCH_VECTOR(PreCallValidateGetShaderBinaryDataEXT);
+    BUILD_DISPATCH_VECTOR(PreCallRecordGetShaderBinaryDataEXT);
+    BUILD_DISPATCH_VECTOR(PostCallRecordGetShaderBinaryDataEXT);
+    BUILD_DISPATCH_VECTOR(PreCallValidateCmdBindShadersEXT);
+    BUILD_DISPATCH_VECTOR(PreCallRecordCmdBindShadersEXT);
+    BUILD_DISPATCH_VECTOR(PostCallRecordCmdBindShadersEXT);
     BUILD_DISPATCH_VECTOR(PreCallValidateGetFramebufferTilePropertiesQCOM);
     BUILD_DISPATCH_VECTOR(PreCallRecordGetFramebufferTilePropertiesQCOM);
     BUILD_DISPATCH_VECTOR(PostCallRecordGetFramebufferTilePropertiesQCOM);

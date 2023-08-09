@@ -15,7 +15,7 @@
 #endif
 
 #ifdef SK_METAL
-#include "include/private/gpu/graphite/MtlTypesPriv.h"
+#include "include/private/gpu/graphite/MtlGraphiteTypesPriv.h"
 #endif
 
 #ifdef SK_VULKAN
@@ -24,7 +24,7 @@
 
 namespace skgpu::graphite {
 
-class TextureInfo {
+class SK_API TextureInfo {
 public:
     TextureInfo() {}
 #ifdef SK_DAWN

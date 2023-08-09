@@ -29,12 +29,11 @@ public:
     GLWindowContext_xlib(const XlibWindowInfo&, const DisplayParams&);
     ~GLWindowContext_xlib() override;
 
-    void onSwapBuffers() override;
-
     void onDestroyContext() override;
 
 protected:
     sk_sp<const GrGLInterface> onInitializeContext() override;
+    void onSwapBuffers() override;
 
 private:
     GLWindowContext_xlib(void*, const DisplayParams&);
@@ -44,12 +43,10 @@ private:
     GLXFBConfig* fFBConfig;
     XVisualInfo* fVisualInfo;
     GLXContext   fGLContext;
-
-    using INHERITED = GLWindowContext;
 };
 
 GLWindowContext_xlib::GLWindowContext_xlib(const XlibWindowInfo& winInfo, const DisplayParams& params)
-        : INHERITED(params)
+        : GLWindowContext(params)
         , fDisplay(winInfo.fDisplay)
         , fWindow(winInfo.fWindow)
         , fFBConfig(winInfo.fFBConfig)

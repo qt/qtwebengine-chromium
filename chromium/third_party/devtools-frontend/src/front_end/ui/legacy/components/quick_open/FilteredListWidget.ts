@@ -214,12 +214,12 @@ export class FilteredListWidget extends Common.ObjectWrapper.eventMixin<EventTyp
     return this.query.substring(this.prefix.length).trim();
   }
 
-  wasShown(): void {
+  override wasShown(): void {
     this.registerCSSFiles([filteredListWidgetStyles]);
     this.attachProvider();
   }
 
-  willHide(): void {
+  override willHide(): void {
     if (this.provider) {
       this.provider.detach();
     }
@@ -629,6 +629,7 @@ export function getRegisteredProviders(): ProviderRegistration[] {
 export interface ProviderRegistration {
   prefix: string;
   iconName: string;
+  iconWidth: string;
   provider: () => Promise<Provider>;
   titlePrefix: (() => string);
   titleSuggestion?: (() => string);

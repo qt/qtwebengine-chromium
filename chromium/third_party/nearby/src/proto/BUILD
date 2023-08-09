@@ -14,6 +14,8 @@
 
 # Proto for Nearby products
 
+load("@rules_cc//cc:defs.bzl", "cc_proto_library")
+
 licenses(["notice"])
 
 package(default_visibility = ["//visibility:public"])
@@ -30,9 +32,7 @@ java_proto_library(
 
 cc_proto_library(
     name = "connections_enums_cc_proto",
-    deps = [
-        ":connections_enums_proto",
-    ],
+    deps = [":connections_enums_proto"],
 )
 
 proto_library(
@@ -40,12 +40,30 @@ proto_library(
     srcs = ["sharing_enums.proto"],
 )
 
+proto_library(
+    name = "fast_pair_enums_proto",
+    srcs = ["fast_pair_enums.proto"],
+    compatible_with = ["//buildenv/target:non_prod"],
+)
+
+cc_proto_library(
+    name = "fast_pair_enums_cc_proto",
+    deps = [":fast_pair_enums_proto"],
+)
+
+java_proto_library(
+    name = "fast_pair_enums_java_proto",
+    deps = [":fast_pair_enums_proto"],
+)
+
 cc_proto_library(
     name = "sharing_enums_cc_proto",
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":sharing_enums_proto",
+    visibility = [
+        "//:__subpackages__",
+        "//location/nearby/analytics/cpp/logging:__subpackages__",
+        "//location/nearby/cpp/sharing:__subpackages__",
     ],
+    deps = [":sharing_enums_proto"],
 )
 
 java_proto_library(

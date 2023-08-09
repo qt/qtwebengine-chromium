@@ -328,10 +328,10 @@ template<typename Derived> class MatrixBase
 
 /////////// LU module ///////////
 
-    inline const FullPivLU<PlainObject> fullPivLu() const;
-    inline const PartialPivLU<PlainObject> partialPivLu() const;
+    template<typename PermutationIndex = DefaultPermutationIndex> inline const FullPivLU<PlainObject, PermutationIndex> fullPivLu() const;
+    template<typename PermutationIndex = DefaultPermutationIndex> inline const PartialPivLU<PlainObject, PermutationIndex> partialPivLu() const;
 
-    inline const PartialPivLU<PlainObject> lu() const;
+    template<typename PermutationIndex = DefaultPermutationIndex> inline const PartialPivLU<PlainObject, PermutationIndex> lu() const;
 
     EIGEN_DEVICE_FUNC
     inline const Inverse<Derived> inverse() const;

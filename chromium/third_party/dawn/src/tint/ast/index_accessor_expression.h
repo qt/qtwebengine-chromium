@@ -20,7 +20,8 @@
 namespace tint::ast {
 
 /// An index accessor expression
-class IndexAccessorExpression final : public Castable<IndexAccessorExpression, AccessorExpression> {
+class IndexAccessorExpression final
+    : public utils::Castable<IndexAccessorExpression, AccessorExpression> {
   public:
     /// Constructor
     /// @param pid the identifier of the program that owns this node
@@ -33,8 +34,8 @@ class IndexAccessorExpression final : public Castable<IndexAccessorExpression, A
                             const Source& source,
                             const Expression* obj,
                             const Expression* idx);
-    /// Move constructor
-    IndexAccessorExpression(IndexAccessorExpression&&);
+
+    /// Destructor
     ~IndexAccessorExpression() override;
 
     /// Clones this node and all transitive child nodes using the `CloneContext`

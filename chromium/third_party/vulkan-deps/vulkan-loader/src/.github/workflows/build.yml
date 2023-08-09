@@ -14,6 +14,7 @@
 # limitations under the License.
 #
 # Author: Lenny Komow <lenny@lunarg.com>
+# Author: Charles Giessen <charles@lunarg.com>
 
 name: CI Build
 
@@ -22,6 +23,8 @@ on:
     pull_request:
         branches:
             - main
+
+permissions: read-all
 
 jobs:
     linux:
@@ -32,7 +35,7 @@ jobs:
                 cc: [ gcc, clang ]
                 cxx: [ g++, clang++ ]
                 config: [ Debug, Release ]
-                os: [ ubuntu-18.04, ubuntu-20.04 ]
+                os: [ ubuntu-20.04, ubuntu-22.04 ]
                 exclude:
                     - cc: gcc
                       cxx: clang++
@@ -52,7 +55,7 @@ jobs:
               run: sudo apt install --yes --no-install-recommends libwayland-dev libxrandr-dev
 
             - name: Generate build files
-              run: cmake -S. -B build -D CMAKE_BUILD_TYPE=${{matrix.config}} -D BUILD_TESTS=ON -D UPDATE_DEPS=ON -D TEST_USE_ADDRESS_SANITIZER=ON
+              run: cmake -S. -B build -D CMAKE_BUILD_TYPE=${{matrix.config}} -D BUILD_TESTS=ON -D UPDATE_DEPS=ON -D LOADER_ENABLE_ADDRESS_SANITIZER=ON
               env:
                 CC: ${{matrix.cc}}
                 CXX: ${{matrix.cxx}}
@@ -81,7 +84,7 @@ jobs:
                 cc: [ gcc, clang ]
                 cxx: [ g++, clang++ ]
                 config: [ Debug, Release ]
-                os: [ ubuntu-18.04, ubuntu-20.04 ]
+                os: [ ubuntu-20.04, ubuntu-22.04 ]
                 exclude:
                     - cc: gcc
                       cxx: clang++
@@ -100,7 +103,7 @@ jobs:
               run: |-
                 sudo dpkg --add-architecture i386
                 sudo apt-get update
-                sudo apt install --yes --no-install-recommends gcc-multilib g++-multilib libc6-dev-i386 pkg-config-i686-linux-gnu libwayland-dev:i386 libxrandr-dev:i386
+                sudo apt install --yes --no-install-recommends gcc-multilib g++-multilib libc6-dev-i386 libwayland-dev:i386 libxrandr-dev:i386
             - name: Generate build files
               run: cmake -S. -B build -D CMAKE_BUILD_TYPE=${{matrix.config}} -D BUILD_TESTS=ON -D UPDATE_DEPS=ON
               env:
@@ -166,7 +169,7 @@ jobs:
                 python-version: '3.7'
             - uses: lukka/get-cmake@latest
             - name: Generate build files
-              run: cmake -S. -B build -DCMAKE_BUILD_TYPE=${{matrix.config}} -D${{matrix.static_build}} -DBUILD_TESTS=ON -DUPDATE_DEPS=ON -DTEST_USE_ADDRESS_SANITIZER=ON -G "Ninja"
+              run: cmake -S. -B build -D CMAKE_BUILD_TYPE=${{matrix.config}} -D ${{matrix.static_build}} -D BUILD_TESTS=ON -D UPDATE_DEPS=ON -D LOADER_ENABLE_ADDRESS_SANITIZER=ON -G "Ninja"
               env:
                 # Specify the minimum version of macOS on which the target binaries are to be deployed.
                 # https://cmake.org/cmake/help/latest/envvar/MACOSX_DEPLOYMENT_TARGET.html

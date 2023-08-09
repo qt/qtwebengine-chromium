@@ -48,7 +48,7 @@
 #include "src/traced/probes/power/linux_power_sysfs_data_source.h"
 #include "src/traced/probes/probes_data_source.h"
 #include "src/traced/probes/ps/process_stats_data_source.h"
-#include "src/traced/probes/statsd_client/statsd_data_source.h"
+#include "src/traced/probes/statsd_client/statsd_binder_data_source.h"
 #include "src/traced/probes/sys_stats/sys_stats_data_source.h"
 #include "src/traced/probes/system_info/system_info_data_source.h"
 
@@ -129,8 +129,7 @@ ProbesProducer::CreateDSInstance<FtraceDataSource>(
   ftrace_config.ParseFromString(config.ftrace_config_raw());
   // Lazily create on the first instance.
   if (!ftrace_) {
-    ftrace_ = FtraceController::Create(task_runner_, this,
-                                       ftrace_config.preserve_ftrace_buffer());
+    ftrace_ = FtraceController::Create(task_runner_, this);
 
     if (!ftrace_) {
       PERFETTO_ELOG("Failed to create FtraceController");
@@ -179,13 +178,13 @@ ProbesProducer::CreateDSInstance<ProcessStatsDataSource>(
 
 template <>
 std::unique_ptr<ProbesDataSource>
-ProbesProducer::CreateDSInstance<StatsdDataSource>(
+ProbesProducer::CreateDSInstance<StatsdBinderDataSource>(
     TracingSessionID session_id,
     const DataSourceConfig& config) {
   auto buffer_id = static_cast<BufferID>(config.target_buffer());
-  return std::unique_ptr<StatsdDataSource>(
-      new StatsdDataSource(task_runner_, session_id,
-                           endpoint_->CreateTraceWriter(buffer_id), config));
+  return std::unique_ptr<StatsdBinderDataSource>(new StatsdBinderDataSource(
+      task_runner_, session_id, endpoint_->CreateTraceWriter(buffer_id),
+      config));
 }
 
 template <>
@@ -326,7 +325,9 @@ constexpr const DataSourceTraits kAllDataSources[] = {
     Ds<MetatraceDataSource>(),
     Ds<PackagesListDataSource>(),
     Ds<ProcessStatsDataSource>(),
-    Ds<StatsdDataSource>(),
+#if PERFETTO_BUILDFLAG(PERFETTO_ANDROID_BUILD)
+    Ds<StatsdBinderDataSource>(),
+#endif
     Ds<SysStatsDataSource>(),
     Ds<SystemInfoDataSource>(),
 };

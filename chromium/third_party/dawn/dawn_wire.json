@@ -219,6 +219,7 @@
             "TextureGetUsage"
         ],
         "client_handwritten_commands": [
+            "AdapterGetInstance",
             "BufferDestroy",
             "BufferUnmap",
             "DeviceCreateErrorBuffer",
@@ -227,6 +228,7 @@
             "DeviceCreateErrorTexture",
             "DeviceGetAdapter",
             "DeviceGetQueue",
+            "DeviceGetSupportedSurfaceUsage",
             "DeviceInjectError"
         ],
         "client_special_objects": [

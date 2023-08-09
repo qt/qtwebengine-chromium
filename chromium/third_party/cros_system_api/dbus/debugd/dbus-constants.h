@@ -32,7 +32,7 @@ const char kSystraceStatus[] = "SystraceStatus";
 const char kGetLog[] = "GetLog";
 const char kGetAllLogs[] = "GetAllLogs";
 const char kGetFeedbackLogsV2[] = "GetFeedbackLogsV2";
-const char kGetFeedbackLogsV3[] = "kGetFeedbackLogsV3";
+const char kGetFeedbackLogsV3[] = "GetFeedbackLogsV3";
 const char kKstaledSetRatio[] = "KstaledSetRatio";
 const char kTestICMP[] = "TestICMP";
 const char kTestICMPWithOptions[] = "TestICMPWithOptions";
@@ -150,6 +150,7 @@ enum FeedbackLogType {
   PERF_DATA = 7,
   OS_RELEASE_INFO = 8,
   VAR_LOG_FILES = 9,
+  PMT_DATA = 10,
 };
 
 // PrintscanDebugCategories flags. These values must align with those in

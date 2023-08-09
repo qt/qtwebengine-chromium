@@ -34,7 +34,8 @@ TEST_F(HlslGeneratorImplTest, UnsupportedExtension) {
     GeneratorImpl& gen = Build();
 
     ASSERT_FALSE(gen.Generate());
-    EXPECT_EQ(gen.error(), R"(12:34 error: HLSL backend does not support extension 'undefined')");
+    EXPECT_EQ(gen.Diagnostics().str(),
+              R"(12:34 error: HLSL backend does not support extension 'undefined')");
 }
 
 TEST_F(HlslGeneratorImplTest, Generate) {
@@ -42,7 +43,7 @@ TEST_F(HlslGeneratorImplTest, Generate) {
 
     GeneratorImpl& gen = Build();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(void my_func() {
 }
 )");
@@ -53,7 +54,9 @@ struct HlslBuiltinData {
     const char* attribute_name;
 };
 inline std::ostream& operator<<(std::ostream& out, HlslBuiltinData data) {
-    out << data.builtin;
+    utils::StringStream str;
+    str << data.builtin;
+    out << str.str();
     return out;
 }
 using HlslBuiltinConversionTest = TestParamHelper<HlslBuiltinData>;

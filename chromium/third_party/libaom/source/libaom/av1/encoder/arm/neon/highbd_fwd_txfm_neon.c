@@ -2350,37 +2350,30 @@ void av1_fadst4_new_neon(const int32x4_t *input, int32x4_t *output,
   cospi = cospi_arr(cos_bit);
   for (col = 0; col < col_num; col++) {
     // stage 0;
-    int32_t stage_idx = 0;
     int j;
     for (j = 0; j < 4; ++j) {
       buf0[j] = input[j * col_num + col];
     }
 
     // stage 1
-    stage_idx++;
     buf1[0] = buf0[3];
     buf1[1] = buf0[0];
     buf1[2] = buf0[1];
     buf1[3] = buf0[2];
 
     // stage 2
-    stage_idx++;
-
     btf_32_neon_type0(cospi[8], cospi[56], buf1[0], buf1[1], buf0[0], buf0[1],
                       v_cos_bit);
     btf_32_neon_type0(cospi[40], cospi[24], buf1[2], buf1[3], buf0[2], buf0[3],
                       v_cos_bit);
 
     // stage 3
-    stage_idx++;
     buf1[0] = vaddq_s32(buf0[0], buf0[2]);
     buf1[2] = vsubq_s32(buf0[0], buf0[2]);
     buf1[1] = vaddq_s32(buf0[1], buf0[3]);
     buf1[3] = vsubq_s32(buf0[1], buf0[3]);
 
     // stage 4
-    stage_idx++;
-
     cospi = cospi_arr(cos_bit);
     buf0[0] = buf1[0];
     buf0[1] = buf1[1];
@@ -2389,7 +2382,6 @@ void av1_fadst4_new_neon(const int32x4_t *input, int32x4_t *output,
                       v_cos_bit);
 
     // stage 5
-    stage_idx++;
     buf1[0] = buf0[0];
     buf1[1] = vnegq_s32(buf0[2]);
     buf1[2] = buf0[3];

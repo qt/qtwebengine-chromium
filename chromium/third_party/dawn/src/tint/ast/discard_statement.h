@@ -20,15 +20,15 @@
 namespace tint::ast {
 
 /// A discard statement
-class DiscardStatement final : public Castable<DiscardStatement, Statement> {
+class DiscardStatement final : public utils::Castable<DiscardStatement, Statement> {
   public:
     /// Constructor
     /// @param pid the identifier of the program that owns this node
     /// @param nid the unique node identifier
     /// @param src the source of this node
     DiscardStatement(ProgramID pid, NodeID nid, const Source& src);
-    /// Move constructor
-    DiscardStatement(DiscardStatement&&);
+
+    /// Destructor
     ~DiscardStatement() override;
 
     /// Clones this node and all transitive child nodes using the `CloneContext`

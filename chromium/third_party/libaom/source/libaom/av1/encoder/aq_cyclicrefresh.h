@@ -117,7 +117,6 @@ struct CYCLIC_REFRESH {
 
   /*!\cond */
   int qindex_delta[3];
-  double weight_segment;
   int apply_cyclic_refresh;
   int skip_over4x4;
   int counter_encode_maxq_scene_change;

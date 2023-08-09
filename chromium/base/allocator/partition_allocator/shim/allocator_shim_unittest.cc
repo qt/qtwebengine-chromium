@@ -19,7 +19,6 @@
 #include "base/memory/page_size.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/threading/platform_thread.h"
-#include "base/threading/thread_local.h"
 #include "build/build_config.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -29,6 +28,7 @@
 #include <windows.h>
 #elif BUILDFLAG(IS_APPLE)
 #include <malloc/malloc.h>
+
 #include "base/allocator/partition_allocator/shim/allocator_interception_mac.h"
 #include "third_party/apple_apsl/malloc.h"
 #else
@@ -108,12 +108,13 @@ class AllocatorShimTest : public testing::Test {
                            size_t size,
                            void* context) {
     if (instance_) {
-      // Size 0xFEED a special sentinel for the NewHandlerConcurrency test.
+      // Size 0xFEED is a special sentinel for the NewHandlerConcurrency test.
       // Hitting it for the first time will cause a failure, causing the
       // invocation of the std::new_handler.
       if (size == 0xFEED) {
-        if (!instance_->did_fail_realloc_0xfeed_once->Get()) {
-          instance_->did_fail_realloc_0xfeed_once->Set(true);
+        thread_local bool did_fail_realloc_0xfeed_once = false;
+        if (!did_fail_realloc_0xfeed_once) {
+          did_fail_realloc_0xfeed_once = true;
           return nullptr;
         }
         return address;
@@ -258,7 +259,6 @@ class AllocatorShimTest : public testing::Test {
     aligned_reallocs_intercepted_by_size.resize(MaxSizeTracked());
     aligned_reallocs_intercepted_by_addr.resize(MaxSizeTracked());
     aligned_frees_intercepted_by_addr.resize(MaxSizeTracked());
-    did_fail_realloc_0xfeed_once = std::make_unique<base::ThreadLocalBoolean>();
     num_new_handler_calls.store(0, std::memory_order_release);
     instance_ = this;
 
@@ -300,7 +300,6 @@ class AllocatorShimTest : public testing::Test {
   std::vector<size_t> aligned_reallocs_intercepted_by_size;
   std::vector<size_t> aligned_reallocs_intercepted_by_addr;
   std::vector<size_t> aligned_frees_intercepted_by_addr;
-  std::unique_ptr<base::ThreadLocalBoolean> did_fail_realloc_0xfeed_once;
   std::atomic<uint32_t> num_new_handler_calls;
 
  private:
@@ -732,6 +731,28 @@ TEST_F(AllocatorShimTest, InterceptVasprintf) {
   stream << std::setprecision(1) << std::showpoint << std::fixed << 1.e38;
   EXPECT_GT(stream.str().size(), 30u);
   // Should not crash.
+}
+
+TEST_F(AllocatorShimTest, InterceptLongVasprintf) {
+  char* str = nullptr;
+  const char* lorem_ipsum =
+      "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed non risus. "
+      "Suspendisse lectus tortor, dignissim sit amet, adipiscing nec, "
+      "ultricies sed, dolor. Cras elementum ultrices diam. Maecenas ligula "
+      "massa, varius a, semper congue, euismod non, mi. Proin porttitor, orci "
+      "nec nonummy molestie, enim est eleifend mi, non fermentum diam nisl sit "
+      "amet erat. Duis semper. Duis arcu massa, scelerisque vitae, consequat "
+      "in, pretium a, enim. Pellentesque congue. Ut in risus volutpat libero "
+      "pharetra tempor. Cras vestibulum bibendum augue. Praesent egestas leo "
+      "in pede. Praesent blandit odio eu enim. Pellentesque sed dui ut augue "
+      "blandit sodales. Vestibulum ante ipsum primis in faucibus orci luctus "
+      "et ultrices posuere cubilia Curae; Aliquam nibh. Mauris ac mauris sed "
+      "pede pellentesque fermentum. Maecenas adipiscing ante non diam sodales "
+      "hendrerit.";
+  int err = asprintf(&str, "%s", lorem_ipsum);
+  EXPECT_EQ(err, static_cast<int>(strlen(lorem_ipsum)));
+  EXPECT_TRUE(str);
+  free(str);
 }
 
 #endif  // BUILDFLAG(USE_PARTITION_ALLOC_AS_MALLOC)

@@ -7,17 +7,26 @@
 
 #include "include/core/SkYUVAPixmaps.h"
 
-#include "src/core/SkConvertPixels.h"
+#include "include/core/SkAlphaType.h"
+#include "include/private/base/SkDebug.h"
+#include "src/base/SkRectMemcpy.h"
 #include "src/core/SkImageInfoPriv.h"
 #include "src/core/SkYUVAInfoLocation.h"
 
-#if SK_SUPPORT_GPU
+#include <algorithm>
+#include <cstdint>
+#include <utility>
+
+#if defined(SK_GANESH)
+#include "include/gpu/GpuTypes.h"
+#include "include/gpu/GrBackendSurface.h"
+#include "include/gpu/GrTypes.h"
 #include "include/private/gpu/ganesh/GrImageContext.h"
 #endif
 
 
 SkYUVAPixmapInfo::SupportedDataTypes::SupportedDataTypes(const GrImageContext& context) {
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
     for (int n = 1; n <= 4; ++n) {
         if (context.defaultBackendFormat(DefaultColorTypeForDataType(DataType::kUnorm8, n),
                                          GrRenderable::kNo).isValid()) {

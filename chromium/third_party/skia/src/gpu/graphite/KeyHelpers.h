@@ -8,6 +8,7 @@
 #ifndef skgpu_graphite_KeyHelpers_DEFINED
 #define skgpu_graphite_KeyHelpers_DEFINED
 
+#include "include/core/SkBitmap.h"
 #include "include/core/SkBlendMode.h"
 #include "include/core/SkM44.h"
 #include "include/core/SkSamplingOptions.h"
@@ -32,6 +33,16 @@ class PipelineDataGatherer;
 class UniquePaintParamsID;
 enum class ReadSwizzle;
 
+// Types of logical "destinations" that a blender might blend with.
+enum class DstColorType {
+    // A color read from the framebuffer.
+    kSurface,
+    // A color provided by geometry.
+    kPrimitive,
+    // A color evaluated by a child shader.
+    kChildOutput,
+};
+
 /**
  * The KeyHelpers can be used to manually construct an SkPaintParamsKey.
  *
@@ -40,36 +51,24 @@ enum class ReadSwizzle;
  * as parent-child relationships.
  */
 
-struct PassthroughShaderBlock {
-
+struct PriorOutputBlock {
     static void BeginBlock(const KeyContext&,
                            PaintParamsKeyBuilder*,
                            PipelineDataGatherer*);
-
-};
-
-struct PassthroughBlenderBlock {
-
-    static void BeginBlock(const KeyContext&,
-                           PaintParamsKeyBuilder*,
-                           PipelineDataGatherer*);
-
 };
 
 struct SolidColorShaderBlock {
-
     static void BeginBlock(const KeyContext&,
                            PaintParamsKeyBuilder*,
                            PipelineDataGatherer*,
                            const SkPMColor4f&);
-
 };
 
 struct GradientShaderBlocks {
-
     struct GradientData {
-        // TODO: For the sprint we only support 8 stops in the gradients
-        static constexpr int kMaxStops = 8;
+        // The number of stops stored internal to this data structure before falling back to
+        // bitmap storage.
+        static constexpr int kNumInternalStorageStops = 8;
 
         // This ctor is used during pre-compilation when we don't have enough information to
         // extract uniform data. However, we must be able to provide enough data to make all the
@@ -86,22 +85,11 @@ struct GradientShaderBlocks {
                      int numStops,
                      const SkPMColor4f* colors,
                      float* offsets,
+                     sk_sp<TextureProxy> colorsAndOffsetsProxy,
                      const SkGradientShader::Interpolation&);
 
-        bool operator==(const GradientData& rhs) const {
-            return fType == rhs.fType &&
-                   fPoints[0] == rhs.fPoints[0] &&
-                   fPoints[1] == rhs.fPoints[1] &&
-                   fRadii[0] == rhs.fRadii[0] &&
-                   fRadii[1] == rhs.fRadii[1] &&
-                   fBias == rhs.fBias &&
-                   fScale == rhs.fScale &&
-                   fTM == rhs.fTM &&
-                   fNumStops == rhs.fNumStops &&
-                   !memcmp(fColors, rhs.fColors, sizeof(fColors)) &&
-                   !memcmp(fOffsets, rhs.fOffsets, sizeof(fOffsets));
-        }
-        bool operator!=(const GradientData& rhs) const { return !(*this == rhs); }
+        bool operator==(const GradientData& rhs) const = delete;
+        bool operator!=(const GradientData& rhs) const = delete;
 
         // Layout options.
         SkShaderBase::GradientType fType;
@@ -114,8 +102,12 @@ struct GradientShaderBlocks {
 
         SkTileMode             fTM;
         int                    fNumStops;
-        SkPMColor4f            fColors[kMaxStops];
-        float                  fOffsets[kMaxStops];
+
+        // For gradients w/ <= kNumInternalStorageStops stops we use fColors and fOffsets.
+        // Otherwise we use fColorsAndOffsetsProxy.
+        SkPMColor4f            fColors[kNumInternalStorageStops];
+        float                  fOffsets[kNumInternalStorageStops];
+        sk_sp<TextureProxy>    fColorsAndOffsetsProxy;
 
         SkGradientShader::Interpolation fInterpolation;
     };
@@ -124,11 +116,9 @@ struct GradientShaderBlocks {
                            PaintParamsKeyBuilder*,
                            PipelineDataGatherer*,
                            const GradientData&);
-
 };
 
 struct LocalMatrixShaderBlock {
-
     struct LMShaderData {
         LMShaderData(const SkMatrix& localMatrix)
                 : fLocalMatrix(localMatrix) {
@@ -141,11 +131,9 @@ struct LocalMatrixShaderBlock {
                            PaintParamsKeyBuilder*,
                            PipelineDataGatherer*,
                            const LMShaderData*);
-
 };
 
 struct ImageShaderBlock {
-
     struct ImageData {
         ImageData(const SkSamplingOptions& sampling,
                   SkTileMode tileModeX,
@@ -171,32 +159,91 @@ struct ImageShaderBlock {
                            PaintParamsKeyBuilder*,
                            PipelineDataGatherer*,
                            const ImageData*);
-
 };
 
-struct PorterDuffBlendShaderBlock {
-    struct PorterDuffBlendShaderData {
-        SkSpan<const float> fPorterDuffConstants;
+struct CoordClampShaderBlock {
+    struct CoordClampData {
+        CoordClampData(SkRect subset) : fSubset(subset) {}
+
+        SkRect fSubset;
     };
 
+    // The gatherer and data should be null or non-null together
     static void BeginBlock(const KeyContext&,
                            PaintParamsKeyBuilder*,
                            PipelineDataGatherer*,
-                           const PorterDuffBlendShaderData&);
+                           const CoordClampData*);
+};
+
+struct DitherShaderBlock {
+    struct DitherData {
+        DitherData(float range) : fRange(range) {}
+
+        float fRange;
+    };
+
+    // The gatherer and data should be null or non-null together
+    static void BeginBlock(const KeyContext&,
+                           PaintParamsKeyBuilder*,
+                           PipelineDataGatherer*,
+                           const DitherData*);
+};
+
+struct PerlinNoiseShaderBlock {
+    enum class Type {
+        kFractalNoise,
+        kTurbulence,
+    };
+
+    struct PerlinNoiseData {
+        PerlinNoiseData(Type type,
+                        SkVector baseFrequency,
+                        int numOctaves,
+                        SkISize stitchData)
+            : fType(type)
+            , fBaseFrequency(baseFrequency)
+            , fNumOctaves(numOctaves)
+            , fStitchData{ SkIntToFloat(stitchData.fWidth), SkIntToFloat(stitchData.fHeight) } {
+        }
+
+        bool stitching() const { return !fStitchData.isZero(); }
+
+        Type fType;
+        SkVector fBaseFrequency;
+        int fNumOctaves;
+        SkVector fStitchData;
+
+        sk_sp<TextureProxy> fPermutationsProxy;
+        sk_sp<TextureProxy> fNoiseProxy;
+    };
+
+    // The gatherer and data should be null or non-null together
+    static void BeginBlock(const KeyContext&,
+                           PaintParamsKeyBuilder*,
+                           PipelineDataGatherer*,
+                           const PerlinNoiseData*);
 };
 
 struct BlendShaderBlock {
-    /**
-     * Blend shader blocks are used to blend the output of two shaders.
-     */
-    struct BlendShaderData {
-        SkBlendMode fBM;
-    };
+    static void BeginBlock(const KeyContext&, PaintParamsKeyBuilder*, PipelineDataGatherer*);
+};
 
+struct BlendModeBlenderBlock {
     static void BeginBlock(const KeyContext&,
                            PaintParamsKeyBuilder*,
                            PipelineDataGatherer*,
-                           const BlendShaderData&);
+                           SkBlendMode blendMode);
+};
+
+struct CoeffBlenderBlock {
+    static void BeginBlock(const KeyContext&,
+                           PaintParamsKeyBuilder*,
+                           PipelineDataGatherer*,
+                           SkSpan<const float> coeffs);
+};
+
+struct PrimitiveColorBlock {
+    static void BeginBlock(const KeyContext&, PaintParamsKeyBuilder*, PipelineDataGatherer*);
 };
 
 struct ColorFilterShaderBlock {
@@ -229,26 +276,6 @@ struct MatrixColorFilterBlock {
                            const MatrixColorFilterData*);
 };
 
-struct BlendColorFilterBlock {
-    /**
-     * Blend color filter blocks are used to blend the output of a shader with a color uniform.
-     */
-    struct BlendColorFilterData {
-        BlendColorFilterData(SkBlendMode blendMode, const SkPMColor4f& srcColor)
-                : fBlendMode(blendMode)
-                , fSrcColor(srcColor) {
-        }
-
-        SkBlendMode fBlendMode;
-        SkPMColor4f fSrcColor;
-    };
-
-    static void BeginBlock(const KeyContext&,
-                           PaintParamsKeyBuilder*,
-                           PipelineDataGatherer*,
-                           const BlendColorFilterData*);
-};
-
 struct ComposeColorFilterBlock {
     static void BeginBlock(const KeyContext&,
                            PaintParamsKeyBuilder*,
@@ -257,7 +284,7 @@ struct ComposeColorFilterBlock {
 
 struct TableColorFilterBlock {
     struct TableColorFilterData {
-        TableColorFilterData();
+        TableColorFilterData(sk_sp<TextureProxy> proxy) : fTextureProxy(std::move(proxy)) {}
 
         sk_sp<TextureProxy> fTextureProxy;
     };
@@ -289,27 +316,32 @@ struct ColorSpaceTransformBlock {
                            const ColorSpaceTransformData*);
 };
 
-struct BlendModeBlock {
-    /**
-     * Blend mode blocks are used to blend a color attachment with the output of a shader.
-     */
-    static void BeginBlock(const KeyContext&,
-                           PaintParamsKeyBuilder*,
-                           PipelineDataGatherer*,
-                           SkBlendMode);
-};
+/**
+ * Dst blend blocks are used to blend the output of a shader with a color attachment.
+ */
+void AddDstBlendBlock(const KeyContext&,
+                      PaintParamsKeyBuilder*,
+                      PipelineDataGatherer*,
+                      const SkBlender*);
 
-struct PrimitiveBlendModeBlock {
-    /**
-     * Primitive blend mode blocks are used to blend a primitive color emitted by certain draw
-     * geometry calls (drawVertices, drawAtlas, etc.) with either the paint color or the output of
-     * another shader. Dst: primitiveColor Src: Paint color/shader output
-     */
-    static void BeginBlock(const KeyContext&,
-                           PaintParamsKeyBuilder*,
-                           PipelineDataGatherer*,
-                           SkBlendMode);
-};
+/**
+ * Primitive blend blocks are used to blend either the paint color or the output of another shader
+ * with a primitive color emitted by certain draw geometry calls (drawVertices, drawAtlas, etc.).
+ * Dst: primitiveColor Src: Paint color/shader output
+ */
+void AddPrimitiveBlendBlock(const KeyContext&,
+                            PaintParamsKeyBuilder*,
+                            PipelineDataGatherer*,
+                            const SkBlender*);
+
+/**
+ * Color filter blend blocks are used to blend a color uniform with the output of a shader.
+ */
+void AddColorBlendBlock(const KeyContext&,
+                        PaintParamsKeyBuilder*,
+                        PipelineDataGatherer*,
+                        SkBlendMode,
+                        const SkPMColor4f& srcColor);
 
 struct RuntimeEffectBlock {
     struct ShaderData {

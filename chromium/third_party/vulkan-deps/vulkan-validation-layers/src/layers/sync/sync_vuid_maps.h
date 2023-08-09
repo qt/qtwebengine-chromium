@@ -18,12 +18,13 @@
 #pragma once
 #include <string>
 #include <vulkan/vulkan_core.h>
-#include "vk_layer_data.h"
+#include "containers/custom_containers.h"
 
 namespace core_error {
 struct Location;
 }
 
+struct DeviceExtensions;
 struct SubresourceRangeErrorCodes;
 
 namespace sync_vuid_maps {
@@ -31,7 +32,7 @@ using core_error::Location;
 
 extern const std::map<VkPipelineStageFlags2KHR, std::string> kFeatureNameMap;
 
-const std::string &GetBadFeatureVUID(const Location &loc, VkPipelineStageFlags2KHR bit);
+const std::string &GetBadFeatureVUID(const Location &loc, VkPipelineStageFlags2 bit, const DeviceExtensions &device_extensions);
 
 const std::string &GetBadAccessFlagsVUID(const Location &loc, VkAccessFlags2KHR bit);
 
@@ -43,7 +44,6 @@ enum class QueueError {
     kSrcAndDstValidOrSpecial,
     kSrcAndDestMustBeIgnore,
     kSrcAndDstBothValid,
-    kSubmitQueueMustMatchSrcOrDst,
 };
 
 extern const std::map<QueueError, std::string> kQueueErrorSummary;
@@ -67,6 +67,8 @@ enum class ImageError {
     kConflictingLayout,
     kBadLayout,
     kBadAttFeedbackLoopLayout,
+    kBadSync2OldLayout,
+    kBadSync2NewLayout,
     kNotColorAspect,
     kNotColorAspectYcbcr,
     kBadMultiplanarAspect,
@@ -74,6 +76,8 @@ enum class ImageError {
     kNotDepthOrStencilAspect,
     kNotDepthAndStencilAspect,
     kNotSeparateDepthAndStencilAspect,
+    kSeparateDepthWithStencilLayout,
+    kSeparateStencilhWithDepthLayout,
     kRenderPassMismatch,
     kRenderPassLayoutChange,
 };
@@ -108,4 +112,4 @@ enum class SubmitError {
 
 const std::string &GetQueueSubmitVUID(const Location &loc, SubmitError error);
 
-};  // namespace sync_vuid_maps
+}  // namespace sync_vuid_maps

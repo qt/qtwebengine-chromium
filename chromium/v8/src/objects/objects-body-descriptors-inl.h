@@ -21,6 +21,7 @@
 #include "src/objects/free-space-inl.h"
 #include "src/objects/hash-table.h"
 #include "src/objects/heap-number.h"
+#include "src/objects/instance-type.h"
 #include "src/objects/js-array-buffer.h"
 #include "src/objects/js-atomics-synchronization-inl.h"
 #include "src/objects/js-collection.h"
@@ -617,6 +618,25 @@ class PreparseData::BodyDescriptor final : public BodyDescriptorBase {
   }
 };
 
+class SharedFunctionInfo::BodyDescriptor final : public BodyDescriptorBase {
+ public:
+  static bool IsValidSlot(Map map, HeapObject obj, int offset) {
+    return offset >= HeapObject::kHeaderSize &&
+           offset < kEndOfStrongFieldsOffset;
+  }
+
+  template <typename ObjectVisitor>
+  static inline void IterateBody(Map map, HeapObject obj, int object_size,
+                                 ObjectVisitor* v) {
+    IterateCustomWeakPointers(obj, kStartOfWeakFieldsOffset,
+                              kEndOfWeakFieldsOffset, v);
+    IteratePointers(obj, kStartOfStrongFieldsOffset, kEndOfStrongFieldsOffset,
+                    v);
+  }
+
+  static inline int SizeOf(Map map, HeapObject raw_object) { return kSize; }
+};
+
 class PromiseOnStack::BodyDescriptor final : public BodyDescriptorBase {
  public:
   static bool IsValidSlot(Map map, HeapObject obj, int offset) {
@@ -899,14 +919,14 @@ class WasmNull::BodyDescriptor final : public BodyDescriptorBase {
 
 #endif  // V8_ENABLE_WEBASSEMBLY
 
-class ExternalOneByteString::BodyDescriptor final : public BodyDescriptorBase {
+class ExternalString::BodyDescriptor final : public BodyDescriptorBase {
  public:
   static bool IsValidSlot(Map map, HeapObject obj, int offset) { return false; }
 
   template <typename ObjectVisitor>
   static inline void IterateBody(Map map, HeapObject obj, int object_size,
                                  ObjectVisitor* v) {
-    ExternalString string = ExternalString::cast(obj);
+    ExternalString string = ExternalString::unchecked_cast(obj);
     v->VisitExternalPointer(obj,
                             string.RawExternalPointerField(kResourceOffset),
                             kExternalStringResourceTag);
@@ -916,27 +936,12 @@ class ExternalOneByteString::BodyDescriptor final : public BodyDescriptorBase {
                             kExternalStringResourceDataTag);
   }
 
-  static inline int SizeOf(Map map, HeapObject object) { return kSize; }
-};
-
-class ExternalTwoByteString::BodyDescriptor final : public BodyDescriptorBase {
- public:
-  static bool IsValidSlot(Map map, HeapObject obj, int offset) { return false; }
-
-  template <typename ObjectVisitor>
-  static inline void IterateBody(Map map, HeapObject obj, int object_size,
-                                 ObjectVisitor* v) {
-    ExternalString string = ExternalString::cast(obj);
-    v->VisitExternalPointer(obj,
-                            string.RawExternalPointerField(kResourceOffset),
-                            kExternalStringResourceTag);
-    if (string.is_uncached()) return;
-    v->VisitExternalPointer(obj,
-                            string.RawExternalPointerField(kResourceDataOffset),
-                            kExternalStringResourceDataTag);
+  static inline int SizeOf(Map map, HeapObject object) {
+    InstanceType type = map.instance_type();
+    const auto is_uncached =
+        (type & kUncachedExternalStringMask) == kUncachedExternalStringTag;
+    return is_uncached ? kUncachedSize : kSizeOfAllExternalStrings;
   }
-
-  static inline int SizeOf(Map map, HeapObject object) { return kSize; }
 };
 
 class CoverageInfo::BodyDescriptor final : public BodyDescriptorBase {
@@ -955,12 +960,10 @@ class CoverageInfo::BodyDescriptor final : public BodyDescriptorBase {
 
 class InstructionStream::BodyDescriptor final : public BodyDescriptorBase {
  public:
-  static_assert(kRelocationInfoOffset + kTaggedSize ==
-                kDeoptimizationDataOrInterpreterDataOffset);
-  static_assert(kDeoptimizationDataOrInterpreterDataOffset + kTaggedSize ==
-                kPositionTableOffset);
-  static_assert(kPositionTableOffset + kTaggedSize == kCodeOffset);
-  static_assert(kCodeOffset + kTaggedSize == kDataStart);
+  static_assert(static_cast<int>(HeapObject::kHeaderSize) ==
+                static_cast<int>(kCodeOffset));
+  static_assert(kCodeOffset + kTaggedSize == kRelocationInfoOffset);
+  static_assert(kRelocationInfoOffset + kTaggedSize == kDataStart);
 
   static bool IsValidSlot(Map map, HeapObject obj, int offset) {
     // Slots in code can't be invalid because we never trim code objects.
@@ -975,15 +978,22 @@ class InstructionStream::BodyDescriptor final : public BodyDescriptorBase {
       RelocInfo::ModeMask(RelocInfo::EXTERNAL_REFERENCE) |
       RelocInfo::ModeMask(RelocInfo::INTERNAL_REFERENCE) |
       RelocInfo::ModeMask(RelocInfo::INTERNAL_REFERENCE_ENCODED) |
-      RelocInfo::ModeMask(RelocInfo::OFF_HEAP_TARGET);
+      RelocInfo::ModeMask(RelocInfo::OFF_HEAP_TARGET) |
+      RelocInfo::ModeMask(RelocInfo::WASM_STUB_CALL);
 
   template <typename ObjectVisitor>
   static inline void IterateBody(Map map, HeapObject obj, ObjectVisitor* v) {
     // GC does not visit data/code in the header and in the body directly.
-    IteratePointers(obj, kRelocationInfoOffset, kDataStart, v);
+    IteratePointers(obj, kStartOfStrongFieldsOffset, kEndOfStrongFieldsOffset,
+                    v);
 
-    RelocIterator it(InstructionStream::cast(obj), kRelocModeMask);
-    v->VisitRelocInfo(&it);
+    InstructionStream istream = InstructionStream::cast(obj);
+    Code code;
+    if (istream.TryGetCodeUnchecked(&code, kAcquireLoad)) {
+      RelocIterator it(code, istream, istream.unchecked_relocation_info(),
+                       kRelocModeMask);
+      v->VisitRelocInfo(istream, &it);
+    }
   }
 
   template <typename ObjectVisitor>
@@ -993,7 +1003,7 @@ class InstructionStream::BodyDescriptor final : public BodyDescriptorBase {
   }
 
   static inline int SizeOf(Map map, HeapObject object) {
-    return InstructionStream::unchecked_cast(object).CodeSize();
+    return InstructionStream::unchecked_cast(object).Size();
   }
 };
 
@@ -1067,18 +1077,22 @@ class NativeContext::BodyDescriptor final : public BodyDescriptorBase {
 class Code::BodyDescriptor final : public BodyDescriptorBase {
  public:
   static bool IsValidSlot(Map map, HeapObject obj, int offset) {
-    return offset >= HeapObject::kHeaderSize &&
-           offset <= Code::kPointerFieldsStrongEndOffset;
+    return offset >= Code::kStartOfStrongFieldsOffset &&
+           offset < Code::kEndOfStrongFieldsOffset;
   }
 
   template <typename ObjectVisitor>
   static inline void IterateBody(Map map, HeapObject obj, int object_size,
                                  ObjectVisitor* v) {
-    // No strong pointers to iterate.
-    static_assert(static_cast<int>(HeapObject::kHeaderSize) ==
-                  static_cast<int>(Code::kPointerFieldsStrongEndOffset));
+    IteratePointers(obj, Code::kStartOfStrongFieldsOffset,
+                    Code::kEndOfStrongFieldsWithMainCageBaseOffset, v);
 
-    v->VisitCodePointer(obj, obj.RawCodeField(kInstructionStreamOffset));
+    static_assert(Code::kEndOfStrongFieldsWithMainCageBaseOffset ==
+                  Code::kInstructionStreamOffset);
+    static_assert(Code::kInstructionStreamOffset + kTaggedSize ==
+                  Code::kEndOfStrongFieldsOffset);
+    v->VisitCodePointer(Code::cast(obj),
+                        obj.RawCodeField(kInstructionStreamOffset));
   }
 
   static inline int SizeOf(Map map, HeapObject object) { return Code::kSize; }
@@ -1228,6 +1242,8 @@ auto BodyDescriptorApply(InstanceType type, Args&&... args) {
       return CALL_APPLY(WasmStruct);
     case WASM_TYPE_INFO_TYPE:
       return CALL_APPLY(WasmTypeInfo);
+    case WASM_SUSPENDER_OBJECT_TYPE:
+      return CALL_APPLY(WasmSuspenderObject);
 #endif  // V8_ENABLE_WEBASSEMBLY
     case JS_API_OBJECT_TYPE:
     case JS_ARGUMENTS_OBJECT_TYPE:
@@ -1247,6 +1263,9 @@ auto BodyDescriptorApply(InstanceType type, Args&&... args) {
     case JS_GLOBAL_PROXY_TYPE:
     case JS_ITERATOR_FILTER_HELPER_TYPE:
     case JS_ITERATOR_MAP_HELPER_TYPE:
+    case JS_ITERATOR_TAKE_HELPER_TYPE:
+    case JS_ITERATOR_DROP_HELPER_TYPE:
+    case JS_ITERATOR_FLAT_MAP_HELPER_TYPE:
     case JS_ITERATOR_PROTOTYPE_TYPE:
     case JS_MAP_ITERATOR_PROTOTYPE_TYPE:
     case JS_MAP_KEY_ITERATOR_TYPE:
@@ -1289,6 +1308,7 @@ auto BodyDescriptorApply(InstanceType type, Args&&... args) {
     case JS_CLASS_CONSTRUCTOR_TYPE:
     case JS_PROMISE_CONSTRUCTOR_TYPE:
     case JS_REG_EXP_CONSTRUCTOR_TYPE:
+    case JS_VALID_ITERATOR_WRAPPER_TYPE:
     case JS_WRAPPED_FUNCTION_TYPE:
     case JS_ARRAY_CONSTRUCTOR_TYPE:
 #define TYPED_ARRAY_CONSTRUCTORS_SWITCH(Type, type, TYPE, Ctype) \
@@ -1315,7 +1335,6 @@ auto BodyDescriptorApply(InstanceType type, Args&&... args) {
     case WASM_GLOBAL_OBJECT_TYPE:
     case WASM_MEMORY_OBJECT_TYPE:
     case WASM_MODULE_OBJECT_TYPE:
-    case WASM_SUSPENDER_OBJECT_TYPE:
     case WASM_TABLE_OBJECT_TYPE:
     case WASM_TAG_OBJECT_TYPE:
     case WASM_VALUE_OBJECT_TYPE:
@@ -1375,6 +1394,8 @@ auto BodyDescriptorApply(InstanceType type, Args&&... args) {
       return CALL_APPLY(Code);
     case PREPARSE_DATA_TYPE:
       return CALL_APPLY(PreparseData);
+    case SHARED_FUNCTION_INFO_TYPE:
+      return CALL_APPLY(SharedFunctionInfo);
     case HEAP_NUMBER_TYPE:
       return CALL_APPLY(HeapNumber);
     case BYTE_ARRAY_TYPE:
@@ -1430,6 +1451,12 @@ template <typename ObjectVisitor>
 void HeapObject::IterateFast(PtrComprCageBase cage_base, ObjectVisitor* v) {
   v->VisitMapPointer(*this);
   IterateBodyFast(cage_base, v);
+}
+
+template <typename ObjectVisitor>
+void HeapObject::IterateFast(Map map, ObjectVisitor* v) {
+  v->VisitMapPointer(*this);
+  IterateBodyFast(map, SizeFromMap(map), v);
 }
 
 template <typename ObjectVisitor>

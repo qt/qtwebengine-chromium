@@ -50,6 +50,7 @@ import {SDKModel} from './SDKModel.js';
 import {TargetManager} from './TargetManager.js';
 import {SecurityOriginManager} from './SecurityOriginManager.js';
 import {StorageKeyManager} from './StorageKeyManager.js';
+import {FrameManager} from './FrameManager.js';
 
 export class ResourceTreeModel extends SDKModel<EventTypes> {
   readonly agent: ProtocolProxyApi.PageApi;
@@ -66,7 +67,7 @@ export class ResourceTreeModel extends SDKModel<EventTypes> {
   isInterstitialShowing: boolean;
   mainFrame: ResourceTreeFrame|null;
   #pendingBackForwardCacheNotUsedEvents: Set<Protocol.Page.BackForwardCacheNotUsedEvent>;
-  #pendingPrerenderAttemptCompletedEvents: Set<Protocol.Page.PrerenderAttemptCompletedEvent>;
+  #pendingPrerenderAttemptCompletedEvents: Set<Protocol.Preload.PrerenderAttemptCompletedEvent>;
 
   constructor(target: Target) {
     super(target);
@@ -82,8 +83,9 @@ export class ResourceTreeModel extends SDKModel<EventTypes> {
     this.#securityOriginManager = (target.model(SecurityOriginManager) as SecurityOriginManager);
     this.#storageKeyManager = (target.model(StorageKeyManager) as StorageKeyManager);
     this.#pendingBackForwardCacheNotUsedEvents = new Set<Protocol.Page.BackForwardCacheNotUsedEvent>();
-    this.#pendingPrerenderAttemptCompletedEvents = new Set<Protocol.Page.PrerenderAttemptCompletedEvent>();
+    this.#pendingPrerenderAttemptCompletedEvents = new Set<Protocol.Preload.PrerenderAttemptCompletedEvent>();
     target.registerPageDispatcher(new PageDispatcher(this));
+    target.registerPreloadDispatcher(new PreloadDispatcher(this));
 
     this.framesInternal = new Map();
     this.#cachedResourcesProcessed = false;
@@ -92,7 +94,11 @@ export class ResourceTreeModel extends SDKModel<EventTypes> {
     this.isInterstitialShowing = false;
     this.mainFrame = null;
 
-    void this.agent.invoke_getResourceTree().then(event => {
+    void this.#buildResourceTree();
+  }
+
+  async #buildResourceTree(): Promise<void> {
+    return this.agent.invoke_getResourceTree().then(event => {
       this.processCachedResources(event.getError() ? null : event.frameTree);
       if (this.mainFrame) {
         this.processPendingEvents(this.mainFrame);
@@ -233,13 +239,8 @@ export class ResourceTreeModel extends SDKModel<EventTypes> {
     }
     this.dispatchEventToListeners(Events.FrameNavigated, frame);
 
-    if (frame.isMainFrame()) {
-      this.processPendingEvents(frame);
-      this.dispatchEventToListeners(Events.MainFrameNavigated, frame);
-      const networkManager = this.target().model(NetworkManager);
-      if (networkManager && frame.isTopFrame()) {
-        networkManager.clearRequests();
-      }
+    if (frame.isPrimaryFrame()) {
+      this.primaryPageChanged(frame, PrimaryPageChangeType.Navigation);
     }
 
     // Fill frame with retained resources (the ones loaded using new loader).
@@ -253,6 +254,21 @@ export class ResourceTreeModel extends SDKModel<EventTypes> {
     }
     this.updateSecurityOrigins();
     void this.updateStorageKeys();
+
+    if (frame.backForwardCacheDetails.restoredFromCache) {
+      FrameManager.instance().modelRemoved(this);
+      FrameManager.instance().modelAdded(this);
+      void this.#buildResourceTree();
+    }
+  }
+
+  primaryPageChanged(frame: ResourceTreeFrame, type: PrimaryPageChangeType): void {
+    this.processPendingEvents(frame);
+    this.dispatchEventToListeners(Events.PrimaryPageChanged, {frame, type});
+    const networkManager = this.target().model(NetworkManager);
+    if (networkManager && frame.isOutermostFrame()) {
+      networkManager.clearRequests();
+    }
   }
 
   documentOpened(framePayload: Protocol.Page.Frame): void {
@@ -585,7 +601,7 @@ export class ResourceTreeModel extends SDKModel<EventTypes> {
     }
   }
 
-  onPrerenderAttemptCompleted(event: Protocol.Page.PrerenderAttemptCompletedEvent): void {
+  onPrerenderAttemptCompleted(event: Protocol.Preload.PrerenderAttemptCompletedEvent): void {
     if (this.mainFrame && this.mainFrame.id === event.initiatingFrameId) {
       this.mainFrame.setPrerenderFinalStatus(event.finalStatus);
       this.dispatchEventToListeners(Events.PrerenderingStatusUpdated, this.mainFrame);
@@ -622,7 +638,7 @@ export class ResourceTreeModel extends SDKModel<EventTypes> {
         break;
       }
     }
-    // No need to dispatch events here as this method call is followed by a `MainFrameNavigated` event.
+    // No need to dispatch events here as this method call is followed by a `PrimaryPageChanged` event.
   }
 }
 
@@ -634,7 +650,9 @@ export enum Events {
   FrameDetached = 'FrameDetached',
   FrameResized = 'FrameResized',
   FrameWillNavigate = 'FrameWillNavigate',
-  MainFrameNavigated = 'MainFrameNavigated',
+  // Primary page changes can be either main frame navigations or activations of a background frame.
+  // TODO(crbug.com/1393057): Let frame activations trigger this event.
+  PrimaryPageChanged = 'PrimaryPageChanged',
   ResourceAdded = 'ResourceAdded',
   WillLoadCachedResources = 'WillLoadCachedResources',
   CachedResourcesLoaded = 'CachedResourcesLoaded',
@@ -657,7 +675,7 @@ export type EventTypes = {
   [Events.FrameDetached]: {frame: ResourceTreeFrame, isSwap: boolean},
   [Events.FrameResized]: void,
   [Events.FrameWillNavigate]: ResourceTreeFrame,
-  [Events.MainFrameNavigated]: ResourceTreeFrame,
+  [Events.PrimaryPageChanged]: {frame: ResourceTreeFrame, type: PrimaryPageChangeType},
   [Events.ResourceAdded]: Resource,
   [Events.WillLoadCachedResources]: void,
   [Events.CachedResourcesLoaded]: ResourceTreeModel,
@@ -670,7 +688,7 @@ export type EventTypes = {
   [Events.InterstitialHidden]: void,
   [Events.BackForwardCacheDetailsUpdated]: ResourceTreeFrame,
   [Events.PrerenderingStatusUpdated]: ResourceTreeFrame,
-  [Events.PrerenderAttemptCompleted]: Protocol.Page.PrerenderAttemptCompletedEvent,
+  [Events.PrerenderAttemptCompleted]: Protocol.Preload.PrerenderAttemptCompletedEvent,
   [Events.JavaScriptDialogOpening]: Protocol.Page.JavascriptDialogOpeningEvent,
 };
 
@@ -703,7 +721,7 @@ export class ResourceTreeFrame {
     explanations: [],
     explanationsTree: undefined,
   };
-  prerenderFinalStatus: Protocol.Page.PrerenderFinalStatus|null;
+  prerenderFinalStatus: Protocol.Preload.PrerenderFinalStatus|null;
   prerenderDisallowedApiMethod: string|null;
 
   constructor(
@@ -892,20 +910,32 @@ export class ResourceTreeFrame {
   }
 
   /**
-   * Returns true if this is the main frame of its target. For example, this returns true for the main frame
-   * of an out-of-process iframe (OOPIF).
+   * Returns true if this is the main frame of its target. A main frame is the root of the frame tree i.e. a frame without
+   * a parent, but the whole frame tree could be embedded in another frame tree (e.g. OOPIFs, fenced frames, portals).
+   * https://chromium.googlesource.com/chromium/src/+/HEAD/docs/frame_trees.md
    */
   isMainFrame(): boolean {
     return !this.#sameTargetParentFrameInternal;
   }
 
   /**
-   * Returns true if this is the top frame of the main target, i.e. if this is the top-most frame in the inspected
-   * tab.
+   * Returns true if this is a main frame which is not embedded in another frame tree. With MPArch features such as
+   * back/forward cache or prerender there can be multiple outermost frames.
+   * https://chromium.googlesource.com/chromium/src/+/HEAD/docs/frame_trees.md
    */
-  isTopFrame(): boolean {
+  isOutermostFrame(): boolean {
     return this.#model.target().parentTarget()?.type() !== Type.Frame && !this.#sameTargetParentFrameInternal &&
         !this.crossTargetParentFrameId;
+  }
+
+  /**
+   * Returns true is this is the primary frame of the browser tab. There can only be one primary frame for each
+   * browser tab. It is the outermost frame being actively displayed in the browser tab.
+   * https://chromium.googlesource.com/chromium/src/+/HEAD/docs/frame_trees.md
+   */
+  isPrimaryFrame(): boolean {
+    return !this.#sameTargetParentFrameInternal &&
+        this.#model.target() === TargetManager.instance().primaryPageTarget();
   }
 
   removeChildFrame(frame: ResourceTreeFrame, isSwap: boolean): void {
@@ -983,7 +1013,7 @@ export class ResourceTreeFrame {
   }
 
   displayName(): string {
-    if (this.isTopFrame()) {
+    if (this.isOutermostFrame()) {
       return i18n.i18n.lockedString('top');
     }
     const subtitle = new Common.ParsedURL.ParsedURL(this.#urlInternal).displayName;
@@ -1009,7 +1039,7 @@ export class ResourceTreeFrame {
     if (deferredNode) {
       return deferredNode.resolvePromise();
     }
-    if (this.isTopFrame()) {
+    if (this.isOutermostFrame()) {
       return this.resourceTreeModel().domModel().requestDocument();
     }
     return null;
@@ -1037,7 +1067,7 @@ export class ResourceTreeFrame {
       }
     }
 
-    // For the top frame there is no owner node. Highlight the whole #document instead.
+    // For the outermost frame there is no owner node. Highlight the whole #document instead.
     const document = await this.resourceTreeModel().domModel().requestDocument();
     if (document) {
       this.resourceTreeModel().domModel().overlayModel().highlightInOverlay(
@@ -1080,7 +1110,7 @@ export class ResourceTreeFrame {
     return this.resourcesMap;
   }
 
-  setPrerenderFinalStatus(status: Protocol.Page.PrerenderFinalStatus): void {
+  setPrerenderFinalStatus(status: Protocol.Preload.PrerenderFinalStatus): void {
     this.prerenderFinalStatus = status;
   }
 
@@ -1189,15 +1219,31 @@ export class PageDispatcher implements ProtocolProxyApi.PageDispatcher {
 
   downloadProgress(): void {
   }
+}
 
-  prerenderAttemptCompleted(params: Protocol.Page.PrerenderAttemptCompletedEvent): void {
+class PreloadDispatcher implements ProtocolProxyApi.PreloadDispatcher {
+  #resourceTreeModel: ResourceTreeModel;
+  constructor(resourceTreeModel: ResourceTreeModel) {
+    this.#resourceTreeModel = resourceTreeModel;
+  }
+
+  ruleSetUpdated(_event: Protocol.Preload.RuleSetUpdatedEvent): void {
+  }
+
+  ruleSetRemoved(_event: Protocol.Preload.RuleSetRemovedEvent): void {
+  }
+
+  prerenderAttemptCompleted(params: Protocol.Preload.PrerenderAttemptCompletedEvent): void {
     this.#resourceTreeModel.onPrerenderAttemptCompleted(params);
   }
 
-  prefetchStatusUpdated({}: Protocol.Page.PrefetchStatusUpdatedEvent): void {
+  prefetchStatusUpdated(_event: Protocol.Preload.PrefetchStatusUpdatedEvent): void {
   }
 
-  prerenderStatusUpdated({}: Protocol.Page.PrerenderStatusUpdatedEvent): void {
+  prerenderStatusUpdated(_event: Protocol.Preload.PrerenderStatusUpdatedEvent): void {
+  }
+
+  preloadingAttemptSourcesUpdated(): void {
   }
 }
 
@@ -1211,4 +1257,9 @@ export interface SecurityOriginData {
 export interface StorageKeyData {
   storageKeys: Set<string>;
   mainStorageKey: string|null;
+}
+
+export const enum PrimaryPageChangeType {
+  Navigation = 'Navigation',
+  Activation = 'Activation',
 }

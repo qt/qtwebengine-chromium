@@ -15,7 +15,7 @@
 #include "dawn/native/stream/Stream.h"
 
 #include "dawn/native/TintUtils.h"
-#include "tint/writer/array_length_from_uniform_options.h"
+#include "tint/tint.h"
 
 namespace dawn::native {
 
@@ -44,16 +44,24 @@ void stream::Stream<tint::Program>::Write(stream::Sink* sink, const tint::Progra
 
 // static
 template <>
-void stream::Stream<tint::sem::BindingPoint>::Write(stream::Sink* sink,
-                                                    const tint::sem::BindingPoint& point) {
+void stream::Stream<tint::writer::BindingPoint>::Write(stream::Sink* sink,
+                                                       const tint::writer::BindingPoint& point) {
     StreamInTintObject(point, sink);
 }
 
 // static
 template <>
-void stream::Stream<tint::transform::MultiplanarExternalTexture::BindingPoints>::Write(
+void stream::Stream<tint::writer::ExternalTextureOptions::BindingPoints>::Write(
     stream::Sink* sink,
-    const tint::transform::MultiplanarExternalTexture::BindingPoints& points) {
+    const tint::writer::ExternalTextureOptions::BindingPoints& point) {
+    StreamInTintObject(point, sink);
+}
+
+// static
+template <>
+void stream::Stream<tint::writer::ExternalTextureOptions>::Write(
+    stream::Sink* sink,
+    const tint::writer::ExternalTextureOptions& points) {
     StreamInTintObject(points, sink);
 }
 
@@ -100,6 +108,14 @@ template <>
 void stream::Stream<tint::writer::ArrayLengthFromUniformOptions>::Write(
     stream::Sink* sink,
     const tint::writer::ArrayLengthFromUniformOptions& options) {
+    StreamInTintObject(options, sink);
+}
+
+// static
+template <>
+void stream::Stream<tint::writer::BindingRemapperOptions>::Write(
+    stream::Sink* sink,
+    const tint::writer::BindingRemapperOptions& options) {
     StreamInTintObject(options, sink);
 }
 

@@ -212,7 +212,7 @@ class ChromeFeatures:
   ENABLE_FLAG: Final[str] = "--enable-features"
   DISABLE_FLAG: Final[str] = "--disable-features"
 
-  def __init__(self):
+  def __init__(self) -> None:
     self._enabled: Dict[str, Optional[str]] = {}
     # Use dict as ordered set.
     self._disabled: Dict[str, None] = {}

@@ -27,7 +27,7 @@ class Attribute;
 namespace tint::ast {
 
 /// A block statement
-class BlockStatement final : public Castable<BlockStatement, Statement> {
+class BlockStatement final : public utils::Castable<BlockStatement, Statement> {
   public:
     /// Constructor
     /// @param pid the identifier of the program that owns this node
@@ -40,8 +40,8 @@ class BlockStatement final : public Castable<BlockStatement, Statement> {
                    const Source& source,
                    utils::VectorRef<const Statement*> statements,
                    utils::VectorRef<const Attribute*> attributes);
-    /// Move constructor
-    BlockStatement(BlockStatement&&);
+
+    /// Destructor
     ~BlockStatement() override;
 
     /// @returns true if the block has no statements

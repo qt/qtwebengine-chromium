@@ -6,14 +6,14 @@
  */
 
 #include "include/core/SkTypes.h"
-#include "include/private/SkSLModifiers.h"
-#include "include/private/SkSLProgramElement.h"
 #include "src/core/SkTHash.h"
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLConstantFolder.h"
 #include "src/sksl/analysis/SkSLProgramUsage.h"
 #include "src/sksl/ir/SkSLExpression.h"
 #include "src/sksl/ir/SkSLFunctionDefinition.h"
+#include "src/sksl/ir/SkSLModifiers.h"
+#include "src/sksl/ir/SkSLProgramElement.h"
 #include "src/sksl/ir/SkSLVariable.h"
 #include "src/sksl/ir/SkSLVariableReference.h"
 #include "src/sksl/transform/SkSLProgramWriter.h"
@@ -24,6 +24,8 @@
 #include <string>
 #include <string_view>
 #include <vector>
+
+using namespace skia_private;
 
 namespace SkSL {
 
@@ -55,7 +57,7 @@ void Transform::ReplaceConstVarsWithLiterals(Module& module, ProgramUsage* usage
         }
 
         ProgramUsage* fUsage;
-        SkTHashSet<const Variable*> fCandidates;
+        THashSet<const Variable*> fCandidates;
 
         using INHERITED = ProgramWriter;
     };

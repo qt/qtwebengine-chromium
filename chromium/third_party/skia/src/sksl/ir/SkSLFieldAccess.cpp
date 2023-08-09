@@ -10,18 +10,18 @@
 #include "include/core/SkSpan.h"
 #include "include/core/SkTypes.h"
 #include "include/private/SkSLDefines.h"
-#include "include/private/SkSLSymbol.h"
 #include "include/private/base/SkTArray.h"
-#include "include/sksl/SkSLErrorReporter.h"
-#include "include/sksl/SkSLOperator.h"
 #include "src/sksl/SkSLAnalysis.h"
 #include "src/sksl/SkSLBuiltinTypes.h"
 #include "src/sksl/SkSLConstantFolder.h"
 #include "src/sksl/SkSLContext.h"
+#include "src/sksl/SkSLErrorReporter.h"
+#include "src/sksl/SkSLOperator.h"
 #include "src/sksl/ir/SkSLConstructorStruct.h"
 #include "src/sksl/ir/SkSLFunctionDeclaration.h"
 #include "src/sksl/ir/SkSLMethodReference.h"
 #include "src/sksl/ir/SkSLSetting.h"
+#include "src/sksl/ir/SkSLSymbol.h"
 #include "src/sksl/ir/SkSLSymbolTable.h"
 
 #include <cstddef>
@@ -47,10 +47,10 @@ std::unique_ptr<Expression> FieldAccess::Convert(const Context& context,
         return nullptr;
     }
     if (baseType.isStruct()) {
-        const std::vector<Type::Field>& fields = baseType.fields();
+        SkSpan<const Type::Field> fields = baseType.fields();
         for (size_t i = 0; i < fields.size(); i++) {
             if (fields[i].fName == field) {
-                return FieldAccess::Make(context, pos, std::move(base), (int) i);
+                return FieldAccess::Make(context, pos, std::move(base), (int)i);
             }
         }
     }

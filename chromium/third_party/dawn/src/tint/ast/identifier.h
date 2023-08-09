@@ -20,7 +20,7 @@
 namespace tint::ast {
 
 /// An identifier
-class Identifier : public Castable<Identifier, Node> {
+class Identifier : public utils::Castable<Identifier, Node> {
   public:
     /// Constructor
     /// @param pid the identifier of the program that owns this node
@@ -28,8 +28,8 @@ class Identifier : public Castable<Identifier, Node> {
     /// @param src the source of this node
     /// @param sym the symbol for the identifier
     Identifier(ProgramID pid, NodeID nid, const Source& src, Symbol sym);
-    /// Move constructor
-    Identifier(Identifier&&);
+
+    /// Destructor
     ~Identifier() override;
 
     /// Clones this node and all transitive child nodes using the `CloneContext`

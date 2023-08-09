@@ -313,24 +313,13 @@ static int DecodeIt(Isolate* isolate, ExternalReferenceEncoder* ref_encoder,
         pc += 4;
       } else if (!rit.done() &&
                  rit.rinfo()->pc() == reinterpret_cast<Address>(pc) &&
-                 (rit.rinfo()->rmode() == RelocInfo::INTERNAL_REFERENCE ||
-                  rit.rinfo()->rmode() == RelocInfo::LITERAL_CONSTANT)) {
-        // raw pointer embedded in code stream, e.g., jump table
+                 rit.rinfo()->rmode() == RelocInfo::INTERNAL_REFERENCE) {
+        // A raw pointer embedded in code stream.
         byte* ptr =
             base::ReadUnalignedValue<byte*>(reinterpret_cast<Address>(pc));
-        if (RelocInfo::IsInternalReference(rit.rinfo()->rmode())) {
-          SNPrintF(decode_buffer,
-                   "%08" V8PRIxPTR "       jump table entry %4zu",
-                   reinterpret_cast<intptr_t>(ptr),
-                   static_cast<size_t>(ptr - begin));
-        } else {
-          const char* kType = RelocInfo::IsLiteralConstant(rit.rinfo()->rmode())
-                                  ? "    literal constant"
-                                  : "embedded data object";
-          SNPrintF(decode_buffer, "%08" V8PRIxPTR "       %s 0x%08" V8PRIxPTR,
-                   reinterpret_cast<intptr_t>(ptr), kType,
-                   reinterpret_cast<intptr_t>(ptr));
-        }
+        SNPrintF(decode_buffer, "%08" V8PRIxPTR "       jump table entry %4zu",
+                 reinterpret_cast<intptr_t>(ptr),
+                 static_cast<size_t>(ptr - begin));
         pc += sizeof(ptr);
       } else {
         decode_buffer[0] = '\0';
@@ -380,17 +369,15 @@ static int DecodeIt(Isolate* isolate, ExternalReferenceEncoder* ref_encoder,
       const CodeReference& host = code;
       Address constant_pool =
           host.is_null() ? kNullAddress : host.constant_pool();
-      InstructionStream instruction_stream;
+      Handle<Code> code_handle;
       if (host.is_code()) {
-        instruction_stream = host.as_code()->instruction_stream();
+        code_handle = host.as_code();
+
+        RelocInfo relocinfo(pcs[i], rmodes[i], datas[i], constant_pool);
+        bool first_reloc_info = (i == 0);
+        PrintRelocInfo(out, isolate, ref_encoder, os, code, &relocinfo,
+                       first_reloc_info);
       }
-
-      RelocInfo relocinfo(pcs[i], rmodes[i], datas[i], instruction_stream,
-                          constant_pool);
-
-      bool first_reloc_info = (i == 0);
-      PrintRelocInfo(out, isolate, ref_encoder, os, code, &relocinfo,
-                     first_reloc_info);
     }
 
     // If this is a constant pool load and we haven't found any RelocInfo
@@ -402,7 +389,7 @@ static int DecodeIt(Isolate* isolate, ExternalReferenceEncoder* ref_encoder,
     // by IsInConstantPool() below.
     if (pcs.empty() && !code.is_null() && !decoding_constant_pool) {
       RelocInfo dummy_rinfo(reinterpret_cast<Address>(prev_pc),
-                            RelocInfo::NO_INFO, 0, InstructionStream());
+                            RelocInfo::NO_INFO);
       if (dummy_rinfo.IsInConstantPool()) {
         Address constant_pool_entry_address =
             dummy_rinfo.constant_pool_entry_address();

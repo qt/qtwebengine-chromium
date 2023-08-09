@@ -1429,7 +1429,8 @@ static int64_t motion_mode_rd(
 
           // Refine MV in a small range.
           av1_refine_warped_mv(xd, cm, &ms_params, bsize, pts0, pts_inref0,
-                               total_samples);
+                               total_samples, cpi->sf.mv_sf.warp_search_method,
+                               cpi->sf.mv_sf.warp_search_iters);
 
           if (mv0.as_int != mbmi->mv[0].as_int) {
             // Keep the refined MV and WM parameters.
@@ -1670,6 +1671,10 @@ static int64_t skip_mode_rd(RD_STATS *rd_stats, const AV1_COMP *const cpi,
 
 // Check NEARESTMV, NEARMV, GLOBALMV ref mvs for duplicate and skip the relevant
 // mode
+// Note(rachelbarker): This speed feature currently does not interact correctly
+// with global motion. The issue is that, when global motion is used, GLOBALMV
+// produces a different prediction to NEARESTMV/NEARMV even if the motion
+// vectors are the same. Thus GLOBALMV should not be pruned in this case.
 static INLINE int check_repeat_ref_mv(const MB_MODE_INFO_EXT *mbmi_ext,
                                       int ref_idx,
                                       const MV_REFERENCE_FRAME *ref_frame,
@@ -2482,15 +2487,18 @@ static AOM_INLINE int prune_zero_mv_with_sse(
   const int is_comp_pred = has_second_ref(mbmi);
   const MV_REFERENCE_FRAME *refs = mbmi->ref_frame;
 
-  // Check that the global mv is the same as ZEROMV
-  assert(mbmi->mv[0].as_int == 0);
-  assert(IMPLIES(is_comp_pred, mbmi->mv[0].as_int == 0));
-  assert(xd->global_motion[refs[0]].wmtype == TRANSLATION ||
-         xd->global_motion[refs[0]].wmtype == IDENTITY);
-
-  // Don't prune if we have invalid data
   for (int idx = 0; idx < 1 + is_comp_pred; idx++) {
-    assert(mbmi->mv[0].as_int == 0);
+    if (xd->global_motion[refs[idx]].wmtype != IDENTITY) {
+      // Pruning logic only works for IDENTITY type models
+      // Note: In theory we could apply similar logic for TRANSLATION
+      // type models, but we do not code these due to a spec bug
+      // (see comments in gm_get_motion_vector() in av1/common/mv.h)
+      assert(xd->global_motion[refs[idx]].wmtype != TRANSLATION);
+      return 0;
+    }
+
+    // Don't prune if we have invalid data
+    assert(mbmi->mv[idx].as_int == 0);
     if (args->best_single_sse_in_refs[refs[idx]] == INT32_MAX) {
       return 0;
     }
@@ -2940,7 +2948,6 @@ static int64_t handle_inter_mode(
       continue;
 
     if (cpi->sf.gm_sf.prune_zero_mv_with_sse &&
-        cpi->sf.gm_sf.gm_search_type == GM_DISABLE_SEARCH &&
         (this_mode == GLOBALMV || this_mode == GLOBAL_GLOBALMV)) {
       if (prune_zero_mv_with_sse(cpi->ppi->fn_ptr, x, bsize, args,
                                  cpi->sf.gm_sf.prune_zero_mv_with_sse)) {

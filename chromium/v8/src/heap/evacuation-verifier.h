@@ -26,7 +26,7 @@ class EvacuationVerifier : public ObjectVisitorWithCageBases,
   void VisitPointers(HeapObject host, MaybeObjectSlot start,
                      MaybeObjectSlot end) override;
 
-  void VisitCodePointer(HeapObject host, CodeObjectSlot slot) override;
+  void VisitCodePointer(Code host, CodeObjectSlot slot) override;
 
   void VisitRootPointers(Root root, const char* description,
                          FullObjectSlot start, FullObjectSlot end) override;

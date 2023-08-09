@@ -24,6 +24,7 @@
 #include "src/tint/sem/function.h"
 #include "src/tint/sem/statement.h"
 #include "src/tint/sem/variable.h"
+#include "src/tint/switch.h"
 #include "src/tint/transform/unshadow.h"
 
 TINT_INSTANTIATE_TYPEINFO(tint::transform::SimplifyPointers);
@@ -131,6 +132,13 @@ struct SimplifyPointers::State {
         utils::Hashmap<const ast::Expression*, Symbol, 8> saved_vars;
 
         bool needs_transform = false;
+        for (auto* ty : ctx.src->Types()) {
+            if (ty->Is<type::Pointer>()) {
+                // Program contains pointers which need removing.
+                needs_transform = true;
+                break;
+            }
+        }
 
         // Find all the pointer-typed `let` declarations.
         // Note that these must be function-scoped, as module-scoped `let`s are not
@@ -158,8 +166,7 @@ struct SimplifyPointers::State {
                             // We have a sub-expression that needs to be saved.
                             // Create a new variable
                             auto saved_name = ctx.dst->Symbols().New(
-                                ctx.src->Symbols().NameFor(var->Declaration()->name->symbol) +
-                                "_save");
+                                var->Declaration()->name->symbol.Name() + "_save");
                             auto* decl =
                                 ctx.dst->Decl(ctx.dst->Let(saved_name, ctx.Clone(idx_expr)));
                             saved.Push(decl);

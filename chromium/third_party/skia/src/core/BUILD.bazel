@@ -1,4 +1,4 @@
-load("//bazel:macros.bzl", "exports_files_legacy", "skia_filegroup", "split_srcs_and_hdrs")
+load("//bazel:skia_rules.bzl", "exports_files_legacy", "skia_filegroup", "split_srcs_and_hdrs")
 
 licenses(["notice"])
 
@@ -61,6 +61,7 @@ CORE_FILES = [
     "SkBlitter.cpp",
     "SkBlitter.h",
     "SkBlitter_A8.cpp",
+    "SkBlitter_A8.h",
     "SkBlitter_ARGB32.cpp",
     "SkBlitter_Sprite.cpp",
     "SkBlurMF.cpp",
@@ -71,6 +72,7 @@ CORE_FILES = [
     "SkCanvas.cpp",
     "SkCanvasPriv.cpp",
     "SkCanvasPriv.h",
+    "SkCanvas_Raster.cpp",
     "SkCapabilities.cpp",
     "SkChromeRemoteGlyphCache.cpp",
     "SkClipStack.cpp",
@@ -95,7 +97,6 @@ CORE_FILES = [
     "SkCubicClipper.cpp",
     "SkCubicClipper.h",
     "SkCubicMap.cpp",
-    "SkCubicSolver.h",
     "SkDataTable.cpp",
     "SkDebug.cpp",
     "SkDebugUtils.h",
@@ -111,7 +112,8 @@ CORE_FILES = [
     "SkDocument.cpp",
     "SkDraw.cpp",
     "SkDraw.h",
-    "SkDrawLooper.cpp",
+    "SkDrawBase.cpp",
+    "SkDrawBase.h",
     "SkDrawProcs.h",
     "SkDrawShadowInfo.cpp",
     "SkDrawShadowInfo.h",
@@ -126,7 +128,6 @@ CORE_FILES = [
     "SkEdgeClipper.cpp",
     "SkEdgeClipper.h",
     "SkEffectPriv.h",
-    "SkEndian.h",
     "SkEnumBitMask.h",
     "SkEnumerate.h",
     "SkExecutor.cpp",
@@ -135,6 +136,8 @@ CORE_FILES = [
     "SkFont.cpp",
     "SkFontDescriptor.cpp",
     "SkFontDescriptor.h",
+    "SkFontMetricsPriv.cpp",
+    "SkFontMetricsPriv.h",
     "SkFontMgr.cpp",
     "SkFontMgrPriv.h",
     "SkFontPriv.h",
@@ -149,15 +152,11 @@ CORE_FILES = [
     "SkGlobalInitialization_core.cpp",
     "SkGlyph.cpp",
     "SkGlyph.h",
-    "SkGlyphBuffer.cpp",
-    "SkGlyphBuffer.h",
     "SkGlyphRunPainter.cpp",
     "SkGlyphRunPainter.h",
     "SkGpuBlurUtils.cpp",
     "SkGpuBlurUtils.h",
     "SkGraphics.cpp",
-    "SkICC.cpp",
-    "SkICCPriv.h",
     "SkIDChangeListener.cpp",
     "SkIPoint16.h",
     "SkImageFilter.cpp",
@@ -202,6 +201,7 @@ CORE_FILES = [
     "SkMipmap.h",
     "SkMipmapAccessor.cpp",
     "SkMipmapAccessor.h",
+    "SkMipmapBuilder.cpp",
     "SkMipmapBuilder.h",
     "SkModeColorFilter.cpp",
     "SkNextID.h",
@@ -249,6 +249,7 @@ CORE_FILES = [
     "SkRasterPipeline.cpp",
     "SkRasterPipeline.h",
     "SkRasterPipelineBlitter.cpp",
+    "SkRasterPipelineContextUtils.h",
     "SkRasterPipelineOpContexts.h",
     "SkRasterPipelineOpList.h",
     "SkReadBuffer.cpp",
@@ -286,6 +287,7 @@ CORE_FILES = [
     "SkScan_Antihair.cpp",
     "SkScan_Hairline.cpp",
     "SkScan_Path.cpp",
+    "SkScan_SAAPath.cpp",
     "SkSharedMutex.cpp",
     "SkSharedMutex.h",
     "SkSpecialImage.cpp",
@@ -347,7 +349,6 @@ CORE_FILES = [
     "SkXfermode.cpp",
     "SkXfermodeInterpretation.cpp",
     "SkXfermodeInterpretation.h",
-    "SkXfermodePriv.h",
     "SkYUVAInfo.cpp",
     "SkYUVAInfoLocation.h",
     "SkYUVAPixmaps.cpp",
@@ -364,6 +365,8 @@ split_srcs_and_hdrs(
 
 # These files are only needed if SkSL is enabled (GPU backend or SkVM).
 SKSL_FILES = [
+    "SkFilterColorProgram.cpp",
+    "SkFilterColorProgram.h",
     "SkRuntimeEffect.cpp",
     "SkSLTypeShared.cpp",
     "SkSLTypeShared.h",
@@ -372,6 +375,13 @@ SKSL_FILES = [
 split_srcs_and_hdrs(
     name = "sksl",
     files = SKSL_FILES,
+)
+
+skia_filegroup(
+    name = "legacy_draw_looper",
+    srcs = [
+        "SkDrawLooper.cpp",
+    ],
 )
 
 # SkPicture files are maintained as a separate skia_filegroups for backward compatability

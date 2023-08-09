@@ -204,6 +204,29 @@ bool DoUnwind(WireMessage* msg, UnwindingMetadata* metadata, AllocRecord* out) {
   return true;
 }
 
+UnwindingWorker::~UnwindingWorker() {
+  if (thread_task_runner_.get() == nullptr) {
+    return;
+  }
+  std::mutex mutex;
+  std::condition_variable cv;
+
+  std::unique_lock<std::mutex> lock(mutex);
+  bool done = false;
+  thread_task_runner_.PostTask([&mutex, &cv, &done, this] {
+    for (auto& it : client_data_) {
+      auto& client_data = it.second;
+      client_data.sock->Shutdown(false);
+    }
+    client_data_.clear();
+
+    std::lock_guard<std::mutex> inner_lock(mutex);
+    done = true;
+    cv.notify_one();
+  });
+  cv.wait(lock, [&done] { return done; });
+}
+
 void UnwindingWorker::OnDisconnect(base::UnixSocket* self) {
   pid_t peer_pid = self->peer_pid_linux();
   auto it = client_data_.find(peer_pid);
@@ -462,6 +485,20 @@ void UnwindingWorker::HandleHandoffSocket(HandoffData handoff_data) {
   alloc_record_arena_.Enable();
 }
 
+void UnwindingWorker::HandleDrainFree(DataSourceInstanceID ds_id, pid_t pid) {
+  auto it = client_data_.find(pid);
+  if (it != client_data_.end()) {
+    ClientData& client_data = it->second;
+
+    if (!client_data.free_records.empty()) {
+      delegate_->PostFreeRecord(this, std::move(client_data.free_records));
+      client_data.free_records.clear();
+      client_data.free_records.reserve(kRecordBatchSize);
+    }
+  }
+  delegate_->PostDrainDone(this, ds_id);
+}
+
 void UnwindingWorker::PostDisconnectSocket(pid_t pid) {
   // We do not need to use a WeakPtr here because the task runner will not
   // outlive its UnwindingWorker.
@@ -479,6 +516,13 @@ void UnwindingWorker::PostPurgeProcess(pid_t pid) {
     }
     RemoveClientData(it);
   });
+}
+
+void UnwindingWorker::PostDrainFree(DataSourceInstanceID ds_id, pid_t pid) {
+  // We do not need to use a WeakPtr here because the task runner will not
+  // outlive its UnwindingWorker.
+  thread_task_runner_.get()->PostTask(
+      [this, ds_id, pid] { HandleDrainFree(ds_id, pid); });
 }
 
 void UnwindingWorker::HandleDisconnectSocket(pid_t pid) {

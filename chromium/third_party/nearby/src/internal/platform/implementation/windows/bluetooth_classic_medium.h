@@ -146,6 +146,15 @@ class BluetoothClassicMedium : public api::BluetoothClassicMedium {
   api::BluetoothDevice* GetRemoteDevice(
       const std::string& mac_address) override;
 
+  void AddObserver(Observer* observer) override {
+    // TODO(b/269521993): Implement.
+  }
+
+  // Removes an observer. It's OK to remove an unregistered observer.
+  void RemoveObserver(Observer* observer) override {
+    // TODO(b/269521993): Implement.
+  }
+
  private:
   bool StartScanning();
   bool StopScanning();

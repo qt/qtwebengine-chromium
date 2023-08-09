@@ -11,8 +11,6 @@
 #include "include/core/SkColorSpace.h"
 #include "include/core/SkData.h"
 #include "include/private/SkOpts_spi.h"
-#include "include/private/SkSLProgramElement.h"
-#include "include/private/SkSLProgramKind.h"
 #include "include/private/base/SkMath.h"
 #include "src/base/SkSafeMath.h"
 #include "src/core/SkMeshPriv.h"
@@ -20,6 +18,7 @@
 #include "src/sksl/SkSLAnalysis.h"
 #include "src/sksl/SkSLBuiltinTypes.h"
 #include "src/sksl/SkSLCompiler.h"
+#include "src/sksl/SkSLProgramKind.h"
 #include "src/sksl/SkSLProgramSettings.h"
 #include "src/sksl/SkSLUtil.h"
 #include "src/sksl/analysis/SkSLProgramVisitor.h"
@@ -27,6 +26,7 @@
 #include "src/sksl/ir/SkSLFunctionDeclaration.h"
 #include "src/sksl/ir/SkSLFunctionDefinition.h"
 #include "src/sksl/ir/SkSLProgram.h"
+#include "src/sksl/ir/SkSLProgramElement.h"
 #include "src/sksl/ir/SkSLReturnStatement.h"
 #include "src/sksl/ir/SkSLStructDefinition.h"
 #include "src/sksl/ir/SkSLType.h"
@@ -34,16 +34,18 @@
 #include "src/sksl/ir/SkSLVariable.h"
 #include "src/sksl/ir/SkSLVariableReference.h"
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
 #include "src/gpu/ganesh/GrGpu.h"
 #include "src/gpu/ganesh/GrStagingBufferManager.h"
-#endif  // SK_SUPPORT_GPU
+#endif  // defined(SK_GANESH)
 
 #include <locale>
 #include <string>
 #include <tuple>
 #include <type_traits>
 #include <utility>
+
+using namespace skia_private;
 
 using Attribute = SkMeshSpecification::Attribute;
 using Varying   = SkMeshSpecification::Varying;
@@ -413,7 +415,7 @@ SkMeshSpecification::Result SkMeshSpecification::Make(SkSpan<const Attribute> at
         }
     }
 
-    SkSTArray<kMaxVaryings, Varying> tempVaryings;
+    STArray<kMaxVaryings, Varying> tempVaryings;
     if (!userProvidedPositionVarying) {
         // Even though we check the # of varyings in MakeFromSourceWithStructs we check here, too,
         // to avoid overflow with + 1.
@@ -655,7 +657,7 @@ sk_sp<IndexBuffer> SkMesh::MakeIndexBuffer(GrDirectContext* dc, const void* data
     if (!dc) {
         return SkMeshPriv::CpuIndexBuffer::Make(data, size);
     }
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
     return SkMeshPriv::GpuIndexBuffer::Make(dc, data, size);
 #else
     return nullptr;
@@ -678,7 +680,7 @@ sk_sp<VertexBuffer> SkMesh::MakeVertexBuffer(GrDirectContext* dc, const void* da
     if (!dc) {
         return SkMeshPriv::CpuVertexBuffer::Make(data, size);
     }
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
     return SkMeshPriv::GpuVertexBuffer::Make(dc, data, size);
 #else
     return nullptr;
@@ -868,7 +870,7 @@ bool SkMesh::VertexBuffer::update(GrDirectContext* dc,
     return check_update(data, offset, size, this->size()) && this->onUpdate(dc, data, offset, size);
 }
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
 bool SkMeshPriv::UpdateGpuBuffer(GrDirectContext* dc,
                                  sk_sp<GrGpuBuffer> buffer,
                                  const void* data,
@@ -920,6 +922,6 @@ bool SkMeshPriv::UpdateGpuBuffer(GrDirectContext* dc,
 
     return true;
 }
-#endif  // SK_SUPPORT_GPU
+#endif  // defined(SK_GANESH)
 
 #endif  // SK_ENABLE_SKSL

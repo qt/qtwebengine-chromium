@@ -119,7 +119,7 @@ export class RequestHeadersView extends UI.Widget.VBox {
     this.contentElement.appendChild(this.#requestHeadersComponent);
   }
 
-  wasShown(): void {
+  override wasShown(): void {
     this.#request.addEventListener(SDK.NetworkRequest.Events.RemoteAddressChanged, this.#refreshHeadersView, this);
     this.#request.addEventListener(SDK.NetworkRequest.Events.FinishedLoading, this.#refreshHeadersView, this);
     this.#request.addEventListener(SDK.NetworkRequest.Events.RequestHeadersChanged, this.#refreshHeadersView, this);
@@ -128,7 +128,7 @@ export class RequestHeadersView extends UI.Widget.VBox {
     this.#refreshHeadersView();
   }
 
-  willHide(): void {
+  override willHide(): void {
     this.#request.removeEventListener(SDK.NetworkRequest.Events.RemoteAddressChanged, this.#refreshHeadersView, this);
     this.#request.removeEventListener(SDK.NetworkRequest.Events.FinishedLoading, this.#refreshHeadersView, this);
     this.#request.removeEventListener(SDK.NetworkRequest.Events.RequestHeadersChanged, this.#refreshHeadersView, this);
@@ -268,18 +268,12 @@ export class RequestHeadersComponent extends HTMLElement {
         Common.Settings.Settings.instance().moduleSetting('persistenceNetworkOverridesEnabled');
     // Disabled until https://crbug.com/1079231 is fixed.
     // clang-format off
-    const fileIcon = overridesSetting.get() ? html`
-      <${IconButton.Icon.Icon.litTagName} class="inline-icon purple-dot" .data=${{
-          iconName: 'file-sync_icon',
-          width: '11px',
-          height: '13px',
-        } as IconButton.Icon.IconData}>
-      </${IconButton.Icon.Icon.litTagName}>` : html`
-      <${IconButton.Icon.Icon.litTagName} class="inline-icon" .data=${{
-          iconName: 'file_icon',
-          color: 'var(--color-text-primary)',
-          width: '12px',
-          height: '12px',
+    const fileIcon = html`
+      <${IconButton.Icon.Icon.litTagName} class=${overridesSetting.get() ? 'inline-icon dot purple': 'inline-icon'} .data=${{
+          iconName: 'document',
+          color: 'var(--icon-default)',
+          width: '16px',
+          height: '16px',
         } as IconButton.Icon.IconData}>
       </${IconButton.Icon.Icon.litTagName}>`;
     // clang-format on
@@ -293,11 +287,23 @@ export class RequestHeadersComponent extends HTMLElement {
       }
     };
 
+    // Disabled until https://crbug.com/1079231 is fixed.
+    // clang-format off
     return html`
+      <x-link href="https://goo.gle/devtools-override" class="link devtools-link">
+        <${IconButton.Icon.Icon.litTagName} class="inline-icon" .data=${{
+            iconName: 'help',
+            color: 'var(--icon-link)',
+            width: '16px',
+            height: '16px',
+          } as IconButton.Icon.IconData}>
+        </${IconButton.Icon.Icon.litTagName}
+      ></x-link>
       <x-link @click=${revealHeadersFile} class="link devtools-link" title=${UIStrings.revealHeaderOverrides}>
         ${fileIcon}${i18nString(UIStrings.headerOverrides)}
       </x-link>
     `;
+    // clang-format on
   }
 
   #getHeaderOverridesFileUrl(): Platform.DevToolsPath.UrlString {

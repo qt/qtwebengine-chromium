@@ -140,9 +140,9 @@ class V8_EXPORT_PRIVATE Space : public BaseSpace {
 
   virtual void RemoveAllocationObserver(AllocationObserver* observer);
 
-  virtual void PauseAllocationObservers();
+  virtual void PauseAllocationObservers() {}
 
-  virtual void ResumeAllocationObservers();
+  virtual void ResumeAllocationObservers() {}
 
   // Returns size of objects. Can differ from the allocated size
   // (e.g. see OldLargeObjectSpace).
@@ -245,8 +245,12 @@ class Page : public MemoryChunk {
     return reinterpret_cast<Page*>(o.ptr() & ~kAlignmentMask);
   }
 
+  static Page* cast(BasicMemoryChunk* chunk) {
+    return cast(MemoryChunk::cast(chunk));
+  }
+
   static Page* cast(MemoryChunk* chunk) {
-    DCHECK(!chunk->IsLargePage());
+    DCHECK_IMPLIES(chunk, !chunk->IsLargePage());
     return static_cast<Page*>(chunk);
   }
 
@@ -569,10 +573,6 @@ class SpaceWithLinearArea : public Space {
   // the minimum size that the limited area should have.
   Address ComputeLimit(Address start, Address end, size_t min_size) const;
   V8_EXPORT_PRIVATE virtual void UpdateInlineAllocationLimit() = 0;
-
-  void DisableInlineAllocation();
-  void EnableInlineAllocation();
-  bool IsInlineAllocationEnabled() const { return allocation_info_.enabled(); }
 
   void PrintAllocationsOrigins() const;
 

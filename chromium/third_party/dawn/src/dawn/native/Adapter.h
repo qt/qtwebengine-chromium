@@ -16,6 +16,7 @@
 #define SRC_DAWN_NATIVE_ADAPTER_H_
 
 #include <string>
+#include <vector>
 
 #include "dawn/native/DawnNative.h"
 
@@ -34,12 +35,15 @@ class DeviceBase;
 
 class AdapterBase : public RefCounted {
   public:
-    AdapterBase(InstanceBase* instance, wgpu::BackendType backend);
+    AdapterBase(InstanceBase* instance,
+                wgpu::BackendType backend,
+                const TogglesState& adapterToggles);
     ~AdapterBase() override;
 
     MaybeError Initialize();
 
     // WebGPU API
+    InstanceBase* APIGetInstance() const;
     bool APIGetLimits(SupportedLimits* limits) const;
     void APIGetProperties(AdapterProperties* properties) const;
     bool APIHasFeature(wgpu::FeatureName feature) const;
@@ -53,6 +57,9 @@ class AdapterBase : public RefCounted {
     uint32_t GetDeviceId() const;
     const gpu_info::DriverVersion& GetDriverVersion() const;
     wgpu::BackendType GetBackendType() const;
+
+    // This method differs from APIGetInstance() in that it won't increase the ref count of the
+    // instance.
     InstanceBase* GetInstance() const;
 
     void ResetInternalDeviceForTesting();
@@ -64,6 +71,9 @@ class AdapterBase : public RefCounted {
     bool GetLimits(SupportedLimits* limits) const;
 
     void SetUseTieredLimits(bool useTieredLimits);
+
+    // Get the actual toggles state of the adapter.
+    const TogglesState& GetTogglesState() const;
 
     virtual bool SupportsExternalImages() const = 0;
 
@@ -77,15 +87,15 @@ class AdapterBase : public RefCounted {
     gpu_info::DriverVersion mDriverVersion;
     std::string mDriverDescription;
 
-    // Features set that CAN be supported by devices of this adapter. Some features in this set may
-    // be guarded by toggles, and creating a device with these features required may result in a
-    // validation error if proper toggles are not enabled/disabled.
-    FeaturesSet mSupportedFeatures;
+    // Mark a feature as enabled in mSupportedFeatures.
+    void EnableFeature(Feature feature);
     // Check if a feature os supported by this adapter AND suitable with given toggles.
     // TODO(dawn:1495): After implementing adapter toggles, remove this and use adapter toggles
     // instead of device toggles to validate supported features.
-    MaybeError ValidateFeatureSupportedWithDeviceToggles(wgpu::FeatureName feature,
-                                                         const TogglesState& deviceTogglesState);
+    MaybeError ValidateFeatureSupportedWithToggles(wgpu::FeatureName feature,
+                                                   const TogglesState& toggles) const;
+    // Used for the tests that intend to use an adapter without all features enabled.
+    void SetSupportedFeaturesForTesting(const std::vector<wgpu::FeatureName>& requiredFeatures);
 
   private:
     // Backend-specific force-setting and defaulting device toggles
@@ -104,15 +114,24 @@ class AdapterBase : public RefCounted {
 
     virtual void InitializeVendorArchitectureImpl();
 
-    virtual MaybeError ValidateFeatureSupportedWithDeviceTogglesImpl(
+    virtual MaybeError ValidateFeatureSupportedWithTogglesImpl(
         wgpu::FeatureName feature,
-        const TogglesState& deviceTogglesState) = 0;
+        const TogglesState& toggles) const = 0;
 
     ResultOrError<Ref<DeviceBase>> CreateDeviceInternal(const DeviceDescriptor* descriptor);
 
     virtual MaybeError ResetInternalDeviceForTestingImpl();
     Ref<InstanceBase> mInstance;
     wgpu::BackendType mBackend;
+
+    // Adapter toggles state, currently only inherited from instance toggles state.
+    TogglesState mTogglesState;
+
+    // Features set that CAN be supported by devices of this adapter. Some features in this set may
+    // be guarded by toggles, and creating a device with these features required may result in a
+    // validation error if proper toggles are not enabled/disabled.
+    FeaturesSet mSupportedFeatures;
+
     CombinedLimits mLimits;
     bool mUseTieredLimits = false;
 };

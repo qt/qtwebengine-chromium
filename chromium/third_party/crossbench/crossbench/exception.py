@@ -47,7 +47,7 @@ class ExceptionAnnotationScope:
                annotator: ExceptionAnnotator,
                exception_types: TExceptionTypes,
                entries: Tuple[str, ...],
-               rethrow: bool = False):
+               rethrow: bool = False) -> None:
     logging.debug("ExceptionAnnotationScope: %s", entries)
     self._annotator = annotator
     self._exception_types = exception_types
@@ -55,11 +55,12 @@ class ExceptionAnnotationScope:
     self.rethrow = rethrow
     self._previous_info_stack: TInfoStack = ()
 
-  def __enter__(self):
+  def __enter__(self) -> ExceptionAnnotationScope:
     self._annotator._pending_exceptions.clear()
     self._previous_info_stack = self._annotator.info_stack
     self._annotator._info_stack = self._previous_info_stack + (
         self._added_info_stack_entries)
+    return self
 
   def __exit__(self, exception_type: Optional[Type[BaseException]],
                exception_value: Optional[BaseException],

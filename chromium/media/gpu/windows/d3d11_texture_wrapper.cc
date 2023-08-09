@@ -17,6 +17,7 @@
 #include "gpu/command_buffer/service/dxgi_shared_handle_manager.h"
 #include "gpu/command_buffer/service/mailbox_manager.h"
 #include "gpu/command_buffer/service/shared_image/d3d_image_backing.h"
+#include "media/base/media_switches.h"
 #include "media/base/win/mf_helpers.h"
 #include "media/gpu/windows/d3d11_picture_buffer.h"
 #include "mojo/public/cpp/bindings/callback_helpers.h"
@@ -44,6 +45,10 @@ bool SupportsFormat(DXGI_FORMAT dxgi_format) {
 }
 
 size_t NumPlanes(DXGI_FORMAT dxgi_format) {
+  if (IsMultiPlaneFormatForHardwareVideoEnabled()) {
+    return 1;
+  }
+
   switch (dxgi_format) {
     case DXGI_FORMAT_Y210:
     case DXGI_FORMAT_Y410:
@@ -61,6 +66,25 @@ size_t NumPlanes(DXGI_FORMAT dxgi_format) {
     default:
       NOTREACHED();
       return 0;
+  }
+}
+
+viz::SharedImageFormat DXGIFormatToMultiPlanarSharedImageFormat(
+    DXGI_FORMAT dxgi_format) {
+  switch (dxgi_format) {
+    case DXGI_FORMAT_NV12:
+      return viz::MultiPlaneFormat::kNV12;
+    case DXGI_FORMAT_P010:
+      return viz::MultiPlaneFormat::kP010;
+    case DXGI_FORMAT_B8G8R8A8_UNORM:
+      return viz::SinglePlaneFormat::kBGRA_8888;
+    case DXGI_FORMAT_R10G10B10A2_UNORM:
+      return viz::SinglePlaneFormat::kRGBA_1010102;
+    case DXGI_FORMAT_R16G16B16A16_FLOAT:
+      return viz::SinglePlaneFormat::kRGBA_F16;
+    default:
+      NOTREACHED();
+      return viz::SinglePlaneFormat::kBGRA_8888;
   }
 }
 
@@ -193,17 +217,14 @@ DefaultTexture2DWrapper::GpuResources::GpuResources(
     size_t array_slice,
     scoped_refptr<media::D3D11PictureBuffer> picture_buffer,
     GPUResourceInitCB gpu_resource_init_cb) {
-  DCHECK(texture);
+  CHECK(texture);
 
   helper_ = get_helper_cb.Run();
-  if (!helper_ || !helper_->MakeContextCurrent()) {
+  if (!helper_) {
     std::move(on_error_cb)
-        .Run(std::move(D3D11Status::Codes::kMakeContextCurrentFailed));
+        .Run(std::move(D3D11Status::Codes::kGetCommandBufferHelperFailed));
     return;
   }
-
-  helper_->AddWillDestroyStubCB(base::BindOnce(&GpuResources::OnWillDestroyStub,
-                                               weak_factory_.GetWeakPtr()));
 
   // Usage flags to allow the display compositor to draw from it, video to
   // decode, and allow webgl/canvas access.
@@ -245,9 +266,21 @@ DefaultTexture2DWrapper::GpuResources::GpuResources(
             base::win::ScopedHandle(shared_handle), texture);
   }
 
-  auto shared_image_backings = gpu::D3DImageBacking::CreateFromVideoTexture(
-      mailboxes, dxgi_format, size, usage, texture, array_slice,
-      std::move(dxgi_shared_handle_state));
+  std::vector<std::unique_ptr<gpu::SharedImageBacking>> shared_image_backings;
+  if (IsMultiPlaneFormatForHardwareVideoEnabled()) {
+    DCHECK_EQ(mailboxes.size(), 1u);
+    // TODO(crbug.com/1430349): Switch |texture_target| to GL_TEXTURE_2D since
+    // it's now supported by ANGLE.
+    shared_image_backings.push_back(gpu::D3DImageBacking::Create(
+        mailboxes[0], DXGIFormatToMultiPlanarSharedImageFormat(dxgi_format),
+        size, gfx::ColorSpace(), kTopLeft_GrSurfaceOrigin, kPremul_SkAlphaType,
+        usage, texture, std::move(dxgi_shared_handle_state),
+        GL_TEXTURE_EXTERNAL_OES, array_slice));
+  } else {
+    shared_image_backings = gpu::D3DImageBacking::CreateFromVideoTexture(
+        mailboxes, dxgi_format, size, usage, texture, array_slice,
+        std::move(dxgi_shared_handle_state));
+  }
   if (shared_image_backings.empty()) {
     std::move(on_error_cb)
         .Run(std::move(D3D11Status::Codes::kCreateSharedImageFailed));
@@ -276,29 +309,6 @@ DefaultTexture2DWrapper::GpuResources::GpuResources(
       .Run(std::move(picture_buffer), std::move(shared_image_rep));
 }
 
-DefaultTexture2DWrapper::GpuResources::~GpuResources() {
-  // Destroy shared images with a current context, otherwise mark context lost.
-  // Check that stub is not destroyed since MakeContextCurrent will fail after
-  // that and we should've already propagated context loss in OnWillDestroyStub.
-  if (!is_stub_destroyed_ && (!helper_ || !helper_->MakeContextCurrent())) {
-    for (auto& shared_image_rep : shared_images_) {
-      shared_image_rep->OnContextLost();
-    }
-  }
-  // Destroy helper after shared image since the shared image has a raw pointer
-  // to the helper's memory tracker.
-  shared_images_.clear();
-  helper_.reset();
-}
-
-void DefaultTexture2DWrapper::GpuResources::OnWillDestroyStub(
-    bool have_context) {
-  if (!have_context) {
-    for (auto& shared_image_rep : shared_images_) {
-      shared_image_rep->OnContextLost();
-    }
-  }
-  is_stub_destroyed_ = true;
-}
+DefaultTexture2DWrapper::GpuResources::~GpuResources() = default;
 
 }  // namespace media

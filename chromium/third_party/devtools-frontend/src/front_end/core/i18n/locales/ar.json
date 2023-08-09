@@ -224,9 +224,6 @@
   "core/i18n/time-utilities.ts | fs": {
     "message": "{PH1} ثانية"
   },
-  "core/sdk/CPUProfileDataModel.ts | devtoolsCpuProfileParserIsFixing": {
-    "message": "DevTools: تتيح أداة تحليل لقطات CPU إمكانية إصلاح {PH1} عينة غير متوفّرة."
-  },
   "core/sdk/CPUProfilerModel.ts | profileD": {
     "message": "الملف التعريفي {PH1}"
   },
@@ -238,6 +235,9 @@
   },
   "core/sdk/CompilerSourceMappingContentProvider.ts | couldNotLoadContentForSS": {
     "message": "تعذَّر تحميل المحتوى في {PH1} ({PH2})."
+  },
+  "core/sdk/ConsoleModel.ts | bfcacheNavigation": {
+    "message": "تمت استعادة التنقّل إلى {PH1} من خلال ميزة \"التخزين المؤقت للصفحات\" (راجِع https://web.dev/bfcache/‎)."
   },
   "core/sdk/ConsoleModel.ts | failedToSaveToTempVariable": {
     "message": "تعذَّر حفظ قيمة JavaScript إلى متغيّر مؤقت."
@@ -551,9 +551,6 @@
   "core/sdk/OverlayModel.ts | pausedInDebugger": {
     "message": "تم الإيقاف مؤقتًا في برنامج تصحيح الأخطاء."
   },
-  "core/sdk/PageResourceLoader.ts | loadCanceledDueToLoadTimeout": {
-    "message": "تم إلغاء التحميل بسبب انتهاء المدة المحدّدة له."
-  },
   "core/sdk/PageResourceLoader.ts | loadCanceledDueToReloadOf": {
     "message": "تم إلغاء تحميل خرائط المصادر بسبب إعادة تحميل الصفحة التي تم فحصها."
   },
@@ -618,7 +615,7 @@
     "message": "جارٍ الإيقاف"
   },
   "core/sdk/sdk-meta.ts | achromatopsia": {
-    "message": "عمى الألوان التام"
+    "message": "عمى الألوان (بدون ألوان)"
   },
   "core/sdk/sdk-meta.ts | blurredVision": {
     "message": "رؤية غير واضحة"
@@ -627,7 +624,7 @@
     "message": "التقاط عمليات تتبُّع تسلسل استدعاء الدوال البرمجية غير المتزامنة"
   },
   "core/sdk/sdk-meta.ts | deuteranopia": {
-    "message": "عمى اللون الأخضر"
+    "message": "عمى اللون الأخضر (بدون لون أخضر)"
   },
   "core/sdk/sdk-meta.ts | disableAsyncStackTraces": {
     "message": "إيقاف عمليات تتبُّع تسلسل استدعاء الدوال البرمجية غير المتزامنة"
@@ -690,7 +687,7 @@
     "message": "محاكاة صفحة مركّز عليها"
   },
   "core/sdk/sdk-meta.ts | emulateAchromatopsia": {
-    "message": "محاكاة عمى الألوان التام"
+    "message": "محاكاة عمى الألوان (بدون ألوان)"
   },
   "core/sdk/sdk-meta.ts | emulateAutoDarkMode": {
     "message": "محاكاة الوضع المُعتِم التلقائي"
@@ -714,13 +711,16 @@
     "message": "محاكاة نوع وسائط شاشة CSS"
   },
   "core/sdk/sdk-meta.ts | emulateDeuteranopia": {
-    "message": "محاكاة عمى اللون الأخضر"
+    "message": "محاكاة عمى اللون الأخضر (بدون لون أخضر)"
   },
   "core/sdk/sdk-meta.ts | emulateProtanopia": {
-    "message": "محاكاة عمى اللون الأحمر"
+    "message": "محاكاة عمى اللون الأحمر (بدون لون أحمر)"
+  },
+  "core/sdk/sdk-meta.ts | emulateReducedContrast": {
+    "message": "محاكاة التباين المخفَّض"
   },
   "core/sdk/sdk-meta.ts | emulateTritanopia": {
-    "message": "محاكاة عمى اللون الأزرق"
+    "message": "محاكاة عمى اللون الأزرق (بدون لون أزرق)"
   },
   "core/sdk/sdk-meta.ts | emulateVisionDeficiencies": {
     "message": "محاكاة قصور الرؤية"
@@ -780,7 +780,7 @@
     "message": "بلا محاكاة"
   },
   "core/sdk/sdk-meta.ts | pauseOnExceptions": {
-    "message": "إيقاف مؤقت عند الاستثناءات"
+    "message": "إيقاف مؤقت عند مواجهة أي استثناءات"
   },
   "core/sdk/sdk-meta.ts | preserveLogUponNavigation": {
     "message": "الاحتفاظ بالسجلات استنادًا إلى التنقّل"
@@ -789,10 +789,13 @@
     "message": "طباعة"
   },
   "core/sdk/sdk-meta.ts | protanopia": {
-    "message": "عمى اللون الأحمر"
+    "message": "عمى اللون الأحمر (بدون لون أحمر)"
   },
   "core/sdk/sdk-meta.ts | query": {
     "message": "طلب"
+  },
+  "core/sdk/sdk-meta.ts | reducedContrast": {
+    "message": "تباين مخفَّض"
   },
   "core/sdk/sdk-meta.ts | screen": {
     "message": "شاشة"
@@ -840,7 +843,7 @@
     "message": "إظهار أحجام مسارات الشبكة"
   },
   "core/sdk/sdk-meta.ts | tritanopia": {
-    "message": "عمى اللون الأزرق"
+    "message": "عمى اللون الأزرق (بدون لون أزرق)"
   },
   "entrypoints/inspector_main/InspectorMain.ts | javascriptIsDisabled": {
     "message": "تم إيقاف JavaScript."
@@ -1043,6 +1046,12 @@
   "entrypoints/main/MainImpl.ts | undockIntoSeparateWindow": {
     "message": "إلغاء الإرساء في نافذة منفصلة"
   },
+  "entrypoints/main/OutermostTargetSelector.ts | targetNotSelected": {
+    "message": "الصفحة: لم يتم اختيارها"
+  },
+  "entrypoints/main/OutermostTargetSelector.ts | targetS": {
+    "message": "الصفحة: {PH1}"
+  },
   "entrypoints/main/main-meta.ts | asAuthored": {
     "message": "على القيمة \"مكتوب من قِبل المستخدم\""
   },
@@ -1062,7 +1071,7 @@
     "message": "تنسيق الألوان:"
   },
   "entrypoints/main/main-meta.ts | colorFormatSettingDisabled": {
-    "message": "تم إيقاف هذا الخيار نهائيًا لأنّه غير متوافق مع مساحات الألوان الحديثة. لإعادة تفعيله، يمكنك إيقاف التجربة المرتبطة به."
+    "message": "تم إيقاف هذا الخيار نهائيًا لأنّه غير متوافق مع مساحات الألوان الحديثة. لإعادة تفعيله، يجب إيقاف التجربة المناظرة."
   },
   "entrypoints/main/main-meta.ts | darkCapital": {
     "message": "مظهر داكن"
@@ -1241,6 +1250,177 @@
   "entrypoints/worker_app/WorkerMain.ts | main": {
     "message": "الهدف الرئيسي"
   },
+  "generated/Deprecation.ts | AuthorizationCoveredByWildcard": {
+    "message": "لن يشمل رمز حرف البدل (*) الإذن في معالجة العنوان Access-Control-Allow-Headers في سياسة Cross-Origin Resource Sharing ‏(CORS)."
+  },
+  "generated/Deprecation.ts | CSSSelectorInternalMediaControlsOverlayCastButton": {
+    "message": "يجب استخدام السمة disableRemotePlayback لإيقاف الدمج التلقائي لتقنية Google Cast بدلاً من استخدام أداة الاختيار -internal-media-controls-overlay-cast-button."
+  },
+  "generated/Deprecation.ts | CanRequestURLHTTPContainingNewline": {
+    "message": "يتم حظر طلبات المصادر التي تتضمّن عناوين URL الخاصة بها كلاً من أحرف المسافة البيضاء \\(n|r|t) ورمز \"الأقل من\" (<). لتحميل هذه المصادر، يُرجى إزالة السطور الجديدة وترميز رمز \"الأقل من\" من خلال مواضع مثل قيم سمات العناصر."
+  },
+  "generated/Deprecation.ts | ChromeLoadTimesConnectionInfo": {
+    "message": "تم إيقاف واجهة برمجة التطبيقات chrome.loadTimes() نهائيًا ويمكنك بدلاً منها استخدام واجهة برمجة التطبيقات Navigation Timing 2 الموحَّدة."
+  },
+  "generated/Deprecation.ts | ChromeLoadTimesFirstPaintAfterLoadTime": {
+    "message": "تم إيقاف واجهة برمجة التطبيقات chrome.loadTimes() نهائيًا. وبدلاً منها، يمكنك استخدام واجهة برمجة التطبيقات الموحَّدة: Paint Timing."
+  },
+  "generated/Deprecation.ts | ChromeLoadTimesWasAlternateProtocolAvailable": {
+    "message": "تم إيقاف واجهة برمجة التطبيقات chrome.loadTimes() نهائيًا. وبدلاً منها، يمكنك استخدام واجهة برمجة التطبيقات الموحَّدة Navigation Timing 2 التي تتضمّن السمة nextHopProtocol."
+  },
+  "generated/Deprecation.ts | CookieWithTruncatingChar": {
+    "message": "سيتم رفض ملفات تعريف الارتباط التي تتضمّن الحرف \\(0|r|n) بدلاً من اقتطاعها."
+  },
+  "generated/Deprecation.ts | CrossOriginAccessBasedOnDocumentDomain": {
+    "message": "بالنسبة إلى ميزة تخفيف قيود السياسة المشتركة المصدر من خلال ضبط الميزة document.domain، تم إيقافها نهائيًا وستكون غير مفعَّلة تلقائيًا. إنّ تحذير الإيقاف النهائي هذا متعلِّق بإذن الوصول من مصادر متعددة والذي تم تفعيله من خلال ضبط الميزة document.domain."
+  },
+  "generated/Deprecation.ts | CrossOriginWindowAlert": {
+    "message": "إنَّ ميزة تنفيذ الوظيفة window.alert المستنِدة إلى إطارات iframe من مصادر متعددة تم إيقافها نهائيًا وستتم إزالتها في المستقبل."
+  },
+  "generated/Deprecation.ts | CrossOriginWindowConfirm": {
+    "message": "إنّ ميزة تنفيذ الوظيفة window.confirm المستنِدة إلى إطارات iframe من مصادر متعددة تم إيقافها نهائيًا وستتم إزالتها في المستقبل."
+  },
+  "generated/Deprecation.ts | DocumentDomainSettingWithoutOriginAgentClusterHeader": {
+    "message": "بالنسبة إلى ميزة تخفيف قيود السياسة المشتركة المصدر من خلال ضبط الميزة document.domain، تم إيقافها نهائيًا وستكون غير مفعَّلة تلقائيًا. لمواصلة استخدام هذه الميزة، يُرجى إيقاف مجموعات الوكلاء المرتبطة حسب المصدر من خلال إرسال العنوان Origin-Agent-Cluster: ?0 مع استجابة HTTP للمستند والإطارات. لمعرفة مزيد من التفاصيل، يمكنك الاطّلاع على https://developer.chrome.com/blog/immutable-document-domain/‎."
+  },
+  "generated/Deprecation.ts | EventPath": {
+    "message": "تم إيقاف واجهة برمجة التطبيقات Event.path نهائيًا وستتم إزالتها. يُرجى استخدام الإجراء Event.composedPath() بدلاً منها."
+  },
+  "generated/Deprecation.ts | ExpectCTHeader": {
+    "message": "تم إيقاف عنوان Expect-CT نهائيًا وستتم إزالته. يتطلَّب Chrome توفُّر شهادة الشفافية لجميع الشهادات الموثوق بها التي تم إصدارها بشكل علني بعد 30 نيسان (أبريل) 2018."
+  },
+  "generated/Deprecation.ts | GeolocationInsecureOrigin": {
+    "message": "لم يعد الإجراءان getCurrentPosition() وwatchPosition() متوافقين مع المصادر غير الآمنة. لاستخدام هذه الميزة، يجب مراعاة نقل تطبيقك إلى مصدر آمن مثل HTTPS. لمعرفة مزيد من التفاصيل، يُرجى الاطّلاع على https://goo.gle/chrome-insecure-origins."
+  },
+  "generated/Deprecation.ts | GeolocationInsecureOriginDeprecatedNotRemoved": {
+    "message": "تم إيقاف الإجراءين getCurrentPosition() وwatchPosition() نهائيًا على المصادر غير الآمنة. لاستخدام هذه الميزة، يجب مراعاة نقل تطبيقك إلى مصدر آمن مثل HTTPS. لمعرفة مزيد من التفاصيل، يُرجى الاطّلاع على https://goo.gle/chrome-insecure-origins."
+  },
+  "generated/Deprecation.ts | GetUserMediaInsecureOrigin": {
+    "message": "لم تعد الميزة getUserMedia() متوافقة مع المصادر غير الآمنة. لاستخدام هذه الميزة، يجب مراعاة نقل تطبيقك إلى مصدر آمن مثل HTTPS. لمعرفة مزيد من التفاصيل، يُرجى الاطّلاع على https://goo.gle/chrome-insecure-origins."
+  },
+  "generated/Deprecation.ts | HostCandidateAttributeGetter": {
+    "message": "تم إيقاف RTCPeerConnectionIceErrorEvent.hostCandidate نهائيًا. يُرجى استخدام RTCPeerConnectionIceErrorEvent.address أو RTCPeerConnectionIceErrorEvent.port بدلاً منها."
+  },
+  "generated/Deprecation.ts | IdentityInCanMakePaymentEvent": {
+    "message": "إنّ أصل التاجر والبيانات العشوائية من حدث مشغّل الخدمات في canmakepayment تم إيقافهما نهائيًا وستتم إزالتهما: topOrigin وpaymentRequestOrigin وmethodData وmodifiers."
+  },
+  "generated/Deprecation.ts | InsecurePrivateNetworkSubresourceRequest": {
+    "message": "طلب الموقع الإلكتروني مصدرًا فرعيًا من شبكة يمكن الوصول إليه من خلال الموقع الإلكتروني فقط بسبب موضع مستخدميه المميّز على الشبكة. تكشف هذه الطلبات الأجهزة والخوادم الخاصة على الإنترنت، ما يزيد من خطر تزوير الطلب من موقع إلكتروني مختلف (CSRF) و/أو تسرُّب المعلومات. وللحدِّ من هذه المخاطر، أوقف Chrome نهائيًا طلبات الوصول إلى مصادر فرعية خاصة، وذلك عند تقديمها من خلال سياقات غير آمنة، وسيبدأ في حظرها."
+  },
+  "generated/Deprecation.ts | InterestGroupDailyUpdateUrl": {
+    "message": "تمت إعادة تسمية الحقل dailyUpdateUrl في InterestGroups الذي تم تمريره إلى joinAdInterestGroup() ليصبح updateUrl لكي يوضّح اسم الحقل سلوكه بدقة أكبر."
+  },
+  "generated/Deprecation.ts | LocalCSSFileExtensionRejected": {
+    "message": "لا يمكن تحميل صفحات الأنماط المتتالية (CSS) من عناوين URL للملفات file: ما لم تنتهِ الملفات بالامتداد .css."
+  },
+  "generated/Deprecation.ts | MediaSourceAbortRemove": {
+    "message": "تم بشكل نهائي إيقاف ميزة استخدام SourceBuffer.abort() لإلغاء إزالة النطاق غير المتزامن للإجراء remove() بسبب تغيُّر المواصفات. ستتم إزالة الميزة في المستقبل. وعليك معالجة الحدث updateend بدلاً من ذلك. يهدف الإجراء abort() فقط إلى إلغاء إمكانية إلحاق الوسائط غير المتزامنة أو إعادة ضبط حالة المحلِّل."
+  },
+  "generated/Deprecation.ts | MediaSourceDurationTruncatingBuffered": {
+    "message": "تم بشكل نهائي إيقاف إمكانية ضبط السمة MediaSource.duration على قيمة أقل من الحد الأقصى للطابع الزمني المخصَّص لعرض أي إطارات تم ترميزها وتخزينها مؤقتًا بسبب تغيُّر المواصفات. إنّ الإزالة الضمنية للوسائط المُقتطَعة التي تم تخزينها مؤقتًا لن تكون متاحة في المستقبل. وبدلاً من ذلك، يجب تطبيق الوظيفة remove(newDuration, oldDuration) بشكل واضح على جميع واجهات برمجة التطبيقات sourceBuffers التي تتوفّر بها newDuration < oldDuration."
+  },
+  "generated/Deprecation.ts | NoSysexWebMIDIWithoutPermission": {
+    "message": "ستطلب واجهة برمجة التطبيقات Web MIDI إذنًا للاستخدام حتى في حال عدم تحديد رسائل النظام الحصرية (Sysex) في MIDIOptions."
+  },
+  "generated/Deprecation.ts | NonStandardDeclarativeShadowDOM": {
+    "message": "تم إيقاف سمة shadowroot القديمة غير الموحّدة نهائيًا، و*لن تعمل* بعد الآن في الإصدار M119. يُرجى استخدام السمة shadowrootmode الجديدة الموحّدة بدلاً من ذلك."
+  },
+  "generated/Deprecation.ts | NotificationInsecureOrigin": {
+    "message": "قد يتوقف استخدام واجهة برمجة التطبيقات Notification API من مصادر غير آمنة. يجب مراعاة نقل تطبيقك إلى مصدر آمن، مثل HTTPS. لمعرفة مزيد من التفاصيل، يُرجى الاطّلاع على https://goo.gle/chrome-insecure-origins."
+  },
+  "generated/Deprecation.ts | NotificationPermissionRequestedIframe": {
+    "message": "قد تتوقّف إمكانية طلب إذن لواجهة برمجة التطبيقات Notification API من أحد إطارات iframe من مصادر متعددة. يجب مراعاة طلب إذن من إطار عالٍ المستوى أو فتح نافذة جديدة بدلاً من ذلك."
+  },
+  "generated/Deprecation.ts | ObsoleteCreateImageBitmapImageOrientationNone": {
+    "message": "تم إيقاف الخيار imageOrientation: 'none'‎ في createImageBitmap نهائيًا. يُرجى استخدام createImageBitmap مع الخيار ‎{imageOrientation: 'from-image'} بدلاً من ذلك."
+  },
+  "generated/Deprecation.ts | ObsoleteWebRtcCipherSuite": {
+    "message": "يتفاوض شريكك لاستخدام إصدار (D) القديم من بروتوكول أمان طبقة النقل (TLS). يُرجى التحقّق من الأمر مع شريكك لحلّ هذه المشكلة."
+  },
+  "generated/Deprecation.ts | OverflowVisibleOnReplacedElement": {
+    "message": "في حال تحديد القيمة \"overflow: visible\" ضمن علامات img وvideo وcanvas، قد يُعرَض محتوى مرئي خارج حدود العنصر. يُرجى الاطّلاع على https://github.com/WICG/shared-element-transitions/blob/main/debugging_overflow_on_images.md."
+  },
+  "generated/Deprecation.ts | PaymentInstruments": {
+    "message": "تم إيقاف paymentManager.instruments نهائيًا. بدلاً من ذلك، يُرجى استخدام ميزة \"التثبيت في وقت التشغيل\" (JIT) مع تطبيقات معالجة الدفع."
+  },
+  "generated/Deprecation.ts | PaymentRequestCSPViolation": {
+    "message": "تجاوز طلب البيانات من واجهة برمجة التطبيقات PaymentRequest التوجيه connect-src في Content-Security-Policy (سياسة أمان المحتوى). تم إيقاف هذا التجاوز نهائيًا. يُرجى إضافة معرِّف طريقة الدفع من واجهة برمجة التطبيقات PaymentRequest (في حقل supportedMethods) إلى توجيه connect-src في سياسة أمان المحتوى (CSP)."
+  },
+  "generated/Deprecation.ts | PersistentQuotaType": {
+    "message": "تم إيقاف StorageType.persistent نهائيًا. يُرجى استخدام navigator.storage الموحّدة بدلاً منها."
+  },
+  "generated/Deprecation.ts | PictureSourceSrc": {
+    "message": "إنّ استخدام العنصر <source src> مع العنصر الرئيسي <picture> غير صالح، وبالتالي سيتم تجاهله. يُرجى استخدام السمة <source srcset> بدلاً من ذلك."
+  },
+  "generated/Deprecation.ts | PrefixedCancelAnimationFrame": {
+    "message": "إنّ طريقة webkitCancelAnimationFrame مخصّصة للمورّدين. يُرجى استخدام طريقة cancelAnimationFrame العادية بدلاً من ذلك."
+  },
+  "generated/Deprecation.ts | PrefixedRequestAnimationFrame": {
+    "message": "إنّ طريقة webkitRequestAnimationFrame مخصّصة للمورّدين. يُرجى استخدام طريقة requestAnimationFrame العادية بدلاً من ذلك."
+  },
+  "generated/Deprecation.ts | PrefixedVideoDisplayingFullscreen": {
+    "message": "تم إيقاف واجهة برمجة التطبيقات HTMLVideoElement.webkitDisplayingFullscreen نهائيًا. يُرجى استخدام واجهة برمجة التطبيقات Document.fullscreenElement بدلاً من ذلك."
+  },
+  "generated/Deprecation.ts | PrefixedVideoEnterFullScreen": {
+    "message": "تم إيقاف واجهة برمجة التطبيقات HTMLVideoElement.webkitEnterFullscreen()‎ نهائيًا. يُرجى استخدام واجهة برمجة التطبيقات Element.requestFullscreen()‎ بدلاً من ذلك."
+  },
+  "generated/Deprecation.ts | PrefixedVideoEnterFullscreen": {
+    "message": "تم إيقاف واجهة برمجة التطبيقات HTMLVideoElement.webkitEnterFullscreen()‎ نهائيًا. يُرجى استخدام واجهة برمجة التطبيقات Element.requestFullscreen()‎ بدلاً من ذلك."
+  },
+  "generated/Deprecation.ts | PrefixedVideoExitFullScreen": {
+    "message": "تم إيقاف واجهة برمجة التطبيقات HTMLVideoElement.webkitExitFullscreen()‎ نهائيًا. يُرجى استخدام واجهة برمجة التطبيقات Document.exitFullscreen()‎ بدلاً من ذلك."
+  },
+  "generated/Deprecation.ts | PrefixedVideoExitFullscreen": {
+    "message": "تم إيقاف واجهة برمجة التطبيقات HTMLVideoElement.webkitExitFullscreen()‎ نهائيًا. يُرجى استخدام واجهة برمجة التطبيقات Document.exitFullscreen()‎ بدلاً من ذلك."
+  },
+  "generated/Deprecation.ts | PrefixedVideoSupportsFullscreen": {
+    "message": "تم إيقاف واجهة برمجة التطبيقات HTMLVideoElement.webkitSupportsFullscreen نهائيًا. يُرجى استخدام واجهة برمجة التطبيقات Document.fullscreenEnabled بدلاً من ذلك."
+  },
+  "generated/Deprecation.ts | PrivacySandboxExtensionsAPI": {
+    "message": "سيتم إيقاف واجهة برمجة التطبيقات chrome.privacy.websites.privacySandboxEnabled نهائيًا، علمًا بأنّها ستظل نشطة للتوافق مع الأنظمة القديمة إلى أن يتم طرح الإصدار الرئيسي M113. بدلاً من هذه الواجهة، يُرجى استخدام واجهات برمجة التطبيقات chrome.privacy.websites.topicsEnabled وchrome.privacy.websites.fledgeEnabled وchrome.privacy.websites.adMeasurementEnabled. لمعرفة مزيد من المعلومات، يمكنك الانتقال إلى https://developer.chrome.com/docs/extensions/reference/privacy/#property-websites-privacySandboxEnabled."
+  },
+  "generated/Deprecation.ts | RTCConstraintEnableDtlsSrtpFalse": {
+    "message": "تمت إزالة القيد DtlsSrtpKeyAgreement. لقد حدَّدت القيمة false لهذا القيد، وهو أمر يتم تفسيره كمحاولة لاستخدام الميزة SDES key negotiation التي تمت إزالتها. لقد تمت إزالة هذه الميزة. وبدلاً منها، يمكنك استخدام إحدى الخدمات التي تتوفّر فيها الميزة DTLS key negotiation."
+  },
+  "generated/Deprecation.ts | RTCConstraintEnableDtlsSrtpTrue": {
+    "message": "تمت إزالة القيد DtlsSrtpKeyAgreement. لقد حدَّدت القيمة true لهذا القيد، وهو أمر ليس له أي تأثير. وفي جميع الأحوال، يمكنك إزالة هذا القيد بغرض التنظيم."
+  },
+  "generated/Deprecation.ts | RTCPeerConnectionGetStatsLegacyNonCompliant": {
+    "message": "تم إيقاف الطريقة getStats()‎ المستنِدة إلى معاودة الاتصال نهائيًا وستتم إزالتها. يُرجى استخدام الطريقة getStats()‎ المتوافقة مع المواصفات بدلاً من ذلك."
+  },
+  "generated/Deprecation.ts | RangeExpand": {
+    "message": "تم إيقاف واجهة برمجة التطبيقات Range.expand()‎ نهائيًا. يُرجى استخدام واجهة برمجة التطبيقات Select.modify()‎ بدلاً من ذلك."
+  },
+  "generated/Deprecation.ts | RequestedSubresourceWithEmbeddedCredentials": {
+    "message": "يتم حظر طلبات المصادر الفرعية التي تتضمّن عناوين URL الخاصة بها بيانات اعتماد مُضمَّنة (مثل https://user:pass@host/)."
+  },
+  "generated/Deprecation.ts | RtcpMuxPolicyNegotiate": {
+    "message": "تم إيقاف الخيار rtcpMuxPolicy نهائيًا وستتم إزالته."
+  },
+  "generated/Deprecation.ts | SharedArrayBufferConstructedWithoutIsolation": {
+    "message": "سيطلب الكائن SharedArrayBuffer حظر الوصول من نطاقات أخرى. لمعرفة مزيد من التفاصيل، يُرجى الاطّلاع على https://developer.chrome.com/blog/enabling-shared-array-buffer/‎."
+  },
+  "generated/Deprecation.ts | TextToSpeech_DisallowedByAutoplay": {
+    "message": "إنّ ميزة تنفيذ الإجراء speechSynthesis.speak() بدون تفعيل المستخدِم متوقفة نهائيًا وستتم إزالتها."
+  },
+  "generated/Deprecation.ts | V8SharedArrayBufferConstructedInExtensionWithoutIsolation": {
+    "message": "يجب أن تستخدم الإضافات ميزة حظر الوصول من نطاقات أخرى لمواصلة استخدام الكائن SharedArrayBuffer. يُرجى الاطّلاع على https://developer.chrome.com/docs/extensions/mv3/cross-origin-isolation/‎."
+  },
+  "generated/Deprecation.ts | WindowPlacementPermissionDescriptorUsed": {
+    "message": "تم إيقاف واصف الأذونات window-placement نهائيًا. يمكنك استخدام window-management كبديل. للحصول على مزيد من المساعدة، يُرجى الاطّلاع على https://bit.ly/window-placement-rename."
+  },
+  "generated/Deprecation.ts | WindowPlacementPermissionPolicyParsed": {
+    "message": "تم إيقاف سياسة الأذونات window-placement نهائيًا. يمكنك استخدام window-management كبديل. للحصول على مزيد من المساعدة، يُرجى الاطّلاع على https://bit.ly/window-placement-rename."
+  },
+  "generated/Deprecation.ts | XHRJSONEncodingDetection": {
+    "message": "لا يتوفّر الترميز UTF-16 من خلال استجابة json في واجهة برمجة التطبيقات XMLHttpRequest."
+  },
+  "generated/Deprecation.ts | XMLHttpRequestSynchronousInNonWorkerOutsideBeforeUnload": {
+    "message": "واجهة برمجة التطبيقات XMLHttpRequest المتزامنة في سلسلة أنظمة التشغيل الرئيسية متوقفة نهائيًا بسبب تأثيراتها الضارة في تجربة المستخدِم النهائي. للحصول على مزيد من المساعدة، يُرجى الاطّلاع على https://xhr.spec.whatwg.org/‎."
+  },
+  "generated/Deprecation.ts | XRSupportsSession": {
+    "message": "تم إيقاف الإجراء supportsSession() نهائيًا. يُرجى استخدام الإجراء isSessionSupported() والتحقُّق من القيمة المنطقية النهائية."
+  },
   "models/bindings/ContentProviderBasedProject.ts | unknownErrorLoadingFile": {
     "message": "حدث خطأ غير معروف أثناء تحميل الملف."
   },
@@ -1376,167 +1556,32 @@
   "models/issues_manager/CrossOriginEmbedderPolicyIssue.ts | samesiteAndSameorigin": {
     "message": "Same-Site وSame-Origin"
   },
-  "models/issues_manager/DeprecationIssue.ts | authorizationCoveredByWildcard": {
-    "message": "لن يشمل رمز حرف البدل (*) الإذن في معالجة العنوان Access-Control-Allow-Headers في سياسة Cross-Origin Resource Sharing ‏(CORS)."
-  },
-  "models/issues_manager/DeprecationIssue.ts | canRequestURLHTTPContainingNewline": {
-    "message": "يتم حظر طلبات المصادر التي تتضمّن عناوين URL الخاصة بها كلاً من أحرف المسافة البيضاء \\(n|r|t) ورمز \"الأقل من\" (<). لتحميل هذه المصادر، يُرجى إزالة السطور الجديدة وترميز رمز \"الأقل من\" من خلال مواضع مثل قيم سمات العناصر."
-  },
-  "models/issues_manager/DeprecationIssue.ts | chromeLoadTimesConnectionInfo": {
-    "message": "تم إيقاف واجهة برمجة التطبيقات chrome.loadTimes() نهائيًا ويمكنك بدلاً منها استخدام واجهة برمجة التطبيقات Navigation Timing 2 الموحَّدة."
-  },
-  "models/issues_manager/DeprecationIssue.ts | chromeLoadTimesFirstPaintAfterLoadTime": {
-    "message": "تم إيقاف واجهة برمجة التطبيقات chrome.loadTimes() نهائيًا. وبدلاً منها، يمكنك استخدام واجهة برمجة التطبيقات الموحَّدة: Paint Timing."
-  },
-  "models/issues_manager/DeprecationIssue.ts | chromeLoadTimesWasAlternateProtocolAvailable": {
-    "message": "تم إيقاف واجهة برمجة التطبيقات chrome.loadTimes() نهائيًا. وبدلاً منها، يمكنك استخدام واجهة برمجة التطبيقات الموحَّدة Navigation Timing 2 التي تتضمّن السمة nextHopProtocol."
-  },
-  "models/issues_manager/DeprecationIssue.ts | cookieWithTruncatingChar": {
-    "message": "سيتم رفض ملفات تعريف الارتباط التي تتضمّن الحرف \\(0|r|n) بدلاً من اقتطاعها."
-  },
-  "models/issues_manager/DeprecationIssue.ts | crossOriginAccessBasedOnDocumentDomain": {
-    "message": "بالنسبة إلى ميزة تخفيف قيود السياسة المشتركة المصدر من خلال ضبط الميزة document.domain، تم إيقافها نهائيًا وستكون غير مفعَّلة تلقائيًا. إنّ تحذير الإيقاف النهائي هذا متعلِّق بإذن الوصول من مصادر متعددة والذي تم تفعيله من خلال ضبط الميزة document.domain."
-  },
-  "models/issues_manager/DeprecationIssue.ts | crossOriginWindowApi": {
-    "message": "إنّ ميزة تنفيذ الوظيفة {PH1} المستنِدة إلى إطارات iframe من مصادر متعددة تم إيقافها نهائيًا وستتم إزالتها في المستقبل."
-  },
-  "models/issues_manager/DeprecationIssue.ts | cssSelectorInternalMediaControlsOverlayCastButton": {
-    "message": "يجب استخدام السمة disableRemotePlayback لإيقاف الدمج التلقائي لتقنية Google Cast بدلاً من استخدام أداة الاختيار -internal-media-controls-overlay-cast-button."
-  },
-  "models/issues_manager/DeprecationIssue.ts | deprecatedWithReplacement": {
-    "message": "تم إيقاف الوظيفة {PH1} نهائيًا. يُرجى استخدام الوظيفة {PH2} بدلاً منها."
-  },
-  "models/issues_manager/DeprecationIssue.ts | deprecationExample": {
-    "message": "هذا مثال على رسالة مُترجمة بشأن مشكلة إيقاف نهائي."
-  },
-  "models/issues_manager/DeprecationIssue.ts | documentDomainSettingWithoutOriginAgentClusterHeader": {
-    "message": "بالنسبة إلى ميزة تخفيف قيود السياسة المشتركة المصدر من خلال ضبط الميزة document.domain، تم إيقافها نهائيًا وستكون غير مفعَّلة تلقائيًا. لمواصلة استخدام هذه الميزة، يُرجى إيقاف مجموعات الوكلاء المرتبطة حسب المصدر من خلال إرسال العنوان Origin-Agent-Cluster: ?0 مع استجابة HTTP للمستند والإطارات. لمعرفة مزيد من التفاصيل، يمكنك الاطّلاع على https://developer.chrome.com/blog/immutable-document-domain/‎."
-  },
-  "models/issues_manager/DeprecationIssue.ts | eventPath": {
-    "message": "تم إيقاف واجهة برمجة التطبيقات Event.path نهائيًا وستتم إزالتها. يُرجى استخدام الإجراء Event.composedPath() بدلاً منها."
-  },
-  "models/issues_manager/DeprecationIssue.ts | expectCTHeader": {
-    "message": "تم إيقاف عنوان Expect-CT نهائيًا وستتم إزالته. يتطلَّب Chrome توفُّر شهادة الشفافية لجميع الشهادات الموثوق بها التي تم إصدارها بشكل علني بعد 30 نيسان (أبريل) 2018."
-  },
   "models/issues_manager/DeprecationIssue.ts | feature": {
     "message": "لمزيد من التفاصيل، يُرجى الاطّلاع على صفحة حالة الميزة."
-  },
-  "models/issues_manager/DeprecationIssue.ts | geolocationInsecureOrigin": {
-    "message": "لم يعد الإجراءان getCurrentPosition() وwatchPosition() متوافقين مع المصادر غير الآمنة. لاستخدام هذه الميزة، يجب مراعاة نقل تطبيقك إلى مصدر آمن مثل HTTPS. لمعرفة مزيد من التفاصيل، يُرجى الاطّلاع على https://goo.gle/chrome-insecure-origins."
-  },
-  "models/issues_manager/DeprecationIssue.ts | geolocationInsecureOriginDeprecatedNotRemoved": {
-    "message": "تم إيقاف الإجراءين getCurrentPosition() وwatchPosition() نهائيًا على المصادر غير الآمنة. لاستخدام هذه الميزة، يجب مراعاة نقل تطبيقك إلى مصدر آمن مثل HTTPS. لمعرفة مزيد من التفاصيل، يُرجى الاطّلاع على https://goo.gle/chrome-insecure-origins."
-  },
-  "models/issues_manager/DeprecationIssue.ts | getUserMediaInsecureOrigin": {
-    "message": "لم تعد الميزة getUserMedia() متوافقة مع المصادر غير الآمنة. لاستخدام هذه الميزة، يجب مراعاة نقل تطبيقك إلى مصدر آمن مثل HTTPS. لمعرفة مزيد من التفاصيل، يُرجى الاطّلاع على https://goo.gle/chrome-insecure-origins."
-  },
-  "models/issues_manager/DeprecationIssue.ts | hostCandidateAttributeGetter": {
-    "message": "تم إيقاف RTCPeerConnectionIceErrorEvent.hostCandidate نهائيًا. يُرجى استخدام RTCPeerConnectionIceErrorEvent.address أو RTCPeerConnectionIceErrorEvent.port بدلاً منها."
-  },
-  "models/issues_manager/DeprecationIssue.ts | identityInCanMakePaymentEvent": {
-    "message": "إنّ أصل التاجر والبيانات العشوائية من حدث مشغّل الخدمات في canmakepayment تم إيقافهما نهائيًا وستتم إزالتهما: topOrigin وpaymentRequestOrigin وmethodData وmodifiers."
-  },
-  "models/issues_manager/DeprecationIssue.ts | insecurePrivateNetworkSubresourceRequest": {
-    "message": "طلب الموقع الإلكتروني مصدرًا فرعيًا من شبكة يمكن الوصول إليه من خلال الموقع الإلكتروني فقط بسبب موضع مستخدميه المميّز على الشبكة. تكشف هذه الطلبات الأجهزة والخوادم الخاصة على الإنترنت، ما يزيد من خطر تزوير الطلب من موقع إلكتروني مختلف (CSRF) و/أو تسرُّب المعلومات. وللحدِّ من هذه المخاطر، أوقف Chrome نهائيًا طلبات الوصول إلى مصادر فرعية خاصة، وذلك عند تقديمها من خلال سياقات غير آمنة، وسيبدأ في حظرها."
-  },
-  "models/issues_manager/DeprecationIssue.ts | localCSSFileExtensionRejected": {
-    "message": "لا يمكن تحميل صفحات الأنماط المتتالية (CSS) من عناوين URL للملفات file: ما لم تنتهِ الملفات بالامتداد .css."
-  },
-  "models/issues_manager/DeprecationIssue.ts | mediaSourceAbortRemove": {
-    "message": "تم بشكل نهائي إيقاف ميزة استخدام SourceBuffer.abort() لإلغاء إزالة النطاق غير المتزامن للإجراء remove() بسبب تغيُّر المواصفات. ستتم إزالة الميزة في المستقبل. وعليك معالجة الحدث updateend بدلاً من ذلك. يهدف الإجراء abort() فقط إلى إلغاء إمكانية إلحاق الوسائط غير المتزامنة أو إعادة ضبط حالة المحلِّل."
-  },
-  "models/issues_manager/DeprecationIssue.ts | mediaSourceDurationTruncatingBuffered": {
-    "message": "تم بشكل نهائي إيقاف إمكانية ضبط السمة MediaSource.duration على قيمة أقل من الحد الأقصى للطابع الزمني المخصَّص لعرض أي إطارات تم ترميزها وتخزينها مؤقتًا بسبب تغيُّر المواصفات. إنّ الإزالة الضمنية للوسائط المُقتطَعة التي تم تخزينها مؤقتًا لن تكون متاحة في المستقبل. وبدلاً من ذلك، يجب تطبيق الوظيفة remove(newDuration, oldDuration) بشكل واضح على جميع واجهات برمجة التطبيقات sourceBuffers التي تتوفّر بها newDuration < oldDuration."
   },
   "models/issues_manager/DeprecationIssue.ts | milestone": {
     "message": "سيسري هذا التغيير عند بلوغ المرحلة {milestone}."
   },
-  "models/issues_manager/DeprecationIssue.ts | noSysexWebMIDIWithoutPermission": {
-    "message": "ستطلب واجهة برمجة التطبيقات Web MIDI إذنًا للاستخدام حتى في حال عدم تحديد رسائل النظام الحصرية (Sysex) في MIDIOptions."
-  },
-  "models/issues_manager/DeprecationIssue.ts | notificationInsecureOrigin": {
-    "message": "قد يتوقف استخدام واجهة برمجة التطبيقات Notification API من مصادر غير آمنة. يجب مراعاة نقل تطبيقك إلى مصدر آمن، مثل HTTPS. لمعرفة مزيد من التفاصيل، يُرجى الاطّلاع على https://goo.gle/chrome-insecure-origins."
-  },
-  "models/issues_manager/DeprecationIssue.ts | notificationPermissionRequestedIframe": {
-    "message": "قد تتوقّف إمكانية طلب إذن لواجهة برمجة التطبيقات Notification API من أحد إطارات iframe من مصادر متعددة. يجب مراعاة طلب إذن من إطار عالٍ المستوى أو فتح نافذة جديدة بدلاً من ذلك."
-  },
-  "models/issues_manager/DeprecationIssue.ts | obsoleteCreateImageBitmAPImageOrientationNone": {
-    "message": "تم إيقاف خيار ‎imageOrientation: \"none\"‎ في createImageBitmap. يُرجى استخدام createImageBitmap مع خيار {‎imageOrientation: \"from-image\"‎} بدلاً من ذلك."
-  },
-  "models/issues_manager/DeprecationIssue.ts | obsoleteWebRtcCipherSuite": {
-    "message": "يتفاوض شريكك لاستخدام إصدار (D) القديم من بروتوكول أمان طبقة النقل (TLS). يُرجى التحقّق من الأمر مع شريكك لحلّ هذه المشكلة."
-  },
-  "models/issues_manager/DeprecationIssue.ts | openWebDatabaseInsecureContext": {
-    "message": "تم إيقاف لغة الاستعلامات البنيوية (SQL) على الويب نهائيًا في السياقات غير الآمنة وستتم إزالتها قريبًا. يُرجى استخدام Web Storage أو Indexed Database."
-  },
-  "models/issues_manager/DeprecationIssue.ts | overflowVisibleOnReplacedElement": {
-    "message": "في حال تحديد القيمة \"overflow: visible\" ضمن علامات img وvideo وcanvas، قد يُعرَض محتوى مرئي خارج حدود العنصر. يُرجى الاطّلاع على https://github.com/WICG/shared-element-transitions/blob/main/debugging_overflow_on_images.md."
-  },
-  "models/issues_manager/DeprecationIssue.ts | paymentInstruments": {
-    "message": "تم إيقاف paymentManager.instruments نهائيًا. بدلاً من ذلك، يُرجى استخدام ميزة \"التثبيت في وقت التشغيل\" (JIT) مع تطبيقات معالجة الدفع."
-  },
-  "models/issues_manager/DeprecationIssue.ts | paymentRequestCSPViolation": {
-    "message": "تجاوز طلب البيانات من واجهة برمجة التطبيقات PaymentRequest التوجيه connect-src في Content-Security-Policy (سياسة أمان المحتوى). تم إيقاف هذا التجاوز نهائيًا. يُرجى إضافة معرِّف طريقة الدفع من واجهة برمجة التطبيقات PaymentRequest (في حقل supportedMethods) إلى توجيه connect-src في سياسة أمان المحتوى (CSP)."
-  },
-  "models/issues_manager/DeprecationIssue.ts | persistentQuotaType": {
-    "message": "تم إيقاف StorageType.persistent نهائيًا. يُرجى استخدام navigator.storage الموحّدة بدلاً منها."
-  },
-  "models/issues_manager/DeprecationIssue.ts | pictureSourceSrc": {
-    "message": "إنّ استخدام العنصر <source src> مع العنصر الرئيسي <picture> غير صالح، وبالتالي سيتم تجاهله. يُرجى استخدام السمة <source srcset> بدلاً من ذلك."
-  },
-  "models/issues_manager/DeprecationIssue.ts | prefixedStorageInfo": {
-    "message": "تم إيقاف window.webkitStorageInfo نهائيًا. يُرجى استخدام navigator.storage الموحّدة بدلاً منها."
-  },
-  "models/issues_manager/DeprecationIssue.ts | privacySandboxExtensionsAPI": {
-    "message": "سيتم إيقاف واجهة برمجة التطبيقات chrome.privacy.websites.privacySandboxEnabled نهائيًا، علمًا بأنّها ستظل نشطة للتوافق مع الأنظمة القديمة إلى أن يتم طرح الإصدار الرئيسي M113. بدلاً من هذه الواجهة، يُرجى استخدام واجهات برمجة التطبيقات chrome.privacy.websites.topicsEnabled وchrome.privacy.websites.fledgeEnabled وchrome.privacy.websites.adMeasurementEnabled. لمعرفة مزيد من المعلومات، يمكنك الانتقال إلى https://developer.chrome.com/docs/extensions/reference/privacy/#property-websites-privacySandboxEnabled."
-  },
-  "models/issues_manager/DeprecationIssue.ts | requestedSubresourceWithEmbeddedCredentials": {
-    "message": "يتم حظر طلبات المصادر الفرعية التي تتضمّن عناوين URL الخاصة بها بيانات اعتماد مُضمَّنة (مثل https://user:pass@host/)."
-  },
-  "models/issues_manager/DeprecationIssue.ts | rtcConstraintEnableDtlsSrtpFalse": {
-    "message": "تمت إزالة القيد DtlsSrtpKeyAgreement. لقد حدَّدت القيمة false لهذا القيد، وهو أمر يتم تفسيره كمحاولة لاستخدام الميزة SDES key negotiation التي تمت إزالتها. لقد تمت إزالة هذه الميزة. وبدلاً منها، يمكنك استخدام إحدى الخدمات التي تتوفّر فيها الميزة DTLS key negotiation."
-  },
-  "models/issues_manager/DeprecationIssue.ts | rtcConstraintEnableDtlsSrtpTrue": {
-    "message": "تمت إزالة القيد DtlsSrtpKeyAgreement. لقد حدَّدت القيمة true لهذا القيد، وهو أمر ليس له أي تأثير. وفي جميع الأحوال، يمكنك إزالة هذا القيد بغرض التنظيم."
-  },
-  "models/issues_manager/DeprecationIssue.ts | rtcPeerConnectionComplexPlanBSdpUsingDefaultSdpSemantics": {
-    "message": "تم رصد إصدار البروتوكول Complex Plan B SDP. لم يعد هذا الإصدار من البروتوكول Session Description Protocol متاحًا. يُرجى استخدام إصدار البروتوكول Unified Plan SDP بدلاً من ذلك."
-  },
-  "models/issues_manager/DeprecationIssue.ts | rtcPeerConnectionSdpSemanticsPlanB": {
-    "message": "إنّ إصدار البرتوكول Plan B SDP semantics المُستخدَم مع {sdpSemantics:'plan-b'} لتصميم الواجهة RTCPeerConnection هو إصدار قديم وغير عادي من البروتوكول Session Description Protocol، وتم حذفه نهائيًا من الأنظمة الأساسية للويب. لا يزال هذا الإصدار مُستخدَمًا للتصميم باستخدام IS_FUCHSIA، ولكننا نعتزم حذفه في أقرب وقت ممكن. يُرجى التوقف عن استخدامه. لمعرفة حالته، يمكنك الاطّلاع على https://crbug.com/1302249."
-  },
-  "models/issues_manager/DeprecationIssue.ts | rtcpMuxPolicyNegotiate": {
-    "message": "تم إيقاف الخيار rtcpMuxPolicy نهائيًا وستتم إزالته."
-  },
-  "models/issues_manager/DeprecationIssue.ts | sharedArrayBufferConstructedWithoutIsolation": {
-    "message": "سيطلب الكائن SharedArrayBuffer حظر الوصول من نطاقات أخرى. لمعرفة مزيد من التفاصيل، يُرجى الاطّلاع على https://developer.chrome.com/blog/enabling-shared-array-buffer/‎."
-  },
-  "models/issues_manager/DeprecationIssue.ts | textToSpeech_DisallowedByAutoplay": {
-    "message": "إنّ ميزة تنفيذ الإجراء speechSynthesis.speak() بدون تفعيل المستخدِم متوقفة نهائيًا وستتم إزالتها."
-  },
   "models/issues_manager/DeprecationIssue.ts | title": {
     "message": "تم استخدام ميزة متوقّفة نهائيًا"
-  },
-  "models/issues_manager/DeprecationIssue.ts | v8SharedArrayBufferConstructedInExtensionWithoutIsolation": {
-    "message": "يجب أن تستخدم الإضافات ميزة حظر الوصول من نطاقات أخرى لمواصلة استخدام الكائن SharedArrayBuffer. يُرجى الاطّلاع على https://developer.chrome.com/docs/extensions/mv3/cross-origin-isolation/‎."
-  },
-  "models/issues_manager/DeprecationIssue.ts | vendorSpecificApi": {
-    "message": "الوظيفة {PH1} مخصَّصة للمورِّدين. يُرجى استخدام الوظيفة {PH2} العادية بدلاً منها."
-  },
-  "models/issues_manager/DeprecationIssue.ts | xhrJSONEncodingDetection": {
-    "message": "لا يتوفّر الترميز UTF-16 من خلال استجابة json في واجهة برمجة التطبيقات XMLHttpRequest."
-  },
-  "models/issues_manager/DeprecationIssue.ts | xmlHttpRequestSynchronousInNonWorkerOutsideBeforeUnload": {
-    "message": "واجهة برمجة التطبيقات XMLHttpRequest المتزامنة في سلسلة التعليمات الأساسية متوقفة نهائيًا بسبب تأثيراتها الضارة في تجربة المستخدِم النهائي. للحصول على مزيد من المساعدة، يُرجى الاطّلاع على https://xhr.spec.whatwg.org/‎."
-  },
-  "models/issues_manager/DeprecationIssue.ts | xrSupportsSession": {
-    "message": "تم إيقاف الإجراء supportsSession() نهائيًا. يُرجى استخدام الإجراء isSessionSupported() والتحقُّق من القيمة المنطقية النهائية."
   },
   "models/issues_manager/FederatedAuthRequestIssue.ts | fedCm": {
     "message": "Federated Credential Management API"
   },
+  "models/issues_manager/GenericIssue.ts | autocompleteAttributePageTitle": {
+    "message": "سمة HTML: الإكمال التلقائي"
+  },
   "models/issues_manager/GenericIssue.ts | crossOriginPortalPostMessage": {
     "message": "قنوات الاتصال ذات المصدر الواحد في المداخل"
+  },
+  "models/issues_manager/GenericIssue.ts | howDoesAutofillWorkPageTitle": {
+    "message": "كيف تعمل ميزة الملء التلقائي؟"
+  },
+  "models/issues_manager/GenericIssue.ts | inputFormElementPageTitle": {
+    "message": "عنصر إدخال النموذج"
+  },
+  "models/issues_manager/GenericIssue.ts | labelFormlementsPageTitle": {
+    "message": "عناصر التصنيف"
   },
   "models/issues_manager/HeavyAdIssue.ts | handlingHeavyAdInterventions": {
     "message": "التعامل مع مشاكل تداخل الإعلانات التي تستهلك موارد الشبكة"
@@ -2375,12 +2420,6 @@
   "panels/application/AppManifestView.ts | presentation": {
     "message": "عرض تقديمي"
   },
-  "panels/application/AppManifestView.ts | primaryIconasUsedByChrome": {
-    "message": "الرمز الأساسي على النحو الذي يستخدمه Chrome"
-  },
-  "panels/application/AppManifestView.ts | primaryManifestIconFromS": {
-    "message": "الرمز الأساسي للبيان من {PH1}"
-  },
   "panels/application/AppManifestView.ts | protocolHandlers": {
     "message": "معالجات البروتوكول"
   },
@@ -2449,9 +2488,6 @@
   },
   "panels/application/AppManifestView.ts | themeColor": {
     "message": "لون المظهر"
-  },
-  "panels/application/ApplicationPanelPreloadingSection.ts | prefetchingAndPrerendering": {
-    "message": "الجلب المُسبَق والعرض المُسبَق"
   },
   "panels/application/ApplicationPanelSidebar.ts | appManifest": {
     "message": "بيان التطبيق"
@@ -2637,7 +2673,7 @@
     "message": "عدد ملفات تعريف الارتباط المعروضة في الجدول: {PH1}"
   },
   "panels/application/CookieItemsView.ts | onlyShowCookiesWhichHaveAn": {
-    "message": "عرض ملفات تعريف الارتباط التي بها مشاكل مرتبطة فقط"
+    "message": "عرض ملفات تعريف الارتباط التي بها مشكلة مرتبطة فقط"
   },
   "panels/application/CookieItemsView.ts | onlyShowCookiesWithAnIssue": {
     "message": "عرض ملفات تعريف الارتباط التي تتضمّن مشاكل فقط"
@@ -2836,6 +2872,9 @@
   },
   "panels/application/OpenedWindowDetailsView.ts | yes": {
     "message": "نعم"
+  },
+  "panels/application/PreloadingTreeElement.ts | prefetchingAndPrerendering": {
+    "message": "الجلب المُسبَق والعرض المُسبَق"
   },
   "panels/application/ReportingApiReportsView.ts | clickToDisplayBody": {
     "message": "انقر على أي تقرير لعرض نصه."
@@ -3147,7 +3186,7 @@
     "message": "لغة الاستعلامات البنيوية (SQL) على الويب"
   },
   "panels/application/TrustTokensTreeElement.ts | trustTokens": {
-    "message": "رموز Trust Tokens"
+    "message": "الرموز المميّزة للحالة الخاصة"
   },
   "panels/application/application-meta.ts | application": {
     "message": "التطبيق"
@@ -3333,10 +3372,10 @@
     "message": "تم استخدام واجهات غير مؤهَّلة لبرمجة التطبيقات."
   },
   "panels/application/components/BackForwardCacheStrings.ts | injectedJavascript": {
-    "message": "الصفحات التي يتم إدخال JavaScript فيها من خلال الإضافات يتعذّر حفظها حاليًا باستخدام ميزة \"التخزين المؤقت للصفحات\"."
+    "message": "لا يمكن استخدام ميزة \"التخزين المؤقت للصفحات\" حاليًا لتخزين الصفحات التي تم إدخال JavaScript فيها من خلال الإضافات."
   },
   "panels/application/components/BackForwardCacheStrings.ts | injectedStyleSheet": {
-    "message": "الصفحات التي تم بها إدخال ورقة أنماط من خلال الإضافات يتعذّر حفظها حاليًا باستخدام ميزة \"التخزين المؤقت للصفحات\"."
+    "message": "لا يمكن استخدام ميزة \"التخزين المؤقت للصفحات\" حاليًا لتخزين الصفحات التي تم إدخال StyleSheet فيها من خلال الإضافات."
   },
   "panels/application/components/BackForwardCacheStrings.ts | internalError": {
     "message": "حدث خطأ داخلي."
@@ -4053,31 +4092,46 @@
     "message": "{n,plural, =1{عرض إطار واحد آخر}zero{عرض # إطار آخر}two{عرض إطارَين آخرَين}few{عرض # إطارات أخرى}many{عرض # إطارًا آخر}other{عرض # إطار آخر}}"
   },
   "panels/application/components/TrustTokensView.ts | allStoredTrustTokensAvailableIn": {
-    "message": "جميع الرموز المميّزة Trust Token متوفّرة على هذه النسخة من المتصفّح."
+    "message": "جميع الرموز المميّزة للحالة الخاصة المخزَّنة متوفّرِة على هذه النسخة من المتصفِّح."
   },
   "panels/application/components/TrustTokensView.ts | deleteTrustTokens": {
-    "message": "يمكنك حذف جميع الرموز المميّزة Trust Token المخزّنة والصادرة من خلال {PH1}."
+    "message": "يؤدي النقر على هذا الزر إلى حذف جميع الرموز المميّزة للحالة الخاصة المخزَّنة الصادرة عن {PH1}."
   },
   "panels/application/components/TrustTokensView.ts | issuer": {
     "message": "جهة الإصدار"
   },
   "panels/application/components/TrustTokensView.ts | noTrustTokensStored": {
-    "message": "لا يتم تخزين الرموز المميّزة والمعتمَدة حاليًا."
+    "message": "لا يتم حاليًا تخزين الرموز المميّزة للحالة الخاصة."
   },
   "panels/application/components/TrustTokensView.ts | storedTokenCount": {
     "message": "عدد الرموز المميَّزة المُخزَّنة"
   },
-  "panels/application/preloading/PreloadingView.ts | clearNotOngoing": {
-    "message": "محو عبارة \"not ongoing\""
+  "panels/application/components/TrustTokensView.ts | trustTokens": {
+    "message": "الرموز المميّزة للحالة الخاصة"
   },
-  "panels/application/preloading/PreloadingView.ts | statusActivated": {
-    "message": "تم التفعيل."
+  "panels/application/preloading/PreloadingView.ts | statusFailure": {
+    "message": "تعذّر إتمام العملية."
   },
-  "panels/application/preloading/PreloadingView.ts | statusDiscarded": {
-    "message": "تم التجاهل."
+  "panels/application/preloading/PreloadingView.ts | statusPending": {
+    "message": "في انتظار الموافقة"
   },
-  "panels/application/preloading/PreloadingView.ts | statusPrerendering": {
-    "message": "العرض المُسبَق"
+  "panels/application/preloading/PreloadingView.ts | statusReady": {
+    "message": "النتيجة جاهزة."
+  },
+  "panels/application/preloading/PreloadingView.ts | statusRunning": {
+    "message": "يجري تنفيذ العملية."
+  },
+  "panels/application/preloading/PreloadingView.ts | statusSuccess": {
+    "message": "تمت العملية بنجاح."
+  },
+  "panels/application/preloading/PreloadingView.ts | validityInvalid": {
+    "message": "غير صالح"
+  },
+  "panels/application/preloading/PreloadingView.ts | validitySomeRulesInvalid": {
+    "message": "بعض القواعد غير صالحة."
+  },
+  "panels/application/preloading/PreloadingView.ts | validityValid": {
+    "message": "صالحة"
   },
   "panels/application/preloading/PreloadingView.ts | warningDetailPreloadingDisabledByFeatureFlag": {
     "message": "تم فرض تفعيل ميزة \"التحميل المُسبَق\" لأنّ أدوات مطوّري البرامج مفتوحة. عند إغلاق أدوات مطوّري البرامج، سيتم إيقاف ميزة \"العرض المُسبَق\" لأنّ جلسة المتصفِّح هذه ضمن مجموعة جلسات مستثناة من تفعيل الميزة، وذلك لأغراض مقارنة الأداء."
@@ -4091,41 +4145,71 @@
   "panels/application/preloading/PreloadingView.ts | warningTitlePrerenderingDisabledByFeatureFlag": {
     "message": "ميزة \"العرض المُسبَق\" كانت غير مفعَّلة، ولكن تم فرض تفعيلها الآن"
   },
-  "panels/application/preloading/components/PreloadingDetailsReportView.ts | detailsBasicInformation": {
-    "message": "المعلومات الأساسية"
+  "panels/application/preloading/components/PreloadingDetailsReportView.ts | detailedStatusFailure": {
+    "message": "تعذَّرت عملية التحميل المُسبق."
   },
-  "panels/application/preloading/components/PreloadingDetailsReportView.ts | detailsStartedAt": {
-    "message": "وقت البدء"
+  "panels/application/preloading/components/PreloadingDetailsReportView.ts | detailedStatusPending": {
+    "message": "محاولة التحميل المُسبق مؤهَّلة ولكنّها في انتظار الموافقة."
+  },
+  "panels/application/preloading/components/PreloadingDetailsReportView.ts | detailedStatusReady": {
+    "message": "انتهت عملية التحميل المُسبق والنتيجة جاهزة لعملية التنقُّل التالية."
+  },
+  "panels/application/preloading/components/PreloadingDetailsReportView.ts | detailedStatusRunning": {
+    "message": "يجري تنفيذ عملية التحميل المُسبق."
+  },
+  "panels/application/preloading/components/PreloadingDetailsReportView.ts | detailedStatusSuccess": {
+    "message": "انتهت عملية التحميل المُسبق وتم استخدامها في عملية تنقُّل."
+  },
+  "panels/application/preloading/components/PreloadingDetailsReportView.ts | detailsAction": {
+    "message": "الإجراء"
+  },
+  "panels/application/preloading/components/PreloadingDetailsReportView.ts | detailsDetailedInformation": {
+    "message": "معلومات مفصّلة"
+  },
+  "panels/application/preloading/components/PreloadingDetailsReportView.ts | detailsRuleSet": {
+    "message": "مجموعة القواعد"
   },
   "panels/application/preloading/components/PreloadingDetailsReportView.ts | detailsStatus": {
     "message": "الحالة"
   },
-  "panels/application/preloading/components/PreloadingDetailsReportView.ts | detailsTrigger": {
-    "message": "عامل التشغيل"
-  },
   "panels/application/preloading/components/PreloadingDetailsReportView.ts | selectAnElementForMoreDetails": {
     "message": "اختَر عنصرًا لمعرفة مزيد من التفاصيل."
   },
-  "panels/application/preloading/components/PreloadingDetailsReportView.ts | statusActivated": {
-    "message": "تم التفعيل."
-  },
-  "panels/application/preloading/components/PreloadingDetailsReportView.ts | statusDiscarded": {
-    "message": "تم التجاهل."
-  },
-  "panels/application/preloading/components/PreloadingDetailsReportView.ts | statusPrerendering": {
-    "message": "العرض المُسبَق"
-  },
-  "panels/application/preloading/components/PreloadingGrid.ts | startedAt": {
-    "message": "وقت البدء"
+  "panels/application/preloading/components/PreloadingGrid.ts | action": {
+    "message": "الإجراء"
   },
   "panels/application/preloading/components/PreloadingGrid.ts | status": {
     "message": "الحالة"
   },
-  "panels/application/preloading/components/PreloadingGrid.ts | trigger": {
-    "message": "عامل التشغيل"
+  "panels/application/preloading/components/RuleSetDetailsReportView.ts | detailsDetailedInformation": {
+    "message": "معلومات مفصّلة"
   },
-  "panels/application/preloading/components/PreloadingGrid.ts | type": {
-    "message": "النوع"
+  "panels/application/preloading/components/RuleSetDetailsReportView.ts | detailsError": {
+    "message": "خطأ"
+  },
+  "panels/application/preloading/components/RuleSetDetailsReportView.ts | detailsSource": {
+    "message": "المصدر"
+  },
+  "panels/application/preloading/components/RuleSetDetailsReportView.ts | detailsValidity": {
+    "message": "الصلاحية"
+  },
+  "panels/application/preloading/components/RuleSetDetailsReportView.ts | validityInvalid": {
+    "message": "القاعدة غير صالحة لأنّ المصدر ليس كائن JSON."
+  },
+  "panels/application/preloading/components/RuleSetDetailsReportView.ts | validitySomeRulesInvalid": {
+    "message": "بعض القواعد غير صالحة وتم تجاهلها."
+  },
+  "panels/application/preloading/components/RuleSetDetailsReportView.ts | validityValid": {
+    "message": "صالحة"
+  },
+  "panels/application/preloading/components/RuleSetGrid.ts | validity": {
+    "message": "الصلاحية"
+  },
+  "panels/application/preloading/components/UsedPreloadingView.ts | prefetchUsed": {
+    "message": "يتم استخدام {PH1} مورد تم جلبه مسبقًا في هذه الصفحة."
+  },
+  "panels/application/preloading/components/UsedPreloadingView.ts | prerenderUsed": {
+    "message": "تم عرض هذه الصفحة مسبقًا."
   },
   "panels/browser_debugger/CategorizedBreakpointsSidebarPane.ts | breakpointHit": {
     "message": "الوصول إلى نقطة فاصلة"
@@ -4361,6 +4445,9 @@
   "panels/console/ConsoleView.ts | consoleCleared": {
     "message": "تم محو وحدة التحكم."
   },
+  "panels/console/ConsoleView.ts | consolePasteBlocked": {
+    "message": "غالبًا ما يتم استخدام إجراء لصق الرموز البرمجية في أدوات مطوّري البرامج لخداع المستخدمين والاستيلاء على حساباتهم، لذلك تم حظر هذا الإجراء في هذه الصفحة."
+  },
   "panels/console/ConsoleView.ts | consoleSettings": {
     "message": "إعدادات وحدة التحكم"
   },
@@ -4499,6 +4586,9 @@
   "panels/console/ConsoleViewMessage.ts | clearAllMessagesWithS": {
     "message": "حذف كل الرسائل من خلال الاختصار {PH1}"
   },
+  "panels/console/ConsoleViewMessage.ts | cndBreakpoint": {
+    "message": "نقطة إيقاف مشروطة"
+  },
   "panels/console/ConsoleViewMessage.ts | console": {
     "message": "وحدة التحكم"
   },
@@ -4528,6 +4618,9 @@
   },
   "panels/console/ConsoleViewMessage.ts | interventionS": {
     "message": "[Intervention] {PH1}"
+  },
+  "panels/console/ConsoleViewMessage.ts | logpoint": {
+    "message": "نقطة تسجيل"
   },
   "panels/console/ConsoleViewMessage.ts | repeatS": {
     "message": "{n,plural, =1{تم تكرار الرسالة مرة واحدة.}zero{تم تكرار الرسالة # مرة.}two{تم تكرار الرسالة مرتين.}few{تم تكرار الرسالة # مرات.}many{تم تكرار الرسالة # مرة.}other{تم تكرار الرسالة # مرة.}}"
@@ -4568,6 +4661,9 @@
   "panels/console/console-meta.ts | autocompleteFromHistory": {
     "message": "الإكمال التلقائي من السجلّ"
   },
+  "panels/console/console-meta.ts | autocompleteOnEnter": {
+    "message": "قبول اقتراح الإكمال التلقائي عند الضغط على مفتاح Enter"
+  },
   "panels/console/console-meta.ts | clearConsole": {
     "message": "محو بيانات وحدة التحكم"
   },
@@ -4575,7 +4671,7 @@
     "message": "محو سجلّ وحدة التحكُّم"
   },
   "panels/console/console-meta.ts | collapseConsoleTraceMessagesByDefault": {
-    "message": "تصغير رسائل console.trace() تلقائيًا"
+    "message": "عدم توسيع رسائل console.trace() تلقائيًا"
   },
   "panels/console/console-meta.ts | console": {
     "message": "وحدة التحكم"
@@ -4585,6 +4681,9 @@
   },
   "panels/console/console-meta.ts | doNotAutocompleteFromHistory": {
     "message": "عدم الإكمال التلقائي من السجلّ"
+  },
+  "panels/console/console-meta.ts | doNotAutocompleteOnEnter": {
+    "message": "عدم قبول اقتراح الإكمال التلقائي عند الضغط على مفتاح Enter"
   },
   "panels/console/console-meta.ts | doNotEagerlyEvaluateConsole": {
     "message": "عدم تقييم نص طلب وحدة التحكّم باهتمام"
@@ -4605,7 +4704,7 @@
     "message": "نص طلب تقييم وحدة التحكّم باهتمام"
   },
   "panels/console/console-meta.ts | evaluateTriggersUserActivation": {
-    "message": "تقييم يؤدي إلى احتساب تفاعل من جانب المستخدم"
+    "message": "التعامل مع عملية تقييم الرمز كإجراء من جانب المستخدم"
   },
   "panels/console/console-meta.ts | expandConsoleTraceMessagesByDefault": {
     "message": "توسيع رسائل console.trace() تلقائيًا"
@@ -4886,6 +4985,9 @@
   "panels/css_overview/CSSOverviewSidebarPanel.ts | clearOverview": {
     "message": "محو تقرير النظرة العامة"
   },
+  "panels/css_overview/CSSOverviewSidebarPanel.ts | cssOverviewPanelSidebar": {
+    "message": "الشريط الجانبي للوحة \"النظرة العامة على صفحات الأنماط المتتالية\" (CSS)"
+  },
   "panels/css_overview/CSSOverviewUnusedDeclarations.ts | bottomAppliedToAStatically": {
     "message": "تم تطبيق قيم Bottom على عنصر ثابت الموضع"
   },
@@ -4988,6 +5090,9 @@
   "panels/developer_resources/developer_resources-meta.ts | showDeveloperResources": {
     "message": "عرض موارد مطوّر البرامج"
   },
+  "panels/elements/CSSRuleValidator.ts | fontVariationSettingsWarning": {
+    "message": "لا تندرج القيمة التي تم إدخالها لضبط \"{PH1}\" {PH2} ضِمن نطاق القيم المسموح بها [{PH3}، {PH4}] لمجموعة الخطوط \"{PH5}\"."
+  },
   "panels/elements/CSSRuleValidator.ts | ruleViolatedByParentElementRuleFix": {
     "message": "يُرجى محاولة ضبط سمة \"{EXISTING_PARENT_ELEMENT_RULE}\" في العنصر الرئيسي على القيمة \"{TARGET_PARENT_ELEMENT_RULE}\"."
   },
@@ -5068,9 +5173,6 @@
   },
   "panels/elements/ElementsPanel.ts | findByStringSelectorOrXpath": {
     "message": "البحث حسب السلسلة أو أداة الاختيار أو XPath"
-  },
-  "panels/elements/ElementsPanel.ts | frame": {
-    "message": "الإطار"
   },
   "panels/elements/ElementsPanel.ts | hideComputedStylesSidebar": {
     "message": "إخفاء الشريط الجانبي للأنماط المحتسَبة"
@@ -5372,9 +5474,6 @@
   "panels/elements/StylePropertyTreeElement.ts | togglePropertyAndContinueEditing": {
     "message": "تبديل الخاصية ومواصلة التعديل"
   },
-  "panels/elements/StylePropertyTreeElement.ts | valueForSettingSSIsOutsideThe": {
-    "message": "لا تندرج القيمة التي تم إدخالها لضبط \"{PH1}\" {PH2} ضِمن نطاق القيم المسموح بها [{PH3}، {PH4}] لمجموعة الخطوط \"{PH5}\"."
-  },
   "panels/elements/StylePropertyTreeElement.ts | viewComputedValue": {
     "message": "عرض القيمة المحتسَبة"
   },
@@ -5454,6 +5553,12 @@
     "message": "عرض الشارات"
   },
   "panels/elements/components/CSSHintDetailsView.ts | learnMore": {
+    "message": "مزيد من المعلومات"
+  },
+  "panels/elements/components/CSSPropertyDocsView.ts | dontShow": {
+    "message": "عدم العرض"
+  },
+  "panels/elements/components/CSSPropertyDocsView.ts | learnMore": {
     "message": "مزيد من المعلومات"
   },
   "panels/elements/components/ElementsBreadcrumbs.ts | breadcrumbs": {
@@ -5548,6 +5653,9 @@
   },
   "panels/elements/elements-meta.ts | selectAnElementInThePageTo": {
     "message": "اختيار عنصر في الصفحة لفحصه"
+  },
+  "panels/elements/elements-meta.ts | showCSSDocumentationTooltip": {
+    "message": "عرض تلميح وثائق CSS"
   },
   "panels/elements/elements-meta.ts | showComputedStyles": {
     "message": "عرض أنماط أداة Computed"
@@ -5916,7 +6024,7 @@
     "message": "نقل"
   },
   "panels/issues/AffectedSharedArrayBufferIssueDetailsView.ts | trigger": {
-    "message": "عامل التشغيل"
+    "message": "السبب المشغِّل"
   },
   "panels/issues/AffectedSharedArrayBufferIssueDetailsView.ts | warning": {
     "message": "تحذير"
@@ -5944,9 +6052,6 @@
   },
   "panels/issues/AttributionReportingIssueDetailsView.ts | invalidHeaderValue": {
     "message": "قيمة العنوان غير الصالحة"
-  },
-  "panels/issues/AttributionReportingIssueDetailsView.ts | maximumConcurrentRegistrations": {
-    "message": "الحد الأقصى للتسجيلات المتزامنة"
   },
   "panels/issues/AttributionReportingIssueDetailsView.ts | nViolations": {
     "message": "{n,plural, =1{مخالفة واحدة}zero{# مخالفة}two{مخالفتان}few{# مخالفات}many{# مخالفةً}other{# مخالفة}}"
@@ -7160,6 +7265,9 @@
   "panels/network/NetworkDataGridNode.ts | finished": {
     "message": "تم تنفيذ الإجراء."
   },
+  "panels/network/NetworkDataGridNode.ts | hasOverriddenHeaders": {
+    "message": "تم تجاهل بعض العناوين في هذا الطلب."
+  },
   "panels/network/NetworkDataGridNode.ts | level": {
     "message": "المستوى 1"
   },
@@ -7185,7 +7293,7 @@
     "message": "محلّل لغوي"
   },
   "panels/network/NetworkDataGridNode.ts | pending": {
-    "message": "في انتظار إجراء"
+    "message": "في انتظار الموافقة"
   },
   "panels/network/NetworkDataGridNode.ts | pendingq": {
     "message": "(قيد التحميل)"
@@ -7305,10 +7413,10 @@
     "message": "المدة الزمنية للطلب"
   },
   "panels/network/NetworkItemView.ts | trustTokenOperationDetails": {
-    "message": "تفاصيل عمليات الرموز المميزة الموثوق بها"
+    "message": "تفاصيل عمليات الرموز المميّزة للحالة الخاصة"
   },
   "panels/network/NetworkItemView.ts | trustTokens": {
-    "message": "رموز Trust Tokens"
+    "message": "الرموز المميّزة للحالة الخاصة"
   },
   "panels/network/NetworkItemView.ts | websocketMessages": {
     "message": "رسائل WebSocket"
@@ -8262,7 +8370,7 @@
     "message": "الحالة"
   },
   "panels/network/components/RequestTrustTokensView.ts | success": {
-    "message": "تم"
+    "message": "تمت العملية بنجاح."
   },
   "panels/network/components/RequestTrustTokensView.ts | theOperationFailedForAnUnknown": {
     "message": "تعذّر تنفيذ العملية لسبب غير معروف."
@@ -9002,6 +9110,21 @@
   "panels/profiler/ProfilesPanel.ts | clearAllProfiles": {
     "message": "محو جميع الملفات التعريفية"
   },
+  "panels/profiler/ProfilesPanel.ts | deprecationWarnMsg": {
+    "message": "سيتم إيقاف هذه اللوحة نهائيًا في الإصدار القادم. يمكنك استخدام لوحة الأداء لتسجيل الملفات التعريفية الخاصة بوحدة المعالجة المركزية (CPU) في JavaScript."
+  },
+  "panels/profiler/ProfilesPanel.ts | enableThisPanelTemporarily": {
+    "message": "تفعيل هذه اللوحة مؤقتًا"
+  },
+  "panels/profiler/ProfilesPanel.ts | feedback": {
+    "message": "الملاحظات والآراء"
+  },
+  "panels/profiler/ProfilesPanel.ts | goToPerformancePanel": {
+    "message": "انتقال إلى لوحة الأداء"
+  },
+  "panels/profiler/ProfilesPanel.ts | learnMore": {
+    "message": "مزيد من المعلومات"
+  },
   "panels/profiler/ProfilesPanel.ts | load": {
     "message": "تحميل…"
   },
@@ -9046,6 +9169,9 @@
   },
   "panels/protocol_monitor/ProtocolMonitor.ts | documentation": {
     "message": "الوثائق"
+  },
+  "panels/protocol_monitor/ProtocolMonitor.ts | elapsedTime": {
+    "message": "الوقت المنقضي"
   },
   "panels/protocol_monitor/ProtocolMonitor.ts | filter": {
     "message": "فلتر"
@@ -10217,15 +10343,6 @@
   "panels/sources/DebuggerPlugin.ts | neverPauseHere": {
     "message": "عدم الإيقاف المؤقت هنا مرة أخرى"
   },
-  "panels/sources/DebuggerPlugin.ts | prettyprint": {
-    "message": "عرض النص بتنسيق محسّن"
-  },
-  "panels/sources/DebuggerPlugin.ts | prettyprintThisMinifiedFile": {
-    "message": "هل تريد عرض نص هذا الملف المصغّر بتنسيق محسّن؟"
-  },
-  "panels/sources/DebuggerPlugin.ts | prettyprintingWillFormatThisFile": {
-    "message": "سيؤدي عرض النص بتنسيق محسّن إلى تنسيق هذا الملف في علامة تبويب جديدة بحيث يمكنك مواصلة تصحيح الأخطاء. ويمكنك أيضًا عرض نص هذا الملف بتنسيق محسّن من خلال النقر على الزر {PH1} في أسفل شريط الحالة."
-  },
   "panels/sources/DebuggerPlugin.ts | removeBreakpoint": {
     "message": "{n,plural, =1{إزالة نقطة إيقاف واحدة}zero{إزالة كل نقاط الإيقاف في السطر}two{إزالة نقطتَي الإيقاف في السطر}few{إزالة كل نقاط الإيقاف في السطر}many{إزالة كل نقاط الإيقاف في السطر}other{إزالة كل نقاط الإيقاف في السطر}}"
   },
@@ -10246,6 +10363,9 @@
   },
   "panels/sources/FilteredUISourceCodeListProvider.ts | noFilesFound": {
     "message": "لم يتم العثور على أي ملفات."
+  },
+  "panels/sources/FilteredUISourceCodeListProvider.ts | sIgnoreListed": {
+    "message": "‫{PH1} (تمت الإضافة إلى قائمة التجاهل)"
   },
   "panels/sources/GoToLineQuickOpen.ts | currentLineSTypeALineNumber": {
     "message": "رقم السطر الحالي: {PH1}. أدخِل رقم سطر بين 1 و{PH2} ليتم الانتقال إليه."
@@ -10276,54 +10396,6 @@
   },
   "panels/sources/InplaceFormatterEditorAction.ts | formatS": {
     "message": "تنسيق {PH1}"
-  },
-  "panels/sources/JavaScriptBreakpointsSidebarPane.ts | activateBreakpoints": {
-    "message": "تفعيل نقاط الإيقاف"
-  },
-  "panels/sources/JavaScriptBreakpointsSidebarPane.ts | checked": {
-    "message": "هناك علامة موضوعة في المربع."
-  },
-  "panels/sources/JavaScriptBreakpointsSidebarPane.ts | deactivateBreakpoints": {
-    "message": "إيقاف نقاط الإيقاف"
-  },
-  "panels/sources/JavaScriptBreakpointsSidebarPane.ts | disableAllBreakpoints": {
-    "message": "إيقاف جميع نقاط الإيقاف"
-  },
-  "panels/sources/JavaScriptBreakpointsSidebarPane.ts | disableBreakpointsInFile": {
-    "message": "إيقاف نقاط الإيقاف في الملف"
-  },
-  "panels/sources/JavaScriptBreakpointsSidebarPane.ts | enableAllBreakpoints": {
-    "message": "تفعيل كل نقاط الإيقاف"
-  },
-  "panels/sources/JavaScriptBreakpointsSidebarPane.ts | enableBreakpointsInFile": {
-    "message": "تفعيل نقاط الإيقاف في الملف"
-  },
-  "panels/sources/JavaScriptBreakpointsSidebarPane.ts | mixed": {
-    "message": "مجموعة من الحالات"
-  },
-  "panels/sources/JavaScriptBreakpointsSidebarPane.ts | noBreakpoints": {
-    "message": "ما مِن نقاط فاصلة."
-  },
-  "panels/sources/JavaScriptBreakpointsSidebarPane.ts | removeAllBreakpoints": {
-    "message": "إزالة جميع نقاط الإيقاف"
-  },
-  "panels/sources/JavaScriptBreakpointsSidebarPane.ts | removeAllBreakpointsInLine": {
-    "message": "إزالة كل نقاط الإيقاف في السطر"
-  },
-  "panels/sources/JavaScriptBreakpointsSidebarPane.ts | removeBreakpoint": {
-    "message": "إزالة النقطة الفاصلة"
-  },
-  "panels/sources/JavaScriptBreakpointsSidebarPane.ts | removeOtherBreakpoints": {
-    "message": "إزالة نقاط الإيقاف الأخرى"
-  },
-  "panels/sources/JavaScriptBreakpointsSidebarPane.ts | revealLocation": {
-    "message": "إظهار مكان رمز المصدر"
-  },
-  "panels/sources/JavaScriptBreakpointsSidebarPane.ts | sBreakpointHit": {
-    "message": "الوصول إلى نقطة الإيقاف {PH1}"
-  },
-  "panels/sources/JavaScriptBreakpointsSidebarPane.ts | unchecked": {
-    "message": "إزالة العلامة من المربّع"
   },
   "panels/sources/NavigatorView.ts | areYouSureYouWantToDeleteAll": {
     "message": "هل تريد فعلاً حذف جميع إجراءات الإلغاء ضِمن هذ المجلّد؟"
@@ -10379,6 +10451,9 @@
   "panels/sources/NavigatorView.ts | sFromSourceMap": {
     "message": "{PH1} (من خريطة المصادر)"
   },
+  "panels/sources/NavigatorView.ts | sIgnoreListed": {
+    "message": "‫{PH1} (تمت الإضافة إلى قائمة التجاهل)"
+  },
   "panels/sources/NavigatorView.ts | searchInAllFiles": {
     "message": "البحث في كل الملفات"
   },
@@ -10403,8 +10478,8 @@
   "panels/sources/ProfilePlugin.ts | ms": {
     "message": "ملي ثانية"
   },
-  "panels/sources/ResourceOriginPlugin.ts | providedViaDebugInfoByS": {
-    "message": "(متوفّرة في معلومات تصحيح الأخطاء من خلال {PH1})"
+  "panels/sources/ResourceOriginPlugin.ts | fromS": {
+    "message": "(من {PH1})"
   },
   "panels/sources/ResourceOriginPlugin.ts | sourceMappedFromS": {
     "message": "(تم ربط المصدر من {PH1})"
@@ -10432,12 +10507,6 @@
   },
   "panels/sources/ScopeChainSidebarPane.ts | revealInMemoryInspectorPanel": {
     "message": "العرض في لوحة أداة \"فحص الذاكرة\""
-  },
-  "panels/sources/ScriptFormatterEditorAction.ts | prettyPrint": {
-    "message": "عرض محتوى الملف بتنسيق محسّن"
-  },
-  "panels/sources/ScriptFormatterEditorAction.ts | prettyPrintS": {
-    "message": "عرض محتوى الملف {PH1} بتنسيق محسّن"
   },
   "panels/sources/SnippetsPlugin.ts | ctrlenter": {
     "message": "Ctrl+Enter"
@@ -10508,9 +10577,6 @@
   "panels/sources/SourcesPanel.ts | debuggerShown": {
     "message": "تم إظهار الشريط الجانبي لبرنامج تصحيح الأخطاء."
   },
-  "panels/sources/SourcesPanel.ts | dontPauseOnExceptions": {
-    "message": "عدم الإيقاف المؤقت عند الاستثناءات"
-  },
   "panels/sources/SourcesPanel.ts | dropWorkspaceFolderHere": {
     "message": "إفلات المجلّد من مساحة العمل هنا"
   },
@@ -10543,9 +10609,6 @@
   },
   "panels/sources/SourcesPanel.ts | pauseOnCaughtExceptions": {
     "message": "الإيقاف مؤقتًا عند رصد الاستثناءات"
-  },
-  "panels/sources/SourcesPanel.ts | pauseOnExceptions": {
-    "message": "إيقاف مؤقت عند الاستثناءات"
   },
   "panels/sources/SourcesPanel.ts | resumeWithAllPausesBlockedForMs": {
     "message": "استئناف جميع عمليات الإيقاف المؤقت التي سبق حظرها لمدة 500 ملي ثانية"
@@ -10662,7 +10725,7 @@
     "message": "إزالة نقاط الإيقاف الأخرى"
   },
   "panels/sources/components/BreakpointsView.ts | revealLocation": {
-    "message": "إظهار مكان رمز المصدر"
+    "message": "عرض مكان رمز المصدر"
   },
   "panels/sources/components/BreakpointsView.ts | unchecked": {
     "message": "إزالة العلامة من المربّع"
@@ -10675,6 +10738,9 @@
   },
   "panels/sources/components/HeadersView.ts | errorWhenParsing": {
     "message": "حدث خطأ أثناء تحليل ''{PH1}''."
+  },
+  "panels/sources/components/HeadersView.ts | learnMore": {
+    "message": "مزيد من المعلومات"
   },
   "panels/sources/components/HeadersView.ts | parsingErrorExplainer": {
     "message": "ويعود سبب ذلك على الأرجح إلى خطأ في بنية \"{PH1}\". يمكنك محاولة فتح هذا الملف في محرِّر خارجي لإصلاح الخطأ أو حذف الملف وإعادة عملية التجاوز."
@@ -10754,6 +10820,9 @@
   "panels/sources/sources-meta.ts | disableTabMovesFocus": {
     "message": "إيقاف نقل التركيز باستخدام مفتاح التبويب (Tab)"
   },
+  "panels/sources/sources-meta.ts | disableWasmAutoStepping": {
+    "message": "إيقاف الانتقال التلقائي في Wasm"
+  },
   "panels/sources/sources-meta.ts | disallowScrollingPastEndOfFile": {
     "message": "عدم السماح بالانتقال إلى ما بعد نهاية الملف"
   },
@@ -10795,6 +10864,9 @@
   },
   "panels/sources/sources-meta.ts | enableTabMovesFocus": {
     "message": "تفعيل نقل التركيز باستخدام مفتاح التبويب (Tab)"
+  },
+  "panels/sources/sources-meta.ts | enableWasmAutoStepping": {
+    "message": "تفعيل الانتقال التلقائي في Wasm"
   },
   "panels/sources/sources-meta.ts | evaluateSelectedTextInConsole": {
     "message": "تقييم النص المحدّد في وحدة التحكّم"
@@ -10955,6 +11027,9 @@
   "panels/sources/sources-meta.ts | trailing": {
     "message": "المسافة اللاحقة"
   },
+  "panels/sources/sources-meta.ts | wasmAutoStepping": {
+    "message": "عند تصحيح أخطاء Wasm باستخدام معلومات تصحيح الأخطاء، حاوِل أّلا تتوقف مؤقتًا عند رمز بايت Wasm."
+  },
   "panels/sources/sources-meta.ts | watch": {
     "message": "مشاهدة"
   },
@@ -10990,6 +11065,18 @@
   },
   "panels/timeline/EventsTimelineTreeView.ts | startTime": {
     "message": "وقت البدء"
+  },
+  "panels/timeline/GPUTrackAppender.ts | gpu": {
+    "message": "وحدة معالجة الرسومات"
+  },
+  "panels/timeline/GPUTrackAppender.ts | sSelfS": {
+    "message": "‫{PH1} (الوقت المستغرق في هذه العقدة وحدها {PH2})"
+  },
+  "panels/timeline/InteractionsTrackAppender.ts | interactions": {
+    "message": "التفاعلات"
+  },
+  "panels/timeline/InteractionsTrackAppender.ts | sSelfS": {
+    "message": "‫{PH1} (الوقت المستغرق في هذه العقدة وحدها {PH2})"
   },
   "panels/timeline/TimelineController.ts | cpuProfileForATargetIsNot": {
     "message": "لا يتوفّر تحليل وحدة المعالجة المركزية (CPU) لأحد الأهداف."
@@ -11027,9 +11114,6 @@
   "panels/timeline/TimelineDetailsView.ts | totalBlockingTimeSmss": {
     "message": "إجمالي وقت الحظر: {PH1}ملي ثانية{PH2}"
   },
-  "panels/timeline/TimelineEventOverview.ts | coverage": {
-    "message": "COVERAGE"
-  },
   "panels/timeline/TimelineEventOverview.ts | cpu": {
     "message": "وحدة المعالجة المركزية (CPU)"
   },
@@ -11045,14 +11129,8 @@
   "panels/timeline/TimelineFlameChartDataProvider.ts | animation": {
     "message": "صورة متحركة"
   },
-  "panels/timeline/TimelineFlameChartDataProvider.ts | console": {
-    "message": "وحدة التحكم"
-  },
   "panels/timeline/TimelineFlameChartDataProvider.ts | droppedFrame": {
     "message": "الإطار الذي تم إسقاطه"
-  },
-  "panels/timeline/TimelineFlameChartDataProvider.ts | experience": {
-    "message": "الخبرة"
   },
   "panels/timeline/TimelineFlameChartDataProvider.ts | frame": {
     "message": "الإطار"
@@ -11062,9 +11140,6 @@
   },
   "panels/timeline/TimelineFlameChartDataProvider.ts | frames": {
     "message": "الإطارات"
-  },
-  "panels/timeline/TimelineFlameChartDataProvider.ts | gpu": {
-    "message": "وحدة معالجة الرسومات"
   },
   "panels/timeline/TimelineFlameChartDataProvider.ts | idleFrame": {
     "message": "إطار غير مستخدَم حاليًا"
@@ -11094,22 +11169,13 @@
     "message": "سلسلة تعليمات أداة تحويل الصور الخطية إلى نقطية {PH1}"
   },
   "panels/timeline/TimelineFlameChartDataProvider.ts | sSelfS": {
-    "message": "{PH1} (الوقت المستغرق في هذه العقدة {PH2})"
+    "message": "‫{PH1} (الوقت المستغرق في هذه العقدة وحدها {PH2})"
   },
   "panels/timeline/TimelineFlameChartDataProvider.ts | subframe": {
     "message": "إطار فرعي"
   },
   "panels/timeline/TimelineFlameChartDataProvider.ts | thread": {
     "message": "سلسلة التعليمات"
-  },
-  "panels/timeline/TimelineFlameChartDataProvider.ts | threadS": {
-    "message": "سلسلة التعليمات رقم {PH1}"
-  },
-  "panels/timeline/TimelineFlameChartDataProvider.ts | timings": {
-    "message": "الأوقات"
-  },
-  "panels/timeline/TimelineFlameChartDataProvider.ts | userInteractions": {
-    "message": "التفاعلات"
   },
   "panels/timeline/TimelineFlameChartNetworkDataProvider.ts | network": {
     "message": "الشبكة"
@@ -11198,9 +11264,6 @@
   "panels/timeline/TimelinePanel.ts | close": {
     "message": "إغلاق"
   },
-  "panels/timeline/TimelinePanel.ts | coverage": {
-    "message": "التغطية"
-  },
   "panels/timeline/TimelinePanel.ts | cpu": {
     "message": "وحدة المعالجة المركزية (CPU):"
   },
@@ -11218,9 +11281,6 @@
   },
   "panels/timeline/TimelinePanel.ts | enableAdvancedPaint": {
     "message": "تفعيل قياس سرعة العرض المتقدم (بطيء)"
-  },
-  "panels/timeline/TimelinePanel.ts | failedToSaveTimelineSSS": {
-    "message": "تعذَّر حفظ المخطّط الزمني: {PH1} ({PH2}، {PH3})."
   },
   "panels/timeline/TimelinePanel.ts | initializingProfiler": {
     "message": "جارٍ إعداد المحلّل…"
@@ -11252,9 +11312,6 @@
   "panels/timeline/TimelinePanel.ts | received": {
     "message": "تمّ التلقي."
   },
-  "panels/timeline/TimelinePanel.ts | recordCoverageWithPerformance": {
-    "message": "تسجيل التغطية باستخدام سجلّ تتبُّع الأداء"
-  },
   "panels/timeline/TimelinePanel.ts | recordingFailed": {
     "message": "تعذّر التسجيل."
   },
@@ -11266,9 +11323,6 @@
   },
   "panels/timeline/TimelinePanel.ts | showMemoryTimeline": {
     "message": "عرض المخطّط الزمني للذاكرة"
-  },
-  "panels/timeline/TimelinePanel.ts | showWebVitals": {
-    "message": "عرض \"مؤشرات أداء الويب\""
   },
   "panels/timeline/TimelinePanel.ts | ssec": {
     "message": "{PH1} ثانية"
@@ -11287,9 +11341,6 @@
   },
   "panels/timeline/TimelinePanel.ts | wasd": {
     "message": "WASD"
-  },
-  "panels/timeline/TimelinePanel.ts | webVitals": {
-    "message": "مؤشرات أداء الويب"
   },
   "panels/timeline/TimelineTreeView.ts | activity": {
     "message": "النشاط"
@@ -11672,14 +11723,8 @@
   "panels/timeline/TimelineUIUtils.ts | initiator": {
     "message": "بادئ التشغيل"
   },
-  "panels/timeline/TimelineUIUtils.ts | inputLatency": {
-    "message": "وقت الاستجابة للإدخال"
-  },
   "panels/timeline/TimelineUIUtils.ts | installTimer": {
     "message": "تثبيت موقِّت"
-  },
-  "panels/timeline/TimelineUIUtils.ts | interactionEvent": {
-    "message": "نوع التفاعل:{PH1} id:{PH2}"
   },
   "panels/timeline/TimelineUIUtils.ts | invalidateLayout": {
     "message": "إلغاء صلاحية التصميم"
@@ -11695,6 +11740,15 @@
   },
   "panels/timeline/TimelineUIUtils.ts | jsFrame": {
     "message": "إطار JavaScript"
+  },
+  "panels/timeline/TimelineUIUtils.ts | jsIdleFrame": {
+    "message": "إطار JavaScript غير مستخدَم حاليًا"
+  },
+  "panels/timeline/TimelineUIUtils.ts | jsRoot": {
+    "message": "جذر JavaScript"
+  },
+  "panels/timeline/TimelineUIUtils.ts | jsSystemFrame": {
+    "message": "إطار نظام JavaScript"
   },
   "panels/timeline/TimelineUIUtils.ts | largestContentfulPaint": {
     "message": "سرعة عرض أكبر جزء من المحتوى على الصفحة"
@@ -11839,6 +11893,9 @@
   },
   "panels/timeline/TimelineUIUtils.ts | producedCacheSize": {
     "message": "حجم ذاكرة التخزين المؤقت الناتج"
+  },
+  "panels/timeline/TimelineUIUtils.ts | profilingOverhead": {
+    "message": "الوقت المستغرَق في إنشاء الملفات التعريفية"
   },
   "panels/timeline/TimelineUIUtils.ts | range": {
     "message": "النطاق"
@@ -12038,9 +12095,6 @@
   "panels/timeline/TimelineUIUtils.ts | timeSpentInRendering": {
     "message": "الوقت المستغرق في العرض"
   },
-  "panels/timeline/TimelineUIUtils.ts | timeWaitingForMainThread": {
-    "message": "الوقت المستغرَق في انتظار سلسلة التعليمات الرئيسية"
-  },
   "panels/timeline/TimelineUIUtils.ts | timeout": {
     "message": "المهلة"
   },
@@ -12113,6 +12167,12 @@
   "panels/timeline/TimelineUIUtils.ts | yes": {
     "message": "نعم"
   },
+  "panels/timeline/TimingsTrackAppender.ts | sSelfS": {
+    "message": "‫{PH1} (الوقت المستغرق في هذه العقدة وحدها {PH2})"
+  },
+  "panels/timeline/TimingsTrackAppender.ts | timings": {
+    "message": "الأوقات"
+  },
   "panels/timeline/UIDevtoolsUtils.ts | drawFrame": {
     "message": "إطار الرسم"
   },
@@ -12136,36 +12196,6 @@
   },
   "panels/timeline/UIDevtoolsUtils.ts | system": {
     "message": "النظام"
-  },
-  "panels/timeline/components/WebVitalsTimeline.ts | fcp": {
-    "message": "سرعة عرض المحتوى على الصفحة"
-  },
-  "panels/timeline/components/WebVitalsTimeline.ts | firstContentfulPaint": {
-    "message": "سرعة عرض المحتوى على الصفحة"
-  },
-  "panels/timeline/components/WebVitalsTimeline.ts | good": {
-    "message": "جيد"
-  },
-  "panels/timeline/components/WebVitalsTimeline.ts | largestContentfulPaint": {
-    "message": "سرعة عرض أكبر جزء من المحتوى على الصفحة"
-  },
-  "panels/timeline/components/WebVitalsTimeline.ts | lcp": {
-    "message": "سرعة عرض أكبر جزء من المحتوى على الصفحة (LCP)"
-  },
-  "panels/timeline/components/WebVitalsTimeline.ts | longTask": {
-    "message": "مهمة طويلة"
-  },
-  "panels/timeline/components/WebVitalsTimeline.ts | longTasks": {
-    "message": "مهام طويلة"
-  },
-  "panels/timeline/components/WebVitalsTimeline.ts | ls": {
-    "message": "متغيّرات التصميم (LS)"
-  },
-  "panels/timeline/components/WebVitalsTimeline.ts | needsImprovement": {
-    "message": "بحاجة إلى تحسين"
-  },
-  "panels/timeline/components/WebVitalsTimeline.ts | poor": {
-    "message": "غير جيد"
   },
   "panels/timeline/timeline-meta.ts | hideChromeFrameInLayersView": {
     "message": "إخفاء إطار chrome في طريقة عرض \"الطبقات\""
@@ -12351,7 +12381,7 @@
     "message": "معيار WebAuthn"
   },
   "ui/components/data_grid/DataGrid.ts | enterToSort": {
-    "message": "اضغط على مفتاح Enter لتطبيق فلتر الترتيب."
+    "message": "نوع ترتيب العمود: {PH1}. اضغط على مفتاح Enter لتطبيق فلتر الترتيب."
   },
   "ui/components/data_grid/DataGrid.ts | headerOptions": {
     "message": "خيارات العنوان"
@@ -12359,8 +12389,17 @@
   "ui/components/data_grid/DataGrid.ts | resetColumns": {
     "message": "إعادة ضبط الأعمدة"
   },
+  "ui/components/data_grid/DataGrid.ts | sortAsc": {
+    "message": "تصاعدي"
+  },
   "ui/components/data_grid/DataGrid.ts | sortBy": {
     "message": "الترتيب حسب"
+  },
+  "ui/components/data_grid/DataGrid.ts | sortDesc": {
+    "message": "تنازلي"
+  },
+  "ui/components/data_grid/DataGrid.ts | sortNone": {
+    "message": "بدون ترتيب"
   },
   "ui/components/data_grid/DataGridController.ts | sortInAscendingOrder": {
     "message": "تم ترتيب العمود \"{PH1}\" تصاعديًا."
@@ -13063,6 +13102,9 @@
   },
   "ui/legacy/components/object_ui/ObjectPropertiesSection.ts | noProperties": {
     "message": "ما من خصائص."
+  },
+  "ui/legacy/components/object_ui/ObjectPropertiesSection.ts | revealInMemoryInpector": {
+    "message": "العرض في لوحة أداة \"فحص الذاكرة\""
   },
   "ui/legacy/components/object_ui/ObjectPropertiesSection.ts | showAllD": {
     "message": "عرض كل النتائج البالغ عددها {PH1}"

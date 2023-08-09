@@ -9,12 +9,12 @@ import logging
 import pathlib
 import time
 import traceback
-from typing import TYPE_CHECKING, Any, Dict, Optional, Sequence
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence
 
 import selenium.common.exceptions
 from selenium import webdriver
 
-from crossbench.browsers.base import Browser
+from .browser import Browser
 
 if TYPE_CHECKING:
   import datetime as dt
@@ -22,7 +22,7 @@ if TYPE_CHECKING:
   from crossbench.runner import Run, Runner
 
 
-class WebdriverMixin(Browser):
+class WebdriverBrowser(Browser, metaclass=abc.ABCMeta):
   _driver: webdriver.Remote
   _driver_path: Optional[pathlib.Path]
   _driver_pid: int
@@ -48,26 +48,36 @@ class WebdriverMixin(Browser):
     pass
 
   def start(self, run: Run) -> None:
-    assert not self._is_running
-    assert self._driver_path
-    assert self._driver_path.is_absolute()
     self._check_driver_version()
     self._driver = self._start_driver(run, self._driver_path)
     if hasattr(self._driver, "service"):
       self._driver_pid = self._driver.service.process.pid
+      candidates: List[int] = []
       for child in self.platform.process_children(self._driver_pid):
         if str(child["exe"]) == str(self.path):
-          self._pid = int(child["pid"])
-          break
+          candidates.append(child["pid"])
+      if len(candidates) == 1:
+        self._pid = candidates[0]
+      else:
+        logging.debug(
+            "Could not find unique browser process for webdriver: %s, got %s",
+            self, candidates)
     self._is_running = True
+    self._setup_window()
+    self._check_driver_version()
+
+  def _setup_window(self) -> None:
     # Force main window to foreground.
     self._driver.switch_to.window(self._driver.current_window_handle)
-    if self._start_fullscreen:
+    if self.viewport.is_headless:
+      return
+    if self.viewport.is_fullscreen:
       self._driver.fullscreen_window()
+    elif self.viewport.is_maximized:
+      self._driver.maximize_window()
     else:
-      self._driver.set_window_position(self.x, self.y)
-      self._driver.set_window_size(self.width, self.height)
-    self._check_driver_version()
+      self._driver.set_window_position(self.viewport.x, self.viewport.y)
+      self._driver.set_window_size(self.viewport.width, self.viewport.height)
 
   @abc.abstractmethod
   def _start_driver(self, run: Run,
@@ -80,7 +90,7 @@ class WebdriverMixin(Browser):
     return details
 
   def show_url(self, runner: Runner, url: str) -> None:
-    logging.debug("SHOW_URL %s", url)
+    logging.debug("WebdriverBrowser.show_url(%s)", url)
     assert self._driver.window_handles, "Browser has no more opened windows."
     self._driver.switch_to.window(self._driver.window_handles[0])
     try:
@@ -97,7 +107,8 @@ class WebdriverMixin(Browser):
          script: str,
          timeout: Optional[dt.timedelta] = None,
          arguments: Sequence[object] = ()) -> Any:
-    logging.debug("RUN SCRIPT timeout=%s, script: %s", timeout, script[:100])
+    logging.debug("WebdriverBrowser.js() timeout=%s, script: %s", timeout,
+                  script)
     assert self._is_running
     try:
       if timeout is not None:
@@ -116,7 +127,7 @@ class WebdriverMixin(Browser):
   def force_quit(self) -> None:
     if getattr(self, "_driver", None) is None:
       return
-    logging.debug("QUIT")
+    logging.debug("WebdriverBrowser.force_quit()")
     try:
       try:
         # Close the current window.
@@ -143,7 +154,7 @@ class WebdriverMixin(Browser):
     return
 
 
-class RemoteWebDriver(WebdriverMixin, Browser):
+class RemoteWebDriver(WebdriverBrowser, Browser):
   """Represent a remote WebDriver that has already been started"""
 
   def __init__(self, label: str, driver: webdriver.Remote):
@@ -171,11 +182,13 @@ class RemoteWebDriver(WebdriverMixin, Browser):
   def start(self, run: Run) -> None:
     # Driver has already been started. We just need to mark it as running.
     self._is_running = True
-    if self._start_fullscreen:
+    if self.viewport.is_fullscreen:
       self._driver.fullscreen_window()
+    elif self.viewport.is_maximized:
+      self._driver.maximize_window()
     else:
-      self._driver.set_window_position(self.x, self.y)
-      self._driver.set_window_size(self.width, self.height)
+      self._driver.set_window_position(self.viewport.x, self.viewport.y)
+      self._driver.set_window_size(self.viewport.width, self.viewport.height)
 
   def quit(self, runner: Runner) -> None:
     # External code that started the driver is responsible for shutting it down.

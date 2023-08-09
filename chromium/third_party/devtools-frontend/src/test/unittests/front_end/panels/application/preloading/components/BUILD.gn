@@ -9,7 +9,9 @@ ts_library("components") {
   sources = [
     "PreloadingDetailsReportView_test.ts",
     "PreloadingGrid_test.ts",
+    "RuleSetDetailsReportView_test.ts",
     "RuleSetGrid_test.ts",
+    "UsedPreloadingView_test.ts",
   ]
 
   deps = [

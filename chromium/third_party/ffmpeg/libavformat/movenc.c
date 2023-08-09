@@ -47,6 +47,7 @@
 #include "internal.h"
 #include "libavutil/avstring.h"
 #include "libavutil/channel_layout.h"
+#include "libavutil/csp.h"
 #include "libavutil/intfloat.h"
 #include "libavutil/mathematics.h"
 #include "libavutil/libm.h"
@@ -56,7 +57,6 @@
 #include "libavutil/stereo3d.h"
 #include "libavutil/timecode.h"
 #include "libavutil/dovi_meta.h"
-#include "libavutil/color_utils.h"
 #include "libavutil/uuid.h"
 #include "hevc.h"
 #include "rtpenc.h"
@@ -1179,6 +1179,68 @@ static int mov_write_btrt_tag(AVIOContext *pb, MOVTrack *track)
     return update_size(pb, pos);
 }
 
+static int mov_write_chnl_tag(AVFormatContext *s, AVIOContext *pb, MOVTrack *track)
+{
+    int64_t pos = avio_tell(pb);
+    int config = 0;
+    int ret;
+    uint8_t *speaker_pos = NULL;
+    const AVChannelLayout *layout = &track->par->ch_layout;
+
+    ret = ff_mov_get_channel_config_from_layout(layout, &config);
+    if (ret || !config) {
+        config = 0;
+        speaker_pos = av_malloc(layout->nb_channels);
+        ret = ff_mov_get_channel_positions_from_layout(layout,
+                speaker_pos, layout->nb_channels);
+        if (ret) {
+            char buf[128] = {0};
+
+            av_freep(&speaker_pos);
+            av_channel_layout_describe(layout, buf, sizeof(buf));
+            av_log(s, AV_LOG_ERROR, "unsupported channel layout %s\n", buf);
+            return ret;
+        }
+    }
+
+    avio_wb32(pb, 0); /* size */
+    ffio_wfourcc(pb, "chnl");
+    avio_wb32(pb, 0); /* version & flags */
+
+    avio_w8(pb, 1); /* stream_structure */
+    avio_w8(pb, config);
+    if (config) {
+        avio_wb64(pb, 0);
+    } else {
+        for (int i = 0; i < layout->nb_channels; i++)
+            avio_w8(pb, speaker_pos[i]);
+        av_freep(&speaker_pos);
+    }
+
+    return update_size(pb, pos);
+}
+
+static int mov_write_pcmc_tag(AVFormatContext *s, AVIOContext *pb, MOVTrack *track)
+{
+    int64_t pos = avio_tell(pb);
+    int format_flags;
+
+    avio_wb32(pb, 0); /* size */
+    ffio_wfourcc(pb, "pcmC");
+    avio_wb32(pb, 0); /* version & flags */
+
+    /* 0x01: indicates little-endian format */
+    format_flags = (track->par->codec_id == AV_CODEC_ID_PCM_F32LE ||
+                    track->par->codec_id == AV_CODEC_ID_PCM_F64LE ||
+                    track->par->codec_id == AV_CODEC_ID_PCM_S16LE ||
+                    track->par->codec_id == AV_CODEC_ID_PCM_S24LE ||
+                    track->par->codec_id == AV_CODEC_ID_PCM_S32LE);
+    avio_w8(pb, format_flags);
+    avio_w8(pb, track->par->bits_per_raw_sample);
+
+    return update_size(pb, pos);
+}
+
 static int mov_write_audio_tag(AVFormatContext *s, AVIOContext *pb, MOVMuxContext *mov, MOVTrack *track)
 {
     int64_t pos = avio_tell(pb);
@@ -1241,13 +1303,7 @@ static int mov_write_audio_tag(AVFormatContext *s, AVIOContext *pb, MOVMuxContex
                 avio_wb16(pb, 16);
             avio_wb16(pb, track->audio_vbr ? -2 : 0); /* compression ID */
         } else { /* reserved for mp4/3gp */
-            if (track->par->codec_id == AV_CODEC_ID_FLAC ||
-                track->par->codec_id == AV_CODEC_ID_ALAC ||
-                track->par->codec_id == AV_CODEC_ID_OPUS) {
-                avio_wb16(pb, track->par->ch_layout.nb_channels);
-            } else {
-                avio_wb16(pb, 2);
-            }
+            avio_wb16(pb, track->par->ch_layout.nb_channels);
             if (track->par->codec_id == AV_CODEC_ID_FLAC ||
                 track->par->codec_id == AV_CODEC_ID_ALAC) {
                 avio_wb16(pb, track->par->bits_per_raw_sample);
@@ -1311,7 +1367,13 @@ static int mov_write_audio_tag(AVFormatContext *s, AVIOContext *pb, MOVMuxContex
         ret = mov_write_dops_tag(s, pb, track);
     else if (track->par->codec_id == AV_CODEC_ID_TRUEHD)
         ret = mov_write_dmlp_tag(s, pb, track);
-    else if (track->vos_len > 0)
+    else if (tag == MOV_MP4_IPCM_TAG || tag == MOV_MP4_FPCM_TAG) {
+        if (track->par->ch_layout.nb_channels > 1)
+            ret = mov_write_chnl_tag(s, pb, track);
+        if (ret < 0)
+            return ret;
+        ret = mov_write_pcmc_tag(s, pb, track);
+    } else if (track->vos_len > 0)
         ret = mov_write_glbl_tag(pb, track);
 
     if (ret < 0)
@@ -2011,9 +2073,8 @@ static int mov_write_pasp_tag(AVIOContext *pb, MOVTrack *track)
 static int mov_write_gama_tag(AVFormatContext *s, AVIOContext *pb, MOVTrack *track, double gamma)
 {
     uint32_t gama = 0;
-    if (gamma <= 0.0) {
-        gamma = avpriv_get_gamma_from_trc(track->par->color_trc);
-    }
+    if (gamma <= 0.0)
+        gamma = av_csp_approximate_trc_gamma(track->par->color_trc);
     av_log(s, AV_LOG_DEBUG, "gamma value %g\n", gamma);
 
     if (gamma > 1e-6) {
@@ -7751,6 +7812,20 @@ static const AVCodecTag codec_mp4_tags[] = {
     { AV_CODEC_ID_MPEGH_3D_AUDIO,  MKTAG('m', 'h', 'm', '1') },
     { AV_CODEC_ID_TTML,            MOV_MP4_TTML_TAG          },
     { AV_CODEC_ID_TTML,            MOV_ISMV_TTML_TAG         },
+
+    /* ISO/IEC 23003-5 integer formats */
+    { AV_CODEC_ID_PCM_S16BE,       MOV_MP4_IPCM_TAG          },
+    { AV_CODEC_ID_PCM_S16LE,       MOV_MP4_IPCM_TAG          },
+    { AV_CODEC_ID_PCM_S24BE,       MOV_MP4_IPCM_TAG          },
+    { AV_CODEC_ID_PCM_S24LE,       MOV_MP4_IPCM_TAG          },
+    { AV_CODEC_ID_PCM_S32BE,       MOV_MP4_IPCM_TAG          },
+    { AV_CODEC_ID_PCM_S32LE,       MOV_MP4_IPCM_TAG          },
+    /* ISO/IEC 23003-5 floating-point formats */
+    { AV_CODEC_ID_PCM_F32BE,       MOV_MP4_FPCM_TAG          },
+    { AV_CODEC_ID_PCM_F32LE,       MOV_MP4_FPCM_TAG          },
+    { AV_CODEC_ID_PCM_F64BE,       MOV_MP4_FPCM_TAG          },
+    { AV_CODEC_ID_PCM_F64LE,       MOV_MP4_FPCM_TAG          },
+
     { AV_CODEC_ID_NONE,               0 },
 };
 #if CONFIG_MP4_MUXER || CONFIG_PSP_MUXER
@@ -7805,182 +7880,182 @@ static const AVClass mov_avif_muxer_class = {
 #endif
 
 #if CONFIG_MOV_MUXER
-const AVOutputFormat ff_mov_muxer = {
-    .name              = "mov",
-    .long_name         = NULL_IF_CONFIG_SMALL("QuickTime / MOV"),
-    .extensions        = "mov",
+const FFOutputFormat ff_mov_muxer = {
+    .p.name            = "mov",
+    .p.long_name       = NULL_IF_CONFIG_SMALL("QuickTime / MOV"),
+    .p.extensions      = "mov",
     .priv_data_size    = sizeof(MOVMuxContext),
-    .audio_codec       = AV_CODEC_ID_AAC,
-    .video_codec       = CONFIG_LIBX264_ENCODER ?
+    .p.audio_codec     = AV_CODEC_ID_AAC,
+    .p.video_codec     = CONFIG_LIBX264_ENCODER ?
                          AV_CODEC_ID_H264 : AV_CODEC_ID_MPEG4,
     .init              = mov_init,
     .write_header      = mov_write_header,
     .write_packet      = mov_write_packet,
     .write_trailer     = mov_write_trailer,
     .deinit            = mov_free,
-    .flags             = AVFMT_GLOBALHEADER | AVFMT_ALLOW_FLUSH | AVFMT_TS_NEGATIVE,
-    .codec_tag         = (const AVCodecTag* const []){
+    .p.flags           = AVFMT_GLOBALHEADER | AVFMT_ALLOW_FLUSH | AVFMT_TS_NEGATIVE,
+    .p.codec_tag       = (const AVCodecTag* const []){
         ff_codec_movvideo_tags, ff_codec_movaudio_tags, ff_codec_movsubtitle_tags, 0
     },
     .check_bitstream   = mov_check_bitstream,
-    .priv_class        = &mov_isobmff_muxer_class,
+    .p.priv_class      = &mov_isobmff_muxer_class,
 };
 #endif
 #if CONFIG_TGP_MUXER
-const AVOutputFormat ff_tgp_muxer = {
-    .name              = "3gp",
-    .long_name         = NULL_IF_CONFIG_SMALL("3GP (3GPP file format)"),
-    .extensions        = "3gp",
+const FFOutputFormat ff_tgp_muxer = {
+    .p.name            = "3gp",
+    .p.long_name       = NULL_IF_CONFIG_SMALL("3GP (3GPP file format)"),
+    .p.extensions      = "3gp",
     .priv_data_size    = sizeof(MOVMuxContext),
-    .audio_codec       = AV_CODEC_ID_AMR_NB,
-    .video_codec       = AV_CODEC_ID_H263,
+    .p.audio_codec     = AV_CODEC_ID_AMR_NB,
+    .p.video_codec     = AV_CODEC_ID_H263,
     .init              = mov_init,
     .write_header      = mov_write_header,
     .write_packet      = mov_write_packet,
     .write_trailer     = mov_write_trailer,
     .deinit            = mov_free,
-    .flags             = AVFMT_GLOBALHEADER | AVFMT_ALLOW_FLUSH | AVFMT_TS_NEGATIVE,
-    .codec_tag         = codec_3gp_tags_list,
+    .p.flags           = AVFMT_GLOBALHEADER | AVFMT_ALLOW_FLUSH | AVFMT_TS_NEGATIVE,
+    .p.codec_tag       = codec_3gp_tags_list,
     .check_bitstream   = mov_check_bitstream,
-    .priv_class        = &mov_isobmff_muxer_class,
+    .p.priv_class      = &mov_isobmff_muxer_class,
 };
 #endif
 #if CONFIG_MP4_MUXER
-const AVOutputFormat ff_mp4_muxer = {
-    .name              = "mp4",
-    .long_name         = NULL_IF_CONFIG_SMALL("MP4 (MPEG-4 Part 14)"),
-    .mime_type         = "video/mp4",
-    .extensions        = "mp4",
+const FFOutputFormat ff_mp4_muxer = {
+    .p.name            = "mp4",
+    .p.long_name       = NULL_IF_CONFIG_SMALL("MP4 (MPEG-4 Part 14)"),
+    .p.mime_type       = "video/mp4",
+    .p.extensions      = "mp4",
     .priv_data_size    = sizeof(MOVMuxContext),
-    .audio_codec       = AV_CODEC_ID_AAC,
-    .video_codec       = CONFIG_LIBX264_ENCODER ?
+    .p.audio_codec     = AV_CODEC_ID_AAC,
+    .p.video_codec     = CONFIG_LIBX264_ENCODER ?
                          AV_CODEC_ID_H264 : AV_CODEC_ID_MPEG4,
     .init              = mov_init,
     .write_header      = mov_write_header,
     .write_packet      = mov_write_packet,
     .write_trailer     = mov_write_trailer,
     .deinit            = mov_free,
-    .flags             = AVFMT_GLOBALHEADER | AVFMT_ALLOW_FLUSH | AVFMT_TS_NEGATIVE,
-    .codec_tag         = mp4_codec_tags_list,
+    .p.flags           = AVFMT_GLOBALHEADER | AVFMT_ALLOW_FLUSH | AVFMT_TS_NEGATIVE,
+    .p.codec_tag       = mp4_codec_tags_list,
     .check_bitstream   = mov_check_bitstream,
-    .priv_class        = &mov_isobmff_muxer_class,
+    .p.priv_class      = &mov_isobmff_muxer_class,
 };
 #endif
 #if CONFIG_PSP_MUXER
-const AVOutputFormat ff_psp_muxer = {
-    .name              = "psp",
-    .long_name         = NULL_IF_CONFIG_SMALL("PSP MP4 (MPEG-4 Part 14)"),
-    .extensions        = "mp4,psp",
+const FFOutputFormat ff_psp_muxer = {
+    .p.name            = "psp",
+    .p.long_name       = NULL_IF_CONFIG_SMALL("PSP MP4 (MPEG-4 Part 14)"),
+    .p.extensions      = "mp4,psp",
     .priv_data_size    = sizeof(MOVMuxContext),
-    .audio_codec       = AV_CODEC_ID_AAC,
-    .video_codec       = CONFIG_LIBX264_ENCODER ?
+    .p.audio_codec     = AV_CODEC_ID_AAC,
+    .p.video_codec     = CONFIG_LIBX264_ENCODER ?
                          AV_CODEC_ID_H264 : AV_CODEC_ID_MPEG4,
     .init              = mov_init,
     .write_header      = mov_write_header,
     .write_packet      = mov_write_packet,
     .write_trailer     = mov_write_trailer,
     .deinit            = mov_free,
-    .flags             = AVFMT_GLOBALHEADER | AVFMT_ALLOW_FLUSH | AVFMT_TS_NEGATIVE,
-    .codec_tag         = mp4_codec_tags_list,
+    .p.flags           = AVFMT_GLOBALHEADER | AVFMT_ALLOW_FLUSH | AVFMT_TS_NEGATIVE,
+    .p.codec_tag       = mp4_codec_tags_list,
     .check_bitstream   = mov_check_bitstream,
-    .priv_class        = &mov_isobmff_muxer_class,
+    .p.priv_class      = &mov_isobmff_muxer_class,
 };
 #endif
 #if CONFIG_TG2_MUXER
-const AVOutputFormat ff_tg2_muxer = {
-    .name              = "3g2",
-    .long_name         = NULL_IF_CONFIG_SMALL("3GP2 (3GPP2 file format)"),
-    .extensions        = "3g2",
+const FFOutputFormat ff_tg2_muxer = {
+    .p.name            = "3g2",
+    .p.long_name       = NULL_IF_CONFIG_SMALL("3GP2 (3GPP2 file format)"),
+    .p.extensions      = "3g2",
     .priv_data_size    = sizeof(MOVMuxContext),
-    .audio_codec       = AV_CODEC_ID_AMR_NB,
-    .video_codec       = AV_CODEC_ID_H263,
+    .p.audio_codec     = AV_CODEC_ID_AMR_NB,
+    .p.video_codec     = AV_CODEC_ID_H263,
     .init              = mov_init,
     .write_header      = mov_write_header,
     .write_packet      = mov_write_packet,
     .write_trailer     = mov_write_trailer,
     .deinit            = mov_free,
-    .flags             = AVFMT_GLOBALHEADER | AVFMT_ALLOW_FLUSH | AVFMT_TS_NEGATIVE,
-    .codec_tag         = codec_3gp_tags_list,
+    .p.flags           = AVFMT_GLOBALHEADER | AVFMT_ALLOW_FLUSH | AVFMT_TS_NEGATIVE,
+    .p.codec_tag       = codec_3gp_tags_list,
     .check_bitstream   = mov_check_bitstream,
-    .priv_class        = &mov_isobmff_muxer_class,
+    .p.priv_class      = &mov_isobmff_muxer_class,
 };
 #endif
 #if CONFIG_IPOD_MUXER
-const AVOutputFormat ff_ipod_muxer = {
-    .name              = "ipod",
-    .long_name         = NULL_IF_CONFIG_SMALL("iPod H.264 MP4 (MPEG-4 Part 14)"),
-    .mime_type         = "video/mp4",
-    .extensions        = "m4v,m4a,m4b",
+const FFOutputFormat ff_ipod_muxer = {
+    .p.name            = "ipod",
+    .p.long_name       = NULL_IF_CONFIG_SMALL("iPod H.264 MP4 (MPEG-4 Part 14)"),
+    .p.mime_type       = "video/mp4",
+    .p.extensions      = "m4v,m4a,m4b",
     .priv_data_size    = sizeof(MOVMuxContext),
-    .audio_codec       = AV_CODEC_ID_AAC,
-    .video_codec       = AV_CODEC_ID_H264,
+    .p.audio_codec     = AV_CODEC_ID_AAC,
+    .p.video_codec     = AV_CODEC_ID_H264,
     .init              = mov_init,
     .write_header      = mov_write_header,
     .write_packet      = mov_write_packet,
     .write_trailer     = mov_write_trailer,
     .deinit            = mov_free,
-    .flags             = AVFMT_GLOBALHEADER | AVFMT_ALLOW_FLUSH | AVFMT_TS_NEGATIVE,
-    .codec_tag         = (const AVCodecTag* const []){ codec_ipod_tags, 0 },
+    .p.flags           = AVFMT_GLOBALHEADER | AVFMT_ALLOW_FLUSH | AVFMT_TS_NEGATIVE,
+    .p.codec_tag       = (const AVCodecTag* const []){ codec_ipod_tags, 0 },
     .check_bitstream   = mov_check_bitstream,
-    .priv_class        = &mov_isobmff_muxer_class,
+    .p.priv_class      = &mov_isobmff_muxer_class,
 };
 #endif
 #if CONFIG_ISMV_MUXER
-const AVOutputFormat ff_ismv_muxer = {
-    .name              = "ismv",
-    .long_name         = NULL_IF_CONFIG_SMALL("ISMV/ISMA (Smooth Streaming)"),
-    .mime_type         = "video/mp4",
-    .extensions        = "ismv,isma",
+const FFOutputFormat ff_ismv_muxer = {
+    .p.name            = "ismv",
+    .p.long_name       = NULL_IF_CONFIG_SMALL("ISMV/ISMA (Smooth Streaming)"),
+    .p.mime_type       = "video/mp4",
+    .p.extensions      = "ismv,isma",
     .priv_data_size    = sizeof(MOVMuxContext),
-    .audio_codec       = AV_CODEC_ID_AAC,
-    .video_codec       = AV_CODEC_ID_H264,
+    .p.audio_codec     = AV_CODEC_ID_AAC,
+    .p.video_codec     = AV_CODEC_ID_H264,
     .init              = mov_init,
     .write_header      = mov_write_header,
     .write_packet      = mov_write_packet,
     .write_trailer     = mov_write_trailer,
     .deinit            = mov_free,
-    .flags             = AVFMT_GLOBALHEADER | AVFMT_ALLOW_FLUSH | AVFMT_TS_NEGATIVE,
-    .codec_tag         = (const AVCodecTag* const []){
+    .p.flags           = AVFMT_GLOBALHEADER | AVFMT_ALLOW_FLUSH | AVFMT_TS_NEGATIVE,
+    .p.codec_tag       = (const AVCodecTag* const []){
         codec_mp4_tags, codec_ism_tags, 0 },
     .check_bitstream   = mov_check_bitstream,
-    .priv_class        = &mov_isobmff_muxer_class,
+    .p.priv_class      = &mov_isobmff_muxer_class,
 };
 #endif
 #if CONFIG_F4V_MUXER
-const AVOutputFormat ff_f4v_muxer = {
-    .name              = "f4v",
-    .long_name         = NULL_IF_CONFIG_SMALL("F4V Adobe Flash Video"),
-    .mime_type         = "application/f4v",
-    .extensions        = "f4v",
+const FFOutputFormat ff_f4v_muxer = {
+    .p.name            = "f4v",
+    .p.long_name       = NULL_IF_CONFIG_SMALL("F4V Adobe Flash Video"),
+    .p.mime_type       = "application/f4v",
+    .p.extensions      = "f4v",
     .priv_data_size    = sizeof(MOVMuxContext),
-    .audio_codec       = AV_CODEC_ID_AAC,
-    .video_codec       = AV_CODEC_ID_H264,
+    .p.audio_codec     = AV_CODEC_ID_AAC,
+    .p.video_codec     = AV_CODEC_ID_H264,
     .init              = mov_init,
     .write_header      = mov_write_header,
     .write_packet      = mov_write_packet,
     .write_trailer     = mov_write_trailer,
     .deinit            = mov_free,
-    .flags             = AVFMT_GLOBALHEADER | AVFMT_ALLOW_FLUSH,
-    .codec_tag         = (const AVCodecTag* const []){ codec_f4v_tags, 0 },
+    .p.flags           = AVFMT_GLOBALHEADER | AVFMT_ALLOW_FLUSH,
+    .p.codec_tag       = (const AVCodecTag* const []){ codec_f4v_tags, 0 },
     .check_bitstream   = mov_check_bitstream,
-    .priv_class        = &mov_isobmff_muxer_class,
+    .p.priv_class      = &mov_isobmff_muxer_class,
 };
 #endif
 #if CONFIG_AVIF_MUXER
-const AVOutputFormat ff_avif_muxer = {
-    .name              = "avif",
-    .long_name         = NULL_IF_CONFIG_SMALL("AVIF"),
-    .mime_type         = "image/avif",
-    .extensions        = "avif",
+const FFOutputFormat ff_avif_muxer = {
+    .p.name            = "avif",
+    .p.long_name       = NULL_IF_CONFIG_SMALL("AVIF"),
+    .p.mime_type       = "image/avif",
+    .p.extensions      = "avif",
     .priv_data_size    = sizeof(MOVMuxContext),
-    .video_codec       = AV_CODEC_ID_AV1,
+    .p.video_codec     = AV_CODEC_ID_AV1,
     .init              = mov_init,
     .write_header      = mov_write_header,
     .write_packet      = mov_write_packet,
     .write_trailer     = avif_write_trailer,
     .deinit            = mov_free,
-    .flags             = AVFMT_GLOBALHEADER | AVFMT_ALLOW_FLUSH,
-    .codec_tag         = codec_avif_tags_list,
-    .priv_class        = &mov_avif_muxer_class,
+    .p.flags           = AVFMT_GLOBALHEADER | AVFMT_ALLOW_FLUSH,
+    .p.codec_tag       = codec_avif_tags_list,
+    .p.priv_class      = &mov_avif_muxer_class,
 };
 #endif

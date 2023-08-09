@@ -9,7 +9,6 @@
 #define GrCaps_DEFINED
 
 #include "include/core/SkCapabilities.h"
-#include "include/core/SkImage.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkTypes.h"
 #include "include/gpu/GrDriverBugWorkarounds.h"
@@ -37,6 +36,7 @@ class GrRenderTarget;
 class GrRenderTargetProxy;
 class GrSurface;
 class SkJSONWriter;
+enum class SkTextureCompressionType;
 struct GrContextOptions;
 struct SkIRect;
 struct SkISize;
@@ -458,7 +458,7 @@ public:
     /** These are used when creating a new texture internally. */
     GrBackendFormat getDefaultBackendFormat(GrColorType, GrRenderable) const;
 
-    virtual GrBackendFormat getBackendFormatFromCompressionType(SkImage::CompressionType) const = 0;
+    virtual GrBackendFormat getBackendFormatFromCompressionType(SkTextureCompressionType) const = 0;
 
     /**
      * The CLAMP_TO_BORDER wrap mode for texture coordinates was added to desktop GL in 1.3, and
@@ -534,6 +534,9 @@ public:
         return fDisablePerspectiveSDFText;
     }
 
+    // anglebug.com/7796
+    bool avoidLineDraws() const { return fAvoidLineDraws; }
+
     /**
      * Checks whether the passed color type is renderable. If so, the same color type is passed
      * back along with the default format used for the color type. If not, provides an alternative
@@ -604,6 +607,7 @@ protected:
     bool fAvoidReorderingRenderTasks                 : 1;
     bool fAvoidDithering                             : 1;
     bool fDisablePerspectiveSDFText                  : 1;
+    bool fAvoidLineDraws                             : 1;
 
     // ANGLE performance workaround
     bool fPreferVRAMUseOverFlushes                   : 1;

@@ -63,7 +63,7 @@ TlsConnectionPosix::~TlsConnectionPosix() {
 
 void TlsConnectionPosix::TryReceiveMessage() {
   OSP_DCHECK(ssl_);
-  constexpr int kMaxApplicationDataBytes = 4096;
+  constexpr int kMaxApplicationDataBytes = 65536;
   std::vector<uint8_t> block(kMaxApplicationDataBytes);
   ClearOpenSSLERRStack(CURRENT_LOCATION);
   const int bytes_read =

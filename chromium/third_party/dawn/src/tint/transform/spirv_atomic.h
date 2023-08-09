@@ -18,7 +18,7 @@
 #include <string>
 
 #include "src/tint/ast/internal_attribute.h"
-#include "src/tint/sem/builtin_type.h"
+#include "src/tint/builtin/function.h"
 #include "src/tint/transform/transform.h"
 
 // Forward declarations
@@ -32,7 +32,7 @@ namespace tint::transform {
 /// with calls to the WGSL atomic builtin. It also makes sure to replace variable declarations that
 /// are the target of the atomic operations with an atomic declaration of the same type. For
 /// structs, it creates a copy of the original struct with atomic members.
-class SpirvAtomic final : public Castable<SpirvAtomic, Transform> {
+class SpirvAtomic final : public utils::Castable<SpirvAtomic, Transform> {
   public:
     /// Constructor
     SpirvAtomic();
@@ -41,12 +41,12 @@ class SpirvAtomic final : public Castable<SpirvAtomic, Transform> {
 
     /// Stub is an attribute applied to stub SPIR-V reader generated functions that need to be
     /// translated to an atomic builtin.
-    class Stub final : public Castable<Stub, ast::InternalAttribute> {
+    class Stub final : public utils::Castable<Stub, ast::InternalAttribute> {
       public:
         /// @param pid the identifier of the program that owns this node
         /// @param nid the unique node identifier
         /// @param builtin the atomic builtin this stub represents
-        Stub(ProgramID pid, ast::NodeID nid, sem::BuiltinType builtin);
+        Stub(ProgramID pid, ast::NodeID nid, builtin::Function builtin);
         /// Destructor
         ~Stub() override;
 
@@ -60,7 +60,7 @@ class SpirvAtomic final : public Castable<SpirvAtomic, Transform> {
         const Stub* Clone(CloneContext* ctx) const override;
 
         /// The type of the intrinsic
-        const sem::BuiltinType builtin;
+        const builtin::Function builtin;
     };
 
     /// @copydoc Transform::Apply

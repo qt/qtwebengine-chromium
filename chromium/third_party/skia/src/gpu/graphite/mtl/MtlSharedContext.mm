@@ -58,10 +58,14 @@ MtlSharedContext::MtlSharedContext(sk_cfp<id<MTLDevice>> device,
         , fDevice(std::move(device)) {}
 
 MtlSharedContext::~MtlSharedContext() {
+    // need to clear out resources before the allocator (if any) is removed
+    this->globalCache()->deleteResources();
 }
 
-std::unique_ptr<ResourceProvider> MtlSharedContext::makeResourceProvider(SingleOwner* singleOwner) {
-    return std::unique_ptr<ResourceProvider>(new MtlResourceProvider(this, singleOwner));
+std::unique_ptr<ResourceProvider> MtlSharedContext::makeResourceProvider(SingleOwner* singleOwner,
+                                                                         uint32_t recorderID) {
+    return std::unique_ptr<ResourceProvider>(new MtlResourceProvider(this, singleOwner,
+                                                                     recorderID));
 }
 
 } // namespace skgpu::graphite

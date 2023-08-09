@@ -63,6 +63,10 @@ class Span {
   Span(std::vector<U>& v) : data_(v.data()), count_(v.size()) {}  // NOLINT
 
   template <typename U, typename = internal::EnableIfConvertible<U, T>>
+  Span(const std::vector<U>& v)  // NOLINT
+      : data_(v.data()), count_(v.size()) {}
+
+  template <typename U, typename = internal::EnableIfConvertible<U, T>>
   constexpr Span(const Span<U>& other) noexcept
       : data_(other.data()), count_(other.size()) {}  // NOLINT
 

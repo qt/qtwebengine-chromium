@@ -25,7 +25,7 @@ void LogExecution(Isolate* isolate, Handle<JSFunction> function) {
   if (!function->has_feedback_vector()) return;
   if (!function->feedback_vector().log_next_execution()) return;
   Handle<SharedFunctionInfo> sfi(function->shared(), isolate);
-  Handle<String> name = SharedFunctionInfo::DebugName(sfi);
+  Handle<String> name = SharedFunctionInfo::DebugName(isolate, sfi);
   DisallowGarbageCollection no_gc;
   auto raw_sfi = *sfi;
   std::string event_name = "first-execution";
@@ -163,7 +163,7 @@ RUNTIME_FUNCTION(Runtime_HealOptimizedCodeSlot) {
   DCHECK(function->shared().is_compiled());
 
   function->feedback_vector().EvictOptimizedCodeMarkedForDeoptimization(
-      function->shared(), "Runtime_HealOptimizedCodeSlot");
+      isolate, function->shared(), "Runtime_HealOptimizedCodeSlot");
   return function->code();
 }
 
@@ -369,7 +369,7 @@ RUNTIME_FUNCTION(Runtime_NotifyDeoptimized) {
   Handle<JSFunction> function = deoptimizer->function();
   // For OSR the optimized code isn't installed on the function, so get the
   // code object from deoptimizer.
-  Handle<InstructionStream> optimized_code = deoptimizer->compiled_code();
+  Handle<Code> optimized_code = deoptimizer->compiled_code();
   const DeoptimizeKind deopt_kind = deoptimizer->deopt_kind();
   const DeoptimizeReason deopt_reason =
       deoptimizer->GetDeoptInfo().deopt_reason;
@@ -415,11 +415,11 @@ RUNTIME_FUNCTION(Runtime_NotifyDeoptimized) {
   // the loop should pay for the deoptimization costs.
   const BytecodeOffset osr_offset = optimized_code->osr_offset();
   if (osr_offset.IsNone()) {
-    Deoptimizer::DeoptimizeFunction(*function, ToCode(*optimized_code));
+    Deoptimizer::DeoptimizeFunction(*function, *optimized_code);
     DeoptAllOsrLoopsContainingDeoptExit(isolate, *function, deopt_exit_offset);
   } else if (DeoptExitIsInsideOsrLoop(isolate, *function, deopt_exit_offset,
                                       osr_offset)) {
-    Deoptimizer::DeoptimizeFunction(*function, ToCode(*optimized_code));
+    Deoptimizer::DeoptimizeFunction(*function, *optimized_code);
   }
 
   return ReadOnlyRoots(isolate).undefined_value();
@@ -488,7 +488,7 @@ Object CompileOptimizedOSR(Isolate* isolate, Handle<JSFunction> function,
     // 2) synchronous compilation failed for some reason.
 
     if (!function->HasAttachedOptimizedCode()) {
-      function->set_code(function->shared().GetCode());
+      function->set_code(function->shared().GetCode(isolate));
     }
 
     return {};
@@ -537,18 +537,11 @@ RUNTIME_FUNCTION(Runtime_CompileOptimizedOSR) {
   return CompileOptimizedOSR(isolate, function, osr_offset);
 }
 
-RUNTIME_FUNCTION(Runtime_CompileOptimizedOSRFromMaglev) {
-  HandleScope handle_scope(isolate);
-  DCHECK_EQ(1, args.length());
-  DCHECK(v8_flags.use_osr);
+namespace {
 
-  const BytecodeOffset osr_offset(args.positive_smi_value_at(0));
-
-  JavaScriptStackFrameIterator it(isolate);
-  MaglevFrame* frame = MaglevFrame::cast(it.frame());
-  DCHECK_EQ(frame->LookupCode().kind(), CodeKind::MAGLEV);
-  Handle<JSFunction> function = handle(frame->function(), isolate);
-
+Object CompileOptimizedOSRFromMaglev(Isolate* isolate,
+                                     Handle<JSFunction> function,
+                                     BytecodeOffset osr_offset) {
   // This path is only relevant for tests (all production configurations enable
   // concurrent OSR). It's quite subtle, if interested read on:
   if (V8_UNLIKELY(!isolate->concurrent_recompilation_enabled() ||
@@ -571,6 +564,44 @@ RUNTIME_FUNCTION(Runtime_CompileOptimizedOSRFromMaglev) {
   }
 
   return CompileOptimizedOSR(isolate, function, osr_offset);
+}
+
+}  // namespace
+
+RUNTIME_FUNCTION(Runtime_CompileOptimizedOSRFromMaglev) {
+  HandleScope handle_scope(isolate);
+  DCHECK_EQ(1, args.length());
+  DCHECK(v8_flags.use_osr);
+
+  const BytecodeOffset osr_offset(args.positive_smi_value_at(0));
+
+  JavaScriptStackFrameIterator it(isolate);
+  MaglevFrame* frame = MaglevFrame::cast(it.frame());
+  DCHECK_EQ(frame->LookupCode().kind(), CodeKind::MAGLEV);
+  Handle<JSFunction> function = handle(frame->function(), isolate);
+
+  return CompileOptimizedOSRFromMaglev(isolate, function, osr_offset);
+}
+
+RUNTIME_FUNCTION(Runtime_CompileOptimizedOSRFromMaglevInlined) {
+  HandleScope handle_scope(isolate);
+  DCHECK_EQ(2, args.length());
+  DCHECK(v8_flags.use_osr);
+
+  const BytecodeOffset osr_offset(args.positive_smi_value_at(0));
+  Handle<JSFunction> function = args.at<JSFunction>(1);
+
+  JavaScriptStackFrameIterator it(isolate);
+  MaglevFrame* frame = MaglevFrame::cast(it.frame());
+  DCHECK_EQ(frame->LookupCode().kind(), CodeKind::MAGLEV);
+
+  if (*function != frame->function()) {
+    // We are OSRing an inlined function. Mark the top frame one for
+    // optimization.
+    isolate->tiering_manager()->MarkForTurboFanOptimization(frame->function());
+  }
+
+  return CompileOptimizedOSRFromMaglev(isolate, function, osr_offset);
 }
 
 RUNTIME_FUNCTION(Runtime_LogOrTraceOptimizedOSREntry) {

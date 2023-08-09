@@ -310,7 +310,6 @@ std::unique_ptr<api::BluetoothSocket> BluetoothClassicMedium::ConnectToService(
     }
     nearby::CancellationFlagListener cancellation_flag_listener(
         cancellation_flag, [&rfcomm_socket]() {
-          rfcomm_socket->CancelIOAsync().get();
           rfcomm_socket->Close();
         });
 
@@ -591,6 +590,12 @@ winrt::fire_and_forget BluetoothClassicMedium::DeviceWatcher_Updated(
     // we need to really change the name of the bluetooth device
     std::string new_device_name = InspectableReader::ReadString(
         properties.Lookup(L"System.ItemNameDisplay"));
+
+    if (it->second->GetName() == new_device_name) {
+      NEARBY_LOGS(INFO)
+          << "Device name is same as old name, ignore the update.";
+      return {};
+    }
 
     it->second->SetName(new_device_name);
 

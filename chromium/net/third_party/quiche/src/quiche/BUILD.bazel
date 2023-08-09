@@ -282,6 +282,38 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "quic_toy_server",
+    srcs = [
+        "quic/tools/quic_toy_server.cc",
+    ],
+    hdrs = [
+        "quic/tools/quic_toy_server.h",
+    ],
+    deps = [
+        ":io_tool_support",
+        ":quiche_core",
+        ":quiche_platform_default_tools",
+        ":quiche_tool_support",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/strings",
+    ],
+)
+
+cc_library(
+    name = "quic_server_factory",
+    srcs = [
+        "quic/tools/quic_server_factory.cc",
+    ],
+    hdrs = [
+        "quic/tools/quic_server_factory.h",
+    ],
+    deps = [
+        ":io_tool_support",
+        ":quic_toy_server",
+    ],
+)
+
 test_suite_from_source_list(
     name = "quiche_tests",
     srcs = quiche_tests_srcs,
@@ -313,6 +345,7 @@ test_suite_from_source_list(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/types:optional",
+        "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
         "@com_google_googleurl//url",
     ],
@@ -444,6 +477,21 @@ cc_binary(
         ":io_tool_support",
         ":quic_toy_client",
         ":quiche_core",
+        ":quiche_tool_support",
+        "@com_google_absl//absl/strings",
+    ],
+)
+
+cc_binary(
+    name = "quic_server",
+    srcs = ["quic/tools/quic_server_bin.cc"],
+    deps = [
+        ":io_tool_support",
+        ":quic_server_factory",
+        ":quic_toy_server",
+        ":quiche_core",
+        ":quiche_platform_default",
+        ":quiche_platform_default_tools",
         ":quiche_tool_support",
         "@com_google_absl//absl/strings",
     ],

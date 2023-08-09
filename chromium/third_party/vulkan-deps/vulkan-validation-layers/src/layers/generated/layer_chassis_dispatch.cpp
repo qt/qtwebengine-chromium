@@ -20,11 +20,9 @@
  * limitations under the License.
  */
 
-#include <mutex>
-#include "cast_utils.h"
+#include "utils/cast_utils.h"
 #include "chassis.h"
 #include "layer_chassis_dispatch.h"
-#include "vk_layer_utils.h"
 #include "vk_safe_struct.h"
 
 std::shared_mutex dispatch_lock;
@@ -280,6 +278,15 @@ void WrapPnextChainHandles(ValidationObject *layer_data, const void *pNext) {
                         safe_struct->buffer = layer_data->Unwrap(safe_struct->buffer);
                     }
                 } break;
+
+#ifdef VK_ENABLE_BETA_EXTENSIONS 
+            case VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_TRIANGLES_DISPLACEMENT_MICROMAP_NV: {
+                    safe_VkAccelerationStructureTrianglesDisplacementMicromapNV *safe_struct = reinterpret_cast<safe_VkAccelerationStructureTrianglesDisplacementMicromapNV *>(cur_pnext);
+                    if (safe_struct->micromap) {
+                        safe_struct->micromap = layer_data->Unwrap(safe_struct->micromap);
+                    }
+                } break;
+#endif // VK_ENABLE_BETA_EXTENSIONS 
 
             case VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_TRIANGLES_OPACITY_MICROMAP_EXT: {
                     safe_VkAccelerationStructureTrianglesOpacityMicromapEXT *safe_struct = reinterpret_cast<safe_VkAccelerationStructureTrianglesOpacityMicromapEXT *>(cur_pnext);
@@ -7040,6 +7047,51 @@ VkResult DispatchGetPipelineExecutableInternalRepresentationsKHR(
     return result;
 }
 
+VkResult DispatchMapMemory2KHR(
+    VkDevice                                    device,
+    const VkMemoryMapInfoKHR*                   pMemoryMapInfo,
+    void**                                      ppData)
+{
+    auto layer_data = GetLayerDataPtr(get_dispatch_key(device), layer_data_map);
+    if (!wrap_handles) return layer_data->device_dispatch_table.MapMemory2KHR(device, pMemoryMapInfo, ppData);
+    safe_VkMemoryMapInfoKHR var_local_pMemoryMapInfo;
+    safe_VkMemoryMapInfoKHR *local_pMemoryMapInfo = nullptr;
+    {
+        if (pMemoryMapInfo) {
+            local_pMemoryMapInfo = &var_local_pMemoryMapInfo;
+            local_pMemoryMapInfo->initialize(pMemoryMapInfo);
+            if (pMemoryMapInfo->memory) {
+                local_pMemoryMapInfo->memory = layer_data->Unwrap(pMemoryMapInfo->memory);
+            }
+        }
+    }
+    VkResult result = layer_data->device_dispatch_table.MapMemory2KHR(device, (const VkMemoryMapInfoKHR*)local_pMemoryMapInfo, ppData);
+
+    return result;
+}
+
+VkResult DispatchUnmapMemory2KHR(
+    VkDevice                                    device,
+    const VkMemoryUnmapInfoKHR*                 pMemoryUnmapInfo)
+{
+    auto layer_data = GetLayerDataPtr(get_dispatch_key(device), layer_data_map);
+    if (!wrap_handles) return layer_data->device_dispatch_table.UnmapMemory2KHR(device, pMemoryUnmapInfo);
+    safe_VkMemoryUnmapInfoKHR var_local_pMemoryUnmapInfo;
+    safe_VkMemoryUnmapInfoKHR *local_pMemoryUnmapInfo = nullptr;
+    {
+        if (pMemoryUnmapInfo) {
+            local_pMemoryUnmapInfo = &var_local_pMemoryUnmapInfo;
+            local_pMemoryUnmapInfo->initialize(pMemoryUnmapInfo);
+            if (pMemoryUnmapInfo->memory) {
+                local_pMemoryUnmapInfo->memory = layer_data->Unwrap(pMemoryUnmapInfo->memory);
+            }
+        }
+    }
+    VkResult result = layer_data->device_dispatch_table.UnmapMemory2KHR(device, (const VkMemoryUnmapInfoKHR*)local_pMemoryUnmapInfo);
+
+    return result;
+}
+
 #ifdef VK_ENABLE_BETA_EXTENSIONS
 
 void DispatchCmdEncodeVideoKHR(
@@ -7054,8 +7106,8 @@ void DispatchCmdEncodeVideoKHR(
         if (pEncodeInfo) {
             local_pEncodeInfo = &var_local_pEncodeInfo;
             local_pEncodeInfo->initialize(pEncodeInfo);
-            if (pEncodeInfo->dstBitstreamBuffer) {
-                local_pEncodeInfo->dstBitstreamBuffer = layer_data->Unwrap(pEncodeInfo->dstBitstreamBuffer);
+            if (pEncodeInfo->dstBuffer) {
+                local_pEncodeInfo->dstBuffer = layer_data->Unwrap(pEncodeInfo->dstBuffer);
             }
             if (pEncodeInfo->srcPictureResource.imageViewBinding) {
                 local_pEncodeInfo->srcPictureResource.imageViewBinding = layer_data->Unwrap(pEncodeInfo->srcPictureResource.imageViewBinding);
@@ -8152,6 +8204,24 @@ void DispatchCmdSetDiscardRectangleEXT(
 
 }
 
+void DispatchCmdSetDiscardRectangleEnableEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkBool32                                    discardRectangleEnable)
+{
+    auto layer_data = GetLayerDataPtr(get_dispatch_key(commandBuffer), layer_data_map);
+    layer_data->device_dispatch_table.CmdSetDiscardRectangleEnableEXT(commandBuffer, discardRectangleEnable);
+
+}
+
+void DispatchCmdSetDiscardRectangleModeEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkDiscardRectangleModeEXT                   discardRectangleMode)
+{
+    auto layer_data = GetLayerDataPtr(get_dispatch_key(commandBuffer), layer_data_map);
+    layer_data->device_dispatch_table.CmdSetDiscardRectangleModeEXT(commandBuffer, discardRectangleMode);
+
+}
+
 void DispatchSetHdrMetadataEXT(
     VkDevice                                    device,
     uint32_t                                    swapchainCount,
@@ -8933,6 +9003,17 @@ void DispatchCmdDrawMeshTasksIndirectCountNV(
         countBuffer = layer_data->Unwrap(countBuffer);
     }
     layer_data->device_dispatch_table.CmdDrawMeshTasksIndirectCountNV(commandBuffer, buffer, offset, countBuffer, countBufferOffset, maxDrawCount, stride);
+
+}
+
+void DispatchCmdSetExclusiveScissorEnableNV(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    firstExclusiveScissor,
+    uint32_t                                    exclusiveScissorCount,
+    const VkBool32*                             pExclusiveScissorEnables)
+{
+    auto layer_data = GetLayerDataPtr(get_dispatch_key(commandBuffer), layer_data_map);
+    layer_data->device_dispatch_table.CmdSetExclusiveScissorEnableNV(commandBuffer, firstExclusiveScissor, exclusiveScissorCount, pExclusiveScissorEnables);
 
 }
 
@@ -11264,6 +11345,98 @@ void DispatchCmdOpticalFlowExecuteNV(
     }
     layer_data->device_dispatch_table.CmdOpticalFlowExecuteNV(commandBuffer, session, pExecuteInfo);
 
+}
+
+VkResult DispatchCreateShadersEXT(
+    VkDevice                                    device,
+    uint32_t                                    createInfoCount,
+    const VkShaderCreateInfoEXT*                pCreateInfos,
+    const VkAllocationCallbacks*                pAllocator,
+    VkShaderEXT*                                pShaders)
+{
+    auto layer_data = GetLayerDataPtr(get_dispatch_key(device), layer_data_map);
+    if (!wrap_handles) return layer_data->device_dispatch_table.CreateShadersEXT(device, createInfoCount, pCreateInfos, pAllocator, pShaders);
+    safe_VkShaderCreateInfoEXT *local_pCreateInfos = nullptr;
+    {
+        if (pCreateInfos) {
+            local_pCreateInfos = new safe_VkShaderCreateInfoEXT[createInfoCount];
+            for (uint32_t index0 = 0; index0 < createInfoCount; ++index0) {
+                local_pCreateInfos[index0].initialize(&pCreateInfos[index0]);
+                if (local_pCreateInfos[index0].pSetLayouts) {
+                    for (uint32_t index1 = 0; index1 < local_pCreateInfos[index0].setLayoutCount; ++index1) {
+                        local_pCreateInfos[index0].pSetLayouts[index1] = layer_data->Unwrap(local_pCreateInfos[index0].pSetLayouts[index1]);
+                    }
+                }
+            }
+        }
+    }
+    VkResult result = layer_data->device_dispatch_table.CreateShadersEXT(device, createInfoCount, (const VkShaderCreateInfoEXT*)local_pCreateInfos, pAllocator, pShaders);
+    if (local_pCreateInfos) {
+        delete[] local_pCreateInfos;
+    }
+    if (VK_SUCCESS == result) {
+        for (uint32_t index0 = 0; index0 < createInfoCount; index0++) {
+            pShaders[index0] = layer_data->WrapNew(pShaders[index0]);
+        }
+    }
+    return result;
+}
+
+void DispatchDestroyShaderEXT(
+    VkDevice                                    device,
+    VkShaderEXT                                 shader,
+    const VkAllocationCallbacks*                pAllocator)
+{
+    auto layer_data = GetLayerDataPtr(get_dispatch_key(device), layer_data_map);
+    if (!wrap_handles) return layer_data->device_dispatch_table.DestroyShaderEXT(device, shader, pAllocator);
+    uint64_t shader_id = CastToUint64(shader);
+    auto iter = unique_id_mapping.pop(shader_id);
+    if (iter != unique_id_mapping.end()) {
+        shader = (VkShaderEXT)iter->second;
+    } else {
+        shader = (VkShaderEXT)0;
+    }
+    layer_data->device_dispatch_table.DestroyShaderEXT(device, shader, pAllocator);
+
+}
+
+VkResult DispatchGetShaderBinaryDataEXT(
+    VkDevice                                    device,
+    VkShaderEXT                                 shader,
+    size_t*                                     pDataSize,
+    void*                                       pData)
+{
+    auto layer_data = GetLayerDataPtr(get_dispatch_key(device), layer_data_map);
+    if (!wrap_handles) return layer_data->device_dispatch_table.GetShaderBinaryDataEXT(device, shader, pDataSize, pData);
+    {
+        shader = layer_data->Unwrap(shader);
+    }
+    VkResult result = layer_data->device_dispatch_table.GetShaderBinaryDataEXT(device, shader, pDataSize, pData);
+
+    return result;
+}
+
+void DispatchCmdBindShadersEXT(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    stageCount,
+    const VkShaderStageFlagBits*                pStages,
+    const VkShaderEXT*                          pShaders)
+{
+    auto layer_data = GetLayerDataPtr(get_dispatch_key(commandBuffer), layer_data_map);
+    if (!wrap_handles) return layer_data->device_dispatch_table.CmdBindShadersEXT(commandBuffer, stageCount, pStages, pShaders);
+    VkShaderEXT var_local_pShaders[DISPATCH_MAX_STACK_ALLOCATIONS];
+    VkShaderEXT *local_pShaders = nullptr;
+    {
+        if (pShaders) {
+            local_pShaders = stageCount > DISPATCH_MAX_STACK_ALLOCATIONS ? new VkShaderEXT[stageCount] : var_local_pShaders;
+            for (uint32_t index0 = 0; index0 < stageCount; ++index0) {
+                local_pShaders[index0] = layer_data->Unwrap(pShaders[index0]);
+            }
+        }
+    }
+    layer_data->device_dispatch_table.CmdBindShadersEXT(commandBuffer, stageCount, pStages, (const VkShaderEXT*)local_pShaders);
+    if (local_pShaders != var_local_pShaders)
+        delete[] local_pShaders;
 }
 
 VkResult DispatchGetFramebufferTilePropertiesQCOM(

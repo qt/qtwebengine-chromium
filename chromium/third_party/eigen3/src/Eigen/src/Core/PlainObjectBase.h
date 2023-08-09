@@ -538,7 +538,9 @@ class PlainObjectBase : public internal::dense_xpr_base<Derived>::type
       if (ColsAtCompileTime == 1 && list.size() == 1) {
         eigen_assert(list_size == static_cast<size_t>(RowsAtCompileTime) || RowsAtCompileTime == Dynamic);
         resize(list_size, ColsAtCompileTime);
-        std::copy(list.begin()->begin(), list.begin()->end(), m_storage.data());
+        if (list.begin()->begin() != nullptr) {
+          std::copy(list.begin()->begin(), list.begin()->end(), m_storage.data());
+        }
       } else {
         eigen_assert(list.size() == static_cast<size_t>(RowsAtCompileTime) || RowsAtCompileTime == Dynamic);
         eigen_assert(list_size == static_cast<size_t>(ColsAtCompileTime) || ColsAtCompileTime == Dynamic);

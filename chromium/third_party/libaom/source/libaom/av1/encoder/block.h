@@ -1318,6 +1318,8 @@ typedef struct macroblock {
   uint8_t color_sensitivity_sb[MAX_MB_PLANE - 1];
   //! Color sensitivity flag for the superblock for golden reference.
   uint8_t color_sensitivity_sb_g[MAX_MB_PLANE - 1];
+  //! Color sensitivity flag for the superblock for altref reference.
+  uint8_t color_sensitivity_sb_alt[MAX_MB_PLANE - 1];
   //! Color sensitivity flag for the coding block.
   uint8_t color_sensitivity[MAX_MB_PLANE - 1];
   /**@}*/
@@ -1359,6 +1361,11 @@ typedef struct macroblock {
 #if COLLECT_NONRD_PICK_MODE_STAT
   mode_search_stat_nonrd ms_stat_nonrd;
 #endif  // COLLECT_NONRD_PICK_MODE_STAT
+
+  /*!\brief Number of pixels in current thread that choose palette mode in the
+   * fast encoding stage for screen content tool detemination.
+   */
+  int palette_pixels;
 } MACROBLOCK;
 #undef SINGLE_REF_MODES
 

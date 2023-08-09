@@ -27,17 +27,17 @@ Run the latest [speedometer benchmark](https://browserbench.org/Speedometer/)
 
 Profile individual line items (with pprof on linux):
 ```bash
-./cb.py speedometer --probe=profiling --separate
+./cb.py speedometer --probe='profiling' --separate
 ```
 
 Use a custom chrome build and only run a subset of the stories:
 ```bash
-./cb.py speedometer --browser=$PATH --probe=profiling --story='Ember.*'
+./cb.py speedometer --browser=$PATH --probe='profiling' --story='Ember.*'
 ```
 
 Profile a website for 17 seconds on Chrome M100 (auto-downloading on macOS and linux):
 ```bash
-./cb.py loading --browser=chrome-m100 --probe=profiling --url=www.cnn.com,17s
+./cb.py loading --browser=chrome-m100 --probe='profiling' --url=www.cnn.com,17s
 ```
 
 
@@ -53,7 +53,7 @@ multiple browsers use `--browser-config` (or pass simple flags after `--` to
 the browser).
 
 ```bash
-./cb.py speedometer --browser=$BROWSER -- --enable-field-trial-config 
+./cb.py speedometer --browser=$BROWSER -- --enable-field-trial-config
 ```
 
 #### Browser Config File
@@ -74,7 +74,7 @@ Probes define a way to extract arbitrary (performance) numbers from a
 host or running browser. This can reach from running simple JS-snippets to
 extract page-specific numbers to system-wide profiling.
 
-Multiple probes can be added with repeated `--probe=XXX` options.
+Multiple probes can be added with repeated `--probe='XXX'` options.
 You can use the `describe probes` subcommand to list all probes:
 
 ```bash
@@ -95,7 +95,7 @@ all options.
 ./cb.py describe probe v8.log
 
 # Use inline hjson to configure a probe:
-./cb.py speedometer --probe='v8.log{prof:true}'
+./cb.py speedometer --probe='v8.log:{prof:true}'
 ```
 
 #### Probe Config File

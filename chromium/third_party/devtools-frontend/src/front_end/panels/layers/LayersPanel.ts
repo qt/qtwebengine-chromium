@@ -105,18 +105,18 @@ export class LayersPanel extends UI.Panel.PanelWithSidebar implements SDK.Target
     return layersPanelInstance;
   }
 
-  focus(): void {
+  override focus(): void {
     this.layerTreeOutline.focus();
   }
 
-  wasShown(): void {
+  override wasShown(): void {
     super.wasShown();
     if (this.model) {
       this.model.enable();
     }
   }
 
-  willHide(): void {
+  override willHide(): void {
     if (this.model) {
       void this.model.disable();
     }
@@ -124,7 +124,7 @@ export class LayersPanel extends UI.Panel.PanelWithSidebar implements SDK.Target
   }
 
   targetAdded(target: SDK.Target.Target): void {
-    if (target !== SDK.TargetManager.TargetManager.instance().mainFrameTarget()) {
+    if (target !== SDK.TargetManager.TargetManager.instance().primaryPageTarget()) {
       return;
     }
     this.model = target.model(LayerTreeModel);

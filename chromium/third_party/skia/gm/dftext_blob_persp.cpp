@@ -22,10 +22,13 @@
 #include "include/core/SkSurfaceProps.h"
 #include "include/core/SkTextBlob.h"
 #include "include/core/SkTypes.h"
+#include "include/gpu/GpuTypes.h"
 #include "include/private/base/SkTArray.h"
 #include "tools/ToolUtils.h"
 
 #include <initializer_list>
+
+using namespace skia_private;
 
 /**
  * This GM tests reusing the same text blobs with distance fields rendering using various
@@ -145,7 +148,7 @@ private:
         canvas->restore();
     }
 
-    SkTArray<sk_sp<SkTextBlob>> fBlobs;
+    TArray<sk_sp<SkTextBlob>> fBlobs;
     using INHERITED = skiagm::GM;
 };
 

@@ -215,13 +215,19 @@ export class UISourceCode extends Common.ObjectWrapper.ObjectWrapper<EventTypes>
     return this.projectInternal;
   }
 
-  requestContent(): Promise<TextUtils.ContentProvider.DeferredContent> {
+  requestContent({cachedWasmOnly}: {cachedWasmOnly?: boolean} = {}):
+      Promise<TextUtils.ContentProvider.DeferredContent> {
     if (this.requestContentPromise) {
       return this.requestContentPromise;
     }
 
     if (this.contentLoadedInternal) {
       return Promise.resolve(this.contentInternal as TextUtils.ContentProvider.DeferredContent);
+    }
+
+    if (cachedWasmOnly && this.mimeType() === 'application/wasm') {
+      return Promise.resolve(
+          {content: '', isEncoded: false, wasmDisassemblyInfo: new Common.WasmDisassembly.WasmDisassembly([], [], [])});
     }
 
     this.requestContentPromise = this.requestContentImpl();
@@ -336,14 +342,21 @@ export class UISourceCode extends Common.ObjectWrapper.ObjectWrapper<EventTypes>
   }
 
   workingCopy(): string {
+    return this.workingCopyContent().content || '';
+  }
+
+  workingCopyContent(): TextUtils.ContentProvider.DeferredContent {
     if (this.workingCopyGetter) {
       this.workingCopyInternal = this.workingCopyGetter();
       this.workingCopyGetter = null;
     }
     if (this.isDirty()) {
-      return this.workingCopyInternal as string;
+      return {content: this.workingCopyInternal as string, isEncoded: false};
     }
-    return this.contentInternal?.content || '';
+    if (this.contentInternal) {
+      return this.contentInternal;
+    }
+    return {content: '', isEncoded: false};
   }
 
   resetWorkingCopy(): void {

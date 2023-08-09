@@ -9,10 +9,37 @@
 #define SkSurface_Base_DEFINED
 
 #include "include/core/SkCanvas.h"
-#include "include/core/SkDeferredDisplayList.h"
+#include "include/core/SkDeferredDisplayList.h" // IWYU pragma: keep
+#include "include/core/SkImage.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkSamplingOptions.h"
+#include "include/core/SkScalar.h"
 #include "include/core/SkSurface.h"
-#include "src/core/SkImagePriv.h"
-#include "src/core/SkSurfacePriv.h"
+#include "include/core/SkTypes.h"
+
+#if defined(SK_GANESH)
+#include "include/gpu/GrBackendSurface.h"
+#include "include/gpu/GrTypes.h"
+#endif
+
+#include <cstdint>
+#include <memory>
+
+class GrBackendSemaphore;
+class GrRecordingContext;
+class SkCapabilities;
+class SkColorSpace;
+class SkPaint;
+class SkPixmap;
+class SkSurfaceCharacterization;
+class SkSurfaceProps;
+enum SkYUVColorSpace : int;
+namespace skgpu { class MutableTextureState; }
+namespace skgpu { namespace graphite { class Recorder; } }
+struct SkIRect;
+struct SkISize;
+struct SkImageInfo;
 
 class SkSurface_Base : public SkSurface {
 public:
@@ -23,7 +50,7 @@ public:
     virtual GrRecordingContext* onGetRecordingContext();
     virtual skgpu::graphite::Recorder* onGetRecorder();
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
     virtual GrBackendTexture onGetBackendTexture(BackendHandleAccess);
     virtual GrBackendRenderTarget onGetBackendRenderTarget(BackendHandleAccess);
     virtual bool onReplaceBackendTexture(const GrBackendTexture&,
@@ -66,7 +93,7 @@ public:
      */
     virtual sk_sp<SkImage> onNewImageSnapshot(const SkIRect* subset = nullptr) { return nullptr; }
 
-#ifdef SK_GRAPHITE_ENABLED
+#if defined(SK_GRAPHITE)
     virtual sk_sp<SkImage> onAsImage() { return nullptr; }
 
     virtual sk_sp<SkImage> onMakeImageCopy(const SkIRect* /* subset */,
@@ -197,6 +224,14 @@ sk_sp<SkImage> SkSurface_Base::refCachedImage() {
 
     SkASSERT(!fCachedCanvas || fCachedCanvas->getSurfaceBase() == this);
     return fCachedImage;
+}
+
+static inline SkSurface_Base* asSB(SkSurface* surface) {
+    return static_cast<SkSurface_Base*>(surface);
+}
+
+static inline const SkSurface_Base* asConstSB(const SkSurface* surface) {
+    return static_cast<const SkSurface_Base*>(surface);
 }
 
 #endif

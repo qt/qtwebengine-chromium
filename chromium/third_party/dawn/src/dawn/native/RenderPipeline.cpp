@@ -157,9 +157,20 @@ MaybeError ValidateVertexState(DeviceBase* device,
     // attribute number never exceed kMaxVertexAttributes.
     ASSERT(totalAttributesNum <= kMaxVertexAttributes);
 
-    // TODO(dawn:563): Specify which inputs were not used in error message.
-    DAWN_INVALID_IF(!IsSubset(vertexMetadata.usedVertexInputs, attributesSetMask),
-                    "Pipeline vertex stage uses vertex buffers not in the vertex state");
+    // Validate that attributes used by the VertexState are in the shader using bitmask operations
+    // but try to be helpful by finding one missing attribute to surface in the error message
+    if (!IsSubset(vertexMetadata.usedVertexInputs, attributesSetMask)) {
+        const ityp::bitset<VertexAttributeLocation, kMaxVertexAttributes> missingAttributes =
+            vertexMetadata.usedVertexInputs & ~attributesSetMask;
+        ASSERT(missingAttributes.any());
+
+        VertexAttributeLocation firstMissing = ityp::Sub(
+            GetHighestBitIndexPlusOne(missingAttributes), VertexAttributeLocation(uint8_t(1)));
+        return DAWN_VALIDATION_ERROR(
+            "Vertex attribute slot %u used in (%s, entryPoint: %s) is not present in the "
+            "VertexState.",
+            uint8_t(firstMissing), descriptor->module, descriptor->entryPoint);
+    }
 
     return {};
 }
@@ -353,6 +364,36 @@ MaybeError ValidateFragmentState(DeviceBase* device,
     const EntryPointMetadata& fragmentMetadata =
         descriptor->module->GetEntryPoint(descriptor->entryPoint);
 
+    // Iterates through the bindings on the fragment state to count the number of storage buffer and
+    // storage textures.
+    uint32_t maxFragmentCombinedOutputResources =
+        device->GetLimits().v1.maxFragmentCombinedOutputResources;
+    uint32_t fragmentCombinedOutputResources = 0;
+    for (uint32_t i = 0; i < descriptor->targetCount; i++) {
+        if (descriptor->targets[i].format != wgpu::TextureFormat::Undefined) {
+            fragmentCombinedOutputResources += 1;
+        }
+    }
+    for (BindGroupIndex group(0); group < fragmentMetadata.bindings.size(); ++group) {
+        for (const auto& [_, shaderBinding] : fragmentMetadata.bindings[group]) {
+            switch (shaderBinding.bindingType) {
+                case BindingInfoType::Buffer:
+                    if (shaderBinding.buffer.type == wgpu::BufferBindingType::Storage) {
+                        fragmentCombinedOutputResources += 1;
+                    }
+                    break;
+                case BindingInfoType::StorageTexture:
+                    fragmentCombinedOutputResources += 1;
+                    break;
+                default:
+                    break;
+            }
+        }
+    }
+    DAWN_INVALID_IF(fragmentCombinedOutputResources > maxFragmentCombinedOutputResources,
+                    "Number of fragment output resources (%u) exceeds the maximum (%u).",
+                    fragmentCombinedOutputResources, maxFragmentCombinedOutputResources);
+
     if (fragmentMetadata.usesFragDepth) {
         DAWN_INVALID_IF(
             depthStencil == nullptr,
@@ -386,10 +427,23 @@ MaybeError ValidateFragmentState(DeviceBase* device,
     }
     DAWN_TRY(ValidateColorAttachmentBytesPerSample(device, colorAttachmentFormats));
 
-    DAWN_INVALID_IF(fragmentMetadata.usesSampleMaskOutput && alphaToCoverageEnabled,
-                    "alphaToCoverageEnabled is true when the sample_mask builtin is a "
-                    "pipeline output of fragment stage of %s.",
-                    descriptor->module);
+    if (alphaToCoverageEnabled) {
+        DAWN_INVALID_IF(fragmentMetadata.usesSampleMaskOutput,
+                        "alphaToCoverageEnabled is true when the sample_mask builtin is a "
+                        "pipeline output of fragment stage of %s.",
+                        descriptor->module);
+
+        DAWN_INVALID_IF(descriptor->targetCount == 0 ||
+                            descriptor->targets[0].format == wgpu::TextureFormat::Undefined,
+                        "alphaToCoverageEnabled is true when color target[0] is not present.");
+
+        const Format* format;
+        DAWN_TRY_ASSIGN(format, device->GetInternalFormat(descriptor->targets[0].format));
+        DAWN_INVALID_IF(
+            !format->HasAlphaChannel(),
+            "alphaToCoverageEnabled is true when target[0].format (%s) has no alpha channel.",
+            format->format);
+    }
 
     return {};
 }
@@ -491,6 +545,10 @@ MaybeError ValidateRenderPipelineDescriptor(DeviceBase* device,
 
     DAWN_TRY_CONTEXT(ValidateMultisampleState(&descriptor->multisample),
                      "validating multisample state.");
+
+    DAWN_INVALID_IF(
+        descriptor->multisample.alphaToCoverageEnabled && descriptor->fragment == nullptr,
+        "alphaToCoverageEnabled is true when fragment state is not present.");
 
     if (descriptor->fragment != nullptr) {
         DAWN_TRY_CONTEXT(ValidateFragmentState(device, descriptor->fragment, descriptor->layout,
@@ -672,8 +730,10 @@ RenderPipelineBase::RenderPipelineBase(DeviceBase* device,
     StreamIn(&mCacheKey, CacheKey::Type::RenderPipeline, device->GetCacheKey());
 }
 
-RenderPipelineBase::RenderPipelineBase(DeviceBase* device, ObjectBase::ErrorTag tag)
-    : PipelineBase(device, tag) {}
+RenderPipelineBase::RenderPipelineBase(DeviceBase* device,
+                                       ObjectBase::ErrorTag tag,
+                                       const char* label)
+    : PipelineBase(device, tag, label) {}
 
 RenderPipelineBase::~RenderPipelineBase() = default;
 
@@ -689,11 +749,11 @@ void RenderPipelineBase::DestroyImpl() {
 }
 
 // static
-RenderPipelineBase* RenderPipelineBase::MakeError(DeviceBase* device) {
+RenderPipelineBase* RenderPipelineBase::MakeError(DeviceBase* device, const char* label) {
     class ErrorRenderPipeline final : public RenderPipelineBase {
       public:
-        explicit ErrorRenderPipeline(DeviceBase* device)
-            : RenderPipelineBase(device, ObjectBase::kError) {}
+        explicit ErrorRenderPipeline(DeviceBase* device, const char* label)
+            : RenderPipelineBase(device, ObjectBase::kError, label) {}
 
         MaybeError Initialize() override {
             UNREACHABLE();
@@ -701,7 +761,7 @@ RenderPipelineBase* RenderPipelineBase::MakeError(DeviceBase* device) {
         }
     };
 
-    return new ErrorRenderPipeline(device);
+    return new ErrorRenderPipeline(device, label);
 }
 
 ObjectType RenderPipelineBase::GetType() const {

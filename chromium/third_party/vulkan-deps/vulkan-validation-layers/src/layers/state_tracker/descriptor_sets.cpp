@@ -142,6 +142,8 @@ cvdescriptorset::DescriptorClass cvdescriptorset::DescriptorTypeToClass(VkDescri
         case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
         case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
         case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
+        case VK_DESCRIPTOR_TYPE_SAMPLE_WEIGHT_IMAGE_QCOM:
+        case VK_DESCRIPTOR_TYPE_BLOCK_MATCH_IMAGE_QCOM:
             return Image;
         case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
         case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
@@ -284,12 +286,6 @@ VkDescriptorType cvdescriptorset::DescriptorSetLayoutDef::GetTypeFromIndex(const
     if (index < bindings_.size()) return bindings_[index].descriptorType;
     return VK_DESCRIPTOR_TYPE_MAX_ENUM;
 }
-// For the given index, return stageFlags
-VkShaderStageFlags cvdescriptorset::DescriptorSetLayoutDef::GetStageFlagsFromIndex(const uint32_t index) const {
-    assert(index < bindings_.size());
-    if (index < bindings_.size()) return bindings_[index].stageFlags;
-    return VkShaderStageFlags(0);
-}
 // Return binding flags for given index, 0 if index is unavailable
 VkDescriptorBindingFlags cvdescriptorset::DescriptorSetLayoutDef::GetDescriptorBindingFlagsFromIndex(const uint32_t index) const {
     if (index >= binding_flags_.size()) return 0;
@@ -351,28 +347,6 @@ const std::vector<VkDescriptorType> &cvdescriptorset::DescriptorSetLayoutDef::Ge
         return empty;
     }
     return mutable_types_[binding];
-}
-
-bool cvdescriptorset::DescriptorSetLayoutDef::IsNextBindingConsistent(const uint32_t binding) const {
-    if (!binding_to_index_map_.count(binding + 1)) return false;
-    auto const &bi_itr = binding_to_index_map_.find(binding);
-    if (bi_itr != binding_to_index_map_.end()) {
-        const auto &next_bi_itr = binding_to_index_map_.find(binding + 1);
-        if (next_bi_itr != binding_to_index_map_.end()) {
-            auto type = bindings_[bi_itr->second].descriptorType;
-            auto stage_flags = bindings_[bi_itr->second].stageFlags;
-            auto immut_samp = bindings_[bi_itr->second].pImmutableSamplers ? true : false;
-            auto flags = binding_flags_[bi_itr->second];
-            if ((type != bindings_[next_bi_itr->second].descriptorType) ||
-                (stage_flags != bindings_[next_bi_itr->second].stageFlags) ||
-                (immut_samp != (bindings_[next_bi_itr->second].pImmutableSamplers ? true : false)) ||
-                (flags != binding_flags_[next_bi_itr->second])) {
-                return false;
-            }
-            return true;
-        }
-    }
-    return false;
 }
 
 void cvdescriptorset::DescriptorSetLayout::SetLayoutSizeInBytes(const VkDeviceSize *layout_size_in_bytes_) {
@@ -583,7 +557,7 @@ void cvdescriptorset::DescriptorSet::PerformCopyUpdate(ValidationStateTracker *d
 //   to be used in a draw by the given cb_state
 void cvdescriptorset::DescriptorSet::UpdateDrawState(ValidationStateTracker *device_data, CMD_BUFFER_STATE *cb_state,
                                                      CMD_TYPE cmd_type, const PIPELINE_STATE *pipe,
-                                                     const BindingReqMap &binding_req_map) {
+                                                     const BindingVariableMap &binding_req_map) {
     // Descriptor UpdateDrawState only call image layout validation callbacks. If it is disabled, skip the entire loop.
     if (device_data->disabled[image_layout_validation]) {
         return;
@@ -641,8 +615,9 @@ void cvdescriptorset::DescriptorSet::UpdateDrawState(ValidationStateTracker *dev
     }
 }
 
-void cvdescriptorset::DescriptorSet::FilterOneBindingReq(const BindingReqMap::value_type &binding_req_pair, BindingReqMap *out_req,
-                                                         const TrackedBindings &bindings, uint32_t limit) {
+void cvdescriptorset::DescriptorSet::FilterOneBindingReq(const BindingVariableMap::value_type &binding_req_pair,
+                                                         BindingVariableMap *out_req, const TrackedBindings &bindings,
+                                                         uint32_t limit) {
     if (bindings.size() < limit) {
         const auto it = bindings.find(binding_req_pair.first);
         if (it == bindings.cend()) out_req->emplace(binding_req_pair);
@@ -650,7 +625,7 @@ void cvdescriptorset::DescriptorSet::FilterOneBindingReq(const BindingReqMap::va
 }
 
 void cvdescriptorset::DescriptorSet::FilterBindingReqs(const CMD_BUFFER_STATE &cb_state, const PIPELINE_STATE &pipeline,
-                                                       const BindingReqMap &in_req, BindingReqMap *out_req) const {
+                                                       const BindingVariableMap &in_req, BindingVariableMap *out_req) const {
     // For const cleanliness we have to find in the maps...
     const auto validated_it = cb_state.descriptorset_cache.find(this);
     if (validated_it == cb_state.descriptorset_cache.end()) {
@@ -702,7 +677,7 @@ void cvdescriptorset::DescriptorSet::FilterBindingReqs(const CMD_BUFFER_STATE &c
 }
 
 void cvdescriptorset::DescriptorSet::UpdateValidationCache(CMD_BUFFER_STATE &cb_state, const PIPELINE_STATE &pipeline,
-                                                           const BindingReqMap &updated_bindings) {
+                                                           const BindingVariableMap &updated_bindings) {
     auto &validated = cb_state.descriptorset_cache[this];
 
     auto &image_sample_version = validated.image_samplers[&pipeline];
@@ -887,8 +862,9 @@ void cvdescriptorset::AccelerationStructureDescriptor::CopyUpdate(DescriptorSet 
                                                                   const Descriptor *src, bool is_bindless) {
     if (src->GetClass() == Mutable) {
         auto acc_desc = static_cast<const MutableDescriptor *>(src);
+        is_khr_ = acc_desc->IsAccelerationStructureKHR();
         if (is_khr_) {
-            acc_ = acc_desc->GetAccelerationStructure();
+            acc_ = acc_desc->GetAccelerationStructureKHR();
             ReplaceStatePtr(set_state, acc_state_, dev_data->GetConstCastShared<ACCELERATION_STRUCTURE_STATE_KHR>(acc_),
                             is_bindless);
         } else {
@@ -1059,7 +1035,7 @@ void cvdescriptorset::MutableDescriptor::CopyUpdate(DescriptorSet *set_state, co
             } break;
             case AccelerationStructure: {
                 if (is_khr_) {
-                    acc_ = mutable_src->GetAccelerationStructure();
+                    acc_ = mutable_src->GetAccelerationStructureKHR();
                     ReplaceStatePtr(set_state, acc_state_, dev_data->GetConstCastShared<ACCELERATION_STRUCTURE_STATE_KHR>(acc_),
                                     is_bindless);
                 } else {
@@ -1208,10 +1184,10 @@ void cvdescriptorset::PerformUpdateDescriptorSets(ValidationStateTracker *dev_da
         }
     }
 }
-const BindingReqMap &cvdescriptorset::PrefilterBindRequestMap::FilteredMap(const CMD_BUFFER_STATE &cb_state,
-                                                                           const PIPELINE_STATE &pipeline) {
+const BindingVariableMap &cvdescriptorset::PrefilterBindRequestMap::FilteredMap(const CMD_BUFFER_STATE &cb_state,
+                                                                                const PIPELINE_STATE &pipeline) {
     if (IsManyDescriptors()) {
-        filtered_map_.reset(new BindingReqMap);
+        filtered_map_.reset(new BindingVariableMap);
         descriptor_set_.FilterBindingReqs(cb_state, pipeline, orig_map_, filtered_map_.get());
         return *filtered_map_;
     }

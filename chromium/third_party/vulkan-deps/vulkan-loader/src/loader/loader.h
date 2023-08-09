@@ -68,7 +68,7 @@ static inline struct loader_instance_dispatch_table *loader_get_instance_dispatc
 }
 
 static inline void loader_init_dispatch(void *obj, const void *data) {
-#ifdef DEBUG
+#if defined(DEBUG)
     assert(valid_loader_magic_value(obj) &&
            "Incompatible ICD, first dword must be initialized to "
            "ICD_LOADER_MAGIC. See loader/README.md for details.");
@@ -101,6 +101,7 @@ bool has_vk_extension_property_array(const VkExtensionProperties *vk_ext_prop, c
                                      const VkExtensionProperties *ext_array);
 bool has_vk_extension_property(const VkExtensionProperties *vk_ext_prop, const struct loader_extension_list *ext_list);
 
+bool loader_find_layer_name_in_list(const char *name, const struct loader_layer_list *layer_list);
 VkResult loader_add_layer_properties_to_list(const struct loader_instance *inst, struct loader_layer_list *list,
                                              uint32_t prop_list_count, const struct loader_layer_properties *props);
 void loader_free_layer_properties(const struct loader_instance *inst, struct loader_layer_properties *layer_properties);
@@ -186,10 +187,10 @@ loader_api_version loader_combine_version(uint32_t major, uint32_t minor, uint32
 bool loader_check_version_meets_required(loader_api_version required, loader_api_version version);
 
 // Convenience macros for common versions
-#ifndef LOADER_VERSION_1_0_0
+#if !defined(LOADER_VERSION_1_0_0)
 #define LOADER_VERSION_1_0_0 loader_combine_version(1, 0, 0)
 #endif
 
-#ifndef LOADER_VERSION_1_1_0
+#if !defined(LOADER_VERSION_1_1_0)
 #define LOADER_VERSION_1_1_0 loader_combine_version(1, 1, 0)
 #endif

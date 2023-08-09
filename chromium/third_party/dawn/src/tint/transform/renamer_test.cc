@@ -192,9 +192,9 @@ fn tint_symbol() {
     EXPECT_THAT(data->remappings, ContainerEq(expected_remappings));
 }
 
-TEST_F(RenamerTest, PreserveDiagnosticControls) {
+TEST_F(RenamerTest, PreserveCoreDiagnosticRuleName) {
     auto* src = R"(
-diagnostic(off, unreachable_code);
+diagnostic(off, chromium.unreachable_code);
 
 @diagnostic(off, derivative_uniformity)
 @fragment
@@ -208,7 +208,7 @@ fn entry(@location(0) value : f32) -> @location(0) f32 {
 )";
 
     auto* expect = R"(
-diagnostic(off, unreachable_code);
+diagnostic(off, chromium.unreachable_code);
 
 @diagnostic(off, derivative_uniformity) @fragment
 fn tint_symbol(@location(0) tint_symbol_1 : f32) -> @location(0) f32 {
@@ -1714,7 +1714,7 @@ std::vector<const char*> ConstructableTypes() {
     for (auto* ty : builtin::kBuiltinStrings) {
         std::string_view type(ty);
         if (type != "ptr" && type != "atomic" && !utils::HasPrefix(type, "sampler") &&
-            !utils::HasPrefix(type, "texture")) {
+            !utils::HasPrefix(type, "texture") && !utils::HasPrefix(type, "__")) {
             out.push_back(ty);
         }
     }
@@ -1924,7 +1924,9 @@ INSTANTIATE_TEST_SUITE_P(RenamerBuiltinTypeTest,
 std::vector<const char*> Identifiers() {
     std::vector<const char*> out;
     for (auto* ident : builtin::kBuiltinStrings) {
-        out.push_back(ident);
+        if (!utils::HasPrefix(ident, "__")) {
+            out.push_back(ident);
+        }
     }
     for (auto* ident : builtin::kAddressSpaceStrings) {
         if (!utils::HasPrefix(ident, "_")) {

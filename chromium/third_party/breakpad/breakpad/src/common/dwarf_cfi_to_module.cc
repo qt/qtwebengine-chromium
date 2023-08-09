@@ -33,6 +33,10 @@
 // Implementation of google_breakpad::DwarfCFIToModule.
 // See dwarf_cfi_to_module.h for details.
 
+#ifdef HAVE_CONFIG_H
+#include <config.h>  // Must come first
+#endif
+
 #include <memory>
 #include <sstream>
 #include <utility>
@@ -141,6 +145,29 @@ vector<string> DwarfCFIToModule::RegisterNames::MIPS() {
 
   return MakeVector(kRegisterNames,
                     sizeof(kRegisterNames) / sizeof(kRegisterNames[0]));
+}
+
+vector<string> DwarfCFIToModule::RegisterNames::RISCV() {
+  static const char *const names[] = {
+    "x0",  "x1",  "x2",  "x3",  "x4",  "x5",  "x6",  "x7",
+    "x8",  "x9",  "x10", "x11", "x12", "x13", "x14", "x15",
+    "x16", "x17", "x18", "x19", "x20", "x21", "x22", "x23",
+    "x24", "x25", "x26", "x27", "x28", "x29", "x30", "x31",
+    "f0",  "f1",  "f2",  "f3",  "f4",  "f5",  "f6",  "f7",
+    "f8",  "f9",  "f10", "f11", "f12", "f13", "f14", "f15",
+    "f16", "f17", "f18", "f19", "f20", "f21", "f22", "f23",
+    "f24", "f25", "f26", "f27", "f28", "f29", "f30", "f31",
+    "",    "",    "",    "",    "",    "",    "",    "",
+    "",    "",    "",    "",    "",    "",    "",    "",
+    "",    "",    "",    "",    "",    "",    "",    "",
+    "",    "",    "",    "",    "",    "",    "",    "",
+    "v0",  "v1",  "v2",  "v3",  "v4",  "v5",  "v6",  "v7",
+    "v8",  "v9",  "v10", "v11", "v12", "v13", "v14", "v15",
+    "v16", "v17", "v18", "v19", "v20", "v21", "v22", "v23",
+    "v24", "v25", "v26", "v27", "v28", "v29", "v30", "v31"
+  };
+
+  return MakeVector(names, sizeof(names) / sizeof(names[0]));
 }
 
 bool DwarfCFIToModule::Entry(size_t offset, uint64_t address, uint64_t length,

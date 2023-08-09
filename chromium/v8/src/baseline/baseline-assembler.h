@@ -11,6 +11,7 @@
 #if ENABLE_SPARKPLUG
 
 #include "src/codegen/macro-assembler.h"
+#include "src/interpreter/bytecode-register.h"
 #include "src/objects/tagged-index.h"
 
 namespace v8 {
@@ -61,6 +62,12 @@ class BaselineAssembler {
 
   inline void JumpIf(Condition cc, Register lhs, const Operand& rhs,
                      Label* target, Label::Distance distance = Label::kFar);
+#if V8_STATIC_ROOTS_BOOL
+  // Fast JS_RECEIVER test which assumes to receive either a primitive object or
+  // a js receiver.
+  inline void JumpIfJSAnyIsPrimitive(Register heap_object, Label* target,
+                                     Label::Distance distance = Label::kFar);
+#endif
   inline void JumpIfObjectType(Condition cc, Register object,
                                InstanceType instance_type, Register map,
                                Label* target,

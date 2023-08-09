@@ -27,32 +27,21 @@ class Device;
 class Texture;
 struct VulkanSurfaceInfo;
 
-class OldSwapChain : public OldSwapChainBase {
-  public:
-    static Ref<OldSwapChain> Create(Device* device, const SwapChainDescriptor* descriptor);
-
-  protected:
-    OldSwapChain(Device* device, const SwapChainDescriptor* descriptor);
-    ~OldSwapChain() override;
-
-    TextureBase* GetNextTextureImpl(const TextureDescriptor* descriptor) override;
-    MaybeError OnBeforePresent(TextureViewBase* texture) override;
-
-  private:
-    wgpu::TextureUsage mTextureUsage;
-};
-
-class SwapChain : public NewSwapChainBase {
+class SwapChain : public SwapChainBase {
   public:
     static ResultOrError<Ref<SwapChain>> Create(Device* device,
                                                 Surface* surface,
-                                                NewSwapChainBase* previousSwapChain,
+                                                SwapChainBase* previousSwapChain,
                                                 const SwapChainDescriptor* descriptor);
+
+    static ResultOrError<wgpu::TextureUsage> GetSupportedSurfaceUsage(const Device* device,
+                                                                      const Surface* surface);
+
     ~SwapChain() override;
 
   private:
-    using NewSwapChainBase::NewSwapChainBase;
-    MaybeError Initialize(NewSwapChainBase* previousSwapChain);
+    using SwapChainBase::SwapChainBase;
+    MaybeError Initialize(SwapChainBase* previousSwapChain);
     void DestroyImpl() override;
 
     struct Config {
@@ -77,7 +66,7 @@ class SwapChain : public NewSwapChainBase {
     ResultOrError<Config> ChooseConfig(const VulkanSurfaceInfo& surfaceInfo) const;
     ResultOrError<Ref<TextureViewBase>> GetCurrentTextureViewInternal(bool isReentrant = false);
 
-    // NewSwapChainBase implementation
+    // SwapChainBase implementation
     MaybeError PresentImpl() override;
     ResultOrError<Ref<TextureViewBase>> GetCurrentTextureViewImpl() override;
     void DetachFromSurfaceImpl() override;

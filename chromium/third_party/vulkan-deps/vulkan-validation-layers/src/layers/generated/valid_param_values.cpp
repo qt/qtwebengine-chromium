@@ -21,7 +21,7 @@
 
 
 #include "chassis.h"
-#include "hash_vk_types.h"
+#include "utils/hash_vk_types.h"
 
 
 template<>
@@ -104,6 +104,7 @@ std::vector<VkObjectType> ValidationObject::ValidParamValues() const {
         { &DeviceExtensions::vk_fuchsia_buffer_collection, { VK_OBJECT_TYPE_BUFFER_COLLECTION_FUCHSIA,  } },
         { &DeviceExtensions::vk_ext_opacity_micromap, { VK_OBJECT_TYPE_MICROMAP_EXT,  } },
         { &DeviceExtensions::vk_nv_optical_flow, { VK_OBJECT_TYPE_OPTICAL_FLOW_SESSION_NV,  } },
+        { &DeviceExtensions::vk_ext_shader_object, { VK_OBJECT_TYPE_SHADER_EXT,  } },
     };
     std::vector<VkObjectType> values(CoreVkObjectTypeEnums.cbegin(), CoreVkObjectTypeEnums.cend());
     std::set<VkObjectType> unique_exts;
@@ -201,7 +202,7 @@ std::vector<VkQueryType> ValidationObject::ValidParamValues() const {
         { &DeviceExtensions::vk_khr_acceleration_structure, { VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR, VK_QUERY_TYPE_ACCELERATION_STRUCTURE_SERIALIZATION_SIZE_KHR,  } },
         { &DeviceExtensions::vk_nv_ray_tracing, { VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_NV,  } },
         { &DeviceExtensions::vk_intel_performance_query, { VK_QUERY_TYPE_PERFORMANCE_QUERY_INTEL,  } },
-        { &DeviceExtensions::vk_khr_video_encode_queue, { VK_QUERY_TYPE_VIDEO_ENCODE_BITSTREAM_BUFFER_RANGE_KHR,  } },
+        { &DeviceExtensions::vk_khr_video_encode_queue, { VK_QUERY_TYPE_VIDEO_ENCODE_FEEDBACK_KHR,  } },
         { &DeviceExtensions::vk_ext_mesh_shader, { VK_QUERY_TYPE_MESH_PRIMITIVES_GENERATED_EXT,  } },
         { &DeviceExtensions::vk_ext_primitives_generated_query, { VK_QUERY_TYPE_PRIMITIVES_GENERATED_EXT,  } },
         { &DeviceExtensions::vk_khr_ray_tracing_maintenance1, { VK_QUERY_TYPE_ACCELERATION_STRUCTURE_SERIALIZATION_BOTTOM_LEVEL_POINTERS_KHR, VK_QUERY_TYPE_ACCELERATION_STRUCTURE_SIZE_KHR,  } },
@@ -357,11 +358,11 @@ std::vector<VkDynamicState> ValidationObject::ValidParamValues() const {
         { &DeviceExtensions::vk_ext_extended_dynamic_state, { VK_DYNAMIC_STATE_CULL_MODE, VK_DYNAMIC_STATE_FRONT_FACE, VK_DYNAMIC_STATE_PRIMITIVE_TOPOLOGY, VK_DYNAMIC_STATE_VIEWPORT_WITH_COUNT, VK_DYNAMIC_STATE_SCISSOR_WITH_COUNT, VK_DYNAMIC_STATE_VERTEX_INPUT_BINDING_STRIDE, VK_DYNAMIC_STATE_DEPTH_TEST_ENABLE, VK_DYNAMIC_STATE_DEPTH_WRITE_ENABLE, VK_DYNAMIC_STATE_DEPTH_COMPARE_OP, VK_DYNAMIC_STATE_DEPTH_BOUNDS_TEST_ENABLE, VK_DYNAMIC_STATE_STENCIL_TEST_ENABLE, VK_DYNAMIC_STATE_STENCIL_OP,  } },
         { &DeviceExtensions::vk_ext_extended_dynamic_state2, { VK_DYNAMIC_STATE_RASTERIZER_DISCARD_ENABLE, VK_DYNAMIC_STATE_DEPTH_BIAS_ENABLE, VK_DYNAMIC_STATE_PRIMITIVE_RESTART_ENABLE, VK_DYNAMIC_STATE_PATCH_CONTROL_POINTS_EXT, VK_DYNAMIC_STATE_LOGIC_OP_EXT,  } },
         { &DeviceExtensions::vk_nv_clip_space_w_scaling, { VK_DYNAMIC_STATE_VIEWPORT_W_SCALING_NV,  } },
-        { &DeviceExtensions::vk_ext_discard_rectangles, { VK_DYNAMIC_STATE_DISCARD_RECTANGLE_EXT,  } },
+        { &DeviceExtensions::vk_ext_discard_rectangles, { VK_DYNAMIC_STATE_DISCARD_RECTANGLE_EXT, VK_DYNAMIC_STATE_DISCARD_RECTANGLE_ENABLE_EXT, VK_DYNAMIC_STATE_DISCARD_RECTANGLE_MODE_EXT,  } },
         { &DeviceExtensions::vk_ext_sample_locations, { VK_DYNAMIC_STATE_SAMPLE_LOCATIONS_EXT,  } },
         { &DeviceExtensions::vk_khr_ray_tracing_pipeline, { VK_DYNAMIC_STATE_RAY_TRACING_PIPELINE_STACK_SIZE_KHR,  } },
         { &DeviceExtensions::vk_nv_shading_rate_image, { VK_DYNAMIC_STATE_VIEWPORT_SHADING_RATE_PALETTE_NV, VK_DYNAMIC_STATE_VIEWPORT_COARSE_SAMPLE_ORDER_NV,  } },
-        { &DeviceExtensions::vk_nv_scissor_exclusive, { VK_DYNAMIC_STATE_EXCLUSIVE_SCISSOR_NV,  } },
+        { &DeviceExtensions::vk_nv_scissor_exclusive, { VK_DYNAMIC_STATE_EXCLUSIVE_SCISSOR_ENABLE_NV, VK_DYNAMIC_STATE_EXCLUSIVE_SCISSOR_NV,  } },
         { &DeviceExtensions::vk_khr_fragment_shading_rate, { VK_DYNAMIC_STATE_FRAGMENT_SHADING_RATE_KHR,  } },
         { &DeviceExtensions::vk_ext_line_rasterization, { VK_DYNAMIC_STATE_LINE_STIPPLE_EXT,  } },
         { &DeviceExtensions::vk_ext_vertex_input_dynamic_state, { VK_DYNAMIC_STATE_VERTEX_INPUT_EXT,  } },
@@ -1964,6 +1965,7 @@ std::vector<VkMicromapTypeEXT> ValidationObject::ValidParamValues() const {
     //      devices over the lifespan of the project (e.g., VLT).
     constexpr std::array CoreVkMicromapTypeEXTEnums = { VK_MICROMAP_TYPE_OPACITY_MICROMAP_EXT,  };
     static const vvl::unordered_map<const ExtEnabled DeviceExtensions::*, std::vector<VkMicromapTypeEXT>> ExtendedVkMicromapTypeEXTEnums = {
+        { &DeviceExtensions::vk_nv_displacement_micromap, { VK_MICROMAP_TYPE_DISPLACEMENT_MICROMAP_NV,  } },
     };
     std::vector<VkMicromapTypeEXT> values(CoreVkMicromapTypeEXTEnums.cbegin(), CoreVkMicromapTypeEXTEnums.cend());
     std::set<VkMicromapTypeEXT> unique_exts;
@@ -2073,6 +2075,27 @@ std::vector<VkOpticalFlowSessionBindingPointNV> ValidationObject::ValidParamValu
     std::vector<VkOpticalFlowSessionBindingPointNV> values(CoreVkOpticalFlowSessionBindingPointNVEnums.cbegin(), CoreVkOpticalFlowSessionBindingPointNVEnums.cend());
     std::set<VkOpticalFlowSessionBindingPointNV> unique_exts;
     for (const auto& [extension, enums]: ExtendedVkOpticalFlowSessionBindingPointNVEnums) {
+        if (IsExtEnabled(device_extensions.*extension)) {
+            unique_exts.insert(enums.cbegin(), enums.cend());
+        }
+    }
+    std::copy(unique_exts.cbegin(), unique_exts.cend(), std::back_inserter(values));
+    return values;
+}
+
+
+template<>
+std::vector<VkShaderCodeTypeEXT> ValidationObject::ValidParamValues() const {
+    // TODO (ncesario) This is not ideal as we compute the enabled extensions every time this function is called.
+    //      Ideally "values" would be something like a static variable that is built once and this function returns
+    //      a span of the container. This does not work for applications which create and destroy many instances and
+    //      devices over the lifespan of the project (e.g., VLT).
+    constexpr std::array CoreVkShaderCodeTypeEXTEnums = { VK_SHADER_CODE_TYPE_BINARY_EXT, VK_SHADER_CODE_TYPE_SPIRV_EXT,  };
+    static const vvl::unordered_map<const ExtEnabled DeviceExtensions::*, std::vector<VkShaderCodeTypeEXT>> ExtendedVkShaderCodeTypeEXTEnums = {
+    };
+    std::vector<VkShaderCodeTypeEXT> values(CoreVkShaderCodeTypeEXTEnums.cbegin(), CoreVkShaderCodeTypeEXTEnums.cend());
+    std::set<VkShaderCodeTypeEXT> unique_exts;
+    for (const auto& [extension, enums]: ExtendedVkShaderCodeTypeEXTEnums) {
         if (IsExtEnabled(device_extensions.*extension)) {
             unique_exts.insert(enums.cbegin(), enums.cend());
         }

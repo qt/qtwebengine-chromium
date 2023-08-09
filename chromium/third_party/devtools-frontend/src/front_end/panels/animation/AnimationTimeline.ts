@@ -149,13 +149,13 @@ export class AnimationTimeline extends UI.Widget.VBox implements SDK.TargetManag
     this.#previewMap = new Map();
     this.#animationsMap = new Map();
     SDK.TargetManager.TargetManager.instance().addModelListener(
-        SDK.DOMModel.DOMModel, SDK.DOMModel.Events.NodeRemoved, this.nodeRemoved, this);
-    SDK.TargetManager.TargetManager.instance().observeModels(AnimationModel, this);
+        SDK.DOMModel.DOMModel, SDK.DOMModel.Events.NodeRemoved, this.nodeRemoved, this, {scoped: true});
+    SDK.TargetManager.TargetManager.instance().observeModels(AnimationModel, this, {scoped: true});
     UI.Context.Context.instance().addFlavorChangeListener(SDK.DOMModel.DOMNode, this.nodeChanged, this);
   }
 
-  static instance(): AnimationTimeline {
-    if (!animationTimelineInstance) {
+  static instance(opts?: {forceNew: boolean}): AnimationTimeline {
+    if (!animationTimelineInstance || opts?.forceNew) {
       animationTimelineInstance = new AnimationTimeline();
     }
     return animationTimelineInstance;
@@ -173,15 +173,15 @@ export class AnimationTimeline extends UI.Widget.VBox implements SDK.TargetManag
     return this.#groupBuffer;
   }
 
-  wasShown(): void {
-    for (const animationModel of SDK.TargetManager.TargetManager.instance().models(AnimationModel)) {
+  override wasShown(): void {
+    for (const animationModel of SDK.TargetManager.TargetManager.instance().models(AnimationModel, {scoped: true})) {
       this.addEventListeners(animationModel);
     }
     this.registerCSSFiles([animationTimelineStyles]);
   }
 
-  willHide(): void {
-    for (const animationModel of SDK.TargetManager.TargetManager.instance().models(AnimationModel)) {
+  override willHide(): void {
+    for (const animationModel of SDK.TargetManager.TargetManager.instance().models(AnimationModel, {scoped: true})) {
       this.removeEventListeners(animationModel);
     }
 
@@ -230,13 +230,12 @@ export class AnimationTimeline extends UI.Widget.VBox implements SDK.TargetManag
   private createHeader(): HTMLElement {
     const toolbarContainer = this.contentElement.createChild('div', 'animation-timeline-toolbar-container');
     const topToolbar = new UI.Toolbar.Toolbar('animation-timeline-toolbar', toolbarContainer);
-    this.#clearButton = new UI.Toolbar.ToolbarButton(i18nString(UIStrings.clearAll), 'largeicon-clear');
+    this.#clearButton = new UI.Toolbar.ToolbarButton(i18nString(UIStrings.clearAll), 'clear');
     this.#clearButton.addEventListener(UI.Toolbar.ToolbarButton.Events.Click, this.reset.bind(this));
     topToolbar.appendToolbarItem(this.#clearButton);
     topToolbar.appendSeparator();
 
-    this.#pauseButton =
-        new UI.Toolbar.ToolbarToggle(i18nString(UIStrings.pauseAll), 'largeicon-pause', 'largeicon-resume');
+    this.#pauseButton = new UI.Toolbar.ToolbarToggle(i18nString(UIStrings.pauseAll), 'pause', 'resume');
     this.#pauseButton.addEventListener(UI.Toolbar.ToolbarButton.Events.Click, this.togglePauseAll.bind(this));
     topToolbar.appendToolbarItem(this.#pauseButton);
 
@@ -271,8 +270,7 @@ export class AnimationTimeline extends UI.Widget.VBox implements SDK.TargetManag
     this.#currentTime = (controls.createChild('div', 'animation-timeline-current-time monospace') as HTMLElement);
 
     const toolbar = new UI.Toolbar.Toolbar('animation-controls-toolbar', controls);
-    this.#controlButton =
-        new UI.Toolbar.ToolbarToggle(i18nString(UIStrings.replayTimeline), 'largeicon-replay-animation');
+    this.#controlButton = new UI.Toolbar.ToolbarToggle(i18nString(UIStrings.replayTimeline), 'replay');
     this.#controlState = ControlState.Replay;
     this.#controlButton.setToggled(true);
     this.#controlButton.addEventListener(UI.Toolbar.ToolbarButton.Events.Click, this.controlButtonToggle.bind(this));
@@ -380,7 +378,7 @@ export class AnimationTimeline extends UI.Widget.VBox implements SDK.TargetManag
 
   private setPlaybackRate(playbackRate: number): void {
     this.#playbackRate = playbackRate;
-    for (const animationModel of SDK.TargetManager.TargetManager.instance().models(AnimationModel)) {
+    for (const animationModel of SDK.TargetManager.TargetManager.instance().models(AnimationModel, {scoped: true})) {
       animationModel.setPlaybackRate(this.#allPaused ? 0 : this.#playbackRate);
     }
     Host.userMetrics.actionTaken(Host.UserMetrics.Action.AnimationsPlaybackRateChanged);
@@ -419,19 +417,19 @@ export class AnimationTimeline extends UI.Widget.VBox implements SDK.TargetManag
       this.#controlState = ControlState.Play;
       this.#controlButton.setToggled(true);
       this.#controlButton.setTitle(i18nString(UIStrings.playTimeline));
-      this.#controlButton.setGlyph('largeicon-play-animation');
+      this.#controlButton.setGlyph('play');
     } else if (
         !this.#scrubberPlayer || !this.#scrubberPlayer.currentTime ||
         this.#scrubberPlayer.currentTime >= this.duration()) {
       this.#controlState = ControlState.Replay;
       this.#controlButton.setToggled(true);
       this.#controlButton.setTitle(i18nString(UIStrings.replayTimeline));
-      this.#controlButton.setGlyph('largeicon-replay-animation');
+      this.#controlButton.setGlyph('replay');
     } else {
       this.#controlState = ControlState.Pause;
       this.#controlButton.setToggled(false);
       this.#controlButton.setTitle(i18nString(UIStrings.pauseTimeline));
-      this.#controlButton.setGlyph('largeicon-pause-animation');
+      this.#controlButton.setGlyph('pause');
     }
   }
 
@@ -744,7 +742,7 @@ export class AnimationTimeline extends UI.Widget.VBox implements SDK.TargetManag
     }
   }
 
-  onResize(): void {
+  override onResize(): void {
     this.#cachedTimelineWidth = Math.max(0, this.#animationsContainer.offsetWidth - this.#timelineControlsWidth) || 0;
     this.#cachedTimelineHeight = this.#animationsContainer.offsetHeight;
     this.scheduleRedraw();

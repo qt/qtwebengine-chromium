@@ -10,13 +10,13 @@
 #include "src/core/SkVM.h"
 #include "src/shaders/SkLocalMatrixShader.h"
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
 #include "src/gpu/ganesh/GrFPArgs.h"
 #include "src/gpu/ganesh/GrFragmentProcessor.h"
 #include "src/gpu/ganesh/effects/GrMatrixEffect.h"
 #endif
 
-#ifdef SK_GRAPHITE_ENABLED
+#if defined(SK_GRAPHITE)
 #include "src/gpu/graphite/KeyContext.h"
 #include "src/gpu/graphite/KeyHelpers.h"
 #include "src/gpu/graphite/PaintParamsKey.h"
@@ -31,14 +31,14 @@ SkShaderBase::GradientType SkLocalMatrixShader::asGradient(GradientInfo* info,
     return type;
 }
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
 std::unique_ptr<GrFragmentProcessor> SkLocalMatrixShader::asFragmentProcessor(
         const GrFPArgs& args, const MatrixRec& mRec) const {
     return as_SB(fWrappedShader)->asFragmentProcessor(args, mRec.concat(fLocalMatrix));
 }
 #endif
 
-#ifdef SK_GRAPHITE_ENABLED
+#if defined(SK_GRAPHITE)
 void SkLocalMatrixShader::addToKey(const skgpu::graphite::KeyContext& keyContext,
                                    skgpu::graphite::PaintParamsKeyBuilder* builder,
                                    skgpu::graphite::PipelineDataGatherer* gatherer) const {
@@ -101,6 +101,7 @@ bool SkLocalMatrixShader::appendStages(const SkStageRec& rec, const MatrixRec& m
     return as_SB(fWrappedShader)->appendStages(rec, mRec.concat(fLocalMatrix));
 }
 
+#if defined(SK_ENABLE_SKVM)
 skvm::Color SkLocalMatrixShader::program(skvm::Builder* p,
                                          skvm::Coord device,
                                          skvm::Coord local,
@@ -118,6 +119,7 @@ skvm::Color SkLocalMatrixShader::program(skvm::Builder* p,
                                           uniforms,
                                           alloc);
 }
+#endif
 
 sk_sp<SkShader> SkShader::makeWithLocalMatrix(const SkMatrix& localMatrix) const {
     if (localMatrix.isIdentity()) {
@@ -158,7 +160,7 @@ public:
         return as_SB(fProxyShader)->asGradient(info, localMatrix);
     }
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
     std::unique_ptr<GrFragmentProcessor> asFragmentProcessor(const GrFPArgs&,
                                                              const MatrixRec&) const override;
 #endif
@@ -170,6 +172,7 @@ protected:
         return as_SB(fProxyShader)->appendRootStages(rec, fCTM);
     }
 
+#if defined(SK_ENABLE_SKVM)
     skvm::Color program(skvm::Builder* p,
                         skvm::Coord device,
                         skvm::Coord local,
@@ -180,6 +183,7 @@ protected:
                         SkArenaAlloc* alloc) const override {
         return as_SB(fProxyShader)->rootProgram(p, device, paint, fCTM, dst, uniforms, alloc);
     }
+#endif
 
 private:
     SK_FLATTENABLE_HOOKS(SkCTMShader)
@@ -191,7 +195,7 @@ private:
 };
 
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
 std::unique_ptr<GrFragmentProcessor> SkCTMShader::asFragmentProcessor(const GrFPArgs& args,
                                                                       const MatrixRec& mRec) const {
     SkMatrix ctmInv;

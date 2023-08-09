@@ -35,6 +35,7 @@
 #include "core/fpdfapi/parser/cpdf_stream.h"
 #include "core/fpdfapi/parser/fpdf_parser_utility.h"
 #include "core/fxcrt/autonuller.h"
+#include "core/fxcrt/bytestring.h"
 #include "core/fxcrt/fx_safe_types.h"
 #include "core/fxcrt/scoped_set_insertion.h"
 #include "core/fxcrt/stl_util.h"
@@ -354,8 +355,7 @@ RetainPtr<CPDF_Object> CPDF_StreamContentParser::GetObject(uint32_t index) {
   if (param.m_Type == ContentParam::Type::kObject)
     return param.m_pObject;
 
-  NOTREACHED();
-  return nullptr;
+  NOTREACHED_NORETURN();
 }
 
 ByteString CPDF_StreamContentParser::GetString(uint32_t index) const {
@@ -426,6 +426,7 @@ void CPDF_StreamContentParser::SetGraphicStates(CPDF_PageObject* pObj,
   if (bText) {
     pObj->m_TextState = m_pCurStates->m_TextState;
   }
+  pObj->SetGraphicsResourceName(m_pCurStates->m_GraphicsResourceName);
 }
 
 // static
@@ -650,7 +651,8 @@ void CPDF_StreamContentParser::Handle_BeginImage() {
     if (m_pSyntax->GetWord() == "EI")
       break;
   }
-  CPDF_ImageObject* pObj = AddImage(std::move(pStream));
+  CPDF_ImageObject* pObj =
+      AddImageFromStream(std::move(pStream), /*resource_name=*/"");
   // Record the bounding box of this image, so rendering code can draw it
   // properly.
   if (pObj && pObj->GetImage()->IsMask())
@@ -725,7 +727,7 @@ void CPDF_StreamContentParser::Handle_ExecuteXObject() {
   ByteString name = GetString(0);
   if (name == m_LastImageName && m_pLastImage && m_pLastImage->GetStream() &&
       m_pLastImage->GetStream()->GetObjNum()) {
-    CPDF_ImageObject* pObj = AddImage(m_pLastImage);
+    CPDF_ImageObject* pObj = AddLastImage();
     // Record the bounding box of this image, so rendering code can draw it
     // properly.
     if (pObj && pObj->GetImage()->IsMask())
@@ -742,14 +744,15 @@ void CPDF_StreamContentParser::Handle_ExecuteXObject() {
     type = pXObject->GetDict()->GetByteStringFor("Subtype");
 
   if (type == "Form") {
-    AddForm(std::move(pXObject));
+    AddForm(std::move(pXObject), name);
     return;
   }
 
   if (type == "Image") {
-    CPDF_ImageObject* pObj = pXObject->IsInline()
-                                 ? AddImage(ToStream(pXObject->Clone()))
-                                 : AddImage(pXObject->GetObjNum());
+    CPDF_ImageObject* pObj =
+        pXObject->IsInline()
+            ? AddImageFromStream(ToStream(pXObject->Clone()), name)
+            : AddImageFromStreamObjNum(pXObject->GetObjNum(), name);
 
     m_LastImageName = std::move(name);
     if (pObj) {
@@ -760,7 +763,8 @@ void CPDF_StreamContentParser::Handle_ExecuteXObject() {
   }
 }
 
-void CPDF_StreamContentParser::AddForm(RetainPtr<CPDF_Stream> pStream) {
+void CPDF_StreamContentParser::AddForm(RetainPtr<CPDF_Stream> pStream,
+                                       const ByteString& name) {
   CPDF_AllStates status;
   status.m_GeneralState = m_pCurStates->m_GeneralState;
   status.m_GraphState = m_pCurStates->m_GraphState;
@@ -773,6 +777,8 @@ void CPDF_StreamContentParser::AddForm(RetainPtr<CPDF_Stream> pStream) {
   CFX_Matrix matrix = m_pCurStates->m_CTM * m_mtContentToUser;
   auto pFormObj = std::make_unique<CPDF_FormObject>(GetCurrentStreamIndex(),
                                                     std::move(form), matrix);
+  pFormObj->SetResourceName(name);
+  pFormObj->SetGraphicsResourceName(m_pCurStates->m_GraphicsResourceName);
   if (!m_pObjectHolder->BackgroundAlphaNeeded() &&
       pFormObj->form()->BackgroundAlphaNeeded()) {
     m_pObjectHolder->SetBackgroundAlphaNeeded(true);
@@ -782,34 +788,38 @@ void CPDF_StreamContentParser::AddForm(RetainPtr<CPDF_Stream> pStream) {
   m_pObjectHolder->AppendPageObject(std::move(pFormObj));
 }
 
-CPDF_ImageObject* CPDF_StreamContentParser::AddImage(
-    RetainPtr<CPDF_Stream> pStream) {
+CPDF_ImageObject* CPDF_StreamContentParser::AddImageFromStream(
+    RetainPtr<CPDF_Stream> pStream,
+    const ByteString& name) {
   if (!pStream)
     return nullptr;
 
   auto pImageObj = std::make_unique<CPDF_ImageObject>(GetCurrentStreamIndex());
+  pImageObj->SetResourceName(name);
   pImageObj->SetImage(
       pdfium::MakeRetain<CPDF_Image>(m_pDocument, std::move(pStream)));
 
   return AddImageObject(std::move(pImageObj));
 }
 
-CPDF_ImageObject* CPDF_StreamContentParser::AddImage(uint32_t streamObjNum) {
+CPDF_ImageObject* CPDF_StreamContentParser::AddImageFromStreamObjNum(
+    uint32_t stream_obj_num,
+    const ByteString& name) {
   auto pImageObj = std::make_unique<CPDF_ImageObject>(GetCurrentStreamIndex());
+  pImageObj->SetResourceName(name);
   pImageObj->SetImage(
-      CPDF_DocPageData::FromDocument(m_pDocument)->GetImage(streamObjNum));
+      CPDF_DocPageData::FromDocument(m_pDocument)->GetImage(stream_obj_num));
 
   return AddImageObject(std::move(pImageObj));
 }
 
-CPDF_ImageObject* CPDF_StreamContentParser::AddImage(
-    const RetainPtr<CPDF_Image>& pImage) {
-  if (!pImage)
-    return nullptr;
+CPDF_ImageObject* CPDF_StreamContentParser::AddLastImage() {
+  DCHECK(m_pLastImage);
 
   auto pImageObj = std::make_unique<CPDF_ImageObject>(GetCurrentStreamIndex());
+  pImageObj->SetResourceName(m_LastImageName);
   pImageObj->SetImage(CPDF_DocPageData::FromDocument(m_pDocument)
-                          ->GetImage(pImage->GetStream()->GetObjNum()));
+                          ->GetImage(m_pLastImage->GetStream()->GetObjNum()));
 
   return AddImageObject(std::move(pImageObj));
 }
@@ -893,6 +903,7 @@ void CPDF_StreamContentParser::Handle_SetExtendGraphState() {
   if (!pGS)
     return;
 
+  m_pCurStates->m_GraphicsResourceName = name;
   m_pCurStates->ProcessExtGS(pGS.Get(), this);
 }
 
@@ -1110,13 +1121,7 @@ void CPDF_StreamContentParser::Handle_MoveTextPoint_SetLeading() {
 }
 
 void CPDF_StreamContentParser::Handle_SetFont() {
-  float fs = GetNumber(0);
-  if (fs == 0) {
-    constexpr float kDefaultFontSize = 0.0f;
-    fs = kDefaultFontSize;
-  }
-
-  m_pCurStates->m_TextState.SetFontSize(fs);
+  m_pCurStates->m_TextState.SetFontSize(GetNumber(0));
   RetainPtr<CPDF_Font> pFont = FindFont(GetString(1));
   if (pFont)
     m_pCurStates->m_TextState.SetFont(std::move(pFont));
@@ -1153,9 +1158,14 @@ RetainPtr<CPDF_Font> CPDF_StreamContentParser::FindFont(
   }
   RetainPtr<CPDF_Font> pFont = CPDF_DocPageData::FromDocument(m_pDocument)
                                    ->GetFont(std::move(pFontDict));
-  if (pFont && pFont->IsType3Font()) {
-    pFont->AsType3Font()->SetPageResources(m_pResources.Get());
-    pFont->AsType3Font()->CheckType3FontMetrics();
+  if (pFont) {
+    // Save `name` for later retrieval by the CPDF_TextObject that uses the
+    // font.
+    pFont->SetResourceName(name);
+    if (pFont->IsType3Font()) {
+      pFont->AsType3Font()->SetPageResources(m_pResources.Get());
+      pFont->AsType3Font()->CheckType3FontMetrics();
+    }
   }
   return pFont;
 }
@@ -1230,6 +1240,7 @@ void CPDF_StreamContentParser::AddTextObject(const ByteString* pStrs,
                            : m_pCurStates->m_TextState.GetTextMode();
   {
     auto pText = std::make_unique<CPDF_TextObject>(GetCurrentStreamIndex());
+    pText->SetResourceName(pFont->GetResourceName());
     SetGraphicStates(pText.get(), true, true, true);
     if (TextRenderingModeIsStrokeMode(text_mode)) {
       pdfium::span<float> pCTM = pText->m_TextState.GetMutableCTM();

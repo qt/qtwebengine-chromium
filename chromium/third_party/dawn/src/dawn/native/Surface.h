@@ -24,7 +24,7 @@
 #include "dawn/common/Platform.h"
 
 #if DAWN_PLATFORM_IS(WINDOWS)
-#include "dawn/native/d3d12/d3d12_platform.h"
+#include "dawn/native/d3d/d3d_platform.h"
 #endif  // DAWN_PLATFORM_IS(WINDOWS)
 
 // Forward declare IUnknown
@@ -48,8 +48,8 @@ class Surface final : public ErrorMonad {
 
     Surface(InstanceBase* instance, const SurfaceDescriptor* descriptor);
 
-    void SetAttachedSwapChain(NewSwapChainBase* swapChain);
-    NewSwapChainBase* GetAttachedSwapChain();
+    void SetAttachedSwapChain(SwapChainBase* swapChain);
+    SwapChainBase* GetAttachedSwapChain();
 
     // These are valid to call on all Surfaces.
     enum class Type {
@@ -96,7 +96,7 @@ class Surface final : public ErrorMonad {
     Type mType;
 
     // The swapchain will set this to null when it is destroyed.
-    Ref<NewSwapChainBase> mSwapChain;
+    Ref<SwapChainBase> mSwapChain;
 
     // MetalLayer
     void* mMetalLayer = nullptr;

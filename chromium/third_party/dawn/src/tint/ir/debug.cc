@@ -14,7 +14,6 @@
 
 #include "src/tint/ir/debug.h"
 
-#include <sstream>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -23,6 +22,8 @@
 #include "src/tint/ir/loop.h"
 #include "src/tint/ir/switch.h"
 #include "src/tint/ir/terminator.h"
+#include "src/tint/switch.h"
+#include "src/tint/utils/string_stream.h"
 
 namespace tint::ir {
 
@@ -33,7 +34,7 @@ std::string Debug::AsDotGraph(const Module* mod) {
     std::unordered_set<const FlowNode*> visited;
     std::unordered_set<const FlowNode*> merge_nodes;
     std::unordered_map<const FlowNode*, std::string> node_to_name;
-    std::stringstream out;
+    utils::StringStream out;
 
     auto name_for = [&](const FlowNode* node) -> std::string {
         if (node_to_name.count(node) > 0) {
@@ -144,7 +145,7 @@ std::string Debug::AsDotGraph(const Module* mod) {
     for (const auto* func : mod->functions) {
         // Cluster each function to label and draw a box around it.
         out << "subgraph cluster_" << name_for(func) << " {" << std::endl;
-        out << R"(label=")" << mod->symbols.NameFor(func->name) << R"(")" << std::endl;
+        out << R"(label=")" << func->name.Name() << R"(")" << std::endl;
         out << name_for(func->start_target) << R"( [label="start"])" << std::endl;
         out << name_for(func->end_target) << R"( [label="end"])" << std::endl;
         Graph(func->start_target);

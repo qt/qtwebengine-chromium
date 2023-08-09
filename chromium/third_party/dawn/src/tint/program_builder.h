@@ -39,6 +39,7 @@
 #include "src/tint/ast/diagnostic_attribute.h"
 #include "src/tint/ast/diagnostic_control.h"
 #include "src/tint/ast/diagnostic_directive.h"
+#include "src/tint/ast/diagnostic_rule_name.h"
 #include "src/tint/ast/disable_validation_attribute.h"
 #include "src/tint/ast/discard_statement.h"
 #include "src/tint/ast/enable.h"
@@ -170,53 +171,53 @@ class ProgramBuilder {
 
     /// Evaluates to true if T can be converted to an identifier.
     template <typename T>
-    static constexpr const bool IsIdentifierLike = std::is_same_v<T, Symbol> ||  // Symbol
-                                                   std::is_enum_v<T> ||          // Enum
-                                                   traits::IsStringLike<T>;      // String
+    static constexpr const bool IsIdentifierLike = std::is_same_v<T, Symbol> ||     // Symbol
+                                                   std::is_enum_v<T> ||             // Enum
+                                                   utils::traits::IsStringLike<T>;  // String
 
     /// A helper used to disable overloads if the first type in `TYPES` is a Source. Used to avoid
     /// ambiguities in overloads that take a Source as the first parameter and those that
     /// perfectly-forward the first argument.
     template <typename... TYPES>
-    using DisableIfSource =
-        traits::EnableIf<!IsSource<traits::Decay<traits::NthTypeOf<0, TYPES..., void>>>>;
+    using DisableIfSource = utils::traits::EnableIf<
+        !IsSource<utils::traits::Decay<utils::traits::NthTypeOf<0, TYPES..., void>>>>;
 
     /// A helper used to disable overloads if the first type in `TYPES` is a scalar type. Used to
     /// avoid ambiguities in overloads that take a scalar as the first parameter and those that
     /// perfectly-forward the first argument.
     template <typename... TYPES>
-    using DisableIfScalar =
-        traits::EnableIf<!IsScalar<traits::Decay<traits::NthTypeOf<0, TYPES..., void>>>>;
+    using DisableIfScalar = utils::traits::EnableIf<
+        !IsScalar<utils::traits::Decay<utils::traits::NthTypeOf<0, TYPES..., void>>>>;
 
     /// A helper used to enable overloads if the first type in `TYPES` is a scalar type. Used to
     /// avoid ambiguities in overloads that take a scalar as the first parameter and those that
     /// perfectly-forward the first argument.
     template <typename... TYPES>
-    using EnableIfScalar =
-        traits::EnableIf<IsScalar<traits::Decay<traits::NthTypeOf<0, TYPES..., void>>>>;
+    using EnableIfScalar = utils::traits::EnableIf<
+        IsScalar<utils::traits::Decay<utils::traits::NthTypeOf<0, TYPES..., void>>>>;
 
     /// A helper used to disable overloads if the first type in `TYPES` is a utils::Vector,
     /// utils::VectorRef or utils::VectorRef.
     template <typename... TYPES>
-    using DisableIfVectorLike = traits::EnableIf<
-        !detail::IsVectorLike<traits::Decay<traits::NthTypeOf<0, TYPES..., void>>>::value>;
+    using DisableIfVectorLike = utils::traits::EnableIf<!detail::IsVectorLike<
+        utils::traits::Decay<utils::traits::NthTypeOf<0, TYPES..., void>>>::value>;
 
     /// A helper used to enable overloads if the first type in `TYPES` is identifier-like.
     template <typename... TYPES>
-    using EnableIfIdentifierLike =
-        traits::EnableIf<IsIdentifierLike<traits::Decay<traits::NthTypeOf<0, TYPES..., void>>>>;
+    using EnableIfIdentifierLike = utils::traits::EnableIf<
+        IsIdentifierLike<utils::traits::Decay<utils::traits::NthTypeOf<0, TYPES..., void>>>>;
 
     /// A helper used to disable overloads if the first type in `TYPES` is Infer or an abstract
     /// numeric.
     template <typename... TYPES>
-    using DisableIfInferOrAbstract =
-        traits::EnableIf<!IsInferOrAbstract<traits::Decay<traits::NthTypeOf<0, TYPES..., void>>>>;
+    using DisableIfInferOrAbstract = utils::traits::EnableIf<
+        !IsInferOrAbstract<utils::traits::Decay<utils::traits::NthTypeOf<0, TYPES..., void>>>>;
 
     /// A helper used to enable overloads if the first type in `TYPES` is Infer or an abstract
     /// numeric.
     template <typename... TYPES>
-    using EnableIfInferOrAbstract =
-        traits::EnableIf<IsInferOrAbstract<traits::Decay<traits::NthTypeOf<0, TYPES..., void>>>>;
+    using EnableIfInferOrAbstract = utils::traits::EnableIf<
+        IsInferOrAbstract<utils::traits::Decay<utils::traits::NthTypeOf<0, TYPES..., void>>>>;
 
     /// VarOptions is a helper for accepting an arbitrary number of order independent options for
     /// constructing an ast::Var.
@@ -258,7 +259,8 @@ class ProgramBuilder {
         template <typename... ARGS>
         explicit LetOptions(ARGS&&... args) {
             static constexpr bool has_init =
-                (traits::IsTypeOrDerived<traits::PtrElTy<ARGS>, ast::Expression> || ...);
+                (utils::traits::IsTypeOrDerived<utils::traits::PtrElTy<ARGS>, ast::Expression> ||
+                 ...);
             static_assert(has_init, "Let() must be constructed with an initializer expression");
             (Set(std::forward<ARGS>(args)), ...);
         }
@@ -281,7 +283,8 @@ class ProgramBuilder {
         template <typename... ARGS>
         explicit ConstOptions(ARGS&&... args) {
             static constexpr bool has_init =
-                (traits::IsTypeOrDerived<traits::PtrElTy<ARGS>, ast::Expression> || ...);
+                (utils::traits::IsTypeOrDerived<utils::traits::PtrElTy<ARGS>, ast::Expression> ||
+                 ...);
             static_assert(has_init, "Const() must be constructed with an initializer expression");
             (Set(std::forward<ARGS>(args)), ...);
         }
@@ -476,7 +479,7 @@ class ProgramBuilder {
     /// @param args the arguments to pass to the constructor
     /// @returns the node pointer
     template <typename T, typename... ARGS>
-    traits::EnableIfIsType<T, ast::Node>* create(const Source& source, ARGS&&... args) {
+    utils::traits::EnableIfIsType<T, ast::Node>* create(const Source& source, ARGS&&... args) {
         AssertNotMoved();
         return ast_nodes_.Create<T>(id_, AllocateNodeID(), source, std::forward<ARGS>(args)...);
     }
@@ -488,7 +491,7 @@ class ProgramBuilder {
     /// destructed.
     /// @returns the node pointer
     template <typename T>
-    traits::EnableIfIsType<T, ast::Node>* create() {
+    utils::traits::EnableIfIsType<T, ast::Node>* create() {
         AssertNotMoved();
         return ast_nodes_.Create<T>(id_, AllocateNodeID(), source_);
     }
@@ -502,10 +505,10 @@ class ProgramBuilder {
     /// @param args the remaining arguments to pass to the constructor
     /// @returns the node pointer
     template <typename T, typename ARG0, typename... ARGS>
-    traits::EnableIf</* T is ast::Node and ARG0 is not Source */
-                     traits::IsTypeOrDerived<T, ast::Node> &&
-                         !traits::IsTypeOrDerived<ARG0, Source>,
-                     T>*
+    utils::traits::EnableIf</* T is ast::Node and ARG0 is not Source */
+                            utils::traits::IsTypeOrDerived<T, ast::Node> &&
+                                !utils::traits::IsTypeOrDerived<ARG0, Source>,
+                            T>*
     create(ARG0&& arg0, ARGS&&... args) {
         AssertNotMoved();
         return ast_nodes_.Create<T>(id_, AllocateNodeID(), source_, std::forward<ARG0>(arg0),
@@ -517,9 +520,9 @@ class ProgramBuilder {
     /// @param args the arguments to pass to the constructor
     /// @returns the node pointer
     template <typename T, typename... ARGS>
-    traits::EnableIf<traits::IsTypeOrDerived<T, sem::Node> &&
-                         !traits::IsTypeOrDerived<T, type::Node>,
-                     T>*
+    utils::traits::EnableIf<utils::traits::IsTypeOrDerived<T, sem::Node> &&
+                                !utils::traits::IsTypeOrDerived<T, type::Node>,
+                            T>*
     create(ARGS&&... args) {
         AssertNotMoved();
         return sem_nodes_.Create<T>(std::forward<ARGS>(args)...);
@@ -530,10 +533,10 @@ class ProgramBuilder {
     /// @param args the arguments to pass to the constructor
     /// @returns the node pointer
     template <typename T, typename... ARGS>
-    traits::EnableIf<traits::IsTypeOrDerived<T, constant::Value> &&
-                         !traits::IsTypeOrDerived<T, constant::Composite> &&
-                         !traits::IsTypeOrDerived<T, constant::Splat>,
-                     T>*
+    utils::traits::EnableIf<utils::traits::IsTypeOrDerived<T, constant::Value> &&
+                                !utils::traits::IsTypeOrDerived<T, constant::Composite> &&
+                                !utils::traits::IsTypeOrDerived<T, constant::Splat>,
+                            T>*
     create(ARGS&&... args) {
         AssertNotMoved();
         return constant_nodes_.Create<T>(std::forward<ARGS>(args)...);
@@ -547,9 +550,10 @@ class ProgramBuilder {
     /// @param type the composite type
     /// @param elements the composite elements
     /// @returns the node pointer
-    template <typename T,
-              typename = traits::EnableIf<traits::IsTypeOrDerived<T, constant::Composite> ||
-                                          traits::IsTypeOrDerived<T, constant::Splat>>>
+    template <
+        typename T,
+        typename = utils::traits::EnableIf<utils::traits::IsTypeOrDerived<T, constant::Composite> ||
+                                           utils::traits::IsTypeOrDerived<T, constant::Splat>>>
     const constant::Value* create(const type::Type* type,
                                   utils::VectorRef<const constant::Value*> elements) {
         AssertNotMoved();
@@ -561,7 +565,9 @@ class ProgramBuilder {
     /// @param element the splat element
     /// @param n the number of elements
     /// @returns the node pointer
-    template <typename T, typename = traits::EnableIf<traits::IsTypeOrDerived<T, constant::Splat>>>
+    template <
+        typename T,
+        typename = utils::traits::EnableIf<utils::traits::IsTypeOrDerived<T, constant::Splat>>>
     const constant::Splat* create(const type::Type* type,
                                   const constant::Value* element,
                                   size_t n) {
@@ -576,7 +582,7 @@ class ProgramBuilder {
     /// @param args the arguments to pass to the constructor
     /// @returns the new, or existing node
     template <typename T, typename... ARGS>
-    traits::EnableIfIsType<T, type::Node>* create(ARGS&&... args) {
+    utils::traits::EnableIfIsType<T, type::Node>* create(ARGS&&... args) {
         AssertNotMoved();
         return types_.Get<T>(std::forward<ARGS>(args)...);
     }
@@ -615,7 +621,8 @@ class ProgramBuilder {
                   typename = DisableIfSource<NAME>,
                   typename = std::enable_if_t<!std::is_same_v<std::decay_t<NAME>, ast::Type>>>
         ast::Type operator()(NAME&& name, ARGS&&... args) const {
-            if constexpr (traits::IsTypeOrDerived<traits::PtrElTy<NAME>, ast::Expression>) {
+            if constexpr (utils::traits::IsTypeOrDerived<utils::traits::PtrElTy<NAME>,
+                                                         ast::Expression>) {
                 static_assert(sizeof...(ARGS) == 0);
                 return {name};
             } else {
@@ -1479,7 +1486,8 @@ class ProgramBuilder {
     /// @return an ast::Identifier with the given symbol
     template <typename IDENTIFIER>
     const ast::Identifier* Ident(IDENTIFIER&& identifier) {
-        if constexpr (traits::IsTypeOrDerived<traits::PtrElTy<IDENTIFIER>, ast::Identifier>) {
+        if constexpr (utils::traits::IsTypeOrDerived<utils::traits::PtrElTy<IDENTIFIER>,
+                                                     ast::Identifier>) {
             return identifier;  // Passthrough
         } else {
             return Ident(source_, std::forward<IDENTIFIER>(identifier));
@@ -1518,7 +1526,7 @@ class ProgramBuilder {
 
     /// @param expr the expression
     /// @return expr (passthrough)
-    template <typename T, typename = traits::EnableIfIsType<T, ast::Expression>>
+    template <typename T, typename = utils::traits::EnableIfIsType<T, ast::Expression>>
     const T* Expr(const T* expr) {
         return expr;
     }
@@ -2048,20 +2056,22 @@ class ProgramBuilder {
     }
 
     /// Adds the extension to the list of enable directives at the top of the module.
-    /// @param ext the extension to enable
+    /// @param extension the extension to enable
     /// @return an `ast::Enable` enabling the given extension.
-    const ast::Enable* Enable(builtin::Extension ext) {
-        auto* enable = create<ast::Enable>(ext);
+    const ast::Enable* Enable(builtin::Extension extension) {
+        auto* ext = create<ast::Extension>(extension);
+        auto* enable = create<ast::Enable>(utils::Vector{ext});
         AST().AddEnable(enable);
         return enable;
     }
 
     /// Adds the extension to the list of enable directives at the top of the module.
     /// @param source the enable source
-    /// @param ext the extension to enable
+    /// @param extension the extension to enable
     /// @return an `ast::Enable` enabling the given extension.
-    const ast::Enable* Enable(const Source& source, builtin::Extension ext) {
-        auto* enable = create<ast::Enable>(source, ext);
+    const ast::Enable* Enable(const Source& source, builtin::Extension extension) {
+        auto* ext = create<ast::Extension>(source, extension);
+        auto* enable = create<ast::Enable>(source, utils::Vector{ext});
         AST().AddEnable(enable);
         return enable;
     }
@@ -2732,8 +2742,9 @@ class ProgramBuilder {
     const ast::MemberAccessorExpression* MemberAccessor(const Source& source,
                                                         OBJECT&& object,
                                                         MEMBER&& member) {
-        static_assert(!traits::IsType<traits::PtrElTy<MEMBER>, ast::TemplatedIdentifier>,
-                      "it is currently invalid for a structure to hold a templated member");
+        static_assert(
+            !utils::traits::IsType<utils::traits::PtrElTy<MEMBER>, ast::TemplatedIdentifier>,
+            "it is currently invalid for a structure to hold a templated member");
         return create<ast::MemberAccessorExpression>(source, Expr(std::forward<OBJECT>(object)),
                                                      Ident(std::forward<MEMBER>(member)));
     }
@@ -2880,8 +2891,8 @@ class ProgramBuilder {
         utils::VectorRef<const ast::Attribute*> attributes = utils::Empty,
         utils::VectorRef<const ast::Attribute*> return_type_attributes = utils::Empty) {
         const ast::BlockStatement* block = nullptr;
-        using BODY_T = traits::PtrElTy<BODY>;
-        if constexpr (traits::IsTypeOrDerived<BODY_T, ast::BlockStatement> ||
+        using BODY_T = utils::traits::PtrElTy<BODY>;
+        if constexpr (utils::traits::IsTypeOrDerived<BODY_T, ast::BlockStatement> ||
                       std::is_same_v<BODY_T, std::nullptr_t>) {
             block = body;
         } else {
@@ -3130,14 +3141,16 @@ class ProgramBuilder {
     /// @param condition the if statement condition expression
     /// @param body the if statement body
     /// @param else_stmt optional else statement
+    /// @param attributes optional attributes
     /// @returns the if statement pointer
     template <typename CONDITION>
     const ast::IfStatement* If(const Source& source,
                                CONDITION&& condition,
                                const ast::BlockStatement* body,
-                               const ElseStmt else_stmt = ElseStmt()) {
+                               const ElseStmt else_stmt = ElseStmt(),
+                               utils::VectorRef<const ast::Attribute*> attributes = utils::Empty) {
         return create<ast::IfStatement>(source, Expr(std::forward<CONDITION>(condition)), body,
-                                        else_stmt.stmt);
+                                        else_stmt.stmt, std::move(attributes));
     }
 
     /// Creates a ast::IfStatement with input condition, body, and optional
@@ -3145,13 +3158,15 @@ class ProgramBuilder {
     /// @param condition the if statement condition expression
     /// @param body the if statement body
     /// @param else_stmt optional else statement
+    /// @param attributes optional attributes
     /// @returns the if statement pointer
     template <typename CONDITION>
     const ast::IfStatement* If(CONDITION&& condition,
                                const ast::BlockStatement* body,
-                               const ElseStmt else_stmt = ElseStmt()) {
+                               const ElseStmt else_stmt = ElseStmt(),
+                               utils::VectorRef<const ast::Attribute*> attributes = utils::Empty) {
         return create<ast::IfStatement>(Expr(std::forward<CONDITION>(condition)), body,
-                                        else_stmt.stmt);
+                                        else_stmt.stmt, std::move(attributes));
     }
 
     /// Creates an Else object.
@@ -3258,74 +3273,96 @@ class ProgramBuilder {
     /// @param source the source information
     /// @param body the loop body
     /// @param continuing the optional continuing block
+    /// @param attributes optional attributes
     /// @returns the loop statement pointer
-    const ast::LoopStatement* Loop(const Source& source,
-                                   const ast::BlockStatement* body,
-                                   const ast::BlockStatement* continuing = nullptr) {
-        return create<ast::LoopStatement>(source, body, continuing);
+    const ast::LoopStatement* Loop(
+        const Source& source,
+        const ast::BlockStatement* body,
+        const ast::BlockStatement* continuing = nullptr,
+        utils::VectorRef<const ast::Attribute*> attributes = utils::Empty) {
+        return create<ast::LoopStatement>(source, body, continuing, std::move(attributes));
     }
 
     /// Creates a ast::LoopStatement with input body and optional continuing
     /// @param body the loop body
     /// @param continuing the optional continuing block
+    /// @param attributes optional attributes
     /// @returns the loop statement pointer
-    const ast::LoopStatement* Loop(const ast::BlockStatement* body,
-                                   const ast::BlockStatement* continuing = nullptr) {
-        return create<ast::LoopStatement>(body, continuing);
+    const ast::LoopStatement* Loop(
+        const ast::BlockStatement* body,
+        const ast::BlockStatement* continuing = nullptr,
+        utils::VectorRef<const ast::Attribute*> attributes = utils::Empty) {
+        return create<ast::LoopStatement>(body, continuing, std::move(attributes));
     }
 
-    /// Creates a ast::ForLoopStatement with input body and optional initializer,
-    /// condition and continuing.
+    /// Creates a ast::ForLoopStatement with input body and optional initializer, condition,
+    /// continuing, and attributes.
     /// @param source the source information
     /// @param init the optional loop initializer
     /// @param cond the optional loop condition
     /// @param cont the optional loop continuing
     /// @param body the loop body
+    /// @param attributes optional attributes
     /// @returns the for loop statement pointer
     template <typename COND>
-    const ast::ForLoopStatement* For(const Source& source,
-                                     const ast::Statement* init,
-                                     COND&& cond,
-                                     const ast::Statement* cont,
-                                     const ast::BlockStatement* body) {
+    const ast::ForLoopStatement* For(
+        const Source& source,
+        const ast::Statement* init,
+        COND&& cond,
+        const ast::Statement* cont,
+        const ast::BlockStatement* body,
+        utils::VectorRef<const ast::Attribute*> attributes = utils::Empty) {
         return create<ast::ForLoopStatement>(source, init, Expr(std::forward<COND>(cond)), cont,
-                                             body);
+                                             body, std::move(attributes));
     }
 
-    /// Creates a ast::ForLoopStatement with input body and optional initializer,
-    /// condition and continuing.
+    /// Creates a ast::ForLoopStatement with input body and optional initializer, condition,
+    /// continuing, and attributes.
     /// @param init the optional loop initializer
     /// @param cond the optional loop condition
     /// @param cont the optional loop continuing
     /// @param body the loop body
+    /// @param attributes optional attributes
     /// @returns the for loop statement pointer
     template <typename COND>
-    const ast::ForLoopStatement* For(const ast::Statement* init,
-                                     COND&& cond,
-                                     const ast::Statement* cont,
-                                     const ast::BlockStatement* body) {
-        return create<ast::ForLoopStatement>(init, Expr(std::forward<COND>(cond)), cont, body);
+    const ast::ForLoopStatement* For(
+        const ast::Statement* init,
+        COND&& cond,
+        const ast::Statement* cont,
+        const ast::BlockStatement* body,
+        utils::VectorRef<const ast::Attribute*> attributes = utils::Empty) {
+        return create<ast::ForLoopStatement>(init, Expr(std::forward<COND>(cond)), cont, body,
+                                             std::move(attributes));
     }
 
-    /// Creates a ast::WhileStatement with input body and condition.
+    /// Creates a ast::WhileStatement with input body, condition, and optional attributes.
     /// @param source the source information
     /// @param cond the loop condition
     /// @param body the loop body
+    /// @param attributes optional attributes
     /// @returns the while statement pointer
     template <typename COND>
-    const ast::WhileStatement* While(const Source& source,
-                                     COND&& cond,
-                                     const ast::BlockStatement* body) {
-        return create<ast::WhileStatement>(source, Expr(std::forward<COND>(cond)), body);
+    const ast::WhileStatement* While(
+        const Source& source,
+        COND&& cond,
+        const ast::BlockStatement* body,
+        utils::VectorRef<const ast::Attribute*> attributes = utils::Empty) {
+        return create<ast::WhileStatement>(source, Expr(std::forward<COND>(cond)), body,
+                                           std::move(attributes));
     }
 
-    /// Creates a ast::WhileStatement with given condition and body.
+    /// Creates a ast::WhileStatement with input body, condition, and optional attributes.
     /// @param cond the condition
     /// @param body the loop body
+    /// @param attributes optional attributes
     /// @returns the while loop statement pointer
     template <typename COND>
-    const ast::WhileStatement* While(COND&& cond, const ast::BlockStatement* body) {
-        return create<ast::WhileStatement>(Expr(std::forward<COND>(cond)), body);
+    const ast::WhileStatement* While(
+        COND&& cond,
+        const ast::BlockStatement* body,
+        utils::VectorRef<const ast::Attribute*> attributes = utils::Empty) {
+        return create<ast::WhileStatement>(Expr(std::forward<COND>(cond)), body,
+                                           std::move(attributes));
     }
 
     /// Creates a ast::VariableDeclStatement for the input variable
@@ -3348,14 +3385,15 @@ class ProgramBuilder {
     /// @param condition the condition expression initializer
     /// @param cases case statements
     /// @returns the switch statement pointer
-    template <typename ExpressionInit, typename... Cases>
+    template <typename ExpressionInit, typename... Cases, typename = DisableIfVectorLike<Cases...>>
     const ast::SwitchStatement* Switch(const Source& source,
                                        ExpressionInit&& condition,
                                        Cases&&... cases) {
         return create<ast::SwitchStatement>(
             source, Expr(std::forward<ExpressionInit>(condition)),
             utils::Vector<const ast::CaseStatement*, sizeof...(cases)>{
-                std::forward<Cases>(cases)...});
+                std::forward<Cases>(cases)...},
+            utils::Empty, utils::Empty);
     }
 
     /// Creates a ast::SwitchStatement with input expression and cases
@@ -3364,12 +3402,49 @@ class ProgramBuilder {
     /// @returns the switch statement pointer
     template <typename ExpressionInit,
               typename... Cases,
-              typename = DisableIfSource<ExpressionInit>>
+              typename = DisableIfSource<ExpressionInit>,
+              typename = DisableIfVectorLike<Cases...>>
     const ast::SwitchStatement* Switch(ExpressionInit&& condition, Cases&&... cases) {
         return create<ast::SwitchStatement>(
             Expr(std::forward<ExpressionInit>(condition)),
             utils::Vector<const ast::CaseStatement*, sizeof...(cases)>{
-                std::forward<Cases>(cases)...});
+                std::forward<Cases>(cases)...},
+            utils::Empty, utils::Empty);
+    }
+
+    /// Creates a ast::SwitchStatement with input expression, cases, and optional attributes
+    /// @param source the source information
+    /// @param condition the condition expression initializer
+    /// @param cases case statements
+    /// @param stmt_attributes optional statement attributes
+    /// @param body_attributes optional body attributes
+    /// @returns the switch statement pointer
+    template <typename ExpressionInit>
+    const ast::SwitchStatement* Switch(
+        const Source& source,
+        ExpressionInit&& condition,
+        utils::VectorRef<const ast::CaseStatement*> cases,
+        utils::VectorRef<const ast::Attribute*> stmt_attributes = utils::Empty,
+        utils::VectorRef<const ast::Attribute*> body_attributes = utils::Empty) {
+        return create<ast::SwitchStatement>(source, Expr(std::forward<ExpressionInit>(condition)),
+                                            cases, std::move(stmt_attributes),
+                                            std::move(body_attributes));
+    }
+
+    /// Creates a ast::SwitchStatement with input expression, cases, and optional attributes
+    /// @param condition the condition expression initializer
+    /// @param cases case statements
+    /// @param stmt_attributes optional statement attributes
+    /// @param body_attributes optional body attributes
+    /// @returns the switch statement pointer
+    template <typename ExpressionInit, typename = DisableIfSource<ExpressionInit>>
+    const ast::SwitchStatement* Switch(
+        ExpressionInit&& condition,
+        utils::VectorRef<const ast::CaseStatement*> cases,
+        utils::VectorRef<const ast::Attribute*> stmt_attributes = utils::Empty,
+        utils::VectorRef<const ast::Attribute*> body_attributes = utils::Empty) {
+        return create<ast::SwitchStatement>(Expr(std::forward<ExpressionInit>(condition)), cases,
+                                            std::move(stmt_attributes), std::move(body_attributes));
     }
 
     /// Creates a ast::CaseStatement with input list of selectors, and body
@@ -3678,56 +3753,129 @@ class ProgramBuilder {
                                                                   validation);
     }
 
+    /// Passthrough overload
+    /// @param name the diagnostic rule name
+    /// @returns @p name
+    const ast::DiagnosticRuleName* DiagnosticRuleName(const ast::DiagnosticRuleName* name) {
+        return name;
+    }
+
+    /// Creates an ast::DiagnosticRuleName
+    /// @param name the diagnostic rule name
+    /// @returns the diagnostic rule name
+    template <typename NAME>
+    const ast::DiagnosticRuleName* DiagnosticRuleName(NAME&& name) {
+        static_assert(
+            !utils::traits::IsType<utils::traits::PtrElTy<NAME>, ast::TemplatedIdentifier>,
+            "it is invalid for a diagnostic rule name to be templated");
+        auto* name_ident = Ident(std::forward<NAME>(name));
+        return create<ast::DiagnosticRuleName>(name_ident->source, name_ident);
+    }
+
+    /// Creates an ast::DiagnosticRuleName
+    /// @param category the diagnostic rule category
+    /// @param name the diagnostic rule name
+    /// @returns the diagnostic rule name
+    template <typename CATEGORY, typename NAME, typename = DisableIfSource<CATEGORY>>
+    const ast::DiagnosticRuleName* DiagnosticRuleName(CATEGORY&& category, NAME&& name) {
+        static_assert(
+            !utils::traits::IsType<utils::traits::PtrElTy<NAME>, ast::TemplatedIdentifier>,
+            "it is invalid for a diagnostic rule name to be templated");
+        static_assert(
+            !utils::traits::IsType<utils::traits::PtrElTy<CATEGORY>, ast::TemplatedIdentifier>,
+            "it is invalid for a diagnostic rule category to be templated");
+        auto* category_ident = Ident(std::forward<CATEGORY>(category));
+        auto* name_ident = Ident(std::forward<NAME>(name));
+        Source source = category_ident->source;
+        source.range.end = name_ident->source.range.end;
+        return create<ast::DiagnosticRuleName>(source, category_ident, name_ident);
+    }
+
+    /// Creates an ast::DiagnosticRuleName
+    /// @param source the source information
+    /// @param name the diagnostic rule name
+    /// @returns the diagnostic rule name
+    template <typename NAME>
+    const ast::DiagnosticRuleName* DiagnosticRuleName(const Source& source, NAME&& name) {
+        static_assert(
+            !utils::traits::IsType<utils::traits::PtrElTy<NAME>, ast::TemplatedIdentifier>,
+            "it is invalid for a diagnostic rule name to be templated");
+        auto* name_ident = Ident(std::forward<NAME>(name));
+        return create<ast::DiagnosticRuleName>(source, name_ident);
+    }
+
+    /// Creates an ast::DiagnosticRuleName
+    /// @param source the source information
+    /// @param category the diagnostic rule category
+    /// @param name the diagnostic rule name
+    /// @returns the diagnostic rule name
+    template <typename CATEGORY, typename NAME>
+    const ast::DiagnosticRuleName* DiagnosticRuleName(const Source& source,
+                                                      CATEGORY&& category,
+                                                      NAME&& name) {
+        static_assert(
+            !utils::traits::IsType<utils::traits::PtrElTy<NAME>, ast::TemplatedIdentifier>,
+            "it is invalid for a diagnostic rule name to be templated");
+        static_assert(
+            !utils::traits::IsType<utils::traits::PtrElTy<CATEGORY>, ast::TemplatedIdentifier>,
+            "it is invalid for a diagnostic rule category to be templated");
+        auto* category_ident = Ident(std::forward<CATEGORY>(category));
+        auto* name_ident = Ident(std::forward<NAME>(name));
+        return create<ast::DiagnosticRuleName>(source, category_ident, name_ident);
+    }
+
     /// Creates an ast::DiagnosticAttribute
     /// @param source the source information
     /// @param severity the diagnostic severity control
-    /// @param rule_name the diagnostic rule name
+    /// @param rule_args the arguments used to construct the rule name
     /// @returns the diagnostic attribute pointer
-    template <typename NAME>
+    template <typename... RULE_ARGS>
     const ast::DiagnosticAttribute* DiagnosticAttribute(const Source& source,
                                                         builtin::DiagnosticSeverity severity,
-                                                        NAME&& rule_name) {
-        static_assert(!traits::IsType<traits::PtrElTy<NAME>, ast::TemplatedIdentifier>,
-                      "it is invalid for a diagnostic rule name to be templated");
+                                                        RULE_ARGS&&... rule_args) {
         return create<ast::DiagnosticAttribute>(
-            source, ast::DiagnosticControl(severity, Ident(std::forward<NAME>(rule_name))));
+            source, ast::DiagnosticControl(
+                        severity, DiagnosticRuleName(std::forward<RULE_ARGS>(rule_args)...)));
     }
 
     /// Creates an ast::DiagnosticAttribute
     /// @param severity the diagnostic severity control
-    /// @param rule_name the diagnostic rule name
+    /// @param rule_args the arguments used to construct the rule name
     /// @returns the diagnostic attribute pointer
-    template <typename NAME>
+    template <typename... RULE_ARGS>
     const ast::DiagnosticAttribute* DiagnosticAttribute(builtin::DiagnosticSeverity severity,
-                                                        NAME&& rule_name) {
+                                                        RULE_ARGS&&... rule_args) {
         return create<ast::DiagnosticAttribute>(
-            source_, ast::DiagnosticControl(severity, Ident(std::forward<NAME>(rule_name))));
+            source_, ast::DiagnosticControl(
+                         severity, DiagnosticRuleName(std::forward<RULE_ARGS>(rule_args)...)));
     }
 
     /// Add a diagnostic directive to the module.
     /// @param source the source information
     /// @param severity the diagnostic severity control
-    /// @param rule_name the diagnostic rule name
+    /// @param rule_args the arguments used to construct the rule name
     /// @returns the diagnostic directive pointer
-    template <typename NAME>
+    template <typename... RULE_ARGS>
     const ast::DiagnosticDirective* DiagnosticDirective(const Source& source,
                                                         builtin::DiagnosticSeverity severity,
-                                                        NAME&& rule_name) {
-        auto* directive = create<ast::DiagnosticDirective>(
-            source, ast::DiagnosticControl(severity, Ident(std::forward<NAME>(rule_name))));
+                                                        RULE_ARGS&&... rule_args) {
+        auto* rule = DiagnosticRuleName(std::forward<RULE_ARGS>(rule_args)...);
+        auto* directive =
+            create<ast::DiagnosticDirective>(source, ast::DiagnosticControl(severity, rule));
         AST().AddDiagnosticDirective(directive);
         return directive;
     }
 
     /// Add a diagnostic directive to the module.
     /// @param severity the diagnostic severity control
-    /// @param rule_name the diagnostic rule name
+    /// @param rule_args the arguments used to construct the rule name
     /// @returns the diagnostic directive pointer
-    template <typename NAME>
+    template <typename... RULE_ARGS>
     const ast::DiagnosticDirective* DiagnosticDirective(builtin::DiagnosticSeverity severity,
-                                                        NAME&& rule_name) {
-        auto* directive = create<ast::DiagnosticDirective>(
-            source_, ast::DiagnosticControl(severity, Ident(std::forward<NAME>(rule_name))));
+                                                        RULE_ARGS&&... rule_args) {
+        auto* rule = DiagnosticRuleName(std::forward<RULE_ARGS>(rule_args)...);
+        auto* directive =
+            create<ast::DiagnosticDirective>(source_, ast::DiagnosticControl(severity, rule));
         AST().AddDiagnosticDirective(directive);
         return directive;
     }
@@ -3806,7 +3954,7 @@ class ProgramBuilder {
     /// @param args a mix of ast::Expression, ast::Statement, ast::Variables.
     /// @returns the function
     template <typename... ARGS,
-              typename = traits::EnableIf<(CanWrapInStatement<ARGS>::value && ...)>>
+              typename = utils::traits::EnableIf<(CanWrapInStatement<ARGS>::value && ...)>>
     const ast::Function* WrapInFunction(ARGS&&... args) {
         utils::Vector stmts{
             WrapInStatement(std::forward<ARGS>(args))...,

@@ -9,15 +9,16 @@
 
 #include "src/gpu/graphite/Log.h"
 #include "src/gpu/graphite/TextureProxy.h"
+#include "src/gpu/graphite/compute/DispatchGroup.h"
 #include "src/gpu/graphite/dawn/DawnBuffer.h"
 #include "src/gpu/graphite/dawn/DawnCaps.h"
 #include "src/gpu/graphite/dawn/DawnGraphicsPipeline.h"
+#include "src/gpu/graphite/dawn/DawnGraphiteUtilsPriv.h"
 #include "src/gpu/graphite/dawn/DawnQueueManager.h"
 #include "src/gpu/graphite/dawn/DawnResourceProvider.h"
 #include "src/gpu/graphite/dawn/DawnSampler.h"
 #include "src/gpu/graphite/dawn/DawnSharedContext.h"
 #include "src/gpu/graphite/dawn/DawnTexture.h"
-#include "src/gpu/graphite/dawn/DawnUtilsPriv.h"
 
 namespace skgpu::graphite {
 
@@ -88,7 +89,7 @@ bool DawnCommandBuffer::onAddRenderPass(const RenderPassDesc& renderPassDesc,
                                         const Texture* resolveTexture,
                                         const Texture* depthStencilTexture,
                                         SkRect viewport,
-                                        const std::vector<std::unique_ptr<DrawPass>>& drawPasses) {
+                                        const DrawPassList& drawPasses) {
     // Update viewport's constant buffer before starting a render pass.
     this->preprocessViewport(viewport);
 
@@ -98,24 +99,34 @@ bool DawnCommandBuffer::onAddRenderPass(const RenderPassDesc& renderPassDesc,
 
     this->setViewport(viewport);
 
-    for (size_t i = 0; i < drawPasses.size(); ++i) {
-        this->addDrawPass(drawPasses[i].get());
+    for (const auto& drawPass : drawPasses) {
+        this->addDrawPass(drawPass.get());
     }
 
     this->endRenderPass();
     return true;
 }
 
-bool DawnCommandBuffer::onAddComputePass(const ComputePassDesc& computePassDesc,
-                                         const ComputePipeline* pipeline,
-                                         const std::vector<ResourceBinding>& bindings) {
+bool DawnCommandBuffer::onAddComputePass(const DispatchGroupList& groups) {
     this->beginComputePass();
-    this->bindComputePipeline(pipeline);
-    for (const ResourceBinding& binding : bindings) {
-        this->bindBuffer(binding.fBuffer.fBuffer, binding.fBuffer.fOffset, binding.fIndex);
+    for (const auto& group : groups) {
+        group->addResourceRefs(this);
+        for (const auto& dispatch : group->dispatches()) {
+            this->bindComputePipeline(group->getPipeline(dispatch.fPipelineIndex));
+            for (const ResourceBinding& binding : dispatch.fBindings) {
+                if (const BindBufferInfo* buffer =
+                            std::get_if<BindBufferInfo>(&binding.fResource)) {
+                    this->bindBuffer(buffer->fBuffer, buffer->fOffset, binding.fIndex);
+                } else {
+                    const TextureIndex* texIdx = std::get_if<TextureIndex>(&binding.fResource);
+                    SkASSERT(texIdx);
+                    this->bindTexture(group->getTexture(*texIdx), binding.fIndex);
+                }
+            }
+            this->dispatchThreadgroups(dispatch.fParams.fGlobalDispatchSize,
+                                       dispatch.fParams.fLocalDispatchSize);
+        }
     }
-    this->dispatchThreadgroups(computePassDesc.fGlobalDispatchSize,
-                               computePassDesc.fLocalDispatchSize);
     this->endComputePass();
     return true;
 }
@@ -580,15 +591,21 @@ void DawnCommandBuffer::setScissor(unsigned int left,
                                    unsigned int width,
                                    unsigned int height) {
     SkASSERT(fActiveRenderPassEncoder);
-    fActiveRenderPassEncoder.SetScissorRect(left, top, width, height);
+    SkIRect scissor = SkIRect::MakeXYWH(
+            left + fReplayTranslation.x(), top + fReplayTranslation.y(), width, height);
+    if (!scissor.intersect(SkIRect::MakeSize(fRenderPassSize))) {
+        scissor.setEmpty();
+    }
+    fActiveRenderPassEncoder.SetScissorRect(
+            scissor.x(), scissor.y(), scissor.width(), scissor.height());
 }
 
 void DawnCommandBuffer::preprocessViewport(const SkRect& viewport) {
     // Dawn's framebuffer space has (0, 0) at the top left. This agrees with Skia's device coords.
     // However, in NDC (-1, -1) is the bottom left. So we flip the origin here (assuming all
     // surfaces we have are TopLeft origin).
-    const float x = viewport.x();
-    const float y = viewport.y();
+    const float x = viewport.x() - fReplayTranslation.x();
+    const float y = viewport.y() - fReplayTranslation.y();
     const float invTwoW = 2.f / viewport.width();
     const float invTwoH = 2.f / viewport.height();
     const IntrinsicConstant rtAdjust = {invTwoW, -invTwoH, -1.f - x * invTwoW, 1.f + y * invTwoH};
@@ -716,6 +733,11 @@ void DawnCommandBuffer::bindBuffer(const Buffer* buffer, unsigned int offset, un
     SkASSERT(false);
 }
 
+void DawnCommandBuffer::bindTexture(const Texture* texture, unsigned int index) {
+    // TODO: https://b.corp.google.com/issues/260341543
+    SkASSERT(false);
+}
+
 void DawnCommandBuffer::dispatchThreadgroups(const WorkgroupSize& globalSize,
                                              const WorkgroupSize& localSize) {
     // TODO: https://b.corp.google.com/issues/260341543
@@ -798,6 +820,7 @@ bool DawnCommandBuffer::onCopyBufferToTexture(const Buffer* buffer,
 
         dst.origin.x = copyData[i].fRect.x();
         dst.origin.y = copyData[i].fRect.y();
+        dst.mipLevel = copyData[i].fMipLevel;
 
         wgpu::Extent3D copySize = {static_cast<uint32_t>(copyData[i].fRect.width()),
                                    static_cast<uint32_t>(copyData[i].fRect.height()),

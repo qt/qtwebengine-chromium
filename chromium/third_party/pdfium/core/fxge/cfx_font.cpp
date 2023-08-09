@@ -418,6 +418,13 @@ int CFX_Font::GetGlyphWidth(uint32_t glyph_index) const {
 int CFX_Font::GetGlyphWidth(uint32_t glyph_index,
                             int dest_width,
                             int weight) const {
+  return GetOrCreateGlyphCache()->GetGlyphWidth(this, glyph_index, dest_width,
+                                                weight);
+}
+
+int CFX_Font::GetGlyphWidthImpl(uint32_t glyph_index,
+                                int dest_width,
+                                int weight) const {
   if (!m_Face)
     return 0;
   if (m_pSubstFont && m_pSubstFont->IsBuiltInGenericFont())
@@ -543,7 +550,7 @@ bool CFX_Font::IsFixedWidth() const {
   return m_Face && FXFT_Is_Face_fixedwidth(m_Face->GetRec()) != 0;
 }
 
-#ifdef _SKIA_SUPPORT_
+#if defined(_SKIA_SUPPORT_)
 bool CFX_Font::IsSubstFontBold() const {
   CFX_SubstFont* subst_font = GetSubstFont();
   return subst_font && subst_font->GetOriginalWeight() >= FXFONT_FW_BOLD;
@@ -790,7 +797,7 @@ int CFX_Font::GetSkewFromAngle(int angle) {
   return kAngleSkew[-angle];
 }
 
-#ifdef _SKIA_SUPPORT_
+#if defined(_SKIA_SUPPORT_)
 CFX_TypeFace* CFX_Font::GetDeviceCache() const {
   return GetOrCreateGlyphCache()->GetDeviceCache(this);
 }

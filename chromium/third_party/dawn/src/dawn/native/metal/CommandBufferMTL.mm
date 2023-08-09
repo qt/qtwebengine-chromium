@@ -442,8 +442,7 @@ class BindGroupTracker : public BindGroupTrackerBase<true, uint64_t> {
     void Apply(Encoder encoder) {
         BeforeApply();
         for (BindGroupIndex index : IterateBitSet(mDirtyBindGroupsObjectChangedOrIsDynamic)) {
-            ApplyBindGroup(encoder, index, ToBackend(mBindGroups[index]),
-                           mDynamicOffsetCounts[index], mDynamicOffsets[index].data(),
+            ApplyBindGroup(encoder, index, ToBackend(mBindGroups[index]), mDynamicOffsets[index],
                            ToBackend(mPipelineLayout));
         }
         AfterApply();
@@ -458,11 +457,8 @@ class BindGroupTracker : public BindGroupTrackerBase<true, uint64_t> {
                             id<MTLComputeCommandEncoder> compute,
                             BindGroupIndex index,
                             BindGroup* group,
-                            uint32_t dynamicOffsetCount,
-                            uint64_t* dynamicOffsets,
+                            const ityp::vector<BindingIndex, uint64_t>& dynamicOffsets,
                             PipelineLayout* pipelineLayout) {
-        uint32_t currentDynamicBufferIndex = 0;
-
         // TODO(crbug.com/dawn/854): Maintain buffers and offsets arrays in BindGroup
         // so that we only have to do one setVertexBuffers and one setFragmentBuffers
         // call here.
@@ -504,8 +500,8 @@ class BindGroupTracker : public BindGroupTrackerBase<true, uint64_t> {
                     // TODO(crbug.com/dawn/854): Record bound buffer status to use
                     // setBufferOffset to achieve better performance.
                     if (bindingInfo.buffer.hasDynamicOffset) {
-                        offset += dynamicOffsets[currentDynamicBufferIndex];
-                        currentDynamicBufferIndex++;
+                        // Dynamic buffers are packed at the front of BindingIndices.
+                        offset += dynamicOffsets[bindingIndex];
                     }
 
                     if (hasVertStage) {
@@ -739,23 +735,25 @@ MaybeError CommandBuffer::FillCommands(CommandRecordingContext* commandContext) 
     size_t nextRenderPassNumber = 0;
 
     auto LazyClearSyncScope = [](const SyncScopeResourceUsage& scope,
-                                 CommandRecordingContext* commandContext) {
+                                 CommandRecordingContext* commandContext) -> MaybeError {
         for (size_t i = 0; i < scope.textures.size(); ++i) {
             Texture* texture = ToBackend(scope.textures[i]);
 
             // Clear subresources that are not render attachments. Render attachments will be
             // cleared in RecordBeginRenderPass by setting the loadop to clear when the texture
             // subresource has not been initialized before the render pass.
-            scope.textureUsages[i].Iterate(
-                [&](const SubresourceRange& range, wgpu::TextureUsage usage) {
-                    if (usage & ~wgpu::TextureUsage::RenderAttachment) {
-                        texture->EnsureSubresourceContentInitialized(commandContext, range);
-                    }
-                });
+            DAWN_TRY(scope.textureUsages[i].Iterate([&](const SubresourceRange& range,
+                                                        wgpu::TextureUsage usage) -> MaybeError {
+                if (usage & ~wgpu::TextureUsage::RenderAttachment) {
+                    DAWN_TRY(texture->EnsureSubresourceContentInitialized(commandContext, range));
+                }
+                return {};
+            }));
         }
         for (BufferBase* bufferBase : scope.buffers) {
             ToBackend(bufferBase)->EnsureDataInitialized(commandContext);
         }
+        return {};
     };
 
     Command type;
@@ -770,7 +768,7 @@ MaybeError CommandBuffer::FillCommands(CommandRecordingContext* commandContext) 
                 }
                 for (const SyncScopeResourceUsage& scope :
                      GetResourceUsages().computePasses[nextComputePassNumber].dispatchUsages) {
-                    LazyClearSyncScope(scope, commandContext);
+                    DAWN_TRY(LazyClearSyncScope(scope, commandContext));
                 }
                 commandContext->EndBlit();
 
@@ -797,8 +795,8 @@ MaybeError CommandBuffer::FillCommands(CommandRecordingContext* commandContext) 
                         }
                     }
                 }
-                LazyClearSyncScope(GetResourceUsages().renderPasses[nextRenderPassNumber],
-                                   commandContext);
+                DAWN_TRY(LazyClearSyncScope(GetResourceUsages().renderPasses[nextRenderPassNumber],
+                                            commandContext));
                 commandContext->EndBlit();
 
                 LazyClearRenderPassAttachments(cmd);
@@ -814,12 +812,25 @@ MaybeError CommandBuffer::FillCommands(CommandRecordingContext* commandContext) 
                 Device* device = ToBackend(GetDevice());
                 NSRef<MTLRenderPassDescriptor> descriptor = CreateMTLRenderPassDescriptor(
                     device, cmd, device->UseCounterSamplingAtStageBoundary());
+
+                EmptyOcclusionQueries emptyOcclusionQueries;
                 DAWN_TRY(EncodeMetalRenderPass(
                     device, commandContext, descriptor.Get(), cmd->width, cmd->height,
-                    [this](id<MTLRenderCommandEncoder> encoder, BeginRenderPassCmd* cmd)
-                        -> MaybeError { return this->EncodeRenderPass(encoder, cmd); },
+                    [&](id<MTLRenderCommandEncoder> encoder,
+                        BeginRenderPassCmd* cmd) -> MaybeError {
+                        return this->EncodeRenderPass(
+                            encoder, cmd,
+                            device->IsToggleEnabled(Toggle::MetalFillEmptyOcclusionQueriesWithZero)
+                                ? &emptyOcclusionQueries
+                                : nullptr);
+                    },
                     cmd));
-
+                for (const auto& [querySet, queryIndex] : emptyOcclusionQueries) {
+                    [commandContext->EnsureBlit()
+                        fillBuffer:querySet->GetVisibilityBuffer()
+                             range:NSMakeRange(queryIndex * sizeof(uint64_t), sizeof(uint64_t))
+                             value:0u];
+                }
                 nextRenderPassNumber++;
                 break;
             }
@@ -862,7 +873,8 @@ MaybeError CommandBuffer::FillCommands(CommandRecordingContext* commandContext) 
                 Texture* texture = ToBackend(dst.texture.Get());
 
                 buffer->EnsureDataInitialized(commandContext);
-                EnsureDestinationTextureInitialized(commandContext, texture, dst, copySize);
+                DAWN_TRY(
+                    EnsureDestinationTextureInitialized(commandContext, texture, dst, copySize));
 
                 buffer->TrackUsage();
                 texture->SynchronizeTextureBeforeUse(commandContext);
@@ -888,8 +900,8 @@ MaybeError CommandBuffer::FillCommands(CommandRecordingContext* commandContext) 
                 buffer->EnsureDataInitializedAsDestination(commandContext, copy);
 
                 texture->SynchronizeTextureBeforeUse(commandContext);
-                texture->EnsureSubresourceContentInitialized(
-                    commandContext, GetSubresourcesAffectedByCopy(src, copySize));
+                DAWN_TRY(texture->EnsureSubresourceContentInitialized(
+                    commandContext, GetSubresourcesAffectedByCopy(src, copySize)));
                 buffer->TrackUsage();
 
                 TextureBufferCopySplit splitCopies = ComputeTextureBufferCopySplit(
@@ -979,10 +991,10 @@ MaybeError CommandBuffer::FillCommands(CommandRecordingContext* commandContext) 
 
                 srcTexture->SynchronizeTextureBeforeUse(commandContext);
                 dstTexture->SynchronizeTextureBeforeUse(commandContext);
-                srcTexture->EnsureSubresourceContentInitialized(
-                    commandContext, GetSubresourcesAffectedByCopy(copy->source, copy->copySize));
-                EnsureDestinationTextureInitialized(commandContext, dstTexture, copy->destination,
-                                                    copy->copySize);
+                DAWN_TRY(srcTexture->EnsureSubresourceContentInitialized(
+                    commandContext, GetSubresourcesAffectedByCopy(copy->source, copy->copySize)));
+                DAWN_TRY(EnsureDestinationTextureInitialized(commandContext, dstTexture,
+                                                             copy->destination, copy->copySize));
 
                 const MTLSize sizeOneSlice =
                     MTLSizeMake(copy->copySize.width, copy->copySize.height, 1);
@@ -1348,13 +1360,16 @@ MaybeError CommandBuffer::EncodeComputePass(CommandRecordingContext* commandCont
 }
 
 MaybeError CommandBuffer::EncodeRenderPass(id<MTLRenderCommandEncoder> encoder,
-                                           BeginRenderPassCmd* renderPassCmd) {
+                                           BeginRenderPassCmd* renderPassCmd,
+                                           EmptyOcclusionQueries* emptyOcclusionQueries) {
     bool enableVertexPulling = GetDevice()->IsToggleEnabled(Toggle::MetalEnableVertexPulling);
     RenderPipeline* lastPipeline = nullptr;
     id<MTLBuffer> indexBuffer = nullptr;
     uint32_t indexBufferBaseOffset = 0;
     MTLIndexType indexBufferType;
     uint64_t indexFormatSize = 0;
+
+    bool didDrawInCurrentOcclusionQuery = false;
 
     StorageBufferLengthTracker storageBufferLengths = {};
     VertexBufferTracker vertexBuffers(&storageBufferLengths);
@@ -1391,12 +1406,14 @@ MaybeError CommandBuffer::EncodeRenderPass(id<MTLRenderCommandEncoder> encoder,
                                     vertexStart:draw->firstVertex
                                     vertexCount:draw->vertexCount
                                   instanceCount:draw->instanceCount];
+                        didDrawInCurrentOcclusionQuery = true;
                     } else {
                         [encoder drawPrimitives:lastPipeline->GetMTLPrimitiveTopology()
                                     vertexStart:draw->firstVertex
                                     vertexCount:draw->vertexCount
                                   instanceCount:draw->instanceCount
                                    baseInstance:draw->firstInstance];
+                        didDrawInCurrentOcclusionQuery = true;
                     }
                 }
                 break;
@@ -1421,6 +1438,7 @@ MaybeError CommandBuffer::EncodeRenderPass(id<MTLRenderCommandEncoder> encoder,
                                      indexBufferOffset:indexBufferBaseOffset +
                                                        draw->firstIndex * indexFormatSize
                                          instanceCount:draw->instanceCount];
+                        didDrawInCurrentOcclusionQuery = true;
                     } else {
                         [encoder drawIndexedPrimitives:lastPipeline->GetMTLPrimitiveTopology()
                                             indexCount:draw->indexCount
@@ -1431,6 +1449,7 @@ MaybeError CommandBuffer::EncodeRenderPass(id<MTLRenderCommandEncoder> encoder,
                                          instanceCount:draw->instanceCount
                                             baseVertex:draw->baseVertex
                                           baseInstance:draw->firstInstance];
+                        didDrawInCurrentOcclusionQuery = true;
                     }
                 }
                 break;
@@ -1449,6 +1468,7 @@ MaybeError CommandBuffer::EncodeRenderPass(id<MTLRenderCommandEncoder> encoder,
                 [encoder drawPrimitives:lastPipeline->GetMTLPrimitiveTopology()
                           indirectBuffer:indirectBuffer
                     indirectBufferOffset:draw->indirectOffset];
+                didDrawInCurrentOcclusionQuery = true;
                 break;
             }
 
@@ -1470,6 +1490,7 @@ MaybeError CommandBuffer::EncodeRenderPass(id<MTLRenderCommandEncoder> encoder,
                              indexBufferOffset:indexBufferBaseOffset
                                 indirectBuffer:indirectBuffer
                           indirectBufferOffset:draw->indirectOffset];
+                didDrawInCurrentOcclusionQuery = true;
                 break;
             }
 
@@ -1650,6 +1671,7 @@ MaybeError CommandBuffer::EncodeRenderPass(id<MTLRenderCommandEncoder> encoder,
 
                 [encoder setVisibilityResultMode:MTLVisibilityResultModeBoolean
                                           offset:cmd->queryIndex * sizeof(uint64_t)];
+                didDrawInCurrentOcclusionQuery = false;
                 break;
             }
 
@@ -1658,6 +1680,20 @@ MaybeError CommandBuffer::EncodeRenderPass(id<MTLRenderCommandEncoder> encoder,
 
                 [encoder setVisibilityResultMode:MTLVisibilityResultModeDisabled
                                           offset:cmd->queryIndex * sizeof(uint64_t)];
+                if (emptyOcclusionQueries) {
+                    // Empty occlusion queries aren't filled to zero on Apple GPUs.
+                    // Keep track of them so we can clear them if necessary.
+                    auto key = std::make_pair(ToBackend(renderPassCmd->occlusionQuerySet.Get()),
+                                              cmd->queryIndex);
+                    if (!didDrawInCurrentOcclusionQuery) {
+                        emptyOcclusionQueries->insert(std::move(key));
+                    } else {
+                        auto it = emptyOcclusionQueries->find(std::move(key));
+                        if (it != emptyOcclusionQueries->end()) {
+                            emptyOcclusionQueries->erase(it);
+                        }
+                    }
+                }
                 break;
             }
 

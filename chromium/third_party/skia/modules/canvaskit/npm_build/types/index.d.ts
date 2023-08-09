@@ -461,6 +461,7 @@ export interface CanvasKit {
     // Factories, i.e. things made with CanvasKit.Foo.MakeTurboEncabulator()
     readonly ParagraphBuilder: ParagraphBuilderFactory;
     readonly ColorFilter: ColorFilterFactory;
+    readonly FontCollection: FontCollectionFactory;
     readonly FontMgr: FontMgrFactory;
     readonly ImageFilter: ImageFilterFactory;
     readonly MaskFilter: MaskFilterFactory;
@@ -891,14 +892,61 @@ export interface TextProperty {
     value: TextValue;
 }
 
+/**
+ * Transform property value. Maps to AE styled transform.
+ */
+export interface TransformValue {
+    /**
+     * Anchor point for transform. x and y value.
+     */
+    anchor: Point;
+    /**
+     * Position of transform. x and y value.
+     */
+    position: Point;
+    /**
+     * Scale of transform. x and y value.
+     */
+    scale: Vector2;
+    /**
+     * Rotation of transform in degrees.
+     */
+    rotation: number;
+    /**
+     * Skew to apply during transform.
+     */
+    skew: number;
+    /**
+     * Direction of skew in degrees.
+     */
+    skew_axis: number;
+}
+
+/**
+ * Named transform property for Skottie property observer.
+ */
+export interface TransformProperty {
+    /**
+     * Property identifier, usually the node name.
+     */
+    key: string;
+    /**
+     * Property value.
+     */
+    value: TransformValue;
+}
+
 export interface ManagedSkottieAnimation extends SkottieAnimation {
     setColor(key: string, color: InputColor): boolean;
     setOpacity(key: string, opacity: number): boolean;
     setText(key: string, text: string, size: number): boolean;
+    setTransform(key: string, anchor: InputPoint, position: InputPoint, scale: InputVector2,
+                 rotation: number, skew: number, skew_axis: number): boolean;
     getMarkers(): AnimationMarker[];
     getColorProps(): ColorProperty[];
     getOpacityProps(): OpacityProperty[];
     getTextProps(): TextProperty[];
+    getTransformProps(): TransformProperty[];
 }
 
 /**
@@ -2083,6 +2131,12 @@ export interface Paint extends EmbindObject<Paint> {
     setColorInt(color: ColorInt, colorSpace?: ColorSpace): void;
 
     /**
+     * Requests, but does not require, to distribute color error.
+     * @param shouldDither
+     */
+    setDither(shouldDither: boolean): void;
+
+    /**
      * Sets the current image filter, replacing the existing one if there was one.
      * @param filter
      */
@@ -2995,6 +3049,23 @@ export interface TypefaceFontProvider extends EmbindObject<TypefaceFontProvider>
     registerFont(bytes: ArrayBuffer | Uint8Array, family: string): void;
 }
 
+/**
+ * See FontCollection.h in SkParagraph for more details
+ */
+export interface FontCollection extends EmbindObject<FontCollection> {
+    /**
+     * Enable fallback to dynamically discovered fonts for characters that are not handled
+     * by the text style's fonts.
+     */
+    enableFontFallback(): void;
+
+    /**
+     * Set the default provider used to locate fonts.
+     */
+    setDefaultFontManager(fontManager: TypefaceFontProvider | null): void;
+}
+
+
 export interface URange {
     start: number;
     end: number;
@@ -3260,9 +3331,22 @@ export interface ParagraphBuilderFactory {
     MakeFromFontProvider(style: ParagraphStyle, fontSrc: TypefaceFontProvider): ParagraphBuilder;
 
     /**
+     * Creates a ParagraphBuilder using the given font collection.
+     * @param style
+     * @param fontCollection
+     */
+    MakeFromFontCollection(style: ParagraphStyle, fontCollection: FontCollection): ParagraphBuilder;
+
+    /**
      * Return a shaped array of lines
      */
     ShapeText(text: string, runs: FontBlock[], width?: number): ShapedLine[];
+
+    /**
+     * Whether the paragraph builder requires ICU data to be provided by the
+     * client.
+     */
+    RequiresClientICU(): boolean;
 }
 
 export interface ParagraphStyleConstructor {
@@ -3904,6 +3988,13 @@ export interface TypefaceFontProviderFactory {
     Make(): TypefaceFontProvider;
 }
 
+export interface FontCollectionFactory {
+    /**
+     * Return an empty FontCollection
+     */
+    Make(): FontCollection;
+}
+
 /**
  * Functions for manipulating vectors. It is Loosely based off of SkV3 in SkM44.h but Skia
  * also has SkVec2 and Skv4. This combines them and works on vectors of any length.
@@ -4064,6 +4155,12 @@ export type WeightList = MallocObj | Float32Array | number[];
 export type Matrix4x4 = Float32Array;
 export type Matrix3x3 = Float32Array;
 export type Matrix3x2 = Float32Array;
+
+/**
+ * Vector2 represents an x, y coordinate or vector. It has length 2.
+ */
+export type Vector2 = Point;
+
 /**
  * Vector3 represents an x, y, z coordinate or vector. It has length 3.
  */
@@ -4134,6 +4231,12 @@ export type InputRRect = MallocObj | RRect | number[];
  * be scos, ssin, tx, ty for each RSXForm. See RSXForm.h for more details.
  */
 export type InputFlattenedRSXFormArray = MallocObj | Float32Array | number[];
+
+/**
+ * InputVector2 maps to InputPoint, the alias is to not use the word "Point" when not accurate, but
+ * they are in practice the same, a representation of x and y.
+ */
+export type InputVector2 =  InputPoint;
 /**
  * CanvasKit APIs accept normal arrays, typed arrays, or Malloc'd memory as a vector of 3 floats.
  * For example, this is the x, y, z coordinates.

@@ -4,7 +4,7 @@
 #ifndef AVIF_INTERNAL_H
 #define AVIF_INTERNAL_H
 
-#include "avif/avif.h"
+#include "avif/avif.h" // IWYU pragma: export
 
 #ifdef __cplusplus
 extern "C" {
@@ -27,6 +27,14 @@ extern "C" {
     do {                      \
         if (!(A))             \
             return ERR;       \
+    } while (0)
+
+// Forward any error to the caller now or continue execution.
+#define AVIF_CHECKRES(A)                 \
+    do {                                 \
+        const avifResult result__ = (A); \
+        if (result__ != AVIF_RESULT_OK)  \
+            return result__;             \
     } while (0)
 
 // ---------------------------------------------------------------------------
@@ -81,6 +89,11 @@ void avifImageSetDefaults(avifImage * image);
 // Copies all fields that do not need to be freed/allocated from srcImage to dstImage.
 void avifImageCopyNoAlloc(avifImage * dstImage, const avifImage * srcImage);
 
+// Copies the samples from srcImage to dstImage. dstImage must be allocated.
+// srcImage and dstImage must have the same width, height, and depth.
+// If the AVIF_PLANES_YUV bit is set in planes, then srcImage and dstImage must have the same yuvFormat and yuvRange.
+void avifImageCopySamples(avifImage * dstImage, const avifImage * srcImage, avifPlanesFlags planes);
+
 typedef struct avifAlphaParams
 {
     uint32_t width;
@@ -100,8 +113,8 @@ typedef struct avifAlphaParams
 
 } avifAlphaParams;
 
-avifBool avifFillAlpha(const avifAlphaParams * const params);
-avifBool avifReformatAlpha(const avifAlphaParams * const params);
+avifBool avifFillAlpha(const avifAlphaParams * params);
+avifBool avifReformatAlpha(const avifAlphaParams * params);
 
 typedef enum avifReformatMode
 {
@@ -153,11 +166,19 @@ typedef struct avifReformatState
 // * [any other error]           - Return error to caller
 avifResult avifImageRGBToYUVLibYUV(avifImage * image, const avifRGBImage * rgb);
 
+// Parameters:
+// * image - input YUV image
+// * rgb - output RGB image
+// * reformatAlpha - if set to AVIF_TRUE, the function will attempt to copy the alpha channel to the output RGB image using
+// libyuv.
+// * alphaReformattedWithLibYUV - Output parameter. If reformatAlpha is set to true and libyuv was able to copy over the alpha
+// channel, then this will be set to AVIF_TRUE. Otherwise, this will be set to AVIF_FALSE. The value in this parameter is valid
+// only if the return value of the function is AVIF_RESULT_OK or AVIF_RESULT_NOT_IMPLEMENTED.
 // Returns:
 // * AVIF_RESULT_OK              - Converted successfully with libyuv
 // * AVIF_RESULT_NOT_IMPLEMENTED - The fast path for this combination is not implemented with libyuv, use built-in YUV conversion
 // * [any other error]           - Return error to caller
-avifResult avifImageYUVToRGBLibYUV(const avifImage * image, avifRGBImage * rgb);
+avifResult avifImageYUVToRGBLibYUV(const avifImage * image, avifRGBImage * rgb, avifBool reformatAlpha, avifBool * alphaReformattedWithLibYUV);
 
 // Returns:
 // * AVIF_RESULT_OK              - Converted successfully with libsharpyuv
@@ -272,10 +293,12 @@ typedef struct avifCodecSpecificOption
     char * value; // Free-form string to be interpreted by the codec
 } avifCodecSpecificOption;
 AVIF_ARRAY_DECLARE(avifCodecSpecificOptions, avifCodecSpecificOption, entries);
+
+// Returns NULL if a memory allocation failed.
 avifCodecSpecificOptions * avifCodecSpecificOptionsCreate(void);
 void avifCodecSpecificOptionsClear(avifCodecSpecificOptions * csOptions);
 void avifCodecSpecificOptionsDestroy(avifCodecSpecificOptions * csOptions);
-void avifCodecSpecificOptionsSet(avifCodecSpecificOptions * csOptions, const char * key, const char * value); // if(value==NULL), key is deleted
+avifResult avifCodecSpecificOptionsSet(avifCodecSpecificOptions * csOptions, const char * key, const char * value); // if(value==NULL), key is deleted
 
 // ---------------------------------------------------------------------------
 // avifCodec (abstraction layer to use different AV1 implementations)

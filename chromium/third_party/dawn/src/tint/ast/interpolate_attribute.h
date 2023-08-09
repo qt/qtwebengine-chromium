@@ -15,7 +15,6 @@
 #ifndef SRC_TINT_AST_INTERPOLATE_ATTRIBUTE_H_
 #define SRC_TINT_AST_INTERPOLATE_ATTRIBUTE_H_
 
-#include <ostream>
 #include <string>
 
 #include "src/tint/ast/attribute.h"
@@ -28,7 +27,7 @@ class Expression;
 namespace tint::ast {
 
 /// An interpolate attribute
-class InterpolateAttribute final : public Castable<InterpolateAttribute, Attribute> {
+class InterpolateAttribute final : public utils::Castable<InterpolateAttribute, Attribute> {
   public:
     /// Create an interpolate attribute.
     /// @param pid the identifier of the program that owns this node

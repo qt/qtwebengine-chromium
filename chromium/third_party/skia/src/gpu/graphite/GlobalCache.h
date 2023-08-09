@@ -10,6 +10,7 @@
 
 #include "include/core/SkRefCnt.h"
 #include "include/private/SkSpinlock.h"
+#include "include/private/base/SkTArray.h"
 #include "src/core/SkLRUCache.h"
 #include "src/gpu/ResourceKey.h"
 
@@ -36,6 +37,8 @@ class GlobalCache {
 public:
     GlobalCache();
     ~GlobalCache();
+
+    void deleteResources();
 
     // Find a cached GraphicsPipeline that matches the associated key.
     sk_sp<GraphicsPipeline> findGraphicsPipeline(const UniqueKey&) SK_EXCLUDES(fSpinLock);
@@ -78,7 +81,7 @@ private:
     GraphicsPipelineCache fGraphicsPipelineCache SK_GUARDED_BY(fSpinLock);
     ComputePipelineCache  fComputePipelineCache  SK_GUARDED_BY(fSpinLock);
 
-    SkTArray<sk_sp<Resource>> fStaticResource SK_GUARDED_BY(fSpinLock);
+    skia_private::TArray<sk_sp<Resource>> fStaticResource SK_GUARDED_BY(fSpinLock);
 };
 
 } // namespace skgpu::graphite

@@ -21,7 +21,7 @@
 namespace tint::ast {
 
 /// A `const_assert` statement
-class ConstAssert final : public Castable<ConstAssert, Statement> {
+class ConstAssert final : public utils::Castable<ConstAssert, Statement> {
   public:
     /// Constructor
     /// @param pid the identifier of the program that owns this node
@@ -29,9 +29,6 @@ class ConstAssert final : public Castable<ConstAssert, Statement> {
     /// @param source the variable statement source
     /// @param condition the assertion condition
     ConstAssert(ProgramID pid, NodeID nid, const Source& source, const Expression* condition);
-
-    /// Move constructor
-    ConstAssert(ConstAssert&&);
 
     /// Destructor
     ~ConstAssert() override;

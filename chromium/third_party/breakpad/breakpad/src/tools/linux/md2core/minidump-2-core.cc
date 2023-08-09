@@ -30,6 +30,10 @@
 // Large parts lifted from the userspace core dumper:
 //   http://code.google.com/p/google-coredumper/
 
+#ifdef HAVE_CONFIG_H
+#include <config.h>  // Must come first
+#endif
+
 #include <elf.h>
 #include <errno.h>
 #include <limits.h>

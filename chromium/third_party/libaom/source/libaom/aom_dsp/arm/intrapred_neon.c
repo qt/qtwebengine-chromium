@@ -17,6 +17,7 @@
 
 #include "aom/aom_integer.h"
 #include "aom_dsp/arm/mem_neon.h"
+#include "aom_dsp/arm/sum_neon.h"
 #include "aom_dsp/intrapred_common.h"
 
 //------------------------------------------------------------------------------
@@ -314,6 +315,95 @@ void aom_dc_128_predictor_32x32_neon(uint8_t *dst, ptrdiff_t stride,
   (void)above;
   (void)left;
   dc_32x32(dst, stride, NULL, NULL, 0, 0);
+}
+
+//------------------------------------------------------------------------------
+// DC 64x64
+
+// 'do_above' and 'do_left' facilitate branch removal when inlined.
+static INLINE void dc_64x64(uint8_t *dst, ptrdiff_t stride,
+                            const uint8_t *above, const uint8_t *left,
+                            int do_above, int do_left) {
+  uint16x8_t sum_top;
+  uint16x8_t sum_left;
+  uint8x8_t dc0;
+
+  if (do_above) {
+    const uint8x16_t a0 = vld1q_u8(above);  // top row
+    const uint8x16_t a1 = vld1q_u8(above + 16);
+    const uint8x16_t a2 = vld1q_u8(above + 32);
+    const uint8x16_t a3 = vld1q_u8(above + 48);
+    const uint16x8_t p0 = vpaddlq_u8(a0);  // cascading summation of the top
+    const uint16x8_t p1 = vpaddlq_u8(a1);
+    const uint16x8_t p2 = vpaddlq_u8(a2);
+    const uint16x8_t p3 = vpaddlq_u8(a3);
+    const uint16x8_t p01 = vaddq_u16(p0, p1);
+    const uint16x8_t p23 = vaddq_u16(p2, p3);
+    sum_top = vdupq_n_u16(horizontal_add_u16x8(vaddq_u16(p01, p23)));
+  }
+
+  if (do_left) {
+    const uint8x16_t l0 = vld1q_u8(left);  // left row
+    const uint8x16_t l1 = vld1q_u8(left + 16);
+    const uint8x16_t l2 = vld1q_u8(left + 32);
+    const uint8x16_t l3 = vld1q_u8(left + 48);
+    const uint16x8_t p0 = vpaddlq_u8(l0);  // cascading summation of the left
+    const uint16x8_t p1 = vpaddlq_u8(l1);
+    const uint16x8_t p2 = vpaddlq_u8(l2);
+    const uint16x8_t p3 = vpaddlq_u8(l3);
+    const uint16x8_t p01 = vaddq_u16(p0, p1);
+    const uint16x8_t p23 = vaddq_u16(p2, p3);
+    sum_left = vdupq_n_u16(horizontal_add_u16x8(vaddq_u16(p01, p23)));
+  }
+
+  if (do_above && do_left) {
+    const uint16x8_t sum = vaddq_u16(sum_left, sum_top);
+    dc0 = vrshrn_n_u16(sum, 7);
+  } else if (do_above) {
+    dc0 = vrshrn_n_u16(sum_top, 6);
+  } else if (do_left) {
+    dc0 = vrshrn_n_u16(sum_left, 6);
+  } else {
+    dc0 = vdup_n_u8(0x80);
+  }
+
+  {
+    const uint8x16_t dc = vdupq_lane_u8(dc0, 0);
+    int i;
+    for (i = 0; i < 64; ++i) {
+      vst1q_u8(dst + i * stride, dc);
+      vst1q_u8(dst + i * stride + 16, dc);
+      vst1q_u8(dst + i * stride + 32, dc);
+      vst1q_u8(dst + i * stride + 48, dc);
+    }
+  }
+}
+
+void aom_dc_predictor_64x64_neon(uint8_t *dst, ptrdiff_t stride,
+                                 const uint8_t *above, const uint8_t *left) {
+  dc_64x64(dst, stride, above, left, 1, 1);
+}
+
+void aom_dc_left_predictor_64x64_neon(uint8_t *dst, ptrdiff_t stride,
+                                      const uint8_t *above,
+                                      const uint8_t *left) {
+  (void)above;
+  dc_64x64(dst, stride, NULL, left, 0, 1);
+}
+
+void aom_dc_top_predictor_64x64_neon(uint8_t *dst, ptrdiff_t stride,
+                                     const uint8_t *above,
+                                     const uint8_t *left) {
+  (void)left;
+  dc_64x64(dst, stride, above, NULL, 1, 0);
+}
+
+void aom_dc_128_predictor_64x64_neon(uint8_t *dst, ptrdiff_t stride,
+                                     const uint8_t *above,
+                                     const uint8_t *left) {
+  (void)above;
+  (void)left;
+  dc_64x64(dst, stride, NULL, NULL, 0, 0);
 }
 
 // -----------------------------------------------------------------------------
@@ -1023,7 +1113,6 @@ void av1_dr_prediction_z1_neon(uint8_t *dst, ptrdiff_t stride, int bw, int bh,
       break;
     default: break;
   }
-  return;
 }
 
 /* ---------------------P R E D I C T I O N   Z 2--------------------------- */
@@ -1289,6 +1378,14 @@ static void dr_prediction_z2_Nx8_neon(int N, uint8_t *dst, ptrdiff_t stride,
       }
     }
 
+    diff.val[0] =
+        vsubq_u16(vreinterpretq_u16_u8(a1_x.val[0]),
+                  vreinterpretq_u16_u8(a0_x.val[0]));  // a[x+1] - a[x]
+    a32.val[0] = vmlaq_u16(a16, vreinterpretq_u16_u8(a0_x.val[0]),
+                           v_32);  // a[x] * 32 + 16
+    res.val[0] = vmlaq_u16(a32.val[0], diff.val[0], shift.val[0]);
+    resx = vshrn_n_u16(res.val[0], 5);
+
     // y calc
     if (base_x < min_base_x) {
       DECLARE_ALIGNED(32, int16_t, base_y_c[16]);
@@ -1334,26 +1431,20 @@ static void dr_prediction_z2_Nx8_neon(int N, uint8_t *dst, ptrdiff_t stride,
         shift.val[1] =
             vshrq_n_u16(vandq_u16(vreinterpretq_u16_s16(y_c128), c3f), 1);
       }
+      diff.val[1] =
+          vsubq_u16(vreinterpretq_u16_u8(a1_x.val[1]),
+                    vreinterpretq_u16_u8(a0_x.val[1]));  // a[x+1] - a[x]
+      a32.val[1] = vmlaq_u16(a16, vreinterpretq_u16_u8(a0_x.val[1]),
+                             v_32);  // a[x] * 32 + 16
+      res.val[1] = vmlaq_u16(a32.val[1], diff.val[1], shift.val[1]);
+      resy = vshrn_n_u16(res.val[1], 5);
+      uint8x8_t mask = vld1_u8(BaseMask[base_min_diff]);
+      resxy = vorr_u8(vand_u8(mask, resy), vbic_u8(resx, mask));
+      vst1_u8(dst, resxy);
+    } else {
+      vst1_u8(dst, resx);
     }
-    diff.val[0] =
-        vsubq_u16(vreinterpretq_u16_u8(a1_x.val[0]),
-                  vreinterpretq_u16_u8(a0_x.val[0]));  // a[x+1] - a[x]
-    diff.val[1] =
-        vsubq_u16(vreinterpretq_u16_u8(a1_x.val[1]),
-                  vreinterpretq_u16_u8(a0_x.val[1]));  // a[x+1] - a[x]
-    a32.val[0] = vmlaq_u16(a16, vreinterpretq_u16_u8(a0_x.val[0]),
-                           v_32);  // a[x] * 32 + 16
-    a32.val[1] = vmlaq_u16(a16, vreinterpretq_u16_u8(a0_x.val[1]),
-                           v_32);  // a[x] * 32 + 16
-    res.val[0] = vmlaq_u16(a32.val[0], diff.val[0], shift.val[0]);
-    res.val[1] = vmlaq_u16(a32.val[1], diff.val[1], shift.val[1]);
-    resx = vshrn_n_u16(res.val[0], 5);
-    resy = vshrn_n_u16(res.val[1], 5);
 
-    uint8x8_t mask = vld1_u8(BaseMask[base_min_diff]);
-
-    resxy = vorr_u8(vand_u8(mask, resy), vbic_u8(resx, mask));
-    vst1_u8(dst, resxy);
     dst += stride;
   }
 }
@@ -1629,7 +1720,6 @@ void av1_dr_prediction_z2_neon(uint8_t *dst, ptrdiff_t stride, int bw, int bh,
                                 upsample_above, upsample_left, dx, dy);
       break;
   }
-  return;
 }
 
 /* ---------------------P R E D I C T I O N   Z 3--------------------------- */
@@ -3212,7 +3302,7 @@ static INLINE void paeth_4or8_x_h_neon(uint8_t *dest, ptrdiff_t stride,
                                        int width, int height) {
   const uint8x8_t top_left = vdup_n_u8(top_row[-1]);
   const uint16x8_t top_left_x2 = vdupq_n_u16(top_row[-1] + top_row[-1]);
-  uint8x8_t top;
+  uint8x8_t UNINITIALIZED_IS_SAFE(top);
   if (width == 4) {
     load_u8_4x1(top_row, &top, 0);
   } else {  // width == 8

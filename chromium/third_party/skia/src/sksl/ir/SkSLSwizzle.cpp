@@ -8,13 +8,13 @@
 #include "src/sksl/ir/SkSLSwizzle.h"
 
 #include "include/core/SkSpan.h"
-#include "include/private/SkSLString.h"
 #include "include/private/base/SkTArray.h"
-#include "include/sksl/SkSLErrorReporter.h"
-#include "include/sksl/SkSLOperator.h"
 #include "src/sksl/SkSLAnalysis.h"
 #include "src/sksl/SkSLConstantFolder.h"
 #include "src/sksl/SkSLContext.h"
+#include "src/sksl/SkSLErrorReporter.h"
+#include "src/sksl/SkSLOperator.h"
+#include "src/sksl/SkSLString.h"
 #include "src/sksl/ir/SkSLConstructorCompound.h"
 #include "src/sksl/ir/SkSLConstructorCompoundCast.h"
 #include "src/sksl/ir/SkSLConstructorScalarCast.h"
@@ -25,6 +25,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+
+using namespace skia_private;
 
 namespace SkSL {
 
@@ -189,7 +191,7 @@ static std::unique_ptr<Expression> optimize_constructor_swizzle(const Context& c
         int8_t fArgIndex;
         ComponentArray fComponents;
     };
-    SkSTArray<4, ReorderedArgument> reorderedArgs;
+    STArray<4, ReorderedArgument> reorderedArgs;
     for (int8_t c : components) {
         const ConstructorArgMap& argument = argMap[c];
         const Expression& baseArg = *baseArguments[argument.fArgIndex];

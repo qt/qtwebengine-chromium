@@ -1,4 +1,5 @@
-load("//bazel:macros.bzl", "bool_flag", "exports_files_legacy", "select_multi", "selects", "skia_cc_deps", "skia_filegroup", "split_srcs_and_hdrs", "string_flag_with_values")
+load("//bazel:skia_rules.bzl", "exports_files_legacy", "select_multi", "skia_cc_deps", "skia_filegroup", "split_srcs_and_hdrs")
+load("//bazel:flags.bzl", "bool_flag", "selects", "string_flag_with_values")
 
 licenses(["notice"])
 
@@ -12,6 +13,9 @@ SHARED_FILES = [
     "Blend.cpp",
     "Blend.h",
     "BufferWriter.h",
+    "DitherUtils.cpp",
+    "DitherUtils.h",
+    "GpuTypesPriv.h",
     "KeyBuilder.h",
     "MutableTextureStateRef.h",
     "Rectanizer.h",
@@ -51,6 +55,7 @@ string_flag_with_values(
         "gl_backend",
         "vulkan_backend",
         "dawn_backend",
+        "metal_backend",
     ],
 )
 
@@ -69,6 +74,7 @@ selects.config_setting_group(
         ":gl_backend",
         ":dawn_backend",
         ":vulkan_backend",
+        ":metal_backend",
     ],
     visibility = ["//:__subpackages__"],
 )
@@ -100,10 +106,21 @@ skia_filegroup(
         ":shared_srcs",
         "//src/gpu/ganesh:srcs",
         "//src/gpu/tessellate:srcs",
-    ] + select({
-        "//src/gpu:vulkan_backend": ["//src/gpu/vk:srcs"],
-        "//conditions:default": [],
-    }),
+    ] + select_multi(
+        {
+            "//src/gpu:dawn_backend": ["//src/gpu/dawn:srcs"],
+            "//src/gpu:vulkan_backend": ["//src/gpu/vk:srcs"],
+        },
+    ),
+    visibility = ["//src:__pkg__"],
+)
+
+skia_filegroup(
+    name = "objc_srcs",
+    srcs = [
+        "//src/gpu/ganesh:objc_srcs",
+        "//src/gpu/mtl:shared_objc_srcs",
+    ],
     visibility = ["//src:__pkg__"],
 )
 
@@ -114,10 +131,13 @@ skia_filegroup(
         ":shared_hdrs",
         "//src/gpu/ganesh:private_hdrs",
         "//src/gpu/tessellate:private_hdrs",
-    ] + select({
-        "//src/gpu:vulkan_backend": ["//src/gpu/vk:private_hdrs"],
-        "//conditions:default": [],
-    }),
+    ] + select_multi(
+        {
+            "//src/gpu:dawn_backend": ["//src/gpu/dawn:private_hdrs"],
+            "//src/gpu:vulkan_backend": ["//src/gpu/vk:private_hdrs"],
+            "//src/gpu:metal_backend": ["//src/gpu/mtl:private_hdrs"],
+        },
+    ),
     visibility = ["//src:__pkg__"],
 )
 

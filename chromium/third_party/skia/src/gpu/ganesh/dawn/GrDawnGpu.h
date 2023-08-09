@@ -212,15 +212,16 @@ private:
     void addFinishedProc(GrGpuFinishedProc finishedProc,
                          GrGpuFinishedContext finishedContext) override;
 
-    GrOpsRenderPass* onGetOpsRenderPass(GrRenderTarget*,
-                                        bool useMSAASurface,
-                                        GrAttachment*,
-                                        GrSurfaceOrigin,
-                                        const SkIRect&,
-                                        const GrOpsRenderPass::LoadAndStoreInfo&,
-                                        const GrOpsRenderPass::StencilLoadAndStoreInfo&,
-                                        const SkTArray<GrSurfaceProxy*, true>& sampledProxies,
-                                        GrXferBarrierFlags renderPassXferBarriers) override;
+    GrOpsRenderPass* onGetOpsRenderPass(
+            GrRenderTarget*,
+            bool useMSAASurface,
+            GrAttachment*,
+            GrSurfaceOrigin,
+            const SkIRect&,
+            const GrOpsRenderPass::LoadAndStoreInfo&,
+            const GrOpsRenderPass::StencilLoadAndStoreInfo&,
+            const skia_private::TArray<GrSurfaceProxy*, true>& sampledProxies,
+            GrXferBarrierFlags renderPassXferBarriers) override;
 
     bool onSubmitToGpu(bool syncCpu) override;
     void onSubmittedWorkDone(WGPUQueueWorkDoneStatus status);
@@ -276,7 +277,7 @@ private:
     // fence because Dawn currently does not support unregistering a callback to prevent a potential
     // use-after-free.
     bool fSubmittedWorkDoneCallbackPending = false;
-    SkTHashSet<GrDawnAsyncWait*> fQueueFences;
+    skia_private::THashSet<GrDawnAsyncWait*> fQueueFences;
 
     struct ProgramDescHash {
         uint32_t operator()(const GrProgramDesc& desc) const {

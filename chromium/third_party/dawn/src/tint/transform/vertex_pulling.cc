@@ -23,9 +23,11 @@
 #include "src/tint/builtin/builtin_value.h"
 #include "src/tint/program_builder.h"
 #include "src/tint/sem/variable.h"
+#include "src/tint/switch.h"
 #include "src/tint/utils/compiler_macros.h"
 #include "src/tint/utils/map.h"
 #include "src/tint/utils/math.h"
+#include "src/tint/utils/string_stream.h"
 
 TINT_INSTANTIATE_TYPEINFO(tint::transform::VertexPulling);
 TINT_INSTANTIATE_TYPEINFO(tint::transform::VertexPulling::Config);
@@ -55,11 +57,11 @@ enum class VertexDataType {
     kFloat,  // unsigned normalized, signed normalized, and float
 };
 
-/// Writes the VertexFormat to the std::ostream.
-/// @param out the std::ostream to write to
+/// Writes the VertexFormat to the stream.
+/// @param out the stream to write to
 /// @param format the VertexFormat to write
 /// @returns out so calls can be chained
-std::ostream& operator<<(std::ostream& out, VertexFormat format) {
+utils::StringStream& operator<<(utils::StringStream& out, VertexFormat format) {
     switch (format) {
         case VertexFormat::kUint8x2:
             return out << "uint8x2";
@@ -379,11 +381,11 @@ struct VertexPulling::State {
 
                 // Base types must match between the vertex stream and the WGSL variable
                 if (!IsTypeCompatible(var_dt, fmt_dt)) {
-                    std::stringstream err;
+                    utils::StringStream err;
                     err << "VertexAttributeDescriptor for location "
                         << std::to_string(attribute_desc.shader_location) << " has format "
                         << attribute_desc.format << " but shader expects "
-                        << var.type->FriendlyName(src->Symbols());
+                        << var.type->FriendlyName();
                     b.Diagnostics().add_error(diag::System::Transform, err.str());
                     return nullptr;
                 }

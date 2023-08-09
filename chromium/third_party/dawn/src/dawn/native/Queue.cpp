@@ -135,7 +135,10 @@ struct SubmittedWorkDone : TrackTaskCallback {
                       WGPUQueueWorkDoneCallback callback,
                       void* userdata)
         : TrackTaskCallback(platform), mCallback(callback), mUserdata(userdata) {}
-    void Finish() override {
+    ~SubmittedWorkDone() override = default;
+
+  private:
+    void FinishImpl() override {
         ASSERT(mCallback != nullptr);
         ASSERT(mSerial != kMaxExecutionSerial);
         TRACE_EVENT1(mPlatform, General, "Queue::SubmittedWorkDone::Finished", "serial",
@@ -143,22 +146,21 @@ struct SubmittedWorkDone : TrackTaskCallback {
         mCallback(WGPUQueueWorkDoneStatus_Success, mUserdata);
         mCallback = nullptr;
     }
-    void HandleDeviceLoss() override {
+    void HandleDeviceLossImpl() override {
         ASSERT(mCallback != nullptr);
         mCallback(WGPUQueueWorkDoneStatus_DeviceLost, mUserdata);
         mCallback = nullptr;
     }
-    void HandleShutDown() override { HandleDeviceLoss(); }
-    ~SubmittedWorkDone() override = default;
+    void HandleShutDownImpl() override { HandleDeviceLossImpl(); }
 
-  private:
     WGPUQueueWorkDoneCallback mCallback = nullptr;
     void* mUserdata;
 };
 
 class ErrorQueue : public QueueBase {
   public:
-    explicit ErrorQueue(DeviceBase* device) : QueueBase(device, ObjectBase::kError) {}
+    explicit ErrorQueue(DeviceBase* device, const char* label)
+        : QueueBase(device, ObjectBase::kError, label) {}
 
   private:
     MaybeError SubmitImpl(uint32_t commandCount, CommandBufferBase* const* commands) override {
@@ -176,7 +178,8 @@ void TrackTaskCallback::SetFinishedSerial(ExecutionSerial serial) {
 QueueBase::QueueBase(DeviceBase* device, const QueueDescriptor* descriptor)
     : ApiObjectBase(device, descriptor->label) {}
 
-QueueBase::QueueBase(DeviceBase* device, ObjectBase::ErrorTag tag) : ApiObjectBase(device, tag) {}
+QueueBase::QueueBase(DeviceBase* device, ObjectBase::ErrorTag tag, const char* label)
+    : ApiObjectBase(device, tag, label) {}
 
 QueueBase::~QueueBase() {
     ASSERT(mTasksInFlight.Empty());
@@ -185,8 +188,8 @@ QueueBase::~QueueBase() {
 void QueueBase::DestroyImpl() {}
 
 // static
-QueueBase* QueueBase::MakeError(DeviceBase* device) {
-    return new ErrorQueue(device);
+QueueBase* QueueBase::MakeError(DeviceBase* device, const char* label) {
+    return new ErrorQueue(device, label);
 }
 
 ObjectType QueueBase::GetType() const {
@@ -207,7 +210,8 @@ void QueueBase::APIOnSubmittedWorkDone(uint64_t signalValue,
     // The error status depends on the type of error so we let the validation function choose it
     WGPUQueueWorkDoneStatus status;
     if (GetDevice()->ConsumedError(ValidateOnSubmittedWorkDone(signalValue, &status))) {
-        callback(status, userdata);
+        GetDevice()->GetCallbackTaskManager()->AddCallbackTask(
+            [callback, status, userdata] { callback(status, userdata); });
         return;
     }
 
@@ -272,7 +276,8 @@ void QueueBase::Tick(ExecutionSerial finishedSerial) {
 
 void QueueBase::HandleDeviceLoss() {
     for (auto& task : mTasksInFlight.IterateAll()) {
-        task->HandleDeviceLoss();
+        task->OnDeviceLoss();
+        GetDevice()->GetCallbackTaskManager()->AddCallbackTask(std::move(task));
     }
     mTasksInFlight.Clear();
 }
@@ -281,7 +286,7 @@ void QueueBase::APIWriteBuffer(BufferBase* buffer,
                                uint64_t bufferOffset,
                                const void* data,
                                size_t size) {
-    GetDevice()->ConsumedError(WriteBuffer(buffer, bufferOffset, data, size));
+    DAWN_UNUSED(GetDevice()->ConsumedError(WriteBuffer(buffer, bufferOffset, data, size)));
 }
 
 MaybeError QueueBase::WriteBuffer(BufferBase* buffer,
@@ -322,8 +327,8 @@ void QueueBase::APIWriteTexture(const ImageCopyTexture* destination,
                                 size_t dataSize,
                                 const TextureDataLayout* dataLayout,
                                 const Extent3D* writeSize) {
-    GetDevice()->ConsumedError(
-        WriteTextureInternal(destination, data, dataSize, *dataLayout, writeSize));
+    DAWN_UNUSED(GetDevice()->ConsumedError(
+        WriteTextureInternal(destination, data, dataSize, *dataLayout, writeSize)));
 }
 
 MaybeError QueueBase::WriteTextureInternal(const ImageCopyTexture* destination,
@@ -389,16 +394,16 @@ void QueueBase::APICopyTextureForBrowser(const ImageCopyTexture* source,
                                          const ImageCopyTexture* destination,
                                          const Extent3D* copySize,
                                          const CopyTextureForBrowserOptions* options) {
-    GetDevice()->ConsumedError(
-        CopyTextureForBrowserInternal(source, destination, copySize, options));
+    DAWN_UNUSED(GetDevice()->ConsumedError(
+        CopyTextureForBrowserInternal(source, destination, copySize, options)));
 }
 
 void QueueBase::APICopyExternalTextureForBrowser(const ImageCopyExternalTexture* source,
                                                  const ImageCopyTexture* destination,
                                                  const Extent3D* copySize,
                                                  const CopyTextureForBrowserOptions* options) {
-    GetDevice()->ConsumedError(
-        CopyExternalTextureForBrowserInternal(source, destination, copySize, options));
+    DAWN_UNUSED(GetDevice()->ConsumedError(
+        CopyExternalTextureForBrowserInternal(source, destination, copySize, options)));
 }
 
 MaybeError QueueBase::CopyTextureForBrowserInternal(const ImageCopyTexture* source,

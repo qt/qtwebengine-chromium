@@ -24,7 +24,7 @@ namespace cast {
 
 namespace {
 
-EnumNameTable<ReceiverMessage::Type, 5> kMessageTypeNames{
+EnumNameTable<ReceiverMessage::Type, 3> kMessageTypeNames{
     {{kMessageTypeAnswer, ReceiverMessage::Type::kAnswer},
      {"CAPABILITIES_RESPONSE", ReceiverMessage::Type::kCapabilitiesResponse},
      {"RPC", ReceiverMessage::Type::kRpc}}};

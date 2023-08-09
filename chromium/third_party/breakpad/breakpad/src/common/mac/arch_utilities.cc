@@ -26,6 +26,10 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+#ifdef HAVE_CONFIG_H
+#include <config.h>  // Must come first
+#endif
+
 #include "common/mac/arch_utilities.h"
 
 #include <mach-o/arch.h>
@@ -49,85 +53,43 @@
 #define CPU_SUBTYPE_ARM64_E (static_cast<cpu_subtype_t>(2))
 #endif  // CPU_SUBTYPE_ARM64_E
 
-namespace {
-
-const NXArchInfo* ArchInfo_arm64(cpu_subtype_t cpu_subtype) {
-  const char* name = NULL;
-  switch (cpu_subtype) {
-    case CPU_SUBTYPE_ARM64_ALL:
-      name = "arm64";
-      break;
-    case CPU_SUBTYPE_ARM64_E:
-      name = "arm64e";
-      break;
-    default:
-      return NULL;
-  }
-
-  NXArchInfo* arm64 = new NXArchInfo;
-  *arm64 = *NXGetArchInfoFromCpuType(CPU_TYPE_ARM,
-                                     CPU_SUBTYPE_ARM_V7);
-  arm64->name = name;
-  arm64->cputype = CPU_TYPE_ARM64;
-  arm64->cpusubtype = cpu_subtype;
-  arm64->description = "arm 64";
-  return arm64;
-}
-
-const NXArchInfo* ArchInfo_armv7s() {
-  NXArchInfo* armv7s = new NXArchInfo;
-  *armv7s = *NXGetArchInfoFromCpuType(CPU_TYPE_ARM,
-                                      CPU_SUBTYPE_ARM_V7);
-  armv7s->name = "armv7s";
-  armv7s->cpusubtype = CPU_SUBTYPE_ARM_V7S;
-  armv7s->description = "arm v7s";
-  return armv7s;
-}
-
-}  // namespace
-
-namespace google_breakpad {
-
-const NXArchInfo* BreakpadGetArchInfoFromName(const char* arch_name) {
+std::optional<ArchInfo> GetArchInfoFromName(const char* arch_name) {
   // TODO: Remove this when the OS knows about arm64.
   if (!strcmp("arm64", arch_name))
-    return BreakpadGetArchInfoFromCpuType(CPU_TYPE_ARM64,
-                                          CPU_SUBTYPE_ARM64_ALL);
+    return ArchInfo{CPU_TYPE_ARM64, CPU_SUBTYPE_ARM64_ALL};
 
   if (!strcmp("arm64e", arch_name))
-    return BreakpadGetArchInfoFromCpuType(CPU_TYPE_ARM64,
-                                          CPU_SUBTYPE_ARM64_E);
-
+    return ArchInfo{CPU_TYPE_ARM64, CPU_SUBTYPE_ARM64_E};
   // TODO: Remove this when the OS knows about armv7s.
   if (!strcmp("armv7s", arch_name))
-    return BreakpadGetArchInfoFromCpuType(CPU_TYPE_ARM, CPU_SUBTYPE_ARM_V7S);
+    return ArchInfo{CPU_TYPE_ARM, CPU_SUBTYPE_ARM_V7S};
 
-  return NXGetArchInfoFromName(arch_name);
+  const NXArchInfo* info = NXGetArchInfoFromName(arch_name);
+  if (info)
+    return ArchInfo{info->cputype, info->cpusubtype};
+  return std::nullopt;
 }
 
-const NXArchInfo* BreakpadGetArchInfoFromCpuType(cpu_type_t cpu_type,
-                                                 cpu_subtype_t cpu_subtype) {
+const char* GetNameFromCPUType(cpu_type_t cpu_type, cpu_subtype_t cpu_subtype) {
   // TODO: Remove this when the OS knows about arm64.
   if (cpu_type == CPU_TYPE_ARM64 && cpu_subtype == CPU_SUBTYPE_ARM64_ALL) {
-    static const NXArchInfo* arm64 = ArchInfo_arm64(cpu_subtype);
-    return arm64;
+    return "arm64";
   }
 
   if (cpu_type == CPU_TYPE_ARM64 && cpu_subtype == CPU_SUBTYPE_ARM64_E) {
-    static const NXArchInfo* arm64e = ArchInfo_arm64(cpu_subtype);
-    return arm64e;
+    return "arm64e";
   }
 
   // TODO: Remove this when the OS knows about armv7s.
   if (cpu_type == CPU_TYPE_ARM && cpu_subtype == CPU_SUBTYPE_ARM_V7S) {
-    static const NXArchInfo* armv7s = ArchInfo_armv7s();
-    return armv7s;
+    return "armv7s";
   }
 
-  return NXGetArchInfoFromCpuType(cpu_type, cpu_subtype);
+  const NXArchInfo* info = NXGetArchInfoFromCpuType(cpu_type, cpu_subtype);
+  if (info)
+    return info->name;
+  return kUnknownArchName;
 }
-
-}  // namespace google_breakpad
 
 // TODO(crbug.com/1242776): The "#ifndef __APPLE__" should be here, but the
 // system version of NXGetLocalArchInfo returns incorrect information on
@@ -203,7 +165,7 @@ const NXArchInfo kKnownArchitectures[] = {
 
 }  // namespace
 
-const NXArchInfo *NXGetLocalArchInfo(void) {
+ArchInfo GetLocalArchInfo(void) {
   Architecture arch;
 #if defined(__i386__)
   arch = kArch_i386;
@@ -218,7 +180,8 @@ const NXArchInfo *NXGetLocalArchInfo(void) {
 #else
   #error "Unsupported CPU architecture"
 #endif
-  return &kKnownArchitectures[arch];
+  NXArchInfo info = kKnownArchitectures[arch];
+  return {info.cputype, info.cpusubtype};
 }
 
 #ifndef __APPLE__
@@ -242,24 +205,6 @@ const NXArchInfo *NXGetArchInfoFromCpuType(cpu_type_t cputype,
       }
       if (!candidate) {
         candidate = &kKnownArchitectures[arch];
-      }
-    }
-  }
-  return candidate;
-}
-
-struct fat_arch *NXFindBestFatArch(cpu_type_t cputype,
-                                   cpu_subtype_t cpusubtype,
-                                   struct fat_arch *fat_archs,
-                                   uint32_t nfat_archs) {
-  struct fat_arch *candidate = NULL;
-  for (uint32_t f = 0; f < nfat_archs; ++f) {
-    if (fat_archs[f].cputype == cputype) {
-      if (fat_archs[f].cpusubtype == cpusubtype) {
-        return &fat_archs[f];
-      }
-      if (!candidate) {
-        candidate = &fat_archs[f];
       }
     }
   }

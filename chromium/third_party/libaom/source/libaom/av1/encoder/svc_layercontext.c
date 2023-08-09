@@ -121,7 +121,9 @@ void av1_update_layer_context_change_config(AV1_COMP *const cpi,
       RATE_CONTROL *const lrc = &lc->rc;
       PRIMARY_RATE_CONTROL *const lp_rc = &lc->p_rc;
       lc->spatial_layer_target_bandwidth = spatial_layer_target;
-      bitrate_alloc = (float)lc->target_bandwidth / target_bandwidth;
+      if (target_bandwidth != 0) {
+        bitrate_alloc = (float)lc->target_bandwidth / target_bandwidth;
+      }
       lp_rc->starting_buffer_level =
           (int64_t)(p_rc->starting_buffer_level * bitrate_alloc);
       lp_rc->optimal_buffer_level =
@@ -201,8 +203,9 @@ void av1_update_temporal_layer_framerate(AV1_COMP *const cpi) {
 static AOM_INLINE bool check_ref_is_low_spatial_res_super_frame(
     int ref_frame, const SVC *svc, const RTC_REF *rtc_ref) {
   int ref_frame_idx = rtc_ref->ref_idx[ref_frame - 1];
-  return svc->buffer_time_index[ref_frame_idx] == svc->current_superframe &&
-         svc->buffer_spatial_layer[ref_frame_idx] <= svc->spatial_layer_id - 1;
+  return rtc_ref->buffer_time_index[ref_frame_idx] == svc->current_superframe &&
+         rtc_ref->buffer_spatial_layer[ref_frame_idx] <=
+             svc->spatial_layer_id - 1;
 }
 
 void av1_restore_layer_context(AV1_COMP *const cpi) {
@@ -255,6 +258,32 @@ void av1_restore_layer_context(AV1_COMP *const cpi) {
   }
 }
 
+void av1_svc_update_buffer_slot_refreshed(AV1_COMP *const cpi) {
+  SVC *const svc = &cpi->svc;
+  RTC_REF *const rtc_ref = &cpi->ppi->rtc_ref;
+  const unsigned int current_frame =
+      cpi->ppi->use_svc ? svc->current_superframe
+                        : cpi->common.current_frame.frame_number;
+  // For any buffer slot that is refreshed, update it with
+  // the spatial_layer_id and the current_superframe.
+  if (cpi->common.current_frame.frame_type == KEY_FRAME) {
+    // All slots are refreshed on KEY.
+    for (unsigned int i = 0; i < REF_FRAMES; i++) {
+      rtc_ref->buffer_time_index[i] = current_frame;
+      rtc_ref->buffer_spatial_layer[i] = svc->spatial_layer_id;
+    }
+  } else if (rtc_ref->set_ref_frame_config) {
+    for (unsigned int i = 0; i < INTER_REFS_PER_FRAME; i++) {
+      const int ref_frame_map_idx = rtc_ref->ref_idx[i];
+      if (cpi->ppi->rtc_ref.refresh[ref_frame_map_idx]) {
+        rtc_ref->buffer_time_index[ref_frame_map_idx] = current_frame;
+        rtc_ref->buffer_spatial_layer[ref_frame_map_idx] =
+            svc->spatial_layer_id;
+      }
+    }
+  }
+}
+
 void av1_save_layer_context(AV1_COMP *const cpi) {
   SVC *const svc = &cpi->svc;
   const AV1_COMMON *const cm = &cpi->common;
@@ -278,23 +307,7 @@ void av1_save_layer_context(AV1_COMP *const cpi) {
     lc->actual_num_seg2_blocks = cr->actual_num_seg2_blocks;
     lc->counter_encode_maxq_scene_change = cr->counter_encode_maxq_scene_change;
   }
-  // For any buffer slot that is refreshed, update it with
-  // the spatial_layer_id and the current_superframe.
-  if (cpi->common.current_frame.frame_type == KEY_FRAME) {
-    // All slots are refreshed on KEY.
-    for (unsigned int i = 0; i < REF_FRAMES; i++) {
-      svc->buffer_time_index[i] = svc->current_superframe;
-      svc->buffer_spatial_layer[i] = svc->spatial_layer_id;
-    }
-  } else if (cpi->ppi->rtc_ref.set_ref_frame_config) {
-    for (unsigned int i = 0; i < INTER_REFS_PER_FRAME; i++) {
-      int ref_frame_map_idx = cpi->ppi->rtc_ref.ref_idx[i];
-      if (cpi->ppi->rtc_ref.refresh[ref_frame_map_idx]) {
-        svc->buffer_time_index[ref_frame_map_idx] = svc->current_superframe;
-        svc->buffer_spatial_layer[ref_frame_map_idx] = svc->spatial_layer_id;
-      }
-    }
-  }
+  av1_svc_update_buffer_slot_refreshed(cpi);
   for (unsigned int i = 0; i < REF_FRAMES; i++) {
     if (frame_is_intra_only(cm) ||
         cm->current_frame.refresh_frame_flags & (1 << i)) {
@@ -571,14 +584,15 @@ void av1_svc_check_reset_layer_rc_flag(AV1_COMP *const cpi) {
 
 void av1_svc_set_last_source(AV1_COMP *const cpi, EncodeFrameInput *frame_input,
                              YV12_BUFFER_CONFIG *prev_source) {
+  RTC_REF *const rtc_ref = &cpi->ppi->rtc_ref;
   if (cpi->svc.spatial_layer_id == 0) {
     // For base spatial layer: if the LAST reference (index 0) is not
     // the previous (super)frame set the last_source to the source corresponding
     // to the last TL0, otherwise keep it at prev_source.
     frame_input->last_source = prev_source != NULL ? prev_source : NULL;
     if (cpi->svc.current_superframe > 0) {
-      const int buffslot_last = cpi->ppi->rtc_ref.ref_idx[0];
-      if (cpi->svc.buffer_time_index[buffslot_last] <
+      const int buffslot_last = rtc_ref->ref_idx[0];
+      if (rtc_ref->buffer_time_index[buffslot_last] <
           cpi->svc.current_superframe - 1)
         frame_input->last_source = &cpi->svc.source_last_TL0;
     }
@@ -591,5 +605,42 @@ void av1_svc_set_last_source(AV1_COMP *const cpi, EncodeFrameInput *frame_input,
       frame_input->last_source = &cpi->svc.source_last_TL0;
     else
       frame_input->last_source = NULL;
+  }
+}
+
+int av1_svc_get_min_ref_dist(const AV1_COMP *cpi) {
+  RTC_REF *const rtc_ref = &cpi->ppi->rtc_ref;
+  int min_dist = INT_MAX;
+  const unsigned int current_frame_num =
+      cpi->ppi->use_svc ? cpi->svc.current_superframe
+                        : cpi->common.current_frame.frame_number;
+  for (unsigned int i = 0; i < INTER_REFS_PER_FRAME; i++) {
+    if (cpi->ppi->rtc_ref.reference[i]) {
+      const int ref_frame_map_idx = rtc_ref->ref_idx[i];
+      const int dist =
+          current_frame_num - rtc_ref->buffer_time_index[ref_frame_map_idx];
+      if (dist < min_dist) min_dist = dist;
+    }
+  }
+  return min_dist;
+}
+
+void av1_svc_set_reference_was_previous(AV1_COMP *cpi) {
+  RTC_REF *const rtc_ref = &cpi->ppi->rtc_ref;
+  // Check if the encoded frame had some reference that was the
+  // previous frame.
+  const unsigned int current_frame =
+      cpi->ppi->use_svc ? cpi->svc.current_superframe
+                        : cpi->common.current_frame.frame_number;
+  rtc_ref->reference_was_previous_frame = true;
+  if (current_frame > 0) {
+    rtc_ref->reference_was_previous_frame = false;
+    for (unsigned int i = 0; i < INTER_REFS_PER_FRAME; i++) {
+      if (rtc_ref->reference[i]) {
+        const int ref_frame_map_idx = rtc_ref->ref_idx[i];
+        if (rtc_ref->buffer_time_index[ref_frame_map_idx] == current_frame - 1)
+          rtc_ref->reference_was_previous_frame = true;
+      }
+    }
   }
 }

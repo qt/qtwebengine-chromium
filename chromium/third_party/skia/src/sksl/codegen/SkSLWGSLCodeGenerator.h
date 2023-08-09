@@ -8,6 +8,7 @@
 #ifndef SKSL_WGSLCODEGENERATOR
 #define SKSL_WGSLCODEGENERATOR
 
+#include "include/core/SkSpan.h"
 #include "include/private/SkSLDefines.h"
 #include "include/private/base/SkTArray.h"
 #include "src/core/SkTHash.h"
@@ -19,10 +20,7 @@
 #include <initializer_list>
 #include <string>
 #include <string_view>
-#include <type_traits>
 #include <utility>
-
-template <typename T> class SkSpan;
 
 namespace sknonstd {
 template <typename T> struct is_bitmask_enum;
@@ -36,6 +34,7 @@ class Block;
 class Context;
 class ConstructorCompound;
 class ConstructorDiagonalMatrix;
+class ConstructorMatrixResize;
 class Expression;
 class ExpressionStatement;
 class FieldAccess;
@@ -44,6 +43,7 @@ class FunctionDeclaration;
 class FunctionDefinition;
 class GlobalVarDeclaration;
 class IfStatement;
+class IndexExpression;
 class Literal;
 class MemoryLayout;
 class OutputStream;
@@ -52,15 +52,14 @@ class ProgramElement;
 class ReturnStatement;
 class Statement;
 class StructDefinition;
+class Swizzle;
 class TernaryExpression;
 class VarDeclaration;
 class Variable;
 class VariableReference;
 enum class OperatorPrecedence : uint8_t;
-struct IndexExpression;
 struct Modifiers;
 struct Program;
-struct Swizzle;
 
 /**
  * Convert a Program into WGSL code.
@@ -110,7 +109,7 @@ public:
     };
 
     struct ProgramRequirements {
-        using DepsMap = SkTHashMap<const FunctionDeclaration*, FunctionDependencies>;
+        using DepsMap = skia_private::THashMap<const FunctionDeclaration*, FunctionDependencies>;
 
         ProgramRequirements() = default;
         ProgramRequirements(DepsMap dependencies, bool mainNeedsCoordsArgument)
@@ -200,8 +199,17 @@ private:
     void writeAnyConstructor(const AnyConstructor& c, Precedence parentPrecedence);
     void writeConstructorCompound(const ConstructorCompound& c, Precedence parentPrecedence);
     void writeConstructorCompoundVector(const ConstructorCompound& c, Precedence parentPrecedence);
+    void writeConstructorCompoundMatrix(const ConstructorCompound& c, Precedence parentPrecedence);
     void writeConstructorDiagonalMatrix(const ConstructorDiagonalMatrix& c,
                                         Precedence parentPrecedence);
+    void writeConstructorMatrixResize(const ConstructorMatrixResize& c,
+                                      Precedence parentPrecedence);
+
+    // Matrix constructor helpers.
+    bool isMatrixConstructorHelperNeeded(const ConstructorCompound& c);
+    std::string getMatrixConstructorHelper(const AnyConstructor& c);
+    void writeMatrixFromMatrixArgs(const Type& sourceMatrix, int columns, int rows);
+    void writeMatrixFromScalarAndVectorArgs(const AnyConstructor& ctor, int columns, int rows);
 
     // Synthesized helper functions for comparison operators that are not supported by WGSL.
     void writeMatrixEquality(const Expression& left, const Expression& right);
@@ -246,10 +254,10 @@ private:
     // Generate an out-parameter helper function for the given call and return its name.
     std::string writeOutParamHelper(const FunctionCall&,
                                     const ExpressionArray& args,
-                                    const SkTArray<VariableReference*>& outVars);
+                                    const skia_private::TArray<VariableReference*>& outVars);
 
     // Stores the disallowed identifier names.
-    SkTHashSet<std::string_view> fReservedWords;
+    skia_private::THashSet<std::string_view> fReservedWords;
     ProgramRequirements fRequirements;
     int fPipelineInputCount = 0;
     bool fDeclaredUniformsStruct = false;
@@ -260,7 +268,7 @@ private:
     // dereference them when the variable is referenced. The contents of this set are expected to
     // be uniquely scoped for each out-param helper and will be cleared every time a new out-param
     // helper function has been emitted.
-    SkTHashSet<const Variable*> fOutParamArgVars;
+    skia_private::THashSet<const Variable*> fOutParamArgVars;
 
     // Output processing state.
     int fIndentation = 0;
@@ -268,7 +276,7 @@ private:
 
     int fSwizzleHelperCount = 0;
     StringStream fExtraFunctions;      // all internally synthesized helpers are written here
-    SkTHashSet<std::string> fHelpers;  // all synthesized helper functions, by name
+    skia_private::THashSet<std::string> fHelpers;  // all synthesized helper functions, by name
 };
 
 }  // namespace SkSL

@@ -28,29 +28,12 @@
 TINT_INSTANTIATE_TYPEINFO(tint::sem::Function);
 
 namespace tint::sem {
-namespace {
 
-utils::VectorRef<const Parameter*> SetOwner(utils::VectorRef<Parameter*> parameters,
-                                            const tint::sem::CallTarget* owner) {
-    for (auto* parameter : parameters) {
-        parameter->SetOwner(owner);
-    }
-    return parameters;
-}
-
-}  // namespace
-
-Function::Function(const ast::Function* declaration,
-                   type::Type* return_type,
-                   std::optional<uint32_t> return_location,
-                   utils::VectorRef<Parameter*> parameters)
-    : Base(return_type,
-           SetOwner(std::move(parameters), this),
-           EvaluationStage::kRuntime,
+Function::Function(const ast::Function* declaration)
+    : Base(EvaluationStage::kRuntime,
            ast::HasAttribute<ast::MustUseAttribute>(declaration->attributes)),
       declaration_(declaration),
-      workgroup_size_{1, 1, 1},
-      return_location_(return_location) {}
+      workgroup_size_{1, 1, 1} {}
 
 Function::~Function() = default;
 
@@ -77,8 +60,8 @@ Function::VariableBindings Function::TransitivelyReferencedUniformVariables() co
             continue;
         }
 
-        if (global->Declaration()->HasBindingPoint()) {
-            ret.push_back({global, global->BindingPoint()});
+        if (auto bp = global->BindingPoint()) {
+            ret.push_back({global, *bp});
         }
     }
     return ret;
@@ -92,8 +75,8 @@ Function::VariableBindings Function::TransitivelyReferencedStorageBufferVariable
             continue;
         }
 
-        if (global->Declaration()->HasBindingPoint()) {
-            ret.push_back({global, global->BindingPoint()});
+        if (auto bp = global->BindingPoint()) {
+            ret.push_back({global, *bp});
         }
     }
     return ret;
@@ -131,13 +114,13 @@ Function::VariableBindings Function::TransitivelyReferencedMultisampledTextureVa
 }
 
 Function::VariableBindings Function::TransitivelyReferencedVariablesOfType(
-    const tint::TypeInfo* type) const {
+    const tint::utils::TypeInfo* type) const {
     VariableBindings ret;
     for (auto* global : TransitivelyReferencedGlobals()) {
         auto* unwrapped_type = global->Type()->UnwrapRef();
         if (unwrapped_type->TypeInfo().Is(type)) {
-            if (global->Declaration()->HasBindingPoint()) {
-                ret.push_back({global, global->BindingPoint()});
+            if (auto bp = global->BindingPoint()) {
+                ret.push_back({global, *bp});
             }
         }
     }
@@ -164,8 +147,8 @@ Function::VariableBindings Function::TransitivelyReferencedSamplerVariablesImpl(
             continue;
         }
 
-        if (global->Declaration()->HasBindingPoint()) {
-            ret.push_back({global, global->BindingPoint()});
+        if (auto bp = global->BindingPoint()) {
+            ret.push_back({global, *bp});
         }
     }
     return ret;
@@ -189,8 +172,8 @@ Function::VariableBindings Function::TransitivelyReferencedSampledTextureVariabl
             continue;
         }
 
-        if (global->Declaration()->HasBindingPoint()) {
-            ret.push_back({global, global->BindingPoint()});
+        if (auto bp = global->BindingPoint()) {
+            ret.push_back({global, *bp});
         }
     }
 

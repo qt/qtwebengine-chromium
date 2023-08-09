@@ -23,12 +23,10 @@ namespace {
 
 // Returns the OID for the Audio-Only Cast policy
 // (1.3.6.1.4.1.11129.2.5.2) in DER form.
-const ConstDataSpan& AudioOnlyPolicyOid() {
-  static const uint8_t kAudioOnlyPolicy[] = {0x2B, 0x06, 0x01, 0x04, 0x01,
-                                             0xD6, 0x79, 0x02, 0x05, 0x02};
-  static ConstDataSpan kPolicySpan{kAudioOnlyPolicy, sizeof(kAudioOnlyPolicy)};
-  return kPolicySpan;
-}
+static constexpr uint8_t kAudioOnlyPolicyBytes[] = {
+    0x2B, 0x06, 0x01, 0x04, 0x01, 0xD6, 0x79, 0x02, 0x05, 0x02};
+static constexpr ByteView kAudioOnlyPolicyOid{&kAudioOnlyPolicyBytes[0],
+                                              sizeof(kAudioOnlyPolicyBytes)};
 
 CastDeviceCertPolicy GetAudioPolicy(
     const std::vector<const ParsedCertificate*>& path) {
@@ -51,9 +49,8 @@ CastDeviceCertPolicy GetAudioPolicy(
   // certificates in the chain do, it won't matter as the chain is already
   // restricted to being audio-only.
   CastDeviceCertPolicy policy = CastDeviceCertPolicy::kUnrestricted;
-  const ConstDataSpan& audio_only_policy_oid = AudioOnlyPolicyOid();
   for (size_t i = 0; i < path.size(); ++i) {
-    if (path[i]->HasPolicyOid(audio_only_policy_oid)) {
+    if (path[i]->HasPolicyOid(kAudioOnlyPolicyOid)) {
       policy = CastDeviceCertPolicy::kAudioOnly;
       break;
     }

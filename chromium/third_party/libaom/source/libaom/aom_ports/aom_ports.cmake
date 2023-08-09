@@ -27,6 +27,12 @@ list(APPEND AOM_PORTS_INCLUDES_X86 "${AOM_ROOT}/aom_ports/x86_abi_support.asm")
 list(APPEND AOM_PORTS_SOURCES_ARM "${AOM_ROOT}/aom_ports/arm.h"
             "${AOM_ROOT}/aom_ports/arm_cpudetect.c")
 
+if(CONFIG_RUNTIME_CPU_DETECT AND ANDROID_NDK)
+  include_directories(${ANDROID_NDK}/sources/android/cpufeatures)
+  list(APPEND AOM_PORTS_SOURCES_ARM
+              "${ANDROID_NDK}/sources/android/cpufeatures/cpu-features.c")
+endif()
+
 list(APPEND AOM_PORTS_SOURCES_PPC "${AOM_ROOT}/aom_ports/ppc.h"
             "${AOM_ROOT}/aom_ports/ppc_cpudetect.c")
 

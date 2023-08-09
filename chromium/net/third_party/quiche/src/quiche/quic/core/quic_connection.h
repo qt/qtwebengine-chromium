@@ -34,7 +34,6 @@
 #include "quiche/quic/core/frames/quic_ack_frequency_frame.h"
 #include "quiche/quic/core/frames/quic_max_streams_frame.h"
 #include "quiche/quic/core/frames/quic_new_connection_id_frame.h"
-#include "quiche/quic/core/proto/cached_network_parameters_proto.h"
 #include "quiche/quic/core/quic_alarm.h"
 #include "quiche/quic/core/quic_alarm_factory.h"
 #include "quiche/quic/core/quic_blocked_writer_interface.h"
@@ -45,6 +44,7 @@
 #include "quiche/quic/core/quic_constants.h"
 #include "quiche/quic/core/quic_framer.h"
 #include "quiche/quic/core/quic_idle_network_detector.h"
+#include "quiche/quic/core/quic_lru_cache.h"
 #include "quiche/quic/core/quic_mtu_discovery.h"
 #include "quiche/quic/core/quic_network_blackhole_detector.h"
 #include "quiche/quic/core/quic_one_block_arena.h"
@@ -240,6 +240,10 @@ class QUIC_EXPORT_PRIVATE QuicConnectionVisitorInterface {
   // Returns context needed for the connection to probe on the alternative path.
   virtual std::unique_ptr<QuicPathValidationContext>
   CreateContextForMultiPortPath() = 0;
+
+  // Migrate to the multi-port path which is identified by |context|.
+  virtual void MigrateToMultiPortPath(
+      std::unique_ptr<QuicPathValidationContext> context) = 0;
 
   // Called when the client receives a preferred address from its peer.
   virtual void OnServerPreferredAddressAvailable(
@@ -673,8 +677,8 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   bool OnAckRange(QuicPacketNumber start, QuicPacketNumber end) override;
   bool OnAckTimestamp(QuicPacketNumber packet_number,
                       QuicTime timestamp) override;
-  void OnAckEcnCounts(const quic::QuicEcnCounts& ecn_counts) override;
-  bool OnAckFrameEnd(QuicPacketNumber start) override;
+  bool OnAckFrameEnd(QuicPacketNumber start,
+                     const absl::optional<QuicEcnCounts>& ecn_counts) override;
   bool OnStopWaitingFrame(const QuicStopWaitingFrame& frame) override;
   bool OnPaddingFrame(const QuicPaddingFrame& frame) override;
   bool OnPingFrame(const QuicPingFrame& frame) override;
@@ -1409,6 +1413,13 @@ class QUIC_EXPORT_PRIVATE QuicConnection
     SEND_RANDOM_BYTES  // Send random bytes which is an unprocessable packet.
   };
 
+  enum class MultiPortStatusOnMigration {
+    kNotValidated,
+    kPendingRefreshValidation,
+    kWaitingForRefreshValidation,
+    kMaxValue,
+  };
+
   struct QUIC_EXPORT_PRIVATE PendingPathChallenge {
     QuicPathFrameBuffer received_path_challenge;
     QuicSocketAddress peer_address;
@@ -1922,6 +1933,10 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   // Return true if framer should continue processing the packet.
   bool OnPathChallengeFrameInternal(const QuicPathChallengeFrame& frame);
 
+  // Check the state of the multi-port alternative path and initiate path
+  // migration.
+  void MaybeMigrateToMultiPortPath();
+
   std::unique_ptr<QuicSelfIssuedConnectionIdManager>
   MakeSelfIssuedConnectionIdManager();
 
@@ -1944,6 +1959,22 @@ class QUIC_EXPORT_PRIVATE QuicConnection
 
   // Returns true if |address| is known server address.
   bool IsKnownServerAddress(const QuicSocketAddress& address) const;
+
+  // Retrieves the ECN codepoint to be sent on the next packet.
+  QuicEcnCodepoint GetNextEcnCodepoint() const {
+    return (per_packet_options_ != nullptr) ? per_packet_options_->ecn_codepoint
+                                            : ECN_NOT_ECT;
+  }
+
+  // Sets the ECN codepoint to Not-ECT.
+  void ClearEcnCodepoint();
+
+  // Writes the packet to the writer and clears the ECN codepoint in |options|
+  // if it is invalid.
+  WriteResult SendPacketToWriter(const char* buffer, size_t buf_len,
+                                 const QuicIpAddress& self_address,
+                                 const QuicSocketAddress& peer_address,
+                                 PerPacketOptions* options);
 
   QuicConnectionContext context_;
 
@@ -2337,10 +2368,18 @@ class QUIC_EXPORT_PRIVATE QuicConnection
 
   ConnectionIdGeneratorInterface& connection_id_generator_;
 
-  // Most recent ECN codepoint counts received in ACK_ECN frames sent from the
-  // peer. For now, this is only stored for tests.
-  QuicEcnCounts
-      peer_ack_ecn_counts_[PacketNumberSpace::NUM_PACKET_NUMBER_SPACES];
+  // This LRU cache records source addresses of packets received on server's
+  // original address.
+  QuicLRUCache<QuicSocketAddress, bool, QuicSocketAddressHash>
+      received_client_addresses_cache_;
+
+  // Endpoints should never mark packets with Congestion Experienced (CE), as
+  // this is only done by routers. Endpoints cannot send ECT(0) or ECT(1) if
+  // their congestion control cannot respond to these signals in accordance with
+  // the spec, or if the QUIC implementation doesn't validate ECN feedback. When
+  // true, the connection will not verify that the requested codepoint adheres
+  // to these policies. This is only accessible through QuicConnectionPeer.
+  bool disable_ecn_codepoint_validation_ = false;
 };
 
 }  // namespace quic

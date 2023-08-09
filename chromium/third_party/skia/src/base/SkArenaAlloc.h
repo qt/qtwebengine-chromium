@@ -192,14 +192,18 @@ public:
         return objStart;
     }
 
-private:
-    static void AssertRelease(bool cond) { if (!cond) { ::abort(); } }
-
+protected:
     using FooterAction = char* (char*);
     struct Footer {
         uint8_t unaligned_action[sizeof(FooterAction*)];
         uint8_t padding;
     };
+
+    char* cursor() { return fCursor; }
+    char* end() { return fEnd; }
+
+private:
+    static void AssertRelease(bool cond) { if (!cond) { ::abort(); } }
 
     static char* SkipPod(char* footerEnd);
     static void RunDtorsOnBlock(char* footerEnd);
@@ -297,6 +301,9 @@ public:
     // Destroy all allocated objects, free any heap allocations.
     void reset();
 
+    // Returns true if the alloc has never made any objects.
+    bool isEmpty();
+
 private:
     char* const    fFirstBlock;
     const uint32_t fFirstSize;
@@ -313,6 +320,11 @@ class SkSTArenaAlloc : private std::array<char, InlineStorageSize>, public SkAre
 public:
     explicit SkSTArenaAlloc(size_t firstHeapAllocation = InlineStorageSize)
         : SkArenaAlloc{this->data(), this->size(), firstHeapAllocation} {}
+
+    ~SkSTArenaAlloc() {
+        // Be sure to unpoison the memory that is probably on the stack.
+        sk_asan_unpoison_memory_region(this->data(), this->size());
+    }
 };
 
 template <size_t InlineStorageSize>
@@ -321,6 +333,11 @@ class SkSTArenaAllocWithReset
 public:
     explicit SkSTArenaAllocWithReset(size_t firstHeapAllocation = InlineStorageSize)
             : SkArenaAllocWithReset{this->data(), this->size(), firstHeapAllocation} {}
+
+    ~SkSTArenaAllocWithReset() {
+        // Be sure to unpoison the memory that is probably on the stack.
+        sk_asan_unpoison_memory_region(this->data(), this->size());
+    }
 };
 
 #endif  // SkArenaAlloc_DEFINED

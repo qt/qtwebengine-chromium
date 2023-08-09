@@ -294,6 +294,7 @@ static uint32_t motion_estimation(AV1_COMP *cpi, MACROBLOCK *x,
   ms_params.var_params.subpel_search_type = USE_2_TAPS;
   ms_params.mv_cost_params.mv_cost_type = MV_COST_NONE;
   MV subpel_start_mv = get_mv_from_fullmv(&best_mv->as_fullmv);
+  assert(av1_is_subpelmv_in_range(&ms_params.mv_limits, subpel_start_mv));
   bestsme = cpi->mv_search_params.find_fractional_mv_step(
       xd, cm, &ms_params, subpel_start_mv, &best_mv->as_mv, &distortion, &sse,
       NULL);
@@ -854,7 +855,8 @@ static AOM_INLINE void mode_estimation(AV1_COMP *cpi,
     int_mv tmp_mv[2] = { single_mv[rf_idx0], single_mv[rf_idx1] };
     int rate_mv;
     av1_joint_motion_search(cpi, x, bsize, tmp_mv, NULL, 0, &rate_mv,
-                            !cpi->sf.mv_sf.disable_second_mv);
+                            !cpi->sf.mv_sf.disable_second_mv,
+                            NUM_JOINT_ME_REFINE_ITER);
 
     for (int ref = 0; ref < 2; ++ref) {
       struct buf_2d ref_buf = { NULL, ref_frame_ptr[ref]->y_buffer,
@@ -2061,6 +2063,7 @@ double av1_tpl_get_frame_importance(const TplParams *tpl_data,
           RDCOST(tpl_frame->base_rdmult, this_stats->mc_dep_rate,
                  this_stats->mc_dep_dist);
       double dist_scaled = (double)(this_stats->recrf_dist << RDDIV_BITS);
+      dist_scaled = AOMMAX(dist_scaled, 1);
       intra_cost_base += log(dist_scaled) * cbcmp;
       mc_dep_cost_base += log(dist_scaled + mc_dep_delta) * cbcmp;
       cbcmp_base += cbcmp;

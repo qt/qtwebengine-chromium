@@ -97,8 +97,13 @@ void CastSocketMessagePort::OnMessage(VirtualConnectionRouter* router,
     return;
   }
 
+  if (message.payload_type() != ::cast::channel::CastMessage::STRING) {
+    OSP_DLOG_WARN << __func__ << ": received an unsupported binary message.";
+    return;
+  }
+
   client_->OnMessage(message.source_id(), message.namespace_(),
-                     message.payload_utf8());
+                     GetPayload(message));
 }
 
 }  // namespace cast

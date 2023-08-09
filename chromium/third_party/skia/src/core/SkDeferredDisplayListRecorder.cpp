@@ -12,7 +12,7 @@
 #include "include/core/SkSurfaceCharacterization.h"
 #include "src/core/SkMessageBus.h"
 
-#if !SK_SUPPORT_GPU
+#if !defined(SK_GANESH)
 SkDeferredDisplayListRecorder::SkDeferredDisplayListRecorder(const SkSurfaceCharacterization&) {}
 
 SkDeferredDisplayListRecorder::~SkDeferredDisplayListRecorder() {}
@@ -28,6 +28,7 @@ sk_sp<SkDeferredDisplayList> SkDeferredDisplayListRecorder::detach() { return nu
 #include "include/core/SkPromiseImageTexture.h"
 #include "include/gpu/GrRecordingContext.h"
 #include "include/gpu/GrYUVABackendTextures.h"
+#include "include/gpu/ganesh/SkImageGanesh.h"
 #include "src/gpu/SkBackingFit.h"
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrProxyProvider.h"
@@ -35,9 +36,9 @@ sk_sp<SkDeferredDisplayList> SkDeferredDisplayListRecorder::detach() { return nu
 #include "src/gpu/ganesh/GrRenderTargetProxy.h"
 #include "src/gpu/ganesh/GrTexture.h"
 #include "src/gpu/ganesh/SkGr.h"
-#include "src/image/SkImage_Gpu.h"
-#include "src/image/SkImage_GpuYUVA.h"
-#include "src/image/SkSurface_Gpu.h"
+#include "src/gpu/ganesh/image/SkImage_Ganesh.h"
+#include "src/gpu/ganesh/image/SkImage_GaneshYUVA.h"
+#include "src/gpu/ganesh/surface/SkSurface_Ganesh.h"
 
 SkDeferredDisplayListRecorder::SkDeferredDisplayListRecorder(const SkSurfaceCharacterization& c)
         : fCharacterization(c) {
@@ -166,12 +167,12 @@ bool SkDeferredDisplayListRecorder::init() {
                                                 fCharacterization.refColorSpace(),
                                                 fCharacterization.origin(),
                                                 fCharacterization.surfaceProps(),
-                                                skgpu::v1::Device::InitContents::kUninit);
+                                                skgpu::ganesh::Device::InitContents::kUninit);
     if (!device) {
         return false;
     }
 
-    fSurface = sk_make_sp<SkSurface_Gpu>(std::move(device));
+    fSurface = sk_make_sp<SkSurface_Ganesh>(std::move(device));
     return SkToBool(fSurface.get());
 }
 
@@ -226,17 +227,17 @@ sk_sp<SkImage> SkDeferredDisplayListRecorder::makePromiseTexture(
     if (!fContext) {
         return nullptr;
     }
-    return SkImage::MakePromiseTexture(fContext->threadSafeProxy(),
-                                       backendFormat,
-                                       {width, height},
-                                       mipmapped,
-                                       origin,
-                                       colorType,
-                                       alphaType,
-                                       std::move(colorSpace),
-                                       textureFulfillProc,
-                                       textureReleaseProc,
-                                       textureContext);
+    return SkImages::PromiseTextureFrom(fContext->threadSafeProxy(),
+                                        backendFormat,
+                                        {width, height},
+                                        mipmapped,
+                                        origin,
+                                        colorType,
+                                        alphaType,
+                                        std::move(colorSpace),
+                                        textureFulfillProc,
+                                        textureReleaseProc,
+                                        textureContext);
 }
 
 sk_sp<SkImage> SkDeferredDisplayListRecorder::makeYUVAPromiseTexture(
@@ -248,12 +249,12 @@ sk_sp<SkImage> SkDeferredDisplayListRecorder::makeYUVAPromiseTexture(
     if (!fContext) {
         return nullptr;
     }
-    return SkImage::MakePromiseYUVATexture(fContext->threadSafeProxy(),
-                                           backendTextureInfo,
-                                           std::move(imageColorSpace),
-                                           textureFulfillProc,
-                                           textureReleaseProc,
-                                           textureContexts);
+    return SkImages::PromiseTextureFromYUVA(fContext->threadSafeProxy(),
+                                            backendTextureInfo,
+                                            std::move(imageColorSpace),
+                                            textureFulfillProc,
+                                            textureReleaseProc,
+                                            textureContexts);
 }
 #endif // !SK_MAKE_PROMISE_TEXTURE_DISABLE_LEGACY_API
 

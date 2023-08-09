@@ -30,9 +30,6 @@ class GrBackendSemaphore;
 struct GrContextOptions;
 class GrDirectContext;
 class GrGLContext;
-class GrPath;
-class GrPathRenderer;
-class GrPathRendererChain;
 class GrPipeline;
 class GrGeometryProcessor;
 class GrRenderTarget;
@@ -45,6 +42,7 @@ class GrTexture;
 class GrThreadSafePipelineBuilder;
 struct GrVkDrawableInfo;
 class SkJSONWriter;
+enum class SkTextureCompressionType;
 
 namespace SkSL {
     class Compiler;
@@ -382,15 +380,16 @@ public:
     // If a 'stencil' is provided it will be the one bound to 'renderTarget'. If one is not
     // provided but 'renderTarget' has a stencil buffer then that is a signal that the
     // render target's stencil buffer should be ignored.
-    GrOpsRenderPass* getOpsRenderPass(GrRenderTarget* renderTarget,
-                                      bool useMSAASurface,
-                                      GrAttachment* stencil,
-                                      GrSurfaceOrigin,
-                                      const SkIRect& bounds,
-                                      const GrOpsRenderPass::LoadAndStoreInfo&,
-                                      const GrOpsRenderPass::StencilLoadAndStoreInfo&,
-                                      const SkTArray<GrSurfaceProxy*, true>& sampledProxies,
-                                      GrXferBarrierFlags renderPassXferBarriers);
+    GrOpsRenderPass* getOpsRenderPass(
+            GrRenderTarget* renderTarget,
+            bool useMSAASurface,
+            GrAttachment* stencil,
+            GrSurfaceOrigin,
+            const SkIRect& bounds,
+            const GrOpsRenderPass::LoadAndStoreInfo&,
+            const GrOpsRenderPass::StencilLoadAndStoreInfo&,
+            const skia_private::TArray<GrSurfaceProxy*, true>& sampledProxies,
+            GrXferBarrierFlags renderPassXferBarriers);
 
     // Called by GrDrawingManager when flushing.
     // Provides a hook for post-flush actions (e.g. Vulkan command buffer submits). This will also
@@ -502,7 +501,8 @@ public:
 
 #if GR_TEST_UTILS
         void dump(SkString*);
-        void dumpKeyValuePairs(SkTArray<SkString>* keys, SkTArray<double>* values);
+        void dumpKeyValuePairs(
+                skia_private::TArray<SkString>* keys, skia_private::TArray<double>* values);
 #endif
     private:
         int fTextureCreates = 0;
@@ -524,7 +524,7 @@ public:
 
 #if GR_TEST_UTILS
         void dump(SkString*) {}
-        void dumpKeyValuePairs(SkTArray<SkString>*, SkTArray<double>*) {}
+        void dumpKeyValuePairs(skia_private::TArray<SkString>*, skia_private::TArray<double>*) {}
 #endif
         void incTextureCreates() {}
         void incTextureUploads() {}
@@ -680,7 +680,7 @@ public:
 
 protected:
     static bool CompressedDataIsCorrect(SkISize dimensions,
-                                        SkImage::CompressionType,
+                                        SkTextureCompressionType,
                                         GrMipmapped,
                                         const void* data,
                                         size_t length);
@@ -826,7 +826,7 @@ private:
             const SkIRect& bounds,
             const GrOpsRenderPass::LoadAndStoreInfo&,
             const GrOpsRenderPass::StencilLoadAndStoreInfo&,
-            const SkTArray<GrSurfaceProxy*, true>& sampledProxies,
+            const skia_private::TArray<GrSurfaceProxy*, true>& sampledProxies,
             GrXferBarrierFlags renderPassXferBarriers) = 0;
 
     virtual void prepareSurfacesForBackendAccessAndStateUpdates(
@@ -877,7 +877,7 @@ private:
         GrGpuSubmittedProc fProc;
         GrGpuSubmittedContext fContext;
     };
-    SkSTArray<4, SubmittedProc> fSubmittedProcs;
+    skia_private::STArray<4, SubmittedProc> fSubmittedProcs;
 
     bool fOOMed = false;
 
@@ -885,7 +885,6 @@ private:
     int fCurrentSubmitRenderPassCount = 0;
 #endif
 
-    friend class GrPathRendering;
     using INHERITED = SkRefCnt;
 };
 

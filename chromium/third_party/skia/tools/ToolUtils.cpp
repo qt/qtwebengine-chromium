@@ -24,6 +24,7 @@
 #include "include/core/SkShader.h"
 #include "include/core/SkSurface.h"
 #include "include/core/SkTextBlob.h"
+#include "include/encode/SkPngEncoder.h"
 #include "include/private/SkColorData.h"
 #include "include/private/base/SkFloatingPoint.h"
 #include "src/core/SkFontPriv.h"
@@ -31,7 +32,7 @@
 #include <cmath>
 #include <cstring>
 
-#ifdef SK_GRAPHITE_ENABLED
+#if defined(SK_GRAPHITE)
 #include "include/gpu/graphite/ImageProvider.h"
 #include <unordered_map>
 #endif
@@ -42,9 +43,10 @@
 #include "src/xml/SkDOM.h"
 #endif
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
 #include "include/gpu/GrDirectContext.h"
 #include "include/gpu/GrRecordingContext.h"
+#include "include/gpu/ganesh/SkImageGanesh.h"
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
 #endif
@@ -566,7 +568,7 @@ void sniff_paths(const char filepath[], std::function<PathSniffCallback> callbac
     }
 }
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
 sk_sp<SkImage> MakeTextureImage(SkCanvas* canvas, sk_sp<SkImage> orig) {
     if (!orig) {
         return nullptr;
@@ -583,9 +585,9 @@ sk_sp<SkImage> MakeTextureImage(SkCanvas* canvas, sk_sp<SkImage> orig) {
             return orig;
         }
 
-        return orig->makeTextureImage(dContext);
+        return SkImages::TextureFromImage(dContext, orig);
     }
-#if defined(SK_GRAPHITE_ENABLED)
+#if defined(SK_GRAPHITE)
     else if (canvas->recorder()) {
         return orig->makeTextureImage(canvas->recorder());
     }
@@ -678,7 +680,7 @@ SkSpan<const SkFontArguments::VariationPosition::Coordinate> VariationSliders::g
                                                                         fAxisSliders.size()};
 }
 
-#ifdef SK_GRAPHITE_ENABLED
+#if defined(SK_GRAPHITE)
 
 // Currently, we give each new Recorder its own ImageProvider. This means we don't have to deal
 // w/ any threading issues.
@@ -735,6 +737,16 @@ skgpu::graphite::RecorderOptions CreateTestingRecorderOptions() {
     return options;
 }
 
-#endif // SK_GRAPHITE_ENABLED
+#endif // SK_GRAPHITE
+
+bool EncodeImageToPngFile(const char* path, const SkBitmap& src) {
+    SkFILEWStream file(path);
+    return file.isValid() && SkPngEncoder::Encode(&file, src.pixmap(), {});
+}
+
+bool EncodeImageToPngFile(const char* path, const SkPixmap& src) {
+    SkFILEWStream file(path);
+    return file.isValid() && SkPngEncoder::Encode(&file, src, {});
+}
 
 }  // namespace ToolUtils

@@ -161,21 +161,21 @@ export class CookieIssue extends Issue {
     return [Protocol.Audits.InspectorIssueCode.CookieIssue, reason, operation].join('::');
   }
 
-  cookies(): Iterable<Protocol.Audits.AffectedCookie> {
+  override cookies(): Iterable<Protocol.Audits.AffectedCookie> {
     if (this.#issueDetails.cookie) {
       return [this.#issueDetails.cookie];
     }
     return [];
   }
 
-  rawCookieLines(): Iterable<string> {
+  override rawCookieLines(): Iterable<string> {
     if (this.#issueDetails.rawCookieLine) {
       return [this.#issueDetails.rawCookieLine];
     }
     return [];
   }
 
-  requests(): Iterable<Protocol.Audits.AffectedRequest> {
+  override requests(): Iterable<Protocol.Audits.AffectedRequest> {
     if (this.#issueDetails.request) {
       return [this.#issueDetails.request];
     }
@@ -194,9 +194,9 @@ export class CookieIssue extends Issue {
     return resolveLazyDescription(description);
   }
 
-  isCausedByThirdParty(): boolean {
-    const topFrame = SDK.FrameManager.FrameManager.instance().getTopFrame();
-    return isCausedByThirdParty(topFrame, this.#issueDetails.cookieUrl);
+  override isCausedByThirdParty(): boolean {
+    const outermostFrame = SDK.FrameManager.FrameManager.instance().getOutermostFrame();
+    return isCausedByThirdParty(outermostFrame, this.#issueDetails.cookieUrl);
   }
 
   getKind(): IssueKind {
@@ -222,17 +222,17 @@ export class CookieIssue extends Issue {
  * Exported for unit test.
  */
 export function isCausedByThirdParty(
-    topFrame: SDK.ResourceTreeModel.ResourceTreeFrame|null, cookieUrl?: string): boolean {
-  if (!topFrame) {
-    // The top frame is not yet available. Consider this issue as a third-party issue
-    // until the top frame is available. This will prevent the issue from being visible
+    outermostFrame: SDK.ResourceTreeModel.ResourceTreeFrame|null, cookieUrl?: string): boolean {
+  if (!outermostFrame) {
+    // The outermost frame is not yet available. Consider this issue as a third-party issue
+    // until the outermost frame is available. This will prevent the issue from being visible
     // for only just a split second.
     return true;
   }
 
   // In the case of no domain and registry, we assume its an IP address or localhost
   // during development, in this case we classify the issue as first-party.
-  if (!cookieUrl || topFrame.domainAndRegistry() === '') {
+  if (!cookieUrl || outermostFrame.domainAndRegistry() === '') {
     return false;
   }
 
@@ -241,7 +241,7 @@ export function isCausedByThirdParty(
     return false;
   }
 
-  // For both operation types we compare the cookieUrl's domain  with the top frames
+  // For both operation types we compare the cookieUrl's domain  with the outermost frames
   // registered domain to determine first-party vs third-party. If they don't match
   // then we consider this issue a third-party issue.
   //
@@ -253,7 +253,7 @@ export function isCausedByThirdParty(
   //     third-party at some point, so we treat this as a third-party issue.
   //
   // TODO(crbug.com/1080589): Use "First-Party sets" instead of the sites registered domain.
-  return !isSubdomainOf(parsedCookieUrl.domain(), topFrame.domainAndRegistry());
+  return !isSubdomainOf(parsedCookieUrl.domain(), outermostFrame.domainAndRegistry());
 }
 
 function isSubdomainOf(subdomain: string, superdomain: string): boolean {
@@ -445,6 +445,11 @@ const excludeDomainNonAscii: LazyMarkdownIssueDescription = {
   links: [],
 };
 
+const excludeBlockedWithinFirstPartySet: LazyMarkdownIssueDescription = {
+  file: 'cookieExcludeBlockedWithinFirstPartySet.md',
+  links: [],
+};
+
 const issueDescriptions: Map<string, LazyMarkdownIssueDescription> = new Map([
   ['CookieIssue::ExcludeSameSiteUnspecifiedTreatedAsLax::ReadCookie', sameSiteUnspecifiedErrorRead],
   ['CookieIssue::ExcludeSameSiteUnspecifiedTreatedAsLax::SetCookie', sameSiteUnspecifiedErrorSet],
@@ -480,4 +485,12 @@ const issueDescriptions: Map<string, LazyMarkdownIssueDescription> = new Map([
   ['CookieIssue::WarnDomainNonASCII::SetCookie', warnDomainNonAscii],
   ['CookieIssue::ExcludeDomainNonASCII::ReadCookie', excludeDomainNonAscii],
   ['CookieIssue::ExcludeDomainNonASCII::SetCookie', excludeDomainNonAscii],
+  [
+    'CookieIssue::ExcludeThirdPartyCookieBlockedInFirstPartySet::ReadCookie',
+    excludeBlockedWithinFirstPartySet,
+  ],
+  [
+    'CookieIssue::ExcludeThirdPartyCookieBlockedInFirstPartySet::SetCookie',
+    excludeBlockedWithinFirstPartySet,
+  ],
 ]);

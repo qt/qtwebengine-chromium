@@ -23,6 +23,7 @@ import {
   i32,
   i8,
   serializeValue,
+  toMatrix,
   u16,
   u32,
   u8,
@@ -30,11 +31,7 @@ import {
   vec3,
   vec4,
 } from '../webgpu/util/conversion.js';
-import {
-  deserializeF32Interval,
-  serializeF32Interval,
-  toF32Interval,
-} from '../webgpu/util/f32_interval.js';
+import { deserializeFPInterval, FP, serializeFPInterval } from '../webgpu/util/floating_point.js';
 
 import { UnitTest } from './unit_test.js';
 
@@ -135,6 +132,79 @@ g.test('value').fn(t => {
     vec2(f32(1), f32(2)),
     vec3(u32(1), u32(2), u32(3)),
     vec4(bool(false), bool(true), bool(false), bool(true)),
+
+    toMatrix(
+      [
+        [0.0, 1.0],
+        [2.0, 3.0],
+      ],
+      f32
+    ),
+    toMatrix(
+      [
+        [0.0, 1.0, 2.0],
+        [3.0, 4.0, 5.0],
+      ],
+      f32
+    ),
+    toMatrix(
+      [
+        [0.0, 1.0, 2.0, 3.0],
+        [4.0, 5.0, 6.0, 7.0],
+      ],
+      f32
+    ),
+    toMatrix(
+      [
+        [0.0, 1.0],
+        [2.0, 3.0],
+        [4.0, 5.0],
+      ],
+      f32
+    ),
+    toMatrix(
+      [
+        [0.0, 1.0, 2.0],
+        [3.0, 4.0, 5.0],
+        [6.0, 7.0, 8.0],
+      ],
+      f32
+    ),
+    toMatrix(
+      [
+        [0.0, 1.0, 2.0, 3.0],
+        [4.0, 5.0, 6.0, 7.0],
+        [8.0, 9.0, 10.0, 11.0],
+      ],
+      f32
+    ),
+    toMatrix(
+      [
+        [0.0, 1.0],
+        [2.0, 3.0],
+        [4.0, 5.0],
+        [6.0, 7.0],
+      ],
+      f32
+    ),
+    toMatrix(
+      [
+        [0.0, 1.0, 2.0],
+        [3.0, 4.0, 5.0],
+        [6.0, 7.0, 8.0],
+        [9.0, 10.0, 11.0],
+      ],
+      f32
+    ),
+    toMatrix(
+      [
+        [0.0, 1.0, 2.0, 3.0],
+        [4.0, 5.0, 6.0, 7.0],
+        [8.0, 9.0, 10.0, 11.0],
+        [12.0, 13.0, 14.0, 15.0],
+      ],
+      f32
+    ),
   ]) {
     const serialized = serializeValue(value);
     const deserialized = deserializeValue(serialized);
@@ -147,31 +217,31 @@ g.test('value').fn(t => {
 
 g.test('f32_interval').fn(t => {
   for (const interval of [
-    toF32Interval(0),
-    toF32Interval(-0),
-    toF32Interval(1),
-    toF32Interval(-1),
-    toF32Interval(0.5),
-    toF32Interval(-0.5),
-    toF32Interval(kValue.f32.positive.max),
-    toF32Interval(kValue.f32.positive.min),
-    toF32Interval(kValue.f32.subnormal.positive.max),
-    toF32Interval(kValue.f32.subnormal.positive.min),
-    toF32Interval(kValue.f32.subnormal.negative.max),
-    toF32Interval(kValue.f32.subnormal.negative.min),
-    toF32Interval(kValue.f32.infinity.positive),
-    toF32Interval(kValue.f32.infinity.negative),
+    FP.f32.toInterval(0),
+    FP.f32.toInterval(-0),
+    FP.f32.toInterval(1),
+    FP.f32.toInterval(-1),
+    FP.f32.toInterval(0.5),
+    FP.f32.toInterval(-0.5),
+    FP.f32.toInterval(kValue.f32.positive.max),
+    FP.f32.toInterval(kValue.f32.positive.min),
+    FP.f32.toInterval(kValue.f32.subnormal.positive.max),
+    FP.f32.toInterval(kValue.f32.subnormal.positive.min),
+    FP.f32.toInterval(kValue.f32.subnormal.negative.max),
+    FP.f32.toInterval(kValue.f32.subnormal.negative.min),
+    FP.f32.toInterval(kValue.f32.infinity.positive),
+    FP.f32.toInterval(kValue.f32.infinity.negative),
 
-    toF32Interval([-0, 0]),
-    toF32Interval([-1, 1]),
-    toF32Interval([-0.5, 0.5]),
-    toF32Interval([kValue.f32.positive.min, kValue.f32.positive.max]),
-    toF32Interval([kValue.f32.subnormal.positive.min, kValue.f32.subnormal.positive.max]),
-    toF32Interval([kValue.f32.subnormal.negative.min, kValue.f32.subnormal.negative.max]),
-    toF32Interval([kValue.f32.infinity.negative, kValue.f32.infinity.positive]),
+    FP.f32.toInterval([-0, 0]),
+    FP.f32.toInterval([-1, 1]),
+    FP.f32.toInterval([-0.5, 0.5]),
+    FP.f32.toInterval([kValue.f32.positive.min, kValue.f32.positive.max]),
+    FP.f32.toInterval([kValue.f32.subnormal.positive.min, kValue.f32.subnormal.positive.max]),
+    FP.f32.toInterval([kValue.f32.subnormal.negative.min, kValue.f32.subnormal.negative.max]),
+    FP.f32.toInterval([kValue.f32.infinity.negative, kValue.f32.infinity.positive]),
   ]) {
-    const serialized = serializeF32Interval(interval);
-    const deserialized = deserializeF32Interval(serialized);
+    const serialized = serializeFPInterval(interval);
+    const deserialized = deserializeFPInterval(serialized);
     t.expect(
       objectEquals(interval, deserialized),
       `interval ${interval} -> serialize -> deserialize -> ${deserialized}`
@@ -185,10 +255,10 @@ g.test('expression_expectation').fn(t => {
     f32(123),
     vec2(f32(1), f32(2)),
     // Interval
-    toF32Interval([-0.5, 0.5]),
-    toF32Interval([kValue.f32.positive.min, kValue.f32.positive.max]),
+    FP.f32.toInterval([-0.5, 0.5]),
+    FP.f32.toInterval([kValue.f32.positive.min, kValue.f32.positive.max]),
     // Intervals
-    [toF32Interval([-8.0, 0.5]), toF32Interval([2.0, 4.0])],
+    [FP.f32.toInterval([-8.0, 0.5]), FP.f32.toInterval([2.0, 4.0])],
   ]) {
     const serialized = serializeExpectation(expectation);
     const deserialized = deserializeExpectation(serialized);

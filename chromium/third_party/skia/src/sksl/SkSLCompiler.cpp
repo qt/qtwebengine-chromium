@@ -8,13 +8,7 @@
 #include "src/sksl/SkSLCompiler.h"
 
 #include "include/private/SkSLDefines.h"
-#include "include/private/SkSLIRNode.h"
-#include "include/private/SkSLProgramKind.h"
-#include "include/private/SkSLSymbol.h"
 #include "include/private/base/SkDebug.h"
-#include "include/sksl/DSLCore.h"
-#include "include/sksl/DSLModifiers.h"
-#include "include/sksl/DSLType.h"
 #include "src/core/SkTraceEvent.h"
 #include "src/sksl/SkSLAnalysis.h"
 #include "src/sksl/SkSLContext.h"
@@ -22,15 +16,21 @@
 #include "src/sksl/SkSLModuleLoader.h"
 #include "src/sksl/SkSLOutputStream.h"
 #include "src/sksl/SkSLParser.h"
+#include "src/sksl/SkSLProgramKind.h"
 #include "src/sksl/SkSLProgramSettings.h"
 #include "src/sksl/SkSLStringStream.h"
 #include "src/sksl/analysis/SkSLProgramUsage.h"
+#include "src/sksl/dsl/DSLCore.h"
+#include "src/sksl/dsl/DSLModifiers.h"
+#include "src/sksl/dsl/DSLType.h"
 #include "src/sksl/ir/SkSLExpression.h"
 #include "src/sksl/ir/SkSLField.h"
 #include "src/sksl/ir/SkSLFieldAccess.h"
 #include "src/sksl/ir/SkSLFunctionDeclaration.h"
 #include "src/sksl/ir/SkSLFunctionReference.h"
+#include "src/sksl/ir/SkSLIRNode.h"
 #include "src/sksl/ir/SkSLProgram.h"
+#include "src/sksl/ir/SkSLSymbol.h"
 #include "src/sksl/ir/SkSLSymbolTable.h"  // IWYU pragma: keep
 #include "src/sksl/ir/SkSLTypeReference.h"
 #include "src/sksl/ir/SkSLVariable.h"
@@ -46,7 +46,7 @@
 #include <fstream>
 #endif
 
-#if defined(SKSL_STANDALONE) || SK_SUPPORT_GPU || defined(SK_GRAPHITE_ENABLED)
+#if defined(SKSL_STANDALONE) || defined(SK_GANESH) || defined(SK_GRAPHITE)
 #include "src/sksl/codegen/SkSLGLSLCodeGenerator.h"
 #include "src/sksl/codegen/SkSLMetalCodeGenerator.h"
 #include "src/sksl/codegen/SkSLSPIRVCodeGenerator.h"
@@ -159,8 +159,7 @@ const Module* Compiler::moduleForProgramKind(ProgramKind kind) {
         case ProgramKind::kPrivateRuntimeColorFilter:
         case ProgramKind::kPrivateRuntimeBlender:
         case ProgramKind::kMeshVertex:
-        case ProgramKind::kMeshFragment:
-        case ProgramKind::kGeneric:               return m.loadPublicModule(this);
+        case ProgramKind::kMeshFragment:          return m.loadPublicModule(this);
     }
     SkUNREACHABLE;
 }
@@ -195,12 +194,6 @@ void Compiler::FinalizeSettings(ProgramSettings* settings, ProgramKind kind) {
     settings->fInlineThreshold *= (int)settings->fOptimize;
     settings->fRemoveDeadFunctions &= settings->fOptimize;
     settings->fRemoveDeadVariables &= settings->fOptimize;
-
-    if (kind == ProgramKind::kGeneric) {
-        // For "generic" interpreter programs, leave all functions intact. (The SkVM API supports
-        // calling any function, not just 'main').
-        settings->fRemoveDeadFunctions = false;
-    }
 
     // Runtime effects always allow narrowing conversions.
     if (ProgramConfig::IsRuntimeEffect(kind)) {
@@ -459,7 +452,7 @@ bool Compiler::finalize(Program& program) {
     return this->errorCount() == 0;
 }
 
-#if defined(SKSL_STANDALONE) || SK_SUPPORT_GPU || defined(SK_GRAPHITE_ENABLED)
+#if defined(SKSL_STANDALONE) || defined(SK_GANESH) || defined(SK_GRAPHITE)
 
 #if defined(SK_ENABLE_SPIRV_VALIDATION)
 static bool validate_spirv(ErrorReporter& reporter, std::string_view program) {
@@ -629,7 +622,7 @@ bool Compiler::toWGSL(Program& program, OutputStream& out) {
     return result;
 }
 
-#endif // defined(SKSL_STANDALONE) || SK_SUPPORT_GPU || defined(SK_GRAPHITE_ENABLED)
+#endif // defined(SKSL_STANDALONE) || defined(SK_GANESH) || defined(SK_GRAPHITE)
 
 void Compiler::handleError(std::string_view msg, Position pos) {
     fErrorText += "error: ";

@@ -5,16 +5,19 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import datetime as dt
+from enum import Enum
 import itertools
 import json
 import logging
 import pathlib
+import re
 import sys
 import tempfile
 import textwrap
 import traceback
-from typing import (TYPE_CHECKING, Any, Dict, Iterable, List, Optional,
+from typing import (TYPE_CHECKING, Any, Dict, Final, Iterable, List, Optional,
                     Sequence, TextIO, Tuple, Type, Union)
 
 import hjson
@@ -22,11 +25,12 @@ from tabulate import tabulate
 
 import crossbench.benchmarks.all as benchmarks
 from crossbench import helper
-from crossbench.benchmarks.base import Benchmark
-from crossbench.browsers import all as browsers
-from crossbench.browsers.base import convert_flags_to_label
+from crossbench.benchmarks.benchmark import Benchmark
+import crossbench.browsers.all as browsers
+from crossbench.browsers.browser import convert_flags_to_label
 from crossbench.browsers.chrome import ChromeDownloader
-from crossbench.cli_helper import existing_file_type, positive_float_type
+from crossbench.browsers.viewport import Viewport
+from crossbench.cli_helper import parse_file_path, parse_positive_float
 from crossbench.env import (HostEnvironment, HostEnvironmentConfig,
                             ValidationMode)
 from crossbench.exception import ExceptionAnnotator
@@ -35,9 +39,57 @@ from crossbench.probes.all import GENERAL_PURPOSE_PROBES
 from crossbench.runner import Runner, Timing
 
 if TYPE_CHECKING:
-  from crossbench.browsers.base import Browser
-  from crossbench.probes.base import Probe
+  from crossbench.browsers.browser import Browser
+  from crossbench.probes.probe import Probe
   BrowserLookupTableT = Dict[str, Tuple[Type[browsers.Browser], pathlib.Path]]
+
+
+class CrossBenchArgumentError(argparse.ArgumentError):
+  """Custom class that also prints the argument.help if available.
+  """
+
+  def __init__(self, argument: Any, message: str) -> None:
+    self.help: str = ""
+    super().__init__(argument, message)
+    if self.argument_name:
+      self.help = getattr(argument, "help", "")
+
+  def __str__(self) -> str:
+    formatted = super().__str__()
+    if not self.help:
+      return formatted
+    return (f"argument error {self.argument_name}:\n\n"
+            f"Help {self.argument_name}:\n{self.help}\n\n"
+            f"{formatted}")
+
+
+argparse.ArgumentError = CrossBenchArgumentError
+
+
+class LateArgumentError(argparse.ArgumentTypeError):
+  """Signals argument parse errors after parser.parse_args().
+  This is used to map errors back to the original argument, much like
+  argparse.ArgumentError does internally. However, since this happens after
+  the internal argument parsing we need this custom implementation to print
+  more descriptive error messages.
+  """
+
+  def __init__(self, flag: str, message: str):
+    super().__init__(message)
+    self.flag = flag
+    self.message = message
+
+
+@contextlib.contextmanager
+def late_argument_type_error_wrapper(flag: str):
+  """Converts raised ValueError and ArgumentTypeError to LateArgumentError
+  that are associated with the given flag.
+  """
+  try:
+    yield
+  except (ValueError, argparse.ArgumentTypeError) as e:
+    raise LateArgumentError(flag, str(e)) from e
+
 
 FlagGroupItemT = Optional[Tuple[str, Optional[str]]]
 
@@ -51,7 +103,7 @@ def _map_flag_group_item(flag_name: str,
   return (flag_name, flag_value)
 
 
-class ConfigFileError(ValueError):
+class ConfigFileError(argparse.ArgumentTypeError):
   pass
 
 
@@ -86,6 +138,37 @@ class FlagGroupConfig:
           for flag_value in flag_values)
 
 
+class BrowserDriverType(Enum):
+  WEB_DRIVER = "WebDriver"
+  APPLE_SCRIPT = "AppleScript"
+  # TODO: implement additional drivers
+  ANDROID = "Android"
+  IOS = "iOS"
+
+  @classmethod
+  def default(cls) -> BrowserDriverType:
+    return cls.WEB_DRIVER
+
+  @classmethod
+  def parse(cls, value: str) -> Tuple[BrowserDriverType, str]:
+    # Early bail-out for windows-paths "C:/foo/bar" or driver-less inputs.
+    if ":" not in value or pathlib.Path(value).exists():
+      return cls.default(), value
+    # Split inputs like "applescript:/out/x64.release/chrome"
+    driver_name, _, path_or_identifier = value.partition(":")
+    driver_name = driver_name.lower()
+    if driver_name == "":
+      return cls.default(), path_or_identifier
+    if driver_name in ("", "selenium", "webdriver"):
+      return cls.WEB_DRIVER, path_or_identifier
+    if driver_name in ("applescript", "osa"):
+      return cls.APPLE_SCRIPT, path_or_identifier
+    if driver_name == "android":
+      return cls.ANDROID, path_or_identifier
+    if driver_name == "ios":
+      return cls.IOS, path_or_identifier
+
+    raise argparse.ArgumentTypeError(f"Unknown driver type: {driver_name}")
 
 
 class BrowserConfig:
@@ -94,11 +177,13 @@ class BrowserConfig:
   def from_cli_args(cls, args: argparse.Namespace) -> BrowserConfig:
     browser_config = BrowserConfig()
     if args.browser_config:
-      path = args.browser_config.expanduser()
-      with path.open(encoding="utf-8") as f:
-        browser_config.load(f)
+      with late_argument_type_error_wrapper("--browser-config"):
+        path = args.browser_config.expanduser()
+        with path.open(encoding="utf-8") as f:
+          browser_config.load(f)
     else:
-      browser_config.load_from_args(args)
+      with late_argument_type_error_wrapper("--browser"):
+        browser_config.load_from_args(args)
     return browser_config
 
   def __init__(self,
@@ -107,6 +192,7 @@ class BrowserConfig:
     self.flag_groups: Dict[str, FlagGroupConfig] = {}
     self._variants: List[Browser] = []
     self._browser_lookup_override = browser_lookup_override or {}
+    self._cache_dir: pathlib.Path = browsers.BROWSERS_CACHE
     self._exceptions = ExceptionAnnotator()
     if raw_config_data:
       self.load_dict(raw_config_data)
@@ -138,6 +224,18 @@ class BrowserConfig:
         self._parse_browsers(raw_config_data["browsers"])
     except Exception as e:  # pylint: disable=broad-except
       self._exceptions.append(e)
+
+  def load_from_args(self, args: argparse.Namespace) -> None:
+    self._cache_dir = args.cache_dir
+    browser_list = args.browser or ["chrome-stable"]
+    assert isinstance(browser_list, list)
+    if len(browser_list) != len(set(browser_list)):
+      raise argparse.ArgumentTypeError(
+          f"Got duplicate --browser arguments: {browser_list}")
+    for browser in browser_list:
+      self._append_browser(args, browser)
+    self._verify_browser_flags(args)
+    self._ensure_unique_browser_names()
 
   def _parse_flag_groups(self, data: Dict[str, Any]) -> None:
     for flag_name, group_config in data.items():
@@ -178,12 +276,13 @@ class BrowserConfig:
     self._ensure_unique_browser_names()
 
   def _parse_browser(self, name: str, raw_browser_data: Dict[str, Any]) -> None:
-    path_or_identifier = raw_browser_data["path"]
+    path_or_identifier: str = raw_browser_data["path"]
     if path_or_identifier in self._browser_lookup_override:
       browser_cls, path = self._browser_lookup_override[path_or_identifier]
     else:
-      path = self._get_browser_path(path_or_identifier)
-      browser_cls = self._get_browser_cls_from_path(path)
+      path, driver_type = self._parse_browser_path_and_driver(
+          path_or_identifier)
+      browser_cls = self._get_browser_cls(path, driver_type)
     if not path.exists():
       raise ConfigFileError(f"browsers['{name}'].path='{path}' does not exist.")
     raw_flags = ()
@@ -209,7 +308,10 @@ class BrowserConfig:
   def _flags_to_label(self, name: str, flags: Flags) -> str:
     return f"{name}_{convert_flags_to_label(*flags.get_list())}"
 
-  def _parse_flags(self, name: str, data: Dict[str, Any]):
+  FlagItemT = Tuple[str, Optional[str]]
+
+  def _parse_flags(self, name: str,
+                   data: Dict[str, Any]) -> List[Tuple[FlagItemT, ...]]:
     flags_variants: List[Tuple[FlagGroupItemT, ...]] = []
     flag_group_names = data.get("flags", [])
     if isinstance(flag_group_names, str):
@@ -240,7 +342,7 @@ class BrowserConfig:
       flags_variants += flag_group.get_variant_items()
     if len(flags_variants) == 0:
       # use empty default
-      return ({},)
+      return [tuple()]
     # IN:  [
     #   (None,            ("--foo", "f1")),
     #   (("--bar", "b1"), ("--bar", "b2")),
@@ -270,20 +372,31 @@ class BrowserConfig:
     assert flags_variants
     return flags_variants
 
-  def _get_browser_cls_from_path(self, path: pathlib.Path) -> Type[Browser]:
+  def _get_browser_cls(self, path: pathlib.Path,
+                       driver: BrowserDriverType) -> Type[Browser]:
     path_str = str(path).lower()
     if "safari" in path_str:
-      return browsers.SafariWebDriver
+      if driver == BrowserDriverType.WEB_DRIVER:
+        return browsers.SafariWebDriver
+      if driver == BrowserDriverType.APPLE_SCRIPT:
+        return browsers.SafariAppleScript
     if "chrome" in path_str:
-      return browsers.ChromeWebDriver
+      if driver == BrowserDriverType.WEB_DRIVER:
+        return browsers.ChromeWebDriver
+      if driver == BrowserDriverType.APPLE_SCRIPT:
+        return browsers.ChromeAppleScript
     if "chromium" in path_str:
       # TODO: technically this should be ChromiumWebDriver
-      return browsers.ChromeWebDriver
+      if driver == BrowserDriverType.WEB_DRIVER:
+        return browsers.ChromeWebDriver
+      if driver == BrowserDriverType.APPLE_SCRIPT:
+        return browsers.ChromeAppleScript
     if "firefox" in path_str:
-      return browsers.FirefoxWebDriver
+      if driver == BrowserDriverType.WEB_DRIVER:
+        return browsers.FirefoxWebDriver
     if "edge" in path_str:
       return browsers.EdgeWebDriver
-    raise ValueError(f"Unsupported browser='{path}'")
+    raise argparse.ArgumentTypeError(f"Unsupported browser='{path}'")
 
   def _ensure_unique_browser_names(self) -> None:
     if self._has_unique_variant_names():
@@ -305,16 +418,6 @@ class BrowserConfig:
     unique_names = set(names)
     return len(unique_names) == len(names)
 
-  def load_from_args(self, args: argparse.Namespace) -> None:
-    browser_list = args.browser or ["chrome-stable"]
-    assert isinstance(browser_list, list)
-    if len(browser_list) != len(set(browser_list)):
-      raise ValueError(f"Got duplicate --browser arguments: {browser_list}")
-    for browser in browser_list:
-      self._append_browser(args, browser)
-    self._verify_browser_flags(args)
-    self._ensure_unique_browser_names()
-
   def _verify_browser_flags(self, args: argparse.Namespace) -> None:
     chrome_args = {
         "--enable-features": args.enable_features,
@@ -326,22 +429,24 @@ class BrowserConfig:
         continue
       for browser in self._variants:
         if not isinstance(browser, browsers.Chromium):
-          raise ValueError(f"Used chrome/chromium-specific flags {flag_name} "
-                           f"for non-chrome {browser.unique_name}.\n"
-                           "Use --browser-config for complex variants.")
+          raise argparse.ArgumentTypeError(
+              f"Used chrome/chromium-specific flags {flag_name} "
+              f"for non-chrome {browser.unique_name}.\n"
+              "Use --browser-config for complex variants.")
     if not args.other_browser_args:
       return
     browser_types = set(browser.type for browser in self._variants)
     if len(browser_types) > 1:
-      raise ValueError(f"Multiple browser types {browser_types} "
-                       "cannot be used with common extra browser flags: "
-                       f"{args.other_browser_args}.\n"
-                       "Use --browser-config for complex variants.")
+      raise argparse.ArgumentTypeError(
+          f"Multiple browser types {browser_types} "
+          "cannot be used with common extra browser flags: "
+          f"{args.other_browser_args}.\n"
+          "Use --browser-config for complex variants.")
 
   def _append_browser(self, args: argparse.Namespace, browser: str) -> None:
     assert browser, "Expected non-empty browser name"
-    path = self._get_browser_path(browser)
-    browser_cls = self._get_browser_cls_from_path(path)
+    path, driver_type = self._parse_browser_path_and_driver(browser)
+    browser_cls = self._get_browser_cls(path, driver_type)
     flags = browser_cls.default_flags()
 
     if issubclass(browser_cls, browsers.Chromium):
@@ -356,7 +461,8 @@ class BrowserConfig:
     browser_instance = browser_cls(  # pytype: disable=not-instantiable
         label=label,
         path=path,
-        flags=flags)
+        flags=flags,
+        viewport=args.viewport)
     logging.info("SELECTED BROWSER: name=%s path='%s' ",
                  browser_instance.unique_name, path)
     self._variants.append(browser_instance)
@@ -374,48 +480,56 @@ class BrowserConfig:
         js_flag_name, js_flag_value = Flags.split(js_flag.lstrip())
         flags.js_flags.set(js_flag_name, js_flag_value)
 
-  def _get_browser_path(self, path_or_identifier: str) -> pathlib.Path:
-    identifier = path_or_identifier.lower()
+  def _parse_browser_path_and_driver(
+      self, value: str) -> Tuple[pathlib.Path, BrowserDriverType]:
+    driver, maybe_path_or_identifier = BrowserDriverType.parse(value)
+    identifier = maybe_path_or_identifier.lower()
     # We're not using a dict-based lookup here, since not all browsers are
     # available on all platforms
-    if identifier in ("chrome", "chrome-stable", "chr-stable"):
-      return browsers.Chrome.stable_path()
+    if identifier in ("chrome", "chrome-stable", "chr-stable", "chr"):
+      return browsers.Chrome.stable_path(), driver
     if identifier in ("chrome-beta", "chr-beta"):
-      return browsers.Chrome.beta_path()
+      return browsers.Chrome.beta_path(), driver
     if identifier in ("chrome-dev", "chr-dev"):
-      return browsers.Chrome.dev_path()
+      return browsers.Chrome.dev_path(), driver
     if identifier in ("chrome-canary", "chr-canary"):
-      return browsers.Chrome.canary_path()
+      return browsers.Chrome.canary_path(), driver
     if identifier in ("edge", "edge-stable"):
-      return browsers.Edge.stable_path()
+      return browsers.Edge.stable_path(), driver
     if identifier == "edge-beta":
-      return browsers.Edge.beta_path()
+      return browsers.Edge.beta_path(), driver
     if identifier == "edge-dev":
-      return browsers.Edge.dev_path()
+      return browsers.Edge.dev_path(), driver
     if identifier == "edge-canary":
-      return browsers.Edge.canary_path()
+      return browsers.Edge.canary_path(), driver
     if identifier in ("safari", "sf"):
-      return browsers.Safari.default_path()
+      return browsers.Safari.default_path(), driver
     if identifier in ("safari-technology-preview", "safari-tp", "sf-tp", "tp"):
-      return browsers.Safari.technology_preview_path()
+      return browsers.Safari.technology_preview_path(), driver
     if identifier in ("firefox", "ff"):
-      return browsers.Firefox.default_path()
+      return browsers.Firefox.default_path(), driver
     if identifier in ("firefox-dev", "firefox-developer-edition", "ff-dev"):
-      return browsers.Firefox.developer_edition_path()
+      return browsers.Firefox.developer_edition_path(), driver
     if identifier in ("firefox-nightly", "ff-nightly", "ff-trunk"):
-      return browsers.Firefox.nightly_path()
-    if ChromeDownloader.VERSION_RE.match(identifier):
-      return ChromeDownloader.load(identifier)
-    path = pathlib.Path(path_or_identifier)
+      return browsers.Firefox.nightly_path(), driver
+    platform = helper.platform
+    if ChromeDownloader.is_valid(value, platform):
+      return ChromeDownloader.load(
+          value, platform, cache_dir=self._cache_dir), driver
+    path = pathlib.Path(maybe_path_or_identifier)
     if path.exists():
-      return path
+      return path, driver
     path = path.expanduser()
     if path.exists():
-      return path
+      return path, driver
     if len(path.parts) > 1:
-      raise ValueError(f"Browser at '{path}' does not exist.")
-    raise ValueError(
-        f"Unknown browser path or short name: '{path_or_identifier}'")
+      raise argparse.ArgumentTypeError(f"Browser at '{path}' does not exist.")
+    raise argparse.ArgumentTypeError(
+        f"Unknown browser path or short name: '{value}'")
+
+
+class ProbeConfigError(argparse.ArgumentTypeError):
+  pass
 
 
 class ProbeConfig:
@@ -423,6 +537,10 @@ class ProbeConfig:
   LOOKUP: Dict[str, Type[Probe]] = {
       cls.NAME: cls for cls in GENERAL_PURPOSE_PROBES
   }
+
+  _PROBE_RE: Final[re.Pattern] = re.compile(
+      r"(?P<probe_name>[\w.]+)(:?(?P<config>\{.*\}))?",
+      re.MULTILINE | re.DOTALL)
 
   @classmethod
   def from_cli_args(cls, args: argparse.Namespace) -> ProbeConfig:
@@ -455,15 +573,29 @@ class ProbeConfig:
     return self._probes
 
   def add_probe(self, probe_name_with_args: str) -> None:
-    # look for "ProbeName{json_key:json_value, ...}"
+    # Look for probes with json payload:
+    # - "ProbeName{json_key:json_value, ...}"
+    # - "ProbeName:{json_key:json_value, ...}"
     inline_config = {}
-    if probe_name_with_args[-1] == "}":
-      probe_name, json_args = probe_name_with_args.split("{", maxsplit=1)
-      assert json_args[-1] == "}"
-      inline_config = hjson.loads("{" + json_args)
+    match = self._PROBE_RE.fullmatch(probe_name_with_args)
+    if match is None:
+      raise ProbeConfigError(
+          f"Could not parse probe argument: {probe_name_with_args}")
+    if match["config"]:
+      probe_name = match["probe_name"]
+      json_args = match["config"]
+      assert json_args[0] == "{" and json_args[-1] == "}"
+      try:
+        inline_config = hjson.loads(json_args)
+      except ValueError as e:
+        message = (f"Could not decode inline probe config: {json_args}\n"
+                   f"   {str(e)}")
+        if "eof" in message:
+          message += "\n   Likely missing quotes for --probe argument."
+        raise ProbeConfigError(message) from e
     else:
       # Default case without the additional hjson payload
-      probe_name = probe_name_with_args
+      probe_name = match["probe_name"]
     if probe_name not in self.LOOKUP:
       self.raise_unknown_probe(probe_name)
     with self._exceptions.info(
@@ -478,9 +610,12 @@ class ProbeConfig:
     with self._exceptions.capture(f"Loading probe config file: {file.name}"):
       data = None
       with self._exceptions.info(f"Parsing {hjson.__name__}"):
-        data = hjson.load(file)
+        try:
+          data = hjson.load(file)
+        except ValueError as e:
+          raise ProbeConfigError(f"Parsing error: {e}") from e
       if not isinstance(data, dict) or "probes" not in data:
-        raise ValueError(
+        raise ProbeConfigError(
             "Probe config file does not contain a 'probes' dict value.")
       self.load_dict(data["probes"])
 
@@ -494,11 +629,14 @@ class ProbeConfig:
         self._probes.append(probe_cls.from_config(config_data))
 
   def raise_unknown_probe(self, probe_name: str) -> None:
-    raise ValueError(f"Unknown probe name: '{probe_name}'\n"
-                     f"Options are: {list(self.LOOKUP.keys())}")
+    additional_msg = ""
+    if ":" in probe_name or "}" in probe_name:
+      additional_msg = "\n    Likely missing quotes for --probe argument"
+    msg = f"    Options are: {list(self.LOOKUP.keys())}{additional_msg}"
+    raise ProbeConfigError(f"Unknown probe name: '{probe_name}'\n{msg}")
 
 
-def inline_env_config(value: str) -> HostEnvironmentConfig:
+def parse_inline_env_config(value: str) -> HostEnvironmentConfig:
   if value in HostEnvironment.CONFIGS:
     return HostEnvironment.CONFIGS[value]
   if value[0] != "{":
@@ -517,8 +655,8 @@ def inline_env_config(value: str) -> HostEnvironmentConfig:
         f"Invalid inline config string: {value}{msg}") from e
 
 
-def env_config_file(value: str) -> HostEnvironmentConfig:
-  config_path = existing_file_type(value)
+def parse_env_config_file(value: str) -> HostEnvironmentConfig:
+  config_path: pathlib.Path = parse_file_path(value)
   try:
     with config_path.open(encoding="utf-8") as f:
       data = hjson.load(f)
@@ -538,19 +676,23 @@ BenchmarkClsT = Type[Benchmark]
 class CrossBenchCLI:
 
   BENCHMARKS: Tuple[Tuple[BenchmarkClsT, Tuple[str, ...]], ...] = (
-      (benchmarks.Speedometer20Benchmark, ()),
-      (benchmarks.Speedometer21Benchmark, ("speedometer",)),
-      (benchmarks.JetStream20Benchmark, ()),
-      (benchmarks.JetStream21Benchmark, ("jetstream",)),
-      (benchmarks.MotionMark12Benchmark, ("motionmark",)),
-      (benchmarks.PageLoadBenchmark, ()),
+      (benchmarks.Speedometer30Benchmark, ("sp30", "sp3")),
+      (benchmarks.Speedometer20Benchmark, ("sp20",)),
+      (benchmarks.Speedometer21Benchmark, ("speedometer", "sp", "sp2", "sp21")),
+      (benchmarks.JetStream20Benchmark, ("js20",)),
+      (benchmarks.JetStream21Benchmark, ("jetstream", "js21")),
+      (benchmarks.MotionMark12Benchmark, ("motionmark", "mm", "mm12")),
+      (benchmarks.PageLoadBenchmark, ("load", "page")),
   )
 
   RUNNER_CLS: Type[Runner] = Runner
 
-  def __init__(self):
+  def __init__(self) -> None:
     self._subparsers: Dict[BenchmarkClsT, argparse.ArgumentParser] = {}
     self.parser = argparse.ArgumentParser()
+    self.describe_parser = argparse.ArgumentParser()
+    # TODO: use self.args instead of passing it along as parameter.
+    self.args = argparse.Namespace()
     self._setup_parser()
     self._setup_subparser()
 
@@ -566,9 +708,18 @@ class CrossBenchCLI:
         help="Disable colored output")
 
   def _add_verbosity_argument(self, parser: argparse.ArgumentParser) -> None:
-    parser.add_argument(
-        "-v",
+    verbosity_group = parser.add_mutually_exclusive_group()
+    verbosity_group.add_argument(
+        "--quiet",
+        "-q",
+        dest="verbosity",
+        default=0,
+        action="store_const",
+        const=-1,
+        help="Disable most output printing.")
+    verbosity_group.add_argument(
         "--verbose",
+        "-v",
         dest="verbosity",
         action="count",
         default=0,
@@ -578,36 +729,42 @@ class CrossBenchCLI:
     self.subparsers = self.parser.add_subparsers(
         title="Subcommands", dest="subcommand", required=True)
     for benchmark_cls, alias in self.BENCHMARKS:
+      assert isinstance(
+          alias,
+          (list,
+           tuple)), (f"Benchmark alias must be list or tuple, but got: {alias}")
       self._setup_benchmark_subparser(benchmark_cls, alias)
     self._setup_describe_subparser()
 
   def _setup_describe_subparser(self) -> None:
-    describe_parser = self.subparsers.add_parser(
+    self.describe_parser = self.subparsers.add_parser(
         "describe", aliases=["desc"], help="Print all benchmarks and stories")
-    describe_parser.add_argument(
+    self.describe_parser.add_argument(
         "category",
         nargs="?",
         choices=["all", "benchmark", "benchmarks", "probe", "probes"],
         default="all",
         help="Limit output to the given category, defaults to 'all'")
-    describe_parser.add_argument(
+    self.describe_parser.add_argument(
         "filter",
         nargs="?",
         help=("Only display the given item from the provided category. "
               "By default all items are displayed. "
               "Example: describe probes v8.log"))
-    describe_parser.add_argument("--json",
-                                 default=False,
-                                 action="store_true",
-                                 help="Print the data as json data")
-    describe_parser.set_defaults(subcommand=self.describe_subcommand)
-    self._add_verbosity_argument(describe_parser)
+    self.describe_parser.add_argument(
+        "--json",
+        default=False,
+        action="store_true",
+        help="Print the data as json data")
+    self.describe_parser.set_defaults(subcommand_fn=self.describe_subcommand)
+    self._add_verbosity_argument(self.describe_parser)
 
   def describe_subcommand(self, args: argparse.Namespace) -> None:
     benchmarks_data: Dict[str, Any] = {}
     for benchmark_cls, aliases in self.BENCHMARKS:
-      if args.filter and benchmark_cls.NAME != args.filter:
-        continue
+      if args.filter:
+        if benchmark_cls.NAME != args.filter and args.filter not in aliases:
+          continue
       benchmark_info = benchmark_cls.describe()
       benchmark_info["aliases"] = aliases or "None"
       benchmark_info["help"] = f"See `{benchmark_cls.NAME} --help`"
@@ -615,7 +772,7 @@ class CrossBenchCLI:
     data: Dict[str, Dict[str, Any]] = {
         "benchmarks": benchmarks_data,
         "probes": {
-            probe_cls.NAME: probe_cls.help_text()
+            str(probe_cls.NAME): probe_cls.help_text()
             for probe_cls in GENERAL_PURPOSE_PROBES
             if not args.filter or probe_cls.NAME == args.filter
         }
@@ -623,8 +780,12 @@ class CrossBenchCLI:
     if args.json:
       if args.category in ("probe", "probes"):
         data = data["probes"]
+        if not data:
+          self.error(f"No matching probe found: '{args.filter}'")
       elif args.category in ("benchmark", "benchmarks"):
         data = data["benchmarks"]
+        if not data:
+          self.error(f"No matching benchmark found: '{args.filter}'")
       else:
         assert args.category == "all"
       print(json.dumps(data, indent=2))
@@ -638,16 +799,24 @@ class CrossBenchCLI:
           if isinstance(value, (tuple, list)):
             value = "\n".join(value)
           elif isinstance(value, dict):
-            value = tabulate(value.items(), tablefmt="plain")
+            if not value.items():
+              value = "[]"
+            else:
+              kwargs = {"maxcolwidths": 60}
+              value = tabulate(value.items(), tablefmt="plain", **kwargs)
           table.append([None, name, value])
-      if len(table) > 1:
+      if len(table) <= 1:
+        self.error(f"No matching benchmark found: '{args.filter}'")
+      else:
         print(tabulate(table, tablefmt="grid"))
 
     if args.category in ("all", "probe", "probes"):
       table = [["Probe", "Help"]]
       for probe_name, probe_desc in data["probes"].items():
         table.append([probe_name, probe_desc])
-      if len(table) > 1:
+      if len(table) <= 1:
+        self.error(f"No matching probe found: '{args.filter}'")
+      else:
         print(tabulate(table, tablefmt="grid"))
 
   def _setup_benchmark_subparser(self, benchmark_cls: Type[Benchmark],
@@ -659,33 +828,39 @@ class CrossBenchCLI:
         f"an ArgumentParser: {subparser}")
     self._subparsers[benchmark_cls] = subparser
 
-    runner_group = subparser.add_argument_group("Runner Settings", "")
+    runner_group = subparser.add_argument_group("Runner Options", "")
+    runner_group.add_argument(
+        "--cache-dir",
+        type=pathlib.Path,
+        default=browsers.BROWSERS_CACHE,
+        help="Used for caching browser binaries and archives. "
+        "Defaults to .browser_cache")
     runner_group.add_argument(
         "--cool-down-time",
-        type=positive_float_type,
+        type=parse_positive_float,
         default=2,
         help="Time the runner waits between different runs or repetitions. "
         "Increase this to let the CPU cool down between runs.")
     runner_group.add_argument(
         "--time-unit",
-        type=positive_float_type,
+        type=parse_positive_float,
         default=1,
         help="Absolute duration of 1 time unit in the runner. "
         "Increase this for slow builds or machines. "
         "Default 1 time unit == 1 second.")
 
-    env_group = subparser.add_argument_group("Runner Environment Settings", "")
+    env_group = subparser.add_argument_group("Environment Options", "")
     env_settings_group = env_group.add_mutually_exclusive_group()
     env_settings_group.add_argument(
         "--env",
-        type=inline_env_config,
+        type=parse_inline_env_config,
         help="Set default runner environment settings. "
         f"Possible values: {', '.join(HostEnvironment.CONFIGS)}"
         "or an inline hjson configuration (see --env-config). "
         "Mutually exclusive with --env-config")
     env_settings_group.add_argument(
         "--env-config",
-        type=env_config_file,
+        type=parse_env_config_file,
         help="Path to an env.config.hjson file that specifies detailed "
         "runner environment settings and requirements. "
         "See config/env.config.hjson for more details."
@@ -699,7 +874,7 @@ class CrossBenchCLI:
             throw:  Strict mode, throw and abort on env issues,
             prompt: Prompt to accept potential env issues,
             warn:   Only display a warning for env issues,
-            skip:   Don't perform any env validation". 
+            skip:   Don't perform any env validation".
           """))
     env_group.add_argument(
         "--dry-run",
@@ -707,8 +882,11 @@ class CrossBenchCLI:
         default=False,
         help="Don't run any browsers or probes")
 
-    browser_group = subparser.add_mutually_exclusive_group()
-    browser_group.add_argument(
+    browser_group = subparser.add_argument_group(
+        "Browser Options", "Any other browser option can be passed "
+        "after the '--' arguments separator.")
+    browser_config_group = browser_group.add_mutually_exclusive_group()
+    browser_config_group.add_argument(
         "--browser",
         action="append",
         default=[],
@@ -718,44 +896,43 @@ class CrossBenchCLI:
         "Repeat for adding multiple browsers. "
         "Defaults to 'chrome-stable'. "
         "Use --browser=chrome-M107 to download the latest milestone, "
-        "--browser=chrome-100.0.4896.168 to download a specific version "
-        "(macos and googlers only)."
+        "--browser=chrome-100.0.4896.168 to download a specific chrome version "
+        "(macOS and linux for googlers and chrome only). "
+        "Use --browser=path/to/archive.dmg on macOS or "
+        "--browser=path/to/archive.rpm on linux "
+        "for locally cached versions (chrome only)."
         "Cannot be used with --browser-config")
-    browser_group.add_argument(
+    browser_config_group.add_argument(
         "--browser-config",
-        type=existing_file_type,
+        type=parse_file_path,
         help="Browser configuration.json file. "
         "Use this to run multiple browsers and/or multiple flag configurations."
         "See config/browser.config.example.hjson on how to set up a complex "
         "configuration file. "
         "Cannot be used together with --browser.")
 
-    probe_group = subparser.add_mutually_exclusive_group()
-    probe_group.add_argument(
-        "--probe",
-        action="append",
-        default=[],
-        help="Enable general purpose probes to measure data on all cb.stories. "
-        "This argument can be specified multiple times to add more probes. "
-        "Use inline hjson (e.g. '--probe=$NAME{$CONFIG}') to configure probes. "
-        "Use 'describe probes' or 'describe probe $NAME' for probe "
-        "configuration details."
-        "Cannot be used together with --probe-config."
-        f"\n\nChoices: {', '.join(ProbeConfig.LOOKUP.keys())}")
-    probe_group.add_argument(
-        "--probe-config",
-        type=existing_file_type,
-        help="Browser configuration.json file. "
-        "Use this config file to specify more complex Probe settings."
-        "See config/probe.config.example.hjson on how to set up a complex "
-        "configuration file. "
-        "Cannot be used together with --probe.")
+    viewport_group = browser_group.add_mutually_exclusive_group()
+    viewport_group.add_argument(
+        "--viewport",
+        default=Viewport.DEFAULT,
+        type=Viewport.parse,
+        help="Set the browser window position."
+        "Options: size, size and position, "
+        "'max', 'maximized', 'fullscreen', 'headless'. "
+        "Examples: --viewport=1550x300 --viewport=fullscreen. "
+        f"Default: {Viewport.DEFAULT}")
+    viewport_group.add_argument(
+        "--headless",
+        dest="viewport",
+        const=Viewport.HEADLESS,
+        action="store_const",
+        help="Start the browser in headless if supported. "
+        "Equivalent to --viewport=headless.")
 
     chrome_args = subparser.add_argument_group(
-        "Chrome-forwarded Options",
+        "Browsers Options: Chrome/Chromium",
         "For convenience these arguments are directly are forwarded "
-        "directly to chrome. Any other browser option can be passed "
-        "after the '--' arguments separator.")
+        "directly to chrome. ")
     chrome_args.add_argument("--js-flags", dest="js_flags")
 
     doc_str = "See chrome's base/feature_list.h source file for more details"
@@ -767,8 +944,30 @@ class CrossBenchCLI:
         "--disable-features",
         help="Command-separated list of disabled chrome features. " + doc_str,
         default="")
+
+    probe_group = subparser.add_argument_group("Probe Options", "")
+    probe_config_group = probe_group.add_mutually_exclusive_group()
+    probe_config_group.add_argument(
+        "--probe",
+        action="append",
+        default=[],
+        help="Enable general purpose probes to measure data on all cb.stories. "
+        "This argument can be specified multiple times to add more probes. "
+        "Use inline hjson (e.g. --probe=\"$NAME{$CONFIG}\") to configure probes. "
+        "Use 'describe probes' or 'describe probe $NAME' for probe "
+        "configuration details."
+        "Cannot be used together with --probe-config."
+        f"\n\nChoices: {', '.join(ProbeConfig.LOOKUP.keys())}")
+    probe_config_group.add_argument(
+        "--probe-config",
+        type=parse_file_path,
+        help="Browser configuration.json file. "
+        "Use this config file to specify more complex Probe settings."
+        "See config/probe.config.example.hjson on how to set up a complex "
+        "configuration file. "
+        "Cannot be used together with --probe.")
     subparser.set_defaults(
-        subcommand=self.benchmark_subcommand, benchmark_cls=benchmark_cls)
+        subcommand_fn=self.benchmark_subcommand, benchmark_cls=benchmark_cls)
     self._add_verbosity_argument(subparser)
     subparser.add_argument("other_browser_args", nargs="*")
 
@@ -788,12 +987,27 @@ class CrossBenchCLI:
         timing = self._get_timing(args)
         runner = self._get_runner(args, benchmark, env_config,
                                   env_validation_mode, timing)
+
+        # We prevent running multiple stories in repetition when 'power' probes
+        # are used.
+        single_run_probes_list = ['powermetrics', 'powersampler']
+        for probe in probes:
+          if probe.NAME in single_run_probes_list:
+            raise argparse.ArgumentTypeError(
+                "Cannot use 'powermetric' and/or 'powersampler' probe(s) with"
+                "the repeat > 1. Since running the stories not from the same"
+                "starting battery level will create erroneous data")
+
         for probe in probes:
           runner.attach_probe(probe, matching_browser_only=True)
 
         self._run_benchmark(args, runner)
     except KeyboardInterrupt:
       sys.exit(2)
+    except LateArgumentError as e:
+      if args.throw:
+        raise
+      self.handle_late_argument_error(e)
     except Exception as e:  # pylint: disable=broad-except
       if args.throw:
         raise
@@ -898,13 +1112,17 @@ class CrossBenchCLI:
                    is_success: bool) -> None:
     logging.info("=" * 80)
     if is_success:
-      logging.info("RESULTS: %s", runner.out_dir)
+      logging.critical("RESULTS: %s", runner.out_dir)
     else:
-      logging.info("RESULTS (maybe incomplete/broken): %s", runner.out_dir)
+      logging.critical("RESULTS (maybe incomplete/broken): %s", runner.out_dir)
     logging.info("=" * 80)
+    if not runner.has_browser_group:
+      logging.debug("No browser group in %s", runner)
+      return
+    browser_group = runner.browser_group
     for probe in runner.probes:
       try:
-        probe.log_browsers_result(runner.browser_group)
+        probe.log_browsers_result(browser_group)
       except Exception as e:  # pylint disable=broad-except
         if args.throw:
           raise
@@ -967,19 +1185,42 @@ class CrossBenchCLI:
         **runner_kwargs)
 
   def run(self, argv: Sequence[str]) -> None:
-    args: argparse.Namespace = self.parser.parse_args(argv)
-    self._initialize_logging(args)
-    args.subcommand(args)
+    # Manually check for unprocessed_argv to print nicer error messages.
+    self.args, unprocessed_argv = self.parser.parse_known_args(argv)
+    if unprocessed_argv:
+      self.error(f"unrecognized arguments: {unprocessed_argv}\n"
+                 f"Use `{self.parser.prog} {self.args.subcommand} --help` "
+                 "for more details.")
+    self._initialize_logging()
+    self.args.subcommand_fn(self.args)
 
-  def _initialize_logging(self, args: argparse.Namespace) -> None:
+  def handle_late_argument_error(self, e: LateArgumentError) -> None:
+    self.error(f"error argument {e.flag}: {e.message}")
+
+  def error(self, message: str) -> None:
+    parser = self.parser
+    # Try to use the subparser to print nicer usage help on errors.
+    # ArgumentParser tends to default to the toplevel parser instead of the
+    # current subcommand, which in turn prints the wrong usage text.
+    if self.args.subcommand == "describe":
+      parser = self.describe_parser
+    else:
+      maybe_benchmark_cls = getattr(self.args, "benchmark_cls", None)
+      if maybe_benchmark_cls:
+        parser = self._subparsers[maybe_benchmark_cls]
+    parser.error(f"{self.args.subcommand}: {message}")
+
+  def _initialize_logging(self) -> None:
     logging.getLogger().setLevel(logging.INFO)
     console_handler = logging.StreamHandler()
-    if args.verbosity == 0:
+    if self.args.verbosity == -1:
+      console_handler.setLevel(logging.ERROR)
+    elif self.args.verbosity == 0:
       console_handler.setLevel(logging.INFO)
-    elif args.verbosity >= 1:
+    elif self.args.verbosity >= 1:
       console_handler.setLevel(logging.DEBUG)
       logging.getLogger().setLevel(logging.DEBUG)
     console_handler.addFilter(logging.Filter("root"))
-    if args.color:
+    if self.args.color:
       console_handler.setFormatter(helper.ColoredLogFormatter())
     logging.getLogger().addHandler(console_handler)

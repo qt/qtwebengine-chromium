@@ -28,6 +28,7 @@ namespace fastpair {
 namespace {
 constexpr absl::Duration kFastPairLowPowerActiveSeconds = absl::Seconds(2);
 constexpr absl::Duration kFastPairLowPowerInactiveSeconds = absl::Seconds(3);
+constexpr char kFastPairServiceUuid[] = "0000FE2C-0000-1000-8000-00805F9B34FB";
 }  // namespace
 
 // static
@@ -53,7 +54,8 @@ FastPairScannerImpl::Factory::~Factory() = default;
 
 // FastPairScannerImpl
 FastPairScannerImpl::FastPairScannerImpl() {
-  task_runner_ = std::make_shared<TaskRunnerImpl>(1);
+  task_runner_ = std::make_unique<TaskRunnerImpl>(1);
+  StartScanning();
 }
 
 void FastPairScannerImpl::AddObserver(FastPairScanner::Observer* observer) {
@@ -114,14 +116,15 @@ void FastPairScannerImpl::StopScanning() {
 void FastPairScannerImpl::OnDeviceFound(const BlePeripheral& peripheral) {
   NEARBY_LOGS(INFO) << __func__ << "Found device with ble Address = "
                     << peripheral.GetName();
-  ByteArray service_data = peripheral.GetAdvertisementBytes(kServiceId);
-  if (service_data.Empty()) {
+  std::string service_data =
+      peripheral.GetAdvertisementBytes(kServiceId).string_data();
+  if (service_data.empty()) {
     NEARBY_LOGS(WARNING) << "No Fast Pair service data found on device";
     return;
   }
 
   device_address_advertisement_data_map_[peripheral.GetName()].insert(
-      peripheral.GetAdvertisementBytes(kServiceId));
+      service_data);
 
   NotifyDeviceFound(peripheral);
 }
@@ -131,13 +134,13 @@ void FastPairScannerImpl::OnDeviceLost(const BlePeripheral& peripheral) {
                     << peripheral.GetName();
   device_address_advertisement_data_map_.erase(peripheral.GetName());
 
-  for (auto& observer : observer_) {
+  for (auto& observer : observer_.GetObservers()) {
     observer->OnDeviceLost(peripheral);
   }
 }
 
 void FastPairScannerImpl::NotifyDeviceFound(const BlePeripheral& peripheral) {
-  for (auto& observer : observer_) {
+  for (auto& observer : observer_.GetObservers()) {
     observer->OnDeviceFound(peripheral);
   }
 }

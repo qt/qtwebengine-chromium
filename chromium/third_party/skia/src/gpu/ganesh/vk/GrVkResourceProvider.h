@@ -59,7 +59,7 @@ public:
                                            VkPipelineLayout layout,
                                            uint32_t subpass);
 
-    GR_DEFINE_RESOURCE_HANDLE_CLASS(CompatibleRPHandle);
+    GR_DEFINE_RESOURCE_HANDLE_CLASS(CompatibleRPHandle)
 
     using SelfDependencyFlags = GrVkRenderPass::SelfDependencyFlags;
     using LoadFromResolve = GrVkRenderPass::LoadFromResolve;
@@ -285,7 +285,7 @@ private:
         void releaseResources();
 
     private:
-        SkSTArray<4, GrVkRenderPass*> fRenderPasses;
+        skia_private::STArray<4, GrVkRenderPass*> fRenderPasses;
         int                           fLastReturnedIndex;
     };
 
@@ -302,17 +302,17 @@ private:
     };
 
     // Cache of previously created msaa load pipelines
-    SkTArray<MSAALoadPipeline> fMSAALoadPipelines;
+    skia_private::TArray<MSAALoadPipeline> fMSAALoadPipelines;
 
-    SkSTArray<4, CompatibleRenderPassSet> fRenderPassArray;
+    skia_private::STArray<4, CompatibleRenderPassSet> fRenderPassArray;
 
-    SkTArray<const GrVkRenderPass*> fExternalRenderPasses;
+    skia_private::TArray<const GrVkRenderPass*> fExternalRenderPasses;
 
     // Array of command pools that we are waiting on
-    SkSTArray<4, GrVkCommandPool*, true> fActiveCommandPools;
+    skia_private::STArray<4, GrVkCommandPool*, true> fActiveCommandPools;
 
     // Array of available command pools that are not in flight
-    SkSTArray<4, GrVkCommandPool*, true> fAvailableCommandPools;
+    skia_private::STArray<4, GrVkCommandPool*, true> fAvailableCommandPools;
 
     // Stores GrVkSampler objects that we've already created so we can reuse them across multiple
     // GrVkPipelineStates
@@ -324,7 +324,7 @@ private:
     // Cache of GrVkPipelineStates
     sk_sp<PipelineStateCache> fPipelineStateCache;
 
-    SkSTArray<4, std::unique_ptr<GrVkDescriptorSetManager>> fDescriptorSetManagers;
+    skia_private::STArray<4, std::unique_ptr<GrVkDescriptorSetManager>> fDescriptorSetManagers;
 
     GrVkDescriptorSetManager::Handle fUniformDSHandle;
     GrVkDescriptorSetManager::Handle fInputDSHandle;

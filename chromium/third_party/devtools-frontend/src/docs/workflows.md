@@ -242,6 +242,12 @@ autoninja -C out/Default content_shell
 third_party/blink/tools/run_web_tests.py -t Default http/tests/devtools
 ```
 
+To debug a failing layout test we can run
+```bash
+npm run debug-test -- http/tests/devtools/<path>/<to>/<test>.js
+```
+
+The script supports either default DevTools checkout inside the chromium tree or side-by-side checkouts of chromium and DevTools. Passing --custom-devtools-frontend is not supported currently, meaning in the side-by-side scenario the DevTools checkout inside the chromium tree will be used (if not symlinked).
 ## Creating a change
 
 Usual [steps](https://chromium.googlesource.com/chromium/src/+/main/docs/contributing.md#creating-a-change) for creating a change work out of the box, when executed in the DevTools frontend repository.
@@ -306,6 +312,33 @@ Step-by-step guide on how to merge:
 1. Get it reviewed if necessary.
 1. Once merge request approval is granted (see step 1), click the hamburger menu on the cherry-pick CL and select “Submit”. (Setting the Commit-Queue bit (+2) has no effect because these branches don’t have a commit queue.)
 1. Done.
+
+### Merge conflicts
+
+If the approach above causes conflicts that need resolving, you can use an alternative git workflow which allows you to resolve conflicts locally before uploading. This is very similar to the [chromium git merge steps](https://chromium.googlesource.com/chromium/src.git/+/refs/heads/main/docs/process/merge_request.md#using-git) but with different branch names. These steps will **create the cherry-pick CL via git**.
+
+_It is suggested to use the Gerrit UI approach when possible, it is more straightforward and automated. Only use this approach if your cherry-pick causes conflicts._
+
+For the commands below, replace `xxxx` with the Chromium branch number that you are merging into.
+
+To set up your local environment run:
+
+```
+gclient sync --with_branch_heads
+git fetch
+git checkout -b BRANCH_NAME origin/chromium/xxxx
+git cl upstream origin/chromium/xxxx
+```
+
+You can then cherry-pick your commit from the main branch:
+
+```
+git cherry-pick -x YOUR_COMMIT
+```
+
+You can then resolve any conflicts, run tests, build DevTools, etc, locally to verify everything is working. Then run `git cl upload` to upload the CL and get a review as normal.
+
+**Make sure you remove the Change-ID: line** from the description to avoid issues when uploading the CL.
 
 ## Useful Commands
 

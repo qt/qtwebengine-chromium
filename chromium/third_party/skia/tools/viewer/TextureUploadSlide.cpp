@@ -13,6 +13,8 @@
 #include "tools/timer/TimeUtils.h"
 #include "tools/viewer/Slide.h"
 
+using namespace skia_private;
+
 /**
  * This sample exercises heavy texture updates and uploads.
  */
@@ -42,7 +44,7 @@ public:
 
     void draw(SkCanvas* canvas) override {
         canvas->clear(0xFFFFFFFF);
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
         auto direct = GrAsDirectContext(canvas->recordingContext());
         if (direct) {
             // One-time context-specific setup.
@@ -121,7 +123,7 @@ private:
     sk_sp<SkSurface> fBlueSurface;
     sk_sp<SkSurface> fGraySurface;
 
-    SkTArray<sk_sp<RenderTargetTexture>> fTextures;
+    TArray<sk_sp<RenderTargetTexture>> fTextures;
 
     GrDirectContext* fCachedContext = nullptr;
 

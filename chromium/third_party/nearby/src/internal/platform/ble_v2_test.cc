@@ -15,12 +15,14 @@
 #include "internal/platform/ble_v2.h"
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 
 #include "gmock/gmock.h"
 #include "protobuf-matchers/protocol-buffer-matchers.h"
 #include "gtest/gtest.h"
+#include "absl/status/status.h"
 #include "internal/platform/bluetooth_adapter.h"
 #include "internal/platform/count_down_latch.h"
 #include "internal/platform/implementation/ble_v2.h"
@@ -51,6 +53,7 @@ constexpr absl::string_view kAdvertisementHeaderString = "\x0x\x0y\x0z";
 constexpr TxPowerLevel kTxPowerLevel(TxPowerLevel::kHigh);
 constexpr absl::string_view kServiceIDA{
     "com.google.location.nearby.apps.test.a"};
+constexpr absl::string_view kDeviceMacAddress{"AA:BB:CC:DD:EE:FF"};
 
 // A stub BlePeripheral implementation.
 class BlePeripheralStub : public api::ble_v2::BlePeripheral {
@@ -443,6 +446,56 @@ TEST_F(BleV2MediumTest, CanStartAsyncScanningAndAdvertising) {
   env_.Stop();
 }
 
+TEST_F(BleV2MediumTest, CanStartAsyncScanningAndAdvertisingWithTmpImpl) {
+  env_.Start();
+  BluetoothAdapter adapter_a;
+  BluetoothAdapter adapter_b;
+  BleV2Medium ble_a(adapter_a);
+  BleV2Medium ble_b(adapter_b);
+  Uuid service_uuid(1234, 5678);
+  ByteArray advertisement_bytes{std::string(kAdvertisementString)};
+  ByteArray advertisement_header_bytes{std::string(kAdvertisementHeaderString)};
+  CountDownLatch found_latch(1);
+
+  std::unique_ptr<api::ble_v2::BleMedium::ScanningSession> scanning_session =
+      ble_a.StartScanningTmp(
+          service_uuid, kTxPowerLevel,
+          api::ble_v2::BleMedium::ScanningCallback{
+              .advertisement_found_cb =
+                  [&](api::ble_v2::BlePeripheral& peripheral,
+                      BleAdvertisementData advertisement_data) -> void {
+                found_latch.CountDown();
+              },
+          });
+
+  // Succeed to start regular advertisement.
+  BleAdvertisementData advertising_data;
+  advertising_data.is_extended_advertisement = false;
+  advertising_data.service_data = {{service_uuid, advertisement_header_bytes}};
+  std::unique_ptr<api::ble_v2::BleMedium::AdvertisingSession> adv_session =
+      ble_b.StartAdvertisingTmp(
+          advertising_data,
+          {.tx_power_level = kTxPowerLevel, .is_connectable = true},
+          {.start_advertising_result = [](absl::Status) {}});
+  EXPECT_NE(adv_session, nullptr);
+
+  EXPECT_TRUE(env_.GetBleV2MediumStatus(*ble_a.GetImpl()).value().is_scanning);
+  EXPECT_TRUE(
+      env_.GetBleV2MediumStatus(*ble_b.GetImpl()).value().is_advertising);
+  EXPECT_TRUE(found_latch.Await(kWaitDuration).result());
+  EXPECT_OK(scanning_session->stop_scanning());
+
+  EXPECT_OK(adv_session->stop_advertising());
+  EXPECT_FALSE(env_.GetBleV2MediumStatus(*ble_a.GetImpl()).value().is_scanning);
+  EXPECT_FALSE(
+      env_.GetBleV2MediumStatus(*ble_b.GetImpl()).value().is_advertising);
+  env_.UnregisterBleV2Medium(*ble_a.GetImpl());
+  env_.UnregisterBleV2Medium(*ble_b.GetImpl());
+  EXPECT_EQ(env_.GetBleV2MediumStatus(*ble_a.GetImpl()), absl::nullopt);
+  EXPECT_EQ(env_.GetBleV2MediumStatus(*ble_b.GetImpl()), absl::nullopt);
+  env_.Stop();
+}
+
 TEST_F(BleV2MediumTest, CanStartGattServer) {
   env_.Start();
   BluetoothAdapter adapter;
@@ -455,14 +508,13 @@ TEST_F(BleV2MediumTest, CanStartGattServer) {
 
   ASSERT_NE(gatt_server, nullptr);
 
-  std::vector<GattCharacteristic::Permission> permissions = {
-      GattCharacteristic::Permission::kRead};
-  std::vector<GattCharacteristic::Property> properties = {
-      GattCharacteristic::Property::kRead};
+  GattCharacteristic::Permission permission =
+      GattCharacteristic::Permission::kRead;
+  GattCharacteristic::Property property = GattCharacteristic::Property::kRead;
   // NOLINTNEXTLINE(google3-legacy-absl-backports)
   absl::optional<GattCharacteristic> gatt_characteristic =
       gatt_server->CreateCharacteristic(service_uuid, characteristic_uuid,
-                                        permissions, properties);
+                                        permission, property);
 
   ASSERT_TRUE(gatt_characteristic.has_value());
 
@@ -491,10 +543,9 @@ TEST_F(BleV2MediumTest, GattClientConnectToGattServerWorks) {
 
   ASSERT_NE(gatt_server, nullptr);
 
-  std::vector<GattCharacteristic::Permission> permissions = {
-      GattCharacteristic::Permission::kRead};
-  std::vector<GattCharacteristic::Property> properties = {
-      GattCharacteristic::Property::kRead};
+  GattCharacteristic::Permission permissions =
+      GattCharacteristic::Permission::kRead;
+  GattCharacteristic::Property properties = GattCharacteristic::Property::kRead;
   // Add characteristic and its value.
   // NOLINTNEXTLINE(google3-legacy-absl-backports)
   absl::optional<GattCharacteristic> server_characteristic =
@@ -506,8 +557,7 @@ TEST_F(BleV2MediumTest, GattClientConnectToGattServerWorks) {
       gatt_server->UpdateCharacteristic(*server_characteristic, server_value));
 
   // Start GattClient
-  auto ble_peripheral =
-      std::make_unique<BlePeripheralStub>(/*mac_address=*/"ABCD");
+  auto ble_peripheral = std::make_unique<BlePeripheralStub>(kDeviceMacAddress);
   std::unique_ptr<GattClient> gatt_client = ble_b.ConnectToGattServer(
       BleV2Peripheral(ble_peripheral.get()), kTxPowerLevel,
       /*ClientGattConnectionCallback=*/{});
@@ -525,9 +575,153 @@ TEST_F(BleV2MediumTest, GattClientConnectToGattServerWorks) {
 
   // Can read the characteristic value.
   EXPECT_THAT(gatt_client->ReadCharacteristic(*client_characteristic),
-              Optional(server_value));
+              Optional(server_value.string_data()));
 
   gatt_client->Disconnect();
+  gatt_server->Stop();
+  env_.Stop();
+}
+
+TEST_F(BleV2MediumTest, GattClientOperatiosOnCharacteristic) {
+  env_.Start();
+  BluetoothAdapter adapter_a;
+  BluetoothAdapter adapter_b;
+  BleV2Medium ble_a(adapter_a);
+  BleV2Medium ble_b(adapter_b);
+  Uuid service_uuid(1234, 5678);
+  Uuid characteristic_uuid(5678, 1234);
+
+  // Start GattClient.
+  auto ble_peripheral = std::make_unique<BlePeripheralStub>(kDeviceMacAddress);
+  std::unique_ptr<GattClient> gatt_client = ble_b.ConnectToGattServer(
+      BleV2Peripheral(ble_peripheral.get()), kTxPowerLevel,
+      /*ClientGattConnectionCallback=*/{});
+
+  ASSERT_NE(gatt_client, nullptr);
+  // Can't not discover service and characteristic.
+  EXPECT_FALSE(gatt_client->DiscoverServiceAndCharacteristics(
+      service_uuid, {characteristic_uuid}));
+
+  // Start GattServer.
+  std::unique_ptr<GattServer> gatt_server =
+      ble_a.StartGattServer(/*ServerGattConnectionCallback=*/{});
+
+  ASSERT_NE(gatt_server, nullptr);
+
+  // Add characteristic and its value.
+  GattCharacteristic::Permission permissions =
+      GattCharacteristic::Permission::kRead;
+  GattCharacteristic::Property properties = GattCharacteristic::Property::kRead;
+  absl::optional<GattCharacteristic> server_characteristic =
+      gatt_server->CreateCharacteristic(service_uuid, characteristic_uuid,
+                                        permissions, properties);
+  ASSERT_TRUE(server_characteristic.has_value());
+  ByteArray server_value("any");
+  EXPECT_TRUE(
+      gatt_server->UpdateCharacteristic(*server_characteristic, server_value));
+
+  // Can discover service and characteristics.
+  EXPECT_TRUE(gatt_client->DiscoverServiceAndCharacteristics(
+      service_uuid, {characteristic_uuid}));
+
+  // Can get Characteristic.
+  absl::optional<GattCharacteristic> client_characteristic =
+      gatt_client->GetCharacteristic(service_uuid, characteristic_uuid);
+  ASSERT_TRUE(client_characteristic.has_value());
+
+  // Can read the characteristic value.
+  EXPECT_THAT(gatt_client->ReadCharacteristic(*client_characteristic),
+              Optional(std::string("any")));
+
+  // Can write the characteristic value.
+  EXPECT_TRUE(gatt_client->WriteCharacteristic(
+      *client_characteristic, "hello",
+      api::ble_v2::GattClient::WriteType::kWithResponse));
+  EXPECT_THAT(gatt_client->ReadCharacteristic(*client_characteristic),
+              Optional(std::string("hello")));
+
+  gatt_client->Disconnect();
+
+  // Failed to write/read characteristic value as gatt is disconnected.
+  EXPECT_FALSE(gatt_client->WriteCharacteristic(
+      *client_characteristic, "any",
+      api::ble_v2::GattClient::WriteType::kWithResponse));
+  EXPECT_THAT(gatt_client->ReadCharacteristic(*client_characteristic),
+              std::nullopt);
+  gatt_server->Stop();
+  env_.Stop();
+}
+
+TEST_F(BleV2MediumTest, GattClientSubscribeNotificationGattServerCanNotify) {
+  env_.Start();
+  BluetoothAdapter adapter_a;
+  BluetoothAdapter adapter_b;
+  BleV2Medium ble_a(adapter_a);
+  BleV2Medium ble_b(adapter_b);
+  Uuid service_uuid(1234, 5678);
+  Uuid characteristic_uuid(5678, 1234);
+  GattCharacteristic::Permission permissions =
+      GattCharacteristic::Permission::kRead;
+  GattCharacteristic::Property properties =
+      GattCharacteristic::Property::kRead |
+      GattCharacteristic::Property::kNotify;
+
+  // Start GattServer
+  std::unique_ptr<GattServer> gatt_server =
+      ble_a.StartGattServer(/*ServerGattConnectionCallback=*/{});
+
+  ASSERT_NE(gatt_server, nullptr);
+  // Add characteristic and its value.
+  // NOLINTNEXTLINE(google3-legacy-absl-backports)
+  absl::optional<GattCharacteristic> server_characteristic =
+      gatt_server->CreateCharacteristic(service_uuid, characteristic_uuid,
+                                        permissions, properties);
+  EXPECT_TRUE(gatt_server->UpdateCharacteristic(server_characteristic.value(),
+                                                ByteArray("any")));
+
+  // Start GattClient
+  auto ble_peripheral = std::make_unique<BlePeripheralStub>(kDeviceMacAddress);
+  std::unique_ptr<GattClient> gatt_client = ble_b.ConnectToGattServer(
+      BleV2Peripheral(ble_peripheral.get()), kTxPowerLevel,
+      /*ClientGattConnectionCallback=*/{});
+  ASSERT_NE(gatt_client, nullptr);
+
+  EXPECT_TRUE(gatt_client->DiscoverServiceAndCharacteristics(
+      service_uuid, {characteristic_uuid}));
+
+  // Subscribes notification
+  EXPECT_TRUE(gatt_client->SetCharacteristicSubscription(
+      server_characteristic.value(), true,
+      [](absl::string_view value) { EXPECT_EQ(value, "hello"); }));
+
+  // Sends notifiction
+  EXPECT_EQ(gatt_server->NotifyCharacteristicChanged(
+                server_characteristic.value(), false, ByteArray("hello")),
+            absl::OkStatus());
+
+  // Subscribes notification
+  EXPECT_TRUE(gatt_client->SetCharacteristicSubscription(
+      server_characteristic.value(), true,
+      [](absl::string_view value) { EXPECT_EQ(value, "hello"); }));
+  // Sends indication
+  EXPECT_EQ(gatt_server->NotifyCharacteristicChanged(
+                server_characteristic.value(), true, ByteArray("any")),
+            absl::OkStatus());
+
+  // Unsubscribes notification
+  bool notified = false;
+  EXPECT_TRUE(gatt_client->SetCharacteristicSubscription(
+      server_characteristic.value(), true,
+      [&](absl::string_view value) { notified = true; }));
+  EXPECT_EQ(gatt_server->NotifyCharacteristicChanged(
+                server_characteristic.value(), true, ByteArray("any")),
+            absl::OkStatus());
+  EXPECT_FALSE(notified);
+
+  gatt_client->Disconnect();
+  // Failed to subscribe characteristic notification as gatt is disconnected.
+  EXPECT_FALSE(gatt_client->SetCharacteristicSubscription(
+      server_characteristic.value(), true, [](absl::string_view value) {}));
   gatt_server->Stop();
   env_.Stop();
 }

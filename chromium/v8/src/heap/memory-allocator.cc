@@ -271,9 +271,8 @@ Address MemoryAllocator::AllocateAlignedMemory(
   Address base = reservation.address();
 
   if (executable == EXECUTABLE) {
-    const size_t aligned_area_size = ::RoundUp(area_size, GetCommitPageSize());
-    if (!SetPermissionsOnExecutableMemoryChunk(&reservation, base,
-                                               aligned_area_size, chunk_size)) {
+    if (!SetPermissionsOnExecutableMemoryChunk(&reservation, base, area_size,
+                                               chunk_size)) {
       return HandleAllocationFailure(executable);
     }
   } else {
@@ -533,10 +532,11 @@ void MemoryAllocator::PerformFreeMemory(MemoryChunk* chunk) {
 }
 
 void MemoryAllocator::Free(MemoryAllocator::FreeMode mode, MemoryChunk* chunk) {
-  if (chunk->IsLargePage())
-    RecordLargePageDestroyed(*static_cast<LargePage*>(chunk));
-  else
-    RecordNormalPageDestroyed(*static_cast<Page*>(chunk));
+  if (chunk->IsLargePage()) {
+    RecordLargePageDestroyed(*LargePage::cast(chunk));
+  } else {
+    RecordNormalPageDestroyed(*Page::cast(chunk));
+  }
   switch (mode) {
     case FreeMode::kImmediately:
       PreFreeMemory(chunk);
@@ -694,17 +694,24 @@ bool MemoryAllocator::SetPermissionsOnExecutableMemoryChunk(VirtualMemory* vm,
                                                             size_t chunk_size) {
   const size_t page_size = GetCommitPageSize();
 
+  // The code area starts at an offset on the first page. To calculate the page
+  // aligned size of the area, we have to add that offset and then round up to
+  // commit page size.
+  size_t area_offset = MemoryChunkLayout::ObjectStartOffsetInCodePage() -
+                       MemoryChunkLayout::ObjectPageOffsetInCodePage();
+  size_t aligned_area_size = RoundUp(area_offset + area_size, page_size);
+
   // All addresses and sizes must be aligned to the commit page size.
   DCHECK(IsAligned(start, page_size));
-  DCHECK_EQ(0, area_size % page_size);
   DCHECK_EQ(0, chunk_size % page_size);
 
   const size_t guard_size = MemoryChunkLayout::CodePageGuardSize();
   const size_t pre_guard_offset = MemoryChunkLayout::CodePageGuardStartOffset();
   const size_t code_area_offset =
-      MemoryChunkLayout::ObjectStartOffsetInCodePage();
+      MemoryChunkLayout::ObjectPageOffsetInCodePage();
 
-  DCHECK_EQ(pre_guard_offset + guard_size + area_size + guard_size, chunk_size);
+  DCHECK_EQ(pre_guard_offset + guard_size + aligned_area_size + guard_size,
+            chunk_size);
 
   const Address pre_guard_page = start + pre_guard_offset;
   const Address code_area = start + code_area_offset;
@@ -722,15 +729,15 @@ bool MemoryAllocator::SetPermissionsOnExecutableMemoryChunk(VirtualMemory* vm,
       // Create the pre-code guard page, following the header.
       if (vm->DiscardSystemPages(pre_guard_page, page_size)) {
         // Commit the executable code body.
-        if (vm->RecommitPages(code_area, area_size,
+        if (vm->RecommitPages(code_area, aligned_area_size,
                               PageAllocator::kReadWriteExecute)) {
           // Create the post-code guard page.
           if (vm->DiscardSystemPages(post_guard_page, page_size)) {
-            UpdateAllocatedSpaceLimits(start, code_area + area_size);
+            UpdateAllocatedSpaceLimits(start, code_area + aligned_area_size);
             return true;
           }
 
-          vm->DiscardSystemPages(code_area, area_size);
+          vm->DiscardSystemPages(code_area, aligned_area_size);
         }
       }
       vm->DiscardSystemPages(start, pre_guard_offset);
@@ -747,7 +754,7 @@ bool MemoryAllocator::SetPermissionsOnExecutableMemoryChunk(VirtualMemory* vm,
         bool set_permission_successed = false;
 #if V8_HEAP_USE_PKU_JIT_WRITE_PROTECT
         if (!jitless && RwxMemoryWriteScope::IsSupported()) {
-          base::AddressRegion region(code_area, area_size);
+          base::AddressRegion region(code_area, aligned_area_size);
           set_permission_successed =
               base::MemoryProtectionKey::SetPermissionsAndKey(
                   code_page_allocator_, region,
@@ -757,7 +764,7 @@ bool MemoryAllocator::SetPermissionsOnExecutableMemoryChunk(VirtualMemory* vm,
 #endif
         {
           set_permission_successed = vm->SetPermissions(
-              code_area, area_size,
+              code_area, aligned_area_size,
               jitless ? PageAllocator::kReadWrite
                       : MemoryChunk::GetCodeModificationPermission());
         }
@@ -765,11 +772,11 @@ bool MemoryAllocator::SetPermissionsOnExecutableMemoryChunk(VirtualMemory* vm,
           // Create the post-code guard page.
           if (vm->SetPermissions(post_guard_page, page_size,
                                  PageAllocator::kNoAccess)) {
-            UpdateAllocatedSpaceLimits(start, code_area + area_size);
+            UpdateAllocatedSpaceLimits(start, code_area + aligned_area_size);
             return true;
           }
 
-          CHECK(vm->SetPermissions(code_area, area_size,
+          CHECK(vm->SetPermissions(code_area, aligned_area_size,
                                    PageAllocator::kNoAccess));
         }
       }
@@ -784,12 +791,16 @@ bool MemoryAllocator::SetPermissionsOnExecutableMemoryChunk(VirtualMemory* vm,
 const MemoryChunk* MemoryAllocator::LookupChunkContainingAddress(
     const NormalPagesSet& normal_pages, const LargePagesSet& large_pages,
     Address addr) {
+  // As the address may not correspond to a valid heap object, the chunk we
+  // obtain below is not necessarily a valid chunk.
   BasicMemoryChunk* chunk = BasicMemoryChunk::FromAddress(addr);
+  // Check if it corresponds to a known normal or large page.
   if (auto it = normal_pages.find(static_cast<Page*>(chunk));
       it != normal_pages.end()) {
     // The chunk is a normal page.
-    DCHECK_LE(chunk->address(), addr);
-    if (chunk->Contains(addr)) return *it;
+    auto* normal_page = Page::cast(chunk);
+    DCHECK_LE(normal_page->address(), addr);
+    if (normal_page->Contains(addr)) return normal_page;
   } else if (auto it = large_pages.upper_bound(static_cast<LargePage*>(chunk));
              it != large_pages.begin()) {
     // The chunk could be inside a large page.

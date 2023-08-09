@@ -78,7 +78,8 @@ os = struct(
     MAC_10_15 = os_enum(os_category.MAC, "Mac-10.15"),
     MAC_12 = os_enum(os_category.MAC, "Mac-12"),
     MAC_13 = os_enum(os_category.MAC, "Mac-13"),
-    MAC_DEFAULT = os_enum(os_category.MAC, "Mac-12"),
+    # TODO(crbug.com/1448262) Remove Mac 12 once builders migrate to Mac 13
+    MAC_DEFAULT = os_enum(os_category.MAC, "Mac-12|Mac-13"),
     MAC_ANY = os_enum(os_category.MAC, "Mac"),
     WINDOWS_10 = os_enum(os_category.WINDOWS, "Windows-10"),
     WINDOWS_11 = os_enum(os_category.WINDOWS, "Windows-11"),
@@ -145,7 +146,15 @@ reclient = struct(
         LOW_JOBS_FOR_CI = 80,
         HIGH_JOBS_FOR_CI = 500,
         LOW_JOBS_FOR_CQ = 150,
+        MID_JOBS_FOR_CQ = 225,
         HIGH_JOBS_FOR_CQ = 300,
+    ),
+)
+
+siso = struct(
+    project = struct(
+        DEFAULT_TRUSTED = reclient.instance.DEFAULT_TRUSTED,
+        DEFAULT_UNTRUSTED = reclient.instance.DEFAULT_UNTRUSTED,
     ),
 )
 
@@ -190,7 +199,7 @@ xcode = struct(
     # Xcode14 RC will be used to build Main iOS
     x14main = xcode_enum("14c18"),
     # A newer Xcode 14 RC  used on beta bots.
-    x14betabots = xcode_enum("14c18"),
+    x14betabots = xcode_enum("14e222b"),
     # in use by ios-webkit-tot
     x14wk = xcode_enum("14c18wk"),
 )
@@ -329,7 +338,6 @@ def _reclient_property(*, instance, service, jobs, rewrapper_env, profiler_servi
                      ", ".join(_VALID_REPROXY_ENV_PREFIX_LIST) +
                      "), got '%s'" % k)
         reclient["bootstrap_env"] = bootstrap_env
-    scandeps_server = defaults.get_value("reclient_scandeps_server", scandeps_server)
     if scandeps_server:
         reclient["scandeps_server"] = scandeps_server
     profiler_service = defaults.get_value("reclient_profiler_service", profiler_service)
@@ -418,10 +426,13 @@ defaults = args.defaults(
     reclient_bootstrap_env = None,
     reclient_profiler_service = None,
     reclient_publish_trace = None,
-    reclient_scandeps_server = None,
+    reclient_scandeps_server = args.COMPUTE,
     reclient_cache_silo = None,
     reclient_ensure_verified = None,
     reclient_disable_bq_upload = None,
+    siso_project = None,
+    siso_enable_cloud_profiler = None,
+    siso_enable_cloud_trace = None,
     health_spec = None,
 
     # Provide vars for bucket and executable so users don't have to
@@ -486,6 +497,9 @@ def builder(
         reclient_cache_silo = None,
         reclient_ensure_verified = None,
         reclient_disable_bq_upload = None,
+        siso_project = args.DEFAULT,
+        siso_enable_cloud_profiler = args.DEFAULT,
+        siso_enable_cloud_trace = args.DEFAULT,
         health_spec = args.DEFAULT,
         **kwargs):
     """Define a builder.
@@ -668,6 +682,10 @@ def builder(
             effect if reclient_instance is not set.
         reclient_disable_bq_upload: If True, rbe_metrics will not be uploaded to
             BigQuery after each build
+        siso_project: a string indicating the GCP project hosting the RBE
+            instance and other Cloud services. e.g. logging, trace etc.
+        siso_enable_cloud_profiler: If True, enable cloud profiler in siso.
+        siso_enable_cloud_trace: If True, enable cloud trace in siso.
         **kwargs: Additional keyword arguments to forward on to `luci.builder`.
 
     Returns:
@@ -808,8 +826,14 @@ def builder(
     if code_coverage != None:
         properties["$build/code_coverage"] = code_coverage
 
-    if reclient_scandeps_server == args.DEFAULT and os and os.category == os_category.MAC:
-        reclient_scandeps_server = True
+    reclient_scandeps_server = defaults.get_value(
+        "reclient_scandeps_server",
+        reclient_scandeps_server,
+    )
+
+    # Enable scandeps_server on Mac by default.
+    if reclient_scandeps_server == args.COMPUTE:
+        reclient_scandeps_server = os and os.category == os_category.MAC
 
     reclient = _reclient_property(
         instance = reclient_instance,
@@ -826,6 +850,14 @@ def builder(
     )
     if reclient != None:
         properties["$build/reclient"] = reclient
+
+    siso = {
+        "project": defaults.get_value("siso_project", siso_project),
+        "enable_cloud_profiler": defaults.get_value("siso_enable_cloud_profiler", siso_enable_cloud_profiler),
+        "enable_cloud_trace": defaults.get_value("siso_enable_cloud_trace", siso_enable_cloud_trace),
+    }
+    if siso["project"]:
+        properties["$build/siso"] = siso
 
     kwargs = dict(kwargs)
     if bucket != args.COMPUTE:
@@ -847,8 +879,6 @@ def builder(
     if triggered_by != args.COMPUTE:
         kwargs["triggered_by"] = triggered_by
 
-    experiments = kwargs.pop("experiments", None) or {}
-
     builder = branches.builder(
         name = name,
         branch_selector = branch_selector,
@@ -859,7 +889,6 @@ def builder(
             resultdb_bigquery_exports = resultdb_bigquery_exports,
             resultdb_index_by_timestamp = resultdb_index_by_timestamp,
         ),
-        experiments = experiments,
         **kwargs
     )
 

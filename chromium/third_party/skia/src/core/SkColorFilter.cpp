@@ -23,13 +23,13 @@
 #include "src/core/SkVM.h"
 #include "src/core/SkWriteBuffer.h"
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
 #include "src/gpu/ganesh/GrColorInfo.h"
 #include "src/gpu/ganesh/GrColorSpaceXform.h"
 #include "src/gpu/ganesh/GrFragmentProcessor.h"
 #endif
 
-#ifdef SK_GRAPHITE_ENABLED
+#if defined(SK_GRAPHITE)
 #include "src/gpu/graphite/KeyContext.h"
 #include "src/gpu/graphite/KeyHelpers.h"
 #include "src/gpu/graphite/PaintParamsKey.h"
@@ -64,7 +64,7 @@ bool SkColorFilterBase::onAsAColorMatrix(float matrix[20]) const {
     return false;
 }
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
 GrFPResult SkColorFilterBase::asFragmentProcessor(std::unique_ptr<GrFragmentProcessor> inputFP,
                                                   GrRecordingContext* context,
                                                   const GrColorInfo& dstColorInfo,
@@ -73,7 +73,7 @@ GrFPResult SkColorFilterBase::asFragmentProcessor(std::unique_ptr<GrFragmentProc
     return GrFPFailure(std::move(inputFP));
 }
 #endif
-
+#if defined(SK_ENABLE_SKVM)
 skvm::Color SkColorFilterBase::program(skvm::Builder* p, skvm::Color c,
                                        const SkColorInfo& dst,
                                        skvm::Uniforms* uniforms, SkArenaAlloc* alloc) const {
@@ -87,6 +87,7 @@ skvm::Color SkColorFilterBase::program(skvm::Builder* p, skvm::Color c,
     //SkDebugf("cannot program %s\n", this->getTypeName());
     return {};
 }
+#endif
 
 SkColor SkColorFilter::filterColor(SkColor c) const {
     // This is mostly meaningless. We should phase-out this call entirely.
@@ -105,15 +106,13 @@ SkColor4f SkColorFilter::filterColor4f(const SkColor4f& origSrcColor, SkColorSpa
 
 SkPMColor4f SkColorFilterBase::onFilterColor4f(const SkPMColor4f& color,
                                                SkColorSpace* dstCS) const {
-    constexpr size_t kEnoughForCommonFilters = 512;  // big enough for compose+colormatrix
+    constexpr size_t kEnoughForCommonFilters = 2048;  // big enough for a tiny SkSL program
     SkSTArenaAlloc<kEnoughForCommonFilters> alloc;
     SkRasterPipeline    pipeline(&alloc);
     pipeline.append_constant_color(&alloc, color.vec());
-    SkPaint solidPaint;
-    solidPaint.setColor4f(color.unpremul());
     SkMatrixProvider matrixProvider(SkMatrix::I());
     SkSurfaceProps props{}; // default OK; colorFilters don't render text
-    SkStageRec rec = {&pipeline, &alloc, kRGBA_F32_SkColorType, dstCS, solidPaint, props};
+    SkStageRec rec = {&pipeline, &alloc, kRGBA_F32_SkColorType, dstCS, color.unpremul(), props};
 
     if (as_CFB(this)->appendStages(rec, color.fA == 1)) {
         SkPMColor4f dst;
@@ -123,6 +122,7 @@ SkPMColor4f SkColorFilterBase::onFilterColor4f(const SkPMColor4f& color,
         return dst;
     }
 
+#if defined(SK_ENABLE_SKVM)
     // This filter doesn't support SkRasterPipeline... try skvm.
     skvm::Builder b;
     skvm::Uniforms uni(b.uniform(), 4);
@@ -138,19 +138,20 @@ SkPMColor4f SkColorFilterBase::onFilterColor4f(const SkPMColor4f& color,
         b.done("filterColor4f", allow_jit).eval(1, uni.buf.data(), &color);
         return color;
     }
+#endif
 
-    SkASSERT(false);
+    SkDEBUGFAIL("onFilterColor4f unimplemented for this filter");
     return SkPMColor4f{0,0,0,0};
 }
 
-#ifdef SK_GRAPHITE_ENABLED
+#if defined(SK_GRAPHITE)
 void SkColorFilterBase::addToKey(const skgpu::graphite::KeyContext& keyContext,
                                  skgpu::graphite::PaintParamsKeyBuilder* builder,
                                  skgpu::graphite::PipelineDataGatherer* gatherer) const {
     using namespace skgpu::graphite;
 
     // Return the input color as-is.
-    PassthroughShaderBlock::BeginBlock(keyContext, builder, gatherer);
+    PriorOutputBlock::BeginBlock(keyContext, builder, gatherer);
     builder->endBlock();
 }
 #endif
@@ -173,14 +174,15 @@ public:
                fOuter->appendStages(rec, innerIsOpaque);
     }
 
+#if defined(SK_ENABLE_SKVM)
     skvm::Color onProgram(skvm::Builder* p, skvm::Color c,
                           const SkColorInfo& dst,
                           skvm::Uniforms* uniforms, SkArenaAlloc* alloc) const override {
                c = fInner->program(p, c, dst, uniforms, alloc);
         return c ? fOuter->program(p, c, dst, uniforms, alloc) : skvm::Color{};
     }
-
-#if SK_SUPPORT_GPU
+#endif
+#if defined(SK_GANESH)
     GrFPResult asFragmentProcessor(std::unique_ptr<GrFragmentProcessor> inputFP,
                                    GrRecordingContext* context,
                                    const GrColorInfo& dstColorInfo,
@@ -205,7 +207,7 @@ public:
     }
 #endif
 
-#ifdef SK_GRAPHITE_ENABLED
+#if defined(SK_GRAPHITE)
     void addToKey(const skgpu::graphite::KeyContext& keyContext,
                   skgpu::graphite::PaintParamsKeyBuilder* builder,
                   skgpu::graphite::PipelineDataGatherer* gatherer) const override {
@@ -218,7 +220,7 @@ public:
 
         builder->endBlock();
     }
-#endif // SK_GRAPHITE_ENABLED
+#endif // SK_GRAPHITE
 
 protected:
     void flatten(SkWriteBuffer& buffer) const override {
@@ -273,7 +275,7 @@ public:
 
     {}
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
     GrFPResult asFragmentProcessor(std::unique_ptr<GrFragmentProcessor> inputFP,
                                    GrRecordingContext* context,
                                    const GrColorInfo& dstColorInfo,
@@ -286,7 +288,7 @@ public:
     }
 #endif
 
-#ifdef SK_GRAPHITE_ENABLED
+#if defined(SK_GRAPHITE)
     void addToKey(const skgpu::graphite::KeyContext& keyContext,
                   skgpu::graphite::PaintParamsKeyBuilder* builder,
                   skgpu::graphite::PipelineDataGatherer* gatherer) const override {
@@ -313,10 +315,12 @@ public:
         return true;
     }
 
+#if defined(SK_ENABLE_SKVM)
     skvm::Color onProgram(skvm::Builder* p, skvm::Color c, const SkColorInfo& dst,
                           skvm::Uniforms* uniforms, SkArenaAlloc* alloc) const override {
         return premul(fSteps.program(p, uniforms, unpremul(c)));
     }
+#endif
 
 protected:
     void flatten(SkWriteBuffer& buffer) const override {
@@ -404,7 +408,7 @@ public:
         return SkColorSpace::MakeRGB(tf, gamut);
     }
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
     GrFPResult asFragmentProcessor(std::unique_ptr<GrFragmentProcessor> inputFP,
                                    GrRecordingContext* context,
                                    const GrColorInfo& dstColorInfo,
@@ -427,7 +431,7 @@ public:
     }
 #endif
 
-#ifdef SK_GRAPHITE_ENABLED
+#if defined(SK_GRAPHITE)
     void addToKey(const skgpu::graphite::KeyContext& keyContext,
                   skgpu::graphite::PaintParamsKeyBuilder* builder,
                   skgpu::graphite::PipelineDataGatherer* gatherer) const override {
@@ -467,21 +471,30 @@ public:
         SkColorInfo dst = {rec.fDstColorType, kPremul_SkAlphaType, dstCS},
                 working = {rec.fDstColorType, workingAT, workingCS};
 
+        const auto* dstToWorking = rec.fAlloc->make<SkColorSpaceXformSteps>(dst, working);
+        const auto* workingToDst = rec.fAlloc->make<SkColorSpaceXformSteps>(working, dst);
+
+        // Any SkSL effects might reference the paint color, which is already in the destination
+        // color space. We need to transform it to the working space for consistency.
+        SkColor4f paintColorInWorkingSpace = rec.fPaintColor;
+        dstToWorking->apply(paintColorInWorkingSpace.vec());
+
         SkStageRec workingRec = {rec.fPipeline,
                                  rec.fAlloc,
                                  rec.fDstColorType,
                                  workingCS.get(),
-                                 rec.fPaint,
+                                 paintColorInWorkingSpace,
                                  rec.fSurfaceProps};
 
-        rec.fAlloc->make<SkColorSpaceXformSteps>(dst, working)->apply(rec.fPipeline);
+        dstToWorking->apply(rec.fPipeline);
         if (!as_CFB(fChild)->appendStages(workingRec, shaderIsOpaque)) {
             return false;
         }
-        rec.fAlloc->make<SkColorSpaceXformSteps>(working, dst)->apply(rec.fPipeline);
+        workingToDst->apply(rec.fPipeline);
         return true;
     }
 
+#if defined(SK_ENABLE_SKVM)
     skvm::Color onProgram(skvm::Builder* p, skvm::Color c, const SkColorInfo& rawDst,
                           skvm::Uniforms* uniforms, SkArenaAlloc* alloc) const override {
         sk_sp<SkColorSpace> dstCS = rawDst.refColorSpace();
@@ -498,6 +511,7 @@ public:
         return c ? SkColorSpaceXformSteps{working,dst}.program(p, uniforms, c)
                  : c;
     }
+#endif
 
     SkPMColor4f onFilterColor4f(const SkPMColor4f& origColor,
                                 SkColorSpace* rawDstCS) const override {

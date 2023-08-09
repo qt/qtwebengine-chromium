@@ -31,7 +31,7 @@ namespace tint::ast {
 /// ```
 ///
 /// @see https://www.w3.org/TR/WGSL/#creation-time-consts
-class Parameter final : public Castable<Parameter, Variable> {
+class Parameter final : public utils::Castable<Parameter, Variable> {
   public:
     /// Create a 'parameter' creation-time value variable.
     /// @param pid the identifier of the program that owns this node
@@ -46,9 +46,6 @@ class Parameter final : public Castable<Parameter, Variable> {
               const Identifier* name,
               Type type,
               utils::VectorRef<const Attribute*> attributes);
-
-    /// Move constructor
-    Parameter(Parameter&&);
 
     /// Destructor
     ~Parameter() override;

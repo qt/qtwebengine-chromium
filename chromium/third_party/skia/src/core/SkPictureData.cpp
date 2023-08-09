@@ -7,23 +7,27 @@
 
 #include "src/core/SkPictureData.h"
 
-#include "include/core/SkImageGenerator.h"
+#include "include/core/SkFlattenable.h"
+#include "include/core/SkSerialProcs.h"
+#include "include/core/SkString.h"
 #include "include/core/SkTypeface.h"
+#include "include/private/base/SkDebug.h"
+#include "include/private/base/SkTFitsIn.h"
+#include "include/private/base/SkTemplates.h"
 #include "include/private/base/SkTo.h"
 #include "src/base/SkAutoMalloc.h"
 #include "src/core/SkPicturePriv.h"
 #include "src/core/SkPictureRecord.h"
+#include "src/core/SkPtrRecorder.h"
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkStreamPriv.h"
+#include "src/core/SkTHash.h"
 #include "src/core/SkTextBlobPriv.h"
 #include "src/core/SkVerticesPriv.h"
 #include "src/core/SkWriteBuffer.h"
 
-#include <new>
-
-#if SK_SUPPORT_GPU
-#include "include/private/chromium/Slug.h"
-#endif
+#include <cstring>
+#include <utility>
 
 using namespace skia_private;
 
@@ -48,7 +52,7 @@ SkPictureData::SkPictureData(const SkPictureRecord& record,
     , fTextBlobs(record.getTextBlobs())
     , fVertices(record.getVertices())
     , fImages(record.getImages())
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
     , fSlugs(record.getSlugs())
 #endif
     , fInfo(info) {
@@ -177,7 +181,7 @@ void SkPictureData::flattenToBuffer(SkWriteBuffer& buffer, bool textBlobsOnly) c
         }
     }
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
     if (!textBlobsOnly) {
         write_tag_size(buffer, SK_PICT_SLUG_BUFFER_TAG, fSlugs.size());
         for (const auto& slug : fSlugs) {
@@ -423,7 +427,7 @@ static sk_sp<SkDrawable> create_drawable_from_buffer(SkReadBuffer& buffer) {
 // We need two types 'cause SkDrawable is const-variant.
 template <typename T, typename U>
 bool new_array_from_buffer(SkReadBuffer& buffer, uint32_t inCount,
-                           SkTArray<sk_sp<T>>& array, sk_sp<U> (*factory)(SkReadBuffer&)) {
+                           TArray<sk_sp<T>>& array, sk_sp<U> (*factory)(SkReadBuffer&)) {
     if (!buffer.validate(array.empty() && SkTFitsIn<int>(inCount))) {
         return false;
     }
@@ -477,7 +481,7 @@ void SkPictureData::parseBufferTag(SkReadBuffer& buffer, uint32_t tag, uint32_t 
             new_array_from_buffer(buffer, size, fTextBlobs, SkTextBlobPriv::MakeFromBuffer);
             break;
         case SK_PICT_SLUG_BUFFER_TAG:
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
             new_array_from_buffer(buffer, size, fSlugs, sktext::gpu::Slug::MakeFromBuffer);
 #endif
             break;

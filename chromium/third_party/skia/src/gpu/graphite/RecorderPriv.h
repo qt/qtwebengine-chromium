@@ -11,7 +11,12 @@
 #include <functional>
 
 #include "include/gpu/graphite/Recorder.h"
+#include "src/gpu/graphite/ResourceCache.h"
+#include "src/gpu/graphite/ResourceProvider.h"
 #include "src/gpu/graphite/SharedContext.h"
+
+class SkBitmap;
+class SkImage;
 
 namespace skgpu::graphite {
 
@@ -55,8 +60,16 @@ public:
     sktext::gpu::TextBlobRedrawCoordinator* textBlobCache() {
         return fRecorder->fTextBlobCache.get();
     }
+    ProxyCache* proxyCache() { return this->resourceProvider()->proxyCache(); }
+
+    static sk_sp<TextureProxy> CreateCachedProxy(Recorder*,
+                                                 const SkBitmap&,
+                                                 Mipmapped = skgpu::Mipmapped::kNo);
+
+    uint32_t recorderID() const { return fRecorder->fRecorderID; }
 
 #if GRAPHITE_TEST_UTILS
+    ResourceCache* resourceCache() { return fRecorder->fResourceProvider->resourceCache(); }
     // used by the Context that created this Recorder to set a back pointer
     void setContext(Context*);
     Context* context() { return fRecorder->fContext; }

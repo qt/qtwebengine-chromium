@@ -8,23 +8,23 @@
 #include "src/sksl/SkSLParser.h"
 
 #include "include/core/SkSpan.h"
-#include "include/private/SkSLModifiers.h"
-#include "include/private/SkSLProgramElement.h"
-#include "include/private/SkSLString.h"
-#include "include/sksl/DSLBlock.h"
-#include "include/sksl/DSLCase.h"
-#include "include/sksl/DSLFunction.h"
-#include "include/sksl/DSLVar.h"
-#include "include/sksl/SkSLOperator.h"
 #include "include/sksl/SkSLVersion.h"
 #include "src/core/SkTHash.h"
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLConstantFolder.h"
+#include "src/sksl/SkSLOperator.h"
+#include "src/sksl/SkSLString.h"
 #include "src/sksl/SkSLThreadContext.h"
+#include "src/sksl/dsl/DSLBlock.h"
+#include "src/sksl/dsl/DSLCase.h"
+#include "src/sksl/dsl/DSLFunction.h"
+#include "src/sksl/dsl/DSLVar.h"
 #include "src/sksl/dsl/priv/DSLWriter.h"
 #include "src/sksl/dsl/priv/DSL_priv.h"
 #include "src/sksl/ir/SkSLExpression.h"
+#include "src/sksl/ir/SkSLModifiers.h"
 #include "src/sksl/ir/SkSLProgram.h"
+#include "src/sksl/ir/SkSLProgramElement.h"
 #include "src/sksl/ir/SkSLSymbolTable.h"
 #include "src/sksl/ir/SkSLVariable.h"
 
@@ -35,6 +35,7 @@
 #include <utility>
 #include <vector>
 
+using namespace skia_private;
 using namespace SkSL::dsl;
 
 namespace SkSL {
@@ -468,7 +469,7 @@ bool Parser::functionDeclarationEnd(Position start,
                                     DSLModifiers& modifiers,
                                     DSLType type,
                                     const Token& name) {
-    SkSTArray<8, DSLParameter> parameters;
+    STArray<8, DSLParameter> parameters;
     Token lookahead = this->peek();
     if (lookahead.fKind == Token::Kind::TK_RPAREN) {
         // `()` means no parameters at all.
@@ -491,7 +492,7 @@ bool Parser::functionDeclarationEnd(Position start,
     if (!this->expect(Token::Kind::TK_RPAREN, "')'")) {
         return false;
     }
-    SkSTArray<8, DSLParameter*> parameterPointers;
+    STArray<8, DSLParameter*> parameterPointers;
     parameterPointers.reserve_back(parameters.size());
     for (DSLParameter& param : parameters) {
         parameterPointers.push_back(&param);
@@ -741,8 +742,8 @@ DSLType Parser::structDeclaration() {
     if (!depth.increase()) {
         return DSLType(nullptr);
     }
-    SkTArray<DSLField> fields;
-    SkTHashSet<std::string_view> fieldNames;
+    TArray<DSLField> fields;
+    THashSet<std::string_view> fieldNames;
     while (!this->checkNext(Token::Kind::TK_RBRACE)) {
         Token fieldStart = this->peek();
         DSLModifiers modifiers = this->modifiers();
@@ -795,8 +796,8 @@ DSLType Parser::structDeclaration() {
 }
 
 /* structDeclaration ((IDENTIFIER varDeclarationEnd) | SEMICOLON) */
-SkTArray<dsl::DSLGlobalVar> Parser::structVarDeclaration(Position start,
-                                                         const DSLModifiers& modifiers) {
+TArray<dsl::DSLGlobalVar> Parser::structVarDeclaration(Position start,
+                                                       const DSLModifiers& modifiers) {
     DSLType type = this->structDeclaration();
     if (!type.hasValue()) {
         return {};
@@ -885,7 +886,7 @@ DSLLayout Parser::layout() {
         WGSL
     };
 
-    using LayoutMap = SkTHashMap<std::string_view, LayoutToken>;
+    using LayoutMap = THashMap<std::string_view, LayoutToken>;
     static LayoutMap* sLayoutTokens = new LayoutMap{
             {"location",                    LayoutToken::LOCATION},
             {"offset",                      LayoutToken::OFFSET},
@@ -1066,6 +1067,12 @@ DSLType Parser::type(DSLModifiers* modifiers) {
         return DSLType::Invalid();
     }
     DSLType result(this->text(type), modifiers, this->position(type));
+    if (result.isInterfaceBlock()) {
+        // SkSL puts interface blocks into the symbol table, but they aren't general-purpose types;
+        // you can't use them to declare a variable type or a function return type.
+        this->error(type, "expected a type, found '" + std::string(this->text(type)) + "'");
+        return DSLType::Invalid();
+    }
     Token bracket;
     while (this->checkNext(Token::Kind::TK_LBRACKET, &bracket)) {
         if (this->checkNext(Token::Kind::TK_RBRACKET)) {
@@ -1102,8 +1109,8 @@ bool Parser::interfaceBlock(const dsl::DSLModifiers& modifiers) {
         return false;
     }
     this->nextToken();
-    SkTArray<DSLField> fields;
-    SkTHashSet<std::string_view> fieldNames;
+    TArray<DSLField> fields;
+    THashSet<std::string_view> fieldNames;
     while (!this->checkNext(Token::Kind::TK_RBRACE)) {
         Position fieldPos = this->position(this->peek());
         DSLModifiers fieldModifiers = this->modifiers();
@@ -1271,7 +1278,7 @@ std::optional<DSLCase> Parser::switchCase() {
     if (!this->expect(Token::Kind::TK_COLON, "':'")) {
         return {};
     }
-    SkTArray<DSLStatement> statements;
+    TArray<DSLStatement> statements;
     while (this->peek().fKind != Token::Kind::TK_RBRACE &&
            this->peek().fKind != Token::Kind::TK_CASE &&
            this->peek().fKind != Token::Kind::TK_DEFAULT) {
@@ -1303,7 +1310,7 @@ DSLStatement Parser::switchStatement() {
     if (!this->expect(Token::Kind::TK_LBRACE, "'{'")) {
         return {};
     }
-    SkTArray<DSLCase> cases;
+    TArray<DSLCase> cases;
     while (this->peek().fKind == Token::Kind::TK_CASE) {
         std::optional<DSLCase> c = this->switchCase();
         if (!c) {
@@ -1314,7 +1321,7 @@ DSLStatement Parser::switchStatement() {
     // Requiring default: to be last (in defiance of C and GLSL) was a deliberate decision. Other
     // parts of the compiler may rely upon this assumption.
     if (this->peek().fKind == Token::Kind::TK_DEFAULT) {
-        SkTArray<DSLStatement> statements;
+        TArray<DSLStatement> statements;
         Token defaultStart;
         SkAssertResult(this->expect(Token::Kind::TK_DEFAULT, "'default'", &defaultStart));
         if (!this->expect(Token::Kind::TK_COLON, "':'")) {

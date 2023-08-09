@@ -8,10 +8,10 @@
 #ifndef SkOpts_DEFINED
 #define SkOpts_DEFINED
 
+#include "include/core/SkColor.h"
 #include "include/core/SkTypes.h"
 #include "include/private/SkOpts_spi.h"
 #include "src/core/SkRasterPipelineOpList.h"
-#include "src/core/SkXfermodePriv.h"
 
 /**
  * SkOpts (short for SkOptimizations) is a mechanism where we can ship with multiple implementations
@@ -62,6 +62,8 @@ struct SkBitmapProcState;
 struct SkRasterPipelineStage;
 namespace skvm {
 struct InterpreterInstruction;
+}
+namespace SkSL {
 class TraceHook;
 }
 
@@ -72,10 +74,6 @@ namespace SkOpts {
     void Init();
 
     // Declare function pointers here...
-
-    // May return nullptr if we haven't specialized the given Mode.
-    extern SkXfermode* (*create_xfermode)(SkBlendMode);
-
     extern void (*blit_mask_d32_a8)(SkPMColor*, size_t, const SkAlpha*, size_t, SkColor, int, int);
     extern void (*blit_row_color32)(SkPMColor*, const SkPMColor*, int, SkPMColor);
     extern void (*blit_row_s32a_opaque)(SkPMColor*, const SkPMColor*, int, U8CPU);
@@ -103,8 +101,6 @@ namespace SkOpts {
     extern void (*rect_memset32)(uint32_t[], uint32_t, int, size_t, int);
     extern void (*rect_memset64)(uint64_t[], uint64_t, int, size_t, int);
 
-    extern float (*cubic_solver)(float, float, float, float);
-
     static inline uint32_t hash(const void* data, size_t bytes, uint32_t seed=0) {
         // hash_fn is defined in SkOpts_spi.h so it can be used by //modules
         return hash_fn(data, bytes, seed);
@@ -128,10 +124,12 @@ namespace SkOpts {
     extern size_t raster_pipeline_lowp_stride;
     extern size_t raster_pipeline_highp_stride;
 
+#if defined(SK_ENABLE_SKVM)
     extern void (*interpret_skvm)(const skvm::InterpreterInstruction insts[], int ninsts,
                                   int nregs, int loop, const int strides[],
-                                  skvm::TraceHook* traceHooks[], int nTraceHooks,
+                                  SkSL::TraceHook* traceHooks[], int nTraceHooks,
                                   int nargs, int n, void* args[]);
+#endif
 }  // namespace SkOpts
 
 #endif // SkOpts_DEFINED

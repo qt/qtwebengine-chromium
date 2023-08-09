@@ -37,7 +37,8 @@ TEST_F(MslGeneratorImplTest, UnsupportedExtension) {
     GeneratorImpl& gen = Build();
 
     ASSERT_FALSE(gen.Generate());
-    EXPECT_EQ(gen.error(), R"(12:34 error: MSL backend does not support extension 'undefined')");
+    EXPECT_EQ(gen.Diagnostics().str(),
+              R"(12:34 error: MSL backend does not support extension 'undefined')");
 }
 
 TEST_F(MslGeneratorImplTest, Generate) {
@@ -49,7 +50,7 @@ TEST_F(MslGeneratorImplTest, Generate) {
 
     GeneratorImpl& gen = Build();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(#include <metal_stdlib>
 
 using namespace metal;
@@ -65,7 +66,9 @@ struct MslBuiltinData {
     const char* attribute_name;
 };
 inline std::ostream& operator<<(std::ostream& out, MslBuiltinData data) {
-    out << data.builtin;
+    utils::StringStream str;
+    str << data.builtin;
+    out << str.str();
     return out;
 }
 using MslBuiltinConversionTest = TestParamHelper<MslBuiltinData>;
@@ -109,14 +112,14 @@ TEST_F(MslGeneratorImplTest, HasInvariantAttribute_True) {
 
     GeneratorImpl& gen = Build();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_TRUE(gen.HasInvariant());
     EXPECT_EQ(gen.result(), R"(#include <metal_stdlib>
 
 using namespace metal;
 
 #if __METAL_VERSION__ >= 210
-#define TINT_INVARIANT @invariant
+#define TINT_INVARIANT [[invariant]]
 #else
 #define TINT_INVARIANT
 #endif
@@ -146,7 +149,7 @@ TEST_F(MslGeneratorImplTest, HasInvariantAttribute_False) {
 
     GeneratorImpl& gen = Build();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_FALSE(gen.HasInvariant());
     EXPECT_EQ(gen.result(), R"(#include <metal_stdlib>
 
@@ -172,7 +175,7 @@ TEST_F(MslGeneratorImplTest, WorkgroupMatrix) {
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(#include <metal_stdlib>
 
 using namespace metal;
@@ -212,7 +215,7 @@ TEST_F(MslGeneratorImplTest, WorkgroupMatrixInArray) {
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(#include <metal_stdlib>
 
 using namespace metal;
@@ -273,7 +276,7 @@ TEST_F(MslGeneratorImplTest, WorkgroupMatrixInStruct) {
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(#include <metal_stdlib>
 
 using namespace metal;
@@ -361,7 +364,7 @@ TEST_F(MslGeneratorImplTest, WorkgroupMatrix_Multiples) {
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(#include <metal_stdlib>
 
 using namespace metal;

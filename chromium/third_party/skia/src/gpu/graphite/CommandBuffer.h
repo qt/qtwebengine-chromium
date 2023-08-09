@@ -14,7 +14,6 @@
 #include "include/private/base/SkTArray.h"
 #include "src/gpu/graphite/AttachmentTypes.h"
 #include "src/gpu/graphite/CommandTypes.h"
-#include "src/gpu/graphite/ComputeTypes.h"
 #include "src/gpu/graphite/DrawTypes.h"
 #include "src/gpu/graphite/DrawWriter.h"
 
@@ -31,7 +30,7 @@ class Scene;
 namespace skgpu::graphite {
 
 class Buffer;
-class ComputePipeline;
+class DispatchGroup;
 class DrawPass;
 class SharedContext;
 class GraphicsPipeline;
@@ -42,6 +41,9 @@ class TextureProxy;
 
 class CommandBuffer {
 public:
+    using DrawPassList = skia_private::TArray<std::unique_ptr<DrawPass>>;
+    using DispatchGroupList = skia_private::TArray<std::unique_ptr<DispatchGroup>>;
+
     virtual ~CommandBuffer();
 
 #ifdef SK_DEBUG
@@ -63,11 +65,9 @@ public:
                        sk_sp<Texture> resolveTexture,
                        sk_sp<Texture> depthStencilTexture,
                        SkRect viewport,
-                       const std::vector<std::unique_ptr<DrawPass>>& drawPasses);
+                       const DrawPassList& drawPasses);
 
-    bool addComputePass(const ComputePassDesc&,
-                        sk_sp<ComputePipeline> pipeline,
-                        const std::vector<ResourceBinding>& bindings);
+    bool addComputePass(const DispatchGroupList& dispatchGroups);
 
     //---------------------------------------------------------------
     // Can only be used outside renderpasses
@@ -119,11 +119,9 @@ private:
                                  const Texture* resolveTexture,
                                  const Texture* depthStencilTexture,
                                  SkRect viewport,
-                                 const std::vector<std::unique_ptr<DrawPass>>& drawPasses) = 0;
+                                 const DrawPassList& drawPasses) = 0;
 
-    virtual bool onAddComputePass(const ComputePassDesc&,
-                                  const ComputePipeline*,
-                                  const std::vector<ResourceBinding>& bindings) = 0;
+    virtual bool onAddComputePass(const DispatchGroupList& dispatchGroups) = 0;
 
     virtual bool onCopyBufferToBuffer(const Buffer* srcBuffer,
                                       size_t srcOffset,
@@ -155,8 +153,8 @@ private:
 #endif
 
     inline static constexpr int kInitialTrackedResourcesCount = 32;
-    SkSTArray<kInitialTrackedResourcesCount, sk_sp<Resource>> fTrackedResources;
-    SkTArray<sk_sp<RefCntedCallback>> fFinishedProcs;
+    skia_private::STArray<kInitialTrackedResourcesCount, sk_sp<Resource>> fTrackedResources;
+    skia_private::TArray<sk_sp<RefCntedCallback>> fFinishedProcs;
 };
 
 } // namespace skgpu::graphite

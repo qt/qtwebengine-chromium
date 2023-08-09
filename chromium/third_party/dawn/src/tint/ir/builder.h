@@ -20,7 +20,10 @@
 #include "src/tint/constant/scalar.h"
 #include "src/tint/ir/binary.h"
 #include "src/tint/ir/bitcast.h"
+#include "src/tint/ir/builtin.h"
 #include "src/tint/ir/constant.h"
+#include "src/tint/ir/construct.h"
+#include "src/tint/ir/convert.h"
 #include "src/tint/ir/function.h"
 #include "src/tint/ir/if.h"
 #include "src/tint/ir/loop.h"
@@ -28,6 +31,7 @@
 #include "src/tint/ir/switch.h"
 #include "src/tint/ir/temp.h"
 #include "src/tint/ir/terminator.h"
+#include "src/tint/ir/user_call.h"
 #include "src/tint/ir/value.h"
 #include "src/tint/type/bool.h"
 #include "src/tint/type/f16.h"
@@ -86,7 +90,8 @@ class Builder {
     /// @param args the arguments
     /// @returns the new constant value
     template <typename T, typename... ARGS>
-    traits::EnableIf<traits::IsTypeOrDerived<T, constant::Value>, const T>* create(ARGS&&... args) {
+    utils::traits::EnableIf<utils::traits::IsTypeOrDerived<T, constant::Value>, const T>* create(
+        ARGS&&... args) {
         return ir.constants.Create<T>(std::forward<ARGS>(args)...);
     }
 
@@ -278,6 +283,37 @@ class Builder {
     /// @param val the value being bitcast
     /// @returns the instruction
     ir::Bitcast* Bitcast(const type::Type* type, Value* val);
+
+    /// Creates a user function call instruction
+    /// @param type the return type of the call
+    /// @param name the name of the function being called
+    /// @param args the call arguments
+    /// @returns the instruction
+    ir::UserCall* UserCall(const type::Type* type, Symbol name, utils::VectorRef<Value*> args);
+
+    /// Creates a value conversion instruction
+    /// @param to the type converted to
+    /// @param from the type converted from
+    /// @param args the arguments to be converted
+    /// @returns the instruction
+    ir::Convert* Convert(const type::Type* to,
+                         const type::Type* from,
+                         utils::VectorRef<Value*> args);
+
+    /// Creates a value constructor instruction
+    /// @param to the type being converted
+    /// @param args the arguments to be converted
+    /// @returns the instruction
+    ir::Construct* Construct(const type::Type* to, utils::VectorRef<Value*> args);
+
+    /// Creates a builtin call instruction
+    /// @param type the return type
+    /// @param func the builtin function
+    /// @param args the arguments to be converted
+    /// @returns the instruction
+    ir::Builtin* Builtin(const type::Type* type,
+                         builtin::Function func,
+                         utils::VectorRef<Value*> args);
 
     /// @returns a unique temp id
     Temp::Id AllocateTempId();

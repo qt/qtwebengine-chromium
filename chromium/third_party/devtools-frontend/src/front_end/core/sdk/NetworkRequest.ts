@@ -207,6 +207,7 @@ export class NetworkRequest extends Common.ObjectWrapper.ObjectWrapper<EventType
   readonly #frameIdInternal: Protocol.Page.FrameId|null;
   readonly #loaderIdInternal: Protocol.Network.LoaderId|null;
   readonly #initiatorInternal: Protocol.Network.Initiator|null|undefined;
+  readonly #hasUserGesture: boolean|undefined;
   #redirectSourceInternal: NetworkRequest|null;
   #preflightRequestInternal: NetworkRequest|null;
   #preflightInitiatorRequestInternal: NetworkRequest|null;
@@ -238,6 +239,7 @@ export class NetworkRequest extends Common.ObjectWrapper.ObjectWrapper<EventType
   };
   #responseHeadersTextInternal: string;
   #originalResponseHeaders: Protocol.Fetch.HeaderEntry[];
+  #sortedOriginalResponseHeaders?: NameValue[];
 
   // This field is only used when intercepting and overriding requests, because
   // in that case 'this.responseHeaders' does not contain 'set-cookie' headers.
@@ -305,7 +307,7 @@ export class NetworkRequest extends Common.ObjectWrapper.ObjectWrapper<EventType
   private constructor(
       requestId: string, backendRequestId: Protocol.Network.RequestId|undefined, url: Platform.DevToolsPath.UrlString,
       documentURL: Platform.DevToolsPath.UrlString, frameId: Protocol.Page.FrameId|null,
-      loaderId: Protocol.Network.LoaderId|null, initiator: Protocol.Network.Initiator|null) {
+      loaderId: Protocol.Network.LoaderId|null, initiator: Protocol.Network.Initiator|null, hasUserGesture?: boolean) {
     super();
 
     this.#requestIdInternal = requestId;
@@ -315,6 +317,7 @@ export class NetworkRequest extends Common.ObjectWrapper.ObjectWrapper<EventType
     this.#frameIdInternal = frameId;
     this.#loaderIdInternal = loaderId;
     this.#initiatorInternal = initiator;
+    this.#hasUserGesture = hasUserGesture;
     this.#redirectSourceInternal = null;
     this.#preflightRequestInternal = null;
     this.#preflightInitiatorRequestInternal = null;
@@ -387,8 +390,10 @@ export class NetworkRequest extends Common.ObjectWrapper.ObjectWrapper<EventType
   static create(
       backendRequestId: Protocol.Network.RequestId, url: Platform.DevToolsPath.UrlString,
       documentURL: Platform.DevToolsPath.UrlString, frameId: Protocol.Page.FrameId|null,
-      loaderId: Protocol.Network.LoaderId|null, initiator: Protocol.Network.Initiator|null): NetworkRequest {
-    return new NetworkRequest(backendRequestId, backendRequestId, url, documentURL, frameId, loaderId, initiator);
+      loaderId: Protocol.Network.LoaderId|null, initiator: Protocol.Network.Initiator|null,
+      hasUserGesture?: boolean): NetworkRequest {
+    return new NetworkRequest(
+        backendRequestId, backendRequestId, url, documentURL, frameId, loaderId, initiator, hasUserGesture);
   }
 
   static createForWebSocket(
@@ -962,6 +967,7 @@ export class NetworkRequest extends Common.ObjectWrapper.ObjectWrapper<EventType
 
   set originalResponseHeaders(headers: Protocol.Fetch.HeaderEntry[]) {
     this.#originalResponseHeaders = headers;
+    this.#sortedOriginalResponseHeaders = undefined;
   }
 
   get setCookieHeaders(): Protocol.Fetch.HeaderEntry[] {
@@ -988,10 +994,42 @@ export class NetworkRequest extends Common.ObjectWrapper.ObjectWrapper<EventType
     }
 
     this.#sortedResponseHeadersInternal = this.responseHeaders.slice();
-    this.#sortedResponseHeadersInternal.sort(function(a, b) {
-      return Platform.StringUtilities.compare(a.name.toLowerCase(), b.name.toLowerCase());
+    return this.#sortedResponseHeadersInternal.sort(function(a, b) {
+      return Platform.StringUtilities.compare(a.name.toLowerCase(), b.name.toLowerCase()) ||
+          Platform.StringUtilities.compare(a.value, b.value);
     });
-    return this.#sortedResponseHeadersInternal;
+  }
+
+  get sortedOriginalResponseHeaders(): NameValue[] {
+    if (this.#sortedOriginalResponseHeaders !== undefined) {
+      return this.#sortedOriginalResponseHeaders;
+    }
+
+    this.#sortedOriginalResponseHeaders = this.originalResponseHeaders.slice();
+    return this.#sortedOriginalResponseHeaders.sort(function(a, b) {
+      return Platform.StringUtilities.compare(a.name.toLowerCase(), b.name.toLowerCase()) ||
+          Platform.StringUtilities.compare(a.value, b.value);
+    });
+  }
+
+  hasOverriddenHeaders(): boolean {
+    if (!this.#originalResponseHeaders.length) {
+      return false;
+    }
+    const sortedResponseHeaders = this.sortedResponseHeaders;
+    const sortedOriginalResponseHeaders = this.sortedOriginalResponseHeaders;
+    if (sortedOriginalResponseHeaders.length !== sortedResponseHeaders.length) {
+      return true;
+    }
+    for (let i = 0; i < sortedResponseHeaders.length; i++) {
+      if (sortedResponseHeaders[i].name.toLowerCase() !== sortedOriginalResponseHeaders[i].name.toLowerCase()) {
+        return true;
+      }
+      if (sortedResponseHeaders[i].value !== sortedOriginalResponseHeaders[i].value) {
+        return true;
+      }
+    }
+    return false;
   }
 
   responseHeaderValue(headerName: string): string|undefined {
@@ -1332,6 +1370,10 @@ export class NetworkRequest extends Common.ObjectWrapper.ObjectWrapper<EventType
 
   initiator(): Protocol.Network.Initiator|null {
     return this.#initiatorInternal || null;
+  }
+
+  hasUserGesture(): boolean|null {
+    return this.#hasUserGesture ?? null;
   }
 
   frames(): WebSocketFrame[] {

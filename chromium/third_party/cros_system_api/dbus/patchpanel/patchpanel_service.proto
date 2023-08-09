@@ -28,6 +28,7 @@ message ArcStartupResponse {}
 
 // Notification that the ARC++ container is shutting down.
 message ArcShutdownRequest {
+  // TODO(hugobenichi) Deprecate this unused argument.
   // The PID of the ARC++ container; must match the PID that was sent at
   // startup.
   // Required.
@@ -48,8 +49,11 @@ message ArcVmStartupRequest {
 
 // Represents an IPv4 subnet given a base address and prefix length.
 message IPv4Subnet {
-  // The base address in network order.
-  uint32 base_addr = 1;
+  // The base address of the subnet, represented as 4 bytes in network order.
+  bytes addr = 3;
+
+  // Deprecated, use addr instead. The base address in network order.
+  uint32 base_addr = 1 [deprecated = true];
 
   // The prefix length of the subnet.
   uint32 prefix_len = 2;
@@ -509,3 +513,208 @@ message SetDnsRedirectionRuleResponse {
 
 // Signal that is emitted when a network configuration change happens.
 message NetworkConfigurationChangedSignal {}
+
+// IPv4 configuration for a L3 network created with CreateLocalOnlyNetwork or
+// CreateTetheredNetwork. If DHCP is not used, clients must configure their own
+// IPv4 configuration manually. In the case of tethering where the traffic is
+// forwarded to an upstream network, SNAT is always implicitly used.
+message IPv4Configuration {
+  // IPv4 prefix to use for configuring IPv4 connectivity. If empty, a random
+  // prefix will be picked in the Class B (172.16.0.0/12) or Class C
+  // (192.128.0.0/16) private network ranges with a typical /24 prefix length.
+  // This configuration can be static and applied manually by clients, or
+  // managed dynamically and automatically with DHCP in which case the DHCP
+  // address range is the full prefix.
+  optional IPv4Subnet ipv4_subnet = 1;
+
+  // IPv4 address used by the DUT on the network, represented as 4 bytes in
+  // network order. This address will be used for the DHCP server if DHCP is
+  // used. This address will be used as the next hop and advertised through DHCP
+  // if DHCP is used. If empty, a random address in the chosen IPv4 subnet will
+  // be used. This address is always pingable for clients connected to the
+  // network and can be resolved with ARP.
+  optional bytes gateway_addr = 2;
+
+  // If true, a DHCP service is started on the network.
+  bool use_dhcp = 3;
+
+  // A DHCP option to advertise to clients.
+  message DhcpOption {
+    // DHCP option code.
+    uint32 code = 1;
+
+    // DHCP option content. How to interpret the bytes is option specific.
+    bytes content = 2;
+  }
+
+  // If DHCP is used, these additional options will be advertised by the DHCP
+  // service.
+  repeated DhcpOption options = 4;
+
+  // The DHCP range represented as 4 bytes in network order. It should be set
+  // iff |use_dhcp| is true and |ipv4_subnet| is set.
+  optional bytes dhcp_start_addr = 5;
+  optional bytes dhcp_end_addr = 6;
+}
+
+// Describes possible errors when creating a downstream network for
+// CreateTetheredNetwork or CreateLocalOnlyNetwork requests.
+enum DownstreamNetworkResult {
+  // The request was successful.
+  SUCCESS = 0;
+  // The request was invalid.
+  INVALID_ARGUMENT = 1;
+  // The network interfaces specified for the request are already in use.
+  INTERFACE_USED = 2;
+  // The request failed.
+  ERROR = 3;
+  // Fails to start the DHCP server.
+  DHCP_SERVER_FAILURE = 4;
+}
+
+message DownstreamNetwork {
+  // Name of the network interface on which the downstream L3 network was
+  // created.
+  string downstream_ifname = 1;
+
+  // IPv4 subnet assigned to the downstream network. Undefined if the upstream
+  // network does not have IPv4 connectivity.
+  IPv4Subnet ipv4_subnet = 2;
+
+  // IPv4 address represented as 4 bytes in network order that was assigned to
+  // the gateway of the created network. This is the address of the DUT on the
+  // network and the next hop address for remote clients connected to the
+  // network. Empty if the upstream network does not have IPv4 connectivity.
+  bytes ipv4_gateway_addr = 3;
+}
+
+// Request to create a L3 logical network on a network interface and share
+// Internet access from another upstream network with this network. In this
+// configuration The DUT acts as a transparent router for remote clients
+// connected on the downstream network and forward the traffic to the upstream
+// network. The downstream network itself is not reachable from the DUT
+// (exception: DHCP service, RA server, ARP, ND proxy). The traffic accounting
+// source for traffic sent and received on the downstream network is always set
+// to TETHER. Dynamic IP configuration services for IPv4 and IPv6 are
+// automatically started depending on the configuration. The IPv4 configuration
+// is explicitly specified by the caller. The IPv6 configuration is always the
+// same as the upstream network if available. The client must append a valid
+// file descriptor immediately after the serialized proto. This file descriptor
+// must remain valid for as long as routing setup needs to persist. Invalidating
+// the file descriptor explicitly by closing it or implicitly when the client
+// process terminates will trigger the teardown of the routing setup and
+// associated services.
+message TetheredNetworkRequest {
+  // Required. Name of the network interface on which a L3 network should
+  // be created. It is assumed that no L3 connection is active on that
+  // interface and that shill has brought the interface up and prepared the link
+  // layer for accepting clients.
+  string ifname = 1;
+
+  // Required. Name of the network interface of the upstream network. The
+  // caller is in charge of the necessary setup for creating an active L3
+  // connection on this network interface.
+  string upstream_ifname = 2;
+
+  // Link technology associated with the upstream network.
+  enum UpstreamTechnology {
+    UNKNOWN = 0;
+    CELLULAR = 1;
+    WIFI = 2;
+    ETHERNET = 3;
+  }
+  // Required. Link technology of the upstream network.
+  UpstreamTechnology upstream_technology = 3;
+
+  // IPv4 configuration for this network. Optional if the upstream is an
+  // IPv6-only network.
+  optional IPv4Configuration ipv4_config = 4;
+
+  // Optional. If true, IPv6 RAs from the upstream networks and IPv6 neighbor
+  // discovery packets are not served or forwarded on the downstream network
+  // and IPv6 forwarding is disabled on the downstream network.
+  bool disable_ipv6 = 5;
+}
+
+// Response to a CreateTetheredNetwork call.
+message TetheredNetworkResponse {
+  // Status of the request.
+  DownstreamNetworkResult response_code = 1;
+}
+
+// Request to create an isolated L3 logical network on a network interface like
+// a WiFi hotspot or a WiFi Direct connection in Group Owner mode. In this
+// configuration the network will be reachable from Chrome, ARC, Crostini, etc
+// for any connection initiated from the DUT. Remote clients connected to the
+// network will be able to reach application listening on the DUT with the same
+// semantics as on a physical network, i.e ARC inbound DNAT rules will be
+// enabled by default, and port access/forwarding rules will apply. Dynamic IP
+// configuration services for IPv4 is automatically started depending on the
+// configuration. The IPv4 configuration is explicitly specified by the caller.
+// IPv6 is currently not supported. The client must append a valid file
+// descriptor immediately after the serialized proto. This file descriptor must
+// remain valid for as long as routing setup needs to persist. Invalidating the
+// file descriptor explicitly by closing it or implicitly when the client
+// process terminates will trigger the teardown of the routing setup and
+// associated services.
+message LocalOnlyNetworkRequest {
+  // Required. Name of the network interface on which a L3 network should
+  // be created. It is assumed that no L3 connection is active on that
+  // interface and that shill is not actively using the network interface.
+  string ifname = 1;
+
+  // Required. IPv4 configuration for this network.
+  IPv4Configuration ipv4_config = 2;
+}
+
+// Response to a CreateLocalOnlyNetwork call.
+message LocalOnlyNetworkResponse {
+  // Status of the request.
+  DownstreamNetworkResult response_code = 1;
+}
+
+// DownstreamNetworkInfo request object to obtain the IP configuration of a
+// network created with CreateLocalOnlyNetwork or CreateTetheredNetwork and
+// to obtain available IP information of all connected clients.
+message DownstreamNetworkInfoRequest {
+  // Required. Interface name on which a network was created with
+  // CreateTetheredNetwork or with CreateLocalOnlyNetwork call.
+  string downstream_ifname = 1;
+}
+
+// Information about a client connected to a network created with the
+// CreateTetheredNetwork or CreateLocalOnlyNetwork calls.
+message NetworkClientInfo {
+  // The EUI-64 hardware address of the client represented as 8 bytes network
+  // order. For Ethernet or WiFi networks, the hardware address is always a
+  // EUI-48 identifier with the upper 2 bytes always set to 0.
+  bytes mac_addr = 1;
+
+  // The IPv4 address assigned to the client in network order represented as 4
+  // 4 bytes in network order. Empty if IPv4 was disabled on the network.
+  bytes ipv4_addr = 2;
+
+  // All IPv6 addresses that have been seen used by the client (based on its
+  // hardware address). Addresses are always 16 bytes long and in network order.
+  repeated bytes ipv6_addresses = 3;
+
+  // The Hostname of the client if it was advertised with the DHCP Client option
+  // 12 during DHCP lease acquisition.
+  string hostname = 4;
+
+  // The Vendor-Class DHCP client option 60 if it was advertised by the client
+  // during DHCP lease acquisition.
+  string vendor_class = 5;
+}
+
+// Response to a DownstreamNetworkInfo call.
+message DownstreamNetworkInfoResponse {
+  // True if the request was valid and completed successfully.
+  bool success = 1;
+
+  // Describes the downstream network.
+  DownstreamNetwork downstream_network = 2;
+
+  // Describes clients connected to the network.
+  repeated NetworkClientInfo clients_info = 3;
+}

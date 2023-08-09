@@ -27,6 +27,7 @@
 #include "include/v8-function.h"
 #include "include/v8-initialization.h"
 #include "include/v8-inspector.h"
+#include "include/v8-isolate.h"
 #include "include/v8-json.h"
 #include "include/v8-locker.h"
 #include "include/v8-profiler.h"
@@ -41,6 +42,7 @@
 #include "src/base/sanitizer/msan.h"
 #include "src/base/sys-info.h"
 #include "src/base/utils/random-number-generator.h"
+#include "src/compiler-dispatcher/optimizing-compile-dispatcher.h"
 #include "src/d8/d8-console.h"
 #include "src/d8/d8-platforms.h"
 #include "src/d8/d8.h"
@@ -69,6 +71,10 @@
 #include "src/tasks/cancelable-task.h"
 #include "src/utils/ostreams.h"
 #include "src/utils/utils.h"
+
+#ifdef V8_ENABLE_MAGLEV
+#include "src/maglev/maglev-concurrent-dispatcher.h"
+#endif  // V8_ENABLE_MAGLEV
 
 #if V8_OS_POSIX
 #include <signal.h>
@@ -341,6 +347,19 @@ class MultiMappedAllocator : public ArrayBufferAllocatorBase {
 v8::Platform* g_default_platform;
 std::unique_ptr<v8::Platform> g_platform;
 
+template <int N>
+bool ThrowError(Isolate* isolate, const char (&message)[N]) {
+  if (isolate->IsExecutionTerminating()) return false;
+  isolate->ThrowError(message);
+  return true;
+}
+
+bool ThrowError(Isolate* isolate, Local<String> message) {
+  if (isolate->IsExecutionTerminating()) return false;
+  isolate->ThrowError(message);
+  return true;
+}
+
 static MaybeLocal<Value> TryGetValue(v8::Isolate* isolate,
                                      Local<Context> context,
                                      Local<v8::Object> object,
@@ -358,13 +377,13 @@ static Local<Value> GetValue(v8::Isolate* isolate, Local<Context> context,
 std::shared_ptr<Worker> GetWorkerFromInternalField(Isolate* isolate,
                                                    Local<Object> object) {
   if (object->InternalFieldCount() != 1) {
-    isolate->ThrowError("this is not a Worker");
+    ThrowError(isolate, "this is not a Worker");
     return nullptr;
   }
 
   i::Handle<i::Object> handle = Utils::OpenHandle(*object->GetInternalField(0));
   if (handle->IsSmi()) {
-    isolate->ThrowError("Worker is defunct because main thread is terminating");
+    ThrowError(isolate, "Worker is defunct because main thread is terminating");
     return nullptr;
   }
   auto managed = i::Handle<i::Managed<Worker>>::cast(handle);
@@ -776,6 +795,56 @@ bool IsValidHostDefinedOptions(Local<Context> context, Local<Data> options,
   if (magic != kHostDefinedOptionsMagicConstant) return false;
   return array->Get(context, 1).As<String>()->StrictEquals(resource_name);
 }
+
+class D8WasmAsyncResolvePromiseTask : public v8::Task {
+ public:
+  D8WasmAsyncResolvePromiseTask(v8::Isolate* isolate,
+                                v8::Local<v8::Context> context,
+                                v8::Local<v8::Promise::Resolver> resolver,
+                                v8::Local<v8::Value> result,
+                                WasmAsyncSuccess success)
+      : isolate_(isolate),
+        context_(isolate, context),
+        resolver_(isolate, resolver),
+        result_(isolate, result),
+        success_(success) {}
+
+  void Run() override {
+    v8::HandleScope scope(isolate_);
+    v8::Local<v8::Context> context = context_.Get(isolate_);
+    MicrotasksScope microtasks_scope(context,
+                                     MicrotasksScope::kDoNotRunMicrotasks);
+    v8::Local<v8::Promise::Resolver> resolver = resolver_.Get(isolate_);
+    v8::Local<v8::Value> result = result_.Get(isolate_);
+
+    Maybe<bool> ret = success_ == WasmAsyncSuccess::kSuccess
+                          ? resolver->Resolve(context, result)
+                          : resolver->Reject(context, result);
+    // It's guaranteed that no exceptions will be thrown by these
+    // operations, but execution might be terminating.
+    CHECK(ret.IsJust() ? ret.FromJust() : isolate_->IsExecutionTerminating());
+  }
+
+ private:
+  v8::Isolate* isolate_;
+  v8::Global<v8::Context> context_;
+  v8::Global<v8::Promise::Resolver> resolver_;
+  v8::Global<v8::Value> result_;
+  WasmAsyncSuccess success_;
+};
+
+void D8WasmAsyncResolvePromiseCallback(
+    v8::Isolate* isolate, v8::Local<v8::Context> context,
+    v8::Local<v8::Promise::Resolver> resolver, v8::Local<v8::Value> result,
+    WasmAsyncSuccess success) {
+  // We have to resolve the promise in a separate task which is not a cancelable
+  // task, to avoid a deadlock when {quit()} is called in the then-handler of
+  // the result promise.
+  g_platform->GetForegroundTaskRunner(isolate)->PostTask(
+      std::make_unique<D8WasmAsyncResolvePromiseTask>(
+          isolate, context, resolver, result, success));
+}
+
 }  // namespace
 
 // Executes a string within the current v8 context.
@@ -1032,8 +1101,8 @@ MaybeLocal<Module> Shell::FetchModuleTree(Local<Module> referrer,
       CHECK(specifier_it != module_data->module_to_specifier_map.end());
       msg += "\n    imported by " + specifier_it->second;
     }
-    isolate->ThrowError(
-        v8::String::NewFromUtf8(isolate, msg.c_str()).ToLocalChecked());
+    ThrowError(isolate,
+               v8::String::NewFromUtf8(isolate, msg.c_str()).ToLocalChecked());
     return MaybeLocal<Module>();
   }
 
@@ -1096,7 +1165,7 @@ MaybeLocal<Module> Shell::FetchModuleTree(Local<Module> referrer,
             context, import_assertions, true);
 
     if (request_module_type == ModuleType::kInvalid) {
-      isolate->ThrowError("Invalid module type was asserted");
+      ThrowError(isolate, "Invalid module type was asserted");
       return MaybeLocal<Module>();
     }
 
@@ -1183,6 +1252,7 @@ struct ModuleResolutionData {
 
 void Shell::ModuleResolutionSuccessCallback(
     const FunctionCallbackInfo<Value>& info) {
+  DCHECK(i::ValidateCallbackInfo(info));
   std::unique_ptr<ModuleResolutionData> module_resolution_data(
       static_cast<ModuleResolutionData*>(
           info.Data().As<v8::External>()->Value()));
@@ -1203,6 +1273,7 @@ void Shell::ModuleResolutionSuccessCallback(
 
 void Shell::ModuleResolutionFailureCallback(
     const FunctionCallbackInfo<Value>& info) {
+  DCHECK(i::ValidateCallbackInfo(info));
   std::unique_ptr<ModuleResolutionData> module_resolution_data(
       static_cast<ModuleResolutionData*>(
           info.Data().As<v8::External>()->Value()));
@@ -1309,7 +1380,7 @@ void Shell::DoHostImportModuleDynamically(void* import_data) {
   try_catch.SetVerbose(true);
 
   if (module_type == ModuleType::kInvalid) {
-    isolate->ThrowError("Invalid module type was asserted");
+    ThrowError(isolate, "Invalid module type was asserted");
     CHECK(try_catch.HasCaught());
     resolver->Reject(realm, try_catch.Exception()).ToChecked();
     return;
@@ -1420,10 +1491,11 @@ bool Shell::ExecuteModule(Isolate* isolate, const char* file_name) {
 
   // Loop until module execution finishes
   Local<Promise> result_promise(result.As<Promise>());
-  while (result_promise->State() == Promise::kPending &&
-         reinterpret_cast<i::Isolate*>(isolate)
-                 ->default_microtask_queue()
-                 ->size() > 0) {
+  while (isolate->HasPendingBackgroundTasks() ||
+         (result_promise->State() == Promise::kPending &&
+          reinterpret_cast<i::Isolate*>(isolate)
+                  ->default_microtask_queue()
+                  ->size() > 0)) {
     Shell::CompleteMessageLoop(isolate);
   }
 
@@ -1555,6 +1627,7 @@ void PerIsolateData::AddUnhandledPromise(Local<Promise> promise,
 int PerIsolateData::HandleUnhandledPromiseRejections() {
   // Avoid recursive calls to HandleUnhandledPromiseRejections.
   if (ignore_unhandled_promises_) return 0;
+  if (isolate_->IsExecutionTerminating()) return 0;
   ignore_unhandled_promises_ = true;
   v8::HandleScope scope(isolate_);
   // Ignore promises that get added during error reporting.
@@ -1639,16 +1712,16 @@ int PerIsolateData::RealmFind(Local<Context> context) {
 }
 
 int PerIsolateData::RealmIndexOrThrow(
-    const v8::FunctionCallbackInfo<v8::Value>& args, int arg_offset) {
-  if (args.Length() < arg_offset || !args[arg_offset]->IsNumber()) {
-    args.GetIsolate()->ThrowError("Invalid argument");
+    const v8::FunctionCallbackInfo<v8::Value>& info, int arg_offset) {
+  if (info.Length() < arg_offset || !info[arg_offset]->IsNumber()) {
+    ThrowError(info.GetIsolate(), "Invalid argument");
     return -1;
   }
-  int index = args[arg_offset]
-                  ->Int32Value(args.GetIsolate()->GetCurrentContext())
+  int index = info[arg_offset]
+                  ->Int32Value(info.GetIsolate()->GetCurrentContext())
                   .FromMaybe(-1);
   if (index < 0 || index >= realm_count_ || realms_[index].IsEmpty()) {
-    args.GetIsolate()->ThrowError("Invalid realm index");
+    ThrowError(info.GetIsolate(), "Invalid realm index");
     return -1;
   }
   return index;
@@ -1679,21 +1752,23 @@ uint64_t Shell::GetTracingTimestampFromPerformanceTimestamp(
 }
 
 // performance.now() returns GetTimestamp().
-void Shell::PerformanceNow(const v8::FunctionCallbackInfo<v8::Value>& args) {
-  args.GetReturnValue().Set(GetTimestamp());
+void Shell::PerformanceNow(const v8::FunctionCallbackInfo<v8::Value>& info) {
+  DCHECK(i::ValidateCallbackInfo(info));
+  info.GetReturnValue().Set(GetTimestamp());
 }
 
 // performance.mark() records and returns a PerformanceEntry with the current
 // timestamp.
-void Shell::PerformanceMark(const v8::FunctionCallbackInfo<v8::Value>& args) {
-  Isolate* isolate = args.GetIsolate();
+void Shell::PerformanceMark(const v8::FunctionCallbackInfo<v8::Value>& info) {
+  DCHECK(i::ValidateCallbackInfo(info));
+  Isolate* isolate = info.GetIsolate();
   Local<Context> context = isolate->GetCurrentContext();
 
-  if (args.Length() < 1 || !args[0]->IsString()) {
-    args.GetIsolate()->ThrowError("Invalid 'name' argument");
+  if (info.Length() < 1 || !info[0]->IsString()) {
+    ThrowError(info.GetIsolate(), "Invalid 'name' argument");
     return;
   }
-  Local<String> name = args[0].As<String>();
+  Local<String> name = info[0].As<String>();
 
   double timestamp = GetTimestamp();
 
@@ -1718,28 +1793,29 @@ void Shell::PerformanceMark(const v8::FunctionCallbackInfo<v8::Value>& args) {
                           Integer::New(isolate, 0), ReadOnly)
       .Check();
 
-  args.GetReturnValue().Set(performance_entry);
+  info.GetReturnValue().Set(performance_entry);
 }
 
 // performance.measure() records and returns a PerformanceEntry with a duration
 // since a given mark, or since zero.
 void Shell::PerformanceMeasure(
-    const v8::FunctionCallbackInfo<v8::Value>& args) {
-  Isolate* isolate = args.GetIsolate();
+    const v8::FunctionCallbackInfo<v8::Value>& info) {
+  DCHECK(i::ValidateCallbackInfo(info));
+  Isolate* isolate = info.GetIsolate();
   Local<Context> context = isolate->GetCurrentContext();
 
-  if (args.Length() < 1 || !args[0]->IsString()) {
-    args.GetIsolate()->ThrowError("Invalid 'name' argument");
+  if (info.Length() < 1 || !info[0]->IsString()) {
+    ThrowError(info.GetIsolate(), "Invalid 'name' argument");
     return;
   }
-  v8::Local<String> name = args[0].As<String>();
+  v8::Local<String> name = info[0].As<String>();
 
   double start_timestamp = 0;
-  if (args.Length() >= 2) {
-    Local<Value> start_mark = args[1].As<Value>();
+  if (info.Length() >= 2) {
+    Local<Value> start_mark = info[1].As<Value>();
     if (!start_mark->IsObject()) {
-      args.GetIsolate()->ThrowError(
-          "Invalid 'startMark' argument: Not an Object");
+      ThrowError(info.GetIsolate(),
+                 "Invalid 'startMark' argument: Not an Object");
       return;
     }
     Local<Value> start_time_field;
@@ -1749,14 +1825,14 @@ void Shell::PerformanceMeasure(
       return;
     }
     if (!start_time_field->IsNumber()) {
-      args.GetIsolate()->ThrowError(
-          "Invalid 'startMark' argument: No numeric 'startTime' field");
+      ThrowError(info.GetIsolate(),
+                 "Invalid 'startMark' argument: No numeric 'startTime' field");
       return;
     }
     start_timestamp = start_time_field.As<Number>()->Value();
   }
-  if (args.Length() > 2) {
-    args.GetIsolate()->ThrowError("Too many arguments");
+  if (info.Length() > 2) {
+    ThrowError(info.GetIsolate(), "Too many arguments");
     return;
   }
 
@@ -1797,18 +1873,19 @@ void Shell::PerformanceMeasure(
           Number::New(isolate, end_timestamp - start_timestamp), ReadOnly)
       .Check();
 
-  args.GetReturnValue().Set(performance_entry);
+  info.GetReturnValue().Set(performance_entry);
 }
 
 // performance.measureMemory() implements JavaScript Memory API proposal.
 // See https://github.com/ulan/javascript-agent-memory/blob/master/explainer.md.
 void Shell::PerformanceMeasureMemory(
-    const v8::FunctionCallbackInfo<v8::Value>& args) {
+    const v8::FunctionCallbackInfo<v8::Value>& info) {
+  DCHECK(i::ValidateCallbackInfo(info));
   v8::MeasureMemoryMode mode = v8::MeasureMemoryMode::kSummary;
-  v8::Isolate* isolate = args.GetIsolate();
+  v8::Isolate* isolate = info.GetIsolate();
   Local<Context> context = isolate->GetCurrentContext();
-  if (args.Length() >= 1 && args[0]->IsObject()) {
-    Local<Object> object = args[0].As<Object>();
+  if (info.Length() >= 1 && info[0]->IsObject()) {
+    Local<Object> object = info[0].As<Object>();
     Local<Value> value = TryGetValue(isolate, context, object, "detailed")
                              .FromMaybe(Local<Value>());
     if (value.IsEmpty()) {
@@ -1821,32 +1898,34 @@ void Shell::PerformanceMeasureMemory(
   }
   Local<v8::Promise::Resolver> promise_resolver =
       v8::Promise::Resolver::New(context).ToLocalChecked();
-  args.GetIsolate()->MeasureMemory(
+  info.GetIsolate()->MeasureMemory(
       v8::MeasureMemoryDelegate::Default(isolate, context, promise_resolver,
                                          mode),
       v8::MeasureMemoryExecution::kEager);
-  args.GetReturnValue().Set(promise_resolver->GetPromise());
+  info.GetReturnValue().Set(promise_resolver->GetPromise());
 }
 
 // Realm.current() returns the index of the currently active realm.
-void Shell::RealmCurrent(const v8::FunctionCallbackInfo<v8::Value>& args) {
-  Isolate* isolate = args.GetIsolate();
+void Shell::RealmCurrent(const v8::FunctionCallbackInfo<v8::Value>& info) {
+  DCHECK(i::ValidateCallbackInfo(info));
+  Isolate* isolate = info.GetIsolate();
   PerIsolateData* data = PerIsolateData::Get(isolate);
   int index = data->RealmFind(isolate->GetEnteredOrMicrotaskContext());
   if (index == -1) return;
-  args.GetReturnValue().Set(index);
+  info.GetReturnValue().Set(index);
 }
 
 // Realm.owner(o) returns the index of the realm that created o.
-void Shell::RealmOwner(const v8::FunctionCallbackInfo<v8::Value>& args) {
-  Isolate* isolate = args.GetIsolate();
+void Shell::RealmOwner(const v8::FunctionCallbackInfo<v8::Value>& info) {
+  DCHECK(i::ValidateCallbackInfo(info));
+  Isolate* isolate = info.GetIsolate();
   PerIsolateData* data = PerIsolateData::Get(isolate);
-  if (args.Length() < 1 || !args[0]->IsObject()) {
-    args.GetIsolate()->ThrowError("Invalid argument");
+  if (info.Length() < 1 || !info[0]->IsObject()) {
+    ThrowError(info.GetIsolate(), "Invalid argument");
     return;
   }
   Local<Object> object =
-      args[0]->ToObject(isolate->GetCurrentContext()).ToLocalChecked();
+      info[0]->ToObject(isolate->GetCurrentContext()).ToLocalChecked();
   i::Handle<i::JSReceiver> i_object = Utils::OpenHandle(*object);
   if (i_object->IsJSGlobalProxy() &&
       i::Handle<i::JSGlobalProxy>::cast(i_object)->IsDetached()) {
@@ -1854,19 +1933,20 @@ void Shell::RealmOwner(const v8::FunctionCallbackInfo<v8::Value>& args) {
   }
   Local<Context> creation_context;
   if (!object->GetCreationContext().ToLocal(&creation_context)) {
-    args.GetIsolate()->ThrowError("object doesn't have creation context");
+    ThrowError(info.GetIsolate(), "object doesn't have creation context");
     return;
   }
   int index = data->RealmFind(creation_context);
   if (index == -1) return;
-  args.GetReturnValue().Set(index);
+  info.GetReturnValue().Set(index);
 }
 
 // Realm.global(i) returns the global object of realm i.
 // (Note that properties of global objects cannot be read/written cross-realm.)
-void Shell::RealmGlobal(const v8::FunctionCallbackInfo<v8::Value>& args) {
-  PerIsolateData* data = PerIsolateData::Get(args.GetIsolate());
-  int index = data->RealmIndexOrThrow(args, 0);
+void Shell::RealmGlobal(const v8::FunctionCallbackInfo<v8::Value>& info) {
+  DCHECK(i::ValidateCallbackInfo(info));
+  PerIsolateData* data = PerIsolateData::Get(info.GetIsolate());
+  int index = data->RealmIndexOrThrow(info, 0);
   if (index == -1) return;
   // TODO(chromium:324812): Ideally Context::Global should never return raw
   // global objects but return a global proxy. Currently it returns global
@@ -1874,23 +1954,24 @@ void Shell::RealmGlobal(const v8::FunctionCallbackInfo<v8::Value>& args) {
   // following is a workaround till we fix Context::Global so we don't leak
   // global objects.
   Local<Object> global =
-      Local<Context>::New(args.GetIsolate(), data->realms_[index])->Global();
+      Local<Context>::New(info.GetIsolate(), data->realms_[index])->Global();
   i::Handle<i::Object> i_global = Utils::OpenHandle(*global);
   if (i_global->IsJSGlobalObject()) {
-    i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(args.GetIsolate());
+    i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(info.GetIsolate());
     i::Handle<i::JSObject> i_global_proxy =
         handle(i::Handle<i::JSGlobalObject>::cast(i_global)->global_proxy(),
                i_isolate);
     global = Utils::ToLocal(i_global_proxy);
   }
-  args.GetReturnValue().Set(global);
+  info.GetReturnValue().Set(global);
 }
 
 MaybeLocal<Context> Shell::CreateRealm(
-    const v8::FunctionCallbackInfo<v8::Value>& args, int index,
+    const v8::FunctionCallbackInfo<v8::Value>& info, int index,
     v8::MaybeLocal<Value> global_object) {
+  DCHECK(i::ValidateCallbackInfo(info));
   const char* kGlobalHandleLabel = "d8::realm";
-  Isolate* isolate = args.GetIsolate();
+  Isolate* isolate = info.GetIsolate();
   TryCatch try_catch(isolate);
   PerIsolateData* data = PerIsolateData::Get(isolate);
   if (index < 0) {
@@ -1915,49 +1996,52 @@ MaybeLocal<Context> Shell::CreateRealm(
   InitializeModuleEmbedderData(context);
   data->realms_[index].Reset(isolate, context);
   data->realms_[index].AnnotateStrongRetainer(kGlobalHandleLabel);
-  args.GetReturnValue().Set(index);
+  info.GetReturnValue().Set(index);
   return context;
 }
 
-void Shell::DisposeRealm(const v8::FunctionCallbackInfo<v8::Value>& args,
+void Shell::DisposeRealm(const v8::FunctionCallbackInfo<v8::Value>& info,
                          int index) {
-  Isolate* isolate = args.GetIsolate();
+  DCHECK(i::ValidateCallbackInfo(info));
+  Isolate* isolate = info.GetIsolate();
   PerIsolateData* data = PerIsolateData::Get(isolate);
   Local<Context> context = data->realms_[index].Get(isolate);
   data->realms_[index].Reset();
   // ContextDisposedNotification expects the disposed context to be entered.
   v8::Context::Scope scope(context);
   isolate->ContextDisposedNotification();
-  isolate->IdleNotificationDeadline(g_platform->MonotonicallyIncreasingTime());
 }
 
 // Realm.create() creates a new realm with a distinct security token
 // and returns its index.
-void Shell::RealmCreate(const v8::FunctionCallbackInfo<v8::Value>& args) {
-  CreateRealm(args, -1, v8::MaybeLocal<Value>());
+void Shell::RealmCreate(const v8::FunctionCallbackInfo<v8::Value>& info) {
+  DCHECK(i::ValidateCallbackInfo(info));
+  CreateRealm(info, -1, v8::MaybeLocal<Value>());
 }
 
 // Realm.createAllowCrossRealmAccess() creates a new realm with the same
 // security token as the current realm.
 void Shell::RealmCreateAllowCrossRealmAccess(
-    const v8::FunctionCallbackInfo<v8::Value>& args) {
+    const v8::FunctionCallbackInfo<v8::Value>& info) {
+  DCHECK(i::ValidateCallbackInfo(info));
   Local<Context> context;
-  if (CreateRealm(args, -1, v8::MaybeLocal<Value>()).ToLocal(&context)) {
+  if (CreateRealm(info, -1, v8::MaybeLocal<Value>()).ToLocal(&context)) {
     context->SetSecurityToken(
-        args.GetIsolate()->GetEnteredOrMicrotaskContext()->GetSecurityToken());
+        info.GetIsolate()->GetEnteredOrMicrotaskContext()->GetSecurityToken());
   }
 }
 
 // Realm.navigate(i) creates a new realm with a distinct security token
 // in place of realm i.
-void Shell::RealmNavigate(const v8::FunctionCallbackInfo<v8::Value>& args) {
-  Isolate* isolate = args.GetIsolate();
+void Shell::RealmNavigate(const v8::FunctionCallbackInfo<v8::Value>& info) {
+  DCHECK(i::ValidateCallbackInfo(info));
+  Isolate* isolate = info.GetIsolate();
   PerIsolateData* data = PerIsolateData::Get(isolate);
-  int index = data->RealmIndexOrThrow(args, 0);
+  int index = data->RealmIndexOrThrow(info, 0);
   if (index == -1) return;
   if (index == 0 || index == data->realm_current_ ||
       index == data->realm_switch_) {
-    args.GetIsolate()->ThrowError("Invalid realm index");
+    ThrowError(info.GetIsolate(), "Invalid realm index");
     return;
   }
 
@@ -1974,19 +2058,20 @@ void Shell::RealmNavigate(const v8::FunctionCallbackInfo<v8::Value>& args) {
     }
   }
 
-  DisposeRealm(args, index);
-  CreateRealm(args, index, global_object);
+  DisposeRealm(info, index);
+  CreateRealm(info, index, global_object);
 }
 
 // Realm.detachGlobal(i) detaches the global objects of realm i from realm i.
-void Shell::RealmDetachGlobal(const v8::FunctionCallbackInfo<v8::Value>& args) {
-  Isolate* isolate = args.GetIsolate();
+void Shell::RealmDetachGlobal(const v8::FunctionCallbackInfo<v8::Value>& info) {
+  DCHECK(i::ValidateCallbackInfo(info));
+  Isolate* isolate = info.GetIsolate();
   PerIsolateData* data = PerIsolateData::Get(isolate);
-  int index = data->RealmIndexOrThrow(args, 0);
+  int index = data->RealmIndexOrThrow(info, 0);
   if (index == -1) return;
   if (index == 0 || index == data->realm_current_ ||
       index == data->realm_switch_) {
-    args.GetIsolate()->ThrowError("Invalid realm index");
+    ThrowError(info.GetIsolate(), "Invalid realm index");
     return;
   }
 
@@ -1996,42 +2081,45 @@ void Shell::RealmDetachGlobal(const v8::FunctionCallbackInfo<v8::Value>& args) {
 }
 
 // Realm.dispose(i) disposes the reference to the realm i.
-void Shell::RealmDispose(const v8::FunctionCallbackInfo<v8::Value>& args) {
-  Isolate* isolate = args.GetIsolate();
+void Shell::RealmDispose(const v8::FunctionCallbackInfo<v8::Value>& info) {
+  DCHECK(i::ValidateCallbackInfo(info));
+  Isolate* isolate = info.GetIsolate();
   PerIsolateData* data = PerIsolateData::Get(isolate);
-  int index = data->RealmIndexOrThrow(args, 0);
+  int index = data->RealmIndexOrThrow(info, 0);
   if (index == -1) return;
   if (index == 0 || index == data->realm_current_ ||
       index == data->realm_switch_) {
-    args.GetIsolate()->ThrowError("Invalid realm index");
+    ThrowError(info.GetIsolate(), "Invalid realm index");
     return;
   }
-  DisposeRealm(args, index);
+  DisposeRealm(info, index);
 }
 
 // Realm.switch(i) switches to the realm i for consecutive interactive inputs.
-void Shell::RealmSwitch(const v8::FunctionCallbackInfo<v8::Value>& args) {
-  Isolate* isolate = args.GetIsolate();
+void Shell::RealmSwitch(const v8::FunctionCallbackInfo<v8::Value>& info) {
+  DCHECK(i::ValidateCallbackInfo(info));
+  Isolate* isolate = info.GetIsolate();
   PerIsolateData* data = PerIsolateData::Get(isolate);
-  int index = data->RealmIndexOrThrow(args, 0);
+  int index = data->RealmIndexOrThrow(info, 0);
   if (index == -1) return;
   data->realm_switch_ = index;
 }
 
 // Realm.eval(i, s) evaluates s in realm i and returns the result.
-void Shell::RealmEval(const v8::FunctionCallbackInfo<v8::Value>& args) {
-  Isolate* isolate = args.GetIsolate();
+void Shell::RealmEval(const v8::FunctionCallbackInfo<v8::Value>& info) {
+  DCHECK(i::ValidateCallbackInfo(info));
+  Isolate* isolate = info.GetIsolate();
   PerIsolateData* data = PerIsolateData::Get(isolate);
-  int index = data->RealmIndexOrThrow(args, 0);
+  int index = data->RealmIndexOrThrow(info, 0);
   if (index == -1) return;
-  if (args.Length() < 2) {
-    isolate->ThrowError("Invalid argument");
+  if (info.Length() < 2) {
+    ThrowError(isolate, "Invalid argument");
     return;
   }
 
   Local<String> source;
-  if (!ReadSource(args, 1, CodeType::kString).ToLocal(&source)) {
-    isolate->ThrowError("Invalid argument");
+  if (!ReadSource(info, 1, CodeType::kString).ToLocal(&source)) {
+    ThrowError(isolate, "Invalid argument");
     return;
   }
   ScriptOrigin origin =
@@ -2053,12 +2141,13 @@ void Shell::RealmEval(const v8::FunctionCallbackInfo<v8::Value>& args) {
       return;
     }
   }
-  args.GetReturnValue().Set(result);
+  info.GetReturnValue().Set(result);
 }
 
 // Realm.shared is an accessor for a single shared value across realms.
 void Shell::RealmSharedGet(Local<String> property,
                            const PropertyCallbackInfo<Value>& info) {
+  DCHECK(i::ValidateCallbackInfo(info));
   Isolate* isolate = info.GetIsolate();
   PerIsolateData* data = PerIsolateData::Get(isolate);
   if (data->realm_shared_.IsEmpty()) return;
@@ -2067,30 +2156,32 @@ void Shell::RealmSharedGet(Local<String> property,
 
 void Shell::RealmSharedSet(Local<String> property, Local<Value> value,
                            const PropertyCallbackInfo<void>& info) {
+  DCHECK(i::ValidateCallbackInfo(info));
   Isolate* isolate = info.GetIsolate();
   PerIsolateData* data = PerIsolateData::Get(isolate);
   data->realm_shared_.Reset(isolate, value);
 }
 
-void Shell::LogGetAndStop(const v8::FunctionCallbackInfo<v8::Value>& args) {
-  Isolate* isolate = args.GetIsolate();
+void Shell::LogGetAndStop(const v8::FunctionCallbackInfo<v8::Value>& info) {
+  DCHECK(i::ValidateCallbackInfo(info));
+  Isolate* isolate = info.GetIsolate();
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
   HandleScope handle_scope(isolate);
 
   std::string file_name = i_isolate->v8_file_logger()->file_name();
   if (!i::LogFile::IsLoggingToTemporaryFile(file_name)) {
-    isolate->ThrowError("Only capturing from temporary files is supported.");
+    ThrowError(isolate, "Only capturing from temporary files is supported.");
     return;
   }
   if (!i_isolate->v8_file_logger()->is_logging()) {
-    isolate->ThrowError("Logging not enabled.");
+    ThrowError(isolate, "Logging not enabled.");
     return;
   }
 
   std::string raw_log;
   FILE* log_file = i_isolate->v8_file_logger()->TearDownAndGetLogFile();
   if (!log_file) {
-    isolate->ThrowError("Log file does not exist.");
+    ThrowError(isolate, "Log file does not exist.");
     return;
   }
 
@@ -2099,7 +2190,7 @@ void Shell::LogGetAndStop(const v8::FunctionCallbackInfo<v8::Value>& args) {
   base::Fclose(log_file);
 
   if (!exists) {
-    isolate->ThrowError("Unable to read log file.");
+    ThrowError(isolate, "Unable to read log file.");
     return;
   }
   Local<String> result =
@@ -2107,22 +2198,22 @@ void Shell::LogGetAndStop(const v8::FunctionCallbackInfo<v8::Value>& args) {
                           static_cast<int>(raw_log.size()))
           .ToLocalChecked();
 
-  args.GetReturnValue().Set(result);
+  info.GetReturnValue().Set(result);
 }
 
 void Shell::TestVerifySourcePositions(
-    const v8::FunctionCallbackInfo<v8::Value>& args) {
-  Isolate* isolate = args.GetIsolate();
+    const v8::FunctionCallbackInfo<v8::Value>& info) {
+  Isolate* isolate = info.GetIsolate();
   // Check if the argument is a valid function.
-  if (args.Length() != 1) {
-    isolate->ThrowError("Expected function as single argument.");
+  if (info.Length() != 1) {
+    ThrowError(isolate, "Expected function as single argument.");
     return;
   }
-  auto arg_handle = Utils::OpenHandle(*args[0]);
+  auto arg_handle = Utils::OpenHandle(*info[0]);
   if (!arg_handle->IsHeapObject() ||
       !i::Handle<i::HeapObject>::cast(arg_handle)
            ->IsJSFunctionOrBoundFunctionOrWrappedFunction()) {
-    isolate->ThrowError("Expected function as single argument.");
+    ThrowError(isolate, "Expected function as single argument.");
     return;
   }
 
@@ -2138,7 +2229,7 @@ void Shell::TestVerifySourcePositions(
     auto bound_target = bound_function->bound_target_function();
     if (!bound_target.IsJSFunctionOrBoundFunctionOrWrappedFunction()) {
       internal::AllowGarbageCollection allow_gc;
-      isolate->ThrowError("Expected function as bound target.");
+      ThrowError(isolate, "Expected function as bound target.");
       return;
     }
     callable = handle(
@@ -2148,7 +2239,7 @@ void Shell::TestVerifySourcePositions(
 
   i::Handle<i::JSFunction> function = i::Handle<i::JSFunction>::cast(callable);
   if (!function->shared().HasBytecodeArray()) {
-    isolate->ThrowError("Function has no BytecodeArray attached.");
+    ThrowError(isolate, "Function has no BytecodeArray attached.");
     return;
   }
   i::Handle<i::BytecodeArray> bytecodes =
@@ -2158,10 +2249,10 @@ void Shell::TestVerifySourcePositions(
   i::Handle<i::ByteArray> bytecode_offsets;
   std::unique_ptr<i::baseline::BytecodeOffsetIterator> offset_iterator;
   if (has_baseline) {
-    bytecode_offsets =
-        handle(i::ByteArray::cast(
-                   function->shared().GetCode().bytecode_offset_table()),
-               i_isolate);
+    bytecode_offsets = handle(
+        i::ByteArray::cast(
+            function->shared().GetCode(i_isolate).bytecode_offset_table()),
+        i_isolate);
     offset_iterator = std::make_unique<i::baseline::BytecodeOffsetIterator>(
         bytecode_offsets, bytecodes);
     // A freshly initiated BytecodeOffsetIterator points to the prologue.
@@ -2174,7 +2265,7 @@ void Shell::TestVerifySourcePositions(
     if (has_baseline) {
       if (offset_iterator->current_bytecode_offset() !=
           bytecode_iterator.current_offset()) {
-        isolate->ThrowError("Baseline bytecode offset mismatch.");
+        ThrowError(isolate, "Baseline bytecode offset mismatch.");
         return;
       }
       // Check that we map every address to this bytecode correctly.
@@ -2186,8 +2277,8 @@ void Shell::TestVerifySourcePositions(
         pc_lookup.AdvanceToPCOffset(pc);
         if (pc_lookup.current_bytecode_offset() !=
             bytecode_iterator.current_offset()) {
-          isolate->ThrowError(
-              "Baseline bytecode offset mismatch for PC lookup.");
+          ThrowError(isolate,
+                     "Baseline bytecode offset mismatch for PC lookup.");
           return;
         }
       }
@@ -2195,73 +2286,74 @@ void Shell::TestVerifySourcePositions(
     bytecode_iterator.Advance();
     if (has_baseline && !bytecode_iterator.done()) {
       if (offset_iterator->done()) {
-        isolate->ThrowError("Missing bytecode(s) in baseline offset mapping.");
+        ThrowError(isolate, "Missing bytecode(s) in baseline offset mapping.");
         return;
       }
       offset_iterator->Advance();
     }
   }
   if (has_baseline && !offset_iterator->done()) {
-    isolate->ThrowError("Excess offsets in baseline offset mapping.");
+    ThrowError(isolate, "Excess offsets in baseline offset mapping.");
     return;
   }
 }
 
 void Shell::InstallConditionalFeatures(
-    const v8::FunctionCallbackInfo<v8::Value>& args) {
-  Isolate* isolate = args.GetIsolate();
+    const v8::FunctionCallbackInfo<v8::Value>& info) {
+  Isolate* isolate = info.GetIsolate();
   isolate->InstallConditionalFeatures(isolate->GetCurrentContext());
 }
 
 // async_hooks.createHook() registers functions to be called for different
 // lifetime events of each async operation.
 void Shell::AsyncHooksCreateHook(
-    const v8::FunctionCallbackInfo<v8::Value>& args) {
+    const v8::FunctionCallbackInfo<v8::Value>& info) {
   Local<Object> wrap =
-      PerIsolateData::Get(args.GetIsolate())->GetAsyncHooks()->CreateHook(args);
-  args.GetReturnValue().Set(wrap);
+      PerIsolateData::Get(info.GetIsolate())->GetAsyncHooks()->CreateHook(info);
+  info.GetReturnValue().Set(wrap);
 }
 
 // async_hooks.executionAsyncId() returns the asyncId of the current execution
 // context.
 void Shell::AsyncHooksExecutionAsyncId(
-    const v8::FunctionCallbackInfo<v8::Value>& args) {
-  Isolate* isolate = args.GetIsolate();
+    const v8::FunctionCallbackInfo<v8::Value>& info) {
+  Isolate* isolate = info.GetIsolate();
   HandleScope handle_scope(isolate);
-  args.GetReturnValue().Set(v8::Number::New(
+  info.GetReturnValue().Set(v8::Number::New(
       isolate,
       PerIsolateData::Get(isolate)->GetAsyncHooks()->GetExecutionAsyncId()));
 }
 
 void Shell::AsyncHooksTriggerAsyncId(
-    const v8::FunctionCallbackInfo<v8::Value>& args) {
-  Isolate* isolate = args.GetIsolate();
+    const v8::FunctionCallbackInfo<v8::Value>& info) {
+  Isolate* isolate = info.GetIsolate();
   HandleScope handle_scope(isolate);
-  args.GetReturnValue().Set(v8::Number::New(
+  info.GetReturnValue().Set(v8::Number::New(
       isolate,
       PerIsolateData::Get(isolate)->GetAsyncHooks()->GetTriggerAsyncId()));
 }
 
 static v8::debug::DebugDelegate dummy_delegate;
 
-void Shell::EnableDebugger(const v8::FunctionCallbackInfo<v8::Value>& args) {
-  v8::debug::SetDebugDelegate(args.GetIsolate(), &dummy_delegate);
+void Shell::EnableDebugger(const v8::FunctionCallbackInfo<v8::Value>& info) {
+  v8::debug::SetDebugDelegate(info.GetIsolate(), &dummy_delegate);
 }
 
-void Shell::DisableDebugger(const v8::FunctionCallbackInfo<v8::Value>& args) {
-  v8::debug::SetDebugDelegate(args.GetIsolate(), nullptr);
+void Shell::DisableDebugger(const v8::FunctionCallbackInfo<v8::Value>& info) {
+  v8::debug::SetDebugDelegate(info.GetIsolate(), nullptr);
 }
 
-void Shell::SetPromiseHooks(const v8::FunctionCallbackInfo<v8::Value>& args) {
-  Isolate* isolate = args.GetIsolate();
+void Shell::SetPromiseHooks(const v8::FunctionCallbackInfo<v8::Value>& info) {
+  DCHECK(i::ValidateCallbackInfo(info));
+  Isolate* isolate = info.GetIsolate();
   if (i::v8_flags.correctness_fuzzer_suppressions) {
     // Setting promise hoooks dynamically has unexpected timing side-effects
     // with certain promise optimizations. We might not get all callbacks for
     // previously scheduled Promises or optimized code-paths that skip Promise
     // creation.
-    isolate->ThrowError(
-        "d8.promise.setHooks is disabled with "
-        "--correctness-fuzzer-suppressions");
+    ThrowError(isolate,
+               "d8.promise.setHooks is disabled with "
+               "--correctness-fuzzer-suppressions");
     return;
   }
 #ifdef V8_ENABLE_JAVASCRIPT_PROMISE_HOOKS
@@ -2269,30 +2361,31 @@ void Shell::SetPromiseHooks(const v8::FunctionCallbackInfo<v8::Value>& args) {
   HandleScope handle_scope(isolate);
 
   context->SetPromiseHooks(
-    args[0]->IsFunction() ? args[0].As<Function>() : Local<Function>(),
-    args[1]->IsFunction() ? args[1].As<Function>() : Local<Function>(),
-    args[2]->IsFunction() ? args[2].As<Function>() : Local<Function>(),
-    args[3]->IsFunction() ? args[3].As<Function>() : Local<Function>());
+      info[0]->IsFunction() ? info[0].As<Function>() : Local<Function>(),
+      info[1]->IsFunction() ? info[1].As<Function>() : Local<Function>(),
+      info[2]->IsFunction() ? info[2].As<Function>() : Local<Function>(),
+      info[3]->IsFunction() ? info[3].As<Function>() : Local<Function>());
 
-  args.GetReturnValue().Set(v8::Undefined(isolate));
+  info.GetReturnValue().Set(v8::Undefined(isolate));
 #else   // V8_ENABLE_JAVASCRIPT_PROMISE_HOOKS
-  isolate->ThrowError(
-      "d8.promise.setHooks is disabled due to missing build flag "
-      "v8_enabale_javascript_in_promise_hooks");
+  ThrowError(isolate,
+             "d8.promise.setHooks is disabled due to missing build flag "
+             "v8_enabale_javascript_in_promise_hooks");
 #endif  // V8_ENABLE_JAVASCRIPT_PROMISE_HOOKS
 }
 
 void Shell::SerializerSerialize(
-    const v8::FunctionCallbackInfo<v8::Value>& args) {
-  Isolate* isolate = args.GetIsolate();
+    const v8::FunctionCallbackInfo<v8::Value>& info) {
+  DCHECK(i::ValidateCallbackInfo(info));
+  Isolate* isolate = info.GetIsolate();
   HandleScope handle_scope(isolate);
   Local<Context> context = isolate->GetCurrentContext();
 
   ValueSerializer serializer(isolate);
   serializer.WriteHeader();
-  for (int i = 0; i < args.Length(); i++) {
+  for (int i = 0; i < info.Length(); i++) {
     bool ok;
-    if (!serializer.WriteValue(context, args[i]).To(&ok)) return;
+    if (!serializer.WriteValue(context, info[i]).To(&ok)) return;
   }
   Local<v8::ArrayBuffer> buffer;
   {
@@ -2301,21 +2394,22 @@ void Shell::SerializerSerialize(
     memcpy(buffer->GetBackingStore()->Data(), pair.first, pair.second);
     free(pair.first);
   }
-  args.GetReturnValue().Set(buffer);
+  info.GetReturnValue().Set(buffer);
 }
 
 void Shell::SerializerDeserialize(
-    const v8::FunctionCallbackInfo<v8::Value>& args) {
-  Isolate* isolate = args.GetIsolate();
+    const v8::FunctionCallbackInfo<v8::Value>& info) {
+  DCHECK(i::ValidateCallbackInfo(info));
+  Isolate* isolate = info.GetIsolate();
   HandleScope handle_scope(isolate);
   Local<Context> context = isolate->GetCurrentContext();
 
-  if (!args[0]->IsArrayBuffer()) {
-    isolate->ThrowError("Can only deserialize from an ArrayBuffer");
+  if (!info[0]->IsArrayBuffer()) {
+    ThrowError(isolate, "Can only deserialize from an ArrayBuffer");
     return;
   }
   std::shared_ptr<BackingStore> backing_store =
-      args[0].As<ArrayBuffer>()->GetBackingStore();
+      info[0].As<ArrayBuffer>()->GetBackingStore();
   ValueDeserializer deserializer(
       isolate, static_cast<const uint8_t*>(backing_store->Data()),
       backing_store->ByteLength());
@@ -2323,20 +2417,21 @@ void Shell::SerializerDeserialize(
   if (!deserializer.ReadHeader(context).To(&ok)) return;
   Local<Value> result;
   if (!deserializer.ReadValue(context).ToLocal(&result)) return;
-  args.GetReturnValue().Set(result);
+  info.GetReturnValue().Set(result);
 }
 
 void Shell::ProfilerSetOnProfileEndListener(
-    const v8::FunctionCallbackInfo<v8::Value>& args) {
-  Isolate* isolate = args.GetIsolate();
+    const v8::FunctionCallbackInfo<v8::Value>& info) {
+  DCHECK(i::ValidateCallbackInfo(info));
+  Isolate* isolate = info.GetIsolate();
   HandleScope handle_scope(isolate);
-  if (!args[0]->IsFunction()) {
-    isolate->ThrowError("The OnProfileEnd listener has to be a function");
+  if (!info[0]->IsFunction()) {
+    ThrowError(isolate, "The OnProfileEnd listener has to be a function");
     return;
   }
   base::MutexGuard lock_guard(&profiler_end_callback_lock_);
   profiler_end_callback_[isolate] =
-      std::make_pair(Global<Function>(isolate, args[0].As<Function>()),
+      std::make_pair(Global<Function>(isolate, info[0].As<Function>()),
                      Global<Context>(isolate, isolate->GetCurrentContext()));
 }
 
@@ -2363,8 +2458,8 @@ void Shell::ResetOnProfileEndListener(Isolate* isolate) {
 }
 
 void Shell::ProfilerTriggerSample(
-    const v8::FunctionCallbackInfo<v8::Value>& args) {
-  Isolate* isolate = args.GetIsolate();
+    const v8::FunctionCallbackInfo<v8::Value>& info) {
+  Isolate* isolate = info.GetIsolate();
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
   D8Console* console =
       reinterpret_cast<D8Console*>(i_isolate->console_delegate());
@@ -2390,29 +2485,29 @@ void Shell::TriggerOnProfileEndListener(Isolate* isolate, std::string profile) {
   USE(callback->Call(context, Undefined(isolate), 1, argv));
 }
 
-void WriteToFile(FILE* file, const v8::FunctionCallbackInfo<v8::Value>& args,
+void WriteToFile(FILE* file, const v8::FunctionCallbackInfo<v8::Value>& info,
                  int first_arg_index = 0) {
-  for (int i = first_arg_index; i < args.Length(); i++) {
-    HandleScope handle_scope(args.GetIsolate());
+  for (int i = first_arg_index; i < info.Length(); i++) {
+    HandleScope handle_scope(info.GetIsolate());
     if (i != first_arg_index) {
       fprintf(file, " ");
     }
 
     // Explicitly catch potential exceptions in toString().
-    v8::TryCatch try_catch(args.GetIsolate());
-    Local<Value> arg = args[i];
+    v8::TryCatch try_catch(info.GetIsolate());
+    Local<Value> arg = info[i];
     Local<String> str_obj;
 
     if (arg->IsSymbol()) {
-      arg = arg.As<Symbol>()->Description(args.GetIsolate());
+      arg = arg.As<Symbol>()->Description(info.GetIsolate());
     }
-    if (!arg->ToString(args.GetIsolate()->GetCurrentContext())
+    if (!arg->ToString(info.GetIsolate()->GetCurrentContext())
              .ToLocal(&str_obj)) {
       try_catch.ReThrow();
       return;
     }
 
-    v8::String::Utf8Value str(args.GetIsolate(), str_obj);
+    v8::String::Utf8Value str(info.GetIsolate(), str_obj);
     int n = static_cast<int>(fwrite(*str, sizeof(**str), str.length(), file));
     if (n != str.length()) {
       printf("Error in fwrite\n");
@@ -2422,22 +2517,23 @@ void WriteToFile(FILE* file, const v8::FunctionCallbackInfo<v8::Value>& args,
 }
 
 void WriteAndFlush(FILE* file,
-                   const v8::FunctionCallbackInfo<v8::Value>& args) {
-  WriteToFile(file, args);
+                   const v8::FunctionCallbackInfo<v8::Value>& info) {
+  DCHECK(i::ValidateCallbackInfo(info));
+  WriteToFile(file, info);
   fprintf(file, "\n");
   fflush(file);
 }
 
-void Shell::Print(const v8::FunctionCallbackInfo<v8::Value>& args) {
-  WriteAndFlush(stdout, args);
+void Shell::Print(const v8::FunctionCallbackInfo<v8::Value>& info) {
+  WriteAndFlush(stdout, info);
 }
 
-void Shell::PrintErr(const v8::FunctionCallbackInfo<v8::Value>& args) {
-  WriteAndFlush(stderr, args);
+void Shell::PrintErr(const v8::FunctionCallbackInfo<v8::Value>& info) {
+  WriteAndFlush(stderr, info);
 }
 
-void Shell::WriteStdout(const v8::FunctionCallbackInfo<v8::Value>& args) {
-  WriteToFile(stdout, args);
+void Shell::WriteStdout(const v8::FunctionCallbackInfo<v8::Value>& info) {
+  WriteToFile(stdout, info);
 }
 
 // There are two overloads of writeFile().
@@ -2449,30 +2545,31 @@ void Shell::WriteStdout(const v8::FunctionCallbackInfo<v8::Value>& args) {
 //
 // Otherwise, convert arguments to UTF-8 strings, and write them to the file,
 // separated by space.
-void Shell::WriteFile(const v8::FunctionCallbackInfo<v8::Value>& args) {
-  String::Utf8Value file_name(args.GetIsolate(), args[0]);
+void Shell::WriteFile(const v8::FunctionCallbackInfo<v8::Value>& info) {
+  DCHECK(i::ValidateCallbackInfo(info));
+  String::Utf8Value file_name(info.GetIsolate(), info[0]);
   if (*file_name == nullptr) {
-    args.GetIsolate()->ThrowError("Error converting filename to string");
+    ThrowError(info.GetIsolate(), "Error converting filename to string");
     return;
   }
   FILE* file;
-  if (args.Length() == 2 &&
-      (args[1]->IsArrayBuffer() || args[1]->IsArrayBufferView())) {
+  if (info.Length() == 2 &&
+      (info[1]->IsArrayBuffer() || info[1]->IsArrayBufferView())) {
     file = base::Fopen(*file_name, "wb");
     if (file == nullptr) {
-      args.GetIsolate()->ThrowError("Error opening file");
+      ThrowError(info.GetIsolate(), "Error opening file");
       return;
     }
 
     void* data;
     size_t length;
-    if (args[1]->IsArrayBuffer()) {
-      Local<v8::ArrayBuffer> buffer = Local<v8::ArrayBuffer>::Cast(args[1]);
+    if (info[1]->IsArrayBuffer()) {
+      Local<v8::ArrayBuffer> buffer = Local<v8::ArrayBuffer>::Cast(info[1]);
       length = buffer->ByteLength();
       data = buffer->Data();
     } else {
       Local<v8::ArrayBufferView> buffer_view =
-          Local<v8::ArrayBufferView>::Cast(args[1]);
+          Local<v8::ArrayBufferView>::Cast(info[1]);
       length = buffer_view->ByteLength();
       data = static_cast<uint8_t*>(buffer_view->Buffer()->Data()) +
              buffer_view->ByteOffset();
@@ -2481,30 +2578,31 @@ void Shell::WriteFile(const v8::FunctionCallbackInfo<v8::Value>& args) {
   } else {
     file = base::Fopen(*file_name, "w");
     if (file == nullptr) {
-      args.GetIsolate()->ThrowError("Error opening file");
+      ThrowError(info.GetIsolate(), "Error opening file");
       return;
     }
-    WriteToFile(file, args, 1);
+    WriteToFile(file, info, 1);
   }
   base::Fclose(file);
 }
 
-void Shell::ReadFile(const v8::FunctionCallbackInfo<v8::Value>& args) {
-  String::Utf8Value file_name(args.GetIsolate(), args[0]);
+void Shell::ReadFile(const v8::FunctionCallbackInfo<v8::Value>& info) {
+  DCHECK(i::ValidateCallbackInfo(info));
+  String::Utf8Value file_name(info.GetIsolate(), info[0]);
   if (*file_name == nullptr) {
-    args.GetIsolate()->ThrowError("Error converting filename to string");
+    ThrowError(info.GetIsolate(), "Error converting filename to string");
     return;
   }
-  if (args.Length() == 2) {
-    String::Utf8Value format(args.GetIsolate(), args[1]);
+  if (info.Length() == 2) {
+    String::Utf8Value format(info.GetIsolate(), info[1]);
     if (*format && std::strcmp(*format, "binary") == 0) {
-      ReadBuffer(args);
+      ReadBuffer(info);
       return;
     }
   }
   Local<String> source;
-  if (!ReadFile(args.GetIsolate(), *file_name).ToLocal(&source)) return;
-  args.GetReturnValue().Set(source);
+  if (!ReadFile(info.GetIsolate(), *file_name).ToLocal(&source)) return;
+  info.GetReturnValue().Set(source);
 }
 
 Local<String> Shell::ReadFromStdin(Isolate* isolate) {
@@ -2547,50 +2645,54 @@ Local<String> Shell::ReadFromStdin(Isolate* isolate) {
   }
 }
 
-void Shell::ExecuteFile(const v8::FunctionCallbackInfo<v8::Value>& args) {
-  Isolate* isolate = args.GetIsolate();
-  for (int i = 0; i < args.Length(); i++) {
+void Shell::ExecuteFile(const v8::FunctionCallbackInfo<v8::Value>& info) {
+  DCHECK(i::ValidateCallbackInfo(info));
+  Isolate* isolate = info.GetIsolate();
+  for (int i = 0; i < info.Length(); i++) {
     HandleScope handle_scope(isolate);
-    String::Utf8Value file_name(isolate, args[i]);
+    String::Utf8Value file_name(isolate, info[i]);
     if (*file_name == nullptr) {
       std::ostringstream oss;
       oss << "Cannot convert file[" << i << "] name to string.";
-      isolate->ThrowError(
+      ThrowError(
+          isolate,
           String::NewFromUtf8(isolate, oss.str().c_str()).ToLocalChecked());
       return;
     }
     Local<String> source;
     if (!ReadFile(isolate, *file_name).ToLocal(&source)) return;
     if (!ExecuteString(
-            args.GetIsolate(), source,
+            info.GetIsolate(), source,
             String::NewFromUtf8(isolate, *file_name).ToLocalChecked(),
             kNoPrintResult,
             options.quiet_load ? kNoReportExceptions : kReportExceptions,
             kNoProcessMessageQueue)) {
       std::ostringstream oss;
       oss << "Error executing file: \"" << *file_name << '"';
-      isolate->ThrowError(
+      ThrowError(
+          isolate,
           String::NewFromUtf8(isolate, oss.str().c_str()).ToLocalChecked());
       return;
     }
   }
 }
 
-void Shell::SetTimeout(const v8::FunctionCallbackInfo<v8::Value>& args) {
-  Isolate* isolate = args.GetIsolate();
-  args.GetReturnValue().Set(v8::Number::New(isolate, 0));
-  if (args.Length() == 0 || !args[0]->IsFunction()) return;
-  Local<Function> callback = args[0].As<Function>();
+void Shell::SetTimeout(const v8::FunctionCallbackInfo<v8::Value>& info) {
+  DCHECK(i::ValidateCallbackInfo(info));
+  Isolate* isolate = info.GetIsolate();
+  info.GetReturnValue().Set(v8::Number::New(isolate, 0));
+  if (info.Length() == 0 || !info[0]->IsFunction()) return;
+  Local<Function> callback = info[0].As<Function>();
   Local<Context> context = isolate->GetCurrentContext();
   PerIsolateData::Get(isolate)->SetTimeout(callback, context);
 }
 
 void Shell::ReadCodeTypeAndArguments(
-    const v8::FunctionCallbackInfo<v8::Value>& args, int index,
+    const v8::FunctionCallbackInfo<v8::Value>& info, int index,
     CodeType* code_type, Local<Value>* arguments) {
-  Isolate* isolate = args.GetIsolate();
-  if (args.Length() > index && args[index]->IsObject()) {
-    Local<Object> object = args[index].As<Object>();
+  Isolate* isolate = info.GetIsolate();
+  if (info.Length() > index && info[index]->IsObject()) {
+    Local<Object> object = info[index].As<Object>();
     Local<Context> context = isolate->GetCurrentContext();
     Local<Value> value;
     if (!TryGetValue(isolate, context, object, "type").ToLocal(&value)) {
@@ -2632,7 +2734,7 @@ bool Shell::FunctionAndArgumentsToString(Local<Function> function,
       function->FunctionProtoToString(context);
   Local<String> function_string;
   if (!maybe_function_string.ToLocal(&function_string)) {
-    isolate->ThrowError("Failed to convert function to string");
+    ThrowError(isolate, "Failed to convert function to string");
     return false;
   }
   *source = String::NewFromUtf8Literal(isolate, "(");
@@ -2641,7 +2743,7 @@ bool Shell::FunctionAndArgumentsToString(Local<Function> function,
   *source = String::Concat(isolate, *source, middle);
   if (!arguments.IsEmpty() && !arguments->IsUndefined()) {
     if (!arguments->IsArray()) {
-      isolate->ThrowError("'arguments' must be an array");
+      ThrowError(isolate, "'arguments' must be an array");
       return false;
     }
     Local<String> comma = String::NewFromUtf8Literal(isolate, ",");
@@ -2653,12 +2755,12 @@ bool Shell::FunctionAndArgumentsToString(Local<Function> function,
       MaybeLocal<Value> maybe_argument = array->Get(context, i);
       Local<Value> argument;
       if (!maybe_argument.ToLocal(&argument)) {
-        isolate->ThrowError("Failed to get argument");
+        ThrowError(isolate, "Failed to get argument");
         return false;
       }
       Local<String> argument_string;
       if (!JSON::Stringify(context, argument).ToLocal(&argument_string)) {
-        isolate->ThrowError("Failed to convert argument to string");
+        ThrowError(isolate, "Failed to convert argument to string");
         return false;
       }
       *source = String::Concat(isolate, *source, argument_string);
@@ -2669,47 +2771,47 @@ bool Shell::FunctionAndArgumentsToString(Local<Function> function,
   return true;
 }
 
-// ReadSource() supports reading source code through `args[index]` as specified
-// by the `default_type` or an optional options bag provided in `args[index+1]`
+// ReadSource() supports reading source code through `info[index]` as specified
+// by the `default_type` or an optional options bag provided in `info[index+1]`
 // (e.g. `options={type: 'code_type', arguments:[...]}`).
 MaybeLocal<String> Shell::ReadSource(
-    const v8::FunctionCallbackInfo<v8::Value>& args, int index,
+    const v8::FunctionCallbackInfo<v8::Value>& info, int index,
     CodeType default_type) {
   CodeType code_type;
   Local<Value> arguments;
-  ReadCodeTypeAndArguments(args, index + 1, &code_type, &arguments);
+  ReadCodeTypeAndArguments(info, index + 1, &code_type, &arguments);
 
-  Isolate* isolate = args.GetIsolate();
+  Isolate* isolate = info.GetIsolate();
   Local<String> source;
   if (code_type == CodeType::kNone) {
     code_type = default_type;
   }
   switch (code_type) {
     case CodeType::kFunction:
-      if (!args[index]->IsFunction()) {
+      if (!info[index]->IsFunction()) {
         return MaybeLocal<String>();
       }
       // Source: ( function_to_string )( params )
-      if (!FunctionAndArgumentsToString(args[index].As<Function>(), arguments,
+      if (!FunctionAndArgumentsToString(info[index].As<Function>(), arguments,
                                         &source, isolate)) {
         return MaybeLocal<String>();
       }
       break;
     case CodeType::kFileName: {
-      if (!args[index]->IsString()) {
+      if (!info[index]->IsString()) {
         return MaybeLocal<String>();
       }
-      String::Utf8Value filename(isolate, args[index]);
+      String::Utf8Value filename(isolate, info[index]);
       if (!Shell::ReadFile(isolate, *filename).ToLocal(&source)) {
         return MaybeLocal<String>();
       }
       break;
     }
     case CodeType::kString:
-      if (!args[index]->IsString()) {
+      if (!info[index]->IsString()) {
         return MaybeLocal<String>();
       }
-      source = args[index].As<String>();
+      source = info[index].As<String>();
       break;
     case CodeType::kNone:
     case CodeType::kInvalid:
@@ -2718,29 +2820,30 @@ MaybeLocal<String> Shell::ReadSource(
   return source;
 }
 
-void Shell::WorkerNew(const v8::FunctionCallbackInfo<v8::Value>& args) {
-  Isolate* isolate = args.GetIsolate();
+void Shell::WorkerNew(const v8::FunctionCallbackInfo<v8::Value>& info) {
+  DCHECK(i::ValidateCallbackInfo(info));
+  Isolate* isolate = info.GetIsolate();
   HandleScope handle_scope(isolate);
-  if (args.Length() < 1 || (!args[0]->IsString() && !args[0]->IsFunction())) {
-    isolate->ThrowError("1st argument must be a string or a function");
+  if (info.Length() < 1 || (!info[0]->IsString() && !info[0]->IsFunction())) {
+    ThrowError(isolate, "1st argument must be a string or a function");
     return;
   }
 
   Local<String> source;
-  if (!ReadSource(args, 0, CodeType::kFileName).ToLocal(&source)) {
-    isolate->ThrowError("Invalid argument");
+  if (!ReadSource(info, 0, CodeType::kFileName).ToLocal(&source)) {
+    ThrowError(isolate, "Invalid argument");
     return;
   }
 
-  if (!args.IsConstructCall()) {
-    isolate->ThrowError("Worker must be constructed with new");
+  if (!info.IsConstructCall()) {
+    ThrowError(isolate, "Worker must be constructed with new");
     return;
   }
 
   // Initialize the embedder field to 0; if we return early without
   // creating a new Worker (because the main thread is terminating) we can
   // early-out from the instance calls.
-  args.Holder()->SetInternalField(0, v8::Integer::New(isolate, 0));
+  info.Holder()->SetInternalField(0, v8::Integer::New(isolate, 0));
 
   {
     // Don't allow workers to create more workers if the main thread
@@ -2752,7 +2855,7 @@ void Shell::WorkerNew(const v8::FunctionCallbackInfo<v8::Value>& args) {
 
     String::Utf8Value script(isolate, source);
     if (!*script) {
-      isolate->ThrowError("Can't get worker script");
+      ThrowError(isolate, "Can't get worker script");
       return;
     }
 
@@ -2764,32 +2867,33 @@ void Shell::WorkerNew(const v8::FunctionCallbackInfo<v8::Value>& args) {
     const size_t kWorkerSizeEstimate = 4 * 1024 * 1024;  // stack + heap.
     i::Handle<i::Object> managed = i::Managed<Worker>::FromSharedPtr(
         i_isolate, kWorkerSizeEstimate, worker);
-    args.Holder()->SetInternalField(0, Utils::ToLocal(managed));
+    info.Holder()->SetInternalField(0, Utils::ToLocal(managed));
     if (!Worker::StartWorkerThread(isolate, std::move(worker))) {
-      isolate->ThrowError("Can't start thread");
+      ThrowError(isolate, "Can't start thread");
       return;
     }
   }
 }
 
-void Shell::WorkerPostMessage(const v8::FunctionCallbackInfo<v8::Value>& args) {
-  Isolate* isolate = args.GetIsolate();
+void Shell::WorkerPostMessage(const v8::FunctionCallbackInfo<v8::Value>& info) {
+  DCHECK(i::ValidateCallbackInfo(info));
+  Isolate* isolate = info.GetIsolate();
   HandleScope handle_scope(isolate);
 
-  if (args.Length() < 1) {
-    isolate->ThrowError("Invalid argument");
+  if (info.Length() < 1) {
+    ThrowError(isolate, "Invalid argument");
     return;
   }
 
   std::shared_ptr<Worker> worker =
-      GetWorkerFromInternalField(isolate, args.Holder());
+      GetWorkerFromInternalField(isolate, info.Holder());
   if (!worker.get()) {
     return;
   }
 
-  Local<Value> message = args[0];
+  Local<Value> message = info[0];
   Local<Value> transfer =
-      args.Length() >= 2 ? args[1] : Undefined(isolate).As<Value>();
+      info.Length() >= 2 ? info[1] : Undefined(isolate).As<Value>();
   std::unique_ptr<SerializationData> data =
       Shell::SerializeValue(isolate, message, transfer);
   if (data) {
@@ -2797,11 +2901,12 @@ void Shell::WorkerPostMessage(const v8::FunctionCallbackInfo<v8::Value>& args) {
   }
 }
 
-void Shell::WorkerGetMessage(const v8::FunctionCallbackInfo<v8::Value>& args) {
-  Isolate* isolate = args.GetIsolate();
+void Shell::WorkerGetMessage(const v8::FunctionCallbackInfo<v8::Value>& info) {
+  DCHECK(i::ValidateCallbackInfo(info));
+  Isolate* isolate = info.GetIsolate();
   HandleScope handle_scope(isolate);
   std::shared_ptr<Worker> worker =
-      GetWorkerFromInternalField(isolate, args.Holder());
+      GetWorkerFromInternalField(isolate, info.Holder());
   if (!worker.get()) {
     return;
   }
@@ -2810,26 +2915,28 @@ void Shell::WorkerGetMessage(const v8::FunctionCallbackInfo<v8::Value>& args) {
   if (data) {
     Local<Value> value;
     if (Shell::DeserializeValue(isolate, std::move(data)).ToLocal(&value)) {
-      args.GetReturnValue().Set(value);
+      info.GetReturnValue().Set(value);
     }
   }
 }
 
-void Shell::WorkerTerminate(const v8::FunctionCallbackInfo<v8::Value>& args) {
-  Isolate* isolate = args.GetIsolate();
+void Shell::WorkerTerminate(const v8::FunctionCallbackInfo<v8::Value>& info) {
+  DCHECK(i::ValidateCallbackInfo(info));
+  Isolate* isolate = info.GetIsolate();
   HandleScope handle_scope(isolate);
   std::shared_ptr<Worker> worker =
-      GetWorkerFromInternalField(isolate, args.Holder());
+      GetWorkerFromInternalField(isolate, info.Holder());
   if (!worker.get()) return;
   worker->Terminate();
 }
 
 void Shell::WorkerTerminateAndWait(
-    const v8::FunctionCallbackInfo<v8::Value>& args) {
-  Isolate* isolate = args.GetIsolate();
+    const v8::FunctionCallbackInfo<v8::Value>& info) {
+  DCHECK(i::ValidateCallbackInfo(info));
+  Isolate* isolate = info.GetIsolate();
   HandleScope handle_scope(isolate);
   std::shared_ptr<Worker> worker =
-      GetWorkerFromInternalField(isolate, args.Holder());
+      GetWorkerFromInternalField(isolate, info.Holder());
   if (!worker.get()) {
     return;
   }
@@ -2839,11 +2946,11 @@ void Shell::WorkerTerminateAndWait(
   worker->TerminateAndWaitForThread(parked);
 }
 
-void Shell::QuitOnce(v8::FunctionCallbackInfo<v8::Value>* args) {
-  int exit_code = (*args)[0]
-                      ->Int32Value(args->GetIsolate()->GetCurrentContext())
+void Shell::QuitOnce(v8::FunctionCallbackInfo<v8::Value>* info) {
+  int exit_code = (*info)[0]
+                      ->Int32Value(info->GetIsolate()->GetCurrentContext())
                       .FromMaybe(0);
-  Isolate* isolate = args->GetIsolate();
+  Isolate* isolate = info->GetIsolate();
   ResetOnProfileEndListener(isolate);
   isolate->Exit();
 
@@ -2866,22 +2973,40 @@ void Shell::QuitOnce(v8::FunctionCallbackInfo<v8::Value>* args) {
   base::OS::ExitProcess(exit_code);
 }
 
-void Shell::Quit(const v8::FunctionCallbackInfo<v8::Value>& args) {
+void Shell::Terminate(const v8::FunctionCallbackInfo<v8::Value>& info) {
+  DCHECK(i::ValidateCallbackInfo(info));
+  // Triggering termination from JS can cause some non-determinism thus we
+  // skip it for correctness fuzzing.
+  // Termination also currently breaks Fuzzilli's REPRL mechanism as the
+  // scheduled termination will prevent the next testcase sent by Fuzzilli from
+  // being processed. This will in turn desynchronize the communication
+  // between d8 and Fuzzilli, leading to a crash.
+  if (!i::v8_flags.correctness_fuzzer_suppressions && !fuzzilli_reprl) {
+    auto v8_isolate = info.GetIsolate();
+    if (!v8_isolate->IsExecutionTerminating()) v8_isolate->TerminateExecution();
+  }
+}
+
+void Shell::Quit(const v8::FunctionCallbackInfo<v8::Value>& info) {
+  DCHECK(i::ValidateCallbackInfo(info));
   base::CallOnce(&quit_once_, &QuitOnce,
-                 const_cast<v8::FunctionCallbackInfo<v8::Value>*>(&args));
+                 const_cast<v8::FunctionCallbackInfo<v8::Value>*>(&info));
 }
 
-void Shell::WaitUntilDone(const v8::FunctionCallbackInfo<v8::Value>& args) {
-  SetWaitUntilDone(args.GetIsolate(), true);
+void Shell::WaitUntilDone(const v8::FunctionCallbackInfo<v8::Value>& info) {
+  DCHECK(i::ValidateCallbackInfo(info));
+  SetWaitUntilDone(info.GetIsolate(), true);
 }
 
-void Shell::NotifyDone(const v8::FunctionCallbackInfo<v8::Value>& args) {
-  SetWaitUntilDone(args.GetIsolate(), false);
+void Shell::NotifyDone(const v8::FunctionCallbackInfo<v8::Value>& info) {
+  DCHECK(i::ValidateCallbackInfo(info));
+  SetWaitUntilDone(info.GetIsolate(), false);
 }
 
-void Shell::Version(const v8::FunctionCallbackInfo<v8::Value>& args) {
-  args.GetReturnValue().Set(
-      String::NewFromUtf8(args.GetIsolate(), V8::GetVersion())
+void Shell::Version(const v8::FunctionCallbackInfo<v8::Value>& info) {
+  DCHECK(i::ValidateCallbackInfo(info));
+  info.GetReturnValue().Set(
+      String::NewFromUtf8(info.GetIsolate(), V8::GetVersion())
           .ToLocalChecked());
 }
 
@@ -2893,17 +3018,17 @@ void Shell::Version(const v8::FunctionCallbackInfo<v8::Value>& args) {
 // as first argument (with the idea being that the fuzzer won't be able to
 // generate this value) which then also acts as a selector for the operation
 // to perform.
-void Shell::Fuzzilli(const v8::FunctionCallbackInfo<v8::Value>& args) {
-  HandleScope handle_scope(args.GetIsolate());
+void Shell::Fuzzilli(const v8::FunctionCallbackInfo<v8::Value>& info) {
+  DCHECK(i::ValidateCallbackInfo(info));
+  HandleScope handle_scope(info.GetIsolate());
 
-  String::Utf8Value operation(args.GetIsolate(), args[0]);
+  String::Utf8Value operation(info.GetIsolate(), info[0]);
   if (*operation == nullptr) {
     return;
   }
-
   if (strcmp(*operation, "FUZZILLI_CRASH") == 0) {
-    auto arg = args[1]
-                   ->Int32Value(args.GetIsolate()->GetCurrentContext())
+    auto arg = info[1]
+                   ->Int32Value(info.GetIsolate()->GetCurrentContext())
                    .FromMaybe(0);
     switch (arg) {
       case 0:
@@ -2925,7 +3050,7 @@ void Shell::Fuzzilli(const v8::FunctionCallbackInfo<v8::Value>& args) {
       fzliout = stdout;
     }
 
-    String::Utf8Value string(args.GetIsolate(), args[1]);
+    String::Utf8Value string(info.GetIsolate(), info[1]);
     if (*string == nullptr) {
       return;
     }
@@ -3111,10 +3236,11 @@ Local<String> Shell::Stringify(Isolate* isolate, Local<Value> value) {
   return result.ToLocalChecked().As<String>();
 }
 
-void Shell::NodeTypeCallback(const v8::FunctionCallbackInfo<v8::Value>& args) {
-  v8::Isolate* isolate = args.GetIsolate();
+void Shell::NodeTypeCallback(const v8::FunctionCallbackInfo<v8::Value>& info) {
+  DCHECK(i::ValidateCallbackInfo(info));
+  v8::Isolate* isolate = info.GetIsolate();
 
-  args.GetReturnValue().Set(v8::Number::New(isolate, 1));
+  info.GetReturnValue().Set(v8::Number::New(isolate, 1));
 }
 
 Local<FunctionTemplate> NewDOMFunctionTemplate(Isolate* isolate,
@@ -3476,6 +3602,11 @@ Local<ObjectTemplate> Shell::CreateD8Template(Isolate* isolate) {
         FunctionTemplate::New(isolate, ProfilerTriggerSample));
     d8_template->Set(isolate, "profiler", profiler_template);
   }
+  d8_template->Set(isolate, "terminate",
+                   FunctionTemplate::New(isolate, Terminate));
+  if (!options.omit_quit) {
+    d8_template->Set(isolate, "quit", FunctionTemplate::New(isolate, Quit));
+  }
   return d8_template;
 }
 
@@ -3559,6 +3690,8 @@ static void ThrowOnFailedAccessCheck(Local<Object> host, v8::AccessType type,
 void Shell::Initialize(Isolate* isolate, D8Console* console,
                        bool isOnMainThread) {
   isolate->SetPromiseRejectCallback(PromiseRejectCallback);
+  isolate->SetWasmAsyncResolvePromiseCallback(
+      D8WasmAsyncResolvePromiseCallback);
   if (isOnMainThread) {
     // Set up counters
     if (i::v8_flags.map_counters[0] != '\0') {
@@ -3594,7 +3727,7 @@ Local<String> Shell::WasmLoadSourceMapCallback(Isolate* isolate,
   return Shell::ReadFile(isolate, path, false).ToLocalChecked();
 }
 
-Local<Context> Shell::CreateEvaluationContext(Isolate* isolate) {
+MaybeLocal<Context> Shell::CreateEvaluationContext(Isolate* isolate) {
   // This needs to be a critical section since this is not thread-safe
   i::ParkedMutexGuard lock_guard(
       reinterpret_cast<i::Isolate*>(isolate)->main_thread_local_isolate(),
@@ -3603,8 +3736,10 @@ Local<Context> Shell::CreateEvaluationContext(Isolate* isolate) {
   Local<ObjectTemplate> global_template = CreateGlobalTemplate(isolate);
   EscapableHandleScope handle_scope(isolate);
   Local<Context> context = Context::New(isolate, nullptr, global_template);
-  DCHECK_IMPLIES(context.IsEmpty(), isolate->IsExecutionTerminating());
-  if (context.IsEmpty()) return {};
+  if (context.IsEmpty()) {
+    DCHECK(isolate->IsExecutionTerminating());
+    return {};
+  }
   if (i::v8_flags.perf_prof_annotate_wasm ||
       i::v8_flags.vtune_prof_annotate_wasm) {
     isolate->SetWasmLoadSourceMapCallback(Shell::WasmLoadSourceMapCallback);
@@ -3948,27 +4083,33 @@ MaybeLocal<PrimitiveArray> Shell::ReadLines(Isolate* isolate,
   return exports;
 }
 
-void Shell::ReadBuffer(const v8::FunctionCallbackInfo<v8::Value>& args) {
+void Shell::ReadBuffer(const v8::FunctionCallbackInfo<v8::Value>& info) {
+  DCHECK(i::ValidateCallbackInfo(info));
   static_assert(sizeof(char) == sizeof(uint8_t),
                 "char and uint8_t should both have 1 byte");
-  Isolate* isolate = args.GetIsolate();
-  String::Utf8Value filename(isolate, args[0]);
+  Isolate* isolate = info.GetIsolate();
+  String::Utf8Value filename(isolate, info[0]);
   int length;
   if (*filename == nullptr) {
-    isolate->ThrowError("Error loading file");
+    ThrowError(isolate, "Error loading file");
     return;
   }
 
   uint8_t* data = reinterpret_cast<uint8_t*>(ReadChars(*filename, &length));
   if (data == nullptr) {
-    isolate->ThrowError("Error reading file");
+    ThrowError(isolate, "Error reading file");
     return;
   }
   Local<v8::ArrayBuffer> buffer = ArrayBuffer::New(isolate, length);
   memcpy(buffer->GetBackingStore()->Data(), data, length);
   delete[] data;
 
-  args.GetReturnValue().Set(buffer);
+  info.GetReturnValue().Set(buffer);
+}
+
+void Shell::ReadLine(const v8::FunctionCallbackInfo<v8::Value>& info) {
+  DCHECK(i::ValidateCallbackInfo(info));
+  info.GetReturnValue().Set(ReadFromStdin(info.GetIsolate()));
 }
 
 // Reads a file into a v8 string.
@@ -3981,10 +4122,10 @@ MaybeLocal<String> Shell::ReadFile(Isolate* isolate, const char* name,
     if (should_throw) {
       std::ostringstream oss;
       oss << "Error loading file: " << name;
-      isolate->ThrowError(
-          v8::String::NewFromUtf8(
-              isolate, oss.str().substr(0, String::kMaxLength).c_str())
-              .ToLocalChecked());
+      ThrowError(isolate,
+                 v8::String::NewFromUtf8(
+                     isolate, oss.str().substr(0, String::kMaxLength).c_str())
+                     .ToLocalChecked());
     }
     return MaybeLocal<String>();
   }
@@ -4152,12 +4293,13 @@ class InspectorClient : public v8_inspector::V8InspectorClient {
   }
 
   static void SendInspectorMessage(
-      const v8::FunctionCallbackInfo<v8::Value>& args) {
-    Isolate* isolate = args.GetIsolate();
+      const v8::FunctionCallbackInfo<v8::Value>& info) {
+    DCHECK(i::ValidateCallbackInfo(info));
+    Isolate* isolate = info.GetIsolate();
     v8::HandleScope handle_scope(isolate);
     Local<Context> context = isolate->GetCurrentContext();
-    args.GetReturnValue().Set(Undefined(isolate));
-    Local<String> message = args[0]->ToString(context).ToLocalChecked();
+    info.GetReturnValue().Set(Undefined(isolate));
+    Local<String> message = info[0]->ToString(context).ToLocalChecked();
     v8_inspector::V8InspectorSession* session =
         InspectorClient::GetSession(context);
     int length = message->Length();
@@ -4168,7 +4310,7 @@ class InspectorClient : public v8_inspector::V8InspectorClient {
       v8::SealHandleScope seal_handle_scope(isolate);
       session->dispatchProtocolMessage(message_view);
     }
-    args.GetReturnValue().Set(True(isolate));
+    info.GetReturnValue().Set(True(isolate));
   }
 
   static const int kContextGroupId = 1;
@@ -4305,35 +4447,44 @@ void SourceGroup::ExecuteInThread() {
   create_params.array_buffer_allocator = Shell::array_buffer_allocator;
   Isolate* isolate = Isolate::New(create_params);
   Shell::SetWaitUntilDone(isolate, false);
-  D8Console console(isolate);
-  Shell::Initialize(isolate, &console, false);
 
-  for (int i = 0; i < Shell::options.stress_runs; ++i) {
-    {
-      next_semaphore_.ParkedWait(
-          reinterpret_cast<i::Isolate*>(isolate)->main_thread_local_isolate());
-    }
-    {
-      Isolate::Scope iscope(isolate);
-      PerIsolateData data(isolate);
+  {
+    Isolate::Scope isolate_scope(isolate);
+    D8Console console(isolate);
+    Shell::Initialize(isolate, &console, false);
+    PerIsolateData data(isolate);
+
+    for (int i = 0; i < Shell::options.stress_runs; ++i) {
       {
-        HandleScope scope(isolate);
-        Local<Context> context = Shell::CreateEvaluationContext(isolate);
-        {
-          Context::Scope cscope(context);
-          InspectorClient inspector_client(context,
-                                           Shell::options.enable_inspector);
-          PerIsolateData::RealmScope realm_scope(PerIsolateData::Get(isolate));
-          Execute(isolate);
-          Shell::CompleteMessageLoop(isolate);
-        }
+        next_semaphore_.ParkedWait(reinterpret_cast<i::Isolate*>(isolate)
+                                       ->main_thread_local_isolate());
       }
-      Shell::CollectGarbage(isolate);
+      {
+        {
+          HandleScope scope(isolate);
+          Local<Context> context;
+          if (!Shell::CreateEvaluationContext(isolate).ToLocal(&context)) {
+            DCHECK(isolate->IsExecutionTerminating());
+            break;
+          }
+          {
+            Context::Scope context_scope(context);
+            InspectorClient inspector_client(context,
+                                             Shell::options.enable_inspector);
+            PerIsolateData::RealmScope realm_scope(
+                PerIsolateData::Get(isolate));
+            Execute(isolate);
+            Shell::CompleteMessageLoop(isolate);
+          }
+        }
+        Shell::CollectGarbage(isolate);
+      }
+      done_semaphore_.Signal();
     }
-    done_semaphore_.Signal();
+
+    Shell::ResetOnProfileEndListener(isolate);
   }
 
-  Shell::ResetOnProfileEndListener(isolate);
   isolate->Dispose();
 }
 
@@ -4505,7 +4656,7 @@ void Worker::ProcessMessage(std::unique_ptr<SerializationData> data) {
   DCHECK_NOT_NULL(isolate_);
   HandleScope scope(isolate_);
   Local<Context> context = context_.Get(isolate_);
-  Context::Scope cscope(context);
+  Context::Scope context_scope(context);
   Local<Object> global = context->Global();
 
   // Get the message handler.
@@ -4520,6 +4671,7 @@ void Worker::ProcessMessage(std::unique_ptr<SerializationData> data) {
   try_catch.SetVerbose(true);
   Local<Value> value;
   if (Shell::DeserializeValue(isolate_, std::move(data)).ToLocal(&value)) {
+    DCHECK(!isolate_->IsExecutionTerminating());
     Local<Value> argv[] = {value};
     MaybeLocal<Value> result = onmessage_fun->Call(context, global, 1, argv);
     USE(result);
@@ -4554,73 +4706,81 @@ void Worker::ExecuteInThread() {
   // The Worker is now ready to receive messages.
   started_semaphore_.Signal();
 
-  D8Console console(isolate_);
-  Shell::Initialize(isolate_, &console, false);
-  // This is not really a loop, but the loop allows us to break out of this
-  // block easily.
-  for (bool execute = true; execute; execute = false) {
-    Isolate::Scope iscope(isolate_);
-    {
-      HandleScope scope(isolate_);
-      PerIsolateData data(isolate_);
-      Local<Context> context = Shell::CreateEvaluationContext(isolate_);
-      if (context.IsEmpty()) break;
-      context_.Reset(isolate_, context);
+  {
+    Isolate::Scope isolate_scope(isolate_);
+    D8Console console(isolate_);
+    Shell::Initialize(isolate_, &console, false);
+    PerIsolateData data(isolate_);
+    // This is not really a loop, but the loop allows us to break out of this
+    // block easily.
+    for (bool execute = true; execute; execute = false) {
       {
-        Context::Scope cscope(context);
-        PerIsolateData::RealmScope realm_scope(PerIsolateData::Get(isolate_));
+        HandleScope scope(isolate_);
+        Local<Context> context;
+        if (!Shell::CreateEvaluationContext(isolate_).ToLocal(&context)) {
+          DCHECK(isolate_->IsExecutionTerminating());
+          break;
+        }
+        context_.Reset(isolate_, context);
+        {
+          Context::Scope context_scope(context);
+          PerIsolateData::RealmScope realm_scope(PerIsolateData::Get(isolate_));
 
-        Local<Object> global = context->Global();
-        Local<Value> this_value = External::New(isolate_, this);
-        Local<FunctionTemplate> postmessage_fun_template =
-            FunctionTemplate::New(isolate_, PostMessageOut, this_value);
+          Local<Object> global = context->Global();
+          Local<Value> this_value = External::New(isolate_, this);
+          Local<FunctionTemplate> postmessage_fun_template =
+              FunctionTemplate::New(isolate_, PostMessageOut, this_value);
 
-        Local<Function> postmessage_fun;
-        if (postmessage_fun_template->GetFunction(context).ToLocal(
-                &postmessage_fun)) {
-          global
-              ->Set(context,
+          Local<Function> postmessage_fun;
+          if (postmessage_fun_template->GetFunction(context).ToLocal(
+                  &postmessage_fun)) {
+            global
+                ->Set(
+                    context,
                     v8::String::NewFromUtf8Literal(
                         isolate_, "postMessage", NewStringType::kInternalized),
                     postmessage_fun)
-              .FromJust();
-        }
+                .FromJust();
+          }
 
-        // First run the script
-        Local<String> file_name =
-            String::NewFromUtf8Literal(isolate_, "unnamed");
-        Local<String> source =
-            String::NewFromUtf8(isolate_, script_).ToLocalChecked();
-        if (Shell::ExecuteString(
-                isolate_, source, file_name, Shell::kNoPrintResult,
-                Shell::kReportExceptions, Shell::kProcessMessageQueue)) {
-          // Check that there's a message handler
-          MaybeLocal<Value> maybe_onmessage = global->Get(
-              context,
-              String::NewFromUtf8Literal(isolate_, "onmessage",
-                                         NewStringType::kInternalized));
-          Local<Value> onmessage;
-          if (maybe_onmessage.ToLocal(&onmessage) && onmessage->IsFunction()) {
-            // Now wait for messages.
-            ProcessMessages();
+          // First run the script
+          Local<String> file_name =
+              String::NewFromUtf8Literal(isolate_, "unnamed");
+          Local<String> source =
+              String::NewFromUtf8(isolate_, script_).ToLocalChecked();
+          if (Shell::ExecuteString(
+                  isolate_, source, file_name, Shell::kNoPrintResult,
+                  Shell::kReportExceptions, Shell::kProcessMessageQueue)) {
+            // Check that there's a message handler
+            MaybeLocal<Value> maybe_onmessage = global->Get(
+                context,
+                String::NewFromUtf8Literal(isolate_, "onmessage",
+                                           NewStringType::kInternalized));
+            Local<Value> onmessage;
+            if (maybe_onmessage.ToLocal(&onmessage) &&
+                onmessage->IsFunction()) {
+              // Now wait for messages.
+              ProcessMessages();
+            }
           }
         }
       }
+      Shell::CollectGarbage(isolate_);
     }
-    Shell::CollectGarbage(isolate_);
+
+    {
+      base::MutexGuard lock_guard(&worker_mutex_);
+      state_.store(State::kTerminated);
+      CHECK(!is_running());
+      task_runner_.reset();
+      task_manager_ = nullptr;
+    }
+
+    Shell::ResetOnProfileEndListener(isolate_);
+    context_.Reset();
+    platform::NotifyIsolateShutdown(g_default_platform, isolate_);
   }
 
-  {
-    base::MutexGuard lock_guard(&worker_mutex_);
-    state_.store(State::kTerminated);
-    CHECK(!is_running());
-    task_runner_.reset();
-    task_manager_ = nullptr;
-  }
-
-  Shell::ResetOnProfileEndListener(isolate_);
-  context_.Reset();
-  platform::NotifyIsolateShutdown(g_default_platform, isolate_);
   isolate_->Dispose();
   isolate_ = nullptr;
 
@@ -4629,22 +4789,23 @@ void Worker::ExecuteInThread() {
   out_semaphore_.Signal();
 }
 
-void Worker::PostMessageOut(const v8::FunctionCallbackInfo<v8::Value>& args) {
-  Isolate* isolate = args.GetIsolate();
+void Worker::PostMessageOut(const v8::FunctionCallbackInfo<v8::Value>& info) {
+  DCHECK(i::ValidateCallbackInfo(info));
+  Isolate* isolate = info.GetIsolate();
   HandleScope handle_scope(isolate);
 
-  if (args.Length() < 1) {
-    isolate->ThrowError("Invalid argument");
+  if (info.Length() < 1) {
+    ThrowError(isolate, "Invalid argument");
     return;
   }
 
-  Local<Value> message = args[0];
+  Local<Value> message = info[0];
   Local<Value> transfer = Undefined(isolate);
   std::unique_ptr<SerializationData> data =
       Shell::SerializeValue(isolate, message, transfer);
   if (data) {
-    DCHECK(args.Data()->IsExternal());
-    Local<External> this_value = args.Data().As<External>();
+    DCHECK(info.Data()->IsExternal());
+    Local<External> this_value = info.Data().As<External>();
     Worker* worker = static_cast<Worker*>(this_value->Value());
     worker->out_queue_.Enqueue(std::move(data));
     worker->out_semaphore_.Signal();
@@ -4980,59 +5141,58 @@ bool Shell::SetOptions(int argc, char* argv[]) {
   return true;
 }
 
-int Shell::RunMain(Isolate* isolate, bool last_run) {
+int Shell::RunMain(v8::Isolate* isolate, bool last_run) {
+  i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
+
   for (int i = 1; i < options.num_isolates; ++i) {
     options.isolate_sources[i].StartExecuteInThread();
   }
-  bool success = true;
-  {
-    SetWaitUntilDone(isolate, false);
-    if (options.lcov_file) {
-      debug::Coverage::SelectMode(isolate, debug::CoverageMode::kBlockCount);
-    }
-    HandleScope scope(isolate);
-    Local<Context> context = CreateEvaluationContext(isolate);
-    bool use_existing_context = last_run && use_interactive_shell();
-    if (use_existing_context) {
-      // Keep using the same context in the interactive shell.
-      evaluation_context_.Reset(isolate, context);
-    }
-    {
-      Context::Scope cscope(context);
-      InspectorClient inspector_client(context, options.enable_inspector);
-      PerIsolateData::RealmScope realm_scope(PerIsolateData::Get(isolate));
-      if (!options.isolate_sources[0].Execute(isolate)) success = false;
-      if (!CompleteMessageLoop(isolate)) success = false;
-    }
-    WriteLcovData(isolate, options.lcov_file);
-    if (last_run && i::v8_flags.stress_snapshot) {
-      static constexpr bool kClearRecompilableData = true;
-      i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
-      i::Handle<i::Context> i_context = Utils::OpenHandle(*context);
-      // TODO(jgruber,v8:10500): Don't deoptimize once we support serialization
-      // of optimized code.
-      i::Deoptimizer::DeoptimizeAll(i_isolate);
-      i::Snapshot::ClearReconstructableDataForSerialization(
-          i_isolate, kClearRecompilableData);
-      i::Snapshot::SerializeDeserializeAndVerifyForTesting(i_isolate,
-                                                           i_context);
-    }
-  }
+
+  // The Context object, created inside RunMainIsolate, is used after the method
+  // returns in some situations:
+  const bool keep_context_alive =
+      last_run && (use_interactive_shell() || i::v8_flags.stress_snapshot);
+  bool success = RunMainIsolate(isolate, keep_context_alive);
   CollectGarbage(isolate);
 
-  // Park the main thread here to prevent deadlocks in shared GCs when waiting
-  // in JoinThread.
-  i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
-  i::ParkedScope parked(i_isolate->main_thread_local_isolate());
-
-  for (int i = 1; i < options.num_isolates; ++i) {
-    if (last_run) {
-      options.isolate_sources[i].JoinThread(parked);
-    } else {
-      options.isolate_sources[i].WaitForThread(parked);
+  {
+    // Park the main thread here to prevent deadlocks in shared GCs when waiting
+    // in JoinThread.
+    i::ParkedScope parked(i_isolate->main_thread_local_isolate());
+    for (int i = 1; i < options.num_isolates; ++i) {
+      if (last_run) {
+        options.isolate_sources[i].JoinThread(parked);
+      } else {
+        options.isolate_sources[i].WaitForThread(parked);
+      }
     }
+    WaitForRunningWorkers(parked);
   }
-  WaitForRunningWorkers(parked);
+
+  // Other threads have terminated, we can now run the artifical
+  // serialize-deserialize pass (which destructively mutates heap state).
+  if (success && last_run && i::v8_flags.stress_snapshot) {
+    HandleScope handle_scope(isolate);
+    static constexpr bool kClearRecompilableData = true;
+    auto context = v8::Local<v8::Context>::New(isolate, evaluation_context_);
+    i::Handle<i::Context> i_context = Utils::OpenHandle(*context);
+    // Stop concurrent compiles before mutating the heap.
+    if (i_isolate->concurrent_recompilation_enabled()) {
+      i_isolate->optimizing_compile_dispatcher()->Stop();
+    }
+#if V8_ENABLE_MAGLEV
+    if (i_isolate->maglev_concurrent_dispatcher()->is_enabled()) {
+      i_isolate->maglev_concurrent_dispatcher()->AwaitCompileJobs();
+    }
+#endif  // V8_ENABLE_MAGLEV
+    // TODO(jgruber,v8:10500): Don't deoptimize once we support serialization
+    // of optimized code.
+    i::Deoptimizer::DeoptimizeAll(i_isolate);
+    i::Snapshot::ClearReconstructableDataForSerialization(
+        i_isolate, kClearRecompilableData);
+    i::Snapshot::SerializeDeserializeAndVerifyForTesting(i_isolate, i_context);
+  }
+
   if (Shell::unhandled_promise_rejections_.load() > 0) {
     printf("%i pending unhandled Promise rejection(s) detected.\n",
            Shell::unhandled_promise_rejections_.load());
@@ -5043,15 +5203,45 @@ int Shell::RunMain(Isolate* isolate, bool last_run) {
   }
   // In order to finish successfully, success must be != expected_to_throw.
   if (Shell::options.no_fail) return 0;
+  // Fuzzers aren't expected to use --throws, but may pick it up from testcases.
+  // In that case, just ignore the flag.
+  if (i::v8_flags.fuzzing && Shell::options.expected_to_throw) return 0;
   return (success == Shell::options.expected_to_throw ? 1 : 0);
+}
+
+bool Shell::RunMainIsolate(v8::Isolate* isolate, bool keep_context_alive) {
+  Shell::SetWaitUntilDone(isolate, false);
+  if (options.lcov_file) {
+    debug::Coverage::SelectMode(isolate, debug::CoverageMode::kBlockCount);
+  }
+  HandleScope scope(isolate);
+  Local<Context> context;
+  if (!CreateEvaluationContext(isolate).ToLocal(&context)) {
+    DCHECK(isolate->IsExecutionTerminating());
+    // We must not exit early here in REPRL mode as that would cause the next
+    // testcase sent by Fuzzilli to be skipped, which will desynchronize the
+    // communication between d8 and Fuzzilli, leading to a crash.
+    DCHECK(!fuzzilli_reprl);
+    return false;
+  }
+  if (keep_context_alive) {
+    evaluation_context_.Reset(isolate, context);
+  }
+  bool success = true;
+  {
+    Context::Scope context_scope(context);
+    InspectorClient inspector_client(context, options.enable_inspector);
+    PerIsolateData::RealmScope realm_scope(PerIsolateData::Get(isolate));
+    if (!options.isolate_sources[0].Execute(isolate)) success = false;
+    if (!CompleteMessageLoop(isolate)) success = false;
+  }
+  WriteLcovData(isolate, options.lcov_file);
+  return success;
 }
 
 void Shell::CollectGarbage(Isolate* isolate) {
   if (options.send_idle_notification) {
-    const double kLongIdlePauseInSeconds = 1.0;
     isolate->ContextDisposedNotification();
-    isolate->IdleNotificationDeadline(
-        g_platform->MonotonicallyIncreasingTime() + kLongIdlePauseInSeconds);
   }
   if (options.invoke_weak_callbacks) {
     // By sending a low memory notifications, we will try hard to collect all
@@ -5106,8 +5296,10 @@ bool ProcessMessages(
     SealHandleScope shs(isolate);
     for (bool ran_tasks = true; ran_tasks;) {
       // Execute one foreground task (if one exists), then microtasks.
+      if (isolate->IsExecutionTerminating()) return false;
       ran_tasks = v8::platform::PumpMessageLoop(g_default_platform, isolate,
                                                 behavior());
+      if (isolate->IsExecutionTerminating()) return false;
       if (ran_tasks) MicrotasksScope::PerformCheckpoint(isolate);
 
       // In predictable mode we push all background tasks into the foreground
@@ -5115,11 +5307,13 @@ bool ProcessMessages(
       // isolate. We execute all background tasks after running one foreground
       // task.
       if (i::v8_flags.verify_predictable) {
+        if (isolate->IsExecutionTerminating()) return false;
         while (v8::platform::PumpMessageLoop(
             g_default_platform,
             kProcessGlobalPredictablePlatformWorkerTaskQueue,
             platform::MessageLoopBehavior::kDoNotWait)) {
           ran_tasks = true;
+          if (isolate->IsExecutionTerminating()) return false;
         }
       }
     }
@@ -5127,6 +5321,7 @@ bool ProcessMessages(
       v8::platform::RunIdleTasks(g_default_platform, isolate,
                                  50.0 / base::Time::kMillisecondsPerSecond);
     }
+    if (isolate->IsExecutionTerminating()) return false;
     bool ran_set_timeout = false;
     if (!RunSetTimeoutCallback(isolate, &ran_set_timeout)) return false;
     if (!ran_set_timeout) return true;
@@ -5455,7 +5650,6 @@ std::unique_ptr<SerializationData> Shell::SerializeValue(
 
 MaybeLocal<Value> Shell::DeserializeValue(
     Isolate* isolate, std::unique_ptr<SerializationData> data) {
-  Local<Value> value;
   Local<Context> context = isolate->GetCurrentContext();
   Deserializer deserializer(isolate, std::move(data));
   return deserializer.ReadValue(context);
@@ -5715,8 +5909,8 @@ int Shell::Main(int argc, char* argv[]) {
 #endif  // V8_FUZZILLI
 
   {
-    D8Console console(isolate);
     Isolate::Scope scope(isolate);
+    D8Console console(isolate);
     Initialize(isolate, &console);
     PerIsolateData data(isolate);
 
@@ -5784,9 +5978,9 @@ int Shell::Main(int argc, char* argv[]) {
           // Restore old hash seed.
           i::v8_flags.hash_seed = i::v8_flags.hash_seed ^ 1337;
           {
+            Isolate::Scope isolate_scope(isolate2);
             D8Console console2(isolate2);
             Initialize(isolate2, &console2);
-            Isolate::Scope isolate_scope(isolate2);
             PerIsolateData data2(isolate2);
 
             result = RunMain(isolate2, false);

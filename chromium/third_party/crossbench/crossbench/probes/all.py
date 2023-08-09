@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Tuple, Type
 
-from crossbench.probes.base import Probe
+from crossbench.probes.probe import Probe
 from crossbench.probes.json import JsonResultProbe
 from crossbench.probes.performance_entries import PerformanceEntriesProbe
 from crossbench.probes.power_sampler import PowerSamplerProbe

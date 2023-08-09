@@ -56,11 +56,11 @@ public:
 
     bool isOpaque() const override;
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
     std::unique_ptr<GrFragmentProcessor> asFragmentProcessor(const GrFPArgs&,
                                                              const MatrixRec&) const override;
 #endif
-#ifdef SK_GRAPHITE_ENABLED
+#if defined(SK_GRAPHITE)
     void addToKey(const skgpu::graphite::KeyContext&,
                   skgpu::graphite::PaintParamsKeyBuilder*,
                   skgpu::graphite::PipelineDataGatherer*) const override;
@@ -78,6 +78,7 @@ private:
 
     bool appendStages(const SkStageRec&, const MatrixRec&) const override;
 
+#if defined(SK_ENABLE_SKVM)
     skvm::Color program(skvm::Builder*,
                         skvm::Coord device,
                         skvm::Coord local,
@@ -86,6 +87,7 @@ private:
                         const SkColorInfo& dst,
                         skvm::Uniforms* uniforms,
                         SkArenaAlloc*) const override;
+#endif  // defined(SK_ENABLE_SKVM)
 
     sk_sp<SkImage>          fImage;
     const SkSamplingOptions fSampling;

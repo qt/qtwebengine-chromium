@@ -175,10 +175,6 @@ static int tf_start_inference(void *args)
                   request->status);
     if (TF_GetCode(request->status) != TF_OK) {
         av_log(&tf_model->ctx, AV_LOG_ERROR, "%s", TF_Message(request->status));
-        tf_free_request(infer_request);
-        if (ff_safe_queue_push_back(tf_model->request_queue, request) < 0) {
-            destroy_request_item(&request);
-        }
         return DNN_GENERIC_ERROR;
     }
     return 0;
@@ -438,8 +434,6 @@ static int load_tf_model(TFModel *tf_model, const char *model_filename)
     TF_DeleteImportGraphDefOptions(graph_opts);
     TF_DeleteBuffer(graph_def);
     if (TF_GetCode(tf_model->status) != TF_OK){
-        TF_DeleteGraph(tf_model->graph);
-        TF_DeleteStatus(tf_model->status);
         av_log(ctx, AV_LOG_ERROR, "Failed to import serialized graph to model graph\n");
         av_freep(&sess_config);
         return DNN_GENERIC_ERROR;
@@ -452,8 +446,6 @@ static int load_tf_model(TFModel *tf_model, const char *model_filename)
         TF_SetConfig(sess_opts, sess_config, sess_config_length,tf_model->status);
         av_freep(&sess_config);
         if (TF_GetCode(tf_model->status) != TF_OK) {
-            TF_DeleteGraph(tf_model->graph);
-            TF_DeleteStatus(tf_model->status);
             TF_DeleteSessionOptions(sess_opts);
             av_log(ctx, AV_LOG_ERROR, "Failed to set config for sess options with %s\n",
                                       tf_model->ctx.options.sess_config);
@@ -465,8 +457,7 @@ static int load_tf_model(TFModel *tf_model, const char *model_filename)
     TF_DeleteSessionOptions(sess_opts);
     if (TF_GetCode(tf_model->status) != TF_OK)
     {
-        TF_DeleteGraph(tf_model->graph);
-        TF_DeleteStatus(tf_model->status);
+        av_freep(&sess_config);
         av_log(ctx, AV_LOG_ERROR, "Failed to create new session with model graph\n");
         return DNN_GENERIC_ERROR;
     }
@@ -479,9 +470,7 @@ static int load_tf_model(TFModel *tf_model, const char *model_filename)
                       &init_op, 1, NULL, tf_model->status);
         if (TF_GetCode(tf_model->status) != TF_OK)
         {
-            TF_DeleteSession(tf_model->session, tf_model->status);
-            TF_DeleteGraph(tf_model->graph);
-            TF_DeleteStatus(tf_model->status);
+            av_freep(&sess_config);
             av_log(ctx, AV_LOG_ERROR, "Failed to run session when initializing\n");
             return DNN_GENERIC_ERROR;
         }
@@ -865,6 +854,7 @@ DNNModel *ff_dnn_load_model_tf(const char *model_filename, DNNFunctionType func_
         av_freep(&model);
         return NULL;
     }
+    model->model = tf_model;
     tf_model->model = model;
     ctx = &tf_model->ctx;
     ctx->class = &dnn_tensorflow_class;
@@ -931,7 +921,6 @@ DNNModel *ff_dnn_load_model_tf(const char *model_filename, DNNFunctionType func_
         goto err;
     }
 
-    model->model = tf_model;
     model->get_input = &get_input_tf;
     model->get_output = &get_output_tf;
     model->options = options;
@@ -1138,6 +1127,7 @@ err:
     if (ff_safe_queue_push_back(tf_model->request_queue, request) < 0) {
         destroy_request_item(&request);
     }
+    ff_dnn_free_model_tf(&tf_model->model);
     return ret;
 }
 
@@ -1162,6 +1152,7 @@ int ff_dnn_execute_model_tf(const DNNModel *model, DNNExecBaseParams *exec_param
 
     ret = ff_dnn_fill_task(task, exec_params, tf_model, ctx->options.async, 1);
     if (ret != 0) {
+        av_log(ctx, AV_LOG_ERROR, "Fill task with invalid parameter(s).\n");
         av_freep(&task);
         return ret;
     }
@@ -1174,12 +1165,14 @@ int ff_dnn_execute_model_tf(const DNNModel *model, DNNExecBaseParams *exec_param
 
     ret = extract_lltask_from_task(task, tf_model->lltask_queue);
     if (ret != 0) {
+        av_freep(&task);
         av_log(ctx, AV_LOG_ERROR, "unable to extract last level task from task.\n");
         return ret;
     }
 
     request = ff_safe_queue_pop_front(tf_model->request_queue);
     if (!request) {
+        av_freep(&task);
         av_log(ctx, AV_LOG_ERROR, "unable to get infer request.\n");
         return AVERROR(EINVAL);
     }

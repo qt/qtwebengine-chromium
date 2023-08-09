@@ -807,7 +807,7 @@ BLOCK_SIZE av1_select_sb_size(const AV1EncoderConfig *const oxcf, int width,
       const TileConfig *const tile_cfg = &oxcf->tile_cfg;
       const int num_tiles =
           (1 << tile_cfg->tile_columns) * (1 << tile_cfg->tile_rows);
-      // For multi-thread encode: if the number of (128x128) superbllocks
+      // For multi-thread encode: if the number of (128x128) superblocks
       // per tile is low use 64X64 superblock.
       if (oxcf->row_mt == 1 && oxcf->max_threads >= 4 &&
           oxcf->max_threads >= num_tiles && AOMMIN(width, height) > 720 &&
@@ -869,7 +869,7 @@ void av1_setup_frame(AV1_COMP *cpi) {
     if (!cpi->ppi->seq_params_locked) {
       set_sb_size(cm->seq_params,
                   av1_select_sb_size(&cpi->oxcf, cm->width, cm->height,
-                                     cpi->svc.number_spatial_layers));
+                                     cpi->ppi->number_spatial_layers));
     }
   } else {
     const RefCntBuffer *const primary_ref_buf = get_primary_ref_frame_buf(cm);
@@ -970,7 +970,13 @@ static void screen_content_tools_determination(
   if (pass != 1) return;
 
   const double psnr_diff = psnr[1].psnr[0] - psnr[0].psnr[0];
-  const int is_sc_encoding_much_better = psnr_diff > STRICT_PSNR_DIFF_THRESH;
+  // Calculate % of palette mode to be chosen in a frame from mode decision.
+  const double palette_ratio =
+      (double)cpi->palette_pixel_num / (double)(cm->height * cm->width);
+  const int psnr_diff_is_large = (psnr_diff > STRICT_PSNR_DIFF_THRESH);
+  const int ratio_is_large =
+      ((palette_ratio >= 0.0001) && ((psnr_diff / palette_ratio) > 4));
+  const int is_sc_encoding_much_better = (psnr_diff_is_large || ratio_is_large);
   if (is_sc_encoding_much_better) {
     // Use screen content tools, if we get coding gain.
     features->allow_screen_content_tools = 1;

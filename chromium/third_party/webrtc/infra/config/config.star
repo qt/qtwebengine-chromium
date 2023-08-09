@@ -602,8 +602,9 @@ def perf_builder(name, perf_cat, **kwargs):
     properties = make_reclient_properties("rbe-webrtc-trusted")
     properties["builder_group"] = "client.webrtc.perf"
     dimensions = {"pool": "luci.webrtc.perf", "os": "Linux", "cores": "2"}
-    if "Android" in name:
+    if "Android" in name or "Fuchsia" in name:
         # Android perf testers require more performant bots to finish under 3 hours.
+        # Fuchsia perf testers encountered "no space left on device" error on multiple runs.
         dimensions["cores"] = "8"
     return webrtc_builder(
         name = name,
@@ -656,17 +657,17 @@ android_builder, android_try_job = normal_builder_factory(
     dimensions = {"os": "Linux"},
 )
 
-win_builder = normal_builder_factory(
+win_builder, win_try_job = normal_builder_factory(
     dimensions = {"os": "Windows"},
-)[0]
-
-win_try_job = normal_builder_factory(
-    dimensions = {"os": "Windows"},
-)[1]
+)
 
 mac_builder, mac_try_job = normal_builder_factory(
     dimensions = {"os": "Mac"},
 )
+
+mac_chromium_try_job = normal_builder_factory(
+    dimensions = {"os": "Mac", "cores": "12"},
+)[1]
 
 ios_builder, ios_try_job = normal_builder_factory(
     dimensions = {"os": "Mac"},
@@ -774,7 +775,7 @@ perf_builder("Perf Mac M1 Arm64 12", "Mac|arm64|Tester|12", triggered_by = ["Mac
 
 mac_builder("Mac Asan", "Mac|x64|asan")
 mac_try_job("mac_asan")
-mac_try_job("mac_chromium_compile", recipe = "chromium_trybot", branch_cq = False)
+mac_chromium_try_job("mac_chromium_compile", recipe = "chromium_trybot", branch_cq = False)
 mac_builder("MacARM64 M1 Release", "Mac|arm64M1|rel", cpu = "arm64-64-Apple_M1")
 mac_try_job("mac_rel_m1")
 mac_try_job("mac_dbg_m1")
@@ -788,10 +789,10 @@ win_try_job("win_compile_x86_clang_rel", cq = None)
 win_builder("Win64 Builder (Clang)", ci_cat = None, perf_cat = "Win|x64|Builder|")
 perf_builder("Perf Win 10", "Win|x64|Tester|10", triggered_by = ["Win64 Builder (Clang)"])
 win_builder("Win64 Debug (Clang)", "Win Clang|x64|dbg")
-win_try_job("win_x64_clang_dbg", cq = None)
+win_try_job("win_x64_clang_dbg")
 win_try_job("win_compile_x64_clang_dbg")
 win_builder("Win64 Release (Clang)", "Win Clang|x64|rel")
-win_try_job("win_x64_clang_rel", cq = None)
+win_try_job("win_x64_clang_rel")
 win_try_job("win_compile_x64_clang_rel")
 win_builder("Win64 ASan", "Win Clang|x64|asan")
 win_try_job("win_asan")

@@ -82,16 +82,16 @@ bool ParseAsn1GeneralizedTime(ASN1_GENERALIZEDTIME* time, DateTime* out) {
 
 bool VerifySignedData(const EVP_MD* digest,
                       EVP_PKEY* public_key,
-                      const ConstDataSpan& data,
-                      const ConstDataSpan& signature) {
+                      const ByteView& data,
+                      const ByteView& signature) {
   // This code assumes the signature algorithm was RSASSA PKCS#1 v1.5 with
   // |digest|.
   bssl::ScopedEVP_MD_CTX ctx;
   if (!EVP_DigestVerifyInit(ctx.get(), nullptr, digest, nullptr, public_key)) {
     return false;
   }
-  return (EVP_DigestVerify(ctx.get(), signature.data, signature.length,
-                           data.data, data.length) == 1);
+  return (EVP_DigestVerify(ctx.get(), signature.data(), signature.size(),
+                           data.data(), data.size()) == 1);
 }
 
 ErrorOr<DateTime> GetNotBeforeTime(X509* cert) {

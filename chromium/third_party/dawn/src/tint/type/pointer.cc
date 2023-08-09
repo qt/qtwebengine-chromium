@@ -19,14 +19,16 @@
 #include "src/tint/type/manager.h"
 #include "src/tint/type/reference.h"
 #include "src/tint/utils/hash.h"
+#include "src/tint/utils/string_stream.h"
 
 TINT_INSTANTIATE_TYPEINFO(tint::type::Pointer);
 
 namespace tint::type {
 
 Pointer::Pointer(const Type* subtype, builtin::AddressSpace address_space, builtin::Access access)
-    : Base(utils::Hash(TypeInfo::Of<Pointer>().full_hashcode, address_space, subtype, access),
-           type::Flags{}),
+    : Base(
+          utils::Hash(utils::TypeInfo::Of<Pointer>().full_hashcode, address_space, subtype, access),
+          type::Flags{}),
       subtype_(subtype),
       address_space_(address_space),
       access_(access) {
@@ -42,13 +44,13 @@ bool Pointer::Equals(const UniqueNode& other) const {
     return false;
 }
 
-std::string Pointer::FriendlyName(const SymbolTable& symbols) const {
-    std::ostringstream out;
+std::string Pointer::FriendlyName() const {
+    utils::StringStream out;
     out << "ptr<";
     if (address_space_ != builtin::AddressSpace::kUndefined) {
         out << address_space_ << ", ";
     }
-    out << subtype_->FriendlyName(symbols) << ", " << access_;
+    out << subtype_->FriendlyName() << ", " << access_;
     out << ">";
     return out.str();
 }

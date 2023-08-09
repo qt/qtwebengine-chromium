@@ -38,7 +38,7 @@ enum class Budgeted : bool {
  * specific callbacks and are documented with the callback itself.
  */
 enum class CallbackResult : bool {
-    kFailed = true,
+    kFailed = false,
     kSuccess = true,
 };
 
@@ -54,6 +54,14 @@ enum class Mipmapped : bool {
  * Is the data protected on the GPU or not.
  */
 enum class Protected : bool {
+    kNo = false,
+    kYes = true,
+};
+
+/**
+ * Is a texture renderable or not
+ */
+enum class Renderable : bool {
     kNo = false,
     kYes = true,
 };

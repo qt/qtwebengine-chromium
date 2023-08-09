@@ -24,7 +24,7 @@
 #include "src/tint/sem/member_accessor_expression.h"
 #include "src/tint/sem/statement.h"
 #include "src/tint/sem/variable.h"
-#include "src/tint/text/unicode.h"
+#include "src/tint/utils/unicode.h"
 
 TINT_INSTANTIATE_TYPEINFO(tint::transform::TruncateInterstageVariables);
 TINT_INSTANTIATE_TYPEINFO(tint::transform::TruncateInterstageVariables::Config);
@@ -57,7 +57,7 @@ Transform::ApplyResult TruncateInterstageVariables::Apply(const Program* src,
         b.Diagnostics().add_error(
             diag::System::Transform,
             "missing transform data for " +
-                std::string(TypeInfo::Of<TruncateInterstageVariables>().name));
+                std::string(utils::TypeInfo::Of<TruncateInterstageVariables>().name));
         return Program(std::move(b));
     }
 

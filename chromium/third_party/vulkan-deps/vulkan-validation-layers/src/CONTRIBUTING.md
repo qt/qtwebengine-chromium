@@ -1,22 +1,16 @@
 # How to Contribute to Vulkan Source Repositories
 
-## **The Repository**
-
 The source code for The Vulkan-ValidationLayer components is sponsored by Khronos and LunarG.
-* [Khronos Vulkan-ValidationLayers](https://github.com/KhronosGroup/Vulkan-ValidationLayers)
-
-## **The Vulkan Ecosystem Needs Your Help**
-
-The Vulkan validation layers make up a significant part of the Vulkan ecosystem.
 While there are often active and organized development efforts underway to improve their coverage,
 opportunities always exist for anyone to help by contributing additional validation layer checks
 and tests.
 
-There are a couple of methods to identify areas of need:
-* Examine the [issues list](https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues)
-in this repository and look for issues that are of interest
-* Examine the Validation Layer 'Coverage - html' page at [the Vulkan SDK
-documentation page](https://vulkan.lunarg.com/doc/sdk/latest/windows/validation_error_database.html) -- it lists all published Vulkan VUIDs and their status.
+## Incomplete VUIDs
+
+There are some [VUID](https://github.com/KhronosGroup/Vulkan-Guide/blob/main/chapters/validation_overview.adoc#valid-usage-id-vuid) that are incomplete and need to be added. The following can be used to find them
+* [Incomplete tagged issues](https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues?q=is%3Aopen+is%3Aissue+label%3AIncomplete)
+* The `Coverage - html` page at [the Vulkan SDK documentation page](https://vulkan.lunarg.com/doc/sdk/latest/windows/validation_error_database.html)
+  * it lists all published Vulkan VUIDs and their status.
 * Run `scripts/vk_validation_stats.py` with `-todo` to see a list of as-yet unimplemented validation checks.
   * ```bash
     # Get summary report
@@ -33,8 +27,10 @@ Of course, if you have your own work in mind, please open an issue to describe i
 Finally, please feel free to contact any of the developers that are actively contributing should you
 wish to coordinate further.
 
-It is the maintainers goal for all issues to be assigned or triaged within one business day of their submission. If you choose
-to work on an issue that is assigned, simply coordinate with the current assignee.
+It is the maintainers goal for all issues to be assigned or `triaged` within one business day of their submission.
+If you choose to work on an issue that is assigned, simply coordinate with the current assignee.
+
+> triaged = decide if real issue, label it, assign it
 
 ## **How to Submit Fixes**
 
@@ -94,6 +90,26 @@ Strive for commits that implement a single or related set of functionality, usin
 That said, please ensure that the repository compiles and passes tests without error for each commit in your pull request.  Note
 that to be accepted into the repository, the pull request must [pass all tests](#testing your changes) on all supported platforms
 -- the continuous integration features will assist in enforcing this requirement.
+
+### **Writing good error messages**
+
+When writing an error message for `LogError` it is important to
+
+1. Print values related to the error message
+2. Explain the logic that got to that error
+
+Example of a good error message
+
+```cpp
+if (render_pass == VK_NULL_HANDLE) {
+    // ...
+} else if (value != 0 && HasDepthFlag(flag)) {
+    // print Render Pass object
+    // Value is not the expected one, log it
+    // List flag users used
+    skip |= LogError(render_pass, "value is %" PRIu32 " but flag (%s) is missing VK_FLAG_DEPTH.", value, string_VkFlag(flag));
+}
+```
 
 #### **Testing Your Changes**
 * Run the included layer validation tests (`vk_layer_validation_tests`) in the repository before and after each of your commits to check for any regressions.

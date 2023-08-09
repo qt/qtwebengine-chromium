@@ -14,6 +14,7 @@
 #include "include/core/SkPoint.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkRefCnt.h"
+#include "include/core/SkSpan.h"
 #include "include/core/SkTypeface.h"
 #include "include/utils/SkTextUtils.h"
 #include "modules/skottie/src/text/SkottieShaper.h"
@@ -40,7 +41,6 @@ enum class TextPaintOrder : uint8_t {
     kStrokeFill,
 };
 
-// EXPERIMENTAL
 // Optional callback invoked when drawing text layers.
 // Allows clients to render custom text decorations.
 class GlyphDecorator : public SkRefCnt {
@@ -49,9 +49,15 @@ public:
         SkRect   fBounds;  // visual glyph bounds
         SkMatrix fMatrix;  // glyph matrix
         size_t   fCluster; // cluster index in the original text string
+        float    fAdvance; // horizontal glyph advance
     };
 
-    virtual void onDecorate(SkCanvas*, const GlyphInfo[], size_t size) = 0;
+    struct TextInfo {
+        SkSpan<const GlyphInfo> fGlyphs;
+        float                   fScale;  // Additional font scale applied by auto-sizing.
+    };
+
+    virtual void onDecorate(SkCanvas*, const TextInfo&) = 0;
 };
 
 struct TextPropertyValue {

@@ -19,7 +19,6 @@
 #include <string>
 #include <utility>
 
-#include "absl/strings/str_format.h"
 #include "dawn/common/Result.h"
 #include "dawn/native/ErrorData.h"
 #include "dawn/native/Toggles.h"
@@ -27,7 +26,13 @@
 
 namespace dawn::native {
 
-enum class InternalErrorType : uint32_t { Validation, DeviceLost, Internal, OutOfMemory };
+enum class InternalErrorType : uint32_t {
+    None = 0,
+    Validation = 1,
+    DeviceLost = 2,
+    Internal = 4,
+    OutOfMemory = 8
+};
 
 // MaybeError and ResultOrError are meant to be used as return value for function that are not
 // expected to, but might fail. The handling of error is potentially much slower than successes.
@@ -83,12 +88,12 @@ using ResultOrError = Result<T, ErrorData>;
     break
 
 // DAWN_MAKE_DEPRECATION_ERROR is used at deprecation paths. It returns a MaybeError.
-// When the disallow_deprecated_path toggle is on, it creates an internal validation error.
-// Otherwise it returns {} and emits a deprecation warning, and moves on.
-#define DAWN_MAKE_DEPRECATION_ERROR(device, ...)            \
-    device->IsToggleEnabled(Toggle::DisallowDeprecatedAPIs) \
-        ? MaybeError(DAWN_VALIDATION_ERROR(__VA_ARGS__))    \
-        : (device->EmitDeprecationWarning(absl::StrFormat(__VA_ARGS__)), MaybeError{})
+// When the allow_deprecated_apis toggle is disabled, it creates an internal validation error.
+// Otherwise it returns {}, emits a deprecation warning, and moves on.
+#define DAWN_MAKE_DEPRECATION_ERROR(device, ...)                                       \
+    device->IsToggleEnabled(Toggle::AllowDeprecatedAPIs)                               \
+        ? (device->EmitDeprecationWarning(absl::StrFormat(__VA_ARGS__)), MaybeError{}) \
+        : MaybeError(DAWN_VALIDATION_ERROR(__VA_ARGS__))
 
 // DAWN_DEPRECATED_IF is used analogous to DAWN_INVALID_IF at deprecation paths.
 #define DAWN_DEPRECATED_IF(device, EXPR, ...)                    \
@@ -204,6 +209,22 @@ void IgnoreErrors(MaybeError maybeError);
 wgpu::ErrorType ToWGPUErrorType(InternalErrorType type);
 InternalErrorType FromWGPUErrorType(wgpu::ErrorType type);
 
+absl::FormatConvertResult<absl::FormatConversionCharSet::kString |
+                          absl::FormatConversionCharSet::kIntegral>
+AbslFormatConvert(InternalErrorType value,
+                  const absl::FormatConversionSpec& spec,
+                  absl::FormatSink* s);
+
 }  // namespace dawn::native
+
+// Enable dawn enum bitmask for error types.
+namespace dawn {
+
+template <>
+struct IsDawnBitmask<native::InternalErrorType> {
+    static constexpr bool enable = true;
+};
+
+}  // namespace dawn
 
 #endif  // SRC_DAWN_NATIVE_ERROR_H_

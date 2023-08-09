@@ -20,6 +20,8 @@
 #include "src/gpu/ganesh/effects/GrShadowGeoProc.h"
 #include "src/gpu/ganesh/ops/GrSimpleMeshDrawOpHelper.h"
 
+using namespace skia_private;
+
 namespace {
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -649,7 +651,7 @@ private:
         }
     }
 
-    SkSTArray<1, Geometry, true> fGeoData;
+    STArray<1, Geometry, true> fGeoData;
     int fVertCount;
     int fIndexCount;
     GrSurfaceProxyView fFalloffView;
@@ -664,7 +666,7 @@ private:
 
 ///////////////////////////////////////////////////////////////////////////////
 
-namespace skgpu::v1::ShadowRRectOp {
+namespace skgpu::ganesh::ShadowRRectOp {
 
 static GrSurfaceProxyView create_falloff_texture(GrRecordingContext* rContext) {
     static const skgpu::UniqueKey::Domain kDomain = skgpu::UniqueKey::GenerateDomain();
@@ -743,7 +745,7 @@ GrOp::Owner Make(GrRecordingContext* context,
                                              std::move(falloffView));
 }
 
-}  // namespace skgpu::v1::ShadowRRectOp
+}  // namespace skgpu::ganesh::ShadowRRectOp
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -772,8 +774,8 @@ GR_DRAW_OP_TEST_DEFINE(ShadowRRectOp) {
         if (isCircle) {
             SkRect circle = GrTest::TestSquare(random);
             SkRRect rrect = SkRRect::MakeOval(circle);
-            if (auto op = skgpu::v1::ShadowRRectOp::Make(
-                    context, color, viewMatrix, rrect, blurWidth, insetWidth)) {
+            if (auto op = skgpu::ganesh::ShadowRRectOp::Make(
+                        context, color, viewMatrix, rrect, blurWidth, insetWidth)) {
                 return op;
             }
         } else {
@@ -782,8 +784,8 @@ GR_DRAW_OP_TEST_DEFINE(ShadowRRectOp) {
                 // This may return a rrect with elliptical corners, which will cause an assert.
                 rrect = GrTest::TestRRectSimple(random);
             } while (!SkRRectPriv::IsSimpleCircular(rrect));
-            if (auto op = skgpu::v1::ShadowRRectOp::Make(
-                    context, color, viewMatrix, rrect, blurWidth, insetWidth)) {
+            if (auto op = skgpu::ganesh::ShadowRRectOp::Make(
+                        context, color, viewMatrix, rrect, blurWidth, insetWidth)) {
                 return op;
             }
         }

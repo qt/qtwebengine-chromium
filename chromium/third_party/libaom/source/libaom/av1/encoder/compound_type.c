@@ -1300,9 +1300,18 @@ int av1_compound_type_rd(const AV1_COMP *const cpi, MACROBLOCK *x,
     int64_t mode_rd = RDCOST(x->rdmult, rs2 + rd_stats->rate, 0);
     if (mode_rd >= ref_best_rd) continue;
 
+    // Derive the flags to indicate enabling/disabling of MV refinement process.
+    const int enable_fast_compound_mode_search =
+        cpi->sf.inter_sf.enable_fast_compound_mode_search;
+    const bool skip_mv_refinement_for_avg_distwtd =
+        enable_fast_compound_mode_search == 3 ||
+        (enable_fast_compound_mode_search == 2 && (this_mode != NEW_NEWMV));
+    const bool skip_mv_refinement_for_diffwtd =
+        (!enable_fast_compound_mode_search && cur_type == COMPOUND_DIFFWTD);
+
     // Case COMPOUND_AVERAGE and COMPOUND_DISTWTD
     if (cur_type < COMPOUND_WEDGE) {
-      if (cpi->sf.inter_sf.enable_fast_compound_mode_search == 2) {
+      if (skip_mv_refinement_for_avg_distwtd) {
         int rate_sum;
         uint8_t tmp_skip_txfm_sb;
         int64_t dist_sum, tmp_skip_sse_sb;
@@ -1514,8 +1523,7 @@ int av1_compound_type_rd(const AV1_COMP *const cpi, MACROBLOCK *x,
       mbmi->mv[1] = tmp_mv[1];
       tmp_rate_mv = best_rate_mv;
       rs2 = best_rs2;
-    } else if (!cpi->sf.inter_sf.enable_fast_compound_mode_search &&
-               cur_type == COMPOUND_DIFFWTD) {
+    } else if (skip_mv_refinement_for_diffwtd) {
       int_mv tmp_mv[2];
       int best_mask_index = 0;
       rs2 += get_interinter_compound_mask_rate(&x->mode_costs, mbmi);

@@ -35,8 +35,8 @@ class TieringManager {
 
   // For use when a JSFunction is available.
   static int InterruptBudgetFor(Isolate* isolate, JSFunction function);
-  // For use when no JSFunction is available.
-  static int InitialInterruptBudget();
+
+  void MarkForTurboFanOptimization(JSFunction function);
 
  private:
   // Make the decision whether to optimize the given function, and mark it for
@@ -44,22 +44,23 @@ class TieringManager {
   // This function is also responsible for bumping the OSR urgency.
   void MaybeOptimizeFrame(JSFunction function, CodeKind code_kind);
 
-  OptimizationDecision ShouldOptimize(JSFunction function, CodeKind code_kind);
+  // After next tick indicates whether we've precremented the ticks before
+  // calling this function, or whether we're pretending that we already got the
+  // tick.
+  OptimizationDecision ShouldOptimize(FeedbackVector feedback_vector,
+                                      CodeKind code_kind);
   void Optimize(JSFunction function, OptimizationDecision decision);
   void Baseline(JSFunction function, OptimizationReason reason);
 
   class V8_NODISCARD OnInterruptTickScope final {
    public:
-    explicit OnInterruptTickScope(TieringManager* profiler);
-    ~OnInterruptTickScope();
+    OnInterruptTickScope();
 
    private:
-    TieringManager* const profiler_;
     DisallowGarbageCollection no_gc;
   };
 
   Isolate* const isolate_;
-  bool any_ic_changed_ = false;
 };
 
 }  // namespace internal

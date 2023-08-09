@@ -6,11 +6,14 @@
  * found in the LICENSE file.
  */
 
+#include "src/ports/SkFontHost_FreeType_common.h"
+
 #include "include/core/SkBitmap.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColor.h"
 #include "include/core/SkDrawable.h"
 #include "include/core/SkGraphics.h"
+#include "include/core/SkImage.h"
 #include "include/core/SkOpenTypeSVGDecoder.h"
 #include "include/core/SkPath.h"
 #include "include/effects/SkGradientShader.h"
@@ -19,7 +22,6 @@
 #include "include/private/base/SkTo.h"
 #include "src/core/SkFDot6.h"
 #include "src/core/SkSwizzlePriv.h"
-#include "src/ports/SkFontHost_FreeType_common.h"
 
 #include <algorithm>
 #include <utility>
@@ -35,6 +37,8 @@
 #include <freetype/ftsizes.h>
 // In the past, FT_GlyphSlot_Own_Bitmap was defined in this header file.
 #include <freetype/ftsynth.h>
+
+using namespace skia_private;
 
 namespace {
 [[maybe_unused]] static inline const constexpr bool kSkShowTextBlitCoverage = false;
@@ -457,7 +461,7 @@ void truncateToStopInterpolating(SkScalar zeroRadiusStop,
                                  std::vector<SkScalar>& stops,
                                  TruncateStops truncateStops) {
     if (stops.size() <= 1u ||
-        zeroRadiusStop < *stops.begin() || *(stops.end() - 1) < zeroRadiusStop)
+        zeroRadiusStop < stops.front() || stops.back() < zeroRadiusStop)
     {
         return;
     }
@@ -490,7 +494,7 @@ struct OpaquePaintHasher {
   }
 };
 
-using VisitedSet = SkTHashSet<FT_OpaquePaint, OpaquePaintHasher>;
+using VisitedSet = THashSet<FT_OpaquePaint, OpaquePaintHasher>;
 
 bool generateFacePathCOLRv1(FT_Face face, SkGlyphID glyphID, SkPath* path);
 
@@ -729,8 +733,8 @@ bool colrv1_configure_skpaint(FT_Face face,
                 // color, everything after this spot is painted with the last color. Not adding this
                 // stop will skip the projection and result in specifying non-normalized color stops
                 // to the shader.
-                stops.push_back(*(stops.end() - 1) + 1.0f);
-                colors.push_back(*(colors.end()-1));
+                stops.push_back(stops.back() + 1.0f);
+                colors.push_back(colors.back());
                 colorStopRange = 1.0f;
               }
             }
@@ -803,8 +807,8 @@ bool colrv1_configure_skpaint(FT_Face face,
                 // color, everything after this spot is painted with the last color. Not adding this
                 // stop will skip the projection and result in specifying non-normalized color stops
                 // to the shader.
-                stops.push_back(*(stops.end() - 1) + 1.0f);
-                colors.push_back(*(colors.end()-1));
+                stops.push_back(stops.back() + 1.0f);
+                colors.push_back(colors.back());
                 colorStopRange = 1.0f;
               }
             }
@@ -989,7 +993,29 @@ bool colrv1_configure_skpaint(FT_Face face,
             SkScalar endAngleScaled = startAngle + sectorAngle * stops.back();
 
             // 2) Scale stops accordingly to 0 to 1 range.
-            SkScalar scaleFactor = 1 / (stops.back() - stops.front());
+
+            float colorStopRange = stops.back() - stops.front();
+            bool colorStopInserted = false;
+            if (colorStopRange == 0.f) {
+              if (tileMode != SkTileMode::kClamp) {
+                paint->setColor(SK_ColorTRANSPARENT);
+                return true;
+              } else {
+                // Insert duplicated fake color stop in pad case at +1.0f to feed the shader correct
+                // values and enable painting a pad sweep gradient with two colors. Adding this stop
+                // will paint the equivalent gradient, because: All font specified color stops are
+                // in the same spot, mode is pad, so everything before this spot is painted with the
+                // first color, everything after this spot is painted with the last color. Not
+                // adding this stop will skip the projection and result in specifying non-normalized
+                // color stops to the shader.
+                stops.push_back(stops.back() + 1.0f);
+                colors.push_back(colors.back());
+                colorStopRange = 1.0f;
+                colorStopInserted = true;
+              }
+            }
+
+            SkScalar scaleFactor = 1 / colorStopRange;
             SkScalar startOffset = stops.front();
 
             for (SkScalar& stop : stops) {
@@ -1001,12 +1027,13 @@ bool colrv1_configure_skpaint(FT_Face face,
              * the direction of the positive x-axis on the design
              * grid. [...]  The color line progresses from the start angle
              * to the end angle in the counter-clockwise direction;" -
-             * convert angles and stops from counter-clockwise to clockwise
+             * Convert angles and stops from counter-clockwise to clockwise
              * for the shader if the gradient is not already reversed due to
              * start angle being larger than end angle. */
             startAngleScaled = 360.f - startAngleScaled;
             endAngleScaled = 360.f - endAngleScaled;
-            if (startAngleScaled > endAngleScaled) {
+            if (startAngleScaled > endAngleScaled ||
+                (startAngleScaled == endAngleScaled && !colorStopInserted)) {
                 std::swap(startAngleScaled, endAngleScaled);
                 std::reverse(stops.begin(), stops.end());
                 std::reverse(colors.begin(), colors.end());

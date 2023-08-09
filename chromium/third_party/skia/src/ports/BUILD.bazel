@@ -1,12 +1,12 @@
 load(
-    "//bazel:macros.bzl",
+    "//bazel:skia_rules.bzl",
     "exports_files_legacy",
     "select_multi",
-    "selects",
     "skia_cc_deps",
     "skia_cc_library",
     "skia_filegroup",
 )
+load("//bazel:flags.bzl", "selects")
 
 licenses(["notice"])
 
@@ -28,6 +28,16 @@ skia_filegroup(
         "SkFontHost_FreeType.cpp",
         "SkFontHost_FreeType_common.cpp",
     ],
+)
+
+skia_filegroup(
+    name = "typeface_fontations",
+    srcs = select({
+        "//bazel/common_config_settings:use_fontations_true": [
+            "SkTypeface_fontations.cpp",
+        ],
+        "//conditions:default": [],
+    }),
 )
 
 # There can only be one FontMgr Factory, but multiple different types of FontMgr compiled into
@@ -257,6 +267,7 @@ skia_filegroup(
         ":malloc",
         ":osfile",
         ":skdebug",
+        ":typeface_fontations",
     ],
     visibility = ["//src:__pkg__"],
 )
@@ -279,6 +290,11 @@ skia_filegroup(
         "//bazel/common_config_settings:uses_fci_fontmgr": [
             "SkFontConfigInterface_direct.h",
             "SkFontConfigTypeface.h",
+        ],
+        "//conditions:default": [],
+    }) + select({
+        "//bazel/common_config_settings:use_fontations_true": [
+            "SkTypeface_fontations.h",
         ],
         "//conditions:default": [],
     }),
@@ -309,6 +325,9 @@ skia_cc_deps(
     name = "deps",
     linkopts = select({
         "@platforms//os:linux": ["-ldl"],
+        "@platforms//os:android": [
+            "-llog",  # Provides __android_log_vprint, needed by //src/ports/SkDebug_android.cpp.
+        ],
         "//conditions:default": [],
     }),
     visibility = ["//src:__pkg__"],
@@ -316,10 +335,14 @@ skia_cc_deps(
         ":uses_freetype": ["@freetype"],
         "//conditions:default": [],
     }) + select({
-        ":uses_fontconfig": ["//bazel/external/fontconfig:fontconfig"],
+        ":uses_fontconfig": ["//bazel/external/fontconfig"],
         "//conditions:default": [],
     }) + select({
         "//bazel/common_config_settings:uses_android_fontmgr": ["@expat"],
+        "//conditions:default": [],
+    }) + select({
+        "//bazel/common_config_settings:use_fontations_true": [
+        ],
         "//conditions:default": [],
     }),
 )

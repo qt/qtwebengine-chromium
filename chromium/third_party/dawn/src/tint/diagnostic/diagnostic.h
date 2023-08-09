@@ -16,6 +16,7 @@
 #define SRC_TINT_DIAGNOSTIC_DIAGNOSTIC_H_
 
 #include <memory>
+#include <ostream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -141,7 +142,7 @@ class List {
     /// @param system the system raising the note message
     /// @param note_msg the note message
     /// @param source the source of the note diagnostic
-    void add_note(System system, const std::string& note_msg, const Source& source) {
+    void add_note(System system, std::string_view note_msg, const Source& source) {
         diag::Diagnostic note{};
         note.severity = diag::Severity::Note;
         note.system = system;
@@ -154,7 +155,7 @@ class List {
     /// @param system the system raising the warning message
     /// @param warning_msg the warning message
     /// @param source the source of the warning diagnostic
-    void add_warning(System system, const std::string& warning_msg, const Source& source) {
+    void add_warning(System system, std::string_view warning_msg, const Source& source) {
         diag::Diagnostic warning{};
         warning.severity = diag::Severity::Warning;
         warning.system = system;
@@ -166,11 +167,11 @@ class List {
     /// adds the error message without a source to the end of this list.
     /// @param system the system raising the error message
     /// @param err_msg the error message
-    void add_error(System system, std::string err_msg) {
+    void add_error(System system, std::string_view err_msg) {
         diag::Diagnostic error{};
         error.severity = diag::Severity::Error;
         error.system = system;
-        error.message = std::move(err_msg);
+        error.message = err_msg;
         add(std::move(error));
     }
 
@@ -178,12 +179,12 @@ class List {
     /// @param system the system raising the error message
     /// @param err_msg the error message
     /// @param source the source of the error diagnostic
-    void add_error(System system, std::string err_msg, const Source& source) {
+    void add_error(System system, std::string_view err_msg, const Source& source) {
         diag::Diagnostic error{};
         error.severity = diag::Severity::Error;
         error.system = system;
         error.source = source;
-        error.message = std::move(err_msg);
+        error.message = err_msg;
         add(std::move(error));
     }
 
@@ -193,13 +194,16 @@ class List {
     /// @param code the error code
     /// @param err_msg the error message
     /// @param source the source of the error diagnostic
-    void add_error(System system, const char* code, std::string err_msg, const Source& source) {
+    void add_error(System system,
+                   const char* code,
+                   std::string_view err_msg,
+                   const Source& source) {
         diag::Diagnostic error{};
         error.code = code;
         error.severity = diag::Severity::Error;
         error.system = system;
         error.source = source;
-        error.message = std::move(err_msg);
+        error.message = err_msg;
         add(std::move(error));
     }
 
@@ -209,7 +213,7 @@ class List {
     /// @param source the source of the internal compiler error
     /// @param file the Source::File owned by this diagnostic
     void add_ice(System system,
-                 const std::string& err_msg,
+                 std::string_view err_msg,
                  const Source& source,
                  std::shared_ptr<Source::File> file) {
         diag::Diagnostic ice{};
@@ -228,6 +232,10 @@ class List {
     size_t error_count() const { return error_count_; }
     /// @returns the number of entries in the list.
     size_t count() const { return entries_.size(); }
+    /// @returns true if the diagnostics list is empty
+    bool empty() const { return entries_.empty(); }
+    /// @returns the number of entrise in the diagnostics list
+    size_t size() const { return entries_.size(); }
     /// @returns the first diagnostic in the list.
     iterator begin() const { return entries_.begin(); }
     /// @returns the last diagnostic in the list.
@@ -240,6 +248,12 @@ class List {
     std::vector<Diagnostic> entries_;
     size_t error_count_ = 0;
 };
+
+/// Write the diagnostic list to the given stream
+/// @param out the output stream
+/// @param list the list to emit
+/// @returns the output stream
+std::ostream& operator<<(std::ostream& out, const List& list);
 
 }  // namespace tint::diag
 

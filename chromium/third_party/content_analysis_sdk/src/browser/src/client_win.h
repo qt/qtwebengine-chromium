@@ -19,8 +19,8 @@ class ClientWin : public ClientBase {
    ~ClientWin() override;
 
   // Client:
-  int Send(const ContentAnalysisRequest& request,
-                 ContentAnalysisResponse* response) override;
+  int Send(ContentAnalysisRequest request,
+           ContentAnalysisResponse* response) override;
   int Acknowledge(const ContentAnalysisAcknowledgement& ack) override;
   int CancelRequests(const ContentAnalysisCancelRequests& cancel) override;
 
@@ -37,7 +37,6 @@ class ClientWin : public ClientBase {
   // Performs a clean shutdown of the client.
   void Shutdown();
 
-  std::string pipename_;
   HANDLE hPipe_ = INVALID_HANDLE_VALUE;
 };
 

@@ -15,7 +15,7 @@
 
 #include "state_tracker/shader_instruction.h"
 #include "state_tracker/shader_module.h"
-#include "spirv_grammar_helper.h"
+#include "generated/spirv_grammar_helper.h"
 
 Instruction::Instruction(std::vector<uint32_t>::const_iterator it) : result_id_(0), type_id_(0) {
     words_.emplace_back(*it++);
@@ -127,4 +127,13 @@ spv::BuiltIn Instruction::GetBuiltIn() const {
         assert(false);  // non valid Opcode
         return spv::BuiltInMax;
     }
+}
+
+spv::Dim Instruction::FindImageDim() const { return (Opcode() == spv::OpTypeImage) ? (spv::Dim(Word(3))) : spv::DimMax; }
+
+bool Instruction::IsArrayed() const { return (Opcode() == spv::OpTypeImage) && (Word(5) != 0); }
+
+bool Instruction::IsMultisampled() const {
+    // spirv-val makes sure that the MS operand is only non-zero when possible to be Multisampled
+    return (Opcode() == spv::OpTypeImage) && (Word(6) != 0);
 }

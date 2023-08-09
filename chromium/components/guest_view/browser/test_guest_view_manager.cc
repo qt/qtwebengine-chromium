@@ -37,13 +37,12 @@ TestGuestViewManager::TestGuestViewManager(
       num_guests_created_(0),
       expected_num_guests_created_(0),
       num_views_garbage_collected_(0),
-      waiting_for_guests_created_(false),
       waiting_for_attach_(nullptr) {}
 
 TestGuestViewManager::~TestGuestViewManager() = default;
 
-size_t TestGuestViewManager::GetNumGuestsActive() const {
-  return guest_web_contents_by_instance_id_.size();
+size_t TestGuestViewManager::GetCurrentGuestCount() const {
+  return guests_by_instance_id_.size();
 }
 
 size_t TestGuestViewManager::GetNumRemovedInstanceIDs() const {
@@ -91,7 +90,7 @@ void TestGuestViewManager::WaitForLastGuestDeleted() {
 
 content::RenderFrameHost*
 TestGuestViewManager::WaitForSingleGuestRenderFrameHostCreated() {
-  if (!GetNumGuestsActive()) {
+  if (!GetCurrentGuestCount()) {
     // Guests have been created and subsequently destroyed.
     if (num_guests_created() > 0)
       return nullptr;
@@ -128,14 +127,15 @@ GuestViewBase* TestGuestViewManager::WaitForNextGuestViewCreated() {
 }
 
 void TestGuestViewManager::WaitForNumGuestsCreated(size_t count) {
-  if (count == num_guests_created_)
+  if (count == num_guests_created_) {
     return;
+  }
 
-  waiting_for_guests_created_ = true;
   expected_num_guests_created_ = count;
 
   num_created_run_loop_ = std::make_unique<base::RunLoop>();
   num_created_run_loop_->Run();
+  num_created_run_loop_ = nullptr;
 }
 
 void TestGuestViewManager::WaitUntilAttached(GuestViewBase* guest_view) {
@@ -168,25 +168,22 @@ void TestGuestViewManager::WaitForSingleViewGarbageCollected() {
     WaitForViewGarbageCollected();
 }
 
-void TestGuestViewManager::AddGuest(int guest_instance_id,
-                                    content::WebContents* guest_web_contents) {
-  GuestViewManager::AddGuest(guest_instance_id, guest_web_contents);
+void TestGuestViewManager::AddGuest(GuestViewBase* guest) {
+  GuestViewManager::AddGuest(guest);
 
   guest_view_watchers_.push_back(
       std::make_unique<content::FrameDeletedObserver>(
-          guest_web_contents->GetPrimaryMainFrame()));
+          guest->GetGuestMainFrame()));
 
   if (created_run_loop_)
     created_run_loop_->Quit();
 
   ++num_guests_created_;
-  if (!waiting_for_guests_created_ &&
-      num_guests_created_ != expected_num_guests_created_) {
-    return;
-  }
 
-  if (num_created_run_loop_)
+  if (num_created_run_loop_ &&
+      num_guests_created_ == expected_num_guests_created_) {
     num_created_run_loop_->Quit();
+  }
 }
 
 void TestGuestViewManager::AttachGuest(int embedder_process_id,

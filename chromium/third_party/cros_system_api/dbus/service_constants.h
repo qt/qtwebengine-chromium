@@ -10,7 +10,6 @@
 // We use relative includes here to make this compatible with both the
 // Chromium OS and Chromium environment.
 #include "anomaly_detector/dbus-constants.h"
-#include "arc-data-snapshotd/dbus-constants.h"
 #include "arcvm_data_migrator/dbus-constants.h"
 #include "audio/dbus-constants.h"
 #include "authpolicy/dbus-constants.h"
@@ -522,10 +521,6 @@ constexpr char kMojoConnectionServiceInterface[] =
     "org.chromium.MojoConnectionService";
 
 // Methods
-constexpr char kBootstrapMojoConnectionForIioServiceMethod[] =
-    "BootstrapMojoConnectionForIioService";
-constexpr char kBootstrapMojoConnectionForSensorClientsMethod[] =
-    "BootstrapMojoConnectionForSensorClients";
 constexpr char kBootstrapMojoConnectionForRollbackNetworkConfigMethod[] =
     "BootstrapMojoConnectionForRollbackNetworkConfigService";
 constexpr char kBootstrapForCrosHealthdInternalServiceFactoryMethod[] =

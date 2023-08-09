@@ -26,8 +26,6 @@ DiagnosticDirective::DiagnosticDirective(ProgramID pid,
                                          DiagnosticControl&& dc)
     : Base(pid, nid, src), control(std::move(dc)) {}
 
-DiagnosticDirective::DiagnosticDirective(DiagnosticDirective&&) = default;
-
 DiagnosticDirective::~DiagnosticDirective() = default;
 
 const DiagnosticDirective* DiagnosticDirective::Clone(CloneContext* ctx) const {
@@ -36,4 +34,5 @@ const DiagnosticDirective* DiagnosticDirective::Clone(CloneContext* ctx) const {
     DiagnosticControl dc(control.severity, rule);
     return ctx->dst->create<DiagnosticDirective>(src, std::move(dc));
 }
+
 }  // namespace tint::ast

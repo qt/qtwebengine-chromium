@@ -65,7 +65,8 @@ struct TensorEvaluator
       TensorBlock;
   //===--------------------------------------------------------------------===//
 
-  EIGEN_STRONG_INLINE TensorEvaluator(const Derived& m, const Device& device)
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE
+  TensorEvaluator(const Derived& m, const Device& device)
       : m_data(device.get((const_cast<TensorPointerType>(m.data())))),
         m_dims(m.dimensions()),
         m_device(device)
@@ -263,7 +264,8 @@ struct TensorEvaluator<const Derived, Device>
       TensorBlock;
   //===--------------------------------------------------------------------===//
 
-  EIGEN_STRONG_INLINE TensorEvaluator(const Derived& m, const Device& device)
+  EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC
+  TensorEvaluator(const Derived& m, const Device& device)
       : m_data(device.get(m.data())), m_dims(m.dimensions()), m_device(device)
   { }
 
@@ -358,6 +360,7 @@ struct TensorEvaluator<const TensorCwiseNullaryOp<NullaryOp, ArgType>, Device>
 {
   typedef TensorCwiseNullaryOp<NullaryOp, ArgType> XprType;
 
+  EIGEN_DEVICE_FUNC
   TensorEvaluator(const XprType& op, const Device& device)
       : m_functor(op.functor()), m_argImpl(op.nestedExpression(), device), m_wrapper()
   { }
@@ -455,6 +458,7 @@ struct TensorEvaluator<const TensorCwiseUnaryOp<UnaryOp, ArgType>, Device>
     RawAccess          = false
   };
 
+  EIGEN_DEVICE_FUNC
   TensorEvaluator(const XprType& op, const Device& device)
     : m_device(device),
       m_functor(op.functor()),
@@ -571,6 +575,7 @@ struct TensorEvaluator<const TensorCwiseBinaryOp<BinaryOp, LeftArgType, RightArg
     RawAccess         = false
   };
 
+  EIGEN_DEVICE_FUNC
   TensorEvaluator(const XprType& op, const Device& device)
     : m_device(device),
       m_functor(op.functor()),
@@ -709,6 +714,7 @@ struct TensorEvaluator<const TensorCwiseTernaryOp<TernaryOp, Arg1Type, Arg2Type,
     RawAccess         = false
   };
 
+  EIGEN_DEVICE_FUNC
   TensorEvaluator(const XprType& op, const Device& device)
     : m_functor(op.functor()),
       m_arg1Impl(op.arg1Expression(), device),
@@ -829,6 +835,7 @@ struct TensorEvaluator<const TensorSelectOp<IfArgType, ThenArgType, ElseArgType>
     RawAccess         = false
   };
 
+  EIGEN_DEVICE_FUNC
   TensorEvaluator(const XprType& op, const Device& device)
     : m_condImpl(op.ifExpression(), device),
       m_thenImpl(op.thenExpression(), device),

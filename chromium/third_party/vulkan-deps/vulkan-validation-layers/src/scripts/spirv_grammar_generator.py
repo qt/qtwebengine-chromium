@@ -95,7 +95,9 @@ class SpirvGrammarHelperOutputGenerator(OutputGenerator):
         self.imageSampleOps = []
         self.imageFetchOps = []
         self.storageClassList = [] # list of storage classes
-        self.executionModel = []
+        self.executionModelList = []
+        self.decorationList = []
+        self.dimList = []
         # Need range to be large as largest possible operand index
         self.imageOperandsParamCount = [[] for i in range(3)]
 
@@ -159,7 +161,7 @@ class SpirvGrammarHelperOutputGenerator(OutputGenerator):
         write(copyright, file=self.outFile)
 
         if self.sourceFile:
-            write('#include "vk_layer_data.h"', file=self.outFile)
+            write('#include "containers/custom_containers.h"', file=self.outFile)
             write('#include "spirv_grammar_helper.h"', file=self.outFile)
             write('#include "state_tracker/shader_instruction.h"', file=self.outFile)
         elif self.headerFile:
@@ -215,18 +217,10 @@ class SpirvGrammarHelperOutputGenerator(OutputGenerator):
                         if enum['value'] not in values:
                             self.imageOperandsParamCount[count].append(enum['enumerant'])
                             values.append(enum['value'])
-                if operandKind['kind'] == 'StorageClass':
-                    values = [] # prevent alias from being duplicatd
-                    for enum in operandKind['enumerants']:
-                        if enum['value'] not in values:
-                            self.storageClassList.append(enum['enumerant'])
-                            values.append(enum['value'])
-                if operandKind['kind'] == 'ExecutionModel':
-                    values = [] # prevent alias from being duplicatd
-                    for enum in operandKind['enumerants']:
-                        if enum['value'] not in values:
-                            self.executionModel.append(enum['enumerant'])
-                            values.append(enum['value'])
+                self.addToStingList(operandKind, 'StorageClass', self.storageClassList)
+                self.addToStingList(operandKind, 'ExecutionModel', self.executionModelList)
+                self.addToStingList(operandKind, 'Decoration', self.decorationList)
+                self.addToStingList(operandKind, 'Dim', self.dimList)
 
             for instruction in instructions:
                 opname = instruction['opname']
@@ -282,6 +276,14 @@ class SpirvGrammarHelperOutputGenerator(OutputGenerator):
                             self.opcodes[opcode]['imageOperandsPosition'] = index + 1
                         if operand['kind'] == 'StorageClass':
                             self.opcodes[opcode]['storageClassPosition'] = index + 1
+
+    def addToStingList(self, operandKind, kind, list):
+        if operandKind['kind'] == kind:
+            values = [] # prevent alias from being duplicatd
+            for enum in operandKind['enumerants']:
+                if enum['value'] not in values:
+                    list.append(enum['enumerant'])
+                    values.append(enum['value'])
 
     #
     # Generate table for each opcode instruction
@@ -475,31 +477,55 @@ class SpirvGrammarHelperOutputGenerator(OutputGenerator):
             output =  'const char* string_SpvOpcode(uint32_t opcode);\n'
             output +=  'const char* string_SpvStorageClass(uint32_t storage_class);\n'
             output +=  'const char* string_SpvExecutionModel(uint32_t execution_model);\n'
+            output +=  'const char* string_SpvDecoration(uint32_t decoration);\n'
+            output +=  'const char* string_SpvDim(uint32_t dim);\n'
         elif self.sourceFile:
             output =  'const char* string_SpvOpcode(uint32_t opcode) {\n'
             output += '    auto format_info = kInstructionTable.find(opcode);\n'
             output += '    if (format_info != kInstructionTable.end()) {\n'
             output += '        return format_info->second.name;\n'
             output += '    } else {\n'
-            output += '        return \"Unhandled Opcode\";\n'
+            output += '        return \"Unknown Opcode\";\n'
             output += '    }\n'
             output += '};\n'
+
             output += '\nconst char* string_SpvStorageClass(uint32_t storage_class) {\n'
             output += '    switch(storage_class) {\n'
             for storageClass in self.storageClassList:
                 output += '        case spv::StorageClass{}:\n'.format(storageClass)
                 output += '            return \"{}\";\n'.format(storageClass)
             output += '        default:\n'
-            output += '            return \"unknown\";\n'
+            output += '            return \"Unknown Storage Class\";\n'
             output += '    }\n'
             output += '};\n'
+
             output += '\nconst char* string_SpvExecutionModel(uint32_t execution_model) {\n'
             output += '    switch(execution_model) {\n'
-            for executionModel in self.executionModel:
+            for executionModel in self.executionModelList:
                 output += '        case spv::ExecutionModel{}:\n'.format(executionModel)
                 output += '            return \"{}\";\n'.format(executionModel)
             output += '        default:\n'
-            output += '            return \"unknown\";\n'
+            output += '            return \"Unknown Execution Model\";\n'
+            output += '    }\n'
+            output += '};\n'
+
+            output += '\nconst char* string_SpvDecoration(uint32_t decoration) {\n'
+            output += '    switch(decoration) {\n'
+            for decoration in self.decorationList:
+                output += '        case spv::Decoration{}:\n'.format(decoration)
+                output += '            return \"{}\";\n'.format(decoration)
+            output += '        default:\n'
+            output += '            return \"Unknown Decoration\";\n'
+            output += '    }\n'
+            output += '};\n'
+
+            output += '\nconst char* string_SpvDim(uint32_t dim) {\n'
+            output += '    switch(dim) {\n'
+            for dim in self.dimList:
+                output += '        case spv::Dim{}:\n'.format(dim)
+                output += '            return \"{}\";\n'.format(dim)
+            output += '        default:\n'
+            output += '            return \"Unknown Dim\";\n'
             output += '    }\n'
             output += '};\n'
         return output

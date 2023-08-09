@@ -146,7 +146,7 @@ export class SourceFrameImpl extends Common.ObjectWrapper.eventMixin<EventTypes,
     this.prettyInternal = false;
     this.rawContent = null;
     this.formattedMap = null;
-    this.prettyToggle = new UI.Toolbar.ToolbarToggle(i18nString(UIStrings.prettyPrint), 'largeicon-pretty-print');
+    this.prettyToggle = new UI.Toolbar.ToolbarToggle(i18nString(UIStrings.prettyPrint), 'brackets');
     this.prettyToggle.addEventListener(UI.Toolbar.ToolbarButton.Events.Click, () => {
       void this.setPretty(!this.prettyToggle.toggled());
     });
@@ -194,7 +194,7 @@ export class SourceFrameImpl extends Common.ObjectWrapper.eventMixin<EventTypes,
         .addChangeListener(this.#textEditorIndentChanged, this);
   }
 
-  disposeView(): void {
+  override disposeView(): void {
     Common.Settings.Settings.instance()
         .moduleSetting('textEditorIndent')
         .removeChangeListener(this.#textEditorIndentChanged, this);
@@ -413,18 +413,18 @@ export class SourceFrameImpl extends Common.ObjectWrapper.eventMixin<EventTypes,
     return this.loadError;
   }
 
-  wasShown(): void {
+  override wasShown(): void {
     void this.ensureContentLoaded();
     this.wasShownOrLoaded();
   }
 
-  willHide(): void {
+  override willHide(): void {
     super.willHide();
 
     this.clearPositionToReveal();
   }
 
-  async toolbarItems(): Promise<UI.Toolbar.ToolbarItem[]> {
+  override async toolbarItems(): Promise<UI.Toolbar.ToolbarItem[]> {
     return [this.prettyToggle, this.sourcePosition, this.progressToolbarItem];
   }
 
@@ -451,102 +451,106 @@ export class SourceFrameImpl extends Common.ObjectWrapper.eventMixin<EventTypes,
   private async ensureContentLoaded(): Promise<void> {
     if (!this.contentRequested) {
       this.contentRequested = true;
+      await this.setDeferredContent(this.lazyContent());
 
-      const progressIndicator = new UI.ProgressIndicator.ProgressIndicator();
-      progressIndicator.setTitle(i18nString(UIStrings.loading));
-      progressIndicator.setTotalWork(100);
-      this.progressToolbarItem.element.appendChild(progressIndicator.element);
-
-      progressIndicator.setWorked(1);
-
-      const deferredContent = await this.lazyContent();
-      let error, content;
-      if (deferredContent.content === null) {
-        error = deferredContent.error;
-        this.rawContent = deferredContent.error;
-      } else {
-        content = deferredContent.content;
-        if (deferredContent.isEncoded) {
-          const view = new DataView(Common.Base64.decode(deferredContent.content));
-          const decoder = new TextDecoder();
-          this.rawContent = decoder.decode(view, {stream: true});
-        } else if ('wasmDisassemblyInfo' in deferredContent && deferredContent.wasmDisassemblyInfo) {
-          const {wasmDisassemblyInfo} = deferredContent;
-          this.rawContent = CodeMirror.Text.of(wasmDisassemblyInfo.lines);
-          this.wasmDisassemblyInternal = wasmDisassemblyInfo;
-        } else {
-          this.rawContent = content;
-          this.wasmDisassemblyInternal = null;
-        }
-      }
-
-      // If the input is wasm but v8-based wasm disassembly failed, fall back to wasmparser for backwards compatibility.
-      if (content && this.contentType === 'application/wasm' && !this.wasmDisassemblyInternal) {
-        const worker = Common.Worker.WorkerWrapper.fromURL(
-            new URL('../../../../entrypoints/wasmparser_worker/wasmparser_worker-entrypoint.js', import.meta.url));
-        const promise = new Promise<{
-          lines: string[],
-          offsets: number[],
-          functionBodyOffsets: {
-            start: number,
-            end: number,
-          }[],
-        }>((resolve, reject) => {
-          worker.onmessage =
-              // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration)
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              ({data}: MessageEvent<any>): void => {
-                if ('event' in data) {
-                  switch (data.event) {
-                    case 'progress':
-                      progressIndicator.setWorked(data.params.percentage);
-                      break;
-                  }
-                } else if ('method' in data) {
-                  switch (data.method) {
-                    case 'disassemble':
-                      if ('error' in data) {
-                        reject(data.error);
-                      } else if ('result' in data) {
-                        resolve(data.result);
-                      }
-                      break;
-                  }
-                }
-              };
-          worker.onerror = reject;
-        });
-        worker.postMessage({method: 'disassemble', params: {content}});
-        try {
-          const {lines, offsets, functionBodyOffsets} = await promise;
-          this.rawContent = content = CodeMirror.Text.of(lines);
-          this.wasmDisassemblyInternal =
-              new Common.WasmDisassembly.WasmDisassembly(lines, offsets, functionBodyOffsets);
-        } catch (e) {
-          this.rawContent = content = error = e.message;
-        } finally {
-          worker.terminate();
-        }
-      }
-
-      progressIndicator.setWorked(100);
-      progressIndicator.done();
-
-      this.formattedMap = null;
-      this.prettyToggle.setEnabled(true);
-
-      if (error) {
-        this.loadError = true;
-        this.textEditor.state = this.placeholderEditorState(error);
-        this.prettyToggle.setEnabled(false);
-      } else {
-        if (this.shouldAutoPrettyPrint && TextUtils.TextUtils.isMinified(content || '')) {
-          await this.setPretty(true);
-        } else {
-          await this.setContent(this.rawContent || '');
-        }
-      }
       this.contentSet = true;
+    }
+  }
+
+  protected async setDeferredContent(deferredContentPromise: Promise<TextUtils.ContentProvider.DeferredContent>):
+      Promise<void> {
+    const progressIndicator = new UI.ProgressIndicator.ProgressIndicator();
+    progressIndicator.setTitle(i18nString(UIStrings.loading));
+    progressIndicator.setTotalWork(100);
+    this.progressToolbarItem.element.appendChild(progressIndicator.element);
+
+    progressIndicator.setWorked(1);
+    const deferredContent = await deferredContentPromise;
+
+    let error, content;
+    if (deferredContent.content === null) {
+      error = deferredContent.error;
+      this.rawContent = deferredContent.error;
+    } else {
+      content = deferredContent.content;
+      if (deferredContent.isEncoded) {
+        const view = new DataView(Common.Base64.decode(deferredContent.content));
+        const decoder = new TextDecoder();
+        this.rawContent = decoder.decode(view, {stream: true});
+      } else if ('wasmDisassemblyInfo' in deferredContent && deferredContent.wasmDisassemblyInfo) {
+        const {wasmDisassemblyInfo} = deferredContent;
+        this.rawContent = CodeMirror.Text.of(wasmDisassemblyInfo.lines);
+        this.wasmDisassemblyInternal = wasmDisassemblyInfo;
+      } else {
+        this.rawContent = content;
+        this.wasmDisassemblyInternal = null;
+      }
+    }
+
+    // If the input is wasm but v8-based wasm disassembly failed, fall back to wasmparser for backwards compatibility.
+    if (content && this.contentType === 'application/wasm' && !this.wasmDisassemblyInternal) {
+      const worker = Common.Worker.WorkerWrapper.fromURL(
+          new URL('../../../../entrypoints/wasmparser_worker/wasmparser_worker-entrypoint.js', import.meta.url));
+      const promise = new Promise<{
+        lines: string[],
+        offsets: number[],
+        functionBodyOffsets: {
+          start: number,
+          end: number,
+        }[],
+      }>((resolve, reject) => {
+        worker.onmessage =
+            // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration)
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            ({data}: MessageEvent<any>): void => {
+              if ('event' in data) {
+                switch (data.event) {
+                  case 'progress':
+                    progressIndicator?.setWorked(data.params.percentage);
+                    break;
+                }
+              } else if ('method' in data) {
+                switch (data.method) {
+                  case 'disassemble':
+                    if ('error' in data) {
+                      reject(data.error);
+                    } else if ('result' in data) {
+                      resolve(data.result);
+                    }
+                    break;
+                }
+              }
+            };
+        worker.onerror = reject;
+      });
+      worker.postMessage({method: 'disassemble', params: {content}});
+      try {
+        const {lines, offsets, functionBodyOffsets} = await promise;
+        this.rawContent = content = CodeMirror.Text.of(lines);
+        this.wasmDisassemblyInternal = new Common.WasmDisassembly.WasmDisassembly(lines, offsets, functionBodyOffsets);
+      } catch (e) {
+        this.rawContent = content = error = e.message;
+      } finally {
+        worker.terminate();
+      }
+    }
+
+    progressIndicator.setWorked(100);
+    progressIndicator.done();
+
+    this.formattedMap = null;
+    this.prettyToggle.setEnabled(true);
+
+    if (error) {
+      this.loadError = true;
+      this.textEditor.state = this.placeholderEditorState(error);
+      this.prettyToggle.setEnabled(false);
+    } else {
+      if (this.shouldAutoPrettyPrint && TextUtils.TextUtils.isMinified(content || '')) {
+        await this.setPretty(true);
+      } else {
+        await this.setContent(this.rawContent || '');
+      }
     }
   }
 
@@ -967,7 +971,7 @@ export class SourceFrameImpl extends Common.ObjectWrapper.eventMixin<EventTypes,
   protected populateLineGutterContextMenu(_menu: UI.ContextMenu.ContextMenu, _lineNumber: number): void {
   }
 
-  focus(): void {
+  override focus(): void {
     this.textEditor.focus();
   }
 }
@@ -1105,7 +1109,7 @@ const searchHighlighter = CodeMirror.ViewPlugin.fromClass(class {
 }, {decorations: (value): CodeMirror.DecorationSet => value.decorations});
 
 const nonBreakableLineMark = new (class extends CodeMirror.GutterMarker {
-  elementClass = 'cm-nonBreakableLine';
+  override elementClass = 'cm-nonBreakableLine';
 })();
 
 // Effect to add lines (by position) to the set of non-breakable lines.
@@ -1169,6 +1173,6 @@ const sourceFrameTheme = CodeMirror.EditorView.theme({
     },
   },
   ':host-context(.pretty-printed) & .cm-lineNumbers .cm-gutterElement': {
-    color: 'var(--color-primary)',
+    color: 'var(--color-primary-old)',
   },
 });

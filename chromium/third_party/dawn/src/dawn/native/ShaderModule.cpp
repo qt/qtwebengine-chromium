@@ -288,6 +288,8 @@ EntryPointMetadata::Override::Type FromTintOverrideType(tint::inspector::Overrid
             return EntryPointMetadata::Override::Type::Boolean;
         case tint::inspector::Override::Type::kFloat32:
             return EntryPointMetadata::Override::Type::Float32;
+        case tint::inspector::Override::Type::kFloat16:
+            return EntryPointMetadata::Override::Type::Float16;
         case tint::inspector::Override::Type::kInt32:
             return EntryPointMetadata::Override::Type::Int32;
         case tint::inspector::Override::Type::kUint32:
@@ -395,21 +397,18 @@ MaybeError ValidateCompatibilityOfSingleBindingWithLayout(const DeviceBase* devi
     BindingIndex bindingIndex(bindingIt->second);
     const BindingInfo& layoutInfo = layout->GetBindingInfo(bindingIndex);
 
-    // TODO(dawn:563): Provide info about the binding types.
-    DAWN_INVALID_IF(
-        layoutInfo.bindingType != shaderInfo.bindingType,
-        "Binding type (buffer vs. texture vs. sampler vs. external) doesn't match the type "
-        "in the layout.");
+    DAWN_INVALID_IF(layoutInfo.bindingType != shaderInfo.bindingType,
+                    "Binding type in the shader (%s) doesn't match the type in the layout (%s).",
+                    shaderInfo.bindingType, layoutInfo.bindingType);
 
     ExternalTextureBindingExpansionMap expansions = layout->GetExternalTextureBindingExpansionMap();
     DAWN_INVALID_IF(expansions.find(bindingNumber) != expansions.end(),
                     "Binding type (buffer vs. texture vs. sampler vs. external) doesn't "
                     "match the type in the layout.");
 
-    // TODO(dawn:563): Provide info about the visibility.
     DAWN_INVALID_IF((layoutInfo.visibility & StageBit(entryPointStage)) == 0,
-                    "Entry point's stage is not in the binding visibility in the layout (%s)",
-                    layoutInfo.visibility);
+                    "Entry point's stage (%s) is not in the binding visibility in the layout (%s).",
+                    StageBit(entryPointStage), layoutInfo.visibility);
 
     switch (layoutInfo.bindingType) {
         case BindingInfoType::Texture: {
@@ -1111,8 +1110,8 @@ ShaderModuleBase::ShaderModuleBase(DeviceBase* device, const ShaderModuleDescrip
     GetObjectTrackingList()->Track(this);
 }
 
-ShaderModuleBase::ShaderModuleBase(DeviceBase* device, ObjectBase::ErrorTag tag)
-    : ApiObjectBase(device, tag), mType(Type::Undefined) {}
+ShaderModuleBase::ShaderModuleBase(DeviceBase* device, ObjectBase::ErrorTag tag, const char* label)
+    : ApiObjectBase(device, tag, label), mType(Type::Undefined) {}
 
 ShaderModuleBase::~ShaderModuleBase() = default;
 
@@ -1124,8 +1123,8 @@ void ShaderModuleBase::DestroyImpl() {
 }
 
 // static
-Ref<ShaderModuleBase> ShaderModuleBase::MakeError(DeviceBase* device) {
-    return AcquireRef(new ShaderModuleBase(device, ObjectBase::kError));
+Ref<ShaderModuleBase> ShaderModuleBase::MakeError(DeviceBase* device, const char* label) {
+    return AcquireRef(new ShaderModuleBase(device, ObjectBase::kError, label));
 }
 
 ObjectType ShaderModuleBase::GetType() const {

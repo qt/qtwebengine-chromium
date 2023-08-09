@@ -15,15 +15,14 @@
 #ifndef SRC_TINT_IR_TEMP_H_
 #define SRC_TINT_IR_TEMP_H_
 
-#include <ostream>
-
 #include "src/tint/ir/value.h"
 #include "src/tint/symbol_table.h"
+#include "src/tint/utils/string_stream.h"
 
 namespace tint::ir {
 
 /// Temporary value in the IR.
-class Temp : public Castable<Temp, Value> {
+class Temp : public utils::Castable<Temp, Value> {
   public:
     /// A value id.
     using Id = uint32_t;
@@ -50,9 +49,8 @@ class Temp : public Castable<Temp, Value> {
 
     /// Write the temp to the given stream
     /// @param out the stream to write to
-    /// @param st the symbol table
     /// @returns the stream
-    std::ostream& ToString(std::ostream& out, const SymbolTable& st) const override;
+    utils::StringStream& ToString(utils::StringStream& out) const override;
 
   private:
     const type::Type* type_ = nullptr;

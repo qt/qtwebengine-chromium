@@ -91,9 +91,9 @@ class HeapObject : public Object {
 
   // Whether the object is in the RO heap and the RO heap is shared, or in the
   // writable shared heap.
-  V8_INLINE bool InSharedHeap() const;
+  V8_INLINE bool InAnySharedSpace() const;
 
-  V8_INLINE bool InSharedWritableHeap() const;
+  V8_INLINE bool InWritableSharedSpace() const;
 
   V8_INLINE bool InReadOnlySpace() const;
 
@@ -140,6 +140,9 @@ class HeapObject : public Object {
 
   template <typename ObjectVisitor>
   inline void IterateFast(PtrComprCageBase cage_base, ObjectVisitor* v);
+
+  template <typename ObjectVisitor>
+  inline void IterateFast(Map map, ObjectVisitor* v);
 
   template <typename ObjectVisitor>
   inline void IterateFast(Map map, int object_size, ObjectVisitor* v);

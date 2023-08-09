@@ -17,6 +17,7 @@ skia_graphite_public = [
   "$_include/Recorder.h",
   "$_include/Recording.h",
   "$_include/TextureInfo.h",
+  "$_include/YUVABackendTextures.h",
 ]
 
 skia_graphite_sources = [
@@ -34,15 +35,15 @@ skia_graphite_sources = [
   "$_src/ClearBuffersTask.h",
   "$_src/ClientMappedBufferManager.cpp",
   "$_src/ClientMappedBufferManager.h",
-  "$_src/ClipStack.cpp",
+  "$_src/ClipStack_graphite.cpp",
   "$_src/ClipStack_graphite.h",
   "$_src/CommandBuffer.cpp",
   "$_src/CommandBuffer.h",
   "$_src/CommandTypes.h",
-  "$_src/ComputePassTask.cpp",
-  "$_src/ComputePassTask.h",
   "$_src/ComputePipeline.cpp",
   "$_src/ComputePipeline.h",
+  "$_src/ComputeTask.cpp",
+  "$_src/ComputeTask.h",
   "$_src/ComputeTypes.h",
   "$_src/Context.cpp",
   "$_src/ContextPriv.h",
@@ -95,9 +96,11 @@ skia_graphite_sources = [
   "$_src/PipelineData.cpp",
   "$_src/PipelineData.h",
   "$_src/PipelineDataCache.h",
+  "$_src/ProxyCache.cpp",
+  "$_src/ProxyCache.h",
   "$_src/QueueManager.cpp",
   "$_src/QueueManager.h",
-  "$_src/ReadWriteSwizzle.h",
+  "$_src/ReadSwizzle.h",
   "$_src/Recorder.cpp",
   "$_src/RecorderPriv.h",
   "$_src/Recording.cpp",
@@ -148,10 +151,13 @@ skia_graphite_sources = [
   "$_src/UploadBufferManager.h",
   "$_src/UploadTask.cpp",
   "$_src/UploadTask.h",
+  "$_src/YUVABackendTextures.cpp",
   "$_src/YUVATextureProxies.cpp",
   "$_src/YUVATextureProxies.h",
   "$_src/compute/ComputeStep.cpp",
   "$_src/compute/ComputeStep.h",
+  "$_src/compute/DispatchGroup.cpp",
+  "$_src/compute/DispatchGroup.h",
   "$_src/geom/BoundsManager.h",
   "$_src/geom/EdgeAAQuad.h",
   "$_src/geom/Geometry.h",
@@ -187,10 +193,13 @@ skia_graphite_sources = [
   "$_src/text/AtlasManager.h",
 ]
 
-skia_graphite_dawn_sources = [
+skia_graphite_dawn_public = [
   "$_include/dawn/DawnBackendContext.h",
   "$_include/dawn/DawnTypes.h",
   "$_include/dawn/DawnUtils.h",
+]
+
+skia_graphite_dawn_sources = [
   "$_include_private/DawnTypesPriv.h",
   "$_src/dawn/DawnAsyncWait.cpp",
   "$_src/dawn/DawnAsyncWait.h",
@@ -202,6 +211,8 @@ skia_graphite_dawn_sources = [
   "$_src/dawn/DawnCommandBuffer.h",
   "$_src/dawn/DawnGraphicsPipeline.cpp",
   "$_src/dawn/DawnGraphicsPipeline.h",
+  "$_src/dawn/DawnGraphiteUtils.cpp",
+  "$_src/dawn/DawnGraphiteUtilsPriv.h",
   "$_src/dawn/DawnQueueManager.cpp",
   "$_src/dawn/DawnQueueManager.h",
   "$_src/dawn/DawnResourceProvider.cpp",
@@ -213,15 +224,16 @@ skia_graphite_dawn_sources = [
   "$_src/dawn/DawnTexture.cpp",
   "$_src/dawn/DawnTexture.h",
   "$_src/dawn/DawnTypesPriv.cpp",
-  "$_src/dawn/DawnUtils.cpp",
-  "$_src/dawn/DawnUtilsPriv.h",
+]
+
+skia_graphite_mtl_public = [
+  "$_include/mtl/MtlBackendContext.h",
+  "$_include/mtl/MtlGraphiteTypes.h",
+  "$_include/mtl/MtlGraphiteUtils.h",
 ]
 
 skia_graphite_mtl_sources = [
-  "$_include/mtl/MtlBackendContext.h",
-  "$_include/mtl/MtlTypes.h",
-  "$_include/mtl/MtlUtils.h",
-  "$_include_private/MtlTypesPriv.h",
+  "$_include_private/MtlGraphiteTypesPriv.h",
   "$_src/mtl/MtlBlitCommandEncoder.h",
   "$_src/mtl/MtlBuffer.h",
   "$_src/mtl/MtlBuffer.mm",
@@ -234,6 +246,9 @@ skia_graphite_mtl_sources = [
   "$_src/mtl/MtlComputePipeline.mm",
   "$_src/mtl/MtlGraphicsPipeline.h",
   "$_src/mtl/MtlGraphicsPipeline.mm",
+  "$_src/mtl/MtlGraphiteTypes.mm",
+  "$_src/mtl/MtlGraphiteUtils.mm",
+  "$_src/mtl/MtlGraphiteUtilsPriv.h",
   "$_src/mtl/MtlQueueManager.h",
   "$_src/mtl/MtlQueueManager.mm",
   "$_src/mtl/MtlRenderCommandEncoder.h",
@@ -245,14 +260,14 @@ skia_graphite_mtl_sources = [
   "$_src/mtl/MtlSharedContext.mm",
   "$_src/mtl/MtlTexture.h",
   "$_src/mtl/MtlTexture.mm",
-  "$_src/mtl/MtlTypesPriv.mm",
-  "$_src/mtl/MtlUtils.mm",
-  "$_src/mtl/MtlUtilsPriv.h",
+]
+
+skia_graphite_vk_public = [
+  "$_include/vk/VulkanGraphiteTypes.h",
+  "$_include/vk/VulkanGraphiteUtils.h",
 ]
 
 skia_graphite_vk_sources = [
-  "$_include/vk/VulkanGraphiteTypes.h",
-  "$_include/vk/VulkanGraphiteUtils.h",
   "$_include_private/VulkanGraphiteTypesPriv.h",
   "$_src/vk/VulkanBuffer.cpp",
   "$_src/vk/VulkanBuffer.h",
@@ -260,6 +275,8 @@ skia_graphite_vk_sources = [
   "$_src/vk/VulkanCaps.h",
   "$_src/vk/VulkanCommandBuffer.cpp",
   "$_src/vk/VulkanCommandBuffer.h",
+  "$_src/vk/VulkanGraphicsPipeline.cpp",
+  "$_src/vk/VulkanGraphicsPipeline.h",
   "$_src/vk/VulkanGraphiteTypes.cpp",
   "$_src/vk/VulkanGraphiteUtils.cpp",
   "$_src/vk/VulkanGraphiteUtilsPriv.h",
@@ -267,6 +284,8 @@ skia_graphite_vk_sources = [
   "$_src/vk/VulkanQueueManager.h",
   "$_src/vk/VulkanResourceProvider.cpp",
   "$_src/vk/VulkanResourceProvider.h",
+  "$_src/vk/VulkanSampler.cpp",
+  "$_src/vk/VulkanSampler.h",
   "$_src/vk/VulkanSharedContext.cpp",
   "$_src/vk/VulkanSharedContext.h",
   "$_src/vk/VulkanTexture.cpp",

@@ -16,7 +16,7 @@ function getGroupDefaultTextColor(): string {
   return ThemeSupport.ThemeSupport.instance().getComputedValue('--color-text-primary');
 }
 
-const DefaultStyle = {
+const DefaultStyle: () => PerfUI.FlameChart.GroupStyle = () => ({
   height: 20,
   padding: 2,
   collapsible: false,
@@ -28,7 +28,7 @@ const DefaultStyle = {
   shareHeaderLine: false,
   useFirstLineForOverview: false,
   useDecoratorsForOverview: false,
-};
+});
 
 export const HotColorScheme = ['#ffba08', '#faa307', '#f48c06', '#e85d04', '#dc2f02', '#d00000', '#9d0208'];
 export const ColdColorScheme = ['#7400b8', '#6930c3', '#5e60ce', '#5390d9', '#4ea8de', '#48bfe3', '#56cfe1', '#64dfdf'];
@@ -61,7 +61,7 @@ export interface EventProperties {
  * Wrapper class for each event displayed on the timeline.
  */
 export class Event {
-  private timelineData: PerfUI.FlameChart.TimelineData;
+  private timelineData: PerfUI.FlameChart.FlameChartTimelineData;
   private setLive: (arg0: number) => number;
   private readonly setComplete: (arg0: number) => void;
   private readonly updateMaxTime: (arg0: number) => void;
@@ -73,7 +73,7 @@ export class Event {
   private readonly hoverData: Object;
 
   constructor(
-      timelineData: PerfUI.FlameChart.TimelineData, eventHandlers: EventHandlers,
+      timelineData: PerfUI.FlameChart.FlameChartTimelineData, eventHandlers: EventHandlers,
       eventProperties: EventProperties|
       undefined = {color: undefined, duration: undefined, hoverData: {}, level: 0, name: '', startTime: 0}) {
     // These allow the event to privately change it's own data in the timeline.
@@ -283,14 +283,14 @@ export class TickingFlameChart extends UI.Widget.VBox {
     this.updateRender();
   }
 
-  willHide(): void {
+  override willHide(): void {
     this.isShown = false;
     if (this.ticking) {
       this.stop();
     }
   }
 
-  wasShown(): void {
+  override wasShown(): void {
     this.isShown = true;
     if (this.canTickInternal && !this.ticking) {
       this.start();
@@ -363,7 +363,7 @@ class TickingFlameChartDataProvider implements PerfUI.FlameChart.FlameChartDataP
   private bounds: Bounds;
   private readonly liveEvents: Set<number>;
   private eventMap: Map<number, Event>;
-  private readonly timelineDataInternal: PerfUI.FlameChart.TimelineData;
+  private readonly timelineDataInternal: PerfUI.FlameChart.FlameChartTimelineData;
   private maxLevel: number;
 
   constructor(initialBounds: Bounds, updateMaxTime: (arg0: number) => void) {
@@ -381,7 +381,7 @@ class TickingFlameChartDataProvider implements PerfUI.FlameChart.FlameChartDataP
 
     // Contains the numerical indicies. This is passed as a reference to the events
     // so that they can update it when they change.
-    this.timelineDataInternal = new PerfUI.FlameChart.TimelineData([], [], [], []);
+    this.timelineDataInternal = PerfUI.FlameChart.FlameChartTimelineData.createEmpty();
 
     // The current sum of all group heights.
     this.maxLevel = 0;
@@ -397,7 +397,7 @@ class TickingFlameChartDataProvider implements PerfUI.FlameChart.FlameChartDataP
         startLevel: this.maxLevel,
         expanded: true,
         selectable: false,
-        style: DefaultStyle,
+        style: DefaultStyle(),
         track: null,
       };
       this.timelineDataInternal.groups.push(newGroup);
@@ -450,7 +450,7 @@ class TickingFlameChartDataProvider implements PerfUI.FlameChart.FlameChartDataP
     return this.maxLevel + 1;
   }
 
-  timelineData(): PerfUI.FlameChart.TimelineData {
+  timelineData(): PerfUI.FlameChart.FlameChartTimelineData {
     return this.timelineDataInternal;
   }
 

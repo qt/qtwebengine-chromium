@@ -17,6 +17,8 @@
 
 #include <array>
 #include <memory>
+#include <mutex>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -37,6 +39,8 @@ class Platform;
 
 namespace dawn::native {
 
+class CallbackTaskManager;
+class DeviceBase;
 class Surface;
 class XlibXcbFunctions;
 
@@ -72,6 +76,8 @@ class InstanceBase final : public RefCountedWithExternalCount {
         return false;
     }
 
+    const TogglesState& GetTogglesState() const;
+
     // Used to query the details of a toggle. Return nullptr if toggleName is not a valid name
     // of a toggle supported in Dawn.
     const ToggleInfo* GetToggleInfo(const char* toggleName);
@@ -101,19 +107,22 @@ class InstanceBase final : public RefCountedWithExternalCount {
     BlobCache* GetBlobCache(bool enabled = true);
 
     uint64_t GetDeviceCountForTesting() const;
-    void IncrementDeviceCountForTesting();
-    void DecrementDeviceCountForTesting();
+    void AddDevice(DeviceBase* device);
+    void RemoveDevice(DeviceBase* device);
 
     const std::vector<std::string>& GetRuntimeSearchPaths() const;
+
+    const Ref<CallbackTaskManager>& GetCallbackTaskManager() const;
 
     // Get backend-independent libraries that need to be loaded dynamically.
     const XlibXcbFunctions* GetOrCreateXlibXcbFunctions();
 
     // Dawn API
     Surface* APICreateSurface(const SurfaceDescriptor* descriptor);
+    bool APIProcessEvents();
 
   private:
-    InstanceBase();
+    explicit InstanceBase(const TogglesState& instanceToggles);
     ~InstanceBase() override;
 
     void WillDropLastExternalRef() override;
@@ -150,6 +159,8 @@ class InstanceBase final : public RefCountedWithExternalCount {
     std::vector<std::unique_ptr<BackendConnection>> mBackends;
     std::vector<Ref<AdapterBase>> mAdapters;
 
+    TogglesState mToggles;
+
     FeaturesInfo mFeaturesInfo;
     TogglesInfo mTogglesInfo;
 
@@ -157,7 +168,10 @@ class InstanceBase final : public RefCountedWithExternalCount {
     std::unique_ptr<XlibXcbFunctions> mXlibXcbFunctions;
 #endif  // defined(DAWN_USE_X11)
 
-    std::atomic_uint64_t mDeviceCountForTesting{0};
+    Ref<CallbackTaskManager> mCallbackTaskManager;
+
+    std::set<DeviceBase*> mDevicesList;
+    mutable std::mutex mDevicesListMutex;
 };
 
 }  // namespace dawn::native

@@ -68,7 +68,7 @@ public:
     void add(const SkSamplingOptions& sampling,
              const SkTileMode tileModes[2],
              sk_sp<TextureProxy> proxy) {
-        fTextureData.push_back({std::move(proxy), {sampling, {tileModes[0], tileModes[1]}}});
+        fTextureData.push_back({std::move(proxy), SamplerDesc{sampling, tileModes}});
     }
 
     void reset() {
@@ -126,6 +126,7 @@ public:
     void writeArray(SkSpan<const SkPMColor4f> colors) { fUniformManager.writeArray(colors); }
     void writeArray(SkSpan<const float> floats) { fUniformManager.writeArray(floats); }
 
+    void writeHalf(float f) { fUniformManager.writeHalf(f); }
     void writeHalf(const SkMatrix& mat) { fUniformManager.writeHalf(mat); }
     void writeHalfArray(SkSpan<const float> floats) { fUniformManager.writeHalfArray(floats); }
 

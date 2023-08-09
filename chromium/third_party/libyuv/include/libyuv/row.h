@@ -402,9 +402,8 @@ extern "C" {
 // The following are available for AVX512 clang x86 platforms:
 // TODO(fbarchard): Port to GCC and Visual C
 // TODO(fbarchard): re-enable HAS_ARGBTORGB24ROW_AVX512VBMI. Issue libyuv:789
-// TODO(fbarchard): Port MERGEUV to assembly
 #if !defined(LIBYUV_DISABLE_X86) && \
-    (defined(__x86_64__) || defined(__i386__)) && (defined(CLANG_HAS_AVX512) && !defined(_MSC_VER))
+    (defined(__x86_64__) || defined(__i386__)) && defined(CLANG_HAS_AVX512)
 #define HAS_ARGBTORGB24ROW_AVX512VBMI
 #define HAS_MERGEUVROW_AVX512BW
 #endif
@@ -756,6 +755,15 @@ extern "C" {
 #define HAS_BGRATOYROW_LASX
 #define HAS_RGB24TOYJROW_LASX
 #define HAS_RAWTOYJROW_LASX
+#endif
+
+#if !defined(LIBYUV_DISABLE_RVV) && defined(__riscv)
+#define HAS_ARGBTORAWROW_RVV
+#define HAS_ARGBTORGB24ROW_RVV
+#define HAS_RAWTOARGBROW_RVV
+#define HAS_RAWTORGB24ROW_RVV
+#define HAS_RAWTORGBAROW_RVV
+#define HAS_RGB24TOARGBROW_RVV
 #endif
 
 #if defined(_MSC_VER) && !defined(__CLR_VER) && !defined(__clang__)
@@ -2956,14 +2964,18 @@ void RGB24ToARGBRow_LSX(const uint8_t* src_rgb24, uint8_t* dst_argb, int width);
 void RGB24ToARGBRow_LASX(const uint8_t* src_rgb24,
                          uint8_t* dst_argb,
                          int width);
+void RGB24ToARGBRow_RVV(const uint8_t* src_rgb24, uint8_t* dst_argb, int width);
 void RAWToARGBRow_NEON(const uint8_t* src_raw, uint8_t* dst_argb, int width);
 void RAWToRGBARow_NEON(const uint8_t* src_raw, uint8_t* dst_rgba, int width);
 void RAWToARGBRow_MSA(const uint8_t* src_raw, uint8_t* dst_argb, int width);
 void RAWToARGBRow_LSX(const uint8_t* src_raw, uint8_t* dst_argb, int width);
 void RAWToARGBRow_LASX(const uint8_t* src_raw, uint8_t* dst_argb, int width);
+void RAWToARGBRow_RVV(const uint8_t* src_raw, uint8_t* dst_argb, int width);
+void RAWToRGBARow_RVV(const uint8_t* src_raw, uint8_t* dst_rgba, int width);
 void RAWToRGB24Row_NEON(const uint8_t* src_raw, uint8_t* dst_rgb24, int width);
 void RAWToRGB24Row_MSA(const uint8_t* src_raw, uint8_t* dst_rgb24, int width);
 void RAWToRGB24Row_LSX(const uint8_t* src_raw, uint8_t* dst_rgb24, int width);
+void RAWToRGB24Row_RVV(const uint8_t* src_raw, uint8_t* dst_rgb24, int width);
 void RGB565ToARGBRow_NEON(const uint8_t* src_rgb565,
                           uint8_t* dst_argb,
                           int width);
@@ -3188,6 +3200,9 @@ void ARGBToARGB1555Row_LASX(const uint8_t* src_argb,
 void ARGBToARGB4444Row_LASX(const uint8_t* src_argb,
                             uint8_t* dst_rgb,
                             int width);
+
+void ARGBToRAWRow_RVV(const uint8_t* src_argb, uint8_t* dst_raw, int width);
+void ARGBToRGB24Row_RVV(const uint8_t* src_argb, uint8_t* dst_rgb24, int width);
 
 void ARGBToRGBARow_C(const uint8_t* src_argb, uint8_t* dst_rgb, int width);
 void ARGBToRGB24Row_C(const uint8_t* src_argb, uint8_t* dst_rgb, int width);

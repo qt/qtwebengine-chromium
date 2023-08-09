@@ -5,13 +5,8 @@
 #ifndef CAST_COMMON_CERTIFICATE_TESTING_TEST_HELPERS_H_
 #define CAST_COMMON_CERTIFICATE_TESTING_TEST_HELPERS_H_
 
-#include <openssl/evp.h>
-
-#include <string>
-#include <vector>
-
 #include "absl/strings/string_view.h"
-#include "cast/common/public/certificate_types.h"
+#include "platform/base/span.h"
 
 namespace openscreen {
 namespace cast {
@@ -22,9 +17,9 @@ class SignatureTestData {
   SignatureTestData();
   ~SignatureTestData();
 
-  ConstDataSpan message;
-  ConstDataSpan sha1;
-  ConstDataSpan sha256;
+  ByteBuffer message;
+  ByteBuffer sha1;
+  ByteBuffer sha256;
 };
 
 SignatureTestData ReadSignatureTestData(absl::string_view filename);

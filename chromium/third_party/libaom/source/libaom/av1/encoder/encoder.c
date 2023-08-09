@@ -76,6 +76,9 @@
 #include "av1/encoder/rc_utils.h"
 #include "av1/encoder/rd.h"
 #include "av1/encoder/rdopt.h"
+#if CONFIG_SALIENCY_MAP
+#include "av1/encoder/saliency_map.h"
+#endif
 #include "av1/encoder/segmentation.h"
 #include "av1/encoder/speed_features.h"
 #include "av1/encoder/superres_scale.h"
@@ -351,7 +354,7 @@ void av1_update_frame_size(AV1_COMP *cpi) {
   if (!cpi->ppi->seq_params_locked)
     set_sb_size(cm->seq_params,
                 av1_select_sb_size(&cpi->oxcf, cm->width, cm->height,
-                                   cpi->svc.number_spatial_layers));
+                                   cpi->ppi->number_spatial_layers));
 
   set_tile_info(cm, &cpi->oxcf.tile_cfg);
 }
@@ -860,6 +863,14 @@ void av1_change_config(struct AV1_COMP *cpi, const AV1EncoderConfig *oxcf,
   rc->worst_quality = rc_cfg->worst_allowed_q;
   rc->best_quality = rc_cfg->best_allowed_q;
 
+  // If lossless has been requested make sure average Q accumulators are reset.
+  if (is_lossless_requested(&cpi->oxcf.rc_cfg)) {
+    int i;
+    for (i = 0; i < FRAME_TYPES; ++i) {
+      p_rc->avg_frame_qindex[i] = 0;
+    }
+  }
+
   features->interp_filter =
       oxcf->tile_cfg.enable_large_scale_tile ? EIGHTTAP_REGULAR : SWITCHABLE;
   features->switchable_motion_mode = is_switchable_motion_mode_allowed(
@@ -941,11 +952,10 @@ static INLINE void init_frame_index_set(FRAME_INDEX_SET *frame_index_set) {
   frame_index_set->show_frame_count = 0;
 }
 
-static INLINE void update_frame_index_set(FRAME_INDEX_SET *frame_index_set,
-                                          int is_show_frame) {
-  if (is_show_frame) {
-    frame_index_set->show_frame_count++;
-  }
+static INLINE void update_counters_for_show_frame(AV1_COMP *const cpi) {
+  assert(cpi->common.show_frame);
+  cpi->frame_index_set.show_frame_count++;
+  cpi->common.current_frame.frame_number++;
 }
 
 AV1_PRIMARY *av1_create_primary_compressor(
@@ -1459,6 +1469,7 @@ AV1_COMP *av1_create_compressor(AV1_PRIMARY *ppi, const AV1EncoderConfig *oxcf,
 
   cpi->mb_weber_stats = NULL;
   cpi->mb_delta_q = NULL;
+  cpi->palette_pixel_num = 0;
 
   {
     const int bsize = BLOCK_16X16;
@@ -1509,6 +1520,26 @@ AV1_COMP *av1_create_compressor(AV1_PRIMARY *ppi, const AV1EncoderConfig *oxcf,
     memset(&cpi->butteraugli_info.resized_source, 0,
            sizeof(cpi->butteraugli_info.resized_source));
     cpi->butteraugli_info.recon_set = false;
+  }
+#endif
+
+#if CONFIG_SALIENCY_MAP
+  {
+    CHECK_MEM_ERROR(cm, cpi->saliency_map,
+                    (uint8_t *)aom_calloc(cm->height * cm->width,
+                                          sizeof(*cpi->saliency_map)));
+    // Buffer initialization based on MIN_MIB_SIZE_LOG2 to ensure that
+    // cpi->sm_scaling_factor buffer is allocated big enough, since we have no
+    // idea of the actual superblock size we are going to use yet.
+    const int min_mi_w_sb = (1 << MIN_MIB_SIZE_LOG2);
+    const int min_mi_h_sb = (1 << MIN_MIB_SIZE_LOG2);
+    const int max_sb_cols =
+        (cm->mi_params.mi_cols + min_mi_w_sb - 1) / min_mi_w_sb;
+    const int max_sb_rows =
+        (cm->mi_params.mi_rows + min_mi_h_sb - 1) / min_mi_h_sb;
+    CHECK_MEM_ERROR(cm, cpi->sm_scaling_factor,
+                    (double *)aom_calloc(max_sb_rows * max_sb_cols,
+                                         sizeof(*cpi->sm_scaling_factor)));
   }
 #endif
 
@@ -1667,7 +1698,12 @@ void av1_remove_compressor(AV1_COMP *cpi) {
   av1_denoiser_free(&(cpi->denoiser));
 #endif
 
-  aom_free(cm->error);
+  if (cm->error) {
+    // Help detect use after free of the error detail string.
+    memset(cm->error->detail, 'A', sizeof(cm->error->detail) - 1);
+    cm->error->detail[sizeof(cm->error->detail) - 1] = '\0';
+    aom_free(cm->error);
+  }
   aom_free(cpi->td.tctx);
   MultiThreadInfo *const mt_info = &cpi->mt_info;
 #if CONFIG_MULTITHREAD
@@ -2172,7 +2208,6 @@ void av1_set_frame_size(AV1_COMP *cpi, int width, int height) {
     }
 #endif
   }
-
   if (is_stat_consumption_stage(cpi)) {
     av1_set_target_rate(cpi, cm->width, cm->height);
   }
@@ -3435,7 +3470,8 @@ static AOM_INLINE int selective_disable_cdf_rtc(const AV1_COMP *cpi) {
     // after 8 frames since last update if frame_source_sad > 0.
     if (frame_is_intra_only(cm) || is_frame_resize_pending(cpi) ||
         rc->high_source_sad || rc->frames_since_key < 30 ||
-        cpi->cyclic_refresh->counter_encode_maxq_scene_change < 30 ||
+        (cpi->oxcf.q_cfg.aq_mode == CYCLIC_REFRESH_AQ &&
+         cpi->cyclic_refresh->counter_encode_maxq_scene_change < 30) ||
         (cpi->frames_since_last_update > 8 && cpi->rc.frame_source_sad > 0))
       return 0;
     else
@@ -3506,7 +3542,7 @@ static void calculate_frame_avg_haar_energy(AV1_COMP *cpi) {
       src, stride, hbd, num_8x8_rows, num_8x8_cols);
 
   cpi->twopass_frame.frame_avg_haar_energy =
-      log(((double)frame_avg_wavelet_energy / num_mbs) + 1.0);
+      log1p((double)frame_avg_wavelet_energy / num_mbs);
 }
 #endif
 
@@ -3644,8 +3680,7 @@ static int encode_frame_to_data_rate(AV1_COMP *cpi, size_t *size,
     }
 #endif  // !CONFIG_REALTIME_ONLY
 
-    ++current_frame->frame_number;
-    update_frame_index_set(&cpi->frame_index_set, cm->show_frame);
+    update_counters_for_show_frame(cpi);
     return AOM_CODEC_OK;
   }
 
@@ -3700,12 +3735,27 @@ static int encode_frame_to_data_rate(AV1_COMP *cpi, size_t *size,
   // Never drop on key frame.
   if (has_no_stats_stage(cpi) && oxcf->rc_cfg.mode == AOM_CBR &&
       current_frame->frame_type != KEY_FRAME) {
+    FRAME_UPDATE_TYPE update_type =
+        cpi->ppi->gf_group.update_type[cpi->gf_frame_index];
+    (void)update_type;
+    assert(
+        IMPLIES(cpi->is_dropped_frame, (update_type == OVERLAY_UPDATE ||
+                                        update_type == INTNL_OVERLAY_UPDATE)));
     if (av1_rc_drop_frame(cpi)) {
+      cpi->is_dropped_frame = true;
+    }
+    if (cpi->is_dropped_frame) {
       av1_setup_frame_size(cpi);
       av1_set_mv_search_params(cpi);
       av1_rc_postencode_update_drop_frame(cpi);
       release_scaled_references(cpi);
-      cpi->is_dropped_frame = true;
+      cpi->ppi->gf_group.is_frame_dropped[cpi->gf_frame_index] = true;
+      // A dropped frame might not be shown but it always takes a slot in the gf
+      // group. Therefore, even when it is not shown, we still need to update
+      // the relevant frame counters.
+      if (cm->show_frame) {
+        update_counters_for_show_frame(cpi);
+      }
       return AOM_CODEC_OK;
     }
   }
@@ -3713,11 +3763,26 @@ static int encode_frame_to_data_rate(AV1_COMP *cpi, size_t *size,
   if (oxcf->tune_cfg.tuning == AOM_TUNE_SSIM) {
     av1_set_mb_ssim_rdmult_scaling(cpi);
   }
-
+#if CONFIG_SALIENCY_MAP
+  else if (oxcf->tune_cfg.tuning == AOM_TUNE_VMAF_SALIENCY_MAP &&
+           !(cpi->source->flags & YV12_FLAG_HIGHBITDEPTH)) {
+    if (av1_set_saliency_map(cpi) == 0) {
+      return AOM_CODEC_MEM_ERROR;
+    }
+#if !CONFIG_REALTIME_ONLY
+    double motion_ratio = av1_setup_motion_ratio(cpi);
+#else
+    double motion_ratio = 1.0;
+#endif
+    if (av1_setup_sm_rdmult_scaling_factor(cpi, motion_ratio) == 0) {
+      return AOM_CODEC_MEM_ERROR;
+    }
+  }
+#endif
 #if CONFIG_TUNE_VMAF
-  if (oxcf->tune_cfg.tuning == AOM_TUNE_VMAF_WITHOUT_PREPROCESSING ||
-      oxcf->tune_cfg.tuning == AOM_TUNE_VMAF_MAX_GAIN ||
-      oxcf->tune_cfg.tuning == AOM_TUNE_VMAF_NEG_MAX_GAIN) {
+  else if (oxcf->tune_cfg.tuning == AOM_TUNE_VMAF_WITHOUT_PREPROCESSING ||
+           oxcf->tune_cfg.tuning == AOM_TUNE_VMAF_MAX_GAIN ||
+           oxcf->tune_cfg.tuning == AOM_TUNE_VMAF_NEG_MAX_GAIN) {
     av1_set_mb_vmaf_rdmult_scaling(cpi);
   }
 #endif
@@ -3905,12 +3970,8 @@ static int encode_frame_to_data_rate(AV1_COMP *cpi, size_t *size,
   cm->seg.update_data = 0;
   cm->lf.mode_ref_delta_update = 0;
 
-  // A droppable frame might not be shown but it always
-  // takes a space in the gf group. Therefore, even when
-  // it is not shown, we still need update the count down.
   if (cm->show_frame) {
-    update_frame_index_set(&cpi->frame_index_set, cm->show_frame);
-    ++current_frame->frame_number;
+    update_counters_for_show_frame(cpi);
   }
 
 #if CONFIG_COLLECT_COMPONENT_TIMING
@@ -4594,6 +4655,11 @@ void av1_post_encode_updates(AV1_COMP *const cpi,
 
   if (cpi->oxcf.pass == AOM_RC_THIRD_PASS && cpi->third_pass_ctx) {
     av1_pop_third_pass_info(cpi->third_pass_ctx);
+  }
+
+  if (ppi->rtc_ref.set_ref_frame_config) {
+    av1_svc_update_buffer_slot_refreshed(cpi);
+    av1_svc_set_reference_was_previous(cpi);
   }
 
   if (ppi->use_svc) av1_save_layer_context(cpi);

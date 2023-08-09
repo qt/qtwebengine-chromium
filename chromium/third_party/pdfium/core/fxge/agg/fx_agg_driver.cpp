@@ -7,6 +7,7 @@
 #include "core/fxge/agg/fx_agg_driver.h"
 
 #include <math.h>
+#include <stdint.h>
 
 #include <algorithm>
 #include <utility>
@@ -191,7 +192,12 @@ void RgbByteOrderTransferBitmap(const RetainPtr<CFX_DIBitmap>& pBitmap,
         *dest_scan++ = src_scan[0];
         src_scan += 4;
       }
-      dest_span = dest_span.subspan(dest_pitch);
+      if (row < height - 1) {
+        // Since `dest_scan` was initialized in a way that takes `dest_x_offset`
+        // and `dest_y_offset` into account, it may go past the end of the span
+        // after processing the last row.
+        dest_span = dest_span.subspan(dest_pitch);
+      }
     }
     return;
   }
@@ -1048,7 +1054,6 @@ void CFX_AggDeviceDriver::SetClipMask(agg::rasterizer_scanline_aa& rasterizer) {
   auto pThisLayer = pdfium::MakeRetain<CFX_DIBitmap>();
   pThisLayer->Create(path_rect.Width(), path_rect.Height(),
                      FXDIB_Format::k8bppMask);
-  pThisLayer->Clear(0);
   agg::rendering_buffer raw_buf(pThisLayer->GetBuffer().data(),
                                 pThisLayer->GetWidth(), pThisLayer->GetHeight(),
                                 pThisLayer->GetPitch());
@@ -1119,6 +1124,14 @@ bool CFX_AggDeviceDriver::SetClip_PathStroke(
 
 int CFX_AggDeviceDriver::GetDriverType() const {
   return 1;
+}
+
+bool CFX_AggDeviceDriver::MultiplyAlpha(float alpha) {
+  return m_pBitmap->MultiplyAlpha(static_cast<int32_t>(alpha * 255));
+}
+
+bool CFX_AggDeviceDriver::MultiplyAlpha(const RetainPtr<CFX_DIBBase>& mask) {
+  return m_pBitmap->MultiplyAlpha(mask);
 }
 
 void CFX_AggDeviceDriver::RenderRasterizer(

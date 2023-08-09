@@ -185,6 +185,8 @@ class QUIC_EXPORT_PRIVATE QuicSession
       override {
     return nullptr;
   }
+  void MigrateToMultiPortPath(
+      std::unique_ptr<QuicPathValidationContext> /*context*/) override {}
   void OnServerPreferredAddressAvailable(
       const QuicSocketAddress& /*server_preferred_address*/) override;
 
@@ -649,6 +651,14 @@ class QUIC_EXPORT_PRIVATE QuicSession
     datagram_queue_.SetForceFlush(force_flush);
   }
 
+  // Find stream with |id|, returns nullptr if the stream does not exist or
+  // closed. static streams and zombie streams are not considered active
+  // streams.
+  QuicStream* GetActiveStream(QuicStreamId id) const;
+
+  // Returns the priority type used by the streams in the session.
+  QuicPriorityType priority_type() const { return QuicPriorityType::kHttp; }
+
  protected:
   using StreamMap =
       absl::flat_hash_map<QuicStreamId, std::unique_ptr<QuicStream>>;
@@ -716,7 +726,9 @@ class QUIC_EXPORT_PRIVATE QuicSession
   virtual bool ShouldProcessPendingStreamImmediately() const { return true; }
 
   spdy::SpdyPriority GetSpdyPriorityofStream(QuicStreamId stream_id) const {
-    return write_blocked_streams_.GetPriorityofStream(stream_id).urgency;
+    return write_blocked_streams_->GetPriorityOfStream(stream_id)
+        .http()
+        .urgency;
   }
 
   size_t pending_streams_size() const { return pending_stream_map_.size(); }
@@ -726,8 +738,8 @@ class QUIC_EXPORT_PRIVATE QuicSession
   void set_largest_peer_created_stream_id(
       QuicStreamId largest_peer_created_stream_id);
 
-  QuicWriteBlockedList* write_blocked_streams() {
-    return &write_blocked_streams_;
+  QuicWriteBlockedListInterface* write_blocked_streams() {
+    return write_blocked_streams_.get();
   }
 
   // Returns true if the stream is still active.
@@ -809,11 +821,6 @@ class QUIC_EXPORT_PRIVATE QuicSession
       std::unique_ptr<LossDetectionTunerInterface> tuner) {
     connection()->SetLossDetectionTuner(std::move(tuner));
   }
-
-  // Find stream with |id|, returns nullptr if the stream does not exist or
-  // closed. static streams and zombie streams are not considered active
-  // streams.
-  QuicStream* GetActiveStream(QuicStreamId id) const;
 
   const UberQuicStreamIdManager& ietf_streamid_manager() const {
     QUICHE_DCHECK(VersionHasIetfQuicFrames(transport_version()));
@@ -927,7 +934,7 @@ class QUIC_EXPORT_PRIVATE QuicSession
   // A list of streams which need to write more data.  Stream register
   // themselves in their constructor, and unregisterm themselves in their
   // destructors, so the write blocked list must outlive all streams.
-  QuicWriteBlockedList write_blocked_streams_;
+  std::unique_ptr<QuicWriteBlockedList> write_blocked_streams_;
 
   ClosedStreams closed_streams_;
 

@@ -126,7 +126,7 @@ const UIStrings = {
    * @description Title of a setting under the Elements category in Settings. Turns on a mode where
    * hovering over CSS properties in the Styles pane will display a popover with documentation.
    */
-  showCSSPropertyDocumentationOnHover: 'Show CSS property documentation on hover',
+  showCSSDocumentationTooltip: 'Show CSS documentation tooltip',
   /**
    *@description A context menu item (command) in the Elements panel that copy the styles of
    * the HTML element.
@@ -516,7 +516,7 @@ Common.Settings.registerSettingExtension({
 Common.Settings.registerSettingExtension({
   category: Common.Settings.SettingCategory.ELEMENTS,
   storageType: Common.Settings.SettingStorageType.Synced,
-  title: i18nLazyString(UIStrings.showCSSPropertyDocumentationOnHover),
+  title: i18nLazyString(UIStrings.showCSSDocumentationTooltip),
   settingName: 'showCSSPropertyDocumentationOnHover',
   settingType: Common.Settings.SettingType.BOOLEAN,
   defaultValue: true,
@@ -539,7 +539,7 @@ UI.ContextMenu.registerProvider({
 
 UI.ViewManager.registerLocationResolver({
   name: UI.ViewManager.ViewLocationValues.ELEMENTS_SIDEBAR,
-  category: UI.ViewManager.ViewLocationCategoryValues.ELEMENTS,
+  category: UI.ViewManager.ViewLocationCategory.ELEMENTS,
   async loadResolver() {
     const Elements = await loadElementsModule();
     return Elements.ElementsPanel.ElementsPanel.instance();

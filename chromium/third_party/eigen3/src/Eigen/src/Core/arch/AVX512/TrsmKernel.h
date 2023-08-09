@@ -110,7 +110,7 @@ int64_t avx512_trsm_cutoff(int64_t L2Size, int64_t N, double L2Cap) {
  * Used by gemmKernel for the case A/B row-major and C col-major.
  */
 template <typename Scalar, typename vec, int64_t unrollM, int64_t unrollN, bool remM, bool remN>
-static EIGEN_ALWAYS_INLINE void transStoreC(PacketBlock<vec, EIGEN_ARCH_DEFAULT_NUMBER_OF_REGISTERS> &zmm,
+EIGEN_ALWAYS_INLINE void transStoreC(PacketBlock<vec, EIGEN_ARCH_DEFAULT_NUMBER_OF_REGISTERS> &zmm,
                                             Scalar *C_arr, int64_t LDC, int64_t remM_ = 0, int64_t remN_ = 0) {
   EIGEN_UNUSED_VARIABLE(remN_);
   EIGEN_UNUSED_VARIABLE(remM_);
@@ -721,7 +721,7 @@ void gemmKernel(Scalar *A_arr, Scalar *B_arr, Scalar *C_arr, int64_t M, int64_t 
  * The B matrix (RHS) is assumed to be row-major
  */
 template <typename Scalar, typename vec, int64_t unrollM, bool isARowMajor, bool isFWDSolve, bool isUnitDiag>
-static EIGEN_ALWAYS_INLINE void triSolveKernel(Scalar *A_arr, Scalar *B_arr, int64_t K, int64_t LDA, int64_t LDB) {
+EIGEN_ALWAYS_INLINE void triSolveKernel(Scalar *A_arr, Scalar *B_arr, int64_t K, int64_t LDA, int64_t LDB) {
   static_assert(unrollM <= EIGEN_AVX_MAX_NUM_ROW, "unrollM should be equal to EIGEN_AVX_MAX_NUM_ROW");
   using urolls = unrolls::trsm<Scalar>;
   constexpr int64_t U3 = urolls::PacketSize * 3;
@@ -802,7 +802,7 @@ void triSolveKernelLxK(Scalar *A_arr, Scalar *B_arr, int64_t M, int64_t K, int64
  *
  */
 template <typename Scalar, bool toTemp = true, bool remM = false>
-static EIGEN_ALWAYS_INLINE void copyBToRowMajor(Scalar *B_arr, int64_t LDB, int64_t K, Scalar *B_temp, int64_t LDB_,
+EIGEN_ALWAYS_INLINE void copyBToRowMajor(Scalar *B_arr, int64_t LDB, int64_t K, Scalar *B_temp, int64_t LDB_,
                                                 int64_t remM_ = 0) {
   EIGEN_UNUSED_VARIABLE(remM_);
   using urolls = unrolls::transB<Scalar>;

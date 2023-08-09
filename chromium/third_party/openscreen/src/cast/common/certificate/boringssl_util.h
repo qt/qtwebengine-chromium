@@ -10,14 +10,15 @@
 
 #include "cast/common/public/certificate_types.h"
 #include "platform/base/error.h"
+#include "platform/base/span.h"
 
 namespace openscreen {
 namespace cast {
 
 bool VerifySignedData(const EVP_MD* digest,
                       EVP_PKEY* public_key,
-                      const ConstDataSpan& data,
-                      const ConstDataSpan& signature);
+                      const ByteView& data,
+                      const ByteView& signature);
 
 ErrorOr<DateTime> GetNotBeforeTime(X509* cert);
 ErrorOr<DateTime> GetNotAfterTime(X509* cert);

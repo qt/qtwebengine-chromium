@@ -22,33 +22,34 @@ const str_ = i18n.i18n.registerUIStrings('panels/application/PreloadingTreeEleme
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 
 export class PreloadingTreeElement extends ApplicationPanelTreeElement {
-  private model?: SDK.PrerenderingModel.PrerenderingModel;
+  private model?: SDK.PreloadingModel.PreloadingModel;
   private view?: PreloadingView;
   #selectedInternal: boolean;
 
   constructor(resourcesPanel: ResourcesPanel) {
     super(resourcesPanel, i18nString(UIStrings.prefetchingAndPrerendering), false);
 
-    const icon = UI.Icon.Icon.create('mediumicon-fetch', 'resource-tree-item');
+    const icon = UI.Icon.Icon.create('arrow-up-down', 'resource-tree-item');
     this.setLeadingIcons([icon]);
     this.#selectedInternal = false;
 
     // TODO(https://crbug.com/1384419): Set link
   }
 
-  get itemURL(): Platform.DevToolsPath.UrlString {
+  override get itemURL(): Platform.DevToolsPath.UrlString {
     return 'preloading://' as Platform.DevToolsPath.UrlString;
   }
 
-  initialize(model: SDK.PrerenderingModel.PrerenderingModel): void {
+  initialize(model: SDK.PreloadingModel.PreloadingModel): void {
     this.model = model;
+
     // Show the view if the model was initialized after selection.
     if (this.#selectedInternal && !this.view) {
       this.onselect(false);
     }
   }
 
-  onselect(selectedByUser?: boolean): boolean {
+  override onselect(selectedByUser?: boolean): boolean {
     super.onselect(selectedByUser);
     this.#selectedInternal = true;
 

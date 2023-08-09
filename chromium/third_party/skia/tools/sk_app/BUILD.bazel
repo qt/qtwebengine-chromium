@@ -1,5 +1,5 @@
-load("//bazel:macros.bzl", "exports_files_legacy", "select_multi", "skia_cc_deps", "skia_cc_library", "skia_objc_library")
-load("//bazel:copts.bzl", "DEFAULT_OBJC_COPTS")
+load("//bazel:skia_rules.bzl", "exports_files_legacy", "select_multi", "skia_cc_deps", "skia_cc_library", "skia_objc_library")
+load("@skia_user_config//:copts.bzl", "DEFAULT_OBJC_COPTS")
 
 licenses(["notice"])
 
@@ -12,6 +12,7 @@ skia_cc_library(
         "Window.cpp",
         "WindowContext.cpp",
         "RasterWindowContext.h",
+        "CommandSet.cpp",
     ] + select_multi(
         {
             "//src/gpu:dawn_backend": [
@@ -34,6 +35,7 @@ skia_cc_library(
     }),
     hdrs = [
         "Application.h",
+        "CommandSet.h",
         "DisplayParams.h",
         "Window.h",
         "WindowContext.h",
@@ -58,7 +60,7 @@ skia_objc_library(
         "RasterWindowContext.h",
     ] + select_multi(
         {
-            # TODO(kjlubick, jmbetancourt) Graphite and Metal backend
+            # TODO(kjlubick, jmbetancourt) Graphite backend
             "//src/gpu:dawn_backend": [
                 "DawnWindowContext.h",
                 "DawnWindowContext.cpp",
@@ -66,6 +68,10 @@ skia_objc_library(
             "//src/gpu:gl_backend": [
                 "GLWindowContext.cpp",
                 "GLWindowContext.h",
+            ],
+            "//src/gpu:metal_backend": [
+                "MetalWindowContext.h",
+                "MetalWindowContext.mm",
             ],
         },
     ) + select({

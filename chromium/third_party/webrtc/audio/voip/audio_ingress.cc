@@ -218,17 +218,18 @@ void AudioIngress::ReceivedRTCPPacket(
     return;
   }
 
-  uint32_t ntp_secs = 0, ntp_frac = 0, rtp_timestamp = 0;
-  if (rtp_rtcp_->RemoteNTP(&ntp_secs, &ntp_frac, nullptr, nullptr,
-                           &rtp_timestamp) != 0) {
+  absl::optional<RtpRtcpInterface::SenderReportStats> last_sr =
+      rtp_rtcp_->GetSenderReportStats();
+  if (!last_sr.has_value()) {
     // Waiting for RTCP.
     return;
   }
 
   {
     MutexLock lock(&lock_);
-    ntp_estimator_.UpdateRtcpTimestamp(
-        TimeDelta::Millis(rtt), NtpTime(ntp_secs, ntp_frac), rtp_timestamp);
+    ntp_estimator_.UpdateRtcpTimestamp(TimeDelta::Millis(rtt),
+                                       last_sr->last_remote_timestamp,
+                                       last_sr->last_remote_rtp_timestamp);
   }
 }
 
@@ -274,13 +275,10 @@ ChannelStatistics AudioIngress::GetChannelStatistics() {
           static_cast<double>(rtcp_report.jitter) / clockrate_hz;
     }
     if (block_data.has_rtt()) {
-      remote_stat.round_trip_time =
-          static_cast<double>(block_data.last_rtt_ms()) /
-          rtc::kNumMillisecsPerSec;
+      remote_stat.round_trip_time = block_data.last_rtt().seconds<double>();
     }
     remote_stat.last_report_received_timestamp_ms =
-        block_data.report_block_timestamp_utc_us() /
-        rtc::kNumMicrosecsPerMillisec;
+        block_data.report_block_timestamp_utc().ms();
     channel_stats.remote_rtcp = remote_stat;
 
     // Receive only channel won't send any RTP packets.

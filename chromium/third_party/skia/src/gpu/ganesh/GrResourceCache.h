@@ -177,7 +177,7 @@ public:
     // Purge unlocked resources not used since the passed point in time. If 'scratchResourcesOnly'
     // is true the purgeable resources containing persistent data are spared. If it is false then
     // all purgeable resources older than 'purgeTime' will be deleted.
-    void purgeResourcesNotUsedSince(GrStdSteadyClock::time_point purgeTime,
+    void purgeResourcesNotUsedSince(skgpu::StdSteadyClock::time_point purgeTime,
                                     bool scratchResourcesOnly=false) {
         this->purgeUnlockedResources(&purgeTime, scratchResourcesOnly);
     }
@@ -244,7 +244,8 @@ public:
 #if GR_TEST_UTILS
     void dumpStats(SkString*) const;
 
-    void dumpStatsKeyValuePairs(SkTArray<SkString>* keys, SkTArray<double>* value) const;
+    void dumpStatsKeyValuePairs(
+            skia_private::TArray<SkString>* keys, skia_private::TArray<double>* value) const;
 #endif
 
 #endif // GR_CACHE_STATS
@@ -313,7 +314,7 @@ private:
 
     uint32_t getNextTimestamp();
 
-    void purgeUnlockedResources(const GrStdSteadyClock::time_point* purgeTime,
+    void purgeUnlockedResources(const skgpu::StdSteadyClock::time_point* purgeTime,
                                 bool scratchResourcesOnly);
 
 #ifdef SK_DEBUG

@@ -27,13 +27,13 @@ jobs:
       - uses: actions/checkout@v3
       - uses: lukka/get-cmake@latest
         with:
-          cmakeVersion: 3.15.0
+          cmakeVersion: 3.17.0
       - name: Configure Vulkan-Headers
         run: cmake -S . -B build -G "Ninja"
       - name: Install Vulkan-Headers
-        run: cmake --install build --prefix ${GITHUB_WORKSPACE}/build/install
+        run: cmake --install build --prefix ${{ github.workspace }}/build/install
       - name: Test Vulkan-Headers find_package support
-        run: cmake -S tests/find_package -B build/tests/find_package -D CMAKE_PREFIX_PATH=${GITHUB_WORKSPACE}/build/install
+        run: cmake -S tests/find_package -B build/tests/find_package -D CMAKE_PREFIX_PATH=${{ github.workspace }}/build/install
 
   ubuntu-cmake-tests:
     runs-on: ubuntu-latest
@@ -53,6 +53,8 @@ jobs:
       - uses: actions/checkout@v3
       - uses: lukka/get-cmake@latest
         with:
-          cmakeVersion: 3.14.0
+          cmakeVersion: 3.15.0
       - name: Configure Vulkan-Headers
-        run: cmake -S . -B build/ -G "Ninja"
+        run: cmake -S . -B build/ -G "Ninja" --loglevel=DEBUG
+      - name: Install Vulkan-Headers
+        run: cmake --install build/ --prefix build/install

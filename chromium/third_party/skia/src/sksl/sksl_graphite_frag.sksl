@@ -58,9 +58,9 @@ $pure half4 $apply_swizzle(int swizzleType, half4 color) {
     return resultantColor;
 }
 
-$pure half $apply_xfer_fn(int kind, half x, half cs[7]) {
-    half G = cs[0], A = cs[1], B = cs[2], C = cs[3], D = cs[4], E = cs[5], F = cs[6];
-    half s = sign(x);
+$pure float $apply_xfer_fn(int kind, float x, half cs[7]) {
+    float G = cs[0], A = cs[1], B = cs[2], C = cs[3], D = cs[4], E = cs[5], F = cs[6];
+    float s = sign(x);
     x = abs(x);
     switch (kind) {
         case $kTFTypeSRGB:
@@ -84,15 +84,15 @@ $pure half $apply_xfer_fn(int kind, half x, half cs[7]) {
     return s * x;
 }
 
-// TODO(b/239548614) need to plumb Graphite equivalent of fColorSpaceMathNeedsFloat.
-// This would change 'color' from half4 to float4
-$pure half4 sk_color_space_transform(half4 color,
+$pure half4 sk_color_space_transform(half4 halfColor,
                                      int flags,
                                      int srcKind,
-                                     int dstKind,
                                      half srcCoeffs[7],
-                                     half dstCoeffs[7],
-                                     half3x3 gamutTransform) {
+                                     half3x3 gamutTransform,
+                                     int dstKind,
+                                     half dstCoeffs[7]) {
+    float4 color = float4(halfColor);
+
     if (bool(flags & $kColorSpaceXformFlagUnpremul)) {
         color = unpremul(color);
     }
@@ -114,7 +114,7 @@ $pure half4 sk_color_space_transform(half4 color,
     if (bool(flags & $kColorSpaceXformFlagPremul)) {
         color.rgb *= color.a;
     }
-    return color;
+    return half4(color);
 }
 
 $pure float $tile(int tileMode, float f, float low, float high) {
@@ -270,17 +270,29 @@ $pure half4 sk_image_shader(float2 coords,
                             int readSwizzle,
                             int csXformFlags,
                             int csXformSrcKind,
-                            int csXformDstKind,
                             half csXformSrcCoeffs[7],
-                            half csXformDstCoeffs[7],
                             half3x3 csXformGamutTransform,
+                            int csXformDstKind,
+                            half csXformDstCoeffs[7],
                             sampler2D s) {
     half4 sampleColor = (useCubic != 0)
         ? $cubic_filter_image(coords, imgSize, subset, tileModeX, tileModeY, cubicCoeffs,
                               readSwizzle, s)
         : $sample_image(coords, imgSize, subset, tileModeX, tileModeY, filterMode, readSwizzle, s);
-    return sk_color_space_transform(sampleColor, csXformFlags, csXformSrcKind, csXformDstKind,
-                                    csXformSrcCoeffs, csXformDstCoeffs, csXformGamutTransform);
+    return sk_color_space_transform(sampleColor, csXformFlags, csXformSrcKind, csXformSrcCoeffs,
+                                    csXformGamutTransform, csXformDstKind, csXformDstCoeffs);
+}
+
+$pure half4 sk_dither_shader(half4 colorIn,
+                             float2 coords,
+                             half range,
+                             sampler2D lut) {
+    const float kImgSize = 8;
+
+    half value = sample(lut, coords / kImgSize).r - 0.5; // undo the bias in the table
+    // For each color channel, add the random offset to the channel value and then clamp
+    // between 0 and alpha to keep the color premultiplied.
+    return half4(clamp(colorIn.rgb + value * range, 0.0, colorIn.a), colorIn.a);
 }
 
 $pure float2 $tile_grad(int tileMode, float2 t) {
@@ -386,6 +398,50 @@ $pure half4 $colorize_grad_8(float4 colorsParam[8], float offsetsParam[8], float
                 return half4(colorsParam[7]);
             }
         }
+    }
+}
+
+half4 $colorize_grad_tex(sampler2D colorsAndOffsetsSampler, int numStops, float2 t) {
+    const float kColorCoord = 0.25;
+    const float kOffsetCoord = 0.75;
+
+    if (t.y < 0) {
+        return half4(0);
+    } else if (t.x == 0) {
+        return sampleLod(colorsAndOffsetsSampler, float2(0, kColorCoord), 0);
+    } else if (t.x == 1) {
+        return sampleLod(colorsAndOffsetsSampler, float2(1, kColorCoord), 0);
+    } else {
+        int low = 0;
+        int high = numStops;
+        for (int loop = 1; loop < numStops; loop <<= 1) {
+            int mid = (low + high) / 2;
+            float midFlt = (float(mid) + 0.5) / float(numStops);
+
+            float2 tmp = sampleLod(colorsAndOffsetsSampler, float2(midFlt, kOffsetCoord), 0).xy;
+            float offset = ldexp(tmp.x, int(tmp.y));
+
+            if (t.x < offset) {
+                high = mid;
+            } else {
+                low = mid;
+            }
+        }
+
+        float lowFlt = (float(low) + 0.5) / float(numStops);
+        float highFlt = (float(low + 1) + 0.5) / float(numStops);
+        half4 color0 = sampleLod(colorsAndOffsetsSampler, float2(lowFlt, kColorCoord), 0);
+        half4 color1 = sampleLod(colorsAndOffsetsSampler, float2(highFlt, kColorCoord), 0);
+
+        float2 tmp = sampleLod(colorsAndOffsetsSampler, float2(lowFlt, kOffsetCoord), 0).xy;
+        float offset0 = ldexp(tmp.x, int(tmp.y));
+
+        tmp = sampleLod(colorsAndOffsetsSampler, float2(highFlt, kOffsetCoord), 0).xy;
+        float offset1 = ldexp(tmp.x, int(tmp.y));
+
+        return half4(mix(color0, color1,
+                         (t.x     - offset0) /
+                         (offset1 - offset0)));
     }
 }
 
@@ -572,6 +628,20 @@ $pure half4 sk_linear_grad_8_shader(float2 coords,
     return $interpolated_to_rgb_unpremul(color, colorSpace, doUnpremul);
 }
 
+$pure half4 sk_linear_grad_tex_shader(float2 coords,
+                                      float2 point0Param,
+                                      float2 point1Param,
+                                      int numStops,
+                                      int tileMode,
+                                      int colorSpace,
+                                      int doUnpremul,
+                                      sampler2D colorAndOffsetSampler) {
+    float2 t = $linear_grad_layout(point0Param, point1Param, coords);
+    t = $tile_grad(tileMode, t);
+    half4 color = $colorize_grad_tex(colorAndOffsetSampler, numStops, t);
+    return $interpolated_to_rgb_unpremul(color, colorSpace, doUnpremul);
+}
+
 $pure half4 sk_radial_grad_4_shader(float2 coords,
                                     float4 colorsParam[4],
                                     float offsetsParam[4],
@@ -597,6 +667,20 @@ $pure half4 sk_radial_grad_8_shader(float2 coords,
     float2 t = $radial_grad_layout(centerParam, radiusParam, coords);
     t = $tile_grad(tileMode, t);
     half4 color = $colorize_grad_8(colorsParam, offsetsParam, t);
+    return $interpolated_to_rgb_unpremul(color, colorSpace, doUnpremul);
+}
+
+$pure half4 sk_radial_grad_tex_shader(float2 coords,
+                                      float2 centerParam,
+                                      float radiusParam,
+                                      int numStops,
+                                      int tileMode,
+                                      int colorSpace,
+                                      int doUnpremul,
+                                      sampler2D colorAndOffsetSampler) {
+    float2 t = $radial_grad_layout(centerParam, radiusParam, coords);
+    t = $tile_grad(tileMode, t);
+    half4 color = $colorize_grad_tex(colorAndOffsetSampler, numStops, t);
     return $interpolated_to_rgb_unpremul(color, colorSpace, doUnpremul);
 }
 
@@ -627,6 +711,21 @@ $pure half4 sk_sweep_grad_8_shader(float2 coords,
     float2 t = $sweep_grad_layout(centerParam, biasParam, scaleParam, coords);
     t = $tile_grad(tileMode, t);
     half4 color = $colorize_grad_8(colorsParam, offsetsParam, t);
+    return $interpolated_to_rgb_unpremul(color, colorSpace, doUnpremul);
+}
+
+$pure half4 sk_sweep_grad_tex_shader(float2 coords,
+                                     float2 centerParam,
+                                     float biasParam,
+                                     float scaleParam,
+                                     int numStops,
+                                     int tileMode,
+                                     int colorSpace,
+                                     int doUnpremul,
+                                     sampler2D colorAndOffsetSampler) {
+    float2 t = $sweep_grad_layout(centerParam, biasParam, scaleParam, coords);
+    t = $tile_grad(tileMode, t);
+    half4 color = $colorize_grad_tex(colorAndOffsetSampler, numStops, t);
     return $interpolated_to_rgb_unpremul(color, colorSpace, doUnpremul);
 }
 
@@ -662,6 +761,22 @@ $pure half4 sk_conical_grad_8_shader(float2 coords,
     return $interpolated_to_rgb_unpremul(color, colorSpace, doUnpremul);
 }
 
+$pure half4 sk_conical_grad_tex_shader(float2 coords,
+                                       float2 point0Param,
+                                       float2 point1Param,
+                                       float radius0Param,
+                                       float radius1Param,
+                                       int numStops,
+                                       int tileMode,
+                                       int colorSpace,
+                                       int doUnpremul,
+                                       sampler2D colorAndOffsetSampler) {
+    float2 t = $conical_grad_layout(point0Param, point1Param, radius0Param, radius1Param, coords);
+    t = $tile_grad(tileMode, t);
+    half4 color = $colorize_grad_tex(colorAndOffsetSampler, numStops, t);
+    return $interpolated_to_rgb_unpremul(color, colorSpace, doUnpremul);
+}
+
 $pure half4 sk_matrix_colorfilter(half4 colorIn, float4x4 m, float4 v, int inHSLA) {
     if (bool(inHSLA)) {
         colorIn = $rgb_to_hsl(colorIn.rgb, colorIn.a); // includes unpremul
@@ -681,7 +796,159 @@ $pure half4 sk_matrix_colorfilter(half4 colorIn, float4x4 m, float4 v, int inHSL
     return colorOut;
 }
 
-$pure half4 sk_blend(int blendMode, half4 src, half4 dst) {
+// This method computes the 4 x-coodinates ([0..1]) that should be used to look
+// up in the Perlin noise shader's noise table.
+$pure half4 noise_helper(half2 noiseVec,
+                         half2 stitchData,
+                         int stitching,
+                         sampler2D permutationSampler) {
+    const half kBlockSize = 256.0;
+
+    half4 floorVal;
+    floorVal.xy = floor(noiseVec);
+    floorVal.zw = floorVal.xy + half2(1);
+
+    // Adjust frequencies if we're stitching tiles
+    if (bool(stitching)) {
+        if (floorVal.x >= stitchData.x) { floorVal.x -= stitchData.x; };
+        if (floorVal.y >= stitchData.y) { floorVal.y -= stitchData.y; };
+        if (floorVal.z >= stitchData.x) { floorVal.z -= stitchData.x; };
+        if (floorVal.w >= stitchData.y) { floorVal.w -= stitchData.y; };
+    }
+
+    half sampleX = sample(permutationSampler, half2(floorVal.x/kBlockSize, 0.5)).r;
+    half sampleY = sample(permutationSampler, half2(floorVal.z/kBlockSize, 0.5)).r;
+
+    half2 latticeIdx = half2(sampleX, sampleY);
+
+    if (sk_Caps.PerlinNoiseRoundingFix) {
+        // Aggressively round to the nearest exact (N / 255) floating point values.
+        // This prevents rounding errors on some platforms (e.g., Tegras)
+        const half kInv255 = 1.0 / 255.0;
+
+        latticeIdx = floor(latticeIdx * half2(255.0) + half2(0.5)) * half2(kInv255);
+    }
+
+    // Get (x,y) coordinates with the permuted x
+    half4 noiseXCoords = kBlockSize*latticeIdx.xyxy + floorVal.yyww;
+
+    noiseXCoords /= half4(kBlockSize);
+    return noiseXCoords;
+}
+
+// TODO: Move this to sksl_shared.sksl and try to share with Ganesh
+$pure half4 noise_function(half2 noiseVec,
+                           half4 noiseXCoords,
+                           sampler2D noiseSampler) {
+
+    half2 fractVal = fract(noiseVec);
+
+    // smooth curve : t^2*(3 - 2*t)
+    half2 noiseSmooth = fractVal*fractVal*(half2(3) - 2*fractVal);
+
+    // This is used to convert the two 16bit integers packed into rgba 8 bit input into
+    // a [-1,1] vector
+    const half kInv256 = 0.00390625;  // 1.0 / 256.0
+
+    half4 result;
+
+    for (int channel = 0; channel < 4; channel++) {
+
+        // There are 4 lines in the noise texture, put y coords at center of each.
+        half chanCoord = (half(channel) + 0.5) / 4.0;
+
+        half4 sampleA = sample(noiseSampler, half2(noiseXCoords.x, chanCoord));
+        half4 sampleB = sample(noiseSampler, half2(noiseXCoords.y, chanCoord));
+        half4 sampleC = sample(noiseSampler, half2(noiseXCoords.w, chanCoord));
+        half4 sampleD = sample(noiseSampler, half2(noiseXCoords.z, chanCoord));
+
+        half2 uv;
+        half2 tmpFractVal = fractVal;
+
+        // Compute u, at offset (0,0)
+        uv.x = dot((sampleA.ga + sampleA.rb*kInv256)*2 - half2(1), tmpFractVal);
+
+        // Compute v, at offset (-1,0)
+        tmpFractVal.x -= 1.0;
+        uv.y = dot((sampleB.ga + sampleB.rb*kInv256)*2 - half2(1), tmpFractVal);
+
+        // Compute 'a' as a linear interpolation of 'u' and 'v'
+        half2 ab;
+        ab.x = mix(uv.x, uv.y, noiseSmooth.x);
+
+        // Compute v, at offset (-1,-1)
+        tmpFractVal.y -= 1.0;
+        uv.y = dot((sampleC.ga + sampleC.rb*kInv256)*2 - half2(1), tmpFractVal);
+
+        // Compute u, at offset (0,-1)
+        tmpFractVal.x += 1.0;
+        uv.x = dot((sampleD.ga + sampleD.rb*kInv256)*2 - half2(1), tmpFractVal);
+
+        // Compute 'b' as a linear interpolation of 'u' and 'v'
+        ab.y = mix(uv.x, uv.y, noiseSmooth.x);
+
+        // Compute the noise as a linear interpolation of 'a' and 'b'
+        result[channel] =  mix(ab.x, ab.y, noiseSmooth.y);
+    }
+
+    return result;
+}
+
+// permutationSampler is [kBlockSize x 1] A8
+// noiseSampler is [kBlockSize x 4] RGBA8 premul
+$pure half4 perlin_noise_shader(float2 coords,
+                                float2 baseFrequency,
+                                float2 stitchDataIn,
+                                int noiseType,
+                                int numOctaves,
+                                int stitching,
+                                sampler2D permutationSampler,
+                                sampler2D noiseSampler) {
+    const int kFractalNoise_Type = 0;
+    const int kTurbulence_Type = 1;
+
+    // There are rounding errors if the floor operation is not performed here
+    half2 noiseVec = half2(floor(coords.xy) * baseFrequency);
+
+    // Clear the color accumulator
+    half4 color = half4(0);
+
+    half2 stitchData = half2(stitchDataIn);
+
+    half ratio = 1.0;
+
+    // Loop over all octaves
+    for (int octave = 0; octave < numOctaves; ++octave) {
+        half4 noiseXCoords = noise_helper(noiseVec, stitchData, stitching, permutationSampler);
+
+        half4 tmp = noise_function(noiseVec, noiseXCoords, noiseSampler);
+
+        if (noiseType != kFractalNoise_Type) {
+            // For kTurbulence_Type the result is: abs(noise[-1,1])
+            tmp = abs(tmp);
+        }
+
+        tmp *= ratio;
+        color += tmp;
+
+        noiseVec *= half2(2.0);
+        ratio *= 0.5;
+        stitchData *= half2(2.0);
+    }
+
+    if (noiseType == kFractalNoise_Type) {
+        // For kFractalNoise_Type the result is: noise[-1,1] * 0.5 + 0.5
+        color = color * half4(0.5) + half4(0.5);
+    }
+
+    // Clamp values
+    color = saturate(color);
+
+    // Pre-multiply the result
+    return half4(color.rgb * color.aaa, color.a);
+}
+
+$pure half4 sk_blend(half4 src, half4 dst, int blendMode) {
     const int kClear      = 0;
     const int kSrc        = 1;
     const int kDst        = 2;
@@ -746,16 +1013,8 @@ $pure half4 sk_blend(int blendMode, half4 src, half4 dst) {
     }
 }
 
-$pure half4 sk_blend_shader(int blendMode, half4 dst, half4 src) {
-    return sk_blend(blendMode, src, dst);
-}
-
-$pure half4 porter_duff_blend_shader(half4 blendOp, half4 dst, half4 src) {
-    return blend_porter_duff(blendOp, src, dst);
-}
-
-$pure half4 sk_blend_colorfilter(half4 dstColor, int blendMode, float4 srcColor) {
-    return sk_blend(blendMode, half4(srcColor), dstColor);
+$pure half4 sk_coeff_blend(half4 src, half4 dst, half4 coeffs) {
+    return blend_porter_duff(coeffs, src, dst);
 }
 
 $pure half4 sk_table_colorfilter(half4 inColor, sampler2D s) {
@@ -776,13 +1035,6 @@ $pure half4 sk_gaussian_colorfilter(half4 inColor) {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // Support functions for analytic round rectangles
-
-// Returns a scale and bias such that 'scale * (dist + bias)' represents a per-pixel coverage value,
-// taking into account the approximate device-space dimensions of the shape.
-$pure float2 coverage_scale_and_bias(float minDim) {
-    float width = min(1.0, minDim);
-    return float2(width, 1.0 - 0.5 * width);
-}
 
 // Calculates 1/|∇| in device space by applying the chain rule to a local gradient vector and the
 // 2x2 Jacobian describing the transform from local-to-device space. For non-perspective, this is

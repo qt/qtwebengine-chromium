@@ -238,7 +238,7 @@ static const struct av1_extracfg default_extra_cfg = {
   "/usr/local/share/model/vmaf_v0.6.1.json",  // VMAF model path
   ".",                                        // partition info path
   0,                                          // enable rate guide deltaq
-  "./rate_map.csv",                           // rate distribution input
+  "./rate_map.txt",                           // rate distribution input
   AOM_DIST_METRIC_PSNR,                       // dist_metric
   10,                                         // cq_level
   0,                                          // rc_max_intra_bitrate_pct
@@ -345,26 +345,26 @@ static const struct av1_extracfg default_extra_cfg = {
       SEQ_LEVEL_MAX, SEQ_LEVEL_MAX, SEQ_LEVEL_MAX, SEQ_LEVEL_MAX, SEQ_LEVEL_MAX,
       SEQ_LEVEL_MAX, SEQ_LEVEL_MAX, SEQ_LEVEL_MAX, SEQ_LEVEL_MAX, SEQ_LEVEL_MAX,
       SEQ_LEVEL_MAX, SEQ_LEVEL_MAX,
-  },                                   // target_seq_level_idx
-  0,                                   // tier_mask
-  0,                                   // min_cr
-  COST_UPD_OFF,                        // coeff_cost_upd_freq
-  COST_UPD_OFF,                        // mode_cost_upd_freq
-  COST_UPD_OFF,                        // mv_cost_upd_freq
-  COST_UPD_OFF,                        // dv_cost_upd_freq
-  0,                                   // ext_tile_debug
-  0,                                   // sb_multipass_unit_test
-  -1,                                  // passes
-  -1,                                  // fwd_kf_dist
-  LOOPFILTER_ALL,                      // loopfilter_control
-  0,                                   // skip_postproc_filtering
-  NULL,                                // two_pass_output
-  NULL,                                // second_pass_log
-  0,                                   // auto_intra_tools_off
-  0,                                   // strict_level_conformance
-  -1,                                  // kf_max_pyr_height
-  0,                                   // sb_qp_sweep
-  GLOBAL_MOTION_METHOD_FEATURE_MATCH,  // global_motion_method
+  },                             // target_seq_level_idx
+  0,                             // tier_mask
+  0,                             // min_cr
+  COST_UPD_OFF,                  // coeff_cost_upd_freq
+  COST_UPD_OFF,                  // mode_cost_upd_freq
+  COST_UPD_OFF,                  // mv_cost_upd_freq
+  COST_UPD_OFF,                  // dv_cost_upd_freq
+  0,                             // ext_tile_debug
+  0,                             // sb_multipass_unit_test
+  -1,                            // passes
+  -1,                            // fwd_kf_dist
+  LOOPFILTER_ALL,                // loopfilter_control
+  0,                             // skip_postproc_filtering
+  NULL,                          // two_pass_output
+  NULL,                          // second_pass_log
+  0,                             // auto_intra_tools_off
+  0,                             // strict_level_conformance
+  -1,                            // kf_max_pyr_height
+  0,                             // sb_qp_sweep
+  GLOBAL_MOTION_METHOD_DISFLOW,  // global_motion_method
 };
 #else
 static const struct av1_extracfg default_extra_cfg = {
@@ -390,7 +390,7 @@ static const struct av1_extracfg default_extra_cfg = {
   "/usr/local/share/model/vmaf_v0.6.1.json",  // VMAF model path
   ".",                                        // partition info path
   0,                                          // enable rate guide deltaq
-  "./rate_map.csv",                           // rate distribution input
+  "./rate_map.txt",                           // rate distribution input
   AOM_DIST_METRIC_PSNR,                       // dist_metric
   10,                                         // cq_level
   0,                                          // rc_max_intra_bitrate_pct
@@ -497,26 +497,26 @@ static const struct av1_extracfg default_extra_cfg = {
       SEQ_LEVEL_MAX, SEQ_LEVEL_MAX, SEQ_LEVEL_MAX, SEQ_LEVEL_MAX, SEQ_LEVEL_MAX,
       SEQ_LEVEL_MAX, SEQ_LEVEL_MAX, SEQ_LEVEL_MAX, SEQ_LEVEL_MAX, SEQ_LEVEL_MAX,
       SEQ_LEVEL_MAX, SEQ_LEVEL_MAX,
-  },                                   // target_seq_level_idx
-  0,                                   // tier_mask
-  0,                                   // min_cr
-  COST_UPD_SB,                         // coeff_cost_upd_freq
-  COST_UPD_SB,                         // mode_cost_upd_freq
-  COST_UPD_SB,                         // mv_cost_upd_freq
-  COST_UPD_SB,                         // dv_cost_upd_freq
-  0,                                   // ext_tile_debug
-  0,                                   // sb_multipass_unit_test
-  -1,                                  // passes
-  -1,                                  // fwd_kf_dist
-  LOOPFILTER_ALL,                      // loopfilter_control
-  0,                                   // skip_postproc_filtering
-  NULL,                                // two_pass_output
-  NULL,                                // second_pass_log
-  0,                                   // auto_intra_tools_off
-  0,                                   // strict_level_conformance
-  -1,                                  // kf_max_pyr_height
-  0,                                   // sb_qp_sweep
-  GLOBAL_MOTION_METHOD_FEATURE_MATCH,  // global_motion_method
+  },                             // target_seq_level_idx
+  0,                             // tier_mask
+  0,                             // min_cr
+  COST_UPD_SB,                   // coeff_cost_upd_freq
+  COST_UPD_SB,                   // mode_cost_upd_freq
+  COST_UPD_SB,                   // mv_cost_upd_freq
+  COST_UPD_SB,                   // dv_cost_upd_freq
+  0,                             // ext_tile_debug
+  0,                             // sb_multipass_unit_test
+  -1,                            // passes
+  -1,                            // fwd_kf_dist
+  LOOPFILTER_ALL,                // loopfilter_control
+  0,                             // skip_postproc_filtering
+  NULL,                          // two_pass_output
+  NULL,                          // second_pass_log
+  0,                             // auto_intra_tools_off
+  0,                             // strict_level_conformance
+  -1,                            // kf_max_pyr_height
+  0,                             // sb_qp_sweep
+  GLOBAL_MOTION_METHOD_DISFLOW,  // global_motion_method
 };
 #endif
 
@@ -564,6 +564,7 @@ static void reduce_ratio(aom_rational64_t *ratio) {
   ratio->den /= denom;
 }
 
+// Called by encoder_encode() only. Must not be called by encoder_init().
 static aom_codec_err_t update_error_state(
     aom_codec_alg_priv_t *ctx, const struct aom_internal_error_info *error) {
   const aom_codec_err_t res = error->error_code;
@@ -715,7 +716,7 @@ static aom_codec_err_t validate_config(aom_codec_alg_priv_t *ctx,
   RANGE_CHECK_HI(extra_cfg, enable_auto_alt_ref, 1);
   RANGE_CHECK_HI(extra_cfg, enable_auto_bwd_ref, 2);
   RANGE_CHECK(extra_cfg, cpu_used, 0,
-              (cfg->g_usage == AOM_USAGE_REALTIME) ? 10 : 9);
+              (cfg->g_usage == AOM_USAGE_REALTIME) ? 11 : 9);
   RANGE_CHECK_HI(extra_cfg, noise_sensitivity, 6);
   RANGE_CHECK(extra_cfg, superblock_size, AOM_SUPERBLOCK_SIZE_64X64,
               AOM_SUPERBLOCK_SIZE_DYNAMIC);
@@ -831,7 +832,7 @@ static aom_codec_err_t validate_config(aom_codec_alg_priv_t *ctx,
   }
 #endif
 
-  RANGE_CHECK(extra_cfg, tuning, AOM_TUNE_PSNR, AOM_TUNE_BUTTERAUGLI);
+  RANGE_CHECK(extra_cfg, tuning, AOM_TUNE_PSNR, AOM_TUNE_VMAF_SALIENCY_MAP);
 
   RANGE_CHECK(extra_cfg, dist_metric, AOM_DIST_METRIC_PSNR,
               AOM_DIST_METRIC_QM_PSNR);
@@ -1007,9 +1008,9 @@ static void update_default_encoder_config(const cfg_options_t *cfg,
   extra_cfg->reduced_tx_type_set = cfg->reduced_tx_type_set;
 }
 
-static aom_codec_err_t set_encoder_config(AV1EncoderConfig *oxcf,
-                                          const aom_codec_enc_cfg_t *cfg,
-                                          struct av1_extracfg *extra_cfg) {
+static void set_encoder_config(AV1EncoderConfig *oxcf,
+                               const aom_codec_enc_cfg_t *cfg,
+                               struct av1_extracfg *extra_cfg) {
   if (cfg->encoder_cfg.init_by_cfg_file) {
     update_default_encoder_config(&cfg->encoder_cfg, extra_cfg);
   }
@@ -1101,16 +1102,6 @@ static aom_codec_err_t set_encoder_config(AV1EncoderConfig *oxcf,
     dec_model_cfg->decoder_model_info_present_flag = 0;
     dec_model_cfg->display_model_info_present_flag = 1;
   } else if (extra_cfg->timing_info_type == AOM_TIMING_DEC_MODEL) {
-    //    if( extra_cfg->arnr_strength > 0 )
-    //    {
-    //      printf("Only --arnr-strength=0 can currently be used with
-    //      --timing-info=model."); return AOM_CODEC_INVALID_PARAM;
-    //    }
-    //    if( extra_cfg->enable_superres)
-    //    {
-    //      printf("Only --superres-mode=0 can currently be used with
-    //      --timing-info=model."); return AOM_CODEC_INVALID_PARAM;
-    //    }
     dec_model_cfg->num_units_in_decoding_tick = cfg->g_timebase.num;
     dec_model_cfg->timing_info.equal_picture_interval = 0;
     dec_model_cfg->decoder_model_info_present_flag = 1;
@@ -1175,8 +1166,19 @@ static aom_codec_err_t set_encoder_config(AV1EncoderConfig *oxcf,
   tool_cfg->enable_interintra_comp = extra_cfg->enable_interintra_comp;
   tool_cfg->ref_frame_mvs_present =
       extra_cfg->enable_ref_frame_mvs & extra_cfg->enable_order_hint;
-  tool_cfg->enable_global_motion =
-      extra_cfg->enable_global_motion && (cfg->g_usage != AOM_USAGE_REALTIME);
+
+  // Explicitly disable global motion in a few cases:
+  // * For realtime mode, we never search global motion, and disabling
+  //   it here prevents later code from allocating buffers we don't need
+  // * For large scale tile mode, some of the intended use cases expect
+  //   all frame headers to be identical. This breaks if global motion is
+  //   used, since global motion data is stored in the frame header.
+  //   eg, see test/lightfield_test.sh, which checks that all frame headers
+  //   are the same.
+  tool_cfg->enable_global_motion = extra_cfg->enable_global_motion &&
+                                   cfg->g_usage != AOM_USAGE_REALTIME &&
+                                   !cfg->large_scale_tile;
+
   tool_cfg->error_resilient_mode =
       cfg->g_error_resilient | extra_cfg->error_resilient_mode;
   tool_cfg->frame_parallel_decoding_mode =
@@ -1482,8 +1484,6 @@ static aom_codec_err_t set_encoder_config(AV1EncoderConfig *oxcf,
   oxcf->sb_qp_sweep = extra_cfg->sb_qp_sweep;
 
   oxcf->global_motion_method = extra_cfg->global_motion_method;
-
-  return AOM_CODEC_OK;
 }
 
 AV1EncoderConfig av1_get_encoder_config(const aom_codec_enc_cfg_t *cfg) {
@@ -1582,7 +1582,7 @@ static aom_codec_err_t ctrl_get_baseline_gf_interval(aom_codec_alg_priv_t *ctx,
 }
 
 static aom_codec_err_t update_extra_cfg(aom_codec_alg_priv_t *ctx,
-                                        struct av1_extracfg *extra_cfg) {
+                                        const struct av1_extracfg *extra_cfg) {
   const aom_codec_err_t res = validate_config(ctx, &ctx->cfg, extra_cfg);
   if (res == AOM_CODEC_OK) {
     ctx->extra_cfg = *extra_cfg;
@@ -1645,22 +1645,28 @@ static aom_codec_err_t ctrl_set_static_thresh(aom_codec_alg_priv_t *ctx,
 
 static aom_codec_err_t ctrl_set_row_mt(aom_codec_alg_priv_t *ctx,
                                        va_list args) {
+  unsigned int row_mt = CAST(AV1E_SET_ROW_MT, args);
+  if (row_mt == ctx->extra_cfg.row_mt) return AOM_CODEC_OK;
   struct av1_extracfg extra_cfg = ctx->extra_cfg;
-  extra_cfg.row_mt = CAST(AV1E_SET_ROW_MT, args);
+  extra_cfg.row_mt = row_mt;
   return update_extra_cfg(ctx, &extra_cfg);
 }
 
 static aom_codec_err_t ctrl_set_tile_columns(aom_codec_alg_priv_t *ctx,
                                              va_list args) {
+  unsigned int tile_columns = CAST(AV1E_SET_TILE_COLUMNS, args);
+  if (tile_columns == ctx->extra_cfg.tile_columns) return AOM_CODEC_OK;
   struct av1_extracfg extra_cfg = ctx->extra_cfg;
-  extra_cfg.tile_columns = CAST(AV1E_SET_TILE_COLUMNS, args);
+  extra_cfg.tile_columns = tile_columns;
   return update_extra_cfg(ctx, &extra_cfg);
 }
 
 static aom_codec_err_t ctrl_set_tile_rows(aom_codec_alg_priv_t *ctx,
                                           va_list args) {
+  unsigned int tile_rows = CAST(AV1E_SET_TILE_ROWS, args);
+  if (tile_rows == ctx->extra_cfg.tile_rows) return AOM_CODEC_OK;
   struct av1_extracfg extra_cfg = ctx->extra_cfg;
-  extra_cfg.tile_rows = CAST(AV1E_SET_TILE_ROWS, args);
+  extra_cfg.tile_rows = tile_rows;
   return update_extra_cfg(ctx, &extra_cfg);
 }
 
@@ -2972,12 +2978,6 @@ static aom_codec_err_t encoder_encode(aom_codec_alg_priv_t *ctx,
   if (res == AOM_CODEC_OK) {
     AV1_COMP *cpi = ppi->cpi;
 
-    const int num_layers =
-        cpi->svc.number_spatial_layers * cpi->svc.number_temporal_layers;
-    if (num_layers > 1 && !av1_alloc_layer_context(cpi, num_layers)) {
-      return AOM_CODEC_MEM_ERROR;
-    }
-
     // Set up internal flags
     if (ctx->base.init_flags & AOM_CODEC_USE_PSNR) ppi->b_calculate_psnr = 1;
 
@@ -3010,7 +3010,7 @@ static aom_codec_err_t encoder_encode(aom_codec_alg_priv_t *ctx,
         AV1EncoderConfig *oxcf = &cpi->oxcf;
         const BLOCK_SIZE sb_size = av1_select_sb_size(
             oxcf, oxcf->frm_dim_cfg.width, oxcf->frm_dim_cfg.height,
-            cpi->svc.number_spatial_layers);
+            ppi->number_spatial_layers);
         oxcf->border_in_pixels =
             av1_get_enc_border_size(av1_is_resize_needed(oxcf),
                                     oxcf->kf_cfg.key_freq_max == 0, sb_size);
@@ -3506,6 +3506,13 @@ static aom_codec_err_t ctrl_set_svc_params(aom_codec_alg_priv_t *ctx,
     ctx->ppi->use_svc = 1;
     const int num_layers =
         ppi->number_spatial_layers * ppi->number_temporal_layers;
+    for (int layer = 0; layer < num_layers; ++layer) {
+      if (params->max_quantizers[layer] > 63 ||
+          params->min_quantizers[layer] < 0 ||
+          params->min_quantizers[layer] > params->max_quantizers[layer]) {
+        return AOM_CODEC_INVALID_PARAM;
+      }
+    }
     if (!av1_alloc_layer_context(cpi, num_layers)) return AOM_CODEC_MEM_ERROR;
 
     for (sl = 0; sl < ppi->number_spatial_layers; ++sl) {

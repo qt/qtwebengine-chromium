@@ -27,9 +27,6 @@
 
 #endif
 
-// Recent versions of ICC require <cstdint> for pointer types below.
-#define EIGEN_ICC_NEEDS_CSTDINT (EIGEN_COMP_ICC>=1600)
-
 // Define portable (u)int{32,64} types
 #include <cstdint>
 
@@ -93,17 +90,6 @@ namespace internal {
   * we however don't want to add a dependency to Boost.
   */
 
-// Only recent versions of ICC complain about using ptrdiff_t to hold pointers,
-// and older versions do not provide *intptr_t types.
-#if EIGEN_ICC_NEEDS_CSTDINT
-typedef std::intptr_t  IntPtr;
-typedef std::uintptr_t UIntPtr;
-#else
-typedef std::ptrdiff_t IntPtr;
-typedef std::size_t UIntPtr;
-#endif
-#undef EIGEN_ICC_NEEDS_CSTDINT
-
 struct true_type {  enum { value = 1 }; };
 struct false_type { enum { value = 0 }; };
 
@@ -135,7 +121,10 @@ using remove_all_t = typename remove_all<T>::type;
 template<typename T> struct is_arithmetic      { enum { value = false }; };
 template<> struct is_arithmetic<float>         { enum { value = true }; };
 template<> struct is_arithmetic<double>        { enum { value = true }; };
+// GPU devices treat `long double` as `double`.
+#ifndef EIGEN_GPU_COMPILE_PHASE
 template<> struct is_arithmetic<long double>   { enum { value = true }; };
+#endif
 template<> struct is_arithmetic<bool>          { enum { value = true }; };
 template<> struct is_arithmetic<char>          { enum { value = true }; };
 template<> struct is_arithmetic<signed char>   { enum { value = true }; };

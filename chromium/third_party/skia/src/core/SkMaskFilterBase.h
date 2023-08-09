@@ -16,7 +16,7 @@
 #include "include/private/base/SkNoncopyable.h"
 #include "src/core/SkMask.h"
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/shaders/SkShaderBase.h"
 #endif
@@ -27,7 +27,11 @@ class GrFragmentProcessor;
 class GrPaint;
 class GrRecordingContext;
 class GrRenderTarget;
-namespace skgpu { namespace v1 { class SurfaceDrawContext; }}
+namespace skgpu {
+namespace ganesh {
+class SurfaceDrawContext;
+}
+}  // namespace skgpu
 class GrResourceProvider;
 class GrStyledShape;
 class GrSurfaceProxyView;
@@ -65,7 +69,7 @@ public:
     virtual bool filterMask(SkMask* dst, const SkMask& src, const SkMatrix&,
                             SkIPoint* margin) const = 0;
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
     /**
      *  Returns a processor if the filter can be expressed a single-pass GrProcessor without
      *  requiring an explicit input mask. Per-pixel, the effect receives the incoming mask's
@@ -116,7 +120,7 @@ public:
      *  successful. If false is returned then paint is unmodified.
      */
     virtual bool directFilterMaskGPU(GrRecordingContext*,
-                                     skgpu::v1::SurfaceDrawContext*,
+                                     skgpu::ganesh::SurfaceDrawContext*,
                                      GrPaint&& paint,
                                      const GrClip*,
                                      const SkMatrix& viewMatrix,
@@ -172,7 +176,7 @@ public:
 protected:
     SkMaskFilterBase() {}
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
     using MatrixRec = SkShaderBase::MatrixRec;
     virtual std::unique_ptr<GrFragmentProcessor> onAsFragmentProcessor(const GrFPArgs&,
                                                                        const MatrixRec&) const;
@@ -224,6 +228,7 @@ protected:
 
 private:
     friend class SkDraw;
+    friend class SkDrawBase;
 
     /** Helper method that, given a path in device space, will rasterize it into a kA8_Format mask
      and then call filterMask(). If this returns true, the specified blitter will be called

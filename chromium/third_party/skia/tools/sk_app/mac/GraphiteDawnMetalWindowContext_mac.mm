@@ -26,7 +26,6 @@ public:
 
     bool onInitializeContext() override;
     void onDestroyContext() override;
-    void onSwapBuffers() override;
     void resize(int w, int h) override;
 
 private:
@@ -34,13 +33,11 @@ private:
 
     NSView*              fMainView;
     CAMetalLayer*        fMetalLayer;
-
-    using INHERITED = GraphiteDawnWindowContext;
 };
 
 GraphiteDawnMetalWindowContext_mac::GraphiteDawnMetalWindowContext_mac(const MacWindowInfo& info,
                                                                        const DisplayParams& params)
-    : INHERITED(params, wgpu::TextureFormat::BGRA8Unorm)
+    : GraphiteDawnWindowContext(params, wgpu::TextureFormat::BGRA8Unorm)
     , fMainView(info.fMainView) {
 
     CGFloat backingScaleFactor = sk_app::GetBackingScaleFactor(fMainView);
@@ -94,9 +91,6 @@ void GraphiteDawnMetalWindowContext_mac::onDestroyContext() {
     fMetalLayer = nil;
     fMainView.layer = nil;
     fMainView.wantsLayer = NO;
-}
-
-void GraphiteDawnMetalWindowContext_mac::onSwapBuffers() {
 }
 
 void GraphiteDawnMetalWindowContext_mac::resize(int w, int h) {

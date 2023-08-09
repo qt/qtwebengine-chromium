@@ -26,16 +26,16 @@ import {STATE_VERSION} from '../common/state';
 import {
   BUCKET_NAME,
   buggyToSha256,
+  deserializeStateObject,
   saveState,
   saveTrace,
   toSha256,
 } from '../common/upload_utils';
-import {globals as frontendGlobals} from '../frontend/globals';
+import {globals} from '../frontend/globals';
 import {publishConversionJobStatusUpdate} from '../frontend/publish';
 import {Router} from '../frontend/router';
 
 import {Controller} from './controller';
-import {globals} from './globals';
 import {RecordConfig, recordConfigValidator} from './record_config_types';
 import {runValidator} from './validators';
 
@@ -79,7 +79,7 @@ export class PermalinkController extends Controller<'main'> {
 
       PermalinkController.createPermalink(isRecordingConfig)
           .then((hash) => {
-            frontendGlobals.dispatch(Actions.setPermalink({requestId, hash}));
+            globals.dispatch(Actions.setPermalink({requestId, hash}));
           })
           .finally(() => {
             publishConversionJobStatusUpdate({
@@ -99,12 +99,11 @@ export class PermalinkController extends Controller<'main'> {
             const validConfig =
                 runValidator(recordConfigValidator, stateOrConfig as unknown)
                     .result;
-            frontendGlobals.dispatch(
-                Actions.setRecordConfig({config: validConfig}));
+            globals.dispatch(Actions.setRecordConfig({config: validConfig}));
             Router.navigate('#!/record');
             return;
           }
-          frontendGlobals.dispatch(Actions.setState({newState: stateOrConfig}));
+          globals.dispatch(Actions.setState({newState: stateOrConfig}));
           this.lastRequestId = stateOrConfig.permalink.requestId;
         });
   }
@@ -156,7 +155,7 @@ export class PermalinkController extends Controller<'main'> {
     if (isRecordingConfig) {
       uploadState = globals.state.recordConfig;
     } else {
-      const engine = assertExists(frontendGlobals.getCurrentEngine());
+      const engine = assertExists(globals.getCurrentEngine());
       let dataToUpload: File|ArrayBuffer|undefined = undefined;
       let traceName = `trace ${engine.id}`;
       if (engine.source.type === 'FILE') {
@@ -197,7 +196,7 @@ export class PermalinkController extends Controller<'main'> {
     }
     const text = await response.text();
     const stateHash = await toSha256(text);
-    const state = JSON.parse(text);
+    const state = deserializeStateObject(text);
     if (stateHash !== id) {
       // Old permalinks incorrectly dropped some digits from the
       // hexdigest of the SHA256. We don't want to invalidate those
@@ -216,7 +215,7 @@ export class PermalinkController extends Controller<'main'> {
 
   private static updateStatus(msg: string): void {
     // TODO(hjd): Unify loading updates.
-    frontendGlobals.dispatch(Actions.updateStatus({
+    globals.dispatch(Actions.updateStatus({
       msg,
       timestamp: Date.now() / 1000,
     }));

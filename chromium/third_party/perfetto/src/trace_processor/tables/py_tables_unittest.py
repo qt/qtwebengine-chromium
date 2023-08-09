@@ -26,8 +26,21 @@ EVENT_TABLE = Table(
     columns=[
         C("ts", CppInt64(), flags=ColumnFlag.SORTED),
         C("arg_set_id", CppUint32()),
-    ],
-    tabledoc=TableDoc(doc='', group='', columns={}))
+    ])
+
+EVENT_CHILD_TABLE = Table(
+    class_name="TestEventChildTable",
+    sql_name="event",
+    parent=EVENT_TABLE,
+    columns=[])
+
+SLICE_TABLE = Table(
+    class_name="TestSliceTable",
+    sql_name="slice",
+    parent=EVENT_TABLE,
+    columns=[
+        C("dur", CppInt64()),
+    ])
 
 ARGS_TABLE = Table(
     class_name="TestArgsTable",
@@ -36,11 +49,12 @@ ARGS_TABLE = Table(
         C("arg_set_id",
           CppUint32(),
           flags=ColumnFlag.SET_ID | ColumnFlag.SORTED),
-    ],
-    tabledoc=TableDoc(doc='', group='', columns={}))
+    ])
 
 # Keep this list sorted.
 ALL_TABLES = [
     ARGS_TABLE,
     EVENT_TABLE,
+    EVENT_CHILD_TABLE,
+    SLICE_TABLE,
 ]

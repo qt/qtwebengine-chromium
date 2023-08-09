@@ -5,21 +5,34 @@ values when the Vulkan Headers or SPIR-V Grammer is updated.
 
 How to generate the code:
 
+- Linux:
 ```bash
-python3 scripts/generate_source.py external/Vulkan-Headers/registry/ external/SPIRV-Headers/include/spirv/unified1/
+scripts/generate_source.py external/Vulkan-Headers/registry/ external/SPIRV-Headers/include/spirv/unified1/
+```
+
+- Windows Powershell:
+```powershell
+pwsh -Command { python3 scripts/generate_source.py external/Vulkan-Headers/registry/ external/SPIRV-Headers/include/spirv/unified1/ }
+```
+
+- Windows Command:
+```cmd
+cmd /C "python3 scripts/generate_source.py external/Vulkan-Headers/registry/ external/SPIRV-Headers/include/spirv/unified1/"
 ```
 
 When making change to the `scripts/` folder, make sure to run `generate_source.py` and check in both the changes to
 `scripts/` and `layers/generated/` in any PR.
 
-## Cmake helper
+## CMake helper
 
-A helper CMake target `VulkanVL_generated_source` is also provided to simplify
-the invocation of `scripts/generate_source.py` from the build directory:
+A helper CMake target `vvl_codegen` is also provided to simplify the invocation of `scripts/generate_source.py` from the build directory:
 
 ```bash
-cmake --build . --target VulkanVL_generated_source
+cmake -S . -B build -D VVL_CODEGEN=ON
+cmake --build build --target vvl_codegen
 ```
+
+NOTE: `VVL_CODEGEN` is `OFF` by default to allow users to build `VVL` via `add_subdirectory` and to avoid potential issues for system/language package managers.
 
 ## How it works
 

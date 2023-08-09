@@ -19,7 +19,7 @@
 #pragma once
 
 #include "parameter_name.h"
-#include "vk_typemap_helper.h"
+#include "generated/vk_typemap_helper.h"
 #include "sync/sync_utils.h"
 #include "state_tracker/cmd_buffer_state.h"
 
@@ -33,17 +33,6 @@ extern std::vector<std::pair<uint32_t, uint32_t>> custom_stype_info;
 // String returned by string_VkStructureType for an unrecognized type.
 const std::string UnsupportedStructureTypeString = "Unhandled VkStructureType";
 
-// String returned by string_VkResult for an unrecognized type.
-const std::string UnsupportedResultString = "Unhandled VkResult";
-
-// The base value used when computing the offset for an enumeration token value that is added by an extension.
-// When validating enumeration tokens, any value >= to this value is considered to be provided by an extension.
-// See Appendix C.10 "Assigning Extension Token Values" from the Vulkan specification
-const uint32_t ExtEnumBaseValue = 1000000000;
-
-// The value of all VK_xxx_MAX_ENUM tokens
-const uint32_t MaxEnumValue = 0x7FFFFFFF;
-
 class StatelessValidation : public ValidationObject {
   public:
     VkPhysicalDeviceLimits device_limits = {};
@@ -52,6 +41,11 @@ class StatelessValidation : public ValidationObject {
     const VkPhysicalDeviceFeatures &physical_device_features = physical_device_features2.features;
     vvl::unordered_map<VkPhysicalDevice, VkPhysicalDeviceProperties *> physical_device_properties_map;
     vvl::unordered_map<VkPhysicalDevice, vvl::unordered_set<std::string>> device_extensions_enumerated{};
+
+    // This was a special case where it was decided to use the extension version for validation
+    // https://gitlab.khronos.org/vulkan/vulkan/-/merge_requests/5671
+    uint32_t discard_rectangles_extension_version = 0;
+    uint32_t scissor_exclusive_extension_version = 0;
 
     // Override chassis read/write locks for this validation object
     // This override takes a deferred lock. i.e. it is not acquired.
@@ -923,10 +917,9 @@ class StatelessValidation : public ValidationObject {
 
     enum RenderPassCreateVersion { RENDER_PASS_VERSION_1 = 0, RENDER_PASS_VERSION_2 = 1 };
 
-    template <typename RenderPassCreateInfoGeneric>
-    bool ValidateSubpassGraphicsFlags(const debug_report_data *report_data, const RenderPassCreateInfoGeneric *pCreateInfo,
-                                      uint32_t dependency_index, uint32_t subpass, VkPipelineStageFlags2KHR stages,
-                                      const char *vuid, const char *target, const char *func_name) const {
+    bool ValidateSubpassGraphicsFlags(const debug_report_data *report_data, const VkRenderPassCreateInfo2 *pCreateInfo,
+                                      uint32_t dependency_index, uint32_t subpass, VkPipelineStageFlags2 stages, const char *vuid,
+                                      const char *target, const char *func_name) const {
         bool skip = false;
         // make sure we consider all of the expanded and un-expanded graphics bits to be valid
         const auto kExcludeStages = VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT_KHR | VK_PIPELINE_STAGE_2_COPY_BIT_KHR |
@@ -958,10 +951,9 @@ class StatelessValidation : public ValidationObject {
         return skip;
     }
 
-    template <typename RenderPassCreateInfoGeneric>
-    bool CreateRenderPassGeneric(VkDevice device, const RenderPassCreateInfoGeneric *pCreateInfo,
-                                 const VkAllocationCallbacks *pAllocator, VkRenderPass *pRenderPass,
-                                 RenderPassCreateVersion rp_version) const;
+    bool ValidateCreateRenderPass(VkDevice device, const VkRenderPassCreateInfo2 *pCreateInfo,
+                                  const VkAllocationCallbacks *pAllocator, VkRenderPass *pRenderPass,
+                                  RenderPassCreateVersion rp_version) const;
 
     template <typename T>
     void RecordRenderPass(VkRenderPass renderPass, const T *pCreateInfo) {
@@ -1017,8 +1009,6 @@ class StatelessValidation : public ValidationObject {
                                                      VkPhysicalDeviceGroupProperties *pPhysicalDeviceGroupProperties,
                                                      VkResult result) override;
 
-    bool RequireDeviceExtension(bool flag, char const *function_name, char const *extension_name) const;
-
     bool ValidateInstanceExtensions(const VkInstanceCreateInfo *pCreateInfo) const;
 
     bool ValidateValidationFeatures(const VkInstanceCreateInfo *pCreateInfo,
@@ -1030,13 +1020,6 @@ class StatelessValidation : public ValidationObject {
                         const char *validateString) const;
 
     bool ValidateCoarseSampleOrderCustomNV(const VkCoarseSampleOrderCustomNV *order) const;
-
-    bool ValidateQueueFamilies(uint32_t queue_family_count, const uint32_t *queue_families, const char *cmd_name,
-                               const char *array_parameter_name, const std::string &unique_error_code,
-                               const std::string &valid_error_code, bool optional);
-
-    bool ValidateDeviceQueueFamily(uint32_t queue_family, const char *cmd_name, const char *parameter_name,
-                                   const std::string &error_code, bool optional);
 
     bool ValidateGeometryTrianglesNV(const VkGeometryTrianglesNV &triangles, VkAccelerationStructureNV object_handle,
                                      const char *func_name) const;
@@ -1246,6 +1229,16 @@ class StatelessValidation : public ValidationObject {
                                                        const VkAllocationCallbacks *pAllocator, VkSurfaceKHR *pSurface) const;
 #endif  // VK_USE_PLATFORM_WAYLAND_KHR
 
+#ifdef VK_USE_PLATFORM_XCB_KHR
+    bool manual_PreCallValidateCreateXcbSurfaceKHR(VkInstance instance, const VkXcbSurfaceCreateInfoKHR *pCreateInfo,
+                                                   const VkAllocationCallbacks *pAllocator, VkSurfaceKHR *pSurface) const;
+#endif  // VK_USE_PLATFORM_WAYLAND_KHR
+
+#ifdef VK_USE_PLATFORM_XLIB_KHR
+    bool manual_PreCallValidateCreateXlibSurfaceKHR(VkInstance instance, const VkXlibSurfaceCreateInfoKHR *pCreateInfo,
+                                                    const VkAllocationCallbacks *pAllocator, VkSurfaceKHR *pSurface) const;
+#endif  // VK_USE_PLATFORM_WAYLAND_KHR
+
     bool manual_PreCallValidateCreateDescriptorPool(VkDevice device, const VkDescriptorPoolCreateInfo *pCreateInfo,
                                                     const VkAllocationCallbacks *pAllocator,
                                                     VkDescriptorPool *pDescriptorPool) const;
@@ -1374,6 +1367,7 @@ class StatelessValidation : public ValidationObject {
                                                                const VkAllocationCallbacks *pAllocator,
                                                                VkSamplerYcbcrConversion *pYcbcrConversion) const;
 
+    bool manual_PreCallValidateGetMemoryFdKHR(VkDevice device, const VkMemoryGetFdInfoKHR *pGetFdInfo, int *pFd) const;
     bool ValidateExternalSemaphoreHandleType(VkSemaphore semaphore, const char *vuid, const char *caller,
                                              VkExternalSemaphoreHandleTypeFlagBits handle_type,
                                              VkExternalSemaphoreHandleTypeFlags allowed_types) const;
@@ -1558,6 +1552,15 @@ class StatelessValidation : public ValidationObject {
                                                                    const VkPhysicalDeviceSurfaceInfo2KHR *pSurfaceInfo,
                                                                    uint32_t *pSurfaceFormatCount,
                                                                    VkSurfaceFormat2KHR *pSurfaceFormats) const;
+
+    bool manual_PreCallValidateCmdSetDiscardRectangleEnableEXT(VkCommandBuffer commandBuffer,
+                                                               VkBool32 discardRectangleEnable) const;
+    bool manual_PreCallValidateCmdSetDiscardRectangleModeEXT(VkCommandBuffer commandBuffer,
+                                                             VkDiscardRectangleModeEXT discardRectangleMode) const;
+    bool manual_PreCallValidateCmdSetExclusiveScissorEnableNV(VkCommandBuffer commandBuffer, uint32_t firstExclusiveScissor,
+                                                              uint32_t exclusiveScissorCount,
+                                                              const VkBool32 *pExclusiveScissorEnables) const;
+
 #ifdef VK_USE_PLATFORM_WIN32_KHR
     bool manual_PreCallValidateGetPhysicalDeviceSurfacePresentModes2EXT(VkPhysicalDevice physicalDevice,
                                                                         const VkPhysicalDeviceSurfaceInfo2KHR *pSurfaceInfo,
@@ -1575,5 +1578,5 @@ class StatelessValidation : public ValidationObject {
     bool manual_PreCallValidateExportMetalObjectsEXT(VkDevice device, VkExportMetalObjectsInfoEXT *pMetalObjectsInfo) const;
 #endif  // VK_USE_PLATFORM_METAL_EXT
 
-#include "parameter_validation.h"
+#include "generated/parameter_validation.h"
 };  // Class StatelessValidation

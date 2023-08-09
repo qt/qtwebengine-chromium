@@ -25,6 +25,7 @@
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"
+#include "absl/functional/any_invocable.h"
 #include "absl/status/status.h"
 #include "absl/strings/string_view.h"
 #include "internal/platform/byte_array.h"
@@ -97,41 +98,67 @@ class BlePeripheral {
 //
 // Representation of a GATT characteristic.
 struct GattCharacteristic {
+  // Represents the GATT characteristic permissions
+  // This enumeration supports a bitwise combination of its member values.
+  // |, &, |= of the values are legal.
   enum class Permission {
-    kUnknown = 0,
-    kRead = 1,
-    kWrite = 2,
+    kNone = 0,
+    kRead = 1 << 0,
+    kWrite = 1 << 1,
     kLast,
   };
 
+  // Represents the GATT characteristic properties
+  // This enumeration supports a bitwise combination of its member values.
+  // |, &, |= of the values are legal.
   enum class Property {
-    kUnknown = 0,
-    kRead = 1,
-    kWrite = 2,
-    kIndicate = 3,
+    kNone = 0,
+    kRead = 1 << 0,
+    kWrite = 1 << 1,
+    kIndicate = 1 << 2,
+    kNotify = 1 << 3,
     kLast,
   };
 
   Uuid uuid;
   Uuid service_uuid;
-  std::vector<Permission> permissions;
-  std::vector<Property> properties;
+  Permission permission;
+  Property property;
+
+  // overloading operator for enum class Permission and Property
+  friend inline Permission operator|(Permission a, Permission b) {
+    return static_cast<Permission>(static_cast<int>(a) | static_cast<int>(b));
+  }
+
+  friend inline Permission operator&(Permission a, Permission b) {
+    return static_cast<Permission>(static_cast<int>(a) & static_cast<int>(b));
+  }
+  friend inline Permission& operator|=(Permission& a, Permission b) {
+    a = a | b;
+    return a;
+  }
+
+  friend inline Property operator|(Property a, Property b) {
+    return static_cast<Property>(static_cast<int>(a) | static_cast<int>(b));
+  }
+
+  friend inline Property operator&(Property a, Property b) {
+    return static_cast<Property>(static_cast<int>(a) & static_cast<int>(b));
+  }
+  friend inline Property& operator|=(Property& a, Property b) {
+    a = a | b;
+    return a;
+  }
 
   // Hashable
   template <typename H>
   friend H AbslHashValue(H h, const GattCharacteristic& s) {
-    return H::combine(std::move(h), s.uuid, s.service_uuid, s.permissions,
-                      s.properties);
+    return H::combine(std::move(h), s.uuid, s.service_uuid, s.permission,
+                      s.property);
   }
   bool operator==(const GattCharacteristic& rhs) const {
-    bool has_equal_permissions =
-        std::is_permutation(this->permissions.begin(), this->permissions.end(),
-                            rhs.permissions.begin(), rhs.permissions.end());
-    bool has_equal_properties =
-        std::is_permutation(this->properties.begin(), this->properties.end(),
-                            rhs.properties.begin(), rhs.properties.end());
     return this->uuid == rhs.uuid && this->service_uuid == rhs.service_uuid &&
-           has_equal_permissions && has_equal_properties;
+           this->permission == rhs.permission && this->property == rhs.property;
   }
 };
 
@@ -140,6 +167,12 @@ struct GattCharacteristic {
 // Representation of a client GATT connection to a remote GATT server.
 class GattClient {
  public:
+  // Specifies what type of GATT write should be performed.
+  enum class WriteType {
+    kWithResponse = 0,
+    kWithoutResponse = 1,
+  };
+
   virtual ~GattClient() = default;
 
   // https://developer.android.com/reference/android/bluetooth/BluetoothGatt.html#discoverServices()
@@ -169,7 +202,7 @@ class GattClient {
   // https://developer.android.com/reference/android/bluetooth/BluetoothGatt.html#readCharacteristic(android.bluetooth.BluetoothGattCharacteristic)
   // https://developer.android.com/reference/android/bluetooth/BluetoothGattCharacteristic.html#getValue()
   // NOLINTNEXTLINE(google3-legacy-absl-backports)
-  virtual absl::optional<ByteArray> ReadCharacteristic(
+  virtual absl::optional<std::string> ReadCharacteristic(
       const GattCharacteristic& characteristic) = 0;
 
   // https://developer.android.com/reference/android/bluetooth/BluetoothGattCharacteristic.html#setValue(byte[])
@@ -178,7 +211,15 @@ class GattClient {
   // Sends a remote characteristic write request to the server and returns
   // whether or not it was successful.
   virtual bool WriteCharacteristic(const GattCharacteristic& characteristic,
-                                   const ByteArray& value) = 0;
+                                   absl::string_view value, WriteType type) = 0;
+
+  // https://developer.android.com/reference/android/bluetooth/BluetoothGatt.html#setCharacteristicNotification(android.bluetooth.BluetoothGattCharacteristic,%20boolean)
+  //
+  // Enable or disable notifications/indications for a given characteristic.
+  virtual bool SetCharacteristicSubscription(
+      const GattCharacteristic& characteristic, bool enable,
+      absl::AnyInvocable<void(absl::string_view value)>
+          on_characteristic_changed_cb) = 0;
 
   // https://developer.android.com/reference/android/bluetooth/BluetoothGatt.html#disconnect()
   virtual void Disconnect() = 0;
@@ -187,6 +228,7 @@ class GattClient {
 // https://developer.android.com/reference/android/bluetooth/BluetoothGattServer
 //
 // Representation of a BLE GATT server.
+// LINT.IfChange
 class GattServer {
  public:
   virtual ~GattServer() = default;
@@ -206,8 +248,8 @@ class GattServer {
   // NOLINTNEXTLINE(google3-legacy-absl-backports)
   virtual absl::optional<GattCharacteristic> CreateCharacteristic(
       const Uuid& service_uuid, const Uuid& characteristic_uuid,
-      const std::vector<GattCharacteristic::Permission>& permissions,
-      const std::vector<GattCharacteristic::Property>& properties) = 0;
+      GattCharacteristic::Permission permission,
+      GattCharacteristic::Property property) = 0;
 
   // https://developer.android.com/reference/android/bluetooth/BluetoothGattCharacteristic.html#setValue(byte[])
   //
@@ -216,13 +258,26 @@ class GattServer {
   virtual bool UpdateCharacteristic(const GattCharacteristic& characteristic,
                                     const nearby::ByteArray& value) = 0;
 
+  // https://developer.android.com/reference/android/bluetooth/BluetoothGattServer#notifyCharacteristicChanged(android.bluetooth.BluetoothDevice,%20android.bluetooth.BluetoothGattCharacteristic,%20boolean,%20byte[])
+  //
+  // Send a notification or indication that a local characteristic has been
+  // updated and returns an absl::Status indicating success or what went wrong.
+  virtual absl::Status NotifyCharacteristicChanged(
+      const GattCharacteristic& characteristic, bool confirm,
+      const ByteArray& new_value) = 0;
+
   // Stops a GATT server.
   virtual void Stop() = 0;
 };
+// LINT.ThenChange(//depot/google3/third_party/nearby/internal/platform/ble_v2.h)
 
 // Callback for asynchronous events on the client side of a GATT connection.
 struct ClientGattConnectionCallback {
  public:
+  // Called when the characteristic is changed
+  absl::AnyInvocable<void(absl::string_view value)>
+      on_characteristic_changed_cb = [](absl::string_view) {};
+
   // Called when the client is disconnected from the GATT server.
   absl::AnyInvocable<void()> disconnected_cb = []() {};
 };

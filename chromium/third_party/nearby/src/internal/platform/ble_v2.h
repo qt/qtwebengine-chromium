@@ -18,8 +18,10 @@
 #include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "absl/functional/any_invocable.h"
+#include "absl/strings/string_view.h"
 #include "absl/types/optional.h"
 #include "internal/platform/bluetooth_adapter.h"
 #include "internal/platform/byte_array.h"
@@ -148,6 +150,7 @@ class BleV2ServerSocket final {
 //
 // Note that some of the methods return absl::optional instead
 // of std::optional, because iOS platform is still in C++14.
+// LINT.IfChange
 class GattServer final {
  public:
   explicit GattServer(std::unique_ptr<api::ble_v2::GattServer> gatt_server)
@@ -157,18 +160,23 @@ class GattServer final {
   // NOLINTNEXTLINE(google3-legacy-absl-backports)
   absl::optional<api::ble_v2::GattCharacteristic> CreateCharacteristic(
       const Uuid& service_uuid, const Uuid& characteristic_uuid,
-      const std::vector<api::ble_v2::GattCharacteristic::Permission>&
-          permissions,
-      const std::vector<api::ble_v2::GattCharacteristic::Property>&
-          properties) {
+      const api::ble_v2::GattCharacteristic::Permission permission,
+      const api::ble_v2::GattCharacteristic::Property property) {
     return impl_->CreateCharacteristic(service_uuid, characteristic_uuid,
-                                       permissions, properties);
+                                       permission, property);
   }
 
   bool UpdateCharacteristic(
       const api::ble_v2::GattCharacteristic& characteristic,
       const ByteArray& value) {
     return impl_->UpdateCharacteristic(characteristic, value);
+  }
+
+  absl::Status NotifyCharacteristicChanged(
+      const api::ble_v2::GattCharacteristic& characteristic, bool confirm,
+      const ByteArray& new_value) {
+    return impl_->NotifyCharacteristicChanged(characteristic, confirm,
+                                              new_value);
   }
 
   void Stop() {
@@ -187,6 +195,7 @@ class GattServer final {
  private:
   std::unique_ptr<api::ble_v2::GattServer> impl_;
 };
+// LINT.ThenChange(//depot/google3/third_party/nearby/internal/platform/implementation/ble_v2.h)
 
 // Opaque wrapper for a GattClient.
 //
@@ -211,9 +220,25 @@ class GattClient final {
   }
 
   // NOLINTNEXTLINE(google3-legacy-absl-backports)
-  absl::optional<ByteArray> ReadCharacteristic(
+  absl::optional<std::string> ReadCharacteristic(
       api::ble_v2::GattCharacteristic& characteristic) {
     return impl_->ReadCharacteristic(characteristic);
+  }
+
+  // NOLINTNEXTLINE(google3-legacy-absl-backports)
+  bool WriteCharacteristic(
+      const api::ble_v2::GattCharacteristic& characteristic,
+      absl::string_view value, api::ble_v2::GattClient::WriteType write_type) {
+    return impl_->WriteCharacteristic(characteristic, value, write_type);
+  }
+
+  // NOLINTNEXTLINE(google3-legacy-absl-backports)
+  bool SetCharacteristicSubscription(
+      const api::ble_v2::GattCharacteristic& characteristic, bool enable,
+      absl::AnyInvocable<void(absl::string_view value)>
+          on_characteristic_changed_cb) {
+    return impl_->SetCharacteristicSubscription(
+        characteristic, enable, std::move(on_characteristic_changed_cb));
   }
 
   void Disconnect() { impl_->Disconnect(); }
@@ -272,10 +297,23 @@ class BleV2Medium final {
         adapter_(adapter) {}
 
   // Returns true once the BLE advertising has been initiated.
+  // This interface will be deprecated soon.
+  // TODO(b/271305977) remove this function.
+  // Use 'unique_ptr<AdvertisingSession> StartAdvertisingTmp' instead.
   bool StartAdvertising(
       const api::ble_v2::BleAdvertisementData& advertising_data,
       api::ble_v2::AdvertiseParameters advertise_parameters);
+  // This interface will be deprecated soon.
+  // TODO(b/271305977) remove this function.
   bool StopAdvertising();
+
+  // Temp interface for windows client to use before windows has native impl
+  // for 'unique_ptr<AdvertisingSession> StartAdvertising'.
+  // TODO(b/271305977) remove this function.
+  std::unique_ptr<api::ble_v2::BleMedium::AdvertisingSession>
+  StartAdvertisingTmp(const api::ble_v2::BleAdvertisementData& advertising_data,
+                      api::ble_v2::AdvertiseParameters advertise_set_parameters,
+                      api::ble_v2::BleMedium::AdvertisingCallback callback);
 
   std::unique_ptr<api::ble_v2::BleMedium::AdvertisingSession> StartAdvertising(
       const api::ble_v2::BleAdvertisementData& advertising_data,
@@ -283,12 +321,24 @@ class BleV2Medium final {
       api::ble_v2::BleMedium::AdvertisingCallback callback);
 
   // Returns true once the BLE scan has been initiated.
+  // This interface will be deprecated soon.
+  // TODO(b/271305977) remove this function.
+  // Use 'unique_ptr<ScanningSession> StartScanningTmp' instead.
   bool StartScanning(const Uuid& service_uuid,
                      api::ble_v2::TxPowerLevel tx_power_level,
                      ScanCallback callback);
+  // This interface will be deprecated soon.
+  // TODO(b/271305977) remove this function.
   bool StopScanning();
 
   std::unique_ptr<api::ble_v2::BleMedium::ScanningSession> StartScanning(
+      const Uuid& service_uuid, api::ble_v2::TxPowerLevel tx_power_level,
+      api::ble_v2::BleMedium::ScanningCallback callback);
+
+  // Temp interface for windows client to use before windows has native impl
+  // for 'unique_ptr<AdvertisingSession> StartScanning'.
+  // TODO(b/271305977) remove this function.
+  std::unique_ptr<api::ble_v2::BleMedium::ScanningSession> StartScanningTmp(
       const Uuid& service_uuid, api::ble_v2::TxPowerLevel tx_power_level,
       api::ble_v2::BleMedium::ScanningCallback callback);
 

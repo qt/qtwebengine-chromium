@@ -14,6 +14,8 @@
 
 #include "src/tint/writer/wgsl/test_helper.h"
 
+#include "gmock/gmock.h"
+
 using namespace tint::number_suffixes;  // NOLINT
 
 namespace tint::writer::wgsl {
@@ -25,9 +27,9 @@ TEST_F(WgslGeneratorImplTest, Emit_GlobalConstAssert) {
     GlobalConstAssert(true);
 
     GeneratorImpl& gen = Build();
-
-    ASSERT_TRUE(gen.Generate()) << gen.error();
-    EXPECT_EQ(gen.result(), R"(static_assert true;
+    gen.Generate();
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
+    EXPECT_EQ(gen.result(), R"(const_assert true;
 )");
 }
 
@@ -35,10 +37,10 @@ TEST_F(WgslGeneratorImplTest, Emit_FunctionConstAssert) {
     Func("f", utils::Empty, ty.void_(), utils::Vector{ConstAssert(true)});
 
     GeneratorImpl& gen = Build();
-
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    gen.Generate();
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_EQ(gen.result(), R"(fn f() {
-  static_assert true;
+  const_assert true;
 }
 )");
 }

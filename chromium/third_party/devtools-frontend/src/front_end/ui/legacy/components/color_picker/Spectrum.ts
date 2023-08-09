@@ -297,7 +297,8 @@ export class Spectrum extends Common.ObjectWrapper.eventMixin<EventTypes, typeof
         toggleEyeDropperShortcut[0]?.descriptors.flatMap(descriptor => descriptor.name.split(' + '))[0];
 
     this.colorPickerButton = new UI.Toolbar.ToolbarToggle(
-        i18nString(UIStrings.toggleColorPicker, {PH1: definedShortcutKey || ''}), 'largeicon-eyedropper');
+        i18nString(UIStrings.toggleColorPicker, {PH1: definedShortcutKey || ''}), 'color-picker',
+        'color-picker-filled');
     this.colorPickerButton.setToggled(true);
     this.colorPickerButton.addEventListener(
         UI.Toolbar.ToolbarButton.Events.Click, this.toggleColorPicker.bind(this, undefined));
@@ -404,14 +405,14 @@ export class Spectrum extends Common.ObjectWrapper.eventMixin<EventTypes, typeof
     });
 
     this.deleteIconToolbar = new UI.Toolbar.Toolbar('delete-color-toolbar');
-    this.deleteButton = new UI.Toolbar.ToolbarButton('', 'largeicon-trash-bin');
+    this.deleteButton = new UI.Toolbar.ToolbarButton('', 'bin');
     this.deleteIconToolbar.appendToolbarItem(this.deleteButton);
 
     const overlay = this.contentElement.createChild('div', 'spectrum-overlay fill');
     overlay.addEventListener('click', this.togglePalettePanel.bind(this, false));
 
     this.addColorToolbar = new UI.Toolbar.Toolbar('add-color-toolbar');
-    const addColorButton = new UI.Toolbar.ToolbarButton(i18nString(UIStrings.addToPalette), 'largeicon-add');
+    const addColorButton = new UI.Toolbar.ToolbarButton(i18nString(UIStrings.addToPalette), 'plus');
     addColorButton.addEventListener(UI.Toolbar.ToolbarButton.Events.Click, this.onAddColorMousedown.bind(this));
     addColorButton.element.addEventListener('keydown', this.onAddColorKeydown.bind(this));
     this.addColorToolbar.appendToolbarItem(addColorButton);
@@ -533,7 +534,7 @@ export class Spectrum extends Common.ObjectWrapper.eventMixin<EventTypes, typeof
 
     function appendSwitcherIcon(parentElement: Element): void {
       const switcherIcon = new IconButton.Icon.Icon();
-      switcherIcon.data = {iconName: 'switcherIcon', color: 'var(--color-text-primary)', width: '16px', height: '16px'};
+      switcherIcon.data = {iconName: 'fold-more', color: 'var(--icon-default)', width: '16px', height: '16px'};
       parentElement.appendChild(switcherIcon);
     }
   }
@@ -571,7 +572,7 @@ export class Spectrum extends Common.ObjectWrapper.eventMixin<EventTypes, typeof
     const title = this.palettePanel.createChild('div', 'palette-title');
     title.textContent = i18nString(UIStrings.colorPalettes);
     const toolbar = new UI.Toolbar.Toolbar('', this.palettePanel);
-    this.closeButton = new UI.Toolbar.ToolbarButton(i18nString(UIStrings.returnToColorPicker), 'largeicon-delete');
+    this.closeButton = new UI.Toolbar.ToolbarButton(i18nString(UIStrings.returnToColorPicker), 'cross');
     this.closeButton.addEventListener(UI.Toolbar.ToolbarButton.Events.Click, this.togglePalettePanel.bind(this, false));
     this.closeButton.element.addEventListener('keydown', this.onCloseBtnKeydown.bind(this));
     toolbar.appendToolbarItem(this.closeButton);
@@ -1316,7 +1317,7 @@ export class Spectrum extends Common.ObjectWrapper.eventMixin<EventTypes, typeof
     this.innerSetColor(color, undefined, undefined /* colorName */, colorFormat, ChangeSource.Input);
   }
 
-  wasShown(): void {
+  override wasShown(): void {
     this.registerCSSFiles([spectrumStyles]);
     this.hueAlphaWidth = this.hueElement.offsetWidth;
     this.slideHelperWidth = this.hueSlider.offsetWidth / 2;
@@ -1341,7 +1342,7 @@ export class Spectrum extends Common.ObjectWrapper.eventMixin<EventTypes, typeof
     }
   }
 
-  willHide(): void {
+  override willHide(): void {
     void this.toggleColorPicker(false);
     if (this.contrastDetails && this.contrastDetailsBackgroundColorPickedToggledBound) {
       this.contrastDetails.removeEventListener(
@@ -1615,7 +1616,7 @@ export class Swatch {
     self.onInvokeElement(this.swatchOverlayElement, this.onCopyText.bind(this));
     this.swatchOverlayElement.addEventListener('mouseout', this.onCopyIconMouseout.bind(this));
     this.swatchOverlayElement.addEventListener('blur', this.onCopyIconMouseout.bind(this));
-    this.swatchCopyIcon = UI.Icon.Icon.create('largeicon-copy', 'copy-color-icon');
+    this.swatchCopyIcon = UI.Icon.Icon.create('copy', 'copy-color-icon');
     UI.Tooltip.Tooltip.install(this.swatchCopyIcon, i18nString(UIStrings.copyColorToClipboard));
     this.swatchOverlayElement.appendChild(this.swatchCopyIcon);
     UI.ARIAUtils.setAccessibleName(this.swatchOverlayElement, this.swatchCopyIcon.title);
@@ -1635,14 +1636,14 @@ export class Swatch {
   }
 
   private onCopyText(event: Event): void {
-    this.swatchCopyIcon.setIconType('largeicon-checkmark');
+    this.swatchCopyIcon.setIconType('checkmark');
     Host.InspectorFrontendHost.InspectorFrontendHostInstance.copyText(this.colorString);
     UI.ARIAUtils.setPressed(this.swatchOverlayElement, true);
     event.consume();
   }
 
   private onCopyIconMouseout(): void {
-    this.swatchCopyIcon.setIconType('largeicon-copy');
+    this.swatchCopyIcon.setIconType('copy');
     UI.ARIAUtils.setPressed(this.swatchOverlayElement, false);
   }
 }

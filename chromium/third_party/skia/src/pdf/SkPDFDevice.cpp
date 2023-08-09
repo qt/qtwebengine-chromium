@@ -53,6 +53,8 @@
 
 #include <vector>
 
+using namespace skia_private;
+
 #ifndef SK_PDF_MASK_QUALITY
     // If MASK_QUALITY is in [0,100], will be used for JpegEncoder.
     // Otherwise, just encode masks losslessly.
@@ -112,7 +114,7 @@ sk_sp<SkImage> mask_to_greyscale_image(SkMask* mask) {
         SkJpegEncoder::Options jpegOptions;
         jpegOptions.fQuality = imgQuality;
         if (SkJpegEncoder::Encode(&buffer, pm, jpegOptions)) {
-            img = SkImage::MakeFromEncoded(buffer.detachAsData());
+            img = SkImages::DeferredFromEncodedData(buffer.detachAsData());
             SkASSERT(img);
             if (img) {
                 SkMask::FreeImage(mask->fImage);
@@ -120,8 +122,8 @@ sk_sp<SkImage> mask_to_greyscale_image(SkMask* mask) {
         }
     }
     if (!img) {
-        img = SkImage::MakeFromRaster(pm, [](const void* p, void*) { SkMask::FreeImage((void*)p); },
-                                      nullptr);
+        img = SkImages::RasterFromPixmap(
+                pm, [](const void* p, void*) { SkMask::FreeImage((void*)p); }, nullptr);
     }
     *mask = SkMask();  // destructive;
     return img;
@@ -140,7 +142,7 @@ sk_sp<SkImage> alpha_image_to_greyscale_image(const SkImage* mask) {
     return greyBitmap.asImage();
 }
 
-static int add_resource(SkTHashSet<SkPDFIndirectReference>& resources, SkPDFIndirectReference ref) {
+static int add_resource(THashSet<SkPDFIndirectReference>& resources, SkPDFIndirectReference ref) {
     resources.add(ref);
     return ref.fValue;
 }
@@ -992,7 +994,7 @@ sk_sp<SkSurface> SkPDFDevice::makeSurface(const SkImageInfo& info, const SkSurfa
     return SkSurface::MakeRaster(info, &props);
 }
 
-static std::vector<SkPDFIndirectReference> sort(const SkTHashSet<SkPDFIndirectReference>& src) {
+static std::vector<SkPDFIndirectReference> sort(const THashSet<SkPDFIndirectReference>& src) {
     std::vector<SkPDFIndirectReference> dst;
     dst.reserve(src.count());
     for (SkPDFIndirectReference ref : src) {
@@ -1154,8 +1156,8 @@ static void populate_graphic_state_entry_from_paint(
         const SkMatrix& initialTransform,
         SkScalar textScale,
         SkPDFGraphicStackState::Entry* entry,
-        SkTHashSet<SkPDFIndirectReference>* shaderResources,
-        SkTHashSet<SkPDFIndirectReference>* graphicStateResources) {
+        THashSet<SkPDFIndirectReference>* shaderResources,
+        THashSet<SkPDFIndirectReference>* graphicStateResources) {
     NOT_IMPLEMENTED(paint.getPathEffect() != nullptr, false);
     NOT_IMPLEMENTED(paint.getMaskFilter() != nullptr, false);
     NOT_IMPLEMENTED(paint.getColorFilter() != nullptr, false);

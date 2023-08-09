@@ -21,15 +21,15 @@ namespace tint::ast {
 
 /// Represents the `_` of a phony assignment `_ = <expr>`
 /// @see https://www.w3.org/TR/WGSL/#phony-assignment-section
-class PhonyExpression final : public Castable<PhonyExpression, Expression> {
+class PhonyExpression final : public utils::Castable<PhonyExpression, Expression> {
   public:
     /// Constructor
     /// @param pid the identifier of the program that owns this node
     /// @param nid the unique node identifier
     /// @param src the source of this node
     PhonyExpression(ProgramID pid, NodeID nid, const Source& src);
-    /// Move constructor
-    PhonyExpression(PhonyExpression&&);
+
+    /// Destructor
     ~PhonyExpression() override;
 
     /// Clones this node and all transitive child nodes using the `CloneContext`

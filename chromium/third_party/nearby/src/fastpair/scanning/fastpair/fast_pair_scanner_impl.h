@@ -21,6 +21,7 @@
 #include <string>
 #include <vector>
 
+#include "absl/strings/string_view.h"
 #include "fastpair/internal/ble/ble.h"
 #include "fastpair/scanning/fastpair/fast_pair_scanner.h"
 #include "internal/base/observer_list.h"
@@ -56,9 +57,6 @@ class FastPairScannerImpl : public FastPairScanner {
   void AddObserver(FastPairScanner::Observer* observer) override;
   void RemoveObserver(FastPairScanner::Observer* observer) override;
 
-  void StartScanning();
-  void StopScanning();
-
   // Fast Pair discovered peripheral callback
   void OnDeviceFound(const BlePeripheral& peripheral);
   void OnDeviceLost(const BlePeripheral& peripheral);
@@ -71,11 +69,14 @@ class FastPairScannerImpl : public FastPairScanner {
   Ble& GetBle() { return ble_; }
 
  private:
-  std::shared_ptr<TaskRunner> task_runner_;
+  void StartScanning();
+  void StopScanning();
+
+  std::unique_ptr<TaskRunner> task_runner_;
 
   // Map of a Bluetooth device address to a set of advertisement data we have
   // seen.
-  absl::flat_hash_map<std::string, std::set<ByteArray>>
+  absl::flat_hash_map<std::string, std::set<std::string>>
       device_address_advertisement_data_map_;
 
   BluetoothAdapter bluetooth_adapter_;

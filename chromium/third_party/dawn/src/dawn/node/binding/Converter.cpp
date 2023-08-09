@@ -156,8 +156,8 @@ bool Converter::Convert(BufferSource& out, interop::BufferSource in) {
         std::visit(
             [&](auto&& v) {
                 auto arr = v.ArrayBuffer();
-                out.data = arr.Data();
-                out.size = arr.ByteLength();
+                out.data = static_cast<uint8_t*>(arr.Data()) + v.ByteOffset();
+                out.size = v.ByteLength();
                 out.bytesPerElement = v.ElementSize();
             },
             *view);
@@ -1654,6 +1654,9 @@ bool Converter::Convert(wgpu::FeatureName& out, interop::GPUFeatureName in) {
         case interop::GPUFeatureName::kBgra8UnormStorage:
             out = wgpu::FeatureName::BGRA8UnormStorage;
             return true;
+        case interop::GPUFeatureName::kFloat32Filterable:
+            UNIMPLEMENTED("TODO(crbug.com/dawn/1687)");
+            return false;
     }
     return false;
 }
@@ -1698,6 +1701,8 @@ bool Converter::Convert(interop::GPUFeatureName& out, wgpu::FeatureName in) {
         case wgpu::FeatureName::DawnNative:
         case wgpu::FeatureName::ChromiumExperimentalDp4a:
         case wgpu::FeatureName::TimestampQueryInsidePasses:
+        case wgpu::FeatureName::ImplicitDeviceSynchronization:
+        case wgpu::FeatureName::SurfaceCapabilities:
         case wgpu::FeatureName::Undefined:
             return false;
     }
@@ -1715,6 +1720,21 @@ bool Converter::Convert(interop::GPUQueryType& out, wgpu::QueryType in) {
         case wgpu::QueryType::PipelineStatistics:
             // TODO(dawn:1123): Add support for pipeline statistics if they are in WebGPU one day.
             return false;
+    }
+    return false;
+}
+
+bool Convert(interop::GPUBufferMapState& out, wgpu::BufferMapState in) {
+    switch (in) {
+        case wgpu::BufferMapState::Unmapped:
+            out = interop::GPUBufferMapState::kUnmapped;
+            return true;
+        case wgpu::BufferMapState::Pending:
+            out = interop::GPUBufferMapState::kPending;
+            return true;
+        case wgpu::BufferMapState::Mapped:
+            out = interop::GPUBufferMapState::kMapped;
+            return true;
     }
     return false;
 }

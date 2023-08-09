@@ -90,7 +90,7 @@ export class XHRBreakpointsSidebarPane extends UI.Widget.VBox implements UI.Cont
 
     this.#breakpointElements = new Map();
 
-    this.#addButton = new UI.Toolbar.ToolbarButton(i18nString(UIStrings.addXhrfetchBreakpoint), 'largeicon-add');
+    this.#addButton = new UI.Toolbar.ToolbarButton(i18nString(UIStrings.addXhrfetchBreakpoint), 'plus');
     this.#addButton.addEventListener(UI.Toolbar.ToolbarButton.Events.Click, () => {
       void this.addButtonClicked();
     });
@@ -381,7 +381,7 @@ export class XHRBreakpointsSidebarPane extends UI.Widget.VBox implements UI.Cont
       this.setBreakpoint(url);
     }
   }
-  wasShown(): void {
+  override wasShown(): void {
     super.wasShown();
     this.registerCSSFiles([xhrBreakpointsSidebarPaneStyles]);
   }

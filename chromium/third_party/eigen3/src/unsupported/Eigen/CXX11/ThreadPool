@@ -56,6 +56,7 @@
 #include "src/util/CXX11Meta.h"
 #include "src/util/MaxSizeVector.h"
 
+// IWYU pragma: begin_exports
 #include "src/ThreadPool/ThreadLocal.h"
 #include "src/ThreadPool/ThreadYield.h"
 #include "src/ThreadPool/ThreadCancel.h"
@@ -65,6 +66,7 @@
 #include "src/ThreadPool/ThreadEnvironment.h"
 #include "src/ThreadPool/Barrier.h"
 #include "src/ThreadPool/NonBlockingThreadPool.h"
+// IWYU pragma: end_exports
 
 #include "../../../Eigen/src/Core/util/ReenableStupidWarnings.h"
 

@@ -26,6 +26,10 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+#ifdef HAVE_CONFIG_H
+#include <config.h>  // Must come first
+#endif
+
 #include "google_breakpad/processor/minidump_processor.h"
 
 #include <assert.h>
@@ -626,6 +630,16 @@ bool MinidumpProcessor::GetCPUInfo(Minidump* dump, SystemInfo* info) {
     }
     case MD_CPU_ARCHITECTURE_MIPS64: {
       info->cpu = "mips64";
+      break;
+    }
+
+    case MD_CPU_ARCHITECTURE_RISCV: {
+      info->cpu = "riscv";
+      break;
+    }
+
+    case MD_CPU_ARCHITECTURE_RISCV64: {
+      info->cpu = "riscv64";
       break;
     }
 

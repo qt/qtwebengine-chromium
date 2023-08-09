@@ -1271,7 +1271,7 @@ export class DataGridImpl<T> extends Common.ObjectWrapper.ObjectWrapper<EventTyp
     if (!icon) {
       return;
     }
-    icon.setIconType(sortOrder === Order.Ascending ? 'smallicon-triangle-up' : 'smallicon-triangle-down');
+    icon.setIconType(sortOrder === Order.Ascending ? 'triangle-up' : 'triangle-down');
 
     this.dispatchEventToListeners(Events.SortingChanged);
   }
@@ -1958,6 +1958,13 @@ export class DataGridNode<T> {
           cell.style.setProperty('padding-left', this.leftPadding + 'px');
         }
       }
+
+      // Allow accessibility tool to identify the editable cell and display context menu
+      const editableCell = this.dataGrid.columns[columnId].editable;
+      if (editableCell) {
+        cell.tabIndex = 0;
+        cell.ariaHasPopup = 'true';
+      }
     }
 
     return cell;
@@ -2405,7 +2412,7 @@ export class DataGridNode<T> {
 }
 
 export class CreationDataGridNode<T> extends DataGridNode<T> {
-  isCreationNode: boolean;
+  override isCreationNode: boolean;
   constructor(
       data?: {
         [x: string]: any,
@@ -2429,20 +2436,20 @@ export class DataGridWidget<T> extends UI.Widget.VBox {
     this.setDefaultFocusedElement(dataGrid.element);
   }
 
-  wasShown(): void {
+  override wasShown(): void {
     this.registerCSSFiles([dataGridStyles]);
     this.dataGrid.wasShown();
   }
 
-  willHide(): void {
+  override willHide(): void {
     this.dataGrid.willHide();
   }
 
-  onResize(): void {
+  override onResize(): void {
     this.dataGrid.onResize();
   }
 
-  elementsToRestoreScrollPositionsFor(): Element[] {
+  override elementsToRestoreScrollPositionsFor(): Element[] {
     return [this.dataGrid.scrollContainer];
   }
 }

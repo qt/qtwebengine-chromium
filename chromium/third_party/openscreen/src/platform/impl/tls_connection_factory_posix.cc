@@ -310,13 +310,13 @@ void TlsConnectionFactoryPosix::Accept(
 
   ErrorOr<std::vector<uint8_t>> der_peer_cert =
       GetDEREncodedPeerCertificate(*connection->ssl_);
-  std::vector<uint8_t> der;
+  std::vector<uint8_t> der_peer_cert_value;
   if (der_peer_cert) {
-    der = std::move(der_peer_cert.value());
+    der_peer_cert_value = std::move(der_peer_cert.value());
   }
   connection->RegisterConnectionWithDataRouter(platform_client_);
   task_runner_->PostTask([weak_this = weak_factory_.GetWeakPtr(),
-                          der = std::move(der),
+                          der = std::move(der_peer_cert_value),
                           moved_connection = std::move(connection)]() mutable {
     if (auto* self = weak_this.get()) {
       self->client_->OnAccepted(self, std::move(der),

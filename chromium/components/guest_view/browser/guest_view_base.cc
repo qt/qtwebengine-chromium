@@ -32,10 +32,6 @@ namespace guest_view {
 
 namespace {
 
-using WebContentsGuestViewMap = std::map<const WebContents*, GuestViewBase*>;
-base::LazyInstance<WebContentsGuestViewMap>::Leaky g_webcontents_guestview_map =
-    LAZY_INSTANCE_INITIALIZER;
-
 void DestroyGuestIfUnattached(GuestViewBase* guest) {
   std::unique_ptr<GuestViewBase> owned_guest =
       guest->GetGuestViewManager()->TransferOwnership(guest);
@@ -160,7 +156,7 @@ GuestViewBase::~GuestViewBase() {
 
   // This is not necessarily redundant with the removal when the guest contents
   // is destroyed, since we may never have initialized a guest WebContents.
-  GetGuestViewManager()->RemoveGuest(guest_instance_id_,
+  GetGuestViewManager()->RemoveGuest(this,
                                      /*invalidate_id=*/true);
 
   pending_events_.clear();
@@ -200,9 +196,7 @@ void GuestViewBase::InitWithWebContents(const base::Value::Dict& create_params,
 
   WebContentsObserver::Observe(guest_web_contents);
   guest_web_contents->SetDelegate(this);
-  g_webcontents_guestview_map.Get().insert(
-      std::make_pair(guest_web_contents, this));
-  GetGuestViewManager()->AddGuest(guest_instance_id_, guest_web_contents);
+  GetGuestViewManager()->AddGuest(this);
 
   // Populate the view instance ID if we have it on creation.
   view_instance_id_ =
@@ -315,10 +309,14 @@ void GuestViewBase::SetSize(const SetSizeParams& params) {
 }
 
 // static
-GuestViewBase* GuestViewBase::FromWebContents(const WebContents* web_contents) {
-  WebContentsGuestViewMap* guest_map = g_webcontents_guestview_map.Pointer();
-  auto it = guest_map->find(web_contents);
-  return it == guest_map->end() ? nullptr : it->second;
+GuestViewBase* GuestViewBase::FromWebContents(WebContents* web_contents) {
+  if (!web_contents) {
+    return nullptr;
+  }
+
+  auto* manager =
+      GuestViewManager::FromBrowserContext(web_contents->GetBrowserContext());
+  return manager ? manager->GetGuestFromWebContents(web_contents) : nullptr;
 }
 
 // static
@@ -535,8 +533,7 @@ void GuestViewBase::RenderViewReady() {
 }
 
 void GuestViewBase::WebContentsDestroyed() {
-  g_webcontents_guestview_map.Get().erase(web_contents());
-  GetGuestViewManager()->RemoveGuest(guest_instance_id_,
+  GetGuestViewManager()->RemoveGuest(this,
                                      /*invalidate_id=*/false);
 
   // Self-destruct.
@@ -903,8 +900,7 @@ void GuestViewBase::UpdateGuestSize(const gfx::Size& new_size,
 }
 
 void GuestViewBase::SetOwnerHost() {
-  auto* manager = GuestViewManager::FromBrowserContext(browser_context_);
-  owner_host_ = manager->IsOwnedByExtension(this)
+  owner_host_ = GetGuestViewManager()->IsOwnedByExtension(this)
                     ? owner_web_contents()->GetLastCommittedURL().host()
                     : std::string();
 }

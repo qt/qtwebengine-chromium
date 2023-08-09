@@ -9,7 +9,7 @@ import {cssMetadata, VariableRegex} from './CSSMetadata.js';
 
 import {type CSSModel} from './CSSModel.js';
 import {type CSSProperty} from './CSSProperty.js';
-import {CSSKeyframesRule, CSSStyleRule} from './CSSRule.js';
+import {CSSKeyframesRule, CSSPositionFallbackRule, CSSStyleRule} from './CSSRule.js';
 import {CSSStyleDeclaration, Type} from './CSSStyleDeclaration.js';
 import {type DOMNode} from './DOMModel.js';
 
@@ -19,6 +19,20 @@ export function parseCSSVariableNameAndFallback(cssVariableValue: string): {
 } {
   const match = cssVariableValue.match(/var\(\s*(--(?:[\s\w\P{ASCII}-]|\\.)+),?\s*(.*)\s*\)/u);
   return {variableName: match && match[1].trim(), fallback: match && match[2]};
+}
+
+interface CSSMatchedStylesPayload {
+  cssModel: CSSModel;
+  node: DOMNode;
+  inlinePayload: Protocol.CSS.CSSStyle|null;
+  attributesPayload: Protocol.CSS.CSSStyle|null;
+  matchedPayload: Protocol.CSS.RuleMatch[];
+  pseudoPayload: Protocol.CSS.PseudoElementMatches[];
+  inheritedPayload: Protocol.CSS.InheritedStyleEntry[];
+  inheritedPseudoPayload: Protocol.CSS.InheritedPseudoElementMatches[];
+  animationsPayload: Protocol.CSS.CSSKeyframesRule[];
+  parentLayoutNodeId: Protocol.DOM.NodeId|undefined;
+  positionFallbackRules: Protocol.CSS.CSSPositionFallbackRule[];
 }
 
 export class CSSMatchedStyles {
@@ -34,13 +48,21 @@ export class CSSMatchedStyles {
   readonly #customHighlightPseudoDOMCascades: Map<string, DOMInheritanceCascade>;
   readonly #styleToDOMCascade: Map<CSSStyleDeclaration, DOMInheritanceCascade>;
   readonly #parentLayoutNodeId: Protocol.DOM.NodeId|undefined;
+  readonly #positionFallbackRules: CSSPositionFallbackRule[];
 
-  constructor(
-      cssModel: CSSModel, node: DOMNode, inlinePayload: Protocol.CSS.CSSStyle|null,
-      attributesPayload: Protocol.CSS.CSSStyle|null, matchedPayload: Protocol.CSS.RuleMatch[],
-      pseudoPayload: Protocol.CSS.PseudoElementMatches[], inheritedPayload: Protocol.CSS.InheritedStyleEntry[],
-      inheritedPseudoPayload: Protocol.CSS.InheritedPseudoElementMatches[],
-      animationsPayload: Protocol.CSS.CSSKeyframesRule[], parentLayoutNodeId: Protocol.DOM.NodeId|undefined) {
+  constructor({
+    cssModel,
+    node,
+    inlinePayload,
+    attributesPayload,
+    matchedPayload,
+    pseudoPayload,
+    inheritedPayload,
+    inheritedPseudoPayload,
+    animationsPayload,
+    parentLayoutNodeId,
+    positionFallbackRules,
+  }: CSSMatchedStylesPayload) {
     this.#cssModelInternal = cssModel;
     this.#nodeInternal = node;
     this.#addedStyles = new Map();
@@ -49,6 +71,7 @@ export class CSSMatchedStyles {
     if (animationsPayload) {
       this.#keyframesInternal = animationsPayload.map(rule => new CSSKeyframesRule(cssModel, rule));
     }
+    this.#positionFallbackRules = positionFallbackRules.map(rule => new CSSPositionFallbackRule(cssModel, rule));
     this.#parentLayoutNodeId = parentLayoutNodeId;
 
     this.#nodeForStyleInternal = new Map();
@@ -520,6 +543,10 @@ export class CSSMatchedStyles {
 
   keyframes(): CSSKeyframesRule[] {
     return this.#keyframesInternal;
+  }
+
+  positionFallbackRules(): CSSPositionFallbackRule[] {
+    return this.#positionFallbackRules;
   }
 
   pseudoStyles(pseudoType: Protocol.DOM.PseudoType): CSSStyleDeclaration[] {

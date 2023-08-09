@@ -44,10 +44,11 @@ struct HoistToDeclBefore::State {
 
         switch (kind) {
             case VariableKind::kLet: {
-                auto builder = [this, expr, name] {
-                    return b.Decl(b.Let(
-                        name, Transform::CreateASTTypeFor(ctx, ctx.src->Sem().GetVal(expr)->Type()),
-                        ctx.CloneWithoutTransform(expr)));
+                auto* ty = ctx.src->Sem().GetVal(expr)->Type();
+                TINT_ASSERT(Transform, !ty->HoldsAbstract());
+                auto builder = [this, expr, name, ty] {
+                    return b.Decl(b.Let(name, Transform::CreateASTTypeFor(ctx, ty),
+                                        ctx.CloneWithoutTransform(expr)));
                 };
                 if (!InsertBeforeImpl(before_expr->Stmt(), std::move(builder))) {
                     return false;
@@ -56,10 +57,11 @@ struct HoistToDeclBefore::State {
             }
 
             case VariableKind::kVar: {
-                auto builder = [this, expr, name] {
-                    return b.Decl(b.Var(
-                        name, Transform::CreateASTTypeFor(ctx, ctx.src->Sem().GetVal(expr)->Type()),
-                        ctx.CloneWithoutTransform(expr)));
+                auto* ty = ctx.src->Sem().GetVal(expr)->Type();
+                TINT_ASSERT(Transform, !ty->HoldsAbstract());
+                auto builder = [this, expr, name, ty] {
+                    return b.Decl(b.Var(name, Transform::CreateASTTypeFor(ctx, ty),
+                                        ctx.CloneWithoutTransform(expr)));
                 };
                 if (!InsertBeforeImpl(before_expr->Stmt(), std::move(builder))) {
                     return false;
@@ -78,7 +80,7 @@ struct HoistToDeclBefore::State {
             }
         }
 
-        // Replace the initializer expression with a reference to the let
+        // Replace the source expression with a reference to the hoisted declaration.
         ctx.Replace(expr, b.Expr(name));
         return true;
     }
@@ -97,6 +99,21 @@ struct HoistToDeclBefore::State {
         return InsertBeforeImpl(before_stmt, std::move(builder));
     }
 
+    /// @copydoc HoistToDeclBefore::Replace(const sem::Statement* what, const ast::Statement* with)
+    bool Replace(const sem::Statement* what, const ast::Statement* with) {
+        auto builder = [with] { return with; };
+        return Replace(what, std::move(builder));
+    }
+
+    /// @copydoc HoistToDeclBefore::Replace(const sem::Statement* what, const StmtBuilder& with)
+    bool Replace(const sem::Statement* what, const StmtBuilder& with) {
+        if (!InsertBeforeImpl(what, Decompose{})) {
+            return false;
+        }
+        ctx.Replace(what->Declaration(), with);
+        return true;
+    }
+
     /// @copydoc HoistToDeclBefore::Prepare()
     bool Prepare(const sem::ValueExpression* before_expr) {
         return InsertBefore(before_expr->Stmt(), nullptr);
@@ -110,6 +127,7 @@ struct HoistToDeclBefore::State {
     /// loop, so that declaration statements can be inserted before the
     /// condition expression or continuing statement.
     struct LoopInfo {
+        utils::Vector<StmtBuilder, 8> init_decls;
         utils::Vector<StmtBuilder, 8> cond_decls;
         utils::Vector<StmtBuilder, 8> cont_decls;
     };
@@ -196,7 +214,7 @@ struct HoistToDeclBefore::State {
                     // Next emit the for-loop body
                     body_stmts.Push(ctx.Clone(for_loop->body));
 
-                    // Finally create the continuing block if there was one.
+                    // Create the continuing block if there was one.
                     const ast::BlockStatement* continuing = nullptr;
                     if (auto* cont = for_loop->continuing) {
                         // Continuing block starts with any let declarations used by
@@ -208,8 +226,17 @@ struct HoistToDeclBefore::State {
 
                     auto* body = b.Block(body_stmts);
                     auto* loop = b.Loop(body, continuing);
-                    if (auto* init = for_loop->initializer) {
-                        return b.Block(ctx.Clone(init), loop);
+
+                    // If the loop has no initializer statements, then we're done.
+                    // Otherwise, wrap loop with another block, prefixed with the initializer
+                    // statements
+                    if (!info->init_decls.IsEmpty() || for_loop->initializer) {
+                        auto stmts = Build(info->init_decls);
+                        if (auto* init = for_loop->initializer) {
+                            stmts.Push(ctx.Clone(init));
+                        }
+                        stmts.Push(loop);
+                        return b.Block(std::move(stmts));
                     }
                     return loop;
                 }
@@ -297,7 +324,7 @@ struct HoistToDeclBefore::State {
             // Need to convert 'else if' to 'else { if }'.
             auto else_if_info = ElseIf(else_if->Declaration());
 
-            // Index the map to convert this else if, even if `stmt` is nullptr.
+            // Index the map to decompose this else if, even if `stmt` is nullptr.
             auto& decls = else_if_info->cond_decls;
             if constexpr (!std::is_same_v<BUILDER, Decompose>) {
                 decls.Push(std::forward<BUILDER>(builder));
@@ -309,7 +336,7 @@ struct HoistToDeclBefore::State {
             // Insertion point is a for-loop condition.
             // For-loop needs to be decomposed to a loop.
 
-            // Index the map to convert this for-loop, even if `stmt` is nullptr.
+            // Index the map to decompose this for-loop, even if `stmt` is nullptr.
             auto& decls = ForLoop(fl)->cond_decls;
             if constexpr (!std::is_same_v<BUILDER, Decompose>) {
                 decls.Push(std::forward<BUILDER>(builder));
@@ -321,7 +348,7 @@ struct HoistToDeclBefore::State {
             // Insertion point is a while condition.
             // While needs to be decomposed to a loop.
 
-            // Index the map to convert this while, even if `stmt` is nullptr.
+            // Index the map to decompose this while, even if `stmt` is nullptr.
             auto& decls = WhileLoop(w)->cond_decls;
             if constexpr (!std::is_same_v<BUILDER, Decompose>) {
                 decls.Push(std::forward<BUILDER>(builder));
@@ -346,11 +373,14 @@ struct HoistToDeclBefore::State {
             // These require special care.
             if (fl->Declaration()->initializer == ip) {
                 // Insertion point is a for-loop initializer.
-                // Insert the new statement above the for-loop.
+                // For-loop needs to be decomposed to a loop.
+
+                // Index the map to decompose this for-loop, even if `stmt` is nullptr.
+                auto& decls = ForLoop(fl)->init_decls;
                 if constexpr (!std::is_same_v<BUILDER, Decompose>) {
-                    ctx.InsertBefore(fl->Block()->Declaration()->statements, fl->Declaration(),
-                                     std::forward<BUILDER>(builder));
+                    decls.Push(std::forward<BUILDER>(builder));
                 }
+
                 return true;
             }
 
@@ -358,11 +388,12 @@ struct HoistToDeclBefore::State {
                 // Insertion point is a for-loop continuing statement.
                 // For-loop needs to be decomposed to a loop.
 
-                // Index the map to convert this for-loop, even if `stmt` is nullptr.
+                // Index the map to decompose this for-loop, even if `stmt` is nullptr.
                 auto& decls = ForLoop(fl)->cont_decls;
                 if constexpr (!std::is_same_v<BUILDER, Decompose>) {
                     decls.Push(std::forward<BUILDER>(builder));
                 }
+
                 return true;
             }
 
@@ -395,6 +426,14 @@ bool HoistToDeclBefore::InsertBefore(const sem::Statement* before_stmt,
 bool HoistToDeclBefore::InsertBefore(const sem::Statement* before_stmt,
                                      const StmtBuilder& builder) {
     return state_->InsertBefore(before_stmt, builder);
+}
+
+bool HoistToDeclBefore::Replace(const sem::Statement* what, const ast::Statement* with) {
+    return state_->Replace(what, with);
+}
+
+bool HoistToDeclBefore::Replace(const sem::Statement* what, const StmtBuilder& with) {
+    return state_->Replace(what, with);
 }
 
 bool HoistToDeclBefore::Prepare(const sem::ValueExpression* before_expr) {

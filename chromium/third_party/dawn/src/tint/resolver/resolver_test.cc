@@ -46,6 +46,7 @@
 #include "src/tint/type/reference.h"
 #include "src/tint/type/sampled_texture.h"
 #include "src/tint/type/texture_dimension.h"
+#include "src/tint/utils/string_stream.h"
 
 using ::testing::ElementsAre;
 using ::testing::HasSubstr;
@@ -1238,6 +1239,15 @@ TEST_F(ResolverTest, Function_WorkgroupSize_Mixed) {
     EXPECT_EQ(func_sem->WorkgroupSize()[2], 3u);
 }
 
+TEST_F(ResolverTest, Expr_MemberAccessor_Type) {
+    auto* mem = MemberAccessor(Ident(Source{{12, 34}}, "f32"), "member");
+    WrapInFunction(mem);
+
+    EXPECT_FALSE(r()->Resolve()) << r()->error();
+    EXPECT_EQ(r()->error(), R"(12:34 error: cannot use type 'f32' as value
+12:34 note: are you missing '()' for value constructor?)");
+}
+
 TEST_F(ResolverTest, Expr_MemberAccessor_Struct) {
     auto* st = Structure(
         "S", utils::Vector{Member("first_member", ty.i32()), Member("second_member", ty.f32())});
@@ -1647,7 +1657,7 @@ TEST_P(Expr_Binary_Test_Valid, All) {
     ast::Type rhs_type = params.create_rhs_type(*this);
     auto* result_type = params.create_result_type(*this);
 
-    std::stringstream ss;
+    utils::StringStream ss;
     ss << FriendlyName(lhs_type) << " " << params.op << " " << FriendlyName(rhs_type);
     SCOPED_TRACE(ss.str());
 
@@ -1679,7 +1689,7 @@ TEST_P(Expr_Binary_Test_WithAlias_Valid, All) {
     ast::Type lhs_type = create_lhs_type(*this);
     ast::Type rhs_type = create_rhs_type(*this);
 
-    std::stringstream ss;
+    utils::StringStream ss;
     ss << FriendlyName(lhs_type) << " " << params.op << " " << FriendlyName(rhs_type);
 
     ss << ", After aliasing: " << FriendlyName(lhs_type) << " " << params.op << " "
@@ -1728,7 +1738,7 @@ TEST_P(Expr_Binary_Test_Invalid, All) {
     ast::Type lhs_type = lhs_create_type_func(*this);
     ast::Type rhs_type = rhs_create_type_func(*this);
 
-    std::stringstream ss;
+    utils::StringStream ss;
     ss << FriendlyName(lhs_type) << " " << op << " " << FriendlyName(rhs_type);
     SCOPED_TRACE(ss.str());
 
@@ -2393,6 +2403,236 @@ TEST_F(ResolverTest, ScopeDepth_IfElseChain) {
 }
 
 #endif  // !defined(NDEBUG)
+
+const size_t kMaxNumStructMembers = 16383;
+
+TEST_F(ResolverTest, MaxNumStructMembers_Valid) {
+    utils::Vector<const ast::StructMember*, 0> members;
+    members.Reserve(kMaxNumStructMembers);
+    for (size_t i = 0; i < kMaxNumStructMembers; ++i) {
+        members.Push(Member("m" + std::to_string(i), ty.i32()));
+    }
+    Structure("S", std::move(members));
+    EXPECT_TRUE(r()->Resolve()) << r()->error();
+}
+
+TEST_F(ResolverTest, MaxNumStructMembers_Invalid) {
+    utils::Vector<const ast::StructMember*, 0> members;
+    members.Reserve(kMaxNumStructMembers + 1);
+    for (size_t i = 0; i < kMaxNumStructMembers + 1; ++i) {
+        members.Push(Member("m" + std::to_string(i), ty.i32()));
+    }
+    Structure(Source{{12, 34}}, "S", std::move(members));
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(), "12:34 error: struct 'S' has 16384 members, maximum is 16383");
+}
+
+TEST_F(ResolverTest, MaxNumStructMembers_WithIgnoreStructMemberLimit_Valid) {
+    utils::Vector<const ast::StructMember*, 0> members;
+    members.Reserve(kMaxNumStructMembers);
+    for (size_t i = 0; i < kMaxNumStructMembers; ++i) {
+        members.Push(Member("m" + std::to_string(i), ty.i32()));
+    }
+
+    // Add 10 more members, but we set the limit to be ignored on the struct
+    for (size_t i = 0; i < 10; ++i) {
+        members.Push(Member("ignored" + std::to_string(i), ty.i32()));
+    }
+
+    Structure("S", std::move(members),
+              utils::Vector{Disable(ast::DisabledValidation::kIgnoreStructMemberLimit)});
+    EXPECT_TRUE(r()->Resolve()) << r()->error();
+}
+
+size_t kMaxNestDepthOfCompositeType = 255;
+
+TEST_F(ResolverTest, MaxNestDepthOfCompositeType_Structs_Valid) {
+    auto* s = Structure("S", utils::Vector{Member("m", ty.i32())});
+    size_t depth = 1;  // Depth of struct
+    size_t iterations = kMaxNestDepthOfCompositeType - depth;
+    for (size_t i = 0; i < iterations; ++i) {
+        s = Structure("S" + std::to_string(i), utils::Vector{Member("m", ty.Of(s))});
+    }
+    EXPECT_TRUE(r()->Resolve()) << r()->error();
+}
+
+TEST_F(ResolverTest, MaxNestDepthOfCompositeType_Structs_Invalid) {
+    auto* s = Structure("S", utils::Vector{Member("m", ty.i32())});
+    size_t depth = 1;  // Depth of struct
+    size_t iterations = kMaxNestDepthOfCompositeType - depth + 1;
+    for (size_t i = 0; i < iterations; ++i) {
+        auto source = i == iterations - 1 ? Source{{12, 34}} : Source{{0, i}};
+        s = Structure(source, "S" + std::to_string(i), utils::Vector{Member("m", ty.Of(s))});
+    }
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(), "12:34 error: struct 'S254' has nesting depth of 256, maximum is 255");
+}
+
+TEST_F(ResolverTest, MaxNestDepthOfCompositeType_StructsWithVector_Valid) {
+    auto* s = Structure("S", utils::Vector{Member("m", ty.vec3<i32>())});
+    size_t depth = 2;  // Despth of struct + vector
+    size_t iterations = kMaxNestDepthOfCompositeType - depth;
+    for (size_t i = 0; i < iterations; ++i) {
+        s = Structure("S" + std::to_string(i), utils::Vector{Member("m", ty.Of(s))});
+    }
+    EXPECT_TRUE(r()->Resolve()) << r()->error();
+}
+
+TEST_F(ResolverTest, MaxNestDepthOfCompositeType_StructsWithVector_Invalid) {
+    auto* s = Structure("S", utils::Vector{Member("m", ty.vec3<i32>())});
+    size_t depth = 2;  // Despth of struct + vector
+    size_t iterations = kMaxNestDepthOfCompositeType - depth + 1;
+    for (size_t i = 0; i < iterations; ++i) {
+        auto source = i == iterations - 1 ? Source{{12, 34}} : Source{{0, i}};
+        s = Structure(source, "S" + std::to_string(i), utils::Vector{Member("m", ty.Of(s))});
+    }
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(), "12:34 error: struct 'S253' has nesting depth of 256, maximum is 255");
+}
+
+TEST_F(ResolverTest, MaxNestDepthOfCompositeType_StructsWithMatrix_Valid) {
+    auto* s = Structure("S", utils::Vector{Member("m", ty.mat3x3<f32>())});
+    size_t depth = 3;  // Depth of struct + matrix
+    size_t iterations = kMaxNestDepthOfCompositeType - depth;
+    for (size_t i = 0; i < iterations; ++i) {
+        s = Structure("S" + std::to_string(i), utils::Vector{Member("m", ty.Of(s))});
+    }
+    EXPECT_TRUE(r()->Resolve()) << r()->error();
+}
+
+TEST_F(ResolverTest, MaxNestDepthOfCompositeType_StructsWithMatrix_Invalid) {
+    auto* s = Structure("S", utils::Vector{Member("m", ty.mat3x3<f32>())});
+    size_t depth = 3;  // Depth of struct + matrix
+    size_t iterations = kMaxNestDepthOfCompositeType - depth + 1;
+    for (size_t i = 0; i < iterations; ++i) {
+        auto source = i == iterations - 1 ? Source{{12, 34}} : Source{{0, i}};
+        s = Structure(source, "S" + std::to_string(i), utils::Vector{Member("m", ty.Of(s))});
+    }
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(), "12:34 error: struct 'S252' has nesting depth of 256, maximum is 255");
+}
+
+TEST_F(ResolverTest, MaxNestDepthOfCompositeType_Arrays_Valid) {
+    auto a = ty.array(ty.i32(), 10_u);
+    size_t depth = 1;  // Depth of array
+    size_t iterations = kMaxNestDepthOfCompositeType - depth;
+    for (size_t i = 0; i < iterations; ++i) {
+        a = ty.array(a, 1_u);
+    }
+    Alias("a", a);
+    EXPECT_TRUE(r()->Resolve()) << r()->error();
+}
+
+TEST_F(ResolverTest, MaxNestDepthOfCompositeType_Arrays_Invalid) {
+    auto a = ty.array(Source{{99, 88}}, ty.i32(), 10_u);
+    size_t depth = 1;  // Depth of array
+    size_t iterations = kMaxNestDepthOfCompositeType - depth + 1;
+    for (size_t i = 0; i < iterations; ++i) {
+        auto source = (i == iterations - 1) ? Source{{12, 34}} : Source{{0, i}};
+        a = ty.array(source, a, 1_u);
+    }
+    Alias("a", a);
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(), "12:34 error: array has nesting depth of 256, maximum is 255");
+}
+
+TEST_F(ResolverTest, MaxNestDepthOfCompositeType_ArraysOfVector_Valid) {
+    auto a = ty.array(ty.vec3<i32>(), 10_u);
+    size_t depth = 2;  // Depth of array + vector
+    size_t iterations = kMaxNestDepthOfCompositeType - depth;
+    for (size_t i = 0; i < iterations; ++i) {
+        a = ty.array(a, 1_u);
+    }
+    Alias("a", a);
+    EXPECT_TRUE(r()->Resolve()) << r()->error();
+}
+
+TEST_F(ResolverTest, MaxNestDepthOfCompositeType_ArraysOfVector_Invalid) {
+    auto a = ty.array(Source{{99, 88}}, ty.vec3<i32>(), 10_u);
+    size_t depth = 2;  // Depth of array + vector
+    size_t iterations = kMaxNestDepthOfCompositeType - depth + 1;
+    for (size_t i = 0; i < iterations; ++i) {
+        auto source = (i == iterations - 1) ? Source{{12, 34}} : Source{{0, i}};
+        a = ty.array(source, a, 1_u);
+    }
+    Alias("a", a);
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(), "12:34 error: array has nesting depth of 256, maximum is 255");
+}
+
+TEST_F(ResolverTest, MaxNestDepthOfCompositeType_ArraysOfMatrix_Valid) {
+    auto a = ty.array(ty.mat3x3<f32>(), 10_u);
+    size_t depth = 3;  // Depth of array + matrix
+    size_t iterations = kMaxNestDepthOfCompositeType - depth;
+    for (size_t i = 0; i < iterations; ++i) {
+        a = ty.array(a, 1_u);
+    }
+    Alias("a", a);
+    EXPECT_TRUE(r()->Resolve()) << r()->error();
+}
+
+TEST_F(ResolverTest, MaxNestDepthOfCompositeType_ArraysOfMatrix_Invalid) {
+    auto a = ty.array(ty.mat3x3<f32>(), 10_u);
+    size_t depth = 3;  // Depth of array + matrix
+    size_t iterations = kMaxNestDepthOfCompositeType - depth + 1;
+    for (size_t i = 0; i < iterations; ++i) {
+        auto source = (i == iterations - 1) ? Source{{12, 34}} : Source{{0, i}};
+        a = ty.array(source, a, 1_u);
+    }
+    Alias("a", a);
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(), "12:34 error: array has nesting depth of 256, maximum is 255");
+}
+
+TEST_F(ResolverTest, MaxNestDepthOfCompositeType_StructsOfArray_Valid) {
+    auto a = ty.array(ty.mat3x3<f32>(), 10_u);
+    auto* s = Structure("S", utils::Vector{Member("m", a)});
+    size_t depth = 4;  // Depth of struct + array + matrix
+    size_t iterations = kMaxNestDepthOfCompositeType - depth;
+    for (size_t i = 0; i < iterations; ++i) {
+        s = Structure("S" + std::to_string(i), utils::Vector{Member("m", ty.Of(s))});
+    }
+    EXPECT_TRUE(r()->Resolve()) << r()->error();
+}
+
+TEST_F(ResolverTest, MaxNestDepthOfCompositeType_StructsOfArray_Invalid) {
+    auto a = ty.array(ty.mat3x3<f32>(), 10_u);
+    auto* s = Structure("S", utils::Vector{Member("m", a)});
+    size_t depth = 4;  // Depth of struct + array + matrix
+    size_t iterations = kMaxNestDepthOfCompositeType - depth + 1;
+    for (size_t i = 0; i < iterations; ++i) {
+        auto source = i == iterations - 1 ? Source{{12, 34}} : Source{{0, i}};
+        s = Structure(source, "S" + std::to_string(i), utils::Vector{Member("m", ty.Of(s))});
+    }
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(), "12:34 error: struct 'S251' has nesting depth of 256, maximum is 255");
+}
+
+TEST_F(ResolverTest, MaxNestDepthOfCompositeType_ArraysOfStruct_Valid) {
+    auto* s = Structure("S", utils::Vector{Member("m", ty.mat3x3<f32>())});
+    auto a = ty.array(ty.Of(s), 10_u);
+    size_t depth = 4;  // Depth of array + struct + matrix
+    size_t iterations = kMaxNestDepthOfCompositeType - depth;
+    for (size_t i = 0; i < iterations; ++i) {
+        a = ty.array(a, 1_u);
+    }
+    Alias("a", a);
+    EXPECT_TRUE(r()->Resolve()) << r()->error();
+}
+
+TEST_F(ResolverTest, MaxNestDepthOfCompositeType_ArraysOfStruct_Invalid) {
+    auto* s = Structure("S", utils::Vector{Member("m", ty.mat3x3<f32>())});
+    auto a = ty.array(ty.Of(s), 10_u);
+    size_t depth = 4;  // Depth of array + struct + matrix
+    size_t iterations = kMaxNestDepthOfCompositeType - depth + 1;
+    for (size_t i = 0; i < iterations; ++i) {
+        auto source = (i == iterations - 1) ? Source{{12, 34}} : Source{{0, i}};
+        a = ty.array(source, a, 1_u);
+    }
+    Alias("a", a);
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(), "12:34 error: array has nesting depth of 256, maximum is 255");
+}
 
 }  // namespace
 }  // namespace tint::resolver

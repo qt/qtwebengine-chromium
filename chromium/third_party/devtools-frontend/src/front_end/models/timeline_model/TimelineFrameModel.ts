@@ -33,8 +33,9 @@
 import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import type * as Protocol from '../../generated/protocol.js';
+import * as TraceEngine from '../trace/trace.js';
 
-import {RecordType, TimelineData} from './TimelineModel.js';
+import {RecordType, EventOnTimelineData} from './TimelineModel.js';
 
 import {TracingLayerTree, type TracingLayerPayload, type TracingLayerTile} from './TracingLayerTree.js';
 
@@ -291,7 +292,7 @@ export class TimelineFrameModel {
     if (event.name === RecordType.SetLayerTreeId) {
       this.layerTreeId = event.args['layerTreeId'] || event.args['data']['layerTreeId'];
     } else if (
-        event.id && event.phase === SDK.TracingModel.Phase.SnapshotObject &&
+        event.id && event.phase === TraceEngine.Types.TraceEvents.Phase.OBJECT_SNAPSHOT &&
         event.name === RecordType.LayerTreeHostImplSnapshot && Number(event.id) === this.layerTreeId && this.target) {
       const snapshot = (event as SDK.TracingModel.ObjectSnapshot);
       this.handleLayerTreeSnapshot(new TracingFrameLayerTree(this.target, snapshot));
@@ -344,8 +345,8 @@ export class TimelineFrameModel {
     if (event.name === RecordType.BeginMainThreadFrame && event.args['data'] && event.args['data']['frameId']) {
       this.framePendingCommit.mainFrameId = event.args['data']['frameId'];
     }
-    if (event.name === RecordType.Paint && event.args['data']['layerId'] && TimelineData.forEvent(event).picture &&
-        this.target) {
+    if (event.name === RecordType.Paint && event.args['data']['layerId'] &&
+        EventOnTimelineData.forEvent(event).picture && this.target) {
       this.framePendingCommit.paints.push(new LayerPaintEvent(event, this.target));
     }
     // Commit will be replacing CompositeLayers but CompositeLayers is kept
@@ -501,7 +502,7 @@ export class LayerPaintEvent {
     rect: Array<number>,
     serializedPicture: string,
   }|null> {
-    const picture = TimelineData.forEvent(this.eventInternal).picture;
+    const picture = EventOnTimelineData.forEvent(this.eventInternal).picture;
     if (!picture) {
       return Promise.resolve(null);
     }

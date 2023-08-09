@@ -37,7 +37,6 @@ class CFX_DefaultRenderDevice final : public CFX_RenderDevice {
   bool AttachRecorder(SkPictureRecorder* recorder);
   void Clear(uint32_t color);
   std::unique_ptr<SkPictureRecorder> CreateRecorder(const SkRect& bounds);
-  void DebugVerifyBitmapIsPreMultiplied() const override;
   bool SetBitsWithMask(const RetainPtr<CFX_DIBBase>& pBitmap,
                        const RetainPtr<CFX_DIBBase>& pMask,
                        int left,
@@ -79,7 +78,7 @@ class CFX_DefaultRenderDevice final : public CFX_RenderDevice {
                  FXDIB_Format format,
                  RetainPtr<CFX_DIBitmap> pBackdropBitmap);
 
-#ifdef _SKIA_SUPPORT_
+#if defined(_SKIA_SUPPORT_)
   bool AttachSkiaImpl(RetainPtr<CFX_DIBitmap> pBitmap,
                       bool bRgbByteOrder,
                       RetainPtr<CFX_DIBitmap> pBackdropBitmap,

@@ -20,6 +20,7 @@ quiche_core_hdrs = [
     "balsa/noop_balsa_visitor.h",
     "balsa/simple_buffer.h",
     "balsa/standard_header_map.h",
+    "common/btree_scheduler.h",
     "common/capsule.h",
     "common/masque/connect_udp_datagram_payload.h",
     "common/platform/api/quiche_bug_tracker.h",
@@ -41,7 +42,6 @@ quiche_core_hdrs = [
     "common/platform/api/quiche_stack_trace.h",
     "common/platform/api/quiche_testvalue.h",
     "common/platform/api/quiche_thread.h",
-    "common/platform/api/quiche_thread_local.h",
     "common/platform/api/quiche_time_utils.h",
     "common/platform/api/quiche_url_utils.h",
     "common/print_elements.h",
@@ -613,7 +613,6 @@ quiche_core_srcs = [
     "quic/core/quic_bandwidth.cc",
     "quic/core/quic_buffered_packet_store.cc",
     "quic/core/quic_chaos_protector.cc",
-    "quic/core/quic_clock.cc",
     "quic/core/quic_coalesced_packet.cc",
     "quic/core/quic_config.cc",
     "quic/core/quic_connection.cc",
@@ -1026,6 +1025,7 @@ quiche_tests_srcs = [
     "balsa/header_properties_test.cc",
     "balsa/simple_buffer_test.cc",
     "binary_http/binary_http_message_test.cc",
+    "common/btree_scheduler_test.cc",
     "common/capsule_test.cc",
     "common/masque/connect_udp_datagram_payload_test.cc",
     "common/platform/api/quiche_file_utils_test.cc",
@@ -1380,7 +1380,6 @@ default_platform_impl_hdrs = [
     "common/platform/default/quiche_platform_impl/quiche_bug_tracker_impl.h",
     "common/platform/default/quiche_platform_impl/quiche_client_stats_impl.h",
     "common/platform/default/quiche_platform_impl/quiche_containers_impl.h",
-    "common/platform/default/quiche_platform_impl/quiche_default_proof_providers_impl.h",
     "common/platform/default/quiche_platform_impl/quiche_event_loop_impl.h",
     "common/platform/default/quiche_platform_impl/quiche_export_impl.h",
     "common/platform/default/quiche_platform_impl/quiche_flag_utils_impl.h",
@@ -1396,7 +1395,6 @@ default_platform_impl_hdrs = [
     "common/platform/default/quiche_platform_impl/quiche_server_stats_impl.h",
     "common/platform/default/quiche_platform_impl/quiche_stack_trace_impl.h",
     "common/platform/default/quiche_platform_impl/quiche_testvalue_impl.h",
-    "common/platform/default/quiche_platform_impl/quiche_thread_local_impl.h",
     "common/platform/default/quiche_platform_impl/quiche_time_utils_impl.h",
     "common/platform/default/quiche_platform_impl/quiche_udp_socket_platform_impl.h",
     "common/platform/default/quiche_platform_impl/quiche_url_utils_impl.h",
@@ -1410,12 +1408,14 @@ default_platform_impl_srcs = [
 ]
 default_platform_impl_tool_support_hdrs = [
     "common/platform/default/quiche_platform_impl/quiche_command_line_flags_impl.h",
+    "common/platform/default/quiche_platform_impl/quiche_default_proof_providers_impl.h",
     "common/platform/default/quiche_platform_impl/quiche_file_utils_impl.h",
     "common/platform/default/quiche_platform_impl/quiche_stream_buffer_allocator_impl.h",
     "common/platform/default/quiche_platform_impl/quiche_system_event_loop_impl.h",
 ]
 default_platform_impl_tool_support_srcs = [
     "common/platform/default/quiche_platform_impl/quiche_command_line_flags_impl.cc",
+    "common/platform/default/quiche_platform_impl/quiche_default_proof_providers_impl.cc",
     "common/platform/default/quiche_platform_impl/quiche_file_utils_impl.cc",
 ]
 default_platform_impl_test_support_hdrs = [
@@ -1546,6 +1546,62 @@ qbone_srcs = [
     "quic/qbone/qbone_session_test.cc",
     "quic/qbone/qbone_stream.cc",
     "quic/qbone/qbone_stream_test.cc",
+]
+blind_sign_auth_hdrs = [
+    "blind_sign_auth/anonymous_tokens/cpp/client/anonymous_tokens_rsa_bssa_client.h",
+    "blind_sign_auth/anonymous_tokens/cpp/crypto/blind_signer.h",
+    "blind_sign_auth/anonymous_tokens/cpp/crypto/blinder.h",
+    "blind_sign_auth/anonymous_tokens/cpp/crypto/constants.h",
+    "blind_sign_auth/anonymous_tokens/cpp/crypto/crypto_utils.h",
+    "blind_sign_auth/anonymous_tokens/cpp/crypto/rsa_blind_signer.h",
+    "blind_sign_auth/anonymous_tokens/cpp/crypto/rsa_blinder.h",
+    "blind_sign_auth/anonymous_tokens/cpp/crypto/rsa_ssa_pss_verifier.h",
+    "blind_sign_auth/anonymous_tokens/cpp/crypto/verifier.h",
+    "blind_sign_auth/anonymous_tokens/cpp/shared/proto_utils.h",
+    "blind_sign_auth/anonymous_tokens/cpp/shared/status_utils.h",
+    "blind_sign_auth/anonymous_tokens/cpp/testing/utils.h",
+    "blind_sign_auth/blind_sign_auth.h",
+    "blind_sign_auth/blind_sign_auth_interface.h",
+    "blind_sign_auth/blind_sign_http_interface.h",
+    "blind_sign_auth/blind_sign_http_response.h",
+    "blind_sign_auth/cached_blind_sign_auth.h",
+    "blind_sign_auth/test_tools/mock_blind_sign_auth_interface.h",
+    "blind_sign_auth/test_tools/mock_blind_sign_http_interface.h",
+]
+blind_sign_auth_srcs = [
+    "blind_sign_auth/anonymous_tokens/cpp/client/anonymous_tokens_rsa_bssa_client.cc",
+    "blind_sign_auth/anonymous_tokens/cpp/crypto/crypto_utils.cc",
+    "blind_sign_auth/anonymous_tokens/cpp/crypto/rsa_blind_signer.cc",
+    "blind_sign_auth/anonymous_tokens/cpp/crypto/rsa_blinder.cc",
+    "blind_sign_auth/anonymous_tokens/cpp/crypto/rsa_ssa_pss_verifier.cc",
+    "blind_sign_auth/anonymous_tokens/cpp/shared/proto_utils.cc",
+    "blind_sign_auth/anonymous_tokens/cpp/testing/utils.cc",
+    "blind_sign_auth/blind_sign_auth.cc",
+    "blind_sign_auth/cached_blind_sign_auth.cc",
+]
+blind_sign_auth_tests_hdrs = [
+
+]
+blind_sign_auth_tests_srcs = [
+    "blind_sign_auth/anonymous_tokens/cpp/client/anonymous_tokens_rsa_bssa_client_test.cc",
+    "blind_sign_auth/anonymous_tokens/cpp/crypto/at_crypto_utils_test.cc",
+    "blind_sign_auth/anonymous_tokens/cpp/crypto/rsa_blind_signer_test.cc",
+    "blind_sign_auth/anonymous_tokens/cpp/crypto/rsa_blinder_test.cc",
+    "blind_sign_auth/anonymous_tokens/cpp/crypto/rsa_ssa_pss_verifier_test.cc",
+    "blind_sign_auth/anonymous_tokens/cpp/shared/proto_utils_test.cc",
+    "blind_sign_auth/blind_sign_auth_test.cc",
+    "blind_sign_auth/cached_blind_sign_auth_test.cc",
+]
+protobuf_blind_sign_auth = [
+    "blind_sign_auth/anonymous_tokens/proto/anonymous_tokens.proto",
+    "blind_sign_auth/proto/any.proto",
+    "blind_sign_auth/proto/attestation.proto",
+    "blind_sign_auth/proto/auth_and_sign.proto",
+    "blind_sign_auth/proto/get_initial_data.proto",
+    "blind_sign_auth/proto/key_services.proto",
+    "blind_sign_auth/proto/public_metadata.proto",
+    "blind_sign_auth/proto/spend_token_data.proto",
+    "blind_sign_auth/proto/timestamp.proto",
 ]
 libevent_hdrs = [
     "quic/bindings/quic_libevent.h",

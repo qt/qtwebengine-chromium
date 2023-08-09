@@ -32,6 +32,7 @@
 #include "src/tint/type/abstract_int.h"
 #include "src/tint/utils/reverse.h"
 #include "src/tint/utils/scoped_assignment.h"
+#include "src/tint/utils/string_stream.h"
 
 TINT_INSTANTIATE_TYPEINFO(tint::transform::DirectVariableAccess);
 TINT_INSTANTIATE_TYPEINFO(tint::transform::DirectVariableAccess::Config);
@@ -687,8 +688,8 @@ struct DirectVariableAccess::State {
                 // Build an appropriate variant function name.
                 // This is derived from the original function name and the pointer parameter
                 // chains.
-                std::stringstream ss;
-                ss << ctx.src->Symbols().NameFor(target->Declaration()->name->symbol);
+                utils::StringStream ss;
+                ss << target->Declaration()->name->symbol.Name();
                 for (auto* param : target->Parameters()) {
                     if (auto indices = target_signature.Find(param)) {
                         ss << "_" << AccessShapeName(*indices);
@@ -1080,12 +1081,12 @@ struct DirectVariableAccess::State {
 
     /// @returns a name describing the given shape
     std::string AccessShapeName(const AccessShape& shape) {
-        std::stringstream ss;
+        utils::StringStream ss;
 
         if (IsPrivateOrFunction(shape.root.address_space)) {
             ss << "F";
         } else {
-            ss << ctx.src->Symbols().NameFor(shape.root.variable->Declaration()->name->symbol);
+            ss << shape.root.variable->Declaration()->name->symbol.Name();
         }
 
         for (auto& op : shape.ops) {
@@ -1099,7 +1100,7 @@ struct DirectVariableAccess::State {
 
             auto* member = std::get_if<Symbol>(&op);
             if (TINT_LIKELY(member)) {
-                ss << sym.NameFor(*member);
+                ss << member->Name();
                 continue;
             }
 
@@ -1159,7 +1160,7 @@ struct DirectVariableAccess::State {
     /// @returns a new Symbol starting with @p symbol concatenated with @p suffix, and possibly an
     /// underscore and number, if the symbol is already taken.
     Symbol UniqueSymbolWithSuffix(Symbol symbol, const std::string& suffix) {
-        auto str = ctx.src->Symbols().NameFor(symbol) + suffix;
+        auto str = symbol.Name() + suffix;
         return unique_symbols.GetOrCreate(str, [&] { return b.Symbols().New(str); });
     }
 

@@ -5,21 +5,19 @@
  * found in the LICENSE file.
  */
 
-#include "include/sksl/DSLCore.h"
+#include "src/sksl/dsl/DSLCore.h"
 
 #include "include/core/SkTypes.h"
 #include "include/private/SkSLDefines.h"
-#include "include/private/SkSLProgramElement.h"
-#include "include/private/SkSLStatement.h"
-#include "include/sksl/DSLModifiers.h"
-#include "include/sksl/DSLType.h"
-#include "include/sksl/DSLVar.h"
-#include "include/sksl/SkSLPosition.h"
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLModifiersPool.h"  // IWYU pragma: keep
 #include "src/sksl/SkSLPool.h"
+#include "src/sksl/SkSLPosition.h"
 #include "src/sksl/SkSLProgramSettings.h"
 #include "src/sksl/SkSLThreadContext.h"
+#include "src/sksl/dsl/DSLModifiers.h"
+#include "src/sksl/dsl/DSLType.h"
+#include "src/sksl/dsl/DSLVar.h"
 #include "src/sksl/dsl/priv/DSLWriter.h"
 #include "src/sksl/ir/SkSLBlock.h"
 #include "src/sksl/ir/SkSLBreakStatement.h"
@@ -34,13 +32,17 @@
 #include "src/sksl/ir/SkSLInterfaceBlock.h"
 #include "src/sksl/ir/SkSLModifiersDeclaration.h"
 #include "src/sksl/ir/SkSLProgram.h"
+#include "src/sksl/ir/SkSLProgramElement.h"
 #include "src/sksl/ir/SkSLReturnStatement.h"
+#include "src/sksl/ir/SkSLStatement.h"
 #include "src/sksl/ir/SkSLSwitchStatement.h"
 #include "src/sksl/ir/SkSLSwizzle.h"
 #include "src/sksl/ir/SkSLTernaryExpression.h"
 #include "src/sksl/ir/SkSLVarDeclarations.h"
 
 #include <vector>
+
+using namespace skia_private;
 
 namespace SkSL {
 
@@ -139,7 +141,7 @@ public:
         return DSLWriter::Declaration(var);
     }
 
-    static DSLStatement Declare(SkTArray<DSLVar>& vars, Position pos) {
+    static DSLStatement Declare(TArray<DSLVar>& vars, Position pos) {
         StatementArray statements;
         for (DSLVar& v : vars) {
             statements.push_back(Declare(v, pos).release());
@@ -155,7 +157,7 @@ public:
         }
     }
 
-    static void Declare(SkTArray<DSLGlobalVar>& vars, Position pos) {
+    static void Declare(TArray<DSLGlobalVar>& vars, Position pos) {
         for (DSLGlobalVar& v : vars) {
             Declare(v, pos);
         }
@@ -191,7 +193,7 @@ public:
     }
 
     static DSLExpression InterfaceBlock(const DSLModifiers& modifiers, std::string_view typeName,
-                                        SkTArray<DSLField> fields, std::string_view varName,
+                                        TArray<DSLField> fields, std::string_view varName,
                                         int arraySize, Position pos) {
         // Build a struct type corresponding to the passed-in fields and array size.
         DSLType varType = StructType(typeName, fields, /*interfaceBlock=*/true, pos);
@@ -272,7 +274,7 @@ public:
         return DSLExpression(std::move(result), pos);
     }
 
-    static DSLStatement Switch(DSLExpression value, SkTArray<DSLCase> cases, Position pos) {
+    static DSLStatement Switch(DSLExpression value, TArray<DSLCase> cases, Position pos) {
         ExpressionArray values;
         values.reserve_back(cases.size());
         StatementArray caseBlocks;
@@ -340,7 +342,7 @@ DSLStatement Declare(DSLVar& var, Position pos) {
     return DSLCore::Declare(var, pos);
 }
 
-DSLStatement Declare(SkTArray<DSLVar>& vars, Position pos) {
+DSLStatement Declare(TArray<DSLVar>& vars, Position pos) {
     return DSLCore::Declare(vars, pos);
 }
 
@@ -348,7 +350,7 @@ void Declare(DSLGlobalVar& var, Position pos) {
     DSLCore::Declare(var, pos);
 }
 
-void Declare(SkTArray<DSLGlobalVar>& vars, Position pos) {
+void Declare(TArray<DSLGlobalVar>& vars, Position pos) {
     DSLCore::Declare(vars, pos);
 }
 
@@ -371,7 +373,7 @@ DSLStatement If(DSLExpression test, DSLStatement ifTrue, DSLStatement ifFalse, P
 }
 
 DSLExpression InterfaceBlock(const DSLModifiers& modifiers, std::string_view typeName,
-                             SkTArray<DSLField> fields, std::string_view varName, int arraySize,
+                             TArray<DSLField> fields, std::string_view varName, int arraySize,
                              Position pos) {
     return DSLCore::InterfaceBlock(modifiers, typeName, std::move(fields), varName, arraySize, pos);
 }
@@ -385,7 +387,7 @@ DSLExpression Select(DSLExpression test, DSLExpression ifTrue, DSLExpression ifF
     return DSLCore::Select(std::move(test), std::move(ifTrue), std::move(ifFalse), pos);
 }
 
-DSLStatement Switch(DSLExpression value, SkTArray<DSLCase> cases, Position pos) {
+DSLStatement Switch(DSLExpression value, TArray<DSLCase> cases, Position pos) {
     return DSLCore::Switch(std::move(value), std::move(cases), pos);
 }
 

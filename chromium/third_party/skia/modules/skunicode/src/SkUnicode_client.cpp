@@ -4,7 +4,6 @@
 * Use of this source code is governed by a BSD-style license that can be
 * found in the LICENSE file.
 */
-
 #include "include/core/SkSpan.h"
 #include "include/core/SkString.h"
 #include "include/core/SkTypes.h"
@@ -22,26 +21,37 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <array>
+#include <unicode/ubidi.h>
+#include <unicode/ubrk.h>
+#include <unicode/uchar.h>
+#include <unicode/uloc.h>
+#include <unicode/uscript.h>
+#include <unicode/ustring.h>
+#include <unicode/utext.h>
+#include <unicode/utypes.h>
 
+using namespace skia_private;
 
 #ifndef SK_UNICODE_ICU_IMPLEMENTATION
+
 const char* SkUnicode_IcuBidi::errorName(UErrorCode status) {
-    return cl_u_errorName(status);
+    return u_errorName_skia(status);
 }
 void SkUnicode_IcuBidi::bidi_close(UBiDi* bidi) {
-    cl_ubidi_close(bidi);
+    ubidi_close_skia(bidi);
 }
 UBiDiDirection SkUnicode_IcuBidi::bidi_getDirection(const UBiDi* bidi) {
-    return cl_ubidi_getDirection(bidi);
+    return ubidi_getDirection_skia(bidi);
 }
 SkBidiIterator::Position SkUnicode_IcuBidi::bidi_getLength(const UBiDi* bidi) {
-    return cl_ubidi_getLength(bidi);
+    return ubidi_getLength_skia(bidi);
 }
 SkBidiIterator::Level SkUnicode_IcuBidi::bidi_getLevelAt(const UBiDi* bidi, int pos) {
-    return cl_ubidi_getLevelAt(bidi, pos);
+    return ubidi_getLevelAt_skia(bidi, pos);
 }
 UBiDi* SkUnicode_IcuBidi::bidi_openSized(int32_t maxLength, int32_t maxRunCount, UErrorCode* pErrorCode) {
-    return cl_ubidi_openSized(maxLength, maxRunCount, pErrorCode);
+    return ubidi_openSized_skia(maxLength, maxRunCount, pErrorCode);
 }
 void SkUnicode_IcuBidi::bidi_setPara(UBiDi* bidi,
                          const UChar* text,
@@ -49,12 +59,12 @@ void SkUnicode_IcuBidi::bidi_setPara(UBiDi* bidi,
                          UBiDiLevel paraLevel,
                          UBiDiLevel* embeddingLevels,
                          UErrorCode* status) {
-    return cl_ubidi_setPara(bidi, text, length, paraLevel, embeddingLevels, status);
+    return ubidi_setPara_skia(bidi, text, length, paraLevel, embeddingLevels, status);
 }
 void SkUnicode_IcuBidi::bidi_reorderVisual(const SkUnicode::BidiLevel runLevels[],
                                int levelsCount,
                                int32_t logicalFromVisual[]) {
-    cl_ubidi_reorderVisual(runLevels, levelsCount, logicalFromVisual);
+    ubidi_reorderVisual_skia(runLevels, levelsCount, logicalFromVisual);
 }
 #endif
 
@@ -92,7 +102,7 @@ public:
             : fData(std::make_shared<Data>(text,
                                            std::move(words),
                                            std::move(graphemeBreaks),
-                                           std::move(lineBreaks))) {}
+                                           std::move(lineBreaks))) { }
     SkUnicode_client(const SkUnicode_client* origin)
             : fData(origin->fData) {}
 
@@ -129,63 +139,63 @@ public:
     }
 
     static bool isWhitespace(SkUnichar unichar) {
-        std::u16string whitespaces =
-       u"\u0009" // character tabulation
-        "\u000A" // line feed
-        "\u000B" // line tabulation
-        "\u000C" // form feed
-        "\u000D" // carriage return
-        "\u0020" // space
-      //"\u0085" // next line
-      //"\u00A0" // no-break space
-        "\u1680" // ogham space mark
-        "\u2000" // en quad
-        "\u2001" // em quad
-        "\u2002" // en space
-        "\u2003" // em space
-        "\u2004" // three-per-em space
-        "\u2005" // four-per-em space
-        "\u2006" // six-per-em space
-      //"\u2007" // figure space
-        "\u2008" // punctuation space
-        "\u2009" // thin space
-        "\u200A" // hair space
-        "\u2028" // line separator
-        "\u2029" // paragraph separator
-      //"\u202F" // narrow no-break space
-        "\u205F" // medium mathematical space
-        "\u3000";// ideographic space
-        return whitespaces.find(unichar) != std::u16string::npos;
+        static constexpr std::array<SkUnichar, 21> whitespaces {
+                0x0009, // character tabulation
+                0x000A, // line feed
+                0x000B, // line tabulation
+                0x000C, // form feed
+                0x000D, // carriage return
+                0x0020, // space
+              //0x0085, // next line
+              //0x00A0, // no-break space
+                0x1680, // ogham space mark
+                0x2000, // en quad
+                0x2001, // em quad
+                0x2002, // en space
+                0x2003, // em space
+                0x2004, // three-per-em space
+                0x2005, // four-per-em space
+                0x2006, // six-per-em space
+              //0x2007, // figure space
+                0x2008, // punctuation space
+                0x2009, // thin space
+                0x200A, // hair space
+                0x2028, // line separator
+                0x2029, // paragraph separator
+              //0x202F, // narrow no-break space
+                0x205F, // medium mathematical space
+                0x3000};// ideographic space
+        return std::find(whitespaces.begin(), whitespaces.end(), unichar) != whitespaces.end();
     }
 
     static bool isSpace(SkUnichar unichar) {
-        std::u16string spaces =
-       u"\u0009" // character tabulation
-        "\u000A" // line feed
-        "\u000B" // line tabulation
-        "\u000C" // form feed
-        "\u000D" // carriage return
-        "\u0020" // space
-        "\u0085" // next line
-        "\u00A0" // no-break space
-        "\u1680" // ogham space mark
-        "\u2000" // en quad
-        "\u2001" // em quad
-        "\u2002" // en space
-        "\u2003" // em space
-        "\u2004" // three-per-em space
-        "\u2005" // four-per-em space
-        "\u2006" // six-per-em space
-        "\u2007" // figure space
-        "\u2008" // punctuation space
-        "\u2009" // thin space
-        "\u200A" // hair space
-        "\u2028" // line separator
-        "\u2029" // paragraph separator
-        "\u202F" // narrow no-break space
-        "\u205F" // medium mathematical space
-        "\u3000"; // ideographic space
-        return spaces.find(unichar) != std::u16string::npos;
+        static constexpr std::array<SkUnichar, 25> spaces {
+                0x0009, // character tabulation
+                0x000A, // line feed
+                0x000B, // line tabulation
+                0x000C, // form feed
+                0x000D, // carriage return
+                0x0020, // space
+                0x0085, // next line
+                0x00A0, // no-break space
+                0x1680, // ogham space mark
+                0x2000, // en quad
+                0x2001, // em quad
+                0x2002, // en space
+                0x2003, // em space
+                0x2004, // three-per-em space
+                0x2005, // four-per-em space
+                0x2006, // six-per-em space
+                0x2007, // figure space
+                0x2008, // punctuation space
+                0x2009, // thin space
+                0x200A, // hair space
+                0x2028, // line separator
+                0x2029, // paragraph separator
+                0x202F, // narrow no-break space
+                0x205F, // medium mathematical space
+                0x3000}; // ideographic space
+        return std::find(spaces.begin(), spaces.end(), unichar) != spaces.end();
     }
 
     static bool isTabulation(SkUnichar utf8) {
@@ -199,7 +209,7 @@ public:
     bool computeCodeUnitFlags(char utf8[],
                               int utf8Units,
                               bool replaceTabs,
-                              SkTArray<SkUnicode::CodeUnitFlags, true>* results) override {
+                              TArray<SkUnicode::CodeUnitFlags, true>* results) override {
         results->clear();
         results->push_back_n(utf8Units + 1, CodeUnitFlags::kNoCodeUnitFlag);
         for (auto& lineBreak : fData->fLineBreaks) {
@@ -241,7 +251,7 @@ public:
     }
 
     bool computeCodeUnitFlags(char16_t utf16[], int utf16Units, bool replaceTabs,
-                          SkTArray<SkUnicode::CodeUnitFlags, true>* results) override {
+                          TArray<SkUnicode::CodeUnitFlags, true>* results) override {
         results->clear();
         results->push_back_n(utf16Units + 1, CodeUnitFlags::kNoCodeUnitFlag);
         for (auto& lineBreak : fData->fLineBreaks) {
@@ -338,3 +348,4 @@ std::unique_ptr<SkUnicode> SkUnicode::MakeClientBasedUnicode(
         std::vector<SkUnicode::LineBreakBefore> lineBreaks) {
     return std::make_unique<SkUnicode_client>(text, words, graphemeBreaks, lineBreaks);
 }
+

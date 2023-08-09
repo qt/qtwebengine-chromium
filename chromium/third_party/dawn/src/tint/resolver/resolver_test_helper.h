@@ -29,9 +29,9 @@
 #include "src/tint/sem/statement.h"
 #include "src/tint/sem/value_expression.h"
 #include "src/tint/sem/variable.h"
-#include "src/tint/traits.h"
 #include "src/tint/type/abstract_float.h"
 #include "src/tint/type/abstract_int.h"
+#include "src/tint/utils/traits.h"
 #include "src/tint/utils/vector.h"
 
 namespace tint::resolver {
@@ -97,11 +97,11 @@ class TestHelper : public ProgramBuilder {
     /// @return true if all users are as expected
     bool CheckVarUsers(const ast::Variable* var,
                        utils::VectorRef<const ast::Expression*> expected_users) {
-        auto& var_users = Sem().Get(var)->Users();
-        if (var_users.size() != expected_users.Length()) {
+        auto var_users = Sem().Get(var)->Users();
+        if (var_users.Length() != expected_users.Length()) {
             return false;
         }
-        for (size_t i = 0; i < var_users.size(); i++) {
+        for (size_t i = 0; i < var_users.Length(); i++) {
             if (var_users[i]->Declaration() != expected_users[i]) {
                 return false;
             }
@@ -112,12 +112,12 @@ class TestHelper : public ProgramBuilder {
     /// @param type a type
     /// @returns the name for `type` that closely resembles how it would be
     /// declared in WGSL.
-    std::string FriendlyName(ast::Type type) { return Symbols().NameFor(type->identifier->symbol); }
+    std::string FriendlyName(ast::Type type) { return type->identifier->symbol.Name(); }
 
     /// @param type a type
     /// @returns the name for `type` that closely resembles how it would be
     /// declared in WGSL.
-    std::string FriendlyName(const type::Type* type) { return type->FriendlyName(Symbols()); }
+    std::string FriendlyName(const type::Type* type) { return type->FriendlyName(); }
 
   private:
     std::unique_ptr<Resolver> resolver_;
@@ -587,7 +587,7 @@ struct DataType<alias<T, ID>> {
     /// @param args the value nested elements will be initialized with
     /// @return a new AST expression of the alias type
     template <bool IS_COMPOSITE = is_composite>
-    static inline traits::EnableIf<!IS_COMPOSITE, const ast::Expression*> Expr(
+    static inline utils::traits::EnableIf<!IS_COMPOSITE, const ast::Expression*> Expr(
         ProgramBuilder& b,
         utils::VectorRef<Scalar> args) {
         // Cast
@@ -598,7 +598,7 @@ struct DataType<alias<T, ID>> {
     /// @param args the value nested elements will be initialized with
     /// @return a new AST expression of the alias type
     template <bool IS_COMPOSITE = is_composite>
-    static inline traits::EnableIf<IS_COMPOSITE, const ast::Expression*> Expr(
+    static inline utils::traits::EnableIf<IS_COMPOSITE, const ast::Expression*> Expr(
         ProgramBuilder& b,
         utils::VectorRef<Scalar> args) {
         // Construct
@@ -819,7 +819,7 @@ constexpr bool IsValue = std::is_same_v<T, Value>;
 /// Creates a Value of DataType<T> from a scalar `v`
 template <typename T>
 Value Val(T v) {
-    static_assert(traits::IsTypeIn<T, Scalar>, "v must be a Number of bool");
+    static_assert(utils::traits::IsTypeIn<T, Scalar>, "v must be a Number of bool");
     return Value::Create<T>(utils::Vector<Scalar, 1>{v});
 }
 

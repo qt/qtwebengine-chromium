@@ -208,17 +208,15 @@ export class ProfileView extends UI.View.SimpleView implements UI.SearchableView
     this.viewSelectComboBox =
         new UI.Toolbar.ToolbarComboBox(this.changeView.bind(this), i18nString(UIStrings.profileViewMode));
 
-    this.focusButton =
-        new UI.Toolbar.ToolbarButton(i18nString(UIStrings.focusSelectedFunction), 'largeicon-visibility');
+    this.focusButton = new UI.Toolbar.ToolbarButton(i18nString(UIStrings.focusSelectedFunction), 'eye');
     this.focusButton.setEnabled(false);
     this.focusButton.addEventListener(UI.Toolbar.ToolbarButton.Events.Click, this.focusClicked, this);
 
-    this.excludeButton =
-        new UI.Toolbar.ToolbarButton(i18nString(UIStrings.excludeSelectedFunction), 'largeicon-delete');
+    this.excludeButton = new UI.Toolbar.ToolbarButton(i18nString(UIStrings.excludeSelectedFunction), 'cross');
     this.excludeButton.setEnabled(false);
     this.excludeButton.addEventListener(UI.Toolbar.ToolbarButton.Events.Click, this.excludeClicked, this);
 
-    this.resetButton = new UI.Toolbar.ToolbarButton(i18nString(UIStrings.restoreAllFunctions), 'largeicon-refresh');
+    this.resetButton = new UI.Toolbar.ToolbarButton(i18nString(UIStrings.restoreAllFunctions), 'refresh');
     this.resetButton.setEnabled(false);
     this.resetButton.addEventListener(UI.Toolbar.ToolbarButton.Events.Click, this.resetClicked, this);
 
@@ -274,7 +272,7 @@ export class ProfileView extends UI.View.SimpleView implements UI.SearchableView
     }
   }
 
-  focus(): void {
+  override focus(): void {
     if (this.flameChart) {
       this.flameChart.focus();
     } else {
@@ -293,7 +291,7 @@ export class ProfileView extends UI.View.SimpleView implements UI.SearchableView
     this.flameChart.selectRange(timeLeft, timeRight);
   }
 
-  async toolbarItems(): Promise<UI.Toolbar.ToolbarItem[]> {
+  override async toolbarItems(): Promise<UI.Toolbar.ToolbarItem[]> {
     return [this.viewSelectComboBox, this.focusButton, this.excludeButton, this.resetButton];
   }
 
@@ -323,7 +321,7 @@ export class ProfileView extends UI.View.SimpleView implements UI.SearchableView
     }
   }
 
-  willHide(): void {
+  override willHide(): void {
     this.currentSearchResultIndex = -1;
   }
 
@@ -581,19 +579,19 @@ export class WritableProfileHeader extends ProfileHeader implements Common.Strin
   async close(): Promise<void> {
   }
 
-  dispose(): void {
+  override dispose(): void {
     this.removeTempFile();
   }
 
-  createSidebarTreeElement(panel: DataDisplayDelegate): ProfileSidebarTreeElement {
+  override createSidebarTreeElement(panel: DataDisplayDelegate): ProfileSidebarTreeElement {
     return new ProfileSidebarTreeElement(panel, this, 'profile-sidebar-tree-item');
   }
 
-  canSaveToFile(): boolean {
+  override canSaveToFile(): boolean {
     return !this.fromFile() && Boolean(this.protocolProfileInternal);
   }
 
-  async saveToFile(): Promise<void> {
+  override async saveToFile(): Promise<void> {
     const fileOutputStream = new Bindings.FileUtils.FileOutputStream();
     if (!this.fileName) {
       const now = Platform.DateUtilities.toISO8601Compact(new Date());
@@ -613,7 +611,7 @@ export class WritableProfileHeader extends ProfileHeader implements Common.Strin
     void fileOutputStream.close();
   }
 
-  async loadFromFile(file: File): Promise<Error|null> {
+  override async loadFromFile(file: File): Promise<Error|null> {
     this.updateStatus(i18nString(UIStrings.loading), true);
     const fileReader = new Bindings.FileUtils.ChunkedFileReader(file, 10000000, this.onChunkTransferred.bind(this));
     this.jsonifiedProfile = '';

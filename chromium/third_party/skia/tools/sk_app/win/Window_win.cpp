@@ -364,7 +364,7 @@ bool Window_win::attach(BackendType attachType) {
             fWindowContext =
                     window_context_factory::MakeDawnD3D12ForWin(fHWnd, fRequestedDisplayParams);
             break;
-#ifdef SK_GRAPHITE_ENABLED
+#if defined(SK_GRAPHITE)
         case kGraphiteDawn_BackendType:
             fWindowContext = window_context_factory::MakeGraphiteDawnD3D12ForWin(
                     fHWnd, fRequestedDisplayParams);
@@ -412,7 +412,7 @@ void Window_win::setRequestedDisplayParams(const DisplayParams& params, bool all
         }
     }
 
-    INHERITED::setRequestedDisplayParams(params, allowReattach);
+    Window::setRequestedDisplayParams(params, allowReattach);
 }
 
 }   // namespace sk_app

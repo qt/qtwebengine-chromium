@@ -136,9 +136,9 @@ class SimulatedNetworkPipe {
   // other side.
   void StartPacketTransmission(std::vector<uint8_t> packet) {
     task_runner_->PostTaskWithDelay(
-        [this, packet = std::move(packet)]() mutable {
+        [this, pkt = std::move(packet)]() mutable {
           remote_->OnReceivedPacket(local_endpoint_, FakeClock::now(),
-                                    std::move(packet));
+                                    std::move(pkt));
         },
         network_delay_);
   }

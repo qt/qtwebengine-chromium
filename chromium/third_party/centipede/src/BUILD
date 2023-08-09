@@ -52,7 +52,11 @@ cc_binary(
 cc_library(
     name = "feature",
     srcs = ["feature.cc"],
-    hdrs = ["feature.h"],
+    hdrs = [
+        "concurrent_bitset.h",  # TODO(kcc): consider moving to a separte cc_library.
+        "feature.h",
+        "foreach_nonzero.h",  # TODO(kcc): consider moving to a separte cc_library.
+    ],
 )
 
 cc_library(
@@ -181,14 +185,30 @@ cc_library(
 )
 
 cc_library(
+    name = "minimize_crash",
+    srcs = ["minimize_crash.cc"],
+    hdrs = ["minimize_crash.h"],
+    deps = [
+        ":centipede_callbacks",
+        ":defs",
+        ":environment",
+        ":logging",
+        ":util",
+        "@com_google_absl//absl/synchronization",
+    ],
+)
+
+cc_library(
     name = "analyze_corpora",
     srcs = ["analyze_corpora.cc"],
     hdrs = ["analyze_corpora.h"],
     deps = [
+        ":binary_info",
+        ":control_flow",
         ":corpus",
         ":coverage",
         ":feature",
-        "@centipede//:logging",
+        ":logging",
         "@com_google_absl//absl/container:flat_hash_set",
     ],
 )
@@ -458,6 +478,7 @@ cc_library(
     ],
     deps = [
         ":analyze_corpora",
+        ":binary_info",
         ":blob_file",
         ":centipede_callbacks",
         ":centipede_lib",
@@ -466,6 +487,7 @@ cc_library(
         ":defs",
         ":environment",
         ":logging",
+        ":minimize_crash",
         ":remote_file",
         ":shard_reader",
         ":stats",
@@ -542,6 +564,7 @@ cc_library(
 RUNNER_SOURCES_NO_MAIN = [
     "byte_array_mutator.cc",
     "byte_array_mutator.h",
+    "concurrent_bitset.h",
     "defs.h",
     "execution_request.cc",
     "execution_request.h",
@@ -549,6 +572,7 @@ RUNNER_SOURCES_NO_MAIN = [
     "execution_result.h",
     "feature.cc",
     "feature.h",
+    "foreach_nonzero.h",
     "knobs.h",
     "knobs.cc",
     "reverse_pc_table.h",
@@ -575,6 +599,7 @@ RUNNER_COPTS = ["-fsanitize-coverage=0"]
 RUNNER_LINKOPTS = [
     "-ldl",  # for dlsym
     "-lrt",  # for shm_open
+    "-lpthread",  # for pthread_once
 ]
 
 RUNNER_DEPS = ["@com_google_absl//absl/types:span"]  # WARNING: be careful with more deps.
@@ -622,7 +647,9 @@ cc_library(
     srcs = ["test_util.cc"],
     hdrs = ["test_util.h"],
     deps = [
+        ":defs",
         ":logging",
+        ":util",
         "@com_google_absl//absl/strings",
     ],
 )
@@ -718,9 +745,21 @@ cc_test(
     name = "stats_test",
     srcs = ["stats_test.cc"],
     deps = [
+        ":logging",
         ":stats",
-        "@centipede//:logging",
-        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "minimize_crash_test",
+    srcs = ["minimize_crash_test.cc"],
+    deps = [
+        ":defs",
+        ":logging",
+        ":minimize_crash",
+        ":test_util",
+        ":util",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -730,7 +769,7 @@ cc_test(
     srcs = ["analyze_corpora_test.cc"],
     deps = [
         ":analyze_corpora",
-        "@centipede//:logging",
+        ":logging",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -840,6 +879,7 @@ cc_test(
         ":test_util",
         ":util",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -863,10 +903,10 @@ cc_test(
     ],
     deps = [
         ":control_flow",
+        ":logging",
         "@centipede//:defs",
         "@centipede//:environment",
         "@centipede//:execution_result",
-        "@centipede//:logging",
         "@centipede//:test_util",
         "@centipede//:util",
         "@com_google_googletest//:gtest_main",
@@ -877,8 +917,8 @@ cc_test(
     name = "call_graph_test",
     srcs = ["call_graph_test.cc"],
     deps = [
+        ":logging",
         "@centipede//:call_graph",
-        "@centipede//:logging",
         "@com_google_googletest//:gtest_main",
     ],
 )

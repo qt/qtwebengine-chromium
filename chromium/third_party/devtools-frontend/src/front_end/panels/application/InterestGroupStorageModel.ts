@@ -76,12 +76,19 @@ export class InterestGroupStorageModel extends SDK.SDKModel.SDKModel<EventTypes>
 
   sharedStorageAccessed(_event: Protocol.Storage.SharedStorageAccessedEvent): void {
   }
+
+  storageBucketCreatedOrUpdated(_event: Protocol.Storage.StorageBucketCreatedOrUpdatedEvent): void {
+  }
+
+  storageBucketDeleted(_event: Protocol.Storage.StorageBucketDeletedEvent): void {
+  }
 }
 
 SDK.SDKModel.SDKModel.register(
     InterestGroupStorageModel, {capabilities: SDK.Target.Capability.Storage, autostart: false});
 
-export const enum Events {
+// eslint-disable-next-line rulesdir/const_enum
+export enum Events {
   InterestGroupAccess = 'InterestGroupAccess',
 }
 

@@ -23,7 +23,7 @@
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/base/span.h"
 
-#ifdef _SKIA_SUPPORT_
+#if defined(_SKIA_SUPPORT_)
 #include "core/fxge/fx_font.h"
 #endif
 
@@ -137,8 +137,9 @@ class CFX_Font {
   void AdjustMMParams(int glyph_index, int dest_width, int weight) const;
   std::unique_ptr<CFX_Path> LoadGlyphPathImpl(uint32_t glyph_index,
                                               int dest_width) const;
+  int GetGlyphWidthImpl(uint32_t glyph_index, int dest_width, int weight) const;
 
-#ifdef _SKIA_SUPPORT_
+#if defined(_SKIA_SUPPORT_)
   CFX_TypeFace* GetDeviceCache() const;
   bool IsSubstFontBold() const;
 #endif

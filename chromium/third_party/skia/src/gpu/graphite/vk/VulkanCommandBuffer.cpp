@@ -13,6 +13,8 @@
 #include "src/gpu/graphite/vk/VulkanSharedContext.h"
 #include "src/gpu/graphite/vk/VulkanTexture.h"
 
+using namespace skia_private;
+
 namespace skgpu::graphite {
 
 std::unique_ptr<VulkanCommandBuffer> VulkanCommandBuffer::Make(
@@ -80,7 +82,23 @@ VulkanCommandBuffer::VulkanCommandBuffer(VkCommandPool pool,
     this->begin();
 }
 
-VulkanCommandBuffer::~VulkanCommandBuffer() {}
+VulkanCommandBuffer::~VulkanCommandBuffer() {
+    if (fActive) {
+        // Need to end command buffer before deleting it
+        VULKAN_CALL(fSharedContext->interface(), EndCommandBuffer(fPrimaryCommandBuffer));
+        fActive = false;
+    }
+
+    if (VK_NULL_HANDLE != fSubmitFence) {
+        VULKAN_CALL(fSharedContext->interface(), DestroyFence(fSharedContext->device(),
+                                                              fSubmitFence,
+                                                              nullptr));
+    }
+    // This should delete any command buffers as well.
+    VULKAN_CALL(fSharedContext->interface(), DestroyCommandPool(fSharedContext->device(),
+                                                                fPool,
+                                                                nullptr));
+}
 
 void VulkanCommandBuffer::onResetCommandBuffer() {
     SkASSERT(!fActive);
@@ -105,7 +123,7 @@ void VulkanCommandBuffer::begin() {
 
     VULKAN_CALL_ERRCHECK(fSharedContext->interface(), BeginCommandBuffer(fPrimaryCommandBuffer,
                                                                          &cmdBufferBeginInfo));
-    SkDEBUGCODE(fActive = true;)
+    fActive = true;
 }
 
 void VulkanCommandBuffer::end() {
@@ -115,7 +133,7 @@ void VulkanCommandBuffer::end() {
 
     VULKAN_CALL_ERRCHECK(fSharedContext->interface(), EndCommandBuffer(fPrimaryCommandBuffer));
 
-    SkDEBUGCODE(fActive = false;)
+    fActive = false;
 }
 
 static bool submit_to_queue(const VulkanInterface* interface,
@@ -238,28 +256,47 @@ void VulkanCommandBuffer::waitUntilFinished() {
                                                                     /*timeout=*/UINT64_MAX));
 }
 
-bool VulkanCommandBuffer::onAddRenderPass(
-        const RenderPassDesc&,
-        const Texture* colorTexture,
-        const Texture* resolveTexture,
-        const Texture* depthStencilTexture,
-        SkRect viewport,
-        const std::vector<std::unique_ptr<DrawPass>>& drawPasses) {
-    return false;
+bool VulkanCommandBuffer::onAddRenderPass(const RenderPassDesc&,
+                                          const Texture* colorTexture,
+                                          const Texture* resolveTexture,
+                                          const Texture* depthStencilTexture,
+                                          SkRect viewport,
+                                          const DrawPassList& drawPasses) {
+    // TODO: fill this in
+
+    // return true despite doing nothing to allow dm to run
+    return true;
 }
 
-bool VulkanCommandBuffer::onAddComputePass(const ComputePassDesc&,
-                                           const ComputePipeline*,
-                                           const std::vector<ResourceBinding>& bindings) {
-    return false;
-}
+bool VulkanCommandBuffer::onAddComputePass(const DispatchGroupList&) { return false; }
 
 bool VulkanCommandBuffer::onCopyBufferToBuffer(const Buffer* srcBuffer,
                                                size_t srcOffset,
                                                const Buffer* dstBuffer,
                                                size_t dstOffset,
                                                size_t size) {
-    return false;
+    this->submitPipelineBarriers();
+
+    auto vkSrcBuffer = static_cast<const VulkanBuffer*>(srcBuffer);
+    auto vkDstBuffer = static_cast<const VulkanBuffer*>(dstBuffer);
+
+    SkASSERT(vkSrcBuffer->bufferUsageFlags() & VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+    SkASSERT(vkDstBuffer->bufferUsageFlags() & VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+
+    VkBufferCopy region;
+    memset(&region, 0, sizeof(VkBufferCopy));
+    region.srcOffset = srcOffset;
+    region.dstOffset = dstOffset;
+    region.size = size;
+
+    VULKAN_CALL(fSharedContext->interface(),
+                CmdCopyBuffer(fPrimaryCommandBuffer,
+                              vkSrcBuffer->vkBuffer(),
+                              vkDstBuffer->vkBuffer(),
+                              /*regionCount=*/1,
+                              &region));
+
+    return true;
 }
 
 bool VulkanCommandBuffer::onCopyTextureToBuffer(const Texture* texture,
@@ -270,7 +307,8 @@ bool VulkanCommandBuffer::onCopyTextureToBuffer(const Texture* texture,
     this->submitPipelineBarriers();
 
     const VulkanTexture* srcTexture = static_cast<const VulkanTexture*>(texture);
-    VkBuffer dstBuffer = static_cast<const VulkanBuffer*>(buffer)->vkBuffer();
+    auto dstBuffer = static_cast<const VulkanBuffer*>(buffer);
+    SkASSERT(dstBuffer->bufferUsageFlags() & VK_BUFFER_USAGE_TRANSFER_DST_BIT);
 
     // Obtain the VkFormat of the source texture so we can determine bytes per block.
     VulkanTextureInfo srcTextureInfo;
@@ -299,7 +337,7 @@ bool VulkanCommandBuffer::onCopyTextureToBuffer(const Texture* texture,
                 CmdCopyImageToBuffer(fPrimaryCommandBuffer,
                                      srcTexture->vkImage(),
                                      VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                                     dstBuffer,
+                                     dstBuffer->vkBuffer(),
                                      /*regionCount=*/1,
                                      &region));
     return true;
@@ -311,7 +349,8 @@ bool VulkanCommandBuffer::onCopyBufferToTexture(const Buffer* buffer,
                                                 int count) {
     this->submitPipelineBarriers();
 
-    VkBuffer srcBuffer = static_cast<const VulkanBuffer*>(buffer)->vkBuffer();
+    auto srcBuffer = static_cast<const VulkanBuffer*>(buffer);
+    SkASSERT(srcBuffer->bufferUsageFlags() & VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
     const VulkanTexture* dstTexture = static_cast<const VulkanTexture*>(texture);
 
     // Obtain the VkFormat of the destination texture so we can determine bytes per block.
@@ -320,7 +359,7 @@ bool VulkanCommandBuffer::onCopyBufferToTexture(const Buffer* buffer,
     size_t bytesPerBlock = VkFormatBytesPerBlock(dstTextureInfo.fFormat);
 
     // Set up copy regions.
-    SkTArray<VkBufferImageCopy> regions(count);
+    TArray<VkBufferImageCopy> regions(count);
     for (int i = 0; i < count; ++i) {
         VkBufferImageCopy& region = regions.push_back();
         memset(&region, 0, sizeof(VkBufferImageCopy));
@@ -346,7 +385,7 @@ bool VulkanCommandBuffer::onCopyBufferToTexture(const Buffer* buffer,
 
     VULKAN_CALL(fSharedContext->interface(),
             CmdCopyBufferToImage(fPrimaryCommandBuffer,
-                                 srcBuffer,
+                                 srcBuffer->vkBuffer(),
                                  dstTexture->vkImage(),
                                  VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                                  regions.size(),

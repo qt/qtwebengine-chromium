@@ -196,14 +196,13 @@ class HelperFileOutputGenerator(OutputGenerator):
         name_define = nameElem.get('name')
         if 'EXTENSION_NAME' not in name_define:
             print("Error in vk.xml file -- extension name is not available")
-        requires = interface.get('requires')
+        requires = interface.get('depends')
         if requires is not None:
-            required_extensions = requires.split(',')
+            # This is a work around for https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/5372
+            requires = re.sub(r',VK_VERSION_1_\d+', '', requires)
+            required_extensions = exprValues(parseExpr(requires))
         else:
             required_extensions = list()
-        requiresCore = interface.get('requiresCore')
-        if requiresCore is not None:
-            required_extensions.append('VK_VERSION_%s' % ('_'.join(requiresCore.split('.'))))
         info = { 'define': GetNameDefine(interface), 'ifdef':self.featureExtraProtect, 'reqs':required_extensions }
         if interface.get('type') == 'instance':
             self.instance_extension_info[name] = info
@@ -591,9 +590,8 @@ class HelperFileOutputGenerator(OutputGenerator):
         V_1_2_device_extensions_promoted_to_V_1_3_core = sorted([e.get('name') for e in promoted_1_3_exts if e.get('type') == 'device'])
 
         output = [
+            '#pragma once',
             '',
-            '#ifndef VK_EXTENSION_HELPER_H_',
-            '#define VK_EXTENSION_HELPER_H_',
             '#include <string>',
             '#include <utility>',
             '#include <set>',
@@ -602,7 +600,7 @@ class HelperFileOutputGenerator(OutputGenerator):
             '#include <cassert>',
             '',
             '#include <vulkan/vulkan.h>',
-            '#include "vk_layer_data.h"',
+            '#include "containers/custom_containers.h"',
             ''
             '#define VK_VERSION_1_1_NAME "VK_VERSION_1_1"',
             '',
@@ -610,6 +608,7 @@ class HelperFileOutputGenerator(OutputGenerator):
             '    kNotEnabled,',
             '    kEnabledByCreateinfo,',
             '    kEnabledByApiLevel,',
+            '    kEnabledByInteraction,',
             '};',
             '',
             '[[maybe_unused]] static bool IsExtEnabled(ExtEnabled extension) {',
@@ -801,7 +800,32 @@ class HelperFileOutputGenerator(OutputGenerator):
                 '                auto info = get_info(pCreateInfo->ppEnabledExtensionNames[i]);',
                 '                if (info.state) this->*(info.state) = kEnabledByCreateinfo;',
                 '            }',
-                '        }',
+                '        }' ])
+            if type == 'Device':
+                struct.extend([
+                    '        // Workaround for functions being introduced by multiple extensions, until the layer is fixed to handle this correctly',
+                    '        // See https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/5579 and https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/5600',
+                    '        {',
+                    '            constexpr std::array shader_object_interactions = {',
+                    '                VK_EXT_EXTENDED_DYNAMIC_STATE_EXTENSION_NAME,',
+                    '                VK_EXT_EXTENDED_DYNAMIC_STATE_2_EXTENSION_NAME,',
+                    '                VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME,',
+                    '                VK_EXT_VERTEX_INPUT_DYNAMIC_STATE_EXTENSION_NAME,',
+                    '            };',
+                    '            auto info = get_info(VK_EXT_SHADER_OBJECT_EXTENSION_NAME);',
+                    '            if (info.state) {',
+                    '                if (this->*(info.state) != kNotEnabled) {',
+                    '                    for (auto interaction_ext : shader_object_interactions) {',
+                    '                        info = get_info(interaction_ext);',
+                    '                        assert(info.state);',
+                    '                        if (this->*(info.state) != kEnabledByCreateinfo) {',
+                    '                            this->*(info.state) = kEnabledByInteraction;',
+                    '                        }',
+                    '                    }',
+                    '                }',
+                    '            }',
+                    '        }' ])
+            struct.extend([
                 '        return api_version;',
                 '    }',
                 '};'])
@@ -812,7 +836,6 @@ class HelperFileOutputGenerator(OutputGenerator):
             struct.extend(['};', ''])
             output.extend(struct)
 
-        output.extend(['', '#endif // VK_EXTENSION_HELPER_H_'])
         return '\n'.join(output)
     #
     # Combine object types helper header file preamble with body text and return
@@ -825,7 +848,7 @@ class HelperFileOutputGenerator(OutputGenerator):
     #
     # Object types header: create object enum type header file
     def GenerateObjectTypesHeader(self):
-        object_types_header = '#include "cast_utils.h"\n'
+        object_types_header = '#include "utils/cast_utils.h"\n'
         object_types_header += '\n'
         object_types_header += '// Object Type enum for validation layer internal object handling\n'
         object_types_header += 'typedef enum VulkanObjectType {\n'
@@ -1170,9 +1193,9 @@ class HelperFileOutputGenerator(OutputGenerator):
         safe_struct_helper_source = '\n'
         safe_struct_helper_source += '#include "vk_safe_struct.h"\n'
         safe_struct_helper_source += '#include "vk_typemap_helper.h"\n'
-        safe_struct_helper_source += '#include "vk_layer_utils.h"\n'
+        safe_struct_helper_source += '#include "utils/vk_layer_utils.h"\n'
         safe_struct_helper_source += '\n'
-        safe_struct_helper_source += '#include <string.h>\n'
+        safe_struct_helper_source += '#include <cstddef>\n'
         safe_struct_helper_source += '#include <cassert>\n'
         safe_struct_helper_source += '#include <cstring>\n'
         safe_struct_helper_source += '#include <vector>\n'
@@ -1266,6 +1289,8 @@ class HelperFileOutputGenerator(OutputGenerator):
                     '        case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:\n'
                     '        case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:\n'
                     '        case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:\n'
+                    '        case VK_DESCRIPTOR_TYPE_BLOCK_MATCH_IMAGE_QCOM:\n'
+                    '        case VK_DESCRIPTOR_TYPE_SAMPLE_WEIGHT_IMAGE_QCOM:\n'
                     '        if (descriptorCount && in_struct->pImageInfo) {\n'
                     '            pImageInfo = new VkDescriptorImageInfo[descriptorCount];\n'
                     '            for (uint32_t i = 0; i < descriptorCount; ++i) {\n'
@@ -1415,30 +1440,6 @@ class HelperFileOutputGenerator(OutputGenerator):
                     '            }\n'
                     '        }\n'
                     '    }\n',
-                'VkAccelerationStructureTrianglesOpacityMicromapEXT':
-                    '    if (usageCountsCount) {\n'
-                    '        if ( in_struct->ppUsageCounts) {\n'
-                    '            ppUsageCounts = new VkMicromapUsageEXT *[usageCountsCount];\n'
-                    '            for (uint32_t i = 0; i < usageCountsCount; ++i) {\n'
-                    '                memcpy ((void *)ppUsageCounts[i], (void *)in_struct->ppUsageCounts[i], sizeof(VkMicromapUsageEXT));'
-                    '            }\n'
-                    '        } else {\n'
-                    '            pUsageCounts = new VkMicromapUsageEXT[usageCountsCount];\n'
-                    '            memcpy ((void *)pUsageCounts, (void *)in_struct->pUsageCounts, sizeof(VkMicromapUsageEXT)*usageCountsCount);'
-                    '        }\n'
-                    '    }\n',
-                'VkMicromapBuildInfoEXT':
-                    '    if (usageCountsCount) {\n'
-                    '        if ( in_struct->ppUsageCounts) {\n'
-                    '            ppUsageCounts = new VkMicromapUsageEXT *[usageCountsCount];\n'
-                    '            for (uint32_t i = 0; i < usageCountsCount; ++i) {\n'
-                    '                memcpy ((void *)ppUsageCounts[i], (void *)in_struct->ppUsageCounts[i], sizeof(VkMicromapUsageEXT));'
-                    '            }\n'
-                    '        } else {\n'
-                    '            pUsageCounts = new VkMicromapUsageEXT[usageCountsCount];\n'
-                    '            memcpy ((void *)pUsageCounts, (void *)in_struct->pUsageCounts, sizeof(VkMicromapUsageEXT)*usageCountsCount);'
-                    '        }\n'
-                    '    }\n',
                 'VkAccelerationStructureGeometryKHR':
                     '    if (is_host && geometryType == VK_GEOMETRY_TYPE_INSTANCES_KHR) {\n'
                     '        if (geometry.instances.arrayOfPointers) {\n'
@@ -1456,39 +1457,52 @@ class HelperFileOutputGenerator(OutputGenerator):
                     '            geometry.instances.data.hostAddress = allocation;\n'
                     '            as_geom_khr_host_alloc.insert(this, new ASGeomKHRExtraData(allocation, build_range_info->primitiveOffset, build_range_info->primitiveCount));\n'
                     '        } else {\n'
-                    '            size_t array_size = build_range_info->primitiveOffset + build_range_info->primitiveCount * sizeof(VkAccelerationStructureInstanceKHR);\n'
+                    '            const auto primitive_offset = build_range_info->primitiveOffset;\n'
+                    '            const auto primitive_count = build_range_info->primitiveCount;\n'
+                    '            size_t array_size = primitive_offset + primitive_count * sizeof(VkAccelerationStructureInstanceKHR);\n'
                     '            uint8_t *allocation = new uint8_t[array_size];\n'
-                    '            memcpy(allocation, in_struct->geometry.instances.data.hostAddress, array_size);\n'
+                    '            auto host_address = static_cast<const uint8_t*>(in_struct->geometry.instances.data.hostAddress);\n'
+                    '            memcpy(allocation + primitive_offset, host_address + primitive_offset, primitive_count * sizeof(VkAccelerationStructureInstanceKHR));\n'
                     '            geometry.instances.data.hostAddress = allocation;\n'
                     '            as_geom_khr_host_alloc.insert(this, new ASGeomKHRExtraData(allocation, build_range_info->primitiveOffset, build_range_info->primitiveCount));\n'
                     '        }\n'
                     '    }\n',
                 'VkMicromapBuildInfoEXT':
-                    '   pNext = SafePnextCopy(in_struct->pNext);\n'
-                    '   if (in_struct->pUsageCounts) {\n'
-                    '       pUsageCounts = new VkMicromapUsageEXT[in_struct->usageCountsCount];\n'
-                    '       memcpy ((void *)pUsageCounts, (void *)in_struct->pUsageCounts, sizeof(VkMicromapUsageEXT)*in_struct->usageCountsCount);\n'
-                    '   }\n'
-                    '   if (in_struct->ppUsageCounts) {\n'
-                    '       VkMicromapUsageEXT** pointer_array  = new VkMicromapUsageEXT*[in_struct->usageCountsCount];\n'
-                    '       for (uint32_t i = 0; i < in_struct->usageCountsCount; ++i) {\n'
-                    '           pointer_array[i] = new VkMicromapUsageEXT(*in_struct->ppUsageCounts[i]);\n'
-                    '       }\n'
-                    '       ppUsageCounts = pointer_array;\n'
-                    '   }\n',
+                    '    if (in_struct->pUsageCounts) {\n'
+                    '        pUsageCounts = new VkMicromapUsageEXT[in_struct->usageCountsCount];\n'
+                    '        memcpy ((void *)pUsageCounts, (void *)in_struct->pUsageCounts, sizeof(VkMicromapUsageEXT)*in_struct->usageCountsCount);\n'
+                    '    }\n'
+                    '    if (in_struct->ppUsageCounts) {\n'
+                    '        VkMicromapUsageEXT** pointer_array  = new VkMicromapUsageEXT*[in_struct->usageCountsCount];\n'
+                    '        for (uint32_t i = 0; i < in_struct->usageCountsCount; ++i) {\n'
+                    '            pointer_array[i] = new VkMicromapUsageEXT(*in_struct->ppUsageCounts[i]);\n'
+                    '        }\n'
+                    '        ppUsageCounts = pointer_array;\n'
+                    '    }\n',
                 'VkAccelerationStructureTrianglesOpacityMicromapEXT':
-                    '   pNext = SafePnextCopy(in_struct->pNext);\n'
-                    '   if (in_struct->pUsageCounts) {\n'
-                    '       pUsageCounts = new VkMicromapUsageEXT[in_struct->usageCountsCount];\n'
-                    '       memcpy ((void *)pUsageCounts, (void *)in_struct->pUsageCounts, sizeof(VkMicromapUsageEXT)*in_struct->usageCountsCount);\n'
-                    '   }\n'
-                    '   if (in_struct->ppUsageCounts) {\n'
-                    '       VkMicromapUsageEXT** pointer_array = new VkMicromapUsageEXT*[in_struct->usageCountsCount];\n'
-                    '       for (uint32_t i = 0; i < in_struct->usageCountsCount; ++i) {\n'
-                    '           pointer_array[i] = new VkMicromapUsageEXT(*in_struct->ppUsageCounts[i]);\n'
-                    '       }\n'
-                    '       ppUsageCounts = pointer_array;\n'
-                    '   }\n',
+                    '    if (in_struct->pUsageCounts) {\n'
+                    '        pUsageCounts = new VkMicromapUsageEXT[in_struct->usageCountsCount];\n'
+                    '        memcpy ((void *)pUsageCounts, (void *)in_struct->pUsageCounts, sizeof(VkMicromapUsageEXT)*in_struct->usageCountsCount);\n'
+                    '    }\n'
+                    '    if (in_struct->ppUsageCounts) {\n'
+                    '        VkMicromapUsageEXT** pointer_array = new VkMicromapUsageEXT*[in_struct->usageCountsCount];\n'
+                    '        for (uint32_t i = 0; i < in_struct->usageCountsCount; ++i) {\n'
+                    '            pointer_array[i] = new VkMicromapUsageEXT(*in_struct->ppUsageCounts[i]);\n'
+                    '        }\n'
+                    '        ppUsageCounts = pointer_array;\n'
+                    '    }\n',
+                'VkAccelerationStructureTrianglesDisplacementMicromapNV':
+                    '    if (in_struct->pUsageCounts) {\n'
+                    '        pUsageCounts = new VkMicromapUsageEXT[in_struct->usageCountsCount];\n'
+                    '        memcpy ((void *)pUsageCounts, (void *)in_struct->pUsageCounts, sizeof(VkMicromapUsageEXT)*in_struct->usageCountsCount);\n'
+                    '    }\n'
+                    '    if (in_struct->ppUsageCounts) {\n'
+                    '        VkMicromapUsageEXT** pointer_array = new VkMicromapUsageEXT*[in_struct->usageCountsCount];\n'
+                    '        for (uint32_t i = 0; i < in_struct->usageCountsCount; ++i) {\n'
+                    '            pointer_array[i] = new VkMicromapUsageEXT(*in_struct->ppUsageCounts[i]);\n'
+                    '        }\n'
+                    '        ppUsageCounts = pointer_array;\n'
+                    '    }\n',
                 'VkDescriptorDataEXT' :
                     '    VkDescriptorType* pType = (VkDescriptorType*)&type_at_end[sizeof(VkDescriptorDataEXT)];\n'
                     '\n'
@@ -1688,9 +1702,7 @@ class HelperFileOutputGenerator(OutputGenerator):
                     '             delete ppUsageCounts[i];\n'
                     '        }\n'
                     '        delete[] ppUsageCounts;\n'
-                    '    }\n'
-                    '    if (pNext)\n'
-                    '        FreePnextChain(pNext);\n',
+                    '    }\n',
                 'VkAccelerationStructureTrianglesOpacityMicromapEXT':
                     '    if (pUsageCounts)\n'
                     '        delete[] pUsageCounts;\n'
@@ -1699,9 +1711,16 @@ class HelperFileOutputGenerator(OutputGenerator):
                     '             delete ppUsageCounts[i];\n'
                     '        }\n'
                     '        delete[] ppUsageCounts;\n'
-                    '    }\n'
-                    '    if (pNext)\n'
-                    '        FreePnextChain(pNext);\n',
+                    '    }\n',
+                'VkAccelerationStructureTrianglesDisplacementMicromapNV':
+                    '    if (pUsageCounts)\n'
+                    '        delete[] pUsageCounts;\n'
+                    '    if (ppUsageCounts) {\n'
+                    '        for (uint32_t i = 0; i < usageCountsCount; ++i) {\n'
+                    '             delete ppUsageCounts[i];\n'
+                    '        }\n'
+                    '        delete[] ppUsageCounts;\n'
+                    '    }\n',
                 'VkDescriptorDataEXT' :
                     '\n'
                     '    VkDescriptorType& thisType = *(VkDescriptorType*)&type_at_end[sizeof(VkDescriptorDataEXT)];\n'
@@ -1760,9 +1779,22 @@ class HelperFileOutputGenerator(OutputGenerator):
                                     copy_strings += '    %s = SafeStringCopy(in_struct->%s);\n' % (member.name, member.name)
                                     destruct_txt += '    if (%s) delete [] %s;\n' % (member.name, member.name)
                             else:
-                                # For these exceptions just copy initial value over for now
-                                init_list += '\n    %s(in_struct->%s),' % (member.name, member.name)
-                                init_func_txt += '    %s = in_struct->%s;\n' % (member.name, member.name)
+                                # We need a deep copy of pData / dataSize combos
+                                if member.name == 'pData':
+                                    init_list += '\n    %s(nullptr),' % (member.name)
+                                    construct_txt += '    if (in_struct->pData != nullptr) {\n'
+                                    construct_txt += '        auto temp = new std::byte[in_struct->dataSize];\n'
+                                    construct_txt += '        std::memcpy(temp, in_struct->pData, in_struct->dataSize);\n'
+                                    construct_txt += '        pData = temp;\n'
+                                    construct_txt += '    }\n'
+
+                                    destruct_txt  += '    if (pData != nullptr) {\n'
+                                    destruct_txt  += '        auto temp = reinterpret_cast<const std::byte*>(pData);\n'
+                                    destruct_txt  += '        delete [] temp;\n'
+                                    destruct_txt  += '    }\n'
+                                else:
+                                    init_list += '\n    %s(in_struct->%s),' % (member.name, member.name)
+                                    init_func_txt += '    %s = in_struct->%s;\n' % (member.name, member.name)
                         default_init_list += '\n    %s(nullptr),' % (member.name)
                     else:
                         default_init_list += '\n    %s(nullptr),' % (member.name)
@@ -1865,10 +1897,12 @@ class HelperFileOutputGenerator(OutputGenerator):
                 destruct_txt += '        FreePnextChain(pNext);\n'
 
             if (self.structOrUnion[item.name] == 'union'):
-                # Unions don't allow multiple members in the initialization list, so just call initialize
-                safe_struct_body.append("\n%s::%s(const %s* in_struct%s)\n{\n%s}" % (ss_name, ss_name, item.name, self.custom_construct_params.get(item.name, ''), construct_txt))
                 if (item.name == 'VkDescriptorDataEXT'):
                     default_init_list = ' type_at_end {0},'
+                    safe_struct_body.append("\n%s::%s(const %s* in_struct%s)\n{\n%s}" % (ss_name, ss_name, item.name, self.custom_construct_params.get(item.name, ''), construct_txt))
+                else:
+                    # Unions don't allow multiple members in the initialization list, so just call initialize
+                    safe_struct_body.append("\n%s::%s(const %s* in_struct%s)\n{\n    initialize(in_struct);\n}" % (ss_name, ss_name, item.name, self.custom_construct_params.get(item.name, '')))
             else:
                 safe_struct_body.append("\n%s::%s(const %s* in_struct%s) :%s\n{\n%s}" % (ss_name, ss_name, item.name, self.custom_construct_params.get(item.name, ''), init_list, construct_txt))
             if '' != default_init_list:
@@ -1963,13 +1997,16 @@ class HelperFileOutputGenerator(OutputGenerator):
             '    T out = {{{type_map}<T>::kSType, p_next, fields...}};',
             '    return out;',
             '}}',
+            '',
             '// Init the header of an sType struct',
             'template <typename T>',
             'T {init_func}(void *p_next = nullptr) {{',
-            '    T out = {{{type_map}<T>::kSType, p_next}};',
+            '    T out = {{}};',
+            '    out.sType = {type_map}<T>::kSType;',
+            '    out.pNext = p_next;',
             '    return out;',
-            '}}',
-            ''))
+            '}}'
+            ))
 
         code = []
 

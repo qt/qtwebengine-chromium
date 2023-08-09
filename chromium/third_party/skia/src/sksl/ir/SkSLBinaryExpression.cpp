@@ -8,10 +8,10 @@
 #include "src/sksl/ir/SkSLBinaryExpression.h"
 
 #include "include/private/SkSLDefines.h"
-#include "include/sksl/SkSLErrorReporter.h"
 #include "src/sksl/SkSLAnalysis.h"
 #include "src/sksl/SkSLConstantFolder.h"
 #include "src/sksl/SkSLContext.h"
+#include "src/sksl/SkSLErrorReporter.h"
 #include "src/sksl/SkSLProgramSettings.h"
 #include "src/sksl/SkSLUtil.h"
 #include "src/sksl/ir/SkSLFieldAccess.h"
@@ -190,7 +190,7 @@ std::unique_ptr<Expression> BinaryExpression::Make(const Context& context,
             // Look up `sk_Caps.rewriteMatrixVectorMultiply`.
             auto caps = Setting::Make(context, pos, &ShaderCaps::fRewriteMatrixVectorMultiply);
 
-            // There are three possible outcomes from Setting::Convert:
+            // There are three possible outcomes from Setting::Make:
             // - If the ShaderCaps aren't known (fCaps in the Context is null), we will get back a
             //   Setting IRNode. In practice, this should happen when compiling a module.
             //   In this case, we generate a ternary expression which will be optimized away when

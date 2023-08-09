@@ -5,6 +5,13 @@
 export const generatedProperties = [
  {
   "longhands": [
+   "animation-delay-start",
+   "animation-delay-end"
+  ],
+  "name": "-alternative-animation-delay"
+ },
+ {
+  "longhands": [
    "animation-duration",
    "animation-timing-function",
    "animation-delay-start",
@@ -14,16 +21,35 @@ export const generatedProperties = [
    "animation-fill-mode",
    "animation-play-state",
    "animation-name",
-   "animation-timeline"
+   "animation-timeline",
+   "animation-range-start",
+   "animation-range-end"
   ],
-  "name": "-alternative-animation"
+  "name": "-alternative-animation-with-delay-start-end"
  },
  {
   "longhands": [
-   "animation-delay-start",
-   "animation-delay-end"
+   "animation-duration",
+   "animation-timing-function",
+   "animation-delay",
+   "animation-iteration-count",
+   "animation-direction",
+   "animation-fill-mode",
+   "animation-play-state",
+   "animation-name",
+   "animation-timeline",
+   "animation-range-start",
+   "animation-range-end"
   ],
-  "name": "-alternative-animation-delay"
+  "name": "-alternative-animation-with-timeline"
+ },
+ {
+  "inherited": true,
+  "longhands": [
+   "white-space-collapse",
+   "text-wrap"
+  ],
+  "name": "-alternative-white-space"
  },
  {
   "inherited": true,
@@ -2547,6 +2573,13 @@ export const generatedProperties = [
   "name": "overflow-y"
  },
  {
+  "keywords": [
+   "none",
+   "auto"
+  ],
+  "name": "overlay"
+ },
+ {
   "name": "override-colors"
  },
  {
@@ -2950,9 +2983,13 @@ export const generatedProperties = [
  {
   "longhands": [
    "scroll-timeline-name",
-   "scroll-timeline-axis"
+   "scroll-timeline-axis",
+   "scroll-timeline-attachment"
   ],
   "name": "scroll-timeline"
+ },
+ {
+  "name": "scroll-timeline-attachment"
  },
  {
   "name": "scroll-timeline-axis"
@@ -3148,6 +3185,15 @@ export const generatedProperties = [
   "name": "text-anchor"
  },
  {
+  "keywords": [
+   "none",
+   "start",
+   "end",
+   "both"
+  ],
+  "name": "text-box-trim"
+ },
+ {
   "inherited": true,
   "keywords": [
    "none",
@@ -3306,6 +3352,15 @@ export const generatedProperties = [
   "name": "text-underline-position"
  },
  {
+  "inherited": true,
+  "keywords": [
+   "wrap",
+   "nowrap",
+   "balance"
+  ],
+  "name": "text-wrap"
+ },
+ {
   "longhands": [
    "toggle-root",
    "toggle-trigger"
@@ -3341,13 +3396,6 @@ export const generatedProperties = [
    "auto"
   ],
   "name": "top"
- },
- {
-  "keywords": [
-   "none",
-   "browser"
-  ],
-  "name": "top-layer"
  },
  {
   "keywords": [
@@ -3473,9 +3521,13 @@ export const generatedProperties = [
  {
   "longhands": [
    "view-timeline-name",
-   "view-timeline-axis"
+   "view-timeline-axis",
+   "view-timeline-attachment"
   ],
   "name": "view-timeline"
+ },
+ {
+  "name": "view-timeline-attachment"
  },
  {
   "name": "view-timeline-axis"
@@ -3509,10 +3561,19 @@ export const generatedProperties = [
    "pre-wrap",
    "pre-line",
    "nowrap",
-   "-webkit-nowrap",
    "break-spaces"
   ],
   "name": "white-space"
+ },
+ {
+  "inherited": true,
+  "keywords": [
+   "collapse",
+   "preserve",
+   "preserve-breaks",
+   "break-spaces"
+  ],
+  "name": "white-space-collapse"
  },
  {
   "inherited": true,
@@ -4918,6 +4979,12 @@ export const generatedPropertyValues = {
    "clip"
   ]
  },
+ "overlay": {
+  "values": [
+   "none",
+   "auto"
+  ]
+ },
  "overscroll-behavior-x": {
   "values": [
    "auto",
@@ -5190,6 +5257,14 @@ export const generatedPropertyValues = {
    "end"
   ]
  },
+ "text-box-trim": {
+  "values": [
+   "none",
+   "start",
+   "end",
+   "both"
+  ]
+ },
  "text-combine-upright": {
   "values": [
    "none",
@@ -5293,6 +5368,13 @@ export const generatedPropertyValues = {
    "right"
   ]
  },
+ "text-wrap": {
+  "values": [
+   "wrap",
+   "nowrap",
+   "balance"
+  ]
+ },
  "toggle-group": {
   "values": [
    "none"
@@ -5316,12 +5398,6 @@ export const generatedPropertyValues = {
  "top": {
   "values": [
    "auto"
-  ]
- },
- "top-layer": {
-  "values": [
-   "none",
-   "browser"
   ]
  },
  "touch-action": {
@@ -5429,7 +5505,14 @@ export const generatedPropertyValues = {
    "pre-wrap",
    "pre-line",
    "nowrap",
-   "-webkit-nowrap",
+   "break-spaces"
+  ]
+ },
+ "white-space-collapse": {
+  "values": [
+   "collapse",
+   "preserve",
+   "preserve-breaks",
    "break-spaces"
   ]
  },
@@ -5522,12 +5605,16 @@ export const generatedAliasesFor = new Map([
   "align-self"
  ],
  [
-  "-webkit-alternative-animation",
-  "-alternative-animation"
- ],
- [
   "-webkit-alternative-animation-delay",
   "-alternative-animation-delay"
+ ],
+ [
+  "-webkit-alternative-animation-with-delay-start-end",
+  "-alternative-animation-with-delay-start-end"
+ ],
+ [
+  "-webkit-alternative-animation-with-timeline",
+  "-alternative-animation-with-timeline"
  ],
  [
   "-webkit-animation",

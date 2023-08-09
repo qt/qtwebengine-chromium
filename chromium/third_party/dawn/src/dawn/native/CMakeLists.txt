@@ -251,6 +251,80 @@ if (WINDOWS_STORE)
     target_link_libraries(dawn_native PRIVATE debug dxgi.lib)
 endif()
 
+if (DAWN_ENABLE_D3D11 OR DAWN_ENABLE_D3D12)
+    target_sources(dawn_native PRIVATE
+        "${DAWN_INCLUDE_DIR}/dawn/native/D3DBackend.h"
+        "d3d/AdapterD3D.cpp"
+        "d3d/AdapterD3D.h"
+        "d3d/BackendD3D.cpp"
+        "d3d/BackendD3D.h"
+        "d3d/BlobD3D.cpp"
+        "d3d/BlobD3D.h"
+        "d3d/D3DBackend.cpp"
+        "d3d/D3DCompilationRequest.h"
+        "d3d/D3DError.cpp"
+        "d3d/D3DError.h"
+        "d3d/DeviceD3D.cpp"
+        "d3d/DeviceD3D.h"
+        "d3d/Forward.h"
+        "d3d/PlatformFunctions.cpp"
+        "d3d/PlatformFunctions.h"
+        "d3d/ShaderUtils.cpp"
+        "d3d/ShaderUtils.h"
+        "d3d/SwapChainD3D.cpp"
+        "d3d/SwapChainD3D.h"
+        "d3d/UtilsD3D.cpp"
+        "d3d/UtilsD3D.h"
+        "d3d/d3d_platform.h"
+    )
+endif()
+
+if (DAWN_ENABLE_D3D11)
+    target_sources(dawn_native PRIVATE
+        "${DAWN_INCLUDE_DIR}/dawn/native/D3D11Backend.h"
+        "d3d11/AdapterD3D11.cpp"
+        "d3d11/AdapterD3D11.h"
+        "d3d11/BackendD3D11.cpp"
+        "d3d11/BackendD3D11.h"
+        "d3d11/BindGroupD3D11.cpp"
+        "d3d11/BindGroupD3D11.h"
+        "d3d11/BindGroupLayoutD3D11.cpp"
+        "d3d11/BindGroupLayoutD3D11.h"
+        "d3d11/BufferD3D11.cpp"
+        "d3d11/BufferD3D11.h"
+        "d3d11/CommandBufferD3D11.cpp"
+        "d3d11/CommandBufferD3D11.h"
+        "d3d11/CommandRecordingContextD3D11.cpp"
+        "d3d11/CommandRecordingContextD3D11.h"
+        "d3d11/ComputePipelineD3D11.cpp"
+        "d3d11/ComputePipelineD3D11.h"
+        "d3d11/D3D11Backend.cpp"
+        "d3d11/DeviceD3D11.cpp"
+        "d3d11/DeviceD3D11.h"
+        "d3d11/DeviceInfoD3D11.cpp"
+        "d3d11/DeviceInfoD3D11.h"
+        "d3d11/Forward.h"
+        "d3d11/PipelineLayoutD3D11.cpp"
+        "d3d11/PipelineLayoutD3D11.h"
+        "d3d11/PlatformFunctionsD3D11.cpp"
+        "d3d11/PlatformFunctionsD3D11.h"
+        "d3d11/QueueD3D11.cpp"
+        "d3d11/QueueD3D11.h"
+        "d3d11/RenderPipelineD3D11.cpp"
+        "d3d11/RenderPipelineD3D11.h"
+        "d3d11/SamplerD3D11.cpp"
+        "d3d11/SamplerD3D11.h"
+        "d3d11/ShaderModuleD3D11.cpp"
+        "d3d11/ShaderModuleD3D11.h"
+        "d3d11/SwapChainD3D11.cpp"
+        "d3d11/SwapChainD3D11.h"
+        "d3d11/TextureD3D11.cpp"
+        "d3d11/TextureD3D11.h"
+        "d3d11/UtilsD3D11.cpp"
+        "d3d11/UtilsD3D11.h"
+    )
+endif()
+
 if (DAWN_ENABLE_D3D12)
     target_sources(dawn_native PRIVATE
         "${DAWN_INCLUDE_DIR}/dawn/native/D3D12Backend.h"
@@ -262,8 +336,6 @@ if (DAWN_ENABLE_D3D12)
         "d3d12/BindGroupD3D12.h"
         "d3d12/BindGroupLayoutD3D12.cpp"
         "d3d12/BindGroupLayoutD3D12.h"
-        "d3d12/BlobD3D12.cpp"
-        "d3d12/BlobD3D12.h"
         "d3d12/BufferD3D12.cpp"
         "d3d12/BufferD3D12.h"
         "d3d12/CPUDescriptorHeapAllocationD3D12.cpp"
@@ -278,8 +350,6 @@ if (DAWN_ENABLE_D3D12)
         "d3d12/ComputePipelineD3D12.h"
         "d3d12/D3D11on12Util.cpp"
         "d3d12/D3D11on12Util.h"
-        "d3d12/D3D12Error.cpp"
-        "d3d12/D3D12Error.h"
         "d3d12/D3D12Info.cpp"
         "d3d12/D3D12Info.h"
         "d3d12/DeviceD3D12.cpp"
@@ -296,14 +366,12 @@ if (DAWN_ENABLE_D3D12)
         "d3d12/HeapD3D12.cpp"
         "d3d12/HeapD3D12.h"
         "d3d12/IntegerTypes.h"
-        "d3d12/NativeSwapChainImplD3D12.cpp"
-        "d3d12/NativeSwapChainImplD3D12.h"
         "d3d12/PageableD3D12.cpp"
         "d3d12/PageableD3D12.h"
         "d3d12/PipelineLayoutD3D12.cpp"
         "d3d12/PipelineLayoutD3D12.h"
-        "d3d12/PlatformFunctions.cpp"
-        "d3d12/PlatformFunctions.h"
+        "d3d12/PlatformFunctionsD3D12.cpp"
+        "d3d12/PlatformFunctionsD3D12.h"
         "d3d12/QuerySetD3D12.cpp"
         "d3d12/QuerySetD3D12.h"
         "d3d12/QueueD3D12.cpp"
@@ -444,8 +512,6 @@ if (DAWN_ENABLE_OPENGL)
         "opengl/Forward.h"
         "opengl/GLFormat.cpp"
         "opengl/GLFormat.h"
-        "opengl/NativeSwapChainImplGL.cpp"
-        "opengl/NativeSwapChainImplGL.h"
         "opengl/OpenGLFunctions.cpp"
         "opengl/OpenGLFunctions.h"
         "opengl/OpenGLVersion.cpp"
@@ -466,8 +532,6 @@ if (DAWN_ENABLE_OPENGL)
         "opengl/SamplerGL.h"
         "opengl/ShaderModuleGL.cpp"
         "opengl/ShaderModuleGL.h"
-        "opengl/SwapChainGL.cpp"
-        "opengl/SwapChainGL.h"
         "opengl/TextureGL.cpp"
         "opengl/TextureGL.h"
         "opengl/UtilsEGL.cpp"
@@ -512,8 +576,6 @@ if (DAWN_ENABLE_VULKAN)
         "vulkan/FencedDeleter.cpp"
         "vulkan/FencedDeleter.h"
         "vulkan/Forward.h"
-        "vulkan/NativeSwapChainImplVk.cpp"
-        "vulkan/NativeSwapChainImplVk.h"
         "vulkan/PipelineCacheVk.cpp"
         "vulkan/PipelineCacheVk.h"
         "vulkan/PipelineLayoutVk.cpp"
@@ -549,26 +611,35 @@ if (DAWN_ENABLE_VULKAN)
         "vulkan/VulkanFunctions.h"
         "vulkan/VulkanInfo.cpp"
         "vulkan/VulkanInfo.h"
+        "vulkan/external_memory/MemoryImportParams.h"
         "vulkan/external_memory/MemoryService.cpp"
         "vulkan/external_memory/MemoryService.h"
+        "vulkan/external_memory/MemoryServiceImplementation.cpp"
+        "vulkan/external_memory/MemoryServiceImplementation.h"
         "vulkan/external_semaphore/SemaphoreService.cpp"
         "vulkan/external_semaphore/SemaphoreService.h"
-        "vulkan/external_semaphore/ServiceImplementation.cpp"
-        "vulkan/external_semaphore/ServiceImplementation.h"
+        "vulkan/external_semaphore/SemaphoreServiceImplementation.cpp"
+        "vulkan/external_semaphore/SemaphoreServiceImplementation.h"
     )
 
     target_link_libraries(dawn_native PUBLIC Vulkan-Headers)
     target_include_directories(dawn_native PRIVATE ${DAWN_VULKAN_TOOLS_DIR})
 
-    if (UNIX AND NOT APPLE)
+    if (ANDROID)
         target_sources(dawn_native PRIVATE
-            "vulkan/external_memory/MemoryServiceOpaqueFD.cpp"
-            "vulkan/external_semaphore/ServiceImplementationFD.cpp"
-            "vulkan/external_semaphore/ServiceImplementationFD.h"
+            "vulkan/external_memory/MemoryServiceImplementationAHardwareBuffer.cpp"
+            "vulkan/external_memory/MemoryServiceImplementationAHardwareBuffer.h"
+            "vulkan/external_semaphore/SemaphoreServiceImplementationFD.cpp"
+            "vulkan/external_semaphore/SemaphoreServiceImplementationFD.h"
         )
-    else()
+    elseif (UNIX AND NOT APPLE)
         target_sources(dawn_native PRIVATE
-            "vulkan/external_memory/MemoryServiceNull.cpp"
+            "vulkan/external_memory/MemoryServiceImplementationDmaBuf.cpp"
+            "vulkan/external_memory/MemoryServiceImplementationDmaBuf.h"
+            "vulkan/external_memory/MemoryServiceImplementationOpaqueFD.cpp"
+            "vulkan/external_memory/MemoryServiceImplementationOpaqueFD.h"
+            "vulkan/external_semaphore/SemaphoreServiceImplementationFD.cpp"
+            "vulkan/external_semaphore/SemaphoreServiceImplementationFD.h"
         )
     endif()
 endif()

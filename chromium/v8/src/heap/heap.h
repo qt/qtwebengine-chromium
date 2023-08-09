@@ -112,6 +112,7 @@ class MemoryAllocator;
 class MemoryChunk;
 class MemoryMeasurement;
 class MemoryReducer;
+class MinorGCJob;
 class MinorMarkCompactCollector;
 class NopRwxMemoryWriteScope;
 class ObjectIterator;
@@ -123,7 +124,6 @@ class ReadOnlyHeap;
 class RootVisitor;
 class RwxMemoryWriteScope;
 class SafepointScope;
-class ScavengeJob;
 class Scavenger;
 class ScavengerCollector;
 class SharedLargeObjectSpace;
@@ -165,6 +165,7 @@ enum class GCIdleTimeAction : uint8_t;
 enum class SkipRoot {
   kExternalStringTable,
   kGlobalHandles,
+  kTracedHandles,
   kOldGeneration,
   kStack,
   kMainThreadHandles,
@@ -172,6 +173,7 @@ enum class SkipRoot {
   kWeak,
   kConservativeStack,
   kTopOfStack,
+  kReadOnlyBuiltins,
 };
 
 enum UnprotectMemoryOrigin {
@@ -333,26 +335,9 @@ class Heap {
 
   // These constants control heap configuration based on the physical memory.
   static constexpr size_t kPhysicalMemoryToOldGenerationRatio = 4;
-  // Young generation size is the same for compressed heaps and 32-bit heaps.
-  static constexpr size_t kOldGenerationToSemiSpaceRatio =
-      128 * kHeapLimitMultiplier / kPointerMultiplier;
-  static constexpr size_t kOldGenerationToSemiSpaceRatioLowMemory =
-      256 * kHeapLimitMultiplier / kPointerMultiplier;
   static constexpr size_t kOldGenerationLowMemory =
       128 * MB * kHeapLimitMultiplier;
   static constexpr size_t kNewLargeObjectSpaceToSemiSpaceRatio = 1;
-#if ENABLE_HUGEPAGE
-  static constexpr size_t kMinSemiSpaceSize =
-      kHugePageSize * kPointerMultiplier;
-  static constexpr size_t kMaxSemiSpaceSize =
-      kHugePageSize * 16 * kPointerMultiplier;
-#else
-  static constexpr size_t kMinSemiSpaceSize = 512 * KB * kPointerMultiplier;
-  static constexpr size_t kMaxSemiSpaceSize = 8192 * KB * kPointerMultiplier;
-#endif
-
-  static_assert(kMinSemiSpaceSize % (1 << kPageSizeBits) == 0);
-  static_assert(kMaxSemiSpaceSize % (1 << kPageSizeBits) == 0);
 
   static const int kTraceRingBufferSize = 512;
   static const int kStacktraceBufferSize = 512;
@@ -368,6 +353,13 @@ class Heap {
 
   static const int kMinPromotedPercentForFastPromotionMode = 90;
 
+  // The minimum new space capacity from which allocation sites can be
+  // pretenured. A too small capacity means frequent GCs. Objects thus don't get
+  // a chance to die before being promoted, which may lead to wrong pretenuring
+  // decisions.
+  static constexpr size_t kDefaultMinSemiSpaceSizeForPretenuring =
+      8192 * KB * kPointerMultiplier;
+
   static_assert(static_cast<int>(RootIndex::kUndefinedValue) ==
                 Internals::kUndefinedValueRootIndex);
   static_assert(static_cast<int>(RootIndex::kTheHoleValue) ==
@@ -380,6 +372,43 @@ class Heap {
                 Internals::kFalseValueRootIndex);
   static_assert(static_cast<int>(RootIndex::kempty_string) ==
                 Internals::kEmptyStringRootIndex);
+
+  static size_t DefaultMinSemiSpaceSize() {
+#if ENABLE_HUGEPAGE
+    static constexpr size_t kMinSemiSpaceSize =
+        kHugePageSize * kPointerMultiplier;
+#else
+    static constexpr size_t kMinSemiSpaceSize = 512 * KB * kPointerMultiplier;
+#endif
+    static_assert(kMinSemiSpaceSize % (1 << kPageSizeBits) == 0);
+
+    return kMinSemiSpaceSize;
+  }
+
+  static size_t DefaultMaxSemiSpaceSize() {
+#if ENABLE_HUGEPAGE
+    static constexpr size_t kMaxSemiSpaceSize =
+        kHugePageSize * 16 * kPointerMultiplier;
+#else
+    static constexpr size_t kMaxSemiSpaceSize = 8192 * KB * kPointerMultiplier;
+#endif
+    static_assert(kMaxSemiSpaceSize % (1 << kPageSizeBits) == 0);
+
+    return (v8_flags.minor_mc ? 2 : 1) * kMaxSemiSpaceSize;
+  }
+
+  // Young generation size is the same for compressed heaps and 32-bit heaps.
+  static size_t OldGenerationToSemiSpaceRatio() {
+    static constexpr size_t kOldGenerationToSemiSpaceRatio =
+        128 * kHeapLimitMultiplier / kPointerMultiplier;
+    return kOldGenerationToSemiSpaceRatio / (v8_flags.minor_mc ? 2 : 1);
+  }
+  static size_t OldGenerationToSemiSpaceRatioLowMemory() {
+    static constexpr size_t kOldGenerationToSemiSpaceRatioLowMemory =
+        256 * kHeapLimitMultiplier / kPointerMultiplier;
+    return kOldGenerationToSemiSpaceRatioLowMemory /
+           (v8_flags.minor_mc ? 2 : 1);
+  }
 
   // Calculates the maximum amount of filler that could be required by the
   // given alignment.
@@ -492,6 +521,12 @@ class Heap {
   // should not happen during deserialization.
   void NotifyDeserializationComplete();
 
+  // Weakens StrongDescriptorArray objects into regular DescriptorArray objects.
+  //
+  // Thread-safe.
+  void WeakenDescriptorArrays(
+      GlobalHandleVector<DescriptorArray> strong_descriptor_arrays);
+
   void NotifyBootstrapComplete();
 
   void NotifyOldGenerationExpansion(AllocationSpace space, MemoryChunk* chunk);
@@ -503,6 +538,7 @@ class Heap {
 
   size_t NewSpaceSize();
   size_t NewSpaceCapacity() const;
+  size_t NewSpaceTargetCapacity() const;
 
   // Move len non-weak tagged elements from src_slot to dst_slot of dst_object.
   // The source and destination memory ranges can overlap.
@@ -528,6 +564,11 @@ class Heap {
   // `CreateFillerObjectAt` this method will not perform slot verification since
   // this would race on background threads.
   void CreateFillerObjectAtBackground(Address addr, int size);
+
+  // This method is used by the sweeper on free memory ranges to make the page
+  // iterable again. Unlike `CreateFillerObjectAt` this method will not verify
+  // slots since the sweeper can run concurrently.
+  void CreateFillerObjectAtSweeper(Address addr, int size);
 
   template <typename T>
   void CreateFillerForArray(T object, int elements_to_trim, int bytes_to_trim);
@@ -653,14 +694,23 @@ class Heap {
   }
   void SetGCState(HeapState state);
   bool IsTearingDown() const { return gc_state() == TEAR_DOWN; }
+  bool IsInGC() const {
+    return gc_state() != NOT_IN_GC && gc_state() != TEAR_DOWN;
+  }
   bool force_oom() const { return force_oom_; }
 
   bool ignore_local_gc_requests() const {
     return ignore_local_gc_requests_depth_ > 0;
   }
 
+  bool IsAllocationObserverActive() const {
+    return pause_allocation_observers_depth_ == 0;
+  }
+
   bool IsGCWithStack() const;
   V8_EXPORT_PRIVATE void ForceSharedGCWithEmptyStackForTesting();
+
+  bool CanShortcutStringsDuringGC(GarbageCollector collector) const;
 
   // Performs GC after background allocation failure.
   void CollectGarbageForBackground(LocalHeap* local_heap);
@@ -1048,10 +1098,12 @@ class Heap {
   void IterateWeakGlobalHandles(RootVisitor* v);
   void IterateBuiltins(RootVisitor* v);
 
-  enum class ScanStackMode { kNone, kFromMarker, kComplete };
-  void IterateStackRoots(RootVisitor* v, ScanStackMode stack_mode);
-  void IterateStackRootsIncludingClients(RootVisitor* v,
-                                         ScanStackMode stack_mode);
+  void IterateStackRoots(RootVisitor* v);
+
+  enum class ScanStackMode { kFromMarker, kComplete };
+  void IterateConservativeStackRoots(RootVisitor* v, ScanStackMode stack_mode);
+  void IterateConservativeStackRootsIncludingClients(RootVisitor* v,
+                                                     ScanStackMode stack_mode);
 
   // ===========================================================================
   // Remembered set API. =======================================================
@@ -1078,12 +1130,6 @@ class Heap {
     return ShouldOptimizeForMemoryUsage() ? kReduceMemoryFootprintMask
                                           : kNoGCFlags;
   }
-
-  // Start incremental marking and ensure that idle time handler can perform
-  // incremental steps.
-  V8_EXPORT_PRIVATE void StartIdleIncrementalMarking(
-      GarbageCollectionReason gc_reason,
-      GCCallbackFlags gc_callback_flags = GCCallbackFlags::kNoGCCallbackFlags);
 
   // Starts incremental marking assuming incremental marking is currently
   // stopped.
@@ -1128,6 +1174,7 @@ class Heap {
   void NotifyObjectLayoutChange(
       HeapObject object, const DisallowGarbageCollection&,
       InvalidateRecordedSlots invalidate_recorded_slots, int new_size = 0);
+  V8_EXPORT_PRIVATE static void NotifyObjectLayoutChangeDone(HeapObject object);
 
   // The runtime uses this function to inform the GC of object size changes. The
   // GC will fill this area with a filler object and might clear recorded slots
@@ -1146,10 +1193,6 @@ class Heap {
   void SetConstructStubCreateDeoptPCOffset(int pc_offset);
   void SetConstructStubInvokeDeoptPCOffset(int pc_offset);
   void SetInterpreterEntryReturnPCOffset(int pc_offset);
-
-  // Invalidates references in the given {code} object that are referenced
-  // transitively from the deoptimization data. Mutates write-protected code.
-  void InvalidateCodeDeoptimizationData(InstructionStream code);
 
   void DeoptMarkedAllocationSites();
 
@@ -1223,7 +1266,7 @@ class Heap {
   V8_EXPORT_PRIVATE bool ContainsCode(HeapObject value) const;
 
   // Checks whether object resides in the non-read-only shared heap.
-  static inline bool InSharedWritableHeap(MaybeObject object);
+  static inline bool InWritableSharedSpace(MaybeObject object);
 
   // Checks whether an address/object is in the non-read-only heap (including
   // auxiliary area and unused area). Use IsValidHeapObject if checking both
@@ -1476,12 +1519,18 @@ class Heap {
   V8_EXPORT_PRIVATE HeapObject PrecedeWithFiller(HeapObject object,
                                                  int filler_size);
 
+  // Creates a filler object and returns a heap object immediately after it.
+  // Unlike `PrecedeWithFiller` this method will not perform slot verification
+  // since this would race on background threads.
+  V8_EXPORT_PRIVATE HeapObject PrecedeWithFillerBackground(HeapObject object,
+                                                           int filler_size);
+
   // Creates a filler object if needed for alignment and returns a heap object
   // immediately after it. If any space is left after the returned object,
   // another filler object is created so the over allocated memory is iterable.
   V8_WARN_UNUSED_RESULT HeapObject
-  AlignWithFiller(HeapObject object, int object_size, int allocation_size,
-                  AllocationAlignment alignment);
+  AlignWithFillerBackground(HeapObject object, int object_size,
+                            int allocation_size, AllocationAlignment alignment);
 
   // Allocate an external backing store with the given allocation callback.
   // If the callback fails (indicated by a nullptr result) then this function
@@ -1550,6 +1599,8 @@ class Heap {
   GcSafeCode GcSafeFindCodeForInnerPointer(Address inner_pointer);
   base::Optional<GcSafeCode> GcSafeTryFindCodeForInnerPointer(
       Address inner_pointer);
+  base::Optional<InstructionStream>
+  GcSafeTryFindInstructionStreamForInnerPointer(Address inner_pointer);
   // Only intended for use from the `jco` gdb macro.
   base::Optional<Code> TryFindCodeForInnerPointerForPrinting(
       Address inner_pointer);
@@ -1579,10 +1630,6 @@ class Heap {
   void PauseSweepingAndEnsureYoungSweepingCompleted();
 
   void DrainSweepingWorklistForSpace(AllocationSpace space);
-
-  void set_evacuation(bool evacuation) { evacuation_ = evacuation; }
-
-  bool evacuation() const { return evacuation_; }
 
   // =============================================================================
 
@@ -1651,6 +1698,8 @@ class Heap {
 
   PretenuringHandler* pretenuring_handler() { return &pretenuring_handler_; }
 
+  bool IsInlineAllocationEnabled() const { return inline_allocation_enabled_; }
+
  private:
   class AllocationTrackerForDebugging;
 
@@ -1701,31 +1750,10 @@ class Heap {
     std::vector<Object> old_strings_;
   };
 
-  struct StringTypeTable {
-    InstanceType type;
-    int size;
-    RootIndex index;
-  };
-
-  struct ConstantStringTable {
-    const char* contents;
-    RootIndex index;
-  };
-
-  struct StructTable {
-    InstanceType type;
-    int size;
-    RootIndex index;
-  };
-
   static const int kInitialEvalCacheSize = 64;
   static const int kInitialNumberStringCacheSize = 256;
 
   static const int kRememberedUnmappedPages = 128;
-
-  static const StringTypeTable string_type_table[];
-  static const ConstantStringTable constant_string_table[];
-  static const StructTable struct_table[];
 
   static const int kYoungSurvivalRateHighThreshold = 90;
   static const int kYoungSurvivalRateAllowedDeviation = 15;
@@ -1764,6 +1792,9 @@ class Heap {
   // Free all LABs in the heap.
   void FreeLinearAllocationAreas();
 
+  // Frees all LABs owned by the main thread.
+  void FreeMainThreadLinearAllocationAreas();
+
   // Free all shared LABs.
   void FreeSharedLinearAllocationAreas();
 
@@ -1784,10 +1815,13 @@ class Heap {
 
   inline void UpdateOldSpaceLimits();
 
-  bool CreateInitialReadOnlyMaps();
+  bool CreateEarlyReadOnlyMaps();
+  bool CreateImportantReadOnlyObjects();
+  bool CreateLateReadOnlyMaps();
+  bool CreateReadOnlyObjects();
+
   void CreateInternalAccessorInfoObjects();
   void CreateInitialMutableObjects();
-  void CreateInitialReadOnlyObjects();
 
   // Zaps the memory of a code object.
   V8_EXPORT_PRIVATE void ZapCodeObject(Address start_address,
@@ -1797,11 +1831,6 @@ class Heap {
   void UpdateInvalidatedObjectSize(HeapObject object, int new_size);
 
   enum class VerifyNoSlotsRecorded { kYes, kNo };
-
-  // This method is used by the sweeper on free memory ranges to make the page
-  // iterable again. Unlike `CreateFillerObjectAt` this method will not verify
-  // slots since the sweeper can run concurrently.
-  void CreateFillerObjectAtSweeper(Address addr, int size);
 
   // Creates a filler object in the specified memory area. This method is the
   // internal method used by all CreateFillerObjectAtXXX-methods.
@@ -1931,9 +1960,8 @@ class Heap {
 
   void UpdateTotalGCTime(double duration);
 
-  bool MaximumSizeMinorGC() const { return maximum_size_minor_gcs_ > 0; }
-  bool IsFirstMaximumSizeMinorGC() const {
-    return maximum_size_minor_gcs_ == 1;
+  bool MinorGCAbovePretenuringThreshold() const {
+    return minor_gc_above_pretenuring_threshold_ > 0;
   }
 
   bool IsIneffectiveMarkCompact(size_t old_generation_size,
@@ -2012,9 +2040,8 @@ class Heap {
   // GC Tasks. =================================================================
   // ===========================================================================
 
-  void ScheduleScavengeTaskIfNeeded();
+  void ScheduleMinorGCTaskIfNeeded();
   void StartMinorMCIncrementalMarkingIfNeeded();
-  size_t MinorMCTaskTriggerSize() const;
   bool MinorMCSizeTaskTriggerReached() const;
 
   // ===========================================================================
@@ -2102,6 +2129,8 @@ class Heap {
   void SetIsMarkingFlag(bool value);
   void SetIsMinorMarkingFlag(bool value);
 
+  bool IsNewSpaceCapacityAbovePretenuringThreshold() const;
+
   ExternalMemoryAccounting external_memory_;
 
   // This can be calculated directly from a pointer to the heap; however, it is
@@ -2115,6 +2144,7 @@ class Heap {
   size_t code_range_size_ = 0;
   size_t max_semi_space_size_ = 0;
   size_t initial_semispace_size_ = 0;
+  size_t min_semi_space_size_for_pretenuring_ = 0;
   // Full garbage collections can be skipped if the old generation size
   // is below this threshold.
   size_t min_old_generation_size_ = 0;
@@ -2196,10 +2226,6 @@ class Heap {
   // is reached.
   int stress_marking_percentage_ = 0;
 
-  // Observer that causes more frequent checks for reached incremental
-  // marking limit.
-  AllocationObserver* stress_marking_observer_ = nullptr;
-
   // Observer that can cause early scavenge start.
   StressScavengeObserver* stress_scavenge_observer_ = nullptr;
 
@@ -2259,10 +2285,10 @@ class Heap {
   int nodes_promoted_ = 0;
 
   // This is the pretenuring trigger for allocation sites that are in maybe
-  // tenure state. When we switched to the maximum new space size we deoptimize
-  // the code that belongs to the allocation site and derive the lifetime
-  // of the allocation site.
-  unsigned int maximum_size_minor_gcs_ = 0;
+  // tenure state. When we switched to a large enough new space size we
+  // deoptimize the code that belongs to the allocation site and derive the
+  // lifetime of the allocation site.
+  unsigned int minor_gc_above_pretenuring_threshold_ = 0;
 
   // Total time spent in GC.
   double total_gc_time_ms_ = 0.0;
@@ -2285,9 +2311,8 @@ class Heap {
   std::unique_ptr<MemoryReducer> memory_reducer_;
   std::unique_ptr<ObjectStats> live_object_stats_;
   std::unique_ptr<ObjectStats> dead_object_stats_;
-  std::unique_ptr<ScavengeJob> scavenge_job_;
-  std::unique_ptr<AllocationObserver> scavenge_task_observer_;
-  std::unique_ptr<AllocationObserver> minor_mc_task_observer_;
+  std::unique_ptr<MinorGCJob> minor_gc_job_;
+  std::unique_ptr<AllocationObserver> minor_gc_task_observer_;
   std::unique_ptr<AllocationObserver> stress_concurrent_allocation_observer_;
   std::unique_ptr<AllocationTrackerForDebugging>
       allocation_tracker_for_debugging_;
@@ -2375,11 +2400,14 @@ class Heap {
 
   int max_regular_code_object_size_ = 0;
 
+  bool inline_allocation_enabled_ = true;
+
+  int pause_allocation_observers_depth_ = 0;
+
   // Used for testing purposes.
   bool force_oom_ = false;
   bool force_gc_on_next_allocation_ = false;
   bool delay_sweeper_tasks_for_testing_ = false;
-  bool force_shared_gc_with_empty_stack_for_testing_ = false;
 
   UnorderedHeapObjectMap<HeapObject> retainer_;
   UnorderedHeapObjectMap<Root> retaining_root_;
@@ -2393,8 +2421,6 @@ class Heap {
   std::vector<HeapObjectAllocationTracker*> allocation_trackers_;
 
   bool is_finalization_registry_cleanup_task_posted_ = false;
-
-  bool evacuation_ = false;
 
   std::unique_ptr<third_party_heap::Heap> tp_heap_;
 
@@ -2422,7 +2448,6 @@ class Heap {
   friend class HeapAllocator;
   friend class HeapObjectIterator;
   friend class HeapVerifier;
-  friend class ScavengeTaskObserver;
   friend class IgnoreLocalGCRequests;
   friend class IncrementalMarking;
   friend class IncrementalMarkingRootMarkingVisitor;
@@ -2435,20 +2460,24 @@ class Heap {
   friend class MarkingVisitorBase;
   friend class MarkCompactCollector;
   friend class MarkCompactCollectorBase;
+  friend class MinorGCTaskObserver;
   friend class MinorMarkCompactCollector;
-  friend class MinorMCTaskObserver;
+  friend class MinorMCIncrementalMarkingTaskObserver;
   friend class NewLargeObjectSpace;
   friend class NewSpace;
   friend class ObjectStatsCollector;
   friend class Page;
   friend class PagedSpaceBase;
+  friend class PauseAllocationObserversScope;
   friend class PretenuringHandler;
   friend class ReadOnlyRoots;
   friend class DisableConservativeStackScanningScopeForTesting;
   friend class Scavenger;
   friend class ScavengerCollector;
+  friend class ScheduleMinorGCTaskObserver;
   friend class StressConcurrentAllocationObserver;
   friend class Space;
+  friend class SpaceWithLinearArea;
   friend class Sweeper;
   friend class UnifiedHeapMarkingState;
   friend class heap::TestMemoryAllocatorScope;
@@ -2786,18 +2815,6 @@ class V8_NODISCARD CppClassNamesAsHeapObjectNameScope final {
 
  private:
   std::unique_ptr<cppgc::internal::ClassNameAsHeapObjectNameScope> scope_;
-};
-
-class V8_NODISCARD EvacuationScope {
- public:
-  explicit EvacuationScope(Heap* heap) : heap_(heap) {
-    heap_->set_evacuation(true);
-  }
-
-  ~EvacuationScope() { heap_->set_evacuation(false); }
-
- private:
-  Heap* const heap_;
 };
 
 }  // namespace internal

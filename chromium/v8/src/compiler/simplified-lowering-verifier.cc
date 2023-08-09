@@ -408,7 +408,6 @@ void SimplifiedLoweringVerifier::VisitNode(Node* node,
           default:
             UNREACHABLE();
         }
-        CheckType(node, output_type);
       }
 
       if (p.override_output_type()) {
@@ -493,7 +492,6 @@ void SimplifiedLoweringVerifier::VisitNode(Node* node,
       CASE(Projection)
       CASE(Retain)
       CASE(MapGuard)
-      CASE(FoldConstant)
       CASE(Unreachable)
       CASE(Dead)
       CASE(Plug)
@@ -668,6 +666,7 @@ void SimplifiedLoweringVerifier::VisitNode(Node* node,
       CASE(LoadStackCheckOffset)
       CASE(LoadFramePointer)
       CASE(LoadParentFramePointer)
+      CASE(LoadRootRegister)
       CASE(UnalignedLoad)
       CASE(UnalignedStore)
       CASE(Int32PairAdd)

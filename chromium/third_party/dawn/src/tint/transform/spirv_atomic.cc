@@ -26,6 +26,7 @@
 #include "src/tint/sem/index_accessor_expression.h"
 #include "src/tint/sem/member_accessor_expression.h"
 #include "src/tint/sem/statement.h"
+#include "src/tint/switch.h"
 #include "src/tint/type/reference.h"
 #include "src/tint/utils/map.h"
 #include "src/tint/utils/unique_vector.h"
@@ -81,22 +82,22 @@ struct SpirvAtomic::State {
                     out_args[0] = b.AddressOf(out_args[0]);
 
                     // Replace all callsites of this stub to a call to the real builtin
-                    if (stub->builtin == sem::BuiltinType::kAtomicCompareExchangeWeak) {
+                    if (stub->builtin == builtin::Function::kAtomicCompareExchangeWeak) {
                         // atomicCompareExchangeWeak returns a struct, so insert a call to it above
                         // the current statement, and replace the current call with the struct's
                         // `old_value` member.
                         auto* block = call->Stmt()->Block()->Declaration();
                         auto old_value = b.Symbols().New("old_value");
                         auto old_value_decl = b.Decl(b.Let(
-                            old_value,
-                            b.MemberAccessor(b.Call(sem::str(stub->builtin), std::move(out_args)),
-                                             "old_value")));
+                            old_value, b.MemberAccessor(
+                                           b.Call(builtin::str(stub->builtin), std::move(out_args)),
+                                           "old_value")));
                         ctx.InsertBefore(block->statements, call->Stmt()->Declaration(),
                                          old_value_decl);
                         ctx.Replace(call->Declaration(), b.Expr(old_value));
                     } else {
                         ctx.Replace(call->Declaration(),
-                                    b.Call(sem::str(stub->builtin), std::move(out_args)));
+                                    b.Call(builtin::str(stub->builtin), std::move(out_args)));
                     }
 
                     // Keep track of this expression. We'll need to modify the root identifier /
@@ -132,7 +133,7 @@ struct SpirvAtomic::State {
                         auto* member = str->members[i];
                         if (forked.atomic_members.count(i)) {
                             auto type = AtomicTypeFor(ctx.src->Sem().Get(member)->Type());
-                            auto name = ctx.src->Symbols().NameFor(member->name->symbol);
+                            auto name = member->name->symbol.Name();
                             members.Push(b.Member(name, type, ctx.Clone(member->attributes)));
                         } else {
                             members.Push(ctx.Clone(member));
@@ -156,8 +157,7 @@ struct SpirvAtomic::State {
     ForkedStruct& Fork(const ast::Struct* str) {
         auto& forked = forked_structs[str];
         if (!forked.name.IsValid()) {
-            forked.name =
-                b.Symbols().New(ctx.src->Symbols().NameFor(str->name->symbol) + "_atomic");
+            forked.name = b.Symbols().New(str->name->symbol.Name() + "_atomic");
         }
         return forked;
     }
@@ -219,8 +219,7 @@ struct SpirvAtomic::State {
             },
             [&](const type::Reference* ref) { return AtomicTypeFor(ref->StoreType()); },
             [&](Default) {
-                TINT_ICE(Transform, b.Diagnostics())
-                    << "unhandled type: " << ty->FriendlyName(ctx.src->Symbols());
+                TINT_ICE(Transform, b.Diagnostics()) << "unhandled type: " << ty->FriendlyName();
                 return ast::Type{};
             });
     }
@@ -255,7 +254,7 @@ struct SpirvAtomic::State {
                             ctx.Replace(assign, [=] {
                                 auto* lhs = ctx.CloneWithoutTransform(assign->lhs);
                                 auto* rhs = ctx.CloneWithoutTransform(assign->rhs);
-                                auto* call = b.Call(sem::str(sem::BuiltinType::kAtomicStore),
+                                auto* call = b.Call(builtin::str(builtin::Function::kAtomicStore),
                                                     b.AddressOf(lhs), rhs);
                                 return b.CallStmt(call);
                             });
@@ -266,7 +265,7 @@ struct SpirvAtomic::State {
                         if (is_ref_to_atomic_var(sem_rhs->UnwrapLoad())) {
                             ctx.Replace(assign->rhs, [=] {
                                 auto* rhs = ctx.CloneWithoutTransform(assign->rhs);
-                                return b.Call(sem::str(sem::BuiltinType::kAtomicLoad),
+                                return b.Call(builtin::str(builtin::Function::kAtomicLoad),
                                               b.AddressOf(rhs));
                             });
                             return;
@@ -278,7 +277,7 @@ struct SpirvAtomic::State {
                             if (is_ref_to_atomic_var(sem_init->UnwrapLoad())) {
                                 ctx.Replace(var->initializer, [=] {
                                     auto* rhs = ctx.CloneWithoutTransform(var->initializer);
-                                    return b.Call(sem::str(sem::BuiltinType::kAtomicLoad),
+                                    return b.Call(builtin::str(builtin::Function::kAtomicLoad),
                                                   b.AddressOf(rhs));
                                 });
                                 return;
@@ -293,11 +292,11 @@ struct SpirvAtomic::State {
 SpirvAtomic::SpirvAtomic() = default;
 SpirvAtomic::~SpirvAtomic() = default;
 
-SpirvAtomic::Stub::Stub(ProgramID pid, ast::NodeID nid, sem::BuiltinType b)
-    : Base(pid, nid), builtin(b) {}
+SpirvAtomic::Stub::Stub(ProgramID pid, ast::NodeID nid, builtin::Function b)
+    : Base(pid, nid, utils::Empty), builtin(b) {}
 SpirvAtomic::Stub::~Stub() = default;
 std::string SpirvAtomic::Stub::InternalName() const {
-    return "@internal(spirv-atomic " + std::string(sem::str(builtin)) + ")";
+    return "@internal(spirv-atomic " + std::string(builtin::str(builtin)) + ")";
 }
 
 const SpirvAtomic::Stub* SpirvAtomic::Stub::Clone(CloneContext* ctx) const {

@@ -23,6 +23,8 @@
 
 #include "src/tint/reflection.h"
 #include "src/tint/writer/array_length_from_uniform_options.h"
+#include "src/tint/writer/binding_remapper_options.h"
+#include "src/tint/writer/external_texture_options.h"
 #include "src/tint/writer/text.h"
 
 // Forward declarations
@@ -44,6 +46,9 @@ struct Options {
     /// @returns this Options
     Options& operator=(const Options&);
 
+    /// Set to `true` to disable software robustness that prevents out-of-bounds accesses.
+    bool disable_robustness = false;
+
     /// The index to use when generating a UBO to receive storage buffer sizes.
     /// Defaults to 30, which is the last valid buffer slot.
     uint32_t buffer_size_ubo_index = 30;
@@ -59,19 +64,23 @@ struct Options {
     /// Set to `true` to disable workgroup memory zero initialization
     bool disable_workgroup_init = false;
 
-    /// Set to 'true' to generates binding mappings for external textures
-    bool generate_external_texture_bindings = false;
+    /// Options used in the binding mappings for external textures
+    ExternalTextureOptions external_texture_options = {};
 
     /// Options used to specify a mapping of binding points to indices into a UBO
     /// from which to load buffer sizes.
     ArrayLengthFromUniformOptions array_length_from_uniform = {};
 
+    /// Options used in the bindings remapper
+    BindingRemapperOptions binding_remapper_options = {};
+
     /// Reflect the fields of this class so that it can be used by tint::ForeachField()
-    TINT_REFLECT(buffer_size_ubo_index,
+    TINT_REFLECT(disable_robustness,
+                 buffer_size_ubo_index,
                  fixed_sample_mask,
                  emit_vertex_point_size,
                  disable_workgroup_init,
-                 generate_external_texture_bindings,
+                 external_texture_options,
                  array_length_from_uniform);
 };
 

@@ -191,7 +191,7 @@ template <typename Self, typename Reducer, typename Device,
               (TensorEvaluator<typename Self::ChildTypeNoConst, Device>::PacketAccess &&
                internal::reducer_traits<Reducer, Device>::PacketAccess)>
 struct ScanLauncher {
-  void operator()(Self& self, typename Self::CoeffReturnType* data) {
+  void operator()(Self& self, typename Self::CoeffReturnType* data) const {
     Index total_size = internal::array_prod(self.dimensions());
 
     // We fix the index along the scan axis to 0 and perform a

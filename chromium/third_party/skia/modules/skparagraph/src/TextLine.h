@@ -68,7 +68,7 @@ public:
     TextRange textWithNewlines() const { return fTextIncludingNewlines; }
     TextRange text() const { return fText; }
     ClusterRange clusters() const { return fClusterRange; }
-    ClusterRange clustersWithSpaces() { return fGhostClusterRange; }
+    ClusterRange clustersWithSpaces() const { return fGhostClusterRange; }
     Run* ellipsis() const { return fEllipsis.get(); }
     InternalLineMetrics sizes() const { return fSizes; }
     bool empty() const { return fTextExcludingSpaces.empty(); }
@@ -78,6 +78,7 @@ public:
     SkScalar width() const {
         return fAdvance.fX + (fEllipsis != nullptr ? fEllipsis->fAdvance.fX : 0);
     }
+    SkScalar widthWithoutEllipsis() const { return fAdvance.fX; }
     SkVector offset() const;
 
     SkScalar alphabeticBaseline() const { return fSizes.alphabeticBaseline(); }
@@ -116,7 +117,10 @@ public:
 
     bool isFirstLine() const;
     bool isLastLine() const;
-    void getRectsForRange(TextRange textRange, RectHeightStyle rectHeightStyle, RectWidthStyle rectWidthStyle, std::vector<TextBox>& boxes);
+    void getRectsForRange(TextRange textRange,
+                          RectHeightStyle rectHeightStyle,
+                          RectWidthStyle rectWidthStyle,
+                          std::vector<TextBox>& boxes) const;
     void getRectsForPlaceholders(std::vector<TextBox>& boxes);
     PositionWithAffinity getGlyphPositionAtCoordinate(SkScalar dx);
 
@@ -172,7 +176,7 @@ private:
     ClusterRange fClusterRange;
     ClusterRange fGhostClusterRange;
     // Avoid the malloc/free in the common case of one run per line
-    SkSTArray<1, size_t, true> fRunsInVisualOrder;
+    skia_private::STArray<1, size_t, true> fRunsInVisualOrder;
     SkVector fAdvance;                  // Text size
     SkVector fOffset;                   // Text position
     SkScalar fShift;                    // Let right

@@ -31,13 +31,16 @@
 #include "absl/strings/str_replace.h"
 #include "absl/types/span.h"
 #include "./analyze_corpora.h"
+#include "./binary_info.h"
 #include "./blob_file.h"
 #include "./centipede.h"
+#include "./centipede_callbacks.h"
 #include "./command.h"
 #include "./coverage.h"
 #include "./defs.h"
 #include "./environment.h"
 #include "./logging.h"
+#include "./minimize_crash.h"
 #include "./remote_file.h"
 #include "./shard_reader.h"
 #include "./stats.h"
@@ -116,8 +119,7 @@ void PrintExperimentStatsThread(const std::atomic<bool> &continue_running,
 
 // Loads corpora from work dirs provided in `env.args`, analyzes differences.
 // Returns EXIT_SUCCESS on success, EXIT_FAILURE otherwise.
-int Analyze(const Environment &env, const PCTable &pc_table,
-            const SymbolTable &symbols) {
+int Analyze(const Environment &env, const BinaryInfo &binary_info) {
   LOG(INFO) << "Analyze " << absl::StrJoin(env.args, ",");
   CHECK_EQ(env.args.size(), 2) << "for now, Analyze supports only 2 work dirs";
   CHECK(!env.binary.empty()) << "--binary must be used";
@@ -143,7 +145,7 @@ int Analyze(const Environment &env, const PCTable &pc_table,
     LOG(INFO) << "corpus size " << corpus.size();
   }
   CHECK_EQ(corpora.size(), 2);
-  AnalyzeCorpora(pc_table, symbols, corpora[0], corpora[1]);
+  AnalyzeCorpora(binary_info, corpora[0], corpora[1]);
   return EXIT_SUCCESS;
 }
 
@@ -166,6 +168,12 @@ int CentipedeMain(const Environment &env,
 
   if (!env.for_each_blob.empty()) return ForEachBlob(env);
 
+  if (!env.minimize_crash_file_path.empty()) {
+    ByteArray crashy_input;
+    ReadFromLocalFile(env.minimize_crash_file_path, crashy_input);
+    return MinimizeCrash(crashy_input, env, callbacks_factory);
+  }
+
   // Just export the corpus from a local dir and exit.
   if (!env.export_corpus_from_local_dir.empty())
     return Centipede::ExportCorpusFromLocalDir(
@@ -185,10 +193,11 @@ int CentipedeMain(const Environment &env,
   LOG(INFO) << "Coverage dir " << env.MakeCoverageDirPath();
   RemoteMkdir(env.MakeCoverageDirPath());
 
-  auto one_time_callbacks = callbacks_factory.create(env);
   BinaryInfo binary_info;
-  one_time_callbacks->PopulateBinaryInfo(binary_info);
-  callbacks_factory.destroy(one_time_callbacks);
+  {
+    ScopedCentipedeCallbacks scoped_callbacks(callbacks_factory, env);
+    scoped_callbacks.callbacks()->PopulateBinaryInfo(binary_info);
+  }
 
   std::string pcs_file_path;
   if (binary_info.uses_legacy_trace_pc_instrumentation) {
@@ -196,8 +205,7 @@ int CentipedeMain(const Environment &env,
     SavePCsToFile(binary_info.pc_table, pcs_file_path);
   }
 
-  if (env.analyze)
-    return Analyze(env, binary_info.pc_table, binary_info.symbols);
+  if (env.analyze) return Analyze(env, binary_info);
 
   if (env.use_pcpair_features) {
     CHECK(!binary_info.pc_table.empty())
@@ -212,12 +220,10 @@ int CentipedeMain(const Environment &env,
 
     if (env.dry_run) return;
 
-    auto user_callbacks = callbacks_factory.create(my_env);
-    my_env.ReadKnobsFileIfSpecified();
-    Centipede centipede(my_env, *user_callbacks, binary_info, coverage_logger,
-                        stats);
+    ScopedCentipedeCallbacks scoped_callbacks(callbacks_factory, my_env);
+    Centipede centipede(my_env, *scoped_callbacks.callbacks(), binary_info,
+                        coverage_logger, stats);
     centipede.FuzzingLoop();
-    callbacks_factory.destroy(user_callbacks);
   };
 
   std::vector<Environment> envs(env.num_threads, env);
@@ -244,6 +250,8 @@ int CentipedeMain(const Environment &env,
   }
   stats_thread_continue_running = false;
   stats_thread.join();
+
+  if (!env.knobs_file.empty()) PrintRewardValues(stats_vec, std::cerr);
 
   return ExitCode();
 }

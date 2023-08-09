@@ -5,23 +5,52 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkColorFilter.h"
+#include "include/core/SkAlphaType.h"
+#include "include/core/SkBlender.h"
+#include "include/core/SkColor.h"
+#include "include/core/SkMaskFilter.h"
 #include "include/core/SkMatrix.h"
+#include "include/core/SkPaint.h"
+#include "include/core/SkPath.h"
+#include "include/core/SkPixmap.h"
+#include "include/core/SkPoint.h"
 #include "include/core/SkRSXform.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkScalar.h"
+#include "include/core/SkShader.h"
+#include "include/core/SkSurfaceProps.h"
+#include "src/base/SkArenaAlloc.h"
 #include "src/core/SkBlendModePriv.h"
 #include "src/core/SkBlenderBase.h"
 #include "src/core/SkColorSpacePriv.h"
 #include "src/core/SkColorSpaceXformSteps.h"
 #include "src/core/SkCoreBlitters.h"
 #include "src/core/SkDraw.h"
+#include "src/core/SkEffectPriv.h"
 #include "src/core/SkMatrixProvider.h"
 #include "src/core/SkRasterClip.h"
 #include "src/core/SkRasterPipeline.h"
+#include "src/core/SkRasterPipelineOpContexts.h"
+#include "src/core/SkRasterPipelineOpList.h"
 #include "src/core/SkScan.h"
-#include "src/core/SkVM.h"
+#include "src/core/SkSurfacePriv.h"
 #include "src/core/SkVMBlitter.h"
 #include "src/shaders/SkShaderBase.h"
 #include "src/shaders/SkTransformShader.h"
+
+#include <cstdint>
+#include <optional>
+#include <utility>
+
+class SkBlitter;
+class SkColorSpace;
+enum class SkBlendMode;
+
+#if defined(SK_ENABLE_SKVM)
+#include "src/core/SkVM.h"
+class SkColorInfo;
+#endif
 
 static void fill_rect(const SkMatrix& ctm, const SkRasterClip& rc,
                       const SkRect& r, SkBlitter* blitter, SkPath* scratchPath) {
@@ -48,12 +77,11 @@ static void load_color(SkRasterPipeline_UniformColorCtx* ctx, const float rgba[]
     ctx->rgba[3] = SkScalarRoundToInt(rgba[3]*255); ctx->a = rgba[3];
 }
 
-extern bool gUseSkVMBlitter;
-
 class UpdatableColorShader : public SkShaderBase {
 public:
     explicit UpdatableColorShader(SkColorSpace* cs)
         : fSteps{sk_srgb_singleton(), kUnpremul_SkAlphaType, cs, kUnpremul_SkAlphaType} {}
+#if defined(SK_ENABLE_SKVM)
     skvm::Color program(skvm::Builder* builder,
                         skvm::Coord device,
                         skvm::Coord local,
@@ -70,6 +98,7 @@ public:
 
         return {r, g, b, a};
     }
+#endif
 
     void updateColor(SkColor c) const {
         SkColor4f c4 = SkColor4f::FromColor(c);
@@ -118,7 +147,8 @@ void SkDraw::drawAtlas(const SkRSXform xform[],
     auto rpblit = [&]() {
         SkRasterPipeline pipeline(&alloc);
         SkSurfaceProps props = SkSurfacePropsCopyOrDefault(fProps);
-        SkStageRec rec = {&pipeline, &alloc, fDst.colorType(), fDst.colorSpace(), p, props};
+        SkStageRec rec = {
+                &pipeline, &alloc, fDst.colorType(), fDst.colorSpace(), p.getColor4f(), props};
         // We pass an identity matrix here rather than the CTM. The CTM gets folded into the
         // per-triangle matrix.
         if (!as_SB(transformShader)->appendRootStages(rec, SkMatrix::I())) {
@@ -172,7 +202,7 @@ void SkDraw::drawAtlas(const SkRSXform xform[],
         return true;
     };
 
-    if (gUseSkVMBlitter || !rpblit()) {
+    if (!rpblit()) {
         UpdatableColorShader* colorShader = nullptr;
         sk_sp<SkShader> shader;
         if (colors) {

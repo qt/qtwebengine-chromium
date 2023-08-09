@@ -66,6 +66,7 @@ import {
   BlankStylePropertiesSection,
   KeyframePropertiesSection,
   HighlightPseudoStylePropertiesSection,
+  TryRuleSection,
 } from './StylePropertiesSection.js';
 
 import * as LayersWidget from './LayersWidget.js';
@@ -238,8 +239,8 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
   #updateAbortController?: AbortController;
   #updateComputedStylesAbortController?: AbortController;
 
-  static instance(): StylesSidebarPane {
-    if (!stylesSidebarPaneInstance) {
+  static instance(opts?: {forceNew: boolean}): StylesSidebarPane {
+    if (!stylesSidebarPaneInstance || opts?.forceNew) {
       stylesSidebarPaneInstance = new StylesSidebarPane();
     }
     return stylesSidebarPaneInstance;
@@ -318,14 +319,20 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
     }
 
     this.#hintPopoverHelper = new UI.PopoverHelper.PopoverHelper(this.contentElement, event => {
-      const hoveredNode = event.composedPath()[0] as Element;
+      const hoveredNode = event.composedPath()[0];
+      // This is a workaround to fix hint popover not showing after icon update.
+      // Previously our `.hint` element was an icon itself and `composedPath()[0]` was referring to it.
+      // However, our `Icon` component now is an element with shadow root and `event.composedPath()[0]`
+      // refers to the markup inside shadow root. Though we want a reference to the `.hint` element itself.
+      // So we trace back and reach to the possible `.hint` element from inside the shadow root.
+      const possibleHintNodeFromHintIcon = event.composedPath()[2];
 
-      if (!hoveredNode) {
+      if (!hoveredNode || !(hoveredNode instanceof Element)) {
         return null;
       }
 
-      if (hoveredNode.matches('.hint')) {
-        const hint = activeHints.get(hoveredNode);
+      if (possibleHintNodeFromHintIcon instanceof Element && possibleHintNodeFromHintIcon.matches('.hint')) {
+        const hint = activeHints.get(possibleHintNodeFromHintIcon);
 
         if (hint) {
           return {
@@ -360,6 +367,19 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
         }
       }
 
+      if (hoveredNode.matches('.nesting-symbol')) {
+        return {
+          box: hoveredNode.boxInWindow(),
+          show: async(popover: UI.GlassPane.GlassPane): Promise<boolean> => {
+            popover.setIgnoreLeftMargin(true);
+            const element = document.createElement('span');
+            element.textContent = (hoveredNode as HTMLElement).dataset.nestingSelectors || '';
+            popover.contentElement.appendChild(element);
+            return true;
+          },
+        };
+      }
+
       return null;
     });
 
@@ -384,7 +404,8 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
     const exclamationElement = (document.createElement('span', {is: 'dt-icon-label'}) as UI.UIUtils.DevToolsIconLabel);
     exclamationElement.className = 'exclamation-mark';
     if (!StylesSidebarPane.ignoreErrorsForProperty(property)) {
-      exclamationElement.type = 'smallicon-warning';
+      exclamationElement
+          .data = {iconName: 'warning-filled', color: 'var(--icon-warning)', width: '14px', height: '14px'};
     }
     let invalidMessage: string|Common.UIString.LocalizedString;
     if (title) {
@@ -678,7 +699,7 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
     this.nodeStylesUpdatedForTest(node, false);
   }
 
-  async doUpdate(): Promise<void> {
+  override async doUpdate(): Promise<void> {
     this.#updateAbortController?.abort();
     this.#updateAbortController = new AbortController();
     await this.#innerDoUpdate(this.#updateAbortController.signal);
@@ -756,7 +777,7 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
     return await node.domModel().cssModel().getComputedStyle(nodeId);
   }
 
-  onResize(): void {
+  override onResize(): void {
     void this.resizeThrottler.schedule(this.innerResize.bind(this));
   }
 
@@ -765,6 +786,7 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
     this.allSections().forEach(section => {
       section.propertiesTreeOutline.element.style.width = width;
     });
+    this.hideAllPopovers();
     return Promise.resolve();
   }
 
@@ -1002,6 +1024,12 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
     // For sniffing in tests.
   }
 
+  rebuildSectionsForMatchedStyleRulesForTest(
+      matchedStyles: SDK.CSSMatchedStyles.CSSMatchedStyles, computedStyles: Map<string, string>|null,
+      parentsComputedStyles: Map<string, string>|null): Promise<SectionBlock[]> {
+    return this.rebuildSectionsForMatchedStyleRules(matchedStyles, computedStyles, parentsComputedStyles);
+  }
+
   private async rebuildSectionsForMatchedStyleRules(
       matchedStyles: SDK.CSSMatchedStyles.CSSMatchedStyles, computedStyles: Map<string, string>|null,
       parentsComputedStyles: Map<string, string>|null): Promise<SectionBlock[]> {
@@ -1146,6 +1174,18 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
       blocks.push(block);
     }
 
+    for (const positionFallbackRule of matchedStyles.positionFallbackRules()) {
+      const block = SectionBlock.createPositionFallbackBlock(positionFallbackRule.name().text);
+      for (const tryRule of positionFallbackRule.tryRules()) {
+        this.idleCallbackManager.schedule(() => {
+          block.sections.push(new TryRuleSection(
+              this, matchedStyles, tryRule.style, sectionIdx, computedStyles, parentsComputedStyles));
+          sectionIdx++;
+        });
+      }
+      blocks.push(block);
+    }
+
     // If we have seen a layer in matched styles we enable
     // the layer widget button.
     if (sawLayers) {
@@ -1244,7 +1284,7 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
     this.visibleSections = visibleSections;
   }
 
-  willHide(): void {
+  override willHide(): void {
     this.hideAllPopovers();
     super.willHide();
   }
@@ -1476,16 +1516,8 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
     const autoDarkModeSetting = Common.Settings.Settings.instance().moduleSetting('emulateAutoDarkMode');
     const decorateStatus = (condition: boolean, title: string): string => `${condition ? '✓ ' : ''}${title}`;
 
-    const icon = new IconButton.Icon.Icon();
-    icon.data = {
-      iconName: 'ic_rendering',
-      color: 'var(--color-text-secondary)',
-      width: '18px',
-      height: '18px',
-    };
-    const button = new UI.Toolbar.ToolbarToggle(i18nString(UIStrings.toggleRenderingEmulations), icon);
-    button.setToggleWithDot(true);
-
+    const button =
+        new UI.Toolbar.ToolbarToggle(i18nString(UIStrings.toggleRenderingEmulations), 'brush', 'brush-filled');
     button.element.addEventListener('click', event => {
       const boundingRect = button.element.getBoundingClientRect();
       const menu = new UI.ContextMenu.ContextMenu(event, {
@@ -1523,8 +1555,7 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
   }
 
   private createCopyAllChangesButton(): UI.Toolbar.ToolbarButton {
-    const copyAllChangesButton =
-        new UI.Toolbar.ToolbarButton(i18nString(UIStrings.copyAllCSSChanges), 'largeicon-copy');
+    const copyAllChangesButton = new UI.Toolbar.ToolbarButton(i18nString(UIStrings.copyAllCSSChanges), 'copy');
     // TODO(1296947): implement a dedicated component to share between all copy buttons
     copyAllChangesButton.element.setAttribute('data-content', i18nString(UIStrings.copiedToClipboard));
     let timeout: number|undefined;
@@ -1610,6 +1641,13 @@ export class SectionBlock {
     const separatorElement = document.createElement('div');
     separatorElement.className = 'sidebar-separator';
     separatorElement.textContent = `@keyframes ${keyframesName}`;
+    return new SectionBlock(separatorElement);
+  }
+
+  static createPositionFallbackBlock(positionFallbackName: string): SectionBlock {
+    const separatorElement = document.createElement('div');
+    separatorElement.className = 'sidebar-separator';
+    separatorElement.textContent = `@position-fallback ${positionFallbackName}`;
     return new SectionBlock(separatorElement);
   }
 
@@ -1778,7 +1816,7 @@ export class CSSPropertyPrompt extends UI.TextPrompt.TextPrompt {
     }
   }
 
-  onKeyDown(event: Event): void {
+  override onKeyDown(event: Event): void {
     const keyboardEvent = (event as KeyboardEvent);
     switch (keyboardEvent.key) {
       case 'ArrowUp':
@@ -1811,7 +1849,7 @@ export class CSSPropertyPrompt extends UI.TextPrompt.TextPrompt {
     super.onKeyDown(keyboardEvent);
   }
 
-  onMouseWheel(event: Event): void {
+  override onMouseWheel(event: Event): void {
     if (this.handleNameOrValueUpDown(event)) {
       event.consume(true);
       return;
@@ -1819,7 +1857,7 @@ export class CSSPropertyPrompt extends UI.TextPrompt.TextPrompt {
     super.onMouseWheel(event);
   }
 
-  tabKeyPressed(): boolean {
+  override tabKeyPressed(): boolean {
     this.acceptAutoComplete();
 
     // Always tab to the next field.
@@ -1915,7 +1953,6 @@ export class CSSPropertyPrompt extends UI.TextPrompt.TextPrompt {
         text: '!important',
         title: undefined,
         subtitle: undefined,
-        iconType: undefined,
         priority: undefined,
         isSecondary: undefined,
         subtitleRenderer: undefined,
@@ -2005,7 +2042,6 @@ export class CSSPropertyPrompt extends UI.TextPrompt.TextPrompt {
         text: completion,
         title: undefined,
         subtitle: undefined,
-        iconType: undefined,
         priority: undefined,
         isSecondary: undefined,
         subtitleRenderer: undefined,
@@ -2095,6 +2131,8 @@ export class StylesSidebarPropertyRenderer {
   private angleHandler: ((arg0: string) => Node)|null;
   private lengthHandler: ((arg0: string) => Node)|null;
   private animationNameHandler: ((data: string) => Node)|null;
+  private animationHandler: ((data: string) => Node)|null;
+  private positionFallbackHandler: ((data: string) => Node)|null;
 
   constructor(rule: SDK.CSSRule.CSSRule|null, node: SDK.DOMModel.DOMNode|null, name: string, value: string) {
     this.rule = rule;
@@ -2111,6 +2149,8 @@ export class StylesSidebarPropertyRenderer {
     this.animationNameHandler = null;
     this.angleHandler = null;
     this.lengthHandler = null;
+    this.animationHandler = null;
+    this.positionFallbackHandler = null;
   }
 
   setColorHandler(handler: (arg0: string) => Node): void {
@@ -2145,12 +2185,20 @@ export class StylesSidebarPropertyRenderer {
     this.animationNameHandler = handler;
   }
 
+  setAnimationHandler(handler: (arg0: string) => Node): void {
+    this.animationHandler = handler;
+  }
+
   setAngleHandler(handler: (arg0: string) => Node): void {
     this.angleHandler = handler;
   }
 
   setLengthHandler(handler: (arg0: string) => Node): void {
     this.lengthHandler = handler;
+  }
+
+  setPositionFallbackHandler(handler: (arg0: string) => Node): void {
+    this.positionFallbackHandler = handler;
   }
 
   renderName(): Element {
@@ -2181,6 +2229,12 @@ export class StylesSidebarPropertyRenderer {
 
     if (this.gridHandler && metadata.isGridAreaDefiningProperty(this.propertyName)) {
       valueElement.appendChild(this.gridHandler(this.propertyValue, this.propertyName));
+      valueElement.normalize();
+      return valueElement;
+    }
+
+    if (this.animationHandler && (this.propertyName === 'animation' || this.propertyName === '-webkit-animation')) {
+      valueElement.appendChild(this.animationHandler(this.propertyValue));
       valueElement.normalize();
       return valueElement;
     }
@@ -2241,6 +2295,12 @@ export class StylesSidebarPropertyRenderer {
       regexes.push(/^.*$/g);
       processors.push(this.animationNameHandler);
     }
+
+    if (this.positionFallbackHandler && this.propertyName === 'position-fallback') {
+      regexes.push(/^.*$/g);
+      processors.push(this.positionFallbackHandler);
+    }
+
     const results = TextUtils.TextUtils.Utils.splitStringByRegexes(this.propertyValue, regexes);
     for (let i = 0; i < results.length; i++) {
       const result = results[i];
@@ -2293,9 +2353,9 @@ let buttonProviderInstance: ButtonProvider;
 export class ButtonProvider implements UI.Toolbar.Provider {
   private readonly button: UI.Toolbar.ToolbarButton;
   private constructor() {
-    this.button = new UI.Toolbar.ToolbarButton(i18nString(UIStrings.newStyleRule), 'largeicon-add');
+    this.button = new UI.Toolbar.ToolbarButton(i18nString(UIStrings.newStyleRule), 'plus');
     this.button.addEventListener(UI.Toolbar.ToolbarButton.Events.Click, this.clicked, this);
-    const longclickTriangle = UI.Icon.Icon.create('largeicon-longclick-triangle', 'long-click-glyph');
+    const longclickTriangle = UI.Icon.Icon.create('triangle-bottom-right', 'long-click-glyph');
     this.button.element.appendChild(longclickTriangle);
 
     new UI.UIUtils.LongClickController(this.button.element, this.longClicked.bind(this));

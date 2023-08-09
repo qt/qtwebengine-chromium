@@ -5,7 +5,9 @@
  * found in the LICENSE file.
  */
 
-#include "include/sksl/DSLCase.h"
+#include "src/sksl/dsl/DSLCase.h"
+
+using namespace skia_private;
 
 namespace SkSL {
 
@@ -16,7 +18,7 @@ DSLCase::DSLCase(DSLExpression value, SkSL::StatementArray statements, Position 
     , fStatements(std::move(statements))
     , fPosition(pos) {}
 
-DSLCase::DSLCase(DSLExpression value, SkTArray<DSLStatement> statements, Position pos)
+DSLCase::DSLCase(DSLExpression value, TArray<DSLStatement> statements, Position pos)
     : fValue(std::move(value))
     , fPosition(pos) {
     fStatements.reserve_back(statements.size());

@@ -35,13 +35,6 @@ static INLINE unsigned int sad(const uint8_t *a, int a_stride, const uint8_t *b,
   return sad;
 }
 
-#define SAD_MXH(m)                                                         \
-  unsigned int aom_sad##m##xh_c(const uint8_t *a, int a_stride,            \
-                                const uint8_t *b, int b_stride, int width, \
-                                int height) {                              \
-    return sad(a, a_stride, b, b_stride, width, height);                   \
-  }
-
 #define SADMXN(m, n)                                                          \
   unsigned int aom_sad##m##x##n##_c(const uint8_t *src, int src_stride,       \
                                     const uint8_t *ref, int ref_stride) {     \
@@ -208,13 +201,7 @@ SADMXN(4, 4)
 SAD_MXNX4D(4, 4)
 SAD_MXNX3D(4, 4)
 
-SAD_MXH(128)
-SAD_MXH(64)
-SAD_MXH(32)
-SAD_MXH(16)
-SAD_MXH(8)
-SAD_MXH(4)
-
+#if !CONFIG_REALTIME_ONLY
 SADMXN(4, 16)
 SAD_MXNX4D(4, 16)
 SADMXN(16, 4)
@@ -227,7 +214,6 @@ SADMXN(16, 64)
 SAD_MXNX4D(16, 64)
 SADMXN(64, 16)
 SAD_MXNX4D(64, 16)
-#if !CONFIG_REALTIME_ONLY
 SAD_MXNX3D(4, 16)
 SAD_MXNX3D(16, 4)
 SAD_MXNX3D(8, 32)

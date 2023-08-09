@@ -27,6 +27,7 @@
 #include "quiche/quic/core/qpack/qpack_decoded_headers_accumulator.h"
 #include "quiche/quic/core/quic_error_codes.h"
 #include "quiche/quic/core/quic_packets.h"
+#include "quiche/quic/core/quic_session.h"
 #include "quiche/quic/core/quic_stream.h"
 #include "quiche/quic/core/quic_stream_priority.h"
 #include "quiche/quic/core/quic_stream_sequencer.h"
@@ -271,10 +272,15 @@ class QUIC_EXPORT_PRIVATE QuicSpdyStream
     // the stream ID.
     virtual void OnHttp3Datagram(QuicStreamId stream_id,
                                  absl::string_view payload) = 0;
+
+    // Called when a Capsule with an unknown type is received.
+    virtual void OnUnknownCapsule(QuicStreamId stream_id,
+                                  const quiche::UnknownCapsule& capsule) = 0;
   };
 
-  // Registers |visitor| to receive HTTP/3 datagrams. |visitor| must be
-  // valid until a corresponding call to UnregisterHttp3DatagramVisitor.
+  // Registers |visitor| to receive HTTP/3 datagrams and enables Capsule
+  // Protocol by registering a CapsuleParser. |visitor| must be valid until a
+  // corresponding call to UnregisterHttp3DatagramVisitor.
   void RegisterHttp3DatagramVisitor(Http3DatagramVisitor* visitor);
 
   // Unregisters an HTTP/3 datagram visitor. Must only be called after a call to
