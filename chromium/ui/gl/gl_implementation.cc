@@ -75,6 +75,10 @@ std::string GLImplementationParts::GLString() const {
   switch (gl) {
     case GLImplementation::kGLImplementationNone:
       return "none";
+    case GLImplementation::kGLImplementationDesktopGL:
+      return "desktop-gl";
+    case GLImplementation::kGLImplementationDesktopGLCoreProfile:
+      return "desktop-gl-core-profile";
     case GLImplementation::kGLImplementationEGLGLES2:
       return "egl-gles2";
     case GLImplementation::kGLImplementationMockGL:
@@ -122,6 +126,8 @@ const struct {
   const char* angle_name;
   GLImplementationParts implementation;
 } kGLImplementationNamePairs[] = {
+    {kGLImplementationDesktopName, kANGLEImplementationNoneName,
+     GLImplementationParts(kGLImplementationDesktopGL)},
     {kGLImplementationEGLName, kANGLEImplementationNoneName,
      GLImplementationParts(kGLImplementationEGLGLES2)},
     {kGLImplementationANGLEName, kANGLEImplementationNoneName,
@@ -363,6 +369,11 @@ void SetANGLEImplementation(ANGLEImplementation implementation) {
 
 ANGLEImplementation GetANGLEImplementation() {
   return g_gl_implementation.angle;
+}
+
+bool HasDesktopGLFeatures() {
+  return kGLImplementationDesktopGL == g_gl_implementation.gl ||
+         kGLImplementationDesktopGLCoreProfile == g_gl_implementation.gl;
 }
 
 void AddGLNativeLibrary(base::NativeLibrary library) {
