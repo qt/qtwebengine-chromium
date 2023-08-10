@@ -4,6 +4,10 @@
 
 #include "ui/gl/init/gl_initializer.h"
 
+#include <OpenGL/CGLRenderers.h>
+
+#include <vector>
+
 #include "base/apple/bundle_locations.h"
 #include "base/base_paths.h"
 #include "base/files/file_path.h"
@@ -30,6 +34,57 @@ namespace gl {
 namespace init {
 
 namespace {
+
+const char kOpenGLFrameworkPath[] =
+    "/System/Library/Frameworks/OpenGL.framework/Versions/Current/OpenGL";
+
+bool InitializeOneOffForSandbox() {
+  static bool initialized = false;
+  if (initialized)
+    return true;
+
+  // This is called from the sandbox warmup code on Mac OS X.
+  // GPU-related stuff is very slow without this, probably because
+  // the sandbox prevents loading graphics drivers or some such.
+  std::vector<CGLPixelFormatAttribute> attribs;
+  if (GLContext::SwitchableGPUsSupported()) {
+    // Avoid switching to the discrete GPU just for this pixel
+    // format selection.
+    attribs.push_back(kCGLPFAAllowOfflineRenderers);
+  }
+  attribs.push_back(static_cast<CGLPixelFormatAttribute>(0));
+
+  CGLPixelFormatObj format;
+  GLint num_pixel_formats;
+  if (CGLChoosePixelFormat(&attribs.front(), &format, &num_pixel_formats) !=
+      kCGLNoError) {
+    LOG(ERROR) << "Error choosing pixel format.";
+    return false;
+  }
+  if (!format) {
+    LOG(ERROR) << "format == 0.";
+    return false;
+  }
+  CGLReleasePixelFormat(format);
+  DCHECK_NE(num_pixel_formats, 0);
+  initialized = true;
+  return true;
+}
+
+bool InitializeStaticCGLInternal(GLImplementation implementation) {
+  base::NativeLibrary library =
+      base::LoadNativeLibrary(base::FilePath(kOpenGLFrameworkPath), nullptr);
+  if (!library) {
+    LOG(ERROR) << "OpenGL framework not found";
+    return false;
+  }
+
+  AddGLNativeLibrary(library);
+  SetGLImplementation(implementation);
+
+  InitializeStaticGLBindingsGL();
+  return true;
+}
 
 #if defined(USE_EGL)
 const char kGLESv2ANGLELibraryName[] = "libGLESv2.dylib";
@@ -114,6 +169,12 @@ bool InitializeStaticEGLInternal(GLImplementationParts implementation) {
 GLDisplay* InitializeGLOneOffPlatform(gl::GpuPreference gpu_preference) {
   GLDisplayEGL* display = GetDisplayEGL(gpu_preference);
   switch (GetGLImplementation()) {
+    case kGLImplementationDesktopGL:
+    case kGLImplementationDesktopGLCoreProfile:
+      if (!InitializeOneOffForSandbox()) {
+        LOG(ERROR) << "GLSurfaceCGL::InitializeOneOff failed.";
+      }
+      break;
 #if defined(USE_EGL)
     case kGLImplementationEGLGLES2:
     case kGLImplementationEGLANGLE:
@@ -142,6 +203,9 @@ bool InitializeStaticGLBindings(GLImplementationParts implementation) {
   base::ScopedAllowBlocking allow_blocking;
 
   switch (implementation.gl) {
+    case kGLImplementationDesktopGL:
+    case kGLImplementationDesktopGLCoreProfile:
+      return InitializeStaticCGLInternal(implementation.gl);
 #if defined(USE_EGL)
     case kGLImplementationEGLGLES2:
     case kGLImplementationEGLANGLE:

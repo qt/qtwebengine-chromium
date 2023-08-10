@@ -793,7 +793,8 @@ void FeatureInfo::InitializeFeatures() {
   }
 
   if (gl_version_info_->is_es3 ||
-      gfx::HasExtension(extensions, "GL_OES_element_index_uint")) {
+      gfx::HasExtension(extensions, "GL_OES_element_index_uint") ||
+      gl::HasDesktopGLFeatures()) {
     AddExtensionString("GL_OES_element_index_uint");
     validators_.index_type.AddValue(GL_UNSIGNED_INT);
   }
@@ -1054,7 +1055,8 @@ void FeatureInfo::InitializeFeatures() {
     AddExtensionString("GL_EXT_disjoint_timer_query");
   }
 
-  if (gfx::HasExtension(extensions, "GL_OES_rgb8_rgba8")) {
+  if (gfx::HasExtension(extensions, "GL_OES_rgb8_rgba8") ||
+      gl::HasDesktopGLFeatures()) {
     AddExtensionString("GL_OES_rgb8_rgba8");
     validators_.render_buffer_format.AddValue(GL_RGB8_OES);
     validators_.render_buffer_format.AddValue(GL_RGBA8_OES);
@@ -1117,14 +1119,15 @@ void FeatureInfo::InitializeFeatures() {
   }
 
   if (gfx::HasExtension(extensions, "GL_OES_depth24") ||
-      gl_version_info_->is_es3) {
+      gl::HasDesktopGLFeatures() || gl_version_info_->is_es3) {
     AddExtensionString("GL_OES_depth24");
     feature_flags_.oes_depth24 = true;
     validators_.render_buffer_format.AddValue(GL_DEPTH_COMPONENT24);
   }
 
   if (gl_version_info_->is_es3 ||
-      gfx::HasExtension(extensions, "GL_OES_standard_derivatives")) {
+      gfx::HasExtension(extensions, "GL_OES_standard_derivatives") ||
+      gl::HasDesktopGLFeatures()) {
     AddExtensionString("GL_OES_standard_derivatives");
     feature_flags_.oes_standard_derivatives = true;
     validators_.hint_target.AddValue(GL_FRAGMENT_SHADER_DERIVATIVE_HINT_OES);
@@ -1384,7 +1387,8 @@ void FeatureInfo::InitializeFeatures() {
   }
 
   if (gl_version_info_->is_es3 ||
-      gfx::HasExtension(extensions, "GL_EXT_blend_minmax")) {
+      gfx::HasExtension(extensions, "GL_EXT_blend_minmax") ||
+      gl::HasDesktopGLFeatures()) {
     AddExtensionString("GL_EXT_blend_minmax");
     validators_.equation.AddValue(GL_MIN_EXT);
     validators_.equation.AddValue(GL_MAX_EXT);
@@ -1393,12 +1397,14 @@ void FeatureInfo::InitializeFeatures() {
   }
 
   // TODO(dshwang): GLES3 supports gl_FragDepth, not gl_FragDepthEXT.
-  if (gfx::HasExtension(extensions, "GL_EXT_frag_depth")) {
+  if (gfx::HasExtension(extensions, "GL_EXT_frag_depth") ||
+      gl::HasDesktopGLFeatures()) {
     AddExtensionString("GL_EXT_frag_depth");
     feature_flags_.ext_frag_depth = true;
   }
 
-  if (gfx::HasExtension(extensions, "GL_EXT_shader_texture_lod")) {
+  if (gfx::HasExtension(extensions, "GL_EXT_shader_texture_lod") ||
+      gl::HasDesktopGLFeatures()) {
     AddExtensionString("GL_EXT_shader_texture_lod");
     feature_flags_.ext_shader_texture_lod = true;
   }
