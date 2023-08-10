@@ -74,13 +74,13 @@ class GLApiTest : public testing::Test {
   }
 
   void SetFakeExtensionString(const char* fake_string) {
-    SetGLImplementation(kGLImplementationEGLANGLE);
+    SetGLImplementation(kGLImplementationDesktopGL);
     fake_extension_string_ = fake_string;
     fake_version_string_ = "2.1";
   }
 
   void SetFakeExtensionStrings(const char** fake_strings, uint32_t count) {
-    SetGLImplementation(kGLImplementationEGLANGLE);
+    SetGLImplementation(kGLImplementationDesktopGL);
     num_fake_extension_strings_ = count;
     fake_extension_strings_ = fake_strings;
     fake_version_string_ = "3.0";
