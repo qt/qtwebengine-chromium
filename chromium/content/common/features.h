@@ -41,6 +41,9 @@ BASE_DECLARE_FEATURE(kRestrictCanAccessDataForOriginToUIThread);
 // (crbug/1377753): Speculatively start service worker before BeforeUnload runs.
 BASE_DECLARE_FEATURE(kSpeculativeServiceWorkerStartup);
 
+// Flag guard for fix for crbug.com/1414936.
+CONTENT_EXPORT BASE_DECLARE_FEATURE(kWindowOpenFileSelectFix);
+
 // Please keep features in alphabetical order.
 
 }  // namespace content
