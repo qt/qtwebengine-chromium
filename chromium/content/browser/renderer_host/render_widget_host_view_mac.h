@@ -54,6 +54,7 @@ class ScopedPasswordInputEnabler;
 
 @class NSAccessibilityRemoteUIElement;
 @class RenderWidgetHostViewCocoa;
+@class CursorAccessibilityScaleFactorObserver;
 
 namespace content {
 
@@ -614,6 +615,9 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   SkColor last_frame_root_background_color_ = SK_ColorTRANSPARENT;
 
   std::unique_ptr<CursorManager> cursor_manager_;
+
+  // Observes macOS's accessibility pointer size user preference changes.
+  CursorAccessibilityScaleFactorObserver* __strong cursor_scale_observer_;
 
   // Used to track active password input sessions.
   std::unique_ptr<ui::ScopedPasswordInputEnabler> password_input_enabler_;

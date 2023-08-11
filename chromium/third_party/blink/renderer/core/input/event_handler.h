@@ -277,6 +277,13 @@ class CORE_EXPORT EventHandler final : public GarbageCollected<EventHandler> {
 
   void UpdateCursor();
 
+  float cursor_accessibility_scale_factor() const {
+    return cursor_accessibility_scale_factor_;
+  }
+  void set_cursor_accessibility_scale_factor(float scale) {
+    cursor_accessibility_scale_factor_ = scale;
+  }
+
   Element* GetElementUnderMouse();
 
   Element* CurrentTouchDownElement();
@@ -410,6 +417,8 @@ class CORE_EXPORT EventHandler final : public GarbageCollected<EventHandler> {
   Member<GestureManager> gesture_manager_;
 
   double max_mouse_moved_duration_;
+
+  float cursor_accessibility_scale_factor_ = 1.f;
 
   HeapTaskRunnerTimer<EventHandler> active_interval_timer_;
 
