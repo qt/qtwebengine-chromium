@@ -24,6 +24,9 @@ BASE_DECLARE_FEATURE(kOnShowWithPageVisibility);
 // See https://crbug.com/838348 and https://crbug.com/1220337.
 BASE_DECLARE_FEATURE(kQueueNavigationsWhileWaitingForCommit);
 
+// Flag guard for fix for crbug.com/1414936.
+CONTENT_EXPORT BASE_DECLARE_FEATURE(kWindowOpenFileSelectFix);
+
 // Please keep features in alphabetical order.
 
 }  // namespace content

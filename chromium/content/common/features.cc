@@ -18,6 +18,10 @@ BASE_FEATURE(kQueueNavigationsWhileWaitingForCommit,
              "QueueNavigationsWhileWaitingForPendingCommit",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
+BASE_FEATURE(kWindowOpenFileSelectFix,
+             "WindowOpenFileSelectFix",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
 // Please keep features in alphabetical order.
 
 }  // namespace content
