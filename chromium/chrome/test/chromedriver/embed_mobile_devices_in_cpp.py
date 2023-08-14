@@ -132,7 +132,7 @@ def main():
   cpp_source.WriteSource('mobile_device_list',
                          output_dir,
                          options.directory,
-                         {'kMobileDevices': json.dumps(devices)})
+                         {'kMobileDevices': json.dumps(devices, indent=0)})
 
 if __name__ == '__main__':
   sys.exit(main())
