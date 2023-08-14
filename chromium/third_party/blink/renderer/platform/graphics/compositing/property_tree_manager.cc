@@ -216,7 +216,7 @@ void PropertyTreeManager::DirectlySetScrollOffset(
 
 void PropertyTreeManager::EnsureCompositorScrollNodes(
     const Vector<const TransformPaintPropertyNode*>& scroll_translation_nodes) {
-  DCHECK(base::FeatureList::IsEnabled(features::kScrollUnification));
+  DCHECK(base::FeatureList::IsEnabled(::features::kScrollUnification));
 
   for (auto* node : scroll_translation_nodes)
     EnsureCompositorScrollNode(*node);
