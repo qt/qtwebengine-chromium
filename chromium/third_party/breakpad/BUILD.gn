@@ -79,7 +79,7 @@ if (use_fuzzing_engine) {
 
 # {micro,mini}dump_stackwalk and minidump_dump are tool-type executables
 # that do not build on Windows.
-if (!is_win) {
+if (!is_win || target_os == "android") {
   if (current_toolchain == host_toolchain || target_os == "mac") {
     # Contains the code shared by both {micro,mini}dump_stackwalk.
     static_library("stackwalk_common") {
@@ -922,7 +922,10 @@ if (is_win) {
     }
 
     group("symupload") {
-      deps = [ ":symupload_win($symupload_toolchain)" ]
+      if (target_os != "android") {
+          # note symupload_toolchain needs toolchain/win
+          deps = [ ":symupload_win($symupload_toolchain)" ]
+      }
     }
     executable("symupload_win") {
       include_dirs = [
