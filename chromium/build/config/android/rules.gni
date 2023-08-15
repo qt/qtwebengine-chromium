@@ -4370,6 +4370,9 @@ if (enable_java_templates && is_android) {
     _flatc_dep = "//third_party/flatbuffers:flatc($host_toolchain)"
     _flatc_out_dir = get_label_info(_flatc_dep, "root_out_dir")
     _flatc_bin = "$_flatc_out_dir/flatc"
+    if (host_os == "win") {
+      _flatc_bin = _flatc_bin + ".exe"
+    }
 
     action_with_pydeps("${_template_name}__flatc_java") {
       _srcjar_path = "$target_gen_dir/$target_name.srcjar"
