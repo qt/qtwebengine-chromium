@@ -356,6 +356,8 @@ if (is_android || is_chromeos) {
     android_host_os = "linux"
   } else if (host_os == "mac") {
     android_host_os = "darwin"
+  } else if (host_os == "win") {
+    android_host_os = "windows"
   } else {
     assert(false, "Need Android toolchain support for your build OS.")
   }
