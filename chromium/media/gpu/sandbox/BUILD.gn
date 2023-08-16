@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//media/gpu/args.gni")
+import("//build/config/features.gni")
 
 source_set("sandbox") {
   sources = []
@@ -26,7 +27,7 @@ source_set("sandbox") {
     deps += [ "//media/gpu/v4l2" ]
   }
   if (current_cpu != "s390x" && current_cpu != "ppc64" && is_linux &&
-      !is_castos) {
+      !is_castos && !is_qtwebengine) {
     # For DRI_DRIVER_DIR.
     configs += [ "//build/config/linux/dri" ]
   }
