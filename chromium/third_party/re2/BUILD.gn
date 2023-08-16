@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/linux/pkg_config.gni")
 import("//testing/libfuzzer/fuzzer_test.gni")
 import("//build/shim_headers.gni")
 
@@ -71,6 +72,10 @@ fuzzer_test("third_party_re2_fuzzer") {
   deps = [ ":re2" ]
 }
 
+pkg_config("re2_from_pkgconfig") {
+  packages = [ "re2" ]
+}
+
 shim_headers("re2_shim") {
   root_path = "src/re2"
   prefix = "re2/"
@@ -84,7 +89,7 @@ shim_headers("re2_shim") {
 
 source_set("system_re2") {
   deps = [ ":re2_shim" ]
-  libs = [ "re2" ]
+  public_configs = [ ":re2_from_pkgconfig" ]
 }
 
 group("re2") {
