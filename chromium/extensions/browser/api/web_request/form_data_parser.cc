@@ -421,7 +421,7 @@ bool FormDataParserUrlEncoded::GetNextNameValue(Result* result) {
 bool FormDataParserUrlEncoded::SetSource(base::StringPiece source) {
   if (source_set_)
     return false;  // We do not allow multiple sources for this parser.
-  source_.set(source.data(), source.size());
+  source_ = re2::StringPiece(source.data(), source.size());
   source_set_ = true;
   source_malformed_ = false;
   return true;
@@ -565,7 +565,7 @@ bool FormDataParserMultipart::GetNextNameValue(Result* result) {
 bool FormDataParserMultipart::SetSource(base::StringPiece source) {
   if (source.data() == NULL || !source_.empty())
     return false;
-  source_.set(source.data(), source.size());
+  source_ = re2::StringPiece(source.data(), source.size());
 
   switch (state_) {
     case STATE_INIT:
