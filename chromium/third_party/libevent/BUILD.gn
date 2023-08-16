@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/linux/pkg_config.gni")
 import("//build/config/cronet/config.gni")
 import("//build/config/nacl/config.gni")
 import("//build/shim_headers.gni")
@@ -83,11 +84,15 @@ shim_headers("libevent_shim") {
   headers = [ "event.h" ]
 }
 
+pkg_config("libevent_from_pkgconfig") {
+  packages = [ "libevent" ]
+}
+
 source_set("system_libevent") {
   deps = [
     ":libevent_shim",
   ]
-  libs = [ "event" ]
+  public_configs = [ ":libevent_from_pkgconfig" ]
 }
 
 group("libevent") {
