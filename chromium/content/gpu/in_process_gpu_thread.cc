@@ -24,6 +24,10 @@
 #include "base/android/jni_android.h"
 #endif
 
+#if BUILDFLAG(IS_WIN)
+#include <windows.h>
+#endif
+
 namespace content {
 
 InProcessGpuThread::InProcessGpuThread(
@@ -40,6 +44,10 @@ InProcessGpuThread::~InProcessGpuThread() {
 
 void InProcessGpuThread::Init() {
   base::ThreadType io_thread_type = base::ThreadType::kDefault;
+
+#if BUILDFLAG(IS_WIN)
+  ImmDisableIME(0);
+#endif
 
   // In single-process mode, we never enter the sandbox, so run the post-sandbox
   // code now.
