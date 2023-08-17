@@ -24,6 +24,10 @@
 #include "base/android/jni_android.h"
 #endif
 
+#if BUILDFLAG(IS_WIN)
+#include <windows.h>
+#endif
+
 namespace content {
 
 InProcessGpuThread::InProcessGpuThread(
@@ -40,6 +44,10 @@ InProcessGpuThread::~InProcessGpuThread() {
 
 void InProcessGpuThread::Init() {
   base::ThreadPriority io_thread_priority = base::ThreadPriority::NORMAL;
+
+#if BUILDFLAG(IS_WIN)
+  ImmDisableIME(0);
+#endif
 
 #if defined(OS_ANDROID)
   // Call AttachCurrentThreadWithName, before any other AttachCurrentThread()
