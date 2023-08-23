@@ -6724,8 +6724,6 @@ void NavigationRequest::DidCommitNavigation(
     frame_tree_node()->SetCollapsed(false);
   }
 
-  UnblockPendingSubframeNavigationRequestsIfNeeded();
-
   if (service_worker_handle_) {
     // Notify the service worker navigation handle that the navigation finished
     // committing.
@@ -6740,6 +6738,11 @@ void NavigationRequest::DidCommitNavigation(
     topics_url_loader_service_bind_context_->OnDidCommitNavigation(
         GetRenderFrameHost()->GetWeakDocumentPtr());
   }
+
+  // DO NOT ADD CODE after this.
+  // UnblockPendingSubframeNavigationRequestsIfNeeded() resumes throttles, which
+  // may cause the destruction of this NavigationRequest.
+  UnblockPendingSubframeNavigationRequestsIfNeeded();
 }
 
 SiteInfo NavigationRequest::GetSiteInfoForCommonParamsURL() {
@@ -8682,9 +8685,13 @@ void NavigationRequest::UnblockPendingSubframeNavigationRequestsIfNeeded() {
   // After a main frame same-document history navigation completes successfully,
   // we can resume any corresponding subframe history navigations that were
   // blocked on it.
+  base::WeakPtr<NavigationRequest> self = GetWeakPtr();
   for (auto& throttle : subframe_history_navigation_throttles_) {
     if (throttle) {
       throttle->Resume();
+      if (!self) {
+        return;
+      }
     }
   }
   subframe_history_navigation_throttles_.clear();
