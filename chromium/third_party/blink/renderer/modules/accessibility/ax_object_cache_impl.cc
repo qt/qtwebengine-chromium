@@ -649,7 +649,9 @@ AXObjectCacheImpl::AXObjectCacheImpl(Document& document,
       permission_observer_receiver_(this, document.GetExecutionContext()),
       ax_tree_source_(BlinkAXTreeSource::Create(*this)),
       ax_tree_serializer_(
-          std::make_unique<ui::AXTreeSerializer<AXObject*>>(ax_tree_source_)) {
+          std::make_unique<
+              ui::AXTreeSerializer<AXObject*, HeapVector<AXObject*>>>(
+              ax_tree_source_)) {
   if (document_->LoadEventFinished())
     AddPermissionStatusListener();
   use_ax_menu_list_ = GetSettings()->GetUseAXMenuList();
@@ -3892,7 +3894,8 @@ bool AXObjectCacheImpl::SerializeEntireTree(bool exclude_offscreen,
   // or a partial accessibility tree. AXTreeSerializer is stateful, but the
   // first time you serialize from a brand-new tree you're guaranteed to get a
   // complete tree.
-  ui::AXTreeSerializer<AXObject*> serializer(tree_source);
+  ui::AXTreeSerializer<AXObject*, HeapVector<AXObject*>> serializer(
+      tree_source);
 
   if (max_node_count)
     serializer.set_max_node_count(max_node_count);
