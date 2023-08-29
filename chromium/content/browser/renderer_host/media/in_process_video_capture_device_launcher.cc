@@ -200,12 +200,15 @@ DesktopCaptureImplementation CreatePlatformDependentVideoCaptureDevice(
 #if BUILDFLAG(IS_MAC)
   // Prefer using ScreenCaptureKit. After that try DesktopCaptureDeviceMac, and
   // if both fail, use the generic DesktopCaptureDevice.
+#ifndef TOOLKIT_QT
+  // ### Requires macOS sdk 12.3:
   if (base::FeatureList::IsEnabled(kScreenCaptureKitMac) ||
       (desktop_id.type == DesktopMediaID::TYPE_WINDOW &&
        base::FeatureList::IsEnabled(kScreenCaptureKitMacWindow))) {
     if ((device_out = CreateScreenCaptureKitDeviceMac(desktop_id)))
       return kScreenCaptureKitDeviceMac;
   }
+#endif
   if ((device_out = CreateDesktopCaptureDeviceMac(desktop_id))) {
     return kDesktopCaptureDeviceMac;
   }
