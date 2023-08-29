@@ -67,7 +67,9 @@ class GL_EXPORT GLSurfaceGLX : public GLSurface {
 
  private:
   static bool initialized_;
+#if defined(USE_GLX)
   raw_ptr<GLDisplayX11> display_;
+#endif
 };
 
 // A surface used to render to a view.
